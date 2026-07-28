@@ -1,0 +1,34 @@
+{
+  "name": "baogiang-damsan",
+  "version": "0.0.1",
+  "description": "Hệ thống Báo giảng và Thống kê Tiết dạy Tự động - Trường PTDTNT THPT Đam San",
+  "private": true,
+  "workspaces": [
+    "apps/web",
+    "apps/api",
+    "packages/contracts",
+    "packages/config",
+    "tests/e2e"
+  ],
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
+  },
+  "scripts": {
+    "dev": "npm run dev:web & npm run dev:api",
+    "dev:web": "npm run dev -w apps/web",
+    "dev:api": "npm run dev -w apps/api",
+    "lint": "npm run lint -w apps/web && npm run lint -w apps/api && npm run lint -w packages/contracts && npm run lint -w packages/config",
+    "typecheck": "npm run typecheck -w packages/contracts && npm run typecheck -w packages/config && npm run typecheck -w apps/api && npm run typecheck -w apps/web",
+    "test": "npm run test:unit && npm run test:integration",
+    "test:unit": "npm run test:unit -w apps/web && npm run test:unit -w apps/api",
+    "test:integration": "npm run test:integration -w apps/api",
+    "test:e2e": "npm run test:e2e -w tests/e2e",
+    "build": "npm run build -w packages/contracts && npm run build -w packages/config && npm run build -w apps/api && npm run build -w apps/web",
+    "db:init": "powershell -ExecutionPolicy Bypass -File scripts/db/Initialize-LocalDatabase.ps1",
+    "db:check": "powershell -ExecutionPolicy Bypass -File scripts/db/Test-DatabaseConnection.ps1",
+    "prisma:generate": "npm run prisma:generate -w apps/api",
+    "prisma:migrate": "npm run prisma:migrate -w apps/api",
+    "prepare": "echo 'No prepare step needed'"
+  }
+}

@@ -1,0 +1,29 @@
+// ============================================================
+// prisma/schema.prisma
+// Prisma schema for baogiang-damsan
+//
+// Phase 00: Foundation schema.
+// Defines initial system setting metadata table for Phase 00.
+// Business domain models (TKB, PPCT, BangKe...) will be added in Phase 01+.
+//
+// Database: PostgreSQL 17 (local: 127.0.0.1:5432)
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// System setting model for metadata and phase tracking
+model SystemSetting {
+  key         String   @id @db.VarChar(100)
+  value       String   @db.Text
+  description String?  @db.VarChar(255)
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("system_settings")
+}
