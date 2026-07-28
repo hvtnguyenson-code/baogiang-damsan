@@ -5,107 +5,134 @@
 **Repository:** `hvtnguyenson-code/baogiang-damsan`  
 **Branch:** `phase/00-foundation`  
 **Ngày hoàn thành:** 2026-07-28  
-**Trạng thái:** **HOÀN THÀNH**
+**Trạng thái:** HOÀN THÀNH, chờ Pull Request vào `main`
 
----
+## 1. Nền tảng kỹ thuật
 
-## 1. Môi trường hệ thống
+- React 18 + Vite 5 + TypeScript strict + Tailwind CSS.
+- Node.js 22 + NestJS 10 + TypeScript strict.
+- Prisma 5 + PostgreSQL 17.
+- npm workspaces monorepo.
+- Vitest, Jest, Supertest và Playwright.
+- GitHub Actions CI.
 
-- **Node.js:** `v22.22.2`
-- **npm:** `10.9.7`
-- **PostgreSQL:** `17.10` (PostgreSQL 17 tại `127.0.0.1:5432`)
-- **Git Branch:** `phase/00-foundation` (up to date with origin/phase/00-foundation)
-- **Working Directory:** `D:\baogiang-damsan`
+## 2. Kiến trúc monorepo
 
----
-
-## 2. Kiến trúc Monorepo
-
-Hệ thống được tổ chức theo mô hình **npm workspaces monorepo**:
-
-```
-D:\baogiang-damsan
-├── apps/
-│   ├── web/          React 18 + Vite 5 + TypeScript + Tailwind CSS (Port 5173)
-│   └── api/          NestJS 10 + TypeScript + Prisma 5 (Port 3100)
-├── packages/
-│   ├── contracts/    Shared TypeScript interfaces & DTOs
-│   └── config/       Shared configuration & constants (no secrets)
-├── tests/
-│   └── e2e/          Playwright E2E smoke test suite
-├── prisma/
-│   └── schema.prisma PostgreSQL datasource & SystemSetting model
-├── scripts/
-│   └── db/           PowerShell scripts (Initialize & Test local DB)
-├── docs/
-│   ├── specifications/   File đặc tả gốc (.docx)
-│   ├── prototypes/       File prototype HTML & README
-│   ├── architecture/     Tài liệu kiến trúc PHASE-00-FOUNDATION.md
-│   ├── decisions/        ADR-001, ADR-002, ADR-003
-│   └── phase-reports/    PHASE-00-REPORT.md (file này)
-└── .github/
-    └── workflows/ci.yml  GitHub Actions CI workflow
+```text
+apps/web
+apps/api
+packages/contracts
+packages/config
+tests/e2e
+prisma
+scripts/db
+docs
+.github/workflows
 ```
 
----
+## 3. Database local và CI
 
-## 3. Database Local
+| Môi trường | Role | Database |
+|---|---|---|
+| Development | `baogiang_dev_user` | `baogiang_dev` |
+| Test | `baogiang_test_user` | `baogiang_test` |
 
-| Dịch vụ | Role | Database | Connection String |
-|---------|------|----------|-------------------|
-| Development | `baogiang_dev_user` | `baogiang_dev` | `postgresql://baogiang_dev_user@127.0.0.1:5432/baogiang_dev?schema=public` |
-| Test | `baogiang_test_user` | `baogiang_test` | `postgresql://baogiang_test_user@127.0.0.1:5432/baogiang_test?schema=public` |
+- Ứng dụng không dùng role `postgres`.
+- Script local không được tác động database khác.
+- CI tạo role và database bằng lệnh idempotent.
+- `CREATE DATABASE` chạy ngoài transaction block.
+- CI xác minh kết nối bằng `SELECT 1`.
 
-- Script khởi tạo: `scripts/db/Initialize-LocalDatabase.ps1` (idempotent, không tác động DB khác)
-- Script kiểm tra: `scripts/db/Test-DatabaseConnection.ps1` (chạy `SELECT 1` kiểm tra)
-- **Xác nhận:** Không dùng role `postgres`, không sửa `postgresql.conf` / `pg_hba.conf`, không tác động DB nội trú hoặc Edu_DamSan.
+## 4. Kết quả kiểm thử và build
 
----
+Pipeline đã xác nhận thành công:
 
-## 4. Kết quả Kiểm thử & Build
+- Prisma generate;
+- lint toàn bộ workspace;
+- TypeScript typecheck;
+- unit tests API và Web;
+- integration tests API với PostgreSQL thật;
+- build packages, API và Web;
+- Playwright Chromium smoke-test step.
 
-| Bước kiểm tra | Công cụ | Trạng thái | Chi tiết |
-|---------------|---------|------------|----------|
-| **Database Check** | PowerShell / psql | **PASS** | `baogiang_dev` & `baogiang_test` kết nối thành công (`SELECT 1`) |
-| **Prisma Generate**| Prisma CLI | **PASS** | Prisma Client v5.22 generated thành công |
-| **ESLint** | ESLint | **PASS** | 0 error, 0 warning trên cả 4 workspaces |
-| **Typecheck** | TypeScript `tsc --noEmit` | **PASS** | 0 error trên cả 4 workspaces |
-| **Unit Tests (Web)**| Vitest | **PASS** | 2 test files, 11 tests passed |
-| **Unit Tests (API)**| Jest | **PASS** | 3 test suites, 23 tests passed |
-| **Integration Tests**| Jest + Supertest + PostgreSQL | **PASS** | 1 test suite, 4 integration tests passed (`SELECT 1` DB thật) |
-| **Build (Packages)**| tsup | **PASS** | `@baogiang/contracts` và `@baogiang/config` build ESM & CJS |
-| **Build (API)** | Nest CLI | **PASS** | NestJS dist artifact built thành công |
-| **Build (Web)** | Vite | **PASS** | Production bundle generated (dist/ index.html, JS, CSS) |
-| **Playwright E2E**| Playwright (Chromium) | **PASS** | 8 smoke tests passed (home page, nav, status, 404, health, no JS errors) |
+Run xác minh tại thời điểm hoàn thành nền móng:
 
----
+- Run ID: `30375101463`
+- Conclusion: `success`
+- Commit: `805b9cd1aa642b53b0f5e6c97d9a101737b51b7b`
 
-## 5. AI-Ready Foundation
+Các commit remediation tài liệu sau đó phải có CI xanh riêng trước khi merge.
 
-- **Interfaces đã tạo (16 ports đầy đủ theo Governance):** `AiAssistantPort`, `AiContextQueryPort`, `AiPolicyGuard`, `AiTaskCatalog`, `PromptTemplateRegistry`, `AiQuotaGuard`, `AiBudgetGuard`, `AiUsageMeter`, `AiCostLedger`, `AiPassiveTriggerPort`, `AiSuggestionDeliveryPort`, `AiProviderAdapter`, `AiOutputValidator`, `AiSuggestionStore`, `AiAuditService`, `AiResultCache` tại `apps/api/src/common/ports/ai-ports.ts`
-- **Adapter mặc định:** `DisabledAiAssistantAdapter` (safe no-op, 0 network, 0 DB write)
-- **Feature Flags (3 kill switches):** 
-  - `AI_ENABLED=false` (mặc định master switch)
-  - `AI_ACTIVE_MODE_ENABLED=false` (mặc định active mode)
-  - `AI_PASSIVE_MODE_ENABLED=false` (mặc định passive mode)
-- **Xác nhận:** 
-  - Không gọi bất kỳ AI provider nào qua mạng.
-  - Không có UI AI selector hay AI button.
-  - Core system hoàn toàn độc lập với AI.
+## 5. AI-ready foundation
 
----
+Đã tạo các interface và disabled adapter phục vụ governance, quota, budget, usage, audit, cache, active/passive delivery và output validation.
 
-## 6. Tuân thủ Quy tắc & An toàn
+Ba kill switch mặc định tắt:
 
-- **Branch:** `phase/00-foundation` (đúng branch yêu cầu).
-- **Git Commit / Push:** 0 commit mới, 0 push (toàn bộ thay đổi nằm trong working tree).
-- **Prototype:** Không sao chép nguyên file HTML, không sao chép JS/role switcher.
-- **Dữ liệu khác:** Không chạm vào `D:\Quan_li_noi_tru`, `D:\Edu_DamSan`, `D:\PostgreSQL\data`.
+- `AI_ENABLED=false`
+- `AI_ACTIVE_MODE_ENABLED=false`
+- `AI_PASSIVE_MODE_ENABLED=false`
 
----
+Không có:
 
-## 7. Đề xuất Bước tiếp theo (Phase 01)
+- provider call;
+- AI endpoint;
+- chatbot hoặc prompt tự do;
+- AI ghi trực tiếp dữ liệu nghiệp vụ.
 
-1. Thiết kế Schema chi tiết cho Người dùng, Phân quyền (Capabilities), Tổ chuyên môn và Môn học trong Prisma.
-2. Triển khai phân hệ Authentication / User Context Middleware (`AuthContext`).
-3. Khởi tạo UI cho quản lý tài khoản và phân quyền chuyên môn.
+## 6. Tài liệu kiến trúc và governance
+
+Repository có:
+
+- `PROJECT_CONTEXT.md`;
+- `PHASE-00-FOUNDATION.md`;
+- ADR-001 đến ADR-004;
+- AI governance và access model;
+- AI usage/cost policy;
+- requirements traceability;
+- handover checklist;
+- đặc tả Phương án A và B v1.2.
+
+Phương án production chính thức:
+
+- Phương án B;
+- Windows Server 2022;
+- PostgreSQL 17;
+- Nginx;
+- service, database, log, backup và deploy riêng.
+
+## 7. Git và trạng thái phát hành
+
+- Branch Phase 00 đã được commit và push lên GitHub.
+- Branch đi trước `main` và không bị tụt sau `main` tại thời điểm verification.
+- Chưa merge vào `main` khi báo cáo này được cập nhật.
+- Push không đồng nghĩa deploy.
+- Chưa deploy VPS.
+
+## 8. Phạm vi chưa triển khai
+
+- authentication và authorization implementation;
+- người dùng và hồ sơ nhân sự;
+- tổ chuyên môn và môn học;
+- TKB, PPCT, nợ tiết, báo giảng và bảng kê;
+- notification/Web Push;
+- GDĐP và HĐTN-HN;
+- AI thật;
+- production deployment.
+
+## 9. Điều kiện merge Phase 00
+
+- Documentation references thống nhất với v1.2.
+- Production platform thống nhất là Windows Server 2022.
+- CI xanh tại final PR head.
+- Không có thay đổi production/deploy.
+- Pull Request được review và squash merge vào `main`.
+
+## 10. Bước tiếp theo
+
+Sau khi Phase 00 merge vào `main`:
+
+1. Tạo branch `phase/01-identity-access` từ head mới nhất của `main`.
+2. Đọc toàn bộ đặc tả v1.2 và ADR.
+3. Hoàn thiện đặc tả Phase 01 về identity, authentication, capability, scope và audit.
+4. Chỉ sau khi đặc tả được phê duyệt mới giao Antigravity triển khai code.
