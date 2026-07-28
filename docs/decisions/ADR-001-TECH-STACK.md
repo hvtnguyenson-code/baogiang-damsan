@@ -4,99 +4,84 @@
 **Trạng thái:** ĐƯỢC CHẤP NHẬN  
 **Giai đoạn:** Phase 00 — Foundation
 
----
-
 ## Bối cảnh
 
-Dự án cần một nền tảng kỹ thuật có thể:
-- Hỗ trợ phát triển theo nhiều phase từ nền móng đến AI
-- Phù hợp với một nhóm phát triển nhỏ
-- Chạy ổn định trên VPS Linux với PostgreSQL
-- Cho phép kiểm thử đầy đủ từ unit đến E2E
+Dự án cần một nền tảng kỹ thuật:
 
----
+- hỗ trợ phát triển theo nhiều phase từ nền móng đến AI;
+- phù hợp nhóm phát triển nhỏ;
+- chạy ổn định trên VPS **Windows Server 2022** với PostgreSQL 17;
+- cho phép kiểm thử đầy đủ từ unit đến E2E;
+- không tác động hệ thống quản lý nội trú đang vận hành trên cùng VPS.
 
 ## Quyết định
 
 ### Frontend: React + Vite + TypeScript
 
-**Lý do:**
-- React là thư viện UI phổ biến, hệ sinh thái lớn, dễ tuyển dụng
-- Vite cung cấp build nhanh, HMR tốt cho development
-- TypeScript strict giúp phát hiện lỗi sớm, đặc biệt trong nghiệp vụ phức tạp
-- React Router v6 với layout routes phù hợp cấu trúc app
-- TanStack Query quản lý server state, caching, retry — phù hợp cho dashboard nghiệp vụ
+Lý do:
 
-**Lý do từ chối Next.js:**
-- SSR/SSG không cần thiết cho hệ thống nội bộ trường
-- Phức tạp hơn không đáng với scope dự án hiện tại
+- React có hệ sinh thái lớn;
+- Vite có quy trình build và development đơn giản;
+- TypeScript strict giảm lỗi trong nghiệp vụ phức tạp;
+- React Router v6 phù hợp ứng dụng nội bộ;
+- TanStack Query quản lý server state, cache và retry.
 
-**Lý do từ chối Tailwind CDN:**
-- CDN không kiểm soát được phiên bản
-- Không treeshake được, file CSS lớn hơn cần thiết
-- Tailwind được cài qua npm và build bằng Vite để tối ưu
+Không dùng Next.js vì hệ thống nội bộ không cần SSR/SSG. Tailwind phải được cài qua npm, không dùng CDN.
 
 ### Backend: NestJS + TypeScript
 
-**Lý do:**
-- NestJS có cấu trúc module rõ ràng, phù hợp hệ thống nghiệp vụ lớn
-- Dependency injection sẵn có, thuận tiện cho ports/adapters pattern
-- Hỗ trợ Pipes, Guards, Filters tích hợp sẵn
-- TypeScript strict end-to-end từ frontend đến backend
-- NestJS + Prisma là combination trưởng thành, được cộng đồng kiểm chứng
+Lý do:
 
-**Lý do từ chối Express thuần:**
-- Thiếu cấu trúc dẫn đến inconsistency trong dự án dài hạn
-- Phải tự xây nhiều thứ mà NestJS đã có
+- cấu trúc module rõ ràng;
+- dependency injection phù hợp ports/adapters;
+- có sẵn Pipes, Guards và Filters;
+- duy trì TypeScript strict end-to-end.
 
-**Lý do từ chối Fastify:**
-- Hệ sinh thái nhỏ hơn NestJS
-- Ít tài liệu tiếng Việt hơn
+Không dùng Express thuần vì thiếu cấu trúc cho dự án dài hạn.
 
 ### ORM: Prisma
 
-**Lý do:**
-- Schema-first, type-safe client được generate tự động
-- Migration workflow rõ ràng với version history
-- Hỗ trợ PostgreSQL tốt
-- Prisma Client là typed hoàn toàn, khớp với TypeScript strict
+Lý do:
 
-**Lý do từ chối TypeORM:**
-- Decorators-heavy, phức tạp hơn trong sync với schema
-- Migration ít reliable hơn Prisma
-
-**Lý do từ chối Drizzle:**
-- Còn tương đối mới, hệ sinh thái nhỏ hơn
-- Ít pattern đã được kiểm chứng cho dự án lớn
+- schema-first;
+- type-safe client;
+- migration có lịch sử;
+- hỗ trợ PostgreSQL tốt.
 
 ### Database: PostgreSQL 17
 
-**Lý do:**
-- Yêu cầu từ đặc tả `PA-B-VPS-PostgreSQL-v1.1`
-- PostgreSQL 17 đã được cài sẵn trên máy local và VPS
-- Hỗ trợ tốt cho JSONB, full-text search, row-level security nếu cần sau này
+- Phù hợp đặc tả Phương án B v1.2.
+- Local development dùng PostgreSQL 17 tại `127.0.0.1:5432`.
+- Production dự kiến dùng PostgreSQL 17 tại `localhost:5433` trên Windows Server 2022.
+- Dự án dùng database và role riêng, không dùng database hoặc role của hệ thống nội trú.
 
-### Package Manager: npm workspaces
+### Package manager: npm workspaces
 
-**Lý do:**
-- npm được cài sẵn với Node.js, không cần install thêm
-- npm workspaces đủ cho monorepo với ≤5 packages
-- Tránh thêm dependency toolchain (pnpm, yarn) cho team nhỏ
-
-**Ràng buộc:** Không chuyển sang pnpm hoặc yarn trong project này.
+- Có sẵn với Node.js;
+- đủ cho quy mô monorepo hiện tại;
+- không chuyển sang pnpm hoặc yarn nếu chưa có ADR mới.
 
 ### Testing: Vitest + Jest + Playwright
 
-**Lý do:**
-- **Vitest** cho web: tích hợp tốt với Vite, nhanh hơn Jest trong môi trường ESM
-- **Jest** cho API: tích hợp tốt với NestJS Testing module
-- **Playwright** cho E2E: cross-browser, network interception, reliable waiting mechanisms
+- Vitest cho frontend;
+- Jest cho API;
+- Playwright cho E2E;
+- integration test dùng PostgreSQL thật trong CI.
 
----
+### Production runtime
+
+- Windows Server 2022;
+- frontend là static files qua Nginx;
+- backend chạy service riêng tại `127.0.0.1:3100`;
+- PostgreSQL 17 dùng database và role riêng;
+- deploy thủ công có kiểm soát qua GitHub Actions UI;
+- push không đồng nghĩa deploy;
+- không restart toàn bộ VPS.
 
 ## Hệ quả
 
-- Toàn bộ codebase dùng TypeScript strict — `any` bị cấm
-- Shared packages (`@baogiang/contracts`, `@baogiang/config`) giữ type-safety end-to-end
-- Build artifacts của packages cần được generate trước khi apps import
-- CI phải chạy `prisma generate` trước khi build API
+- Toàn bộ codebase dùng TypeScript strict.
+- Shared packages giữ type-safety giữa web và API.
+- CI chạy Prisma generate trước khi build API.
+- Mọi thay đổi nền tảng hoặc production architecture phải có ADR mới.
+- Không triển khai production trong Phase 00 hoặc Phase 01.
