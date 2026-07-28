@@ -68,7 +68,7 @@ jobs:
         working-directory: apps/api
         env:
           DATABASE_URL: postgresql://baogiang_dev_user@127.0.0.1:5432/baogiang_dev?schema=public
-        run: npx prisma generate
+        run: npm run prisma:generate
 
       # ---- Lint ----
       - name: Lint — packages/contracts
