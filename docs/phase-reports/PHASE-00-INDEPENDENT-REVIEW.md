@@ -1,44 +1,67 @@
-# BÁO CÁO REVIEW ĐỘC LẬP & KẾT QUẢ REMEDIATION — PHASE 00 FOUNDATION
+# BÁO CÁO REVIEW ĐỘC LẬP & REMEDIATION — PHASE 00 FOUNDATION
 
 **Dự án:** Hệ thống Báo giảng và Thống kê Tiết dạy Tự động  
 **Đơn vị:** Trường PTDTNT THPT Đam San  
-**Repository local:** `D:\baogiang-damsan`  
-**Branch được review:** `phase/00-foundation`  
+**Branch:** `phase/00-foundation`  
 **Ngày review:** 2026-07-28  
-**Trạng thái:** **REMEDIATED (ĐÃ KHẮC PHỤC HOÀN TOÀN)**
+**Trạng thái:** REMEDIATED — nền móng kỹ thuật đạt, tài liệu đã được đối chiếu lại
 
----
+## 1. Phát hiện kỹ thuật đã khắc phục
 
-## 1. Danh sách Phát hiện & Trạng thái Khắc phục (Remediation Status)
+| ID | Mức độ | Phát hiện | Trạng thái |
+|---|---|---|---|
+| F1 | Thấp | Thiếu một số AI governance ports | Remediated |
+| F2 | Thấp | Readiness từng trả HTTP 200 khi DB lỗi | Remediated |
+| F3 | Thông tin | AI kill switches chưa đầy đủ | Remediated |
+| F4 | Thông tin | React Router future-flag warning | Remediated |
+| F5 | Thông tin | Start path của NestJS cần xác minh | Remediated |
+| F6 | Trung bình | Tài liệu còn nhắc đặc tả v1.1 và VPS Linux | Remediated trong documentation pass |
+| F7 | Thấp | Báo cáo Git chưa phản ánh branch đã commit/push | Remediated trong documentation pass |
 
-| ID | Mức độ | Mô tả phát hiện ban đầu | Trạng thái | Phương pháp và Bằng chứng Khắc phục |
-|---|---|---|---|---|
-| **F1** | ⚠️ THẤP | Cổng AI từ Governance doc còn thiếu | **[REMEDIATED]** | Đã bổ sung đầy đủ 16 AI ports (`AiTaskCatalog`, `AiQuotaGuard`, `AiBudgetGuard`, `AiUsageMeter`, `AiCostLedger`, `AiPassiveTriggerPort`, `AiSuggestionDeliveryPort`, `AiProviderAdapter`, `AiOutputValidator`, `AiSuggestionStore`, `AiAuditService`, `AiResultCache`, v.v.) trong `ai-ports.ts` và implement safe no-op stub trong `DisabledAiAssistantAdapter`. |
-| **F2** | ⚠️ THẤP | `GET /api/health/ready` trả HTTP 200 khi DB lỗi | **[REMEDIATED]** | Đã cập nhật `HealthController.getReady()` trả **HTTP 503 Service Unavailable** khi DB lỗi. Đã bổ sung unit test (`health.controller.spec.ts`) và integration test (`health.integration.spec.ts`) kiểm tra cả HTTP 200 và HTTP 503. |
-| **F3** | ℹ️ THÔNG TIN | AI kill switches chưa đầy đủ | **[REMEDIATED]** | Đã khai báo và đồng bộ 3 kill switches `AI_ENABLED=false`, `AI_ACTIVE_MODE_ENABLED=false`, `AI_PASSIVE_MODE_ENABLED=false` xuyên suốt `contracts`, `config`, `app.config.ts`, `.env.example`, `.env` và `app.config.spec.ts`. |
-| **F4** | ℹ️ THÔNG TIN | React Router v6 future flag warnings | **[REMEDIATED]** | Đã bổ sung `future={{ v7_startTransition: true, v7_relativeSplatPath: true }}` vào `<BrowserRouter>` trong `main.tsx` và `<MemoryRouter>` trong `HomePage.test.tsx`, `SystemStatusPage.test.tsx`. |
-| **F5** | ℹ️ THÔNG TIN | Script start và CI start path có thể sai | **[REMEDIATED]** | Đã kiểm tra output thật của NestJS build (`dist/apps/api/src/main.js`). Đã xác nhận `npm run start -w apps/api` chạy file `dist/apps/api/src/main.js` chính xác và đồng bộ `.github/workflows/ci.yml`. |
+## 2. Kết quả bảo mật và cấu hình Phase 00
 
----
+- `.env` được gitignore.
+- Không có AI API key trong source.
+- Không có provider call hoặc AI endpoint.
+- API và Web bind loopback trong local development.
+- Application connection string không dùng role `postgres`.
+- Readiness trả HTTP 503 khi database không sẵn sàng.
+- CI dùng PostgreSQL thật cho integration tests.
+- Không có role selector trong production code.
 
-## 2. Review Bảo mật & Cấu hình
+## 3. Kết quả CI đã xác minh
 
-| Điểm kiểm tra | Kết quả |
-|---|---|
-| `.env` bị gitignore | ✅ Đúng (`.gitignore` line 14: `.env`) |
-| `.env` chứa credentials thật | ✅ Không — chỉ chứa local trust auth |
-| Bí mật hardcoded trong source | ✅ Không |
-| AI API key trong codebase | ✅ Không |
-| Bind address | `127.0.0.1` (API & Web) ✅ |
-| Role `postgres` trong app | ✅ Không dùng |
+Run `30375101463` tại commit `805b9cd1aa642b53b0f5e6c97d9a101737b51b7b` có conclusion `success`.
 
----
+Các bước lint, typecheck, unit tests, integration tests, build và Playwright đều hoàn tất thành công. Các commit remediation tài liệu sau run này phải được CI xác minh lại trước khi merge.
 
-## 3. Kết luận Tổng thể Sau Remediation
+## 4. Giới hạn của kết luận review
 
-### Phán quyết: **ĐẠT — PHASE 00 FOUNDATION HOÀN TOÀN SẴN SÀNG**
+Kết luận Phase 00 chỉ áp dụng cho:
 
-Tất cả 5 phát hiện (F1 - F5) đều đã được **khắc phục triệt để và kiểm thử xác minh**.  
-Không còn bất kỳ rủi ro hay thiếu sót nào về mặt kiến trúc, bảo mật, feature flags, hay health endpoints.
+- phạm vi source và tài liệu đã review;
+- trạng thái branch/commit trên GitHub;
+- bằng chứng CI được ghi nhận;
+- nền móng kỹ thuật trước khi merge.
 
-*Báo cáo này lưu giữ lịch sử phát hiện và minh chứng remediation theo đúng quy tắc an toàn.*
+Kết luận không thay thế:
+
+- review Pull Request tại final head;
+- CI chạy trên commit remediation mới;
+- kiểm tra local working tree;
+- security review của authentication ở Phase 01;
+- kiểm thử hoặc phê duyệt production deployment.
+
+## 5. Phán quyết
+
+**ĐẠT CÓ ĐIỀU KIỆN MERGE.**
+
+Phase 00 đủ điều kiện mở Pull Request khi:
+
+1. documentation remediation đã được push;
+2. CI tại final branch head thành công;
+3. PR không chứa thay đổi production hoặc deploy;
+4. checklist review được hoàn tất;
+5. squash merge được thực hiện vào `main`.
+
+Không tuyên bố production-ready và không deploy VPS trong Phase 00.
