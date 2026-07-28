@@ -1,0 +1,228 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - 'phase/**'
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  ci:
+    name: Lint · Typecheck · Test · Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # PostgreSQL service for integration tests
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci_password_only
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      NODE_ENV: test
+      CI: true
+
+    steps:
+      # ---- Checkout ----
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ---- Node.js setup ----
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      # ---- Install dependencies ----
+      - name: Install dependencies
+        run: npm ci
+
+      # ---- Create CI database resources ----
+      - name: Create CI databases and roles
+        env:
+          PGPASSWORD: ci_password_only
+        run: |
+          set -euo pipefail
+          PSQL="psql -h 127.0.0.1 -U postgres -v ON_ERROR_STOP=1"
+
+          # 1. Dev Role
+          ROLE_EXISTS=$($PSQL -tAc "SELECT 1 FROM pg_roles WHERE rolname = 'baogiang_dev_user'")
+          if [ "$ROLE_EXISTS" = "1" ]; then
+            $PSQL -c "ALTER ROLE baogiang_dev_user WITH LOGIN PASSWORD 'ci_dev_pass_only' NOSUPERUSER NOCREATEDB NOCREATEROLE;"
+          else
+            $PSQL -c "CREATE ROLE baogiang_dev_user WITH LOGIN PASSWORD 'ci_dev_pass_only' NOSUPERUSER NOCREATEDB NOCREATEROLE;"
+          fi
+
+          # 2. Test Role
+          ROLE_EXISTS=$($PSQL -tAc "SELECT 1 FROM pg_roles WHERE rolname = 'baogiang_test_user'")
+          if [ "$ROLE_EXISTS" = "1" ]; then
+            $PSQL -c "ALTER ROLE baogiang_test_user WITH LOGIN PASSWORD 'ci_test_pass_only' NOSUPERUSER NOCREATEDB NOCREATEROLE;"
+          else
+            $PSQL -c "CREATE ROLE baogiang_test_user WITH LOGIN PASSWORD 'ci_test_pass_only' NOSUPERUSER NOCREATEDB NOCREATEROLE;"
+          fi
+
+          # 3. Dev Database
+          DB_EXISTS=$($PSQL -tAc "SELECT 1 FROM pg_database WHERE datname = 'baogiang_dev'")
+          if [ "$DB_EXISTS" != "1" ]; then
+            $PSQL -c "CREATE DATABASE baogiang_dev OWNER baogiang_dev_user;"
+          else
+            $PSQL -c "ALTER DATABASE baogiang_dev OWNER TO baogiang_dev_user;"
+          fi
+          $PSQL -c "GRANT ALL PRIVILEGES ON DATABASE baogiang_dev TO baogiang_dev_user;"
+
+          # 4. Test Database
+          DB_EXISTS=$($PSQL -tAc "SELECT 1 FROM pg_database WHERE datname = 'baogiang_test'")
+          if [ "$DB_EXISTS" != "1" ]; then
+            $PSQL -c "CREATE DATABASE baogiang_test OWNER baogiang_test_user;"
+          else
+            $PSQL -c "ALTER DATABASE baogiang_test OWNER TO baogiang_test_user;"
+          fi
+          $PSQL -c "GRANT ALL PRIVILEGES ON DATABASE baogiang_test TO baogiang_test_user;"
+
+          # 5. Verification
+          PGPASSWORD="ci_dev_pass_only" psql -h 127.0.0.1 -U baogiang_dev_user -d baogiang_dev -v ON_ERROR_STOP=1 -c "SELECT 1;"
+          PGPASSWORD="ci_test_pass_only" psql -h 127.0.0.1 -U baogiang_test_user -d baogiang_test -v ON_ERROR_STOP=1 -c "SELECT 1;"
+
+      # ---- Prisma generate ----
+      - name: Prisma generate
+        working-directory: apps/api
+        env:
+          DATABASE_URL: postgresql://baogiang_dev_user:ci_dev_pass_only@127.0.0.1:5432/baogiang_dev?schema=public
+        run: npm run prisma:generate
+
+      # ---- Lint ----
+      - name: Lint — packages/contracts
+        working-directory: packages/contracts
+        run: npm run lint
+
+      - name: Lint — packages/config
+        working-directory: packages/config
+        run: npm run lint
+
+      - name: Lint — apps/api
+        working-directory: apps/api
+        run: npm run lint
+
+      - name: Lint — apps/web
+        working-directory: apps/web
+        run: npm run lint
+
+      # ---- Typecheck ----
+      - name: Typecheck — packages/contracts
+        working-directory: packages/contracts
+        run: npm run typecheck
+
+      - name: Typecheck — packages/config
+        working-directory: packages/config
+        run: npm run typecheck
+
+      - name: Typecheck — apps/api
+        working-directory: apps/api
+        run: npm run typecheck
+
+      - name: Typecheck — apps/web
+        working-directory: apps/web
+        run: npm run typecheck
+
+      # ---- Unit tests ----
+      - name: Unit tests — apps/api
+        working-directory: apps/api
+        env:
+          DATABASE_URL: postgresql://baogiang_dev_user:ci_dev_pass_only@127.0.0.1:5432/baogiang_dev?schema=public
+          TEST_DATABASE_URL: postgresql://baogiang_test_user:ci_test_pass_only@127.0.0.1:5432/baogiang_test?schema=public
+          AI_ENABLED: 'false'
+        run: npm run test:unit
+
+      - name: Unit tests — apps/web
+        working-directory: apps/web
+        run: npm run test:unit
+
+      # ---- Integration tests ----
+      - name: Integration tests — apps/api
+        working-directory: apps/api
+        env:
+          DATABASE_URL: postgresql://baogiang_dev_user:ci_dev_pass_only@127.0.0.1:5432/baogiang_dev?schema=public
+          TEST_DATABASE_URL: postgresql://baogiang_test_user:ci_test_pass_only@127.0.0.1:5432/baogiang_test?schema=public
+          AI_ENABLED: 'false'
+          CORS_ORIGINS: http://127.0.0.1:5173
+        run: npm run test:integration
+
+      # ---- Build ----
+      - name: Build — packages/contracts
+        working-directory: packages/contracts
+        run: npm run build
+
+      - name: Build — packages/config
+        working-directory: packages/config
+        run: npm run build
+
+      - name: Build — apps/api
+        working-directory: apps/api
+        env:
+          DATABASE_URL: postgresql://baogiang_dev_user:ci_dev_pass_only@127.0.0.1:5432/baogiang_dev?schema=public
+        run: npm run build
+
+      - name: Build — apps/web
+        working-directory: apps/web
+        run: npm run build
+
+      # ---- Playwright smoke test ----
+      - name: Install Playwright browsers
+        working-directory: tests/e2e
+        run: npx playwright install --with-deps chromium
+
+      - name: Start API for Playwright
+        working-directory: apps/api
+        env:
+          DATABASE_URL: postgresql://baogiang_dev_user:ci_dev_pass_only@127.0.0.1:5432/baogiang_dev?schema=public
+          TEST_DATABASE_URL: postgresql://baogiang_test_user:ci_test_pass_only@127.0.0.1:5432/baogiang_test?schema=public
+          AI_ENABLED: 'false'
+          CORS_ORIGINS: http://127.0.0.1:5173
+          API_HOST: 127.0.0.1
+          API_PORT: '3100'
+        run: node dist/apps/api/src/main.js &
+
+      - name: Start Web for Playwright
+        working-directory: apps/web
+        run: npx vite preview --host 127.0.0.1 --port 5173 &
+
+      - name: Wait for servers to be ready
+        run: |
+          npx wait-on http://127.0.0.1:3100/api/health/live http://127.0.0.1:5173 --timeout 30000
+
+      - name: Run Playwright smoke tests
+        working-directory: tests/e2e
+        env:
+          BASE_URL: http://127.0.0.1:5173
+          API_URL: http://127.0.0.1:3100
+        run: npm run test:e2e
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: tests/e2e/playwright-report/
+          retention-days: 7
+
+  # ---- Security: no secret scanning ----
+  # Note: This workflow does NOT:
+  # - SSH into any server
+  # - Deploy to VPS
+  # - Use production secrets
+  # - Restart production services
+  # - Run production migrations

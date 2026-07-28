@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hệ thống Chuyên môn - THPT DTNT Đam San</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .tab-active { border-bottom: 2px solid #2563eb; color: #2563eb; font-weight: bold; }
+        .tab-inactive { color: #6b7280; border-bottom: 2px solid transparent; }
+        .tab-inactive:hover { color: #374151; border-gray-300; }
+        .role-badge { transition: all 0.3s ease; }
+        .modal-bg { backdrop-filter: blur(4px); transition: opacity 0.3s ease; }
+        .dropdown-menu { display: none; }
+        .dropdown-menu.show { display: block; }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen font-sans relative overflow-x-hidden" id="body-container">
+
+    <!-- ========================================== -->
+    <!-- HEADER & NAVBAR CHÍNH -->
+    <!-- ========================================== -->
+    <header class="bg-white shadow-sm relative z-50 border-b border-gray-200">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex justify-between items-center">
+            
+            <!-- Logo & Title -->
+            <div class="flex items-center space-x-4">
+                <div class="w-10 h-10 bg-blue-700 rounded-lg flex items-center justify-center shadow">
+                    <svg class="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
+                </div>
+                <div>
+                    <h1 class="text-lg font-bold text-gray-900 uppercase tracking-tight">Hệ thống CM Đam San</h1>
+                    <p class="text-xs text-gray-500 font-medium">Báo giảng & Thống kê Tiết dạy Tự động</p>
+                </div>
+            </div>
+            
+            <div class="flex items-center space-x-5">
+                
+                <!-- [DEV TOOL] Giả lập Role - Sẽ xóa khi lên Production -->
+                <div class="bg-yellow-50 px-3 py-1.5 rounded border border-yellow-300 flex items-center space-x-2 shadow-inner">
+                    <span class="text-yellow-700 text-xs font-bold">🛠 DEV:</span>
+                    <select id="role-selector" onchange="switchRole()" class="bg-transparent text-sm font-bold text-gray-800 focus:outline-none cursor-pointer">
+                        <option value="Level_1">Giáo Viên</option>
+                        <option value="Level_2">Tổ Trưởng</option>
+                        <option value="Level_Max" selected>Ban Giám Hiệu (Admin)</option>
+                    </select>
+                </div>
+
+                <div class="w-px h-6 bg-gray-300"></div>
+
+                <!-- Trung tâm thông báo (Web Push / Alert) -->
+                <div class="relative">
+                    <button onclick="toggleNotifications()" class="relative p-2 text-gray-400 hover:text-gray-500 focus:outline-none">
+                        <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
+                        <span class="absolute top-1 right-1 block h-2.5 w-2.5 rounded-full bg-red-600 ring-2 ring-white"></span>
+                    </button>
+                    <!-- Notification Panel -->
+                    <div id="notification-panel" class="dropdown-menu absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-xl border border-gray-100 z-50 overflow-hidden">
+                        <div class="bg-gray-50 px-4 py-3 border-b flex justify-between items-center">
+                            <span class="text-sm font-bold text-gray-700">Thông báo của bạn</span>
+                            <span class="text-xs text-blue-600 cursor-pointer hover:underline">Đánh dấu đã đọc</span>
+                        </div>
+                        <div class="max-h-64 overflow-y-auto">
+                            <div class="px-4 py-3 border-b hover:bg-gray-50 cursor-pointer flex items-start">
+                                <div class="flex-shrink-0 pt-0.5"><div class="h-2 w-2 bg-red-600 rounded-full mt-1.5"></div></div>
+                                <div class="ml-3">
+                                    <p class="text-sm font-bold text-gray-800">Cảnh báo nợ tiết PPCT!</p>
+                                    <p class="text-xs text-gray-500 mt-0.5">Lớp 10A1 (Địa lí) đang bị khóa do nợ dạy bù. Vui lòng xếp lịch bù.</p>
+                                    <p class="text-xs text-gray-400 mt-1">10 phút trước</p>
+                                </div>
+                            </div>
+                            <div class="px-4 py-3 border-b hover:bg-gray-50 cursor-pointer flex items-start">
+                                <div class="flex-shrink-0 pt-0.5"><div class="h-2 w-2 bg-gray-300 rounded-full mt-1.5"></div></div>
+                                <div class="ml-3">
+                                    <p class="text-sm font-bold text-gray-800">Bảng kê đã được duyệt</p>
+                                    <p class="text-xs text-gray-500 mt-0.5">Tổ trưởng đã duyệt bảng kê Tuần 18 của bạn.</p>
+                                    <p class="text-xs text-gray-400 mt-1">Hôm qua</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- User Profile -->
+                <div class="flex items-center space-x-3 cursor-pointer">
+                    <div class="text-right hidden sm:block">
+                        <p id="user-name" class="text-sm font-bold text-gray-900 leading-tight">Ban Giám Hiệu</p>
+                        <p id="user-title" class="text-xs text-red-600 font-medium">Admin Toàn quyền</p>
+                    </div>
+                    <div id="avatar" class="w-9 h-9 rounded-full bg-red-600 text-white flex items-center justify-center font-bold role-badge shadow">A</div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- ========================================== -->
+    <!-- MAIN NAVIGATION TABS -->
+    <!-- ========================================== -->
+    <div class="bg-white border-b border-gray-200 sticky top-0 z-40 shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <nav id="nav-common" class="-mb-px flex space-x-6 overflow-x-auto" aria-label="Tabs">
+                
+                <!-- VÙNG CÁ NHÂN (Level 1) -->
+                <button onclick="switchTab('tc-tkb-ppct')" id="btn-tc-tkb-ppct" class="tab-inactive whitespace-nowrap py-3 px-1 text-sm font-medium flex items-center transition-colors">
+                    <svg class="mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                    TKB & Báo Giảng
+                </button>
+                <button onclick="switchTab('tc-khai-bao')" id="btn-tc-khai-bao" class="tab-inactive whitespace-nowrap py-3 px-1 text-sm font-medium flex items-center transition-colors">
+                    <svg class="mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
+                    Khai báo Bù / Thay
+                </button>
+                <button onclick="switchTab('tc-hoat-dong')" id="btn-tc-hoat-dong" class="tab-inactive whitespace-nowrap py-3 px-1 text-sm font-medium flex items-center transition-colors">
+                    <svg class="mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+                    GDĐP & HĐTN-HN
+                </button>
+                <button onclick="switchTab('tc-bang-ke')" id="btn-tc-bang-ke" class="tab-inactive whitespace-nowrap py-3 px-1 text-sm font-medium flex items-center transition-colors">
+                    <svg class="mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                    Hồ sơ Bảng Kê
+                </button>
+                
+                <div class="w-px h-8 bg-gray-200 self-center hidden md:block"></div>
+
+                <!-- VÙNG QUẢN LÝ TỔ (Level 2 & Max) -->
+                <button onclick="switchTab('tt-phan-cong')" id="btn-tt-phan-cong" class="tab-inactive whitespace-nowrap py-3 px-1 text-sm font-medium flex items-center view-level-2 view-level-max transition-colors text-purple-600 hover:text-purple-800">
+                    <svg class="mr-1.5 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
+                    Điều phối Dạy Thay
+                </button>
+                <button onclick="switchTab('tt-duyet')" id="btn-tt-duyet" class="tab-inactive whitespace-nowrap py-3 px-1 text-sm font-medium flex items-center view-level-2 view-level-max transition-colors text-purple-600 hover:text-purple-800">
+                    <svg class="mr-1.5 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>
+                    Duyệt Bảng Kê
+                </button>
+
+                <div class="w-px h-8 bg-gray-200 self-center hidden md:block view-level-max"></div>
+
+                <!-- VÙNG HỆ THỐNG (Level Max) -->
+                <button onclick="switchTab('ad-lich-nam')" id="btn-ad-lich-nam" class="tab-active text-red-600 border-red-600 whitespace-nowrap py-3 px-1 text-sm font-medium flex items-center view-level-max transition-colors hover:text-red-800">
+                    <svg class="mr-1.5 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                    Lịch Năm & TKB
+                </button>
+                <button onclick="switchTab('ad-cau-hinh')" id="btn-ad-cau-hinh" class="tab-inactive whitespace-nowrap py-3 px-1 text-sm font-medium flex items-center view-level-max transition-colors text-red-600 hover:text-red-800">
+                    <svg class="mr-1.5 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                    Master Data (Cấu hình)
+                </button>
+            </nav>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- MAIN CONTENT CONTAINERS -->
+    <!-- ========================================== -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+        <!-- TAB 1: TKB & BÁO GIẢNG -->
+        <div id="tab-tc-tkb-ppct" class="tab-content hidden">
+            <!-- Alert Nợ Tiết -->
+            <div class="bg-red-50 border border-red-200 p-4 mb-6 rounded-lg shadow-sm flex items-start">
+                <div class="flex-shrink-0 pt-0.5"><svg class="h-5 w-5 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg></div>
+                <div class="ml-3 flex-1">
+                    <h3 class="text-sm font-bold text-red-800">Cảnh báo Nợ tiết PPCT</h3>
+                    <p class="text-sm text-red-700 mt-1">Đồng chí đang nợ <b>1 tiết Địa lí lớp 10A1</b> (PPCT Tiết 21 bị đóng băng do nhờ GV Toán quản lớp). Vui lòng sang tab Khai báo để xếp lịch dạy bù!</p>
+                </div>
+                <button onclick="switchTab('tc-khai-bao')" class="ml-4 bg-red-600 text-white px-3 py-1.5 rounded text-xs font-bold hover:bg-red-700 shadow-sm">Xếp lịch bù ngay</button>
+            </div>
+
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold text-gray-900 tracking-tight">Thời Khóa Biểu & Tiến độ (Auto)</h2>
+                <div class="flex space-x-2">
+                    <button class="bg-blue-50 text-blue-700 border border-blue-200 px-3 py-1.5 rounded text-sm font-bold hover:bg-blue-100 flex items-center">
+                        <svg class="w-4 h-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                        Xuất PDF Báo Giảng
+                    </button>
+                    <select class="border border-gray-300 rounded-md text-sm py-1.5 px-3 font-bold bg-white focus:ring-blue-500"><option>Tuần 18 (05/01 - 10/01)</option></select>
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                <!-- Cột TKB -->
+                <div class="lg:col-span-7 bg-white shadow-sm border border-gray-200 rounded-lg overflow-hidden">
+                    <div class="bg-gray-50 border-b border-gray-200 py-3 px-4 flex justify-between items-center">
+                        <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wider">Lịch phân công tuần 18</h3>
+                        <span class="text-xs bg-green-100 text-green-800 px-2 py-1 rounded font-bold">Phiên bản TKB: v3.1 (Active)</span>
+                    </div>
+                    <div class="overflow-x-auto p-4">
+                        <table class="min-w-full divide-y divide-gray-200 text-sm text-center border">
+                            <thead class="bg-gray-100">
+                                <tr>
+                                    <th class="px-2 py-2 font-bold text-gray-600">Thứ</th>
+                                    <th class="px-2 py-2 font-bold text-gray-600 border-l">Tiết 1</th>
+                                    <th class="px-2 py-2 font-bold text-gray-600 border-l">Tiết 2</th>
+                                    <th class="px-2 py-2 font-bold text-gray-600 border-l">Tiết 3</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-200">
+                                <tr>
+                                    <td class="px-2 py-3 font-bold bg-gray-50">Hai</td>
+                                    <td class="border-l text-gray-400">-</td>
+                                    <td class="border-l text-gray-400">-</td>
+                                    <td class="border-l p-1"><div class="bg-blue-50 text-blue-800 font-bold border border-blue-200 rounded p-1.5">10A5<br><span class="text-xs font-normal">Địa lí</span></div></td>
+                                </tr>
+                                <tr>
+                                    <td class="px-2 py-3 font-bold bg-gray-50">Tư</td>
+                                    <td class="border-l text-gray-400">-</td>
+                                    <td class="border-l text-gray-400">-</td>
+                                    <td class="border-l p-1 relative group cursor-help">
+                                        <div class="bg-red-50 text-red-800 font-bold border border-red-300 rounded p-1.5 opacity-50">10A1<br><span class="text-xs font-normal">Địa lí</span></div>
+                                        <span class="absolute hidden group-hover:block bg-gray-800 text-white text-xs p-2 rounded -top-10 left-1/2 transform -translate-x-1/2 w-48 z-10 text-center shadow-lg">Vắng (Đi công tác).<br>Thầy Toán quản lớp -> Treo nợ.</span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Cột PPCT Tracker -->
+                <div class="lg:col-span-5 bg-white shadow-sm border border-gray-200 rounded-lg overflow-hidden flex flex-col">
+                    <div class="bg-gray-50 border-b border-gray-200 py-3 px-4">
+                        <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wider">Tiến độ PPCT (Auto Count)</h3>
+                    </div>
+                    <div class="p-0 overflow-y-auto max-h-80">
+                        <table class="min-w-full divide-y divide-gray-200 text-sm text-left">
+                            <thead class="bg-gray-100 sticky top-0">
+                                <tr>
+                                    <th class="px-4 py-2 font-bold text-gray-600">Lớp - Môn</th>
+                                    <th class="px-3 py-2 font-bold text-gray-600 text-center">Tiết</th>
+                                    <th class="px-4 py-2 font-bold text-gray-600">Tên Bài</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-200">
+                                <tr class="hover:bg-gray-50">
+                                    <td class="px-4 py-3 font-bold text-gray-800">10A5<br><span class="text-xs text-gray-500 font-normal">Địa lí</span></td>
+                                    <td class="px-3 py-3 text-center"><span class="bg-green-100 text-green-800 font-bold px-2 py-1 rounded">62</span></td>
+                                    <td class="px-4 py-3 text-xs leading-tight text-gray-600">Bài 27. Địa lí giao thông vận tải và bưu chính viễn thông.</td>
+                                </tr>
+                                <tr class="bg-red-50 hover:bg-red-100">
+                                    <td class="px-4 py-3 font-bold text-red-800">10A1<br><span class="text-xs text-red-500 font-normal">Địa lí</span></td>
+                                    <td class="px-3 py-3 text-center"><span class="bg-red-200 text-red-800 font-bold px-2 py-1 rounded">21 🔒</span></td>
+                                    <td class="px-4 py-3 text-xs leading-tight text-red-700 font-medium flex items-center">
+                                        <svg class="w-4 h-4 mr-1 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                                        Mạch tiến độ đóng băng tại tiết 21 chờ dạy bù.
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 2: KHAI BÁO BIẾN ĐỘNG -->
+        <div id="tab-tc-khai-bao" class="tab-content hidden">
+            <div class="max-w-4xl mx-auto bg-white shadow-sm border border-gray-200 rounded-lg p-6">
+                <h2 class="text-xl font-bold text-gray-900 mb-2 tracking-tight">Khai báo Dạy Bù / Trả nợ tiết</h2>
+                <p class="text-sm text-gray-500 mb-6">Collision Check (Chống trùng lịch) sẽ tự động kích hoạt khi chọn Tọa độ thời gian.</p>
+                
+                <form class="space-y-6">
+                    <!-- Dòng 1 -->
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 mb-1">Loại khai báo</label>
+                            <select class="w-full border border-blue-400 bg-blue-50 rounded-lg p-2.5 text-blue-800 font-bold focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                                <option>Dạy Bù (Trả nợ PPCT)</option>
+                                <option>Dạy Thay (Hỗ trợ người khác)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 mb-1">Khoản nợ cần đóng</label>
+                            <select class="w-full border border-red-300 bg-red-50 rounded-lg p-2.5 text-red-800 font-bold focus:ring-2 focus:ring-red-500 focus:outline-none">
+                                <option>Lớp 10A1 - Địa lí (Nợ từ T4 Tuần 18)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 mb-1">Ngày thực hiện bù</label>
+                            <input type="date" class="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                        </div>
+                    </div>
+                    <!-- Dòng 2 -->
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 bg-gray-50 p-4 rounded-lg border border-gray-200">
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 mb-1">Khung giờ</label>
+                            <select class="w-full border border-gray-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                                <option>Tối (19:00 - 22:00) - Cho phép bù</option>
+                                <option>Chiều</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 mb-1">Từ tiết</label>
+                            <select class="w-full border border-gray-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"><option>1</option></select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 mb-1">Đến tiết</label>
+                            <select class="w-full border border-gray-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"><option>1</option></select>
+                        </div>
+                    </div>
+                    
+                    <button type="button" class="w-full bg-blue-600 text-white font-bold px-6 py-3 rounded-lg shadow-md hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 transition-all flex justify-center items-center">
+                        <svg class="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        Xác nhận Lịch Bù & Giải phóng PPCT
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- TAB 3: GDĐP & HĐTN-HN (NEW MODULE) -->
+        <div id="tab-tc-hoat-dong" class="tab-content hidden">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-xl font-bold text-gray-900 tracking-tight">Xác nhận Hoạt động Đặc thù</h2>
+                <p class="text-sm text-gray-500">Giáo dục Địa phương & Trải nghiệm Hướng nghiệp</p>
+            </div>
+            
+            <div class="bg-white shadow-sm border border-gray-200 rounded-lg overflow-hidden">
+                <table class="min-w-full divide-y divide-gray-200 text-sm">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-4 py-3 text-left font-bold text-gray-600">Hoạt động / Thời gian</th>
+                            <th class="px-4 py-3 text-left font-bold text-gray-600">Phạm vi</th>
+                            <th class="px-4 py-3 text-center font-bold text-gray-600">Hệ số</th>
+                            <th class="px-4 py-3 text-center font-bold text-gray-600">Trạng thái</th>
+                            <th class="px-4 py-3 text-right font-bold text-gray-600">Thao tác</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200">
+                        <tr>
+                            <td class="px-4 py-4">
+                                <p class="font-bold text-gray-900">GDĐP Chủ đề 3: Lịch sử Đắk Lắk</p>
+                                <p class="text-xs text-gray-500 mt-1">Tuần 18 | T5 Tiết 4-5</p>
+                            </td>
+                            <td class="px-4 py-4"><span class="bg-purple-100 text-purple-800 text-xs font-bold px-2 py-1 rounded">Khối 10</span></td>
+                            <td class="px-4 py-4 text-center font-bold text-gray-700">x 1.5</td>
+                            <td class="px-4 py-4 text-center"><span class="bg-yellow-100 text-yellow-800 text-xs font-bold px-2 py-1 rounded">Chờ xác nhận (OR)</span></td>
+                            <td class="px-4 py-4 text-right">
+                                <button class="text-blue-600 hover:text-blue-900 font-bold text-sm bg-blue-50 px-3 py-1 rounded border border-blue-200">Xác nhận thực hiện</button>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <p class="text-xs text-gray-500 mt-3 italic">* Xác nhận theo cơ chế OR: Ban Giám Hiệu hoặc Tổ trưởng Điều phối bấm xác nhận đều được tính quỹ tiết.</p>
+        </div>
+
+        <!-- TAB 4: HỒ SƠ BẢNG KÊ (CÁ NHÂN) -->
+        <div id="tab-tc-bang-ke" class="tab-content hidden">
+            <div class="max-w-5xl mx-auto">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-bold text-gray-900 tracking-tight">Hồ sơ & Bảng Kê Cá nhân</h2>
+                    <button class="bg-blue-600 text-white font-bold px-4 py-2 rounded shadow hover:bg-blue-700 text-sm flex items-center">
+                        <svg class="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+                        Tạo Snapshot Tháng 1
+                    </button>
+                </div>
+
+                <!-- Approval Pipeline UI -->
+                <div class="bg-white shadow-sm border border-gray-200 rounded-lg p-6 mb-6">
+                    <div class="flex justify-between items-center mb-4 border-b pb-2">
+                        <h3 class="font-bold text-gray-800">Bảng Kê Tháng 12/2025</h3>
+                        <span class="bg-green-100 text-green-800 text-xs font-bold px-3 py-1 rounded-full border border-green-200">Đã khóa & Chốt sổ</span>
+                    </div>
+                    
+                    <!-- Tracker -->
+                    <div class="flex items-center justify-between w-full relative pt-2">
+                        <div class="absolute left-0 top-1/2 transform -translate-y-1/2 w-full h-1 bg-green-200 z-0"></div>
+                        
+                        <div class="relative z-10 flex flex-col items-center">
+                            <div class="w-8 h-8 rounded-full bg-green-500 text-white flex items-center justify-center font-bold shadow ring-4 ring-white"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg></div>
+                            <p class="text-xs font-bold text-gray-700 mt-2">DRAFT (Đã chốt)</p>
+                        </div>
+                        <div class="relative z-10 flex flex-col items-center">
+                            <div class="w-8 h-8 rounded-full bg-green-500 text-white flex items-center justify-center font-bold shadow ring-4 ring-white"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg></div>
+                            <p class="text-xs font-bold text-gray-700 mt-2">Gửi Tổ Trưởng</p>
+                        </div>
+                        <div class="relative z-10 flex flex-col items-center">
+                            <div class="w-8 h-8 rounded-full bg-green-500 text-white flex items-center justify-center font-bold shadow ring-4 ring-white"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg></div>
+                            <p class="text-xs font-bold text-gray-700 mt-2">BGH Duyệt</p>
+                        </div>
+                        <div class="relative z-10 flex flex-col items-center">
+                            <div class="w-8 h-8 rounded-full bg-gray-800 text-white flex items-center justify-center font-bold shadow ring-4 ring-white"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg></div>
+                            <p class="text-xs font-bold text-gray-900 mt-2">Khóa Kế Toán</p>
+                        </div>
+                    </div>
+
+                    <div class="mt-6 flex justify-end space-x-3">
+                        <button class="text-sm font-bold text-blue-600 bg-blue-50 px-4 py-2 rounded border border-blue-200 hover:bg-blue-100 transition">Tải Ma trận PDF</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- TAB 5: QUẢN LÝ TỔ / PHÂN CÔNG (LEVEL 2 & MAX) -->
+        <!-- ========================================== -->
+        <div id="tab-tt-phan-cong" class="tab-content hidden">
+            <div class="max-w-4xl mx-auto">
+                <div class="flex justify-between items-center mb-6">
+                    <div>
+                        <h2 class="text-xl font-bold text-purple-700 tracking-tight">Công cụ Phân công Dạy Thay</h2>
+                        <p class="text-sm text-gray-500 mt-1" id="txt-phan-cong-desc">Phạm vi: Chỉ điều động giáo viên trong Tổ Xã hội.</p>
+                    </div>
+                </div>
+                
+                <form class="space-y-6 bg-white shadow-sm p-8 rounded-xl border border-purple-100 relative overflow-hidden">
+                    <!-- Deco line -->
+                    <div class="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-purple-500 to-indigo-500"></div>
+
+                    <!-- Bước 1 -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 mb-1">1. Loại Biến động</label>
+                            <select class="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-purple-500 outline-none bg-gray-50">
+                                <option>Đi công tác theo Lệnh</option>
+                                <option>Nghỉ ốm / Việc riêng</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 mb-1">2. Người vắng mặt</label>
+                            <select class="w-full border border-yellow-400 bg-yellow-50 rounded-lg p-2.5 font-bold text-yellow-900 focus:ring-2 focus:ring-purple-500 outline-none">
+                                <option>Nguyễn Đình Sơn (Đ2)</option>
+                                <option>Ngô Minh Tuấn (T1)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Bước 2 -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-gray-100">
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 mb-1">3. Tọa độ Tiết vắng (Dò từ TKB gốc)</label>
+                            <select class="w-full border border-gray-300 rounded-lg p-2.5 font-mono text-sm focus:ring-2 focus:ring-purple-500 outline-none bg-gray-50">
+                                <option>T4 - Tiết 3 - Lớp 10A1 (Môn: Địa lí)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-bold text-purple-700 mb-1">4. Chỉ định Người dạy thay</label>
+                            <select class="w-full border-2 border-purple-400 rounded-lg p-2.5 focus:ring-2 focus:ring-purple-500 outline-none font-bold text-sm bg-white shadow-sm">
+                                <optgroup label="🟢 NHÓM 1: CÙNG MÔN (PPCT Chạy tiếp)">
+                                    <option>Lê Thị A (Trống tiết 3 - T4)</option>
+                                </optgroup>
+                                <optgroup label="🟡 NHÓM 2: KHÁC MÔN (Quản Lớp -> Ghi nợ bù)">
+                                    <option selected>Trần Văn Toán (Tổ Toán - Trống tiết 3 - T4)</option>
+                                </optgroup>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Cảnh báo logic kép -->
+                    <div class="bg-blue-50 border border-blue-200 p-3 rounded-lg flex items-start mt-2">
+                        <svg class="h-5 w-5 text-blue-500 mt-0.5 mr-2 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        <p class="text-xs text-blue-800 leading-relaxed">
+                            <b>Giao dịch kép (Atomic Transaction):</b> Hệ thống sẽ đóng băng PPCT lớp 10A1 tại tiết này, cộng tiết cho Thầy Toán và tự động treo một khoản nợ lên tài khoản Thầy Sơn.
+                        </p>
+                    </div>
+
+                    <button type="button" class="w-full bg-purple-600 text-white font-bold px-6 py-3.5 rounded-lg shadow-md hover:bg-purple-700 focus:ring-4 focus:ring-purple-300 transition-all uppercase tracking-wide">
+                        Ghi Giao Dịch Phân Công (Append-only)
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- TAB 6: DUYỆT BẢNG KÊ (LEVEL 2 & MAX) -->
+        <div id="tab-tt-duyet" class="tab-content hidden">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-xl font-bold text-purple-700 tracking-tight">Hàng đợi Phê duyệt Bảng kê</h2>
+                <div class="flex space-x-2">
+                    <span class="bg-gray-200 text-gray-700 px-3 py-1 rounded-full text-xs font-bold flex items-center">Kỳ: Tháng 01/2026</span>
+                </div>
+            </div>
+            
+            <div class="bg-white shadow-sm border border-gray-200 rounded-lg overflow-hidden">
+                <table class="min-w-full divide-y divide-gray-200 text-sm">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-4 py-3 text-left font-bold text-gray-600">Giáo viên</th>
+                            <th class="px-4 py-3 text-center font-bold text-gray-600">Định mức</th>
+                            <th class="px-4 py-3 text-center font-bold text-gray-600">Tổng dạy</th>
+                            <th class="px-4 py-3 text-center font-bold text-gray-600">Trạng thái</th>
+                            <th class="px-4 py-3 text-right font-bold text-gray-600">Quyết định</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200">
+                        <tr>
+                            <td class="px-4 py-4 font-bold text-gray-900">Ngô Minh Tuấn (T1)</td>
+                            <td class="px-4 py-4 text-center">4.5</td>
+                            <td class="px-4 py-4 text-center font-bold text-green-600">14</td>
+                            <td class="px-4 py-4 text-center"><span class="bg-blue-100 text-blue-800 text-xs font-bold px-2 py-1 rounded">Chờ duyệt (SUBMITTED)</span></td>
+                            <td class="px-4 py-4 text-right space-x-2">
+                                <button class="text-sm font-bold text-gray-600 bg-gray-100 px-3 py-1.5 rounded hover:bg-gray-200 border">Xem Chi tiết</button>
+                                <button class="text-sm font-bold text-white bg-green-600 px-3 py-1.5 rounded hover:bg-green-700 shadow-sm">Duyệt & Đẩy lên</button>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- TAB 7: LỊCH NĂM HỌC & TKB (ADMIN LEVEL MAX)-->
+        <!-- ========================================== -->
+        <div id="tab-ad-lich-nam" class="tab-content hidden">
+            <div class="mb-6 flex justify-between items-center border-b pb-4">
+                <div>
+                    <h2 class="text-xl font-bold text-red-700 tracking-tight">Quản trị Lịch Năm Học & TKB</h2>
+                    <p class="text-sm text-gray-500 mt-1">Cấu hình 35 tuần học, tạo ngoại lệ và activate version TKB.</p>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- Block Lịch năm học -->
+                <div class="bg-white border border-gray-200 rounded-lg shadow-sm">
+                    <div class="bg-gray-800 px-4 py-3 rounded-t-lg flex justify-between items-center">
+                        <h3 class="text-white font-bold text-sm tracking-wider uppercase">Tiến độ Lịch Năm Học</h3>
+                        <button class="bg-gray-700 text-gray-200 hover:text-white px-2 py-1 rounded text-xs font-bold border border-gray-600">Sửa mốc</button>
+                    </div>
+                    <div class="p-4 space-y-4">
+                        <div class="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded">
+                            <div>
+                                <p class="text-xs font-bold text-green-800 uppercase">Tuần đang chạy</p>
+                                <p class="text-lg font-bold text-gray-900 mt-1">Tuần 18 <span class="text-sm font-normal text-gray-500">(Chính thức)</span></p>
+                            </div>
+                            <div class="text-right">
+                                <p class="text-xs text-gray-500">05/01/2026 - 10/01/2026</p>
+                            </div>
+                        </div>
+                        
+                        <div class="border-t pt-4">
+                            <h4 class="text-sm font-bold text-gray-800 mb-2">Công cụ Can thiệp Lịch:</h4>
+                            <div class="flex space-x-3">
+                                <button class="flex-1 bg-yellow-50 text-yellow-700 border border-yellow-300 py-2 rounded text-sm font-bold hover:bg-yellow-100">Tạo Quãng Nghỉ (Dừng mạch)</button>
+                                <button class="flex-1 bg-red-50 text-red-700 border border-red-300 py-2 rounded text-sm font-bold hover:bg-red-100">Ngoại lệ Cục bộ (Hủy tiết)</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Block Quản lý TKB Version -->
+                <div class="bg-white border border-gray-200 rounded-lg shadow-sm">
+                    <div class="bg-gray-800 px-4 py-3 rounded-t-lg flex justify-between items-center">
+                        <h3 class="text-white font-bold text-sm tracking-wider uppercase">Phiên bản Thời Khóa Biểu</h3>
+                        <label class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-xs font-bold cursor-pointer shadow-sm transition">
+                            <span>+ Upload TKB Excel</span>
+                            <input type="file" class="sr-only">
+                        </label>
+                    </div>
+                    <div class="p-0">
+                        <table class="min-w-full divide-y divide-gray-200 text-sm">
+                            <tbody class="divide-y divide-gray-200">
+                                <tr class="bg-green-50">
+                                    <td class="px-4 py-3">
+                                        <p class="font-bold text-gray-900">Version 3.1 <span class="text-xs font-normal text-gray-500">(Tuần 18)</span></p>
+                                        <p class="text-xs text-gray-500 mt-0.5">Checksum: a7f8b9... | Người up: Admin</p>
+                                    </td>
+                                    <td class="px-4 py-3 text-right">
+                                        <span class="bg-green-200 text-green-800 text-xs font-bold px-2 py-1 rounded-full">ACTIVE</span>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td class="px-4 py-3">
+                                        <p class="font-bold text-gray-900">Version 4.0 <span class="text-xs font-normal text-gray-500">(Dự kiến Tuần 20)</span></p>
+                                        <p class="text-xs text-gray-500 mt-0.5">Tải lên lúc: 10 phút trước</p>
+                                    </td>
+                                    <td class="px-4 py-3 text-right space-x-2">
+                                        <span class="text-xs font-bold text-blue-600 bg-blue-50 border border-blue-200 px-2 py-1 rounded cursor-pointer">Preview Lỗi</span>
+                                        <span class="bg-gray-200 text-gray-700 text-xs font-bold px-2 py-1 rounded-full cursor-pointer hover:bg-gray-300">Kích hoạt</span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- TAB 8: CẤU HÌNH HỆ THỐNG (LEVEL MAX) -->
+        <!-- ========================================== -->
+        <div id="tab-ad-cau-hinh" class="tab-content hidden border-t-4 border-red-600 bg-white shadow-sm p-6 rounded-b-lg">
+            
+            <div class="mb-6">
+                <h2 class="text-xl font-bold text-red-700 tracking-tight">Master Data & Entity Configuration</h2>
+                <p class="text-sm text-gray-500 mt-1">Cơ sở dữ liệu gốc (Single Source of Truth). Tách bạch quản lý Từ điển Luật và Hồ sơ nhân sự.</p>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <!-- BLOCK A: TỪ ĐIỂN KIÊM NHIỆM -->
+                <div class="flex flex-col h-full border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+                    <div class="flex justify-between items-center bg-gray-100 py-3 px-4 border-b">
+                        <h3 class="text-sm font-bold text-gray-800 uppercase tracking-wider">Từ điển Kiêm Nhiệm</h3>
+                        <button onclick="openModal('modal-dict')" class="text-blue-600 hover:text-blue-800 text-sm font-bold flex items-center">
+                            <svg class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg> Thêm Luật
+                        </button>
+                    </div>
+                    <div class="p-4 bg-white flex-grow space-y-3">
+                        <div class="flex justify-between items-center p-3 border rounded border-gray-200 hover:border-blue-300 transition group">
+                            <div><span class="text-sm font-bold text-gray-800">HT (Hiệu trưởng)</span></div>
+                            <span class="text-xs bg-red-100 text-red-800 px-2 py-1 rounded font-bold border border-red-200">Ghi đè: 2 tiết</span>
+                        </div>
+                        <div class="flex justify-between items-center p-3 border rounded border-gray-200 hover:border-blue-300 transition group">
+                            <div><span class="text-sm font-bold text-gray-800">GVCN (Chủ nhiệm)</span></div>
+                            <span class="text-xs bg-green-100 text-green-800 px-2 py-1 rounded font-bold border border-green-200">Trừ cứng: 4 tiết</span>
+                        </div>
+                        <div class="flex justify-between items-center p-3 border rounded border-gray-200 hover:border-blue-300 transition group">
+                            <div><span class="text-sm font-bold text-gray-800">BTD (Bí thư Đoàn)</span></div>
+                            <span class="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded font-bold border border-blue-200">Giảm %: 50%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- BLOCK B: NHÂN SỰ & GÁN LUẬT -->
+                <div class="flex flex-col h-full border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+                    <div class="flex justify-between items-center bg-gray-100 py-3 px-4 border-b">
+                        <h3 class="text-sm font-bold text-gray-800 uppercase tracking-wider">Hồ sơ Nhân sự & Gán Quyền</h3>
+                        <button onclick="openModal('modal-assign')" class="text-red-600 hover:text-red-800 text-sm font-bold flex items-center">
+                            <svg class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg> Gán Kiêm Nhiệm
+                        </button>
+                    </div>
+                    <div class="p-4 bg-gray-50 flex-grow space-y-3 overflow-y-auto" style="max-height: 280px;">
+                        
+                        <div class="bg-white p-4 rounded shadow-sm border border-gray-200">
+                            <div class="flex justify-between items-start mb-3 border-b pb-2">
+                                <div>
+                                    <h4 class="text-sm font-bold text-gray-900">Nguyễn Đình Sơn <span class="text-xs font-normal text-gray-500">(Đ2)</span></h4>
+                                    <p class="text-xs text-gray-500">Tổ Xã hội | Cap: TO_TRUONG_CHUYEN_MON</p>
+                                </div>
+                                <span class="text-xs font-bold bg-blue-100 text-blue-800 px-2 py-1 rounded border border-blue-200">Định mức: 10 tiết</span>
+                            </div>
+                            <div class="flex flex-wrap gap-2">
+                                <span class="text-xs bg-gray-100 border px-2 py-1 rounded text-gray-700 font-medium">Tổ trưởng (-3t)</span>
+                                <span class="text-xs bg-gray-100 border px-2 py-1 rounded text-gray-700 font-medium">GVCN (-4t)</span>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Global Variables -->
+            <div class="mt-8 border rounded-lg p-5 bg-yellow-50 border-yellow-200 shadow-sm flex flex-col md:flex-row items-center justify-between">
+                <div class="flex space-x-12 mb-4 md:mb-0">
+                    <div>
+                        <label class="block text-xs font-bold text-yellow-800 uppercase mb-1">Định mức chung (THPT)</label>
+                        <div class="text-2xl font-bold text-gray-900">17 <span class="text-sm font-normal text-gray-500">tiết/tuần</span></div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-yellow-800 uppercase mb-1">Quy đổi 1 ngày CT</label>
+                        <div class="text-2xl font-bold text-gray-900">0 <span class="text-sm font-normal text-gray-500">tiết (Inactive)</span></div>
+                    </div>
+                </div>
+                <button class="bg-white border border-gray-300 text-gray-800 font-bold px-6 py-2.5 rounded shadow-sm hover:bg-gray-50 transition">Cấu hình Tham số (System_Settings)</button>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- ========================================== -->
+    <!-- JAVASCRIPT: LOGIC UI & STATE MANAGEMENT -->
+    <!-- ========================================== -->
+    <script>
+        // --- LOGIC AUTH ---
+        function performLogin() {
+            document.getElementById('login-modal').classList.add('hidden');
+            document.getElementById('body-container').classList.remove('overflow-hidden');
+            // Mặc định nạp Role Level_Max khi vào demo để thấy toàn cảnh
+            document.getElementById('role-selector').value = 'Level_Max';
+            switchRole();
+        }
+
+        // --- LOGIC THÔNG BÁO ---
+        function toggleNotifications() {
+            document.getElementById('notification-panel').classList.toggle('show');
+        }
+        
+        // Ẩn panel khi click ra ngoài
+        document.addEventListener('click', function(event) {
+            const panel = document.getElementById('notification-panel');
+            const button = panel.previousElementSibling;
+            if (!panel.contains(event.target) && !button.contains(event.target)) {
+                panel.classList.remove('show');
+            }
+        });
+
+        // --- LOGIC MODAL ---
+        function openModal(modalId) { document.getElementById(modalId).classList.remove('hidden'); }
+        function closeModal(modalId) { document.getElementById(modalId).classList.add('hidden'); }
+
+        // --- LOGIC PHÂN QUYỀN (RBAC) DÀNH CHO BẢN DEMO ---
+        function switchRole() {
+            const role = document.getElementById('role-selector').value;
+            const isLevel2 = (role === 'Level_2' || role === 'Level_Max');
+            const isLevelMax = (role === 'Level_Max');
+
+            // Cập nhật Header
+            document.getElementById('user-name').innerText = isLevelMax ? 'Ban Giám Hiệu' : (role === 'Level_2' ? 'Sơn (Tổ trưởng)' : 'Nguyễn Đình Sơn');
+            document.getElementById('user-title').innerText = isLevelMax ? 'Admin Toàn quyền' : (role === 'Level_2' ? 'Tổ trưởng Xã hội' : 'Giáo viên');
+            const avatar = document.getElementById('avatar');
+            avatar.innerText = isLevelMax ? 'A' : 'S';
+            avatar.className = 'w-9 h-9 rounded-full text-white flex items-center justify-center font-bold role-badge shadow ' + (isLevelMax ? 'bg-red-600' : (role === 'Level_2' ? 'bg-purple-600' : 'bg-blue-600'));
+
+            // Quản lý hiển thị Menu Tabs (Cộng dồn capability theo spec)
+            document.querySelectorAll('.view-level-2, .view-level-max').forEach(el => el.classList.add('hidden'));
+            
+            if (isLevel2) {
+                document.querySelectorAll('.view-level-2').forEach(el => el.classList.remove('hidden'));
+                const txtDesc = document.getElementById('txt-phan-cong-desc');
+                if(txtDesc) txtDesc.innerText = isLevelMax ? "Phạm vi: TOÀN TRƯỜNG (Quyền Admin)." : "Phạm vi: Chỉ điều động giáo viên trong Tổ Xã hội (Giới hạn quyền).";
+            }
+            if (isLevelMax) {
+                document.querySelectorAll('.view-level-max').forEach(el => el.classList.remove('hidden'));
+            }
+
+            // Chuyển view mặc định
+            if (isLevelMax) switchTab('ad-lich-nam');
+            else if (isLevel2) switchTab('tt-phan-cong');
+            else switchTab('tc-tkb-ppct');
+        }
+
+        // --- LOGIC CHUYỂN TAB (Đổi màu CSS động) ---
+        function switchTab(tabId) {
+            // Ẩn tất cả nội dung tab
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            
+            // Reset style nút bấm
+            const buttons = document.querySelectorAll('#nav-common button');
+            buttons.forEach(btn => {
+                // Remove active classes
+                btn.className = btn.className.replace(/tab-active/g, 'tab-inactive');
+                btn.className = btn.className.replace(/text-blue-600|text-purple-600|text-red-600/g, 'text-gray-500');
+                btn.className = btn.className.replace(/border-blue-600|border-purple-600|border-red-600/g, 'border-transparent');
+            });
+
+            // Gán màu active tùy theo quyền của Tab đó
+            let activeColorClass = 'text-blue-600 border-blue-600';
+            if (tabId.startsWith('ad-')) activeColorClass = 'text-red-600 border-red-600';
+            if (tabId.startsWith('tt-')) activeColorClass = 'text-purple-600 border-purple-600';
+
+            // Hiển thị Tab Content
+            const targetTab = document.getElementById('tab-' + tabId);
+            if(targetTab) targetTab.classList.remove('hidden');
+
+            // Đổi màu Button
+            const targetBtn = document.getElementById('btn-' + tabId);
+            if(targetBtn) {
+                targetBtn.className = targetBtn.className.replace('tab-inactive', 'tab-active');
+                targetBtn.className = targetBtn.className.replace('text-gray-500', activeColorClass.split(' ')[0]);
+                targetBtn.className = targetBtn.className.replace('border-transparent', activeColorClass.split(' ')[1]);
+            }
+        }
+    </script>
+</body>
+</html>

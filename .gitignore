@@ -1,4 +1,4 @@
-﻿# Dependencies
+# Dependencies
 node_modules/
 
 # Build outputs
@@ -7,9 +7,15 @@ build/
 coverage/
 playwright-report/
 test-results/
+.tsbuildinfo
+*.tsbuildinfo
 
-# Environment and secrets
+# Environment and secrets - NEVER commit .env files containing real credentials
 .env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 .env.*
 !.env.example
 
@@ -22,6 +28,11 @@ logs/
 .idea/
 .DS_Store
 Thumbs.db
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
 
 # Temporary files
 tmp/
@@ -32,3 +43,10 @@ temp/
 *.backup
 *.dump
 *.sql.gz
+
+# Prisma - generated client (rebuilt with prisma generate)
+apps/api/src/generated/
+
+# Playwright state
+auth-state/
+playwright/.auth/
