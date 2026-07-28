@@ -56,12 +56,46 @@ jobs:
         env:
           PGPASSWORD: ci_password_only
         run: |
-          psql -h 127.0.0.1 -U postgres -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'baogiang_dev_user') THEN CREATE ROLE baogiang_dev_user WITH LOGIN PASSWORD 'ci_dev_pass_only' NOSUPERUSER NOCREATEDB NOCREATEROLE; ELSE ALTER ROLE baogiang_dev_user WITH LOGIN PASSWORD 'ci_dev_pass_only'; END IF; END \$\$;"
-          psql -h 127.0.0.1 -U postgres -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'baogiang_test_user') THEN CREATE ROLE baogiang_test_user WITH LOGIN PASSWORD 'ci_test_pass_only' NOSUPERUSER NOCREATEDB NOCREATEROLE; ELSE ALTER ROLE baogiang_test_user WITH LOGIN PASSWORD 'ci_test_pass_only'; END IF; END \$\$;"
-          psql -h 127.0.0.1 -U postgres -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_database WHERE datname = 'baogiang_dev') THEN CREATE DATABASE baogiang_dev OWNER baogiang_dev_user; END IF; END \$\$;"
-          psql -h 127.0.0.1 -U postgres -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_database WHERE datname = 'baogiang_test') THEN CREATE DATABASE baogiang_test OWNER baogiang_test_user; END IF; END \$\$;"
-          psql -h 127.0.0.1 -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE baogiang_dev TO baogiang_dev_user;"
-          psql -h 127.0.0.1 -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE baogiang_test TO baogiang_test_user;"
+          set -euo pipefail
+          PSQL="psql -h 127.0.0.1 -U postgres -v ON_ERROR_STOP=1"
+
+          # 1. Dev Role
+          ROLE_EXISTS=$($PSQL -tAc "SELECT 1 FROM pg_roles WHERE rolname = 'baogiang_dev_user'")
+          if [ "$ROLE_EXISTS" = "1" ]; then
+            $PSQL -c "ALTER ROLE baogiang_dev_user WITH LOGIN PASSWORD 'ci_dev_pass_only' NOSUPERUSER NOCREATEDB NOCREATEROLE;"
+          else
+            $PSQL -c "CREATE ROLE baogiang_dev_user WITH LOGIN PASSWORD 'ci_dev_pass_only' NOSUPERUSER NOCREATEDB NOCREATEROLE;"
+          fi
+
+          # 2. Test Role
+          ROLE_EXISTS=$($PSQL -tAc "SELECT 1 FROM pg_roles WHERE rolname = 'baogiang_test_user'")
+          if [ "$ROLE_EXISTS" = "1" ]; then
+            $PSQL -c "ALTER ROLE baogiang_test_user WITH LOGIN PASSWORD 'ci_test_pass_only' NOSUPERUSER NOCREATEDB NOCREATEROLE;"
+          else
+            $PSQL -c "CREATE ROLE baogiang_test_user WITH LOGIN PASSWORD 'ci_test_pass_only' NOSUPERUSER NOCREATEDB NOCREATEROLE;"
+          fi
+
+          # 3. Dev Database
+          DB_EXISTS=$($PSQL -tAc "SELECT 1 FROM pg_database WHERE datname = 'baogiang_dev'")
+          if [ "$DB_EXISTS" != "1" ]; then
+            $PSQL -c "CREATE DATABASE baogiang_dev OWNER baogiang_dev_user;"
+          else
+            $PSQL -c "ALTER DATABASE baogiang_dev OWNER TO baogiang_dev_user;"
+          fi
+          $PSQL -c "GRANT ALL PRIVILEGES ON DATABASE baogiang_dev TO baogiang_dev_user;"
+
+          # 4. Test Database
+          DB_EXISTS=$($PSQL -tAc "SELECT 1 FROM pg_database WHERE datname = 'baogiang_test'")
+          if [ "$DB_EXISTS" != "1" ]; then
+            $PSQL -c "CREATE DATABASE baogiang_test OWNER baogiang_test_user;"
+          else
+            $PSQL -c "ALTER DATABASE baogiang_test OWNER TO baogiang_test_user;"
+          fi
+          $PSQL -c "GRANT ALL PRIVILEGES ON DATABASE baogiang_test TO baogiang_test_user;"
+
+          # 5. Verification
+          PGPASSWORD="ci_dev_pass_only" psql -h 127.0.0.1 -U baogiang_dev_user -d baogiang_dev -v ON_ERROR_STOP=1 -c "SELECT 1;"
+          PGPASSWORD="ci_test_pass_only" psql -h 127.0.0.1 -U baogiang_test_user -d baogiang_test -v ON_ERROR_STOP=1 -c "SELECT 1;"
 
       # ---- Prisma generate ----
       - name: Prisma generate
