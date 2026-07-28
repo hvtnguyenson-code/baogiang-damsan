@@ -3,157 +3,134 @@
 **Ngày:** 2026-07-28  
 **Phiên bản:** 0.0.1
 
----
-
 ## Tổng quan
 
-Phase 00 thiết lập nền móng kỹ thuật cho toàn bộ hệ thống Báo giảng Đam San.  
-Không có nghiệp vụ đầy đủ trong phase này — chỉ có khung kiến trúc, hạ tầng và kiểm thử nền móng.
+Phase 00 thiết lập nền móng kỹ thuật cho Hệ thống Báo giảng Đam San. Phase này chưa triển khai nghiệp vụ hoàn chỉnh; chỉ cung cấp kiến trúc, hạ tầng, contracts và kiểm thử nền móng.
 
----
+Phương án production chính thức là **Windows Server 2022 + PostgreSQL 17**, theo đặc tả Phương án B v1.2. Production chưa được kích hoạt.
 
-## Cấu trúc Monorepo
+## Cấu trúc monorepo
 
-```
-D:\baogiang-damsan
+```text
+baogiang-damsan/
 ├── apps/
-│   ├── web/          React + Vite + TypeScript (frontend)
-│   └── api/          NestJS + TypeScript + Prisma (backend)
+│   ├── web/
+│   └── api/
 ├── packages/
-│   ├── contracts/    Shared types: health, errors, capabilities, flags
-│   └── config/       Shared constants: app name, ports, feature flags
-├── tests/
-│   └── e2e/          Playwright smoke tests
+│   ├── contracts/
+│   └── config/
+├── tests/e2e/
 ├── prisma/
-│   └── schema.prisma PostgreSQL datasource (no models in Phase 00)
-├── scripts/
-│   └── db/           PowerShell scripts for local DB management
+├── scripts/db/
 ├── docs/
-│   ├── specifications/   Đặc tả kỹ thuật (.docx)
-│   ├── prototypes/       UI reference (tham khảo only)
-│   ├── architecture/     Tài liệu kiến trúc (file này)
-│   ├── decisions/        ADRs
-│   └── phase-reports/    Báo cáo hoàn thành phase
-└── .github/
-    └── workflows/ci.yml  GitHub Actions
+└── .github/workflows/ci.yml
 ```
 
----
+## Luồng request
 
-## Luồng Request
-
-```
-Browser (127.0.0.1:5173)
-    │
-    │ /api/* proxied by Vite dev server
-    ▼
-Vite Dev Server (dev) / Nginx (production)
-    │
-    ▼
-NestJS API (127.0.0.1:3100)
-    │
-    ├── RequestIdMiddleware → gắn X-Request-Id
-    ├── ValidationPipe → validate input
-    ├── AllExceptionsFilter → normalize errors
-    │
-    ▼
-    ├── HealthModule → /api/health/live, /api/health/ready
-    └── (Phase 01+) → các module nghiệp vụ
-    │
-    ▼
-PrismaService → PostgreSQL 17 (127.0.0.1:5432)
+```text
+Browser
+  → Vite dev server hoặc Nginx production
+  → NestJS API tại 127.0.0.1:3100
+  → RequestIdMiddleware
+  → ValidationPipe
+  → AllExceptionsFilter
+  → module ứng dụng
+  → PrismaService
+  → PostgreSQL 17
 ```
 
----
+## Health checks
 
-## Health Checks
+| Endpoint | Mục đích | Phụ thuộc DB |
+|---|---|---|
+| `GET /api/health/live` | Tiến trình API còn sống | Không |
+| `GET /api/health/ready` | API và database sẵn sàng | Có, `SELECT 1` |
 
-| Endpoint | Mục đích | DB phụ thuộc |
-|----------|----------|--------------|
-| `GET /api/health/live` | Tiến trình API còn sống | ❌ Không |
-| `GET /api/health/ready` | API + DB sẵn sàng | ✅ SELECT 1 |
+Readiness trả HTTP 503 khi database không sẵn sàng.
 
----
+## Shared packages
 
-## Shared Packages
+### `@baogiang/contracts`
 
-### @baogiang/contracts
+Chứa:
 
-Chứa TypeScript types dùng chung giữa web và API:
-- `HealthLiveResponse`, `HealthReadyResponse`
-- `ApiErrorResponse`
-- `FeatureFlags`, `DEFAULT_FEATURE_FLAGS`
-- `AuthContext`, `ScopedCapability`, `CapabilityKey` (Phase 00: type only)
-- `BaseNotification` (Phase 00: type only)
+- health contracts;
+- standard API error;
+- feature flags;
+- capability và scope foundation types;
+- `AuthContext` foundation type;
+- notification foundation types.
 
-### @baogiang/config
+### `@baogiang/config`
 
 Chứa constants không có secret:
-- `APP_NAME`, `SCHOOL_NAME`, `CURRENT_PHASE`
-- `LOCAL_PORTS` (web: 5173, api: 3100)
-- `FEATURE_FLAG_KEYS`
-- `API_PREFIX`, `HEALTH_PATHS`
 
----
+- tên hệ thống và đơn vị;
+- phase hiện tại;
+- local ports;
+- API prefix;
+- feature flag keys.
 
 ## Database
 
-- **Tool:** Prisma 5
-- **Schema:** `prisma/schema.prisma` — datasource chỉ, không có model nghiệp vụ trong Phase 00
-- **Dev DB:** `baogiang_dev` — owned by `baogiang_dev_user`
-- **Test DB:** `baogiang_test` — owned by `baogiang_test_user`
-- **Không dùng role `postgres`** trong connection string
-- **Không dùng `prisma migrate reset`** trên DB có dữ liệu
+- ORM: Prisma 5.
+- PostgreSQL 17.
+- Dev DB: `baogiang_dev`, owner `baogiang_dev_user`.
+- Test DB: `baogiang_test`, owner `baogiang_test_user`.
+- Không dùng role `postgres` trong application connection string.
+- Không dùng `prisma migrate reset` trên database có dữ liệu.
 
----
+Schema Phase 00 có model metadata `SystemSetting`; **chưa có model nghiệp vụ** như User, TKB, PPCT hoặc Bảng kê.
 
-## AI-Ready Ports & Feature Flags
+## AI-ready foundation
 
-Được định nghĩa trong `apps/api/src/common/ports/`:
+Phase 00 có các ports và disabled adapter cần thiết cho governance, nhưng không gọi provider thật và không ghi dữ liệu nghiệp vụ.
 
-| Port / Interface | Trạng thái Phase 00 |
-|------|---------------------|
-| `AiAssistantPort`, `AiContextQueryPort`, `AiPolicyGuard` | Interface & Disabled Adapter |
-| `AiTaskCatalog`, `PromptTemplateRegistry` | Interface & Disabled Adapter |
-| `AiQuotaGuard`, `AiBudgetGuard`, `AiUsageMeter`, `AiCostLedger` | Interface & Disabled Adapter |
-| `AiPassiveTriggerPort`, `AiSuggestionDeliveryPort` | Interface & Disabled Adapter |
-| `AiProviderAdapter`, `AiOutputValidator`, `AiSuggestionStore` | Interface & Disabled Adapter |
-| `AiAuditService`, `AiResultCache` | Interface & Disabled Adapter |
-| `DisabledAiAssistantAdapter` | Implemented (safe no-op, 0 network, 0 DB write) |
+Ba kill switch mặc định `false`:
 
-Tất cả AI kill switches mặc định **false**:
-- `AI_ENABLED=false`
-- `AI_ACTIVE_MODE_ENABLED=false`
-- `AI_PASSIVE_MODE_ENABLED=false`
+- `AI_ENABLED`
+- `AI_ACTIVE_MODE_ENABLED`
+- `AI_PASSIVE_MODE_ENABLED`
 
----
+Không có AI endpoint, chatbot hoặc prompt tự do.
 
-## Notification-Ready Ports
+## Notification-ready foundation
 
-`NotificationPublisherPort` và `PushGatewayPort` được định nghĩa nhưng chưa implement.  
-Triển khai đầy đủ trong Phase 03+.
-
----
+`NotificationPublisherPort` và `PushGatewayPort` chỉ là interface nền móng; chưa triển khai notification hoặc Web Push.
 
 ## Testing
 
 | Layer | Framework | Scope |
-|-------|-----------|-------|
-| API Unit | Jest + NestJS Testing | HealthController, DisabledAiAdapter, Config |
-| API Integration | Jest + Supertest | Health endpoints với DB thật |
-| Web Unit | Vitest + Testing Library | HomePage, SystemStatusPage |
-| E2E | Playwright | Navigation, status display, 404, no JS errors |
+|---|---|---|
+| API unit | Jest | health, config, disabled AI adapter |
+| API integration | Jest + Supertest | health endpoint với PostgreSQL thật |
+| Web unit | Vitest + Testing Library | Home và System Status |
+| E2E | Playwright | navigation, health/status, 404, JavaScript errors |
 
----
+GitHub Actions thực hiện PostgreSQL setup, Prisma generate, lint, typecheck, unit tests, integration tests, build và Playwright.
+
+## Production architecture dự kiến
+
+- Windows Server 2022.
+- Nginx phục vụ frontend static và reverse proxy.
+- Backend service riêng tại `127.0.0.1:3100`.
+- PostgreSQL 17 tại `localhost:5433`.
+- Database `baogiang`, role `baogiang_app` riêng.
+- Log, backup, service và deploy tách khỏi hệ thống nội trú.
+- Push không đồng nghĩa deploy.
+- Deploy chỉ thực hiện thủ công có kiểm soát sau xác nhận `DEPLOY`.
 
 ## Giới hạn Phase 00
 
 Chưa có:
-- Authentication / Authorization
-- Business domain models (TKB, PPCT, Bảng kê, v.v.)
-- Web Push notifications
-- Import Excel / Export PDF
-- GDĐP / HĐTN-HN modules
-- AI features
-- Dashboard nghiệp vụ
-- Production deployment workflow
+
+- authentication và authorization implementation;
+- user, staff, subject group và subject models;
+- TKB, PPCT, nợ tiết, báo giảng và bảng kê;
+- notification/Web Push;
+- import/export nghiệp vụ;
+- GDĐP và HĐTN-HN;
+- AI features;
+- dashboard nghiệp vụ;
+- production deployment workflow.
