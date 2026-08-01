@@ -2,8 +2,7 @@
 
 **Đơn vị sử dụng:** Trường PTDTNT THPT Đam San
 
-> ⚠️ **Phase 00 — Nền móng kỹ thuật.** Chưa có chức năng nghiệp vụ nào hoàn chỉnh.  
-> Không sử dụng database production cho phát triển.
+> ⚠️ Hệ thống đang ở giai đoạn nền móng, chưa có chức năng nghiệp vụ hoàn chỉnh. Hạ tầng VPS, PostgreSQL và domain là production chính thức ở trạng thái **pre-operational**; chỉ dùng tài khoản và dữ liệu giả cho đến quyết định go-live.
 
 ---
 
@@ -34,7 +33,7 @@
 
 - Node.js 22+
 - npm 10+
-- PostgreSQL 17 tại `D:\PostgreSQL`
+- Không bắt buộc cài hoặc chạy PostgreSQL trên máy local.
 
 ### 1. Cài dependencies
 
@@ -42,31 +41,21 @@
 npm install
 ```
 
-### 2. Tạo database local
-
-```bash
-npm run db:init
-```
-
-Script sẽ tạo (idempotent):
-- Role: `baogiang_dev_user`, `baogiang_test_user`
-- Database: `baogiang_dev`, `baogiang_test`
-
-### 3. Tạo file môi trường
+### 2. Tạo file môi trường khi cần
 
 ```bash
 copy apps\api\.env.example apps\api\.env
 ```
 
-Chỉnh sửa `.env` nếu cần (không commit file `.env`).
+Chỉ cấu hình `.env` cho lệnh cần environment runtime và không commit file này. `DATABASE_URL`/`TEST_DATABASE_URL` do từng environment cấp; không đưa credential VPS vào repository. Kết nối từ local tới database chính thức không phải cấu hình mặc định và chỉ được thực hiện qua phương thức an toàn được phê duyệt riêng.
 
-### 4. Generate Prisma client
+### 3. Generate Prisma client
 
 ```bash
 npm run prisma:generate
 ```
 
-### 5. Chạy development servers
+### 4. Chạy development servers
 
 ```bash
 # Chạy cả web và API
@@ -79,27 +68,19 @@ npm run dev:api   # http://127.0.0.1:3100
 
 ---
 
-## Kiểm tra kết nối database
-
-```bash
-npm run db:check
-```
-
----
-
 ## Kiểm thử
 
 ```bash
-# Toàn bộ tests (unit + integration)
+# Toàn bộ tests trong CI/test environment có PostgreSQL cô lập
 npm run test
 
-# Unit tests
+# Targeted unit tests có thể chạy local mà không cần PostgreSQL
 npm run test:unit
 
-# Integration tests (cần PostgreSQL đang chạy)
+# Integration tests nhận TEST_DATABASE_URL từ CI/test environment
 npm run test:integration
 
-# E2E với Playwright (cần cả web và API đang chạy)
+# E2E đầy đủ chạy trong CI cô lập; kiểm tra môi trường thật chạy sau CD trên domain chính thức
 npm run test:e2e
 ```
 
@@ -125,8 +106,6 @@ npm run build
 | `npm run test` | Chạy unit + integration tests |
 | `npm run test:e2e` | Chạy Playwright E2E tests |
 | `npm run build` | Build tất cả packages và apps |
-| `npm run db:init` | Khởi tạo database local |
-| `npm run db:check` | Kiểm tra kết nối database |
 | `npm run prisma:generate` | Generate Prisma Client |
 
 ---
@@ -143,7 +122,6 @@ baogiang-damsan/
 │   └── config/       # Shared constants
 ├── tests/e2e/        # Playwright E2E tests
 ├── prisma/           # Prisma schema
-├── scripts/db/       # Database management scripts
 └── docs/             # Specifications, ADRs, reports
 ```
 
@@ -151,19 +129,22 @@ baogiang-damsan/
 
 ## Nguyên tắc phát triển
 
-- Phát triển và kiểm thử trên máy local.
-- **KHÔNG dùng database production để phát triển.**
-- Push GitHub không đồng nghĩa deploy.
-- Production chỉ deploy khi đã kiểm tra và xác nhận.
+- Máy local chủ yếu chạy editor, Codex/Antigravity, lint, typecheck và targeted unit tests; mỗi task trên một branch riêng.
+- Delivery chính thức đi qua GitHub: push → CI → review → merge `main` khi được phép → CD có kiểm soát.
+- Push tự nó không phải deploy; deploy chỉ xảy ra khi các CI/review/authorization gate của CD được thỏa mãn.
+- Database VPS chính thức đang pre-operational và chỉ dùng dữ liệu giả; không dùng nó cho test phá hủy hoặc test suite tự động. Integration/migration/E2E dùng PostgreSQL cô lập trong CI. Thay đổi schema đi qua migration đã commit và `prisma migrate deploy` được phê duyệt trong task riêng.
 - Không tác động hệ thống quản lý nội trú hiện có.
 - AI tắt mặc định — xem `docs/decisions/ADR-002-AI-READY-BUT-DISABLED.md`.
+
+Quy tắc đầy đủ: `AGENTS.md`, `docs/specifications/PA-B-VPS-PostgreSQL-v1.3-IMPLEMENTATION-ADDENDUM.md` và `docs/operations/DEVELOPMENT-DEPLOYMENT-DATABASE.md`.
 
 ## Production
 
 - Domain: `baogiang.dtnt-damsan.edu.vn`
 - Backend: `127.0.0.1:3100` (sau Nginx proxy)
 - Reverse proxy: Nginx
+- Trạng thái: hạ tầng chính thức, pre-operational; chưa có dữ liệu vận hành thực tế.
 
 ---
 
-*Phase 00 — Foundation. Xem `docs/phase-reports/PHASE-00-REPORT.md` để biết chi tiết.*
+*Xem `docs/phase-reports/PHASE-00-REPORT.md` cho lịch sử Phase 00 và addendum v1.3 cho hướng hiện hành.*

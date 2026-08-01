@@ -50,10 +50,11 @@ Không sao chép:
 
 ## Thứ tự ưu tiên nguồn yêu cầu
 
-1. Đặc tả chính thức `PA-B-VPS-PostgreSQL-v1.2-AI-governance.docx`.
-2. ADR, governance, policy và requirements traceability hiện hành.
-3. Tài liệu phase đã được review và đối chiếu với đặc tả.
-4. Prototype HTML — chỉ tham khảo UI/UX.
+1. Addendum `PA-B-VPS-PostgreSQL-v1.3-IMPLEMENTATION-ADDENDUM.md`.
+2. ADR hiện hành.
+3. Đặc tả chính thức `PA-B-VPS-PostgreSQL-v1.2-AI-governance.docx`.
+4. Governance, policy, requirements traceability và tài liệu phase đã review.
+5. Prototype HTML — chỉ tham khảo UI/UX.
 
 Khi có mâu thuẫn, nguồn có thứ tự cao hơn luôn thắng.
 
