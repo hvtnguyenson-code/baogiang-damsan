@@ -385,7 +385,7 @@ UI phải:
 - cross-scope denial;
 - pagination và validation;
 - audit records;
-- migration trên PostgreSQL thật.
+- migration trên PostgreSQL cô lập do CI/test environment cấp.
 - CRUD/disable catalog và assign/end kiêm nhiệm;
 - catalog mới tự xuất hiện trong truy vấn dropdown mà không sửa code;
 - audit create/update/disable/assign/end;

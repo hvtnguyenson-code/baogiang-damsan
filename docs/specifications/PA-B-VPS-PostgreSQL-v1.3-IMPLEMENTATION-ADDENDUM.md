@@ -24,6 +24,14 @@ Tài liệu Phase 00 vẫn là bằng chứng lịch sử tại thời điểm P
 - Domain chính thức là `baogiang.dtnt-damsan.edu.vn`.
 - Việc dùng hạ tầng chính thức không cho phép thao tác tùy tiện: mọi truy cập, migration và deploy vẫn cần task/phê duyệt tương ứng.
 
+### Phân tách local, CI và VPS
+
+- Máy local không bắt buộc cài/chạy PostgreSQL; local chủ yếu dùng editor, Codex/Antigravity, lint, typecheck và targeted unit tests.
+- Integration, migration và E2E có database dùng PostgreSQL cô lập do CI/test environment cấp.
+- Database VPS chính thức không dùng cho automated test suite hoặc test phá hủy.
+- Local không kết nối database VPS theo mặc định. Ngoại lệ cần phương thức an toàn và phê duyệt riêng; không mở PostgreSQL công khai chỉ để local truy cập.
+- Kiểm thử ứng dụng trên môi trường thật diễn ra sau CD qua domain chính thức.
+
 ## B. Luồng phát triển và delivery
 
 ```text

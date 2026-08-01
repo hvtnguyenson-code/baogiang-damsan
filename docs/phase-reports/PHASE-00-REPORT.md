@@ -34,6 +34,8 @@ docs
 
 ## 3. Database local và CI
 
+> **Trạng thái lịch sử:** Các role/database local dưới đây là cơ chế Phase 00 đã được addendum v1.3 thay thế. Workflow hiện hành không yêu cầu PostgreSQL local; CI/test environment dựng PostgreSQL cô lập.
+
 | Môi trường | Role | Database |
 |---|---|---|
 | Development | `baogiang_dev_user` | `baogiang_dev` |

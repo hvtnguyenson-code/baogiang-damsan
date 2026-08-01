@@ -34,7 +34,11 @@ Phương án triển khai chính thức là:
 | Package manager | npm workspaces |
 | CI | GitHub Actions |
 
-## Cổng mặc định local
+## Môi trường làm việc local
+
+Máy local chủ yếu dùng cho editor, Codex/Antigravity, lint, typecheck và targeted unit tests. PostgreSQL không bắt buộc cài/chạy local. Integration, migration và E2E có database chạy bằng PostgreSQL cô lập trong CI/test environment.
+
+Các cổng dưới đây chỉ là cổng tiến trình ứng dụng khi cần chạy local; chúng không hàm ý có database local:
 
 | Dịch vụ | Cổng |
 |---|---|
@@ -51,7 +55,9 @@ Phương án triển khai chính thức là:
 | Backend | `127.0.0.1:3100` sau Nginx |
 | PostgreSQL | PostgreSQL 17, `localhost:5433` |
 
-VPS, PostgreSQL và domain là hạ tầng chính thức ngay trong giai đoạn phát triển. Database chưa có dữ liệu vận hành thực tế; chỉ dùng tài khoản và dữ liệu giả cho đến quyết định go-live. Delivery đi qua commit GitHub, CI, review, merge được phép và CD có kiểm soát. Mỗi lần truy cập VPS, deploy hoặc migration vẫn cần task/phê duyệt riêng.
+VPS, PostgreSQL và domain là hạ tầng chính thức ngay trong giai đoạn phát triển. Database chưa có dữ liệu vận hành thực tế; chỉ dùng tài khoản và dữ liệu giả cho đến quyết định go-live, không dùng cho test phá hủy hoặc test suite tự động. Delivery đi qua commit GitHub, CI, review, merge được phép và CD có kiểm soát. Mỗi lần truy cập VPS, deploy hoặc migration vẫn cần task/phê duyệt riêng.
+
+Local không kết nối database VPS theo mặc định. Mọi nhu cầu kết nối phải có phương thức an toàn và phê duyệt riêng; không mở PostgreSQL công khai chỉ để local truy cập. Kiểm thử trên môi trường thật chỉ diễn ra sau CD qua domain chính thức.
 
 ## Hệ thống không được tác động
 

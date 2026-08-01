@@ -76,6 +76,8 @@ Chứa constants không có secret:
 
 ## Database
 
+> `baogiang_dev`/`baogiang_test` bên dưới ghi lại baseline local của Phase 00. Addendum v1.3 đã thay thế workflow này: máy local không cần PostgreSQL; database cho integration/migration/E2E được dựng cô lập trong CI/test environment.
+
 - ORM: Prisma 5.
 - PostgreSQL 17.
 - Dev DB: `baogiang_dev`, owner `baogiang_dev_user`.

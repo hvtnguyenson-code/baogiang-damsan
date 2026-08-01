@@ -6,7 +6,7 @@
 // Defines initial system setting metadata table for Phase 00.
 // Business domain models (TKB, PPCT, BangKe...) will be added in Phase 01+.
 //
-// Database: PostgreSQL 17 (local: 127.0.0.1:5432)
+// Database: PostgreSQL 17; connection supplied through DATABASE_URL per environment.
 // ============================================================
 
 generator client {

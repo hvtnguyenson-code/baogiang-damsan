@@ -23,6 +23,8 @@ Codex chịu trách nhiệm schema/migration, auth/session/authorization, capabi
 - Xác minh branch mới dành riêng cho task và working tree rõ nguồn gốc.
 - Đọc đầy đủ nguồn bắt buộc, không dựa vào báo cáo PASS cũ.
 - Lập traceability từ acceptance case tới implementation/test.
+- Không giả định máy local có PostgreSQL. Local chạy lint, typecheck và targeted unit tests; CI/test environment cấp PostgreSQL cô lập cho integration, migration và E2E có database.
+- Không dùng database VPS chính thức cho automated/destructive tests, không kết nối từ local theo mặc định và không mở PostgreSQL công khai. Kiểm tra môi trường thật chỉ chạy sau CD qua domain chính thức.
 - Nếu có frontend, thực hiện UI/UX gate trong addendum v1.3 và ghi principal skill/design direction.
 - Không truy cập VPS, deploy hoặc chạy migration trên database chính thức nếu task không cấp quyền riêng.
 

@@ -25,8 +25,6 @@
     "test:integration": "npm run test:integration -w apps/api",
     "test:e2e": "npm run test:e2e -w tests/e2e",
     "build": "npm run build -w packages/contracts && npm run build -w packages/config && npm run build -w apps/api && npm run build -w apps/web",
-    "db:init": "powershell -ExecutionPolicy Bypass -File scripts/db/Initialize-LocalDatabase.ps1",
-    "db:check": "powershell -ExecutionPolicy Bypass -File scripts/db/Test-DatabaseConnection.ps1",
     "prisma:generate": "npm run prisma:generate -w apps/api",
     "prisma:migrate": "npm run prisma:migrate -w apps/api",
     "prepare": "echo 'No prepare step needed'"

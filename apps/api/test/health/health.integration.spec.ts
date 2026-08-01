@@ -7,15 +7,17 @@ import { PrismaService } from '../../src/prisma/prisma.service';
 
 /**
  * Integration tests for health endpoints.
- * These tests require a running PostgreSQL baogiang_test database.
+ * The isolated CI/test environment must supply TEST_DATABASE_URL.
  */
 describe('Health endpoints (integration)', () => {
   let app: INestApplication;
 
   beforeAll(async () => {
-    process.env['DATABASE_URL'] =
-      process.env['TEST_DATABASE_URL'] ??
-      'postgresql://baogiang_test_user@127.0.0.1:5432/baogiang_test?schema=public';
+    const testDatabaseUrl = process.env['TEST_DATABASE_URL'];
+    if (!testDatabaseUrl) {
+      throw new Error('TEST_DATABASE_URL must be supplied by the isolated CI/test environment.');
+    }
+    process.env['DATABASE_URL'] = testDatabaseUrl;
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],

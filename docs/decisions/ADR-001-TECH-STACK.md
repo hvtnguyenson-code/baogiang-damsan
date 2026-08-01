@@ -53,9 +53,11 @@ Lý do:
 ### Database: PostgreSQL 17
 
 - Phù hợp đặc tả Phương án B v1.2.
-- Local development dùng PostgreSQL 17 tại `127.0.0.1:5432`.
+- PostgreSQL không phải prerequisite trên máy local; local chủ yếu chạy editor/agent, lint, typecheck và targeted unit tests.
+- Integration, migration và E2E có database dùng PostgreSQL 17 cô lập do CI/test environment cấp.
 - Production chính thức dùng PostgreSQL 17 tại `localhost:5433` trên Windows Server 2022 và đang pre-operational.
 - Dự án dùng database và role riêng, không dùng database hoặc role của hệ thống nội trú.
+- Database chính thức không được dùng cho test phá hủy hoặc test suite tự động. Local không kết nối tới database này theo mặc định và PostgreSQL không được mở công khai chỉ để phục vụ kết nối local.
 
 ### Package manager: npm workspaces
 
