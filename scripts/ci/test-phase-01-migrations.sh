@@ -21,7 +21,7 @@ done
 
 database_url() {
   local database_name="$1"
-  printf 'postgresql://%s:%s@%s:%s/%s?schema=public' \
+  printf 'postgresql://%s:%s@%s:%s/%s' \
     "$MIGRATION_DB_USER" "$MIGRATION_DB_PASSWORD" "$MIGRATION_DB_HOST" "$MIGRATION_DB_PORT" "$database_name"
 }
 
@@ -33,8 +33,10 @@ recreate_database() {
     -c "CREATE DATABASE \"$database_name\" OWNER \"$MIGRATION_DB_USER\";"
 }
 
-fresh_url="$(database_url "$FRESH_DB")"
-legacy_url="$(database_url "$LEGACY_DB")"
+fresh_psql_url="$(database_url "$FRESH_DB")"
+legacy_psql_url="$(database_url "$LEGACY_DB")"
+fresh_url="${fresh_psql_url}?schema=public"
+legacy_url="${legacy_psql_url}?schema=public"
 
 recreate_database "$FRESH_DB"
 recreate_database "$LEGACY_DB"
@@ -44,7 +46,7 @@ DATABASE_URL="$fresh_url" npx prisma migrate deploy --schema "$SCHEMA_PATH"
 DATABASE_URL="$fresh_url" npx prisma migrate status --schema "$SCHEMA_PATH"
 
 echo "[migration-test] Legacy Phase 00 baseline simulation"
-psql "$legacy_url" -v ON_ERROR_STOP=1 <<'SQL'
+psql "$legacy_psql_url" -v ON_ERROR_STOP=1 <<'SQL'
 CREATE TABLE "system_settings" (
     "key" VARCHAR(100) NOT NULL,
     "value" TEXT NOT NULL,
@@ -63,6 +65,6 @@ DATABASE_URL="$fresh_url" node prisma/seed.cjs
 DATABASE_URL="$fresh_url" node prisma/seed.cjs
 
 echo "[migration-test] Constraint and history verification"
-psql "$fresh_url" -v ON_ERROR_STOP=1 -f scripts/ci/verify-phase-01-schema.sql
+psql "$fresh_psql_url" -v ON_ERROR_STOP=1 -f scripts/ci/verify-phase-01-schema.sql
 
 echo "[migration-test] PASS"
