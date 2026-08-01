@@ -97,12 +97,28 @@ jobs:
           PGPASSWORD="ci_dev_pass_only" psql -h 127.0.0.1 -U baogiang_dev_user -d baogiang_dev -v ON_ERROR_STOP=1 -c "SELECT 1;"
           PGPASSWORD="ci_test_pass_only" psql -h 127.0.0.1 -U baogiang_test_user -d baogiang_test -v ON_ERROR_STOP=1 -c "SELECT 1;"
 
-      # ---- Prisma generate ----
+      # ---- Prisma validate and generate ----
+      - name: Prisma validate
+        env:
+          DATABASE_URL: postgresql://baogiang_dev_user:ci_dev_pass_only@127.0.0.1:5432/baogiang_dev?schema=public
+        run: npx prisma validate --schema prisma/schema.prisma
+
       - name: Prisma generate
         working-directory: apps/api
         env:
           DATABASE_URL: postgresql://baogiang_dev_user:ci_dev_pass_only@127.0.0.1:5432/baogiang_dev?schema=public
         run: npm run prisma:generate
+
+      - name: Schema foundation static verification
+        run: npm run test:schema:static
+
+      # ---- Migration gates on isolated PostgreSQL databases ----
+      - name: Phase 01 migration foundation tests
+        env:
+          POSTGRES_ADMIN_URL: postgresql://postgres:ci_password_only@127.0.0.1:5432/postgres
+          MIGRATION_DB_USER: baogiang_dev_user
+          MIGRATION_DB_PASSWORD: ci_dev_pass_only
+        run: npm run test:migrations:ci
 
       # ---- Lint ----
       - name: Lint — packages/contracts
