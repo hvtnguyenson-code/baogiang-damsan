@@ -3,11 +3,13 @@
 **Ngày:** 2026-07-28  
 **Phiên bản:** 0.0.1
 
+> **Ghi chú hiện hành (2026-08-01):** Đây là tài liệu lịch sử của Phase 00. Hướng hạ tầng/delivery mới có hiệu lực theo addendum Phương án B v1.3 và ADR-005: VPS, PostgreSQL và domain là production chính thức ở trạng thái pre-operational.
+
 ## Tổng quan
 
 Phase 00 thiết lập nền móng kỹ thuật cho Hệ thống Báo giảng Đam San. Phase này chưa triển khai nghiệp vụ hoàn chỉnh; chỉ cung cấp kiến trúc, hạ tầng, contracts và kiểm thử nền móng.
 
-Phương án production chính thức là **Windows Server 2022 + PostgreSQL 17**, theo đặc tả Phương án B v1.2. Production chưa được kích hoạt.
+Tại thời điểm Phase 00, production chưa được triển khai. Kiến trúc đích là **Windows Server 2022 + PostgreSQL 17** theo Phương án B v1.2; trạng thái hiện hành được addendum v1.3 và ADR-005 thay thế như ghi chú trên.
 
 ## Cấu trúc monorepo
 
@@ -110,7 +112,7 @@ Không có AI endpoint, chatbot hoặc prompt tự do.
 
 GitHub Actions thực hiện PostgreSQL setup, Prisma generate, lint, typecheck, unit tests, integration tests, build và Playwright.
 
-## Production architecture dự kiến
+## Production architecture (đã trở thành hạ tầng chính thức pre-operational)
 
 - Windows Server 2022.
 - Nginx phục vụ frontend static và reverse proxy.
@@ -118,8 +120,8 @@ GitHub Actions thực hiện PostgreSQL setup, Prisma generate, lint, typecheck,
 - PostgreSQL 17 tại `localhost:5433`.
 - Database `baogiang`, role `baogiang_app` riêng.
 - Log, backup, service và deploy tách khỏi hệ thống nội trú.
-- Push không đồng nghĩa deploy.
-- Deploy chỉ thực hiện thủ công có kiểm soát sau xác nhận `DEPLOY`.
+- Source delivery đi từ commit GitHub qua CI/review/CD có kiểm soát.
+- Push tự nó không deploy; CD chỉ chạy sau các gate và phê duyệt hiện hành.
 
 ## Giới hạn Phase 00
 
@@ -133,4 +135,4 @@ Chưa có:
 - GDĐP và HĐTN-HN;
 - AI features;
 - dashboard nghiệp vụ;
-- production deployment workflow.
+- production deployment workflow (chưa thuộc deliverable Phase 00).

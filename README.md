@@ -2,8 +2,7 @@
 
 **Đơn vị sử dụng:** Trường PTDTNT THPT Đam San
 
-> ⚠️ **Phase 00 — Nền móng kỹ thuật.** Chưa có chức năng nghiệp vụ nào hoàn chỉnh.  
-> Không sử dụng database production cho phát triển.
+> ⚠️ Hệ thống đang ở giai đoạn nền móng, chưa có chức năng nghiệp vụ hoàn chỉnh. Hạ tầng VPS, PostgreSQL và domain là production chính thức ở trạng thái **pre-operational**; chỉ dùng tài khoản và dữ liệu giả cho đến quyết định go-live.
 
 ---
 
@@ -151,19 +150,22 @@ baogiang-damsan/
 
 ## Nguyên tắc phát triển
 
-- Phát triển và kiểm thử trên máy local.
-- **KHÔNG dùng database production để phát triển.**
-- Push GitHub không đồng nghĩa deploy.
-- Production chỉ deploy khi đã kiểm tra và xác nhận.
+- Viết code và chạy kiểm tra nhanh trên máy local, mỗi task trên một branch riêng.
+- Delivery chính thức đi qua GitHub: push → CI → review → merge `main` khi được phép → CD có kiểm soát.
+- Push tự nó không phải deploy; deploy chỉ xảy ra khi các CI/review/authorization gate của CD được thỏa mãn.
+- Database chính thức đang pre-operational và chỉ dùng dữ liệu giả. Thay đổi schema đi qua migration đã commit, CI cô lập và `prisma migrate deploy` được phê duyệt.
 - Không tác động hệ thống quản lý nội trú hiện có.
 - AI tắt mặc định — xem `docs/decisions/ADR-002-AI-READY-BUT-DISABLED.md`.
+
+Quy tắc đầy đủ: `AGENTS.md`, `docs/specifications/PA-B-VPS-PostgreSQL-v1.3-IMPLEMENTATION-ADDENDUM.md` và `docs/operations/DEVELOPMENT-DEPLOYMENT-DATABASE.md`.
 
 ## Production
 
 - Domain: `baogiang.dtnt-damsan.edu.vn`
 - Backend: `127.0.0.1:3100` (sau Nginx proxy)
 - Reverse proxy: Nginx
+- Trạng thái: hạ tầng chính thức, pre-operational; chưa có dữ liệu vận hành thực tế.
 
 ---
 
-*Phase 00 — Foundation. Xem `docs/phase-reports/PHASE-00-REPORT.md` để biết chi tiết.*
+*Xem `docs/phase-reports/PHASE-00-REPORT.md` cho lịch sử Phase 00 và addendum v1.3 cho hướng hiện hành.*

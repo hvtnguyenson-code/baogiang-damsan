@@ -9,6 +9,7 @@
 | **Repository** | `hvtnguyenson-code/baogiang-damsan` |
 | **Thư mục local** | `D:\baogiang-damsan` |
 | **Branch Phase 00** | `phase/00-foundation` |
+| **Branch Phase 01** | `phase/01-identity-access` |
 | **Stable branch** | `main` |
 | **Phiên bản** | `0.0.1` — Phase 00 Foundation |
 
@@ -17,7 +18,8 @@
 Phương án triển khai chính thức là:
 
 - **Phương án B** — VPS Windows Server 2022 + PostgreSQL 17.
-- Đặc tả ưu tiên: `docs/specifications/PA-B-VPS-PostgreSQL-v1.2-AI-governance.docx`.
+- Đặc tả ưu tiên cao nhất: `docs/specifications/PA-B-VPS-PostgreSQL-v1.3-IMPLEMENTATION-ADDENDUM.md`, bổ sung và thay thế nội dung tương ứng của v1.2.
+- Đặc tả nền: `docs/specifications/PA-B-VPS-PostgreSQL-v1.2-AI-governance.docx`.
 - Phương án A chỉ lưu để đối chiếu và tham khảo.
 
 ## Công nghệ
@@ -40,16 +42,16 @@ Phương án triển khai chính thức là:
 | API | `127.0.0.1:3100` |
 | API prefix | `/api` |
 
-## Production — chưa kích hoạt
+## Hạ tầng production chính thức — pre-operational
 
 | Mục | Giá trị |
 |---|---|
 | Hệ điều hành | Windows Server 2022 |
-| Domain dự kiến | `baogiang.dtnt-damsan.edu.vn` |
+| Domain chính thức | `baogiang.dtnt-damsan.edu.vn` |
 | Backend | `127.0.0.1:3100` sau Nginx |
 | PostgreSQL | PostgreSQL 17, `localhost:5433` |
 
-Không deploy production trong Phase 00 hoặc Phase 01.
+VPS, PostgreSQL và domain là hạ tầng chính thức ngay trong giai đoạn phát triển. Database chưa có dữ liệu vận hành thực tế; chỉ dùng tài khoản và dữ liệu giả cho đến quyết định go-live. Delivery đi qua commit GitHub, CI, review, merge được phép và CD có kiểm soát. Mỗi lần truy cập VPS, deploy hoặc migration vẫn cần task/phê duyệt riêng.
 
 ## Hệ thống không được tác động
 
@@ -57,7 +59,7 @@ Không deploy production trong Phase 00 hoặc Phase 01.
 - `D:\Edu_DamSan`
 - dữ liệu và cấu hình PostgreSQL của hệ thống khác
 - dịch vụ, Scheduled Task và Nginx của hệ thống nội trú
-- VPS production khi chưa có phê duyệt `DEPLOY`
+- tài nguyên VPS production ngoài phạm vi task hoặc khi chưa có phê duyệt tương ứng
 
 ## AI — tắt mặc định
 
@@ -84,7 +86,8 @@ Không sao chép:
 
 Thứ tự ưu tiên nguồn yêu cầu:
 
-1. Đặc tả v1.2 được phê duyệt.
-2. ADR và tài liệu governance hiện hành.
-3. Tài liệu phase đã được đối chiếu.
-4. Prototype HTML — chỉ tham khảo UI/UX.
+1. Addendum Phương án B v1.3.
+2. ADR hiện hành.
+3. Đặc tả Phương án B v1.2 được phê duyệt.
+4. Tài liệu phase và governance đã được đối chiếu.
+5. Prototype HTML — chỉ tham khảo UI/UX.

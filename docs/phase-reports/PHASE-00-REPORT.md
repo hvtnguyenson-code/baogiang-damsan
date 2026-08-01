@@ -1,5 +1,7 @@
 # BÁO CÁO HOÀN THÀNH PHASE 00 — FOUNDATION
 
+> **Hồ sơ lịch sử:** Các trạng thái branch/merge/deploy và phân công agent dưới đây chỉ mô tả Phase 00. Hướng hiện hành từ 2026-08-01 nằm trong addendum Phương án B v1.3, ADR-005 và `AGENTS.md`.
+
 **Dự án:** Hệ thống Báo giảng và Thống kê Tiết dạy Tự động  
 **Đơn vị:** Trường PTDTNT THPT Đam San  
 **Repository:** `hvtnguyenson-code/baogiang-damsan`  
