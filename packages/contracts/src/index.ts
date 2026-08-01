@@ -3,7 +3,7 @@
  * Shared TypeScript types and interfaces for baogiang-damsan.
  *
  * These contracts define the API surface between frontend and backend.
- * Business domain models are NOT included in Phase 00.
+ * Phase 01 adds public-safe identity, catalog, assignment, and audit contracts.
  */
 
 // ============================================================
@@ -108,6 +108,13 @@ export type CapabilityKey =
   | 'GDDDP_COORDINATOR'      // GDĐP coordination
   | 'HĐTN_COORDINATOR'       // HĐTN-HN coordination
   | 'SYSTEM_ADMIN'           // system administration (NOT professional approval)
+  | 'USER_MANAGE'
+  | 'SUBJECT_GROUP_MANAGE'
+  | 'SUBJECT_MANAGE'
+  | 'CAPABILITY_GRANT'
+  | 'AUDIT_VIEW'
+  | 'ADDITIONAL_DUTY_CATALOG_MANAGE'
+  | 'ADDITIONAL_DUTY_ASSIGNMENT_MANAGE'
   | 'AI_ACTIVE_USE_SCHOOL'   // AI active use school-wide (BGH)
   | 'AI_ACTIVE_USE_DEPARTMENT' // AI active use department-wide (tổ trưởng)
   | 'AI_ACTIVE_USE_ACTIVITY' // AI active use activity-wide (điều phối)
@@ -142,6 +149,122 @@ export interface AuthContext {
   capabilities: ScopedCapability[];
   /** Whether the user is in read-only mode (e.g., token expired but still navigating) */
   isReadOnly: boolean;
+}
+
+// ============================================================
+// Phase 01 Identity, Catalog, Assignment, and Audit Contracts
+// ============================================================
+
+export type UserStatus = 'PENDING' | 'ACTIVE' | 'LOCKED' | 'DISABLED';
+export type CatalogStatus = 'ACTIVE' | 'INACTIVE';
+export type AuditResult = 'SUCCESS' | 'DENIED' | 'FAILURE';
+
+export interface ValidityWindow {
+  validFrom: string;
+  validUntil?: string;
+}
+
+export interface UserSummary {
+  id: string;
+  username: string;
+  status: UserStatus;
+  mustChangePassword: boolean;
+  lockedUntil?: string;
+  lastLoginAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StaffProfileSummary {
+  id: string;
+  userId: string;
+  staffCode?: string;
+  displayName: string;
+  email?: string;
+  phone?: string;
+  positionTitle?: string;
+  isTeachingStaff: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CatalogEntry {
+  id: string;
+  code: string;
+  name: string;
+  status: CatalogStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SubjectGroupMembershipRecord extends ValidityWindow {
+  id: string;
+  userId: string;
+  subjectGroupId: string;
+  isPrimary: boolean;
+}
+
+export interface StaffSubjectRecord extends ValidityWindow {
+  id: string;
+  userId: string;
+  subjectId: string;
+  isPrimary: boolean;
+}
+
+export interface CapabilityDefinitionRecord {
+  key: CapabilityKey;
+  description: string;
+  allowedScopeTypes: CapabilityScope[];
+  isSystem: boolean;
+  isActive: boolean;
+}
+
+export interface CapabilityGrantRecord extends ValidityWindow {
+  id: string;
+  userId: string;
+  capabilityKey: CapabilityKey;
+  scopeType: CapabilityScope;
+  scopeResourceId?: string;
+  grantedByUserId?: string;
+  revokedAt?: string;
+  revokedByUserId?: string;
+  revokeReason?: string;
+}
+
+export interface AuditEventRecord {
+  id: string;
+  actorUserId?: string;
+  action: string;
+  entityType: string;
+  entityId?: string;
+  requestId?: string;
+  result: AuditResult;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface AdditionalDutyDefinitionRecord extends ValidityWindow {
+  id: string;
+  code: string;
+  name: string;
+  description?: string;
+  category: string;
+  isActive: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StaffAdditionalDutyAssignmentRecord extends ValidityWindow {
+  id: string;
+  staffProfileId: string;
+  dutyDefinitionId: string;
+  scopeType: CapabilityScope;
+  scopeResourceId?: string;
+  note?: string;
+  createdByUserId: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // ============================================================
