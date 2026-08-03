@@ -65,4 +65,14 @@ describe('appConfig (unit)', () => {
       'http://127.0.0.1:5173',
     ]);
   });
+
+  it('rejects wildcard CORS and insecure production cookies', () => {
+    process.env['DATABASE_URL'] = 'postgresql://test@localhost:5432/test';
+    process.env['CORS_ORIGINS'] = '*';
+    expect(() => appConfig()).toThrow('never wildcard');
+    process.env['CORS_ORIGINS'] = 'https://example.test';
+    process.env['NODE_ENV'] = 'production';
+    process.env['AUTH_COOKIE_SECURE'] = 'false';
+    expect(() => appConfig()).toThrow('must be true in production');
+  });
 });
