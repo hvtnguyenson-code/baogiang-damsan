@@ -111,7 +111,13 @@ integration('Auth API (isolated PostgreSQL integration)', () => {
     const originalSeen = session.lastSeenAt;
     expect((await request(app.getHttpServer()).get('/api/auth/me').set('Cookie', cookie)).status).toBe(200);
     expect((await prisma.authSession.findUniqueOrThrow({ where: { id: session.id } })).lastSeenAt).toEqual(originalSeen);
-    await prisma.authSession.update({ where: { id: session.id }, data: { expiresAt: new Date(0) } });
+    await prisma.authSession.update({
+      where: { id: session.id },
+      data: {
+        createdAt: new Date(Date.now() - 7_200_000),
+        expiresAt: new Date(Date.now() - 3_600_000),
+      },
+    });
     expect((await request(app.getHttpServer()).get('/api/auth/me').set('Cookie', cookie)).status).toBe(401);
     await prisma.authSession.update({ where: { id: session.id }, data: { expiresAt: new Date(Date.now() + 60_000), revokedAt: new Date() } });
     expect((await request(app.getHttpServer()).get('/api/auth/me').set('Cookie', cookie)).status).toBe(401);
