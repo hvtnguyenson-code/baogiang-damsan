@@ -17,7 +17,7 @@ export const SCHOOL_NAME = 'Trường PTDTNT THPT Đam San';
 export const REPOSITORY = 'hvtnguyenson-code/baogiang-damsan';
 
 /** Current phase */
-export const CURRENT_PHASE = 'Phase 01 — Schema & Migration Foundation';
+export const CURRENT_PHASE = 'Phase 01 — Auth & Session Runtime';
 
 /** Official production domain; infrastructure remains pre-operational. */
 export const PRODUCTION_DOMAIN = 'baogiang.dtnt-damsan.edu.vn';

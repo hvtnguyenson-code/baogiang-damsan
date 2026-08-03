@@ -3,6 +3,7 @@ import { ValidationPipe, Logger } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
+import { AppConfig } from './config/app.config';
 
 async function bootstrap(): Promise<void> {
   const logger = new Logger('Bootstrap');
@@ -14,19 +15,16 @@ async function bootstrap(): Promise<void> {
     logger: ['error', 'warn', 'log', 'debug', 'verbose'],
     bufferLogs: false,
   });
+  const config = app.get<AppConfig>('APP_CONFIG');
 
   // ---- Global prefix ----
   app.setGlobalPrefix('api');
 
   // ---- CORS ----
-  const corsOrigins = (process.env['CORS_ORIGINS'] ?? 'http://127.0.0.1:5173')
-    .split(',')
-    .map((o) => o.trim());
-
   app.enableCors({
-    origin: corsOrigins,
+    origin: config.corsOrigins,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-Id'],
+    allowedHeaders: ['Content-Type', 'X-Request-Id'],
     credentials: true,
   });
 

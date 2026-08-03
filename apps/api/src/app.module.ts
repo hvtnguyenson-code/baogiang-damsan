@@ -4,6 +4,7 @@ import { TerminusModule } from '@nestjs/terminus';
 import { HealthModule } from './health/health.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { AppConfigModule } from './config/app-config.module';
+import { AuthModule } from './auth/auth.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { AppConfigModule } from './config/app-config.module';
 
     // ---- Health endpoints ----
     HealthModule,
+    AuthModule,
   ],
 })
 export class AppModule {}
