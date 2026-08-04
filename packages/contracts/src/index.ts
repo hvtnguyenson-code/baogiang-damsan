@@ -151,6 +151,37 @@ export interface AuthContext {
   isReadOnly: boolean;
 }
 
+export interface LoginRequest {
+  username: string;
+  password: string;
+}
+
+export interface ChangePasswordRequest {
+  currentPassword: string;
+  newPassword: string;
+}
+
+export interface AuthUserResponse {
+  id: string;
+  username: string;
+  displayName: string;
+  status: 'ACTIVE';
+  mustChangePassword: boolean;
+}
+
+export interface LoginResponse {
+  user: AuthUserResponse;
+  expiresAt: string;
+}
+
+export interface AuthMeResponse {
+  user: AuthUserResponse;
+}
+
+export interface AuthMutationResponse {
+  success: true;
+}
+
 // ============================================================
 // Phase 01 Identity, Catalog, Assignment, and Audit Contracts
 // ============================================================

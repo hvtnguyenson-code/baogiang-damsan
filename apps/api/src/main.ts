@@ -3,30 +3,28 @@ import { ValidationPipe, Logger } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
+import { AppConfig } from './config/app.config';
+import { configureTrustProxy } from './auth/auth-http';
 
 async function bootstrap(): Promise<void> {
   const logger = new Logger('Bootstrap');
-
-  const host = process.env['API_HOST'] ?? '127.0.0.1';
-  const port = parseInt(process.env['API_PORT'] ?? '3100', 10);
 
   const app = await NestFactory.create(AppModule, {
     logger: ['error', 'warn', 'log', 'debug', 'verbose'],
     bufferLogs: false,
   });
+  const config = app.get<AppConfig>('APP_CONFIG');
+  const { host, port } = config;
+  configureTrustProxy(app.getHttpAdapter().getInstance() as { set(name: string, value: number): unknown }, config.httpTrustProxyHops);
 
   // ---- Global prefix ----
   app.setGlobalPrefix('api');
 
   // ---- CORS ----
-  const corsOrigins = (process.env['CORS_ORIGINS'] ?? 'http://127.0.0.1:5173')
-    .split(',')
-    .map((o) => o.trim());
-
   app.enableCors({
-    origin: corsOrigins,
+    origin: config.corsOrigins,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-Id'],
+    allowedHeaders: ['Content-Type', 'X-Request-Id'],
     credentials: true,
   });
 
