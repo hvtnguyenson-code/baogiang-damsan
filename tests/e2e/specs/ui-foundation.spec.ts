@@ -11,6 +11,7 @@ test.describe.configure({ retries: 0 });
 async function prepareScreenshot(page: Page) {
   await page.addStyleTag({ content: '*, *::before, *::after { animation: none !important; transition: none !important; caret-color: transparent !important; }' });
   await page.evaluate(() => document.fonts.ready);
+  await page.evaluate(() => window.scrollTo(0, 0));
 }
 
 async function assertNoSeriousAxeViolations(page: Page) {
@@ -45,6 +46,8 @@ test('real auth UI supports keyboard, first-login change, cookie reload, and log
 
   await page.keyboard.press('Tab');
   await expect(page.getByRole('link', { name: 'Đến biểu mẫu' })).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('link', { name: 'Kiểm tra trạng thái hệ thống' }).first()).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(page.getByLabel('Tên đăng nhập')).toBeFocused();
 
