@@ -44,7 +44,7 @@ describe('auth HTTP boundary', () => {
       }),
     };
     const rateLimit = { consume: jest.fn() };
-    const controller = new AuthController(auth as never, rateLimit as never, config);
+    const controller = new AuthController(auth as never, rateLimit as never, { listEffectiveCapabilities: jest.fn() } as never, config);
     const httpRequest = {
       ip: '::ffff:127.0.0.1',
       headers: { 'x-forwarded-for': '198.51.100.25' },

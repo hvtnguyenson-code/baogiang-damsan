@@ -9,11 +9,12 @@ import { SessionAuthGuard } from './session-auth.guard';
 import { SessionTokenService } from './session-token.service';
 import { AuthPolicyService } from './auth-policy.service';
 import { AppConfigModule } from '../config/app-config.module';
+import { AuthorizationModule } from '../authorization/authorization.module';
 
 @Module({
-  imports: [AppConfigModule],
+  imports: [AppConfigModule, AuthorizationModule],
   controllers: [AuthController],
   providers: [AuthService, PasswordService, SessionTokenService, AuthPolicyService, SessionAuthGuard, CsrfOriginGuard, LoginRateLimitService, AuditService],
-  exports: [AuthService, SessionAuthGuard],
+  exports: [AuthService, SessionAuthGuard, AppConfigModule],
 })
 export class AuthModule {}
