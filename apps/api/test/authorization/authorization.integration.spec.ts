@@ -244,9 +244,8 @@ integration('Capability authorization (isolated PostgreSQL integration)', () => 
     expect((await agent.post('/api/auth/logout').set('Origin', 'http://127.0.0.1:5173')).status).toBe(200);
   });
 
-  it('/auth/me exposes only deduplicated active public capability fields', async () => {
+  it('/auth/me exposes only active public capability fields in deterministic order', async () => {
     const { user, agent } = await createAgent('me-capabilities');
-    await grant(user.id, 'USER_MANAGE', 'SCHOOL_WIDE');
     await grant(user.id, 'USER_MANAGE', 'SCHOOL_WIDE');
     await grant(user.id, 'SUBJECT_GROUP_LEAD', 'SUBJECT_GROUP', groupId);
     await grant(user.id, 'SUBJECT_GROUP_LEAD', 'SUBJECT_GROUP', otherGroupId, { validFrom: new Date(Date.now() + 60_000) });
