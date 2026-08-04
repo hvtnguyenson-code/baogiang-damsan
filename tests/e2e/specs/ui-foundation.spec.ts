@@ -85,8 +85,14 @@ test('real auth UI supports keyboard, first-login change, cookie reload, and log
 
   await page.getByLabel('Mật khẩu mới', { exact: true }).fill(NEW_PASSWORD);
   await page.getByLabel('Xác nhận mật khẩu mới').fill(NEW_PASSWORD);
+  const changeResponsePromise = page.waitForResponse((response) =>
+    new URL(response.url()).pathname === '/api/auth/change-password'
+      && response.request().method() === 'POST',
+  );
   await page.getByRole('button', { name: 'Đổi mật khẩu' }).click();
-  await expect(page).toHaveURL(/\/$/);
+  const changeResponse = await changeResponsePromise;
+  expect(changeResponse.status()).toBe(200);
+  await expect(page).toHaveURL(/\/$/, { timeout: 10_000 });
   await expect(page.getByRole('heading', { name: /E2E UI Admin/ })).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Điều hướng chính' }).locator('[role="tab"]')).toHaveCount(0);
   await expect(page.locator('select[id*="role"], [id*="role"][role="combobox"]')).toHaveCount(0);

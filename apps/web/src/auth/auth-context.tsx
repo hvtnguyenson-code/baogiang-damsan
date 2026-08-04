@@ -37,6 +37,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const passwordMutation = useMutation({ mutationFn: changePassword });
   const logoutMutation = useMutation({ mutationFn: logout });
 
+  async function refreshAuth(): Promise<AuthMeResponse> {
+    await queryClient.invalidateQueries({ queryKey: AUTH_QUERY_KEY, refetchType: 'none' });
+    const refreshed = await queryClient.fetchQuery({ queryKey: AUTH_QUERY_KEY, queryFn: fetchAuthMe });
+    queryClient.setQueryData(AUTH_QUERY_KEY, refreshed);
+    return refreshed;
+  }
+
   const value: AuthContextValue = {
     status: deriveStatus(authQuery),
     auth: authQuery.data ?? null,
@@ -44,15 +51,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isMutating: loginMutation.isPending || passwordMutation.isPending || logoutMutation.isPending,
     async login(input) {
       await loginMutation.mutateAsync(input);
-      const refreshed = await queryClient.fetchQuery({ queryKey: AUTH_QUERY_KEY, queryFn: fetchAuthMe });
-      queryClient.setQueryData(AUTH_QUERY_KEY, refreshed);
-      return refreshed;
+      return refreshAuth();
     },
     async changePassword(input) {
       await passwordMutation.mutateAsync(input);
-      const refreshed = await queryClient.fetchQuery({ queryKey: AUTH_QUERY_KEY, queryFn: fetchAuthMe });
-      queryClient.setQueryData(AUTH_QUERY_KEY, refreshed);
-      return refreshed;
+      return refreshAuth();
     },
     async logout() {
       try {

@@ -89,6 +89,7 @@ describe('auth routing and forms', () => {
     await user.type(screen.getByLabelText('Xác nhận mật khẩu mới'), 'ReplacementPassword8');
     await user.click(screen.getByRole('button', { name: /đổi mật khẩu/i }));
     expect(await screen.findByRole('heading', { name: /chào nguyễn văn an/i })).toBeInTheDocument();
+    expect(meCalls).toBe(2);
   });
 
   it('keeps only safe internal intended destinations', () => {
