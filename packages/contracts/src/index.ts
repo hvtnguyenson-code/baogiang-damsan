@@ -176,6 +176,8 @@ export interface LoginResponse {
 
 export interface AuthMeResponse {
   user: AuthUserResponse;
+  /** Effective, active capability grants at request time. */
+  capabilities: ScopedCapability[];
 }
 
 export interface AuthMutationResponse {

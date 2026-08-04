@@ -10,12 +10,14 @@ import { CsrfOriginGuard } from './csrf-origin.guard';
 import { LoginRateLimitService } from './login-rate-limit.service';
 import { Inject } from '@nestjs/common';
 import { AppConfig } from '../config/app.config';
+import { CapabilityAuthorizationService } from '../authorization/capability-authorization.service';
 
 @Controller('auth')
 export class AuthController {
   constructor(
     private readonly auth: AuthService,
     private readonly rateLimit: LoginRateLimitService,
+    private readonly authorization: CapabilityAuthorizationService,
     @Inject('APP_CONFIG') private readonly config: AppConfig,
   ) {}
 
@@ -30,8 +32,9 @@ export class AuthController {
 
   @Get('me')
   @UseGuards(SessionAuthGuard)
-  me(@Req() request: AuthenticatedRequest): AuthMeResponse {
-    return { user: { ...request.auth!.user, status: 'ACTIVE' } };
+  async me(@Req() request: AuthenticatedRequest): Promise<AuthMeResponse> {
+    const capabilities = await this.authorization.listEffectiveCapabilities(request.auth!.user.id);
+    return { user: { ...request.auth!.user, status: 'ACTIVE' }, capabilities };
   }
 
   @Post('logout')
