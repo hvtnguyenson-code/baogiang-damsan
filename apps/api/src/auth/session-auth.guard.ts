@@ -16,7 +16,7 @@ export class SessionAuthGuard implements CanActivate {
     const rawToken = readCookie(request, this.config.auth.cookieName);
     if (!rawToken) throw new UnauthorizedException('Yêu cầu đăng nhập.');
     const authenticated = await this.auth.authenticate(rawToken, requestMeta(request));
-    request.auth = { ...authenticated, rawToken };
+    request.auth = authenticated;
     return true;
   }
 }

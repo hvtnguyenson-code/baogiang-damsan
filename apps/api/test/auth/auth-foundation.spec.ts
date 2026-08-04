@@ -8,17 +8,19 @@ import { SessionTokenService } from '../../src/auth/session-token.service';
 import { AuthPolicyService } from '../../src/auth/auth-policy.service';
 import { AppConfig } from '../../src/config/app.config';
 import { UserStatus } from '@prisma/client';
+import { AuthService } from '../../src/auth/auth.service';
 
 const config: AppConfig = {
   nodeEnv: 'test', host: '127.0.0.1', port: 3100,
   corsOrigins: ['http://127.0.0.1:5173'], aiEnabled: false,
   aiActiveModeEnabled: false, aiPassiveModeEnabled: false, webPushEnabled: false,
   logLevel: 'error', databaseUrl: 'postgresql://placeholder',
+  httpTrustProxyHops: 0,
   auth: {
     sessionTtlSeconds: 3600, lastSeenUpdateSeconds: 300,
     cookieName: 'test_session', cookiePath: '/api', cookieSecure: false, cookieSameSite: 'lax',
     lockoutThreshold: 3, lockoutDurationSeconds: 60, passwordMinLength: 12,
-    loginRateLimitMax: 2, loginRateLimitWindowSeconds: 60,
+    loginRateLimitMax: 2, loginRateLimitWindowSeconds: 60, loginRateLimitMaxKeys: 2,
   },
 };
 
@@ -39,14 +41,51 @@ describe('auth security foundations', () => {
     const second = service.generate();
     expect(first).not.toEqual(second);
     expect(Buffer.from(first, 'base64url')).toHaveLength(32);
+    expect(service.isValid(first)).toBe(true);
+    expect(service.isValid('not-a-session-token')).toBe(false);
+    expect(service.isValid(`${first}extra`)).toBe(false);
     expect(service.hash(first)).toMatch(/^[a-f0-9]{64}$/);
     expect(service.hash(first)).not.toContain(first);
   });
 
+  it('rejects invalid token shape before hashing or database lookup', async () => {
+    const prisma = { authSession: { findUnique: jest.fn() } };
+    const audit = { write: jest.fn().mockResolvedValue(undefined) };
+    const service = new AuthService(
+      prisma as never,
+      {} as never,
+      new SessionTokenService(),
+      audit as never,
+      new AuthPolicyService(config),
+      config,
+    );
+    await expect(service.authenticate('invalid-token-shape', {})).rejects.toThrow('Phiên đăng nhập không hợp lệ');
+    expect(prisma.authSession.findUnique).not.toHaveBeenCalled();
+    expect(audit.write).toHaveBeenCalledWith(expect.objectContaining({ metadata: { reasonCode: 'INVALID_FORMAT' } }));
+  });
+
   it('redacts sensitive audit keys recursively by default', () => {
     const service = new AuditService({} as never);
-    expect(service.sanitize({ reasonCode: 'INVALID', password: 'x', nested: { tokenHash: 'x', safe: true } }))
-      .toEqual({ reasonCode: 'INVALID', nested: { safe: true } });
+    const input = {
+      reasonCode: 'INVALID',
+      password: 'x',
+      nested: { tokenHash: 'x', safe: true, items: [{ credential: 'x', label: 'safe' }, ['ok', { apiKey: 'x' }]] },
+    };
+    expect(service.sanitize(input)).toEqual({
+      reasonCode: 'INVALID',
+      nested: { safe: true, items: [{ label: 'safe' }, ['ok', {}]] },
+    });
+    expect(input.nested.tokenHash).toBe('x');
+  });
+
+  it('handles cyclic and excessive-depth audit metadata without throwing', () => {
+    const service = new AuditService({} as never);
+    const cyclic: Record<string, unknown> = { safe: 'value' };
+    cyclic['self'] = cyclic;
+    let deep: Record<string, unknown> = { leaf: 'kept-until-limit' };
+    for (let index = 0; index < 12; index += 1) deep = { child: deep };
+    expect(() => service.sanitize({ cyclic, deep })).not.toThrow();
+    expect(service.sanitize({ cyclic })).toEqual({ cyclic: { safe: 'value' } });
   });
 
   it('uses HttpOnly cookie options with configured environment attributes', () => {
@@ -70,6 +109,17 @@ describe('auth security foundations', () => {
     service.consume('client', 1);
     expect(() => service.consume('client', 2)).toThrow();
     expect(() => service.consume('client', 60_001)).not.toThrow();
+  });
+
+  it('prunes expired keys at capacity and fails closed while active keys fill capacity', () => {
+    const service = new LoginRateLimitService(config);
+    service.consume('first', 0);
+    service.consume('second', 30_000);
+    expect(service.trackedKeyCount).toBe(2);
+    service.consume('third', 60_001);
+    expect(service.trackedKeyCount).toBe(2);
+    expect(() => service.consume('fourth', 60_002)).toThrow();
+    expect(service.trackedKeyCount).toBe(2);
   });
 
   it('applies lockout threshold and configured duration', () => {

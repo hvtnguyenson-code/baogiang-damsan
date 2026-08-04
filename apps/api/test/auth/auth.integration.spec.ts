@@ -86,7 +86,7 @@ integration('Auth API (isolated PostgreSQL integration)', () => {
   it('sets a safe cookie, authenticates /me, and logout revokes the session', async () => {
     await createUser('session-user');
     const agent = request.agent(app.getHttpServer());
-    const login = await agent.post('/api/auth/login').send({ username: 'SESSION-USER', password: originalPassword });
+    const login = await agent.post('/api/auth/login').set('X-Forwarded-For', '198.51.100.25').send({ username: 'SESSION-USER', password: originalPassword });
     expect(login.status).toBe(200);
     const setCookie = login.headers['set-cookie'] as unknown as string[];
     expect(setCookie[0]).toContain('HttpOnly');
@@ -94,6 +94,7 @@ integration('Auth API (isolated PostgreSQL integration)', () => {
     expect(setCookie[0]).toContain('Path=/api');
     const rawToken = /baogiang_session=([^;]+)/.exec(setCookie[0])![1];
     const stored = await prisma.authSession.findFirstOrThrow();
+    expect(stored.ipAddress).not.toBe('198.51.100.25');
     expect(stored.tokenHash).not.toContain(rawToken);
     expect(JSON.stringify(await prisma.auditEvent.findMany())).not.toContain(rawToken);
     expect((await agent.get('/api/auth/me')).body.user).toMatchObject({ username: 'session-user', mustChangePassword: true });
@@ -101,6 +102,19 @@ integration('Auth API (isolated PostgreSQL integration)', () => {
     expect(csrfDenied.status).toBe(403);
     expect((await agent.post('/api/auth/logout').set('Origin', origin)).status).toBe(200);
     expect((await agent.get('/api/auth/me')).status).toBe(401);
+  });
+
+  it('rejects malformed and invalid-format session cookies without leaking or returning 500', async () => {
+    const malformed = await request(app.getHttpServer()).get('/api/auth/me').set('Cookie', 'baogiang_session=%E0%A4%A');
+    expect(malformed.status).toBe(401);
+    const invalidValue = 'invalid-session-shape';
+    const invalid = await request(app.getHttpServer()).get('/api/auth/me').set('Cookie', `baogiang_session=${invalidValue}`);
+    expect(invalid.status).toBe(401);
+    expect(JSON.stringify(invalid.body)).not.toContain(invalidValue);
+    expect(await prisma.authSession.count()).toBe(0);
+    const events = await prisma.auditEvent.findMany({ where: { action: 'AUTH_SESSION_REJECTED' } });
+    expect(events).toHaveLength(1);
+    expect(JSON.stringify(events)).not.toContain(invalidValue);
   });
 
   it('rejects expired and revoked sessions consistently and throttles lastSeen writes', async () => {

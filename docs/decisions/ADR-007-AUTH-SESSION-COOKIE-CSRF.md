@@ -14,6 +14,12 @@ Unsafe authenticated requests must carry an `Origin`, or a valid `Referer` fallb
 
 Changing a password revokes every other active session while preserving the current verified session. This lets first-login password change complete without issuing another token; the policy is covered by integration/E2E tests.
 
+The API binds to loopback and production currently sits behind exactly one Nginx reverse-proxy hop. `HTTP_TRUST_PROXY_HOPS` therefore defaults to `0` in development/test and `1` in production. Express computes `request.ip` from that explicit numeric boundary; application code never parses or trusts raw forwarding headers. Wildcard or callback-based proxy trust is not configurable.
+
+The fixed-window login limiter is a bounded, single-process foundation. `AUTH_LOGIN_RATE_LIMIT_MAX_KEYS` caps tracked client IPs. At capacity it prunes expired windows first and otherwise fails closed with HTTP 429; it never evicts an active key. A multi-process deployment must replace this state with an approved shared store in a separate task.
+
+Cookie parsing validates that a session token has the exact 32-byte base64url shape before hashing or database lookup. The raw token exists in the cookie/request parsing path only long enough to validate and hash it and is never attached to the authenticated request context.
+
 ## Consequences
 
 - No bearer token or session token is stored in browser storage.
@@ -21,3 +27,4 @@ Changing a password revokes every other active session while preserving the curr
 - Deploy configuration must provide explicit trusted frontend origins and production-secure cookies.
 - Non-browser clients must provide an approved Origin for unsafe authenticated operations.
 - Capability authorization is intentionally outside this ADR and this work packet.
+- Proxy hop count must be reviewed whenever the production reverse-proxy topology changes.

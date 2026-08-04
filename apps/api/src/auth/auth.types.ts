@@ -10,7 +10,6 @@ export interface AuthenticatedUser {
 export interface AuthenticatedRequest extends Request {
   auth?: {
     sessionId: string;
-    rawToken: string;
     user: AuthenticatedUser;
   };
 }

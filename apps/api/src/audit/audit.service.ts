@@ -2,7 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { AuditResult, Prisma, PrismaClient } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
-const SENSITIVE_KEY = /password|token|cookie|secret|hash|authorization/i;
+const SENSITIVE_KEY = /password|token|cookie|secret|hash|authorization|credential|bearer|api[_-]?key|database[_-]?url/i;
+const MAX_METADATA_DEPTH = 8;
 
 export interface AuditInput {
   actorUserId?: string;
@@ -15,6 +16,7 @@ export interface AuditInput {
 }
 
 type AuditDb = Pick<PrismaClient, 'auditEvent'> | Prisma.TransactionClient;
+type SafeJson = string | number | boolean | null | SafeJson[] | { [key: string]: SafeJson };
 
 @Injectable()
 export class AuditService {
@@ -22,17 +24,33 @@ export class AuditService {
 
   sanitize(metadata?: Record<string, unknown>): Prisma.InputJsonValue | undefined {
     if (!metadata) return undefined;
-    const output: Record<string, Prisma.InputJsonValue> = {};
-    for (const [key, value] of Object.entries(metadata)) {
-      if (SENSITIVE_KEY.test(key) || value === undefined) continue;
-      if (value === null || ['string', 'number', 'boolean'].includes(typeof value)) {
-        output[key] = value as Prisma.InputJsonValue;
-      } else if (Array.isArray(value)) {
-        output[key] = value
-          .filter((item) => item === null || ['string', 'number', 'boolean'].includes(typeof item)) as Prisma.InputJsonArray;
-      } else if (typeof value === 'object') {
-        output[key] = this.sanitize(value as Record<string, unknown>) ?? {};
+    return this.sanitizeValue(metadata, 0, new WeakSet<object>()) as Prisma.InputJsonValue;
+  }
+
+  private sanitizeValue(
+    value: unknown,
+    depth: number,
+    seen: WeakSet<object>,
+  ): SafeJson | undefined {
+    if (depth > MAX_METADATA_DEPTH || value === undefined) return undefined;
+    if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
+    if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
+    if (typeof value !== 'object') return undefined;
+    if (seen.has(value)) return undefined;
+    seen.add(value);
+    if (Array.isArray(value)) {
+      const output: SafeJson[] = [];
+      for (const item of value) {
+        const sanitized = this.sanitizeValue(item, depth + 1, seen);
+        if (sanitized !== undefined) output.push(sanitized);
       }
+      return output;
+    }
+    const output: Record<string, SafeJson> = {};
+    for (const [key, item] of Object.entries(value)) {
+      if (SENSITIVE_KEY.test(key)) continue;
+      const sanitized = this.sanitizeValue(item, depth + 1, seen);
+      if (sanitized !== undefined) output[key] = sanitized;
     }
     return output;
   }

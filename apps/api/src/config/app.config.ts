@@ -11,6 +11,7 @@ export interface AppConfig {
   webPushEnabled: boolean;
   logLevel: string;
   databaseUrl: string;
+  httpTrustProxyHops: number;
   auth: AuthConfig;
 }
 
@@ -27,6 +28,7 @@ export interface AuthConfig {
   passwordMinLength: number;
   loginRateLimitMax: number;
   loginRateLimitWindowSeconds: number;
+  loginRateLimitMaxKeys: number;
 }
 
 function positiveInteger(name: string, fallback: number): number {
@@ -34,6 +36,15 @@ function positiveInteger(name: string, fallback: number): number {
   const value = raw === undefined ? fallback : Number(raw);
   if (!Number.isInteger(value) || value <= 0) {
     throw new Error(`[Config] ${name} must be a positive integer.`);
+  }
+  return value;
+}
+
+function nonNegativeInteger(name: string, fallback: number): number {
+  const raw = process.env[name];
+  const value = raw === undefined ? fallback : Number(raw);
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(`[Config] ${name} must be a non-negative integer.`);
   }
   return value;
 }
@@ -62,6 +73,10 @@ export const appConfig = registerAs('app', (): AppConfig => {
   }
 
   const nodeEnv = process.env['NODE_ENV'] ?? 'development';
+  const host = process.env['API_HOST'] ?? '127.0.0.1';
+  if (nodeEnv === 'production' && !['127.0.0.1', '::1', 'localhost'].includes(host)) {
+    throw new Error('[Config] API_HOST must bind to loopback in production.');
+  }
   const corsOrigins = (process.env['CORS_ORIGINS'] ?? 'http://127.0.0.1:5173')
     .split(',')
     .map((origin) => origin.trim())
@@ -91,7 +106,7 @@ export const appConfig = registerAs('app', (): AppConfig => {
 
   return {
     nodeEnv,
-    host: process.env['API_HOST'] ?? '127.0.0.1',
+    host,
     port: parseInt(process.env['API_PORT'] ?? '3100', 10),
     corsOrigins,
     aiEnabled: process.env['AI_ENABLED'] === 'true',
@@ -100,6 +115,7 @@ export const appConfig = registerAs('app', (): AppConfig => {
     webPushEnabled: process.env['WEB_PUSH_ENABLED'] === 'true',
     logLevel: process.env['LOG_LEVEL'] ?? 'log',
     databaseUrl,
+    httpTrustProxyHops: nonNegativeInteger('HTTP_TRUST_PROXY_HOPS', nodeEnv === 'production' ? 1 : 0),
     auth: {
       sessionTtlSeconds: positiveInteger('AUTH_SESSION_TTL_SECONDS', 28_800),
       lastSeenUpdateSeconds: positiveInteger('AUTH_LAST_SEEN_UPDATE_SECONDS', 300),
@@ -113,6 +129,7 @@ export const appConfig = registerAs('app', (): AppConfig => {
       passwordMinLength: positiveInteger('AUTH_PASSWORD_MIN_LENGTH', 12),
       loginRateLimitMax: positiveInteger('AUTH_LOGIN_RATE_LIMIT_MAX', 10),
       loginRateLimitWindowSeconds: positiveInteger('AUTH_LOGIN_RATE_LIMIT_WINDOW_SECONDS', 60),
+      loginRateLimitMaxKeys: positiveInteger('AUTH_LOGIN_RATE_LIMIT_MAX_KEYS', 10_000),
     },
   };
 });

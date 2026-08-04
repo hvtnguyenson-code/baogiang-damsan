@@ -1,4 +1,5 @@
 import { CookieOptions, Request } from 'express';
+import { isIP } from 'net';
 import { AppConfig } from '../config/app.config';
 import { RequestMeta } from './auth.types';
 
@@ -20,17 +21,34 @@ export function readCookie(request: Request, name: string): string | undefined {
     const separator = part.indexOf('=');
     if (separator < 0) continue;
     const key = part.slice(0, separator).trim();
-    if (key === name) return decodeURIComponent(part.slice(separator + 1).trim());
+    if (key === name) {
+      try {
+        return decodeURIComponent(part.slice(separator + 1).trim());
+      } catch {
+        return undefined;
+      }
+    }
   }
   return undefined;
 }
 
 export function requestMeta(request: Request): RequestMeta {
-  const forwarded = request.headers['x-forwarded-for'];
-  const forwardedIp = Array.isArray(forwarded) ? forwarded[0] : forwarded?.split(',')[0];
   return {
-    ipAddress: (forwardedIp?.trim() || request.ip)?.slice(0, 45),
+    ipAddress: normalizeClientIp(request.ip),
     userAgent: request.headers['user-agent']?.slice(0, 500),
     requestId: typeof request.headers['x-request-id'] === 'string' ? request.headers['x-request-id'] : undefined,
   };
+}
+
+export function normalizeClientIp(value?: string): string | undefined {
+  if (!value) return undefined;
+  const candidate = value.startsWith('::ffff:') ? value.slice(7) : value;
+  return isIP(candidate) === 0 ? undefined : candidate.slice(0, 45);
+}
+
+export function configureTrustProxy(
+  expressApplication: { set(name: string, value: number): unknown },
+  trustedHops: number,
+): void {
+  expressApplication.set('trust proxy', trustedHops);
 }

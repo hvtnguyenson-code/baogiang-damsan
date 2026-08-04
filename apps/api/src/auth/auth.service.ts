@@ -129,6 +129,13 @@ export class AuthService {
   }
 
   async authenticate(rawToken: string, meta: RequestMeta): Promise<{ sessionId: string; user: AuthenticatedUser }> {
+    if (!this.tokens.isValid(rawToken)) {
+      await this.audit.write({
+        action: 'AUTH_SESSION_REJECTED', entityType: 'AuthSession', requestId: meta.requestId,
+        result: AuditResult.DENIED, metadata: { reasonCode: 'INVALID_FORMAT' },
+      });
+      throw new UnauthorizedException('Phiên đăng nhập không hợp lệ hoặc đã hết hạn.');
+    }
     const tokenHash = this.tokens.hash(rawToken);
     const session = await this.prisma.authSession.findUnique({
       where: { tokenHash }, include: { user: { include: { profile: true } } },

@@ -56,6 +56,30 @@ describe('appConfig (unit)', () => {
     expect(config.port).toBe(3100);
   });
 
+  it('validates trust proxy hops and defaults production to one hop', () => {
+    process.env['DATABASE_URL'] = 'postgresql://test@localhost:5432/test';
+    process.env['NODE_ENV'] = 'production';
+    process.env['AUTH_COOKIE_SECURE'] = 'true';
+    delete process.env['HTTP_TRUST_PROXY_HOPS'];
+    expect(appConfig().httpTrustProxyHops).toBe(1);
+    process.env['HTTP_TRUST_PROXY_HOPS'] = '-1';
+    expect(() => appConfig()).toThrow('must be a non-negative integer');
+  });
+
+  it('requires production API binding to remain on loopback', () => {
+    process.env['DATABASE_URL'] = 'postgresql://test@localhost:5432/test';
+    process.env['NODE_ENV'] = 'production';
+    process.env['AUTH_COOKIE_SECURE'] = 'true';
+    process.env['API_HOST'] = '0.0.0.0';
+    expect(() => appConfig()).toThrow('must bind to loopback in production');
+  });
+
+  it('validates the bounded login rate-limit key capacity', () => {
+    process.env['DATABASE_URL'] = 'postgresql://test@localhost:5432/test';
+    process.env['AUTH_LOGIN_RATE_LIMIT_MAX_KEYS'] = '0';
+    expect(() => appConfig()).toThrow('AUTH_LOGIN_RATE_LIMIT_MAX_KEYS must be a positive integer');
+  });
+
   it('should parse CORS_ORIGINS as an array', () => {
     process.env['DATABASE_URL'] = 'postgresql://test@localhost:5432/test';
     process.env['CORS_ORIGINS'] = 'http://localhost:5173,http://127.0.0.1:5173';

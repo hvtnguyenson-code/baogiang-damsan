@@ -4,18 +4,18 @@ import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { AppConfig } from './config/app.config';
+import { configureTrustProxy } from './auth/auth-http';
 
 async function bootstrap(): Promise<void> {
   const logger = new Logger('Bootstrap');
-
-  const host = process.env['API_HOST'] ?? '127.0.0.1';
-  const port = parseInt(process.env['API_PORT'] ?? '3100', 10);
 
   const app = await NestFactory.create(AppModule, {
     logger: ['error', 'warn', 'log', 'debug', 'verbose'],
     bufferLogs: false,
   });
   const config = app.get<AppConfig>('APP_CONFIG');
+  const { host, port } = config;
+  configureTrustProxy(app.getHttpAdapter().getInstance() as { set(name: string, value: number): unknown }, config.httpTrustProxyHops);
 
   // ---- Global prefix ----
   app.setGlobalPrefix('api');
