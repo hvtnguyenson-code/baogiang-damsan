@@ -21,7 +21,55 @@ Work packet `PHASE-01-UI-DESIGN-SYSTEM-FOUNDATION-001` on `phase/01-ui-design-sy
 
 ## Implementation and verification
 
-This section is completed with final auth behavior, accessibility evidence, screenshot critique/corrections, test counts, CI run, artifact identifier, commits, and boundaries after implementation and final-head CI.
+### Governance, tokens, and application structure
+
+- `.codex/skills/damsan-ui/SKILL.md` is the sole project UI skill and requires the sequence audit → wireframe → token check → implementation → screenshot critique → accessibility check. Root `DESIGN.md` is the higher visual authority.
+- `AGENTS.md`, ADR-009, the UI engineering checklist, and the source/license record make the authority and Antigravity boundary explicit.
+- The semantic foundation uses ink `#15242E`, school blue `#1F4358`, basalt `#A7462F`, mist `#F3F6F7`, paper `#FFFFFF`, and defined line/status colors. It uses restrained 2/4/8 px geometry and no default elevation.
+- Be Vietnam Pro 400/500/600/700 and IBM Plex Mono 400/500 are self-hosted from package assets. The former Google Fonts/Inter dependency was removed.
+- Project-owned native-first primitives cover the real slice only: button, form field, alert, loading, and recovery. No second primitive or icon system was added.
+- The authenticated shell has a semantic skip link, compact identity masthead, route links with `aria-current`, display name without a derived role, and logout. Public auth and diagnostic pages do not inherit the authenticated shell.
+
+### Auth vertical slice behavior
+
+- The centralized typed API client covers login, `/auth/me`, change-password, logout/logout-all, and health; sends `credentials: 'same-origin'`; safely accepts 204/empty bodies; and exposes normalized errors without raw response bodies.
+- `/auth/me` is the source of truth for explicit `checking`, `anonymous`, `firstLoginRequired`, `authenticated`, and `error` states. Login and password change invalidate and refetch it before routing; logout clears query state.
+- Routes are canonical at `/dang-nhap`, `/doi-mat-khau-lan-dau`, `/`, `/trang-thai-he-thong`, and `/khong-co-quyen`, with compatibility redirects for `/login` and `/system-status`.
+- Protected routing preserves only safe internal destinations, prevents protected-content flash and redirect loops, separates 401 from 403, and offers recovery when session verification is indeterminate.
+- Login uses the real cookie API, native form semantics, accessible labels/autocomplete, paste-compatible password fields, retained loading labels, generic credential failure, and network recovery without registration or password-recovery fiction.
+- First-login change matches the existing backend policy exactly: at least 12 characters with lowercase, uppercase, and a digit, plus client confirmation. A successful mutation refreshes `/me`, enters the workspace, and survives reload through the HttpOnly cookie.
+- Workspace and system status contain only factual foundation/health information; no role selector, fake metric, business CRUD, raw SQL, host, stack trace, or credential is rendered.
+
+### Static, accessibility, and interaction evidence
+
+- `npm run test:ui:static` includes a checker self-fixture and scans production web source for forbidden transition-all, gradient, backdrop/glass, h-screen, route tab roles, browser auth persistence, Inter configuration, and missing UI authority files.
+- Web unit suite: **19/19 PASS** across API success/error/empty handling, credentials, 401/403 separation, auth bootstrap/recovery, login, first-login policy/change, safe redirects, logout, semantic navigation, no role selector, and health states.
+- API unit suite: **64/64 PASS**. Existing API integration, schema static, secret scan, migration fresh/legacy, lint, typecheck, and builds remained green in isolated CI.
+- Playwright: **3/3 PASS**. The API auth flow and UI auth flow use separate accounts. UI coverage includes anonymous redirect, generic invalid login, valid login, first-login routing, policy/confirmation errors, HTTP 200 password change, workspace, cookie reload, logout/post-logout protection, public health, keyboard focus order, and axe checks.
+- Axe found no critical or serious WCAG-tagged violations on login, first-password-change, or workspace. Keyboard evidence covers skip link → support link → username and the complete native form flow; focus remains visibly rendered.
+
+### CI fixture isolation
+
+- `e2e-api-admin` belongs only to `auth-api.spec.ts`; `e2e-ui-admin` belongs only to `ui-foundation.spec.ts`.
+- Both accounts are created through the existing bootstrap CLI using fake workflow-only values in the isolated CI PostgreSQL service. No official database or production fixture endpoint is involved.
+- Vite preview proxies `/api` only to the CI-local API process so browser requests retain same-origin cookie behavior.
+
+### Screenshot critique and corrections
+
+Green implementation run: [GitHub Actions 30911912642](https://github.com/hvtnguyenson-code/baogiang-damsan/actions/runs/30911912642), commit `4517c169a7c5434aa702d78d2d7370a8a40f6200`. Artifact `ui-foundation-screenshots`, ID `8893513551`, contains nine deterministic screenshots: login at 375×812 and 1366×768; first password change at 375×812 and 1366×768; workspace at 375×812, 1366×768, and 1920×1080; and ready/error-safe system status at 1366×768.
+
+- Auth screens remain asymmetric and ledger-based on laptop, collapse to one usable column on mobile, and keep the primary action visible at 1366×768. They do not read as a centered marketing hero, card grid, or generic SaaS dashboard.
+- Vietnamese glyphs and line height render correctly. The 375 px views show no horizontal overflow; navigation and controls retain usable touch dimensions. The 1920 px workspace deliberately keeps a bounded work column rather than stretching prose and ledger rows indefinitely.
+- The basalt rail identifies auth context, workspace context, and diagnostic context; it is structural rather than scattered decoration.
+- Status ready/error states carry text and symbol cues, reveal no internal detail, and keep retry visible. The screenshot helper now restores scroll position to the top after reload, fixing the first error-state artifact that began mid-page.
+- The first CI failure (`30875884376`) exposed an incorrect test assumption about native Tab order; the test now verifies the real skip/support/form sequence. The second (`30876263328`) exposed a fresh-cache redirect after password mutation; auth state now invalidates and refetches `/me`, and E2E verifies the mutation response before navigation. Run `30911912642` confirms both corrections.
+
+### Commits and CI
+
+- `e1300f9` — UI authority, design system, auth vertical slice, tests, CI, and initial report.
+- `0868714` — keyboard-order and deterministic screenshot correction.
+- `4517c16` — forced auth refresh after password change plus response-level E2E evidence.
+- Run `30911912642`: all schema/migration/security/static UI/lint/typecheck/unit/integration/build/Playwright/axe/screenshot steps PASS. The documentation-only closure commit is reverified by branch CI and its final run is reported in the task handoff.
 
 ## Boundaries
 
