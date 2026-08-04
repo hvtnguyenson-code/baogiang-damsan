@@ -23,6 +23,12 @@ CÔNG CỤ THỰC THI: ANTIGRAVITY IDE
 - Do not reset, clean, stash, rebase, amend, squash, or force-push.
 - Do not merge, deploy, or run a production migration without a separate explicit authorization.
 
+## UI authority
+
+- Before every UI task, read `.codex/skills/damsan-ui/SKILL.md` and root `DESIGN.md` completely.
+- `DESIGN.md` is the project visual authority. Do not choose a different theme, token palette, font, or primitive system without an explicitly approved design decision.
+- Antigravity IDE may implement only narrow UI work inside the approved system; it must not redefine the system or introduce another primitive library.
+
 ## Required workflow
 
 1. Verify repository path, branch, `git status -sb`, remote divergence, and untracked files.
