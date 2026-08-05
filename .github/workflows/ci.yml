@@ -115,6 +115,9 @@ jobs:
       - name: Auth secret scan
         run: npm run test:secrets
 
+      - name: Deployment static verification
+        run: npm run test:deploy:static
+
       - name: UI foundation static verification
         run: npm run test:ui:static
 

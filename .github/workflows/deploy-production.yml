@@ -1,0 +1,163 @@
+name: Deploy production
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: Full 40-character application commit reachable from origin/main
+        required: true
+        type: string
+      confirmation:
+        description: Type DEPLOY-BAOGIANG-PRODUCTION to continue
+        required: true
+        type: string
+      run_migrations:
+        description: Run reviewed Prisma migrations after a verified backup
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: production-deployment
+  cancel-in-progress: false
+
+env:
+  TARGET_SHA: ${{ inputs.commit_sha }}
+
+jobs:
+  deploy:
+    name: Controlled production deployment
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    steps:
+      - name: Checkout control plane
+        uses: actions/checkout@v4
+        with:
+          path: control-plane
+          fetch-depth: 0
+
+      - name: Validate confirmation, target and environment contract
+        shell: bash
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+          PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+          PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT }}
+          PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
+          PROD_SSH_PRIVATE_KEY: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
+          PROD_SSH_HOST_KEY: ${{ secrets.PROD_SSH_HOST_KEY }}
+          PROD_BAOGIANG_ROOT: ${{ vars.PROD_BAOGIANG_ROOT }}
+          PROD_SERVICE_KIND: ${{ vars.PROD_SERVICE_KIND }}
+          PROD_SERVICE_NAME: ${{ vars.PROD_SERVICE_NAME }}
+          PROD_ENV_FILE: ${{ vars.PROD_ENV_FILE }}
+          PROD_NGINX_EXE: ${{ vars.PROD_NGINX_EXE }}
+          PROD_NGINX_CONFIG: ${{ vars.PROD_NGINX_CONFIG }}
+          PROD_PG_DUMP_EXE: ${{ vars.PROD_PG_DUMP_EXE }}
+          PROD_BASE_URL: ${{ vars.PROD_BASE_URL }}
+        run: |
+          set -euo pipefail
+          [[ "$CONFIRMATION" == "DEPLOY-BAOGIANG-PRODUCTION" ]]
+          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git -C control-plane fetch --no-tags origin main "$TARGET_SHA"
+          git -C control-plane cat-file -e "$TARGET_SHA^{commit}"
+          git -C control-plane merge-base --is-ancestor "$TARGET_SHA" origin/main
+          for value in PROD_SSH_HOST PROD_SSH_PORT PROD_SSH_USER PROD_SSH_PRIVATE_KEY PROD_SSH_HOST_KEY PROD_BAOGIANG_ROOT PROD_SERVICE_KIND PROD_SERVICE_NAME PROD_ENV_FILE PROD_NGINX_EXE PROD_NGINX_CONFIG PROD_PG_DUMP_EXE PROD_BASE_URL; do
+            [[ -n "${!value}" ]] || { echo "Missing environment contract: $value" >&2; exit 1; }
+          done
+          [[ "$PROD_SERVICE_KIND" == "scheduled-task" || "$PROD_SERVICE_KIND" == "service" ]]
+          [[ "$PROD_BAOGIANG_ROOT" =~ ^[A-Za-z]:\\ ]] && [[ "$PROD_ENV_FILE" =~ ^[A-Za-z]:\\ ]] && [[ "$PROD_NGINX_EXE" =~ ^[A-Za-z]:\\ ]] && [[ "$PROD_NGINX_CONFIG" =~ ^[A-Za-z]:\\ ]] && [[ "$PROD_PG_DUMP_EXE" =~ ^[A-Za-z]:\\ ]]
+          [[ "$PROD_BASE_URL" == "https://baogiang.dtnt-damsan.edu.vn" ]]
+          [[ "${{ inputs.run_migrations }}" == "true" ]] || { echo "First deploy requires run_migrations=true." >&2; exit 1; }
+          echo "Target SHA: $TARGET_SHA"
+
+      - name: Verify exact target CI success
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          conclusion="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${TARGET_SHA}&per_page=100" --jq '[.workflow_runs[] | select(.name == "CI" and .head_sha == "'"$TARGET_SHA"'") | select(.status == "completed")] | sort_by(.updated_at) | last | .conclusion')"
+          [[ "$conclusion" == "success" ]] || { echo "Exact target CI is not proven successful." >&2; exit 1; }
+
+      - name: Checkout exact application target
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit_sha }}
+          path: target-source
+          fetch-depth: 1
+
+      - name: Package exact target and calculate checksum
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar --exclude-vcs --exclude='*/.env' --exclude='*/node_modules' --exclude='*/dist' --exclude='*/coverage' -czf release.tar.gz -C target-source .
+          sha256sum release.tar.gz | tee release.sha256
+          echo "sha256=$(cut -d' ' -f1 release.sha256)" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare pinned SSH files
+        id: ssh
+        shell: bash
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
+          SSH_HOST_KEY: ${{ secrets.PROD_SSH_HOST_KEY }}
+        run: |
+          set -euo pipefail
+          keyfile="$RUNNER_TEMP/baogiang-deploy-key"
+          knownfile="$RUNNER_TEMP/baogiang-known-hosts"
+          umask 077
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$keyfile"
+          printf '%s\n' "$SSH_HOST_KEY" > "$knownfile"
+          chmod 600 "$keyfile" "$knownfile"
+          echo "keyfile=$keyfile" >> "$GITHUB_OUTPUT"
+          echo "knownfile=$knownfile" >> "$GITHUB_OUTPUT"
+
+      - name: Upload exact package and versioned deploy scripts
+        shell: bash
+        env:
+          SSH_KEY: ${{ steps.ssh.outputs.keyfile }}
+          KNOWN_HOSTS: ${{ steps.ssh.outputs.knownfile }}
+          PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+          PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT }}
+          PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
+          PROD_BAOGIANG_ROOT: ${{ vars.PROD_BAOGIANG_ROOT }}
+        run: |
+          set -euo pipefail
+          remote="${PROD_SSH_USER}@${PROD_SSH_HOST}"
+          destination="${PROD_BAOGIANG_ROOT}\\incoming\\${TARGET_SHA}"
+          ssh -i "$SSH_KEY" -p "$PROD_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "$remote" "New-Item -ItemType Directory -Path '$destination' -Force | Out-Null"
+          scp -i "$SSH_KEY" -P "$PROD_SSH_PORT" -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" release.tar.gz release.sha256 "$remote:$destination\\"
+          scp -i "$SSH_KEY" -P "$PROD_SSH_PORT" -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" control-plane/scripts/deploy/windows/*.ps1 "$remote:$destination\\"
+
+      - name: Execute versioned fail-closed deploy script
+        shell: bash
+        env:
+          SSH_KEY: ${{ steps.ssh.outputs.keyfile }}
+          KNOWN_HOSTS: ${{ steps.ssh.outputs.knownfile }}
+          PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+          PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT }}
+          PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
+          PROD_BAOGIANG_ROOT: ${{ vars.PROD_BAOGIANG_ROOT }}
+          PROD_SERVICE_KIND: ${{ vars.PROD_SERVICE_KIND }}
+          PROD_SERVICE_NAME: ${{ vars.PROD_SERVICE_NAME }}
+          PROD_ENV_FILE: ${{ vars.PROD_ENV_FILE }}
+          PROD_NGINX_EXE: ${{ vars.PROD_NGINX_EXE }}
+          PROD_NGINX_CONFIG: ${{ vars.PROD_NGINX_CONFIG }}
+          PROD_PG_DUMP_EXE: ${{ vars.PROD_PG_DUMP_EXE }}
+          PROD_BASE_URL: ${{ vars.PROD_BASE_URL }}
+        run: |
+          set -euo pipefail
+          remote="${PROD_SSH_USER}@${PROD_SSH_HOST}"
+          destination="${PROD_BAOGIANG_ROOT}\\incoming\\${TARGET_SHA}"
+          command="& '$destination\\invoke-production-deploy.ps1' -ReleaseSha '$TARGET_SHA' -Root '$PROD_BAOGIANG_ROOT' -SourceArchive '$destination\\release.tar.gz' -ExpectedSha256 '${{ steps.package.outputs.sha256 }}' -NpmExe 'npm' -NodeExe 'node' -NpxExe 'npx' -PgDumpExe '$PROD_PG_DUMP_EXE' -EnvFile '$PROD_ENV_FILE' -NginxExe '$PROD_NGINX_EXE' -NginxConfig '$PROD_NGINX_CONFIG' -ExpectedBaseUrl '$PROD_BASE_URL' -ServiceKind '$PROD_SERVICE_KIND' -ServiceName '$PROD_SERVICE_NAME' -ExpectedEntryPoint '$PROD_BAOGIANG_ROOT\\current\\apps\\api\\dist\\apps\\api\\src\\main.js'"
+          if [[ "${{ inputs.run_migrations }}" == "true" ]]; then command="$command -RunMigrations -ProductionMigrationApproved"; fi
+          ssh -i "$SSH_KEY" -p "$PROD_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "$remote" "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command \"$command\""
+
+      - name: Remove temporary SSH files
+        if: always()
+        shell: bash
+        run: rm -f "${{ steps.ssh.outputs.keyfile }}" "${{ steps.ssh.outputs.knownfile }}"
