@@ -1,15 +1,71 @@
-# Production Environment Configuration
+# Production Environment Configuration Contract
 
-This is a contract for the `production` GitHub Environment. It contains no production values. Do not paste secrets, connection strings, private keys, or database dumps into this repository.
+This file is a value-free contract. Configure it only after the read-only VPS inventory has been reviewed. Never commit a secret, connection string, private key, database dump, or server-side environment file.
 
-## Required secrets
+## GitHub Environment
 
-`PROD_SSH_HOST`, `PROD_SSH_PORT`, `PROD_SSH_USER`, `PROD_SSH_PRIVATE_KEY`, and `PROD_SSH_HOST_KEY` are required. `PROD_SSH_HOST_KEY` must be a pinned known-hosts entry obtained through the approved inventory process. `StrictHostKeyChecking=yes` is mandatory.
+The workflow uses the protected GitHub Environment `production`. Required secrets are:
 
-## Required variables
+- `PROD_SSH_HOST`
+- `PROD_SSH_PORT`
+- `PROD_SSH_USER`
+- `PROD_SSH_PRIVATE_KEY`
+- `PROD_SSH_HOST_KEY`
 
-`PROD_BAOGIANG_ROOT`, `PROD_SERVICE_KIND` (`scheduled-task` or `service`), `PROD_SERVICE_NAME`, `PROD_ENV_FILE`, `PROD_NGINX_EXE`, `PROD_NGINX_CONFIG`, `PROD_PG_DUMP_EXE`, and `PROD_BASE_URL` are required. The workflow accepts only the exact official base URL and validates Windows absolute paths. Service/task names and paths must match the reviewed read-only inventory.
+`PROD_SSH_HOST_KEY` is exactly one non-wildcard known-hosts entry for the configured host and port, with an approved key type and valid base64 payload. Hashed hosts, `@cert-authority`, wildcard patterns, multiline values and mismatched ports are rejected.
 
-The server-side environment file is the only location for `DATABASE_URL` and runtime secrets. It must have an ACL granting access only to the approved Báo giảng runtime identity and deployment operator. It must contain `NODE_ENV=production`, loopback API binding on port `3100`, `HTTP_TRUST_PROXY_HOPS=1`, secure cookies, the exact domain CORS origin, and AI/Web Push flags set to `false`.
+Required non-secret variables, all copied from the reviewed inventory, are:
 
-No GitHub secret or variable may contain a database dump, production password in a loggable command, or private key other than the dedicated SSH key secret. Configuration is incomplete until the inventory report identifies every value and confirms isolation from DamSanV5 and boarding-management.
+- `PROD_BAOGIANG_ROOT`
+- `PROD_SERVICE_KIND` — `scheduled-task` or `service`
+- `PROD_SERVICE_NAME`
+- `PROD_ENV_FILE`
+- `PROD_STARTUP_WRAPPER`
+- `PROD_API_ENTRYPOINT`
+- `PROD_NODE_EXE`
+- `PROD_NPM_EXE`
+- `PROD_NPX_EXE`
+- `PROD_PSQL_EXE`
+- `PROD_PG_DUMP_EXE`
+- `PROD_PG_RESTORE_EXE`
+- `PROD_NGINX_EXE`
+- `PROD_NGINX_CONFIG`
+- `PROD_BASE_URL` — exactly `https://baogiang.dtnt-damsan.edu.vn`
+
+Every executable and file path must be an existing Windows absolute leaf path on the VPS. Bare `node`, `npm`, `npx`, `psql`, `pg_dump`, `pg_restore`, or `nginx` values are invalid. The workflow validates safe host/user/service-name syntax, numeric SSH port, dedicated root paths, and exact domain.
+
+## Dedicated identity marker
+
+Bootstrap must create `<PROD_BAOGIANG_ROOT>\shared\deployment-identity.json` before any workflow mutation. It contains no secret and must record at least:
+
+```json
+{
+  "systemId": "baogiang-damsan",
+  "canonicalRoot": "<reviewed absolute root>",
+  "domain": "https://baogiang.dtnt-damsan.edu.vn",
+  "apiPort": 3100,
+  "nodeExe": "<reviewed absolute node.exe>",
+  "envFile": "<reviewed server-side env path>",
+  "startupWrapper": "<reviewed start-baogiang-api.ps1 path>",
+  "entryPoint": "<root>\current\apps\api\dist\apps\api\src\main.js",
+  "nginxExe": "<reviewed nginx.exe path>",
+  "nginxConfig": "<reviewed nginx config path>",
+  "service": {
+    "kind": "scheduled-task",
+    "name": "BaoGiangBackend",
+    "taskPath": "<exact task path>",
+    "account": "<exact account>",
+    "execute": "<exact PowerShell executable>",
+    "arguments": "<exact wrapper arguments>",
+    "workingDirectory": "<exact working directory>"
+  }
+}
+```
+
+For a Windows Service, replace the task fields with the exact reviewed service-host executable, `pathName`, and `startName`. A PowerShell script alone is not a Windows Service. The workflow and every mutating script refuse a missing marker, root mismatch, path mismatch, service/task mismatch, port conflict, protected root, or missing pre-created directory.
+
+## Server-side environment
+
+`PROD_ENV_FILE` is readable only by the approved runtime/deployment identities. It must contain the production values required by `apps/api/.env.example`, including auth/session/lockout/rate-limit/cookie/log settings, but never bootstrap-admin or test-database variables. The startup wrapper rejects duplicate/unknown assignments and validates `NODE_ENV=production`, loopback API port `3100`, `HTTP_TRUST_PROXY_HOPS=1`, exact CORS, `AUTH_COOKIE_SECURE=true`, non-empty `DATABASE_URL`, and AI/Web Push flags `false`.
+
+The workflow never receives `DATABASE_URL`. Backup/migration scripts parse it in memory and pass non-secret PostgreSQL fields as arguments with the password only in short-lived `PGPASSWORD` process environment, cleared in `finally` blocks. Reports contain no URL or credential.

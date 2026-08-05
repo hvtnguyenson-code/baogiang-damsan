@@ -1,0 +1,21 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+
+const file = path.join(__dirname, '..', '..', '.github', 'workflows', 'deploy-production.yml');
+const text = fs.readFileSync(file, 'utf8');
+const lines = text.split(/\r?\n/).filter((line) => !/^\s*#/.test(line));
+const topKeys = lines.filter((line) => /^[A-Za-z0-9_-]+:\s*$/.test(line)).map((line) => line.trim().slice(0, -1));
+assert.deepEqual(topKeys.filter((key) => key === 'on'), ['on']);
+assert.ok(topKeys.includes('permissions') && topKeys.includes('concurrency') && topKeys.includes('jobs'));
+assert.match(text, /^  workflow_dispatch:\s*$/m); assert.doesNotMatch(text, /^  (push|pull_request):\s*$/m);
+assert.match(text, /^      commit_sha:\s*$/m); assert.match(text, /^      confirmation:\s*$/m); assert.match(text, /^      run_migrations:\s*$/m);
+assert.match(text, /^  deploy:\s*$/m); assert.match(text, /^    environment: production$/m); assert.match(text, /^    timeout-minutes: 30$/m);
+assert.match(text, /^  cancel-in-progress: false$/m); assert.match(text, /contents: read/); assert.match(text, /actions: read/);
+for (const required of ['PROD_NODE_EXE','PROD_NPM_EXE','PROD_NPX_EXE','PROD_PSQL_EXE','PROD_PG_DUMP_EXE','PROD_PG_RESTORE_EXE','PROD_STARTUP_WRAPPER','PROD_API_ENTRYPOINT']) assert.match(text, new RegExp(required));
+assert.match(text, /StrictHostKeyChecking=yes/g); assert.doesNotMatch(text, /StrictHostKeyChecking=no/i); assert.doesNotMatch(text, /:.*\\\\incoming/);
+assert.match(text, /powershell\.exe -NoProfile -NonInteractive -Command/); assert.match(text, /ParameterFile/);
+const stepBlocks = text.split(/^      - name:/m).slice(1);
+for (const block of stepBlocks) { const envCount = (block.match(/^        env:\s*$/gm) || []).length; assert.ok(envCount <= 1, 'a workflow step has duplicate env mappings'); }
+assert.match(text, /if: always\(\)/); assert.match(text, /deploy-report-\$\{\{ inputs\.commit_sha \}\}\.json/);
+console.log('[workflow-contract] PASS (parsed trigger/job/permissions/concurrency/inputs/environment/transfer/report structure)');

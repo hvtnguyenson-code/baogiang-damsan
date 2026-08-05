@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - 'phase/**'
+      - 'ops/**'
   pull_request:
     branches:
       - main
@@ -117,6 +118,15 @@ jobs:
 
       - name: Deployment static verification
         run: npm run test:deploy:static
+
+      - name: Deployment behavioral fixtures
+        run: npm run test:deploy:behavior
+
+      - name: Workflow contract verification
+        run: npm run test:workflow:contract
+
+      - name: PowerShell parser verification
+        run: npm run test:deploy:powershell
 
       - name: UI foundation static verification
         run: npm run test:ui:static

@@ -1,46 +1,69 @@
 [CmdletBinding()]
 param(
-  [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{40}$')][string]$ReleaseSha,
-  [Parameter(Mandatory = $true)][ValidateScript({ [IO.Path]::IsPathRooted($_) })][string]$Root,
-  [Parameter(Mandatory = $true)][ValidateScript({ Test-Path -LiteralPath $_ -PathType Leaf })][string]$SourceArchive,
-  [Parameter(Mandatory = $true)][ValidatePattern('^[0-9A-Fa-f]{64}$')][string]$ExpectedSha256,
-  [Parameter(Mandatory = $true)][ValidateScript({ Test-Path -LiteralPath $_ -PathType Leaf })][string]$NpmExe,
-  [Parameter(Mandatory = $true)][ValidateScript({ Test-Path -LiteralPath $_ -PathType Leaf })][string]$NodeExe,
-  [Parameter(Mandatory = $true)][ValidateScript({ Test-Path -LiteralPath $_ -PathType Leaf })][string]$NpxExe,
-  [Parameter(Mandatory = $true)][ValidateScript({ Test-Path -LiteralPath $_ -PathType Leaf })][string]$PgDumpExe,
-  [Parameter(Mandatory = $true)][ValidateScript({ Test-Path -LiteralPath $_ -PathType Leaf })][string]$EnvFile,
-  [Parameter(Mandatory = $true)][ValidateScript({ Test-Path -LiteralPath $_ -PathType Leaf })][string]$NginxExe,
-  [Parameter(Mandatory = $true)][ValidateScript({ Test-Path -LiteralPath $_ -PathType Leaf })][string]$NginxConfig,
-  [Parameter(Mandatory = $true)][ValidatePattern('^https://baogiang\.dtnt-damsan\.edu\.vn$')][string]$ExpectedBaseUrl,
-  [Parameter(Mandatory = $true)][ValidateSet('scheduled-task','service')][string]$ServiceKind,
-  [Parameter(Mandatory = $true)][ValidateNotNullOrEmpty()][string]$ServiceName,
-  [Parameter(Mandatory = $true)][ValidateScript({ [IO.Path]::IsPathRooted($_) })][string]$ExpectedEntryPoint,
-  [switch]$RunMigrations,
-  [switch]$ProductionMigrationApproved
+  [Parameter(Mandatory = $true)][ValidateScript({ Test-Path -LiteralPath $_ -PathType Leaf })][string]$ParameterFile
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$switched = $false; $migrationApplied = $false
+. (Join-Path $PSScriptRoot 'deployment-common.ps1')
+$propertyNames = @('ReleaseSha','Root','SourceArchiveName','ExpectedSha256','NodeExe','NpmExe','NpxExe','PsqlExe','PgDumpExe','PgRestoreExe','EnvFile','StartupWrapper','NginxExe','NginxConfig','ExpectedBaseUrl','ServiceKind','ServiceName','ExpectedEntryPoint','MigrationRequested','ProductionMigrationApproved','RollbackCompatibilityApproved','ReportFileName')
+$p = Get-Content -LiteralPath $ParameterFile -Raw -Encoding UTF8 | ConvertFrom-Json
+foreach ($property in $p.PSObject.Properties.Name) { if ($propertyNames -notcontains $property) { throw 'Deployment parameter JSON contains an unknown property.' } }
+foreach ($property in $propertyNames) { if (-not $p.PSObject.Properties.Name.Contains($property)) { throw "Deployment parameter JSON is missing: $property" } }
+if ($p.ReleaseSha -notmatch '^[0-9a-f]{40}$' -or $p.ExpectedSha256 -notmatch '^[0-9A-Fa-f]{64}$' -or $p.SourceArchiveName -notmatch "^release-$($p.ReleaseSha)\.zip$" -or $p.ReportFileName -notmatch "^deploy-report-$($p.ReleaseSha)\.json$") { throw 'Deployment parameter JSON has an unsafe release/checksum/report identity.' }
+if ($p.ServiceKind -notin @('scheduled-task','service') -or $p.ExpectedBaseUrl -ne 'https://baogiang.dtnt-damsan.edu.vn') { throw 'Deployment parameter JSON has an unsafe service/domain contract.' }
+$canonicalRoot = Assert-DedicatedRoot $p.Root
+$identity = Read-DeploymentIdentity -Root $canonicalRoot -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint
+Assert-VerifiedRuntimeIdentity -Marker $identity -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName | Out-Null
+if ($identity.nginxExe -and (Normalize-ComparablePath $identity.nginxExe) -ne (Normalize-ComparablePath $p.NginxExe)) { throw 'Nginx executable does not match the deployment marker.' }
+if ($identity.nginxConfig -and (Normalize-ComparablePath $identity.nginxConfig) -ne (Normalize-ComparablePath $p.NginxConfig)) { throw 'Nginx config does not match the deployment marker.' }
+Assert-ExecutableContract @{ NodeExe = $p.NodeExe; NpmExe = $p.NpmExe; NpxExe = $p.NpxExe; PsqlExe = $p.PsqlExe; PgDumpExe = $p.PgDumpExe; PgRestoreExe = $p.PgRestoreExe; NginxExe = $p.NginxExe }
+$home = [Environment]::GetFolderPath('UserProfile')
+$source = Join-Path $home $p.SourceArchiveName
+if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw 'Exact release archive is missing from the remote transfer home.' }
+$incoming = Join-Path $canonicalRoot "incoming\$($p.SourceArchiveName)"
+if (Test-Path -LiteralPath $incoming) { throw 'Incoming release archive already exists; operator must inspect it.' }
+$reportHome = Join-Path $home $p.ReportFileName
+$reportLogs = Join-Path $canonicalRoot "logs\$($p.ReportFileName)"
+$report = [ordered]@{ schemaVersion = 1; generatedAtUtc = [DateTime]::UtcNow.ToString('o'); releaseSha = $p.ReleaseSha; previousRelease = $null; backup = $null; migration = [ordered]@{ state = 'notStarted' }; switch = $null; restart = $null; health = $null; rollback = [ordered]@{ state = 'notNeeded' }; errorCategory = $null }
+$migrationAttempted = $false; $switched = $false; $restartAttempted = $false
 try {
-  $allowed = @('NODE_ENV','API_HOST','API_PORT','DATABASE_URL','CORS_ORIGINS','HTTP_TRUST_PROXY_HOPS','AUTH_COOKIE_SECURE','AI_ENABLED','AI_ACTIVE_MODE_ENABLED','AI_PASSIVE_MODE_ENABLED','WEB_PUSH_ENABLED')
-  foreach ($line in Get-Content -LiteralPath $EnvFile) {
-    if ($line -match '^\s*#' -or [string]::IsNullOrWhiteSpace($line)) { continue }
-    if ($line -notmatch '^\s*([A-Za-z_][A-Za-z0-9_]*)=(.*)$') { throw 'Production environment file contains an invalid line.' }
-    $name = $Matches[1]; $value = $Matches[2]
-    if ($allowed -notcontains $name) { continue }
-    [Environment]::SetEnvironmentVariable($name, $value, 'Process')
+  Import-ServerEnvironment -EnvFile $p.EnvFile -ExpectedBaseUrl $p.ExpectedBaseUrl | Out-Null
+  Invoke-NativeChecked $p.NginxExe @('-t','-c',$p.NginxConfig) 'nginx configuration test' | Out-Null
+  if (Test-Path -LiteralPath (Join-Path $canonicalRoot 'current')) { $report.previousRelease = Split-Path (Get-ReparseTarget (Join-Path $canonicalRoot 'current')) -Leaf }
+  Move-Item -LiteralPath $source -Destination $incoming
+  & (Join-Path $PSScriptRoot 'install-release.ps1') -ReleaseSha $p.ReleaseSha -Root $canonicalRoot -SourceArchive $incoming -ExpectedSha256 $p.ExpectedSha256 -NpmExe $p.NpmExe -NpxExe $p.NpxExe -NodeExe $p.NodeExe -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName
+  $backupJson = & (Join-Path $PSScriptRoot 'backup-database.ps1') -PgDumpExe $p.PgDumpExe -PgRestoreExe $p.PgRestoreExe -Root $canonicalRoot -BackupRoot (Join-Path $canonicalRoot 'backups') -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint | Select-Object -Last 1
+  $report.backup = $backupJson | ConvertFrom-Json
+  if ($p.MigrationRequested) {
+    $migrationAttempted = $true; $report.migration.state = 'attemptedUnknown'
+    $migrationJson = & (Join-Path $PSScriptRoot 'run-migrations.ps1') -ReleasePath (Join-Path $canonicalRoot "releases\$($p.ReleaseSha)") -NpxExe $p.NpxExe -PsqlExe $p.PsqlExe -Root $canonicalRoot -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl -AllowProductionMigration:$p.ProductionMigrationApproved -BackupVerified | Select-Object -Last 1
+    $report.migration = $migrationJson | ConvertFrom-Json
   }
-  if ($env:NODE_ENV -ne 'production' -or $env:API_HOST -notin @('127.0.0.1','::1','localhost') -or $env:API_PORT -ne '3100' -or $env:HTTP_TRUST_PROXY_HOPS -ne '1' -or $env:AUTH_COOKIE_SECURE -ne 'true' -or $env:AI_ENABLED -ne 'false' -or $env:AI_ACTIVE_MODE_ENABLED -ne 'false' -or $env:AI_PASSIVE_MODE_ENABLED -ne 'false' -or $env:WEB_PUSH_ENABLED -ne 'false' -or [string]::IsNullOrWhiteSpace($env:DATABASE_URL) -or $env:CORS_ORIGINS -notlike "*$ExpectedBaseUrl*") { throw 'Production environment validation failed.' }
-  & $NginxExe -t -c $NginxConfig 2>$null
-  if ($LASTEXITCODE -ne 0) { throw 'Nginx configuration test failed; no reload was attempted.' }
-  & (Join-Path $PSScriptRoot 'install-release.ps1') -ReleaseSha $ReleaseSha -Root $Root -SourceArchive $SourceArchive -ExpectedSha256 $ExpectedSha256 -NpmExe $NpmExe -NodeExe $NodeExe
-  $backup = & (Join-Path $PSScriptRoot 'backup-database.ps1') -PgDumpExe $PgDumpExe -BackupRoot (Join-Path $Root 'backups') | ConvertFrom-Json
-  if ([int64]$backup.bytes -le 0) { throw 'Backup verification failed.' }
-  if ($RunMigrations) { & (Join-Path $PSScriptRoot 'run-migrations.ps1') -ReleasePath (Join-Path $Root "releases\$ReleaseSha") -NpxExe $NpxExe -AllowProductionMigration:$ProductionMigrationApproved -BackupVerified; $migrationApplied = $true }
-  & (Join-Path $PSScriptRoot 'switch-current-release.ps1') -ReleaseSha $ReleaseSha -Root $Root; $switched = $true
-  & (Join-Path $PSScriptRoot 'restart-baogiang-api.ps1') -ServiceKind $ServiceKind -ServiceName $ServiceName -ExpectedEntryPoint $ExpectedEntryPoint -Root $Root
-  & (Join-Path $PSScriptRoot 'test-production-health.ps1')
+  $switchJson = & (Join-Path $PSScriptRoot 'switch-current-release.ps1') -ReleaseSha $p.ReleaseSha -Root $canonicalRoot -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint | Select-Object -Last 1
+  $report.switch = $switchJson | ConvertFrom-Json; $switched = $true
+  $restartAttempted = $true
+  $restartJson = & (Join-Path $PSScriptRoot 'restart-baogiang-api.ps1') -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -NodeExe $p.NodeExe -Root $canonicalRoot -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl | Select-Object -Last 1
+  $report.restart = $restartJson | ConvertFrom-Json
+  $healthJson = & (Join-Path $PSScriptRoot 'test-production-health.ps1') -BaseUrl $p.ExpectedBaseUrl -ExpectedApiPort 3100 | Select-Object -Last 1
+  $report.health = $healthJson | ConvertFrom-Json
+  $report.migration.state = if ($p.MigrationRequested) { 'completed' } else { 'notRequested' }
+  Write-RedactedReport -Path $reportLogs -Data $report
+  Copy-Item -LiteralPath $reportLogs -Destination $reportHome
+  Write-Output ($report | ConvertTo-Json -Depth 12)
 } catch {
-  if ($switched) { & (Join-Path $PSScriptRoot 'rollback-release.ps1') -Root $Root -ServiceKind $ServiceKind -ServiceName $ServiceName -ExpectedEntryPoint $ExpectedEntryPoint -MigrationApplied:$migrationApplied }
-  throw
+  $original = $_
+  $report.errorCategory = Get-SafeErrorCategory $original
+  if ($migrationAttempted) { $report.migration.state = 'attemptedUnknown' }
+  if ($switched -or $restartAttempted) {
+    if (-not $report.previousRelease) { $report.rollback = [ordered]@{ state = 'notAvailableFirstDeploy' } }
+    elseif ($migrationAttempted -and -not $p.RollbackCompatibilityApproved) { $report.rollback = [ordered]@{ state = 'stoppedCompatibilityApprovalRequired' } }
+    else {
+      try {
+        $rollbackJson = & (Join-Path $PSScriptRoot 'rollback-release.ps1') -Root $canonicalRoot -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -NodeExe $p.NodeExe -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl -CompatibilityApproved:$p.RollbackCompatibilityApproved -MigrationAttempted:$migrationAttempted | Select-Object -Last 1
+        $report.rollback = $rollbackJson | ConvertFrom-Json
+      } catch { $report.rollback = [ordered]@{ state = 'failed'; errorCategory = Get-SafeErrorCategory $_ } }
+    }
+  }
+  try { Write-RedactedReport -Path $reportLogs -Data $report; Copy-Item -LiteralPath $reportLogs -Destination $reportHome -Force } catch { }
+  throw $original
 }
