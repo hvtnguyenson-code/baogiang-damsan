@@ -8,6 +8,56 @@ import { ApiError } from '../lib/api-client';
 import { LogoutNotice } from '../auth/logout-notice';
 
 const PASSWORD_POLICY = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{12,}$/;
+const CURRENT_REQUIRED_ERROR = 'Nhập mật khẩu hiện tại.';
+const POLICY_ERROR = 'Mật khẩu mới cần ít nhất 12 ký tự, có chữ thường, chữ hoa và chữ số.';
+const SAME_PASSWORD_ERROR = 'Mật khẩu mới phải khác mật khẩu hiện tại.';
+const CONFIRM_REQUIRED_ERROR = 'Nhập xác nhận mật khẩu mới.';
+const CONFIRM_MISMATCH_ERROR = 'Mật khẩu xác nhận chưa khớp.';
+
+type PasswordField = 'currentPassword' | 'newPassword' | 'confirmPassword';
+type PasswordValues = Record<PasswordField, string>;
+type PasswordErrors = Partial<Record<PasswordField, string>>;
+
+function getNewPasswordError(values: PasswordValues): string | undefined {
+  if (!PASSWORD_POLICY.test(values.newPassword)) return POLICY_ERROR;
+  if (values.currentPassword && values.currentPassword === values.newPassword) return SAME_PASSWORD_ERROR;
+  return undefined;
+}
+
+function getConfirmPasswordError(values: PasswordValues): string | undefined {
+  if (!values.confirmPassword) return CONFIRM_REQUIRED_ERROR;
+  if (values.confirmPassword !== values.newPassword) return CONFIRM_MISMATCH_ERROR;
+  return undefined;
+}
+
+function updateFieldErrors(field: PasswordField, values: PasswordValues, errors: PasswordErrors): PasswordErrors {
+  const next = { ...errors };
+  if (field === 'currentPassword') {
+    if (next.currentPassword) {
+      if (values.currentPassword) delete next.currentPassword;
+      else next.currentPassword = CURRENT_REQUIRED_ERROR;
+    }
+    if (next.newPassword === SAME_PASSWORD_ERROR && values.currentPassword !== values.newPassword) delete next.newPassword;
+  }
+  if (field === 'newPassword') {
+    if (next.newPassword) {
+      const error = getNewPasswordError(values);
+      if (error) next.newPassword = error;
+      else delete next.newPassword;
+    }
+    if (next.confirmPassword) {
+      const confirmError = getConfirmPasswordError(values);
+      if (confirmError) next.confirmPassword = confirmError;
+      else delete next.confirmPassword;
+    }
+  }
+  if (field === 'confirmPassword' && next.confirmPassword) {
+    const error = getConfirmPasswordError(values);
+    if (error) next.confirmPassword = error;
+    else delete next.confirmPassword;
+  }
+  return next;
+}
 
 export function FirstPasswordChangePage() {
   const auth = useAuth();
@@ -23,11 +73,12 @@ export function FirstPasswordChangePage() {
     event.preventDefault();
     setServerError(null);
     const nextErrors: Record<string, string> = {};
-    if (!currentPassword) nextErrors.currentPassword = 'Nhập mật khẩu hiện tại.';
-    if (!PASSWORD_POLICY.test(newPassword)) nextErrors.newPassword = 'Mật khẩu mới cần ít nhất 12 ký tự, có chữ thường, chữ hoa và chữ số.';
-    if (currentPassword && newPassword && currentPassword === newPassword) nextErrors.newPassword = 'Mật khẩu mới phải khác mật khẩu hiện tại.';
-    if (!confirmPassword) nextErrors.confirmPassword = 'Nhập xác nhận mật khẩu mới.';
-    else if (confirmPassword !== newPassword) nextErrors.confirmPassword = 'Mật khẩu xác nhận chưa khớp.';
+    const values = { currentPassword, newPassword, confirmPassword };
+    if (!currentPassword) nextErrors.currentPassword = CURRENT_REQUIRED_ERROR;
+    const newPasswordError = getNewPasswordError(values);
+    if (newPasswordError) nextErrors.newPassword = newPasswordError;
+    const confirmPasswordError = getConfirmPasswordError(values);
+    if (confirmPasswordError) nextErrors.confirmPassword = confirmPasswordError;
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) {
       window.setTimeout(() => alertRef.current?.focus(), 0);
@@ -56,6 +107,15 @@ export function FirstPasswordChangePage() {
     }
   }
 
+  function handleFieldChange(field: PasswordField, value: string) {
+    const values = { currentPassword, newPassword, confirmPassword, [field]: value };
+    setCurrentPassword(values.currentPassword);
+    setNewPassword(values.newPassword);
+    setConfirmPassword(values.confirmPassword);
+    setErrors((current) => updateFieldErrors(field, values, current));
+    setServerError(null);
+  }
+
   const hasClientErrors = Object.keys(errors).length > 0;
   return (
     <section className="auth-form" aria-labelledby="change-title">
@@ -70,9 +130,9 @@ export function FirstPasswordChangePage() {
         </InlineAlert>
       )}
       <form onSubmit={handleSubmit} noValidate>
-        <FormField id="current-password" name="currentPassword" label="Mật khẩu hiện tại" type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => { setCurrentPassword(event.target.value); setErrors((current) => { const next = { ...current }; delete next.currentPassword; return next; }); setServerError(null); }} error={errors.currentPassword} />
-        <FormField id="new-password" name="newPassword" label="Mật khẩu mới" type="password" autoComplete="new-password" value={newPassword} onChange={(event) => { setNewPassword(event.target.value); setErrors((current) => { const next = { ...current }; delete next.newPassword; return next; }); setServerError(null); }} error={errors.newPassword} />
-        <FormField id="confirm-password" name="confirmPassword" label="Xác nhận mật khẩu mới" type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => { setConfirmPassword(event.target.value); setErrors((current) => { const next = { ...current }; delete next.confirmPassword; return next; }); setServerError(null); }} error={errors.confirmPassword} />
+        <FormField id="current-password" name="currentPassword" label="Mật khẩu hiện tại" type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => handleFieldChange('currentPassword', event.target.value)} error={errors.currentPassword} />
+        <FormField id="new-password" name="newPassword" label="Mật khẩu mới" type="password" autoComplete="new-password" value={newPassword} onChange={(event) => handleFieldChange('newPassword', event.target.value)} error={errors.newPassword} />
+        <FormField id="confirm-password" name="confirmPassword" label="Xác nhận mật khẩu mới" type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => handleFieldChange('confirmPassword', event.target.value)} error={errors.confirmPassword} />
         <div className="form-actions">
           <Button type="submit" loading={auth.isMutating}>Đổi mật khẩu</Button>
           <Button aria-label="Đăng xuất khỏi lần đăng nhập đầu tiên" type="button" variant="quiet" loading={auth.isMutating} onClick={() => void auth.logout().catch(() => undefined)}>Đăng xuất</Button>

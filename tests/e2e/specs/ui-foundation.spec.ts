@@ -131,6 +131,7 @@ test('real auth UI supports keyboard, first-login change, cookie reload, and log
   expect(changeResponse.status()).toBe(200);
   await expect(page).toHaveURL(/\/$/, { timeout: 10_000 });
   await expect(page.getByRole('heading', { name: /E2E UI Admin/ })).toBeVisible();
+  await expect(page.getByRole('alert')).toHaveCount(0);
   await expect(page.getByRole('navigation', { name: 'Điều hướng chính' }).locator('[role="tab"]')).toHaveCount(0);
   await expect(page.locator('select[id*="role"], [id*="role"][role="combobox"]')).toHaveCount(0);
   await assertNoSeriousAxeViolations(page);

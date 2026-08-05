@@ -90,7 +90,7 @@ Correction boundaries remain unchanged: backend/source feature/schema/migration/
 
 Correction task `PHASE-01-UI-DESIGN-SYSTEM-FOUNDATION-CORRECTION-002` was implemented on the required branch from reviewed HEAD `77a0a3afa6f9117000d587f7e06399a294c3ac25`.
 
-- Password-change 401 responses no longer notify the global unauthorized listener. The frontend rechecks `/auth/me`: a 200 response preserves first-login state and shows the current-password error; a 401 transitions to anonymous; network/5xx recovery preserves the current page without exposing backend details.
+- Password-change 401 responses no longer notify the global unauthorized listener. The frontend rechecks `/auth/me`: a 200 response preserves first-login state and rethrows the original 401 for the current-password error; a 401 transitions to anonymous; network/5xx refresh failures are rethrown so the UI shows the correct recovery copy without exposing backend details.
 - The unit matrix now covers login blank/400-422/401/network/5xx and stale-field clearing; first-login client policy, current-password 401/session expiry, validation/network/5xx recovery, success refresh, and stale relational errors; logout success/401/network/5xx/retry behavior; and rendered-copy safety.
 - E2E logout locators are unique. Responsive assertions inspect every matched visible target at 320, 375, and 414px, skip hidden responsive variants, and verify no horizontal overflow. Keyboard focus is asserted at the desktop auth layout where the context support link is visible.
 - E2E evidence includes first-login logout network failure recovery, workspace logout 5xx recovery and successful retry, protected-route blocking after logout, blank-login validation, and the API cookie/CSRF flow.
@@ -101,4 +101,15 @@ Local final-head quality evidence:
 - Web unit: **30/30 PASS**; API unit: **64/64 PASS**; PostgreSQL integration: **24/24 PASS**; Playwright API/UI: **3/3 PASS**.
 - Screenshot artifact: `tests/e2e/test-results/ui-foundation/`, **9/9 PNGs** (`ui-foundation-screenshots`). The artifact covers login 375/1366, first-login 375/1366, workspace 375/1366/1920, and system-status ready/error-safe 1366.
 - The local migration script could not start because the Windows Bash launcher returned `E_ACCESSDENIED`; CI remains the authoritative isolated fresh/legacy migration gate. No official database, VPS, deployment, PR, or merge was used.
-- Final-head CI run and hosted artifact ID: triggered by the correction-002 push; record the remote run ID when the branch workflow completes.
+- Hosted CI run/artifact ID: not recorded in this local correction report without direct hosted evidence.
+
+## Correction-003 closure
+
+Correction task `PHASE-01-UI-DESIGN-SYSTEM-FOUNDATION-CORRECTION-003` was implemented from reviewed HEAD `f110ea9f76b7bb82779a4e13c69ab5257845bdee` on `phase/01-ui-design-system-foundation`.
+
+- `AuthProvider.changePassword()` now distinguishes all password-401 reconciliation outcomes: `/auth/me` 200 keeps the session and rethrows the original 401; `/auth/me` 401 clears auth state and routes anonymous; network/status-0 and 5xx refresh failures are thrown to the page so recovery copy is shown instead of a false current-password error.
+- `logoutError` is cleared after successful login and password change, and during the global unauthorized transition. Failed logout remains visible until retry or a valid auth transition; the first-login failure followed by successful password change produces a clean workspace.
+- First-login validation now uses named helpers for policy, same-password, required, and confirmation errors. Editing current recomputes the current/new relation; editing new recomputes policy, same-password, and dependent confirmation; editing confirm recomputes only confirmation state. Client errors still block mutation and remain programmatically connected to fields.
+- Unit matrix: **35/35 web PASS**, including four password-401 refresh branches, stale logout cleanup, relational error recomputation, and no unhandled rejection path. API unit remains **64/64 PASS**; PostgreSQL integration **24/24 PASS**; Playwright API/UI/axe **3/3 PASS**.
+- Local gates: Prisma validate/generate, schema static, secret scan, UI static, lint, typecheck, build, and `git diff --check` all PASS. Screenshot artifact `tests/e2e/test-results/ui-foundation/` contains **9/9 PNGs**, including a workspace screenshot verified without a stale logout alert.
+- The Windows migration launcher remains unavailable with `E_ACCESSDENIED`; no official database, VPS, deployment, PR, merge, or CI architecture change was used. Hosted CI/artifact IDs are intentionally omitted without direct evidence.

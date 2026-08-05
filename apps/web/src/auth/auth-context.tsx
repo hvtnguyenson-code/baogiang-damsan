@@ -32,6 +32,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
 
   useEffect(() => onUnauthorized(() => {
+    setLogoutError(null);
     queryClient.setQueryData(AUTH_QUERY_KEY, null);
   }), [queryClient]);
 
@@ -54,12 +55,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isMutating: loginMutation.isPending || passwordMutation.isPending || logoutMutation.isPending,
     async login(input) {
       await loginMutation.mutateAsync(input);
-      return refreshAuth();
+      const refreshed = await refreshAuth();
+      setLogoutError(null);
+      return refreshed;
     },
     async changePassword(input) {
       try {
         await passwordMutation.mutateAsync(input);
-        return refreshAuth();
+        const refreshed = await refreshAuth();
+        setLogoutError(null);
+        return refreshed;
       } catch (caught) {
         if (caught instanceof ApiError && caught.statusCode === 401) {
           try {
@@ -70,6 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               queryClient.removeQueries({ queryKey: AUTH_QUERY_KEY });
               queryClient.setQueryData(AUTH_QUERY_KEY, null);
             }
+            throw refreshError;
           }
         }
         throw caught;
