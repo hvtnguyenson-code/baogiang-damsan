@@ -1,63 +1,113 @@
-import type { HealthLiveResponse, HealthReadyResponse } from '@baogiang/contracts';
+import type {
+  ApiErrorResponse,
+  AuthMeResponse,
+  AuthMutationResponse,
+  ChangePasswordRequest,
+  HealthLiveResponse,
+  HealthReadyResponse,
+  LoginRequest,
+  LoginResponse,
+} from '@baogiang/contracts';
 import { HEALTH_PATHS } from '@baogiang/config';
-
-/**
- * Centralized API client for baogiang-damsan.
- *
- * All API calls go through this module.
- * In production, the /api prefix is proxied to the backend.
- */
 
 const API_BASE = '/api';
 
-/**
- * Generic fetch wrapper with error handling.
- */
-async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...options?.headers,
-    },
-    ...options,
-  });
+type UnauthorizedListener = () => void;
+const unauthorizedListeners = new Set<UnauthorizedListener>();
 
-  if (!response.ok) {
-    const errorBody = await response.json().catch(() => ({
-      message: `HTTP ${response.status} ${response.statusText}`,
-    }));
-    throw new ApiError(
-      response.status,
-      errorBody.message ?? 'Request failed',
-      errorBody,
-    );
-  }
-
-  return response.json() as Promise<T>;
-}
-
-/** Typed API error */
 export class ApiError extends Error {
   constructor(
     public readonly statusCode: number,
     message: string,
-    public readonly body?: unknown,
+    public readonly requestId?: string,
   ) {
     super(message);
     this.name = 'ApiError';
   }
 }
 
-// ============================================================
-// Health API
-// ============================================================
-
-/** Fetch liveness status */
-export async function fetchHealthLive(): Promise<HealthLiveResponse> {
-  return apiFetch<HealthLiveResponse>(HEALTH_PATHS.LIVE.replace('/api', ''));
+export function onUnauthorized(listener: UnauthorizedListener): () => void {
+  unauthorizedListeners.add(listener);
+  return () => unauthorizedListeners.delete(listener);
 }
 
-/** Fetch readiness status including database check */
-export async function fetchHealthReady(): Promise<HealthReadyResponse> {
-  return apiFetch<HealthReadyResponse>(HEALTH_PATHS.READY.replace('/api', ''));
+interface ApiRequestOptions extends RequestInit {
+  notifyUnauthorized?: boolean;
 }
+
+export async function apiFetch<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
+  const { notifyUnauthorized = false, ...requestOptions } = options;
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      ...requestOptions,
+      credentials: 'same-origin',
+      headers: {
+        Accept: 'application/json',
+        ...(requestOptions.body ? { 'Content-Type': 'application/json' } : {}),
+        ...requestOptions.headers,
+      },
+    });
+  } catch {
+    throw new ApiError(0, 'Không thể kết nối đến máy chủ.');
+  }
+
+  const body = await readJson(response);
+  if (!response.ok) {
+    if (response.status === 401 && notifyUnauthorized) {
+      unauthorizedListeners.forEach((listener) => listener());
+    }
+    const apiError = isApiErrorResponse(body) ? body : undefined;
+    throw new ApiError(response.status, normalizeMessage(apiError?.message), apiError?.requestId);
+  }
+
+  return body as T;
+}
+
+async function readJson(response: Response): Promise<unknown> {
+  if (response.status === 204) return undefined;
+  const contentType = response.headers.get('content-type') ?? '';
+  if (!contentType.includes('application/json')) return undefined;
+  const text = await response.text();
+  if (!text.trim()) return undefined;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    throw new ApiError(response.status, 'Máy chủ trả về dữ liệu không hợp lệ.');
+  }
+}
+
+function isApiErrorResponse(value: unknown): value is ApiErrorResponse {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<ApiErrorResponse>;
+  return typeof candidate.statusCode === 'number' && (typeof candidate.message === 'string' || Array.isArray(candidate.message));
+}
+
+function normalizeMessage(message: string | string[] | undefined): string {
+  if (Array.isArray(message)) return message.filter((item) => typeof item === 'string').join(' ');
+  return typeof message === 'string' && message.trim() ? message : 'Yêu cầu không thực hiện được.';
+}
+
+export const fetchHealthLive = (): Promise<HealthLiveResponse> =>
+  apiFetch<HealthLiveResponse>(HEALTH_PATHS.LIVE.replace('/api', ''));
+
+export const fetchHealthReady = (): Promise<HealthReadyResponse> =>
+  apiFetch<HealthReadyResponse>(HEALTH_PATHS.READY.replace('/api', ''));
+
+export const login = (input: LoginRequest): Promise<LoginResponse> =>
+  apiFetch<LoginResponse>('/auth/login', { method: 'POST', body: JSON.stringify(input) });
+
+export const fetchAuthMe = (): Promise<AuthMeResponse> =>
+  apiFetch<AuthMeResponse>('/auth/me', { notifyUnauthorized: true });
+
+export const changePassword = (input: ChangePasswordRequest): Promise<AuthMutationResponse> =>
+  apiFetch<AuthMutationResponse>('/auth/change-password', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+
+export const logout = (): Promise<AuthMutationResponse> =>
+  apiFetch<AuthMutationResponse>('/auth/logout', { method: 'POST', notifyUnauthorized: true });
+
+export const logoutAll = (): Promise<AuthMutationResponse> =>
+  apiFetch<AuthMutationResponse>('/auth/logout-all', { method: 'POST', notifyUnauthorized: true });

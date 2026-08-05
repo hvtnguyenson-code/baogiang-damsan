@@ -115,6 +115,9 @@ jobs:
       - name: Auth secret scan
         run: npm run test:secrets
 
+      - name: UI foundation static verification
+        run: npm run test:ui:static
+
       # ---- Migration gates on isolated PostgreSQL databases ----
       - name: Phase 01 migration foundation tests
         env:
@@ -211,13 +214,22 @@ jobs:
           npx prisma migrate deploy --schema prisma/schema.prisma
           npm run prisma:seed
 
-      - name: Bootstrap Playwright technical admin
+      - name: Bootstrap Playwright API technical admin
         working-directory: apps/api
         env:
           DATABASE_URL: postgresql://baogiang_dev_user:ci_dev_pass_only@127.0.0.1:5432/baogiang_dev?schema=public
-          BOOTSTRAP_ADMIN_USERNAME: e2e-admin
-          BOOTSTRAP_ADMIN_DISPLAY_NAME: E2E Technical Admin
-          BOOTSTRAP_ADMIN_PASSWORD: E2eBootstrapPassword9
+          BOOTSTRAP_ADMIN_USERNAME: e2e-api-admin
+          BOOTSTRAP_ADMIN_DISPLAY_NAME: E2E API Admin
+          BOOTSTRAP_ADMIN_PASSWORD: E2eApiBootstrapPassword9
+        run: npm run bootstrap:admin
+
+      - name: Bootstrap Playwright UI technical admin
+        working-directory: apps/api
+        env:
+          DATABASE_URL: postgresql://baogiang_dev_user:ci_dev_pass_only@127.0.0.1:5432/baogiang_dev?schema=public
+          BOOTSTRAP_ADMIN_USERNAME: e2e-ui-admin
+          BOOTSTRAP_ADMIN_DISPLAY_NAME: E2E UI Admin
+          BOOTSTRAP_ADMIN_PASSWORD: E2eUiBootstrapPassword9
         run: npm run bootstrap:admin
 
       # ---- Playwright smoke test ----
@@ -250,6 +262,15 @@ jobs:
           BASE_URL: http://127.0.0.1:5173
           API_URL: http://127.0.0.1:3100
         run: npm run test:e2e
+
+      - name: Upload UI foundation screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-foundation-screenshots
+          path: tests/e2e/test-results/ui-foundation/
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload Playwright report on failure
         if: failure()

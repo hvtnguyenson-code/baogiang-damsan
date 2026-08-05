@@ -1,51 +1,22 @@
 /** @type {import('tailwindcss').Config} */
 export default {
-  content: [
-    "./index.html",
-    "./src/**/*.{js,ts,jsx,tsx}",
-  ],
+  content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {
       colors: {
-        // Brand colors matching prototype: deep navy/blue palette
-        brand: {
-          50:  '#eff6ff',
-          100: '#dbeafe',
-          200: '#bfdbfe',
-          300: '#93c5fd',
-          400: '#60a5fa',
-          500: '#3b82f6',
-          600: '#2563eb',
-          700: '#1d4ed8',
-          800: '#1e40af',
-          900: '#1e3a8a',
-          950: '#172554',
-        },
-        // Status colors
-        status: {
-          ok:      '#16a34a',
-          warning: '#ca8a04',
-          error:   '#dc2626',
-          unknown: '#6b7280',
-        },
+        ink: { 950: '#15242E' },
+        school: { 800: '#1F4358' },
+        basalt: { 600: '#A7462F' },
+        mist: { 50: '#F3F6F7' },
+        paper: { 0: '#FFFFFF' },
+        line: { 300: '#C9D4DA' },
+        success: { 50: '#EDF7F1', 700: '#246B45' },
+        warning: { 50: '#FFF7E6', 800: '#7A4B00' },
+        error: { 50: '#FFF1F1', 700: '#A32929' },
       },
       fontFamily: {
-        sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'sans-serif'],
-      },
-      animation: {
-        'fade-in': 'fadeIn 0.3s ease-in-out',
-        'slide-in': 'slideIn 0.2s ease-out',
-        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-      },
-      keyframes: {
-        fadeIn: {
-          '0%': { opacity: '0', transform: 'translateY(-4px)' },
-          '100%': { opacity: '1', transform: 'translateY(0)' },
-        },
-        slideIn: {
-          '0%': { opacity: '0', transform: 'translateX(-8px)' },
-          '100%': { opacity: '1', transform: 'translateX(0)' },
-        },
+        sans: ['Be Vietnam Pro', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        mono: ['IBM Plex Mono', 'ui-monospace', 'monospace'],
       },
     },
   },

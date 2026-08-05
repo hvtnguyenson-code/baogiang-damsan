@@ -31,6 +31,7 @@
     "test:schema:static": "node scripts/ci/verify-schema-foundation.cjs",
     "test:migrations:ci": "bash scripts/ci/test-phase-01-migrations.sh",
     "test:secrets": "node scripts/ci/scan-auth-secrets.cjs",
+    "test:ui:static": "node scripts/ui/verify-ui-foundation.cjs",
     "prepare": "echo 'No prepare step needed'"
   }
 }
