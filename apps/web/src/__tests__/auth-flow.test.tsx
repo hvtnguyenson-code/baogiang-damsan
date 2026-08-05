@@ -41,6 +41,51 @@ describe('auth routing and forms', () => {
     expect(screen.queryByText(/specific backend text/i)).not.toBeInTheDocument();
   });
 
+  it('maps login validation responses to safe validation copy', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => String(input).endsWith('/auth/me')
+      ? jsonResponse({ statusCode: 401 }, 401)
+      : jsonResponse({ statusCode: 422, message: 'internal validation details' }, 422));
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    renderApp('/dang-nhap');
+    await screen.findByRole('heading', { name: /^Đăng nhập$/i });
+    await user.type(await screen.findByLabelText('Tên đăng nhập'), 'teacher');
+    await user.type(screen.getByLabelText('Mật khẩu'), 'Password9');
+    await user.click(screen.getByRole('button', { name: /đăng nhập/i }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Thông tin đăng nhập chưa hợp lệ');
+    expect(screen.queryByText(/internal validation details/i)).not.toBeInTheDocument();
+  });
+
+  it('shows connection recovery copy for a login network failure', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith('/auth/me')) return jsonResponse({ statusCode: 401 }, 401);
+      throw new Error('socket details');
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    renderApp('/dang-nhap');
+    await screen.findByRole('heading', { name: /^Đăng nhập$/i });
+    await user.type(await screen.findByLabelText('Tên đăng nhập'), 'teacher');
+    await user.type(screen.getByLabelText('Mật khẩu'), 'Password9');
+    await user.click(screen.getByRole('button', { name: /đăng nhập/i }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Không thể kết nối để đăng nhập');
+  });
+
+  it('shows temporary-system copy for a login server failure', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => String(input).endsWith('/auth/me')
+      ? jsonResponse({ statusCode: 401 }, 401)
+      : jsonResponse({ statusCode: 503, message: 'internal server detail' }, 503));
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    renderApp('/dang-nhap');
+    await screen.findByRole('heading', { name: /^Đăng nhập$/i });
+    await user.type(await screen.findByLabelText('Tên đăng nhập'), 'teacher');
+    await user.type(screen.getByLabelText('Mật khẩu'), 'Password9');
+    await user.click(screen.getByRole('button', { name: /đăng nhập/i }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Hệ thống tạm thời chưa thể đăng nhập');
+    expect(screen.queryByText(/internal server detail/i)).not.toBeInTheDocument();
+  });
+
   it('refreshes /me after login and routes first-login users to password change', async () => {
     let meCalls = 0;
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
@@ -90,6 +135,64 @@ describe('auth routing and forms', () => {
     await user.click(screen.getByRole('button', { name: /đổi mật khẩu/i }));
     expect(await screen.findByRole('heading', { name: /chào nguyễn văn an/i })).toBeInTheDocument();
     expect(meCalls).toBe(2);
+  });
+
+  it('keeps the first-login page and shows the current-password error after a 401', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/change-password')) return jsonResponse({ statusCode: 401, message: 'Current password is incorrect' }, 401);
+      return jsonResponse(firstLoginAuth);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    renderApp('/doi-mat-khau-lan-dau');
+    await user.type(await screen.findByLabelText('Mật khẩu hiện tại'), 'WrongPassword9');
+    await user.type(screen.getByLabelText('Mật khẩu mới'), 'ReplacementPassword8');
+    await user.type(screen.getByLabelText('Xác nhận mật khẩu mới'), 'ReplacementPassword8');
+    await user.click(screen.getByRole('button', { name: /đổi mật khẩu/i }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Mật khẩu hiện tại không đúng');
+    expect(screen.getByRole('heading', { name: /đổi mật khẩu để tiếp tục/i })).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith('/auth/me'))).toBe(true);
+  });
+
+  it('redirects to login when password-change 401 is confirmed as an expired session', async () => {
+    let meCalls = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/change-password')) return jsonResponse({ statusCode: 401, message: 'Unauthorized' }, 401);
+      if (url.endsWith('/auth/me')) {
+        meCalls += 1;
+        return meCalls === 1 ? jsonResponse(firstLoginAuth) : jsonResponse({ statusCode: 401, message: 'Unauthorized' }, 401);
+      }
+      return jsonResponse(firstLoginAuth);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    renderApp('/doi-mat-khau-lan-dau');
+    await screen.findByRole('heading', { name: /đổi mật khẩu để tiếp tục/i });
+    await user.type(await screen.findByLabelText('Mật khẩu hiện tại'), 'WrongPassword9');
+    await user.type(screen.getByLabelText('Mật khẩu mới'), 'ReplacementPassword8');
+    await user.type(screen.getByLabelText('Xác nhận mật khẩu mới'), 'ReplacementPassword8');
+    await user.click(screen.getByRole('button', { name: /đổi mật khẩu/i }));
+    expect(await screen.findByRole('heading', { name: /^Đăng nhập$/i })).toBeInTheDocument();
+  });
+
+  it('keeps the first-login page with recovery copy when password change cannot reach the server', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/change-password')) throw new Error('socket details');
+      return jsonResponse(firstLoginAuth);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    renderApp('/doi-mat-khau-lan-dau');
+    await screen.findByRole('heading', { name: /đổi mật khẩu để tiếp tục/i });
+    await user.type(await screen.findByLabelText('Mật khẩu hiện tại'), 'OldPassword9');
+    await user.type(screen.getByLabelText('Mật khẩu mới'), 'ReplacementPassword8');
+    await user.type(screen.getByLabelText('Xác nhận mật khẩu mới'), 'ReplacementPassword8');
+    await user.click(screen.getByRole('button', { name: /đổi mật khẩu/i }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Không thể kết nối để đổi mật khẩu');
+    expect(screen.getByRole('heading', { name: /đổi mật khẩu để tiếp tục/i })).toBeInTheDocument();
   });
 
   it('keeps only safe internal intended destinations', () => {
@@ -150,5 +253,18 @@ describe('auth routing and forms', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/tạm thời chưa thể đăng xuất/i);
     expect(screen.getByRole('heading', { name: /chào/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /thử đăng xuất lại/i })).toBeInTheDocument();
+  });
+
+  it('treats a logout 401 as already logged out', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/logout')) return jsonResponse({ statusCode: 401 }, 401);
+      return jsonResponse(normalAuth);
+    }));
+    const user = userEvent.setup();
+    renderApp('/');
+    await screen.findByRole('heading', { name: /chào/i });
+    await user.click(screen.getByRole('button', { name: /đăng xuất/i }));
+    expect(await screen.findByRole('heading', { name: /^Đăng nhập$/i })).toBeInTheDocument();
   });
 });

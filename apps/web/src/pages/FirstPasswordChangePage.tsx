@@ -75,7 +75,7 @@ export function FirstPasswordChangePage() {
         <FormField id="confirm-password" name="confirmPassword" label="Xác nhận mật khẩu mới" type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => { setConfirmPassword(event.target.value); setErrors((current) => { const next = { ...current }; delete next.confirmPassword; return next; }); setServerError(null); }} error={errors.confirmPassword} />
         <div className="form-actions">
           <Button type="submit" loading={auth.isMutating}>Đổi mật khẩu</Button>
-          <Button type="button" variant="quiet" loading={auth.isMutating} onClick={() => void auth.logout().catch(() => undefined)}>Đăng xuất</Button>
+          <Button aria-label="Đăng xuất khỏi lần đăng nhập đầu tiên" type="button" variant="quiet" loading={auth.isMutating} onClick={() => void auth.logout().catch(() => undefined)}>Đăng xuất</Button>
         </div>
       </form>
       <LogoutNotice />

@@ -20,7 +20,7 @@ export function AppLayout() {
           </div>
           <div className="session-context">
             <span className="session-context__name">{auth.auth?.user.displayName}</span>
-            <Button type="button" variant="quiet" loading={auth.isMutating} onClick={() => void auth.logout().catch(() => undefined)}>
+            <Button aria-label="Đăng xuất khỏi không gian làm việc" type="button" variant="quiet" loading={auth.isMutating} onClick={() => void auth.logout().catch(() => undefined)}>
               Đăng xuất
             </Button>
           </div>

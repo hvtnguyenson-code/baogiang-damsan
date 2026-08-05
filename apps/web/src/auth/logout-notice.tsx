@@ -15,7 +15,7 @@ export function LogoutNotice() {
   return (
     <InlineAlert title="Chưa thể đăng xuất">
       <p>{message}</p>
-      <Button type="button" variant="secondary" loading={auth.isMutating} onClick={() => void auth.logout().catch(() => undefined)}>
+      <Button aria-label="Thử đăng xuất lại" type="button" variant="secondary" loading={auth.isMutating} onClick={() => void auth.logout().catch(() => undefined)}>
         Thử đăng xuất lại
       </Button>
     </InlineAlert>

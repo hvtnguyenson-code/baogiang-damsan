@@ -104,7 +104,6 @@ export const changePassword = (input: ChangePasswordRequest): Promise<AuthMutati
   apiFetch<AuthMutationResponse>('/auth/change-password', {
     method: 'POST',
     body: JSON.stringify(input),
-    notifyUnauthorized: true,
   });
 
 export const logout = (): Promise<AuthMutationResponse> =>

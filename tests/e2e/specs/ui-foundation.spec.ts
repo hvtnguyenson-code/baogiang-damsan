@@ -24,11 +24,20 @@ async function assertResponsiveTargets(page: Page, selectors: string[]) {
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
   expect(overflow, `horizontal overflow at ${await page.evaluate(() => window.innerWidth)}px`).toBe(true);
   for (const selector of selectors) {
-    const target = page.locator(selector).first();
-    const box = await target.boundingBox();
-    expect(box, `missing target ${selector}`).not.toBeNull();
-    expect(box!.width, `${selector} width`).toBeGreaterThanOrEqual(44);
-    expect(box!.height, `${selector} height`).toBeGreaterThanOrEqual(44);
+    const targets = page.locator(selector);
+    const count = await targets.count();
+    expect(count, `missing target ${selector}`).toBeGreaterThan(0);
+    let visibleCount = 0;
+    for (let index = 0; index < count; index += 1) {
+      const target = targets.nth(index);
+      if (!(await target.isVisible())) continue;
+      visibleCount += 1;
+      const box = await target.boundingBox();
+      expect(box, `missing target ${selector}[${index}]`).not.toBeNull();
+      expect(box!.height, `${selector}[${index}] height`).toBeGreaterThanOrEqual(44);
+      expect(box!.width, `${selector}[${index}] width`).toBeGreaterThanOrEqual(44);
+    }
+    expect(visibleCount, `no visible targets for ${selector}`).toBeGreaterThan(0);
   }
 }
 
@@ -62,12 +71,13 @@ test('real auth UI supports keyboard, first-login change, cookie reload, and log
   await expect(page).toHaveURL(/\/dang-nhap$/);
   await expect(page.getByRole('heading', { name: 'Đăng nhập' })).toBeVisible();
   await assertNoSeriousAxeViolations(page);
-  await assertAtMobileWidths(page, ['button[type="submit"]', 'a.text-link']);
+  await assertAtMobileWidths(page, ['button[type="submit"]', 'a[href="/trang-thai-he-thong"]']);
+  await page.setViewportSize({ width: 1366, height: 768 });
 
   await page.keyboard.press('Tab');
   await expect(page.getByRole('link', { name: 'Đến biểu mẫu' })).toBeFocused();
   await page.keyboard.press('Tab');
-  await expect(page.getByRole('link', { name: 'Kiểm tra trạng thái hệ thống' }).first()).toBeFocused();
+  await expect(page.locator('.auth-context a[href="/trang-thai-he-thong"]')).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(page.getByLabel('Tên đăng nhập')).toBeFocused();
 
@@ -96,6 +106,12 @@ test('real auth UI supports keyboard, first-login change, cookie reload, and log
   await page.setViewportSize({ width: 1366, height: 768 });
   await page.screenshot({ path: `${screenshots}/first-password-change-1366x768.png` });
   await assertAtMobileWidths(page, ['button[type="submit"]', 'button[type="button"]']);
+
+  await page.route('**/api/auth/logout', (route) => route.abort('failed'));
+  await page.getByRole('button', { name: 'Đăng xuất khỏi lần đăng nhập đầu tiên', exact: true }).click();
+  await expect(page.getByRole('alert')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Đổi mật khẩu để tiếp tục' })).toBeVisible();
+  await page.unroute('**/api/auth/logout');
 
   await page.getByLabel('Mật khẩu hiện tại').fill(INITIAL_PASSWORD);
   await page.getByLabel('Mật khẩu mới', { exact: true }).fill('too-short');
@@ -128,12 +144,16 @@ test('real auth UI supports keyboard, first-login change, cookie reload, and log
   await page.reload();
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByRole('heading', { name: /E2E UI Admin/ })).toBeVisible();
-  await page.route('**/api/auth/logout', (route) => route.abort('failed'));
-  await page.getByRole('button', { name: 'Đăng xuất' }).click();
+  await page.route('**/api/auth/logout', (route) => route.fulfill({
+    status: 503,
+    contentType: 'application/json',
+    body: JSON.stringify({ statusCode: 503, message: 'temporary internal detail' }),
+  }));
+  await page.getByRole('button', { name: 'Đăng xuất khỏi không gian làm việc', exact: true }).click();
   await expect(page.getByRole('alert')).toBeVisible();
   await expect(page.getByRole('heading', { name: /E2E UI Admin/ })).toBeVisible();
   await page.unroute('**/api/auth/logout');
-  await page.getByRole('button', { name: 'Đăng xuất' }).click();
+  await page.getByRole('button', { name: 'Đăng xuất khỏi không gian làm việc', exact: true }).click();
   await expect(page).toHaveURL(/\/dang-nhap$/);
   await page.goto('/');
   await expect(page).toHaveURL(/\/dang-nhap$/);

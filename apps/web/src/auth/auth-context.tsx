@@ -57,8 +57,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return refreshAuth();
     },
     async changePassword(input) {
-      await passwordMutation.mutateAsync(input);
-      return refreshAuth();
+      try {
+        await passwordMutation.mutateAsync(input);
+        return refreshAuth();
+      } catch (caught) {
+        if (caught instanceof ApiError && caught.statusCode === 401) {
+          try {
+            const refreshed = await fetchAuthMe();
+            queryClient.setQueryData(AUTH_QUERY_KEY, refreshed);
+          } catch (refreshError) {
+            if (refreshError instanceof ApiError && refreshError.statusCode === 401) {
+              queryClient.removeQueries({ queryKey: AUTH_QUERY_KEY });
+              queryClient.setQueryData(AUTH_QUERY_KEY, null);
+            }
+          }
+        }
+        throw caught;
+      }
     },
     async logout() {
       setLogoutError(null);

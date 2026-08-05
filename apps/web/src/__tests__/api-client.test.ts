@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, apiFetch, fetchAuthMe, onUnauthorized } from '../lib/api-client';
+import { ApiError, apiFetch, changePassword, fetchAuthMe, onUnauthorized } from '../lib/api-client';
 import { jsonResponse, normalAuth } from './test-utils';
 
 describe('api client', () => {
@@ -34,6 +34,15 @@ describe('api client', () => {
     await expect(failure).resolves.toBeInstanceOf(ApiError);
     expect(listener).toHaveBeenCalledOnce();
     expect((await failure as ApiError)).not.toHaveProperty('body');
+    unsubscribe();
+  });
+
+  it('does not notify the global unauthorized listener for a password-change 401', async () => {
+    const listener = vi.fn();
+    const unsubscribe = onUnauthorized(listener);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ statusCode: 401, message: 'Current password is incorrect' }, 401)));
+    await expect(changePassword({ currentPassword: 'wrong', newPassword: 'ReplacementPassword8' })).rejects.toMatchObject({ statusCode: 401 });
+    expect(listener).not.toHaveBeenCalled();
     unsubscribe();
   });
 
