@@ -14,11 +14,20 @@ export function LoginPage() {
   const alertRef = useRef<HTMLDivElement>(null);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<{ title: string; message: string; recoverable: boolean } | null>(null);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+    const nextErrors: Record<string, string> = {};
+    if (!username.trim()) nextErrors.username = 'Nhập tên đăng nhập.';
+    if (!password) nextErrors.password = 'Nhập mật khẩu.';
+    setFieldErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) {
+      window.setTimeout(() => alertRef.current?.focus(), 0);
+      return;
+    }
     try {
       const result = await auth.login({ username, password });
       setPassword('');
@@ -31,9 +40,16 @@ export function LoginPage() {
     } catch (caught) {
       const apiError = caught instanceof ApiError ? caught : new ApiError(0, 'Không thể kết nối đến máy chủ.');
       setPassword('');
-      setError(apiError.statusCode === 401
-        ? { title: 'Không thể đăng nhập', message: 'Tên đăng nhập hoặc mật khẩu không hợp lệ.', recoverable: false }
-        : { title: 'Chưa thể kết nối', message: 'Vui lòng kiểm tra kết nối và thử lại.', recoverable: true });
+      const message = apiError.statusCode === 401
+        ? 'Tên đăng nhập hoặc mật khẩu không hợp lệ.'
+        : apiError.statusCode === 400 || apiError.statusCode === 422
+          ? 'Thông tin đăng nhập chưa hợp lệ. Kiểm tra lại rồi thử lại.'
+          : apiError.statusCode === 0
+            ? 'Không thể kết nối để đăng nhập. Kiểm tra kết nối rồi thử lại.'
+            : apiError.statusCode >= 500
+              ? 'Hệ thống tạm thời chưa thể đăng nhập. Vui lòng thử lại.'
+              : 'Chưa thể đăng nhập. Vui lòng thử lại.';
+      setError({ title: 'Không thể đăng nhập', message, recoverable: apiError.statusCode !== 401 });
       window.setTimeout(() => alertRef.current?.focus(), 0);
     }
   }
@@ -45,7 +61,7 @@ export function LoginPage() {
         <h2 id="login-title">Đăng nhập</h2>
         <p>Dùng tài khoản nội bộ do nhà trường cấp.</p>
       </div>
-      {error && <InlineAlert title={error.title} focusRef={alertRef}>{error.message}{error.recoverable && <span> Bạn có thể thử lại ngay trên biểu mẫu này.</span>}</InlineAlert>}
+      {(error || Object.values(fieldErrors).some(Boolean)) && <InlineAlert title={error?.title ?? 'Kiểm tra lại thông tin'} focusRef={alertRef}>{error?.message ?? 'Nhập đủ các trường bắt buộc.'}{error?.recoverable && <span> Bạn có thể thử lại ngay trên biểu mẫu này.</span>}</InlineAlert>}
       <form onSubmit={handleSubmit} noValidate>
         <FormField
           id="username"
@@ -54,7 +70,8 @@ export function LoginPage() {
           autoComplete="username"
           required
           value={username}
-          onChange={(event) => setUsername(event.target.value)}
+          error={fieldErrors.username}
+          onChange={(event) => { setUsername(event.target.value); setFieldErrors((current) => { const next = { ...current }; delete next.username; return next; }); setError(null); }}
         />
         <FormField
           id="password"
@@ -64,7 +81,8 @@ export function LoginPage() {
           autoComplete="current-password"
           required
           value={password}
-          onChange={(event) => setPassword(event.target.value)}
+          error={fieldErrors.password}
+          onChange={(event) => { setPassword(event.target.value); setFieldErrors((current) => { const next = { ...current }; delete next.password; return next; }); setError(null); }}
         />
         <Button type="submit" loading={auth.isMutating}>Đăng nhập</Button>
       </form>

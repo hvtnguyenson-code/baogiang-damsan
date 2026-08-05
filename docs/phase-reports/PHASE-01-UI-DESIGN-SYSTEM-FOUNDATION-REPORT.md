@@ -74,3 +74,14 @@ Green implementation run: [GitHub Actions 30911912642](https://github.com/hvtngu
 ## Boundaries
 
 Backend source: **NO**. Schema/migration: **NO**. Authorization semantics: **NO**. Business CRUD: **NO**. VPS/official database: **NO**. Deploy/PR/merge: **NO**.
+
+## Correction audit and closure
+
+Correction base `29f86936accd006d22ba8fc3ce8112e11e2bf007` was audited downstream across the auth provider, login and first-login forms, app shell, route/query transitions, responsive targets, rendered copy, and typography.
+
+- Logout now clears auth/query state only after success or an expected 401. Network, timeout, 4xx (other than 401), and 5xx failures preserve the authenticated/first-login view, expose a concise accessible alert, and offer a shared retry action in both shells.
+- Login and first-login forms perform client validation before mutation, clear stale field errors, distinguish 401/input/network/server recovery copy, enforce current/new password difference, and preserve form values during network/5xx recovery.
+- Mobile target and overflow assertions cover 320, 375, and 414px for login, first-login, and workspace. Vietnamese utility labels use Be Vietnam Pro; IBM Plex Mono remains limited to ASCII data/technical values. Technical implementation terms are excluded from rendered production copy and guarded by the static gate.
+- Web unit suite: **22/22 PASS**. Static UI gate, typecheck, and lint pass locally. The Playwright suite was extended with mobile target/overflow checks and logout recovery evidence; the next isolated CI run must publish refreshed nine-image screenshot evidence.
+
+Correction boundaries remain unchanged: backend/source feature/schema/migration/CI workflow/VPS/official database/deploy/PR/merge: **NO**.

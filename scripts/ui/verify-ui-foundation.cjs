@@ -12,6 +12,7 @@ const forbidden = [
   { label: 'route tab role', pattern: /role\s*=\s*["'{]\s*tab(?:list)?\b/i },
   { label: 'browser auth persistence', pattern: /(?:localStorage|sessionStorage)[\s\S]{0,160}(?:auth|token|cookie|password)|(?:auth|token|cookie|password)[\s\S]{0,160}(?:localStorage|sessionStorage)/i },
   { label: 'Inter font', pattern: /(?:font-family|fontFamily|fonts\.googleapis)[\s\S]{0,100}\bInter\b/i },
+  { label: 'technical database/auth copy', pattern: /Cookie\s+HttpOnly|\bcapability\b|\bPostgreSQL\b/i },
 ];
 
 function walk(target) {
@@ -28,7 +29,7 @@ function inspectText(text, name) {
 }
 
 function selfTest() {
-  const bad = 'className="transition-all h-screen backdrop-blur"; localStorage.setItem("auth-token", password); font-family: Inter; background: linear-gradient(red, blue); role="tab"';
+  const bad = 'className="transition-all h-screen backdrop-blur"; localStorage.setItem("auth-token", password); font-family: Inter; background: linear-gradient(red, blue); role="tab"; Cookie HttpOnly capability PostgreSQL';
   const labels = inspectText(bad, 'fixture');
   if (labels.length !== forbidden.length) throw new Error(`Static checker fixture missed rules: ${labels.join(', ')}`);
   if (inspectText("transition: color 120ms; font-family: 'Be Vietnam Pro';", 'safe').length) throw new Error('Static checker rejected safe fixture.');

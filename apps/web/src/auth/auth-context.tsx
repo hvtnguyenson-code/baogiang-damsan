@@ -1,6 +1,6 @@
 import type { AuthMeResponse, ChangePasswordRequest, LoginRequest } from '@baogiang/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { createContext, useContext, useEffect, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { ApiError, changePassword, fetchAuthMe, login, logout, onUnauthorized } from '../lib/api-client';
 
 export const AUTH_QUERY_KEY = ['auth', 'me'] as const;
@@ -11,6 +11,7 @@ interface AuthContextValue {
   status: AuthStatus;
   auth: AuthMeResponse | null;
   error: ApiError | null;
+  logoutError: ApiError | null;
   isMutating: boolean;
   login(input: LoginRequest): Promise<AuthMeResponse>;
   changePassword(input: ChangePasswordRequest): Promise<AuthMeResponse>;
@@ -22,6 +23,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
+  const [logoutError, setLogoutError] = useState<ApiError | null>(null);
   const authQuery = useQuery<AuthMeResponse | null, ApiError>({
     queryKey: AUTH_QUERY_KEY,
     queryFn: fetchAuthMe,
@@ -48,6 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     status: deriveStatus(authQuery),
     auth: authQuery.data ?? null,
     error: authQuery.error ?? null,
+    logoutError,
     isMutating: loginMutation.isPending || passwordMutation.isPending || logoutMutation.isPending,
     async login(input) {
       await loginMutation.mutateAsync(input);
@@ -58,11 +61,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return refreshAuth();
     },
     async logout() {
+      setLogoutError(null);
       try {
         await logoutMutation.mutateAsync();
-      } finally {
-        queryClient.clear();
+        queryClient.removeQueries({ queryKey: AUTH_QUERY_KEY });
         queryClient.setQueryData(AUTH_QUERY_KEY, null);
+      } catch (caught) {
+        const apiError = caught instanceof ApiError ? caught : new ApiError(0, 'Không thể đăng xuất.');
+        if (apiError.statusCode === 401) {
+          queryClient.removeQueries({ queryKey: AUTH_QUERY_KEY });
+          queryClient.setQueryData(AUTH_QUERY_KEY, null);
+          return;
+        }
+        setLogoutError(apiError);
+        throw apiError;
       }
     },
     async retry() {

@@ -39,7 +39,7 @@ export function SystemStatusPage() {
               ['Thời gian hoạt động', formatUptime(liveQuery.data.uptime)],
               ['Kiểm tra lúc', formatTimestamp(liveQuery.data.timestamp)],
             ] : []} />
-            <StatusRow title="Cơ sở dữ liệu" description="Khả năng kết nối PostgreSQL" status={readyQuery.data?.checks.database.status} error={readyQuery.isError} details={buildDbDetails(readyQuery.data?.checks.database)} />
+            <StatusRow title="Cơ sở dữ liệu" description="Khả năng kết nối dữ liệu" status={readyQuery.data?.checks.database.status} error={readyQuery.isError} details={buildDbDetails(readyQuery.data?.checks.database)} />
           </section>
         )}
 

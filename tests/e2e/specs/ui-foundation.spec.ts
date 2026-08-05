@@ -20,6 +20,25 @@ async function assertNoSeriousAxeViolations(page: Page) {
   expect(serious, serious.map((violation) => `${violation.id}: ${violation.help}`).join('\n')).toEqual([]);
 }
 
+async function assertResponsiveTargets(page: Page, selectors: string[]) {
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
+  expect(overflow, `horizontal overflow at ${await page.evaluate(() => window.innerWidth)}px`).toBe(true);
+  for (const selector of selectors) {
+    const target = page.locator(selector).first();
+    const box = await target.boundingBox();
+    expect(box, `missing target ${selector}`).not.toBeNull();
+    expect(box!.width, `${selector} width`).toBeGreaterThanOrEqual(44);
+    expect(box!.height, `${selector} height`).toBeGreaterThanOrEqual(44);
+  }
+}
+
+async function assertAtMobileWidths(page: Page, selectors: string[]) {
+  for (const width of [320, 375, 414]) {
+    await page.setViewportSize({ width, height: 812 });
+    await assertResponsiveTargets(page, selectors);
+  }
+}
+
 test('public system status is usable and exposes only safe recovery details', async ({ page }) => {
   await page.goto('/trang-thai-he-thong');
   await expect(page.getByRole('heading', { name: 'Trạng thái hệ thống' })).toBeVisible();
@@ -43,6 +62,7 @@ test('real auth UI supports keyboard, first-login change, cookie reload, and log
   await expect(page).toHaveURL(/\/dang-nhap$/);
   await expect(page.getByRole('heading', { name: 'Đăng nhập' })).toBeVisible();
   await assertNoSeriousAxeViolations(page);
+  await assertAtMobileWidths(page, ['button[type="submit"]', 'a.text-link']);
 
   await page.keyboard.press('Tab');
   await expect(page.getByRole('link', { name: 'Đến biểu mẫu' })).toBeFocused();
@@ -75,6 +95,7 @@ test('real auth UI supports keyboard, first-login change, cookie reload, and log
   await page.screenshot({ path: `${screenshots}/first-password-change-375x812.png` });
   await page.setViewportSize({ width: 1366, height: 768 });
   await page.screenshot({ path: `${screenshots}/first-password-change-1366x768.png` });
+  await assertAtMobileWidths(page, ['button[type="submit"]', 'button[type="button"]']);
 
   await page.getByLabel('Mật khẩu hiện tại').fill(INITIAL_PASSWORD);
   await page.getByLabel('Mật khẩu mới', { exact: true }).fill('too-short');
@@ -102,10 +123,16 @@ test('real auth UI supports keyboard, first-login change, cookie reload, and log
     await page.setViewportSize(viewport);
     await page.screenshot({ path: `${screenshots}/workspace-${viewport.width}x${viewport.height}.png` });
   }
+  await assertAtMobileWidths(page, ['.session-context .button', '.primary-nav a']);
 
   await page.reload();
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByRole('heading', { name: /E2E UI Admin/ })).toBeVisible();
+  await page.route('**/api/auth/logout', (route) => route.abort('failed'));
+  await page.getByRole('button', { name: 'Đăng xuất' }).click();
+  await expect(page.getByRole('alert')).toBeVisible();
+  await expect(page.getByRole('heading', { name: /E2E UI Admin/ })).toBeVisible();
+  await page.unroute('**/api/auth/logout');
   await page.getByRole('button', { name: 'Đăng xuất' }).click();
   await expect(page).toHaveURL(/\/dang-nhap$/);
   await page.goto('/');

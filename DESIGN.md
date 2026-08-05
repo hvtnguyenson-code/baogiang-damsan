@@ -34,7 +34,7 @@ Status must always include text or an icon cue, never color alone. Do not add ar
 ## Typography
 
 - Product text: Be Vietnam Pro, self-hosted, weights 400, 500, 600, and 700 as required.
-- Data/utility: IBM Plex Mono, self-hosted, weights 400 and 500, only for codes, dates, time, technical labels, and tabular numbers.
+- Data/utility: IBM Plex Mono, self-hosted, weights 400 and 500, only for ASCII codes, dates, time, technical values, and tabular numbers. Vietnamese utility labels remain Be Vietnam Pro for legibility.
 - Use `font-display: swap`; never load fonts from a CDN.
 - Default body size is 16px with a comfortable Vietnamese line-height. Form inputs remain at least 16px on mobile.
 - Prose measure is about 65ch. Operational forms and tables may use the available work width.

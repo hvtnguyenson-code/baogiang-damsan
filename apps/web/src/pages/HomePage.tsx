@@ -18,7 +18,7 @@ export function HomePage() {
         <h2 id="foundation-heading">Trạng thái nền tảng</h2>
         <dl className="foundation-ledger">
           <div><dt>Phiên đăng nhập</dt><dd><span className="status-cue status-cue--ok">Sẵn sàng</span><span>Phiên hiện tại được xác minh trên máy chủ.</span></dd></div>
-          <div><dt>Phân quyền</dt><dd><span className="status-cue status-cue--ok">Sẵn sàng</span><span>Quyền được đánh giá theo capability và phạm vi.</span></dd></div>
+          <div><dt>Phân quyền</dt><dd><span className="status-cue status-cue--ok">Sẵn sàng</span><span>Quyền được kiểm tra theo phạm vi công việc được giao.</span></dd></div>
           <div><dt>Nghiệp vụ báo giảng</dt><dd><span className="status-cue status-cue--neutral">Chưa mở</span><span>Không có dữ liệu hoặc thao tác nghiệp vụ trong lát nền móng này.</span></dd></div>
         </dl>
       </section>

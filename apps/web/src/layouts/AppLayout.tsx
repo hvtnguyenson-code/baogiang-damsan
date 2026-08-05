@@ -1,6 +1,7 @@
 import { APP_NAME_SHORT, SCHOOL_NAME } from '@baogiang/config';
 import { NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../auth/auth-context';
+import { LogoutNotice } from '../auth/logout-notice';
 import { Button } from '../components/ui/button';
 
 export function AppLayout() {
@@ -19,12 +20,13 @@ export function AppLayout() {
           </div>
           <div className="session-context">
             <span className="session-context__name">{auth.auth?.user.displayName}</span>
-            <Button type="button" variant="quiet" loading={auth.isMutating} onClick={() => void auth.logout()}>
+            <Button type="button" variant="quiet" loading={auth.isMutating} onClick={() => void auth.logout().catch(() => undefined)}>
               Đăng xuất
             </Button>
           </div>
         </div>
       </header>
+      <div className="page-width"><LogoutNotice /></div>
       <nav className="primary-nav" aria-label="Điều hướng chính">
         <div className="page-width primary-nav__links">
           <NavLink to="/" end>Không gian làm việc</NavLink>

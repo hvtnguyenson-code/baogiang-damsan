@@ -21,8 +21,8 @@ export function AuthLayout() {
           <h1 id="auth-context-title">Một phiên làm việc rõ ràng, đúng phạm vi.</h1>
           <p>Đăng nhập để tiếp tục công việc được giao. Quyền truy cập được hệ thống kiểm tra theo từng phạm vi.</p>
           <dl className="auth-context__ledger">
-            <div><dt>Phiên</dt><dd>Cookie HttpOnly</dd></div>
-            <div><dt>Quyền</dt><dd>Theo capability được cấp</dd></div>
+            <div><dt>Phiên</dt><dd>Được bảo vệ trong trình duyệt</dd></div>
+            <div><dt>Quyền</dt><dd>Theo phạm vi công việc được giao</dd></div>
             <div><dt>Hỗ trợ</dt><dd><Link to="/trang-thai-he-thong">Kiểm tra trạng thái hệ thống</Link></dd></div>
           </dl>
         </section>
