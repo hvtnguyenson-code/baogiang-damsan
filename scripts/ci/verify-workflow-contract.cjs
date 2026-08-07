@@ -16,6 +16,12 @@ for (const required of ['PROD_NODE_EXE','PROD_NPM_EXE','PROD_NPX_EXE','PROD_PSQL
 assert.match(text, /StrictHostKeyChecking=yes/g); assert.doesNotMatch(text, /StrictHostKeyChecking=no/i); assert.doesNotMatch(text, /:.*\\\\incoming/);
 assert.match(text, /powershell\.exe -NoProfile -NonInteractive -EncodedCommand/); assert.doesNotMatch(text, /powershell\.exe -NoProfile -NonInteractive -Command/); assert.match(text, /Read-only marker handshake before transfer/);
 const stepBlocks = text.split(/^      - name:/m).slice(1);
-for (const block of stepBlocks) { const envCount = (block.match(/^        env:\s*$/gm) || []).length; assert.ok(envCount <= 1, 'a workflow step has duplicate env mappings'); }
+function assertStepEnvSources(block) {
+  const envNames = new Set([...block.matchAll(/^          (PROD_[A-Z0-9_]+):/gm)].map((m) => m[1]));
+  const shellRefs = new Set([...block.matchAll(/\$\{?(PROD_[A-Z0-9_]+)/g)].map((m) => m[1]));
+  for (const name of shellRefs) assert.ok(envNames.has(name), `step shell references ${name} without a step env source`);
+}
+for (const block of stepBlocks) { const envCount = (block.match(/^        env:\s*$/gm) || []).length; assert.ok(envCount <= 1, 'a workflow step has duplicate env mappings'); assertStepEnvSources(block); }
+assert.throws(() => assertStepEnvSources('        run: |\n          echo "$PROD_BAOGIANG_ROOT"'), /without a step env source/);
 assert.match(text, /if: always\(\)/); assert.match(text, /deploy-report-\$\{\{ inputs\.commit_sha \}\}\.json/);
 console.log('[workflow-contract] PASS (parsed trigger/job/permissions/concurrency/inputs/environment/transfer/report structure)');

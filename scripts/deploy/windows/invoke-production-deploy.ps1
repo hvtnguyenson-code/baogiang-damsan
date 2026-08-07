@@ -61,7 +61,8 @@ try {
     if (-not $report.previousRelease) {
       try {
         Stop-ExactBaoGiangRuntime -Marker $marker -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName | Out-Null
-        $report.rollback = [ordered]@{ state = 'firstDeployFailedStopped'; failedRelease = $p.ReleaseSha }
+        $quarantine = Quarantine-FailedFirstRelease -Root $canonicalRoot -FailedSha $p.ReleaseSha
+        $report.rollback = [ordered]@{ state = 'firstDeployFailedStopped'; failedRelease = $p.ReleaseSha; quarantinePointer = $quarantine.pointer }
       } catch { $report.rollback = [ordered]@{ state = 'firstDeployStopFailed'; errorCategory = Get-SafeErrorCategory $_; failedRelease = $p.ReleaseSha } }
     }
     elseif ($migrationAttempted -and -not $p.RollbackCompatibilityApproved) { $report.rollback = [ordered]@{ state = 'stoppedCompatibilityApprovalRequired' } }

@@ -161,6 +161,44 @@ function Assert-VerifiedRuntimeIdentity([Parameter(Mandatory = $true)]$Marker,[P
   return $true
 }
 
+function Stop-ExactBaoGiangRuntime([Parameter(Mandatory = $true)]$Marker,[Parameter(Mandatory = $true)][ValidateSet('scheduled-task','service')][string]$ServiceKind,[Parameter(Mandatory = $true)][string]$ServiceName) {
+  # Identity validation is intentionally before every mutation; never target a generic node.exe.
+  Assert-VerifiedRuntimeIdentity -Marker $Marker -ServiceKind $ServiceKind -ServiceName $ServiceName | Out-Null
+  if ($ServiceKind -eq 'scheduled-task') {
+    $tasks = @(Get-ScheduledTask -ErrorAction Stop | Where-Object { $_.TaskName -ceq $ServiceName -and $_.TaskPath -ceq $Marker.service.taskPath })
+    if ($tasks.Count -ne 1 -or @($tasks[0].Actions).Count -ne 1) { throw 'Exact Scheduled Task cannot be safely stopped.' }
+    # A first-deploy failure must not be restarted by an automatic trigger.
+    Disable-ScheduledTask -TaskName $ServiceName -TaskPath $Marker.service.taskPath -ErrorAction Stop | Out-Null
+    Stop-ScheduledTask -TaskName $ServiceName -TaskPath $Marker.service.taskPath -ErrorAction SilentlyContinue
+  } else {
+    $services = @(Get-CimInstance Win32_Service -ErrorAction Stop | Where-Object { $_.Name -ceq $ServiceName -and $_.PathName -ceq $Marker.service.pathName -and $_.StartName -ceq $Marker.service.account })
+    if ($services.Count -ne 1) { throw 'Exact Windows Service cannot be safely stopped.' }
+    Stop-Service -Name $ServiceName -Force -ErrorAction Stop
+    Set-Service -Name $ServiceName -StartupType Disabled -ErrorAction Stop
+  }
+  $exact = @((Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {
+    (Normalize-ComparablePath $_.ExecutablePath) -eq (Normalize-ComparablePath $Marker.nodeExe) -and (Normalize-ProcessCommandLine $_.CommandLine) -like "*$(Normalize-ProcessCommandLine $Marker.entryPoint)*"
+  }))
+  $listeners = @(Get-NetTCPConnection -State Listen -LocalPort 3100 -ErrorAction SilentlyContinue)
+  if ($exact.Count -ne 0) { throw 'Exact Báo giảng API process remains after safe stop.' }
+  if ($listeners.Count -ne 0) { throw 'Port 3100 remains owned after safe stop; no foreign process was killed.' }
+  return [ordered]@{ state = 'stopped'; serviceKind = $ServiceKind; serviceName = $ServiceName; apiProcessCount = 0; listenerCount = 0 }
+}
+
+function Quarantine-FailedFirstRelease([Parameter(Mandatory = $true)][string]$Root,[Parameter(Mandatory = $true)][string]$FailedSha) {
+  $canonicalRoot = Assert-DedicatedRoot $Root
+  $current = Join-Path $canonicalRoot 'current'; $previous = Join-Path $canonicalRoot 'previous'; $failed = Join-Path $canonicalRoot 'failed-release'
+  if (Test-Path -LiteralPath $previous) { throw 'First-deploy quarantine refuses an existing previous release pointer.' }
+  if (Test-Path -LiteralPath $failed) { throw 'Failed-release quarantine pointer already exists; operator inspection is required.' }
+  if (-not (Test-Path -LiteralPath $current)) { throw 'Current pointer is missing for first-deploy quarantine.' }
+  $target = Assert-ReleasePointerTarget -PointerPath $current -Root $canonicalRoot
+  if ((Split-Path -Leaf $target) -cne $FailedSha) { throw 'Current pointer does not identify the failed release.' }
+  Move-Item -LiteralPath $current -Destination $failed -ErrorAction Stop
+  Assert-ReleasePointerTarget -PointerPath $failed -Root $canonicalRoot | Out-Null
+  if (Test-Path -LiteralPath $current) { throw 'Current pointer remained after first-deploy quarantine.' }
+  return [ordered]@{ state = 'quarantined'; failedRelease = $FailedSha; pointer = $failed }
+}
+
 function Assert-ExecutableContract([Parameter(Mandatory = $true)][hashtable]$Executables) {
   foreach ($key in $Executables.Keys) { Assert-ExistingLeaf -Path $Executables[$key] -Label $key | Out-Null }
 }

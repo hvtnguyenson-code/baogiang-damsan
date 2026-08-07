@@ -13,6 +13,7 @@ const invoke = read('scripts/deploy/windows/invoke-production-deploy.ps1');
 const restart = read('scripts/deploy/windows/restart-baogiang-api.ps1');
 const rollback = read('scripts/deploy/windows/rollback-release.ps1');
 const migration = read('scripts/deploy/windows/run-migrations.ps1');
+const remote = require('./build-windows-remote-command.cjs');
 
 function redact(text) {
   return text
@@ -36,6 +37,11 @@ assert.equal(validateKnownHost('vps.example.test ssh-ed25519 AAAAC3NzaC1lZDI1NTE
 assert.throws(() => validateKnownHost('* ssh-ed25519 AAAA==','vps.example.test'));
 assert.equal(toRelativeScpPath('release-' + 'a'.repeat(40) + '.zip').startsWith('./'), true);
 assert.throws(() => toRelativeScpPath('C:\\Windows\\bad.zip'));
+assert.equal(remote.windowsRootToSftp('C:\\Báo giảng Đam San'), '/C:/Báo giảng Đam San');
+assert.throws(() => remote.windowsRootToSftp('C:\\bad"root'));
+assert.throws(() => remote.windowsRootToSftp('relative\\root'));
+assert.throws(() => remote.buildCleanup('C:\\baogiang', ''));
+assert.throws(() => remote.buildCleanup('C:\\baogiang', 'incoming'));
 
 assert.match(workflow, /git -C control-plane archive --format=zip/); assert.match(workflow, /release-\$TARGET_SHA\.zip/); assert.doesNotMatch(workflow, /tar\s+--/i);
 assert.match(install, /Expand-Archive/); assert.match(install, /Invoke-NativeChecked/); assert.doesNotMatch(install, /--ignore-scripts/); assert.match(install, /argon2 native runtime smoke check/);

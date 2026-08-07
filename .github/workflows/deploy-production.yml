@@ -215,10 +215,10 @@ jobs:
           PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
           PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT }}
           PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
+          PROD_BAOGIANG_ROOT: ${{ vars.PROD_BAOGIANG_ROOT }}
         run: |
           set -euo pipefail
-          root_sftp="/${PROD_BAOGIANG_ROOT:0:1}:/${PROD_BAOGIANG_ROOT:3}"
-          root_sftp="${root_sftp//\\//}"
+          root_sftp="$(node control-plane/scripts/ci/build-windows-remote-command.cjs sftp-root "$PROD_BAOGIANG_ROOT")"
           transfer="$root_sftp/incoming/${{ steps.handshake.outputs.transfer_name }}"
           sftp_args=(-i "$SSH_KEY" -P "$PROD_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "${PROD_SSH_USER}@${PROD_SSH_HOST}")
           { printf 'put %s %s\n' "$GITHUB_WORKSPACE/${{ steps.package.outputs.archive }}" "$transfer/${{ steps.package.outputs.archive }}"; printf 'put %s %s\n' deploy-parameters.json "$transfer/deploy-parameters.json"; } | sftp "${sftp_args[@]}"
@@ -234,6 +234,7 @@ jobs:
           PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
           PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT }}
           PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
+          PROD_BAOGIANG_ROOT: ${{ vars.PROD_BAOGIANG_ROOT }}
         run: |
           set -euo pipefail
           root='${PROD_BAOGIANG_ROOT}'
@@ -257,7 +258,7 @@ jobs:
           set -euo pipefail
           report="deploy-report-${TARGET_SHA}.json"
           if [[ -s "$SSH_KEY" && -s "$KNOWN_HOSTS" ]]; then
-            root_sftp="/${PROD_BAOGIANG_ROOT:0:1}:/${PROD_BAOGIANG_ROOT:3}"; root_sftp="${root_sftp//\\//}"
+            root_sftp="$(node control-plane/scripts/ci/build-windows-remote-command.cjs sftp-root "$PROD_BAOGIANG_ROOT")"
             remote_report="$root_sftp/incoming/${{ steps.handshake.outputs.transfer_name }}/$report"
             printf 'get %s %s\n' "$remote_report" "$RUNNER_TEMP/$report" | sftp -i "$SSH_KEY" -P "$PROD_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "${PROD_SSH_USER}@${PROD_SSH_HOST}"
           fi
@@ -285,8 +286,8 @@ jobs:
           set -euo pipefail
           if [[ -s "$SSH_KEY" && -s "$KNOWN_HOSTS" ]]; then
             root='${PROD_BAOGIANG_ROOT}'; transfer='${{ steps.handshake.outputs.transfer_name }}'
-            command="\$ErrorActionPreference='Stop'; \$path=Join-Path '$root' ('incoming\\' + '$transfer'); if(Test-Path -LiteralPath \$path){Remove-Item -LiteralPath \$path -Recurse -Force}"
-            encoded="$(printf '%s' "$command" | iconv -f UTF-8 -t UTF-16LE | base64 -w0)"
+            [[ "$transfer" =~ ^control-[0-9]+-[0-9]+-[0-9a-f]{40}$ ]] || { echo 'Skipping remote cleanup: no verified transfer directory.'; exit 0; }
+            encoded="$(node control-plane/scripts/ci/build-windows-remote-command.cjs cleanup "$root" "$transfer")"
             ssh -i "$SSH_KEY" -p "$PROD_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "$PROD_SSH_USER@$PROD_SSH_HOST" powershell.exe -NoProfile -NonInteractive -EncodedCommand "$encoded"
           fi
           rm -f "$SSH_KEY" "$KNOWN_HOSTS" deploy-parameters.json
