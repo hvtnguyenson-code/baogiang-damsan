@@ -1,4 +1,4 @@
-# Phase 01 Production CD First Deploy — Correction 003 Report
+# Phase 01 Production CD First Deploy — Correction 005 Report
 
 ## Scope and safety
 
@@ -29,14 +29,14 @@ First deploy remains blocked until the staged runbook is completed, the marker/e
 
 | Gate | Result |
 |---|---|
-| Deployment static, behavioral fixtures, workflow contract, PowerShell parser | LOCAL PASS for Correction-004; authoritative CI PENDING |
-| Windows deployment fixture | LOCAL PASS for Correction-004; authoritative `windows-latest` CI PENDING |
+| Deployment static, behavioral fixtures, workflow contract, PowerShell parser | LOCAL PASS for Correction-005; authoritative CI PENDING |
+| Windows deployment fixture and deterministic classification/polling fixtures | LOCAL PASS for Correction-005; authoritative `windows-latest` CI PENDING |
 | Schema, repository secret, UI static checks | NOT_RUN in Correction-004; prior evidence exists |
 | Lint, typecheck, unit tests | NOT_RUN in Correction-004; prior evidence exists |
 | Build | LOCAL BLOCKED in Correction-002 due timeout; NOT_RUN in Correction-003/004 |
 | Prisma generate | LOCAL PASS in Correction-002; NOT_RUN in Correction-003/004 |
 | Prisma validate | LOCAL BLOCKED in Correction-002 due missing local `DATABASE_URL`; NOT_RUN in Correction-003/004 |
 | Migration foundation, API integration, Playwright E2E | NOT_RUN locally; authoritative isolated CI evidence required |
-| `git diff --check`, staged-file inspection, staged secret scan | Required final gate before commit |
+| `git diff --check`, staged-file inspection, staged secret scan | PASS for Correction-005 |
 
 The blocked local gates are environment blockers, not PASS claims. Authoritative integration/migration/E2E evidence must come from CI after push. No blocked local database or PowerShell environment may be reported as PASS.

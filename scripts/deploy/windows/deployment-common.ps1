@@ -161,6 +161,25 @@ function Assert-VerifiedRuntimeIdentity([Parameter(Mandatory = $true)]$Marker,[P
   return $true
 }
 
+function Get-SafeStopPollingDecision([Parameter(Mandatory = $true)][AllowEmptyCollection()][int[]]$ExactProcessId,[Parameter(Mandatory = $true)]$Listeners) {
+  $exactIds = @($ExactProcessId | ForEach-Object { [int]$_ })
+  $rows = @($Listeners)
+  $foreign = @($rows | Where-Object { $exactIds -notcontains [int]$_.OwningProcess })
+  if ($foreign.Count -gt 0) { return [ordered]@{ state = 'CONFLICT'; exactProcessCount = $exactIds.Count; listenerCount = $rows.Count; foreignListenerCount = $foreign.Count } }
+  if ($exactIds.Count -eq 0 -and $rows.Count -eq 0) { return [ordered]@{ state = 'PASS'; exactProcessCount = 0; listenerCount = 0; foreignListenerCount = 0 } }
+  return [ordered]@{ state = 'WAIT'; exactProcessCount = $exactIds.Count; listenerCount = $rows.Count; foreignListenerCount = 0 }
+}
+
+function Get-DatabaseEvidenceClassification([Parameter(Mandatory = $true)][string]$ActualDatabase,[Parameter(Mandatory = $true)][string]$ExpectedDatabase,[Parameter(Mandatory = $true)][string]$ActualRole,[Parameter(Mandatory = $true)][string]$ExpectedRole,[Parameter(Mandatory = $true)][string[]]$ActualExtensions,[Parameter(Mandatory = $true)][string[]]$RequiredExtensions,[Parameter(Mandatory = $true)][bool]$MigrationTablePresent,[int]$UnfinishedMigrations = 0,[int]$RolledBackMigrations = 0,[bool]$MigrationSummaryVerified = $false) {
+  if ($ActualDatabase -cne $ExpectedDatabase -or $ActualRole -cne $ExpectedRole) { return [ordered]@{ state = 'CONFLICT'; identityState = 'CONFLICT' } }
+  $missing = @($RequiredExtensions | Where-Object { $ActualExtensions -notcontains $_ })
+  if ($missing.Count -gt 0) { return [ordered]@{ state = 'CONFLICT'; identityState = 'EXISTS AND VERIFIED'; missingExtensions = $missing } }
+  if (-not $MigrationTablePresent) { return [ordered]@{ state = 'PARTIAL'; identityState = 'EXISTS AND VERIFIED'; migrationState = 'NOT_APPLIED' } }
+  if (-not $MigrationSummaryVerified) { return [ordered]@{ state = 'PARTIAL'; identityState = 'EXISTS AND VERIFIED'; migrationState = 'NOT_VERIFIED' } }
+  if ($UnfinishedMigrations -gt 0 -or $RolledBackMigrations -gt 0) { return [ordered]@{ state = 'CONFLICT'; identityState = 'EXISTS AND VERIFIED'; migrationState = 'BLOCKING_ROWS'; unfinished = $UnfinishedMigrations; rolledBack = $RolledBackMigrations } }
+  return [ordered]@{ state = 'EXISTS AND VERIFIED'; identityState = 'EXISTS AND VERIFIED'; migrationState = 'CLEAN' }
+}
+
 function Stop-ExactBaoGiangRuntime([Parameter(Mandatory = $true)]$Marker,[Parameter(Mandatory = $true)][ValidateSet('scheduled-task','service')][string]$ServiceKind,[Parameter(Mandatory = $true)][string]$ServiceName,[ValidateRange(1,10)][int]$MaxAttempts = 6,[ValidateRange(0,10)][int]$DelaySeconds = 1) {
   # Identity validation is intentionally before every mutation; never target a generic node.exe.
   Assert-VerifiedRuntimeIdentity -Marker $Marker -ServiceKind $ServiceKind -ServiceName $ServiceName | Out-Null
@@ -181,8 +200,9 @@ function Stop-ExactBaoGiangRuntime([Parameter(Mandatory = $true)]$Marker,[Parame
       (Normalize-ComparablePath $_.ExecutablePath) -eq (Normalize-ComparablePath $Marker.nodeExe) -and (Normalize-ProcessCommandLine $_.CommandLine) -like "*$(Normalize-ProcessCommandLine $Marker.entryPoint)*"
     }))
     $listeners = @(Get-NetTCPConnection -State Listen -LocalPort 3100 -ErrorAction SilentlyContinue)
-    if ($listeners.Count -gt 0) { throw 'Port 3100 remains owned after safe stop; it may be a foreign process and was not killed.' }
-    if ($exact.Count -eq 0) { return [ordered]@{ state = 'stopped'; serviceKind = $ServiceKind; serviceName = $ServiceName; attempts = $attempt; apiProcessCount = 0; listenerCount = 0 } }
+    $decision = Get-SafeStopPollingDecision -ExactProcessId @($exact | Select-Object -ExpandProperty ProcessId) -Listeners $listeners
+    if ($decision.state -eq 'CONFLICT') { throw "Safe-stop conflict: foreign process owns port 3100 (listener count $($decision.listenerCount))." }
+    if ($decision.state -eq 'PASS') { return [ordered]@{ state = 'stopped'; serviceKind = $ServiceKind; serviceName = $ServiceName; attempts = $attempt; apiProcessCount = 0; listenerCount = 0 } }
     if ($attempt -lt $MaxAttempts -and $DelaySeconds -gt 0) { Start-Sleep -Seconds $DelaySeconds }
   }
   throw 'Safe-stop timeout: exact Báo giảng API process remains after the bounded wait.'
