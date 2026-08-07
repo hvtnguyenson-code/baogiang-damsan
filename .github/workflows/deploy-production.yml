@@ -89,6 +89,7 @@ jobs:
           for path_value in PROD_BAOGIANG_ROOT PROD_ENV_FILE PROD_STARTUP_WRAPPER PROD_API_ENTRYPOINT PROD_NGINX_EXE PROD_NGINX_CONFIG PROD_NODE_EXE PROD_NPM_EXE PROD_NPX_EXE PROD_PSQL_EXE PROD_PG_DUMP_EXE PROD_PG_RESTORE_EXE; do
             [[ "${!path_value}" =~ ^[A-Za-z]:\\ ]] || { echo "Non-absolute Windows path: $path_value" >&2; exit 1; }
           done
+          [[ "$PROD_BAOGIANG_ROOT" =~ ^[A-Za-z]:\\[A-Za-z0-9._-]+(\\[A-Za-z0-9._-]+)*$ ]] || { echo "Production root must use safe ASCII path segments." >&2; exit 1; }
           [[ "$PROD_BASE_URL" == "https://baogiang.dtnt-damsan.edu.vn" ]]
           [[ "$PROD_SSH_HOST_KEY" != *$'\n'* && "$PROD_SSH_HOST_KEY" != *$'\r'* ]]
           [[ "$PROD_SSH_HOST_KEY" != *'*'* && "$PROD_SSH_HOST_KEY" != *'?'* && "$PROD_SSH_HOST_KEY" != *'@cert-authority'* && "$PROD_SSH_HOST_KEY" != \|* ]]

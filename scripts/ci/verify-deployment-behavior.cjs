@@ -37,7 +37,8 @@ assert.equal(validateKnownHost('vps.example.test ssh-ed25519 AAAAC3NzaC1lZDI1NTE
 assert.throws(() => validateKnownHost('* ssh-ed25519 AAAA==','vps.example.test'));
 assert.equal(toRelativeScpPath('release-' + 'a'.repeat(40) + '.zip').startsWith('./'), true);
 assert.throws(() => toRelativeScpPath('C:\\Windows\\bad.zip'));
-assert.equal(remote.windowsRootToSftp('C:\\Báo giảng Đam San'), '/C:/Báo giảng Đam San');
+assert.equal(remote.windowsRootToSftp('C:\\baogiang'), '/C:/baogiang');
+assert.throws(() => remote.windowsRootToSftp('C:\\Báo giảng Đam San'));
 assert.throws(() => remote.windowsRootToSftp('C:\\bad"root'));
 assert.throws(() => remote.windowsRootToSftp('relative\\root'));
 assert.throws(() => remote.buildCleanup('C:\\baogiang', ''));

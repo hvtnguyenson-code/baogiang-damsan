@@ -161,7 +161,7 @@ function Assert-VerifiedRuntimeIdentity([Parameter(Mandatory = $true)]$Marker,[P
   return $true
 }
 
-function Stop-ExactBaoGiangRuntime([Parameter(Mandatory = $true)]$Marker,[Parameter(Mandatory = $true)][ValidateSet('scheduled-task','service')][string]$ServiceKind,[Parameter(Mandatory = $true)][string]$ServiceName) {
+function Stop-ExactBaoGiangRuntime([Parameter(Mandatory = $true)]$Marker,[Parameter(Mandatory = $true)][ValidateSet('scheduled-task','service')][string]$ServiceKind,[Parameter(Mandatory = $true)][string]$ServiceName,[ValidateRange(1,10)][int]$MaxAttempts = 6,[ValidateRange(0,10)][int]$DelaySeconds = 1) {
   # Identity validation is intentionally before every mutation; never target a generic node.exe.
   Assert-VerifiedRuntimeIdentity -Marker $Marker -ServiceKind $ServiceKind -ServiceName $ServiceName | Out-Null
   if ($ServiceKind -eq 'scheduled-task') {
@@ -176,13 +176,16 @@ function Stop-ExactBaoGiangRuntime([Parameter(Mandatory = $true)]$Marker,[Parame
     Stop-Service -Name $ServiceName -Force -ErrorAction Stop
     Set-Service -Name $ServiceName -StartupType Disabled -ErrorAction Stop
   }
-  $exact = @((Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {
-    (Normalize-ComparablePath $_.ExecutablePath) -eq (Normalize-ComparablePath $Marker.nodeExe) -and (Normalize-ProcessCommandLine $_.CommandLine) -like "*$(Normalize-ProcessCommandLine $Marker.entryPoint)*"
-  }))
-  $listeners = @(Get-NetTCPConnection -State Listen -LocalPort 3100 -ErrorAction SilentlyContinue)
-  if ($exact.Count -ne 0) { throw 'Exact Báo giảng API process remains after safe stop.' }
-  if ($listeners.Count -ne 0) { throw 'Port 3100 remains owned after safe stop; no foreign process was killed.' }
-  return [ordered]@{ state = 'stopped'; serviceKind = $ServiceKind; serviceName = $ServiceName; apiProcessCount = 0; listenerCount = 0 }
+  for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+    $exact = @((Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {
+      (Normalize-ComparablePath $_.ExecutablePath) -eq (Normalize-ComparablePath $Marker.nodeExe) -and (Normalize-ProcessCommandLine $_.CommandLine) -like "*$(Normalize-ProcessCommandLine $Marker.entryPoint)*"
+    }))
+    $listeners = @(Get-NetTCPConnection -State Listen -LocalPort 3100 -ErrorAction SilentlyContinue)
+    if ($listeners.Count -gt 0) { throw 'Port 3100 remains owned after safe stop; it may be a foreign process and was not killed.' }
+    if ($exact.Count -eq 0) { return [ordered]@{ state = 'stopped'; serviceKind = $ServiceKind; serviceName = $ServiceName; attempts = $attempt; apiProcessCount = 0; listenerCount = 0 } }
+    if ($attempt -lt $MaxAttempts -and $DelaySeconds -gt 0) { Start-Sleep -Seconds $DelaySeconds }
+  }
+  throw 'Safe-stop timeout: exact Báo giảng API process remains after the bounded wait.'
 }
 
 function Quarantine-FailedFirstRelease([Parameter(Mandatory = $true)][string]$Root,[Parameter(Mandatory = $true)][string]$FailedSha) {

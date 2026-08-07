@@ -15,6 +15,10 @@ param(
   [string[]]$KnownForeignName = @(),
   [switch]$VerifyDatabase,
   [string]$DatabaseUrlEnvironmentVariable = 'DATABASE_URL',
+  [string]$ExpectedDatabase = 'baogiang',
+  [string]$ExpectedDatabaseRole = 'baogiang_app',
+  [ValidateRange(1,65535)][int]$ExpectedPostgresPort = 5433,
+  [string[]]$RequiredDatabaseExtension = @('btree_gist'),
   [switch]$RequireVerifiedIdentity
 )
 Set-StrictMode -Version Latest
@@ -85,19 +89,27 @@ function Get-NginxSnapshot {
   if ($NginxConfig -and (Test-Path -LiteralPath $NginxConfig -PathType Leaf)) {
     $references = @(Get-Content -LiteralPath $NginxConfig | Where-Object { $_ -match 'server_name|proxy_pass|root\s+' } | ForEach-Object { Redact-SensitiveText $_.Trim() })
   }
-  [ordered]@{ executable = if ($NginxExe) { Get-CommandSnapshot ([IO.Path]::GetFileNameWithoutExtension($NginxExe)) } else { Get-CommandSnapshot 'nginx' }; config = $configState; references = $references; processes = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -ieq 'nginx.exe' } | ForEach-Object { Get-NormalizedProcessIdentity $_ }) }
+  [ordered]@{ state = if ($references.Count -gt 0) { 'PARTIAL' } else { 'NOT_VERIFIED' }; note = 'Direct config references only; include chain and exact server block are not verified.'; executable = if ($NginxExe) { Get-CommandSnapshot ([IO.Path]::GetFileNameWithoutExtension($NginxExe)) } else { Get-CommandSnapshot 'nginx' }; config = $configState; references = $references; processes = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -ieq 'nginx.exe' } | ForEach-Object { Get-NormalizedProcessIdentity $_ }) }
 }
 
 function Get-DatabaseSnapshot {
   if (-not $VerifyDatabase) { return [ordered]@{ state = 'NOT_RUN'; reason = 'No approved local database authentication was provided.' } }
   $url = [Environment]::GetEnvironmentVariable($DatabaseUrlEnvironmentVariable)
   if ([string]::IsNullOrWhiteSpace($url)) { return [ordered]@{ state = 'NOT_RUN'; reason = 'Approved server-side database environment is unavailable.' } }
-  $parts = Set-PostgresProcessEnvironment -DatabaseUrl $url -ExpectedPort 5433
+  $parts = Set-PostgresProcessEnvironment -DatabaseUrl $url -ExpectedPort $ExpectedPostgresPort
   try {
     $psql = Get-Command psql -ErrorAction Stop
-    & $psql.Source --tuples-only --no-align --command "SELECT current_database(), current_user; SELECT extname FROM pg_extension ORDER BY extname;" 2>$null | Out-Null
+    $output = @(& $psql.Source --tuples-only --no-align --command "SELECT current_database() || '|' || current_user; SELECT extname FROM pg_extension ORDER BY extname; SELECT to_regclass('_prisma_migrations') IS NOT NULL;" 2>$null)
     if ($LASTEXITCODE -ne 0) { return [ordered]@{ state = 'CONFLICT'; reason = 'Read-only PostgreSQL verification failed.' } }
-    [ordered]@{ state = 'EXISTS AND VERIFIED'; host = $parts.host; port = $parts.port; database = $parts.database; role = $parts.user; extensions = 'verified-read-only' }
+    $actual = ($output | ForEach-Object { $_.ToString().Trim() } | Where-Object { $_ })
+    $identity = $actual | Select-Object -First 1
+    $identityParts = $identity -split '\|', 2
+    $extensions = @($actual | Select-Object -Skip 1 | Where-Object { $_ -notin @('t','f') })
+    $migrationsPresent = $actual -contains 't'
+    if ($identityParts.Count -ne 2 -or $identityParts[0] -cne $ExpectedDatabase -or $identityParts[1] -cne $ExpectedDatabaseRole -or [int]$parts.port -ne $ExpectedPostgresPort) { return [ordered]@{ state = 'CONFLICT'; database = if($identityParts.Count -gt 0){$identityParts[0]}else{$null}; role = if($identityParts.Count -gt 1){$identityParts[1]}else{$null}; port = $parts.port; reason = 'Actual database/role/port does not match reviewed expectations.' } }
+    $missingExtensions = @($RequiredDatabaseExtension | Where-Object { $extensions -notcontains $_ })
+    if ($missingExtensions.Count -gt 0) { return [ordered]@{ state = 'CONFLICT'; database = $identityParts[0]; role = $identityParts[1]; port = $parts.port; extensions = $extensions; missingExtensions = $missingExtensions; migrationsTablePresent = $migrationsPresent } }
+    [ordered]@{ state = if($migrationsPresent){'EXISTS AND VERIFIED'}else{'PARTIAL'}; database = $identityParts[0]; role = $identityParts[1]; port = $parts.port; extensions = $extensions; migrationsTablePresent = $migrationsPresent; migrationState = if($migrationsPresent){'NOT_VERIFIED'}else{'MISSING'} }
   } finally { Clear-PostgresProcessEnvironment }
 }
 
@@ -106,7 +118,7 @@ function Get-TlsHttpSnapshot {
     $response = Invoke-WebRequest -Uri $BaseUrl -Method Head -MaximumRedirection 0 -TimeoutSec 10 -UseBasicParsing
     $certificate = $null
     if ($response.BaseResponse.ServicePoint.Certificate) { $certificate = [Security.Cryptography.X509Certificates.X509Certificate2]$response.BaseResponse.ServicePoint.Certificate }
-    [ordered]@{ state = 'EXISTS AND VERIFIED'; status = [int]$response.StatusCode; finalHost = ([Uri]$response.BaseResponse.ResponseUri).Host; tls = if ($certificate) { [ordered]@{ subject = $certificate.Subject; thumbprint = $certificate.Thumbprint; notAfter = $certificate.NotAfter.ToUniversalTime().ToString('o') } } else { [ordered]@{ state = 'NOT_AVAILABLE' } } }
+    [ordered]@{ state = 'PARTIAL'; status = [int]$response.StatusCode; finalHost = ([Uri]$response.BaseResponse.ResponseUri).Host; note = 'DNS A/AAAA and certificate SAN hostname validation are not performed by this snapshot.'; tls = if ($certificate) { [ordered]@{ subject = $certificate.Subject; thumbprint = $certificate.Thumbprint; notAfter = $certificate.NotAfter.ToUniversalTime().ToString('o') } } else { [ordered]@{ state = 'NOT_AVAILABLE' } } }
   } catch { [ordered]@{ state = 'NOT_RUN'; reason = 'DNS/TLS/HTTP check did not complete; inspect category in operator environment.' } }
 }
 

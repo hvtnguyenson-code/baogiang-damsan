@@ -29,7 +29,7 @@ function buildFileInvocation(scriptPath, parameterPath) {
 }
 
 function windowsRootToSftp(root) {
-  if (typeof root !== 'string' || /[\r\n'"\u0000]/.test(root) || !/^[A-Za-z]:\\[^\\/:*?<>|]+(?:\\[^\\/:*?<>|]+)*$/.test(root)) throw new Error('Unsafe Windows root for SFTP contract.');
+  if (typeof root !== 'string' || !/^[A-Za-z]:\\[A-Za-z0-9._-]+(?:\\[A-Za-z0-9._-]+)*$/.test(root)) throw new Error('Windows deployment root must use safe ASCII path segments.');
   return `/${root[0].toUpperCase()}:/${root.slice(3).replace(/\\/g, '/')}`;
 }
 function assertTransferName(name) {
