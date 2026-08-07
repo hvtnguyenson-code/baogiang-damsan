@@ -36,9 +36,11 @@ function Get-ProcessForPid([int]$Pid) {
 function Get-ListenerSnapshot([int]$Port) {
   $rows = @(Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue)
   @($rows | ForEach-Object {
+    $row = $_
     $process = Get-ProcessForPid ([int]$_.OwningProcess)
-    if ($process) { Get-NormalizedProcessIdentity $process } else { [ordered]@{ pid = [int]$_.OwningProcess; inaccessible = $true } }
-  } | ForEach-Object { $_['port'] = $Port; $_['address'] = $rows[0].LocalAddress; $_ })
+    $identity = if ($process) { Get-NormalizedProcessIdentity $process } else { [ordered]@{ pid = [int]$_.OwningProcess; inaccessible = $true } }
+    $identity['port'] = $Port; $identity['address'] = $row.LocalAddress; $identity
+  })
 }
 
 function Get-DirectorySnapshot([string]$Path) {
@@ -47,7 +49,7 @@ function Get-DirectorySnapshot([string]$Path) {
   $target = $null
   if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { try { $target = Get-ReparseTarget $Path } catch { $target = 'UNRESOLVED_REPARSE_TARGET' } }
   $acl = @((Get-Acl -LiteralPath $Path).Access | ForEach-Object { [ordered]@{ identity = $_.IdentityReference.ToString(); rights = $_.FileSystemRights.ToString(); type = $_.AccessControlType.ToString() } })
-  [ordered]@{ path = $Path; state = 'EXISTS AND VERIFIED'; reparseTarget = $target; acl = $acl }
+  [ordered]@{ path = $Path; state = 'EXISTS'; reparseTarget = $target; acl = $acl }
 }
 
 function Get-SshSnapshot {
@@ -116,8 +118,8 @@ $identityStatus = 'REQUIRES_REVIEW'
 if ($RequireVerifiedIdentity) {
   if ([string]::IsNullOrWhiteSpace($ExpectedTaskName) -and [string]::IsNullOrWhiteSpace($ExpectedServiceName)) { throw 'Verified identity requires an exact task or service name.' }
   $identityServiceName = if ($ServiceKind -eq 'service') { $ExpectedServiceName } else { $ExpectedTaskName }
-  $marker = Read-DeploymentIdentity -Root $canonicalRoot -ServiceKind $ServiceKind -ServiceName $identityServiceName -EnvFile $EnvFile -StartupWrapper $StartupWrapper -ExpectedEntryPoint $ExpectedEntryPoint
-  Assert-VerifiedRuntimeIdentity -Marker $marker -ServiceKind $ServiceKind -ServiceName $identityServiceName | Out-Null
+  $identity = Read-DeploymentIdentity -Root $canonicalRoot -ServiceKind $ServiceKind -ServiceName $identityServiceName -EnvFile $EnvFile -StartupWrapper $StartupWrapper -ExpectedEntryPoint $ExpectedEntryPoint
+  Assert-VerifiedRuntimeIdentity -Marker $identity.marker -ServiceKind $ServiceKind -ServiceName $identityServiceName | Out-Null
   $identityStatus = 'EXISTS AND VERIFIED'
 }
 $report = [ordered]@{

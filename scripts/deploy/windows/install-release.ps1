@@ -17,12 +17,15 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'deployment-common.ps1')
-$canonicalRoot = Read-DeploymentIdentity -Root $Root -ServiceKind $ServiceKind -ServiceName $ServiceName -EnvFile $EnvFile -StartupWrapper $StartupWrapper -ExpectedEntryPoint $ExpectedEntryPoint
+$identity = Read-DeploymentIdentity -Root $Root -ServiceKind $ServiceKind -ServiceName $ServiceName -EnvFile $EnvFile -StartupWrapper $StartupWrapper -ExpectedEntryPoint $ExpectedEntryPoint
+$canonicalRoot = $identity.canonicalRoot
 Assert-ExecutableContract @{ NpmExe = $NpmExe; NpxExe = $NpxExe; NodeExe = $NodeExe }
 $actual = (Get-FileHash -LiteralPath $SourceArchive -Algorithm SHA256).Hash
 if ($actual -ne $ExpectedSha256.ToUpperInvariant()) { throw 'Release archive checksum mismatch.' }
-$release = Join-Path $Root "releases\$ReleaseSha"
-$staging = Join-Path $Root "staging\$ReleaseSha"
+$release = Assert-ExactChildPath $canonicalRoot "releases\$ReleaseSha"
+$staging = Assert-ExactChildPath $canonicalRoot "staging\$ReleaseSha"
+Assert-ExistingDirectory (Join-Path $canonicalRoot 'releases') | Out-Null
+Assert-ExistingDirectory (Join-Path $canonicalRoot 'staging') | Out-Null
 if (Test-Path -LiteralPath $release) { throw "Release already exists: $ReleaseSha" }
 if (Test-Path -LiteralPath $staging) { throw 'Staging directory already exists; operator must inspect it before retry.' }
 $pushed = $false
@@ -39,5 +42,4 @@ try {
   if (-not (Test-Path (Join-Path $staging 'apps\api\dist\apps\api\src\main.js'))) { throw 'API startup entry point is missing after build.' }
   if (-not (Test-Path (Join-Path $staging 'apps\web\dist') -PathType Container)) { throw 'Frontend static root is missing after build.' }
 } finally { if ($pushed) { Pop-Location } }
-New-Item -ItemType Directory -Path (Split-Path $release) -ErrorAction Stop | Out-Null
 Move-Item -LiteralPath $staging -Destination $release

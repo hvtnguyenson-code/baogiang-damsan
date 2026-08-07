@@ -300,3 +300,20 @@ jobs:
   # - Use production secrets
   # - Restart production services
   # - Run production migrations
+
+  deployment-windows-contract:
+    name: Windows deployment contract
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+      - name: Install test runtime
+        run: npm ci --ignore-scripts
+      - name: Parse PowerShell deployment scripts
+        run: npm run test:deploy:powershell
+      - name: Execute Windows deployment behavior fixtures
+        run: npm run test:deploy:windows

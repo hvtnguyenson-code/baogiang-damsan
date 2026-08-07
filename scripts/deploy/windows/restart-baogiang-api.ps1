@@ -15,7 +15,9 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'deployment-common.ps1')
 $canonicalRoot = Assert-DedicatedRoot $Root
-$marker = Read-DeploymentIdentity -Root $canonicalRoot -ServiceKind $ServiceKind -ServiceName $ServiceName -EnvFile $EnvFile -StartupWrapper $StartupWrapper -ExpectedEntryPoint $ExpectedEntryPoint
+$identity = Read-DeploymentIdentity -Root $canonicalRoot -ServiceKind $ServiceKind -ServiceName $ServiceName -EnvFile $EnvFile -StartupWrapper $StartupWrapper -ExpectedEntryPoint $ExpectedEntryPoint
+$canonicalRoot = $identity.canonicalRoot
+$marker = $identity.marker
 Assert-ExistingLeaf $NodeExe 'Node executable' | Out-Null
 $entry = Get-CanonicalPath $ExpectedEntryPoint
 if (-not (Test-Path -LiteralPath $entry -PathType Leaf)) { throw 'Expected current API entry point is missing.' }
@@ -58,7 +60,7 @@ function Get-StartedProcess([DateTime]$StartedAtUtc) {
   if ($process.StartTime.ToUniversalTime() -lt $StartedAtUtc) { return $null }
   $listeners = @(Get-NetTCPConnection -State Listen -LocalPort 3100 -ErrorAction SilentlyContinue)
   if ($listeners.Count -ne 1 -or $listeners[0].OwningProcess -ne $processes[0].ProcessId) { return $null }
-  return [ordered]@{ pid = [int]$processes[0].ProcessId; executablePath = $processes[0].ExecutablePath; commandLineRedacted = Redact-SensitiveText $processes[0].CommandLine; port = 3100; attempts = 0 }
+  return [ordered]@{ pid = [int]$processes[0].ProcessId; executablePath = $processes[0].ExecutablePath; commandLineSha256 = (Get-NormalizedProcessIdentity $processes[0]).commandLineSha256; port = 3100; attempts = 0 }
 }
 
 Assert-PortIdentity

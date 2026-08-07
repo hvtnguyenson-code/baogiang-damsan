@@ -11,13 +11,14 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'deployment-common.ps1')
-$canonicalRoot = Read-DeploymentIdentity -Root $Root -ServiceKind $ServiceKind -ServiceName $ServiceName -EnvFile $EnvFile -StartupWrapper $StartupWrapper -ExpectedEntryPoint $ExpectedEntryPoint
+$identity = Read-DeploymentIdentity -Root $Root -ServiceKind $ServiceKind -ServiceName $ServiceName -EnvFile $EnvFile -StartupWrapper $StartupWrapper -ExpectedEntryPoint $ExpectedEntryPoint
+$canonicalRoot = $identity.canonicalRoot
 $release = Join-Path $canonicalRoot "releases\$ReleaseSha"; $current = Join-Path $canonicalRoot 'current'; $previous = Join-Path $canonicalRoot 'previous'; $incoming = Join-Path $canonicalRoot 'current.next'
 if (-not (Test-Path -LiteralPath $release -PathType Container)) { throw 'Target release does not exist.' }
 $previousTarget = $null
-if (Test-Path -LiteralPath $current) { $previousTarget = Get-ReparseTarget $current }
-if (Test-Path -LiteralPath $previous) { Get-ReparseTarget $previous | Out-Null }
-if (Test-Path -LiteralPath $incoming) { Get-ReparseTarget $incoming | Out-Null; Remove-Item -LiteralPath $incoming -Force }
+if (Test-Path -LiteralPath $current) { $previousTarget = Assert-ReleasePointerTarget -PointerPath $current -Root $canonicalRoot }
+if (Test-Path -LiteralPath $previous) { Assert-ReleasePointerTarget -PointerPath $previous -Root $canonicalRoot | Out-Null }
+if (Test-Path -LiteralPath $incoming) { Assert-ReleasePointerTarget -PointerPath $incoming -Root $canonicalRoot | Out-Null; Remove-Item -LiteralPath $incoming -Force }
 New-Item -ItemType Junction -Path $incoming -Target $release | Out-Null
 try {
   if (Test-Path -LiteralPath $previous) { Remove-Item -LiteralPath $previous -Force }

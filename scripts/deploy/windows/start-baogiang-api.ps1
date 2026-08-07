@@ -13,7 +13,9 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'deployment-common.ps1')
 $canonicalRoot = Assert-DedicatedRoot $Root
 $wrapper = Get-CanonicalPath $PSCommandPath
-$marker = Read-DeploymentIdentity -Root $canonicalRoot -ServiceKind $ServiceKind -ServiceName $ServiceName -EnvFile $EnvFile -StartupWrapper $wrapper -ExpectedEntryPoint $ExpectedEntryPoint
+$identity = Read-DeploymentIdentity -Root $canonicalRoot -ServiceKind $ServiceKind -ServiceName $ServiceName -EnvFile $EnvFile -StartupWrapper $wrapper -ExpectedEntryPoint $ExpectedEntryPoint
+$canonicalRoot = $identity.canonicalRoot
+$marker = $identity.marker
 Import-ServerEnvironment -EnvFile $EnvFile -ExpectedBaseUrl $ExpectedBaseUrl | Out-Null
 $entry = Get-CanonicalPath $ExpectedEntryPoint
 if (-not (Test-Path -LiteralPath $entry -PathType Leaf)) { throw 'Current API entry point is missing.' }

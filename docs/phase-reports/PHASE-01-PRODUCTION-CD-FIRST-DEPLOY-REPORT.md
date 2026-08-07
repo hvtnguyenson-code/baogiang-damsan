@@ -1,20 +1,21 @@
-# Phase 01 Production CD First Deploy — Correction 001 Report
+# Phase 01 Production CD First Deploy — Correction 002 Report
 
 ## Scope and safety
 
 This correction audits the complete delivery chain around artifact creation, remote transfer, identity, runtime environment, backup, migration, restart, health, rollback, inventory and evidence. No VPS was accessed, no production secret was configured/read, no production database was used, no migration or deployment was run, and no PR/merge was created.
 
-## Implemented correction
+## Implemented correction (repository evidence only)
 
 - Deterministic `git archive --format=zip` from the exact target SHA; remote checksum verification; no working-tree/untracked package content.
 - Full absolute executable contract for Node/npm/npx/psql/pg_dump/pg_restore/Nginx and lifecycle-enabled `npm ci` with an argon2 native smoke check.
-- Shared identity marker and fail-closed checks for dedicated root, pre-created directories, ACL-reviewed paths, exact task/service action, startup wrapper, port ownership and neighboring-system isolation.
+- Shared identity return contract is explicit (`canonicalRoot` plus `marker`); release switch/rollback validate every existing junction target as an exact lowercase-SHA directory below the dedicated releases root.
+- Existing bootstrapped `releases`/`staging` parents are verified rather than recreated. Startup runtime bundle identity now requires both wrapper/helper paths and reviewed hashes.
 - `start-baogiang-api.ps1` loads and validates the server-side environment without echoing values, then runs the exact Node executable and current entry point.
 - PostgreSQL backup uses parsed URL fields plus short-lived `PGPASSWORD`, custom format, non-zero size, SHA-256 and `pg_restore --list`; reports contain no credentials.
 - Migration evidence records `_prisma_migrations` state before/after, distinguishes expected pending status from fatal errors, marks attempts before execution, and blocks automatic code rollback without explicit compatibility approval.
 - Exact process/PID/port verification before and after restart; bounded health checks for local/public live/ready, `/`, and `/trang-thai-he-thong`; reparse-point-safe switch/rollback and redacted deploy report.
-- Read-only inventory now classifies SSH/config/ports, tools, listeners, paths/ACLs/reparse targets, task/service actions, Nginx references, database verification, DNS/TLS/HTTP and isolation evidence without raw command-line output.
-- Behavioral fixtures, workflow contract parser, PowerShell parser and expanded static checks wired into CI; `ops/**` branch pushes now receive authoritative CI.
+- Remote workflow first performs a read-only UTF-16LE `-EncodedCommand` marker handshake, then uses a unique verified incoming directory and SFTP; report retrieval is evidence-required after remote execution.
+- Windows CI now executes deployment path/junction, encoded-command and stale-`LASTEXITCODE` fixtures in addition to parser checks. Local execution cannot prove the Windows hosted runner gate until CI runs.
 
 ## Remaining inventory and manual gates
 
@@ -26,15 +27,13 @@ First deploy remains blocked until the staged runbook is completed, the marker/e
 
 | Gate | Result |
 |---|---|
-| Deployment static, behavioral fixtures, workflow contract, PowerShell parser | PASS |
+| Deployment static, behavioral fixtures, workflow contract, PowerShell parser | Pending final local/CI execution for Correction-002 |
 | Schema, repository secret, UI static checks | PASS |
 | Lint, typecheck, unit tests | PASS — 99 tests |
 | Build | PASS |
 | Prisma validate | PASS |
-| Prisma generate | BLOCKED — Windows `EPERM` while renaming the locked Prisma engine file |
-| Migration foundation | BLOCKED — local Bash launcher returned `E_ACCESSDENIED`; no database mutation |
-| API integration | BLOCKED — isolated loopback port `5434` has no PostgreSQL server |
-| Playwright E2E | BLOCKED — 1/3 passed; two auth flows require the unavailable local API/database fixture |
+| Prisma generate | NOT_RUN for Correction-002 at time of report edit |
+| Migration foundation, API integration, Playwright E2E | NOT_RUN for Correction-002; authoritative isolated CI evidence required |
 | `git diff --check`, staged-file inspection, staged secret scan | Required final gate before commit |
 
 The blocked local gates are environment blockers, not PASS claims. Authoritative integration/migration/E2E evidence must come from CI after push. No blocked local database or PowerShell environment may be reported as PASS.

@@ -36,6 +36,19 @@ function Normalize-ComparablePath([string]$Path) {
   return (Get-CanonicalPath $Path).ToLowerInvariant()
 }
 
+function Test-PathWithin([Parameter(Mandatory = $true)][string]$Path,[Parameter(Mandatory = $true)][string]$Parent) {
+  $candidate = Normalize-ComparablePath $Path
+  $container = (Normalize-ComparablePath $Parent).TrimEnd('\')
+  return $candidate -eq $container -or $candidate.StartsWith("$container\", [StringComparison]::OrdinalIgnoreCase)
+}
+
+function Assert-ExactChildPath([Parameter(Mandatory = $true)][string]$Root,[Parameter(Mandatory = $true)][string]$RelativePath) {
+  $canonicalRoot = Assert-DedicatedRoot $Root
+  $candidate = Get-CanonicalPath (Join-Path $canonicalRoot $RelativePath)
+  if (-not (Test-PathWithin $candidate $canonicalRoot)) { throw 'Path escapes the dedicated deployment root.' }
+  return $candidate
+}
+
 function Redact-SensitiveText([AllowNull()][string]$Text) {
   if ($null -eq $Text) { return $null }
   $safe = $Text
@@ -47,12 +60,12 @@ function Redact-SensitiveText([AllowNull()][string]$Text) {
 }
 
 function Get-NormalizedProcessIdentity([Parameter(Mandatory = $true)]$Process) {
-  $commandLine = Redact-SensitiveText $Process.CommandLine
+  # Command lines can contain arbitrary secret syntaxes. Inventory records only a hash.
+  $commandLine = [string]$Process.CommandLine
   [ordered]@{
     pid = [int]$Process.ProcessId
     executablePath = $Process.ExecutablePath
     executableName = if ($Process.ExecutablePath) { Split-Path -Leaf $Process.ExecutablePath } else { $null }
-    commandLineRedacted = $commandLine
     commandLineSha256 = if ($commandLine) { (Get-FileHash -InputStream ([IO.MemoryStream]::new([Text.Encoding]::UTF8.GetBytes($commandLine))) -Algorithm SHA256).Hash } else { $null }
   }
 }
@@ -76,6 +89,18 @@ function Assert-ReparseTarget([Parameter(Mandatory = $true)][string]$Path,[Param
   return $actual
 }
 
+function Assert-ReleasePointerTarget([Parameter(Mandatory = $true)][string]$PointerPath,[Parameter(Mandatory = $true)][string]$Root) {
+  $canonicalRoot = Assert-DedicatedRoot $Root
+  $releasesRoot = Assert-ExactChildPath $canonicalRoot 'releases'
+  $target = Get-ReparseTarget $PointerPath
+  if (-not (Test-PathWithin $target $releasesRoot)) { throw 'Release pointer target is outside the dedicated releases directory.' }
+  $leaf = Split-Path -Leaf $target
+  if ($leaf -notmatch '^[0-9a-f]{40}$') { throw 'Release pointer target must be a lowercase full SHA release directory.' }
+  if (-not (Test-Path -LiteralPath $target -PathType Container)) { throw 'Release pointer target directory does not exist.' }
+  if ((Normalize-ComparablePath (Split-Path -Parent $target)) -ne (Normalize-ComparablePath $releasesRoot)) { throw 'Release pointer target has an ambiguous parent path.' }
+  return $target
+}
+
 function Read-DeploymentIdentity(
   [Parameter(Mandatory = $true)][string]$Root,
   [Parameter(Mandatory = $true)][ValidateSet('scheduled-task','service')][string]$ServiceKind,
@@ -96,7 +121,18 @@ function Read-DeploymentIdentity(
   if ((Normalize-ComparablePath $marker.startupWrapper) -ne (Normalize-ComparablePath $StartupWrapper)) { throw 'Deployment identity marker startup wrapper mismatch.' }
   if ((Normalize-ComparablePath $marker.entryPoint) -ne (Normalize-ComparablePath $ExpectedEntryPoint)) { throw 'Deployment identity marker entry point mismatch.' }
   foreach ($name in @('releases','staging','incoming','shared','logs','backups')) { Assert-ExistingDirectory (Join-Path $canonicalRoot $name) | Out-Null }
-  return $marker
+  foreach ($property in @('startupBundle','nginxExe','nginxConfig','foreignIsolation')) {
+    if (-not $marker.PSObject.Properties.Name.Contains($property)) { throw "Deployment identity marker is missing required isolation/runtime evidence: $property" }
+  }
+  if (-not $marker.startupBundle.wrapperPath -or -not $marker.startupBundle.commonPath -or -not $marker.startupBundle.wrapperSha256 -or -not $marker.startupBundle.commonSha256) { throw 'Deployment identity marker startup runtime bundle is incomplete.' }
+  if ((Normalize-ComparablePath $marker.startupBundle.wrapperPath) -ne (Normalize-ComparablePath $StartupWrapper)) { throw 'Deployment marker startup bundle wrapper path mismatch.' }
+  $commonPath = Join-Path (Split-Path -Parent $StartupWrapper) 'deployment-common.ps1'
+  if ((Normalize-ComparablePath $marker.startupBundle.commonPath) -ne (Normalize-ComparablePath $commonPath)) { throw 'Deployment marker startup bundle helper path mismatch.' }
+  foreach ($bundleFile in @(@{ path = $marker.startupBundle.wrapperPath; hash = $marker.startupBundle.wrapperSha256 }, @{ path = $marker.startupBundle.commonPath; hash = $marker.startupBundle.commonSha256 })) {
+    Assert-ExistingLeaf $bundleFile.path 'Startup runtime bundle file' | Out-Null
+    if ((Get-FileHash -LiteralPath $bundleFile.path -Algorithm SHA256).Hash -ine $bundleFile.hash) { throw 'Startup runtime bundle hash mismatch.' }
+  }
+  return [pscustomobject]@{ canonicalRoot = $canonicalRoot; marker = $marker }
 }
 
 function Assert-VerifiedRuntimeIdentity([Parameter(Mandatory = $true)]$Marker,[Parameter(Mandatory = $true)][ValidateSet('scheduled-task','service')][string]$ServiceKind,[Parameter(Mandatory = $true)][string]$ServiceName) {

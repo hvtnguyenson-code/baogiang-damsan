@@ -35,6 +35,7 @@
     "test:deploy:behavior": "node scripts/ci/verify-deployment-behavior.cjs",
     "test:workflow:contract": "node scripts/ci/verify-workflow-contract.cjs",
     "test:deploy:powershell": "node scripts/ci/verify-powershell-parser.cjs",
+    "test:deploy:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/ci/test-deployment-windows.ps1",
     "test:ui:static": "node scripts/ui/verify-ui-foundation.cjs",
     "prepare": "echo 'No prepare step needed'"
   }

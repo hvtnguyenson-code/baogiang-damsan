@@ -14,7 +14,7 @@ assert.match(text, /^  deploy:\s*$/m); assert.match(text, /^    environment: pro
 assert.match(text, /^  cancel-in-progress: false$/m); assert.match(text, /contents: read/); assert.match(text, /actions: read/);
 for (const required of ['PROD_NODE_EXE','PROD_NPM_EXE','PROD_NPX_EXE','PROD_PSQL_EXE','PROD_PG_DUMP_EXE','PROD_PG_RESTORE_EXE','PROD_STARTUP_WRAPPER','PROD_API_ENTRYPOINT']) assert.match(text, new RegExp(required));
 assert.match(text, /StrictHostKeyChecking=yes/g); assert.doesNotMatch(text, /StrictHostKeyChecking=no/i); assert.doesNotMatch(text, /:.*\\\\incoming/);
-assert.match(text, /powershell\.exe -NoProfile -NonInteractive -Command/); assert.match(text, /ParameterFile/);
+assert.match(text, /powershell\.exe -NoProfile -NonInteractive -EncodedCommand/); assert.doesNotMatch(text, /powershell\.exe -NoProfile -NonInteractive -Command/); assert.match(text, /Read-only marker handshake before transfer/);
 const stepBlocks = text.split(/^      - name:/m).slice(1);
 for (const block of stepBlocks) { const envCount = (block.match(/^        env:\s*$/gm) || []).length; assert.ok(envCount <= 1, 'a workflow step has duplicate env mappings'); }
 assert.match(text, /if: always\(\)/); assert.match(text, /deploy-report-\$\{\{ inputs\.commit_sha \}\}\.json/);

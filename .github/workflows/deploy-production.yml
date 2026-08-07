@@ -151,7 +151,7 @@ jobs:
           ROLLBACK_COMPATIBILITY: ${{ inputs.allow_code_rollback_after_migration }}
         run: |
           set -euo pipefail
-          node -e 'const fs=require("node:fs"); const e=process.env; const root=e.PROD_BAOGIANG_ROOT; const p={ReleaseSha:e.TARGET_SHA,Root:root,SourceArchiveName:`release-${e.TARGET_SHA}.zip`,ExpectedSha256:e.RELEASE_SHA256,NodeExe:e.PROD_NODE_EXE,NpmExe:e.PROD_NPM_EXE,NpxExe:e.PROD_NPX_EXE,PsqlExe:e.PROD_PSQL_EXE,PgDumpExe:e.PROD_PG_DUMP_EXE,PgRestoreExe:e.PROD_PG_RESTORE_EXE,EnvFile:e.PROD_ENV_FILE,StartupWrapper:e.PROD_STARTUP_WRAPPER,NginxExe:e.PROD_NGINX_EXE,NginxConfig:e.PROD_NGINX_CONFIG,ExpectedBaseUrl:e.PROD_BASE_URL,ServiceKind:e.PROD_SERVICE_KIND,ServiceName:e.PROD_SERVICE_NAME,ExpectedEntryPoint:e.PROD_API_ENTRYPOINT,MigrationRequested:true,ProductionMigrationApproved:true,RollbackCompatibilityApproved:e.ROLLBACK_COMPATIBILITY==="true",ReportFileName:`deploy-report-${e.TARGET_SHA}.json`}; fs.writeFileSync("deploy-parameters.json",JSON.stringify(p,null,2),{encoding:"utf8",mode:0o600});'
+          node -e 'const fs=require("node:fs"); const e=process.env; const root=e.PROD_BAOGIANG_ROOT; const run=`${e.GITHUB_RUN_ID}-${e.GITHUB_RUN_ATTEMPT}`; const p={ReleaseSha:e.TARGET_SHA,Root:root,TransferDirectoryName:`control-${run}-${e.TARGET_SHA}`,SourceArchiveName:`release-${e.TARGET_SHA}.zip`,ExpectedSha256:e.RELEASE_SHA256,NodeExe:e.PROD_NODE_EXE,NpmExe:e.PROD_NPM_EXE,NpxExe:e.PROD_NPX_EXE,PsqlExe:e.PROD_PSQL_EXE,PgDumpExe:e.PROD_PG_DUMP_EXE,PgRestoreExe:e.PROD_PG_RESTORE_EXE,EnvFile:e.PROD_ENV_FILE,StartupWrapper:e.PROD_STARTUP_WRAPPER,NginxExe:e.PROD_NGINX_EXE,NginxConfig:e.PROD_NGINX_CONFIG,ExpectedBaseUrl:e.PROD_BASE_URL,ServiceKind:e.PROD_SERVICE_KIND,ServiceName:e.PROD_SERVICE_NAME,ExpectedEntryPoint:e.PROD_API_ENTRYPOINT,MigrationRequested:true,ProductionMigrationApproved:true,RollbackCompatibilityApproved:e.ROLLBACK_COMPATIBILITY==="true",ReportFileName:`deploy-report-${e.TARGET_SHA}.json`}; fs.writeFileSync("deploy-parameters.json",JSON.stringify(p,null,2),{encoding:"utf8",mode:0o600});'
 
       - name: Prepare pinned SSH files
         id: ssh
@@ -170,7 +170,44 @@ jobs:
           echo "keyfile=$keyfile" >> "$GITHUB_OUTPUT"
           echo "knownfile=$knownfile" >> "$GITHUB_OUTPUT"
 
-      - name: Upload exact artifact, parameters and reviewed scripts
+      - name: Read-only marker handshake before transfer
+        id: handshake
+        shell: bash
+        env:
+          SSH_KEY: ${{ steps.ssh.outputs.keyfile }}
+          KNOWN_HOSTS: ${{ steps.ssh.outputs.knownfile }}
+          PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+          PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT }}
+          PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
+          PROD_BAOGIANG_ROOT: ${{ vars.PROD_BAOGIANG_ROOT }}
+          PROD_SERVICE_KIND: ${{ vars.PROD_SERVICE_KIND }}
+          PROD_SERVICE_NAME: ${{ vars.PROD_SERVICE_NAME }}
+        run: |
+          set -euo pipefail
+          payload="$(node control-plane/scripts/ci/build-windows-remote-command.cjs handshake "$(node -e 'process.stdout.write(JSON.stringify({root:process.env.PROD_BAOGIANG_ROOT,serviceKind:process.env.PROD_SERVICE_KIND,serviceName:process.env.PROD_SERVICE_NAME}))')")"
+          ssh -i "$SSH_KEY" -p "$PROD_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "$PROD_SSH_USER@$PROD_SSH_HOST" powershell.exe -NoProfile -NonInteractive -EncodedCommand "$payload" | grep -Fx BAOGIANG_HANDSHAKE_PASS
+          run_id="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          [[ "$run_id" =~ ^[0-9-]+$ ]]
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "transfer_name=control-$run_id-$TARGET_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Create verified unique transfer directory
+        shell: bash
+        env:
+          SSH_KEY: ${{ steps.ssh.outputs.keyfile }}
+          KNOWN_HOSTS: ${{ steps.ssh.outputs.knownfile }}
+          PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+          PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT }}
+          PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
+          PROD_BAOGIANG_ROOT: ${{ vars.PROD_BAOGIANG_ROOT }}
+        run: |
+          set -euo pipefail
+          transfer='${{ steps.handshake.outputs.transfer_name }}'
+          command="\$ErrorActionPreference='Stop'; \$root='${PROD_BAOGIANG_ROOT//\'/\'\'}'; \$dir=Join-Path \$root ('incoming\\' + '$transfer'); if(Test-Path -LiteralPath \$dir){throw 'Transfer directory already exists.'}; New-Item -ItemType Directory -LiteralPath \$dir | Out-Null"
+          encoded="$(printf '%s' "$command" | iconv -f UTF-8 -t UTF-16LE | base64 -w0)"
+          ssh -i "$SSH_KEY" -p "$PROD_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "$PROD_SSH_USER@$PROD_SSH_HOST" powershell.exe -NoProfile -NonInteractive -EncodedCommand "$encoded"
+
+      - name: Upload reviewed transfer bundle through SFTP
         shell: bash
         env:
           SSH_KEY: ${{ steps.ssh.outputs.keyfile }}
@@ -180,10 +217,13 @@ jobs:
           PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
         run: |
           set -euo pipefail
-          remote="${PROD_SSH_USER}@${PROD_SSH_HOST}"
-          scp -i "$SSH_KEY" -P "$PROD_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "$GITHUB_WORKSPACE/${{ steps.package.outputs.archive }}" deploy-parameters.json "$remote:./"
+          root_sftp="/${PROD_BAOGIANG_ROOT:0:1}:/${PROD_BAOGIANG_ROOT:3}"
+          root_sftp="${root_sftp//\\//}"
+          transfer="$root_sftp/incoming/${{ steps.handshake.outputs.transfer_name }}"
+          sftp_args=(-i "$SSH_KEY" -P "$PROD_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "${PROD_SSH_USER}@${PROD_SSH_HOST}")
+          { printf 'put %s %s\n' "$GITHUB_WORKSPACE/${{ steps.package.outputs.archive }}" "$transfer/${{ steps.package.outputs.archive }}"; printf 'put %s %s\n' deploy-parameters.json "$transfer/deploy-parameters.json"; } | sftp "${sftp_args[@]}"
           for script in deployment-common.ps1 install-release.ps1 backup-database.ps1 run-migrations.ps1 switch-current-release.ps1 restart-baogiang-api.ps1 start-baogiang-api.ps1 test-production-health.ps1 rollback-release.ps1 invoke-production-deploy.ps1; do
-            scp -i "$SSH_KEY" -P "$PROD_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "control-plane/scripts/deploy/windows/$script" "$remote:./$script"
+            printf 'put %s %s\n' "control-plane/scripts/deploy/windows/$script" "$transfer/$script" | sftp "${sftp_args[@]}"
           done
 
       - name: Execute explicit PowerShell deploy contract
@@ -196,8 +236,12 @@ jobs:
           PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
         run: |
           set -euo pipefail
-          remote="${PROD_SSH_USER}@${PROD_SSH_HOST}"
-          ssh -i "$SSH_KEY" -p "$PROD_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "$remote" powershell.exe -NoProfile -NonInteractive -Command '& { $home = [Environment]::GetFolderPath("UserProfile"); & (Join-Path $home "invoke-production-deploy.ps1") -ParameterFile (Join-Path $home "deploy-parameters.json") }'
+          root='${PROD_BAOGIANG_ROOT}'
+          transfer='${{ steps.handshake.outputs.transfer_name }}'
+          invoke="$root\\incoming\\$transfer\\invoke-production-deploy.ps1"
+          parameters="$root\\incoming\\$transfer\\deploy-parameters.json"
+          encoded="$(node control-plane/scripts/ci/build-windows-remote-command.cjs invoke "$invoke" "$parameters")"
+          ssh -i "$SSH_KEY" -p "$PROD_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "$PROD_SSH_USER@$PROD_SSH_HOST" powershell.exe -NoProfile -NonInteractive -EncodedCommand "$encoded"
 
       - name: Retrieve redacted deploy report
         if: always()
@@ -208,11 +252,14 @@ jobs:
           PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
           PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT }}
           PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
+          PROD_BAOGIANG_ROOT: ${{ vars.PROD_BAOGIANG_ROOT }}
         run: |
           set -euo pipefail
           report="deploy-report-${TARGET_SHA}.json"
           if [[ -s "$SSH_KEY" && -s "$KNOWN_HOSTS" ]]; then
-            scp -i "$SSH_KEY" -P "$PROD_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "${PROD_SSH_USER}@${PROD_SSH_HOST}:./$report" "$RUNNER_TEMP/$report" || true
+            root_sftp="/${PROD_BAOGIANG_ROOT:0:1}:/${PROD_BAOGIANG_ROOT:3}"; root_sftp="${root_sftp//\\//}"
+            remote_report="$root_sftp/incoming/${{ steps.handshake.outputs.transfer_name }}/$report"
+            printf 'get %s %s\n' "$remote_report" "$RUNNER_TEMP/$report" | sftp -i "$SSH_KEY" -P "$PROD_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "${PROD_SSH_USER}@${PROD_SSH_HOST}"
           fi
 
       - name: Upload redacted deploy report
@@ -221,7 +268,7 @@ jobs:
         with:
           name: deploy-report-${{ inputs.commit_sha }}
           path: ${{ runner.temp }}/deploy-report-${{ inputs.commit_sha }}.json
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 14
 
       - name: Remove exact temporary remote and local transfer files
@@ -233,9 +280,13 @@ jobs:
           PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
           PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT }}
           PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
+          PROD_BAOGIANG_ROOT: ${{ vars.PROD_BAOGIANG_ROOT }}
         run: |
           set -euo pipefail
           if [[ -s "$SSH_KEY" && -s "$KNOWN_HOSTS" ]]; then
-            ssh -i "$SSH_KEY" -p "$PROD_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "$PROD_SSH_USER@$PROD_SSH_HOST" powershell.exe -NoProfile -NonInteractive -Command '& { $home = [Environment]::GetFolderPath("UserProfile"); foreach ($name in @("release-'"$TARGET_SHA"'.zip","deploy-parameters.json","deploy-report-'"$TARGET_SHA"'.json","deployment-common.ps1","install-release.ps1","backup-database.ps1","run-migrations.ps1","switch-current-release.ps1","restart-baogiang-api.ps1","start-baogiang-api.ps1","test-production-health.ps1","rollback-release.ps1","invoke-production-deploy.ps1")) { $path=Join-Path $home $name; if (Test-Path -LiteralPath $path -PathType Leaf) { Remove-Item -LiteralPath $path -Force } } }' || true
+            root='${PROD_BAOGIANG_ROOT}'; transfer='${{ steps.handshake.outputs.transfer_name }}'
+            command="\$ErrorActionPreference='Stop'; \$path=Join-Path '$root' ('incoming\\' + '$transfer'); if(Test-Path -LiteralPath \$path){Remove-Item -LiteralPath \$path -Recurse -Force}"
+            encoded="$(printf '%s' "$command" | iconv -f UTF-8 -t UTF-16LE | base64 -w0)"
+            ssh -i "$SSH_KEY" -p "$PROD_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "$PROD_SSH_USER@$PROD_SSH_HOST" powershell.exe -NoProfile -NonInteractive -EncodedCommand "$encoded"
           fi
           rm -f "$SSH_KEY" "$KNOWN_HOSTS" deploy-parameters.json

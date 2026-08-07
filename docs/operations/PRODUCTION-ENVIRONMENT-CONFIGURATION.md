@@ -50,6 +50,18 @@ Bootstrap must create `<PROD_BAOGIANG_ROOT>\shared\deployment-identity.json` bef
   "entryPoint": "<root>\current\apps\api\dist\apps\api\src\main.js",
   "nginxExe": "<reviewed nginx.exe path>",
   "nginxConfig": "<reviewed nginx config path>",
+  "foreignIsolation": {
+    "reviewedNginxPrefix": "<reviewed nginx prefix>",
+    "reviewedNginxConfig": "<reviewed nginx config>",
+    "foreignRoots": ["<reviewed DamSanV5 root>", "<reviewed boarding root>"],
+    "bootstrapReportReference": "<redacted reviewed inventory report>"
+  },
+  "startupBundle": {
+    "wrapperPath": "<immutable shared start-baogiang-api.ps1 path>",
+    "wrapperSha256": "<reviewed SHA-256>",
+    "commonPath": "<immutable shared deployment-common.ps1 path>",
+    "commonSha256": "<reviewed SHA-256>"
+  },
   "service": {
     "kind": "scheduled-task",
     "name": "BaoGiangBackend",
@@ -62,7 +74,7 @@ Bootstrap must create `<PROD_BAOGIANG_ROOT>\shared\deployment-identity.json` bef
 }
 ```
 
-For a Windows Service, replace the task fields with the exact reviewed service-host executable, `pathName`, and `startName`. A PowerShell script alone is not a Windows Service. The workflow and every mutating script refuse a missing marker, root mismatch, path mismatch, service/task mismatch, port conflict, protected root, or missing pre-created directory.
+The startup bundle is an immutable bootstrap prerequisite installed together from the reviewed commit, hash-verified and ACL-reviewed before the task/service is created. For a Windows Service, replace the task fields with the exact reviewed service-host executable, `pathName`, and `startName`. A PowerShell script alone is not a Windows Service. The workflow and every mutating script refuse a missing marker, root mismatch, bundle hash mismatch, path mismatch, service/task mismatch, port conflict, protected root, or missing pre-created directory.
 
 ## Server-side environment
 
