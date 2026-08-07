@@ -20,6 +20,12 @@ $unfinished = Get-DatabaseEvidenceClassification -ActualDatabase 'baogiang' -Exp
 if ($unfinished.state -ne 'CONFLICT') { throw 'Unfinished migration classification failed.' }
 $identityConflict = Get-DatabaseEvidenceClassification -ActualDatabase 'other' -ExpectedDatabase 'baogiang' -ActualRole 'baogiang_app' -ExpectedRole 'baogiang_app' -ActualExtensions @('btree_gist') -RequiredExtensions @('btree_gist') -MigrationTablePresent $false
 if ($identityConflict.state -ne 'CONFLICT') { throw 'Database identity conflict classification failed.' }
+$absentPlan = @(Get-DatabaseEvidenceQueryPlan -MigrationTablePresent:$false)
+$presentPlan = @(Get-DatabaseEvidenceQueryPlan -MigrationTablePresent:$true)
+if ($absentPlan.Count -ne 1 -or $absentPlan[0].sql -match 'FROM _prisma_migrations') { throw 'Greenfield query plan must not run migration summary SQL.' }
+if ($presentPlan.Count -ne 2 -or $presentPlan[1].sql -notmatch 'FROM _prisma_migrations') { throw 'Present-table query plan must include summary SQL.' }
+$summaryUnavailable = Get-DatabaseEvidenceClassification -ActualDatabase 'baogiang' -ExpectedDatabase 'baogiang' -ActualRole 'baogiang_app' -ExpectedRole 'baogiang_app' -ActualExtensions @('btree_gist') -RequiredExtensions @('btree_gist') -MigrationTablePresent $true -MigrationSummaryVerified $false
+if ($summaryUnavailable.state -ne 'PARTIAL' -or $summaryUnavailable.migrationState -ne 'NOT_VERIFIED') { throw 'Unavailable migration summary classification failed.' }
 $temp = Join-Path ([IO.Path]::GetTempPath()) ("baogiang-deploy-test-" + [guid]::NewGuid().ToString('N'))
 try {
   $sha = 'a' * 40

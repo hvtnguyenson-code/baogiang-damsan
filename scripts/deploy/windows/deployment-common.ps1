@@ -180,6 +180,12 @@ function Get-DatabaseEvidenceClassification([Parameter(Mandatory = $true)][strin
   return [ordered]@{ state = 'EXISTS AND VERIFIED'; identityState = 'EXISTS AND VERIFIED'; migrationState = 'CLEAN' }
 }
 
+function Get-DatabaseEvidenceQueryPlan([Parameter(Mandatory = $true)][bool]$MigrationTablePresent) {
+  $plan = @([pscustomobject]@{ name = 'identity'; sql = "SELECT current_database() || '|' || current_user; SELECT extname FROM pg_extension ORDER BY extname; SELECT CASE WHEN to_regclass('_prisma_migrations') IS NULL THEN 'MISSING' ELSE 'PRESENT' END;" })
+  if ($MigrationTablePresent) { $plan += [pscustomobject]@{ name = 'migration-summary'; sql = "SELECT count(*) FILTER (WHERE finished_at IS NULL)::text || '|' || count(*) FILTER (WHERE rolled_back_at IS NOT NULL)::text FROM _prisma_migrations;" } }
+  return $plan
+}
+
 function Stop-ExactBaoGiangRuntime([Parameter(Mandatory = $true)]$Marker,[Parameter(Mandatory = $true)][ValidateSet('scheduled-task','service')][string]$ServiceKind,[Parameter(Mandatory = $true)][string]$ServiceName,[ValidateRange(1,10)][int]$MaxAttempts = 6,[ValidateRange(0,10)][int]$DelaySeconds = 1) {
   # Identity validation is intentionally before every mutation; never target a generic node.exe.
   Assert-VerifiedRuntimeIdentity -Marker $Marker -ServiceKind $ServiceKind -ServiceName $ServiceName | Out-Null

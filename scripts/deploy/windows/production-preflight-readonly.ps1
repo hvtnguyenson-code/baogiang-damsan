@@ -99,16 +99,24 @@ function Get-DatabaseSnapshot {
   $parts = Set-PostgresProcessEnvironment -DatabaseUrl $url -ExpectedPort $ExpectedPostgresPort
   try {
     $psql = Get-Command psql -ErrorAction Stop
-    $output = @(& $psql.Source --tuples-only --no-align --command "SELECT current_database() || '|' || current_user; SELECT extname FROM pg_extension ORDER BY extname; SELECT CASE WHEN to_regclass('_prisma_migrations') IS NULL THEN 'MISSING' ELSE 'PRESENT' END; SELECT CASE WHEN to_regclass('_prisma_migrations') IS NULL THEN '0|0' ELSE (SELECT count(*) FILTER (WHERE finished_at IS NULL)::text || '|' || count(*) FILTER (WHERE rolled_back_at IS NOT NULL)::text FROM _prisma_migrations) END;" 2>$null)
+    # Query A is always safe on a greenfield database: it never references the relation.
+    $queryA = (Get-DatabaseEvidenceQueryPlan -MigrationTablePresent:$false)[0].sql
+    $output = @(& $psql.Source --tuples-only --no-align --command $queryA 2>$null)
     if ($LASTEXITCODE -ne 0) { return [ordered]@{ state = 'CONFLICT'; reason = 'Read-only PostgreSQL verification failed.' } }
     $actual = ($output | ForEach-Object { $_.ToString().Trim() } | Where-Object { $_ })
     $identity = $actual | Select-Object -First 1
     $identityParts = $identity -split '\|', 2
-    $extensions = @($actual | Select-Object -Skip 1 | Where-Object { $_ -notin @('MISSING','PRESENT') -and $_ -notmatch '^\d+\|\d+$' })
+    $extensions = @($actual | Select-Object -Skip 1 | Where-Object { $_ -notin @('MISSING','PRESENT') })
     $migrationsPresent = $actual -contains 'PRESENT'
     if ($identityParts.Count -ne 2 -or $identityParts[0] -cne $ExpectedDatabase -or $identityParts[1] -cne $ExpectedDatabaseRole -or [int]$parts.port -ne $ExpectedPostgresPort) { return [ordered]@{ state = 'CONFLICT'; database = if($identityParts.Count -gt 0){$identityParts[0]}else{$null}; role = if($identityParts.Count -gt 1){$identityParts[1]}else{$null}; port = $parts.port; reason = 'Actual database/role/port does not match reviewed expectations.' } }
-    $summary = ($actual | Where-Object { $_ -match '^\d+\|\d+$' } | Select-Object -First 1) -split '\|'
-    $classification = Get-DatabaseEvidenceClassification -ActualDatabase $identityParts[0] -ExpectedDatabase $ExpectedDatabase -ActualRole $identityParts[1] -ExpectedRole $ExpectedDatabaseRole -ActualExtensions $extensions -RequiredExtensions $RequiredDatabaseExtension -MigrationTablePresent $migrationsPresent -UnfinishedMigrations ([int]$summary[0]) -RolledBackMigrations ([int]$summary[1]) -MigrationSummaryVerified $migrationsPresent
+    $summary = @('0','0'); $summaryVerified = $false
+    if ($migrationsPresent) {
+      # Query B is only constructed/executed after Query A proved the relation exists.
+      $queryB = (Get-DatabaseEvidenceQueryPlan -MigrationTablePresent:$true)[1].sql
+      $summaryOutput = @(& $psql.Source --tuples-only --no-align --command $queryB 2>$null)
+      if ($LASTEXITCODE -eq 0 -and $summaryOutput.Count -eq 1 -and $summaryOutput[0].ToString().Trim() -match '^\d+\|\d+$') { $summary = $summaryOutput[0].ToString().Trim() -split '\|'; $summaryVerified = $true }
+    }
+    $classification = Get-DatabaseEvidenceClassification -ActualDatabase $identityParts[0] -ExpectedDatabase $ExpectedDatabase -ActualRole $identityParts[1] -ExpectedRole $ExpectedDatabaseRole -ActualExtensions $extensions -RequiredExtensions $RequiredDatabaseExtension -MigrationTablePresent $migrationsPresent -UnfinishedMigrations ([int]$summary[0]) -RolledBackMigrations ([int]$summary[1]) -MigrationSummaryVerified $summaryVerified
     $classification.database = $identityParts[0]; $classification.role = $identityParts[1]; $classification.port = $parts.port; $classification.extensions = $extensions; $classification.migrationsTablePresent = $migrationsPresent; $classification.migrationSummary = [ordered]@{ unfinished = [int]$summary[0]; rolledBack = [int]$summary[1] }; $classification
   } finally { Clear-PostgresProcessEnvironment }
 }

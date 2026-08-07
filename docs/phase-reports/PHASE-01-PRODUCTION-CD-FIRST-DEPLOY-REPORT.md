@@ -1,4 +1,4 @@
-# Phase 01 Production CD First Deploy — Correction 005 Report
+# Phase 01 Production CD First Deploy — Correction 006 Report
 
 ## Scope and safety
 
@@ -29,14 +29,14 @@ First deploy remains blocked until the staged runbook is completed, the marker/e
 
 | Gate | Result |
 |---|---|
-| Deployment static, behavioral fixtures, workflow contract, PowerShell parser | LOCAL PASS for Correction-005; authoritative CI PENDING |
-| Windows deployment fixture and deterministic classification/polling fixtures | LOCAL PASS for Correction-005; authoritative `windows-latest` CI PENDING |
-| Schema, repository secret, UI static checks | NOT_RUN in Correction-004; prior evidence exists |
-| Lint, typecheck, unit tests | NOT_RUN in Correction-004; prior evidence exists |
-| Build | LOCAL BLOCKED in Correction-002 due timeout; NOT_RUN in Correction-003/004 |
-| Prisma generate | LOCAL PASS in Correction-002; NOT_RUN in Correction-003/004 |
-| Prisma validate | LOCAL BLOCKED in Correction-002 due missing local `DATABASE_URL`; NOT_RUN in Correction-003/004 |
+| Deployment static, behavioral fixtures, workflow contract, PowerShell parser | LOCAL PASS for Correction-006; authoritative CI PENDING |
+| Windows deployment fixture and greenfield query/classification fixtures | LOCAL PASS for Correction-006; authoritative `windows-latest` CI PENDING |
+| Schema, repository secret, UI static checks | NOT_RUN in Correction-006; prior evidence exists |
+| Lint, typecheck, unit tests | NOT_RUN in Correction-006; prior evidence exists |
+| Build | NOT_RUN in Correction-006; prior local blocker was timeout in Correction-002 |
+| Prisma generate | NOT_RUN in Correction-006; prior local PASS in Correction-002 |
+| Prisma validate | NOT_RUN in Correction-006; prior local blocker was missing local `DATABASE_URL` in Correction-002 |
 | Migration foundation, API integration, Playwright E2E | NOT_RUN locally; authoritative isolated CI evidence required |
-| `git diff --check`, staged-file inspection, staged secret scan | PASS for Correction-005 |
+| `git diff --check`, staged-file inspection, staged secret scan | PASS for Correction-006 |
 
 The blocked local gates are environment blockers, not PASS claims. Authoritative integration/migration/E2E evidence must come from CI after push. No blocked local database or PowerShell environment may be reported as PASS.
