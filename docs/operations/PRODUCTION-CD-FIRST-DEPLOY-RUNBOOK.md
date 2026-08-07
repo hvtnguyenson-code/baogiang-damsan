@@ -1,0 +1,63 @@
+# Production CD First Deploy Runbook
+
+This is an executable, staged runbook for the official Windows VPS in pre-operational state. Codex does not run the inventory, access the VPS, configure GitHub secrets, run migrations, or activate deployment. At every stop point record `EXISTS AND VERIFIED`, `MISSING`, or `CONFLICT`, then obtain independent review before proceeding.
+
+## Stage 0 — repository and authority
+
+1. Confirm the approved application commit is a full SHA reachable from `main` and its authoritative CI run is completed/successful.
+2. Confirm the control-plane workflow is still `workflow_dispatch` only, has the protected `production` Environment, and has no production secrets in repository files.
+3. Stop if the target branch, commit, CI result, or review state is not independently approved.
+
+## Stage 1 — read-only inventory
+
+On the VPS, run the exact `production-preflight-readonly.ps1` from the reviewed control-plane commit. Use an already existing operator-owned report directory; the script refuses to create it. Do not run this script from Codex or from a local workstation.
+
+Record each result as:
+
+| Area | EXISTS AND VERIFIED | MISSING | CONFLICT |
+|---|---|---|---|
+| Host, SSH service/config/actual listening ports/firewall | exact host, user, numeric port and pinned key match | any value unavailable | key, port or firewall belongs to another system |
+| Root and `releases`, `staging`, `incoming`, `shared`, `logs`, `backups` | dedicated canonical paths, reparse targets and ACLs reviewed | directory/ACL absent | drive/system/DamSanV5/boarding path or shared ACL |
+| Marker, task/service and startup wrapper | exact marker/action/account/wrapper/entry point match | not bootstrapped | action, account, port or entry point mismatch |
+| Node/npm/npx/psql/pg_dump/pg_restore/Nginx | existing absolute leaf paths and versions match inventory | executable missing | path points to another installation |
+| Port listeners 80/443/3100/5433 | redacted process identity is attributable | no listener where expected | process/port owned by another system |
+| Nginx/domain/TLS | server block, SPA root, API upstream and certificate evidence match | not configured | domain/block/certificate conflict |
+| PostgreSQL/database/role/extensions/migrations | read-only query succeeds with approved local auth | `NOT_RUN` without auth | database/role/listen/extension belongs elsewhere |
+| DamSanV5/boarding isolation | no path/port/task/service/process overlap | evidence unavailable | any overlap |
+
+Stop and send the redacted JSON report for ChatGPT review. Never send raw command lines, environment files, connection strings, passwords, keys, dumps, or unrelated process details.
+
+## Stage 2 — manual bootstrap after inventory PASS
+
+1. Create only the dedicated root and all required subdirectories with reviewed ACLs. Do not use a drive root, `Windows`, `System32`, `Program Files`, Nginx root, DamSanV5 root, or boarding-management root.
+2. Create the value-free identity marker at `shared\deployment-identity.json`, filling only reviewed non-secret identities. Verify its canonical root, domain, API port, executable paths, env path, wrapper, entry point and exact task/service action.
+3. Create the server-side production env file with strict ACL. Validate it through the startup wrapper without echoing values. Do not store bootstrap-admin or test-database variables in the runtime file.
+4. Bootstrap an immutable startup runtime bundle containing both `start-baogiang-api.ps1` and its sibling `deployment-common.ps1` from the exact reviewed GitHub commit. Record both absolute shared paths and SHA-256 values in the marker, verify hashes/ACLs, then configure the stopped/disabled exact task action to the hash-verified wrapper. Do not assume `current` exists. For a Windows Service, use only an inventory-approved service host whose exact `pathName` and account are recorded in the marker; do not register a `.ps1` as if it were a native service.
+5. Configure/verify the dedicated Nginx block: HTTPS domain, SPA fallback, `/api` proxy to `127.0.0.1:3100`, forwarded headers and reviewed request limits. Run the exact `nginx -t -c <reviewed-config>` before a targeted reload. Never stop/restart all Nginx.
+
+Stop for independent review of the marker, ACLs, wrapper action, env validation, Nginx test and isolation evidence.
+
+## Stage 3 — database and recovery gates
+
+1. Verify PostgreSQL 17 listen address/port, `baogiang` database, `baogiang_app` role, least privilege and required extensions with approved read-only local authentication.
+2. Run the versioned backup script only after the backup directory and ACL are verified. It produces PostgreSQL custom format, non-zero size, SHA-256 and a passing `pg_restore --list` check. It never prints or places the full `DATABASE_URL` in an argument list.
+3. Record the restore-drill command and operator/maintenance window. Do not restore into the official database as a test.
+4. Review migration compatibility and the pre/post `_prisma_migrations` evidence. `prisma migrate deploy` is allowed only with explicit workflow input and a verified backup. A pending status is not automatically fatal; connectivity/fatal errors are.
+
+Stop if backup, restore-list, migration review, or database isolation is not PASS.
+
+## Stage 4 — GitHub Environment and dry validation
+
+Configure the value-free contract in `PRODUCTION-ENVIRONMENT-CONFIGURATION.md` using only inventory-reviewed values. Pin the single known-hosts entry. Do not configure or reveal values through Codex.
+
+Run static, behavioral, workflow-contract and PowerShell-parser checks. A dry validation may verify SHA, CI, paths and host-key shape without SSH mutation. The workflow must not create the application root or remote directories before marker verification.
+
+## Stage 5 — first deploy dispatch and evidence
+
+After independent PR/CI review and merge by the authorized party, dispatch manually with the exact SHA, `DEPLOY-BAOGIANG-PRODUCTION`, `run_migrations=true`, and a compatibility approval only if separately reviewed. The workflow packages tracked content from `git archive --format=zip`, verifies SHA-256, performs a read-only marker handshake through UTF-16LE `powershell.exe -EncodedCommand`, then creates one verified `<root>\incoming\control-<run-id>-<sha>` directory and transfers only into it with SFTP. Every remote invocation is encoded and independent of the OpenSSH default shell.
+
+The deploy script runs `npm ci` with lifecycle scripts, an argon2 native smoke check, Prisma generate/build, backup, migration gates, exact release switch, exact task/service restart, and bounded local/public health checks for live, ready, `/`, and `/trang-thai-he-thong`. It writes only a redacted report containing SHA, release pointers, backup metadata, migration state, process identity, health outcomes and rollback state. The workflow retrieves and uploads that report with `if: always()`; it never uploads the env file or database backup.
+
+## Stage 6 — failure and rollback
+
+Before switch/restart, a failure preserves evidence and does not claim rollback. On a first deploy with no previous pointer, any failure after switch/restart disables/stops only the exact marker-approved Báo giảng task/service, verifies port 3100 is no longer occupied, retains failed release/current evidence, and records `firstDeployFailedStopped` (or an explicit stop failure) with the original error. After a switch, code rollback requires an existing verified previous release. After any migration attempt, automatic code rollback additionally requires explicit compatibility approval; database rollback is never automatic. If rollback is performed, it verifies reparse targets, restarts only the exact task/service, and re-runs all bounded health checks. Record original and rollback/cleanup error categories separately.

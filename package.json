@@ -31,6 +31,11 @@
     "test:schema:static": "node scripts/ci/verify-schema-foundation.cjs",
     "test:migrations:ci": "bash scripts/ci/test-phase-01-migrations.sh",
     "test:secrets": "node scripts/ci/scan-auth-secrets.cjs",
+    "test:deploy:static": "node scripts/ci/verify-deployment-static.cjs",
+    "test:deploy:behavior": "node scripts/ci/verify-deployment-behavior.cjs",
+    "test:workflow:contract": "node scripts/ci/verify-workflow-contract.cjs",
+    "test:deploy:powershell": "node scripts/ci/verify-powershell-parser.cjs",
+    "test:deploy:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/ci/test-deployment-windows.ps1",
     "test:ui:static": "node scripts/ui/verify-ui-foundation.cjs",
     "prepare": "echo 'No prepare step needed'"
   }

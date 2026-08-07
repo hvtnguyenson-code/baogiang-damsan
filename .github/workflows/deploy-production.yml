@@ -1,0 +1,294 @@
+name: Deploy production
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: Full 40-character application commit reachable from origin/main
+        required: true
+        type: string
+      confirmation:
+        description: Type DEPLOY-BAOGIANG-PRODUCTION to continue
+        required: true
+        type: string
+      run_migrations:
+        description: Run reviewed Prisma migrations after a verified backup
+        required: true
+        default: true
+        type: boolean
+      allow_code_rollback_after_migration:
+        description: Explicit compatibility approval for code rollback after a migration attempt
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: production-deployment
+  cancel-in-progress: false
+
+env:
+  TARGET_SHA: ${{ inputs.commit_sha }}
+
+jobs:
+  deploy:
+    name: Controlled production deployment
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    steps:
+      - name: Checkout control plane
+        uses: actions/checkout@v4
+        with:
+          path: control-plane
+          fetch-depth: 0
+
+      - name: Validate target, pinned SSH identity and environment contract
+        shell: bash
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+          RUN_MIGRATIONS: ${{ inputs.run_migrations }}
+          PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+          PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT }}
+          PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
+          PROD_SSH_HOST_KEY: ${{ secrets.PROD_SSH_HOST_KEY }}
+          PROD_BAOGIANG_ROOT: ${{ vars.PROD_BAOGIANG_ROOT }}
+          PROD_SERVICE_KIND: ${{ vars.PROD_SERVICE_KIND }}
+          PROD_SERVICE_NAME: ${{ vars.PROD_SERVICE_NAME }}
+          PROD_ENV_FILE: ${{ vars.PROD_ENV_FILE }}
+          PROD_STARTUP_WRAPPER: ${{ vars.PROD_STARTUP_WRAPPER }}
+          PROD_API_ENTRYPOINT: ${{ vars.PROD_API_ENTRYPOINT }}
+          PROD_NGINX_EXE: ${{ vars.PROD_NGINX_EXE }}
+          PROD_NGINX_CONFIG: ${{ vars.PROD_NGINX_CONFIG }}
+          PROD_NODE_EXE: ${{ vars.PROD_NODE_EXE }}
+          PROD_NPM_EXE: ${{ vars.PROD_NPM_EXE }}
+          PROD_NPX_EXE: ${{ vars.PROD_NPX_EXE }}
+          PROD_PSQL_EXE: ${{ vars.PROD_PSQL_EXE }}
+          PROD_PG_DUMP_EXE: ${{ vars.PROD_PG_DUMP_EXE }}
+          PROD_PG_RESTORE_EXE: ${{ vars.PROD_PG_RESTORE_EXE }}
+          PROD_BASE_URL: ${{ vars.PROD_BASE_URL }}
+        run: |
+          set -euo pipefail
+          [[ "$CONFIRMATION" == "DEPLOY-BAOGIANG-PRODUCTION" ]]
+          [[ "$RUN_MIGRATIONS" == "true" ]]
+          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git -C control-plane fetch --no-tags origin main "$TARGET_SHA"
+          git -C control-plane cat-file -e "$TARGET_SHA^{commit}"
+          git -C control-plane merge-base --is-ancestor "$TARGET_SHA" origin/main
+          for value in PROD_SSH_HOST PROD_SSH_PORT PROD_SSH_USER PROD_SSH_HOST_KEY PROD_BAOGIANG_ROOT PROD_SERVICE_KIND PROD_SERVICE_NAME PROD_ENV_FILE PROD_STARTUP_WRAPPER PROD_API_ENTRYPOINT PROD_NGINX_EXE PROD_NGINX_CONFIG PROD_NODE_EXE PROD_NPM_EXE PROD_NPX_EXE PROD_PSQL_EXE PROD_PG_DUMP_EXE PROD_PG_RESTORE_EXE PROD_BASE_URL; do
+            [[ -n "${!value}" ]] || { echo "Missing production contract: $value" >&2; exit 1; }
+          done
+          [[ "$PROD_SSH_HOST" =~ ^[A-Za-z0-9.-]+$ ]]
+          [[ "$PROD_SSH_USER" =~ ^[A-Za-z0-9._-]+$ ]]
+          [[ "$PROD_SSH_PORT" =~ ^[0-9]+$ ]] && (( PROD_SSH_PORT >= 1 && PROD_SSH_PORT <= 65535 ))
+          [[ "$PROD_SERVICE_KIND" == "scheduled-task" || "$PROD_SERVICE_KIND" == "service" ]]
+          [[ "$PROD_SERVICE_NAME" =~ ^[A-Za-z0-9._-]+$ ]]
+          for path_value in PROD_BAOGIANG_ROOT PROD_ENV_FILE PROD_STARTUP_WRAPPER PROD_API_ENTRYPOINT PROD_NGINX_EXE PROD_NGINX_CONFIG PROD_NODE_EXE PROD_NPM_EXE PROD_NPX_EXE PROD_PSQL_EXE PROD_PG_DUMP_EXE PROD_PG_RESTORE_EXE; do
+            [[ "${!path_value}" =~ ^[A-Za-z]:\\ ]] || { echo "Non-absolute Windows path: $path_value" >&2; exit 1; }
+          done
+          [[ "$PROD_BAOGIANG_ROOT" =~ ^[A-Za-z]:\\[A-Za-z0-9._-]+(\\[A-Za-z0-9._-]+)*$ ]] || { echo "Production root must use safe ASCII path segments." >&2; exit 1; }
+          [[ "$PROD_BASE_URL" == "https://baogiang.dtnt-damsan.edu.vn" ]]
+          [[ "$PROD_SSH_HOST_KEY" != *$'\n'* && "$PROD_SSH_HOST_KEY" != *$'\r'* ]]
+          [[ "$PROD_SSH_HOST_KEY" != *'*'* && "$PROD_SSH_HOST_KEY" != *'?'* && "$PROD_SSH_HOST_KEY" != *'@cert-authority'* && "$PROD_SSH_HOST_KEY" != \|* ]]
+          expected_host="$PROD_SSH_HOST"; if [[ "$PROD_SSH_PORT" != "22" ]]; then expected_host="[$PROD_SSH_HOST]:$PROD_SSH_PORT"; fi
+          read -r known_host known_type known_key known_extra <<< "$PROD_SSH_HOST_KEY"
+          [[ -z "${known_extra:-}" && "$known_host" == "$expected_host" ]]
+          case "$known_type" in ssh-ed25519|ecdsa-sha2-nistp256|rsa-sha2-256|rsa-sha2-512) ;; *) exit 1 ;; esac
+          printf '%s' "$known_key" | base64 --decode >/dev/null 2>&1
+          echo "Target SHA: $TARGET_SHA"
+
+      - name: Verify exact target CI success
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          conclusion="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${TARGET_SHA}&per_page=100" --jq '[.workflow_runs[] | select(.name == "CI" and .head_sha == "'"$TARGET_SHA"'") | select(.status == "completed")] | sort_by(.updated_at) | last | .conclusion')"
+          [[ "$conclusion" == "success" ]] || { echo "Exact target CI is not proven successful." >&2; exit 1; }
+
+      - name: Checkout exact application target
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit_sha }}
+          path: target-source
+          fetch-depth: 1
+
+      - name: Create deterministic exact-commit artifact
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          bad_tracked="$(git -C control-plane ls-tree -r --name-only "$TARGET_SHA" | grep -E '(^|/)\.env$|(^|/)node_modules/|(^|/)dist/' || true)"
+          [[ -z "$bad_tracked" ]] || { echo "Target contains forbidden tracked deployment content." >&2; exit 1; }
+          archive="release-$TARGET_SHA.zip"
+          git -C control-plane archive --format=zip --output="$GITHUB_WORKSPACE/$archive" "$TARGET_SHA"
+          sha256sum "$GITHUB_WORKSPACE/$archive" | tee "$GITHUB_WORKSPACE/$archive.sha256"
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+          echo "sha256=$(cut -d' ' -f1 "$GITHUB_WORKSPACE/$archive.sha256")" >> "$GITHUB_OUTPUT"
+
+      - name: Create non-secret remote parameter JSON
+        shell: bash
+        env:
+          TARGET_SHA: ${{ inputs.commit_sha }}
+          RELEASE_SHA256: ${{ steps.package.outputs.sha256 }}
+          PROD_BAOGIANG_ROOT: ${{ vars.PROD_BAOGIANG_ROOT }}
+          PROD_SERVICE_KIND: ${{ vars.PROD_SERVICE_KIND }}
+          PROD_SERVICE_NAME: ${{ vars.PROD_SERVICE_NAME }}
+          PROD_ENV_FILE: ${{ vars.PROD_ENV_FILE }}
+          PROD_STARTUP_WRAPPER: ${{ vars.PROD_STARTUP_WRAPPER }}
+          PROD_API_ENTRYPOINT: ${{ vars.PROD_API_ENTRYPOINT }}
+          PROD_NGINX_EXE: ${{ vars.PROD_NGINX_EXE }}
+          PROD_NGINX_CONFIG: ${{ vars.PROD_NGINX_CONFIG }}
+          PROD_NODE_EXE: ${{ vars.PROD_NODE_EXE }}
+          PROD_NPM_EXE: ${{ vars.PROD_NPM_EXE }}
+          PROD_NPX_EXE: ${{ vars.PROD_NPX_EXE }}
+          PROD_PSQL_EXE: ${{ vars.PROD_PSQL_EXE }}
+          PROD_PG_DUMP_EXE: ${{ vars.PROD_PG_DUMP_EXE }}
+          PROD_PG_RESTORE_EXE: ${{ vars.PROD_PG_RESTORE_EXE }}
+          PROD_BASE_URL: ${{ vars.PROD_BASE_URL }}
+          ROLLBACK_COMPATIBILITY: ${{ inputs.allow_code_rollback_after_migration }}
+        run: |
+          set -euo pipefail
+          node -e 'const fs=require("node:fs"); const e=process.env; const root=e.PROD_BAOGIANG_ROOT; const run=`${e.GITHUB_RUN_ID}-${e.GITHUB_RUN_ATTEMPT}`; const p={ReleaseSha:e.TARGET_SHA,Root:root,TransferDirectoryName:`control-${run}-${e.TARGET_SHA}`,SourceArchiveName:`release-${e.TARGET_SHA}.zip`,ExpectedSha256:e.RELEASE_SHA256,NodeExe:e.PROD_NODE_EXE,NpmExe:e.PROD_NPM_EXE,NpxExe:e.PROD_NPX_EXE,PsqlExe:e.PROD_PSQL_EXE,PgDumpExe:e.PROD_PG_DUMP_EXE,PgRestoreExe:e.PROD_PG_RESTORE_EXE,EnvFile:e.PROD_ENV_FILE,StartupWrapper:e.PROD_STARTUP_WRAPPER,NginxExe:e.PROD_NGINX_EXE,NginxConfig:e.PROD_NGINX_CONFIG,ExpectedBaseUrl:e.PROD_BASE_URL,ServiceKind:e.PROD_SERVICE_KIND,ServiceName:e.PROD_SERVICE_NAME,ExpectedEntryPoint:e.PROD_API_ENTRYPOINT,MigrationRequested:true,ProductionMigrationApproved:true,RollbackCompatibilityApproved:e.ROLLBACK_COMPATIBILITY==="true",ReportFileName:`deploy-report-${e.TARGET_SHA}.json`}; fs.writeFileSync("deploy-parameters.json",JSON.stringify(p,null,2),{encoding:"utf8",mode:0o600});'
+
+      - name: Prepare pinned SSH files
+        id: ssh
+        shell: bash
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
+          SSH_HOST_KEY: ${{ secrets.PROD_SSH_HOST_KEY }}
+        run: |
+          set -euo pipefail
+          keyfile="$RUNNER_TEMP/baogiang-deploy-key"
+          knownfile="$RUNNER_TEMP/baogiang-known-hosts"
+          umask 077
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$keyfile"
+          printf '%s\n' "$SSH_HOST_KEY" > "$knownfile"
+          chmod 600 "$keyfile" "$knownfile"
+          echo "keyfile=$keyfile" >> "$GITHUB_OUTPUT"
+          echo "knownfile=$knownfile" >> "$GITHUB_OUTPUT"
+
+      - name: Read-only marker handshake before transfer
+        id: handshake
+        shell: bash
+        env:
+          SSH_KEY: ${{ steps.ssh.outputs.keyfile }}
+          KNOWN_HOSTS: ${{ steps.ssh.outputs.knownfile }}
+          PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+          PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT }}
+          PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
+          PROD_BAOGIANG_ROOT: ${{ vars.PROD_BAOGIANG_ROOT }}
+          PROD_SERVICE_KIND: ${{ vars.PROD_SERVICE_KIND }}
+          PROD_SERVICE_NAME: ${{ vars.PROD_SERVICE_NAME }}
+        run: |
+          set -euo pipefail
+          payload="$(node control-plane/scripts/ci/build-windows-remote-command.cjs handshake "$(node -e 'process.stdout.write(JSON.stringify({root:process.env.PROD_BAOGIANG_ROOT,serviceKind:process.env.PROD_SERVICE_KIND,serviceName:process.env.PROD_SERVICE_NAME}))')")"
+          ssh -i "$SSH_KEY" -p "$PROD_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "$PROD_SSH_USER@$PROD_SSH_HOST" powershell.exe -NoProfile -NonInteractive -EncodedCommand "$payload" | grep -Fx BAOGIANG_HANDSHAKE_PASS
+          run_id="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          [[ "$run_id" =~ ^[0-9-]+$ ]]
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "transfer_name=control-$run_id-$TARGET_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Create verified unique transfer directory
+        shell: bash
+        env:
+          SSH_KEY: ${{ steps.ssh.outputs.keyfile }}
+          KNOWN_HOSTS: ${{ steps.ssh.outputs.knownfile }}
+          PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+          PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT }}
+          PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
+          PROD_BAOGIANG_ROOT: ${{ vars.PROD_BAOGIANG_ROOT }}
+        run: |
+          set -euo pipefail
+          transfer='${{ steps.handshake.outputs.transfer_name }}'
+          command="\$ErrorActionPreference='Stop'; \$root='${PROD_BAOGIANG_ROOT//\'/\'\'}'; \$dir=Join-Path \$root ('incoming\\' + '$transfer'); if(Test-Path -LiteralPath \$dir){throw 'Transfer directory already exists.'}; New-Item -ItemType Directory -LiteralPath \$dir | Out-Null"
+          encoded="$(printf '%s' "$command" | iconv -f UTF-8 -t UTF-16LE | base64 -w0)"
+          ssh -i "$SSH_KEY" -p "$PROD_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "$PROD_SSH_USER@$PROD_SSH_HOST" powershell.exe -NoProfile -NonInteractive -EncodedCommand "$encoded"
+
+      - name: Upload reviewed transfer bundle through SFTP
+        shell: bash
+        env:
+          SSH_KEY: ${{ steps.ssh.outputs.keyfile }}
+          KNOWN_HOSTS: ${{ steps.ssh.outputs.knownfile }}
+          PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+          PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT }}
+          PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
+          PROD_BAOGIANG_ROOT: ${{ vars.PROD_BAOGIANG_ROOT }}
+        run: |
+          set -euo pipefail
+          root_sftp="$(node control-plane/scripts/ci/build-windows-remote-command.cjs sftp-root "$PROD_BAOGIANG_ROOT")"
+          transfer="$root_sftp/incoming/${{ steps.handshake.outputs.transfer_name }}"
+          sftp_args=(-i "$SSH_KEY" -P "$PROD_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "${PROD_SSH_USER}@${PROD_SSH_HOST}")
+          { printf 'put %s %s\n' "$GITHUB_WORKSPACE/${{ steps.package.outputs.archive }}" "$transfer/${{ steps.package.outputs.archive }}"; printf 'put %s %s\n' deploy-parameters.json "$transfer/deploy-parameters.json"; } | sftp "${sftp_args[@]}"
+          for script in deployment-common.ps1 install-release.ps1 backup-database.ps1 run-migrations.ps1 switch-current-release.ps1 restart-baogiang-api.ps1 start-baogiang-api.ps1 test-production-health.ps1 rollback-release.ps1 invoke-production-deploy.ps1; do
+            printf 'put %s %s\n' "control-plane/scripts/deploy/windows/$script" "$transfer/$script" | sftp "${sftp_args[@]}"
+          done
+
+      - name: Execute explicit PowerShell deploy contract
+        shell: bash
+        env:
+          SSH_KEY: ${{ steps.ssh.outputs.keyfile }}
+          KNOWN_HOSTS: ${{ steps.ssh.outputs.knownfile }}
+          PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+          PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT }}
+          PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
+          PROD_BAOGIANG_ROOT: ${{ vars.PROD_BAOGIANG_ROOT }}
+        run: |
+          set -euo pipefail
+          root='${PROD_BAOGIANG_ROOT}'
+          transfer='${{ steps.handshake.outputs.transfer_name }}'
+          invoke="$root\\incoming\\$transfer\\invoke-production-deploy.ps1"
+          parameters="$root\\incoming\\$transfer\\deploy-parameters.json"
+          encoded="$(node control-plane/scripts/ci/build-windows-remote-command.cjs invoke "$invoke" "$parameters")"
+          ssh -i "$SSH_KEY" -p "$PROD_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "$PROD_SSH_USER@$PROD_SSH_HOST" powershell.exe -NoProfile -NonInteractive -EncodedCommand "$encoded"
+
+      - name: Retrieve redacted deploy report
+        if: always()
+        shell: bash
+        env:
+          SSH_KEY: ${{ steps.ssh.outputs.keyfile }}
+          KNOWN_HOSTS: ${{ steps.ssh.outputs.knownfile }}
+          PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+          PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT }}
+          PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
+          PROD_BAOGIANG_ROOT: ${{ vars.PROD_BAOGIANG_ROOT }}
+        run: |
+          set -euo pipefail
+          report="deploy-report-${TARGET_SHA}.json"
+          if [[ -s "$SSH_KEY" && -s "$KNOWN_HOSTS" ]]; then
+            root_sftp="$(node control-plane/scripts/ci/build-windows-remote-command.cjs sftp-root "$PROD_BAOGIANG_ROOT")"
+            remote_report="$root_sftp/incoming/${{ steps.handshake.outputs.transfer_name }}/$report"
+            printf 'get %s %s\n' "$remote_report" "$RUNNER_TEMP/$report" | sftp -i "$SSH_KEY" -P "$PROD_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "${PROD_SSH_USER}@${PROD_SSH_HOST}"
+          fi
+
+      - name: Upload redacted deploy report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-report-${{ inputs.commit_sha }}
+          path: ${{ runner.temp }}/deploy-report-${{ inputs.commit_sha }}.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Remove exact temporary remote and local transfer files
+        if: always()
+        shell: bash
+        env:
+          SSH_KEY: ${{ steps.ssh.outputs.keyfile }}
+          KNOWN_HOSTS: ${{ steps.ssh.outputs.knownfile }}
+          PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+          PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT }}
+          PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
+          PROD_BAOGIANG_ROOT: ${{ vars.PROD_BAOGIANG_ROOT }}
+        run: |
+          set -euo pipefail
+          if [[ -s "$SSH_KEY" && -s "$KNOWN_HOSTS" ]]; then
+            root='${PROD_BAOGIANG_ROOT}'; transfer='${{ steps.handshake.outputs.transfer_name }}'
+            [[ "$transfer" =~ ^control-[0-9]+-[0-9]+-[0-9a-f]{40}$ ]] || { echo 'Skipping remote cleanup: no verified transfer directory.'; exit 0; }
+            encoded="$(node control-plane/scripts/ci/build-windows-remote-command.cjs cleanup "$root" "$transfer")"
+            ssh -i "$SSH_KEY" -p "$PROD_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "$PROD_SSH_USER@$PROD_SSH_HOST" powershell.exe -NoProfile -NonInteractive -EncodedCommand "$encoded"
+          fi
+          rm -f "$SSH_KEY" "$KNOWN_HOSTS" deploy-parameters.json
