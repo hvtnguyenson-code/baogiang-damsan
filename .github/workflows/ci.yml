@@ -52,6 +52,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Production dependency security gate
+        run: npm audit --omit=dev --audit-level=high
+
       # ---- Create CI database resources ----
       - name: Create CI databases and roles
         env:
