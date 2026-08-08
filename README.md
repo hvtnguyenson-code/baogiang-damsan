@@ -97,7 +97,7 @@ npm run build
 ## Các lệnh chính
 
 | Lệnh | Mục đích |
-|------|----------|
+|------|-----------|
 | `npm run dev` | Chạy web + API |
 | `npm run dev:web` | Chỉ chạy web (Vite) |
 | `npm run dev:api` | Chỉ chạy API (NestJS) |
@@ -134,7 +134,7 @@ baogiang-damsan/
 - Push tự nó không phải deploy; deploy chỉ xảy ra khi các CI/review/authorization gate của CD được thỏa mãn.
 - Database VPS chính thức đang pre-operational và chỉ dùng dữ liệu giả; không dùng nó cho test phá hủy hoặc test suite tự động. Integration/migration/E2E dùng PostgreSQL cô lập trong CI. Thay đổi schema đi qua migration đã commit và `prisma migrate deploy` được phê duyệt trong task riêng.
 - Không tác động hệ thống quản lý nội trú hiện có.
-- Báo giảng phải **host-portable**: business code không phụ thuộc VPS hiện tại, Quản lí nội trú hay một OS cụ thể. Cùng codebase phải hỗ trợ deployment profile shared-host và standalone VPS; xem `docs/decisions/ADR-010-HOSTING-PORTABILITY-AND-2027-CONSOLIDATION.md`.
+- Báo giảng phải **host-portable**: business code không phụ thuộc VPS hiện tại, Quản lí nội trú hay một OS cụ thể. Cùng codebase phải hỗ trợ deployment profile shared-host và standalone VPS; xem `docs/decisions/ADR-010-HOSTING-PORTABILITY-AND-STAGED-CONSOLIDATION.md`.
 - AI tắt mặc định — xem `docs/decisions/ADR-002-AI-READY-BUT-DISABLED.md`.
 
 Quy tắc đầy đủ: `AGENTS.md`, `docs/specifications/PA-B-VPS-PostgreSQL-v1.3-IMPLEMENTATION-ADDENDUM.md` và `docs/operations/DEVELOPMENT-DEPLOYMENT-DATABASE.md`.
@@ -145,7 +145,7 @@ Quy tắc đầy đủ: `AGENTS.md`, `docs/specifications/PA-B-VPS-PostgreSQL-v1
 - Backend: `127.0.0.1:3100` (sau Nginx proxy)
 - Reverse proxy: Nginx
 - Trạng thái: hạ tầng chính thức, pre-operational; chưa có dữ liệu vận hành thực tế.
-- Hosting direction: production bootstrap hiện được trì hoãn để ưu tiên hoàn thiện local; một standalone Linux VPS là target được hỗ trợ và kế hoạch khoảng 05/2027 có thể đánh giá hợp nhất Quản lí nội trú sau portability audit/capacity review, không phải cam kết migration.
+- Hosting direction: ưu tiên một VPS Linux mới, đưa Báo giảng lên vận hành trước; sau đó audit và chạy Quản lí nội trú ở staging song song với VPS Windows cũ. Chỉ khi readiness gate đạt mới hợp nhất hai hệ thống trên VPS Linux. **Hướng làm đã chốt, thời điểm cutover không khóa theo tháng/năm.**
 
 ---
 
