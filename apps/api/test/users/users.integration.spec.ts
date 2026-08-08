@@ -92,6 +92,7 @@ integration('Users API (isolated PostgreSQL integration)', () => {
     expect(duplicateCode.status).toBe(409);
     expect(await prisma.user.count()).toBe(before);
     expect((await manager.post('/api/users').set('Origin', origin).send(createPayload('no-profile', false))).status).toBe(201);
+    expect((await manager.post('/api/users').set('Origin', origin).send({ ...createPayload('null-boolean'), profile: { displayName: 'Valid', isTeachingStaff: null } })).status).toBe(400);
     const audit = await prisma.auditEvent.findFirstOrThrow({ where: { action: 'USER_CREATED', entityId: stored.id } });
     expect(audit.requestId).toBe('users-create-1');
   });
@@ -127,11 +128,21 @@ integration('Users API (isolated PostgreSQL integration)', () => {
     expect(patch.status).toBe(200); expect(patch.body).toMatchObject({ username: 'patched', profile: { id: profile.id, displayName: 'After', staffCode: 'AFTER' } });
     expect((await manager.patch(`/api/users/${target.id}`).set('Origin', origin).send({})).status).toBe(400);
     expect((await manager.patch(`/api/users/${target.id}`).set('Origin', origin).send({ profile: null })).status).toBe(400);
+    expect((await manager.patch(`/api/users/${target.id}`).set('Origin', origin).send({ profile: { displayName: null } })).status).toBe(400);
+    expect((await manager.patch(`/api/users/${target.id}`).set('Origin', origin).send({ profile: { isTeachingStaff: null } })).status).toBe(400);
     expect((await manager.patch(`/api/users/${target.id}`).set('Origin', origin).send({ status: 'ACTIVE' })).status).toBe(400);
+    for (const field of ['password', 'passwordHash', 'mustChangePassword', 'failedLoginCount', 'lockedUntil', 'lastLoginAt', 'capabilityGrants']) {
+      expect((await manager.patch(`/api/users/${target.id}`).set('Origin', origin).send({ [field]: 'unsafe' })).status).toBe(400);
+    }
     const bare = await prisma.user.create({ data: { username: 'bare', passwordHash: await passwords.hash(password) } });
     expect((await manager.patch(`/api/users/${bare.id}`).set('Origin', origin).send({ profile: { displayName: 'Now present' } })).status).toBe(200);
     const missing = await prisma.user.create({ data: { username: 'missing', passwordHash: await passwords.hash(password) } });
     expect((await manager.patch(`/api/users/${missing.id}`).set('Origin', origin).send({ profile: { phone: '1' } })).status).toBe(400);
+    const duplicate = await prisma.user.create({ data: { username: 'duplicate', passwordHash: await passwords.hash(password), profile: { create: { displayName: 'Duplicate', staffCode: 'DUPLICATE' } } } });
+    expect((await manager.patch(`/api/users/${target.id}`).set('Origin', origin).send({ username: duplicate.username })).status).toBe(409);
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: target.id } })).username).toBe('patched');
+    expect((await manager.patch(`/api/users/${target.id}`).set('Origin', origin).send({ username: 'should-rollback', profile: { staffCode: 'duplicate' } })).status).toBe(409);
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: target.id } })).username).toBe('patched');
   });
 
   it('manages state, revokes sessions and preserves authorization data', async () => {
@@ -139,19 +150,39 @@ integration('Users API (isolated PostgreSQL integration)', () => {
     const target = await prisma.user.create({ data: { username: 'state-target', passwordHash: await passwords.hash(password), status: UserStatus.PENDING, mustChangePassword: true, profile: { create: { displayName: 'State target' } } } });
     expect((await manager.post(`/api/users/${target.id}/activate`).set('Origin', origin)).status).toBe(200);
     expect((await prisma.user.findUniqueOrThrow({ where: { id: target.id } })).status).toBe(UserStatus.ACTIVE);
+    expect((await manager.post(`/api/users/${target.id}/activate`).set('Origin', origin)).status).toBe(200);
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: target.id } })).mustChangePassword).toBe(true);
+    expect(await prisma.capabilityGrant.count({ where: { userId: target.id } })).toBe(0);
+    await prisma.capabilityGrant.create({ data: { userId: target.id, capabilityKey: 'USER_MANAGE', scopeType: 'SCHOOL_WIDE', validFrom: new Date(Date.now() - 1_000) } });
     const targetAgent = request.agent(app.getHttpServer());
     expect((await targetAgent.post('/api/auth/login').send({ username: 'state-target', password })).status).toBe(200);
     await prisma.user.update({ where: { id: target.id }, data: { mustChangePassword: false } });
     expect((await manager.post(`/api/users/${target.id}/disable`).set('Origin', origin)).status).toBe(200);
+    const disabled = await prisma.user.findUniqueOrThrow({ where: { id: target.id } });
+    expect(disabled.status).toBe(UserStatus.DISABLED);
+    expect(await prisma.authSession.count({ where: { userId: target.id } })).toBe(1);
+    expect(await prisma.authSession.count({ where: { userId: target.id, revokedAt: { not: null } } })).toBe(1);
+    expect(await prisma.staffProfile.count({ where: { userId: target.id } })).toBe(1);
+    expect(await prisma.capabilityGrant.count({ where: { userId: target.id } })).toBe(1);
     expect((await targetAgent.get('/api/auth/me')).status).toBe(401);
     expect((await manager.post(`/api/users/${target.id}/activate`).set('Origin', origin)).status).toBe(200);
     expect((await targetAgent.get('/api/auth/me')).status).toBe(401);
     const disabledAudit = await prisma.auditEvent.findFirstOrThrow({ where: { action: 'USER_DISABLED', entityId: target.id } });
     expect(disabledAudit.metadata).toMatchObject({ previousStatus: 'ACTIVE', newStatus: 'DISABLED', revokedSessionCount: 1 });
     await prisma.user.update({ where: { id: target.id }, data: { lockedUntil: new Date(Date.now() + 60_000), failedLoginCount: 4 } });
+    const passwordHashBeforeUnlock = (await prisma.user.findUniqueOrThrow({ where: { id: target.id } })).passwordHash;
     expect((await manager.post(`/api/users/${target.id}/unlock`).set('Origin', origin)).status).toBe(200);
     expect(await prisma.user.findUniqueOrThrow({ where: { id: target.id } })).toMatchObject({ lockedUntil: null, failedLoginCount: 0 });
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: target.id } })).passwordHash).toBe(passwordHashBeforeUnlock);
+    expect(await prisma.capabilityGrant.count({ where: { userId: target.id } })).toBe(1);
     const actions = await prisma.auditEvent.findMany({ where: { entityId: target.id }, select: { action: true } });
     expect(actions.map((item) => item.action)).toEqual(expect.arrayContaining(['USER_ACTIVATED', 'USER_DISABLED', 'USER_UNLOCKED']));
+    expect((await manager.post(`/api/users/${target.id}/unlock`).set('Origin', origin)).status).toBe(200);
+    await prisma.user.update({ where: { id: target.id }, data: { status: UserStatus.PENDING } });
+    expect((await manager.post(`/api/users/${target.id}/unlock`).set('Origin', origin)).status).toBe(409);
+    await prisma.user.update({ where: { id: target.id }, data: { status: UserStatus.DISABLED } });
+    expect((await manager.post(`/api/users/${target.id}/unlock`).set('Origin', origin)).status).toBe(409);
+    await prisma.user.update({ where: { id: target.id }, data: { status: UserStatus.LOCKED } });
+    expect((await manager.post(`/api/users/${target.id}/activate`).set('Origin', origin)).status).toBe(409);
   });
 });

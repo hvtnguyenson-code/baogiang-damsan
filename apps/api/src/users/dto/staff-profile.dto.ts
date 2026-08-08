@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsEmail, IsOptional, IsString, Length, MaxLength } from 'class-validator';
+import { IsBoolean, IsEmail, IsOptional, IsString, Length, MaxLength, ValidateIf } from 'class-validator';
 
 export class StaffProfileDto {
   @IsOptional()
@@ -8,7 +8,7 @@ export class StaffProfileDto {
   @Length(1, 50)
   staffCode?: string | null;
 
-  @IsOptional()
+  @ValidateIf((_object, value) => value !== undefined)
   @Transform(({ value }: { value: unknown }) => typeof value === 'string' ? value.trim() : value)
   @IsString()
   @Length(1, 150)
@@ -30,7 +30,7 @@ export class StaffProfileDto {
   @MaxLength(150)
   positionTitle?: string | null;
 
-  @IsOptional()
+  @ValidateIf((_object, value) => value !== undefined)
   @IsBoolean()
   isTeachingStaff?: boolean;
 }
