@@ -33,8 +33,8 @@ function Get-CommandSnapshot([string]$Name) {
   [ordered]@{ name = $Name; found = $true; path = $command.Source; version = $version }
 }
 
-function Get-ProcessForPid([int]$Pid) {
-  try { return Get-CimInstance Win32_Process -Filter "ProcessId = $Pid" -ErrorAction Stop } catch { return $null }
+function Get-ProcessForPid([int]$ProcessId) {
+  try { return Get-CimInstance Win32_Process -Filter "ProcessId = $ProcessId" -ErrorAction Stop } catch { return $null }
 }
 
 function Get-ListenerSnapshot([int]$Port) {
@@ -65,8 +65,8 @@ function Get-SshSnapshot {
   }
   if (-not $config) { $config = Join-Path $env:ProgramData 'ssh\sshd_config' }
   if (Test-Path -LiteralPath $config -PathType Leaf) { $ports = @(Get-Content -LiteralPath $config | Where-Object { $_ -match '^\s*Port\s+(\d+)' } | ForEach-Object { [int]$Matches[1] }) }
-  $pid = if ($service) { [int]$service.ProcessId } else { 0 }
-  [ordered]@{ service = if ($service) { [ordered]@{ name = $service.Name; state = $service.State; startName = $service.StartName; pathNameRedacted = Redact-SensitiveText $service.PathName } } else { [ordered]@{ state = 'MISSING' } }; configPath = $config; configuredPorts = $ports; listeningPorts = @(Get-NetTCPConnection -State Listen -OwningProcess $pid -ErrorAction SilentlyContinue | Select-Object -ExpandProperty LocalPort -Unique); firewall = @(Get-NetFirewallRule -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -match '(?i)SSH|OpenSSH' } | Select-Object DisplayName,Enabled,Direction,Action) }
+  $sshdProcessId = if ($service) { [int]$service.ProcessId } else { 0 }
+  [ordered]@{ service = if ($service) { [ordered]@{ name = $service.Name; state = $service.State; startName = $service.StartName; pathNameRedacted = Redact-SensitiveText $service.PathName } } else { [ordered]@{ state = 'MISSING' } }; configPath = $config; configuredPorts = $ports; listeningPorts = @(Get-NetTCPConnection -State Listen -OwningProcess $sshdProcessId -ErrorAction SilentlyContinue | Select-Object -ExpandProperty LocalPort -Unique); firewall = @(Get-NetFirewallRule -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -match '(?i)SSH|OpenSSH' } | Select-Object DisplayName,Enabled,Direction,Action) }
 }
 
 function Get-TaskSnapshot([string]$Name) {
