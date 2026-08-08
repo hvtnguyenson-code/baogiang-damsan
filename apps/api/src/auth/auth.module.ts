@@ -15,6 +15,6 @@ import { AuthorizationModule } from '../authorization/authorization.module';
   imports: [AppConfigModule, AuthorizationModule],
   controllers: [AuthController],
   providers: [AuthService, PasswordService, SessionTokenService, AuthPolicyService, SessionAuthGuard, CsrfOriginGuard, LoginRateLimitService, AuditService],
-  exports: [AuthService, SessionAuthGuard, AppConfigModule],
+  exports: [AuthService, PasswordService, SessionAuthGuard, CsrfOriginGuard, AppConfigModule],
 })
 export class AuthModule {}
