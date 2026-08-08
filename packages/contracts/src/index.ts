@@ -221,6 +221,17 @@ export interface StaffProfileSummary {
   updatedAt: string;
 }
 
+export interface UserManagementRecord extends UserSummary {
+  profile: StaffProfileSummary | null;
+}
+
+export interface UserManagementListResponse {
+  items: UserManagementRecord[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
 export interface CatalogEntry {
   id: string;
   code: string;
