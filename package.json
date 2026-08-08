@@ -3,6 +3,13 @@
   "version": "0.0.1",
   "description": "Hệ thống Báo giảng và Thống kê Tiết dạy Tự động - Trường PTDTNT THPT Đam San",
   "private": true,
+  "overrides": {
+    "lodash": "4.18.1",
+    "multer": "2.2.0",
+    "@nestjs/platform-express": {
+      "multer": "2.2.0"
+    }
+  },
   "workspaces": [
     "apps/web",
     "apps/api",
