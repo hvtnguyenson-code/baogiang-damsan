@@ -94,6 +94,13 @@ $forbiddenPreflightMutations = @(
 foreach ($forbiddenMutation in $forbiddenPreflightMutations) {
   if ($preflightText -match [regex]::Escape($forbiddenMutation)) { throw "Read-only production preflight contains forbidden mutation token: $forbiddenMutation" }
 }
+
+$neighborDiscoveryPath = Join-Path $repo 'scripts\deploy\windows\production-protected-neighbor-discovery.ps1'
+$neighborDiscoveryText = Get-Content -LiteralPath $neighborDiscoveryPath -Raw -Encoding UTF8
+foreach ($forbiddenMutation in @('Register-ScheduledTask','Set-ScheduledTask','Start-ScheduledTask','Stop-ScheduledTask','Disable-ScheduledTask','Enable-ScheduledTask','Unregister-ScheduledTask','Start-Service','Stop-Service','Restart-Service','Set-Service','Stop-Process','Start-Process','taskkill','New-Item','Remove-Item','Move-Item','Copy-Item','Set-Content','Add-Content','Out-File','Set-NetFirewall','New-NetFirewall','Remove-NetFirewall','prisma migrate')) {
+  if ($neighborDiscoveryText -match [regex]::Escape($forbiddenMutation)) { throw "Protected-neighbor discovery contains forbidden mutation token: $forbiddenMutation" }
+}
+if ($neighborDiscoveryText -notmatch '\[IO\.File\]::WriteAllText' -or $neighborDiscoveryText -notmatch 'READ_ONLY_DISCOVERY') { throw 'Protected-neighbor discovery write/schema contract is missing.' }
 if ($preflightText -match '(?i)nginx(?:\.exe)?[^\r\n]*-s\s+(?:reload|stop|quit)' -or $preflightText -match '(?im)^\s*(?:INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|TRUNCATE)\b') {
   throw 'Read-only production preflight contains forbidden Nginx or PostgreSQL mutation syntax.'
 }
@@ -123,6 +130,48 @@ $summaryUnavailable = Get-DatabaseEvidenceClassification -ActualDatabase 'baogia
 if ($summaryUnavailable.state -ne 'PARTIAL' -or $summaryUnavailable.migrationState -ne 'NOT_VERIFIED') { throw 'Unavailable migration summary classification failed.' }
 $temp = Join-Path ([IO.Path]::GetTempPath()) ("baogiang-deploy-test-" + [guid]::NewGuid().ToString('N'))
 try {
+  New-Item -ItemType Directory -Path $temp -Force | Out-Null
+  $neighborReport = Join-Path $temp 'protected-neighbor-discovery.json'
+  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $neighborDiscoveryPath -ReportPath $neighborReport | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw 'Protected-neighbor discovery smoke execution failed.' }
+  $neighborJson = Get-Content -LiteralPath $neighborReport -Raw -Encoding UTF8 | ConvertFrom-Json
+  if ($neighborJson.schemaVersion -ne 1 -or $neighborJson.safety.mode -ne 'READ_ONLY_DISCOVERY' -or $neighborJson.safety.mutationsPerformed -ne $false -or $neighborJson.safety.databaseAuthenticationAttempted -ne $false -or $neighborJson.candidateBaoGiang.port -ne 3100 -or $neighborJson.conclusion -ne 'REQUIRES_REVIEW') { throw 'Protected-neighbor discovery smoke schema contract failed.' }
+  $nginxRoot = Join-Path $temp 'nginx-test'
+  $nginxConf = Join-Path $nginxRoot 'conf'
+  New-Item -ItemType Directory -Path $nginxConf -Force | Out-Null
+  $outsideNginx = Join-Path $temp 'nginx-test-evil'
+  New-Item -ItemType Directory -Path $outsideNginx -Force | Out-Null
+  [IO.File]::WriteAllText((Join-Path $outsideNginx 'evil.conf'), "server { listen 9999; server_name evil.test; }", [Text.UTF8Encoding]::new($false))
+  [IO.File]::WriteAllText((Join-Path $nginxConf 'nginx.conf'), "include $outsideNginx\*.conf;`nserver {`n  listen 443 ssl;`n  server_name example.test;`n  root C:\app;`n  location /api {`n    proxy_pass http://127.0.0.1:3000;`n  }`n}", [Text.UTF8Encoding]::new($false))
+  $pgData = Join-Path $temp 'postgres-data'
+  New-Item -ItemType Directory -Path $pgData -Force | Out-Null
+  [IO.File]::WriteAllText((Join-Path $pgData 'postgresql.conf'), "port = 5433`nlisten_addresses = 'localhost'`nhba_file = 'pg_hba.conf'", [Text.UTF8Encoding]::new($false))
+  function Get-CimInstance([string]$ClassName) {
+    if ($ClassName -eq 'Win32_Process') { return @(
+      [pscustomobject]@{ ProcessId = 100; ParentProcessId = 1; Name = 'svchost.exe'; ExecutablePath = 'C:\Windows\System32\svchost.exe'; CommandLine = 'svchost.exe' },
+      [pscustomobject]@{ ProcessId = 200; ParentProcessId = 1; Name = 'node.exe'; ExecutablePath = 'C:\tools\node.exe'; CommandLine = 'C:\tools\node.exe C:\app\server.js' },
+      [pscustomobject]@{ ProcessId = 300; ParentProcessId = 1; Name = 'nginx.exe'; ExecutablePath = (Join-Path $nginxRoot 'nginx.exe'); CommandLine = 'nginx.exe' },
+      [pscustomobject]@{ ProcessId = 400; ParentProcessId = 1; Name = 'postgres.exe'; ExecutablePath = 'C:\Program Files\PostgreSQL\17\bin\postgres.exe'; CommandLine = ('postgres.exe -D "' + $pgData + '"') }
+    ) }
+    if ($ClassName -eq 'Win32_Service') { return @(
+      [pscustomobject]@{ Name = 'WindowsUpdate'; DisplayName = 'Windows Update'; State = 'Running'; StartMode = 'Auto'; StartName = 'LocalSystem'; ProcessId = 100; PathName = 'C:\Windows\System32\svchost.exe' },
+      [pscustomobject]@{ Name = 'NodeHost'; DisplayName = 'Node Host'; State = 'Running'; StartMode = 'Auto'; StartName = 'LocalSystem'; ProcessId = 200; PathName = 'C:\tools\node.exe C:\app\server.js' }
+    ) }
+    [pscustomobject]@{ Caption = 'Fixture Windows' }
+  }
+  function Get-NetTCPConnection { @([pscustomobject]@{ OwningProcess = 300; LocalPort = 80; LocalAddress = '0.0.0.0' }, [pscustomobject]@{ OwningProcess = 300; LocalPort = 443; LocalAddress = '0.0.0.0' }) }
+  function Get-ScheduledTask { @() }
+  $fixtureReport = Join-Path $temp 'protected-neighbor-fixture.json'
+  & $neighborDiscoveryPath -ReportPath $fixtureReport -NginxRoot $nginxRoot | Out-Null
+  Remove-Item Function:\Get-CimInstance,Function:\Get-NetTCPConnection,Function:\Get-ScheduledTask -Force
+  $fixtureJson = Get-Content -LiteralPath $fixtureReport -Raw -Encoding UTF8 | ConvertFrom-Json
+  $fixtureServices = @($fixtureJson.services)
+  if ($fixtureServices.Count -ne 1 -or $fixtureServices[0].name -ne 'NodeHost' -or $fixtureServices[0].reasonTags -notcontains 'application-runtime') { throw 'Protected-neighbor service filter fixture failed.' }
+  if ($fixtureJson.nginx.processes[0].listeningPorts -notcontains 80 -or $fixtureJson.nginx.processes[0].listeningPorts -notcontains 443) { throw 'Nginx listener association fixture failed.' }
+  $server = $fixtureJson.nginx.serverBlocks | Where-Object { $_.serverNames -contains 'example.test' } | Select-Object -First 1
+  if (-not $server -or $server.listens -notcontains '443 ssl' -or $server.rootsAliases -notcontains 'C:\app' -or $server.proxyUpstreams[0].host -ne '127.0.0.1' -or $server.proxyUpstreams[0].port -ne 3000) { throw 'Nginx safe server-block fixture failed.' }
+  if (@($fixtureJson.nginx.configFiles | Where-Object { $_.state -eq 'OUTSIDE_NGINX_ROOT_NOT_READ' }).Count -ne 1 -or (Get-Content -LiteralPath $fixtureReport -Raw) -match 'evil\.test') { throw 'Nginx containment fixture failed.' }
+  if ($fixtureJson.postgres.configMetadata.config.port -ne 5433 -or $fixtureJson.postgres.configMetadata.config.listenAddresses -notcontains 'localhost' -or $fixtureJson.postgres.configMetadata.config.configFile -ne (Join-Path $pgData 'postgresql.conf') -or $fixtureJson.postgres.configMetadata.config.hbaFile -ne (Join-Path $pgData 'pg_hba.conf')) { throw 'PostgreSQL safe metadata fixture failed.' }
   $sha = 'a' * 40
   $root = Join-Path $temp 'root with spaces & unicode Đam San'
   $releases = Join-Path $root 'releases'

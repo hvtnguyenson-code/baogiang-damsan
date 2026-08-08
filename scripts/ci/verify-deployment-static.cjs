@@ -4,7 +4,7 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '..', '..');
 const workflowPath = path.join(root, '.github', 'workflows', 'deploy-production.yml');
 const scriptDir = path.join(root, 'scripts', 'deploy', 'windows');
-const required = ['deployment-common.ps1','production-preflight-readonly.ps1','install-release.ps1','backup-database.ps1','run-migrations.ps1','switch-current-release.ps1','restart-baogiang-api.ps1','start-baogiang-api.ps1','test-production-health.ps1','rollback-release.ps1','invoke-production-deploy.ps1'];
+const required = ['deployment-common.ps1','production-preflight-readonly.ps1','production-protected-neighbor-discovery.ps1','install-release.ps1','backup-database.ps1','run-migrations.ps1','switch-current-release.ps1','restart-baogiang-api.ps1','start-baogiang-api.ps1','test-production-health.ps1','rollback-release.ps1','invoke-production-deploy.ps1'];
 const fail = (message) => { throw new Error(`[deployment-static] ${message}`); };
 const read = (file) => fs.readFileSync(file, 'utf8');
 if (!fs.existsSync(workflowPath)) fail('workflow is missing');
