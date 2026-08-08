@@ -26,6 +26,24 @@ Runbook này diễn giải đường đi chính thức từ thay đổi local t�
 - Sau CD, smoke/health/application checks dùng domain chính thức và không biến database thành test fixture phá hủy.
 - Deploy, migration và truy cập VPS luôn cần task/phê duyệt riêng.
 
+## Hosting portability và kế hoạch hợp nhất dài hạn
+
+Báo giảng phải giữ nguyên khả năng chạy trên nhiều deployment profile. Business/application code không được phụ thuộc vào hostname/IP VPS hiện tại, Quản lí nội trú, `C:\damsan`, `DamSanV5`, shared Nginx, PostgreSQL service cụ thể hoặc Windows Scheduled Task.
+
+Deployment hiện được tạm dừng để ưu tiên hoàn thiện chức năng trên local. Khi production bootstrap được mở lại, Báo giảng có thể chạy trên VPS hiện tại hoặc một VPS riêng; việc đổi host chỉ được thay environment/infrastructure adapter, không rewrite nghiệp vụ.
+
+Một VPS Linux riêng là deployment target được hỗ trợ. Node runtime, listener, database/role, service identity, logs, backups, release path và secrets của Báo giảng phải nằm trong namespace riêng. Giao diện quản trị web như Cockpit có thể được dùng để tăng khả năng quan sát cho operator, nhưng quyền truy cập quản trị phải bị giới hạn rõ ràng và không được mở rộng attack surface mặc định.
+
+VPS Quản lí nội trú hiện tại dự kiến hết hạn khoảng tháng 05/2027. Đây là mốc để **đánh giá**, không phải cam kết, khả năng nâng VPS Báo giảng rồi migrate Quản lí nội trú sang cùng host. Trước migration phải audit portability Quản lí nội trú, rehearsal với database copy, backup/rollback và kiểm tra dung lượng thực tế. Không được giả định source Quản lí nội trú chạy Linux nếu chưa kiểm tra các phụ thuộc Windows-specific.
+
+Nếu sau này hai hệ thống chạy chung một Linux VPS, chúng có thể dùng chung Nginx daemon và PostgreSQL server process nhưng vẫn phải có database/role, thư mục, service, port, log, backup, release history và secret riêng. Shared infrastructure không cho phép một application tự restart/stop daemon chỉ vì deploy application đó.
+
+Sizing ban đầu cho Báo giảng có thể ở lớp khoảng 2 vCPU / 2 GB RAM / 30 GB SSD/NVMe. Khi hợp nhất thêm Quản lí nội trú, phải review từ monitoring thực tế và dự kiến tối thiểu khoảng 4 GB RAM / 50 GB storage. Đây là planning baseline, không phải hard-coded application requirement.
+
+Backup database/attachments quan trọng phải có ít nhất một bản recoverable ngoài chính production VPS. Firewall tiếp tục theo least privilege; ưu tiên build/package ngoài production và chuyển artifact đã review lên server thay vì phụ thuộc production có Internet outbound rộng cho `npm install`, `git pull` hoặc tải runtime.
+
+Chi tiết quyết định và migration gate: `docs/decisions/ADR-010-HOSTING-PORTABILITY-AND-2027-CONSOLIDATION.md`.
+
 ## Delivery path
 
 1. Viết code local trên branch riêng cho một task.
