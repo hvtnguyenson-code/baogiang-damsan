@@ -79,7 +79,7 @@ export class UsersService {
           },
           include: { profile: true },
         });
-        await this.writeAudit('USER_CREATED', user.id, actorUserId, meta);
+        await this.writeAudit('USER_CREATED', user.id, actorUserId, meta, undefined, tx);
         return toUserManagementRecord(user);
       });
     } catch (error) {
