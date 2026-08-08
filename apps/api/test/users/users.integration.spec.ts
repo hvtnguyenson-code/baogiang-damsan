@@ -182,9 +182,14 @@ integration('Users API (isolated PostgreSQL integration)', () => {
     expect(await prisma.capabilityGrant.count({ where: { userId: target.id } })).toBe(1);
     const actions = await prisma.auditEvent.findMany({ where: { entityId: target.id }, select: { action: true } });
     expect(actions.map((item) => item.action)).toEqual(expect.arrayContaining(['USER_ACTIVATED', 'USER_DISABLED', 'USER_UNLOCKED']));
-    const stateAudits = await prisma.auditEvent.findMany({ where: { action: { in: ['USER_ACTIVATED', 'USER_DISABLED', 'USER_UNLOCKED'] }, entityId: target.id } });
-    expect(stateAudits.find((event) => event.action === 'USER_ACTIVATED')).toMatchObject({ actorUserId: manager.user.id, entityType: 'User', entityId: target.id, requestId: 'users-activate-1', result: 'SUCCESS' });
-    expect(stateAudits.find((event) => event.action === 'USER_UNLOCKED')).toMatchObject({ actorUserId: manager.user.id, entityType: 'User', entityId: target.id, requestId: 'users-unlock-1', result: 'SUCCESS' });
+    const activatedAudit = await prisma.auditEvent.findFirstOrThrow({
+      where: { action: 'USER_ACTIVATED', entityId: target.id, requestId: 'users-activate-1' },
+    });
+    expect(activatedAudit).toMatchObject({ actorUserId: manager.user.id, entityType: 'User', entityId: target.id, requestId: 'users-activate-1', result: 'SUCCESS' });
+    const unlockedAudit = await prisma.auditEvent.findFirstOrThrow({
+      where: { action: 'USER_UNLOCKED', entityId: target.id, requestId: 'users-unlock-1' },
+    });
+    expect(unlockedAudit).toMatchObject({ actorUserId: manager.user.id, entityType: 'User', entityId: target.id, requestId: 'users-unlock-1', result: 'SUCCESS' });
     const sensitive = /password|token|cookie|secret|credential|apikey|database_url/i;
     expect(JSON.stringify((await prisma.auditEvent.findMany({ where: { action: { in: ['USER_CREATED', 'USER_UPDATED', 'USER_ACTIVATED', 'USER_DISABLED', 'USER_UNLOCKED'] } }, select: { metadata: true } })).map((event) => event.metadata))).not.toMatch(sensitive);
     expect((await manager.agent.post(`/api/users/${target.id}/unlock`).set('Origin', origin)).status).toBe(200);
