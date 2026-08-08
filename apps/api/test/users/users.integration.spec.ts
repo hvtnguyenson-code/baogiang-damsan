@@ -85,7 +85,10 @@ integration('Users API (isolated PostgreSQL integration)', () => {
     const created = await manager.agent.post('/api/users').set('Origin', origin).set('X-Request-Id', 'users-create-1').send(createPayload('one'));
     expect(created.status).toBe(201);
     expect(created.body).toMatchObject({ username: 'user-one', status: 'PENDING', mustChangePassword: true, profile: { staffCode: 'ST-ONE', isTeachingStaff: false } });
-    expect(JSON.stringify(created.body)).not.toMatch(/passwordHash|password|failedLoginCount/i);
+    expect(created.body).not.toHaveProperty('passwordHash');
+    expect(created.body).not.toHaveProperty('password');
+    expect(created.body).not.toHaveProperty('failedLoginCount');
+    expect(JSON.stringify(created.body)).not.toContain(password);
     const stored = await prisma.user.findUniqueOrThrow({ where: { username: 'user-one' } });
     expect(stored.passwordHash).toContain('$argon2id$');
     expect(stored.passwordHash).not.toContain(password);
