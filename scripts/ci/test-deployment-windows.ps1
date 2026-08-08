@@ -3,6 +3,101 @@ Set-StrictMode -Version Latest
 
 $repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 . (Join-Path $repo 'scripts\deploy\windows\deployment-common.ps1')
+
+$reservedVariableNames = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+Get-Variable | Where-Object {
+  (($_.Options -band [System.Management.Automation.ScopedItemOptions]::ReadOnly) -ne 0) -or
+  (($_.Options -band [System.Management.Automation.ScopedItemOptions]::Constant) -ne 0)
+} | ForEach-Object { [void]$reservedVariableNames.Add($_.Name) }
+
+function Get-VariableWriteRecords([System.Management.Automation.Language.Ast]$RootAst) {
+  $records = [System.Collections.Generic.List[object]]::new()
+
+  foreach ($parameterNode in $RootAst.FindAll({ param($candidateAst) $candidateAst -is [System.Management.Automation.Language.ParameterAst] }, $true)) {
+    $records.Add([pscustomobject]@{ name = $parameterNode.Name.VariablePath.UserPath; context = 'ParameterAst'; line = $parameterNode.Extent.StartLineNumber })
+  }
+
+  foreach ($assignmentNode in $RootAst.FindAll({ param($candidateAst) $candidateAst -is [System.Management.Automation.Language.AssignmentStatementAst] }, $true)) {
+    foreach ($variableNode in $assignmentNode.Left.FindAll({ param($candidateAst) $candidateAst -is [System.Management.Automation.Language.VariableExpressionAst] }, $true)) {
+      $records.Add([pscustomobject]@{ name = $variableNode.VariablePath.UserPath; context = 'AssignmentStatementAst'; line = $variableNode.Extent.StartLineNumber })
+    }
+  }
+
+  foreach ($forEachNode in $RootAst.FindAll({ param($candidateAst) $candidateAst -is [System.Management.Automation.Language.ForEachStatementAst] }, $true)) {
+    if ($forEachNode.Variable) {
+      $records.Add([pscustomobject]@{ name = $forEachNode.Variable.VariablePath.UserPath; context = 'ForEachStatementAst'; line = $forEachNode.Variable.Extent.StartLineNumber })
+    }
+  }
+
+  foreach ($unaryNode in $RootAst.FindAll({
+    param($candidateAst)
+    $candidateAst -is [System.Management.Automation.Language.UnaryExpressionAst] -and
+    $candidateAst.TokenKind -in @(
+      [System.Management.Automation.Language.TokenKind]::PlusPlus,
+      [System.Management.Automation.Language.TokenKind]::MinusMinus
+    )
+  }, $true)) {
+    foreach ($variableNode in $unaryNode.Child.FindAll({ param($candidateAst) $candidateAst -is [System.Management.Automation.Language.VariableExpressionAst] }, $true)) {
+      $records.Add([pscustomobject]@{ name = $variableNode.VariablePath.UserPath; context = 'UnaryExpressionAst'; line = $variableNode.Extent.StartLineNumber })
+    }
+  }
+
+  return @($records)
+}
+
+function Get-ReservedVariableWriteCollisions([System.Management.Automation.Language.Ast]$RootAst) {
+  return @(Get-VariableWriteRecords $RootAst | Where-Object { $reservedVariableNames.Contains($_.name) })
+}
+
+function Parse-PowerShellText([string]$SourceText,[string]$Label) {
+  $parseTokens = $null
+  $parseErrors = $null
+  $parsedAst = [System.Management.Automation.Language.Parser]::ParseInput($SourceText, [ref]$parseTokens, [ref]$parseErrors)
+  if (@($parseErrors).Count -gt 0) { throw "PowerShell AST fixture did not parse: $Label" }
+  return $parsedAst
+}
+
+foreach ($fixture in @(
+  @{ label = 'parameter PID'; source = 'function BadParameter([int]$Pid) { }'; shouldReject = $true },
+  @{ label = 'assignment pid'; source = '$pid = 123'; shouldReject = $true },
+  @{ label = 'foreach pid'; source = 'foreach ($pid in @(1)) { }'; shouldReject = $true },
+  @{ label = 'safe processId'; source = '$processId = 123'; shouldReject = $false }
+)) {
+  $fixtureAst = Parse-PowerShellText -SourceText $fixture.source -Label $fixture.label
+  $fixtureCollisions = @(Get-ReservedVariableWriteCollisions $fixtureAst)
+  if ($fixture.shouldReject -and $fixtureCollisions.Count -eq 0) { throw "Reserved-variable write fixture was not rejected: $($fixture.label)" }
+  if (-not $fixture.shouldReject -and $fixtureCollisions.Count -ne 0) { throw "Safe variable fixture was rejected: $($fixture.label)" }
+}
+
+$powerShellFiles = @(
+  Get-ChildItem -LiteralPath (Join-Path $repo 'scripts\deploy\windows') -Filter '*.ps1' -File
+  Get-ChildItem -LiteralPath (Join-Path $repo 'scripts\ci') -Filter '*.ps1' -File
+)
+foreach ($scriptFile in $powerShellFiles) {
+  $parseTokens = $null
+  $parseErrors = $null
+  $scriptAst = [System.Management.Automation.Language.Parser]::ParseFile($scriptFile.FullName, [ref]$parseTokens, [ref]$parseErrors)
+  if (@($parseErrors).Count -gt 0) { throw "PowerShell parser errors in $($scriptFile.FullName): $($parseErrors[0].Message)" }
+  $collisions = @(Get-ReservedVariableWriteCollisions $scriptAst)
+  if ($collisions.Count -gt 0) {
+    $firstCollision = $collisions[0]
+    throw "Reserved/constant PowerShell variable write collision: $($scriptFile.FullName):$($firstCollision.line) $($firstCollision.name) $($firstCollision.context)"
+  }
+}
+
+$preflightPath = Join-Path $repo 'scripts\deploy\windows\production-preflight-readonly.ps1'
+$preflightText = Get-Content -LiteralPath $preflightPath -Raw -Encoding UTF8
+$forbiddenPreflightMutations = @(
+  'Register-ScheduledTask','Set-ScheduledTask','Start-ScheduledTask','Stop-ScheduledTask','Disable-ScheduledTask','Enable-ScheduledTask','Unregister-ScheduledTask',
+  'Start-Service','Stop-Service','Restart-Service','Set-Service','Stop-Process','taskkill','prisma migrate'
+)
+foreach ($forbiddenMutation in $forbiddenPreflightMutations) {
+  if ($preflightText -match [regex]::Escape($forbiddenMutation)) { throw "Read-only production preflight contains forbidden mutation token: $forbiddenMutation" }
+}
+if ($preflightText -match '(?i)nginx(?:\.exe)?[^\r\n]*-s\s+(?:reload|stop|quit)' -or $preflightText -match '(?im)^\s*(?:INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|TRUNCATE)\b') {
+  throw 'Read-only production preflight contains forbidden Nginx or PostgreSQL mutation syntax.'
+}
+
 if (-not (Get-Command Stop-ExactBaoGiangRuntime -ErrorAction SilentlyContinue)) { throw 'Safe-stop helper is not exported by deployment-common.ps1.' }
 $wait = Get-SafeStopPollingDecision -ExactProcessId @(3100) -Listeners @([pscustomobject]@{ OwningProcess = 3100 })
 if ($wait.state -ne 'WAIT') { throw 'Exact Báo giảng listener should wait during shutdown grace period.' }
@@ -55,7 +150,7 @@ try {
   $global:LASTEXITCODE = 77
   & { [pscustomobject]@{ state = 'completed' } } | Out-Null
   if ($LASTEXITCODE -ne 77) { throw 'Fixture did not preserve stale native exit code.' }
-  Write-Output '[deployment-windows] PASS (helpers, paths, junction safety, encoded command, SFTP and cleanup contracts, stale LASTEXITCODE fixture)'
+  Write-Output '[deployment-windows] PASS (automatic-variable write audit, protected-neighbor preflight audit, helpers, paths, junction safety, encoded command, SFTP and cleanup contracts, stale LASTEXITCODE fixture)'
 } finally {
   if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Recurse -Force }
 }
