@@ -354,6 +354,7 @@ test('real Phase 01 management flow preserves history and capability boundaries'
   await expect(page.getByRole('heading', { name: /không có quyền thực hiện thao tác này/i })).toBeVisible();
   await page.goto('/');
   await page.getByRole('button', { name: 'Đăng xuất khỏi không gian làm việc', exact: true }).click();
+  await expect(page).toHaveURL(/\/dang-nhap$/);
   await page.goto('/quan-tri/nguoi-dung');
   await expect(page).toHaveURL(/\/dang-nhap$/);
 });
