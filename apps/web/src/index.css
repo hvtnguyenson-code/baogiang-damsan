@@ -13,7 +13,7 @@
 *, *::before, *::after { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
 body { margin: 0; min-width: 320px; min-height: 100vh; min-height: 100dvh; background: #f3f6f7; color: #15242e; font-size: 16px; line-height: 1.55; }
-button, input { font: inherit; }
+button, input, select, textarea { font: inherit; }
 button { color: inherit; }
 a { color: inherit; }
 h1, h2, h3, p, dl, dd { margin-top: 0; }
@@ -47,6 +47,9 @@ h2 { font-size: clamp(1.25rem, 2vw, 1.55rem); }
 .primary-nav a { min-height: 46px; display: inline-flex; align-items: center; padding: 8px 14px; border-bottom: 3px solid transparent; text-decoration: none; font-size: 0.9rem; font-weight: 600; white-space: nowrap; transition: background-color 120ms ease, border-color 120ms ease; }
 .primary-nav a:hover { background: #173747; }
 .primary-nav a[aria-current='page'] { border-bottom-color: #fff; background: #173747; }
+@media (min-width: 900px) {
+  .primary-nav__links { flex-wrap: wrap; overflow-x: visible; }
+}
 
 .main-content { flex: 1; padding-block: 32px 48px; }
 .site-footer { border-top: 1px solid #c9d4da; background: #fff; padding-block: 16px; color: #49616f; font-size: 0.78rem; }
@@ -144,6 +147,96 @@ h2 { font-size: clamp(1.25rem, 2vw, 1.55rem); }
 .recovery-state p { max-width: 60ch; color: #49616f; }
 .recovery-state .button, .recovery-state .text-link { margin-top: 8px; }
 
+.management-page { width: 100%; max-width: 1180px; }
+.management-heading { margin-bottom: 32px; }
+.management-heading__row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 32px; align-items: end; }
+.management-heading__row > div > p { max-width: 65ch; }
+.technical-value { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 0.82rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.muted-copy, .table-secondary { color: #49616f; }
+.table-secondary { display: block; margin-top: 4px; font-size: 0.78rem; }
+.table-region { max-width: 100%; overflow-x: auto; border-block: 2px solid #1f4358; background: #fff; scrollbar-gutter: stable; }
+.table-region:focus-visible { outline: 3px solid #a7462f; outline-offset: 3px; }
+.table-region table { width: 100%; min-width: 760px; border-collapse: collapse; text-align: left; }
+.table-region th { padding: 10px 12px; border-bottom: 2px solid #1f4358; background: #e8eef1; color: #1f4358; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.025em; vertical-align: bottom; }
+.table-region td { padding: 14px 12px; border-bottom: 1px solid #c9d4da; vertical-align: top; }
+.table-region tbody tr:last-child td { border-bottom: 0; }
+.table-region tbody tr:focus-within td { background: #f3f6f7; }
+.row-actions { min-width: 160px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.row-actions .button { min-height: 44px; padding: 7px 9px; text-align: left; }
+.row-confirm { min-width: 240px; }
+.status-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 0.78rem; font-weight: 700; }
+.status-badge::before { content: ''; width: 8px; height: 8px; border: 2px solid currentColor; border-radius: 50%; }
+.status-badge--active { color: #246b45; }
+.status-badge--inactive { color: #7a4b00; }
+.pagination { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding-block: 16px; border-bottom: 1px solid #c9d4da; }
+.pagination p { margin: 0; color: #49616f; }
+.pagination > div { display: flex; gap: 8px; }
+.empty-state { border-block: 1px solid #c9d4da; padding: 32px 0 32px 28px; position: relative; }
+.empty-state::before { content: ''; position: absolute; inset: 24px auto 24px 0; width: 4px; background: #a7462f; border-radius: 2px; }
+.empty-state h2 { font-size: 1.12rem; }
+.empty-state p { margin: 5px 0 0; color: #49616f; }
+.filter-bar { margin-block: 24px 16px; padding-block: 16px 0; border-top: 1px solid #c9d4da; display: flex; flex-wrap: wrap; align-items: end; gap: 8px 20px; }
+.filter-bar .form-field { min-width: 210px; margin: 0; }
+.filter-bar--expanded { display: grid; grid-template-columns: 1.2fr 1fr 1fr 1fr; gap: 8px 16px; }
+.filter-bar--expanded .form-actions { grid-column: 1 / -1; }
+.inline-work-form, .long-form { margin-block: 28px 36px; padding: 24px 24px 24px 32px; border: 1px solid #c9d4da; border-left: 7px solid #a7462f; background: #fff; }
+.inline-work-form h2, .long-form h2 { margin-bottom: 20px; }
+.form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 24px; align-items: start; }
+.form-section { border: 0; border-top: 1px solid #c9d4da; padding: 24px 0 4px; margin: 0; }
+.form-section legend { padding-right: 16px; color: #1f4358; font-size: 1.05rem; font-weight: 700; }
+.form-field__textarea { min-height: 96px; resize: vertical; }
+.check-field { min-height: 44px; display: flex; align-items: center; gap: 10px; font-weight: 600; }
+.check-field input { width: 20px; height: 20px; accent-color: #1f4358; }
+.limitation-note { margin-block: 20px; border-block: 1px solid #c9d4da; padding: 14px 16px; background: #fff7e6; color: #7a4b00; }
+.limitation-note strong { margin-right: 4px; }
+.detail-ledger { border-top: 2px solid #1f4358; }
+.detail-ledger > div { display: grid; grid-template-columns: minmax(160px, 0.34fr) 1fr; border-bottom: 1px solid #c9d4da; }
+.detail-ledger dt, .detail-ledger dd { margin: 0; padding: 14px 16px; }
+.detail-ledger dt { color: #49616f; background: #fff; font-weight: 600; }
+.rights-list { list-style: none; padding: 0; border-top: 2px solid #1f4358; }
+.rights-list li { display: grid; grid-template-columns: minmax(260px, .55fr) 1fr; gap: 20px; padding: 14px 16px; border-bottom: 1px solid #c9d4da; }
+.rights-list span { color: #49616f; }
+.work-index ol { list-style: none; margin: 0; padding: 0; border-top: 2px solid #1f4358; }
+.work-index li { display: grid; grid-template-columns: 56px 1fr; gap: 16px; align-items: baseline; padding: 14px 12px; border-bottom: 1px solid #c9d4da; }
+.work-index li > .technical-value { color: #a7462f; font-weight: 500; }
+.work-index a { min-height: 44px; display: inline-flex; align-items: center; color: #1f4358; font-weight: 700; text-underline-offset: 4px; }
+.work-index p { margin: 4px 0 0; color: #49616f; }
+.metadata-view { max-width: 420px; max-height: 260px; overflow: auto; padding: 12px; border: 1px solid #c9d4da; background: #f3f6f7; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: .75rem; white-space: pre-wrap; }
+details summary { min-height: 44px; display: inline-flex; align-items: center; color: #1f4358; font-weight: 600; cursor: pointer; }
+
+/* Staff register: identity is the reading anchor; administrative actions stay at the far edge. */
+.staff-register .management-heading__row { grid-template-columns: minmax(0, 1.45fr) minmax(180px, .35fr); }
+.staff-register .table-region tbody td:first-child { border-left: 4px solid #c9d4da; padding-left: 16px; min-width: 240px; }
+.staff-register .table-region tbody tr:focus-within td:first-child { border-left-color: #a7462f; }
+.staff-register .table-region th:last-child, .staff-register .table-region td:last-child { border-left: 1px solid #c9d4da; background: #f3f6f7; }
+
+/* Catalogs are deliberately compact and code-led. */
+.catalog-register { max-width: 920px; }
+.catalog-register .table-region table { min-width: 620px; }
+.catalog-register .table-region td { padding-block: 10px; }
+.catalog-register .table-region td:first-child { width: 150px; color: #1f4358; font-weight: 500; }
+
+/* Temporal ledgers use a visible validity axis between relationship and history. */
+.temporal-ledger .table-region th:nth-child(3), .temporal-ledger .table-region td:nth-child(3) { border-left: 4px solid #a7462f; min-width: 210px; }
+.temporal-ledger .table-region td:first-child { font-weight: 700; }
+
+/* Authorization reads as a cautious sequence, distinct from organizational assignment. */
+.authorization-register .inline-work-form { border: 2px solid #1f4358; border-left-width: 10px; }
+.authorization-register .inline-work-form .form-grid { grid-template-columns: 1.2fr 1.4fr .8fr; }
+.authorization-register .ledger-section { margin-top: 48px; }
+.authorization-register .ledger-section > h2 { padding-bottom: 10px; border-bottom: 1px solid #a7462f; }
+
+/* Audit is an event chronology: time and result form the fixed scanning axis. */
+.audit-register .table-region { border-top-color: #a7462f; }
+.audit-register .table-region th:first-child, .audit-register .table-region td:first-child { position: relative; border-right: 4px solid #a7462f; min-width: 160px; }
+.audit-register .table-region td:first-child::after { content: ''; position: absolute; right: -8px; top: 20px; width: 12px; height: 12px; border: 3px solid #a7462f; background: #fff; border-radius: 50%; }
+.audit-register .table-region td:nth-child(3) { color: #1f4358; font-weight: 500; }
+
+/* Duty pages stay organizational: name/category first, security language absent. */
+.duty-catalog .table-region td:first-child, .duty-ledger .table-region td:nth-child(2) { min-width: 220px; }
+.duty-ledger .table-region th:nth-child(4), .duty-ledger .table-region td:nth-child(4) { border-left: 4px solid #a7462f; min-width: 200px; }
+.duty-ledger .long-form { border-left-width: 7px; border-top: 2px solid #1f4358; }
+
 @keyframes spin { to { transform: rotate(360deg); } }
 
 @media (max-width: 760px) {
@@ -165,6 +258,16 @@ h2 { font-size: clamp(1.25rem, 2vw, 1.55rem); }
   .status-toolbar { align-items: stretch; flex-direction: column; }
   .status-row { grid-template-columns: 1fr; gap: 10px; padding: 16px 12px; }
   .status-row dl div { grid-template-columns: minmax(110px, 0.8fr) 1fr; }
+  .management-heading__row, .staff-register .management-heading__row { grid-template-columns: 1fr; gap: 16px; align-items: start; }
+  .management-heading__row > .button { width: 100%; }
+  .form-grid, .filter-bar--expanded, .authorization-register .inline-work-form .form-grid { grid-template-columns: 1fr; }
+  .filter-bar--expanded .form-actions { grid-column: auto; }
+  .inline-work-form, .long-form { padding: 20px 14px 20px 20px; }
+  .pagination { align-items: stretch; flex-direction: column; }
+  .pagination > div { display: grid; grid-template-columns: 1fr 1fr; }
+  .detail-ledger > div, .rights-list li { grid-template-columns: 1fr; gap: 0; }
+  .detail-ledger dt { padding-bottom: 4px; }
+  .detail-ledger dd { padding-top: 4px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
