@@ -15,7 +15,13 @@ integration('Phase 01 backend cross-domain preservation (isolated PostgreSQL int
       { key: 'TEACHER_BASE', scopes: ['PERSONAL'] },
     ]);
   });
-  afterAll(() => h.stop());
+  afterAll(async () => {
+    try {
+      await h.clean();
+    } finally {
+      await h.stop();
+    }
+  });
 
   async function historyFixture() {
     const actor = await h.actor({ grants: [

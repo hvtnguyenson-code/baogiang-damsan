@@ -13,7 +13,13 @@ integration('Additional duties API (isolated PostgreSQL integration)', () => {
       { key: 'SYSTEM_ADMIN', scopes: ['SCHOOL_WIDE'] },
     ]);
   });
-  afterAll(() => h.stop());
+  afterAll(async () => {
+    try {
+      await h.clean();
+    } finally {
+      await h.stop();
+    }
+  });
 
   async function fixtures(): Promise<{ groupA: string; groupB: string; staffProfileId: string; definitionId: string }> {
     const [groupA, groupB] = await Promise.all([

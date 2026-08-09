@@ -11,7 +11,13 @@ integration('Audit viewer API (isolated PostgreSQL integration)', () => {
       { key: 'SYSTEM_ADMIN', scopes: ['SCHOOL_WIDE'] },
     ]);
   });
-  afterAll(() => h.stop());
+  afterAll(async () => {
+    try {
+      await h.clean();
+    } finally {
+      await h.stop();
+    }
+  });
 
   it('enforces session, AUDIT_VIEW, SYSTEM_ADMIN isolation and first-login denial', async () => {
     expect((await request(h.app.getHttpServer()).get('/api/audit-events')).status).toBe(401);

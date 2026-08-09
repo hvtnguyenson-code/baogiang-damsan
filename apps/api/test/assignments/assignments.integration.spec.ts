@@ -14,7 +14,13 @@ integration('Assignments API (isolated PostgreSQL integration)', () => {
       { key: 'SYSTEM_ADMIN', scopes: ['SCHOOL_WIDE'] },
     ]);
   });
-  afterAll(() => h.stop());
+  afterAll(async () => {
+    try {
+      await h.clean();
+    } finally {
+      await h.stop();
+    }
+  });
 
   async function references(): Promise<{ userId: string; groupId: string; subjectId: string }> {
     const user = await h.prisma.user.create({ data: { username: `target-${crypto.randomUUID()}`, passwordHash: 'fixture' } });

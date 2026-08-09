@@ -17,7 +17,13 @@ integration('Capability management API (isolated PostgreSQL integration)', () =>
       { key: 'GDDDP_COORDINATOR', scopes: ['ACTIVITY'] },
     ]);
   });
-  afterAll(() => h.stop());
+  afterAll(async () => {
+    try {
+      await h.clean();
+    } finally {
+      await h.stop();
+    }
+  });
 
   async function target(): Promise<string> {
     return (await h.prisma.user.create({ data: { username: `target-${crypto.randomUUID()}`, passwordHash: 'fixture', status: 'ACTIVE', mustChangePassword: false } })).id;
