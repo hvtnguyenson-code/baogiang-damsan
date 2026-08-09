@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - 'phase/**'
+      - 'feat/**'
       - 'ops/**'
   pull_request:
     branches:
@@ -114,7 +115,10 @@ jobs:
         run: npm run prisma:generate
 
       - name: Schema foundation static verification
-        run: npm run test:schema:static
+        run: npm run test:schema:foundation:static
+
+      - name: Academic structure schema static verification
+        run: npm run test:academic-schema:static
 
       - name: Auth secret scan
         run: npm run test:secrets
@@ -135,7 +139,7 @@ jobs:
         run: npm run test:ui:static
 
       # ---- Migration gates on isolated PostgreSQL databases ----
-      - name: Phase 01 migration foundation tests
+      - name: Schema migration foundation tests
         env:
           POSTGRES_ADMIN_URL: postgresql://postgres:ci_password_only@127.0.0.1:5432/postgres
           MIGRATION_DB_USER: baogiang_dev_user

@@ -67,4 +67,7 @@ DATABASE_URL="$fresh_url" node prisma/seed.cjs
 echo "[migration-test] Constraint and history verification"
 psql "$fresh_psql_url" -v ON_ERROR_STOP=1 -f scripts/ci/verify-phase-01-schema.sql
 
+echo "[migration-test] Academic structure constraint and behavior verification"
+psql "$fresh_psql_url" -v ON_ERROR_STOP=1 -f scripts/ci/verify-academic-structure-schema.sql
+
 echo "[migration-test] PASS"
