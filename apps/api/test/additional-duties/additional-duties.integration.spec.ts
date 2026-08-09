@@ -82,6 +82,8 @@ integration('Additional duties API (isolated PostgreSQL integration)', () => {
     const refs = await fixtures();
     const school = await h.actor({ grants: [{ capabilityKey: 'ADDITIONAL_DUTY_ASSIGNMENT_MANAGE' }] });
     const group = await h.actor({ grants: [{ capabilityKey: 'ADDITIONAL_DUTY_ASSIGNMENT_MANAGE', scopeType: 'SUBJECT_GROUP', scopeResourceId: refs.groupA }] });
+    const firstLogin = await h.actor({ grants: [{ capabilityKey: 'ADDITIONAL_DUTY_ASSIGNMENT_MANAGE', scopeType: 'SUBJECT_GROUP', scopeResourceId: refs.groupA }], mustChangePassword: true });
+    expect((await firstLogin.agent.get('/api/staff-additional-duty-assignments')).status).toBe(403);
     const groupA = await school.agent.post('/api/staff-additional-duty-assignments').set('Origin', testOrigin).send({ staffProfileId: refs.staffProfileId, dutyDefinitionId: refs.definitionId, scopeType: 'SUBJECT_GROUP', scopeResourceId: refs.groupA, validFrom: '2026-06-01', validUntil: '2026-07-01' });
     const groupB = await school.agent.post('/api/staff-additional-duty-assignments').set('Origin', testOrigin).send({ staffProfileId: refs.staffProfileId, dutyDefinitionId: refs.definitionId, scopeType: 'SUBJECT_GROUP', scopeResourceId: refs.groupB, validFrom: '2026-06-01', validUntil: '2026-07-01' });
     const schoolWide = await school.agent.post('/api/staff-additional-duty-assignments').set('Origin', testOrigin).send({ staffProfileId: refs.staffProfileId, dutyDefinitionId: refs.definitionId, scopeType: 'SCHOOL_WIDE', validFrom: '2026-06-01', validUntil: '2026-07-01' });
@@ -116,16 +118,37 @@ integration('Additional duties API (isolated PostgreSQL integration)', () => {
 
   it('rolls back definition create/disable and assignment create/end when audit writing fails', async () => {
     const refs = await fixtures();
+    const actor = (await h.prisma.user.findFirstOrThrow()).id;
     const failing = new AdditionalDutiesService(h.prisma as never, { write: jest.fn().mockRejectedValue(new Error('audit unavailable')) } as never);
-    await expect(failing.createDefinition({ code: 'ROLLBACK', name: 'Rollback', category: 'X' }, 'actor', {})).rejects.toThrow('audit unavailable');
+    await expect(failing.createDefinition({ code: 'ROLLBACK', name: 'Rollback', category: 'X' }, actor, {})).rejects.toThrow('audit unavailable');
     expect(await h.prisma.additionalDutyDefinition.count({ where: { code: 'ROLLBACK' } })).toBe(0);
-    await expect(failing.disableDefinition(refs.definitionId, 'actor', {})).rejects.toThrow('audit unavailable');
+    await expect(failing.disableDefinition(refs.definitionId, actor, {})).rejects.toThrow('audit unavailable');
     expect((await h.prisma.additionalDutyDefinition.findUniqueOrThrow({ where: { id: refs.definitionId } })).isActive).toBe(true);
     const payload = { staffProfileId: refs.staffProfileId, dutyDefinitionId: refs.definitionId, scopeType: 'SUBJECT_GROUP' as const, scopeResourceId: refs.groupA, validFrom: '2026-06-01' };
-    await expect(failing.createAssignment(payload, 'actor', {})).rejects.toThrow('audit unavailable');
+    await expect(failing.createAssignment(payload, actor, {})).rejects.toThrow('audit unavailable');
     expect(await h.prisma.staffAdditionalDutyAssignment.count()).toBe(0);
-    const assignment = await h.prisma.staffAdditionalDutyAssignment.create({ data: { staffProfileId: refs.staffProfileId, dutyDefinitionId: refs.definitionId, scopeType: 'SUBJECT_GROUP', scopeResourceId: refs.groupA, validFrom: new Date('2026-06-01'), createdByUserId: (await h.prisma.user.findFirstOrThrow()).id } });
-    await expect(failing.endAssignment(assignment.id, { endAt: '2026-07-01' }, 'actor', {})).rejects.toThrow('audit unavailable');
+    const assignment = await h.prisma.staffAdditionalDutyAssignment.create({ data: { staffProfileId: refs.staffProfileId, dutyDefinitionId: refs.definitionId, scopeType: 'SUBJECT_GROUP', scopeResourceId: refs.groupA, validFrom: new Date('2026-06-01'), createdByUserId: actor } });
+    await expect(failing.endAssignment(assignment.id, { endAt: '2026-07-01' }, actor, {})).rejects.toThrow('audit unavailable');
     expect((await h.prisma.staffAdditionalDutyAssignment.findUniqueOrThrow({ where: { id: assignment.id } })).validUntil).toBeNull();
+  });
+
+  it('writes all six deterministic definition and assignment audits with complete metadata', async () => {
+    const refs = await fixtures();
+    const manager = await h.actor({ grants: [{ capabilityKey: 'ADDITIONAL_DUTY_CATALOG_MANAGE' }, { capabilityKey: 'ADDITIONAL_DUTY_ASSIGNMENT_MANAGE' }] });
+    const created = await manager.agent.post('/api/additional-duty-definitions').set('Origin', testOrigin).set('X-Request-Id', 'd-create').send({ code: 'AUDIT_DUTY', name: 'Audit Duty', category: 'AUDIT', validFrom: '2026-01-01', validUntil: '2028-01-01' });
+    await manager.agent.patch(`/api/additional-duty-definitions/${created.body.id as string}`).set('Origin', testOrigin).set('X-Request-Id', 'd-update').send({ name: 'Audit Duty Updated' });
+    const assignment = await manager.agent.post('/api/staff-additional-duty-assignments').set('Origin', testOrigin).set('X-Request-Id', 'a-create').send({ staffProfileId: refs.staffProfileId, dutyDefinitionId: created.body.id, scopeType: 'SUBJECT_GROUP', scopeResourceId: refs.groupA, validFrom: '2026-06-01' });
+    await manager.agent.patch(`/api/staff-additional-duty-assignments/${assignment.body.id as string}`).set('Origin', testOrigin).set('X-Request-Id', 'a-update').send({ note: 'Updated' });
+    await manager.agent.post(`/api/staff-additional-duty-assignments/${assignment.body.id as string}/end`).set('Origin', testOrigin).set('X-Request-Id', 'a-end').send({ endAt: '2026-07-01' });
+    await manager.agent.post(`/api/additional-duty-definitions/${created.body.id as string}/disable`).set('Origin', testOrigin).set('X-Request-Id', 'd-disable');
+    const expected = [
+      ['d-create', 'ADDITIONAL_DUTY_DEFINITION_CREATED'], ['d-update', 'ADDITIONAL_DUTY_DEFINITION_UPDATED'], ['d-disable', 'ADDITIONAL_DUTY_DEFINITION_DISABLED'],
+      ['a-create', 'STAFF_ADDITIONAL_DUTY_ASSIGNED'], ['a-update', 'STAFF_ADDITIONAL_DUTY_UPDATED'], ['a-end', 'STAFF_ADDITIONAL_DUTY_ENDED'],
+    ] as const;
+    for (const [requestId, action] of expected) expect(await h.prisma.auditEvent.count({ where: { requestId, action, actorUserId: manager.id, result: 'SUCCESS' } })).toBe(1);
+    expect((await h.prisma.auditEvent.findFirstOrThrow({ where: { requestId: 'd-create' } })).metadata).toEqual({ code: 'AUDIT_DUTY', category: 'AUDIT' });
+    expect((await h.prisma.auditEvent.findFirstOrThrow({ where: { requestId: 'd-update' } })).metadata).toEqual({ changedFields: ['name'] });
+    expect((await h.prisma.auditEvent.findFirstOrThrow({ where: { requestId: 'a-create' } })).metadata).toEqual({ staffProfileId: refs.staffProfileId, dutyDefinitionId: created.body.id, scopeType: 'SUBJECT_GROUP', scopeResourceId: refs.groupA });
+    expect((await h.prisma.auditEvent.findFirstOrThrow({ where: { requestId: 'a-update' } })).metadata).toEqual({ changedFields: ['note'] });
   });
 });

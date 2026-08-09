@@ -65,6 +65,11 @@ integration('Assignments API (isolated PostgreSQL integration)', () => {
     for (const body of [{ validFrom: null }, { validUntil: null }, { isPrimary: null }]) {
       expect((await manager.agent.post('/api/staff-subjects').set('Origin', testOrigin).send({ userId: refs.userId, subjectId: refs.subjectId, ...body })).status).toBe(400);
     }
+    const inactive = await references();
+    await h.prisma.subjectGroup.update({ where: { id: inactive.groupId }, data: { status: 'INACTIVE' } });
+    await h.prisma.subject.update({ where: { id: inactive.subjectId }, data: { status: 'INACTIVE' } });
+    expect((await manager.agent.post('/api/subject-group-memberships').set('Origin', testOrigin).send({ userId: inactive.userId, subjectGroupId: inactive.groupId })).status).toBe(409);
+    expect((await manager.agent.post('/api/staff-subjects').set('Origin', testOrigin).send({ userId: inactive.userId, subjectId: inactive.subjectId })).status).toBe(409);
   });
 
   it('enforces overlap, permits adjacency and applies half-open activeAt boundaries', async () => {
@@ -98,5 +103,26 @@ integration('Assignments API (isolated PostgreSQL integration)', () => {
     await expect(service.createStaffSubject({ userId: refs.userId, subjectId: refs.subjectId }, 'actor', {})).rejects.toThrow('audit unavailable');
     expect(await h.prisma.subjectGroupMembership.count()).toBe(0);
     expect(await h.prisma.staffSubject.count()).toBe(0);
+  });
+
+  it('writes all six deterministic audits with complete metadata and rejects mass assignment', async () => {
+    const manager = await h.actor({ grants: [{ capabilityKey: 'SUBJECT_GROUP_MANAGE' }, { capabilityKey: 'SUBJECT_MANAGE' }] });
+    const refs = await references();
+    const membership = await manager.agent.post('/api/subject-group-memberships').set('Origin', testOrigin).set('X-Request-Id', 'm-create').send({ userId: refs.userId, subjectGroupId: refs.groupId, validFrom: '2026-01-01' });
+    await manager.agent.patch(`/api/subject-group-memberships/${membership.body.id as string}`).set('Origin', testOrigin).set('X-Request-Id', 'm-update').send({ isPrimary: true });
+    await manager.agent.post(`/api/subject-group-memberships/${membership.body.id as string}/end`).set('Origin', testOrigin).set('X-Request-Id', 'm-end').send({ endAt: '2026-02-01' });
+    const staff = await manager.agent.post('/api/staff-subjects').set('Origin', testOrigin).set('X-Request-Id', 's-create').send({ userId: refs.userId, subjectId: refs.subjectId, validFrom: '2026-01-01' });
+    await manager.agent.patch(`/api/staff-subjects/${staff.body.id as string}`).set('Origin', testOrigin).set('X-Request-Id', 's-update').send({ isPrimary: true });
+    await manager.agent.post(`/api/staff-subjects/${staff.body.id as string}/end`).set('Origin', testOrigin).set('X-Request-Id', 's-end').send({ endAt: '2026-02-01' });
+    const expected = [
+      ['m-create', 'SUBJECT_GROUP_MEMBERSHIP_CREATED'], ['m-update', 'SUBJECT_GROUP_MEMBERSHIP_UPDATED'], ['m-end', 'SUBJECT_GROUP_MEMBERSHIP_ENDED'],
+      ['s-create', 'STAFF_SUBJECT_CREATED'], ['s-update', 'STAFF_SUBJECT_UPDATED'], ['s-end', 'STAFF_SUBJECT_ENDED'],
+    ] as const;
+    for (const [requestId, action] of expected) expect(await h.prisma.auditEvent.count({ where: { requestId, action, actorUserId: manager.id, result: 'SUCCESS' } })).toBe(1);
+    expect((await h.prisma.auditEvent.findFirstOrThrow({ where: { requestId: 'm-update' } })).metadata).toEqual({ changedFields: ['isPrimary'] });
+    expect((await h.prisma.auditEvent.findFirstOrThrow({ where: { requestId: 's-update' } })).metadata).toEqual({ changedFields: ['isPrimary'] });
+    for (const body of [{}, { userId: refs.userId }, { subjectId: refs.subjectId }, { id: staff.body.id }, { createdAt: 'x' }]) {
+      expect((await manager.agent.patch(`/api/staff-subjects/${staff.body.id as string}`).set('Origin', testOrigin).send(body)).status).toBe(400);
+    }
   });
 });

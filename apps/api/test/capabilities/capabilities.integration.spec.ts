@@ -83,16 +83,20 @@ integration('Capability management API (isolated PostgreSQL integration)', () =>
 
   it('permits adjacency, rejects overlap, integrates authorization and revokes idempotently', async () => {
     const manager = await h.actor({ grants: [{ capabilityKey: 'CAPABILITY_GRANT' }] });
-    const userId = await target();
+    const targetActor = await h.actor({ usernamePrefix: 'cap-target' });
+    const userId = targetActor.id;
     const first = await manager.agent.post(`/api/users/${userId}/capability-grants`).set('Origin', testOrigin).set('X-Request-Id', 'grant-create').send({ capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL', validFrom: '2026-01-01', validUntil: '2026-02-01' });
     expect(first.status).toBe(201);
     expect((await manager.agent.post(`/api/users/${userId}/capability-grants`).set('Origin', testOrigin).send({ capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL', validFrom: '2026-01-15', validUntil: '2026-01-20' })).status).toBe(409);
     expect((await manager.agent.post(`/api/users/${userId}/capability-grants`).set('Origin', testOrigin).send({ capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL', validFrom: '2026-02-01', validUntil: '2026-03-01' })).status).toBe(201);
     const authorization = h.app.get(CapabilityAuthorizationService);
     expect(await authorization.hasCapability({ userId, capabilityKey: 'TEACHER_BASE', requestedScope: 'PERSONAL', atTime: new Date('2026-01-15') })).toBe(true);
-    const revoked = await manager.agent.post(`/api/capability-grants/${first.body.id as string}/revoke`).set('Origin', testOrigin).set('X-Request-Id', 'grant-revoke').send({ revokeReason: '  no longer needed  ' });
+    const effective = await manager.agent.post(`/api/users/${userId}/capability-grants`).set('Origin', testOrigin).send({ capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL' });
+    expect((await targetActor.agent.get('/api/auth/me')).body.capabilities).toContainEqual({ key: 'TEACHER_BASE', scope: 'PERSONAL' });
+    const revoked = await manager.agent.post(`/api/capability-grants/${effective.body.id as string}/revoke`).set('Origin', testOrigin).set('X-Request-Id', 'grant-revoke').send({ revokeReason: '  no longer needed  ' });
+    expect((await targetActor.agent.get('/api/auth/me')).body.capabilities).not.toContainEqual({ key: 'TEACHER_BASE', scope: 'PERSONAL' });
     expect(revoked.body.revokeReason).toBe('no longer needed');
-    const repeated = await manager.agent.post(`/api/capability-grants/${first.body.id as string}/revoke`).set('Origin', testOrigin).send({ revokeReason: 'overwrite' });
+    const repeated = await manager.agent.post(`/api/capability-grants/${effective.body.id as string}/revoke`).set('Origin', testOrigin).send({ revokeReason: 'overwrite' });
     expect(repeated.body.revokedAt).toBe(revoked.body.revokedAt);
     expect(repeated.body.revokeReason).toBe('no longer needed');
     expect((await h.prisma.auditEvent.findFirstOrThrow({ where: { requestId: 'grant-create' } })).metadata).toMatchObject({ targetUserId: userId, capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL' });
