@@ -16,8 +16,8 @@ export function Pagination({ page, pageSize, total, onPage }: { page: number; pa
   return <nav className="pagination" aria-label="Phân trang"><p>Trang <strong>{page}</strong> / {pages} · {total} bản ghi</p><div><Button type="button" variant="secondary" disabled={page <= 1} onClick={() => onPage(page - 1)}>Trang trước</Button><Button type="button" variant="secondary" disabled={page >= pages} onClick={() => onPage(page + 1)}>Trang sau</Button></div></nav>;
 }
 
-export function StatusText({ active, activeLabel = 'Đang hoạt động', inactiveLabel = 'Đã kết thúc' }: { active: boolean; activeLabel?: string; inactiveLabel?: string }) {
-  return <span className={`status-badge ${active ? 'status-badge--active' : 'status-badge--inactive'}`}>{active ? activeLabel : inactiveLabel}</span>;
+export function StatusText({ active, activeLabel = 'Đang hoạt động', inactiveLabel = 'Đã kết thúc', inactiveTone = 'warning' }: { active: boolean; activeLabel?: string; inactiveLabel?: string; inactiveTone?: 'warning' | 'error' }) {
+  return <span className={`status-badge ${active ? 'status-badge--active' : `status-badge--${inactiveTone === 'error' ? 'error' : 'inactive'}`}`}>{active ? activeLabel : inactiveLabel}</span>;
 }
 
 export function EmptyState({ filtered = false, title, message }: { filtered?: boolean; title?: string; message?: string }) {
@@ -30,11 +30,13 @@ export function QueryFailure({ error, retry }: { error: unknown; retry(): void }
 }
 
 export function MutationNotice({ error, success }: { error?: unknown; success?: string }) {
+  if (error) {
+    const status = error instanceof ApiError ? error.statusCode : 0;
+    const message = status === 409 ? 'Dữ liệu xung đột với bản ghi hiện có. Hãy giữ nguyên biểu mẫu, kiểm tra lại rồi thử lại.' : status === 403 ? 'Bạn không có quyền thực hiện thao tác này.' : status === 404 ? 'Bản ghi không còn tồn tại. Hãy tải lại danh sách.' : status === 400 || status === 422 ? 'Một số giá trị chưa hợp lệ. Hãy kiểm tra lại biểu mẫu.' : 'Không thể hoàn tất yêu cầu. Hãy thử lại khi kết nối ổn định.';
+    return <InlineAlert title="Chưa thể lưu thay đổi">{message}</InlineAlert>;
+  }
   if (success) return <InlineAlert title="Đã hoàn tất" tone="success">{success}</InlineAlert>;
-  if (!error) return null;
-  const status = error instanceof ApiError ? error.statusCode : 0;
-  const message = status === 409 ? 'Dữ liệu xung đột với bản ghi hiện có. Hãy giữ nguyên biểu mẫu, kiểm tra lại rồi thử lại.' : status === 403 ? 'Bạn không có quyền thực hiện thao tác này.' : status === 404 ? 'Bản ghi không còn tồn tại. Hãy tải lại danh sách.' : status === 400 || status === 422 ? 'Một số giá trị chưa hợp lệ. Hãy kiểm tra lại biểu mẫu.' : 'Không thể hoàn tất yêu cầu. Hãy thử lại khi kết nối ổn định.';
-  return <InlineAlert title="Chưa thể lưu thay đổi">{message}</InlineAlert>;
+  return null;
 }
 
 export function SelectField({ label, id, children, hint, ...props }: SelectHTMLAttributes<HTMLSelectElement> & { label: string; id: string; hint?: string; children: ReactNode }) {

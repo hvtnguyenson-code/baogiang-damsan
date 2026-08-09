@@ -10,12 +10,15 @@ export function hasSchoolCapability(capabilities: ScopedCapability[], key: Capab
   return capabilities.some((grant) => grant.key === key && grant.scope === 'SCHOOL_WIDE');
 }
 
-export function hasSubjectGroupGrant(capabilities: ScopedCapability[]): boolean {
-  return capabilities.some((grant) => grant.scope === 'SUBJECT_GROUP' && Boolean(grant.resourceId));
+export function subjectGroupResources(capabilities: ScopedCapability[], key: CapabilityKey): string[] {
+  return capabilities
+    .filter((grant) => grant.key === key && grant.scope === 'SUBJECT_GROUP' && Boolean(grant.resourceId))
+    .map((grant) => grant.resourceId!);
 }
 
 export function canManageDutyAssignments(capabilities: ScopedCapability[]): boolean {
-  return hasSchoolCapability(capabilities, 'ADDITIONAL_DUTY_ASSIGNMENT_MANAGE') || hasSubjectGroupGrant(capabilities);
+  return hasSchoolCapability(capabilities, 'ADDITIONAL_DUTY_ASSIGNMENT_MANAGE')
+    || subjectGroupResources(capabilities, 'ADDITIONAL_DUTY_ASSIGNMENT_MANAGE').length > 0;
 }
 
 export const managementRoutes: ManagementRoute[] = [

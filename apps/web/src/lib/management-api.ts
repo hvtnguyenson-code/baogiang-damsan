@@ -65,10 +65,11 @@ export const dutyDefinitionsApi = {
 };
 
 export type DutyAssignmentInput = { staffProfileId: string; dutyDefinitionId: string; scopeType: 'SCHOOL_WIDE' | 'SUBJECT_GROUP'; scopeResourceId?: string; validFrom?: string; validUntil?: string; note?: string };
+export type DutyAssignmentUpdate = { validFrom?: string; validUntil?: string; note?: string | null };
 export const dutyAssignmentsApi = {
   list: (q: Record<string, QueryValue>) => apiFetch<StaffAdditionalDutyAssignmentListResponse>(`/staff-additional-duty-assignments${queryString(q)}`, { notifyUnauthorized: true }),
   create: (input: DutyAssignmentInput) => apiFetch<StaffAdditionalDutyAssignmentRecord>('/staff-additional-duty-assignments', json('POST', input)),
-  update: (id: string, input: Pick<DutyAssignmentInput, 'validFrom' | 'validUntil' | 'note'>) => apiFetch<StaffAdditionalDutyAssignmentRecord>(`/staff-additional-duty-assignments/${id}`, json('PATCH', input)),
+  update: (id: string, input: DutyAssignmentUpdate) => apiFetch<StaffAdditionalDutyAssignmentRecord>(`/staff-additional-duty-assignments/${id}`, json('PATCH', input)),
   end: (id: string, endAt?: string) => apiFetch<StaffAdditionalDutyAssignmentRecord>(`/staff-additional-duty-assignments/${id}/end`, json('POST', endAt ? { endAt } : {})),
 };
 

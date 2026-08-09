@@ -168,6 +168,7 @@ h2 { font-size: clamp(1.25rem, 2vw, 1.55rem); }
 .status-badge::before { content: ''; width: 8px; height: 8px; border: 2px solid currentColor; border-radius: 50%; }
 .status-badge--active { color: #246b45; }
 .status-badge--inactive { color: #7a4b00; }
+.status-badge--error { color: #a32929; }
 .pagination { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding-block: 16px; border-bottom: 1px solid #c9d4da; }
 .pagination p { margin: 0; color: #49616f; }
 .pagination > div { display: flex; gap: 8px; }
