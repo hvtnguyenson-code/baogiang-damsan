@@ -7,10 +7,11 @@ import { FormField } from '../components/ui/form-field';
 import { DataTable, EmptyState, MutationNotice, PageHeader, PageLoading, Pagination, QueryFailure, SelectField, StatusText } from '../components/ui/management';
 import { hasSchoolCapability } from '../lib/capabilities';
 import { formatDateTime, isActiveWindow } from '../lib/display';
-import { assignmentApi, catalogApi, toIso, toLocalInput, usersApi } from '../lib/management-api';
+import { assignmentApi, buildTemporalAssignmentUpdate, catalogApi, hasPatchChanges, toIso, toLocalInput, usersApi, type AssignmentInput, type AssignmentUpdate } from '../lib/management-api';
 
 type RecordType = SubjectGroupMembershipRecord | StaffSubjectRecord;
-type Draft = { id?: string; userId: string; resourceId: string; validFrom: string; validUntil: string; isPrimary: boolean };
+type Draft = { id?: string; userId: string; resourceId: string; validFrom: string; validUntil: string; isPrimary: boolean; original?: RecordType };
+type SaveVariables = { operation: 'create'; input: AssignmentInput } | { operation: 'update'; id: string; input: AssignmentUpdate };
 type Filters = { userId: string; resourceId: string; activeAt: string; isPrimary: string };
 const emptyFilters: Filters = { userId: '', resourceId: '', activeAt: '', isPrimary: '' };
 
@@ -46,9 +47,9 @@ export function TemporalAssignmentsPage({ kind }: { kind: 'subject-group-members
   const users = useQuery({ queryKey: ['users', 'lookup'], queryFn: () => usersApi.list({ page: 1, pageSize: 100 }), enabled: canLookupUsers });
   const resources = useQuery({ queryKey: ['catalog', catalogKind, 'history-lookup'], queryFn: () => resourceApi.list({ page: 1, pageSize: 100 }) });
   const save = useMutation({
-    mutationFn: (value: Draft) => value.id
-      ? api.update(value.id, { validFrom: toIso(value.validFrom), validUntil: toIso(value.validUntil), isPrimary: value.isPrimary })
-      : api.create({ userId: value.userId, resourceId: value.resourceId, validFrom: toIso(value.validFrom), validUntil: toIso(value.validUntil), isPrimary: value.isPrimary }),
+    mutationFn: (variables: SaveVariables) => variables.operation === 'update'
+      ? api.update(variables.id, variables.input)
+      : api.create(variables.input),
     onMutate: () => { setSuccess(''); endMutation.reset(); },
     onSuccess: async () => { setDraft(null); setSuccess('Đã lưu phân công.'); await queryClient.invalidateQueries({ queryKey: ['assignments', kind] }); },
   });
@@ -62,10 +63,20 @@ export function TemporalAssignmentsPage({ kind }: { kind: 'subject-group-members
   const activeResources = resources.data?.items.filter((resource) => resource.status === 'ACTIVE') ?? [];
   const filtered = Object.values(filters).some(Boolean);
   function updateFilter<K extends keyof Filters>(key: K, value: Filters[K]) { setFilters((current) => ({ ...current, [key]: value })); setPage(1); }
-  function submit(event: FormEvent) { event.preventDefault(); if (draft && draft.userId && draft.resourceId) save.mutate(draft); }
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!draft?.userId || !draft.resourceId) return;
+    if (draft.id && draft.original) {
+      const input = buildTemporalAssignmentUpdate(draft, draft.original);
+      if (!hasPatchChanges(input)) { save.reset(); endMutation.reset(); setSuccess('Không có thay đổi cần lưu.'); return; }
+      save.mutate({ operation: 'update', id: draft.id, input });
+      return;
+    }
+    save.mutate({ operation: 'create', input: { userId: draft.userId, resourceId: draft.resourceId, validFrom: toIso(draft.validFrom), validUntil: toIso(draft.validUntil), isPrimary: draft.isPrimary } });
+  }
   function edit(row: RecordType) {
     setSuccess('');
-    setDraft({ id: row.id, userId: row.userId, resourceId: isGroup ? (row as SubjectGroupMembershipRecord).subjectGroupId : (row as StaffSubjectRecord).subjectId, validFrom: toLocalInput(row.validFrom), validUntil: toLocalInput(row.validUntil), isPrimary: row.isPrimary });
+    setDraft({ id: row.id, userId: row.userId, resourceId: isGroup ? (row as SubjectGroupMembershipRecord).subjectGroupId : (row as StaffSubjectRecord).subjectId, validFrom: toLocalInput(row.validFrom), validUntil: toLocalInput(row.validUntil), isPrimary: row.isPrimary, original: row });
   }
   return <div className="management-page temporal-ledger">
     <PageHeader eyebrow="Phân công có hiệu lực" title={title} action={<Button type="button" disabled={!canLookupUsers} onClick={() => { setSuccess(''); setDraft({ userId: '', resourceId: '', validFrom: '', validUntil: '', isPrimary: false }); }}>Tạo phân công</Button>}>Khoảng hiệu lực dùng quy tắc từ thời điểm bắt đầu đến trước thời điểm kết thúc.</PageHeader>

@@ -7,9 +7,10 @@ import { FormField } from '../components/ui/form-field';
 import { DataTable, EmptyState, MutationNotice, PageHeader, PageLoading, Pagination, QueryFailure, SelectField, StatusText, TextareaField } from '../components/ui/management';
 import { hasSchoolCapability, subjectGroupResources } from '../lib/capabilities';
 import { formatDateTime, isActiveWindow } from '../lib/display';
-import { catalogApi, dutyAssignmentsApi, dutyDefinitionsApi, toIso, toLocalInput, usersApi } from '../lib/management-api';
+import { buildDutyAssignmentUpdate, catalogApi, dutyAssignmentsApi, dutyDefinitionsApi, hasPatchChanges, toIso, toLocalInput, usersApi, type DutyAssignmentInput, type DutyAssignmentUpdate } from '../lib/management-api';
 
-type Draft = { id?: string; staffProfileId: string; dutyDefinitionId: string; scopeType: 'SCHOOL_WIDE' | 'SUBJECT_GROUP'; scopeResourceId: string; validFrom: string; validUntil: string; note: string };
+type Draft = { id?: string; staffProfileId: string; dutyDefinitionId: string; scopeType: 'SCHOOL_WIDE' | 'SUBJECT_GROUP'; scopeResourceId: string; validFrom: string; validUntil: string; note: string; original?: StaffAdditionalDutyAssignmentRecord };
+type SaveVariables = { operation: 'create'; input: DutyAssignmentInput } | { operation: 'update'; id: string; input: DutyAssignmentUpdate };
 type Filters = { staffProfileId: string; dutyDefinitionId: string; scopeType: string; scopeResourceId: string; activeAt: string };
 const emptyFilters: Filters = { staffProfileId: '', dutyDefinitionId: '', scopeType: '', scopeResourceId: '', activeAt: '' };
 
@@ -56,9 +57,9 @@ export function DutyAssignmentsPage() {
   const canCreate = canUsers && (schoolWide || (exactGroups.length > 0 && canGroups));
   const filtered = Object.values(filters).some(Boolean);
   const save = useMutation({
-    mutationFn: (value: Draft) => value.id
-      ? dutyAssignmentsApi.update(value.id, { validFrom: toIso(value.validFrom), validUntil: toIso(value.validUntil), note: value.note.trim() ? value.note : null })
-      : dutyAssignmentsApi.create({ staffProfileId: value.staffProfileId, dutyDefinitionId: value.dutyDefinitionId, scopeType: value.scopeType, ...(value.scopeType === 'SUBJECT_GROUP' ? { scopeResourceId: value.scopeResourceId } : {}), validFrom: toIso(value.validFrom), validUntil: toIso(value.validUntil), ...(value.note.trim() ? { note: value.note } : {}) }),
+    mutationFn: (variables: SaveVariables) => variables.operation === 'update'
+      ? dutyAssignmentsApi.update(variables.id, variables.input)
+      : dutyAssignmentsApi.create(variables.input),
     onMutate: () => { setSuccess(''); end.reset(); },
     onSuccess: async () => { setDraft(null); setSuccess('Đã lưu phân công kiêm nhiệm.'); await queryClient.invalidateQueries({ queryKey: ['duty-assignments'] }); },
   });
@@ -68,8 +69,18 @@ export function DutyAssignmentsPage() {
     onSuccess: async () => { setEndId(undefined); setEndAt(''); setSuccess('Đã kết thúc phân công; lịch sử vẫn được giữ.'); await queryClient.invalidateQueries({ queryKey: ['duty-assignments'] }); },
   });
   function updateFilter<K extends keyof Filters>(key: K, value: Filters[K]) { setFilters((current) => ({ ...current, [key]: value, ...(key === 'scopeType' && value !== 'SUBJECT_GROUP' ? { scopeResourceId: '' } : {}) })); setPage(1); }
-  function edit(row: StaffAdditionalDutyAssignmentRecord) { setSuccess(''); setDraft({ id: row.id, staffProfileId: row.staffProfileId, dutyDefinitionId: row.dutyDefinitionId, scopeType: row.scopeType === 'SUBJECT_GROUP' ? 'SUBJECT_GROUP' : 'SCHOOL_WIDE', scopeResourceId: row.scopeResourceId ?? '', validFrom: toLocalInput(row.validFrom), validUntil: toLocalInput(row.validUntil), note: row.note ?? '' }); }
-  function submit(event: FormEvent) { event.preventDefault(); if (!draft || (!draft.id && (!draft.staffProfileId || !draft.dutyDefinitionId)) || (draft.scopeType === 'SUBJECT_GROUP' && !draft.scopeResourceId)) return; save.mutate(draft); }
+  function edit(row: StaffAdditionalDutyAssignmentRecord) { setSuccess(''); setDraft({ id: row.id, staffProfileId: row.staffProfileId, dutyDefinitionId: row.dutyDefinitionId, scopeType: row.scopeType === 'SUBJECT_GROUP' ? 'SUBJECT_GROUP' : 'SCHOOL_WIDE', scopeResourceId: row.scopeResourceId ?? '', validFrom: toLocalInput(row.validFrom), validUntil: toLocalInput(row.validUntil), note: row.note ?? '', original: row }); }
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!draft || (!draft.id && (!draft.staffProfileId || !draft.dutyDefinitionId)) || (draft.scopeType === 'SUBJECT_GROUP' && !draft.scopeResourceId)) return;
+    if (draft.id && draft.original) {
+      const input = buildDutyAssignmentUpdate(draft, draft.original);
+      if (!hasPatchChanges(input)) { save.reset(); end.reset(); setSuccess('Không có thay đổi cần lưu.'); return; }
+      save.mutate({ operation: 'update', id: draft.id, input });
+      return;
+    }
+    save.mutate({ operation: 'create', input: { staffProfileId: draft.staffProfileId, dutyDefinitionId: draft.dutyDefinitionId, scopeType: draft.scopeType, ...(draft.scopeType === 'SUBJECT_GROUP' ? { scopeResourceId: draft.scopeResourceId } : {}), validFrom: toIso(draft.validFrom), validUntil: toIso(draft.validUntil), ...(draft.note.trim() ? { note: draft.note } : {}) } });
+  }
   return <div className="management-page duty-ledger">
     <PageHeader eyebrow="Phân công kiêm nhiệm" title="Kiêm nhiệm nhân sự" action={<Button type="button" disabled={!canCreate} onClick={() => { setSuccess(''); setDraft({ staffProfileId: '', dutyDefinitionId: '', scopeType: schoolWide ? 'SCHOOL_WIDE' : 'SUBJECT_GROUP', scopeResourceId: exactGroups[0] ?? '', validFrom: '', validUntil: '', note: '' }); }}>Tạo phân công</Button>}>Danh sách được máy chủ giới hạn theo đúng phạm vi được giao. Kiêm nhiệm không tự cấp quyền hệ thống.</PageHeader>
     {!canCreate && <div className="limitation-note"><strong>Chưa thể tạo phân công mới.</strong> Cần quyền tra cứu nhân sự và danh mục tổ phù hợp; giao diện không yêu cầu nhập UUID thô.</div>}

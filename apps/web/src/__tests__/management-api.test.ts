@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { assignmentApi, buildDutyDefinitionInput, capabilitiesApi, catalogApi, dutyAssignmentsApi, dutyDefinitionsApi, queryString, toIso, toLocalInput, usersApi } from '../lib/management-api';
+import { assignmentApi, buildDutyAssignmentUpdate, buildDutyDefinitionInput, buildTemporalAssignmentUpdate, capabilitiesApi, catalogApi, dutyAssignmentsApi, dutyDefinitionsApi, hasPatchChanges, queryString, toIso, toLocalInput, usersApi } from '../lib/management-api';
 import { jsonResponse } from './test-utils';
 
 describe('typed management API boundary', () => {
@@ -60,14 +60,72 @@ describe('typed management API boundary', () => {
     expect(JSON.parse(fetchMock.mock.calls[0]![1]!.body as string)).toEqual({ code: 'E2EDUTY', name: 'Kiêm nhiệm E2E', category: 'Kiểm thử', description: 'Mô tả nghiệp vụ' });
   });
 
-  it('sends null when an update clears a duty-definition description', async () => {
+  it('sends only null when an update clears a duty-definition description', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: 'duty-id' })); vi.stubGlobal('fetch', fetchMock);
-    const input = buildDutyDefinitionInput({ code: 'E2EDUTY', name: 'Kiêm nhiệm E2E', description: '   ', category: 'Kiểm thử', sortOrder: '2', validFrom: '', validUntil: '' }, 'update');
+    const original = { code: 'E2EDUTY', name: 'Kiêm nhiệm E2E', description: 'Mô tả cũ', category: 'Kiểm thử', sortOrder: 2, validFrom: '2026-08-09T08:30:45.678Z' };
+    const input = buildDutyDefinitionInput({ code: original.code, name: original.name, description: '   ', category: original.category, sortOrder: '2', validFrom: toLocalInput(original.validFrom), validUntil: '' }, 'update', original);
     await dutyDefinitionsApi.update('duty-id', input);
-    const body = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string);
-    expect(body).toEqual({ code: 'E2EDUTY', name: 'Kiêm nhiệm E2E', category: 'Kiểm thử', sortOrder: 2, description: null });
-    expect(body).not.toHaveProperty('validFrom');
-    expect(body).not.toHaveProperty('validUntil');
+    expect(JSON.parse(fetchMock.mock.calls[0]![1]!.body as string)).toEqual({ description: null });
+  });
+
+  it('builds a duty note-only PATCH without truncating exact server timestamps', () => {
+    const original = { validFrom: '2026-08-09T08:30:45.678Z', validUntil: '2026-09-09T09:40:59.321Z', note: 'Ghi chú cũ' };
+    expect(buildDutyAssignmentUpdate({ validFrom: toLocalInput(original.validFrom), validUntil: toLocalInput(original.validUntil), note: 'Ghi chú mới' }, original)).toEqual({ note: 'Ghi chú mới' });
+  });
+
+  it('builds a duty note-clear PATCH as null without temporal fields', () => {
+    const original = { validFrom: '2026-08-09T08:30:45.678Z', note: 'Ghi chú cũ' };
+    expect(buildDutyAssignmentUpdate({ validFrom: toLocalInput(original.validFrom), validUntil: '', note: '' }, original)).toEqual({ note: null });
+  });
+
+  it('includes only an explicitly changed duty-assignment timestamp', () => {
+    const original = { validFrom: '2026-08-09T08:30:45.678Z', validUntil: '2026-09-09T09:40:59.321Z', note: 'Giữ nguyên' };
+    const changed = '2026-08-10T10:15';
+    expect(buildDutyAssignmentUpdate({ validFrom: changed, validUntil: toLocalInput(original.validUntil), note: original.note }, original)).toEqual({ validFrom: toIso(changed) });
+  });
+
+  it('builds a subject-group primary-only PATCH without temporal fields', () => {
+    const original = { validFrom: '2026-08-09T08:30:45.678Z', validUntil: '2026-09-09T09:40:59.321Z', isPrimary: false };
+    expect(buildTemporalAssignmentUpdate({ validFrom: toLocalInput(original.validFrom), validUntil: toLocalInput(original.validUntil), isPrimary: true }, original)).toEqual({ isPrimary: true });
+  });
+
+  it('builds a staff-subject primary-only PATCH without temporal fields', () => {
+    const original = { validFrom: '2026-08-09T08:30:45.678Z', isPrimary: true };
+    expect(buildTemporalAssignmentUpdate({ validFrom: toLocalInput(original.validFrom), validUntil: '', isPrimary: false }, original)).toEqual({ isPrimary: false });
+  });
+
+  it('includes only an explicitly changed temporal-assignment date', () => {
+    const original = { validFrom: '2026-08-09T08:30:45.678Z', validUntil: '2026-09-09T09:40:59.321Z', isPrimary: false };
+    const changed = '2026-09-10T11:25';
+    expect(buildTemporalAssignmentUpdate({ validFrom: toLocalInput(original.validFrom), validUntil: changed, isPrimary: false }, original)).toEqual({ validUntil: toIso(changed) });
+  });
+
+  it('builds a duty-definition description-only PATCH', () => {
+    const original = { code: 'E2EDUTY', name: 'Kiêm nhiệm E2E', description: 'Mô tả cũ', category: 'Kiểm thử', sortOrder: 2, validFrom: '2026-08-09T08:30:45.678Z', validUntil: '2026-09-09T09:40:59.321Z' };
+    const values = { code: original.code, name: original.name, description: 'Mô tả mới', category: original.category, sortOrder: '2', validFrom: toLocalInput(original.validFrom), validUntil: toLocalInput(original.validUntil) };
+    expect(buildDutyDefinitionInput(values, 'update', original)).toEqual({ description: 'Mô tả mới' });
+  });
+
+  it('builds a duty-definition name-only PATCH and omits unchanged code', () => {
+    const original = { code: 'E2EDUTY', name: 'Tên cũ', description: undefined, category: 'Kiểm thử', sortOrder: 2, validFrom: '2026-08-09T08:30:45.678Z' };
+    const values = { code: 'e2eduty', name: 'Tên mới', description: '', category: original.category, sortOrder: '2', validFrom: toLocalInput(original.validFrom), validUntil: '' };
+    expect(buildDutyDefinitionInput(values, 'update', original)).toEqual({ name: 'Tên mới' });
+  });
+
+  it('includes one explicitly changed duty-definition validity boundary only', () => {
+    const original = { code: 'E2EDUTY', name: 'Kiêm nhiệm E2E', description: undefined, category: 'Kiểm thử', sortOrder: 2, validFrom: '2026-08-09T08:30:45.678Z', validUntil: '2026-09-09T09:40:59.321Z' };
+    const changed = '2026-08-10T10:15';
+    const values = { code: original.code, name: original.name, description: '', category: original.category, sortOrder: '2', validFrom: changed, validUntil: toLocalInput(original.validUntil) };
+    expect(buildDutyDefinitionInput(values, 'update', original)).toEqual({ validFrom: toIso(changed) });
+  });
+
+  it('returns no update fields for unchanged edit forms', () => {
+    const duty = { validFrom: '2026-08-09T08:30:45.678Z', validUntil: '2026-09-09T09:40:59.321Z', note: 'Giữ nguyên' };
+    const temporal = { validFrom: duty.validFrom, validUntil: duty.validUntil, isPrimary: true };
+    const definition = { code: 'E2EDUTY', name: 'Kiêm nhiệm E2E', description: 'Mô tả', category: 'Kiểm thử', sortOrder: 2, validFrom: duty.validFrom, validUntil: duty.validUntil };
+    expect(hasPatchChanges(buildDutyAssignmentUpdate({ validFrom: toLocalInput(duty.validFrom), validUntil: toLocalInput(duty.validUntil), note: duty.note }, duty))).toBe(false);
+    expect(hasPatchChanges(buildTemporalAssignmentUpdate({ validFrom: toLocalInput(temporal.validFrom), validUntil: toLocalInput(temporal.validUntil), isPrimary: temporal.isPrimary }, temporal))).toBe(false);
+    expect(hasPatchChanges(buildDutyDefinitionInput({ code: definition.code, name: definition.name, description: definition.description, category: definition.category, sortOrder: '2', validFrom: toLocalInput(definition.validFrom), validUntil: toLocalInput(definition.validUntil) }, 'update', definition))).toBe(false);
   });
 
   it('omits resource IDs for school-wide capability grants', async () => {
