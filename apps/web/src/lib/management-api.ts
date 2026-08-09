@@ -55,12 +55,41 @@ export const capabilitiesApi = {
 
 export const auditApi = { list: (q: Record<string, QueryValue>) => apiFetch<AuditEventListResponse>(`/audit-events${queryString(q)}`, { notifyUnauthorized: true }) };
 
-export type DutyDefinitionInput = { code: string; name: string; description?: string | null; category: string; sortOrder?: number; validFrom?: string; validUntil?: string };
+type DutyDefinitionBaseInput = { code: string; name: string; category: string; sortOrder?: number; validFrom?: string; validUntil?: string };
+export type DutyDefinitionCreateInput = DutyDefinitionBaseInput & { description?: string };
+export type DutyDefinitionUpdateInput = DutyDefinitionBaseInput & { description?: string | null };
+export type DutyDefinitionFormValues = { code: string; name: string; description: string; category: string; sortOrder: string; validFrom: string; validUntil: string };
+
+export function buildDutyDefinitionInput(values: DutyDefinitionFormValues, operation: 'create'): DutyDefinitionCreateInput;
+export function buildDutyDefinitionInput(values: DutyDefinitionFormValues, operation: 'update'): DutyDefinitionUpdateInput;
+export function buildDutyDefinitionInput(values: DutyDefinitionFormValues, operation: 'create' | 'update'): DutyDefinitionUpdateInput {
+  const description = values.description.trim();
+  const sortOrderText = values.sortOrder.trim();
+  const parsedSortOrder = Number(sortOrderText);
+  const sortOrder = sortOrderText && Number.isFinite(parsedSortOrder) ? parsedSortOrder : undefined;
+  const validFrom = toIso(values.validFrom);
+  const validUntil = toIso(values.validUntil);
+
+  return {
+    code: values.code,
+    name: values.name,
+    category: values.category,
+    ...(sortOrder === undefined ? {} : { sortOrder }),
+    ...(validFrom ? { validFrom } : {}),
+    ...(validUntil ? { validUntil } : {}),
+    ...(operation === 'update'
+      ? { description: description || null }
+      : description
+        ? { description }
+        : {}),
+  };
+}
+
 export const dutyDefinitionsApi = {
   list: (q: Record<string, QueryValue>) => apiFetch<AdditionalDutyDefinitionListResponse>(`/additional-duty-definitions${queryString(q)}`, { notifyUnauthorized: true }),
   options: (q: Record<string, QueryValue>) => apiFetch<AdditionalDutyDefinitionOptionsResponse>(`/additional-duty-definitions/options${queryString(q)}`, { notifyUnauthorized: true }),
-  create: (input: DutyDefinitionInput) => apiFetch<AdditionalDutyDefinitionRecord>('/additional-duty-definitions', json('POST', input)),
-  update: (id: string, input: DutyDefinitionInput) => apiFetch<AdditionalDutyDefinitionRecord>(`/additional-duty-definitions/${id}`, json('PATCH', input)),
+  create: (input: DutyDefinitionCreateInput) => apiFetch<AdditionalDutyDefinitionRecord>('/additional-duty-definitions', json('POST', input)),
+  update: (id: string, input: DutyDefinitionUpdateInput) => apiFetch<AdditionalDutyDefinitionRecord>(`/additional-duty-definitions/${id}`, json('PATCH', input)),
   disable: (id: string) => apiFetch<AdditionalDutyDefinitionRecord>(`/additional-duty-definitions/${id}/disable`, json('POST')),
 };
 

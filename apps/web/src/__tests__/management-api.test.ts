@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { assignmentApi, capabilitiesApi, catalogApi, dutyAssignmentsApi, queryString, toIso, toLocalInput, usersApi } from '../lib/management-api';
+import { assignmentApi, buildDutyDefinitionInput, capabilitiesApi, catalogApi, dutyAssignmentsApi, dutyDefinitionsApi, queryString, toIso, toLocalInput, usersApi } from '../lib/management-api';
 import { jsonResponse } from './test-utils';
 
 describe('typed management API boundary', () => {
@@ -40,6 +40,34 @@ describe('typed management API boundary', () => {
     expect(String(fetchMock.mock.calls[0]![0])).toContain('staffProfileId=staff-id&dutyDefinitionId=duty-id&scopeType=SUBJECT_GROUP&scopeResourceId=group-id');
     await dutyAssignmentsApi.update('assignment-id', { note: null });
     expect(fetchMock).toHaveBeenLastCalledWith('/api/staff-additional-duty-assignments/assignment-id', expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ note: null }) }));
+  });
+
+  it('omits blank optional duty-definition fields from create requests', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: 'duty-id' })); vi.stubGlobal('fetch', fetchMock);
+    const input = buildDutyDefinitionInput({ code: 'E2EDUTY', name: 'Kiêm nhiệm E2E', description: '', category: 'Kiểm thử', sortOrder: '0', validFrom: '', validUntil: '' }, 'create');
+    await dutyDefinitionsApi.create(input);
+    const body = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string);
+    expect(body).toEqual({ code: 'E2EDUTY', name: 'Kiêm nhiệm E2E', category: 'Kiểm thử', sortOrder: 0 });
+    expect(body).not.toHaveProperty('description');
+    expect(body).not.toHaveProperty('validFrom');
+    expect(body).not.toHaveProperty('validUntil');
+  });
+
+  it('preserves a nonblank duty-definition description on create', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: 'duty-id' })); vi.stubGlobal('fetch', fetchMock);
+    const input = buildDutyDefinitionInput({ code: 'E2EDUTY', name: 'Kiêm nhiệm E2E', description: '  Mô tả nghiệp vụ  ', category: 'Kiểm thử', sortOrder: '', validFrom: '', validUntil: '' }, 'create');
+    await dutyDefinitionsApi.create(input);
+    expect(JSON.parse(fetchMock.mock.calls[0]![1]!.body as string)).toEqual({ code: 'E2EDUTY', name: 'Kiêm nhiệm E2E', category: 'Kiểm thử', description: 'Mô tả nghiệp vụ' });
+  });
+
+  it('sends null when an update clears a duty-definition description', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: 'duty-id' })); vi.stubGlobal('fetch', fetchMock);
+    const input = buildDutyDefinitionInput({ code: 'E2EDUTY', name: 'Kiêm nhiệm E2E', description: '   ', category: 'Kiểm thử', sortOrder: '2', validFrom: '', validUntil: '' }, 'update');
+    await dutyDefinitionsApi.update('duty-id', input);
+    const body = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string);
+    expect(body).toEqual({ code: 'E2EDUTY', name: 'Kiêm nhiệm E2E', category: 'Kiểm thử', sortOrder: 2, description: null });
+    expect(body).not.toHaveProperty('validFrom');
+    expect(body).not.toHaveProperty('validUntil');
   });
 
   it('omits resource IDs for school-wide capability grants', async () => {
