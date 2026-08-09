@@ -17,7 +17,7 @@ integration('Catalog APIs (isolated PostgreSQL integration)', () => {
 
   beforeAll(async () => {
     process.env['DATABASE_URL'] = testDatabaseUrl;
-    process.env['NODE_ENV'] = 'test'; process.env['CORS_ORIGINS'] = origin; process.env['AUTH_COOKIE_SECURE'] = 'false';
+    process.env['NODE_ENV'] = 'test'; process.env['CORS_ORIGINS'] = origin; process.env['AUTH_COOKIE_SECURE'] = 'false'; process.env['AUTH_LOGIN_RATE_LIMIT_MAX'] = '100';
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication(); app.setGlobalPrefix('api');
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true })); await app.init();
@@ -33,23 +33,23 @@ integration('Catalog APIs (isolated PostgreSQL integration)', () => {
   });
   afterAll(async () => { await prisma?.$disconnect(); await app?.close(); });
 
-  async function actor(capability?: 'SUBJECT_GROUP_MANAGE' | 'SUBJECT_MANAGE' | 'SYSTEM_ADMIN'): Promise<{ agent: Agent; id: string }> {
-    const user = await prisma.user.create({ data: { username: `catalog-${crypto.randomUUID().slice(0, 8)}`, passwordHash: await passwords.hash(password), status: UserStatus.ACTIVE, mustChangePassword: false } });
-    if (capability) await prisma.capabilityGrant.create({ data: { userId: user.id, capabilityKey: capability, scopeType: 'SCHOOL_WIDE', validFrom: new Date(Date.now() - 1000) } });
+  async function actor(options: { capabilities?: Array<'SUBJECT_GROUP_MANAGE' | 'SUBJECT_MANAGE' | 'SYSTEM_ADMIN'>; mustChangePassword?: boolean } = {}): Promise<{ agent: Agent; id: string }> {
+    const user = await prisma.user.create({ data: { username: `catalog-${crypto.randomUUID().slice(0, 8)}`, passwordHash: await passwords.hash(password), status: UserStatus.ACTIVE, mustChangePassword: options.mustChangePassword ?? false } });
+    for (const capability of options.capabilities ?? []) await prisma.capabilityGrant.create({ data: { userId: user.id, capabilityKey: capability, scopeType: 'SCHOOL_WIDE', validFrom: new Date(Date.now() - 1000) } });
     const agent = request.agent(app.getHttpServer()); expect((await agent.post('/api/auth/login').send({ username: user.username, password })).status).toBe(200); return { agent, id: user.id };
   }
 
   it('enforces separate capabilities and CSRF', async () => {
     expect((await request(app.getHttpServer()).get('/api/subjects')).status).toBe(401);
-    const groups = await actor('SUBJECT_GROUP_MANAGE');
+    const groups = await actor({ capabilities: ['SUBJECT_GROUP_MANAGE'] });
     expect((await groups.agent.get('/api/subject-groups')).status).toBe(200); expect((await groups.agent.get('/api/subjects')).status).toBe(403);
     expect((await groups.agent.post('/api/subject-groups').send({ code: 'TOAN', name: 'Toán' })).status).toBe(403);
     expect((await groups.agent.post('/api/subject-groups').set('Origin', origin).send({ code: 'TOAN', name: 'Toán' })).status).toBe(201);
-    expect((await (await actor('SYSTEM_ADMIN')).agent.get('/api/subjects')).status).toBe(403);
+    expect((await (await actor({ capabilities: ['SYSTEM_ADMIN'] })).agent.get('/api/subjects')).status).toBe(403);
   });
 
   it('normalizes, updates, transitions and writes audit atomically', async () => {
-    const manager = await actor('SUBJECT_MANAGE');
+    const manager = await actor({ capabilities: ['SUBJECT_MANAGE'] });
     const created = await manager.agent.post('/api/subjects').set('Origin', origin).set('X-Request-Id', 'subject-create').send({ code: '  geo  ', name: '  Địa lý  ' });
     expect(created.status).toBe(201); expect(created.body).toMatchObject({ code: 'GEO', name: 'Địa lý', status: 'ACTIVE' });
     const id = created.body.id as string;
@@ -58,5 +58,7 @@ integration('Catalog APIs (isolated PostgreSQL integration)', () => {
     expect((await manager.agent.post(`/api/subjects/${id}/deactivate`).set('Origin', origin)).status).toBe(200);
     expect(await prisma.auditEvent.count({ where: { entityId: id, result: 'SUCCESS', action: { in: ['SUBJECT_CREATED', 'SUBJECT_UPDATED', 'SUBJECT_DEACTIVATED'] } } })).toBe(4);
     expect((await manager.agent.patch(`/api/subjects/${id}`).set('Origin', origin).send({ status: 'ACTIVE' })).status).toBe(400);
+    expect((await manager.agent.patch(`/api/subjects/${id}`).set('Origin', origin).send({ code: null })).status).toBe(400);
+    expect((await manager.agent.patch(`/api/subjects/${id}`).set('Origin', origin).send({ name: null })).status).toBe(400);
   });
 });
