@@ -325,7 +325,7 @@ test('real Phase 01 management flow preserves history and capability boundaries'
   const auditEvents = page.getByRole('region', { name: 'Sự kiện nhật ký' });
   await expect(auditEvents.locator('tbody tr', { hasText: 'USER_CREATED' })).toBeVisible();
   await expect(auditEvents.locator('tbody tr', { hasText: 'SUBJECT_GROUP_CREATED' })).toBeVisible();
-  await expect(auditEvents.locator('tbody tr', { hasText: 'DUTY_ASSIGNMENT_ENDED' })).toBeVisible();
+  await expect(auditEvents.locator('tbody tr', { hasText: 'STAFF_ADDITIONAL_DUTY_ENDED' })).toBeVisible();
   await assertNoSeriousAxeViolations(page);
   await prepareScreenshot(page);
   await page.screenshot({ path: `${screenshots}/management-audit-1366x768.png`, fullPage: true });
