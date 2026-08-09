@@ -1,5 +1,6 @@
 import { Transform, Type } from 'class-transformer';
-import { IsBoolean, IsDateString, IsEnum, IsInt, IsOptional, IsString, IsUUID, Length, Max, Min, ValidateIf } from 'class-validator';
+import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, IsUUID, Length, Max, Min, ValidateIf } from 'class-validator';
+import { IsAbsoluteInstant } from '../common/validation/is-absolute-instant.decorator';
 
 export type DutyAssignmentScope = 'SCHOOL_WIDE' | 'SUBJECT_GROUP';
 const dutyScopes: DutyAssignmentScope[] = ['SCHOOL_WIDE', 'SUBJECT_GROUP'];
@@ -19,8 +20,8 @@ export class CreateDefinitionDto {
   @ValidateIf(optionalValue) @Transform(trim) @IsString() description?: string;
   @Transform(trim) @IsString() @Length(1, 100) category!: string;
   @ValidateIf(optionalValue) @Type(() => Number) @IsInt() @Min(0) sortOrder?: number;
-  @ValidateIf(optionalValue) @IsDateString() validFrom?: string;
-  @ValidateIf(optionalValue) @IsDateString() validUntil?: string;
+  @ValidateIf(optionalValue) @IsAbsoluteInstant() validFrom?: string;
+  @ValidateIf(optionalValue) @IsAbsoluteInstant() validUntil?: string;
 }
 
 export class UpdateDefinitionDto {
@@ -29,19 +30,19 @@ export class UpdateDefinitionDto {
   @IsOptional() @Transform(trim) @IsString() description?: string | null;
   @ValidateIf(optionalValue) @Transform(trim) @IsString() @Length(1, 100) category?: string;
   @ValidateIf(optionalValue) @Type(() => Number) @IsInt() @Min(0) sortOrder?: number;
-  @ValidateIf(optionalValue) @IsDateString() validFrom?: string;
-  @ValidateIf(optionalValue) @IsDateString() validUntil?: string;
+  @ValidateIf(optionalValue) @IsAbsoluteInstant() validFrom?: string;
+  @ValidateIf(optionalValue) @IsAbsoluteInstant() validUntil?: string;
 }
 
 export class ListDefinitionsDto extends DutyPageDto {
   @IsOptional() @Type(() => String) @Transform(strictBoolean) @IsBoolean() isActive?: boolean;
   @IsOptional() @IsString() category?: string;
-  @IsOptional() @IsDateString() effectiveAt?: string;
+  @IsOptional() @IsAbsoluteInstant() effectiveAt?: string;
 }
 
 export class ListDefinitionOptionsDto extends DutyPageDto {
   @IsOptional() @IsString() category?: string;
-  @IsOptional() @IsDateString() effectiveAt?: string;
+  @IsOptional() @IsAbsoluteInstant() effectiveAt?: string;
 }
 
 export class CreateDutyAssignmentDto {
@@ -49,19 +50,19 @@ export class CreateDutyAssignmentDto {
   @IsUUID() dutyDefinitionId!: string;
   @IsEnum(dutyScopes) scopeType!: DutyAssignmentScope;
   @ValidateIf(optionalValue) @IsUUID() scopeResourceId?: string;
-  @ValidateIf(optionalValue) @IsDateString() validFrom?: string;
-  @ValidateIf(optionalValue) @IsDateString() validUntil?: string;
+  @ValidateIf(optionalValue) @IsAbsoluteInstant() validFrom?: string;
+  @ValidateIf(optionalValue) @IsAbsoluteInstant() validUntil?: string;
   @ValidateIf(optionalValue) @IsString() note?: string;
 }
 
 export class UpdateDutyAssignmentDto {
-  @ValidateIf(optionalValue) @IsDateString() validFrom?: string;
-  @ValidateIf(optionalValue) @IsDateString() validUntil?: string;
+  @ValidateIf(optionalValue) @IsAbsoluteInstant() validFrom?: string;
+  @ValidateIf(optionalValue) @IsAbsoluteInstant() validUntil?: string;
   @IsOptional() @IsString() note?: string | null;
 }
 
 export class EndDutyAssignmentDto {
-  @ValidateIf(optionalValue) @IsDateString() endAt?: string;
+  @ValidateIf(optionalValue) @IsAbsoluteInstant() endAt?: string;
 }
 
 export class ListDutyAssignmentsDto extends DutyPageDto {
@@ -69,5 +70,5 @@ export class ListDutyAssignmentsDto extends DutyPageDto {
   @IsOptional() @IsUUID() dutyDefinitionId?: string;
   @IsOptional() @IsEnum(dutyScopes) scopeType?: DutyAssignmentScope;
   @IsOptional() @IsUUID() scopeResourceId?: string;
-  @IsOptional() @IsDateString() activeAt?: string;
+  @IsOptional() @IsAbsoluteInstant() activeAt?: string;
 }

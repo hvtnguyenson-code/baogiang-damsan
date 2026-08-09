@@ -24,5 +24,6 @@ const forbidden = [
 ];
 for (const pattern of forbidden) if (pattern.test(scripts)) fail(`forbidden deployment construct: ${pattern}`);
 for (const token of ['Set-StrictMode -Version Latest','$ErrorActionPreference = \'Stop\'','ValidatePattern','ValidateScript','Expand-Archive','migrate status','migrate deploy','PGPASSWORD','pg_restore','Read-DeploymentIdentity','commandLineSha256','Get-ExactApiProcesses','MigrationAttempted','CompatibilityApproved','start-baogiang-api.ps1']) if (!scripts.includes(token)) fail(`fail-closed control missing: ${token}`);
+for (const token of ["'TZ'",'Asia/Ho_Chi_Minh',"ContainsKey('TZ')"]) if (!scripts.includes(token)) fail(`timezone contract missing: ${token}`);
 if (workflow.includes('scp') && /\$remote:[^.]?\\/.test(workflow)) fail('SCP must use relative SFTP destinations, not unverified Windows backslashes.');
 console.log(`[deployment-static] PASS (${required.length} scripts and forbidden-pattern scan)`);

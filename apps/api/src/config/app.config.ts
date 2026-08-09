@@ -1,7 +1,9 @@
 import { registerAs } from '@nestjs/config';
+import { BUSINESS_TIME_ZONE } from '@baogiang/config';
 
 export interface AppConfig {
   nodeEnv: string;
+  timeZone: string;
   host: string;
   port: number;
   corsOrigins: string[];
@@ -103,9 +105,17 @@ export const appConfig = registerAs('app', (): AppConfig => {
   if (!cookiePath.startsWith('/')) {
     throw new Error('[Config] AUTH_COOKIE_PATH must start with /.');
   }
+  const configuredTimeZone = process.env['TZ'];
+  if (nodeEnv === 'production' && configuredTimeZone === undefined) {
+    throw new Error(`[Config] TZ=${BUSINESS_TIME_ZONE} is required in production.`);
+  }
+  if (configuredTimeZone !== undefined && configuredTimeZone !== BUSINESS_TIME_ZONE) {
+    throw new Error(`[Config] TZ must be exactly ${BUSINESS_TIME_ZONE}.`);
+  }
 
   return {
     nodeEnv,
+    timeZone: configuredTimeZone ?? BUSINESS_TIME_ZONE,
     host,
     port: parseInt(process.env['API_PORT'] ?? '3100', 10),
     corsOrigins,

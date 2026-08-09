@@ -46,7 +46,7 @@ integration('Additional duties API (isolated PostgreSQL integration)', () => {
     const catalog = await h.actor({ grants: [{ capabilityKey: 'ADDITIONAL_DUTY_CATALOG_MANAGE' }] });
     const school = await h.actor({ grants: [{ capabilityKey: 'ADDITIONAL_DUTY_ASSIGNMENT_MANAGE' }] });
     const group = await h.actor({ grants: [{ capabilityKey: 'ADDITIONAL_DUTY_ASSIGNMENT_MANAGE', scopeType: 'SUBJECT_GROUP', scopeResourceId: refs.groupA }] });
-    for (const actor of [catalog, school, group]) expect((await actor.agent.get('/api/additional-duty-definitions/options?effectiveAt=2027-01-01')).status).toBe(200);
+    for (const actor of [catalog, school, group]) expect((await actor.agent.get('/api/additional-duty-definitions/options?effectiveAt=2027-01-01T00:00:00Z')).status).toBe(200);
     expect((await (await h.actor({ grants: [{ capabilityKey: 'SYSTEM_ADMIN' }] })).agent.get('/api/additional-duty-definitions/options')).status).toBe(403);
     expect((await catalog.agent.get('/api/additional-duty-definitions/options?isActive=false')).status).toBe(400);
   });
@@ -58,7 +58,7 @@ integration('Additional duties API (isolated PostgreSQL integration)', () => {
       { code: 'CURRENT', name: 'Current', category: 'A', validFrom: new Date('2026-01-01'), validUntil: new Date('2027-01-01') },
     ] });
     expect((await manager.agent.get('/api/additional-duty-definitions?isActive=false')).body.items.map((row: { code: string }) => row.code)).toEqual(['OLD']);
-    expect((await manager.agent.get('/api/additional-duty-definitions?effectiveAt=2026-06-01')).body.items.map((row: { code: string }) => row.code)).toEqual(['CURRENT']);
+    expect((await manager.agent.get('/api/additional-duty-definitions?effectiveAt=2026-06-01T00:00:00Z')).body.items.map((row: { code: string }) => row.code)).toEqual(['CURRENT']);
     expect((await manager.agent.get('/api/additional-duty-definitions?isActive=0')).status).toBe(400);
     const created = await manager.agent.post('/api/additional-duty-definitions').set('Origin', testOrigin).set('X-Request-Id', 'definition-create').send({ code: '  leader  ', name: '  Leader  ', description: '  Desc  ', category: '  Management  ', sortOrder: 1 });
     expect(created.body).toMatchObject({ code: 'LEADER', name: 'Leader', description: 'Desc', category: 'Management', sortOrder: 1 });
@@ -92,9 +92,9 @@ integration('Additional duties API (isolated PostgreSQL integration)', () => {
     expect((await firstLogin.agent.get('/api/staff-additional-duty-assignments')).status).toBe(403);
     expect((await group.agent.post('/api/staff-additional-duty-assignments').send({ staffProfileId: refs.staffProfileId, dutyDefinitionId: refs.definitionId, scopeType: 'SUBJECT_GROUP', scopeResourceId: refs.groupA })).status).toBe(403);
     expect((await group.agent.post('/api/staff-additional-duty-assignments').set('Origin', testOrigin).send({ staffProfileId: refs.staffProfileId, dutyDefinitionId: refs.definitionId, scopeType: 'SUBJECT_GROUP', scopeResourceId: refs.groupB })).status).toBe(403);
-    const groupA = await school.agent.post('/api/staff-additional-duty-assignments').set('Origin', testOrigin).send({ staffProfileId: refs.staffProfileId, dutyDefinitionId: refs.definitionId, scopeType: 'SUBJECT_GROUP', scopeResourceId: refs.groupA, validFrom: '2026-06-01', validUntil: '2026-07-01' });
-    const groupB = await school.agent.post('/api/staff-additional-duty-assignments').set('Origin', testOrigin).send({ staffProfileId: refs.staffProfileId, dutyDefinitionId: refs.definitionId, scopeType: 'SUBJECT_GROUP', scopeResourceId: refs.groupB, validFrom: '2026-06-01', validUntil: '2026-07-01' });
-    const schoolWide = await school.agent.post('/api/staff-additional-duty-assignments').set('Origin', testOrigin).send({ staffProfileId: refs.staffProfileId, dutyDefinitionId: refs.definitionId, scopeType: 'SCHOOL_WIDE', validFrom: '2026-06-01', validUntil: '2026-07-01' });
+    const groupA = await school.agent.post('/api/staff-additional-duty-assignments').set('Origin', testOrigin).send({ staffProfileId: refs.staffProfileId, dutyDefinitionId: refs.definitionId, scopeType: 'SUBJECT_GROUP', scopeResourceId: refs.groupA, validFrom: '2026-06-01T00:00:00Z', validUntil: '2026-07-01T00:00:00Z' });
+    const groupB = await school.agent.post('/api/staff-additional-duty-assignments').set('Origin', testOrigin).send({ staffProfileId: refs.staffProfileId, dutyDefinitionId: refs.definitionId, scopeType: 'SUBJECT_GROUP', scopeResourceId: refs.groupB, validFrom: '2026-06-01T00:00:00Z', validUntil: '2026-07-01T00:00:00Z' });
+    const schoolWide = await school.agent.post('/api/staff-additional-duty-assignments').set('Origin', testOrigin).send({ staffProfileId: refs.staffProfileId, dutyDefinitionId: refs.definitionId, scopeType: 'SCHOOL_WIDE', validFrom: '2026-06-01T00:00:00Z', validUntil: '2026-07-01T00:00:00Z' });
     expect(groupA.status).toBe(201); expect(groupB.status).toBe(201); expect(schoolWide.status).toBe(201);
     const isolated = await group.agent.get('/api/staff-additional-duty-assignments');
     expect(isolated.body.total).toBe(1);
@@ -111,9 +111,9 @@ integration('Additional duties API (isolated PostgreSQL integration)', () => {
     const boundedDefinition = await h.prisma.additionalDutyDefinition.create({ data: {
       code: normalizedCode('BOUND', 6), name: 'Bounded Duty', category: 'LEADERSHIP', validFrom: new Date('2026-01-01'), validUntil: new Date('2026-07-01'),
     } });
-    const payload = { staffProfileId: refs.staffProfileId, dutyDefinitionId: boundedDefinition.id, scopeType: 'SUBJECT_GROUP', scopeResourceId: refs.groupA, validFrom: '2026-06-01' };
+    const payload = { staffProfileId: refs.staffProfileId, dutyDefinitionId: boundedDefinition.id, scopeType: 'SUBJECT_GROUP', scopeResourceId: refs.groupA, validFrom: '2026-06-01T00:00:00Z' };
 
-    expect((await manager.agent.post('/api/staff-additional-duty-assignments').set('Origin', testOrigin).send({ ...payload, validUntil: '2026-08-01' })).status).toBe(409);
+    expect((await manager.agent.post('/api/staff-additional-duty-assignments').set('Origin', testOrigin).send({ ...payload, validUntil: '2026-08-01T00:00:00Z' })).status).toBe(409);
     expect((await manager.agent.post('/api/staff-additional-duty-assignments').set('Origin', testOrigin).send(payload)).status).toBe(409);
   });
 
@@ -123,18 +123,18 @@ integration('Additional duties API (isolated PostgreSQL integration)', () => {
     const base = { staffProfileId: refs.staffProfileId, dutyDefinitionId: refs.definitionId, scopeType: 'SUBJECT_GROUP', scopeResourceId: refs.groupA };
     expect((await manager.agent.post('/api/staff-additional-duty-assignments').set('Origin', testOrigin).send({ ...base, note: null })).status).toBe(400);
     expect((await manager.agent.post('/api/staff-additional-duty-assignments').set('Origin', testOrigin).send({ ...base, validUntil: null })).status).toBe(400);
-    const first = await manager.agent.post('/api/staff-additional-duty-assignments').set('Origin', testOrigin).send({ ...base, validFrom: '2026-06-01', validUntil: '2026-07-01' });
-    expect((await manager.agent.post('/api/staff-additional-duty-assignments').set('Origin', testOrigin).send({ ...base, validFrom: '2026-06-15', validUntil: '2026-06-20' })).status).toBe(409);
-    const adjacent = await manager.agent.post('/api/staff-additional-duty-assignments').set('Origin', testOrigin).send({ ...base, validFrom: '2026-07-01' });
+    const first = await manager.agent.post('/api/staff-additional-duty-assignments').set('Origin', testOrigin).send({ ...base, validFrom: '2026-06-01T00:00:00Z', validUntil: '2026-07-01T00:00:00Z' });
+    expect((await manager.agent.post('/api/staff-additional-duty-assignments').set('Origin', testOrigin).send({ ...base, validFrom: '2026-06-15T00:00:00Z', validUntil: '2026-06-20T00:00:00Z' })).status).toBe(409);
+    const adjacent = await manager.agent.post('/api/staff-additional-duty-assignments').set('Origin', testOrigin).send({ ...base, validFrom: '2026-07-01T00:00:00Z' });
     expect(adjacent.status).toBe(201);
-    expect((await manager.agent.patch(`/api/staff-additional-duty-assignments/${first.body.id as string}`).set('Origin', testOrigin).send({ validUntil: '2026-07-15' })).status).toBe(409);
+    expect((await manager.agent.patch(`/api/staff-additional-duty-assignments/${first.body.id as string}`).set('Origin', testOrigin).send({ validUntil: '2026-07-15T00:00:00Z' })).status).toBe(409);
     expect((await h.prisma.staffAdditionalDutyAssignment.findUniqueOrThrow({ where: { id: first.body.id as string } })).validUntil).toEqual(new Date('2026-07-01'));
     await h.prisma.subjectGroup.update({ where: { id: refs.groupA }, data: { status: 'INACTIVE' } });
     await h.prisma.additionalDutyDefinition.update({ where: { id: refs.definitionId }, data: { isActive: false } });
     const before = await h.prisma.capabilityGrant.count();
-    const ended = await manager.agent.post(`/api/staff-additional-duty-assignments/${adjacent.body.id as string}/end`).set('Origin', testOrigin).set('X-Request-Id', 'duty-end').send({ endAt: '2026-08-01' });
+    const ended = await manager.agent.post(`/api/staff-additional-duty-assignments/${adjacent.body.id as string}/end`).set('Origin', testOrigin).set('X-Request-Id', 'duty-end').send({ endAt: '2026-08-01T00:00:00Z' });
     expect(ended.status).toBe(200);
-    expect((await manager.agent.post(`/api/staff-additional-duty-assignments/${adjacent.body.id as string}/end`).set('Origin', testOrigin).send({ endAt: '2026-09-01' })).body.validUntil).toBe(ended.body.validUntil);
+    expect((await manager.agent.post(`/api/staff-additional-duty-assignments/${adjacent.body.id as string}/end`).set('Origin', testOrigin).send({ endAt: '2026-09-01T00:00:00Z' })).body.validUntil).toBe(ended.body.validUntil);
     expect(await h.prisma.capabilityGrant.count()).toBe(before);
   });
 
@@ -146,22 +146,22 @@ integration('Additional duties API (isolated PostgreSQL integration)', () => {
     expect(await h.prisma.additionalDutyDefinition.count({ where: { code: 'ROLLBACK' } })).toBe(0);
     await expect(failing.disableDefinition(refs.definitionId, actor, {})).rejects.toThrow('audit unavailable');
     expect((await h.prisma.additionalDutyDefinition.findUniqueOrThrow({ where: { id: refs.definitionId } })).isActive).toBe(true);
-    const payload = { staffProfileId: refs.staffProfileId, dutyDefinitionId: refs.definitionId, scopeType: 'SUBJECT_GROUP' as const, scopeResourceId: refs.groupA, validFrom: '2026-06-01' };
+    const payload = { staffProfileId: refs.staffProfileId, dutyDefinitionId: refs.definitionId, scopeType: 'SUBJECT_GROUP' as const, scopeResourceId: refs.groupA, validFrom: '2026-06-01T00:00:00Z' };
     await expect(failing.createAssignment(payload, actor, {})).rejects.toThrow('audit unavailable');
     expect(await h.prisma.staffAdditionalDutyAssignment.count()).toBe(0);
     const assignment = await h.prisma.staffAdditionalDutyAssignment.create({ data: { staffProfileId: refs.staffProfileId, dutyDefinitionId: refs.definitionId, scopeType: 'SUBJECT_GROUP', scopeResourceId: refs.groupA, validFrom: new Date('2026-06-01'), createdByUserId: actor } });
-    await expect(failing.endAssignment(assignment.id, { endAt: '2026-07-01' }, actor, {})).rejects.toThrow('audit unavailable');
+    await expect(failing.endAssignment(assignment.id, { endAt: '2026-07-01T00:00:00Z' }, actor, {})).rejects.toThrow('audit unavailable');
     expect((await h.prisma.staffAdditionalDutyAssignment.findUniqueOrThrow({ where: { id: assignment.id } })).validUntil).toBeNull();
   });
 
   it('writes all six deterministic definition and assignment audits with complete metadata', async () => {
     const refs = await fixtures();
     const manager = await h.actor({ grants: [{ capabilityKey: 'ADDITIONAL_DUTY_CATALOG_MANAGE' }, { capabilityKey: 'ADDITIONAL_DUTY_ASSIGNMENT_MANAGE' }] });
-    const created = await manager.agent.post('/api/additional-duty-definitions').set('Origin', testOrigin).set('X-Request-Id', 'd-create').send({ code: 'AUDIT_DUTY', name: 'Audit Duty', category: 'AUDIT', validFrom: '2026-01-01' });
+    const created = await manager.agent.post('/api/additional-duty-definitions').set('Origin', testOrigin).set('X-Request-Id', 'd-create').send({ code: 'AUDIT_DUTY', name: 'Audit Duty', category: 'AUDIT', validFrom: '2026-01-01T00:00:00Z' });
     await manager.agent.patch(`/api/additional-duty-definitions/${created.body.id as string}`).set('Origin', testOrigin).set('X-Request-Id', 'd-update').send({ name: 'Audit Duty Updated' });
-    const assignment = await manager.agent.post('/api/staff-additional-duty-assignments').set('Origin', testOrigin).set('X-Request-Id', 'a-create').send({ staffProfileId: refs.staffProfileId, dutyDefinitionId: created.body.id, scopeType: 'SUBJECT_GROUP', scopeResourceId: refs.groupA, validFrom: '2026-06-01' });
+    const assignment = await manager.agent.post('/api/staff-additional-duty-assignments').set('Origin', testOrigin).set('X-Request-Id', 'a-create').send({ staffProfileId: refs.staffProfileId, dutyDefinitionId: created.body.id, scopeType: 'SUBJECT_GROUP', scopeResourceId: refs.groupA, validFrom: '2026-06-01T00:00:00Z' });
     await manager.agent.patch(`/api/staff-additional-duty-assignments/${assignment.body.id as string}`).set('Origin', testOrigin).set('X-Request-Id', 'a-update').send({ note: 'Updated' });
-    await manager.agent.post(`/api/staff-additional-duty-assignments/${assignment.body.id as string}/end`).set('Origin', testOrigin).set('X-Request-Id', 'a-end').send({ endAt: '2026-07-01' });
+    await manager.agent.post(`/api/staff-additional-duty-assignments/${assignment.body.id as string}/end`).set('Origin', testOrigin).set('X-Request-Id', 'a-end').send({ endAt: '2026-07-01T00:00:00Z' });
     await manager.agent.post(`/api/additional-duty-definitions/${created.body.id as string}/disable`).set('Origin', testOrigin).set('X-Request-Id', 'd-disable');
     const expected = [
       ['d-create', 'ADDITIONAL_DUTY_DEFINITION_CREATED'], ['d-update', 'ADDITIONAL_DUTY_DEFINITION_UPDATED'], ['d-disable', 'ADDITIONAL_DUTY_DEFINITION_DISABLED'],

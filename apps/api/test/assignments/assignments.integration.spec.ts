@@ -92,6 +92,26 @@ integration('Assignments API (isolated PostgreSQL integration)', () => {
     expect((await manager.agent.get('/api/subject-group-memberships?activeAt=2026-02-01T00:00:00Z')).body.total).toBe(1);
   });
 
+  it('stores +07:00 input as the same absolute instant regardless of PostgreSQL session timezone', async () => {
+    const manager = await h.actor({ grants: [{ capabilityKey: 'SUBJECT_GROUP_MANAGE' }] });
+    const refs = await references();
+    const created = await manager.agent.post('/api/subject-group-memberships').set('Origin', testOrigin).send({
+      userId: refs.userId,
+      subjectGroupId: refs.groupId,
+      validFrom: '2026-08-09T08:30:00+07:00',
+      validUntil: '2026-08-09T09:30:00+07:00',
+    });
+    expect(created.status).toBe(201);
+    expect(created.body.validFrom).toBe('2026-08-09T01:30:00.000Z');
+    expect((await h.prisma.subjectGroupMembership.findUniqueOrThrow({ where: { id: created.body.id as string } })).validFrom).toEqual(new Date('2026-08-09T01:30:00.000Z'));
+
+    await h.prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe("SET LOCAL TIME ZONE 'America/New_York'");
+      const rows = await tx.$queryRaw<Array<{ validFrom: Date }>>`SELECT valid_from AS "validFrom" FROM subject_group_memberships WHERE id = ${created.body.id as string}::uuid`;
+      expect(rows[0]?.validFrom).toEqual(new Date('2026-08-09T01:30:00.000Z'));
+    });
+  });
+
   it('rolls back conflicting PATCH, ends idempotently and writes deterministic audits', async () => {
     const manager = await h.actor({ grants: [{ capabilityKey: 'SUBJECT_MANAGE' }] });
     const refs = await references();
@@ -118,12 +138,12 @@ integration('Assignments API (isolated PostgreSQL integration)', () => {
   it('writes all six deterministic audits with complete metadata and rejects mass assignment', async () => {
     const manager = await h.actor({ grants: [{ capabilityKey: 'SUBJECT_GROUP_MANAGE' }, { capabilityKey: 'SUBJECT_MANAGE' }] });
     const refs = await references();
-    const membership = await manager.agent.post('/api/subject-group-memberships').set('Origin', testOrigin).set('X-Request-Id', 'm-create').send({ userId: refs.userId, subjectGroupId: refs.groupId, validFrom: '2026-01-01' });
+    const membership = await manager.agent.post('/api/subject-group-memberships').set('Origin', testOrigin).set('X-Request-Id', 'm-create').send({ userId: refs.userId, subjectGroupId: refs.groupId, validFrom: '2026-01-01T00:00:00Z' });
     await manager.agent.patch(`/api/subject-group-memberships/${membership.body.id as string}`).set('Origin', testOrigin).set('X-Request-Id', 'm-update').send({ isPrimary: true });
-    await manager.agent.post(`/api/subject-group-memberships/${membership.body.id as string}/end`).set('Origin', testOrigin).set('X-Request-Id', 'm-end').send({ endAt: '2026-02-01' });
-    const staff = await manager.agent.post('/api/staff-subjects').set('Origin', testOrigin).set('X-Request-Id', 's-create').send({ userId: refs.userId, subjectId: refs.subjectId, validFrom: '2026-01-01' });
+    await manager.agent.post(`/api/subject-group-memberships/${membership.body.id as string}/end`).set('Origin', testOrigin).set('X-Request-Id', 'm-end').send({ endAt: '2026-02-01T00:00:00Z' });
+    const staff = await manager.agent.post('/api/staff-subjects').set('Origin', testOrigin).set('X-Request-Id', 's-create').send({ userId: refs.userId, subjectId: refs.subjectId, validFrom: '2026-01-01T00:00:00Z' });
     await manager.agent.patch(`/api/staff-subjects/${staff.body.id as string}`).set('Origin', testOrigin).set('X-Request-Id', 's-update').send({ isPrimary: true });
-    await manager.agent.post(`/api/staff-subjects/${staff.body.id as string}/end`).set('Origin', testOrigin).set('X-Request-Id', 's-end').send({ endAt: '2026-02-01' });
+    await manager.agent.post(`/api/staff-subjects/${staff.body.id as string}/end`).set('Origin', testOrigin).set('X-Request-Id', 's-end').send({ endAt: '2026-02-01T00:00:00Z' });
     const expected = [
       ['m-create', 'SUBJECT_GROUP_MEMBERSHIP_CREATED'], ['m-update', 'SUBJECT_GROUP_MEMBERSHIP_UPDATED'], ['m-end', 'SUBJECT_GROUP_MEMBERSHIP_ENDED'],
       ['s-create', 'STAFF_SUBJECT_CREATED'], ['s-update', 'STAFF_SUBJECT_UPDATED'], ['s-end', 'STAFF_SUBJECT_ENDED'],

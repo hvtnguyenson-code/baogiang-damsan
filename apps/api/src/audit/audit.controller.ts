@@ -1,14 +1,15 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { Type } from 'class-transformer';
-import { IsDateString, IsEnum, IsInt, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
+import { IsEnum, IsInt, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
 import { AuditResult } from '@prisma/client';
 import { AuditEventListResponse } from '@baogiang/contracts';
 import { SessionAuthGuard } from '../auth/session-auth.guard';
 import { CapabilityGuard } from '../authorization/capability.guard';
 import { RequireCapability } from '../authorization/require-capability.decorator';
 import { AuditService } from './audit.service';
+import { IsAbsoluteInstant } from '../common/validation/is-absolute-instant.decorator';
 
-class ListAuditDto {
+export class ListAuditDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) page = 1;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) pageSize = 20;
   @IsOptional() @IsUUID() actorUserId?: string;
@@ -17,8 +18,8 @@ class ListAuditDto {
   @IsOptional() @IsString() entityId?: string;
   @IsOptional() @IsString() requestId?: string;
   @IsOptional() @IsEnum(AuditResult) result?: AuditResult;
-  @IsOptional() @IsDateString() createdFrom?: string;
-  @IsOptional() @IsDateString() createdTo?: string;
+  @IsOptional() @IsAbsoluteInstant() createdFrom?: string;
+  @IsOptional() @IsAbsoluteInstant() createdTo?: string;
 }
 
 @Controller('audit-events')

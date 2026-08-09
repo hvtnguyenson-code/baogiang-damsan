@@ -11,7 +11,7 @@ import { UserStatus } from '@prisma/client';
 import { AuthService } from '../../src/auth/auth.service';
 
 const config: AppConfig = {
-  nodeEnv: 'test', host: '127.0.0.1', port: 3100,
+  nodeEnv: 'test', timeZone: 'Asia/Ho_Chi_Minh', host: '127.0.0.1', port: 3100,
   corsOrigins: ['http://127.0.0.1:5173'], aiEnabled: false,
   aiActiveModeEnabled: false, aiPassiveModeEnabled: false, webPushEnabled: false,
   logLevel: 'error', databaseUrl: 'postgresql://placeholder',

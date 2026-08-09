@@ -83,20 +83,20 @@ integration('Capability management API (isolated PostgreSQL integration)', () =>
       expect(response.body).not.toHaveProperty('updatedAt');
     }
     expect((await manager.agent.post(`/api/users/${userId}/capability-grants`).set('Origin', testOrigin).send({ capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL', scopeResourceId: userId })).status).toBe(400);
-    expect((await manager.agent.post(`/api/users/${userId}/capability-grants`).set('Origin', testOrigin).send({ capabilityKey: 'SUBJECT_GROUP_LEAD', scopeType: 'SUBJECT_GROUP', scopeResourceId: crypto.randomUUID(), validFrom: '2027-01-01' })).status).toBe(404);
+    expect((await manager.agent.post(`/api/users/${userId}/capability-grants`).set('Origin', testOrigin).send({ capabilityKey: 'SUBJECT_GROUP_LEAD', scopeType: 'SUBJECT_GROUP', scopeResourceId: crypto.randomUUID(), validFrom: '2027-01-01T00:00:00Z' })).status).toBe(404);
     expect((await manager.agent.post(`/api/users/${userId}/capability-grants`).set('Origin', testOrigin).send({ capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL', validUntil: null })).status).toBe(400);
     await h.prisma.subjectGroup.update({ where: { id: group.id }, data: { status: 'INACTIVE' } });
-    expect((await manager.agent.post(`/api/users/${userId}/capability-grants`).set('Origin', testOrigin).send({ capabilityKey: 'SUBJECT_GROUP_LEAD', scopeType: 'SUBJECT_GROUP', scopeResourceId: group.id, validFrom: '2027-01-01' })).status).toBe(409);
+    expect((await manager.agent.post(`/api/users/${userId}/capability-grants`).set('Origin', testOrigin).send({ capabilityKey: 'SUBJECT_GROUP_LEAD', scopeType: 'SUBJECT_GROUP', scopeResourceId: group.id, validFrom: '2027-01-01T00:00:00Z' })).status).toBe(409);
   });
 
   it('permits adjacency, rejects overlap, integrates authorization and revokes idempotently', async () => {
     const manager = await h.actor({ grants: [{ capabilityKey: 'CAPABILITY_GRANT' }] });
     const targetActor = await h.actor({ usernamePrefix: 'cap-target' });
     const userId = targetActor.id;
-    const first = await manager.agent.post(`/api/users/${userId}/capability-grants`).set('Origin', testOrigin).set('X-Request-Id', 'grant-create').send({ capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL', validFrom: '2026-01-01', validUntil: '2026-02-01' });
+    const first = await manager.agent.post(`/api/users/${userId}/capability-grants`).set('Origin', testOrigin).set('X-Request-Id', 'grant-create').send({ capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL', validFrom: '2026-01-01T00:00:00Z', validUntil: '2026-02-01T00:00:00Z' });
     expect(first.status).toBe(201);
-    expect((await manager.agent.post(`/api/users/${userId}/capability-grants`).set('Origin', testOrigin).send({ capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL', validFrom: '2026-01-15', validUntil: '2026-01-20' })).status).toBe(409);
-    expect((await manager.agent.post(`/api/users/${userId}/capability-grants`).set('Origin', testOrigin).send({ capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL', validFrom: '2026-02-01', validUntil: '2026-03-01' })).status).toBe(201);
+    expect((await manager.agent.post(`/api/users/${userId}/capability-grants`).set('Origin', testOrigin).send({ capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL', validFrom: '2026-01-15T00:00:00Z', validUntil: '2026-01-20T00:00:00Z' })).status).toBe(409);
+    expect((await manager.agent.post(`/api/users/${userId}/capability-grants`).set('Origin', testOrigin).send({ capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL', validFrom: '2026-02-01T00:00:00Z', validUntil: '2026-03-01T00:00:00Z' })).status).toBe(201);
     const authorization = h.app.get(CapabilityAuthorizationService);
     expect(await authorization.hasCapability({ userId, capabilityKey: 'TEACHER_BASE', requestedScope: 'PERSONAL', atTime: new Date('2026-01-15') })).toBe(true);
     const effective = await manager.agent.post(`/api/users/${userId}/capability-grants`).set('Origin', testOrigin).send({ capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL' });

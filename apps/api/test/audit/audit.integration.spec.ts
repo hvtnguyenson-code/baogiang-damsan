@@ -54,7 +54,7 @@ integration('Audit viewer API (isolated PostgreSQL integration)', () => {
     ] });
     const response = await viewer.agent.get('/api/audit-events?action=BOUNDARY&createdFrom=2026-02-01T00:00:00Z&createdTo=2026-02-02T00:00:00Z');
     expect(response.body.total).toBe(1);
-    for (const query of ['page=0', 'pageSize=101', 'result=UNKNOWN', 'actorUserId=nope', 'createdFrom=nope', 'createdFrom=2026-02-02&createdTo=2026-02-01', 'unknown=1']) {
+    for (const query of ['page=0', 'pageSize=101', 'result=UNKNOWN', 'actorUserId=nope', 'createdFrom=nope', 'createdFrom=2026-02-02T00:00:00Z&createdTo=2026-02-01T00:00:00Z', 'unknown=1']) {
       expect((await viewer.agent.get(`/api/audit-events?${query}`)).status).toBe(400);
     }
   });
