@@ -193,7 +193,7 @@ test('real Phase 01 management flow preserves history and capability boundaries'
   await expect(page.getByRole('heading', { name: 'Người dùng' })).toBeVisible();
   await assertNoSeriousAxeViolations(page);
 
-  await page.getByRole('button', { name: 'Tạo người dùng' }).first().click();
+  await page.getByRole('button', { name: 'Tạo người dùng' }).click();
   await page.getByLabel('Tên đăng nhập').fill(targetUsername);
   await page.getByLabel('Mật khẩu khởi tạo').fill(targetInitialPassword);
   await page.getByLabel('Mã nhân sự').fill('E2E-GV-01');
@@ -209,7 +209,7 @@ test('real Phase 01 management flow preserves history and capability boundaries'
   await prepareScreenshot(page);
   await page.setViewportSize({ width: 1366, height: 768 });
   await page.screenshot({ path: `${screenshots}/management-users-1366x768.png` });
-  await page.getByRole('button', { name: 'Tạo người dùng' }).first().click();
+  await page.getByRole('button', { name: 'Tạo người dùng' }).click();
   await page.setViewportSize({ width: 375, height: 812 });
   await page.screenshot({ path: `${screenshots}/management-user-form-375x812.png`, fullPage: true });
   await page.locator('form.long-form').getByRole('button', { name: 'Hủy' }).click();
@@ -219,19 +219,23 @@ test('real Phase 01 management flow preserves history and capability boundaries'
   await page.getByLabel('Mã').fill('E2ETO');
   await page.getByLabel('Tên').fill('Tổ E2E Phase 01');
   await page.locator('form').getByRole('button', { name: 'Thêm vào danh mục' }).click();
-  await expect(page.getByText('Tổ E2E Phase 01')).toBeVisible();
+  await expect(page.getByRole('status').getByText('Đã lưu danh mục.', { exact: true })).toBeVisible();
   const groupRow = page.locator('tbody tr', { hasText: 'E2ETO' });
+  await expect(groupRow.getByText('Tổ E2E Phase 01', { exact: true })).toBeVisible();
   await groupRow.getByRole('button', { name: 'Sửa E2ETO' }).click();
   await page.getByLabel('Tên').fill('Tổ E2E Phase 01 đã sửa');
   await page.locator('form').getByRole('button', { name: 'Lưu thay đổi' }).click();
-  await expect(page.getByText('Tổ E2E Phase 01 đã sửa')).toBeVisible();
+  await expect(page.getByRole('status').getByText('Đã lưu danh mục.', { exact: true })).toBeVisible();
+  await expect(groupRow.getByText('Tổ E2E Phase 01 đã sửa', { exact: true })).toBeVisible();
 
   await page.goto('/quan-tri/mon-hoc');
   await page.getByRole('button', { name: 'Thêm môn' }).click();
   await page.getByLabel('Mã').fill('E2EMON');
   await page.getByLabel('Tên').fill('Môn E2E Phase 01');
   await page.locator('form').getByRole('button', { name: 'Thêm vào danh mục' }).click();
-  await expect(page.getByText('Môn E2E Phase 01')).toBeVisible();
+  await expect(page.getByRole('status').getByText('Đã lưu danh mục.', { exact: true })).toBeVisible();
+  const subjectRow = page.locator('tbody tr', { hasText: 'E2EMON' });
+  await expect(subjectRow.getByText('Môn E2E Phase 01', { exact: true })).toBeVisible();
 
   await page.goto('/quan-tri/phan-cong-to');
   await page.getByRole('button', { name: 'Tạo phân công' }).click();
@@ -240,7 +244,10 @@ test('real Phase 01 management flow preserves history and capability boundaries'
   await selectOptionMatching(membershipForm.getByLabel('Tổ chuyên môn'), /E2ETO/);
   await membershipForm.getByRole('checkbox', { name: 'Phân công chính' }).check();
   await membershipForm.getByRole('button', { name: 'Lưu phân công' }).click();
-  await expect(page.getByText('Tổ E2E Phase 01')).toBeVisible();
+  await expect(page.getByRole('status').getByText('Đã lưu phân công.', { exact: true })).toBeVisible();
+  const membershipRow = page.locator('tbody tr', { hasText: 'Giáo viên E2E Phase 01' }).filter({ hasText: 'E2ETO' });
+  await expect(membershipRow).toBeVisible();
+  await expect(membershipRow.getByText(/E2ETO — Tổ E2E Phase 01 đã sửa/)).toBeVisible();
 
   await page.goto('/quan-tri/phan-cong-mon');
   await page.getByRole('button', { name: 'Tạo phân công' }).click();
@@ -248,7 +255,10 @@ test('real Phase 01 management flow preserves history and capability boundaries'
   await selectOptionMatching(staffSubjectForm.getByLabel('Người được phân công'), /Giáo viên E2E Phase 01/);
   await selectOptionMatching(staffSubjectForm.getByLabel('Môn học'), /E2EMON/);
   await staffSubjectForm.getByRole('button', { name: 'Lưu phân công' }).click();
-  await expect(page.getByText('Môn E2E Phase 01')).toBeVisible();
+  await expect(page.getByRole('status').getByText('Đã lưu phân công.', { exact: true })).toBeVisible();
+  const staffSubjectRow = page.locator('tbody tr', { hasText: 'Giáo viên E2E Phase 01' }).filter({ hasText: 'E2EMON' });
+  await expect(staffSubjectRow).toBeVisible();
+  await expect(staffSubjectRow.getByText(/E2EMON — Môn E2E Phase 01/)).toBeVisible();
   await assertNoSeriousAxeViolations(page);
   await prepareScreenshot(page);
   await page.setViewportSize({ width: 1366, height: 768 });
@@ -260,8 +270,12 @@ test('real Phase 01 management flow preserves history and capability boundaries'
   await capabilityForm.getByLabel('Quyền').selectOption('TEACHER_BASE');
   await capabilityForm.getByLabel('Phạm vi').selectOption('PERSONAL');
   await capabilityForm.getByRole('button', { name: 'Cấp quyền' }).click();
-  await expect(page.getByRole('heading', { name: /Lịch sử quyền của Giáo viên E2E Phase 01/ })).toBeVisible();
-  await expect(page.getByText('Công việc giáo viên cơ bản').last()).toBeVisible();
+  await expect(page.getByRole('status').getByText('Đã cấp quyền.', { exact: true })).toBeVisible();
+  const capabilityHistory = page.locator('section[aria-labelledby="history-heading"]');
+  await expect(capabilityHistory.getByRole('heading', { name: /Lịch sử quyền của Giáo viên E2E Phase 01/ })).toBeVisible();
+  const capabilityRow = capabilityHistory.locator('tbody tr', { hasText: 'Công việc giáo viên cơ bản' });
+  await expect(capabilityRow).toBeVisible();
+  await expect(capabilityRow.getByText('Công việc giáo viên cơ bản', { exact: true })).toBeVisible();
   await prepareScreenshot(page);
   await page.screenshot({ path: `${screenshots}/management-capabilities-1366x768.png`, fullPage: true });
 
@@ -271,7 +285,9 @@ test('real Phase 01 management flow preserves history and capability boundaries'
   await page.getByLabel('Tên').fill('Kiêm nhiệm E2E Phase 01');
   await page.getByLabel('Nhóm').fill('Kiểm thử');
   await page.locator('form').getByRole('button', { name: 'Lưu loại kiêm nhiệm' }).click();
-  await expect(page.getByText('Kiêm nhiệm E2E Phase 01')).toBeVisible();
+  await expect(page.getByRole('status').getByText('Đã lưu loại kiêm nhiệm.', { exact: true })).toBeVisible();
+  const createdDutyDefinitionRow = page.locator('tbody tr', { hasText: 'E2EDUTY' });
+  await expect(createdDutyDefinitionRow.getByText('Kiêm nhiệm E2E Phase 01', { exact: true })).toBeVisible();
 
   await page.goto('/quan-tri/kiem-nhiem/phan-cong');
   await page.getByRole('button', { name: 'Tạo phân công' }).click();
@@ -281,14 +297,17 @@ test('real Phase 01 management flow preserves history and capability boundaries'
   await dutyForm.getByLabel('Phạm vi').selectOption('SCHOOL_WIDE');
   await dutyForm.getByLabel('Ghi chú').fill('Phân công kiểm thử giao diện');
   await dutyForm.getByRole('button', { name: 'Lưu phân công' }).click();
+  await expect(page.getByRole('status').getByText('Đã lưu phân công kiêm nhiệm.', { exact: true })).toBeVisible();
   const dutyRow = page.locator('tbody tr', { hasText: 'Kiêm nhiệm E2E Phase 01' });
   await expect(dutyRow).toBeVisible();
   await dutyRow.getByRole('button', { name: 'Sửa hiệu lực' }).click();
   await dutyForm.getByLabel('Ghi chú').fill('Đã cập nhật trong kiểm thử');
   await dutyForm.getByRole('button', { name: 'Lưu phân công' }).click();
+  await expect(page.getByRole('status').getByText('Đã lưu phân công kiêm nhiệm.', { exact: true })).toBeVisible();
   await expect(dutyRow.getByText('Đã cập nhật trong kiểm thử')).toBeVisible();
   await dutyRow.getByRole('button', { name: 'Kết thúc' }).click();
   await dutyRow.getByRole('button', { name: 'Xác nhận kết thúc' }).click();
+  await expect(page.getByRole('status').getByText('Đã kết thúc phân công; lịch sử vẫn được giữ.', { exact: true })).toBeVisible();
   await expect(dutyRow.getByText('Đã kết thúc')).toBeVisible();
   await prepareScreenshot(page);
   await page.screenshot({ path: `${screenshots}/management-additional-duty-1366x768.png`, fullPage: true });
@@ -297,6 +316,7 @@ test('real Phase 01 management flow preserves history and capability boundaries'
   const dutyDefinitionRow = page.locator('tbody tr', { hasText: 'E2EDUTY' });
   await dutyDefinitionRow.getByRole('button', { name: 'Vô hiệu hóa' }).click();
   await dutyDefinitionRow.getByRole('button', { name: 'Xác nhận' }).click();
+  await expect(page.getByRole('status').getByText('Đã vô hiệu hóa loại kiêm nhiệm; lịch sử vẫn được giữ.', { exact: true })).toBeVisible();
   await expect(dutyDefinitionRow.getByText('Đã vô hiệu hóa')).toBeVisible();
   await page.goto('/quan-tri/kiem-nhiem/phan-cong');
   const endedDutyRow = page.locator('tbody tr', { hasText: 'E2EDUTY — Kiêm nhiệm E2E Phase 01' });
@@ -305,7 +325,10 @@ test('real Phase 01 management flow preserves history and capability boundaries'
 
   await page.goto('/quan-tri/nhat-ky');
   await expect(page.getByRole('heading', { name: 'Nhật ký hệ thống' })).toBeVisible();
-  await expect(page.getByText(/USER_CREATED|SUBJECT_GROUP_CREATED|DUTY_ASSIGNMENT_ENDED/).first()).toBeVisible();
+  const auditEvents = page.getByRole('region', { name: 'Sự kiện nhật ký' });
+  await expect(auditEvents.locator('tbody tr', { hasText: 'USER_CREATED' })).toBeVisible();
+  await expect(auditEvents.locator('tbody tr', { hasText: 'SUBJECT_GROUP_CREATED' })).toBeVisible();
+  await expect(auditEvents.locator('tbody tr', { hasText: 'DUTY_ASSIGNMENT_ENDED' })).toBeVisible();
   await assertNoSeriousAxeViolations(page);
   await prepareScreenshot(page);
   await page.screenshot({ path: `${screenshots}/management-audit-1366x768.png`, fullPage: true });
