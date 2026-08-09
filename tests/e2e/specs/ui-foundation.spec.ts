@@ -341,7 +341,14 @@ test('real Phase 01 management flow preserves history and capability boundaries'
   await page.getByLabel('Mật khẩu hiện tại').fill(targetInitialPassword);
   await page.getByLabel('Mật khẩu mới', { exact: true }).fill(targetNewPassword);
   await page.getByLabel('Xác nhận mật khẩu mới').fill(targetNewPassword);
+  const changeResponsePromise = page.waitForResponse((response) =>
+    new URL(response.url()).pathname === '/api/auth/change-password'
+      && response.request().method() === 'POST',
+  );
   await page.getByRole('button', { name: 'Đổi mật khẩu' }).click();
+  const changeResponse = await changeResponsePromise;
+  expect(changeResponse.status()).toBe(200);
+  await expect(page).toHaveURL(/\/$/, { timeout: 10_000 });
   await page.goto('/quan-tri/nguoi-dung');
   await expect(page).toHaveURL(/\/khong-co-quyen$/);
   await expect(page.getByRole('heading', { name: /không có quyền thực hiện thao tác này/i })).toBeVisible();
