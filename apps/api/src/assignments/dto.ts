@@ -1,7 +1,6 @@
 import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
-  IsDateString,
   IsInt,
   IsOptional,
   IsUUID,
@@ -9,6 +8,7 @@ import {
   Min,
   ValidateIf,
 } from 'class-validator';
+import { IsAbsoluteInstant } from '../common/validation/is-absolute-instant.decorator';
 
 const optionalValue = (_object: object, value: unknown): boolean => value !== undefined;
 const strictBoolean = ({ value }: { value: unknown }): unknown => {
@@ -40,11 +40,11 @@ export class CreateMembershipDto {
   subjectGroupId!: string;
 
   @ValidateIf(optionalValue)
-  @IsDateString()
+  @IsAbsoluteInstant()
   validFrom?: string;
 
   @ValidateIf(optionalValue)
-  @IsDateString()
+  @IsAbsoluteInstant()
   validUntil?: string;
 
   @ValidateIf(optionalValue)
@@ -60,11 +60,11 @@ export class CreateStaffSubjectDto {
   subjectId!: string;
 
   @ValidateIf(optionalValue)
-  @IsDateString()
+  @IsAbsoluteInstant()
   validFrom?: string;
 
   @ValidateIf(optionalValue)
-  @IsDateString()
+  @IsAbsoluteInstant()
   validUntil?: string;
 
   @ValidateIf(optionalValue)
@@ -74,11 +74,11 @@ export class CreateStaffSubjectDto {
 
 export class UpdateAssignmentDto {
   @ValidateIf(optionalValue)
-  @IsDateString()
+  @IsAbsoluteInstant()
   validFrom?: string;
 
   @ValidateIf(optionalValue)
-  @IsDateString()
+  @IsAbsoluteInstant()
   validUntil?: string;
 
   @ValidateIf(optionalValue)
@@ -88,7 +88,7 @@ export class UpdateAssignmentDto {
 
 export class EndAssignmentDto {
   @ValidateIf(optionalValue)
-  @IsDateString()
+  @IsAbsoluteInstant()
   endAt?: string;
 }
 
@@ -102,7 +102,7 @@ export class ListMembershipDto extends AssignmentPageDto {
   subjectGroupId?: string;
 
   @IsOptional()
-  @IsDateString()
+  @IsAbsoluteInstant()
   activeAt?: string;
 
   @IsOptional()
@@ -122,7 +122,7 @@ export class ListStaffSubjectDto extends AssignmentPageDto {
   subjectId?: string;
 
   @IsOptional()
-  @IsDateString()
+  @IsAbsoluteInstant()
   activeAt?: string;
 
   @IsOptional()

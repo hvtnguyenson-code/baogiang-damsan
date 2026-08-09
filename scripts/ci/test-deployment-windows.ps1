@@ -131,6 +131,40 @@ if ($summaryUnavailable.state -ne 'PARTIAL' -or $summaryUnavailable.migrationSta
 $temp = Join-Path ([IO.Path]::GetTempPath()) ("baogiang-deploy-test-" + [guid]::NewGuid().ToString('N'))
 try {
   New-Item -ItemType Directory -Path $temp -Force | Out-Null
+  $validEnvLines = @(
+    'NODE_ENV=production',
+    'TZ=Asia/Ho_Chi_Minh',
+    'API_HOST=127.0.0.1',
+    'API_PORT=3100',
+    'HTTP_TRUST_PROXY_HOPS=1',
+    'DATABASE_URL=fixture-database-url',
+    'CORS_ORIGINS=https://baogiang.dtnt-damsan.edu.vn',
+    'AUTH_COOKIE_SECURE=true',
+    'AI_ENABLED=false',
+    'AI_ACTIVE_MODE_ENABLED=false',
+    'AI_PASSIVE_MODE_ENABLED=false',
+    'WEB_PUSH_ENABLED=false'
+  )
+  $validEnvPath = Join-Path $temp 'valid.env'
+  [IO.File]::WriteAllLines($validEnvPath, $validEnvLines, [Text.UTF8Encoding]::new($false))
+  $importedNames = @(Import-ServerEnvironment -EnvFile $validEnvPath -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn')
+  if ($importedNames -notcontains 'TZ' -or $env:TZ -ne 'Asia/Ho_Chi_Minh') { throw 'Correct production TZ contract was rejected.' }
+
+  $missingTimeZonePath = Join-Path $temp 'missing-tz.env'
+  [IO.File]::WriteAllLines($missingTimeZonePath, @($validEnvLines | Where-Object { $_ -notmatch '^TZ=' }), [Text.UTF8Encoding]::new($false))
+  $missingTimeZoneRejected = $false; try { Import-ServerEnvironment -EnvFile $missingTimeZonePath -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn' | Out-Null } catch { $missingTimeZoneRejected = $true }
+  if (-not $missingTimeZoneRejected) { throw 'Missing production TZ was accepted.' }
+
+  $wrongTimeZonePath = Join-Path $temp 'wrong-tz.env'
+  [IO.File]::WriteAllLines($wrongTimeZonePath, @($validEnvLines | ForEach-Object { if ($_ -match '^TZ=') { 'TZ=UTC' } else { $_ } }), [Text.UTF8Encoding]::new($false))
+  $wrongTimeZoneRejected = $false; try { Import-ServerEnvironment -EnvFile $wrongTimeZonePath -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn' | Out-Null } catch { $wrongTimeZoneRejected = $true }
+  if (-not $wrongTimeZoneRejected) { throw 'Wrong production TZ was accepted.' }
+
+  $duplicateTimeZonePath = Join-Path $temp 'duplicate-tz.env'
+  [IO.File]::WriteAllLines($duplicateTimeZonePath, @($validEnvLines + 'TZ=Asia/Ho_Chi_Minh'), [Text.UTF8Encoding]::new($false))
+  $duplicateTimeZoneRejected = $false; try { Import-ServerEnvironment -EnvFile $duplicateTimeZonePath -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn' | Out-Null } catch { $duplicateTimeZoneRejected = $true }
+  if (-not $duplicateTimeZoneRejected) { throw 'Duplicate production TZ was accepted.' }
+
   $neighborReport = Join-Path $temp 'protected-neighbor-discovery.json'
   & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $neighborDiscoveryPath -ReportPath $neighborReport | Out-Null
   if ($LASTEXITCODE -ne 0) { throw 'Protected-neighbor discovery smoke execution failed.' }
@@ -199,7 +233,7 @@ try {
   $global:LASTEXITCODE = 77
   & { [pscustomobject]@{ state = 'completed' } } | Out-Null
   if ($LASTEXITCODE -ne 77) { throw 'Fixture did not preserve stale native exit code.' }
-  Write-Output '[deployment-windows] PASS (automatic-variable write audit, protected-neighbor preflight audit, helpers, paths, junction safety, encoded command, SFTP and cleanup contracts, stale LASTEXITCODE fixture)'
+  Write-Output '[deployment-windows] PASS (automatic-variable write audit, production TZ contract, protected-neighbor preflight audit, helpers, paths, junction safety, encoded command, SFTP and cleanup contracts, stale LASTEXITCODE fixture)'
 } finally {
   if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Recurse -Force }
 }

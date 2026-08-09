@@ -47,6 +47,7 @@ assert.throws(() => remote.buildCleanup('C:\\baogiang', 'incoming'));
 assert.match(workflow, /git -C control-plane archive --format=zip/); assert.match(workflow, /release-\$TARGET_SHA\.zip/); assert.doesNotMatch(workflow, /tar\s+--/i);
 assert.match(install, /Expand-Archive/); assert.match(install, /Invoke-NativeChecked/); assert.doesNotMatch(install, /--ignore-scripts/); assert.match(install, /argon2 native runtime smoke check/);
 assert.match(common, /PGPASSWORD/); assert.match(backup, /pg_restore/); assert.doesNotMatch(backup, /--dbname\s+\$databaseUrl/); assert.match(backup, /format=custom/);
+assert.match(common, /'TZ'/); assert.match(common, /Asia\/Ho_Chi_Minh/); assert.match(common, /ContainsKey\('TZ'\)/);
 assert.match(common, /commandLineSha256/); assert.doesNotMatch(common, /commandLineRedacted/); assert.match(inventory, /Get-NormalizedProcessIdentity/); assert.doesNotMatch(inventory, /Get-ListenerSnapshot 22/);
 assert.match(invoke, /Read-DeploymentIdentity/); assert.ok(invoke.indexOf('Read-DeploymentIdentity') < invoke.indexOf('Move-Item -LiteralPath $source'));
 assert.match(restart, /Count -ne 1/); assert.match(restart, /LocalPort 3100/); assert.match(restart, /Get-ExactApiProcesses/);

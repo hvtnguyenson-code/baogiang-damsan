@@ -5,6 +5,7 @@ import type {
   StaffAdditionalDutyAssignmentRecord, StaffSubjectListResponse, StaffSubjectRecord,
   SubjectGroupMembershipListResponse, SubjectGroupMembershipRecord, UserManagementListResponse, UserManagementRecord,
 } from '@baogiang/contracts';
+import { BUSINESS_UTC_OFFSET } from '@baogiang/config';
 import { apiFetch } from './api-client';
 
 type QueryValue = string | number | boolean | undefined;
@@ -131,8 +132,35 @@ export const dutyAssignmentsApi = {
   end: (id: string, endAt?: string) => apiFetch<StaffAdditionalDutyAssignmentRecord>(`/staff-additional-duty-assignments/${id}/end`, json('POST', endAt ? { endAt } : {})),
 };
 
-export function toIso(localValue: string): string | undefined { return localValue ? new Date(localValue).toISOString() : undefined; }
-export function toLocalInput(iso?: string): string { if (!iso) return ''; const date = new Date(iso); const offset = date.getTimezoneOffset() * 60_000; return new Date(date.getTime() - offset).toISOString().slice(0, 16); }
+const DATETIME_LOCAL_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?$/;
+
+export function toIso(localValue: string): string | undefined {
+  if (!localValue) return undefined;
+  const match = DATETIME_LOCAL_PATTERN.exec(localValue);
+  if (!match) throw new RangeError('Invalid datetime-local value.');
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText = '0', millisecondText = '0'] = match;
+  const [year, month, day, hour, minute, second, millisecond] = [
+    yearText, monthText, dayText, hourText, minuteText, secondText, millisecondText.padEnd(3, '0'),
+  ].map(Number);
+  const wallClock = new Date(0);
+  wallClock.setUTCFullYear(year, month - 1, day);
+  wallClock.setUTCHours(hour, minute, second, millisecond);
+  if (
+    wallClock.getUTCFullYear() !== year || wallClock.getUTCMonth() !== month - 1 || wallClock.getUTCDate() !== day
+    || wallClock.getUTCHours() !== hour || wallClock.getUTCMinutes() !== minute || wallClock.getUTCSeconds() !== second
+  ) throw new RangeError('Invalid datetime-local value.');
+  return new Date(`${yearText}-${monthText}-${dayText}T${hourText}:${minuteText}:${String(second).padStart(2, '0')}.${String(millisecond).padStart(3, '0')}${BUSINESS_UTC_OFFSET}`).toISOString();
+}
+
+export function toLocalInput(iso?: string): string {
+  if (!iso) return '';
+  const instant = new Date(iso);
+  if (Number.isNaN(instant.getTime())) throw new RangeError('Invalid ISO instant.');
+  const offsetSign = BUSINESS_UTC_OFFSET.startsWith('-') ? -1 : 1;
+  const [offsetHours, offsetMinutes] = BUSINESS_UTC_OFFSET.slice(1).split(':').map(Number);
+  const businessTime = new Date(instant.getTime() + offsetSign * (offsetHours * 60 + offsetMinutes) * 60_000);
+  return businessTime.toISOString().slice(0, 16);
+}
 export function hasPatchChanges(input: object): boolean { return Object.keys(input).length > 0; }
 
 function changedIso(localValue: string, originalIso?: string): string | undefined {

@@ -1,4 +1,5 @@
 import { appConfig } from '../../src/config/app.config';
+import { BUSINESS_TIME_ZONE } from '@baogiang/config';
 
 /**
  * Unit tests for app configuration factory.
@@ -10,6 +11,7 @@ describe('appConfig (unit)', () => {
   beforeEach(() => {
     // Create fresh copy of env for each test
     process.env = { ...originalEnv };
+    process.env['TZ'] = BUSINESS_TIME_ZONE;
   });
 
   afterEach(() => {
@@ -25,6 +27,7 @@ describe('appConfig (unit)', () => {
     process.env['DATABASE_URL'] = 'postgresql://test@localhost:5432/test';
     const config = appConfig();
     expect(config.databaseUrl).toBe('postgresql://test@localhost:5432/test');
+    expect(config.timeZone).toBe(BUSINESS_TIME_ZONE);
   });
 
   it('should default AI_ENABLED to false', () => {
@@ -98,5 +101,17 @@ describe('appConfig (unit)', () => {
     process.env['NODE_ENV'] = 'production';
     process.env['AUTH_COOKIE_SECURE'] = 'false';
     expect(() => appConfig()).toThrow('must be true in production');
+  });
+
+  it('requires the exact business timezone in production', () => {
+    process.env['DATABASE_URL'] = 'postgresql://test@localhost:5432/test';
+    process.env['NODE_ENV'] = 'production';
+    process.env['AUTH_COOKIE_SECURE'] = 'true';
+    delete process.env['TZ'];
+    expect(() => appConfig()).toThrow(`TZ=${BUSINESS_TIME_ZONE} is required`);
+    process.env['TZ'] = 'UTC';
+    expect(() => appConfig()).toThrow(`TZ must be exactly ${BUSINESS_TIME_ZONE}`);
+    process.env['TZ'] = BUSINESS_TIME_ZONE;
+    expect(appConfig().timeZone).toBe(BUSINESS_TIME_ZONE);
   });
 });

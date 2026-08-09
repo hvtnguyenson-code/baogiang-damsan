@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { assignmentApi, buildDutyAssignmentUpdate, buildDutyDefinitionInput, buildTemporalAssignmentUpdate, capabilitiesApi, catalogApi, dutyAssignmentsApi, dutyDefinitionsApi, hasPatchChanges, queryString, toIso, toLocalInput, usersApi } from '../lib/management-api';
+import { formatDateTime } from '../lib/display';
 import { jsonResponse } from './test-utils';
 
 describe('typed management API boundary', () => {
-  afterEach(() => { vi.unstubAllGlobals(); });
+  afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
   it('serializes supported list filters without empty values', () => {
     expect(queryString({ page: 2, pageSize: 20, status: 'ACTIVE', activeAt: undefined, search: '' })).toBe('?page=2&pageSize=20&status=ACTIVE');
@@ -134,10 +135,42 @@ describe('typed management API boundary', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/users/user-id/capability-grants', expect.objectContaining({ body: JSON.stringify({ capabilityKey: 'AUDIT_VIEW', scopeType: 'SCHOOL_WIDE' }) }));
   });
 
-  it('converts datetime-local explicitly and preserves an empty optional date as omitted', () => {
+  it('converts Vietnam datetime-local values to exact absolute instants', () => {
     expect(toIso('')).toBeUndefined();
-    const iso = toIso('2026-08-09T08:30');
-    expect(iso).toMatch(/^2026-08-09T/);
-    expect(toLocalInput(iso)).toBe('2026-08-09T08:30');
+    expect(toIso('2026-08-09T08:30')).toBe('2026-08-09T01:30:00.000Z');
+    expect(toIso('2026-08-10T00:15')).toBe('2026-08-09T17:15:00.000Z');
+  });
+
+  it('converts absolute instants to exact Vietnam datetime-local values', () => {
+    expect(toLocalInput()).toBe('');
+    expect(toLocalInput('2026-08-09T01:30:45.678Z')).toBe('2026-08-09T08:30');
+    expect(toLocalInput('2026-08-09T17:15:00.000Z')).toBe('2026-08-10T00:15');
+  });
+
+  it('rejects invalid datetime-local values instead of normalizing them', () => {
+    expect(() => toIso('2026-02-30T08:30')).toThrow('Invalid datetime-local value');
+    expect(() => toIso('2026-08-09')).toThrow('Invalid datetime-local value');
+  });
+
+  it('formats absolute instants as Vietnam time explicitly', () => {
+    expect(formatDateTime('2026-08-09T01:30:00.000Z')).toContain('08:30');
+  });
+
+  it('keeps conversion and display independent of the host timezone', () => {
+    const NativeDate = Date;
+    class NonVietnamHostDate extends NativeDate {
+      constructor(value?: string | number) {
+        if (value === undefined) { super(); return; }
+        if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) { super(`${value}-04:00`); return; }
+        super(value as number);
+      }
+
+      override getTimezoneOffset(): number { return 240; }
+    }
+    vi.stubGlobal('Date', NonVietnamHostDate);
+    expect(new Date('2026-08-09T08:30').toISOString()).toBe('2026-08-09T12:30:00.000Z');
+    expect(toIso('2026-08-09T08:30')).toBe('2026-08-09T01:30:00.000Z');
+    expect(toLocalInput('2026-08-09T01:30:45.678Z')).toBe('2026-08-09T08:30');
+    expect(formatDateTime('2026-08-09T01:30:00.000Z')).toContain('08:30');
   });
 });

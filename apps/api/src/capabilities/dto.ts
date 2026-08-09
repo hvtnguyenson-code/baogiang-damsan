@@ -1,6 +1,7 @@
 import { Transform, Type } from 'class-transformer';
-import { IsBoolean, IsDateString, IsEnum, IsInt, IsOptional, IsString, IsUUID, Length, Max, Min, ValidateIf } from 'class-validator';
+import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, IsUUID, Length, Max, Min, ValidateIf } from 'class-validator';
 import { CapabilityScope } from '@baogiang/contracts';
+import { IsAbsoluteInstant } from '../common/validation/is-absolute-instant.decorator';
 
 const scopes: CapabilityScope[] = ['PERSONAL', 'SUBJECT_GROUP', 'SUBJECT', 'ACTIVITY', 'SCHOOL_WIDE'];
 const optionalValue = (_object: object, value: unknown): boolean => value !== undefined;
@@ -24,15 +25,15 @@ export class ListGrantsDto extends CapabilityPageDto {
   @IsOptional() @IsString() capabilityKey?: string;
   @IsOptional() @IsEnum(scopes) scopeType?: CapabilityScope;
   @IsOptional() @Type(() => String) @Transform(strictBoolean) @IsBoolean() revoked?: boolean;
-  @IsOptional() @IsDateString() activeAt?: string;
+  @IsOptional() @IsAbsoluteInstant() activeAt?: string;
 }
 
 export class CreateGrantDto {
   @Transform(trim) @IsString() @Length(1, 100) capabilityKey!: string;
   @IsEnum(scopes) scopeType!: CapabilityScope;
   @ValidateIf(optionalValue) @IsUUID() scopeResourceId?: string;
-  @ValidateIf(optionalValue) @IsDateString() validFrom?: string;
-  @ValidateIf(optionalValue) @IsDateString() validUntil?: string;
+  @ValidateIf(optionalValue) @IsAbsoluteInstant() validFrom?: string;
+  @ValidateIf(optionalValue) @IsAbsoluteInstant() validUntil?: string;
 }
 
 export class RevokeGrantDto {

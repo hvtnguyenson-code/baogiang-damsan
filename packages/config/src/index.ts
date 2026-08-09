@@ -22,6 +22,12 @@ export const CURRENT_PHASE = 'Phase 01 — Auth & Session Runtime';
 /** Official production domain; infrastructure remains pre-operational. */
 export const PRODUCTION_DOMAIN = 'baogiang.dtnt-damsan.edu.vn';
 
+/** Canonical business timezone for all user-facing wall-clock semantics. */
+export const BUSINESS_TIME_ZONE = 'Asia/Ho_Chi_Minh';
+
+/** Vietnam's fixed UTC offset, used when interpreting datetime-local values. */
+export const BUSINESS_UTC_OFFSET = '+07:00';
+
 /**
  * Default local development ports.
  * These are the agreed ports for local development only.
