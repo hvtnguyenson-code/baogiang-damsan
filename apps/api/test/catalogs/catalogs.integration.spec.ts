@@ -41,11 +41,47 @@ integration('Catalog APIs (isolated PostgreSQL integration)', () => {
 
   it('enforces separate capabilities and CSRF', async () => {
     expect((await request(app.getHttpServer()).get('/api/subjects')).status).toBe(401);
+    expect((await request(app.getHttpServer()).get('/api/subject-groups')).status).toBe(401);
+    const none = await actor();
+    expect((await none.agent.get('/api/subjects')).status).toBe(403); expect((await none.agent.get('/api/subject-groups')).status).toBe(403);
+    const denial = await prisma.auditEvent.findFirstOrThrow({ where: { action: 'AUTHORIZATION_DENIED', actorUserId: none.id } });
+    expect(denial.actorUserId).toBe(none.id); expect(await prisma.auditEvent.count({ where: { actorUserId: none.id, result: 'SUCCESS', action: { startsWith: 'SUBJECT' } } })).toBe(0);
     const groups = await actor({ capabilities: ['SUBJECT_GROUP_MANAGE'] });
     expect((await groups.agent.get('/api/subject-groups')).status).toBe(200); expect((await groups.agent.get('/api/subjects')).status).toBe(403);
     expect((await groups.agent.post('/api/subject-groups').send({ code: 'TOAN', name: 'Toán' })).status).toBe(403);
     expect((await groups.agent.post('/api/subject-groups').set('Origin', origin).send({ code: 'TOAN', name: 'Toán' })).status).toBe(201);
     expect((await (await actor({ capabilities: ['SYSTEM_ADMIN'] })).agent.get('/api/subjects')).status).toBe(403);
+    expect((await (await actor({ capabilities: ['SYSTEM_ADMIN'] })).agent.get('/api/subject-groups')).status).toBe(403);
+    const subjects = await actor({ capabilities: ['SUBJECT_MANAGE'] });
+    expect((await subjects.agent.get('/api/subjects')).status).toBe(200); expect((await subjects.agent.get('/api/subject-groups')).status).toBe(403);
+    const both = await actor({ capabilities: ['SUBJECT_MANAGE', 'SUBJECT_GROUP_MANAGE'] });
+    expect((await both.agent.get('/api/subjects')).status).toBe(200); expect((await both.agent.get('/api/subject-groups')).status).toBe(200);
+    const forced = await actor({ capabilities: ['SUBJECT_MANAGE'], mustChangePassword: true });
+    expect((await forced.agent.get('/api/subjects')).status).toBe(403);
+  });
+
+  it('creates both independent namespaces and rejects invalid or duplicate input', async () => {
+    const manager = await actor({ capabilities: ['SUBJECT_MANAGE', 'SUBJECT_GROUP_MANAGE'] });
+    const group = await manager.agent.post('/api/subject-groups').set('Origin', origin).set('X-Request-Id', 'catalog-group-create-1').send({ code: '  van  ', name: '  Ngữ văn  ' });
+    expect(group.status).toBe(201); expect(group.body).toMatchObject({ code: 'VAN', name: 'Ngữ văn', status: 'ACTIVE' }); expect(group.body).not.toHaveProperty('memberships');
+    expect((await manager.agent.post('/api/subjects').set('Origin', origin).send({ code: 'geo', name: 'Địa lý' })).status).toBe(201);
+    expect((await manager.agent.post('/api/subject-groups').set('Origin', origin).send({ code: 'geo', name: 'Tổ GEO' })).status).toBe(201);
+    const before = await prisma.subject.count();
+    expect((await manager.agent.post('/api/subjects').set('Origin', origin).send({ code: 'GEO', name: 'Duplicate' })).status).toBe(409); expect(await prisma.subject.count()).toBe(before);
+    for (const body of [{ code: ' ', name: 'x' }, { code: 'x', name: ' ' }, { code: null, name: 'x' }, { code: 'x', name: null }, { code: 'x'.repeat(51), name: 'x' }, { code: 'x', name: 'x'.repeat(151) }, { code: 'x', name: 'x', status: 'INACTIVE' }, { code: 'x', name: 'x', unknownField: true }]) expect((await manager.agent.post('/api/subjects').set('Origin', origin).send(body)).status).toBe(400);
+    expect((await manager.agent.post('/api/subjects').set('Origin', origin).send({ code: ` ${'p'.repeat(50)} `, name: 'Padded' })).status).toBe(201);
+  });
+
+  it('lists, details, patches, transitions and preserves catalog records', async () => {
+    const manager = await actor({ capabilities: ['SUBJECT_MANAGE', 'SUBJECT_GROUP_MANAGE'] });
+    const subject = await prisma.subject.create({ data: { code: 'ZED', name: 'Zed' } }); const group = await prisma.subjectGroup.create({ data: { code: 'AAA', name: 'Aaa' } });
+    const list = await manager.agent.get('/api/subjects?page=1&pageSize=2'); expect(list.status).toBe(200); expect(list.body).toMatchObject({ page: 1, pageSize: 2 });
+    expect((await manager.agent.get('/api/subject-groups')).status).toBe(200); for (const q of ['page=0', 'pageSize=101', 'status=UNKNOWN', 'unknown=1']) expect((await manager.agent.get(`/api/subjects?${q}`)).status).toBe(400);
+    expect((await manager.agent.get(`/api/subjects/${subject.id}`)).status).toBe(200); expect((await manager.agent.get('/api/subjects/not-uuid')).status).toBe(400); expect((await manager.agent.get('/api/subject-groups/00000000-0000-4000-8000-000000000000')).status).toBe(404);
+    const patch = await manager.agent.patch(`/api/subjects/${subject.id}`).set('Origin', origin).send({ code: ' new ', name: ' New ' }); expect(patch.body).toMatchObject({ id: subject.id, code: 'NEW', name: 'New', status: 'ACTIVE' });
+    for (const body of [{}, { status: 'INACTIVE' }, { id: subject.id }, { createdAt: 'x' }, { updatedAt: 'x' }, { staffSubjects: [] }]) expect((await manager.agent.patch(`/api/subjects/${subject.id}`).set('Origin', origin).send(body)).status).toBe(400);
+    expect((await manager.agent.patch(`/api/subject-groups/${group.id}`).set('Origin', origin).send({ memberships: [] })).status).toBe(400);
+    expect((await manager.agent.post(`/api/subjects/${subject.id}/deactivate`).set('Origin', origin)).status).toBe(200); expect((await manager.agent.post(`/api/subjects/${subject.id}/deactivate`).set('Origin', origin)).status).toBe(200); expect((await manager.agent.post(`/api/subjects/${subject.id}/activate`).set('Origin', origin)).status).toBe(200);
   });
 
   it('normalizes, updates, transitions and writes audit atomically', async () => {
