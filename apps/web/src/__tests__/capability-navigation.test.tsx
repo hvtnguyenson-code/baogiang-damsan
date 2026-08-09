@@ -28,10 +28,27 @@ describe('capability-aware navigation', () => {
     expect(screen.queryByRole('link', { name: 'Cấp quyền' })).not.toBeInTheDocument();
   });
 
-  it('shows duty assignment for an effective exact subject-group grant', async () => {
+  it('denies duty assignment navigation and direct route for an unrelated subject-group capability', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(authWith('SUBJECT_GROUP_LEAD', 'SUBJECT_GROUP', 'group-1'))));
     renderApp('/');
+    await screen.findByRole('heading', { name: /chào/i });
+    expect(screen.queryByRole('link', { name: 'Phân công kiêm nhiệm' })).not.toBeInTheDocument();
+  });
+
+  it('blocks the duty assignment direct route for an unrelated subject-group capability', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(authWith('SUBJECT_GROUP_LEAD', 'SUBJECT_GROUP', 'group-1'))));
+    renderApp('/quan-tri/kiem-nhiem/phan-cong');
+    expect(await screen.findByRole('heading', { name: /không có quyền thực hiện thao tác này/i })).toBeInTheDocument();
+  });
+
+  it('allows duty assignment navigation and direct route for the exact subject-group capability', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => String(input).endsWith('/auth/me')
+      ? jsonResponse(authWith('ADDITIONAL_DUTY_ASSIGNMENT_MANAGE', 'SUBJECT_GROUP', 'group-1'))
+      : jsonResponse({ items: [], page: 1, pageSize: 20, total: 0 }));
+    vi.stubGlobal('fetch', fetchMock);
+    renderApp('/quan-tri/kiem-nhiem/phan-cong');
     expect((await screen.findAllByRole('link', { name: 'Phân công kiêm nhiệm' })).length).toBeGreaterThanOrEqual(1);
+    expect(await screen.findByRole('heading', { name: 'Kiêm nhiệm nhân sự' })).toBeInTheDocument();
   });
 
   it('blocks a direct management route before rendering its page', async () => {
