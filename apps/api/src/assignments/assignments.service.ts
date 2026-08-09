@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { AuditResult, CatalogStatus, Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service'; import { PrismaService } from '../prisma/prisma.service'; import { RequestMeta } from '../auth/auth.types';
