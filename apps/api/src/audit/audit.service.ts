@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { AuditResult, Prisma, PrismaClient } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { BadRequestException } from '@nestjs/common';
 
 const SENSITIVE_KEY = /password|token|cookie|secret|hash|authorization|credential|bearer|api[_-]?key|database[_-]?url/i;
 const MAX_METADATA_DEPTH = 8;
@@ -67,5 +68,22 @@ export class AuditService {
         metadata: this.sanitize(input.metadata),
       },
     });
+  }
+
+  async list(query: { page: number; pageSize: number; actorUserId?: string; action?: string; entityType?: string; entityId?: string; requestId?: string; result?: AuditResult; createdFrom?: string; createdTo?: string }) {
+    const from = query.createdFrom ? new Date(query.createdFrom) : undefined;
+    const to = query.createdTo ? new Date(query.createdTo) : undefined;
+    if ((from && Number.isNaN(+from)) || (to && Number.isNaN(+to)) || (from && to && from >= to)) throw new BadRequestException('Khoảng thời gian không hợp lệ.');
+    const where: Prisma.AuditEventWhereInput = {};
+    for (const key of ['actorUserId','action','entityType','entityId','requestId','result'] as const) if (query[key] !== undefined) (where as Record<string, unknown>)[key] = query[key];
+    if (from || to) where.createdAt = { ...(from ? { gte: from } : {}), ...(to ? { lt: to } : {}) };
+    const [items,total] = await Promise.all([this.prisma.auditEvent.findMany({ where, skip:(query.page-1)*query.pageSize, take:query.pageSize, orderBy:[{createdAt:'desc'},{id:'asc'}] }),this.prisma.auditEvent.count({where})]);
+    return { items: items.map(item => ({ ...item, actorUserId:item.actorUserId ?? undefined, entityId:item.entityId ?? undefined, requestId:item.requestId ?? undefined, metadata:this.viewerMetadata(item.metadata), createdAt:item.createdAt.toISOString() })), page:query.page,pageSize:query.pageSize,total };
+  }
+
+  private viewerMetadata(value: unknown): Record<string, unknown> | undefined {
+    const forbidden = new Set(['password','passwordhash','token','tokenhash','cookie','secret','credential','apikey','database_url','authorization','authorizationheader','sessiontoken']);
+    const clean = (input: unknown): unknown => Array.isArray(input) ? input.map(clean) : input && typeof input === 'object' ? Object.fromEntries(Object.entries(input as Record<string, unknown>).filter(([key]) => !forbidden.has(key.toLowerCase())).map(([key,item]) => [key,clean(item)])) : input;
+    return value && typeof value === 'object' && !Array.isArray(value) ? clean(value) as Record<string,unknown> : undefined;
   }
 }
