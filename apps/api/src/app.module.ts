@@ -7,6 +7,10 @@ import { AppConfigModule } from './config/app-config.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { CatalogsModule } from './catalogs/catalogs.module';
+import { AssignmentsModule } from './assignments/assignments.module';
+import { CapabilitiesModule } from './capabilities/capabilities.module';
+import { AuditModule } from './audit/audit.module';
+import { AdditionalDutiesModule } from './additional-duties/additional-duties.module';
 
 @Module({
   imports: [
@@ -31,6 +35,10 @@ import { CatalogsModule } from './catalogs/catalogs.module';
     AuthModule,
     UsersModule,
     CatalogsModule,
+    AssignmentsModule,
+    CapabilitiesModule,
+    AuditModule,
+    AdditionalDutiesModule,
   ],
 })
 export class AppModule {}

@@ -261,6 +261,8 @@ export interface StaffSubjectRecord extends ValidityWindow {
   subjectId: string;
   isPrimary: boolean;
 }
+export interface SubjectGroupMembershipListResponse { items: SubjectGroupMembershipRecord[]; page: number; pageSize: number; total: number; }
+export interface StaffSubjectListResponse { items: StaffSubjectRecord[]; page: number; pageSize: number; total: number; }
 
 export interface CapabilityDefinitionRecord {
   key: CapabilityKey;
@@ -281,6 +283,8 @@ export interface CapabilityGrantRecord extends ValidityWindow {
   revokedByUserId?: string;
   revokeReason?: string;
 }
+export interface CapabilityDefinitionListResponse { items: CapabilityDefinitionRecord[]; page: number; pageSize: number; total: number; }
+export interface CapabilityGrantListResponse { items: CapabilityGrantRecord[]; page: number; pageSize: number; total: number; }
 
 export interface AuditEventRecord {
   id: string;
@@ -293,6 +297,7 @@ export interface AuditEventRecord {
   metadata?: Record<string, unknown>;
   createdAt: string;
 }
+export interface AuditEventListResponse { items: AuditEventRecord[]; page: number; pageSize: number; total: number; }
 
 export interface AdditionalDutyDefinitionRecord extends ValidityWindow {
   id: string;
@@ -316,6 +321,27 @@ export interface StaffAdditionalDutyAssignmentRecord extends ValidityWindow {
   createdByUserId: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface AdditionalDutyDefinitionListResponse {
+  items: AdditionalDutyDefinitionRecord[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+export interface AdditionalDutyDefinitionOptionsResponse {
+  items: AdditionalDutyDefinitionRecord[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+export interface StaffAdditionalDutyAssignmentListResponse {
+  items: StaffAdditionalDutyAssignmentRecord[];
+  page: number;
+  pageSize: number;
+  total: number;
 }
 
 // ============================================================

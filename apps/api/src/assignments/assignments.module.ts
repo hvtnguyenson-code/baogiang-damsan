@@ -1,0 +1,2 @@
+import { Module } from '@nestjs/common'; import { AuthModule } from '../auth/auth.module'; import { AuthorizationModule } from '../authorization/authorization.module'; import { AuditService } from '../audit/audit.service'; import { AssignmentsService } from './assignments.service'; import { MembershipsController, StaffSubjectsController } from './assignments.controller';
+@Module({imports:[AuthModule,AuthorizationModule],controllers:[MembershipsController,StaffSubjectsController],providers:[AssignmentsService,AuditService]}) export class AssignmentsModule {}
