@@ -8,6 +8,7 @@ import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { CatalogsModule } from './catalogs/catalogs.module';
 import { AssignmentsModule } from './assignments/assignments.module';
+import { CapabilitiesModule } from './capabilities/capabilities.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { AssignmentsModule } from './assignments/assignments.module';
     UsersModule,
     CatalogsModule,
     AssignmentsModule,
+    CapabilitiesModule,
   ],
 })
 export class AppModule {}
