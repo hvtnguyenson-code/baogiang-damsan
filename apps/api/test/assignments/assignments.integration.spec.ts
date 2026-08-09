@@ -34,7 +34,11 @@ integration('Assignments API (isolated PostgreSQL integration)', () => {
     const manager = await h.actor({ grants: [{ capabilityKey: 'SUBJECT_GROUP_MANAGE' }] });
     const refs = await references();
     expect((await manager.agent.post('/api/subject-group-memberships').send({ userId: refs.userId, subjectGroupId: refs.groupId })).status).toBe(403);
-    expect((await manager.agent.post('/api/subject-group-memberships').set('Origin', testOrigin).send({ userId: refs.userId, subjectGroupId: refs.groupId })).status).toBe(201);
+    const created = await manager.agent.post('/api/subject-group-memberships').set('Origin', testOrigin).send({ userId: refs.userId, subjectGroupId: refs.groupId });
+    expect(created.status).toBe(201);
+    expect((await manager.agent.get(`/api/subject-group-memberships/${created.body.id as string}`)).status).toBe(200);
+    expect((await manager.agent.get('/api/subject-group-memberships/not-a-uuid')).status).toBe(400);
+    expect((await manager.agent.get('/api/subject-group-memberships/00000000-0000-4000-8000-000000000000')).status).toBe(404);
   });
 
   it('creates both public-safe assignment records without capability side effects', async () => {

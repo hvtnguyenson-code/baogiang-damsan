@@ -84,6 +84,8 @@ integration('Additional duties API (isolated PostgreSQL integration)', () => {
     const group = await h.actor({ grants: [{ capabilityKey: 'ADDITIONAL_DUTY_ASSIGNMENT_MANAGE', scopeType: 'SUBJECT_GROUP', scopeResourceId: refs.groupA }] });
     const firstLogin = await h.actor({ grants: [{ capabilityKey: 'ADDITIONAL_DUTY_ASSIGNMENT_MANAGE', scopeType: 'SUBJECT_GROUP', scopeResourceId: refs.groupA }], mustChangePassword: true });
     expect((await firstLogin.agent.get('/api/staff-additional-duty-assignments')).status).toBe(403);
+    expect((await group.agent.post('/api/staff-additional-duty-assignments').send({ staffProfileId: refs.staffProfileId, dutyDefinitionId: refs.definitionId, scopeType: 'SUBJECT_GROUP', scopeResourceId: refs.groupA })).status).toBe(403);
+    expect((await group.agent.post('/api/staff-additional-duty-assignments').set('Origin', testOrigin).send({ staffProfileId: refs.staffProfileId, dutyDefinitionId: refs.definitionId, scopeType: 'SUBJECT_GROUP', scopeResourceId: refs.groupB })).status).toBe(403);
     const groupA = await school.agent.post('/api/staff-additional-duty-assignments').set('Origin', testOrigin).send({ staffProfileId: refs.staffProfileId, dutyDefinitionId: refs.definitionId, scopeType: 'SUBJECT_GROUP', scopeResourceId: refs.groupA, validFrom: '2026-06-01', validUntil: '2026-07-01' });
     const groupB = await school.agent.post('/api/staff-additional-duty-assignments').set('Origin', testOrigin).send({ staffProfileId: refs.staffProfileId, dutyDefinitionId: refs.definitionId, scopeType: 'SUBJECT_GROUP', scopeResourceId: refs.groupB, validFrom: '2026-06-01', validUntil: '2026-07-01' });
     const schoolWide = await school.agent.post('/api/staff-additional-duty-assignments').set('Origin', testOrigin).send({ staffProfileId: refs.staffProfileId, dutyDefinitionId: refs.definitionId, scopeType: 'SCHOOL_WIDE', validFrom: '2026-06-01', validUntil: '2026-07-01' });
@@ -101,6 +103,8 @@ integration('Additional duties API (isolated PostgreSQL integration)', () => {
     const refs = await fixtures();
     const manager = await h.actor({ grants: [{ capabilityKey: 'ADDITIONAL_DUTY_ASSIGNMENT_MANAGE' }] });
     const base = { staffProfileId: refs.staffProfileId, dutyDefinitionId: refs.definitionId, scopeType: 'SUBJECT_GROUP', scopeResourceId: refs.groupA };
+    expect((await manager.agent.post('/api/staff-additional-duty-assignments').set('Origin', testOrigin).send({ ...base, note: null })).status).toBe(400);
+    expect((await manager.agent.post('/api/staff-additional-duty-assignments').set('Origin', testOrigin).send({ ...base, validUntil: null })).status).toBe(400);
     const first = await manager.agent.post('/api/staff-additional-duty-assignments').set('Origin', testOrigin).send({ ...base, validFrom: '2026-06-01', validUntil: '2026-07-01' });
     expect((await manager.agent.post('/api/staff-additional-duty-assignments').set('Origin', testOrigin).send({ ...base, validFrom: '2026-06-15', validUntil: '2026-06-20' })).status).toBe(409);
     const adjacent = await manager.agent.post('/api/staff-additional-duty-assignments').set('Origin', testOrigin).send({ ...base, validFrom: '2026-07-01' });

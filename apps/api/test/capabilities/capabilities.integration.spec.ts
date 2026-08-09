@@ -77,6 +77,8 @@ integration('Capability management API (isolated PostgreSQL integration)', () =>
       expect(response.body).not.toHaveProperty('updatedAt');
     }
     expect((await manager.agent.post(`/api/users/${userId}/capability-grants`).set('Origin', testOrigin).send({ capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL', scopeResourceId: userId })).status).toBe(400);
+    expect((await manager.agent.post(`/api/users/${userId}/capability-grants`).set('Origin', testOrigin).send({ capabilityKey: 'SUBJECT_GROUP_LEAD', scopeType: 'SUBJECT_GROUP', scopeResourceId: crypto.randomUUID(), validFrom: '2027-01-01' })).status).toBe(404);
+    expect((await manager.agent.post(`/api/users/${userId}/capability-grants`).set('Origin', testOrigin).send({ capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL', validUntil: null })).status).toBe(400);
     await h.prisma.subjectGroup.update({ where: { id: group.id }, data: { status: 'INACTIVE' } });
     expect((await manager.agent.post(`/api/users/${userId}/capability-grants`).set('Origin', testOrigin).send({ capabilityKey: 'SUBJECT_GROUP_LEAD', scopeType: 'SUBJECT_GROUP', scopeResourceId: group.id, validFrom: '2027-01-01' })).status).toBe(409);
   });
@@ -101,6 +103,7 @@ integration('Capability management API (isolated PostgreSQL integration)', () =>
     expect(repeated.body.revokeReason).toBe('no longer needed');
     expect((await h.prisma.auditEvent.findFirstOrThrow({ where: { requestId: 'grant-create' } })).metadata).toMatchObject({ targetUserId: userId, capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL' });
     expect((await h.prisma.auditEvent.findFirstOrThrow({ where: { requestId: 'grant-revoke' } })).metadata).toEqual({ targetUserId: userId, capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL' });
+    expect((await manager.agent.post(`/api/capability-grants/${first.body.id as string}/revoke`).set('Origin', testOrigin).send({ revokeReason: null })).status).toBe(400);
   });
 
   it('rolls back create and first revoke when audit writing fails', async () => {
