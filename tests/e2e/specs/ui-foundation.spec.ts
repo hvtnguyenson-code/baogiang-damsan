@@ -159,3 +159,136 @@ test('real auth UI supports keyboard, first-login change, cookie reload, and log
   await page.goto('/');
   await expect(page).toHaveURL(/\/dang-nhap$/);
 });
+
+test('real Phase 01 management flow preserves history and capability boundaries', async ({ page }) => {
+  const targetUsername = 'e2e-phase01-target';
+  const targetInitialPassword = 'E2eTargetPassword7';
+  const targetNewPassword = 'E2eTargetReplacement8';
+
+  await page.goto('/quan-tri/nguoi-dung');
+  await expect(page).toHaveURL(/\/dang-nhap$/);
+  await page.getByLabel('Tên đăng nhập').fill(USERNAME);
+  await page.getByLabel('Mật khẩu').fill(NEW_PASSWORD);
+  await page.getByRole('button', { name: 'Đăng nhập' }).click();
+  await expect(page).toHaveURL(/\/quan-tri\/nguoi-dung$/);
+  await expect(page.getByRole('heading', { name: 'Người dùng' })).toBeVisible();
+  await assertNoSeriousAxeViolations(page);
+
+  await page.getByRole('button', { name: 'Tạo người dùng' }).first().click();
+  await page.getByLabel('Tên đăng nhập').fill(targetUsername);
+  await page.getByLabel('Mật khẩu khởi tạo').fill(targetInitialPassword);
+  await page.getByLabel('Mã nhân sự').fill('E2E-GV-01');
+  await page.getByLabel('Tên hiển thị').fill('Giáo viên E2E Phase 01');
+  await page.getByLabel('Email').fill('e2e-phase01@example.invalid');
+  await page.getByLabel('Chức danh').fill('Giáo viên');
+  await page.locator('form.long-form').getByRole('button', { name: 'Tạo người dùng' }).click();
+  const targetRow = page.locator('tbody tr', { hasText: targetUsername });
+  await expect(targetRow).toBeVisible();
+  await targetRow.getByRole('button', { name: 'Kích hoạt' }).click();
+  await targetRow.getByRole('button', { name: 'Xác nhận' }).click();
+  await expect(targetRow.getByText('Đang hoạt động')).toBeVisible();
+  await prepareScreenshot(page);
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await page.screenshot({ path: `${screenshots}/management-users-1366x768.png` });
+  await page.getByRole('button', { name: 'Tạo người dùng' }).first().click();
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.screenshot({ path: `${screenshots}/management-user-form-375x812.png`, fullPage: true });
+  await page.locator('form.long-form').getByRole('button', { name: 'Hủy' }).click();
+
+  await page.goto('/quan-tri/to-chuyen-mon');
+  await page.getByRole('button', { name: 'Thêm tổ' }).click();
+  await page.getByLabel('Mã').fill('E2ETO');
+  await page.getByLabel('Tên').fill('Tổ E2E Phase 01');
+  await page.locator('form').getByRole('button', { name: 'Thêm vào danh mục' }).click();
+  await expect(page.getByText('Tổ E2E Phase 01')).toBeVisible();
+
+  await page.goto('/quan-tri/mon-hoc');
+  await page.getByRole('button', { name: 'Thêm môn' }).click();
+  await page.getByLabel('Mã').fill('E2EMON');
+  await page.getByLabel('Tên').fill('Môn E2E Phase 01');
+  await page.locator('form').getByRole('button', { name: 'Thêm vào danh mục' }).click();
+  await expect(page.getByText('Môn E2E Phase 01')).toBeVisible();
+
+  await page.goto('/quan-tri/phan-cong-to');
+  await page.getByRole('button', { name: 'Tạo phân công' }).click();
+  await page.getByLabel('Người được phân công').selectOption({ label: /Giáo viên E2E Phase 01/ });
+  await page.getByLabel('Tổ chuyên môn').selectOption({ label: /E2ETO/ });
+  await page.getByText('Phân công chính').click();
+  await page.locator('form').getByRole('button', { name: 'Lưu phân công' }).click();
+  await expect(page.getByText('Tổ E2E Phase 01')).toBeVisible();
+
+  await page.goto('/quan-tri/phan-cong-mon');
+  await page.getByRole('button', { name: 'Tạo phân công' }).click();
+  await page.getByLabel('Người được phân công').selectOption({ label: /Giáo viên E2E Phase 01/ });
+  await page.getByLabel('Môn học').selectOption({ label: /E2EMON/ });
+  await page.locator('form').getByRole('button', { name: 'Lưu phân công' }).click();
+  await expect(page.getByText('Môn E2E Phase 01')).toBeVisible();
+  await assertNoSeriousAxeViolations(page);
+  await prepareScreenshot(page);
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await page.screenshot({ path: `${screenshots}/management-assignment-1366x768.png` });
+
+  await page.goto('/quan-tri/quyen');
+  await page.getByLabel('Người nhận').selectOption({ label: /Giáo viên E2E Phase 01/ });
+  await page.getByLabel('Quyền').selectOption('TEACHER_BASE');
+  await page.getByLabel('Phạm vi').selectOption('PERSONAL');
+  await page.getByRole('button', { name: 'Cấp quyền' }).click();
+  await expect(page.getByRole('heading', { name: /Lịch sử quyền của Giáo viên E2E Phase 01/ })).toBeVisible();
+  await expect(page.getByText('Công việc giáo viên cơ bản').last()).toBeVisible();
+  await prepareScreenshot(page);
+  await page.screenshot({ path: `${screenshots}/management-capabilities-1366x768.png`, fullPage: true });
+
+  await page.goto('/quan-tri/kiem-nhiem/danh-muc');
+  await page.getByRole('button', { name: 'Thêm loại kiêm nhiệm' }).click();
+  await page.getByLabel('Mã').fill('E2EDUTY');
+  await page.getByLabel('Tên').fill('Kiêm nhiệm E2E Phase 01');
+  await page.getByLabel('Nhóm').fill('Kiểm thử');
+  await page.locator('form').getByRole('button', { name: 'Lưu loại kiêm nhiệm' }).click();
+  await expect(page.getByText('Kiêm nhiệm E2E Phase 01')).toBeVisible();
+
+  await page.goto('/quan-tri/kiem-nhiem/phan-cong');
+  await page.getByRole('button', { name: 'Tạo phân công' }).click();
+  await page.getByLabel('Nhân sự').selectOption({ label: /Giáo viên E2E Phase 01/ });
+  await page.getByLabel('Loại kiêm nhiệm').selectOption({ label: /E2EDUTY/ });
+  await page.getByLabel('Phạm vi').selectOption('SCHOOL_WIDE');
+  await page.getByLabel('Ghi chú').fill('Phân công kiểm thử giao diện');
+  await page.locator('form').getByRole('button', { name: 'Lưu phân công' }).click();
+  const dutyRow = page.locator('tbody tr', { hasText: 'Kiêm nhiệm E2E Phase 01' });
+  await expect(dutyRow).toBeVisible();
+  await dutyRow.getByRole('button', { name: 'Sửa hiệu lực' }).click();
+  await page.getByLabel('Ghi chú').fill('Đã cập nhật trong kiểm thử');
+  await page.locator('form').getByRole('button', { name: 'Lưu phân công' }).click();
+  await expect(dutyRow.getByText('Đã cập nhật trong kiểm thử')).toBeVisible();
+  await dutyRow.getByRole('button', { name: 'Kết thúc' }).click();
+  await dutyRow.getByRole('button', { name: 'Xác nhận kết thúc' }).click();
+  await expect(dutyRow.getByText('Đã kết thúc')).toBeVisible();
+  await prepareScreenshot(page);
+  await page.screenshot({ path: `${screenshots}/management-additional-duty-1366x768.png`, fullPage: true });
+
+  await page.goto('/quan-tri/nhat-ky');
+  await expect(page.getByRole('heading', { name: 'Nhật ký hệ thống' })).toBeVisible();
+  await expect(page.getByText(/USER_CREATED|SUBJECT_GROUP_CREATED|DUTY_ASSIGNMENT_ENDED/).first()).toBeVisible();
+  await assertNoSeriousAxeViolations(page);
+  await prepareScreenshot(page);
+  await page.screenshot({ path: `${screenshots}/management-audit-1366x768.png`, fullPage: true });
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.screenshot({ path: `${screenshots}/management-audit-375x812.png`, fullPage: true });
+  await assertAtMobileWidths(page, ['.primary-nav a', '.filter-bar button']);
+
+  await page.getByRole('button', { name: 'Đăng xuất khỏi không gian làm việc', exact: true }).click();
+  await page.getByLabel('Tên đăng nhập').fill(targetUsername);
+  await page.getByLabel('Mật khẩu').fill(targetInitialPassword);
+  await page.getByRole('button', { name: 'Đăng nhập' }).click();
+  await expect(page).toHaveURL(/\/doi-mat-khau-lan-dau$/);
+  await page.getByLabel('Mật khẩu hiện tại').fill(targetInitialPassword);
+  await page.getByLabel('Mật khẩu mới', { exact: true }).fill(targetNewPassword);
+  await page.getByLabel('Xác nhận mật khẩu mới').fill(targetNewPassword);
+  await page.getByRole('button', { name: 'Đổi mật khẩu' }).click();
+  await page.goto('/quan-tri/nguoi-dung');
+  await expect(page).toHaveURL(/\/khong-co-quyen$/);
+  await expect(page.getByRole('heading', { name: /không có quyền thực hiện thao tác này/i })).toBeVisible();
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Đăng xuất khỏi không gian làm việc', exact: true }).click();
+  await page.goto('/quan-tri/nguoi-dung');
+  await expect(page).toHaveURL(/\/dang-nhap$/);
+});
