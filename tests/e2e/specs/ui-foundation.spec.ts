@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
 const USERNAME = 'e2e-ui-admin';
 const INITIAL_PASSWORD = 'E2eUiBootstrapPassword9';
@@ -46,6 +46,25 @@ async function assertAtMobileWidths(page: Page, selectors: string[]) {
     await page.setViewportSize({ width, height: 812 });
     await assertResponsiveTargets(page, selectors);
   }
+}
+
+async function selectOptionMatching(select: Locator, pattern: RegExp) {
+  const options = select.locator('option');
+  const optionCount = await options.count();
+
+  for (let index = 0; index < optionCount; index += 1) {
+    const option = options.nth(index);
+    const optionText = (await option.textContent()) ?? '';
+    pattern.lastIndex = 0;
+    if (!pattern.test(optionText)) continue;
+
+    const value = await option.getAttribute('value');
+    if (!value) throw new Error(`Option matching ${pattern} has no selectable value.`);
+    await select.selectOption(value);
+    return;
+  }
+
+  throw new Error(`No option matching ${pattern} was found.`);
 }
 
 test('public system status is usable and exposes only safe recovery details', async ({ page }) => {
@@ -216,17 +235,19 @@ test('real Phase 01 management flow preserves history and capability boundaries'
 
   await page.goto('/quan-tri/phan-cong-to');
   await page.getByRole('button', { name: 'Tạo phân công' }).click();
-  await page.getByLabel('Người được phân công').selectOption({ label: /Giáo viên E2E Phase 01/ });
-  await page.getByLabel('Tổ chuyên môn').selectOption({ label: /E2ETO/ });
-  await page.getByText('Phân công chính').click();
-  await page.locator('form').getByRole('button', { name: 'Lưu phân công' }).click();
+  const membershipForm = page.locator('form.inline-work-form');
+  await selectOptionMatching(membershipForm.getByLabel('Người được phân công'), /Giáo viên E2E Phase 01/);
+  await selectOptionMatching(membershipForm.getByLabel('Tổ chuyên môn'), /E2ETO/);
+  await membershipForm.getByRole('checkbox', { name: 'Phân công chính' }).check();
+  await membershipForm.getByRole('button', { name: 'Lưu phân công' }).click();
   await expect(page.getByText('Tổ E2E Phase 01')).toBeVisible();
 
   await page.goto('/quan-tri/phan-cong-mon');
   await page.getByRole('button', { name: 'Tạo phân công' }).click();
-  await page.getByLabel('Người được phân công').selectOption({ label: /Giáo viên E2E Phase 01/ });
-  await page.getByLabel('Môn học').selectOption({ label: /E2EMON/ });
-  await page.locator('form').getByRole('button', { name: 'Lưu phân công' }).click();
+  const staffSubjectForm = page.locator('form.inline-work-form');
+  await selectOptionMatching(staffSubjectForm.getByLabel('Người được phân công'), /Giáo viên E2E Phase 01/);
+  await selectOptionMatching(staffSubjectForm.getByLabel('Môn học'), /E2EMON/);
+  await staffSubjectForm.getByRole('button', { name: 'Lưu phân công' }).click();
   await expect(page.getByText('Môn E2E Phase 01')).toBeVisible();
   await assertNoSeriousAxeViolations(page);
   await prepareScreenshot(page);
@@ -234,10 +255,11 @@ test('real Phase 01 management flow preserves history and capability boundaries'
   await page.screenshot({ path: `${screenshots}/management-assignment-1366x768.png` });
 
   await page.goto('/quan-tri/quyen');
-  await page.getByLabel('Người nhận').selectOption({ label: /Giáo viên E2E Phase 01/ });
-  await page.getByLabel('Quyền').selectOption('TEACHER_BASE');
-  await page.getByLabel('Phạm vi').selectOption('PERSONAL');
-  await page.getByRole('button', { name: 'Cấp quyền' }).click();
+  const capabilityForm = page.locator('section.inline-work-form form');
+  await selectOptionMatching(capabilityForm.getByLabel('Người nhận'), /Giáo viên E2E Phase 01/);
+  await capabilityForm.getByLabel('Quyền').selectOption('TEACHER_BASE');
+  await capabilityForm.getByLabel('Phạm vi').selectOption('PERSONAL');
+  await capabilityForm.getByRole('button', { name: 'Cấp quyền' }).click();
   await expect(page.getByRole('heading', { name: /Lịch sử quyền của Giáo viên E2E Phase 01/ })).toBeVisible();
   await expect(page.getByText('Công việc giáo viên cơ bản').last()).toBeVisible();
   await prepareScreenshot(page);
@@ -253,16 +275,17 @@ test('real Phase 01 management flow preserves history and capability boundaries'
 
   await page.goto('/quan-tri/kiem-nhiem/phan-cong');
   await page.getByRole('button', { name: 'Tạo phân công' }).click();
-  await page.getByLabel('Nhân sự').selectOption({ label: /Giáo viên E2E Phase 01/ });
-  await page.getByLabel('Loại kiêm nhiệm').selectOption({ label: /E2EDUTY/ });
-  await page.getByLabel('Phạm vi').selectOption('SCHOOL_WIDE');
-  await page.getByLabel('Ghi chú').fill('Phân công kiểm thử giao diện');
-  await page.locator('form').getByRole('button', { name: 'Lưu phân công' }).click();
+  const dutyForm = page.locator('form.long-form');
+  await selectOptionMatching(dutyForm.getByLabel('Nhân sự'), /Giáo viên E2E Phase 01/);
+  await selectOptionMatching(dutyForm.getByLabel('Loại kiêm nhiệm'), /E2EDUTY/);
+  await dutyForm.getByLabel('Phạm vi').selectOption('SCHOOL_WIDE');
+  await dutyForm.getByLabel('Ghi chú').fill('Phân công kiểm thử giao diện');
+  await dutyForm.getByRole('button', { name: 'Lưu phân công' }).click();
   const dutyRow = page.locator('tbody tr', { hasText: 'Kiêm nhiệm E2E Phase 01' });
   await expect(dutyRow).toBeVisible();
   await dutyRow.getByRole('button', { name: 'Sửa hiệu lực' }).click();
-  await page.getByLabel('Ghi chú').fill('Đã cập nhật trong kiểm thử');
-  await page.locator('form').getByRole('button', { name: 'Lưu phân công' }).click();
+  await dutyForm.getByLabel('Ghi chú').fill('Đã cập nhật trong kiểm thử');
+  await dutyForm.getByRole('button', { name: 'Lưu phân công' }).click();
   await expect(dutyRow.getByText('Đã cập nhật trong kiểm thử')).toBeVisible();
   await dutyRow.getByRole('button', { name: 'Kết thúc' }).click();
   await dutyRow.getByRole('button', { name: 'Xác nhận kết thúc' }).click();
