@@ -1,7 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { AuditResult, Prisma, PrismaClient } from '@prisma/client';
+import { AuditEventListResponse, AuditEventRecord } from '@baogiang/contracts';
 import { PrismaService } from '../prisma/prisma.service';
-import { BadRequestException } from '@nestjs/common';
 
 const SENSITIVE_KEY = /password|token|cookie|secret|hash|authorization|credential|bearer|api[_-]?key|database[_-]?url/i;
 const MAX_METADATA_DEPTH = 8;
@@ -70,15 +70,33 @@ export class AuditService {
     });
   }
 
-  async list(query: { page: number; pageSize: number; actorUserId?: string; action?: string; entityType?: string; entityId?: string; requestId?: string; result?: AuditResult; createdFrom?: string; createdTo?: string }) {
+  async list(query: { page: number; pageSize: number; actorUserId?: string; action?: string; entityType?: string; entityId?: string; requestId?: string; result?: AuditResult; createdFrom?: string; createdTo?: string }): Promise<AuditEventListResponse> {
     const from = query.createdFrom ? new Date(query.createdFrom) : undefined;
     const to = query.createdTo ? new Date(query.createdTo) : undefined;
     if ((from && Number.isNaN(+from)) || (to && Number.isNaN(+to)) || (from && to && from >= to)) throw new BadRequestException('Khoảng thời gian không hợp lệ.');
     const where: Prisma.AuditEventWhereInput = {};
-    for (const key of ['actorUserId','action','entityType','entityId','requestId','result'] as const) if (query[key] !== undefined) (where as Record<string, unknown>)[key] = query[key];
+    if (query.actorUserId !== undefined) where.actorUserId = query.actorUserId;
+    if (query.action !== undefined) where.action = query.action;
+    if (query.entityType !== undefined) where.entityType = query.entityType;
+    if (query.entityId !== undefined) where.entityId = query.entityId;
+    if (query.requestId !== undefined) where.requestId = query.requestId;
+    if (query.result !== undefined) where.result = query.result;
     if (from || to) where.createdAt = { ...(from ? { gte: from } : {}), ...(to ? { lt: to } : {}) };
-    const [items,total] = await Promise.all([this.prisma.auditEvent.findMany({ where, skip:(query.page-1)*query.pageSize, take:query.pageSize, orderBy:[{createdAt:'desc'},{id:'asc'}] }),this.prisma.auditEvent.count({where})]);
-    return { items: items.map(item => ({ ...item, actorUserId:item.actorUserId ?? undefined, entityId:item.entityId ?? undefined, requestId:item.requestId ?? undefined, metadata:this.viewerMetadata(item.metadata), createdAt:item.createdAt.toISOString() })), page:query.page,pageSize:query.pageSize,total };
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.auditEvent.findMany({ where, skip: (query.page - 1) * query.pageSize, take: query.pageSize, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }] }),
+      this.prisma.auditEvent.count({ where }),
+    ]);
+    return { items: items.map((item): AuditEventRecord => ({
+      id: item.id,
+      ...(item.actorUserId ? { actorUserId: item.actorUserId } : {}),
+      action: item.action,
+      entityType: item.entityType,
+      ...(item.entityId ? { entityId: item.entityId } : {}),
+      ...(item.requestId ? { requestId: item.requestId } : {}),
+      result: item.result,
+      ...(this.viewerMetadata(item.metadata) ? { metadata: this.viewerMetadata(item.metadata) } : {}),
+      createdAt: item.createdAt.toISOString(),
+    })), page: query.page, pageSize: query.pageSize, total };
   }
 
   private viewerMetadata(value: unknown): Record<string, unknown> | undefined {

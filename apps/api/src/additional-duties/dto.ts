@@ -1,9 +1,73 @@
-import{Type}from'class-transformer';import{IsDateString,IsEnum,IsInt,IsOptional,IsString,IsUUID,Max,Min}from'class-validator';
-export class PageDto{@IsOptional()@Type(()=>Number)@IsInt()@Min(1)page=1;@IsOptional()@Type(()=>Number)@IsInt()@Min(1)@Max(100)pageSize=20}
-export class DefinitionDto{@IsString()code!:string;@IsString()name!:string;@IsOptional()@IsString()description?:string|null;@IsString()category!:string;@IsOptional()@Type(()=>Number)@IsInt()sortOrder?:number;@IsOptional()@IsDateString()validFrom?:string;@IsOptional()@IsDateString()validUntil?:string}
-export class UpdateDefinitionDto{@IsOptional()@IsString()code?:string;@IsOptional()@IsString()name?:string;@IsOptional()@IsString()description?:string|null;@IsOptional()@IsString()category?:string;@IsOptional()@Type(()=>Number)@IsInt()sortOrder?:number;@IsOptional()@IsDateString()validFrom?:string;@IsOptional()@IsDateString()validUntil?:string}
-export class ListDefinitionDto extends PageDto{@IsOptional()isActive?:boolean;@IsOptional()@IsString()category?:string;@IsOptional()@IsDateString()effectiveAt?:string}
-export class AssignmentDto{@IsUUID()staffProfileId!:string;@IsUUID()dutyDefinitionId!:string;@IsEnum(['SCHOOL_WIDE','SUBJECT_GROUP'])scopeType!: 'SCHOOL_WIDE'|'SUBJECT_GROUP';@IsOptional()@IsUUID()scopeResourceId?:string;@IsOptional()@IsDateString()validFrom?:string;@IsOptional()@IsDateString()validUntil?:string;@IsOptional()@IsString()note?:string}
-export class UpdateAssignmentDto{@IsOptional()@IsDateString()validFrom?:string;@IsOptional()@IsDateString()validUntil?:string;@IsOptional()@IsString()note?:string|null}
-export class EndDto{@IsOptional()@IsDateString()endAt?:string}
-export class ListAssignmentDto extends PageDto{@IsOptional()@IsUUID()staffProfileId?:string;@IsOptional()@IsUUID()dutyDefinitionId?:string;@IsOptional()@IsEnum(['SCHOOL_WIDE','SUBJECT_GROUP'])scopeType?:string;@IsOptional()@IsUUID()scopeResourceId?:string;@IsOptional()@IsDateString()activeAt?:string}
+import { Transform, Type } from 'class-transformer';
+import { IsBoolean, IsDateString, IsEnum, IsInt, IsOptional, IsString, IsUUID, Length, Max, Min, ValidateIf } from 'class-validator';
+
+export type DutyAssignmentScope = 'SCHOOL_WIDE' | 'SUBJECT_GROUP';
+const dutyScopes: DutyAssignmentScope[] = ['SCHOOL_WIDE', 'SUBJECT_GROUP'];
+const optionalValue = (_object: object, value: unknown): boolean => value !== undefined;
+const strictBoolean = ({ value }: { value: unknown }): unknown => value === 'true' ? true : value === 'false' ? false : value;
+const trim = ({ value }: { value: unknown }): unknown => typeof value === 'string' ? value.trim() : value;
+const uppercase = ({ value }: { value: unknown }): unknown => typeof value === 'string' ? value.trim().toUpperCase() : value;
+
+export class DutyPageDto {
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) page = 1;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) pageSize = 20;
+}
+
+export class CreateDefinitionDto {
+  @Transform(uppercase) @IsString() @Length(1, 50) code!: string;
+  @Transform(trim) @IsString() @Length(1, 150) name!: string;
+  @ValidateIf(optionalValue) @Transform(trim) @IsString() description?: string;
+  @Transform(trim) @IsString() @Length(1, 100) category!: string;
+  @ValidateIf(optionalValue) @Type(() => Number) @IsInt() @Min(0) sortOrder?: number;
+  @ValidateIf(optionalValue) @IsDateString() validFrom?: string;
+  @ValidateIf(optionalValue) @IsDateString() validUntil?: string;
+}
+
+export class UpdateDefinitionDto {
+  @ValidateIf(optionalValue) @Transform(uppercase) @IsString() @Length(1, 50) code?: string;
+  @ValidateIf(optionalValue) @Transform(trim) @IsString() @Length(1, 150) name?: string;
+  @IsOptional() @Transform(trim) @IsString() description?: string | null;
+  @ValidateIf(optionalValue) @Transform(trim) @IsString() @Length(1, 100) category?: string;
+  @ValidateIf(optionalValue) @Type(() => Number) @IsInt() @Min(0) sortOrder?: number;
+  @ValidateIf(optionalValue) @IsDateString() validFrom?: string;
+  @ValidateIf(optionalValue) @IsDateString() validUntil?: string;
+}
+
+export class ListDefinitionsDto extends DutyPageDto {
+  @IsOptional() @Type(() => String) @Transform(strictBoolean) @IsBoolean() isActive?: boolean;
+  @IsOptional() @IsString() category?: string;
+  @IsOptional() @IsDateString() effectiveAt?: string;
+}
+
+export class ListDefinitionOptionsDto extends DutyPageDto {
+  @IsOptional() @IsString() category?: string;
+  @IsOptional() @IsDateString() effectiveAt?: string;
+}
+
+export class CreateDutyAssignmentDto {
+  @IsUUID() staffProfileId!: string;
+  @IsUUID() dutyDefinitionId!: string;
+  @IsEnum(dutyScopes) scopeType!: DutyAssignmentScope;
+  @ValidateIf(optionalValue) @IsUUID() scopeResourceId?: string;
+  @ValidateIf(optionalValue) @IsDateString() validFrom?: string;
+  @ValidateIf(optionalValue) @IsDateString() validUntil?: string;
+  @ValidateIf(optionalValue) @IsString() note?: string;
+}
+
+export class UpdateDutyAssignmentDto {
+  @ValidateIf(optionalValue) @IsDateString() validFrom?: string;
+  @ValidateIf(optionalValue) @IsDateString() validUntil?: string;
+  @IsOptional() @IsString() note?: string | null;
+}
+
+export class EndDutyAssignmentDto {
+  @ValidateIf(optionalValue) @IsDateString() endAt?: string;
+}
+
+export class ListDutyAssignmentsDto extends DutyPageDto {
+  @IsOptional() @IsUUID() staffProfileId?: string;
+  @IsOptional() @IsUUID() dutyDefinitionId?: string;
+  @IsOptional() @IsEnum(dutyScopes) scopeType?: DutyAssignmentScope;
+  @IsOptional() @IsUUID() scopeResourceId?: string;
+  @IsOptional() @IsDateString() activeAt?: string;
+}

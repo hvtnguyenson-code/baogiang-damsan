@@ -1,13 +1,262 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import{BadRequestException,ConflictException,Injectable,NotFoundException}from'@nestjs/common';import{AuditResult,Prisma}from'@prisma/client';import{AuditService}from'../audit/audit.service';import{PrismaService}from'../prisma/prisma.service';import{RequestMeta}from'../auth/auth.types';
-@Injectable()export class AdditionalDutiesService{constructor(private prisma:PrismaService,private audit:AuditService){}private date(v?:string){const x=v?new Date(v):new Date();if(Number.isNaN(+x))throw new BadRequestException('Ngày không hợp lệ.');return x}private win(f?:string,u?:string){const validFrom=this.date(f),validUntil=u?this.date(u):null;if(validUntil&&validUntil<=validFrom)throw new BadRequestException('Khoảng thời gian không hợp lệ.');return{validFrom,validUntil}}private def(x:any){return{...x,validFrom:x.validFrom.toISOString(),validUntil:x.validUntil?.toISOString(),createdAt:x.createdAt.toISOString(),updatedAt:x.updatedAt.toISOString()}}private ass(x:any){return{...x,validFrom:x.validFrom.toISOString(),validUntil:x.validUntil?.toISOString(),createdAt:x.createdAt.toISOString(),updatedAt:x.updatedAt.toISOString()}}
- async listDefs(q:any,options=false){const at=this.date(q.effectiveAt);const where:any={...(q.category?{category:q.category}:{}),...(q.isActive===undefined?{}:{isActive:q.isActive})};if(options){where.isActive=true;where.AND=[{validFrom:{lte:at}},{OR:[{validUntil:null},{validUntil:{gt:at}}]}]}const[items,total]=await Promise.all([this.prisma.additionalDutyDefinition.findMany({where,skip:(q.page-1)*q.pageSize,take:q.pageSize,orderBy:[{sortOrder:'asc'},{code:'asc'},{id:'asc'}]}),this.prisma.additionalDutyDefinition.count({where})]);return{items:items.map(x=>this.def(x)),page:q.page,pageSize:q.pageSize,total}}
- async getDef(id:string){const x=await this.prisma.additionalDutyDefinition.findUnique({where:{id}});if(!x)throw new NotFoundException('Không tìm thấy định nghĩa.');return this.def(x)}
- async createDef(d:any,a:string,m:RequestMeta){const data={...d,code:d.code.trim().toUpperCase(),name:d.name.trim(),category:d.category.trim(),description:d.description?.trim(),sortOrder:d.sortOrder??0,...this.win(d.validFrom,d.validUntil)};if(!data.code||!data.name||!data.category)throw new BadRequestException('Dữ liệu không hợp lệ.');try{return await this.prisma.$transaction(async tx=>{const x=await tx.additionalDutyDefinition.create({data});await this.audit.write({actorUserId:a,action:'ADDITIONAL_DUTY_DEFINITION_CREATED',entityType:'AdditionalDutyDefinition',entityId:x.id,requestId:m.requestId,result:AuditResult.SUCCESS},tx);return this.def(x)})}catch(e){if(e instanceof Prisma.PrismaClientKnownRequestError&&e.code==='P2002')throw new ConflictException('Mã đã tồn tại.');throw e}}
- async updateDef(id:string,d:any,a:string,m:RequestMeta){if(!Object.keys(d).length)throw new BadRequestException('Phải có dữ liệu cập nhật.');return this.prisma.$transaction(async tx=>{const old=await tx.additionalDutyDefinition.findUnique({where:{id},include:{assignments:{select:{id:true},take:1}}});if(!old)throw new NotFoundException('Không tìm thấy định nghĩa.');if(old.assignments.length&&(d.code!==undefined||d.validFrom!==undefined||d.validUntil!==undefined))throw new ConflictException('Không thể thay đổi lịch sử đã sử dụng.');const data:any={...d};if(data.code)data.code=data.code.trim().toUpperCase();for(const k of ['name','category','description'])if(typeof data[k]==='string')data[k]=data[k].trim();if(d.validFrom!==undefined||d.validUntil!==undefined)Object.assign(data,this.win(d.validFrom??old.validFrom.toISOString(),d.validUntil===undefined?old.validUntil?.toISOString():d.validUntil));const x=await tx.additionalDutyDefinition.update({where:{id},data});await this.audit.write({actorUserId:a,action:'ADDITIONAL_DUTY_DEFINITION_UPDATED',entityType:'AdditionalDutyDefinition',entityId:id,requestId:m.requestId,result:AuditResult.SUCCESS,metadata:{changedFields:Object.keys(data)}},tx);return this.def(x)})}
- async disableDef(id:string,a:string,m:RequestMeta){return this.prisma.$transaction(async tx=>{const old=await tx.additionalDutyDefinition.findUnique({where:{id}});if(!old)throw new NotFoundException('Không tìm thấy định nghĩa.');if(!old.isActive)return this.def(old);const x=await tx.additionalDutyDefinition.update({where:{id},data:{isActive:false}});await this.audit.write({actorUserId:a,action:'ADDITIONAL_DUTY_DEFINITION_DISABLED',entityType:'AdditionalDutyDefinition',entityId:id,requestId:m.requestId,result:AuditResult.SUCCESS},tx);return this.def(x)})}
- async listAssignments(q:any){const where:any={};for(const k of['staffProfileId','dutyDefinitionId','scopeType','scopeResourceId'])if(q[k]!==undefined)where[k]=q[k];if(q.activeAt){const at=this.date(q.activeAt);where.AND=[{validFrom:{lte:at}},{OR:[{validUntil:null},{validUntil:{gt:at}}]}]}const[items,total]=await Promise.all([this.prisma.staffAdditionalDutyAssignment.findMany({where,skip:(q.page-1)*q.pageSize,take:q.pageSize,orderBy:[{validFrom:'desc'},{id:'asc'}]}),this.prisma.staffAdditionalDutyAssignment.count({where})]);return{items:items.map(x=>this.ass(x)),page:q.page,pageSize:q.pageSize,total}}
- async getAssignment(id:string){const x=await this.prisma.staffAdditionalDutyAssignment.findUnique({where:{id}});if(!x)throw new NotFoundException('Không tìm thấy phân công.');return this.ass(x)}
- async createAssignment(d:any,a:string,m:RequestMeta){const w=this.win(d.validFrom,d.validUntil);if(d.scopeType==='SCHOOL_WIDE'&&d.scopeResourceId!==undefined)throw new BadRequestException('Scope toàn trường không có resource.');if(d.scopeType==='SUBJECT_GROUP'&&!d.scopeResourceId)throw new BadRequestException('Thiếu tổ chuyên môn.');const[staff,def,group]=await Promise.all([this.prisma.staffProfile.findUnique({where:{id:d.staffProfileId}}),this.prisma.additionalDutyDefinition.findUnique({where:{id:d.dutyDefinitionId}}),d.scopeResourceId?this.prisma.subjectGroup.findUnique({where:{id:d.scopeResourceId}}):null]);if(!staff||!def|| (d.scopeType==='SUBJECT_GROUP'&&!group))throw new NotFoundException('Không tìm thấy tham chiếu.');if(!def.isActive||(def.validFrom>w.validFrom)||(def.validUntil&&(!w.validUntil||w.validUntil>def.validUntil))||(group&&group.status!=='ACTIVE'))throw new ConflictException('Tham chiếu không còn hiệu lực.');try{return await this.prisma.$transaction(async tx=>{const x=await tx.staffAdditionalDutyAssignment.create({data:{...d,...w,scopeResourceId:d.scopeResourceId??null,createdByUserId:a}});await this.audit.write({actorUserId:a,action:'STAFF_ADDITIONAL_DUTY_ASSIGNED',entityType:'StaffAdditionalDutyAssignment',entityId:x.id,requestId:m.requestId,result:AuditResult.SUCCESS},tx);return this.ass(x)})}catch(e){if(e instanceof Prisma.PrismaClientKnownRequestError&&(e.code==='P2002'||e.code==='P2010'))throw new ConflictException('Phân công trùng hoặc chồng lấn.');throw e}}
- async updateAssignment(id:string,d:any,a:string,m:RequestMeta){if(!Object.keys(d).length)throw new BadRequestException('Phải có dữ liệu cập nhật.');return this.prisma.$transaction(async tx=>{const old=await tx.staffAdditionalDutyAssignment.findUnique({where:{id},include:{dutyDefinition:true}});if(!old)throw new NotFoundException('Không tìm thấy phân công.');if(d.validUntil===null)throw new BadRequestException('Không thể mở lại lịch sử.');const w=this.win(d.validFrom??old.validFrom.toISOString(),d.validUntil===undefined?old.validUntil?.toISOString():d.validUntil);if(w.validFrom<old.dutyDefinition.validFrom||(old.dutyDefinition.validUntil&&(!w.validUntil||w.validUntil>old.dutyDefinition.validUntil)))throw new ConflictException('Ngoài hiệu lực định nghĩa.');const x=await tx.staffAdditionalDutyAssignment.update({where:{id},data:{...w,...(d.note!==undefined?{note:d.note}:{})}});await this.audit.write({actorUserId:a,action:'STAFF_ADDITIONAL_DUTY_UPDATED',entityType:'StaffAdditionalDutyAssignment',entityId:id,requestId:m.requestId,result:AuditResult.SUCCESS},tx);return this.ass(x)})}
- async endAssignment(id:string,d:any,a:string,m:RequestMeta){return this.prisma.$transaction(async tx=>{const old=await tx.staffAdditionalDutyAssignment.findUnique({where:{id}});if(!old)throw new NotFoundException('Không tìm thấy phân công.');if(old.validUntil)return this.ass(old);const end=this.date(d.endAt);if(end<=old.validFrom)throw new BadRequestException('Ngày kết thúc không hợp lệ.');const x=await tx.staffAdditionalDutyAssignment.update({where:{id},data:{validUntil:end}});await this.audit.write({actorUserId:a,action:'STAFF_ADDITIONAL_DUTY_ENDED',entityType:'StaffAdditionalDutyAssignment',entityId:id,requestId:m.requestId,result:AuditResult.SUCCESS},tx);return this.ass(x)})}}
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { AdditionalDutyDefinition, AuditResult, Prisma, StaffAdditionalDutyAssignment } from '@prisma/client';
+import {
+  AdditionalDutyDefinitionListResponse,
+  AdditionalDutyDefinitionOptionsResponse,
+  AdditionalDutyDefinitionRecord,
+  StaffAdditionalDutyAssignmentListResponse,
+  StaffAdditionalDutyAssignmentRecord,
+} from '@baogiang/contracts';
+import { AuditService } from '../audit/audit.service';
+import { RequestMeta } from '../auth/auth.types';
+import { PrismaService } from '../prisma/prisma.service';
+import {
+  CreateDefinitionDto,
+  CreateDutyAssignmentDto,
+  EndDutyAssignmentDto,
+  ListDefinitionOptionsDto,
+  ListDefinitionsDto,
+  ListDutyAssignmentsDto,
+  UpdateDefinitionDto,
+  UpdateDutyAssignmentDto,
+} from './dto';
+
+const DUTY_ASSIGNMENT_CONSTRAINT = 'staff_duty_assignments_no_overlap';
+
+function parseWindow(validFrom?: string, validUntil?: string): { validFrom: Date; validUntil: Date | null } {
+  const from = validFrom ? new Date(validFrom) : new Date();
+  const until = validUntil ? new Date(validUntil) : null;
+  if (Number.isNaN(from.getTime()) || (until && Number.isNaN(until.getTime())) || (until && until <= from)) {
+    throw new BadRequestException('Khoảng thời gian không hợp lệ.');
+  }
+  return { validFrom: from, validUntil: until };
+}
+
+function isAssignmentConflict(error: unknown): boolean {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false;
+  if (error.code === 'P2002') return true;
+  if (error.code !== 'P2004') return false;
+  return JSON.stringify(error.meta ?? {}).includes(DUTY_ASSIGNMENT_CONSTRAINT) || error.message.includes(DUTY_ASSIGNMENT_CONSTRAINT);
+}
+
+export function toDefinitionRecord(row: AdditionalDutyDefinition): AdditionalDutyDefinitionRecord {
+  return {
+    id: row.id,
+    code: row.code,
+    name: row.name,
+    ...(row.description ? { description: row.description } : {}),
+    category: row.category,
+    isActive: row.isActive,
+    sortOrder: row.sortOrder,
+    validFrom: row.validFrom.toISOString(),
+    ...(row.validUntil ? { validUntil: row.validUntil.toISOString() } : {}),
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+export function toDutyAssignmentRecord(row: StaffAdditionalDutyAssignment): StaffAdditionalDutyAssignmentRecord {
+  return {
+    id: row.id,
+    staffProfileId: row.staffProfileId,
+    dutyDefinitionId: row.dutyDefinitionId,
+    scopeType: row.scopeType as StaffAdditionalDutyAssignmentRecord['scopeType'],
+    ...(row.scopeResourceId ? { scopeResourceId: row.scopeResourceId } : {}),
+    validFrom: row.validFrom.toISOString(),
+    ...(row.validUntil ? { validUntil: row.validUntil.toISOString() } : {}),
+    ...(row.note ? { note: row.note } : {}),
+    createdByUserId: row.createdByUserId,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+@Injectable()
+export class AdditionalDutiesService {
+  constructor(private readonly prisma: PrismaService, private readonly audit: AuditService) {}
+
+  async listDefinitions(query: ListDefinitionsDto): Promise<AdditionalDutyDefinitionListResponse> {
+    const effectiveAt = query.effectiveAt ? new Date(query.effectiveAt) : undefined;
+    const where: Prisma.AdditionalDutyDefinitionWhereInput = {
+      ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
+      ...(query.category ? { category: query.category } : {}),
+      ...(effectiveAt ? { AND: [{ validFrom: { lte: effectiveAt } }, { OR: [{ validUntil: null }, { validUntil: { gt: effectiveAt } }] }] } : {}),
+    };
+    return this.definitionPage(where, query.page, query.pageSize);
+  }
+
+  async listOptions(query: ListDefinitionOptionsDto): Promise<AdditionalDutyDefinitionOptionsResponse> {
+    const effectiveAt = query.effectiveAt ? new Date(query.effectiveAt) : new Date();
+    const where: Prisma.AdditionalDutyDefinitionWhereInput = {
+      isActive: true,
+      ...(query.category ? { category: query.category } : {}),
+      AND: [{ validFrom: { lte: effectiveAt } }, { OR: [{ validUntil: null }, { validUntil: { gt: effectiveAt } }] }],
+    };
+    return this.definitionPage(where, query.page, query.pageSize);
+  }
+
+  async getDefinition(id: string): Promise<AdditionalDutyDefinitionRecord> {
+    const row = await this.prisma.additionalDutyDefinition.findUnique({ where: { id } });
+    if (!row) throw new NotFoundException('Không tìm thấy định nghĩa kiêm nhiệm.');
+    return toDefinitionRecord(row);
+  }
+
+  async createDefinition(dto: CreateDefinitionDto, actor: string, meta: RequestMeta): Promise<AdditionalDutyDefinitionRecord> {
+    const window = parseWindow(dto.validFrom, dto.validUntil);
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const row = await tx.additionalDutyDefinition.create({
+          data: { code: dto.code, name: dto.name, ...(dto.description !== undefined ? { description: dto.description } : {}), category: dto.category, sortOrder: dto.sortOrder ?? 0, ...window },
+        });
+        await this.audit.write({ actorUserId: actor, action: 'ADDITIONAL_DUTY_DEFINITION_CREATED', entityType: 'AdditionalDutyDefinition', entityId: row.id, requestId: meta.requestId, result: AuditResult.SUCCESS, metadata: { code: row.code, category: row.category } }, tx);
+        return toDefinitionRecord(row);
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException('Mã kiêm nhiệm đã tồn tại.');
+      throw error;
+    }
+  }
+
+  async updateDefinition(id: string, dto: UpdateDefinitionDto, actor: string, meta: RequestMeta): Promise<AdditionalDutyDefinitionRecord> {
+    if (Object.keys(dto).length === 0) throw new BadRequestException('Phải có dữ liệu cập nhật.');
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const old = await tx.additionalDutyDefinition.findUnique({ where: { id }, include: { assignments: { select: { id: true }, take: 1 } } });
+        if (!old) throw new NotFoundException('Không tìm thấy định nghĩa kiêm nhiệm.');
+        if (old.assignments.length > 0 && (dto.code !== undefined || dto.validFrom !== undefined || dto.validUntil !== undefined)) {
+          throw new ConflictException('Không thể thay đổi code hoặc hiệu lực của định nghĩa đã được sử dụng.');
+        }
+        const window = dto.validFrom !== undefined || dto.validUntil !== undefined
+          ? parseWindow(dto.validFrom ?? old.validFrom.toISOString(), dto.validUntil ?? old.validUntil?.toISOString())
+          : undefined;
+        const row = await tx.additionalDutyDefinition.update({
+          where: { id },
+          data: {
+            ...(dto.code !== undefined ? { code: dto.code } : {}),
+            ...(dto.name !== undefined ? { name: dto.name } : {}),
+            ...(dto.description !== undefined ? { description: dto.description } : {}),
+            ...(dto.category !== undefined ? { category: dto.category } : {}),
+            ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {}),
+            ...window,
+          },
+        });
+        await this.audit.write({ actorUserId: actor, action: 'ADDITIONAL_DUTY_DEFINITION_UPDATED', entityType: 'AdditionalDutyDefinition', entityId: id, requestId: meta.requestId, result: AuditResult.SUCCESS, metadata: { changedFields: Object.keys(dto) } }, tx);
+        return toDefinitionRecord(row);
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException('Mã kiêm nhiệm đã tồn tại.');
+      throw error;
+    }
+  }
+
+  async disableDefinition(id: string, actor: string, meta: RequestMeta): Promise<AdditionalDutyDefinitionRecord> {
+    return this.prisma.$transaction(async (tx) => {
+      const old = await tx.additionalDutyDefinition.findUnique({ where: { id } });
+      if (!old) throw new NotFoundException('Không tìm thấy định nghĩa kiêm nhiệm.');
+      if (!old.isActive) return toDefinitionRecord(old);
+      const row = await tx.additionalDutyDefinition.update({ where: { id }, data: { isActive: false } });
+      await this.audit.write({ actorUserId: actor, action: 'ADDITIONAL_DUTY_DEFINITION_DISABLED', entityType: 'AdditionalDutyDefinition', entityId: id, requestId: meta.requestId, result: AuditResult.SUCCESS, metadata: { previousIsActive: true, newIsActive: false } }, tx);
+      return toDefinitionRecord(row);
+    });
+  }
+
+  async listAssignments(query: ListDutyAssignmentsDto, authorizationWhere: Prisma.StaffAdditionalDutyAssignmentWhereInput): Promise<StaffAdditionalDutyAssignmentListResponse> {
+    const activeAt = query.activeAt ? new Date(query.activeAt) : undefined;
+    const where: Prisma.StaffAdditionalDutyAssignmentWhereInput = {
+      AND: [
+        authorizationWhere,
+        {
+          ...(query.staffProfileId ? { staffProfileId: query.staffProfileId } : {}),
+          ...(query.dutyDefinitionId ? { dutyDefinitionId: query.dutyDefinitionId } : {}),
+          ...(query.scopeType ? { scopeType: query.scopeType } : {}),
+          ...(query.scopeResourceId ? { scopeResourceId: query.scopeResourceId } : {}),
+          ...(activeAt ? { AND: [{ validFrom: { lte: activeAt } }, { OR: [{ validUntil: null }, { validUntil: { gt: activeAt } }] }] } : {}),
+        },
+      ],
+    };
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.staffAdditionalDutyAssignment.findMany({ where, skip: (query.page - 1) * query.pageSize, take: query.pageSize, orderBy: [{ validFrom: 'desc' }, { id: 'asc' }] }),
+      this.prisma.staffAdditionalDutyAssignment.count({ where }),
+    ]);
+    return { items: items.map(toDutyAssignmentRecord), page: query.page, pageSize: query.pageSize, total };
+  }
+
+  async getAssignmentScope(id: string): Promise<Pick<StaffAdditionalDutyAssignment, 'scopeType' | 'scopeResourceId'>> {
+    const row = await this.prisma.staffAdditionalDutyAssignment.findUnique({ where: { id }, select: { scopeType: true, scopeResourceId: true } });
+    if (!row) throw new NotFoundException('Không tìm thấy phân công kiêm nhiệm.');
+    return row;
+  }
+
+  async getAssignment(id: string): Promise<StaffAdditionalDutyAssignmentRecord> {
+    const row = await this.prisma.staffAdditionalDutyAssignment.findUnique({ where: { id } });
+    if (!row) throw new NotFoundException('Không tìm thấy phân công kiêm nhiệm.');
+    return toDutyAssignmentRecord(row);
+  }
+
+  async createAssignment(dto: CreateDutyAssignmentDto, actor: string, meta: RequestMeta): Promise<StaffAdditionalDutyAssignmentRecord> {
+    const window = parseWindow(dto.validFrom, dto.validUntil);
+    if (dto.scopeType === 'SCHOOL_WIDE' && dto.scopeResourceId !== undefined) throw new BadRequestException('Scope toàn trường không có resource.');
+    if (dto.scopeType === 'SUBJECT_GROUP' && !dto.scopeResourceId) throw new BadRequestException('Thiếu tổ chuyên môn.');
+    const [staff, definition, group] = await Promise.all([
+      this.prisma.staffProfile.findUnique({ where: { id: dto.staffProfileId }, select: { id: true } }),
+      this.prisma.additionalDutyDefinition.findUnique({ where: { id: dto.dutyDefinitionId } }),
+      dto.scopeType === 'SUBJECT_GROUP' ? this.prisma.subjectGroup.findUnique({ where: { id: dto.scopeResourceId! }, select: { status: true } }) : Promise.resolve(null),
+    ]);
+    if (!staff || !definition || (dto.scopeType === 'SUBJECT_GROUP' && !group)) throw new NotFoundException('Không tìm thấy tham chiếu phân công.');
+    if (!definition.isActive || definition.validFrom > window.validFrom || (definition.validUntil && window.validFrom >= definition.validUntil) || (definition.validUntil && (!window.validUntil || window.validUntil > definition.validUntil))) {
+      throw new ConflictException('Phân công nằm ngoài hiệu lực định nghĩa.');
+    }
+    if (group && group.status !== 'ACTIVE') throw new ConflictException('Tổ chuyên môn không hoạt động.');
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const row = await tx.staffAdditionalDutyAssignment.create({ data: { staffProfileId: dto.staffProfileId, dutyDefinitionId: dto.dutyDefinitionId, scopeType: dto.scopeType, scopeResourceId: dto.scopeResourceId ?? null, ...window, ...(dto.note !== undefined ? { note: dto.note } : {}), createdByUserId: actor } });
+        await this.audit.write({ actorUserId: actor, action: 'STAFF_ADDITIONAL_DUTY_ASSIGNED', entityType: 'StaffAdditionalDutyAssignment', entityId: row.id, requestId: meta.requestId, result: AuditResult.SUCCESS, metadata: { staffProfileId: row.staffProfileId, dutyDefinitionId: row.dutyDefinitionId, scopeType: row.scopeType, ...(row.scopeResourceId ? { scopeResourceId: row.scopeResourceId } : {}) } }, tx);
+        return toDutyAssignmentRecord(row);
+      });
+    } catch (error) {
+      if (isAssignmentConflict(error)) throw new ConflictException('Phân công trùng hoặc chồng lấn thời gian.');
+      throw error;
+    }
+  }
+
+  async updateAssignment(id: string, dto: UpdateDutyAssignmentDto, actor: string, meta: RequestMeta): Promise<StaffAdditionalDutyAssignmentRecord> {
+    if (Object.keys(dto).length === 0) throw new BadRequestException('Phải có dữ liệu cập nhật.');
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const old = await tx.staffAdditionalDutyAssignment.findUnique({ where: { id }, include: { dutyDefinition: true } });
+        if (!old) throw new NotFoundException('Không tìm thấy phân công kiêm nhiệm.');
+        const window = parseWindow(dto.validFrom ?? old.validFrom.toISOString(), dto.validUntil ?? old.validUntil?.toISOString());
+        if (window.validFrom < old.dutyDefinition.validFrom || (old.dutyDefinition.validUntil && (!window.validUntil || window.validUntil > old.dutyDefinition.validUntil))) {
+          throw new ConflictException('Phân công nằm ngoài hiệu lực định nghĩa.');
+        }
+        const row = await tx.staffAdditionalDutyAssignment.update({ where: { id }, data: { ...window, ...(dto.note !== undefined ? { note: dto.note } : {}) } });
+        await this.audit.write({ actorUserId: actor, action: 'STAFF_ADDITIONAL_DUTY_UPDATED', entityType: 'StaffAdditionalDutyAssignment', entityId: id, requestId: meta.requestId, result: AuditResult.SUCCESS, metadata: { changedFields: Object.keys(dto) } }, tx);
+        return toDutyAssignmentRecord(row);
+      });
+    } catch (error) {
+      if (isAssignmentConflict(error)) throw new ConflictException('Phân công trùng hoặc chồng lấn thời gian.');
+      throw error;
+    }
+  }
+
+  async endAssignment(id: string, dto: EndDutyAssignmentDto, actor: string, meta: RequestMeta): Promise<StaffAdditionalDutyAssignmentRecord> {
+    return this.prisma.$transaction(async (tx) => {
+      const old = await tx.staffAdditionalDutyAssignment.findUnique({ where: { id } });
+      if (!old) throw new NotFoundException('Không tìm thấy phân công kiêm nhiệm.');
+      if (old.validUntil) return toDutyAssignmentRecord(old);
+      const endAt = dto.endAt ? new Date(dto.endAt) : new Date();
+      if (endAt <= old.validFrom) throw new BadRequestException('Thời điểm kết thúc không hợp lệ.');
+      const row = await tx.staffAdditionalDutyAssignment.update({ where: { id }, data: { validUntil: endAt } });
+      await this.audit.write({ actorUserId: actor, action: 'STAFF_ADDITIONAL_DUTY_ENDED', entityType: 'StaffAdditionalDutyAssignment', entityId: id, requestId: meta.requestId, result: AuditResult.SUCCESS, metadata: { previousValidUntil: null, newValidUntil: endAt.toISOString() } }, tx);
+      return toDutyAssignmentRecord(row);
+    });
+  }
+
+  private async definitionPage(where: Prisma.AdditionalDutyDefinitionWhereInput, page: number, pageSize: number): Promise<AdditionalDutyDefinitionListResponse> {
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.additionalDutyDefinition.findMany({ where, skip: (page - 1) * pageSize, take: pageSize, orderBy: [{ sortOrder: 'asc' }, { code: 'asc' }, { id: 'asc' }] }),
+      this.prisma.additionalDutyDefinition.count({ where }),
+    ]);
+    return { items: items.map(toDefinitionRecord), page, pageSize, total };
+  }
+}

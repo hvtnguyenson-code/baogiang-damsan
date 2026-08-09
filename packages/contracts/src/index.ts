@@ -323,6 +323,27 @@ export interface StaffAdditionalDutyAssignmentRecord extends ValidityWindow {
   updatedAt: string;
 }
 
+export interface AdditionalDutyDefinitionListResponse {
+  items: AdditionalDutyDefinitionRecord[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+export interface AdditionalDutyDefinitionOptionsResponse {
+  items: AdditionalDutyDefinitionRecord[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+export interface StaffAdditionalDutyAssignmentListResponse {
+  items: StaffAdditionalDutyAssignmentRecord[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
 // ============================================================
 // Notification Contracts (foundation types for Phase 03+)
 // ============================================================
