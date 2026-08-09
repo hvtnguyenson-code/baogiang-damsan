@@ -21,7 +21,7 @@ integration('Additional duties API (isolated PostgreSQL integration)', () => {
       h.prisma.subjectGroup.create({ data: { code: normalizedCode('GB', 5), name: 'Group B' } }),
     ]);
     const staff = await h.prisma.user.create({ data: { username: `staff-${crypto.randomUUID()}`, passwordHash: 'fixture', profile: { create: { displayName: 'Staff' } } }, include: { profile: true } });
-    const definition = await h.prisma.additionalDutyDefinition.create({ data: { code: normalizedCode('D', 6), name: 'Duty', category: 'LEADERSHIP', validFrom: new Date('2026-01-01'), validUntil: new Date('2028-01-01') } });
+    const definition = await h.prisma.additionalDutyDefinition.create({ data: { code: normalizedCode('D', 6), name: 'Duty', category: 'LEADERSHIP', validFrom: new Date('2026-01-01') } });
     return { groupA: groupA.id, groupB: groupB.id, staffProfileId: staff.profile!.id, definitionId: definition.id };
   }
 
@@ -99,6 +99,18 @@ integration('Additional duties API (isolated PostgreSQL integration)', () => {
     expect((await group.agent.get(`/api/staff-additional-duty-assignments/${schoolWide.body.id as string}`)).status).toBe(403);
   });
 
+  it('rejects assignments that extend beyond a bounded definition', async () => {
+    const refs = await fixtures();
+    const manager = await h.actor({ grants: [{ capabilityKey: 'ADDITIONAL_DUTY_ASSIGNMENT_MANAGE' }] });
+    const boundedDefinition = await h.prisma.additionalDutyDefinition.create({ data: {
+      code: normalizedCode('BOUND', 6), name: 'Bounded Duty', category: 'LEADERSHIP', validFrom: new Date('2026-01-01'), validUntil: new Date('2026-07-01'),
+    } });
+    const payload = { staffProfileId: refs.staffProfileId, dutyDefinitionId: boundedDefinition.id, scopeType: 'SUBJECT_GROUP', scopeResourceId: refs.groupA, validFrom: '2026-06-01' };
+
+    expect((await manager.agent.post('/api/staff-additional-duty-assignments').set('Origin', testOrigin).send({ ...payload, validUntil: '2026-08-01' })).status).toBe(409);
+    expect((await manager.agent.post('/api/staff-additional-duty-assignments').set('Origin', testOrigin).send(payload)).status).toBe(409);
+  });
+
   it('rejects overlap, permits adjacency, rolls back PATCH and ends after catalogs become inactive', async () => {
     const refs = await fixtures();
     const manager = await h.actor({ grants: [{ capabilityKey: 'ADDITIONAL_DUTY_ASSIGNMENT_MANAGE' }] });
@@ -139,7 +151,7 @@ integration('Additional duties API (isolated PostgreSQL integration)', () => {
   it('writes all six deterministic definition and assignment audits with complete metadata', async () => {
     const refs = await fixtures();
     const manager = await h.actor({ grants: [{ capabilityKey: 'ADDITIONAL_DUTY_CATALOG_MANAGE' }, { capabilityKey: 'ADDITIONAL_DUTY_ASSIGNMENT_MANAGE' }] });
-    const created = await manager.agent.post('/api/additional-duty-definitions').set('Origin', testOrigin).set('X-Request-Id', 'd-create').send({ code: 'AUDIT_DUTY', name: 'Audit Duty', category: 'AUDIT', validFrom: '2026-01-01', validUntil: '2028-01-01' });
+    const created = await manager.agent.post('/api/additional-duty-definitions').set('Origin', testOrigin).set('X-Request-Id', 'd-create').send({ code: 'AUDIT_DUTY', name: 'Audit Duty', category: 'AUDIT', validFrom: '2026-01-01' });
     await manager.agent.patch(`/api/additional-duty-definitions/${created.body.id as string}`).set('Origin', testOrigin).set('X-Request-Id', 'd-update').send({ name: 'Audit Duty Updated' });
     const assignment = await manager.agent.post('/api/staff-additional-duty-assignments').set('Origin', testOrigin).set('X-Request-Id', 'a-create').send({ staffProfileId: refs.staffProfileId, dutyDefinitionId: created.body.id, scopeType: 'SUBJECT_GROUP', scopeResourceId: refs.groupA, validFrom: '2026-06-01' });
     await manager.agent.patch(`/api/staff-additional-duty-assignments/${assignment.body.id as string}`).set('Origin', testOrigin).set('X-Request-Id', 'a-update').send({ note: 'Updated' });
