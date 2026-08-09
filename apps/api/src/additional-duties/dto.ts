@@ -1,0 +1,9 @@
+import{Type}from'class-transformer';import{IsDateString,IsEnum,IsInt,IsOptional,IsString,IsUUID,Max,Min}from'class-validator';
+export class PageDto{@IsOptional()@Type(()=>Number)@IsInt()@Min(1)page=1;@IsOptional()@Type(()=>Number)@IsInt()@Min(1)@Max(100)pageSize=20}
+export class DefinitionDto{@IsString()code!:string;@IsString()name!:string;@IsOptional()@IsString()description?:string|null;@IsString()category!:string;@IsOptional()@Type(()=>Number)@IsInt()sortOrder?:number;@IsOptional()@IsDateString()validFrom?:string;@IsOptional()@IsDateString()validUntil?:string}
+export class UpdateDefinitionDto{@IsOptional()@IsString()code?:string;@IsOptional()@IsString()name?:string;@IsOptional()@IsString()description?:string|null;@IsOptional()@IsString()category?:string;@IsOptional()@Type(()=>Number)@IsInt()sortOrder?:number;@IsOptional()@IsDateString()validFrom?:string;@IsOptional()@IsDateString()validUntil?:string}
+export class ListDefinitionDto extends PageDto{@IsOptional()isActive?:boolean;@IsOptional()@IsString()category?:string;@IsOptional()@IsDateString()effectiveAt?:string}
+export class AssignmentDto{@IsUUID()staffProfileId!:string;@IsUUID()dutyDefinitionId!:string;@IsEnum(['SCHOOL_WIDE','SUBJECT_GROUP'])scopeType!: 'SCHOOL_WIDE'|'SUBJECT_GROUP';@IsOptional()@IsUUID()scopeResourceId?:string;@IsOptional()@IsDateString()validFrom?:string;@IsOptional()@IsDateString()validUntil?:string;@IsOptional()@IsString()note?:string}
+export class UpdateAssignmentDto{@IsOptional()@IsDateString()validFrom?:string;@IsOptional()@IsDateString()validUntil?:string;@IsOptional()@IsString()note?:string|null}
+export class EndDto{@IsOptional()@IsDateString()endAt?:string}
+export class ListAssignmentDto extends PageDto{@IsOptional()@IsUUID()staffProfileId?:string;@IsOptional()@IsUUID()dutyDefinitionId?:string;@IsOptional()@IsEnum(['SCHOOL_WIDE','SUBJECT_GROUP'])scopeType?:string;@IsOptional()@IsUUID()scopeResourceId?:string;@IsOptional()@IsDateString()activeAt?:string}
