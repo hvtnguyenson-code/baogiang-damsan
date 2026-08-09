@@ -49,22 +49,17 @@ async function assertAtMobileWidths(page: Page, selectors: string[]) {
 }
 
 async function selectOptionMatching(select: Locator, pattern: RegExp) {
-  const options = select.locator('option');
-  const optionCount = await options.count();
+  const matchingOptions = select.locator('option').filter({ hasText: pattern });
 
-  for (let index = 0; index < optionCount; index += 1) {
-    const option = options.nth(index);
-    const optionText = (await option.textContent()) ?? '';
-    pattern.lastIndex = 0;
-    if (!pattern.test(optionText)) continue;
+  await expect(
+    matchingOptions,
+    `Expected exactly one selectable option matching ${pattern}`,
+  ).toHaveCount(1);
 
-    const value = await option.getAttribute('value');
-    if (!value) throw new Error(`Option matching ${pattern} has no selectable value.`);
-    await select.selectOption(value);
-    return;
-  }
+  const value = await matchingOptions.getAttribute('value');
+  if (!value) throw new Error(`Option matching ${pattern} has no selectable value.`);
 
-  throw new Error(`No option matching ${pattern} was found.`);
+  await select.selectOption(value);
 }
 
 test('public system status is usable and exposes only safe recovery details', async ({ page }) => {
