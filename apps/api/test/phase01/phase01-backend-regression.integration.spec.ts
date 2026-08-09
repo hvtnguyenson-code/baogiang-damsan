@@ -1,4 +1,4 @@
-import { Phase01Harness, integration, testOrigin } from '../helpers/phase01-test-harness';
+import { normalizedCode, Phase01Harness, integration, testOrigin } from '../helpers/phase01-test-harness';
 
 integration('Phase 01 backend cross-domain preservation (isolated PostgreSQL integration)', () => {
   const h = new Phase01Harness();
@@ -23,9 +23,9 @@ integration('Phase 01 backend cross-domain preservation (isolated PostgreSQL int
       { capabilityKey: 'CAPABILITY_GRANT' }, { capabilityKey: 'ADDITIONAL_DUTY_CATALOG_MANAGE' }, { capabilityKey: 'ADDITIONAL_DUTY_ASSIGNMENT_MANAGE' },
     ] });
     const target = await h.prisma.user.create({ data: { username: `history-${crypto.randomUUID()}`, passwordHash: 'fixture', status: 'ACTIVE', mustChangePassword: false, profile: { create: { displayName: 'History' } } }, include: { profile: true } });
-    const group = await h.prisma.subjectGroup.create({ data: { code: `HG${crypto.randomUUID().slice(0, 5)}`, name: 'History group' } });
-    const subject = await h.prisma.subject.create({ data: { code: `HS${crypto.randomUUID().slice(0, 5)}`, name: 'History subject' } });
-    const definition = await h.prisma.additionalDutyDefinition.create({ data: { code: `HD${crypto.randomUUID().slice(0, 5)}`, name: 'History duty', category: 'HISTORY', validFrom: new Date('2026-01-01') } });
+    const group = await h.prisma.subjectGroup.create({ data: { code: normalizedCode('HG', 5), name: 'History group' } });
+    const subject = await h.prisma.subject.create({ data: { code: normalizedCode('HS', 5), name: 'History subject' } });
+    const definition = await h.prisma.additionalDutyDefinition.create({ data: { code: normalizedCode('HD', 5), name: 'History duty', category: 'HISTORY', validFrom: new Date('2026-01-01') } });
     const membership = await h.prisma.subjectGroupMembership.create({ data: { userId: target.id, subjectGroupId: group.id, validFrom: new Date('2026-01-01') } });
     const staffSubject = await h.prisma.staffSubject.create({ data: { userId: target.id, subjectId: subject.id, validFrom: new Date('2026-01-01') } });
     const grant = await h.prisma.capabilityGrant.create({ data: { userId: target.id, capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL', validFrom: new Date('2026-01-01'), grantedByUserId: actor.id } });

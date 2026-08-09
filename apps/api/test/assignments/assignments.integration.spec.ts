@@ -1,6 +1,6 @@
 import request from 'supertest';
 import { AssignmentsService } from '../../src/assignments/assignments.service';
-import { Phase01Harness, integration, testOrigin } from '../helpers/phase01-test-harness';
+import { normalizedCode, Phase01Harness, integration, testOrigin } from '../helpers/phase01-test-harness';
 
 integration('Assignments API (isolated PostgreSQL integration)', () => {
   const h = new Phase01Harness();
@@ -18,8 +18,8 @@ integration('Assignments API (isolated PostgreSQL integration)', () => {
 
   async function references(): Promise<{ userId: string; groupId: string; subjectId: string }> {
     const user = await h.prisma.user.create({ data: { username: `target-${crypto.randomUUID()}`, passwordHash: 'fixture' } });
-    const group = await h.prisma.subjectGroup.create({ data: { code: `G${crypto.randomUUID().slice(0, 6)}`, name: 'Group' } });
-    const subject = await h.prisma.subject.create({ data: { code: `S${crypto.randomUUID().slice(0, 6)}`, name: 'Subject' } });
+    const group = await h.prisma.subjectGroup.create({ data: { code: normalizedCode('G', 6), name: 'Group' } });
+    const subject = await h.prisma.subject.create({ data: { code: normalizedCode('S', 6), name: 'Subject' } });
     return { userId: user.id, groupId: group.id, subjectId: subject.id };
   }
 

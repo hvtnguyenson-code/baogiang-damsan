@@ -37,10 +37,15 @@ function parseWindow(validFrom?: string, validUntil?: string): { validFrom: Date
 }
 
 function isTemporalConflict(error: unknown, constraint: string): boolean {
-  if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false;
-  if (error.code === 'P2002') return true;
-  if (error.code !== 'P2004') return false;
-  return JSON.stringify(error.meta ?? {}).includes(constraint) || error.message.includes(constraint);
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    if (error.code === 'P2002') return true;
+    return error.code === 'P2004' && matchesConstraint(error.message, error.meta, constraint);
+  }
+  return error instanceof Prisma.PrismaClientUnknownRequestError && error.message.includes(constraint);
+}
+
+function matchesConstraint(message: string, metadata: unknown, constraint: string): boolean {
+  return message.includes(constraint) || JSON.stringify(metadata ?? {}).includes(constraint);
 }
 
 export function toMembershipRecord(row: SubjectGroupMembership): SubjectGroupMembershipRecord {

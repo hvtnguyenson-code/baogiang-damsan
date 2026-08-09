@@ -16,10 +16,15 @@ import { CreateGrantDto, ListCapabilitiesDto, ListGrantsDto, RevokeGrantDto } fr
 const CAPABILITY_GRANT_CONSTRAINT = 'capability_grants_no_active_overlap';
 
 function isGrantConflict(error: unknown): boolean {
-  if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false;
-  if (error.code === 'P2002') return true;
-  if (error.code !== 'P2004') return false;
-  return JSON.stringify(error.meta ?? {}).includes(CAPABILITY_GRANT_CONSTRAINT) || error.message.includes(CAPABILITY_GRANT_CONSTRAINT);
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    if (error.code === 'P2002') return true;
+    return error.code === 'P2004' && matchesConstraint(error.message, error.meta, CAPABILITY_GRANT_CONSTRAINT);
+  }
+  return error instanceof Prisma.PrismaClientUnknownRequestError && error.message.includes(CAPABILITY_GRANT_CONSTRAINT);
+}
+
+function matchesConstraint(message: string, metadata: unknown, constraint: string): boolean {
+  return message.includes(constraint) || JSON.stringify(metadata ?? {}).includes(constraint);
 }
 
 export function toCapabilityDefinitionRecord(row: CapabilityDefinition): CapabilityDefinitionRecord {

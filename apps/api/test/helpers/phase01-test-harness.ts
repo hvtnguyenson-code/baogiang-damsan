@@ -10,6 +10,10 @@ export const integration = testDatabaseUrl ? describe : describe.skip;
 export const testOrigin = 'http://127.0.0.1:5173';
 export const testPassword = 'Phase01BackendPassword9';
 
+export function normalizedCode(prefix: string, length = 8): string {
+  return `${prefix}${crypto.randomUUID().replaceAll('-', '').slice(0, length).toUpperCase()}`;
+}
+
 export interface TestGrant {
   capabilityKey: string;
   scopeType?: string;

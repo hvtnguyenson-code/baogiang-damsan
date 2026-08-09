@@ -33,10 +33,15 @@ function parseWindow(validFrom?: string, validUntil?: string): { validFrom: Date
 }
 
 function isAssignmentConflict(error: unknown): boolean {
-  if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false;
-  if (error.code === 'P2002') return true;
-  if (error.code !== 'P2004') return false;
-  return JSON.stringify(error.meta ?? {}).includes(DUTY_ASSIGNMENT_CONSTRAINT) || error.message.includes(DUTY_ASSIGNMENT_CONSTRAINT);
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    if (error.code === 'P2002') return true;
+    return error.code === 'P2004' && matchesConstraint(error.message, error.meta, DUTY_ASSIGNMENT_CONSTRAINT);
+  }
+  return error instanceof Prisma.PrismaClientUnknownRequestError && error.message.includes(DUTY_ASSIGNMENT_CONSTRAINT);
+}
+
+function matchesConstraint(message: string, metadata: unknown, constraint: string): boolean {
+  return message.includes(constraint) || JSON.stringify(metadata ?? {}).includes(constraint);
 }
 
 export function toDefinitionRecord(row: AdditionalDutyDefinition): AdditionalDutyDefinitionRecord {

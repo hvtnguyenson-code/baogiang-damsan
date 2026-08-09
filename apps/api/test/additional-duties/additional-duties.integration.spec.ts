@@ -1,6 +1,6 @@
 import request from 'supertest';
 import { AdditionalDutiesService } from '../../src/additional-duties/additional-duties.service';
-import { Phase01Harness, integration, testOrigin } from '../helpers/phase01-test-harness';
+import { normalizedCode, Phase01Harness, integration, testOrigin } from '../helpers/phase01-test-harness';
 
 integration('Additional duties API (isolated PostgreSQL integration)', () => {
   const h = new Phase01Harness();
@@ -17,11 +17,11 @@ integration('Additional duties API (isolated PostgreSQL integration)', () => {
 
   async function fixtures(): Promise<{ groupA: string; groupB: string; staffProfileId: string; definitionId: string }> {
     const [groupA, groupB] = await Promise.all([
-      h.prisma.subjectGroup.create({ data: { code: `GA${crypto.randomUUID().slice(0, 5)}`, name: 'Group A' } }),
-      h.prisma.subjectGroup.create({ data: { code: `GB${crypto.randomUUID().slice(0, 5)}`, name: 'Group B' } }),
+      h.prisma.subjectGroup.create({ data: { code: normalizedCode('GA', 5), name: 'Group A' } }),
+      h.prisma.subjectGroup.create({ data: { code: normalizedCode('GB', 5), name: 'Group B' } }),
     ]);
     const staff = await h.prisma.user.create({ data: { username: `staff-${crypto.randomUUID()}`, passwordHash: 'fixture', profile: { create: { displayName: 'Staff' } } }, include: { profile: true } });
-    const definition = await h.prisma.additionalDutyDefinition.create({ data: { code: `D${crypto.randomUUID().slice(0, 6)}`, name: 'Duty', category: 'LEADERSHIP', validFrom: new Date('2026-01-01'), validUntil: new Date('2028-01-01') } });
+    const definition = await h.prisma.additionalDutyDefinition.create({ data: { code: normalizedCode('D', 6), name: 'Duty', category: 'LEADERSHIP', validFrom: new Date('2026-01-01'), validUntil: new Date('2028-01-01') } });
     return { groupA: groupA.id, groupB: groupB.id, staffProfileId: staff.profile!.id, definitionId: definition.id };
   }
 
