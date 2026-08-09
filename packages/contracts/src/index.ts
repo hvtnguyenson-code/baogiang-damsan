@@ -241,6 +241,13 @@ export interface CatalogEntry {
   updatedAt: string;
 }
 
+export interface CatalogListResponse {
+  items: CatalogEntry[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
 export interface SubjectGroupMembershipRecord extends ValidityWindow {
   id: string;
   userId: string;
