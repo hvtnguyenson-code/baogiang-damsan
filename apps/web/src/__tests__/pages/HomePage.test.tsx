@@ -5,12 +5,13 @@ import { jsonResponse, normalAuth, renderApp } from '../test-utils';
 describe('authenticated workspace', () => {
   afterEach(() => { vi.unstubAllGlobals(); });
 
-  it('renders factual foundation state and semantic route links without a role selector', async () => {
+  it('renders a factual personalized work index and semantic route links without a role selector', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(normalAuth)));
     renderApp('/');
     expect(await screen.findByRole('heading', { name: /chào nguyễn văn an/i })).toBeInTheDocument();
-    expect(screen.getByText(/nghiệp vụ báo giảng/i)).toBeInTheDocument();
-    expect(screen.getByText(/chưa mở/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /mục lục công việc/i })).toBeInTheDocument();
+    expect(screen.getByText(/không có khu vực quản lý/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /hồ sơ cá nhân/i })).toBeInTheDocument();
     const nav = screen.getByRole('navigation', { name: /điều hướng chính/i });
     expect(nav.querySelector('[role="tab"]')).toBeNull();
     expect(screen.getByRole('link', { name: /không gian làm việc/i })).toHaveAttribute('aria-current', 'page');

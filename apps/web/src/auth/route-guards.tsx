@@ -1,3 +1,4 @@
+import type { ScopedCapability } from '@baogiang/contracts';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { LoadingState, RecoveryState } from '../components/ui/feedback';
 import { useAuth } from './auth-context';
@@ -11,6 +12,12 @@ export function ProtectedRoute() {
     return <Navigate to="/dang-nhap" replace state={{ from: safeInternalPath(`${location.pathname}${location.search}`) }} />;
   }
   if (auth.status === 'firstLoginRequired') return <Navigate to="/doi-mat-khau-lan-dau" replace />;
+  return <Outlet />;
+}
+
+export function CapabilityRoute({ allow }: { allow(capabilities: ScopedCapability[]): boolean }) {
+  const auth = useAuth();
+  if (!auth.auth || !allow(auth.auth.capabilities)) return <Navigate to="/khong-co-quyen" replace />;
   return <Outlet />;
 }
 

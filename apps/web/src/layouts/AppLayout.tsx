@@ -3,9 +3,11 @@ import { NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../auth/auth-context';
 import { LogoutNotice } from '../auth/logout-notice';
 import { Button } from '../components/ui/button';
+import { accessibleManagementRoutes } from '../lib/capabilities';
 
 export function AppLayout() {
   const auth = useAuth();
+  const management = accessibleManagementRoutes(auth.auth);
   return (
     <div className="app-frame">
       <a className="skip-link" href="#main-content">Bỏ qua điều hướng</a>
@@ -30,6 +32,8 @@ export function AppLayout() {
       <nav className="primary-nav" aria-label="Điều hướng chính">
         <div className="page-width primary-nav__links">
           <NavLink to="/" end>Không gian làm việc</NavLink>
+          <NavLink to="/ho-so">Hồ sơ</NavLink>
+          {management.map((route) => <NavLink key={route.to} to={route.to}>{route.label}</NavLink>)}
           <NavLink to="/trang-thai-he-thong">Trạng thái hệ thống</NavLink>
         </div>
       </nav>

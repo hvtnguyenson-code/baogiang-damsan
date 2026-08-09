@@ -1,8 +1,10 @@
 import { Link } from 'react-router-dom';
 import { useAuth } from '../auth/auth-context';
+import { accessibleManagementRoutes } from '../lib/capabilities';
 
 export function HomePage() {
   const auth = useAuth();
+  const routes = accessibleManagementRoutes(auth.auth);
   return (
     <div className="workspace-page">
       <header className="page-heading page-heading--rail">
@@ -10,17 +12,16 @@ export function HomePage() {
         <div>
           <p className="utility-label">Không gian làm việc</p>
           <h1>Chào {auth.auth?.user.displayName}</h1>
-          <p>Nền tảng đăng nhập, phiên và phân quyền đã sẵn sàng cho các lát nghiệp vụ tiếp theo.</p>
+          <p>Đây là các khu vực công việc hiện có theo phạm vi được giao cho tài khoản của bạn.</p>
         </div>
       </header>
 
-      <section className="ledger-section" aria-labelledby="foundation-heading">
-        <h2 id="foundation-heading">Trạng thái nền tảng</h2>
-        <dl className="foundation-ledger">
-          <div><dt>Phiên đăng nhập</dt><dd><span className="status-cue status-cue--ok">Sẵn sàng</span><span>Phiên hiện tại được xác minh trên máy chủ.</span></dd></div>
-          <div><dt>Phân quyền</dt><dd><span className="status-cue status-cue--ok">Sẵn sàng</span><span>Quyền được kiểm tra theo phạm vi công việc được giao.</span></dd></div>
-          <div><dt>Nghiệp vụ báo giảng</dt><dd><span className="status-cue status-cue--neutral">Chưa mở</span><span>Không có dữ liệu hoặc thao tác nghiệp vụ trong lát nền móng này.</span></dd></div>
-        </dl>
+      <section className="ledger-section work-index" aria-labelledby="work-heading">
+        <h2 id="work-heading">Mục lục công việc</h2>
+        <ol>
+          {routes.length > 0 ? routes.map((route, index) => <li key={route.to}><span className="technical-value">{String(index + 1).padStart(2, '0')}</span><Link to={route.to}>{route.label}</Link></li>) : <li><span className="technical-value">01</span><div><strong>Không có khu vực quản lý</strong><p>Bạn vẫn có thể xem hồ sơ cá nhân và trạng thái hệ thống.</p></div></li>}
+          <li><span className="technical-value">{String(routes.length + 1).padStart(2, '0')}</span><Link to="/ho-so">Hồ sơ cá nhân</Link></li>
+        </ol>
       </section>
 
       <div className="workspace-actions">
