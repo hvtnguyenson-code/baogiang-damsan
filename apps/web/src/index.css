@@ -164,7 +164,7 @@ h2 { font-size: clamp(1.25rem, 2vw, 1.55rem); }
 .row-actions { min-width: 160px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
 .row-actions .button { min-height: 44px; padding: 7px 9px; text-align: left; }
 .row-confirm { min-width: 240px; }
-.status-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 0.78rem; font-weight: 700; }
+.status-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 0.78rem; font-weight: 700; white-space: nowrap; }
 .status-badge::before { content: ''; width: 8px; height: 8px; border: 2px solid currentColor; border-radius: 50%; }
 .status-badge--active { color: #246b45; }
 .status-badge--inactive { color: #7a4b00; }

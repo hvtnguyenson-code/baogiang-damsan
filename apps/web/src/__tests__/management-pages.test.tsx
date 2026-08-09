@@ -59,6 +59,8 @@ describe('Phase 01 management pages', () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => { const url = String(input); if (url.endsWith('/auth/me')) return jsonResponse(auth({ key: 'ADDITIONAL_DUTY_ASSIGNMENT_MANAGE', scope: 'SUBJECT_GROUP', resourceId: 'group-1' })); return jsonResponse(page()); }); vi.stubGlobal('fetch', fetchMock); renderApp('/quan-tri/kiem-nhiem/phan-cong');
     expect(await screen.findByText(/cần quyền tra cứu nhân sự/i)).toBeInTheDocument(); expect(screen.getByRole('button', { name: /tạo phân công/i })).toBeDisabled();
     expect(screen.queryByLabelText('Nhân sự')).not.toBeInTheDocument(); expect(screen.queryByLabelText('Tổ chuyên môn')).not.toBeInTheDocument();
+    const scopeFilter = screen.getByLabelText('Phạm vi');
+    expect(within(scopeFilter).getByRole('option', { name: 'Tất cả' })).toBeInTheDocument(); expect(within(scopeFilter).getByRole('option', { name: 'Tổ chuyên môn' })).toBeInTheDocument(); expect(within(scopeFilter).queryByRole('option', { name: 'Toàn trường' })).not.toBeInTheDocument();
   });
 
   it('prefers an inactive historical catalog label and keeps it out of the create picker', async () => {
