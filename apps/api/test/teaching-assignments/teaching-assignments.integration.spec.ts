@@ -31,7 +31,10 @@ integration('Teaching assignment control plane (isolated PostgreSQL integration)
       { key: 'SYSTEM_ADMIN', scopes: ['SCHOOL_WIDE'] },
     ]);
   });
-  afterAll(async () => h.stop());
+  afterAll(async () => {
+    await h.clean();
+    await h.stop();
+  });
 
   async function manager(prefix = 'manager'): Promise<{ agent: Agent; id: string }> {
     return h.actor({ grants: [{ capabilityKey: capability }], usernamePrefix: prefix });
@@ -42,7 +45,7 @@ integration('Teaching assignment control plane (isolated PostgreSQL integration)
     calendarId: string;
   }> {
     const year = await h.prisma.academicYear.create({
-      data: { code: `TA-${crypto.randomUUID().slice(0, 8)}`, name: 'Teaching assignment year' },
+      data: { code: `TA-${crypto.randomUUID().slice(0, 8).toUpperCase()}`, name: 'Teaching assignment year' },
     });
     const calendar = await h.prisma.academicCalendarVersion.create({
       data: {
@@ -133,7 +136,10 @@ integration('Teaching assignment control plane (isolated PostgreSQL integration)
     const { yearId, calendarId } = await createYear(activeCalendar);
     const schoolClass = await createClass(yearId);
     const subject = await createSubject();
-    const teacher = await createTeacher({ displayName: 'Teacher One', staffCode: `GV${crypto.randomUUID().slice(0, 6)}` });
+    const teacher = await createTeacher({
+      displayName: 'Teacher One',
+      staffCode: `GV${crypto.randomUUID().slice(0, 6).toUpperCase()}`,
+    });
     const secondTeacher = await createTeacher({ displayName: 'Teacher Two' });
     await cover(teacher.id, subject.id);
     await cover(secondTeacher.id, subject.id);
