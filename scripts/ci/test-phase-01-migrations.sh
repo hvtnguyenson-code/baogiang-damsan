@@ -70,4 +70,7 @@ psql "$fresh_psql_url" -v ON_ERROR_STOP=1 -f scripts/ci/verify-phase-01-schema.s
 echo "[migration-test] Academic structure constraint and behavior verification"
 psql "$fresh_psql_url" -v ON_ERROR_STOP=1 -f scripts/ci/verify-academic-structure-schema.sql
 
+echo "[migration-test] Teaching assignment constraint and history verification"
+psql "$fresh_psql_url" -v ON_ERROR_STOP=1 -f scripts/ci/verify-teaching-assignment-schema.sql
+
 echo "[migration-test] PASS"

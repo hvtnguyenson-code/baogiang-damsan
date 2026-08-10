@@ -4,6 +4,7 @@
 //
 // Phase 01: Identity, access, organizational assignment, and audit foundation.
 // Local Phase 02A: Versioned academic calendar and academic-year class foundation.
+// Local Phase 03A: Academic-year teaching-assignment history foundation.
 //
 // Database: PostgreSQL 17; connection supplied through DATABASE_URL per environment.
 // ============================================================
@@ -81,6 +82,7 @@ model User {
   authSessions                     AuthSession[]
   auditEvents                      AuditEvent[]                    @relation("AuditActor")
   additionalDutyAssignmentsCreated StaffAdditionalDutyAssignment[] @relation("AdditionalDutyAssignmentCreator")
+  teachingAssignments              TeachingAssignment[]            @relation("TeachingAssignmentTeacher")
 
   @@index([status])
   @@map("users")
@@ -126,7 +128,8 @@ model Subject {
   createdAt DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  staffSubjects StaffSubject[]
+  staffSubjects       StaffSubject[]
+  teachingAssignments TeachingAssignment[]
 
   @@index([status, code])
   @@map("subjects")
@@ -296,8 +299,9 @@ model AcademicYear {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  calendarVersions AcademicCalendarVersion[]
-  classes          SchoolClass[]
+  calendarVersions    AcademicCalendarVersion[]
+  classes             SchoolClass[]
+  teachingAssignments TeachingAssignment[]
 
   @@map("academic_years")
 }
@@ -413,9 +417,34 @@ model SchoolClass {
   createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt      DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  academicYear        AcademicYear         @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  teachingAssignments TeachingAssignment[] @relation("TeachingAssignmentSchoolClass")
 
+  @@unique([id, academicYearId])
   @@unique([academicYearId, code])
   @@index([academicYearId, status, gradeLevel, code])
   @@map("classes")
+}
+
+model TeachingAssignment {
+  id             String    @id @default(uuid()) @db.Uuid
+  academicYearId String    @map("academic_year_id") @db.Uuid
+  schoolClassId  String    @map("school_class_id") @db.Uuid
+  subjectId      String    @map("subject_id") @db.Uuid
+  teacherUserId  String    @map("teacher_user_id") @db.Uuid
+  validFrom      DateTime  @map("valid_from") @db.Date
+  validUntil     DateTime? @map("valid_until") @db.Date
+  note           String?   @db.Text
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  schoolClass  SchoolClass  @relation("TeachingAssignmentSchoolClass", fields: [schoolClassId, academicYearId], references: [id, academicYearId], onDelete: Restrict)
+  subject      Subject      @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  teacher      User         @relation("TeachingAssignmentTeacher", fields: [teacherUserId], references: [id], onDelete: Restrict)
+
+  @@index([academicYearId, schoolClassId, subjectId, validFrom, validUntil], map: "teaching_assignments_class_subject_validity_idx")
+  @@index([teacherUserId, academicYearId, validFrom, validUntil], map: "teaching_assignments_teacher_year_validity_idx")
+  @@index([subjectId, academicYearId, validFrom, validUntil], map: "teaching_assignments_subject_year_validity_idx")
+  @@map("teaching_assignments")
 }
