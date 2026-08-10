@@ -514,6 +514,41 @@ export interface TeachingAssignmentChangeResult {
   replacement: TeachingAssignmentRecord;
 }
 
+export interface TeachingAssignmentAcademicYearOption {
+  id: string;
+  code: string;
+  name: string;
+}
+
+export interface TeachingAssignmentAcademicYearOptionListResponse {
+  items: TeachingAssignmentAcademicYearOption[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+export interface TeachingAssignmentActiveCalendarOption {
+  id: string;
+  versionNumber: number;
+  startDate: CivilDateString;
+  endDate: CivilDateString;
+}
+
+export interface TeachingAssignmentWorkspaceOptionsResponse {
+  academicYear: TeachingAssignmentAcademicYearOption;
+  activeCalendar: TeachingAssignmentActiveCalendarOption | null;
+  classes: TeachingAssignmentClassSummary[];
+  subjects: TeachingAssignmentSubjectSummary[];
+  historicalTeachers: TeachingAssignmentTeacherSummary[];
+}
+
+export interface TeachingAssignmentEligibleTeacherListResponse {
+  items: TeachingAssignmentTeacherSummary[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
 // ============================================================
 // Notification Contracts (foundation types for Phase 03+)
 // ============================================================
