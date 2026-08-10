@@ -459,6 +459,62 @@ export interface SchoolClassListResponse {
 }
 
 // ============================================================
+// Phase 03 Teaching Assignment Contracts
+// ============================================================
+
+export interface TeachingAssignmentClassSummary {
+  id: string;
+  code: string;
+  name: string;
+  gradeLevel: number;
+  status: CatalogStatus;
+}
+
+export interface TeachingAssignmentSubjectSummary {
+  id: string;
+  code: string;
+  name: string;
+  status: CatalogStatus;
+}
+
+export interface TeachingAssignmentTeacherSummary {
+  userId: string;
+  username: string;
+  displayName: string;
+  staffCode: string | null;
+  userStatus: UserStatus;
+  isTeachingStaff: boolean | null;
+}
+
+export interface TeachingAssignmentRecord {
+  id: string;
+  academicYearId: string;
+  schoolClassId: string;
+  subjectId: string;
+  teacherUserId: string;
+  validFrom: CivilDateString;
+  validUntil: CivilDateString | null;
+  note: string | null;
+  createdAt: string;
+  updatedAt: string;
+  schoolClass: TeachingAssignmentClassSummary;
+  subject: TeachingAssignmentSubjectSummary;
+  teacher: TeachingAssignmentTeacherSummary;
+}
+
+export interface TeachingAssignmentListResponse {
+  items: TeachingAssignmentRecord[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+export interface TeachingAssignmentChangeResult {
+  previous: TeachingAssignmentRecord;
+  replacement: TeachingAssignmentRecord;
+}
+
+// ============================================================
 // Notification Contracts (foundation types for Phase 03+)
 // ============================================================
 

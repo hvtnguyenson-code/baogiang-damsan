@@ -1,5 +1,6 @@
-import { AcademicWeekKind, AcademicWeekday, CatalogStatus } from '@prisma/client';
+import { AcademicWeekKind, AcademicWeekday, CatalogStatus, UserStatus } from '@prisma/client';
 import request, { Agent } from 'supertest';
+import { businessMidnight } from '../../src/teaching-assignments/teaching-assignment-policy';
 import { Phase01Harness, integration, testOrigin } from '../helpers/phase01-test-harness';
 
 const capability = 'ACADEMIC_STRUCTURE_MANAGE';
@@ -235,5 +236,47 @@ integration('Academic structure control plane (isolated PostgreSQL integration)'
     await agent.post(`/api/school-classes/${first.body.id as string}/activate`).set(origin).send({});
     await agent.post(`/api/school-classes/${first.body.id as string}/activate`).set(origin).send({});
     expect(await h.prisma.auditEvent.count({ where: { entityId: first.body.id as string, action: 'SCHOOL_CLASS_ACTIVATED', result: 'SUCCESS' } })).toBe(2);
+  });
+
+  it('rejects incompatible calendar activation without rewriting teaching-assignment history', async () => {
+    const { agent } = await manager();
+    const year = await createYear(agent, 'TA-CALENDAR');
+    const active = await agent.post(`/api/academic-years/${year.id}/calendar-versions`).set(origin).send(calendarPayload('Active'));
+    const candidatePayload = structuredClone(calendarPayload('Candidate')) as Record<string, unknown>;
+    const shiftCivilDates = (value: unknown): unknown => {
+      if (typeof value === 'string' && /^2026-\d{2}-\d{2}$/.test(value)) {
+        const date = new Date(`${value}T00:00:00.000Z`);
+        date.setUTCDate(date.getUTCDate() + 7);
+        return date.toISOString().slice(0, 10);
+      }
+      if (Array.isArray(value)) return value.map(shiftCivilDates);
+      if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, shiftCivilDates(item)]));
+      return value;
+    };
+    const candidate = await agent.post(`/api/academic-years/${year.id}/calendar-versions`).set(origin).send(shiftCivilDates(candidatePayload));
+    expect(active.status).toBe(201);
+    expect(candidate.status).toBe(201);
+    expect((await agent.post(`/api/academic-calendar-versions/${active.body.id as string}/activate`).set(origin).send({})).status).toBe(200);
+
+    const schoolClass = await h.prisma.schoolClass.create({ data: { academicYearId: year.id, code: 'TA10A1', name: 'TA 10A1', gradeLevel: 10 } });
+    const subject = await h.prisma.subject.create({ data: { code: 'TA_SUBJECT', name: 'TA Subject' } });
+    const teacher = await h.prisma.user.create({ data: {
+      username: 'ta-calendar-teacher', passwordHash: 'integration-only', status: UserStatus.ACTIVE, mustChangePassword: false,
+      profile: { create: { displayName: 'TA Calendar Teacher' } },
+    } });
+    await h.prisma.staffSubject.create({ data: {
+      userId: teacher.id, subjectId: subject.id, validFrom: businessMidnight('2026-08-03'), validUntil: businessMidnight('2026-10-01'),
+    } });
+    const assignment = await h.prisma.teachingAssignment.create({ data: {
+      academicYearId: year.id, schoolClassId: schoolClass.id, subjectId: subject.id, teacherUserId: teacher.id,
+      validFrom: new Date('2026-08-03T00:00:00.000Z'), validUntil: new Date('2026-08-10T00:00:00.000Z'),
+    } });
+    const rejected = await agent.post(`/api/academic-calendar-versions/${candidate.body.id as string}/activate`)
+      .set(origin).set('X-Request-Id', 'teaching-assignment-calendar-conflict').send({});
+    expect(rejected.status).toBe(409);
+    expect((await h.prisma.academicCalendarVersion.findUniqueOrThrow({ where: { id: active.body.id as string } })).isActive).toBe(true);
+    expect((await h.prisma.academicCalendarVersion.findUniqueOrThrow({ where: { id: candidate.body.id as string } })).isActive).toBe(false);
+    expect(await h.prisma.teachingAssignment.findUniqueOrThrow({ where: { id: assignment.id } })).toMatchObject({ validFrom: assignment.validFrom, validUntil: assignment.validUntil });
+    expect(await h.prisma.auditEvent.count({ where: { requestId: 'teaching-assignment-calendar-conflict', action: 'ACADEMIC_CALENDAR_VERSION_ACTIVATED', result: 'SUCCESS' } })).toBe(0);
   });
 });

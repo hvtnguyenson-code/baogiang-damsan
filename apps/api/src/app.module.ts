@@ -12,6 +12,7 @@ import { CapabilitiesModule } from './capabilities/capabilities.module';
 import { AuditModule } from './audit/audit.module';
 import { AdditionalDutiesModule } from './additional-duties/additional-duties.module';
 import { AcademicStructureModule } from './academic-structure/academic-structure.module';
+import { TeachingAssignmentsModule } from './teaching-assignments/teaching-assignments.module';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { AcademicStructureModule } from './academic-structure/academic-structure
     AuditModule,
     AdditionalDutiesModule,
     AcademicStructureModule,
+    TeachingAssignmentsModule,
   ],
 })
 export class AppModule {}
