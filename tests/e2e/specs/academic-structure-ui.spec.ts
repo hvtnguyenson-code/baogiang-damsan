@@ -44,7 +44,7 @@ test('academic structure workspace is capability-aware and responsive', async ({
   await page.getByLabel('Số tuần chính thức').fill('2');
   await page.getByLabel('Số tuần dự phòng').fill('1');
   await page.getByRole('button', { name: 'Sinh khung tuần' }).click();
-  await expect(page.locator('summary').filter({ hasText: 'Tuần chính thức · thứ tự' })).toHaveCount(2);
+  await expect(page.locator('summary').filter({ hasText: 'Tuần chính thức' })).toHaveCount(2);
   await assertAccessible(page);
   for (const width of [320, 375, 414]) {
     await page.setViewportSize({ width, height: 812 });

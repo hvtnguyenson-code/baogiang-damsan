@@ -174,6 +174,70 @@ test('real auth UI supports keyboard, first-login change, cookie reload, and log
   await expect(page).toHaveURL(/\/dang-nhap$/);
 });
 
+test('real academic structure flow creates and activates a calendar and class', async ({ page }) => {
+  const suffix = Date.now().toString(36).slice(-6).toUpperCase();
+  const yearCode = `E2E26-${suffix}`;
+  const classCode = `10A1-${suffix}`;
+
+  await page.goto('/quan-tri/cau-truc-nam-hoc');
+  await expect(page).toHaveURL(/\/dang-nhap$/);
+  await page.getByLabel('Tên đăng nhập').fill(USERNAME);
+  await page.getByLabel('Mật khẩu').fill(NEW_PASSWORD);
+  await page.getByRole('button', { name: 'Đăng nhập' }).click();
+  await expect(page).toHaveURL(/\/quan-tri\/cau-truc-nam-hoc$/);
+  await expect(page.getByRole('link', { name: 'Cấu trúc năm học' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Tạo năm học' }).click();
+  await page.getByLabel('Mã năm học').fill(yearCode);
+  await page.getByLabel('Tên năm học').fill(`Năm học E2E ${suffix}`);
+  const yearResponsePromise = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/academic-years' && response.request().method() === 'POST');
+  await page.getByRole('button', { name: 'Lưu năm học' }).click();
+  expect((await yearResponsePromise).status()).toBe(201);
+  const yearRow = page.locator('tbody tr', { hasText: yearCode });
+  await expect(yearRow).toBeVisible();
+  await yearRow.getByRole('link', { name: 'Mở năm học' }).click();
+  await expect(page.getByRole('heading', { name: `Năm học E2E ${suffix}` })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Tạo phiên lịch' }).click();
+  const calendarForm = page.locator('form.calendar-builder');
+  await calendarForm.locator('input[name="calendar-start"]').fill('2026-08-31');
+  await calendarForm.locator('input[name="calendar-end"]').fill('2026-09-04');
+  await calendarForm.getByLabel('Số tuần chính thức').fill('1');
+  await calendarForm.getByLabel('Số tuần dự phòng').fill('0');
+  for (const day of ['Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu']) await calendarForm.getByRole('checkbox', { name: day }).check();
+  await calendarForm.getByRole('button', { name: 'Thêm học kỳ' }).click();
+  await calendarForm.getByLabel('Mã học kỳ').fill('HK1');
+  await calendarForm.getByLabel('Tên học kỳ').fill('Học kỳ 1');
+  await calendarForm.locator('input[name="semester-start-0"]').fill('2026-08-31');
+  await calendarForm.locator('input[name="semester-end-0"]').fill('2026-09-04');
+  await calendarForm.getByRole('button', { name: 'Sinh khung tuần' }).click();
+  await calendarForm.locator('summary', { hasText: 'Tuần chính thức 1' }).click();
+  await calendarForm.getByLabel('Nhãn hiển thị').fill('Tuần 1');
+  await calendarForm.getByLabel('Nhãn khoảng').fill('1');
+  await calendarForm.locator('input[name="segment-start-0-0"]').fill('2026-08-31');
+  await calendarForm.locator('input[name="segment-end-0-0"]').fill('2026-09-04');
+  const calendarResponsePromise = page.waitForResponse((response) => /\/api\/academic-years\/[^/]+\/calendar-versions$/.test(new URL(response.url()).pathname) && response.request().method() === 'POST');
+  await calendarForm.getByRole('button', { name: 'Tạo phiên lịch' }).click();
+  expect((await calendarResponsePromise).status()).toBe(201);
+  await expect(page.getByRole('heading', { name: 'Phiên lịch 1' })).toBeVisible();
+  await page.getByRole('button', { name: 'Đóng chi tiết' }).click();
+  await page.getByRole('button', { name: 'Kích hoạt Phiên 1' }).click();
+  const activateResponsePromise = page.waitForResponse((response) => /\/api\/academic-calendar-versions\/[^/]+\/activate$/.test(new URL(response.url()).pathname) && response.request().method() === 'POST');
+  await page.getByRole('button', { name: 'Xác nhận kích hoạt Phiên 1' }).click();
+  expect((await activateResponsePromise).status()).toBe(200);
+  await expect(page.getByText('Đang áp dụng')).toBeVisible();
+
+  await page.getByRole('link', { name: 'Lớp học' }).click();
+  await page.getByRole('button', { name: 'Tạo lớp' }).click();
+  await page.getByLabel('Mã lớp').fill(classCode);
+  await page.getByLabel('Tên lớp').fill(`Lớp E2E ${suffix}`);
+  await page.getByLabel('Khối').selectOption('10');
+  const classResponsePromise = page.waitForResponse((response) => /\/api\/academic-years\/[^/]+\/classes$/.test(new URL(response.url()).pathname) && response.request().method() === 'POST');
+  await page.getByRole('button', { name: 'Lưu lớp học' }).click();
+  expect((await classResponsePromise).status()).toBe(201);
+  await expect(page.locator('tbody tr', { hasText: classCode })).toBeVisible();
+});
+
 test('real Phase 01 management flow preserves history and capability boundaries', async ({ page }) => {
   const targetUsername = 'e2e-phase01-target';
   const targetInitialPassword = 'E2eTargetPassword7';

@@ -1,6 +1,6 @@
 import type { AcademicCalendarVersionDetail, AcademicYearRecord, SchoolClassRecord } from '@baogiang/contracts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { academicYearPatch, academicYearsApi, calendarDetailToInput, calendarVersionsApi, formatCivilDate, normalizeCode, schoolClassPatch, schoolClassesApi } from '../lib/academic-structure-api';
+import { academicYearPatch, academicYearsApi, buildWeekSkeleton, calendarDetailToInput, calendarVersionsApi, calendarWeeksToInput, formatCivilDate, normalizeCode, schoolClassPatch, schoolClassesApi } from '../lib/academic-structure-api';
 import { jsonResponse } from './test-utils';
 
 const year: AcademicYearRecord = { id: 'year-1', code: '2026-2027', name: 'Năm học 2026–2027', createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' };
@@ -41,10 +41,23 @@ describe('academic structure API', () => {
     ]);
   });
 
+  it('keeps canonical week identities when chronology changes', () => {
+    const skeleton = buildWeekSkeleton(2, 1);
+    expect(skeleton.map((week) => [week.kind, week.officialWeekNumber, week.reserveWeekNumber, week.displayLabel])).toEqual([
+      ['OFFICIAL', 1, undefined, 'Tuần 1'], ['OFFICIAL', 2, undefined, 'Tuần 2'], ['RESERVE', undefined, 1, 'DP1'],
+    ]);
+    const reordered = [skeleton[1]!, skeleton[2]!, skeleton[0]!];
+    const payload = calendarWeeksToInput(reordered);
+    expect(payload.map((week) => [week.sortOrder, week.kind, week.officialWeekNumber, week.reserveWeekNumber])).toEqual([
+      [1, 'OFFICIAL', 2, undefined], [2, 'RESERVE', undefined, 1], [3, 'OFFICIAL', 1, undefined],
+    ]);
+  });
+
   it('clones business fields while stripping ids and lifecycle state', () => {
-    const detail = { id: 'version-1', academicYearId: 'year-1', versionNumber: 3, startDate: '2026-08-31', endDate: '2027-05-31', officialWeekCount: 1, reserveWeekCount: 0, teachingWeekdays: ['MONDAY'], isActive: true, activatedAt: '2026-08-01T00:00:00Z', note: 'Ghi chú', createdAt: '', updatedAt: '', semesters: [{ id: 'semester-1', code: 'HK1', name: 'Học kỳ 1', ordinal: 4, startDate: '2026-08-31', endDate: '2027-01-15', createdAt: '', updatedAt: '' }], weeks: [{ id: 'week-1', kind: 'OFFICIAL', officialWeekNumber: 1, reserveWeekNumber: null, displayLabel: 'Tuần 1', sortOrder: 7, createdAt: '', updatedAt: '', segments: [{ id: 'segment-1', label: 'Khoảng học', segmentOrder: 9, startDate: '2026-08-31', endDate: '2026-09-04', createdAt: '', updatedAt: '' }] }], interruptions: [] } as AcademicCalendarVersionDetail;
+    const detail = { id: 'version-1', academicYearId: 'year-1', versionNumber: 3, startDate: '2026-08-31', endDate: '2027-05-31', officialWeekCount: 1, reserveWeekCount: 1, teachingWeekdays: ['MONDAY'], isActive: true, activatedAt: '2026-08-01T00:00:00Z', note: 'Ghi chú', createdAt: '', updatedAt: '', semesters: [{ id: 'semester-1', code: 'HK1', name: 'Học kỳ 1', ordinal: 4, startDate: '2026-08-31', endDate: '2027-01-15', createdAt: '', updatedAt: '' }], weeks: [{ id: 'week-1', kind: 'OFFICIAL', officialWeekNumber: 1, reserveWeekNumber: null, displayLabel: 'Tuần 1', sortOrder: 7, createdAt: '', updatedAt: '', segments: [{ id: 'segment-1', label: 'Khoảng học', segmentOrder: 9, startDate: '2026-08-31', endDate: '2026-09-04', createdAt: '', updatedAt: '' }] }, { id: 'week-reserve', kind: 'RESERVE', officialWeekNumber: null, reserveWeekNumber: 1, displayLabel: 'DP1', sortOrder: 8, createdAt: '', updatedAt: '', segments: [{ id: 'segment-reserve', label: 'DP1', segmentOrder: 1, startDate: '2027-05-24', endDate: '2027-05-28', createdAt: '', updatedAt: '' }] }], interruptions: [] } as AcademicCalendarVersionDetail;
     const cloned = calendarDetailToInput(detail);
     expect(cloned.semesters[0]?.ordinal).toBe(1); expect(cloned.weeks[0]?.sortOrder).toBe(1); expect(cloned.weeks[0]?.segments[0]?.segmentOrder).toBe(1);
+    expect(cloned.weeks[0]?.officialWeekNumber).toBe(1); expect(cloned.weeks[1]?.reserveWeekNumber).toBe(1);
     expect(JSON.stringify(cloned)).not.toMatch(/version-1|semester-1|segment-1|isActive|activatedAt/);
   });
 });

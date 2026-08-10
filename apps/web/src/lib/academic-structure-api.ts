@@ -17,6 +17,13 @@ export type AcademicYearInput = { code: string; name: string };
 export type SchoolClassInput = { code: string; name: string; gradeLevel: 10 | 11 | 12 };
 export type CalendarSegmentInput = { label: string; segmentOrder: number; startDate: CivilDateString; endDate: CivilDateString };
 export type CalendarWeekInput = { kind: AcademicWeekKind; officialWeekNumber?: number; reserveWeekNumber?: number; displayLabel: string; sortOrder: number; segments: CalendarSegmentInput[] };
+export type CalendarWeekDraft = {
+  kind: AcademicWeekKind;
+  officialWeekNumber?: number;
+  reserveWeekNumber?: number;
+  displayLabel: string;
+  segments: { label: string; startDate: string; endDate: string }[];
+};
 export type CalendarVersionInput = {
   startDate: CivilDateString; endDate: CivilDateString; officialWeekCount: number; reserveWeekCount: number;
   teachingWeekdays: AcademicWeekday[]; note?: string;
@@ -58,6 +65,30 @@ export function academicYearPatch(values: AcademicYearInput, original: AcademicY
 export function schoolClassPatch(values: SchoolClassInput, original: SchoolClassRecord): Partial<SchoolClassInput> {
   const code = normalizeCode(values.code); const name = values.name.trim();
   return { ...(code !== original.code ? { code } : {}), ...(name !== original.name ? { name } : {}), ...(values.gradeLevel !== original.gradeLevel ? { gradeLevel: values.gradeLevel } : {}) };
+}
+export function buildWeekSkeleton(officialWeekCount: number, reserveWeekCount: number): CalendarWeekDraft[] {
+  return [
+    ...Array.from({ length: officialWeekCount }, (_, index): CalendarWeekDraft => ({
+      kind: 'OFFICIAL', officialWeekNumber: index + 1, displayLabel: `Tuần ${index + 1}`,
+      segments: [{ label: 'Khoảng học', startDate: '', endDate: '' }],
+    })),
+    ...Array.from({ length: reserveWeekCount }, (_, index): CalendarWeekDraft => ({
+      kind: 'RESERVE', reserveWeekNumber: index + 1, displayLabel: `DP${index + 1}`,
+      segments: [{ label: 'Khoảng dự phòng', startDate: '', endDate: '' }],
+    })),
+  ];
+}
+
+export function calendarWeeksToInput(weeks: CalendarWeekDraft[]): CalendarWeekInput[] {
+  return weeks.map((week, index) => ({
+    kind: week.kind,
+    ...(week.kind === 'OFFICIAL' ? { officialWeekNumber: week.officialWeekNumber } : { reserveWeekNumber: week.reserveWeekNumber }),
+    displayLabel: week.displayLabel.trim(), sortOrder: index + 1,
+    segments: week.segments.map((segment, segmentIndex) => ({
+      label: segment.label.trim(), segmentOrder: segmentIndex + 1,
+      startDate: segment.startDate as CivilDateString, endDate: segment.endDate as CivilDateString,
+    })),
+  }));
 }
 export function calendarDetailToInput(detail: AcademicCalendarVersionDetail): CalendarVersionInput {
   return {
