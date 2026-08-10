@@ -109,6 +109,52 @@ integration('Academic structure control plane (isolated PostgreSQL integration)'
     expect((await agent.get(`/api/academic-calendar-versions/${first.body.id as string}`)).body.weeks).toHaveLength(6);
   });
 
+  it('requires interruption coverage for teaching-day gaps but accepts an ordinary weekend-only gap', async () => {
+    const { agent } = await manager(); const year = await createYear(agent);
+    const unexplained = structuredClone(calendarPayload()); unexplained.interruptions = [];
+    const rejected = await agent.post(`/api/academic-years/${year.id}/calendar-versions`).set(origin).send(unexplained);
+    expect(rejected.status).toBe(400);
+    expect(await h.prisma.academicCalendarVersion.count({ where: { academicYearId: year.id } })).toBe(0);
+    expect(await h.prisma.semester.count()).toBe(0);
+    expect(await h.prisma.academicWeek.count()).toBe(0);
+    expect(await h.prisma.academicWeekSegment.count()).toBe(0);
+    expect(await h.prisma.calendarInterruption.count()).toBe(0);
+    expect(await h.prisma.auditEvent.count({ where: { action: 'ACADEMIC_CALENDAR_VERSION_CREATED', result: 'SUCCESS' } })).toBe(0);
+
+    const weekendOnly = structuredClone(calendarPayload());
+    ((weekendOnly.weeks as Array<Record<string, unknown>>)[4].segments as Array<Record<string, unknown>>)[0].endDate = '2026-09-04';
+    weekendOnly.interruptions = [];
+    const accepted = await agent.post(`/api/academic-years/${year.id}/calendar-versions`).set(origin).send(weekendOnly);
+    expect(accepted.status).toBe(201);
+    expect(accepted.body.versionNumber).toBe(1);
+  });
+
+  it('assigns concurrent versions safely without duplicate numbers, partial aggregates, or failed-request audits', async () => {
+    const firstActor = await manager(); const secondActor = await manager();
+    const year = await createYear(firstActor.agent, 'CONCURRENT');
+    const responses = await Promise.all([
+      firstActor.agent.post(`/api/academic-years/${year.id}/calendar-versions`).set(origin).send(calendarPayload('Concurrent A')),
+      secondActor.agent.post(`/api/academic-years/${year.id}/calendar-versions`).set(origin).send(calendarPayload('Concurrent B')),
+    ]);
+    const statuses = responses.map((response) => response.status).sort((left, right) => left - right);
+    expect([[201, 201], [201, 409]]).toContainEqual(statuses);
+    const successCount = responses.filter((response) => response.status === 201).length;
+    const versions = await h.prisma.academicCalendarVersion.findMany({
+      where: { academicYearId: year.id }, orderBy: { versionNumber: 'asc' },
+      include: { semesters: true, interruptions: true, weeks: { include: { segments: true } } },
+    });
+    expect(versions).toHaveLength(successCount);
+    expect(versions.map((version) => version.versionNumber)).toEqual(successCount === 2 ? [1, 2] : [1]);
+    expect(new Set(versions.map((version) => version.versionNumber)).size).toBe(versions.length);
+    for (const version of versions) {
+      expect(version.semesters).toHaveLength(1);
+      expect(version.weeks).toHaveLength(6);
+      expect(version.weeks.flatMap((week) => week.segments)).toHaveLength(7);
+      expect(version.interruptions).toHaveLength(1);
+    }
+    expect(await h.prisma.auditEvent.count({ where: { action: 'ACADEMIC_CALENDAR_VERSION_CREATED', result: 'SUCCESS' } })).toBe(successCount);
+  });
+
   it('rejects client lifecycle fields, non-civil dates and invalid aggregate matrices without partial writes or success audits', async () => {
     const { agent } = await manager(); const year = await createYear(agent);
     const forbidden = { ...calendarPayload(), versionNumber: 7 };
@@ -149,11 +195,16 @@ integration('Academic structure control plane (isolated PostgreSQL integration)'
 
     const corrupt = await h.prisma.academicCalendarVersion.create({ data: {
       academicYearId: year.id, versionNumber: 99, startDate: new Date('2026-10-01T00:00:00Z'), endDate: new Date('2026-10-31T00:00:00Z'),
-      officialWeekCount: 2, reserveWeekCount: 0, teachingWeekdays: [AcademicWeekday.MONDAY],
+      officialWeekCount: 2, reserveWeekCount: 0,
+      teachingWeekdays: [AcademicWeekday.MONDAY, AcademicWeekday.TUESDAY, AcademicWeekday.WEDNESDAY, AcademicWeekday.THURSDAY, AcademicWeekday.FRIDAY],
     } });
     await h.prisma.semester.create({ data: { calendarVersionId: corrupt.id, code: 'ONLY', name: 'Only', ordinal: 1, startDate: corrupt.startDate, endDate: corrupt.endDate } });
-    const corruptWeek = await h.prisma.academicWeek.create({ data: { calendarVersionId: corrupt.id, kind: AcademicWeekKind.OFFICIAL, officialWeekNumber: 1, displayLabel: 'One', sortOrder: 1 } });
-    await h.prisma.academicWeekSegment.create({ data: { calendarVersionId: corrupt.id, academicWeekId: corruptWeek.id, label: 'One', segmentOrder: 1, startDate: new Date('2026-10-05T00:00:00Z'), endDate: new Date('2026-10-05T00:00:00Z') } });
+    const corruptWeek1 = await h.prisma.academicWeek.create({ data: { calendarVersionId: corrupt.id, kind: AcademicWeekKind.OFFICIAL, officialWeekNumber: 1, displayLabel: 'One', sortOrder: 1 } });
+    const corruptWeek2 = await h.prisma.academicWeek.create({ data: { calendarVersionId: corrupt.id, kind: AcademicWeekKind.OFFICIAL, officialWeekNumber: 2, displayLabel: 'Two', sortOrder: 2 } });
+    await h.prisma.academicWeekSegment.createMany({ data: [
+      { calendarVersionId: corrupt.id, academicWeekId: corruptWeek1.id, label: 'One', segmentOrder: 1, startDate: new Date('2026-10-05T00:00:00Z'), endDate: new Date('2026-10-06T00:00:00Z') },
+      { calendarVersionId: corrupt.id, academicWeekId: corruptWeek2.id, label: 'Two', segmentOrder: 1, startDate: new Date('2026-10-12T00:00:00Z'), endDate: new Date('2026-10-13T00:00:00Z') },
+    ] });
     const failed = await agent.post(`/api/academic-calendar-versions/${corrupt.id}/activate`).set(origin).set('X-Request-Id', 'corrupt-activate').send({});
     expect(failed.status).toBe(400);
     expect((await h.prisma.academicCalendarVersion.findUniqueOrThrow({ where: { id: second.body.id as string } })).isActive).toBe(true);

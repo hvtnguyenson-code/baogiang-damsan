@@ -55,10 +55,12 @@ function assertExactNumbers(values: number[], count: number, label: string): voi
 }
 function containsTeachingDate(range: [number, number], teachingWeekdays: Set<AcademicWeekday>): boolean {
   for (let day = range[0]; day <= range[1]; day += 1) {
-    const date = new Date(day * 86_400_000);
-    if (teachingWeekdays.has(weekdayByUtcDay[date.getUTCDay()])) return true;
+    if (isTeachingDay(day, teachingWeekdays)) return true;
   }
   return false;
+}
+function isTeachingDay(day: number, teachingWeekdays: Set<AcademicWeekday>): boolean {
+  return teachingWeekdays.has(weekdayByUtcDay[new Date(day * 86_400_000).getUTCDay()]);
 }
 
 export function validateCalendarAggregate(input: CalendarAggregateInput): void {
@@ -109,6 +111,9 @@ export function validateCalendarAggregate(input: CalendarAggregateInput): void {
       if (segment.segmentOrder <= 0) fail('Thứ tự phân đoạn phải là số dương.');
       const range = assertInside(segment, parent, 'Phân đoạn tuần');
       if (priorEnd !== undefined && range[0] <= priorEnd) fail('Thứ tự/ngày phân đoạn không hợp lệ hoặc bị chồng lấn.');
+      if (!isTeachingDay(range[0], teachingWeekdays) || !isTeachingDay(range[1], teachingWeekdays)) {
+        fail('Ngày bắt đầu và kết thúc phân đoạn phải là ngày dạy học đã cấu hình.');
+      }
       if (!containsTeachingDate(range, teachingWeekdays)) fail('Phân đoạn phải chứa ít nhất một ngày dạy học đã cấu hình.');
       priorEnd = range[1];
       allSegmentRanges.push(range);
@@ -123,12 +128,32 @@ export function validateCalendarAggregate(input: CalendarAggregateInput): void {
 
   assertUnique(input.interruptions.map((interruption) => interruption.code), 'Mã gián đoạn');
   const interruptionRanges = input.interruptions.map((interruption) => assertInside(interruption, parent, 'Gián đoạn'));
+  const internalGaps: Array<[number, number]> = [];
+  for (let index = 1; index < allSegmentRanges.length; index += 1) {
+    const gapStart = allSegmentRanges[index - 1][1] + 1;
+    const gapEnd = allSegmentRanges[index][0] - 1;
+    if (gapStart <= gapEnd) internalGaps.push([gapStart, gapEnd]);
+  }
   for (let index = 0; index < interruptionRanges.length; index += 1) {
     for (let other = index + 1; other < interruptionRanges.length; other += 1) {
       if (overlaps(interruptionRanges[index], interruptionRanges[other])) fail('Các gián đoạn không được chồng lấn.');
     }
     if (allSegmentRanges.some((segment) => overlaps(interruptionRanges[index], segment))) {
       fail('Gián đoạn không được chồng lấn phân đoạn tuần.');
+    }
+    if (!containsTeachingDate(interruptionRanges[index], teachingWeekdays)) {
+      fail('Gián đoạn phải chứa ít nhất một ngày dạy học đã cấu hình.');
+    }
+    if (!internalGaps.some((gap) => gap[0] <= interruptionRanges[index][0] && interruptionRanges[index][1] <= gap[1])) {
+      fail('Gián đoạn phải nằm trong một khoảng trống nội bộ giữa các phân đoạn.');
+    }
+  }
+  for (const gap of internalGaps) {
+    for (let day = gap[0]; day <= gap[1]; day += 1) {
+      if (isTeachingDay(day, teachingWeekdays)
+        && !interruptionRanges.some((interruption) => interruption[0] <= day && day <= interruption[1])) {
+        fail('Mọi ngày dạy học trong khoảng trống nội bộ phải được gián đoạn bao phủ.');
+      }
     }
   }
 }
