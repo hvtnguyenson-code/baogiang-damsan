@@ -14,6 +14,12 @@ export class ListTeachingAssignmentsDto extends TeachingAssignmentPageDto {
   @IsOptional() @IsCivilDate() activeOn?: string;
 }
 
+export class ListEligibleTeachingAssignmentTeachersDto extends TeachingAssignmentPageDto {
+  @IsUUID() subjectId!: string;
+  @IsCivilDate() validFrom!: string;
+  @IsOptional() @IsCivilDate() validUntil?: string;
+}
+
 export class CreateTeachingAssignmentDto {
   @IsUUID() schoolClassId!: string;
   @IsUUID() subjectId!: string;

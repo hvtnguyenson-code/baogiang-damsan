@@ -28,6 +28,29 @@ export function businessMidnight(value: CivilDateString): Date {
   return new Date(`${value}T00:00:00.000${BUSINESS_UTC_OFFSET}`);
 }
 
+export function staffSubjectCoverageBounds(
+  validFrom: CivilDateString,
+  effectiveEnd: CivilDateString,
+): { coverageStart: Date; coverageEndExclusive: Date } {
+  return {
+    coverageStart: businessMidnight(validFrom),
+    coverageEndExclusive: businessMidnight(nextCivilDate(effectiveEnd)),
+  };
+}
+
+export function staffSubjectCoverageWhere(
+  subjectId: string,
+  validFrom: CivilDateString,
+  effectiveEnd: CivilDateString,
+): Prisma.StaffSubjectWhereInput {
+  const { coverageStart, coverageEndExclusive } = staffSubjectCoverageBounds(validFrom, effectiveEnd);
+  return {
+    subjectId,
+    validFrom: { lte: coverageStart },
+    OR: [{ validUntil: null }, { validUntil: { gte: coverageEndExclusive } }],
+  };
+}
+
 export function intervalIsWithinCalendar(
   validFrom: CivilDateString,
   validUntil: CivilDateString | null,
@@ -103,14 +126,10 @@ export async function requireStaffSubjectCoverage(
   validFrom: CivilDateString,
   effectiveEnd: CivilDateString,
 ): Promise<void> {
-  const coverageStart = businessMidnight(validFrom);
-  const coverageEndExclusive = businessMidnight(nextCivilDate(effectiveEnd));
   const coverage = await db.staffSubject.findFirst({
     where: {
       userId: teacherUserId,
-      subjectId,
-      validFrom: { lte: coverageStart },
-      OR: [{ validUntil: null }, { validUntil: { gte: coverageEndExclusive } }],
+      ...staffSubjectCoverageWhere(subjectId, validFrom, effectiveEnd),
     },
     select: { id: true },
   });

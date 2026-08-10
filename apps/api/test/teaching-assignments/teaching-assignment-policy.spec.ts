@@ -8,6 +8,8 @@ import {
   previousCivilDate,
   requireCalendarEnvelope,
   requireStaffSubjectCoverage,
+  staffSubjectCoverageBounds,
+  staffSubjectCoverageWhere,
 } from '../../src/teaching-assignments/teaching-assignment-policy';
 
 const calendar = {
@@ -72,6 +74,20 @@ describe('teaching-assignment civil-date policy', () => {
 
   it('maps business midnight at +07:00 to the exact absolute instant', () => {
     expect(businessMidnight('2026-08-03').toISOString()).toBe('2026-08-02T17:00:00.000Z');
+  });
+
+  it('derives one canonical half-open StaffSubject predicate from inclusive civil dates', () => {
+    const bounds = staffSubjectCoverageBounds('2028-02-29', '2028-03-01');
+    expect(bounds.coverageStart.toISOString()).toBe('2028-02-28T17:00:00.000Z');
+    expect(bounds.coverageEndExclusive.toISOString()).toBe('2028-03-01T17:00:00.000Z');
+    const where = staffSubjectCoverageWhere('subject-id', '2028-02-29', '2028-03-01');
+    expect(where).toEqual({
+      subjectId: 'subject-id',
+      validFrom: { lte: bounds.coverageStart },
+      OR: [{ validUntil: null }, { validUntil: { gte: bounds.coverageEndExclusive } }],
+    });
+    expect(bounds.coverageEndExclusive >= bounds.coverageEndExclusive).toBe(true);
+    expect(new Date(bounds.coverageEndExclusive.getTime() - 1) >= bounds.coverageEndExclusive).toBe(false);
   });
 
   it('queries StaffSubject with inclusive start and exact inclusive end-exclusive coverage', async () => {
