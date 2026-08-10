@@ -1,5 +1,7 @@
 import { CatalogStatus, UserStatus } from '@prisma/client';
+import { CivilDateString } from '@baogiang/contracts';
 import request, { Agent } from 'supertest';
+import { parseCivilDate } from '../../src/common/validation/civil-date';
 import { businessMidnight } from '../../src/teaching-assignments/teaching-assignment-policy';
 import {
   integration,
@@ -8,8 +10,8 @@ import {
 } from '../helpers/phase01-test-harness';
 
 const capability = 'SUBJECT_MANAGE';
-const calendarStart = '2026-08-03';
-const calendarEnd = '2026-09-18';
+const calendarStart: CivilDateString = '2026-08-03';
+const calendarEnd: CivilDateString = '2026-09-18';
 
 integration('Teaching assignment workspace options (isolated PostgreSQL integration)', () => {
   const h = new Phase01Harness();
@@ -46,8 +48,8 @@ integration('Teaching assignment workspace options (isolated PostgreSQL integrat
         data: {
           academicYearId: academicYear.id,
           versionNumber: 1,
-          startDate: businessMidnight(calendarStart),
-          endDate: businessMidnight(calendarEnd),
+          startDate: parseCivilDate(calendarStart),
+          endDate: parseCivilDate(calendarEnd),
           officialWeekCount: 7,
           reserveWeekCount: 0,
           teachingWeekdays: ['MONDAY'],
@@ -59,7 +61,7 @@ integration('Teaching assignment workspace options (isolated PostgreSQL integrat
     return academicYear;
   }
 
-  async function subject(status = CatalogStatus.ACTIVE) {
+  async function subject(status: CatalogStatus = CatalogStatus.ACTIVE) {
     return h.prisma.subject.create({
       data: { code: normalizedCode('S', 6), name: normalizedCode('Subject', 4), status },
     });
@@ -88,7 +90,12 @@ integration('Teaching assignment workspace options (isolated PostgreSQL integrat
     });
   }
 
-  async function coverage(userId: string, subjectId: string, start = calendarStart, endExclusive?: string) {
+  async function coverage(
+    userId: string,
+    subjectId: string,
+    start: CivilDateString = calendarStart,
+    endExclusive?: CivilDateString,
+  ) {
     return h.prisma.staffSubject.create({
       data: {
         userId,
@@ -149,22 +156,22 @@ integration('Teaching assignment workspace options (isolated PostgreSQL integrat
       data: { academicYearId: otherYear.id, code: normalizedCode('C', 5), name: 'Other', gradeLevel: 12 },
     });
     const activeSubject = await subject();
-    await subject(CatalogStatus.INACTIVE);
+    const inactiveSubject = await subject(CatalogStatus.INACTIVE);
     const historical = await teacher({ status: UserStatus.DISABLED, name: 'Disabled historical' });
     const noProfile = await teacher({ profile: false });
     const otherTeacher = await teacher({ name: 'Other year' });
-    for (const [schoolClassId, academicYearId, teacherUserId] of [
-      [activeClass.id, academicYear.id, historical.id],
-      [inactiveClass.id, academicYear.id, historical.id],
-      [activeClass.id, academicYear.id, noProfile.id],
-      [otherClass.id, otherYear.id, otherTeacher.id],
+    for (const [schoolClassId, academicYearId, subjectId, teacherUserId] of [
+      [activeClass.id, academicYear.id, activeSubject.id, historical.id],
+      [inactiveClass.id, academicYear.id, activeSubject.id, historical.id],
+      [activeClass.id, academicYear.id, inactiveSubject.id, noProfile.id],
+      [otherClass.id, otherYear.id, activeSubject.id, otherTeacher.id],
     ]) {
       await h.prisma.teachingAssignment.create({ data: {
         schoolClassId,
         academicYearId,
-        subjectId: activeSubject.id,
+        subjectId,
         teacherUserId,
-        validFrom: businessMidnight(calendarStart),
+        validFrom: parseCivilDate(calendarStart),
       } });
     }
     const manager = await actor();
