@@ -115,6 +115,7 @@ export type CapabilityKey =
   | 'AUDIT_VIEW'
   | 'ADDITIONAL_DUTY_CATALOG_MANAGE'
   | 'ADDITIONAL_DUTY_ASSIGNMENT_MANAGE'
+  | 'ACADEMIC_STRUCTURE_MANAGE'
   | 'AI_ACTIVE_USE_SCHOOL'   // AI active use school-wide (BGH)
   | 'AI_ACTIVE_USE_DEPARTMENT' // AI active use department-wide (tổ trưởng)
   | 'AI_ACTIVE_USE_ACTIVITY' // AI active use activity-wide (điều phối)
@@ -339,6 +340,119 @@ export interface AdditionalDutyDefinitionOptionsResponse {
 
 export interface StaffAdditionalDutyAssignmentListResponse {
   items: StaffAdditionalDutyAssignmentRecord[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+// ============================================================
+// Phase 02 Academic Structure Contracts
+// ============================================================
+
+export type AcademicWeekday = 'MONDAY' | 'TUESDAY' | 'WEDNESDAY' | 'THURSDAY' | 'FRIDAY' | 'SATURDAY' | 'SUNDAY';
+export type AcademicWeekKind = 'OFFICIAL' | 'RESERVE';
+export type CivilDateString = `${number}-${number}-${number}`;
+
+export interface AcademicYearRecord {
+  id: string;
+  code: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AcademicYearListResponse {
+  items: AcademicYearRecord[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+export interface AcademicSemesterRecord {
+  id: string;
+  code: string;
+  name: string;
+  ordinal: number;
+  startDate: CivilDateString;
+  endDate: CivilDateString;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AcademicWeekSegmentRecord {
+  id: string;
+  label: string;
+  segmentOrder: number;
+  startDate: CivilDateString;
+  endDate: CivilDateString;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AcademicWeekRecord {
+  id: string;
+  kind: AcademicWeekKind;
+  officialWeekNumber: number | null;
+  reserveWeekNumber: number | null;
+  displayLabel: string;
+  sortOrder: number;
+  segments: AcademicWeekSegmentRecord[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CalendarInterruptionRecord {
+  id: string;
+  code: string;
+  name: string;
+  startDate: CivilDateString;
+  endDate: CivilDateString;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AcademicCalendarVersionSummary {
+  id: string;
+  academicYearId: string;
+  versionNumber: number;
+  startDate: CivilDateString;
+  endDate: CivilDateString;
+  officialWeekCount: number;
+  reserveWeekCount: number;
+  teachingWeekdays: AcademicWeekday[];
+  isActive: boolean;
+  activatedAt: string | null;
+  note: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AcademicCalendarVersionDetail extends AcademicCalendarVersionSummary {
+  semesters: AcademicSemesterRecord[];
+  weeks: AcademicWeekRecord[];
+  interruptions: CalendarInterruptionRecord[];
+}
+
+export interface AcademicCalendarVersionListResponse {
+  items: AcademicCalendarVersionSummary[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+export interface SchoolClassRecord {
+  id: string;
+  academicYearId: string;
+  code: string;
+  name: string;
+  gradeLevel: 10 | 11 | 12;
+  status: CatalogStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SchoolClassListResponse {
+  items: SchoolClassRecord[];
   page: number;
   pageSize: number;
   total: number;
