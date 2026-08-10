@@ -22,6 +22,7 @@ export function canManageDutyAssignments(capabilities: ScopedCapability[]): bool
 }
 
 export const managementRoutes: ManagementRoute[] = [
+  { to: '/quan-tri/cau-truc-nam-hoc', label: 'Cấu trúc năm học', isVisible: (c) => hasSchoolCapability(c, 'ACADEMIC_STRUCTURE_MANAGE') },
   { to: '/quan-tri/nguoi-dung', label: 'Người dùng', isVisible: (c) => hasSchoolCapability(c, 'USER_MANAGE') },
   { to: '/quan-tri/to-chuyen-mon', label: 'Tổ chuyên môn', isVisible: (c) => hasSchoolCapability(c, 'SUBJECT_GROUP_MANAGE') },
   { to: '/quan-tri/mon-hoc', label: 'Môn học', isVisible: (c) => hasSchoolCapability(c, 'SUBJECT_MANAGE') },
@@ -38,6 +39,7 @@ export function accessibleManagementRoutes(auth: AuthMeResponse | null): Managem
 }
 
 export const capabilityLabels: Partial<Record<CapabilityKey, string>> = {
+  ACADEMIC_STRUCTURE_MANAGE: 'Quản lý cấu trúc năm học',
   TEACHER_BASE: 'Công việc giáo viên cơ bản',
   SUBJECT_GROUP_LEAD: 'Phụ trách tổ chuyên môn',
   USER_MANAGE: 'Quản lý người dùng',
