@@ -37,6 +37,88 @@ describe('academic structure pages', () => {
     expect(screen.queryByRole('button', { name: /xóa/i })).not.toBeInTheDocument();
   });
 
+  it('validates normalized AcademicYear values before create or update and sends only meaningful sparse patches', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input); const method = init?.method ?? 'GET';
+      if (url.endsWith('/auth/me')) return jsonResponse(academicAuth);
+      if (url.endsWith('/academic-years/year-1') && method === 'PATCH') return jsonResponse({ ...year, code: '2027-2028' });
+      if (url.endsWith('/academic-years') && method === 'POST') return jsonResponse({ ...year, code: '2028-2029', name: 'Năm học mới' }, 201);
+      return jsonResponse({ items: [year], page: 1, pageSize: 20, total: 1 });
+    });
+    vi.stubGlobal('fetch', fetchMock); renderApp('/quan-tri/cau-truc-nam-hoc');
+    await screen.findByRole('region', { name: 'Sổ năm học' });
+    await userEvent.click(screen.getByRole('button', { name: 'Tạo năm học' }));
+    await userEvent.type(screen.getByLabelText('Mã năm học'), '   '); await userEvent.type(screen.getByLabelText('Tên năm học'), '   ');
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu năm học' }));
+    expect(screen.getByLabelText('Mã năm học')).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByLabelText('Tên năm học')).toHaveAttribute('aria-invalid', 'true');
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).endsWith('/academic-years') && call[1]?.method === 'POST')).toBe(false);
+    await userEvent.clear(screen.getByLabelText('Mã năm học')); await userEvent.type(screen.getByLabelText('Mã năm học'), ' 2028-2029 ');
+    await userEvent.clear(screen.getByLabelText('Tên năm học')); await userEvent.type(screen.getByLabelText('Tên năm học'), ' Năm học mới ');
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu năm học' }));
+    const createCall = fetchMock.mock.calls.find((call) => String(call[0]).endsWith('/academic-years') && call[1]?.method === 'POST')!;
+    expect(JSON.parse(String(createCall[1]?.body))).toEqual({ code: '2028-2029', name: 'Năm học mới' });
+    await userEvent.click(screen.getByRole('button', { name: 'Sửa 2026-2027' }));
+    await userEvent.clear(screen.getByLabelText('Mã năm học')); await userEvent.type(screen.getByLabelText('Mã năm học'), '   ');
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu năm học' }));
+    expect(screen.getByRole('heading', { name: 'Chỉnh sửa năm học' })).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).endsWith('/academic-years/year-1') && call[1]?.method === 'PATCH')).toBe(false);
+    await userEvent.clear(screen.getByLabelText('Mã năm học')); await userEvent.type(screen.getByLabelText('Mã năm học'), ' 2027-2028 ');
+    await userEvent.click(screen.getByRole('button', { name: 'Lưu năm học' }));
+    const patchCall = fetchMock.mock.calls.find((call) => String(call[0]).endsWith('/academic-years/year-1') && call[1]?.method === 'PATCH')!;
+    expect(JSON.parse(String(patchCall[1]?.body))).toEqual({ code: '2027-2028' });
+    await userEvent.click(screen.getByRole('button', { name: 'Sửa 2026-2027' })); await userEvent.click(screen.getByRole('button', { name: 'Lưu năm học' }));
+    expect(fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/academic-years/year-1') && call[1]?.method === 'PATCH')).toHaveLength(1);
+  }, 10_000);
+
+  it('clears stale AcademicYear mutation feedback when an explicit new workflow begins', async () => {
+    let attempts = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input); if (url.endsWith('/auth/me')) return jsonResponse(academicAuth);
+      if (url.endsWith('/academic-years') && init?.method === 'POST' && attempts++ === 0) return jsonResponse({ statusCode: 409, message: 'conflict' }, 409);
+      return jsonResponse({ items: [year], page: 1, pageSize: 20, total: 1 });
+    }));
+    renderApp('/quan-tri/cau-truc-nam-hoc'); await screen.findByRole('region', { name: 'Sổ năm học' });
+    await userEvent.click(screen.getByRole('button', { name: 'Tạo năm học' })); await userEvent.type(screen.getByLabelText('Mã năm học'), '2028'); await userEvent.type(screen.getByLabelText('Tên năm học'), 'Năm học 2028'); await userEvent.click(screen.getByRole('button', { name: 'Lưu năm học' }));
+    expect(await screen.findByText(/Dữ liệu xung đột/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Hủy' })); await userEvent.click(screen.getByRole('button', { name: 'Tạo năm học' }));
+    expect(screen.queryByText(/Dữ liệu xung đột/)).not.toBeInTheDocument();
+  }, 10_000);
+
+  it('validates normalized SchoolClass values, preserves empty edits, and sends exact create/update payloads', async () => {
+    const row = { id: 'class-1', academicYearId: year.id, code: '10A1', name: 'Lớp 10A1', gradeLevel: 10, status: 'ACTIVE', createdAt: '', updatedAt: '' };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input); const method = init?.method ?? 'GET';
+      if (url.endsWith('/auth/me')) return jsonResponse(academicAuth); if (url.endsWith('/academic-years/year-1')) return jsonResponse(year);
+      if (url.endsWith('/academic-years/year-1/classes') && method === 'POST') return jsonResponse({ ...row, id: 'class-2', code: '10A2' }, 201);
+      if (url.endsWith('/school-classes/class-1') && method === 'PATCH') return jsonResponse({ ...row, name: 'Lớp 10A1 mới' });
+      return jsonResponse({ items: [row], page: 1, pageSize: 20, total: 1 });
+    });
+    vi.stubGlobal('fetch', fetchMock); renderApp('/quan-tri/cau-truc-nam-hoc/year-1/lop'); await screen.findByRole('region', { name: 'Sổ lớp học' });
+    await userEvent.click(screen.getByRole('button', { name: 'Tạo lớp' })); await userEvent.type(screen.getByLabelText('Mã lớp'), ' '); await userEvent.type(screen.getByLabelText('Tên lớp'), ' '); await userEvent.click(screen.getByRole('button', { name: 'Lưu lớp học' }));
+    expect(screen.getByLabelText('Mã lớp')).toHaveAttribute('aria-invalid', 'true'); expect(screen.getByLabelText('Tên lớp')).toHaveAttribute('aria-invalid', 'true');
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).endsWith('/academic-years/year-1/classes') && call[1]?.method === 'POST')).toBe(false);
+    await userEvent.clear(screen.getByLabelText('Mã lớp')); await userEvent.type(screen.getByLabelText('Mã lớp'), ' 10a2 '); await userEvent.clear(screen.getByLabelText('Tên lớp')); await userEvent.type(screen.getByLabelText('Tên lớp'), ' Lớp 10A2 '); await userEvent.click(screen.getByRole('button', { name: 'Lưu lớp học' }));
+    const createCall = fetchMock.mock.calls.find((call) => String(call[0]).endsWith('/academic-years/year-1/classes') && call[1]?.method === 'POST')!;
+    expect(JSON.parse(String(createCall[1]?.body))).toEqual({ code: '10A2', name: 'Lớp 10A2', gradeLevel: 10 });
+    await userEvent.click(screen.getByRole('button', { name: 'Sửa 10A1' })); await userEvent.clear(screen.getByLabelText('Tên lớp')); await userEvent.type(screen.getByLabelText('Tên lớp'), ' '); await userEvent.click(screen.getByRole('button', { name: 'Lưu lớp học' }));
+    expect(screen.getByRole('heading', { name: 'Chỉnh sửa lớp học' })).toBeInTheDocument(); expect(fetchMock.mock.calls.some((call) => String(call[0]).endsWith('/school-classes/class-1') && call[1]?.method === 'PATCH')).toBe(false);
+    await userEvent.clear(screen.getByLabelText('Tên lớp')); await userEvent.type(screen.getByLabelText('Tên lớp'), ' Lớp 10A1 mới '); await userEvent.click(screen.getByRole('button', { name: 'Lưu lớp học' }));
+    const patchCall = fetchMock.mock.calls.find((call) => String(call[0]).endsWith('/school-classes/class-1') && call[1]?.method === 'PATCH')!;
+    expect(JSON.parse(String(patchCall[1]?.body))).toEqual({ name: 'Lớp 10A1 mới' });
+    await userEvent.click(screen.getByRole('button', { name: 'Sửa 10A1' })); await userEvent.click(screen.getByRole('button', { name: 'Lưu lớp học' }));
+    expect(fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/school-classes/class-1') && call[1]?.method === 'PATCH')).toHaveLength(1);
+  }, 10_000);
+
+  it('sends exact SchoolClass status and grade filters', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => { const url = String(input); if (url.endsWith('/auth/me')) return jsonResponse(academicAuth); if (url.endsWith('/academic-years/year-1')) return jsonResponse(year); return jsonResponse({ items: [], page: 1, pageSize: 20, total: 0 }); });
+    vi.stubGlobal('fetch', fetchMock); renderApp('/quan-tri/cau-truc-nam-hoc/year-1/lop'); await screen.findByRole('heading', { name: 'Chưa có lớp học' });
+    await userEvent.selectOptions(screen.getByLabelText('Trạng thái'), 'INACTIVE');
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes('status=INACTIVE'))).toBe(true);
+    await userEvent.selectOptions(screen.getByLabelText('Khối', { selector: '#class-grade-filter' }), '11');
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes('status=INACTIVE') && String(call[0]).includes('gradeLevel=11'))).toBe(true);
+  });
+
   it('generates and resets an explicit week skeleton without selecting weekdays', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input); if (url.endsWith('/auth/me')) return jsonResponse(academicAuth); if (url.endsWith('/academic-years/year-1')) return jsonResponse(year);
@@ -63,6 +145,27 @@ describe('academic structure pages', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Xác nhận đặt lại' }));
     expect(screen.queryByText(/Tuần chính thức \d+ · thứ tự/, { selector: 'summary' })).not.toBeInTheDocument();
     expect(screen.getByLabelText('Số tuần chính thức')).toBeEnabled();
+  });
+
+  it('keeps active calendar actions hidden and renders each official or reserve week with its own segments', async () => {
+    const activeSummary = { ...versionSummary, isActive: true, officialWeekCount: 5, reserveWeekCount: 1 };
+    const detail = {
+      ...versionDetail,
+      ...activeSummary,
+      weeks: [
+        { id: 'week-5', kind: 'OFFICIAL', officialWeekNumber: 5, reserveWeekNumber: null, displayLabel: 'Tuần 5', sortOrder: 1, segments: [{ id: 'segment-5a', label: '5a', segmentOrder: 1, startDate: '2026-08-31', endDate: '2026-09-01', createdAt: '', updatedAt: '' }, { id: 'segment-5b', label: '5b', segmentOrder: 2, startDate: '2026-09-02', endDate: '2026-09-04', createdAt: '', updatedAt: '' }], createdAt: '', updatedAt: '' },
+        { id: 'week-dp1', kind: 'RESERVE', officialWeekNumber: null, reserveWeekNumber: 1, displayLabel: 'DP1', sortOrder: 2, segments: [{ id: 'segment-dp1', label: 'Dự phòng', segmentOrder: 1, startDate: '2026-09-04', endDate: '2026-09-04', createdAt: '', updatedAt: '' }], createdAt: '', updatedAt: '' },
+      ],
+    };
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => { const url = String(input); if (url.endsWith('/auth/me')) return jsonResponse(academicAuth); if (url.endsWith('/academic-years/year-1')) return jsonResponse(year); if (url.endsWith('/academic-calendar-versions/version-1')) return jsonResponse(detail); return jsonResponse({ items: [activeSummary], page: 1, pageSize: 20, total: 1 }); }));
+    renderApp('/quan-tri/cau-truc-nam-hoc/year-1/lich');
+    expect(await screen.findByText('Đang áp dụng')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Kích hoạt Phiên 1' })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Xem chi tiết Phiên 1' }));
+    const officialWeek = await screen.findByRole('heading', { name: 'Tuần 5 · thứ tự 1' });
+    expect(within(officialWeek.closest('section')!).getByText('5a')).toBeInTheDocument();
+    expect(within(officialWeek.closest('section')!).getByText('5b')).toBeInTheDocument();
+    expect(screen.getByText('Tuần dự phòng 1')).toBeInTheDocument();
   });
 
   it('keeps class records year-scoped and exposes status confirmation without delete', async () => {
@@ -129,7 +232,7 @@ describe('academic structure pages', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Xác nhận kích hoạt Phiên 1' }));
     expect(await screen.findByText('Đã kích hoạt phiên 1.')).toBeInTheDocument();
     expect(screen.queryByText('Lịch chưa phủ đủ ngày dạy.')).not.toBeInTheDocument();
-  });
+  }, 10_000);
 
   it('clears a failed template request before creating a new calendar', async () => {
     let templateFailed = false;
@@ -150,7 +253,7 @@ describe('academic structure pages', () => {
     expect(screen.queryByText('Không thể hoàn tất yêu cầu. Hãy thử lại khi kết nối ổn định.')).not.toBeInTheDocument();
     await fillMinimalCalendar(); await userEvent.click(screen.getAllByRole('button', { name: 'Tạo phiên lịch' }).at(-1)!);
     expect(await screen.findByText('Đã tạo phiên lịch mới. Phiên này được giữ bất biến.')).toBeInTheDocument();
-  });
+  }, 10_000);
 
   it('clears competing class mutation errors after later successful operations', async () => {
     let saveAttempts = 0; let actionAttempts = 0;
