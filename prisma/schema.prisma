@@ -3,6 +3,7 @@
 // Prisma schema for baogiang-damsan
 //
 // Phase 01: Identity, access, organizational assignment, and audit foundation.
+// Local Phase 02A: Versioned academic calendar and academic-year class foundation.
 //
 // Database: PostgreSQL 17; connection supplied through DATABASE_URL per environment.
 // ============================================================
@@ -36,6 +37,21 @@ enum UserStatus {
 enum CatalogStatus {
   ACTIVE
   INACTIVE
+}
+
+enum AcademicWeekday {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
+enum AcademicWeekKind {
+  OFFICIAL
+  RESERVE
 }
 
 enum AuditResult {
@@ -271,4 +287,135 @@ model StaffAdditionalDutyAssignment {
   @@index([dutyDefinitionId, validFrom, validUntil])
   @@index([scopeType, scopeResourceId, validFrom, validUntil])
   @@map("staff_additional_duty_assignments")
+}
+
+model AcademicYear {
+  id        String   @id @default(uuid()) @db.Uuid
+  code      String   @unique @db.VarChar(20)
+  name      String   @db.VarChar(150)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  calendarVersions AcademicCalendarVersion[]
+  classes          SchoolClass[]
+
+  @@map("academic_years")
+}
+
+model AcademicCalendarVersion {
+  id                String            @id @default(uuid()) @db.Uuid
+  academicYearId    String            @map("academic_year_id") @db.Uuid
+  versionNumber     Int               @map("version_number")
+  startDate         DateTime          @map("start_date") @db.Date
+  endDate           DateTime          @map("end_date") @db.Date
+  officialWeekCount Int               @map("official_week_count")
+  reserveWeekCount  Int               @map("reserve_week_count")
+  teachingWeekdays  AcademicWeekday[] @map("teaching_weekdays")
+  isActive          Boolean           @default(false) @map("is_active")
+  activatedAt       DateTime?         @map("activated_at") @db.Timestamptz(3)
+  note              String?           @db.Text
+  createdAt         DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  academicYear  AcademicYear           @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  semesters     Semester[]
+  weeks         AcademicWeek[]
+  interruptions CalendarInterruption[]
+
+  @@unique([academicYearId, versionNumber])
+  @@index([academicYearId, isActive])
+  @@map("academic_calendar_versions")
+}
+
+model Semester {
+  id                String   @id @default(uuid()) @db.Uuid
+  calendarVersionId String   @map("calendar_version_id") @db.Uuid
+  code              String   @db.VarChar(30)
+  name              String   @db.VarChar(150)
+  ordinal           Int
+  startDate         DateTime @map("start_date") @db.Date
+  endDate           DateTime @map("end_date") @db.Date
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  calendarVersion AcademicCalendarVersion @relation(fields: [calendarVersionId], references: [id], onDelete: Restrict)
+
+  @@unique([calendarVersionId, code])
+  @@unique([calendarVersionId, ordinal])
+  @@index([calendarVersionId, startDate, endDate])
+  @@map("semesters")
+}
+
+model AcademicWeek {
+  id                 String           @id @default(uuid()) @db.Uuid
+  calendarVersionId  String           @map("calendar_version_id") @db.Uuid
+  kind               AcademicWeekKind
+  officialWeekNumber Int?             @map("official_week_number")
+  reserveWeekNumber  Int?             @map("reserve_week_number")
+  displayLabel       String           @map("display_label") @db.VarChar(50)
+  sortOrder          Int              @map("sort_order")
+  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  calendarVersion AcademicCalendarVersion @relation(fields: [calendarVersionId], references: [id], onDelete: Restrict)
+  segments        AcademicWeekSegment[]   @relation("AcademicWeekSegments")
+
+  @@unique([id, calendarVersionId])
+  @@unique([calendarVersionId, displayLabel])
+  @@unique([calendarVersionId, sortOrder])
+  @@index([calendarVersionId, kind])
+  @@map("academic_weeks")
+}
+
+model AcademicWeekSegment {
+  id                String   @id @default(uuid()) @db.Uuid
+  academicWeekId    String   @map("academic_week_id") @db.Uuid
+  calendarVersionId String   @map("calendar_version_id") @db.Uuid
+  label             String   @db.VarChar(50)
+  segmentOrder      Int      @map("segment_order")
+  startDate         DateTime @map("start_date") @db.Date
+  endDate           DateTime @map("end_date") @db.Date
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  academicWeek AcademicWeek @relation("AcademicWeekSegments", fields: [academicWeekId, calendarVersionId], references: [id, calendarVersionId], onDelete: Restrict)
+
+  @@unique([academicWeekId, label])
+  @@unique([academicWeekId, segmentOrder])
+  @@index([calendarVersionId, startDate, endDate], map: "academic_week_segments_version_dates_idx")
+  @@map("academic_week_segments")
+}
+
+model CalendarInterruption {
+  id                String   @id @default(uuid()) @db.Uuid
+  calendarVersionId String   @map("calendar_version_id") @db.Uuid
+  code              String   @db.VarChar(50)
+  name              String   @db.VarChar(150)
+  startDate         DateTime @map("start_date") @db.Date
+  endDate           DateTime @map("end_date") @db.Date
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  calendarVersion AcademicCalendarVersion @relation(fields: [calendarVersionId], references: [id], onDelete: Restrict)
+
+  @@unique([calendarVersionId, code])
+  @@index([calendarVersionId, startDate, endDate], map: "calendar_interruptions_version_dates_idx")
+  @@map("calendar_interruptions")
+}
+
+model SchoolClass {
+  id             String        @id @default(uuid()) @db.Uuid
+  academicYearId String        @map("academic_year_id") @db.Uuid
+  code           String        @db.VarChar(50)
+  name           String        @db.VarChar(150)
+  gradeLevel     Int           @map("grade_level")
+  status         CatalogStatus @default(ACTIVE)
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+
+  @@unique([academicYearId, code])
+  @@index([academicYearId, status, gradeLevel, code])
+  @@map("classes")
 }
