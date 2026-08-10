@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { AcademicCalendarVersion } from '@prisma/client';
 import {
   businessMidnight,
@@ -16,12 +16,18 @@ const calendar = {
 } as Pick<AcademicCalendarVersion, 'startDate' | 'endDate'>;
 
 describe('teaching-assignment civil-date policy', () => {
-  it('uses inclusive calendar boundaries and keeps an open interval operationally bounded by calendar end', () => {
+  it('accepts both inclusive calendar boundaries and keeps null validUntil unchanged', () => {
     expect(intervalIsWithinCalendar('2026-08-03', '2026-09-18', calendar)).toBe(true);
+    expect(intervalIsWithinCalendar('2026-08-03', '2026-08-03', calendar)).toBe(true);
+    expect(intervalIsWithinCalendar('2026-09-18', '2026-09-18', calendar)).toBe(true);
     expect(intervalIsWithinCalendar('2026-08-02', '2026-09-18', calendar)).toBe(false);
     expect(intervalIsWithinCalendar('2026-08-03', '2026-09-19', calendar)).toBe(false);
     expect(intervalIsWithinCalendar('2026-08-03', null, calendar)).toBe(true);
-    expect(() => requireCalendarEnvelope('2026-08-10', '2026-08-09', calendar)).toThrow();
+    expect(() => requireCalendarEnvelope('2026-08-03', null, calendar)).not.toThrow();
+  });
+
+  it('rejects validUntil before validFrom instead of treating it as a calendar-envelope failure', () => {
+    expect(() => requireCalendarEnvelope('2026-08-10', '2026-08-09', calendar)).toThrow(BadRequestException);
   });
 
   it('rejects an incompatible candidate calendar before activation and rechecks open-ended coverage', async () => {
@@ -54,14 +60,21 @@ describe('teaching-assignment civil-date policy', () => {
     })).rejects.toBeInstanceOf(ConflictException);
   });
 
-  it('performs previous and next civil-day arithmetic through UTC, including leap days', () => {
+  it('performs civil-day arithmetic across month, leap-day and year boundaries', () => {
+    expect(previousCivilDate('2026-03-01')).toBe('2026-02-28');
+    expect(nextCivilDate('2026-01-31')).toBe('2026-02-01');
     expect(previousCivilDate('2028-03-01')).toBe('2028-02-29');
     expect(nextCivilDate('2028-02-28')).toBe('2028-02-29');
     expect(nextCivilDate('2028-02-29')).toBe('2028-03-01');
+    expect(previousCivilDate('2027-01-01')).toBe('2026-12-31');
+    expect(nextCivilDate('2026-12-31')).toBe('2027-01-01');
+  });
+
+  it('maps business midnight at +07:00 to the exact absolute instant', () => {
     expect(businessMidnight('2026-08-03').toISOString()).toBe('2026-08-02T17:00:00.000Z');
   });
 
-  it('accepts exact StaffSubject exclusive-end coverage and rejects one instant too early', async () => {
+  it('queries StaffSubject with inclusive start and exact inclusive end-exclusive coverage', async () => {
     const validUntil = businessMidnight('2026-09-19');
     const findFirst = jest.fn().mockResolvedValue({ id: 'coverage' });
     await requireStaffSubjectCoverage(
@@ -77,8 +90,10 @@ describe('teaching-assignment civil-date policy', () => {
         OR: [{ validUntil: null }, { validUntil: { gte: validUntil } }],
       }),
     }));
+  });
 
-    findFirst.mockResolvedValue(null);
+  it('rejects a missing StaffSubject match while PostgreSQL integration proves the early-end boundary', async () => {
+    const findFirst = jest.fn().mockResolvedValue(null);
     await expect(requireStaffSubjectCoverage(
       { staffSubject: { findFirst } } as never,
       '00000000-0000-0000-0000-000000000001',
