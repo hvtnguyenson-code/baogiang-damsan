@@ -16,6 +16,9 @@ import { CapabilitiesPage } from './pages/CapabilitiesPage';
 import { AuditPage } from './pages/AuditPage';
 import { DutyCatalogPage } from './pages/DutyCatalogPage';
 import { DutyAssignmentsPage } from './pages/DutyAssignmentsPage';
+import { AcademicYearsPage } from './pages/AcademicYearsPage';
+import { AcademicCalendarPage } from './pages/AcademicCalendarPage';
+import { SchoolClassesPage } from './pages/SchoolClassesPage';
 import { canManageDutyAssignments, hasSchoolCapability } from './lib/capabilities';
 
 export default function App() {
@@ -44,6 +47,12 @@ export default function App() {
           <Route element={<CapabilityRoute allow={(c) => hasSchoolCapability(c, 'AUDIT_VIEW')} />}><Route path="/quan-tri/nhat-ky" element={<AuditPage />} /></Route>
           <Route element={<CapabilityRoute allow={(c) => hasSchoolCapability(c, 'ADDITIONAL_DUTY_CATALOG_MANAGE')} />}><Route path="/quan-tri/kiem-nhiem/danh-muc" element={<DutyCatalogPage />} /></Route>
           <Route element={<CapabilityRoute allow={canManageDutyAssignments} />}><Route path="/quan-tri/kiem-nhiem/phan-cong" element={<DutyAssignmentsPage />} /></Route>
+          <Route element={<CapabilityRoute allow={(c) => hasSchoolCapability(c, 'ACADEMIC_STRUCTURE_MANAGE')} />}>
+            <Route path="/quan-tri/cau-truc-nam-hoc" element={<AcademicYearsPage />} />
+            <Route path="/quan-tri/cau-truc-nam-hoc/:academicYearId" element={<Navigate to="lich" replace />} />
+            <Route path="/quan-tri/cau-truc-nam-hoc/:academicYearId/lich" element={<AcademicCalendarPage />} />
+            <Route path="/quan-tri/cau-truc-nam-hoc/:academicYearId/lop" element={<SchoolClassesPage />} />
+          </Route>
         </Route>
       </Route>
       <Route path="/trang-thai-he-thong" element={<SystemStatusPage />} />

@@ -14,6 +14,7 @@ describe('capability-aware navigation', () => {
     ['USER_MANAGE', 'Người dùng'], ['SUBJECT_GROUP_MANAGE', 'Tổ chuyên môn'], ['SUBJECT_MANAGE', 'Môn học'],
     ['CAPABILITY_GRANT', 'Cấp quyền'], ['AUDIT_VIEW', 'Nhật ký'], ['ADDITIONAL_DUTY_CATALOG_MANAGE', 'Danh mục kiêm nhiệm'],
     ['ADDITIONAL_DUTY_ASSIGNMENT_MANAGE', 'Phân công kiêm nhiệm'],
+    ['ACADEMIC_STRUCTURE_MANAGE', 'Cấu trúc năm học'],
   ] as const)('shows %s only when effective school-wide', async (key, label) => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(authWith(key))));
     renderApp('/');
@@ -26,6 +27,24 @@ describe('capability-aware navigation', () => {
     await screen.findByRole('heading', { name: /chào/i });
     expect(screen.queryByRole('link', { name: 'Người dùng' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Cấp quyền' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Cấu trúc năm học' })).not.toBeInTheDocument();
+  });
+
+  it('blocks academic structure for SYSTEM_ADMIN without the business capability', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(authWith('SYSTEM_ADMIN'))));
+    renderApp('/quan-tri/cau-truc-nam-hoc');
+    expect(await screen.findByRole('heading', { name: /không có quyền thực hiện thao tác này/i })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Cấu trúc năm học' })).not.toBeInTheDocument();
+  });
+
+  it('allows the academic register only with the school-wide academic capability', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => String(input).endsWith('/auth/me')
+      ? jsonResponse(authWith('ACADEMIC_STRUCTURE_MANAGE'))
+      : jsonResponse({ items: [], page: 1, pageSize: 20, total: 0 }));
+    vi.stubGlobal('fetch', fetchMock);
+    renderApp('/quan-tri/cau-truc-nam-hoc');
+    expect(await screen.findByRole('heading', { name: 'Cấu trúc năm học' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Cấu trúc năm học' })).toBeInTheDocument();
   });
 
   it('denies duty assignment navigation and direct route for an unrelated subject-group capability', async () => {
