@@ -229,11 +229,12 @@ test('real academic structure flow creates and activates a calendar and class', 
 
   await page.getByRole('link', { name: 'Lớp học' }).click();
   await page.getByRole('button', { name: 'Tạo lớp' }).click();
-  await page.getByLabel('Mã lớp').fill(classCode);
-  await page.getByLabel('Tên lớp').fill(`Lớp E2E ${suffix}`);
-  await page.getByLabel('Khối').selectOption('10');
+  const classForm = page.locator('form.long-form');
+  await classForm.getByLabel('Mã lớp').fill(classCode);
+  await classForm.getByLabel('Tên lớp').fill(`Lớp E2E ${suffix}`);
+  await classForm.getByLabel('Khối').selectOption('10');
   const classResponsePromise = page.waitForResponse((response) => /\/api\/academic-years\/[^/]+\/classes$/.test(new URL(response.url()).pathname) && response.request().method() === 'POST');
-  await page.getByRole('button', { name: 'Lưu lớp học' }).click();
+  await classForm.getByRole('button', { name: 'Lưu lớp học' }).click();
   expect((await classResponsePromise).status()).toBe(201);
   await expect(page.locator('tbody tr', { hasText: classCode })).toBeVisible();
 });
