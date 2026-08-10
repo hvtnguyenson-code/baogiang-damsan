@@ -55,7 +55,7 @@ for (const constraint of [
 }
 
 const capabilityKeys = CAPABILITIES.map(([key]) => key);
-assert.equal(capabilityKeys.length, 25);
+assert.equal(capabilityKeys.length, 26);
 assert.equal(new Set(capabilityKeys).size, capabilityKeys.length);
 for (const requiredKey of [
   'USER_MANAGE',
@@ -65,6 +65,7 @@ for (const requiredKey of [
   'AUDIT_VIEW',
   'ADDITIONAL_DUTY_CATALOG_MANAGE',
   'ADDITIONAL_DUTY_ASSIGNMENT_MANAGE',
+  'ACADEMIC_STRUCTURE_MANAGE',
 ]) {
   assert.ok(capabilityKeys.includes(requiredKey), `Missing seeded capability ${requiredKey}`);
 }
