@@ -46,6 +46,7 @@ integration('Catalog APIs (isolated PostgreSQL integration)', () => {
   beforeEach(async () => {
     await prisma.auditEvent.deleteMany();
     await prisma.authSession.deleteMany();
+    await prisma.teachingAssignment.deleteMany();
     await prisma.capabilityGrant.deleteMany();
     await prisma.subjectGroupMembership.deleteMany();
     await prisma.staffSubject.deleteMany();

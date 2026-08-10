@@ -1,5 +1,7 @@
-import { AcademicWeekKind, AcademicWeekday, CatalogStatus } from '@prisma/client';
+import { AcademicWeekKind, AcademicWeekday, CatalogStatus, UserStatus } from '@prisma/client';
+import { CivilDateString } from '@baogiang/contracts';
 import request, { Agent } from 'supertest';
+import { businessMidnight } from '../../src/teaching-assignments/teaching-assignment-policy';
 import { Phase01Harness, integration, testOrigin } from '../helpers/phase01-test-harness';
 
 const capability = 'ACADEMIC_STRUCTURE_MANAGE';
@@ -25,6 +27,22 @@ function calendarPayload(note = 'Phiên chuẩn'): Record<string, unknown> {
   };
 }
 
+function shiftedCalendarPayload(days: number, note: string): Record<string, unknown> {
+  const shiftCivilDates = (value: unknown): unknown => {
+    if (typeof value === 'string' && /^2026-\d{2}-\d{2}$/.test(value)) {
+      const date = new Date(`${value}T00:00:00.000Z`);
+      date.setUTCDate(date.getUTCDate() + days);
+      return date.toISOString().slice(0, 10);
+    }
+    if (Array.isArray(value)) return value.map(shiftCivilDates);
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, shiftCivilDates(item)]));
+    }
+    return value;
+  };
+  return shiftCivilDates(calendarPayload(note)) as Record<string, unknown>;
+}
+
 integration('Academic structure control plane (isolated PostgreSQL integration)', () => {
   const h = new Phase01Harness();
 
@@ -45,6 +63,41 @@ integration('Academic structure control plane (isolated PostgreSQL integration)'
     const response = await agent.post('/api/academic-years').set(origin).send({ code: ` ${code} `, name: ' Năm học thử nghiệm ' });
     expect(response.status).toBe(201);
     return response.body as { id: string; code: string };
+  }
+
+  async function createStoredTeachingAssignment(
+    academicYearId: string,
+    validFrom: CivilDateString,
+    validUntil: CivilDateString | null,
+    coverageEndExclusive: CivilDateString,
+  ) {
+    const suffix = crypto.randomUUID().slice(0, 7).toUpperCase();
+    const schoolClass = await h.prisma.schoolClass.create({
+      data: { academicYearId, code: `TA${suffix}`, name: 'TA class', gradeLevel: 10 },
+    });
+    const subject = await h.prisma.subject.create({ data: { code: `TS${suffix}`, name: 'TA subject' } });
+    const teacher = await h.prisma.user.create({ data: {
+      username: `ta-calendar-${suffix.toLowerCase()}`,
+      passwordHash: 'integration-only',
+      status: UserStatus.ACTIVE,
+      mustChangePassword: false,
+      profile: { create: { displayName: 'TA Calendar Teacher' } },
+    } });
+    await h.prisma.staffSubject.create({ data: {
+      userId: teacher.id,
+      subjectId: subject.id,
+      validFrom: businessMidnight(validFrom),
+      validUntil: businessMidnight(coverageEndExclusive),
+    } });
+    return h.prisma.teachingAssignment.create({ data: {
+      academicYearId,
+      schoolClassId: schoolClass.id,
+      subjectId: subject.id,
+      teacherUserId: teacher.id,
+      validFrom: new Date(`${validFrom}T00:00:00.000Z`),
+      validUntil: validUntil ? new Date(`${validUntil}T00:00:00.000Z`) : null,
+      note: 'Immutable assignment identity',
+    } });
   }
 
   it('enforces authentication, explicit capability, password-change and CSRF policy', async () => {
@@ -235,5 +288,119 @@ integration('Academic structure control plane (isolated PostgreSQL integration)'
     await agent.post(`/api/school-classes/${first.body.id as string}/activate`).set(origin).send({});
     await agent.post(`/api/school-classes/${first.body.id as string}/activate`).set(origin).send({});
     expect(await h.prisma.auditEvent.count({ where: { entityId: first.body.id as string, action: 'SCHOOL_CLASS_ACTIVATED', result: 'SUCCESS' } })).toBe(2);
+  });
+
+  it('rejects incompatible calendar activation without rewriting teaching-assignment history', async () => {
+    const { agent } = await manager();
+    const year = await createYear(agent, 'TA-CALENDAR');
+    const active = await agent.post(`/api/academic-years/${year.id}/calendar-versions`).set(origin).send(calendarPayload('Active'));
+    const candidatePayload = structuredClone(calendarPayload('Candidate')) as Record<string, unknown>;
+    const shiftCivilDates = (value: unknown): unknown => {
+      if (typeof value === 'string' && /^2026-\d{2}-\d{2}$/.test(value)) {
+        const date = new Date(`${value}T00:00:00.000Z`);
+        date.setUTCDate(date.getUTCDate() + 7);
+        return date.toISOString().slice(0, 10);
+      }
+      if (Array.isArray(value)) return value.map(shiftCivilDates);
+      if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, shiftCivilDates(item)]));
+      return value;
+    };
+    const candidate = await agent.post(`/api/academic-years/${year.id}/calendar-versions`).set(origin)
+      .send(shiftCivilDates(candidatePayload) as Record<string, unknown>);
+    expect(active.status).toBe(201);
+    expect(candidate.status).toBe(201);
+    expect((await agent.post(`/api/academic-calendar-versions/${active.body.id as string}/activate`).set(origin).send({})).status).toBe(200);
+
+    const schoolClass = await h.prisma.schoolClass.create({ data: { academicYearId: year.id, code: 'TA10A1', name: 'TA 10A1', gradeLevel: 10 } });
+    const subject = await h.prisma.subject.create({ data: { code: 'TA_SUBJECT', name: 'TA Subject' } });
+    const teacher = await h.prisma.user.create({ data: {
+      username: 'ta-calendar-teacher', passwordHash: 'integration-only', status: UserStatus.ACTIVE, mustChangePassword: false,
+      profile: { create: { displayName: 'TA Calendar Teacher' } },
+    } });
+    await h.prisma.staffSubject.create({ data: {
+      userId: teacher.id, subjectId: subject.id, validFrom: businessMidnight('2026-08-03'), validUntil: businessMidnight('2026-10-01'),
+    } });
+    const assignment = await h.prisma.teachingAssignment.create({ data: {
+      academicYearId: year.id, schoolClassId: schoolClass.id, subjectId: subject.id, teacherUserId: teacher.id,
+      validFrom: new Date('2026-08-03T00:00:00.000Z'), validUntil: new Date('2026-08-10T00:00:00.000Z'),
+    } });
+    const rejected = await agent.post(`/api/academic-calendar-versions/${candidate.body.id as string}/activate`)
+      .set(origin).set('X-Request-Id', 'teaching-assignment-calendar-conflict').send({});
+    expect(rejected.status).toBe(409);
+    expect((await h.prisma.academicCalendarVersion.findUniqueOrThrow({ where: { id: active.body.id as string } })).isActive).toBe(true);
+    expect((await h.prisma.academicCalendarVersion.findUniqueOrThrow({ where: { id: candidate.body.id as string } })).isActive).toBe(false);
+    expect(await h.prisma.teachingAssignment.findUniqueOrThrow({ where: { id: assignment.id } })).toMatchObject({ validFrom: assignment.validFrom, validUntil: assignment.validUntil });
+    expect(await h.prisma.auditEvent.count({ where: { requestId: 'teaching-assignment-calendar-conflict', action: 'ACADEMIC_CALENDAR_VERSION_ACTIVATED', result: 'SUCCESS' } })).toBe(0);
+  });
+
+  it('rejects target activation when an explicit assignment end exceeds the target calendar', async () => {
+    const { agent } = await manager();
+    const year = await createYear(agent, 'TA-CALENDAR-END');
+    const active = await agent.post(`/api/academic-years/${year.id}/calendar-versions`).set(origin).send(calendarPayload('Active'));
+    const candidate = await agent.post(`/api/academic-years/${year.id}/calendar-versions`).set(origin)
+      .send(shiftedCalendarPayload(-7, 'Earlier end'));
+    expect(active.status).toBe(201);
+    expect(candidate.status).toBe(201);
+    expect((await agent.post(`/api/academic-calendar-versions/${active.body.id as string}/activate`).set(origin).send({})).status).toBe(200);
+    const assignment = await createStoredTeachingAssignment(year.id, '2026-08-03', '2026-09-18', '2026-10-01');
+    const rejected = await agent.post(`/api/academic-calendar-versions/${candidate.body.id as string}/activate`)
+      .set(origin).set('X-Request-Id', 'calendar-end-conflict').send({});
+    expect(rejected.status).toBe(409);
+    expect((await h.prisma.academicCalendarVersion.findUniqueOrThrow({ where: { id: active.body.id as string } })).isActive).toBe(true);
+    expect((await h.prisma.academicCalendarVersion.findUniqueOrThrow({ where: { id: candidate.body.id as string } })).isActive).toBe(false);
+    expect(await h.prisma.teachingAssignment.findUniqueOrThrow({ where: { id: assignment.id } })).toMatchObject(assignment);
+    expect(await h.prisma.auditEvent.count({ where: {
+      requestId: 'calendar-end-conflict', action: 'ACADEMIC_CALENDAR_VERSION_ACTIVATED', result: 'SUCCESS',
+    } })).toBe(0);
+  });
+
+  it('rejects an extended target when open-ended StaffSubject coverage reaches only the current horizon', async () => {
+    const { agent } = await manager();
+    const year = await createYear(agent, 'TA-CALENDAR-HORIZON');
+    const active = await agent.post(`/api/academic-years/${year.id}/calendar-versions`).set(origin)
+      .send(shiftedCalendarPayload(-7, 'Current shorter calendar'));
+    const candidate = await agent.post(`/api/academic-years/${year.id}/calendar-versions`).set(origin)
+      .send(calendarPayload('Extended candidate'));
+    expect(active.status).toBe(201);
+    expect(candidate.status).toBe(201);
+    expect((await agent.post(`/api/academic-calendar-versions/${active.body.id as string}/activate`).set(origin).send({})).status).toBe(200);
+    const assignment = await createStoredTeachingAssignment(year.id, '2026-08-03', null, '2026-09-12');
+    const rejected = await agent.post(`/api/academic-calendar-versions/${candidate.body.id as string}/activate`)
+      .set(origin).set('X-Request-Id', 'calendar-open-horizon-conflict').send({});
+    expect(rejected.status).toBe(409);
+    expect((await h.prisma.academicCalendarVersion.findUniqueOrThrow({ where: { id: active.body.id as string } })).isActive).toBe(true);
+    expect((await h.prisma.academicCalendarVersion.findUniqueOrThrow({ where: { id: candidate.body.id as string } })).isActive).toBe(false);
+    expect(await h.prisma.teachingAssignment.findUniqueOrThrow({ where: { id: assignment.id } })).toMatchObject(assignment);
+    expect(await h.prisma.auditEvent.count({ where: {
+      requestId: 'calendar-open-horizon-conflict', action: 'ACADEMIC_CALENDAR_VERSION_ACTIVATED', result: 'SUCCESS',
+    } })).toBe(0);
+  });
+
+  it('activates a compatible target without rewriting teaching-assignment business identity', async () => {
+    const { agent } = await manager();
+    const year = await createYear(agent, 'TA-CAL-COMPAT');
+    const active = await agent.post(`/api/academic-years/${year.id}/calendar-versions`).set(origin).send(calendarPayload('Active'));
+    const candidate = await agent.post(`/api/academic-years/${year.id}/calendar-versions`).set(origin).send(calendarPayload('Compatible'));
+    expect(active.status).toBe(201);
+    expect(candidate.status).toBe(201);
+    expect((await agent.post(`/api/academic-calendar-versions/${active.body.id as string}/activate`).set(origin).send({})).status).toBe(200);
+    const assignment = await createStoredTeachingAssignment(year.id, '2026-08-03', '2026-08-20', '2026-09-19');
+    const before = await h.prisma.teachingAssignment.findUniqueOrThrow({ where: { id: assignment.id } });
+    const activated = await agent.post(`/api/academic-calendar-versions/${candidate.body.id as string}/activate`).set(origin)
+      .set('X-Request-Id', 'calendar-compatible').send({});
+    expect(activated.status).toBe(200);
+    expect((await h.prisma.academicCalendarVersion.findUniqueOrThrow({ where: { id: active.body.id as string } })).isActive).toBe(false);
+    expect((await h.prisma.academicCalendarVersion.findUniqueOrThrow({ where: { id: candidate.body.id as string } })).isActive).toBe(true);
+    const after = await h.prisma.teachingAssignment.findUniqueOrThrow({ where: { id: assignment.id } });
+    expect(after).toMatchObject({
+      id: before.id,
+      academicYearId: before.academicYearId,
+      schoolClassId: before.schoolClassId,
+      subjectId: before.subjectId,
+      teacherUserId: before.teacherUserId,
+      validFrom: before.validFrom,
+      validUntil: before.validUntil,
+      note: before.note,
+    });
   });
 });

@@ -85,6 +85,7 @@ integration('Capability authorization (isolated PostgreSQL integration)', () => 
   beforeEach(async () => {
     await prisma.auditEvent.deleteMany();
     await prisma.authSession.deleteMany();
+    await prisma.teachingAssignment.deleteMany();
     await prisma.capabilityGrant.deleteMany();
     if (assignmentTablesAvailable) {
       await prisma.staffAdditionalDutyAssignment.deleteMany();
