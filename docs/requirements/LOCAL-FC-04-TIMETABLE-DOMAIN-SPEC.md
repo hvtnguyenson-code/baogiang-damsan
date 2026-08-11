@@ -1,6 +1,6 @@
 # LOCAL-FC-04 — Timetable Domain Specification
 
-**Status:** Requirements audit; implementation decisions remain subject to ADR-015 approval
+**Status:** Requirements audit; time-slot questions resolved by accepted ADR-016, remaining Timetable decisions subject to ADR-015 approval
 
 **Audit date:** 2026-08-11
 
@@ -108,7 +108,7 @@ This candidate is sufficiently grounded for follow-up design, but remains non-bi
 
 | Concept | Candidate shape | Classification |
 |---|---|---|
-| `TimeSlotDefinition` | UUID; `academicYearId`; session code; ordinal; display label; `startTime TIME`; `endTime TIME`; enabled/allowed-use metadata. Parent deletion `RESTRICT`. | **INFERRED**; separate 04A1 recommended. Versioning/effectivity is **UNRESOLVED**. |
+| `TimeSlotDefinition` | UUID; `academicYearId`; explicit weekday; session; ordinal; revision; display label; `startTime TIME(0)`; `endTime TIME(0)`; active/current-authoring marker and explicit usage flags. Parent deletion `RESTRICT`. | **RESOLVED** by accepted ADR-016 and LOCAL-FC-04A1. |
 | `TimetableVersion` | UUID; `academicYearId`; year-local version number/label; lifecycle state; `effectiveAcademicWeekId`; derived/displayed `effectiveDate DATE`; checksum/import reference; creator/validator/approver/activator and `TIMESTAMPTZ` audit instants. | Core identity **CONFIRMED**; exact fields/cardinality **INFERRED**. |
 | `TimetableEntry` | UUID; `timetableVersionId`; weekday; `timeSlotId`; class; subject; normal-lesson staffing evidence described in §9. A separate/discriminated special occupancy remains open. Parent/master deletion `RESTRICT`. | Dimensions **CONFIRMED**; physical representation **INFERRED**. |
 
@@ -147,14 +147,20 @@ Proposed transition guardrails:
 | Period numbers | **CONFIRMED** as user-facing coordinates — v1.2 §§7.3–7.5. |
 | Start/end wall-clock time | **CONFIRMED and configurable** — v1.2 §§7.4–7.5, Appendix D. |
 | Configurable period count/end time | **CONFIRMED** — v1.2 §7.5. |
-| Different schedules by weekday/session | Session differences are **CONFIRMED**; weekday-specific clock grids are **UNRESOLVED**. |
-| Break periods | **UNRESOLVED.** No authoritative representation or collision behavior is stated. |
-| School-wide vs year-specific | Academic-year configuration is **CONFIRMED**; whether definitions are copied/versioned across years is **UNRESOLVED**. |
+| Different schedules by weekday/session | **RESOLVED by ADR-016.** Weekday is explicit per slot, so weekday-specific grids are supported. |
+| Break periods | **RESOLVED by ADR-016.** A break is a gap between schedulable intervals, not a row. |
+| School-wide vs year-specific | **RESOLVED by ADR-016.** Definitions and their immutable revisions belong directly to AcademicYear. |
 | Ordinal vs display label | Both are operationally useful but their separation is **INFERRED**, not specified. |
 
 ADR-010 deferred local exceptions until a canonical time-slot and downstream scope model exists. Therefore LOCAL-FC-04 should first establish stable slot identity usable later by `CalendarException`, substitution and make-up models, without implementing those domains.
 
-Recommended, subject to approval: use an AcademicYear-owned slot definition with session, ordinal, label and a half-open `[startTime, endTime)` interval. Do not hardcode five periods, morning-only operation, weekdays, example times, or Monday–Friday. The storage model for schedules that differ by weekday and the versioning/effectivity of slot definitions must be settled in 04A1 before Prisma design.
+ADR-016 accepts an AcademicYear-owned slot revision with explicit weekday, session, ordinal, label and a half-open `[startTime, endTime)` interval. It forbids hardcoded period counts, morning-only operation, implicit weekdays, example-time constants, and Monday–Friday assumptions.
+
+### 7.1 04A1 resolution / ADR-016
+
+[ADR-016](../decisions/ADR-016-CANONICAL-TIME-SLOT-FOUNDATION.md) resolves the three former time-slot questions. `TimeSlotDefinition` is an AcademicYear-owned immutable revision with an explicit weekday row, so weekday-specific clock grids are supported. Revisions have no civil business effectivity; `isActive` identifies only the current/selectable revision for new authoring, while future timetable history references an exact revision. Breaks are gaps between half-open schedulable intervals and require no break or fake slot row.
+
+The remaining TimetableVersion effectivity, entry representation, staffing snapshot, special-activity, completeness, import, editing, approval, rollback, and draft-retention questions remain unresolved and belong to 04A2 or later slices.
 
 ## 8. Timetable entry identity
 
@@ -345,23 +351,21 @@ Application validation owns cross-aggregate existence/state/scope rules. Activat
 
 ## 20. Open questions / unresolved requirements
 
-The following require product/architecture approval before binding schema work:
+ADR-016 has resolved the former questions about slot version/effectivity, weekday-specific grids, and break representation. The following Timetable questions still require product/architecture approval before binding 04A2 schema work:
 
-1. Are time-slot definitions versioned/effective, or immutable per AcademicYear once referenced?
-2. Can clock grids differ by weekday, and how are breaks represented?
-3. Is a multi-period lesson one authoring row plus normalized occupancy rows, or one entry per slot?
-4. Does `TimetableVersion` store a calendar-version activation snapshot, and what happens when the active calendar is replaced?
-5. Can several future versions be activated/scheduled, or exactly one `ACTIVE` version exists per year?
-6. Is `effectiveUntil` stored or derived from the next version?
-7. Does activation before a future effective week set `ACTIVE` immediately or use another scheduled state?
-8. Is rollback a new cloned version or reactivation of an old version?
-9. Is assignment reference + teacher snapshot approved, and how far into an open-ended interval must coverage be validated?
-10. Do special-activity coordinates share a discriminated table or use a separate occupancy table?
-11. What completeness rule applies to classes, weekdays, slots and reserve `DP` weeks?
-12. What are the official import columns, template versions, row-span rules and atomicity/error contract?
-13. Are manual entry and bulk editing required?
-14. Must approval and activation be separated by actor/capability?
-15. What is the retention/deletion policy for abandoned drafts?
+1. Is a multi-period lesson one authoring row plus normalized occupancy rows, or one entry per slot?
+2. Does `TimetableVersion` store a calendar-version activation snapshot, and what happens when the active calendar is replaced?
+3. Can several future versions be activated/scheduled, or exactly one `ACTIVE` version exists per year?
+4. Is `effectiveUntil` stored or derived from the next version?
+5. Does activation before a future effective week set `ACTIVE` immediately or use another scheduled state?
+6. Is rollback a new cloned version or reactivation of an old version?
+7. Is assignment reference + teacher snapshot approved, and how far into an open-ended interval must coverage be validated?
+8. Do special-activity coordinates share a discriminated table or use a separate occupancy table?
+9. What completeness rule applies to classes, weekdays, slots and reserve `DP` weeks?
+10. What are the official import columns, template versions, row-span rules and atomicity/error contract?
+11. Are manual entry and bulk editing required?
+12. Must approval and activation be separated by actor/capability?
+13. What is the retention/deletion policy for abandoned drafts?
 
 Room collision is explicitly **DEFERRED**, not an unresolved invitation to invent a room model.
 
