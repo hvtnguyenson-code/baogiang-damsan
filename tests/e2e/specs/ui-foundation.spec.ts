@@ -296,7 +296,7 @@ test('real teaching assignment flow creates, changes teacher, and ends the repla
   });
 
   await page.reload();
-  await selectOptionMatching(page.getByLabel('Năm học'), new RegExp(suffix));
+  await selectOptionMatching(page.getByRole('combobox', { name: 'Năm học', exact: true }), new RegExp(suffix));
   await page.getByRole('button', { name: 'Tạo phân công' }).click();
   const createForm = page.locator('form.inline-work-form');
   await selectOptionMatching(createForm.getByLabel('Lớp'), new RegExp(String(schoolClass.code)));
