@@ -10,6 +10,8 @@ const academicMigrationName = '20260810000000_academic_structure_schema_foundati
 const academicMigration = read('prisma', 'migrations', academicMigrationName, 'migration.sql');
 const teachingMigrationName = '20260810010000_teaching_assignment_schema_foundation';
 const teachingMigration = read('prisma', 'migrations', teachingMigrationName, 'migration.sql');
+const timeSlotMigrationName = '20260811020000_time_slot_schema_foundation';
+const timeSlotMigration = read('prisma', 'migrations', timeSlotMigrationName, 'migration.sql');
 
 function modelBlock(name) {
   const match = schema.match(new RegExp(`model\\s+${name}\\s+\\{([\\s\\S]*?)\\n\\}`, 'u'));
@@ -21,6 +23,15 @@ function sha256(text) {
   return crypto.createHash('sha256').update(text).digest('hex').toUpperCase();
 }
 
+function enumValues(name) {
+  const match = schema.match(new RegExp(`enum\\s+${name}\\s+\\{([\\s\\S]*?)\\n\\}`, 'u'));
+  assert.ok(match, `Missing Prisma enum ${name}`);
+  return match[1]
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
 for (const model of [
   'AcademicYear',
   'AcademicCalendarVersion',
@@ -30,11 +41,13 @@ for (const model of [
   'CalendarInterruption',
   'SchoolClass',
   'TeachingAssignment',
+  'TimeSlotDefinition',
 ]) {
   modelBlock(model);
 }
 assert.match(schema, /enum\s+AcademicWeekday\s+\{[\s\S]*MONDAY[\s\S]*SUNDAY[\s\S]*\}/u);
 assert.match(schema, /enum\s+AcademicWeekKind\s+\{[\s\S]*OFFICIAL[\s\S]*RESERVE[\s\S]*\}/u);
+assert.deepEqual(enumValues('TimeSlotSession'), ['MORNING', 'AFTERNOON', 'EVENING']);
 
 const calendarVersion = modelBlock('AcademicCalendarVersion');
 assert.match(calendarVersion, /academicYearId\s+String\s+@map\("academic_year_id"\)\s+@db\.Uuid/u);
@@ -101,6 +114,30 @@ assert.match(teachingAssignment, /academicYear\s+AcademicYear\s+@relation\(field
 assert.match(teachingAssignment, /schoolClass\s+SchoolClass\s+@relation\("TeachingAssignmentSchoolClass",\s*fields:\s*\[schoolClassId, academicYearId\],\s*references:\s*\[id, academicYearId\],\s*onDelete:\s*Restrict\)/u);
 assert.match(teachingAssignment, /subject\s+Subject\s+@relation\(fields:\s*\[subjectId\],\s*references:\s*\[id\],\s*onDelete:\s*Restrict\)/u);
 assert.match(teachingAssignment, /teacher\s+User\s+@relation\("TeachingAssignmentTeacher",\s*fields:\s*\[teacherUserId\],\s*references:\s*\[id\],\s*onDelete:\s*Restrict\)/u);
+
+const academicYear = modelBlock('AcademicYear');
+const timeSlot = modelBlock('TimeSlotDefinition');
+assert.equal((schema.match(/\bmodel\s+TimeSlotDefinition\s+\{/gu) ?? []).length, 1);
+assert.match(academicYear, /timeSlotDefinitions\s+TimeSlotDefinition\[\]/u);
+for (const field of ['id', 'academicYearId']) {
+  assert.match(timeSlot, new RegExp(`${field}\\s+String[\\s\\S]*?@db\\.Uuid`, 'u'), `${field} must use UUID`);
+}
+assert.match(timeSlot, /weekday\s+AcademicWeekday/u);
+assert.match(timeSlot, /session\s+TimeSlotSession/u);
+assert.match(timeSlot, /ordinal\s+Int/u);
+assert.match(timeSlot, /revision\s+Int/u);
+assert.match(timeSlot, /displayLabel\s+String\s+@map\("display_label"\)\s+@db\.VarChar\(50\)/u);
+assert.match(timeSlot, /startTime\s+DateTime\s+@map\("start_time"\)\s+@db\.Time\(0\)/u);
+assert.match(timeSlot, /endTime\s+DateTime\s+@map\("end_time"\)\s+@db\.Time\(0\)/u);
+assert.match(timeSlot, /createdAt\s+DateTime[\s\S]*@db\.Timestamptz\(3\)/u);
+assert.match(timeSlot, /updatedAt\s+DateTime[\s\S]*@db\.Timestamptz\(3\)/u);
+for (const field of ['allowRegularTeaching', 'allowMakeupTeaching', 'allowSelfStudy']) {
+  assert.match(timeSlot, new RegExp(`${field}\\s+Boolean`, 'u'), `Missing explicit usage flag ${field}`);
+}
+assert.match(timeSlot, /academicYear\s+AcademicYear\s+@relation\(fields:\s*\[academicYearId\],\s*references:\s*\[id\],\s*onDelete:\s*Restrict\)/u);
+assert.match(timeSlot, /@@unique\(\[id, academicYearId\],\s*map:\s*"time_slot_definitions_id_academic_year_id_key"\)/u);
+assert.match(timeSlot, /@@unique\(\[academicYearId, weekday, session, ordinal, revision\],\s*map:\s*"time_slot_definitions_logical_revision_key"\)/u);
+assert.doesNotMatch(timeSlot, /validFrom|validUntil|effectiveFrom|effectiveUntil|academicWeekId|calendarVersionId/u);
 
 for (const table of [
   'academic_years',
@@ -186,13 +223,39 @@ assert.equal((teachingMigration.match(/EXCLUDE USING gist/gu) ?? []).length, 1);
 assert.doesNotMatch(teachingMigration, /CREATE\s+(OR\s+REPLACE\s+)?TRIGGER/iu);
 assert.doesNotMatch(teachingMigration, /calendar_version_id/iu);
 
+assert.match(timeSlotMigration, /CREATE TYPE "TimeSlotSession" AS ENUM \('MORNING', 'AFTERNOON', 'EVENING'\)/u);
+assert.match(timeSlotMigration, /CREATE TABLE "time_slot_definitions"/u);
+assert.match(timeSlotMigration, /"start_time" TIME\(0\) WITHOUT TIME ZONE NOT NULL/u);
+assert.match(timeSlotMigration, /"end_time" TIME\(0\) WITHOUT TIME ZONE NOT NULL/u);
+assert.match(timeSlotMigration, /"created_at" TIMESTAMPTZ\(3\) NOT NULL/u);
+assert.match(timeSlotMigration, /"updated_at" TIMESTAMPTZ\(3\) NOT NULL/u);
+for (const constraint of [
+  'time_slot_definitions_ordinal_check',
+  'time_slot_definitions_revision_check',
+  'time_slot_definitions_display_label_normalized_check',
+  'time_slot_definitions_time_range_check',
+  'time_slot_definitions_usage_check',
+]) {
+  assert.match(timeSlotMigration, new RegExp(`"${constraint}"`, 'u'), `Time-slot migration missing ${constraint}`);
+}
+assert.match(timeSlotMigration, /CREATE UNIQUE INDEX "time_slot_definitions_id_academic_year_id_key"[\s\S]*\("id", "academic_year_id"\)/u);
+assert.match(timeSlotMigration, /CREATE UNIQUE INDEX "time_slot_definitions_logical_revision_key"[\s\S]*\("academic_year_id", "weekday", "session", "ordinal", "revision"\)/u);
+assert.match(timeSlotMigration, /CREATE UNIQUE INDEX "time_slot_definitions_one_active_revision_key"[\s\S]*\("academic_year_id", "weekday", "session", "ordinal"\)[\s\S]*WHERE "is_active"/u);
+assert.match(timeSlotMigration, /CREATE UNIQUE INDEX "time_slot_definitions_active_label_key"[\s\S]*\("academic_year_id", "weekday", "session", "display_label"\)[\s\S]*WHERE "is_active"/u);
+assert.match(timeSlotMigration, /"time_slot_definitions_active_time_no_overlap"[\s\S]*EXCLUDE USING gist[\s\S]*"academic_year_id" WITH =[\s\S]*"weekday" WITH =[\s\S]*int8range\([\s\S]*extract\(epoch FROM "start_time"\)::bigint[\s\S]*extract\(epoch FROM "end_time"\)::bigint[\s\S]*'\[\)'[\s\S]*WITH &&[\s\S]*WHERE \("is_active"\)/u);
+assert.match(timeSlotMigration, /"time_slot_definitions_academic_year_id_fkey"[\s\S]*FOREIGN KEY \("academic_year_id"\)[\s\S]*REFERENCES "academic_years"\("id"\)[\s\S]*ON DELETE RESTRICT/u);
+assert.doesNotMatch(timeSlotMigration, /CREATE\s+(OR\s+REPLACE\s+)?TRIGGER/iu);
+assert.doesNotMatch(timeSlotMigration, /calendar_version_id|valid_from|valid_until|effective_from|effective_until/iu);
+assert.doesNotMatch(timeSlotMigration, /\b(?:five|5)\s+periods?\b/iu, 'Migration must not hard-code a universal period count');
+
 const legacyHashes = new Map([
   ['20260728000000_phase_00_baseline', 'A2185F4F34E90F9B437B3D0DD91B1C473D586849E6B0DFFB766C5AF69546634A'],
   ['20260801000000_phase_01_schema_foundation', '56B7F09859E9851A15D62D17A58066DAFB1798B0E4225858A464B0CD8F47DF9E'],
   ['20260810000000_academic_structure_schema_foundation', 'FC8812756B4041E29BCC8581D8DB47E02FEAA0C40325795CE8574B1F17168AE4'],
+  ['20260810010000_teaching_assignment_schema_foundation', '89BC5647B6B451D9026F99CC578BD98F02DE2B186FD63CEF3205E2EFF4B15D07'],
 ]);
 for (const [name, expected] of legacyHashes) {
   assert.equal(sha256(read('prisma', 'migrations', name, 'migration.sql')), expected, `Historical migration ${name} changed`);
 }
 
-console.log(`Academic and teaching-assignment schema static verification PASS (${academicMigrationName}, ${teachingMigrationName}).`);
+console.log(`Academic, teaching-assignment, and time-slot schema static verification PASS (${academicMigrationName}, ${teachingMigrationName}, ${timeSlotMigrationName}).`);

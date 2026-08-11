@@ -5,6 +5,7 @@
 // Phase 01: Identity, access, organizational assignment, and audit foundation.
 // Local Phase 02A: Versioned academic calendar and academic-year class foundation.
 // Local Phase 03A: Academic-year teaching-assignment history foundation.
+// Local Phase 04A1: Academic-year canonical wall-clock time-slot foundation.
 //
 // Database: PostgreSQL 17; connection supplied through DATABASE_URL per environment.
 // ============================================================
@@ -48,6 +49,12 @@ enum AcademicWeekday {
   FRIDAY
   SATURDAY
   SUNDAY
+}
+
+enum TimeSlotSession {
+  MORNING
+  AFTERNOON
+  EVENING
 }
 
 enum AcademicWeekKind {
@@ -302,8 +309,34 @@ model AcademicYear {
   calendarVersions    AcademicCalendarVersion[]
   classes             SchoolClass[]
   teachingAssignments TeachingAssignment[]
+  timeSlotDefinitions TimeSlotDefinition[]
 
   @@map("academic_years")
+}
+
+model TimeSlotDefinition {
+  id                   String          @id @default(uuid()) @db.Uuid
+  academicYearId       String          @map("academic_year_id") @db.Uuid
+  weekday              AcademicWeekday
+  session              TimeSlotSession
+  ordinal              Int
+  revision             Int             @default(1)
+  displayLabel         String          @map("display_label") @db.VarChar(50)
+  startTime            DateTime        @map("start_time") @db.Time(0)
+  endTime              DateTime        @map("end_time") @db.Time(0)
+  isActive             Boolean         @default(true) @map("is_active")
+  allowRegularTeaching Boolean         @default(true) @map("allow_regular_teaching")
+  allowMakeupTeaching  Boolean         @default(false) @map("allow_makeup_teaching")
+  allowSelfStudy       Boolean         @default(false) @map("allow_self_study")
+  createdAt            DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+
+  @@unique([id, academicYearId], map: "time_slot_definitions_id_academic_year_id_key")
+  @@unique([academicYearId, weekday, session, ordinal, revision], map: "time_slot_definitions_logical_revision_key")
+  @@index([academicYearId, weekday, session, isActive], map: "time_slot_definitions_year_weekday_session_active_idx")
+  @@map("time_slot_definitions")
 }
 
 model AcademicCalendarVersion {

@@ -79,24 +79,26 @@ Rejected/deferred. No authoritative room domain exists.
 
 Rejected. The specification treats them as operational/calendar overlays, and mixing them would destroy stable base-version history.
 
+## Time-slot questions resolved by ADR-016
+
+[ADR-016](ADR-016-CANONICAL-TIME-SLOT-FOUNDATION.md) accepts the canonical time-slot foundation without accepting this broader Timetable ADR. A slot is an AcademicYear-owned immutable revision with no civil business effectivity; its active flag means current/selectable configuration for new authoring only, and future timetable history will reference the exact revision. Weekday is explicit on each slot so clock grids may differ by weekday. Breaks are gaps between half-open schedulable intervals, not rows or timetable entries.
+
 ## Unresolved questions
 
 Approval of this ADR should either answer or explicitly defer these items before binding Prisma design:
 
-1. Are time slots versioned/effective, and can clock grids differ by weekday?
-2. How are breaks represented, if at all?
-3. Is a multi-period lesson stored as one authoring row, one row per slot, or an authoring row plus normalized occupancies?
-4. Does a TimetableVersion retain an activation-time AcademicCalendarVersion snapshot?
-5. Can multiple future versions be scheduled, and what status applies before their effective week?
-6. Is `effectiveUntil` stored or derived?
-7. Is rollback a new clone/version or reactivation of old content?
-8. Is assignment-reference plus teacher snapshot accepted, including the coverage horizon for an open-ended version?
-9. Do special coordinates use a discriminated TimetableEntry or a separate occupancy table?
-10. What constitutes a complete timetable for classes, weekdays, slots and reserve `DP` weeks?
-11. What are the official import columns, row-span semantics, atomicity and error format?
-12. Are manual cell editing and bulk editing required?
-13. Must approval and activation use different actors/capabilities?
-14. What retention policy applies to abandoned drafts?
+1. Is a multi-period lesson stored as one authoring row, one row per slot, or an authoring row plus normalized occupancies?
+2. Does a TimetableVersion retain an activation-time AcademicCalendarVersion snapshot?
+3. Can multiple future versions be scheduled, and what status applies before their effective week?
+4. Is `effectiveUntil` stored or derived?
+5. Is rollback a new clone/version or reactivation of old content?
+6. Is assignment-reference plus teacher snapshot accepted, including the coverage horizon for an open-ended version?
+7. Do special coordinates use a discriminated TimetableEntry or a separate occupancy table?
+8. What constitutes a complete timetable for classes, weekdays, slots and reserve `DP` weeks?
+9. What are the official import columns, row-span semantics, atomicity and error format?
+10. Are manual cell editing and bulk editing required?
+11. Must approval and activation use different actors/capabilities?
+12. What retention policy applies to abandoned drafts?
 
 ## Consequences
 
@@ -112,7 +114,7 @@ Approval of this ADR should either answer or explicitly defer these items before
 
 - Assignment reference plus teacher snapshot introduces deliberate denormalization and validation complexity.
 - Real-time collision is not fully expressible through simple uniqueness if separate slot definitions may overlap.
-- Future-effective activation and slot effectivity require additional product decisions.
+- Future-effective timetable activation requires additional product decisions.
 - Import, activation and calendar replacement need transactional/concurrency tests.
 
 ## Dependencies
@@ -122,7 +124,7 @@ Approval of this ADR should either answer or explicitly defer these items before
 - ADR-011 academic-structure control-plane guarantees.
 - ADR-012 TeachingAssignment invariant and collision ownership.
 - ADR-013/014 teaching-assignment commands and read model.
-- A new 04A1 time-slot decision and schema foundation.
+- ADR-016 and the accepted 04A1 time-slot schema foundation.
 - Later PPCT/reporting, special-activity and operational-event specifications.
 
 ## Explicit non-scope
