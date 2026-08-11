@@ -19,6 +19,7 @@ import { DutyAssignmentsPage } from './pages/DutyAssignmentsPage';
 import { AcademicYearsPage } from './pages/AcademicYearsPage';
 import { AcademicCalendarPage } from './pages/AcademicCalendarPage';
 import { SchoolClassesPage } from './pages/SchoolClassesPage';
+import { TeachingAssignmentsPage } from './pages/TeachingAssignmentsPage';
 import { canManageDutyAssignments, hasSchoolCapability } from './lib/capabilities';
 
 export default function App() {
@@ -42,6 +43,7 @@ export default function App() {
           <Route element={<CapabilityRoute allow={(c) => hasSchoolCapability(c, 'SUBJECT_MANAGE')} />}>
             <Route path="/quan-tri/mon-hoc" element={<CatalogPage kind="subjects" />} />
             <Route path="/quan-tri/phan-cong-mon" element={<TemporalAssignmentsPage kind="staff-subjects" />} />
+            <Route path="/quan-tri/phan-cong-giang-day" element={<TeachingAssignmentsPage />} />
           </Route>
           <Route element={<CapabilityRoute allow={(c) => hasSchoolCapability(c, 'CAPABILITY_GRANT')} />}><Route path="/quan-tri/quyen" element={<CapabilitiesPage />} /></Route>
           <Route element={<CapabilityRoute allow={(c) => hasSchoolCapability(c, 'AUDIT_VIEW')} />}><Route path="/quan-tri/nhat-ky" element={<AuditPage />} /></Route>

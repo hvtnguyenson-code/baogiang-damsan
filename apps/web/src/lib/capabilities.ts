@@ -28,6 +28,7 @@ export const managementRoutes: ManagementRoute[] = [
   { to: '/quan-tri/mon-hoc', label: 'Môn học', isVisible: (c) => hasSchoolCapability(c, 'SUBJECT_MANAGE') },
   { to: '/quan-tri/phan-cong-to', label: 'Phân công tổ', isVisible: (c) => hasSchoolCapability(c, 'SUBJECT_GROUP_MANAGE') },
   { to: '/quan-tri/phan-cong-mon', label: 'Phân công môn', isVisible: (c) => hasSchoolCapability(c, 'SUBJECT_MANAGE') },
+  { to: '/quan-tri/phan-cong-giang-day', label: 'Phân công giảng dạy', isVisible: (c) => hasSchoolCapability(c, 'SUBJECT_MANAGE') },
   { to: '/quan-tri/quyen', label: 'Cấp quyền', isVisible: (c) => hasSchoolCapability(c, 'CAPABILITY_GRANT') },
   { to: '/quan-tri/nhat-ky', label: 'Nhật ký', isVisible: (c) => hasSchoolCapability(c, 'AUDIT_VIEW') },
   { to: '/quan-tri/kiem-nhiem/danh-muc', label: 'Danh mục kiêm nhiệm', isVisible: (c) => hasSchoolCapability(c, 'ADDITIONAL_DUTY_CATALOG_MANAGE') },

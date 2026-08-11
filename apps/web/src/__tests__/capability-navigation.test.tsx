@@ -28,7 +28,29 @@ describe('capability-aware navigation', () => {
     expect(screen.queryByRole('link', { name: 'Người dùng' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Cấp quyền' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Cấu trúc năm học' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Phân công giảng dạy' })).not.toBeInTheDocument();
   });
+
+  it('shows both distinct subject-management assignment routes and renders the teaching ledger', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => String(input).endsWith('/auth/me')
+      ? jsonResponse(authWith('SUBJECT_MANAGE'))
+      : jsonResponse({ items: [], page: 1, pageSize: 100, total: 0 }));
+    vi.stubGlobal('fetch', fetchMock);
+    renderApp('/quan-tri/phan-cong-giang-day');
+    expect(await screen.findByRole('heading', { name: 'Phân công giảng dạy' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Phân công môn' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Phân công giảng dạy' })).toBeInTheDocument();
+  });
+
+  it.each([undefined, 'SYSTEM_ADMIN', 'USER_MANAGE', 'ACADEMIC_STRUCTURE_MANAGE'] as const)(
+    'denies the teaching-assignment route without school-wide SUBJECT_MANAGE (%s)',
+    async (key) => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(authWith(key))));
+      renderApp('/quan-tri/phan-cong-giang-day');
+      expect(await screen.findByRole('heading', { name: /không có quyền thực hiện thao tác này/i })).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'Phân công giảng dạy' })).not.toBeInTheDocument();
+    },
+  );
 
   it('blocks academic structure for SYSTEM_ADMIN without the business capability', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(authWith('SYSTEM_ADMIN'))));

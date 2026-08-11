@@ -239,6 +239,101 @@ test('real academic structure flow creates and activates a calendar and class', 
   await expect(page.locator('tbody tr', { hasText: classCode })).toBeVisible();
 });
 
+test('real teaching assignment flow creates, changes teacher, and ends the replacement', async ({ page }) => {
+  const suffix = Date.now().toString(36).slice(-6).toUpperCase();
+  const post = async (path: string, data: unknown) => {
+    const response = await page.request.post(path, {
+      data,
+      headers: { Origin: new URL(page.url()).origin },
+    });
+    const body = await response.json() as Record<string, unknown>;
+    expect(response.ok(), `${path}: ${response.status()} ${JSON.stringify(body)}`).toBe(true);
+    return body;
+  };
+
+  await page.goto('/quan-tri/phan-cong-giang-day');
+  await expect(page).toHaveURL(/\/dang-nhap$/);
+  await page.getByLabel('Tên đăng nhập').fill(USERNAME);
+  await page.getByLabel('Mật khẩu').fill(NEW_PASSWORD);
+  await page.getByRole('button', { name: 'Đăng nhập' }).click();
+  await expect(page).toHaveURL(/\/quan-tri\/phan-cong-giang-day$/);
+
+  const subject = await post('/api/subjects', { code: `E2EM${suffix}`, name: `Môn E2E ${suffix}` });
+  const teacherA = await post('/api/users', {
+    username: `e2e-gv-a-${suffix.toLowerCase()}`,
+    password: 'E2eTeacherPassword7',
+    profile: { staffCode: `EA${suffix}`, displayName: `Giáo viên A ${suffix}`, isTeachingStaff: true },
+  });
+  const teacherB = await post('/api/users', {
+    username: `e2e-gv-b-${suffix.toLowerCase()}`,
+    password: 'E2eTeacherPassword7',
+    profile: { staffCode: `EB${suffix}`, displayName: `Giáo viên B ${suffix}`, isTeachingStaff: true },
+  });
+  await post(`/api/users/${teacherA.id}/activate`, {});
+  await post(`/api/users/${teacherB.id}/activate`, {});
+  for (const teacher of [teacherA, teacherB]) {
+    await post('/api/staff-subjects', {
+      userId: teacher.id,
+      subjectId: subject.id,
+      validFrom: '2026-08-30T17:00:00.000Z',
+    });
+  }
+
+  const year = await post('/api/academic-years', { code: `E2E27-${suffix}`, name: `Năm học phân công ${suffix}` });
+  const calendar = await post(`/api/academic-years/${year.id}/calendar-versions`, {
+    startDate: '2026-08-31', endDate: '2026-09-04', officialWeekCount: 1, reserveWeekCount: 0,
+    teachingWeekdays: ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY'],
+    semesters: [{ code: 'HK1', name: 'Học kỳ 1', ordinal: 1, startDate: '2026-08-31', endDate: '2026-09-04' }],
+    weeks: [{
+      kind: 'OFFICIAL', officialWeekNumber: 1, displayLabel: 'Tuần 1', sortOrder: 1,
+      segments: [{ label: '1', segmentOrder: 1, startDate: '2026-08-31', endDate: '2026-09-04' }],
+    }],
+    interruptions: [],
+  });
+  await post(`/api/academic-calendar-versions/${calendar.id}/activate`, {});
+  const schoolClass = await post(`/api/academic-years/${year.id}/classes`, {
+    code: `10PC-${suffix}`, name: `Lớp phân công ${suffix}`, gradeLevel: 10,
+  });
+
+  await page.reload();
+  await selectOptionMatching(page.getByLabel('Năm học'), new RegExp(suffix));
+  await page.getByRole('button', { name: 'Tạo phân công' }).click();
+  const createForm = page.locator('form.inline-work-form');
+  await selectOptionMatching(createForm.getByLabel('Lớp'), new RegExp(String(schoolClass.code)));
+  await selectOptionMatching(createForm.getByLabel('Môn học'), new RegExp(String(subject.code)));
+  await createForm.getByLabel('Có hiệu lực từ').fill('2026-08-31');
+  await selectOptionMatching(createForm.getByLabel('Giáo viên'), new RegExp(`Giáo viên A ${suffix}`));
+  await createForm.getByRole('button', { name: 'Lưu phân công' }).click();
+  await expect(page.getByRole('status').getByText('Đã tạo phân công giảng dạy.')).toBeVisible();
+
+  const initialRow = page.locator('tbody tr', { hasText: `Giáo viên A ${suffix}` });
+  await initialRow.getByRole('button', { name: 'Đổi giáo viên' }).click();
+  const changeForm = page.locator('form.inline-work-form');
+  await changeForm.getByLabel('Có hiệu lực từ').fill('2026-09-02');
+  await selectOptionMatching(changeForm.getByLabel('Giáo viên mới'), new RegExp(`Giáo viên B ${suffix}`));
+  await changeForm.getByRole('button', { name: 'Xác nhận đổi giáo viên' }).click();
+  await expect(page.getByRole('status').getByText(/Đã đổi giáo viên từ ngày/)).toBeVisible();
+
+  const replacementRow = page.locator('tbody tr', { hasText: `Giáo viên B ${suffix}` });
+  await replacementRow.getByRole('button', { name: 'Kết thúc' }).click();
+  const endForm = page.locator('form.inline-work-form');
+  await endForm.getByLabel('Ngày kết thúc').fill('2026-09-03');
+  await endForm.getByRole('button', { name: 'Xác nhận kết thúc' }).click();
+  await expect(page.getByRole('status').getByText(/Đã kết thúc phân công/)).toBeVisible();
+  await expect(initialRow).toContainText('31/08/2026');
+  await expect(initialRow).toContainText('đến 01/09/2026');
+  await expect(replacementRow).toContainText('02/09/2026');
+  await expect(replacementRow).toContainText('đến 03/09/2026');
+  await assertNoSeriousAxeViolations(page);
+  await assertAtMobileWidths(page, ['.primary-nav a', '.management-page button']);
+
+  await prepareScreenshot(page);
+  for (const viewport of [{ width: 375, height: 812 }, { width: 1366, height: 768 }, { width: 1920, height: 1080 }]) {
+    await page.setViewportSize(viewport);
+    await page.screenshot({ path: `${screenshots}/teaching-assignments-${viewport.width}x${viewport.height}.png`, fullPage: true });
+  }
+});
+
 test('real Phase 01 management flow preserves history and capability boundaries', async ({ page }) => {
   const targetUsername = 'e2e-phase01-target';
   const targetInitialPassword = 'E2eTargetPassword7';
