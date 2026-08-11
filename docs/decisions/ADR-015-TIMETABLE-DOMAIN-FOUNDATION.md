@@ -49,7 +49,7 @@ These are proposals, not accepted repository rules until this ADR is approved.
 
 ### Parent TimetableVersion to AcademicCalendarVersion
 
-Rejected as the default proposal. It couples two separately versioned aggregates and risks making a calendar replacement appear to replace timetable meaning. A calendar-version snapshot for audit remains an open option.
+Rejected as the ownership model. It couples two separately versioned aggregates and risks making a calendar replacement appear to replace timetable meaning. ADR-017 accepts a nullable activation-target calendar snapshot for audit and composite integrity without changing AcademicYear ownership.
 
 ### Copy AcademicCalendarVersion lifecycle mechanically
 
@@ -83,22 +83,21 @@ Rejected. The specification treats them as operational/calendar overlays, and mi
 
 [ADR-016](ADR-016-CANONICAL-TIME-SLOT-FOUNDATION.md) accepts the canonical time-slot foundation without accepting this broader Timetable ADR. A slot is an AcademicYear-owned immutable revision with no civil business effectivity; its active flag means current/selectable configuration for new authoring only, and future timetable history will reference the exact revision. Weekday is explicit on each slot so clock grids may differ by weekday. Breaks are gaps between half-open schedulable intervals, not rows or timetable entries.
 
+## Schema questions resolved by ADR-017
+
+[ADR-017](ADR-017-TIMETABLE-SCHEMA-FOUNDATION.md) accepts the 04A2 persistence subset without accepting this broader control-plane ADR. Normal lessons use exactly one `TimetableEntry` per exact slot revision. `TimetableVersion` remains AcademicYear-owned and stores a nullable, all-or-none calendar/week/effective-date activation target. The lifecycle has one `ACTIVE` chain head per year; `ACTIVE` and `SUPERSEDED` inclusive date ranges cannot overlap, so a future-dated active head is representable and date resolution remains interval-based. `effectiveUntil` is stored as the inclusive last date of a superseded interval. Rollback creates a new version rather than reactivating historical content.
+
+Normal entries retain both composite `TeachingAssignment` provenance and the immutable `teacherUserId` snapshot. Special-activity coordinates require a separate future table/domain and do not weaken the normal-entry shape. Exact-slot class/teacher collisions are database invariants; real-time collisions across different slot identities remain an activation invariant for 04B.
+
 ## Unresolved questions
 
-Approval of this ADR should either answer or explicitly defer these items before binding Prisma design:
+ADR-017 resolves the binding 04A2 schema choices. These product/control-plane questions remain proposed and belong to 04B or later slices:
 
-1. Is a multi-period lesson stored as one authoring row, one row per slot, or an authoring row plus normalized occupancies?
-2. Does a TimetableVersion retain an activation-time AcademicCalendarVersion snapshot?
-3. Can multiple future versions be scheduled, and what status applies before their effective week?
-4. Is `effectiveUntil` stored or derived?
-5. Is rollback a new clone/version or reactivation of old content?
-6. Is assignment-reference plus teacher snapshot accepted, including the coverage horizon for an open-ended version?
-7. Do special coordinates use a discriminated TimetableEntry or a separate occupancy table?
-8. What constitutes a complete timetable for classes, weekdays, slots and reserve `DP` weeks?
-9. What are the official import columns, row-span semantics, atomicity and error format?
-10. Are manual cell editing and bulk editing required?
-11. Must approval and activation use different actors/capabilities?
-12. What retention policy applies to abandoned drafts?
+1. What constitutes a complete timetable for classes, weekdays, slots and reserve `DP` weeks?
+2. What are the official import columns, template versions, row error contract and atomicity rules?
+3. Are manual cell editing and bulk editing required?
+4. Must approval and activation use different actors/capabilities or separation-of-duties rules?
+5. What retention policy applies to abandoned drafts?
 
 ## Consequences
 
@@ -114,7 +113,7 @@ Approval of this ADR should either answer or explicitly defer these items before
 
 - Assignment reference plus teacher snapshot introduces deliberate denormalization and validation complexity.
 - Real-time collision is not fully expressible through simple uniqueness if separate slot definitions may overlap.
-- Future-effective timetable activation requires additional product decisions.
+- Future-effective activation requires transactional 04B commands and date-resolution tests even though its persistence semantics are fixed by ADR-017.
 - Import, activation and calendar replacement need transactional/concurrency tests.
 
 ## Dependencies
@@ -130,7 +129,7 @@ Approval of this ADR should either answer or explicitly defer these items before
 ## Explicit non-scope
 
 - Accepting this ADR automatically; its status remains **Proposed**.
-- Prisma schema, migration, seed, API, UI or tests.
+- API, UI, capability seed or control-plane implementation beyond the accepted ADR-017 schema subset.
 - CalendarException, substitution, cancellation, period swap or make-up implementation.
 - PPCT sequence/progress, teaching debt, lesson content, statements or approvals.
 - Special-activity participants, confirmation or workload.

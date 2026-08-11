@@ -57,6 +57,14 @@ enum TimeSlotSession {
   EVENING
 }
 
+enum TimetableVersionStatus {
+  DRAFT
+  VALIDATED
+  APPROVED
+  ACTIVE
+  SUPERSEDED
+}
+
 enum AcademicWeekKind {
   OFFICIAL
   RESERVE
@@ -90,6 +98,11 @@ model User {
   auditEvents                      AuditEvent[]                    @relation("AuditActor")
   additionalDutyAssignmentsCreated StaffAdditionalDutyAssignment[] @relation("AdditionalDutyAssignmentCreator")
   teachingAssignments              TeachingAssignment[]            @relation("TeachingAssignmentTeacher")
+  timetableVersionsCreated         TimetableVersion[]              @relation("TimetableVersionCreatedBy")
+  timetableVersionsValidated       TimetableVersion[]              @relation("TimetableVersionValidatedBy")
+  timetableVersionsApproved        TimetableVersion[]              @relation("TimetableVersionApprovedBy")
+  timetableVersionsActivated       TimetableVersion[]              @relation("TimetableVersionActivatedBy")
+  timetableEntriesAsTeacher        TimetableEntry[]                @relation("TimetableEntryTeacher")
 
   @@index([status])
   @@map("users")
@@ -137,6 +150,7 @@ model Subject {
 
   staffSubjects       StaffSubject[]
   teachingAssignments TeachingAssignment[]
+  timetableEntries    TimetableEntry[]
 
   @@index([status, code])
   @@map("subjects")
@@ -310,6 +324,8 @@ model AcademicYear {
   classes             SchoolClass[]
   teachingAssignments TeachingAssignment[]
   timeSlotDefinitions TimeSlotDefinition[]
+  timetableVersions   TimetableVersion[]
+  timetableEntries    TimetableEntry[]
 
   @@map("academic_years")
 }
@@ -331,9 +347,11 @@ model TimeSlotDefinition {
   createdAt            DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt            DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  academicYear     AcademicYear     @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  timetableEntries TimetableEntry[] @relation("TimetableEntryTimeSlot")
 
   @@unique([id, academicYearId], map: "time_slot_definitions_id_academic_year_id_key")
+  @@unique([id, academicYearId, weekday], map: "time_slot_definitions_id_academic_year_id_weekday_key")
   @@unique([academicYearId, weekday, session, ordinal, revision], map: "time_slot_definitions_logical_revision_key")
   @@index([academicYearId, weekday, session, isActive], map: "time_slot_definitions_year_weekday_session_active_idx")
   @@map("time_slot_definitions")
@@ -354,11 +372,13 @@ model AcademicCalendarVersion {
   createdAt         DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt         DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  academicYear  AcademicYear           @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
-  semesters     Semester[]
-  weeks         AcademicWeek[]
-  interruptions CalendarInterruption[]
+  academicYear      AcademicYear           @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  semesters         Semester[]
+  weeks             AcademicWeek[]
+  interruptions     CalendarInterruption[]
+  timetableVersions TimetableVersion[]     @relation("TimetableVersionCalendarSnapshot")
 
+  @@unique([id, academicYearId], map: "academic_calendar_versions_id_academic_year_id_key")
   @@unique([academicYearId, versionNumber])
   @@index([academicYearId, isActive])
   @@map("academic_calendar_versions")
@@ -394,8 +414,9 @@ model AcademicWeek {
   createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt          DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  calendarVersion AcademicCalendarVersion @relation(fields: [calendarVersionId], references: [id], onDelete: Restrict)
-  segments        AcademicWeekSegment[]   @relation("AcademicWeekSegments")
+  calendarVersion            AcademicCalendarVersion @relation(fields: [calendarVersionId], references: [id], onDelete: Restrict)
+  segments                   AcademicWeekSegment[]   @relation("AcademicWeekSegments")
+  effectiveTimetableVersions TimetableVersion[]      @relation("TimetableVersionEffectiveWeek")
 
   @@unique([id, calendarVersionId])
   @@unique([calendarVersionId, displayLabel])
@@ -452,6 +473,7 @@ model SchoolClass {
 
   academicYear        AcademicYear         @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
   teachingAssignments TeachingAssignment[] @relation("TeachingAssignmentSchoolClass")
+  timetableEntries    TimetableEntry[]     @relation("TimetableEntrySchoolClass")
 
   @@unique([id, academicYearId])
   @@unique([academicYearId, code])
@@ -471,13 +493,84 @@ model TeachingAssignment {
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
-  schoolClass  SchoolClass  @relation("TeachingAssignmentSchoolClass", fields: [schoolClassId, academicYearId], references: [id, academicYearId], onDelete: Restrict)
-  subject      Subject      @relation(fields: [subjectId], references: [id], onDelete: Restrict)
-  teacher      User         @relation("TeachingAssignmentTeacher", fields: [teacherUserId], references: [id], onDelete: Restrict)
+  academicYear     AcademicYear     @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  schoolClass      SchoolClass      @relation("TeachingAssignmentSchoolClass", fields: [schoolClassId, academicYearId], references: [id, academicYearId], onDelete: Restrict)
+  subject          Subject          @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  teacher          User             @relation("TeachingAssignmentTeacher", fields: [teacherUserId], references: [id], onDelete: Restrict)
+  timetableEntries TimetableEntry[] @relation("TimetableEntryAssignment")
 
+  @@unique([id, academicYearId, schoolClassId, subjectId, teacherUserId], map: "teaching_assignments_provenance_key")
   @@index([academicYearId, schoolClassId, subjectId, validFrom, validUntil], map: "teaching_assignments_class_subject_validity_idx")
   @@index([teacherUserId, academicYearId, validFrom, validUntil], map: "teaching_assignments_teacher_year_validity_idx")
   @@index([subjectId, academicYearId, validFrom, validUntil], map: "teaching_assignments_subject_year_validity_idx")
   @@map("teaching_assignments")
+}
+
+model TimetableVersion {
+  id                      String                 @id @default(uuid()) @db.Uuid
+  academicYearId          String                 @map("academic_year_id") @db.Uuid
+  versionNumber           Int                    @map("version_number")
+  status                  TimetableVersionStatus @default(DRAFT)
+  calendarVersionId       String?                @map("calendar_version_id") @db.Uuid
+  effectiveAcademicWeekId String?                @map("effective_academic_week_id") @db.Uuid
+  effectiveFrom           DateTime?              @map("effective_from") @db.Date
+  effectiveUntil          DateTime?              @map("effective_until") @db.Date
+  contentChecksum         String?                @map("content_checksum") @db.VarChar(128)
+  note                    String?                @db.Text
+  createdByUserId         String                 @map("created_by_user_id") @db.Uuid
+  validatedByUserId       String?                @map("validated_by_user_id") @db.Uuid
+  validatedAt             DateTime?              @map("validated_at") @db.Timestamptz(3)
+  approvedByUserId        String?                @map("approved_by_user_id") @db.Uuid
+  approvedAt              DateTime?              @map("approved_at") @db.Timestamptz(3)
+  activatedByUserId       String?                @map("activated_by_user_id") @db.Uuid
+  activatedAt             DateTime?              @map("activated_at") @db.Timestamptz(3)
+  supersededAt            DateTime?              @map("superseded_at") @db.Timestamptz(3)
+  createdAt               DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt               DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  academicYear          AcademicYear             @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  calendarVersion       AcademicCalendarVersion? @relation("TimetableVersionCalendarSnapshot", fields: [calendarVersionId, academicYearId], references: [id, academicYearId], onDelete: Restrict)
+  effectiveAcademicWeek AcademicWeek?            @relation("TimetableVersionEffectiveWeek", fields: [effectiveAcademicWeekId, calendarVersionId], references: [id, calendarVersionId], onDelete: Restrict)
+  createdBy             User                     @relation("TimetableVersionCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  validatedBy           User?                    @relation("TimetableVersionValidatedBy", fields: [validatedByUserId], references: [id], onDelete: Restrict)
+  approvedBy            User?                    @relation("TimetableVersionApprovedBy", fields: [approvedByUserId], references: [id], onDelete: Restrict)
+  activatedBy           User?                    @relation("TimetableVersionActivatedBy", fields: [activatedByUserId], references: [id], onDelete: Restrict)
+  entries               TimetableEntry[]         @relation("TimetableEntryVersion")
+
+  @@unique([id, academicYearId], map: "timetable_versions_id_academic_year_id_key")
+  @@unique([academicYearId, versionNumber], map: "timetable_versions_academic_year_id_version_number_key")
+  @@index([academicYearId, status], map: "timetable_versions_academic_year_id_status_idx")
+  @@index([calendarVersionId, effectiveAcademicWeekId], map: "timetable_versions_calendar_version_id_effective_week_id_idx")
+  @@index([contentChecksum], map: "timetable_versions_content_checksum_idx")
+  @@map("timetable_versions")
+}
+
+model TimetableEntry {
+  id                   String          @id @default(uuid()) @db.Uuid
+  timetableVersionId   String          @map("timetable_version_id") @db.Uuid
+  academicYearId       String          @map("academic_year_id") @db.Uuid
+  weekday              AcademicWeekday
+  timeSlotDefinitionId String          @map("time_slot_definition_id") @db.Uuid
+  schoolClassId        String          @map("school_class_id") @db.Uuid
+  subjectId            String          @map("subject_id") @db.Uuid
+  teachingAssignmentId String          @map("teaching_assignment_id") @db.Uuid
+  teacherUserId        String          @map("teacher_user_id") @db.Uuid
+  createdAt            DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  timetableVersion   TimetableVersion   @relation("TimetableEntryVersion", fields: [timetableVersionId, academicYearId], references: [id, academicYearId], onDelete: Restrict)
+  academicYear       AcademicYear       @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  timeSlotDefinition TimeSlotDefinition @relation("TimetableEntryTimeSlot", fields: [timeSlotDefinitionId, academicYearId, weekday], references: [id, academicYearId, weekday], onDelete: Restrict)
+  schoolClass        SchoolClass        @relation("TimetableEntrySchoolClass", fields: [schoolClassId, academicYearId], references: [id, academicYearId], onDelete: Restrict)
+  subject            Subject            @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  teachingAssignment TeachingAssignment @relation("TimetableEntryAssignment", fields: [teachingAssignmentId, academicYearId, schoolClassId, subjectId, teacherUserId], references: [id, academicYearId, schoolClassId, subjectId, teacherUserId], onDelete: Restrict)
+  teacher            User               @relation("TimetableEntryTeacher", fields: [teacherUserId], references: [id], onDelete: Restrict)
+
+  @@unique([timetableVersionId, weekday, timeSlotDefinitionId, schoolClassId], map: "timetable_entries_class_exact_slot_key")
+  @@unique([timetableVersionId, weekday, timeSlotDefinitionId, teacherUserId], map: "timetable_entries_teacher_exact_slot_key")
+  @@index([timetableVersionId, schoolClassId], map: "timetable_entries_version_class_idx")
+  @@index([timetableVersionId, teacherUserId], map: "timetable_entries_version_teacher_idx")
+  @@index([timetableVersionId, subjectId], map: "timetable_entries_version_subject_idx")
+  @@index([timetableVersionId, teachingAssignmentId], map: "timetable_entries_version_assignment_idx")
+  @@index([academicYearId, weekday, timeSlotDefinitionId], map: "timetable_entries_year_weekday_slot_idx")
+  @@map("timetable_entries")
 }

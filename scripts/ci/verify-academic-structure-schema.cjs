@@ -12,6 +12,8 @@ const teachingMigrationName = '20260810010000_teaching_assignment_schema_foundat
 const teachingMigration = read('prisma', 'migrations', teachingMigrationName, 'migration.sql');
 const timeSlotMigrationName = '20260811020000_time_slot_schema_foundation';
 const timeSlotMigration = read('prisma', 'migrations', timeSlotMigrationName, 'migration.sql');
+const timetableMigrationName = '20260811030000_timetable_schema_foundation';
+const timetableMigration = read('prisma', 'migrations', timetableMigrationName, 'migration.sql');
 
 function modelBlock(name) {
   const match = schema.match(new RegExp(`model\\s+${name}\\s+\\{([\\s\\S]*?)\\n\\}`, 'u'));
@@ -42,12 +44,15 @@ for (const model of [
   'SchoolClass',
   'TeachingAssignment',
   'TimeSlotDefinition',
+  'TimetableVersion',
+  'TimetableEntry',
 ]) {
   modelBlock(model);
 }
 assert.match(schema, /enum\s+AcademicWeekday\s+\{[\s\S]*MONDAY[\s\S]*SUNDAY[\s\S]*\}/u);
 assert.match(schema, /enum\s+AcademicWeekKind\s+\{[\s\S]*OFFICIAL[\s\S]*RESERVE[\s\S]*\}/u);
 assert.deepEqual(enumValues('TimeSlotSession'), ['MORNING', 'AFTERNOON', 'EVENING']);
+assert.deepEqual(enumValues('TimetableVersionStatus'), ['DRAFT', 'VALIDATED', 'APPROVED', 'ACTIVE', 'SUPERSEDED']);
 
 const calendarVersion = modelBlock('AcademicCalendarVersion');
 assert.match(calendarVersion, /academicYearId\s+String\s+@map\("academic_year_id"\)\s+@db\.Uuid/u);
@@ -136,6 +141,7 @@ for (const field of ['allowRegularTeaching', 'allowMakeupTeaching', 'allowSelfSt
 }
 assert.match(timeSlot, /academicYear\s+AcademicYear\s+@relation\(fields:\s*\[academicYearId\],\s*references:\s*\[id\],\s*onDelete:\s*Restrict\)/u);
 assert.match(timeSlot, /@@unique\(\[id, academicYearId\],\s*map:\s*"time_slot_definitions_id_academic_year_id_key"\)/u);
+assert.match(timeSlot, /@@unique\(\[id, academicYearId, weekday\],\s*map:\s*"time_slot_definitions_id_academic_year_id_weekday_key"\)/u);
 assert.match(timeSlot, /@@unique\(\[academicYearId, weekday, session, ordinal, revision\],\s*map:\s*"time_slot_definitions_logical_revision_key"\)/u);
 assert.doesNotMatch(timeSlot, /validFrom|validUntil|effectiveFrom|effectiveUntil|academicWeekId|calendarVersionId/u);
 
@@ -248,14 +254,107 @@ assert.doesNotMatch(timeSlotMigration, /CREATE\s+(OR\s+REPLACE\s+)?TRIGGER/iu);
 assert.doesNotMatch(timeSlotMigration, /calendar_version_id|valid_from|valid_until|effective_from|effective_until/iu);
 assert.doesNotMatch(timeSlotMigration, /\b(?:five|5)\s+periods?\b/iu, 'Migration must not hard-code a universal period count');
 
+const timetableVersion = modelBlock('TimetableVersion');
+const timetableEntry = modelBlock('TimetableEntry');
+assert.equal((schema.match(/\bmodel\s+TimetableVersion\s+\{/gu) ?? []).length, 1);
+assert.equal((schema.match(/\bmodel\s+TimetableEntry\s+\{/gu) ?? []).length, 1);
+assert.match(calendarVersion, /@@unique\(\[id, academicYearId\],\s*map:\s*"academic_calendar_versions_id_academic_year_id_key"\)/u);
+assert.match(teachingAssignment, /@@unique\(\[id, academicYearId, schoolClassId, subjectId, teacherUserId\],\s*map:\s*"teaching_assignments_provenance_key"\)/u);
+
+for (const field of [
+  'id', 'academicYearId', 'calendarVersionId', 'effectiveAcademicWeekId', 'createdByUserId',
+  'validatedByUserId', 'approvedByUserId', 'activatedByUserId',
+]) {
+  assert.match(timetableVersion, new RegExp(`${field}\\s+String\\??[\\s\\S]*?@db\\.Uuid`, 'u'), `${field} must use UUID`);
+}
+assert.match(timetableVersion, /versionNumber\s+Int\s+@map\("version_number"\)/u);
+assert.match(timetableVersion, /status\s+TimetableVersionStatus\s+@default\(DRAFT\)/u);
+for (const field of ['effectiveFrom', 'effectiveUntil']) {
+  assert.match(timetableVersion, new RegExp(`${field}\\s+DateTime\\?\\s+@map\\("[a-z_]+"\\)\\s+@db\\.Date`, 'u'));
+}
+for (const field of ['validatedAt', 'approvedAt', 'activatedAt', 'supersededAt']) {
+  assert.match(timetableVersion, new RegExp(`${field}\\s+DateTime\\?[\\s\\S]*?@db\\.Timestamptz\\(3\\)`, 'u'));
+}
+assert.match(timetableVersion, /contentChecksum\s+String\?\s+@map\("content_checksum"\)\s+@db\.VarChar\(128\)/u);
+assert.match(timetableVersion, /calendarVersion\s+AcademicCalendarVersion\?\s+@relation\("TimetableVersionCalendarSnapshot",\s*fields:\s*\[calendarVersionId, academicYearId\],\s*references:\s*\[id, academicYearId\],\s*onDelete:\s*Restrict\)/u);
+assert.match(timetableVersion, /effectiveAcademicWeek\s+AcademicWeek\?\s+@relation\("TimetableVersionEffectiveWeek",\s*fields:\s*\[effectiveAcademicWeekId, calendarVersionId\],\s*references:\s*\[id, calendarVersionId\],\s*onDelete:\s*Restrict\)/u);
+assert.match(timetableVersion, /@@unique\(\[id, academicYearId\],\s*map:\s*"timetable_versions_id_academic_year_id_key"\)/u);
+assert.match(timetableVersion, /@@unique\(\[academicYearId, versionNumber\],\s*map:\s*"timetable_versions_academic_year_id_version_number_key"\)/u);
+assert.doesNotMatch(timetableVersion, /rollbackTarget|reactivatedAt/u);
+
+for (const field of [
+  'id', 'timetableVersionId', 'academicYearId', 'timeSlotDefinitionId', 'schoolClassId',
+  'subjectId', 'teachingAssignmentId', 'teacherUserId',
+]) {
+  assert.match(timetableEntry, new RegExp(`${field}\\s+String[\\s\\S]*?@db\\.Uuid`, 'u'), `${field} must use UUID`);
+}
+assert.match(timetableEntry, /weekday\s+AcademicWeekday/u);
+assert.match(timetableEntry, /createdAt\s+DateTime[\s\S]*@db\.Timestamptz\(3\)/u);
+assert.doesNotMatch(timetableEntry, /updatedAt|civilDate|effectiveFrom|effectiveUntil|calendarVersionId|academicWeekId|room|span/u);
+assert.match(timetableEntry, /timetableVersion\s+TimetableVersion\s+@relation\("TimetableEntryVersion",\s*fields:\s*\[timetableVersionId, academicYearId\],\s*references:\s*\[id, academicYearId\],\s*onDelete:\s*Restrict\)/u);
+assert.match(timetableEntry, /timeSlotDefinition\s+TimeSlotDefinition\s+@relation\("TimetableEntryTimeSlot",\s*fields:\s*\[timeSlotDefinitionId, academicYearId, weekday\],\s*references:\s*\[id, academicYearId, weekday\],\s*onDelete:\s*Restrict\)/u);
+assert.match(timetableEntry, /teachingAssignment\s+TeachingAssignment\s+@relation\("TimetableEntryAssignment",\s*fields:\s*\[teachingAssignmentId, academicYearId, schoolClassId, subjectId, teacherUserId\],\s*references:\s*\[id, academicYearId, schoolClassId, subjectId, teacherUserId\],\s*onDelete:\s*Restrict\)/u);
+for (const index of [
+  'timetable_entries_class_exact_slot_key', 'timetable_entries_teacher_exact_slot_key',
+  'timetable_entries_version_class_idx', 'timetable_entries_version_teacher_idx',
+  'timetable_entries_version_subject_idx', 'timetable_entries_version_assignment_idx',
+  'timetable_entries_year_weekday_slot_idx',
+]) {
+  assert.match(timetableEntry, new RegExp(`map:\\s*"${index}"`, 'u'), `Prisma schema missing ${index}`);
+}
+
+assert.match(timetableMigration, /CREATE TYPE "TimetableVersionStatus" AS ENUM \([\s\S]*'DRAFT'[\s\S]*'VALIDATED'[\s\S]*'APPROVED'[\s\S]*'ACTIVE'[\s\S]*'SUPERSEDED'[\s\S]*\)/u);
+for (const table of ['timetable_versions', 'timetable_entries']) {
+  assert.match(timetableMigration, new RegExp(`CREATE TABLE "${table}"`, 'u'), `Migration missing ${table}`);
+}
+for (const supportIndex of [
+  'academic_calendar_versions_id_academic_year_id_key',
+  'time_slot_definitions_id_academic_year_id_weekday_key',
+  'teaching_assignments_provenance_key',
+]) {
+  assert.match(timetableMigration, new RegExp(`CREATE UNIQUE INDEX "${supportIndex}"`, 'u'), `Migration missing ${supportIndex}`);
+}
+for (const constraint of [
+  'timetable_versions_version_number_check', 'timetable_versions_target_triplet_check',
+  'timetable_versions_effective_range_check', 'timetable_versions_content_checksum_normalized_check',
+  'timetable_versions_validation_actor_pair_check', 'timetable_versions_approval_actor_pair_check',
+  'timetable_versions_activation_actor_pair_check', 'timetable_versions_lifecycle_shape_check',
+  'timetable_versions_effective_history_no_overlap',
+]) {
+  assert.match(timetableMigration, new RegExp(`"${constraint}"`, 'u'), `Migration missing ${constraint}`);
+}
+assert.match(timetableMigration, /CREATE UNIQUE INDEX "timetable_versions_one_active_per_year_key"[\s\S]*WHERE "status" = 'ACTIVE'/u);
+assert.match(timetableMigration, /"timetable_versions_effective_history_no_overlap"[\s\S]*EXCLUDE USING gist[\s\S]*"academic_year_id" WITH =[\s\S]*daterange\("effective_from", "effective_until", '\[\]'\) WITH &&[\s\S]*WHERE \("status" IN \('ACTIVE', 'SUPERSEDED'\)\)/u);
+assert.match(timetableMigration, /CREATE INDEX "timetable_versions_content_checksum_idx"[\s\S]*\("content_checksum"\)/u);
+assert.doesNotMatch(timetableMigration, /CREATE UNIQUE INDEX "[^"]*checksum/iu, 'Content checksum must not be globally unique');
+for (const constraint of [
+  'timetable_versions_academic_year_id_fkey', 'timetable_versions_calendar_version_year_fkey',
+  'timetable_versions_effective_week_calendar_fkey', 'timetable_versions_created_by_user_id_fkey',
+  'timetable_versions_validated_by_user_id_fkey', 'timetable_versions_approved_by_user_id_fkey',
+  'timetable_versions_activated_by_user_id_fkey', 'timetable_entries_version_year_fkey',
+  'timetable_entries_academic_year_id_fkey', 'timetable_entries_time_slot_year_weekday_fkey',
+  'timetable_entries_school_class_year_fkey', 'timetable_entries_subject_id_fkey',
+  'timetable_entries_assignment_provenance_fkey', 'timetable_entries_teacher_user_id_fkey',
+]) {
+  assert.match(timetableMigration, new RegExp(`"${constraint}"[\\s\\S]*?ON DELETE RESTRICT`, 'u'), `${constraint} must restrict deletion`);
+}
+assert.doesNotMatch(timetableMigration, /CREATE\s+(OR\s+REPLACE\s+)?TRIGGER/iu);
+assert.doesNotMatch(timetableMigration, /rollback_target|reactivated_at|civil_date|room_id|period_span/iu);
+assert.doesNotMatch(timetableMigration, /iso_week|week_of_year/iu);
+assert.doesNotMatch(timetableMigration, /\b(?:monday\s*[-â€“]\s*friday|five|5)\s+(?:weekdays?|periods?)\b/iu);
+const timetableEntryTable = timetableMigration.match(/CREATE TABLE "timetable_entries" \(([\s\S]*?)\n\);/u);
+assert.ok(timetableEntryTable, 'Cannot inspect timetable_entries migration table');
+assert.doesNotMatch(timetableEntryTable[1], /\bDATE\b/u, 'TimetableEntry must not persist civil-date or effectivity rows');
+
 const legacyHashes = new Map([
   ['20260728000000_phase_00_baseline', 'A2185F4F34E90F9B437B3D0DD91B1C473D586849E6B0DFFB766C5AF69546634A'],
   ['20260801000000_phase_01_schema_foundation', '56B7F09859E9851A15D62D17A58066DAFB1798B0E4225858A464B0CD8F47DF9E'],
   ['20260810000000_academic_structure_schema_foundation', 'FC8812756B4041E29BCC8581D8DB47E02FEAA0C40325795CE8574B1F17168AE4'],
   ['20260810010000_teaching_assignment_schema_foundation', '89BC5647B6B451D9026F99CC578BD98F02DE2B186FD63CEF3205E2EFF4B15D07'],
+  ['20260811020000_time_slot_schema_foundation', 'EEAFEF46FCC7CD5179973D439FDE66B7EACA68E8E6951974B4AB66C8BD3828E5'],
 ]);
 for (const [name, expected] of legacyHashes) {
   assert.equal(sha256(read('prisma', 'migrations', name, 'migration.sql')), expected, `Historical migration ${name} changed`);
 }
 
-console.log(`Academic, teaching-assignment, and time-slot schema static verification PASS (${academicMigrationName}, ${teachingMigrationName}, ${timeSlotMigrationName}).`);
+console.log(`Academic, teaching-assignment, time-slot, and timetable schema static verification PASS (${academicMigrationName}, ${teachingMigrationName}, ${timeSlotMigrationName}, ${timetableMigrationName}).`);
