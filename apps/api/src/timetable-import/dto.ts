@@ -14,10 +14,12 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Max,
   MaxLength,
   Min,
   ValidateNested,
 } from 'class-validator';
+import { MAX_HEADER_SCAN_ROWS } from './workbook-limits';
 
 export class TimetableImportColumnMappingDto {
   @IsEnum(TimetableImportSemanticField)
@@ -109,4 +111,17 @@ export class CreateTimetableImportAliasDto {
   @IsOptional()
   @IsUUID()
   subjectId?: string;
+}
+
+export class InspectTimetableImportWorkbookDto {
+  @IsUUID()
+  profileRevisionId!: string;
+}
+
+export class PreviewTimetableImportWorkbookDto extends InspectTimetableImportWorkbookDto {
+  @IsUUID() academicYearId!: string;
+  @IsUUID() calendarVersionId!: string;
+  @IsUUID() effectiveAcademicWeekId!: string;
+  @IsString() @MaxLength(150) sheetName!: string;
+  @Type(() => Number) @IsInt() @Min(1) @Max(MAX_HEADER_SCAN_ROWS) headerRowNumber!: number;
 }

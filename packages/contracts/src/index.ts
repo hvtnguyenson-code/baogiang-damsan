@@ -798,6 +798,110 @@ export interface TimetableImportAliasListResponse {
   items: TimetableImportAliasRecord[];
 }
 
+export type TimetableImportWorksheetState = 'VISIBLE' | 'HIDDEN' | 'VERY_HIDDEN';
+export type TimetableImportIssueSeverity = 'ERROR' | 'WARNING';
+export type TimetableImportIssueCategory = 'WORKBOOK' | 'SHEET' | 'HEADER' | 'ROW' | 'RESOLUTION' | 'VALIDATION';
+export type TimetableImportPreviewIssueCode =
+  | 'HIDDEN_MAPPED_DATA' | 'NONBLANK_ROW_WITHOUT_MAPPED_DATA' | 'PARTIALLY_BLANK_MAPPED_ROW'
+  | 'FORMULA_IN_MAPPED_CELL' | 'HYPERLINK_IN_MAPPED_CELL' | 'MERGED_MAPPED_CELL'
+  | 'UNSUPPORTED_MAPPED_CELL_TYPE' | 'MAPPED_VALUE_TOO_LONG'
+  | 'INVALID_WEEKDAY' | 'INVALID_SESSION' | 'INVALID_PERIOD_ORDINAL' | 'WEEKDAY_NOT_IN_CALENDAR'
+  | 'SLOT_NOT_FOUND' | 'SLOT_NOT_ACTIVE' | 'SLOT_NOT_REGULAR_TEACHING'
+  | 'CLASS_NOT_FOUND' | 'CLASS_INACTIVE' | 'CLASS_IDENTITY_CONFLICT'
+  | 'SUBJECT_NOT_FOUND' | 'SUBJECT_INACTIVE' | 'SUBJECT_IDENTITY_CONFLICT'
+  | 'TEACHER_NOT_FOUND' | 'TEACHER_AMBIGUOUS' | 'TEACHER_INACTIVE' | 'TEACHER_NOT_TEACHING_STAFF'
+  | 'ASSIGNMENT_NOT_FOUND' | 'ASSIGNMENT_AMBIGUOUS' | 'ASSIGNMENT_COVERAGE_GAP'
+  | 'DUPLICATE_CANONICAL_ROW' | 'CLASS_TIME_OVERLAP' | 'TEACHER_TIME_OVERLAP';
+
+export interface TimetableImportPreviewIssue {
+  code: TimetableImportPreviewIssueCode;
+  severity: TimetableImportIssueSeverity;
+  category: TimetableImportIssueCategory;
+  message: string;
+  sourceRowNumber?: number;
+  relatedSourceRowNumbers?: number[];
+  semanticField?: TimetableImportSemanticField;
+  boundedSourceValue?: string;
+}
+
+export interface TimetableImportHeaderCandidate {
+  rowNumber: number;
+  matchedSemanticFields: TimetableImportSemanticField[];
+  complete: boolean;
+}
+
+export interface TimetableImportWorksheetInspection {
+  name: string;
+  state: TimetableImportWorksheetState;
+  nonBlank: boolean;
+  selectable: boolean;
+  rowCount: number;
+  columnCount: number;
+  matchesProfileSheetHint: boolean;
+  headerCandidates: TimetableImportHeaderCandidate[];
+}
+
+export interface TimetableImportWorkbookInspectionResponse {
+  profileRevisionId: string;
+  profileId: string;
+  sourceFileName: string;
+  sheets: TimetableImportWorksheetInspection[];
+  issues: TimetableImportPreviewIssue[];
+}
+
+export interface TimetableImportCanonicalPreviewRow {
+  sourceRowNumber: number;
+  weekday: AcademicWeekday;
+  timeSlotDefinitionId: string;
+  schoolClassId: string;
+  schoolClassCode: string;
+  subjectId: string;
+  subjectCode: string;
+  teachingAssignmentId: string;
+  teacherUserId: string;
+  teacherDisplayName: string;
+  teacherStaffCode: string | null;
+  normalizedSourceValues: Record<TimetableImportSemanticField, string>;
+}
+
+export interface TimetableImportPreviewDiffRow {
+  weekday: AcademicWeekday;
+  timeSlotDefinitionId: string;
+  schoolClassId: string;
+  sourceRowNumber?: number;
+  subjectId: string;
+  teachingAssignmentId: string;
+  teacherUserId: string;
+}
+
+export interface TimetableImportPreviewChangedRow {
+  before: TimetableImportPreviewDiffRow;
+  after: TimetableImportPreviewDiffRow;
+  changedFields: Array<'SUBJECT' | 'TEACHING_ASSIGNMENT' | 'TEACHER'>;
+}
+
+export interface TimetableImportPreviewDiff {
+  added: TimetableImportPreviewDiffRow[];
+  changed: TimetableImportPreviewChangedRow[];
+  removed: TimetableImportPreviewDiffRow[];
+  unchangedCount: number;
+  counts: { added: number; changed: number; removed: number; unchanged: number };
+}
+
+export interface TimetableImportWorkbookPreviewResponse {
+  profileId: string;
+  profileRevisionId: string;
+  source: { sourceFileName: string; sheetName: string; headerRowNumber: number; sourceRowCount: number };
+  target: { academicYearId: string; calendarVersionId: string; effectiveAcademicWeekId: string; effectiveFrom: CivilDateString; calendarEndDate: CivilDateString };
+  rows: TimetableImportCanonicalPreviewRow[];
+  issues: TimetableImportPreviewIssue[];
+  blockingIssueCount: number;
+  warningCount: number;
+  canConfirm: boolean;
+  baseline: { date: CivilDateString; timetableVersion: null | { id: string; versionNumber: number; status: TimetableVersionStatus; effectiveFrom: CivilDateString | null; effectiveUntil: CivilDateString | null } };
+  diff: TimetableImportPreviewDiff | null;
+}
+
 // ============================================================
 // Notification Contracts (foundation types for Phase 03+)
 // ============================================================
