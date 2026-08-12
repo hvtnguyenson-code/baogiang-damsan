@@ -422,7 +422,7 @@ Room collision is explicitly **DEFERRED**, not an unresolved invitation to inven
 6. **04B3A — Import contract audit (resolved by ADR-021):** accepted workbook, mapping, canonical identity, replay and atomicity architecture.
 7. **04B3B — Import persistence foundation:** profiles, typed aliases, committed receipts, semantic duplicate uniqueness, request idempotency and receipt/version provenance.
 8. **04B3C1 — Import configuration control plane (implemented by ADR-023):** school-wide profile list/read/create/revise/retire, exact six canonical mappings, typed alias create/retire, normalization, authorization and same-transaction audit.
-9. **04B3C2 — Workbook Inspection & Canonical Preview:** reviewed parser, bounded inspection, canonical resolution, preview/errors and diff.
+9. **04B3C2 — Workbook Inspection & Canonical Preview (implemented by ADR-024):** reviewed parser, bounded inspection, canonical resolution, preview/errors and diff.
 10. **04B3C3 — Canonical Import Confirmation, Idempotent Replay and Imported-DRAFT Lock:** atomic commit-to-DRAFT, committed receipt/replay and generic mutation protection.
 11. **04B3D — Optional import hardening:** corpus, fuzz, ZIP-bomb and large-workbook security/load gates if separated from 04B3C.
 12. **04C — Timetable management UI:** import/draft comparison, conflict remediation and activation workflow within the approved design system.
@@ -431,3 +431,5 @@ Room collision is explicitly **DEFERRED**, not an unresolved invitation to inven
 15. **04F — Special-activity occupancy integration:** after the canonical special-activity scope/staffing model exists.
 
 ADR-016 and ADR-017 are the accepted persistence gates; 04B must preserve their collision and historical semantics.
+
+ADR-024's parser selection and resource bounds are new 04B3C2 architecture decisions, not retroactive requirements attributed to the v1.2 source material.
