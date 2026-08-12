@@ -1,6 +1,6 @@
 # LOCAL-FC-04 — Timetable Domain Specification
 
-**Status:** Requirements audit; 04A1 persistence resolved by ADR-016, 04A2 timetable persistence by ADR-017, 04B0 time-slot control plane by ADR-018, 04B1 draft/validation by ADR-019, and 04B2 lifecycle/resolution by ADR-020; 04B3A import questions are audited in `LOCAL-FC-04B3-TIMETABLE-IMPORT-CONTRACT-AUDIT.md` and proposed by ADR-021, but remain subject to review/acceptance
+**Status:** Requirements audit; 04A1 persistence resolved by ADR-016, 04A2 timetable persistence by ADR-017, 04B0 time-slot control plane by ADR-018, 04B1 draft/validation by ADR-019, 04B2 lifecycle/resolution by ADR-020, and 04B3A import architecture by ADR-021
 
 **Audit date:** 2026-08-11
 
@@ -292,7 +292,7 @@ ADR-020 resolves the current control-plane policy: approval and activation both 
 
 ## 15. Import/manual-entry requirements
 
-The focused [LOCAL-FC-04B3 import audit](LOCAL-FC-04B3-TIMETABLE-IMPORT-CONTRACT-AUDIT.md) and [ADR-021](../decisions/ADR-021-TIMETABLE-IMPORT-CONTRACT-AND-IDEMPOTENCY.md) now document evidence and propose a contract. ADR-021 remains **Proposed**; the unresolved questions below are not converted into accepted requirements by that proposal.
+The focused [LOCAL-FC-04B3 import audit](LOCAL-FC-04B3-TIMETABLE-IMPORT-CONTRACT-AUDIT.md) distinguishes source evidence from architecture, and [ADR-021](../decisions/ADR-021-TIMETABLE-IMPORT-CONTRACT-AND-IDEMPOTENCY.md) is **Accepted**. It fixes the first-release workbook/mapping boundary, canonical resolution, atomic confirmation, separate semantic/request replay identities, committed receipt and imported-DRAFT immutability. It deliberately defines no official fixed source header template.
 
 ### Confirmed import workflow
 
@@ -304,7 +304,7 @@ v1.2 §§7.2–7.3 and 14.3 require: upload → select profile/sheet → detect 
 - Exact source columns/header names: **UNRESOLVED**. Do not invent a template.
 - Manual cell entry or bulk edit: **UNRESOLVED**. The prototype shows upload and activation only and cannot establish a requirement.
 - Import row spanning multiple periods: **UNRESOLVED**.
-- Error transport format, row/column addressing and partial acceptance: **UNRESOLVED**. Atomic version import is recommended but not yet approved.
+- Exact response transport shape remains an 04B3C detail. Stable bounded row/field issues and zero partial TimetableVersion persistence are accepted by ADR-021.
 
 ## 16. Special-activity boundary
 
@@ -377,10 +377,10 @@ Application validation owns cross-aggregate existence/state/scope rules. Activat
 
 ## 20. Open questions / unresolved requirements
 
-ADR-016 resolves the time-slot foundation, ADR-017 resolves the 04A2 version/entry/history schema, and ADR-020 resolves the 04B2 lifecycle policy. The following questions remain for 04B3 or later slices:
+ADR-016 resolves the time-slot foundation, ADR-017 resolves the 04A2 version/entry/history schema, ADR-020 resolves the 04B2 lifecycle policy, and ADR-021 resolves the canonical 04B3 import architecture. The following questions remain for later slices:
 
 1. What completeness rule applies to classes, weekdays, slots and reserve `DP` weeks?
-2. What are the official import columns, template versions, row error contract and atomicity rules?
+2. What source-specific official header/template variants exist in real files? ADR-021 deliberately defines no fixed official template.
 3. What future UI manual/bulk editing requirements apply?
 4. What is the retention/deletion policy for abandoned drafts?
 
@@ -417,10 +417,13 @@ Room collision is explicitly **DEFERRED**, not an unresolved invitation to inven
 3. **04B0 — Time-slot control plane:** canonical slot management plus `TIMETABLE_MANAGE`.
 4. **04B1 — Draft and entry commands:** timetable authoring plus validation engine.
 5. **04B2 — Lifecycle (resolved by ADR-020):** approve, activate, supersede, historical resolution and concurrency.
-6. **04B3 — Import:** Excel import, template/mapping, preview/comparison, checksum and idempotency.
-7. **04C — Timetable management UI:** import/draft comparison, conflict remediation and activation workflow within the approved design system.
-8. **04D — Teacher/read-only timetable UI:** effective personal/class timetable and historical/date navigation.
-9. **04E — Operational overlays:** only after separate requirements work for CalendarException, substitution, cancellation and make-up.
-10. **04F — Special-activity occupancy integration:** after the canonical special-activity scope/staffing model exists.
+6. **04B3A — Import contract audit (resolved by ADR-021):** accepted workbook, mapping, canonical identity, replay and atomicity architecture.
+7. **04B3B — Import persistence foundation:** profiles, typed aliases, committed receipts, semantic duplicate uniqueness, request idempotency and receipt/version provenance.
+8. **04B3C — Workbook inspection/import API:** reviewed parser, bounded inspection, preview/errors/diff and atomic commit-to-DRAFT.
+9. **04B3D — Optional import hardening:** corpus, fuzz, ZIP-bomb and large-workbook security/load gates if separated from 04B3C.
+10. **04C — Timetable management UI:** import/draft comparison, conflict remediation and activation workflow within the approved design system.
+11. **04D — Teacher/read-only timetable UI:** effective personal/class timetable and historical/date navigation.
+12. **04E — Operational overlays:** only after separate requirements work for CalendarException, substitution, cancellation and make-up.
+13. **04F — Special-activity occupancy integration:** after the canonical special-activity scope/staffing model exists.
 
 ADR-016 and ADR-017 are the accepted persistence gates; 04B must preserve their collision and historical semantics.

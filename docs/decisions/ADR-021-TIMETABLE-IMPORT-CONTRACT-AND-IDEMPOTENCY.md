@@ -1,82 +1,117 @@
 # ADR-021 — Timetable Import Contract and Idempotency
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-12
 - **Scope:** LOCAL-FC-04B3 timetable import architecture
 - **Supporting audit:** [LOCAL-FC-04B3 Timetable Import Contract Audit](../requirements/LOCAL-FC-04B3-TIMETABLE-IMPORT-CONTRACT-AUDIT.md)
 
 ## Context
 
-**CONFIRMED:** PA-B v1.2 requires Excel timetable upload, profile/sheet selection, column detection, remembered aliases, validation, compare/preview, approval, activation and checksum/idempotency. It does not publish official extensions, headers, profile scope, partial-acceptance rules, checksum algorithm or row-error transport.
+**CONFIRMED:** PA-B v1.2 requires Excel timetable upload, profile/sheet selection, column detection, remembered aliases, validation, compare/preview, approval, activation and checksum/idempotency. It does not publish official extensions, headers, profile scope, partial-acceptance rules, checksum algorithm or row-error transport. Decisions below that fill those gaps are accepted architecture, not retroactively attributed to the source.
 
-**CONFIRMED:** ADR-017 through ADR-020 already establish AcademicYear-owned timetable versions, one exact slot per normal entry, TeachingAssignment provenance plus teacher snapshot, atomic replace-all DRAFT content, current-scope validation and existing approval/activation/history. `contentChecksum` is nullable and indexed but not globally unique. There is no current import/profile/alias/idempotency persistence or workbook parser.
+**CONFIRMED:** ADR-017 through ADR-020 already establish AcademicYear-owned timetable versions, one exact slot per normal entry, TeachingAssignment provenance plus teacher snapshot, atomic replace-all DRAFT content, current-scope validation and the approval/activation/history lifecycle. `contentChecksum` is nullable and indexed but not globally unique. There is no current import profile, alias, receipt, idempotency persistence or workbook parser.
 
 ## Source-backed constraints
 
-- **CONFIRMED:** raw source names are normalized through aliases to stable canonical teacher/class/subject identities (v1.2 §5.4, tables 17–18).
-- **CONFIRMED:** import pipeline is upload → parse sheet/header/data region → normalize → validate → preview add/change/remove/errors/warnings → transactional commit and audit (v1.2 §§7.2–7.3, 14.3, tables 24 and 45).
-- **CONFIRMED:** equal checksum or idempotency key must not create duplicate content (v1.2 table 24).
-- **CONFIRMED:** import must not bypass `TIMETABLE_MANAGE / SCHOOL_WIDE`, the DRAFT lifecycle, existing evaluator or activation recheck.
-- **DEFERRED:** completeness, PPCT association, special-activity collision and Room cannot be claimed by normal-base import.
+- Raw source names are normalized through aliases to stable canonical teacher/class/subject identities.
+- The pipeline is upload → parse sheet/header/data region → normalize → validate → preview add/change/remove/errors/warnings → transactional commit and audit.
+- Equal checksum or idempotency key must not create duplicate content.
+- Import must not bypass `TIMETABLE_MANAGE / SCHOOL_WIDE`, the DRAFT lifecycle, the existing evaluator or activation recheck.
+- Completeness, PPCT association, special-activity collision and Room remain deferred because their canonical models/rules do not yet exist.
 
-## Proposed decisions
+## Decision
 
-1. **PROPOSED:** first release accepts `.xlsx` only. `.xls` and `.csv` are unsupported until separately approved. This is a recommendation, not a source requirement.
-2. **PROPOSED:** one explicit visible nonblank sheet is imported into one candidate. Header-row detection is bounded and user-confirmed; raw headers never become canonical domain fields.
-3. **PROPOSED:** required canonical semantics are weekday, active regular-teaching slot, same-year active class, active subject and one eligible teacher. TeachingAssignment and teacher snapshot are server-derived.
-4. **PROPOSED:** entity resolution uses normalized exact code/username/staffCode, then a source-scoped approved alias. Display name and labels never choose ambiguously; fuzzy matching is excluded.
-5. **PROPOSED:** school-wide mapping profiles own sheet/header/mapping policy; typed value/entity aliases are separate from header mappings and auditable.
-6. **PROPOSED:** parse/mapping/entity errors create no TimetableVersion. Preview confirmation atomically claims an import receipt, creates the DRAFT/target/entries/checksum and audit. Invalid rows are never omitted or partially persisted.
-7. **PROPOSED:** row issues retain actual Excel 1-based row numbers and stable file/workbook/mapping/resolution/validation categories, with sanitized bounded context.
-8. **PROPOSED:** preview compares against the ADR-020 timetable effective at candidate `effectiveFrom`, not latest version number. Diff identity is weekday + exact slot coordinate + class; payload changes include subject and teacher/assignment provenance.
-9. **PROPOSED:** `contentChecksum` is a deterministic semantic checksum of sorted canonical normal entries. SHA-256 lowercase hex and serialization version `semantic-v1` are recommendations, not source requirements. Target fields stay outside the content digest.
-10. **PROPOSED:** idempotency scope is AcademicYear + calendar version + effective academic week + semantic checksum. Identical content at a different future target remains allowed.
-11. **PROPOSED:** duplicate submission returns the existing version with explicit `CREATED` versus `IDEMPOTENT_REPLAY`, not another version and not an opaque conflict.
-12. **PROPOSED:** a dedicated import receipt with a unique composite scope and request replay record provides database-backed concurrent duplicate protection in the same serializable commit transaction.
-13. **PROPOSED:** manual DRAFT replace-all recomputes the semantic checksum and severs stale source-file identity; it may not leave a checksum representing prior content.
-14. **PROPOSED:** workbook bytes are transient. Persist bounded provenance/digests/counts, not raw Excel data.
-15. **PROPOSED:** import stops at DRAFT and may reuse the existing evaluator for preview. Existing validate → approve → activate commands remain unchanged.
+### 1. Input and workbook mapping
+
+The first release accepts `.xlsx` only; `.xls` and `.csv` are rejected. This format choice is architecture, not a source requirement. Content parsing is authoritative and must agree with the claimed extension/media type.
+
+One explicitly selected visible nonblank worksheet produces one candidate import. Sheets are never silently concatenated. A bounded header-row candidate must be explicitly confirmed, and actual 1-based source row addressing is preserved. Fully blank rows may be ignored; partially blank mapped rows, nonblank hidden mapped data, unsupported merged mapped cells and duplicate canonical rows are blocking. No row is silently omitted or collapsed.
+
+Profiles are school-wide configuration authorized by `TIMETABLE_MANAGE / SCHOOL_WIDE`. Header/column mapping policy is distinct from typed, source/profile-scoped entity aliases; both are auditable. One active typed alias key cannot map to multiple canonical IDs in the same scope. No fixed official header template is established by this ADR.
+
+### 2. Canonical entity resolution
+
+Canonical import semantics are weekday, an active exact regular-teaching slot revision, a same-year active class, an active subject and one eligible teacher. TeachingAssignment and its teacher snapshot are server-derived.
+
+Class and subject use exact normalized canonical codes or approved typed aliases. Fuzzy matching and name-only silent selection are forbidden. A conflicting exact identifier and alias is blocking.
+
+A teacher mapping uses an explicit `STAFF_CODE`, `USERNAME` or `APPROVED_ALIAS` mode when the source namespace is known. For a generic teacher value, all permitted exact namespaces are searched without precedence and results are deduplicated by canonical User ID: zero IDs is missing, one resolves, and more than one is a blocking ambiguity. Display names are candidate/help text only.
+
+### 3. Preview and atomic confirmation
+
+Inspection, mapping and preview do not create a TimetableVersion while blocking errors remain. Preview compares with the ADR-020 timetable effective at the candidate `effectiveFrom`; a user-selected alternative may be an additional view, not the default baseline. Diff identity is weekday + exact slot business coordinate/revision + class; subject and TeachingAssignment/teacher provenance are compared as payload.
+
+Confirmation is one serializable transaction that enforces replay identities and creates the committed receipt, DRAFT, target, complete normalized entry set, semantic checksum and audit. There is no partial timetable, invalid-row omission or automatic approve/activate. Optional attempt/preview persistence is separate from the committed receipt.
+
+### 4. Semantic checksum and duplicate identity
+
+`contentChecksum` is SHA-256 lowercase hexadecimal over deterministic UTF-8 `semantic-v1` serialization of sorted canonical normal entries. SHA-256 and this serialization are accepted architecture, not source requirements. Every row contains exactly:
+
+- `weekday`
+- `timeSlotDefinitionId`
+- `schoolClassId`
+- `subjectId`
+- `teachingAssignmentId`
+- `teacherUserId`
+
+Entry IDs, timestamps, raw headers/spelling, file metadata and target fields are excluded. Exact slot revision identity is intentionally included through `timeSlotDefinitionId`.
+
+The separately enforceable semantic duplicate key is `academicYearId + calendarVersionId + effectiveAcademicWeekId + semanticChecksum`. Equal content at a different target is allowed; different request keys cannot bypass this invariant.
+
+### 5. Request idempotency
+
+Request idempotency is distinct from semantic duplication. The durable namespace/composite key and canonical fingerprint encoding are designed in 04B3B/C, with these required behaviors:
+
+- same key and same deterministic request fingerprint replays the original result;
+- same key and materially different fingerprint returns a 409 conflict;
+- different keys with the same semantic duplicate key return `IDEMPOTENT_REPLAY`.
+
+The fingerprint is bounded and covers the committed semantic identity plus mapping/profile/target-version context needed to distinguish a retry from key reuse. Raw workbook content is not stored as an unbounded fingerprint payload.
+
+### 6. Receipt identity, replay and imported-DRAFT immutability
+
+A committed `TimetableImportReceipt` is immutable provenance for exactly one successfully created TimetableVersion, and an imported TimetableVersion has at most one committed receipt. Conceptually it records AcademicYear, target calendar version and AcademicWeek, checksum algorithm/serialization version, semantic checksum, created TimetableVersion, actor, commit timestamp, bounded source/profile provenance and optional request-idempotency identity/fingerprint. The authoritative relation must identify whether a version is import-backed; exact names and FK direction belong to 04B3B. Failed inspection/parsing attempts are not committed receipts.
+
+Semantic and request replay return the original receipt-linked version with its current lifecycle status and outcome `IDEMPOTENT_REPLAY`; a new DRAFT is never created because the original has progressed. A first commit returns `CREATED`.
+
+For a receipt-backed DRAFT, target, normalized entry set and `contentChecksum` are immutable through generic 04B1 target/replace-all commands. Future 04B3C must return a 409 domain conflict from those commands. Manual DRAFTs without a receipt retain current 04B1 behavior and may keep `contentChecksum = null`. Changing imported content requires a future accepted copy/new-manual-DRAFT workflow; the original receipt/version link is never detached.
+
+### 7. Raw workbook retention
+
+04B3B must not store raw workbook bytes in PostgreSQL. Bounded transient upload/preview storage is allowed. Whether durable raw bytes are retained externally, and for how long, remains unresolved and requires a separate decision. Durable bounded receipt/profile/version/target provenance and audit are required; workbook contents must not be logged.
+
+### 8. Parser and security boundary
+
+No parser package or version is selected here. 04B3C must perform a pinned dependency/security spike for Node 22 and define tested upload, expansion, dimension, string and processing-time limits. Formula cells in mapped fields, macros, encrypted workbooks, external links and unsupported structures are rejected; workbook content is never executed or evaluated.
 
 ## Alternatives considered
 
-- **Raw-file checksum:** rejected as content identity because harmless workbook metadata/format changes alter bytes; an optional raw digest may remain audit metadata.
-- **Global unique `TimetableVersion.contentChecksum`:** rejected because identical content must be reusable at a different future week.
-- **Application lookup only:** rejected because simultaneous identical imports race.
-- **Create version immediately on upload:** not preferred because unreadable/unmapped files pollute timetable history.
-- **Partial valid-row draft:** rejected as the proposed architecture because it hides omissions and conflicts with atomic replace-all; the source itself leaves partial acceptance unresolved.
-- **Header names as domain contract:** rejected; the source requires mapping/profile precisely because files vary.
-- **Dynamic teacher resolution without TeachingAssignment:** rejected by accepted timetable provenance/history constraints.
+- **Raw-file checksum as business identity:** rejected because harmless workbook metadata/format changes alter bytes.
+- **Global unique `TimetableVersion.contentChecksum`:** rejected because equal content at another target is valid.
+- **Application lookup only:** rejected because concurrent identical confirmation races.
+- **Immediate version creation on upload:** rejected because unreadable/unmapped files would pollute timetable history.
+- **Partial valid-row DRAFT:** rejected because it hides omissions and conflicts with atomic replace-all semantics.
+- **Cross-namespace teacher precedence:** rejected because it can silently select the wrong User.
+- **Mutating or detaching a receipt-backed DRAFT:** rejected because replay would no longer identify immutable committed content.
 
 ## Persistence consequences
 
-- **PROPOSED:** 04B3B adds mapping-profile, typed entity-alias and import-receipt/idempotency persistence plus reviewed unique indexes and audit relations.
-- **CONFIRMED:** normal timetable tables and `contentChecksum` field already exist; no global checksum uniqueness is added.
-- **UNRESOLVED:** exact table/column names, profile versioning representation and relation direction require schema review.
-- **PROPOSED:** raw workbooks are not stored in PostgreSQL.
+04B3B is required before the import API. It must add reviewed persistence and migrations for school-wide profiles, separate typed aliases, committed receipts/provenance, semantic duplicate uniqueness, request-idempotency identity/fingerprint and the authoritative receipt/version relation. Normal timetable tables and the existing nullable `contentChecksum` field remain the baseline; no global checksum uniqueness is added. Exact Prisma names, indexes, profile versioning and FK direction remain implementation design choices constrained by this ADR.
 
 ## API consequences
 
-- **PROPOSED:** 04B3C separates bounded inspection/mapping/preview from confirmation/commit. Confirmation yields `CREATED` or `IDEMPOTENT_REPLAY` and a DRAFT version.
-- **PROPOSED:** errors use stable categories/codes and actual sheet/row addressing; response context is sanitized and bounded.
-- **CONFIRMED:** target selection is server-owned calendar/week input and derives `effectiveFrom`; workbook UUIDs are not trusted.
-- **CONFIRMED:** no automatic approval/activation and no second validation engine.
+04B3C separates bounded inspection/mapping/preview from confirmation. Confirmation returns `CREATED` or `IDEMPOTENT_REPLAY` and the receipt-linked version with its current status. Errors use stable categories/codes and sanitized bounded source addressing. Target selection remains server-owned calendar/week input, and import ends at DRAFT. Existing validate → approve → activate commands remain authoritative.
 
-## Security consequences
+## Remaining questions
 
-- **PROPOSED:** reject formula cells in mapped fields, macros, encrypted workbooks, external links and unsupported structures; never execute/evaluate workbook content.
-- **PROPOSED:** content sniffing, ZIP-bomb/resource limits, bounded dimensions/strings/time, safe temporary handling and sanitized errors/audits are mandatory.
-- **UNRESOLVED:** numeric upload/sheet/row/column limits and parser choice require a security/dependency review.
-
-## Open questions
-
-1. Approve `.xlsx`-only first release?
-2. Approve one visible selected sheet and confirmed header row per import?
-3. Approve school-wide profile/alias scope and both header/value mapping concepts?
-4. Approve preview-confirmation creation boundary and zero partial persistence?
-5. Approve semantic checksum serialization, target-scoped receipt uniqueness and replay response?
-6. Recompute checksum on manual DRAFT edits, or forbid such edits for imported drafts?
-7. Select a Node 22-compatible parser and exact security limits after a pinned-version spike?
+- Exact Prisma names, profile representation/versioning and receipt FK direction.
+- Exact request-key namespace/index and fingerprint serialization.
+- Parser package/version and numeric security limits.
+- Durable raw workbook retention outside PostgreSQL.
+- Multi-period normalization beyond the first-release blocking behavior.
+- Future copy/manual/bulk UI and abandoned-DRAFT retention.
+- Completeness, PPCT, special activities and Room.
 
 ## Explicit non-scope
 
-This Proposed ADR does not authorize schema/migration, dependency installation, parser/API/contracts/tests/UI, raw file storage, completeness, PPCT, special activities, CalendarException, substitutions/make-up, Room, deployment or production access. ADR-015 remains Proposed. Implementation awaits independent review and a later task.
+This ADR accepts architecture only. It does not implement or authorize schema/migrations, dependency installation, parser/API/contracts/tests/UI, external raw-file storage, completeness, PPCT, special activities, CalendarException, substitutions/make-up, Room, deployment or production access. ADR-015 remains Proposed. Implementation requires the separate 04B3B and 04B3C tasks and the repository review gates.

@@ -101,10 +101,10 @@ ADR-020 resolves approval/activation authorization for the current control plane
 
 These product/control-plane questions remain unresolved and belong to later slices:
 
-[LOCAL-FC-04B3A](../requirements/LOCAL-FC-04B3-TIMETABLE-IMPORT-CONTRACT-AUDIT.md) and [ADR-021](ADR-021-TIMETABLE-IMPORT-CONTRACT-AND-IDEMPOTENCY.md) audit the import questions and propose resolutions. ADR-021 is **Proposed**, so it does not accept or remove the unresolved items below.
+[LOCAL-FC-04B3A](../requirements/LOCAL-FC-04B3-TIMETABLE-IMPORT-CONTRACT-AUDIT.md) distinguishes import source evidence from architecture. [ADR-021](ADR-021-TIMETABLE-IMPORT-CONTRACT-AND-IDEMPOTENCY.md) is **Accepted** and resolves the canonical workbook/mapping boundary, entity resolution, atomic confirmation, semantic duplicate and request-idempotency identities, committed receipt and imported-DRAFT immutability. This does not accept the broader ADR-015, whose status remains **Proposed**.
 
 1. What constitutes a complete timetable for classes, weekdays, slots and reserve `DP` weeks?
-2. What are the official import columns, template versions, row error contract and atomicity rules?
+2. What source-specific official header/template variants exist in real files? ADR-021 deliberately defines no fixed official template.
 3. What future UI manual/bulk editing requirements apply?
 4. What retention policy applies to abandoned drafts?
 
