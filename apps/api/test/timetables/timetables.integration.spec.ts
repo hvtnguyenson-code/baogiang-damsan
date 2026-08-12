@@ -1,5 +1,5 @@
 import { CatalogStatus, Prisma, UserStatus } from '@prisma/client';
-import { integration, Phase01Harness, testOrigin } from '../helpers/phase01-test-harness';
+import { integration, normalizedCode, Phase01Harness, testOrigin } from '../helpers/phase01-test-harness';
 
 integration('timetable draft validation control plane (PostgreSQL)', () => {
   const h = new Phase01Harness();
@@ -17,7 +17,7 @@ integration('timetable draft validation control plane (PostgreSQL)', () => {
   });
 
   async function academicFixture() {
-    const year = await h.prisma.academicYear.create({ data: { code: `Y${crypto.randomUUID().slice(0, 6)}`, name: '2026-2027' } });
+    const year = await h.prisma.academicYear.create({ data: { code: normalizedCode('Y'), name: '2026-2027' } });
     const calendar = await h.prisma.academicCalendarVersion.create({
       data: {
         academicYearId: year.id, versionNumber: 1, startDate: new Date('2026-09-01Z'), endDate: new Date('2027-05-31Z'),
@@ -34,7 +34,7 @@ integration('timetable draft validation control plane (PostgreSQL)', () => {
     const schoolClass = await h.prisma.schoolClass.create({
       data: { academicYearId: year.id, code: '10A1', name: '10A1', gradeLevel: 10, status: CatalogStatus.ACTIVE },
     });
-    const subject = await h.prisma.subject.create({ data: { code: `S${crypto.randomUUID().slice(0, 6)}`, name: 'Toán', status: CatalogStatus.ACTIVE } });
+    const subject = await h.prisma.subject.create({ data: { code: normalizedCode('S'), name: 'Toán', status: CatalogStatus.ACTIVE } });
     const teacher = await h.prisma.user.create({
       data: {
         username: `teacher-${crypto.randomUUID().slice(0, 8)}`, passwordHash: await h.passwords.hash('TeacherPassword9'),
@@ -218,7 +218,7 @@ integration('timetable draft validation control plane (PostgreSQL)', () => {
       where: { entityId: created.body.id, action: 'TIMETABLE_ENTRIES_REPLACED' },
     });
     const mismatchedSubject = await h.prisma.subject.create({ data: {
-      code: `M${crypto.randomUUID().slice(0, 6)}`, name: 'Môn không khớp phân công', status: CatalogStatus.ACTIVE,
+      code: normalizedCode('M'), name: 'Môn không khớp phân công', status: CatalogStatus.ACTIVE,
     } });
     const failed = await authorDraft(manager, created.body.id, first.body.version.updatedAt, [
       entryPayload(fixture), entryPayload(fixture, { subjectId: mismatchedSubject.id }),
