@@ -587,6 +587,120 @@ export interface TimeSlotRevisionResult {
   replacement: TimeSlotDefinitionRecord;
 }
 
+export type TimetableVersionStatus = 'DRAFT' | 'VALIDATED' | 'APPROVED' | 'ACTIVE' | 'SUPERSEDED';
+
+export interface TimetableVersionRecord {
+  id: string;
+  academicYearId: string;
+  versionNumber: number;
+  status: TimetableVersionStatus;
+  calendarVersionId: string | null;
+  effectiveAcademicWeekId: string | null;
+  effectiveFrom: CivilDateString | null;
+  effectiveUntil: CivilDateString | null;
+  contentChecksum: string | null;
+  note: string | null;
+  createdByUserId: string;
+  validatedByUserId: string | null;
+  validatedAt: string | null;
+  approvedByUserId: string | null;
+  approvedAt: string | null;
+  activatedByUserId: string | null;
+  activatedAt: string | null;
+  supersededAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  entryCount: number;
+}
+
+export interface TimetableVersionListResponse {
+  items: TimetableVersionRecord[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+export interface TimetableEntryTeachingAssignmentSummary {
+  id: string;
+  validFrom: CivilDateString;
+  validUntil: CivilDateString | null;
+}
+
+export interface TimetableEntryRecord {
+  id: string;
+  timetableVersionId: string;
+  academicYearId: string;
+  weekday: AcademicWeekday;
+  timeSlotDefinitionId: string;
+  schoolClassId: string;
+  subjectId: string;
+  teachingAssignmentId: string;
+  teacherUserId: string;
+  createdAt: string;
+  timeSlot: TimeSlotDefinitionRecord;
+  schoolClass: TeachingAssignmentClassSummary;
+  subject: TeachingAssignmentSubjectSummary;
+  teacher: TeachingAssignmentTeacherSummary;
+  teachingAssignment: TimetableEntryTeachingAssignmentSummary;
+}
+
+export interface TimetableEntryListResponse {
+  items: TimetableEntryRecord[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+export interface TimetableEntryReplaceResult {
+  version: TimetableVersionRecord;
+  previousCount: number;
+  entryCount: number;
+}
+
+export type TimetableValidationIssueCode =
+  | 'TARGET_REQUIRED'
+  | 'TARGET_WEEK_NO_SEGMENTS'
+  | 'TARGET_EFFECTIVE_FROM_MISMATCH'
+  | 'EMPTY_TIMETABLE'
+  | 'WEEKDAY_NOT_IN_CALENDAR'
+  | 'SLOT_NOT_ACTIVE'
+  | 'SLOT_NOT_REGULAR_TEACHING'
+  | 'CLASS_NOT_ACTIVE'
+  | 'SUBJECT_NOT_ACTIVE'
+  | 'TEACHER_NOT_ACTIVE'
+  | 'TEACHER_NOT_TEACHING_STAFF'
+  | 'ASSIGNMENT_COVERAGE_GAP'
+  | 'CLASS_TIME_OVERLAP'
+  | 'TEACHER_TIME_OVERLAP';
+
+export interface TimetableValidationIssue {
+  code: TimetableValidationIssueCode;
+  message: string;
+  entryIds?: string[];
+  weekday?: AcademicWeekday;
+  schoolClassId?: string;
+  teacherUserId?: string;
+  timeSlotDefinitionIds?: string[];
+}
+
+export type TimetableDeferredCheck =
+  | 'TIMETABLE_COMPLETENESS'
+  | 'PPCT_ASSOCIATION'
+  | 'SPECIAL_ACTIVITY_COLLISIONS';
+
+export interface TimetableValidationReport {
+  versionId: string;
+  validationScope: 'NORMAL_BASE_TIMETABLE';
+  statusBefore: TimetableVersionStatus;
+  statusAfter: TimetableVersionStatus;
+  valid: boolean;
+  issues: TimetableValidationIssue[];
+  deferredChecks: TimetableDeferredCheck[];
+  validatedByUserId: string | null;
+  validatedAt: string | null;
+  version: TimetableVersionRecord;
+}
+
 // ============================================================
 // Notification Contracts (foundation types for Phase 03+)
 // ============================================================

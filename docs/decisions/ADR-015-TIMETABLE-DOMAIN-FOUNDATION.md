@@ -95,7 +95,9 @@ Normal entries retain both composite `TeachingAssignment` provenance and the imm
 
 ## Unresolved questions
 
-ADR-017 and ADR-018 resolve the binding schema and time-slot control-plane choices. These product/control-plane questions remain proposed and belong to later 04B slices:
+ADR-017 and ADR-018 resolve the binding schema and time-slot control-plane choices. [ADR-019](ADR-019-TIMETABLE-DRAFT-AND-VALIDATION-CONTROL-PLANE.md) accepts the canonical backend DRAFT authoring primitive, target derivation, current-scope validation, optimistic draft concurrency and `DRAFT` to `VALIDATED` behavior. Atomic replace-all normalized entries are a backend primitive; this does not decide that a future UI must support manual or bulk editing. This ADR remains **Proposed**.
+
+These product/control-plane questions remain unresolved and belong to later 04B slices:
 
 1. What constitutes a complete timetable for classes, weekdays, slots and reserve `DP` weeks?
 2. What are the official import columns, template versions, row error contract and atomicity rules?
