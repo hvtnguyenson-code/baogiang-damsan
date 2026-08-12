@@ -97,13 +97,14 @@ Normal entries retain both composite `TeachingAssignment` provenance and the imm
 
 ADR-017 and ADR-018 resolve the binding schema and time-slot control-plane choices. [ADR-019](ADR-019-TIMETABLE-DRAFT-AND-VALIDATION-CONTROL-PLANE.md) accepts the canonical backend DRAFT authoring primitive, target derivation, current-scope validation, optimistic draft concurrency and `DRAFT` to `VALIDATED` behavior. Atomic replace-all normalized entries are a backend primitive; this does not decide that a future UI must support manual or bulk editing. This ADR remains **Proposed**.
 
-These product/control-plane questions remain unresolved and belong to later 04B slices:
+ADR-020 resolves approval/activation authorization for the current control plane: both use `TIMETABLE_MANAGE / SCHOOL_WIDE`, and validator, approver and activator are not required to be different actors. This does not accept the broader ADR-015, whose status remains **Proposed**.
+
+These product/control-plane questions remain unresolved and belong to later slices:
 
 1. What constitutes a complete timetable for classes, weekdays, slots and reserve `DP` weeks?
 2. What are the official import columns, template versions, row error contract and atomicity rules?
-3. Are manual cell editing and bulk editing required?
-4. Must approval and activation use different actors/capabilities or separation-of-duties rules?
-5. What retention policy applies to abandoned drafts?
+3. What future UI manual/bulk editing requirements apply?
+4. What retention policy applies to abandoned drafts?
 
 ## Consequences
 

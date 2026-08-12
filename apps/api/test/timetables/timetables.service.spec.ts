@@ -71,6 +71,58 @@ function authoringTx(overrides: {
   };
 }
 
+function validationEntry() {
+  return {
+    id: 'entry-1', timetableVersionId: 'version-1', academicYearId: 'year-1', weekday: 'MONDAY',
+    timeSlotDefinitionId: 'slot-1', schoolClassId: 'class-1', subjectId: 'subject-1',
+    teachingAssignmentId: 'assignment-1', teacherUserId: 'actor', createdAt: now,
+    timeSlotDefinition: {
+      id: 'slot-1', academicYearId: 'year-1', weekday: 'MONDAY', session: 'MORNING', ordinal: 1,
+      revision: 1, displayLabel: 'Tiết 1', startTime: new Date('1970-01-01T07:00:00Z'),
+      endTime: new Date('1970-01-01T07:45:00Z'), isActive: true, allowRegularTeaching: true,
+      allowMakeupTeaching: false, allowSelfStudy: false, createdAt: now, updatedAt: now,
+    },
+    schoolClass: { id: 'class-1', code: '10A1', name: '10A1', gradeLevel: 10, status: 'ACTIVE' },
+    subject: { id: 'subject-1', code: 'TOAN', name: 'Toán', status: 'ACTIVE' },
+    teacher: { id: 'actor', username: 'actor', status: 'ACTIVE', profile: { displayName: 'Actor', isTeachingStaff: true } },
+    teachingAssignment: {
+      id: 'assignment-1', validFrom: new Date('2026-09-01Z'), validUntil: new Date('2027-05-31Z'),
+    },
+  };
+}
+
+function activationTx(options: { activeCalendar?: boolean; predecessor?: ReturnType<typeof version> | null } = {}) {
+  const approved = version({
+    status: 'APPROVED', calendarVersionId: 'calendar-1', effectiveAcademicWeekId: 'week-1',
+    effectiveFrom: new Date('2026-09-21Z'), validatedByUserId: 'actor', validatedAt: now,
+    approvedByUserId: 'actor', approvedAt: new Date(now.getTime() + 1), updatedAt: new Date(now.getTime() + 1),
+    _count: { entries: 1 },
+  });
+  const active = version({
+    ...approved, status: 'ACTIVE', activatedByUserId: 'actor', activatedAt: new Date(now.getTime() + 3),
+    updatedAt: new Date(now.getTime() + 3),
+  });
+  return {
+    timetableVersion: {
+      findUnique: jest.fn().mockResolvedValue(approved),
+      findUniqueOrThrow: jest.fn().mockResolvedValue(active),
+      findFirst: jest.fn().mockResolvedValue(options.predecessor ?? null),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      update: jest.fn().mockImplementation(({ data }) => Promise.resolve({
+        ...options.predecessor, ...data, _count: { entries: 1 },
+      })),
+    },
+    timetableEntry: { findMany: jest.fn().mockResolvedValue([validationEntry()]) },
+    academicCalendarVersion: { findUnique: jest.fn().mockResolvedValue({
+      id: 'calendar-1', academicYearId: 'year-1', isActive: options.activeCalendar ?? true,
+      teachingWeekdays: ['MONDAY'], endDate: new Date('2027-05-31Z'),
+    }) },
+    academicWeek: { findUnique: jest.fn().mockResolvedValue({
+      id: 'week-1', calendarVersionId: 'calendar-1', segments: [{ startDate: new Date('2026-09-21Z') }],
+    }) },
+  };
+}
+
 describe('TimetablesService draft commands', () => {
   it('creates a normalized DRAFT with server numbering and null target/checksum', async () => {
     const create = jest.fn().mockResolvedValue(version({ note: 'Ghi chú' }));
@@ -290,6 +342,133 @@ describe('TimetablesService read model', () => {
       },
     }));
     expect(result.items[0]).toMatchObject({ timeSlot: { isActive: false }, teacher: { userStatus: 'DISABLED' } });
+    expect(audit.write).not.toHaveBeenCalled();
+  });
+
+  it('resolves only the inclusive ACTIVE/SUPERSEDED interval without auditing the read', async () => {
+    const effective = version({ status: 'SUPERSEDED', effectiveFrom: new Date('2026-09-01Z'), effectiveUntil: new Date('2026-09-20Z') });
+    const root = {
+      academicYear: { findUnique: jest.fn().mockResolvedValue({ id: 'year-1' }) },
+      timetableVersion: { findFirst: jest.fn().mockResolvedValue(effective) },
+    };
+    const { service, audit } = harness({}, root);
+    const result = await service.resolveEffectiveVersion('year-1', { date: '2026-09-20' });
+    expect(root.timetableVersion.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        academicYearId: 'year-1', status: { in: ['ACTIVE', 'SUPERSEDED'] },
+        effectiveFrom: { lte: new Date('2026-09-20Z') },
+      }),
+    }));
+    expect(result.version?.status).toBe('SUPERSEDED');
+    expect(audit.write).not.toHaveBeenCalled();
+  });
+});
+
+describe('TimetablesService lifecycle commands', () => {
+  it.each(['DRAFT', 'APPROVED', 'ACTIVE', 'SUPERSEDED'])('rejects approval from %s', async (status) => {
+    const tx = { timetableVersion: { findUnique: jest.fn().mockResolvedValue(version({ status })) } };
+    const { service, audit } = harness(tx);
+    await expect(service.approveVersion('version-1', { expectedUpdatedAt: now.toISOString() }, 'actor', {}))
+      .rejects.toBeInstanceOf(ConflictException);
+    expect(audit.write).not.toHaveBeenCalled();
+  });
+
+  it.each(['DRAFT', 'VALIDATED', 'ACTIVE', 'SUPERSEDED'])('rejects activation from %s', async (status) => {
+    const tx = { timetableVersion: { findUnique: jest.fn().mockResolvedValue(version({ status })) } };
+    const { service, audit } = harness(tx);
+    await expect(service.activateVersion('version-1', {
+      expectedUpdatedAt: now.toISOString(), expectedActiveVersionId: null,
+    }, 'actor', {})).rejects.toBeInstanceOf(ConflictException);
+    expect(audit.write).not.toHaveBeenCalled();
+  });
+
+  it('approves only an exact VALIDATED token, preserves validation metadata, and allows the same actor', async () => {
+    const validated = version({ status: 'VALIDATED', validatedByUserId: 'actor', validatedAt: now });
+    const approved = version({
+      status: 'APPROVED', validatedByUserId: 'actor', validatedAt: now,
+      approvedByUserId: 'actor', approvedAt: new Date(now.getTime() + 1), updatedAt: new Date(now.getTime() + 1),
+    });
+    const updateMany = jest.fn().mockResolvedValue({ count: 1 });
+    const tx = { timetableVersion: {
+      findUnique: jest.fn().mockResolvedValue(validated), updateMany,
+      findUniqueOrThrow: jest.fn().mockResolvedValue(approved),
+    } };
+    const { service, audit } = harness(tx);
+    const result = await service.approveVersion('version-1', { expectedUpdatedAt: now.toISOString() }, 'actor', {});
+    expect(updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'version-1', status: 'VALIDATED', updatedAt: now },
+      data: expect.objectContaining({ status: 'APPROVED', approvedByUserId: 'actor' }),
+    }));
+    expect(result).toMatchObject({ status: 'APPROVED', validatedByUserId: 'actor', approvedByUserId: 'actor' });
+    expect(audit.write).toHaveBeenCalledWith(expect.objectContaining({ action: 'TIMETABLE_VERSION_APPROVED' }), tx);
+  });
+
+  it('leaves no approval audit when the lifecycle token is stale', async () => {
+    const tx = { timetableVersion: {
+      findUnique: jest.fn().mockResolvedValue(version({ status: 'VALIDATED', validatedByUserId: 'actor', validatedAt: now })),
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+    } };
+    const { service, audit } = harness(tx);
+    await expect(service.approveVersion('version-1', { expectedUpdatedAt: now.toISOString() }, 'actor', {}))
+      .rejects.toMatchObject({ message: 'Trạng thái phiên bản thời khóa biểu đã thay đổi; hãy tải lại trước khi tiếp tục.' });
+    expect(audit.write).not.toHaveBeenCalled();
+  });
+
+  it('claims but keeps APPROVED when the exact target calendar is inactive', async () => {
+    const tx = activationTx({ activeCalendar: false });
+    const { service, audit } = harness(tx);
+    const result = await service.activateVersion('version-1', {
+      expectedUpdatedAt: new Date(now.getTime() + 1).toISOString(), expectedActiveVersionId: null,
+    }, 'actor', {});
+    expect(result).toMatchObject({ activated: false, statusAfter: 'APPROVED', supersededVersion: null });
+    expect(result.issues.map((item) => item.code)).toEqual(['TARGET_CALENDAR_NOT_ACTIVE']);
+    expect(tx.timetableVersion.updateMany).toHaveBeenCalledTimes(1);
+    expect(audit.write).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'TIMETABLE_ACTIVATION_RUN', metadata: expect.objectContaining({ activated: false }),
+    }), tx);
+  });
+
+  it('activates the first head and preserves explicit deferred checks for the same actor', async () => {
+    const tx = activationTx();
+    const { service, audit } = harness(tx);
+    const result = await service.activateVersion('version-1', {
+      expectedUpdatedAt: new Date(now.getTime() + 1).toISOString(), expectedActiveVersionId: null,
+    }, 'actor', {});
+    expect(result).toMatchObject({
+      activated: true, statusBefore: 'APPROVED', statusAfter: 'ACTIVE', supersededVersion: null,
+      deferredChecks: ['TIMETABLE_COMPLETENESS', 'PPCT_ASSOCIATION', 'SPECIAL_ACTIVITY_COLLISIONS'],
+    });
+    expect(audit.write).toHaveBeenCalledWith(expect.objectContaining({ action: 'TIMETABLE_VERSION_ACTIVATED' }), tx);
+  });
+
+  it('closes a predecessor on the previous civil date without mutating its content fields', async () => {
+    const predecessor = version({
+      id: 'predecessor', status: 'ACTIVE', effectiveFrom: new Date('2026-09-01Z'),
+      activatedByUserId: 'actor', activatedAt: now, updatedAt: now, _count: { entries: 1 },
+    });
+    const tx = activationTx({ predecessor });
+    const { service, audit } = harness(tx);
+    const result = await service.activateVersion('version-1', {
+      expectedUpdatedAt: new Date(now.getTime() + 1).toISOString(), expectedActiveVersionId: 'predecessor',
+    }, 'actor', {});
+    expect(tx.timetableVersion.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'predecessor' },
+      data: expect.objectContaining({ status: 'SUPERSEDED', effectiveUntil: new Date('2026-09-20Z') }),
+    }));
+    expect(result.supersededVersion).toMatchObject({ id: 'predecessor', status: 'SUPERSEDED', effectiveUntil: '2026-09-20' });
+    expect(audit.write).toHaveBeenCalledWith(expect.objectContaining({ action: 'TIMETABLE_VERSION_SUPERSEDED' }), tx);
+  });
+
+  it('rejects a changed ACTIVE chain head before any supersession audit', async () => {
+    const predecessor = version({ id: 'predecessor', status: 'ACTIVE', effectiveFrom: new Date('2026-09-01Z') });
+    const tx = activationTx({ predecessor });
+    const { service, audit } = harness(tx);
+    await expect(service.activateVersion('version-1', {
+      expectedUpdatedAt: new Date(now.getTime() + 1).toISOString(), expectedActiveVersionId: null,
+    }, 'actor', {})).rejects.toMatchObject({
+      message: 'Đầu chuỗi thời khóa biểu đang áp dụng đã thay đổi; hãy tải lại trước khi kích hoạt.',
+    });
+    expect(tx.timetableVersion.update).not.toHaveBeenCalled();
     expect(audit.write).not.toHaveBeenCalled();
   });
 });

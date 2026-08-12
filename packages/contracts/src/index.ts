@@ -659,6 +659,7 @@ export interface TimetableEntryReplaceResult {
 
 export type TimetableValidationIssueCode =
   | 'TARGET_REQUIRED'
+  | 'TARGET_CALENDAR_NOT_ACTIVE'
   | 'TARGET_WEEK_NO_SEGMENTS'
   | 'TARGET_EFFECTIVE_FROM_MISMATCH'
   | 'EMPTY_TIMETABLE'
@@ -699,6 +700,24 @@ export interface TimetableValidationReport {
   validatedByUserId: string | null;
   validatedAt: string | null;
   version: TimetableVersionRecord;
+}
+
+export interface TimetableActivationResult {
+  versionId: string;
+  activationScope: 'NORMAL_BASE_TIMETABLE';
+  statusBefore: 'APPROVED';
+  statusAfter: 'APPROVED' | 'ACTIVE';
+  activated: boolean;
+  issues: TimetableValidationIssue[];
+  deferredChecks: TimetableDeferredCheck[];
+  supersededVersion: TimetableVersionRecord | null;
+  version: TimetableVersionRecord;
+}
+
+export interface TimetableEffectiveResolution {
+  academicYearId: string;
+  date: CivilDateString;
+  version: TimetableVersionRecord | null;
 }
 
 // ============================================================

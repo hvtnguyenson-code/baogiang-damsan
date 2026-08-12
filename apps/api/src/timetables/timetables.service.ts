@@ -1,7 +1,10 @@
 import { ConflictException, HttpException, Injectable, NotFoundException } from '@nestjs/common';
 import { AuditResult, Prisma, TimetableVersion, TimetableVersionStatus } from '@prisma/client';
 import {
+  CivilDateString,
+  TimetableActivationResult,
   TimetableDeferredCheck,
+  TimetableEffectiveResolution,
   TimetableEntryListResponse,
   TimetableEntryReplaceResult,
   TimetableValidationIssue,
@@ -11,13 +14,17 @@ import {
 } from '@baogiang/contracts';
 import { AuditService } from '../audit/audit.service';
 import { RequestMeta } from '../auth/auth.types';
-import { formatCivilDate } from '../common/validation/civil-date';
+import { formatCivilDate, parseCivilDate } from '../common/validation/civil-date';
 import { PrismaService } from '../prisma/prisma.service';
+import { previousCivilDate } from '../teaching-assignments/teaching-assignment-policy';
 import {
+  ActivateTimetableVersionDto,
+  ApproveTimetableVersionDto,
   CreateTimetableVersionDto,
   ListTimetableEntriesDto,
   ListTimetableVersionsDto,
   ReplaceTimetableEntriesDto,
+  ResolveTimetableDateDto,
   SetTimetableTargetDto,
   ValidateTimetableVersionDto,
 } from './dto';
@@ -45,6 +52,12 @@ const VERSION_NUMBER_CONSTRAINTS = [
   'academic_year_id,version_number',
 ] as const;
 export const STALE_MESSAGE = 'Bản nháp thời khóa biểu đã thay đổi; hãy tải lại trước khi tiếp tục.';
+export const LIFECYCLE_STALE_MESSAGE = 'Trạng thái phiên bản thời khóa biểu đã thay đổi; hãy tải lại trước khi tiếp tục.';
+export const ACTIVE_HEAD_STALE_MESSAGE = 'Đầu chuỗi thời khóa biểu đang áp dụng đã thay đổi; hãy tải lại trước khi kích hoạt.';
+const LIFECYCLE_CONSTRAINTS = [
+  'timetable_versions_one_active_per_year_key',
+  'timetable_versions_effective_history_no_overlap',
+] as const;
 
 @Injectable()
 export class TimetablesService {
@@ -292,42 +305,10 @@ export class TimetablesService {
     try {
       return await this.prisma.$transaction(async (tx) => {
         const version = await this.requireDraft(id, tx);
-        const entries = await tx.timetableEntry.findMany({
-          where: { timetableVersionId: id },
-          include: timetableEntryInclude,
-          orderBy: [{ id: 'asc' }],
-        });
-        const issues: TimetableValidationIssue[] = [];
-        let teachingWeekdays: Parameters<typeof evaluateTimetableEntries>[0]['teachingWeekdays'];
-        let effectiveFrom: Parameters<typeof evaluateTimetableEntries>[0]['effectiveFrom'];
-        let calendarEndDate: Parameters<typeof evaluateTimetableEntries>[0]['calendarEndDate'];
-        if (!version.calendarVersionId || !version.effectiveAcademicWeekId || !version.effectiveFrom) {
-          issues.push(issue('TARGET_REQUIRED'));
-        } else {
-          const calendar = await tx.academicCalendarVersion.findUnique({ where: { id: version.calendarVersionId } });
-          const week = await tx.academicWeek.findUnique({
-            where: { id: version.effectiveAcademicWeekId },
-            include: { segments: { orderBy: [{ startDate: 'asc' }, { id: 'asc' }] } },
-          });
-          if (!calendar || calendar.academicYearId !== version.academicYearId
-            || !week || week.calendarVersionId !== calendar.id) {
-            issues.push(issue('TARGET_REQUIRED'));
-          } else if (week.segments.length === 0) {
-            teachingWeekdays = calendar.teachingWeekdays;
-            issues.push(issue('TARGET_WEEK_NO_SEGMENTS'));
-          } else {
-            const expected = formatCivilDate(week.segments[0]!.startDate);
-            const persisted = formatCivilDate(version.effectiveFrom);
-            if (expected !== persisted) issues.push(issue('TARGET_EFFECTIVE_FROM_MISMATCH'));
-            teachingWeekdays = calendar.teachingWeekdays;
-            effectiveFrom = persisted;
-            calendarEndDate = formatCivilDate(calendar.endDate);
-          }
-        }
-        issues.push(...evaluateTimetableEntries({ entries, teachingWeekdays, effectiveFrom, calendarEndDate }));
+        const evaluation = await this.evaluateVersionCurrentScope(tx, version, false);
 
         const token = await this.claimDraft(tx, version, dto.expectedUpdatedAt);
-        const orderedIssues = sortValidationIssues(issues);
+        const orderedIssues = evaluation.issues;
         const valid = orderedIssues.length === 0;
         const now = new Date(Math.max(Date.now(), token.getTime() + 1));
         const updated = valid
@@ -369,6 +350,281 @@ export class TimetablesService {
     } catch (error) {
       this.rethrowMutationConflict(error, 'Không thể xác thực thời khóa biểu do xung đột đồng thời.');
     }
+  }
+
+  async approveVersion(
+    id: string,
+    dto: ApproveTimetableVersionDto,
+    actorUserId: string,
+    meta: RequestMeta,
+  ): Promise<TimetableVersionRecord> {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const version = await this.requireLifecycleVersion(id, TimetableVersionStatus.VALIDATED, tx);
+        const approvedAt = strictlyAdvancedInstant(version.updatedAt);
+        const claimed = await tx.timetableVersion.updateMany({
+          where: {
+            id,
+            status: TimetableVersionStatus.VALIDATED,
+            updatedAt: new Date(dto.expectedUpdatedAt),
+          },
+          data: {
+            status: TimetableVersionStatus.APPROVED,
+            approvedByUserId: actorUserId,
+            approvedAt,
+            updatedAt: approvedAt,
+          },
+        });
+        if (claimed.count !== 1) throw new ConflictException(LIFECYCLE_STALE_MESSAGE);
+        await this.writeAudit(tx, actorUserId, meta, 'TIMETABLE_VERSION_APPROVED', id, {
+          academicYearId: version.academicYearId,
+          versionNumber: version.versionNumber,
+          statusBefore: TimetableVersionStatus.VALIDATED,
+          statusAfter: TimetableVersionStatus.APPROVED,
+          validatedByUserId: version.validatedByUserId,
+          approvedByUserId: actorUserId,
+        });
+        return this.reloadVersion(tx, id);
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    } catch (error) {
+      this.rethrowLifecycleConflict(error);
+    }
+  }
+
+  async activateVersion(
+    id: string,
+    dto: ActivateTimetableVersionDto,
+    actorUserId: string,
+    meta: RequestMeta,
+  ): Promise<TimetableActivationResult> {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const version = await this.requireLifecycleVersion(id, TimetableVersionStatus.APPROVED, tx);
+        const claimToken = strictlyAdvancedInstant(version.updatedAt);
+        const claimed = await tx.timetableVersion.updateMany({
+          where: {
+            id,
+            status: TimetableVersionStatus.APPROVED,
+            updatedAt: new Date(dto.expectedUpdatedAt),
+          },
+          data: { updatedAt: claimToken },
+        });
+        if (claimed.count !== 1) throw new ConflictException(LIFECYCLE_STALE_MESSAGE);
+
+        const evaluation = await this.evaluateVersionCurrentScope(tx, version, true);
+        const currentActive = await tx.timetableVersion.findFirst({
+          where: { academicYearId: version.academicYearId, status: TimetableVersionStatus.ACTIVE },
+          orderBy: [{ versionNumber: 'asc' }, { id: 'asc' }],
+        });
+        const expectedActiveVersionId = dto.expectedActiveVersionId ?? null;
+        const actualActiveVersionId = currentActive?.id ?? null;
+        if (expectedActiveVersionId !== actualActiveVersionId) {
+          throw new ConflictException(ACTIVE_HEAD_STALE_MESSAGE);
+        }
+
+        if (evaluation.issues.length > 0) {
+          const record = await this.reloadVersion(tx, id);
+          await this.writeActivationRunAudit(tx, actorUserId, meta, version, {
+            valid: false,
+            activated: false,
+            statusAfter: TimetableVersionStatus.APPROVED,
+            issues: evaluation.issues,
+            expectedActiveVersionId,
+            actualActiveVersionId,
+          });
+          return {
+            versionId: id,
+            activationScope: 'NORMAL_BASE_TIMETABLE',
+            statusBefore: 'APPROVED',
+            statusAfter: 'APPROVED',
+            activated: false,
+            issues: evaluation.issues,
+            deferredChecks: DEFERRED_CHECKS,
+            supersededVersion: null,
+            version: record,
+          };
+        }
+
+        const candidateEffectiveFrom = formatCivilDate(version.effectiveFrom!);
+        if (currentActive && candidateEffectiveFrom <= formatCivilDate(currentActive.effectiveFrom!)) {
+          throw new ConflictException('Ngày hiệu lực của phiên bản kế tiếp phải sau đầu chuỗi đang áp dụng.');
+        }
+        const activationInstant = strictlyAdvancedInstant(claimToken, currentActive?.updatedAt);
+        let supersededVersion: TimetableVersionRecord | null = null;
+        if (currentActive) {
+          const predecessor = await tx.timetableVersion.update({
+            where: { id: currentActive.id },
+            data: {
+              status: TimetableVersionStatus.SUPERSEDED,
+              effectiveUntil: parseCivilDate(previousCivilDate(candidateEffectiveFrom)),
+              supersededAt: activationInstant,
+              updatedAt: activationInstant,
+            },
+            include: timetableVersionCountSelect,
+          });
+          supersededVersion = toTimetableVersionRecord(predecessor);
+        }
+        const activated = await tx.timetableVersion.updateMany({
+          where: { id, status: TimetableVersionStatus.APPROVED, updatedAt: claimToken },
+          data: {
+            status: TimetableVersionStatus.ACTIVE,
+            activatedByUserId: actorUserId,
+            activatedAt: activationInstant,
+            effectiveUntil: null,
+            supersededAt: null,
+            updatedAt: activationInstant,
+          },
+        });
+        if (activated.count !== 1) throw new ConflictException(LIFECYCLE_STALE_MESSAGE);
+        const record = await this.reloadVersion(tx, id);
+        await this.writeActivationRunAudit(tx, actorUserId, meta, version, {
+          valid: true,
+          activated: true,
+          statusAfter: TimetableVersionStatus.ACTIVE,
+          issues: [],
+          expectedActiveVersionId,
+          actualActiveVersionId,
+        });
+        await this.writeAudit(tx, actorUserId, meta, 'TIMETABLE_VERSION_ACTIVATED', id, {
+          academicYearId: version.academicYearId,
+          versionNumber: version.versionNumber,
+          effectiveFrom: candidateEffectiveFrom,
+          calendarVersionId: version.calendarVersionId,
+          effectiveAcademicWeekId: version.effectiveAcademicWeekId,
+          activatedByUserId: actorUserId,
+          previousActiveVersionId: actualActiveVersionId,
+        });
+        if (currentActive && supersededVersion) {
+          await this.writeAudit(tx, actorUserId, meta, 'TIMETABLE_VERSION_SUPERSEDED', currentActive.id, {
+            academicYearId: currentActive.academicYearId,
+            versionNumber: currentActive.versionNumber,
+            effectiveFrom: formatCivilDate(currentActive.effectiveFrom!),
+            effectiveUntil: supersededVersion.effectiveUntil,
+            supersededByVersionId: id,
+          });
+        }
+        return {
+          versionId: id,
+          activationScope: 'NORMAL_BASE_TIMETABLE',
+          statusBefore: 'APPROVED',
+          statusAfter: 'ACTIVE',
+          activated: true,
+          issues: [],
+          deferredChecks: DEFERRED_CHECKS,
+          supersededVersion,
+          version: record,
+        };
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    } catch (error) {
+      this.rethrowLifecycleConflict(error);
+    }
+  }
+
+  async resolveEffectiveVersion(
+    academicYearId: string,
+    dto: ResolveTimetableDateDto,
+  ): Promise<TimetableEffectiveResolution> {
+    await this.requireAcademicYear(academicYearId);
+    const date = dto.date as CivilDateString;
+    const targetDate = parseCivilDate(date);
+    const version = await this.prisma.timetableVersion.findFirst({
+      where: {
+        academicYearId,
+        status: { in: [TimetableVersionStatus.ACTIVE, TimetableVersionStatus.SUPERSEDED] },
+        effectiveFrom: { lte: targetDate },
+        OR: [{ effectiveUntil: null }, { effectiveUntil: { gte: targetDate } }],
+      },
+      include: timetableVersionCountSelect,
+      orderBy: [{ effectiveFrom: 'desc' }, { id: 'asc' }],
+    });
+    return { academicYearId, date, version: version ? toTimetableVersionRecord(version) : null };
+  }
+
+  private async evaluateVersionCurrentScope(
+    tx: Prisma.TransactionClient,
+    version: TimetableVersion,
+    requireActiveCalendar: boolean,
+  ): Promise<{ issues: TimetableValidationIssue[] }> {
+    const entries = await tx.timetableEntry.findMany({
+      where: { timetableVersionId: version.id },
+      include: timetableEntryInclude,
+      orderBy: [{ id: 'asc' }],
+    });
+    const issues: TimetableValidationIssue[] = [];
+    let teachingWeekdays: Parameters<typeof evaluateTimetableEntries>[0]['teachingWeekdays'];
+    let effectiveFrom: Parameters<typeof evaluateTimetableEntries>[0]['effectiveFrom'];
+    let calendarEndDate: Parameters<typeof evaluateTimetableEntries>[0]['calendarEndDate'];
+    if (!version.calendarVersionId || !version.effectiveAcademicWeekId || !version.effectiveFrom) {
+      issues.push(issue('TARGET_REQUIRED'));
+    } else {
+      const [calendar, week] = await Promise.all([
+        tx.academicCalendarVersion.findUnique({ where: { id: version.calendarVersionId } }),
+        tx.academicWeek.findUnique({
+          where: { id: version.effectiveAcademicWeekId },
+          include: { segments: { orderBy: [{ startDate: 'asc' }, { id: 'asc' }] } },
+        }),
+      ]);
+      if (!calendar || calendar.academicYearId !== version.academicYearId
+        || !week || week.calendarVersionId !== calendar.id) {
+        issues.push(issue('TARGET_REQUIRED'));
+      } else {
+        if (requireActiveCalendar && !calendar.isActive) issues.push(issue('TARGET_CALENDAR_NOT_ACTIVE'));
+        teachingWeekdays = calendar.teachingWeekdays;
+        if (week.segments.length === 0) {
+          issues.push(issue('TARGET_WEEK_NO_SEGMENTS'));
+        } else {
+          const expected = formatCivilDate(week.segments[0]!.startDate);
+          const persisted = formatCivilDate(version.effectiveFrom);
+          if (expected !== persisted) issues.push(issue('TARGET_EFFECTIVE_FROM_MISMATCH'));
+          effectiveFrom = persisted;
+          calendarEndDate = formatCivilDate(calendar.endDate);
+        }
+      }
+    }
+    issues.push(...evaluateTimetableEntries({ entries, teachingWeekdays, effectiveFrom, calendarEndDate }));
+    return { issues: sortValidationIssues(issues) };
+  }
+
+  private async requireLifecycleVersion(
+    id: string,
+    status: TimetableVersionStatus,
+    tx: Prisma.TransactionClient,
+  ): Promise<TimetableVersion> {
+    const version = await tx.timetableVersion.findUnique({ where: { id } });
+    if (!version) throw new NotFoundException('Không tìm thấy phiên bản thời khóa biểu.');
+    if (version.status !== status) {
+      throw new ConflictException(`Chỉ phiên bản ${status} mới có thể thực hiện chuyển trạng thái này.`);
+    }
+    return version;
+  }
+
+  private async writeActivationRunAudit(
+    tx: Prisma.TransactionClient,
+    actorUserId: string,
+    meta: RequestMeta,
+    version: TimetableVersion,
+    input: {
+      valid: boolean;
+      activated: boolean;
+      statusAfter: TimetableVersionStatus;
+      issues: TimetableValidationIssue[];
+      expectedActiveVersionId: string | null;
+      actualActiveVersionId: string | null;
+    },
+  ): Promise<void> {
+    await this.writeAudit(tx, actorUserId, meta, 'TIMETABLE_ACTIVATION_RUN', version.id, {
+      academicYearId: version.academicYearId,
+      versionNumber: version.versionNumber,
+      valid: input.valid,
+      activated: input.activated,
+      statusBefore: TimetableVersionStatus.APPROVED,
+      statusAfter: input.statusAfter,
+      issueCount: input.issues.length,
+      issueCodes: [...new Set(input.issues.map((item) => item.code))],
+      deferredChecks: DEFERRED_CHECKS,
+      expectedActiveVersionId: input.expectedActiveVersionId,
+      actualActiveVersionId: input.actualActiveVersionId,
+    });
   }
 
   private async requireAcademicYear(id: string, tx: Prisma.TransactionClient = this.prisma): Promise<void> {
@@ -439,6 +695,20 @@ export class TimetablesService {
     if (isSerializationConflict(error)) throw new ConflictException(message);
     throw error;
   }
+
+  private rethrowLifecycleConflict(error: unknown): never {
+    if (error instanceof HttpException) throw error;
+    if (isKnownLifecycleConflict(error)) {
+      throw new ConflictException('Chuỗi thời khóa biểu đã thay đổi đồng thời; hãy tải lại trước khi tiếp tục.');
+    }
+    throw error;
+  }
+}
+
+function strictlyAdvancedInstant(...previous: Array<Date | undefined>): Date {
+  const previousMaximum = Math.max(...previous.filter((value): value is Date => value !== undefined)
+    .map((value) => value.getTime()));
+  return new Date(Math.max(Date.now(), previousMaximum + 1));
 }
 
 function isSerializationConflict(error: unknown): boolean {
@@ -462,4 +732,16 @@ function isEntryConflict(error: unknown): boolean {
   return isConstraintConflict(error, ENTRY_CONSTRAINTS);
 }
 
-export { DEFERRED_CHECKS, isEntryConflict, isSerializationConflict };
+function isKnownLifecycleConflict(error: unknown): boolean {
+  if (isSerializationConflict(error)) return true;
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    if (error.code === 'P2002') return isConstraintConflict(error, [LIFECYCLE_CONSTRAINTS[0]]);
+    if (error.code !== 'P2004') return false;
+    const detail = `${error.message} ${JSON.stringify(error.meta ?? {})}`;
+    return LIFECYCLE_CONSTRAINTS.some((constraint) => detail.includes(constraint));
+  }
+  return error instanceof Prisma.PrismaClientUnknownRequestError
+    && LIFECYCLE_CONSTRAINTS.some((constraint) => error.message.includes(constraint));
+}
+
+export { DEFERRED_CHECKS, isEntryConflict, isKnownLifecycleConflict, isSerializationConflict };
