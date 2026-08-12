@@ -1,6 +1,6 @@
 # LOCAL-FC-04 — Timetable Domain Specification
 
-**Status:** Requirements audit; 04A1 persistence resolved by ADR-016, 04A2 timetable persistence by ADR-017, 04B0 time-slot control plane by ADR-018, 04B1 draft/validation by ADR-019, and 04B2 lifecycle/resolution by ADR-020; remaining import/product questions remain subject to later decisions
+**Status:** Requirements audit; 04A1 persistence resolved by ADR-016, 04A2 timetable persistence by ADR-017, 04B0 time-slot control plane by ADR-018, 04B1 draft/validation by ADR-019, and 04B2 lifecycle/resolution by ADR-020; 04B3A import questions are audited in `LOCAL-FC-04B3-TIMETABLE-IMPORT-CONTRACT-AUDIT.md` and proposed by ADR-021, but remain subject to review/acceptance
 
 **Audit date:** 2026-08-11
 
@@ -291,6 +291,8 @@ Reasons:
 ADR-020 resolves the current control-plane policy: approval and activation both require `TIMETABLE_MANAGE / SCHOOL_WIDE`; no distinct capability or mandatory actor inequality applies. Backend checks, not UI state, remain authoritative. A stricter future organizational separation-of-duties policy requires a separate approved change.
 
 ## 15. Import/manual-entry requirements
+
+The focused [LOCAL-FC-04B3 import audit](LOCAL-FC-04B3-TIMETABLE-IMPORT-CONTRACT-AUDIT.md) and [ADR-021](../decisions/ADR-021-TIMETABLE-IMPORT-CONTRACT-AND-IDEMPOTENCY.md) now document evidence and propose a contract. ADR-021 remains **Proposed**; the unresolved questions below are not converted into accepted requirements by that proposal.
 
 ### Confirmed import workflow
 
