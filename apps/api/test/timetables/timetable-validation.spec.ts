@@ -1,5 +1,10 @@
 import { TimetableValidationIssueCode } from '@baogiang/contracts';
-import { evaluateTimetableEntries, sortValidationIssues, timeRangesOverlap } from '../../src/timetables/timetable-validation';
+import {
+  evaluateTimetableEntries,
+  issue,
+  sortValidationIssues,
+  timeRangesOverlap,
+} from '../../src/timetables/timetable-validation';
 
 function entry(overrides: Record<string, unknown> = {}) {
   return {
@@ -8,12 +13,12 @@ function entry(overrides: Record<string, unknown> = {}) {
     teachingAssignmentId: 'assignment-1', teacherUserId: 'teacher-1', createdAt: new Date(),
     timeSlotDefinition: {
       id: 'slot-1', academicYearId: 'year-1', weekday: 'MONDAY', session: 'MORNING', ordinal: 1,
-      revision: 1, displayLabel: 'Tiáº¿t 1', startTime: new Date('1970-01-01T07:00:00Z'),
+      revision: 1, displayLabel: 'Tiết 1', startTime: new Date('1970-01-01T07:00:00Z'),
       endTime: new Date('1970-01-01T07:45:00Z'), isActive: true, allowRegularTeaching: true,
       allowMakeupTeaching: false, allowSelfStudy: false, createdAt: new Date(), updatedAt: new Date(),
     },
     schoolClass: { id: 'class-1', academicYearId: 'year-1', code: '10A1', name: '10A1', gradeLevel: 10, status: 'ACTIVE', createdAt: new Date(), updatedAt: new Date() },
-    subject: { id: 'subject-1', code: 'TOAN', name: 'ToÃ¡n', status: 'ACTIVE', createdAt: new Date(), updatedAt: new Date() },
+    subject: { id: 'subject-1', code: 'TOAN', name: 'Toán', status: 'ACTIVE', createdAt: new Date(), updatedAt: new Date() },
     teacher: { id: 'teacher-1', username: 'gv1', status: 'ACTIVE', profile: { isTeachingStaff: true } },
     teachingAssignment: { id: 'assignment-1', academicYearId: 'year-1', schoolClassId: 'class-1', subjectId: 'subject-1', teacherUserId: 'teacher-1', validFrom: new Date('2026-09-01Z'), validUntil: new Date('2027-05-31Z') },
     ...overrides,
@@ -28,6 +33,10 @@ const evaluate = (entries: never[]) => evaluateTimetableEntries({
 });
 
 describe('timetable validation evaluator', () => {
+  it('publishes exact UTF-8 Vietnamese validation messages', () => {
+    expect(issue('TARGET_REQUIRED').message).toBe('Bản nháp chưa chọn phiên lịch và tuần hiệu lực.');
+    expect(issue('TEACHER_TIME_OVERLAP').message).toBe('Giáo viên có hai tiết chồng lấn thời gian.');
+  });
   it('uses half-open wall-clock intervals', () => {
     expect(timeRangesOverlap('07:00:00', '07:45:00', '07:45:00', '08:30:00')).toBe(false);
     expect(timeRangesOverlap('07:00:00', '07:45:00', '07:44:00', '08:30:00')).toBe(true);

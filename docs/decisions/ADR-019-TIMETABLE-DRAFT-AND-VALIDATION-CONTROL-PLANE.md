@@ -1,4 +1,4 @@
-# ADR-019 â€” Timetable Draft and Validation Control Plane
+# ADR-019 — Timetable Draft and Validation Control Plane
 
 - **Status:** Accepted
 - **Date:** 2026-08-12

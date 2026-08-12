@@ -25,21 +25,21 @@ const RULE_ORDER: TimetableValidationIssueCode[] = [
   'TEACHER_TIME_OVERLAP',
 ];
 
-const MESSAGE: Record<TimetableValidationIssueCode, string> = {
-  TARGET_REQUIRED: 'Báº£n nhÃ¡p chÆ°a chá»n phiÃªn lá»‹ch vÃ  tuáº§n hiá»‡u lá»±c.',
-  TARGET_WEEK_NO_SEGMENTS: 'Tuáº§n hiá»‡u lá»±c khÃ´ng cÃ³ phÃ¢n Ä‘oáº¡n ngÃ y.',
-  TARGET_EFFECTIVE_FROM_MISMATCH: 'NgÃ y hiá»‡u lá»±c khÃ´ng khá»›p ngÃ y báº¯t Ä‘áº§u sá»›m nháº¥t cá»§a tuáº§n Ä‘Ã£ chá»n.',
-  EMPTY_TIMETABLE: 'Thá»i khÃ³a biá»ƒu chÆ°a cÃ³ dÃ²ng ná»™i dung.',
-  WEEKDAY_NOT_IN_CALENDAR: 'Thá»© cá»§a dÃ²ng khÃ´ng thuá»™c cÃ¡c ngÃ y dáº¡y trong phiÃªn lá»‹ch.',
-  SLOT_NOT_ACTIVE: 'PhiÃªn báº£n khung tiáº¿t khÃ´ng cÃ²n hoáº¡t Ä‘á»™ng.',
-  SLOT_NOT_REGULAR_TEACHING: 'Khung tiáº¿t khÃ´ng cho phÃ©p tiáº¿t dáº¡y thÃ´ng thÆ°á»ng.',
-  CLASS_NOT_ACTIVE: 'Lá»›p há»c khÃ´ng cÃ²n hoáº¡t Ä‘á»™ng.',
-  SUBJECT_NOT_ACTIVE: 'MÃ´n há»c khÃ´ng cÃ²n hoáº¡t Ä‘á»™ng.',
-  TEACHER_NOT_ACTIVE: 'TÃ i khoáº£n giÃ¡o viÃªn khÃ´ng hoáº¡t Ä‘á»™ng.',
-  TEACHER_NOT_TEACHING_STAFF: 'NgÆ°á»i Ä‘Æ°á»£c phÃ¢n cÃ´ng khÃ´ng cÃ³ há»“ sÆ¡ giÃ¡o viÃªn há»£p lá»‡.',
-  ASSIGNMENT_COVERAGE_GAP: 'PhÃ¢n cÃ´ng giáº£ng dáº¡y khÃ´ng bao phá»§ toÃ n bá»™ khoáº£ng hiá»‡u lá»±c cáº§n kiá»ƒm tra.',
-  CLASS_TIME_OVERLAP: 'Lá»›p há»c cÃ³ hai tiáº¿t chá»“ng láº¥n thá»i gian.',
-  TEACHER_TIME_OVERLAP: 'GiÃ¡o viÃªn cÃ³ hai tiáº¿t chá»“ng láº¥n thá»i gian.',
+export const TIMETABLE_VALIDATION_MESSAGES: Record<TimetableValidationIssueCode, string> = {
+  TARGET_REQUIRED: 'Bản nháp chưa chọn phiên lịch và tuần hiệu lực.',
+  TARGET_WEEK_NO_SEGMENTS: 'Tuần hiệu lực không có phân đoạn ngày.',
+  TARGET_EFFECTIVE_FROM_MISMATCH: 'Ngày hiệu lực không khớp ngày bắt đầu sớm nhất của tuần đã chọn.',
+  EMPTY_TIMETABLE: 'Thời khóa biểu chưa có dòng nội dung.',
+  WEEKDAY_NOT_IN_CALENDAR: 'Thứ của dòng không thuộc các ngày dạy trong phiên lịch.',
+  SLOT_NOT_ACTIVE: 'Phiên bản khung tiết không còn hoạt động.',
+  SLOT_NOT_REGULAR_TEACHING: 'Khung tiết không cho phép tiết dạy thông thường.',
+  CLASS_NOT_ACTIVE: 'Lớp học không còn hoạt động.',
+  SUBJECT_NOT_ACTIVE: 'Môn học không còn hoạt động.',
+  TEACHER_NOT_ACTIVE: 'Tài khoản giáo viên không hoạt động.',
+  TEACHER_NOT_TEACHING_STAFF: 'Người được phân công không có hồ sơ giáo viên hợp lệ.',
+  ASSIGNMENT_COVERAGE_GAP: 'Phân công giảng dạy không bao phủ toàn bộ khoảng hiệu lực cần kiểm tra.',
+  CLASS_TIME_OVERLAP: 'Lớp học có hai tiết chồng lấn thời gian.',
+  TEACHER_TIME_OVERLAP: 'Giáo viên có hai tiết chồng lấn thời gian.',
 };
 
 export function timeRangesOverlap(aStart: string, aEnd: string, bStart: string, bEnd: string): boolean {
@@ -48,7 +48,7 @@ export function timeRangesOverlap(aStart: string, aEnd: string, bStart: string, 
 }
 
 export function issue(code: TimetableValidationIssueCode, context: Omit<TimetableValidationIssue, 'code' | 'message'> = {}): TimetableValidationIssue {
-  return { code, message: MESSAGE[code], ...context };
+  return { code, message: TIMETABLE_VALIDATION_MESSAGES[code], ...context };
 }
 
 export function sortValidationIssues(issues: TimetableValidationIssue[]): TimetableValidationIssue[] {

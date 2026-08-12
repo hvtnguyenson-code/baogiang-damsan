@@ -44,7 +44,7 @@ const VERSION_NUMBER_CONSTRAINTS = [
   'timetable_versions_academic_year_id_version_number_key',
   'academic_year_id,version_number',
 ] as const;
-const STALE_MESSAGE = 'Báº£n nhÃ¡p thá»i khÃ³a biá»ƒu Ä‘Ã£ thay Ä‘á»•i; hÃ£y táº£i láº¡i trÆ°á»›c khi tiáº¿p tá»¥c.';
+export const STALE_MESSAGE = 'Bản nháp thời khóa biểu đã thay đổi; hãy tải lại trước khi tiếp tục.';
 
 @Injectable()
 export class TimetablesService {
@@ -71,7 +71,7 @@ export class TimetablesService {
 
   async getVersion(id: string): Promise<TimetableVersionRecord> {
     const row = await this.prisma.timetableVersion.findUnique({ where: { id }, include: timetableVersionCountSelect });
-    if (!row) throw new NotFoundException('KhÃ´ng tÃ¬m tháº¥y phiÃªn báº£n thá»i khÃ³a biá»ƒu.');
+    if (!row) throw new NotFoundException('Không tìm thấy phiên bản thời khóa biểu.');
     return toTimetableVersionRecord(row);
   }
 
@@ -126,20 +126,20 @@ export class TimetablesService {
       return await this.prisma.$transaction(async (tx) => {
         const version = await this.requireDraft(id, tx);
         const calendar = await tx.academicCalendarVersion.findUnique({ where: { id: dto.calendarVersionId } });
-        if (!calendar) throw new NotFoundException('KhÃ´ng tÃ¬m tháº¥y phiÃªn lá»‹ch há»c thuáº­t.');
+        if (!calendar) throw new NotFoundException('Không tìm thấy phiên lịch học thuật.');
         if (calendar.academicYearId !== version.academicYearId) {
-          throw new ConflictException('PhiÃªn lá»‹ch khÃ´ng thuá»™c nÄƒm há»c cá»§a thá»i khÃ³a biá»ƒu.');
+          throw new ConflictException('Phiên lịch không thuộc năm học của thời khóa biểu.');
         }
         const week = await tx.academicWeek.findUnique({
           where: { id: dto.effectiveAcademicWeekId },
           include: { segments: { orderBy: [{ startDate: 'asc' }, { id: 'asc' }] } },
         });
-        if (!week) throw new NotFoundException('KhÃ´ng tÃ¬m tháº¥y tuáº§n há»c.');
+        if (!week) throw new NotFoundException('Không tìm thấy tuần học.');
         if (week.calendarVersionId !== calendar.id) {
-          throw new ConflictException('Tuáº§n há»c khÃ´ng thuá»™c Ä‘Ãºng phiÃªn lá»‹ch Ä‘Ã£ chá»n.');
+          throw new ConflictException('Tuần học không thuộc đúng phiên lịch đã chọn.');
         }
         if (week.segments.length === 0) {
-          throw new ConflictException('Tuáº§n há»c chÆ°a cÃ³ phÃ¢n Ä‘oáº¡n ngÃ y Ä‘á»ƒ xÃ¡c Ä‘á»‹nh hiá»‡u lá»±c.');
+          throw new ConflictException('Tuần học chưa có phân đoạn ngày để xác định hiệu lực.');
         }
         const effectiveFrom = week.segments[0]!.startDate;
         await this.claimDraft(tx, version, dto.expectedUpdatedAt, {
@@ -161,13 +161,13 @@ export class TimetablesService {
         return this.reloadVersion(tx, version.id);
       }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
     } catch (error) {
-      this.rethrowMutationConflict(error, 'KhÃ´ng thá»ƒ cáº­p nháº­t má»¥c tiÃªu thá»i khÃ³a biá»ƒu do xung Ä‘á»™t Ä‘á»“ng thá»i.');
+      this.rethrowMutationConflict(error, 'Không thể cập nhật mục tiêu thời khóa biểu do xung đột đồng thời.');
     }
   }
 
   async listEntries(id: string, query: ListTimetableEntriesDto): Promise<TimetableEntryListResponse> {
     if (!await this.prisma.timetableVersion.findUnique({ where: { id }, select: { id: true } })) {
-      throw new NotFoundException('KhÃ´ng tÃ¬m tháº¥y phiÃªn báº£n thá»i khÃ³a biá»ƒu.');
+      throw new NotFoundException('Không tìm thấy phiên bản thời khóa biểu.');
     }
     const where: Prisma.TimetableEntryWhereInput = {
       timetableVersionId: id,
@@ -223,27 +223,27 @@ export class TimetablesService {
           const schoolClass = classMap.get(requested.schoolClassId);
           const subject = subjectMap.get(requested.subjectId);
           const assignment = assignmentMap.get(requested.teachingAssignmentId);
-          if (!slot) throw new NotFoundException('KhÃ´ng tÃ¬m tháº¥y phiÃªn báº£n khung tiáº¿t.');
-          if (!schoolClass) throw new NotFoundException('KhÃ´ng tÃ¬m tháº¥y lá»›p há»c.');
-          if (!subject) throw new NotFoundException('KhÃ´ng tÃ¬m tháº¥y mÃ´n há»c.');
-          if (!assignment) throw new NotFoundException('KhÃ´ng tÃ¬m tháº¥y phÃ¢n cÃ´ng giáº£ng dáº¡y.');
+          if (!slot) throw new NotFoundException('Không tìm thấy phiên bản khung tiết.');
+          if (!schoolClass) throw new NotFoundException('Không tìm thấy lớp học.');
+          if (!subject) throw new NotFoundException('Không tìm thấy môn học.');
+          if (!assignment) throw new NotFoundException('Không tìm thấy phân công giảng dạy.');
           if (slot.academicYearId !== version.academicYearId || slot.weekday !== requested.weekday) {
-            throw new ConflictException('Khung tiáº¿t khÃ´ng khá»›p nÄƒm há»c hoáº·c thá»© Ä‘Ã£ chá»n.');
+            throw new ConflictException('Khung tiết không khớp năm học hoặc thứ đã chọn.');
           }
           if (!slot.isActive || !slot.allowRegularTeaching) {
-            throw new ConflictException('Chá»‰ Ä‘Æ°á»£c chá»n khung tiáº¿t Ä‘ang hoáº¡t Ä‘á»™ng vÃ  cho phÃ©p dáº¡y thÃ´ng thÆ°á»ng.');
+            throw new ConflictException('Chỉ được chọn khung tiết đang hoạt động và cho phép dạy thông thường.');
           }
           if (schoolClass.academicYearId !== version.academicYearId || schoolClass.status !== 'ACTIVE') {
-            throw new ConflictException('Lá»›p há»c khÃ´ng khá»›p nÄƒm há»c hoáº·c khÃ´ng hoáº¡t Ä‘á»™ng.');
+            throw new ConflictException('Lớp học không khớp năm học hoặc không hoạt động.');
           }
-          if (subject.status !== 'ACTIVE') throw new ConflictException('MÃ´n há»c khÃ´ng hoáº¡t Ä‘á»™ng.');
+          if (subject.status !== 'ACTIVE') throw new ConflictException('Môn học không hoạt động.');
           if (assignment.academicYearId !== version.academicYearId
             || assignment.schoolClassId !== requested.schoolClassId
             || assignment.subjectId !== requested.subjectId) {
-            throw new ConflictException('PhÃ¢n cÃ´ng giáº£ng dáº¡y khÃ´ng khá»›p nÄƒm há»c, lá»›p hoáº·c mÃ´n Ä‘Ã£ chá»n.');
+            throw new ConflictException('Phân công giảng dạy không khớp năm học, lớp hoặc môn đã chọn.');
           }
           if (assignment.teacher.status !== 'ACTIVE' || !assignment.teacher.profile?.isTeachingStaff) {
-            throw new ConflictException('GiÃ¡o viÃªn cá»§a phÃ¢n cÃ´ng khÃ´ng Ä‘á»§ Ä‘iá»u kiá»‡n cho biÃªn soáº¡n má»›i.');
+            throw new ConflictException('Giáo viên của phân công không đủ điều kiện cho biên soạn mới.');
           }
           return {
             timetableVersionId: version.id,
@@ -276,7 +276,7 @@ export class TimetablesService {
     } catch (error) {
       if (error instanceof HttpException) throw error;
       if (isEntryConflict(error)) {
-        throw new ConflictException('Ná»™i dung thá»i khÃ³a biá»ƒu bá»‹ trÃ¹ng lá»›p hoáº·c giÃ¡o viÃªn trong cÃ¹ng khung tiáº¿t.');
+        throw new ConflictException('Nội dung thời khóa biểu bị trùng lớp hoặc giáo viên trong cùng khung tiết.');
       }
       if (isSerializationConflict(error)) throw new ConflictException(STALE_MESSAGE);
       throw error;
@@ -367,21 +367,21 @@ export class TimetablesService {
         };
       }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
     } catch (error) {
-      this.rethrowMutationConflict(error, 'KhÃ´ng thá»ƒ xÃ¡c thá»±c thá»i khÃ³a biá»ƒu do xung Ä‘á»™t Ä‘á»“ng thá»i.');
+      this.rethrowMutationConflict(error, 'Không thể xác thực thời khóa biểu do xung đột đồng thời.');
     }
   }
 
   private async requireAcademicYear(id: string, tx: Prisma.TransactionClient = this.prisma): Promise<void> {
     if (!await tx.academicYear.findUnique({ where: { id }, select: { id: true } })) {
-      throw new NotFoundException('KhÃ´ng tÃ¬m tháº¥y nÄƒm há»c.');
+      throw new NotFoundException('Không tìm thấy năm học.');
     }
   }
 
   private async requireDraft(id: string, tx: Prisma.TransactionClient) {
     const version = await tx.timetableVersion.findUnique({ where: { id } });
-    if (!version) throw new NotFoundException('KhÃ´ng tÃ¬m tháº¥y phiÃªn báº£n thá»i khÃ³a biá»ƒu.');
+    if (!version) throw new NotFoundException('Không tìm thấy phiên bản thời khóa biểu.');
     if (version.status !== TimetableVersionStatus.DRAFT) {
-      throw new ConflictException('Chá»‰ báº£n nhÃ¡p DRAFT má»›i cÃ³ thá»ƒ thay Ä‘á»•i hoáº·c xÃ¡c thá»±c.');
+      throw new ConflictException('Chỉ bản nháp DRAFT mới có thể thay đổi hoặc xác thực.');
     }
     return version;
   }
@@ -429,7 +429,7 @@ export class TimetablesService {
   private rethrowCreateConflict(error: unknown): never {
     if (error instanceof HttpException) throw error;
     if (isSerializationConflict(error) || isConstraintConflict(error, VERSION_NUMBER_CONSTRAINTS)) {
-      throw new ConflictException('Sá»‘ phiÃªn báº£n thá»i khÃ³a biá»ƒu vá»«a thay Ä‘á»•i; hÃ£y thá»­ táº¡o láº¡i.');
+      throw new ConflictException('Số phiên bản thời khóa biểu vừa thay đổi; hãy thử tạo lại.');
     }
     throw error;
   }
