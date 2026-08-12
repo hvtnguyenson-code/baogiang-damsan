@@ -1,6 +1,6 @@
 # LOCAL-FC-04 — Timetable Domain Specification
 
-**Status:** Requirements audit; 04A1 persistence resolved by ADR-016, 04A2 timetable persistence by ADR-017, and 04B0 time-slot control plane by ADR-018; remaining timetable control-plane questions remain subject to later decisions
+**Status:** Requirements audit; 04A1 persistence resolved by ADR-016, 04A2 timetable persistence by ADR-017, 04B0 time-slot control plane by ADR-018, and 04B1 draft/validation by ADR-019; remaining lifecycle/import questions remain subject to later decisions
 
 **Audit date:** 2026-08-11
 
@@ -171,6 +171,12 @@ Entries prove same-year version, slot/weekday, class and `TeachingAssignment` pr
 ### 7.3 04B0 resolution / ADR-018
 
 [ADR-018](../decisions/ADR-018-TIMETABLE-TIME-SLOT-CONTROL-PLANE.md) accepts a separate AcademicYear-owned time-slot management API. It uses explicit `TIMETABLE_MANAGE / SCHOOL_WIDE` authorization and history-preserving create, revise and retire commands. Only active/current slot revisions are selectable for new timetable authoring by policy, while administrative reads keep every exact revision queryable for historical resolution. Timetable draft/entry commands and validation continue in 04B1; approve/activate/supersede/history and lifecycle concurrency in 04B2; Excel import/checksum/mapping/preview in 04B3.
+
+### 7.4 04B1 resolution / ADR-019
+
+[ADR-019](../decisions/ADR-019-TIMETABLE-DRAFT-AND-VALIDATION-CONTROL-PLANE.md) accepts the timetable DRAFT control plane: server-numbered drafts, target derivation from the minimum AcademicWeek segment date, atomic normalized replace-all entries, server-resolved TeachingAssignment teacher snapshots, optimistic `updatedAt` concurrency, and current-scope validation followed by immutable `DRAFT` to `VALIDATED` transition. Validation covers calendar weekdays, current master/slot/teacher state, assignment coverage through the selected calendar end, and exact half-open class/teacher wall-clock collision.
+
+04B1 deliberately defers timetable completeness, PPCT association and special-activity collisions and reports those boundaries explicitly. It does not decide future UI manual/bulk editing. Approval, activation, supersession, historical date resolution and lifecycle concurrency remain 04B2; Excel mapping/import/checksum/idempotency remain 04B3.
 
 ## 8. Timetable entry identity
 
