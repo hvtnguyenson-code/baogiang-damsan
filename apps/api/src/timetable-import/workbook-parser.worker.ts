@@ -1,6 +1,6 @@
 import { isMainThread, parentPort } from 'worker_threads';
 import ExcelJS from 'exceljs';
-import { MAX_MERGED_RANGES, MAX_SHEET_COLUMNS, MAX_SHEET_ROWS, MAX_TOTAL_DIMENSION_CELLS, MAX_WORKSHEETS, MAX_XLSX_EXPANDED_BYTES } from './workbook-limits';
+import { MAX_MERGED_RANGES, MAX_PARSER_CELL_TEXT_LENGTH, MAX_SHEET_COLUMNS, MAX_SHEET_ROWS, MAX_TOTAL_DIMENSION_CELLS, MAX_WORKSHEETS, MAX_XLSX_EXPANDED_BYTES } from './workbook-limits';
 import { ParsedWorkbook, ParsedWorkbookCell, ParsedWorkbookSheet, WorkbookParseError, WorkbookWorkerResponse } from './workbook-parser.types';
 
 interface ZipEntry { fileName: string; uncompressedSize: number; compressedSize: number }
@@ -44,20 +44,39 @@ async function preflight(buffer: Buffer): Promise<void> {
   });
 }
 
+function boundedNormalizedText(parts: Iterable<string>): { text: string; textOverLimit: boolean } {
+  let text = '';
+  let pendingWhitespace = false;
+  let textOverLimit = false;
+  outer: for (const part of parts) {
+    for (const character of part) {
+      if (/\s/u.test(character)) {
+        if (text.length > 0) pendingWhitespace = true;
+        continue;
+      }
+      const next = `${text}${pendingWhitespace ? ' ' : ''}${character}`.normalize('NFKC');
+      if (next.length > MAX_PARSER_CELL_TEXT_LENGTH) { textOverLimit = true; break outer; }
+      text = next;
+      pendingWhitespace = false;
+    }
+  }
+  return { text, textOverLimit };
+}
+
 function cellValue(cell: ExcelJS.Cell): ParsedWorkbookCell {
   const base = { formula: Boolean(cell.formula), hyperlink: Boolean(cell.hyperlink), merged: cell.isMerged };
-  if (cell.value === null || cell.value === undefined || cell.value === '') return { kind: 'BLANK', ...base };
-  if (cell.formula) return { kind: 'UNSUPPORTED', ...base };
-  if (cell.hyperlink) return { kind: 'UNSUPPORTED', ...base };
-  if (typeof cell.value === 'string') return { kind: 'TEXT', text: cell.value, ...base };
-  if (typeof cell.value === 'number') return Number.isFinite(cell.value) ? { kind: 'NUMBER', text: String(cell.value), ...base } : { kind: 'UNSUPPORTED', ...base };
-  if (typeof cell.value === 'boolean') return { kind: 'BOOLEAN', text: String(cell.value), ...base };
-  if (cell.value instanceof Date) return { kind: 'DATE', ...base };
-  if (typeof cell.value === 'object' && 'error' in cell.value) return { kind: 'ERROR', ...base };
+  if (cell.value === null || cell.value === undefined || cell.value === '') return { kind: 'BLANK', textOverLimit: false, ...base };
+  if (cell.formula) return { kind: 'UNSUPPORTED', textOverLimit: false, ...base };
+  if (cell.hyperlink) return { kind: 'UNSUPPORTED', textOverLimit: false, ...base };
+  if (typeof cell.value === 'string') return { kind: 'TEXT', ...boundedNormalizedText([cell.value]), ...base };
+  if (typeof cell.value === 'number') return Number.isFinite(cell.value) ? { kind: 'NUMBER', text: String(cell.value), textOverLimit: false, ...base } : { kind: 'UNSUPPORTED', textOverLimit: false, ...base };
+  if (typeof cell.value === 'boolean') return { kind: 'BOOLEAN', text: String(cell.value), textOverLimit: false, ...base };
+  if (cell.value instanceof Date) return { kind: 'DATE', textOverLimit: false, ...base };
+  if (typeof cell.value === 'object' && 'error' in cell.value) return { kind: 'ERROR', textOverLimit: false, ...base };
   if (typeof cell.value === 'object' && 'richText' in cell.value) {
-    return { kind: 'TEXT', text: cell.value.richText.map((part) => part.text).join(''), ...base };
+    return { kind: 'TEXT', ...boundedNormalizedText(cell.value.richText.map((part) => part.text)), ...base };
   }
-  return { kind: 'UNSUPPORTED', ...base };
+  return { kind: 'UNSUPPORTED', textOverLimit: false, ...base };
 }
 
 export async function parseWorkbookBuffer(input: Uint8Array): Promise<ParsedWorkbook> {

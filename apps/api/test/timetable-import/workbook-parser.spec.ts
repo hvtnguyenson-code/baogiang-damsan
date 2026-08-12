@@ -1,6 +1,6 @@
 import ExcelJS from 'exceljs';
 import { inspectParsedWorkbook, locateHeader } from '../../src/timetable-import/workbook-inspection';
-import { MAX_HEADER_SCAN_ROWS } from '../../src/timetable-import/workbook-limits';
+import { MAX_HEADER_CANDIDATES_PER_SHEET, MAX_HEADER_SCAN_ROWS, MAX_PARSER_CELL_TEXT_LENGTH } from '../../src/timetable-import/workbook-limits';
 import { parseWorkbookBuffer } from '../../src/timetable-import/workbook-parser.worker';
 
 const mappings = [
@@ -81,5 +81,41 @@ describe('bounded workbook parser and inspection', () => {
     const sheet = (await parseWorkbookBuffer(input)).sheets[0]!;
     expect(locateHeader(sheet, 4, mappings.map(([semanticField, sourceHeaderKey]) => ({ semanticField, sourceHeaderKey })))?.candidate.complete).toBe(true);
     expect(sheet.rows.find((row) => row.number === 7)?.number).toBe(7);
+  });
+
+  it('scans past ten partial candidates and prioritizes a later complete header in the bounded result', async () => {
+    const input = await bytes((workbook) => {
+      const visible = workbook.addWorksheet('Visible');
+      const hidden = workbook.addWorksheet('Hidden', { state: 'hidden' });
+      for (const sheet of [visible, hidden]) {
+        for (let rowNumber = 1; rowNumber <= MAX_HEADER_CANDIDATES_PER_SHEET; rowNumber += 1) sheet.getRow(rowNumber).values = ['Thứ'];
+        sheet.getRow(11).values = ['Thứ', 'Buổi', 'Tiết', 'Lớp', 'Môn', 'Giáo viên'];
+        sheet.getRow(12).values = ['T2', 'Sáng', 1, '10A', 'Toán', 'GV01'];
+      }
+    });
+    const result = inspectParsedWorkbook(await parseWorkbookBuffer(input), mappings.map(([semanticField, sourceHeaderKey]) => ({ semanticField, sourceHeaderKey })), null);
+    const visible = result.sheets.find((sheet) => sheet.name === 'Visible')!;
+    expect(visible.headerCandidates).toHaveLength(MAX_HEADER_CANDIDATES_PER_SHEET);
+    expect(visible.headerCandidates).toContainEqual(expect.objectContaining({ rowNumber: 11, complete: true }));
+    expect(result.issues).toContainEqual(expect.objectContaining({ code: 'HIDDEN_MAPPED_DATA', category: 'SHEET' }));
+  });
+
+  it('bounds plain and rich text before returning parsed worker data', async () => {
+    const oversized = 'X'.repeat(MAX_PARSER_CELL_TEXT_LENGTH + 500);
+    const input = await bytes((workbook) => {
+      const sheet = workbook.addWorksheet('TKB');
+      sheet.addRow([oversized, { richText: [{ text: oversized }, { text: oversized }] }]);
+    });
+    const parsed = await parseWorkbookBuffer(input);
+    for (const cell of parsed.sheets[0]!.rows[0]!.cells) {
+      expect(cell.textOverLimit).toBe(true);
+      expect(cell.text).toHaveLength(MAX_PARSER_CELL_TEXT_LENGTH);
+      expect(cell.text).not.toContain(oversized);
+    }
+  });
+
+  it('does not flag a long raw value whose normalized form remains within the parser bound', async () => {
+    const input = await bytes((workbook) => workbook.addWorksheet('TKB').addRow([`${' '.repeat(2_000)}GV01${' '.repeat(2_000)}`]));
+    expect((await parseWorkbookBuffer(input)).sheets[0]!.rows[0]!.cells[0]).toMatchObject({ text: 'GV01', textOverLimit: false });
   });
 });

@@ -16,7 +16,7 @@ export function locateHeader(sheet: ParsedWorkbookSheet, rowNumber: number, mapp
   const matched: TimetableImportSemanticField[] = [];
   let duplicate = false;
   for (const mapping of mappings) {
-    const matches = row.cells.flatMap((cell, index) => cell.text !== undefined && normalizeLookupKey(cell.text) === mapping.sourceHeaderKey ? [index + 1] : []);
+    const matches = row.cells.flatMap((cell, index) => !cell.textOverLimit && cell.text !== undefined && normalizeLookupKey(cell.text) === mapping.sourceHeaderKey ? [index + 1] : []);
     if (matches.length > 1) duplicate = true;
     if (matches.length === 1) { columns[mapping.semanticField] = matches[0]!; matched.push(mapping.semanticField); }
   }
@@ -27,17 +27,20 @@ export function locateHeader(sheet: ParsedWorkbookSheet, rowNumber: number, mapp
 export function inspectParsedWorkbook(workbook: ParsedWorkbook, mappings: HeaderMapping[], sheetHint: string | null): { sheets: TimetableImportWorksheetInspection[]; issues: TimetableImportPreviewIssue[] } {
   const issues: TimetableImportPreviewIssue[] = [];
   const sheets = workbook.sheets.map((sheet): TimetableImportWorksheetInspection => {
-    const candidates: TimetableImportHeaderCandidate[] = [];
+    const scannedCandidates: TimetableImportHeaderCandidate[] = [];
+    const completeHeaders: LocatedHeader[] = [];
     for (let row = 1; row <= Math.min(sheet.rowCount, MAX_HEADER_SCAN_ROWS); row += 1) {
       const located = locateHeader(sheet, row, mappings);
-      if (located && located.candidate.matchedSemanticFields.length > 0) candidates.push(located.candidate);
-      if (candidates.length >= MAX_HEADER_CANDIDATES_PER_SHEET) break;
+      if (located?.candidate.complete) completeHeaders.push(located);
+      if (located && located.candidate.matchedSemanticFields.length > 0) scannedCandidates.push(located.candidate);
     }
+    const candidates = [
+      ...scannedCandidates.filter((candidate) => candidate.complete),
+      ...scannedCandidates.filter((candidate) => !candidate.complete),
+    ].slice(0, MAX_HEADER_CANDIDATES_PER_SHEET).sort((a, b) => a.rowNumber - b.rowNumber);
     const hasContent = sheet.rows.some((row) => row.cells.some(nonBlank));
-    if (sheet.state !== 'VISIBLE' && candidates.some((candidate) => candidate.complete)) {
-      const header = candidates.find((candidate) => candidate.complete)!;
-      const located = locateHeader(sheet, header.rowNumber, mappings)!;
-      const mappedData = sheet.rows.some((row) => row.number > header.rowNumber && semanticFields.some((field) => nonBlank(row.cells[located.columns[field] - 1]!)));
+    if (sheet.state !== 'VISIBLE' && completeHeaders.length > 0) {
+      const mappedData = completeHeaders.some((located) => sheet.rows.some((row) => row.number > located.candidate.rowNumber && semanticFields.some((field) => nonBlank(row.cells[located.columns[field] - 1]!))));
       if (mappedData) issues.push({ code: 'HIDDEN_MAPPED_DATA', severity: 'ERROR', category: 'SHEET', message: 'Hidden worksheet contains mapped timetable data.' });
     }
     return { name: sheet.name, state: sheet.state, nonBlank: hasContent, selectable: sheet.state === 'VISIBLE' && hasContent, rowCount: sheet.rowCount, columnCount: sheet.columnCount, matchesProfileSheetHint: sheetHint !== null && normalizeLookupKey(sheet.name) === normalizeLookupKey(sheetHint), headerCandidates: candidates };

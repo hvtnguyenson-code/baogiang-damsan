@@ -2,6 +2,7 @@ export type ParsedCellKind = 'BLANK' | 'TEXT' | 'NUMBER' | 'BOOLEAN' | 'DATE' | 
 export interface ParsedWorkbookCell {
   kind: ParsedCellKind;
   text?: string;
+  textOverLimit: boolean;
   formula: boolean;
   hyperlink: boolean;
   merged: boolean;

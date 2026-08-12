@@ -38,9 +38,13 @@ Inspection inventories visible, hidden, and very-hidden worksheets. Only visible
 
 Header matching uses the immutable six mappings and the existing NFKC/whitespace/case normalization. It preserves Vietnamese diacritics and punctuation, with no accent folding or fuzzy matching. A complete header contains every mapped field exactly once. Hidden/very-hidden timetable-shaped data and mapped data in selected hidden rows/columns produce blocking `HIDDEN_MAPPED_DATA` issues.
 
+All rows through the 50-row scan boundary are inspected. The ten-candidate response limit does not terminate scanning; complete candidates are selected ahead of partial candidates and the bounded payload is then returned in deterministic row order. Hidden-sheet detection uses the full scan rather than the truncated response payload.
+
 ### Canonicalization and validation
 
 Rows retain their actual one-based Excel addresses. Fully blank rows may be ignored; nonblank rows without mapped data and partially mapped rows are blocking. Formula, hyperlink, merged, error/object, and overlength mapped cells are blocking; formula cache values are never used. Numeric values are accepted only for period ordinal.
+
+Untrusted plain/rich cell text is normalized and bounded inside the parser worker. Worker messages carry at most `MAX_PARSER_CELL_TEXT_LENGTH = 200` characters plus an explicit `textOverLimit` flag. This covers the 150-character configured-header maximum and the 200-character mapped-value maximum. Oversized headers cannot match because flagged text never participates in exact header matching; oversized mapped values produce `MAPPED_VALUE_TOO_LONG`. Rich-text segments are consumed incrementally without joining the complete source value, so the full oversized value never crosses the worker boundary.
 
 Weekday and session values use the frozen exact English/Vietnamese token dictionaries. Period ordinal is an ASCII decimal integer from 1 to 99. Slot resolution uses exact academic-year, weekday, session, ordinal, latest revision semantics and requires active regular-teaching slots.
 

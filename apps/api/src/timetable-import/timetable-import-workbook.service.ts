@@ -69,7 +69,7 @@ export class TimetableImportWorkbookService {
         const code = cell.formula ? 'FORMULA_IN_MAPPED_CELL' : cell.hyperlink ? 'HYPERLINK_IN_MAPPED_CELL' : cell.merged ? 'MERGED_MAPPED_CELL' : cell.kind !== 'TEXT' && !(permitsNumber && cell.kind === 'NUMBER') ? 'UNSUPPORTED_MAPPED_CELL_TYPE' : undefined;
         if (code) { issues.push(this.issue(code, sourceRow.number, field)); unsafe = true; continue; }
         const value = normalizeHumanText(cell.text!);
-        if (value.length > MAX_MAPPED_CELL_TEXT_LENGTH) { issues.push(this.issue('MAPPED_VALUE_TOO_LONG', sourceRow.number, field, value)); unsafe = true; }
+        if (cell.textOverLimit || value.length > MAX_MAPPED_CELL_TEXT_LENGTH) { issues.push(this.issue('MAPPED_VALUE_TOO_LONG', sourceRow.number, field, value)); unsafe = true; }
         values[field] = value;
         if ((sourceRow.hidden || sheet.hiddenColumns.includes(located.columns[field])) && value) issues.push(this.issue('HIDDEN_MAPPED_DATA', sourceRow.number, field));
       }

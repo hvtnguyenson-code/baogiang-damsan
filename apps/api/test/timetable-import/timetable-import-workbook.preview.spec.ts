@@ -1,5 +1,8 @@
 import { TimetableImportWorkbookService, UploadedWorkbookFile } from '../../src/timetable-import/timetable-import-workbook.service';
 import { ParsedWorkbookCell, ParsedWorkbookRow } from '../../src/timetable-import/workbook-parser.types';
+import { MAX_PARSER_CELL_TEXT_LENGTH } from '../../src/timetable-import/workbook-limits';
+import { parseWorkbookBuffer } from '../../src/timetable-import/workbook-parser.worker';
+import ExcelJS from 'exceljs';
 
 const fields = ['WEEKDAY', 'SESSION', 'PERIOD_ORDINAL', 'SCHOOL_CLASS', 'SUBJECT', 'TEACHER'] as const;
 const headers = ['Thứ', 'Buổi', 'Tiết', 'Lớp', 'Môn', 'Giáo viên'];
@@ -8,8 +11,8 @@ const identifiers = {
   week: '10000000-0000-4000-8000-000000000003', revision: '10000000-0000-4000-8000-000000000004',
 };
 
-const text = (value: string, overrides: Partial<ParsedWorkbookCell> = {}): ParsedWorkbookCell => ({ kind: 'TEXT', text: value, formula: false, hyperlink: false, merged: false, ...overrides });
-const blank = (): ParsedWorkbookCell => ({ kind: 'BLANK', formula: false, hyperlink: false, merged: false });
+const text = (value: string, overrides: Partial<ParsedWorkbookCell> = {}): ParsedWorkbookCell => ({ kind: 'TEXT', text: value, textOverLimit: false, formula: false, hyperlink: false, merged: false, ...overrides });
+const blank = (): ParsedWorkbookCell => ({ kind: 'BLANK', textOverLimit: false, formula: false, hyperlink: false, merged: false });
 const row = (number: number, values: string[], hidden = false): ParsedWorkbookRow => ({ number, hidden, cells: values.map((value) => value ? text(value) : blank()) });
 
 function fixture(dataRow: ParsedWorkbookRow = row(5, ['T2', 'Sáng', '1', '10A', 'Toán', 'GV01'])) {
@@ -55,6 +58,25 @@ describe('TimetableImportWorkbookService canonical preview orchestration', () =>
   ])('retains blocking row context and suppresses diff', async (dataRow, code) => {
     const result = await fixture(dataRow as ParsedWorkbookRow).service.preview(upload, dto);
     expect(result.issues).toContainEqual(expect.objectContaining({ code, sourceRowNumber: dataRow.number }));
+    expect(result.canConfirm).toBe(false);
+    expect(result.diff).toBeNull();
+  });
+
+  it.each([
+    ['plain text', (oversized: string) => oversized],
+    ['rich text', (oversized: string) => ({ richText: [{ text: oversized.slice(0, 150) }, { text: oversized.slice(150) }] })],
+  ])('blocks oversized %s using only the bounded worker representation', async (_name, teacherValue) => {
+    const oversized = `SECRET-${'X'.repeat(MAX_PARSER_CELL_TEXT_LENGTH + 500)}`;
+    const workbook = new ExcelJS.Workbook();
+    workbook.addWorksheet('TKB').addRows([headers, ['T2', 'Sáng', 1, '10A', 'Toán', teacherValue(oversized)]]);
+    const parsed = await parseWorkbookBuffer(Buffer.from(await workbook.xlsx.writeBuffer()));
+    const parsedRow = parsed.sheets[0]!.rows[1]!;
+    expect(parsedRow.cells[5]).toMatchObject({ textOverLimit: true });
+    expect(parsedRow.cells[5]!.text).toHaveLength(MAX_PARSER_CELL_TEXT_LENGTH);
+    const result = await fixture(parsedRow).service.preview(upload, dto);
+    expect(result.issues).toContainEqual(expect.objectContaining({ code: 'MAPPED_VALUE_TOO_LONG', sourceRowNumber: 2 }));
+    expect(result.issues.find((issue) => issue.code === 'MAPPED_VALUE_TOO_LONG')?.boundedSourceValue?.length).toBeLessThanOrEqual(MAX_PARSER_CELL_TEXT_LENGTH);
+    expect(JSON.stringify(result)).not.toContain(oversized);
     expect(result.canConfirm).toBe(false);
     expect(result.diff).toBeNull();
   });
