@@ -314,10 +314,11 @@ Accepted audit-event architecture covers profile/alias changes, import commit an
 2. **04B3B — required persistence foundation:** school-wide profiles, typed entity aliases, committed receipts, semantic duplicate uniqueness, request-idempotency replay identity and receipt/version provenance.
 3. **04B3C1 — configuration control plane (implemented by ADR-023):** profile list/read/create/revise/retire, exact six canonical mappings, typed alias create/retire, exact normalization, capability enforcement and transactional audit.
 4. **04B3C2 — Workbook Inspection & Canonical Preview (implemented by ADR-024):** parser dependency, bounded upload, sheet/header inspection, canonical resolution, preview/errors/diff and integration tests.
-5. **04B3C3 — Canonical Import Confirmation, Idempotent Replay and Imported-DRAFT Lock:** atomic commit-to-DRAFT, committed receipt replay and protection of receipt-backed drafts.
-6. **04B3D — optional hardening:** fuzz/corpus/ZIP-bomb/formula/large-workbook tests and CI security/load gates if 04B3C becomes too large.
+5. **04B3C3A — Durable Request Idempotency Binding Foundation (resolved by ADR-025):** authoritative one-to-many consumed request-key bindings while retaining receipt fields as original-creation provenance.
+6. **04B3C3B — Canonical Import Confirmation, Idempotent Replay and Imported-DRAFT Lock:** atomic commit-to-DRAFT, committed receipt replay and protection of receipt-backed drafts.
+7. **04B3D — optional hardening:** fuzz/corpus/ZIP-bomb/formula/large-workbook tests and CI security/load gates if 04B3C becomes too large.
 
-ADR-022 accepts and implements the 04B3B persistence identities. ADR-023 accepts and implements the 04B3C1 configuration control plane over stable profile/revision/mapping rows and typed retained aliases. ADR-024 accepts and implements 04B3C2 Workbook Inspection & Canonical Preview. The next slice is 04B3C3 Canonical Import Confirmation, Idempotent Replay and Imported-DRAFT Lock. Each remains a separate reviewed task; 04B3D is optional corpus/security hardening.
+ADR-022 accepts and implements the 04B3B persistence identities. ADR-023 accepts and implements the 04B3C1 configuration control plane over stable profile/revision/mapping rows and typed retained aliases. ADR-024 accepts and implements 04B3C2 Workbook Inspection & Canonical Preview. ADR-025 refines ADR-022's request-key storage with the C3A durable binding foundation. The next slice is 04B3C3B Canonical Import Confirmation, Idempotent Replay and Imported-DRAFT Lock. Each remains a separate reviewed task; 04B3D is optional corpus/security hardening.
 
 The parser choice and resource limits recorded by ADR-024 are architecture decisions introduced in 04B3C2; they are not retroactive claims about the historical v1.2 source findings.
 

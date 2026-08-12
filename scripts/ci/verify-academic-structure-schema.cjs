@@ -16,6 +16,8 @@ const timetableMigrationName = '20260811030000_timetable_schema_foundation';
 const timetableMigration = read('prisma', 'migrations', timetableMigrationName, 'migration.sql');
 const timetableImportMigrationName = '20260812010000_timetable_import_persistence_foundation';
 const timetableImportMigration = read('prisma', 'migrations', timetableImportMigrationName, 'migration.sql');
+const timetableImportRequestKeyMigrationName = '20260812020000_timetable_import_idempotency_bindings';
+const timetableImportRequestKeyMigration = read('prisma', 'migrations', timetableImportRequestKeyMigrationName, 'migration.sql');
 
 function modelBlock(name) {
   const match = schema.match(new RegExp(`model\\s+${name}\\s+\\{([\\s\\S]*?)\\n\\}`, 'u'));
@@ -53,6 +55,7 @@ for (const model of [
   'TimetableImportColumnMapping',
   'TimetableImportEntityAlias',
   'TimetableImportReceipt',
+  'TimetableImportRequestKey',
 ]) {
   modelBlock(model);
 }
@@ -361,6 +364,7 @@ const importRevision = modelBlock('TimetableImportProfileRevision');
 const importMapping = modelBlock('TimetableImportColumnMapping');
 const importAlias = modelBlock('TimetableImportEntityAlias');
 const importReceipt = modelBlock('TimetableImportReceipt');
+const importRequestKey = modelBlock('TimetableImportRequestKey');
 
 for (const [modelName, block, fields] of [
   ['TimetableImportProfile', importProfile, ['id', 'createdByUserId']],
@@ -368,6 +372,7 @@ for (const [modelName, block, fields] of [
   ['TimetableImportColumnMapping', importMapping, ['id', 'profileRevisionId']],
   ['TimetableImportEntityAlias', importAlias, ['id', 'profileId', 'academicYearId', 'teacherUserId', 'schoolClassId', 'subjectId', 'createdByUserId', 'retiredByUserId']],
   ['TimetableImportReceipt', importReceipt, ['id', 'timetableVersionId', 'profileRevisionId', 'createdByUserId']],
+  ['TimetableImportRequestKey', importRequestKey, ['id', 'receiptId']],
 ]) {
   for (const field of fields) {
     assert.match(block, new RegExp(`${field}\\s+String\\??[\\s\\S]*?@db\\.Uuid`, 'u'), `${modelName}.${field} must use UUID`);
@@ -379,6 +384,7 @@ for (const [modelName, block, fields] of [
   ['TimetableImportColumnMapping', importMapping, ['createdAt']],
   ['TimetableImportEntityAlias', importAlias, ['retiredAt', 'createdAt']],
   ['TimetableImportReceipt', importReceipt, ['committedAt']],
+  ['TimetableImportRequestKey', importRequestKey, ['boundAt']],
 ]) {
   for (const field of fields) {
     assert.match(block, new RegExp(`${field}\\s+DateTime\\??[\\s\\S]*?@db\\.Timestamptz\\(3\\)`, 'u'), `${modelName}.${field} must use TIMESTAMPTZ(3)`);
@@ -412,7 +418,15 @@ assert.match(importReceipt, /timetableVersionId\s+String\s+@unique\(map:\s*"time
 assert.match(importReceipt, /requestIdempotencyKey\s+String\?\s+@unique\(map:\s*"timetable_import_receipts_request_idempotency_key_key"\)/u);
 assert.match(importReceipt, /timetableVersion\s+TimetableVersion\s+@relation\("TimetableImportReceiptVersion"[\s\S]*onDelete:\s*Restrict\)/u);
 assert.match(importReceipt, /profileRevision\s+TimetableImportProfileRevision\s+@relation\([\s\S]*onDelete:\s*Restrict\)/u);
+assert.match(importReceipt, /requestKeys\s+TimetableImportRequestKey\[\]/u);
 assert.doesNotMatch(importReceipt, /updatedAt|academicYearId|calendarVersionId|effectiveAcademicWeekId|semanticChecksum|Bytes|Json/u);
+
+assert.match(importRequestKey, /requestKey\s+String\s+@unique\(map:\s*"timetable_import_request_keys_request_key_key"\)\s+@map\("request_key"\)\s+@db\.VarChar\(200\)/u);
+assert.match(importRequestKey, /requestFingerprint\s+String\s+@map\("request_fingerprint"\)\s+@db\.VarChar\(128\)/u);
+assert.match(importRequestKey, /receipt\s+TimetableImportReceipt\s+@relation\(fields:\s*\[receiptId\],\s*references:\s*\[id\],\s*onDelete:\s*Restrict\)/u);
+assert.match(importRequestKey, /@@index\(\[receiptId\],\s*map:\s*"timetable_import_request_keys_receipt_id_idx"\)/u);
+assert.match(importRequestKey, /@@map\("timetable_import_request_keys"\)/u);
+assert.doesNotMatch(importRequestKey, /requestFingerprint\s+String[^\n]*@unique|Bytes|Json|workbook|formula|url|path/iu);
 
 for (const type of [
   'TimetableImportTeacherIdentifierMode', 'TimetableImportSemanticField', 'TimetableImportAliasEntityType',
@@ -474,6 +488,20 @@ for (const constraint of [
 assert.doesNotMatch(timetableImportMigration, /CREATE\s+(OR\s+REPLACE\s+)?TRIGGER/iu);
 assert.doesNotMatch(timetableImportMigration, /\bBYTEA\b|raw_workbook|workbook_body|macro_body|formula_body|filesystem_path/iu);
 
+assert.match(timetableImportRequestKeyMigration, /CREATE TABLE "timetable_import_request_keys"/u);
+assert.match(timetableImportRequestKeyMigration, /CREATE UNIQUE INDEX "timetable_import_request_keys_request_key_key"[\s\S]*\("request_key"\)/u);
+assert.match(timetableImportRequestKeyMigration, /CREATE INDEX "timetable_import_request_keys_receipt_id_idx"[\s\S]*\("receipt_id"\)/u);
+for (const constraint of [
+  'timetable_import_request_keys_request_key_normalized_check',
+  'timetable_import_request_keys_request_fingerprint_normalized_check',
+]) {
+  assert.match(timetableImportRequestKeyMigration, new RegExp(`"${constraint}"[\\s\\S]*?btrim`, 'u'), `Migration missing ${constraint}`);
+}
+assert.match(timetableImportRequestKeyMigration, /"timetable_import_request_keys_receipt_id_fkey"[\s\S]*FOREIGN KEY \("receipt_id"\)[\s\S]*REFERENCES "timetable_import_receipts"\("id"\)[\s\S]*ON DELETE RESTRICT/u);
+assert.match(timetableImportRequestKeyMigration, /HAVING COUNT\(\*\) > 1[\s\S]*RAISE EXCEPTION/u, 'Backfill must fail explicitly on conflicting historical keys');
+assert.match(timetableImportRequestKeyMigration, /INSERT INTO "timetable_import_request_keys"[\s\S]*SELECT[\s\S]*"id"[\s\S]*"request_idempotency_key"[\s\S]*"request_fingerprint"[\s\S]*"committed_at"[\s\S]*FROM "timetable_import_receipts"[\s\S]*WHERE "request_idempotency_key" IS NOT NULL[\s\S]*AND "request_fingerprint" IS NOT NULL/u);
+assert.doesNotMatch(timetableImportRequestKeyMigration, /ON CONFLICT|DO NOTHING|ON DELETE CASCADE|\bBYTEA\b|raw_workbook|workbook_body|formula|filesystem_path/iu);
+
 const legacyHashes = new Map([
   ['20260728000000_phase_00_baseline', 'A2185F4F34E90F9B437B3D0DD91B1C473D586849E6B0DFFB766C5AF69546634A'],
   ['20260801000000_phase_01_schema_foundation', '56B7F09859E9851A15D62D17A58066DAFB1798B0E4225858A464B0CD8F47DF9E'],
@@ -481,9 +509,10 @@ const legacyHashes = new Map([
   ['20260810010000_teaching_assignment_schema_foundation', '89BC5647B6B451D9026F99CC578BD98F02DE2B186FD63CEF3205E2EFF4B15D07'],
   ['20260811020000_time_slot_schema_foundation', 'EEAFEF46FCC7CD5179973D439FDE66B7EACA68E8E6951974B4AB66C8BD3828E5'],
   ['20260811030000_timetable_schema_foundation', '49C330E7FD0536B4A2D30F64989AA87F677332FD4942600842BB3A7F3AE824CF'],
+  ['20260812010000_timetable_import_persistence_foundation', '6118DC8B909C400A11CDA38A6C09B3D8BAAB23B79DC3647B6F3136EAE9EF2CA8'],
 ]);
 for (const [name, expected] of legacyHashes) {
   assert.equal(sha256(read('prisma', 'migrations', name, 'migration.sql')), expected, `Historical migration ${name} changed`);
 }
 
-console.log(`Academic, teaching-assignment, time-slot, timetable, and timetable-import schema static verification PASS (${academicMigrationName}, ${teachingMigrationName}, ${timeSlotMigrationName}, ${timetableMigrationName}, ${timetableImportMigrationName}).`);
+console.log(`Academic, teaching-assignment, time-slot, timetable, and timetable-import schema static verification PASS (${academicMigrationName}, ${teachingMigrationName}, ${timeSlotMigrationName}, ${timetableMigrationName}, ${timetableImportMigrationName}, ${timetableImportRequestKeyMigrationName}).`);
