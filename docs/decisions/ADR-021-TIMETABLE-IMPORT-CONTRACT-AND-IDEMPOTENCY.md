@@ -60,7 +60,7 @@ The separately enforceable semantic duplicate key is `academicYearId + calendarV
 
 ### 5. Request idempotency
 
-Request idempotency is distinct from semantic duplication. The durable namespace/composite key and canonical fingerprint encoding are designed in 04B3B/C, with these required behaviors:
+Request idempotency is distinct from semantic duplication. ADR-022 resolves the durable namespace as the school-wide timetable-import-confirm command and makes a non-null receipt request key globally unique, independent of actor, profile or target. Canonical fingerprint encoding remains a 04B3C service decision, with these required behaviors:
 
 - same key and same deterministic request fingerprint replays the original result;
 - same key and materially different fingerprint returns a 409 conflict;
@@ -70,7 +70,7 @@ The fingerprint is bounded and covers the committed semantic identity plus mappi
 
 ### 6. Receipt identity, replay and imported-DRAFT immutability
 
-A committed `TimetableImportReceipt` is immutable provenance for exactly one successfully created TimetableVersion, and an imported TimetableVersion has at most one committed receipt. Conceptually it records AcademicYear, target calendar version and AcademicWeek, checksum algorithm/serialization version, semantic checksum, created TimetableVersion, actor, commit timestamp, bounded source/profile provenance and optional request-idempotency identity/fingerprint. The authoritative relation must identify whether a version is import-backed; exact names and FK direction belong to 04B3B. Failed inspection/parsing attempts are not committed receipts.
+A committed `TimetableImportReceipt` is immutable provenance for exactly one successfully created TimetableVersion, and an imported TimetableVersion has at most one committed receipt. ADR-022 fixes the FK on `TimetableImportReceipt.timetableVersionId`, uniquely, with the optional `TimetableVersion.importReceipt` reverse relation as the authoritative import-backed signal. The receipt references an exact immutable `TimetableImportProfileRevision`; target and semantic checksum provenance are normalized through the linked TimetableVersion. Failed inspection/parsing attempts are not committed receipts.
 
 Semantic and request replay return the original receipt-linked version with its current lifecycle status and outcome `IDEMPOTENT_REPLAY`; a new DRAFT is never created because the original has progressed. A first commit returns `CREATED`.
 
@@ -96,7 +96,7 @@ No parser package or version is selected here. 04B3C must perform a pinned depen
 
 ## Persistence consequences
 
-04B3B is required before the import API. It must add reviewed persistence and migrations for school-wide profiles, separate typed aliases, committed receipts/provenance, semantic duplicate uniqueness, request-idempotency identity/fingerprint and the authoritative receipt/version relation. Normal timetable tables and the existing nullable `contentChecksum` field remain the baseline; no global checksum uniqueness is added. Exact Prisma names, indexes, profile versioning and FK direction remain implementation design choices constrained by this ADR.
+ADR-022 accepts the 04B3B persistence foundation: `TimetableImportProfile`, immutable numbered `TimetableImportProfileRevision`, `TimetableImportColumnMapping`, typed `TimetableImportEntityAlias`, and `TimetableImportReceipt`. It fixes the receipt-to-version FK direction, exact target-scoped semantic unique on TimetableVersion, globally unique non-null request key in the timetable-import-confirm namespace, and retained RESTRICT history. The existing nullable `contentChecksum` remains the baseline; no global checksum uniqueness is added.
 
 ## API consequences
 
@@ -104,8 +104,7 @@ No parser package or version is selected here. 04B3C must perform a pinned depen
 
 ## Remaining questions
 
-- Exact Prisma names, profile representation/versioning and receipt FK direction.
-- Exact request-key namespace/index and fingerprint serialization.
+- Exact request-fingerprint serialization.
 - Parser package/version and numeric security limits.
 - Durable raw workbook retention outside PostgreSQL.
 - Multi-period normalization beyond the first-release blocking behavior.

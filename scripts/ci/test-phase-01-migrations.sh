@@ -79,4 +79,7 @@ psql "$fresh_psql_url" -v ON_ERROR_STOP=1 -f scripts/ci/verify-time-slot-schema.
 echo "[migration-test] Timetable constraint and history verification"
 psql "$fresh_psql_url" -v ON_ERROR_STOP=1 -f scripts/ci/verify-timetable-schema.sql
 
+echo "[migration-test] Timetable import persistence constraint and history verification"
+psql "$fresh_psql_url" -v ON_ERROR_STOP=1 -f scripts/ci/verify-timetable-import-schema.sql
+
 echo "[migration-test] PASS"

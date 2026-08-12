@@ -65,6 +65,28 @@ enum TimetableVersionStatus {
   SUPERSEDED
 }
 
+enum TimetableImportTeacherIdentifierMode {
+  GENERIC_EXACT
+  STAFF_CODE
+  USERNAME
+  APPROVED_ALIAS
+}
+
+enum TimetableImportSemanticField {
+  WEEKDAY
+  SESSION
+  PERIOD_ORDINAL
+  SCHOOL_CLASS
+  SUBJECT
+  TEACHER
+}
+
+enum TimetableImportAliasEntityType {
+  TEACHER
+  SCHOOL_CLASS
+  SUBJECT
+}
+
 enum AcademicWeekKind {
   OFFICIAL
   RESERVE
@@ -91,18 +113,25 @@ model User {
   profile                          StaffProfile?
   subjectGroupMemberships          SubjectGroupMembership[]
   staffSubjects                    StaffSubject[]
-  capabilityGrants                 CapabilityGrant[]               @relation("CapabilityGrantSubject")
-  capabilityGrantsCreated          CapabilityGrant[]               @relation("CapabilityGrantGrantedBy")
-  capabilityGrantsRevoked          CapabilityGrant[]               @relation("CapabilityGrantRevokedBy")
+  capabilityGrants                 CapabilityGrant[]                @relation("CapabilityGrantSubject")
+  capabilityGrantsCreated          CapabilityGrant[]                @relation("CapabilityGrantGrantedBy")
+  capabilityGrantsRevoked          CapabilityGrant[]                @relation("CapabilityGrantRevokedBy")
   authSessions                     AuthSession[]
-  auditEvents                      AuditEvent[]                    @relation("AuditActor")
-  additionalDutyAssignmentsCreated StaffAdditionalDutyAssignment[] @relation("AdditionalDutyAssignmentCreator")
-  teachingAssignments              TeachingAssignment[]            @relation("TeachingAssignmentTeacher")
-  timetableVersionsCreated         TimetableVersion[]              @relation("TimetableVersionCreatedBy")
-  timetableVersionsValidated       TimetableVersion[]              @relation("TimetableVersionValidatedBy")
-  timetableVersionsApproved        TimetableVersion[]              @relation("TimetableVersionApprovedBy")
-  timetableVersionsActivated       TimetableVersion[]              @relation("TimetableVersionActivatedBy")
-  timetableEntriesAsTeacher        TimetableEntry[]                @relation("TimetableEntryTeacher")
+  auditEvents                      AuditEvent[]                     @relation("AuditActor")
+  additionalDutyAssignmentsCreated StaffAdditionalDutyAssignment[]  @relation("AdditionalDutyAssignmentCreator")
+  teachingAssignments              TeachingAssignment[]             @relation("TeachingAssignmentTeacher")
+  timetableVersionsCreated         TimetableVersion[]               @relation("TimetableVersionCreatedBy")
+  timetableVersionsValidated       TimetableVersion[]               @relation("TimetableVersionValidatedBy")
+  timetableVersionsApproved        TimetableVersion[]               @relation("TimetableVersionApprovedBy")
+  timetableVersionsActivated       TimetableVersion[]               @relation("TimetableVersionActivatedBy")
+  timetableEntriesAsTeacher        TimetableEntry[]                 @relation("TimetableEntryTeacher")
+  timetableImportProfilesCreated   TimetableImportProfile[]         @relation("TimetableImportProfileCreatedBy")
+  timetableImportRevisionsCreated  TimetableImportProfileRevision[] @relation("TimetableImportProfileRevisionCreatedBy")
+  timetableImportRevisionsRetired  TimetableImportProfileRevision[] @relation("TimetableImportProfileRevisionRetiredBy")
+  timetableImportAliasesAsTeacher  TimetableImportEntityAlias[]     @relation("TimetableImportAliasTeacher")
+  timetableImportAliasesCreated    TimetableImportEntityAlias[]     @relation("TimetableImportAliasCreatedBy")
+  timetableImportAliasesRetired    TimetableImportEntityAlias[]     @relation("TimetableImportAliasRetiredBy")
+  timetableImportReceiptsCreated   TimetableImportReceipt[]         @relation("TimetableImportReceiptCreatedBy")
 
   @@index([status])
   @@map("users")
@@ -148,9 +177,10 @@ model Subject {
   createdAt DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  staffSubjects       StaffSubject[]
-  teachingAssignments TeachingAssignment[]
-  timetableEntries    TimetableEntry[]
+  staffSubjects          StaffSubject[]
+  teachingAssignments    TeachingAssignment[]
+  timetableEntries       TimetableEntry[]
+  timetableImportAliases TimetableImportEntityAlias[]
 
   @@index([status, code])
   @@map("subjects")
@@ -320,12 +350,13 @@ model AcademicYear {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  calendarVersions    AcademicCalendarVersion[]
-  classes             SchoolClass[]
-  teachingAssignments TeachingAssignment[]
-  timeSlotDefinitions TimeSlotDefinition[]
-  timetableVersions   TimetableVersion[]
-  timetableEntries    TimetableEntry[]
+  calendarVersions       AcademicCalendarVersion[]
+  classes                SchoolClass[]
+  teachingAssignments    TeachingAssignment[]
+  timeSlotDefinitions    TimeSlotDefinition[]
+  timetableVersions      TimetableVersion[]
+  timetableEntries       TimetableEntry[]
+  timetableImportAliases TimetableImportEntityAlias[]
 
   @@map("academic_years")
 }
@@ -471,9 +502,10 @@ model SchoolClass {
   createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt      DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  academicYear        AcademicYear         @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
-  teachingAssignments TeachingAssignment[] @relation("TeachingAssignmentSchoolClass")
-  timetableEntries    TimetableEntry[]     @relation("TimetableEntrySchoolClass")
+  academicYear           AcademicYear                 @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  teachingAssignments    TeachingAssignment[]         @relation("TeachingAssignmentSchoolClass")
+  timetableEntries       TimetableEntry[]             @relation("TimetableEntrySchoolClass")
+  timetableImportAliases TimetableImportEntityAlias[] @relation("TimetableImportAliasSchoolClass")
 
   @@unique([id, academicYearId])
   @@unique([academicYearId, code])
@@ -536,13 +568,125 @@ model TimetableVersion {
   approvedBy            User?                    @relation("TimetableVersionApprovedBy", fields: [approvedByUserId], references: [id], onDelete: Restrict)
   activatedBy           User?                    @relation("TimetableVersionActivatedBy", fields: [activatedByUserId], references: [id], onDelete: Restrict)
   entries               TimetableEntry[]         @relation("TimetableEntryVersion")
+  importReceipt         TimetableImportReceipt?  @relation("TimetableImportReceiptVersion")
 
   @@unique([id, academicYearId], map: "timetable_versions_id_academic_year_id_key")
   @@unique([academicYearId, versionNumber], map: "timetable_versions_academic_year_id_version_number_key")
+  @@unique([academicYearId, calendarVersionId, effectiveAcademicWeekId, contentChecksum], map: "timetable_versions_import_semantic_duplicate_key")
   @@index([academicYearId, status], map: "timetable_versions_academic_year_id_status_idx")
   @@index([calendarVersionId, effectiveAcademicWeekId], map: "timetable_versions_calendar_version_id_effective_week_id_idx")
   @@index([contentChecksum], map: "timetable_versions_content_checksum_idx")
   @@map("timetable_versions")
+}
+
+model TimetableImportProfile {
+  id              String   @id @default(uuid()) @db.Uuid
+  sourceKey       String   @map("source_key") @db.VarChar(100)
+  name            String   @db.VarChar(150)
+  createdByUserId String   @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  createdBy User                             @relation("TimetableImportProfileCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  revisions TimetableImportProfileRevision[]
+  aliases   TimetableImportEntityAlias[]
+
+  @@unique([sourceKey, name], map: "timetable_import_profiles_source_key_name_key")
+  @@index([sourceKey, name], map: "timetable_import_profiles_source_key_name_idx")
+  @@map("timetable_import_profiles")
+}
+
+model TimetableImportProfileRevision {
+  id                    String                               @id @default(uuid()) @db.Uuid
+  profileId             String                               @map("profile_id") @db.Uuid
+  revision              Int
+  isActive              Boolean                              @default(true) @map("is_active")
+  sheetNameHint         String?                              @map("sheet_name_hint") @db.VarChar(150)
+  headerRowHint         Int?                                 @map("header_row_hint")
+  teacherIdentifierMode TimetableImportTeacherIdentifierMode @map("teacher_identifier_mode")
+  createdByUserId       String                               @map("created_by_user_id") @db.Uuid
+  retiredByUserId       String?                              @map("retired_by_user_id") @db.Uuid
+  retiredAt             DateTime?                            @map("retired_at") @db.Timestamptz(3)
+  createdAt             DateTime                             @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  profile        TimetableImportProfile         @relation(fields: [profileId], references: [id], onDelete: Restrict)
+  createdBy      User                           @relation("TimetableImportProfileRevisionCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  retiredBy      User?                          @relation("TimetableImportProfileRevisionRetiredBy", fields: [retiredByUserId], references: [id], onDelete: Restrict)
+  columnMappings TimetableImportColumnMapping[]
+  receipts       TimetableImportReceipt[]
+
+  @@unique([profileId, revision], map: "timetable_import_profile_revisions_profile_revision_key")
+  @@index([profileId, isActive], map: "timetable_import_profile_revisions_profile_active_idx")
+  @@map("timetable_import_profile_revisions")
+}
+
+model TimetableImportColumnMapping {
+  id                String                       @id @default(uuid()) @db.Uuid
+  profileRevisionId String                       @map("profile_revision_id") @db.Uuid
+  semanticField     TimetableImportSemanticField @map("semantic_field")
+  sourceHeader      String                       @map("source_header") @db.VarChar(150)
+  sourceHeaderKey   String                       @map("source_header_key") @db.VarChar(150)
+  createdAt         DateTime                     @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  profileRevision TimetableImportProfileRevision @relation(fields: [profileRevisionId], references: [id], onDelete: Restrict)
+
+  @@unique([profileRevisionId, semanticField], map: "timetable_import_column_mappings_revision_field_key")
+  @@unique([profileRevisionId, sourceHeaderKey], map: "timetable_import_column_mappings_revision_source_key")
+  @@map("timetable_import_column_mappings")
+}
+
+model TimetableImportEntityAlias {
+  id              String                         @id @default(uuid()) @db.Uuid
+  profileId       String                         @map("profile_id") @db.Uuid
+  entityType      TimetableImportAliasEntityType @map("entity_type")
+  academicYearId  String?                        @map("academic_year_id") @db.Uuid
+  sourceValue     String                         @map("source_value") @db.VarChar(200)
+  sourceValueKey  String                         @map("source_value_key") @db.VarChar(200)
+  teacherUserId   String?                        @map("teacher_user_id") @db.Uuid
+  schoolClassId   String?                        @map("school_class_id") @db.Uuid
+  subjectId       String?                        @map("subject_id") @db.Uuid
+  isActive        Boolean                        @default(true) @map("is_active")
+  createdByUserId String                         @map("created_by_user_id") @db.Uuid
+  retiredByUserId String?                        @map("retired_by_user_id") @db.Uuid
+  retiredAt       DateTime?                      @map("retired_at") @db.Timestamptz(3)
+  createdAt       DateTime                       @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  profile      TimetableImportProfile @relation(fields: [profileId], references: [id], onDelete: Restrict)
+  academicYear AcademicYear?          @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  teacher      User?                  @relation("TimetableImportAliasTeacher", fields: [teacherUserId], references: [id], onDelete: Restrict)
+  schoolClass  SchoolClass?           @relation("TimetableImportAliasSchoolClass", fields: [schoolClassId, academicYearId], references: [id, academicYearId], onDelete: Restrict)
+  subject      Subject?               @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  createdBy    User                   @relation("TimetableImportAliasCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  retiredBy    User?                  @relation("TimetableImportAliasRetiredBy", fields: [retiredByUserId], references: [id], onDelete: Restrict)
+
+  @@index([profileId, entityType, isActive], map: "timetable_import_entity_aliases_profile_entity_active_idx")
+  @@index([academicYearId, schoolClassId], map: "timetable_import_entity_aliases_year_class_idx")
+  @@map("timetable_import_entity_aliases")
+}
+
+model TimetableImportReceipt {
+  id                    String   @id @default(uuid()) @db.Uuid
+  timetableVersionId    String   @unique(map: "timetable_import_receipts_timetable_version_id_key") @map("timetable_version_id") @db.Uuid
+  profileRevisionId     String   @map("profile_revision_id") @db.Uuid
+  checksumAlgorithm     String   @map("checksum_algorithm") @db.VarChar(20)
+  serializationVersion  String   @map("serialization_version") @db.VarChar(30)
+  requestIdempotencyKey String?  @unique(map: "timetable_import_receipts_request_idempotency_key_key") @map("request_idempotency_key") @db.VarChar(200)
+  requestFingerprint    String?  @map("request_fingerprint") @db.VarChar(128)
+  sourceFileName        String   @map("source_file_name") @db.VarChar(255)
+  sheetName             String   @map("sheet_name") @db.VarChar(150)
+  headerRowNumber       Int      @map("header_row_number")
+  sourceRowCount        Int      @map("source_row_count")
+  normalizedEntryCount  Int      @map("normalized_entry_count")
+  createdByUserId       String   @map("created_by_user_id") @db.Uuid
+  committedAt           DateTime @default(now()) @map("committed_at") @db.Timestamptz(3)
+
+  timetableVersion TimetableVersion               @relation("TimetableImportReceiptVersion", fields: [timetableVersionId], references: [id], onDelete: Restrict)
+  profileRevision  TimetableImportProfileRevision @relation(fields: [profileRevisionId], references: [id], onDelete: Restrict)
+  createdBy        User                           @relation("TimetableImportReceiptCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@index([profileRevisionId], map: "timetable_import_receipts_profile_revision_id_idx")
+  @@index([createdByUserId], map: "timetable_import_receipts_created_by_user_id_idx")
+  @@map("timetable_import_receipts")
 }
 
 model TimetableEntry {
