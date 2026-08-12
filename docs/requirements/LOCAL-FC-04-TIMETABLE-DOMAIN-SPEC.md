@@ -1,6 +1,6 @@
 # LOCAL-FC-04 — Timetable Domain Specification
 
-**Status:** Requirements audit; 04A1 persistence resolved by ADR-016, 04A2 timetable persistence by ADR-017, 04B0 time-slot control plane by ADR-018, 04B1 draft/validation by ADR-019, 04B2 lifecycle/resolution by ADR-020, and 04B3A import architecture by ADR-021
+**Status:** Requirements audit; 04A1 persistence resolved by ADR-016, 04A2 timetable persistence by ADR-017, 04B0 time-slot control plane by ADR-018, 04B1 draft/validation by ADR-019, 04B2 lifecycle/resolution by ADR-020, 04B3A import architecture by ADR-021, and 04B3B import persistence by ADR-022
 
 **Audit date:** 2026-08-11
 
@@ -293,6 +293,8 @@ ADR-020 resolves the current control-plane policy: approval and activation both 
 ## 15. Import/manual-entry requirements
 
 The focused [LOCAL-FC-04B3 import audit](LOCAL-FC-04B3-TIMETABLE-IMPORT-CONTRACT-AUDIT.md) distinguishes source evidence from architecture, and [ADR-021](../decisions/ADR-021-TIMETABLE-IMPORT-CONTRACT-AND-IDEMPOTENCY.md) is **Accepted**. It fixes the first-release workbook/mapping boundary, canonical resolution, atomic confirmation, separate semantic/request replay identities, committed receipt and imported-DRAFT immutability. It deliberately defines no official fixed source header template.
+
+[ADR-022](../decisions/ADR-022-TIMETABLE-IMPORT-PERSISTENCE-FOUNDATION.md) accepts the 04B3B persistence foundation: stable school-wide profiles with immutable revisions, canonical column mappings, typed retained aliases, target-scoped semantic uniqueness on TimetableVersion, globally unique non-null confirmation request keys, and a one-to-one committed receipt relation. The next slice is **04B3C — workbook inspection, mapping, preview and canonical import API**; parser/security limits and request-fingerprint serialization remain there.
 
 ### Confirmed import workflow
 

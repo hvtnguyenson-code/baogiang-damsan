@@ -1,6 +1,6 @@
 # LOCAL-FC-04B3 — Timetable Import Contract and Idempotency Audit
 
-**Status:** Requirements audit; import architecture accepted by ADR-021
+**Status:** Requirements audit; import architecture accepted by ADR-021 and persistence foundation accepted by ADR-022
 
 **Date:** 2026-08-12
 
@@ -315,7 +315,7 @@ Accepted audit-event architecture covers profile/alias changes, import commit an
 3. **04B3C — workbook inspection/import API:** parser dependency, bounded upload, sheet/header mapping, preview/errors/diff, canonical normalization, commit-to-DRAFT and integration tests.
 4. **04B3D — optional hardening:** fuzz/corpus/ZIP-bomb/formula/large-workbook tests and CI security/load gates if 04B3C becomes too large.
 
-04B3B is required before 04B3C because none of those authoritative identities exists in the current schema. Each remains a separate reviewed task.
+ADR-022 accepts and implements the 04B3B persistence identities before 04B3C: stable profile/revision/mapping rows, typed retained aliases, committed one-to-one receipt provenance, target-scoped semantic uniqueness and globally unique non-null confirmation request keys. The next slice is 04B3C workbook inspection, mapping, preview and canonical import API. Each remains a separate reviewed task.
 
 ## 20. Remaining implementation and deferred questions
 

@@ -53,8 +53,13 @@ export class Phase01Harness {
   async clean(): Promise<void> {
     await this.prisma.auditEvent.deleteMany();
     await this.prisma.authSession.deleteMany();
+    await this.prisma.timetableImportReceipt.deleteMany();
     await this.prisma.timetableEntry.deleteMany();
     await this.prisma.timetableVersion.deleteMany();
+    await this.prisma.timetableImportEntityAlias.deleteMany();
+    await this.prisma.timetableImportColumnMapping.deleteMany();
+    await this.prisma.timetableImportProfileRevision.deleteMany();
+    await this.prisma.timetableImportProfile.deleteMany();
     await this.prisma.timeSlotDefinition.deleteMany();
     await this.prisma.academicWeekSegment.deleteMany();
     await this.prisma.semester.deleteMany();
