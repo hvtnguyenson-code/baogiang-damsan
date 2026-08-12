@@ -35,6 +35,8 @@ const evaluate = (entries: never[]) => evaluateTimetableEntries({
 describe('timetable validation evaluator', () => {
   it('publishes exact UTF-8 Vietnamese validation messages', () => {
     expect(issue('TARGET_REQUIRED').message).toBe('Bản nháp chưa chọn phiên lịch và tuần hiệu lực.');
+    expect(issue('TARGET_CALENDAR_NOT_ACTIVE').message)
+      .toBe('Phiên lịch được chọn không còn là phiên lịch đang áp dụng của năm học.');
     expect(issue('TEACHER_TIME_OVERLAP').message).toBe('Giáo viên có hai tiết chồng lấn thời gian.');
   });
   it('uses half-open wall-clock intervals', () => {
@@ -84,8 +86,10 @@ describe('timetable validation evaluator', () => {
   });
 
   it('orders issues deterministically by rule then context', () => {
-    const codes: TimetableValidationIssueCode[] = ['TEACHER_NOT_ACTIVE', 'EMPTY_TIMETABLE', 'TARGET_REQUIRED'];
+    const codes: TimetableValidationIssueCode[] = [
+      'TEACHER_NOT_ACTIVE', 'EMPTY_TIMETABLE', 'TARGET_CALENDAR_NOT_ACTIVE', 'TARGET_REQUIRED',
+    ];
     expect(sortValidationIssues(codes.map((code) => ({ code, message: code }))).map((value) => value.code))
-      .toEqual(['TARGET_REQUIRED', 'EMPTY_TIMETABLE', 'TEACHER_NOT_ACTIVE']);
+      .toEqual(['TARGET_REQUIRED', 'TARGET_CALENDAR_NOT_ACTIVE', 'EMPTY_TIMETABLE', 'TEACHER_NOT_ACTIVE']);
   });
 });

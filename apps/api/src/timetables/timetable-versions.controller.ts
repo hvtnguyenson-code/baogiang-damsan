@@ -2,6 +2,8 @@ import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Put, Query
 import {
   TimetableEntryListResponse,
   TimetableEntryReplaceResult,
+  TimetableActivationResult,
+  TimetableEffectiveResolution,
   TimetableValidationReport,
   TimetableVersionListResponse,
   TimetableVersionRecord,
@@ -14,9 +16,12 @@ import { CapabilityGuard } from '../authorization/capability.guard';
 import { RequireCapability } from '../authorization/require-capability.decorator';
 import {
   CreateTimetableVersionDto,
+  ActivateTimetableVersionDto,
+  ApproveTimetableVersionDto,
   ListTimetableEntriesDto,
   ListTimetableVersionsDto,
   ReplaceTimetableEntriesDto,
+  ResolveTimetableDateDto,
   SetTimetableTargetDto,
   ValidateTimetableVersionDto,
 } from './dto';
@@ -44,6 +49,21 @@ export class AcademicYearTimetableVersionsController {
     @Req() request: AuthenticatedRequest,
   ): Promise<TimetableVersionRecord> {
     return this.service.createVersion(academicYearId, dto, request.auth!.user.id, requestMeta(request));
+  }
+}
+
+@Controller('academic-years/:academicYearId/timetable-resolution')
+@RequireCapability('TIMETABLE_MANAGE', { scope: 'SCHOOL_WIDE' })
+export class AcademicYearTimetableResolutionController {
+  constructor(private readonly service: TimetablesService) {}
+
+  @Get()
+  @UseGuards(SessionAuthGuard, CapabilityGuard)
+  resolve(
+    @Param('academicYearId', ParseUUIDPipe) academicYearId: string,
+    @Query() query: ResolveTimetableDateDto,
+  ): Promise<TimetableEffectiveResolution> {
+    return this.service.resolveEffectiveVersion(academicYearId, query);
   }
 }
 
@@ -97,5 +117,27 @@ export class TimetableVersionsController {
     @Req() request: AuthenticatedRequest,
   ): Promise<TimetableValidationReport> {
     return this.service.validateVersion(id, dto, request.auth!.user.id, requestMeta(request));
+  }
+
+  @Post(':id/approve')
+  @HttpCode(200)
+  @UseGuards(SessionAuthGuard, CsrfOriginGuard, CapabilityGuard)
+  approve(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ApproveTimetableVersionDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<TimetableVersionRecord> {
+    return this.service.approveVersion(id, dto, request.auth!.user.id, requestMeta(request));
+  }
+
+  @Post(':id/activate')
+  @HttpCode(200)
+  @UseGuards(SessionAuthGuard, CsrfOriginGuard, CapabilityGuard)
+  activate(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ActivateTimetableVersionDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<TimetableActivationResult> {
+    return this.service.activateVersion(id, dto, request.auth!.user.id, requestMeta(request));
   }
 }

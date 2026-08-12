@@ -13,6 +13,8 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+import { IsAbsoluteInstant } from '../common/validation/is-absolute-instant.decorator';
+import { IsCivilDate } from '../common/validation/civil-date';
 
 export class ListTimetableVersionsDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) page = 1;
@@ -55,4 +57,17 @@ export class ReplaceTimetableEntriesDto {
 
 export class ValidateTimetableVersionDto {
   @IsISO8601({ strict: true }) expectedUpdatedAt!: string;
+}
+
+export class ApproveTimetableVersionDto {
+  @IsAbsoluteInstant() expectedUpdatedAt!: string;
+}
+
+export class ActivateTimetableVersionDto {
+  @IsAbsoluteInstant() expectedUpdatedAt!: string;
+  @IsOptional() @IsUUID() expectedActiveVersionId?: string | null;
+}
+
+export class ResolveTimetableDateDto {
+  @IsCivilDate() date!: string;
 }

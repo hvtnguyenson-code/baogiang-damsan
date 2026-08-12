@@ -1,6 +1,6 @@
 # LOCAL-FC-04 — Timetable Domain Specification
 
-**Status:** Requirements audit; 04A1 persistence resolved by ADR-016, 04A2 timetable persistence by ADR-017, 04B0 time-slot control plane by ADR-018, and 04B1 draft/validation by ADR-019; remaining lifecycle/import questions remain subject to later decisions
+**Status:** Requirements audit; 04A1 persistence resolved by ADR-016, 04A2 timetable persistence by ADR-017, 04B0 time-slot control plane by ADR-018, 04B1 draft/validation by ADR-019, and 04B2 lifecycle/resolution by ADR-020; remaining import/product questions remain subject to later decisions
 
 **Audit date:** 2026-08-11
 
@@ -178,6 +178,14 @@ Entries prove same-year version, slot/weekday, class and `TeachingAssignment` pr
 
 04B1 deliberately defers timetable completeness, PPCT association and special-activity collisions and reports those boundaries explicitly. It does not decide future UI manual/bulk editing. Approval, activation, supersession, historical date resolution and lifecycle concurrency remain 04B2; Excel mapping/import/checksum/idempotency remain 04B3.
 
+### 7.5 04B2 resolution / ADR-020
+
+[ADR-020](../decisions/ADR-020-TIMETABLE-LIFECYCLE-AND-HISTORICAL-RESOLUTION.md) accepts `VALIDATED` → `APPROVED` and `APPROVED` → `ACTIVE` under the existing `TIMETABLE_MANAGE / SCHOOL_WIDE` capability. The same actor may validate, approve and activate; the lifecycle still records each actor and timestamp independently. Exact `expectedUpdatedAt` protects the candidate, while `expectedActiveVersionId` protects the AcademicYear chain head.
+
+Activation is serializable, reruns the shared current normal-base evaluator, and requires the candidate's exact calendar version to be currently active. A valid successor automatically supersedes the predecessor with an inclusive `effectiveUntil` equal to the previous civil date. `ACTIVE` may begin in the future, and historical resolution uses only the inclusive `ACTIVE`/`SUPERSEDED` interval rather than status alone, ISO week, process date or current calendar-active state. Calendar interruptions do not erase the resolved base version.
+
+Completeness, PPCT association and special-activity collisions remain explicit deferred checks. Excel import, template/mapping, preview/comparison and checksum/idempotency remain 04B3.
+
 ## 8. Timetable entry identity
 
 The smallest confirmed scheduled coordinate is one version + weekday + time slot + class + subject, with teacher evidence for a normal lesson. Source: v1.2 §5.1.
@@ -280,7 +288,7 @@ Reasons:
 - `SCHOOL_WIDE` matches cross-class/teacher collision and whole-school activation.
 - It would conceptually be granted to timetable administrators/BGH delegates through explicit assignments; `SYSTEM_ADMIN` does not bypass it.
 
-Whether approval and activation require distinct capabilities or separation of duties is **UNRESOLVED**. Backend checks, not UI state, remain authoritative.
+ADR-020 resolves the current control-plane policy: approval and activation both require `TIMETABLE_MANAGE / SCHOOL_WIDE`; no distinct capability or mandatory actor inequality applies. Backend checks, not UI state, remain authoritative. A stricter future organizational separation-of-duties policy requires a separate approved change.
 
 ## 15. Import/manual-entry requirements
 
@@ -367,13 +375,12 @@ Application validation owns cross-aggregate existence/state/scope rules. Activat
 
 ## 20. Open questions / unresolved requirements
 
-ADR-016 resolves the time-slot foundation and ADR-017 resolves the 04A2 version/entry/history schema. The following questions remain for 04B or later slices:
+ADR-016 resolves the time-slot foundation, ADR-017 resolves the 04A2 version/entry/history schema, and ADR-020 resolves the 04B2 lifecycle policy. The following questions remain for 04B3 or later slices:
 
 1. What completeness rule applies to classes, weekdays, slots and reserve `DP` weeks?
 2. What are the official import columns, template versions, row error contract and atomicity rules?
-3. Are manual entry and bulk editing required?
-4. Must approval and activation be separated by actor/capability or separation-of-duties policy?
-5. What is the retention/deletion policy for abandoned drafts?
+3. What future UI manual/bulk editing requirements apply?
+4. What is the retention/deletion policy for abandoned drafts?
 
 Room collision is explicitly **DEFERRED**, not an unresolved invitation to invent a room model.
 
@@ -407,8 +414,8 @@ Room collision is explicitly **DEFERRED**, not an unresolved invitation to inven
 2. **04A2 — Timetable schema foundation:** version/entry/history model, assignment snapshot strategy, parent integrity, indexes and collision representation.
 3. **04B0 — Time-slot control plane:** canonical slot management plus `TIMETABLE_MANAGE`.
 4. **04B1 — Draft and entry commands:** timetable authoring plus validation engine.
-5. **04B2 — Lifecycle:** approve, activate, supersede, historical resolution and concurrency.
-6. **04B3 — Import:** Excel checksum, mapping and preview orchestration.
+5. **04B2 — Lifecycle (resolved by ADR-020):** approve, activate, supersede, historical resolution and concurrency.
+6. **04B3 — Import:** Excel import, template/mapping, preview/comparison, checksum and idempotency.
 7. **04C — Timetable management UI:** import/draft comparison, conflict remediation and activation workflow within the approved design system.
 8. **04D — Teacher/read-only timetable UI:** effective personal/class timetable and historical/date navigation.
 9. **04E — Operational overlays:** only after separate requirements work for CalendarException, substitution, cancellation and make-up.

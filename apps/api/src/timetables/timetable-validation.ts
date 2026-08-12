@@ -10,6 +10,7 @@ import { EnrichedTimetableEntry } from './mapper';
 
 const RULE_ORDER: TimetableValidationIssueCode[] = [
   'TARGET_REQUIRED',
+  'TARGET_CALENDAR_NOT_ACTIVE',
   'TARGET_WEEK_NO_SEGMENTS',
   'TARGET_EFFECTIVE_FROM_MISMATCH',
   'EMPTY_TIMETABLE',
@@ -27,6 +28,7 @@ const RULE_ORDER: TimetableValidationIssueCode[] = [
 
 export const TIMETABLE_VALIDATION_MESSAGES: Record<TimetableValidationIssueCode, string> = {
   TARGET_REQUIRED: 'Bản nháp chưa chọn phiên lịch và tuần hiệu lực.',
+  TARGET_CALENDAR_NOT_ACTIVE: 'Phiên lịch được chọn không còn là phiên lịch đang áp dụng của năm học.',
   TARGET_WEEK_NO_SEGMENTS: 'Tuần hiệu lực không có phân đoạn ngày.',
   TARGET_EFFECTIVE_FROM_MISMATCH: 'Ngày hiệu lực không khớp ngày bắt đầu sớm nhất của tuần đã chọn.',
   EMPTY_TIMETABLE: 'Thời khóa biểu chưa có dòng nội dung.',
