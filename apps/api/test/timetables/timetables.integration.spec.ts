@@ -136,6 +136,13 @@ integration('timetable draft validation control plane (PostgreSQL)', () => {
     return week;
   }
 
+  async function markCalendarActive(calendarId: string): Promise<void> {
+    await h.prisma.academicCalendarVersion.update({
+      where: { id: calendarId },
+      data: { isActive: true, activatedAt: new Date() },
+    });
+  }
+
   it('enforces exact capability and CSRF composition', async () => {
     const { year } = await academicFixture();
     const manager = await h.actor({ grants: [{ capabilityKey: 'TIMETABLE_MANAGE' }] });
@@ -394,7 +401,7 @@ integration('timetable draft validation control plane (PostgreSQL)', () => {
 
   it('allows one timetable manager to validate, approve and first-activate the same future-effective version', async () => {
     const fixture = await academicFixture();
-    await h.prisma.academicCalendarVersion.update({ where: { id: fixture.calendar.id }, data: { isActive: true } });
+    await markCalendarActive(fixture.calendar.id);
     const manager = await h.actor({ grants: [{ capabilityKey: 'TIMETABLE_MANAGE' }] });
     const approved = await prepareApproved(manager, fixture);
     const activated = await manager.agent.post(`/api/timetable-versions/${approved.body.id}/activate`)
@@ -416,7 +423,7 @@ integration('timetable draft validation control plane (PostgreSQL)', () => {
 
   it('supersedes the predecessor one civil day before a future successor and resolves inclusive history', async () => {
     const fixture = await academicFixture();
-    await h.prisma.academicCalendarVersion.update({ where: { id: fixture.calendar.id }, data: { isActive: true } });
+    await markCalendarActive(fixture.calendar.id);
     const manager = await h.actor({ grants: [{ capabilityKey: 'TIMETABLE_MANAGE' }] });
     const firstWeek = await createWeek(fixture, '2026-09-01', 1);
     const successorWeek = await createWeek(fixture, '2026-09-21', 2);
@@ -472,7 +479,7 @@ integration('timetable draft validation control plane (PostgreSQL)', () => {
     ['assignment', 'ASSIGNMENT_COVERAGE_GAP'],
   ] as const)('keeps APPROVED and the active chain unchanged when %s drifts after approval', async (dependency, issueCode) => {
     const fixture = await academicFixture();
-    await h.prisma.academicCalendarVersion.update({ where: { id: fixture.calendar.id }, data: { isActive: true } });
+    await markCalendarActive(fixture.calendar.id);
     const manager = await h.actor({ grants: [{ capabilityKey: 'TIMETABLE_MANAGE' }] });
     const approved = await prepareApproved(manager, fixture);
     if (dependency === 'slot') await h.prisma.timeSlotDefinition.update({ where: { id: fixture.slot.id }, data: { isActive: false } });
@@ -519,7 +526,7 @@ integration('timetable draft validation control plane (PostgreSQL)', () => {
 
   it('requires the exact chain-head token and rejects non-forward successor chronology atomically', async () => {
     const fixture = await academicFixture();
-    await h.prisma.academicCalendarVersion.update({ where: { id: fixture.calendar.id }, data: { isActive: true } });
+    await markCalendarActive(fixture.calendar.id);
     const manager = await h.actor({ grants: [{ capabilityKey: 'TIMETABLE_MANAGE' }] });
     const firstWeek = await createWeek(fixture, '2026-09-01', 1);
     const first = await prepareApproved(manager, fixture, firstWeek);
@@ -547,7 +554,7 @@ integration('timetable draft validation control plane (PostgreSQL)', () => {
 
   it('allows at most one concurrent approval and one concurrent activation from the same lifecycle snapshots', async () => {
     const fixture = await academicFixture();
-    await h.prisma.academicCalendarVersion.update({ where: { id: fixture.calendar.id }, data: { isActive: true } });
+    await markCalendarActive(fixture.calendar.id);
     const manager = await h.actor({ grants: [{ capabilityKey: 'TIMETABLE_MANAGE' }] });
     const created = await createDraft(manager, fixture.year.id);
     const targeted = await targetDraft(manager, created, fixture);
@@ -574,7 +581,7 @@ integration('timetable draft validation control plane (PostgreSQL)', () => {
 
   it('does not let different approved candidates independently activate from the same empty chain snapshot', async () => {
     const fixture = await academicFixture();
-    await h.prisma.academicCalendarVersion.update({ where: { id: fixture.calendar.id }, data: { isActive: true } });
+    await markCalendarActive(fixture.calendar.id);
     const manager = await h.actor({ grants: [{ capabilityKey: 'TIMETABLE_MANAGE' }] });
     const first = await prepareApproved(manager, fixture);
     const second = await prepareApproved(manager, fixture);
