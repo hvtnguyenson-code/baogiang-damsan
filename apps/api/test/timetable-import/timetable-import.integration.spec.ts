@@ -11,13 +11,18 @@ const columnMappings = [
   ['TEACHER', 'Giáo viên'],
 ].map(([semanticField, sourceHeader]) => ({ semanticField, sourceHeader }));
 
-const profilePayload = (suffix = '') => ({
-  sourceKey: ` SIS.DAMSAN${suffix} `,
-  name: `  Cấu hình   nhập ${suffix || 'chính'} `,
+const revisionPayload = (overrides: Record<string, unknown> = {}) => ({
   teacherIdentifierMode: 'GENERIC_EXACT',
   sheetNameHint: '  Thời khóa   biểu ',
   headerRowHint: 2,
   columnMappings,
+  ...overrides,
+});
+
+const profilePayload = (suffix = '') => ({
+  sourceKey: ` SIS.DAMSAN${suffix} `,
+  name: `  Cấu hình   nhập ${suffix || 'chính'} `,
+  ...revisionPayload(),
 });
 
 integration('timetable import configuration control plane integration', () => {
@@ -71,17 +76,20 @@ integration('timetable import configuration control plane integration', () => {
 
     const profileId = created.body.id as string;
     const revisionOneId = created.body.activeRevision.id as string;
-    const revised = await actor.agent.post(`/api/timetable-import/profiles/${profileId}/revise`).set('Origin', testOrigin).send({
+    const revised = await actor.agent.post(`/api/timetable-import/profiles/${profileId}/revise`).set('Origin', testOrigin).send(revisionPayload({
       expectedActiveRevisionId: revisionOneId,
       teacherIdentifierMode: 'STAFF_CODE',
       headerRowHint: 3,
       columnMappings: columnMappings.map((mapping) => ({ ...mapping, sourceHeader: `${mapping.sourceHeader.trim()} mới` })),
-    });
+    }));
     expect(revised.status).toBe(200);
     expect(revised.body).toMatchObject({ activeRevision: { revision: 2, isActive: true }, revisions: [{ revision: 2 }, { revision: 1, isActive: false }] });
     expect(await harness.prisma.timetableImportColumnMapping.count()).toBe(12);
     expect((await harness.prisma.timetableImportColumnMapping.findMany({ where: { profileRevisionId: revisionOneId }, orderBy: { semanticField: 'asc' } })).map((item) => item.sourceHeader)).toContain('Thứ');
-    expect((await actor.agent.post(`/api/timetable-import/profiles/${profileId}/revise`).set('Origin', testOrigin).send({ ...profilePayload(), expectedActiveRevisionId: revisionOneId })).status).toBe(409);
+    const stale = await actor.agent.post(`/api/timetable-import/profiles/${profileId}/revise`).set('Origin', testOrigin)
+      .send(revisionPayload({ expectedActiveRevisionId: revisionOneId }));
+    expect(stale.status).toBe(409);
+    expect(stale.body.error).toBe('TIMETABLE_IMPORT_PROFILE_HEAD_CHANGED');
     expect(await harness.prisma.timetableImportProfileRevision.count()).toBe(2);
 
     const activeId = revised.body.activeRevision.id as string;
@@ -100,9 +108,7 @@ integration('timetable import configuration control plane integration', () => {
     const created = await actor.agent.post('/api/timetable-import/profiles').set('Origin', testOrigin).send(profilePayload());
     const profileId = created.body.id as string;
     const expectedActiveRevisionId = created.body.activeRevision.id as string;
-    const body = { ...profilePayload(), expectedActiveRevisionId, sourceKey: undefined, name: undefined };
-    delete body.sourceKey;
-    delete body.name;
+    const body = revisionPayload({ expectedActiveRevisionId });
     const [first, second] = await Promise.all([
       actor.agent.post(`/api/timetable-import/profiles/${profileId}/revise`).set('Origin', testOrigin).send(body),
       actor.agent.post(`/api/timetable-import/profiles/${profileId}/revise`).set('Origin', testOrigin).send(body),
