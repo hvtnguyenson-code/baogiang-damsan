@@ -683,10 +683,24 @@ model TimetableImportReceipt {
   timetableVersion TimetableVersion               @relation("TimetableImportReceiptVersion", fields: [timetableVersionId], references: [id], onDelete: Restrict)
   profileRevision  TimetableImportProfileRevision @relation(fields: [profileRevisionId], references: [id], onDelete: Restrict)
   createdBy        User                           @relation("TimetableImportReceiptCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  requestKeys      TimetableImportRequestKey[]
 
   @@index([profileRevisionId], map: "timetable_import_receipts_profile_revision_id_idx")
   @@index([createdByUserId], map: "timetable_import_receipts_created_by_user_id_idx")
   @@map("timetable_import_receipts")
+}
+
+model TimetableImportRequestKey {
+  id                   String   @id @default(uuid()) @db.Uuid
+  receiptId            String   @map("receipt_id") @db.Uuid
+  requestKey           String   @unique(map: "timetable_import_request_keys_request_key_key") @map("request_key") @db.VarChar(200)
+  requestFingerprint   String   @map("request_fingerprint") @db.VarChar(128)
+  boundAt              DateTime @default(now()) @map("bound_at") @db.Timestamptz(3)
+
+  receipt TimetableImportReceipt @relation(fields: [receiptId], references: [id], onDelete: Restrict)
+
+  @@index([receiptId], map: "timetable_import_request_keys_receipt_id_idx")
+  @@map("timetable_import_request_keys")
 }
 
 model TimetableEntry {

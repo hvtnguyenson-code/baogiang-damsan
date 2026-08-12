@@ -47,6 +47,8 @@ This decision resolves only that persistence foundation. It does not implement p
 - The request-idempotency namespace is the school-wide timetable-import-confirm command represented by this table. A non-null `requestIdempotencyKey` is globally unique among receipts; actor, profile and target are deliberately not part of the key. PostgreSQL allows multiple null keys.
 - Request key and fingerprint are either both null or both trimmed, nonblank values. Fingerprint serialization remains an 04B3C service decision. `SHA-256` and `semantic-v1` are enforced as receipt provenance.
 
+> **Refinement (ADR-025):** these receipt fields remain immutable provenance for the original creation request, but a single pair is insufficient to retain additional keys accepted through semantic replay. ADR-025 introduces `TimetableImportRequestKey` as the authoritative one-to-many consumed-key namespace. The remainder of ADR-022 remains Accepted.
+
 ### History and enforcement boundary
 
 - Every profile, revision, mapping, alias, canonical target, receipt, version and actor foreign key uses `ON DELETE RESTRICT`. History is never cascaded away.
