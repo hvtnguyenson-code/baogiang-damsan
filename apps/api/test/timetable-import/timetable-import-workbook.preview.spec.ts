@@ -1,4 +1,5 @@
 import { TimetableImportWorkbookService, UploadedWorkbookFile } from '../../src/timetable-import/timetable-import-workbook.service';
+import { WorkbookCanonicalizationService } from '../../src/timetable-import/workbook-canonicalization.service';
 import { ParsedWorkbookCell, ParsedWorkbookRow } from '../../src/timetable-import/workbook-parser.types';
 import { MAX_PARSER_CELL_TEXT_LENGTH } from '../../src/timetable-import/workbook-limits';
 import { parseWorkbookBuffer } from '../../src/timetable-import/workbook-parser.worker';
@@ -33,7 +34,11 @@ function fixture(dataRow: ParsedWorkbookRow = row(5, ['T2', 'Sáng', '1', '10A',
     timetableVersion: { findFirst: jest.fn().mockResolvedValue(null) }, timetableEntry: { findMany: jest.fn() },
   };
   const parser = { parse: jest.fn().mockResolvedValue({ sheets: [{ name: 'TKB', state: 'VISIBLE', rowCount: dataRow.number, columnCount: 6, rows: [row(1, headers), dataRow], hiddenColumns: [] }] }) };
-  return { service: new TimetableImportWorkbookService(prisma as never, parser as never), prisma };
+  const canonicalization = new WorkbookCanonicalizationService(prisma as never);
+  return {
+    service: new TimetableImportWorkbookService(prisma as never, parser as never, canonicalization, {} as never),
+    prisma,
+  };
 }
 
 const upload: UploadedWorkbookFile = { originalname: 'tkb.xlsx', mimetype: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', size: 1, buffer: Buffer.from('x') };

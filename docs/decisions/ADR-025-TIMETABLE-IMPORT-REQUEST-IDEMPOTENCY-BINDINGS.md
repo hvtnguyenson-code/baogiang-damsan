@@ -43,7 +43,7 @@ No raw workbook bytes, workbook JSON, source cell values, formulas, URLs, or fil
 
 ## Consequences
 
-C3B can implement serializable confirmation and replay against a durable one-to-many key namespace without weakening semantic duplicate behavior. Receipt provenance remains historically meaningful while replay keys gain durable conflict protection.
+ADR-026 and C3B implement serializable confirmation and replay against this durable one-to-many key namespace without weakening semantic duplicate behavior. Receipt provenance remains historically meaningful while replay keys have durable conflict protection.
 
 This ADR refines only ADR-022's request-key-storage decision. The remainder of ADR-022 stays Accepted.
 

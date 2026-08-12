@@ -66,7 +66,7 @@ Request idempotency is distinct from semantic duplication. ADR-022 resolves the 
 - same key and materially different fingerprint returns a 409 conflict;
 - different keys with the same semantic duplicate key return `IDEMPOTENT_REPLAY`.
 
-The fingerprint is bounded and covers the committed semantic identity plus mapping/profile/target-version context needed to distinguish a retry from key reuse. Raw workbook content is not stored as an unbounded fingerprint payload.
+The fingerprint is bounded and covers the committed semantic identity plus mapping/profile/target-version context needed to distinguish a retry from key reuse. Raw workbook content is not stored as an unbounded fingerprint payload. ADR-026 freezes the exact `confirm-request-v1` encoding and replay implementation.
 
 ### 6. Receipt identity, replay and imported-DRAFT immutability
 
@@ -104,7 +104,7 @@ ADR-022 accepts the 04B3B persistence foundation: `TimetableImportProfile`, immu
 
 ## Remaining questions
 
-- Exact request-fingerprint serialization.
+- Exact request-fingerprint serialization is resolved by ADR-026.
 - Parser package/version and numeric security limits.
 - Durable raw workbook retention outside PostgreSQL.
 - Multi-period normalization beyond the first-release blocking behavior.

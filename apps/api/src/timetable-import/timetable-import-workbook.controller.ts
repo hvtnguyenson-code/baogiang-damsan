@@ -1,11 +1,13 @@
-import { Body, Controller, Post, UploadedFile, UseFilters, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, HttpCode, Post, Req, UploadedFile, UseFilters, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { TimetableImportWorkbookInspectionResponse, TimetableImportWorkbookPreviewResponse } from '@baogiang/contracts';
+import { TimetableImportWorkbookConfirmResponse, TimetableImportWorkbookInspectionResponse, TimetableImportWorkbookPreviewResponse } from '@baogiang/contracts';
 import { CsrfOriginGuard } from '../auth/csrf-origin.guard';
+import { requestMeta } from '../auth/auth-http';
+import { AuthenticatedRequest } from '../auth/auth.types';
 import { SessionAuthGuard } from '../auth/session-auth.guard';
 import { CapabilityGuard } from '../authorization/capability.guard';
 import { RequireCapability } from '../authorization/require-capability.decorator';
-import { InspectTimetableImportWorkbookDto, PreviewTimetableImportWorkbookDto } from './dto';
+import { ConfirmTimetableImportWorkbookDto, InspectTimetableImportWorkbookDto, PreviewTimetableImportWorkbookDto } from './dto';
 import { TimetableImportWorkbookService, UploadedWorkbookFile } from './timetable-import-workbook.service';
 import { MAX_XLSX_BYTES } from './workbook-limits';
 import { WorkbookUploadExceptionFilter } from './workbook-upload-exception.filter';
@@ -29,5 +31,16 @@ export class TimetableImportWorkbookController {
   @UseInterceptors(upload)
   preview(@UploadedFile() file: UploadedWorkbookFile | undefined, @Body() dto: PreviewTimetableImportWorkbookDto): Promise<TimetableImportWorkbookPreviewResponse> {
     return this.service.preview(file, dto);
+  }
+
+  @Post('confirm')
+  @HttpCode(200)
+  @UseInterceptors(upload)
+  confirm(
+    @UploadedFile() file: UploadedWorkbookFile | undefined,
+    @Body() dto: ConfirmTimetableImportWorkbookDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<TimetableImportWorkbookConfirmResponse> {
+    return this.service.confirm(file, dto, request.auth!.user.id, requestMeta(request));
   }
 }

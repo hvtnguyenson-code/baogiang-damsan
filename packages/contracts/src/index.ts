@@ -902,6 +902,31 @@ export interface TimetableImportWorkbookPreviewResponse {
   diff: TimetableImportPreviewDiff | null;
 }
 
+export type TimetableImportConfirmationOutcome = 'CREATED' | 'IDEMPOTENT_REPLAY';
+
+export interface TimetableImportReceiptRecord {
+  id: string;
+  timetableVersionId: string;
+  profileRevisionId: string;
+  checksumAlgorithm: 'SHA-256';
+  serializationVersion: 'semantic-v1';
+  requestIdempotencyKey: string | null;
+  requestFingerprint: string | null;
+  sourceFileName: string;
+  sheetName: string;
+  headerRowNumber: number;
+  sourceRowCount: number;
+  normalizedEntryCount: number;
+  createdByUserId: string;
+  committedAt: string;
+}
+
+export interface TimetableImportWorkbookConfirmResponse {
+  outcome: TimetableImportConfirmationOutcome;
+  receipt: TimetableImportReceiptRecord;
+  version: TimetableVersionRecord;
+}
+
 // ============================================================
 // Notification Contracts (foundation types for Phase 03+)
 // ============================================================
