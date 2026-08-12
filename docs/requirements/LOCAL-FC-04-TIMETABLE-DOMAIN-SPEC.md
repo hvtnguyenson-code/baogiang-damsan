@@ -1,6 +1,6 @@
 # LOCAL-FC-04 — Timetable Domain Specification
 
-**Status:** Requirements audit; 04A1 time-slot persistence resolved by ADR-016 and 04A2 timetable persistence resolved by ADR-017; 04B control-plane questions remain subject to ADR-015 approval
+**Status:** Requirements audit; 04A1 persistence resolved by ADR-016, 04A2 timetable persistence by ADR-017, and 04B0 time-slot control plane by ADR-018; remaining timetable control-plane questions remain subject to later decisions
 
 **Audit date:** 2026-08-11
 
@@ -168,6 +168,10 @@ ADR-017 resolves TimetableVersion effectivity, normal-entry representation, staf
 
 Entries prove same-year version, slot/weekday, class and `TeachingAssignment` provenance while storing the immutable `teacherUserId` snapshot. Special-activity coordinates use a future separate domain. Exact-slot class/teacher collisions are database constraints; collision across different slot IDs remains a transactional 04B activation check over real wall-clock intervals. Any earlier **UNRESOLVED**, **INFERRED**, candidate or recommended labels in sections 5–13 for those exact schema choices are superseded by ADR-017; they remain visible only as the audit trail that led to the accepted decision.
 
+### 7.3 04B0 resolution / ADR-018
+
+[ADR-018](../decisions/ADR-018-TIMETABLE-TIME-SLOT-CONTROL-PLANE.md) accepts a separate AcademicYear-owned time-slot management API. It uses explicit `TIMETABLE_MANAGE / SCHOOL_WIDE` authorization and history-preserving create, revise and retire commands. Only active/current slot revisions are selectable for new timetable authoring by policy, while administrative reads keep every exact revision queryable for historical resolution. Timetable draft/entry commands and validation continue in 04B1; approve/activate/supersede/history and lifecycle concurrency in 04B2; Excel import/checksum/mapping/preview in 04B3.
+
 ## 8. Timetable entry identity
 
 The smallest confirmed scheduled coordinate is one version + weekday + time slot + class + subject, with teacher evidence for a normal lesson. Source: v1.2 §5.1.
@@ -259,9 +263,9 @@ Hard delete of referenced master data or activated versions should use `ON DELET
 
 ## 14. Authorization/capability requirements
 
-v1.2 assigns timetable import/check/approve/activation to the conceptual `ADMIN_TKB` responsibility (§3.2 and §7), while the accepted platform uses cumulative capabilities and scopes rather than role switches (ADR-008). The current seed has 26 capability definitions and no timetable-management key.
+v1.2 assigns timetable import/check/approve/activation to the conceptual `ADMIN_TKB` responsibility (§3.2 and §7), while the accepted platform uses cumulative capabilities and scopes rather than role switches (ADR-008). ADR-018 accepts `TIMETABLE_MANAGE` with `SCHOOL_WIDE` scope for the time-slot management control plane, bringing the seed catalog to 27 definitions.
 
-Recommendation: introduce a distinct `TIMETABLE_MANAGE` capability with `SCHOOL_WIDE` scope in a later authorized task. This is **INFERRED**, not an approved seed change.
+The accepted 04B0 boundary uses that distinct professional capability rather than academic-structure or subject-dictionary authority. It does not yet decide separate approval or activation capabilities.
 
 Reasons:
 
@@ -395,10 +399,13 @@ Room collision is explicitly **DEFERRED**, not an unresolved invitation to inven
 
 1. **04A1 — Time-slot foundation:** approve slot version/effectivity, weekday variance, interval integrity and stable identity; schema/migration plus focused invariants. This is required before TimetableVersion schema.
 2. **04A2 — Timetable schema foundation:** version/entry/history model, assignment snapshot strategy, parent integrity, indexes and collision representation.
-3. **04B — Backend/version control plane:** draft/import orchestration, validation/preview, authorization, approval/activation, concurrency and historical reads.
-4. **04C — Timetable management UI:** import/draft comparison, conflict remediation and activation workflow within the approved design system.
-5. **04D — Teacher/read-only timetable UI:** effective personal/class timetable and historical/date navigation.
-6. **04E — Operational overlays:** only after separate requirements work for CalendarException, substitution, cancellation and make-up.
-7. **04F — Special-activity occupancy integration:** after the canonical special-activity scope/staffing model exists.
+3. **04B0 — Time-slot control plane:** canonical slot management plus `TIMETABLE_MANAGE`.
+4. **04B1 — Draft and entry commands:** timetable authoring plus validation engine.
+5. **04B2 — Lifecycle:** approve, activate, supersede, historical resolution and concurrency.
+6. **04B3 — Import:** Excel checksum, mapping and preview orchestration.
+7. **04C — Timetable management UI:** import/draft comparison, conflict remediation and activation workflow within the approved design system.
+8. **04D — Teacher/read-only timetable UI:** effective personal/class timetable and historical/date navigation.
+9. **04E — Operational overlays:** only after separate requirements work for CalendarException, substitution, cancellation and make-up.
+10. **04F — Special-activity occupancy integration:** after the canonical special-activity scope/staffing model exists.
 
 ADR-016 and ADR-017 are the accepted persistence gates; 04B must preserve their collision and historical semantics.

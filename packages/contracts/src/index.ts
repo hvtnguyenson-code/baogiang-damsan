@@ -116,6 +116,7 @@ export type CapabilityKey =
   | 'ADDITIONAL_DUTY_CATALOG_MANAGE'
   | 'ADDITIONAL_DUTY_ASSIGNMENT_MANAGE'
   | 'ACADEMIC_STRUCTURE_MANAGE'
+  | 'TIMETABLE_MANAGE'
   | 'AI_ACTIVE_USE_SCHOOL'   // AI active use school-wide (BGH)
   | 'AI_ACTIVE_USE_DEPARTMENT' // AI active use department-wide (tổ trưởng)
   | 'AI_ACTIVE_USE_ACTIVITY' // AI active use activity-wide (điều phối)
@@ -547,6 +548,43 @@ export interface TeachingAssignmentEligibleTeacherListResponse {
   page: number;
   pageSize: number;
   total: number;
+}
+
+// ============================================================
+// Phase 04 Timetable / Time-slot Contracts
+// ============================================================
+
+export type TimeSlotSession = 'MORNING' | 'AFTERNOON' | 'EVENING';
+export type WallClockTimeString = `${number}:${number}:${number}`;
+
+export interface TimeSlotDefinitionRecord {
+  id: string;
+  academicYearId: string;
+  weekday: AcademicWeekday;
+  session: TimeSlotSession;
+  ordinal: number;
+  revision: number;
+  displayLabel: string;
+  startTime: WallClockTimeString;
+  endTime: WallClockTimeString;
+  isActive: boolean;
+  allowRegularTeaching: boolean;
+  allowMakeupTeaching: boolean;
+  allowSelfStudy: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TimeSlotDefinitionListResponse {
+  items: TimeSlotDefinitionRecord[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+export interface TimeSlotRevisionResult {
+  previous: TimeSlotDefinitionRecord;
+  replacement: TimeSlotDefinitionRecord;
 }
 
 // ============================================================

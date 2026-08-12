@@ -13,6 +13,7 @@ import { AuditModule } from './audit/audit.module';
 import { AdditionalDutiesModule } from './additional-duties/additional-duties.module';
 import { AcademicStructureModule } from './academic-structure/academic-structure.module';
 import { TeachingAssignmentsModule } from './teaching-assignments/teaching-assignments.module';
+import { TimeSlotsModule } from './time-slots/time-slots.module';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { TeachingAssignmentsModule } from './teaching-assignments/teaching-assig
     AdditionalDutiesModule,
     AcademicStructureModule,
     TeachingAssignmentsModule,
+    TimeSlotsModule,
   ],
 })
 export class AppModule {}

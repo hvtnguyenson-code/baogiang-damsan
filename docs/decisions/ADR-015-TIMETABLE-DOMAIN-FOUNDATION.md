@@ -89,9 +89,13 @@ Rejected. The specification treats them as operational/calendar overlays, and mi
 
 Normal entries retain both composite `TeachingAssignment` provenance and the immutable `teacherUserId` snapshot. Special-activity coordinates require a separate future table/domain and do not weaken the normal-entry shape. Exact-slot class/teacher collisions are database invariants; real-time collisions across different slot identities remain an activation invariant for 04B.
 
+## Control-plane questions resolved by ADR-018
+
+[ADR-018](ADR-018-TIMETABLE-TIME-SLOT-CONTROL-PLANE.md) accepts `TIMETABLE_MANAGE` at `SCHOOL_WIDE` as the dedicated professional capability for the time-slot management control plane. It also accepts create-only-for-new-coordinate, immutable revision, stale-source rejection, retirement and retired-coordinate restoration semantics for canonical `TimeSlotDefinition` history. These decisions do not accept this broader Timetable ADR, whose status remains **Proposed**.
+
 ## Unresolved questions
 
-ADR-017 resolves the binding 04A2 schema choices. These product/control-plane questions remain proposed and belong to 04B or later slices:
+ADR-017 and ADR-018 resolve the binding schema and time-slot control-plane choices. These product/control-plane questions remain proposed and belong to later 04B slices:
 
 1. What constitutes a complete timetable for classes, weekdays, slots and reserve `DP` weeks?
 2. What are the official import columns, template versions, row error contract and atomicity rules?
