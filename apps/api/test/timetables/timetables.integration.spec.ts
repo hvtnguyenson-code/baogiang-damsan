@@ -5,7 +5,13 @@ integration('timetable draft validation control plane (PostgreSQL)', () => {
   const h = new Phase01Harness();
 
   beforeAll(async () => h.start());
-  afterAll(async () => h.stop());
+  afterAll(async () => {
+    try {
+      await h.clean();
+    } finally {
+      await h.stop();
+    }
+  });
   beforeEach(async () => {
     await h.clean();
     await h.seedCapabilities([
