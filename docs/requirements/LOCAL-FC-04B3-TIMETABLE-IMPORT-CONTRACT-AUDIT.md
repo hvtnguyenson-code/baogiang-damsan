@@ -312,10 +312,12 @@ Accepted audit-event architecture covers profile/alias changes, import commit an
 
 1. **04B3A — this task:** evidence-backed contract audit and ADR-021 Accepted.
 2. **04B3B — required persistence foundation:** school-wide profiles, typed entity aliases, committed receipts, semantic duplicate uniqueness, request-idempotency replay identity and receipt/version provenance.
-3. **04B3C — workbook inspection/import API:** parser dependency, bounded upload, sheet/header mapping, preview/errors/diff, canonical normalization, commit-to-DRAFT and integration tests.
-4. **04B3D — optional hardening:** fuzz/corpus/ZIP-bomb/formula/large-workbook tests and CI security/load gates if 04B3C becomes too large.
+3. **04B3C1 — configuration control plane (implemented by ADR-023):** profile list/read/create/revise/retire, exact six canonical mappings, typed alias create/retire, exact normalization, capability enforcement and transactional audit.
+4. **04B3C2 — Workbook Inspection & Canonical Preview:** parser dependency, bounded upload, sheet/header inspection, canonical resolution, preview/errors/diff and integration tests.
+5. **04B3C3 — Canonical Import Confirmation, Idempotent Replay and Imported-DRAFT Lock:** atomic commit-to-DRAFT, committed receipt replay and protection of receipt-backed drafts.
+6. **04B3D — optional hardening:** fuzz/corpus/ZIP-bomb/formula/large-workbook tests and CI security/load gates if 04B3C becomes too large.
 
-ADR-022 accepts and implements the 04B3B persistence identities before 04B3C: stable profile/revision/mapping rows, typed retained aliases, committed one-to-one receipt provenance, target-scoped semantic uniqueness and globally unique non-null confirmation request keys. The next slice is 04B3C workbook inspection, mapping, preview and canonical import API. Each remains a separate reviewed task.
+ADR-022 accepts and implements the 04B3B persistence identities. ADR-023 accepts and implements the 04B3C1 configuration control plane over stable profile/revision/mapping rows and typed retained aliases. The next slices are 04B3C2 Workbook Inspection & Canonical Preview, followed by 04B3C3 Canonical Import Confirmation, Idempotent Replay and Imported-DRAFT Lock. Each remains a separate reviewed task; 04B3D is optional corpus/security hardening.
 
 ## 20. Remaining implementation and deferred questions
 

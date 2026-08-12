@@ -721,6 +721,84 @@ export interface TimetableEffectiveResolution {
 }
 
 // ============================================================
+// Phase 04B3 Timetable Import Configuration Contracts
+// ============================================================
+
+export type TimetableImportTeacherIdentifierMode =
+  | 'GENERIC_EXACT'
+  | 'STAFF_CODE'
+  | 'USERNAME'
+  | 'APPROVED_ALIAS';
+
+export type TimetableImportSemanticField =
+  | 'WEEKDAY'
+  | 'SESSION'
+  | 'PERIOD_ORDINAL'
+  | 'SCHOOL_CLASS'
+  | 'SUBJECT'
+  | 'TEACHER';
+
+export type TimetableImportAliasEntityType = 'TEACHER' | 'SCHOOL_CLASS' | 'SUBJECT';
+
+export interface TimetableImportColumnMappingRecord {
+  semanticField: TimetableImportSemanticField;
+  sourceHeader: string;
+}
+
+export interface TimetableImportProfileRevisionRecord {
+  id: string;
+  profileId: string;
+  revision: number;
+  isActive: boolean;
+  sheetNameHint: string | null;
+  headerRowHint: number | null;
+  teacherIdentifierMode: TimetableImportTeacherIdentifierMode;
+  createdByUserId: string;
+  retiredByUserId: string | null;
+  retiredAt: string | null;
+  createdAt: string;
+  columnMappings: TimetableImportColumnMappingRecord[];
+}
+
+export interface TimetableImportProfileRecord {
+  id: string;
+  sourceKey: string;
+  name: string;
+  createdByUserId: string;
+  createdAt: string;
+  updatedAt: string;
+  activeRevision: TimetableImportProfileRevisionRecord | null;
+}
+
+export interface TimetableImportProfileDetail extends TimetableImportProfileRecord {
+  revisions: TimetableImportProfileRevisionRecord[];
+}
+
+export interface TimetableImportProfileListResponse {
+  items: TimetableImportProfileRecord[];
+}
+
+export interface TimetableImportAliasRecord {
+  id: string;
+  profileId: string;
+  entityType: TimetableImportAliasEntityType;
+  academicYearId: string | null;
+  sourceValue: string;
+  teacherUserId: string | null;
+  schoolClassId: string | null;
+  subjectId: string | null;
+  isActive: boolean;
+  createdByUserId: string;
+  retiredByUserId: string | null;
+  retiredAt: string | null;
+  createdAt: string;
+}
+
+export interface TimetableImportAliasListResponse {
+  items: TimetableImportAliasRecord[];
+}
+
+// ============================================================
 // Notification Contracts (foundation types for Phase 03+)
 // ============================================================
 
