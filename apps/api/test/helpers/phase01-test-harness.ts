@@ -53,6 +53,9 @@ export class Phase01Harness {
   async clean(): Promise<void> {
     await this.prisma.auditEvent.deleteMany();
     await this.prisma.authSession.deleteMany();
+    await this.prisma.timetableEntry.deleteMany();
+    await this.prisma.timetableVersion.deleteMany();
+    await this.prisma.timeSlotDefinition.deleteMany();
     await this.prisma.academicWeekSegment.deleteMany();
     await this.prisma.semester.deleteMany();
     await this.prisma.calendarInterruption.deleteMany();
