@@ -15,6 +15,7 @@ import { AcademicStructureModule } from './academic-structure/academic-structure
 import { TeachingAssignmentsModule } from './teaching-assignments/teaching-assignments.module';
 import { TimeSlotsModule } from './time-slots/time-slots.module';
 import { TimetablesModule } from './timetables/timetables.module';
+import { TimetableImportModule } from './timetable-import/timetable-import.module';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { TimetablesModule } from './timetables/timetables.module';
     TeachingAssignmentsModule,
     TimeSlotsModule,
     TimetablesModule,
+    TimetableImportModule,
   ],
 })
 export class AppModule {}
