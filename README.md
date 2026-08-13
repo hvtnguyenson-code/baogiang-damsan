@@ -2,7 +2,7 @@
 
 **Đơn vị sử dụng:** Trường PTDTNT THPT Đam San
 
-> ⚠️ Hệ thống đang ở giai đoạn nền móng, chưa có chức năng nghiệp vụ hoàn chỉnh. Hạ tầng VPS, PostgreSQL và domain là production chính thức ở trạng thái **pre-operational**; chỉ dùng tài khoản và dữ liệu giả cho đến quyết định go-live.
+> ⚠️ Hệ thống đã có nền tảng backend cho identity/access, cấu trúc năm học, phân công giảng dạy, khung tiết, thời khóa biểu và import XLSX. Chuỗi PPCT → thực hiện dạy → tiến độ/nợ → báo cáo/phê duyệt chưa được triển khai, nên hệ thống chưa hoàn chỉnh nghiệp vụ. Hạ tầng VPS, PostgreSQL và domain là production chính thức ở trạng thái **pre-operational**; chỉ dùng tài khoản và dữ liệu giả cho đến quyết định go-live.
 
 ---
 

@@ -8,10 +8,8 @@
 | **Đơn vị** | Trường PTDTNT THPT Đam San |
 | **Repository** | `hvtnguyenson-code/baogiang-damsan` |
 | **Thư mục local** | `D:\baogiang-damsan` |
-| **Branch Phase 00** | `phase/00-foundation` |
-| **Branch Phase 01** | `phase/01-identity-access` |
 | **Stable branch** | `main` |
-| **Phiên bản** | `0.0.1` — Phase 00 Foundation |
+| **Trạng thái sản phẩm** | Backend lõi đã hoàn thành qua import TKB 04B3D1; pre-operational, chưa go-live |
 
 ## Phương án chính thức
 
@@ -45,6 +43,19 @@ Các cổng dưới đây chỉ là cổng tiến trình ứng dụng khi cần 
 | Web | `127.0.0.1:5173` |
 | API | `127.0.0.1:3100` |
 | API prefix | `/api` |
+
+## Hiện trạng kiến trúc
+
+Backend hiện có các boundary đã được review và version hóa:
+
+- identity, session, capability/scope default-deny và audit;
+- cấu trúc năm học với `AcademicCalendarVersion`, tuần nghiệp vụ, phân đoạn, quãng nghỉ và lớp theo năm;
+- lịch sử `TeachingAssignment` theo ngày dân sự;
+- khung tiết theo giờ thực và các revision bất biến;
+- `TimetableVersion`/`TimetableEntry`, DRAFT/validation, approval/activation, supersession và historical resolution;
+- import TKB XLSX gồm profile/alias, bounded workbook inspection, canonical preview, confirmation phía server, semantic/request replay, imported-DRAFT lock và adversarial security corpus qua LOCAL-FC-04B3D1.
+
+Chưa có persistence hoặc API cho PPCT, ngoại lệ cục bộ, cancellation/substitution/make-up, special activity, teaching execution/Báo giảng, tiến độ/công nợ, statement/reporting hay approval snapshot. Các boundary này phải được khóa bằng audit/ADR backend trước khi UI được phép đặt business semantics.
 
 ## Hạ tầng production chính thức — pre-operational
 
