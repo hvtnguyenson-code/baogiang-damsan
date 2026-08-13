@@ -262,6 +262,7 @@ integration('timetable import workbook endpoints integration', () => {
     const workbook = new ExcelJS.Workbook();
     workbook.addWorksheet('TKB').addRows([
       columnMappings.map((mapping) => mapping.sourceHeader),
+      ['T2', 'Sáng', 1, '10A', target.subject.code, 'GV01'],
       ['T2', 'Sáng', 1, '10A', target.subject.code, 'UNKNOWN'],
     ]);
     const response = await actor.agent.post('/api/timetable-import/workbooks/confirm').set('Origin', testOrigin)
@@ -272,10 +273,14 @@ integration('timetable import workbook endpoints integration', () => {
     expect(response.status).toBe(409);
     expect(response.body).toMatchObject({ error: 'TIMETABLE_IMPORT_CONFIRM_BLOCKED', blockingIssueCount: 1 });
     expect(response.body.issues).toContainEqual(expect.objectContaining({ code: 'TEACHER_NOT_FOUND' }));
+    expect(response.body.issues).not.toContainEqual(expect.objectContaining({ code: 'EMPTY_TIMETABLE' }));
     expect(await harness.prisma.timetableVersion.count()).toBe(0);
     expect(await harness.prisma.timetableEntry.count()).toBe(0);
     expect(await harness.prisma.timetableImportReceipt.count()).toBe(0);
     expect(await harness.prisma.timetableImportRequestKey.count()).toBe(0);
+    expect(await harness.prisma.auditEvent.count({
+      where: { action: { in: ['TIMETABLE_IMPORT_COMMITTED', 'TIMETABLE_IMPORT_REPLAY_BOUND'] } },
+    })).toBe(0);
   });
 
   it('blocks a header-only confirmation without creating import persistence or success audit', async () => {
