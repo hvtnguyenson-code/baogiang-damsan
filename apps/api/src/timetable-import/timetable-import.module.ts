@@ -7,10 +7,16 @@ import { TimetableImportService } from './timetable-import.service';
 import { TimetableImportWorkbookController } from './timetable-import-workbook.controller';
 import { TimetableImportWorkbookService } from './timetable-import-workbook.service';
 import { WorkbookParserService } from './workbook-parser.service';
+import { WorkbookCanonicalizationService } from './workbook-canonicalization.service';
 
 @Module({
   imports: [AuthModule, AuthorizationModule, AuditModule],
   controllers: [TimetableImportController, TimetableImportWorkbookController],
-  providers: [TimetableImportService, TimetableImportWorkbookService, WorkbookParserService],
+  providers: [
+    TimetableImportService,
+    TimetableImportWorkbookService,
+    WorkbookCanonicalizationService,
+    WorkbookParserService,
+  ],
 })
 export class TimetableImportModule {}

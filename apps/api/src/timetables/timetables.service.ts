@@ -138,6 +138,7 @@ export class TimetablesService {
     try {
       return await this.prisma.$transaction(async (tx) => {
         const version = await this.requireDraft(id, tx);
+        await this.requireMutableManualDraft(version.id, tx);
         const calendar = await tx.academicCalendarVersion.findUnique({ where: { id: dto.calendarVersionId } });
         if (!calendar) throw new NotFoundException('Không tìm thấy phiên lịch học thuật.');
         if (calendar.academicYearId !== version.academicYearId) {
@@ -217,6 +218,7 @@ export class TimetablesService {
     try {
       return await this.prisma.$transaction(async (tx) => {
         const version = await this.requireDraft(id, tx);
+        await this.requireMutableManualDraft(version.id, tx);
         const unique = <T>(values: T[]): T[] => [...new Set(values)];
         const [slots, classes, subjects, assignments] = await Promise.all([
           tx.timeSlotDefinition.findMany({ where: { id: { in: unique(dto.entries.map((row) => row.timeSlotDefinitionId)) } } }),
@@ -640,6 +642,19 @@ export class TimetablesService {
       throw new ConflictException('Chỉ bản nháp DRAFT mới có thể thay đổi hoặc xác thực.');
     }
     return version;
+  }
+
+  private async requireMutableManualDraft(id: string, tx: Prisma.TransactionClient): Promise<void> {
+    const receipt = await tx.timetableImportReceipt.findUnique({
+      where: { timetableVersionId: id },
+      select: { id: true },
+    });
+    if (receipt) {
+      throw new ConflictException({
+        error: 'TIMETABLE_IMPORTED_DRAFT_IMMUTABLE',
+        message: 'Imported timetable drafts cannot change target or entries; create a new draft/import instead.',
+      });
+    }
   }
 
   private async claimDraft(

@@ -1,4 +1,5 @@
 import { TimetableImportWorkbookService, UploadedWorkbookFile } from '../../src/timetable-import/timetable-import-workbook.service';
+import { WorkbookCanonicalizationService } from '../../src/timetable-import/workbook-canonicalization.service';
 import { ParsedWorkbookCell, ParsedWorkbookRow } from '../../src/timetable-import/workbook-parser.types';
 import { MAX_PARSER_CELL_TEXT_LENGTH } from '../../src/timetable-import/workbook-limits';
 import { parseWorkbookBuffer } from '../../src/timetable-import/workbook-parser.worker';
@@ -15,7 +16,7 @@ const text = (value: string, overrides: Partial<ParsedWorkbookCell> = {}): Parse
 const blank = (): ParsedWorkbookCell => ({ kind: 'BLANK', textOverLimit: false, formula: false, hyperlink: false, merged: false });
 const row = (number: number, values: string[], hidden = false): ParsedWorkbookRow => ({ number, hidden, cells: values.map((value) => value ? text(value) : blank()) });
 
-function fixture(dataRow: ParsedWorkbookRow = row(5, ['T2', 'Sáng', '1', '10A', 'Toán', 'GV01'])) {
+function fixture(dataRow: ParsedWorkbookRow | null = row(5, ['T2', 'Sáng', '1', '10A', 'Toán', 'GV01'])) {
   const revision = { id: identifiers.revision, profileId: 'profile', isActive: true, sheetNameHint: 'TKB', teacherIdentifierMode: 'GENERIC_EXACT', profile: {}, columnMappings: fields.map((semanticField, index) => ({ semanticField, sourceHeaderKey: headers[index]!.toLocaleLowerCase('vi-VN') })) };
   const schoolClass = { id: 'class', academicYearId: identifiers.year, code: '10A', name: '10A', status: 'ACTIVE' };
   const subject = { id: 'subject', code: 'Toán', name: 'Toán', status: 'ACTIVE' };
@@ -32,8 +33,12 @@ function fixture(dataRow: ParsedWorkbookRow = row(5, ['T2', 'Sáng', '1', '10A',
     timeSlotDefinition: { findMany: jest.fn().mockResolvedValue([slot]) }, teachingAssignment: { findMany: jest.fn().mockResolvedValue([assignment]) },
     timetableVersion: { findFirst: jest.fn().mockResolvedValue(null) }, timetableEntry: { findMany: jest.fn() },
   };
-  const parser = { parse: jest.fn().mockResolvedValue({ sheets: [{ name: 'TKB', state: 'VISIBLE', rowCount: dataRow.number, columnCount: 6, rows: [row(1, headers), dataRow], hiddenColumns: [] }] }) };
-  return { service: new TimetableImportWorkbookService(prisma as never, parser as never), prisma };
+  const parser = { parse: jest.fn().mockResolvedValue({ sheets: [{ name: 'TKB', state: 'VISIBLE', rowCount: dataRow?.number ?? 1, columnCount: 6, rows: [row(1, headers), ...(dataRow ? [dataRow] : [])], hiddenColumns: [] }] }) };
+  const canonicalization = new WorkbookCanonicalizationService(prisma as never);
+  return {
+    service: new TimetableImportWorkbookService(prisma as never, parser as never, canonicalization, {} as never),
+    prisma,
+  };
 }
 
 const upload: UploadedWorkbookFile = { originalname: 'tkb.xlsx', mimetype: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', size: 1, buffer: Buffer.from('x') };
@@ -49,6 +54,17 @@ describe('TimetableImportWorkbookService canonical preview orchestration', () =>
       baseline: { date: '2026-08-17', timetableVersion: null }, diff: { counts: { added: 1, changed: 0, removed: 0, unchanged: 0 } },
     });
     expect(Object.keys(prisma).some((name) => ['create', 'update', 'delete', 'upsert'].some((verb) => name.includes(verb)))).toBe(false);
+  });
+
+  it('blocks a header-only workbook with evaluator-owned EMPTY_TIMETABLE', async () => {
+    const result = await fixture(null).service.preview(upload, dto);
+    expect(result.rows).toEqual([]);
+    expect(result.issues).toContainEqual(expect.objectContaining({
+      code: 'EMPTY_TIMETABLE', severity: 'ERROR', category: 'VALIDATION',
+    }));
+    expect(result.blockingIssueCount).toBeGreaterThanOrEqual(1);
+    expect(result.canConfirm).toBe(false);
+    expect(result.diff).toBeNull();
   });
 
   it.each([

@@ -11,6 +11,9 @@ const version = (overrides: Record<string, unknown> = {}) => ({
 });
 
 function harness(tx: Record<string, unknown>, root: Record<string, unknown> = tx) {
+  if (!tx.timetableImportReceipt) {
+    tx.timetableImportReceipt = { findUnique: jest.fn().mockResolvedValue(null) };
+  }
   const audit = { write: jest.fn() };
   const prisma = {
     ...root,
@@ -175,6 +178,28 @@ describe('TimetablesService draft commands', () => {
     const { service } = harness(tx);
     await expect(service.replaceEntries('version-1', { expectedUpdatedAt: now.toISOString(), entries: [] }, 'actor', {}))
       .rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it.each(['setTarget', 'replaceEntries'] as const)('rejects %s for a receipt-backed DRAFT before resolution or mutation', async (command) => {
+    const tx = {
+      timetableVersion: { findUnique: jest.fn().mockResolvedValue(version()) },
+      timetableImportReceipt: { findUnique: jest.fn().mockResolvedValue({ id: 'receipt-1' }) },
+      academicCalendarVersion: { findUnique: jest.fn() },
+      timeSlotDefinition: { findMany: jest.fn() },
+      timetableEntry: { deleteMany: jest.fn() },
+    };
+    const { service } = harness(tx);
+    const operation = command === 'setTarget'
+      ? service.setTarget('version-1', {
+        expectedUpdatedAt: now.toISOString(), calendarVersionId: 'calendar-1', effectiveAcademicWeekId: 'week-1',
+      }, 'actor', {})
+      : service.replaceEntries('version-1', { expectedUpdatedAt: now.toISOString(), entries: [] }, 'actor', {});
+    await expect(operation).rejects.toMatchObject({
+      response: expect.objectContaining({ error: 'TIMETABLE_IMPORTED_DRAFT_IMMUTABLE' }),
+    });
+    expect(tx.academicCalendarVersion.findUnique).not.toHaveBeenCalled();
+    expect(tx.timeSlotDefinition.findMany).not.toHaveBeenCalled();
+    expect(tx.timetableEntry.deleteMany).not.toHaveBeenCalled();
   });
 
   it('resolves the teacher snapshot from the exact assignment and replaces all rows atomically', async () => {

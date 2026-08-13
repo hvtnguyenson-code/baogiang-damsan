@@ -811,7 +811,7 @@ export type TimetableImportPreviewIssueCode =
   | 'SUBJECT_NOT_FOUND' | 'SUBJECT_INACTIVE' | 'SUBJECT_IDENTITY_CONFLICT'
   | 'TEACHER_NOT_FOUND' | 'TEACHER_AMBIGUOUS' | 'TEACHER_INACTIVE' | 'TEACHER_NOT_TEACHING_STAFF'
   | 'ASSIGNMENT_NOT_FOUND' | 'ASSIGNMENT_AMBIGUOUS' | 'ASSIGNMENT_COVERAGE_GAP'
-  | 'DUPLICATE_CANONICAL_ROW' | 'CLASS_TIME_OVERLAP' | 'TEACHER_TIME_OVERLAP';
+  | 'DUPLICATE_CANONICAL_ROW' | 'CLASS_TIME_OVERLAP' | 'TEACHER_TIME_OVERLAP' | 'EMPTY_TIMETABLE';
 
 export interface TimetableImportPreviewIssue {
   code: TimetableImportPreviewIssueCode;
@@ -900,6 +900,31 @@ export interface TimetableImportWorkbookPreviewResponse {
   canConfirm: boolean;
   baseline: { date: CivilDateString; timetableVersion: null | { id: string; versionNumber: number; status: TimetableVersionStatus; effectiveFrom: CivilDateString | null; effectiveUntil: CivilDateString | null } };
   diff: TimetableImportPreviewDiff | null;
+}
+
+export type TimetableImportConfirmationOutcome = 'CREATED' | 'IDEMPOTENT_REPLAY';
+
+export interface TimetableImportReceiptRecord {
+  id: string;
+  timetableVersionId: string;
+  profileRevisionId: string;
+  checksumAlgorithm: 'SHA-256';
+  serializationVersion: 'semantic-v1';
+  requestIdempotencyKey: string | null;
+  requestFingerprint: string | null;
+  sourceFileName: string;
+  sheetName: string;
+  headerRowNumber: number;
+  sourceRowCount: number;
+  normalizedEntryCount: number;
+  createdByUserId: string;
+  committedAt: string;
+}
+
+export interface TimetableImportWorkbookConfirmResponse {
+  outcome: TimetableImportConfirmationOutcome;
+  receipt: TimetableImportReceiptRecord;
+  version: TimetableVersionRecord;
 }
 
 // ============================================================

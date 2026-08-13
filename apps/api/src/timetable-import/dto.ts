@@ -11,6 +11,7 @@ import {
   IsBoolean,
   IsEnum,
   IsInt,
+  IsNotEmpty,
   IsOptional,
   IsString,
   IsUUID,
@@ -124,4 +125,13 @@ export class PreviewTimetableImportWorkbookDto extends InspectTimetableImportWor
   @IsUUID() effectiveAcademicWeekId!: string;
   @IsString() @MaxLength(150) sheetName!: string;
   @Type(() => Number) @IsInt() @Min(1) @Max(MAX_HEADER_SCAN_ROWS) headerRowNumber!: number;
+}
+
+export class ConfirmTimetableImportWorkbookDto extends PreviewTimetableImportWorkbookDto {
+  @IsOptional()
+  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(200)
+  requestIdempotencyKey?: string;
 }

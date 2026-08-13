@@ -11,11 +11,16 @@ function file(overrides: Partial<UploadedWorkbookFile> = {}): UploadedWorkbookFi
 }
 
 function service(parserResult: unknown = { sheets: [] }): TimetableImportWorkbookService {
-  const prisma = { timetableImportProfileRevision: { findUnique: jest.fn().mockResolvedValue({
+  const revision = {
     id: 'revision', profileId: 'profile', isActive: true, sheetNameHint: null, profile: {}, columnMappings: mappings,
-  }) } };
+  };
+  const prisma = {};
   const parser = { parse: jest.fn().mockResolvedValue(parserResult) };
-  return new TimetableImportWorkbookService(prisma as never, parser as never);
+  const canonicalization = {
+    requireActiveRevision: jest.fn().mockResolvedValue(revision),
+    headerMappings: jest.fn().mockReturnValue(mappings),
+  };
+  return new TimetableImportWorkbookService(prisma as never, parser as never, canonicalization as never, {} as never);
 }
 
 describe('TimetableImportWorkbookService transport boundary', () => {
@@ -34,11 +39,16 @@ describe('TimetableImportWorkbookService transport boundary', () => {
 
   it('does not leak parser internals when content validation fails', async () => {
     const parserFailure = new BadRequestException({ error: 'TIMETABLE_IMPORT_INVALID_XLSX', message: 'Workbook is invalid or unsupported.' });
-    const prisma = { timetableImportProfileRevision: { findUnique: jest.fn().mockResolvedValue({
-      id: 'revision', profileId: 'profile', isActive: true, sheetNameHint: null, profile: {}, columnMappings: mappings,
-    }) } };
+    const prisma = {};
     const parser = { parse: jest.fn().mockRejectedValue(parserFailure) };
-    const result = new TimetableImportWorkbookService(prisma as never, parser as never).inspect(file({ buffer: Buffer.from('fake CSV') }), 'revision');
+    const canonicalization = {
+      requireActiveRevision: jest.fn().mockResolvedValue({
+        id: 'revision', profileId: 'profile', isActive: true, sheetNameHint: null, profile: {}, columnMappings: mappings,
+      }),
+      headerMappings: jest.fn().mockReturnValue(mappings),
+    };
+    const result = new TimetableImportWorkbookService(prisma as never, parser as never, canonicalization as never, {} as never)
+      .inspect(file({ buffer: Buffer.from('fake CSV') }), 'revision');
     await expect(result).rejects.toBe(parserFailure);
     expect(JSON.stringify(parserFailure.getResponse())).not.toContain('fake CSV');
   });
