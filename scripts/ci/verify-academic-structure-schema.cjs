@@ -18,6 +18,8 @@ const timetableImportMigrationName = '20260812010000_timetable_import_persistenc
 const timetableImportMigration = read('prisma', 'migrations', timetableImportMigrationName, 'migration.sql');
 const timetableImportRequestKeyMigrationName = '20260812020000_timetable_import_idempotency_bindings';
 const timetableImportRequestKeyMigration = read('prisma', 'migrations', timetableImportRequestKeyMigrationName, 'migration.sql');
+const ppctMigrationName = '20260813010000_ppct_persistence_foundation';
+const ppctMigration = read('prisma', 'migrations', ppctMigrationName, 'migration.sql');
 
 function modelBlock(name) {
   const match = schema.match(new RegExp(`model\\s+${name}\\s+\\{([\\s\\S]*?)\\n\\}`, 'u'));
@@ -56,6 +58,12 @@ for (const model of [
   'TimetableImportEntityAlias',
   'TimetableImportReceipt',
   'TimetableImportRequestKey',
+  'PpctPlan',
+  'PpctVersion',
+  'PpctItem',
+  'PpctItemRevision',
+  'PpctItemLineage',
+  'PpctClassAssociation',
 ]) {
   modelBlock(model);
 }
@@ -66,6 +74,7 @@ assert.deepEqual(enumValues('TimetableVersionStatus'), ['DRAFT', 'VALIDATED', 'A
 assert.deepEqual(enumValues('TimetableImportTeacherIdentifierMode'), ['GENERIC_EXACT', 'STAFF_CODE', 'USERNAME', 'APPROVED_ALIAS']);
 assert.deepEqual(enumValues('TimetableImportSemanticField'), ['WEEKDAY', 'SESSION', 'PERIOD_ORDINAL', 'SCHOOL_CLASS', 'SUBJECT', 'TEACHER']);
 assert.deepEqual(enumValues('TimetableImportAliasEntityType'), ['TEACHER', 'SCHOOL_CLASS', 'SUBJECT']);
+assert.deepEqual(enumValues('PpctVersionStatus'), ['DRAFT', 'PUBLISHED', 'SUPERSEDED']);
 
 const calendarVersion = modelBlock('AcademicCalendarVersion');
 assert.match(calendarVersion, /academicYearId\s+String\s+@map\("academic_year_id"\)\s+@db\.Uuid/u);
@@ -502,6 +511,120 @@ assert.match(timetableImportRequestKeyMigration, /HAVING COUNT\(\*\) > 1[\s\S]*R
 assert.match(timetableImportRequestKeyMigration, /INSERT INTO "timetable_import_request_keys"[\s\S]*SELECT[\s\S]*"id"[\s\S]*"request_idempotency_key"[\s\S]*"request_fingerprint"[\s\S]*"committed_at"[\s\S]*FROM "timetable_import_receipts"[\s\S]*WHERE "request_idempotency_key" IS NOT NULL[\s\S]*AND "request_fingerprint" IS NOT NULL/u);
 assert.doesNotMatch(timetableImportRequestKeyMigration, /ON CONFLICT|DO NOTHING|ON DELETE CASCADE|\bBYTEA\b|raw_workbook|workbook_body|formula|filesystem_path/iu);
 
+const ppctPlan = modelBlock('PpctPlan');
+const ppctVersion = modelBlock('PpctVersion');
+const ppctItem = modelBlock('PpctItem');
+const ppctItemRevision = modelBlock('PpctItemRevision');
+const ppctItemLineage = modelBlock('PpctItemLineage');
+const ppctClassAssociation = modelBlock('PpctClassAssociation');
+const ppctBlocks = [ppctPlan, ppctVersion, ppctItem, ppctItemRevision, ppctItemLineage, ppctClassAssociation].join('\n');
+
+for (const modelName of [
+  'PpctPlan', 'PpctVersion', 'PpctItem', 'PpctItemRevision', 'PpctItemLineage', 'PpctClassAssociation',
+]) {
+  assert.equal((schema.match(new RegExp(`\\bmodel\\s+${modelName}\\s+\\{`, 'gu')) ?? []).length, 1, `${modelName} must exist exactly once`);
+}
+
+assert.match(ppctPlan, /academicYearId\s+String\s+@map\("academic_year_id"\)\s+@db\.Uuid/u);
+assert.match(ppctPlan, /subjectId\s+String\s+@map\("subject_id"\)\s+@db\.Uuid/u);
+assert.match(ppctPlan, /gradeLevel\s+Int\s+@map\("grade_level"\)/u);
+assert.match(ppctPlan, /@@unique\(\[academicYearId, subjectId, gradeLevel\],\s*map:\s*"ppct_plans_academic_year_id_subject_id_grade_level_key"\)/u);
+assert.match(ppctPlan, /@@unique\(\[id, academicYearId, subjectId, gradeLevel\],\s*map:\s*"ppct_plans_identity_key"\)/u);
+
+for (const field of ['id', 'ppctPlanId', 'createdByUserId', 'publishedByUserId', 'supersededByUserId']) {
+  assert.match(ppctVersion, new RegExp(`${field}\\s+String\\??[\\s\\S]*?@db\\.Uuid`, 'u'), `PpctVersion.${field} must use UUID`);
+}
+assert.match(ppctVersion, /versionNumber\s+Int\s+@map\("version_number"\)/u);
+assert.match(ppctVersion, /status\s+PpctVersionStatus\s+@default\(DRAFT\)/u);
+for (const field of ['publishedAt', 'supersededAt']) {
+  assert.match(ppctVersion, new RegExp(`${field}\\s+DateTime\\?[\\s\\S]*?@db\\.Timestamptz\\(3\\)`, 'u'));
+}
+assert.match(ppctVersion, /@@unique\(\[ppctPlanId, versionNumber\],\s*map:\s*"ppct_versions_ppct_plan_id_version_number_key"\)/u);
+assert.match(ppctVersion, /@@unique\(\[id, ppctPlanId\],\s*map:\s*"ppct_versions_id_ppct_plan_id_key"\)/u);
+assert.match(ppctVersion, /@@index\(\[ppctPlanId, status\],\s*map:\s*"ppct_versions_ppct_plan_id_status_idx"\)/u);
+
+assert.match(ppctItem, /id\s+String\s+@id[\s\S]*?@db\.Uuid/u);
+assert.match(ppctItem, /ppctPlanId\s+String\s+@map\("ppct_plan_id"\)\s+@db\.Uuid/u);
+assert.match(ppctItem, /@@unique\(\[id, ppctPlanId\],\s*map:\s*"ppct_items_id_ppct_plan_id_key"\)/u);
+assert.doesNotMatch(ppctItem, /sequence|title|lessonType|completed|updatedAt/u);
+
+for (const field of ['ppctVersionId', 'ppctPlanId', 'ppctItemId']) {
+  assert.match(ppctItemRevision, new RegExp(`${field}\\s+String[\\s\\S]*?@db\\.Uuid`, 'u'));
+}
+assert.match(ppctItemRevision, /sequence\s+Int/u);
+assert.match(ppctItemRevision, /title\s+String\s+@db\.VarChar\(500\)/u);
+assert.match(ppctItemRevision, /lessonType\s+String\s+@map\("lesson_type"\)\s+@db\.VarChar\(100\)/u);
+assert.match(ppctItemRevision, /fields:\s*\[ppctVersionId, ppctPlanId\][\s\S]*references:\s*\[id, ppctPlanId\]/u);
+assert.match(ppctItemRevision, /fields:\s*\[ppctItemId, ppctPlanId\][\s\S]*references:\s*\[id, ppctPlanId\]/u);
+assert.match(ppctItemRevision, /@@unique\(\[ppctVersionId, sequence\],\s*map:\s*"ppct_item_revisions_version_sequence_key"\)/u);
+assert.match(ppctItemRevision, /@@unique\(\[ppctVersionId, ppctItemId\],\s*map:\s*"ppct_item_revisions_version_item_key"\)/u);
+assert.match(ppctItemRevision, /@@unique\(\[ppctVersionId, ppctItemId, ppctPlanId\],\s*map:\s*"ppct_item_revisions_provenance_key"\)/u);
+assert.doesNotMatch(ppctItemRevision, /updatedAt|completed/u);
+
+assert.match(ppctItemLineage, /fields:\s*\[predecessorVersionId, predecessorItemId, ppctPlanId\][\s\S]*references:\s*\[ppctVersionId, ppctItemId, ppctPlanId\]/u);
+assert.match(ppctItemLineage, /fields:\s*\[successorVersionId, successorItemId, ppctPlanId\][\s\S]*references:\s*\[ppctVersionId, ppctItemId, ppctPlanId\]/u);
+assert.match(ppctItemLineage, /@@unique\(\[predecessorVersionId, predecessorItemId, successorVersionId, successorItemId\],\s*map:\s*"ppct_item_lineage_edge_key"\)/u);
+assert.doesNotMatch(ppctItemLineage, /split|merge|LineageType/u);
+
+assert.match(ppctClassAssociation, /effectiveFrom\s+DateTime\s+@map\("effective_from"\)\s+@db\.Date/u);
+assert.match(ppctClassAssociation, /effectiveUntil\s+DateTime\?\s+@map\("effective_until"\)\s+@db\.Date/u);
+assert.match(ppctClassAssociation, /fields:\s*\[schoolClassId, academicYearId, gradeLevel\][\s\S]*references:\s*\[id, academicYearId, gradeLevel\]/u);
+assert.match(ppctClassAssociation, /fields:\s*\[ppctPlanId, academicYearId, subjectId, gradeLevel\][\s\S]*references:\s*\[id, academicYearId, subjectId, gradeLevel\]/u);
+assert.match(ppctClassAssociation, /fields:\s*\[ppctVersionId, ppctPlanId\][\s\S]*references:\s*\[id, ppctPlanId\]/u);
+assert.match(ppctClassAssociation, /@@unique\(\[id, academicYearId, schoolClassId, subjectId\],\s*map:\s*"ppct_class_associations_provenance_key"\)/u);
+assert.match(schoolClass, /@@unique\(\[id, academicYearId, gradeLevel\],\s*map:\s*"classes_id_academic_year_id_grade_level_key"\)/u);
+
+assert.doesNotMatch(ppctBlocks, /calendarVersionId|academicWeekId|completed|checksum|workbook|sheetName|columnMapping|importProfile|requestIdempotency/iu);
+assert.doesNotMatch(timetableEntry, /ppct/iu, 'TimetableEntry must not contain PPCT fields');
+
+assert.match(ppctMigration, /CREATE TYPE "PpctVersionStatus" AS ENUM \('DRAFT', 'PUBLISHED', 'SUPERSEDED'\)/u);
+for (const table of [
+  'ppct_plans', 'ppct_versions', 'ppct_items', 'ppct_item_revisions', 'ppct_item_lineage', 'ppct_class_associations',
+]) {
+  assert.match(ppctMigration, new RegExp(`CREATE TABLE "${table}"`, 'u'), `PPCT migration missing ${table}`);
+}
+for (const requiredName of [
+  'classes_id_academic_year_id_grade_level_key',
+  'ppct_plans_grade_level_check',
+  'ppct_plans_academic_year_id_subject_id_grade_level_key',
+  'ppct_plans_identity_key',
+  'ppct_versions_version_number_check',
+  'ppct_versions_published_actor_pair_check',
+  'ppct_versions_superseded_actor_pair_check',
+  'ppct_versions_lifecycle_shape_check',
+  'ppct_versions_one_published_per_plan_key',
+  'ppct_item_revisions_sequence_check',
+  'ppct_item_revisions_title_normalized_check',
+  'ppct_item_revisions_lesson_type_normalized_check',
+  'ppct_item_revisions_provenance_key',
+  'ppct_item_lineage_distinct_versions_check',
+  'ppct_item_lineage_distinct_items_check',
+  'ppct_item_lineage_edge_key',
+  'ppct_class_associations_effective_range_check',
+  'ppct_class_associations_no_overlap',
+  'ppct_class_associations_provenance_key',
+]) {
+  assert.match(ppctMigration, new RegExp(`"${requiredName}"`, 'u'), `PPCT migration missing ${requiredName}`);
+}
+assert.match(ppctMigration, /"ppct_versions_one_published_per_plan_key"[\s\S]*WHERE "status" = 'PUBLISHED'/u);
+assert.match(ppctMigration, /"ppct_class_associations_no_overlap"[\s\S]*EXCLUDE USING gist[\s\S]*daterange\("effective_from", "effective_until", '\[\]'\) WITH &&/u);
+for (const constraint of [
+  'ppct_plans_academic_year_id_fkey', 'ppct_plans_subject_id_fkey',
+  'ppct_versions_ppct_plan_id_fkey', 'ppct_versions_created_by_user_id_fkey',
+  'ppct_versions_published_by_user_id_fkey', 'ppct_versions_superseded_by_user_id_fkey',
+  'ppct_items_ppct_plan_id_fkey', 'ppct_item_revisions_version_plan_fkey',
+  'ppct_item_revisions_item_plan_fkey', 'ppct_item_lineage_predecessor_revision_fkey',
+  'ppct_item_lineage_successor_revision_fkey', 'ppct_class_associations_academic_year_id_fkey',
+  'ppct_class_associations_school_class_year_grade_fkey', 'ppct_class_associations_subject_id_fkey',
+  'ppct_class_associations_plan_scope_fkey', 'ppct_class_associations_version_plan_fkey',
+  'ppct_class_associations_created_by_user_id_fkey',
+]) {
+  assert.match(ppctMigration, new RegExp(`"${constraint}"[\\s\\S]*?ON DELETE RESTRICT`, 'u'), `${constraint} must restrict deletion`);
+}
+assert.doesNotMatch(ppctMigration, /CREATE\s+(OR\s+REPLACE\s+)?TRIGGER/iu);
+assert.doesNotMatch(ppctMigration, /ON DELETE CASCADE/iu);
+assert.doesNotMatch(ppctMigration, /calendar_version_id|academic_week_id|\bcompleted\b|checksum|workbook|sheet_name|column_mapping|import_profile|request_idempotency/iu);
+
 const legacyHashes = new Map([
   ['20260728000000_phase_00_baseline', 'A2185F4F34E90F9B437B3D0DD91B1C473D586849E6B0DFFB766C5AF69546634A'],
   ['20260801000000_phase_01_schema_foundation', '56B7F09859E9851A15D62D17A58066DAFB1798B0E4225858A464B0CD8F47DF9E'],
@@ -515,4 +638,4 @@ for (const [name, expected] of legacyHashes) {
   assert.equal(sha256(read('prisma', 'migrations', name, 'migration.sql')), expected, `Historical migration ${name} changed`);
 }
 
-console.log(`Academic, teaching-assignment, time-slot, timetable, and timetable-import schema static verification PASS (${academicMigrationName}, ${teachingMigrationName}, ${timeSlotMigrationName}, ${timetableMigrationName}, ${timetableImportMigrationName}, ${timetableImportRequestKeyMigrationName}).`);
+console.log(`Academic, teaching-assignment, time-slot, timetable, timetable-import, and PPCT schema static verification PASS (${academicMigrationName}, ${teachingMigrationName}, ${timeSlotMigrationName}, ${timetableMigrationName}, ${timetableImportMigrationName}, ${timetableImportRequestKeyMigrationName}, ${ppctMigrationName}).`);

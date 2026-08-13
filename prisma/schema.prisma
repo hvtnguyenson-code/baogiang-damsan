@@ -65,6 +65,12 @@ enum TimetableVersionStatus {
   SUPERSEDED
 }
 
+enum PpctVersionStatus {
+  DRAFT
+  PUBLISHED
+  SUPERSEDED
+}
+
 enum TimetableImportTeacherIdentifierMode {
   GENERIC_EXACT
   STAFF_CODE
@@ -132,6 +138,10 @@ model User {
   timetableImportAliasesCreated    TimetableImportEntityAlias[]     @relation("TimetableImportAliasCreatedBy")
   timetableImportAliasesRetired    TimetableImportEntityAlias[]     @relation("TimetableImportAliasRetiredBy")
   timetableImportReceiptsCreated   TimetableImportReceipt[]         @relation("TimetableImportReceiptCreatedBy")
+  ppctVersionsCreated              PpctVersion[]                    @relation("PpctVersionCreatedBy")
+  ppctVersionsPublished            PpctVersion[]                    @relation("PpctVersionPublishedBy")
+  ppctVersionsSuperseded           PpctVersion[]                    @relation("PpctVersionSupersededBy")
+  ppctClassAssociationsCreated     PpctClassAssociation[]           @relation("PpctClassAssociationCreatedBy")
 
   @@index([status])
   @@map("users")
@@ -181,6 +191,8 @@ model Subject {
   teachingAssignments    TeachingAssignment[]
   timetableEntries       TimetableEntry[]
   timetableImportAliases TimetableImportEntityAlias[]
+  ppctPlans              PpctPlan[]
+  ppctClassAssociations  PpctClassAssociation[]
 
   @@index([status, code])
   @@map("subjects")
@@ -357,6 +369,8 @@ model AcademicYear {
   timetableVersions      TimetableVersion[]
   timetableEntries       TimetableEntry[]
   timetableImportAliases TimetableImportEntityAlias[]
+  ppctPlans              PpctPlan[]
+  ppctClassAssociations  PpctClassAssociation[]
 
   @@map("academic_years")
 }
@@ -506,11 +520,137 @@ model SchoolClass {
   teachingAssignments    TeachingAssignment[]         @relation("TeachingAssignmentSchoolClass")
   timetableEntries       TimetableEntry[]             @relation("TimetableEntrySchoolClass")
   timetableImportAliases TimetableImportEntityAlias[] @relation("TimetableImportAliasSchoolClass")
+  ppctClassAssociations  PpctClassAssociation[]       @relation("PpctClassAssociationSchoolClass")
 
   @@unique([id, academicYearId])
+  @@unique([id, academicYearId, gradeLevel], map: "classes_id_academic_year_id_grade_level_key")
   @@unique([academicYearId, code])
   @@index([academicYearId, status, gradeLevel, code])
   @@map("classes")
+}
+
+model PpctPlan {
+  id             String   @id @default(uuid()) @db.Uuid
+  academicYearId String   @map("academic_year_id") @db.Uuid
+  subjectId      String   @map("subject_id") @db.Uuid
+  gradeLevel     Int      @map("grade_level")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  academicYear      AcademicYear           @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  subject           Subject                @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  versions          PpctVersion[]
+  items             PpctItem[]
+  classAssociations PpctClassAssociation[]
+
+  @@unique([academicYearId, subjectId, gradeLevel], map: "ppct_plans_academic_year_id_subject_id_grade_level_key")
+  @@unique([id, academicYearId, subjectId, gradeLevel], map: "ppct_plans_identity_key")
+  @@map("ppct_plans")
+}
+
+model PpctVersion {
+  id                 String            @id @default(uuid()) @db.Uuid
+  ppctPlanId         String            @map("ppct_plan_id") @db.Uuid
+  versionNumber      Int               @map("version_number")
+  status             PpctVersionStatus @default(DRAFT)
+  createdByUserId    String            @map("created_by_user_id") @db.Uuid
+  publishedByUserId  String?           @map("published_by_user_id") @db.Uuid
+  publishedAt        DateTime?         @map("published_at") @db.Timestamptz(3)
+  supersededByUserId String?           @map("superseded_by_user_id") @db.Uuid
+  supersededAt       DateTime?         @map("superseded_at") @db.Timestamptz(3)
+  createdAt          DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  ppctPlan          PpctPlan               @relation(fields: [ppctPlanId], references: [id], onDelete: Restrict)
+  createdBy         User                   @relation("PpctVersionCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  publishedBy       User?                  @relation("PpctVersionPublishedBy", fields: [publishedByUserId], references: [id], onDelete: Restrict)
+  supersededBy      User?                  @relation("PpctVersionSupersededBy", fields: [supersededByUserId], references: [id], onDelete: Restrict)
+  itemRevisions     PpctItemRevision[]
+  classAssociations PpctClassAssociation[]
+
+  @@unique([ppctPlanId, versionNumber], map: "ppct_versions_ppct_plan_id_version_number_key")
+  @@unique([id, ppctPlanId], map: "ppct_versions_id_ppct_plan_id_key")
+  @@index([ppctPlanId, status], map: "ppct_versions_ppct_plan_id_status_idx")
+  @@map("ppct_versions")
+}
+
+model PpctItem {
+  id         String   @id @default(uuid()) @db.Uuid
+  ppctPlanId String   @map("ppct_plan_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  ppctPlan  PpctPlan           @relation(fields: [ppctPlanId], references: [id], onDelete: Restrict)
+  revisions PpctItemRevision[]
+
+  @@unique([id, ppctPlanId], map: "ppct_items_id_ppct_plan_id_key")
+  @@index([ppctPlanId], map: "ppct_items_ppct_plan_id_idx")
+  @@map("ppct_items")
+}
+
+model PpctItemRevision {
+  id            String   @id @default(uuid()) @db.Uuid
+  ppctVersionId String   @map("ppct_version_id") @db.Uuid
+  ppctPlanId    String   @map("ppct_plan_id") @db.Uuid
+  ppctItemId    String   @map("ppct_item_id") @db.Uuid
+  sequence      Int
+  title         String   @db.VarChar(500)
+  lessonType    String   @map("lesson_type") @db.VarChar(100)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  ppctVersion      PpctVersion       @relation(fields: [ppctVersionId, ppctPlanId], references: [id, ppctPlanId], onDelete: Restrict)
+  ppctItem         PpctItem          @relation(fields: [ppctItemId, ppctPlanId], references: [id, ppctPlanId], onDelete: Restrict)
+  predecessorEdges PpctItemLineage[] @relation("PpctItemLineagePredecessor")
+  successorEdges   PpctItemLineage[] @relation("PpctItemLineageSuccessor")
+
+  @@unique([ppctVersionId, sequence], map: "ppct_item_revisions_version_sequence_key")
+  @@unique([ppctVersionId, ppctItemId], map: "ppct_item_revisions_version_item_key")
+  @@unique([ppctVersionId, ppctItemId, ppctPlanId], map: "ppct_item_revisions_provenance_key")
+  @@map("ppct_item_revisions")
+}
+
+model PpctItemLineage {
+  id                   String   @id @default(uuid()) @db.Uuid
+  ppctPlanId           String   @map("ppct_plan_id") @db.Uuid
+  predecessorVersionId String   @map("predecessor_version_id") @db.Uuid
+  predecessorItemId    String   @map("predecessor_item_id") @db.Uuid
+  successorVersionId   String   @map("successor_version_id") @db.Uuid
+  successorItemId      String   @map("successor_item_id") @db.Uuid
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  predecessorRevision PpctItemRevision @relation("PpctItemLineagePredecessor", fields: [predecessorVersionId, predecessorItemId, ppctPlanId], references: [ppctVersionId, ppctItemId, ppctPlanId], onDelete: Restrict)
+  successorRevision   PpctItemRevision @relation("PpctItemLineageSuccessor", fields: [successorVersionId, successorItemId, ppctPlanId], references: [ppctVersionId, ppctItemId, ppctPlanId], onDelete: Restrict)
+
+  @@unique([predecessorVersionId, predecessorItemId, successorVersionId, successorItemId], map: "ppct_item_lineage_edge_key")
+  @@index([ppctPlanId, predecessorVersionId, predecessorItemId], map: "ppct_item_lineage_predecessor_idx")
+  @@index([ppctPlanId, successorVersionId, successorItemId], map: "ppct_item_lineage_successor_idx")
+  @@map("ppct_item_lineage")
+}
+
+model PpctClassAssociation {
+  id              String    @id @default(uuid()) @db.Uuid
+  academicYearId  String    @map("academic_year_id") @db.Uuid
+  schoolClassId   String    @map("school_class_id") @db.Uuid
+  subjectId       String    @map("subject_id") @db.Uuid
+  gradeLevel      Int       @map("grade_level")
+  ppctPlanId      String    @map("ppct_plan_id") @db.Uuid
+  ppctVersionId   String    @map("ppct_version_id") @db.Uuid
+  effectiveFrom   DateTime  @map("effective_from") @db.Date
+  effectiveUntil  DateTime? @map("effective_until") @db.Date
+  createdByUserId String    @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  schoolClass  SchoolClass  @relation("PpctClassAssociationSchoolClass", fields: [schoolClassId, academicYearId, gradeLevel], references: [id, academicYearId, gradeLevel], onDelete: Restrict)
+  subject      Subject      @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  ppctPlan     PpctPlan     @relation(fields: [ppctPlanId, academicYearId, subjectId, gradeLevel], references: [id, academicYearId, subjectId, gradeLevel], onDelete: Restrict)
+  ppctVersion  PpctVersion  @relation(fields: [ppctVersionId, ppctPlanId], references: [id, ppctPlanId], onDelete: Restrict)
+  createdBy    User         @relation("PpctClassAssociationCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@unique([id, academicYearId, schoolClassId, subjectId], map: "ppct_class_associations_provenance_key")
+  @@index([academicYearId, schoolClassId, subjectId, effectiveFrom, effectiveUntil], map: "ppct_class_associations_stream_dates_idx")
+  @@index([ppctVersionId], map: "ppct_class_associations_ppct_version_id_idx")
+  @@map("ppct_class_associations")
 }
 
 model TeachingAssignment {
