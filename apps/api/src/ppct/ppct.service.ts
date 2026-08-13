@@ -198,7 +198,9 @@ export class PpctService {
           } else if (!item) {
             newItemIds.push(requested.itemId);
           } else {
-            if (item.ppctPlanId !== version.ppctPlanId || item.revisions.some((revision) => revision.ppctVersion.id !== id)) {
+            const hasCurrentDraftRevision = item.revisions.some((revision) => revision.ppctVersion.id === id);
+            const hasRevisionInAnotherVersion = item.revisions.some((revision) => revision.ppctVersion.id !== id);
+            if (item.ppctPlanId !== version.ppctPlanId || !hasCurrentDraftRevision || hasRevisionInAnotherVersion) {
               throw new ConflictException('Mã nghĩa vụ lịch sử không được tái sử dụng như một nghĩa vụ NEW.');
             }
           }
