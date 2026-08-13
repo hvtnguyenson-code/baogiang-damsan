@@ -62,10 +62,16 @@ export function computeConfirmRequestFingerprint(input: TimetableImportConfirmFi
 }
 
 function compareSemanticEntries(a: TimetableImportSemanticEntry, b: TimetableImportSemanticEntry): number {
-  return a.weekday.localeCompare(b.weekday)
-    || a.timeSlotDefinitionId.localeCompare(b.timeSlotDefinitionId)
-    || a.schoolClassId.localeCompare(b.schoolClassId)
-    || a.subjectId.localeCompare(b.subjectId)
-    || a.teachingAssignmentId.localeCompare(b.teachingAssignmentId)
-    || a.teacherUserId.localeCompare(b.teacherUserId);
+  return compareOrdinal(a.weekday, b.weekday)
+    || compareOrdinal(a.timeSlotDefinitionId, b.timeSlotDefinitionId)
+    || compareOrdinal(a.schoolClassId, b.schoolClassId)
+    || compareOrdinal(a.subjectId, b.subjectId)
+    || compareOrdinal(a.teachingAssignmentId, b.teachingAssignmentId)
+    || compareOrdinal(a.teacherUserId, b.teacherUserId);
+}
+
+function compareOrdinal(left: string, right: string): number {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
 }

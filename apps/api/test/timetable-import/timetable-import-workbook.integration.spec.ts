@@ -262,7 +262,7 @@ integration('timetable import workbook endpoints integration', () => {
     const workbook = new ExcelJS.Workbook();
     workbook.addWorksheet('TKB').addRows([
       columnMappings.map((mapping) => mapping.sourceHeader),
-      ['T2', 'SÃ¡ng', 1, '10A', target.subject.code, 'UNKNOWN'],
+      ['T2', 'Sáng', 1, '10A', target.subject.code, 'UNKNOWN'],
     ]);
     const response = await actor.agent.post('/api/timetable-import/workbooks/confirm').set('Origin', testOrigin)
       .field('profileRevisionId', revisionId).field('academicYearId', target.year.id)
@@ -271,10 +271,35 @@ integration('timetable import workbook endpoints integration', () => {
       .attach('file', Buffer.from(await workbook.xlsx.writeBuffer()), 'blocked.xlsx');
     expect(response.status).toBe(409);
     expect(response.body).toMatchObject({ error: 'TIMETABLE_IMPORT_CONFIRM_BLOCKED', blockingIssueCount: 1 });
+    expect(response.body.issues).toContainEqual(expect.objectContaining({ code: 'TEACHER_NOT_FOUND' }));
     expect(await harness.prisma.timetableVersion.count()).toBe(0);
     expect(await harness.prisma.timetableEntry.count()).toBe(0);
     expect(await harness.prisma.timetableImportReceipt.count()).toBe(0);
     expect(await harness.prisma.timetableImportRequestKey.count()).toBe(0);
+  });
+
+  it('blocks a header-only confirmation without creating import persistence or success audit', async () => {
+    const target = await academicFixture();
+    const { actor, revisionId } = await createProfile();
+    const workbook = new ExcelJS.Workbook();
+    workbook.addWorksheet('TKB').addRow(columnMappings.map((mapping) => mapping.sourceHeader));
+    const response = await actor.agent.post('/api/timetable-import/workbooks/confirm').set('Origin', testOrigin)
+      .field('profileRevisionId', revisionId).field('academicYearId', target.year.id)
+      .field('calendarVersionId', target.calendar.id).field('effectiveAcademicWeekId', target.week.id)
+      .field('sheetName', 'TKB').field('headerRowNumber', '1').field('requestIdempotencyKey', 'empty-key')
+      .attach('file', Buffer.from(await workbook.xlsx.writeBuffer()), 'empty.xlsx');
+    expect(response.status).toBe(409);
+    expect(response.body).toMatchObject({ error: 'TIMETABLE_IMPORT_CONFIRM_BLOCKED' });
+    expect(response.body.issues).toContainEqual(expect.objectContaining({
+      code: 'EMPTY_TIMETABLE', severity: 'ERROR', category: 'VALIDATION',
+    }));
+    expect(await harness.prisma.timetableVersion.count()).toBe(0);
+    expect(await harness.prisma.timetableEntry.count()).toBe(0);
+    expect(await harness.prisma.timetableImportReceipt.count()).toBe(0);
+    expect(await harness.prisma.timetableImportRequestKey.count()).toBe(0);
+    expect(await harness.prisma.auditEvent.count({
+      where: { action: { in: ['TIMETABLE_IMPORT_COMMITTED', 'TIMETABLE_IMPORT_REPLAY_BOUND'] } },
+    })).toBe(0);
   });
 
   it('permits identical semantic content at a different exact target', async () => {
@@ -319,7 +344,7 @@ integration('timetable import workbook endpoints integration', () => {
     const target = await academicFixture();
     const { actor, revisionId } = await createProfile();
     const workbookA = new ExcelJS.Workbook();
-    workbookA.addWorksheet('TKB').addRows([columnMappings.map((mapping) => mapping.sourceHeader), ['T2', 'SÃ¡ng', 1, '10A', target.subject.code, 'GV01']]);
+    workbookA.addWorksheet('TKB').addRows([columnMappings.map((mapping) => mapping.sourceHeader), ['T2', 'Sáng', 1, '10A', target.subject.code, 'GV01']]);
     const bytesA = Buffer.from(await workbookA.xlsx.writeBuffer());
     const requestConfirm = (key: string, bytes: Buffer) => actor.agent.post('/api/timetable-import/workbooks/confirm').set('Origin', testOrigin)
       .field('profileRevisionId', revisionId).field('academicYearId', target.year.id)
@@ -341,24 +366,40 @@ integration('timetable import workbook endpoints integration', () => {
     ]);
     const targetB = await academicFixture();
     const profileB = await createProfile();
+    const secondWeek = await harness.prisma.academicWeek.create({
+      data: {
+        calendarVersionId: targetB.calendar.id,
+        kind: 'OFFICIAL',
+        officialWeekNumber: 2,
+        displayLabel: 'Tuần 2',
+        sortOrder: 2,
+      },
+    });
+    await harness.prisma.academicWeekSegment.create({
+      data: {
+        academicWeekId: secondWeek.id,
+        calendarVersionId: targetB.calendar.id,
+        label: 'W2',
+        segmentOrder: 1,
+        startDate: new Date('2026-09-14Z'),
+        endDate: new Date('2026-09-19Z'),
+      },
+    });
     const workbookA2 = new ExcelJS.Workbook();
     workbookA2.addWorksheet('TKB').addRows([columnMappings.map((mapping) => mapping.sourceHeader), ['T2', 'Sáng', 1, '10A', targetB.subject.code, 'GV01']]);
     const bytesA2 = Buffer.from(await workbookA2.xlsx.writeBuffer());
-    const workbookB = new ExcelJS.Workbook();
-    workbookB.creator = 'byte-variant';
-    workbookB.addWorksheet('TKB').addRows([columnMappings.map((mapping) => mapping.sourceHeader), ['T2', 'SÃ¡ng', 1, '10A', targetB.subject.code, 'GV01']]);
-    const bytesB = Buffer.from(await workbookB.xlsx.writeBuffer());
-    const sameKey = (bytes: Buffer) => profileB.actor.agent.post('/api/timetable-import/workbooks/confirm').set('Origin', testOrigin)
+    const sameKey = (weekId: string) => profileB.actor.agent.post('/api/timetable-import/workbooks/confirm').set('Origin', testOrigin)
       .field('profileRevisionId', profileB.revisionId).field('academicYearId', targetB.year.id)
-      .field('calendarVersionId', targetB.calendar.id).field('effectiveAcademicWeekId', targetB.week.id)
+      .field('calendarVersionId', targetB.calendar.id).field('effectiveAcademicWeekId', weekId)
       .field('sheetName', 'TKB').field('headerRowNumber', '1').field('requestIdempotencyKey', 'same-race-key')
-      .attach('file', bytes, 'tkb.xlsx');
-    const keyResults = await Promise.all([sameKey(bytesA2), sameKey(bytesB)]);
+      .attach('file', bytesA2, 'tkb.xlsx');
+    const keyResults = await Promise.all([sameKey(targetB.week.id), sameKey(secondWeek.id)]);
     expect(keyResults.map((item) => item.status).sort()).toEqual([200, 409]);
     expect(keyResults.find((item) => item.status === 409)?.body.error).toBe('TIMETABLE_IMPORT_IDEMPOTENCY_KEY_REUSED');
     expect(await harness.prisma.timetableVersion.count()).toBe(1);
     expect(await harness.prisma.timetableImportReceipt.count()).toBe(1);
     expect(await harness.prisma.timetableImportRequestKey.count()).toBe(1);
     expect(await harness.prisma.timetableEntry.count()).toBe(1);
+    expect(await harness.prisma.auditEvent.count({ where: { action: 'TIMETABLE_IMPORT_COMMITTED' } })).toBe(1);
   });
 });

@@ -29,7 +29,7 @@ The route uses `SessionAuthGuard`, `CsrfOriginGuard`, and `CapabilityGuard` for 
 
 The browser cannot submit canonical rows, semantic checksums, request fingerprints, version/entry IDs, resolved entity IDs, or preview diffs as confirmation content.
 
-For every unbound request, the server validates and parses the uploaded XLSX again, resolves the explicitly selected visible sheet and exact header again, reloads the active immutable profile revision, and re-runs the shared canonicalization and current timetable evaluator. Database-dependent profile, target, slot, entity, alias, TeachingAssignment, coverage, and evaluator resolution runs against the authoritative state inside the commit transaction. Blocking issues return `409 TIMETABLE_IMPORT_CONFIRM_BLOCKED` and create no import/version/audit state.
+For every unbound request, the server validates and parses the uploaded XLSX again, resolves the explicitly selected visible sheet and exact header again, reloads the active immutable profile revision, and re-runs the shared canonicalization and current timetable evaluator. Database-dependent profile, target, slot, entity, alias, TeachingAssignment, coverage, and evaluator resolution runs against the authoritative state inside the commit transaction. Blocking issues return `409 TIMETABLE_IMPORT_CONFIRM_BLOCKED` and create no import/version/audit state. This includes evaluator-owned `EMPTY_TIMETABLE`: zero canonical rows are rejected before commit.
 
 ### `semantic-v1`
 
@@ -42,7 +42,7 @@ Semantic identity contains only these six fields per canonical normal entry, in 
 5. `teachingAssignmentId`
 6. `teacherUserId`
 
-Entries are sorted lexicographically by that six-field tuple using an explicit comparator. The exact byte input is UTF-8 of `JSON.stringify()` over objects constructed in this exact key order:
+Entries are sorted lexicographically by that six-field tuple using explicit ordinal JavaScript string comparison (`<` and `>`), never locale/ICU collation. The exact byte input is UTF-8 of `JSON.stringify()` over objects constructed in this exact key order:
 
 ```json
 {"version":"semantic-v1","entries":[{"weekday":"...","timeSlotDefinitionId":"...","schoolClassId":"...","subjectId":"...","teachingAssignmentId":"...","teacherUserId":"..."}]}
@@ -96,7 +96,10 @@ The service retries the complete serializable database decision at most three ti
 
 - `timetable_versions_import_semantic_duplicate_key`;
 - `timetable_import_request_keys_request_key_key`;
+- `timetable_import_receipts_request_idempotency_key_key`;
 - `timetable_versions_academic_year_id_version_number_key`.
+
+`TimetableImportRequestKey` remains the authoritative consumed-key namespace. The retained unique `TimetableImportReceipt.requestIdempotencyKey` original-request provenance field is an additional physical first-creation race boundary, so its named constraint and Prisma/snake-case field target variants participate in the same bounded retry classification.
 
 It never retries validation/domain failures. Exhaustion returns bounded `409 TIMETABLE_IMPORT_CONFIRM_CONCURRENCY_CONFLICT`. Transaction rollback prevents orphan versions, entries, receipts, bindings, or success audits.
 

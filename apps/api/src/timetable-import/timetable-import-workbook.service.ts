@@ -39,6 +39,7 @@ export interface UploadedWorkbookFile {
 const CONCURRENCY_CONSTRAINTS = [
   'timetable_versions_import_semantic_duplicate_key',
   'timetable_import_request_keys_request_key_key',
+  'timetable_import_receipts_request_idempotency_key_key',
   'timetable_versions_academic_year_id_version_number_key',
 ] as const;
 const MAX_TRANSACTION_ATTEMPTS = 3;
@@ -385,11 +386,15 @@ export class TimetableImportWorkbookService {
     if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false;
     if (error.code === 'P2034') return true;
     if (error.code !== 'P2002') return false;
-    const target = JSON.stringify(error.meta?.target ?? '').toLowerCase();
-    if (CONCURRENCY_CONSTRAINTS.some((constraint) => target.includes(constraint))) return true;
-    return target.includes('request_key')
-      || (target.includes('academic_year_id') && target.includes('version_number'))
-      || (target.includes('academic_year_id') && target.includes('calendar_version_id')
-        && target.includes('effective_academic_week_id') && target.includes('content_checksum'));
+    const diagnostic = `${error.message} ${JSON.stringify(error.meta ?? {})}`
+      .replaceAll(/[^a-zA-Z0-9]+/gu, '')
+      .toLowerCase();
+    const includes = (value: string): boolean => diagnostic.includes(value.replaceAll('_', '').toLowerCase());
+    if (CONCURRENCY_CONSTRAINTS.some(includes)) return true;
+    return includes('request_key')
+      || includes('request_idempotency_key')
+      || (includes('academic_year_id') && includes('version_number'))
+      || (includes('academic_year_id') && includes('calendar_version_id')
+        && includes('effective_academic_week_id') && includes('content_checksum'));
   }
 }

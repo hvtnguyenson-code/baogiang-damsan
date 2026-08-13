@@ -1,5 +1,6 @@
 import { computeConfirmRequestFingerprint, computeWorkbookSha256 } from '../../src/timetable-import/import-identity';
 import { TimetableImportWorkbookService, UploadedWorkbookFile } from '../../src/timetable-import/timetable-import-workbook.service';
+import { Prisma } from '@prisma/client';
 
 const now = new Date('2026-08-12T00:00:00.000Z');
 const checksum = 'a1b8d2c734a4ace72ae4e3842afba10d26485c692c8492d92cf37c93bb835c48';
@@ -160,5 +161,74 @@ describe('TimetableImportWorkbookService confirmation', () => {
     expect(tx.timetableVersion.create).not.toHaveBeenCalled();
     expect(tx.timetableImportReceipt.create).not.toHaveBeenCalled();
     expect(tx.timetableImportRequestKey.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects EMPTY_TIMETABLE without persisting import state or success audit', async () => {
+    const tx = {
+      timetableImportRequestKey: { findUnique: jest.fn().mockResolvedValue(null), create: jest.fn() },
+      timetableVersion: { findFirst: jest.fn(), create: jest.fn() },
+      timetableEntry: { createMany: jest.fn() },
+      timetableImportReceipt: { create: jest.fn() },
+    };
+    const empty = {
+      ...canonical,
+      rows: [],
+      source: { ...canonical.source, sourceRowCount: 0 },
+      blockingIssueCount: 1,
+      canConfirm: false,
+      issues: [{ code: 'EMPTY_TIMETABLE', severity: 'ERROR', category: 'VALIDATION' }],
+    };
+    const { service, audit } = harness({ tx, canonicalResult: empty });
+    await expect(service.confirm(upload, dto, 'actor', {})).rejects.toMatchObject({
+      response: expect.objectContaining({
+        error: 'TIMETABLE_IMPORT_CONFIRM_BLOCKED',
+        issues: [expect.objectContaining({ code: 'EMPTY_TIMETABLE' })],
+      }),
+    });
+    expect(tx.timetableVersion.create).not.toHaveBeenCalled();
+    expect(tx.timetableEntry.createMany).not.toHaveBeenCalled();
+    expect(tx.timetableImportReceipt.create).not.toHaveBeenCalled();
+    expect(tx.timetableImportRequestKey.create).not.toHaveBeenCalled();
+    expect(audit.write).not.toHaveBeenCalled();
+  });
+
+  it('retries a legacy receipt provenance P2002 and resolves the winning binding as replay', async () => {
+    const binding = {
+      requestFingerprint: fingerprint(),
+      receipt: { ...receipt({ requestFingerprint: fingerprint() }), timetableVersion: version() },
+    };
+    const legacyRace = new Prisma.PrismaClientKnownRequestError(
+      'Unique constraint failed on the constraint: `timetable_import_receipts_request_idempotency_key_key`',
+      { code: 'P2002', clientVersion: '5.22.0', meta: { target: ['requestIdempotencyKey'] } },
+    );
+    const rootLookup = jest.fn().mockResolvedValueOnce(null);
+    const transaction = jest.fn()
+      .mockRejectedValueOnce(legacyRace)
+      .mockImplementationOnce((callback: (client: unknown) => unknown) => callback({
+        timetableImportRequestKey: { findUnique: jest.fn().mockResolvedValue(binding) },
+      }));
+    const prisma = { timetableImportRequestKey: { findUnique: rootLookup }, $transaction: transaction };
+    const parser = { parse: jest.fn().mockResolvedValue({ sheets: [] }) };
+    const service = new TimetableImportWorkbookService(prisma as never, parser as never, {} as never, {} as never);
+    await expect(service.confirm(upload, dto, 'actor', {})).resolves.toMatchObject({
+      outcome: 'IDEMPOTENT_REPLAY', receipt: { id: 'receipt-1' }, version: { id: 'version-1' },
+    });
+    expect(transaction).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not retry an unrelated P2002', async () => {
+    const unrelated = new Prisma.PrismaClientKnownRequestError(
+      'Unique constraint failed on unrelated catalog code',
+      { code: 'P2002', clientVersion: '5.22.0', meta: { target: ['unrelatedCode'] } },
+    );
+    const transaction = jest.fn().mockRejectedValue(unrelated);
+    const prisma = {
+      timetableImportRequestKey: { findUnique: jest.fn().mockResolvedValue(null) },
+      $transaction: transaction,
+    };
+    const parser = { parse: jest.fn().mockResolvedValue({ sheets: [] }) };
+    const service = new TimetableImportWorkbookService(prisma as never, parser as never, {} as never, {} as never);
+    await expect(service.confirm(upload, dto, 'actor', {})).rejects.toBe(unrelated);
+    expect(transaction).toHaveBeenCalledTimes(1);
   });
 });

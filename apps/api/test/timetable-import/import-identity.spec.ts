@@ -28,8 +28,11 @@ const envelope = (overrides: Record<string, string | number> = {}) => ({
 });
 
 describe('semantic-v1 identity', () => {
-  it('serializes the exact fixed-key shape and is order independent', () => {
-    const second = entry({ weekday: 'TUESDAY', teacherUserId: '00000000-0000-4000-8000-000000000006' });
+  it('serializes multiple entries in exact ordinal tuple order with the fixed-key byte shape', () => {
+    const second = entry({ weekday: 'FRIDAY', teacherUserId: '00000000-0000-4000-8000-000000000006' });
+    const expected = '{"version":"semantic-v1","entries":[{"weekday":"FRIDAY","timeSlotDefinitionId":"00000000-0000-4000-8000-000000000001","schoolClassId":"00000000-0000-4000-8000-000000000002","subjectId":"00000000-0000-4000-8000-000000000003","teachingAssignmentId":"00000000-0000-4000-8000-000000000004","teacherUserId":"00000000-0000-4000-8000-000000000006"},{"weekday":"MONDAY","timeSlotDefinitionId":"00000000-0000-4000-8000-000000000001","schoolClassId":"00000000-0000-4000-8000-000000000002","subjectId":"00000000-0000-4000-8000-000000000003","teachingAssignmentId":"00000000-0000-4000-8000-000000000004","teacherUserId":"00000000-0000-4000-8000-000000000005"}]}';
+    expect(serializeSemanticV1([entry(), second])).toBe(expected);
+    expect(serializeSemanticV1([second, entry()])).toBe(expected);
     expect(serializeSemanticV1([entry()])).toBe(JSON.stringify({ version: 'semantic-v1', entries: [entry()] }));
     expect(computeSemanticChecksum([entry(), second])).toBe(computeSemanticChecksum([second, entry()]));
   });

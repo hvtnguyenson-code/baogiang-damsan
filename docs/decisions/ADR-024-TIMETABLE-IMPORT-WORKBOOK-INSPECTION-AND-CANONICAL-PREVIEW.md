@@ -52,6 +52,8 @@ Class and subject resolution collects exact canonical-code and active typed-alia
 
 Teaching assignment is derived from exact class/subject/teacher identity. Exactly one assignment must cover the full interval from the selected week's earliest segment start through calendar end. The existing `evaluateTimetableEntries` evaluator supplies weekday and real-time class/teacher collision rules, with validation results mapped back to source rows. No bad row is silently accepted; any error makes `canConfirm` false and suppresses the diff.
 
+ADR-026 clarifies that a valid selected sheet/header producing zero canonical rows maps the evaluator's `EMPTY_TIMETABLE` result into a blocking validation issue. A header-only workbook therefore has `canConfirm = false` and no preview diff.
+
 ### Baseline and diff
 
 The baseline is the `ACTIVE` or `SUPERSEDED` timetable historically effective at candidate `effectiveFrom`, ordered by latest `effectiveFrom` then ID. Coordinate identity is weekday + exact time-slot-definition ID + class ID. Payload identity is subject + teaching assignment + teacher. Exact slot revision changes therefore appear as remove plus add. Added, changed, removed, unchanged counts and issue ordering are deterministic.

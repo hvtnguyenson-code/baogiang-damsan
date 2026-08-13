@@ -62,6 +62,7 @@ const messages: Record<string, string> = {
   DUPLICATE_CANONICAL_ROW: 'Canonical timetable row is duplicated.',
   CLASS_TIME_OVERLAP: 'Class timetable rows overlap.',
   TEACHER_TIME_OVERLAP: 'Teacher timetable rows overlap.',
+  EMPTY_TIMETABLE: 'Timetable must contain at least one canonical entry.',
 };
 
 @Injectable()
@@ -251,8 +252,7 @@ export class WorkbookCanonicalizationService {
       effectiveFrom: target.effectiveFrom,
       calendarEndDate: target.calendarEndDate,
     })) {
-      if (validation.code === 'EMPTY_TIMETABLE'
-        || !['WEEKDAY_NOT_IN_CALENDAR', 'CLASS_TIME_OVERLAP', 'TEACHER_TIME_OVERLAP'].includes(validation.code)) continue;
+      if (!['EMPTY_TIMETABLE', 'WEEKDAY_NOT_IN_CALENDAR', 'CLASS_TIME_OVERLAP', 'TEACHER_TIME_OVERLAP'].includes(validation.code)) continue;
       const related = (validation.entryIds ?? []).map((id) => sourceById.get(id)!).filter(Boolean);
       issues.push({
         ...this.issue(validation.code, related[0]),
@@ -357,7 +357,7 @@ export class WorkbookCanonicalizationService {
       code: code as TimetableImportPreviewIssue['code'],
       severity: 'ERROR',
       category: code.includes('CELL') || code.includes('ROW') || code === 'HIDDEN_MAPPED_DATA'
-        ? 'ROW' : code.includes('OVERLAP') ? 'VALIDATION' : 'RESOLUTION',
+        ? 'ROW' : code.includes('OVERLAP') || code === 'EMPTY_TIMETABLE' ? 'VALIDATION' : 'RESOLUTION',
       message: messages[code] ?? code,
       ...(sourceRowNumber ? { sourceRowNumber } : {}),
       ...(semanticField ? { semanticField } : {}),
