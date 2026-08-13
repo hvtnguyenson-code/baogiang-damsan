@@ -19,8 +19,8 @@ BEGIN
           FROM "capability_definitions"
          WHERE "key" = 'PPCT_MANAGE'
            AND cardinality("allowed_scope_types") = 2
-           AND "allowed_scope_types" @> ARRAY['SUBJECT', 'SCHOOL_WIDE']::"CapabilityScope"[]
-           AND "allowed_scope_types" <@ ARRAY['SUBJECT', 'SCHOOL_WIDE']::"CapabilityScope"[]
+           AND "allowed_scope_types" @> ARRAY['SUBJECT', 'SCHOOL_WIDE']::text[]
+           AND "allowed_scope_types" <@ ARRAY['SUBJECT', 'SCHOOL_WIDE']::text[]
     ) THEN
         RAISE EXCEPTION 'PPCT_MANAGE must allow exactly SUBJECT and SCHOOL_WIDE';
     END IF;
