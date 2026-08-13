@@ -16,6 +16,7 @@ import { TeachingAssignmentsModule } from './teaching-assignments/teaching-assig
 import { TimeSlotsModule } from './time-slots/time-slots.module';
 import { TimetablesModule } from './timetables/timetables.module';
 import { TimetableImportModule } from './timetable-import/timetable-import.module';
+import { PpctModule } from './ppct/ppct.module';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { TimetableImportModule } from './timetable-import/timetable-import.modul
     TimeSlotsModule,
     TimetablesModule,
     TimetableImportModule,
+    PpctModule,
   ],
 })
 export class AppModule {}
