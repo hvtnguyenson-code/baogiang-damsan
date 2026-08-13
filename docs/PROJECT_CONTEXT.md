@@ -55,9 +55,11 @@ Backend hiện có các boundary đã được review và version hóa:
 - `TimetableVersion`/`TimetableEntry`, DRAFT/validation, approval/activation, supersession và historical resolution;
 - import TKB XLSX gồm profile/alias, bounded workbook inspection, canonical preview, confirmation phía server, semantic/request replay, imported-DRAFT lock và adversarial security corpus qua LOCAL-FC-04B3D1.
 
-Chưa có persistence hoặc API cho PPCT, ngoại lệ cục bộ, cancellation/substitution/make-up, special activity, teaching execution/Báo giảng, tiến độ/công nợ, statement/reporting hay approval snapshot. Các boundary này phải được khóa bằng audit/ADR backend trước khi UI được phép đặt business semantics.
+Ngoài PPCT persistence foundation của 05A1, chưa có PPCT API/control plane, ngoại lệ cục bộ, cancellation/substitution/make-up, special activity, teaching execution/Báo giảng, tiến độ/công nợ, statement/reporting hay approval snapshot. Các boundary này phải được khóa bằng audit/ADR backend trước khi UI được phép đặt business semantics.
 
-`LOCAL-FC-05A0` đã merged qua PR #37. Closure 05A0D đã đóng các điều kiện kiến trúc PPCT và đưa ADR-027 sang **Accepted**: logical master PPCT dùng chung có scope `AcademicYear + Subject + Grade`, còn tiến độ phân phối/hoàn thành/nợ vẫn độc lập theo từng class-subject stream và gắn lịch sử với exact PPCT version/item. `LOCAL-FC-05A1` là backend slice tiếp theo và đã architecture-ready, nhưng persistence/API/capability/import của nó vẫn cần task riêng; PPCT import được deferred sang lát cắt riêng.
+`LOCAL-FC-05A0` đã merged qua PR #37. Closure 05A0D và ADR-027 đã xác lập kiến trúc PPCT: logical master dùng chung có scope `AcademicYear + Subject + Grade`, còn tiến độ phân phối/hoàn thành/nợ độc lập theo từng class-subject stream và gắn lịch sử với exact PPCT version/item.
+
+`LOCAL-FC-05A1`/ADR-028 thiết lập persistence foundation: stable item UUID tách khỏi version-local revision/order, split/merge có lineage tới exact revisions, và class-subject association gắn exact PPCT version theo khoảng ngày dân sự không chồng lấp. `LOCAL-FC-05A2` là lát cắt tiếp theo, sở hữu lifecycle command, historical reads và authorization. PPCT import vẫn deferred sang lát cắt riêng.
 
 Thứ tự không đổi: hoàn thành chuỗi backend đến `CORE BACKEND FREEZE` trước khi UI được phép chốt business semantics.
 
