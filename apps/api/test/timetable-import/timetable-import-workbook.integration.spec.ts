@@ -26,7 +26,10 @@ integration('timetable import workbook endpoints integration', () => {
       { key: 'SYSTEM_ADMIN', scopes: ['SCHOOL_WIDE'] },
     ]);
   });
-  afterAll(async () => harness.stop());
+  afterAll(async () => {
+    await harness.clean();
+    await harness.stop();
+  });
 
   async function createProfile(): Promise<{ actor: Awaited<ReturnType<Phase01Harness['actor']>>; profileId: string; revisionId: string }> {
     const actor = await harness.actor({ grants: [{ capabilityKey: 'TIMETABLE_MANAGE' }] });
