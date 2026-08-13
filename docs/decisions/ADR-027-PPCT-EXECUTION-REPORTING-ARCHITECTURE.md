@@ -1,23 +1,34 @@
 # ADR-027: Kiến trúc PPCT, thực thi giảng dạy và báo cáo
 
-- **Trạng thái:** Proposed
+- **Trạng thái:** Accepted
 - **Ngày:** 2026-08-13
 - **Phạm vi:** Quyết định kiến trúc; chưa cho phép triển khai schema, API hoặc UI
 - **Audit nguồn:** `docs/requirements/LOCAL-FC-05A0-PPCT-TEACHING-EXECUTION-REPORTING-ARCHITECTURE-AUDIT.md`
+- **Closure:** `docs/requirements/LOCAL-FC-05A0D-PPCT-DECISION-CLOSURE.md`
 
 ## Bối cảnh
 
 Đặc tả v1.2 xác lập chuỗi nghiệp vụ từ phân phối chương trình (PPCT), thời khóa biểu, điều chỉnh vận hành, thực thi giảng dạy, tiến độ/nợ tiết đến báo cáo và duyệt báo cáo. Nền tảng hiện tại đã có năm học, lịch nghiệp vụ, phân công giảng dạy, tiết học, thời khóa biểu và nhập XLSX an toàn; các miền PPCT, thực thi, nợ tiết và báo cáo chưa được triển khai.
 
-Các quyết định dưới đây chỉ ghi nhận phần kiến trúc đã có đủ bằng chứng. Những điểm chưa rõ vẫn là điều kiện chặn trước khi bắt đầu lát cắt triển khai LOCAL-FC-05A1.
+Các nguyên tắc nghiệp vụ có nguồn trực tiếp từ v1.2 được phân biệt với các suy luận của audit 05A0. Những điểm PPCT trước đây còn **INFERRED** hoặc **UNRESOLVED** được đóng bằng quyết định product owner trong 05A0D; không được mô tả ngược thành nội dung vốn đã explicit trong v1.2. Các câu hỏi downstream còn lại vẫn cần quyết định ở lát cắt tương ứng.
 
-## Quyết định đề xuất
+## Quyết định
 
-### 1. PPCT là miền độc lập, có phiên bản bất biến
+### 1. PPCT là miền độc lập, dùng chung và có phiên bản bất biến
 
-PPCT không phải là thuộc tính của thời khóa biểu. Một phiên bản PPCT sở hữu tập mục PPCT có thứ tự, tên bài/chủ đề, loại bài và hiệu lực lịch sử. Khi đã được dùng làm căn cứ nghiệp vụ, phiên bản không bị sửa ngược; điều chỉnh tạo phiên bản mới và bảo toàn tham chiếu lịch sử.
+Logical PPCT aggregate thuộc đúng tổ hợp `AcademicYear + Subject + Grade`. `SchoolClass`, `TeachingAssignment`, `TimetableVersion` và `AcademicCalendarVersion` không sở hữu PPCT. Tất cả lớp cùng năm học, môn và khối dùng các phiên bản của cùng một master PPCT; mô hình hiện hành không có master plan hoặc override riêng theo lớp.
 
-Khóa tổng hợp chính xác của PPCT, quy tắc dùng chung giữa các lớp và cơ chế ngoại lệ theo lớp chưa được quyết định trong ADR này.
+Tiến độ thực tế thuộc từng class-subject stream, có scope tối thiểu `AcademicYear + SchoolClass + Subject`, và phải resolve qua association đến chính xác một phiên bản PPCT. Hai lớp có thể lệch tiến độ nhiều tiết mà không tạo plan/version riêng. PPCT item không mang global `completed` flag cho mọi lớp.
+
+Một logical plan có các phiên bản theo vòng đời `DRAFT → PUBLISHED → SUPERSEDED`. Chỉ `DRAFT` được sửa. `PUBLISHED` bất biến; sửa một plan đã công bố phải tạo phiên bản mới. `SUPERSEDED` bất biến, terminal đối với future planning use. Công bố bản thay thế giữ nguyên bản trước và mọi tham chiếu lịch sử; ADR này không có delete, unpublish, reactivate hoặc approval workflow thứ hai cho PPCT.
+
+Mỗi logical PPCT item có UUID bất biến; `sequence` / `Tiet_PPCT` chỉ là thứ tự nghiệp vụ, không phải định danh kỹ thuật. Mỗi phiên bản chứa item revision bất biến dưới chính phiên bản đó. Khi nghĩa của obligation được giữ nguyên, UUID có thể được carry forward dù sequence/title/metadata đổi. Split tạo UUID con mới; merge tạo UUID hợp nhất mới; cả hai giữ predecessor/successor lineage tường minh. UUID cũ không bị tái dùng cho nhiều nghĩa mới và item bị bỏ khỏi phiên bản sau vẫn tồn tại trong lịch sử.
+
+Cardinality chuẩn là một item tương ứng một curriculum position và một distributable teaching-period obligation. Chủ đề nhiều tiết dùng nhiều item có thứ tự. Một normal resolved teaching occurrence tiêu thụ tối đa một next item; một class-stream item được hoàn thành đúng một lần; make-up hoàn thành item đã phân phối và không tiêu thụ item mới. Cardinality khác là re-entry trigger, không được tự suy diễn trong triển khai.
+
+PPCT thuộc AcademicYear nhưng không thuộc `AcademicCalendarVersion`; `AcademicWeek` không phải owner hoặc identity của item. Canonical master được sắp theo curriculum sequence. Expected week placement là downstream projection từ association của lớp, business calendar có hiệu lực, timetable/operational reality và tiến độ riêng của lớp. Thay calendar version không tự yêu cầu thay PPCT version và cột “week” của workbook chưa được duyệt không phải core semantics.
+
+Mỗi class-subject stream bind theo interval ngày dân sự không chồng lấn tới một exact PPCT version: `AcademicYear + SchoolClass + Subject + effective civil-date interval → exact PPCT version`. Version phải cùng AcademicYear, Subject và Grade với lớp trong năm đó. Chuyển version chỉ có hiệu lực prospective/date-effective; execution, fulfillment/debt và reporting giữ exact version, exact item UUID, stream và association/source lịch sử cần thiết. Không resolve lịch sử bằng version đang current và không thêm sequence/title PPCT vào `TimetableEntry`.
 
 ### 2. Tách lịch cơ sở khỏi điều chỉnh vận hành
 
@@ -31,7 +42,7 @@ Một tiết được phân giải (resolved teaching occurrence) là kết qu�
 2. thời khóa biểu cơ sở có hiệu lực;
 3. các lớp phủ vận hành hợp lệ;
 4. phân công giảng dạy có hiệu lực;
-5. PPCT có hiệu lực và trạng thái tiến độ trước tiết đó;
+5. association PPCT chính xác có hiệu lực theo ngày, exact PPCT version/item và trạng thái tiến độ của class-subject stream trước tiết đó;
 6. bằng chứng thực thi nếu tiết đã diễn ra.
 
 Đây mặc định là mô hình đọc có thể tái tạo, không phải nguồn sự thật mới để ghi đè các miền nguồn. Có thể materialize để tối ưu truy vấn chỉ khi vẫn đối soát và tái tạo được từ sự kiện/thực thể lịch sử.
@@ -64,9 +75,11 @@ Người nộp không được tự duyệt chính báo cáo đó. Tuyến duy�
 
 ### 8. Quyền nghiệp vụ phải dùng capability và scope tường minh
 
-Quyền PPCT, ghi nhận thực thi, rà soát chuyên môn, quản lý vận hành và duyệt báo cáo phải đi qua capability cùng phạm vi dữ liệu rõ ràng. Không suy quyền từ chức danh, tư cách thành viên đơn thuần hoặc quyền quản trị hệ thống.
+Quyền quản lý PPCT dùng capability chuyên môn riêng `PPCT_MANAGE`, chỉ cho phép scope `SUBJECT` và `SCHOOL_WIDE`. Đây là quyết định kiến trúc; ADR này không seed hoặc triển khai capability. Subject-group leader cần quyền PPCT phải được cấp explicit grant cho `SUBJECT` tương ứng hoặc grant `SCHOOL_WIDE` được phê duyệt.
 
-Tên capability và ma trận scope trong audit là ứng viên, chưa phải hợp đồng được chấp nhận.
+Theo ADR-008, không suy `PPCT_MANAGE` từ `SYSTEM_ADMIN`, role/title, `SubjectGroupMembership`, `AdditionalDuty`, `TeachingAssignment` hoặc grant `SUBJECT_GROUP`; không có inference giữa scope types. Với request theo subject, server phải resolve resource từ PPCT/domain resource bị tác động, không tin resource ID tùy ý trong body/query của client.
+
+Capability và scope cho execution, operational overlays, special activities và reporting/approval vẫn là quyết định downstream.
 
 ### 9. Hoạt động đặc biệt là tổng hợp nghiệp vụ riêng
 
@@ -92,28 +105,21 @@ Các miền giao tiếp bằng định danh và hợp đồng phiên bản; khô
 
 ADR này không quyết định:
 
-1. khóa tổng hợp PPCT chính xác và phạm vi năm học/môn/khối/chương trình;
-2. một PPCT dùng chung giữa nhiều lớp hay có biến thể/ghi đè theo lớp;
-3. quan hệ sở hữu giữa PPCT và phiên bản lịch nghiệp vụ;
-4. định danh mục PPCT qua các phiên bản và quy tắc tách/gộp mục;
-5. vòng đời soạn thảo, công bố, thay thế, hiệu lực và hiệu chỉnh PPCT;
-6. hợp đồng, mẫu tệp và semantics nhập PPCT;
-7. cách phân bổ tuần PPCT và ngoại lệ theo lịch địa phương;
-8. tiêu chí “đủ PPCT” để công bố thời khóa biểu;
-9. ngoại lệ không tiêu thụ PPCT ngoài nghỉ cục bộ và ngày gián đoạn;
-10. quyền chiếm tiết và xử lý xung đột của hoạt động đặc biệt;
-11. semantics đầy đủ của đổi/chuyển/hoán đổi tiết;
-12. số lượng bản ghi thực thi trên một tiết và xử lý khác biệt giữa kế hoạch với thực tế;
-13. dạy bù bổ sung ngoài lịch cơ sở và cách chọn vị trí thực hiện;
-14. nợ tiết là projection thuần hay ledger được lưu kèm cơ chế đối soát;
-15. ảnh hưởng của phiên bản PPCT mới đến nợ đang mở;
-16. nguồn dữ liệu tiết chủ nhiệm và hoạt động giáo dục khác;
-17. cơ chế snapshot/manifest cụ thể của báo cáo;
-18. tuyến duyệt, ủy quyền và phân tách nhiệm vụ;
-19. sửa báo cáo sau nộp/duyệt/khóa;
-20. tên capability và tập scope cuối cùng;
-21. chính sách lưu trữ, đóng năm và truy xuất lâu dài;
-22. mọi hợp đồng API, schema và UX chi tiết.
+1. tiêu chí “đủ PPCT” để công bố hoặc đánh giá operational readiness của thời khóa biểu;
+2. ngoại lệ không tiêu thụ PPCT ngoài các trường hợp đã có nguồn;
+3. quyền chiếm tiết, staffing và xử lý xung đột của hoạt động đặc biệt;
+4. semantics đầy đủ của đổi/chuyển/hoán đổi tiết và precedence cuối cùng của mọi overlay;
+5. cách xử lý khác biệt giữa nội dung kế hoạch với thực tế và correction workflow của execution;
+6. dạy bù bổ sung không có debt trước đó và cách chọn vị trí thực hiện;
+7. nợ tiết là projection thuần hay ledger được lưu kèm cơ chế đối soát;
+8. nguồn dữ liệu tiết chủ nhiệm và hoạt động giáo dục khác;
+9. cơ chế vật lý snapshot/immutable-manifest của báo cáo;
+10. tuyến duyệt, ủy quyền, phân tách nhiệm vụ và sửa báo cáo sau nộp/duyệt/khóa;
+11. capability/scope downstream ngoài `PPCT_MANAGE`;
+12. chính sách lưu trữ, đóng năm và truy xuất lâu dài;
+13. mọi hợp đồng API, schema, transaction, idempotency và UX chi tiết.
+
+PPCT import được **deferred** sang lát cắt và audit kiến trúc/bảo mật riêng khi có workbook/template/workflow được phê duyệt. 05A1 không được encode layout, sheet, alias, column mapping, checksum, profile, raw-file contract, replay namespace, semantic duplicate rule hoặc giả định từ timetable XLSX import.
 
 ## Hệ quả
 
@@ -125,18 +131,8 @@ ADR này không quyết định:
 
 ## Cổng triển khai LOCAL-FC-05A1
 
-**BLOCKED.** LOCAL-FC-05A1 chỉ được bắt đầu sau khi có quyết định được chấp nhận tối thiểu về:
-
-- khóa tổng hợp PPCT và quy tắc dùng chung/ngoại lệ theo lớp;
-- định danh mục PPCT qua phiên bản và quy tắc tách/gộp;
-- vòng đời, công bố, thay thế và hiệu lực PPCT;
-- quan hệ PPCT với năm học, lịch nghiệp vụ và tuần nghiệp vụ;
-- tham chiếu lịch sử bắt buộc từ lịch/thực thi/báo cáo;
-- capability và scope quản lý PPCT;
-- ranh giới nhập PPCT (triển khai ngay hay hoãn sang lát cắt riêng).
-
-Việc chuyển ADR này sang Accepted chỉ hợp lệ khi các điểm trên được quyết định rõ hoặc được tách thành ADR phụ đã Accepted. Trạng thái Proposed hiện tại không cấp quyền triển khai.
+**READY về architecture entry criteria.** 05A0D đã đóng đầy đủ bảy điều kiện về aggregate/sharing, item identity/cardinality, lifecycle/effectivity, calendar/association, historical references, authorization và import boundary. Trạng thái READY chỉ cho phép một task riêng thiết kế/triển khai 05A1 theo các quyết định đã chấp nhận; nó không cho phép schema/API/runtime implementation trong 05A0D.
 
 ## Ngoài phạm vi
 
-ADR này không thay đổi source code, schema, migration, seed, hợp đồng API, dependency, CI/CD, hạ tầng, dữ liệu hay giao diện người dùng.
+ADR này không thay đổi source code, schema, migration, seed, hợp đồng API, dependency, CI/CD, hạ tầng, dữ liệu hay giao diện người dùng. PPCT import và mọi UI business semantics vẫn nằm ngoài phạm vi; UI chỉ được đi sau `CORE BACKEND FREEZE` của các contract tương ứng.

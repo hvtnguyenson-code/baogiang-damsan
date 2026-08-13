@@ -10,7 +10,7 @@ This audit defines the dependency and ownership boundaries required before PPCT,
 - **INFERRED:** the narrowest architecture consistent with the sources; approval is still required.
 - **UNRESOLVED:** no single safe answer is established.
 
-ADR-027 remains **Proposed**. Nothing in this audit changes the accepted meaning of historical timetable `VALIDATED` or `ACTIVE` rows.
+This document preserves the original 05A0 evidence classifications. The later product-owner decisions are recorded explicitly in the 05A0D closure/addendum; after that closure, ADR-027 is **Accepted** and 05A1 is architecture-ready. Nothing in either document changes the accepted meaning of historical timetable `VALIDATED` or `ACTIVE` rows.
 
 ## 2. Source authority and method
 
@@ -24,6 +24,21 @@ Priority applied:
 6. Prototype only as non-binding presentation evidence under ADR-003.
 
 Repository inspection confirmed no PPCT, CalendarException, operational-event, teaching-execution, teaching-debt, special-activity or statement model currently exists. The current aggregate chain ends at canonical timetable import.
+
+### 2.1 05A0D closure addendum
+
+05A0 was merged through PR #37 / CI #168. Its **INFERRED** and **UNRESOLVED** labels remain an accurate record of what specification v1.2 and the previously Accepted ADRs did or did not say. `LOCAL-FC-05A0D-PPCT-DECISION-CLOSURE.md` adds product-owner architecture authority; it does not falsify that source history.
+
+| Former 05A0 question | 05A0D accepted project decision |
+|---|---|
+| Aggregate key and class sharing | Logical PPCT plan is exactly `AcademicYear + Subject + Grade`; all matching classes share it; no class-owned master/override. |
+| Master plan versus progress | Progress is independent per `AcademicYear + SchoolClass + Subject` stream and resolves an exact version binding. |
+| Item identity/cardinality | Immutable item UUID is distinct from sequence; immutable version-local revisions; explicit split/merge lineage; one normal item per teaching-period obligation. |
+| Lifecycle/effectivity | `DRAFT → PUBLISHED → SUPERSEDED`; only draft is editable; published/superseded history is immutable; class binding switches prospectively by civil date. |
+| Calendar/week relationship | PPCT belongs to AcademicYear, not `AcademicCalendarVersion`; sequence is canonical and expected week placement is downstream projection. |
+| Historical association | Non-overlapping class-subject intervals bind exact versions; history pins exact version/item/stream and relevant association/source. |
+| PPCT authorization | Future distinct `PPCT_MANAGE`, allowed only at `SUBJECT` and `SCHOOL_WIDE`; no implicit group, role, duty, assignment or admin inference. |
+| Import boundary | PPCT import is deferred to a separate evidence-backed architecture/security slice and is excluded from 05A1. |
 
 ## 3. Direct v1.2 extraction and completeness evidence
 
@@ -106,9 +121,9 @@ Planning aggregates are upstream facts. Operational events explain deviations. E
 ### Authoritative facts and owner
 
 - **CONFIRMED:** PPCT is independently versioned (`curriculum_versions` + `curriculum_entries`), includes year, grade, subject, lesson sequence/title/type and effectivity (v1.2 §§5.1–5.2, 8.1; Appendix C).
-- **INFERRED:** the aggregate root is a `CurriculumPlanVersion`/PPCT version, not Subject, TimetableEntry or TeachingAssignment. It should own an ordered immutable item set.
-- **CONFIRMED:** a sequence number identifies a curriculum position in source/business language. **UNRESOLVED:** whether it is a stable identity across revisions. It must initially be treated as a version-local order/business key, with an immutable surrogate identity for historical references.
-- **CONFIRMED:** corrections must not overwrite historical facts (§2). **INFERRED:** publish/supersede produces a new immutable PPCT version; executions retain the exact old version/item reference.
+- **05A0D DECIDED:** the logical aggregate is exactly `AcademicYear + Subject + Grade`; versions own ordered immutable item revisions. Subject, SchoolClass, TimetableEntry, TeachingAssignment, TimetableVersion and AcademicCalendarVersion are not owners.
+- **CONFIRMED source / 05A0D DECIDED identity:** sequence identifies business order. It is not technical identity. Each logical item has an immutable UUID; semantically preserved obligations may carry it forward. Split/merge creates new identities with explicit lineage.
+- **CONFIRMED historical rule / 05A0D DECIDED lifecycle:** corrections do not overwrite facts. Lifecycle is `DRAFT → PUBLISHED → SUPERSEDED`; published and superseded versions are immutable, and executions retain exact old version/item references.
 
 ### Scope and sharing
 
@@ -117,25 +132,25 @@ Planning aggregates are upstream facts. Operational events explain deviations. E
 | AcademicYear | **CONFIRMED**. |
 | Subject | **CONFIRMED**. |
 | Grade | **CONFIRMED**. |
-| AcademicCalendarVersion | **UNRESOLVED** as ownership. Not recommended; calendar is a planning/resolution dependency. |
-| SchoolClass | **UNRESOLVED** as aggregate scope. Source progress is class+subject but master PPCT is subject+grade. |
+| AcademicCalendarVersion | **05A0D DECIDED:** not ownership or aggregate identity; calendar is a downstream planning/resolution dependency. |
+| SchoolClass | **05A0D DECIDED:** not aggregate ownership; progress is class+subject while the master is year+subject+grade. |
 | TeachingAssignment | **REJECTED as owner / INFERRED boundary**; responsibility may change without replacing curriculum meaning. |
-| SubjectGroup | **UNRESOLVED** as owner; likely governance/review scope only. |
-| Shared across classes | **INFERRED:** the master plan may be shared by classes of a grade/subject, while each class has its own consumption stream. |
-| Class-specific adjustment | **UNRESOLVED:** no authoritative override/delta model is specified. |
+| SubjectGroup | **05A0D DECIDED:** not owner and does not imply subject authorization. |
+| Shared across classes | **05A0D DECIDED:** all classes for the same year+subject+grade share the master; each class has its own consumption stream. |
+| Class-specific adjustment | **05A0D DECIDED:** no class master/override in the authorized model; different progress is not a plan variant. |
 
 ### Lifecycle, import and week placement
 
-- **CONFIRMED:** version/effectivity and retained history exist conceptually. **UNRESOLVED:** exact lifecycle vocabulary, approval/locking, future-effective activation and whether PPCT may be corrected while unused.
-- **CONFIRMED:** PPCT import/profile is anticipated by §§1.2, 14 and Appendix D. **UNRESOLVED:** supported format, template, row contract, import identity, idempotency namespace and whether manual management is also required.
-- **INFERRED:** PPCT items form a sequential content plan, while class-level expected placement is a separate schedule/projection. **UNRESOLVED:** whether the official plan has explicit AcademicWeek placement, per-week allocations or only sequence/effectivity.
-- Lesson/topic/title mutability is **UNRESOLVED before publication**; after historical reference it must be immutable or superseded (**CONFIRMED historical rule**, physical mechanism **INFERRED**).
+- **05A0D DECIDED:** lifecycle is `DRAFT → PUBLISHED → SUPERSEDED`; only draft is editable and published correction uses a new version. No second approval, delete, unpublish or reactivate workflow is introduced.
+- **CONFIRMED anticipation / 05A0D DEFERRED:** PPCT import/profile is anticipated by v1.2, but its format, template, row contract, identity and idempotency remain outside 05A1 and require a separate audit after authoritative evidence exists.
+- **05A0D DECIDED:** PPCT is sequential; class-level expected placement is a downstream projection. `AcademicWeek` is not item ownership/identity, and calendar-version changes do not themselves cause PPCT versions.
+- Lesson/topic/title may change only in `DRAFT`; `PUBLISHED` and `SUPERSEDED` item revisions are immutable.
 
 ## 9. Timetable ↔ PPCT and readiness
 
-“Missing PPCT association” in v1.2 §7.3 is **CONFIRMED** as a blocking future readiness concern, but the exact associated entity is **UNRESOLVED**. The safest candidate is a date-effective association for the normal teaching stream identified by AcademicYear + class + subject, selecting one PPCT plan/version; it is not a PPCT field on every TimetableEntry.
+“Missing PPCT association” in v1.2 §7.3 is **CONFIRMED** as a blocking future readiness concern. **05A0D DECIDED:** the association uses non-overlapping civil-date intervals for `AcademicYear + SchoolClass + Subject`, selecting an exact PPCT version with matching year, subject and class grade. It binds the shared master and is not a PPCT field on every TimetableEntry.
 
-- **INFERRED:** normal resolved occurrences require a class-subject PPCT stream and expected next item.
+- **05A0D DECIDED:** normal resolved occurrences require the date-effective exact-version association for their class-subject stream and consume at most one next item.
 - **UNRESOLVED:** whether every normal subject lesson must be PPCT-backed and how non-curriculum periods are declared.
 - **CONFIRMED:** GDĐP/HĐTN-HN are not forced through normal PPCT/TimetableEntry (§11; ADR-017). Their content-plan relationship is **UNRESOLVED**.
 
@@ -189,7 +204,7 @@ Stored authoritative facts are calendar/timetable/PPCT versions, operational eve
 - **INFERRED:** a `TeachingExecution` (or equivalently named evidence record) means a lesson was actually taught; a report line is a projection/snapshot over execution, not the sole mutable execution fact.
 - The execution owner is the occurrence/obligation, with exact civil date, slot interval, class/subject or special-activity scope, responsible teacher, actual teacher, expected PPCT version/item and actual content evidence.
 - **CONFIRMED:** actual content may differ operationally because debt/make-up exists. **UNRESOLVED:** allowed divergence categories, free-text requirements and approval authority.
-- **UNRESOLVED:** whether one execution may fulfill multiple PPCT items or one item may require multiple executions. Default implementation must forbid both until explicit cardinality is approved.
+- **05A0D DECIDED normal cardinality:** one normal occurrence consumes at most one next PPCT item and one class-stream item is completed exactly once. Multi-period topics use multiple ordered items. Contradictory future evidence requires architecture re-entry.
 - A substitute's execution records the actual teacher while retaining responsible-teacher/base provenance. A later TeachingAssignment change does not rewrite either.
 - **INFERRED:** draft evidence may be corrected; submitted/approved evidence is immutable and correction creates a linked revision/reversal. Exact workflow remains unresolved.
 - Historical references must include exact calendar, week/segment, timetable version/entry, slot revision, PPCT version/item, original obligation/event, responsible and actual teacher IDs, and bounded display snapshots required to prevent master-data drift.
@@ -216,7 +231,7 @@ The measurement unit is distinct PPCT position/obligation, not raw timetable row
 - Supervision/absence: distribution advances, completion does not; debt opens (**CONFIRMED** §§8.3, 9.2).
 - Same-subject substitute: distribution and completion advance once (**CONFIRMED**).
 - Make-up: no new distribution; original obligation completes once and debt closes (**CONFIRMED**).
-- PPCT revision: old executions retain old item semantics; effect on future expectation is **UNRESOLVED**.
+- PPCT revision: old executions and open-debt provenance retain old item/version semantics. Future expectation follows the prospective date-effective exact-version association and never rewrites earlier history (**05A0D DECIDED**).
 - Timetable revision: expected opportunities resolve historically by date; no retroactive recalculation from current active timetable (**CONFIRMED** ADR-020/§12).
 
 Progress/debt is a deterministic projection over append-only facts. A durable debt row may serve as an indexed workflow aggregate, but it must carry original-obligation identity and be reconcilable from source facts; a mutable counter is prohibited. Storage choice remains **UNRESOLVED** pending concurrency and correction design.
@@ -287,25 +302,25 @@ The ADR-020 same-actor timetable exception is confined to timetable lifecycle. I
 
 ## 17. Authorization capability/scope candidates
 
-Existing scope types are `PERSONAL`, `SUBJECT_GROUP`, `SUBJECT`, `ACTIVITY`, `SCHOOL_WIDE` (contracts/ADR-008). Candidate minimum keys are **INFERRED proposals**, not seed changes:
+Existing scope types are `PERSONAL`, `SUBJECT_GROUP`, `SUBJECT`, `ACTIVITY`, `SCHOOL_WIDE` (contracts/ADR-008). `PPCT_MANAGE` is accepted by 05A0D but is not a seed/runtime change in this task; the other minimum keys remain **INFERRED** downstream proposals:
 
 | Candidate key | Purpose | Allowed scopes | Why not reuse existing capability |
 |---|---|---|---|
-| `PPCT_MANAGE` | Create/revise/publish/retire PPCT plans and associations. | `SUBJECT_GROUP`, `SCHOOL_WIDE` | `SUBJECT_MANAGE` currently owns catalog/TeachingAssignment and would overgrant curriculum publication. Subject scope may be added only if routing is resolved. |
+| `PPCT_MANAGE` | Create/revise/publish/supersede PPCT plans and manage their associations. | `SUBJECT`, `SCHOOL_WIDE` | **05A0D DECIDED.** Distinct professional authority; no `SUBJECT_GROUP` inference and no capability implementation in 05A0D. |
 | `TEACHING_EXECUTION_RECORD` | Create/correct own execution/Báo giảng evidence. | `PERSONAL` | `TEACHER_BASE` is broad read/personal foundation and must not silently gain mutation authority. |
 | `TEACHING_EXECUTION_REVIEW` | Review/return/approve submitted statements for a professional group. | `SUBJECT_GROUP` | Membership/`SUBJECT_GROUP_LEAD` alone is not sufficient authorization; explicit review authority is required. |
 | `TEACHING_REPORT_REVIEW_SCHOOL` | BGH confirmation/lock and school-wide reporting. | `SCHOOL_WIDE` | Existing technical/admin/timetable capabilities do not authorize report approval. |
 | `OPERATIONAL_TEACHING_MANAGE` | Create/correct cancellation, substitution and make-up workflow facts. | `SUBJECT_GROUP`, `SCHOOL_WIDE` | `TIMETABLE_MANAGE` owns base schedule and must not gain operational execution mutation implicitly. |
 | `SPECIAL_ACTIVITY_MANAGE` | Manage activity occupancy, assignments and confirmation. | `ACTIVITY`, `SCHOOL_WIDE` | Timetable/subject permissions cannot safely authorize multi-scope activity operations. |
 
-Whether PPCT/execution review needs `SUBJECT` scope is **UNRESOLVED**. `SYSTEM_ADMIN`, positionTitle, membership and AdditionalDuty never imply these keys.
+`PPCT_MANAGE` scope is closed by 05A0D. Execution/report review scopes remain downstream questions. `SYSTEM_ADMIN`, positionTitle, membership, AdditionalDuty and TeachingAssignment never imply these keys.
 
 ## 18. Historical immutability and correction model
 
 | Layer | Editable state | Historical evidence | Correction |
 |---|---|---|---|
 | Calendar | New draft aggregate only. | Activated versions retained. | New version/reactivation semantics already governed by ADR-011. |
-| PPCT | Draft/version under future lifecycle. | Referenced/published item set immutable. | New version/supersession; never rewrite execution references. |
+| PPCT | `DRAFT` only. | `PUBLISHED`/`SUPERSEDED` versions and item revisions immutable. | New version/supersession; never rewrite execution references. |
 | Timetable | DRAFT only under existing rules. | VALIDATED onward immutable; activated history retained. | New version; no operational overlay in base rows. |
 | Operational reality | Pending event if policy permits. | Effective/confirmed event append-only. | Reversal/superseding event. |
 | Execution | Draft evidence before submission. | Submitted/approved evidence immutable. | Linked revision/reversal. |
@@ -316,7 +331,7 @@ Core invariant: **No downstream operational layer may rewrite historical meaning
 
 ## 19. Concurrency and idempotency implications
 
-- PPCT publish/revise needs aggregate-head optimistic token + serializable transition; import needs separate request idempotency and semantic duplicate identity.
+- PPCT publish/revise needs an aggregate-head optimistic token plus serializable transition. A later, separately authorized import slice needs its own request idempotency and semantic duplicate identity; 05A1 must not encode them.
 - Operational event creation must prevent two active dispositions for one occurrence/obligation at the same precedence level.
 - Execution confirmation must be idempotent by command key and unique fulfillment provenance.
 - Debt scheduling/confirmation must lock or conditionally claim the same open debt; double-click/retry cannot double close or double credit.
@@ -353,33 +368,29 @@ Exact retry budgets, key namespaces, canonical serialization and conflict codes 
 
 ## 22. Material unresolved questions
 
-1. Exact PPCT aggregate key: AcademicYear + subject + grade only, or additional program/track/class scope?
-2. Does a PPCT version own/target AcademicCalendarVersion, or only reference calendar planning separately?
-3. Is one plan shared by all classes of a grade/subject, and how are class-specific variations represented?
-4. Stable cross-version identity/cardinality of PPCT items; can one item require multiple executions or vice versa?
-5. PPCT lifecycle, publication authority, self-approval, locking, correction and future effectivity.
-6. PPCT import format/template, manual workflow, checksum, semantic idempotency and raw-source retention.
-7. Whether PPCT has explicit AcademicWeek allocation or only sequential order plus separate expected-progress policy.
-8. Exact class+subject association and cutover behavior when PPCT changes mid-year.
-9. Operational completeness for active classes, unfilled slots, non-regular/self-study slots and reserve weeks; the source does not require every class to fill every slot.
-10. Which normal/non-PPCT lesson types are permitted and how they declare exemption.
-11. Conflict precedence when special activity and a normal occurrence both claim the same scope.
-12. Period move/swap semantics and whether it is cancellation+new opportunity or its own aggregate.
-13. Execution-to-PPCT cardinality and allowed actual-content divergence/reason vocabulary.
-14. Extra make-up without an existing debt: new obligation, enrichment or invalid action.
-15. Debt persistence choice and correction/reconciliation protocol.
-16. PPCT revision effects on expected progress and existing open debt.
-17. Canonical homeroom history and grade/class membership snapshots for special activities.
-18. Special-activity PPCT/content-plan relationship and substitution/absence rules.
-19. Statement snapshot strategy: copied detail versus immutable reference manifest/canonical serialization.
-20. Routing with multiple/no subject-group memberships or leaders, delegation, BGH confirmation/lock separation and post-lock correction.
-21. Whether candidate capability scopes need `SUBJECT` in addition to group/school scopes.
-22. Retention periods and privacy/export requirements for execution and statements.
+05A0D closed the PPCT questions required for 05A1. The remaining material questions are downstream:
+
+1. Operational completeness for active classes, unfilled slots, non-regular/self-study slots and reserve weeks; the source does not require every class to fill every slot.
+2. Which normal/non-PPCT lesson types are permitted and how they declare exemption.
+3. Conflict precedence when special activity and a normal occurrence both claim the same scope.
+4. Period move/swap semantics and whether it is cancellation+new opportunity or its own aggregate.
+5. Allowed actual-content divergence/reason vocabulary and execution correction workflow.
+6. Extra make-up without an existing debt: new obligation, enrichment or invalid action.
+7. Debt persistence choice and correction/reconciliation protocol.
+8. Canonical homeroom history and grade/class membership snapshots for special activities.
+9. Special-activity PPCT/content-plan relationship and substitution/absence rules.
+10. Statement snapshot strategy: copied detail versus immutable reference manifest/canonical serialization.
+11. Routing with multiple/no subject-group memberships or leaders, delegation, BGH confirmation/lock separation and post-lock correction.
+12. Capability/scope requirements for execution, operations, special activities and report review.
+13. Exact downstream API, transaction, idempotency and error contracts.
+14. Retention periods and privacy/export requirements for execution and statements.
+
+The PPCT import contract is deliberately deferred, not solved: workbook/template, manual/import workflow, checksum, semantic idempotency and raw-source retention require a separate audit after authoritative evidence exists.
 
 ## 23. Recommended slice sequence after 05A0
 
-1. Resolve PPCT aggregate/lifecycle questions and accept or replace ADR-027.
-2. 05A1 PPCT persistence foundation.
+1. **Completed by 05A0D:** resolve PPCT entry questions and accept ADR-027.
+2. **Next separate task:** 05A1 PPCT persistence foundation.
 3. 05A2 PPCT control/lifecycle and historical reads.
 4. Separate PPCT import contract only if authoritative sample/workflow evidence exists.
 5. Timetable operational-readiness contract/cutover.
@@ -397,23 +408,26 @@ Estimates and future task identifiers are planning aids only.
 
 ### Entry status
 
-**05A1 = BLOCKED.** The sources support a PPCT persistence direction but do not yet fix enough aggregate identity and lifecycle semantics for a migration-safe schema.
+**05A1 = READY (architecture entry criteria only).** 05A0D and Accepted ADR-027 close the seven prerequisites. READY does not authorize implementation in 05A0D; 05A1 still requires its own task and branch.
 
-05A1 becomes ready only when an accepted decision fixes:
-
-1. aggregate owner/key and exact sharing/class-override rule;
-2. PPCT item version-local and cross-version identity/cardinality;
-3. lifecycle/publication/correction/effectivity rules;
-4. calendar/week relationship and class-stream association;
-5. minimum historical references required by execution/debt/reporting;
-6. authorization capability and allowed scope types;
-7. explicitly deferred import boundary so persistence does not accidentally encode an unapproved file contract.
+| Entry criterion | 05A0D closure |
+|---|---|
+| 1. Aggregate owner/key and sharing/class override | D1–D2: exact year+subject+grade shared master; no class-owned plan; independent class progress. |
+| 2. Item version-local/cross-version identity and cardinality | D3: immutable UUID, immutable version-local revisions, split/merge lineage and one-period obligation semantics. |
+| 3. Lifecycle/publication/correction/effectivity | D4 and D6: `DRAFT → PUBLISHED → SUPERSEDED`, immutable history, successor correction and prospective date-effective binding. |
+| 4. Calendar/week relationship and class-stream association | D5–D6: calendar-independent sequence and non-overlapping class-subject exact-version intervals. |
+| 5. Minimum historical references | D3, D4 and D6: exact version, item, stream and relevant association/source are retained. |
+| 6. Capability and allowed scopes | D7: future `PPCT_MANAGE` at `SUBJECT` or `SCHOOL_WIDE` only. |
+| 7. Import boundary | D8: PPCT import excluded from 05A1 and deferred to a separate evidence-backed slice. |
 
 ## 25. Deferred/re-entry triggers
 
 - A real approved PPCT workbook/template triggers a separate import audit.
-- Evidence of class-specific plans, multiple programs/books or multi-item lessons reopens aggregate/cardinality decisions.
-- Approval/delegation policy from BGH reopens lifecycle and capability routing.
+- Evidence of class-specific curricula, multiple programs/tracks/books within one year+subject+grade, or cardinality contradicting D3 reopens the affected decisions.
+- A policy requiring a different PPCT publication/approval workflow reopens D4.
+- Authorization requirements incompatible with `SUBJECT` / `SCHOOL_WIDE` reopen D7.
+- Authoritative policy making week placement part of canonical PPCT meaning reopens D5.
+- Approval/delegation policy from BGH reopens downstream reporting routing.
 - A canonical HomeroomAssignment or activity-content plan reopens special-activity integration.
 - Any request to reinterpret old timetable `ACTIVE` as “ready” requires an explicit forward-cutover ADR and regression plan.
 - Any UI task before backend freeze must stop and return to the relevant architecture gate.
