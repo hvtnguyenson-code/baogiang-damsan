@@ -1,6 +1,6 @@
 import ExcelJS from 'exceljs';
 import { inspectParsedWorkbook, locateHeader } from '../../src/timetable-import/workbook-inspection';
-import { MAX_HEADER_CANDIDATES_PER_SHEET, MAX_HEADER_SCAN_ROWS, MAX_PARSER_CELL_TEXT_LENGTH } from '../../src/timetable-import/workbook-limits';
+import { MAX_HEADER_CANDIDATES_PER_SHEET, MAX_HEADER_SCAN_ROWS, MAX_MERGED_RANGES, MAX_PARSER_CELL_TEXT_LENGTH } from '../../src/timetable-import/workbook-limits';
 import { parseWorkbookBuffer } from '../../src/timetable-import/workbook-parser.worker';
 
 const mappings = [
@@ -39,6 +39,25 @@ describe('bounded workbook parser and inspection', () => {
     ['total dimension', (workbook: ExcelJS.Workbook) => { const sheet = workbook.addWorksheet('S'); sheet.getCell(4000, 64).value = 'x'; }],
   ])('rejects the %s complexity limit', async (_name, configure) => {
     await expect(parseWorkbookBuffer(await bytes(configure))).rejects.toThrow('WORKBOOK_COMPLEXITY_LIMIT');
+  });
+
+  it.each([
+    [MAX_MERGED_RANGES, false],
+    [MAX_MERGED_RANGES + 1, true],
+  ])('enforces the unique merged-range boundary at %i ranges', async (rangeCount, rejected) => {
+    const input = await bytes((workbook) => {
+      const sheet = workbook.addWorksheet('Merged');
+      for (let rowNumber = 1; rowNumber <= rangeCount; rowNumber += 1) {
+        sheet.mergeCells(rowNumber, 1, rowNumber, 2);
+        sheet.getCell(rowNumber, 1).value = `range-${rowNumber}`;
+      }
+    });
+    const result = parseWorkbookBuffer(input);
+    if (rejected) {
+      await expect(result).rejects.toThrow('WORKBOOK_COMPLEXITY_LIMIT');
+    } else {
+      await expect(result).resolves.toMatchObject({ sheets: [{ rowCount: MAX_MERGED_RANGES }] });
+    }
   });
 
   it('rejects corrupt, arbitrary ZIP-like and non-XLSX input with a stable parser code', async () => {

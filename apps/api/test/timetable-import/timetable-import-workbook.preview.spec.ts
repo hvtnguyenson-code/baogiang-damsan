@@ -44,6 +44,15 @@ function fixture(dataRow: ParsedWorkbookRow | null = row(5, ['T2', 'Sáng', '1',
 const upload: UploadedWorkbookFile = { originalname: 'tkb.xlsx', mimetype: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', size: 1, buffer: Buffer.from('x') };
 const dto = { profileRevisionId: identifiers.revision, academicYearId: identifiers.year, calendarVersionId: identifiers.calendar, effectiveAcademicWeekId: identifiers.week, sheetName: 'TKB', headerRowNumber: 1 };
 
+async function parsedAdversarialRow(configure: (sheet: ExcelJS.Worksheet) => void): Promise<ParsedWorkbookRow> {
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet('TKB');
+  sheet.addRows([headers, ['T2', 'Morning', 1, '10A', 'MATH', 'GV01']]);
+  configure(sheet);
+  const parsed = await parseWorkbookBuffer(Buffer.from(await workbook.xlsx.writeBuffer()));
+  return parsed.sheets[0]!.rows[1]!;
+}
+
 describe('TimetableImportWorkbookService canonical preview orchestration', () => {
   it('resolves a canonical row, derives assignment, historical target and ADDED diff without mutation', async () => {
     const { service, prisma } = fixture();
@@ -76,6 +85,45 @@ describe('TimetableImportWorkbookService canonical preview orchestration', () =>
     expect(result.issues).toContainEqual(expect.objectContaining({ code, sourceRowNumber: dataRow.number }));
     expect(result.canConfirm).toBe(false);
     expect(result.diff).toBeNull();
+  });
+
+  it.each([
+    [
+      'formula with a cached result',
+      (sheet: ExcelJS.Worksheet) => { sheet.getCell('A2').value = { formula: 'WEBSERVICE("https://formula.invalid/secret")', result: 'CACHED-NOT-AUTHORITATIVE' }; },
+      'FORMULA_IN_MAPPED_CELL',
+      'WEEKDAY',
+      ['WEBSERVICE', 'formula.invalid', 'CACHED-NOT-AUTHORITATIVE'],
+    ],
+    [
+      'hyperlink value',
+      (sheet: ExcelJS.Worksheet) => { sheet.getCell('F2').value = { text: 'GV01', hyperlink: 'https://hyperlink.invalid/secret' }; },
+      'HYPERLINK_IN_MAPPED_CELL',
+      'TEACHER',
+      ['hyperlink.invalid'],
+    ],
+    [
+      'merged mapped value',
+      (sheet: ExcelJS.Worksheet) => { sheet.mergeCells('F2:G2'); },
+      'MERGED_MAPPED_CELL',
+      'TEACHER',
+      [],
+    ],
+  ])('blocks a real parsed %s without exposing or canonicalizing unsafe content', async (_name, configure, code, semanticField, secrets) => {
+    const parsedRow = await parsedAdversarialRow(configure as (sheet: ExcelJS.Worksheet) => void);
+    const result = await fixture(parsedRow).service.preview(upload, dto);
+    expect(result.issues).toContainEqual(expect.objectContaining({
+      code,
+      severity: 'ERROR',
+      category: 'ROW',
+      sourceRowNumber: 2,
+      semanticField,
+    }));
+    expect(result.rows).toEqual([]);
+    expect(result.blockingIssueCount).toBeGreaterThanOrEqual(1);
+    expect(result.canConfirm).toBe(false);
+    expect(result.diff).toBeNull();
+    for (const secret of secrets as string[]) expect(JSON.stringify(result)).not.toContain(secret);
   });
 
   it.each([
