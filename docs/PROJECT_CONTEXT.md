@@ -57,6 +57,10 @@ Backend hiện có các boundary đã được review và version hóa:
 
 Chưa có persistence hoặc API cho PPCT, ngoại lệ cục bộ, cancellation/substitution/make-up, special activity, teaching execution/Báo giảng, tiến độ/công nợ, statement/reporting hay approval snapshot. Các boundary này phải được khóa bằng audit/ADR backend trước khi UI được phép đặt business semantics.
 
+`LOCAL-FC-05A0` đã merged qua PR #37. Closure 05A0D đã đóng các điều kiện kiến trúc PPCT và đưa ADR-027 sang **Accepted**: logical master PPCT dùng chung có scope `AcademicYear + Subject + Grade`, còn tiến độ phân phối/hoàn thành/nợ vẫn độc lập theo từng class-subject stream và gắn lịch sử với exact PPCT version/item. `LOCAL-FC-05A1` là backend slice tiếp theo và đã architecture-ready, nhưng persistence/API/capability/import của nó vẫn cần task riêng; PPCT import được deferred sang lát cắt riêng.
+
+Thứ tự không đổi: hoàn thành chuỗi backend đến `CORE BACKEND FREEZE` trước khi UI được phép chốt business semantics.
+
 ## Hạ tầng production chính thức — pre-operational
 
 | Mục | Giá trị |

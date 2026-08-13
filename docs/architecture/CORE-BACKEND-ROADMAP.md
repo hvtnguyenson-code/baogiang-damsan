@@ -1,6 +1,6 @@
 # Core Backend Roadmap
 
-**Status:** Planning guide after LOCAL-FC-05A0. This document is not an accepted requirements source and does not authorize implementation.
+**Status:** Planning guide after merged LOCAL-FC-05A0 and the 05A0D decision closure. This document is not an accepted requirements source and does not authorize implementation.
 
 ## Purpose
 
@@ -38,11 +38,11 @@ The accepted timetable meaning remains deliberately partial: `VALIDATED` and `AC
 
 ## Remaining core sequence
 
-The sequence below is planning guidance subject to acceptance of ADR-027 and each slice's own gate.
+LOCAL-FC-05A0 is merged. LOCAL-FC-05A0D closes the seven PPCT architecture prerequisites and ADR-027 is Accepted. The sequence below remains planning guidance subject to each slice's own authorization and gate.
 
-1. **05A1 — PPCT persistence foundation.** Begin only after the 05A1 entry criteria in the 05A0 audit are resolved and ADR-027 is accepted or replaced.
+1. **05A1 — PPCT persistence foundation (next; architecture-ready).** 05A0D closed the entry criteria: a shared `AcademicYear + Subject + Grade` master, class-specific progress, exact-version date-effective association, stable item identity/cardinality, immutable lifecycle/history, `PPCT_MANAGE` scope, and deferred import. Implementation remains a separate authorized task.
 2. **05A2 — PPCT control plane and lifecycle.** Immutable revisions, correction/supersession, historical reads and authorization.
-3. **PPCT import, if authorized.** Separate contract/security audit; do not assume timetable-import formats or identifiers apply.
+3. **PPCT import, if later authorized.** Separate contract/security audit after authoritative workbook/workflow evidence; do not encode it in 05A1 or assume timetable-import formats or identifiers apply.
 4. **Timetable operational readiness.** A forward-only readiness assessment over timetable + PPCT + special-activity dependencies; never reinterpret old lifecycle states.
 5. **Operational overlays.** CalendarException/local suppression, cancellation, substitution and make-up provenance as separate aggregates/events.
 6. **Special-activity minimum core.** Occupancy, participant scope and multi-teacher staffing sufficient for collision, execution and reporting.
