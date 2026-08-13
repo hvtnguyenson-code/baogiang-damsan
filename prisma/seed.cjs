@@ -16,6 +16,7 @@ const CAPABILITIES = [
   ['ADDITIONAL_DUTY_CATALOG_MANAGE', 'Quản trị catalog loại kiêm nhiệm.', ['SCHOOL_WIDE']],
   ['ACADEMIC_STRUCTURE_MANAGE', 'Quản trị năm học, phiên lịch học thuật và lớp học.', ['SCHOOL_WIDE']],
   ['TIMETABLE_MANAGE', 'Quản trị khung tiết và thời khóa biểu toàn trường.', ['SCHOOL_WIDE']],
+  ['PPCT_MANAGE', 'Quản trị PPCT theo môn hoặc toàn trường.', ['SUBJECT', 'SCHOOL_WIDE']],
   [
     'ADDITIONAL_DUTY_ASSIGNMENT_MANAGE',
     'Quản trị phân công kiêm nhiệm theo scope và hiệu lực.',

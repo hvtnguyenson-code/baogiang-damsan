@@ -117,6 +117,7 @@ export type CapabilityKey =
   | 'ADDITIONAL_DUTY_ASSIGNMENT_MANAGE'
   | 'ACADEMIC_STRUCTURE_MANAGE'
   | 'TIMETABLE_MANAGE'
+  | 'PPCT_MANAGE'
   | 'AI_ACTIVE_USE_SCHOOL'   // AI active use school-wide (BGH)
   | 'AI_ACTIVE_USE_DEPARTMENT' // AI active use department-wide (tổ trưởng)
   | 'AI_ACTIVE_USE_ACTIVITY' // AI active use activity-wide (điều phối)
@@ -719,6 +720,123 @@ export interface TimetableEffectiveResolution {
   date: CivilDateString;
   version: TimetableVersionRecord | null;
 }
+
+// ============================================================
+// LOCAL-FC-05A2 PPCT Control Plane Contracts
+// ============================================================
+
+export type PpctVersionStatus = 'DRAFT' | 'PUBLISHED' | 'SUPERSEDED';
+
+export interface PpctPlanRecord {
+  id: string;
+  academicYearId: string;
+  subjectId: string;
+  gradeLevel: 10 | 11 | 12;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PpctVersionRecord {
+  id: string;
+  ppctPlanId: string;
+  versionNumber: number;
+  status: PpctVersionStatus;
+  createdByUserId: string;
+  publishedByUserId: string | null;
+  publishedAt: string | null;
+  supersededByUserId: string | null;
+  supersededAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  itemCount: number;
+}
+
+export interface PpctItemRevisionRecord {
+  id: string;
+  ppctVersionId: string;
+  ppctPlanId: string;
+  itemId: string;
+  sequence: number;
+  title: string;
+  lessonType: string;
+  createdAt: string;
+}
+
+export interface PpctLineageEdgeRecord {
+  id: string;
+  ppctPlanId: string;
+  predecessorVersionId: string;
+  predecessorItemId: string;
+  successorVersionId: string;
+  successorItemId: string;
+  createdAt: string;
+}
+
+export interface PpctVersionContent {
+  version: PpctVersionRecord;
+  items: PpctItemRevisionRecord[];
+  lineage: PpctLineageEdgeRecord[];
+}
+
+export interface PpctClassAssociationRecord {
+  id: string;
+  academicYearId: string;
+  schoolClassId: string;
+  subjectId: string;
+  gradeLevel: 10 | 11 | 12;
+  ppctPlanId: string;
+  ppctVersionId: string;
+  ppctVersionStatus: PpctVersionStatus;
+  effectiveFrom: CivilDateString;
+  effectiveUntil: CivilDateString | null;
+  createdByUserId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PpctPlanListResponse {
+  items: PpctPlanRecord[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+export interface PpctVersionListResponse {
+  items: PpctVersionRecord[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+export interface PpctAssociationHistoryResponse {
+  items: PpctClassAssociationRecord[];
+}
+
+export interface PpctAssociationSwitchResult {
+  previousAssociation: PpctClassAssociationRecord | null;
+  association: PpctClassAssociationRecord;
+}
+
+export type PpctResolution =
+  | {
+      resolved: false;
+      academicYearId: string;
+      schoolClassId: string;
+      subjectId: string;
+      date: CivilDateString;
+    }
+  | {
+      resolved: true;
+      academicYearId: string;
+      schoolClassId: string;
+      subjectId: string;
+      date: CivilDateString;
+      association: PpctClassAssociationRecord;
+      plan: PpctPlanRecord;
+      version: PpctVersionRecord;
+      items: PpctItemRevisionRecord[];
+      lineage: PpctLineageEdgeRecord[];
+    };
 
 // ============================================================
 // Phase 04B3 Timetable Import Configuration Contracts
