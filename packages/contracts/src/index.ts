@@ -722,6 +722,79 @@ export interface TimetableEffectiveResolution {
 }
 
 // ============================================================
+// LOCAL-FC-05B1 Deterministic Timetable Readiness Read Model
+// ============================================================
+
+export type TimetableReadinessProfile = 'NORMAL_BASE_PPCT_V1';
+
+export type TimetableReadinessRootState = 'PASS' | 'FAIL';
+
+export type TimetableReadinessDimensionState = 'PASS' | 'FAIL' | 'NOT_ASSESSED';
+
+export type TimetableReadinessFindingSeverity = 'BLOCKER' | 'WARNING' | 'INFO';
+
+export type TimetableReadinessDimensionKey =
+  | 'NORMAL_BASE_TIMETABLE_FOUNDATION'
+  | 'PPCT_ASSOCIATION_BINDING'
+  | 'PPCT_CAPACITY'
+  | 'OPERATIONAL_OVERLAYS'
+  | 'SUBSTITUTION_CANCELLATION_MAKEUP'
+  | 'LOCAL_OPERATIONAL_EXCEPTIONS'
+  | 'SPECIAL_ACTIVITY_COLLISIONS'
+  | 'RESOLVED_OCCURRENCE_EXECUTION'
+  | 'PROGRESS_DEBT_REPORTING';
+
+export interface TimetableReadinessDimensionResult {
+  key: TimetableReadinessDimensionKey;
+  state: TimetableReadinessDimensionState;
+  required: boolean;
+}
+
+export interface TimetableReadinessStream {
+  academicYearId: string;
+  schoolClassId: string;
+  subjectId: string;
+}
+
+export interface TimetableReadinessScope {
+  timetableVersionId: string;
+  academicYearId: string;
+  from: CivilDateString;
+  to: CivilDateString;
+  affectedStreams: Array<Omit<TimetableReadinessStream, 'academicYearId'>>;
+}
+
+export interface TimetableReadinessFinding {
+  code: string;
+  dimension: TimetableReadinessDimensionKey;
+  severity: TimetableReadinessFindingSeverity;
+  message: string;
+  stream?: TimetableReadinessStream;
+  date?: CivilDateString;
+  timetableEntryIds?: string[];
+  ppctClassAssociationId?: string;
+  ppctVersionId?: string;
+}
+
+export interface TimetableReadinessProvenance {
+  timetableVersionId: string;
+  academicCalendarVersionId: string | null;
+  ppctClassAssociationIds: string[];
+  ppctVersionIds: string[];
+}
+
+export interface TimetableReadinessResponse {
+  profile: TimetableReadinessProfile;
+  productLabel: 'TIMETABLE READINESS — NORMAL BASE + PPCT BINDING';
+  scope: TimetableReadinessScope;
+  result: TimetableReadinessRootState;
+  dimensions: TimetableReadinessDimensionResult[];
+  findings: TimetableReadinessFinding[];
+  provenance: TimetableReadinessProvenance;
+  evaluatedAt: string;
+}
+
+// ============================================================
 // LOCAL-FC-05A2 PPCT Control Plane Contracts
 // ============================================================
 

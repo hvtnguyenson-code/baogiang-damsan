@@ -1,6 +1,6 @@
 # Core Backend Roadmap
 
-**Status:** Planning guide after ADR-029 established the LOCAL-FC-05A2 PPCT control plane and lifecycle. This document is not an accepted requirements source and does not authorize implementation.
+**Status:** Planning guide after ADR-030 established the bounded LOCAL-FC-05B1 `NORMAL_BASE_PPCT_V1` readiness read model. This document is not an accepted requirements source and does not authorize implementation.
 
 ## Purpose
 
@@ -33,6 +33,7 @@ The repository currently contains:
 4. AcademicYear-owned immutable time-slot revisions and real wall-clock collision semantics.
 5. AcademicYear-owned TimetableVersion history, normalized normal TimetableEntry rows, DRAFT/validation, approval/activation, supersession and civil-date historical resolution.
 6. Timetable XLSX import through LOCAL-FC-04B3D1: immutable profile revisions, typed aliases, bounded parsing, canonical preview, server-side confirmation, semantic/request replay, imported-DRAFT protection and adversarial workbook tests.
+7. Bounded deterministic `NORMAL_BASE_PPCT_V1` readiness over retained normal-base evidence and exact date-effective PPCT binding, with all unavailable operational dimensions explicitly `NOT_ASSESSED`.
 
 The accepted timetable meaning remains deliberately partial: `VALIDATED` and `ACTIVE` prove only the implemented normal-base checks. They do not prove timetable completeness, PPCT association or special-activity collision readiness.
 
@@ -43,7 +44,7 @@ LOCAL-FC-05A0 is merged. LOCAL-FC-05A0D closed the seven PPCT architecture prere
 1. **05A1 — PPCT persistence foundation (established by ADR-028).** The shared `AcademicYear + Subject + Grade` master, immutable version/item history, explicit lineage and date-effective exact-version class association now have database-enforced structural foundations. No API, lifecycle command, capability runtime or import is implied.
 2. **05A2 — PPCT control plane and lifecycle (established by ADR-029).** Transactional lifecycle commands, published immutability, correction/supersession, class binding, historical reads and `PPCT_MANAGE` authorization are available. No import, progress, execution, reporting or UI is implied.
 3. **PPCT import, if later authorized.** Separate contract/security audit after authoritative workbook/workflow evidence; do not encode it in 05A1 or assume timetable-import formats or identifiers apply.
-4. **Timetable operational readiness (next core dependency).** A forward-only readiness assessment over timetable + PPCT + special-activity dependencies; never reinterpret old lifecycle states.
+4. **Bounded timetable readiness foundation (established by ADR-030).** The first pure read profile assesses retained normal-base timetable evidence plus exact PPCT association binding only. It does not assess capacity, overlays, special activities or full operational readiness.
 5. **Operational overlays.** CalendarException/local suppression, cancellation, substitution and make-up provenance as separate aggregates/events.
 6. **Special-activity minimum core.** Occupancy, participant scope and multi-teacher staffing sufficient for collision, execution and reporting.
 7. **Resolved lesson occurrence.** Deterministic read model over historical calendar, timetable, PPCT and overlays.

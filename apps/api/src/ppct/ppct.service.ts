@@ -37,6 +37,7 @@ import {
   toPpctVersionRecord,
 } from './mapper';
 import { PpctAccessService } from './ppct-access.service';
+import { exactPpctAssociationDateWhere } from './ppct-association-read.service';
 
 const STALE_DRAFT_MESSAGE = 'Bản nháp PPCT đã thay đổi; hãy tải lại trước khi tiếp tục.';
 const STALE_HEAD_MESSAGE = 'Phiên bản PPCT đang công bố đã thay đổi; hãy tải lại trước khi tiếp tục.';
@@ -396,13 +397,7 @@ export class PpctService {
     await this.access.requireSubject(request, subjectId);
     const date = parseCivilDate(query.date);
     const association = await this.prisma.ppctClassAssociation.findFirst({
-      where: {
-        academicYearId,
-        schoolClassId,
-        subjectId,
-        effectiveFrom: { lte: date },
-        OR: [{ effectiveUntil: null }, { effectiveUntil: { gte: date } }],
-      },
+      where: exactPpctAssociationDateWhere({ academicYearId, schoolClassId, subjectId }, date),
       include: { ...ppctAssociationInclude, ppctPlan: true },
       orderBy: [{ effectiveFrom: 'desc' }, { id: 'asc' }],
     });

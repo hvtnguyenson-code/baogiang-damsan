@@ -71,3 +71,8 @@ export class ActivateTimetableVersionDto {
 export class ResolveTimetableDateDto {
   @IsCivilDate() date!: string;
 }
+
+export class EvaluateTimetableReadinessDto {
+  @IsCivilDate() from!: string;
+  @IsCivilDate() to!: string;
+}
