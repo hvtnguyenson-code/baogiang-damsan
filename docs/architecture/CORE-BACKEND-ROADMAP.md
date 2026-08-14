@@ -1,6 +1,6 @@
 # Core Backend Roadmap
 
-**Status:** Planning guide after ADR-030 established the bounded LOCAL-FC-05B1 `NORMAL_BASE_PPCT_V1` readiness read model. This document is not an accepted requirements source and does not authorize implementation.
+**Status:** Planning guide after LOCAL-FC-05C0D and ADR-031 closed the operational-overlay architecture decisions. This document is not an accepted requirements source and does not authorize implementation.
 
 ## Purpose
 
@@ -39,22 +39,23 @@ The accepted timetable meaning remains deliberately partial: `VALIDATED` and `AC
 
 ## Remaining core sequence
 
-LOCAL-FC-05A0 is merged. LOCAL-FC-05A0D closed the seven PPCT architecture prerequisites and ADR-027 is Accepted. LOCAL-FC-05A1 established the six-model persistence foundation through ADR-028. LOCAL-FC-05A2 now establishes the subject-authorized PPCT control plane, lifecycle commands and exact historical resolution through ADR-029. The sequence below remains planning guidance subject to each slice's own authorization and gate.
+LOCAL-FC-05A0 is merged. LOCAL-FC-05A0D closed the seven PPCT architecture prerequisites and ADR-027 is Accepted. LOCAL-FC-05A1 established the six-model persistence foundation through ADR-028. LOCAL-FC-05A2 established the subject-authorized PPCT control plane, lifecycle commands and exact historical resolution through ADR-029. LOCAL-FC-05B1 established bounded normal-base readiness through ADR-030. LOCAL-FC-05C0 audited the operational-overlay boundary, and LOCAL-FC-05C0D closed R1-R22 through ADR-031 without implementing them. The sequence below remains planning guidance subject to each slice's own authorization and gate.
 
 1. **05A1 — PPCT persistence foundation (established by ADR-028).** The shared `AcademicYear + Subject + Grade` master, immutable version/item history, explicit lineage and date-effective exact-version class association now have database-enforced structural foundations. No API, lifecycle command, capability runtime or import is implied.
 2. **05A2 — PPCT control plane and lifecycle (established by ADR-029).** Transactional lifecycle commands, published immutability, correction/supersession, class binding, historical reads and `PPCT_MANAGE` authorization are available. No import, progress, execution, reporting or UI is implied.
 3. **PPCT import, if later authorized.** Separate contract/security audit after authoritative workbook/workflow evidence; do not encode it in 05A1 or assume timetable-import formats or identifiers apply.
 4. **Bounded timetable readiness foundation (established by ADR-030).** The first pure read profile assesses retained normal-base timetable evidence plus exact PPCT association binding only. It does not assess capacity, overlays, special activities or full operational readiness.
-5. **Operational overlays.** CalendarException/local suppression, cancellation, substitution and make-up provenance as separate aggregates/events.
-6. **Special-activity minimum core.** Occupancy, participant scope and multi-teacher staffing sufficient for collision, execution and reporting.
-7. **Resolved lesson occurrence.** Deterministic read model over historical calendar, timetable, PPCT and overlays.
-8. **Teaching execution / Báo giảng.** Immutable evidence of what occurred, expected versus actual content and responsible versus actual teacher.
-9. **Progress, debt and late.** Reproducible projections from historical facts; make-up fulfills an original obligation exactly once.
-10. **Reporting.** Weekly, monthly, semester, custom-range and annual projections as supported by authoritative rules.
-11. **Submission and approval.** Immutable submitted/approved snapshots or immutable reference manifests with explicit capability/scope checks and no self-approval.
-12. **Cross-domain closure.** Concurrency, idempotency, correction, replay, historical drift and performance validation across the full chain.
-13. **CORE BACKEND FREEZE.** Contracts, state transitions, precedence, source references and capability matrix are accepted and regression-covered.
-14. **UI afterward.** Product UI consumes frozen backend contracts and does not invent PPCT, debt, occurrence, approval or correction semantics.
+5. **05C1 — operational-overlay persistence foundation (planned next slice).** Implement only the three ADR-031 aggregate families, lifecycle/source/reversal history, database invariants and persistence support for idempotency. No API, capability runtime, resolved-occurrence execution, debt/reporting, move/swap or Special Activity semantics are implied.
+6. **05C2 — operational-overlay control plane (planned later slice).** Add the accepted capabilities/scopes, create/reverse/read commands, server-resolved default-deny authorization, idempotency/CAS/concurrency behavior, authoritative source validation, bounded collision checks and historical reads. Activity-aware precedence remains deferred until the Special Activity model exists.
+7. **Special-activity minimum core.** Occupancy, participant scope and multi-teacher staffing sufficient for collision, execution and reporting.
+8. **Resolved lesson occurrence.** Deterministic read model over historical calendar, timetable, PPCT and overlays.
+9. **Teaching execution / Báo giảng.** Immutable evidence of what occurred, expected versus actual content and responsible versus actual teacher.
+10. **Progress, debt and late.** Reproducible projections from historical facts; make-up fulfills an original obligation exactly once.
+11. **Reporting.** Weekly, monthly, semester, custom-range and annual projections as supported by authoritative rules.
+12. **Submission and approval.** Immutable submitted/approved snapshots or immutable reference manifests with explicit capability/scope checks and no self-approval.
+13. **Cross-domain closure.** Concurrency, idempotency, correction, replay, historical drift and performance validation across the full chain.
+14. **CORE BACKEND FREEZE.** Contracts, state transitions, precedence, source references and capability matrix are accepted and regression-covered.
+15. **UI afterward.** Product UI consumes frozen backend contracts and does not invent PPCT, debt, occurrence, approval or correction semantics.
 
 ## Layering rule
 
