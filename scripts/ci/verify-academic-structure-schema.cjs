@@ -20,6 +20,8 @@ const timetableImportRequestKeyMigrationName = '20260812020000_timetable_import_
 const timetableImportRequestKeyMigration = read('prisma', 'migrations', timetableImportRequestKeyMigrationName, 'migration.sql');
 const ppctMigrationName = '20260813010000_ppct_persistence_foundation';
 const ppctMigration = read('prisma', 'migrations', ppctMigrationName, 'migration.sql');
+const overlayMigrationName = '20260814010000_operational_overlay_persistence_foundation';
+const overlayMigration = read('prisma', 'migrations', overlayMigrationName, 'migration.sql');
 
 function modelBlock(name) {
   const match = schema.match(new RegExp(`model\\s+${name}\\s+\\{([\\s\\S]*?)\\n\\}`, 'u'));
@@ -64,6 +66,10 @@ for (const model of [
   'PpctItemRevision',
   'PpctItemLineage',
   'PpctClassAssociation',
+  'CalendarException',
+  'CalendarExceptionTimeSlot',
+  'OperationalLessonDisposition',
+  'MakeupTeachingSchedule',
 ]) {
   modelBlock(model);
 }
@@ -75,6 +81,15 @@ assert.deepEqual(enumValues('TimetableImportTeacherIdentifierMode'), ['GENERIC_E
 assert.deepEqual(enumValues('TimetableImportSemanticField'), ['WEEKDAY', 'SESSION', 'PERIOD_ORDINAL', 'SCHOOL_CLASS', 'SUBJECT', 'TEACHER']);
 assert.deepEqual(enumValues('TimetableImportAliasEntityType'), ['TEACHER', 'SCHOOL_CLASS', 'SUBJECT']);
 assert.deepEqual(enumValues('PpctVersionStatus'), ['DRAFT', 'PUBLISHED', 'SUPERSEDED']);
+assert.deepEqual(enumValues('OperationalOverlayStatus'), ['ACTIVE', 'REVERSED']);
+assert.deepEqual(enumValues('CalendarExceptionScope'), ['SCHOOL_WIDE', 'GRADE', 'CLASS']);
+assert.deepEqual(enumValues('CalendarExceptionTimeSelector'), ['WHOLE_DAY', 'SESSION', 'EXACT_SLOTS']);
+assert.deepEqual(enumValues('OperationalLessonDispositionType'), [
+  'AUTHORIZED_CANCELLATION',
+  'ABSENCE_NO_REPLACEMENT',
+  'SAME_SUBJECT_SUBSTITUTION',
+  'DIFFERENT_SUBJECT_SUPERVISION',
+]);
 
 const calendarVersion = modelBlock('AcademicCalendarVersion');
 assert.match(calendarVersion, /academicYearId\s+String\s+@map\("academic_year_id"\)\s+@db\.Uuid/u);
@@ -124,7 +139,7 @@ assert.match(segment, /fields:\s*\[academicWeekId, calendarVersionId\][\s\S]*ref
 const schoolClass = modelBlock('SchoolClass');
 assert.match(schoolClass, /@@unique\(\[id, academicYearId\]\)/u);
 assert.match(schoolClass, /@@unique\(\[academicYearId, code\]\)/u);
-assert.doesNotMatch(schema, /\bmodel\s+(CalendarException|HomeroomAssignment|Timetable|Student|Enrollment|TimeSlot)\s+\{/u);
+assert.doesNotMatch(schema, /\bmodel\s+(HomeroomAssignment|Timetable|Student|Enrollment|TimeSlot)\s+\{/u);
 assert.doesNotMatch(schema, /\b35\b/u, 'Week counts must be data, not a schema constant');
 
 const teachingAssignment = modelBlock('TeachingAssignment');
@@ -625,6 +640,135 @@ assert.doesNotMatch(ppctMigration, /CREATE\s+(OR\s+REPLACE\s+)?TRIGGER/iu);
 assert.doesNotMatch(ppctMigration, /ON DELETE CASCADE/iu);
 assert.doesNotMatch(ppctMigration, /calendar_version_id|academic_week_id|\bcompleted\b|checksum|workbook|sheet_name|column_mapping|import_profile|request_idempotency/iu);
 
+const calendarException = modelBlock('CalendarException');
+const calendarExceptionTimeSlot = modelBlock('CalendarExceptionTimeSlot');
+const lessonDisposition = modelBlock('OperationalLessonDisposition');
+const makeupSchedule = modelBlock('MakeupTeachingSchedule');
+const overlayBlocks = [calendarException, calendarExceptionTimeSlot, lessonDisposition, makeupSchedule].join('\n');
+
+for (const modelName of [
+  'CalendarException', 'CalendarExceptionTimeSlot', 'OperationalLessonDisposition', 'MakeupTeachingSchedule',
+]) {
+  assert.equal((schema.match(new RegExp(`\\bmodel\\s+${modelName}\\s+\\{`, 'gu')) ?? []).length, 1, `${modelName} must exist exactly once`);
+}
+
+for (const [modelName, block] of [
+  ['CalendarException', calendarException],
+  ['OperationalLessonDisposition', lessonDisposition],
+  ['MakeupTeachingSchedule', makeupSchedule],
+]) {
+  for (const field of ['id', 'createdByUserId', 'reversedByUserId', 'replacesId']) {
+    assert.match(block, new RegExp(`${field}\\s+String\\??[\\s\\S]*?@db\\.Uuid`, 'u'), `${modelName}.${field} must use UUID`);
+  }
+  for (const field of ['createdAt', 'updatedAt', 'reversedAt']) {
+    assert.match(block, new RegExp(`${field}\\s+DateTime\\??[\\s\\S]*?@db\\.Timestamptz\\(3\\)`, 'u'), `${modelName}.${field} must use TIMESTAMPTZ(3)`);
+  }
+  assert.match(block, /status\s+OperationalOverlayStatus\s+@default\(ACTIVE\)/u);
+  assert.match(block, /createRequestKey\s+String\s+@unique[\s\S]*@db\.VarChar\(200\)/u);
+  assert.match(block, /createRequestFingerprint\s+String[\s\S]*@db\.VarChar\(128\)/u);
+  assert.match(block, /reverseRequestKey\s+String\?\s+@unique[\s\S]*@db\.VarChar\(200\)/u);
+  assert.match(block, /reverseRequestFingerprint\s+String\?[\s\S]*@db\.VarChar\(128\)/u);
+  assert.match(block, /reversalReason\s+String\?[\s\S]*@db\.VarChar\(500\)/u);
+}
+
+assert.match(calendarException, /civilDate\s+DateTime\s+@map\("civil_date"\)\s+@db\.Date/u);
+assert.match(calendarException, /scope\s+CalendarExceptionScope/u);
+assert.match(calendarException, /gradeLevel\s+Int\?/u);
+assert.match(calendarException, /schoolClassId\s+String\?[\s\S]*@db\.Uuid/u);
+assert.match(calendarException, /timeSelector\s+CalendarExceptionTimeSelector/u);
+assert.match(calendarException, /session\s+TimeSlotSession\?/u);
+assert.match(calendarException, /fields:\s*\[academicCalendarVersionId, academicYearId\][\s\S]*references:\s*\[id, academicYearId\][\s\S]*onDelete:\s*Restrict/u);
+assert.match(calendarException, /fields:\s*\[schoolClassId, academicYearId\][\s\S]*references:\s*\[id, academicYearId\][\s\S]*onDelete:\s*Restrict/u);
+assert.match(calendarException, /@@unique\(\[id, academicYearId, timeSelector\],\s*map:\s*"calendar_exceptions_exact_slot_parent_key"\)/u);
+
+assert.match(calendarExceptionTimeSlot, /parentTimeSelector\s+CalendarExceptionTimeSelector\s+@default\(EXACT_SLOTS\)/u);
+assert.match(calendarExceptionTimeSlot, /fields:\s*\[calendarExceptionId, academicYearId, parentTimeSelector\][\s\S]*references:\s*\[id, academicYearId, timeSelector\][\s\S]*onDelete:\s*Restrict/u);
+assert.match(calendarExceptionTimeSlot, /fields:\s*\[timeSlotDefinitionId, academicYearId\][\s\S]*references:\s*\[id, academicYearId\][\s\S]*onDelete:\s*Restrict/u);
+assert.match(calendarExceptionTimeSlot, /@@unique\(\[calendarExceptionId, timeSlotDefinitionId\],\s*map:\s*"calendar_exception_time_slots_exception_slot_key"\)/u);
+
+for (const field of [
+  'academicYearId', 'timetableVersionId', 'timetableEntryId', 'academicCalendarVersionId',
+  'timeSlotDefinitionId', 'schoolClassId', 'subjectId', 'teachingAssignmentId', 'responsibleTeacherUserId',
+]) {
+  assert.match(lessonDisposition, new RegExp(`${field}\\s+String[\\s\\S]*?@db\\.Uuid`, 'u'));
+}
+assert.match(lessonDisposition, /sourceCivilDate\s+DateTime\s+@map\("source_civil_date"\)\s+@db\.Date/u);
+assert.match(lessonDisposition, /dispositionType\s+OperationalLessonDispositionType/u);
+for (const field of ['assignedTeacherUserId', 'eligibilityStaffSubjectId']) {
+  assert.match(lessonDisposition, new RegExp(`${field}\\s+String\\?[\\s\\S]*?@db\\.Uuid`, 'u'));
+}
+for (const field of ['eligibilityWasActive', 'eligibilityWasTeachingStaff', 'eligibilitySameSubject']) {
+  assert.match(lessonDisposition, new RegExp(`${field}\\s+Boolean\\?`, 'u'));
+}
+assert.match(lessonDisposition, /fields:\s*\[timetableEntryId, timetableVersionId, academicYearId, timeSlotDefinitionId, schoolClassId, subjectId, teachingAssignmentId, responsibleTeacherUserId\][\s\S]*references:\s*\[id, timetableVersionId, academicYearId, timeSlotDefinitionId, schoolClassId, subjectId, teachingAssignmentId, teacherUserId\]/u);
+assert.doesNotMatch(lessonDisposition, /ppct/iu, 'OperationalLessonDisposition must not own a PPCT item');
+
+for (const field of [
+  'ppctClassAssociationId', 'ppctPlanId', 'ppctVersionId', 'ppctItemId',
+  'targetAcademicCalendarVersionId', 'targetTimeSlotDefinitionId', 'scheduledTeacherUserId',
+]) {
+  assert.match(makeupSchedule, new RegExp(`${field}\\s+String[\\s\\S]*?@db\\.Uuid`, 'u'));
+}
+assert.match(makeupSchedule, /sourceDispositionId\s+String\?[\s\S]*@db\.Uuid/u);
+assert.match(makeupSchedule, /originalCivilDate\s+DateTime\s+@map\("original_civil_date"\)\s+@db\.Date/u);
+assert.match(makeupSchedule, /targetCivilDate\s+DateTime\s+@map\("target_civil_date"\)\s+@db\.Date/u);
+for (const field of ['eligibilityWasActive', 'eligibilityWasTeachingStaff', 'eligibilitySameSubject']) {
+  assert.match(makeupSchedule, new RegExp(`${field}\\s+Boolean(?!\\?)`, 'u'));
+}
+assert.match(makeupSchedule, /fields:\s*\[ppctClassAssociationId, academicYearId, schoolClassId, subjectId, ppctPlanId, ppctVersionId\][\s\S]*references:\s*\[id, academicYearId, schoolClassId, subjectId, ppctPlanId, ppctVersionId\]/u);
+assert.match(makeupSchedule, /fields:\s*\[ppctVersionId, ppctItemId, ppctPlanId\][\s\S]*references:\s*\[ppctVersionId, ppctItemId, ppctPlanId\]/u);
+assert.match(makeupSchedule, /fields:\s*\[targetAcademicCalendarVersionId, academicYearId\][\s\S]*references:\s*\[id, academicYearId\]/u);
+assert.match(makeupSchedule, /fields:\s*\[targetTimeSlotDefinitionId, academicYearId\][\s\S]*references:\s*\[id, academicYearId\]/u);
+
+assert.match(timetableVersion, /@@unique\(\[id, academicYearId, calendarVersionId\],\s*map:\s*"timetable_versions_operational_source_key"\)/u);
+assert.match(timetableEntry, /@@unique\(\[id, timetableVersionId, academicYearId, timeSlotDefinitionId, schoolClassId, subjectId, teachingAssignmentId, teacherUserId\],\s*map:\s*"timetable_entries_operational_source_key"\)/u);
+assert.match(ppctClassAssociation, /@@unique\(\[id, academicYearId, schoolClassId, subjectId, ppctPlanId, ppctVersionId\],\s*map:\s*"ppct_class_associations_overlay_provenance_key"\)/u);
+assert.match(modelBlock('StaffSubject'), /@@unique\(\[id, userId, subjectId\],\s*map:\s*"staff_subjects_eligibility_provenance_key"\)/u);
+
+for (const enumName of [
+  'OperationalOverlayStatus', 'CalendarExceptionScope', 'CalendarExceptionTimeSelector', 'OperationalLessonDispositionType',
+]) {
+  assert.match(overlayMigration, new RegExp(`CREATE TYPE "${enumName}" AS ENUM`, 'u'), `Overlay migration missing ${enumName}`);
+}
+for (const table of [
+  'calendar_exceptions', 'calendar_exception_time_slots', 'operational_lesson_dispositions', 'makeup_teaching_schedules',
+]) {
+  assert.match(overlayMigration, new RegExp(`CREATE TABLE "${table}"`, 'u'), `Overlay migration missing ${table}`);
+}
+for (const name of [
+  'calendar_exceptions_lifecycle_shape_check', 'calendar_exceptions_scope_shape_check',
+  'calendar_exceptions_time_selector_shape_check', 'calendar_exceptions_no_self_replacement_check',
+  'calendar_exception_time_slots_exact_selector_check',
+  'operational_lesson_dispositions_lifecycle_shape_check', 'operational_lesson_dispositions_type_shape_check',
+  'operational_lesson_dispositions_no_self_replacement_check',
+  'makeup_teaching_schedules_lifecycle_shape_check', 'makeup_teaching_schedules_eligibility_shape_check',
+  'makeup_teaching_schedules_no_self_replacement_check',
+]) {
+  assert.match(overlayMigration, new RegExp(`"${name}"`, 'u'), `Overlay migration missing ${name}`);
+}
+assert.match(overlayMigration, /CREATE UNIQUE INDEX "operational_lesson_dispositions_one_active_source_key"[\s\S]*WHERE "status" = 'ACTIVE'/u);
+assert.match(overlayMigration, /CREATE UNIQUE INDEX "makeup_teaching_schedules_one_active_obligation_key"[\s\S]*WHERE "status" = 'ACTIVE'/u);
+for (const sourceName of [
+  'staff_subjects_eligibility_provenance_key', 'timetable_versions_operational_source_key',
+  'timetable_entries_operational_source_key', 'ppct_class_associations_overlay_provenance_key',
+  'calendar_exception_time_slots_parent_exact_selector_fkey',
+  'operational_lesson_dispositions_timetable_version_source_fkey',
+  'operational_lesson_dispositions_timetable_entry_source_fkey',
+  'makeup_teaching_schedules_original_timetable_version_fkey',
+  'makeup_teaching_schedules_original_timetable_entry_fkey',
+  'makeup_teaching_schedules_ppct_association_provenance_fkey',
+  'makeup_teaching_schedules_ppct_item_revision_fkey',
+]) {
+  assert.match(overlayMigration, new RegExp(`"${sourceName}"`, 'u'), `Overlay migration missing ${sourceName}`);
+}
+for (const fk of overlayMigration.matchAll(/ADD CONSTRAINT "([^"]+_fkey)"([\s\S]*?);/gu)) {
+  assert.match(fk[2], /ON DELETE RESTRICT/u, `${fk[1]} must restrict deletion`);
+}
+assert.doesNotMatch(overlayMigration, /CREATE\s+(OR\s+REPLACE\s+)?TRIGGER/iu);
+assert.doesNotMatch(overlayMigration, /ON DELETE CASCADE/iu);
+assert.doesNotMatch(overlayBlocks, /\b(?:completed|completion|debt|progress|report|execution|move|swap|activity)\b/iu);
+assert.doesNotMatch(overlayMigration, /\b(?:completed|completion|debt|progress|report|execution|move|swap|activity)\b/iu);
+
 const legacyHashes = new Map([
   ['20260728000000_phase_00_baseline', 'A2185F4F34E90F9B437B3D0DD91B1C473D586849E6B0DFFB766C5AF69546634A'],
   ['20260801000000_phase_01_schema_foundation', '56B7F09859E9851A15D62D17A58066DAFB1798B0E4225858A464B0CD8F47DF9E'],
@@ -633,9 +777,11 @@ const legacyHashes = new Map([
   ['20260811020000_time_slot_schema_foundation', 'EEAFEF46FCC7CD5179973D439FDE66B7EACA68E8E6951974B4AB66C8BD3828E5'],
   ['20260811030000_timetable_schema_foundation', '49C330E7FD0536B4A2D30F64989AA87F677332FD4942600842BB3A7F3AE824CF'],
   ['20260812010000_timetable_import_persistence_foundation', '6118DC8B909C400A11CDA38A6C09B3D8BAAB23B79DC3647B6F3136EAE9EF2CA8'],
+  ['20260812020000_timetable_import_idempotency_bindings', '266490FC3BD49FAC9E5C91A6CDAA233717DB227F6BD5AD1529C607C5716199B9'],
+  ['20260813010000_ppct_persistence_foundation', 'DFF5874CBCCE3A513644A84D1D6D1532B82F71C175B448B9C1F6BF8D22E75A63'],
 ]);
 for (const [name, expected] of legacyHashes) {
   assert.equal(sha256(read('prisma', 'migrations', name, 'migration.sql')), expected, `Historical migration ${name} changed`);
 }
 
-console.log(`Academic, teaching-assignment, time-slot, timetable, timetable-import, and PPCT schema static verification PASS (${academicMigrationName}, ${teachingMigrationName}, ${timeSlotMigrationName}, ${timetableMigrationName}, ${timetableImportMigrationName}, ${timetableImportRequestKeyMigrationName}, ${ppctMigrationName}).`);
+console.log(`Academic, teaching-assignment, time-slot, timetable, timetable-import, PPCT, and operational-overlay schema static verification PASS (${academicMigrationName}, ${teachingMigrationName}, ${timeSlotMigrationName}, ${timetableMigrationName}, ${timetableImportMigrationName}, ${timetableImportRequestKeyMigrationName}, ${ppctMigrationName}, ${overlayMigrationName}).`);

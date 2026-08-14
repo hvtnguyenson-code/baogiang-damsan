@@ -71,6 +71,30 @@ enum PpctVersionStatus {
   SUPERSEDED
 }
 
+enum OperationalOverlayStatus {
+  ACTIVE
+  REVERSED
+}
+
+enum CalendarExceptionScope {
+  SCHOOL_WIDE
+  GRADE
+  CLASS
+}
+
+enum CalendarExceptionTimeSelector {
+  WHOLE_DAY
+  SESSION
+  EXACT_SLOTS
+}
+
+enum OperationalLessonDispositionType {
+  AUTHORIZED_CANCELLATION
+  ABSENCE_NO_REPLACEMENT
+  SAME_SUBJECT_SUBSTITUTION
+  DIFFERENT_SUBJECT_SUPERVISION
+}
+
 enum TimetableImportTeacherIdentifierMode {
   GENERIC_EXACT
   STAFF_CODE
@@ -142,6 +166,14 @@ model User {
   ppctVersionsPublished            PpctVersion[]                    @relation("PpctVersionPublishedBy")
   ppctVersionsSuperseded           PpctVersion[]                    @relation("PpctVersionSupersededBy")
   ppctClassAssociationsCreated     PpctClassAssociation[]           @relation("PpctClassAssociationCreatedBy")
+  calendarExceptionsCreated        CalendarException[]              @relation("CalendarExceptionCreatedBy")
+  calendarExceptionsReversed       CalendarException[]              @relation("CalendarExceptionReversedBy")
+  lessonDispositionsCreated        OperationalLessonDisposition[]   @relation("LessonDispositionCreatedBy")
+  lessonDispositionsReversed       OperationalLessonDisposition[]   @relation("LessonDispositionReversedBy")
+  lessonDispositionsAssigned       OperationalLessonDisposition[]   @relation("LessonDispositionAssignedTeacher")
+  makeupSchedulesCreated           MakeupTeachingSchedule[]         @relation("MakeupScheduleCreatedBy")
+  makeupSchedulesReversed          MakeupTeachingSchedule[]         @relation("MakeupScheduleReversedBy")
+  makeupSchedulesAsTeacher         MakeupTeachingSchedule[]         @relation("MakeupScheduleTeacher")
 
   @@index([status])
   @@map("users")
@@ -226,9 +258,12 @@ model StaffSubject {
   createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt  DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  user    User    @relation(fields: [userId], references: [id], onDelete: Restrict)
-  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  user                         User                           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  subject                      Subject                        @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  lessonDispositionEligibility OperationalLessonDisposition[] @relation("LessonDispositionEligibilityStaffSubject")
+  makeupScheduleEligibility    MakeupTeachingSchedule[]       @relation("MakeupScheduleEligibilityStaffSubject")
 
+  @@unique([id, userId, subjectId], map: "staff_subjects_eligibility_provenance_key")
   @@index([userId, validFrom, validUntil])
   @@index([subjectId, validFrom, validUntil])
   @@map("staff_subjects")
@@ -371,6 +406,8 @@ model AcademicYear {
   timetableImportAliases TimetableImportEntityAlias[]
   ppctPlans              PpctPlan[]
   ppctClassAssociations  PpctClassAssociation[]
+  calendarExceptions     CalendarException[]
+  calendarExceptionSlots CalendarExceptionTimeSlot[]
 
   @@map("academic_years")
 }
@@ -392,8 +429,10 @@ model TimeSlotDefinition {
   createdAt            DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt            DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  academicYear     AcademicYear     @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
-  timetableEntries TimetableEntry[] @relation("TimetableEntryTimeSlot")
+  academicYear           AcademicYear                @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  timetableEntries       TimetableEntry[]            @relation("TimetableEntryTimeSlot")
+  calendarExceptionSlots CalendarExceptionTimeSlot[] @relation("CalendarExceptionExactTimeSlot")
+  makeupScheduleTargets  MakeupTeachingSchedule[]    @relation("MakeupScheduleTargetTimeSlot")
 
   @@unique([id, academicYearId], map: "time_slot_definitions_id_academic_year_id_key")
   @@unique([id, academicYearId, weekday], map: "time_slot_definitions_id_academic_year_id_weekday_key")
@@ -417,11 +456,15 @@ model AcademicCalendarVersion {
   createdAt         DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt         DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  academicYear      AcademicYear           @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
-  semesters         Semester[]
-  weeks             AcademicWeek[]
-  interruptions     CalendarInterruption[]
-  timetableVersions TimetableVersion[]     @relation("TimetableVersionCalendarSnapshot")
+  academicYear            AcademicYear                   @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  semesters               Semester[]
+  weeks                   AcademicWeek[]
+  interruptions           CalendarInterruption[]
+  timetableVersions       TimetableVersion[]             @relation("TimetableVersionCalendarSnapshot")
+  calendarExceptions      CalendarException[]            @relation("CalendarExceptionCalendarVersion")
+  lessonDispositions      OperationalLessonDisposition[] @relation("LessonDispositionCalendarVersion")
+  makeupOriginalSchedules MakeupTeachingSchedule[]       @relation("MakeupScheduleOriginalCalendarVersion")
+  makeupTargetSchedules   MakeupTeachingSchedule[]       @relation("MakeupScheduleTargetCalendarVersion")
 
   @@unique([id, academicYearId], map: "academic_calendar_versions_id_academic_year_id_key")
   @@unique([academicYearId, versionNumber])
@@ -521,6 +564,7 @@ model SchoolClass {
   timetableEntries       TimetableEntry[]             @relation("TimetableEntrySchoolClass")
   timetableImportAliases TimetableImportEntityAlias[] @relation("TimetableImportAliasSchoolClass")
   ppctClassAssociations  PpctClassAssociation[]       @relation("PpctClassAssociationSchoolClass")
+  calendarExceptions     CalendarException[]          @relation("CalendarExceptionSchoolClass")
 
   @@unique([id, academicYearId])
   @@unique([id, academicYearId, gradeLevel], map: "classes_id_academic_year_id_grade_level_key")
@@ -597,10 +641,11 @@ model PpctItemRevision {
   lessonType    String   @map("lesson_type") @db.VarChar(100)
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  ppctVersion      PpctVersion       @relation(fields: [ppctVersionId, ppctPlanId], references: [id, ppctPlanId], onDelete: Restrict)
-  ppctItem         PpctItem          @relation(fields: [ppctItemId, ppctPlanId], references: [id, ppctPlanId], onDelete: Restrict)
-  predecessorEdges PpctItemLineage[] @relation("PpctItemLineagePredecessor")
-  successorEdges   PpctItemLineage[] @relation("PpctItemLineageSuccessor")
+  ppctVersion      PpctVersion              @relation(fields: [ppctVersionId, ppctPlanId], references: [id, ppctPlanId], onDelete: Restrict)
+  ppctItem         PpctItem                 @relation(fields: [ppctItemId, ppctPlanId], references: [id, ppctPlanId], onDelete: Restrict)
+  predecessorEdges PpctItemLineage[]        @relation("PpctItemLineagePredecessor")
+  successorEdges   PpctItemLineage[]        @relation("PpctItemLineageSuccessor")
+  makeupSchedules  MakeupTeachingSchedule[] @relation("MakeupSchedulePpctItemRevision")
 
   @@unique([ppctVersionId, sequence], map: "ppct_item_revisions_version_sequence_key")
   @@unique([ppctVersionId, ppctItemId], map: "ppct_item_revisions_version_item_key")
@@ -640,14 +685,16 @@ model PpctClassAssociation {
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
-  schoolClass  SchoolClass  @relation("PpctClassAssociationSchoolClass", fields: [schoolClassId, academicYearId, gradeLevel], references: [id, academicYearId, gradeLevel], onDelete: Restrict)
-  subject      Subject      @relation(fields: [subjectId], references: [id], onDelete: Restrict)
-  ppctPlan     PpctPlan     @relation(fields: [ppctPlanId, academicYearId, subjectId, gradeLevel], references: [id, academicYearId, subjectId, gradeLevel], onDelete: Restrict)
-  ppctVersion  PpctVersion  @relation(fields: [ppctVersionId, ppctPlanId], references: [id, ppctPlanId], onDelete: Restrict)
-  createdBy    User         @relation("PpctClassAssociationCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  academicYear    AcademicYear             @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  schoolClass     SchoolClass              @relation("PpctClassAssociationSchoolClass", fields: [schoolClassId, academicYearId, gradeLevel], references: [id, academicYearId, gradeLevel], onDelete: Restrict)
+  subject         Subject                  @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  ppctPlan        PpctPlan                 @relation(fields: [ppctPlanId, academicYearId, subjectId, gradeLevel], references: [id, academicYearId, subjectId, gradeLevel], onDelete: Restrict)
+  ppctVersion     PpctVersion              @relation(fields: [ppctVersionId, ppctPlanId], references: [id, ppctPlanId], onDelete: Restrict)
+  createdBy       User                     @relation("PpctClassAssociationCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  makeupSchedules MakeupTeachingSchedule[] @relation("MakeupSchedulePpctAssociation")
 
   @@unique([id, academicYearId, schoolClassId, subjectId], map: "ppct_class_associations_provenance_key")
+  @@unique([id, academicYearId, schoolClassId, subjectId, ppctPlanId, ppctVersionId], map: "ppct_class_associations_overlay_provenance_key")
   @@index([academicYearId, schoolClassId, subjectId, effectiveFrom, effectiveUntil], map: "ppct_class_associations_stream_dates_idx")
   @@index([ppctVersionId], map: "ppct_class_associations_ppct_version_id_idx")
   @@map("ppct_class_associations")
@@ -700,17 +747,20 @@ model TimetableVersion {
   createdAt               DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt               DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  academicYear          AcademicYear             @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
-  calendarVersion       AcademicCalendarVersion? @relation("TimetableVersionCalendarSnapshot", fields: [calendarVersionId, academicYearId], references: [id, academicYearId], onDelete: Restrict)
-  effectiveAcademicWeek AcademicWeek?            @relation("TimetableVersionEffectiveWeek", fields: [effectiveAcademicWeekId, calendarVersionId], references: [id, calendarVersionId], onDelete: Restrict)
-  createdBy             User                     @relation("TimetableVersionCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  validatedBy           User?                    @relation("TimetableVersionValidatedBy", fields: [validatedByUserId], references: [id], onDelete: Restrict)
-  approvedBy            User?                    @relation("TimetableVersionApprovedBy", fields: [approvedByUserId], references: [id], onDelete: Restrict)
-  activatedBy           User?                    @relation("TimetableVersionActivatedBy", fields: [activatedByUserId], references: [id], onDelete: Restrict)
-  entries               TimetableEntry[]         @relation("TimetableEntryVersion")
-  importReceipt         TimetableImportReceipt?  @relation("TimetableImportReceiptVersion")
+  academicYear            AcademicYear                   @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  calendarVersion         AcademicCalendarVersion?       @relation("TimetableVersionCalendarSnapshot", fields: [calendarVersionId, academicYearId], references: [id, academicYearId], onDelete: Restrict)
+  effectiveAcademicWeek   AcademicWeek?                  @relation("TimetableVersionEffectiveWeek", fields: [effectiveAcademicWeekId, calendarVersionId], references: [id, calendarVersionId], onDelete: Restrict)
+  createdBy               User                           @relation("TimetableVersionCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  validatedBy             User?                          @relation("TimetableVersionValidatedBy", fields: [validatedByUserId], references: [id], onDelete: Restrict)
+  approvedBy              User?                          @relation("TimetableVersionApprovedBy", fields: [approvedByUserId], references: [id], onDelete: Restrict)
+  activatedBy             User?                          @relation("TimetableVersionActivatedBy", fields: [activatedByUserId], references: [id], onDelete: Restrict)
+  entries                 TimetableEntry[]               @relation("TimetableEntryVersion")
+  importReceipt           TimetableImportReceipt?        @relation("TimetableImportReceiptVersion")
+  lessonDispositions      OperationalLessonDisposition[] @relation("LessonDispositionTimetableVersion")
+  makeupOriginalSchedules MakeupTeachingSchedule[]       @relation("MakeupScheduleOriginalTimetableVersion")
 
   @@unique([id, academicYearId], map: "timetable_versions_id_academic_year_id_key")
+  @@unique([id, academicYearId, calendarVersionId], map: "timetable_versions_operational_source_key")
   @@unique([academicYearId, versionNumber], map: "timetable_versions_academic_year_id_version_number_key")
   @@unique([academicYearId, calendarVersionId, effectiveAcademicWeekId, contentChecksum], map: "timetable_versions_import_semantic_duplicate_key")
   @@index([academicYearId, status], map: "timetable_versions_academic_year_id_status_idx")
@@ -831,11 +881,11 @@ model TimetableImportReceipt {
 }
 
 model TimetableImportRequestKey {
-  id                   String   @id @default(uuid()) @db.Uuid
-  receiptId            String   @map("receipt_id") @db.Uuid
-  requestKey           String   @unique(map: "timetable_import_request_keys_request_key_key") @map("request_key") @db.VarChar(200)
-  requestFingerprint   String   @map("request_fingerprint") @db.VarChar(128)
-  boundAt              DateTime @default(now()) @map("bound_at") @db.Timestamptz(3)
+  id                 String   @id @default(uuid()) @db.Uuid
+  receiptId          String   @map("receipt_id") @db.Uuid
+  requestKey         String   @unique(map: "timetable_import_request_keys_request_key_key") @map("request_key") @db.VarChar(200)
+  requestFingerprint String   @map("request_fingerprint") @db.VarChar(128)
+  boundAt            DateTime @default(now()) @map("bound_at") @db.Timestamptz(3)
 
   receipt TimetableImportReceipt @relation(fields: [receiptId], references: [id], onDelete: Restrict)
 
@@ -855,14 +905,17 @@ model TimetableEntry {
   teacherUserId        String          @map("teacher_user_id") @db.Uuid
   createdAt            DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  timetableVersion   TimetableVersion   @relation("TimetableEntryVersion", fields: [timetableVersionId, academicYearId], references: [id, academicYearId], onDelete: Restrict)
-  academicYear       AcademicYear       @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
-  timeSlotDefinition TimeSlotDefinition @relation("TimetableEntryTimeSlot", fields: [timeSlotDefinitionId, academicYearId, weekday], references: [id, academicYearId, weekday], onDelete: Restrict)
-  schoolClass        SchoolClass        @relation("TimetableEntrySchoolClass", fields: [schoolClassId, academicYearId], references: [id, academicYearId], onDelete: Restrict)
-  subject            Subject            @relation(fields: [subjectId], references: [id], onDelete: Restrict)
-  teachingAssignment TeachingAssignment @relation("TimetableEntryAssignment", fields: [teachingAssignmentId, academicYearId, schoolClassId, subjectId, teacherUserId], references: [id, academicYearId, schoolClassId, subjectId, teacherUserId], onDelete: Restrict)
-  teacher            User               @relation("TimetableEntryTeacher", fields: [teacherUserId], references: [id], onDelete: Restrict)
+  timetableVersion        TimetableVersion               @relation("TimetableEntryVersion", fields: [timetableVersionId, academicYearId], references: [id, academicYearId], onDelete: Restrict)
+  academicYear            AcademicYear                   @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  timeSlotDefinition      TimeSlotDefinition             @relation("TimetableEntryTimeSlot", fields: [timeSlotDefinitionId, academicYearId, weekday], references: [id, academicYearId, weekday], onDelete: Restrict)
+  schoolClass             SchoolClass                    @relation("TimetableEntrySchoolClass", fields: [schoolClassId, academicYearId], references: [id, academicYearId], onDelete: Restrict)
+  subject                 Subject                        @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  teachingAssignment      TeachingAssignment             @relation("TimetableEntryAssignment", fields: [teachingAssignmentId, academicYearId, schoolClassId, subjectId, teacherUserId], references: [id, academicYearId, schoolClassId, subjectId, teacherUserId], onDelete: Restrict)
+  teacher                 User                           @relation("TimetableEntryTeacher", fields: [teacherUserId], references: [id], onDelete: Restrict)
+  lessonDispositions      OperationalLessonDisposition[] @relation("LessonDispositionTimetableEntry")
+  makeupOriginalSchedules MakeupTeachingSchedule[]       @relation("MakeupScheduleOriginalTimetableEntry")
 
+  @@unique([id, timetableVersionId, academicYearId, timeSlotDefinitionId, schoolClassId, subjectId, teachingAssignmentId, teacherUserId], map: "timetable_entries_operational_source_key")
   @@unique([timetableVersionId, weekday, timeSlotDefinitionId, schoolClassId], map: "timetable_entries_class_exact_slot_key")
   @@unique([timetableVersionId, weekday, timeSlotDefinitionId, teacherUserId], map: "timetable_entries_teacher_exact_slot_key")
   @@index([timetableVersionId, schoolClassId], map: "timetable_entries_version_class_idx")
@@ -871,4 +924,169 @@ model TimetableEntry {
   @@index([timetableVersionId, teachingAssignmentId], map: "timetable_entries_version_assignment_idx")
   @@index([academicYearId, weekday, timeSlotDefinitionId], map: "timetable_entries_year_weekday_slot_idx")
   @@map("timetable_entries")
+}
+
+model CalendarException {
+  id                        String                        @id @default(uuid()) @db.Uuid
+  academicYearId            String                        @map("academic_year_id") @db.Uuid
+  academicCalendarVersionId String                        @map("academic_calendar_version_id") @db.Uuid
+  civilDate                 DateTime                      @map("civil_date") @db.Date
+  scope                     CalendarExceptionScope
+  gradeLevel                Int?                          @map("grade_level")
+  schoolClassId             String?                       @map("school_class_id") @db.Uuid
+  timeSelector              CalendarExceptionTimeSelector @map("time_selector")
+  session                   TimeSlotSession?
+  note                      String?                       @db.VarChar(500)
+  status                    OperationalOverlayStatus      @default(ACTIVE)
+  createRequestKey          String                        @unique(map: "calendar_exceptions_create_request_key_key") @map("create_request_key") @db.VarChar(200)
+  createRequestFingerprint  String                        @map("create_request_fingerprint") @db.VarChar(128)
+  reversedByUserId          String?                       @map("reversed_by_user_id") @db.Uuid
+  reversedAt                DateTime?                     @map("reversed_at") @db.Timestamptz(3)
+  reversalReason            String?                       @map("reversal_reason") @db.VarChar(500)
+  reverseRequestKey         String?                       @unique(map: "calendar_exceptions_reverse_request_key_key") @map("reverse_request_key") @db.VarChar(200)
+  reverseRequestFingerprint String?                       @map("reverse_request_fingerprint") @db.VarChar(128)
+  replacesId                String?                       @unique(map: "calendar_exceptions_replaces_id_key") @map("replaces_id") @db.Uuid
+  createdByUserId           String                        @map("created_by_user_id") @db.Uuid
+  createdAt                 DateTime                      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                 DateTime                      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  academicYear    AcademicYear                @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  calendarVersion AcademicCalendarVersion     @relation("CalendarExceptionCalendarVersion", fields: [academicCalendarVersionId, academicYearId], references: [id, academicYearId], onDelete: Restrict)
+  schoolClass     SchoolClass?                @relation("CalendarExceptionSchoolClass", fields: [schoolClassId, academicYearId], references: [id, academicYearId], onDelete: Restrict)
+  createdBy       User                        @relation("CalendarExceptionCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  reversedBy      User?                       @relation("CalendarExceptionReversedBy", fields: [reversedByUserId], references: [id], onDelete: Restrict)
+  replaces        CalendarException?          @relation("CalendarExceptionReplacement", fields: [replacesId], references: [id], onDelete: Restrict)
+  replacedBy      CalendarException?          @relation("CalendarExceptionReplacement")
+  exactTimeSlots  CalendarExceptionTimeSlot[]
+
+  @@unique([id, academicYearId, timeSelector], map: "calendar_exceptions_exact_slot_parent_key")
+  @@index([academicYearId, civilDate, status], map: "calendar_exceptions_year_date_status_idx")
+  @@index([academicCalendarVersionId, civilDate], map: "calendar_exceptions_calendar_date_idx")
+  @@map("calendar_exceptions")
+}
+
+model CalendarExceptionTimeSlot {
+  id                   String                        @id @default(uuid()) @db.Uuid
+  calendarExceptionId  String                        @map("calendar_exception_id") @db.Uuid
+  academicYearId       String                        @map("academic_year_id") @db.Uuid
+  parentTimeSelector   CalendarExceptionTimeSelector @default(EXACT_SLOTS) @map("parent_time_selector")
+  timeSlotDefinitionId String                        @map("time_slot_definition_id") @db.Uuid
+  createdAt            DateTime                      @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  calendarException  CalendarException  @relation(fields: [calendarExceptionId, academicYearId, parentTimeSelector], references: [id, academicYearId, timeSelector], onDelete: Restrict)
+  academicYear       AcademicYear       @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  timeSlotDefinition TimeSlotDefinition @relation("CalendarExceptionExactTimeSlot", fields: [timeSlotDefinitionId, academicYearId], references: [id, academicYearId], onDelete: Restrict)
+
+  @@unique([calendarExceptionId, timeSlotDefinitionId], map: "calendar_exception_time_slots_exception_slot_key")
+  @@index([academicYearId, timeSlotDefinitionId], map: "calendar_exception_time_slots_year_slot_idx")
+  @@map("calendar_exception_time_slots")
+}
+
+model OperationalLessonDisposition {
+  id                          String                           @id @default(uuid()) @db.Uuid
+  academicYearId              String                           @map("academic_year_id") @db.Uuid
+  timetableVersionId          String                           @map("timetable_version_id") @db.Uuid
+  timetableEntryId            String                           @map("timetable_entry_id") @db.Uuid
+  sourceCivilDate             DateTime                         @map("source_civil_date") @db.Date
+  academicCalendarVersionId   String                           @map("academic_calendar_version_id") @db.Uuid
+  timeSlotDefinitionId        String                           @map("time_slot_definition_id") @db.Uuid
+  schoolClassId               String                           @map("school_class_id") @db.Uuid
+  subjectId                   String                           @map("subject_id") @db.Uuid
+  teachingAssignmentId        String                           @map("teaching_assignment_id") @db.Uuid
+  responsibleTeacherUserId    String                           @map("responsible_teacher_user_id") @db.Uuid
+  dispositionType             OperationalLessonDispositionType @map("disposition_type")
+  assignedTeacherUserId       String?                          @map("assigned_teacher_user_id") @db.Uuid
+  eligibilityCheckedAt        DateTime?                        @map("eligibility_checked_at") @db.Timestamptz(3)
+  eligibilityWasActive        Boolean?                         @map("eligibility_was_active")
+  eligibilityWasTeachingStaff Boolean?                         @map("eligibility_was_teaching_staff")
+  eligibilitySameSubject      Boolean?                         @map("eligibility_same_subject")
+  eligibilityStaffSubjectId   String?                          @map("eligibility_staff_subject_id") @db.Uuid
+  note                        String?                          @db.VarChar(500)
+  status                      OperationalOverlayStatus         @default(ACTIVE)
+  createRequestKey            String                           @unique(map: "operational_lesson_dispositions_create_request_key_key") @map("create_request_key") @db.VarChar(200)
+  createRequestFingerprint    String                           @map("create_request_fingerprint") @db.VarChar(128)
+  reversedByUserId            String?                          @map("reversed_by_user_id") @db.Uuid
+  reversedAt                  DateTime?                        @map("reversed_at") @db.Timestamptz(3)
+  reversalReason              String?                          @map("reversal_reason") @db.VarChar(500)
+  reverseRequestKey           String?                          @unique(map: "operational_lesson_dispositions_reverse_request_key_key") @map("reverse_request_key") @db.VarChar(200)
+  reverseRequestFingerprint   String?                          @map("reverse_request_fingerprint") @db.VarChar(128)
+  replacesId                  String?                          @unique(map: "operational_lesson_dispositions_replaces_id_key") @map("replaces_id") @db.Uuid
+  createdByUserId             String                           @map("created_by_user_id") @db.Uuid
+  createdAt                   DateTime                         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                   DateTime                         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  timetableVersion         TimetableVersion              @relation("LessonDispositionTimetableVersion", fields: [timetableVersionId, academicYearId, academicCalendarVersionId], references: [id, academicYearId, calendarVersionId], onDelete: Restrict)
+  timetableEntry           TimetableEntry                @relation("LessonDispositionTimetableEntry", fields: [timetableEntryId, timetableVersionId, academicYearId, timeSlotDefinitionId, schoolClassId, subjectId, teachingAssignmentId, responsibleTeacherUserId], references: [id, timetableVersionId, academicYearId, timeSlotDefinitionId, schoolClassId, subjectId, teachingAssignmentId, teacherUserId], onDelete: Restrict)
+  calendarVersion          AcademicCalendarVersion       @relation("LessonDispositionCalendarVersion", fields: [academicCalendarVersionId, academicYearId], references: [id, academicYearId], onDelete: Restrict)
+  assignedTeacher          User?                         @relation("LessonDispositionAssignedTeacher", fields: [assignedTeacherUserId], references: [id], onDelete: Restrict)
+  eligibilityStaffSubject  StaffSubject?                 @relation("LessonDispositionEligibilityStaffSubject", fields: [eligibilityStaffSubjectId, assignedTeacherUserId, subjectId], references: [id, userId, subjectId], onDelete: Restrict)
+  createdBy                User                          @relation("LessonDispositionCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  reversedBy               User?                         @relation("LessonDispositionReversedBy", fields: [reversedByUserId], references: [id], onDelete: Restrict)
+  replaces                 OperationalLessonDisposition? @relation("LessonDispositionReplacement", fields: [replacesId], references: [id], onDelete: Restrict)
+  replacedBy               OperationalLessonDisposition? @relation("LessonDispositionReplacement")
+  sourceForMakeupSchedules MakeupTeachingSchedule[]      @relation("MakeupScheduleSourceDisposition")
+
+  @@index([timetableEntryId, sourceCivilDate, status], map: "operational_lesson_dispositions_source_status_idx")
+  @@index([academicYearId, sourceCivilDate], map: "operational_lesson_dispositions_year_date_idx")
+  @@map("operational_lesson_dispositions")
+}
+
+model MakeupTeachingSchedule {
+  id                                String                   @id @default(uuid()) @db.Uuid
+  academicYearId                    String                   @map("academic_year_id") @db.Uuid
+  originalTimetableVersionId        String                   @map("original_timetable_version_id") @db.Uuid
+  originalTimetableEntryId          String                   @map("original_timetable_entry_id") @db.Uuid
+  originalCivilDate                 DateTime                 @map("original_civil_date") @db.Date
+  originalAcademicCalendarVersionId String                   @map("original_academic_calendar_version_id") @db.Uuid
+  originalTimeSlotDefinitionId      String                   @map("original_time_slot_definition_id") @db.Uuid
+  schoolClassId                     String                   @map("school_class_id") @db.Uuid
+  subjectId                         String                   @map("subject_id") @db.Uuid
+  originalTeachingAssignmentId      String                   @map("original_teaching_assignment_id") @db.Uuid
+  responsibleTeacherUserId          String                   @map("responsible_teacher_user_id") @db.Uuid
+  ppctClassAssociationId            String                   @map("ppct_class_association_id") @db.Uuid
+  ppctPlanId                        String                   @map("ppct_plan_id") @db.Uuid
+  ppctVersionId                     String                   @map("ppct_version_id") @db.Uuid
+  ppctItemId                        String                   @map("ppct_item_id") @db.Uuid
+  sourceDispositionId               String?                  @map("source_disposition_id") @db.Uuid
+  targetCivilDate                   DateTime                 @map("target_civil_date") @db.Date
+  targetAcademicCalendarVersionId   String                   @map("target_academic_calendar_version_id") @db.Uuid
+  targetTimeSlotDefinitionId        String                   @map("target_time_slot_definition_id") @db.Uuid
+  scheduledTeacherUserId            String                   @map("scheduled_teacher_user_id") @db.Uuid
+  eligibilityCheckedAt              DateTime                 @map("eligibility_checked_at") @db.Timestamptz(3)
+  eligibilityWasActive              Boolean                  @map("eligibility_was_active")
+  eligibilityWasTeachingStaff       Boolean                  @map("eligibility_was_teaching_staff")
+  eligibilitySameSubject            Boolean                  @map("eligibility_same_subject")
+  eligibilityStaffSubjectId         String                   @map("eligibility_staff_subject_id") @db.Uuid
+  note                              String?                  @db.VarChar(500)
+  status                            OperationalOverlayStatus @default(ACTIVE)
+  createRequestKey                  String                   @unique(map: "makeup_teaching_schedules_create_request_key_key") @map("create_request_key") @db.VarChar(200)
+  createRequestFingerprint          String                   @map("create_request_fingerprint") @db.VarChar(128)
+  reversedByUserId                  String?                  @map("reversed_by_user_id") @db.Uuid
+  reversedAt                        DateTime?                @map("reversed_at") @db.Timestamptz(3)
+  reversalReason                    String?                  @map("reversal_reason") @db.VarChar(500)
+  reverseRequestKey                 String?                  @unique(map: "makeup_teaching_schedules_reverse_request_key_key") @map("reverse_request_key") @db.VarChar(200)
+  reverseRequestFingerprint         String?                  @map("reverse_request_fingerprint") @db.VarChar(128)
+  replacesId                        String?                  @unique(map: "makeup_teaching_schedules_replaces_id_key") @map("replaces_id") @db.Uuid
+  createdByUserId                   String                   @map("created_by_user_id") @db.Uuid
+  createdAt                         DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                         DateTime                 @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  originalTimetableVersion TimetableVersion              @relation("MakeupScheduleOriginalTimetableVersion", fields: [originalTimetableVersionId, academicYearId, originalAcademicCalendarVersionId], references: [id, academicYearId, calendarVersionId], onDelete: Restrict)
+  originalTimetableEntry   TimetableEntry                @relation("MakeupScheduleOriginalTimetableEntry", fields: [originalTimetableEntryId, originalTimetableVersionId, academicYearId, originalTimeSlotDefinitionId, schoolClassId, subjectId, originalTeachingAssignmentId, responsibleTeacherUserId], references: [id, timetableVersionId, academicYearId, timeSlotDefinitionId, schoolClassId, subjectId, teachingAssignmentId, teacherUserId], onDelete: Restrict)
+  originalCalendarVersion  AcademicCalendarVersion       @relation("MakeupScheduleOriginalCalendarVersion", fields: [originalAcademicCalendarVersionId, academicYearId], references: [id, academicYearId], onDelete: Restrict)
+  ppctAssociation          PpctClassAssociation          @relation("MakeupSchedulePpctAssociation", fields: [ppctClassAssociationId, academicYearId, schoolClassId, subjectId, ppctPlanId, ppctVersionId], references: [id, academicYearId, schoolClassId, subjectId, ppctPlanId, ppctVersionId], onDelete: Restrict)
+  ppctItemRevision         PpctItemRevision              @relation("MakeupSchedulePpctItemRevision", fields: [ppctVersionId, ppctItemId, ppctPlanId], references: [ppctVersionId, ppctItemId, ppctPlanId], onDelete: Restrict)
+  sourceDisposition        OperationalLessonDisposition? @relation("MakeupScheduleSourceDisposition", fields: [sourceDispositionId], references: [id], onDelete: Restrict)
+  targetCalendarVersion    AcademicCalendarVersion       @relation("MakeupScheduleTargetCalendarVersion", fields: [targetAcademicCalendarVersionId, academicYearId], references: [id, academicYearId], onDelete: Restrict)
+  targetTimeSlotDefinition TimeSlotDefinition            @relation("MakeupScheduleTargetTimeSlot", fields: [targetTimeSlotDefinitionId, academicYearId], references: [id, academicYearId], onDelete: Restrict)
+  scheduledTeacher         User                          @relation("MakeupScheduleTeacher", fields: [scheduledTeacherUserId], references: [id], onDelete: Restrict)
+  eligibilityStaffSubject  StaffSubject                  @relation("MakeupScheduleEligibilityStaffSubject", fields: [eligibilityStaffSubjectId, scheduledTeacherUserId, subjectId], references: [id, userId, subjectId], onDelete: Restrict)
+  createdBy                User                          @relation("MakeupScheduleCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  reversedBy               User?                         @relation("MakeupScheduleReversedBy", fields: [reversedByUserId], references: [id], onDelete: Restrict)
+  replaces                 MakeupTeachingSchedule?       @relation("MakeupScheduleReplacement", fields: [replacesId], references: [id], onDelete: Restrict)
+  replacedBy               MakeupTeachingSchedule?       @relation("MakeupScheduleReplacement")
+
+  @@index([ppctClassAssociationId, ppctVersionId, ppctItemId, status], map: "makeup_teaching_schedules_obligation_status_idx")
+  @@index([academicYearId, targetCivilDate, targetTimeSlotDefinitionId], map: "makeup_teaching_schedules_target_idx")
+  @@map("makeup_teaching_schedules")
 }
