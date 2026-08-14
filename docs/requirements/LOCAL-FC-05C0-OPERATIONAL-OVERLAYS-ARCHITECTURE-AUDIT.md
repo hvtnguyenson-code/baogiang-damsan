@@ -368,7 +368,8 @@ Before Special Activity exists, a write command cannot claim full collision safe
 
 ### 18.1 Confirmed constraints
 
-- A distinct professional mutation capability is required; `TIMETABLE_MANAGE` owns base timetable and must not silently gain overlay mutation authority.
+- `TIMETABLE_MANAGE` owns base timetable management and must not silently acquire operational-overlay mutation authority merely for implementation convenience.
+- Professional authorization remains explicit capability/scope, default-deny and server-resolved. Whether operational overlays require one new dedicated capability, multiple new professional capabilities, or particular capability names and allowed scopes remains **INFERRED / UNRESOLVED** and is closed only by R7–R8 in a later 05C0D decision task.
 - No authority is inferred from role/title, `SYSTEM_ADMIN`, `SubjectGroupMembership`, duty, `TeachingAssignment`, `StaffSubject` or frontend state.
 - Capability resources are resolved from persisted target data server-side; arbitrary body/query scope IDs are not trusted.
 - Default deny and exact scope semantics from ADR-008 apply.
