@@ -1,5 +1,14 @@
-import { CatalogStatus, PpctVersionStatus, UserStatus } from '@prisma/client';
-import { integration, normalizedCode, Phase01Harness } from '../helpers/phase01-test-harness';
+import { CatalogStatus, PpctVersionStatus, Prisma, UserStatus } from '@prisma/client';
+import { PpctAssociationReadService, PpctReadClient } from '../../src/ppct/ppct-association-read.service';
+import { PrismaService } from '../../src/prisma/prisma.service';
+import { TimetableReadinessService } from '../../src/timetables/timetable-readiness.service';
+import { integration, normalizedCode, Phase01Harness, testOrigin } from '../helpers/phase01-test-harness';
+
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => { resolve = done; });
+  return { promise, resolve };
+}
 
 integration('deterministic timetable readiness read model (PostgreSQL)', () => {
   const h = new Phase01Harness();
@@ -61,8 +70,13 @@ integration('deterministic timetable readiness read model (PostgreSQL)', () => {
       academicYearId: year.id, schoolClassId: schoolClass.id, subjectId: subject.id, teacherUserId: teacher.id,
       validFrom: new Date('2026-09-01Z'), validUntil: new Date('2027-05-31Z'),
     } });
-    const slot = await h.prisma.timeSlotDefinition.create({ data: {
+    const mondaySlot = await h.prisma.timeSlotDefinition.create({ data: {
       academicYearId: year.id, weekday: 'MONDAY', session: 'MORNING', ordinal: 1, revision: 1,
+      displayLabel: 'Tiết 1', startTime: new Date('1970-01-01T07:00:00Z'), endTime: new Date('1970-01-01T07:45:00Z'),
+      isActive: true, allowRegularTeaching: true, allowMakeupTeaching: false, allowSelfStudy: false,
+    } });
+    const tuesdaySlot = await h.prisma.timeSlotDefinition.create({ data: {
+      academicYearId: year.id, weekday: 'TUESDAY', session: 'MORNING', ordinal: 1, revision: 1,
       displayLabel: 'Tiết 1', startTime: new Date('1970-01-01T07:00:00Z'), endTime: new Date('1970-01-01T07:45:00Z'),
       isActive: true, allowRegularTeaching: true, allowMakeupTeaching: false, allowSelfStudy: false,
     } });
@@ -73,7 +87,11 @@ integration('deterministic timetable readiness read model (PostgreSQL)', () => {
     } });
     await h.prisma.timetableEntry.createMany({ data: [
       {
-        timetableVersionId: timetable.id, academicYearId: year.id, weekday: 'MONDAY', timeSlotDefinitionId: slot.id,
+        timetableVersionId: timetable.id, academicYearId: year.id, weekday: 'MONDAY', timeSlotDefinitionId: mondaySlot.id,
+        schoolClassId: schoolClass.id, subjectId: subject.id, teachingAssignmentId: assignment.id, teacherUserId: teacher.id,
+      },
+      {
+        timetableVersionId: timetable.id, academicYearId: year.id, weekday: 'TUESDAY', timeSlotDefinitionId: tuesdaySlot.id,
         schoolClassId: schoolClass.id, subjectId: subject.id, teachingAssignmentId: assignment.id, teacherUserId: teacher.id,
       },
     ] });
@@ -123,10 +141,106 @@ integration('deterministic timetable readiness read model (PostgreSQL)', () => {
     expect((await manager.agent.get(`/api/timetable-versions/${crypto.randomUUID()}/readiness?from=2026-09-07&to=2026-09-21`)).status).toBe(404);
   });
 
+  it('keeps one PostgreSQL RepeatableRead snapshot across timetable, calendar and PPCT reads', async () => {
+    const manager = await h.actor({ grants: [{ capabilityKey: 'TIMETABLE_MANAGE' }] });
+    const f = await fixture(manager.id);
+    const appPrisma = h.app.get(PrismaService);
+    const associationRead = h.app.get(PpctAssociationReadService);
+    const readerReached = deferred();
+    const mutationCommitted = deferred();
+    let evaluationTransactionClient: Prisma.TransactionClient | undefined;
+    let associationTransactionClient: PpctReadClient | undefined;
+    const originalFind = associationRead.findOverlappingRange.bind(associationRead);
+    const readSpy = jest.spyOn(associationRead, 'findOverlappingRange').mockImplementationOnce(async (db, streams, from, to) => {
+      associationTransactionClient = db;
+      readerReached.resolve();
+      await mutationCommitted.promise;
+      return originalFind(db, streams, from, to);
+    });
+    const capturingPrisma = {
+      $transaction: <T>(
+        callback: (tx: Prisma.TransactionClient) => Promise<T>,
+        options: { isolationLevel: Prisma.TransactionIsolationLevel },
+      ) => appPrisma.$transaction((tx) => {
+        evaluationTransactionClient = tx;
+        return callback(tx);
+      }, options),
+    } as unknown as PrismaService;
+    const readiness = new TimetableReadinessService(capturingPrisma, associationRead);
+    const query = { from: '2026-09-07', to: '2026-09-21' };
+    let inFlight: Promise<Awaited<ReturnType<TimetableReadinessService['evaluate']>>> | undefined;
+
+    try {
+      inFlight = readiness.evaluate(f.timetable.id, query);
+      await readerReached.promise;
+      expect(evaluationTransactionClient).toBeDefined();
+      expect(associationTransactionClient).toBe(evaluationTransactionClient);
+
+      await h.prisma.ppctClassAssociation.delete({ where: { id: f.association.id } });
+      mutationCommitted.resolve();
+
+      const snapshotResponse = await inFlight;
+      expect(snapshotResponse.result).toBe('PASS');
+      expect(snapshotResponse.provenance.ppctClassAssociationIds).toEqual([f.association.id]);
+
+      const afterCommitResponse = await readiness.evaluate(f.timetable.id, query);
+      expect(afterCommitResponse.result).toBe('FAIL');
+      expect(afterCommitResponse.findings.map((finding) => finding.code)).toEqual([
+        'PPCT_ASSOCIATION_MISSING',
+        'PPCT_ASSOCIATION_MISSING',
+        'PPCT_ASSOCIATION_MISSING',
+      ]);
+    } finally {
+      mutationCommitted.resolve();
+      readSpy.mockRestore();
+      await inFlight?.catch(() => undefined);
+    }
+  });
+
+  it('uses the exact retained inactive calendar instead of a different active calendar head', async () => {
+    const manager = await h.actor({ grants: [{ capabilityKey: 'TIMETABLE_MANAGE' }] });
+    const f = await fixture(manager.id);
+    const currentCalendar = await h.prisma.academicCalendarVersion.create({ data: {
+      academicYearId: f.year.id, versionNumber: 2, startDate: new Date('2026-09-01Z'), endDate: new Date('2027-05-31Z'),
+      officialWeekCount: 1, reserveWeekCount: 0, teachingWeekdays: ['WEDNESDAY'], isActive: true,
+      activatedAt: new Date('2026-08-15T00:00:00Z'),
+    } });
+    const currentWeek = await h.prisma.academicWeek.create({ data: {
+      calendarVersionId: currentCalendar.id, kind: 'OFFICIAL', officialWeekNumber: 1, displayLabel: 'Current T1', sortOrder: 1,
+    } });
+    await h.prisma.academicWeekSegment.create({ data: {
+      academicWeekId: currentWeek.id, calendarVersionId: currentCalendar.id, label: 'Current only', segmentOrder: 1,
+      startDate: new Date('2026-09-09Z'), endDate: new Date('2026-09-09Z'),
+    } });
+
+    const response = await manager.agent.get(
+      `/api/timetable-versions/${f.timetable.id}/readiness?from=2026-09-07&to=2026-09-21`,
+    );
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      result: 'PASS',
+      provenance: {
+        academicCalendarVersionId: f.calendar.id,
+        ppctClassAssociationIds: [f.association.id],
+      },
+    });
+    expect(response.body.provenance.academicCalendarVersionId).not.toBe(currentCalendar.id);
+    expect(response.body.findings).toEqual([]);
+  });
+
   it('uses exact retained segments and binding history, ignores master drift/capacity, and recomputes (A5-A14)', async () => {
     const manager = await h.actor({ grants: [{ capabilityKey: 'TIMETABLE_MANAGE' }] });
     const f = await fixture(manager.id);
     const route = `/api/timetable-versions/${f.timetable.id}/readiness?from=2026-09-07&to=2026-09-21`;
+    const draft = await h.prisma.timetableVersion.update({
+      where: { id: f.timetable.id },
+      data: { status: 'DRAFT', validatedAt: null, validatedByUserId: null },
+    });
+    const validation = await manager.agent.post(`/api/timetable-versions/${f.timetable.id}/validate`)
+      .set('Origin', testOrigin).send({ expectedUpdatedAt: draft.updatedAt.toISOString() });
+    expect(validation.status).toBe(200);
+    expect(validation.body).toMatchObject({ valid: true, statusAfter: 'VALIDATED' });
+
     const first = await manager.agent.get(route);
     expect(first.status).toBe(200);
     expect(first.body).toMatchObject({
@@ -139,12 +253,22 @@ integration('deterministic timetable readiness read model (PostgreSQL)', () => {
 
     await h.prisma.user.update({ where: { id: f.teacher.id }, data: { status: UserStatus.DISABLED } });
     await h.prisma.academicCalendarVersion.update({ where: { id: f.calendar.id }, data: { isActive: false } });
+    const afterMasterDrift = await manager.agent.get(route);
+    expect(afterMasterDrift.status).toBe(200);
+    expect(afterMasterDrift.body.result).toBe('PASS');
+    expect(afterMasterDrift.body.dimensions).toEqual(expect.arrayContaining([
+      { key: 'NORMAL_BASE_TIMETABLE_FOUNDATION', state: 'PASS', required: true },
+      { key: 'PPCT_ASSOCIATION_BINDING', state: 'PASS', required: true },
+    ]));
+    expect(afterMasterDrift.body.findings).toEqual([]);
+
     await h.prisma.ppctClassAssociation.delete({ where: { id: f.association.id } });
     const second = await manager.agent.get(route);
     expect(second.status).toBe(200);
     expect(second.body.result).toBe('FAIL');
     expect(second.body.findings).toEqual([
       expect.objectContaining({ code: 'PPCT_ASSOCIATION_MISSING', date: '2026-09-07', severity: 'BLOCKER' }),
+      expect.objectContaining({ code: 'PPCT_ASSOCIATION_MISSING', date: '2026-09-08', severity: 'BLOCKER' }),
       expect.objectContaining({ code: 'PPCT_ASSOCIATION_MISSING', date: '2026-09-21', severity: 'BLOCKER' }),
     ]);
     expect(first.body.result).toBe('PASS');

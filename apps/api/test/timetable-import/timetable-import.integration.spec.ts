@@ -36,7 +36,9 @@ integration('timetable import configuration control plane integration', () => {
       { key: 'SYSTEM_ADMIN', scopes: ['SCHOOL_WIDE'] },
     ]);
   });
-  afterAll(async () => harness.stop());
+  afterAll(async () => {
+    try { await harness.clean(); } finally { await harness.stop(); }
+  });
 
   const manager = () => harness.actor({ grants: [{ capabilityKey: 'TIMETABLE_MANAGE' }] });
 

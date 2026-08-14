@@ -55,7 +55,7 @@ Backend hiện có các boundary đã được review và version hóa:
 - `TimetableVersion`/`TimetableEntry`, DRAFT/validation, approval/activation, supersession và historical resolution;
 - import TKB XLSX gồm profile/alias, bounded workbook inspection, canonical preview, confirmation phía server, semantic/request replay, imported-DRAFT lock và adversarial security corpus qua LOCAL-FC-04B3D1.
 
-Ngoài PPCT persistence foundation của 05A1 và control plane/lifecycle/history/auth do 05A2 triển khai trên feature branch theo ADR-029, chưa có PPCT import, operational overlay, cancellation/substitution/make-up, special activity, teaching execution/Báo giảng, tiến độ/công nợ, statement/reporting hay approval snapshot. Chưa có UI business semantics; dependency backend lõi tiếp theo vẫn là timetable operational readiness.
+Ngoài PPCT persistence foundation của 05A1, control plane/lifecycle/history/auth do 05A2 thiết lập theo ADR-029 và bounded readiness foundation do 05B1 thiết lập theo ADR-030, chưa có PPCT import, capacity, operational overlay, cancellation/substitution/make-up, special activity, teaching execution/Báo giảng, tiến độ/công nợ, statement/reporting hay approval snapshot. 05B1 không phải full operational readiness; operational overlays là dependency tiếp theo trong roadmap hiện tại. Chưa có UI business semantics.
 
 `LOCAL-FC-05A0` đã merged qua PR #37. Closure 05A0D và ADR-027 đã xác lập kiến trúc PPCT: logical master dùng chung có scope `AcademicYear + Subject + Grade`, còn tiến độ phân phối/hoàn thành/nợ độc lập theo từng class-subject stream và gắn lịch sử với exact PPCT version/item.
 
