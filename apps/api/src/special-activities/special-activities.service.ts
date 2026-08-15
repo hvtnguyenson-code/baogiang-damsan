@@ -34,10 +34,10 @@ export class SpecialActivitiesService {
         academicYearId: value.academicYearId, academicCalendarVersionId: value.academicCalendarVersionId, civilDate: parseCivilDate(value.civilDate), scope: value.scope,
         gradeLevel: value.gradeLevel, schoolClassId: value.schoolClassId, title: value.title, note: value.note, replacesId: value.replacesId,
         createRequestKey: dto.requestKey.trim(), createRequestFingerprint: fingerprint, createdByUserId: request.auth!.user.id,
-        timeSlots: { create: value.exactTimeSlotDefinitionIds.map((timeSlotDefinitionId) => ({ academicYearId: value.academicYearId, timeSlotDefinitionId })) },
-        classTargets: { create: context.classIds.map((schoolClassId) => ({ academicYearId: value.academicYearId, schoolClassId })) },
-        staffing: { create: context.staff.map((item) => ({ scheduledTeacherUserId: item.userId, staffProfileId: item.profileId, eligibilityCheckedAt: item.checkedAt, eligibilityWasActive: true, eligibilityWasTeachingStaff: true })) },
       } });
+      await tx.specialActivityTimeSlot.createMany({ data: value.exactTimeSlotDefinitionIds.map((timeSlotDefinitionId) => ({ specialActivityId: root.id, academicYearId: value.academicYearId, timeSlotDefinitionId })) });
+      await tx.specialActivityClassTarget.createMany({ data: context.classIds.map((schoolClassId) => ({ specialActivityId: root.id, academicYearId: value.academicYearId, schoolClassId })) });
+      await tx.specialActivityStaffing.createMany({ data: context.staff.map((item) => ({ specialActivityId: root.id, scheduledTeacherUserId: item.userId, staffProfileId: item.profileId, eligibilityCheckedAt: item.checkedAt, eligibilityWasActive: true, eligibilityWasTeachingStaff: true })) });
       const row = await tx.specialActivity.findUniqueOrThrow({ where: { id: root.id }, include: specialActivityInclude });
       await this.writeAudit(tx, request, 'SPECIAL_ACTIVITY_CREATED', row.id, { capabilityKey: 'SPECIAL_ACTIVITY_MANAGE', scope: 'SCHOOL_WIDE', requestKey: dto.requestKey.trim(), academicYearId: row.academicYearId, calendarVersionId: row.academicCalendarVersionId, civilDate: value.civilDate, activityScope: row.scope, gradeLevel: row.gradeLevel, schoolClassId: row.schoolClassId, exactTimeSlotDefinitionIds: value.exactTimeSlotDefinitionIds, targetClassCount: context.classIds.length, scheduledTeacherUserIds: value.scheduledTeacherUserIds, replacesId: row.replacesId, collisionProfile: SPECIAL_ACTIVITY_COLLISION_COVERAGE.profile });
       return { outcome: 'CREATED', record: toSpecialActivityRecord(row), collisionCoverage: SPECIAL_ACTIVITY_COLLISION_COVERAGE };
