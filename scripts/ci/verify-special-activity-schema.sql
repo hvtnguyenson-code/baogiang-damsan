@@ -153,6 +153,26 @@ BEGIN
         RAISE EXCEPTION 'Expected invalid scope rejection';
     EXCEPTION WHEN check_violation THEN NULL; END;
     BEGIN
+        INSERT INTO "special_activities" ("academic_year_id", "academic_calendar_version_id", "civil_date", "scope", "grade_level", "title", "create_request_key", "create_request_fingerprint", "created_by_user_id")
+        VALUES ('a5d10000-0000-0000-0000-000000000001', 'e5d10000-0000-0000-0000-000000000001', DATE '2026-10-06', 'GRADE', 9, 'Bad grade', 'bad-grade', 'bad-grade-fp', 'd5d10000-0000-0000-0000-000000000001');
+        RAISE EXCEPTION 'Expected invalid GRADE level rejection';
+    EXCEPTION WHEN check_violation THEN NULL; END;
+    BEGIN
+        INSERT INTO "special_activities" ("academic_year_id", "academic_calendar_version_id", "civil_date", "scope", "grade_level", "school_class_id", "title", "create_request_key", "create_request_fingerprint", "created_by_user_id")
+        VALUES ('a5d10000-0000-0000-0000-000000000001', 'e5d10000-0000-0000-0000-000000000001', DATE '2026-10-06', 'GRADE', 10, 'c5d10000-0000-0000-0000-000000000001', 'Grade with class', 'grade-with-class', 'grade-with-class-fp', 'd5d10000-0000-0000-0000-000000000001');
+        RAISE EXCEPTION 'Expected GRADE class selector rejection';
+    EXCEPTION WHEN check_violation THEN NULL; END;
+    BEGIN
+        INSERT INTO "special_activities" ("academic_year_id", "academic_calendar_version_id", "civil_date", "scope", "title", "create_request_key", "create_request_fingerprint", "created_by_user_id")
+        VALUES ('a5d10000-0000-0000-0000-000000000001', 'e5d10000-0000-0000-0000-000000000001', DATE '2026-10-06', 'CLASS', 'Class without selector', 'class-without-selector', 'class-without-selector-fp', 'd5d10000-0000-0000-0000-000000000001');
+        RAISE EXCEPTION 'Expected CLASS selector rejection';
+    EXCEPTION WHEN check_violation THEN NULL; END;
+    BEGIN
+        INSERT INTO "special_activities" ("academic_year_id", "academic_calendar_version_id", "civil_date", "scope", "school_class_id", "title", "create_request_key", "create_request_fingerprint", "created_by_user_id")
+        VALUES ('a5d10000-0000-0000-0000-000000000001', 'e5d10000-0000-0000-0000-000000000001', DATE '2026-10-06', 'CLASS', 'c5d10000-0000-0000-0000-000000000002', 'Cross-year class selector', 'cross-class-selector', 'cross-class-selector-fp', 'd5d10000-0000-0000-0000-000000000001');
+        RAISE EXCEPTION 'Expected cross-year CLASS selector rejection';
+    EXCEPTION WHEN foreign_key_violation THEN NULL; END;
+    BEGIN
         INSERT INTO "special_activities" ("academic_year_id", "academic_calendar_version_id", "civil_date", "scope", "title", "create_request_key", "create_request_fingerprint", "created_by_user_id")
         VALUES ('a5d10000-0000-0000-0000-000000000001', 'e5d10000-0000-0000-0000-000000000002', DATE '2026-10-06', 'SCHOOL_WIDE', 'Cross calendar', 'cross-calendar', 'cross-calendar-fp', 'd5d10000-0000-0000-0000-000000000001');
         RAISE EXCEPTION 'Expected cross-year calendar rejection';
@@ -163,10 +183,20 @@ BEGIN
         RAISE EXCEPTION 'Expected cross-year slot rejection';
     EXCEPTION WHEN foreign_key_violation THEN NULL; END;
     BEGIN
+        INSERT INTO "special_activity_time_slots" ("special_activity_id", "academic_year_id", "time_slot_definition_id")
+        VALUES ('05d10000-0000-0000-0000-000000000001', 'a5d10000-0000-0000-0000-000000000001', 'f5d10000-0000-0000-0000-000000000001');
+        RAISE EXCEPTION 'Expected duplicate activity slot rejection';
+    EXCEPTION WHEN unique_violation THEN NULL; END;
+    BEGIN
         INSERT INTO "special_activity_class_targets" ("special_activity_id", "academic_year_id", "school_class_id")
         VALUES ('05d10000-0000-0000-0000-000000000001', 'a5d10000-0000-0000-0000-000000000001', 'c5d10000-0000-0000-0000-000000000002');
         RAISE EXCEPTION 'Expected cross-year class rejection';
     EXCEPTION WHEN foreign_key_violation THEN NULL; END;
+    BEGIN
+        INSERT INTO "special_activity_class_targets" ("special_activity_id", "academic_year_id", "school_class_id")
+        VALUES ('05d10000-0000-0000-0000-000000000002', 'a5d10000-0000-0000-0000-000000000001', 'c5d10000-0000-0000-0000-000000000001');
+        RAISE EXCEPTION 'Expected duplicate activity class target rejection';
+    EXCEPTION WHEN unique_violation THEN NULL; END;
     BEGIN
         INSERT INTO "special_activity_staffing" ("special_activity_id", "scheduled_teacher_user_id", "staff_profile_id", "eligibility_checked_at", "eligibility_was_active", "eligibility_was_teaching_staff")
         VALUES ('05d10000-0000-0000-0000-000000000001', 'd5d10000-0000-0000-0000-000000000003', 'b5d10000-0000-0000-0000-000000000001', CURRENT_TIMESTAMP, true, true);
@@ -176,6 +206,16 @@ BEGIN
         INSERT INTO "special_activity_staffing" ("special_activity_id", "scheduled_teacher_user_id", "staff_profile_id", "eligibility_checked_at", "eligibility_was_active", "eligibility_was_teaching_staff")
         VALUES ('05d10000-0000-0000-0000-000000000001', 'd5d10000-0000-0000-0000-000000000003', 'b5d10000-0000-0000-0000-000000000002', CURRENT_TIMESTAMP, false, true);
         RAISE EXCEPTION 'Expected eligibility rejection';
+    EXCEPTION WHEN check_violation THEN NULL; END;
+    BEGIN
+        INSERT INTO "special_activity_staffing" ("special_activity_id", "scheduled_teacher_user_id", "staff_profile_id", "eligibility_checked_at", "eligibility_was_active", "eligibility_was_teaching_staff")
+        VALUES ('05d10000-0000-0000-0000-000000000001', 'd5d10000-0000-0000-0000-000000000002', 'b5d10000-0000-0000-0000-000000000001', CURRENT_TIMESTAMP, true, true);
+        RAISE EXCEPTION 'Expected duplicate scheduled teacher rejection';
+    EXCEPTION WHEN unique_violation THEN NULL; END;
+    BEGIN
+        INSERT INTO "special_activity_staffing" ("special_activity_id", "scheduled_teacher_user_id", "staff_profile_id", "eligibility_checked_at", "eligibility_was_active", "eligibility_was_teaching_staff")
+        VALUES ('05d10000-0000-0000-0000-000000000002', 'd5d10000-0000-0000-0000-000000000003', 'b5d10000-0000-0000-0000-000000000002', CURRENT_TIMESTAMP, true, false);
+        RAISE EXCEPTION 'Expected teaching-staff eligibility rejection';
     EXCEPTION WHEN check_violation THEN NULL; END;
     BEGIN
         INSERT INTO "special_activities" ("academic_year_id", "academic_calendar_version_id", "civil_date", "scope", "title", "status", "reversed_by_user_id", "create_request_key", "create_request_fingerprint", "created_by_user_id")
@@ -191,6 +231,26 @@ BEGIN
         INSERT INTO "special_activities" ("academic_year_id", "academic_calendar_version_id", "civil_date", "scope", "title", "create_request_key", "create_request_fingerprint", "created_by_user_id")
         VALUES ('a5d10000-0000-0000-0000-000000000001', 'e5d10000-0000-0000-0000-000000000001', DATE '2026-10-07', 'SCHOOL_WIDE', ' Bad text ', 'bad-text', 'bad-text-fp', 'd5d10000-0000-0000-0000-000000000001');
         RAISE EXCEPTION 'Expected normalized title rejection';
+    EXCEPTION WHEN check_violation THEN NULL; END;
+    BEGIN
+        INSERT INTO "special_activities" ("academic_year_id", "academic_calendar_version_id", "civil_date", "scope", "title", "create_request_key", "create_request_fingerprint", "created_by_user_id")
+        VALUES ('a5d10000-0000-0000-0000-000000000001', 'e5d10000-0000-0000-0000-000000000001', DATE '2026-10-07', 'SCHOOL_WIDE', 'Blank request key', ' ', 'blank-key-fp', 'd5d10000-0000-0000-0000-000000000001');
+        RAISE EXCEPTION 'Expected blank create request key rejection';
+    EXCEPTION WHEN check_violation THEN NULL; END;
+    BEGIN
+        INSERT INTO "special_activities" ("academic_year_id", "academic_calendar_version_id", "civil_date", "scope", "title", "create_request_key", "create_request_fingerprint", "created_by_user_id")
+        VALUES ('a5d10000-0000-0000-0000-000000000001', 'e5d10000-0000-0000-0000-000000000001', DATE '2026-10-07', 'SCHOOL_WIDE', 'Blank request fingerprint', 'blank-fingerprint-key', ' ', 'd5d10000-0000-0000-0000-000000000001');
+        RAISE EXCEPTION 'Expected blank create request fingerprint rejection';
+    EXCEPTION WHEN check_violation THEN NULL; END;
+    BEGIN
+        INSERT INTO "special_activities" ("academic_year_id", "academic_calendar_version_id", "civil_date", "scope", "title", "create_request_key", "create_request_fingerprint", "created_by_user_id")
+        VALUES ('a5d10000-0000-0000-0000-000000000001', 'e5d10000-0000-0000-0000-000000000001', DATE '2026-10-07', 'SCHOOL_WIDE', ' ', 'blank-title-key', 'blank-title-fp', 'd5d10000-0000-0000-0000-000000000001');
+        RAISE EXCEPTION 'Expected blank title rejection';
+    EXCEPTION WHEN check_violation THEN NULL; END;
+    BEGIN
+        INSERT INTO "special_activities" ("academic_year_id", "academic_calendar_version_id", "civil_date", "scope", "title", "note", "create_request_key", "create_request_fingerprint", "created_by_user_id")
+        VALUES ('a5d10000-0000-0000-0000-000000000001', 'e5d10000-0000-0000-0000-000000000001', DATE '2026-10-07', 'SCHOOL_WIDE', 'Blank note', ' ', 'blank-note-key', 'blank-note-fp', 'd5d10000-0000-0000-0000-000000000001');
+        RAISE EXCEPTION 'Expected blank note rejection';
     EXCEPTION WHEN check_violation THEN NULL; END;
     BEGIN
         INSERT INTO "special_activities" ("academic_year_id", "academic_calendar_version_id", "civil_date", "scope", "title", "create_request_key", "create_request_fingerprint", "created_by_user_id")
@@ -215,6 +275,13 @@ BEGIN
         VALUES ('05d10000-0000-0000-0000-000000000009', 'a5d10000-0000-0000-0000-000000000001', 'e5d10000-0000-0000-0000-000000000001', DATE '2026-10-07', 'SCHOOL_WIDE', 'Self replacement', '05d10000-0000-0000-0000-000000000009', 'self-replace', 'self-replace-fp', 'd5d10000-0000-0000-0000-000000000001');
         RAISE EXCEPTION 'Expected self replacement rejection';
     EXCEPTION WHEN check_violation THEN NULL; END;
+    INSERT INTO "special_activities" ("id", "academic_year_id", "academic_calendar_version_id", "civil_date", "scope", "title", "replaces_id", "create_request_key", "create_request_fingerprint", "created_by_user_id")
+    VALUES ('05d10000-0000-0000-0000-000000000010', 'a5d10000-0000-0000-0000-000000000001', 'e5d10000-0000-0000-0000-000000000001', DATE '2026-10-08', 'SCHOOL_WIDE', 'Valid successor', '05d10000-0000-0000-0000-000000000001', 'valid-successor-key', 'valid-successor-fp', 'd5d10000-0000-0000-0000-000000000001');
+    BEGIN
+        INSERT INTO "special_activities" ("id", "academic_year_id", "academic_calendar_version_id", "civil_date", "scope", "title", "replaces_id", "create_request_key", "create_request_fingerprint", "created_by_user_id")
+        VALUES ('05d10000-0000-0000-0000-000000000011', 'a5d10000-0000-0000-0000-000000000001', 'e5d10000-0000-0000-0000-000000000001', DATE '2026-10-09', 'SCHOOL_WIDE', 'Second successor', '05d10000-0000-0000-0000-000000000001', 'second-successor-key', 'second-successor-fp', 'd5d10000-0000-0000-0000-000000000001');
+        RAISE EXCEPTION 'Expected replacement cardinality rejection';
+    EXCEPTION WHEN unique_violation THEN NULL; END;
 END $$;
 
 DO $$
