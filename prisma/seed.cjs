@@ -39,6 +39,7 @@ const CAPABILITIES = [
   ['AI_DISABLE_SYSTEM', 'Tắt AI toàn hệ thống theo policy.', ['SCHOOL_WIDE']],
   ['CALENDAR_EXCEPTION_MANAGE', 'Quản lý ngoại lệ lịch học toàn trường.', ['SCHOOL_WIDE']],
   ['TEACHING_OPERATION_MANAGE', 'Quản lý điều hành tiết dạy theo môn hoặc toàn trường.', ['SUBJECT', 'SCHOOL_WIDE']],
+  ['SPECIAL_ACTIVITY_MANAGE', 'Special Activity management school-wide.', ['SCHOOL_WIDE']],
 ];
 
 async function seedCapabilityCatalog(prisma) {

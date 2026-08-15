@@ -120,6 +120,7 @@ export type CapabilityKey =
   | 'PPCT_MANAGE'
   | 'CALENDAR_EXCEPTION_MANAGE'
   | 'TEACHING_OPERATION_MANAGE'
+  | 'SPECIAL_ACTIVITY_MANAGE'
   | 'AI_ACTIVE_USE_SCHOOL'   // AI active use school-wide (BGH)
   | 'AI_ACTIVE_USE_DEPARTMENT' // AI active use department-wide (tổ trưởng)
   | 'AI_ACTIVE_USE_ACTIVITY' // AI active use activity-wide (điều phối)
@@ -1135,9 +1136,28 @@ export type OperationalLessonDispositionType =
 export type OperationalOverlayMutationOutcome = 'CREATED' | 'REVERSED' | 'IDEMPOTENT_REPLAY';
 
 export interface OperationalOverlayCollisionCoverage {
-  profile: 'CURRENT_CANONICAL_PRE_SPECIAL_ACTIVITY_V1';
-  specialActivity: 'NOT_ASSESSED';
+  profile: 'CANONICAL_CLASS_TEACHER_TIME_V1';
+  specialActivity: 'ASSESSED';
+  room: 'NOT_ASSESSED';
 }
+
+// ============================================================
+// Special Activity Contracts (LOCAL-FC-05D2)
+// ============================================================
+export type SpecialActivityStatus = 'ACTIVE' | 'REVERSED';
+export type SpecialActivityScope = 'SCHOOL_WIDE' | 'GRADE' | 'CLASS';
+export interface SpecialActivityStaffingRecord { scheduledTeacherUserId: string; staffProfileId: string; eligibilityCheckedAt: string; eligibilityWasActive: boolean; eligibilityWasTeachingStaff: boolean; }
+export interface SpecialActivityRecord {
+  id: string; academicYearId: string; academicCalendarVersionId: string; civilDate: CivilDateString;
+  scope: SpecialActivityScope; gradeLevel: 10 | 11 | 12 | null; schoolClassId: string | null;
+  title: string; note: string | null; status: SpecialActivityStatus; replacesId: string | null;
+  createdByUserId: string; reversedByUserId: string | null; reversedAt: string | null; reversalReason: string | null;
+  createdAt: string; updatedAt: string; exactTimeSlotDefinitionIds: string[]; frozenSchoolClassIds: string[]; staffing: SpecialActivityStaffingRecord[];
+}
+export interface SpecialActivityCollisionCoverage { profile: 'CANONICAL_CLASS_TEACHER_TIME_V1'; specialActivity: 'ASSESSED'; room: 'NOT_ASSESSED'; }
+export interface SpecialActivityCreateResult { outcome: 'CREATED' | 'IDEMPOTENT_REPLAY'; record: SpecialActivityRecord; collisionCoverage: SpecialActivityCollisionCoverage; }
+export interface SpecialActivityReverseResult { outcome: 'REVERSED' | 'IDEMPOTENT_REPLAY'; record: SpecialActivityRecord; collisionCoverage: SpecialActivityCollisionCoverage; }
+export interface SpecialActivityListResponse { items: SpecialActivityRecord[]; page: number; pageSize: number; total: number; collisionCoverage: SpecialActivityCollisionCoverage; }
 
 export interface CalendarExceptionRecord {
   id: string;

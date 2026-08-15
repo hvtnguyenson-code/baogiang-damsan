@@ -18,6 +18,7 @@ import { TimetablesModule } from './timetables/timetables.module';
 import { TimetableImportModule } from './timetable-import/timetable-import.module';
 import { PpctModule } from './ppct/ppct.module';
 import { OperationalOverlaysModule } from './operational-overlays/operational-overlays.module';
+import { SpecialActivitiesModule } from './special-activities/special-activities.module';
 
 @Module({
   imports: [
@@ -53,6 +54,7 @@ import { OperationalOverlaysModule } from './operational-overlays/operational-ov
     TimetableImportModule,
     PpctModule,
     OperationalOverlaysModule,
+    SpecialActivitiesModule,
   ],
 })
 export class AppModule {}

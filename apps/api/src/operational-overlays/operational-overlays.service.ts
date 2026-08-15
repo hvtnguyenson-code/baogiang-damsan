@@ -9,6 +9,7 @@ import {
   Prisma,
   TimeSlotSession,
   TimetableVersionStatus,
+  SpecialActivityStatus,
 } from '@prisma/client';
 import {
   CalendarExceptionCreateResult,
@@ -28,7 +29,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateCalendarExceptionDto, CreateLessonDispositionDto, ListCalendarExceptionsDto, ListLessonDispositionsDto, ReverseOperationalOverlayDto } from './dto';
 import { calendarExceptionInclude, toCalendarExceptionRecord, toLessonDispositionRecord } from './mapper';
 import { OperationalOverlayAccessService } from './operational-overlay-access.service';
-import { COLLISION_COVERAGE, calendarCreateFingerprint, dispositionCreateFingerprint, isTeacherDisposition, OverlayClock, OVERLAY_CLOCK, reverseFingerprint, weekdayForCivilDate } from './operational-overlay-policy';
+import { COLLISION_COVERAGE, calendarCreateFingerprint, dispositionCreateFingerprint, intervalsOverlap, isTeacherDisposition, OverlayClock, OVERLAY_CLOCK, reverseFingerprint, weekdayForCivilDate } from './operational-overlay-policy';
 
 const CREATE_RACE_MESSAGE = 'Lệnh xung đột với một thay đổi đồng thời hoặc dữ liệu nghiệp vụ đang có.';
 const STALE_MESSAGE = 'Bản ghi đã thay đổi; hãy tải lại trước khi đảo ngược.';
@@ -324,6 +325,13 @@ export class OperationalOverlaysService {
     for (const exception of exceptions) if (this.exceptionCoversEntry(exception, entry.schoolClassId, entry.schoolClass.gradeLevel, entry.timeSlotDefinitionId, entry.timeSlotDefinition.session)) applicable.push(exception.id);
     if (applicable.length > 1) throw new ConflictException('Dữ liệu ngoại lệ ACTIVE mơ hồ; hệ thống từ chối an toàn.');
     if (applicable.length === 1) throw new ConflictException('CalendarException đã loại bỏ cơ hội nguồn.');
+    const specialActivity = (tx as unknown as {
+      specialActivity?: { findMany: (args: unknown) => Promise<Array<{ timeSlots: Array<{ timeSlotDefinition: { startTime: Date; endTime: Date } }> }>> };
+    }).specialActivity;
+    if (specialActivity) {
+      const activities = await specialActivity.findMany({ where: { academicYearId: entry.academicYearId, civilDate: date, status: SpecialActivityStatus.ACTIVE, classTargets: { some: { schoolClassId: entry.schoolClassId } } }, include: { timeSlots: { include: { timeSlotDefinition: true } } } });
+      if (activities.some((activity) => activity.timeSlots.some((slot) => intervalsOverlap(slot.timeSlotDefinition, entry.timeSlotDefinition)))) throw new ConflictException('SpecialActivity ACTIVE da suppress co hoi nguon.');
+    }
   }
 
   private validateDispositionShape(dto: CreateLessonDispositionDto): void {
@@ -344,14 +352,30 @@ export class OperationalOverlaysService {
   }
 
   private async assertTeacherAvailable(tx: Prisma.TransactionClient, teacherId: string, date: Date, weekday: AcademicWeekday, slotId: string): Promise<void> {
-    if (await tx.operationalLessonDisposition.findFirst({ where: { assignedTeacherUserId: teacherId, sourceCivilDate: date, timeSlotDefinitionId: slotId, status: OperationalOverlayStatus.ACTIVE, dispositionType: { in: [OperationalLessonDispositionType.SAME_SUBJECT_SUBSTITUTION, OperationalLessonDispositionType.DIFFERENT_SUBJECT_SUPERVISION] } }, select: { id: true } })) throw new ConflictException('Giáo viên đã có occupancy từ disposition ACTIVE.');
-    if (await tx.makeupTeachingSchedule.findFirst({ where: { scheduledTeacherUserId: teacherId, targetCivilDate: date, targetTimeSlotDefinitionId: slotId, status: OperationalOverlayStatus.ACTIVE }, select: { id: true } })) throw new ConflictException('Giáo viên đã có occupancy từ lịch dạy bù ACTIVE.');
-    const entries = await tx.timetableEntry.findMany({ where: { teacherUserId: teacherId, weekday, timeSlotDefinitionId: slotId, timetableVersion: { status: { in: [TimetableVersionStatus.ACTIVE, TimetableVersionStatus.SUPERSEDED] }, effectiveFrom: { lte: date }, OR: [{ effectiveUntil: null }, { effectiveUntil: { gte: date } }] } }, include: { timetableVersion: true, schoolClass: { select: { gradeLevel: true } }, timeSlotDefinition: { select: { session: true } } } });
+    const source = await tx.timeSlotDefinition.findUnique({ where: { id: slotId }, select: { academicYearId: true, startTime: true, endTime: true } });
+    if (!source) throw new ConflictException('Không tìm thấy exact slot nguồn.');
+    const intervalActivities = await tx.specialActivity.findMany({
+      where: { academicYearId: source.academicYearId, civilDate: date, status: SpecialActivityStatus.ACTIVE, staffing: { some: { scheduledTeacherUserId: teacherId } } },
+      include: { timeSlots: { include: { timeSlotDefinition: { select: { startTime: true, endTime: true } } } } },
+    });
+    if (intervalActivities.some((row) => row.timeSlots.some((slot) => intervalsOverlap(source, slot.timeSlotDefinition)))) throw new ConflictException('Giáo viên đã có occupancy từ SpecialActivity ACTIVE.');
+    const dispositions = await tx.operationalLessonDisposition.findMany({
+      where: { assignedTeacherUserId: teacherId, sourceCivilDate: date, status: OperationalOverlayStatus.ACTIVE, dispositionType: { in: [OperationalLessonDispositionType.SAME_SUBJECT_SUBSTITUTION, OperationalLessonDispositionType.DIFFERENT_SUBJECT_SUPERVISION] } },
+      include: { timetableEntry: { include: { timeSlotDefinition: { select: { startTime: true, endTime: true } } } } },
+    });
+    if (dispositions.some((row) => intervalsOverlap(source, row.timetableEntry.timeSlotDefinition))) throw new ConflictException('Giáo viên đã có occupancy từ disposition ACTIVE.');
+    const makeups = await tx.makeupTeachingSchedule.findMany({
+      where: { scheduledTeacherUserId: teacherId, targetCivilDate: date, status: OperationalOverlayStatus.ACTIVE },
+      include: { targetTimeSlotDefinition: { select: { startTime: true, endTime: true } } },
+    });
+    if (makeups.some((row) => intervalsOverlap(source, row.targetTimeSlotDefinition))) throw new ConflictException('Giáo viên đã có occupancy từ lịch dạy bù ACTIVE.');
+    const entries = await tx.timetableEntry.findMany({ where: { teacherUserId: teacherId, weekday, timetableVersion: { status: { in: [TimetableVersionStatus.ACTIVE, TimetableVersionStatus.SUPERSEDED] }, effectiveFrom: { lte: date }, OR: [{ effectiveUntil: null }, { effectiveUntil: { gte: date } }] } }, include: { timetableVersion: true, schoolClass: { select: { gradeLevel: true } }, timeSlotDefinition: { select: { session: true, startTime: true, endTime: true } } } });
     for (const entry of entries) {
+      if (!intervalsOverlap(source, entry.timeSlotDefinition)) continue;
       if (!entry.timetableVersion.calendarVersionId) continue;
       if (await tx.calendarInterruption.findFirst({ where: { calendarVersionId: entry.timetableVersion.calendarVersionId, startDate: { lte: date }, endDate: { gte: date } }, select: { id: true } })) continue;
       const exceptions = await tx.calendarException.findMany({ where: { academicCalendarVersionId: entry.timetableVersion.calendarVersionId, civilDate: date, status: OperationalOverlayStatus.ACTIVE }, include: { ...calendarExceptionInclude, schoolClass: { select: { gradeLevel: true } } } });
-      const applicable = exceptions.filter((item) => this.exceptionCoversEntry(item, entry.schoolClassId, entry.schoolClass.gradeLevel, slotId, entry.timeSlotDefinition.session));
+      const applicable = exceptions.filter((item) => this.exceptionCoversEntry(item, entry.schoolClassId, entry.schoolClass.gradeLevel, entry.timeSlotDefinitionId, entry.timeSlotDefinition.session));
       if (applicable.length > 1) throw new ConflictException('Dữ liệu ngoại lệ ACTIVE mơ hồ; hệ thống từ chối an toàn.');
       if (applicable.length === 1) continue;
       if (await tx.operationalLessonDisposition.findFirst({ where: { timetableEntryId: entry.id, sourceCivilDate: date, status: OperationalOverlayStatus.ACTIVE }, select: { id: true } })) continue;

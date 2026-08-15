@@ -179,16 +179,23 @@ describe('OperationalOverlaysService domain validation', () => {
 
   it.each(['disposition', 'makeup'])('rejects assigned-teacher overlay occupancy from %s', async (kind) => {
     const internal = service() as unknown as { assertTeacherAvailable(tx: unknown, teacher: string, date: Date, weekday: string, slot: string): Promise<void> };
+    const interval = { startTime: new Date('1970-01-01T07:30:00.000Z'), endTime: new Date('1970-01-01T08:15:00.000Z') };
     const tx = {
-      operationalLessonDisposition: { findFirst: jest.fn().mockResolvedValue(kind === 'disposition' ? { id: 'busy' } : null) },
-      makeupTeachingSchedule: { findFirst: jest.fn().mockResolvedValue(kind === 'makeup' ? { id: 'busy' } : null) },
+      timeSlotDefinition: { findUnique: jest.fn().mockResolvedValue({ academicYearId: 'year', startTime: new Date('1970-01-01T07:00:00.000Z'), endTime: new Date('1970-01-01T07:45:00.000Z') }) },
+      specialActivity: { findMany: jest.fn().mockResolvedValue([]) },
+      operationalLessonDisposition: { findMany: jest.fn().mockResolvedValue(kind === 'disposition' ? [{ timetableEntry: { timeSlotDefinition: interval } }] : []) },
+      makeupTeachingSchedule: { findMany: jest.fn().mockResolvedValue(kind === 'makeup' ? [{ targetTimeSlotDefinition: interval }] : []) },
       timetableEntry: { findMany: jest.fn().mockResolvedValue([]) },
     };
     await expect(internal.assertTeacherAvailable(tx, 'teacher', date, 'MONDAY', 'slot')).rejects.toBeInstanceOf(ConflictException);
   });
   it('allows a teacher when canonical occupancy is empty', async () => {
     const internal = service() as unknown as { assertTeacherAvailable(tx: unknown, teacher: string, date: Date, weekday: string, slot: string): Promise<void> };
-    const tx = { operationalLessonDisposition: { findFirst: jest.fn().mockResolvedValue(null) }, makeupTeachingSchedule: { findFirst: jest.fn().mockResolvedValue(null) }, timetableEntry: { findMany: jest.fn().mockResolvedValue([]) } };
+    const tx = {
+      timeSlotDefinition: { findUnique: jest.fn().mockResolvedValue({ academicYearId: 'year', startTime: new Date('1970-01-01T07:00:00.000Z'), endTime: new Date('1970-01-01T07:45:00.000Z') }) },
+      specialActivity: { findMany: jest.fn().mockResolvedValue([]) }, operationalLessonDisposition: { findMany: jest.fn().mockResolvedValue([]) },
+      makeupTeachingSchedule: { findMany: jest.fn().mockResolvedValue([]) }, timetableEntry: { findMany: jest.fn().mockResolvedValue([]) },
+    };
     await expect(internal.assertTeacherAvailable(tx, 'teacher', date, 'MONDAY', 'slot')).resolves.toBeUndefined();
   });
   it('requires a reversed same-family predecessor', async () => {

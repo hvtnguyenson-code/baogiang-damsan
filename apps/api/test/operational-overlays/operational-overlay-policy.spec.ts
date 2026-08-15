@@ -29,5 +29,5 @@ describe('operational overlay deterministic policy', () => {
     ['2026-08-17', 'MONDAY'], ['2026-08-18', 'TUESDAY'], ['2026-08-19', 'WEDNESDAY'],
     ['2026-08-20', 'THURSDAY'], ['2026-08-21', 'FRIDAY'], ['2026-08-22', 'SATURDAY'], ['2026-08-23', 'SUNDAY'],
   ])('maps %s to retained weekday %s', (civilDate, weekday) => expect(weekdayForCivilDate(new Date(`${civilDate}T00:00:00.000Z`))).toBe(weekday));
-  it('reports bounded pre-Special-Activity coverage honestly', () => expect(COLLISION_COVERAGE).toEqual({ profile: 'CURRENT_CANONICAL_PRE_SPECIAL_ACTIVITY_V1', specialActivity: 'NOT_ASSESSED' }));
+  it('reports bounded SpecialActivity coverage honestly', () => expect(COLLISION_COVERAGE).toEqual({ profile: 'CANONICAL_CLASS_TEACHER_TIME_V1', specialActivity: 'ASSESSED', room: 'NOT_ASSESSED' }));
 });

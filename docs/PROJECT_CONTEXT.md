@@ -2,6 +2,10 @@
 
 ## Thông tin dự án
 
+## LOCAL-FC-05D2 status
+
+LOCAL-FC-05D2 adds the bounded SpecialActivity runtime control plane: dedicated SCHOOL_WIDE capability, retained create/read/reverse API, frozen class/staff provenance, transactional audit, idempotency/CAS and CANONICAL_CLASS_TEACHER_TIME_V1 class/teacher interval collision coverage. Room remains NOT_ASSESSED and no PPCT, execution, make-up runtime or UI semantics are introduced.
+
 | Mục | Nội dung |
 |---|---|
 | **Tên dự án** | Hệ thống Báo giảng và Thống kê Tiết dạy Tự động |
