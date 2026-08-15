@@ -33,6 +33,13 @@ integration('operational overlay control plane (PostgreSQL)', () => {
       academicYearId: year.id, versionNumber: 1, startDate: new Date('2026-09-01Z'), endDate: new Date('2027-05-31Z'),
       officialWeekCount: 35, reserveWeekCount: 1, teachingWeekdays: ['MONDAY'], isActive: true, activatedAt: new Date(),
     } });
+    const week = await h.prisma.academicWeek.create({ data: {
+      calendarVersionId: calendar.id, kind: 'OFFICIAL', officialWeekNumber: 1, displayLabel: 'Tuần 1', sortOrder: 1,
+    } });
+    await h.prisma.academicWeekSegment.create({ data: {
+      academicWeekId: week.id, calendarVersionId: calendar.id, label: 'W1', segmentOrder: 1,
+      startDate: new Date('2026-09-07Z'), endDate: new Date('2026-09-13Z'),
+    } });
     const schoolClass = await h.prisma.schoolClass.create({ data: {
       academicYearId: year.id, code: normalizedCode('C'), name: '10A1', gradeLevel: 10, status: CatalogStatus.ACTIVE,
     } });
@@ -58,9 +65,12 @@ integration('operational overlay control plane (PostgreSQL)', () => {
       startTime: new Date('1970-01-01T07:00:00Z'), endTime: new Date('1970-01-01T07:45:00Z'),
       isActive: true, allowRegularTeaching: true, allowMakeupTeaching: false, allowSelfStudy: false,
     } });
+    const lifecycleAt = new Date('2026-08-01T00:00:00.000Z');
     const version = await h.prisma.timetableVersion.create({ data: {
       academicYearId: year.id, versionNumber: 1, status: 'ACTIVE', calendarVersionId: calendar.id,
-      effectiveFrom: new Date('2026-09-01Z'), createdByUserId, activatedByUserId: createdByUserId, activatedAt: new Date(),
+      effectiveAcademicWeekId: week.id, effectiveFrom: new Date('2026-09-07Z'), createdByUserId,
+      validatedByUserId: createdByUserId, validatedAt: lifecycleAt, approvedByUserId: createdByUserId, approvedAt: lifecycleAt,
+      activatedByUserId: createdByUserId, activatedAt: lifecycleAt,
     } });
     const entry = await h.prisma.timetableEntry.create({ data: {
       timetableVersionId: version.id, academicYearId: year.id, weekday: 'MONDAY', timeSlotDefinitionId: slot.id,
