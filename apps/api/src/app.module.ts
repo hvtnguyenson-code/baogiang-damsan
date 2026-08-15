@@ -17,6 +17,7 @@ import { TimeSlotsModule } from './time-slots/time-slots.module';
 import { TimetablesModule } from './timetables/timetables.module';
 import { TimetableImportModule } from './timetable-import/timetable-import.module';
 import { PpctModule } from './ppct/ppct.module';
+import { OperationalOverlaysModule } from './operational-overlays/operational-overlays.module';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { PpctModule } from './ppct/ppct.module';
     TimetablesModule,
     TimetableImportModule,
     PpctModule,
+    OperationalOverlaysModule,
   ],
 })
 export class AppModule {}

@@ -11,14 +11,14 @@ describe('time-slot capability catalog', () => {
     expect(BOOTSTRAP_TECHNICAL_CAPABILITIES).not.toContain(key);
   });
 
-  it('seeds exactly 28 definitions and TIMETABLE_MANAGE exactly once at SCHOOL_WIDE', () => {
+  it('seeds exactly 30 definitions and TIMETABLE_MANAGE exactly once at SCHOOL_WIDE', () => {
     const load = createRequire(__filename);
     const { CAPABILITIES } = load('../../../../prisma/seed.cjs') as {
       CAPABILITIES: Array<[string, string, string[]]>;
     };
     const seed = fs.readFileSync(path.resolve(__dirname, '../../../../prisma/seed.cjs'), 'utf8');
     const keys = CAPABILITIES.map(([key]) => key);
-    expect(keys).toHaveLength(28);
+    expect(keys).toHaveLength(30);
     expect(keys.filter((key) => key === 'TIMETABLE_MANAGE')).toHaveLength(1);
     expect(seed).toMatch(/\['TIMETABLE_MANAGE',[\s\S]*?\['SCHOOL_WIDE'\]\]/u);
     expect(seed.match(/TIMETABLE_MANAGE/gu)).toHaveLength(1);

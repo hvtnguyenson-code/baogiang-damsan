@@ -118,6 +118,8 @@ export type CapabilityKey =
   | 'ACADEMIC_STRUCTURE_MANAGE'
   | 'TIMETABLE_MANAGE'
   | 'PPCT_MANAGE'
+  | 'CALENDAR_EXCEPTION_MANAGE'
+  | 'TEACHING_OPERATION_MANAGE'
   | 'AI_ACTIVE_USE_SCHOOL'   // AI active use school-wide (BGH)
   | 'AI_ACTIVE_USE_DEPARTMENT' // AI active use department-wide (tổ trưởng)
   | 'AI_ACTIVE_USE_ACTIVITY' // AI active use activity-wide (điều phối)
@@ -1117,6 +1119,84 @@ export interface TimetableImportWorkbookConfirmResponse {
   receipt: TimetableImportReceiptRecord;
   version: TimetableVersionRecord;
 }
+
+// ============================================================
+// Operational Overlay Contracts (LOCAL-FC-05C2A)
+// ============================================================
+
+export type OperationalOverlayStatus = 'ACTIVE' | 'REVERSED';
+export type CalendarExceptionScope = 'SCHOOL_WIDE' | 'GRADE' | 'CLASS';
+export type CalendarExceptionTimeSelector = 'WHOLE_DAY' | 'SESSION' | 'EXACT_SLOTS';
+export type OperationalLessonDispositionType =
+  | 'AUTHORIZED_CANCELLATION'
+  | 'ABSENCE_NO_REPLACEMENT'
+  | 'SAME_SUBJECT_SUBSTITUTION'
+  | 'DIFFERENT_SUBJECT_SUPERVISION';
+export type OperationalOverlayMutationOutcome = 'CREATED' | 'REVERSED' | 'IDEMPOTENT_REPLAY';
+
+export interface OperationalOverlayCollisionCoverage {
+  profile: 'CURRENT_CANONICAL_PRE_SPECIAL_ACTIVITY_V1';
+  specialActivity: 'NOT_ASSESSED';
+}
+
+export interface CalendarExceptionRecord {
+  id: string;
+  academicYearId: string;
+  academicCalendarVersionId: string;
+  civilDate: CivilDateString;
+  scope: CalendarExceptionScope;
+  gradeLevel: 10 | 11 | 12 | null;
+  schoolClassId: string | null;
+  timeSelector: CalendarExceptionTimeSelector;
+  session: TimeSlotSession | null;
+  exactTimeSlotDefinitionIds: string[];
+  note: string | null;
+  status: OperationalOverlayStatus;
+  replacesId: string | null;
+  createdByUserId: string;
+  reversedByUserId: string | null;
+  reversedAt: string | null;
+  reversalReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OperationalLessonDispositionRecord {
+  id: string;
+  academicYearId: string;
+  timetableVersionId: string;
+  timetableEntryId: string;
+  sourceCivilDate: CivilDateString;
+  academicCalendarVersionId: string;
+  timeSlotDefinitionId: string;
+  schoolClassId: string;
+  subjectId: string;
+  teachingAssignmentId: string;
+  responsibleTeacherUserId: string;
+  dispositionType: OperationalLessonDispositionType;
+  assignedTeacherUserId: string | null;
+  eligibilityCheckedAt: string | null;
+  eligibilityWasActive: boolean | null;
+  eligibilityWasTeachingStaff: boolean | null;
+  eligibilitySameSubject: boolean | null;
+  eligibilityStaffSubjectId: string | null;
+  note: string | null;
+  status: OperationalOverlayStatus;
+  replacesId: string | null;
+  createdByUserId: string;
+  reversedByUserId: string | null;
+  reversedAt: string | null;
+  reversalReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CalendarExceptionCreateResult { outcome: 'CREATED' | 'IDEMPOTENT_REPLAY'; record: CalendarExceptionRecord; collisionCoverage: OperationalOverlayCollisionCoverage; }
+export interface CalendarExceptionReverseResult { outcome: 'REVERSED' | 'IDEMPOTENT_REPLAY'; record: CalendarExceptionRecord; collisionCoverage: OperationalOverlayCollisionCoverage; }
+export interface OperationalLessonDispositionCreateResult { outcome: 'CREATED' | 'IDEMPOTENT_REPLAY'; record: OperationalLessonDispositionRecord; collisionCoverage: OperationalOverlayCollisionCoverage; }
+export interface OperationalLessonDispositionReverseResult { outcome: 'REVERSED' | 'IDEMPOTENT_REPLAY'; record: OperationalLessonDispositionRecord; collisionCoverage: OperationalOverlayCollisionCoverage; }
+export interface CalendarExceptionListResponse { items: CalendarExceptionRecord[]; page: number; pageSize: number; total: number; collisionCoverage: OperationalOverlayCollisionCoverage; }
+export interface OperationalLessonDispositionListResponse { items: OperationalLessonDispositionRecord[]; page: number; pageSize: number; total: number; collisionCoverage: OperationalOverlayCollisionCoverage; }
 
 // ============================================================
 // Notification Contracts (foundation types for Phase 03+)
