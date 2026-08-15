@@ -1,10 +1,10 @@
 # Core Backend Roadmap
 
-**Status:** Planning guide after LOCAL-FC-05C2A and ADR-033 established the bounded operational-overlay control plane. This document is not an accepted requirements source and does not authorize implementation.
+**Status:** Planning guide after LOCAL-FC-05D2 closed the Special Activity minimum core and LOCAL-FC-05E0D/ADR-036 closed the structural Resolved Lesson Occurrence architecture. This document is not an accepted requirements source and does not authorize implementation.
 
 ## Purpose
 
-LOCAL-FC-05D2 implements the SpecialActivity runtime slice with `CANONICAL_CLASS_TEACHER_TIME_V1`; SpecialActivity is assessed for class/teacher interval collisions and Room remains not assessed.
+LOCAL-FC-05D2 is **CLOSED / GREEN**. It implements the SpecialActivity runtime slice with `CANONICAL_CLASS_TEACHER_TIME_V1`; SpecialActivity is assessed for class/teacher interval collisions and Room remains not assessed.
 
 The remaining backend must be delivered as one dependency chain, not as independent screens:
 
@@ -15,9 +15,10 @@ flowchart LR
   PPCT --> READY["Operational readiness"]
   TKB --> READY
   READY --> OVERLAY["Operational overlays"]
-  OVERLAY --> OCC["Resolved lesson occurrence"]
+  OVERLAY --> OCC["05E1 structural resolved occurrence"]
   PPCT --> OCC
-  OCC --> EXEC["Teaching execution / Báo giảng"]
+  OCC --> ALLOC["05E2 PPCT occurrence allocation"]
+  ALLOC --> EXEC["Teaching execution / Báo giảng"]
   EXEC --> PROG["Progress / debt / late"]
   PROG --> REPORT["Reporting projection"]
   REPORT --> SNAP["Submission / approval snapshot"]
@@ -41,7 +42,7 @@ The accepted timetable meaning remains deliberately partial: `VALIDATED` and `AC
 
 ## Remaining core sequence
 
-LOCAL-FC-05A0 is merged. LOCAL-FC-05A0D closed the seven PPCT architecture prerequisites and ADR-027 is Accepted. LOCAL-FC-05A1 established the six-model persistence foundation through ADR-028. LOCAL-FC-05A2 established the subject-authorized PPCT control plane, lifecycle commands and exact historical resolution through ADR-029. LOCAL-FC-05B1 established bounded normal-base readiness through ADR-030. LOCAL-FC-05C0D closed R1-R22 through ADR-031, LOCAL-FC-05C1 established the three-family persistence foundation through ADR-032, and LOCAL-FC-05C2A established the bounded `CalendarException` plus `OperationalLessonDisposition` control plane through ADR-033. LOCAL-FC-05D0 audited the Special Activity gap; LOCAL-FC-05D0D closes it through ADR-034, with no Special Activity schema or runtime yet. The sequence below remains planning guidance subject to each slice's own authorization and gate.
+LOCAL-FC-05A0 is merged. LOCAL-FC-05A0D closed the seven PPCT architecture prerequisites and ADR-027 is Accepted. LOCAL-FC-05A1 established the six-model persistence foundation through ADR-028. LOCAL-FC-05A2 established the subject-authorized PPCT control plane, lifecycle commands and exact historical resolution through ADR-029. LOCAL-FC-05B1 established bounded normal-base readiness through ADR-030. LOCAL-FC-05C0D closed R1-R22 through ADR-031, LOCAL-FC-05C1 established the three-family persistence foundation through ADR-032, and LOCAL-FC-05C2A established the bounded `CalendarException` plus `OperationalLessonDisposition` control plane through ADR-033. LOCAL-FC-05D0D closed Special Activity architecture through ADR-034, LOCAL-FC-05D1 established its persistence foundation through ADR-035, and LOCAL-FC-05D2 is CLOSED / GREEN after its runtime control plane. LOCAL-FC-05E0D and ADR-036 now close only the structural resolved-occurrence architecture. The sequence below remains planning guidance subject to each slice's own authorization and gate; the applicable ADR/decision closure remains authoritative.
 
 1. **05A1 — PPCT persistence foundation (established by ADR-028).** The shared `AcademicYear + Subject + Grade` master, immutable version/item history, explicit lineage and date-effective exact-version class association now have database-enforced structural foundations. No API, lifecycle command, capability runtime or import is implied.
 2. **05A2 — PPCT control plane and lifecycle (established by ADR-029).** Transactional lifecycle commands, published immutability, correction/supersession, class binding, historical reads and `PPCT_MANAGE` authorization are available. No import, progress, execution, reporting or UI is implied.
@@ -50,15 +51,17 @@ LOCAL-FC-05A0 is merged. LOCAL-FC-05A0D closed the seven PPCT architecture prere
 5. **05C1 — operational-overlay persistence foundation (established by ADR-032).** The three ADR-031 aggregate families now have lifecycle/source/reversal history, exact composite provenance, idempotency support and database invariants. No API, capability runtime, resolved-occurrence execution, debt/reporting, move/swap or Special Activity semantics are implied.
 6. **05C2A — bounded operational-overlay control plane (established by ADR-033).** `CalendarException` and `OperationalLessonDisposition` now have capability-controlled create/reverse/read, server-derived source, idempotency/CAS and bounded pre-Special-Activity collision checks. Make-up runtime is deferred until an authoritative exact incomplete-obligation proof source exists. Special Activity, resolved occurrence, execution, progress/debt, reporting/snapshots and UI business semantics remain absent.
 7. **05D1 — Special Activity Persistence Foundation (established by ADR-035).** The ADR-034 root, exact-slot, frozen-class-target and roleless-staffing persistence direction now has retained provenance and database invariants. No runtime, execution, PPCT/progress/reporting, Room or UI is implied.
-8. **05D runtime control plane.** Add separately authorized capability-controlled Special Activity commands and canonical class/teacher/time collision behavior. After this runtime control plane, Resolved Lesson Occurrence remains the next dependency.
-9. **Resolved lesson occurrence.** Deterministic read model over historical calendar, timetable, PPCT and overlays.
-10. **Teaching execution / Báo giảng.** Immutable evidence of what occurred, expected versus actual content and responsible versus actual teacher.
-11. **Progress, debt and late.** Reproducible projections from historical facts; make-up fulfills an original obligation exactly once.
-12. **Reporting.** Weekly, monthly, semester, custom-range and annual projections as supported by authoritative rules.
-13. **Submission and approval.** Immutable submitted/approved snapshots or immutable reference manifests with explicit capability/scope checks and no self-approval.
-14. **Cross-domain closure.** Concurrency, idempotency, correction, replay, historical drift and performance validation across the full chain.
-15. **CORE BACKEND FREEZE.** Contracts, state transitions, precedence, source references and capability matrix are accepted and regression-covered.
-16. **UI afterward.** Product UI consumes frozen backend contracts and does not invent PPCT, debt, occurrence, approval or correction semantics.
+8. **05D2 — Special Activity runtime control plane (CLOSED / GREEN).** Capability-controlled create/read/reverse, frozen class/staff provenance, idempotency/CAS and canonical class/teacher/time collision behavior are established. Room remains `NOT_ASSESSED`.
+9. **05E0 — Resolved Lesson Occurrence Architecture (closed by 05E0D/ADR-036).** Architecture/decision closure only; no runtime, persistence or allocation algorithm.
+10. **05E1 — Structural Resolved Lesson Occurrence Read Model.** Derived-only and schema-free internal composition of normal, make-up and Special Activity families, with exact PPCT binding provenance. `PPCT_ITEM_ALLOCATION` remains `NOT_ASSESSED`.
+11. **05E2 — PPCT Occurrence Allocation Architecture / implementation prerequisite.** Close exact next-item/distribution cursor, version-switch/carry-forward, stable UUID and split/merge lineage semantics, including SpecialActivity suppression and future debt-obligation identity.
+12. **Teaching execution / Báo giảng.** Immutable evidence of what occurred, expected versus actual content and responsible versus actual teacher, only after the allocation prerequisite is accepted.
+13. **Progress, debt and late.** Reproducible projections from historical facts; make-up fulfills an original obligation exactly once.
+14. **Reporting.** Weekly, monthly, semester, custom-range and annual projections as supported by authoritative rules.
+15. **Submission and approval.** Immutable submitted/approved snapshots or immutable reference manifests with explicit capability/scope checks and no self-approval.
+16. **Cross-domain closure.** Concurrency, idempotency, correction, replay, historical drift and performance validation across the full chain.
+17. **CORE BACKEND FREEZE.** Contracts, state transitions, precedence, source references and capability matrix are accepted and regression-covered.
+18. **UI afterward.** Product UI consumes frozen backend contracts and does not invent PPCT, debt, occurrence, approval or correction semantics.
 
 ## Layering rule
 
