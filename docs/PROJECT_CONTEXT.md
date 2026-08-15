@@ -63,6 +63,8 @@ Ngoài PPCT persistence foundation của 05A1, control plane/lifecycle/history/a
 
 `LOCAL-FC-05C0D` và ADR-031 đã đóng R1-R22, xác lập ba aggregate operational overlay độc lập. `LOCAL-FC-05C1`/ADR-032 đã triển khai persistence/database foundation cho `CalendarException`, `OperationalLessonDisposition` và `MakeupTeachingSchedule`. `LOCAL-FC-05C2A`/ADR-033 đã thiết lập bounded create/reverse/read control plane, capability, idempotency/CAS, source validation và pre-Special-Activity collision checks cho hai family đầu. `LOCAL-FC-05D0D`/ADR-034 đã đóng kiến trúc Special Activity: atomic occurrence, frozen class targets, roleless scheduled teaching staff, class/teacher/time collision và Room `NOT_ASSESSED`; chưa có persistence hay runtime. Make-up runtime tiếp tục fail-closed vì chưa có nguồn chứng minh exact existing incomplete PPCT obligation; persisted occurrence, TeachingExecution, progress/debt, reporting và UI business semantics vẫn chưa có.
 
+LOCAL-FC-05D1/ADR-035 now provides the Special Activity persistence foundation: atomic root, retained exact slots, frozen class targets, roleless staffing and lifecycle/provenance constraints. Runtime commands, collision resolution and Room remain outside this slice.
+
 Thứ tự không đổi: hoàn thành chuỗi backend đến `CORE BACKEND FREEZE` trước khi UI được phép chốt business semantics.
 
 ## Hạ tầng production chính thức — pre-operational
