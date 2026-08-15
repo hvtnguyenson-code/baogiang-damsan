@@ -37,6 +37,8 @@ const CAPABILITIES = [
   ['AI_VIEW_COST', 'Xem chi phí AI.', ['SCHOOL_WIDE']],
   ['AI_VIEW_AUDIT', 'Xem audit AI.', ['SCHOOL_WIDE']],
   ['AI_DISABLE_SYSTEM', 'Tắt AI toàn hệ thống theo policy.', ['SCHOOL_WIDE']],
+  ['CALENDAR_EXCEPTION_MANAGE', 'Quản lý ngoại lệ lịch học toàn trường.', ['SCHOOL_WIDE']],
+  ['TEACHING_OPERATION_MANAGE', 'Quản lý điều hành tiết dạy theo môn hoặc toàn trường.', ['SUBJECT', 'SCHOOL_WIDE']],
 ];
 
 async function seedCapabilityCatalog(prisma) {

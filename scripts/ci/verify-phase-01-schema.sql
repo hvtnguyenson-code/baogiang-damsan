@@ -9,7 +9,7 @@ BEGIN
     SELECT count(*), count(DISTINCT "key")
       INTO capability_count, distinct_count
       FROM "capability_definitions";
-    IF capability_count <> 28 OR distinct_count <> 28 THEN
+    IF capability_count <> 30 OR distinct_count <> 30 THEN
         RAISE EXCEPTION 'Capability seed is not idempotent: count %, distinct %',
             capability_count, distinct_count;
     END IF;
