@@ -2,8 +2,9 @@ import { createHash } from 'node:crypto';
 import { AcademicWeekday, CalendarExceptionScope, CalendarExceptionTimeSelector, OperationalLessonDispositionType, TimeSlotSession } from '@prisma/client';
 
 export const COLLISION_COVERAGE = {
-  profile: 'CURRENT_CANONICAL_PRE_SPECIAL_ACTIVITY_V1',
-  specialActivity: 'NOT_ASSESSED',
+  profile: 'CANONICAL_CLASS_TEACHER_TIME_V1',
+  specialActivity: 'ASSESSED',
+  room: 'NOT_ASSESSED',
 } as const;
 
 export const OVERLAY_CLOCK = Symbol('OVERLAY_CLOCK');
@@ -61,4 +62,8 @@ export function weekdayForCivilDate(date: Date): AcademicWeekday {
 export function isTeacherDisposition(type: OperationalLessonDispositionType): boolean {
   return type === OperationalLessonDispositionType.SAME_SUBJECT_SUBSTITUTION
     || type === OperationalLessonDispositionType.DIFFERENT_SUBJECT_SUPERVISION;
+}
+
+export function intervalsOverlap(left: { startTime: Date; endTime: Date }, right: { startTime: Date; endTime: Date }): boolean {
+  return left.startTime < right.endTime && right.startTime < left.endTime;
 }

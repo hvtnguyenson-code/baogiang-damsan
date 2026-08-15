@@ -4,6 +4,8 @@
 
 ## Purpose
 
+LOCAL-FC-05D2 implements the SpecialActivity runtime slice with `CANONICAL_CLASS_TEACHER_TIME_V1`; SpecialActivity is assessed for class/teacher interval collisions and Room remains not assessed.
+
 The remaining backend must be delivered as one dependency chain, not as independent screens:
 
 ```mermaid
