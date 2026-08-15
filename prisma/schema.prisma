@@ -95,6 +95,17 @@ enum OperationalLessonDispositionType {
   DIFFERENT_SUBJECT_SUPERVISION
 }
 
+enum SpecialActivityStatus {
+  ACTIVE
+  REVERSED
+}
+
+enum SpecialActivityScope {
+  SCHOOL_WIDE
+  GRADE
+  CLASS
+}
+
 enum TimetableImportTeacherIdentifierMode {
   GENERIC_EXACT
   STAFF_CODE
@@ -174,6 +185,9 @@ model User {
   makeupSchedulesCreated           MakeupTeachingSchedule[]         @relation("MakeupScheduleCreatedBy")
   makeupSchedulesReversed          MakeupTeachingSchedule[]         @relation("MakeupScheduleReversedBy")
   makeupSchedulesAsTeacher         MakeupTeachingSchedule[]         @relation("MakeupScheduleTeacher")
+  specialActivitiesCreated         SpecialActivity[]                @relation("SpecialActivityCreatedBy")
+  specialActivitiesReversed        SpecialActivity[]                @relation("SpecialActivityReversedBy")
+  specialActivityStaffing          SpecialActivityStaffing[]        @relation("SpecialActivityScheduledTeacher")
 
   @@index([status])
   @@map("users")
@@ -193,7 +207,9 @@ model StaffProfile {
 
   user                      User                            @relation(fields: [userId], references: [id], onDelete: Restrict)
   additionalDutyAssignments StaffAdditionalDutyAssignment[]
+  specialActivityStaffing   SpecialActivityStaffing[]
 
+  @@unique([id, userId], map: "staff_profiles_id_user_id_key")
   @@map("staff_profiles")
 }
 
@@ -408,6 +424,9 @@ model AcademicYear {
   ppctClassAssociations  PpctClassAssociation[]
   calendarExceptions     CalendarException[]
   calendarExceptionSlots CalendarExceptionTimeSlot[]
+  specialActivities      SpecialActivity[]
+  specialActivitySlots   SpecialActivityTimeSlot[]
+  specialActivityTargets SpecialActivityClassTarget[]
 
   @@map("academic_years")
 }
@@ -433,6 +452,7 @@ model TimeSlotDefinition {
   timetableEntries       TimetableEntry[]            @relation("TimetableEntryTimeSlot")
   calendarExceptionSlots CalendarExceptionTimeSlot[] @relation("CalendarExceptionExactTimeSlot")
   makeupScheduleTargets  MakeupTeachingSchedule[]    @relation("MakeupScheduleTargetTimeSlot")
+  specialActivitySlots   SpecialActivityTimeSlot[]
 
   @@unique([id, academicYearId], map: "time_slot_definitions_id_academic_year_id_key")
   @@unique([id, academicYearId, weekday], map: "time_slot_definitions_id_academic_year_id_weekday_key")
@@ -465,6 +485,7 @@ model AcademicCalendarVersion {
   lessonDispositions      OperationalLessonDisposition[] @relation("LessonDispositionCalendarVersion")
   makeupOriginalSchedules MakeupTeachingSchedule[]       @relation("MakeupScheduleOriginalCalendarVersion")
   makeupTargetSchedules   MakeupTeachingSchedule[]       @relation("MakeupScheduleTargetCalendarVersion")
+  specialActivities       SpecialActivity[]
 
   @@unique([id, academicYearId], map: "academic_calendar_versions_id_academic_year_id_key")
   @@unique([academicYearId, versionNumber])
@@ -565,6 +586,8 @@ model SchoolClass {
   timetableImportAliases TimetableImportEntityAlias[] @relation("TimetableImportAliasSchoolClass")
   ppctClassAssociations  PpctClassAssociation[]       @relation("PpctClassAssociationSchoolClass")
   calendarExceptions     CalendarException[]          @relation("CalendarExceptionSchoolClass")
+  specialActivitySelectors SpecialActivity[]          @relation("SpecialActivitySchoolClass")
+  specialActivityTargets   SpecialActivityClassTarget[]
 
   @@unique([id, academicYearId])
   @@unique([id, academicYearId, gradeLevel], map: "classes_id_academic_year_id_grade_level_key")
@@ -980,6 +1003,97 @@ model CalendarExceptionTimeSlot {
   @@unique([calendarExceptionId, timeSlotDefinitionId], map: "calendar_exception_time_slots_exception_slot_key")
   @@index([academicYearId, timeSlotDefinitionId], map: "calendar_exception_time_slots_year_slot_idx")
   @@map("calendar_exception_time_slots")
+}
+
+model SpecialActivity {
+  id                        String                @id @default(uuid()) @db.Uuid
+  academicYearId            String                @map("academic_year_id") @db.Uuid
+  academicCalendarVersionId String                @map("academic_calendar_version_id") @db.Uuid
+  civilDate                 DateTime              @map("civil_date") @db.Date
+  scope                     SpecialActivityScope
+  gradeLevel                Int?                  @map("grade_level")
+  schoolClassId             String?               @map("school_class_id") @db.Uuid
+  title                     String                @db.VarChar(200)
+  note                      String?               @db.VarChar(500)
+  status                    SpecialActivityStatus @default(ACTIVE)
+  createRequestKey          String                @unique(map: "special_activities_create_request_key_key") @map("create_request_key") @db.VarChar(200)
+  createRequestFingerprint  String                @map("create_request_fingerprint") @db.VarChar(128)
+  reversedByUserId          String?               @map("reversed_by_user_id") @db.Uuid
+  reversedAt                DateTime?             @map("reversed_at") @db.Timestamptz(3)
+  reversalReason            String?               @map("reversal_reason") @db.VarChar(500)
+  reverseRequestKey         String?               @unique(map: "special_activities_reverse_request_key_key") @map("reverse_request_key") @db.VarChar(200)
+  reverseRequestFingerprint String?               @map("reverse_request_fingerprint") @db.VarChar(128)
+  replacesId                String?               @unique(map: "special_activities_replaces_id_key") @map("replaces_id") @db.Uuid
+  createdByUserId           String                @map("created_by_user_id") @db.Uuid
+  createdAt                 DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                 DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  academicYear    AcademicYear            @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  calendarVersion AcademicCalendarVersion @relation(fields: [academicCalendarVersionId, academicYearId], references: [id, academicYearId], onDelete: Restrict)
+  schoolClass     SchoolClass?            @relation("SpecialActivitySchoolClass", fields: [schoolClassId, academicYearId], references: [id, academicYearId], onDelete: Restrict)
+  createdBy       User                    @relation("SpecialActivityCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  reversedBy      User?                   @relation("SpecialActivityReversedBy", fields: [reversedByUserId], references: [id], onDelete: Restrict)
+  replaces        SpecialActivity?        @relation("SpecialActivityReplacement", fields: [replacesId], references: [id], onDelete: Restrict)
+  replacedBy      SpecialActivity?        @relation("SpecialActivityReplacement")
+  timeSlots       SpecialActivityTimeSlot[]
+  classTargets    SpecialActivityClassTarget[]
+  staffing        SpecialActivityStaffing[]
+
+  @@unique([id, academicYearId], map: "special_activities_id_academic_year_id_key")
+  @@index([academicYearId, civilDate, status], map: "special_activities_year_date_status_idx")
+  @@index([academicCalendarVersionId, civilDate], map: "special_activities_calendar_date_idx")
+  @@map("special_activities")
+}
+
+model SpecialActivityTimeSlot {
+  id                   String          @id @default(uuid()) @db.Uuid
+  specialActivityId    String          @map("special_activity_id") @db.Uuid
+  academicYearId       String          @map("academic_year_id") @db.Uuid
+  timeSlotDefinitionId String          @map("time_slot_definition_id") @db.Uuid
+  createdAt            DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  specialActivity    SpecialActivity    @relation(fields: [specialActivityId, academicYearId], references: [id, academicYearId], onDelete: Restrict)
+  academicYear       AcademicYear       @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  timeSlotDefinition TimeSlotDefinition @relation(fields: [timeSlotDefinitionId, academicYearId], references: [id, academicYearId], onDelete: Restrict)
+
+  @@unique([specialActivityId, timeSlotDefinitionId], map: "special_activity_time_slots_activity_slot_key")
+  @@index([academicYearId, timeSlotDefinitionId], map: "special_activity_time_slots_year_slot_idx")
+  @@map("special_activity_time_slots")
+}
+
+model SpecialActivityClassTarget {
+  id                String          @id @default(uuid()) @db.Uuid
+  specialActivityId String          @map("special_activity_id") @db.Uuid
+  academicYearId    String          @map("academic_year_id") @db.Uuid
+  schoolClassId     String          @map("school_class_id") @db.Uuid
+  createdAt         DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  specialActivity SpecialActivity @relation(fields: [specialActivityId, academicYearId], references: [id, academicYearId], onDelete: Restrict)
+  academicYear    AcademicYear    @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  schoolClass     SchoolClass     @relation(fields: [schoolClassId, academicYearId], references: [id, academicYearId], onDelete: Restrict)
+
+  @@unique([specialActivityId, schoolClassId], map: "special_activity_class_targets_activity_class_key")
+  @@index([academicYearId, schoolClassId], map: "special_activity_class_targets_year_class_idx")
+  @@map("special_activity_class_targets")
+}
+
+model SpecialActivityStaffing {
+  id                         String          @id @default(uuid()) @db.Uuid
+  specialActivityId          String          @map("special_activity_id") @db.Uuid
+  scheduledTeacherUserId     String          @map("scheduled_teacher_user_id") @db.Uuid
+  staffProfileId             String          @map("staff_profile_id") @db.Uuid
+  eligibilityCheckedAt       DateTime        @map("eligibility_checked_at") @db.Timestamptz(3)
+  eligibilityWasActive       Boolean         @map("eligibility_was_active")
+  eligibilityWasTeachingStaff Boolean        @map("eligibility_was_teaching_staff")
+  createdAt                  DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  specialActivity  SpecialActivity @relation(fields: [specialActivityId], references: [id], onDelete: Restrict)
+  scheduledTeacher User            @relation("SpecialActivityScheduledTeacher", fields: [scheduledTeacherUserId], references: [id], onDelete: Restrict)
+  staffProfile     StaffProfile    @relation(fields: [staffProfileId, scheduledTeacherUserId], references: [id, userId], onDelete: Restrict)
+
+  @@unique([specialActivityId, scheduledTeacherUserId], map: "special_activity_staffing_activity_teacher_key")
+  @@index([scheduledTeacherUserId, specialActivityId], map: "special_activity_staffing_teacher_activity_idx")
+  @@map("special_activity_staffing")
 }
 
 model OperationalLessonDisposition {

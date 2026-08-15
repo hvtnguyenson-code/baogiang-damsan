@@ -73,7 +73,7 @@ BEGIN
     ) OR EXISTS (
         SELECT 1 FROM information_schema.tables
         WHERE table_schema = 'public'
-          AND table_name ~ '(teaching_execution|operational.*ledger|debt|special_activity|resolved.*occurrence|move|swap)'
+          AND table_name ~ '(teaching_execution|operational.*ledger|debt|resolved.*occurrence|move|swap)'
     ) THEN
         RAISE EXCEPTION 'Forbidden downstream operational persistence found';
     END IF;

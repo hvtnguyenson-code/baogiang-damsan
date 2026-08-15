@@ -88,4 +88,7 @@ psql "$fresh_psql_url" -v ON_ERROR_STOP=1 -f scripts/ci/verify-ppct-schema.sql
 echo "[migration-test] Operational-overlay persistence constraint and history verification"
 psql "$fresh_psql_url" -v ON_ERROR_STOP=1 -f scripts/ci/verify-operational-overlay-schema.sql
 
+echo "[migration-test] Special Activity persistence constraint and history verification"
+psql "$fresh_psql_url" -v ON_ERROR_STOP=1 -f scripts/ci/verify-special-activity-schema.sql
+
 echo "[migration-test] PASS"

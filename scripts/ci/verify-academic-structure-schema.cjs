@@ -22,6 +22,8 @@ const ppctMigrationName = '20260813010000_ppct_persistence_foundation';
 const ppctMigration = read('prisma', 'migrations', ppctMigrationName, 'migration.sql');
 const overlayMigrationName = '20260814010000_operational_overlay_persistence_foundation';
 const overlayMigration = read('prisma', 'migrations', overlayMigrationName, 'migration.sql');
+const specialActivityMigrationName = '20260815010000_special_activity_persistence_foundation';
+const specialActivityMigration = read('prisma', 'migrations', specialActivityMigrationName, 'migration.sql');
 
 function modelBlock(name) {
   const match = schema.match(new RegExp(`model\\s+${name}\\s+\\{([\\s\\S]*?)\\n\\}`, 'u'));
@@ -70,6 +72,10 @@ for (const model of [
   'CalendarExceptionTimeSlot',
   'OperationalLessonDisposition',
   'MakeupTeachingSchedule',
+  'SpecialActivity',
+  'SpecialActivityTimeSlot',
+  'SpecialActivityClassTarget',
+  'SpecialActivityStaffing',
 ]) {
   modelBlock(model);
 }
@@ -90,6 +96,8 @@ assert.deepEqual(enumValues('OperationalLessonDispositionType'), [
   'SAME_SUBJECT_SUBSTITUTION',
   'DIFFERENT_SUBJECT_SUPERVISION',
 ]);
+assert.deepEqual(enumValues('SpecialActivityStatus'), ['ACTIVE', 'REVERSED']);
+assert.deepEqual(enumValues('SpecialActivityScope'), ['SCHOOL_WIDE', 'GRADE', 'CLASS']);
 
 const calendarVersion = modelBlock('AcademicCalendarVersion');
 assert.match(calendarVersion, /academicYearId\s+String\s+@map\("academic_year_id"\)\s+@db\.Uuid/u);
@@ -769,6 +777,90 @@ assert.doesNotMatch(overlayMigration, /ON DELETE CASCADE/iu);
 assert.doesNotMatch(overlayBlocks, /\b(?:completed|completion|debt|progress|report|execution|move|swap|activity)\b/iu);
 assert.doesNotMatch(overlayMigration, /\b(?:completed|completion|debt|progress|report|execution|move|swap|activity)\b/iu);
 
+const specialActivity = modelBlock('SpecialActivity');
+const specialActivityTimeSlot = modelBlock('SpecialActivityTimeSlot');
+const specialActivityClassTarget = modelBlock('SpecialActivityClassTarget');
+const specialActivityStaffing = modelBlock('SpecialActivityStaffing');
+const specialActivityBlocks = [specialActivity, specialActivityTimeSlot, specialActivityClassTarget, specialActivityStaffing].join('\n');
+
+for (const [modelName, block] of [
+  ['SpecialActivity', specialActivity],
+  ['SpecialActivityTimeSlot', specialActivityTimeSlot],
+  ['SpecialActivityClassTarget', specialActivityClassTarget],
+  ['SpecialActivityStaffing', specialActivityStaffing],
+]) {
+  assert.equal((schema.match(new RegExp('\\bmodel\\s+' + modelName + '\\s+\\{', 'gu')) ?? []).length, 1, modelName + ' must exist exactly once');
+  assert.match(block, /id\s+String\s+@id[\s\S]*?@db\.Uuid/u);
+  assert.match(block, /createdAt\s+DateTime[\s\S]*?@db\.Timestamptz\(3\)/u);
+}
+assert.match(specialActivity, /academicYearId\s+String[\s\S]*?@db\.Uuid/u);
+assert.match(specialActivity, /academicCalendarVersionId\s+String[\s\S]*?@db\.Uuid/u);
+assert.match(specialActivity, /civilDate\s+DateTime\s+@map\("civil_date"\)\s+@db\.Date/u);
+assert.match(specialActivity, /scope\s+SpecialActivityScope/u);
+assert.match(specialActivity, /gradeLevel\s+Int\?/u);
+assert.match(specialActivity, /schoolClassId\s+String\?[\s\S]*?@db\.Uuid/u);
+assert.match(specialActivity, /title\s+String\s+@db\.VarChar\(200\)/u);
+assert.match(specialActivity, /note\s+String\?[\s\S]*?@db\.VarChar\(500\)/u);
+assert.match(specialActivity, /status\s+SpecialActivityStatus\s+@default\(ACTIVE\)/u);
+for (const field of ['createdByUserId', 'reversedByUserId', 'replacesId']) {
+  assert.match(specialActivity, new RegExp(field + '\\s+String\\??[\\s\\S]*?@db\\.Uuid', 'u'));
+}
+for (const field of ['createdAt', 'updatedAt', 'reversedAt']) {
+  assert.match(specialActivity, new RegExp(field + '\\s+DateTime\\??[\\s\\S]*?@db\\.Timestamptz\\(3\\)', 'u'));
+}
+assert.match(specialActivity, /createRequestKey\s+String\s+@unique[\s\S]*@db\.VarChar\(200\)/u);
+assert.match(specialActivity, /createRequestFingerprint\s+String[\s\S]*@db\.VarChar\(128\)/u);
+assert.match(specialActivity, /reverseRequestKey\s+String\?\s+@unique[\s\S]*@db\.VarChar\(200\)/u);
+assert.match(specialActivity, /reverseRequestFingerprint\s+String\?[\s\S]*@db\.VarChar\(128\)/u);
+assert.match(specialActivity, /fields:\s*\[academicCalendarVersionId, academicYearId\][\s\S]*references:\s*\[id, academicYearId\][\s\S]*onDelete:\s*Restrict/u);
+assert.match(specialActivity, /fields:\s*\[schoolClassId, academicYearId\][\s\S]*references:\s*\[id, academicYearId\][\s\S]*onDelete:\s*Restrict/u);
+assert.match(specialActivity, /@@unique\(\[id, academicYearId\],\s*map:\s*"special_activities_id_academic_year_id_key"\)/u);
+
+assert.match(specialActivityTimeSlot, /fields:\s*\[specialActivityId, academicYearId\][\s\S]*references:\s*\[id, academicYearId\][\s\S]*onDelete:\s*Restrict/u);
+assert.match(specialActivityTimeSlot, /fields:\s*\[timeSlotDefinitionId, academicYearId\][\s\S]*references:\s*\[id, academicYearId\][\s\S]*onDelete:\s*Restrict/u);
+assert.match(specialActivityTimeSlot, /@@unique\(\[specialActivityId, timeSlotDefinitionId\],\s*map:\s*"special_activity_time_slots_activity_slot_key"\)/u);
+assert.match(specialActivityTimeSlot, /@@index\(\[academicYearId, timeSlotDefinitionId\],\s*map:\s*"special_activity_time_slots_year_slot_idx"\)/u);
+assert.match(specialActivityClassTarget, /fields:\s*\[specialActivityId, academicYearId\][\s\S]*references:\s*\[id, academicYearId\][\s\S]*onDelete:\s*Restrict/u);
+assert.match(specialActivityClassTarget, /fields:\s*\[schoolClassId, academicYearId\][\s\S]*references:\s*\[id, academicYearId\][\s\S]*onDelete:\s*Restrict/u);
+assert.match(specialActivityClassTarget, /@@unique\(\[specialActivityId, schoolClassId\],\s*map:\s*"special_activity_class_targets_activity_class_key"\)/u);
+assert.match(specialActivityClassTarget, /@@index\(\[academicYearId, schoolClassId\],\s*map:\s*"special_activity_class_targets_year_class_idx"\)/u);
+
+for (const field of ['specialActivityId', 'scheduledTeacherUserId', 'staffProfileId']) {
+  assert.match(specialActivityStaffing, new RegExp(field + '\\s+String[\\s\\S]*?@db\\.Uuid', 'u'));
+}
+assert.match(specialActivityStaffing, /eligibilityCheckedAt\s+DateTime\s+@map\("eligibility_checked_at"\)\s+@db\.Timestamptz\(3\)/u);
+assert.match(specialActivityStaffing, /eligibilityWasActive\s+Boolean/u);
+assert.match(specialActivityStaffing, /eligibilityWasTeachingStaff\s+Boolean/u);
+assert.match(specialActivityStaffing, /fields:\s*\[staffProfileId, scheduledTeacherUserId\][\s\S]*references:\s*\[id, userId\][\s\S]*onDelete:\s*Restrict/u);
+assert.match(specialActivityStaffing, /@@unique\(\[specialActivityId, scheduledTeacherUserId\],\s*map:\s*"special_activity_staffing_activity_teacher_key"\)/u);
+assert.match(specialActivityStaffing, /@@index\(\[scheduledTeacherUserId, specialActivityId\],\s*map:\s*"special_activity_staffing_teacher_activity_idx"\)/u);
+assert.match(modelBlock('StaffProfile'), /@@unique\(\[id, userId\],\s*map:\s*"staff_profiles_id_user_id_key"\)/u);
+assert.doesNotMatch(specialActivityBlocks, /\b(?:ppct|subject|teachingassignment|completed|completion|progress|debt|execution|actualteacher|content|report|snapshot|room|location|category|attendance|student|enrollment|notification|approval)\b/iu);
+
+for (const enumName of ['SpecialActivityStatus', 'SpecialActivityScope']) {
+  assert.match(specialActivityMigration, new RegExp('CREATE TYPE "' + enumName + '" AS ENUM', 'u'), 'Special Activity migration missing ' + enumName);
+}
+for (const table of ['special_activities', 'special_activity_time_slots', 'special_activity_class_targets', 'special_activity_staffing']) {
+  assert.match(specialActivityMigration, new RegExp('CREATE TABLE "' + table + '"', 'u'), 'Special Activity migration missing ' + table);
+}
+for (const name of [
+  'staff_profiles_id_user_id_key', 'special_activities_id_academic_year_id_key',
+  'special_activities_scope_shape_check', 'special_activities_lifecycle_shape_check',
+  'special_activities_request_identity_check', 'special_activities_bounded_text_check',
+  'special_activities_no_self_replacement_check', 'special_activity_staffing_eligibility_shape_check',
+  'special_activity_time_slots_activity_year_fkey', 'special_activity_time_slots_time_slot_year_fkey',
+  'special_activity_class_targets_activity_year_fkey', 'special_activity_class_targets_school_class_year_fkey',
+  'special_activity_staffing_staff_profile_user_fkey',
+]) {
+  assert.match(specialActivityMigration, new RegExp('"' + name + '"', 'u'), 'Special Activity migration missing ' + name);
+}
+for (const fk of specialActivityMigration.matchAll(/ADD CONSTRAINT "([^"]+_fkey)"([\s\S]*?);/gu)) {
+  assert.match(fk[2], /ON DELETE RESTRICT/u, fk[1] + ' must restrict deletion');
+}
+assert.doesNotMatch(specialActivityMigration, /CREATE\s+(OR\s+REPLACE\s+)?TRIGGER/iu);
+assert.doesNotMatch(specialActivityMigration, /ON DELETE CASCADE/iu);
+assert.doesNotMatch(specialActivityMigration, /\b(?:ppct|subject_id|teaching_assignment|completed|completion|progress|debt|execution|actual_teacher|content|report|snapshot|room|location|category|attendance|student|enrollment|notification|approval)\b/iu);
+
 const legacyHashes = new Map([
   ['20260728000000_phase_00_baseline', 'A2185F4F34E90F9B437B3D0DD91B1C473D586849E6B0DFFB766C5AF69546634A'],
   ['20260801000000_phase_01_schema_foundation', '56B7F09859E9851A15D62D17A58066DAFB1798B0E4225858A464B0CD8F47DF9E'],
@@ -784,4 +876,4 @@ for (const [name, expected] of legacyHashes) {
   assert.equal(sha256(read('prisma', 'migrations', name, 'migration.sql')), expected, `Historical migration ${name} changed`);
 }
 
-console.log(`Academic, teaching-assignment, time-slot, timetable, timetable-import, PPCT, and operational-overlay schema static verification PASS (${academicMigrationName}, ${teachingMigrationName}, ${timeSlotMigrationName}, ${timetableMigrationName}, ${timetableImportMigrationName}, ${timetableImportRequestKeyMigrationName}, ${ppctMigrationName}, ${overlayMigrationName}).`);
+console.log(`Academic, teaching-assignment, time-slot, timetable, timetable-import, PPCT, operational-overlay, and Special Activity schema static verification PASS (${academicMigrationName}, ${teachingMigrationName}, ${timeSlotMigrationName}, ${timetableMigrationName}, ${timetableImportMigrationName}, ${timetableImportRequestKeyMigrationName}, ${ppctMigrationName}, ${overlayMigrationName}, ${specialActivityMigrationName}).`);
