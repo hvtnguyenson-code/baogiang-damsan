@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException } from '@nestjs/common';
 import { CalendarExceptionScope, CalendarExceptionTimeSelector, OperationalLessonDispositionType, OperationalOverlayStatus, Prisma } from '@prisma/client';
 import { AuthenticatedRequest } from '../../src/auth/auth.types';
 import { CreateCalendarExceptionDto, CreateLessonDispositionDto } from '../../src/operational-overlays/dto';
+import { calendarExceptionInclude } from '../../src/operational-overlays/mapper';
 import { calendarCreateFingerprint, reverseFingerprint } from '../../src/operational-overlays/operational-overlay-policy';
 import { OperationalOverlaysService } from '../../src/operational-overlays/operational-overlays.service';
 
@@ -44,6 +45,35 @@ describe('OperationalOverlaysService bounded command behavior', () => {
     const tx = { calendarException: { findUnique: jest.fn().mockResolvedValue(calendarRow({ createRequestFingerprint: 'f'.repeat(64) })) } };
     const { service } = makeService(tx);
     await expect(service.createCalendarException(calendarDto, request)).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('persists exact calendar slots through explicit children and rereads the aggregate once', async () => {
+    const exactDto = { ...calendarDto, timeSelector: CalendarExceptionTimeSelector.EXACT_SLOTS, exactTimeSlotDefinitionIds: [id('5'), id('4')] };
+    const create = jest.fn().mockResolvedValue({ id: id('3') });
+    const createMany = jest.fn().mockResolvedValue({ count: 2 });
+    const findUnique = jest.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(calendarRow({
+      timeSelector: CalendarExceptionTimeSelector.EXACT_SLOTS,
+      exactTimeSlots: [{ timeSlotDefinitionId: id('4') }, { timeSlotDefinitionId: id('5') }],
+    }));
+    const tx = { calendarException: { findUnique, create }, calendarExceptionTimeSlot: { createMany } };
+    const { service, audit } = makeService(tx);
+    const internal = service as unknown as { validateCalendarCreate: jest.Mock };
+    internal.validateCalendarCreate = jest.fn().mockResolvedValue(undefined);
+
+    await expect(service.createCalendarException(exactDto, request)).resolves.toMatchObject({ outcome: 'CREATED', record: {
+      id: id('3'), exactTimeSlotDefinitionIds: [id('4'), id('5')],
+    } });
+    expect(create).toHaveBeenCalledWith({ data: expect.objectContaining({
+      academicYearId: id('1'), academicCalendarVersionId: id('2'), createRequestKey: 'create-key', createdByUserId: id('9'),
+    }) });
+    expect(create.mock.calls[0]![0].data).not.toHaveProperty('exactTimeSlots');
+    expect(createMany).toHaveBeenCalledWith({ data: [
+      { calendarExceptionId: id('3'), academicYearId: id('1'), parentTimeSelector: CalendarExceptionTimeSelector.EXACT_SLOTS, timeSlotDefinitionId: id('4') },
+      { calendarExceptionId: id('3'), academicYearId: id('1'), parentTimeSelector: CalendarExceptionTimeSelector.EXACT_SLOTS, timeSlotDefinitionId: id('5') },
+    ] });
+    expect(findUnique).toHaveBeenLastCalledWith({ where: { id: id('3') }, include: calendarExceptionInclude });
+    expect(audit.write).toHaveBeenCalledTimes(1);
+    expect(audit.write).toHaveBeenCalledWith(expect.objectContaining({ action: 'CALENDAR_EXCEPTION_CREATED', result: 'SUCCESS' }), tx);
   });
 
   it('replays a reverse against the retained row even after lifecycle progression', async () => {

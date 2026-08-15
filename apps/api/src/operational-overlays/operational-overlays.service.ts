@@ -53,7 +53,7 @@ export class OperationalOverlaysService {
         return { outcome: 'IDEMPOTENT_REPLAY', record: toCalendarExceptionRecord(replay), collisionCoverage: COLLISION_COVERAGE };
       }
       await this.validateCalendarCreate(tx, normalized);
-      const row = await tx.calendarException.create({
+      const parent = await tx.calendarException.create({
         data: {
           academicYearId: normalized.academicYearId,
           academicCalendarVersionId: normalized.academicCalendarVersionId,
@@ -61,9 +61,15 @@ export class OperationalOverlaysService {
           schoolClassId: normalized.schoolClassId, timeSelector: normalized.timeSelector, session: normalized.session,
           note: normalized.note, replacesId: normalized.replacesId, createRequestKey: dto.requestKey.trim(),
           createRequestFingerprint: fingerprint, createdByUserId: request.auth!.user.id,
-          exactTimeSlots: normalized.exactTimeSlotDefinitionIds.length ? { create: normalized.exactTimeSlotDefinitionIds.map((timeSlotDefinitionId) => ({ academicYearId: normalized.academicYearId, timeSlotDefinitionId })) } : undefined,
-        }, include: calendarExceptionInclude,
+        },
       });
+      if (normalized.exactTimeSlotDefinitionIds.length) await tx.calendarExceptionTimeSlot.createMany({ data:
+        normalized.exactTimeSlotDefinitionIds.map((timeSlotDefinitionId) => ({
+          calendarExceptionId: parent.id, academicYearId: normalized.academicYearId,
+          parentTimeSelector: CalendarExceptionTimeSelector.EXACT_SLOTS, timeSlotDefinitionId,
+        })),
+      });
+      const row = await tx.calendarException.findUniqueOrThrow({ where: { id: parent.id }, include: calendarExceptionInclude });
       await this.writeAudit(tx, request, 'CALENDAR_EXCEPTION_CREATED', 'CalendarException', row.id, {
         capabilityKey: 'CALENDAR_EXCEPTION_MANAGE', scope: 'SCHOOL_WIDE', requestKey: dto.requestKey.trim(),
         academicYearId: row.academicYearId, calendarVersionId: row.academicCalendarVersionId,
