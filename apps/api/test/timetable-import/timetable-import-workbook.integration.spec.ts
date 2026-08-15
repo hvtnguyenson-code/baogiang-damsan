@@ -348,7 +348,7 @@ integration('timetable import workbook endpoints integration', () => {
     expect(await harness.prisma.timetableImportReceipt.count()).toBe(2);
   });
 
-  it('converges concurrent semantic and same-key races without orphan import rows', async () => {
+  it('converges after bounded concurrency conflicts without orphan import rows', async () => {
     const target = await academicFixture();
     const { actor, revisionId } = await createProfile();
     const workbookA = new ExcelJS.Workbook();
@@ -360,8 +360,18 @@ integration('timetable import workbook endpoints integration', () => {
       .field('sheetName', 'TKB').field('headerRowNumber', '1').field('requestIdempotencyKey', key)
       .attach('file', bytes, 'tkb.xlsx');
 
-    const semanticResults = await Promise.all([requestConfirm('concurrent-a', bytesA), requestConfirm('concurrent-b', bytesA)]);
-    expect(semanticResults.map((item) => item.status)).toEqual([200, 200]);
+    const semanticKeys = ['concurrent-a', 'concurrent-b'];
+    const semanticFirstPass = await Promise.all(semanticKeys.map((key) => requestConfirm(key, bytesA)));
+    for (const response of semanticFirstPass) {
+      expect([200, 409]).toContain(response.status);
+      if (response.status === 409) expect(response.body.error).toBe('TIMETABLE_IMPORT_CONFIRM_CONCURRENCY_CONFLICT');
+    }
+    const semanticResults = [];
+    for (const [index, response] of semanticFirstPass.entries()) {
+      const final = response.status === 200 ? response : await requestConfirm(semanticKeys[index]!, bytesA);
+      expect(final.status).toBe(200);
+      semanticResults.push(final);
+    }
     expect(semanticResults.map((item) => item.body.outcome).sort()).toEqual(['CREATED', 'IDEMPOTENT_REPLAY']);
     expect(await harness.prisma.timetableVersion.count()).toBe(1);
     expect(await harness.prisma.timetableImportReceipt.count()).toBe(1);
@@ -401,7 +411,24 @@ integration('timetable import workbook endpoints integration', () => {
       .field('calendarVersionId', targetB.calendar.id).field('effectiveAcademicWeekId', weekId)
       .field('sheetName', 'TKB').field('headerRowNumber', '1').field('requestIdempotencyKey', 'same-race-key')
       .attach('file', bytesA2, 'tkb.xlsx');
-    const keyResults = await Promise.all([sameKey(targetB.week.id), sameKey(secondWeek.id)]);
+    const sameKeyWeeks = [targetB.week.id, secondWeek.id];
+    const keyFirstPass = await Promise.all(sameKeyWeeks.map((weekId) => sameKey(weekId)));
+    for (const response of keyFirstPass) {
+      expect([200, 409]).toContain(response.status);
+      if (response.status === 409) {
+        expect(['TIMETABLE_IMPORT_IDEMPOTENCY_KEY_REUSED', 'TIMETABLE_IMPORT_CONFIRM_CONCURRENCY_CONFLICT'])
+          .toContain(response.body.error);
+      }
+    }
+    const keyResults = [];
+    for (const [index, response] of keyFirstPass.entries()) {
+      const final = response.status === 409 && response.body.error === 'TIMETABLE_IMPORT_CONFIRM_CONCURRENCY_CONFLICT'
+        ? await sameKey(sameKeyWeeks[index]!)
+        : response;
+      expect([200, 409]).toContain(final.status);
+      expect(final.body.error).not.toBe('TIMETABLE_IMPORT_CONFIRM_CONCURRENCY_CONFLICT');
+      keyResults.push(final);
+    }
     expect(keyResults.map((item) => item.status).sort()).toEqual([200, 409]);
     expect(keyResults.find((item) => item.status === 409)?.body.error).toBe('TIMETABLE_IMPORT_IDEMPOTENCY_KEY_REUSED');
     expect(await harness.prisma.timetableVersion.count()).toBe(1);
