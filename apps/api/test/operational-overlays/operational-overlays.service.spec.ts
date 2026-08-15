@@ -51,11 +51,12 @@ describe('OperationalOverlaysService bounded command behavior', () => {
     const exactDto = { ...calendarDto, timeSelector: CalendarExceptionTimeSelector.EXACT_SLOTS, exactTimeSlotDefinitionIds: [id('5'), id('4')] };
     const create = jest.fn().mockResolvedValue({ id: id('3') });
     const createMany = jest.fn().mockResolvedValue({ count: 2 });
-    const findUnique = jest.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(calendarRow({
+    const findUnique = jest.fn().mockResolvedValue(null);
+    const findUniqueOrThrow = jest.fn().mockResolvedValue(calendarRow({
       timeSelector: CalendarExceptionTimeSelector.EXACT_SLOTS,
       exactTimeSlots: [{ timeSlotDefinitionId: id('4') }, { timeSlotDefinitionId: id('5') }],
     }));
-    const tx = { calendarException: { findUnique, create }, calendarExceptionTimeSlot: { createMany } };
+    const tx = { calendarException: { findUnique, findUniqueOrThrow, create }, calendarExceptionTimeSlot: { createMany } };
     const { service, audit } = makeService(tx);
     const internal = service as unknown as { validateCalendarCreate: jest.Mock };
     internal.validateCalendarCreate = jest.fn().mockResolvedValue(undefined);
@@ -71,7 +72,8 @@ describe('OperationalOverlaysService bounded command behavior', () => {
       { calendarExceptionId: id('3'), academicYearId: id('1'), parentTimeSelector: CalendarExceptionTimeSelector.EXACT_SLOTS, timeSlotDefinitionId: id('4') },
       { calendarExceptionId: id('3'), academicYearId: id('1'), parentTimeSelector: CalendarExceptionTimeSelector.EXACT_SLOTS, timeSlotDefinitionId: id('5') },
     ] });
-    expect(findUnique).toHaveBeenLastCalledWith({ where: { id: id('3') }, include: calendarExceptionInclude });
+    expect(findUniqueOrThrow).toHaveBeenCalledTimes(1);
+    expect(findUniqueOrThrow).toHaveBeenCalledWith({ where: { id: id('3') }, include: calendarExceptionInclude });
     expect(audit.write).toHaveBeenCalledTimes(1);
     expect(audit.write).toHaveBeenCalledWith(expect.objectContaining({ action: 'CALENDAR_EXCEPTION_CREATED', result: 'SUCCESS' }), tx);
   });
