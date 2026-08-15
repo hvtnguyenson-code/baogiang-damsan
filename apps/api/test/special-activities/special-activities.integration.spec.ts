@@ -50,8 +50,8 @@ integration('special activity runtime control plane (PostgreSQL)', () => {
     const subjectA = await h.prisma.subject.create({ data: { code: normalizedCode('SA'), name: 'Subject A', status: CatalogStatus.ACTIVE } });
     const subjectB = await h.prisma.subject.create({ data: { code: normalizedCode('SB'), name: 'Subject B', status: CatalogStatus.ACTIVE } });
     const slotA = await h.prisma.timeSlotDefinition.create({ data: { academicYearId: year.id, weekday: 'MONDAY', session: 'MORNING', ordinal: 1, revision: 1, displayLabel: 'A', startTime: new Date('1970-01-01T07:00:00Z'), endTime: new Date('1970-01-01T07:45:00Z'), isActive: true, allowRegularTeaching: true, allowMakeupTeaching: true, allowSelfStudy: false } });
-    const slotB = await h.prisma.timeSlotDefinition.create({ data: { academicYearId: year.id, weekday: 'MONDAY', session: 'MORNING', ordinal: 2, revision: 1, displayLabel: 'B', startTime: new Date('1970-01-01T07:30:00Z'), endTime: new Date('1970-01-01T08:15:00Z'), isActive: true, allowRegularTeaching: true, allowMakeupTeaching: true, allowSelfStudy: false } });
-    const slotC = await h.prisma.timeSlotDefinition.create({ data: { academicYearId: year.id, weekday: 'MONDAY', session: 'MORNING', ordinal: 3, revision: 1, displayLabel: 'C', startTime: new Date('1970-01-01T07:45:00Z'), endTime: new Date('1970-01-01T08:30:00Z'), isActive: true, allowRegularTeaching: true, allowMakeupTeaching: true, allowSelfStudy: false } });
+    const slotB = await h.prisma.timeSlotDefinition.create({ data: { academicYearId: year.id, weekday: 'MONDAY', session: 'MORNING', ordinal: 2, revision: 1, displayLabel: 'B', startTime: new Date('1970-01-01T07:45:00Z'), endTime: new Date('1970-01-01T08:30:00Z'), isActive: true, allowRegularTeaching: true, allowMakeupTeaching: true, allowSelfStudy: false } });
+    const slotC = await h.prisma.timeSlotDefinition.create({ data: { academicYearId: year.id, weekday: 'MONDAY', session: 'MORNING', ordinal: 3, revision: 1, displayLabel: 'C', startTime: new Date('1970-01-01T08:30:00Z'), endTime: new Date('1970-01-01T09:15:00Z'), isActive: true, allowRegularTeaching: true, allowMakeupTeaching: true, allowSelfStudy: false } });
     async function teacher(prefix: string, status = UserStatus.ACTIVE, teaching = true) {
       return h.prisma.user.create({ data: { username: `${prefix}-${crypto.randomUUID().slice(0, 8)}`, passwordHash: await h.passwords.hash('TeacherPassword9'), status, profile: { create: { displayName: prefix, isTeachingStaff: teaching } } }, include: { profile: true } });
     }
@@ -64,7 +64,7 @@ integration('special activity runtime control plane (PostgreSQL)', () => {
     const lifecycleAt = new Date('2026-08-01T00:00:00.000Z');
     const version = await h.prisma.timetableVersion.create({ data: { academicYearId: year.id, versionNumber: 1, status: 'ACTIVE', calendarVersionId: calendar.id, effectiveAcademicWeekId: week.id, effectiveFrom: new Date('2026-09-07Z'), createdByUserId, validatedByUserId: createdByUserId, validatedAt: lifecycleAt, approvedByUserId: createdByUserId, approvedAt: lifecycleAt, activatedByUserId: createdByUserId, activatedAt: lifecycleAt } });
     const entryA = await h.prisma.timetableEntry.create({ data: { timetableVersionId: version.id, academicYearId: year.id, weekday: 'MONDAY', timeSlotDefinitionId: slotA.id, schoolClassId: activeA.id, subjectId: subjectA.id, teachingAssignmentId: assignmentA.id, teacherUserId: responsibleA.id } });
-    const entryB = await h.prisma.timetableEntry.create({ data: { timetableVersionId: version.id, academicYearId: year.id, weekday: 'MONDAY', timeSlotDefinitionId: slotB.id, schoolClassId: activeB.id, subjectId: subjectB.id, teachingAssignmentId: assignmentB.id, teacherUserId: responsibleB.id } });
+    const entryB = await h.prisma.timetableEntry.create({ data: { timetableVersionId: version.id, academicYearId: year.id, weekday: 'MONDAY', timeSlotDefinitionId: slotA.id, schoolClassId: activeB.id, subjectId: subjectB.id, teachingAssignmentId: assignmentB.id, teacherUserId: responsibleB.id } });
     const staffSubjectA = await h.prisma.staffSubject.create({ data: { userId: activityTeacher.id, subjectId: subjectA.id, validFrom: new Date('2026-01-01Z'), isPrimary: true } });
     const staffSubjectB = await h.prisma.staffSubject.create({ data: { userId: activityTeacher.id, subjectId: subjectB.id, validFrom: new Date('2026-01-01Z'), isPrimary: true } });
     return { year, calendar, activeA, activeB, inactive, subjectA, subjectB, slotA, slotB, slotC, teacher, responsibleA, responsibleB, activityTeacher, alternateTeacher, assignmentA, assignmentB, version, entryA, entryB, staffSubjectA, staffSubjectB };
@@ -139,22 +139,22 @@ integration('special activity runtime control plane (PostgreSQL)', () => {
     expect((await manager.agent.post('/api/special-activities').set('Origin', testOrigin).send(payload(f, f.alternateTeacher.id, { replacesId: id }))).status).toBe(201);
   });
 
-  it('G activity/activity uses real half-open intervals', async () => {
+  it('G activity/activity treats touching canonical slot boundaries as non-overlapping', async () => {
     const manager = await h.actor({ grants: [{ capabilityKey: 'SPECIAL_ACTIVITY_MANAGE' }] }); const f = await fixture(manager.id);
     expect((await manager.agent.post('/api/special-activities').set('Origin', testOrigin).send(payload(f, f.activityTeacher.id))).status).toBe(201);
-    expect((await manager.agent.post('/api/special-activities').set('Origin', testOrigin).send(payload(f, f.alternateTeacher.id, { exactTimeSlotDefinitionIds: [f.slotB.id] }))).status).toBe(409);
-    expect((await manager.agent.post('/api/special-activities').set('Origin', testOrigin).send(payload(f, f.alternateTeacher.id, { schoolClassId: f.activeB.id, exactTimeSlotDefinitionIds: [f.slotC.id] }))).status).toBe(201);
+    expect((await manager.agent.post('/api/special-activities').set('Origin', testOrigin).send(payload(f, f.alternateTeacher.id, { exactTimeSlotDefinitionIds: [f.slotA.id] }))).status).toBe(409);
+    expect((await manager.agent.post('/api/special-activities').set('Origin', testOrigin).send(payload(f, f.alternateTeacher.id, { exactTimeSlotDefinitionIds: [f.slotB.id] }))).status).toBe(201);
   });
 
   it('H1 rejects an ACTIVE make-up for the same class at an overlapping real interval', async () => {
     const manager = await h.actor({ grants: [{ capabilityKey: 'SPECIAL_ACTIVITY_MANAGE' }] }); const f = await fixture(manager.id);
-    await createMakeup(f, f.entryA, f.activityTeacher.id, f.staffSubjectA.id, f.slotB.id);
+    await createMakeup(f, f.entryA, f.activityTeacher.id, f.staffSubjectA.id, f.slotA.id);
     expect((await manager.agent.post('/api/special-activities').set('Origin', testOrigin).send(payload(f, f.alternateTeacher.id))).status).toBe(409);
   });
 
   it('H2 rejects an ACTIVE make-up for another class when the scheduled teacher overlaps', async () => {
     const manager = await h.actor({ grants: [{ capabilityKey: 'SPECIAL_ACTIVITY_MANAGE' }] }); const f = await fixture(manager.id);
-    await createMakeup(f, f.entryB, f.activityTeacher.id, f.staffSubjectB.id, f.slotB.id);
+    await createMakeup(f, f.entryB, f.activityTeacher.id, f.staffSubjectB.id, f.slotA.id);
     expect((await manager.agent.post('/api/special-activities').set('Origin', testOrigin).send(payload(f, f.activityTeacher.id))).status).toBe(409);
   });
 
@@ -182,7 +182,7 @@ integration('special activity runtime control plane (PostgreSQL)', () => {
     expect((await manager.agent.post('/api/special-activities').set('Origin', testOrigin).send(payload(f, f.responsibleB.id))).status).toBe(201);
   });
 
-  it('I5 I6 uses real interval overlap for activity-first disposition assignment and excludes reversed activity', async () => {
+  it('I5 I6 blocks activity-first disposition assignment and excludes reversed activity', async () => {
     const manager = await h.actor({ grants: [{ capabilityKey: 'SPECIAL_ACTIVITY_MANAGE' }, { capabilityKey: 'TEACHING_OPERATION_MANAGE' }] }); const f = await fixture(manager.id);
     const activity = await manager.agent.post('/api/special-activities').set('Origin', testOrigin).send(payload(f, f.activityTeacher.id));
     expect(activity.status).toBe(201);
@@ -227,7 +227,7 @@ integration('special activity runtime control plane (PostgreSQL)', () => {
 
   it('J7 ignores another-class normal teacher occupancy suppressed by ACTIVE CalendarException', async () => {
     const manager = await h.actor({ grants: [{ capabilityKey: 'SPECIAL_ACTIVITY_MANAGE' }, { capabilityKey: 'CALENDAR_EXCEPTION_MANAGE' }] }); const f = await fixture(manager.id);
-    expect((await createException(manager, f, f.activeB.id, f.slotB.id)).status).toBe(201);
+    expect((await createException(manager, f, f.activeB.id, f.slotA.id)).status).toBe(201);
     expect((await manager.agent.post('/api/special-activities').set('Origin', testOrigin).send(payload(f, f.responsibleB.id))).status).toBe(201);
   });
 
@@ -241,7 +241,7 @@ integration('special activity runtime control plane (PostgreSQL)', () => {
 
   it('K dispatches real concurrent SERIALIZABLE commands and asserts one survivor/audit', async () => {
     const manager = await h.actor({ grants: [{ capabilityKey: 'SPECIAL_ACTIVITY_MANAGE' }] }); const f = await fixture(manager.id);
-    const a = payload(f, f.activityTeacher.id, { requestKey: 'concurrent-a' }); const b = payload(f, f.activityTeacher.id, { requestKey: 'concurrent-b', exactTimeSlotDefinitionIds: [f.slotB.id] });
+    const a = payload(f, f.activityTeacher.id, { requestKey: 'concurrent-a' }); const b = payload(f, f.activityTeacher.id, { requestKey: 'concurrent-b' });
     const [one, two] = await Promise.all([manager.agent.post('/api/special-activities').set('Origin', testOrigin).send(a), manager.agent.post('/api/special-activities').set('Origin', testOrigin).send(b)]);
     expect([one.status, two.status].sort()).toEqual([201, 409]);
     expect(await h.prisma.specialActivity.findMany({ where: { academicYearId: f.year.id, status: 'ACTIVE' } })).toHaveLength(1);
