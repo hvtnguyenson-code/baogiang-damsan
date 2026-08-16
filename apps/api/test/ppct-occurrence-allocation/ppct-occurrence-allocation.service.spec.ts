@@ -44,6 +44,13 @@ describe('PpctOccurrenceAllocationService', () => {
     expect(result.replayOrigin).toBe('2026-08-03'); expect(result.normalAllocations.map((row) => row.occurrence.civilDate)).toEqual(['2026-08-03', '2026-08-10', '2026-08-17']);
   });
 
+  it('uses a supplied transaction without opening a RepeatableRead transaction', async () => {
+    const h = harness();
+    await h.service.resolveInTransaction(h.tx as never, { academicYearId: 'year', schoolClassId: 'class', subjectId: 'subject', throughCivilDate: '2026-08-03' });
+    expect(h.prisma.$transaction).not.toHaveBeenCalled();
+    expect(h.structural.resolveInTransaction).toHaveBeenCalledWith(h.tx, expect.any(Object));
+  });
+
   it('does not consume suppression and allocates the same first item to the next normal', async () => {
     const h = harness({ '2026-08-03': { normalOccurrences: [normal('2026-08-03', 'SPECIAL_ACTIVITY_SUPPRESSED')], findings: [] } });
     const result = await h.service.resolve({ academicYearId: 'year', schoolClassId: 'class', subjectId: 'subject', throughCivilDate: '2026-08-17' });

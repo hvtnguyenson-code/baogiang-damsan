@@ -62,13 +62,18 @@ export class PpctOccurrenceAllocationService {
 
   async resolve(input: ResolvePpctOccurrenceAllocationInput): Promise<PpctOccurrenceAllocationResult> {
     const result = await this.prisma.$transaction(
-      (tx) => this.resolveSnapshot(tx, input),
+      (tx) => this.resolveInTransaction(tx, input),
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
     return { ...result, evaluatedAt: new Date().toISOString() };
   }
 
-  private async resolveSnapshot(tx: Prisma.TransactionClient, input: ResolvePpctOccurrenceAllocationInput): Promise<Omit<PpctOccurrenceAllocationResult, 'evaluatedAt'>> {
+  /**
+   * Resolve against the caller's transaction snapshot.  This deliberately
+   * opens no transaction: execution confirmation composes it inside its
+   * single SERIALIZABLE mutation boundary.
+   */
+  async resolveInTransaction(tx: Prisma.TransactionClient, input: ResolvePpctOccurrenceAllocationInput): Promise<Omit<PpctOccurrenceAllocationResult, 'evaluatedAt'>> {
     const throughDate = parseCivilDate(input.throughCivilDate);
     const candidateDates = await this.discoverCandidateDates(tx, input, throughDate);
     const normals: NormalStructuralOccurrence[] = [];

@@ -1,6 +1,6 @@
 # ADR-039 — Teaching Execution Persistence Foundation
 
-- **Status:** Implemented on the LOCAL-FC-05F1 task branch; awaiting independent GitHub/CI review
+- **Status:** Closed / green through merged PR #56, canonical main `1d2bcd5baaa0a9390f65c386b884a4b2e621275d`, post-merge CI #220 SUCCESS
 - **Date:** 2026-08-16
 - **Scope:** Prisma/PostgreSQL persistence foundation only
 - **Authority:** ADR-038
