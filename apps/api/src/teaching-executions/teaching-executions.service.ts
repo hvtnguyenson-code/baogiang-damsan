@@ -76,7 +76,7 @@ export class TeachingExecutionsService {
 
   private async confirmNormalTx(tx: Prisma.TransactionClient, dto: ConfirmNormalTeachingExecutionDto, request: AuthenticatedRequest): Promise<TeachingExecutionMutationResult<CurricularTeachingExecutionRecord>> {
     const fingerprint = createFingerprint('CURRICULAR_NORMAL', { academicYearId: dto.academicYearId, schoolClassId: dto.schoolClassId, subjectId: dto.subjectId, timetableEntryId: dto.timetableEntryId, sourceCivilDate: dto.sourceCivilDate, note: dto.note ?? null, replacesId: dto.replacesId ?? null });
-    const replay = await this.curricularReplay(tx, dto.requestKey, fingerprint); if (replay) return replay;
+    const replay = await this.curricularReplay(tx, dto.requestKey, fingerprint, request); if (replay) return replay;
     const allocation = await this.allocation.resolveInTransaction(tx, { academicYearId: dto.academicYearId, schoolClassId: dto.schoolClassId, subjectId: dto.subjectId, throughCivilDate: dto.sourceCivilDate as `${number}-${number}-${number}` });
     const key = `NORMAL:${dto.timetableEntryId}:${dto.sourceCivilDate}`;
     const selected = allocation.normalAllocations.find((item) => item.occurrence.occurrenceKey === key);
@@ -89,7 +89,7 @@ export class TeachingExecutionsService {
     await this.assertEnded(o.civilDate, o.timeSlot.endTime, this.clock.now());
     const week = await this.requireWeek(tx, o.academicCalendarVersionId, parseCivilDate(o.civilDate), true);
     const capabilityScope = await this.access.requireCurricular(request, actualTeacherUserId, o.subjectId);
-    await this.requireCurricularReplacement(tx, dto.replacesId, o);
+    await this.requireCurricularReplacement(tx, dto.replacesId, { ...o, ppctItemId: selected.expectedPpctItem.ppctItemId });
     const snapshots = await this.curricularSnapshots(tx, o.schoolClass.id, o.subjectId, o.responsibleTeacherUserId, actualTeacherUserId);
     const e = selected.expectedPpctItem;
     const created = await tx.curricularTeachingExecution.create({ data: { kind: 'NORMAL', academicYearId: o.academicYearId, schoolClassId: o.schoolClass.id, subjectId: o.subjectId, sourceNormalOccurrenceKey: o.occurrenceKey, originalTimetableVersionId: o.timetableVersionId, originalTimetableEntryId: o.timetableEntryId, sourceCivilDate: parseCivilDate(o.civilDate), sourceAcademicCalendarVersionId: o.academicCalendarVersionId, sourceTimeSlotDefinitionId: o.timeSlot.id, originalTeachingAssignmentId: o.teachingAssignmentId, responsibleTeacherUserId: o.responsibleTeacherUserId, ppctClassAssociationId: e.ppctClassAssociationId, ppctPlanId: e.ppctPlanId, ppctVersionId: e.ppctVersionId, ppctItemId: e.ppctItemId, ppctItemRevisionId: e.ppctItemRevisionId, operationalLessonDispositionId: dispositionId, operationalDispositionType: dispositionType, executionCivilDate: parseCivilDate(o.civilDate), executionAcademicCalendarVersionId: o.academicCalendarVersionId, executionTimeSlotDefinitionId: o.timeSlot.id, executionAcademicWeekId: week.weekId!, executionAcademicWeekSegmentId: week.segmentId!, actualTeacherUserId, ...snapshots, note: dto.note ?? null, createRequestKey: dto.requestKey, createRequestFingerprint: fingerprint, replacesId: dto.replacesId ?? null, createdByUserId: request.auth!.user.id } });
@@ -99,7 +99,7 @@ export class TeachingExecutionsService {
 
   private async confirmMakeupTx(tx: Prisma.TransactionClient, dto: ConfirmMakeupTeachingExecutionDto, request: AuthenticatedRequest): Promise<TeachingExecutionMutationResult<CurricularTeachingExecutionRecord>> {
     const fingerprint = createFingerprint('CURRICULAR_MAKEUP', { makeupTeachingScheduleId: dto.makeupTeachingScheduleId, note: dto.note ?? null, replacesId: dto.replacesId ?? null });
-    const replay = await this.curricularReplay(tx, dto.requestKey, fingerprint); if (replay) return replay;
+    const replay = await this.curricularReplay(tx, dto.requestKey, fingerprint, request); if (replay) return replay;
     const m = await tx.makeupTeachingSchedule.findUnique({ where: { id: dto.makeupTeachingScheduleId }, include: { targetTimeSlotDefinition: true } });
     if (!m || m.status !== OperationalOverlayStatus.ACTIVE) throw new ConflictException('Lịch dạy bù không còn ACTIVE.');
     const targetDate = formatCivilDate(m.targetCivilDate);
@@ -115,7 +115,7 @@ export class TeachingExecutionsService {
       subjectId: m.subjectId,
       timetableEntryId: m.originalTimetableEntryId,
       civilDate: formatCivilDate(m.originalCivilDate),
-      ppctBinding: { ppctClassAssociationId: m.ppctClassAssociationId, ppctPlanId: m.ppctPlanId, ppctVersionId: m.ppctVersionId },
+      ppctBinding: { ppctClassAssociationId: m.ppctClassAssociationId, ppctPlanId: m.ppctPlanId, ppctVersionId: m.ppctVersionId }, ppctItemId: m.ppctItemId,
     });
     const snapshots = await this.curricularSnapshots(tx, m.schoolClassId, m.subjectId, m.responsibleTeacherUserId, m.scheduledTeacherUserId);
     const e = match.expectedPpctItem;
@@ -126,7 +126,7 @@ export class TeachingExecutionsService {
 
   private async confirmActivityTx(tx: Prisma.TransactionClient, dto: ConfirmSpecialActivityParticipationDto, request: AuthenticatedRequest): Promise<TeachingExecutionMutationResult<SpecialActivityParticipationExecutionRecord>> {
     const fingerprint = createFingerprint('ACTIVITY_PARTICIPATION', { specialActivityId: dto.specialActivityId, specialActivityStaffingId: dto.specialActivityStaffingId, specialActivityTimeSlotId: dto.specialActivityTimeSlotId, replacesId: dto.replacesId ?? null });
-    const replay = await this.activityReplay(tx, dto.requestKey, fingerprint); if (replay) return replay;
+    const replay = await this.activityReplay(tx, dto.requestKey, fingerprint, request); if (replay) return replay;
     const activity = await tx.specialActivity.findUnique({ where: { id: dto.specialActivityId }, include: { staffing: { include: { scheduledTeacher: { include: { profile: true } } } }, timeSlots: { include: { timeSlotDefinition: true } } } });
     if (!activity || activity.status !== SpecialActivityStatus.ACTIVE) throw new ConflictException('SpecialActivity không còn ACTIVE.');
     const staffing = activity.staffing.find((row) => row.id === dto.specialActivityStaffingId);
@@ -159,15 +159,17 @@ export class TeachingExecutionsService {
     return this.activityRecord(row);
   }
 
-  private async curricularReplay(tx: Prisma.TransactionClient, requestKey: string, fingerprint: string): Promise<TeachingExecutionMutationResult<CurricularTeachingExecutionRecord> | null> {
+  private async curricularReplay(tx: Prisma.TransactionClient, requestKey: string, fingerprint: string, request: AuthenticatedRequest): Promise<TeachingExecutionMutationResult<CurricularTeachingExecutionRecord> | null> {
     const existing = await tx.curricularTeachingExecution.findUnique({ where: { createRequestKey: requestKey } });
     if (!existing) return null;
+    await this.access.requireCurricular(request, existing.actualTeacherUserId, existing.subjectId);
     if (existing.createRequestFingerprint !== fingerprint) throw new ConflictException('requestKey được dùng với nội dung khác.');
     return { outcome: 'IDEMPOTENT_REPLAY', item: this.curricularRecord(existing) };
   }
-  private async activityReplay(tx: Prisma.TransactionClient, requestKey: string, fingerprint: string): Promise<TeachingExecutionMutationResult<SpecialActivityParticipationExecutionRecord> | null> {
+  private async activityReplay(tx: Prisma.TransactionClient, requestKey: string, fingerprint: string, request: AuthenticatedRequest): Promise<TeachingExecutionMutationResult<SpecialActivityParticipationExecutionRecord> | null> {
     const existing = await tx.specialActivityParticipationExecution.findUnique({ where: { createRequestKey: requestKey } });
     if (!existing) return null;
+    await this.access.requireActivity(request, existing.actualTeacherUserId);
     if (existing.createRequestFingerprint !== fingerprint) throw new ConflictException('requestKey được dùng với nội dung khác.');
     return { outcome: 'IDEMPOTENT_REPLAY', item: this.activityRecord(existing) };
   }
@@ -197,10 +199,10 @@ export class TeachingExecutionsService {
     return { schoolClassCodeSnapshot: schoolClass.code, schoolClassNameSnapshot: schoolClass.name, subjectCodeSnapshot: subject.code, subjectNameSnapshot: subject.name, responsibleTeacherDisplayNameSnapshot: responsible.profile.displayName, actualTeacherDisplayNameSnapshot: actual.profile.displayName };
   }
 
-  private async requireCurricularReplacement(tx: Prisma.TransactionClient, replacesId: string | undefined, source: { academicYearId: string; schoolClass: { id: string }; subjectId: string; timetableEntryId: string; civilDate: string; ppctBinding: { ppctClassAssociationId: string; ppctPlanId: string; ppctVersionId: string } | null }): Promise<void> {
+  private async requireCurricularReplacement(tx: Prisma.TransactionClient, replacesId: string | undefined, source: { academicYearId: string; schoolClass: { id: string }; subjectId: string; timetableEntryId: string; civilDate: string; ppctItemId: string; ppctBinding: { ppctClassAssociationId: string; ppctPlanId: string; ppctVersionId: string } | null }): Promise<void> {
     if (!replacesId) return;
     const predecessor = await tx.curricularTeachingExecution.findUnique({ where: { id: replacesId } });
-    if (!predecessor || predecessor.status !== TeachingExecutionStatus.REVERSED || !source.ppctBinding || predecessor.academicYearId !== source.academicYearId || predecessor.schoolClassId !== source.schoolClass.id || predecessor.subjectId !== source.subjectId || predecessor.originalTimetableEntryId !== source.timetableEntryId || formatCivilDate(predecessor.sourceCivilDate) !== source.civilDate || predecessor.ppctClassAssociationId !== source.ppctBinding.ppctClassAssociationId || predecessor.ppctPlanId !== source.ppctBinding.ppctPlanId || predecessor.ppctVersionId !== source.ppctBinding.ppctVersionId) throw new ConflictException('Replacement curricular không cùng nghĩa vụ reversed.');
+    if (!predecessor || predecessor.status !== TeachingExecutionStatus.REVERSED || !source.ppctBinding || predecessor.academicYearId !== source.academicYearId || predecessor.schoolClassId !== source.schoolClass.id || predecessor.subjectId !== source.subjectId || predecessor.originalTimetableEntryId !== source.timetableEntryId || formatCivilDate(predecessor.sourceCivilDate) !== source.civilDate || predecessor.ppctClassAssociationId !== source.ppctBinding.ppctClassAssociationId || predecessor.ppctPlanId !== source.ppctBinding.ppctPlanId || predecessor.ppctVersionId !== source.ppctBinding.ppctVersionId || predecessor.ppctItemId !== source.ppctItemId) throw new ConflictException('Replacement curricular không cùng nghĩa vụ reversed.');
   }
   private async requireActivityReplacement(tx: Prisma.TransactionClient, replacesId: string | undefined, activityId: string, staffingId: string, slotId: string): Promise<void> {
     if (!replacesId) return;
@@ -211,6 +213,6 @@ export class TeachingExecutionsService {
   private async successAudit(tx: Prisma.TransactionClient, request: AuthenticatedRequest, action: string, entityType: string, entityId: string, metadata: Record<string, unknown>): Promise<void> { await this.audit.write({ actorUserId: request.auth!.user.id, action, entityType, entityId, requestId: requestMeta(request).requestId, result: 'SUCCESS', metadata }, tx); }
   private async retry<T>(operation: () => Promise<T>): Promise<T> { for (let attempt = 1; attempt <= 3; attempt += 1) try { return await operation(); } catch (error) { if (error instanceof ConflictException || !(error instanceof Prisma.PrismaClientKnownRequestError) || !['P2002', 'P2034'].includes(error.code) || attempt === 3) { if (error instanceof Prisma.PrismaClientKnownRequestError && ['P2002', 'P2034'].includes(error.code)) throw new ConflictException('Xung đột đồng thời; hãy thử lại.'); throw error; } } throw new ConflictException('Xung đột đồng thời; hãy thử lại.'); }
 
-  private curricularRecord(row: Prisma.CurricularTeachingExecutionGetPayload<object>): CurricularTeachingExecutionRecord { return { ...row, sourceCivilDate: formatCivilDate(row.sourceCivilDate), executionCivilDate: formatCivilDate(row.executionCivilDate), reversedAt: row.reversedAt?.toISOString() ?? null, createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() }; }
-  private activityRecord(row: Prisma.SpecialActivityParticipationExecutionGetPayload<object>): SpecialActivityParticipationExecutionRecord { return { ...row, executionCivilDate: formatCivilDate(row.executionCivilDate), reversedAt: row.reversedAt?.toISOString() ?? null, createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() }; }
+  private curricularRecord(row: Prisma.CurricularTeachingExecutionGetPayload<object>): CurricularTeachingExecutionRecord { return { id: row.id, kind: row.kind, status: row.status, academicYearId: row.academicYearId, schoolClassId: row.schoolClassId, subjectId: row.subjectId, sourceNormalOccurrenceKey: row.sourceNormalOccurrenceKey, sourceCivilDate: formatCivilDate(row.sourceCivilDate), originalTimetableVersionId: row.originalTimetableVersionId, originalTimetableEntryId: row.originalTimetableEntryId, sourceAcademicCalendarVersionId: row.sourceAcademicCalendarVersionId, sourceTimeSlotDefinitionId: row.sourceTimeSlotDefinitionId, originalTeachingAssignmentId: row.originalTeachingAssignmentId, ppctClassAssociationId: row.ppctClassAssociationId, ppctPlanId: row.ppctPlanId, ppctVersionId: row.ppctVersionId, ppctItemId: row.ppctItemId, ppctItemRevisionId: row.ppctItemRevisionId, executionCivilDate: formatCivilDate(row.executionCivilDate), executionAcademicCalendarVersionId: row.executionAcademicCalendarVersionId, executionTimeSlotDefinitionId: row.executionTimeSlotDefinitionId, executionAcademicWeekId: row.executionAcademicWeekId, executionAcademicWeekSegmentId: row.executionAcademicWeekSegmentId, responsibleTeacherUserId: row.responsibleTeacherUserId, actualTeacherUserId: row.actualTeacherUserId, operationalLessonDispositionId: row.operationalLessonDispositionId, operationalDispositionType: row.operationalDispositionType, makeupTeachingScheduleId: row.makeupTeachingScheduleId, schoolClassCodeSnapshot: row.schoolClassCodeSnapshot, schoolClassNameSnapshot: row.schoolClassNameSnapshot, subjectCodeSnapshot: row.subjectCodeSnapshot, subjectNameSnapshot: row.subjectNameSnapshot, responsibleTeacherDisplayNameSnapshot: row.responsibleTeacherDisplayNameSnapshot, actualTeacherDisplayNameSnapshot: row.actualTeacherDisplayNameSnapshot, note: row.note, replacesId: row.replacesId, reversedByUserId: row.reversedByUserId, reversedAt: row.reversedAt?.toISOString() ?? null, reversalReason: row.reversalReason, createdByUserId: row.createdByUserId, createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() }; }
+  private activityRecord(row: Prisma.SpecialActivityParticipationExecutionGetPayload<object>): SpecialActivityParticipationExecutionRecord { return { id: row.id, status: row.status, specialActivityId: row.specialActivityId, specialActivityStaffingId: row.specialActivityStaffingId, specialActivityTimeSlotId: row.specialActivityTimeSlotId, academicYearId: row.academicYearId, executionCivilDate: formatCivilDate(row.executionCivilDate), executionAcademicCalendarVersionId: row.executionAcademicCalendarVersionId, executionTimeSlotDefinitionId: row.executionTimeSlotDefinitionId, executionAcademicWeekId: row.executionAcademicWeekId, executionAcademicWeekSegmentId: row.executionAcademicWeekSegmentId, actualTeacherUserId: row.actualTeacherUserId, activityTitleSnapshot: row.activityTitleSnapshot, actualTeacherDisplayNameSnapshot: row.actualTeacherDisplayNameSnapshot, replacesId: row.replacesId, reversedByUserId: row.reversedByUserId, reversedAt: row.reversedAt?.toISOString() ?? null, reversalReason: row.reversalReason, createdByUserId: row.createdByUserId, createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() }; }
 }

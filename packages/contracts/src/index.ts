@@ -318,12 +318,12 @@ export interface CurricularTeachingExecutionRecord {
   academicYearId: string; schoolClassId: string; subjectId: string;
   sourceNormalOccurrenceKey: string; sourceCivilDate: CivilDateString;
   originalTimetableVersionId: string; originalTimetableEntryId: string;
-  sourceAcademicCalendarVersionId: string; sourceTimeSlotDefinitionId: string;
+  sourceAcademicCalendarVersionId: string; sourceTimeSlotDefinitionId: string; originalTeachingAssignmentId: string;
   ppctClassAssociationId: string; ppctPlanId: string; ppctVersionId: string; ppctItemId: string; ppctItemRevisionId: string;
   executionCivilDate: CivilDateString; executionAcademicCalendarVersionId: string; executionTimeSlotDefinitionId: string;
   executionAcademicWeekId: string; executionAcademicWeekSegmentId: string;
   responsibleTeacherUserId: string; actualTeacherUserId: string;
-  operationalLessonDispositionId: string | null; makeupTeachingScheduleId: string | null;
+  operationalLessonDispositionId: string | null; operationalDispositionType: OperationalLessonDispositionType | null; makeupTeachingScheduleId: string | null;
   schoolClassCodeSnapshot: string; schoolClassNameSnapshot: string; subjectCodeSnapshot: string; subjectNameSnapshot: string;
   responsibleTeacherDisplayNameSnapshot: string; actualTeacherDisplayNameSnapshot: string;
   note: string | null; replacesId: string | null; reversedByUserId: string | null; reversedAt: string | null; reversalReason: string | null;
