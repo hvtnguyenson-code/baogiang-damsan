@@ -402,8 +402,8 @@ DO $$ BEGIN
     IF (SELECT count(*) FROM curricular_teaching_executions WHERE ppct_item_revision_id = '95f10000-0000-0000-0000-000000000003') <> 1
        OR NOT EXISTS (SELECT 1 FROM curricular_teaching_executions WHERE id = 'd6f10000-0000-0000-0000-000000000003' AND ppct_item_revision_id = '95f10000-0000-0000-0000-000000000003')
        OR EXISTS (SELECT 1 FROM makeup_teaching_schedules WHERE ppct_version_id = '75f10000-0000-0000-0000-000000000001' AND ppct_item_id = '85f10000-0000-0000-0000-000000000003' AND ppct_plan_id = '65f10000-0000-0000-0000-000000000001')
-       OR EXISTS (SELECT 1 FROM ppct_item_lineages WHERE predecessor_version_id = '75f10000-0000-0000-0000-000000000001' AND predecessor_item_id = '85f10000-0000-0000-0000-000000000003')
-       OR EXISTS (SELECT 1 FROM ppct_item_lineages WHERE successor_version_id = '75f10000-0000-0000-0000-000000000001' AND successor_item_id = '85f10000-0000-0000-0000-000000000003')
+       OR EXISTS (SELECT 1 FROM ppct_item_lineage WHERE predecessor_version_id = '75f10000-0000-0000-0000-000000000001' AND predecessor_item_id = '85f10000-0000-0000-0000-000000000003')
+       OR EXISTS (SELECT 1 FROM ppct_item_lineage WHERE successor_version_id = '75f10000-0000-0000-0000-000000000001' AND successor_item_id = '85f10000-0000-0000-0000-000000000003')
     THEN RAISE EXCEPTION 'T30 fixture does not isolate the new CurricularTeachingExecution PPCT revision FK'; END IF;
 
     IF (SELECT count(*) FROM special_activity_participation_executions WHERE special_activity_staffing_id = '06f10000-0000-0000-0000-000000000011') <> 2
