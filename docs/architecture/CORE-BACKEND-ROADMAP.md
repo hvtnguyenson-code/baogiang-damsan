@@ -1,6 +1,6 @@
 # Core Backend Roadmap
 
-**Status:** Planning guide after LOCAL-FC-05D2 closed the Special Activity minimum core, LOCAL-FC-05E0 closed/green through PR #51 and CI #205 PASS, and LOCAL-FC-05E1 implemented the Structural V1 resolver on its branch awaiting independent GitHub/CI review. This document is not an accepted requirements source and does not authorize implementation.
+**Status:** Planning guide after LOCAL-FC-05D2 closed the Special Activity minimum core, LOCAL-FC-05E0 closed/green through PR #51 and CI #205 PASS, LOCAL-FC-05E1 closed/green through PR #52 with PR CI #208 and post-merge CI #209 PASS at canonical main `92ea9133748f0864ba1d600b76a23d1d18e9e0e3`, and LOCAL-FC-05E2 implemented its architecture closure on the docs branch awaiting independent GitHub review. This document is not an accepted requirements source and does not authorize implementation.
 
 ## Purpose
 
@@ -17,7 +17,8 @@ flowchart LR
   READY --> OVERLAY["Operational overlays"]
   OVERLAY --> OCC["05E1 structural resolved occurrence"]
   PPCT --> OCC
-  OCC --> ALLOC["05E2 PPCT occurrence allocation"]
+  OCC --> ALLOC_ARCH["05E2 allocation architecture closure"]
+  ALLOC_ARCH --> ALLOC["05E2B deterministic allocation read model"]
   ALLOC --> EXEC["Teaching execution / Báo giảng"]
   EXEC --> PROG["Progress / debt / late"]
   PROG --> REPORT["Reporting projection"]
@@ -53,15 +54,16 @@ LOCAL-FC-05A0 is merged. LOCAL-FC-05A0D closed the seven PPCT architecture prere
 7. **05D1 — Special Activity Persistence Foundation (established by ADR-035).** The ADR-034 root, exact-slot, frozen-class-target and roleless-staffing persistence direction now has retained provenance and database invariants. No runtime, execution, PPCT/progress/reporting, Room or UI is implied.
 8. **05D2 — Special Activity runtime control plane (CLOSED / GREEN).** Capability-controlled create/read/reverse, frozen class/staff provenance, idempotency/CAS and canonical class/teacher/time collision behavior are established. Room remains `NOT_ASSESSED`.
 9. **05E0 — Resolved Lesson Occurrence Architecture (closed by 05E0D/ADR-036).** Architecture/decision closure only; no runtime, persistence or allocation algorithm.
-10. **05E1 — Structural Resolved Lesson Occurrence Read Model (implemented on task branch; awaiting independent GitHub/CI review).** Derived-only and schema-free internal `RepeatableRead` composition of normal, make-up and Special Activity families, normal suppression evidence, exact PPCT association/version/plan provenance and fail-closed blockers. `PPCT_ITEM_ALLOCATION = NOT_ASSESSED` remains explicit.
-11. **05E2 — PPCT Occurrence Allocation Architecture / implementation prerequisite.** Close exact next-item/distribution cursor, version-switch/carry-forward, stable UUID and split/merge lineage semantics, including SpecialActivity suppression and future debt-obligation identity.
-12. **Teaching execution / Báo giảng.** Immutable evidence of what occurred, expected versus actual content and responsible versus actual teacher, only after the allocation prerequisite is accepted.
-13. **Progress, debt and late.** Reproducible projections from historical facts; make-up fulfills an original obligation exactly once.
-14. **Reporting.** Weekly, monthly, semester, custom-range and annual projections as supported by authoritative rules.
-15. **Submission and approval.** Immutable submitted/approved snapshots or immutable reference manifests with explicit capability/scope checks and no self-approval.
-16. **Cross-domain closure.** Concurrency, idempotency, correction, replay, historical drift and performance validation across the full chain.
-17. **CORE BACKEND FREEZE.** Contracts, state transitions, precedence, source references and capability matrix are accepted and regression-covered.
-18. **UI afterward.** Product UI consumes frozen backend contracts and does not invent PPCT, debt, occurrence, approval or correction semantics.
+10. **05E1 — Structural Resolved Lesson Occurrence Read Model (CLOSED / GREEN).** Derived-only and schema-free internal `RepeatableRead` composition of normal, make-up and Special Activity families, normal suppression evidence, exact PPCT association/version/plan provenance and fail-closed blockers. PR #52 / PR CI #208 / post-merge CI #209 passed. `PPCT_ITEM_ALLOCATION = NOT_ASSESSED` remains explicit and unchanged.
+11. **05E2 — PPCT Occurrence Allocation Architecture Closure (implemented on docs branch; awaiting independent GitHub review).** ADR-037 closes deterministic class-subject replay, exact-version stable UUID, split/merge, SpecialActivity suppression, exhaustion and distribution-obligation provenance. It adds no runtime or persistence and is not CLOSED / GREEN before merge and post-merge CI.
+12. **05E2B — Deterministic PPCT Allocation Read Model.** Separately authorized implementation of `PPCT_OCCURRENCE_ALLOCATION_V1`; internal, schema-free and fail-closed under one bounded `RepeatableRead` replay.
+13. **Teaching execution / Báo giảng.** Immutable evidence of what occurred, expected versus actual content and responsible versus actual teacher, only after 05E2B.
+14. **Progress, debt and late.** Reproducible projections from historical facts; make-up fulfills an original obligation exactly once.
+15. **Reporting.** Weekly, monthly, semester, custom-range and annual projections as supported by authoritative rules.
+16. **Submission and approval.** Immutable submitted/approved snapshots or immutable reference manifests with explicit capability/scope checks and no self-approval.
+17. **Cross-domain closure.** Concurrency, idempotency, correction, replay, historical drift and performance validation across the full chain.
+18. **CORE BACKEND FREEZE.** Contracts, state transitions, precedence, source references and capability matrix are accepted and regression-covered.
+19. **UI business completion afterward.** Product UI consumes frozen backend contracts and does not invent PPCT, debt, occurrence, approval or correction semantics.
 
 ## Layering rule
 
