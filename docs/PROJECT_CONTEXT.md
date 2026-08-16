@@ -2,13 +2,15 @@
 
 ## Thông tin dự án
 
-## LOCAL-FC-05E2 status
+## LOCAL-FC-05E2 / 05E2B status
 
 Canonical main entering LOCAL-FC-05E2 is `92ea9133748f0864ba1d600b76a23d1d18e9e0e3`. LOCAL-FC-05D2 is **CLOSED / GREEN** through merged PR #50 and CI #203 PASS. It provides the bounded SpecialActivity runtime control plane; Room remains `NOT_ASSESSED`.
 
 LOCAL-FC-05E0 is **CLOSED / GREEN** through PR #51 and CI #205 PASS. LOCAL-FC-05E1 is **CLOSED / GREEN** through PR #52 at head `76f0d389358d4f23f2a39e347a329c222d580d3c`, authoritative PR CI #208 PASS, merge commit/canonical main `92ea9133748f0864ba1d600b76a23d1d18e9e0e3`, and post-merge main CI #209 PASS. It implements the derived-only internal `RESOLVED_LESSON_OCCURRENCE_STRUCTURAL_V1` resolver. Structural V1 remains unchanged with `PPCT_ITEM_ALLOCATION = NOT_ASSESSED`.
 
-LOCAL-FC-05E2 has implemented its documentation-only architecture closure on the task branch and awaits independent GitHub review. ADR-037 defines the separate downstream `PPCT_OCCURRENCE_ALLOCATION_V1` profile; implementation is deferred to separately authorized LOCAL-FC-05E2B.
+LOCAL-FC-05E2 is **CLOSED / GREEN** through PR #53 at head `1328a6be42e4438df3d23425f0fd0920c5d69224`, authoritative PR CI #210 PASS, canonical merge/main `641d0ed94cf56b948888d1fc2870d60e5fc3f53f`, and post-merge main CI #211 PASS. ADR-037 defines the downstream `PPCT_OCCURRENCE_ALLOCATION_V1` profile.
+
+LOCAL-FC-05E2B is implemented on branch `feat/local-fc-05e2b-deterministic-ppct-allocation-read-model` and awaits independent GitHub review. It is not CLOSED / GREEN before authoritative PR CI, merge and post-merge CI.
 
 | Mục | Nội dung |
 |---|---|
@@ -63,7 +65,7 @@ Backend hiện có các boundary đã được review và version hóa:
 - `TimetableVersion`/`TimetableEntry`, DRAFT/validation, approval/activation, supersession và historical resolution;
 - import TKB XLSX gồm profile/alias, bounded workbook inspection, canonical preview, confirmation phía server, semantic/request replay, imported-DRAFT lock và adversarial security corpus qua LOCAL-FC-04B3D1.
 
-Ngoài PPCT persistence/control plane của 05A1–05A2, bounded readiness của 05B1, và operational-overlay persistence/control plane của 05C1–05C2A, chuỗi 05D0D–05D2 đã đóng và triển khai Special Activity minimum core. LOCAL-FC-05E0D/ADR-036 đóng kiến trúc structural resolved occurrence và 05E1 đã CLOSED / GREEN. LOCAL-FC-05E2D/ADR-037 hiện đóng kiến trúc allocation; 05E2B deterministic allocation read model, TeachingExecution/Báo giảng, progress/debt, statement/reporting và approval snapshot vẫn chưa được triển khai. PPCT import, capacity, make-up public runtime, Room/Location và UI business semantics vẫn ngoài phạm vi.
+Ngoài PPCT persistence/control plane của 05A1–05A2, bounded readiness của 05B1, và operational-overlay persistence/control plane của 05C1–05C2A, chuỗi 05D0D–05D2 đã đóng và triển khai Special Activity minimum core. LOCAL-FC-05E0D/ADR-036 đóng kiến trúc structural resolved occurrence, 05E1 đã CLOSED / GREEN, và LOCAL-FC-05E2D/ADR-037 đã CLOSED / GREEN kiến trúc allocation. 05E2B deterministic allocation read model đã được triển khai trên task branch và đang chờ independent review; TeachingExecution/Báo giảng, progress/debt, statement/reporting và approval snapshot vẫn chưa được triển khai. PPCT import, capacity, make-up public runtime, Room/Location và UI business semantics vẫn ngoài phạm vi.
 
 `LOCAL-FC-05A0` đã merged qua PR #37. Closure 05A0D và ADR-027 đã xác lập kiến trúc PPCT: logical master dùng chung có scope `AcademicYear + Subject + Grade`, còn tiến độ phân phối/hoàn thành/nợ độc lập theo từng class-subject stream và gắn lịch sử với exact PPCT version/item.
 
@@ -73,7 +75,7 @@ Ngoài PPCT persistence/control plane của 05A1–05A2, bounded readiness của
 
 ADR-036 giữ Structural V1 ở dạng recomputed `RepeatableRead`, không persistence/cache/snapshot/audit mutation. Normal candidates giữ cả suppression state; make-up và Special Activity là các occurrence family độc lập. PPCT binding resolve tới exact association/version/plan và allocation vẫn `NOT_ASSESSED` trong profile này. ADR-037 định nghĩa profile downstream `PPCT_OCCURRENCE_ALLOCATION_V1`: replay theo class-subject stream, exact-version stable-UUID/lineage semantics và fail-closed blockers; không thay đổi ý nghĩa Structural V1.
 
-LOCAL-FC-05E2 không deploy, không migration production và không thay đổi ứng dụng/schema/database.
+LOCAL-FC-05E2B không deploy, không migration production và không thay đổi schema/database hay public HTTP contract.
 
 Thứ tự không đổi: hoàn thành chuỗi backend đến `CORE BACKEND FREEZE` trước khi UI được phép chốt business semantics.
 
