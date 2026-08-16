@@ -46,11 +46,11 @@ function enumValues(name) {
     .filter(Boolean);
 }
 
-function withoutExpectedExecutionInverses(block) {
-  return block
-    .split(/\r?\n/u)
-    .filter((line) => !/^\s*(?:curricularExecutions|participationExecutions)\s+(?:CurricularTeachingExecution|SpecialActivityParticipationExecution)\[\]/u.test(line))
-    .join('\n');
+function excludeVerifiedSourceExecutionInverse(modelName, block, exactInverseLine) {
+  const lines = block.split(/\r?\n/u);
+  const matchingLines = lines.filter((line) => exactInverseLine.test(line));
+  assert.equal(matchingLines.length, 1, `${modelName} must expose its one allowed Teaching Execution inverse exactly once`);
+  return lines.filter((line) => !exactInverseLine.test(line)).join('\n');
 }
 
 for (const model of [
@@ -665,7 +665,6 @@ const calendarException = modelBlock('CalendarException');
 const calendarExceptionTimeSlot = modelBlock('CalendarExceptionTimeSlot');
 const lessonDisposition = modelBlock('OperationalLessonDisposition');
 const makeupSchedule = modelBlock('MakeupTeachingSchedule');
-const overlayBlocks = [calendarException, calendarExceptionTimeSlot, lessonDisposition, makeupSchedule].join('\n');
 
 for (const modelName of [
   'CalendarException', 'CalendarExceptionTimeSlot', 'OperationalLessonDisposition', 'MakeupTeachingSchedule',
@@ -787,14 +786,33 @@ for (const fk of overlayMigration.matchAll(/ADD CONSTRAINT "([^"]+_fkey)"([\s\S]
 }
 assert.doesNotMatch(overlayMigration, /CREATE\s+(OR\s+REPLACE\s+)?TRIGGER/iu);
 assert.doesNotMatch(overlayMigration, /ON DELETE CASCADE/iu);
-assert.doesNotMatch(withoutExpectedExecutionInverses(overlayBlocks), /\b(?:completed|completion|debt|progress|report|execution|move|swap|activity)\b/iu);
+for (const [modelName, block] of [
+  ['CalendarException', calendarException],
+  ['CalendarExceptionTimeSlot', calendarExceptionTimeSlot],
+]) {
+  assert.doesNotMatch(block, /\b(?:CurricularTeachingExecution|SpecialActivityParticipationExecution)\[\]/u, `${modelName} must not receive a Teaching Execution inverse`);
+}
+const overlayBlocksWithoutVerifiedExecutionInverses = [
+  calendarException,
+  calendarExceptionTimeSlot,
+  excludeVerifiedSourceExecutionInverse(
+    'OperationalLessonDisposition',
+    lessonDisposition,
+    /^\s*curricularExecutions\s+CurricularTeachingExecution\[\]\s+@relation\("CurricularExecutionDisposition"\)\s*$/u,
+  ),
+  excludeVerifiedSourceExecutionInverse(
+    'MakeupTeachingSchedule',
+    makeupSchedule,
+    /^\s*curricularExecutions\s+CurricularTeachingExecution\[\]\s+@relation\("CurricularExecutionMakeupSchedule"\)\s*$/u,
+  ),
+].join('\n');
+assert.doesNotMatch(overlayBlocksWithoutVerifiedExecutionInverses, /\b(?:completed|completion|debt|progress|report|execution|move|swap|activity)\b/iu);
 assert.doesNotMatch(overlayMigration, /\b(?:completed|completion|debt|progress|report|execution|move|swap|activity)\b/iu);
 
 const specialActivity = modelBlock('SpecialActivity');
 const specialActivityTimeSlot = modelBlock('SpecialActivityTimeSlot');
 const specialActivityClassTarget = modelBlock('SpecialActivityClassTarget');
 const specialActivityStaffing = modelBlock('SpecialActivityStaffing');
-const specialActivityBlocks = [specialActivity, specialActivityTimeSlot, specialActivityClassTarget, specialActivityStaffing].join('\n');
 
 for (const [modelName, block] of [
   ['SpecialActivity', specialActivity],
@@ -848,7 +866,26 @@ assert.match(specialActivityStaffing, /fields:\s*\[staffProfileId, scheduledTeac
 assert.match(specialActivityStaffing, /@@unique\(\[specialActivityId, scheduledTeacherUserId\],\s*map:\s*"special_activity_staffing_activity_teacher_key"\)/u);
 assert.match(specialActivityStaffing, /@@index\(\[scheduledTeacherUserId, specialActivityId\],\s*map:\s*"special_activity_staffing_teacher_activity_idx"\)/u);
 assert.match(modelBlock('StaffProfile'), /@@unique\(\[id, userId\],\s*map:\s*"staff_profiles_id_user_id_key"\)/u);
-assert.doesNotMatch(withoutExpectedExecutionInverses(specialActivityBlocks), /\b(?:ppct|subject|teachingassignment|completed|completion|progress|debt|execution|actualteacher|content|report|snapshot|room|location|category|attendance|student|enrollment|notification|approval)\b/iu);
+assert.doesNotMatch(specialActivityClassTarget, /\b(?:CurricularTeachingExecution|SpecialActivityParticipationExecution)\[\]/u, 'SpecialActivityClassTarget must not receive a Teaching Execution inverse');
+const specialActivityBlocksWithoutVerifiedExecutionInverses = [
+  excludeVerifiedSourceExecutionInverse(
+    'SpecialActivity',
+    specialActivity,
+    /^\s*participationExecutions\s+SpecialActivityParticipationExecution\[\]\s+@relation\("ActivityExecutionActivity"\)\s*$/u,
+  ),
+  excludeVerifiedSourceExecutionInverse(
+    'SpecialActivityTimeSlot',
+    specialActivityTimeSlot,
+    /^\s*participationExecutions\s+SpecialActivityParticipationExecution\[\]\s+@relation\("ActivityExecutionTimeSlotChild"\)\s*$/u,
+  ),
+  specialActivityClassTarget,
+  excludeVerifiedSourceExecutionInverse(
+    'SpecialActivityStaffing',
+    specialActivityStaffing,
+    /^\s*participationExecutions\s+SpecialActivityParticipationExecution\[\]\s+@relation\("ActivityExecutionStaffing"\)\s*$/u,
+  ),
+].join('\n');
+assert.doesNotMatch(specialActivityBlocksWithoutVerifiedExecutionInverses, /\b(?:ppct|subject|teachingassignment|completed|completion|progress|debt|execution|actualteacher|content|report|snapshot|room|location|category|attendance|student|enrollment|notification|approval)\b/iu);
 
 for (const enumName of ['SpecialActivityStatus', 'SpecialActivityScope']) {
   assert.match(specialActivityMigration, new RegExp('CREATE TYPE "' + enumName + '" AS ENUM', 'u'), 'Special Activity migration missing ' + enumName);

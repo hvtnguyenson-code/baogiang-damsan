@@ -396,9 +396,23 @@ UPDATE activity_candidate SET id = '16f10000-0000-0000-0000-000000000106', statu
     replaces_id = '16f10000-0000-0000-0000-000000000001', create_request_key = 't29-create';
 SELECT pg_temp.expect_sqlstate('INSERT INTO special_activity_participation_executions SELECT * FROM activity_candidate', '23503', 'T29 cross-unit activity replacement');
 
--- T30 representative curricular and activity source deletion remains restricted.
-SELECT pg_temp.expect_sqlstate($cmd$DELETE FROM timetable_entries WHERE id = '55f10000-0000-0000-0000-000000000001'$cmd$, '23503', 'T30 curricular source delete restriction');
-SELECT pg_temp.expect_sqlstate($cmd$DELETE FROM special_activities WHERE id = 'e6f10000-0000-0000-0000-000000000001'$cmd$, '23503', 'T30 activity source delete restriction');
+-- T30 isolates new Teaching Execution RESTRICT edges: no make-up or lineage fixture row uses revision C,
+-- and staffing 011 has only the participation executions created above as dependent rows.
+DO $$ BEGIN
+    IF (SELECT count(*) FROM curricular_teaching_executions WHERE ppct_item_revision_id = '95f10000-0000-0000-0000-000000000003') <> 1
+       OR NOT EXISTS (SELECT 1 FROM curricular_teaching_executions WHERE id = 'd6f10000-0000-0000-0000-000000000003' AND ppct_item_revision_id = '95f10000-0000-0000-0000-000000000003')
+       OR EXISTS (SELECT 1 FROM makeup_teaching_schedules WHERE ppct_version_id = '75f10000-0000-0000-0000-000000000001' AND ppct_item_id = '85f10000-0000-0000-0000-000000000003' AND ppct_plan_id = '65f10000-0000-0000-0000-000000000001')
+       OR EXISTS (SELECT 1 FROM ppct_item_lineages WHERE predecessor_version_id = '75f10000-0000-0000-0000-000000000001' AND predecessor_item_id = '85f10000-0000-0000-0000-000000000003')
+       OR EXISTS (SELECT 1 FROM ppct_item_lineages WHERE successor_version_id = '75f10000-0000-0000-0000-000000000001' AND successor_item_id = '85f10000-0000-0000-0000-000000000003')
+    THEN RAISE EXCEPTION 'T30 fixture does not isolate the new CurricularTeachingExecution PPCT revision FK'; END IF;
+
+    IF (SELECT count(*) FROM special_activity_participation_executions WHERE special_activity_staffing_id = '06f10000-0000-0000-0000-000000000011') <> 2
+       OR NOT EXISTS (SELECT 1 FROM special_activity_participation_executions WHERE id = '16f10000-0000-0000-0000-000000000001' AND special_activity_staffing_id = '06f10000-0000-0000-0000-000000000011')
+       OR NOT EXISTS (SELECT 1 FROM special_activity_participation_executions WHERE id = '16f10000-0000-0000-0000-000000000002' AND special_activity_staffing_id = '06f10000-0000-0000-0000-000000000011')
+    THEN RAISE EXCEPTION 'T30 fixture does not isolate the new SpecialActivityParticipationExecution staffing FK'; END IF;
+END $$;
+SELECT pg_temp.expect_sqlstate($cmd$DELETE FROM ppct_item_revisions WHERE id = '95f10000-0000-0000-0000-000000000003'$cmd$, '23503', 'T30 new CurricularTeachingExecution PPCT revision RESTRICT FK');
+SELECT pg_temp.expect_sqlstate($cmd$DELETE FROM special_activity_staffing WHERE id = '06f10000-0000-0000-0000-000000000011'$cmd$, '23503', 'T30 new SpecialActivityParticipationExecution staffing RESTRICT FK');
 
 ROLLBACK;
 
