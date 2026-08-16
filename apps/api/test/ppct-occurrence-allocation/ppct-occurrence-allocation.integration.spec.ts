@@ -52,14 +52,27 @@ integration('PPCT occurrence allocation read model (PostgreSQL)', () => {
     async function lineage(predecessor: { version: { id: string }; revisions: Array<{ ppctItemId: string }> }, predecessorIndex: number, successor: { version: { id: string }; revisions: Array<{ ppctItemId: string }> }, successorIndex: number) {
       return h.prisma.ppctItemLineage.create({ data: { ppctPlanId: plan.id, predecessorVersionId: predecessor.version.id, predecessorItemId: predecessor.revisions[predecessorIndex]!.ppctItemId, successorVersionId: successor.version.id, successorItemId: successor.revisions[successorIndex]!.ppctItemId } });
     }
-    return { year, actor, calendar, schoolClass, subject, slot, assignment, staffSubject, timetable, timetableEntry, plan, service, addVersion, associate, lineage };
+    async function addMakeup(options: { id?: string; associationId: string; ppctVersionId: string; ppctItemId: string; sourceDate: string; targetDate: string }) {
+      return h.prisma.makeupTeachingSchedule.create({ data: { id: options.id, academicYearId: year.id, originalTimetableVersionId: timetable.id, originalTimetableEntryId: timetableEntry.id, originalCivilDate: new Date(`${options.sourceDate}T00:00:00Z`), originalAcademicCalendarVersionId: calendar.id, originalTimeSlotDefinitionId: slot.id, schoolClassId: schoolClass.id, subjectId: subject.id, originalTeachingAssignmentId: assignment.id, responsibleTeacherUserId: actor.id, ppctClassAssociationId: options.associationId, ppctPlanId: plan.id, ppctVersionId: options.ppctVersionId, ppctItemId: options.ppctItemId, targetCivilDate: new Date(`${options.targetDate}T00:00:00Z`), targetAcademicCalendarVersionId: calendar.id, targetTimeSlotDefinitionId: slot.id, scheduledTeacherUserId: actor.id, eligibilityCheckedAt: lifecycleAt, eligibilityWasActive: true, eligibilityWasTeachingStaff: true, eligibilitySameSubject: true, eligibilityStaffSubjectId: staffSubject.id, status: OperationalOverlayStatus.ACTIVE, createRequestKey: crypto.randomUUID(), createRequestFingerprint: crypto.randomUUID(), createdByUserId: actor.id } });
+    }
+    async function readOnlyCounts() {
+      return Promise.all([
+        h.prisma.timetableVersion.count({ where: { academicYearId: year.id } }), h.prisma.timetableEntry.count({ where: { academicYearId: year.id } }),
+        h.prisma.ppctClassAssociation.count({ where: { academicYearId: year.id } }), h.prisma.ppctVersion.count({ where: { ppctPlanId: plan.id } }),
+        h.prisma.ppctItem.count({ where: { ppctPlanId: plan.id } }), h.prisma.ppctItemRevision.count({ where: { ppctPlanId: plan.id } }),
+        h.prisma.ppctItemLineage.count({ where: { ppctPlanId: plan.id } }), h.prisma.calendarException.count({ where: { academicYearId: year.id } }),
+        h.prisma.operationalLessonDisposition.count({ where: { academicYearId: year.id } }), h.prisma.specialActivity.count({ where: { academicYearId: year.id } }),
+        h.prisma.makeupTeachingSchedule.count({ where: { academicYearId: year.id } }), h.prisma.auditEvent.count({ where: { actorUserId: actor.id } }),
+      ]);
+    }
+    return { year, actor, calendar, schoolClass, subject, slot, assignment, staffSubject, timetable, timetableEntry, plan, service, addVersion, associate, lineage, addMakeup, readOnlyCounts };
   }
 
   it('I1 distributes chronological BASE revisions in sequence and I9 writes nothing', async () => {
     const f = await fixture(); const v1 = await f.addVersion(1, ['A', 'B', 'C'], PpctVersionStatus.PUBLISHED); await f.associate(v1.version.id, MONDAYS[0]);
-    const before = await Promise.all([h.prisma.timetableVersion.count(), h.prisma.timetableEntry.count(), h.prisma.ppctClassAssociation.count(), h.prisma.ppctVersion.count(), h.prisma.ppctItem.count(), h.prisma.ppctItemRevision.count(), h.prisma.ppctItemLineage.count(), h.prisma.makeupTeachingSchedule.count()]);
+    const before = await f.readOnlyCounts();
     const result = await f.service.resolve({ academicYearId: f.year.id, schoolClassId: f.schoolClass.id, subjectId: f.subject.id, throughCivilDate: MONDAYS[2] });
-    const after = await Promise.all([h.prisma.timetableVersion.count(), h.prisma.timetableEntry.count(), h.prisma.ppctClassAssociation.count(), h.prisma.ppctVersion.count(), h.prisma.ppctItem.count(), h.prisma.ppctItemRevision.count(), h.prisma.ppctItemLineage.count(), h.prisma.makeupTeachingSchedule.count()]);
+    const after = await f.readOnlyCounts();
     expect(result.status).toBe('PASS'); expect(result.coverage).toMatchObject({ ppctItemAllocation: 'ASSESSED', completion: 'NOT_ASSESSED', debt: 'NOT_ASSESSED' }); expect(result.normalAllocations.map((row) => row.expectedPpctItem?.title)).toEqual(['A', 'B', 'C']); expect(after).toEqual(before);
   });
 
@@ -102,7 +115,21 @@ integration('PPCT occurrence allocation read model (PostgreSQL)', () => {
 
   it('I8 matches a make-up only to the exact direct distribution obligation', async () => {
     const f = await fixture(); const v1 = await f.addVersion(1, ['A', 'B'], PpctVersionStatus.PUBLISHED); const association = await f.associate(v1.version.id, MONDAYS[0]);
-    await h.prisma.makeupTeachingSchedule.create({ data: { academicYearId: f.year.id, originalTimetableVersionId: f.timetable.id, originalTimetableEntryId: f.timetableEntry.id, originalCivilDate: new Date(`${MONDAYS[0]}T00:00:00Z`), originalAcademicCalendarVersionId: f.calendar.id, originalTimeSlotDefinitionId: f.slot.id, schoolClassId: f.schoolClass.id, subjectId: f.subject.id, originalTeachingAssignmentId: f.assignment.id, responsibleTeacherUserId: f.actor.id, ppctClassAssociationId: association.id, ppctPlanId: f.plan.id, ppctVersionId: v1.version.id, ppctItemId: v1.revisions[0]!.ppctItemId, targetCivilDate: new Date(`${MONDAYS[1]}T00:00:00Z`), targetAcademicCalendarVersionId: f.calendar.id, targetTimeSlotDefinitionId: f.slot.id, scheduledTeacherUserId: f.actor.id, eligibilityCheckedAt: new Date('2026-08-01T00:00:00Z'), eligibilityWasActive: true, eligibilityWasTeachingStaff: true, eligibilitySameSubject: true, eligibilityStaffSubjectId: f.staffSubject.id, status: OperationalOverlayStatus.ACTIVE, createRequestKey: crypto.randomUUID(), createRequestFingerprint: crypto.randomUUID(), createdByUserId: f.actor.id } });
+    await f.addMakeup({ associationId: association.id, ppctVersionId: v1.version.id, ppctItemId: v1.revisions[0]!.ppctItemId, sourceDate: MONDAYS[0], targetDate: MONDAYS[1] });
     const result = await f.service.resolve({ academicYearId: f.year.id, schoolClassId: f.schoolClass.id, subjectId: f.subject.id, throughCivilDate: MONDAYS[1] }); expect(result.makeupSourceMatches).toEqual([expect.objectContaining({ status: 'MATCH', expectedPpctItem: expect.objectContaining({ title: 'A' }) })]);
+  });
+
+  it('I8B reports exact make-up source mismatch for a different DB-valid item', async () => {
+    const f = await fixture(); const v1 = await f.addVersion(1, ['A', 'B'], PpctVersionStatus.PUBLISHED); const association = await f.associate(v1.version.id, MONDAYS[0]);
+    const row = await f.addMakeup({ associationId: association.id, ppctVersionId: v1.version.id, ppctItemId: v1.revisions[1]!.ppctItemId, sourceDate: MONDAYS[0], targetDate: MONDAYS[1] });
+    const result = await f.service.resolve({ academicYearId: f.year.id, schoolClassId: f.schoolClass.id, subjectId: f.subject.id, throughCivilDate: MONDAYS[1] });
+    expect(result.makeupSourceMatches).toEqual([expect.objectContaining({ occurrenceKey: `MAKEUP:${row.id}`, status: 'MISMATCH', expectedPpctItem: null })]); expect(result.findings).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'PPCT_MAKEUP_SOURCE_ALLOCATION_MISMATCH', occurrenceKey: `MAKEUP:${row.id}` })]));
+  });
+
+  it('I8C reports history-blocked make-up source without a false mismatch', async () => {
+    const f = await fixture(); const v1 = await f.addVersion(1, ['A'], PpctVersionStatus.PUBLISHED); const association = await f.associate(v1.version.id, MONDAYS[0]);
+    const row = await f.addMakeup({ associationId: association.id, ppctVersionId: v1.version.id, ppctItemId: v1.revisions[0]!.ppctItemId, sourceDate: MONDAYS[1], targetDate: MONDAYS[2] });
+    const result = await f.service.resolve({ academicYearId: f.year.id, schoolClassId: f.schoolClass.id, subjectId: f.subject.id, throughCivilDate: MONDAYS[2] });
+    expect(result.makeupSourceMatches).toEqual([expect.objectContaining({ occurrenceKey: `MAKEUP:${row.id}`, status: 'NOT_ASSESSED_HISTORY_BLOCKED', expectedPpctItem: null })]); expect(result.findings.filter((finding) => finding.occurrenceKey === `MAKEUP:${row.id}`)).toEqual([]);
   });
 });

@@ -1,10 +1,13 @@
 import { NormalStructuralOccurrence } from '../../src/resolved-occurrences/resolved-occurrence.types';
 import {
   applyVersionTransition,
+  compareHistoryPositions,
   compareNormalOccurrences,
   consumingOverlapKeys,
   consumptionDecision,
   distributionObligationKey,
+  historyPositionAtDateStart,
+  historyPositionForNormal,
   pendingRevisions,
 } from '../../src/ppct-occurrence-allocation/ppct-occurrence-allocation.policy';
 import { PpctGraphLineage, PpctGraphVersion, PpctPlanGraph } from '../../src/ppct-occurrence-allocation/ppct-occurrence-allocation.types';
@@ -48,6 +51,13 @@ describe('PPCT occurrence allocation pure policy', () => {
     const earlier = { ...normal('BASE_TIMETABLE', undefined, '07:00:00', '07:45:00', 'b'), civilDate: '2026-08-10' as const };
     const same = { ...earlier, occurrenceKey: 'a' };
     expect([later, earlier, same].sort(compareNormalOccurrences).map((item) => item.occurrenceKey)).toEqual(['a', 'b', 'z']);
+  });
+
+  it('orders a global date-start boundary before slots and preserves same-day slot/key order', () => {
+    const early = normal('BASE_TIMETABLE', undefined, '07:00:00', '07:45:00', 'a');
+    const late = normal('BASE_TIMETABLE', undefined, '08:00:00', '08:45:00', 'b');
+    expect(compareHistoryPositions(historyPositionAtDateStart('2026-08-17'), historyPositionForNormal(early))).toBeLessThan(0);
+    expect(compareHistoryPositions(historyPositionForNormal(early), historyPositionForNormal(late))).toBeLessThan(0);
   });
 
   it('keeps stable UUID carry-forward covered and preserves coverage over removal/reappearance', () => {

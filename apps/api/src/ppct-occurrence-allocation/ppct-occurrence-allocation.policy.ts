@@ -1,4 +1,5 @@
 import { NormalStructuralOccurrence } from '../resolved-occurrences/resolved-occurrence.types';
+import { CivilDateString } from '@baogiang/contracts';
 import {
   AllocationEffect,
   DirectDistributionObligation,
@@ -9,6 +10,22 @@ import {
 } from './ppct-occurrence-allocation.types';
 
 export interface ConsumptionDecision { effect: AllocationEffect; reason: string; }
+export interface HistoryPosition { civilDate: CivilDateString; startTime: string; endTime: string; occurrenceKey: string; }
+
+export function historyPositionForNormal(occurrence: NormalStructuralOccurrence): HistoryPosition {
+  return { civilDate: occurrence.civilDate, startTime: occurrence.timeSlot.startTime, endTime: occurrence.timeSlot.endTime, occurrenceKey: occurrence.occurrenceKey };
+}
+
+export function historyPositionAtDateStart(civilDate: CivilDateString): HistoryPosition {
+  return { civilDate, startTime: '', endTime: '', occurrenceKey: '' };
+}
+
+export function compareHistoryPositions(a: HistoryPosition, b: HistoryPosition): number {
+  return a.civilDate.localeCompare(b.civilDate)
+    || a.startTime.localeCompare(b.startTime)
+    || a.endTime.localeCompare(b.endTime)
+    || a.occurrenceKey.localeCompare(b.occurrenceKey);
+}
 
 export function consumptionDecision(occurrence: NormalStructuralOccurrence): ConsumptionDecision {
   if (occurrence.effectiveKind === 'BASE_TIMETABLE') return { effect: 'CONSUMES_NEXT_ITEM', reason: 'BASE_TIMETABLE' };
@@ -29,8 +46,7 @@ export function distributionObligationKey(value: Pick<DirectDistributionObligati
 }
 
 export function compareNormalOccurrences(a: NormalStructuralOccurrence, b: NormalStructuralOccurrence): number {
-  return `${a.civilDate}:${a.timeSlot.startTime}:${a.timeSlot.endTime}:${a.occurrenceKey}`
-    .localeCompare(`${b.civilDate}:${b.timeSlot.startTime}:${b.timeSlot.endTime}:${b.occurrenceKey}`);
+  return compareHistoryPositions(historyPositionForNormal(a), historyPositionForNormal(b));
 }
 
 export function consumingOverlapKeys(occurrences: NormalStructuralOccurrence[]): Set<string> {

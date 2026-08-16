@@ -14,6 +14,16 @@ function bound(occurrence: NormalStructuralOccurrence, planId: string, ppctVersi
   return { ...occurrence, ppctBinding: { ppctClassAssociationId: `association-${planId}`, ppctPlanId: planId, ppctVersionId, ppctVersionStatus: 'PUBLISHED' } };
 }
 
+function makeup(options: { id: string; sourceDate: string; sourceEntryId?: string; sourceStart?: string; sourceEnd?: string; ppctItemId?: string }) {
+  const sourceEntryId = options.sourceEntryId ?? 'missing-entry';
+  return {
+    id: options.id, academicYearId: 'year', schoolClassId: 'class', subjectId: 'subject', originalTimetableEntryId: sourceEntryId, originalCivilDate: date(options.sourceDate),
+    ppctClassAssociationId: 'association', ppctPlanId: 'plan', ppctVersionId: 'version', ppctItemId: options.ppctItemId ?? 'item-1',
+    targetCivilDate: date('2026-08-17'), targetTimeSlotDefinition: { startTime: new Date('1970-01-01T10:00:00Z') },
+    originalTimetableEntry: { timeSlotDefinition: { startTime: new Date(`1970-01-01T${options.sourceStart ?? '07:00:00'}Z`), endTime: new Date(`1970-01-01T${options.sourceEnd ?? '07:45:00'}Z`) } },
+  };
+}
+
 function harness(structuralResults?: Record<string, object>) {
   const tx = {
     timetableEntry: { findMany: jest.fn().mockResolvedValue([{ weekday: 'MONDAY', timetableVersion: { effectiveFrom: date('2026-08-03'), effectiveUntil: date('2026-08-17') } }]) },
@@ -96,5 +106,56 @@ describe('PpctOccurrenceAllocationService', () => {
       : [{ id: 'vb', ppctPlanId: 'plan-b', versionNumber: 1, status: 'PUBLISHED', itemRevisions: [{ id: 'rb', ppctVersionId: 'vb', ppctPlanId: 'plan-b', ppctItemId: 'B', sequence: 1, title: 'B', lessonType: 'LESSON' }] }]);
     const result = await h.service.resolve({ academicYearId: 'year', schoolClassId: 'class', subjectId: 'subject', throughCivilDate: '2026-08-10' });
     expect(result.findings).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'PPCT_ALLOCATION_HISTORY_BLOCKED', reason: 'PLAN_CONTEXT_CHANGED' })]));
+  });
+
+  it('M1 keeps an absent claimed source before a later blocker as MISMATCH', async () => {
+    const h = harness({ '2026-08-10': { normalOccurrences: [normal('2026-08-10')], findings: [{ severity: 'BLOCKER', code: 'NORMAL_PROVENANCE_INVALID', occurrenceKey: 'NORMAL:entry:2026-08-10', entityIds: ['entry'] }] } });
+    h.tx.makeupTeachingSchedule.findMany.mockResolvedValue([makeup({ id: 'm1', sourceDate: '2026-08-03' })]);
+    const result = await h.service.resolve({ academicYearId: 'year', schoolClassId: 'class', subjectId: 'subject', throughCivilDate: '2026-08-17' });
+    expect(result.makeupSourceMatches).toEqual([expect.objectContaining({ status: 'MISMATCH' })]); expect(result.findings).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'PPCT_MAKEUP_SOURCE_ALLOCATION_MISMATCH', occurrenceKey: 'MAKEUP:m1' })]));
+  });
+
+  it('M2 marks an absent claimed source after the first blocker as NOT_ASSESSED_HISTORY_BLOCKED', async () => {
+    const h = harness({ '2026-08-10': { normalOccurrences: [normal('2026-08-10')], findings: [{ severity: 'BLOCKER', code: 'NORMAL_PROVENANCE_INVALID', occurrenceKey: 'NORMAL:entry:2026-08-10', entityIds: ['entry'] }] } });
+    h.tx.makeupTeachingSchedule.findMany.mockResolvedValue([makeup({ id: 'm2', sourceDate: '2026-08-17' })]);
+    const result = await h.service.resolve({ academicYearId: 'year', schoolClassId: 'class', subjectId: 'subject', throughCivilDate: '2026-08-17' });
+    expect(result.makeupSourceMatches).toEqual([expect.objectContaining({ status: 'NOT_ASSESSED_HISTORY_BLOCKED' })]); expect(result.findings.map((finding) => finding.code)).not.toContain('PPCT_MAKEUP_SOURCE_ALLOCATION_MISMATCH');
+  });
+
+  it('M3 preserves an exact direct MATCH before a later blocker', async () => {
+    const h = harness({ '2026-08-10': { normalOccurrences: [normal('2026-08-10')], findings: [{ severity: 'BLOCKER', code: 'NORMAL_PROVENANCE_INVALID', occurrenceKey: 'NORMAL:entry:2026-08-10', entityIds: ['entry'] }] } });
+    h.tx.makeupTeachingSchedule.findMany.mockResolvedValue([makeup({ id: 'm3', sourceDate: '2026-08-03', sourceEntryId: 'entry' })]);
+    const result = await h.service.resolve({ academicYearId: 'year', schoolClassId: 'class', subjectId: 'subject', throughCivilDate: '2026-08-17' });
+    expect(result.makeupSourceMatches).toEqual([expect.objectContaining({ status: 'MATCH', expectedPpctItem: expect.objectContaining({ ppctItemId: 'item-1' }) })]);
+  });
+
+  it('M4 keeps a same-day absent earlier-slot source as MISMATCH when the blocker is later', async () => {
+    const blocked = { ...normal('2026-08-03'), occurrenceKey: 'NORMAL:blocked:2026-08-03', timetableEntryId: 'blocked', timeSlot: { ...normal('2026-08-03').timeSlot, startTime: '08:00:00', endTime: '08:45:00' } };
+    const h = harness({ '2026-08-03': { normalOccurrences: [blocked], findings: [{ severity: 'BLOCKER', code: 'NORMAL_PROVENANCE_INVALID', occurrenceKey: blocked.occurrenceKey, entityIds: ['blocked'] }] } });
+    h.tx.makeupTeachingSchedule.findMany.mockResolvedValue([makeup({ id: 'm4', sourceDate: '2026-08-03', sourceStart: '07:00:00', sourceEnd: '07:45:00' })]);
+    const result = await h.service.resolve({ academicYearId: 'year', schoolClassId: 'class', subjectId: 'subject', throughCivilDate: '2026-08-03' }); expect(result.makeupSourceMatches[0]?.status).toBe('MISMATCH');
+  });
+
+  it('M5 marks a same-day later-slot source after the blocker as NOT_ASSESSED_HISTORY_BLOCKED', async () => {
+    const blocked = { ...normal('2026-08-03'), occurrenceKey: 'NORMAL:blocked:2026-08-03', timetableEntryId: 'blocked', timeSlot: { ...normal('2026-08-03').timeSlot, startTime: '08:00:00', endTime: '08:45:00' } };
+    const h = harness({ '2026-08-03': { normalOccurrences: [blocked], findings: [{ severity: 'BLOCKER', code: 'NORMAL_PROVENANCE_INVALID', occurrenceKey: blocked.occurrenceKey, entityIds: ['blocked'] }] } });
+    h.tx.makeupTeachingSchedule.findMany.mockResolvedValue([makeup({ id: 'm5', sourceDate: '2026-08-03', sourceStart: '09:00:00', sourceEnd: '09:45:00' })]);
+    const result = await h.service.resolve({ academicYearId: 'year', schoolClassId: 'class', subjectId: 'subject', throughCivilDate: '2026-08-03' }); expect(result.makeupSourceMatches[0]?.status).toBe('NOT_ASSESSED_HISTORY_BLOCKED'); expect(result.findings.map((finding) => finding.code)).not.toContain('PPCT_MAKEUP_SOURCE_ALLOCATION_MISMATCH');
+  });
+
+  it('S1 denies both overlapping consumers and every later consuming allocation', async () => {
+    const first = { ...normal('2026-08-03'), occurrenceKey: 'NORMAL:first:2026-08-03', timetableEntryId: 'first', timeSlot: { ...normal('2026-08-03').timeSlot, startTime: '07:00:00', endTime: '08:00:00' } };
+    const second = { ...normal('2026-08-03'), occurrenceKey: 'NORMAL:second:2026-08-03', timetableEntryId: 'second', timeSlot: { ...normal('2026-08-03').timeSlot, startTime: '07:30:00', endTime: '08:30:00' } };
+    const later = { ...normal('2026-08-03'), occurrenceKey: 'NORMAL:later:2026-08-03', timetableEntryId: 'later', timeSlot: { ...normal('2026-08-03').timeSlot, startTime: '09:00:00', endTime: '09:45:00' } };
+    const h = harness({ '2026-08-03': { normalOccurrences: [later, second, first], findings: [] } });
+    const result = await h.service.resolve({ academicYearId: 'year', schoolClassId: 'class', subjectId: 'subject', throughCivilDate: '2026-08-03' });
+    expect(result.normalAllocations.map((allocation) => allocation.allocationStatus)).toEqual(['BLOCKED', 'BLOCKED', 'BLOCKED']); expect(result.normalAllocations.every((allocation) => allocation.expectedPpctItem === null)).toBe(true); expect(result.findings).toEqual([expect.objectContaining({ code: 'PPCT_ALLOCATION_OCCURRENCE_ORDER_AMBIGUOUS' })]);
+  });
+
+  it('S2 preserves the earliest pre-association replay candidate and blocks later allocation', async () => {
+    const missing = { ...normal('2026-08-03'), ppctBinding: null };
+    const h = harness({ '2026-08-03': { normalOccurrences: [missing], findings: [{ severity: 'BLOCKER', code: 'PPCT_ASSOCIATION_MISSING', occurrenceKey: missing.occurrenceKey, entityIds: ['entry'] }] } });
+    const result = await h.service.resolve({ academicYearId: 'year', schoolClassId: 'class', subjectId: 'subject', throughCivilDate: '2026-08-10' });
+    expect(result.replayOrigin).toBe('2026-08-03'); expect(result.normalAllocations.map((allocation) => allocation.allocationStatus)).toEqual(['BLOCKED', 'BLOCKED']); expect(result.findings).toEqual([expect.objectContaining({ code: 'PPCT_ASSOCIATION_MISSING', occurrenceKey: missing.occurrenceKey })]);
   });
 });

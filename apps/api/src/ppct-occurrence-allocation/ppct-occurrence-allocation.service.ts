@@ -7,10 +7,14 @@ import { ResolvedLessonOccurrencesService } from '../resolved-occurrences/resolv
 import { NormalStructuralOccurrence, StructuralOccurrenceFinding } from '../resolved-occurrences/resolved-occurrence.types';
 import {
   applyVersionTransition,
+  compareHistoryPositions,
   compareNormalOccurrences,
   consumingOverlapKeys,
   consumptionDecision,
   distributionObligationKey,
+  HistoryPosition,
+  historyPositionAtDateStart,
+  historyPositionForNormal,
   pendingRevisions,
 } from './ppct-occurrence-allocation.policy';
 import {
@@ -28,7 +32,10 @@ import {
 
 const WEEKDAYS = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'] as const;
 const GLOBAL_STRUCTURAL_CODES = new Set(['TIMETABLE_EFFECTIVE_VERSION_MISSING', 'TIMETABLE_EFFECTIVE_VERSION_AMBIGUOUS', 'RETAINED_CALENDAR_INVALID']);
-const makeupInclude = { targetTimeSlotDefinition: true } satisfies Prisma.MakeupTeachingScheduleInclude;
+const makeupInclude = {
+  targetTimeSlotDefinition: true,
+  originalTimetableEntry: { select: { timeSlotDefinition: { select: { startTime: true, endTime: true } } } },
+} satisfies Prisma.MakeupTeachingScheduleInclude;
 
 interface DatedFinding {
   civilDate: CivilDateString;
@@ -92,23 +99,29 @@ export class PpctOccurrenceAllocationService {
     const overlapReported = new Set<string>();
     const covered = new Set<string>();
     const obligations = new Map<string, DirectDistributionObligation>();
-    const assessedNormalKeys = new Set<string>();
     const graphCache = new Map<string, PpctPlanGraph>();
     const normalAllocations: NormalPpctAllocation[] = [];
     let currentVersion: PpctGraphVersion | null = null;
     let currentPlanId: string | null = null;
     let historyBlocked = false;
+    let firstHistoryBlockBoundary: HistoryPosition | null = null;
     let globalEventIndex = 0;
+    const blockHistoryAt = (position: HistoryPosition) => {
+      historyBlocked = true;
+      if (!firstHistoryBlockBoundary || compareHistoryPositions(position, firstHistoryBlockBoundary) < 0) firstHistoryBlockBoundary = position;
+    };
 
     for (const occurrence of normals) {
       const decision = consumptionDecision(occurrence);
+      const occurrencePosition = historyPositionForNormal(occurrence);
       while (globalEventIndex < globalEvents.length && globalEvents[globalEventIndex]!.civilDate <= occurrence.civilDate) {
-        addFinding(globalEvents[globalEventIndex]!.finding); historyBlocked = true; globalEventIndex += 1;
+        const event = globalEvents[globalEventIndex]!;
+        addFinding(event.finding); blockHistoryAt(historyPositionAtDateStart(event.civilDate)); globalEventIndex += 1;
       }
       const scopedFindings = byOccurrence.get(occurrence.occurrenceKey) ?? [];
       if (scopedFindings.length) {
         for (const finding of scopedFindings) addFinding(finding);
-        historyBlocked = true;
+        blockHistoryAt(occurrencePosition);
       }
       if (overlapKeys.has(occurrence.occurrenceKey)) {
         const members = normals.filter((candidate) => candidate.civilDate === occurrence.civilDate && overlapKeys.has(candidate.occurrenceKey) && candidate.timeSlot.startTime < occurrence.timeSlot.endTime && occurrence.timeSlot.startTime < candidate.timeSlot.endTime).map((candidate) => candidate.occurrenceKey).sort();
@@ -117,12 +130,12 @@ export class PpctOccurrenceAllocationService {
           addFinding({ severity: 'BLOCKER', code: 'PPCT_ALLOCATION_OCCURRENCE_ORDER_AMBIGUOUS', occurrenceKey: occurrence.occurrenceKey, entityIds: members });
           overlapReported.add(signature);
         }
-        historyBlocked = true;
+        blockHistoryAt(occurrencePosition);
       }
       const binding = occurrence.ppctBinding;
       if (!binding && !historyBlocked) {
         addFinding({ severity: 'BLOCKER', code: 'PPCT_ALLOCATION_HISTORY_BLOCKED', occurrenceKey: occurrence.occurrenceKey, reason: 'TARGET_PPCT_BINDING_MISSING', entityIds: [occurrence.timetableEntryId] });
-        historyBlocked = true;
+        blockHistoryAt(occurrencePosition);
       }
       if (historyBlocked || !binding) {
         normalAllocations.push({ occurrence, allocationEffect: decision.effect, allocationReason: decision.reason, allocationStatus: 'BLOCKED', expectedPpctItem: null });
@@ -133,13 +146,13 @@ export class PpctOccurrenceAllocationService {
       const target = graph.versions.find((version) => version.id === binding.ppctVersionId && version.status !== 'DRAFT');
       if (!target) {
         addFinding({ severity: 'BLOCKER', code: 'PPCT_ALLOCATION_HISTORY_BLOCKED', occurrenceKey: occurrence.occurrenceKey, reason: 'TARGET_VERSION_CONTEXT_MISSING', entityIds: [binding.ppctVersionId] });
-        historyBlocked = true;
+        blockHistoryAt(occurrencePosition);
       } else if (currentPlanId !== null && currentPlanId !== binding.ppctPlanId) {
         addFinding({ severity: 'BLOCKER', code: 'PPCT_ALLOCATION_HISTORY_BLOCKED', occurrenceKey: occurrence.occurrenceKey, reason: 'PLAN_CONTEXT_CHANGED', entityIds: [currentPlanId, binding.ppctPlanId] });
-        historyBlocked = true;
+        blockHistoryAt(occurrencePosition);
       } else if (currentVersion && target.versionNumber < currentVersion.versionNumber) {
         addFinding({ severity: 'BLOCKER', code: 'PPCT_ALLOCATION_HISTORY_BLOCKED', occurrenceKey: occurrence.occurrenceKey, reason: 'NON_FORWARD_VERSION_TRANSITION', entityIds: [currentVersion.id, target.id] });
-        historyBlocked = true;
+        blockHistoryAt(occurrencePosition);
       } else {
         const currentNumber = currentVersion?.versionNumber;
         const frontier: PpctGraphVersion[] = currentNumber !== undefined
@@ -149,7 +162,7 @@ export class PpctOccurrenceAllocationService {
           const blocker = applyVersionTransition(graph, version, covered);
           if (blocker) {
             addFinding({ severity: 'BLOCKER', ...blocker, occurrenceKey: occurrence.occurrenceKey });
-            historyBlocked = true; break;
+            blockHistoryAt(occurrencePosition); break;
           }
           currentVersion = version; currentPlanId = graph.planId;
         }
@@ -159,24 +172,26 @@ export class PpctOccurrenceAllocationService {
         continue;
       }
       if (decision.effect === 'DOES_NOT_CONSUME_ITEM') {
-        assessedNormalKeys.add(occurrence.occurrenceKey);
         normalAllocations.push({ occurrence, allocationEffect: decision.effect, allocationReason: decision.reason, allocationStatus: 'NOT_CONSUMED', expectedPpctItem: null });
         continue;
       }
       const revision = pendingRevisions(currentVersion, covered)[0];
       if (!revision) {
         addFinding({ severity: 'BLOCKER', code: 'PPCT_ALLOCATION_EXHAUSTED', occurrenceKey: occurrence.occurrenceKey, entityIds: [currentVersion.id] });
-        historyBlocked = true;
+        blockHistoryAt(occurrencePosition);
         normalAllocations.push({ occurrence, allocationEffect: decision.effect, allocationReason: decision.reason, allocationStatus: 'BLOCKED', expectedPpctItem: null });
         continue;
       }
       const base = { academicYearId: input.academicYearId, schoolClassId: input.schoolClassId, subjectId: input.subjectId, normalOccurrenceKey: occurrence.occurrenceKey, ppctClassAssociationId: binding.ppctClassAssociationId, ppctPlanId: binding.ppctPlanId, ppctVersionId: currentVersion.id, ppctItemId: revision.ppctItemId };
       const obligation: DirectDistributionObligation = { ...base, distributionObligationKey: distributionObligationKey(base), ppctItemRevisionId: revision.id, sequence: revision.sequence, title: revision.title, lessonType: revision.lessonType };
-      covered.add(revision.ppctItemId); obligations.set(occurrence.occurrenceKey, obligation); assessedNormalKeys.add(occurrence.occurrenceKey);
+      covered.add(revision.ppctItemId); obligations.set(occurrence.occurrenceKey, obligation);
       normalAllocations.push({ occurrence, allocationEffect: decision.effect, allocationReason: decision.reason, allocationStatus: 'ALLOCATED', expectedPpctItem: expectedItem(obligation) });
     }
 
-    while (globalEventIndex < globalEvents.length) { addFinding(globalEvents[globalEventIndex]!.finding); historyBlocked = true; globalEventIndex += 1; }
+    while (globalEventIndex < globalEvents.length) {
+      const event = globalEvents[globalEventIndex]!;
+      addFinding(event.finding); blockHistoryAt(historyPositionAtDateStart(event.civilDate)); globalEventIndex += 1;
+    }
     const makeups = await tx.makeupTeachingSchedule.findMany({
       where: { academicYearId: input.academicYearId, schoolClassId: input.schoolClassId, subjectId: input.subjectId, targetCivilDate: { lte: throughDate }, status: OperationalOverlayStatus.ACTIVE },
       include: makeupInclude,
@@ -186,7 +201,18 @@ export class PpctOccurrenceAllocationService {
       const sourceNormalOccurrenceKey = `NORMAL:${makeup.originalTimetableEntryId}:${formatCivilDate(makeup.originalCivilDate)}`;
       const direct = obligations.get(sourceNormalOccurrenceKey);
       const exact = direct && direct.academicYearId === makeup.academicYearId && direct.schoolClassId === makeup.schoolClassId && direct.subjectId === makeup.subjectId && direct.ppctClassAssociationId === makeup.ppctClassAssociationId && direct.ppctPlanId === makeup.ppctPlanId && direct.ppctVersionId === makeup.ppctVersionId && direct.ppctItemId === makeup.ppctItemId ? direct : null;
-      const status: MakeupSourceMatch['status'] = exact ? 'MATCH' : historyBlocked && !assessedNormalKeys.has(sourceNormalOccurrenceKey) ? 'NOT_ASSESSED_HISTORY_BLOCKED' : 'MISMATCH';
+      const sourceAllocation = normalAllocations.find((allocation) => allocation.occurrence.occurrenceKey === sourceNormalOccurrenceKey);
+      const sourcePosition: HistoryPosition = {
+        civilDate: formatCivilDate(makeup.originalCivilDate),
+        startTime: makeup.originalTimetableEntry.timeSlotDefinition.startTime.toISOString().slice(11, 19),
+        endTime: makeup.originalTimetableEntry.timeSlotDefinition.endTime.toISOString().slice(11, 19),
+        occurrenceKey: sourceNormalOccurrenceKey,
+      };
+      let status: MakeupSourceMatch['status'];
+      if (exact) status = 'MATCH';
+      else if (sourceAllocation?.allocationStatus === 'ALLOCATED' || sourceAllocation?.allocationStatus === 'NOT_CONSUMED') status = 'MISMATCH';
+      else if (sourceAllocation?.allocationStatus === 'BLOCKED') status = 'NOT_ASSESSED_HISTORY_BLOCKED';
+      else status = firstHistoryBlockBoundary && compareHistoryPositions(firstHistoryBlockBoundary, sourcePosition) <= 0 ? 'NOT_ASSESSED_HISTORY_BLOCKED' : 'MISMATCH';
       if (status === 'MISMATCH') addFinding({ severity: 'BLOCKER', code: 'PPCT_MAKEUP_SOURCE_ALLOCATION_MISMATCH', occurrenceKey: `MAKEUP:${makeup.id}`, entityIds: [makeup.id] });
       return { occurrenceKey: `MAKEUP:${makeup.id}`, makeupTeachingScheduleId: makeup.id, targetCivilDate: formatCivilDate(makeup.targetCivilDate), targetSlotStartTime: makeup.targetTimeSlotDefinition.startTime.toISOString().slice(11, 19), sourceNormalOccurrenceKey, status, expectedPpctItem: exact ? expectedItem(exact) : null };
     }).sort((a, b) => `${a.targetCivilDate}:${a.targetSlotStartTime}:${a.occurrenceKey}`.localeCompare(`${b.targetCivilDate}:${b.targetSlotStartTime}:${b.occurrenceKey}`));
