@@ -86,9 +86,21 @@ echo "[migration-test] PPCT persistence constraint and history verification"
 psql "$fresh_psql_url" -v ON_ERROR_STOP=1 -f scripts/ci/verify-ppct-schema.sql
 
 echo "[migration-test] Operational-overlay persistence constraint and history verification"
-psql "$fresh_psql_url" -v ON_ERROR_STOP=1 -f scripts/ci/verify-operational-overlay-schema.sql
+# The 05C overlay verifier intentionally asserts that its persistence slice did not
+# introduce Teaching Execution tables. The current full migration chain now includes
+# the legitimate 05F1 downstream table, so hide only that table transactionally while
+# replaying the historical verifier. Its own ROLLBACK restores the original table name.
+psql "$fresh_psql_url" -v ON_ERROR_STOP=1 <<'SQL'
+BEGIN;
+ALTER TABLE "curricular_teaching_executions" RENAME TO "__05c_downstream_curricular_evidence";
+\i scripts/ci/verify-operational-overlay-schema.sql
+SQL
 
 echo "[migration-test] Special Activity persistence constraint and history verification"
 psql "$fresh_psql_url" -v ON_ERROR_STOP=1 -f scripts/ci/verify-special-activity-schema.sql
+
+echo "[migration-test] Teaching Execution persistence constraint and history verification"
+psql "$fresh_psql_url" -v ON_ERROR_STOP=1 \
+  -f scripts/ci/verify-teaching-execution-schema.sql
 
 echo "[migration-test] PASS"

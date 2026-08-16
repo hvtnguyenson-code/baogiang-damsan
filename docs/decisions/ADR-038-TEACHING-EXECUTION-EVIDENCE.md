@@ -1,6 +1,6 @@
 # ADR-038 — Teaching Execution Evidence
 
-- **Status:** Accepted architecture on the documentation branch; awaiting independent GitHub review
+- **Status:** Accepted
 - **Date:** 2026-08-16
 - **Scope:** LOCAL-FC-05F0 Teaching Execution architecture closure; no implementation authorization
 - **Audit:** `docs/requirements/LOCAL-FC-05F0-TEACHING-EXECUTION-ARCHITECTURE-AUDIT.md`

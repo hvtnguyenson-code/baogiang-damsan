@@ -2,7 +2,7 @@
 
 ## 1. Status and scope
 
-**Status:** Architecture audit implemented on `docs/local-fc-05f0-teaching-execution-architecture`; awaiting independent GitHub review.
+**Status:** **CLOSED / GREEN** — PR #55; final PR head `c857fe108e0a816e12c3403376e4d917c68f6569`; authoritative PR CI #215 PASS; merge/current baseline `7937a53953e44aa4f41bc4071131495c241cf006`; post-merge CI #216 PASS.
 
 This task closes only the Teaching Execution evidence architecture. It authorizes no schema, migration, application source, API, contract, capability catalog/seed, UI, workflow, deployment or production mutation. Progress, debt, late, workload, reporting projection, submission, approval and statement snapshots remain downstream.
 

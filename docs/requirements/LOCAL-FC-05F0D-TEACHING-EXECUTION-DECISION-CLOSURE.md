@@ -2,7 +2,7 @@
 
 ## 1. Status and authority
 
-**Status:** Accepted architecture decision closure on the documentation branch; awaiting independent GitHub review.
+**Status:** **CLOSED / GREEN** — PR #55; final PR head `c857fe108e0a816e12c3403376e4d917c68f6569`; authoritative PR CI #215 PASS; merge/current baseline `7937a53953e44aa4f41bc4071131495c241cf006`; post-merge CI #216 PASS.
 
 This closure records the locked product-owner decisions verified by `LOCAL-FC-05F0-TEACHING-EXECUTION-ARCHITECTURE-AUDIT.md`. It closes Teaching Execution architecture only and authorizes no implementation.
 
