@@ -18,7 +18,7 @@ describe('time-slot capability catalog', () => {
     };
     const seed = fs.readFileSync(path.resolve(__dirname, '../../../../prisma/seed.cjs'), 'utf8');
     const keys = CAPABILITIES.map(([key]) => key);
-    expect(keys).toHaveLength(31);
+    expect(keys).toHaveLength(33);
     expect(keys.filter((key) => key === 'TIMETABLE_MANAGE')).toHaveLength(1);
     expect(seed).toMatch(/\['TIMETABLE_MANAGE',[\s\S]*?\['SCHOOL_WIDE'\]\]/u);
     expect(seed.match(/TIMETABLE_MANAGE/gu)).toHaveLength(1);

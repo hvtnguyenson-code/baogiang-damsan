@@ -21,6 +21,7 @@ import { OperationalOverlaysModule } from './operational-overlays/operational-ov
 import { SpecialActivitiesModule } from './special-activities/special-activities.module';
 import { ResolvedOccurrencesModule } from './resolved-occurrences/resolved-occurrences.module';
 import { PpctOccurrenceAllocationModule } from './ppct-occurrence-allocation/ppct-occurrence-allocation.module';
+import { TeachingExecutionsModule } from './teaching-executions/teaching-executions.module';
 
 @Module({
   imports: [
@@ -59,6 +60,7 @@ import { PpctOccurrenceAllocationModule } from './ppct-occurrence-allocation/ppc
     SpecialActivitiesModule,
     ResolvedOccurrencesModule,
     PpctOccurrenceAllocationModule,
+    TeachingExecutionsModule,
   ],
 })
 export class AppModule {}

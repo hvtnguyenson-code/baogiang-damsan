@@ -40,6 +40,8 @@ const CAPABILITIES = [
   ['CALENDAR_EXCEPTION_MANAGE', 'Quản lý ngoại lệ lịch học toàn trường.', ['SCHOOL_WIDE']],
   ['TEACHING_OPERATION_MANAGE', 'Quản lý điều hành tiết dạy theo môn hoặc toàn trường.', ['SUBJECT', 'SCHOOL_WIDE']],
   ['SPECIAL_ACTIVITY_MANAGE', 'Special Activity management school-wide.', ['SCHOOL_WIDE']],
+  ['TEACHING_EXECUTION_RECORD', 'Ghi nhận và hiệu chỉnh bằng chứng thực hiện giảng dạy cá nhân.', ['PERSONAL']],
+  ['TEACHING_EXECUTION_MANAGE', 'Quản lý bằng chứng thực hiện giảng dạy theo môn hoặc toàn trường.', ['SUBJECT', 'SCHOOL_WIDE']],
 ];
 
 async function seedCapabilityCatalog(prisma) {

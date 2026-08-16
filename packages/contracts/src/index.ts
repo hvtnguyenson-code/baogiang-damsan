@@ -121,6 +121,8 @@ export type CapabilityKey =
   | 'CALENDAR_EXCEPTION_MANAGE'
   | 'TEACHING_OPERATION_MANAGE'
   | 'SPECIAL_ACTIVITY_MANAGE'
+  | 'TEACHING_EXECUTION_RECORD'
+  | 'TEACHING_EXECUTION_MANAGE'
   | 'AI_ACTIVE_USE_SCHOOL'   // AI active use school-wide (BGH)
   | 'AI_ACTIVE_USE_DEPARTMENT' // AI active use department-wide (tổ trưởng)
   | 'AI_ACTIVE_USE_ACTIVITY' // AI active use activity-wide (điều phối)
@@ -304,6 +306,37 @@ export interface AuditEventRecord {
   createdAt: string;
 }
 export interface AuditEventListResponse { items: AuditEventRecord[]; page: number; pageSize: number; total: number; }
+
+// ============================================================
+// Teaching execution evidence
+// ============================================================
+export type TeachingExecutionStatus = 'ACTIVE' | 'REVERSED';
+export type CurricularTeachingExecutionKind = 'NORMAL' | 'MAKEUP';
+
+export interface CurricularTeachingExecutionRecord {
+  id: string; kind: CurricularTeachingExecutionKind; status: TeachingExecutionStatus;
+  academicYearId: string; schoolClassId: string; subjectId: string;
+  sourceNormalOccurrenceKey: string; sourceCivilDate: CivilDateString;
+  originalTimetableVersionId: string; originalTimetableEntryId: string;
+  sourceAcademicCalendarVersionId: string; sourceTimeSlotDefinitionId: string;
+  ppctClassAssociationId: string; ppctPlanId: string; ppctVersionId: string; ppctItemId: string; ppctItemRevisionId: string;
+  executionCivilDate: CivilDateString; executionAcademicCalendarVersionId: string; executionTimeSlotDefinitionId: string;
+  executionAcademicWeekId: string; executionAcademicWeekSegmentId: string;
+  responsibleTeacherUserId: string; actualTeacherUserId: string;
+  operationalLessonDispositionId: string | null; makeupTeachingScheduleId: string | null;
+  schoolClassCodeSnapshot: string; schoolClassNameSnapshot: string; subjectCodeSnapshot: string; subjectNameSnapshot: string;
+  responsibleTeacherDisplayNameSnapshot: string; actualTeacherDisplayNameSnapshot: string;
+  note: string | null; replacesId: string | null; reversedByUserId: string | null; reversedAt: string | null; reversalReason: string | null;
+  createdByUserId: string; createdAt: string; updatedAt: string;
+}
+export interface SpecialActivityParticipationExecutionRecord {
+  id: string; status: TeachingExecutionStatus; specialActivityId: string; specialActivityStaffingId: string; specialActivityTimeSlotId: string;
+  academicYearId: string; executionCivilDate: CivilDateString; executionAcademicCalendarVersionId: string; executionTimeSlotDefinitionId: string;
+  executionAcademicWeekId: string | null; executionAcademicWeekSegmentId: string | null; actualTeacherUserId: string;
+  activityTitleSnapshot: string; actualTeacherDisplayNameSnapshot: string; replacesId: string | null; reversedByUserId: string | null; reversedAt: string | null; reversalReason: string | null;
+  createdByUserId: string; createdAt: string; updatedAt: string;
+}
+export interface TeachingExecutionMutationResult<T> { outcome: 'CREATED' | 'IDEMPOTENT_REPLAY' | 'REVERSED'; item: T; }
 
 export interface AdditionalDutyDefinitionRecord extends ValidityWindow {
   id: string;
