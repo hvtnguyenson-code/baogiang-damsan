@@ -88,12 +88,12 @@ export class TeachingExecutionsService {
     else throw new ConflictException('Ý nghĩa vận hành không đủ điều kiện xác nhận giảng dạy.');
     await this.assertEnded(o.civilDate, o.timeSlot.endTime, this.clock.now());
     const week = await this.requireWeek(tx, o.academicCalendarVersionId, parseCivilDate(o.civilDate), true);
-    await this.access.requireCurricular(request, actualTeacherUserId, o.subjectId);
+    const capabilityScope = await this.access.requireCurricular(request, actualTeacherUserId, o.subjectId);
     await this.requireCurricularReplacement(tx, dto.replacesId, o);
     const snapshots = await this.curricularSnapshots(tx, o.schoolClass.id, o.subjectId, o.responsibleTeacherUserId, actualTeacherUserId);
     const e = selected.expectedPpctItem;
     const created = await tx.curricularTeachingExecution.create({ data: { kind: 'NORMAL', academicYearId: o.academicYearId, schoolClassId: o.schoolClass.id, subjectId: o.subjectId, sourceNormalOccurrenceKey: o.occurrenceKey, originalTimetableVersionId: o.timetableVersionId, originalTimetableEntryId: o.timetableEntryId, sourceCivilDate: parseCivilDate(o.civilDate), sourceAcademicCalendarVersionId: o.academicCalendarVersionId, sourceTimeSlotDefinitionId: o.timeSlot.id, originalTeachingAssignmentId: o.teachingAssignmentId, responsibleTeacherUserId: o.responsibleTeacherUserId, ppctClassAssociationId: e.ppctClassAssociationId, ppctPlanId: e.ppctPlanId, ppctVersionId: e.ppctVersionId, ppctItemId: e.ppctItemId, ppctItemRevisionId: e.ppctItemRevisionId, operationalLessonDispositionId: dispositionId, operationalDispositionType: dispositionType, executionCivilDate: parseCivilDate(o.civilDate), executionAcademicCalendarVersionId: o.academicCalendarVersionId, executionTimeSlotDefinitionId: o.timeSlot.id, executionAcademicWeekId: week.weekId!, executionAcademicWeekSegmentId: week.segmentId!, actualTeacherUserId, ...snapshots, note: dto.note ?? null, createRequestKey: dto.requestKey, createRequestFingerprint: fingerprint, replacesId: dto.replacesId ?? null, createdByUserId: request.auth!.user.id } });
-    await this.successAudit(tx, request, 'TEACHING_EXECUTION_CONFIRMED', 'CurricularTeachingExecution', created.id, { requestKey: dto.requestKey, commandFamily: 'CURRICULAR_NORMAL', capabilityScope: 'server-evaluated', sourceNormalOccurrenceKey: o.occurrenceKey, operationalLessonDispositionId: dispositionId });
+    await this.successAudit(tx, request, 'TEACHING_EXECUTION_CONFIRMED', 'CurricularTeachingExecution', created.id, { requestKey: dto.requestKey, commandFamily: 'CURRICULAR_NORMAL', capabilityScope, sourceNormalOccurrenceKey: o.occurrenceKey, operationalLessonDispositionId: dispositionId });
     return { outcome: 'CREATED', item: this.curricularRecord(created) };
   }
 
@@ -108,7 +108,7 @@ export class TeachingExecutionsService {
     if (!match || match.status !== 'MATCH' || !match.expectedPpctItem) throw new ConflictException('Nguồn PPCT của lịch dạy bù không khớp hoặc bị chặn lịch sử.');
     await this.assertEnded(targetDate, m.targetTimeSlotDefinition.endTime.toISOString().slice(11, 19), this.clock.now());
     const week = await this.requireWeek(tx, m.targetAcademicCalendarVersionId, m.targetCivilDate, true);
-    await this.access.requireCurricular(request, m.scheduledTeacherUserId, m.subjectId);
+    const capabilityScope = await this.access.requireCurricular(request, m.scheduledTeacherUserId, m.subjectId);
     await this.requireCurricularReplacement(tx, dto.replacesId, {
       academicYearId: m.academicYearId,
       schoolClass: { id: m.schoolClassId },
@@ -120,7 +120,7 @@ export class TeachingExecutionsService {
     const snapshots = await this.curricularSnapshots(tx, m.schoolClassId, m.subjectId, m.responsibleTeacherUserId, m.scheduledTeacherUserId);
     const e = match.expectedPpctItem;
     const created = await tx.curricularTeachingExecution.create({ data: { kind: 'MAKEUP', academicYearId: m.academicYearId, schoolClassId: m.schoolClassId, subjectId: m.subjectId, sourceNormalOccurrenceKey: match.sourceNormalOccurrenceKey, originalTimetableVersionId: m.originalTimetableVersionId, originalTimetableEntryId: m.originalTimetableEntryId, sourceCivilDate: m.originalCivilDate, sourceAcademicCalendarVersionId: m.originalAcademicCalendarVersionId, sourceTimeSlotDefinitionId: m.originalTimeSlotDefinitionId, originalTeachingAssignmentId: m.originalTeachingAssignmentId, responsibleTeacherUserId: m.responsibleTeacherUserId, ppctClassAssociationId: e.ppctClassAssociationId, ppctPlanId: e.ppctPlanId, ppctVersionId: e.ppctVersionId, ppctItemId: e.ppctItemId, ppctItemRevisionId: e.ppctItemRevisionId, makeupTeachingScheduleId: m.id, executionCivilDate: m.targetCivilDate, executionAcademicCalendarVersionId: m.targetAcademicCalendarVersionId, executionTimeSlotDefinitionId: m.targetTimeSlotDefinitionId, executionAcademicWeekId: week.weekId!, executionAcademicWeekSegmentId: week.segmentId!, actualTeacherUserId: m.scheduledTeacherUserId, ...snapshots, note: dto.note ?? null, createRequestKey: dto.requestKey, createRequestFingerprint: fingerprint, replacesId: dto.replacesId ?? null, createdByUserId: request.auth!.user.id } });
-    await this.successAudit(tx, request, 'TEACHING_EXECUTION_CONFIRMED', 'CurricularTeachingExecution', created.id, { requestKey: dto.requestKey, commandFamily: 'CURRICULAR_MAKEUP', makeupTeachingScheduleId: m.id });
+    await this.successAudit(tx, request, 'TEACHING_EXECUTION_CONFIRMED', 'CurricularTeachingExecution', created.id, { requestKey: dto.requestKey, commandFamily: 'CURRICULAR_MAKEUP', capabilityScope, makeupTeachingScheduleId: m.id });
     return { outcome: 'CREATED', item: this.curricularRecord(created) };
   }
 
@@ -136,12 +136,12 @@ export class TeachingExecutionsService {
     const structural = await this.structural.resolveInTransaction(tx, { academicYearId: activity.academicYearId, civilDate: formatCivilDate(activity.civilDate) });
     if (structural.findings.some((finding) => finding.entityIds.includes(activity.id) || finding.entityIds.includes(slot.id) || finding.entityIds.includes(staffing.id))) throw new ConflictException('SpecialActivity có blocker cấu trúc nên không thể xác nhận.');
     const week = await this.requireWeek(tx, activity.academicCalendarVersionId, activity.civilDate, false);
-    await this.access.requireActivity(request, staffing.scheduledTeacherUserId);
+    const capabilityScope = await this.access.requireActivity(request, staffing.scheduledTeacherUserId);
     await this.requireActivityReplacement(tx, dto.replacesId, activity.id, staffing.id, slot.id);
     const displayName = staffing.scheduledTeacher.profile?.displayName;
     if (!displayName) throw new ConflictException('Giáo viên staffing không có display snapshot hợp lệ.');
     const created = await tx.specialActivityParticipationExecution.create({ data: { specialActivityId: activity.id, specialActivityStaffingId: staffing.id, specialActivityTimeSlotId: slot.id, academicYearId: activity.academicYearId, executionCivilDate: activity.civilDate, executionAcademicCalendarVersionId: activity.academicCalendarVersionId, executionTimeSlotDefinitionId: slot.timeSlotDefinitionId, executionAcademicWeekId: week.weekId, executionAcademicWeekSegmentId: week.segmentId, actualTeacherUserId: staffing.scheduledTeacherUserId, activityTitleSnapshot: activity.title, actualTeacherDisplayNameSnapshot: displayName, createRequestKey: dto.requestKey, createRequestFingerprint: fingerprint, replacesId: dto.replacesId ?? null, createdByUserId: request.auth!.user.id } });
-    await this.successAudit(tx, request, 'TEACHING_EXECUTION_CONFIRMED', 'SpecialActivityParticipationExecution', created.id, { requestKey: dto.requestKey, commandFamily: 'ACTIVITY_PARTICIPATION', specialActivityId: activity.id, specialActivityStaffingId: staffing.id, specialActivityTimeSlotId: slot.id });
+    await this.successAudit(tx, request, 'TEACHING_EXECUTION_CONFIRMED', 'SpecialActivityParticipationExecution', created.id, { requestKey: dto.requestKey, commandFamily: 'ACTIVITY_PARTICIPATION', capabilityScope, specialActivityId: activity.id, specialActivityStaffingId: staffing.id, specialActivityTimeSlotId: slot.id });
     return { outcome: 'CREATED', item: this.activityRecord(created) };
   }
 

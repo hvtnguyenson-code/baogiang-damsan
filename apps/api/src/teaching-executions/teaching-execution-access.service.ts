@@ -11,6 +11,7 @@ export class TeachingExecutionAccessService {
   async requireCurricular(request: AuthenticatedRequest, actualTeacherUserId: string, subjectId: string): Promise<'PERSONAL' | 'SUBJECT' | 'SCHOOL_WIDE'> {
     if (!request.auth || request.auth.user.mustChangePassword) return this.deny(request, 'TEACHING_EXECUTION_RECORD', 'PASSWORD_CHANGE_REQUIRED');
     if (request.auth.user.id === actualTeacherUserId && (await this.authorization.evaluate({ userId: request.auth.user.id, capabilityKey: 'TEACHING_EXECUTION_RECORD', requestedScope: 'PERSONAL' })).allowed) return 'PERSONAL';
+    if ((await this.authorization.evaluate({ userId: request.auth.user.id, capabilityKey: 'TEACHING_EXECUTION_MANAGE', requestedScope: 'SCHOOL_WIDE' })).allowed) return 'SCHOOL_WIDE';
     if ((await this.authorization.evaluate({ userId: request.auth.user.id, capabilityKey: 'TEACHING_EXECUTION_MANAGE', requestedScope: 'SUBJECT', resourceId: subjectId })).allowed) return 'SUBJECT';
     return this.deny(request, 'TEACHING_EXECUTION_MANAGE', 'GRANT_NOT_FOUND');
   }
