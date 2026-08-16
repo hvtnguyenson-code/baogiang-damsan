@@ -34,3 +34,50 @@ describe('TeachingExecutionsService response and replay boundaries', () => {
     expect(Object.keys(result!.item)).not.toEqual(expect.arrayContaining(['createRequestKey', 'createRequestFingerprint']));
   });
 });
+
+describe('TeachingExecutionsService confirmation transaction boundary', () => {
+  const request = { auth: { user: { id: 'teacher' } } } as never;
+  const occurrence = (effectiveKind = 'BASE_TIMETABLE', disposition: object | null = null) => ({
+    occurrenceKey: 'NORMAL:entry:2026-08-01', civilDate: '2026-08-01', academicYearId: 'year', academicCalendarVersionId: 'calendar', timetableVersionId: 'version', timetableEntryId: 'entry', timeSlot: { id: 'slot', endTime: '07:45:00' }, schoolClass: { id: 'class' }, subjectId: 'subject', teachingAssignmentId: 'assignment', responsibleTeacherUserId: 'teacher', ppctBinding: { ppctClassAssociationId: 'association', ppctPlanId: 'plan', ppctVersionId: 'ppct-version' }, effectiveKind, disposition,
+  });
+  const expected = { ppctClassAssociationId: 'association', ppctPlanId: 'plan', ppctVersionId: 'ppct-version', ppctItemId: 'item', ppctItemRevisionId: 'revision' };
+
+  function normalHarness(overrides: { allocation?: object; now?: Date } = {}) {
+    const tx = { curricularTeachingExecution: { findUnique: jest.fn().mockResolvedValue(null), create: jest.fn().mockResolvedValue(curricular()) } };
+    const prisma = { $transaction: jest.fn((callback: (input: typeof tx) => Promise<unknown>) => callback(tx)) };
+    const allocation = { resolve: jest.fn(), resolveInTransaction: jest.fn().mockResolvedValue(overrides.allocation ?? { normalAllocations: [{ occurrence: occurrence(), allocationStatus: 'ALLOCATED', expectedPpctItem: expected }] }) };
+    const access = { requireCurricular: jest.fn().mockResolvedValue('PERSONAL'), requireActivity: jest.fn() };
+    const sut = new TeachingExecutionsService(prisma as never, allocation as never, { resolveInTransaction: jest.fn() } as never, { write: jest.fn() } as never, access as never, { now: () => overrides.now ?? new Date('2026-08-01T00:45:00.000Z') });
+    Object.assign(sut as object, {
+      requireWeek: jest.fn().mockResolvedValue({ weekId: 'week', segmentId: 'segment' }),
+      curricularSnapshots: jest.fn().mockResolvedValue({ schoolClassCodeSnapshot: '10A', schoolClassNameSnapshot: '10A', subjectCodeSnapshot: 'M', subjectNameSnapshot: 'Math', responsibleTeacherDisplayNameSnapshot: 'Teacher', actualTeacherDisplayNameSnapshot: 'Teacher' }),
+      successAudit: jest.fn().mockResolvedValue(undefined),
+    });
+    return { sut, tx, prisma, allocation, access };
+  }
+
+  it('confirms BASE with the exact allocated PPCT evidence in one SERIALIZABLE transaction', async () => {
+    const h = normalHarness();
+    await h.sut.confirmNormal({ academicYearId: 'year', schoolClassId: 'class', subjectId: 'subject', timetableEntryId: 'entry', sourceCivilDate: '2026-08-01', requestKey: 'key' }, request);
+    expect(h.prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: 'Serializable' });
+    expect(h.allocation.resolve).not.toHaveBeenCalled();
+    expect(h.allocation.resolveInTransaction).toHaveBeenCalledWith(h.tx, expect.objectContaining({ throughCivilDate: '2026-08-01' }));
+    expect(h.tx.curricularTeachingExecution.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ actualTeacherUserId: 'teacher', ppctItemId: 'item', ppctItemRevisionId: 'revision', operationalLessonDispositionId: null, operationalDispositionType: null }) }));
+  });
+
+  it.each(['CALENDAR_INTERRUPTION', 'CALENDAR_EXCEPTION', 'SPECIAL_ACTIVITY_SUPPRESSED', 'OPERATIONAL_DISPOSITION'])('rejects non-execution normal meaning %s', async (effectiveKind) => {
+    const h = normalHarness({ allocation: { normalAllocations: [{ occurrence: occurrence(effectiveKind), allocationStatus: 'ALLOCATED', expectedPpctItem: expected }] } });
+    await expect(h.sut.confirmNormal({ academicYearId: 'year', schoolClassId: 'class', subjectId: 'subject', timetableEntryId: 'entry', sourceCivilDate: '2026-08-01', requestKey: 'key' }, request)).rejects.toThrow('Ý nghĩa vận hành');
+    expect(h.tx.curricularTeachingExecution.create).not.toHaveBeenCalled();
+  });
+
+  it.each(['NOT_CONSUMED', 'BLOCKED'])('rejects allocation state %s', async (allocationStatus) => {
+    const h = normalHarness({ allocation: { normalAllocations: [{ occurrence: occurrence(), allocationStatus, expectedPpctItem: null }] } });
+    await expect(h.sut.confirmNormal({ academicYearId: 'year', schoolClassId: 'class', subjectId: 'subject', timetableEntryId: 'entry', sourceCivilDate: '2026-08-01', requestKey: 'key' }, request)).rejects.toThrow('ALLOCATED');
+  });
+
+  it('rejects confirmation one instant before the Asia/Ho_Chi_Minh slot end', async () => {
+    const h = normalHarness({ now: new Date('2026-08-01T00:44:59.999Z') });
+    await expect(h.sut.confirmNormal({ academicYearId: 'year', schoolClassId: 'class', subjectId: 'subject', timetableEntryId: 'entry', sourceCivilDate: '2026-08-01', requestKey: 'key' }, request)).rejects.toThrow('Chưa đến');
+  });
+});
