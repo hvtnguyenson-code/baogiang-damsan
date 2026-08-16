@@ -24,6 +24,8 @@ const overlayMigrationName = '20260814010000_operational_overlay_persistence_fou
 const overlayMigration = read('prisma', 'migrations', overlayMigrationName, 'migration.sql');
 const specialActivityMigrationName = '20260815010000_special_activity_persistence_foundation';
 const specialActivityMigration = read('prisma', 'migrations', specialActivityMigrationName, 'migration.sql');
+const teachingExecutionMigrationName = '20260816010000_teaching_execution_persistence_foundation';
+const teachingExecutionMigration = read('prisma', 'migrations', teachingExecutionMigrationName, 'migration.sql');
 
 function modelBlock(name) {
   const match = schema.match(new RegExp(`model\\s+${name}\\s+\\{([\\s\\S]*?)\\n\\}`, 'u'));
@@ -42,6 +44,13 @@ function enumValues(name) {
     .split(/\r?\n/u)
     .map((line) => line.trim())
     .filter(Boolean);
+}
+
+function withoutExpectedExecutionInverses(block) {
+  return block
+    .split(/\r?\n/u)
+    .filter((line) => !/^\s*(?:curricularExecutions|participationExecutions)\s+(?:CurricularTeachingExecution|SpecialActivityParticipationExecution)\[\]/u.test(line))
+    .join('\n');
 }
 
 for (const model of [
@@ -76,6 +85,8 @@ for (const model of [
   'SpecialActivityTimeSlot',
   'SpecialActivityClassTarget',
   'SpecialActivityStaffing',
+  'CurricularTeachingExecution',
+  'SpecialActivityParticipationExecution',
 ]) {
   modelBlock(model);
 }
@@ -98,6 +109,8 @@ assert.deepEqual(enumValues('OperationalLessonDispositionType'), [
 ]);
 assert.deepEqual(enumValues('SpecialActivityStatus'), ['ACTIVE', 'REVERSED']);
 assert.deepEqual(enumValues('SpecialActivityScope'), ['SCHOOL_WIDE', 'GRADE', 'CLASS']);
+assert.deepEqual(enumValues('TeachingExecutionStatus'), ['ACTIVE', 'REVERSED']);
+assert.deepEqual(enumValues('CurricularTeachingExecutionKind'), ['NORMAL', 'MAKEUP']);
 
 const calendarVersion = modelBlock('AcademicCalendarVersion');
 assert.match(calendarVersion, /academicYearId\s+String\s+@map\("academic_year_id"\)\s+@db\.Uuid/u);
@@ -774,7 +787,7 @@ for (const fk of overlayMigration.matchAll(/ADD CONSTRAINT "([^"]+_fkey)"([\s\S]
 }
 assert.doesNotMatch(overlayMigration, /CREATE\s+(OR\s+REPLACE\s+)?TRIGGER/iu);
 assert.doesNotMatch(overlayMigration, /ON DELETE CASCADE/iu);
-assert.doesNotMatch(overlayBlocks, /\b(?:completed|completion|debt|progress|report|execution|move|swap|activity)\b/iu);
+assert.doesNotMatch(withoutExpectedExecutionInverses(overlayBlocks), /\b(?:completed|completion|debt|progress|report|execution|move|swap|activity)\b/iu);
 assert.doesNotMatch(overlayMigration, /\b(?:completed|completion|debt|progress|report|execution|move|swap|activity)\b/iu);
 
 const specialActivity = modelBlock('SpecialActivity');
@@ -835,7 +848,7 @@ assert.match(specialActivityStaffing, /fields:\s*\[staffProfileId, scheduledTeac
 assert.match(specialActivityStaffing, /@@unique\(\[specialActivityId, scheduledTeacherUserId\],\s*map:\s*"special_activity_staffing_activity_teacher_key"\)/u);
 assert.match(specialActivityStaffing, /@@index\(\[scheduledTeacherUserId, specialActivityId\],\s*map:\s*"special_activity_staffing_teacher_activity_idx"\)/u);
 assert.match(modelBlock('StaffProfile'), /@@unique\(\[id, userId\],\s*map:\s*"staff_profiles_id_user_id_key"\)/u);
-assert.doesNotMatch(specialActivityBlocks, /\b(?:ppct|subject|teachingassignment|completed|completion|progress|debt|execution|actualteacher|content|report|snapshot|room|location|category|attendance|student|enrollment|notification|approval)\b/iu);
+assert.doesNotMatch(withoutExpectedExecutionInverses(specialActivityBlocks), /\b(?:ppct|subject|teachingassignment|completed|completion|progress|debt|execution|actualteacher|content|report|snapshot|room|location|category|attendance|student|enrollment|notification|approval)\b/iu);
 
 for (const enumName of ['SpecialActivityStatus', 'SpecialActivityScope']) {
   assert.match(specialActivityMigration, new RegExp('CREATE TYPE "' + enumName + '" AS ENUM', 'u'), 'Special Activity migration missing ' + enumName);
@@ -861,6 +874,82 @@ assert.doesNotMatch(specialActivityMigration, /CREATE\s+(OR\s+REPLACE\s+)?TRIGGE
 assert.doesNotMatch(specialActivityMigration, /ON DELETE CASCADE/iu);
 assert.doesNotMatch(specialActivityMigration, /\b(?:ppct|subject_id|teaching_assignment|completed|completion|progress|debt|execution|actual_teacher|content|report|snapshot|room|location|category|attendance|student|enrollment|notification|approval)\b/iu);
 
+const curricularExecution = modelBlock('CurricularTeachingExecution');
+const activityExecution = modelBlock('SpecialActivityParticipationExecution');
+const executionBlocks = `${curricularExecution}\n${activityExecution}`;
+assert.equal((schema.match(/\bmodel\s+CurricularTeachingExecution\s+\{/gu) ?? []).length, 1);
+assert.equal((schema.match(/\bmodel\s+SpecialActivityParticipationExecution\s+\{/gu) ?? []).length, 1);
+
+for (const [modelName, block] of [
+  ['CurricularTeachingExecution', curricularExecution],
+  ['SpecialActivityParticipationExecution', activityExecution],
+]) {
+  for (const field of ['id', 'academicYearId', 'actualTeacherUserId', 'createdByUserId', 'reversedByUserId', 'replacesId']) {
+    assert.match(block, new RegExp(`${field}\\s+String\\??[\\s\\S]*?@db\\.Uuid`, 'u'), `${modelName}.${field} must use UUID`);
+  }
+  for (const field of ['createdAt', 'updatedAt', 'reversedAt']) {
+    assert.match(block, new RegExp(`${field}\\s+DateTime\\??[\\s\\S]*?@db\\.Timestamptz\\(3\\)`, 'u'), `${modelName}.${field} must use TIMESTAMPTZ(3)`);
+  }
+  assert.match(block, /status\s+TeachingExecutionStatus\s+@default\(ACTIVE\)/u);
+  assert.match(block, /createRequestKey\s+String\s+@unique[\s\S]*@db\.VarChar\(200\)/u);
+  assert.match(block, /createRequestFingerprint\s+String[\s\S]*@db\.VarChar\(128\)/u);
+  assert.match(block, /reverseRequestKey\s+String\?\s+@unique[\s\S]*@db\.VarChar\(200\)/u);
+  assert.match(block, /reverseRequestFingerprint\s+String\?[\s\S]*@db\.VarChar\(128\)/u);
+  assert.match(block, /reversalReason\s+String\?[\s\S]*@db\.VarChar\(500\)/u);
+}
+
+assert.match(curricularExecution, /kind\s+CurricularTeachingExecutionKind/u);
+for (const field of ['sourceCivilDate', 'executionCivilDate']) {
+  assert.match(curricularExecution, new RegExp(`${field}\\s+DateTime\\s+@map\\("[a-z_]+"\\)\\s+@db\\.Date`, 'u'));
+}
+for (const field of [
+  'sourceNormalOccurrenceKey', 'schoolClassCodeSnapshot', 'schoolClassNameSnapshot', 'subjectCodeSnapshot',
+  'subjectNameSnapshot', 'responsibleTeacherDisplayNameSnapshot', 'actualTeacherDisplayNameSnapshot', 'note',
+]) {
+  assert.match(curricularExecution, new RegExp(`${field}\\s+String\\??[\\s\\S]*?@db\\.VarChar\\((?:50|100|150|500)\\)`, 'u'));
+}
+assert.match(curricularExecution, /fields:\s*\[ppctItemRevisionId, ppctVersionId, ppctItemId, ppctPlanId\][\s\S]*references:\s*\[id, ppctVersionId, ppctItemId, ppctPlanId\][\s\S]*onDelete:\s*Restrict/u);
+assert.match(curricularExecution, /fields:\s*\[executionAcademicWeekSegmentId, executionAcademicWeekId, executionAcademicCalendarVersionId\][\s\S]*references:\s*\[id, academicWeekId, calendarVersionId\][\s\S]*onDelete:\s*Restrict/u);
+assert.match(curricularExecution, /fields:\s*\[operationalLessonDispositionId, academicYearId, originalTimetableVersionId, originalTimetableEntryId, sourceCivilDate[\s\S]*operationalDispositionType\][\s\S]*references:\s*\[id, academicYearId, timetableVersionId, timetableEntryId, sourceCivilDate[\s\S]*dispositionType\][\s\S]*onDelete:\s*Restrict/u);
+assert.match(curricularExecution, /fields:\s*\[makeupTeachingScheduleId, academicYearId, originalTimetableVersionId[\s\S]*actualTeacherUserId\][\s\S]*references:\s*\[id, academicYearId, originalTimetableVersionId[\s\S]*scheduledTeacherUserId\][\s\S]*onDelete:\s*Restrict/u);
+assert.match(curricularExecution, /@@unique\(\[id, academicYearId, schoolClassId, subjectId, originalTimetableEntryId, sourceCivilDate, ppctClassAssociationId, ppctPlanId, ppctVersionId, ppctItemId\],\s*map:\s*"curricular_exec_replacement_provenance_key"\)/u);
+
+assert.match(activityExecution, /executionCivilDate\s+DateTime\s+@map\("execution_civil_date"\)\s+@db\.Date/u);
+assert.match(activityExecution, /executionAcademicWeekId\s+String\?[\s\S]*@db\.Uuid/u);
+assert.match(activityExecution, /executionAcademicWeekSegmentId\s+String\?[\s\S]*@db\.Uuid/u);
+assert.match(activityExecution, /activityTitleSnapshot\s+String[\s\S]*@db\.VarChar\(200\)/u);
+assert.match(activityExecution, /actualTeacherDisplayNameSnapshot\s+String[\s\S]*@db\.VarChar\(150\)/u);
+assert.match(activityExecution, /fields:\s*\[specialActivityId, academicYearId, executionAcademicCalendarVersionId, executionCivilDate\][\s\S]*references:\s*\[id, academicYearId, academicCalendarVersionId, civilDate\][\s\S]*onDelete:\s*Restrict/u);
+assert.match(activityExecution, /fields:\s*\[specialActivityStaffingId, specialActivityId, actualTeacherUserId\][\s\S]*references:\s*\[id, specialActivityId, scheduledTeacherUserId\][\s\S]*onDelete:\s*Restrict/u);
+assert.match(activityExecution, /fields:\s*\[specialActivityTimeSlotId, specialActivityId, academicYearId, executionTimeSlotDefinitionId\][\s\S]*references:\s*\[id, specialActivityId, academicYearId, timeSlotDefinitionId\][\s\S]*onDelete:\s*Restrict/u);
+assert.doesNotMatch(activityExecution, /schoolClassId|subjectId|ppct|teachingAssignmentId/iu);
+
+assert.match(modelBlock('PpctItemRevision'), /@@unique\(\[id, ppctVersionId, ppctItemId, ppctPlanId\],\s*map:\s*"ppct_item_revisions_execution_provenance_key"\)/u);
+assert.match(modelBlock('AcademicWeekSegment'), /@@unique\(\[id, academicWeekId, calendarVersionId\],\s*map:\s*"academic_week_segments_execution_provenance_key"\)/u);
+assert.match(lessonDisposition, /@@unique\(\[id, academicYearId, timetableVersionId, timetableEntryId, sourceCivilDate, academicCalendarVersionId, timeSlotDefinitionId, schoolClassId, subjectId, teachingAssignmentId, responsibleTeacherUserId, dispositionType\],\s*map:\s*"operational_lesson_dispositions_execution_source_key"\)/u);
+assert.match(makeupSchedule, /@@unique\(\[id, academicYearId, originalTimetableVersionId[\s\S]*scheduledTeacherUserId\],\s*map:\s*"makeup_teaching_schedules_execution_source_key"\)/u);
+assert.match(specialActivity, /@@unique\(\[id, academicYearId, academicCalendarVersionId, civilDate\],\s*map:\s*"special_activities_execution_source_key"\)/u);
+assert.match(specialActivityTimeSlot, /@@unique\(\[id, specialActivityId, academicYearId, timeSlotDefinitionId\],\s*map:\s*"special_activity_time_slots_execution_source_key"\)/u);
+assert.match(specialActivityStaffing, /@@unique\(\[id, specialActivityId, scheduledTeacherUserId\],\s*map:\s*"special_activity_staffing_execution_source_key"\)/u);
+
+for (const name of [
+  'curricular_teaching_executions', 'special_activity_participation_executions',
+  'operational_lesson_dispositions_execution_teacher_key', 'curricular_exec_one_active_obligation_key',
+  'activity_participation_one_active_key', 'curricular_exec_replacement_provenance_key',
+  'activity_participation_replacement_provenance_key', 'curricular_exec_disposition_teacher_fkey',
+  'curricular_exec_makeup_schedule_fkey', 'activity_exec_staffing_source_fkey',
+]) {
+  assert.match(teachingExecutionMigration, new RegExp(`"${name}"`, 'u'), `Teaching Execution migration missing ${name}`);
+}
+assert.match(teachingExecutionMigration, /CREATE UNIQUE INDEX "curricular_exec_one_active_obligation_key"[\s\S]*WHERE "status" = 'ACTIVE'/u);
+assert.match(teachingExecutionMigration, /CREATE UNIQUE INDEX "activity_participation_one_active_key"[\s\S]*WHERE "status" = 'ACTIVE'/u);
+for (const fk of teachingExecutionMigration.matchAll(/ADD CONSTRAINT "([^"]+_fkey)"([\s\S]*?);/gu)) {
+  assert.match(fk[2], /ON DELETE RESTRICT/u, `${fk[1]} must restrict deletion`);
+}
+assert.doesNotMatch(teachingExecutionMigration, /CREATE\s+(OR\s+REPLACE\s+)?TRIGGER/iu);
+assert.doesNotMatch(teachingExecutionMigration, /ON DELETE CASCADE/iu);
+assert.doesNotMatch(executionBlocks, /\b(?:completed|completionStatus|debt|progress|late|report|approval|room|location|attendance|student|enrollment|notification|ai)\b/iu);
+
 const legacyHashes = new Map([
   ['20260728000000_phase_00_baseline', 'A2185F4F34E90F9B437B3D0DD91B1C473D586849E6B0DFFB766C5AF69546634A'],
   ['20260801000000_phase_01_schema_foundation', '56B7F09859E9851A15D62D17A58066DAFB1798B0E4225858A464B0CD8F47DF9E'],
@@ -876,4 +965,4 @@ for (const [name, expected] of legacyHashes) {
   assert.equal(sha256(read('prisma', 'migrations', name, 'migration.sql')), expected, `Historical migration ${name} changed`);
 }
 
-console.log(`Academic, teaching-assignment, time-slot, timetable, timetable-import, PPCT, operational-overlay, and Special Activity schema static verification PASS (${academicMigrationName}, ${teachingMigrationName}, ${timeSlotMigrationName}, ${timetableMigrationName}, ${timetableImportMigrationName}, ${timetableImportRequestKeyMigrationName}, ${ppctMigrationName}, ${overlayMigrationName}, ${specialActivityMigrationName}).`);
+console.log(`Academic, teaching-assignment, time-slot, timetable, timetable-import, PPCT, operational-overlay, Special Activity, and Teaching Execution schema static verification PASS (${academicMigrationName}, ${teachingMigrationName}, ${timeSlotMigrationName}, ${timetableMigrationName}, ${timetableImportMigrationName}, ${timetableImportRequestKeyMigrationName}, ${ppctMigrationName}, ${overlayMigrationName}, ${specialActivityMigrationName}, ${teachingExecutionMigrationName}).`);

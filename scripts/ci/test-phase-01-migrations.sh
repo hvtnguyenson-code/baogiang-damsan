@@ -91,4 +91,8 @@ psql "$fresh_psql_url" -v ON_ERROR_STOP=1 -f scripts/ci/verify-operational-overl
 echo "[migration-test] Special Activity persistence constraint and history verification"
 psql "$fresh_psql_url" -v ON_ERROR_STOP=1 -f scripts/ci/verify-special-activity-schema.sql
 
+echo "[migration-test] Teaching Execution persistence constraint and history verification"
+psql "$fresh_psql_url" -v ON_ERROR_STOP=1 \
+  -f scripts/ci/verify-teaching-execution-schema.sql
+
 echo "[migration-test] PASS"
