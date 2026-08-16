@@ -1,6 +1,5 @@
 import { CatalogStatus, OperationalOverlayStatus, PpctVersionStatus, UserStatus } from '@prisma/client';
 import { ResolvedLessonOccurrencesService } from '../../src/resolved-occurrences/resolved-occurrences.service';
-import { PpctAssociationReadService } from '../../src/ppct/ppct-association-read.service';
 import { integration, normalizedCode, Phase01Harness } from '../helpers/phase01-test-harness';
 
 const civilDate = '2026-09-07';
@@ -27,11 +26,11 @@ integration('resolved lesson occurrences structural read model (PostgreSQL)', ()
     const plan = await h.prisma.ppctPlan.create({ data: { academicYearId: year.id, subjectId: subject.id, gradeLevel: 10 } });
     const ppctVersion = await h.prisma.ppctVersion.create({ data: { ppctPlanId: plan.id, versionNumber: 1, status: PpctVersionStatus.PUBLISHED, createdByUserId: actor.id, publishedByUserId: actor.id, publishedAt: new Date('2026-08-01Z') } });
     const association = await h.prisma.ppctClassAssociation.create({ data: { academicYearId: year.id, schoolClassId: schoolClass.id, subjectId: subject.id, gradeLevel: 10, ppctPlanId: plan.id, ppctVersionId: ppctVersion.id, effectiveFrom: new Date('2026-09-01Z'), createdByUserId: actor.id } });
-    const service = new ResolvedLessonOccurrencesService(h.prisma as never, new PpctAssociationReadService(h.prisma as never));
+    const service = h.app.get(ResolvedLessonOccurrencesService);
     return { year, actor, calendar, schoolClass, subject, slot, touchingSlot, assignment, timetable, timetableEntry, plan, ppctVersion, association, service };
   }
   it('retains the existing missing-timetable read-only outcome', async () => {
-    const year = await h.prisma.academicYear.create({ data: { code: normalizedCode('MISS'), name: 'Missing' } }); const service = new ResolvedLessonOccurrencesService(h.prisma as never, new PpctAssociationReadService(h.prisma as never)); const before = await h.prisma.academicYear.count(); const result = await service.resolve({ academicYearId: year.id, civilDate });
+    const year = await h.prisma.academicYear.create({ data: { code: normalizedCode('MISS'), name: 'Missing' } }); const service = h.app.get(ResolvedLessonOccurrencesService); const before = await h.prisma.academicYear.count(); const result = await service.resolve({ academicYearId: year.id, civilDate });
     expect(result.findings).toEqual([expect.objectContaining({ code: 'TIMETABLE_EFFECTIVE_VERSION_MISSING' })]); expect(await h.prisma.academicYear.count()).toBe(before);
   });
   it('resolves normal BASE_TIMETABLE with exact PPCT binding and no writes', async () => {
