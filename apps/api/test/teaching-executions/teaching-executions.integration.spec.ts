@@ -47,7 +47,9 @@ integration('Teaching Execution runtime relational invariants (PostgreSQL)', () 
     expect(firstNormal.status).toBe(201);
     const secondItem = await h.prisma.ppctItem.create({ data: { ppctPlanId: f.plan.id } });
     await h.prisma.ppctItemRevision.create({ data: { ppctVersionId: f.version.id, ppctPlanId: f.plan.id, ppctItemId: secondItem.id, sequence: 2, title: 'Lesson 2', lessonType: 'LESSON' } });
-    const secondNormal = await f.actor.agent.post('/api/teaching-executions/curricular/normal').set('Origin', testOrigin).send({ ...normalBody(f), sourceCivilDate: '2026-08-17' });
+    const secondSlot = await h.prisma.timeSlotDefinition.create({ data: { academicYearId: f.year.id, weekday: 'MONDAY', session: 'MORNING', ordinal: 2, revision: 1, displayLabel: 'Two', startTime: new Date('1970-01-01T08:00:00Z'), endTime: new Date('1970-01-01T08:45:00Z'), allowRegularTeaching: true, allowMakeupTeaching: true } });
+    const secondEntry = await h.prisma.timetableEntry.create({ data: { timetableVersionId: f.timetable.id, academicYearId: f.year.id, weekday: 'MONDAY', timeSlotDefinitionId: secondSlot.id, schoolClassId: f.schoolClass.id, subjectId: f.subject.id, teachingAssignmentId: f.assignment.id, teacherUserId: f.actor.id } });
+    const secondNormal = await f.actor.agent.post('/api/teaching-executions/curricular/normal').set('Origin', testOrigin).send({ ...normalBody(f), timetableEntryId: secondEntry.id });
     expect(secondNormal.status).toBe(201);
     expect(secondNormal.body.item.id).not.toBe(firstNormal.body.item.id);
     expect(secondNormal.body.item.ppctItemId).not.toBe(firstNormal.body.item.ppctItemId);
