@@ -13,7 +13,7 @@ describe('TeachingExecutionAccessService', () => {
     expect(authorization.evaluate).toHaveBeenCalledWith({ userId: 'teacher', capabilityKey: 'TEACHING_EXECUTION_RECORD', requestedScope: 'PERSONAL' });
   });
   it('allows exact SUBJECT and SCHOOL_WIDE curricular grants, but never infers them', async () => {
-    const authorization = { evaluate: jest.fn().mockResolvedValueOnce(denied).mockResolvedValueOnce(denied).mockResolvedValueOnce({ allowed: true }) };
+    const authorization = { evaluate: jest.fn().mockResolvedValueOnce(denied).mockResolvedValueOnce({ allowed: true }) };
     const sut = new TeachingExecutionAccessService(authorization as never, { write: jest.fn() } as never);
     await expect(sut.requireCurricular(request('manager'), 'teacher', 'subject')).resolves.toBe('SUBJECT');
     expect(authorization.evaluate).toHaveBeenLastCalledWith({ userId: 'manager', capabilityKey: 'TEACHING_EXECUTION_MANAGE', requestedScope: 'SUBJECT', resourceId: 'subject' });
