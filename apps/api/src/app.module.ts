@@ -19,6 +19,7 @@ import { TimetableImportModule } from './timetable-import/timetable-import.modul
 import { PpctModule } from './ppct/ppct.module';
 import { OperationalOverlaysModule } from './operational-overlays/operational-overlays.module';
 import { SpecialActivitiesModule } from './special-activities/special-activities.module';
+import { ResolvedOccurrencesModule } from './resolved-occurrences/resolved-occurrences.module';
 
 @Module({
   imports: [
@@ -55,6 +56,7 @@ import { SpecialActivitiesModule } from './special-activities/special-activities
     PpctModule,
     OperationalOverlaysModule,
     SpecialActivitiesModule,
+    ResolvedOccurrencesModule,
   ],
 })
 export class AppModule {}
