@@ -1,6 +1,6 @@
 # Core Backend Roadmap
 
-**Status:** Planning guide after LOCAL-FC-05D2 closed the Special Activity minimum core and LOCAL-FC-05E0D/ADR-036 closed the structural Resolved Lesson Occurrence architecture. This document is not an accepted requirements source and does not authorize implementation.
+**Status:** Planning guide after LOCAL-FC-05D2 closed the Special Activity minimum core, LOCAL-FC-05E0 closed/green through PR #51 and CI #205 PASS, and LOCAL-FC-05E1 implemented the Structural V1 resolver on its branch awaiting independent GitHub/CI review. This document is not an accepted requirements source and does not authorize implementation.
 
 ## Purpose
 
@@ -53,7 +53,7 @@ LOCAL-FC-05A0 is merged. LOCAL-FC-05A0D closed the seven PPCT architecture prere
 7. **05D1 — Special Activity Persistence Foundation (established by ADR-035).** The ADR-034 root, exact-slot, frozen-class-target and roleless-staffing persistence direction now has retained provenance and database invariants. No runtime, execution, PPCT/progress/reporting, Room or UI is implied.
 8. **05D2 — Special Activity runtime control plane (CLOSED / GREEN).** Capability-controlled create/read/reverse, frozen class/staff provenance, idempotency/CAS and canonical class/teacher/time collision behavior are established. Room remains `NOT_ASSESSED`.
 9. **05E0 — Resolved Lesson Occurrence Architecture (closed by 05E0D/ADR-036).** Architecture/decision closure only; no runtime, persistence or allocation algorithm.
-10. **05E1 — Structural Resolved Lesson Occurrence Read Model.** Derived-only and schema-free internal composition of normal, make-up and Special Activity families, with exact PPCT binding provenance. `PPCT_ITEM_ALLOCATION` remains `NOT_ASSESSED`.
+10. **05E1 — Structural Resolved Lesson Occurrence Read Model (implemented on task branch; awaiting independent GitHub/CI review).** Derived-only and schema-free internal `RepeatableRead` composition of normal, make-up and Special Activity families, normal suppression evidence, exact PPCT association/version/plan provenance and fail-closed blockers. `PPCT_ITEM_ALLOCATION = NOT_ASSESSED` remains explicit.
 11. **05E2 — PPCT Occurrence Allocation Architecture / implementation prerequisite.** Close exact next-item/distribution cursor, version-switch/carry-forward, stable UUID and split/merge lineage semantics, including SpecialActivity suppression and future debt-obligation identity.
 12. **Teaching execution / Báo giảng.** Immutable evidence of what occurred, expected versus actual content and responsible versus actual teacher, only after the allocation prerequisite is accepted.
 13. **Progress, debt and late.** Reproducible projections from historical facts; make-up fulfills an original obligation exactly once.

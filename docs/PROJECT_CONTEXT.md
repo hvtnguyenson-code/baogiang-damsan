@@ -6,7 +6,7 @@
 
 Canonical main entering LOCAL-FC-05E0 is `331caf162dded4ae148542b5649a9e913107f85d`. LOCAL-FC-05D2 is **CLOSED / GREEN** through merged PR #50 and CI #203 PASS. It provides the bounded SpecialActivity runtime control plane; Room remains `NOT_ASSESSED`.
 
-LOCAL-FC-05E0D and Accepted ADR-036 close `RESOLVED_LESSON_OCCURRENCE_STRUCTURAL_V1` as a derived-only structural read model with normal, make-up and Special Activity families, deterministic source-derived keys, exact retained provenance and fail-closed blockers. The next implementation target is LOCAL-FC-05E1, internal service/read model only, with no schema and no public endpoint/capability. Normal PPCT item allocation is intentionally `NOT_ASSESSED` and deferred to LOCAL-FC-05E2 before TeachingExecution/Báo giảng.
+LOCAL-FC-05E0 is **CLOSED / GREEN** through PR #51 and CI #205 PASS. LOCAL-FC-05E1 implements `RESOLVED_LESSON_OCCURRENCE_STRUCTURAL_V1` on its task branch and awaits independent GitHub/CI review: a derived-only internal `RepeatableRead` resolver over normal, make-up and Special Activity families with suppression evidence, exact PPCT association/version/plan binding and fail-closed blockers. `PPCT_ITEM_ALLOCATION = NOT_ASSESSED` remains explicit; LOCAL-FC-05E2 is the next architecture prerequisite before TeachingExecution/Báo giảng.
 
 | Mục | Nội dung |
 |---|---|
@@ -61,7 +61,7 @@ Backend hiện có các boundary đã được review và version hóa:
 - `TimetableVersion`/`TimetableEntry`, DRAFT/validation, approval/activation, supersession và historical resolution;
 - import TKB XLSX gồm profile/alias, bounded workbook inspection, canonical preview, confirmation phía server, semantic/request replay, imported-DRAFT lock và adversarial security corpus qua LOCAL-FC-04B3D1.
 
-Ngoài PPCT persistence/control plane của 05A1–05A2, bounded readiness của 05B1, và operational-overlay persistence/control plane của 05C1–05C2A, chuỗi 05D0D–05D2 đã đóng và triển khai Special Activity minimum core. LOCAL-FC-05E0D/ADR-036 hiện đóng kiến trúc structural resolved occurrence; chưa có runtime 05E1, PPCT allocation 05E2, TeachingExecution/Báo giảng, progress/debt, statement/reporting hay approval snapshot. PPCT import, capacity, make-up public runtime, Room/Location và UI business semantics vẫn ngoài phạm vi.
+Ngoài PPCT persistence/control plane của 05A1–05A2, bounded readiness của 05B1, và operational-overlay persistence/control plane của 05C1–05C2A, chuỗi 05D0D–05D2 đã đóng và triển khai Special Activity minimum core. LOCAL-FC-05E0D/ADR-036 hiện đóng kiến trúc structural resolved occurrence; 05E1 đã được triển khai trên task branch và đang chờ independent GitHub/CI review, còn PPCT allocation 05E2, TeachingExecution/Báo giảng, progress/debt, statement/reporting hay approval snapshot vẫn chưa có. PPCT import, capacity, make-up public runtime, Room/Location và UI business semantics vẫn ngoài phạm vi.
 
 `LOCAL-FC-05A0` đã merged qua PR #37. Closure 05A0D và ADR-027 đã xác lập kiến trúc PPCT: logical master dùng chung có scope `AcademicYear + Subject + Grade`, còn tiến độ phân phối/hoàn thành/nợ độc lập theo từng class-subject stream và gắn lịch sử với exact PPCT version/item.
 
