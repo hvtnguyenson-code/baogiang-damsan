@@ -81,3 +81,25 @@ describe('TeachingExecutionsService confirmation transaction boundary', () => {
     await expect(h.sut.confirmNormal({ academicYearId: 'year', schoolClassId: 'class', subjectId: 'subject', timetableEntryId: 'entry', sourceCivilDate: '2026-08-01', requestKey: 'key' }, request)).rejects.toThrow('Chưa đến');
   });
 });
+
+describe('TeachingExecutionsService makeup and activity confirmation', () => {
+  const request = { auth: { user: { id: 'teacher' } } } as never;
+  const ppct = { ppctClassAssociationId: 'association', ppctPlanId: 'plan', ppctVersionId: 'ppct-version', ppctItemId: 'item', ppctItemRevisionId: 'revision' };
+  const makeup = (status = 'ACTIVE') => ({ id: 'makeup', status, academicYearId: 'year', schoolClassId: 'class', subjectId: 'subject', originalTimetableVersionId: 'original-version', originalTimetableEntryId: 'original-entry', originalCivilDate: new Date('2026-07-31Z'), originalAcademicCalendarVersionId: 'original-calendar', originalTimeSlotDefinitionId: 'original-slot', originalTeachingAssignmentId: 'assignment', responsibleTeacherUserId: 'responsible', ppctClassAssociationId: 'association', ppctPlanId: 'plan', ppctVersionId: 'ppct-version', ppctItemId: 'item', targetCivilDate: new Date('2026-08-01Z'), targetAcademicCalendarVersionId: 'target-calendar', targetTimeSlotDefinitionId: 'target-slot', scheduledTeacherUserId: 'teacher', targetTimeSlotDefinition: { endTime: new Date('1970-01-01T07:45:00Z') } });
+  it('confirms an ACTIVE MATCH makeup with retained original and target bundles', async () => {
+    const tx = { curricularTeachingExecution: { findUnique: jest.fn().mockResolvedValue(null), create: jest.fn().mockResolvedValue(curricular()) }, makeupTeachingSchedule: { findUnique: jest.fn().mockResolvedValue(makeup()) } };
+    const prisma = { $transaction: jest.fn((callback: (input: typeof tx) => Promise<unknown>) => callback(tx)) };
+    const allocation = { resolve: jest.fn(), resolveInTransaction: jest.fn().mockResolvedValue({ makeupSourceMatches: [{ makeupTeachingScheduleId: 'makeup', sourceNormalOccurrenceKey: 'NORMAL:original-entry:2026-07-31', status: 'MATCH', expectedPpctItem: ppct }] }) };
+    const sut = new TeachingExecutionsService(prisma as never, allocation as never, {} as never, { write: jest.fn() } as never, { requireCurricular: jest.fn().mockResolvedValue('PERSONAL') } as never, { now: () => new Date('2026-08-01T00:45:00Z') });
+    Object.assign(sut as object, { requireWeek: jest.fn().mockResolvedValue({ weekId: 'week', segmentId: 'segment' }), requireCurricularReplacement: jest.fn(), curricularSnapshots: jest.fn().mockResolvedValue({ schoolClassCodeSnapshot: '10A', schoolClassNameSnapshot: '10A', subjectCodeSnapshot: 'M', subjectNameSnapshot: 'Math', responsibleTeacherDisplayNameSnapshot: 'Responsible', actualTeacherDisplayNameSnapshot: 'Teacher' }), successAudit: jest.fn() });
+    await sut.confirmMakeup({ makeupTeachingScheduleId: 'makeup', requestKey: 'key' }, request);
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: 'Serializable' });
+    expect(allocation.resolve).not.toHaveBeenCalled();
+    expect(tx.curricularTeachingExecution.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ kind: 'MAKEUP', makeupTeachingScheduleId: 'makeup', sourceCivilDate: new Date('2026-07-31Z'), executionCivilDate: new Date('2026-08-01Z'), actualTeacherUserId: 'teacher', ppctItemRevisionId: 'revision' }) }));
+  });
+  it.each(['REVERSED', 'INACTIVE'])('rejects non-ACTIVE makeup schedules', async (status) => {
+    const tx = { curricularTeachingExecution: { findUnique: jest.fn().mockResolvedValue(null) }, makeupTeachingSchedule: { findUnique: jest.fn().mockResolvedValue(makeup(status)) } };
+    const sut = new TeachingExecutionsService({ $transaction: (cb: (input: typeof tx) => unknown) => cb(tx) } as never, {} as never, {} as never, {} as never, {} as never, { now: () => new Date() });
+    await expect(sut.confirmMakeup({ makeupTeachingScheduleId: 'makeup', requestKey: 'key' }, request)).rejects.toThrow('không còn ACTIVE');
+  });
+});
