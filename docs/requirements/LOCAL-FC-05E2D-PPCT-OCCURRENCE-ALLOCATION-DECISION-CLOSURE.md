@@ -20,7 +20,7 @@ This closure authorizes no runtime implementation. LOCAL-FC-05E2B requires a sep
 
 ### D2 — Stream scope and server replay
 
-Allocation state belongs exactly to `AcademicYear + SchoolClass + Subject`. A bounded request resolves that stream through an exact civil date. The server replays authoritative normal opportunities; a client numeric cursor, last sequence or current progress counter is prohibited.
+Allocation state belongs exactly to `AcademicYear + SchoolClass + Subject`. `throughCivilDate` is inclusive. Replay begins at the earliest civil date on which that exact stream has an authoritative retained normal timetable opportunity under retained timetable/calendar history and reconstructs every candidate through the upper bound. It never begins at the first PPCT association, current timetable/calendar, caller result window or arbitrary lookback. A candidate before the first valid association still propagates its structural binding blocker. Gaps without opportunities contribute nothing; if there are no opportunities through the requested date, direct distribution state is empty. A client numeric cursor, last sequence or current progress counter is prohibited.
 
 ### D3 — Canonical order and overlap
 
@@ -36,7 +36,12 @@ An active matching Special Activity suppresses the normal opportunity, consumes 
 
 ### D6 — Pending-set cursor semantics
 
-There is no canonical integer cursor. Logical state is the classification of obligations consumed by prior eligible normal opportunities. In one exact version, the next item is the lowest-sequence exact pending `PpctItemRevision`. Sequence orders but does not identify. One opportunity consumes at most one item; one stream obligation is consumed at most once.
+There is no canonical integer cursor. Replay maintains:
+
+- `DIRECT_DISTRIBUTION_OBLIGATIONS`: allocations created only when a consuming normal occurrence receives an item, each with D16 provenance and an exact normal occurrence;
+- `DISTRIBUTION_COVERED_ITEMS`: stable logical item UUIDs already distributed for future allocation, including every directly distributed item and a merge successor when all predecessors are covered.
+
+Merge-derived coverage creates no synthetic occurrence, direct obligation, TeachingExecution, completion or debt evidence. Every transition test of consumed/already-distributed state uses `DISTRIBUTION_COVERED_ITEMS`. In one exact version, the next item is the lowest-sequence exact pending `PpctItemRevision` whose UUID is not covered. Sequence orders but does not identify. One opportunity creates at most one direct obligation; one stream obligation is directly distributed at most once.
 
 ### D7 — Exact date-effective association
 
@@ -44,23 +49,23 @@ Every normal opportunity uses its exact date-effective `PpctClassAssociation →
 
 ### D8 — Stable UUID carry-forward
 
-The same `PpctItem` UUID in a later exact version is the same logical obligation. If already consumed, its later revision is skipped; otherwise it remains pending at its new version-local sequence. Sequence/title/lesson-type changes do not create a new obligation. Historical completion/debt stays pinned to original evidence.
+The same `PpctItem` UUID in a later exact version is the same logical obligation. If distribution-covered, its later revision is skipped; otherwise it remains pending at its new version-local sequence. Coverage survives absence from intermediate versions: a legally reappearing covered UUID stays covered, while a never-covered UUID reappears pending. Sequence/title/lesson-type changes do not create a new obligation. Historical direct distribution/completion/debt stays pinned to original evidence.
 
 ### D9 — New and removed items
 
-A new UUID without applicable predecessor lineage is a new pending obligation; similarity cannot create carry-forward. An item omitted by a later version remains historical but is no longer a future target. Prior distribution/completion/debt remains pinned; an undistributed removed item simply ceases to be required by the successor.
+A new UUID without applicable predecessor lineage is a new pending obligation; similarity cannot create carry-forward. An item omitted by a later version remains historical and is absent from that version's pending target, but removal never erases `DISTRIBUTION_COVERED_ITEMS`. Prior distribution/completion/debt remains pinned; D8 governs any later legal same-UUID reappearance.
 
 ### D10 — Lineage topology
 
-Explicit lineage and implicit same-UUID carry-forward are separate. Complete connected transition shapes are classified; malformed or allocation-ambiguous lineage blocks. `1→N` is split, `N→1` is merge, `1→1` new UUID is explicit replacement, and `N→M` with both sides greater than one is unsupported ambiguity. No last-edge-wins, sequence/title heuristic or arbitrary traversal is permitted.
+Explicit lineage and implicit same-UUID carry-forward are separate. For each retained frontier target, all applicable incoming edges whose successor belongs to that target are classified as a complete connected transition shape. A predecessor may be any earlier same-plan retained non-DRAFT revision; immediate-version adjacency is not required. DRAFT or otherwise impermissible predecessor history is malformed and blocks. `1→N` is split, `N→1` is merge, `1→1` new UUID is explicit replacement, and `N→M` with both sides greater than one is unsupported ambiguity. No last-edge-wins, sequence/title heuristic or arbitrary traversal is permitted.
 
 ### D11 — Split
 
-For `1→N`, `N≥2`: if the predecessor was not consumed, all children are pending by target sequence. If it was consumed, block with `PPCT_VERSION_TRANSITION_SPLIT_AFTER_DISTRIBUTION`; one historical credit cannot be assigned deterministically among children.
+For `1→N`, `N≥2`: if the predecessor is not distribution-covered, all children are pending by target sequence. If it is covered, block with `PPCT_VERSION_TRANSITION_SPLIT_AFTER_DISTRIBUTION`; one historical credit cannot be assigned deterministically among children.
 
 ### D12 — Merge
 
-For `N→1`, `N≥2`: zero predecessors consumed means successor pending; all consumed means successor already distributed; partial consumption blocks with `PPCT_VERSION_TRANSITION_MERGE_PARTIAL_DISTRIBUTION`. Historical predecessor evidence is never collapsed or rewritten.
+For `N→1`, `N≥2`: zero predecessors covered means successor pending; all covered means add the successor UUID to `DISTRIBUTION_COVERED_ITEMS`; partial coverage blocks with `PPCT_VERSION_TRANSITION_MERGE_PARTIAL_DISTRIBUTION`. Derived successor coverage creates no direct distribution obligation. It persists through same-UUID carry-forward, participates as covered input to later merges, and causes D11 to block a later split. Historical predecessor evidence is never collapsed or rewritten.
 
 ### D13 — Explicit one-to-one new UUID
 
@@ -80,7 +85,7 @@ Each consuming normal occurrence defines one exact identity from `AcademicYear +
 
 ### D17 — Make-up source match
 
-`MAKEUP_TEACHING` consumes no new item. Its original normal occurrence plus exact association/version/item must match exactly one historical distribution-obligation identity. `MAKEUP_SOURCE_ALLOCATION_MATCH` may be assessed; completion, open debt, closure and fulfillment are not. A mismatch blocks with `PPCT_MAKEUP_SOURCE_ALLOCATION_MISMATCH`.
+`MAKEUP_TEACHING` consumes no new item. `MakeupTeachingSchedule` pins exact association/plan/version/item; its composite provenance FK proves and resolves the unique exact `PpctItemRevision` without storing a revision-id column. Its original normal occurrence and PPCT coordinates must match exactly one `DIRECT_DISTRIBUTION_OBLIGATION`. Merge-derived coverage cannot manufacture a make-up source; historical predecessor obligations remain exact debt/make-up provenance. `MAKEUP_SOURCE_ALLOCATION_MATCH` may be assessed; completion, open debt, closure and fulfillment are not. A mismatch blocks with `PPCT_MAKEUP_SOURCE_ALLOCATION_MISMATCH`.
 
 ### D18 — Current-authoritative recomputation
 
@@ -89,6 +94,14 @@ Allocation replays current authoritative retained facts. Accepted overlay correc
 ## 3. Consistency, result and blocker contract
 
 One complete bounded replay uses one Prisma interactive `RepeatableRead` transaction for structural occurrences, associations, versions, revisions and lineage. Implementation must reuse/refactor ADR-036 structural resolution semantics and must not open independent transactions per date.
+
+### Exact version context and skipped-version frontier
+
+The first structurally valid normal candidate starts with empty direct obligations and empty coverage; its exact version becomes the initial context. No prior version is invented and versions from 1 are not replayed merely because the first binding begins later. Incoming lineage of that initial version is still validated with empty predecessor coverage.
+
+For a later candidate, the same exact version performs no transition. A forward change from `Vs` to `Vt` processes every same-plan version where `Vs.versionNumber < versionNumber <= Vt.versionNumber` and `status != DRAFT`, ordered by version number. Each frontier version applies stable UUID, new/removal and complete incoming-lineage rules before advancing. DRAFT versions are skipped as non-authoritative; a lineage edge from a DRAFT or impermissible predecessor blocks. Non-adjacent predecessor edges are allowed when they reference any permitted earlier non-DRAFT revision. A target version number lower than the prior exact context blocks as `PPCT_ALLOCATION_HISTORY_BLOCKED`, with an internal structured reason such as `NON_FORWARD_VERSION_TRANSITION`.
+
+This frontier prevents a skipped non-DRAFT split/merge blocker from being bypassed. It begins only after a prior exact stream version context exists.
 
 The result status is `PASS` or `BLOCKED`. Coverage is `ppctItemAllocation = ASSESSED`, while TeachingExecution, completion, debt and reporting remain `NOT_ASSESSED`. Consuming occurrences expose exact allocation; non-consuming occurrences expose the reason and no item.
 
@@ -104,7 +117,24 @@ At minimum, distinguish:
 
 Existing Structural V1 blockers may propagate.
 
-## 4. Preserved boundaries
+## 4. Composition scenario closure
+
+| Scenario | Result |
+|---|---|
+| V1 A directly distributed; V2/V3 carry same UUID A | A remains covered; no redistribution. |
+| V1 A directly distributed; V2 splits A→B,C; V3 carries B,C | Block at the V2 frontier; V3 cannot hide split-after-distribution. |
+| V1 A uncovered; V2 splits A→B,C; V3 carries B,C | B and C remain pending. |
+| Covered A+X merge to M; V3 carries M | M gains derived coverage, creates no direct obligation and remains covered. |
+| Covered A+X merge to M; later M splits to P,Q | Split-after-distribution blocks. |
+| Distributed A; explicit `1→1` A→B; later B carry-forward | B remains pending until directly distributed. |
+| Distributed A; intermediate version removes A; later same UUID A reappears | Coverage survives removal; A is skipped. |
+| Prior V1; V2 DRAFT only; target V3 non-DRAFT | V2 is not a frontier step. |
+| Prior V1; skipped V2 non-DRAFT has split/merge; later target V3 | V2 semantics are applied before V3. |
+| Normal opportunity precedes first valid association | Structural missing-binding blocker is preserved. |
+
+Split→merge and merge→merge use the same composable coverage membership; partial merges still block. No chain may distribute twice, erase coverage, fabricate a direct occurrence, assign split credit, bypass a frontier blocker or create a make-up source from merge-derived credit.
+
+## 5. Preserved boundaries
 
 `RESOLVED_LESSON_OCCURRENCE_STRUCTURAL_V1` remains unchanged and continues to report `PPCT_ITEM_ALLOCATION = NOT_ASSESSED`. Allocation is a separate downstream profile.
 
@@ -112,7 +142,7 @@ The minimum core is internal only: no controller, route or capability. No author
 
 No TeachingExecution, Báo giảng, progress, completion, debt, late state, reporting, approval, public make-up mutation, PPCT import, UI, Room/Location, notification, deployment or production migration is authorized.
 
-## 5. Implementation entry boundary
+## 6. Implementation entry boundary
 
 LOCAL-FC-05E2B is architecture-ready only for a separately authorized, deterministic internal allocation read model that preserves D1–D18. The next chain is:
 
