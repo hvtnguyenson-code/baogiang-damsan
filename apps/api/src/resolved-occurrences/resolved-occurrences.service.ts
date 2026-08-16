@@ -20,10 +20,10 @@ export class ResolvedLessonOccurrencesService {
   constructor(private readonly prisma: PrismaService, private readonly ppctAssociations: PpctAssociationReadService) {}
 
   async resolve(input: ResolveLessonOccurrencesInput): Promise<ResolvedLessonOccurrencesResult> {
-    return this.prisma.$transaction((tx) => this.resolveSnapshot(tx, input), { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+    return this.prisma.$transaction((tx) => this.resolveInTransaction(tx, input), { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
   }
 
-  private async resolveSnapshot(tx: Prisma.TransactionClient, input: ResolveLessonOccurrencesInput): Promise<ResolvedLessonOccurrencesResult> {
+  async resolveInTransaction(tx: Prisma.TransactionClient, input: ResolveLessonOccurrencesInput): Promise<ResolvedLessonOccurrencesResult> {
     const date = parseCivilDate(input.civilDate); const findings: StructuralOccurrenceFinding[] = [];
     const blocker = (code: StructuralOccurrenceFinding['code'], occurrenceKey: string | null, ...entityIds: string[]) => findings.push({ severity: 'BLOCKER', code, occurrenceKey, entityIds: entityIds.filter(Boolean).sort() });
     const [versions, activities, makeups] = await Promise.all([
