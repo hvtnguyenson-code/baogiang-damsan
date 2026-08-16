@@ -27,9 +27,15 @@ Curricular execution has only `NORMAL | MAKEUP`. It remains one family because b
 
 ### Curricular source and content
 
-Every curricular execution pins exact `AcademicYear`, `SchoolClass`, `Subject`, `sourceNormalOccurrenceKey`, `PpctClassAssociation`, `PpctPlan`, `PpctVersion`, `PpctItem` and exact `PpctItemRevision`. It also pins exact timetable version/entry, source civil date, calendar version, slot, TeachingAssignment and responsible teacher. The deterministic `distributionObligationKey` may be retained for convenience, indexing and diagnostics but cannot replace the authoritative relational tuple.
+Every curricular execution distinguishes two mandatory, non-collapsible provenance bundles.
 
-For NORMAL, execution is eligible only when allocation is `ALLOCATED` and operational meaning is BASE_TIMETABLE or SAME_SUBJECT_SUBSTITUTION. Base actual teacher is the responsible teacher; substitution actual teacher is the exact active disposition assigned teacher. The client never chooses an actual teacher, and substitution never transfers TeachingAssignment ownership.
+The **original distribution-obligation bundle** pins exact `AcademicYear`, `SchoolClass`, `Subject`, `sourceNormalOccurrenceKey`, `PpctClassAssociation`, `PpctPlan`, `PpctVersion`, `PpctItem` and exact `PpctItemRevision`. It also pins the exact original/base timetable version/entry, source civil date, source `AcademicCalendarVersion`, source `TimeSlotDefinition`, `TeachingAssignment` and responsible teacher. The deterministic `distributionObligationKey` may be retained for convenience, indexing and diagnostics but cannot replace this authoritative relational tuple.
+
+The **actual execution-occurrence bundle** separately pins exact execution civil date, execution `AcademicCalendarVersion`, execution `TimeSlotDefinition`, execution `AcademicWeek`, execution `AcademicWeekSegment` and actual teacher. For NORMAL, execution date/calendar/slot are the exact resolved normal occurrence coordinates and equal the original occurrence coordinates. For MAKEUP, execution date/calendar/slot are the exact `MakeupTeachingSchedule` target and may differ from the original obligation. A persistence design that collapses the MAKEUP original and target bundles is invalid.
+
+For NORMAL, execution is eligible only when allocation is `ALLOCATED` and operational meaning is `BASE_TIMETABLE` or `SAME_SUBJECT_SUBSTITUTION`. NORMAL retains that constrained operational-source classification. BASE requires `operationalLessonDispositionId = null` and derives actual teacher from the responsible teacher. SAME_SUBJECT_SUBSTITUTION requires the exact `operationalLessonDispositionId` observed by accepted structural/allocation resolution for that source normal occurrence and derives actual teacher from that disposition's assigned teacher. A substitution cannot store only an actual-teacher ID or classification string; 05F1 must provide a composite FK or equally strong relational backstop preventing reference to an unrelated disposition. In both cases `makeupTeachingScheduleId = null`.
+
+The client never chooses an actual teacher, and substitution never transfers TeachingAssignment ownership. Absence, supervision and cancellation are not NORMAL execution-source variants.
 
 No execution is allowed for interruption, exception, Special Activity suppression, authorized cancellation, absence without replacement, different-subject supervision, `BLOCKED`, `NOT_CONSUMED`, exhaustion or ambiguous/blocked history.
 
@@ -37,7 +43,9 @@ V1 actual curricular content is exactly the allocated item/revision. MAKEUP cont
 
 ### Make-up and exactly-once fulfillment
 
-MAKEUP requires an exact ACTIVE `MakeupTeachingSchedule`, exact class/subject/year and target date/slot, and allocation source state `MATCH`. `MISMATCH` and `NOT_ASSESSED_HISTORY_BLOCKED` fail closed. Actual teacher is the exact scheduled teacher. It fulfills the original direct obligation, consumes no new item and never chooses a current next PPCT item.
+MAKEUP requires an exact ACTIVE `MakeupTeachingSchedule`, exact class/subject/year and target date/slot, and allocation source state `MATCH`. `MISMATCH` and `NOT_ASSESSED_HISTORY_BLOCKED` fail closed. `makeupTeachingScheduleId` is mandatory and is the authoritative execution-opportunity source. The actual execution bundle pins that schedule's target civil date, target `AcademicCalendarVersion`, target `TimeSlotDefinition`, resolved target week/segment and scheduled/actual teacher, while the original obligation bundle remains separately pinned. It fulfills the original direct obligation, consumes no new item and never chooses a current next PPCT item.
+
+The schedule already retains optional `sourceDispositionId` when the original incomplete obligation came from an operational fact. Execution does not reinterpret that fact. Exact schedule identity provides relational access to it; if 05F1 duplicates `sourceDispositionId` as a denormalized backstop, the value must remain exactly consistent with the schedule and cannot be independently authored.
 
 Across NORMAL and MAKEUP, one exact direct distribution obligation has zero or one ACTIVE curricular fulfillment. Reversed evidence remains immutable history but no longer owns current-authoritative completion credit; a separately validated linked replacement may become ACTIVE. No mutable completion flag is written to PPCT or overlay rows.
 
@@ -61,7 +69,7 @@ Curricular evidence retains bounded class code/name, subject code/name and respo
 
 Both families use immutable `ACTIVE -> REVERSED`. Creation is ACTIVE; there is no DRAFT, SUBMITTED, APPROVED, COMPLETED, LOCKED, DELETED or physical delete. Correction CAS-reverses active evidence, records actor/instant/bounded reason, retains predecessor/replacement linkage, and optionally creates a separately validated replacement. Semantic fields never change in place.
 
-Creation validates current-authoritative retained sources. Later accepted changes to dispositions, make-up schedules, activities, PPCT binding/replay or other upstream facts never silently mutate or rebind accepted execution. A later disagreement is downstream source drift/reconciliation, not a mutable `SOURCE_DRIFTED` execution status.
+Creation validates current-authoritative retained sources. Later accepted changes to dispositions, make-up schedules, activities, PPCT binding/replay or other upstream facts never silently mutate or rebind accepted execution. A SAME_SUBJECT_SUBSTITUTION disposition later reversed/replaced leaves execution pinned to the original accepted disposition, not its replacement or another substitute. A make-up schedule later reversed/replaced leaves execution pinned to the original accepted schedule, not a replacement schedule or current source state. A later disagreement is downstream source drift/reconciliation, not a mutable `SOURCE_DRIFTED` execution status.
 
 Time passing or missing execution does not itself prove absence, cancellation, supervision, debt or late. Negative facts come from operational sources; future progress/debt policy derives consequences from allocation, operational meaning, active execution and time.
 
@@ -88,6 +96,8 @@ Every mutation uses request identity plus deterministic semantic fingerprint. Sa
 
 Future Progress derives distribution from allocation/operations, completion from valid ACTIVE curricular execution and debt from distributed-but-unfulfilled obligations under separately accepted policy. Activity participation never contributes to curricular completion/debt. Reporting projection and immutable statement workflow remain later slices; reversing execution never silently rewrites a submitted statement.
 
+The retained provenance is sufficient for future Báo giảng/reporting to distinguish original obligation date/slot from actual execution date/slot, responsible teacher from actual teacher, and the exact substitution disposition or make-up schedule when applicable. This ADR does not implement reporting.
+
 ## Alternatives rejected
 
 - One polymorphic execution table with nullable curricular/make-up/activity fields.
@@ -97,6 +107,8 @@ Future Progress derives distribution from allocation/operations, completion from
 - Class fan-out participation rows or teacher workload multiplied by class targets.
 - In-place execution edit/delete or mutable source-drift status.
 - Nested allocation transaction or validation/insert TOCTOU window.
+- Collapsing MAKEUP original-obligation and actual target date/slot into one temporal bundle.
+- Retaining only a substitution label/actual teacher or only make-up target values without the exact operational source identity.
 
 ## Explicit non-scope
 

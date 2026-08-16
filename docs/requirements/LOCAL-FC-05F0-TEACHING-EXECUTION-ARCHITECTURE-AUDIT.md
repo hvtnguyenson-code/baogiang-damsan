@@ -24,8 +24,8 @@ Repository evidence confirms:
 1. PPCT persistence retains the shared `AcademicYear + Subject + Grade` plan, exact version, stable item UUID, immutable item revision, lineage and date-effective class association.
 2. Structural resolution is recomputed and separates `NORMAL_TIMETABLE_OPPORTUNITY`, `MAKEUP_TEACHING` and `SPECIAL_ACTIVITY`; a structural occurrence is not execution evidence.
 3. `PPCT_OCCURRENCE_ALLOCATION_V1` deterministically emits exact direct distribution-obligation provenance and exact `PpctItemRevision`, while classifying normal allocation as `ALLOCATED`, `NOT_CONSUMED` or `BLOCKED` and make-up source state as `MATCH`, `MISMATCH` or `NOT_ASSESSED_HISTORY_BLOCKED`.
-4. Operational dispositions retain responsible and assigned teacher identities separately. Same-subject substitution is distinct from absence, supervision and authorized cancellation.
-5. `MakeupTeachingSchedule` already retains exact original and target provenance, but no public creation runtime exists.
+4. `NormalStructuralOccurrence.disposition.id` exposes the exact accepted `OperationalLessonDisposition` together with its type and assigned teacher. Operational dispositions retain responsible and assigned teacher identities separately; same-subject substitution is distinct from absence, supervision and authorized cancellation.
+5. `MakeupStructuralOccurrence.target.id` is the exact `MakeupTeachingSchedule` identity. The schedule already retains separate original-obligation coordinates, optional original `sourceDispositionId`, target date/calendar/slot and scheduled teacher, but no public creation runtime exists.
 6. Special Activity is one atomic root with exact slot children, frozen class targets and roleless staffing children. Class targets do not define teacher workload cardinality.
 7. Existing mutation conventions use request key plus deterministic fingerprint, CAS reversal, `SERIALIZABLE` where competing facts are decided, database backstops and transactionally coupled success audit.
 8. Authorization is default-deny and exact-scope. `PERSONAL` normalizes to the actor; `SUBJECT` needs an exact resource; `SCHOOL_WIDE` is explicit. No cross-scope or role/title inference exists.
@@ -64,18 +64,18 @@ The conceptual persistence family is `SpecialActivityParticipationExecution`. It
 |---|---|---|
 | D1 | Execution is immutable evidence of reality, not report state. Reports are downstream projections; official statements are later immutable snapshots/manifests. | ADR-027 separates execution, derived progress and official snapshots; no report/execution persistence exists. |
 | D2 | Two persistence families: curricular fulfillment and Special Activity teacher-slot participation. No nullable God aggregate. | ADR-034 makes activity independent and PPCT-free; ADR-036 keeps independent structural families. |
-| D3 | Curricular execution pins exact year/class/subject, source normal key, association/plan/version/item/revision and exact timetable/calendar/slot/assignment/responsible-teacher provenance. The deterministic obligation key is convenience only. | Schema composite provenance and 05E2B `DirectDistributionObligation`/`ExpectedPpctItem` expose the complete tuple and exact revision. |
+| D3 | Curricular execution pins two non-collapsible bundles: exact original distribution-obligation/base provenance and exact actual-execution date/calendar/slot/week/segment/teacher provenance. The deterministic obligation key is convenience only. | Schema and 05E2B expose the original tuple; structural normal and make-up results expose the exact actual occurrence source coordinates. |
 | D4 | Normal execution is allowed only for `ALLOCATED` base teaching or `ALLOCATED` `SAME_SUBJECT_SUBSTITUTION`. Every suppression, cancellation, absence, supervision, `BLOCKED`, `NOT_CONSUMED`, exhaustion or ambiguous replay fails closed. | ADR-031 outcome table and allocation `consumptionDecision()` distinguish distribution from completion eligibility. |
-| D5 | Actual teacher is server-derived: responsible teacher for base; exact active disposition assigned teacher for same-subject substitution. Responsible ownership is unchanged. | Structural occurrence returns both responsible teacher and disposition assigned teacher; ADR-027/031 forbid assignment mutation. |
+| D5 | Actual teacher is server-derived: responsible teacher for base; exact active disposition assigned teacher for same-subject substitution. A substitution execution also retains that exact disposition identity. Responsible ownership is unchanged. | Structural occurrence returns responsible teacher plus exact `disposition.id`, type and assigned teacher; ADR-027/031 forbid assignment mutation. |
 | D6 | V1 actual curricular content is exactly the allocated item/revision for normal and the retained original item/revision for make-up. A bounded note has no semantic effect. | Exact immutable revision is available; no approved alternate-content source exists. |
-| D7 | Make-up requires exact ACTIVE schedule and source allocation `MATCH`; it fulfills the original obligation, consumes no item and uses the scheduled teacher. `MISMATCH` and history-blocked fail closed. Public schedule creation remains deferred. | Persisted schedule pins original/target provenance; 05E2B exposes the three source-match states. |
+| D7 | Make-up requires exact ACTIVE schedule and source allocation `MATCH`; execution retains exact `makeupTeachingScheduleId`, its target execution coordinates and scheduled teacher separately from the original obligation bundle. It consumes no item. Public schedule creation remains deferred. | Structural `target.id` and persisted schedule provide exact schedule identity plus separate original/target provenance; 05E2B exposes the three source-match states. |
 | D8 | At most one ACTIVE curricular execution across NORMAL and MAKEUP fulfills one exact direct obligation. Reversed evidence retains history and relinquishes current completion credit. | ADR-027/031 require exactly-once fulfillment; allocation emits one exact direct obligation identity. |
 | D9 | Curricular kinds are only `NORMAL` and `MAKEUP`; base/substitution are retained normal provenance, not extra execution kinds. | Other operational types represent negative or incomplete facts, and Special Activity is separate. |
 | D10 | Special Activity participation unit is exact `SpecialActivity + SpecialActivityStaffing + SpecialActivityTimeSlot`. | Current root has separate unique staffing and slot children; class targets are separate frozen provenance. |
 | D11 | Activity must be ACTIVE; both children must belong to it; scheduled teacher must match staffing; corrupt/colliding structure fails closed. One teacher-slot counts once, unaffected by class-target count. | ADR-034 and current schema enforce root/child ownership and activity scheduling cardinality. |
 | D12 | No future execution. In `Asia/Ho_Chi_Minh`, retained slot end on the execution civil date must be at or before the server instant. Civil dates remain DATE semantics. | Time slots retain wall-clock end and civil dates use PostgreSQL DATE; repository conventions avoid host-local-midnight meaning. |
 | D13 | Lifecycle is immutable `ACTIVE -> REVERSED`; creation is ACTIVE. Correction uses CAS reversal and optional separately validated replacement with linkage. No edit/delete or report-state statuses. | Overlay/activity lifecycle, CAS and replacement conventions provide the accepted precedent. |
-| D14 | Creation validates current-authoritative retained facts; later source corrections do not mutate/rebind execution. Disagreement is downstream source drift/reconciliation, not a new execution status. | ADR-036/037 explicitly define current-authoritative replay and future pinned execution provenance. |
+| D14 | Creation validates current-authoritative retained facts; later reversal/replacement of the accepted disposition or make-up schedule does not mutate or rebind execution to a replacement source. Disagreement is downstream source drift/reconciliation, not a new execution status. | ADR-031 retains immutable source identities; ADR-036/037 require future execution to pin accepted exact provenance. |
 | D15 | Curricular confirmation pins one unambiguous retained calendar/week-segment/week containing the civil date. Missing/ambiguous mapping fails closed. Activity calendar/date/slot is mandatory; week/segment may be absent outside academic segments. Never derive ISO week. | Calendar schema retains exact weeks/segments; ADR-034 permits explicit activity independently of normal teaching availability. |
 | D16 | Retain bounded display snapshots: curricular class code/name, subject code/name and responsible/actual teacher names; activity title and scheduled/actual teacher name. IDs remain authority; PPCT revision retains sequence/title/type. | Mutable master labels exist while exact PPCT revision fields are immutable. |
 | D17 | Passage of time or missing execution is not a negative fact. No debt/late state is stored by 05F. | ADR-031 owns absence/supervision/cancellation facts; ADR-027 makes progress/debt derived. |
@@ -83,17 +83,50 @@ The conceptual persistence family is `SpecialActivityParticipationExecution`. It
 | D19 | Every mutation uses request key + semantic fingerprint; replay/conflict semantics, CAS reversal, `SERIALIZABLE`, uniqueness and success audit in the business transaction are mandatory. | Operational overlay and Special Activity services implement the same accepted pattern. |
 | D20 | 05F2 must add a tx-aware allocation boundary and run resolution/validation/insert in one outer `SERIALIZABLE` transaction. Existing `resolve(input)` remains read-only `RepeatableRead`. | Current service exposes `resolve(input)` and a private snapshot path; a public tx-aware allocation method does not yet exist. |
 
+### 6.1 Original-obligation and actual-execution coordinate bundles
+
+Every `CurricularTeachingExecution` must keep two explicitly named and non-collapsible provenance bundles.
+
+**Original distribution-obligation provenance** retains exact:
+
+- `AcademicYear`, `SchoolClass`, `Subject` and `sourceNormalOccurrenceKey`;
+- `PpctClassAssociation`, `PpctPlan`, `PpctVersion`, `PpctItem` and `PpctItemRevision`;
+- original/base `TimetableVersion`, `TimetableEntry`, source civil date, source `AcademicCalendarVersion`, source `TimeSlotDefinition`, `TeachingAssignment` and responsible teacher.
+
+**Actual execution occurrence provenance** retains exact:
+
+- execution civil date;
+- execution `AcademicCalendarVersion` and `TimeSlotDefinition`;
+- execution `AcademicWeek` and `AcademicWeekSegment`;
+- actual teacher.
+
+For NORMAL, actual execution date/calendar/slot are those of the exact resolved normal occurrence and therefore equal the original occurrence coordinates. For MAKEUP, actual execution date/calendar/slot are the exact schedule target and can differ from the original obligation. Equality in NORMAL does not authorize collapsing the conceptual bundles; MAKEUP requires both.
+
+### 6.2 Constrained curricular source shape
+
+Future persistence must express discriminator-backed source provenance equivalent to:
+
+| Curricular kind/source | `operationalLessonDispositionId` | `makeupTeachingScheduleId` | Required relational meaning |
+|---|---|---|---|
+| `NORMAL / BASE_TIMETABLE` | MUST be null | MUST be null | Actual teacher is the responsible teacher; original and execution coordinates identify the same resolved normal occurrence. |
+| `NORMAL / SAME_SUBJECT_SUBSTITUTION` | MUST be non-null | MUST be null | References the exact accepted disposition for the same source normal occurrence; actual teacher is that disposition's assigned teacher. |
+| `MAKEUP` | Not independently authored from the schedule | MUST be non-null | References the exact accepted schedule; target date/calendar/slot and scheduled teacher equal the execution bundle. |
+
+The NORMAL operational source classification is constrained to `BASE_TIMETABLE | SAME_SUBJECT_SUBSTITUTION`. Absence, supervision and cancellation are not execution variants. A substitution row cannot retain only an actual-teacher ID or classification string: it must retain relational provenance to the exact disposition, with 05F1 responsible for a composite FK or equally strong database backstop preventing an unrelated disposition.
+
+For MAKEUP, `makeupTeachingScheduleId` is the authoritative execution-opportunity source. The schedule's optional `sourceDispositionId` already preserves the original incomplete operational fact. Execution should access that frozen provenance through the exact schedule. If 05F1 denormalizes `sourceDispositionId`, database invariants must keep it exactly equal to the schedule value and clients cannot author it independently.
+
 ## 7. Curricular confirmation semantics
 
 ### 7.1 NORMAL
 
-Within one future outer `SERIALIZABLE` transaction, the server identifies exact year/class/subject/normal occurrence key; resolves allocation through the civil date; finds the exact normal allocation; requires `ALLOCATED`; accepts only base or same-subject substitution; derives actual teacher; checks the retained slot end gate; resolves exact week/segment; checks no ACTIVE fulfillment owns the exact obligation; and inserts immutable execution plus sanitized audit atomically.
+Within one future outer `SERIALIZABLE` transaction, the server identifies exact year/class/subject/normal occurrence key; resolves allocation through the civil date; finds the exact normal allocation; requires `ALLOCATED`; accepts only base or same-subject substitution; retains `BASE_TIMETABLE` with null disposition identity or retains the exact accepted substitution `OperationalLessonDisposition` identity; derives actual teacher; sets execution date/calendar/slot from the exact normal occurrence; checks the retained slot end gate; resolves exact execution week/segment; checks no ACTIVE fulfillment owns the exact obligation; and inserts immutable execution plus sanitized audit atomically.
 
 The client supplies neither a replacement PPCT item nor an actual teacher.
 
 ### 7.2 MAKEUP
 
-Within that same transaction, the server loads the exact ACTIVE schedule, derives source/target stream, resolves allocation through target date, requires source `MATCH`, checks target slot end, derives the scheduled teacher, resolves exact target week/segment, verifies no ACTIVE execution fulfills the original direct obligation, and inserts immutable MAKEUP evidence plus audit atomically.
+Within that same transaction, the server loads and retains the exact ACTIVE `makeupTeachingScheduleId`, derives source/target stream, resolves allocation through target date, requires source `MATCH`, keeps the original obligation bundle separate from the schedule target execution bundle, checks target slot end, derives the scheduled teacher, resolves exact target week/segment, verifies no ACTIVE execution fulfills the original direct obligation, and inserts immutable MAKEUP evidence plus audit atomically.
 
 The operation never chooses the current next item and never creates a second distribution obligation.
 
@@ -110,6 +143,8 @@ The business timezone is `Asia/Ho_Chi_Minh`. Slot-end validation must combine th
 Curricular execution requires exactly one valid `AcademicWeekSegment -> AcademicWeek` mapping for the date and pins both identities plus the calendar version. Activity participation always pins calendar/date/slot; its week/segment is nullable only when the explicit activity validly falls outside an academic-week segment.
 
 Exact IDs remain authority. Bounded label snapshots prevent later class, subject, user or activity label changes from rewriting evidence. The exact PPCT revision remains the source for sequence, title and lesson type.
+
+Future Báo giảng/reporting must be able to distinguish original curricular obligation date/slot from actual execution date/slot, responsible teacher from actual teacher, and the exact substitution disposition or make-up schedule when applicable. This evidence-sufficiency requirement does not implement reporting.
 
 ## 10. Authorization matrix
 
@@ -159,6 +194,17 @@ PpctOccurrenceAllocationService.resolveInTransaction(tx, input)
 | P | Master display name changes after execution. | Pinned IDs/snapshots and immutable PPCT revision preserve accepted evidence. |
 | Q | Upstream overlay is later reversed. | Existing execution is unchanged; downstream reconciliation reports source drift. |
 | R | Client supplies another actual teacher or alternate PPCT item. | Reject or do not accept the fields. |
+
+### 12.1 Source-provenance correction scenarios
+
+| ID | Scenario | Expected outcome |
+|---|---|---|
+| S1 | BASE normal execution. | Original and execution coordinates are equal; `operationalLessonDispositionId` and `makeupTeachingScheduleId` are null. |
+| S2 | SAME_SUBJECT_SUBSTITUTION. | Original and execution coordinates are equal; exact disposition identity is retained; actual teacher is derived from that disposition. |
+| S3 | Accepted substitution disposition is later reversed/replaced. | Existing execution still references the original accepted disposition and is never rebound. |
+| S4 | MAKEUP fulfills obligation A from 2026-09-07 at target 2026-09-21. | Original bundle remains 2026-09-07; execution bundle is 2026-09-21; exact make-up schedule identity is retained. |
+| S5 | Accepted make-up schedule is later reversed/replaced. | Existing execution remains pinned to the original accepted schedule and is never rebound. |
+| S6 | Persistence collapses a MAKEUP original and target into one date/slot bundle. | Invalid topology; 05F1 must reject the design because both temporal bundles are mandatory. |
 
 ## 13. Downstream and make-up boundaries
 
