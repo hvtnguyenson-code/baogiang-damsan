@@ -1,6 +1,6 @@
 # Core Backend Roadmap
 
-**Status:** Planning guide after LOCAL-FC-05F1 closed/green through merged PR #56, canonical main `1d2bcd5baaa0a9390f65c386b884a4b2e621275d`, and post-merge CI #220 SUCCESS. LOCAL-FC-05F2 is the active runtime implementation slice. This document is not an accepted requirements source and does not authorize implementation.
+**Status:** Planning guide after LOCAL-FC-05F2 closed/green through PR #57 at `03bc8e9c08349547f7a447cef9dc4428a0bc55d8`, current main `354b1723d45fdb8cadc31aeded05ebcbd88cfdb3`, PR CI #224 SUCCESS and post-merge CI #225 SUCCESS. LOCAL-FC-05G0 closes progress/debt/late architecture; LOCAL-FC-05G1 is the next internal implementation slice. This document is not an accepted requirements source and does not authorize implementation.
 
 ## Purpose
 
@@ -22,8 +22,8 @@ flowchart LR
   ALLOC --> EXEC_ARCH["05F0 execution architecture closure"]
   EXEC_ARCH --> EXEC_DB["05F1 execution persistence foundation"]
   EXEC_DB --> EXEC_RT["05F2 execution evidence runtime"]
-  EXEC_RT --> PROG_ARCH["05G0 progress / debt / late architecture"]
-  PROG_ARCH --> PROG["Progress / debt / late implementation"]
+  EXEC_RT --> PROG_ARCH["05G0 progress / debt / late architecture closure"]
+  PROG_ARCH --> PROG["05G1 deterministic progress / debt / late projection"]
   PROG --> REPORT["Reporting projection"]
   REPORT --> SNAP["Submission / approval snapshot"]
 ```
@@ -62,9 +62,9 @@ LOCAL-FC-05A0 is merged. LOCAL-FC-05A0D closed the seven PPCT architecture prere
 12. **05E2B — Deterministic PPCT Allocation Read Model (CLOSED / GREEN).** PR #54 at final head `1731b7496c98961a96c09fd3b4aa7d397f7c679d`, authoritative PR CI #213 PASS, merge/current canonical main `07cba9d15b4335ac7d167ef11fa3ef21b66ee28a`, and post-merge CI #214 PASS. Internal, schema-free and fail-closed `PPCT_OCCURRENCE_ALLOCATION_V1` runs under one bounded `RepeatableRead`; execution/completion/debt/reporting remain `NOT_ASSESSED` in that profile.
 13. **05F0 — Teaching Execution architecture closure (CLOSED / GREEN).** ADR-038 defines separate curricular fulfillment and Special Activity teacher-slot participation evidence, exact provenance, server-derived actual teacher/content, exactly-once active fulfillment, immutable reversal, time/week gates, authorization and one-transaction future runtime requirements. PR #55 / PR CI #215 / post-merge CI #216 passed; merge/current baseline is `7937a53953e44aa4f41bc4071131495c241cf006`.
 14. **05F1 — Teaching Execution persistence foundation (CLOSED / GREEN).** ADR-039 implements the two persistence families, exact provenance, bounded display snapshots, immutable lifecycle, request identities, replacement integrity and database uniqueness. Merged PR #56 and post-merge CI #220 closed this foundation. No runtime/controller/capability seed or progress/reporting behavior is included.
-15. **05F2 — Teaching Execution control plane / Báo giảng evidence runtime.** Implement server-derived confirmation/read/correction under explicit capability/scope rules. Add a tx-aware allocation resolver and perform resolution, validation, uniqueness, insert and success audit in one outer `SERIALIZABLE` transaction. Do not broaden public make-up scheduling.
-16. **05G0 — Progress / Debt / Late architecture closure.** Close derivation, debt proof, time policy and reconciliation before persistence/runtime.
-17. **Progress, debt and late implementation.** Reproducible projections from historical facts; make-up fulfills an original obligation exactly once.
+15. **05F2 — Teaching Execution control plane / Báo giảng evidence runtime (CLOSED / GREEN).** PR #57 final head `03bc8e9c08349547f7a447cef9dc4428a0bc55d8`, PR CI #224 SUCCESS, merge/current main `354b1723d45fdb8cadc31aeded05ebcbd88cfdb3` and post-merge CI #225 SUCCESS. It establishes server-derived confirmation/read/correction, tx-aware allocation and one outer `SERIALIZABLE` evidence transaction without public make-up scheduling.
+16. **05G0 — Progress / Debt / Late architecture closure (CLOSED).** ADR-040 defines projection-only truth, exact direct-obligation distribution, source-slot elapsed policy, proof-backed debt, visible unconfirmed gaps, V1 late and fail-closed reconciliation.
+17. **05G1 — Deterministic Progress / Debt / Late Projection (next implementation slice).** Internal, reproducible read projection/service from retained facts only; make-up fulfills an original obligation exactly once. No public controller/capability is implied.
 18. **Reporting projection.** Weekly, monthly, semester, custom-range and annual projections as supported by authoritative rules.
 19. **Submission and approval snapshot.** Immutable submitted/approved snapshots or immutable reference manifests with explicit capability/scope checks and no self-approval.
 20. **Cross-domain closure.** Concurrency, idempotency, correction, replay, historical drift and performance validation across the full chain.
