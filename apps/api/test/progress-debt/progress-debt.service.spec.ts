@@ -4,7 +4,7 @@ const asOf = new Date('2026-08-12T12:00:00.000Z');
 const clock = { now: () => new Date('2026-08-13T00:00:00.000Z') };
 const expected = { distributionObligationKey: 'key', ppctClassAssociationId: 'association', ppctPlanId: 'plan', ppctVersionId: 'version', ppctItemId: 'item', ppctItemRevisionId: 'revision', sequence: 1, title: 'Lesson', lessonType: 'LESSON' };
 
-function allocation(overrides: Record<string, unknown> = {}): any {
+function allocation(overrides: Record<string, unknown> = {}) {
   const occurrence = { occurrenceKey: 'NORMAL:entry:2026-08-10', family: 'NORMAL_TIMETABLE_OPPORTUNITY', civilDate: '2026-08-10', academicYearId: 'year', academicCalendarVersionId: 'calendar', timetableVersionId: 'timetable', timetableEntryId: 'entry', timeSlot: { id: 'slot', weekday: 'MONDAY', session: 'MORNING', startTime: '07:00:00', endTime: '07:45:00' }, schoolClass: { id: 'class', gradeLevel: 10 }, subjectId: 'subject', teachingAssignmentId: 'assignment', responsibleTeacherUserId: 'teacher', ppctBinding: { ppctClassAssociationId: 'association', ppctPlanId: 'plan', ppctVersionId: 'version', ppctVersionStatus: 'PUBLISHED' }, effectiveKind: 'BASE_TIMETABLE', interruptionIds: [], exceptionIds: [], suppressingSpecialActivityIds: [], disposition: null, ...overrides };
   return { status: 'PASS', normalAllocations: [{ occurrence, allocationEffect: 'CONSUMES_NEXT_ITEM', allocationStatus: 'ALLOCATED', expectedPpctItem: expected }], makeupSourceMatches: [], findings: [] };
 }
@@ -13,7 +13,7 @@ function execution(overrides: Record<string, unknown> = {}) {
   return { id: 'execution', kind: 'NORMAL', status: 'ACTIVE', academicYearId: 'year', schoolClassId: 'class', subjectId: 'subject', sourceNormalOccurrenceKey: 'NORMAL:entry:2026-08-10', originalTimetableVersionId: 'timetable', originalTimetableEntryId: 'entry', sourceCivilDate: new Date('2026-08-10T00:00:00.000Z'), sourceAcademicCalendarVersionId: 'calendar', sourceTimeSlotDefinitionId: 'slot', originalTeachingAssignmentId: 'assignment', responsibleTeacherUserId: 'teacher', ppctClassAssociationId: 'association', ppctPlanId: 'plan', ppctVersionId: 'version', ppctItemId: 'item', ppctItemRevisionId: 'revision', operationalLessonDispositionId: null, operationalDispositionType: null, makeupTeachingScheduleId: null, executionCivilDate: new Date('2026-08-10T00:00:00.000Z'), executionAcademicCalendarVersionId: 'calendar', executionTimeSlotDefinitionId: 'slot', actualTeacherUserId: 'teacher', executionTimeSlot: { endTime: new Date('1970-01-01T07:45:00.000Z') }, ...overrides };
 }
 
-function harness(result = allocation(), executions: object[] = [], schedules: object[] = []) {
+function harness(result: unknown = allocation(), executions: object[] = [], schedules: object[] = []) {
   const tx = { curricularTeachingExecution: { findMany: jest.fn().mockResolvedValue(executions) }, makeupTeachingSchedule: { findMany: jest.fn().mockResolvedValue(schedules) } };
   const prisma = { $transaction: jest.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)) };
   const resolver = { resolveInTransaction: jest.fn().mockResolvedValue(result) };
