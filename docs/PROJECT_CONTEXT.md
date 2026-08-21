@@ -2,7 +2,9 @@
 
 ## Thông tin dự án
 
-## LOCAL-FC-05E2 / 05E2B / 05F0 / 05F1 / 05F2 / 05G0 status
+## LOCAL-FC-05E2 / 05E2B / 05F0 / 05F1 / 05F2 / 05G0 / 05G1 status
+
+LOCAL-FC-05G1 is implemented locally as the internal `TEACHING_PROGRESS_DEBT_V1` projection and remains pending independent review and CI; it is not closed or green.
 
 Canonical main entering LOCAL-FC-05E2 is `92ea9133748f0864ba1d600b76a23d1d18e9e0e3`. LOCAL-FC-05D2 is **CLOSED / GREEN** through merged PR #50 and CI #203 PASS. It provides the bounded SpecialActivity runtime control plane; Room remains `NOT_ASSESSED`.
 
