@@ -1,6 +1,6 @@
 # Core Backend Roadmap
 
-**Status:** Planning guide after LOCAL-FC-05F2 closed/green through PR #57 at `03bc8e9c08349547f7a447cef9dc4428a0bc55d8`, current main `354b1723d45fdb8cadc31aeded05ebcbd88cfdb3`, PR CI #224 SUCCESS and post-merge CI #225 SUCCESS. LOCAL-FC-05G0 closes progress/debt/late architecture; LOCAL-FC-05G1 is the next internal implementation slice. This document is not an accepted requirements source and does not authorize implementation.
+**Status:** Planning guide after LOCAL-FC-05H0 CLOSED / GREEN through PR #60, canonical merge/main `8390c1d5ed0da253aeaf0b0ce2e27db8463e95ec` and post-merge CI #233 SUCCESS. LOCAL-FC-05G1 is CLOSED / GREEN. LOCAL-FC-05H0D is finalized locally, pending independent review/CI; 05H1 is next and has not started. This document is not an accepted requirements source and does not authorize implementation.
 
 ## Purpose
 
@@ -65,12 +65,14 @@ LOCAL-FC-05A0 is merged. LOCAL-FC-05A0D closed the seven PPCT architecture prere
 15. **05F2 — Teaching Execution control plane / Báo giảng evidence runtime (CLOSED / GREEN).** PR #57 final head `03bc8e9c08349547f7a447cef9dc4428a0bc55d8`, PR CI #224 SUCCESS, merge/current main `354b1723d45fdb8cadc31aeded05ebcbd88cfdb3` and post-merge CI #225 SUCCESS. It establishes server-derived confirmation/read/correction, tx-aware allocation and one outer `SERIALIZABLE` evidence transaction without public make-up scheduling.
 16. **05G0 — Progress / Debt / Late architecture closure (CLOSED).** ADR-040 defines projection-only truth, exact direct-obligation distribution, source-slot elapsed policy, proof-backed debt, visible unconfirmed gaps, V1 late and fail-closed reconciliation.
 17. **05G1 — Deterministic Progress / Debt / Late Projection (CLOSED / GREEN).** PR #59 final head `352842d5dcc9615c26b3549fd512f23b8e247632`, PR CI #230 SUCCESS, merge/current canonical main `cade4896ff7e25cdb9221e204bd714105d4bd52a`, and post-merge CI #231 SUCCESS. Internal, reproducible read projection/service from retained facts only; make-up fulfills an original obligation exactly once. No public controller/capability is implied.
-18. **05H0 — Reporting Projection Architecture Audit (current; not closed).** Documentation-only audit after 05G1: identifies and classifies CONFIRMED, INFERRED and UNRESOLVED reporting requirements; it does not itself decide missing product semantics. A later **05H0D — Reporting Projection Decision Closure** must accept or explicitly defer the implementation-dependent reporting decisions before 05H1.
-19. **Reporting projection.** Weekly, monthly, semester, custom-range and annual projections only after authoritative reporting rules are closed.
-20. **Submission and approval snapshot.** Immutable submitted/approved snapshots or immutable reference manifests with explicit capability/scope checks and no self-approval.
-21. **Cross-domain closure.** Concurrency, idempotency, correction, replay, historical drift and performance validation across the full chain.
-22. **CORE BACKEND FREEZE.** Contracts, state transitions, precedence, source references and capability matrix are accepted and regression-covered.
-23. **UI business completion afterward.** Product UI consumes frozen backend contracts and does not invent PPCT, debt, occurrence, approval or correction semantics.
+18. **05H0 — Reporting Projection Architecture Audit (CLOSED / GREEN).** PR #60, merge commit 8390c1d5ed0da253aeaf0b0ce2e27db8463e95ec and post-merge main CI #233 SUCCESS complete the audit.
+19. **05H0D — Reporting Projection Decision Closure (finalized locally; pending independent review/CI).** Product Owner accepted D1–D15 and ADR-041 records the accepted architecture. 05H1 has not started.
+20. **05H1 — Internal Reporting Projection (next; not implemented).** Separately authorized schema-free/internal deterministic projection only.
+21. **05H2 — Public Reporting read/control plane (later).** Requires separate authorization, read scope and pagination/performance closure.
+22. **Submission and approval snapshot.** Immutable submitted/approved snapshots or immutable reference manifests with explicit capability/scope checks and no self-approval.
+23. **Cross-domain closure.** Concurrency, idempotency, correction, replay, historical drift and performance validation across the full chain.
+24. **CORE BACKEND FREEZE.** Contracts, state transitions, precedence, source references and capability matrix are accepted and regression-covered.
+25. **UI business completion afterward.** Product UI consumes frozen backend contracts and does not invent PPCT, debt, occurrence, approval or correction semantics.
 
 ## Layering rule
 
