@@ -23,6 +23,7 @@ import { ResolvedOccurrencesModule } from './resolved-occurrences/resolved-occur
 import { PpctOccurrenceAllocationModule } from './ppct-occurrence-allocation/ppct-occurrence-allocation.module';
 import { TeachingExecutionsModule } from './teaching-executions/teaching-executions.module';
 import { ProgressDebtModule } from './progress-debt/progress-debt.module';
+import { ReportingProjectionModule } from './reporting-projection/reporting-projection.module';
 
 @Module({
   imports: [
@@ -63,6 +64,7 @@ import { ProgressDebtModule } from './progress-debt/progress-debt.module';
     PpctOccurrenceAllocationModule,
     TeachingExecutionsModule,
     ProgressDebtModule,
+    ReportingProjectionModule,
   ],
 })
 export class AppModule {}
