@@ -4,7 +4,7 @@
 
 ## LOCAL-FC-05E2 / 05E2B / 05F0 / 05F1 / 05F2 / 05G0 / 05G1 status
 
-LOCAL-FC-05G1 is implemented locally as the internal `TEACHING_PROGRESS_DEBT_V1` projection and remains pending independent review and CI; it is not closed or green.
+LOCAL-FC-05G1 is **CLOSED / GREEN** as the internal `TEACHING_PROGRESS_DEBT_V1` projection: PR #59 final head `352842d5dcc9615c26b3549fd512f23b8e247632`, PR CI #230 SUCCESS, merge/canonical main `cade4896ff7e25cdb9221e204bd714105d4bd52a`, and post-merge CI #231 SUCCESS. LOCAL-FC-05H0 is the current documentation-only reporting-projection architecture audit and is not closed.
 
 Canonical main entering LOCAL-FC-05E2 is `92ea9133748f0864ba1d600b76a23d1d18e9e0e3`. LOCAL-FC-05D2 is **CLOSED / GREEN** through merged PR #50 and CI #203 PASS. It provides the bounded SpecialActivity runtime control plane; Room remains `NOT_ASSESSED`.
 
@@ -23,7 +23,7 @@ LOCAL-FC-05F0 Teaching Execution architecture is **CLOSED / GREEN** through PR #
 | **Repository** | `hvtnguyenson-code/baogiang-damsan` |
 | **Thư mục local** | `D:\baogiang-damsan` |
 | **Stable branch** | `main` |
-| **Trạng thái sản phẩm** | Backend lõi đã hoàn thành qua Teaching Execution control plane 05F2; 05G0 đã đóng kiến trúc progress/debt/late và 05G1 là lát cắt projection nội bộ tiếp theo; pre-operational, chưa go-live |
+| **Trạng thái sản phẩm** | Backend lõi đã hoàn thành qua 05G1 deterministic progress/debt/late projection; 05H0 là audit kiến trúc reporting hiện tại; pre-operational, chưa go-live |
 
 ## Phương án chính thức
 
@@ -79,7 +79,7 @@ Ngoài PPCT persistence/control plane của 05A1–05A2, bounded readiness của
 
 ADR-036 giữ Structural V1 ở dạng recomputed `RepeatableRead`, không persistence/cache/snapshot/audit mutation. Normal candidates giữ cả suppression state; make-up và Special Activity là các occurrence family độc lập. PPCT binding resolve tới exact association/version/plan và allocation vẫn `NOT_ASSESSED` trong profile này. ADR-037 định nghĩa profile downstream `PPCT_OCCURRENCE_ALLOCATION_V1`: replay theo class-subject stream, exact-version stable-UUID/lineage semantics và fail-closed blockers; không thay đổi ý nghĩa Structural V1.
 
-LOCAL-FC-05E2B không deploy, không migration production và không thay đổi schema/database hay public HTTP contract. LOCAL-FC-05F1 đã merged với persistence foundation/schema verification và không triển khai runtime source, public contract, capability, seed, controller, workflow, UI, deployment hay production mutation. LOCAL-FC-05F2 đã đóng runtime Teaching Execution control plane. Bước implementation tiếp theo, sau closure 05G0, là LOCAL-FC-05G1 — Deterministic Progress / Debt / Late Projection nội bộ.
+LOCAL-FC-05E2B không deploy, không migration production và không thay đổi schema/database hay public HTTP contract. LOCAL-FC-05F1 đã merged với persistence foundation/schema verification và không triển khai runtime source, public contract, capability, seed, controller, workflow, UI, deployment hay production mutation. LOCAL-FC-05F2 đã đóng runtime Teaching Execution control plane. LOCAL-FC-05G1 đã **CLOSED / GREEN** qua PR #59, CI #230/#231 và canonical main `cade4896ff7e25cdb9221e204bd714105d4bd52a`. Bước hiện tại là LOCAL-FC-05H0 — Reporting Projection Architecture Audit; chưa có reporting implementation.
 
 Thứ tự không đổi: hoàn thành chuỗi backend đến `CORE BACKEND FREEZE` trước khi UI được phép chốt business semantics.
 
