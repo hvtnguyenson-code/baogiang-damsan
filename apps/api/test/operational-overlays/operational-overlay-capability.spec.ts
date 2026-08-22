@@ -14,8 +14,8 @@ describe('operational overlay capability catalog', () => {
   });
 
   it('has exactly 30 unique definitions and creates no grants in seed', () => {
-    expect(CAPABILITIES).toHaveLength(33);
-    expect(new Set(CAPABILITIES.map(([key]) => key))).toHaveProperty('size', 33);
+    expect(CAPABILITIES).toHaveLength(34);
+    expect(new Set(CAPABILITIES.map(([key]) => key))).toHaveProperty('size', 34);
     const seed = fs.readFileSync(path.resolve(__dirname, '../../../../prisma/seed.cjs'), 'utf8');
     expect(seed).not.toMatch(/capabilityGrant\.(?:create|createMany|upsert)/u);
   });
