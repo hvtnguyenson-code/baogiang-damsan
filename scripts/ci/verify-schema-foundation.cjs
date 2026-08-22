@@ -55,7 +55,7 @@ for (const constraint of [
 }
 
 const capabilityKeys = CAPABILITIES.map(([key]) => key);
-assert.equal(capabilityKeys.length, 33);
+assert.equal(capabilityKeys.length, 34);
 assert.equal(new Set(capabilityKeys).size, capabilityKeys.length);
 for (const requiredKey of [
   'USER_MANAGE',
@@ -73,6 +73,7 @@ for (const requiredKey of [
   'SPECIAL_ACTIVITY_MANAGE',
   'TEACHING_EXECUTION_RECORD',
   'TEACHING_EXECUTION_MANAGE',
+  'REPORTING_READ',
 ]) {
   assert.ok(capabilityKeys.includes(requiredKey), `Missing seeded capability ${requiredKey}`);
 }
@@ -82,5 +83,6 @@ assert.deepEqual(capabilityScopes.get('TEACHING_OPERATION_MANAGE'), ['SUBJECT', 
 assert.deepEqual(capabilityScopes.get('SPECIAL_ACTIVITY_MANAGE'), ['SCHOOL_WIDE']);
 assert.deepEqual(capabilityScopes.get('TEACHING_EXECUTION_RECORD'), ['PERSONAL']);
 assert.deepEqual(capabilityScopes.get('TEACHING_EXECUTION_MANAGE'), ['SUBJECT', 'SCHOOL_WIDE']);
+assert.deepEqual(capabilityScopes.get('REPORTING_READ'), ['SUBJECT', 'SCHOOL_WIDE']);
 
 console.log('Schema foundation static verification PASS.');

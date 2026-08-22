@@ -9,7 +9,7 @@ BEGIN
     SELECT count(*), count(DISTINCT "key")
       INTO capability_count, distinct_count
       FROM "capability_definitions";
-    IF capability_count <> 33 OR distinct_count <> 33 THEN
+    IF capability_count <> 34 OR distinct_count <> 34 THEN
         RAISE EXCEPTION 'Capability seed is not idempotent: count %, distinct %',
             capability_count, distinct_count;
     END IF;
@@ -23,6 +23,17 @@ BEGIN
            AND "allowed_scope_types" <@ ARRAY['SUBJECT', 'SCHOOL_WIDE']::text[]
     ) THEN
         RAISE EXCEPTION 'PPCT_MANAGE must allow exactly SUBJECT and SCHOOL_WIDE';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+          FROM "capability_definitions"
+         WHERE "key" = 'REPORTING_READ'
+           AND cardinality("allowed_scope_types") = 2
+           AND "allowed_scope_types" @> ARRAY['SUBJECT', 'SCHOOL_WIDE']::text[]
+           AND "allowed_scope_types" <@ ARRAY['SUBJECT', 'SCHOOL_WIDE']::text[]
+    ) THEN
+        RAISE EXCEPTION 'REPORTING_READ must allow exactly SUBJECT and SCHOOL_WIDE';
     END IF;
 
     IF NOT EXISTS (
