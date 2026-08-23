@@ -2,13 +2,13 @@
 
 ## 1. Status / authority
 
-**Status: ACCEPTED / DECISION CLOSED.** Product Owner decisions D1–D18 are accepted for the V1 **PERSONAL** Reporting Statement. This is documentation only: it authorizes no implementation, schema/migration/Prisma, controller/service/runtime, capability catalog/seed, deployment, staging, commit, or push.
+**Status: ACCEPTED / DECISION CLOSED.** Product Owner decisions D1–D19 are accepted for the V1 **PERSONAL** Reporting Statement. This is documentation only: it authorizes no implementation, schema/migration/Prisma, controller/service/runtime, capability catalog/seed, deployment, staging, commit, or push.
 
 `STATEMENT_MODE = PERSONAL`: one authenticated submitter owns one Statement revision. It is not an organizational multi-root report; client-selected roots never establish personal completeness.
 
 ## 2. Baseline
 
-Canonical base: `67fa8fff2368f12b821815e4b21d0e8e8e5624fc`. Expected branch: `docs/local-fc-05i0d-submission-approval-decision-closure`.
+Canonical base: D19 is a later A2 extension recorded from canonical main 2dfa4acda507a3083d1ed89854cf09edc0c4a83f during the Personal Reporting Projection closure. Original baseline: `67fa8fff2368f12b821815e4b21d0e8e8e5624fc`. Expected branch: `docs/local-fc-05i0d-submission-approval-decision-closure`.
 
 ## 3. Pre-existing confirmed authority
 
@@ -20,15 +20,15 @@ Reporting remains current-authoritative and downstream; canonical detail exclusi
 
 V1 is a personal immutable official-record family. The authenticated submitter and historical date-effective `responsibleTeacher` semantics determine scope. `actualTeacher` is evidence only; it never transfers TeachingAssignment ownership or personal curricular responsibility.
 
-## 5. Accepted decisions D1–D18
+## 5. Accepted decisions D1–D19
 
 | ID | Accepted decision |
 | --- | --- |
 | D1 | Logical PERSONAL Statement series key is `statementProfile + submitterUserId + academicYearId + fromCivilDate + toCivilDate`. `statementProfile` is a versioned business discriminator. Each immutable Statement UUID is exactly one revision in one series. Series identity is not UUID, semantic hash, requestKey, lifecycle token, display/title, current assignment, generated/submitted time, or `evaluatedAt`. |
-| D2 | Submit only fully trustworthy authoritative PERSONAL projection: all included scope PASS, no intersecting BLOCKED source omitted, all aggregates available, and no partial combined total represented complete. Otherwise fail closed with no Statement. |
+| D2 | Submit only fully trustworthy authoritative PERSONAL projection: RESPONSIBILITY_PRESENT + PASS authoritative Personal projection, no intersecting BLOCKED source omitted, all aggregates available, and no partial combined total represented complete. Otherwise fail closed with no Statement. |
 | D3 | Freeze a **HYBRID immutable snapshot plus provenance manifest**: snapshot/profile/serializer version, accepted input, ordered canonical detail, reconciled aggregates, ADR-041 provenance, submitter UUID, bounded display evidence, semantic hash, and separate operational timestamps. Normal history reads frozen evidence, never current heads. |
 | D4 | `REPORTING_STATEMENT_SNAPSHOT_V1` uses SHA-256 over versioned canonical UTF-8 JSON. Semantic hash proves frozen semantic content/integrity only; it never proves Statement/revision/series identity, current authority, idempotency, uniqueness, or lifecycle. |
-| D5 | Official submit uses one outer `SERIALIZABLE` transaction: authenticate; authorize; normalize series; normalize deterministic client command intent; resolve requestKey/fingerprint; replay a prior same accepted command without new reporting/as-of; only for a new command pin one server command-clock `asOfInstant`; enforce series guards; resolve tx-aware personal projection with that exact instant; PASS eligibility; canonicalize/freeze/hash; persist immutable revision and series/lineage; history; success audit; commit. No nested projection transaction or later clock read may change new-command truth. |
+| D5 | Official submit uses one outer `SERIALIZABLE` transaction: authenticate; authorize; normalize series; normalize deterministic client command intent; resolve requestKey/fingerprint; replay a prior same accepted command without new reporting/as-of; only for a new command pin one server command-clock `asOfInstant`; enforce series guards; resolve tx-aware personal projection with that exact instant; RESPONSIBILITY_PRESENT + PASS eligibility; canonicalize/freeze/hash; persist immutable revision and series/lineage; history; success audit; commit. No nested projection transaction or later clock read may change new-command truth. |
 | D6 | States: `SUBMITTED`, `APPROVED`, `REJECTED`, `SUPERSEDED`; no persisted DRAFT, WITHDRAWN, or VOID. `SUBMITTED -> APPROVED|REJECTED`; `APPROVED -> SUPERSEDED` only through approved successor. REJECTED and SUPERSEDED are terminal/readable. |
 | D7 | Approval/rejection are immutable append-only domain decisions. Root/series may hold guarded state/version tokens for reads; state and history reconcile exactly. A transition and history write are atomic. |
 | D8 | Frozen content is never edited. Rejection then valid resubmit creates a new successor revision in the same series. Approved correction creates a new successor revision; predecessor remains current approved until successor approval. |
@@ -42,6 +42,7 @@ V1 is a personal immutable official-record family. The authenticated submitter a
 | D16 | Sequence: Personal Reporting Projection prerequisite; persistence foundation; submit/read/approve/reject control plane; cross-domain stale/concurrency/replay/historical-drift E2E; Core Backend Freeze; then UI. |
 | D17 | One series permits at most one unresolved current SUBMITTED and at most one non-superseded current APPROVED. A second non-idempotent submit during SUBMITTED conflicts. On successor approval, successor APPROVED, predecessor SUPERSEDED, series current authority, history, and audit occur atomically. Future persistence must enforce these transactionally/database-backed, not best-effort; no physical table/index is selected now. |
 | D18 | Official submit never accepts client-controlled `asOfInstant`. After idempotency establishes a genuinely new command, server pins exactly one command-clock instant, passes it unchanged to the authoritative PERSONAL resolver, and retains it in frozen input/manifest. A replay returns its original frozen as-of and does not pin/re-resolve. Client body/query cannot override it; source drift fails stale/conflict, never changes new-command as-of or yields mixed content. Existing live/preflight API semantics are unchanged. |
+| D19 | Valid Personal PASS ZERO_RESPONSIBILITY has exact zero counts but is ineligible for V1 Statement submission before freeze/persistence; no series/revision. Future zero-subject support requires re-entry and SUBJECT-only non-owner read stays fail-closed. |
 
 ## 6. PERSONAL scope derivation analysis
 
@@ -53,7 +54,7 @@ Exact personal reporting requires server-derived responsibility scope, filtering
 
 If a candidate underlying root intersects that server-derived scope and is BLOCKED, personal scope remains fail-closed: do not drop it, infer safe detail, or expose partial combined totals. A root wholly outside scope is not included merely because a client supplied it. This composition is reporting semantics, not Statement logic, and must be a separately closed tx-aware, non-persistent, no-lifecycle slice.
 
-**Zero-scope remains unresolved for that prerequisite:** where teacher has no date-effective curricular responsibility in range, it must source-test and choose either authoritative empty zero aggregate or invalid/non-submittable request. 05I0D chooses neither; the later choice must agree across personal preflight, submit eligibility, series identity, and later UI.
+**D19 — Zero-responsibility Personal truth / Statement eligibility:** a valid Personal projection may PASS with ZERO_RESPONSIBILITY and exact zero counts; V1 Statement submission requires RESPONSIBILITY_PRESENT. ZERO_RESPONSIBILITY is ineligible, not BLOCKED, and creates no Statement series/revision. Future zero-subject Statement support requires explicit re-entry; SUBJECT-only non-owner read must then fail closed.
 
 ## 7. Lifecycle / series transition matrix
 
@@ -80,7 +81,7 @@ If a candidate underlying root intersects that server-derived scope and is BLOCK
 | any read | `REPORTING_STATEMENT_READ`, SCHOOL_WIDE | allowed, including a future valid zero-subject Statement |
 | approve/reject | `APPROVAL_PRINCIPAL` or `APPROVAL_VICE_PRINCIPAL`, SCHOOL_WIDE | exact token and UUID separation of duty |
 
-No title, role, membership, AdditionalDuty, TeachingAssignment, SYSTEM_ADMIN, UI, CLASS, or ACADEMIC_YEAR scope authorizes. Zero-scope submission validity remains deferred; this only closes its read authorization if a future accepted prerequisite permits such a frozen Statement.
+No title, role, membership, AdditionalDuty, TeachingAssignment, SYSTEM_ADMIN, UI, CLASS, or ACADEMIC_YEAR scope authorizes. V1 does not create zero-subject Statements because D19 makes ZERO_RESPONSIBILITY non-submittable. The zero-subject authorization rows describe only the future defensive rule if a later explicit policy re-entry permits such Statements.
 ## 9. Snapshot / hash canonicalization contract
 
 Semantic payload includes snapshot/profile/serializer version; accepted `statementProfile`; submitterUserId; academicYearId; inclusive canonical civil from/to dates; exact server-pinned official asOfInstant; server-derived scope manifest; ordered canonical detail; reconciled aggregates; and ADR-041 immutable provenance.
@@ -90,7 +91,7 @@ It excludes Statement UUID/statementId, series lifecycle revision/token, request
 `REPORTING_STATEMENT_SNAPSHOT_V1` bytes are UTF-8 **without BOM**, with no insignificant whitespace and recursively lexicographically sorted object keys. Arrays preserve accepted domain order: roots by stable accepted root key; detail by `sourceCivilDate -> sourceSlotStart -> sourceSlotEnd -> occurrenceKey`. Canonical instants are exactly `YYYY-MM-DDTHH:mm:ss.sssZ`: UTC, trailing `Z`, exactly millisecond precision, no offset variants and no locale format. Civil dates remain `YYYY-MM-DD`, never UTC-midnight timestamps. Schema-defined nullable values serialize as explicit JSON `null`; schema-defined absent fields are absent by schema contract. `undefined` is not representable: any accidental runtime undefined after schema normalization is a canonicalization failure and must not be silently serialized. No secrets, incidental database order, or locale numeric formatting is permitted. Current payload uses integer counts and strings/IDs/instants; serializer version owns future numeric edge compatibility rather than inventing a domain rule.
 ## 10. Submission transaction topology
 
-Within one outer SERIALIZABLE transaction: (1) authenticate; (2) authorize; (3) normalize logical series; (4) normalize deterministic client intent; (5) resolve requestKey/fingerprint; (6) if same accepted command already succeeded, return its authoritative prior result and original frozen as-of without reporting or a new clock read; (7) only for a genuinely new command pin one server-owned command-clock as-of; (8) enforce series guards; (9) resolve tx-aware PERSONAL projection using exactly it; (10) PASS eligibility; (11) canonicalize/freeze/hash; (12) persist revision and series/lineage; (13) append business history; (14) write success audit; (15) commit.
+Within one outer SERIALIZABLE transaction: (1) authenticate; (2) authorize; (3) normalize logical series; (4) normalize deterministic client intent; (5) resolve requestKey/fingerprint; (6) if same accepted command already succeeded, return its authoritative prior result and original frozen as-of without reporting or a new clock read; (7) only for a genuinely new command pin one server-owned command-clock as-of; (8) enforce series guards; (9) resolve tx-aware PERSONAL projection using exactly it; (10) RESPONSIBILITY_PRESENT + PASS eligibility; (11) canonicalize/freeze/hash; (12) persist revision and series/lineage; (13) append business history; (14) write success audit; (15) commit.
 
 The resolver shares this transaction and exposes missing provenance, BLOCKED, source drift, or concurrency as failure. Any such failure, unavailable aggregate, authorization denial, idempotency mismatch, or series guard failure creates no revision. Concurrent same-key commands require later database-backed idempotency: one authoritative result wins and loser/retry replays that revision.
 ## 11. Idempotency, concurrency and CAS
@@ -127,7 +128,7 @@ No V1 physical deletion. Rejected and superseded revisions remain readable. Froz
 | P27 concurrent approval paths | never two non-superseded APPROVED revisions. |
 | P28 client old as-of | ignored/rejected by command contract; new official submit uses only server clock, while replay returns original frozen as-of. |
 | P29 successive revisions with equal business detail | hashes may match only when every hashed field, including pinned as-of, is byte-semantically identical; UUID/revisions remain distinct. |
-| P30 zero responsibility | prerequisite decision; no Statement-layer inference. If later valid zero-subject Statement, SUBJECT-only non-owner read fails closed; owner PERSONAL/SCHOOL_WIDE remain possible. |
+| P30 zero responsibility | valid request: Personal PASS / ZERO_RESPONSIBILITY / zero counts; official Statement submission is ineligible and creates no series/revision. Future zero-subject policy requires re-entry and SUBJECT-only read remains fail-closed. |
 | P31 start/stop inside root | filter canonical personal detail then reaggregate. |
 | P32 intersecting root BLOCKED | filtering cannot manufacture personal PASS. |
 
@@ -135,7 +136,7 @@ P1–P8, P19, P30–P32 depend on the prerequisite closure.
 
 ## 16. Implementation entry criteria
 
-Before Statement persistence: (1) Personal Reporting Projection CLOSED/GREEN; (2) zero-scope submission behavior closed and, if valid, zero-subject read fail-closed semantics tested; (3) server-derived responsibility tested; (4) partial-root handover tested; (5) BLOCKED propagation tested; (6) tx-aware resolver exists; (7) official server-pinned as-of/replay contract exposed. Persistence must enforce series identity, immutable revision/lineage, one current SUBMITTED, one non-superseded APPROVED, atomic successor approval/supersession, CAS token, command idempotency, immutable snapshot/hash, and decision history transactionally/database-backed.
+Before Statement persistence: (1) Personal Reporting Projection CLOSED/GREEN; (2) ZERO_RESPONSIBILITY ineligibility tested; future zero-subject read fail-closed rule retained; (3) server-derived responsibility tested; (4) partial-root handover tested; (5) BLOCKED propagation tested; (6) tx-aware resolver exists; (7) official server-pinned as-of/replay contract exposed. Persistence must enforce series identity, immutable revision/lineage, one current SUBMITTED, one non-superseded APPROVED, atomic successor approval/supersession, CAS token, command idempotency, immutable snapshot/hash, and decision history transactionally/database-backed.
 
 ## 17. Residual deferrals
 
@@ -143,7 +144,7 @@ Physical schema/indexes, API/DTO/error contract, rationale visibility, numeric l
 
 ## 18. Re-entry triggers
 
-Re-enter if prerequisite cannot preserve ADR-041 detail/aggregate semantics, zero-scope choice requires authority, responsibility semantics change, or delegation/quorum/retention is proposed, before runtime work.
+Re-enter if prerequisite cannot preserve ADR-041 detail/aggregate semantics, zero-subject Statement policy is proposed, responsibility semantics change, or delegation/quorum/retention is proposed, before runtime work.
 
 ## 19. Non-authorization
 
