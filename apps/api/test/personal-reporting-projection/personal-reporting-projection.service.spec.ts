@@ -1,4 +1,3 @@
-import { Prisma } from "@prisma/client";
 import { PersonalReportingProjectionService } from "../../src/personal-reporting-projection/personal-reporting-projection.service";
 import {
   ReportingDetail,
