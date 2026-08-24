@@ -1403,8 +1403,8 @@ model ReportingStatementSeries {
   toCivilDate      DateTime @map("to_civil_date") @db.Date
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  submitter    User                         @relation("ReportingStatementSeriesSubmitter", fields: [submitterUserId], references: [id], onDelete: Restrict)
-  academicYear AcademicYear                 @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  submitter    User                         @relation("ReportingStatementSeriesSubmitter", fields: [submitterUserId], references: [id], onDelete: Restrict, map: "reporting_statement_series_submitter_fkey")
+  academicYear AcademicYear                 @relation(fields: [academicYearId], references: [id], onDelete: Restrict, map: "reporting_statement_series_academic_year_fkey")
   revisions    ReportingStatementRevision[]
   commands     ReportingStatementCommand[]
   histories    ReportingStatementHistory[]
@@ -1427,10 +1427,10 @@ model ReportingStatementRevision {
   submitterStaffCodeSnapshot   String?  @map("submitter_staff_code_snapshot") @db.VarChar(50)
   submittedAt                  DateTime @default(now()) @map("submitted_at") @db.Timestamptz(3)
 
-  series                ReportingStatementSeries            @relation(fields: [seriesId], references: [id], onDelete: Restrict)
-  predecessor           ReportingStatementRevision?         @relation("ReportingStatementRevisionPredecessor", fields: [predecessorRevisionId, seriesId], references: [id, seriesId], onDelete: Restrict)
+  series                ReportingStatementSeries            @relation(fields: [seriesId], references: [id], onDelete: Restrict, map: "reporting_statement_revision_series_fkey")
+  predecessor           ReportingStatementRevision?         @relation("ReportingStatementRevisionPredecessor", fields: [predecessorRevisionId, seriesId], references: [id, seriesId], onDelete: Restrict, map: "reporting_statement_revision_predecessor_fkey")
   predecessorSuccessors ReportingStatementRevision[]        @relation("ReportingStatementRevisionPredecessor")
-  supersedes            ReportingStatementRevision?         @relation("ReportingStatementRevisionSupersedes", fields: [supersedesRevisionId, seriesId], references: [id, seriesId], onDelete: Restrict)
+  supersedes            ReportingStatementRevision?         @relation("ReportingStatementRevisionSupersedes", fields: [supersedesRevisionId, seriesId], references: [id, seriesId], onDelete: Restrict, map: "reporting_statement_revision_supersedes_fkey")
   supersededBy          ReportingStatementRevision[]        @relation("ReportingStatementRevisionSupersedes")
   state                 ReportingStatementRevisionState?
   subjects              ReportingStatementRevisionSubject[]
@@ -1450,7 +1450,7 @@ model ReportingStatementRevisionState {
   lifecycleToken String                           @map("lifecycle_token") @db.Uuid
   updatedAt      DateTime                         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  revision ReportingStatementRevision @relation(fields: [revisionId, seriesId], references: [id, seriesId], onDelete: Restrict)
+  revision ReportingStatementRevision @relation(fields: [revisionId, seriesId], references: [id, seriesId], onDelete: Restrict, map: "reporting_statement_revision_state_revision_fkey")
 
   @@unique([revisionId, seriesId], map: "reporting_statement_revision_states_revision_id_series_id_key")
   @@index([seriesId], map: "reporting_statement_revision_states_series_id_idx")
@@ -1462,8 +1462,8 @@ model ReportingStatementRevisionSubject {
   subjectId  String   @map("subject_id") @db.Uuid
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  revision ReportingStatementRevision @relation(fields: [revisionId], references: [id], onDelete: Restrict)
-  subject  Subject                    @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  revision ReportingStatementRevision @relation(fields: [revisionId], references: [id], onDelete: Restrict, map: "reporting_statement_revision_subject_revision_fkey")
+  subject  Subject                    @relation(fields: [subjectId], references: [id], onDelete: Restrict, map: "reporting_statement_revision_subject_subject_fkey")
 
   @@id([revisionId, subjectId])
   @@map("reporting_statement_revision_subjects")
@@ -1483,12 +1483,13 @@ model ReportingStatementCommand {
   submissionAsOfInstant DateTime?                        @map("submission_as_of_instant") @db.Timestamptz(3)
   acceptedAt            DateTime                         @default(now()) @map("accepted_at") @db.Timestamptz(3)
 
-  actor          User                        @relation("ReportingStatementCommandActor", fields: [actorUserId], references: [id], onDelete: Restrict)
-  series         ReportingStatementSeries    @relation(fields: [seriesId], references: [id], onDelete: Restrict)
-  targetRevision ReportingStatementRevision? @relation("ReportingStatementCommandTargetRevision", fields: [targetRevisionId, seriesId], references: [id, seriesId], onDelete: Restrict)
-  resultRevision ReportingStatementRevision  @relation("ReportingStatementCommandResultRevision", fields: [resultRevisionId, seriesId], references: [id, seriesId], onDelete: Restrict)
+  actor          User                        @relation("ReportingStatementCommandActor", fields: [actorUserId], references: [id], onDelete: Restrict, map: "reporting_statement_command_actor_fkey")
+  series         ReportingStatementSeries    @relation(fields: [seriesId], references: [id], onDelete: Restrict, map: "reporting_statement_command_series_fkey")
+  targetRevision ReportingStatementRevision? @relation("ReportingStatementCommandTargetRevision", fields: [targetRevisionId, seriesId], references: [id, seriesId], onDelete: Restrict, map: "reporting_statement_command_target_revision_fkey")
+  resultRevision ReportingStatementRevision  @relation("ReportingStatementCommandResultRevision", fields: [resultRevisionId, seriesId], references: [id, seriesId], onDelete: Restrict, map: "reporting_statement_command_result_revision_fkey")
   histories      ReportingStatementHistory[]
 
+  @@unique([id, seriesId], map: "reporting_statement_commands_id_series_id_key")
   @@unique([actorUserId, commandType, requestKey], map: "reporting_statement_commands_actor_type_request_key")
   @@index([seriesId], map: "reporting_statement_commands_series_id_idx")
   @@map("reporting_statement_commands")
@@ -1511,11 +1512,11 @@ model ReportingStatementHistory {
   submissionAsOfInstant    DateTime?                         @map("submission_as_of_instant") @db.Timestamptz(3)
   createdAt                DateTime                          @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  series           ReportingStatementSeries    @relation(fields: [seriesId], references: [id], onDelete: Restrict)
-  revision         ReportingStatementRevision  @relation("ReportingStatementHistoryRevision", fields: [revisionId, seriesId], references: [id, seriesId], onDelete: Restrict)
-  actor            User                        @relation("ReportingStatementHistoryActor", fields: [actorUserId], references: [id], onDelete: Restrict)
-  command          ReportingStatementCommand   @relation(fields: [commandId], references: [id], onDelete: Restrict)
-  causedByRevision ReportingStatementRevision? @relation("ReportingStatementHistoryCausedByRevision", fields: [causedByRevisionId, seriesId], references: [id, seriesId], onDelete: Restrict)
+  series           ReportingStatementSeries    @relation(fields: [seriesId], references: [id], onDelete: Restrict, map: "reporting_statement_history_series_fkey")
+  revision         ReportingStatementRevision  @relation("ReportingStatementHistoryRevision", fields: [revisionId, seriesId], references: [id, seriesId], onDelete: Restrict, map: "reporting_statement_history_revision_fkey")
+  actor            User                        @relation("ReportingStatementHistoryActor", fields: [actorUserId], references: [id], onDelete: Restrict, map: "reporting_statement_history_actor_fkey")
+  command          ReportingStatementCommand   @relation(fields: [commandId, seriesId], references: [id, seriesId], onDelete: Restrict, map: "reporting_statement_history_command_fkey")
+  causedByRevision ReportingStatementRevision? @relation("ReportingStatementHistoryCausedByRevision", fields: [causedByRevisionId, seriesId], references: [id, seriesId], onDelete: Restrict, map: "reporting_statement_history_caused_by_revision_fkey")
 
   @@index([seriesId, createdAt], map: "reporting_statement_histories_series_created_at_idx")
   @@index([revisionId], map: "reporting_statement_histories_revision_id_idx")

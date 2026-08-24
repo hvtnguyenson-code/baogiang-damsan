@@ -72,6 +72,7 @@ CREATE TABLE "reporting_statement_commands" (
     "submission_as_of_instant" TIMESTAMPTZ(3),
     "accepted_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "reporting_statement_commands_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "reporting_statement_commands_id_series_id_key" UNIQUE ("id", "series_id"),
     CONSTRAINT "reporting_statement_commands_actor_type_request_key" UNIQUE ("actor_user_id", "command_type", "request_key"),
     CONSTRAINT "reporting_statement_command_identity_text_check" CHECK (
       "request_key" = btrim("request_key") AND "request_key" <> ''
@@ -79,8 +80,8 @@ CREATE TABLE "reporting_statement_commands" (
     ),
     CONSTRAINT "reporting_statement_command_shape_check" CHECK (
       ("command_type" = 'SUBMIT' AND "target_revision_id" IS NULL AND "submission_as_of_instant" IS NOT NULL AND "result_lifecycle_state" = 'SUBMITTED')
-      OR ("command_type" = 'APPROVE' AND "target_revision_id" IS NOT NULL AND "submission_as_of_instant" IS NULL AND "result_lifecycle_state" = 'APPROVED')
-      OR ("command_type" = 'REJECT' AND "target_revision_id" IS NOT NULL AND "submission_as_of_instant" IS NULL AND "result_lifecycle_state" = 'REJECTED')
+      OR ("command_type" = 'APPROVE' AND "target_revision_id" IS NOT NULL AND "target_revision_id" = "result_revision_id" AND "submission_as_of_instant" IS NULL AND "result_lifecycle_state" = 'APPROVED')
+      OR ("command_type" = 'REJECT' AND "target_revision_id" IS NOT NULL AND "target_revision_id" = "result_revision_id" AND "submission_as_of_instant" IS NULL AND "result_lifecycle_state" = 'REJECTED')
     )
 );
 
@@ -131,5 +132,5 @@ ALTER TABLE "reporting_statement_commands" ADD CONSTRAINT "reporting_statement_c
 ALTER TABLE "reporting_statement_histories" ADD CONSTRAINT "reporting_statement_history_series_fkey" FOREIGN KEY ("series_id") REFERENCES "reporting_statement_series"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE "reporting_statement_histories" ADD CONSTRAINT "reporting_statement_history_revision_fkey" FOREIGN KEY ("revision_id", "series_id") REFERENCES "reporting_statement_revisions"("id", "series_id") ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE "reporting_statement_histories" ADD CONSTRAINT "reporting_statement_history_actor_fkey" FOREIGN KEY ("actor_user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-ALTER TABLE "reporting_statement_histories" ADD CONSTRAINT "reporting_statement_history_command_fkey" FOREIGN KEY ("command_id") REFERENCES "reporting_statement_commands"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "reporting_statement_histories" ADD CONSTRAINT "reporting_statement_history_command_fkey" FOREIGN KEY ("command_id", "series_id") REFERENCES "reporting_statement_commands"("id", "series_id") ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE "reporting_statement_histories" ADD CONSTRAINT "reporting_statement_history_caused_by_revision_fkey" FOREIGN KEY ("caused_by_revision_id", "series_id") REFERENCES "reporting_statement_revisions"("id", "series_id") ON DELETE RESTRICT ON UPDATE CASCADE;
