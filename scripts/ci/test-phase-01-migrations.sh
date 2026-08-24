@@ -103,4 +103,7 @@ echo "[migration-test] Teaching Execution persistence constraint and history ver
 psql "$fresh_psql_url" -v ON_ERROR_STOP=1 \
   -f scripts/ci/verify-teaching-execution-schema.sql
 
+echo "[migration-test] Reporting Statement persistence constraint verification"
+psql "$fresh_psql_url" -v ON_ERROR_STOP=1 -f scripts/ci/verify-reporting-statement-schema.sql
+
 echo "[migration-test] PASS"
