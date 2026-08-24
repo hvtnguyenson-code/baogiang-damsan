@@ -116,6 +116,26 @@ enum CurricularTeachingExecutionKind {
   MAKEUP
 }
 
+enum ReportingStatementLifecycleState {
+  SUBMITTED
+  APPROVED
+  REJECTED
+  SUPERSEDED
+}
+
+enum ReportingStatementCommandType {
+  SUBMIT
+  APPROVE
+  REJECT
+}
+
+enum ReportingStatementHistoryEvent {
+  SUBMITTED
+  APPROVED
+  REJECTED
+  SUPERSEDED
+}
+
 enum TimetableImportTeacherIdentifierMode {
   GENERIC_EXACT
   STAFF_CODE
@@ -161,50 +181,53 @@ model User {
   createdAt          DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt          DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  profile                          StaffProfile?
-  subjectGroupMemberships          SubjectGroupMembership[]
-  staffSubjects                    StaffSubject[]
-  capabilityGrants                 CapabilityGrant[]                       @relation("CapabilityGrantSubject")
-  capabilityGrantsCreated          CapabilityGrant[]                       @relation("CapabilityGrantGrantedBy")
-  capabilityGrantsRevoked          CapabilityGrant[]                       @relation("CapabilityGrantRevokedBy")
-  authSessions                     AuthSession[]
-  auditEvents                      AuditEvent[]                            @relation("AuditActor")
-  additionalDutyAssignmentsCreated StaffAdditionalDutyAssignment[]         @relation("AdditionalDutyAssignmentCreator")
-  teachingAssignments              TeachingAssignment[]                    @relation("TeachingAssignmentTeacher")
-  timetableVersionsCreated         TimetableVersion[]                      @relation("TimetableVersionCreatedBy")
-  timetableVersionsValidated       TimetableVersion[]                      @relation("TimetableVersionValidatedBy")
-  timetableVersionsApproved        TimetableVersion[]                      @relation("TimetableVersionApprovedBy")
-  timetableVersionsActivated       TimetableVersion[]                      @relation("TimetableVersionActivatedBy")
-  timetableEntriesAsTeacher        TimetableEntry[]                        @relation("TimetableEntryTeacher")
-  timetableImportProfilesCreated   TimetableImportProfile[]                @relation("TimetableImportProfileCreatedBy")
-  timetableImportRevisionsCreated  TimetableImportProfileRevision[]        @relation("TimetableImportProfileRevisionCreatedBy")
-  timetableImportRevisionsRetired  TimetableImportProfileRevision[]        @relation("TimetableImportProfileRevisionRetiredBy")
-  timetableImportAliasesAsTeacher  TimetableImportEntityAlias[]            @relation("TimetableImportAliasTeacher")
-  timetableImportAliasesCreated    TimetableImportEntityAlias[]            @relation("TimetableImportAliasCreatedBy")
-  timetableImportAliasesRetired    TimetableImportEntityAlias[]            @relation("TimetableImportAliasRetiredBy")
-  timetableImportReceiptsCreated   TimetableImportReceipt[]                @relation("TimetableImportReceiptCreatedBy")
-  ppctVersionsCreated              PpctVersion[]                           @relation("PpctVersionCreatedBy")
-  ppctVersionsPublished            PpctVersion[]                           @relation("PpctVersionPublishedBy")
-  ppctVersionsSuperseded           PpctVersion[]                           @relation("PpctVersionSupersededBy")
-  ppctClassAssociationsCreated     PpctClassAssociation[]                  @relation("PpctClassAssociationCreatedBy")
-  calendarExceptionsCreated        CalendarException[]                     @relation("CalendarExceptionCreatedBy")
-  calendarExceptionsReversed       CalendarException[]                     @relation("CalendarExceptionReversedBy")
-  lessonDispositionsCreated        OperationalLessonDisposition[]          @relation("LessonDispositionCreatedBy")
-  lessonDispositionsReversed       OperationalLessonDisposition[]          @relation("LessonDispositionReversedBy")
-  lessonDispositionsAssigned       OperationalLessonDisposition[]          @relation("LessonDispositionAssignedTeacher")
-  makeupSchedulesCreated           MakeupTeachingSchedule[]                @relation("MakeupScheduleCreatedBy")
-  makeupSchedulesReversed          MakeupTeachingSchedule[]                @relation("MakeupScheduleReversedBy")
-  makeupSchedulesAsTeacher         MakeupTeachingSchedule[]                @relation("MakeupScheduleTeacher")
-  specialActivitiesCreated         SpecialActivity[]                       @relation("SpecialActivityCreatedBy")
-  specialActivitiesReversed        SpecialActivity[]                       @relation("SpecialActivityReversedBy")
-  specialActivityStaffing          SpecialActivityStaffing[]               @relation("SpecialActivityScheduledTeacher")
-  curricularExecutionsResponsible  CurricularTeachingExecution[]           @relation("CurricularExecutionResponsibleTeacher")
-  curricularExecutionsActual       CurricularTeachingExecution[]           @relation("CurricularExecutionActualTeacher")
-  curricularExecutionsCreated      CurricularTeachingExecution[]           @relation("CurricularExecutionCreatedBy")
-  curricularExecutionsReversed     CurricularTeachingExecution[]           @relation("CurricularExecutionReversedBy")
-  activityExecutionsActual         SpecialActivityParticipationExecution[] @relation("ActivityExecutionActualTeacher")
-  activityExecutionsCreated        SpecialActivityParticipationExecution[] @relation("ActivityExecutionCreatedBy")
-  activityExecutionsReversed       SpecialActivityParticipationExecution[] @relation("ActivityExecutionReversedBy")
+  profile                           StaffProfile?
+  subjectGroupMemberships           SubjectGroupMembership[]
+  staffSubjects                     StaffSubject[]
+  capabilityGrants                  CapabilityGrant[]                       @relation("CapabilityGrantSubject")
+  capabilityGrantsCreated           CapabilityGrant[]                       @relation("CapabilityGrantGrantedBy")
+  capabilityGrantsRevoked           CapabilityGrant[]                       @relation("CapabilityGrantRevokedBy")
+  authSessions                      AuthSession[]
+  auditEvents                       AuditEvent[]                            @relation("AuditActor")
+  additionalDutyAssignmentsCreated  StaffAdditionalDutyAssignment[]         @relation("AdditionalDutyAssignmentCreator")
+  teachingAssignments               TeachingAssignment[]                    @relation("TeachingAssignmentTeacher")
+  timetableVersionsCreated          TimetableVersion[]                      @relation("TimetableVersionCreatedBy")
+  timetableVersionsValidated        TimetableVersion[]                      @relation("TimetableVersionValidatedBy")
+  timetableVersionsApproved         TimetableVersion[]                      @relation("TimetableVersionApprovedBy")
+  timetableVersionsActivated        TimetableVersion[]                      @relation("TimetableVersionActivatedBy")
+  timetableEntriesAsTeacher         TimetableEntry[]                        @relation("TimetableEntryTeacher")
+  timetableImportProfilesCreated    TimetableImportProfile[]                @relation("TimetableImportProfileCreatedBy")
+  timetableImportRevisionsCreated   TimetableImportProfileRevision[]        @relation("TimetableImportProfileRevisionCreatedBy")
+  timetableImportRevisionsRetired   TimetableImportProfileRevision[]        @relation("TimetableImportProfileRevisionRetiredBy")
+  timetableImportAliasesAsTeacher   TimetableImportEntityAlias[]            @relation("TimetableImportAliasTeacher")
+  timetableImportAliasesCreated     TimetableImportEntityAlias[]            @relation("TimetableImportAliasCreatedBy")
+  timetableImportAliasesRetired     TimetableImportEntityAlias[]            @relation("TimetableImportAliasRetiredBy")
+  timetableImportReceiptsCreated    TimetableImportReceipt[]                @relation("TimetableImportReceiptCreatedBy")
+  ppctVersionsCreated               PpctVersion[]                           @relation("PpctVersionCreatedBy")
+  ppctVersionsPublished             PpctVersion[]                           @relation("PpctVersionPublishedBy")
+  ppctVersionsSuperseded            PpctVersion[]                           @relation("PpctVersionSupersededBy")
+  ppctClassAssociationsCreated      PpctClassAssociation[]                  @relation("PpctClassAssociationCreatedBy")
+  calendarExceptionsCreated         CalendarException[]                     @relation("CalendarExceptionCreatedBy")
+  calendarExceptionsReversed        CalendarException[]                     @relation("CalendarExceptionReversedBy")
+  lessonDispositionsCreated         OperationalLessonDisposition[]          @relation("LessonDispositionCreatedBy")
+  lessonDispositionsReversed        OperationalLessonDisposition[]          @relation("LessonDispositionReversedBy")
+  lessonDispositionsAssigned        OperationalLessonDisposition[]          @relation("LessonDispositionAssignedTeacher")
+  makeupSchedulesCreated            MakeupTeachingSchedule[]                @relation("MakeupScheduleCreatedBy")
+  makeupSchedulesReversed           MakeupTeachingSchedule[]                @relation("MakeupScheduleReversedBy")
+  makeupSchedulesAsTeacher          MakeupTeachingSchedule[]                @relation("MakeupScheduleTeacher")
+  specialActivitiesCreated          SpecialActivity[]                       @relation("SpecialActivityCreatedBy")
+  specialActivitiesReversed         SpecialActivity[]                       @relation("SpecialActivityReversedBy")
+  specialActivityStaffing           SpecialActivityStaffing[]               @relation("SpecialActivityScheduledTeacher")
+  curricularExecutionsResponsible   CurricularTeachingExecution[]           @relation("CurricularExecutionResponsibleTeacher")
+  curricularExecutionsActual        CurricularTeachingExecution[]           @relation("CurricularExecutionActualTeacher")
+  curricularExecutionsCreated       CurricularTeachingExecution[]           @relation("CurricularExecutionCreatedBy")
+  curricularExecutionsReversed      CurricularTeachingExecution[]           @relation("CurricularExecutionReversedBy")
+  activityExecutionsActual          SpecialActivityParticipationExecution[] @relation("ActivityExecutionActualTeacher")
+  activityExecutionsCreated         SpecialActivityParticipationExecution[] @relation("ActivityExecutionCreatedBy")
+  activityExecutionsReversed        SpecialActivityParticipationExecution[] @relation("ActivityExecutionReversedBy")
+  reportingStatementSeriesSubmitted ReportingStatementSeries[]              @relation("ReportingStatementSeriesSubmitter")
+  reportingStatementCommands        ReportingStatementCommand[]             @relation("ReportingStatementCommandActor")
+  reportingStatementHistories       ReportingStatementHistory[]             @relation("ReportingStatementHistoryActor")
 
   @@index([status])
   @@map("users")
@@ -258,6 +281,8 @@ model Subject {
   timetableImportAliases TimetableImportEntityAlias[]
   ppctPlans              PpctPlan[]
   ppctClassAssociations  PpctClassAssociation[]
+
+  reportingStatementRevisionSubjects ReportingStatementRevisionSubject[]
 
   @@index([status, code])
   @@map("subjects")
@@ -446,6 +471,8 @@ model AcademicYear {
   specialActivityTargets SpecialActivityClassTarget[]
   curricularExecutions   CurricularTeachingExecution[]
   activityExecutions     SpecialActivityParticipationExecution[]
+
+  reportingStatementSeries ReportingStatementSeries[]
 
   @@map("academic_years")
 }
@@ -1365,4 +1392,133 @@ model SpecialActivityParticipationExecution {
   @@unique([replacesId, specialActivityId, specialActivityStaffingId, specialActivityTimeSlotId], map: "activity_participation_replacement_fk_key")
   @@index([academicYearId, executionCivilDate], map: "activity_participation_year_date_idx")
   @@map("special_activity_participation_executions")
+}
+
+model ReportingStatementSeries {
+  id               String   @id @default(uuid()) @db.Uuid
+  statementProfile String   @map("statement_profile") @db.VarChar(100)
+  submitterUserId  String   @map("submitter_user_id") @db.Uuid
+  academicYearId   String   @map("academic_year_id") @db.Uuid
+  fromCivilDate    DateTime @map("from_civil_date") @db.Date
+  toCivilDate      DateTime @map("to_civil_date") @db.Date
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  submitter    User                         @relation("ReportingStatementSeriesSubmitter", fields: [submitterUserId], references: [id], onDelete: Restrict, map: "reporting_statement_series_submitter_fkey")
+  academicYear AcademicYear                 @relation(fields: [academicYearId], references: [id], onDelete: Restrict, map: "reporting_statement_series_academic_year_fkey")
+  revisions    ReportingStatementRevision[]
+  commands     ReportingStatementCommand[]
+  histories    ReportingStatementHistory[]
+
+  @@unique([statementProfile, submitterUserId, academicYearId, fromCivilDate, toCivilDate], map: "reporting_statement_series_logical_key")
+  @@map("reporting_statement_series")
+}
+
+model ReportingStatementRevision {
+  id                           String   @id @default(uuid()) @db.Uuid
+  seriesId                     String   @map("series_id") @db.Uuid
+  predecessorRevisionId        String?  @unique(map: "reporting_statement_revisions_predecessor_revision_id_key") @map("predecessor_revision_id") @db.Uuid
+  supersedesRevisionId         String?  @map("supersedes_revision_id") @db.Uuid
+  snapshotProfile              String   @map("snapshot_profile") @db.VarChar(100)
+  serializerVersion            String   @map("serializer_version") @db.VarChar(100)
+  canonicalSnapshotJson        String   @map("canonical_snapshot_json") @db.Text
+  semanticHash                 String   @map("semantic_hash") @db.Char(64)
+  asOfInstant                  DateTime @map("as_of_instant") @db.Timestamptz(3)
+  submitterDisplayNameSnapshot String?  @map("submitter_display_name_snapshot") @db.VarChar(150)
+  submitterStaffCodeSnapshot   String?  @map("submitter_staff_code_snapshot") @db.VarChar(50)
+  submittedAt                  DateTime @default(now()) @map("submitted_at") @db.Timestamptz(3)
+
+  series                ReportingStatementSeries            @relation(fields: [seriesId], references: [id], onDelete: Restrict, map: "reporting_statement_revision_series_fkey")
+  predecessor           ReportingStatementRevision?         @relation("ReportingStatementRevisionPredecessor", fields: [predecessorRevisionId, seriesId], references: [id, seriesId], onDelete: Restrict, map: "reporting_statement_revision_predecessor_fkey")
+  predecessorSuccessors ReportingStatementRevision[]        @relation("ReportingStatementRevisionPredecessor")
+  supersedes            ReportingStatementRevision?         @relation("ReportingStatementRevisionSupersedes", fields: [supersedesRevisionId, seriesId], references: [id, seriesId], onDelete: Restrict, map: "reporting_statement_revision_supersedes_fkey")
+  supersededBy          ReportingStatementRevision[]        @relation("ReportingStatementRevisionSupersedes")
+  state                 ReportingStatementRevisionState?
+  subjects              ReportingStatementRevisionSubject[]
+  commandTargets        ReportingStatementCommand[]         @relation("ReportingStatementCommandTargetRevision")
+  commandResults        ReportingStatementCommand[]         @relation("ReportingStatementCommandResultRevision")
+  historyEntries        ReportingStatementHistory[]         @relation("ReportingStatementHistoryRevision")
+  causedHistoryEntries  ReportingStatementHistory[]         @relation("ReportingStatementHistoryCausedByRevision")
+
+  @@unique([id, seriesId], map: "reporting_statement_revisions_id_series_id_key")
+  @@map("reporting_statement_revisions")
+}
+
+model ReportingStatementRevisionState {
+  revisionId     String                           @id @map("revision_id") @db.Uuid
+  seriesId       String                           @map("series_id") @db.Uuid
+  lifecycleState ReportingStatementLifecycleState @map("lifecycle_state")
+  lifecycleToken String                           @map("lifecycle_token") @db.Uuid
+  updatedAt      DateTime                         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  revision ReportingStatementRevision @relation(fields: [revisionId, seriesId], references: [id, seriesId], onDelete: Restrict, map: "reporting_statement_revision_state_revision_fkey")
+
+  @@unique([revisionId, seriesId], map: "reporting_statement_revision_states_revision_id_series_id_key")
+  @@index([seriesId], map: "reporting_statement_revision_states_series_id_idx")
+  @@map("reporting_statement_revision_states")
+}
+
+model ReportingStatementRevisionSubject {
+  revisionId String   @map("revision_id") @db.Uuid
+  subjectId  String   @map("subject_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  revision ReportingStatementRevision @relation(fields: [revisionId], references: [id], onDelete: Restrict, map: "reporting_statement_revision_subject_revision_fkey")
+  subject  Subject                    @relation(fields: [subjectId], references: [id], onDelete: Restrict, map: "reporting_statement_revision_subject_subject_fkey")
+
+  @@id([revisionId, subjectId])
+  @@map("reporting_statement_revision_subjects")
+}
+
+model ReportingStatementCommand {
+  id                    String                           @id @default(uuid()) @db.Uuid
+  commandType           ReportingStatementCommandType    @map("command_type")
+  actorUserId           String                           @map("actor_user_id") @db.Uuid
+  requestKey            String                           @map("request_key") @db.VarChar(200)
+  requestFingerprint    String                           @map("request_fingerprint") @db.VarChar(128)
+  seriesId              String                           @map("series_id") @db.Uuid
+  targetRevisionId      String?                          @map("target_revision_id") @db.Uuid
+  resultRevisionId      String                           @map("result_revision_id") @db.Uuid
+  resultLifecycleState  ReportingStatementLifecycleState @map("result_lifecycle_state")
+  resultLifecycleToken  String                           @map("result_lifecycle_token") @db.Uuid
+  submissionAsOfInstant DateTime?                        @map("submission_as_of_instant") @db.Timestamptz(3)
+  acceptedAt            DateTime                         @default(now()) @map("accepted_at") @db.Timestamptz(3)
+
+  actor          User                        @relation("ReportingStatementCommandActor", fields: [actorUserId], references: [id], onDelete: Restrict, map: "reporting_statement_command_actor_fkey")
+  series         ReportingStatementSeries    @relation(fields: [seriesId], references: [id], onDelete: Restrict, map: "reporting_statement_command_series_fkey")
+  targetRevision ReportingStatementRevision? @relation("ReportingStatementCommandTargetRevision", fields: [targetRevisionId, seriesId], references: [id, seriesId], onDelete: Restrict, map: "reporting_statement_command_target_revision_fkey")
+  resultRevision ReportingStatementRevision  @relation("ReportingStatementCommandResultRevision", fields: [resultRevisionId, seriesId], references: [id, seriesId], onDelete: Restrict, map: "reporting_statement_command_result_revision_fkey")
+  histories      ReportingStatementHistory[]
+
+  @@unique([id, seriesId], map: "reporting_statement_commands_id_series_id_key")
+  @@unique([actorUserId, commandType, requestKey], map: "reporting_statement_commands_actor_type_request_key")
+  @@index([seriesId], map: "reporting_statement_commands_series_id_idx")
+  @@map("reporting_statement_commands")
+}
+
+model ReportingStatementHistory {
+  id                       String                            @id @default(uuid()) @db.Uuid
+  seriesId                 String                            @map("series_id") @db.Uuid
+  revisionId               String                            @map("revision_id") @db.Uuid
+  eventType                ReportingStatementHistoryEvent    @map("event_type")
+  stateBefore              ReportingStatementLifecycleState? @map("state_before")
+  stateAfter               ReportingStatementLifecycleState  @map("state_after")
+  actorUserId              String                            @map("actor_user_id") @db.Uuid
+  actorDisplayNameSnapshot String?                           @map("actor_display_name_snapshot") @db.VarChar(150)
+  actorStaffCodeSnapshot   String?                           @map("actor_staff_code_snapshot") @db.VarChar(50)
+  commandId                String                            @map("command_id") @db.Uuid
+  causedByRevisionId       String?                           @map("caused_by_revision_id") @db.Uuid
+  lifecycleTokenBefore     String?                           @map("lifecycle_token_before") @db.Uuid
+  lifecycleTokenAfter      String                            @map("lifecycle_token_after") @db.Uuid
+  submissionAsOfInstant    DateTime?                         @map("submission_as_of_instant") @db.Timestamptz(3)
+  createdAt                DateTime                          @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  series           ReportingStatementSeries    @relation(fields: [seriesId], references: [id], onDelete: Restrict, map: "reporting_statement_history_series_fkey")
+  revision         ReportingStatementRevision  @relation("ReportingStatementHistoryRevision", fields: [revisionId, seriesId], references: [id, seriesId], onDelete: Restrict, map: "reporting_statement_history_revision_fkey")
+  actor            User                        @relation("ReportingStatementHistoryActor", fields: [actorUserId], references: [id], onDelete: Restrict, map: "reporting_statement_history_actor_fkey")
+  command          ReportingStatementCommand   @relation(fields: [commandId, seriesId], references: [id, seriesId], onDelete: Restrict, map: "reporting_statement_history_command_fkey")
+  causedByRevision ReportingStatementRevision? @relation("ReportingStatementHistoryCausedByRevision", fields: [causedByRevisionId, seriesId], references: [id, seriesId], onDelete: Restrict, map: "reporting_statement_history_caused_by_revision_fkey")
+
+  @@index([seriesId, createdAt], map: "reporting_statement_histories_series_created_at_idx")
+  @@index([revisionId], map: "reporting_statement_histories_revision_id_idx")
+  @@map("reporting_statement_histories")
 }
