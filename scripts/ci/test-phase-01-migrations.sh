@@ -45,6 +45,10 @@ echo "[migration-test] Fresh database deploy"
 DATABASE_URL="$fresh_url" npx prisma migrate deploy --schema "$SCHEMA_PATH"
 DATABASE_URL="$fresh_url" npx prisma migrate status --schema "$SCHEMA_PATH"
 
+echo "[migration-test] Fresh database second deploy / no pending migrations"
+DATABASE_URL="$fresh_url" npx prisma migrate deploy --schema "$SCHEMA_PATH"
+DATABASE_URL="$fresh_url" npx prisma migrate status --schema "$SCHEMA_PATH"
+
 echo "[migration-test] Legacy Phase 00 baseline simulation"
 psql "$legacy_psql_url" -v ON_ERROR_STOP=1 <<'SQL'
 CREATE TABLE "system_settings" (
@@ -104,6 +108,7 @@ psql "$fresh_psql_url" -v ON_ERROR_STOP=1 \
   -f scripts/ci/verify-teaching-execution-schema.sql
 
 echo "[migration-test] Reporting Statement persistence constraint verification"
+psql "$fresh_psql_url" -v ON_ERROR_STOP=1 -f scripts/ci/verify-reporting-statement-schema.sql
 psql "$fresh_psql_url" -v ON_ERROR_STOP=1 -f scripts/ci/verify-reporting-statement-schema.sql
 
 echo "[migration-test] PASS"
