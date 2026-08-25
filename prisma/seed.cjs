@@ -43,6 +43,8 @@ const CAPABILITIES = [
   ['TEACHING_EXECUTION_RECORD', 'Ghi nhận và hiệu chỉnh bằng chứng thực hiện giảng dạy cá nhân.', ['PERSONAL']],
   ['TEACHING_EXECUTION_MANAGE', 'Quản lý bằng chứng thực hiện giảng dạy theo môn hoặc toàn trường.', ['SUBJECT', 'SCHOOL_WIDE']],
   ['REPORTING_READ', 'Xem báo cáo giảng dạy theo môn hoặc toàn trường.', ['SUBJECT', 'SCHOOL_WIDE']],
+  ['REPORTING_STATEMENT_SUBMIT', 'Nộp báo cáo kê khai cá nhân.', ['PERSONAL']],
+  ['REPORTING_STATEMENT_READ', 'Xem báo cáo kê khai đã lưu.', ['PERSONAL', 'SUBJECT', 'SCHOOL_WIDE']],
 ];
 
 async function seedCapabilityCatalog(prisma) {

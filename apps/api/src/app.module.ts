@@ -24,6 +24,7 @@ import { PpctOccurrenceAllocationModule } from './ppct-occurrence-allocation/ppc
 import { TeachingExecutionsModule } from './teaching-executions/teaching-executions.module';
 import { ProgressDebtModule } from './progress-debt/progress-debt.module';
 import { ReportingProjectionModule } from './reporting-projection/reporting-projection.module';
+import { ReportingStatementsModule } from './reporting-statements/reporting-statements.module';
 
 @Module({
   imports: [
@@ -65,6 +66,7 @@ import { ReportingProjectionModule } from './reporting-projection/reporting-proj
     TeachingExecutionsModule,
     ProgressDebtModule,
     ReportingProjectionModule,
+    ReportingStatementsModule,
   ],
 })
 export class AppModule {}

@@ -124,6 +124,8 @@ export type CapabilityKey =
   | 'TEACHING_EXECUTION_RECORD'
   | 'TEACHING_EXECUTION_MANAGE'
   | 'REPORTING_READ'
+  | 'REPORTING_STATEMENT_SUBMIT'
+  | 'REPORTING_STATEMENT_READ'
   | 'AI_ACTIVE_USE_SCHOOL'   // AI active use school-wide (BGH)
   | 'AI_ACTIVE_USE_DEPARTMENT' // AI active use department-wide (tổ trưởng)
   | 'AI_ACTIVE_USE_ACTIVITY' // AI active use activity-wide (điều phối)
