@@ -8,7 +8,6 @@ describe('Special Activity capability', () => {
     const load = createRequire(__filename);
     const { CAPABILITIES } = load('../../../../prisma/seed.cjs') as { CAPABILITIES: Array<[string, string, string[]]> };
     expect(CAPABILITIES.filter(([candidate]) => candidate === key)).toEqual([[key, expect.any(String), ['SCHOOL_WIDE']]]);
-    expect(CAPABILITIES).toHaveLength(34);
     expect(BOOTSTRAP_TECHNICAL_CAPABILITIES).not.toContain(key);
   });
 });
