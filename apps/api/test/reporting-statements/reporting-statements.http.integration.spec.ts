@@ -2,13 +2,14 @@ import { AuditResult, PrismaClient, ReportingStatementLifecycleState as State } 
 import request, { Agent } from 'supertest';
 import { freezeReportingStatementSnapshot } from '../../src/reporting-statement-internal/reporting-statement-canonicalizer';
 import { ReportingStatementRepository } from '../../src/reporting-statement-internal/reporting-statement.repository';
+import { PERSONAL_REPORTING_STATEMENT_PROFILE } from '../../src/reporting-statements/reporting-statement.policy';
 import { Phase01Harness, integration, testOrigin } from '../helpers/phase01-test-harness';
 
 const asOf = new Date('2026-08-24T01:02:03.004Z');
 
 function frozen(ownerId: string, academicYearId: string, subjectIds: string[]) {
   return freezeReportingStatementSnapshot({
-    statementProfile: 'PERSONAL_V1',
+    statementProfile: PERSONAL_REPORTING_STATEMENT_PROFILE,
     submitterUserId: ownerId,
     asOfInstant: asOf,
     projection: {
@@ -38,7 +39,7 @@ integration('Reporting Statement HTTP security boundary (isolated PostgreSQL)', 
 
   async function seedSubmittedRevision() {
     return prisma.$transaction(tx => repository.persistSubmittedRevision(tx, {
-      series: { statementProfile: 'PERSONAL_V1', submitterUserId: owner.id, academicYearId, fromCivilDate: new Date('2026-08-01'), toCivilDate: new Date('2026-08-31') },
+      series: { statementProfile: PERSONAL_REPORTING_STATEMENT_PROFILE, submitterUserId: owner.id, academicYearId, fromCivilDate: new Date('2026-08-01'), toCivilDate: new Date('2026-08-31') },
       frozen: frozen(owner.id, academicYearId, [subjectA, subjectB]),
       lifecycleToken: crypto.randomUUID(),
       command: { actorUserId: owner.id, requestKey: crypto.randomUUID(), requestFingerprint: crypto.randomUUID() },
