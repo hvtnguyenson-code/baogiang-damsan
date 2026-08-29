@@ -5,6 +5,7 @@ import {
   ReportingStatementDetailResponse,
   ReportingStatementHistoryEntry,
   ReportingStatementLifecycleState,
+  ReportingStatementPublicFinding,
   ReportingStatementSummary,
 } from '@baogiang/contracts';
 import {
@@ -17,6 +18,67 @@ import {
 
 export function civilDate(value: Date): CivilDateString {
   return value.toISOString().slice(0, 10) as CivilDateString;
+}
+
+export function mapToPublicFinding(finding: { code: string; severity?: string }): ReportingStatementPublicFinding {
+  switch (finding.code) {
+    case 'RECONCILIATION_REQUIRED':
+      return {
+        severity: 'BLOCKER',
+        code: 'RECONCILIATION_REQUIRED',
+        message: 'Cần đối soát lại dữ liệu phân bổ và tiến độ giảng dạy.',
+      };
+    case 'ACTIVE_FULFILLMENT_AMBIGUOUS':
+      return {
+        severity: 'BLOCKER',
+        code: 'ACTIVE_FULFILLMENT_AMBIGUOUS',
+        message: 'Tồn tại nhiều ghi nhận thực hiện bài dạy chưa thể xác định duy nhất.',
+      };
+    case 'OPERATIONAL_MEANING_UNCLASSIFIABLE':
+      return {
+        severity: 'BLOCKER',
+        code: 'OPERATIONAL_MEANING_UNCLASSIFIABLE',
+        message: 'Không thể phân loại trạng thái bài dạy từ dữ liệu vận hành.',
+      };
+    case 'UPSTREAM_ALLOCATION_BLOCKED':
+      return {
+        severity: 'BLOCKER',
+        code: 'UPSTREAM_ALLOCATION_BLOCKED',
+        message: 'Tiến trình phân bổ PPCT từ hệ thống nguồn đang bị chặn.',
+      };
+    case 'SOURCE_TIME_SLOT_PROVENANCE_MISSING':
+      return {
+        severity: 'BLOCKER',
+        code: 'SOURCE_TIME_SLOT_PROVENANCE_MISSING',
+        message: 'Thiếu thông tin nguồn tiết học hoặc khung giờ giảng dạy.',
+      };
+    case 'RESPONSIBILITY_SCOPE_PROVENANCE_INVALID':
+      return {
+        severity: 'BLOCKER',
+        code: 'RESPONSIBILITY_SCOPE_PROVENANCE_INVALID',
+        message: 'Khoảng thời gian phân công phụ trách giảng dạy không hợp lệ.',
+      };
+    case 'RESPONSIBLE_TEACHER_PROVENANCE_MISMATCH':
+      return {
+        severity: 'BLOCKER',
+        code: 'RESPONSIBLE_TEACHER_PROVENANCE_MISMATCH',
+        message: 'Giáo viên phụ trách trong dữ liệu không trùng khớp với phân công.',
+      };
+    case 'DUPLICATE_PERSONAL_OCCURRENCE':
+      return {
+        severity: 'BLOCKER',
+        code: 'DUPLICATE_PERSONAL_OCCURRENCE',
+        message: 'Phát hiện tiết dạy bị trùng lặp trong kỳ báo cáo cá nhân.',
+      };
+    case 'PERSONAL_AGGREGATE_RECONCILIATION_FAILED':
+      return {
+        severity: 'BLOCKER',
+        code: 'PERSONAL_AGGREGATE_RECONCILIATION_FAILED',
+        message: 'Không thể tổng hợp số liệu báo cáo giảng dạy cá nhân một cách nhất quán.',
+      };
+    default:
+      throw new InternalServerErrorException(`Unknown finding code: ${finding.code}`);
+  }
 }
 
 export interface FrozenRevisionRow {
@@ -145,6 +207,39 @@ export function parseAndVerifyFrozenSnapshot(row: FrozenRevisionRow): ReportingS
     throw new InternalServerErrorException('Reporting Statement snapshot canonical byte integrity check failed.');
   }
 
+  // Fail-closed cross-record reconciliation between canonical snapshot and persistence metadata
+  if (snapshot.statementProfile !== row.series.statementProfile) {
+    throw new InternalServerErrorException('Reporting Statement profile mismatch between snapshot and series.');
+  }
+
+  if (snapshot.submitterUserId !== row.series.submitterUserId) {
+    throw new InternalServerErrorException('Reporting Statement submitterUserId mismatch between snapshot and series.');
+  }
+
+  if (snapshot.submitterDisplayNameSnapshot !== row.submitterDisplayNameSnapshot) {
+    throw new InternalServerErrorException('Reporting Statement submitterDisplayName mismatch between snapshot and row.');
+  }
+
+  if (snapshot.submitterStaffCodeSnapshot !== row.submitterStaffCodeSnapshot) {
+    throw new InternalServerErrorException('Reporting Statement submitterStaffCode mismatch between snapshot and row.');
+  }
+
+  if (snapshot.academicYearId !== row.series.academicYearId) {
+    throw new InternalServerErrorException('Reporting Statement academicYearId mismatch between snapshot and series.');
+  }
+
+  if (snapshot.fromCivilDate !== civilDate(row.series.fromCivilDate)) {
+    throw new InternalServerErrorException('Reporting Statement fromCivilDate mismatch between snapshot and series.');
+  }
+
+  if (snapshot.toCivilDate !== civilDate(row.series.toCivilDate)) {
+    throw new InternalServerErrorException('Reporting Statement toCivilDate mismatch between snapshot and series.');
+  }
+
+  if (new Date(snapshot.asOfInstant).getTime() !== row.asOfInstant.getTime()) {
+    throw new InternalServerErrorException('Reporting Statement asOfInstant integrity check failed.');
+  }
+
   const snapshotSubjects = [...new Set(snapshot.responsibilityManifest.map((x) => x.subjectId))].sort();
   const dbSubjects = (row.subjects ?? []).map((s) => s.subjectId).slice().sort();
 
@@ -154,10 +249,6 @@ export function parseAndVerifyFrozenSnapshot(row: FrozenRevisionRow): ReportingS
     snapshotSubjects.some((id, index) => id !== dbSubjects[index])
   ) {
     throw new InternalServerErrorException('Reporting Statement frozen subject integrity check failed.');
-  }
-
-  if (new Date(snapshot.asOfInstant).getTime() !== row.asOfInstant.getTime()) {
-    throw new InternalServerErrorException('Reporting Statement asOfInstant integrity check failed.');
   }
 
   return snapshot;
@@ -213,13 +304,7 @@ export function presentReportingStatementDetail(
       status: s.status,
       counts: s.counts ? { ...s.counts } : null,
       details: s.details.map((d) => ({ ...d })),
-      findings: s.findings.map((f) => ({
-        severity: f.severity,
-        code: f.code,
-        reason: f.reason,
-        entityIds: f.entityIds.slice(),
-        occurrenceKey: f.occurrenceKey,
-      })),
+      findings: s.findings.map((f) => mapToPublicFinding(f)),
     })),
     responsibilityManifest: snapshot.responsibilityManifest.map((x) => ({ ...x })),
     frozenSubjectIds,
@@ -227,4 +312,3 @@ export function presentReportingStatementDetail(
     allowedActions,
   };
 }
-

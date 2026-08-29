@@ -1341,13 +1341,23 @@ export interface ReportingDetail {
   actualTeacherUserId: string | null;
 }
 
+export type ReportingStatementFindingCode =
+  | 'RECONCILIATION_REQUIRED'
+  | 'ACTIVE_FULFILLMENT_AMBIGUOUS'
+  | 'OPERATIONAL_MEANING_UNCLASSIFIABLE'
+  | 'UPSTREAM_ALLOCATION_BLOCKED'
+  | 'SOURCE_TIME_SLOT_PROVENANCE_MISSING'
+  | 'RESPONSIBILITY_SCOPE_PROVENANCE_INVALID'
+  | 'RESPONSIBLE_TEACHER_PROVENANCE_MISMATCH'
+  | 'DUPLICATE_PERSONAL_OCCURRENCE'
+  | 'PERSONAL_AGGREGATE_RECONCILIATION_FAILED';
+
 export interface ReportingStatementPublicFinding {
   severity: 'BLOCKER';
-  code: string;
-  reason: string;
-  entityIds: string[];
-  occurrenceKey: string | null;
+  code: ReportingStatementFindingCode;
+  message: string;
 }
+
 
 export interface ReportingStatementPreviewSection {
   schoolClassId: string;

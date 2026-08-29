@@ -187,7 +187,12 @@ describe('ReportingStatementsService Discovery, Preview, and Read API', () => {
       expect(result.status).toBe('BLOCKED');
       expect(result.counts).toBeNull();
       expect(result.findings).toHaveLength(1);
-      expect(result.findings[0]).toMatchObject({ code: 'RECONCILIATION_REQUIRED', severity: 'BLOCKER' });
+      expect(result.findings[0]).toEqual({
+        code: 'RECONCILIATION_REQUIRED',
+        severity: 'BLOCKER',
+        message: 'Cần đối soát lại dữ liệu phân bổ và tiến độ giảng dạy.',
+      });
+
     });
 
     it('returns eligibleForSubmission = false on ZERO_RESPONSIBILITY projection without erroring', async () => {

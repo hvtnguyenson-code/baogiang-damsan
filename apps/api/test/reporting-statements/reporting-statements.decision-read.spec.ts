@@ -13,6 +13,8 @@ function makeFrozenRow(ownerId = 'owner', subjectIds = ['subject']) {
   const f = freezeReportingStatementSnapshot({
     statementProfile: PERSONAL_REPORTING_STATEMENT_PROFILE,
     submitterUserId: ownerId,
+    submitterDisplayNameSnapshot: 'Owner',
+    submitterStaffCodeSnapshot: 'GV-01',
     asOfInstant: asOf,
     projection: {
       profile: 'PERSONAL_TEACHING_REPORTING_PROJECTION_V1',

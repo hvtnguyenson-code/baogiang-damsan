@@ -25,6 +25,7 @@ import {
 } from './dto';
 import { PERSONAL_REPORTING_STATEMENT_PROFILE, REPORTING_STATEMENT_CLOCK, ReportingStatementClock } from './reporting-statement.policy';
 import {
+  mapToPublicFinding,
   presentReportingStatementDetail,
   presentReportingStatementSummary,
 } from './reporting-statement.presenter';
@@ -70,24 +71,13 @@ export class ReportingStatementsService {
         status: s.status,
         counts: s.counts,
         details: s.details.map((d) => ({ ...d })),
-        findings: s.findings.map((f) => ({
-          severity: f.severity,
-          code: f.code,
-          reason: f.reason,
-          entityIds: f.entityIds,
-          occurrenceKey: f.occurrenceKey,
-        })),
+        findings: s.findings.map((f) => mapToPublicFinding(f)),
       })),
-      findings: projection.findings.map((f) => ({
-        severity: f.severity,
-        code: f.code,
-        reason: f.reason,
-        entityIds: f.entityIds,
-        occurrenceKey: f.occurrenceKey,
-      })),
+      findings: projection.findings.map((f) => mapToPublicFinding(f)),
       responsibilityManifest: projection.responsibilityManifest.map((i) => ({ ...i })),
     };
   }
+
 
   async listMine(query: ListReportingStatementsQueryDto, request: AuthenticatedRequest): Promise<ReportingStatementListResponse> {
     const actor = request.auth!.user.id;

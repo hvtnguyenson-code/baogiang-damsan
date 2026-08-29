@@ -4,6 +4,7 @@ import {
   REPORTING_STATEMENT_SNAPSHOT_V1,
 } from '../../src/reporting-statement-internal/reporting-statement-canonicalizer';
 import {
+  mapToPublicFinding,
   parseAndVerifyFrozenSnapshot,
   presentReportingStatementDetail,
   presentReportingStatementSummary,
@@ -152,11 +153,39 @@ function createValidFrozenFixture(ownerId = 'user-1', subjectIds = ['sub-a', 'su
     }>,
   };
 
-
   return { frozen, row };
 }
 
 describe('Reporting Statement Presenter & Integrity', () => {
+  describe('mapToPublicFinding', () => {
+    it.each([
+      ['RECONCILIATION_REQUIRED', 'Cần đối soát lại dữ liệu phân bổ và tiến độ giảng dạy.'],
+      ['ACTIVE_FULFILLMENT_AMBIGUOUS', 'Tồn tại nhiều ghi nhận thực hiện bài dạy chưa thể xác định duy nhất.'],
+      ['OPERATIONAL_MEANING_UNCLASSIFIABLE', 'Không thể phân loại trạng thái bài dạy từ dữ liệu vận hành.'],
+      ['UPSTREAM_ALLOCATION_BLOCKED', 'Tiến trình phân bổ PPCT từ hệ thống nguồn đang bị chặn.'],
+      ['SOURCE_TIME_SLOT_PROVENANCE_MISSING', 'Thiếu thông tin nguồn tiết học hoặc khung giờ giảng dạy.'],
+      ['RESPONSIBILITY_SCOPE_PROVENANCE_INVALID', 'Khoảng thời gian phân công phụ trách giảng dạy không hợp lệ.'],
+      ['RESPONSIBLE_TEACHER_PROVENANCE_MISMATCH', 'Giáo viên phụ trách trong dữ liệu không trùng khớp với phân công.'],
+      ['DUPLICATE_PERSONAL_OCCURRENCE', 'Phát hiện tiết dạy bị trùng lặp trong kỳ báo cáo cá nhân.'],
+      ['PERSONAL_AGGREGATE_RECONCILIATION_FAILED', 'Không thể tổng hợp số liệu báo cáo giảng dạy cá nhân một cách nhất quán.'],
+    ] as const)('maps %s to product-safe Vietnamese copy', (code, expectedMessage) => {
+      const publicFinding = mapToPublicFinding({ code });
+      expect(publicFinding).toEqual({
+        severity: 'BLOCKER',
+        code,
+        message: expectedMessage,
+      });
+      expect(publicFinding).not.toHaveProperty('reason');
+      expect(publicFinding).not.toHaveProperty('entityIds');
+    });
+
+    it('fails closed and throws InternalServerErrorException for unknown finding code', () => {
+      expect(() => mapToPublicFinding({ code: 'UNKNOWN_FUTURE_CODE' })).toThrow(
+        InternalServerErrorException,
+      );
+    });
+  });
+
   describe('presentReportingStatementSummary', () => {
     it('presents a complete summary without exposing raw JSON or fingerprints', () => {
       const { row } = createValidFrozenFixture();
@@ -224,13 +253,78 @@ describe('Reporting Statement Presenter & Integrity', () => {
 
     it('fails closed when re-canonicalized bytes do not match stored canonical JSON', () => {
       const { row, frozen } = createValidFrozenFixture();
-      // Inject extra whitespace into canonicalSnapshotJson while matching hash
       const whitespaceJson = frozen.canonicalSnapshotJson.replace('{', '{ ');
       expect(() =>
         parseAndVerifyFrozenSnapshot({
           ...row,
           canonicalSnapshotJson: whitespaceJson,
           semanticHash: 'any',
+        }),
+      ).toThrow(InternalServerErrorException);
+    });
+
+    it('fails closed when series statementProfile does not match snapshot', () => {
+      const { row } = createValidFrozenFixture();
+      expect(() =>
+        parseAndVerifyFrozenSnapshot({
+          ...row,
+          series: { ...row.series, statementProfile: 'OTHER_PROFILE' },
+        }),
+      ).toThrow(InternalServerErrorException);
+    });
+
+    it('fails closed when series submitterUserId does not match snapshot', () => {
+      const { row } = createValidFrozenFixture();
+      expect(() =>
+        parseAndVerifyFrozenSnapshot({
+          ...row,
+          series: { ...row.series, submitterUserId: 'different-user' },
+        }),
+      ).toThrow(InternalServerErrorException);
+    });
+
+    it('fails closed when submitterDisplayNameSnapshot does not match snapshot', () => {
+      const { row } = createValidFrozenFixture();
+      expect(() =>
+        parseAndVerifyFrozenSnapshot({
+          ...row,
+          submitterDisplayNameSnapshot: 'Mismatched Name',
+        }),
+      ).toThrow(InternalServerErrorException);
+    });
+
+    it('fails closed when submitterStaffCodeSnapshot does not match snapshot', () => {
+      const { row } = createValidFrozenFixture();
+      expect(() =>
+        parseAndVerifyFrozenSnapshot({
+          ...row,
+          submitterStaffCodeSnapshot: 'Mismatched StaffCode',
+        }),
+      ).toThrow(InternalServerErrorException);
+    });
+
+    it('fails closed when series academicYearId does not match snapshot', () => {
+      const { row } = createValidFrozenFixture();
+      expect(() =>
+        parseAndVerifyFrozenSnapshot({
+          ...row,
+          series: { ...row.series, academicYearId: 'different-year' },
+        }),
+      ).toThrow(InternalServerErrorException);
+    });
+
+    it('fails closed when series date range does not match snapshot', () => {
+      const { row } = createValidFrozenFixture();
+      expect(() =>
+        parseAndVerifyFrozenSnapshot({
+          ...row,
+          series: { ...row.series, fromCivilDate: new Date('2026-07-01') },
+        }),
+      ).toThrow(InternalServerErrorException);
+      expect(() =>
+        parseAndVerifyFrozenSnapshot({
+          ...row,
+          series: { ...row.series, toCivilDate: new Date('2026-09-01') },
         }),
       ).toThrow(InternalServerErrorException);
     });
