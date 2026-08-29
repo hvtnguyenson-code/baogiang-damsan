@@ -20,6 +20,8 @@ export function civilDate(value: Date): CivilDateString {
   return value.toISOString().slice(0, 10) as CivilDateString;
 }
 
+export const PUBLIC_PRESENTATION_INTEGRITY_ERROR = 'Không thể hiển thị báo cáo do dữ liệu không nhất quán.';
+
 export function mapToPublicFinding(finding: { code: string; severity?: string }): ReportingStatementPublicFinding {
   switch (finding.code) {
     case 'RECONCILIATION_REQUIRED':
@@ -77,9 +79,10 @@ export function mapToPublicFinding(finding: { code: string; severity?: string })
         message: 'Không thể tổng hợp số liệu báo cáo giảng dạy cá nhân một cách nhất quán.',
       };
     default:
-      throw new InternalServerErrorException(`Unknown finding code: ${finding.code}`);
+      throw new InternalServerErrorException(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
   }
 }
+
 
 export interface FrozenRevisionRow {
   id: string;
@@ -141,7 +144,7 @@ export interface RevisionSummaryRow {
 
 export function presentReportingStatementSummary(row: RevisionSummaryRow): ReportingStatementSummary {
   if (!row.state) {
-    throw new InternalServerErrorException('Reporting Statement revision missing lifecycle state.');
+    throw new InternalServerErrorException(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
   }
   return {
     revisionId: row.id,
@@ -165,22 +168,22 @@ export function parseAndVerifyFrozenSnapshot(row: FrozenRevisionRow): ReportingS
     row.snapshotProfile !== REPORTING_STATEMENT_SNAPSHOT_V1 ||
     row.serializerVersion !== REPORTING_STATEMENT_SERIALIZER_V1
   ) {
-    throw new InternalServerErrorException('Reporting Statement version integrity check failed.');
+    throw new InternalServerErrorException(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
   }
 
   if (sha256CanonicalJson(row.canonicalSnapshotJson) !== row.semanticHash) {
-    throw new InternalServerErrorException('Reporting Statement semantic hash integrity check failed.');
+    throw new InternalServerErrorException(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
   }
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(row.canonicalSnapshotJson);
   } catch {
-    throw new InternalServerErrorException('Reporting Statement snapshot JSON parsing failed.');
+    throw new InternalServerErrorException(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
   }
 
   if (!parsed || typeof parsed !== 'object') {
-    throw new InternalServerErrorException('Reporting Statement snapshot payload is invalid.');
+    throw new InternalServerErrorException(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
   }
 
   const snapshot = parsed as ReportingStatementSnapshotV1;
@@ -193,51 +196,51 @@ export function parseAndVerifyFrozenSnapshot(row: FrozenRevisionRow): ReportingS
     !Array.isArray(snapshot.sections) ||
     !Array.isArray(snapshot.responsibilityManifest)
   ) {
-    throw new InternalServerErrorException('Reporting Statement snapshot structure is invalid.');
+    throw new InternalServerErrorException(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
   }
 
   let recanonical: string;
   try {
     recanonical = canonicalizeJson(snapshot as never);
   } catch {
-    throw new InternalServerErrorException('Reporting Statement snapshot canonicalization failed.');
+    throw new InternalServerErrorException(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
   }
 
   if (recanonical !== row.canonicalSnapshotJson) {
-    throw new InternalServerErrorException('Reporting Statement snapshot canonical byte integrity check failed.');
+    throw new InternalServerErrorException(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
   }
 
   // Fail-closed cross-record reconciliation between canonical snapshot and persistence metadata
   if (snapshot.statementProfile !== row.series.statementProfile) {
-    throw new InternalServerErrorException('Reporting Statement profile mismatch between snapshot and series.');
+    throw new InternalServerErrorException(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
   }
 
   if (snapshot.submitterUserId !== row.series.submitterUserId) {
-    throw new InternalServerErrorException('Reporting Statement submitterUserId mismatch between snapshot and series.');
+    throw new InternalServerErrorException(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
   }
 
   if (snapshot.submitterDisplayNameSnapshot !== row.submitterDisplayNameSnapshot) {
-    throw new InternalServerErrorException('Reporting Statement submitterDisplayName mismatch between snapshot and row.');
+    throw new InternalServerErrorException(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
   }
 
   if (snapshot.submitterStaffCodeSnapshot !== row.submitterStaffCodeSnapshot) {
-    throw new InternalServerErrorException('Reporting Statement submitterStaffCode mismatch between snapshot and row.');
+    throw new InternalServerErrorException(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
   }
 
   if (snapshot.academicYearId !== row.series.academicYearId) {
-    throw new InternalServerErrorException('Reporting Statement academicYearId mismatch between snapshot and series.');
+    throw new InternalServerErrorException(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
   }
 
   if (snapshot.fromCivilDate !== civilDate(row.series.fromCivilDate)) {
-    throw new InternalServerErrorException('Reporting Statement fromCivilDate mismatch between snapshot and series.');
+    throw new InternalServerErrorException(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
   }
 
   if (snapshot.toCivilDate !== civilDate(row.series.toCivilDate)) {
-    throw new InternalServerErrorException('Reporting Statement toCivilDate mismatch between snapshot and series.');
+    throw new InternalServerErrorException(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
   }
 
   if (new Date(snapshot.asOfInstant).getTime() !== row.asOfInstant.getTime()) {
-    throw new InternalServerErrorException('Reporting Statement asOfInstant integrity check failed.');
+    throw new InternalServerErrorException(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
   }
 
   const snapshotSubjects = [...new Set(snapshot.responsibilityManifest.map((x) => x.subjectId))].sort();
@@ -248,7 +251,7 @@ export function parseAndVerifyFrozenSnapshot(row: FrozenRevisionRow): ReportingS
     snapshotSubjects.length !== dbSubjects.length ||
     snapshotSubjects.some((id, index) => id !== dbSubjects[index])
   ) {
-    throw new InternalServerErrorException('Reporting Statement frozen subject integrity check failed.');
+    throw new InternalServerErrorException(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
   }
 
   return snapshot;
@@ -259,8 +262,9 @@ export function presentReportingStatementDetail(
   allowedActions: ReportingStatementAllowedAction[],
 ): ReportingStatementDetailResponse {
   if (!row.state) {
-    throw new InternalServerErrorException('Reporting Statement revision missing lifecycle state.');
+    throw new InternalServerErrorException(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
   }
+
 
   const snapshot = parseAndVerifyFrozenSnapshot(row);
   const frozenSubjectIds = (row.subjects ?? []).map((s) => s.subjectId).slice().sort();

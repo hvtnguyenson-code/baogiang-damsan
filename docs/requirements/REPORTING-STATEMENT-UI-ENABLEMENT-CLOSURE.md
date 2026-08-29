@@ -74,7 +74,7 @@ Lớp Presenter (`apps/api/src/reporting-statements/reporting-statement.presente
    - Giải mã canonical JSON và xác minh đối chiếu lại chuỗi canonical byte-for-byte.
    - **Cross-Record Reconciliation**: Đối chiếu tất cả các trường root metadata giữa snapshot và bản ghi database (`statementProfile`, `submitterUserId`, `submitterDisplayNameSnapshot`, `submitterStaffCodeSnapshot`, `academicYearId`, `fromCivilDate`, `toCivilDate`, `asOfInstant`).
    - Đối chiếu danh sách môn học lưu tại bảng quan hệ `ReportingStatementFrozenSubject` với danh sách môn trong `responsibilityManifest`.
-   - **Fail-Closed**: Bất kỳ sự sai lệch nào lập tức ném `InternalServerErrorException` (500), ngăn chặn việc hiển thị dữ liệu hỏng hoặc bị giả mạo.
+   - **Fail-Closed & Public-Safe Exception**: Bất kỳ sự sai lệch nào lập tức ném `InternalServerErrorException` (500) với thông điệp chung chuẩn tiếng Việt (`Không thể hiển thị báo cáo do dữ liệu không nhất quán.`), hoàn toàn không rò rỉ hash, canonical JSON, thông điệp lỗi nội bộ hay chi tiết cơ sở dữ liệu.
 2. **Khử rò rỉ dữ liệu nội bộ**:
    - `presentReportingStatementSummary` và `presentReportingStatementDetail` loại bỏ hoàn toàn các trường nội bộ của hệ thống lưu trữ: `canonicalSnapshotJson`, `requestFingerprint`, `requestKey`, command IDs nội bộ.
    - Lịch sử chuyển trạng thái (`history`) được sắp xếp đơn luồng chuẩn xác: `createdAt ASC, id ASC`.
@@ -100,13 +100,13 @@ Tệp `apps/web/src/lib/reporting-statements-api.ts` cung cấp adapter typed ch
    - `@baogiang/api`: `tsc --noEmit` thành công 0 lỗi.
    - `@baogiang/web`: `tsc --noEmit` thành công 0 lỗi.
 2. **Unit & Presentation Tests**:
-   - Backend (`apps/api`): 5 test suites, 65 tests hoàn thành 100% PASS:
+   - Backend (`apps/api`): 5 test suites, 73 tests hoàn thành 100% PASS:
      - `reporting-statements.discovery-read.spec.ts`
-     - `reporting-statement.presenter.spec.ts` (kiểm tra đầy đủ 9 finding codes, mapping tiếng Việt, và tất cả trường hợp mismatch snapshot cross-record)
+     - `reporting-statement.presenter.spec.ts` (kiểm tra đầy đủ 9 finding codes, mapping tiếng Việt, 500 public exception sanitization, và tất cả trường hợp mismatch snapshot cross-record)
      - `reporting-statements.decision-read.spec.ts`
      - `reporting-statements.submit.spec.ts`
      - `reporting-statement-canonicalizer.spec.ts`
    - Frontend (`apps/web`): 1 test suite, 9 tests hoàn thành 100% PASS:
      - `reporting-statements-api.test.ts`
 3. **HTTP & PostgreSQL Integration Tests**:
-   - `reporting-statements.http.integration.spec.ts`: kiểm thử toàn diện HTTP security boundary, DTO validation, preview zero-persistence, stale preview non-reuse invariant, discovery authorization, detail sanitization, và pagination bounds.
+   - `reporting-statements.http.integration.spec.ts`: **AUTHORED / AWAITING AUTHORITATIVE CI** (bao phủ toàn diện HTTP security boundary, DTO validation, active calendar domain fixture, preview zero-persistence trên 6 bảng, stale preview non-reuse invariant, discovery authorization, queue terminal states matrix, detail contract sanitization, 500 error sanitization, và pagination bounds).

@@ -4,11 +4,14 @@ import {
   REPORTING_STATEMENT_SNAPSHOT_V1,
 } from '../../src/reporting-statement-internal/reporting-statement-canonicalizer';
 import {
+  FrozenRevisionRow,
   mapToPublicFinding,
   parseAndVerifyFrozenSnapshot,
   presentReportingStatementDetail,
   presentReportingStatementSummary,
+  PUBLIC_PRESENTATION_INTEGRITY_ERROR,
 } from '../../src/reporting-statements/reporting-statement.presenter';
+
 
 const asOf = new Date('2026-08-25T10:20:30.400Z');
 
@@ -179,9 +182,9 @@ describe('Reporting Statement Presenter & Integrity', () => {
       expect(publicFinding).not.toHaveProperty('entityIds');
     });
 
-    it('fails closed and throws InternalServerErrorException for unknown finding code', () => {
+    it('fails closed and throws sanitized InternalServerErrorException for unknown finding code', () => {
       expect(() => mapToPublicFinding({ code: 'UNKNOWN_FUTURE_CODE' })).toThrow(
-        InternalServerErrorException,
+        PUBLIC_PRESENTATION_INTEGRITY_ERROR,
       );
     });
   });
@@ -213,7 +216,7 @@ describe('Reporting Statement Presenter & Integrity', () => {
     it('throws InternalServerErrorException if row is missing state', () => {
       const { row } = createValidFrozenFixture();
       expect(() => presentReportingStatementSummary({ ...row, state: null })).toThrow(
-        InternalServerErrorException,
+        PUBLIC_PRESENTATION_INTEGRITY_ERROR,
       );
     });
   });
@@ -231,24 +234,24 @@ describe('Reporting Statement Presenter & Integrity', () => {
       const { row } = createValidFrozenFixture();
       expect(() =>
         parseAndVerifyFrozenSnapshot({ ...row, snapshotProfile: 'INVALID_PROFILE' }),
-      ).toThrow(InternalServerErrorException);
+      ).toThrow(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
       expect(() =>
         parseAndVerifyFrozenSnapshot({ ...row, serializerVersion: 'INVALID_VERSION' }),
-      ).toThrow(InternalServerErrorException);
+      ).toThrow(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
     });
 
     it('fails closed when semantic hash does not match canonical JSON', () => {
       const { row } = createValidFrozenFixture();
       expect(() =>
         parseAndVerifyFrozenSnapshot({ ...row, semanticHash: 'f'.repeat(64) }),
-      ).toThrow(InternalServerErrorException);
+      ).toThrow(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
     });
 
     it('fails closed when canonical JSON is corrupted or invalid JSON', () => {
       const { row } = createValidFrozenFixture();
       expect(() =>
         parseAndVerifyFrozenSnapshot({ ...row, canonicalSnapshotJson: '{ corrupted json ' }),
-      ).toThrow(InternalServerErrorException);
+      ).toThrow(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
     });
 
     it('fails closed when re-canonicalized bytes do not match stored canonical JSON', () => {
@@ -260,7 +263,7 @@ describe('Reporting Statement Presenter & Integrity', () => {
           canonicalSnapshotJson: whitespaceJson,
           semanticHash: 'any',
         }),
-      ).toThrow(InternalServerErrorException);
+      ).toThrow(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
     });
 
     it('fails closed when series statementProfile does not match snapshot', () => {
@@ -270,7 +273,7 @@ describe('Reporting Statement Presenter & Integrity', () => {
           ...row,
           series: { ...row.series, statementProfile: 'OTHER_PROFILE' },
         }),
-      ).toThrow(InternalServerErrorException);
+      ).toThrow(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
     });
 
     it('fails closed when series submitterUserId does not match snapshot', () => {
@@ -280,7 +283,7 @@ describe('Reporting Statement Presenter & Integrity', () => {
           ...row,
           series: { ...row.series, submitterUserId: 'different-user' },
         }),
-      ).toThrow(InternalServerErrorException);
+      ).toThrow(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
     });
 
     it('fails closed when submitterDisplayNameSnapshot does not match snapshot', () => {
@@ -290,7 +293,7 @@ describe('Reporting Statement Presenter & Integrity', () => {
           ...row,
           submitterDisplayNameSnapshot: 'Mismatched Name',
         }),
-      ).toThrow(InternalServerErrorException);
+      ).toThrow(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
     });
 
     it('fails closed when submitterStaffCodeSnapshot does not match snapshot', () => {
@@ -300,7 +303,7 @@ describe('Reporting Statement Presenter & Integrity', () => {
           ...row,
           submitterStaffCodeSnapshot: 'Mismatched StaffCode',
         }),
-      ).toThrow(InternalServerErrorException);
+      ).toThrow(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
     });
 
     it('fails closed when series academicYearId does not match snapshot', () => {
@@ -310,7 +313,7 @@ describe('Reporting Statement Presenter & Integrity', () => {
           ...row,
           series: { ...row.series, academicYearId: 'different-year' },
         }),
-      ).toThrow(InternalServerErrorException);
+      ).toThrow(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
     });
 
     it('fails closed when series date range does not match snapshot', () => {
@@ -320,13 +323,13 @@ describe('Reporting Statement Presenter & Integrity', () => {
           ...row,
           series: { ...row.series, fromCivilDate: new Date('2026-07-01') },
         }),
-      ).toThrow(InternalServerErrorException);
+      ).toThrow(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
       expect(() =>
         parseAndVerifyFrozenSnapshot({
           ...row,
           series: { ...row.series, toCivilDate: new Date('2026-09-01') },
         }),
-      ).toThrow(InternalServerErrorException);
+      ).toThrow(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
     });
 
     it('fails closed when subjects in DB do not match responsibilityManifest', () => {
@@ -334,9 +337,9 @@ describe('Reporting Statement Presenter & Integrity', () => {
       expect(() =>
         parseAndVerifyFrozenSnapshot({
           ...row,
-          subjects: [{ subjectId: 'sub-a' }], // Missing sub-b
+          subjects: [{ subjectId: 'sub-a' }],
         }),
-      ).toThrow(InternalServerErrorException);
+      ).toThrow(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
     });
 
     it('fails closed when asOfInstant does not match row.asOfInstant', () => {
@@ -346,7 +349,7 @@ describe('Reporting Statement Presenter & Integrity', () => {
           ...row,
           asOfInstant: new Date('2020-01-01T00:00:00.000Z'),
         }),
-      ).toThrow(InternalServerErrorException);
+      ).toThrow(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
     });
   });
 
@@ -392,7 +395,6 @@ describe('Reporting Statement Presenter & Integrity', () => {
         causedByRevisionId: null,
       });
 
-      // Confirm no raw/internal persistence properties leaked
       expect(detail).not.toHaveProperty('canonicalSnapshotJson');
       expect(detail).not.toHaveProperty('requestFingerprint');
       expect(detail).not.toHaveProperty('requestKey');
@@ -429,6 +431,39 @@ describe('Reporting Statement Presenter & Integrity', () => {
       const detail = presentReportingStatementDetail(row, []);
       expect(detail.history[0].id).toBe('hist-1');
       expect(detail.history[1].id).toBe('hist-2');
+    });
+  });
+
+  describe('500 Exception Sanitization Security Guarantee', () => {
+    it('ensures all integrity and decoding failures produce generic Vietnamese messages without internal leakage', () => {
+      const { row } = createValidFrozenFixture();
+      const corruptedScenarios: FrozenRevisionRow[] = [
+        { ...row, snapshotProfile: 'INVALID' },
+        { ...row, serializerVersion: 'INVALID' },
+        { ...row, semanticHash: '0'.repeat(64) },
+        { ...row, canonicalSnapshotJson: '{ invalid json' },
+        { ...row, series: { ...row.series, statementProfile: 'DIFF' } },
+        { ...row, series: { ...row.series, submitterUserId: 'DIFF' } },
+        { ...row, submitterDisplayNameSnapshot: 'DIFF' },
+        { ...row, submitterStaffCodeSnapshot: 'DIFF' },
+        { ...row, series: { ...row.series, academicYearId: 'DIFF' } },
+        { ...row, series: { ...row.series, fromCivilDate: new Date('2026-01-01') } },
+        { ...row, series: { ...row.series, toCivilDate: new Date('2026-12-31') } },
+        { ...row, asOfInstant: new Date('2020-01-01T00:00:00.000Z') },
+        { ...row, subjects: [] },
+      ];
+
+      for (const scenario of corruptedScenarios) {
+        try {
+          parseAndVerifyFrozenSnapshot(scenario);
+          expect(true).toBe(false);
+        } catch (error: unknown) {
+          expect(error).toBeInstanceOf(InternalServerErrorException);
+          const message = (error as InternalServerErrorException).message;
+          expect(message).toBe(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
+          expect(message).not.toMatch(/hash|canonical|submitter|series|database|prisma|sql|unknown|profile|serializer/i);
+        }
+      }
     });
   });
 });
