@@ -1276,3 +1276,193 @@ export interface BaseNotification {
   createdAt: string;
   readAt?: string;
 }
+
+// ============================================================
+// Reporting Statement Contracts (ADR-042 / UI-0 Enablement)
+// ============================================================
+
+export type ReportingStatementLifecycleState =
+  | 'SUBMITTED'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'SUPERSEDED';
+
+export type ReportingStatementAllowedAction = 'APPROVE' | 'REJECT';
+
+export type ReportingProgressDebtClassification =
+  | 'COMPLETED'
+  | 'PROVEN_OPEN_DEBT'
+  | 'UNCONFIRMED_COMPLETION_GAP';
+
+export interface ReportingCounts {
+  distributedElapsedCount: number;
+  completedCount: number;
+  openDebtCount: number;
+  lateCount: number;
+  unconfirmedGapCount: number;
+}
+
+export interface PersonalResponsibilityInterval {
+  teachingAssignmentId: string;
+  schoolClassId: string;
+  subjectId: string;
+  validFrom: CivilDateString;
+  validUntil: CivilDateString | null;
+}
+
+export interface ReportingDetail {
+  academicYearId: string;
+  schoolClassId: string;
+  subjectId: string;
+  classification: ReportingProgressDebtClassification;
+  sourceNormalOccurrenceKey: string;
+  originalTimetableVersionId: string;
+  originalTimetableEntryId: string;
+  sourceCivilDate: CivilDateString;
+  sourceAcademicCalendarVersionId: string;
+  sourceTimeSlotDefinitionId: string;
+  sourceSlotStart: string;
+  sourceSlotEnd: string;
+  originalTeachingAssignmentId: string;
+  responsibleTeacherUserId: string;
+  ppctClassAssociationId: string;
+  ppctPlanId: string;
+  ppctVersionId: string;
+  ppctItemId: string;
+  ppctItemRevisionId: string;
+  operationalLessonDispositionId: string | null;
+  operationalDispositionType: string | null;
+  fulfillmentExecutionId: string | null;
+  fulfillmentKind: 'NORMAL' | 'MAKEUP' | null;
+  makeupTeachingScheduleId: string | null;
+  executionCivilDate: CivilDateString | null;
+  executionAcademicCalendarVersionId: string | null;
+  executionTimeSlotDefinitionId: string | null;
+  actualTeacherUserId: string | null;
+}
+
+export interface ReportingStatementPublicFinding {
+  severity: 'BLOCKER';
+  code: string;
+  reason: string;
+  entityIds: string[];
+  occurrenceKey: string | null;
+}
+
+export interface ReportingStatementPreviewSection {
+  schoolClassId: string;
+  subjectId: string;
+  responsibilityIntervals: PersonalResponsibilityInterval[];
+  status: 'PASS' | 'BLOCKED';
+  counts: ReportingCounts | null;
+  details: ReportingDetail[];
+  findings: ReportingStatementPublicFinding[];
+}
+
+export interface ReportingStatementPreviewRequest {
+  academicYearId: string;
+  fromCivilDate: CivilDateString;
+  toCivilDate: CivilDateString;
+}
+
+export interface ReportingStatementPreviewResponse {
+  previewAsOfInstant: string;
+  status: 'PASS' | 'BLOCKED';
+  responsibilityState: 'RESPONSIBILITY_PRESENT' | 'ZERO_RESPONSIBILITY';
+  eligibleForSubmission: boolean;
+  counts: ReportingCounts | null;
+  sections: ReportingStatementPreviewSection[];
+  findings: ReportingStatementPublicFinding[];
+  responsibilityManifest: PersonalResponsibilityInterval[];
+}
+
+export interface ReportingStatementCommandResult {
+  revisionId: string;
+  seriesId: string;
+  lifecycleState: ReportingStatementLifecycleState;
+  lifecycleToken: string;
+  asOfInstant: string | null;
+  replay: boolean;
+}
+
+export interface ReportingStatementSubmitRequest {
+  academicYearId: string;
+  fromCivilDate: CivilDateString;
+  toCivilDate: CivilDateString;
+  requestKey: string;
+}
+
+export interface ReportingStatementDecideRequest {
+  expectedLifecycleToken: string;
+  requestKey: string;
+}
+
+export interface ReportingStatementSummary {
+  revisionId: string;
+  seriesId: string;
+  submitterUserId: string;
+  submitterDisplayNameSnapshot: string | null;
+  submitterStaffCodeSnapshot: string | null;
+  academicYearId: string;
+  fromCivilDate: CivilDateString;
+  toCivilDate: CivilDateString;
+  asOfInstant: string;
+  submittedAt: string;
+  lifecycleState: ReportingStatementLifecycleState;
+  predecessorRevisionId: string | null;
+  supersedesRevisionId: string | null;
+}
+
+export interface ReportingStatementListResponse {
+  items: ReportingStatementSummary[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+export interface ReportingStatementHistoryEntry {
+  id: string;
+  eventType: ReportingStatementLifecycleState;
+  stateBefore: ReportingStatementLifecycleState | null;
+  stateAfter: ReportingStatementLifecycleState;
+  actorUserId: string;
+  actorDisplayNameSnapshot: string | null;
+  actorStaffCodeSnapshot: string | null;
+  createdAt: string;
+  causedByRevisionId: string | null;
+}
+
+export interface ReportingStatementDetailSection {
+  schoolClassId: string;
+  subjectId: string;
+  responsibilityIntervals: PersonalResponsibilityInterval[];
+  status: 'PASS' | 'BLOCKED';
+  counts: ReportingCounts | null;
+  details: ReportingDetail[];
+  findings: ReportingStatementPublicFinding[];
+}
+
+
+export interface ReportingStatementDetailResponse {
+  revisionId: string;
+  seriesId: string;
+  statementProfile: string;
+  submitterUserId: string;
+  submitterDisplayNameSnapshot: string | null;
+  submitterStaffCodeSnapshot: string | null;
+  academicYearId: string;
+  fromCivilDate: CivilDateString;
+  toCivilDate: CivilDateString;
+  asOfInstant: string;
+  submittedAt: string;
+  lifecycleState: ReportingStatementLifecycleState;
+  lifecycleToken: string;
+  predecessorRevisionId: string | null;
+  supersedesRevisionId: string | null;
+  counts: ReportingCounts;
+  sections: ReportingStatementDetailSection[];
+  responsibilityManifest: PersonalResponsibilityInterval[];
+  frozenSubjectIds: string[];
+  history: ReportingStatementHistoryEntry[];
+  allowedActions: ReportingStatementAllowedAction[];
+}
