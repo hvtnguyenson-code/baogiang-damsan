@@ -13,11 +13,11 @@ export function AccessibleReportingStatementsPage() {
   const yearLabels = useMemo(() => new Map((contextQuery.data?.academicYears ?? []).map((year) => [year.id, `${year.name} (${year.code})`])), [contextQuery.data]);
 
   return <div className="reporting-page">
-    <PageHeader eyebrow="Sổ báo cáo" title="Báo cáo được phép xem">Danh sách này do backend xác định theo phạm vi đọc đang có hiệu lực.</PageHeader>
+    <PageHeader eyebrow="Sổ báo cáo" title="Báo cáo được phép xem">Danh sách gồm các báo cáo thuộc phạm vi bạn được phép xem.</PageHeader>
     {(contextQuery.isLoading || listQuery.isLoading) && <PageLoading />}
     {contextQuery.isError && <QueryFailure error={contextQuery.error} retry={() => void contextQuery.refetch()} />}
     {listQuery.isError && <QueryFailure error={listQuery.error} retry={() => void listQuery.refetch()} />}
-    {listQuery.data?.items.length === 0 && <EmptyState title="Chưa có báo cáo được phép xem" message="Không có báo cáo nào trong phạm vi backend cho phép tài khoản này đọc." />}
+    {listQuery.data?.items.length === 0 && <EmptyState title="Chưa có báo cáo được phép xem" message="Hiện không có báo cáo nào trong phạm vi bạn được phép xem." />}
     {listQuery.data && listQuery.data.items.length > 0 && <><StatementListTable items={listQuery.data.items} academicYearLabels={yearLabels} /><Pagination page={page} pageSize={PAGE_SIZE} total={listQuery.data.total} onPage={setPage} /></>}
   </div>;
 }

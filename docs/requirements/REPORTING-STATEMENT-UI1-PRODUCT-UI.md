@@ -31,17 +31,17 @@ Preview chỉ chạy sau nút “Xem trước báo cáo”. Mọi thay đổi ye
 - `PASS + RESPONSIBILITY_PRESENT + eligibleForSubmission` hiển thị counts, current catalog labels, responsibility intervals và evidence trước nút gửi.
 - `BLOCKED` chỉ hiển thị `finding.message` public-safe, không hiển thị code, entity ID hoặc provenance nội bộ.
 
-Submit nhắc rõ server sẽ kiểm tra lại dữ liệu tại thời điểm gửi chính thức. Nút chỉ dùng preview khớp exact fingerprint hiện tại. Success/replay được hợp nhất thành một logical success và làm mới danh sách cá nhân.
+Submit nhắc rõ server sẽ kiểm tra lại dữ liệu tại thời điểm gửi chính thức. Nút chỉ dùng preview khớp exact fingerprint hiện tại. Success/replay được hợp nhất thành một logical success và làm mới danh sách cá nhân. Sau khi bắt đầu gửi, giao diện khóa lệnh đó: trong lúc chờ hoặc chưa xác định được kết quả chỉ có thể thử lại đúng yêu cầu cũ; không thể tạo thêm yêu cầu từ bản xem trước cũ. Khi thành công, bản xem trước cũ không thể được gửi lại.
 
 ## requestKey retry và stale CAS
 
 Một submit command tạo đúng một `requestKey`. Network error hoặc server failure chưa rõ kết quả giữ nguyên command và nút “Thử gửi lại” gửi cùng key và cùng year/from/to. Success xóa pending key. `HTTP 409` không blind retry: pending key và preview bị xóa, danh sách được làm mới, người dùng phải xem trước lại; command mới tạo key mới.
 
-Decision chỉ được tạo sau bước xác nhận, với một `requestKey` và lifecycle token đang đọc. Uncertain retry giữ nguyên cả hai. `HTTP 409` xóa pending command, refetch detail/hàng đợi, thông báo báo cáo đã có trạng thái mới và yêu cầu đọc lại. Quyết định mới sau review tạo key mới. Contract hiện không có rejection reason nên UI không tự thêm field hoặc payload này.
+Decision chỉ được tạo sau bước xác nhận, với một `requestKey` và lifecycle token đang đọc. Khi kết quả chưa rõ, giao diện ẩn xác nhận và mọi hành động thông thường; chỉ có thể thử lại đúng quyết định cũ. Sau success hoặc `HTTP 409`, mọi hành động cũ bị khóa đến khi chi tiết mới tải xong. Chỉ dữ liệu mới quyết định các hành động được phép hiển thị tiếp theo. `HTTP 409` xóa pending command, tải lại detail/hàng đợi, thông báo báo cáo đã có trạng thái mới và yêu cầu đọc lại. Quyết định mới sau review tạo key mới. Khi từ chối, hệ thống hiện không yêu cầu nhập lý do.
 
 ## Evidence-before-action và read workflows
 
-Danh sách cá nhân, accessible và pending đều dùng pagination backend và status label có text. Frozen detail sắp xếp: identity/range/status → counts → responsibility → detailed evidence → history → actions. Current class/subject labels chỉ hỗ trợ đọc và có fallback khi danh mục không còn nhãn; copy không gọi chúng là frozen truth. UUID, lifecycle token, requestKey, canonical JSON, semantic hash và provenance IDs không xuất hiện trên product surface.
+Danh sách cá nhân, accessible và pending đều dùng pagination backend và status label có text. Frozen detail sắp xếp: identity/range/status → counts → responsibility → detailed evidence → history → actions. Current class/subject labels chỉ hỗ trợ đọc và có fallback khi danh mục không còn nhãn; copy không gọi chúng là frozen truth. Đường quay lại trên shared detail phản ánh đúng quyền hiện có: báo cáo cá nhân, danh sách được phép xem và hàng đợi phê duyệt chỉ xuất hiện khi người dùng thực sự đi được tới nơi đó; các đường phù hợp có thể cùng xuất hiện. UUID, lifecycle token, requestKey, canonical JSON, semantic hash và provenance IDs không xuất hiện trên product surface.
 
 ## Responsive, accessibility và design
 
@@ -57,11 +57,11 @@ Visual fixture có dữ liệu đại diện, tách rõ khỏi business E2E:
 - `approval-detail-375x812.png`;
 - `approval-detail-1366x768.png`.
 
-Ảnh được sinh dưới `tests/e2e/test-results/reporting-statement-ui/` và không stage. Visual critique kiểm tra template-like composition, rail semantics, density, chữ Việt, local table overflow, touch targets và evidence/action order.
+Ảnh được sinh dưới `tests/e2e/test-results/ui-foundation/reporting-statement-ui/` và không stage. Visual critique kiểm tra template-like composition, rail semantics, density, chữ Việt, local table overflow, touch targets và evidence/action order.
 
 ## Test evidence
 
-Candidate có unit integration cho capability routing, ZERO/PASS/BLOCKED, label/evidence, input invalidation, requestKey submit/decision retry, replay, allowed actions, confirmation, no raw ID và stale CAS refetch. Playwright visual fixture chạy axe WCAG A/AA, page overflow, touch targets và screenshot matrix. Real PostgreSQL cross-role/lifecycle E2E chỉ được tính khi có certified isolated database; visual fixture không thay thế bằng chứng business E2E.
+Candidate có unit integration cho capability routing và navigation, ZERO/PASS/BLOCKED, label/evidence, input invalidation, requestKey submit/decision retry, replay, allowed actions, confirmation, no raw ID và stale refetch bị trì hoãn sau success/409. Playwright visual fixture chạy axe WCAG A/AA, page overflow, touch targets và screenshot matrix. Real PostgreSQL cross-role/lifecycle E2E chỉ được tính khi có certified isolated database; visual fixture không thay thế bằng chứng business E2E.
 
 Local final evidence:
 

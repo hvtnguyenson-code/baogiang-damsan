@@ -9,7 +9,7 @@ import { InlineAlert } from '../components/ui/feedback';
 import { EmptyState, PageHeader, PageLoading, Pagination, QueryFailure, SelectField } from '../components/ui/management';
 import { FormField } from '../components/ui/form-field';
 import { ApiError } from '../lib/api-client';
-import { canReadPersonalReporting, canSubmitPersonalReporting } from '../lib/capabilities';
+import { canOpenReportingDetail, canReadPersonalReporting, canSubmitPersonalReporting } from '../lib/capabilities';
 import { createReportingStatementRequestKey, reportingStatementsApi } from '../lib/reporting-statements-api';
 import { displayReference, makeReportingLabels } from '../lib/reporting-statement-presentation';
 
@@ -33,6 +33,7 @@ export function ReportingStatementsPage() {
   const capabilities = auth.auth?.capabilities ?? [];
   const canSubmit = canSubmitPersonalReporting(capabilities);
   const canReadMine = canReadPersonalReporting(capabilities);
+  const canOpenDetail = canOpenReportingDetail(capabilities);
   const queryClient = useQueryClient();
   const [academicYearId, setAcademicYearId] = useState('');
   const [fromCivilDate, setFromCivilDate] = useState('');
@@ -83,6 +84,8 @@ export function ReportingStatementsPage() {
         setPendingSubmit(null);
         setPreview(null);
         void queryClient.invalidateQueries({ queryKey: ['reporting-statements-mine'] });
+      } else if (status !== 0 && status < 500) {
+        setPendingSubmit(null);
       }
     },
   });
@@ -106,6 +109,7 @@ export function ReportingStatementsPage() {
   if (contextQuery.isError) return <QueryFailure error={contextQuery.error} retry={() => void contextQuery.refetch()} />;
 
   const startSubmit = () => {
+    if (pendingSubmit || submitMutation.isPending || uncertainSubmit || submitSuccess) return;
     const command: PendingSubmitCommand = { academicYearId, fromCivilDate: fromCivilDate as CivilDateString, toCivilDate: toCivilDate as CivilDateString, requestKey: createReportingStatementRequestKey() };
     setPendingSubmit(command);
     setSubmitSuccess(null);
@@ -142,7 +146,7 @@ export function ReportingStatementsPage() {
       {currentPreview.status === 'BLOCKED' && <InlineAlert title="Chưa thể lập báo cáo từ dữ liệu hiện tại"><ul>{currentPreview.findings.map((finding, index) => <li key={index}>{finding.message}</li>)}</ul></InlineAlert>}
       {currentPreview.counts && <ReportingCountsView counts={currentPreview.counts} />}
       {currentPreview.sections.map((section) => <article className="reporting-evidence-section" key={`${section.schoolClassId}-${section.subjectId}`}>
-        <header><h3>{displayReference(section.schoolClassId, labels.classes, 'class')} · {displayReference(section.subjectId, labels.subjects, 'subject')}</h3><p>Phạm vi trách nhiệm hiện hành theo danh mục dùng để hiển thị.</p></header>
+        <header><h3>{displayReference(section.schoolClassId, labels.classes, 'class')} · {displayReference(section.subjectId, labels.subjects, 'subject')}</h3><p>Tên lớp và môn lấy từ danh mục hiện tại để hiển thị; khoảng trách nhiệm là kết quả của bản xem trước này.</p></header>
         {section.counts && <ReportingCountsView counts={section.counts} />}
         <dl className="responsibility-ledger">{section.responsibilityIntervals.map((interval, index) => <div key={index}><dt>Thời gian chịu trách nhiệm</dt><dd className="technical-value">{interval.validFrom} – {interval.validUntil ?? 'đến nay'}</dd></div>)}</dl>
         {section.findings.length > 0 && <ul>{section.findings.map((finding, index) => <li key={index}>{finding.message}</li>)}</ul>}
@@ -150,13 +154,13 @@ export function ReportingStatementsPage() {
       </article>)}
       <div className="reporting-submit">
         <p>Hệ thống sẽ kiểm tra lại dữ liệu tại thời điểm gửi chính thức.</p>
-        <Button type="button" disabled={!currentPreview.eligibleForSubmission || submitMutation.isPending} loading={submitMutation.isPending} onClick={startSubmit}>Gửi báo cáo</Button>
+        {!pendingSubmit && !submitSuccess && <Button type="button" disabled={!currentPreview.eligibleForSubmission || submitMutation.isPending} loading={submitMutation.isPending} onClick={startSubmit}>Gửi báo cáo</Button>}
         {submitMutation.isError && <InlineAlert title={submitMutation.error instanceof ApiError && submitMutation.error.statusCode === 409 ? 'Dữ liệu đã thay đổi' : 'Chưa xác định được kết quả gửi'}>
           <p>{submitMutation.error instanceof ApiError ? submitMutation.error.message : 'Kết nối đang gián đoạn.'}</p>
           {submitMutation.error instanceof ApiError && submitMutation.error.statusCode === 409 && <p>Hãy xem trước lại báo cáo trước khi tạo yêu cầu mới.</p>}
           {uncertainSubmit && pendingSubmit && <Button type="button" variant="secondary" loading={submitMutation.isPending} onClick={() => submitMutation.mutate(pendingSubmit)}>Thử gửi lại</Button>}
         </InlineAlert>}
-        {submitSuccess && <InlineAlert title="Đã gửi báo cáo" tone="success"><p>{submitSuccess.replay ? 'Yêu cầu trước đó đã được hệ thống xác nhận.' : 'Báo cáo chính thức đã được lưu.'}</p><Link className="text-link" to={`/bao-cao-ke-khai/${submitSuccess.revisionId}`}>Mở báo cáo vừa gửi</Link></InlineAlert>}
+        {submitSuccess && <InlineAlert title="Đã gửi báo cáo" tone="success"><p>{submitSuccess.replay ? 'Yêu cầu trước đó đã được hệ thống xác nhận.' : 'Báo cáo chính thức đã được lưu.'}</p>{canOpenDetail && <Link className="text-link" to={`/bao-cao-ke-khai/${submitSuccess.revisionId}`}>Mở báo cáo vừa gửi</Link>}</InlineAlert>}
       </div>
     </section>}
 

@@ -155,7 +155,7 @@ h2 { font-size: clamp(1.25rem, 2vw, 1.55rem); }
 .foundation-ledger dt { padding: 16px; font-weight: 700; background: #fff; }
 .foundation-ledger dd { margin: 0; padding: 16px; display: flex; align-items: center; gap: 16px; }
 .foundation-ledger dd > span:last-child { color: #49616f; }
-.workspace-actions { margin-top: 28px; }
+.workspace-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
 .text-link { display: inline-flex; min-height: 44px; align-items: center; color: #1f4358; font-weight: 700; text-decoration-thickness: 1px; text-underline-offset: 4px; }
 .text-link:hover { text-decoration-thickness: 2px; }
 .status-cue { display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto; font-size: 0.78rem; font-weight: 700; }

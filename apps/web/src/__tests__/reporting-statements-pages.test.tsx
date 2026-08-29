@@ -53,6 +53,12 @@ function authWith(...capabilities: Array<{ key: string; scope: string; resourceI
   return { ...normalAuth, capabilities };
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => { resolve = resolvePromise; });
+  return { promise, resolve };
+}
+
 function standardWorkspaceFetch(preview: unknown) {
   return vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
@@ -124,7 +130,7 @@ describe('Reporting Statement product UI', () => {
 
   it('reuses one submit requestKey after uncertain transport failure and creates a new key for a changed command', async () => {
     const keys = ['submit-key-1', 'submit-key-2'];
-    vi.spyOn(globalThis.crypto, 'randomUUID').mockImplementation(() => keys.shift() as `${string}-${string}-${string}-${string}-${string}`);
+    const randomUuid = vi.spyOn(globalThis.crypto, 'randomUUID').mockImplementation(() => keys.shift() as `${string}-${string}-${string}-${string}-${string}`);
     const submitBodies: Array<Record<string, unknown>> = [];
     let submitAttempt = 0;
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -146,10 +152,15 @@ describe('Reporting Statement product UI', () => {
     renderApp('/bao-cao-ke-khai');
     await fillAndPreview(user);
     await user.click(await screen.findByRole('button', { name: 'Gửi báo cáo' }));
+    await screen.findByRole('button', { name: 'Thử gửi lại' });
+    expect(screen.queryByRole('button', { name: 'Gửi báo cáo' })).not.toBeInTheDocument();
+    expect(randomUuid).toHaveBeenCalledTimes(1);
     await user.click(await screen.findByRole('button', { name: 'Thử gửi lại' }));
     expect(await screen.findByText(/yêu cầu trước đó đã được hệ thống xác nhận/i)).toBeInTheDocument();
     expect(submitBodies[0].requestKey).toBe('submit-key-1');
     expect(submitBodies[1]).toEqual(submitBodies[0]);
+    expect(randomUuid).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('link', { name: 'Mở báo cáo vừa gửi' })).not.toBeInTheDocument();
 
     await user.clear(screen.getByLabelText('Đến ngày'));
     await user.type(screen.getByLabelText('Đến ngày'), '2026-09-30');
@@ -157,6 +168,7 @@ describe('Reporting Statement product UI', () => {
     await user.click(await screen.findByRole('button', { name: 'Gửi báo cáo' }));
     await waitFor(() => expect(submitBodies).toHaveLength(3));
     expect(submitBodies[2].requestKey).toBe('submit-key-2');
+    expect(randomUuid).toHaveBeenCalledTimes(2);
   });
 
   it('renders frozen detail without raw identifiers and requires confirmation before decision', async () => {
@@ -209,7 +221,7 @@ describe('Reporting Statement product UI', () => {
   });
 
   it('reuses the same decision requestKey and lifecycle token after an uncertain retry', async () => {
-    vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue('decision-retry-key' as `${string}-${string}-${string}-${string}-${string}`);
+    const randomUuid = vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue('decision-retry-key' as `${string}-${string}-${string}-${string}-${string}`);
     const bodies: Array<Record<string, unknown>> = [];
     let attempts = 0;
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -229,23 +241,29 @@ describe('Reporting Statement product UI', () => {
     renderApp(`/bao-cao-ke-khai/${REVISION_ID}`);
     await user.click(await screen.findByRole('button', { name: 'Từ chối báo cáo' }));
     await user.click(screen.getByRole('button', { name: 'Xác nhận từ chối' }));
-    await user.click(await screen.findByRole('button', { name: 'Thử lại cùng yêu cầu' }));
+    await screen.findByRole('button', { name: 'Thử lại cùng yêu cầu' });
+    expect(screen.queryByRole('button', { name: 'Xác nhận từ chối' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Phê duyệt báo cáo' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Từ chối báo cáo' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Thử lại cùng yêu cầu' }));
     await screen.findByText(/yêu cầu từ chối trước đó/i);
     expect(bodies).toHaveLength(2);
     expect(bodies[0]).toEqual({ expectedLifecycleToken: 'lifecycle-token-1', requestKey: 'decision-retry-key' });
     expect(bodies[1]).toEqual(bodies[0]);
+    expect(randomUuid).toHaveBeenCalledTimes(1);
   });
 
-  it('does not blind retry a stale 409 and refetches the new lifecycle state', async () => {
+  it('keeps all decision controls hidden while a stale 409 refetch is pending', async () => {
     let detailReads = 0;
     let decisions = 0;
+    const refreshedDetail = deferred<Response>();
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.endsWith('/auth/me')) return jsonResponse(authWith({ key: 'REPORTING_STATEMENT_READ', scope: 'SCHOOL_WIDE' }));
       if (url.includes('workspace-context')) return jsonResponse(workspaceSelected);
       if (url.endsWith(`/reporting-statements/${REVISION_ID}`) && !init?.method) {
         detailReads += 1;
-        return jsonResponse(detailReads === 1 ? pendingDetail : { ...pendingDetail, lifecycleState: 'APPROVED', lifecycleToken: 'lifecycle-token-2', allowedActions: [] });
+        return detailReads === 1 ? jsonResponse(pendingDetail) : refreshedDetail.promise;
       }
       if (url.endsWith('/approve')) {
         decisions += 1;
@@ -257,9 +275,47 @@ describe('Reporting Statement product UI', () => {
     renderApp(`/bao-cao-ke-khai/${REVISION_ID}`);
     await user.click(await screen.findByRole('button', { name: 'Phê duyệt báo cáo' }));
     await user.click(screen.getByRole('button', { name: 'Xác nhận phê duyệt' }));
-    expect(await screen.findByText(/nội dung vừa được tải lại/i)).toBeInTheDocument();
+    await waitFor(() => expect(detailReads).toBe(2));
+    expect(await screen.findByText(/đang tải trạng thái mới/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /phê duyệt báo cáo/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /từ chối báo cáo/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /xác nhận/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /thử lại cùng yêu cầu/i })).not.toBeInTheDocument();
+    refreshedDetail.resolve(jsonResponse({ ...pendingDetail, lifecycleState: 'APPROVED', lifecycleToken: 'lifecycle-token-2', allowedActions: [] }));
     expect(await screen.findByText('Đã phê duyệt')).toBeInTheDocument();
     expect(decisions).toBe(1);
     expect(screen.queryByRole('button', { name: /thử lại cùng yêu cầu/i })).not.toBeInTheDocument();
+  });
+
+  it('keeps all decision controls hidden while a successful decision refetch is pending', async () => {
+    let detailReads = 0;
+    let decisions = 0;
+    const refreshedDetail = deferred<Response>();
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) return jsonResponse(authWith({ key: 'REPORTING_STATEMENT_READ', scope: 'SCHOOL_WIDE' }));
+      if (url.includes('workspace-context')) return jsonResponse(workspaceSelected);
+      if (url.endsWith(`/reporting-statements/${REVISION_ID}`) && !init?.method) {
+        detailReads += 1;
+        return detailReads === 1 ? jsonResponse(pendingDetail) : refreshedDetail.promise;
+      }
+      if (url.endsWith('/approve')) {
+        decisions += 1;
+        return jsonResponse({ revisionId: REVISION_ID, seriesId: 'hidden', lifecycleState: 'APPROVED', lifecycleToken: 'lifecycle-token-2', asOfInstant: null, replay: false });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    }));
+    const user = userEvent.setup();
+    renderApp(`/bao-cao-ke-khai/${REVISION_ID}`);
+    await user.click(await screen.findByRole('button', { name: 'Phê duyệt báo cáo' }));
+    await user.click(screen.getByRole('button', { name: 'Xác nhận phê duyệt' }));
+    await waitFor(() => expect(detailReads).toBe(2));
+    expect(screen.queryByRole('button', { name: /phê duyệt báo cáo/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /từ chối báo cáo/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /xác nhận/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /thử lại cùng yêu cầu/i })).not.toBeInTheDocument();
+    refreshedDetail.resolve(jsonResponse({ ...pendingDetail, lifecycleState: 'APPROVED', lifecycleToken: 'lifecycle-token-2', allowedActions: [] }));
+    expect(await screen.findByText('Đã phê duyệt')).toBeInTheDocument();
+    expect(decisions).toBe(1);
   });
 });

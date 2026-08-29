@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page, type Route } from '@playwright/test';
 
-const screenshots = 'test-results/reporting-statement-ui';
+const screenshots = 'test-results/ui-foundation/reporting-statement-ui';
 const yearId = '11111111-1111-4111-8111-111111111111';
 const classId = '22222222-2222-4222-8222-222222222222';
 const subjectId = '33333333-3333-4333-8333-333333333333';
