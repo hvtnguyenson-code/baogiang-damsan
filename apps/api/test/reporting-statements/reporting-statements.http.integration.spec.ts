@@ -36,15 +36,33 @@ integration('Reporting Statement HTTP security boundary (isolated PostgreSQL)', 
   let academicYearId: string;
   let subjectA: string;
   let subjectB: string;
+  let seededSeriesIds: string[] = [];
 
   async function seedSubmittedRevision() {
-    return prisma.$transaction(tx => repository.persistSubmittedRevision(tx, {
+    const persisted = await prisma.$transaction(tx => repository.persistSubmittedRevision(tx, {
       series: { statementProfile: PERSONAL_REPORTING_STATEMENT_PROFILE, submitterUserId: owner.id, academicYearId, fromCivilDate: new Date('2026-08-01'), toCivilDate: new Date('2026-08-31') },
       frozen: frozen(owner.id, academicYearId, [subjectA, subjectB]),
       lifecycleToken: crypto.randomUUID(),
       command: { actorUserId: owner.id, requestKey: crypto.randomUUID(), requestFingerprint: crypto.randomUUID() },
       history: { actorUserId: owner.id },
     }));
+    seededSeriesIds.push(persisted.series.id);
+    return persisted;
+  }
+
+  async function cleanupSeededReportingStatements() {
+    if (!seededSeriesIds.length) return;
+    const revisionIds = (await prisma.reportingStatementRevision.findMany({ where: { seriesId: { in: seededSeriesIds } }, select: { id: true } })).map(({ id }) => id);
+    await prisma.reportingStatementHistory.deleteMany({ where: { seriesId: { in: seededSeriesIds } } });
+    await prisma.reportingStatementCommand.deleteMany({ where: { seriesId: { in: seededSeriesIds } } });
+    if (revisionIds.length) {
+      await prisma.reportingStatementRevisionSubject.deleteMany({ where: { revisionId: { in: revisionIds } } });
+      await prisma.reportingStatementRevisionState.deleteMany({ where: { revisionId: { in: revisionIds } } });
+      await prisma.reportingStatementRevision.updateMany({ where: { id: { in: revisionIds } }, data: { predecessorRevisionId: null, supersedesRevisionId: null } });
+      await prisma.reportingStatementRevision.deleteMany({ where: { id: { in: revisionIds } } });
+    }
+    await prisma.reportingStatementSeries.deleteMany({ where: { id: { in: seededSeriesIds } } });
+    seededSeriesIds = [];
   }
 
   beforeAll(async () => {
@@ -54,6 +72,7 @@ integration('Reporting Statement HTTP security boundary (isolated PostgreSQL)', 
 
   beforeEach(async () => {
     await harness.clean();
+    seededSeriesIds = [];
     await harness.seedCapabilities([
       { key: 'REPORTING_STATEMENT_SUBMIT', scopes: ['PERSONAL'] },
       { key: 'REPORTING_STATEMENT_READ', scopes: ['PERSONAL', 'SUBJECT', 'SCHOOL_WIDE'] },
@@ -68,7 +87,15 @@ integration('Reporting Statement HTTP security boundary (isolated PostgreSQL)', 
     approver = await harness.actor({ grants: [{ capabilityKey: 'APPROVAL_PRINCIPAL' }] });
   });
 
-  afterAll(async () => harness.stop());
+  afterEach(async () => cleanupSeededReportingStatements());
+
+  afterAll(async () => {
+    try {
+      await cleanupSeededReportingStatements();
+    } finally {
+      await harness.stop();
+    }
+  });
 
   it('denies every Statement route without an authenticated session', async () => {
     const server = harness.app.getHttpServer();
