@@ -53,6 +53,18 @@ export class Phase01Harness {
   async clean(): Promise<void> {
     await this.prisma.auditEvent.deleteMany();
     await this.prisma.authSession.deleteMany();
+    await this.prisma.reportingStatementHistory.deleteMany();
+    await this.prisma.reportingStatementCommand.deleteMany();
+    await this.prisma.reportingStatementRevisionSubject.deleteMany();
+    await this.prisma.reportingStatementRevisionState.deleteMany();
+    await this.prisma.reportingStatementRevision.updateMany({
+      data: {
+        predecessorRevisionId: null,
+        supersedesRevisionId: null,
+      },
+    });
+    await this.prisma.reportingStatementRevision.deleteMany();
+    await this.prisma.reportingStatementSeries.deleteMany();
     await this.prisma.timetableImportRequestKey.deleteMany();
     await this.prisma.timetableImportReceipt.deleteMany();
     await this.prisma.timetableEntry.deleteMany();
