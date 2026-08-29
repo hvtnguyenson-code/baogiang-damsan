@@ -298,6 +298,45 @@ details summary { min-height: 44px; display: inline-flex; align-items: center; c
 .teaching-assignment-workflow__summary dd { margin: 4px 0 0; }
 .candidate-empty { margin-top: 0; padding: 12px 14px; border-block: 1px solid #c9d4da; color: #49616f; }
 
+/* Reporting Statements are a long-form evidence ledger. Rails mark workflow sections only. */
+.reporting-page { width: 100%; max-width: 1120px; }
+.reporting-form, .reporting-preview, .reporting-decision { margin-top: 32px; padding-block: 24px; border-block: 1px solid #c9d4da; }
+.reporting-section-heading { display: grid; grid-template-columns: 7px minmax(0, 1fr); gap: 20px; margin-bottom: 24px; }
+.reporting-section-heading h2 { margin-bottom: 6px; }
+.reporting-section-heading p { margin: 0; max-width: 65ch; color: #49616f; }
+.reporting-form__fields { display: grid; grid-template-columns: minmax(240px, 1.2fr) repeat(2, minmax(180px, .8fr)); gap: 0 20px; align-items: start; }
+.reporting-form > .button { margin-top: 12px; }
+.reporting-counts { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin: 16px 0 24px; border-block: 2px solid #1f4358; background: #fff; }
+.reporting-counts div { padding: 12px; border-right: 1px solid #c9d4da; }
+.reporting-counts div:last-child { border-right: 0; }
+.reporting-counts dt { color: #49616f; font-size: .78rem; font-weight: 600; }
+.reporting-counts dd { margin: 5px 0 0; color: #1f4358; font-size: 1.15rem; font-weight: 700; }
+.reporting-evidence-section { margin-top: 32px; border-left: 7px solid #a7462f; padding-left: 20px; }
+.reporting-evidence-section > header { padding-bottom: 12px; border-bottom: 1px solid #c9d4da; }
+.reporting-evidence-section h3 { margin-bottom: 5px; }
+.reporting-evidence-section > header p { margin: 0; color: #49616f; }
+.reporting-evidence-section .table-region table { min-width: 820px; }
+.responsibility-ledger { margin: 12px 0 20px; }
+.responsibility-ledger > div { display: grid; grid-template-columns: minmax(190px, .4fr) 1fr; padding-block: 8px; border-bottom: 1px solid #c9d4da; }
+.responsibility-ledger dd { margin: 0; }
+.reporting-submit { margin-top: 32px; padding-top: 20px; border-top: 2px solid #1f4358; }
+.reporting-submit > p { max-width: 65ch; color: #49616f; }
+.reporting-submit > .alert { margin-top: 20px; }
+.responsibility-register { border-top: 2px solid #1f4358; }
+.responsibility-register dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0; border-bottom: 1px solid #c9d4da; background: #fff; }
+.responsibility-register dl > div { padding: 12px 14px; border-right: 1px solid #c9d4da; }
+.responsibility-register dl > div:last-child { border-right: 0; }
+.responsibility-register dt { color: #49616f; font-size: .78rem; font-weight: 600; }
+.responsibility-register dd { margin: 4px 0 0; }
+.reporting-history { list-style: none; margin: 0; padding: 0 0 0 24px; border-left: 4px solid #a7462f; }
+.reporting-history li { position: relative; padding: 12px 0 16px 20px; border-bottom: 1px solid #c9d4da; }
+.reporting-history li::before { content: ''; position: absolute; left: -31px; top: 18px; width: 12px; height: 12px; border: 3px solid #a7462f; border-radius: 50%; background: #fff; }
+.reporting-history li > div { display: flex; justify-content: space-between; gap: 16px; }
+.reporting-history p { margin: 4px 0 0; color: #49616f; }
+.decision-confirm { margin-top: 16px; padding: 16px 20px; border: 2px solid #1f4358; background: #fff; }
+.decision-confirm p { max-width: 65ch; }
+.reporting-decision .form-actions .button--primary { flex: 0 1 auto; }
+
 @keyframes spin { to { transform: rotate(360deg); } }
 
 @media (max-width: 760px) {
@@ -348,6 +387,13 @@ details summary { min-height: 44px; display: inline-flex; align-items: center; c
   .teaching-assignment-ledger__filters .button { width: 100%; }
   .teaching-assignment-workflow__summary div { border-right: 0; border-bottom: 1px solid #c9d4da; }
   .teaching-assignment-workflow__summary div:last-child { border-bottom: 0; }
+  .reporting-form__fields, .reporting-counts, .responsibility-register dl { grid-template-columns: 1fr; }
+  .reporting-counts div, .responsibility-register dl > div { border-right: 0; border-bottom: 1px solid #c9d4da; }
+  .reporting-counts div:last-child, .responsibility-register dl > div:last-child { border-bottom: 0; }
+  .reporting-evidence-section { padding-left: 14px; }
+  .responsibility-ledger > div { grid-template-columns: 1fr; }
+  .reporting-history li > div { align-items: flex-start; flex-direction: column; gap: 3px; }
+  .reporting-decision .form-actions .button { width: 100%; }
 }
 
 @media (prefers-reduced-motion: reduce) {

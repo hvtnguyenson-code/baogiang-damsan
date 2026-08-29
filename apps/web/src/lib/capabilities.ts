@@ -6,6 +6,57 @@ export type ManagementRoute = {
   isVisible(capabilities: ScopedCapability[]): boolean;
 };
 
+export type ProfessionalRoute = ManagementRoute;
+
+function hasCapability(capabilities: ScopedCapability[], key: CapabilityKey, scope: ScopedCapability['scope']): boolean {
+  return capabilities.some((grant) => grant.key === key && grant.scope === scope);
+}
+
+export function canSubmitPersonalReporting(capabilities: ScopedCapability[]): boolean {
+  return hasCapability(capabilities, 'REPORTING_STATEMENT_SUBMIT', 'PERSONAL');
+}
+
+export function canReadPersonalReporting(capabilities: ScopedCapability[]): boolean {
+  return hasCapability(capabilities, 'REPORTING_STATEMENT_READ', 'PERSONAL');
+}
+
+export function canReadAccessibleReporting(capabilities: ScopedCapability[]): boolean {
+  return hasCapability(capabilities, 'REPORTING_STATEMENT_READ', 'SUBJECT')
+    || hasCapability(capabilities, 'REPORTING_STATEMENT_READ', 'SCHOOL_WIDE');
+}
+
+export function canOpenReportingDetail(capabilities: ScopedCapability[]): boolean {
+  return canReadPersonalReporting(capabilities) || canReadAccessibleReporting(capabilities);
+}
+
+export function canReviewReportingStatements(capabilities: ScopedCapability[]): boolean {
+  const canApprove = hasCapability(capabilities, 'APPROVAL_PRINCIPAL', 'SCHOOL_WIDE')
+    || hasCapability(capabilities, 'APPROVAL_VICE_PRINCIPAL', 'SCHOOL_WIDE');
+  return canApprove && canReadAccessibleReporting(capabilities);
+}
+
+export const professionalRoutes: ProfessionalRoute[] = [
+  {
+    to: '/bao-cao-ke-khai',
+    label: 'Báo cáo kê khai',
+    isVisible: (capabilities) => canSubmitPersonalReporting(capabilities) || canReadPersonalReporting(capabilities),
+  },
+  {
+    to: '/bao-cao-ke-khai/duoc-xem',
+    label: 'Báo cáo được phép xem',
+    isVisible: canReadAccessibleReporting,
+  },
+  {
+    to: '/phe-duyet-bao-cao',
+    label: 'Phê duyệt báo cáo',
+    isVisible: canReviewReportingStatements,
+  },
+];
+
+export function accessibleProfessionalRoutes(auth: AuthMeResponse | null): ProfessionalRoute[] {
+  return professionalRoutes.filter((route) => route.isVisible(auth?.capabilities ?? []));
+}
+
 export function hasSchoolCapability(capabilities: ScopedCapability[], key: CapabilityKey): boolean {
   return capabilities.some((grant) => grant.key === key && grant.scope === 'SCHOOL_WIDE');
 }
