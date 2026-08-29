@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { AuthenticatedRequest } from '../auth/auth.types';
 import { CsrfOriginGuard } from '../auth/csrf-origin.guard';
 import { SessionAuthGuard } from '../auth/session-auth.guard';
@@ -15,6 +15,7 @@ export class ReportingStatementsController {
   constructor(private readonly service: ReportingStatementsService) {}
 
   @Post('preview')
+  @HttpCode(200)
   @UseGuards(SessionAuthGuard)
   preview(@Body() dto: PreviewReportingStatementDto, @Req() req: AuthenticatedRequest) {
     return this.service.preview(dto, req);

@@ -53,7 +53,7 @@ Tất cả các endpoint được triển khai trong `ReportingStatementsControl
 
 | Phương thức | Đường dẫn | Bảo vệ / Guards | Yêu cầu phân quyền | Mô tả chức năng |
 | :--- | :--- | :--- | :--- | :--- |
-| `POST` | `/api/reporting-statements/preview` | `SessionAuthGuard` | `REPORTING_STATEMENT_SUBMIT` (`PERSONAL`) | Đánh giá trước số liệu và cờ `eligibleForSubmission` theo đồng hồ server. Không ghi dữ liệu vào DB (zero-persistence). |
+| `POST` | `/api/reporting-statements/preview` | `SessionAuthGuard` | `REPORTING_STATEMENT_SUBMIT` (`PERSONAL`) | Đánh giá trước số liệu và cờ `eligibleForSubmission` theo đồng hồ server. Success response là `HTTP 200 OK`. `POST` mang structured preview input nhưng operation vẫn read-only và không ghi dữ liệu vào DB (zero-persistence). |
 | `GET` | `/api/reporting-statements/mine` | `SessionAuthGuard` | `REPORTING_STATEMENT_READ` (`PERSONAL`) | Lấy danh sách phân trang các revision do chính actor nộp (`submittedAt DESC, id ASC`). |
 | `GET` | `/api/reporting-statements/accessible` | `SessionAuthGuard` | `REPORTING_STATEMENT_READ` | Trả về các revision actor có quyền đọc: bản ghi của chính mình (nếu có `PERSONAL`), bản ghi người khác (nếu có `SCHOOL_WIDE` hoặc được cấp quyền `SUBJECT` trên toàn bộ môn học đóng băng). Thay đổi TeachingAssignment sau khi freeze không làm đổi quyền đọc. |
 | `GET` | `/api/reporting-statements/pending-decision` | `SessionAuthGuard` | `APPROVAL_PRINCIPAL`/`VICE_PRINCIPAL` (`SCHOOL_WIDE`) | Lấy danh sách Statement `SUBMITTED` đang chờ duyệt, loại trừ bản ghi của chính mình và yêu cầu quyền đọc môn học đầy đủ. |
