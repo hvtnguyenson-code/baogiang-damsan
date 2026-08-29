@@ -4,8 +4,9 @@ import { PrismaClient, UserStatus } from '@prisma/client';
 import request, { Agent } from 'supertest';
 import { AppModule } from '../../src/app.module';
 import { PasswordService } from '../../src/auth/password.service';
+import { resolveSafeTestDatabaseUrl } from './test-database-safety';
 
-export const testDatabaseUrl = process.env['TEST_DATABASE_URL'];
+export const testDatabaseUrl = resolveSafeTestDatabaseUrl(process.env);
 export const integration = testDatabaseUrl ? describe : describe.skip;
 export const testOrigin = 'http://127.0.0.1:5173';
 export const testPassword = 'Phase01BackendPassword9';
@@ -26,7 +27,9 @@ export class Phase01Harness {
   passwords!: PasswordService;
 
   async start(): Promise<void> {
-    process.env['DATABASE_URL'] = testDatabaseUrl;
+    const safeDatabaseUrl = resolveSafeTestDatabaseUrl(process.env);
+    if (!safeDatabaseUrl) throw new Error('TEST_DATABASE_URL is required after destructive-test safety approval.');
+    process.env['DATABASE_URL'] = safeDatabaseUrl;
     process.env['NODE_ENV'] = 'test';
     process.env['CORS_ORIGINS'] = testOrigin;
     process.env['AUTH_COOKIE_SECURE'] = 'false';
@@ -41,7 +44,7 @@ export class Phase01Harness {
       transformOptions: { enableImplicitConversion: true },
     }));
     await this.app.init();
-    this.prisma = new PrismaClient({ datasources: { db: { url: testDatabaseUrl } } });
+    this.prisma = new PrismaClient({ datasources: { db: { url: safeDatabaseUrl } } });
     this.passwords = this.app.get(PasswordService);
   }
 
