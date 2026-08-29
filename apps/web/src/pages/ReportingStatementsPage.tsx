@@ -9,7 +9,7 @@ import { InlineAlert } from '../components/ui/feedback';
 import { EmptyState, PageHeader, PageLoading, Pagination, QueryFailure, SelectField } from '../components/ui/management';
 import { FormField } from '../components/ui/form-field';
 import { ApiError } from '../lib/api-client';
-import { canOpenReportingDetail, canReadPersonalReporting, canSubmitPersonalReporting } from '../lib/capabilities';
+import { canReadPersonalReporting, canSubmitPersonalReporting } from '../lib/capabilities';
 import { createReportingStatementRequestKey, reportingStatementsApi } from '../lib/reporting-statements-api';
 import { displayReference, makeReportingLabels } from '../lib/reporting-statement-presentation';
 
@@ -33,7 +33,6 @@ export function ReportingStatementsPage() {
   const capabilities = auth.auth?.capabilities ?? [];
   const canSubmit = canSubmitPersonalReporting(capabilities);
   const canReadMine = canReadPersonalReporting(capabilities);
-  const canOpenDetail = canOpenReportingDetail(capabilities);
   const queryClient = useQueryClient();
   const [academicYearId, setAcademicYearId] = useState('');
   const [fromCivilDate, setFromCivilDate] = useState('');
@@ -160,7 +159,7 @@ export function ReportingStatementsPage() {
           {submitMutation.error instanceof ApiError && submitMutation.error.statusCode === 409 && <p>Hãy xem trước lại báo cáo trước khi tạo yêu cầu mới.</p>}
           {uncertainSubmit && pendingSubmit && <Button type="button" variant="secondary" loading={submitMutation.isPending} onClick={() => submitMutation.mutate(pendingSubmit)}>Thử gửi lại</Button>}
         </InlineAlert>}
-        {submitSuccess && <InlineAlert title="Đã gửi báo cáo" tone="success"><p>{submitSuccess.replay ? 'Yêu cầu trước đó đã được hệ thống xác nhận.' : 'Báo cáo chính thức đã được lưu.'}</p>{canOpenDetail && <Link className="text-link" to={`/bao-cao-ke-khai/${submitSuccess.revisionId}`}>Mở báo cáo vừa gửi</Link>}</InlineAlert>}
+        {submitSuccess && <InlineAlert title="Đã gửi báo cáo" tone="success"><p>{submitSuccess.replay ? 'Yêu cầu trước đó đã được hệ thống xác nhận.' : 'Báo cáo chính thức đã được lưu.'}</p>{canReadMine && <Link className="text-link" to={`/bao-cao-ke-khai/${submitSuccess.revisionId}`}>Mở báo cáo vừa gửi</Link>}</InlineAlert>}
       </div>
     </section>}
 

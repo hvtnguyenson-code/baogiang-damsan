@@ -135,7 +135,10 @@ describe('Reporting Statement product UI', () => {
     let submitAttempt = 0;
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      if (url.endsWith('/auth/me')) return jsonResponse(authWith({ key: 'REPORTING_STATEMENT_SUBMIT', scope: 'PERSONAL' }));
+      if (url.endsWith('/auth/me')) return jsonResponse(authWith(
+        { key: 'REPORTING_STATEMENT_SUBMIT', scope: 'PERSONAL' },
+        { key: 'REPORTING_STATEMENT_READ', scope: 'SCHOOL_WIDE' },
+      ));
       if (url.includes('workspace-context?academicYearId=')) return jsonResponse(workspaceSelected);
       if (url.endsWith('/workspace-context')) return jsonResponse(workspaceBase);
       if (url.endsWith('/preview')) return jsonResponse(passPreview);
@@ -169,6 +172,28 @@ describe('Reporting Statement product UI', () => {
     await waitFor(() => expect(submitBodies).toHaveLength(3));
     expect(submitBodies[2].requestKey).toBe('submit-key-2');
     expect(randomUuid).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows the own submit result link only with PERSONAL read authority', async () => {
+    vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue('personal-read-submit-key' as `${string}-${string}-${string}-${string}-${string}`);
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) return jsonResponse(authWith(
+        { key: 'REPORTING_STATEMENT_SUBMIT', scope: 'PERSONAL' },
+        { key: 'REPORTING_STATEMENT_READ', scope: 'PERSONAL' },
+      ));
+      if (url.includes('workspace-context?academicYearId=')) return jsonResponse(workspaceSelected);
+      if (url.endsWith('/workspace-context')) return jsonResponse(workspaceBase);
+      if (url.endsWith('/preview')) return jsonResponse(passPreview);
+      if (url.includes('/reporting-statements/mine')) return jsonResponse({ items: [], page: 1, pageSize: 10, total: 0 });
+      if (url.endsWith('/reporting-statements') && init?.method === 'POST') return jsonResponse({ revisionId: REVISION_ID, seriesId: 'hidden', lifecycleState: 'SUBMITTED', lifecycleToken: 'hidden', asOfInstant: '2026-08-29T01:00:00.000Z', replay: false });
+      throw new Error(`Unexpected request ${url}`);
+    }));
+    const user = userEvent.setup();
+    renderApp('/bao-cao-ke-khai');
+    await fillAndPreview(user);
+    await user.click(await screen.findByRole('button', { name: 'Gửi báo cáo' }));
+    expect(await screen.findByRole('link', { name: 'Mở báo cáo vừa gửi' })).toHaveAttribute('href', `/bao-cao-ke-khai/${REVISION_ID}`);
   });
 
   it('renders frozen detail without raw identifiers and requires confirmation before decision', async () => {
@@ -250,6 +275,34 @@ describe('Reporting Statement product UI', () => {
     expect(bodies).toHaveLength(2);
     expect(bodies[0]).toEqual({ expectedLifecycleToken: 'lifecycle-token-1', requestKey: 'decision-retry-key' });
     expect(bodies[1]).toEqual(bodies[0]);
+    expect(randomUuid).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears a deterministic 403 decision command and offers a new action opportunity', async () => {
+    const randomUuid = vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue('decision-forbidden-key' as `${string}-${string}-${string}-${string}-${string}`);
+    let decisions = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) return jsonResponse(authWith({ key: 'REPORTING_STATEMENT_READ', scope: 'SCHOOL_WIDE' }));
+      if (url.includes('workspace-context')) return jsonResponse(workspaceSelected);
+      if (url.endsWith(`/reporting-statements/${REVISION_ID}`) && !init?.method) return jsonResponse(pendingDetail);
+      if (url.endsWith('/approve')) {
+        decisions += 1;
+        return jsonResponse({ statusCode: 403, message: 'raw authorization internals' }, 403);
+      }
+      throw new Error(`Unexpected request ${url}`);
+    }));
+    const user = userEvent.setup();
+    const { container } = renderApp(`/bao-cao-ke-khai/${REVISION_ID}`);
+    await user.click(await screen.findByRole('button', { name: 'Phê duyệt báo cáo' }));
+    await user.click(screen.getByRole('button', { name: 'Xác nhận phê duyệt' }));
+    expect(await screen.findByText('Bạn không còn quyền thực hiện quyết định này.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Thử lại cùng yêu cầu' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Xác nhận phê duyệt' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Phê duyệt báo cáo' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Từ chối báo cáo' })).toBeInTheDocument();
+    expect(container).not.toHaveTextContent('raw authorization internals');
+    expect(decisions).toBe(1);
     expect(randomUuid).toHaveBeenCalledTimes(1);
   });
 

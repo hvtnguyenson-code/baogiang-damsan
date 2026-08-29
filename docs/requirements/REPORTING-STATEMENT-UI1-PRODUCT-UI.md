@@ -31,13 +31,13 @@ Preview chỉ chạy sau nút “Xem trước báo cáo”. Mọi thay đổi ye
 - `PASS + RESPONSIBILITY_PRESENT + eligibleForSubmission` hiển thị counts, current catalog labels, responsibility intervals và evidence trước nút gửi.
 - `BLOCKED` chỉ hiển thị `finding.message` public-safe, không hiển thị code, entity ID hoặc provenance nội bộ.
 
-Submit nhắc rõ server sẽ kiểm tra lại dữ liệu tại thời điểm gửi chính thức. Nút chỉ dùng preview khớp exact fingerprint hiện tại. Success/replay được hợp nhất thành một logical success và làm mới danh sách cá nhân. Sau khi bắt đầu gửi, giao diện khóa lệnh đó: trong lúc chờ hoặc chưa xác định được kết quả chỉ có thể thử lại đúng yêu cầu cũ; không thể tạo thêm yêu cầu từ bản xem trước cũ. Khi thành công, bản xem trước cũ không thể được gửi lại.
+Submit nhắc rõ server sẽ kiểm tra lại dữ liệu tại thời điểm gửi chính thức. Nút chỉ dùng preview khớp exact fingerprint hiện tại. Success/replay được hợp nhất thành một logical success và làm mới danh sách cá nhân. Sau khi bắt đầu gửi, giao diện khóa lệnh đó: trong lúc chờ hoặc chưa xác định được kết quả chỉ có thể thử lại đúng yêu cầu cũ; không thể tạo thêm yêu cầu từ bản xem trước cũ. Khi thành công, bản xem trước cũ không thể được gửi lại. Link mở chính revision vừa gửi chỉ xuất hiện khi actor có `REPORTING_STATEMENT_READ / PERSONAL`; quyền đọc `SUBJECT` hoặc `SCHOOL_WIDE` không thay thế quyền đọc bản cá nhân của owner.
 
 ## requestKey retry và stale CAS
 
 Một submit command tạo đúng một `requestKey`. Network error hoặc server failure chưa rõ kết quả giữ nguyên command và nút “Thử gửi lại” gửi cùng key và cùng year/from/to. Success xóa pending key. `HTTP 409` không blind retry: pending key và preview bị xóa, danh sách được làm mới, người dùng phải xem trước lại; command mới tạo key mới.
 
-Decision chỉ được tạo sau bước xác nhận, với một `requestKey` và lifecycle token đang đọc. Khi kết quả chưa rõ, giao diện ẩn xác nhận và mọi hành động thông thường; chỉ có thể thử lại đúng quyết định cũ. Sau success hoặc `HTTP 409`, mọi hành động cũ bị khóa đến khi chi tiết mới tải xong. Chỉ dữ liệu mới quyết định các hành động được phép hiển thị tiếp theo. `HTTP 409` xóa pending command, tải lại detail/hàng đợi, thông báo báo cáo đã có trạng thái mới và yêu cầu đọc lại. Quyết định mới sau review tạo key mới. Khi từ chối, hệ thống hiện không yêu cầu nhập lý do.
+Decision chỉ được tạo sau bước xác nhận, với một `requestKey` và lifecycle token đang đọc. Khi kết quả chưa rõ, giao diện ẩn xác nhận và mọi hành động thông thường; chỉ có thể thử lại đúng quyết định cũ. Sau success hoặc `HTTP 409`, mọi hành động cũ bị khóa đến khi chi tiết mới tải xong. Chỉ dữ liệu mới quyết định các hành động được phép hiển thị tiếp theo. `HTTP 409` xóa pending command, tải lại detail/hàng đợi, thông báo báo cáo đã có trạng thái mới và yêu cầu đọc lại. Với lỗi 4xx xác định khác 409, UI xóa command và confirmation cũ, hiển thị thông báo an toàn theo 400/401/403/404, không retry lệnh cũ và không tự tạo lệnh thay thế; nếu detail hiện tại vẫn có action thì người dùng có thể chủ động bắt đầu một command mới. Quyết định mới sau review tạo key mới. Khi từ chối, hệ thống hiện không yêu cầu nhập lý do.
 
 ## Evidence-before-action và read workflows
 
@@ -65,12 +65,12 @@ Candidate có unit integration cho capability routing và navigation, ZERO/PASS/
 
 Local final evidence:
 
-- web full unit: 14 files, 153 tests PASS;
+- web full unit: 14 files, 157 tests PASS;
 - web lint, typecheck, build và UI foundation static gate: PASS;
 - Reporting Statement Playwright visual fixture: 2 tests PASS, 5 screenshots;
 - contracts lint, typecheck, build: PASS;
 - API lint, typecheck, build: PASS;
-- API Reporting Statement non-DB regression: 5 suites, 72 tests PASS.
+- API Reporting Statement non-DB regression: 6 suites, 81 tests PASS.
 
 ## Known limitation
 

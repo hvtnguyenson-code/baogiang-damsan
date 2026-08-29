@@ -26,6 +26,15 @@ type DetailRefreshState = 'idle' | 'success-loading' | 'conflict-loading' | 'con
 
 const actionLabels = { APPROVE: 'Phê duyệt', REJECT: 'Từ chối' } as const;
 
+function deterministicDecisionError(error: unknown): string | null {
+  if (!(error instanceof ApiError) || error.statusCode === 0 || error.statusCode === 409 || error.statusCode >= 500) return null;
+  if (error.statusCode === 400) return 'Yêu cầu quyết định không còn hợp lệ. Hãy kiểm tra trạng thái báo cáo.';
+  if (error.statusCode === 401) return 'Phiên đăng nhập không còn hiệu lực. Hãy đăng nhập lại.';
+  if (error.statusCode === 403) return 'Bạn không còn quyền thực hiện quyết định này.';
+  if (error.statusCode === 404) return 'Báo cáo không còn khả dụng.';
+  return 'Không thể thực hiện quyết định này. Hãy kiểm tra lại trạng thái báo cáo.';
+}
+
 export function ReportingStatementDetailPage() {
   const { revisionId = '' } = useParams();
   const auth = useAuth();
@@ -72,6 +81,9 @@ export function ReportingStatementDetailPage() {
         setRefreshState('conflict-loading');
         void detailQuery.refetch().then(() => setRefreshState('conflict-ready'));
         void queryClient.invalidateQueries({ queryKey: ['reporting-statements-pending'] });
+      } else if (error instanceof ApiError && error.statusCode > 0 && error.statusCode < 500) {
+        setPendingCommand(null);
+        setConfirmAction(null);
       }
     },
   });
@@ -102,6 +114,7 @@ export function ReportingStatementDetailPage() {
     : Boolean(decisionMutation.error);
   const yearLabel = context ? `${context.name} (${context.code})` : 'Không còn nhãn năm học trong danh mục hiện tại';
   const commandUncertain = uncertainDecision && pendingCommand !== null;
+  const deterministicError = deterministicDecisionError(decisionMutation.error);
   const interactionLocked = refreshState === 'success-loading' || refreshState === 'conflict-loading' || pendingCommand !== null || decisionMutation.isPending || commandUncertain;
   const showFreshActions = !interactionLocked;
   const capabilities = auth.auth?.capabilities ?? [];
@@ -161,6 +174,7 @@ export function ReportingStatementDetailPage() {
     {refreshState === 'conflict-loading' && <InlineAlert title="Báo cáo đang được cập nhật" tone="warning">Đang tải trạng thái mới của báo cáo. Trong lúc này chưa thể thực hiện thêm quyết định.</InlineAlert>}
     {refreshState === 'conflict-ready' && <InlineAlert title="Báo cáo đã có trạng thái mới" tone="warning">Nội dung vừa được tải lại. Hãy đọc trạng thái hiện tại trước khi thực hiện một quyết định mới.</InlineAlert>}
     {decisionSuccess && <InlineAlert title="Đã ghi nhận quyết định" tone="success">{decisionSuccess}</InlineAlert>}
+    {deterministicError && <InlineAlert title="Không thể ghi nhận quyết định">{deterministicError}</InlineAlert>}
 
     {(detail.allowedActions.length > 0 || commandUncertain || refreshState === 'conflict-loading') && <section className="reporting-decision" aria-labelledby="decision-heading">
       <div className="reporting-section-heading"><div className="margin-rail" aria-hidden="true" /><div><h2 id="decision-heading">Quyết định sau khi đọc bằng chứng</h2><p>Quyết định dùng trạng thái hiện tại của báo cáo. Nếu có thay đổi đồng thời, hệ thống sẽ yêu cầu bạn xem lại.</p></div></div>
