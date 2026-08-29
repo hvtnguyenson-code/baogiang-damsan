@@ -6,6 +6,7 @@ import type {
   ReportingStatementPreviewRequest,
   ReportingStatementPreviewResponse,
   ReportingStatementSubmitRequest,
+  ReportingStatementWorkspaceContextResponse,
 } from '@baogiang/contracts';
 import { apiFetch } from './api-client';
 
@@ -39,6 +40,12 @@ export function createReportingStatementRequestKey(): string {
 }
 
 export const reportingStatementsApi = {
+  workspaceContext: (academicYearId?: string): Promise<ReportingStatementWorkspaceContextResponse> =>
+    apiFetch<ReportingStatementWorkspaceContextResponse>(
+      `/reporting-statements/workspace-context${queryString({ academicYearId })}`,
+      { notifyUnauthorized: true },
+    ),
+
   preview: (input: ReportingStatementPreviewRequest): Promise<ReportingStatementPreviewResponse> =>
     apiFetch<ReportingStatementPreviewResponse>('/reporting-statements/preview', json('POST', input)),
 

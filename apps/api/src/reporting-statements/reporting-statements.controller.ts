@@ -6,6 +6,7 @@ import {
   DecideReportingStatementDto,
   ListReportingStatementsQueryDto,
   PreviewReportingStatementDto,
+  ReportingStatementWorkspaceContextQueryDto,
   SubmitReportingStatementDto,
 } from './dto';
 import { ReportingStatementsService } from './reporting-statements.service';
@@ -19,6 +20,15 @@ export class ReportingStatementsController {
   @UseGuards(SessionAuthGuard)
   preview(@Body() dto: PreviewReportingStatementDto, @Req() req: AuthenticatedRequest) {
     return this.service.preview(dto, req);
+  }
+
+  @Get('workspace-context')
+  @UseGuards(SessionAuthGuard)
+  workspaceContext(
+    @Query() query: ReportingStatementWorkspaceContextQueryDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.service.workspaceContext(query, req);
   }
 
   @Get('mine')

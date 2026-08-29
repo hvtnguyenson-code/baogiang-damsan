@@ -3,6 +3,7 @@ import {
   createReportingStatementRequestKey,
   reportingStatementsApi,
 } from '../lib/reporting-statements-api';
+import { onUnauthorized } from '../lib/api-client';
 import { jsonResponse } from './test-utils';
 
 describe('reporting statements API adapter', () => {
@@ -25,6 +26,42 @@ describe('reporting statements API adapter', () => {
   });
 
   describe('reportingStatementsApi methods', () => {
+    it('workspaceContext sends a read-only GET without an academic year query', async () => {
+      const mockContext = { academicYears: [], selectedAcademicYear: null };
+      const fetchMock = vi.fn().mockResolvedValue(jsonResponse(mockContext));
+      vi.stubGlobal('fetch', fetchMock);
+
+      await expect(reportingStatementsApi.workspaceContext()).resolves.toEqual(mockContext);
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/reporting-statements/workspace-context',
+        expect.objectContaining({ credentials: 'same-origin' }),
+      );
+      const init = fetchMock.mock.calls[0][1] as RequestInit;
+      expect(init.method).toBeUndefined();
+      expect(init.body).toBeUndefined();
+      expect(String(fetchMock.mock.calls[0][0])).not.toContain('requestKey');
+    });
+
+    it('workspaceContext serializes the selected academic year and notifies on 401', async () => {
+      const academicYearId = 'b1000000-0000-4000-8000-000000000001';
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce(jsonResponse({ academicYears: [], selectedAcademicYear: null }))
+        .mockResolvedValueOnce(jsonResponse({ statusCode: 401, message: 'No session' }, 401));
+      vi.stubGlobal('fetch', fetchMock);
+
+      await reportingStatementsApi.workspaceContext(academicYearId);
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        1,
+        `/api/reporting-statements/workspace-context?academicYearId=${academicYearId}`,
+        expect.anything(),
+      );
+      const unauthorized = vi.fn();
+      const unsubscribe = onUnauthorized(unauthorized);
+      await expect(reportingStatementsApi.workspaceContext()).rejects.toMatchObject({ statusCode: 401 });
+      expect(unauthorized).toHaveBeenCalledTimes(1);
+      unsubscribe();
+    });
+
     it('preview sends POST to /api/reporting-statements/preview with typed body', async () => {
       const mockResult = {
         previewAsOfInstant: '2026-08-25T08:00:00.000Z',
