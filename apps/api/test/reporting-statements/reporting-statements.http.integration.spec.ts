@@ -123,7 +123,7 @@ integration('Reporting Statement HTTP security boundary (isolated PostgreSQL)', 
 
   it('uses the persisted frozen subject set, never current teaching assignment, for non-owner reads', async () => {
     const seeded = await seedSubmittedRevision();
-    const schoolClass = await prisma.schoolClass.create({ data: { academicYearId, code: `C${crypto.randomUUID().slice(0, 6)}`, name: 'Class', gradeLevel: 10 } });
+    const schoolClass = await prisma.schoolClass.create({ data: { academicYearId, code: `C${crypto.randomUUID().slice(0, 6).toUpperCase()}`, name: 'Class', gradeLevel: 10 } });
     await prisma.teachingAssignment.create({ data: { academicYearId, schoolClassId: schoolClass.id, subjectId: subjectB, teacherUserId: reader.id, validFrom: new Date('2026-08-01') } });
     expect((await reader.agent.get(`/api/reporting-statements/${seeded.revision.id}`)).status).toBe(403);
     await prisma.capabilityGrant.create({ data: { userId: reader.id, capabilityKey: 'REPORTING_STATEMENT_READ', scopeType: 'SUBJECT', scopeResourceId: subjectB, validFrom: new Date(Date.now() - 1_000) } });
