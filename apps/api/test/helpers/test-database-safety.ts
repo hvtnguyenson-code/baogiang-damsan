@@ -17,8 +17,10 @@ export function resolveSafeTestDatabaseUrl(env: TestDatabaseEnvironment): string
 
   const databaseName = decodeURIComponent(url.pathname).replace(/^\/+/, '');
   const loopback = ['127.0.0.1', '::1', 'localhost'].includes(url.hostname.toLowerCase());
-  const githubCi = env.CI === 'true';
-  if (githubCi) {
+  const githubActions = env.CI === 'true'
+    && env.GITHUB_ACTIONS === 'true'
+    && env.GITHUB_REPOSITORY === 'hvtnguyenson-code/baogiang-damsan';
+  if (githubActions) {
     if (env.NODE_ENV === 'test' && loopback && databaseName === 'baogiang_test') return raw;
     throw new Error(SAFETY_ERROR);
   }

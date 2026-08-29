@@ -2,6 +2,12 @@ import { resolveSafeTestDatabaseUrl, TEST_DATABASE_SAFETY_ERROR } from './test-d
 
 const local = 'postgresql://test_user:test_password@127.0.0.1:5432/baogiang_test_local';
 const resolve = (overrides: Record<string, string | undefined> = {}) => resolveSafeTestDatabaseUrl({ ...overrides });
+const githubActions = {
+  CI: 'true',
+  GITHUB_ACTIONS: 'true',
+  GITHUB_REPOSITORY: 'hvtnguyenson-code/baogiang-damsan',
+  NODE_ENV: 'test',
+};
 
 describe('resolveSafeTestDatabaseUrl', () => {
   it('SDB1 disables integration when TEST_DATABASE_URL is absent', () => {
@@ -36,15 +42,25 @@ describe('resolveSafeTestDatabaseUrl', () => {
     expect(resolve({ TEST_DATABASE_URL: local, NODE_ENV: 'test', BAOGIANG_ALLOW_DESTRUCTIVE_TEST_DB: '1' })).toBe(local);
   });
 
-  it('SDB8 allows the current GitHub CI PostgreSQL contract without local opt-in', () => {
+  it('SDB8 rejects generic CI without explicit local opt-in', () => {
     const ci = 'postgresql://baogiang_test_user:ci_test_pass_only@127.0.0.1:5432/baogiang_test?schema=public';
-    expect(resolve({ TEST_DATABASE_URL: ci, NODE_ENV: 'test', CI: 'true' })).toBe(ci);
+    expect(() => resolve({ TEST_DATABASE_URL: ci, NODE_ENV: 'test', CI: 'true' })).toThrow(TEST_DATABASE_SAFETY_ERROR);
+  });
+
+  it('SDB9 rejects GitHub Actions from another repository', () => {
+    const ci = 'postgresql://baogiang_test_user:ci_test_pass_only@127.0.0.1:5432/baogiang_test?schema=public';
+    expect(() => resolve({ TEST_DATABASE_URL: ci, ...githubActions, GITHUB_REPOSITORY: 'somewhere/else' })).toThrow(TEST_DATABASE_SAFETY_ERROR);
+  });
+
+  it('SDB10 allows the exact GitHub Actions PostgreSQL contract without local opt-in', () => {
+    const ci = 'postgresql://baogiang_test_user:ci_test_pass_only@127.0.0.1:5432/baogiang_test?schema=public';
+    expect(resolve({ TEST_DATABASE_URL: ci, ...githubActions })).toBe(ci);
   });
 
   it.each([
-    ['SDB9 non-loopback CI host', 'postgresql://test_user:test_password@example.test:5432/baogiang_test'],
-    ['SDB10 wrong CI database', 'postgresql://test_user:test_password@127.0.0.1:5432/wrong_database'],
-  ])('%s rejects an unsafe CI contract', (_name, url) => {
-    expect(() => resolve({ TEST_DATABASE_URL: url, NODE_ENV: 'test', CI: 'true' })).toThrow(TEST_DATABASE_SAFETY_ERROR);
+    ['SDB11 GitHub Actions non-loopback host', 'postgresql://test_user:test_password@example.test:5432/baogiang_test'],
+    ['SDB12 GitHub Actions wrong database', 'postgresql://test_user:test_password@127.0.0.1:5432/wrong_database'],
+  ])('%s rejects an unsafe GitHub Actions contract', (_name, url) => {
+    expect(() => resolve({ TEST_DATABASE_URL: url, ...githubActions })).toThrow(TEST_DATABASE_SAFETY_ERROR);
   });
 });

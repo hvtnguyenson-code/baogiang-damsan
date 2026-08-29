@@ -1,4 +1,4 @@
-import { PrismaClient, ReportingStatementLifecycleState as State } from '@prisma/client';
+import { AuditResult, PrismaClient, ReportingStatementLifecycleState as State } from '@prisma/client';
 import request, { Agent } from 'supertest';
 import { freezeReportingStatementSnapshot } from '../../src/reporting-statement-internal/reporting-statement-canonicalizer';
 import { ReportingStatementRepository } from '../../src/reporting-statement-internal/reporting-statement.repository';
@@ -81,12 +81,16 @@ integration('Reporting Statement HTTP security boundary (isolated PostgreSQL)', 
 
   it('enforces CSRF before submit and decision mutations, while historical GET has no Origin requirement', async () => {
     const seeded = await seedSubmittedRevision();
+    const lifecycleToken = seeded.state.lifecycleToken;
     const submit = { academicYearId, fromCivilDate: '2026-08-01', toCivilDate: '2026-08-31', requestKey: 'csrf-submit' };
     expect((await owner.agent.post('/api/reporting-statements').send(submit)).status).toBe(403);
-    expect((await approver.agent.post(`/api/reporting-statements/${seeded.revision.id}/approve`).send({ expectedLifecycleToken: seeded.state.lifecycleToken, requestKey: 'csrf-approve' })).status).toBe(403);
+    expect((await approver.agent.post(`/api/reporting-statements/${seeded.revision.id}/approve`).send({ expectedLifecycleToken: lifecycleToken, requestKey: 'csrf-approve' })).status).toBe(403);
+    expect((await approver.agent.post(`/api/reporting-statements/${seeded.revision.id}/reject`).send({ expectedLifecycleToken: lifecycleToken, requestKey: 'csrf-reject' })).status).toBe(403);
     expect(await prisma.reportingStatementRevision.count()).toBe(1);
-    expect(await prisma.reportingStatementCommand.count({ where: { commandType: 'APPROVE' } })).toBe(0);
-    expect(await prisma.reportingStatementRevisionState.findUniqueOrThrow({ where: { revisionId: seeded.revision.id } })).toMatchObject({ lifecycleState: State.SUBMITTED });
+    expect(await prisma.reportingStatementCommand.count({ where: { commandType: { in: ['APPROVE', 'REJECT'] } } })).toBe(0);
+    expect(await prisma.reportingStatementHistory.count({ where: { revisionId: seeded.revision.id, eventType: { in: ['APPROVED', 'REJECTED'] } } })).toBe(0);
+    expect(await prisma.auditEvent.count({ where: { entityId: seeded.revision.id, action: 'REPORTING_STATEMENT_REJECTED', result: AuditResult.SUCCESS } })).toBe(0);
+    expect(await prisma.reportingStatementRevisionState.findUniqueOrThrow({ where: { revisionId: seeded.revision.id } })).toMatchObject({ lifecycleState: State.SUBMITTED, lifecycleToken });
     await prisma.capabilityGrant.create({ data: { userId: reader.id, capabilityKey: 'REPORTING_STATEMENT_READ', scopeType: 'SUBJECT', scopeResourceId: subjectB, validFrom: new Date(Date.now() - 1_000) } });
     expect((await reader.agent.get(`/api/reporting-statements/${seeded.revision.id}`)).status).toBe(200);
     expect((await owner.agent.post('/api/reporting-statements').set('Origin', testOrigin).send({ ...submit, fromCivilDate: 'invalid-date' })).status).toBe(400);
