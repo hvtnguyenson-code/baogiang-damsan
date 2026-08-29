@@ -7,12 +7,13 @@ import {
   ReportingStatementDetailResponse,
   ReportingStatementListResponse,
   ReportingStatementPreviewResponse,
+  ReportingStatementWorkspaceContextResponse,
 } from '@baogiang/contracts';
 import { AuditService } from '../audit/audit.service';
 import { requestMeta } from '../auth/auth-http';
 import { AuthenticatedRequest } from '../auth/auth.types';
 import { CapabilityAuthorizationService } from '../authorization/capability-authorization.service';
-import { parseCivilDate } from '../common/validation/civil-date';
+import { formatCivilDate, parseCivilDate } from '../common/validation/civil-date';
 import { PersonalReportingProjectionService } from '../personal-reporting-projection/personal-reporting-projection.service';
 import { freezeReportingStatementSnapshot } from '../reporting-statement-internal/reporting-statement-canonicalizer';
 import { ReportingStatementRepository } from '../reporting-statement-internal/reporting-statement.repository';
@@ -21,6 +22,7 @@ import {
   DecideReportingStatementDto,
   ListReportingStatementsQueryDto,
   PreviewReportingStatementDto,
+  ReportingStatementWorkspaceContextQueryDto,
   SubmitReportingStatementDto,
 } from './dto';
 import { PERSONAL_REPORTING_STATEMENT_PROFILE, REPORTING_STATEMENT_CLOCK, ReportingStatementClock } from './reporting-statement.policy';
@@ -75,6 +77,71 @@ export class ReportingStatementsService {
       })),
       findings: projection.findings.map((f) => mapToPublicFinding(f)),
       responsibilityManifest: projection.responsibilityManifest.map((i) => ({ ...i })),
+    };
+  }
+
+  async workspaceContext(
+    query: ReportingStatementWorkspaceContextQueryDto,
+    request: AuthenticatedRequest,
+  ): Promise<ReportingStatementWorkspaceContextResponse> {
+    const actor = request.auth!.user.id;
+    const capabilities = await this.authorization.listEffectiveCapabilities(actor);
+    const allowed = capabilities.some((capability) =>
+      (capability.key === 'REPORTING_STATEMENT_SUBMIT' && capability.scope === 'PERSONAL')
+      || (capability.key === 'REPORTING_STATEMENT_READ'
+        && ['PERSONAL', 'SUBJECT', 'SCHOOL_WIDE'].includes(capability.scope)),
+    );
+    if (!allowed) return this.deny(request, 'REPORTING_STATEMENT_READ');
+
+    const academicYearRows = await this.prisma.academicYear.findMany({
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        calendarVersions: {
+          where: { isActive: true },
+          select: { startDate: true, endDate: true },
+          orderBy: [{ id: 'asc' }],
+          take: 1,
+        },
+      },
+      orderBy: [{ code: 'asc' }, { id: 'asc' }],
+    });
+    const academicYears = academicYearRows.map((year) => ({
+      id: year.id,
+      code: year.code,
+      name: year.name,
+      activeCalendar: year.calendarVersions[0]
+        ? {
+            startDate: formatCivilDate(year.calendarVersions[0].startDate),
+            endDate: formatCivilDate(year.calendarVersions[0].endDate),
+          }
+        : null,
+    }));
+
+    if (!query.academicYearId) return { academicYears, selectedAcademicYear: null };
+    const selectedAcademicYear = academicYears.find((year) => year.id === query.academicYearId);
+    if (!selectedAcademicYear) throw new NotFoundException('Không tìm thấy năm học.');
+
+    const [schoolClasses, subjects] = await Promise.all([
+      this.prisma.schoolClass.findMany({
+        where: { academicYearId: query.academicYearId },
+        select: { id: true, code: true, name: true, status: true },
+        orderBy: [{ code: 'asc' }, { id: 'asc' }],
+      }),
+      this.prisma.subject.findMany({
+        select: { id: true, code: true, name: true, status: true },
+        orderBy: [{ code: 'asc' }, { id: 'asc' }],
+      }),
+    ]);
+
+    return {
+      academicYears,
+      selectedAcademicYear: {
+        ...selectedAcademicYear,
+        schoolClasses,
+        subjects,
+      },
     };
   }
 

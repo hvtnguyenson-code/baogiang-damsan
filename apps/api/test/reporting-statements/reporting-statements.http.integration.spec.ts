@@ -1,4 +1,4 @@
-import { AuditResult, PrismaClient, ReportingStatementLifecycleState as State } from '@prisma/client';
+import { AuditResult, CatalogStatus, PrismaClient, ReportingStatementLifecycleState as State } from '@prisma/client';
 import request, { Agent } from 'supertest';
 import { freezeReportingStatementSnapshot } from '../../src/reporting-statement-internal/reporting-statement-canonicalizer';
 import { ReportingStatementRepository } from '../../src/reporting-statement-internal/reporting-statement.repository';
@@ -35,6 +35,9 @@ integration('Reporting Statement HTTP security boundary (isolated PostgreSQL)', 
   let otherTeacher: { agent: Agent; id: string };
   let reader: { agent: Agent; id: string };
   let approver: { agent: Agent; id: string };
+  let submitOnly: { agent: Agent; id: string };
+  let readPersonal: { agent: Agent; id: string };
+  let noReportingAuthority: { agent: Agent; id: string };
   let academicYearId: string;
   let subjectA: string;
   let subjectB: string;
@@ -80,6 +83,8 @@ integration('Reporting Statement HTTP security boundary (isolated PostgreSQL)', 
       { key: 'REPORTING_STATEMENT_READ', scopes: ['PERSONAL', 'SUBJECT', 'SCHOOL_WIDE'] },
       { key: 'APPROVAL_PRINCIPAL', scopes: ['SCHOOL_WIDE'] },
       { key: 'APPROVAL_VICE_PRINCIPAL', scopes: ['SCHOOL_WIDE'] },
+      { key: 'ACADEMIC_STRUCTURE_MANAGE', scopes: ['SCHOOL_WIDE'] },
+      { key: 'SYSTEM_ADMIN', scopes: ['SCHOOL_WIDE'] },
     ]);
     academicYearId = (await prisma.academicYear.create({ data: { code: `Y${crypto.randomUUID().slice(0, 6).toUpperCase()}`, name: 'Year' } })).id;
 
@@ -104,6 +109,9 @@ integration('Reporting Statement HTTP security boundary (isolated PostgreSQL)', 
     otherTeacher = await harness.actor({ grants: [{ capabilityKey: 'REPORTING_STATEMENT_SUBMIT', scopeType: 'PERSONAL' }, { capabilityKey: 'REPORTING_STATEMENT_READ', scopeType: 'PERSONAL' }] });
     reader = await harness.actor({ grants: [{ capabilityKey: 'REPORTING_STATEMENT_READ', scopeType: 'SUBJECT', scopeResourceId: subjectA }] });
     approver = await harness.actor({ grants: [{ capabilityKey: 'APPROVAL_PRINCIPAL', scopeType: 'SCHOOL_WIDE' }, { capabilityKey: 'REPORTING_STATEMENT_READ', scopeType: 'SCHOOL_WIDE' }] });
+    submitOnly = await harness.actor({ grants: [{ capabilityKey: 'REPORTING_STATEMENT_SUBMIT', scopeType: 'PERSONAL' }] });
+    readPersonal = await harness.actor({ grants: [{ capabilityKey: 'REPORTING_STATEMENT_READ', scopeType: 'PERSONAL' }] });
+    noReportingAuthority = await harness.actor({ grants: [{ capabilityKey: 'SYSTEM_ADMIN', scopeType: 'SCHOOL_WIDE' }] });
   });
 
   afterEach(async () => cleanupSeededReportingStatements());
@@ -123,6 +131,7 @@ integration('Reporting Statement HTTP security boundary (isolated PostgreSQL)', 
     const submit = { academicYearId, fromCivilDate: '2026-08-01', toCivilDate: '2026-08-31', requestKey: 'unauthenticated' };
 
     expect((await request(server).post('/api/reporting-statements/preview').send(preview)).status).toBe(401);
+    expect((await request(server).get('/api/reporting-statements/workspace-context')).status).toBe(401);
     expect((await request(server).get('/api/reporting-statements/mine')).status).toBe(401);
     expect((await request(server).get('/api/reporting-statements/accessible')).status).toBe(401);
     expect((await request(server).get('/api/reporting-statements/pending-decision')).status).toBe(401);
@@ -130,6 +139,89 @@ integration('Reporting Statement HTTP security boundary (isolated PostgreSQL)', 
     expect((await request(server).get(`/api/reporting-statements/${revisionId}`)).status).toBe(401);
     expect((await request(server).post(`/api/reporting-statements/${revisionId}/approve`).set('Origin', testOrigin).send({ expectedLifecycleToken: crypto.randomUUID(), requestKey: 'unauthenticated' })).status).toBe(401);
     expect((await request(server).post(`/api/reporting-statements/${revisionId}/reject`).set('Origin', testOrigin).send({ expectedLifecycleToken: crypto.randomUUID(), requestKey: 'unauthenticated' })).status).toBe(401);
+  });
+
+  it('serves deterministic public product context without widening academic management or persisting data', async () => {
+    const yearWithoutCalendar = await prisma.academicYear.create({
+      data: { code: '0000-0000', name: 'Năm học chưa có lịch' },
+    });
+    const activeClass = await prisma.schoolClass.create({
+      data: { academicYearId, code: '10A1', name: 'Lớp 10A1', gradeLevel: 10 },
+    });
+    const inactiveClass = await prisma.schoolClass.create({
+      data: {
+        academicYearId,
+        code: '12C1',
+        name: 'Lớp 12C1',
+        gradeLevel: 12,
+        status: CatalogStatus.INACTIVE,
+      },
+    });
+    const inactiveSubject = await prisma.subject.create({
+      data: { code: 'ZZZ-INACTIVE', name: 'Môn học ngừng hoạt động', status: CatalogStatus.INACTIVE },
+    });
+
+    const counts = async () => ({
+      series: await prisma.reportingStatementSeries.count(),
+      revision: await prisma.reportingStatementRevision.count(),
+      state: await prisma.reportingStatementRevisionState.count(),
+      revisionSubject: await prisma.reportingStatementRevisionSubject.count(),
+      command: await prisma.reportingStatementCommand.count(),
+      history: await prisma.reportingStatementHistory.count(),
+      academicYear: await prisma.academicYear.count(),
+      calendar: await prisma.academicCalendarVersion.count(),
+      schoolClass: await prisma.schoolClass.count(),
+      subject: await prisma.subject.count(),
+    });
+    const before = await counts();
+
+    const noSelection = await submitOnly.agent.get('/api/reporting-statements/workspace-context');
+    expect(noSelection.status).toBe(200);
+    expect(noSelection.body.selectedAcademicYear).toBeNull();
+    expect(noSelection.body.academicYears).toHaveLength(2);
+    expect(noSelection.body.academicYears.map((year: { code: string }) => year.code)).toEqual([
+      '0000-0000',
+      expect.stringMatching(/^Y/u),
+    ]);
+    expect(noSelection.body.academicYears.find((year: { id: string }) => year.id === yearWithoutCalendar.id))
+      .toMatchObject({ activeCalendar: null });
+
+    expect((await readPersonal.agent.get('/api/reporting-statements/workspace-context')).status).toBe(200);
+    expect((await reader.agent.get('/api/reporting-statements/workspace-context')).status).toBe(200);
+    expect((await approver.agent.get('/api/reporting-statements/workspace-context')).status).toBe(200);
+    expect((await noReportingAuthority.agent.get('/api/reporting-statements/workspace-context')).status).toBe(403);
+
+    expect((await submitOnly.agent.get('/api/academic-years')).status).toBe(403);
+    expect((await submitOnly.agent.get('/api/reporting-statements/workspace-context')).status).toBe(200);
+
+    expect((await submitOnly.agent.get('/api/reporting-statements/workspace-context?academicYearId=not-a-uuid')).status).toBe(400);
+    expect((await submitOnly.agent.get(`/api/reporting-statements/workspace-context?academicYearId=${crypto.randomUUID()}`)).status).toBe(404);
+
+    const selected = await submitOnly.agent.get(`/api/reporting-statements/workspace-context?academicYearId=${academicYearId}`);
+    expect(selected.status).toBe(200);
+    expect(selected.body.selectedAcademicYear).toEqual(expect.objectContaining({
+      id: academicYearId,
+      activeCalendar: { startDate: '2026-08-01', endDate: '2027-05-31' },
+      schoolClasses: [
+        { id: activeClass.id, code: '10A1', name: 'Lớp 10A1', status: 'ACTIVE' },
+        { id: inactiveClass.id, code: '12C1', name: 'Lớp 12C1', status: 'INACTIVE' },
+      ],
+    }));
+    expect(selected.body.selectedAcademicYear.subjects.map((subject: { code: string }) => subject.code))
+      .toEqual([...selected.body.selectedAcademicYear.subjects]
+        .map((subject: { code: string }) => subject.code)
+        .sort((left: string, right: string) => left < right ? -1 : left > right ? 1 : 0));
+    expect(selected.body.selectedAcademicYear.subjects).toContainEqual({
+      id: inactiveSubject.id,
+      code: 'ZZZ-INACTIVE',
+      name: 'Môn học ngừng hoạt động',
+      status: 'INACTIVE',
+    });
+    expect(Object.keys(selected.body.selectedAcademicYear).sort()).toEqual([
+      'activeCalendar', 'code', 'id', 'name', 'schoolClasses', 'subjects',
+    ]);
+    expect(JSON.stringify(selected.body)).not.toMatch(/createdAt|updatedAt|activatedAt|note|audit|grant|requestFingerprint|staff|user/i);
+    expect(await counts()).toEqual(before);
   });
 
   it('validates preview DTO and forbids non-whitelisted fields', async () => {

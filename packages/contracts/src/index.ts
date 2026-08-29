@@ -1281,6 +1281,36 @@ export interface BaseNotification {
 // Reporting Statement Contracts (ADR-042 / UI-0 Enablement)
 // ============================================================
 
+export interface ReportingStatementActiveCalendarEnvelope {
+  startDate: CivilDateString;
+  endDate: CivilDateString;
+}
+
+export interface ReportingStatementAcademicYearOption {
+  id: string;
+  code: string;
+  name: string;
+  activeCalendar: ReportingStatementActiveCalendarEnvelope | null;
+}
+
+export interface ReportingStatementReferenceOption {
+  id: string;
+  code: string;
+  name: string;
+  status: CatalogStatus;
+}
+
+export interface ReportingStatementSelectedAcademicYearContext
+  extends ReportingStatementAcademicYearOption {
+  schoolClasses: ReportingStatementReferenceOption[];
+  subjects: ReportingStatementReferenceOption[];
+}
+
+export interface ReportingStatementWorkspaceContextResponse {
+  academicYears: ReportingStatementAcademicYearOption[];
+  selectedAcademicYear: ReportingStatementSelectedAcademicYearContext | null;
+}
+
 export type ReportingStatementLifecycleState =
   | 'SUBMITTED'
   | 'APPROVED'

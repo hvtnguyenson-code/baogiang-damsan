@@ -41,6 +41,12 @@ export class PreviewReportingStatementDto {
   toCivilDate!: string;
 }
 
+export class ReportingStatementWorkspaceContextQueryDto {
+  @IsOptional()
+  @IsUUID()
+  academicYearId?: string;
+}
+
 export class ListReportingStatementsQueryDto {
   @IsOptional()
   @Type(() => Number)
