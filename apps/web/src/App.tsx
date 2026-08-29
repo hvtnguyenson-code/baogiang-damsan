@@ -20,7 +20,19 @@ import { AcademicYearsPage } from './pages/AcademicYearsPage';
 import { AcademicCalendarPage } from './pages/AcademicCalendarPage';
 import { SchoolClassesPage } from './pages/SchoolClassesPage';
 import { TeachingAssignmentsPage } from './pages/TeachingAssignmentsPage';
-import { canManageDutyAssignments, hasSchoolCapability } from './lib/capabilities';
+import { AccessibleReportingStatementsPage } from './pages/AccessibleReportingStatementsPage';
+import { PendingReportingStatementsPage } from './pages/PendingReportingStatementsPage';
+import { ReportingStatementDetailPage } from './pages/ReportingStatementDetailPage';
+import { ReportingStatementsPage } from './pages/ReportingStatementsPage';
+import {
+  canManageDutyAssignments,
+  canOpenReportingDetail,
+  canReadAccessibleReporting,
+  canReadPersonalReporting,
+  canReviewReportingStatements,
+  canSubmitPersonalReporting,
+  hasSchoolCapability,
+} from './lib/capabilities';
 
 export default function App() {
   return (
@@ -35,6 +47,10 @@ export default function App() {
         <Route element={<AppLayout />}>
           <Route path="/" element={<HomePage />} />
           <Route path="/ho-so" element={<ProfilePage />} />
+          <Route element={<CapabilityRoute allow={(c) => canSubmitPersonalReporting(c) || canReadPersonalReporting(c)} />}><Route path="/bao-cao-ke-khai" element={<ReportingStatementsPage />} /></Route>
+          <Route element={<CapabilityRoute allow={canReadAccessibleReporting} />}><Route path="/bao-cao-ke-khai/duoc-xem" element={<AccessibleReportingStatementsPage />} /></Route>
+          <Route element={<CapabilityRoute allow={canOpenReportingDetail} />}><Route path="/bao-cao-ke-khai/:revisionId" element={<ReportingStatementDetailPage />} /></Route>
+          <Route element={<CapabilityRoute allow={canReviewReportingStatements} />}><Route path="/phe-duyet-bao-cao" element={<PendingReportingStatementsPage />} /></Route>
           <Route element={<CapabilityRoute allow={(c) => hasSchoolCapability(c, 'USER_MANAGE')} />}><Route path="/quan-tri/nguoi-dung" element={<UsersPage />} /></Route>
           <Route element={<CapabilityRoute allow={(c) => hasSchoolCapability(c, 'SUBJECT_GROUP_MANAGE')} />}>
             <Route path="/quan-tri/to-chuyen-mon" element={<CatalogPage kind="subject-groups" />} />

@@ -10,7 +10,7 @@ describe('authenticated workspace', () => {
     renderApp('/');
     expect(await screen.findByRole('heading', { name: /chào nguyễn văn an/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /mục lục công việc/i })).toBeInTheDocument();
-    expect(screen.getByText(/không có khu vực quản lý/i)).toBeInTheDocument();
+    expect(screen.getByText(/chưa có công việc chuyên môn/i)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /hồ sơ cá nhân/i })).toBeInTheDocument();
     const nav = screen.getByRole('navigation', { name: /điều hướng chính/i });
     expect(nav.querySelector('[role="tab"]')).toBeNull();
