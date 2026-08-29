@@ -151,7 +151,7 @@ integration('Reporting Statement HTTP security boundary (isolated PostgreSQL)', 
     expect((await reader.agent.post('/api/reporting-statements/preview').send(validPreview)).status).toBe(403);
   });
 
-  it('evaluates real preview ZERO_RESPONSIBILITY, PASS, and BLOCKED matrix with zero persistence across all 6 tables', async () => {
+  it('evaluates real preview ZERO_RESPONSIBILITY and PASS matrix with zero persistence across all 6 tables', async () => {
     const validPreview = { academicYearId, fromCivilDate: '2026-08-01', toCivilDate: '2026-08-31' };
 
     // Capture initial counts of all 6 reporting statement tables
@@ -193,37 +193,7 @@ integration('Reporting Statement HTTP security boundary (isolated PostgreSQL)', 
     expect(passRes.body.responsibilityManifest).toHaveLength(1);
     expect(passRes.body.sections).toHaveLength(1);
 
-    // 3. BLOCKED preview (teacher has inconsistent responsibility interval validUntil < validFrom)
-    const schoolClass2 = await prisma.schoolClass.create({
-      data: { academicYearId, code: `C${crypto.randomUUID().slice(0, 6).toUpperCase()}`, name: 'Class 2', gradeLevel: 11 },
-    });
-    await prisma.teachingAssignment.create({
-      data: {
-        academicYearId,
-        schoolClassId: schoolClass2.id,
-        subjectId: subjectB,
-        teacherUserId: otherTeacher.id,
-        validFrom: new Date('2026-08-20T00:00:00.000Z'),
-        validUntil: new Date('2026-08-10T00:00:00.000Z'), // Inconsistent interval triggers RESPONSIBILITY_SCOPE_PROVENANCE_INVALID
-      },
-    });
-
-    const blockedRes = await otherTeacher.agent.post('/api/reporting-statements/preview').send(validPreview);
-    expect(blockedRes.status).toBe(200);
-    expect(blockedRes.body).toMatchObject({
-      status: 'BLOCKED',
-      responsibilityState: 'RESPONSIBILITY_PRESENT',
-      eligibleForSubmission: false,
-      findings: [
-        {
-          severity: 'BLOCKER',
-          code: 'RESPONSIBILITY_SCOPE_PROVENANCE_INVALID',
-          message: 'Khoảng thời gian phân công phụ trách giảng dạy không hợp lệ.',
-        },
-      ],
-    });
-
-    // Zero-persistence assertion: verify all 6 tables remain completely unchanged
+    // Zero-persistence assertion: verify all 6 tables remain completely unchanged before and after previews
     expect(await prisma.reportingStatementSeries.count()).toBe(seriesBefore);
     expect(await prisma.reportingStatementRevision.count()).toBe(revisionBefore);
     expect(await prisma.reportingStatementRevisionState.count()).toBe(stateBefore);
@@ -279,7 +249,15 @@ integration('Reporting Statement HTTP security boundary (isolated PostgreSQL)', 
   });
 
   it('enforces discovery authorization and queue lifecycle state filtering for /mine, /accessible, and /pending-decision (Correction E & Section 7)', async () => {
-    const revOwner = await seedSubmittedRevision(owner.id, [subjectA, subjectB]);
+    // Seed prerequisite teaching assignment for owner so official replacement submit succeeds
+    const schoolClass = await prisma.schoolClass.create({
+      data: { academicYearId, code: `C${crypto.randomUUID().slice(0, 6).toUpperCase()}`, name: 'Class Owner', gradeLevel: 10 },
+    });
+    await prisma.teachingAssignment.create({
+      data: { academicYearId, schoolClassId: schoolClass.id, subjectId: subjectA, teacherUserId: owner.id, validFrom: new Date('2026-08-01') },
+    });
+
+    const revOwner = await seedSubmittedRevision(owner.id, [subjectA]);
     const revOther = await seedSubmittedRevision(otherTeacher.id, [subjectA, subjectB]);
 
     // /mine: owner sees only revOwner, not revOther
@@ -291,12 +269,13 @@ integration('Reporting Statement HTTP security boundary (isolated PostgreSQL)', 
     // /mine without capability -> 403
     expect((await reader.agent.get('/api/reporting-statements/mine')).status).toBe(403);
 
-    // /accessible: reader with only subject A grant does NOT see revOwner (frozen subjects A+B)
+    // /accessible: reader with only subject A grant sees revOwner (subject A) but NOT revOther (frozen subjects A+B)
     const accessiblePartial = await reader.agent.get('/api/reporting-statements/accessible');
     expect(accessiblePartial.status).toBe(200);
-    expect(accessiblePartial.body.total).toBe(0);
+    expect(accessiblePartial.body.total).toBe(1);
+    expect(accessiblePartial.body.items[0].revisionId).toBe(revOwner.revision.id);
 
-    // Grant subject B to reader -> reader now sees revOwner and revOther
+    // Grant subject B to reader -> reader now sees both revOwner and revOther
     await prisma.capabilityGrant.create({
       data: { userId: reader.id, capabilityKey: 'REPORTING_STATEMENT_READ', scopeType: 'SUBJECT', scopeResourceId: subjectB, validFrom: new Date(Date.now() - 1_000) },
     });
@@ -319,12 +298,14 @@ integration('Reporting Statement HTTP security boundary (isolated PostgreSQL)', 
     expect(pendingAfterSelf.body.total).toBe(2);
     expect(pendingAfterSelf.body.items.some((i: { revisionId: string }) => i.revisionId === revApprover.revision.id)).toBe(false);
 
-    // 3. APPROVED revisions are hidden
-    const approveRes = await approver.agent.post(`/api/reporting-statements/${revOwner.revision.id}/approve`).set('Origin', testOrigin).send({
+    // 3. APPROVED predecessor revision is hidden
+    const approvePredecessorRes = await approver.agent.post(`/api/reporting-statements/${revOwner.revision.id}/approve`).set('Origin', testOrigin).send({
       expectedLifecycleToken: revOwner.state.lifecycleToken,
       requestKey: crypto.randomUUID(),
     });
-    expect(approveRes.status).toBe(201);
+    expect(approvePredecessorRes.status).toBe(201);
+    expect(approvePredecessorRes.body.lifecycleState).toBe('APPROVED');
+
     const pendingAfterApprove = await approver.agent.get('/api/reporting-statements/pending-decision');
     expect(pendingAfterApprove.body.total).toBe(1);
     expect(pendingAfterApprove.body.items[0].revisionId).toBe(revOther.revision.id);
@@ -335,18 +316,50 @@ integration('Reporting Statement HTTP security boundary (isolated PostgreSQL)', 
       requestKey: crypto.randomUUID(),
     });
     expect(rejectRes.status).toBe(201);
+    expect(rejectRes.body.lifecycleState).toBe('REJECTED');
+
     const pendingAfterReject = await approver.agent.get('/api/reporting-statements/pending-decision');
     expect(pendingAfterReject.body.total).toBe(0);
 
-    // 5. SUPERSEDED revisions are hidden
-    const revReplacement = await seedSubmittedRevision(owner.id, [subjectA, subjectB]);
-    await approver.agent.post(`/api/reporting-statements/${revReplacement.revision.id}/approve`).set('Origin', testOrigin).send({
-      expectedLifecycleToken: revReplacement.state.lifecycleToken,
+    // 5. Official HTTP replacement workflow for SUPERSEDED state (Correction Lineage):
+    // Teacher submits a replacement revision for the same series
+    const submitReplacementRes = await owner.agent.post('/api/reporting-statements').set('Origin', testOrigin).send({
+      academicYearId,
+      fromCivilDate: '2026-08-01',
+      toCivilDate: '2026-08-31',
       requestKey: crypto.randomUUID(),
     });
-    const pendingAfterReplacement = await approver.agent.get('/api/reporting-statements/pending-decision');
-    expect(pendingAfterReplacement.body.total).toBe(0);
+    expect(submitReplacementRes.status).toBe(201);
+    expect(submitReplacementRes.body.lifecycleState).toBe('SUBMITTED');
+
+    // Pending decision queue now shows the submitted replacement revision
+    const pendingWithReplacement = await approver.agent.get('/api/reporting-statements/pending-decision');
+    expect(pendingWithReplacement.status).toBe(200);
+    expect(pendingWithReplacement.body.total).toBe(1);
+    expect(pendingWithReplacement.body.items[0].revisionId).toBe(submitReplacementRes.body.revisionId);
+
+    // Approver approves the replacement revision
+    const approveReplacementRes = await approver.agent.post(`/api/reporting-statements/${submitReplacementRes.body.revisionId}/approve`).set('Origin', testOrigin).send({
+      expectedLifecycleToken: submitReplacementRes.body.lifecycleToken,
+      requestKey: crypto.randomUUID(),
+    });
+    expect(approveReplacementRes.status).toBe(201);
+    expect(approveReplacementRes.body.lifecycleState).toBe('APPROVED');
+
+    // Verify DB states: predecessor is atomically SUPERSEDED, replacement is APPROVED with supersedesRevisionId
+    const predecessorDb = await prisma.reportingStatementRevisionState.findUniqueOrThrow({ where: { revisionId: revOwner.revision.id } });
+    expect(predecessorDb.lifecycleState).toBe('SUPERSEDED');
+
+    const replacementDb = await prisma.reportingStatementRevision.findUniqueOrThrow({ where: { id: submitReplacementRes.body.revisionId } });
+    expect(replacementDb.predecessorRevisionId).toBe(revOwner.revision.id);
+    expect(replacementDb.supersedesRevisionId).toBe(revOwner.revision.id);
+
+    // Pending decision queue is now empty (neither SUPERSEDED nor APPROVED revisions are visible)
+    const finalPending = await approver.agent.get('/api/reporting-statements/pending-decision');
+    expect(finalPending.status).toBe(200);
+    expect(finalPending.body.total).toBe(0);
   });
+
 
   it('validates detail response contract and prevents internal leakage (Correction F)', async () => {
     const seeded = await seedSubmittedRevision(owner.id, [subjectA, subjectB]);

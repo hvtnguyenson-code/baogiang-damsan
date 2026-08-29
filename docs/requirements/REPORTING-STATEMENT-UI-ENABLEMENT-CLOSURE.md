@@ -99,7 +99,7 @@ Tệp `apps/web/src/lib/reporting-statements-api.ts` cung cấp adapter typed ch
    - `@baogiang/contracts`: Build `tsup` và `tsc --noEmit` thành công 100%.
    - `@baogiang/api`: `tsc --noEmit` thành công 0 lỗi.
    - `@baogiang/web`: `tsc --noEmit` thành công 0 lỗi.
-2. **Unit & Presentation Tests**:
+2. **Unit & Presentation Tests (PASS — local executable)**:
    - Backend (`apps/api`): 5 test suites, 73 tests hoàn thành 100% PASS:
      - `reporting-statements.discovery-read.spec.ts`
      - `reporting-statement.presenter.spec.ts` (kiểm tra đầy đủ 9 finding codes, mapping tiếng Việt, 500 public exception sanitization, và tất cả trường hợp mismatch snapshot cross-record)
@@ -108,5 +108,6 @@ Tệp `apps/web/src/lib/reporting-statements-api.ts` cung cấp adapter typed ch
      - `reporting-statement-canonicalizer.spec.ts`
    - Frontend (`apps/web`): 1 test suite, 9 tests hoàn thành 100% PASS:
      - `reporting-statements-api.test.ts`
-3. **HTTP & PostgreSQL Integration Tests**:
-   - `reporting-statements.http.integration.spec.ts`: **AUTHORED / AWAITING AUTHORITATIVE CI** (bao phủ toàn diện HTTP security boundary, DTO validation, active calendar domain fixture, preview zero-persistence trên 6 bảng, stale preview non-reuse invariant, discovery authorization, queue terminal states matrix, detail contract sanitization, 500 error sanitization, và pagination bounds).
+   - *Ghi chú về BLOCKED preview*: BLOCKED preview presentation is unit-covered; no standalone PostgreSQL HTTP BLOCKED fixture was added because relational constraints prevent the artificial responsibility-invalid fixture and no minimal authoritative BLOCKED fixture exists in this slice. (UNIT-COVERED ONLY)
+3. **HTTP & PostgreSQL Integration Tests (AUTHORED / AWAITING AUTHORITATIVE CI — NOT RUN locally)**:
+   - `reporting-statements.http.integration.spec.ts`: Đã hoàn thiện toàn diện HTTP security boundary, DTO validation, active calendar domain fixture, preview zero-persistence trên 6 bảng, stale preview non-reuse invariant, discovery authorization, queue terminal states matrix với official correction replacement flow, detail contract sanitization, 500 error sanitization, và pagination bounds. Sẵn sàng chờ kiểm tra trên pipeline CI chính thức của GitHub.
