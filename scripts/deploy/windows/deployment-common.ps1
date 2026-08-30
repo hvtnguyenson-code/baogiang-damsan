@@ -455,30 +455,60 @@ function Invoke-NativeChecked(
   if ($exitCode -ne 0) { throw "$Operation failed with exit code $exitCode." }
 }
 
-function Import-ServerEnvironment(
-  [Parameter(Mandatory = $true)][string]$EnvFile,
-  [Parameter(Mandatory = $true)][string]$ExpectedBaseUrl
-) {
+function Get-ManagedProductionEnvironmentNames {
+  return @('NODE_ENV','TZ','API_HOST','API_PORT','HTTP_TRUST_PROXY_HOPS','DATABASE_URL','CORS_ORIGINS','AUTH_SESSION_TTL_SECONDS','AUTH_LAST_SEEN_UPDATE_SECONDS','AUTH_COOKIE_NAME','AUTH_COOKIE_PATH','AUTH_COOKIE_DOMAIN','AUTH_COOKIE_SECURE','AUTH_COOKIE_SAME_SITE','AUTH_LOCKOUT_THRESHOLD','AUTH_LOCKOUT_DURATION_SECONDS','AUTH_PASSWORD_MIN_LENGTH','AUTH_LOGIN_RATE_LIMIT_MAX','AUTH_LOGIN_RATE_LIMIT_WINDOW_SECONDS','AUTH_LOGIN_RATE_LIMIT_MAX_KEYS','AI_ENABLED','AI_ACTIVE_MODE_ENABLED','AI_PASSIVE_MODE_ENABLED','WEB_PUSH_ENABLED','LOG_LEVEL','TEST_DATABASE_URL','BOOTSTRAP_ADMIN_USERNAME','BOOTSTRAP_ADMIN_DISPLAY_NAME','BOOTSTRAP_ADMIN_PASSWORD')
+}
+
+function Assert-ProductionPositiveInteger([Parameter(Mandatory = $true)][string]$Value) {
+  if ($Value -notmatch '^[1-9][0-9]*$') { throw 'Production runtime environment contains an invalid positive integer.' }
+  [double]$number = 0
+  if (-not [double]::TryParse($Value,[Globalization.NumberStyles]::None,[Globalization.CultureInfo]::InvariantCulture,[ref]$number) -or [double]::IsNaN($number) -or [double]::IsInfinity($number) -or $number -le 0 -or [Math]::Truncate($number) -ne $number) { throw 'Production runtime environment contains a non-finite positive integer.' }
+  return $Value
+}
+
+function Read-ValidatedProductionEnvironment([Parameter(Mandatory = $true)][string]$EnvFile,[Parameter(Mandatory = $true)][string]$ExpectedBaseUrl) {
   Assert-ExistingLeaf $EnvFile 'Production environment file' | Out-Null
-  $allowed = @('NODE_ENV','TZ','API_HOST','API_PORT','HTTP_TRUST_PROXY_HOPS','DATABASE_URL','TEST_DATABASE_URL','CORS_ORIGINS','AUTH_SESSION_TTL_SECONDS','AUTH_LAST_SEEN_UPDATE_SECONDS','AUTH_COOKIE_NAME','AUTH_COOKIE_PATH','AUTH_COOKIE_DOMAIN','AUTH_COOKIE_SECURE','AUTH_COOKIE_SAME_SITE','AUTH_LOCKOUT_THRESHOLD','AUTH_LOCKOUT_DURATION_SECONDS','AUTH_PASSWORD_MIN_LENGTH','AUTH_LOGIN_RATE_LIMIT_MAX','AUTH_LOGIN_RATE_LIMIT_WINDOW_SECONDS','AUTH_LOGIN_RATE_LIMIT_MAX_KEYS','BOOTSTRAP_ADMIN_USERNAME','BOOTSTRAP_ADMIN_DISPLAY_NAME','BOOTSTRAP_ADMIN_PASSWORD','AI_ENABLED','AI_ACTIVE_MODE_ENABLED','AI_PASSIVE_MODE_ENABLED','WEB_PUSH_ENABLED','LOG_LEVEL')
-  $seen = @{}
+  $allowed = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+  foreach ($name in @(Get-ManagedProductionEnvironmentNames | Where-Object { $_ -notin @('TEST_DATABASE_URL','BOOTSTRAP_ADMIN_USERNAME','BOOTSTRAP_ADMIN_DISPLAY_NAME','BOOTSTRAP_ADMIN_PASSWORD') })) { [void]$allowed.Add($name) }
+  $required = @('NODE_ENV','TZ','API_HOST','API_PORT','HTTP_TRUST_PROXY_HOPS','DATABASE_URL','CORS_ORIGINS','AUTH_SESSION_TTL_SECONDS','AUTH_LAST_SEEN_UPDATE_SECONDS','AUTH_COOKIE_NAME','AUTH_COOKIE_PATH','AUTH_COOKIE_SECURE','AUTH_COOKIE_SAME_SITE','AUTH_LOCKOUT_THRESHOLD','AUTH_LOCKOUT_DURATION_SECONDS','AUTH_PASSWORD_MIN_LENGTH','AUTH_LOGIN_RATE_LIMIT_MAX','AUTH_LOGIN_RATE_LIMIT_WINDOW_SECONDS','AUTH_LOGIN_RATE_LIMIT_MAX_KEYS','AI_ENABLED','AI_ACTIVE_MODE_ENABLED','AI_PASSIVE_MODE_ENABLED','WEB_PUSH_ENABLED','LOG_LEVEL')
+  $forbidden = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+  foreach ($name in @('TEST_DATABASE_URL','BOOTSTRAP_ADMIN_USERNAME','BOOTSTRAP_ADMIN_DISPLAY_NAME','BOOTSTRAP_ADMIN_PASSWORD')) { [void]$forbidden.Add($name) }
+  $values = [Collections.Generic.Dictionary[string,string]]::new([StringComparer]::Ordinal)
+  $seenInsensitive = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
   foreach ($line in Get-Content -LiteralPath $EnvFile) {
     if ([string]::IsNullOrWhiteSpace($line) -or $line -match '^\s*#') { continue }
     if ($line -notmatch '^\s*([A-Za-z_][A-Za-z0-9_]*)=(.*)$') { throw 'Production environment contains an invalid assignment.' }
     $name = $Matches[1]; $value = $Matches[2]
-    if ($allowed -notcontains $name) { throw "Production environment contains an unapproved variable: $name" }
-    if ($seen.ContainsKey($name)) { throw "Production environment contains a duplicate variable: $name" }
-    $seen[$name] = $true
-    [Environment]::SetEnvironmentVariable($name, $value, 'Process')
+    if ($forbidden.Contains($name)) { throw 'Production runtime environment contains a forbidden variable.' }
+    if (-not $allowed.Contains($name)) { throw 'Production runtime environment contains an unapproved variable.' }
+    if (-not $seenInsensitive.Add($name)) { throw 'Production runtime environment contains a duplicate variable.' }
+    [void]$values.Add($name,$value)
   }
-  foreach ($forbidden in @('TEST_DATABASE_URL','BOOTSTRAP_ADMIN_USERNAME','BOOTSTRAP_ADMIN_DISPLAY_NAME','BOOTSTRAP_ADMIN_PASSWORD')) {
-    if ($seen.ContainsKey($forbidden)) { throw "Production runtime environment may not contain $forbidden." }
-  }
-  if (-not $seen.ContainsKey('TZ')) { throw 'Production runtime environment must explicitly contain TZ.' }
-  if ($env:NODE_ENV -ne 'production' -or $env:TZ -ne 'Asia/Ho_Chi_Minh' -or $env:API_HOST -notin @('127.0.0.1','::1','localhost') -or $env:API_PORT -ne '3100' -or $env:HTTP_TRUST_PROXY_HOPS -ne '1' -or $env:AUTH_COOKIE_SECURE -ne 'true' -or $env:AI_ENABLED -ne 'false' -or $env:AI_ACTIVE_MODE_ENABLED -ne 'false' -or $env:AI_PASSIVE_MODE_ENABLED -ne 'false' -or $env:WEB_PUSH_ENABLED -ne 'false' -or [string]::IsNullOrWhiteSpace($env:DATABASE_URL)) { throw 'Production environment safety validation failed.' }
-  $origins = @($env:CORS_ORIGINS -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-  if ($origins.Count -ne 1 -or $origins[0] -ne $ExpectedBaseUrl) { throw 'Production CORS origin is not the exact approved domain.' }
-  return $seen.Keys
+  foreach ($name in $required) { if (-not $values.ContainsKey($name)) { throw 'Production runtime environment is missing a required variable.' } }
+  foreach ($name in @('DATABASE_URL','AUTH_SESSION_TTL_SECONDS','AUTH_LAST_SEEN_UPDATE_SECONDS','AUTH_COOKIE_NAME','AUTH_COOKIE_PATH','AUTH_COOKIE_SAME_SITE','AUTH_LOCKOUT_THRESHOLD','AUTH_LOCKOUT_DURATION_SECONDS','AUTH_PASSWORD_MIN_LENGTH','AUTH_LOGIN_RATE_LIMIT_MAX','AUTH_LOGIN_RATE_LIMIT_WINDOW_SECONDS','AUTH_LOGIN_RATE_LIMIT_MAX_KEYS','LOG_LEVEL')) { if ([string]::IsNullOrWhiteSpace($values[$name])) { throw 'Production runtime environment contains a blank required value.' } }
+  foreach ($name in @('AUTH_SESSION_TTL_SECONDS','AUTH_LAST_SEEN_UPDATE_SECONDS','AUTH_LOCKOUT_THRESHOLD','AUTH_LOCKOUT_DURATION_SECONDS','AUTH_PASSWORD_MIN_LENGTH','AUTH_LOGIN_RATE_LIMIT_MAX','AUTH_LOGIN_RATE_LIMIT_WINDOW_SECONDS','AUTH_LOGIN_RATE_LIMIT_MAX_KEYS')) { Assert-ProductionPositiveInteger $values[$name] | Out-Null }
+  if ($values['AUTH_COOKIE_NAME'] -notmatch '^[A-Za-z0-9_-]+$') { throw 'Production runtime environment contains an invalid cookie name.' }
+  if (-not $values['AUTH_COOKIE_PATH'].StartsWith('/')) { throw 'Production runtime environment contains an invalid cookie path.' }
+  if ($values['AUTH_COOKIE_SAME_SITE'].ToLowerInvariant() -notin @('lax','strict','none')) { throw 'Production runtime environment contains an invalid cookie SameSite value.' }
+  if ($values['NODE_ENV'] -cne 'production' -or $values['TZ'] -cne 'Asia/Ho_Chi_Minh' -or $values['API_HOST'] -cnotin @('127.0.0.1','::1','localhost') -or $values['API_PORT'] -cne '3100' -or $values['HTTP_TRUST_PROXY_HOPS'] -cne '1' -or $values['AUTH_COOKIE_SECURE'] -cne 'true' -or $values['AI_ENABLED'] -cne 'false' -or $values['AI_ACTIVE_MODE_ENABLED'] -cne 'false' -or $values['AI_PASSIVE_MODE_ENABLED'] -cne 'false' -or $values['WEB_PUSH_ENABLED'] -cne 'false') { throw 'Production environment safety validation failed.' }
+  $origins = @($values['CORS_ORIGINS'] -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+  if ($origins.Count -ne 1 -or $origins[0] -cne $ExpectedBaseUrl) { throw 'Production CORS origin is not the exact approved domain.' }
+  return $values
+}
+
+function Invoke-WithServerEnvironment([Parameter(Mandatory = $true)][string]$EnvFile,[Parameter(Mandatory = $true)][string]$ExpectedBaseUrl,[Parameter(Mandatory = $true)][scriptblock]$ScriptBlock) {
+  $values = Read-ValidatedProductionEnvironment -EnvFile $EnvFile -ExpectedBaseUrl $ExpectedBaseUrl
+  $private:snapshot = @{}
+  try {
+    foreach ($name in Get-ManagedProductionEnvironmentNames) { $prior = [Environment]::GetEnvironmentVariable($name,'Process'); $private:snapshot[$name] = [pscustomobject]@{ existed = $null -ne $prior; value = $prior } }
+    foreach ($name in $private:snapshot.Keys) { [Environment]::SetEnvironmentVariable($name,$null,'Process') }
+    foreach ($name in $values.Keys) { [Environment]::SetEnvironmentVariable($name,$values[$name],'Process') }
+    & $ScriptBlock
+  } finally { Restore-ServerEnvironment -Snapshot $private:snapshot }
+}
+
+function Restore-ServerEnvironment([Parameter(Mandatory = $true)][hashtable]$Snapshot) {
+  foreach ($name in $Snapshot.Keys) { $prior = $Snapshot[$name]; if ($prior.existed) { [Environment]::SetEnvironmentVariable($name,$prior.value,'Process') } else { [Environment]::SetEnvironmentVariable($name,$null,'Process') } }
 }
 
 function Get-DatabaseParts([Parameter(Mandatory = $true)][string]$DatabaseUrl) {

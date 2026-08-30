@@ -6,7 +6,7 @@ const workflowPath = path.join(root, '.github', 'workflows', 'deploy-production.
 const firstDeployRunbookPath = path.join(root, 'docs', 'operations', 'PRODUCTION-CD-FIRST-DEPLOY-RUNBOOK.md');
 const environmentConfigurationPath = path.join(root, 'docs', 'operations', 'PRODUCTION-ENVIRONMENT-CONFIGURATION.md');
 const scriptDir = path.join(root, 'scripts', 'deploy', 'windows');
-const required = ['deployment-common.ps1','production-preflight-readonly.ps1','production-protected-neighbor-discovery.ps1','install-release.ps1','backup-database.ps1','run-migrations.ps1','sync-capability-catalog.ps1','switch-current-release.ps1','restart-baogiang-api.ps1','start-baogiang-api.ps1','test-production-health.ps1','rollback-release.ps1','invoke-production-deploy.ps1'];
+const required = ['deployment-common.ps1','production-preflight-readonly.ps1','production-protected-neighbor-discovery.ps1','install-release.ps1','backup-database.ps1','run-migrations.ps1','sync-capability-catalog.ps1','switch-current-release.ps1','restart-baogiang-api.ps1','start-baogiang-api.ps1','validate-production-environment.ps1','test-production-health.ps1','rollback-release.ps1','invoke-production-deploy.ps1'];
 const fail = (message) => { throw new Error(`[deployment-static] ${message}`); };
 const read = (file) => fs.readFileSync(file, 'utf8');
 if (!fs.existsSync(workflowPath)) fail('workflow is missing');
@@ -31,12 +31,13 @@ const forbidden = [
 for (const pattern of forbidden) if (pattern.test(scripts)) fail(`forbidden deployment construct: ${pattern}`);
 for (const token of ['Set-StrictMode -Version Latest','$ErrorActionPreference = \'Stop\'','ValidatePattern','ValidateScript','Expand-Archive','migrate status','migrate deploy','PGPASSWORD','pg_restore','Read-DeploymentIdentity','commandLineSha256','Get-ExactApiProcesses','MigrationAttempted','CompatibilityApproved','start-baogiang-api.ps1']) if (!scripts.includes(token)) fail(`fail-closed control missing: ${token}`);
 for (const token of ['Assert-DeploymentMarkerSchema','Assert-ExactMarkerProperties',"'schemaVersion'", "'foreignIsolation'", "'startupBundle'", "'scheduled-task'", "'service'"]) if (!scripts.includes(token)) fail(`strict deployment marker schema control missing: ${token}`);
+for (const token of ['Get-ManagedProductionEnvironmentNames','Assert-ProductionPositiveInteger','Read-ValidatedProductionEnvironment','Restore-ServerEnvironment','AUTH_SESSION_TTL_SECONDS','BOOTSTRAP_ADMIN_PASSWORD']) if (!scripts.includes(token)) fail(`production environment validation control missing: ${token}`);
 if (/marker\.nginxExe\s+-and|marker\.nginxConfig\s+-and|marker\.service\.taskPath\s+-and|if\s*\(\$marker\.nodeExe\)/.test(scripts)) fail('strict marker authority contains a conditional bypass');
 for (const token of ['"schemaVersion": 1','no unknown top-level or nested properties','`taskPath`','`pathName`']) if (!environmentConfiguration.includes(token)) fail(`strict marker documentation missing: ${token}`);
 for (const token of ['RequireReviewedIsolation','KnownForeignRoot','KnownForeignName','Resolve-DatabaseVerifierExecutable','Get-SshPublicHostKeyEvidence','Get-SshFirewallEvidence']) if (!scripts.includes(token)) fail(`preflight evidence control missing: ${token}`);
 for (const token of ['Resolve-ExpectedCandidateRuntimeName','Get-SshDirectConfigEvidence','Get-SshPortEvidence','ACTIVE_INCLUDE_REQUIRES_REVIEW']) if (!scripts.includes(token)) fail(`final preflight fail-closed control missing: ${token}`);
 if (!workflow.includes('ssh-ed25519|ecdsa-sha2-nistp256|ecdsa-sha2-nistp384|ecdsa-sha2-nistp521|ssh-rsa') || /rsa-sha2-(256|512)|HostKeyAlgorithms|PubkeyAcceptedAlgorithms/.test(workflow)) fail('known_hosts key-type contract is unsafe or inconsistent');
 if (firstDeployRunbook.indexOf('production-protected-neighbor-discovery.ps1') < 0 || firstDeployRunbook.indexOf('production-protected-neighbor-discovery.ps1') >= firstDeployRunbook.indexOf('production-preflight-readonly.ps1')) fail('PASS 1 discovery must precede PASS 2 preflight in the first-deploy runbook');
-for (const token of ["'TZ'",'Asia/Ho_Chi_Minh',"ContainsKey('TZ')"]) if (!scripts.includes(token)) fail(`timezone contract missing: ${token}`);
+for (const token of ["'TZ'",'Asia/Ho_Chi_Minh','missing a required variable']) if (!scripts.includes(token)) fail(`timezone contract missing: ${token}`);
 if (workflow.includes('scp') && /\$remote:[^.]?\\/.test(workflow)) fail('SCP must use relative SFTP destinations, not unverified Windows backslashes.');
 console.log(`[deployment-static] PASS (${required.length} scripts and forbidden-pattern scan)`);
