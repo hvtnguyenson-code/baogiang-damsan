@@ -461,6 +461,8 @@ function Get-ManagedProductionEnvironmentNames {
 
 function Assert-ProductionPositiveInteger([Parameter(Mandatory = $true)][string]$Value) {
   if ($Value -notmatch '^[1-9][0-9]*$') { throw 'Production runtime environment contains an invalid positive integer.' }
+  [double]$number = 0
+  if (-not [double]::TryParse($Value,[Globalization.NumberStyles]::None,[Globalization.CultureInfo]::InvariantCulture,[ref]$number) -or [double]::IsNaN($number) -or [double]::IsInfinity($number) -or $number -le 0 -or [Math]::Truncate($number) -ne $number) { throw 'Production runtime environment contains a non-finite positive integer.' }
   return $Value
 }
 
