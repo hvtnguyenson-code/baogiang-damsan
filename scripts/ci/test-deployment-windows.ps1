@@ -4,6 +4,13 @@ Set-StrictMode -Version Latest
 $repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 . (Join-Path $repo 'scripts\deploy\windows\deployment-common.ps1')
 
+Assert-ProductionRuntimeKindSupported -ServiceKind 'scheduled-task' -FirstDeploy $true
+$rejected = $false
+try { Assert-ProductionRuntimeKindSupported -ServiceKind 'service' -FirstDeploy $true } catch { if ($_.Exception.Message -match 'SERVICE_FIRST_DEPLOY_UNSUPPORTED') { $rejected = $true } }
+if (-not $rejected) { throw 'Service first-deploy runtime kind was not rejected categorically.' }
+Assert-ProductionRuntimeKindSupported -ServiceKind 'service' -FirstDeploy $false
+Assert-ProductionRuntimeKindSupported -ServiceKind 'scheduled-task' -FirstDeploy $false
+
 $reservedVariableNames = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 Get-Variable | Where-Object {
   (($_.Options -band [System.Management.Automation.ScopedItemOptions]::ReadOnly) -ne 0) -or

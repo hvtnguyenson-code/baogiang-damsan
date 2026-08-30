@@ -18,6 +18,9 @@ const knownHostKeyTypes = 'ssh-ed25519|ecdsa-sha2-nistp256|ecdsa-sha2-nistp384|e
 assert.ok(text.includes(`case "$known_type" in ${knownHostKeyTypes})`), 'known_hosts public-key type allowlist drifted');
 assert.doesNotMatch(text, /rsa-sha2-(256|512)/); assert.doesNotMatch(text, /HostKeyAlgorithms|PubkeyAcceptedAlgorithms/);
 assert.match(text, /powershell\.exe -NoProfile -NonInteractive -EncodedCommand/); assert.doesNotMatch(text, /powershell\.exe -NoProfile -NonInteractive -Command/); assert.match(text, /Read-only marker handshake before transfer/);
+assert.match(text, /\[\[ "\$PROD_SERVICE_KIND" == "scheduled-task" \]\] \|\| \{ echo "Production CD currently supports scheduled-task only\." >&2; exit 1; \}/); assert.doesNotMatch(text, /\[\[ "\$PROD_SERVICE_KIND" == "scheduled-task" \|\| "\$PROD_SERVICE_KIND" == "service" \]\]/);
+const validationBlock = text.slice(text.indexOf('- name: Validate target, pinned SSH identity and environment contract'), text.indexOf('- name: Verify exact target CI success')); assert.doesNotMatch(validationBlock, /\bservice\b/);
+for (const remoteStep of ['Prepare pinned SSH files','Read-only marker handshake before transfer','Create verified unique transfer directory','Upload reviewed transfer bundle through SFTP']) assert.ok(text.indexOf('[[ "$PROD_SERVICE_KIND" == "scheduled-task" ]]') < text.indexOf(remoteStep), `scheduled-task-only gate must precede ${remoteStep}`);
 assert.match(text, /sync-capability-catalog\.ps1/);
 assert.match(text, /git -C control-plane rev-list --first-parent origin\/main/); assert.doesNotMatch(text, /merge-base --is-ancestor/);
 for (const ciProvenance of ['.name == "CI"','.head_sha ==','.status == "completed"','.event == "push"','.head_branch == "main"']) assert.ok(text.includes(ciProvenance), `exact CI provenance gate is missing: ${ciProvenance}`);

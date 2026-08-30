@@ -1,7 +1,7 @@
 # Production Stage 2 Bootstrap Readiness Audit
 
-Status: Candidate
-Baseline: 936133b33f1742556747512ca4e9403fc08cb0f7
+Status: Candidate — P0-4 CLOSED CANDIDATE; Stage 2 overall NO-GO
+Baseline: 5ff81b6e5ea26d1082130de6fea7985a00c41406
 
 ## 1. Scope
 
@@ -110,9 +110,9 @@ P0-3 authority hóa một contract duy nhất: Scheduled Task có đúng một e
 
 ## 8. Windows Service readiness
 
-Workflow advertise `service`, nhưng repository không có native service host binary, service installation script, startup-type setup, recovery policy hay guarded transition từ Disabled trở lại approved startup type. Runbook đúng khi cấm đăng ký `.ps1` như native service và yêu cầu inventory-approved host, nhưng đó mới là abstract future-compatible contract.
+P0-4 là **CLOSED CANDIDATE**: production CD chỉ chấp nhận `scheduled-task`; verified-first-deploy preflight từ chối `service`; và deploy controller từ chối `service` khi chưa có `current` trước mutation business-critical. Generic Service code/schema vẫn future-compatible và non-authoritative; P0-4 không tạo service host, installer/uninstaller, startup-type policy, recovery policy hoặc reboot architecture.
 
-Recommendation: **RESTRICT FIRST DEPLOY TO SCHEDULED-TASK** sau khi P0 lifecycle của Scheduled Task được sửa. Service mode phải bị chặn cho first deploy cho tới khi có reviewed service-host architecture, installer/uninstaller, exact `PathName`/account/start mode schema, safe-stop/recovery/reboot tests và rollback procedure. Đây là **P0 release-readiness condition** theo GO rule, dù implementation service riêng có thể được lên lịch P1 sau khi restriction fail-closed tồn tại.
+Windows Service production bootstrap vẫn deferred cho tới khi có reviewed Service architecture, gồm native host authority, installer/uninstaller, exact `PathName`/account/startup-type schema, guarded Disabled-to-approved-startup transition, recovery/reboot tests và rollback procedure.
 
 ## 9. Nginx bootstrap findings
 
@@ -160,12 +160,12 @@ Recommendation duy nhất: **B — source-controlled plan/verify tool, manual mu
 | Gate | Evidence | Result |
 |---|---|---|
 | Desired root/subdirs/ACL state exact | Paths có guard; ACL chỉ operator review | NO-GO |
-| Marker complete, non-bypassable | Empty/incomplete isolation, Node, Nginx và nested runtime values chưa fail-closed | NO-GO (P0) |
-| Clean pre-first-deploy env PASS | Không có standalone validator; wrapper cần `current` | NO-GO (P0) |
-| Scheduled Task activation/recovery | Disabled/stop có; enable/reboot/retry transition thiếu | NO-GO (P0) |
-| Advertised Service implementable | Không có host/install/startup recovery | NO-GO (P0 condition) |
+| Marker complete, non-bypassable | P0 marker-schema correction đã có; vẫn cần plan/verify bootstrap P1 | CLOSED CANDIDATE |
+| Clean pre-first-deploy env PASS | Standalone validation contract P0 đã có; VPS evidence vẫn operator-only | CLOSED CANDIDATE |
+| Scheduled Task activation/recovery | P0-3 verify → enable → reverify → start, safe-stop và reboot contract | CLOSED CANDIDATE |
+| Service first-deploy authority | P0-4 restricted to Scheduled Task; generic Service code remains non-authoritative | CLOSED CANDIDATE |
 | Startup bundle deterministic | Hash verification tốt; creation/update manual chưa plan hóa | NO-GO (P1) |
-| Nginx deterministic and neighbor-safe | Partial verifier; mutation/reload manual; marker binding bypassable | NO-GO (P0/P1) |
+| Nginx deterministic and neighbor-safe | Partial verifier; mutation/reload manual | NO-GO (P1) |
 | Transfer boundary proportionate | Minimal handshake trước isolated staging; controller trước critical mutation | GO WITH P2 HARDENING |
 
 Overall: **NO-GO / CORRECTION NEEDED**.
@@ -174,12 +174,12 @@ Overall: **NO-GO / CORRECTION NEEDED**.
 
 Một correction plan duy nhất, theo thứ tự bắt buộc:
 
-### P0 — readiness blockers
+### P0 — closed candidates
 
-1. **Marker schema authority:** định nghĩa discriminated task/service schema; reject unknown, missing, null, empty và wrong-type values; require/bind Node/Nginx/env/wrapper/entry point; validate all `foreignIsolation` fields; add hostile fixtures. Quyết định versioning trước khi thêm `schemaVersion`.
-2. **Standalone env validation:** isolated validate-only command, parse-before-apply, no-current success, no secret output, cleanup-on-all-paths và fixtures.
-3. **Scheduled Task state machine:** exact trigger contract, bootstrap state, explicit reviewed activation/re-enable, safe-stop, retry/quarantine, rollback và reboot semantics; tests phải chứng minh every transition.
-4. **Service restriction:** fail closed khi `service` được chọn cho first deploy cho tới khi implementable host/install/lifecycle contract tồn tại.
+1. **Marker schema authority:** đã có correction schema/fixture P0; không mở lại schema trong P0-4.
+2. **Standalone env validation:** đã có validate-only contract P0; không mở lại env handling trong P0-4.
+3. **Scheduled Task state machine:** P0-3 đã authority hóa bootstrap state, activation, safe-stop, retry/quarantine, rollback và reboot semantics.
+4. **Service restriction:** **CLOSED CANDIDATE (P0-4)** — fail closed khi `service` được chọn cho first deploy; không xây Service architecture trong slice này.
 
 ### P1 — deterministic bootstrap plan/verify
 
@@ -212,6 +212,6 @@ PASS 1/PASS 2 reports phải được operator và independent reviewer đánh g
 
 **NO-GO / CORRECTION NEEDED**.
 
-Canonical main tại baseline chưa đủ contract để operator bootstrap production deterministic và fail-closed. Bốn GO-rule blockers đều được confirm: không có clean pre-first-deploy env validation; marker có thể bị bypass bằng empty/incomplete values; activation lifecycle task/service không khép kín; và advertised Service mode chưa có implementable bootstrap path.
+Stage 2 tổng thể vẫn **NO-GO / chưa GO** vì các P1/P2 và operator-only evidence còn lại. P0-4 chỉ đóng fail-closed restriction cho Service first deploy; không tuyên bố Service architecture hay Production Stage 2 hoàn tất.
 
-Điều kiện tối thiểu để audit lại là hoàn tất P0 marker schema, standalone env validator, Scheduled Task lifecycle và Service first-deploy restriction; sau đó triển khai architecture B plan/verify cho ACL, bundle và Nginx. Không được bắt đầu Stage 2 mutation chỉ dựa trên CI xanh hoặc tài liệu manual hiện tại.
+Điều kiện để audit lại vẫn gồm hoàn tất các P1/P2 áp dụng được, operator evidence độc lập và architecture B plan/verify cho ACL, bundle và Nginx. Không được bắt đầu Stage 2 mutation chỉ dựa trên CI xanh hoặc tài liệu manual hiện tại.
