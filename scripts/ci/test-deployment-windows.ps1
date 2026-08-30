@@ -87,10 +87,17 @@ foreach ($scriptFile in $powerShellFiles) {
 
 $catalogSyncPath = Join-Path $repo 'scripts\deploy\windows\sync-capability-catalog.ps1'
 $catalogSyncText = Get-Content -LiteralPath $catalogSyncPath -Raw -Encoding UTF8
-foreach ($requiredCatalogSyncToken in @('Set-StrictMode -Version Latest',"`$ErrorActionPreference = 'Stop'",'Read-DeploymentIdentity','Import-ServerEnvironment','Assert-ExecutableContract','BackupVerified','ReleaseSha','expectedRelease','Normalize-ComparablePath','sync-capability-catalog.cjs','Test-PathWithin')) {
+foreach ($requiredCatalogSyncToken in @('Set-StrictMode -Version Latest',"`$ErrorActionPreference = 'Stop'",'Read-DeploymentIdentity','Import-ServerEnvironment','Assert-ExecutableContract','BackupVerified','ReleaseSha','Assert-ExactReleasePath','sync-capability-catalog.cjs')) {
   if ($catalogSyncText -notmatch [regex]::Escape($requiredCatalogSyncToken)) { throw "Capability catalog sync wrapper is missing required safety token: $requiredCatalogSyncToken" }
 }
 if ($catalogSyncText -match 'npm run prisma:seed|prisma db seed') { throw 'Capability catalog sync wrapper must not invoke generic seed.' }
+
+$migrationPath = Join-Path $repo 'scripts\deploy\windows\run-migrations.ps1'
+$migrationText = Get-Content -LiteralPath $migrationPath -Raw -Encoding UTF8
+foreach ($requiredMigrationToken in @('ReleaseSha','Assert-ExactReleasePath','prisma\schema.prisma','Test-PathWithin $schema $release')) {
+  if ($migrationText -notmatch [regex]::Escape($requiredMigrationToken)) { throw "Migration wrapper is missing exact-release safety token: $requiredMigrationToken" }
+}
+if ($migrationText.IndexOf('Assert-ExactReleasePath') -gt $migrationText.IndexOf('Import-ServerEnvironment') -or $migrationText.IndexOf('Test-Path -LiteralPath $schema -PathType Leaf') -gt $migrationText.IndexOf('Import-ServerEnvironment')) { throw 'Exact release and schema checks must precede environment/database mutation.' }
 
 $preflightPath = Join-Path $repo 'scripts\deploy\windows\production-preflight-readonly.ps1'
 $preflightText = Get-Content -LiteralPath $preflightPath -Raw -Encoding UTF8
@@ -138,6 +145,23 @@ if ($summaryUnavailable.state -ne 'PARTIAL' -or $summaryUnavailable.migrationSta
 $temp = Join-Path ([IO.Path]::GetTempPath()) ("baogiang-deploy-test-" + [guid]::NewGuid().ToString('N'))
 try {
   New-Item -ItemType Directory -Path $temp -Force | Out-Null
+  $releaseRoot = Join-Path $temp 'release-path-fixtures'
+  $releaseShaA = 'a' * 40
+  $releaseShaB = 'b' * 40
+  $releasePathA = Join-Path $releaseRoot "releases\$releaseShaA"
+  $releasePathB = Join-Path $releaseRoot "releases\$releaseShaB"
+  New-Item -ItemType Directory -Path $releasePathA,$releasePathB -Force | Out-Null
+  if ((Assert-ExactReleasePath -Root $releaseRoot -ReleaseSha $releaseShaA -ReleasePath $releasePathA) -ne (Get-CanonicalPath $releasePathA)) { throw 'M1 exact release path fixture failed.' }
+  foreach ($invalidReleaseFixture in @(
+    @{ label = 'M2 wrong SHA'; sha = $releaseShaA; path = $releasePathB },
+    @{ label = 'M3 outside releases'; sha = $releaseShaA; path = (Join-Path $temp $releaseShaA) },
+    @{ label = 'M3 nested release'; sha = $releaseShaA; path = (Join-Path $releasePathA 'nested') },
+    @{ label = 'M4 missing release'; sha = ('c' * 40); path = (Join-Path $releaseRoot ('releases\' + ('c' * 40))) }
+  )) {
+    $invalidReleaseRejected = $false
+    try { Assert-ExactReleasePath -Root $releaseRoot -ReleaseSha $invalidReleaseFixture.sha -ReleasePath $invalidReleaseFixture.path | Out-Null } catch { $invalidReleaseRejected = $true }
+    if (-not $invalidReleaseRejected) { throw "Exact release path fixture was accepted: $($invalidReleaseFixture.label)" }
+  }
   $validEnvLines = @(
     'NODE_ENV=production',
     'TZ=Asia/Ho_Chi_Minh',

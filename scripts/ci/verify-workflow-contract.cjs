@@ -16,6 +16,13 @@ for (const required of ['PROD_NODE_EXE','PROD_NPM_EXE','PROD_NPX_EXE','PROD_PSQL
 assert.match(text, /StrictHostKeyChecking=yes/g); assert.doesNotMatch(text, /StrictHostKeyChecking=no/i); assert.doesNotMatch(text, /:.*\\\\incoming/);
 assert.match(text, /powershell\.exe -NoProfile -NonInteractive -EncodedCommand/); assert.doesNotMatch(text, /powershell\.exe -NoProfile -NonInteractive -Command/); assert.match(text, /Read-only marker handshake before transfer/);
 assert.match(text, /sync-capability-catalog\.ps1/);
+assert.match(text, /git -C control-plane rev-list --first-parent origin\/main/); assert.doesNotMatch(text, /merge-base --is-ancestor/);
+for (const ciProvenance of ['.name == "CI"','.head_sha ==','.status == "completed"','.event == "push"','.head_branch == "main"']) assert.ok(text.includes(ciProvenance), `exact CI provenance gate is missing: ${ciProvenance}`);
+function isCanonicalSuccessfulCiRun(run, targetSha) { return run.name === 'CI' && run.head_sha === targetSha && run.status === 'completed' && run.conclusion === 'success' && run.event === 'push' && run.head_branch === 'main'; }
+const targetSha = 'a'.repeat(40);
+assert.equal(isCanonicalSuccessfulCiRun({ name: 'CI', head_sha: targetSha, status: 'completed', conclusion: 'success', event: 'pull_request', head_branch: 'feature' }, targetSha), false);
+assert.equal(isCanonicalSuccessfulCiRun({ name: 'CI', head_sha: targetSha, status: 'completed', conclusion: 'success', event: 'push', head_branch: 'feature' }, targetSha), false);
+assert.equal(isCanonicalSuccessfulCiRun({ name: 'CI', head_sha: targetSha, status: 'completed', conclusion: 'success', event: 'push', head_branch: 'main' }, targetSha), true);
 const stepBlocks = text.split(/^      - name:/m).slice(1);
 function assertStepEnvSources(block) {
   const envNames = new Set([...block.matchAll(/^          (PROD_[A-Z0-9_]+):/gm)].map((m) => m[1]));

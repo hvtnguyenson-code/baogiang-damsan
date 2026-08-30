@@ -12,7 +12,7 @@ for (const file of required) if (!fs.existsSync(path.join(scriptDir, file))) fai
 const workflow = read(workflowPath);
 if (!/^on:\s*$/m.test(workflow) || !/^\s{2}workflow_dispatch:\s*$/m.test(workflow)) fail('manual workflow_dispatch contract is missing');
 if (/^\s{2}(push|pull_request):\s*$/m.test(workflow)) fail('deployment workflow must not have push/pull_request triggers');
-for (const token of ['environment: production','cancel-in-progress: false','confirmation:','commit_sha:','StrictHostKeyChecking=yes','merge-base --is-ancestor','workflow_runs','git -C control-plane archive --format=zip','upload-artifact@v4','if: always()','-EncodedCommand','Read-only marker handshake before transfer','control-$run_id-$TARGET_SHA']) if (!workflow.includes(token)) fail(`workflow gate missing: ${token}`);
+for (const token of ['environment: production','cancel-in-progress: false','confirmation:','commit_sha:','StrictHostKeyChecking=yes','rev-list --first-parent origin/main','workflow_runs','.event == "push"','.head_branch == "main"','git -C control-plane archive --format=zip','upload-artifact@v4','if: always()','-EncodedCommand','Read-only marker handshake before transfer','control-$run_id-$TARGET_SHA']) if (!workflow.includes(token)) fail(`workflow gate missing: ${token}`);
 const scripts = required.map((file) => read(path.join(scriptDir, file))).join('\n');
 if (!workflow.includes('sync-capability-catalog.ps1') || !scripts.includes('sync-capability-catalog.cjs')) fail('capability catalog synchronization contract is missing');
 if (/npm\s+run\s+prisma:seed/i.test(scripts)) fail('deployment must not invoke generic Prisma seed');

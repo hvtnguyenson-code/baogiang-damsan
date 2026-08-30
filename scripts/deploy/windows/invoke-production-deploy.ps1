@@ -39,7 +39,7 @@ try {
   $report.backup = $backupJson | ConvertFrom-Json
   if ($p.MigrationRequested) {
     $migrationAttempted = $true; $report.migration.state = 'attemptedUnknown'
-    $migrationJson = & (Join-Path $PSScriptRoot 'run-migrations.ps1') -ReleasePath (Join-Path $canonicalRoot "releases\$($p.ReleaseSha)") -NpxExe $p.NpxExe -PsqlExe $p.PsqlExe -Root $canonicalRoot -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl -AllowProductionMigration:$p.ProductionMigrationApproved -BackupVerified | Select-Object -Last 1
+    $migrationJson = & (Join-Path $PSScriptRoot 'run-migrations.ps1') -ReleaseSha $p.ReleaseSha -ReleasePath (Join-Path $canonicalRoot "releases\$($p.ReleaseSha)") -NpxExe $p.NpxExe -PsqlExe $p.PsqlExe -Root $canonicalRoot -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl -AllowProductionMigration:$p.ProductionMigrationApproved -BackupVerified | Select-Object -Last 1
     $migrationResult = $migrationJson | ConvertFrom-Json
     if (-not $migrationResult.PSObject.Properties.Name.Contains('state') -or $migrationResult.state -ne 'completed') { throw 'Migration completion summary is missing or not completed.' }
     $report.migration = $migrationResult
@@ -72,7 +72,12 @@ try {
         $report.rollback = [ordered]@{ state = 'firstDeployFailedStopped'; failedRelease = $p.ReleaseSha; quarantinePointer = $quarantine.pointer }
       } catch { $report.rollback = [ordered]@{ state = 'firstDeployStopFailed'; errorCategory = Get-SafeErrorCategory $_; failedRelease = $p.ReleaseSha } }
     }
-    elseif ($migrationAttempted -and -not $p.RollbackCompatibilityApproved) { $report.rollback = [ordered]@{ state = 'stoppedCompatibilityApprovalRequired' } }
+    elseif ($migrationAttempted -and -not $p.RollbackCompatibilityApproved) {
+      try {
+        Stop-ExactBaoGiangRuntime -Marker $marker -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName | Out-Null
+        $report.rollback = [ordered]@{ state = 'stoppedCompatibilityApprovalRequired' }
+      } catch { $report.rollback = [ordered]@{ state = 'stopFailedCompatibilityApprovalRequired'; errorCategory = Get-SafeErrorCategory $_ } }
+    }
     else {
       try {
         $rollbackJson = & (Join-Path $PSScriptRoot 'rollback-release.ps1') -Root $canonicalRoot -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -NodeExe $p.NodeExe -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl -CompatibilityApproved:$p.RollbackCompatibilityApproved -MigrationAttempted:$migrationAttempted | Select-Object -Last 1

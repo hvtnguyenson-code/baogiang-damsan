@@ -18,10 +18,7 @@ $ErrorActionPreference = 'Stop'
 if (-not $BackupVerified) { throw 'A verified database backup is required before capability catalog synchronization.' }
 $identity = Read-DeploymentIdentity -Root $Root -ServiceKind $ServiceKind -ServiceName $ServiceName -EnvFile $EnvFile -StartupWrapper $StartupWrapper -ExpectedEntryPoint $ExpectedEntryPoint
 $canonicalRoot = $identity.canonicalRoot
-$releasesRoot = Assert-ExactChildPath $canonicalRoot 'releases'
-$expectedRelease = Assert-ExactChildPath $canonicalRoot "releases\$ReleaseSha"
-$release = Get-CanonicalPath $ReleasePath
-if ((Normalize-ComparablePath $release) -ne (Normalize-ComparablePath $expectedRelease) -or -not (Test-PathWithin $expectedRelease $releasesRoot) -or (Split-Path -Leaf $expectedRelease) -cne $ReleaseSha -or -not (Test-Path -LiteralPath $expectedRelease -PathType Container)) { throw 'Release path does not match the exact requested release identity.' }
+$release = Assert-ExactReleasePath -Root $canonicalRoot -ReleaseSha $ReleaseSha -ReleasePath $ReleasePath
 Assert-ExecutableContract @{ NodeExe = $NodeExe }
 Import-ServerEnvironment -EnvFile $EnvFile -ExpectedBaseUrl $ExpectedBaseUrl | Out-Null
 $cli = Join-Path $release 'scripts\deploy\node\sync-capability-catalog.cjs'

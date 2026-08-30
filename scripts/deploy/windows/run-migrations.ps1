@@ -1,5 +1,6 @@
 [CmdletBinding()]
 param(
+  [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{40}$')][string]$ReleaseSha,
   [Parameter(Mandatory = $true)][ValidateScript({ [IO.Path]::IsPathRooted($_) })][string]$ReleasePath,
   [Parameter(Mandatory = $true)][ValidateScript({ Test-Path -LiteralPath $_ -PathType Leaf })][string]$NpxExe,
   [Parameter(Mandatory = $true)][ValidateScript({ Test-Path -LiteralPath $_ -PathType Leaf })][string]$PsqlExe,
@@ -19,11 +20,12 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'deployment-common.ps1')
 if (-not $AllowProductionMigration) { throw 'Production migration is disabled unless explicitly authorized.' }
 if (-not $BackupVerified) { throw 'A verified database backup is required before migration.' }
-Read-DeploymentIdentity -Root $Root -ServiceKind $ServiceKind -ServiceName $ServiceName -EnvFile $EnvFile -StartupWrapper $StartupWrapper -ExpectedEntryPoint $ExpectedEntryPoint | Out-Null
+$identity = Read-DeploymentIdentity -Root $Root -ServiceKind $ServiceKind -ServiceName $ServiceName -EnvFile $EnvFile -StartupWrapper $StartupWrapper -ExpectedEntryPoint $ExpectedEntryPoint
+$release = Assert-ExactReleasePath -Root $identity.canonicalRoot -ReleaseSha $ReleaseSha -ReleasePath $ReleasePath
+$schema = Get-CanonicalPath (Join-Path $release 'prisma\schema.prisma')
+if (-not (Test-Path -LiteralPath $schema -PathType Leaf) -or -not (Test-PathWithin $schema $release)) { throw 'Prisma schema is missing from the exact release.' }
 Import-ServerEnvironment -EnvFile $EnvFile -ExpectedBaseUrl $ExpectedBaseUrl | Out-Null
 Assert-ExecutableContract @{ NpxExe = $NpxExe; PsqlExe = $PsqlExe }
-$schema = Join-Path $ReleasePath 'prisma\schema.prisma'
-if (-not (Test-Path -LiteralPath $schema -PathType Leaf)) { throw 'Prisma schema is missing from release.' }
 $databaseUrl = [Environment]::GetEnvironmentVariable($DatabaseUrlEnvironmentVariable)
 $parts = Set-PostgresProcessEnvironment -DatabaseUrl $databaseUrl -ExpectedPort 5433
 function Get-MigrationState([string]$Phase) {
