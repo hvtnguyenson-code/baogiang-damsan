@@ -1,6 +1,4 @@
-import fs from 'node:fs';
 import { createRequire } from 'node:module';
-import path from 'node:path';
 import { CapabilityKey } from '@baogiang/contracts';
 import { BOOTSTRAP_TECHNICAL_CAPABILITIES } from '../../src/bootstrap/bootstrap-admin';
 
@@ -11,16 +9,12 @@ describe('time-slot capability catalog', () => {
     expect(BOOTSTRAP_TECHNICAL_CAPABILITIES).not.toContain(key);
   });
 
-  it('seeds TIMETABLE_MANAGE exactly once at SCHOOL_WIDE', () => {
+  it('defines TIMETABLE_MANAGE exactly once at SCHOOL_WIDE', () => {
+    const key: CapabilityKey = 'TIMETABLE_MANAGE';
     const load = createRequire(__filename);
-    const { CAPABILITIES } = load('../../../../prisma/seed.cjs') as {
+    const { CAPABILITIES } = load('../../../../prisma/capability-catalog.cjs') as {
       CAPABILITIES: Array<[string, string, string[]]>;
     };
-    const seed = fs.readFileSync(path.resolve(__dirname, '../../../../prisma/seed.cjs'), 'utf8');
-    const keys = CAPABILITIES.map(([key]) => key);
-    expect(keys.filter((key) => key === 'TIMETABLE_MANAGE')).toHaveLength(1);
-    expect(seed).toMatch(/\['TIMETABLE_MANAGE',[\s\S]*?\['SCHOOL_WIDE'\]\]/u);
-    expect(seed.match(/TIMETABLE_MANAGE/gu)).toHaveLength(1);
-    expect(seed).toContain('prisma.capabilityDefinition.upsert');
+    expect(CAPABILITIES.filter(([candidate]) => candidate === key)).toEqual([[key, expect.any(String), ['SCHOOL_WIDE']]]);
   });
 });
