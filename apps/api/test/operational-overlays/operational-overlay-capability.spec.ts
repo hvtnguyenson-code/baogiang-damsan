@@ -1,4 +1,6 @@
 import { createRequire } from 'node:module';
+import fs from 'node:fs';
+import path from 'node:path';
 
 describe('operational overlay capability catalog', () => {
   const load = createRequire(__filename);
@@ -13,7 +15,7 @@ describe('operational overlay capability catalog', () => {
 
   it('has unique definitions and the catalog synchronizer creates no grants', () => {
     expect(new Set(CAPABILITIES.map(([key]) => key))).toHaveProperty('size', CAPABILITIES.length);
-    const catalog = require('node:fs').readFileSync(require('node:path').resolve(__dirname, '../../../../prisma/capability-catalog.cjs'), 'utf8');
+    const catalog = fs.readFileSync(path.resolve(__dirname, '../../../../prisma/capability-catalog.cjs'), 'utf8');
     expect(catalog).not.toMatch(/capabilityGrant\.(?:create|createMany|upsert)/u);
   });
 });
