@@ -96,7 +96,7 @@ jobs:
           expected_host="$PROD_SSH_HOST"; if [[ "$PROD_SSH_PORT" != "22" ]]; then expected_host="[$PROD_SSH_HOST]:$PROD_SSH_PORT"; fi
           read -r known_host known_type known_key known_extra <<< "$PROD_SSH_HOST_KEY"
           [[ -z "${known_extra:-}" && "$known_host" == "$expected_host" ]]
-          case "$known_type" in ssh-ed25519|ecdsa-sha2-nistp256|rsa-sha2-256|rsa-sha2-512) ;; *) exit 1 ;; esac
+          case "$known_type" in ssh-ed25519|ecdsa-sha2-nistp256|ecdsa-sha2-nistp384|ecdsa-sha2-nistp521|ssh-rsa) ;; *) exit 1 ;; esac
           printf '%s' "$known_key" | base64 --decode >/dev/null 2>&1
           echo "Target SHA: $TARGET_SHA"
 

@@ -103,6 +103,17 @@ function Resolve-DatabaseVerifierExecutable([switch]$VerifyDatabase,[AllowNull()
   return Assert-ExactPsqlExecutable -Path $PsqlExe
 }
 
+function Resolve-ExpectedCandidateRuntimeName([AllowNull()][string]$ServiceKind,[AllowNull()][string]$ExpectedTaskName,[AllowNull()][string]$ExpectedServiceName,[switch]$RequireReviewedIsolation) {
+  if (-not $RequireReviewedIsolation) { return $null }
+  if ($ServiceKind -notin @('scheduled-task','service')) { throw 'Verified first-deploy isolation requires an exact ServiceKind.' }
+  $selected = if ($ServiceKind -eq 'scheduled-task') { $ExpectedTaskName } else { $ExpectedServiceName }
+  $unselected = if ($ServiceKind -eq 'scheduled-task') { $ExpectedServiceName } else { $ExpectedTaskName }
+  if ([string]::IsNullOrWhiteSpace($selected)) { throw 'Verified first-deploy isolation requires the corresponding expected runtime name.' }
+  if (-not [string]::IsNullOrWhiteSpace($unselected)) { throw 'Verified first-deploy isolation candidate identity is ambiguous.' }
+  if ($selected -notmatch '^[A-Za-z0-9._-]{1,128}$') { throw 'Expected runtime name does not match the safe service-name syntax.' }
+  return $selected
+}
+
 function Get-ProtectedNeighborIsolationEvidence(
   [Parameter(Mandatory = $true)][string]$CandidateRoot,
   [string[]]$KnownForeignRoot = @(),
@@ -110,10 +121,13 @@ function Get-ProtectedNeighborIsolationEvidence(
   [string[]]$KnownForeignName = @(),
   [switch]$RequireReviewedInputs
 ) {
-  if ($RequireReviewedInputs -and (@($KnownForeignRoot | Where-Object { [string]::IsNullOrWhiteSpace($_) }).Count -gt 0 -or @($KnownForeignName | Where-Object { [string]::IsNullOrWhiteSpace($_) }).Count -gt 0)) { throw 'Reviewed protected-neighbor inputs may not contain empty values.' }
+  if ($RequireReviewedInputs -and (@($KnownForeignRoot | Where-Object { [string]::IsNullOrWhiteSpace($_) }).Count -gt 0 -or @($KnownForeignName | Where-Object { [string]::IsNullOrWhiteSpace($_) }).Count -gt 0 -or @($CandidateName | Where-Object { [string]::IsNullOrWhiteSpace($_) }).Count -gt 0)) { throw 'Reviewed protected-neighbor inputs may not contain empty values.' }
   $foreignRoots = @($KnownForeignRoot | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
   $foreignNames = @($KnownForeignName | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+  $candidateNames = @($CandidateName | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
   if ($RequireReviewedInputs -and ($foreignRoots.Count -eq 0 -or $foreignNames.Count -eq 0)) { throw 'Verified first-deploy preflight requires reviewed KnownForeignRoot and KnownForeignName inputs.' }
+  if ($RequireReviewedInputs -and $candidateNames.Count -ne 1) { throw 'Verified first-deploy preflight requires exactly one expected candidate runtime name.' }
+  if ($RequireReviewedInputs -and $candidateNames[0] -notmatch '^[A-Za-z0-9._-]{1,128}$') { throw 'Expected candidate runtime name does not match the safe service-name syntax.' }
   if ($foreignRoots.Count -eq 0 -and $foreignNames.Count -eq 0) { return [ordered]@{ status = 'NOT_RUN'; foreignInputs = @() } }
   $candidate = Normalize-ComparablePath $CandidateRoot
   foreach ($foreignRoot in $foreignRoots) {
@@ -123,15 +137,40 @@ function Get-ProtectedNeighborIsolationEvidence(
       return [ordered]@{ status = 'CONFLICT'; foreignInputs = @($foreignRoots + $foreignNames); conflictType = 'PATH_OVERLAP' }
     }
   }
-  foreach ($name in @($CandidateName | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })) {
+  foreach ($name in $candidateNames) {
     if (@($foreignNames | Where-Object { $_ -ieq $name }).Count -gt 0) { return [ordered]@{ status = 'CONFLICT'; foreignInputs = @($foreignRoots + $foreignNames); conflictType = 'NAME_OVERLAP' } }
   }
   return [ordered]@{ status = if ($RequireReviewedInputs) { 'EXISTS AND VERIFIED' } else { 'REQUIRES_REVIEW' }; foreignInputs = @($foreignRoots + $foreignNames) }
 }
 
-function Get-SshPublicHostKeyEvidence([Parameter(Mandatory = $true)][string]$ConfigPath) {
+function Get-SshDirectConfigEvidence([Parameter(Mandatory = $true)][string]$ConfigPath) {
+  $config = Get-CanonicalPath $ConfigPath
+  if (-not (Test-Path -LiteralPath $config -PathType Leaf)) { return [ordered]@{ effectiveConfigState = 'NOT_VERIFIED'; configPath = $config; configuredPorts = @(); activeIncludes = @(); reason = 'SSH_CONFIG_MISSING' } }
+  $activeIncludes = @(); $configuredPorts = @()
+  foreach ($line in Get-Content -LiteralPath $config) {
+    if ($line -match '^\s*Include\s+(.+?)\s*$') { $activeIncludes += [ordered]@{ patternSha256 = Get-SensitiveTextHash $Matches[1]; safePathHints = @(Get-SafePathHints $Matches[1]) }; continue }
+    if ($line -match '^\s*Port\s+(\d+)(?:\s|#|$)') { $configuredPorts += [int]$Matches[1] }
+  }
+  if ($activeIncludes.Count -gt 0) { return [ordered]@{ effectiveConfigState = 'NOT_VERIFIED'; configPath = $config; configuredPorts = @(); activeIncludes = $activeIncludes; defaultPortApplied = $false; reason = 'ACTIVE_INCLUDE_REQUIRES_REVIEW' } }
+  $ports = @($configuredPorts | Sort-Object -Unique)
+  $defaultApplied = $ports.Count -eq 0
+  if ($defaultApplied) { $ports = @(22) }
+  return [ordered]@{ effectiveConfigState = 'DISCOVERED'; configPath = $config; configuredPorts = $ports; activeIncludes = @(); defaultPortApplied = $defaultApplied }
+}
+
+function Get-SshPortEvidence([Parameter(Mandatory = $true)][string]$EffectiveConfigState,[Parameter(Mandatory = $true)][AllowEmptyCollection()][int[]]$ConfiguredPort,[Parameter(Mandatory = $true)][AllowEmptyCollection()][int[]]$ListeningPort,[switch]$ServiceRunning) {
+  $configured = @($ConfiguredPort | ForEach-Object { [int]$_ } | Sort-Object -Unique)
+  $listening = @($ListeningPort | ForEach-Object { [int]$_ } | Sort-Object -Unique)
+  if ($EffectiveConfigState -ne 'DISCOVERED') { return [ordered]@{ state = 'NOT_VERIFIED'; configuredPorts = $configured; listeningPorts = $listening; agreedPorts = @(); reason = 'EFFECTIVE_CONFIG_NOT_VERIFIED' } }
+  if (-not $ServiceRunning -or $configured.Count -eq 0 -or $listening.Count -eq 0) { return [ordered]@{ state = 'NOT_VERIFIED'; configuredPorts = $configured; listeningPorts = $listening; agreedPorts = @(); reason = 'ACTUAL_SSHD_LISTENER_NOT_VERIFIED' } }
+  if (@(Compare-Object -ReferenceObject $configured -DifferenceObject $listening).Count -gt 0) { return [ordered]@{ state = 'CONFLICT'; configuredPorts = $configured; listeningPorts = $listening; agreedPorts = @(); reason = 'CONFIGURED_LISTENER_PORT_MISMATCH' } }
+  return [ordered]@{ state = 'DISCOVERED'; configuredPorts = $configured; listeningPorts = $listening; agreedPorts = $configured }
+}
+
+function Get-SshPublicHostKeyEvidence([Parameter(Mandatory = $true)][string]$ConfigPath,[bool]$EffectiveConfigVerified = $true) {
   $config = Get-CanonicalPath $ConfigPath
   if (-not (Test-Path -LiteralPath $config -PathType Leaf)) { return [ordered]@{ state = 'MISSING'; configPath = $config; keys = @() } }
+  if (-not $EffectiveConfigVerified) { return [ordered]@{ state = 'NOT_VERIFIED'; configPath = $config; source = 'UNRESOLVED_EFFECTIVE_CONFIG'; keys = @(); reason = 'ACTIVE_INCLUDE_REQUIRES_REVIEW' } }
   $configured = @(); $source = 'CONFIGURED'
   foreach ($line in Get-Content -LiteralPath $config) {
     if ($line -match '^\s*HostKey\s+(?:"([^"]+)"|([^#\s]+))') {

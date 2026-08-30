@@ -108,7 +108,7 @@ $forbiddenPreflightMutations = @(
 foreach ($forbiddenMutation in $forbiddenPreflightMutations) {
   if ($preflightText -match [regex]::Escape($forbiddenMutation)) { throw "Read-only production preflight contains forbidden mutation token: $forbiddenMutation" }
 }
-foreach ($requiredPreflightToken in @('RequireReviewedIsolation','Resolve-DatabaseVerifierExecutable','Get-ProtectedNeighborIsolationEvidence','Get-SshPublicHostKeyEvidence','Get-SshFirewallEvidence','& $databaseVerifier --tuples-only','argumentsSha256','pathNameSha256')) {
+foreach ($requiredPreflightToken in @('RequireReviewedIsolation','Resolve-ExpectedCandidateRuntimeName','Resolve-DatabaseVerifierExecutable','Get-ProtectedNeighborIsolationEvidence','Get-SshDirectConfigEvidence','Get-SshPortEvidence','Get-SshPublicHostKeyEvidence','Get-SshFirewallEvidence','-SshPort @($portEvidence.agreedPorts)','& $databaseVerifier --tuples-only','argumentsSha256','pathNameSha256')) {
   if ($preflightText -notmatch [regex]::Escape($requiredPreflightToken)) { throw "Production preflight is missing required evidence token: $requiredPreflightToken" }
 }
 if ($preflightText -match 'Get-Command\s+psql\b|argumentsRedacted|pathNameRedacted') { throw 'Production preflight contains a PATH-based DB verifier or unsafe raw command evidence.' }
@@ -149,8 +149,31 @@ if ($summaryUnavailable.state -ne 'PARTIAL' -or $summaryUnavailable.migrationSta
 $emptyIsolationRejected = $false
 try { Get-ProtectedNeighborIsolationEvidence -CandidateRoot 'C:\baogiang' -RequireReviewedInputs | Out-Null } catch { $emptyIsolationRejected = $true }
 if (-not $emptyIsolationRejected) { throw 'Verified first-deploy isolation accepted empty reviewed inputs.' }
+$missingCandidateRejected = $false
+try { Get-ProtectedNeighborIsolationEvidence -CandidateRoot 'C:\baogiang' -KnownForeignRoot @('C:\DamSanV5') -KnownForeignName @('DamSanV5Backend') -RequireReviewedInputs | Out-Null } catch { $missingCandidateRejected = $true }
+if (-not $missingCandidateRejected) { throw 'I1 verified isolation accepted an empty candidate runtime name.' }
+$missingKindRejected = $false
+try { Resolve-ExpectedCandidateRuntimeName -ExpectedTaskName 'BaoGiangBackend' -RequireReviewedIsolation | Out-Null } catch { $missingKindRejected = $true }
+if (-not $missingKindRejected) { throw 'I2 verified isolation accepted a missing ServiceKind.' }
+$missingTaskNameRejected = $false
+try { Resolve-ExpectedCandidateRuntimeName -ServiceKind 'scheduled-task' -RequireReviewedIsolation | Out-Null } catch { $missingTaskNameRejected = $true }
+if (-not $missingTaskNameRejected) { throw 'I3 scheduled-task isolation accepted a missing ExpectedTaskName.' }
+$missingServiceNameRejected = $false
+try { Resolve-ExpectedCandidateRuntimeName -ServiceKind 'service' -RequireReviewedIsolation | Out-Null } catch { $missingServiceNameRejected = $true }
+if (-not $missingServiceNameRejected) { throw 'I4 service isolation accepted a missing ExpectedServiceName.' }
+$ambiguousCandidateRejected = $false
+try { Resolve-ExpectedCandidateRuntimeName -ServiceKind 'scheduled-task' -ExpectedTaskName 'BaoGiangBackend' -ExpectedServiceName 'BaoGiangService' -RequireReviewedIsolation | Out-Null } catch { $ambiguousCandidateRejected = $true }
+if (-not $ambiguousCandidateRejected) { throw 'Verified isolation accepted an ambiguous candidate runtime identity.' }
+$unsafeCandidateRejected = $false
+try { Resolve-ExpectedCandidateRuntimeName -ServiceKind 'scheduled-task' -ExpectedTaskName 'Bao Giang Backend' -RequireReviewedIsolation | Out-Null } catch { $unsafeCandidateRejected = $true }
+if (-not $unsafeCandidateRejected) { throw 'Verified isolation accepted an unsafe candidate runtime name.' }
+$candidateRuntimeName = Resolve-ExpectedCandidateRuntimeName -ServiceKind 'scheduled-task' -ExpectedTaskName 'BaoGiangBackend' -RequireReviewedIsolation
+$nameConflictIsolation = Get-ProtectedNeighborIsolationEvidence -CandidateRoot 'C:\baogiang' -KnownForeignRoot @('C:\DamSanV5') -CandidateName @($candidateRuntimeName) -KnownForeignName @('baogiangbackend') -RequireReviewedInputs
+if ($nameConflictIsolation.status -ne 'CONFLICT' -or $nameConflictIsolation.conflictType -ne 'NAME_OVERLAP') { throw 'I5 case-insensitive exact runtime-name overlap was not classified as conflict.' }
 $reviewedIsolation = Get-ProtectedNeighborIsolationEvidence -CandidateRoot 'C:\baogiang' -KnownForeignRoot @('C:\DamSanV5') -CandidateName @('BaoGiangBackend') -KnownForeignName @('DamSanV5Backend') -RequireReviewedInputs
-if ($reviewedIsolation.status -ne 'EXISTS AND VERIFIED') { throw 'Reviewed protected-neighbor inputs were not accepted.' }
+if ($reviewedIsolation.status -ne 'EXISTS AND VERIFIED') { throw 'I6 reviewed protected-neighbor inputs were not accepted.' }
+$nonFuzzyIsolation = Get-ProtectedNeighborIsolationEvidence -CandidateRoot 'C:\baogiang' -KnownForeignRoot @('C:\DamSanV5') -CandidateName @('BaoGiangBackend') -KnownForeignName @('BaoGiangBackendOld') -RequireReviewedInputs
+if ($nonFuzzyIsolation.status -ne 'EXISTS AND VERIFIED') { throw 'Distinct runtime names were incorrectly fuzzy-matched.' }
 $overlapIsolation = Get-ProtectedNeighborIsolationEvidence -CandidateRoot 'C:\baogiang' -KnownForeignRoot @('C:\baogiang\legacy') -CandidateName @('BaoGiangBackend') -KnownForeignName @('DamSanV5Backend') -RequireReviewedInputs
 if ($overlapIsolation.status -ne 'CONFLICT' -or $overlapIsolation.conflictType -ne 'PATH_OVERLAP') { throw 'Protected-neighbor path overlap was not classified as conflict.' }
 $hostileTaskArguments = 'C:\apps\baogiang\server.js --token arbitrary-secret-value --password another-secret'
@@ -184,6 +207,30 @@ try {
   }
   $sshFixtureRoot = Join-Path $temp 'ssh evidence'
   New-Item -ItemType Directory -Path $sshFixtureRoot -Force | Out-Null
+  $simpleSshConfig = Join-Path $sshFixtureRoot 'sshd_config_simple'
+  [IO.File]::WriteAllText($simpleSshConfig, 'Port 2222')
+  $simpleConfigEvidence = Get-SshDirectConfigEvidence -ConfigPath $simpleSshConfig
+  $matchingPortEvidence = Get-SshPortEvidence -EffectiveConfigState $simpleConfigEvidence.effectiveConfigState -ConfiguredPort @($simpleConfigEvidence.configuredPorts) -ListeningPort @(2222) -ServiceRunning
+  if ($simpleConfigEvidence.effectiveConfigState -ne 'DISCOVERED' -or $matchingPortEvidence.state -ne 'DISCOVERED' -or $matchingPortEvidence.agreedPorts[0] -ne 2222) { throw 'S1 exact configured/listening SSH port fixture failed.' }
+  $mismatchedPortEvidence = Get-SshPortEvidence -EffectiveConfigState 'DISCOVERED' -ConfiguredPort @(22) -ListeningPort @(2222) -ServiceRunning
+  if ($mismatchedPortEvidence.state -ne 'CONFLICT' -or @($mismatchedPortEvidence.agreedPorts).Count -ne 0) { throw 'S2 configured/listening SSH port mismatch was not rejected.' }
+  $unavailableListenerEvidence = Get-SshPortEvidence -EffectiveConfigState 'DISCOVERED' -ConfiguredPort @(2222) -ListeningPort @() -ServiceRunning
+  if ($unavailableListenerEvidence.state -ne 'NOT_VERIFIED' -or @($unavailableListenerEvidence.agreedPorts).Count -ne 0) { throw 'Known SSH config with unavailable actual listener was incorrectly verified.' }
+  $multiplePortEvidence = Get-SshPortEvidence -EffectiveConfigState 'DISCOVERED' -ConfiguredPort @(2222,2200) -ListeningPort @(2200,2222) -ServiceRunning
+  if ($multiplePortEvidence.state -ne 'DISCOVERED' -or @($multiplePortEvidence.agreedPorts).Count -ne 2) { throw 'Exact multiple SSH port sets were not accepted.' }
+  $includedSshConfig = Join-Path $sshFixtureRoot 'sshd_config_include'
+  [IO.File]::WriteAllText($includedSshConfig, 'Include sshd_config.d\*.conf')
+  $includedConfigEvidence = Get-SshDirectConfigEvidence -ConfigPath $includedSshConfig
+  $includedHostKeyEvidence = Get-SshPublicHostKeyEvidence -ConfigPath $includedSshConfig -EffectiveConfigVerified:$false
+  if ($includedConfigEvidence.effectiveConfigState -ne 'NOT_VERIFIED' -or $includedConfigEvidence.reason -ne 'ACTIVE_INCLUDE_REQUIRES_REVIEW' -or @($includedConfigEvidence.configuredPorts).Count -ne 0 -or $includedConfigEvidence.defaultPortApplied -ne $false -or $includedHostKeyEvidence.state -ne 'NOT_VERIFIED' -or @($includedHostKeyEvidence.keys).Count -ne 0) { throw 'S3 active SSH Include synthesized false effective evidence.' }
+  $commentedIncludeConfig = Join-Path $sshFixtureRoot 'sshd_config_commented_include'
+  [IO.File]::WriteAllLines($commentedIncludeConfig, @('# Include sshd_config.d\*.conf','Port 2222'))
+  $commentedIncludeEvidence = Get-SshDirectConfigEvidence -ConfigPath $commentedIncludeConfig
+  if ($commentedIncludeEvidence.effectiveConfigState -ne 'DISCOVERED' -or $commentedIncludeEvidence.configuredPorts[0] -ne 2222) { throw 'S4 commented SSH Include incorrectly blocked direct config evidence.' }
+  $defaultPortConfig = Join-Path $sshFixtureRoot 'sshd_config_default_port'
+  [IO.File]::WriteAllText($defaultPortConfig, '# no active Include or Port')
+  $defaultPortEvidence = Get-SshDirectConfigEvidence -ConfigPath $defaultPortConfig
+  if ($defaultPortEvidence.effectiveConfigState -ne 'DISCOVERED' -or $defaultPortEvidence.defaultPortApplied -ne $true -or $defaultPortEvidence.configuredPorts[0] -ne 22) { throw 'S5 safe OpenSSH default-port evidence fixture failed.' }
   $edPrivatePath = Join-Path $sshFixtureRoot 'ssh_host_ed25519_key'
   $rsaPrivatePath = Join-Path $sshFixtureRoot 'ssh_host_rsa_key'
   [IO.File]::WriteAllText($edPrivatePath, 'PRIVATE_KEY_SENTINEL_DO_NOT_REPORT')

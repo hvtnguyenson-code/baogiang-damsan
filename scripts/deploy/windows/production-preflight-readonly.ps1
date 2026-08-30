@@ -60,25 +60,29 @@ function Get-DirectorySnapshot([string]$Path) {
 
 function Get-SshSnapshot {
   $service = Get-CimInstance Win32_Service -ErrorAction SilentlyContinue | Where-Object { $_.Name -ceq 'sshd' } | Select-Object -First 1
-  $config = $null; $ports = @()
+  $config = $null
   if ($service) {
     $match = [regex]::Match($service.PathName, '(?i)(?:-f|--config)\s+(?:"([^"]+)"|([^\s]+))')
     if ($match.Success) { $config = if ($match.Groups[1].Success) { $match.Groups[1].Value } else { $match.Groups[2].Value } }
   }
   if (-not $config) { $config = Join-Path $env:ProgramData 'ssh\sshd_config' }
-  if (Test-Path -LiteralPath $config -PathType Leaf) {
-    $ports = @(Get-Content -LiteralPath $config | Where-Object { $_ -match '^\s*Port\s+(\d+)' } | ForEach-Object { [int]$Matches[1] })
-    if ($ports.Count -eq 0) { $ports = @(22) }
-  }
+  $configEvidence = Get-SshDirectConfigEvidence -ConfigPath $config
   $sshdProcessId = if ($service) { [int]$service.ProcessId } else { 0 }
   $listeningPorts = if ($sshdProcessId -gt 0) { @(Get-NetTCPConnection -State Listen -OwningProcess $sshdProcessId -ErrorAction SilentlyContinue | Select-Object -ExpandProperty LocalPort -Unique) } else { @() }
+  $portEvidence = Get-SshPortEvidence -EffectiveConfigState $configEvidence.effectiveConfigState -ConfiguredPort @($configEvidence.configuredPorts) -ListeningPort $listeningPorts -ServiceRunning:($service -and $service.State -ieq 'Running')
+  $hostKeyEvidence = Get-SshPublicHostKeyEvidence -ConfigPath $config -EffectiveConfigVerified:($configEvidence.effectiveConfigState -eq 'DISCOVERED')
+  $firewallEvidence = Get-SshFirewallEvidence -SshPort @($portEvidence.agreedPorts)
+  $sshState = if ($portEvidence.state -eq 'CONFLICT' -or $firewallEvidence.state -eq 'CONFLICT') { 'CONFLICT' } elseif ($configEvidence.effectiveConfigState -eq 'DISCOVERED' -and $portEvidence.state -eq 'DISCOVERED' -and $hostKeyEvidence.state -eq 'DISCOVERED' -and $firewallEvidence.state -eq 'DISCOVERED') { 'DISCOVERED' } elseif ($hostKeyEvidence.state -eq 'PARTIAL') { 'PARTIAL' } else { 'NOT_VERIFIED' }
   [ordered]@{
+    state = $sshState
     service = if ($service) { [ordered]@{ name = $service.Name; state = $service.State; startName = $service.StartName; pathNameSha256 = Get-SensitiveTextHash ([string]$service.PathName); safePathHints = @(Get-SafePathHints ([string]$service.PathName)) } } else { [ordered]@{ state = 'MISSING' } }
     configPath = Get-CanonicalPath $config
-    configuredPorts = $ports
-    listeningPorts = $listeningPorts
-    hostKeys = Get-SshPublicHostKeyEvidence -ConfigPath $config
-    firewall = Get-SshFirewallEvidence -SshPort @($ports + $listeningPorts | Select-Object -Unique)
+    effectiveConfig = $configEvidence
+    configuredPorts = @($configEvidence.configuredPorts)
+    actualSshdListeningPorts = $listeningPorts
+    portEvidence = $portEvidence
+    hostKeys = $hostKeyEvidence
+    firewall = $firewallEvidence
   }
 }
 
@@ -148,7 +152,9 @@ $databaseVerifier = Resolve-DatabaseVerifierExecutable -VerifyDatabase:$VerifyDa
 $reportDirectory = Split-Path -Parent ([IO.Path]::GetFullPath($ReportPath))
 if (-not (Test-Path -LiteralPath $reportDirectory -PathType Container)) { throw 'Report directory must already exist; inventory will not create it.' }
 $directoryPaths = @($canonicalRoot,'releases','staging','incoming','shared','logs','backups' | ForEach-Object { if ($_ -eq $canonicalRoot) { $_ } else { Join-Path $canonicalRoot $_ } })
-$isolation = Get-ProtectedNeighborIsolationEvidence -CandidateRoot $canonicalRoot -KnownForeignRoot $KnownForeignRoot -CandidateName @($ExpectedTaskName,$ExpectedServiceName) -KnownForeignName $KnownForeignName -RequireReviewedInputs:$RequireReviewedIsolation
+$candidateRuntimeName = Resolve-ExpectedCandidateRuntimeName -ServiceKind $ServiceKind -ExpectedTaskName $ExpectedTaskName -ExpectedServiceName $ExpectedServiceName -RequireReviewedIsolation:$RequireReviewedIsolation
+$candidateNames = if ($RequireReviewedIsolation) { @($candidateRuntimeName) } else { @(@($ExpectedTaskName,$ExpectedServiceName) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) }
+$isolation = Get-ProtectedNeighborIsolationEvidence -CandidateRoot $canonicalRoot -KnownForeignRoot $KnownForeignRoot -CandidateName $candidateNames -KnownForeignName $KnownForeignName -RequireReviewedInputs:$RequireReviewedIsolation
 $identityStatus = 'REQUIRES_REVIEW'
 if ($RequireVerifiedIdentity) {
   if ([string]::IsNullOrWhiteSpace($ExpectedTaskName) -and [string]::IsNullOrWhiteSpace($ExpectedServiceName)) { throw 'Verified identity requires an exact task or service name.' }
