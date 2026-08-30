@@ -14,6 +14,9 @@ const restart = read('scripts/deploy/windows/restart-baogiang-api.ps1');
 const rollback = read('scripts/deploy/windows/rollback-release.ps1');
 const migration = read('scripts/deploy/windows/run-migrations.ps1');
 const catalog = read('scripts/deploy/windows/sync-capability-catalog.ps1');
+const discovery = read('scripts/deploy/windows/production-protected-neighbor-discovery.ps1');
+const preflight = read('scripts/deploy/windows/production-preflight-readonly.ps1');
+const firstDeployRunbook = read('docs/operations/PRODUCTION-CD-FIRST-DEPLOY-RUNBOOK.md');
 const remote = require('./build-windows-remote-command.cjs');
 
 function redact(text) {
@@ -65,4 +68,9 @@ assert.match(invoke, /firstDeployFailedStopped/); assert.match(invoke, /firstDep
 assert.match(catalog, /ReleaseSha/); assert.match(catalog, /Assert-ExactReleasePath/); assert.match(catalog, /BackupVerified/); assert.match(catalog, /sync-capability-catalog\.cjs/); assert.match(invoke, /capabilityCatalog/); assert.ok(invoke.indexOf('backup-database.ps1') < invoke.indexOf('run-migrations.ps1')); assert.ok(invoke.indexOf('run-migrations.ps1') < invoke.indexOf('sync-capability-catalog.ps1')); assert.ok(invoke.indexOf('sync-capability-catalog.ps1') < invoke.indexOf('switch-current-release.ps1')); assert.doesNotMatch(invoke, /prisma:seed/);
 assert.match(workflow, /rev-list --first-parent origin\/main/); assert.doesNotMatch(workflow, /merge-base --is-ancestor/); assert.match(workflow, /\.event == "push"/); assert.match(workflow, /\.head_branch == "main"/);
 assert.match(workflow, /Read-only marker handshake before transfer/); assert.match(workflow, /-EncodedCommand/); assert.doesNotMatch(workflow, /powershell\.exe -NoProfile -NonInteractive -Command/); assert.match(workflow, /Retrieve redacted deploy report/); assert.match(workflow, /if-no-files-found: error/); assert.match(workflow, /upload-artifact@v4/); assert.match(workflow, /if: always\(\)/);
-console.log('[deployment-behavior] PASS (redaction, identity, artifact, native-command, migration, rollback and transfer fixtures)');
+assert.match(discovery, /mode='READ_ONLY_DISCOVERY'/); assert.match(discovery, /mutationsPerformed=\$false/); assert.match(discovery, /databaseAuthenticationAttempted=\$false/); assert.match(discovery, /conclusion='REQUIRES_REVIEW'/);
+assert.ok(firstDeployRunbook.indexOf('production-protected-neighbor-discovery.ps1') < firstDeployRunbook.indexOf('production-preflight-readonly.ps1'));
+assert.match(preflight, /RequireReviewedIsolation/); assert.match(preflight, /Get-ProtectedNeighborIsolationEvidence/); assert.match(preflight, /Get-SshPublicHostKeyEvidence/); assert.match(preflight, /Get-SshFirewallEvidence/);
+assert.match(preflight, /Resolve-DatabaseVerifierExecutable/); assert.doesNotMatch(preflight, /Get-Command\s+psql\b/i); assert.match(preflight, /& \$databaseVerifier --tuples-only/);
+assert.doesNotMatch(preflight, /argumentsRedacted|pathNameRedacted/); assert.match(preflight, /argumentsSha256/); assert.match(preflight, /pathNameSha256/);
+console.log('[deployment-behavior] PASS (redaction, identity, preflight evidence, artifact, migration, rollback and transfer fixtures)');

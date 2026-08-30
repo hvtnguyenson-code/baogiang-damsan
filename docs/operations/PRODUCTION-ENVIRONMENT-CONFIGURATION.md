@@ -14,6 +14,8 @@ The workflow uses the protected GitHub Environment `production`. Required secret
 
 `PROD_SSH_HOST_KEY` is exactly one non-wildcard known-hosts entry for the configured host and port, with an approved key type and valid base64 payload. Hashed hosts, `@cert-authority`, wildcard patterns, multiline values and mismatched ports are rejected.
 
+Construct this value only after PASS 1 discovery and PASS 2 review have identified the effective `sshd_config`, every configured `HostKey` public companion, its algorithm/SHA256 fingerprint, the actual sshd listening port, and a firewall rule whose protocol/local-port filter matches that port. A missing or malformed `.pub`, unresolved firewall port filter, or private-key-only path remains `PARTIAL`/`NOT_VERIFIED`; never read, copy or report private-key contents and never substitute Internet `ssh-keyscan` for server-side evidence.
+
 Required non-secret variables, all copied from the reviewed inventory, are:
 
 - `PROD_BAOGIANG_ROOT`
@@ -33,6 +35,8 @@ Required non-secret variables, all copied from the reviewed inventory, are:
 - `PROD_BASE_URL` — exactly `https://baogiang.dtnt-damsan.edu.vn`
 
 Every executable and file path must be an existing Windows absolute leaf path on the VPS. Bare `node`, `npm`, `npx`, `psql`, `pg_dump`, `pg_restore`, or `nginx` values are invalid. The workflow validates safe host/user/service-name syntax, numeric SSH port, dedicated root paths, and exact domain.
+
+PASS 1 tool paths are discovery candidates only. Authenticated PASS 2 database evidence must use the separately reviewed exact absolute `PsqlExe` whose leaf is `psql.exe`; it never resolves the verifier through `PATH`. `PROD_PSQL_EXE` is configured from that reviewed evidence only.
 
 ## Dedicated identity marker
 

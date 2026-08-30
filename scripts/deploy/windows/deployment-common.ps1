@@ -79,6 +79,103 @@ function Get-NormalizedProcessIdentity([Parameter(Mandatory = $true)]$Process) {
   }
 }
 
+function Get-SafePathHints([AllowNull()][string]$Text) {
+  if ([string]::IsNullOrWhiteSpace($Text)) { return @() }
+  return @([regex]::Matches($Text, '(?i)(?:[A-Z]:\\[^"''\r\n<>|?*]+?\.(?:js|cjs|mjs|ps1|cmd|bat|exe|conf))') | ForEach-Object { $_.Value.Trim('"') } | Select-Object -Unique)
+}
+
+function Get-SensitiveTextHash([AllowNull()][string]$Text) {
+  if ([string]::IsNullOrWhiteSpace($Text)) { return $null }
+  $digest = [Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($Text))
+  return ([BitConverter]::ToString($digest)).Replace('-','').ToLowerInvariant()
+}
+
+function Assert-ExactPsqlExecutable([Parameter(Mandatory = $true)][string]$Path) {
+  if (-not [IO.Path]::IsPathRooted($Path)) { throw 'PsqlExe must be an absolute path.' }
+  $exact = Assert-ExistingLeaf -Path $Path -Label 'PsqlExe'
+  if ((Split-Path -Leaf $exact) -cne 'psql.exe') { throw 'PsqlExe must identify the exact psql.exe leaf.' }
+  return $exact
+}
+
+function Resolve-DatabaseVerifierExecutable([switch]$VerifyDatabase,[AllowNull()][string]$PsqlExe) {
+  if (-not $VerifyDatabase) { return $null }
+  if ([string]::IsNullOrWhiteSpace($PsqlExe)) { throw 'VerifyDatabase requires an exact PsqlExe.' }
+  return Assert-ExactPsqlExecutable -Path $PsqlExe
+}
+
+function Get-ProtectedNeighborIsolationEvidence(
+  [Parameter(Mandatory = $true)][string]$CandidateRoot,
+  [string[]]$KnownForeignRoot = @(),
+  [string[]]$CandidateName = @(),
+  [string[]]$KnownForeignName = @(),
+  [switch]$RequireReviewedInputs
+) {
+  if ($RequireReviewedInputs -and (@($KnownForeignRoot | Where-Object { [string]::IsNullOrWhiteSpace($_) }).Count -gt 0 -or @($KnownForeignName | Where-Object { [string]::IsNullOrWhiteSpace($_) }).Count -gt 0)) { throw 'Reviewed protected-neighbor inputs may not contain empty values.' }
+  $foreignRoots = @($KnownForeignRoot | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+  $foreignNames = @($KnownForeignName | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+  if ($RequireReviewedInputs -and ($foreignRoots.Count -eq 0 -or $foreignNames.Count -eq 0)) { throw 'Verified first-deploy preflight requires reviewed KnownForeignRoot and KnownForeignName inputs.' }
+  if ($foreignRoots.Count -eq 0 -and $foreignNames.Count -eq 0) { return [ordered]@{ status = 'NOT_RUN'; foreignInputs = @() } }
+  $candidate = Normalize-ComparablePath $CandidateRoot
+  foreach ($foreignRoot in $foreignRoots) {
+    if (-not [IO.Path]::IsPathRooted($foreignRoot)) { throw 'KnownForeignRoot must contain only absolute reviewed paths.' }
+    $foreign = (Normalize-ComparablePath $foreignRoot).TrimEnd('\')
+    if ($candidate -eq $foreign -or $candidate.StartsWith("$foreign\", [StringComparison]::OrdinalIgnoreCase) -or $foreign.StartsWith("$candidate\", [StringComparison]::OrdinalIgnoreCase)) {
+      return [ordered]@{ status = 'CONFLICT'; foreignInputs = @($foreignRoots + $foreignNames); conflictType = 'PATH_OVERLAP' }
+    }
+  }
+  foreach ($name in @($CandidateName | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })) {
+    if (@($foreignNames | Where-Object { $_ -ieq $name }).Count -gt 0) { return [ordered]@{ status = 'CONFLICT'; foreignInputs = @($foreignRoots + $foreignNames); conflictType = 'NAME_OVERLAP' } }
+  }
+  return [ordered]@{ status = if ($RequireReviewedInputs) { 'EXISTS AND VERIFIED' } else { 'REQUIRES_REVIEW' }; foreignInputs = @($foreignRoots + $foreignNames) }
+}
+
+function Get-SshPublicHostKeyEvidence([Parameter(Mandatory = $true)][string]$ConfigPath) {
+  $config = Get-CanonicalPath $ConfigPath
+  if (-not (Test-Path -LiteralPath $config -PathType Leaf)) { return [ordered]@{ state = 'MISSING'; configPath = $config; keys = @() } }
+  $configured = @(); $source = 'CONFIGURED'
+  foreach ($line in Get-Content -LiteralPath $config) {
+    if ($line -match '^\s*HostKey\s+(?:"([^"]+)"|([^#\s]+))') {
+      $value = if ($Matches[1]) { $Matches[1] } else { $Matches[2] }
+      if ($value -match '^(?i)__PROGRAMDATA__[\\/](.+)$' -and -not [string]::IsNullOrWhiteSpace($env:ProgramData)) { $value = Join-Path $env:ProgramData $Matches[1] }
+      $value = [Environment]::ExpandEnvironmentVariables($value)
+      $configured += if ([IO.Path]::IsPathRooted($value)) { Get-CanonicalPath $value } else { Get-CanonicalPath (Join-Path (Split-Path -Parent $config) $value) }
+    }
+  }
+  if ($configured.Count -eq 0) {
+    $source = 'OPENSSH_DEFAULT'
+    $configDirectory = Split-Path -Parent $config
+    $configured = @('ssh_host_ed25519_key','ssh_host_ecdsa_key','ssh_host_rsa_key' | ForEach-Object { Get-CanonicalPath (Join-Path $configDirectory $_) })
+  }
+  $keys = @($configured | Select-Object -Unique | ForEach-Object {
+    $privatePath = $_; $publicPath = "$privatePath.pub"
+    if (-not (Test-Path -LiteralPath $privatePath -PathType Leaf)) { return [ordered]@{ state = 'MISSING'; privateKeyPath = $privatePath; publicKeyPath = $publicPath } }
+    if (-not (Test-Path -LiteralPath $publicPath -PathType Leaf)) { return [ordered]@{ state = 'NOT_VERIFIED'; privateKeyPath = $privatePath; publicKeyPath = $publicPath } }
+    $fields = @((Get-Content -LiteralPath $publicPath -Raw -Encoding UTF8).Trim() -split '\s+')
+    if ($fields.Count -lt 2 -or $fields[0] -notmatch '^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(?:256|384|521))$' -or $fields[1] -notmatch '^[A-Za-z0-9+/]+={0,2}$') { return [ordered]@{ state = 'NOT_VERIFIED'; privateKeyPath = $privatePath; publicKeyPath = $publicPath } }
+    try { $blob = [Convert]::FromBase64String($fields[1]) } catch { return [ordered]@{ state = 'NOT_VERIFIED'; privateKeyPath = $privatePath; publicKeyPath = $publicPath } }
+    if ($blob.Length -lt 5) { return [ordered]@{ state = 'NOT_VERIFIED'; privateKeyPath = $privatePath; publicKeyPath = $publicPath } }
+    $algorithmLength = [Net.IPAddress]::NetworkToHostOrder([BitConverter]::ToInt32($blob, 0))
+    if ($algorithmLength -le 0 -or $algorithmLength -gt ($blob.Length - 4) -or [Text.Encoding]::ASCII.GetString($blob, 4, $algorithmLength) -cne $fields[0]) { return [ordered]@{ state = 'NOT_VERIFIED'; privateKeyPath = $privatePath; publicKeyPath = $publicPath } }
+    $digest = [Security.Cryptography.SHA256]::Create().ComputeHash($blob)
+    [ordered]@{ state = 'DISCOVERED'; privateKeyPath = $privatePath; publicKeyPath = $publicPath; algorithm = $fields[0]; publicKey = $fields[1]; fingerprint = 'SHA256:' + [Convert]::ToBase64String($digest).TrimEnd('=') }
+  })
+  [ordered]@{ state = if (@($keys | Where-Object { $_.state -ne 'DISCOVERED' }).Count) { 'PARTIAL' } else { 'DISCOVERED' }; configPath = $config; source = $source; keys = $keys }
+}
+
+function Get-SshFirewallEvidence([Parameter(Mandatory = $true)][AllowEmptyCollection()][int[]]$SshPort) {
+  if (-not (Get-Command Get-NetFirewallRule -ErrorAction SilentlyContinue) -or -not (Get-Command Get-NetFirewallPortFilter -ErrorAction SilentlyContinue)) { return [ordered]@{ state = 'NOT_VERIFIED'; rules = @(); reason = 'Windows firewall rule-to-port APIs are unavailable.' } }
+  $rules = @(Get-NetFirewallRule -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -match '(?i)SSH|OpenSSH' })
+  $records = @($rules | ForEach-Object {
+    $rule = $_
+    $filters = @(Get-NetFirewallPortFilter -AssociatedNetFirewallRule $rule -ErrorAction SilentlyContinue)
+    $resolved = @($filters | Where-Object { "$($_.Protocol)" -match '^(6|TCP)$' -and "$($_.LocalPort)" -match '^\d+$' })
+    $matching = @($resolved | Where-Object { $SshPort -contains [int]$_.LocalPort })
+    $usable = "$($rule.Enabled)" -match '^(True|1)$' -and "$($rule.Direction)" -ieq 'Inbound' -and "$($rule.Action)" -ieq 'Allow'
+    [ordered]@{ displayName = $rule.DisplayName; enabled = "$($rule.Enabled)"; direction = "$($rule.Direction)"; action = "$($rule.Action)"; state = if ($SshPort.Count -eq 0) { 'NOT_VERIFIED' } elseif ($matching.Count -and $usable) { 'DISCOVERED' } elseif ($resolved.Count) { 'CONFLICT' } else { 'NOT_VERIFIED' }; portFilters = @($filters | ForEach-Object { [ordered]@{ protocol = "$($_.Protocol)"; localPort = "$($_.LocalPort)" } }) }
+  })
+  [ordered]@{ state = if (@($records | Where-Object { $_.state -eq 'CONFLICT' }).Count) { 'CONFLICT' } elseif ($records.Count -gt 0 -and @($records | Where-Object { $_.state -ne 'DISCOVERED' }).Count -eq 0) { 'DISCOVERED' } else { 'NOT_VERIFIED' }; rules = $records }
+}
+
 function Normalize-ProcessCommandLine([AllowNull()][string]$CommandLine) {
   if ([string]::IsNullOrWhiteSpace($CommandLine)) { return '' }
   return (Redact-SensitiveText $CommandLine).ToLowerInvariant().Replace('/','\')
