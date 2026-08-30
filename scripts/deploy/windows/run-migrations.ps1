@@ -24,7 +24,8 @@ $identity = Read-DeploymentIdentity -Root $Root -ServiceKind $ServiceKind -Servi
 $release = Assert-ExactReleasePath -Root $identity.canonicalRoot -ReleaseSha $ReleaseSha -ReleasePath $ReleasePath
 $schema = Get-CanonicalPath (Join-Path $release 'prisma\schema.prisma')
 if (-not (Test-Path -LiteralPath $schema -PathType Leaf) -or -not (Test-PathWithin $schema $release)) { throw 'Prisma schema is missing from the exact release.' }
-Import-ServerEnvironment -EnvFile $EnvFile -ExpectedBaseUrl $ExpectedBaseUrl | Out-Null
+$environmentSnapshot = Import-ServerEnvironment -EnvFile $EnvFile -ExpectedBaseUrl $ExpectedBaseUrl
+try {
 Assert-ExecutableContract @{ NpxExe = $NpxExe; PsqlExe = $PsqlExe }
 $databaseUrl = [Environment]::GetEnvironmentVariable($DatabaseUrlEnvironmentVariable)
 $parts = Set-PostgresProcessEnvironment -DatabaseUrl $databaseUrl -ExpectedPort 5433
@@ -41,7 +42,6 @@ function Get-MigrationState([string]$Phase) {
     return [ordered]@{ phase = $Phase; state = ($rows -join '').Trim() }
   } catch { throw }
 }
-try {
   $before = Get-MigrationState 'before'
   $statusOutput = @(& $NpxExe 'prisma','migrate','status','--schema',$schema 2>&1)
   $statusExit = $LASTEXITCODE
@@ -55,4 +55,4 @@ try {
   $after = Get-MigrationState 'after-deploy'
   Invoke-NativeChecked $NpxExe @('prisma','migrate','status','--schema',$schema) 'prisma migrate status after deploy' | Out-Null
   [ordered]@{ state = 'completed'; before = $before; after = $after } | ConvertTo-Json -Compress
-} finally { Clear-PostgresProcessEnvironment }
+} finally { Restore-ServerEnvironment -Snapshot $environmentSnapshot; Clear-PostgresProcessEnvironment }

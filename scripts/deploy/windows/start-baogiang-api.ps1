@@ -16,11 +16,13 @@ $wrapper = Get-CanonicalPath $PSCommandPath
 $identity = Read-DeploymentIdentity -Root $canonicalRoot -ServiceKind $ServiceKind -ServiceName $ServiceName -EnvFile $EnvFile -StartupWrapper $wrapper -ExpectedEntryPoint $ExpectedEntryPoint -NodeExe $NodeExe
 $canonicalRoot = $identity.canonicalRoot
 $marker = $identity.marker
-Import-ServerEnvironment -EnvFile $EnvFile -ExpectedBaseUrl $ExpectedBaseUrl | Out-Null
-$entry = Get-CanonicalPath $ExpectedEntryPoint
-if (-not (Test-Path -LiteralPath $entry -PathType Leaf)) { throw 'Current API entry point is missing.' }
-if ((Normalize-ComparablePath $entry) -notlike "$(Normalize-ComparablePath (Join-Path $canonicalRoot 'current'))*") { throw 'API entry point is outside the current release pointer.' }
-& $NodeExe $entry
-$exitCode = $LASTEXITCODE
-Clear-PostgresProcessEnvironment
+$environmentSnapshot = Import-ServerEnvironment -EnvFile $EnvFile -ExpectedBaseUrl $ExpectedBaseUrl
+$exitCode = 1
+try {
+  $entry = Get-CanonicalPath $ExpectedEntryPoint
+  if (-not (Test-Path -LiteralPath $entry -PathType Leaf)) { throw 'Current API entry point is missing.' }
+  if ((Normalize-ComparablePath $entry) -notlike "$(Normalize-ComparablePath (Join-Path $canonicalRoot 'current'))*") { throw 'API entry point is outside the current release pointer.' }
+  & $NodeExe $entry
+  $exitCode = $LASTEXITCODE
+} finally { Restore-ServerEnvironment -Snapshot $environmentSnapshot; Clear-PostgresProcessEnvironment }
 exit $exitCode

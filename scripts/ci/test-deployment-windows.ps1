@@ -375,16 +375,29 @@ try {
     'HTTP_TRUST_PROXY_HOPS=1',
     'DATABASE_URL=fixture-database-url',
     'CORS_ORIGINS=https://baogiang.dtnt-damsan.edu.vn',
+    'AUTH_SESSION_TTL_SECONDS=28800',
+    'AUTH_LAST_SEEN_UPDATE_SECONDS=300',
+    'AUTH_COOKIE_NAME=baogiang_session',
+    'AUTH_COOKIE_PATH=/api',
     'AUTH_COOKIE_SECURE=true',
+    'AUTH_COOKIE_SAME_SITE=lax',
+    'AUTH_LOCKOUT_THRESHOLD=5',
+    'AUTH_LOCKOUT_DURATION_SECONDS=900',
+    'AUTH_PASSWORD_MIN_LENGTH=12',
+    'AUTH_LOGIN_RATE_LIMIT_MAX=10',
+    'AUTH_LOGIN_RATE_LIMIT_WINDOW_SECONDS=60',
+    'AUTH_LOGIN_RATE_LIMIT_MAX_KEYS=10000',
     'AI_ENABLED=false',
     'AI_ACTIVE_MODE_ENABLED=false',
     'AI_PASSIVE_MODE_ENABLED=false',
-    'WEB_PUSH_ENABLED=false'
+    'WEB_PUSH_ENABLED=false',
+    'LOG_LEVEL=info'
   )
   $validEnvPath = Join-Path $temp 'valid.env'
   [IO.File]::WriteAllLines($validEnvPath, $validEnvLines, [Text.UTF8Encoding]::new($false))
-  $importedNames = @(Import-ServerEnvironment -EnvFile $validEnvPath -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn')
-  if ($importedNames -notcontains 'TZ' -or $env:TZ -ne 'Asia/Ho_Chi_Minh') { throw 'Correct production TZ contract was rejected.' }
+  $environmentSnapshot = Import-ServerEnvironment -EnvFile $validEnvPath -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn'
+  if (-not $environmentSnapshot.ContainsKey('TZ') -or $env:TZ -ne 'Asia/Ho_Chi_Minh') { throw 'Correct production TZ contract was rejected.' }
+  Restore-ServerEnvironment -Snapshot $environmentSnapshot
 
   $missingTimeZonePath = Join-Path $temp 'missing-tz.env'
   [IO.File]::WriteAllLines($missingTimeZonePath, @($validEnvLines | Where-Object { $_ -notmatch '^TZ=' }), [Text.UTF8Encoding]::new($false))
@@ -400,6 +413,34 @@ try {
   [IO.File]::WriteAllLines($duplicateTimeZonePath, @($validEnvLines + 'TZ=Asia/Ho_Chi_Minh'), [Text.UTF8Encoding]::new($false))
   $duplicateTimeZoneRejected = $false; try { Import-ServerEnvironment -EnvFile $duplicateTimeZonePath -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn' | Out-Null } catch { $duplicateTimeZoneRejected = $true }
   if (-not $duplicateTimeZoneRejected) { throw 'Duplicate production TZ was accepted.' }
+
+  foreach ($requiredName in @('NODE_ENV','API_HOST','API_PORT','HTTP_TRUST_PROXY_HOPS','DATABASE_URL','CORS_ORIGINS','AUTH_COOKIE_SECURE','AI_ENABLED','AI_ACTIVE_MODE_ENABLED','AI_PASSIVE_MODE_ENABLED','WEB_PUSH_ENABLED','AUTH_SESSION_TTL_SECONDS','LOG_LEVEL')) {
+    [Environment]::SetEnvironmentVariable($requiredName,($validEnvLines | Where-Object { $_ -like "$requiredName=*" } | Select-Object -First 1).Substring($requiredName.Length + 1),'Process')
+    $missingPath = Join-Path $temp ("missing-$requiredName.env")
+    [IO.File]::WriteAllLines($missingPath,@($validEnvLines | Where-Object { $_ -notlike "$requiredName=*" }),[Text.UTF8Encoding]::new($false))
+    $rejected = $false; try { Read-ValidatedProductionEnvironment -EnvFile $missingPath -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn' | Out-Null } catch { $rejected = $true }
+    if (-not $rejected) { throw "Inherited process value satisfied missing required variable: $requiredName" }
+  }
+  $sentinelNode = 'parent-node-sentinel'; [Environment]::SetEnvironmentVariable('NODE_ENV',$sentinelNode,'Process')
+  $atomicFailurePath = Join-Path $temp 'atomic-failure.env'
+  [IO.File]::WriteAllLines($atomicFailurePath,@(($validEnvLines | ForEach-Object { if ($_ -match '^DATABASE_URL=') { 'DATABASE_URL=postgresql://fixture:P0_ENV_SECRET_DO_NOT_LEAK_9F4B@db.invalid:5433/baogiang' } else { $_ } }) + 'UNAPPROVED_VARIABLE=after-valid-secret'),[Text.UTF8Encoding]::new($false))
+  $rejected = $false; try { Import-ServerEnvironment -EnvFile $atomicFailurePath -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn' | Out-Null } catch { $rejected = $true }
+  if (-not $rejected -or [Environment]::GetEnvironmentVariable('NODE_ENV','Process') -cne $sentinelNode) { throw 'Parse-before-apply atomicity fixture failed.' }
+  $priorLogLevel = [Environment]::GetEnvironmentVariable('LOG_LEVEL','Process'); [Environment]::SetEnvironmentVariable('LOG_LEVEL','parent-log-sentinel','Process'); [Environment]::SetEnvironmentVariable('AUTH_COOKIE_DOMAIN',$null,'Process')
+  $restoreSnapshot = Import-ServerEnvironment -EnvFile $validEnvPath -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn'
+  if ($env:LOG_LEVEL -cne 'info') { throw 'Validated environment was not applied.' }
+  Restore-ServerEnvironment -Snapshot $restoreSnapshot
+  if ([Environment]::GetEnvironmentVariable('LOG_LEVEL','Process') -cne 'parent-log-sentinel' -or $null -ne [Environment]::GetEnvironmentVariable('AUTH_COOKIE_DOMAIN','Process')) { throw 'Environment restore fixture failed.' }
+  [Environment]::SetEnvironmentVariable('LOG_LEVEL',$priorLogLevel,'Process')
+  foreach ($forbiddenName in @('TEST_DATABASE_URL','BOOTSTRAP_ADMIN_USERNAME','BOOTSTRAP_ADMIN_DISPLAY_NAME','BOOTSTRAP_ADMIN_PASSWORD')) { $forbiddenPath = Join-Path $temp ("forbidden-$forbiddenName.env"); [IO.File]::WriteAllLines($forbiddenPath,@($validEnvLines + "$forbiddenName=value"),[Text.UTF8Encoding]::new($false)); $rejected = $false; try { Read-ValidatedProductionEnvironment -EnvFile $forbiddenPath -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn' | Out-Null } catch { $rejected = $true }; if (-not $rejected) { throw "Forbidden production variable was accepted: $forbiddenName" } }
+  $wrongCaseEnvPath = Join-Path $temp 'wrong-case-env.env'; [IO.File]::WriteAllLines($wrongCaseEnvPath,@($validEnvLines | ForEach-Object { if ($_ -match '^NODE_ENV=') { 'node_env=production' } else { $_ } }),[Text.UTF8Encoding]::new($false)); $rejected = $false; try { Read-ValidatedProductionEnvironment -EnvFile $wrongCaseEnvPath -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn' | Out-Null } catch { $rejected = $true }; if (-not $rejected) { throw 'Wrong-case environment variable was accepted.' }
+  foreach ($invalid in @(@{ name = 'NODE_ENV'; value = 'development' },@{ name = 'TZ'; value = 'UTC' },@{ name = 'API_HOST'; value = '0.0.0.0' },@{ name = 'API_PORT'; value = '9999' },@{ name = 'HTTP_TRUST_PROXY_HOPS'; value = '0' },@{ name = 'AUTH_COOKIE_SECURE'; value = 'false' },@{ name = 'CORS_ORIGINS'; value = 'https://other.example' },@{ name = 'AI_ENABLED'; value = 'true' },@{ name = 'WEB_PUSH_ENABLED'; value = 'true' })) { $invalidPath = Join-Path $temp ("invalid-$($invalid.name).env"); [IO.File]::WriteAllLines($invalidPath,@($validEnvLines | ForEach-Object { if ($_ -like "$($invalid.name)=*") { "$($invalid.name)=$($invalid.value)" } else { $_ } }),[Text.UTF8Encoding]::new($false)); $rejected = $false; try { Read-ValidatedProductionEnvironment -EnvFile $invalidPath -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn' | Out-Null } catch { $rejected = $true }; if (-not $rejected) { throw "Safety invariant was accepted: $($invalid.name)" } }
+  $validatorPath = Join-Path $repo 'scripts\deploy\windows\validate-production-environment.ps1'; $parentMarker = [Environment]::GetEnvironmentVariable('P0_ENV_PARENT_ISOLATION','Process'); [Environment]::SetEnvironmentVariable('P0_ENV_PARENT_ISOLATION','unchanged','Process')
+  $validatorOutput = @(& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $validatorPath -EnvFile $validEnvPath -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn' 2>&1)
+  if ($LASTEXITCODE -ne 0 -or ($validatorOutput -join ' ') -notmatch 'VALIDATED' -or [Environment]::GetEnvironmentVariable('P0_ENV_PARENT_ISOLATION','Process') -cne 'unchanged') { throw 'Standalone environment validator isolation/no-current fixture failed.' }
+  $secretOutput = @(& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $validatorPath -EnvFile $atomicFailurePath -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn' 2>&1); $secretText = $secretOutput -join "`n"
+  if ($LASTEXITCODE -eq 0 -or $secretText -match 'P0_ENV_SECRET_DO_NOT_LEAK_9F4B|UNAPPROVED_VARIABLE=|DATABASE_URL') { throw 'Standalone environment validator leaked hostile input.' }
+  [Environment]::SetEnvironmentVariable('P0_ENV_PARENT_ISOLATION',$parentMarker,'Process')
 
   $neighborReport = Join-Path $temp 'protected-neighbor-discovery.json'
   & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $neighborDiscoveryPath -ReportPath $neighborReport | Out-Null

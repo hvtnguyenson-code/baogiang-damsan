@@ -28,7 +28,7 @@ $reportLogs = Join-Path $canonicalRoot "logs\$($p.ReportFileName)"
 $report = [ordered]@{ schemaVersion = 1; generatedAtUtc = [DateTime]::UtcNow.ToString('o'); releaseSha = $p.ReleaseSha; previousRelease = $null; backup = $null; migration = [ordered]@{ state = 'notStarted' }; capabilityCatalog = [ordered]@{ state = 'notStarted' }; switch = $null; restart = $null; health = $null; rollback = [ordered]@{ state = 'notNeeded' }; errorCategory = $null }
 $migrationAttempted = $false; $migrationCompleted = $false; $switched = $false; $restartAttempted = $false
 try {
-  Import-ServerEnvironment -EnvFile $p.EnvFile -ExpectedBaseUrl $p.ExpectedBaseUrl | Out-Null
+  Read-ValidatedProductionEnvironment -EnvFile $p.EnvFile -ExpectedBaseUrl $p.ExpectedBaseUrl | Out-Null
   Invoke-NativeChecked $p.NginxExe @('-t','-c',$p.NginxConfig) 'nginx configuration test' | Out-Null
   if (Test-Path -LiteralPath (Join-Path $canonicalRoot 'current')) { $report.previousRelease = Split-Path (Assert-ReleasePointerTarget -PointerPath (Join-Path $canonicalRoot 'current') -Root $canonicalRoot) -Leaf }
   Move-Item -LiteralPath $source -Destination $incoming
