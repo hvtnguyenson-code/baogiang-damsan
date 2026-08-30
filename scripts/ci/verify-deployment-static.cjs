@@ -30,6 +30,15 @@ const forbidden = [
 ];
 for (const pattern of forbidden) if (pattern.test(scripts)) fail(`forbidden deployment construct: ${pattern}`);
 for (const token of ['Set-StrictMode -Version Latest','$ErrorActionPreference = \'Stop\'','ValidatePattern','ValidateScript','Expand-Archive','migrate status','migrate deploy','PGPASSWORD','pg_restore','Read-DeploymentIdentity','commandLineSha256','Get-ExactApiProcesses','MigrationAttempted','CompatibilityApproved','start-baogiang-api.ps1']) if (!scripts.includes(token)) fail(`fail-closed control missing: ${token}`);
+for (const token of ['Assert-VerifiedScheduledTaskContract','MSFT_TaskBootTrigger','Test-ScheduledTaskTriggerEnabled','Assert-ScheduledTaskActivationAuthorized','Get-ScheduledTaskActivationFailureDisposition','AllowScheduledTaskActivation','Enable-ScheduledTask','Disable-ScheduledTask']) if (!scripts.includes(token)) fail(`Scheduled Task lifecycle control missing: ${token}`);
+const restart = read(path.join(scriptDir, 'restart-baogiang-api.ps1'));
+const common = read(path.join(scriptDir, 'deployment-common.ps1'));
+const rollback = read(path.join(scriptDir, 'rollback-release.ps1'));
+const invoke = read(path.join(scriptDir, 'invoke-production-deploy.ps1'));
+if (!(restart.indexOf('Assert-ScheduledTaskActivationAuthorized') < restart.indexOf('Enable-ScheduledTask') && restart.indexOf('Enable-ScheduledTask') < restart.indexOf('Start-ScheduledTask'))) fail('Scheduled Task activation must authorize then enable before start');
+if (!(common.indexOf('Disable-ScheduledTask') < common.indexOf('Stop-ScheduledTask'))) fail('Scheduled Task safe-stop must disable before stop');
+if (!rollback.includes('-AllowScheduledTaskActivation:$AllowScheduledTaskActivation') || !invoke.includes('-AllowScheduledTaskActivation:($p.ServiceKind -eq \'scheduled-task\')')) fail('controller and rollback must propagate explicit Scheduled Task activation authority');
+if (/Register-ScheduledTask|Set-ScheduledTask/.test(`${restart}\n${common}\n${rollback}\n${invoke}`)) fail('runtime deployment path must not register or rewrite Scheduled Tasks');
 for (const token of ['Assert-DeploymentMarkerSchema','Assert-ExactMarkerProperties',"'schemaVersion'", "'foreignIsolation'", "'startupBundle'", "'scheduled-task'", "'service'"]) if (!scripts.includes(token)) fail(`strict deployment marker schema control missing: ${token}`);
 for (const token of ['Get-ManagedProductionEnvironmentNames','Assert-ProductionPositiveInteger','Read-ValidatedProductionEnvironment','Restore-ServerEnvironment','AUTH_SESSION_TTL_SECONDS','BOOTSTRAP_ADMIN_PASSWORD']) if (!scripts.includes(token)) fail(`production environment validation control missing: ${token}`);
 if (/marker\.nginxExe\s+-and|marker\.nginxConfig\s+-and|marker\.service\.taskPath\s+-and|if\s*\(\$marker\.nodeExe\)/.test(scripts)) fail('strict marker authority contains a conditional bypass');

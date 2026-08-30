@@ -9,7 +9,8 @@ param(
   [Parameter(Mandatory = $true)][string]$ExpectedEntryPoint,
   [Parameter(Mandatory = $true)][ValidatePattern('^https://baogiang\.dtnt-damsan\.edu\.vn$')][string]$ExpectedBaseUrl,
   [Parameter(Mandatory = $true)][switch]$CompatibilityApproved,
-  [Parameter(Mandatory = $true)][switch]$MigrationAttempted
+  [Parameter(Mandatory = $true)][switch]$MigrationAttempted,
+  [switch]$AllowScheduledTaskActivation
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -27,7 +28,7 @@ New-Item -ItemType Junction -Path $temp -Target $previousTarget | Out-Null
 if (Test-Path -LiteralPath $current) { Assert-ReleasePointerTarget -PointerPath $current -Root $canonicalRoot | Out-Null; Move-Item -LiteralPath $current -Destination $failed }
 Move-Item -LiteralPath $temp -Destination $current
 try {
-  & (Join-Path $PSScriptRoot 'restart-baogiang-api.ps1') -ServiceKind $ServiceKind -ServiceName $ServiceName -NodeExe $NodeExe -Root $Root -EnvFile $EnvFile -StartupWrapper $StartupWrapper -ExpectedEntryPoint $ExpectedEntryPoint -ExpectedBaseUrl $ExpectedBaseUrl
+  & (Join-Path $PSScriptRoot 'restart-baogiang-api.ps1') -ServiceKind $ServiceKind -ServiceName $ServiceName -NodeExe $NodeExe -Root $Root -EnvFile $EnvFile -StartupWrapper $StartupWrapper -ExpectedEntryPoint $ExpectedEntryPoint -ExpectedBaseUrl $ExpectedBaseUrl -AllowScheduledTaskActivation:$AllowScheduledTaskActivation
   $health = & (Join-Path $PSScriptRoot 'test-production-health.ps1') -BaseUrl $ExpectedBaseUrl -ExpectedApiPort 3100
   [ordered]@{ state = 'completed'; currentTarget = $previousTarget; health = ($health -join '') } | ConvertTo-Json -Compress
 } catch { throw }

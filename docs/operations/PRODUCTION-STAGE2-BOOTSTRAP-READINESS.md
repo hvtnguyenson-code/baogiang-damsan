@@ -93,23 +93,20 @@ Correction **P0**: tạo validator độc lập chỉ đọc exact env file tron
 
 ## 7. Scheduled Task lifecycle state machine
 
-Repository không định nghĩa/kiểm tra trigger set, nên cột trigger là unknown chứ không suy từ Windows. Từ runbook, bootstrap task là stopped/disabled. Restart chỉ gọi `Start-ScheduledTask`; không có `Enable-ScheduledTask`. Safe-stop gọi `Disable-ScheduledTask` trước khi stop.
+P0-3 authority hóa một contract duy nhất: Scheduled Task có đúng một enabled `MSFT_TaskBootTrigger`/`AtStartup` trigger, không có trigger bổ sung. Shared verifier kiểm exact task name/path/account/action/wrapper/working directory và trigger; scheduler state Disabled là lifecycle state hợp lệ, không phải identity failure.
 
 | State | Enabled | Running | Automatic trigger | `current` | Runtime expected | Repository transition/evidence |
 |---|---|---|---|---|---|---|
-| BOOTSTRAP | No (documented) | No | Không có authority | No | No | Manual creation only |
-| FIRST DEPLOY BEFORE SWITCH | No | No | Unknown | No | No | Controller validates existing task |
-| AFTER SWITCH | Vẫn chưa có enable path | Start requested | Unknown | Yes | Yes | `Start-ScheduledTask` only; transition không được đảm bảo |
-| HEALTHY | Desired yes/running, không đạt được bằng contract hiện tại | Desired yes | Chưa định nghĩa | Yes | Yes | Bounded process/port health check chỉ chạy sau start |
-| FIRST-DEPLOY FAILURE | No | No | Bị chặn bằng disable | Quarantined; no `current` | No | Safe-stop + `failed-release` |
-| POST-MIGRATION FAILURE WITHOUT ROLLBACK APPROVAL | No | No | Bị chặn bằng disable | Failed current giữ lại | No | Fail-safe stop |
-| ROLLBACK SUCCESS | Không có enable transition nếu task đã disabled | Start requested | Unknown | Previous release | Yes | Rollback calls same restart helper |
-| NEXT DEPLOY AFTER QUARANTINE | No | No | Unknown/disabled | No | No until switch | Không có reviewed re-enable/recovery path |
-| SERVER REBOOT | Không xác định ngoài disabled state | Không xác định | Trigger/startup persistence chưa được authority hóa | Tùy prior state | Không xác định | Không có trigger fixture/contract |
+| BOOTSTRAP | No | No | One enabled Boot trigger, whole task disabled | No | No | Exact verifier accepts configuration-valid Disabled task |
+| FIRST DEPLOY AFTER SWITCH | Explicit controller authorization | Starts after enable/reverify | One enabled Boot trigger | Yes | Yes | verify → enable → reverify → start → bounded process/port proof |
+| HEALTHY | Yes | Yes | One enabled Boot trigger | Yes | Yes | Exact Báo giảng process owns port 3100; scheduler starts task after reboot |
+| FIRST-DEPLOY FAILURE | No | No | Trigger remains in definition, task disabled | Quarantined; no `current` | No | Disable → stop → bounded verification → Disabled re-fetch |
+| POST-MIGRATION FAILURE WITHOUT ROLLBACK APPROVAL | No | No | Trigger remains in definition, task disabled | Failed current giữ lại | No | Fail-safe stop; no automatic re-enable |
+| ROLLBACK SUCCESS | Yes, explicit controller authorization | Yes | One enabled Boot trigger | Previous release | Yes | Same shared verifier and activation state machine |
+| NEXT DEPLOY AFTER QUARANTINE | Enabled only through explicit reviewed activation | Yes after health proof | One enabled Boot trigger | After reviewed switch | Yes | Deterministic recovery path |
+| SERVER REBOOT | Yes in HEALTHY state | Scheduler starts exact task | One enabled Boot trigger | Prior healthy release | Yes | Repository-wide reboot-persistence contract |
 
-Không thể kết luận Windows sẽ xử lý `Start-ScheduledTask` trên disabled task thế nào vì repository không test điều đó. Điều chắc chắn là control plane không sở hữu transition disabled → enabled, do đó không thể đảm bảo first deploy, rollback hoặc deployment kế tiếp đạt desired running state. Safe-stop có lý do đúng là chống automatic restart, nhưng recovery half còn thiếu. Mức **P0**.
-
-Correction phải quyết định và test một lifecycle duy nhất: exact allowed triggers, bootstrap enabled/stopped hay disabled, explicit reviewed activation gate, safe-stop behavior, re-enable after operator approval, retry/quarantine/rollback và reboot persistence. Không cho phép operator ad-hoc enable nằm ngoài evidence/report.
+`restart-baogiang-api.ps1` từ chối Scheduled Task khi thiếu `-AllowScheduledTaskActivation`, trước mọi lifecycle mutation. Activation failure sau khi đã bắt đầu phải gọi shared safe-stop; nếu cleanup thất bại, controller báo riêng failure cleanup. Không cho phép operator ad-hoc enable nằm ngoài controller/evidence. P0-3 là closure candidate cho lifecycle Scheduled Task; Stage 2 vẫn chưa GO vì P0-4 và các P1/P2 khác.
 
 ## 8. Windows Service readiness
 

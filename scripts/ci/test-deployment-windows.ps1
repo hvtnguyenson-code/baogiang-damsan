@@ -124,6 +124,36 @@ if ($preflightText -match '(?i)nginx(?:\.exe)?[^\r\n]*-s\s+(?:reload|stop|quit)'
 }
 
 if (-not (Get-Command Stop-ExactBaoGiangRuntime -ErrorAction SilentlyContinue)) { throw 'Safe-stop helper is not exported by deployment-common.ps1.' }
+$taskContractMarker = [pscustomobject]@{ service = [pscustomobject]@{ taskPath = '\BaoGiang\'; account = 'fixture-account'; execute = 'C:\fixture\WindowsPowerShell.exe'; arguments = '-File start-baogiang-api.ps1'; workingDirectory = 'C:\fixture\shared' } }
+function New-ScheduledTaskContractFixture([object[]]$Triggers,[string]$State = 'Disabled') {
+  return [pscustomobject]@{
+    TaskName = 'BaoGiangBackend'; TaskPath = '\BaoGiang\'; State = $State
+    Principal = [pscustomobject]@{ UserId = 'fixture-account' }
+    Actions = @([pscustomobject]@{ Execute = 'C:\fixture\WindowsPowerShell.exe'; Arguments = '-File start-baogiang-api.ps1'; WorkingDirectory = 'C:\fixture\shared' })
+    Triggers = $Triggers
+  }
+}
+function New-ScheduledTaskTriggerFixture([string]$ClassName,[bool]$Enabled = $true) { return [pscustomobject]@{ CimClass = [pscustomobject]@{ CimClassName = $ClassName }; Enabled = $Enabled } }
+$bootTrigger = New-ScheduledTaskTriggerFixture -ClassName 'MSFT_TaskBootTrigger'
+$validDisabledTask = New-ScheduledTaskContractFixture -Triggers @($bootTrigger) -State 'Disabled'
+Assert-VerifiedScheduledTaskContract -Marker $taskContractMarker -ServiceName 'BaoGiangBackend' -Task $validDisabledTask | Out-Null
+Assert-ScheduledTaskDisabledState -Task $validDisabledTask | Out-Null
+foreach ($triggerFixture in @(
+  @{ label = 'zero trigger'; task = (New-ScheduledTaskContractFixture -Triggers @()) },
+  @{ label = 'two Boot triggers'; task = (New-ScheduledTaskContractFixture -Triggers @($bootTrigger,(New-ScheduledTaskTriggerFixture -ClassName 'MSFT_TaskBootTrigger'))) },
+  @{ label = 'Boot plus Time trigger'; task = (New-ScheduledTaskContractFixture -Triggers @($bootTrigger,(New-ScheduledTaskTriggerFixture -ClassName 'MSFT_TaskTimeTrigger'))) },
+  @{ label = 'Logon-only trigger'; task = (New-ScheduledTaskContractFixture -Triggers @((New-ScheduledTaskTriggerFixture -ClassName 'MSFT_TaskLogonTrigger'))) },
+  @{ label = 'disabled Boot trigger'; task = (New-ScheduledTaskContractFixture -Triggers @((New-ScheduledTaskTriggerFixture -ClassName 'MSFT_TaskBootTrigger' -Enabled:$false))) }
+)) {
+  $rejected = $false; try { Assert-VerifiedScheduledTaskContract -Marker $taskContractMarker -ServiceName 'BaoGiangBackend' -Task $triggerFixture.task | Out-Null } catch { $rejected = $true }
+  if (-not $rejected) { throw "Scheduled Task trigger contract accepted: $($triggerFixture.label)" }
+}
+$activationRejected = $false; try { Assert-ScheduledTaskActivationAuthorized | Out-Null } catch { $activationRejected = $true }
+if (-not $activationRejected) { throw 'Scheduled Task activation gate accepted a missing explicit authorization.' }
+Assert-ScheduledTaskActivationAuthorized -AllowScheduledTaskActivation | Out-Null
+$preMutationFailure = Get-ScheduledTaskActivationFailureDisposition -ActivationAttempted:$false
+$activationFailure = Get-ScheduledTaskActivationFailureDisposition -ActivationAttempted:$true
+if ($preMutationFailure.state -ne 'PROPAGATE_ONLY' -or $activationFailure.state -ne 'SAFE_STOP_REQUIRED' -or $activationFailure.taskEnabled -ne $false -or $activationFailure.runtimeRunning -ne $false) { throw 'Scheduled Task activation-failure safe-stop disposition fixture failed.' }
 $wait = Get-SafeStopPollingDecision -ExactProcessId @(3100) -Listeners @([pscustomobject]@{ OwningProcess = 3100 })
 if ($wait.state -ne 'WAIT') { throw 'Exact Báo giảng listener should wait during shutdown grace period.' }
 $pass = Get-SafeStopPollingDecision -ExactProcessId @() -Listeners @()

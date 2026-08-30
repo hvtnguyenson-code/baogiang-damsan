@@ -51,7 +51,7 @@ try {
   $switchJson = & (Join-Path $PSScriptRoot 'switch-current-release.ps1') -ReleaseSha $p.ReleaseSha -Root $canonicalRoot -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint | Select-Object -Last 1
   $report.switch = $switchJson | ConvertFrom-Json; $switched = $true
   $restartAttempted = $true
-  $restartJson = & (Join-Path $PSScriptRoot 'restart-baogiang-api.ps1') -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -NodeExe $p.NodeExe -Root $canonicalRoot -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl | Select-Object -Last 1
+  $restartJson = & (Join-Path $PSScriptRoot 'restart-baogiang-api.ps1') -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -NodeExe $p.NodeExe -Root $canonicalRoot -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl -AllowScheduledTaskActivation:($p.ServiceKind -eq 'scheduled-task') | Select-Object -Last 1
   $report.restart = $restartJson | ConvertFrom-Json
   $healthJson = & (Join-Path $PSScriptRoot 'test-production-health.ps1') -BaseUrl $p.ExpectedBaseUrl -ExpectedApiPort 3100 | Select-Object -Last 1
   $report.health = $healthJson | ConvertFrom-Json
@@ -78,7 +78,7 @@ try {
     }
     else {
       try {
-        $rollbackJson = & (Join-Path $PSScriptRoot 'rollback-release.ps1') -Root $canonicalRoot -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -NodeExe $p.NodeExe -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl -CompatibilityApproved:$p.RollbackCompatibilityApproved -MigrationAttempted:$migrationAttempted | Select-Object -Last 1
+        $rollbackJson = & (Join-Path $PSScriptRoot 'rollback-release.ps1') -Root $canonicalRoot -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -NodeExe $p.NodeExe -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl -CompatibilityApproved:$p.RollbackCompatibilityApproved -MigrationAttempted:$migrationAttempted -AllowScheduledTaskActivation:($p.ServiceKind -eq 'scheduled-task') | Select-Object -Last 1
         $report.rollback = $rollbackJson | ConvertFrom-Json
       } catch { $report.rollback = [ordered]@{ state = 'failed'; errorCategory = Get-SafeErrorCategory $_ } }
     }
