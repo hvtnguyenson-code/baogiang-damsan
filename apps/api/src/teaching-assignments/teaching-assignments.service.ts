@@ -22,6 +22,7 @@ import {
   requireCalendarEnvelope,
   validateTeachingAssignmentCandidate,
 } from './teaching-assignment-policy';
+import { retryTeachingAssignmentSerializableMutation } from './teaching-assignment-transaction-retry';
 
 const TEACHING_ASSIGNMENT_CONSTRAINT = 'teaching_assignments_no_overlap';
 const assignmentInclude = {
@@ -119,7 +120,7 @@ export class TeachingAssignmentsService {
     meta: RequestMeta,
   ): Promise<TeachingAssignmentRecord> {
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      return await retryTeachingAssignmentSerializableMutation(() => this.prisma.$transaction(async (tx) => {
         await this.requireAcademicYear(academicYearId, tx);
         const calendar = await requireActiveCalendar(tx, academicYearId);
         const validFrom = dto.validFrom as CivilDateString;
@@ -150,7 +151,7 @@ export class TeachingAssignmentsService {
           validFrom, validUntil,
         });
         return toRecord(row);
-      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
     } catch (error) {
       this.rethrowConflict(error);
     }
@@ -163,7 +164,7 @@ export class TeachingAssignmentsService {
     meta: RequestMeta,
   ): Promise<TeachingAssignmentRecord> {
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      return await retryTeachingAssignmentSerializableMutation(() => this.prisma.$transaction(async (tx) => {
         const old = await tx.teachingAssignment.findUnique({ where: { id }, include: assignmentInclude });
         if (!old) throw new NotFoundException('Không tìm thấy phân công giảng dạy.');
         const calendar = await requireActiveCalendar(tx, old.academicYearId);
@@ -185,7 +186,7 @@ export class TeachingAssignmentsService {
           previousValidUntil: oldValidUntil, newValidUntil: endDate, noOp,
         });
         return toRecord(row);
-      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
     } catch (error) {
       this.rethrowConflict(error);
     }
@@ -198,7 +199,7 @@ export class TeachingAssignmentsService {
     meta: RequestMeta,
   ): Promise<TeachingAssignmentChangeResult> {
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      return await retryTeachingAssignmentSerializableMutation(() => this.prisma.$transaction(async (tx) => {
         const old = await tx.teachingAssignment.findUnique({ where: { id }, include: assignmentInclude });
         if (!old) throw new NotFoundException('Không tìm thấy phân công giảng dạy.');
         if (dto.newTeacherUserId === old.teacherUserId) {
@@ -248,7 +249,7 @@ export class TeachingAssignmentsService {
           replacementValidUntil: oldValidUntil,
         });
         return { previous: toRecord(previous), replacement: toRecord(replacement) };
-      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
     } catch (error) {
       this.rethrowConflict(error);
     }
