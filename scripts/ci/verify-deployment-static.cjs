@@ -4,7 +4,7 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '..', '..');
 const workflowPath = path.join(root, '.github', 'workflows', 'deploy-production.yml');
 const scriptDir = path.join(root, 'scripts', 'deploy', 'windows');
-const required = ['deployment-common.ps1','production-preflight-readonly.ps1','production-protected-neighbor-discovery.ps1','install-release.ps1','backup-database.ps1','run-migrations.ps1','switch-current-release.ps1','restart-baogiang-api.ps1','start-baogiang-api.ps1','test-production-health.ps1','rollback-release.ps1','invoke-production-deploy.ps1'];
+const required = ['deployment-common.ps1','production-preflight-readonly.ps1','production-protected-neighbor-discovery.ps1','install-release.ps1','backup-database.ps1','run-migrations.ps1','sync-capability-catalog.ps1','switch-current-release.ps1','restart-baogiang-api.ps1','start-baogiang-api.ps1','test-production-health.ps1','rollback-release.ps1','invoke-production-deploy.ps1'];
 const fail = (message) => { throw new Error(`[deployment-static] ${message}`); };
 const read = (file) => fs.readFileSync(file, 'utf8');
 if (!fs.existsSync(workflowPath)) fail('workflow is missing');
@@ -14,6 +14,8 @@ if (!/^on:\s*$/m.test(workflow) || !/^\s{2}workflow_dispatch:\s*$/m.test(workflo
 if (/^\s{2}(push|pull_request):\s*$/m.test(workflow)) fail('deployment workflow must not have push/pull_request triggers');
 for (const token of ['environment: production','cancel-in-progress: false','confirmation:','commit_sha:','StrictHostKeyChecking=yes','merge-base --is-ancestor','workflow_runs','git -C control-plane archive --format=zip','upload-artifact@v4','if: always()','-EncodedCommand','Read-only marker handshake before transfer','control-$run_id-$TARGET_SHA']) if (!workflow.includes(token)) fail(`workflow gate missing: ${token}`);
 const scripts = required.map((file) => read(path.join(scriptDir, file))).join('\n');
+if (!workflow.includes('sync-capability-catalog.ps1') || !scripts.includes('sync-capability-catalog.cjs')) fail('capability catalog synchronization contract is missing');
+if (/npm\s+run\s+prisma:seed/i.test(scripts)) fail('deployment must not invoke generic Prisma seed');
 const forbidden = [
   /StrictHostKeyChecking\s*=\s*no/i, /taskkill\s+\/IM\s+node\.exe/i, /\b(reboot|shutdown)\b/i,
   /Restart-Service[^\r\n]*(postgres|nginx)/i, /Stop-Service[^\r\n]*nginx/i,

@@ -6,7 +6,7 @@ describe('Special Activity capability', () => {
   it('is a single school-wide catalog definition, not a bootstrap grant', () => {
     const key: CapabilityKey = 'SPECIAL_ACTIVITY_MANAGE';
     const load = createRequire(__filename);
-    const { CAPABILITIES } = load('../../../../prisma/seed.cjs') as { CAPABILITIES: Array<[string, string, string[]]> };
+    const { CAPABILITIES } = load('../../../../prisma/capability-catalog.cjs') as { CAPABILITIES: Array<[string, string, string[]]> };
     expect(CAPABILITIES.filter(([candidate]) => candidate === key)).toEqual([[key, expect.any(String), ['SCHOOL_WIDE']]]);
     expect(BOOTSTRAP_TECHNICAL_CAPABILITIES).not.toContain(key);
   });

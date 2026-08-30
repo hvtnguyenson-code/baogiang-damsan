@@ -1,5 +1,4 @@
-import fs from 'node:fs';
-import path from 'node:path';
+import { createRequire } from 'node:module';
 import { CapabilityKey } from '@baogiang/contracts';
 import { BOOTSTRAP_TECHNICAL_CAPABILITIES } from '../../src/bootstrap/bootstrap-admin';
 
@@ -9,8 +8,9 @@ describe('academic structure capability catalog', () => {
     expect(BOOTSTRAP_TECHNICAL_CAPABILITIES).toContain(key);
   });
 
-  it('is seeded with SCHOOL_WIDE as its only allowed scope', () => {
-    const seed = fs.readFileSync(path.resolve(__dirname, '../../../../prisma/seed.cjs'), 'utf8');
-    expect(seed).toMatch(/\['ACADEMIC_STRUCTURE_MANAGE',[\s\S]*?\['SCHOOL_WIDE'\]\]/u);
+  it('has one canonical SCHOOL_WIDE definition', () => {
+    const load = createRequire(__filename);
+    const { CAPABILITIES } = load('../../../../prisma/capability-catalog.cjs') as { CAPABILITIES: Array<[string, string, string[]]> };
+    expect(CAPABILITIES.filter(([candidate]) => candidate === 'ACADEMIC_STRUCTURE_MANAGE')).toEqual([['ACADEMIC_STRUCTURE_MANAGE', expect.any(String), ['SCHOOL_WIDE']]]);
   });
 });

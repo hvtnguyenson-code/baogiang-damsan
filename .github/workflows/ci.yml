@@ -198,6 +198,11 @@ jobs:
           DATABASE_URL: postgresql://baogiang_test_user:ci_test_pass_only@127.0.0.1:5432/baogiang_test?schema=public
         run: npx prisma migrate deploy --schema prisma/schema.prisma
 
+      - name: Capability catalog synchronization integration
+        env:
+          DATABASE_URL: postgresql://baogiang_test_user:ci_test_pass_only@127.0.0.1:5432/baogiang_test?schema=public
+        run: npm run test:capability-catalog:integration
+
       - name: Integration tests — apps/api
         working-directory: apps/api
         env:

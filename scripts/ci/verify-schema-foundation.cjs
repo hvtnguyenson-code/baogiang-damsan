@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { CAPABILITIES } = require('../../prisma/seed.cjs');
+const { CAPABILITIES, validateCapabilityCatalog } = require('../../prisma/capability-catalog.cjs');
 
 const root = path.resolve(__dirname, '..', '..');
 const schema = fs.readFileSync(path.join(root, 'prisma', 'schema.prisma'), 'utf8');
@@ -57,6 +57,9 @@ for (const constraint of [
 const capabilityKeys = CAPABILITIES.map(([key]) => key);
 assert.equal(capabilityKeys.length, 36);
 assert.equal(new Set(capabilityKeys).size, capabilityKeys.length);
+assert.equal(validateCapabilityCatalog(), true);
+assert.throws(() => validateCapabilityCatalog([['BAD', 'bad', ['PERSONAL']], ['BAD', 'duplicate', ['PERSONAL']]]));
+assert.throws(() => validateCapabilityCatalog([['bad', 'invalid', ['PERSONAL']]]));
 for (const requiredKey of [
   'USER_MANAGE',
   'SUBJECT_GROUP_MANAGE',
@@ -88,5 +91,7 @@ assert.deepEqual(capabilityScopes.get('TEACHING_EXECUTION_MANAGE'), ['SUBJECT', 
 assert.deepEqual(capabilityScopes.get('REPORTING_READ'), ['SUBJECT', 'SCHOOL_WIDE']);
 assert.deepEqual(capabilityScopes.get('REPORTING_STATEMENT_SUBMIT'), ['PERSONAL']);
 assert.deepEqual(capabilityScopes.get('REPORTING_STATEMENT_READ'), ['PERSONAL', 'SUBJECT', 'SCHOOL_WIDE']);
+assert.deepEqual(capabilityScopes.get('APPROVAL_PRINCIPAL'), ['SCHOOL_WIDE']);
+assert.deepEqual(capabilityScopes.get('APPROVAL_VICE_PRINCIPAL'), ['SCHOOL_WIDE']);
 
 console.log('Schema foundation static verification PASS.');

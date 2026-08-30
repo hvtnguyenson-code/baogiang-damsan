@@ -34,9 +34,11 @@ Runbook này diễn giải đường đi chính thức từ thay đổi local t�
 4. CI chạy trên branch/PR, dựng PostgreSQL cô lập cho integration/migration/E2E có database.
 5. Có review GitHub độc lập; chỉ merge `main` khi được phép.
 6. CD lấy đúng commit từ GitHub sang thư mục riêng của Báo giảng trên VPS.
-7. Nếu commit có migration, thực hiện backup/review gate rồi chạy `prisma migrate deploy`.
-8. Restart riêng service/Scheduled Task/process Báo giảng bằng entry point đã xác minh.
+7. Thực hiện backup/review gate, chạy `prisma migrate deploy`, rồi synchronize và verify capability catalog từ exact release.
+8. Chỉ khi catalog verification thành công mới switch release; sau đó restart riêng service/Scheduled Task/process Báo giảng bằng entry point đã xác minh.
 9. Kiểm tra process, log, database migration state và health endpoint tại `https://baogiang.dtnt-damsan.edu.vn`.
+
+`CapabilityDefinition` synchronization bảo đảm system catalog, không phải provisioning `CapabilityGrant`. Deploy không tự cấp/sửa/thu hồi quyền người dùng; grants là prerequisite nghiệp vụ do operator quyết định.
 
 Không copy working tree local lên VPS. `workflow_dispatch` chỉ là cơ chế khởi chạy có kiểm soát, không thay thế review/phê duyệt.
 
