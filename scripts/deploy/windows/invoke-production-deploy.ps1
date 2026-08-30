@@ -17,6 +17,8 @@ $canonicalRoot = $identity.canonicalRoot
 $marker = $identity.marker
 Assert-VerifiedRuntimeIdentity -Marker $marker -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName | Out-Null
 Assert-ExecutableContract @{ NodeExe = $p.NodeExe; NpmExe = $p.NpmExe; NpxExe = $p.NpxExe; PsqlExe = $p.PsqlExe; PgDumpExe = $p.PgDumpExe; PgRestoreExe = $p.PgRestoreExe; NginxExe = $p.NginxExe }
+$hasCurrentRelease = Test-Path -LiteralPath (Join-Path $canonicalRoot 'current')
+Assert-ProductionRuntimeKindSupported -ServiceKind $p.ServiceKind -FirstDeploy:(-not $hasCurrentRelease)
 $transfer = Assert-ExactChildPath $canonicalRoot "incoming\$($p.TransferDirectoryName)"
 if (-not (Test-Path -LiteralPath $transfer -PathType Container)) { throw 'Verified unique transfer directory is missing.' }
 $source = Join-Path $transfer $p.SourceArchiveName
@@ -30,7 +32,7 @@ $migrationAttempted = $false; $migrationCompleted = $false; $switched = $false; 
 try {
   Read-ValidatedProductionEnvironment -EnvFile $p.EnvFile -ExpectedBaseUrl $p.ExpectedBaseUrl | Out-Null
   Invoke-NativeChecked $p.NginxExe @('-t','-c',$p.NginxConfig) 'nginx configuration test' | Out-Null
-  if (Test-Path -LiteralPath (Join-Path $canonicalRoot 'current')) { $report.previousRelease = Split-Path (Assert-ReleasePointerTarget -PointerPath (Join-Path $canonicalRoot 'current') -Root $canonicalRoot) -Leaf }
+  if ($hasCurrentRelease) { $report.previousRelease = Split-Path (Assert-ReleasePointerTarget -PointerPath (Join-Path $canonicalRoot 'current') -Root $canonicalRoot) -Leaf }
   Move-Item -LiteralPath $source -Destination $incoming
   & (Join-Path $PSScriptRoot 'install-release.ps1') -ReleaseSha $p.ReleaseSha -Root $canonicalRoot -SourceArchive $incoming -ExpectedSha256 $p.ExpectedSha256 -NpmExe $p.NpmExe -NpxExe $p.NpxExe -NodeExe $p.NodeExe -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName
   $backupJson = & (Join-Path $PSScriptRoot 'backup-database.ps1') -PgDumpExe $p.PgDumpExe -PgRestoreExe $p.PgRestoreExe -Root $canonicalRoot -BackupRoot (Join-Path $canonicalRoot 'backups') -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint | Select-Object -Last 1

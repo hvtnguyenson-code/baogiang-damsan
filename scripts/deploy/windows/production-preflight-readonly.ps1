@@ -152,6 +152,7 @@ $databaseVerifier = Resolve-DatabaseVerifierExecutable -VerifyDatabase:$VerifyDa
 $reportDirectory = Split-Path -Parent ([IO.Path]::GetFullPath($ReportPath))
 if (-not (Test-Path -LiteralPath $reportDirectory -PathType Container)) { throw 'Report directory must already exist; inventory will not create it.' }
 $directoryPaths = @($canonicalRoot,'releases','staging','incoming','shared','logs','backups' | ForEach-Object { if ($_ -eq $canonicalRoot) { $_ } else { Join-Path $canonicalRoot $_ } })
+Assert-PreflightRuntimeKindSupported -RequireReviewedIsolation:$RequireReviewedIsolation -ServiceKind $ServiceKind
 $candidateRuntimeName = Resolve-ExpectedCandidateRuntimeName -ServiceKind $ServiceKind -ExpectedTaskName $ExpectedTaskName -ExpectedServiceName $ExpectedServiceName -RequireReviewedIsolation:$RequireReviewedIsolation
 $candidateNames = if ($RequireReviewedIsolation) { @($candidateRuntimeName) } else { @(@($ExpectedTaskName,$ExpectedServiceName) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) }
 $isolation = Get-ProtectedNeighborIsolationEvidence -CandidateRoot $canonicalRoot -KnownForeignRoot $KnownForeignRoot -CandidateName $candidateNames -KnownForeignName $KnownForeignName -RequireReviewedInputs:$RequireReviewedIsolation

@@ -84,7 +84,7 @@ jobs:
           [[ "$PROD_SSH_HOST" =~ ^[A-Za-z0-9.-]+$ ]]
           [[ "$PROD_SSH_USER" =~ ^[A-Za-z0-9._-]+$ ]]
           [[ "$PROD_SSH_PORT" =~ ^[0-9]+$ ]] && (( PROD_SSH_PORT >= 1 && PROD_SSH_PORT <= 65535 ))
-          [[ "$PROD_SERVICE_KIND" == "scheduled-task" || "$PROD_SERVICE_KIND" == "service" ]]
+          [[ "$PROD_SERVICE_KIND" == "scheduled-task" ]] || { echo "Production CD currently supports scheduled-task only." >&2; exit 1; }
           [[ "$PROD_SERVICE_NAME" =~ ^[A-Za-z0-9._-]+$ ]]
           for path_value in PROD_BAOGIANG_ROOT PROD_ENV_FILE PROD_STARTUP_WRAPPER PROD_API_ENTRYPOINT PROD_NGINX_EXE PROD_NGINX_CONFIG PROD_NODE_EXE PROD_NPM_EXE PROD_NPX_EXE PROD_PSQL_EXE PROD_PG_DUMP_EXE PROD_PG_RESTORE_EXE; do
             [[ "${!path_value}" =~ ^[A-Za-z]:\\ ]] || { echo "Non-absolute Windows path: $path_value" >&2; exit 1; }

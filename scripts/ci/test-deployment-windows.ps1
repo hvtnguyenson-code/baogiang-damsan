@@ -4,6 +4,19 @@ Set-StrictMode -Version Latest
 $repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 . (Join-Path $repo 'scripts\deploy\windows\deployment-common.ps1')
 
+Assert-ProductionRuntimeKindSupported -ServiceKind 'scheduled-task' -FirstDeploy $true
+$rejected = $false
+try { Assert-ProductionRuntimeKindSupported -ServiceKind 'service' -FirstDeploy $true } catch { if ($_.Exception.Message -match 'SERVICE_FIRST_DEPLOY_UNSUPPORTED') { $rejected = $true } }
+if (-not $rejected) { throw 'Service first-deploy runtime kind was not rejected categorically.' }
+Assert-ProductionRuntimeKindSupported -ServiceKind 'service' -FirstDeploy $false
+Assert-ProductionRuntimeKindSupported -ServiceKind 'scheduled-task' -FirstDeploy $false
+Assert-PreflightRuntimeKindSupported -RequireReviewedIsolation:$false
+Assert-PreflightRuntimeKindSupported -RequireReviewedIsolation:$false -ServiceKind 'service'
+Assert-PreflightRuntimeKindSupported -RequireReviewedIsolation:$true -ServiceKind 'scheduled-task'
+$preflightServiceRejected = $false
+try { Assert-PreflightRuntimeKindSupported -RequireReviewedIsolation:$true -ServiceKind 'service' } catch { if ($_.Exception.Message -match 'SERVICE_FIRST_DEPLOY_UNSUPPORTED') { $preflightServiceRejected = $true } }
+if (-not $preflightServiceRejected) { throw 'Verified first-deploy Service was not rejected categorically by the preflight guard.' }
+
 $reservedVariableNames = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 Get-Variable | Where-Object {
   (($_.Options -band [System.Management.Automation.ScopedItemOptions]::ReadOnly) -ne 0) -or
