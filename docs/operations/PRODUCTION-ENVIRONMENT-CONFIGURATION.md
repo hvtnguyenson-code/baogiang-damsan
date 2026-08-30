@@ -40,10 +40,11 @@ PASS 1 tool paths are discovery candidates only. Authenticated PASS 2 database e
 
 ## Dedicated identity marker
 
-Bootstrap must create `<PROD_BAOGIANG_ROOT>\shared\deployment-identity.json` before any workflow mutation. It contains no secret and must record at least:
+Bootstrap must create `<PROD_BAOGIANG_ROOT>\shared\deployment-identity.json` before any workflow mutation. It contains no secret and must conform to this exact versioned schema: no unknown top-level or nested properties are accepted, every displayed field is required, and strings must be non-empty. `schemaVersion` is exactly integer `1`.
 
 ```json
 {
+  "schemaVersion": 1,
   "systemId": "baogiang-damsan",
   "canonicalRoot": "<reviewed absolute root>",
   "domain": "https://baogiang.dtnt-damsan.edu.vn",
@@ -78,7 +79,11 @@ Bootstrap must create `<PROD_BAOGIANG_ROOT>\shared\deployment-identity.json` bef
 }
 ```
 
-The startup bundle is an immutable bootstrap prerequisite installed together from the reviewed commit, hash-verified and ACL-reviewed before the task/service is created. For a Windows Service, replace the task fields with the exact reviewed service-host executable, `pathName`, and `startName`. A PowerShell script alone is not a Windows Service. The workflow and every mutating script refuse a missing marker, root mismatch, bundle hash mismatch, path mismatch, service/task mismatch, port conflict, protected root, or missing pre-created directory.
+`foreignIsolation` has exactly `reviewedNginxPrefix`, `reviewedNginxConfig`, `foreignRoots`, and `bootstrapReportReference`. `foreignRoots` is a non-empty JSON array of distinct absolute paths that do not overlap the dedicated root; the reviewed Nginx prefix also must not overlap it. `reviewedNginxConfig` binds exactly to top-level `nginxConfig`. The report reference is never emitted in errors.
+
+`startupBundle` has exactly `wrapperPath`, `wrapperSha256`, `commonPath`, and `commonSha256`; both hashes are 64-character hexadecimal SHA-256 values. The bundle paths bind to the approved wrapper and sibling `deployment-common.ps1` and both files are hash-verified.
+
+For `service.kind: "scheduled-task"`, the exact shape is `kind`, `name`, `taskPath`, `account`, `execute`, `arguments`, and `workingDirectory`. For `service.kind: "service"`, it is exactly `kind`, `name`, `account`, and `pathName`; `account` corresponds to Windows Service `StartName`. The shapes are discriminated and cannot carry each other's fields. A PowerShell script alone is not a Windows Service. The workflow and every mutating script refuse a missing marker, schema mismatch, root mismatch, bundle hash mismatch, path mismatch, service/task mismatch, port conflict, protected root, or missing pre-created directory.
 
 ## Server-side environment
 

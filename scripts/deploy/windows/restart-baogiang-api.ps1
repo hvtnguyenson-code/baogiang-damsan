@@ -15,7 +15,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'deployment-common.ps1')
 $canonicalRoot = Assert-DedicatedRoot $Root
-$identity = Read-DeploymentIdentity -Root $canonicalRoot -ServiceKind $ServiceKind -ServiceName $ServiceName -EnvFile $EnvFile -StartupWrapper $StartupWrapper -ExpectedEntryPoint $ExpectedEntryPoint
+$identity = Read-DeploymentIdentity -Root $canonicalRoot -ServiceKind $ServiceKind -ServiceName $ServiceName -EnvFile $EnvFile -StartupWrapper $StartupWrapper -ExpectedEntryPoint $ExpectedEntryPoint -NodeExe $NodeExe
 $canonicalRoot = $identity.canonicalRoot
 $marker = $identity.marker
 Assert-ExistingLeaf $NodeExe 'Node executable' | Out-Null
@@ -32,7 +32,7 @@ function Get-ExactApiProcesses {
 function Assert-TaskContract {
   $task = @(Get-ScheduledTask -ErrorAction Stop | Where-Object { $_.TaskName -ceq $ServiceName })
   if ($task.Count -ne 1) { throw 'Exact Scheduled Task identity is missing or ambiguous.' }
-  if ($marker.service.taskPath -and $task[0].TaskPath -cne $marker.service.taskPath) { throw 'Scheduled Task path mismatch.' }
+  if ($task[0].TaskPath -cne $marker.service.taskPath) { throw 'Scheduled Task path mismatch.' }
   if ($task[0].Principal.UserId -cne $marker.service.account) { throw 'Scheduled Task account mismatch.' }
   $actions = @($task[0].Actions)
   if ($actions.Count -ne 1) { throw 'Scheduled Task must have exactly one startup action.' }
