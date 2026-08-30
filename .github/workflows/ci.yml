@@ -274,6 +274,7 @@ jobs:
           CORS_ORIGINS: http://127.0.0.1:5173
           API_HOST: 127.0.0.1
           API_PORT: '3100'
+          AUTH_LOGIN_RATE_LIMIT_MAX: '50'
         run: node dist/apps/api/src/main.js &
 
       - name: Start Web for Playwright

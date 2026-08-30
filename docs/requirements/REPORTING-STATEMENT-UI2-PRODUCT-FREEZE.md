@@ -29,6 +29,8 @@ Mỗi major route family chạy axe WCAG A/AA, kiểm serious/critical violation
 
 Workflow canonical migrate/seed database Playwright cô lập, bootstrap fixture trước khi khởi động API/Web và `Run Playwright smoke tests` chạy cả live business spec lẫn visual fixture. Kết quả PostgreSQL/business authoritative chỉ đến từ GitHub CI.
 
+CI #285 đã PASS các gate security/static, migration, lint/typecheck, unit, PostgreSQL integration, build, isolated Playwright database, Reporting Statement fixture bootstrap và API/Web startup. Bước Playwright thất bại ở ba điểm thuộc hai nhóm test/infrastructure: hai business tests dùng global text locator cho label counts xuất hiện hợp lệ ở cả tổng hợp và evidence section; test quản trị Phase-01 sau đó gặp `HTTP 429` do mọi Playwright context dùng chung loopback rate-limit key. Correction scope semantic locator theo preview evidence, lifecycle identity và history; riêng process API của Playwright đặt `AUTH_LOGIN_RATE_LIMIT_MAX: '50'` để cô lập suite trong khi limiter, real login, cookie/session và authorization vẫn hoạt động. Không phát hiện product, runtime hoặc domain defect.
+
 `local candidate → push → independent GitHub review → PR → exact-head CI → merge → post-merge main CI → CLOSED / GREEN`
 
 ## Explicit non-scope

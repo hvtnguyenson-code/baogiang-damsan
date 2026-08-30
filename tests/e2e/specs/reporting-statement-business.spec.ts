@@ -8,7 +8,12 @@ async function login(page: Page, username: string) {
   await page.goto('/dang-nhap');
   await page.getByLabel('Tên đăng nhập').fill(username);
   await page.getByLabel('Mật khẩu').fill(password);
+  const loginResponsePromise = page.waitForResponse((response) =>
+    new URL(response.url()).pathname === '/api/auth/login'
+    && response.request().method() === 'POST');
   await page.getByRole('button', { name: 'Đăng nhập' }).click();
+  const loginResponse = await loginResponsePromise;
+  expect(loginResponse.status()).toBe(200);
   await expect(page).not.toHaveURL(/dang-nhap/);
 }
 
@@ -26,9 +31,11 @@ async function submitThroughTeacherUi(page: Page): Promise<string> {
   await page.getByLabel('Từ ngày').fill('2026-08-01');
   await page.getByLabel('Đến ngày').fill('2026-08-31');
   await page.getByRole('button', { name: 'Xem trước báo cáo' }).click();
-  await expect(page.getByText('Tiết đã phân phối đến hạn')).toBeVisible();
-  await expect(page.getByText('Thời gian chịu trách nhiệm')).toBeVisible();
-  await expect(page.getByText('Tiết đã hoàn thành')).toBeVisible();
+  const previewRegion = page.getByRole('region', { name: '02 · Bằng chứng xem trước' });
+  const evidenceArticle = previewRegion.getByRole('article');
+  await expect(evidenceArticle.getByText('Tiết đã phân phối đến hạn', { exact: true })).toBeVisible();
+  await expect(evidenceArticle.getByText('Thời gian chịu trách nhiệm', { exact: true })).toBeVisible();
+  await expect(evidenceArticle.getByText('Tiết đã hoàn thành', { exact: true })).toBeVisible();
   await expect(page.locator('body')).not.toContainText(/requestKey|lifecycleToken|semanticHash|canonicalSnapshotJson|provenance/i);
   await page.getByRole('button', { name: 'Gửi báo cáo' }).click();
   await expect(page.getByText('Báo cáo chính thức đã được lưu.')).toBeVisible();
@@ -78,13 +85,16 @@ test.describe('Reporting Statement live cross-role workflow', () => {
     await approverPage.getByRole('button', { name: 'Phê duyệt báo cáo' }).click();
     await expect(approverPage.getByRole('button', { name: 'Xác nhận phê duyệt' })).toBeVisible();
     await approverPage.getByRole('button', { name: 'Xác nhận phê duyệt' }).click();
-    await expect(approverPage.getByText('Đã phê duyệt')).toBeVisible();
+    const approverIdentity = approverPage.getByRole('region', { name: 'Thông tin bản báo cáo' });
+    await expect(approverIdentity.getByText('Đã phê duyệt', { exact: true })).toBeVisible();
     await expect(approverPage.getByRole('button', { name: /Phê duyệt|Từ chối/ })).toHaveCount(0);
     await approverPage.goto('/phe-duyet-bao-cao');
     await expect(approverPage.getByText('Không có báo cáo đang chờ')).toBeVisible();
     await teacherPage.reload();
-    await expect(teacherPage.getByText('Đã phê duyệt')).toBeVisible();
-    await expect(teacherPage.getByRole('heading', { name: 'Lịch sử báo cáo' })).toContainText(/Đã phê duyệt/);
+    const teacherIdentity = teacherPage.getByRole('region', { name: 'Thông tin bản báo cáo' });
+    const teacherHistory = teacherPage.getByRole('region', { name: 'Lịch sử báo cáo' });
+    await expect(teacherIdentity.getByText('Đã phê duyệt', { exact: true })).toBeVisible();
+    await expect(teacherHistory.getByText('Đã phê duyệt', { exact: true })).toBeVisible();
     await Promise.all([teacher.close(), readerA.close(), readerB.close(), approver.close()]);
   });
 
@@ -104,7 +114,8 @@ test.describe('Reporting Statement live cross-role workflow', () => {
     await stalePage.getByRole('button', { name: 'Phê duyệt báo cáo' }).click();
     await stalePage.getByRole('button', { name: 'Xác nhận phê duyệt' }).click();
     await expect(stalePage.getByText('Báo cáo đã có trạng thái mới')).toBeVisible();
-    await expect(stalePage.getByText('Đã phê duyệt')).toBeVisible();
+    const staleIdentity = stalePage.getByRole('region', { name: 'Thông tin bản báo cáo' });
+    await expect(staleIdentity.getByText('Đã phê duyệt', { exact: true })).toBeVisible();
     await expect(stalePage.getByRole('button', { name: /Phê duyệt|Từ chối/ })).toHaveCount(0);
     await api.dispose();
     await Promise.all([teacher.close(), staleApprover.close()]);
