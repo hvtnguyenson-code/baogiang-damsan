@@ -58,8 +58,8 @@ assert.match(common, /PGPASSWORD/); assert.match(backup, /pg_restore/); assert.d
 assert.match(common, /'TZ'/); assert.match(common, /Asia\/Ho_Chi_Minh/); assert.match(common, /foreach \(\$name in \$required\)/);
 assert.match(common, /commandLineSha256/); assert.doesNotMatch(common, /commandLineRedacted/); assert.match(inventory, /Get-NormalizedProcessIdentity/); assert.doesNotMatch(inventory, /Get-ListenerSnapshot 22/);
 assert.match(invoke, /Read-DeploymentIdentity/); assert.ok(invoke.indexOf('Read-DeploymentIdentity') < invoke.indexOf('Move-Item -LiteralPath $source'));
-assert.match(common, /function Assert-ProductionRuntimeKindSupported/); assert.match(common, /SERVICE_FIRST_DEPLOY_UNSUPPORTED/);
-assert.ok(inventory.indexOf('Assert-ProductionRuntimeKindSupported') < inventory.indexOf('Resolve-ExpectedCandidateRuntimeName'));
+assert.match(common, /function Assert-ProductionRuntimeKindSupported/); assert.match(common, /function Assert-PreflightRuntimeKindSupported/); assert.match(common, /if \(\$RequireReviewedIsolation\) \{ Assert-ProductionRuntimeKindSupported -ServiceKind \$ServiceKind -FirstDeploy \$true \}/); assert.match(common, /SERVICE_FIRST_DEPLOY_UNSUPPORTED/);
+assert.ok(inventory.indexOf('Assert-PreflightRuntimeKindSupported') < inventory.indexOf('Resolve-ExpectedCandidateRuntimeName'));
 assert.match(invoke, /\$hasCurrentRelease = Test-Path -LiteralPath \(Join-Path \$canonicalRoot 'current'\)/); assert.match(invoke, /Assert-ProductionRuntimeKindSupported -ServiceKind \$p\.ServiceKind -FirstDeploy:\(-not \$hasCurrentRelease\)/);
 for (const mutation of ['Move-Item -LiteralPath $source','install-release.ps1','backup-database.ps1','run-migrations.ps1','switch-current-release.ps1']) assert.ok(invoke.indexOf('Assert-ProductionRuntimeKindSupported') < invoke.indexOf(mutation), `first-deploy service rejection must precede ${mutation}`);
 assert.match(workflow, /\[\[ "\$PROD_SERVICE_KIND" == "scheduled-task" \]\] \|\| \{ echo "Production CD currently supports scheduled-task only\." >&2; exit 1; \}/); assert.doesNotMatch(workflow, /\[\[ "\$PROD_SERVICE_KIND" == "scheduled-task" \|\| "\$PROD_SERVICE_KIND" == "service" \]\]/);

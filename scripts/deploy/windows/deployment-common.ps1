@@ -107,6 +107,10 @@ function Assert-ProductionRuntimeKindSupported([Parameter(Mandatory = $true)][Va
   if ($FirstDeploy -and $ServiceKind -eq 'service') { throw 'SERVICE_FIRST_DEPLOY_UNSUPPORTED' }
 }
 
+function Assert-PreflightRuntimeKindSupported([switch]$RequireReviewedIsolation,[AllowNull()][string]$ServiceKind) {
+  if ($RequireReviewedIsolation) { Assert-ProductionRuntimeKindSupported -ServiceKind $ServiceKind -FirstDeploy $true }
+}
+
 function Resolve-ExpectedCandidateRuntimeName([AllowNull()][string]$ServiceKind,[AllowNull()][string]$ExpectedTaskName,[AllowNull()][string]$ExpectedServiceName,[switch]$RequireReviewedIsolation) {
   if (-not $RequireReviewedIsolation) { return $null }
   if ($ServiceKind -notin @('scheduled-task','service')) { throw 'Verified first-deploy isolation requires an exact ServiceKind.' }

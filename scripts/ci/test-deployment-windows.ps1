@@ -10,6 +10,12 @@ try { Assert-ProductionRuntimeKindSupported -ServiceKind 'service' -FirstDeploy 
 if (-not $rejected) { throw 'Service first-deploy runtime kind was not rejected categorically.' }
 Assert-ProductionRuntimeKindSupported -ServiceKind 'service' -FirstDeploy $false
 Assert-ProductionRuntimeKindSupported -ServiceKind 'scheduled-task' -FirstDeploy $false
+Assert-PreflightRuntimeKindSupported -RequireReviewedIsolation:$false
+Assert-PreflightRuntimeKindSupported -RequireReviewedIsolation:$false -ServiceKind 'service'
+Assert-PreflightRuntimeKindSupported -RequireReviewedIsolation:$true -ServiceKind 'scheduled-task'
+$preflightServiceRejected = $false
+try { Assert-PreflightRuntimeKindSupported -RequireReviewedIsolation:$true -ServiceKind 'service' } catch { if ($_.Exception.Message -match 'SERVICE_FIRST_DEPLOY_UNSUPPORTED') { $preflightServiceRejected = $true } }
+if (-not $preflightServiceRejected) { throw 'Verified first-deploy Service was not rejected categorically by the preflight guard.' }
 
 $reservedVariableNames = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 Get-Variable | Where-Object {
