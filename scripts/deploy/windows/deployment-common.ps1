@@ -249,8 +249,10 @@ function Assert-ReleasePointerTarget([Parameter(Mandatory = $true)][string]$Poin
 function Assert-ExactMarkerProperties([Parameter(Mandatory = $true)]$Object,[Parameter(Mandatory = $true)][string[]]$Expected,[Parameter(Mandatory = $true)][string]$Label) {
   if ($null -eq $Object -or $Object -isnot [pscustomobject]) { throw "Deployment identity marker $Label must be an object." }
   $actual = @($Object.PSObject.Properties.Name)
-  foreach ($name in $Expected) { if ($actual -notcontains $name) { throw "Deployment identity marker $Label is missing required property: $name" } }
-  foreach ($name in $actual) { if ($Expected -notcontains $name) { throw "Deployment identity marker $Label contains an unknown property." } }
+  $expectedNames = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+  foreach ($name in $Expected) { [void]$expectedNames.Add($name) }
+  foreach ($name in $Expected) { if (-not $expectedNames.Contains($name) -or -not (@($actual | Where-Object { $_ -ceq $name }).Count -eq 1)) { throw "Deployment identity marker $Label is missing required property: $name" } }
+  foreach ($name in $actual) { if (-not $expectedNames.Contains($name)) { throw "Deployment identity marker $Label contains an unknown property." } }
 }
 
 function Assert-MarkerString([Parameter(Mandatory = $true)]$Value,[Parameter(Mandatory = $true)][string]$Label,[switch]$AbsolutePath) {
@@ -294,12 +296,12 @@ function Assert-DeploymentMarkerSchema([Parameter(Mandatory = $true)]$Marker,[Pa
 
   if ($Marker.service -isnot [pscustomobject]) { throw 'Deployment identity marker service must be an object.' }
   $kind = Assert-MarkerString $Marker.service.kind 'service.kind'
-  if ($kind -eq 'scheduled-task') {
+  if ($kind -ceq 'scheduled-task') {
     Assert-ExactMarkerProperties $Marker.service @('kind','name','taskPath','account','execute','arguments','workingDirectory') 'service'
     foreach ($field in @('name','taskPath','account','execute','arguments','workingDirectory')) { Assert-MarkerString $Marker.service.$field "service.$field" | Out-Null }
     if ($Marker.service.name -notmatch '^[A-Za-z0-9._-]{1,128}$') { throw 'Deployment identity marker scheduled-task name does not match the safe runtime-name syntax.' }
     foreach ($pathField in @('execute','workingDirectory')) { Assert-MarkerString $Marker.service.$pathField "service.$pathField" -AbsolutePath | Out-Null }
-  } elseif ($kind -eq 'service') {
+  } elseif ($kind -ceq 'service') {
     Assert-ExactMarkerProperties $Marker.service @('kind','name','account','pathName') 'service'
     foreach ($field in @('name','account','pathName')) { Assert-MarkerString $Marker.service.$field "service.$field" | Out-Null }
     if ($Marker.service.name -notmatch '^[A-Za-z0-9._-]{1,128}$') { throw 'Deployment identity marker service name does not match the safe runtime-name syntax.' }
@@ -323,7 +325,7 @@ function Read-DeploymentIdentity(
   if (-not (Test-Path -LiteralPath $markerPath -PathType Leaf)) { throw 'Dedicated deployment identity marker is missing.' }
   $marker = Get-Content -LiteralPath $markerPath -Raw -Encoding UTF8 | ConvertFrom-Json
   Assert-DeploymentMarkerSchema -Marker $marker -CanonicalRoot $canonicalRoot | Out-Null
-  if ($marker.service.kind -ne $ServiceKind -or $marker.service.name -ne $ServiceName) { throw 'Deployment identity marker task/service mismatch.' }
+  if ($marker.service.kind -cne $ServiceKind -or $marker.service.name -cne $ServiceName) { throw 'Deployment identity marker task/service mismatch.' }
   if ((Normalize-ComparablePath $marker.envFile) -ne (Normalize-ComparablePath $EnvFile)) { throw 'Deployment identity marker env path mismatch.' }
   if ((Normalize-ComparablePath $marker.startupWrapper) -ne (Normalize-ComparablePath $StartupWrapper)) { throw 'Deployment identity marker startup wrapper mismatch.' }
   if ((Normalize-ComparablePath $marker.entryPoint) -ne (Normalize-ComparablePath $ExpectedEntryPoint)) { throw 'Deployment identity marker entry point mismatch.' }

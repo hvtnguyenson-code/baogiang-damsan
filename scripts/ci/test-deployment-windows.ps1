@@ -193,17 +193,20 @@ try {
   Assert-DeploymentMarkerSchema -Marker $validMarker -CanonicalRoot $schemaRoot | Out-Null
   foreach ($fixture in @(
     @{ label = 'missing schemaVersion'; mutate = { param($m) $m.PSObject.Properties.Remove('schemaVersion') } },
+    @{ label = 'wrong-case SchemaVersion'; mutate = { param($m) $value = $m.schemaVersion; $m.PSObject.Properties.Remove('schemaVersion'); $m | Add-Member -NotePropertyName SchemaVersion -NotePropertyValue $value } },
     @{ label = 'unsupported schemaVersion'; mutate = { param($m) $m.schemaVersion = [long]2 } },
     @{ label = 'wrong type version'; mutate = { param($m) $m.schemaVersion = '1' } },
     @{ label = 'wrong type apiPort'; mutate = { param($m) $m.apiPort = '3100' } },
     @{ label = 'unknown top-level'; mutate = { param($m) $m | Add-Member -NotePropertyName extra -NotePropertyValue 'x' } },
     @{ label = 'missing nodeExe'; mutate = { param($m) $m.PSObject.Properties.Remove('nodeExe') } },
+    @{ label = 'wrong-case NodeExe'; mutate = { param($m) $value = $m.nodeExe; $m.PSObject.Properties.Remove('nodeExe'); $m | Add-Member -NotePropertyName NodeExe -NotePropertyValue $value } },
     @{ label = 'empty nodeExe'; mutate = { param($m) $m.nodeExe = '' } },
     @{ label = 'wrong type nodeExe'; mutate = { param($m) $m.nodeExe = 7 } },
     @{ label = 'empty nginxExe'; mutate = { param($m) $m.nginxExe = '' } },
     @{ label = 'empty nginxConfig'; mutate = { param($m) $m.nginxConfig = '' } },
     @{ label = 'empty foreignIsolation'; mutate = { param($m) $m.foreignIsolation = [pscustomobject]@{} } },
     @{ label = 'missing Nginx prefix'; mutate = { param($m) $m.foreignIsolation.PSObject.Properties.Remove('reviewedNginxPrefix') } },
+    @{ label = 'wrong-case reviewed Nginx config'; mutate = { param($m) $value = $m.foreignIsolation.reviewedNginxConfig; $m.foreignIsolation.PSObject.Properties.Remove('reviewedNginxConfig'); $m.foreignIsolation | Add-Member -NotePropertyName ReviewedNginxConfig -NotePropertyValue $value } },
     @{ label = 'missing Nginx config'; mutate = { param($m) $m.foreignIsolation.PSObject.Properties.Remove('reviewedNginxConfig') } },
     @{ label = 'missing foreignRoots'; mutate = { param($m) $m.foreignIsolation.PSObject.Properties.Remove('foreignRoots') } },
     @{ label = 'missing report reference'; mutate = { param($m) $m.foreignIsolation.PSObject.Properties.Remove('bootstrapReportReference') } },
@@ -215,9 +218,12 @@ try {
     @{ label = 'Nginx prefix overlap'; mutate = { param($m) $m.foreignIsolation.reviewedNginxPrefix = 'C:\fixture\baogiang\nginx' } },
     @{ label = 'reviewed config mismatch'; mutate = { param($m) $m.foreignIsolation.reviewedNginxConfig = 'C:\fixture\different.conf' } },
     @{ label = 'missing startup field'; mutate = { param($m) $m.startupBundle.PSObject.Properties.Remove('commonPath') } },
+    @{ label = 'empty startup wrapperPath'; mutate = { param($m) $m.startupBundle.wrapperPath = '' } },
+    @{ label = 'wrong-case startup wrapperPath'; mutate = { param($m) $value = $m.startupBundle.wrapperPath; $m.startupBundle.PSObject.Properties.Remove('wrapperPath'); $m.startupBundle | Add-Member -NotePropertyName WrapperPath -NotePropertyValue $value } },
     @{ label = 'invalid startup hash'; mutate = { param($m) $m.startupBundle.wrapperSha256 = 'bad' } },
     @{ label = 'unknown startup field'; mutate = { param($m) $m.startupBundle | Add-Member -NotePropertyName extra -NotePropertyValue 'x' } },
     @{ label = 'missing taskPath'; mutate = { param($m) $m.service.PSObject.Properties.Remove('taskPath') } },
+    @{ label = 'wrong-case taskPath'; mutate = { param($m) $value = $m.service.taskPath; $m.service.PSObject.Properties.Remove('taskPath'); $m.service | Add-Member -NotePropertyName TaskPath -NotePropertyValue $value } },
     @{ label = 'empty taskPath'; mutate = { param($m) $m.service.taskPath = '' } },
     @{ label = 'empty task account'; mutate = { param($m) $m.service.account = '' } },
     @{ label = 'empty task execute'; mutate = { param($m) $m.service.execute = '' } },
@@ -230,6 +236,7 @@ try {
     $rejected = $false; try { Assert-DeploymentMarkerSchema -Marker $candidate -CanonicalRoot $schemaRoot | Out-Null } catch { $rejected = $true }
     if (-not $rejected) { throw "Marker schema hostile fixture was accepted: $($fixture.label)" }
   }
+  foreach ($wrongCaseKind in @('SCHEDULED-TASK','SERVICE')) { $candidate = $validMarker | ConvertTo-Json -Depth 8 | ConvertFrom-Json; $candidate.service.kind = $wrongCaseKind; $rejected = $false; try { Assert-DeploymentMarkerSchema -Marker $candidate -CanonicalRoot $schemaRoot | Out-Null } catch { $rejected = $true }; if (-not $rejected) { throw "Wrong-case service.kind was accepted: $wrongCaseKind" } }
   $serviceMarker = $validMarker | ConvertTo-Json -Depth 8 | ConvertFrom-Json
   $serviceMarker.service = [pscustomobject]@{ kind = 'service'; name = 'BaoGiangService'; account = 'fixture-account'; pathName = 'C:\fixture\service-host.exe --run' }
   Assert-DeploymentMarkerSchema -Marker $serviceMarker -CanonicalRoot $schemaRoot | Out-Null
