@@ -2,7 +2,7 @@
 
 ## Status
 
-**Candidate.** Baseline `main` tại `15b1fb4478aa01c82211a9204b3c14e5efaba53a`. Candidate cần independent GitHub review và CI trên exact branch head; tài liệu này không tuyên bố Product UI Freeze CLOSED, không cho phép merge hoặc deploy.
+**Historical UI-1 candidate.** Product UI Freeze được tiếp tục và đánh giá tại `REPORTING-STATEMENT-UI2-PRODUCT-FREEZE.md`; tài liệu này không tự tuyên bố Product UI Freeze CLOSED/GREEN, không cho phép merge hoặc deploy.
 
 ## User jobs
 

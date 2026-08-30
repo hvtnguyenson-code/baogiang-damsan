@@ -228,15 +228,24 @@ jobs:
 
       - name: Prepare isolated API database for Playwright
         env:
-          DATABASE_URL: postgresql://baogiang_dev_user:ci_dev_pass_only@127.0.0.1:5432/baogiang_dev?schema=public
+          DATABASE_URL: postgresql://baogiang_test_user:ci_test_pass_only@127.0.0.1:5432/baogiang_test?schema=public
         run: |
           npx prisma migrate deploy --schema prisma/schema.prisma
           npm run prisma:seed
 
+      - name: Bootstrap Reporting Statement Playwright business fixture
+        env:
+          NODE_ENV: test
+          CI: true
+          GITHUB_ACTIONS: true
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          TEST_DATABASE_URL: postgresql://baogiang_test_user:ci_test_pass_only@127.0.0.1:5432/baogiang_test?schema=public
+        run: node tests/e2e/setup/reporting-statement-business-fixture.cjs
+
       - name: Bootstrap Playwright API technical admin
         working-directory: apps/api
         env:
-          DATABASE_URL: postgresql://baogiang_dev_user:ci_dev_pass_only@127.0.0.1:5432/baogiang_dev?schema=public
+          DATABASE_URL: postgresql://baogiang_test_user:ci_test_pass_only@127.0.0.1:5432/baogiang_test?schema=public
           BOOTSTRAP_ADMIN_USERNAME: e2e-api-admin
           BOOTSTRAP_ADMIN_DISPLAY_NAME: E2E API Admin
           BOOTSTRAP_ADMIN_PASSWORD: E2eApiBootstrapPassword9
@@ -245,7 +254,7 @@ jobs:
       - name: Bootstrap Playwright UI technical admin
         working-directory: apps/api
         env:
-          DATABASE_URL: postgresql://baogiang_dev_user:ci_dev_pass_only@127.0.0.1:5432/baogiang_dev?schema=public
+          DATABASE_URL: postgresql://baogiang_test_user:ci_test_pass_only@127.0.0.1:5432/baogiang_test?schema=public
           BOOTSTRAP_ADMIN_USERNAME: e2e-ui-admin
           BOOTSTRAP_ADMIN_DISPLAY_NAME: E2E UI Admin
           BOOTSTRAP_ADMIN_PASSWORD: E2eUiBootstrapPassword9
@@ -259,12 +268,13 @@ jobs:
       - name: Start API for Playwright
         working-directory: apps/api
         env:
-          DATABASE_URL: postgresql://baogiang_dev_user:ci_dev_pass_only@127.0.0.1:5432/baogiang_dev?schema=public
+          DATABASE_URL: postgresql://baogiang_test_user:ci_test_pass_only@127.0.0.1:5432/baogiang_test?schema=public
           TEST_DATABASE_URL: postgresql://baogiang_test_user:ci_test_pass_only@127.0.0.1:5432/baogiang_test?schema=public
           AI_ENABLED: 'false'
           CORS_ORIGINS: http://127.0.0.1:5173
           API_HOST: 127.0.0.1
           API_PORT: '3100'
+          AUTH_LOGIN_RATE_LIMIT_MAX: '50'
         run: node dist/apps/api/src/main.js &
 
       - name: Start Web for Playwright

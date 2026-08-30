@@ -38,6 +38,7 @@ async function installVisualFixture(page: Page) {
     if (path.startsWith('/api/reporting-statements/workspace-context?')) return fulfillJson(route, workspaceSelected);
     if (path === '/api/reporting-statements/preview') return fulfillJson(route, preview);
     if (path.startsWith('/api/reporting-statements/mine')) return fulfillJson(route, { items: [summary], page: 1, pageSize: 10, total: 1 });
+    if (path.startsWith('/api/reporting-statements/accessible')) return fulfillJson(route, { items: [summary], page: 1, pageSize: 15, total: 1 });
     if (path === `/api/reporting-statements/${revisionId}`) return fulfillJson(route, detail);
     if (path.startsWith('/api/reporting-statements/pending-decision')) return fulfillJson(route, { items: [summary], page: 1, pageSize: 15, total: 1 });
     return fulfillJson(route, { statusCode: 404, message: 'Visual fixture route not found' }, 404);
@@ -94,6 +95,25 @@ test.describe('Reporting Statement UI visual fixture', () => {
     for (const viewport of [{ width: 375, height: 812 }, { width: 1366, height: 768 }]) {
       await page.setViewportSize(viewport);
       await page.screenshot({ path: `${screenshots}/approval-detail-${viewport.width}x${viewport.height}.png`, fullPage: true });
+    }
+  });
+
+  test('accessible and pending routes preserve the ledger layout at mobile and laptop widths', async ({ page }) => {
+    await page.goto('/bao-cao-ke-khai/duoc-xem');
+    await expect(page.getByRole('heading', { name: 'Báo cáo được phép xem' })).toBeVisible();
+    await assertAccessibleAndResponsive(page);
+    await prepareScreenshot(page);
+    for (const viewport of [{ width: 375, height: 812 }, { width: 1366, height: 768 }]) {
+      await page.setViewportSize(viewport);
+      await page.screenshot({ path: `${screenshots}/accessible-list-${viewport.width}x${viewport.height}.png`, fullPage: true });
+    }
+    await page.goto('/phe-duyet-bao-cao');
+    await expect(page.getByRole('heading', { name: 'Báo cáo chờ phê duyệt' })).toBeVisible();
+    await assertAccessibleAndResponsive(page);
+    await prepareScreenshot(page);
+    for (const viewport of [{ width: 375, height: 812 }, { width: 1366, height: 768 }]) {
+      await page.setViewportSize(viewport);
+      await page.screenshot({ path: `${screenshots}/pending-queue-${viewport.width}x${viewport.height}.png`, fullPage: true });
     }
   });
 });
