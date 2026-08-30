@@ -397,6 +397,56 @@ function Assert-ScheduledTaskHealthyState([Parameter(Mandatory = $true)]$Task) {
   return $true
 }
 
+function Invoke-ScheduledTaskActivationLifecycle(
+  [switch]$AllowScheduledTaskActivation,
+  [Parameter(Mandatory = $true)]$Context,
+  [Parameter(Mandatory = $true)][scriptblock]$Verify,
+  [Parameter(Mandatory = $true)][scriptblock]$Enable,
+  [Parameter(Mandatory = $true)][scriptblock]$Start,
+  [Parameter(Mandatory = $true)][scriptblock]$RuntimeCheck,
+  [Parameter(Mandatory = $true)][scriptblock]$FinalVerify,
+  [Parameter(Mandatory = $true)][scriptblock]$SafeStop,
+  [Parameter(Mandatory = $true)][scriptblock]$Success
+) {
+  Assert-ScheduledTaskActivationAuthorized -AllowScheduledTaskActivation:$AllowScheduledTaskActivation | Out-Null
+  $activationAttempted = $false
+  try {
+    $task = & $Verify $Context 'initial'
+    $activationAttempted = $true
+    & $Enable $Context $task
+    $task = & $Verify $Context 'post-enable'
+    if ("$($task.State)" -ceq 'Disabled') { throw 'Scheduled Task remained disabled after activation enable.' }
+    & $Start $Context $task
+    $runtime = & $RuntimeCheck $Context
+    if (-not $runtime) { throw 'Restart completed but exactly one expected API process did not own port 3100 within the bounded wait.' }
+    $finalTask = & $FinalVerify $Context
+    Assert-ScheduledTaskHealthyState -Task $finalTask | Out-Null
+    return & $Success $Context $runtime
+  } catch {
+    $activationFailure = $_
+    if ((Get-ScheduledTaskActivationFailureDisposition -ActivationAttempted:$activationAttempted).state -eq 'SAFE_STOP_REQUIRED') {
+      try { & $SafeStop $Context } catch { throw "ACTIVATION_FAILED_AND_SAFE_STOP_FAILED: primary=$($activationFailure.Exception.GetType().Name); cleanup=$($_.Exception.GetType().Name)" }
+    }
+    throw $activationFailure
+  }
+}
+
+function Invoke-ScheduledTaskRollbackLifecycle([Parameter(Mandatory = $true)]$Context,[Parameter(Mandatory = $true)][scriptblock]$Restart,[Parameter(Mandatory = $true)][scriptblock]$Health,[Parameter(Mandatory = $true)][scriptblock]$SafeStop) {
+  $restartCompleted = $false
+  try { & $Restart $Context | Out-Null; $restartCompleted = $true; return & $Health $Context }
+  catch {
+    $rollbackFailure = $_
+    if ($restartCompleted) { try { & $SafeStop $Context } catch { throw "ROLLBACK_HEALTH_FAILED_AND_SAFE_STOP_FAILED: primary=$($rollbackFailure.Exception.GetType().Name); cleanup=$($_.Exception.GetType().Name)" } }
+    throw $rollbackFailure
+  }
+}
+
+function Get-DeploymentFailureRecoveryDecision([bool]$HasPreviousRelease,[bool]$MigrationAttempted,[bool]$RollbackCompatibilityApproved) {
+  if (-not $HasPreviousRelease) { return 'FIRST_DEPLOY_SAFE_STOP' }
+  if ($MigrationAttempted -and -not $RollbackCompatibilityApproved) { return 'COMPATIBILITY_SAFE_STOP' }
+  return 'ROLLBACK_RELEASE'
+}
+
 function Assert-VerifiedRuntimeIdentity([Parameter(Mandatory = $true)]$Marker,[Parameter(Mandatory = $true)][ValidateSet('scheduled-task','service')][string]$ServiceKind,[Parameter(Mandatory = $true)][string]$ServiceName) {
   if ($ServiceKind -eq 'scheduled-task') {
     Assert-VerifiedScheduledTaskContract -Marker $Marker -ServiceName $ServiceName | Out-Null

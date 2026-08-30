@@ -63,14 +63,15 @@ try {
   $report.errorCategory = Get-SafeErrorCategory $original
   if ($migrationAttempted -and -not $migrationCompleted) { $report.migration.state = 'attemptedUnknown' }
   if ($switched -or $restartAttempted) {
-    if (-not $report.previousRelease) {
+    $recoveryDecision = Get-DeploymentFailureRecoveryDecision -HasPreviousRelease:(-not [string]::IsNullOrWhiteSpace([string]$report.previousRelease)) -MigrationAttempted:$migrationAttempted -RollbackCompatibilityApproved:$p.RollbackCompatibilityApproved
+    if ($recoveryDecision -eq 'FIRST_DEPLOY_SAFE_STOP') {
       try {
         Stop-ExactBaoGiangRuntime -Marker $marker -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName | Out-Null
         $quarantine = Quarantine-FailedFirstRelease -Root $canonicalRoot -FailedSha $p.ReleaseSha
         $report.rollback = [ordered]@{ state = 'firstDeployFailedStopped'; failedRelease = $p.ReleaseSha; quarantinePointer = $quarantine.pointer }
       } catch { $report.rollback = [ordered]@{ state = 'firstDeployStopFailed'; errorCategory = Get-SafeErrorCategory $_; failedRelease = $p.ReleaseSha } }
     }
-    elseif ($migrationAttempted -and -not $p.RollbackCompatibilityApproved) {
+    elseif ($recoveryDecision -eq 'COMPATIBILITY_SAFE_STOP') {
       try {
         Stop-ExactBaoGiangRuntime -Marker $marker -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName | Out-Null
         $report.rollback = [ordered]@{ state = 'stoppedCompatibilityApprovalRequired' }

@@ -160,10 +160,38 @@ foreach ($activationFixture in @(
 $readyRejected = $false; try { Assert-ScheduledTaskHealthyState -Task (New-ScheduledTaskContractFixture -Triggers @($bootTrigger) -State 'Ready') | Out-Null } catch { $readyRejected = $true }
 if (-not $readyRejected) { throw 'A5 final Ready task was accepted as healthy.' }
 Assert-ScheduledTaskHealthyState -Task (New-ScheduledTaskContractFixture -Triggers @($bootTrigger) -State 'Running') | Out-Null
-$rollbackHealthFailure = Get-ScheduledTaskActivationFailureDisposition -ActivationAttempted:$true
-if ($rollbackHealthFailure.state -ne 'SAFE_STOP_REQUIRED') { throw 'B2 rollback health failure did not require safe-stop.' }
-$rollbackCleanupFailureCategory = 'Rollback health failure and Scheduled Task safe-stop cleanup failure'
-if ($rollbackCleanupFailureCategory -notmatch 'Rollback health failure.+safe-stop cleanup failure') { throw 'B3 rollback combined cleanup failure category fixture failed.' }
+function Invoke-ActivationLifecycleFixture([Parameter(Mandatory = $true)][ValidateSet('A1','A2','A3','A4','A5','A6')][string]$Case) {
+  $context = [pscustomobject]@{ Case = $Case; Trace = [Collections.Generic.List[string]]::new(); SafeStopCount = 0; StartCount = 0; SuccessCount = 0; Task = [pscustomobject]@{ State = 'Ready' } }
+  $failure = $null; $result = $null
+  try {
+    $result = Invoke-ScheduledTaskActivationLifecycle -AllowScheduledTaskActivation:($Case -ne 'A1') -Context $context -Verify { param($context,$phase) $eventName = if ($phase -eq 'initial') { 'verify' } else { 'reverify' }; [void]$context.Trace.Add($eventName); if ($context.Case -eq 'A2' -and $phase -eq 'post-enable') { throw 'fixture post-enable reverify failure' }; $context.Task } -Enable { param($context,$task) [void]$context.Trace.Add('enable') } -Start { param($context,$task) [void]$context.Trace.Add('start'); $context.StartCount++ } -RuntimeCheck { param($context) [void]$context.Trace.Add('runtime-check'); if ($context.Case -eq 'A3') { return $null }; if ($context.Case -eq 'A4') { throw 'fixture runtime verifier failure' }; [pscustomobject]@{ pid = 1; port = 3100 } } -FinalVerify { param($context) [void]$context.Trace.Add('final-verify'); [pscustomobject]@{ State = if ($context.Case -eq 'A5') { 'Ready' } else { 'Running' } } } -SafeStop { param($context) [void]$context.Trace.Add('safe-stop'); $context.SafeStopCount++ } -Success { param($context,$runtime) [void]$context.Trace.Add('success'); $context.SuccessCount++; [pscustomobject]@{ taskEnabled = $true; runtimeRunning = $true; rebootPersistence = $true } }
+  } catch { $failure = $_ }
+  return [pscustomobject]@{ Context = $context; Failure = $failure; Result = $result }
+}
+function Assert-ExactFixtureTrace([string]$Label,$Fixture,[string[]]$Expected) {
+  $actual = @($Fixture.Context.Trace)
+  if ($actual.Count -ne $Expected.Count -or ($actual -join ',') -cne ($Expected -join ',')) { throw "$Label trace mismatch: expected=$($Expected -join ','); actual=$($actual -join ',')" }
+}
+$a1 = Invoke-ActivationLifecycleFixture A1; Assert-ExactFixtureTrace A1 $a1 @(); if ($null -eq $a1.Failure -or $a1.Context.SafeStopCount -ne 0 -or $a1.Context.StartCount -ne 0 -or $a1.Context.SuccessCount -ne 0) { throw 'A1 authorization fixture failed.' }
+$a2 = Invoke-ActivationLifecycleFixture A2; Assert-ExactFixtureTrace A2 $a2 @('verify','enable','reverify','safe-stop'); if ($a2.Failure.Exception.Message -notmatch 'fixture post-enable reverify failure' -or $a2.Context.SafeStopCount -ne 1 -or $a2.Context.StartCount -ne 0 -or $a2.Context.SuccessCount -ne 0) { throw 'A2 reverify failure fixture failed.' }
+$a3 = Invoke-ActivationLifecycleFixture A3; Assert-ExactFixtureTrace A3 $a3 @('verify','enable','reverify','start','runtime-check','safe-stop'); if ($null -eq $a3.Failure -or $a3.Context.SafeStopCount -ne 1 -or $a3.Context.StartCount -ne 1 -or $a3.Context.SuccessCount -ne 0) { throw 'A3 no-process fixture failed.' }
+$a4 = Invoke-ActivationLifecycleFixture A4; Assert-ExactFixtureTrace A4 $a4 @('verify','enable','reverify','start','runtime-check','safe-stop'); if ($a4.Failure.Exception.Message -notmatch 'fixture runtime verifier failure' -or $a4.Context.SafeStopCount -ne 1 -or $a4.Context.StartCount -ne 1 -or $a4.Context.SuccessCount -ne 0) { throw 'A4 throwing runtime verifier fixture failed.' }
+$a5 = Invoke-ActivationLifecycleFixture A5; Assert-ExactFixtureTrace A5 $a5 @('verify','enable','reverify','start','runtime-check','final-verify','safe-stop'); if ($null -eq $a5.Failure -or $a5.Context.SafeStopCount -ne 1 -or $a5.Context.SuccessCount -ne 0) { throw 'A5 Ready-state fixture failed.' }
+$a6 = Invoke-ActivationLifecycleFixture A6; Assert-ExactFixtureTrace A6 $a6 @('verify','enable','reverify','start','runtime-check','final-verify','success'); if ($null -ne $a6.Failure -or $a6.Context.SafeStopCount -ne 0 -or $a6.Context.StartCount -ne 1 -or $a6.Context.SuccessCount -ne 1 -or -not $a6.Result.taskEnabled -or -not $a6.Result.runtimeRunning -or -not $a6.Result.rebootPersistence) { throw 'A6 healthy fixture failed.' }
+
+function Invoke-RollbackLifecycleFixture([Parameter(Mandatory = $true)][ValidateSet('B1','B2','B3')][string]$Case) {
+  $context = [pscustomobject]@{ Case = $Case; Trace = [Collections.Generic.List[string]]::new(); SafeStopCount = 0 }
+  $failure = $null; $result = $null
+  try { $result = Invoke-ScheduledTaskRollbackLifecycle -Context $context -Restart { param($context) [void]$context.Trace.Add('restart') } -Health { param($context) [void]$context.Trace.Add('health'); if ($context.Case -in @('B2','B3')) { throw 'fixture rollback health failure' }; 'PASS' } -SafeStop { param($context) [void]$context.Trace.Add('safe-stop'); $context.SafeStopCount++; if ($context.Case -eq 'B3') { throw 'fixture rollback cleanup failure' } } } catch { $failure = $_ }
+  return [pscustomobject]@{ Context = $context; Failure = $failure; Result = $result }
+}
+$b1 = Invoke-RollbackLifecycleFixture B1; Assert-ExactFixtureTrace B1 $b1 @('restart','health'); if ($null -ne $b1.Failure -or $b1.Result -ne 'PASS' -or $b1.Context.SafeStopCount -ne 0) { throw 'B1 rollback success fixture failed.' }
+$b2 = Invoke-RollbackLifecycleFixture B2; Assert-ExactFixtureTrace B2 $b2 @('restart','health','safe-stop'); if ($b2.Failure.Exception.Message -notmatch 'fixture rollback health failure' -or $b2.Context.SafeStopCount -ne 1) { throw 'B2 throwing health fixture failed.' }
+$b3 = Invoke-RollbackLifecycleFixture B3; Assert-ExactFixtureTrace B3 $b3 @('restart','health','safe-stop'); if ($b3.Failure.Exception.Message -notmatch 'ROLLBACK_HEALTH_FAILED_AND_SAFE_STOP_FAILED' -or $b3.Context.SafeStopCount -ne 1) { throw 'B3 throwing cleanup fixture failed.' }
+$b4Context = [pscustomobject]@{ Trace = [Collections.Generic.List[string]]::new(); RollbackActivationCount = 0; EnableCount = 0; SafeStopCount = 0 }
+$b4Decision = Get-DeploymentFailureRecoveryDecision -HasPreviousRelease:$true -MigrationAttempted:$true -RollbackCompatibilityApproved:$false
+if ($b4Decision -eq 'COMPATIBILITY_SAFE_STOP') { [void]$b4Context.Trace.Add('safe-stop'); $b4Context.SafeStopCount++ } elseif ($b4Decision -eq 'ROLLBACK_RELEASE') { $b4Context.RollbackActivationCount++; $b4Context.EnableCount++ }
+if ($b4Decision -ne 'COMPATIBILITY_SAFE_STOP' -or (@($b4Context.Trace) -join ',') -ne 'safe-stop' -or $b4Context.SafeStopCount -ne 1 -or $b4Context.RollbackActivationCount -ne 0 -or $b4Context.EnableCount -ne 0) { throw 'B4 compatibility recovery routing fixture failed.' }
 $wait = Get-SafeStopPollingDecision -ExactProcessId @(3100) -Listeners @([pscustomobject]@{ OwningProcess = 3100 })
 if ($wait.state -ne 'WAIT') { throw 'Exact Báo giảng listener should wait during shutdown grace period.' }
 $pass = Get-SafeStopPollingDecision -ExactProcessId @() -Listeners @()

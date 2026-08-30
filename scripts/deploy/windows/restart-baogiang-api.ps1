@@ -53,35 +53,8 @@ function Get-StartedProcess([DateTime]$StartedAtUtc) {
 
 Assert-PortIdentity
 if ($ServiceKind -eq 'scheduled-task') {
-  Assert-ScheduledTaskActivationAuthorized -AllowScheduledTaskActivation:$AllowScheduledTaskActivation | Out-Null
-  $activationAttempted = $false
-  try {
-    $task = Assert-VerifiedScheduledTaskContract -Marker $marker -ServiceName $ServiceName
-    $activationAttempted = $true
-    if ($task.State -eq 'Running') { Stop-ScheduledTask -TaskName $ServiceName -TaskPath $task.TaskPath -ErrorAction Stop }
-    Enable-ScheduledTask -TaskName $ServiceName -TaskPath $task.TaskPath -ErrorAction Stop | Out-Null
-    $task = Assert-VerifiedScheduledTaskContract -Marker $marker -ServiceName $ServiceName
-    if ("$($task.State)" -ceq 'Disabled') { throw 'Scheduled Task remained disabled after activation enable.' }
-    $startedAt = [DateTime]::UtcNow
-    Start-ScheduledTask -TaskName $ServiceName -TaskPath $task.TaskPath -ErrorAction Stop
-    $found = $null
-    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
-      Start-Sleep -Seconds $DelaySeconds
-      $found = Get-StartedProcess $startedAt
-      if ($found) { $found.attempts = $attempt; break }
-    }
-    if (-not $found) { throw 'Restart completed but exactly one expected API process did not own port 3100 within the bounded wait.' }
-    $finalTask = Assert-VerifiedScheduledTaskContract -Marker $marker -ServiceName $ServiceName
-    Assert-ScheduledTaskHealthyState -Task $finalTask | Out-Null
-    [ordered]@{ runtimeKind = 'scheduled-task'; activationState = 'enabled-running'; taskEnabled = $true; runtimeRunning = $true; rebootPersistence = $true; triggerKind = 'Boot'; process = $found } | ConvertTo-Json -Compress
-  } catch {
-    $activationFailure = $_
-    if ((Get-ScheduledTaskActivationFailureDisposition -ActivationAttempted:$activationAttempted).state -eq 'SAFE_STOP_REQUIRED') {
-      try { Stop-ExactBaoGiangRuntime -Marker $marker -ServiceKind $ServiceKind -ServiceName $ServiceName -MaxAttempts $MaxAttempts -DelaySeconds $DelaySeconds | Out-Null }
-      catch { throw "Scheduled Task activation failed and safe-stop cleanup failed: $($_.Exception.GetType().Name)" }
-    }
-    throw $activationFailure
-  }
+  $activationContext = [pscustomobject]@{ StartedAtUtc = $null }
+  Invoke-ScheduledTaskActivationLifecycle -AllowScheduledTaskActivation:$AllowScheduledTaskActivation -Context $activationContext -Verify { param($context,$phase) Assert-VerifiedScheduledTaskContract -Marker $marker -ServiceName $ServiceName } -Enable { param($context,$task) if ($task.State -eq 'Running') { Stop-ScheduledTask -TaskName $ServiceName -TaskPath $task.TaskPath -ErrorAction Stop }; Enable-ScheduledTask -TaskName $ServiceName -TaskPath $task.TaskPath -ErrorAction Stop | Out-Null } -Start { param($context,$task) $context.StartedAtUtc = [DateTime]::UtcNow; Start-ScheduledTask -TaskName $ServiceName -TaskPath $task.TaskPath -ErrorAction Stop } -RuntimeCheck { param($context) $found = $null; for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) { Start-Sleep -Seconds $DelaySeconds; $found = Get-StartedProcess $context.StartedAtUtc; if ($found) { $found.attempts = $attempt; break } }; $found } -FinalVerify { param($context) Assert-VerifiedScheduledTaskContract -Marker $marker -ServiceName $ServiceName } -SafeStop { param($context) Stop-ExactBaoGiangRuntime -Marker $marker -ServiceKind $ServiceKind -ServiceName $ServiceName -MaxAttempts $MaxAttempts -DelaySeconds $DelaySeconds | Out-Null } -Success { param($context,$found) [ordered]@{ runtimeKind = 'scheduled-task'; activationState = 'enabled-running'; taskEnabled = $true; runtimeRunning = $true; rebootPersistence = $true; triggerKind = 'Boot'; process = $found } | ConvertTo-Json -Compress }
 } else {
   $service = Assert-ServiceContract
   if ($service.State -eq 'Running') { Stop-Service -Name $ServiceName -Force }
