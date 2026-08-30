@@ -31,6 +31,8 @@ Workflow canonical migrate/seed database Playwright cô lập, bootstrap fixture
 
 CI #285 đã PASS các gate security/static, migration, lint/typecheck, unit, PostgreSQL integration, build, isolated Playwright database, Reporting Statement fixture bootstrap và API/Web startup. Bước Playwright thất bại ở ba điểm thuộc hai nhóm test/infrastructure: hai business tests dùng global text locator cho label counts xuất hiện hợp lệ ở cả tổng hợp và evidence section; test quản trị Phase-01 sau đó gặp `HTTP 429` do mọi Playwright context dùng chung loopback rate-limit key. Correction scope semantic locator theo preview evidence, lifecycle identity và history; riêng process API của Playwright đặt `AUTH_LOGIN_RATE_LIMIT_MAX: '50'` để cô lập suite trong khi limiter, real login, cookie/session và authorization vẫn hoạt động. Không phát hiện product, runtime hoặc domain defect.
 
+CI #286 chạy trên exact head `682bcb657388b07e351f888fde68d75ae885c762` và đã vượt qua các failure #285: không còn `HTTP 429`, preview semantic locator PASS, toàn bộ gate trước browser Playwright tiếp tục PASS. Hai failure còn lại được phân loại là E2E assertion/isolation defects: Reader B assertion chưa khớp public-safe 403 copy “Bạn không còn quyền truy cập khu vực này.”; stale-CAS dùng lại logical series tháng 8 nên phụ thuộc lifecycle của workflow test trước. Correction kiểm denial trong semantic alert, giữ assertion không leak submitter, bắt trực tiếp submit HTTP `201`, và tách workflow series `2026-08-01 → 2026-08-31` khỏi stale-CAS series `2026-09-01 → 2026-09-30`. Không phát hiện product, runtime hoặc domain defect.
+
 `local candidate → push → independent GitHub review → PR → exact-head CI → merge → post-merge main CI → CLOSED / GREEN`
 
 ## Explicit non-scope

@@ -3,6 +3,9 @@ import { API_URL } from '../playwright.config';
 
 const password = 'ReportingStatementE2ePassword9';
 const users = { teacher: 'e2e-rs-teacher', readerA: 'e2e-rs-reader-a', readerB: 'e2e-rs-reader-b', approver: 'e2e-rs-approver' } as const;
+type ReportingRange = { fromCivilDate: string; toCivilDate: string };
+const workflowRange: ReportingRange = { fromCivilDate: '2026-08-01', toCivilDate: '2026-08-31' };
+const staleCasRange: ReportingRange = { fromCivilDate: '2026-09-01', toCivilDate: '2026-09-30' };
 
 async function login(page: Page, username: string) {
   await page.goto('/dang-nhap');
@@ -23,13 +26,13 @@ async function loggedInContext(browser: Browser, username: string): Promise<Brow
   return context;
 }
 
-async function submitThroughTeacherUi(page: Page): Promise<string> {
+async function submitThroughTeacherUi(page: Page, range: ReportingRange): Promise<string> {
   await page.goto('/bao-cao-ke-khai');
   await expect(page.getByRole('heading', { name: 'Báo cáo kê khai cá nhân' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Báo cáo được phép xem' })).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Phê duyệt báo cáo' })).toHaveCount(0);
-  await page.getByLabel('Từ ngày').fill('2026-08-01');
-  await page.getByLabel('Đến ngày').fill('2026-08-31');
+  await page.getByLabel('Từ ngày').fill(range.fromCivilDate);
+  await page.getByLabel('Đến ngày').fill(range.toCivilDate);
   await page.getByRole('button', { name: 'Xem trước báo cáo' }).click();
   const previewRegion = page.getByRole('region', { name: '02 · Bằng chứng xem trước' });
   const evidenceArticle = previewRegion.getByRole('article');
@@ -37,7 +40,15 @@ async function submitThroughTeacherUi(page: Page): Promise<string> {
   await expect(evidenceArticle.getByText('Thời gian chịu trách nhiệm', { exact: true })).toBeVisible();
   await expect(evidenceArticle.getByText('Tiết đã hoàn thành', { exact: true })).toBeVisible();
   await expect(page.locator('body')).not.toContainText(/requestKey|lifecycleToken|semanticHash|canonicalSnapshotJson|provenance/i);
+  const submitResponsePromise = page.waitForResponse((response) =>
+    new URL(response.url()).pathname === '/api/reporting-statements'
+    && response.request().method() === 'POST');
   await page.getByRole('button', { name: 'Gửi báo cáo' }).click();
+  const submitResponse = await submitResponsePromise;
+  expect(
+    submitResponse.status(),
+    `Reporting Statement submit failed: HTTP ${submitResponse.status()}`,
+  ).toBe(201);
   await expect(page.getByText('Báo cáo chính thức đã được lưu.')).toBeVisible();
   const href = await page.getByRole('link', { name: 'Mở báo cáo vừa gửi' }).getAttribute('href');
   expect(href).toMatch(/^\/bao-cao-ke-khai\/[0-9a-f-]{36}$/);
@@ -51,7 +62,7 @@ test.describe('Reporting Statement live cross-role workflow', () => {
   test('teacher submit, subject read boundary, approver approval, and owner terminal read', async ({ browser }) => {
     const teacher = await loggedInContext(browser, users.teacher);
     const teacherPage = teacher.pages()[0];
-    const revisionId = await submitThroughTeacherUi(teacherPage);
+    const revisionId = await submitThroughTeacherUi(teacherPage, workflowRange);
     await teacherPage.getByRole('link', { name: 'Mở báo cáo vừa gửi' }).click();
     await expect(teacherPage.getByRole('heading', { name: 'Chi tiết báo cáo kê khai' })).toBeVisible();
 
@@ -70,7 +81,10 @@ test.describe('Reporting Statement live cross-role workflow', () => {
     await readerBPage.goto('/bao-cao-ke-khai/duoc-xem');
     await expect(readerBPage.getByText('Chưa có báo cáo được phép xem')).toBeVisible();
     await readerBPage.goto(`/bao-cao-ke-khai/${revisionId}`);
-    await expect(readerBPage.getByText(/không có quyền|không thể tải/i)).toBeVisible();
+    const deniedAlert = readerBPage.getByRole('alert');
+    await expect(deniedAlert).toContainText('Chưa tải được dữ liệu');
+    await expect(deniedAlert).toContainText('Bạn không còn quyền truy cập khu vực này.');
+    await expect(deniedAlert.getByRole('button', { name: 'Thử lại' })).toBeVisible();
     await expect(readerBPage.locator('body')).not.toContainText('Giáo viên kiểm thử');
 
     const approver = await loggedInContext(browser, users.approver);
@@ -100,7 +114,7 @@ test.describe('Reporting Statement live cross-role workflow', () => {
 
   test('real backend CAS conflict locks stale actions and refetches the newer detail', async ({ browser }) => {
     const teacher = await loggedInContext(browser, users.teacher);
-    const revisionId = await submitThroughTeacherUi(teacher.pages()[0]);
+    const revisionId = await submitThroughTeacherUi(teacher.pages()[0], staleCasRange);
     const staleApprover = await loggedInContext(browser, users.approver);
     const stalePage = staleApprover.pages()[0];
     await stalePage.goto(`/bao-cao-ke-khai/${revisionId}`);
