@@ -27,8 +27,17 @@ if (Test-Path -LiteralPath $temp) { Assert-ReleasePointerTarget -PointerPath $te
 New-Item -ItemType Junction -Path $temp -Target $previousTarget | Out-Null
 if (Test-Path -LiteralPath $current) { Assert-ReleasePointerTarget -PointerPath $current -Root $canonicalRoot | Out-Null; Move-Item -LiteralPath $current -Destination $failed }
 Move-Item -LiteralPath $temp -Destination $current
+ $restartCompleted = $false
 try {
   & (Join-Path $PSScriptRoot 'restart-baogiang-api.ps1') -ServiceKind $ServiceKind -ServiceName $ServiceName -NodeExe $NodeExe -Root $Root -EnvFile $EnvFile -StartupWrapper $StartupWrapper -ExpectedEntryPoint $ExpectedEntryPoint -ExpectedBaseUrl $ExpectedBaseUrl -AllowScheduledTaskActivation:$AllowScheduledTaskActivation
+  $restartCompleted = $true
   $health = & (Join-Path $PSScriptRoot 'test-production-health.ps1') -BaseUrl $ExpectedBaseUrl -ExpectedApiPort 3100
   [ordered]@{ state = 'completed'; currentTarget = $previousTarget; health = ($health -join '') } | ConvertTo-Json -Compress
-} catch { throw }
+} catch {
+  $rollbackFailure = $_
+  if ($ServiceKind -eq 'scheduled-task' -and $restartCompleted) {
+    try { Stop-ExactBaoGiangRuntime -Marker $marker -ServiceKind $ServiceKind -ServiceName $ServiceName | Out-Null }
+    catch { throw "Rollback health failure and Scheduled Task safe-stop cleanup failure: $($_.Exception.GetType().Name)" }
+  }
+  throw $rollbackFailure
+}

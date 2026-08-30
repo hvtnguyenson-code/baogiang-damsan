@@ -64,6 +64,16 @@ if ($ServiceKind -eq 'scheduled-task') {
     if ("$($task.State)" -ceq 'Disabled') { throw 'Scheduled Task remained disabled after activation enable.' }
     $startedAt = [DateTime]::UtcNow
     Start-ScheduledTask -TaskName $ServiceName -TaskPath $task.TaskPath -ErrorAction Stop
+    $found = $null
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+      Start-Sleep -Seconds $DelaySeconds
+      $found = Get-StartedProcess $startedAt
+      if ($found) { $found.attempts = $attempt; break }
+    }
+    if (-not $found) { throw 'Restart completed but exactly one expected API process did not own port 3100 within the bounded wait.' }
+    $finalTask = Assert-VerifiedScheduledTaskContract -Marker $marker -ServiceName $ServiceName
+    Assert-ScheduledTaskHealthyState -Task $finalTask | Out-Null
+    [ordered]@{ runtimeKind = 'scheduled-task'; activationState = 'enabled-running'; taskEnabled = $true; runtimeRunning = $true; rebootPersistence = $true; triggerKind = 'Boot'; process = $found } | ConvertTo-Json -Compress
   } catch {
     $activationFailure = $_
     if ((Get-ScheduledTaskActivationFailureDisposition -ActivationAttempted:$activationAttempted).state -eq 'SAFE_STOP_REQUIRED') {
@@ -77,29 +87,12 @@ if ($ServiceKind -eq 'scheduled-task') {
   if ($service.State -eq 'Running') { Stop-Service -Name $ServiceName -Force }
   $startedAt = [DateTime]::UtcNow
   Start-Service -Name $ServiceName
-}
-$found = $null
-for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
-  Start-Sleep -Seconds $DelaySeconds
-  $found = Get-StartedProcess $startedAt
-  if ($found) { $found.attempts = $attempt; break }
-}
-if (-not $found) {
-  if ($ServiceKind -eq 'scheduled-task') {
-    try { Stop-ExactBaoGiangRuntime -Marker $marker -ServiceKind $ServiceKind -ServiceName $ServiceName -MaxAttempts $MaxAttempts -DelaySeconds $DelaySeconds | Out-Null }
-    catch { throw "Scheduled Task activation runtime verification failed and safe-stop cleanup failed: $($_.Exception.GetType().Name)" }
+  $found = $null
+  for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+    Start-Sleep -Seconds $DelaySeconds
+    $found = Get-StartedProcess $startedAt
+    if ($found) { $found.attempts = $attempt; break }
   }
-  throw 'Restart completed but exactly one expected API process did not own port 3100 within the bounded wait.'
+  if (-not $found) { throw 'Restart completed but exactly one expected API process did not own port 3100 within the bounded wait.' }
+  $found | ConvertTo-Json -Compress
 }
-if ($ServiceKind -eq 'scheduled-task') {
-  try {
-    $finalTask = Assert-VerifiedScheduledTaskContract -Marker $marker -ServiceName $ServiceName
-    if ("$($finalTask.State)" -ceq 'Disabled') { throw 'Scheduled Task became disabled during activation.' }
-  } catch {
-    $activationFailure = $_
-    try { Stop-ExactBaoGiangRuntime -Marker $marker -ServiceKind $ServiceKind -ServiceName $ServiceName -MaxAttempts $MaxAttempts -DelaySeconds $DelaySeconds | Out-Null }
-    catch { throw "Scheduled Task activation final verification failed and safe-stop cleanup failed: $($_.Exception.GetType().Name)" }
-    throw $activationFailure
-  }
-  [ordered]@{ runtimeKind = 'scheduled-task'; activationState = 'enabled-running'; taskEnabled = $true; runtimeRunning = $true; rebootPersistence = $true; triggerKind = 'Boot'; process = $found } | ConvertTo-Json -Compress
-} else { $found | ConvertTo-Json -Compress }

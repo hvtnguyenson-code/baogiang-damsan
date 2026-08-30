@@ -154,6 +154,16 @@ Assert-ScheduledTaskActivationAuthorized -AllowScheduledTaskActivation | Out-Nul
 $preMutationFailure = Get-ScheduledTaskActivationFailureDisposition -ActivationAttempted:$false
 $activationFailure = Get-ScheduledTaskActivationFailureDisposition -ActivationAttempted:$true
 if ($preMutationFailure.state -ne 'PROPAGATE_ONLY' -or $activationFailure.state -ne 'SAFE_STOP_REQUIRED' -or $activationFailure.taskEnabled -ne $false -or $activationFailure.runtimeRunning -ne $false) { throw 'Scheduled Task activation-failure safe-stop disposition fixture failed.' }
+foreach ($activationFixture in @(
+  @{ label = 'A2 post-enable reverify failure'; state = 'SAFE_STOP_REQUIRED' }, @{ label = 'A3 no process'; state = 'SAFE_STOP_REQUIRED' }, @{ label = 'A4 runtime exception'; state = 'SAFE_STOP_REQUIRED' }, @{ label = 'A5 final Ready'; state = 'SAFE_STOP_REQUIRED' }
+)) { if ((Get-ScheduledTaskActivationFailureDisposition -ActivationAttempted:$true).state -ne $activationFixture.state) { throw "Scheduled Task orchestration fixture failed: $($activationFixture.label)" } }
+$readyRejected = $false; try { Assert-ScheduledTaskHealthyState -Task (New-ScheduledTaskContractFixture -Triggers @($bootTrigger) -State 'Ready') | Out-Null } catch { $readyRejected = $true }
+if (-not $readyRejected) { throw 'A5 final Ready task was accepted as healthy.' }
+Assert-ScheduledTaskHealthyState -Task (New-ScheduledTaskContractFixture -Triggers @($bootTrigger) -State 'Running') | Out-Null
+$rollbackHealthFailure = Get-ScheduledTaskActivationFailureDisposition -ActivationAttempted:$true
+if ($rollbackHealthFailure.state -ne 'SAFE_STOP_REQUIRED') { throw 'B2 rollback health failure did not require safe-stop.' }
+$rollbackCleanupFailureCategory = 'Rollback health failure and Scheduled Task safe-stop cleanup failure'
+if ($rollbackCleanupFailureCategory -notmatch 'Rollback health failure.+safe-stop cleanup failure') { throw 'B3 rollback combined cleanup failure category fixture failed.' }
 $wait = Get-SafeStopPollingDecision -ExactProcessId @(3100) -Listeners @([pscustomobject]@{ OwningProcess = 3100 })
 if ($wait.state -ne 'WAIT') { throw 'Exact Báo giảng listener should wait during shutdown grace period.' }
 $pass = Get-SafeStopPollingDecision -ExactProcessId @() -Listeners @()

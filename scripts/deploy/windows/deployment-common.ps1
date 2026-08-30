@@ -392,6 +392,11 @@ function Get-ScheduledTaskActivationFailureDisposition([bool]$ActivationAttempte
   return [ordered]@{ state = if ($ActivationAttempted) { 'SAFE_STOP_REQUIRED' } else { 'PROPAGATE_ONLY' }; taskEnabled = $false; runtimeRunning = $false }
 }
 
+function Assert-ScheduledTaskHealthyState([Parameter(Mandatory = $true)]$Task) {
+  if ("$($Task.State)" -cne 'Running') { throw 'Scheduled Task did not reach the required Running healthy state.' }
+  return $true
+}
+
 function Assert-VerifiedRuntimeIdentity([Parameter(Mandatory = $true)]$Marker,[Parameter(Mandatory = $true)][ValidateSet('scheduled-task','service')][string]$ServiceKind,[Parameter(Mandatory = $true)][string]$ServiceName) {
   if ($ServiceKind -eq 'scheduled-task') {
     Assert-VerifiedScheduledTaskContract -Marker $Marker -ServiceName $ServiceName | Out-Null
