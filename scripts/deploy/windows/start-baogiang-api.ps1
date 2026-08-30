@@ -13,7 +13,7 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'deployment-common.ps1')
 $canonicalRoot = Assert-DedicatedRoot $Root
 $wrapper = Get-CanonicalPath $PSCommandPath
-$identity = Read-DeploymentIdentity -Root $canonicalRoot -ServiceKind $ServiceKind -ServiceName $ServiceName -EnvFile $EnvFile -StartupWrapper $wrapper -ExpectedEntryPoint $ExpectedEntryPoint
+$identity = Read-DeploymentIdentity -Root $canonicalRoot -ServiceKind $ServiceKind -ServiceName $ServiceName -EnvFile $EnvFile -StartupWrapper $wrapper -ExpectedEntryPoint $ExpectedEntryPoint -NodeExe $NodeExe
 $canonicalRoot = $identity.canonicalRoot
 $marker = $identity.marker
 Import-ServerEnvironment -EnvFile $EnvFile -ExpectedBaseUrl $ExpectedBaseUrl | Out-Null

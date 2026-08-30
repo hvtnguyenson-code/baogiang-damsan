@@ -17,7 +17,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'deployment-common.ps1')
-$identity = Read-DeploymentIdentity -Root $Root -ServiceKind $ServiceKind -ServiceName $ServiceName -EnvFile $EnvFile -StartupWrapper $StartupWrapper -ExpectedEntryPoint $ExpectedEntryPoint
+$identity = Read-DeploymentIdentity -Root $Root -ServiceKind $ServiceKind -ServiceName $ServiceName -EnvFile $EnvFile -StartupWrapper $StartupWrapper -ExpectedEntryPoint $ExpectedEntryPoint -NodeExe $NodeExe
 $canonicalRoot = $identity.canonicalRoot
 Assert-ExecutableContract @{ NpmExe = $NpmExe; NpxExe = $NpxExe; NodeExe = $NodeExe }
 $actual = (Get-FileHash -LiteralPath $SourceArchive -Algorithm SHA256).Hash

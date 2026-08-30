@@ -182,6 +182,89 @@ if ($safeTaskEvidence -match 'arbitrary-secret-value|another-secret|--token|--pa
 $temp = Join-Path ([IO.Path]::GetTempPath()) ("baogiang-deploy-test-" + [guid]::NewGuid().ToString('N'))
 try {
   New-Item -ItemType Directory -Path $temp -Force | Out-Null
+  $schemaRoot = 'C:\fixture\baogiang'
+  $validMarker = [pscustomobject]@{
+    schemaVersion = [long]1; systemId = 'baogiang-damsan'; canonicalRoot = $schemaRoot; domain = 'https://baogiang.dtnt-damsan.edu.vn'; apiPort = [long]3100
+    nodeExe = 'C:\fixture\node.exe'; envFile = 'C:\fixture\production.env'; startupWrapper = 'C:\fixture\shared\start-baogiang-api.ps1'; entryPoint = 'C:\fixture\baogiang\current\apps\api\dist\apps\api\src\main.js'; nginxExe = 'C:\fixture\nginx.exe'; nginxConfig = 'C:\fixture\nginx.conf'
+    foreignIsolation = [pscustomobject]@{ reviewedNginxPrefix = 'C:\fixture\nginx'; reviewedNginxConfig = 'C:\fixture\nginx.conf'; foreignRoots = @('C:\fixture\DamSanV5','C:\fixture\boarding'); bootstrapReportReference = 'reviewed-report-reference' }
+    startupBundle = [pscustomobject]@{ wrapperPath = 'C:\fixture\shared\start-baogiang-api.ps1'; wrapperSha256 = ('a' * 64); commonPath = 'C:\fixture\shared\deployment-common.ps1'; commonSha256 = ('b' * 64) }
+    service = [pscustomobject]@{ kind = 'scheduled-task'; name = 'BaoGiangBackend'; taskPath = '\BaoGiang\'; account = 'fixture-account'; execute = 'C:\fixture\WindowsPowerShell.exe'; arguments = '-File start-baogiang-api.ps1'; workingDirectory = 'C:\fixture\shared' }
+  }
+  Assert-DeploymentMarkerSchema -Marker $validMarker -CanonicalRoot $schemaRoot | Out-Null
+  foreach ($fixture in @(
+    @{ label = 'missing schemaVersion'; mutate = { param($m) $m.PSObject.Properties.Remove('schemaVersion') } },
+    @{ label = 'wrong-case SchemaVersion'; mutate = { param($m) $value = $m.schemaVersion; $m.PSObject.Properties.Remove('schemaVersion'); $m | Add-Member -NotePropertyName SchemaVersion -NotePropertyValue $value } },
+    @{ label = 'unsupported schemaVersion'; mutate = { param($m) $m.schemaVersion = [long]2 } },
+    @{ label = 'wrong type version'; mutate = { param($m) $m.schemaVersion = '1' } },
+    @{ label = 'wrong type apiPort'; mutate = { param($m) $m.apiPort = '3100' } },
+    @{ label = 'unknown top-level'; mutate = { param($m) $m | Add-Member -NotePropertyName extra -NotePropertyValue 'x' } },
+    @{ label = 'missing nodeExe'; mutate = { param($m) $m.PSObject.Properties.Remove('nodeExe') } },
+    @{ label = 'wrong-case NodeExe'; mutate = { param($m) $value = $m.nodeExe; $m.PSObject.Properties.Remove('nodeExe'); $m | Add-Member -NotePropertyName NodeExe -NotePropertyValue $value } },
+    @{ label = 'empty nodeExe'; mutate = { param($m) $m.nodeExe = '' } },
+    @{ label = 'wrong type nodeExe'; mutate = { param($m) $m.nodeExe = 7 } },
+    @{ label = 'empty nginxExe'; mutate = { param($m) $m.nginxExe = '' } },
+    @{ label = 'empty nginxConfig'; mutate = { param($m) $m.nginxConfig = '' } },
+    @{ label = 'empty foreignIsolation'; mutate = { param($m) $m.foreignIsolation = [pscustomobject]@{} } },
+    @{ label = 'missing Nginx prefix'; mutate = { param($m) $m.foreignIsolation.PSObject.Properties.Remove('reviewedNginxPrefix') } },
+    @{ label = 'wrong-case reviewed Nginx config'; mutate = { param($m) $value = $m.foreignIsolation.reviewedNginxConfig; $m.foreignIsolation.PSObject.Properties.Remove('reviewedNginxConfig'); $m.foreignIsolation | Add-Member -NotePropertyName ReviewedNginxConfig -NotePropertyValue $value } },
+    @{ label = 'missing Nginx config'; mutate = { param($m) $m.foreignIsolation.PSObject.Properties.Remove('reviewedNginxConfig') } },
+    @{ label = 'missing foreignRoots'; mutate = { param($m) $m.foreignIsolation.PSObject.Properties.Remove('foreignRoots') } },
+    @{ label = 'missing report reference'; mutate = { param($m) $m.foreignIsolation.PSObject.Properties.Remove('bootstrapReportReference') } },
+    @{ label = 'empty foreignRoots'; mutate = { param($m) $m.foreignIsolation.foreignRoots = @() } },
+    @{ label = 'wrong type foreignRoots'; mutate = { param($m) $m.foreignIsolation.foreignRoots = 'C:\foreign' } },
+    @{ label = 'empty foreign root'; mutate = { param($m) $m.foreignIsolation.foreignRoots = @('') } },
+    @{ label = 'duplicate foreign roots'; mutate = { param($m) $m.foreignIsolation.foreignRoots = @('C:\fixture\DamSanV5','c:\FIXTURE\damsanv5') } },
+    @{ label = 'foreign root overlap'; mutate = { param($m) $m.foreignIsolation.foreignRoots = @('C:\fixture\baogiang\other') } },
+    @{ label = 'Nginx prefix overlap'; mutate = { param($m) $m.foreignIsolation.reviewedNginxPrefix = 'C:\fixture\baogiang\nginx' } },
+    @{ label = 'reviewed config mismatch'; mutate = { param($m) $m.foreignIsolation.reviewedNginxConfig = 'C:\fixture\different.conf' } },
+    @{ label = 'missing startup field'; mutate = { param($m) $m.startupBundle.PSObject.Properties.Remove('commonPath') } },
+    @{ label = 'empty startup wrapperPath'; mutate = { param($m) $m.startupBundle.wrapperPath = '' } },
+    @{ label = 'wrong-case startup wrapperPath'; mutate = { param($m) $value = $m.startupBundle.wrapperPath; $m.startupBundle.PSObject.Properties.Remove('wrapperPath'); $m.startupBundle | Add-Member -NotePropertyName WrapperPath -NotePropertyValue $value } },
+    @{ label = 'invalid startup hash'; mutate = { param($m) $m.startupBundle.wrapperSha256 = 'bad' } },
+    @{ label = 'unknown startup field'; mutate = { param($m) $m.startupBundle | Add-Member -NotePropertyName extra -NotePropertyValue 'x' } },
+    @{ label = 'missing taskPath'; mutate = { param($m) $m.service.PSObject.Properties.Remove('taskPath') } },
+    @{ label = 'wrong-case taskPath'; mutate = { param($m) $value = $m.service.taskPath; $m.service.PSObject.Properties.Remove('taskPath'); $m.service | Add-Member -NotePropertyName TaskPath -NotePropertyValue $value } },
+    @{ label = 'empty taskPath'; mutate = { param($m) $m.service.taskPath = '' } },
+    @{ label = 'empty task account'; mutate = { param($m) $m.service.account = '' } },
+    @{ label = 'empty task execute'; mutate = { param($m) $m.service.execute = '' } },
+    @{ label = 'empty task arguments'; mutate = { param($m) $m.service.arguments = '' } },
+    @{ label = 'empty task workingDirectory'; mutate = { param($m) $m.service.workingDirectory = '' } },
+    @{ label = 'unknown task field'; mutate = { param($m) $m.service | Add-Member -NotePropertyName pathName -NotePropertyValue 'x' } }
+  )) {
+    $candidate = $validMarker | ConvertTo-Json -Depth 8 | ConvertFrom-Json
+    & $fixture.mutate $candidate
+    $rejected = $false; try { Assert-DeploymentMarkerSchema -Marker $candidate -CanonicalRoot $schemaRoot | Out-Null } catch { $rejected = $true }
+    if (-not $rejected) { throw "Marker schema hostile fixture was accepted: $($fixture.label)" }
+  }
+  foreach ($wrongCaseKind in @('SCHEDULED-TASK','SERVICE')) { $candidate = $validMarker | ConvertTo-Json -Depth 8 | ConvertFrom-Json; $candidate.service.kind = $wrongCaseKind; $rejected = $false; try { Assert-DeploymentMarkerSchema -Marker $candidate -CanonicalRoot $schemaRoot | Out-Null } catch { $rejected = $true }; if (-not $rejected) { throw "Wrong-case service.kind was accepted: $wrongCaseKind" } }
+  $serviceMarker = $validMarker | ConvertTo-Json -Depth 8 | ConvertFrom-Json
+  $serviceMarker.service = [pscustomobject]@{ kind = 'service'; name = 'BaoGiangService'; account = 'fixture-account'; pathName = 'C:\fixture\service-host.exe --run' }
+  Assert-DeploymentMarkerSchema -Marker $serviceMarker -CanonicalRoot $schemaRoot | Out-Null
+  foreach ($field in @('account','pathName')) { $candidate = $serviceMarker | ConvertTo-Json -Depth 8 | ConvertFrom-Json; $candidate.service.PSObject.Properties.Remove($field); $rejected = $false; try { Assert-DeploymentMarkerSchema $candidate $schemaRoot | Out-Null } catch { $rejected = $true }; if (-not $rejected) { throw "Service marker missing $field was accepted." } }
+  $serviceWithTaskField = $serviceMarker | ConvertTo-Json -Depth 8 | ConvertFrom-Json; $serviceWithTaskField.service | Add-Member -NotePropertyName taskPath -NotePropertyValue '\\'; $rejected = $false; try { Assert-DeploymentMarkerSchema $serviceWithTaskField $schemaRoot | Out-Null } catch { $rejected = $true }; if (-not $rejected) { throw 'Service marker carrying Scheduled Task fields was accepted.' }
+  $firstDeployRoot = Join-Path $temp 'first-deploy-root'
+  foreach ($directory in @('releases','staging','incoming','shared','logs','backups')) { New-Item -ItemType Directory -Path (Join-Path $firstDeployRoot $directory) -Force | Out-Null }
+  $firstDeployShared = Join-Path $firstDeployRoot 'shared'
+  $firstDeployWrapper = Join-Path $firstDeployShared 'start-baogiang-api.ps1'; $firstDeployCommon = Join-Path $firstDeployShared 'deployment-common.ps1'
+  $firstDeployNode = Join-Path $temp 'first-deploy-node.exe'; $firstDeployEnv = Join-Path $temp 'first-deploy.env'; $firstDeployNginx = Join-Path $temp 'first-deploy-nginx.exe'; $firstDeployConfig = Join-Path $temp 'first-deploy-nginx.conf'; $firstDeployTaskExe = Join-Path $temp 'first-deploy-powershell.exe'
+  foreach ($leaf in @($firstDeployWrapper,$firstDeployCommon,$firstDeployNode,$firstDeployEnv,$firstDeployNginx,$firstDeployConfig,$firstDeployTaskExe)) { [IO.File]::WriteAllText($leaf, "fixture $leaf") }
+  $firstDeployMarker = [pscustomobject]@{
+    schemaVersion = [long]1; systemId = 'baogiang-damsan'; canonicalRoot = (Get-CanonicalPath $firstDeployRoot); domain = 'https://baogiang.dtnt-damsan.edu.vn'; apiPort = [long]3100
+    nodeExe = $firstDeployNode; envFile = $firstDeployEnv; startupWrapper = $firstDeployWrapper; entryPoint = (Join-Path $firstDeployRoot 'current\apps\api\dist\apps\api\src\main.js'); nginxExe = $firstDeployNginx; nginxConfig = $firstDeployConfig
+    foreignIsolation = [pscustomobject]@{ reviewedNginxPrefix = (Join-Path $temp 'reviewed-nginx'); reviewedNginxConfig = $firstDeployConfig; foreignRoots = @((Join-Path $temp 'foreign-one')); bootstrapReportReference = 'fixture-reference' }
+    startupBundle = [pscustomobject]@{ wrapperPath = $firstDeployWrapper; wrapperSha256 = (Get-SensitiveTextHash ([IO.File]::ReadAllText($firstDeployWrapper))); commonPath = $firstDeployCommon; commonSha256 = (Get-SensitiveTextHash ([IO.File]::ReadAllText($firstDeployCommon))) }
+    service = [pscustomobject]@{ kind = 'scheduled-task'; name = 'BaoGiangBackend'; taskPath = '\BaoGiang\'; account = 'fixture-account'; execute = $firstDeployTaskExe; arguments = '-File start-baogiang-api.ps1'; workingDirectory = $firstDeployShared }
+  }
+  $firstDeployMarker | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $firstDeployShared 'deployment-identity.json') -Encoding UTF8
+  if (Test-Path -LiteralPath $firstDeployMarker.entryPoint -PathType Leaf) { throw 'Pre-first-deploy fixture unexpectedly has a current entry point.' }
+  function Get-FileHash([string]$LiteralPath,[string]$Algorithm) { [pscustomobject]@{ Hash = Get-SensitiveTextHash ([IO.File]::ReadAllText($LiteralPath)) } }
+  Read-DeploymentIdentity -Root $firstDeployRoot -ServiceKind scheduled-task -ServiceName BaoGiangBackend -EnvFile $firstDeployEnv -StartupWrapper $firstDeployWrapper -ExpectedEntryPoint $firstDeployMarker.entryPoint -NodeExe $firstDeployNode -NginxExe $firstDeployNginx -NginxConfig $firstDeployConfig | Out-Null
+  foreach ($bindingFixture in @(
+    @{ label = 'Node expected-value mismatch'; node = (Join-Path $temp 'other-node.exe'); nginx = $firstDeployNginx; config = $firstDeployConfig },
+    @{ label = 'Nginx executable mismatch'; node = $firstDeployNode; nginx = (Join-Path $temp 'other-nginx.exe'); config = $firstDeployConfig },
+    @{ label = 'Nginx config mismatch'; node = $firstDeployNode; nginx = $firstDeployNginx; config = (Join-Path $temp 'other-nginx.conf') }
+  )) { $rejected = $false; try { Read-DeploymentIdentity -Root $firstDeployRoot -ServiceKind scheduled-task -ServiceName BaoGiangBackend -EnvFile $firstDeployEnv -StartupWrapper $firstDeployWrapper -ExpectedEntryPoint $firstDeployMarker.entryPoint -NodeExe $bindingFixture.node -NginxExe $bindingFixture.nginx -NginxConfig $bindingFixture.config | Out-Null } catch { $rejected = $true }; if (-not $rejected) { throw "Marker binding fixture was accepted: $($bindingFixture.label)" } }
+  Remove-Item Function:\Get-FileHash -Force
   foreach ($invalidPsqlFixture in @(
     @{ label = 'missing argument'; path = $null },
     @{ label = 'relative path'; path = 'psql.exe' },

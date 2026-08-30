@@ -246,36 +246,104 @@ function Assert-ReleasePointerTarget([Parameter(Mandatory = $true)][string]$Poin
   return $target
 }
 
+function Assert-ExactMarkerProperties([Parameter(Mandatory = $true)]$Object,[Parameter(Mandatory = $true)][string[]]$Expected,[Parameter(Mandatory = $true)][string]$Label) {
+  if ($null -eq $Object -or $Object -isnot [pscustomobject]) { throw "Deployment identity marker $Label must be an object." }
+  $actual = @($Object.PSObject.Properties.Name)
+  $expectedNames = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+  foreach ($name in $Expected) { [void]$expectedNames.Add($name) }
+  foreach ($name in $Expected) { if (-not $expectedNames.Contains($name) -or -not (@($actual | Where-Object { $_ -ceq $name }).Count -eq 1)) { throw "Deployment identity marker $Label is missing required property: $name" } }
+  foreach ($name in $actual) { if (-not $expectedNames.Contains($name)) { throw "Deployment identity marker $Label contains an unknown property." } }
+}
+
+function Assert-MarkerString([Parameter(Mandatory = $true)]$Value,[Parameter(Mandatory = $true)][string]$Label,[switch]$AbsolutePath) {
+  if ($Value -isnot [string] -or [string]::IsNullOrWhiteSpace($Value)) { throw "Deployment identity marker $Label must be a non-empty string." }
+  if ($AbsolutePath -and ($Value -notmatch '^(?:[A-Za-z]:\\|\\\\[^\\]+\\[^\\]+)')) { throw "Deployment identity marker $Label must be an absolute Windows path." }
+  return $Value
+}
+
+function Assert-DeploymentMarkerSchema([Parameter(Mandatory = $true)]$Marker,[Parameter(Mandatory = $true)][string]$CanonicalRoot) {
+  # Deliberately pure: this verifies JSON shape/types/path binding only, not host state.
+  Assert-ExactMarkerProperties $Marker @('schemaVersion','systemId','canonicalRoot','domain','apiPort','nodeExe','envFile','startupWrapper','entryPoint','nginxExe','nginxConfig','foreignIsolation','startupBundle','service') 'top level'
+  if (($Marker.schemaVersion -isnot [int] -and $Marker.schemaVersion -isnot [long]) -or [long]$Marker.schemaVersion -ne 1) { throw 'Deployment identity marker schemaVersion must be integer 1.' }
+  if ((Assert-MarkerString $Marker.systemId 'systemId') -cne 'baogiang-damsan') { throw 'Deployment identity marker systemId mismatch.' }
+  $markerRoot = Assert-MarkerString $Marker.canonicalRoot 'canonicalRoot' -AbsolutePath
+  if ((Normalize-ComparablePath $markerRoot) -ne (Normalize-ComparablePath $CanonicalRoot)) { throw 'Deployment identity marker root mismatch.' }
+  if ((Assert-MarkerString $Marker.domain 'domain') -cne 'https://baogiang.dtnt-damsan.edu.vn') { throw 'Deployment identity marker domain mismatch.' }
+  if (($Marker.apiPort -isnot [int] -and $Marker.apiPort -isnot [long]) -or [long]$Marker.apiPort -ne 3100) { throw 'Deployment identity marker apiPort must be integer 3100.' }
+  foreach ($pathField in @('nodeExe','envFile','startupWrapper','entryPoint','nginxExe','nginxConfig')) { Assert-MarkerString $Marker.$pathField $pathField -AbsolutePath | Out-Null }
+
+  Assert-ExactMarkerProperties $Marker.startupBundle @('wrapperPath','wrapperSha256','commonPath','commonSha256') 'startupBundle'
+  foreach ($pathField in @('wrapperPath','commonPath')) { Assert-MarkerString $Marker.startupBundle.$pathField "startupBundle.$pathField" -AbsolutePath | Out-Null }
+  foreach ($hashField in @('wrapperSha256','commonSha256')) {
+    $hash = Assert-MarkerString $Marker.startupBundle.$hashField "startupBundle.$hashField"
+    if ($hash -notmatch '^[0-9A-Fa-f]{64}$') { throw "Deployment identity marker startupBundle.$hashField must be a SHA-256 hex digest." }
+  }
+
+  Assert-ExactMarkerProperties $Marker.foreignIsolation @('reviewedNginxPrefix','reviewedNginxConfig','foreignRoots','bootstrapReportReference') 'foreignIsolation'
+  $nginxPrefix = Assert-MarkerString $Marker.foreignIsolation.reviewedNginxPrefix 'foreignIsolation.reviewedNginxPrefix' -AbsolutePath
+  $reviewedConfig = Assert-MarkerString $Marker.foreignIsolation.reviewedNginxConfig 'foreignIsolation.reviewedNginxConfig' -AbsolutePath
+  if ((Normalize-ComparablePath $reviewedConfig) -ne (Normalize-ComparablePath $Marker.nginxConfig)) { throw 'Deployment identity marker reviewed Nginx config mismatch.' }
+  if ((Test-PathWithin $nginxPrefix $CanonicalRoot) -or (Test-PathWithin $CanonicalRoot $nginxPrefix)) { throw 'Deployment identity marker reviewed Nginx prefix overlaps the dedicated root.' }
+  Assert-MarkerString $Marker.foreignIsolation.bootstrapReportReference 'foreignIsolation.bootstrapReportReference' | Out-Null
+  if ($Marker.foreignIsolation.foreignRoots -isnot [object[]] -or @($Marker.foreignIsolation.foreignRoots).Count -eq 0) { throw 'Deployment identity marker foreignRoots must be a non-empty JSON array.' }
+  $foreignRoots = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+  foreach ($foreignRootValue in @($Marker.foreignIsolation.foreignRoots)) {
+    $foreignRoot = Assert-MarkerString $foreignRootValue 'foreignIsolation.foreignRoots member' -AbsolutePath
+    $normalized = Normalize-ComparablePath $foreignRoot
+    if (-not $foreignRoots.Add($normalized)) { throw 'Deployment identity marker foreignRoots contains a duplicate.' }
+    if ((Test-PathWithin $foreignRoot $CanonicalRoot) -or (Test-PathWithin $CanonicalRoot $foreignRoot)) { throw 'Deployment identity marker foreignRoots overlaps the dedicated root.' }
+  }
+
+  if ($Marker.service -isnot [pscustomobject]) { throw 'Deployment identity marker service must be an object.' }
+  $kind = Assert-MarkerString $Marker.service.kind 'service.kind'
+  if ($kind -ceq 'scheduled-task') {
+    Assert-ExactMarkerProperties $Marker.service @('kind','name','taskPath','account','execute','arguments','workingDirectory') 'service'
+    foreach ($field in @('name','taskPath','account','execute','arguments','workingDirectory')) { Assert-MarkerString $Marker.service.$field "service.$field" | Out-Null }
+    if ($Marker.service.name -notmatch '^[A-Za-z0-9._-]{1,128}$') { throw 'Deployment identity marker scheduled-task name does not match the safe runtime-name syntax.' }
+    foreach ($pathField in @('execute','workingDirectory')) { Assert-MarkerString $Marker.service.$pathField "service.$pathField" -AbsolutePath | Out-Null }
+  } elseif ($kind -ceq 'service') {
+    Assert-ExactMarkerProperties $Marker.service @('kind','name','account','pathName') 'service'
+    foreach ($field in @('name','account','pathName')) { Assert-MarkerString $Marker.service.$field "service.$field" | Out-Null }
+    if ($Marker.service.name -notmatch '^[A-Za-z0-9._-]{1,128}$') { throw 'Deployment identity marker service name does not match the safe runtime-name syntax.' }
+  } else { throw 'Deployment identity marker service.kind is unsupported.' }
+  return $Marker
+}
+
 function Read-DeploymentIdentity(
   [Parameter(Mandatory = $true)][string]$Root,
   [Parameter(Mandatory = $true)][ValidateSet('scheduled-task','service')][string]$ServiceKind,
   [Parameter(Mandatory = $true)][ValidateNotNullOrEmpty()][string]$ServiceName,
   [Parameter(Mandatory = $true)][string]$EnvFile,
   [Parameter(Mandatory = $true)][string]$StartupWrapper,
-  [Parameter(Mandatory = $true)][string]$ExpectedEntryPoint
+  [Parameter(Mandatory = $true)][string]$ExpectedEntryPoint,
+  [string]$NodeExe,
+  [string]$NginxExe,
+  [string]$NginxConfig
 ) {
   $canonicalRoot = Assert-DedicatedRoot $Root
   $markerPath = Join-Path $canonicalRoot 'shared\deployment-identity.json'
   if (-not (Test-Path -LiteralPath $markerPath -PathType Leaf)) { throw 'Dedicated deployment identity marker is missing.' }
   $marker = Get-Content -LiteralPath $markerPath -Raw -Encoding UTF8 | ConvertFrom-Json
-  if ($marker.systemId -ne 'baogiang-damsan') { throw 'Deployment identity marker systemId mismatch.' }
-  if ((Normalize-ComparablePath $marker.canonicalRoot) -ne (Normalize-ComparablePath $canonicalRoot)) { throw 'Deployment identity marker root mismatch.' }
-  if ($marker.domain -ne 'https://baogiang.dtnt-damsan.edu.vn' -or [int]$marker.apiPort -ne 3100) { throw 'Deployment identity marker domain/port mismatch.' }
-  if ($marker.service.kind -ne $ServiceKind -or $marker.service.name -ne $ServiceName) { throw 'Deployment identity marker task/service mismatch.' }
+  Assert-DeploymentMarkerSchema -Marker $marker -CanonicalRoot $canonicalRoot | Out-Null
+  if ($marker.service.kind -cne $ServiceKind -or $marker.service.name -cne $ServiceName) { throw 'Deployment identity marker task/service mismatch.' }
   if ((Normalize-ComparablePath $marker.envFile) -ne (Normalize-ComparablePath $EnvFile)) { throw 'Deployment identity marker env path mismatch.' }
   if ((Normalize-ComparablePath $marker.startupWrapper) -ne (Normalize-ComparablePath $StartupWrapper)) { throw 'Deployment identity marker startup wrapper mismatch.' }
   if ((Normalize-ComparablePath $marker.entryPoint) -ne (Normalize-ComparablePath $ExpectedEntryPoint)) { throw 'Deployment identity marker entry point mismatch.' }
+  if (-not [string]::IsNullOrWhiteSpace($NodeExe) -and (Normalize-ComparablePath $marker.nodeExe) -ne (Normalize-ComparablePath $NodeExe)) { throw 'Deployment identity marker Node executable mismatch.' }
+  if (-not [string]::IsNullOrWhiteSpace($NginxExe) -and (Normalize-ComparablePath $marker.nginxExe) -ne (Normalize-ComparablePath $NginxExe)) { throw 'Deployment identity marker Nginx executable mismatch.' }
+  if (-not [string]::IsNullOrWhiteSpace($NginxConfig) -and (Normalize-ComparablePath $marker.nginxConfig) -ne (Normalize-ComparablePath $NginxConfig)) { throw 'Deployment identity marker Nginx config mismatch.' }
   foreach ($name in @('releases','staging','incoming','shared','logs','backups')) { Assert-ExistingDirectory (Join-Path $canonicalRoot $name) | Out-Null }
-  foreach ($property in @('startupBundle','nginxExe','nginxConfig','foreignIsolation')) {
-    if (-not $marker.PSObject.Properties.Name.Contains($property)) { throw "Deployment identity marker is missing required isolation/runtime evidence: $property" }
-  }
-  if (-not $marker.startupBundle.wrapperPath -or -not $marker.startupBundle.commonPath -or -not $marker.startupBundle.wrapperSha256 -or -not $marker.startupBundle.commonSha256) { throw 'Deployment identity marker startup runtime bundle is incomplete.' }
   if ((Normalize-ComparablePath $marker.startupBundle.wrapperPath) -ne (Normalize-ComparablePath $StartupWrapper)) { throw 'Deployment marker startup bundle wrapper path mismatch.' }
   $commonPath = Join-Path (Split-Path -Parent $StartupWrapper) 'deployment-common.ps1'
   if ((Normalize-ComparablePath $marker.startupBundle.commonPath) -ne (Normalize-ComparablePath $commonPath)) { throw 'Deployment marker startup bundle helper path mismatch.' }
   foreach ($bundleFile in @(@{ path = $marker.startupBundle.wrapperPath; hash = $marker.startupBundle.wrapperSha256 }, @{ path = $marker.startupBundle.commonPath; hash = $marker.startupBundle.commonSha256 })) {
     Assert-ExistingLeaf $bundleFile.path 'Startup runtime bundle file' | Out-Null
     if ((Get-FileHash -LiteralPath $bundleFile.path -Algorithm SHA256).Hash -ine $bundleFile.hash) { throw 'Startup runtime bundle hash mismatch.' }
+  }
+  foreach ($requiredLeaf in @(@{ path = $marker.nodeExe; label = 'Node executable' }, @{ path = $marker.envFile; label = 'Production environment file' }, @{ path = $marker.nginxExe; label = 'Nginx executable' }, @{ path = $marker.nginxConfig; label = 'Nginx config' })) { Assert-ExistingLeaf $requiredLeaf.path $requiredLeaf.label | Out-Null }
+  if ($marker.service.kind -eq 'scheduled-task') {
+    Assert-ExistingLeaf $marker.service.execute 'Scheduled Task executable' | Out-Null
+    Assert-ExistingDirectory $marker.service.workingDirectory | Out-Null
   }
   return [pscustomobject]@{ canonicalRoot = $canonicalRoot; marker = $marker }
 }
@@ -285,7 +353,7 @@ function Assert-VerifiedRuntimeIdentity([Parameter(Mandatory = $true)]$Marker,[P
     $tasks = @(Get-ScheduledTask -ErrorAction Stop | Where-Object { $_.TaskName -ceq $ServiceName })
     if ($tasks.Count -ne 1) { throw 'Exact Scheduled Task identity is missing or ambiguous.' }
     $task = $tasks[0]
-    if ($marker.service.taskPath -and $task.TaskPath -cne $marker.service.taskPath) { throw 'Scheduled Task path mismatch.' }
+    if ($task.TaskPath -cne $marker.service.taskPath) { throw 'Scheduled Task path mismatch.' }
     if ($task.Principal.UserId -cne $marker.service.account) { throw 'Scheduled Task account mismatch.' }
     $actions = @($task.Actions)
     if ($actions.Count -ne 1) { throw 'Scheduled Task must have exactly one action.' }
@@ -300,7 +368,7 @@ function Assert-VerifiedRuntimeIdentity([Parameter(Mandatory = $true)]$Marker,[P
   $listeners = @(Get-NetTCPConnection -State Listen -LocalPort 3100 -ErrorAction SilentlyContinue)
   foreach ($listener in $listeners) {
     $process = Get-CimInstance Win32_Process -Filter "ProcessId = $($listener.OwningProcess)" -ErrorAction Stop
-    $exeMatches = if ($marker.nodeExe) { (Normalize-ComparablePath $process.ExecutablePath) -eq (Normalize-ComparablePath $marker.nodeExe) } else { $true }
+    $exeMatches = (Normalize-ComparablePath $process.ExecutablePath) -eq (Normalize-ComparablePath $marker.nodeExe)
     if (-not $exeMatches -or (Normalize-ProcessCommandLine $process.CommandLine) -notlike "*$(Normalize-ProcessCommandLine $marker.entryPoint)*") { throw 'Port 3100 is occupied by a process that does not match the deployment marker.' }
   }
   return $true

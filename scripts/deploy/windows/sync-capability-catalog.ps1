@@ -16,7 +16,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'deployment-common.ps1')
 if (-not $BackupVerified) { throw 'A verified database backup is required before capability catalog synchronization.' }
-$identity = Read-DeploymentIdentity -Root $Root -ServiceKind $ServiceKind -ServiceName $ServiceName -EnvFile $EnvFile -StartupWrapper $StartupWrapper -ExpectedEntryPoint $ExpectedEntryPoint
+$identity = Read-DeploymentIdentity -Root $Root -ServiceKind $ServiceKind -ServiceName $ServiceName -EnvFile $EnvFile -StartupWrapper $StartupWrapper -ExpectedEntryPoint $ExpectedEntryPoint -NodeExe $NodeExe
 $canonicalRoot = $identity.canonicalRoot
 $release = Assert-ExactReleasePath -Root $canonicalRoot -ReleaseSha $ReleaseSha -ReleasePath $ReleasePath
 Assert-ExecutableContract @{ NodeExe = $NodeExe }

@@ -12,12 +12,10 @@ foreach ($property in $propertyNames) { if (-not $p.PSObject.Properties.Name.Con
 if ($p.ReleaseSha -notmatch '^[0-9a-f]{40}$' -or $p.ExpectedSha256 -notmatch '^[0-9A-Fa-f]{64}$' -or $p.TransferDirectoryName -notmatch "^control-[0-9]+-[0-9]+-$($p.ReleaseSha)$" -or $p.SourceArchiveName -notmatch "^release-$($p.ReleaseSha)\.zip$" -or $p.ReportFileName -notmatch "^deploy-report-$($p.ReleaseSha)\.json$") { throw 'Deployment parameter JSON has an unsafe transfer/release/checksum/report identity.' }
 if ($p.ServiceKind -notin @('scheduled-task','service') -or $p.ExpectedBaseUrl -ne 'https://baogiang.dtnt-damsan.edu.vn') { throw 'Deployment parameter JSON has an unsafe service/domain contract.' }
 $canonicalRoot = Assert-DedicatedRoot $p.Root
-$identity = Read-DeploymentIdentity -Root $canonicalRoot -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint
+$identity = Read-DeploymentIdentity -Root $canonicalRoot -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -NodeExe $p.NodeExe -NginxExe $p.NginxExe -NginxConfig $p.NginxConfig
 $canonicalRoot = $identity.canonicalRoot
 $marker = $identity.marker
 Assert-VerifiedRuntimeIdentity -Marker $marker -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName | Out-Null
-if ($marker.nginxExe -and (Normalize-ComparablePath $marker.nginxExe) -ne (Normalize-ComparablePath $p.NginxExe)) { throw 'Nginx executable does not match the deployment marker.' }
-if ($marker.nginxConfig -and (Normalize-ComparablePath $marker.nginxConfig) -ne (Normalize-ComparablePath $p.NginxConfig)) { throw 'Nginx config does not match the deployment marker.' }
 Assert-ExecutableContract @{ NodeExe = $p.NodeExe; NpmExe = $p.NpmExe; NpxExe = $p.NpxExe; PsqlExe = $p.PsqlExe; PgDumpExe = $p.PgDumpExe; PgRestoreExe = $p.PgRestoreExe; NginxExe = $p.NginxExe }
 $transfer = Assert-ExactChildPath $canonicalRoot "incoming\$($p.TransferDirectoryName)"
 if (-not (Test-Path -LiteralPath $transfer -PathType Container)) { throw 'Verified unique transfer directory is missing.' }
