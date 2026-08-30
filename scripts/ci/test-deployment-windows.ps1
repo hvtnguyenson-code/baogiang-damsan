@@ -446,6 +446,10 @@ try {
   $scopeOutput = @(Invoke-WithServerEnvironment -EnvFile $validEnvPath -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn' -ScriptBlock { 'SCOPE_BODY_OK' }); $scopeText = $scopeOutput -join "`n"
   if ($scopeText -notmatch '^SCOPE_BODY_OK$' -or $scopeText -match 'P0_PRIOR_SECRET_MUST_NOT_ESCAPE_7D91|postgresql://fixture|existed|value') { throw 'Scoped helper leaked prior environment state through its pipeline.' }
   if ([Environment]::GetEnvironmentVariable('DATABASE_URL','Process') -cne $priorDatabaseUrl) { throw 'Prior DATABASE_URL was not restored after successful scoped execution.' }
+  $privateSnapshotUrl = 'postgresql://fixture:P0_PRIVATE_SNAPSHOT_SECRET_41A7@db.invalid:5433/baogiang'; [Environment]::SetEnvironmentVariable('DATABASE_URL',$privateSnapshotUrl,'Process')
+  $privateScopeOutput = @(Invoke-WithServerEnvironment -EnvFile $validEnvPath -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn' -ScriptBlock { try { $snapshot } catch { } ; 'SCOPE_PRIVATE_OK' }); $privateScopeText = $privateScopeOutput -join "`n"
+  if ($privateScopeText -notmatch '^SCOPE_PRIVATE_OK$' -or $privateScopeText -match 'P0_PRIVATE_SNAPSHOT_SECRET_41A7|postgresql://fixture|existed|value') { throw 'Hostile ScriptBlock accessed the private environment snapshot.' }
+  if ([Environment]::GetEnvironmentVariable('DATABASE_URL','Process') -cne $privateSnapshotUrl) { throw 'Prior DATABASE_URL was not restored after hostile ScriptBlock execution.' }
   [Environment]::SetEnvironmentVariable('P0_ALTERNATE_DATABASE_URL','postgresql://fixture:alternate@db.invalid:5433/other','Process')
   $activeDatabaseUrl = Invoke-WithServerEnvironment -EnvFile $validEnvPath -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn' -ScriptBlock { [Environment]::GetEnvironmentVariable('DATABASE_URL','Process') }
   if ($activeDatabaseUrl -cne 'fixture-database-url') { throw 'Validated DATABASE_URL was not the sole active database authority.' }

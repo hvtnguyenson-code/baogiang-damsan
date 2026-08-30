@@ -498,13 +498,13 @@ function Read-ValidatedProductionEnvironment([Parameter(Mandatory = $true)][stri
 
 function Invoke-WithServerEnvironment([Parameter(Mandatory = $true)][string]$EnvFile,[Parameter(Mandatory = $true)][string]$ExpectedBaseUrl,[Parameter(Mandatory = $true)][scriptblock]$ScriptBlock) {
   $values = Read-ValidatedProductionEnvironment -EnvFile $EnvFile -ExpectedBaseUrl $ExpectedBaseUrl
-  $snapshot = @{}
+  $private:snapshot = @{}
   try {
-    foreach ($name in Get-ManagedProductionEnvironmentNames) { $prior = [Environment]::GetEnvironmentVariable($name,'Process'); $snapshot[$name] = [pscustomobject]@{ existed = $null -ne $prior; value = $prior } }
-    foreach ($name in $snapshot.Keys) { [Environment]::SetEnvironmentVariable($name,$null,'Process') }
+    foreach ($name in Get-ManagedProductionEnvironmentNames) { $prior = [Environment]::GetEnvironmentVariable($name,'Process'); $private:snapshot[$name] = [pscustomobject]@{ existed = $null -ne $prior; value = $prior } }
+    foreach ($name in $private:snapshot.Keys) { [Environment]::SetEnvironmentVariable($name,$null,'Process') }
     foreach ($name in $values.Keys) { [Environment]::SetEnvironmentVariable($name,$values[$name],'Process') }
     & $ScriptBlock
-  } finally { Restore-ServerEnvironment -Snapshot $snapshot }
+  } finally { Restore-ServerEnvironment -Snapshot $private:snapshot }
 }
 
 function Restore-ServerEnvironment([Parameter(Mandatory = $true)][hashtable]$Snapshot) {
