@@ -91,6 +91,8 @@ For `service.kind: "scheduled-task"`, the exact shape is `kind`, `name`, `taskPa
 
 The shared contract parses and validates the complete file before any Process environment change. Unknown, duplicate (including case variants), malformed, missing, blank-required, or invariant-violating assignments fail closed without partial application. Runtime callers restore their prior Process values in `finally` after use; values and snapshots are never reported.
 
+The auth numeric fields are positive integers. Cookie values are validated with the API runtime semantics: `AUTH_COOKIE_NAME` uses the runtime-safe name syntax, `AUTH_COOKIE_PATH` begins with `/`, and `AUTH_COOKIE_SAME_SITE` is `lax`, `strict`, or `none` (case-insensitive). The validated file's `DATABASE_URL` is the only database runtime authority.
+
 Run `scripts\deploy\windows\validate-production-environment.ps1` for Stage 2 validation. It requires only the reviewed env-file path and approved base URL, does not require `current`, marker, Node, PostgreSQL, Nginx, task, or service, and returns only a value-free validation state. Never provide the environment file or its values to ChatGPT, Codex, GitHub, or a report.
 
 The workflow never receives `DATABASE_URL`. Backup/migration scripts parse it in memory and pass non-secret PostgreSQL fields as arguments with the password only in short-lived `PGPASSWORD` process environment, cleared in `finally` blocks. Reports contain no URL or credential.

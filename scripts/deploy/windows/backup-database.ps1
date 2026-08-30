@@ -8,8 +8,7 @@ param(
   [Parameter(Mandatory = $true)][ValidateNotNullOrEmpty()][string]$ServiceName,
   [Parameter(Mandatory = $true)][string]$EnvFile,
   [Parameter(Mandatory = $true)][string]$StartupWrapper,
-  [Parameter(Mandatory = $true)][string]$ExpectedEntryPoint,
-  [string]$DatabaseUrlEnvironmentVariable = 'DATABASE_URL'
+  [Parameter(Mandatory = $true)][string]$ExpectedEntryPoint
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -19,7 +18,7 @@ Assert-ExecutableContract @{ PgDumpExe = $PgDumpExe; PgRestoreExe = $PgRestoreEx
 if (-not (Test-Path -LiteralPath $BackupRoot -PathType Container)) { throw 'Backup directory must be bootstrapped and ACL-reviewed before deploy.' }
 Invoke-WithServerEnvironment -EnvFile $EnvFile -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn' -ScriptBlock {
 try {
-  $databaseUrl = [Environment]::GetEnvironmentVariable($DatabaseUrlEnvironmentVariable)
+  $databaseUrl = [Environment]::GetEnvironmentVariable('DATABASE_URL','Process')
   if ([string]::IsNullOrWhiteSpace($databaseUrl)) { throw 'Server-side database environment is missing.' }
   $parts = Set-PostgresProcessEnvironment -DatabaseUrl $databaseUrl -ExpectedPort 5433
   $stamp = [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssZ')

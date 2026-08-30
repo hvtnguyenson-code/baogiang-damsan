@@ -12,8 +12,7 @@ param(
   [Parameter(Mandatory = $true)][string]$ExpectedEntryPoint,
   [Parameter(Mandatory = $true)][ValidatePattern('^https://baogiang\.dtnt-damsan\.edu\.vn$')][string]$ExpectedBaseUrl,
   [Parameter(Mandatory = $true)][switch]$AllowProductionMigration,
-  [Parameter(Mandatory = $true)][switch]$BackupVerified,
-  [string]$DatabaseUrlEnvironmentVariable = 'DATABASE_URL'
+  [Parameter(Mandatory = $true)][switch]$BackupVerified
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -27,7 +26,7 @@ if (-not (Test-Path -LiteralPath $schema -PathType Leaf) -or -not (Test-PathWith
 Invoke-WithServerEnvironment -EnvFile $EnvFile -ExpectedBaseUrl $ExpectedBaseUrl -ScriptBlock {
 try {
 Assert-ExecutableContract @{ NpxExe = $NpxExe; PsqlExe = $PsqlExe }
-$databaseUrl = [Environment]::GetEnvironmentVariable($DatabaseUrlEnvironmentVariable)
+$databaseUrl = [Environment]::GetEnvironmentVariable('DATABASE_URL','Process')
 $parts = Set-PostgresProcessEnvironment -DatabaseUrl $databaseUrl -ExpectedPort 5433
 function Get-MigrationState([string]$Phase) {
   $existsQuery = "SELECT CASE WHEN to_regclass('public._prisma_migrations') IS NULL THEN 'NOT_PRESENT' ELSE 'PRESENT' END;"
