@@ -49,6 +49,15 @@ function Assert-ExactChildPath([Parameter(Mandatory = $true)][string]$Root,[Para
   return $candidate
 }
 
+function Assert-ExactReleasePath([Parameter(Mandatory = $true)][string]$Root,[Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{40}$')][string]$ReleaseSha,[Parameter(Mandatory = $true)][string]$ReleasePath) {
+  $canonicalRoot = Assert-DedicatedRoot $Root
+  $releasesRoot = Assert-ExactChildPath $canonicalRoot 'releases'
+  $expectedRelease = Assert-ExactChildPath $canonicalRoot "releases\$ReleaseSha"
+  $release = Get-CanonicalPath $ReleasePath
+  if ((Normalize-ComparablePath $release) -ne (Normalize-ComparablePath $expectedRelease) -or -not (Test-PathWithin $expectedRelease $releasesRoot) -or (Normalize-ComparablePath (Split-Path -Parent $expectedRelease)) -ne (Normalize-ComparablePath $releasesRoot) -or (Split-Path -Leaf $expectedRelease) -cne $ReleaseSha -or -not (Test-Path -LiteralPath $expectedRelease -PathType Container)) { throw 'Release path does not match the exact requested release identity.' }
+  return $expectedRelease
+}
+
 function Redact-SensitiveText([AllowNull()][string]$Text) {
   if ($null -eq $Text) { return $null }
   $safe = $Text

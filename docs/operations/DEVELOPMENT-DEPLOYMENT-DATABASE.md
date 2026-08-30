@@ -40,6 +40,8 @@ Runbook này diễn giải đường đi chính thức từ thay đổi local t�
 
 `CapabilityDefinition` synchronization bảo đảm system catalog, không phải provisioning `CapabilityGrant`. Deploy không tự cấp/sửa/thu hồi quyền người dùng; grants là prerequisite nghiệp vụ do operator quyết định.
 
+Production target phải thuộc first-parent history của canonical `main` và có CI thành công từ event `push` trên branch `main`. Migration chỉ chạy từ exact `releases\<ReleaseSha>`. Nếu release lỗi sau migration và code rollback compatibility chưa được phê duyệt, controller phải dừng exact Báo giảng runtime fail-safe, giữ pointer/database để operator kiểm tra, thay vì tiếp tục phục vụ hoặc rollback code mù. Các hành động deploy/migration vẫn cần phê duyệt riêng.
+
 Không copy working tree local lên VPS. `workflow_dispatch` chỉ là cơ chế khởi chạy có kiểm soát, không thay thế review/phê duyệt.
 
 ## Isolation checklist
