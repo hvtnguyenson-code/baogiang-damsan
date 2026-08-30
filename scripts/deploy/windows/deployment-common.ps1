@@ -348,18 +348,108 @@ function Read-DeploymentIdentity(
   return [pscustomobject]@{ canonicalRoot = $canonicalRoot; marker = $marker }
 }
 
+function Get-ScheduledTaskTriggerClassName([Parameter(Mandatory = $true)]$Trigger) {
+  if ($null -ne $Trigger.CimClass -and -not [string]::IsNullOrWhiteSpace([string]$Trigger.CimClass.CimClassName)) { return [string]$Trigger.CimClass.CimClassName }
+  $typeName = @($Trigger.PSObject.TypeNames | Where-Object { $_ -match 'MSFT_Task.+Trigger$' } | Select-Object -First 1)
+  if ($typeName.Count -eq 1) { return $typeName[0] }
+  return ''
+}
+
+function Test-ScheduledTaskTriggerEnabled([Parameter(Mandatory = $true)]$Trigger) {
+  return "$($Trigger.Enabled)" -match '^(True|1)$'
+}
+
+function Assert-VerifiedScheduledTaskContract([Parameter(Mandatory = $true)]$Marker,[Parameter(Mandatory = $true)][string]$ServiceName,[object]$Task) {
+  [object[]]$tasks = @()
+  if ($PSBoundParameters.ContainsKey('Task') -and $null -ne $Task) { $tasks += $Task } else { $tasks += @(Get-ScheduledTask -ErrorAction Stop | Where-Object { $_.TaskName -ceq $ServiceName }) }
+  if ($tasks.Count -ne 1) { throw 'Exact Scheduled Task identity is missing or ambiguous.' }
+  $task = $tasks[0]
+  if ($task.TaskName -cne $ServiceName -or $task.TaskPath -cne $Marker.service.taskPath) { throw 'Scheduled Task name or path mismatch.' }
+  if ($task.Principal.UserId -cne $Marker.service.account) { throw 'Scheduled Task account mismatch.' }
+  $actions = @($task.Actions | Where-Object { $null -ne $_ })
+  if ($actions.Count -ne 1) { throw 'Scheduled Task must have exactly one action.' }
+  if ((Normalize-ComparablePath $actions[0].Execute) -ne (Normalize-ComparablePath $Marker.service.execute)) { throw 'Scheduled Task executable mismatch.' }
+  if (($actions[0].Arguments -replace '\s+',' ').Trim() -cne ($Marker.service.arguments -replace '\s+',' ').Trim()) { throw 'Scheduled Task arguments mismatch.' }
+  if ((Normalize-ComparablePath $actions[0].WorkingDirectory) -ne (Normalize-ComparablePath $Marker.service.workingDirectory)) { throw 'Scheduled Task working directory mismatch.' }
+  $triggers = @($task.Triggers | Where-Object { $null -ne $_ })
+  if ($triggers.Count -ne 1) { throw 'Scheduled Task must have exactly one enabled Boot trigger.' }
+  if ((Get-ScheduledTaskTriggerClassName $triggers[0]) -cne 'MSFT_TaskBootTrigger') { throw 'Scheduled Task trigger must be the approved Boot trigger.' }
+  if (-not (Test-ScheduledTaskTriggerEnabled $triggers[0])) { throw 'Scheduled Task Boot trigger must be enabled.' }
+  return $task
+}
+
+function Assert-ScheduledTaskDisabledState([Parameter(Mandatory = $true)]$Task) {
+  if ("$($Task.State)" -cne 'Disabled') { throw 'Scheduled Task safe-stop did not leave the exact task disabled.' }
+  return $true
+}
+
+function Assert-ScheduledTaskActivationAuthorized([switch]$AllowScheduledTaskActivation) {
+  if (-not $AllowScheduledTaskActivation) { throw 'Scheduled Task activation requires -AllowScheduledTaskActivation before any lifecycle mutation.' }
+  return $true
+}
+
+function Get-ScheduledTaskActivationFailureDisposition([bool]$ActivationAttempted) {
+  return [ordered]@{ state = if ($ActivationAttempted) { 'SAFE_STOP_REQUIRED' } else { 'PROPAGATE_ONLY' }; taskEnabled = $false; runtimeRunning = $false }
+}
+
+function Assert-ScheduledTaskHealthyState([Parameter(Mandatory = $true)]$Task) {
+  if ("$($Task.State)" -cne 'Running') { throw 'Scheduled Task did not reach the required Running healthy state.' }
+  return $true
+}
+
+function Invoke-ScheduledTaskActivationLifecycle(
+  [switch]$AllowScheduledTaskActivation,
+  [Parameter(Mandatory = $true)]$Context,
+  [Parameter(Mandatory = $true)][scriptblock]$Verify,
+  [Parameter(Mandatory = $true)][scriptblock]$Enable,
+  [Parameter(Mandatory = $true)][scriptblock]$Start,
+  [Parameter(Mandatory = $true)][scriptblock]$RuntimeCheck,
+  [Parameter(Mandatory = $true)][scriptblock]$FinalVerify,
+  [Parameter(Mandatory = $true)][scriptblock]$SafeStop,
+  [Parameter(Mandatory = $true)][scriptblock]$Success
+) {
+  Assert-ScheduledTaskActivationAuthorized -AllowScheduledTaskActivation:$AllowScheduledTaskActivation | Out-Null
+  $activationAttempted = $false
+  try {
+    $task = & $Verify $Context 'initial'
+    $activationAttempted = $true
+    & $Enable $Context $task
+    $task = & $Verify $Context 'post-enable'
+    if ("$($task.State)" -ceq 'Disabled') { throw 'Scheduled Task remained disabled after activation enable.' }
+    & $Start $Context $task
+    $runtime = & $RuntimeCheck $Context
+    if (-not $runtime) { throw 'Restart completed but exactly one expected API process did not own port 3100 within the bounded wait.' }
+    $finalTask = & $FinalVerify $Context
+    Assert-ScheduledTaskHealthyState -Task $finalTask | Out-Null
+    return & $Success $Context $runtime
+  } catch {
+    $activationFailure = $_
+    if ((Get-ScheduledTaskActivationFailureDisposition -ActivationAttempted:$activationAttempted).state -eq 'SAFE_STOP_REQUIRED') {
+      try { & $SafeStop $Context } catch { throw "ACTIVATION_FAILED_AND_SAFE_STOP_FAILED: primary=$($activationFailure.Exception.GetType().Name); cleanup=$($_.Exception.GetType().Name)" }
+    }
+    throw $activationFailure
+  }
+}
+
+function Invoke-ScheduledTaskRollbackLifecycle([Parameter(Mandatory = $true)]$Context,[Parameter(Mandatory = $true)][scriptblock]$Restart,[Parameter(Mandatory = $true)][scriptblock]$Health,[Parameter(Mandatory = $true)][scriptblock]$SafeStop) {
+  $restartCompleted = $false
+  try { & $Restart $Context | Out-Null; $restartCompleted = $true; return & $Health $Context }
+  catch {
+    $rollbackFailure = $_
+    if ($restartCompleted) { try { & $SafeStop $Context } catch { throw "ROLLBACK_HEALTH_FAILED_AND_SAFE_STOP_FAILED: primary=$($rollbackFailure.Exception.GetType().Name); cleanup=$($_.Exception.GetType().Name)" } }
+    throw $rollbackFailure
+  }
+}
+
+function Get-DeploymentFailureRecoveryDecision([bool]$HasPreviousRelease,[bool]$MigrationAttempted,[bool]$RollbackCompatibilityApproved) {
+  if (-not $HasPreviousRelease) { return 'FIRST_DEPLOY_SAFE_STOP' }
+  if ($MigrationAttempted -and -not $RollbackCompatibilityApproved) { return 'COMPATIBILITY_SAFE_STOP' }
+  return 'ROLLBACK_RELEASE'
+}
+
 function Assert-VerifiedRuntimeIdentity([Parameter(Mandatory = $true)]$Marker,[Parameter(Mandatory = $true)][ValidateSet('scheduled-task','service')][string]$ServiceKind,[Parameter(Mandatory = $true)][string]$ServiceName) {
   if ($ServiceKind -eq 'scheduled-task') {
-    $tasks = @(Get-ScheduledTask -ErrorAction Stop | Where-Object { $_.TaskName -ceq $ServiceName })
-    if ($tasks.Count -ne 1) { throw 'Exact Scheduled Task identity is missing or ambiguous.' }
-    $task = $tasks[0]
-    if ($task.TaskPath -cne $marker.service.taskPath) { throw 'Scheduled Task path mismatch.' }
-    if ($task.Principal.UserId -cne $marker.service.account) { throw 'Scheduled Task account mismatch.' }
-    $actions = @($task.Actions)
-    if ($actions.Count -ne 1) { throw 'Scheduled Task must have exactly one action.' }
-    if ((Normalize-ComparablePath $actions[0].Execute) -ne (Normalize-ComparablePath $marker.service.execute)) { throw 'Scheduled Task executable mismatch.' }
-    if (($actions[0].Arguments -replace '\s+',' ').Trim() -cne ($marker.service.arguments -replace '\s+',' ').Trim()) { throw 'Scheduled Task arguments mismatch.' }
-    if ((Normalize-ComparablePath $actions[0].WorkingDirectory) -ne (Normalize-ComparablePath $marker.service.workingDirectory)) { throw 'Scheduled Task working directory mismatch.' }
+    Assert-VerifiedScheduledTaskContract -Marker $Marker -ServiceName $ServiceName | Out-Null
   } else {
     $services = @(Get-CimInstance Win32_Service -ErrorAction Stop | Where-Object { $_.Name -ceq $ServiceName })
     if ($services.Count -ne 1) { throw 'Exact Windows Service identity is missing or ambiguous.' }
@@ -403,11 +493,10 @@ function Stop-ExactBaoGiangRuntime([Parameter(Mandatory = $true)]$Marker,[Parame
   # Identity validation is intentionally before every mutation; never target a generic node.exe.
   Assert-VerifiedRuntimeIdentity -Marker $Marker -ServiceKind $ServiceKind -ServiceName $ServiceName | Out-Null
   if ($ServiceKind -eq 'scheduled-task') {
-    $tasks = @(Get-ScheduledTask -ErrorAction Stop | Where-Object { $_.TaskName -ceq $ServiceName -and $_.TaskPath -ceq $Marker.service.taskPath })
-    if ($tasks.Count -ne 1 -or @($tasks[0].Actions).Count -ne 1) { throw 'Exact Scheduled Task cannot be safely stopped.' }
+    $task = Assert-VerifiedScheduledTaskContract -Marker $Marker -ServiceName $ServiceName
     # A first-deploy failure must not be restarted by an automatic trigger.
-    Disable-ScheduledTask -TaskName $ServiceName -TaskPath $Marker.service.taskPath -ErrorAction Stop | Out-Null
-    Stop-ScheduledTask -TaskName $ServiceName -TaskPath $Marker.service.taskPath -ErrorAction SilentlyContinue
+    Disable-ScheduledTask -TaskName $ServiceName -TaskPath $task.TaskPath -ErrorAction Stop | Out-Null
+    Stop-ScheduledTask -TaskName $ServiceName -TaskPath $task.TaskPath -ErrorAction SilentlyContinue
   } else {
     $services = @(Get-CimInstance Win32_Service -ErrorAction Stop | Where-Object { $_.Name -ceq $ServiceName -and $_.PathName -ceq $Marker.service.pathName -and $_.StartName -ceq $Marker.service.account })
     if ($services.Count -ne 1) { throw 'Exact Windows Service cannot be safely stopped.' }
@@ -421,7 +510,10 @@ function Stop-ExactBaoGiangRuntime([Parameter(Mandatory = $true)]$Marker,[Parame
     $listeners = @(Get-NetTCPConnection -State Listen -LocalPort 3100 -ErrorAction SilentlyContinue)
     $decision = Get-SafeStopPollingDecision -ExactProcessId @($exact | Select-Object -ExpandProperty ProcessId) -Listeners $listeners
     if ($decision.state -eq 'CONFLICT') { throw "Safe-stop conflict: foreign process owns port 3100 (listener count $($decision.listenerCount))." }
-    if ($decision.state -eq 'PASS') { return [ordered]@{ state = 'stopped'; serviceKind = $ServiceKind; serviceName = $ServiceName; attempts = $attempt; apiProcessCount = 0; listenerCount = 0 } }
+    if ($decision.state -eq 'PASS') {
+      if ($ServiceKind -eq 'scheduled-task') { Assert-ScheduledTaskDisabledState (Assert-VerifiedScheduledTaskContract -Marker $Marker -ServiceName $ServiceName) | Out-Null }
+      return [ordered]@{ state = 'stopped'; serviceKind = $ServiceKind; serviceName = $ServiceName; attempts = $attempt; apiProcessCount = 0; listenerCount = 0; taskEnabled = if ($ServiceKind -eq 'scheduled-task') { $false } else { $null } }
+    }
     if ($attempt -lt $MaxAttempts -and $DelaySeconds -gt 0) { Start-Sleep -Seconds $DelaySeconds }
   }
   throw 'Safe-stop timeout: exact Báo giảng API process remains after the bounded wait.'
