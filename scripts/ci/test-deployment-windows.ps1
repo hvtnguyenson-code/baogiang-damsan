@@ -108,6 +108,10 @@ $forbiddenPreflightMutations = @(
 foreach ($forbiddenMutation in $forbiddenPreflightMutations) {
   if ($preflightText -match [regex]::Escape($forbiddenMutation)) { throw "Read-only production preflight contains forbidden mutation token: $forbiddenMutation" }
 }
+foreach ($requiredPreflightToken in @('RequireReviewedIsolation','Resolve-ExpectedCandidateRuntimeName','Resolve-DatabaseVerifierExecutable','Get-ProtectedNeighborIsolationEvidence','Get-SshDirectConfigEvidence','Get-SshPortEvidence','Get-SshPublicHostKeyEvidence','Get-SshFirewallEvidence','-SshPort @($portEvidence.agreedPorts)','& $databaseVerifier --tuples-only','argumentsSha256','pathNameSha256')) {
+  if ($preflightText -notmatch [regex]::Escape($requiredPreflightToken)) { throw "Production preflight is missing required evidence token: $requiredPreflightToken" }
+}
+if ($preflightText -match 'Get-Command\s+psql\b|argumentsRedacted|pathNameRedacted') { throw 'Production preflight contains a PATH-based DB verifier or unsafe raw command evidence.' }
 
 $neighborDiscoveryPath = Join-Path $repo 'scripts\deploy\windows\production-protected-neighbor-discovery.ps1'
 $neighborDiscoveryText = Get-Content -LiteralPath $neighborDiscoveryPath -Raw -Encoding UTF8
@@ -142,9 +146,127 @@ if ($absentPlan.Count -ne 1 -or $absentPlan[0].sql -match 'FROM _prisma_migratio
 if ($presentPlan.Count -ne 2 -or $presentPlan[1].sql -notmatch 'FROM _prisma_migrations') { throw 'Present-table query plan must include summary SQL.' }
 $summaryUnavailable = Get-DatabaseEvidenceClassification -ActualDatabase 'baogiang' -ExpectedDatabase 'baogiang' -ActualRole 'baogiang_app' -ExpectedRole 'baogiang_app' -ActualExtensions @('btree_gist') -RequiredExtensions @('btree_gist') -MigrationTablePresent $true -MigrationSummaryVerified $false
 if ($summaryUnavailable.state -ne 'PARTIAL' -or $summaryUnavailable.migrationState -ne 'NOT_VERIFIED') { throw 'Unavailable migration summary classification failed.' }
+$emptyIsolationRejected = $false
+try { Get-ProtectedNeighborIsolationEvidence -CandidateRoot 'C:\baogiang' -RequireReviewedInputs | Out-Null } catch { $emptyIsolationRejected = $true }
+if (-not $emptyIsolationRejected) { throw 'Verified first-deploy isolation accepted empty reviewed inputs.' }
+$missingCandidateRejected = $false
+try { Get-ProtectedNeighborIsolationEvidence -CandidateRoot 'C:\baogiang' -KnownForeignRoot @('C:\DamSanV5') -KnownForeignName @('DamSanV5Backend') -RequireReviewedInputs | Out-Null } catch { $missingCandidateRejected = $true }
+if (-not $missingCandidateRejected) { throw 'I1 verified isolation accepted an empty candidate runtime name.' }
+$missingKindRejected = $false
+try { Resolve-ExpectedCandidateRuntimeName -ExpectedTaskName 'BaoGiangBackend' -RequireReviewedIsolation | Out-Null } catch { $missingKindRejected = $true }
+if (-not $missingKindRejected) { throw 'I2 verified isolation accepted a missing ServiceKind.' }
+$missingTaskNameRejected = $false
+try { Resolve-ExpectedCandidateRuntimeName -ServiceKind 'scheduled-task' -RequireReviewedIsolation | Out-Null } catch { $missingTaskNameRejected = $true }
+if (-not $missingTaskNameRejected) { throw 'I3 scheduled-task isolation accepted a missing ExpectedTaskName.' }
+$missingServiceNameRejected = $false
+try { Resolve-ExpectedCandidateRuntimeName -ServiceKind 'service' -RequireReviewedIsolation | Out-Null } catch { $missingServiceNameRejected = $true }
+if (-not $missingServiceNameRejected) { throw 'I4 service isolation accepted a missing ExpectedServiceName.' }
+$ambiguousCandidateRejected = $false
+try { Resolve-ExpectedCandidateRuntimeName -ServiceKind 'scheduled-task' -ExpectedTaskName 'BaoGiangBackend' -ExpectedServiceName 'BaoGiangService' -RequireReviewedIsolation | Out-Null } catch { $ambiguousCandidateRejected = $true }
+if (-not $ambiguousCandidateRejected) { throw 'Verified isolation accepted an ambiguous candidate runtime identity.' }
+$unsafeCandidateRejected = $false
+try { Resolve-ExpectedCandidateRuntimeName -ServiceKind 'scheduled-task' -ExpectedTaskName 'Bao Giang Backend' -RequireReviewedIsolation | Out-Null } catch { $unsafeCandidateRejected = $true }
+if (-not $unsafeCandidateRejected) { throw 'Verified isolation accepted an unsafe candidate runtime name.' }
+$candidateRuntimeName = Resolve-ExpectedCandidateRuntimeName -ServiceKind 'scheduled-task' -ExpectedTaskName 'BaoGiangBackend' -RequireReviewedIsolation
+$nameConflictIsolation = Get-ProtectedNeighborIsolationEvidence -CandidateRoot 'C:\baogiang' -KnownForeignRoot @('C:\DamSanV5') -CandidateName @($candidateRuntimeName) -KnownForeignName @('baogiangbackend') -RequireReviewedInputs
+if ($nameConflictIsolation.status -ne 'CONFLICT' -or $nameConflictIsolation.conflictType -ne 'NAME_OVERLAP') { throw 'I5 case-insensitive exact runtime-name overlap was not classified as conflict.' }
+$reviewedIsolation = Get-ProtectedNeighborIsolationEvidence -CandidateRoot 'C:\baogiang' -KnownForeignRoot @('C:\DamSanV5') -CandidateName @('BaoGiangBackend') -KnownForeignName @('DamSanV5Backend') -RequireReviewedInputs
+if ($reviewedIsolation.status -ne 'EXISTS AND VERIFIED') { throw 'I6 reviewed protected-neighbor inputs were not accepted.' }
+$nonFuzzyIsolation = Get-ProtectedNeighborIsolationEvidence -CandidateRoot 'C:\baogiang' -KnownForeignRoot @('C:\DamSanV5') -CandidateName @('BaoGiangBackend') -KnownForeignName @('BaoGiangBackendOld') -RequireReviewedInputs
+if ($nonFuzzyIsolation.status -ne 'EXISTS AND VERIFIED') { throw 'Distinct runtime names were incorrectly fuzzy-matched.' }
+$overlapIsolation = Get-ProtectedNeighborIsolationEvidence -CandidateRoot 'C:\baogiang' -KnownForeignRoot @('C:\baogiang\legacy') -CandidateName @('BaoGiangBackend') -KnownForeignName @('DamSanV5Backend') -RequireReviewedInputs
+if ($overlapIsolation.status -ne 'CONFLICT' -or $overlapIsolation.conflictType -ne 'PATH_OVERLAP') { throw 'Protected-neighbor path overlap was not classified as conflict.' }
+$hostileTaskArguments = 'C:\apps\baogiang\server.js --token arbitrary-secret-value --password another-secret'
+$safeTaskEvidence = [ordered]@{ argumentsSha256 = Get-SensitiveTextHash $hostileTaskArguments; safePathHints = @(Get-SafePathHints $hostileTaskArguments) } | ConvertTo-Json
+if ($safeTaskEvidence -match 'arbitrary-secret-value|another-secret|--token|--password' -or $safeTaskEvidence -notmatch 'server\.js') { throw 'Task/service arbitrary-argument privacy fixture failed.' }
 $temp = Join-Path ([IO.Path]::GetTempPath()) ("baogiang-deploy-test-" + [guid]::NewGuid().ToString('N'))
 try {
   New-Item -ItemType Directory -Path $temp -Force | Out-Null
+  foreach ($invalidPsqlFixture in @(
+    @{ label = 'missing argument'; path = $null },
+    @{ label = 'relative path'; path = 'psql.exe' },
+    @{ label = 'missing leaf'; path = (Join-Path $temp 'missing\psql.exe') }
+  )) {
+    $invalidPsqlRejected = $false
+    try { Resolve-DatabaseVerifierExecutable -VerifyDatabase -PsqlExe $invalidPsqlFixture.path | Out-Null } catch { $invalidPsqlRejected = $true }
+    if (-not $invalidPsqlRejected) { throw "Invalid authenticated DB verifier was accepted: $($invalidPsqlFixture.label)" }
+  }
+  $wrongPsqlPath = Join-Path $temp 'postgres-client.exe'
+  [IO.File]::WriteAllText($wrongPsqlPath, '')
+  $wrongPsqlRejected = $false; try { Resolve-DatabaseVerifierExecutable -VerifyDatabase -PsqlExe $wrongPsqlPath | Out-Null } catch { $wrongPsqlRejected = $true }
+  if (-not $wrongPsqlRejected) { throw 'Wrong authenticated DB verifier filename was accepted.' }
+  $exactPsqlPath = Join-Path $temp 'psql.exe'
+  [IO.File]::WriteAllText($exactPsqlPath, '')
+  if ((Resolve-DatabaseVerifierExecutable -VerifyDatabase -PsqlExe $exactPsqlPath) -ne (Get-CanonicalPath $exactPsqlPath)) { throw 'Exact psql.exe fixture was rejected.' }
+
+  function New-PublicKeyLine([string]$KeyAlgorithm,[byte[]]$KeyMaterial) {
+    $algorithmBytes = [Text.Encoding]::ASCII.GetBytes($KeyAlgorithm)
+    $lengthBytes = [BitConverter]::GetBytes([Net.IPAddress]::HostToNetworkOrder([int]$algorithmBytes.Length))
+    $blob = [byte[]]@($lengthBytes + $algorithmBytes + $KeyMaterial)
+    return "$KeyAlgorithm $([Convert]::ToBase64String($blob)) fixture-comment-must-not-be-reported"
+  }
+  $sshFixtureRoot = Join-Path $temp 'ssh evidence'
+  New-Item -ItemType Directory -Path $sshFixtureRoot -Force | Out-Null
+  $simpleSshConfig = Join-Path $sshFixtureRoot 'sshd_config_simple'
+  [IO.File]::WriteAllText($simpleSshConfig, 'Port 2222')
+  $simpleConfigEvidence = Get-SshDirectConfigEvidence -ConfigPath $simpleSshConfig
+  $matchingPortEvidence = Get-SshPortEvidence -EffectiveConfigState $simpleConfigEvidence.effectiveConfigState -ConfiguredPort @($simpleConfigEvidence.configuredPorts) -ListeningPort @(2222) -ServiceRunning
+  if ($simpleConfigEvidence.effectiveConfigState -ne 'DISCOVERED' -or $matchingPortEvidence.state -ne 'DISCOVERED' -or $matchingPortEvidence.agreedPorts[0] -ne 2222) { throw 'S1 exact configured/listening SSH port fixture failed.' }
+  $mismatchedPortEvidence = Get-SshPortEvidence -EffectiveConfigState 'DISCOVERED' -ConfiguredPort @(22) -ListeningPort @(2222) -ServiceRunning
+  if ($mismatchedPortEvidence.state -ne 'CONFLICT' -or @($mismatchedPortEvidence.agreedPorts).Count -ne 0) { throw 'S2 configured/listening SSH port mismatch was not rejected.' }
+  $unavailableListenerEvidence = Get-SshPortEvidence -EffectiveConfigState 'DISCOVERED' -ConfiguredPort @(2222) -ListeningPort @() -ServiceRunning
+  if ($unavailableListenerEvidence.state -ne 'NOT_VERIFIED' -or @($unavailableListenerEvidence.agreedPorts).Count -ne 0) { throw 'Known SSH config with unavailable actual listener was incorrectly verified.' }
+  $multiplePortEvidence = Get-SshPortEvidence -EffectiveConfigState 'DISCOVERED' -ConfiguredPort @(2222,2200) -ListeningPort @(2200,2222) -ServiceRunning
+  if ($multiplePortEvidence.state -ne 'DISCOVERED' -or @($multiplePortEvidence.agreedPorts).Count -ne 2) { throw 'Exact multiple SSH port sets were not accepted.' }
+  $includedSshConfig = Join-Path $sshFixtureRoot 'sshd_config_include'
+  [IO.File]::WriteAllText($includedSshConfig, 'Include sshd_config.d\*.conf')
+  $includedConfigEvidence = Get-SshDirectConfigEvidence -ConfigPath $includedSshConfig
+  $includedHostKeyEvidence = Get-SshPublicHostKeyEvidence -ConfigPath $includedSshConfig -EffectiveConfigVerified:$false
+  if ($includedConfigEvidence.effectiveConfigState -ne 'NOT_VERIFIED' -or $includedConfigEvidence.reason -ne 'ACTIVE_INCLUDE_REQUIRES_REVIEW' -or @($includedConfigEvidence.configuredPorts).Count -ne 0 -or $includedConfigEvidence.defaultPortApplied -ne $false -or $includedHostKeyEvidence.state -ne 'NOT_VERIFIED' -or @($includedHostKeyEvidence.keys).Count -ne 0) { throw 'S3 active SSH Include synthesized false effective evidence.' }
+  $commentedIncludeConfig = Join-Path $sshFixtureRoot 'sshd_config_commented_include'
+  [IO.File]::WriteAllLines($commentedIncludeConfig, @('# Include sshd_config.d\*.conf','Port 2222'))
+  $commentedIncludeEvidence = Get-SshDirectConfigEvidence -ConfigPath $commentedIncludeConfig
+  if ($commentedIncludeEvidence.effectiveConfigState -ne 'DISCOVERED' -or $commentedIncludeEvidence.configuredPorts[0] -ne 2222) { throw 'S4 commented SSH Include incorrectly blocked direct config evidence.' }
+  $defaultPortConfig = Join-Path $sshFixtureRoot 'sshd_config_default_port'
+  [IO.File]::WriteAllText($defaultPortConfig, '# no active Include or Port')
+  $defaultPortEvidence = Get-SshDirectConfigEvidence -ConfigPath $defaultPortConfig
+  if ($defaultPortEvidence.effectiveConfigState -ne 'DISCOVERED' -or $defaultPortEvidence.defaultPortApplied -ne $true -or $defaultPortEvidence.configuredPorts[0] -ne 22) { throw 'S5 safe OpenSSH default-port evidence fixture failed.' }
+  $edPrivatePath = Join-Path $sshFixtureRoot 'ssh_host_ed25519_key'
+  $rsaPrivatePath = Join-Path $sshFixtureRoot 'ssh_host_rsa_key'
+  [IO.File]::WriteAllText($edPrivatePath, 'PRIVATE_KEY_SENTINEL_DO_NOT_REPORT')
+  [IO.File]::WriteAllText($rsaPrivatePath, 'SECOND_PRIVATE_KEY_SENTINEL_DO_NOT_REPORT')
+  [IO.File]::WriteAllText("$edPrivatePath.pub", (New-PublicKeyLine 'ssh-ed25519' ([byte[]](1..32))))
+  [IO.File]::WriteAllText("$rsaPrivatePath.pub", (New-PublicKeyLine 'ssh-rsa' ([byte[]](33..64))))
+  $sshdConfigPath = Join-Path $sshFixtureRoot 'sshd_config'
+  [IO.File]::WriteAllLines($sshdConfigPath, @("HostKey `"$edPrivatePath`"", "HostKey `"$rsaPrivatePath`""))
+  $hostKeyEvidence = Get-SshPublicHostKeyEvidence -ConfigPath $sshdConfigPath
+  if ($hostKeyEvidence.state -ne 'DISCOVERED' -or @($hostKeyEvidence.keys).Count -ne 2 -or @($hostKeyEvidence.keys | Where-Object { $_.fingerprint -match '^SHA256:[A-Za-z0-9+/]+$' }).Count -ne 2) { throw 'Valid or multiple SSH HostKey evidence fixture failed.' }
+  $hostKeyJson = $hostKeyEvidence | ConvertTo-Json -Depth 8
+  if ($hostKeyJson -match 'PRIVATE_KEY_SENTINEL|fixture-comment-must-not-be-reported') { throw 'SSH evidence leaked private-key content or public-key comment.' }
+  $missingPublicConfig = Join-Path $sshFixtureRoot 'sshd_config_missing_pub'
+  $missingPublicPrivatePath = Join-Path $sshFixtureRoot 'missing_key'
+  [IO.File]::WriteAllText($missingPublicPrivatePath, 'MISSING_PUBLIC_PRIVATE_SENTINEL')
+  [IO.File]::WriteAllText($missingPublicConfig, "HostKey `"$missingPublicPrivatePath`"")
+  $missingPublicEvidence = Get-SshPublicHostKeyEvidence -ConfigPath $missingPublicConfig
+  if ($missingPublicEvidence.state -ne 'PARTIAL' -or $missingPublicEvidence.keys[0].state -ne 'NOT_VERIFIED') { throw 'Missing SSH public key did not remain PARTIAL/NOT_VERIFIED.' }
+  $malformedPrivatePath = Join-Path $sshFixtureRoot 'ssh_host_malformed_key'
+  [IO.File]::WriteAllText($malformedPrivatePath, 'MALFORMED_PRIVATE_SENTINEL')
+  [IO.File]::WriteAllText("$malformedPrivatePath.pub", 'ssh-ed25519 YmFk malformed-comment')
+  $malformedConfig = Join-Path $sshFixtureRoot 'sshd_config_malformed'
+  [IO.File]::WriteAllText($malformedConfig, "HostKey `"$malformedPrivatePath`"")
+  $malformedEvidence = Get-SshPublicHostKeyEvidence -ConfigPath $malformedConfig
+  if ($malformedEvidence.state -ne 'PARTIAL' -or $malformedEvidence.keys[0].state -ne 'NOT_VERIFIED') { throw 'Malformed SSH public key was accepted.' }
+  $allHostKeyJson = @($hostKeyEvidence,$missingPublicEvidence,$malformedEvidence) | ConvertTo-Json -Depth 8
+  if ($allHostKeyJson -match 'PRIVATE_KEY_SENTINEL|SECOND_PRIVATE_KEY_SENTINEL|MISSING_PUBLIC_PRIVATE_SENTINEL|MALFORMED_PRIVATE_SENTINEL') { throw 'SSH evidence read or reported private host-key contents.' }
+
+  $firewallFixtureMode = 'matching'
+  function Get-NetFirewallRule { [CmdletBinding()]param(); if ($firewallFixtureMode -eq 'matching') { [pscustomobject]@{ DisplayName='OpenSSH exact'; Enabled='True'; Direction='Inbound'; Action='Allow' } } else { [pscustomobject]@{ DisplayName='OpenSSH unresolved'; Enabled='True'; Direction='Inbound'; Action='Allow' } } }
+  function Get-NetFirewallPortFilter { [CmdletBinding()]param($AssociatedNetFirewallRule); if ($AssociatedNetFirewallRule.DisplayName -eq 'OpenSSH exact') { [pscustomobject]@{ Protocol='TCP'; LocalPort='2222' } } else { [pscustomobject]@{ Protocol='TCP'; LocalPort='Any' } } }
+  $matchingFirewallEvidence = Get-SshFirewallEvidence -SshPort @(2222)
+  $firewallFixtureMode = 'unresolved'
+  $unresolvedFirewallEvidence = Get-SshFirewallEvidence -SshPort @(2222)
+  Remove-Item Function:\Get-NetFirewallRule,Function:\Get-NetFirewallPortFilter -Force
+  if ($matchingFirewallEvidence.state -ne 'DISCOVERED' -or $matchingFirewallEvidence.rules[0].state -ne 'DISCOVERED' -or $unresolvedFirewallEvidence.state -ne 'NOT_VERIFIED' -or $unresolvedFirewallEvidence.rules[0].state -ne 'NOT_VERIFIED') { throw 'SSH firewall rule-to-local-port evidence fixture failed.' }
   $releaseRoot = Join-Path $temp 'release-path-fixtures'
   $releaseShaA = 'a' * 40
   $releaseShaB = 'b' * 40
@@ -264,7 +386,7 @@ try {
   $global:LASTEXITCODE = 77
   & { [pscustomobject]@{ state = 'completed' } } | Out-Null
   if ($LASTEXITCODE -ne 77) { throw 'Fixture did not preserve stale native exit code.' }
-  Write-Output '[deployment-windows] PASS (automatic-variable write audit, production TZ contract, protected-neighbor preflight audit, helpers, paths, junction safety, encoded command, SFTP and cleanup contracts, stale LASTEXITCODE fixture)'
+  Write-Output '[deployment-windows] PASS (preflight isolation, SSH host-key/firewall, exact psql, privacy, safe-stop, migration, path and transfer fixtures)'
 } finally {
   if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Recurse -Force }
 }

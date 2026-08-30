@@ -14,6 +14,9 @@ assert.match(text, /^  deploy:\s*$/m); assert.match(text, /^    environment: pro
 assert.match(text, /^  cancel-in-progress: false$/m); assert.match(text, /contents: read/); assert.match(text, /actions: read/);
 for (const required of ['PROD_NODE_EXE','PROD_NPM_EXE','PROD_NPX_EXE','PROD_PSQL_EXE','PROD_PG_DUMP_EXE','PROD_PG_RESTORE_EXE','PROD_STARTUP_WRAPPER','PROD_API_ENTRYPOINT']) assert.match(text, new RegExp(required));
 assert.match(text, /StrictHostKeyChecking=yes/g); assert.doesNotMatch(text, /StrictHostKeyChecking=no/i); assert.doesNotMatch(text, /:.*\\\\incoming/);
+const knownHostKeyTypes = 'ssh-ed25519|ecdsa-sha2-nistp256|ecdsa-sha2-nistp384|ecdsa-sha2-nistp521|ssh-rsa';
+assert.ok(text.includes(`case "$known_type" in ${knownHostKeyTypes})`), 'known_hosts public-key type allowlist drifted');
+assert.doesNotMatch(text, /rsa-sha2-(256|512)/); assert.doesNotMatch(text, /HostKeyAlgorithms|PubkeyAcceptedAlgorithms/);
 assert.match(text, /powershell\.exe -NoProfile -NonInteractive -EncodedCommand/); assert.doesNotMatch(text, /powershell\.exe -NoProfile -NonInteractive -Command/); assert.match(text, /Read-only marker handshake before transfer/);
 assert.match(text, /sync-capability-catalog\.ps1/);
 assert.match(text, /git -C control-plane rev-list --first-parent origin\/main/); assert.doesNotMatch(text, /merge-base --is-ancestor/);

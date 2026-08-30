@@ -14,6 +14,9 @@ const restart = read('scripts/deploy/windows/restart-baogiang-api.ps1');
 const rollback = read('scripts/deploy/windows/rollback-release.ps1');
 const migration = read('scripts/deploy/windows/run-migrations.ps1');
 const catalog = read('scripts/deploy/windows/sync-capability-catalog.ps1');
+const discovery = read('scripts/deploy/windows/production-protected-neighbor-discovery.ps1');
+const preflight = read('scripts/deploy/windows/production-preflight-readonly.ps1');
+const firstDeployRunbook = read('docs/operations/PRODUCTION-CD-FIRST-DEPLOY-RUNBOOK.md');
 const remote = require('./build-windows-remote-command.cjs');
 
 function redact(text) {
@@ -26,8 +29,9 @@ function redact(text) {
 function validateKnownHost(value, expectedHost) {
   assert.equal(value.includes('\n'), false); assert.equal(value.includes('\r'), false);
   const fields = value.split(/\s+/); assert.equal(fields.length, 3);
-  assert.equal(fields[0], expectedHost); assert.match(fields[1], /^(ssh-ed25519|ecdsa-sha2-nistp256|rsa-sha2-(256|512))$/);
-  assert.match(fields[2], /^[A-Za-z0-9+/]+={0,2}$/); return true;
+  assert.equal(fields[0], expectedHost); assert.match(fields[1], /^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521))$/);
+  assert.match(fields[2], /^[A-Za-z0-9+/]+={0,2}$/);
+  const decoded = Buffer.from(fields[2], 'base64'); assert.ok(decoded.length > 0); assert.equal(decoded.toString('base64').replace(/=+$/, ''), fields[2].replace(/=+$/, '')); return true;
 }
 function toRelativeScpPath(name) { assert.match(name, /^[A-Za-z0-9._-]+$/); return `./${name}`; }
 
@@ -35,6 +39,8 @@ const hostile = 'postgresql://' + 'deploy' + ':' + 'superSecret' + '@db.internal
 const redacted = redact(hostile);
 assert.equal(redacted.includes('superSecret'), false); assert.equal(redacted.includes('hunter2'), false); assert.equal(redacted.includes('abc.private'), false); assert.equal(redacted.includes('xyz'), false);
 assert.equal(validateKnownHost('vps.example.test ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA==','vps.example.test'), true);
+assert.equal(validateKnownHost('vps.example.test ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ==','vps.example.test'), true);
+assert.throws(() => validateKnownHost('vps.example.test rsa-sha2-256 AAAA==','vps.example.test'));
 assert.throws(() => validateKnownHost('* ssh-ed25519 AAAA==','vps.example.test'));
 assert.equal(toRelativeScpPath('release-' + 'a'.repeat(40) + '.zip').startsWith('./'), true);
 assert.throws(() => toRelativeScpPath('C:\\Windows\\bad.zip'));
@@ -65,4 +71,10 @@ assert.match(invoke, /firstDeployFailedStopped/); assert.match(invoke, /firstDep
 assert.match(catalog, /ReleaseSha/); assert.match(catalog, /Assert-ExactReleasePath/); assert.match(catalog, /BackupVerified/); assert.match(catalog, /sync-capability-catalog\.cjs/); assert.match(invoke, /capabilityCatalog/); assert.ok(invoke.indexOf('backup-database.ps1') < invoke.indexOf('run-migrations.ps1')); assert.ok(invoke.indexOf('run-migrations.ps1') < invoke.indexOf('sync-capability-catalog.ps1')); assert.ok(invoke.indexOf('sync-capability-catalog.ps1') < invoke.indexOf('switch-current-release.ps1')); assert.doesNotMatch(invoke, /prisma:seed/);
 assert.match(workflow, /rev-list --first-parent origin\/main/); assert.doesNotMatch(workflow, /merge-base --is-ancestor/); assert.match(workflow, /\.event == "push"/); assert.match(workflow, /\.head_branch == "main"/);
 assert.match(workflow, /Read-only marker handshake before transfer/); assert.match(workflow, /-EncodedCommand/); assert.doesNotMatch(workflow, /powershell\.exe -NoProfile -NonInteractive -Command/); assert.match(workflow, /Retrieve redacted deploy report/); assert.match(workflow, /if-no-files-found: error/); assert.match(workflow, /upload-artifact@v4/); assert.match(workflow, /if: always\(\)/);
-console.log('[deployment-behavior] PASS (redaction, identity, artifact, native-command, migration, rollback and transfer fixtures)');
+assert.match(discovery, /mode='READ_ONLY_DISCOVERY'/); assert.match(discovery, /mutationsPerformed=\$false/); assert.match(discovery, /databaseAuthenticationAttempted=\$false/); assert.match(discovery, /conclusion='REQUIRES_REVIEW'/);
+assert.ok(firstDeployRunbook.indexOf('production-protected-neighbor-discovery.ps1') < firstDeployRunbook.indexOf('production-preflight-readonly.ps1'));
+assert.match(preflight, /RequireReviewedIsolation/); assert.match(preflight, /Get-ProtectedNeighborIsolationEvidence/); assert.match(preflight, /Get-SshPublicHostKeyEvidence/); assert.match(preflight, /Get-SshFirewallEvidence/);
+assert.match(preflight, /Resolve-ExpectedCandidateRuntimeName/); assert.match(preflight, /Get-SshDirectConfigEvidence/); assert.match(preflight, /Get-SshPortEvidence/); assert.match(preflight, /-SshPort @\(\$portEvidence\.agreedPorts\)/); assert.doesNotMatch(preflight, /\$ports \+ \$listeningPorts/);
+assert.match(preflight, /Resolve-DatabaseVerifierExecutable/); assert.doesNotMatch(preflight, /Get-Command\s+psql\b/i); assert.match(preflight, /& \$databaseVerifier --tuples-only/);
+assert.doesNotMatch(preflight, /argumentsRedacted|pathNameRedacted/); assert.match(preflight, /argumentsSha256/); assert.match(preflight, /pathNameSha256/);
+console.log('[deployment-behavior] PASS (redaction, identity, preflight evidence, artifact, migration, rollback and transfer fixtures)');

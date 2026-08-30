@@ -10,13 +10,27 @@ This is an executable, staged runbook for the official Windows VPS in pre-operat
 
 ## Stage 1 — read-only inventory
 
-On the VPS, run the exact `production-preflight-readonly.ps1` from the reviewed control-plane commit. Use an already existing operator-owned report directory; the script refuses to create it. Do not run this script from Codex or from a local workstation.
+Stage 1 has two ordered passes. Both scripts must come from the same reviewed control-plane commit, and both write JSON only into an already existing operator-owned report directory. Do not run either script from Codex or from a local workstation.
+
+### PASS 1 — protected-neighbor discovery
+
+Run `production-protected-neighbor-discovery.ps1` first. It performs read-only discovery of candidate DamSanV5/boarding roots, Node workloads, Scheduled Tasks/Services, Nginx roots/server blocks/upstreams, PostgreSQL process/config/tool metadata and port ownership. It does not authenticate to the database, export raw command lines/task arguments/service command lines, read private host keys or mutate the host. Its conclusion is always `REQUIRES_REVIEW`.
+
+Stop. Operator and ChatGPT review the redacted PASS 1 report and record exact protected `KnownForeignRoot` and `KnownForeignName` values, the candidate Báo giảng root, and reviewed Nginx/PostgreSQL/tool evidence. Discovery candidates are not automatically authoritative.
+
+### PASS 2 — exact verified-first-deploy preflight
+
+Only after PASS 1 review, run `production-preflight-readonly.ps1` with `-RequireReviewedIsolation`, non-empty reviewed `-KnownForeignRoot` and `-KnownForeignName`, the exact candidate root, `-ServiceKind`, and exactly one corresponding expected runtime identity (`-ExpectedTaskName` for `scheduled-task` or `-ExpectedServiceName` for `service`). The verified-first-deploy mode rejects missing/ambiguous/unsafe candidate identities and reports case-insensitive exact path/name overlap as `CONFLICT`; it does not fuzzy-match different names. `NOT_RUN` is not a completed isolation result. The default mode remains discovery compatibility only and must not be treated as first-deploy approval.
+
+PASS 2 treats any active `Include` in the selected global `sshd_config` as unresolved effective configuration: port/default-host-key evidence remains `NOT_VERIFIED` until separately reviewed. Without an active `Include`, an absent direct `Port` may use OpenSSH default 22. For a running sshd service, configured and actual listening port sets must agree exactly; firewall evidence uses only that agreed set, never a configured/listener union.
+
+If database verification is authorized, PASS 2 additionally requires `-VerifyDatabase -PsqlExe <reviewed-absolute-psql.exe>`. It refuses PATH resolution, relative/missing paths and any leaf not named exactly `psql.exe` before database authentication.
 
 Record each result as:
 
 | Area | EXISTS AND VERIFIED | MISSING | CONFLICT |
 |---|---|---|---|
-| Host, SSH service/config/actual listening ports/firewall | exact host, user, numeric port and pinned key match | any value unavailable | key, port or firewall belongs to another system |
+| Host, SSH service/config/actual listening ports/firewall | exact host, user, numeric port, public host-key algorithm/fingerprint and rule-to-local-port evidence match | any value unavailable or `NOT_VERIFIED` | key, port or firewall belongs to another system |
 | Root and `releases`, `staging`, `incoming`, `shared`, `logs`, `backups` | dedicated canonical paths, reparse targets and ACLs reviewed | directory/ACL absent | drive/system/DamSanV5/boarding path or shared ACL |
 | Marker, task/service and startup wrapper | exact marker/action/account/wrapper/entry point match | not bootstrapped | action, account, port or entry point mismatch |
 | Node/npm/npx/psql/pg_dump/pg_restore/Nginx | existing absolute leaf paths and versions match inventory | executable missing | path points to another installation |
