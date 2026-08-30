@@ -455,10 +455,14 @@ function Invoke-NativeChecked(
   if ($exitCode -ne 0) { throw "$Operation failed with exit code $exitCode." }
 }
 
+function Get-ManagedProductionEnvironmentNames {
+  return @('NODE_ENV','TZ','API_HOST','API_PORT','HTTP_TRUST_PROXY_HOPS','DATABASE_URL','CORS_ORIGINS','AUTH_SESSION_TTL_SECONDS','AUTH_LAST_SEEN_UPDATE_SECONDS','AUTH_COOKIE_NAME','AUTH_COOKIE_PATH','AUTH_COOKIE_DOMAIN','AUTH_COOKIE_SECURE','AUTH_COOKIE_SAME_SITE','AUTH_LOCKOUT_THRESHOLD','AUTH_LOCKOUT_DURATION_SECONDS','AUTH_PASSWORD_MIN_LENGTH','AUTH_LOGIN_RATE_LIMIT_MAX','AUTH_LOGIN_RATE_LIMIT_WINDOW_SECONDS','AUTH_LOGIN_RATE_LIMIT_MAX_KEYS','AI_ENABLED','AI_ACTIVE_MODE_ENABLED','AI_PASSIVE_MODE_ENABLED','WEB_PUSH_ENABLED','LOG_LEVEL','TEST_DATABASE_URL','BOOTSTRAP_ADMIN_USERNAME','BOOTSTRAP_ADMIN_DISPLAY_NAME','BOOTSTRAP_ADMIN_PASSWORD')
+}
+
 function Read-ValidatedProductionEnvironment([Parameter(Mandatory = $true)][string]$EnvFile,[Parameter(Mandatory = $true)][string]$ExpectedBaseUrl) {
   Assert-ExistingLeaf $EnvFile 'Production environment file' | Out-Null
   $allowed = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
-  foreach ($name in @('NODE_ENV','TZ','API_HOST','API_PORT','HTTP_TRUST_PROXY_HOPS','DATABASE_URL','CORS_ORIGINS','AUTH_SESSION_TTL_SECONDS','AUTH_LAST_SEEN_UPDATE_SECONDS','AUTH_COOKIE_NAME','AUTH_COOKIE_PATH','AUTH_COOKIE_DOMAIN','AUTH_COOKIE_SECURE','AUTH_COOKIE_SAME_SITE','AUTH_LOCKOUT_THRESHOLD','AUTH_LOCKOUT_DURATION_SECONDS','AUTH_PASSWORD_MIN_LENGTH','AUTH_LOGIN_RATE_LIMIT_MAX','AUTH_LOGIN_RATE_LIMIT_WINDOW_SECONDS','AUTH_LOGIN_RATE_LIMIT_MAX_KEYS','AI_ENABLED','AI_ACTIVE_MODE_ENABLED','AI_PASSIVE_MODE_ENABLED','WEB_PUSH_ENABLED','LOG_LEVEL')) { [void]$allowed.Add($name) }
+  foreach ($name in @(Get-ManagedProductionEnvironmentNames | Where-Object { $_ -notin @('TEST_DATABASE_URL','BOOTSTRAP_ADMIN_USERNAME','BOOTSTRAP_ADMIN_DISPLAY_NAME','BOOTSTRAP_ADMIN_PASSWORD') })) { [void]$allowed.Add($name) }
   $required = @('NODE_ENV','TZ','API_HOST','API_PORT','HTTP_TRUST_PROXY_HOPS','DATABASE_URL','CORS_ORIGINS','AUTH_SESSION_TTL_SECONDS','AUTH_LAST_SEEN_UPDATE_SECONDS','AUTH_COOKIE_NAME','AUTH_COOKIE_PATH','AUTH_COOKIE_SECURE','AUTH_COOKIE_SAME_SITE','AUTH_LOCKOUT_THRESHOLD','AUTH_LOCKOUT_DURATION_SECONDS','AUTH_PASSWORD_MIN_LENGTH','AUTH_LOGIN_RATE_LIMIT_MAX','AUTH_LOGIN_RATE_LIMIT_WINDOW_SECONDS','AUTH_LOGIN_RATE_LIMIT_MAX_KEYS','AI_ENABLED','AI_ACTIVE_MODE_ENABLED','AI_PASSIVE_MODE_ENABLED','WEB_PUSH_ENABLED','LOG_LEVEL')
   $forbidden = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
   foreach ($name in @('TEST_DATABASE_URL','BOOTSTRAP_ADMIN_USERNAME','BOOTSTRAP_ADMIN_DISPLAY_NAME','BOOTSTRAP_ADMIN_PASSWORD')) { [void]$forbidden.Add($name) }
@@ -485,7 +489,9 @@ function Import-ServerEnvironment([Parameter(Mandatory = $true)][string]$EnvFile
   $values = Read-ValidatedProductionEnvironment -EnvFile $EnvFile -ExpectedBaseUrl $ExpectedBaseUrl
   $snapshot = @{}
   try {
-    foreach ($name in $values.Keys) { $prior = [Environment]::GetEnvironmentVariable($name,'Process'); $snapshot[$name] = [pscustomobject]@{ existed = $null -ne $prior; value = $prior }; [Environment]::SetEnvironmentVariable($name,$values[$name],'Process') }
+    foreach ($name in Get-ManagedProductionEnvironmentNames) { $prior = [Environment]::GetEnvironmentVariable($name,'Process'); $snapshot[$name] = [pscustomobject]@{ existed = $null -ne $prior; value = $prior } }
+    foreach ($name in $snapshot.Keys) { [Environment]::SetEnvironmentVariable($name,$null,'Process') }
+    foreach ($name in $values.Keys) { [Environment]::SetEnvironmentVariable($name,$values[$name],'Process') }
     return $snapshot
   } catch { Restore-ServerEnvironment -Snapshot $snapshot; throw }
 }
