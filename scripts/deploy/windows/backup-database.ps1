@@ -17,7 +17,7 @@ $ErrorActionPreference = 'Stop'
 Read-DeploymentIdentity -Root $Root -ServiceKind $ServiceKind -ServiceName $ServiceName -EnvFile $EnvFile -StartupWrapper $StartupWrapper -ExpectedEntryPoint $ExpectedEntryPoint | Out-Null
 Assert-ExecutableContract @{ PgDumpExe = $PgDumpExe; PgRestoreExe = $PgRestoreExe }
 if (-not (Test-Path -LiteralPath $BackupRoot -PathType Container)) { throw 'Backup directory must be bootstrapped and ACL-reviewed before deploy.' }
-$environmentSnapshot = Import-ServerEnvironment -EnvFile $EnvFile -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn'
+Invoke-WithServerEnvironment -EnvFile $EnvFile -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn' -ScriptBlock {
 try {
   $databaseUrl = [Environment]::GetEnvironmentVariable($DatabaseUrlEnvironmentVariable)
   if ([string]::IsNullOrWhiteSpace($databaseUrl)) { throw 'Server-side database environment is missing.' }
@@ -30,4 +30,5 @@ try {
   Invoke-NativeChecked $PgRestoreExe @('--list',$backupPath) 'pg_restore --list verification' | Out-Null
   $hash = Get-FileHash -LiteralPath $backupPath -Algorithm SHA256
   [ordered]@{ path = $backupPath; bytes = $item.Length; sha256 = $hash.Hash; format = 'custom'; restoreList = 'PASS'; createdAtUtc = [DateTime]::UtcNow.ToString('o') } | ConvertTo-Json -Compress
-} finally { Restore-ServerEnvironment -Snapshot $environmentSnapshot; Clear-PostgresProcessEnvironment }
+} finally { Clear-PostgresProcessEnvironment }
+}

@@ -5,8 +5,8 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-. (Join-Path $PSScriptRoot 'deployment-common.ps1')
 try {
+  . (Join-Path $PSScriptRoot 'deployment-common.ps1')
   if ($ExpectedBaseUrl -cne 'https://baogiang.dtnt-damsan.edu.vn') { throw 'Production environment validator base URL is invalid.' }
   Read-ValidatedProductionEnvironment -EnvFile $EnvFile -ExpectedBaseUrl $ExpectedBaseUrl | Out-Null
   [ordered]@{ schemaVersion = 1; state = 'VALIDATED' } | ConvertTo-Json -Compress

@@ -485,15 +485,15 @@ function Read-ValidatedProductionEnvironment([Parameter(Mandatory = $true)][stri
   return $values
 }
 
-function Import-ServerEnvironment([Parameter(Mandatory = $true)][string]$EnvFile,[Parameter(Mandatory = $true)][string]$ExpectedBaseUrl) {
+function Invoke-WithServerEnvironment([Parameter(Mandatory = $true)][string]$EnvFile,[Parameter(Mandatory = $true)][string]$ExpectedBaseUrl,[Parameter(Mandatory = $true)][scriptblock]$ScriptBlock) {
   $values = Read-ValidatedProductionEnvironment -EnvFile $EnvFile -ExpectedBaseUrl $ExpectedBaseUrl
   $snapshot = @{}
   try {
     foreach ($name in Get-ManagedProductionEnvironmentNames) { $prior = [Environment]::GetEnvironmentVariable($name,'Process'); $snapshot[$name] = [pscustomobject]@{ existed = $null -ne $prior; value = $prior } }
     foreach ($name in $snapshot.Keys) { [Environment]::SetEnvironmentVariable($name,$null,'Process') }
     foreach ($name in $values.Keys) { [Environment]::SetEnvironmentVariable($name,$values[$name],'Process') }
-    return $snapshot
-  } catch { Restore-ServerEnvironment -Snapshot $snapshot; throw }
+    & $ScriptBlock
+  } finally { Restore-ServerEnvironment -Snapshot $snapshot }
 }
 
 function Restore-ServerEnvironment([Parameter(Mandatory = $true)][hashtable]$Snapshot) {

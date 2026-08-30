@@ -87,7 +87,7 @@ foreach ($scriptFile in $powerShellFiles) {
 
 $catalogSyncPath = Join-Path $repo 'scripts\deploy\windows\sync-capability-catalog.ps1'
 $catalogSyncText = Get-Content -LiteralPath $catalogSyncPath -Raw -Encoding UTF8
-foreach ($requiredCatalogSyncToken in @('Set-StrictMode -Version Latest',"`$ErrorActionPreference = 'Stop'",'Read-DeploymentIdentity','Import-ServerEnvironment','Assert-ExecutableContract','BackupVerified','ReleaseSha','Assert-ExactReleasePath','sync-capability-catalog.cjs')) {
+foreach ($requiredCatalogSyncToken in @('Set-StrictMode -Version Latest',"`$ErrorActionPreference = 'Stop'",'Read-DeploymentIdentity','Invoke-WithServerEnvironment','Assert-ExecutableContract','BackupVerified','ReleaseSha','Assert-ExactReleasePath','sync-capability-catalog.cjs')) {
   if ($catalogSyncText -notmatch [regex]::Escape($requiredCatalogSyncToken)) { throw "Capability catalog sync wrapper is missing required safety token: $requiredCatalogSyncToken" }
 }
 if ($catalogSyncText -match 'npm run prisma:seed|prisma db seed') { throw 'Capability catalog sync wrapper must not invoke generic seed.' }
@@ -97,7 +97,7 @@ $migrationText = Get-Content -LiteralPath $migrationPath -Raw -Encoding UTF8
 foreach ($requiredMigrationToken in @('ReleaseSha','Assert-ExactReleasePath','prisma\schema.prisma','Test-PathWithin $schema $release')) {
   if ($migrationText -notmatch [regex]::Escape($requiredMigrationToken)) { throw "Migration wrapper is missing exact-release safety token: $requiredMigrationToken" }
 }
-if ($migrationText.IndexOf('Assert-ExactReleasePath') -gt $migrationText.IndexOf('Import-ServerEnvironment') -or $migrationText.IndexOf('Test-Path -LiteralPath $schema -PathType Leaf') -gt $migrationText.IndexOf('Import-ServerEnvironment')) { throw 'Exact release and schema checks must precede environment/database mutation.' }
+if ($migrationText.IndexOf('Assert-ExactReleasePath') -gt $migrationText.IndexOf('Invoke-WithServerEnvironment') -or $migrationText.IndexOf('Test-Path -LiteralPath $schema -PathType Leaf') -gt $migrationText.IndexOf('Invoke-WithServerEnvironment')) { throw 'Exact release and schema checks must precede environment/database mutation.' }
 
 $preflightPath = Join-Path $repo 'scripts\deploy\windows\production-preflight-readonly.ps1'
 $preflightText = Get-Content -LiteralPath $preflightPath -Raw -Encoding UTF8
@@ -395,23 +395,22 @@ try {
   )
   $validEnvPath = Join-Path $temp 'valid.env'
   [IO.File]::WriteAllLines($validEnvPath, $validEnvLines, [Text.UTF8Encoding]::new($false))
-  $environmentSnapshot = Import-ServerEnvironment -EnvFile $validEnvPath -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn'
-  if (-not $environmentSnapshot.ContainsKey('TZ') -or $env:TZ -ne 'Asia/Ho_Chi_Minh') { throw 'Correct production TZ contract was rejected.' }
-  Restore-ServerEnvironment -Snapshot $environmentSnapshot
+  $environmentActive = Invoke-WithServerEnvironment -EnvFile $validEnvPath -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn' -ScriptBlock { $env:TZ }
+  if ($environmentActive -cne 'Asia/Ho_Chi_Minh') { throw 'Correct production TZ contract was rejected.' }
 
   $missingTimeZonePath = Join-Path $temp 'missing-tz.env'
   [IO.File]::WriteAllLines($missingTimeZonePath, @($validEnvLines | Where-Object { $_ -notmatch '^TZ=' }), [Text.UTF8Encoding]::new($false))
-  $missingTimeZoneRejected = $false; try { Import-ServerEnvironment -EnvFile $missingTimeZonePath -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn' | Out-Null } catch { $missingTimeZoneRejected = $true }
+  $missingTimeZoneRejected = $false; try { Invoke-WithServerEnvironment -EnvFile $missingTimeZonePath -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn' -ScriptBlock {} | Out-Null } catch { $missingTimeZoneRejected = $true }
   if (-not $missingTimeZoneRejected) { throw 'Missing production TZ was accepted.' }
 
   $wrongTimeZonePath = Join-Path $temp 'wrong-tz.env'
   [IO.File]::WriteAllLines($wrongTimeZonePath, @($validEnvLines | ForEach-Object { if ($_ -match '^TZ=') { 'TZ=UTC' } else { $_ } }), [Text.UTF8Encoding]::new($false))
-  $wrongTimeZoneRejected = $false; try { Import-ServerEnvironment -EnvFile $wrongTimeZonePath -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn' | Out-Null } catch { $wrongTimeZoneRejected = $true }
+  $wrongTimeZoneRejected = $false; try { Invoke-WithServerEnvironment -EnvFile $wrongTimeZonePath -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn' -ScriptBlock {} | Out-Null } catch { $wrongTimeZoneRejected = $true }
   if (-not $wrongTimeZoneRejected) { throw 'Wrong production TZ was accepted.' }
 
   $duplicateTimeZonePath = Join-Path $temp 'duplicate-tz.env'
   [IO.File]::WriteAllLines($duplicateTimeZonePath, @($validEnvLines + 'TZ=Asia/Ho_Chi_Minh'), [Text.UTF8Encoding]::new($false))
-  $duplicateTimeZoneRejected = $false; try { Import-ServerEnvironment -EnvFile $duplicateTimeZonePath -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn' | Out-Null } catch { $duplicateTimeZoneRejected = $true }
+  $duplicateTimeZoneRejected = $false; try { Invoke-WithServerEnvironment -EnvFile $duplicateTimeZonePath -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn' -ScriptBlock {} | Out-Null } catch { $duplicateTimeZoneRejected = $true }
   if (-not $duplicateTimeZoneRejected) { throw 'Duplicate production TZ was accepted.' }
 
   foreach ($requiredName in @('NODE_ENV','API_HOST','API_PORT','HTTP_TRUST_PROXY_HOPS','DATABASE_URL','CORS_ORIGINS','AUTH_COOKIE_SECURE','AI_ENABLED','AI_ACTIVE_MODE_ENABLED','AI_PASSIVE_MODE_ENABLED','WEB_PUSH_ENABLED','AUTH_SESSION_TTL_SECONDS','LOG_LEVEL')) {
@@ -424,29 +423,32 @@ try {
   $sentinelNode = 'parent-node-sentinel'; [Environment]::SetEnvironmentVariable('NODE_ENV',$sentinelNode,'Process')
   $atomicFailurePath = Join-Path $temp 'atomic-failure.env'
   [IO.File]::WriteAllLines($atomicFailurePath,@(($validEnvLines | ForEach-Object { if ($_ -match '^DATABASE_URL=') { 'DATABASE_URL=postgresql://fixture:P0_ENV_SECRET_DO_NOT_LEAK_9F4B@db.invalid:5433/baogiang' } else { $_ } }) + 'UNAPPROVED_VARIABLE=after-valid-secret'),[Text.UTF8Encoding]::new($false))
-  $rejected = $false; try { Import-ServerEnvironment -EnvFile $atomicFailurePath -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn' | Out-Null } catch { $rejected = $true }
+  $rejected = $false; try { Invoke-WithServerEnvironment -EnvFile $atomicFailurePath -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn' -ScriptBlock {} | Out-Null } catch { $rejected = $true }
   if (-not $rejected -or [Environment]::GetEnvironmentVariable('NODE_ENV','Process') -cne $sentinelNode) { throw 'Parse-before-apply atomicity fixture failed.' }
   $priorLogLevel = [Environment]::GetEnvironmentVariable('LOG_LEVEL','Process'); [Environment]::SetEnvironmentVariable('LOG_LEVEL','parent-log-sentinel','Process'); [Environment]::SetEnvironmentVariable('AUTH_COOKIE_DOMAIN',$null,'Process')
-  $restoreSnapshot = Import-ServerEnvironment -EnvFile $validEnvPath -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn'
-  if ($env:LOG_LEVEL -cne 'info') { throw 'Validated environment was not applied.' }
-  Restore-ServerEnvironment -Snapshot $restoreSnapshot
+  $activeLogLevel = Invoke-WithServerEnvironment -EnvFile $validEnvPath -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn' -ScriptBlock { $env:LOG_LEVEL }
+  if ($activeLogLevel -cne 'info') { throw 'Validated environment was not applied.' }
   if ([Environment]::GetEnvironmentVariable('LOG_LEVEL','Process') -cne 'parent-log-sentinel' -or $null -ne [Environment]::GetEnvironmentVariable('AUTH_COOKIE_DOMAIN','Process')) { throw 'Environment restore fixture failed.' }
   [Environment]::SetEnvironmentVariable('LOG_LEVEL',$priorLogLevel,'Process')
   [Environment]::SetEnvironmentVariable('AUTH_COOKIE_DOMAIN','parent-cookie-domain-sentinel','Process')
-  $optionalScopeSnapshot = Import-ServerEnvironment -EnvFile $validEnvPath -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn'
-  if ($null -ne [Environment]::GetEnvironmentVariable('AUTH_COOKIE_DOMAIN','Process')) { throw 'Optional env variable inherited into the active production scope.' }
-  Restore-ServerEnvironment -Snapshot $optionalScopeSnapshot
+  $optionalActive = Invoke-WithServerEnvironment -EnvFile $validEnvPath -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn' -ScriptBlock { [Environment]::GetEnvironmentVariable('AUTH_COOKIE_DOMAIN','Process') }
+  if ($null -ne $optionalActive) { throw 'Optional env variable inherited into the active production scope.' }
   if ([Environment]::GetEnvironmentVariable('AUTH_COOKIE_DOMAIN','Process') -cne 'parent-cookie-domain-sentinel') { throw 'Optional parent env variable was not restored.' }
   $forbiddenSentinels = @{}; foreach ($forbiddenName in @('TEST_DATABASE_URL','BOOTSTRAP_ADMIN_USERNAME','BOOTSTRAP_ADMIN_DISPLAY_NAME','BOOTSTRAP_ADMIN_PASSWORD')) { $forbiddenSentinels[$forbiddenName] = "parent-$forbiddenName-sentinel"; [Environment]::SetEnvironmentVariable($forbiddenName,$forbiddenSentinels[$forbiddenName],'Process') }
-  $forbiddenScopeSnapshot = Import-ServerEnvironment -EnvFile $validEnvPath -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn'
-  foreach ($forbiddenName in $forbiddenSentinels.Keys) { if ($null -ne [Environment]::GetEnvironmentVariable($forbiddenName,'Process')) { throw "Forbidden parent variable leaked into active production scope: $forbiddenName" } }
-  Restore-ServerEnvironment -Snapshot $forbiddenScopeSnapshot
+  $forbiddenActive = Invoke-WithServerEnvironment -EnvFile $validEnvPath -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn' -ScriptBlock { [ordered]@{ test = [Environment]::GetEnvironmentVariable('TEST_DATABASE_URL','Process'); username = [Environment]::GetEnvironmentVariable('BOOTSTRAP_ADMIN_USERNAME','Process'); display = [Environment]::GetEnvironmentVariable('BOOTSTRAP_ADMIN_DISPLAY_NAME','Process'); password = [Environment]::GetEnvironmentVariable('BOOTSTRAP_ADMIN_PASSWORD','Process') } }
+  foreach ($value in $forbiddenActive.Values) { if ($null -ne $value) { throw 'Forbidden parent variable leaked into active production scope.' } }
   foreach ($forbiddenName in $forbiddenSentinels.Keys) { if ([Environment]::GetEnvironmentVariable($forbiddenName,'Process') -cne $forbiddenSentinels[$forbiddenName]) { throw "Forbidden parent variable was not restored: $forbiddenName" } }
   [Environment]::SetEnvironmentVariable('LOG_LEVEL',$null,'Process')
-  $absentLogSnapshot = Import-ServerEnvironment -EnvFile $validEnvPath -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn'
-  if ([Environment]::GetEnvironmentVariable('LOG_LEVEL','Process') -cne 'info') { throw 'Absent-before LOG_LEVEL was not applied.' }
-  Restore-ServerEnvironment -Snapshot $absentLogSnapshot
+  $absentLogActive = Invoke-WithServerEnvironment -EnvFile $validEnvPath -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn' -ScriptBlock { [Environment]::GetEnvironmentVariable('LOG_LEVEL','Process') }
+  if ($absentLogActive -cne 'info') { throw 'Absent-before LOG_LEVEL was not applied.' }
   if ($null -ne [Environment]::GetEnvironmentVariable('LOG_LEVEL','Process')) { throw 'Absent-before LOG_LEVEL was not removed after restore.' }
+  $priorDatabaseUrl = 'postgresql://fixture:P0_PRIOR_SECRET_MUST_NOT_ESCAPE_7D91@db.invalid:5433/baogiang'; [Environment]::SetEnvironmentVariable('DATABASE_URL',$priorDatabaseUrl,'Process')
+  $scopeOutput = @(Invoke-WithServerEnvironment -EnvFile $validEnvPath -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn' -ScriptBlock { 'SCOPE_BODY_OK' }); $scopeText = $scopeOutput -join "`n"
+  if ($scopeText -notmatch '^SCOPE_BODY_OK$' -or $scopeText -match 'P0_PRIOR_SECRET_MUST_NOT_ESCAPE_7D91|postgresql://fixture|existed|value') { throw 'Scoped helper leaked prior environment state through its pipeline.' }
+  if ([Environment]::GetEnvironmentVariable('DATABASE_URL','Process') -cne $priorDatabaseUrl) { throw 'Prior DATABASE_URL was not restored after successful scoped execution.' }
+  [Environment]::SetEnvironmentVariable('LOG_LEVEL','throw-log-sentinel','Process'); [Environment]::SetEnvironmentVariable('AUTH_COOKIE_DOMAIN','throw-domain-sentinel','Process'); [Environment]::SetEnvironmentVariable('TEST_DATABASE_URL','throw-test-sentinel','Process')
+  $threw = $false; try { Invoke-WithServerEnvironment -EnvFile $validEnvPath -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn' -ScriptBlock { throw 'synthetic scoped failure' } | Out-Null } catch { $threw = $true }
+  if (-not $threw -or [Environment]::GetEnvironmentVariable('LOG_LEVEL','Process') -cne 'throw-log-sentinel' -or [Environment]::GetEnvironmentVariable('AUTH_COOKIE_DOMAIN','Process') -cne 'throw-domain-sentinel' -or [Environment]::GetEnvironmentVariable('TEST_DATABASE_URL','Process') -cne 'throw-test-sentinel') { throw 'Scoped helper did not restore parent values after ScriptBlock failure.' }
   foreach ($forbiddenName in @('TEST_DATABASE_URL','BOOTSTRAP_ADMIN_USERNAME','BOOTSTRAP_ADMIN_DISPLAY_NAME','BOOTSTRAP_ADMIN_PASSWORD')) { $forbiddenPath = Join-Path $temp ("forbidden-$forbiddenName.env"); [IO.File]::WriteAllLines($forbiddenPath,@($validEnvLines + "$forbiddenName=value"),[Text.UTF8Encoding]::new($false)); $rejected = $false; try { Read-ValidatedProductionEnvironment -EnvFile $forbiddenPath -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn' | Out-Null } catch { $rejected = $true }; if (-not $rejected) { throw "Forbidden production variable was accepted: $forbiddenName" } }
   $wrongCaseEnvPath = Join-Path $temp 'wrong-case-env.env'; [IO.File]::WriteAllLines($wrongCaseEnvPath,@($validEnvLines | ForEach-Object { if ($_ -match '^NODE_ENV=') { 'node_env=production' } else { $_ } }),[Text.UTF8Encoding]::new($false)); $rejected = $false; try { Read-ValidatedProductionEnvironment -EnvFile $wrongCaseEnvPath -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn' | Out-Null } catch { $rejected = $true }; if (-not $rejected) { throw 'Wrong-case environment variable was accepted.' }
   foreach ($invalid in @(@{ name = 'NODE_ENV'; value = 'development' },@{ name = 'TZ'; value = 'UTC' },@{ name = 'API_HOST'; value = '0.0.0.0' },@{ name = 'API_PORT'; value = '9999' },@{ name = 'HTTP_TRUST_PROXY_HOPS'; value = '0' },@{ name = 'AUTH_COOKIE_SECURE'; value = 'false' },@{ name = 'CORS_ORIGINS'; value = 'https://other.example' },@{ name = 'AI_ENABLED'; value = 'true' },@{ name = 'WEB_PUSH_ENABLED'; value = 'true' })) { $invalidPath = Join-Path $temp ("invalid-$($invalid.name).env"); [IO.File]::WriteAllLines($invalidPath,@($validEnvLines | ForEach-Object { if ($_ -like "$($invalid.name)=*") { "$($invalid.name)=$($invalid.value)" } else { $_ } }),[Text.UTF8Encoding]::new($false)); $rejected = $false; try { Read-ValidatedProductionEnvironment -EnvFile $invalidPath -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn' | Out-Null } catch { $rejected = $true }; if (-not $rejected) { throw "Safety invariant was accepted: $($invalid.name)" } }
@@ -459,6 +461,9 @@ try {
   if ($LASTEXITCODE -eq 0 -or $missingValidatorText -notmatch '^VALIDATION_FAILED\s*$' -or $missingValidatorText -match 'Cannot validate argument|Test-Path') { throw 'Standalone missing-file failure was not categorical.' }
   $invalidBaseOutput = @(& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $validatorPath -EnvFile $validEnvPath -ExpectedBaseUrl 'https://invalid.example' 2>&1); $invalidBaseText = $invalidBaseOutput -join "`n"
   if ($LASTEXITCODE -eq 0 -or $invalidBaseText -notmatch '^VALIDATION_FAILED\s*$' -or $invalidBaseText -match 'Cannot validate argument|ValidatePattern') { throw 'Standalone invalid-base failure was not categorical.' }
+  $isolatedValidatorDirectory = Join-Path $temp 'validator-without-helper'; New-Item -ItemType Directory -Path $isolatedValidatorDirectory -Force | Out-Null; $isolatedValidator = Join-Path $isolatedValidatorDirectory 'validate-production-environment.ps1'; Copy-Item -LiteralPath $validatorPath -Destination $isolatedValidator
+  $missingHelperOutput = @(& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $isolatedValidator -EnvFile $validEnvPath -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn' 2>&1); $missingHelperText = $missingHelperOutput -join "`n"
+  if ($LASTEXITCODE -eq 0 -or $missingHelperText -notmatch '^VALIDATION_FAILED\s*$' -or $missingHelperText -match 'deployment-common|CommandNotFound|not recognized') { throw 'Standalone helper-load failure was not categorical.' }
   [Environment]::SetEnvironmentVariable('P0_ENV_PARENT_ISOLATION',$parentMarker,'Process')
 
   $neighborReport = Join-Path $temp 'protected-neighbor-discovery.json'

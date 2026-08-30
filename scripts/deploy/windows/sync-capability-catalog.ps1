@@ -20,7 +20,7 @@ $identity = Read-DeploymentIdentity -Root $Root -ServiceKind $ServiceKind -Servi
 $canonicalRoot = $identity.canonicalRoot
 $release = Assert-ExactReleasePath -Root $canonicalRoot -ReleaseSha $ReleaseSha -ReleasePath $ReleasePath
 Assert-ExecutableContract @{ NodeExe = $NodeExe }
-$environmentSnapshot = Import-ServerEnvironment -EnvFile $EnvFile -ExpectedBaseUrl $ExpectedBaseUrl
+Invoke-WithServerEnvironment -EnvFile $EnvFile -ExpectedBaseUrl $ExpectedBaseUrl -ScriptBlock {
 try {
   $cli = Join-Path $release 'scripts\deploy\node\sync-capability-catalog.cjs'
   if (-not (Test-Path -LiteralPath $cli -PathType Leaf) -or -not (Test-PathWithin (Get-CanonicalPath $cli) $release)) { throw 'Capability catalog CLI is missing from the exact release.' }
@@ -29,4 +29,5 @@ try {
   $summary = $output | Select-Object -Last 1 | ConvertFrom-Json
   if ($summary.state -ne 'completed' -or [int]$summary.expectedDefinitionCount -ne [int]$summary.verifiedDefinitionCount) { throw 'Capability catalog synchronization returned an invalid summary.' }
   Write-Output ($summary | ConvertTo-Json -Compress)
-} finally { Restore-ServerEnvironment -Snapshot $environmentSnapshot }
+} finally { }
+}
