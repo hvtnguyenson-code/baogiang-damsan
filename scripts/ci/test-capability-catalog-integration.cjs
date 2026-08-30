@@ -1,4 +1,6 @@
 const assert = require('node:assert/strict');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 const { PrismaClient } = require('@prisma/client');
 const { CAPABILITIES, syncCapabilityCatalog, verifyCapabilityCatalog } = require('../../prisma/capability-catalog.cjs');
 
@@ -7,7 +9,12 @@ async function main() {
   const prisma = new PrismaClient();
   try {
     await prisma.capabilityGrant.deleteMany(); await prisma.capabilityDefinition.deleteMany();
-    await syncCapabilityCatalog(prisma); // P1
+    const cli = spawnSync(process.execPath, [path.join(__dirname, '..', 'deploy', 'node', 'sync-capability-catalog.cjs')], { env: process.env, encoding: 'utf8' });
+    assert.equal(cli.status, 0, cli.stderr); // P1: exact production entrypoint
+    const cliSummary = JSON.parse(cli.stdout.trim().split(/\r?\n/).at(-1));
+    assert.equal(cliSummary.state, 'completed');
+    assert.equal(cliSummary.expectedDefinitionCount, CAPABILITIES.length);
+    assert.equal(cliSummary.verifiedDefinitionCount, CAPABILITIES.length);
     await verifyCapabilityCatalog(prisma);
     await syncCapabilityCatalog(prisma); // P2
     assert.equal(await prisma.capabilityDefinition.count({ where: { key: { in: CAPABILITIES.map(([key]) => key) } } }), CAPABILITIES.length);

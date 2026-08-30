@@ -1,5 +1,6 @@
 [CmdletBinding()]
 param(
+  [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{40}$')][string]$ReleaseSha,
   [Parameter(Mandatory = $true)][string]$ReleasePath,
   [Parameter(Mandatory = $true)][ValidateScript({ Test-Path -LiteralPath $_ -PathType Leaf })][string]$NodeExe,
   [Parameter(Mandatory = $true)][string]$Root,
@@ -17,8 +18,10 @@ $ErrorActionPreference = 'Stop'
 if (-not $BackupVerified) { throw 'A verified database backup is required before capability catalog synchronization.' }
 $identity = Read-DeploymentIdentity -Root $Root -ServiceKind $ServiceKind -ServiceName $ServiceName -EnvFile $EnvFile -StartupWrapper $StartupWrapper -ExpectedEntryPoint $ExpectedEntryPoint
 $canonicalRoot = $identity.canonicalRoot
+$releasesRoot = Assert-ExactChildPath $canonicalRoot 'releases'
+$expectedRelease = Assert-ExactChildPath $canonicalRoot "releases\$ReleaseSha"
 $release = Get-CanonicalPath $ReleasePath
-if (-not (Test-PathWithin $release (Assert-ExactChildPath $canonicalRoot 'releases')) -or (Split-Path -Leaf $release) -notmatch '^[0-9a-f]{40}$') { throw 'Release path must be an exact release beneath the dedicated root.' }
+if ((Normalize-ComparablePath $release) -ne (Normalize-ComparablePath $expectedRelease) -or -not (Test-PathWithin $expectedRelease $releasesRoot) -or (Split-Path -Leaf $expectedRelease) -cne $ReleaseSha -or -not (Test-Path -LiteralPath $expectedRelease -PathType Container)) { throw 'Release path does not match the exact requested release identity.' }
 Assert-ExecutableContract @{ NodeExe = $NodeExe }
 Import-ServerEnvironment -EnvFile $EnvFile -ExpectedBaseUrl $ExpectedBaseUrl | Out-Null
 $cli = Join-Path $release 'scripts\deploy\node\sync-capability-catalog.cjs'
