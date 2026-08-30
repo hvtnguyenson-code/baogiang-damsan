@@ -15,6 +15,7 @@ assert.match(text, /^  cancel-in-progress: false$/m); assert.match(text, /conten
 for (const required of ['PROD_NODE_EXE','PROD_NPM_EXE','PROD_NPX_EXE','PROD_PSQL_EXE','PROD_PG_DUMP_EXE','PROD_PG_RESTORE_EXE','PROD_STARTUP_WRAPPER','PROD_API_ENTRYPOINT']) assert.match(text, new RegExp(required));
 assert.match(text, /StrictHostKeyChecking=yes/g); assert.doesNotMatch(text, /StrictHostKeyChecking=no/i); assert.doesNotMatch(text, /:.*\\\\incoming/);
 assert.match(text, /powershell\.exe -NoProfile -NonInteractive -EncodedCommand/); assert.doesNotMatch(text, /powershell\.exe -NoProfile -NonInteractive -Command/); assert.match(text, /Read-only marker handshake before transfer/);
+assert.match(text, /sync-capability-catalog\.ps1/);
 const stepBlocks = text.split(/^      - name:/m).slice(1);
 function assertStepEnvSources(block) {
   const envNames = new Set([...block.matchAll(/^          (PROD_[A-Z0-9_]+):/gm)].map((m) => m[1]));

@@ -223,7 +223,7 @@ jobs:
           transfer="$root_sftp/incoming/${{ steps.handshake.outputs.transfer_name }}"
           sftp_args=(-i "$SSH_KEY" -P "$PROD_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "${PROD_SSH_USER}@${PROD_SSH_HOST}")
           { printf 'put %s %s\n' "$GITHUB_WORKSPACE/${{ steps.package.outputs.archive }}" "$transfer/${{ steps.package.outputs.archive }}"; printf 'put %s %s\n' deploy-parameters.json "$transfer/deploy-parameters.json"; } | sftp "${sftp_args[@]}"
-          for script in deployment-common.ps1 install-release.ps1 backup-database.ps1 run-migrations.ps1 switch-current-release.ps1 restart-baogiang-api.ps1 start-baogiang-api.ps1 test-production-health.ps1 rollback-release.ps1 invoke-production-deploy.ps1; do
+          for script in deployment-common.ps1 install-release.ps1 backup-database.ps1 run-migrations.ps1 sync-capability-catalog.ps1 switch-current-release.ps1 restart-baogiang-api.ps1 start-baogiang-api.ps1 test-production-health.ps1 rollback-release.ps1 invoke-production-deploy.ps1; do
             printf 'put %s %s\n' "control-plane/scripts/deploy/windows/$script" "$transfer/$script" | sftp "${sftp_args[@]}"
           done
 

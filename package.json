@@ -39,6 +39,7 @@
     "test:academic-schema:static": "node scripts/ci/verify-academic-structure-schema.cjs",
     "test:schema:static": "npm run test:schema:foundation:static && npm run test:academic-schema:static",
     "test:migrations:ci": "bash scripts/ci/test-phase-01-migrations.sh",
+    "test:capability-catalog:integration": "node scripts/ci/test-capability-catalog-integration.cjs",
     "test:secrets": "node scripts/ci/scan-auth-secrets.cjs",
     "test:deploy:static": "node scripts/ci/verify-deployment-static.cjs",
     "test:deploy:behavior": "node scripts/ci/verify-deployment-behavior.cjs",

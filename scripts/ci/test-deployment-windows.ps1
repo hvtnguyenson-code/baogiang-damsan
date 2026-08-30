@@ -85,6 +85,13 @@ foreach ($scriptFile in $powerShellFiles) {
   }
 }
 
+$catalogSyncPath = Join-Path $repo 'scripts\deploy\windows\sync-capability-catalog.ps1'
+$catalogSyncText = Get-Content -LiteralPath $catalogSyncPath -Raw -Encoding UTF8
+foreach ($requiredCatalogSyncToken in @('Set-StrictMode -Version Latest',"`$ErrorActionPreference = 'Stop'",'Read-DeploymentIdentity','Import-ServerEnvironment','Assert-ExecutableContract','BackupVerified','sync-capability-catalog.cjs','Test-PathWithin')) {
+  if ($catalogSyncText -notmatch [regex]::Escape($requiredCatalogSyncToken)) { throw "Capability catalog sync wrapper is missing required safety token: $requiredCatalogSyncToken" }
+}
+if ($catalogSyncText -match 'npm run prisma:seed|prisma db seed') { throw 'Capability catalog sync wrapper must not invoke generic seed.' }
+
 $preflightPath = Join-Path $repo 'scripts\deploy\windows\production-preflight-readonly.ps1'
 $preflightText = Get-Content -LiteralPath $preflightPath -Raw -Encoding UTF8
 $forbiddenPreflightMutations = @(

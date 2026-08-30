@@ -13,6 +13,7 @@ const invoke = read('scripts/deploy/windows/invoke-production-deploy.ps1');
 const restart = read('scripts/deploy/windows/restart-baogiang-api.ps1');
 const rollback = read('scripts/deploy/windows/rollback-release.ps1');
 const migration = read('scripts/deploy/windows/run-migrations.ps1');
+const catalog = read('scripts/deploy/windows/sync-capability-catalog.ps1');
 const remote = require('./build-windows-remote-command.cjs');
 
 function redact(text) {
@@ -52,5 +53,6 @@ assert.match(common, /commandLineSha256/); assert.doesNotMatch(common, /commandL
 assert.match(invoke, /Read-DeploymentIdentity/); assert.ok(invoke.indexOf('Read-DeploymentIdentity') < invoke.indexOf('Move-Item -LiteralPath $source'));
 assert.match(restart, /Count -ne 1/); assert.match(restart, /LocalPort 3100/); assert.match(restart, /Get-ExactApiProcesses/);
 assert.match(migration, /Get-MigrationState/); assert.match(invoke, /migrationAttempted = \$true/); assert.match(rollback, /test-production-health/); assert.match(rollback, /CompatibilityApproved/);
+assert.match(catalog, /BackupVerified/); assert.match(catalog, /sync-capability-catalog\.cjs/); assert.match(invoke, /capabilityCatalog/); assert.ok(invoke.indexOf('backup-database.ps1') < invoke.indexOf('run-migrations.ps1')); assert.ok(invoke.indexOf('run-migrations.ps1') < invoke.indexOf('sync-capability-catalog.ps1')); assert.ok(invoke.indexOf('sync-capability-catalog.ps1') < invoke.indexOf('switch-current-release.ps1')); assert.doesNotMatch(invoke, /prisma:seed/);
 assert.match(workflow, /Read-only marker handshake before transfer/); assert.match(workflow, /-EncodedCommand/); assert.doesNotMatch(workflow, /powershell\.exe -NoProfile -NonInteractive -Command/); assert.match(workflow, /Retrieve redacted deploy report/); assert.match(workflow, /if-no-files-found: error/); assert.match(workflow, /upload-artifact@v4/); assert.match(workflow, /if: always\(\)/);
 console.log('[deployment-behavior] PASS (redaction, identity, artifact, native-command, migration, rollback and transfer fixtures)');

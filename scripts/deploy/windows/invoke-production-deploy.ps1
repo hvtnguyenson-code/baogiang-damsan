@@ -27,7 +27,7 @@ $incoming = Assert-ExactChildPath $canonicalRoot "incoming\$($p.SourceArchiveNam
 if (Test-Path -LiteralPath $incoming) { throw 'Incoming release archive already exists; operator must inspect it.' }
 $reportHome = Join-Path $transfer $p.ReportFileName
 $reportLogs = Join-Path $canonicalRoot "logs\$($p.ReportFileName)"
-$report = [ordered]@{ schemaVersion = 1; generatedAtUtc = [DateTime]::UtcNow.ToString('o'); releaseSha = $p.ReleaseSha; previousRelease = $null; backup = $null; migration = [ordered]@{ state = 'notStarted' }; switch = $null; restart = $null; health = $null; rollback = [ordered]@{ state = 'notNeeded' }; errorCategory = $null }
+$report = [ordered]@{ schemaVersion = 1; generatedAtUtc = [DateTime]::UtcNow.ToString('o'); releaseSha = $p.ReleaseSha; previousRelease = $null; backup = $null; migration = [ordered]@{ state = 'notStarted' }; capabilityCatalog = [ordered]@{ state = 'notStarted' }; switch = $null; restart = $null; health = $null; rollback = [ordered]@{ state = 'notNeeded' }; errorCategory = $null }
 $migrationAttempted = $false; $switched = $false; $restartAttempted = $false
 try {
   Import-ServerEnvironment -EnvFile $p.EnvFile -ExpectedBaseUrl $p.ExpectedBaseUrl | Out-Null
@@ -42,6 +42,9 @@ try {
     $migrationJson = & (Join-Path $PSScriptRoot 'run-migrations.ps1') -ReleasePath (Join-Path $canonicalRoot "releases\$($p.ReleaseSha)") -NpxExe $p.NpxExe -PsqlExe $p.PsqlExe -Root $canonicalRoot -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl -AllowProductionMigration:$p.ProductionMigrationApproved -BackupVerified | Select-Object -Last 1
     $report.migration = $migrationJson | ConvertFrom-Json
   }
+  $report.capabilityCatalog.state = 'attemptedUnknown'
+  $catalogJson = & (Join-Path $PSScriptRoot 'sync-capability-catalog.ps1') -ReleasePath (Join-Path $canonicalRoot "releases\$($p.ReleaseSha)") -NodeExe $p.NodeExe -Root $canonicalRoot -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl -BackupVerified | Select-Object -Last 1
+  $report.capabilityCatalog = $catalogJson | ConvertFrom-Json
   $switchJson = & (Join-Path $PSScriptRoot 'switch-current-release.ps1') -ReleaseSha $p.ReleaseSha -Root $canonicalRoot -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint | Select-Object -Last 1
   $report.switch = $switchJson | ConvertFrom-Json; $switched = $true
   $restartAttempted = $true
