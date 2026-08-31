@@ -502,6 +502,38 @@ try {
   $reportTypeExit = $LASTEXITCODE; $ErrorActionPreference = $savedErrorActionPreference
   if ($reportTypeExit -eq 0 -or $reportTypeOutput -notmatch 'READ_ONLY_REPORT_TARGET_TYPE_MISMATCH') { throw 'RPT-P7 report target directory was not rejected categorically.' }
   Remove-Item -LiteralPath $reportTargetDirectory -Force
+
+  $nestedProductionReportTarget = Join-Path $sbShared 'report-target\nested'
+  New-Item -ItemType Directory -Path $nestedProductionReportTarget -Force | Out-Null
+  $nestedProductionSentinel = Join-Path $nestedProductionReportTarget 'sentinel.txt'
+  [IO.File]::WriteAllBytes($nestedProductionSentinel,[Text.Encoding]::UTF8.GetBytes('nested production sentinel'))
+  $nestedProductionSentinelHash = Get-Sha256FromBytes ([IO.File]::ReadAllBytes($nestedProductionSentinel))
+  $externalProductionBridgeRoot = Join-Path $temp 'external-production-bridge'
+  New-Item -ItemType Directory -Path $externalProductionBridgeRoot -Force | Out-Null
+  $externalProductionBridge = Join-Path $externalProductionBridgeRoot 'bridge'
+  New-Item -ItemType Junction -Path $externalProductionBridge -Target (Split-Path -Parent $nestedProductionReportTarget) | Out-Null
+  $nestedProductionReport = Join-Path $externalProductionBridge 'nested\report.json'
+  $savedErrorActionPreference = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+  $nestedProductionOutput = (& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $sbPlanScript -RepositoryRoot $sbRepo -ReviewedCommitSha $sbCommitA -Root $sbRoot -ReportPath $nestedProductionReport 2>&1 | Out-String)
+  $nestedProductionExit = $LASTEXITCODE; $ErrorActionPreference = $savedErrorActionPreference
+  if ($nestedProductionExit -eq 0 -or $nestedProductionOutput -notmatch 'READ_ONLY_REPORT_ANCESTOR_REPARSE_POINT' -or (Test-Path -LiteralPath (Join-Path $nestedProductionReportTarget 'report.json')) -or (Get-Sha256FromBytes ([IO.File]::ReadAllBytes($nestedProductionSentinel))) -ne $nestedProductionSentinelHash) { throw 'RPT-P8 nested ancestor junction into production root was not rejected without mutation.' }
+  [IO.Directory]::Delete($externalProductionBridge)
+
+  $nestedRepositoryReportTarget = Join-Path $sbRepo 'report-source-target\nested'
+  New-Item -ItemType Directory -Path $nestedRepositoryReportTarget -Force | Out-Null
+  $repositoryStatusBefore = (& git -C $sbRepo status --porcelain=v1) -join "`n"
+  $repositorySourceHashBefore = Get-Sha256FromBytes ([IO.File]::ReadAllBytes($sbSourceWrapper))
+  $externalRepositoryBridgeRoot = Join-Path $temp 'external-repository-bridge'
+  New-Item -ItemType Directory -Path $externalRepositoryBridgeRoot -Force | Out-Null
+  $externalRepositoryBridge = Join-Path $externalRepositoryBridgeRoot 'bridge'
+  New-Item -ItemType Junction -Path $externalRepositoryBridge -Target (Split-Path -Parent $nestedRepositoryReportTarget) | Out-Null
+  $nestedRepositoryReport = Join-Path $externalRepositoryBridge 'nested\report.json'
+  $savedErrorActionPreference = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+  $nestedRepositoryOutput = (& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $sbPlanScript -RepositoryRoot $sbRepo -ReviewedCommitSha $sbCommitA -Root $sbRoot -ReportPath $nestedRepositoryReport 2>&1 | Out-String)
+  $nestedRepositoryExit = $LASTEXITCODE; $ErrorActionPreference = $savedErrorActionPreference
+  $repositoryStatusAfter = (& git -C $sbRepo status --porcelain=v1) -join "`n"
+  if ($nestedRepositoryExit -eq 0 -or $nestedRepositoryOutput -notmatch 'READ_ONLY_REPORT_ANCESTOR_REPARSE_POINT' -or (Test-Path -LiteralPath (Join-Path $nestedRepositoryReportTarget 'report.json')) -or (Get-Sha256FromBytes ([IO.File]::ReadAllBytes($sbSourceWrapper))) -ne $repositorySourceHashBefore -or $repositoryStatusAfter -cne $repositoryStatusBefore) { throw 'RPT-P9 nested ancestor junction into source repository was not rejected without mutation.' }
+  [IO.Directory]::Delete($externalRepositoryBridge)
   $sbReparseTarget = Join-Path $temp 'startup-bundle-reparse-target'
   New-Item -ItemType Directory -Path $sbReparseTarget -Force | Out-Null
   New-Item -ItemType Junction -Path $expectedLayoutA.bundleRoot -Target $sbReparseTarget | Out-Null
@@ -1018,7 +1050,7 @@ try {
   $global:LASTEXITCODE = 77
   & { [pscustomobject]@{ state = 'completed' } } | Out-Null
   if ($LASTEXITCODE -ne 77) { throw 'Fixture did not preserve stale native exit code.' }
-  Write-Output '[deployment-windows] PASS (ACL-P1..ACL-P8, PATH-P1..PATH-P3, SB-P1..SB-P14, RPT-P1..RPT-P7, preflight isolation, SSH host-key/firewall, exact psql, privacy, safe-stop, migration and transfer fixtures)'
+  Write-Output '[deployment-windows] PASS (ACL-P1..ACL-P8, PATH-P1..PATH-P3, SB-P1..SB-P14, RPT-P1..RPT-P9, preflight isolation, SSH host-key/firewall, exact psql, privacy, safe-stop, migration and transfer fixtures)'
 } finally {
   if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Recurse -Force }
 }

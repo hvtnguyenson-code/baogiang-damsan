@@ -413,6 +413,32 @@ function Test-PathWithin([Parameter(Mandatory = $true)][string]$Path,[Parameter(
   return $candidate -eq $container -or $candidate.StartsWith("$container\", [StringComparison]::OrdinalIgnoreCase)
 }
 
+function Assert-PathAncestorChainNonReparse([Parameter(Mandatory = $true)][string]$Directory) {
+  $fullDirectory = [IO.Path]::GetFullPath($Directory)
+  $filesystemRoot = [IO.Path]::GetPathRoot($fullDirectory)
+  $current = if ($fullDirectory.TrimEnd('\') -ieq $filesystemRoot.TrimEnd('\')) { $filesystemRoot } else { $fullDirectory.TrimEnd('\') }
+  $visited = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+  $isImmediateParent = $true
+  while (-not [string]::IsNullOrWhiteSpace($current)) {
+    if (-not $visited.Add($current)) { throw 'READ_ONLY_REPORT_ANCESTOR_INVALID' }
+    $classification = Get-PathSecurityClassification -Path $current -Kind directory
+    if ($classification.state -eq 'REPARSE_POINT') {
+      if ($isImmediateParent) { throw 'READ_ONLY_REPORT_PARENT_REPARSE_POINT' }
+      throw 'READ_ONLY_REPORT_ANCESTOR_REPARSE_POINT'
+    }
+    if ($classification.state -ne 'PASS') {
+      if ($isImmediateParent) { throw 'READ_ONLY_REPORT_PARENT_INVALID' }
+      throw 'READ_ONLY_REPORT_ANCESTOR_INVALID'
+    }
+    if ($current.TrimEnd('\') -ieq $filesystemRoot.TrimEnd('\')) { break }
+    $parent = Split-Path -Parent $current
+    if ([string]::IsNullOrWhiteSpace($parent)) { throw 'READ_ONLY_REPORT_ANCESTOR_INVALID' }
+    $current = if ($parent.TrimEnd('\') -ieq $filesystemRoot.TrimEnd('\')) { $filesystemRoot } else { Get-CanonicalPath $parent }
+    $isImmediateParent = $false
+  }
+  return $fullDirectory.TrimEnd('\')
+}
+
 function Assert-SafeReadOnlyReportPath(
   [Parameter(Mandatory = $true)][string]$ReportPath,
   [Parameter(Mandatory = $true)][string]$ProductionRoot,
@@ -427,9 +453,7 @@ function Assert-SafeReadOnlyReportPath(
     if (-not [string]::IsNullOrWhiteSpace($leaf) -and (Normalize-ComparablePath $canonicalReport) -eq (Normalize-ComparablePath $leaf)) { throw 'READ_ONLY_REPORT_PATH_CONFLICT' }
   }
 
-  $parentClassification = Get-PathSecurityClassification -Path (Split-Path -Parent $canonicalReport) -Kind directory
-  if ($parentClassification.state -eq 'REPARSE_POINT') { throw 'READ_ONLY_REPORT_PARENT_REPARSE_POINT' }
-  if ($parentClassification.state -ne 'PASS') { throw 'READ_ONLY_REPORT_PARENT_INVALID' }
+  Assert-PathAncestorChainNonReparse -Directory (Split-Path -Parent $canonicalReport) | Out-Null
 
   $targetClassification = Get-PathSecurityClassification -Path $canonicalReport -Kind file
   if ($targetClassification.state -eq 'REPARSE_POINT') { throw 'READ_ONLY_REPORT_TARGET_REPARSE_POINT' }
