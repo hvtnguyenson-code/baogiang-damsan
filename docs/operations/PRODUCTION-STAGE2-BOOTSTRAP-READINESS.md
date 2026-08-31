@@ -1,7 +1,7 @@
 # Production Stage 2 Bootstrap Readiness Audit
 
-Status: Candidate — P1 ROOT/ACL CLOSED CANDIDATE; Stage 2 overall NO-GO
-Baseline: 5f8a521d29bd8814363b4c1e837a26689f8a47ae
+Status: Candidate — P1 ROOT/ACL + STARTUP BUNDLE CLOSED CANDIDATE; Stage 2 overall NO-GO
+Baseline: 357620a4f256e087f773d308817cde252687f230
 
 ## 1. Scope
 
@@ -11,14 +11,14 @@ Các giá trị thực tế của VPS vẫn là `OPERATOR VERIFICATION REQUIRED`
 
 ## 2. Existing Stage 2 architecture
 
-Stage 2 giữ kiến trúc **source-controlled plan/verify + manual mutation**. Root/ACL đã có desired-state plan và verifier read-only; các mutation bootstrap vẫn do operator thực hiện dưới approval riêng. Startup bundle provenance/update và Nginx plan/verify vẫn chưa hoàn chỉnh.
+Stage 2 giữ kiến trúc **source-controlled plan/verify + manual mutation**. Root/ACL và startup bundle đã có plan/verifier read-only; mọi mutation bootstrap vẫn do operator thực hiện dưới approval riêng. Nginx plan/verify vẫn chưa hoàn chỉnh.
 
 | Bootstrap operation | Source-controlled implementation | Manual only | Verifier hiện có | Rollback/recovery |
 |---|---|---|---|---|
 | Dedicated root | Không có creator | Có | Exact path, existence, non-reparse và protected DACL verifier | Operator sửa/xóa theo review riêng |
 | Required subdirectories | Không có creator | Có | Exact six-directory non-reparse + DACL verifier | Không có bootstrap recovery |
 | ACLs | Deterministic desired-state plan; không có mutating executor | Có | Exact SID/numeric-rights/inheritance verifier | Manual correction dưới approval riêng |
-| Startup bundle | Không có installer | Có | Exact sibling path, file existence và SHA-256 | Không có update/rotation procedure |
+| Startup bundle | Exact-commit Git-blob provenance plan; không có installer | Có | Canonical layout, exact pair/blob hashes, reparse/content/ACL verifier | Commit mới dùng directory mới; giữ nguyên prior bundle |
 | Identity marker | Không có generator | Có | `Read-DeploymentIdentity`, handshake và runtime verifier, nhưng schema chưa đầy đủ | Operator correction |
 | Production environment | Không có creator | Có | `Import-ServerEnvironment`, nhưng chưa có standalone pre-first-deploy validator | Không có cleanup tổng quát |
 | Scheduled Task | Không có register/enable implementation | Có | Exact name/account/action checks | Safe-stop disable/stop; không có re-enable path |
@@ -32,7 +32,7 @@ Manual bootstrap không tự thân là defect. Defect xuất hiện khi manual s
 
 `Assert-DedicatedRoot` tiếp tục chặn drive root, Windows/system paths và tên/path thuộc DamSanV5/boarding. `Read-DeploymentIdentity` nay fail closed nếu root thiếu/sai type/là reparse point hoặc nếu bất kỳ direct child bắt buộc nào trong `releases`, `staging`, `incoming`, `shared`, `logs`, `backups` thiếu/sai type/là reparse point.
 
-`Get-ProductionAclPolicy` là authority duy nhất nhận ba reviewed role identities, normalize về SID và tạo exact protected-DACL policy cho root, sáu thư mục và marker/env/startup bundle leaves. `production-root-acl-plan.ps1` xuất deterministic JSON desired state; `production-root-acl-verify.ps1` dùng cùng helper, đọc `Get-Acl`, normalize SID/type/numeric rights/inheritance/propagation/`IsInherited`, rồi fail khi thiếu/thừa/sai ACE, có DENY, duplicate semantic ACE, broad principal hoặc inheritance protection sai. Hai tool không mutate ACL và không tạo production directory; correction vẫn manual.
+`Get-ProductionAclPolicy` là authority duy nhất nhận ba reviewed role identities, normalize về SID và tạo exact protected-DACL policy cho root, sáu thư mục, marker/env, startup-bundles parent, commit directory và hai runtime leaves. `production-root-acl-plan.ps1` xuất deterministic JSON desired state; `production-root-acl-verify.ps1` và startup verifier dùng cùng comparator/snapshot authority, normalize SID/type/numeric rights/inheritance/propagation/`IsInherited`, rồi fail khi thiếu/thừa/sai ACE, có DENY, duplicate semantic ACE, broad principal hoặc inheritance protection sai. Các tool không mutate ACL và không tạo production directory; correction vẫn manual.
 
 Policy không authority hóa owner và không chứng minh toàn bộ effective token authorization qua nested local/domain group membership. Những membership đó, account thực và actual VPS DACL vẫn là `OPERATOR VERIFICATION REQUIRED`; limitation không cho phép broad ACE ngoài exact policy.
 
@@ -48,7 +48,7 @@ Authority được đối chiếu giữa `PRODUCTION-ENVIRONMENT-CONFIGURATION.m
 | `canonicalRoot` | Required exact | Exact normalized | Exact case-insensitive | Dedicated-root guard | Strong, nhưng không resolve root reparse |
 | `domain`, `apiPort` | Exact domain/3100 | Exact | Exact | Base URL/port guards | Strong |
 | `envFile`, `startupWrapper`, `entryPoint` | Required paths | Exact against inputs | Không kiểm | Exact against workflow inputs | Binding mạnh khi inputs đầy đủ |
-| `startupBundle.*` | Paths + hashes | Non-empty, sibling, existing leaf, exact hashes | Không kiểm | Reader chạy trước business-critical mutation | Runtime verification mạnh; provenance commit/ACL/update policy thiếu |
+| `startupBundle.*` | Paths + hashes | Canonical versioned sibling paths, existing non-reparse leaves, exact hashes | Không kiểm | Reader chạy trước business-critical mutation | Runtime binding giữ nguyên; reviewed commit được chứng minh trong plan riêng, không đổi marker schema |
 | `foreignIsolation` | 4 nested evidence fields | Chỉ kiểm property tồn tại | Không kiểm | Không đọc nested evidence | `{}` pass; **P0** |
 | `nginxExe`, `nginxConfig` | Required exact paths | Chỉ kiểm property tồn tại | Không kiểm | Chỉ compare khi marker value truthy | `""` bypass marker binding; **P0** |
 | `nodeExe` | Required exact path | Không require/compare | Không kiểm | Listener check chỉ compare nếu truthy; restart dùng workflow input riêng | Missing/empty bypass marker Node authority; **P0** |
@@ -65,18 +65,13 @@ Correction phải dùng một discriminated, versioned marker schema được đ
 
 ## 5. Startup bundle findings
 
-Authority yêu cầu operator copy `start-baogiang-api.ps1` và sibling `deployment-common.ps1` từ cùng exact reviewed GitHub commit vào immutable shared location, ghi absolute paths/SHA-256 vào marker rồi review ACL. Reader thực sự kiểm tra sibling relationship, tồn tại và hash của cả hai file.
+`production-startup-bundle-plan.ps1` nhận repository root, lowercase reviewed commit SHA, canonical production root và report path. Shared helper kiểm commit/path/blob bằng Git object database, đọc binary stdout của `git cat-file blob`, rồi SHA-256 exact bytes cho hai fixed paths. Working-tree content và EOL không tham gia authority. Plan value-free bind blob OID/hash vào duy nhất `shared\startup-bundles\<reviewedCommitSha>\` và tuyên bố rõ no-overwrite/no-delete/new-directory-on-update.
 
-Điểm chưa được source-control hóa:
+`production-startup-bundle-verify.ps1` xác thực digest và exact schema/type/root binding của plan trước khi tin destination. Nó phân biệt `INSTALL_REQUIRED`, reusable `PASS / EXACT_BUNDLE_VERIFIED`, và deterministic `CONFLICT` cho plan/layout/partial/hash/reparse/unexpected-file/ACL mismatch. PASS yêu cầu directory chỉ có đúng hai non-reparse sibling files với exact hashes và bốn startup paths cùng pass shared `Get-ProductionAclPolicy`/ACL comparator. Tool chỉ ghi report; không create/copy/move/delete/ACL-fix/marker/task mutation.
 
-- command lấy file từ exact commit và chứng minh source provenance;
-- canonical destination layout;
-- ACL desired state và immutability verifier;
-- behavior khi destination đã tồn tại;
-- atomic install, overwrite refusal, update/rotation và recovery;
-- evidence liên kết reviewed commit SHA với bundle hashes.
+Commit A và B luôn dùng hai directory 40-hex khác nhau và có thể cùng tồn tại. B cần plan, manual install và verify riêng; A không bị overwrite, rename hoặc delete. Chỉ sau PASS, operator mới được re-bind marker/task dưới approval riêng. `Read-DeploymentIdentity` tiếp tục kiểm exact active wrapper/common absolute paths và hashes, nên version rotation không làm yếu P0-3 runtime binding và không cần đổi marker schema.
 
-Vì vậy **operator manual copy hiện là cơ chế tạo bundle lần đầu**. Runtime hash verification giảm tampering risk, nhưng initial creation/update vẫn dễ sai và không reproducible. Mức **P1**; normal deployment không được silently replace bundle.
+Kết luận: **P1 STARTUP BUNDLE = CLOSED CANDIDATE**. Đây là repository authority, không phải bằng chứng bundle/ACL/task thực tế trên VPS; Stage 2 tổng thể vẫn NO-GO.
 
 ## 6. Environment validation findings
 
@@ -159,7 +154,7 @@ Recommendation duy nhất: **B — source-controlled plan/verify tool, manual mu
 | Clean pre-first-deploy env PASS | Standalone validation contract P0 đã có; VPS evidence vẫn operator-only | CLOSED CANDIDATE |
 | Scheduled Task activation/recovery | P0-3 verify → enable → reverify → start, safe-stop và reboot contract | CLOSED CANDIDATE |
 | Service first-deploy authority | P0-4 restricted to Scheduled Task; generic Service code remains non-authoritative | CLOSED CANDIDATE |
-| Startup bundle deterministic | Hash verification tốt; creation/update manual chưa plan hóa | NO-GO (P1) |
+| Startup bundle deterministic | Exact Git-blob plan + canonical immutable layout + read-only content/ACL verifier + A/B rotation fixtures | CLOSED CANDIDATE |
 | Nginx deterministic and neighbor-safe | Partial verifier; mutation/reload manual | NO-GO (P1) |
 | Transfer boundary proportionate | Minimal handshake trước isolated staging; controller trước critical mutation | GO WITH P2 HARDENING |
 
@@ -179,7 +174,7 @@ Một correction plan duy nhất, theo thứ tự bắt buộc:
 ### P1 — deterministic bootstrap plan/verify
 
 5. **Root/subdirectory/ACL:** **CLOSED CANDIDATE** — desired-state manifest và non-mutating verifier bao gồm inheritance/reparse, marker/env/backup/bundle access.
-6. Startup bundle source-provenance/install-plan/overwrite-refusal/update-rotation verifier.
+6. **Startup bundle:** **CLOSED CANDIDATE** — exact Git-blob provenance, canonical immutable commit directory, overwrite/delete refusal, shared ACL verification và A/B rotation fixtures.
 7. Nginx value-free plan/verify contract, neighboring-block isolation, exact test/reload/restore evidence.
 
 ### P2 — defense in depth
@@ -207,6 +202,6 @@ PASS 1/PASS 2 reports phải được operator và independent reviewer đánh g
 
 **NO-GO / CORRECTION NEEDED**.
 
-Stage 2 tổng thể vẫn **NO-GO / chưa GO** vì startup bundle provenance/install/update P1, Nginx plan/verify/reload/restore P1, full marker pre-transfer handshake P2 và operator-only production evidence còn lại. P1 ROOT/ACL chỉ là closed candidate; không tuyên bố Production Stage 2 hoàn tất.
+Stage 2 tổng thể vẫn **NO-GO / chưa GO** vì Nginx plan/verify/reload/restore P1, shared marker validator/pre-transfer handshake P2 và operator-only production evidence còn lại. P1 ROOT/ACL và P1 STARTUP BUNDLE chỉ là closed candidates; không tuyên bố Production Stage 2 hoàn tất.
 
-Điều kiện để audit lại vẫn gồm hoàn tất các P1/P2 áp dụng được, operator evidence độc lập và architecture B plan/verify cho ACL, bundle và Nginx. Không được bắt đầu Stage 2 mutation chỉ dựa trên CI xanh hoặc tài liệu manual hiện tại.
+Điều kiện để audit lại vẫn gồm hoàn tất Nginx P1 và handshake P2, operator evidence độc lập, cùng review thực tế các plan/verifier ACL và startup bundle. Không được bắt đầu Stage 2 mutation chỉ dựa trên CI xanh hoặc tài liệu manual hiện tại.

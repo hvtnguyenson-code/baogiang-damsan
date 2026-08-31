@@ -37,8 +37,8 @@ function Get-PathSecurityClassification(
   $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
   if ($null -eq $item) { return [pscustomobject]@{ state = 'MISSING'; path = Get-CanonicalPath $Path; kind = $Kind } }
   $actualKind = if ($item.PSIsContainer) { 'directory' } else { 'file' }
-  if ($actualKind -ne $Kind) { return [pscustomobject]@{ state = 'TYPE_MISMATCH'; path = Get-CanonicalPath $Path; kind = $Kind } }
   if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { return [pscustomobject]@{ state = 'REPARSE_POINT'; path = Get-CanonicalPath $Path; kind = $Kind } }
+  if ($actualKind -ne $Kind) { return [pscustomobject]@{ state = 'TYPE_MISMATCH'; path = Get-CanonicalPath $Path; kind = $Kind } }
   return [pscustomobject]@{ state = 'PASS'; path = Get-CanonicalPath $Path; kind = $Kind }
 }
 
@@ -62,6 +62,159 @@ function Assert-ExistingNonReparseDirectory(
 function Assert-ExistingLeaf([Parameter(Mandatory = $true)][string]$Path,[string]$Label = 'Executable') {
   if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw "$Label must be an existing file: $Path" }
   return Get-CanonicalPath $Path
+}
+
+function Get-CanonicalStartupBundleLayout(
+  [Parameter(Mandatory = $true)][string]$Root,
+  [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{40}$')][string]$ReviewedCommitSha
+) {
+  $canonicalRoot = Assert-DedicatedRoot $Root
+  $bundleRoot = Assert-ExactChildPath -Root $canonicalRoot -RelativePath 'shared\startup-bundles'
+  $versionDirectory = Assert-ExactChildPath -Root $canonicalRoot -RelativePath "shared\startup-bundles\$ReviewedCommitSha"
+  return [pscustomobject][ordered]@{
+    bundleRoot = $bundleRoot
+    versionDirectory = $versionDirectory
+    wrapperPath = Get-CanonicalPath (Join-Path $versionDirectory 'start-baogiang-api.ps1')
+    commonPath = Get-CanonicalPath (Join-Path $versionDirectory 'deployment-common.ps1')
+  }
+}
+
+function Get-CanonicalStartupBundleLayoutFromWrapper(
+  [Parameter(Mandatory = $true)][string]$Root,
+  [Parameter(Mandatory = $true)][string]$StartupWrapper
+) {
+  $wrapperPath = Get-CanonicalPath $StartupWrapper
+  if ((Split-Path -Leaf $wrapperPath) -cne 'start-baogiang-api.ps1') { throw 'STARTUP_BUNDLE_LAYOUT_CONFLICT' }
+  $versionDirectory = Split-Path -Parent $wrapperPath
+  $reviewedCommitSha = Split-Path -Leaf $versionDirectory
+  if ($reviewedCommitSha -notmatch '^[0-9a-f]{40}$') { throw 'STARTUP_BUNDLE_LAYOUT_CONFLICT' }
+  $layout = Get-CanonicalStartupBundleLayout -Root $Root -ReviewedCommitSha $reviewedCommitSha
+  if ((Normalize-ComparablePath $layout.wrapperPath) -ne (Normalize-ComparablePath $wrapperPath)) { throw 'STARTUP_BUNDLE_LAYOUT_CONFLICT' }
+  $layout | Add-Member -NotePropertyName reviewedCommitSha -NotePropertyValue $reviewedCommitSha
+  return $layout
+}
+
+function Assert-ExistingNonReparseStartupBundleLayout([Parameter(Mandatory = $true)]$Layout) {
+  foreach ($directory in @($Layout.bundleRoot,$Layout.versionDirectory)) {
+    $classification = Get-PathSecurityClassification -Path $directory -Kind directory
+    if ($classification.state -eq 'REPARSE_POINT') { throw 'STARTUP_BUNDLE_REPARSE_POINT' }
+    if ($classification.state -eq 'MISSING') { throw 'STARTUP_BUNDLE_MISSING' }
+    if ($classification.state -eq 'TYPE_MISMATCH') { throw 'STARTUP_BUNDLE_LAYOUT_CONFLICT' }
+  }
+  foreach ($file in @($Layout.wrapperPath,$Layout.commonPath)) {
+    $classification = Get-PathSecurityClassification -Path $file -Kind file
+    if ($classification.state -eq 'REPARSE_POINT') { throw 'STARTUP_BUNDLE_REPARSE_POINT' }
+    if ($classification.state -eq 'MISSING') { throw 'STARTUP_BUNDLE_PARTIAL_DESTINATION' }
+    if ($classification.state -eq 'TYPE_MISMATCH') { throw 'STARTUP_BUNDLE_LAYOUT_CONFLICT' }
+  }
+  return $Layout
+}
+
+function Get-Sha256FromBytes([Parameter(Mandatory = $true)][byte[]]$Bytes) {
+  $digest = [Security.Cryptography.SHA256]::Create().ComputeHash($Bytes)
+  return ([BitConverter]::ToString($digest)).Replace('-','').ToLowerInvariant()
+}
+
+function Invoke-GitCapturedBytes(
+  [Parameter(Mandatory = $true)][string]$RepositoryRoot,
+  [Parameter(Mandatory = $true)][ValidateNotNullOrEmpty()][string[]]$Argument
+) {
+  $repository = Assert-ExistingDirectory $RepositoryRoot
+  $gitCommand = Get-Command git.exe -ErrorAction SilentlyContinue
+  if ($null -eq $gitCommand) { $gitCommand = Get-Command git -ErrorAction SilentlyContinue }
+  if ($null -eq $gitCommand -or [string]::IsNullOrWhiteSpace($gitCommand.Source)) { throw 'STARTUP_BUNDLE_SOURCE_INVALID' }
+  foreach ($value in $Argument) { if ($value -notmatch '^[A-Za-z0-9._/:{}^-]+$') { throw 'STARTUP_BUNDLE_SOURCE_INVALID' } }
+  $startInfo = [Diagnostics.ProcessStartInfo]::new()
+  $startInfo.FileName = $gitCommand.Source
+  $startInfo.WorkingDirectory = $repository
+  $startInfo.Arguments = $Argument -join ' '
+  $startInfo.UseShellExecute = $false
+  $startInfo.CreateNoWindow = $true
+  $startInfo.RedirectStandardOutput = $true
+  $startInfo.RedirectStandardError = $true
+  $process = [Diagnostics.Process]::new()
+  $process.StartInfo = $startInfo
+  $output = [IO.MemoryStream]::new()
+  try {
+    if (-not $process.Start()) { throw 'STARTUP_BUNDLE_SOURCE_INVALID' }
+    $stderrTask = $process.StandardError.ReadToEndAsync()
+    $process.StandardOutput.BaseStream.CopyTo($output)
+    $process.WaitForExit()
+    [void]$stderrTask.Result
+    if ($process.ExitCode -ne 0) { throw 'STARTUP_BUNDLE_SOURCE_INVALID' }
+    return [pscustomobject]@{ bytes = $output.ToArray(); exitCode = $process.ExitCode }
+  } finally {
+    $output.Dispose()
+    $process.Dispose()
+  }
+}
+
+function Get-GitAsciiOutput([Parameter(Mandatory = $true)][string]$RepositoryRoot,[Parameter(Mandatory = $true)][string[]]$Argument) {
+  $result = Invoke-GitCapturedBytes -RepositoryRoot $RepositoryRoot -Argument $Argument
+  return [Text.Encoding]::ASCII.GetString($result.bytes).Trim()
+}
+
+function Get-StartupBundleProvenancePlan(
+  [Parameter(Mandatory = $true)][string]$RepositoryRoot,
+  [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{40}$')][string]$ReviewedCommitSha,
+  [Parameter(Mandatory = $true)][string]$Root
+) {
+  $repository = Assert-ExistingDirectory $RepositoryRoot
+  if ((Get-GitAsciiOutput -RepositoryRoot $repository -Argument @('rev-parse','--show-prefix')) -cne '') { throw 'STARTUP_BUNDLE_SOURCE_INVALID' }
+  if ((Get-GitAsciiOutput -RepositoryRoot $repository -Argument @('cat-file','-t',$ReviewedCommitSha)) -cne 'commit') { throw 'STARTUP_BUNDLE_SOURCE_INVALID' }
+  $sourceRecords = [ordered]@{}
+  foreach ($entry in @(
+    @{ role = 'wrapper'; path = 'scripts/deploy/windows/start-baogiang-api.ps1' },
+    @{ role = 'common'; path = 'scripts/deploy/windows/deployment-common.ps1' }
+  )) {
+    $oid = Get-GitAsciiOutput -RepositoryRoot $repository -Argument @('rev-parse','--verify',"${ReviewedCommitSha}:$($entry.path)")
+    if ($oid -notmatch '^[0-9a-f]{40,64}$' -or (Get-GitAsciiOutput -RepositoryRoot $repository -Argument @('cat-file','-t',$oid)) -cne 'blob') { throw 'STARTUP_BUNDLE_SOURCE_INVALID' }
+    $blob = Invoke-GitCapturedBytes -RepositoryRoot $repository -Argument @('cat-file','blob',$oid)
+    $sourceRecords[$entry.role] = [pscustomobject][ordered]@{ repositoryPath = $entry.path; gitBlobOid = $oid; sha256 = Get-Sha256FromBytes $blob.bytes }
+  }
+  $layout = Get-CanonicalStartupBundleLayout -Root $Root -ReviewedCommitSha $ReviewedCommitSha
+  return [pscustomobject][ordered]@{
+    schemaVersion = 1
+    mode = 'READ_ONLY_STARTUP_BUNDLE_PLAN'
+    mutationsPerformed = $false
+    reviewedCommitSha = $ReviewedCommitSha
+    source = [pscustomobject]$sourceRecords
+    destination = $layout
+    policy = [pscustomobject][ordered]@{ overwriteExisting = $false; deletePreviousVersions = $false; exactExistingMayBeReused = $true; updateRequiresNewCommitDirectory = $true }
+  }
+}
+
+function Assert-StartupBundlePlanObject([Parameter(Mandatory = $true)]$Object,[Parameter(Mandatory = $true)][string[]]$Expected) {
+  if ($null -eq $Object -or $Object -isnot [pscustomobject]) { throw 'STARTUP_BUNDLE_PLAN_INVALID' }
+  $actual = @($Object.PSObject.Properties.Name)
+  if ($actual.Count -ne $Expected.Count) { throw 'STARTUP_BUNDLE_PLAN_INVALID' }
+  foreach ($name in $Expected) { if (@($actual | Where-Object { $_ -ceq $name }).Count -ne 1) { throw 'STARTUP_BUNDLE_PLAN_INVALID' } }
+}
+
+function Assert-StartupBundlePlanSchema(
+  [Parameter(Mandatory = $true)]$Plan,
+  [Parameter(Mandatory = $true)][string]$Root
+) {
+  Assert-StartupBundlePlanObject $Plan @('schemaVersion','mode','mutationsPerformed','reviewedCommitSha','source','destination','policy')
+  if ($Plan.schemaVersion -isnot [int] -and $Plan.schemaVersion -isnot [long]) { throw 'STARTUP_BUNDLE_PLAN_INVALID' }
+  if ($Plan.schemaVersion -ne 1 -or $Plan.mode -cne 'READ_ONLY_STARTUP_BUNDLE_PLAN' -or $Plan.mutationsPerformed -isnot [bool] -or $Plan.mutationsPerformed) { throw 'STARTUP_BUNDLE_PLAN_INVALID' }
+  if ($Plan.reviewedCommitSha -isnot [string] -or $Plan.reviewedCommitSha -notmatch '^[0-9a-f]{40}$') { throw 'STARTUP_BUNDLE_PLAN_INVALID' }
+  Assert-StartupBundlePlanObject $Plan.source @('wrapper','common')
+  foreach ($source in @(
+    @{ value = $Plan.source.wrapper; path = 'scripts/deploy/windows/start-baogiang-api.ps1' },
+    @{ value = $Plan.source.common; path = 'scripts/deploy/windows/deployment-common.ps1' }
+  )) {
+    Assert-StartupBundlePlanObject $source.value @('repositoryPath','gitBlobOid','sha256')
+    if ($source.value.repositoryPath -cne $source.path -or $source.value.gitBlobOid -isnot [string] -or $source.value.gitBlobOid -notmatch '^[0-9a-f]{40,64}$' -or $source.value.sha256 -isnot [string] -or $source.value.sha256 -notmatch '^[0-9a-f]{64}$') { throw 'STARTUP_BUNDLE_PLAN_INVALID' }
+  }
+  Assert-StartupBundlePlanObject $Plan.destination @('bundleRoot','versionDirectory','wrapperPath','commonPath')
+  $expectedLayout = Get-CanonicalStartupBundleLayout -Root $Root -ReviewedCommitSha $Plan.reviewedCommitSha
+  foreach ($field in @('bundleRoot','versionDirectory','wrapperPath','commonPath')) {
+    if ($Plan.destination.$field -isnot [string] -or (Normalize-ComparablePath $Plan.destination.$field) -ne (Normalize-ComparablePath $expectedLayout.$field)) { throw 'STARTUP_BUNDLE_PLAN_INVALID' }
+  }
+  Assert-StartupBundlePlanObject $Plan.policy @('overwriteExisting','deletePreviousVersions','exactExistingMayBeReused','updateRequiresNewCommitDirectory')
+  if ($Plan.policy.overwriteExisting -isnot [bool] -or $Plan.policy.overwriteExisting -or $Plan.policy.deletePreviousVersions -isnot [bool] -or $Plan.policy.deletePreviousVersions -or $Plan.policy.exactExistingMayBeReused -isnot [bool] -or -not $Plan.policy.exactExistingMayBeReused -or $Plan.policy.updateRequiresNewCommitDirectory -isnot [bool] -or -not $Plan.policy.updateRequiresNewCommitDirectory) { throw 'STARTUP_BUNDLE_PLAN_INVALID' }
+  return $Plan
 }
 
 function Resolve-ReviewedIdentitySid([Parameter(Mandatory = $true)][ValidateNotNullOrEmpty()][string]$Identity) {
@@ -124,9 +277,9 @@ function Get-ProductionAclPolicy(
   $root = Assert-DedicatedRoot $CanonicalRoot
   $shared = Assert-ExactChildPath -Root $root -RelativePath 'shared'
   $environmentPath = Get-CanonicalPath $EnvFile
-  $wrapperPath = Get-CanonicalPath $StartupWrapper
-  if ((Normalize-ComparablePath (Split-Path -Parent $wrapperPath)) -ne (Normalize-ComparablePath $shared)) { throw 'STARTUP_BUNDLE_AUTHORITY_CONFLICT' }
-  $commonPath = Get-CanonicalPath (Join-Path $shared 'deployment-common.ps1')
+  $startupLayout = Get-CanonicalStartupBundleLayoutFromWrapper -Root $root -StartupWrapper $StartupWrapper
+  $wrapperPath = $startupLayout.wrapperPath
+  $commonPath = $startupLayout.commonPath
   $markerPath = Get-CanonicalPath (Join-Path $shared 'deployment-identity.json')
 
   $identitySids = [ordered]@{
@@ -168,6 +321,9 @@ function Get-ProductionAclPolicy(
     $rights = if ($name -eq 'logs') { $logRights } else { $directoryRights }
     $paths.Add([pscustomobject][ordered]@{ path = (Join-Path $root $name); kind = 'directory'; inheritanceProtected = $true; desiredAces = @(New-DirectoryRules $roles $rights) })
   }
+  foreach ($bundleDirectory in @($startupLayout.bundleRoot,$startupLayout.versionDirectory)) {
+    $paths.Add([pscustomobject][ordered]@{ path = $bundleDirectory; kind = 'directory'; inheritanceProtected = $true; desiredAces = @(New-DirectoryRules @('SYSTEM','Administrators','DeploymentIdentity','ApiRuntimeIdentity') $directoryRights) })
+  }
 
   $leafRights = @{
     SYSTEM = [Security.AccessControl.FileSystemRights]::FullControl
@@ -206,7 +362,13 @@ function Normalize-AclRule([Parameter(Mandatory = $true)]$Rule) {
 function Get-AclRuleKey([Parameter(Mandatory = $true)]$Rule,[switch]$WithoutRights) {
   $normalized = Normalize-AclRule $Rule
   $parts = @($normalized.sid,$normalized.accessControlTypeValue)
-  if (-not $WithoutRights) { $parts += $normalized.rightsValue }
+  if (-not $WithoutRights) {
+    $comparableRights = $normalized.rightsValue
+    if ($normalized.accessControlTypeValue -eq [int][Security.AccessControl.AccessControlType]::Allow) {
+      $comparableRights = $comparableRights -band (-bnot [int64][Security.AccessControl.FileSystemRights]::Synchronize)
+    }
+    $parts += $comparableRights
+  }
   $parts += @($normalized.inheritanceFlagsValue,$normalized.propagationFlagsValue,$normalized.isInherited)
   return ($parts -join '|')
 }
@@ -235,7 +397,8 @@ function Compare-AclSnapshotToPolicy(
 }
 
 function Get-ActualAclSnapshot([Parameter(Mandatory = $true)][string]$Path) {
-  $acl = Get-Acl -LiteralPath $Path -ErrorAction Stop
+  $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+  $acl = if ($item.PSIsContainer) { [IO.Directory]::GetAccessControl($item.FullName) } else { [IO.File]::GetAccessControl($item.FullName) }
   return [pscustomobject]@{ inheritanceProtected = [bool]$acl.AreAccessRulesProtected; access = @($acl.Access | ForEach-Object { Normalize-AclRule $_ }) }
 }
 
@@ -552,8 +715,10 @@ function Read-DeploymentIdentity(
   if (-not [string]::IsNullOrWhiteSpace($NodeExe) -and (Normalize-ComparablePath $marker.nodeExe) -ne (Normalize-ComparablePath $NodeExe)) { throw 'Deployment identity marker Node executable mismatch.' }
   if (-not [string]::IsNullOrWhiteSpace($NginxExe) -and (Normalize-ComparablePath $marker.nginxExe) -ne (Normalize-ComparablePath $NginxExe)) { throw 'Deployment identity marker Nginx executable mismatch.' }
   if (-not [string]::IsNullOrWhiteSpace($NginxConfig) -and (Normalize-ComparablePath $marker.nginxConfig) -ne (Normalize-ComparablePath $NginxConfig)) { throw 'Deployment identity marker Nginx config mismatch.' }
+  $startupLayout = Get-CanonicalStartupBundleLayoutFromWrapper -Root $canonicalRoot -StartupWrapper $StartupWrapper
+  Assert-ExistingNonReparseStartupBundleLayout $startupLayout | Out-Null
   if ((Normalize-ComparablePath $marker.startupBundle.wrapperPath) -ne (Normalize-ComparablePath $StartupWrapper)) { throw 'Deployment marker startup bundle wrapper path mismatch.' }
-  $commonPath = Join-Path (Split-Path -Parent $StartupWrapper) 'deployment-common.ps1'
+  $commonPath = $startupLayout.commonPath
   if ((Normalize-ComparablePath $marker.startupBundle.commonPath) -ne (Normalize-ComparablePath $commonPath)) { throw 'Deployment marker startup bundle helper path mismatch.' }
   foreach ($bundleFile in @(@{ path = $marker.startupBundle.wrapperPath; hash = $marker.startupBundle.wrapperSha256 }, @{ path = $marker.startupBundle.commonPath; hash = $marker.startupBundle.commonSha256 })) {
     Assert-ExistingLeaf $bundleFile.path 'Startup runtime bundle file' | Out-Null

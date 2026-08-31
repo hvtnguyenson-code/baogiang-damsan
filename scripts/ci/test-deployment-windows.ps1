@@ -266,9 +266,13 @@ try {
   $aclRoot = Join-Path $temp 'acl-authority-root'
   $aclShared = Join-Path $aclRoot 'shared'
   foreach ($directory in @(Get-ProductionRequiredDirectoryNames)) { New-Item -ItemType Directory -Path (Join-Path $aclRoot $directory) -Force | Out-Null }
+  $aclBundleSha = 'a' * 40
+  $aclBundleRoot = Join-Path $aclShared 'startup-bundles'
+  $aclVersionDirectory = Join-Path $aclBundleRoot $aclBundleSha
+  New-Item -ItemType Directory -Path $aclVersionDirectory -Force | Out-Null
   $aclEnv = Join-Path $aclShared 'production.env'
-  $aclWrapper = Join-Path $aclShared 'start-baogiang-api.ps1'
-  $aclCommon = Join-Path $aclShared 'deployment-common.ps1'
+  $aclWrapper = Join-Path $aclVersionDirectory 'start-baogiang-api.ps1'
+  $aclCommon = Join-Path $aclVersionDirectory 'deployment-common.ps1'
   $aclMarker = Join-Path $aclShared 'deployment-identity.json'
   foreach ($leaf in @($aclEnv,$aclWrapper,$aclCommon,$aclMarker)) { Set-Content -LiteralPath $leaf -Value 'fixture' -Encoding UTF8 }
   $aclInputs = @{
@@ -303,6 +307,7 @@ try {
   foreach ($directory in @('staging','incoming','backups')) { Assert-AclPolicyPath -Path (Join-Path $aclRoot $directory) -Kind directory -ExpectedRights $deploymentOnlyRights }
   Assert-AclPolicyPath -Path (Join-Path $aclRoot 'shared') -Kind directory -ExpectedRights $apiReadExecuteRights
   Assert-AclPolicyPath -Path (Join-Path $aclRoot 'logs') -Kind directory -ExpectedRights @{ SYSTEM = $aclFull; Administrators = $aclFull; DeploymentIdentity = $aclModify; ApiRuntimeIdentity = $aclModify }
+  foreach ($directory in @($aclBundleRoot,$aclVersionDirectory)) { Assert-AclPolicyPath -Path $directory -Kind directory -ExpectedRights $apiReadExecuteRights }
   foreach ($leaf in @($aclMarker,$aclEnv)) { Assert-AclPolicyPath -Path $leaf -Kind file -ExpectedRights @{ SYSTEM = $aclFull; Administrators = $aclFull; DeploymentIdentity = $aclModify; ApiRuntimeIdentity = $aclRead } }
   foreach ($leaf in @($aclWrapper,$aclCommon)) { Assert-AclPolicyPath -Path $leaf -Kind file -ExpectedRights $apiReadExecuteRights }
   $aclPlanScript = Join-Path $repo 'scripts\deploy\windows\production-root-acl-plan.ps1'
@@ -361,6 +366,196 @@ try {
   Remove-Item -LiteralPath $pathReleases -Force
   New-Item -ItemType Directory -Path $pathReleases | Out-Null
   foreach ($directory in Get-ProductionRequiredDirectoryNames) { Assert-ExistingNonReparseDirectory -Path (Join-Path $pathFixtureRoot $directory) -Role PRODUCTION_SUBDIRECTORY | Out-Null }
+
+  $sbRepo = Join-Path $temp 'startup-bundle-source-repo'
+  New-Item -ItemType Directory -Path $sbRepo -Force | Out-Null
+  & git -C $sbRepo init --quiet
+  & git -C $sbRepo config user.email 'fixture@example.invalid'
+  & git -C $sbRepo config user.name 'Startup Bundle Fixture'
+  & git -C $sbRepo config core.autocrlf false
+  & git -C $sbRepo commit --allow-empty --quiet -m empty
+  if ($LASTEXITCODE -ne 0) { throw 'SB-P3 fixture repository initialization failed.' }
+  $sbEmptyCommit = (& git -C $sbRepo rev-parse HEAD).Trim()
+  $sbSourceDirectory = Join-Path $sbRepo 'scripts\deploy\windows'
+  New-Item -ItemType Directory -Path $sbSourceDirectory -Force | Out-Null
+  $sbSourceWrapper = Join-Path $sbSourceDirectory 'start-baogiang-api.ps1'
+  $sbSourceCommon = Join-Path $sbSourceDirectory 'deployment-common.ps1'
+  [byte[]]$sbWrapperABytes = [Text.Encoding]::UTF8.GetBytes("wrapper-A`r`nexact-blob`n")
+  [byte[]]$sbCommonABytes = [Text.Encoding]::UTF8.GetBytes("common-A`nexact-blob-without-working-tree-authority")
+  [IO.File]::WriteAllBytes($sbSourceWrapper,$sbWrapperABytes)
+  [IO.File]::WriteAllBytes($sbSourceCommon,$sbCommonABytes)
+  & git -C $sbRepo add -- scripts/deploy/windows/start-baogiang-api.ps1 scripts/deploy/windows/deployment-common.ps1
+  & git -C $sbRepo commit --quiet -m bundle-a
+  if ($LASTEXITCODE -ne 0) { throw 'SB-P1 fixture commit A failed.' }
+  $sbCommitA = (& git -C $sbRepo rev-parse HEAD).Trim()
+  $sbRoot = Join-Path $temp 'startup-bundle-production-root'
+  $sbPlanScript = Join-Path $repo 'scripts\deploy\windows\production-startup-bundle-plan.ps1'
+  $sbVerifyScript = Join-Path $repo 'scripts\deploy\windows\production-startup-bundle-verify.ps1'
+  $sbPlanA1 = Join-Path $temp 'startup-plan-a1.json'
+  $sbPlanA2 = Join-Path $temp 'startup-plan-a2.json'
+  foreach ($planReport in @($sbPlanA1,$sbPlanA2)) {
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $sbPlanScript -RepositoryRoot $sbRepo -ReviewedCommitSha $sbCommitA -Root $sbRoot -ReportPath $planReport | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'SB-P1 exact-commit provenance plan failed.' }
+  }
+  $sbPlanA = Get-Content -LiteralPath $sbPlanA1 -Raw | ConvertFrom-Json
+  $sbPlanARepeat = Get-Content -LiteralPath $sbPlanA2 -Raw | ConvertFrom-Json
+  if (($sbPlanA | ConvertTo-Json -Depth 10 -Compress) -cne ($sbPlanARepeat | ConvertTo-Json -Depth 10 -Compress) -or $sbPlanA.source.wrapper.sha256 -ne (Get-Sha256FromBytes $sbWrapperABytes) -or $sbPlanA.source.common.sha256 -ne (Get-Sha256FromBytes $sbCommonABytes) -or $sbPlanA.source.wrapper.gitBlobOid -notmatch '^[0-9a-f]{40,64}$' -or $sbPlanA.source.common.gitBlobOid -notmatch '^[0-9a-f]{40,64}$') { throw 'SB-P1 deterministic Git-blob provenance failed.' }
+
+  [IO.File]::WriteAllBytes($sbSourceWrapper,[Text.Encoding]::UTF8.GetBytes('dirty wrapper must not be authoritative'))
+  [IO.File]::WriteAllBytes($sbSourceCommon,[Text.Encoding]::UTF8.GetBytes('dirty common must not be authoritative'))
+  $sbDirtyPlan = Join-Path $temp 'startup-plan-dirty-worktree.json'
+  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $sbPlanScript -RepositoryRoot $sbRepo -ReviewedCommitSha $sbCommitA -Root $sbRoot -ReportPath $sbDirtyPlan | Out-Null
+  $sbDirtyAuthority = Get-Content -LiteralPath $sbDirtyPlan -Raw | ConvertFrom-Json
+  if ($LASTEXITCODE -ne 0 -or $sbDirtyAuthority.source.wrapper.sha256 -ne $sbPlanA.source.wrapper.sha256 -or $sbDirtyAuthority.source.common.sha256 -ne $sbPlanA.source.common.sha256 -or $sbDirtyAuthority.source.wrapper.gitBlobOid -ne $sbPlanA.source.wrapper.gitBlobOid -or $sbDirtyAuthority.source.common.gitBlobOid -ne $sbPlanA.source.common.gitBlobOid) { throw 'SB-P2 dirty working tree changed provenance authority.' }
+
+  $invalidPlanReport = Join-Path $temp 'startup-plan-invalid.json'
+  $savedErrorActionPreference = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $sbPlanScript -RepositoryRoot $sbRepo -ReviewedCommitSha $sbEmptyCommit -Root $sbRoot -ReportPath $invalidPlanReport 2>&1 | Out-Null
+  $invalidPlanExitCode = $LASTEXITCODE; $ErrorActionPreference = $savedErrorActionPreference
+  if ($invalidPlanExitCode -eq 0 -or (Test-Path -LiteralPath $invalidPlanReport)) { throw 'SB-P3 missing exact-commit source paths did not fail closed.' }
+  $expectedLayoutA = Get-CanonicalStartupBundleLayout -Root $sbRoot -ReviewedCommitSha $sbCommitA
+  if ((Normalize-ComparablePath $sbPlanA.destination.versionDirectory) -ne (Normalize-ComparablePath $expectedLayoutA.versionDirectory) -or (Split-Path -Leaf $sbPlanA.destination.versionDirectory) -cne $sbCommitA) { throw 'SB-P4 canonical version layout mismatch.' }
+  foreach ($invalidWrapper in @(
+    (Join-Path $sbRoot 'shared\start-baogiang-api.ps1'),
+    (Join-Path $sbRoot "shared\other-parent\$sbCommitA\start-baogiang-api.ps1"),
+    (Join-Path $sbRoot ("shared\startup-bundles\" + ('f' * 39) + '\start-baogiang-api.ps1')),
+    (Join-Path $sbRoot "shared\startup-bundles\$sbCommitA\..\start-baogiang-api.ps1")
+  )) {
+    $layoutRejected = $false
+    try { Get-CanonicalStartupBundleLayoutFromWrapper -Root $sbRoot -StartupWrapper $invalidWrapper | Out-Null } catch { $layoutRejected = $true }
+    if (-not $layoutRejected) { throw "SB-P4 invalid wrapper layout was accepted: $invalidWrapper" }
+  }
+
+  $sbDeploymentSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+  $sbApiSid = 'S-1-5-19'
+  $sbWebSid = 'S-1-5-20'
+  $sbEnv = Join-Path $sbRoot 'shared\production.env'
+  $sbVerifyReport = Join-Path $temp 'startup-verify.json'
+  function Assert-StartupVerifierState([string]$PlanPath,[string]$ExpectedState,[string]$ExpectedCategory,[bool]$ShouldFail,[string]$ExpectedDigest = '') {
+    $digest = if ([string]::IsNullOrWhiteSpace($ExpectedDigest)) { Get-Sha256FromBytes ([IO.File]::ReadAllBytes($PlanPath)) } else { $ExpectedDigest }
+    if (Test-Path -LiteralPath $sbVerifyReport) { Remove-Item -LiteralPath $sbVerifyReport -Force }
+    $savedPreference = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    $verifyOutput = (& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $sbVerifyScript -PlanPath $PlanPath -ExpectedPlanSha256 $digest -Root $sbRoot -DeploymentIdentity $sbDeploymentSid -ApiRuntimeIdentity $sbApiSid -WebRuntimeIdentity $sbWebSid -EnvFile $sbEnv -ReportPath $sbVerifyReport 2>&1 | Out-String)
+    $exitCode = $LASTEXITCODE
+    $ErrorActionPreference = $savedPreference
+    if (-not (Test-Path -LiteralPath $sbVerifyReport -PathType Leaf)) { throw "Startup verifier did not emit a report. Exit=$exitCode Output=$verifyOutput" }
+    $report = Get-Content -LiteralPath $sbVerifyReport -Raw | ConvertFrom-Json
+    if ($report.state -cne $ExpectedState -or $report.category -cne $ExpectedCategory -or ($ShouldFail -and $exitCode -eq 0) -or (-not $ShouldFail -and $exitCode -ne 0)) { throw "Startup verifier state mismatch: expected $ExpectedState/$ExpectedCategory/fail=$ShouldFail; actual $($report.state)/$($report.category)/exit=$exitCode/check=$(@($report.checks | Select-Object -First 1).state). Checks=$($report.checks | ConvertTo-Json -Depth 5 -Compress) Output=$verifyOutput" }
+    return $report
+  }
+  Assert-StartupVerifierState -PlanPath $sbPlanA1 -ExpectedState INSTALL_REQUIRED -ExpectedCategory DESTINATION_MISSING -ShouldFail $false | Out-Null
+  if (Test-Path -LiteralPath $sbRoot) { throw 'SB-P5 verifier created the missing production destination.' }
+
+  $tamperedPlan = $sbPlanA | ConvertTo-Json -Depth 10 | ConvertFrom-Json
+  $tamperedPlan.destination.versionDirectory = Join-Path $sbRoot ('shared\startup-bundles\' + ('f' * 40))
+  $tamperedPlanPath = Join-Path $temp 'startup-plan-tampered.json'
+  $tamperedPlan | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $tamperedPlanPath -Encoding UTF8
+  Assert-StartupVerifierState -PlanPath $tamperedPlanPath -ExpectedState CONFLICT -ExpectedCategory PLAN_INVALID -ShouldFail $true | Out-Null
+
+  $sbShared = Join-Path $sbRoot 'shared'
+  New-Item -ItemType Directory -Path $sbShared -Force | Out-Null
+  $sbReparseTarget = Join-Path $temp 'startup-bundle-reparse-target'
+  New-Item -ItemType Directory -Path $sbReparseTarget -Force | Out-Null
+  New-Item -ItemType Junction -Path $expectedLayoutA.bundleRoot -Target $sbReparseTarget | Out-Null
+  Assert-StartupVerifierState -PlanPath $sbPlanA1 -ExpectedState CONFLICT -ExpectedCategory REPARSE_POINT -ShouldFail $true | Out-Null
+  Remove-Item -LiteralPath $expectedLayoutA.bundleRoot -Force
+  New-Item -ItemType Directory -Path $expectedLayoutA.bundleRoot -Force | Out-Null
+  New-Item -ItemType Junction -Path $expectedLayoutA.versionDirectory -Target $sbReparseTarget | Out-Null
+  Assert-StartupVerifierState -PlanPath $sbPlanA1 -ExpectedState CONFLICT -ExpectedCategory REPARSE_POINT -ShouldFail $true | Out-Null
+  Remove-Item -LiteralPath $expectedLayoutA.versionDirectory -Force
+  New-Item -ItemType Directory -Path $expectedLayoutA.versionDirectory -Force | Out-Null
+  $sbFileSymlinkTarget = Join-Path $temp 'startup-wrapper-symlink-target.ps1'
+  [IO.File]::WriteAllBytes($sbFileSymlinkTarget,$sbWrapperABytes)
+  try {
+    New-Item -ItemType SymbolicLink -Path $expectedLayoutA.wrapperPath -Target $sbFileSymlinkTarget -ErrorAction Stop | Out-Null
+  } catch {
+    $sbFileReparseTarget = Join-Path $temp 'startup-wrapper-reparse-target'
+    New-Item -ItemType Directory -Path $sbFileReparseTarget -Force | Out-Null
+    New-Item -ItemType Junction -Path $expectedLayoutA.wrapperPath -Target $sbFileReparseTarget | Out-Null
+  }
+  [IO.File]::WriteAllBytes($expectedLayoutA.commonPath,$sbCommonABytes)
+  Assert-StartupVerifierState -PlanPath $sbPlanA1 -ExpectedState CONFLICT -ExpectedCategory REPARSE_POINT -ShouldFail $true | Out-Null
+  Remove-Item -LiteralPath $expectedLayoutA.wrapperPath -Force
+  Remove-Item -LiteralPath $expectedLayoutA.commonPath -Force
+
+  [IO.File]::WriteAllBytes($expectedLayoutA.wrapperPath,$sbWrapperABytes)
+  Assert-StartupVerifierState -PlanPath $sbPlanA1 -ExpectedState CONFLICT -ExpectedCategory PARTIAL_DESTINATION -ShouldFail $true | Out-Null
+  [IO.File]::WriteAllBytes($expectedLayoutA.commonPath,$sbCommonABytes)
+  [IO.File]::WriteAllBytes($expectedLayoutA.wrapperPath,[Text.Encoding]::UTF8.GetBytes('wrong installed bytes'))
+  $sbInstalledEntryNames = @(Get-ChildItem -LiteralPath $expectedLayoutA.versionDirectory -Force | ForEach-Object { $_.Name })
+  if ($sbInstalledEntryNames.Count -ne 2 -or -not ($sbInstalledEntryNames -ccontains 'start-baogiang-api.ps1') -or -not ($sbInstalledEntryNames -ccontains 'deployment-common.ps1')) { throw "SB-P7 fixture did not contain the exact bundle pair: $($sbInstalledEntryNames -join ',')." }
+  Assert-StartupVerifierState -PlanPath $sbPlanA1 -ExpectedState CONFLICT -ExpectedCategory HASH_MISMATCH -ShouldFail $true | Out-Null
+  [IO.File]::WriteAllBytes($expectedLayoutA.wrapperPath,$sbWrapperABytes)
+  $sbExtraFile = Join-Path $expectedLayoutA.versionDirectory 'unexpected.ps1'
+  [IO.File]::WriteAllText($sbExtraFile,'unexpected')
+  Assert-StartupVerifierState -PlanPath $sbPlanA1 -ExpectedState CONFLICT -ExpectedCategory UNEXPECTED_FILE -ShouldFail $true | Out-Null
+  Remove-Item -LiteralPath $sbExtraFile -Force
+
+  function Set-DisposableAclFromPolicy([Parameter(Mandatory = $true)]$PolicyPath) {
+    $security = if ($PolicyPath.kind -eq 'directory') { [Security.AccessControl.DirectorySecurity]::new() } else { [Security.AccessControl.FileSecurity]::new() }
+    $security.SetAccessRuleProtection($true,$false)
+    foreach ($ace in @($PolicyPath.desiredAces)) {
+      $rule = [Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new($ace.sid),[Security.AccessControl.FileSystemRights]$ace.rightsValue,[Security.AccessControl.InheritanceFlags]$ace.inheritanceFlagsValue,[Security.AccessControl.PropagationFlags]$ace.propagationFlagsValue,[Security.AccessControl.AccessControlType]::Allow)
+      [void]$security.AddAccessRule($rule)
+    }
+    if ($PolicyPath.kind -eq 'directory') { [IO.Directory]::SetAccessControl($PolicyPath.path,$security) } else { [IO.File]::SetAccessControl($PolicyPath.path,$security) }
+  }
+  function Get-StartupPolicyPaths([string]$WrapperPath) {
+    $policy = Get-ProductionAclPolicy -CanonicalRoot $sbRoot -DeploymentIdentity $sbDeploymentSid -ApiRuntimeIdentity $sbApiSid -WebRuntimeIdentity $sbWebSid -EnvFile $sbEnv -StartupWrapper $WrapperPath
+    $layout = Get-CanonicalStartupBundleLayoutFromWrapper -Root $sbRoot -StartupWrapper $WrapperPath
+    $paths = @(@($layout.bundleRoot,$layout.versionDirectory,$layout.wrapperPath,$layout.commonPath) | ForEach-Object { Normalize-ComparablePath $_ })
+    return @($policy.protectedPaths | Where-Object { $paths -contains (Normalize-ComparablePath $_.path) })
+  }
+  $sbPolicyAPaths = @(Get-StartupPolicyPaths $expectedLayoutA.wrapperPath)
+  foreach ($policyPath in $sbPolicyAPaths) { Set-DisposableAclFromPolicy $policyPath }
+  foreach ($policyPath in $sbPolicyAPaths) {
+    $fixtureAclSnapshot = Get-ActualAclSnapshot $policyPath.path
+    $fixtureAclComparison = Compare-AclSnapshotToPolicy $policyPath $fixtureAclSnapshot
+    if ($fixtureAclComparison.state -ne 'PASS') { throw "SB-P10 fixture ACL setup mismatch. Policy=$($policyPath.desiredAces | ConvertTo-Json -Depth 4 -Compress) Actual=$($fixtureAclSnapshot.access | ConvertTo-Json -Depth 4 -Compress)" }
+  }
+  Assert-StartupVerifierState -PlanPath $sbPlanA1 -ExpectedState PASS -ExpectedCategory EXACT_BUNDLE_VERIFIED -ShouldFail $false | Out-Null
+  $sbAWrapperHashBefore = Get-Sha256FromBytes ([IO.File]::ReadAllBytes($expectedLayoutA.wrapperPath))
+  $sbACommonHashBefore = Get-Sha256FromBytes ([IO.File]::ReadAllBytes($expectedLayoutA.commonPath))
+  Assert-StartupVerifierState -PlanPath $sbPlanA1 -ExpectedState PASS -ExpectedCategory EXACT_BUNDLE_VERIFIED -ShouldFail $false | Out-Null
+  if ((Get-Sha256FromBytes ([IO.File]::ReadAllBytes($expectedLayoutA.wrapperPath))) -ne $sbAWrapperHashBefore -or (Get-Sha256FromBytes ([IO.File]::ReadAllBytes($expectedLayoutA.commonPath))) -ne $sbACommonHashBefore) { throw 'SB-P11 idempotent verification mutated exact bundle bytes.' }
+
+  $startupLeafPolicy = $sbPolicyAPaths | Where-Object { (Normalize-ComparablePath $_.path) -eq (Normalize-ComparablePath $expectedLayoutA.wrapperPath) } | Select-Object -First 1
+  if (@($startupLeafPolicy.desiredAces | Where-Object { $_.role -eq 'ApiRuntimeIdentity' -and $_.rightsValue -eq [int64][Security.AccessControl.FileSystemRights]::ReadAndExecute }).Count -ne 1 -or @($startupLeafPolicy.desiredAces | Where-Object { $_.role -eq 'DeploymentIdentity' -and $_.rightsValue -eq [int64][Security.AccessControl.FileSystemRights]::Modify }).Count -ne 1 -or @($startupLeafPolicy.desiredAces | Where-Object { $_.role -match 'WebRuntimeIdentity' }).Count -ne 0) { throw 'SB-P13 startup ACL role matrix mismatch.' }
+  $startupExactSnapshot = [pscustomobject]@{ inheritanceProtected = $true; access = @($startupLeafPolicy.desiredAces | ForEach-Object { Normalize-AclRule $_ }) }
+  $startupBroad = New-ProductionAclRule -Role UnexpectedBroad -Sid 'S-1-5-32-545' -Rights ([Security.AccessControl.FileSystemRights]::Read)
+  if ((Compare-AclSnapshotToPolicy $startupLeafPolicy ([pscustomobject]@{ inheritanceProtected = $true; access = @($startupExactSnapshot.access) + @(Normalize-AclRule $startupBroad) })).state -ne 'UNEXPECTED_ACE') { throw 'SB-P13 broad ACL mismatch passed.' }
+  $startupDeny = Normalize-AclRule $startupLeafPolicy.desiredAces[0]; $startupDeny.accessControlTypeValue = [int][Security.AccessControl.AccessControlType]::Deny
+  if ((Compare-AclSnapshotToPolicy $startupLeafPolicy ([pscustomobject]@{ inheritanceProtected = $true; access = @($startupExactSnapshot.access) + @($startupDeny) })).state -ne 'DENY_ACE' -or (Compare-AclSnapshotToPolicy $startupLeafPolicy ([pscustomobject]@{ inheritanceProtected = $false; access = @($startupExactSnapshot.access) })).state -ne 'INHERITANCE_MISMATCH') { throw 'SB-P13 DENY/inheritance mismatch passed.' }
+  $wrongStartupRights = @($startupExactSnapshot.access | ForEach-Object { $_ | Select-Object * }); $wrongStartupRights[0].rightsValue = [int64][Security.AccessControl.FileSystemRights]::Read
+  if ((Compare-AclSnapshotToPolicy $startupLeafPolicy ([pscustomobject]@{ inheritanceProtected = $true; access = $wrongStartupRights })).state -ne 'RIGHTS_MISMATCH') { throw 'SB-P13 wrong rights passed.' }
+
+  $wrapperSecurity = [IO.File]::GetAccessControl($expectedLayoutA.wrapperPath)
+  $wrapperSecurity.SetAccessRuleProtection($false,$true)
+  [IO.File]::SetAccessControl($expectedLayoutA.wrapperPath,$wrapperSecurity)
+  Assert-StartupVerifierState -PlanPath $sbPlanA1 -ExpectedState CONFLICT -ExpectedCategory ACL_MISMATCH -ShouldFail $true | Out-Null
+  Set-DisposableAclFromPolicy $startupLeafPolicy
+  Assert-StartupVerifierState -PlanPath $sbPlanA1 -ExpectedState PASS -ExpectedCategory EXACT_BUNDLE_VERIFIED -ShouldFail $false | Out-Null
+
+  [byte[]]$sbWrapperBBytes = [Text.Encoding]::UTF8.GetBytes("wrapper-B`nnew-version")
+  [byte[]]$sbCommonBBytes = [Text.Encoding]::UTF8.GetBytes("common-B`r`nnew-version")
+  [IO.File]::WriteAllBytes($sbSourceWrapper,$sbWrapperBBytes)
+  [IO.File]::WriteAllBytes($sbSourceCommon,$sbCommonBBytes)
+  & git -C $sbRepo add -- scripts/deploy/windows/start-baogiang-api.ps1 scripts/deploy/windows/deployment-common.ps1
+  & git -C $sbRepo commit --quiet -m bundle-b
+  if ($LASTEXITCODE -ne 0) { throw 'SB-P12 fixture commit B failed.' }
+  $sbCommitB = (& git -C $sbRepo rev-parse HEAD).Trim()
+  $sbPlanBPath = Join-Path $temp 'startup-plan-b.json'
+  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $sbPlanScript -RepositoryRoot $sbRepo -ReviewedCommitSha $sbCommitB -Root $sbRoot -ReportPath $sbPlanBPath | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw 'SB-P12 provenance plan B failed.' }
+  $sbPlanB = Get-Content -LiteralPath $sbPlanBPath -Raw | ConvertFrom-Json
+  if ((Normalize-ComparablePath $sbPlanB.destination.versionDirectory) -eq (Normalize-ComparablePath $sbPlanA.destination.versionDirectory)) { throw 'SB-P12 commit B reused commit A directory.' }
+  Assert-StartupVerifierState -PlanPath $sbPlanBPath -ExpectedState INSTALL_REQUIRED -ExpectedCategory DESTINATION_MISSING -ShouldFail $false | Out-Null
+  New-Item -ItemType Directory -Path $sbPlanB.destination.versionDirectory -Force | Out-Null
+  [IO.File]::WriteAllBytes($sbPlanB.destination.wrapperPath,$sbWrapperBBytes)
+  [IO.File]::WriteAllBytes($sbPlanB.destination.commonPath,$sbCommonBBytes)
+  foreach ($policyPath in @(Get-StartupPolicyPaths $sbPlanB.destination.wrapperPath)) { Set-DisposableAclFromPolicy $policyPath }
+  Assert-StartupVerifierState -PlanPath $sbPlanBPath -ExpectedState PASS -ExpectedCategory EXACT_BUNDLE_VERIFIED -ShouldFail $false | Out-Null
+  if ((Get-Sha256FromBytes ([IO.File]::ReadAllBytes($expectedLayoutA.wrapperPath))) -ne $sbAWrapperHashBefore -or (Get-Sha256FromBytes ([IO.File]::ReadAllBytes($expectedLayoutA.commonPath))) -ne $sbACommonHashBefore) { throw 'SB-P12 update changed prior bundle A.' }
 
   $schemaRoot = 'C:\fixture\baogiang'
   $validMarker = [pscustomobject]@{
@@ -425,7 +620,9 @@ try {
   $firstDeployRoot = Join-Path $temp 'first-deploy-root'
   foreach ($directory in @('releases','staging','incoming','shared','logs','backups')) { New-Item -ItemType Directory -Path (Join-Path $firstDeployRoot $directory) -Force | Out-Null }
   $firstDeployShared = Join-Path $firstDeployRoot 'shared'
-  $firstDeployWrapper = Join-Path $firstDeployShared 'start-baogiang-api.ps1'; $firstDeployCommon = Join-Path $firstDeployShared 'deployment-common.ps1'
+  $firstDeployBundle = Get-CanonicalStartupBundleLayout -Root $firstDeployRoot -ReviewedCommitSha ('b' * 40)
+  New-Item -ItemType Directory -Path $firstDeployBundle.versionDirectory -Force | Out-Null
+  $firstDeployWrapper = $firstDeployBundle.wrapperPath; $firstDeployCommon = $firstDeployBundle.commonPath
   $firstDeployNode = Join-Path $temp 'first-deploy-node.exe'; $firstDeployEnv = Join-Path $temp 'first-deploy.env'; $firstDeployNginx = Join-Path $temp 'first-deploy-nginx.exe'; $firstDeployConfig = Join-Path $temp 'first-deploy-nginx.conf'; $firstDeployTaskExe = Join-Path $temp 'first-deploy-powershell.exe'
   foreach ($leaf in @($firstDeployWrapper,$firstDeployCommon,$firstDeployNode,$firstDeployEnv,$firstDeployNginx,$firstDeployConfig,$firstDeployTaskExe)) { [IO.File]::WriteAllText($leaf, "fixture $leaf") }
   $firstDeployMarker = [pscustomobject]@{
@@ -439,6 +636,20 @@ try {
   if (Test-Path -LiteralPath $firstDeployMarker.entryPoint -PathType Leaf) { throw 'Pre-first-deploy fixture unexpectedly has a current entry point.' }
   function Get-FileHash([string]$LiteralPath,[string]$Algorithm) { [pscustomobject]@{ Hash = Get-SensitiveTextHash ([IO.File]::ReadAllText($LiteralPath)) } }
   Read-DeploymentIdentity -Root $firstDeployRoot -ServiceKind scheduled-task -ServiceName BaoGiangBackend -EnvFile $firstDeployEnv -StartupWrapper $firstDeployWrapper -ExpectedEntryPoint $firstDeployMarker.entryPoint -NodeExe $firstDeployNode -NginxExe $firstDeployNginx -NginxConfig $firstDeployConfig | Out-Null
+  foreach ($markerBindingFixture in @(
+    @{ label = 'wrapper path'; mutate = { param($m) $m.startupBundle.wrapperPath = Join-Path $firstDeployBundle.versionDirectory 'other-wrapper.ps1' } },
+    @{ label = 'common path'; mutate = { param($m) $m.startupBundle.commonPath = Join-Path $firstDeployBundle.versionDirectory 'other-common.ps1' } },
+    @{ label = 'wrapper hash'; mutate = { param($m) $m.startupBundle.wrapperSha256 = 'c' * 64 } },
+    @{ label = 'common hash'; mutate = { param($m) $m.startupBundle.commonSha256 = 'd' * 64 } }
+  )) {
+    $candidateMarker = $firstDeployMarker | ConvertTo-Json -Depth 8 | ConvertFrom-Json
+    & $markerBindingFixture.mutate $candidateMarker
+    $candidateMarker | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $firstDeployShared 'deployment-identity.json') -Encoding UTF8
+    $rejected = $false
+    try { Read-DeploymentIdentity -Root $firstDeployRoot -ServiceKind scheduled-task -ServiceName BaoGiangBackend -EnvFile $firstDeployEnv -StartupWrapper $firstDeployWrapper -ExpectedEntryPoint $firstDeployMarker.entryPoint -NodeExe $firstDeployNode -NginxExe $firstDeployNginx -NginxConfig $firstDeployConfig | Out-Null } catch { $rejected = $true }
+    if (-not $rejected) { throw "SB-P14 active marker $($markerBindingFixture.label) mismatch was accepted." }
+  }
+  $firstDeployMarker | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $firstDeployShared 'deployment-identity.json') -Encoding UTF8
   $identityRootJunction = Join-Path $temp 'identity-root-junction'
   New-Item -ItemType Junction -Path $identityRootJunction -Target $firstDeployRoot | Out-Null
   $identityReparseRejected = $false
@@ -748,7 +959,7 @@ try {
   $global:LASTEXITCODE = 77
   & { [pscustomobject]@{ state = 'completed' } } | Out-Null
   if ($LASTEXITCODE -ne 77) { throw 'Fixture did not preserve stale native exit code.' }
-  Write-Output '[deployment-windows] PASS (ACL-P1..ACL-P8, PATH-P1..PATH-P3, preflight isolation, SSH host-key/firewall, exact psql, privacy, safe-stop, migration and transfer fixtures)'
+  Write-Output '[deployment-windows] PASS (ACL-P1..ACL-P8, PATH-P1..PATH-P3, SB-P1..SB-P14, preflight isolation, SSH host-key/firewall, exact psql, privacy, safe-stop, migration and transfer fixtures)'
 } finally {
   if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Recurse -Force }
 }
