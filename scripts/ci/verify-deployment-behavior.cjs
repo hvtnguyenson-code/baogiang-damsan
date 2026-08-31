@@ -21,6 +21,8 @@ const aclPlan = read('scripts/deploy/windows/production-root-acl-plan.ps1');
 const aclVerify = read('scripts/deploy/windows/production-root-acl-verify.ps1');
 const startupBundlePlan = read('scripts/deploy/windows/production-startup-bundle-plan.ps1');
 const startupBundleVerify = read('scripts/deploy/windows/production-startup-bundle-verify.ps1');
+const nginxPlan = read('scripts/deploy/windows/production-nginx-plan.ps1');
+const nginxVerify = read('scripts/deploy/windows/production-nginx-verify.ps1');
 const firstDeployRunbook = read('docs/operations/PRODUCTION-CD-FIRST-DEPLOY-RUNBOOK.md');
 const remote = require('./build-windows-remote-command.cjs');
 
@@ -118,4 +120,8 @@ assert.ok(common.indexOf('Assert-ExistingNonReparseDirectory -Path $canonicalRoo
 assert.match(common, /function Get-ProductionAclPolicy/); assert.match(common, /function Normalize-AclRule/); assert.match(common, /rightsValue/); assert.match(common, /function Compare-AclSnapshotToPolicy/); assert.match(common, /INHERITANCE_MISMATCH/); assert.match(common, /DENY_ACE/); assert.match(common, /DUPLICATE_SEMANTIC_ACE/);
 assert.match(aclVerify, /Get-ActualAclSnapshot/); assert.match(aclVerify, /broadPrincipalDetected/); assert.match(aclVerify, /PRODUCTION_ROOT_ACL_VERIFY_FAILED/); assert.doesNotMatch(aclVerify, /Join-Path \$policy\.canonicalRoot 'current'/);
 assert.ok(aclVerify.indexOf('Get-PathSecurityClassification -Path $canonicalRoot') < aclVerify.indexOf('$policy = Get-ProductionAclPolicy')); assert.ok(aclVerify.indexOf('foreach ($name in Get-ProductionRequiredDirectoryNames)') < aclVerify.indexOf('$policy = Get-ProductionAclPolicy')); assert.ok(aclVerify.indexOf('Get-ProductionAclPolicy') < aclVerify.indexOf('Get-ActualAclSnapshot'));
+assert.match(common, /function Get-NginxRuntimeBinding/); assert.match(common, /reviewedNginxPrefix/); assert.match(common, /function Get-NginxTokens/); assert.match(common, /function Read-NginxAst/); assert.match(common, /function Get-NginxEffectiveGraph/); assert.match(common, /NGINX_INCLUDE_CYCLE/); assert.match(common, /function Invoke-ReviewedNginxSyntaxTest/);
+assert.match(nginxPlan, /READY_FOR_MANUAL_APPLY/); assert.match(nginxPlan, /SNAPSHOT_REQUIRED/); assert.match(nginxPlan, /BLOCKED_INCLUDE_BOUNDARY/); assert.match(nginxPlan, /Get-NginxNeighborSnapshot/); assert.match(nginxPlan, /MANUAL_ONLY|Get-NginxCommandPlan/);
+assert.match(nginxVerify, /ValidateSet\('Desired','Restored'\)/); assert.match(nginxVerify, /EXACT_NGINX_AUTHORITY_VERIFIED/); assert.match(nginxVerify, /RESTORE_VERIFIED/); assert.match(nginxVerify, /Assert-NginxNeighborSnapshot/); assert.doesNotMatch(`${nginxPlan}\n${nginxVerify}`, /\b(?:Set-Content|Copy-Item|Move-Item|Remove-Item|New-Item|Stop-Process|Restart-Service|Stop-Service|taskkill)\b/);
+assert.ok(invoke.indexOf('Invoke-ReviewedNginxSyntaxTest') < invoke.indexOf('Move-Item -LiteralPath $source')); assert.match(invoke, /reviewedNginxPrefix/); assert.doesNotMatch(invoke, /-s['"\s,]+reload/);
 console.log('[deployment-behavior] PASS (redaction, identity, preflight evidence, artifact, migration, rollback and transfer fixtures)');

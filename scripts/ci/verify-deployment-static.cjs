@@ -6,7 +6,7 @@ const workflowPath = path.join(root, '.github', 'workflows', 'deploy-production.
 const firstDeployRunbookPath = path.join(root, 'docs', 'operations', 'PRODUCTION-CD-FIRST-DEPLOY-RUNBOOK.md');
 const environmentConfigurationPath = path.join(root, 'docs', 'operations', 'PRODUCTION-ENVIRONMENT-CONFIGURATION.md');
 const scriptDir = path.join(root, 'scripts', 'deploy', 'windows');
-const required = ['deployment-common.ps1','production-root-acl-plan.ps1','production-root-acl-verify.ps1','production-startup-bundle-plan.ps1','production-startup-bundle-verify.ps1','production-preflight-readonly.ps1','production-protected-neighbor-discovery.ps1','install-release.ps1','backup-database.ps1','run-migrations.ps1','sync-capability-catalog.ps1','switch-current-release.ps1','restart-baogiang-api.ps1','start-baogiang-api.ps1','validate-production-environment.ps1','test-production-health.ps1','rollback-release.ps1','invoke-production-deploy.ps1'];
+const required = ['deployment-common.ps1','production-root-acl-plan.ps1','production-root-acl-verify.ps1','production-startup-bundle-plan.ps1','production-startup-bundle-verify.ps1','production-nginx-plan.ps1','production-nginx-verify.ps1','production-preflight-readonly.ps1','production-protected-neighbor-discovery.ps1','install-release.ps1','backup-database.ps1','run-migrations.ps1','sync-capability-catalog.ps1','switch-current-release.ps1','restart-baogiang-api.ps1','start-baogiang-api.ps1','validate-production-environment.ps1','test-production-health.ps1','rollback-release.ps1','invoke-production-deploy.ps1'];
 const fail = (message) => { throw new Error(`[deployment-static] ${message}`); };
 const read = (file) => fs.readFileSync(file, 'utf8');
 if (!fs.existsSync(workflowPath)) fail('workflow is missing');
@@ -40,6 +40,8 @@ const aclPlan = read(path.join(scriptDir, 'production-root-acl-plan.ps1'));
 const aclVerify = read(path.join(scriptDir, 'production-root-acl-verify.ps1'));
 const startupBundlePlan = read(path.join(scriptDir, 'production-startup-bundle-plan.ps1'));
 const startupBundleVerify = read(path.join(scriptDir, 'production-startup-bundle-verify.ps1'));
+const nginxPlan = read(path.join(scriptDir, 'production-nginx-plan.ps1'));
+const nginxVerify = read(path.join(scriptDir, 'production-nginx-verify.ps1'));
 const p1ReadOnlyReportTools = [['root ACL plan', aclPlan], ['root ACL verifier', aclVerify], ['startup bundle plan', startupBundlePlan], ['startup bundle verifier', startupBundleVerify]];
 for (const [label, tool] of p1ReadOnlyReportTools) {
   const guard = tool.indexOf('Assert-SafeReadOnlyReportPath');
@@ -69,6 +71,15 @@ if (!(common.indexOf('function Assert-PathAncestorChainNonReparse') < common.ind
 if (!startupBundlePlan.includes('-AdditionalProtectedRoot $canonicalRepository')) fail('startup provenance plan must exclude its source repository from report sinks');
 if (!startupBundleVerify.includes('-ProtectedLeaf @($PlanPath)')) fail('startup verifier must protect its reviewed PlanPath from report overwrite');
 if ((common.match(/function\s+Get-ProductionAclPolicy/g) || []).length !== 1) fail('ACL desired policy must have exactly one production authority');
+for (const [label, nginxTool] of [['plan', nginxPlan], ['verifier', nginxVerify]]) {
+  if (/\b(Set-Content|Copy-Item|Move-Item|Remove-Item|New-Item|Stop-Process|Start-Service|Stop-Service|Restart-Service|taskkill)\b/i.test(nginxTool)) fail(`Nginx ${label} contains a forbidden mutation`);
+  if (/-s['"\s,]+(?:reload|stop|quit)/i.test(nginxTool)) fail(`Nginx ${label} must not execute a signal command`);
+  if (!nginxTool.includes('Assert-SafeReadOnlyReportPath') || nginxTool.indexOf('Assert-SafeReadOnlyReportPath') > nginxTool.indexOf('[IO.File]::WriteAllText')) fail(`Nginx ${label} must guard its report before writing`);
+  if (/function\s+(Get-NginxTokens|Read-NginxAst|Get-NginxEffectiveGraph|Get-CanonicalNginxManagedBytes)/i.test(nginxTool)) fail(`Nginx ${label} duplicates shared parser/policy authority`);
+}
+for (const token of ['function Get-NginxRuntimeBinding','reviewedNginxPrefix','function Get-NginxTokens','function Read-NginxAst','function Get-NginxEffectiveGraph','function Get-CanonicalNginxManagedBytes','function Invoke-ReviewedNginxSyntaxTest',"@('-p'", "'-t'", "'-c'"]) if (!common.includes(token)) fail(`Nginx shared authority missing: ${token}`);
+if (!invoke.includes('Invoke-ReviewedNginxSyntaxTest') || invoke.indexOf('Invoke-ReviewedNginxSyntaxTest') > invoke.indexOf('Move-Item -LiteralPath $source')) fail('controller must run the reviewed prefix-bound syntax test before mutation');
+if (/ReadAllBytes\s*\(?(?:\$privateKey|\$TlsPrivateKey)/i.test(`${common}\n${nginxPlan}\n${nginxVerify}`) || /Get-Content[^\n]*(?:PrivateKey|TlsPrivateKey)/i.test(`${common}\n${nginxPlan}\n${nginxVerify}`)) fail('Nginx authority must never read TLS private-key contents');
 if (!(common.indexOf('Assert-ExistingNonReparseDirectory -Path $canonicalRoot -Role PRODUCTION_ROOT') < common.indexOf("$markerPath = Join-Path $canonicalRoot 'shared\\deployment-identity.json'"))) fail('Read-DeploymentIdentity must reject root reparse before reading the marker');
 const workflowValidation = workflow.slice(workflow.indexOf('- name: Validate target, pinned SSH identity and environment contract'), workflow.indexOf('- name: Verify exact target CI success'));
 if (!workflowValidation.includes('[[ "$PROD_SERVICE_KIND" == "scheduled-task" ]]') || !workflowValidation.includes('Production CD currently supports scheduled-task only.')) fail('production workflow must restrict runtime kind to scheduled-task only');

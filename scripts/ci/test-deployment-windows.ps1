@@ -1050,7 +1050,89 @@ try {
   $global:LASTEXITCODE = 77
   & { [pscustomobject]@{ state = 'completed' } } | Out-Null
   if ($LASTEXITCODE -ne 77) { throw 'Fixture did not preserve stale native exit code.' }
-  Write-Output '[deployment-windows] PASS (ACL-P1..ACL-P8, PATH-P1..PATH-P3, SB-P1..SB-P14, RPT-P1..RPT-P9, preflight isolation, SSH host-key/firewall, exact psql, privacy, safe-stop, migration and transfer fixtures)'
+  # NGX-P1..NGX-P23: executable plan/apply/verify/restore authority fixtures.
+  $nginxFixture = Join-Path $temp 'nginx-authority'
+  $nginxProductionRoot = Join-Path $nginxFixture 'production'
+  $nginxShared = Join-Path $nginxProductionRoot 'shared'
+  $nginxPrefix = Join-Path $nginxFixture 'reviewed-nginx'
+  $nginxConf = Join-Path $nginxPrefix 'conf'
+  $nginxConfD = Join-Path $nginxConf 'conf.d'
+  $nginxEvidence = Join-Path $nginxFixture 'evidence'
+  foreach ($directory in @($nginxShared,$nginxConfD,$nginxEvidence)) { New-Item -ItemType Directory -Path $directory -Force | Out-Null }
+  $nginxExe = Join-Path $nginxPrefix 'fake-nginx.cmd'
+  $nginxTrace = Join-Path $nginxEvidence 'nginx-trace.txt'
+  [IO.File]::WriteAllLines($nginxExe,@('@echo off',"echo %*>>`"$nginxTrace`"",'if defined FAKE_NGINX_FAIL exit /b 9','exit /b 0'),[Text.ASCIIEncoding]::new())
+  $nginxMain = Join-Path $nginxConf 'nginx.conf'
+  $nginxNeighbor = Join-Path $nginxConfD 'foreign.conf'
+  $nginxManaged = Join-Path $nginxConfD 'baogiang.conf'
+  $nginxCertificate = Join-Path $nginxConf 'certificate.pem'
+  $nginxPrivateKey = Join-Path $nginxConf 'private-key.pem'
+  $privateKeySentinel = 'NGX_PRIVATE_KEY_SENTINEL_MUST_NEVER_LEAK_7F3A'
+  [IO.File]::WriteAllText($nginxMain,"events {}`nhttp { include conf/conf.d/*.conf; }`n",[Text.UTF8Encoding]::new($false))
+  [IO.File]::WriteAllText($nginxNeighbor,"server { listen 80; server_name baogiang.dtnt-damsan.edu.vn; }`n",[Text.UTF8Encoding]::new($false))
+  [IO.File]::WriteAllText($nginxCertificate,'fixture certificate metadata leaf',[Text.UTF8Encoding]::new($false))
+  [IO.File]::WriteAllText($nginxPrivateKey,$privateKeySentinel,[Text.UTF8Encoding]::new($false))
+  $startupVersion = Join-Path $nginxShared ('startup-bundles\' + ('a' * 40))
+  $startupWrapper = Join-Path $startupVersion 'start-baogiang-api.ps1'; $startupCommon = Join-Path $startupVersion 'deployment-common.ps1'
+  $marker = [ordered]@{
+    schemaVersion=1;systemId='baogiang-damsan';canonicalRoot=$nginxProductionRoot;domain='https://baogiang.dtnt-damsan.edu.vn';apiPort=3100
+    nodeExe='C:\fixture\node.exe';envFile=(Join-Path $nginxShared 'production.env');startupWrapper=$startupWrapper;entryPoint=(Join-Path $nginxProductionRoot 'current\apps\api\dist\main.js');nginxExe=$nginxExe;nginxConfig=$nginxMain
+    foreignIsolation=[ordered]@{reviewedNginxPrefix=$nginxPrefix;reviewedNginxConfig=$nginxMain;foreignRoots=@('C:\foreign-system');bootstrapReportReference='fixture-review'}
+    startupBundle=[ordered]@{wrapperPath=$startupWrapper;wrapperSha256=('a'*64);commonPath=$startupCommon;commonSha256=('b'*64)}
+    service=[ordered]@{kind='scheduled-task';name='BaoGiangBackend';taskPath='\BaoGiang\';account='fixture-account';execute='C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe';arguments='-File fixture.ps1';workingDirectory=$nginxShared}
+  }
+  [IO.File]::WriteAllText((Join-Path $nginxShared 'deployment-identity.json'),($marker|ConvertTo-Json -Depth 8),[Text.UTF8Encoding]::new($false))
+  $nginxPlanScript=Join-Path $repo 'scripts\deploy\windows\production-nginx-plan.ps1'; $nginxVerifyScript=Join-Path $repo 'scripts\deploy\windows\production-nginx-verify.ps1'
+  $nginxResults=[ordered]@{}; function Set-NgxPass([string]$Id){$nginxResults[$Id]='PASS'}
+  function Assert-NgxReject([scriptblock]$Action,[string]$Id){$didReject=$false;try{& $Action|Out-Null}catch{$didReject=$true};if(-not $didReject){throw "$Id expected rejection"};Set-NgxPass $Id}
+  function Invoke-NgxPlanFixture([string]$Path,[string]$Managed=$nginxManaged,[string]$Main=$nginxMain,[string]$Snapshot='') {
+    & $nginxPlanScript -RepositoryRoot $repo -Root $nginxProductionRoot -NginxExe $nginxExe -NginxPrefix $nginxPrefix -NginxConfig $Main -ManagedConfig $Managed -TlsCertificate $nginxCertificate -TlsPrivateKey $nginxPrivateKey -ClientMaxBodySize '20m' -RollbackSnapshot $Snapshot -ReportPath $Path | Out-Null
+    return Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
+  }
+  function Invoke-NgxVerifyFixture([string]$Mode,[string]$Plan,[string]$Report) {
+    $digest=Get-FileSha256FromBytes $Plan
+    return & $nginxVerifyScript -Mode $Mode -PlanPath $Plan -ExpectedPlanSha256 $digest -RepositoryRoot $repo -Root $nginxProductionRoot -NginxExe $nginxExe -NginxPrefix $nginxPrefix -NginxConfig $nginxMain -ManagedConfig $nginxManaged -TlsCertificate $nginxCertificate -TlsPrivateKey $nginxPrivateKey -ClientMaxBodySize '20m' -ReportPath $Report
+  }
+  $missingPlanPath=Join-Path $nginxEvidence 'missing-plan.json'; $missingPlan=Invoke-NgxPlanFixture $missingPlanPath
+  if($missingPlan.state -cne 'READY_FOR_MANUAL_APPLY'){throw "NGX-P1 safe include boundary was not READY: $($missingPlan.state) / $($missingPlan.reason)"};Set-NgxPass 'NGX-P1'
+  $desiredBytes=[Convert]::FromBase64String($missingPlan.desired.contentBase64);[IO.File]::WriteAllBytes($nginxManaged,$desiredBytes)
+  $desiredReport=Join-Path $nginxEvidence 'desired-report.json';$desiredOutput=Invoke-NgxVerifyFixture 'Desired' $missingPlanPath $desiredReport
+  if(($desiredOutput -join "`n") -notmatch 'EXACT_NGINX_AUTHORITY_VERIFIED'){throw 'NGX-P2 Desired verifier did not PASS'};Set-NgxPass 'NGX-P2'
+  $desiredText=[Text.UTF8Encoding]::new($false).GetString($desiredBytes)
+  foreach($case in @(
+    @{id='NGX-P3';from='proxy_pass http://127.0.0.1:3100;';to='proxy_pass http://127.0.0.1:3100/api/;'},
+    @{id='NGX-P4';from='proxy_set_header X-Real-IP $remote_addr;';to='proxy_set_header X-Real-IP wrong;'},
+    @{id='NGX-P5';from='try_files $uri $uri/ /index.html;';to='try_files $uri =404;'},
+    @{id='NGX-P6';from='client_max_body_size 20m;';to='client_max_body_size 21m;'}
+  )){[IO.File]::WriteAllText($nginxManaged,$desiredText.Replace($case.from,$case.to),[Text.UTF8Encoding]::new($false));Assert-NgxReject {Invoke-NgxVerifyFixture 'Desired' $missingPlanPath (Join-Path $nginxEvidence "$($case.id).json")} $case.id;[IO.File]::WriteAllBytes($nginxManaged,$desiredBytes)}
+  $second443=Join-Path $nginxConfD 'duplicate443.conf';[IO.File]::WriteAllText($second443,"server { listen 443 ssl; server_name baogiang.dtnt-damsan.edu.vn; }`n",[Text.UTF8Encoding]::new($false));Assert-NgxReject {Invoke-NgxVerifyFixture 'Desired' $missingPlanPath (Join-Path $nginxEvidence 'p7.json')} 'NGX-P7';Remove-Item -LiteralPath $second443
+  $neighborOriginal=[IO.File]::ReadAllBytes($nginxNeighbor);[IO.File]::AppendAllText($nginxNeighbor,"# drift`n");Assert-NgxReject {Invoke-NgxVerifyFixture 'Desired' $missingPlanPath (Join-Path $nginxEvidence 'p8.json')} 'NGX-P8';[IO.File]::WriteAllBytes($nginxNeighbor,$neighborOriginal)
+  $newNeighbor=Join-Path $nginxConfD 'unplanned.conf';[IO.File]::WriteAllText($newNeighbor,"server { listen 8080; server_name unplanned.test; }`n",[Text.UTF8Encoding]::new($false));Assert-NgxReject {Invoke-NgxVerifyFixture 'Desired' $missingPlanPath (Join-Path $nginxEvidence 'p9.json')} 'NGX-P9';Remove-Item -LiteralPath $newNeighbor
+  $reparseTarget=Join-Path $nginxFixture 'reparse-target';New-Item -ItemType Directory -Path $reparseTarget|Out-Null;$reparseBoundary=Join-Path $nginxConf 'linked';New-Item -ItemType Junction -Path $reparseBoundary -Target $reparseTarget|Out-Null;Assert-NgxReject {Get-NginxEffectiveGraph $nginxPrefix (Join-Path $reparseBoundary 'nginx.conf')|Out-Null} 'NGX-P10';Remove-Item -LiteralPath $reparseBoundary -Force
+  Assert-NgxReject {Invoke-NgxPlanFixture (Join-Path $nginxEvidence 'p11.json') (Join-Path $nginxFixture 'outside-managed.conf')|Out-Null} 'NGX-P11'
+  $dynamic=Join-Path $nginxConf 'dynamic.conf';$unresolved=Join-Path $nginxConf 'unresolved.conf';$outbound=Join-Path $nginxConf 'outbound.conf';$cycleA=Join-Path $nginxConf 'cycle-a.conf';$cycleB=Join-Path $nginxConf 'cycle-b.conf'
+  [IO.File]::WriteAllText($dynamic,'include $dynamic_path;',[Text.UTF8Encoding]::new($false));[IO.File]::WriteAllText($unresolved,'include conf/absent/*.conf;',[Text.UTF8Encoding]::new($false));[IO.File]::WriteAllText($outbound,"include $($nginxFixture.Replace('\','/'))/outside.conf;",[Text.UTF8Encoding]::new($false));[IO.File]::WriteAllText($cycleA,'include conf/cycle-b.conf;',[Text.UTF8Encoding]::new($false));[IO.File]::WriteAllText($cycleB,'include conf/cycle-a.conf;',[Text.UTF8Encoding]::new($false))
+  foreach($badGraph in @($dynamic,$unresolved,$outbound,$cycleA)){$graphRejected=$false;try{Get-NginxEffectiveGraph $nginxPrefix $badGraph|Out-Null}catch{$graphRejected=$true};if(-not $graphRejected){throw 'NGX-P12 unsafe include form accepted'}};Set-NgxPass 'NGX-P12';Remove-Item $dynamic,$unresolved,$outbound,$cycleA,$cycleB
+  [Environment]::SetEnvironmentVariable('FAKE_NGINX_FAIL','1','Process');Assert-NgxReject {Invoke-NgxVerifyFixture 'Desired' $missingPlanPath (Join-Path $nginxEvidence 'p13.json')} 'NGX-P13';[Environment]::SetEnvironmentVariable('FAKE_NGINX_FAIL',$null,'Process')
+  Remove-Item $nginxTrace -ErrorAction SilentlyContinue;Invoke-NgxVerifyFixture 'Desired' $missingPlanPath (Join-Path $nginxEvidence 'p14.json')|Out-Null;$traceText=Get-Content $nginxTrace -Raw;if($traceText -notmatch [regex]::Escape("-p $nginxPrefix -t -c $nginxMain") -or $traceText -match '-s\s+reload'){throw 'NGX-P14 executable trace mismatch'};Set-NgxPass 'NGX-P14'
+  $existingOriginal=[Text.UTF8Encoding]::new($false).GetBytes("server { listen 8081; server_name prior.test; }`n");[IO.File]::WriteAllBytes($nginxManaged,$existingOriginal)
+  $snapshot=Join-Path $nginxEvidence 'rollback.snapshot';$noSnapshotPlan=Join-Path $nginxEvidence 'existing-no-snapshot.json';if((Invoke-NgxPlanFixture $noSnapshotPlan).state -cne 'SNAPSHOT_REQUIRED'){throw 'NGX-P15 missing snapshot accepted'};[IO.File]::WriteAllBytes($snapshot,$existingOriginal);$existingPlanPath=Join-Path $nginxEvidence 'existing-plan.json';if((Invoke-NgxPlanFixture $existingPlanPath $nginxManaged $nginxMain $snapshot).state -cne 'READY_FOR_MANUAL_APPLY'){throw 'NGX-P15 exact snapshot rejected'};Set-NgxPass 'NGX-P15'
+  [IO.File]::WriteAllBytes($nginxManaged,$desiredBytes);[IO.File]::WriteAllBytes($nginxManaged,$existingOriginal);if((Invoke-NgxVerifyFixture 'Restored' $existingPlanPath (Join-Path $nginxEvidence 'p16.json') -join "`n") -notmatch 'RESTORE_VERIFIED'){throw 'NGX-P16 restore failed'};Set-NgxPass 'NGX-P16'
+  Remove-Item $nginxManaged; if((Invoke-NgxVerifyFixture 'Restored' $missingPlanPath (Join-Path $nginxEvidence 'p17.json') -join "`n") -notmatch 'RESTORE_VERIFIED'){throw 'NGX-P17 missing restore failed'};Set-NgxPass 'NGX-P17'
+  foreach($reportTarget in @($nginxConf,$nginxProductionRoot,$repo)){$reportLink=Join-Path $nginxFixture ('report-link-'+[Guid]::NewGuid().ToString('N'));New-Item -ItemType Junction -Path $reportLink -Target $reportTarget|Out-Null;$unsafeReport=Join-Path $reportLink ('unsafe-'+[Guid]::NewGuid().ToString('N')+'.json');$reportRejected=$false;try{Invoke-NgxPlanFixture $unsafeReport|Out-Null}catch{$reportRejected=$true};if(-not $reportRejected -or (Test-Path $unsafeReport)){throw 'NGX-P18 unsafe report junction accepted'};[IO.Directory]::Delete($reportLink)};Set-NgxPass 'NGX-P18'
+  $authorityOutput=(Get-ChildItem $nginxEvidence -File|ForEach-Object{if($_.Extension -eq '.json'){Get-Content $_.FullName -Raw}})-join "`n";if($authorityOutput -match $privateKeySentinel){throw 'NGX-P19 private-key sentinel leaked'};Set-NgxPass 'NGX-P19'
+  foreach($requiredDirectory in @('releases','staging','incoming','logs','backups')){New-Item -ItemType Directory -Path (Join-Path $nginxProductionRoot $requiredDirectory) -Force|Out-Null};New-Item -ItemType Directory -Path $startupVersion -Force|Out-Null
+  [IO.File]::WriteAllText($startupWrapper,'fixture wrapper',[Text.UTF8Encoding]::new($false));[IO.File]::WriteAllText($startupCommon,'fixture common',[Text.UTF8Encoding]::new($false));$fakeTool=Join-Path $nginxFixture 'fake-tool.cmd';[IO.File]::WriteAllLines($fakeTool,@('@echo off','exit /b 0'),[Text.ASCIIEncoding]::new());$envFixture=Join-Path $nginxShared 'production.env';[IO.File]::WriteAllLines($envFixture,$validEnvLines,[Text.UTF8Encoding]::new($false));$marker.nodeExe=$fakeTool;$marker.envFile=$envFixture;$marker.startupBundle.wrapperSha256=Get-FileSha256FromBytes $startupWrapper;$marker.startupBundle.commonSha256=Get-FileSha256FromBytes $startupCommon;[IO.File]::WriteAllText((Join-Path $nginxShared 'deployment-identity.json'),($marker|ConvertTo-Json -Depth 8),[Text.UTF8Encoding]::new($false))
+  $releaseSha='c'*40;$transferName="control-1-1-$releaseSha";$transferDirectory=Join-Path $nginxProductionRoot "incoming\$transferName";New-Item -ItemType Directory -Path $transferDirectory|Out-Null;$archiveName="release-$releaseSha.zip";$archivePath=Join-Path $transferDirectory $archiveName;[IO.File]::WriteAllText($archivePath,'not reached',[Text.UTF8Encoding]::new($false))
+  $controllerParameters=[ordered]@{ReleaseSha=$releaseSha;Root=$nginxProductionRoot;TransferDirectoryName=$transferName;SourceArchiveName=$archiveName;ExpectedSha256=('d'*64);NodeExe=$fakeTool;NpmExe=$fakeTool;NpxExe=$fakeTool;PsqlExe=$fakeTool;PgDumpExe=$fakeTool;PgRestoreExe=$fakeTool;EnvFile=$envFixture;StartupWrapper=$startupWrapper;NginxExe=$nginxExe;NginxConfig=$nginxMain;ExpectedBaseUrl='https://baogiang.dtnt-damsan.edu.vn';ServiceKind='scheduled-task';ServiceName='BaoGiangBackend';ExpectedEntryPoint=$marker.entryPoint;MigrationRequested=$false;ProductionMigrationApproved=$false;RollbackCompatibilityApproved=$false;ReportFileName="deploy-report-$releaseSha.json"};$parameterFile=Join-Path $nginxEvidence 'controller-parameters.json';[IO.File]::WriteAllText($parameterFile,($controllerParameters|ConvertTo-Json),[Text.UTF8Encoding]::new($false))
+  $global:nginxSharedFixture=$nginxShared;function global:Get-ScheduledTask { [pscustomobject]@{TaskName='BaoGiangBackend';TaskPath='\BaoGiang\';State='Disabled';Principal=[pscustomobject]@{UserId='fixture-account'};Actions=@([pscustomobject]@{Execute='C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe';Arguments='-File fixture.ps1';WorkingDirectory=$global:nginxSharedFixture});Triggers=@([pscustomobject]@{CimClass=[pscustomobject]@{CimClassName='MSFT_TaskBootTrigger'};Enabled=$true})} };function global:Get-FileHash { param([string]$LiteralPath,[string]$Algorithm) [pscustomobject]@{Hash=Get-FileSha256FromBytes $LiteralPath} }
+  Remove-Item $nginxTrace -ErrorAction SilentlyContinue;[Environment]::SetEnvironmentVariable('FAKE_NGINX_FAIL','1','Process');$controllerRejected=$false;$controllerError='';try{& (Join-Path $repo 'scripts\deploy\windows\invoke-production-deploy.ps1') -ParameterFile $parameterFile|Out-Null}catch{$controllerRejected=$true;$controllerError=$_.Exception.Message};[Environment]::SetEnvironmentVariable('FAKE_NGINX_FAIL',$null,'Process');Remove-Item Function:\Get-ScheduledTask,Function:\Get-FileHash -Force;Remove-Variable nginxSharedFixture -Scope Global -ErrorAction SilentlyContinue
+  if(-not (Test-Path $nginxTrace)){throw "NGX-P20 controller did not reach syntax test: $controllerError"};$controllerTrace=Get-Content $nginxTrace -Raw;if(-not $controllerRejected -or $controllerTrace -notmatch [regex]::Escape("-p $nginxPrefix -t -c $nginxMain") -or $controllerTrace -match '-s\s+reload' -or -not (Test-Path $archivePath) -or (Test-Path (Join-Path $nginxProductionRoot $archiveName))){throw 'NGX-P20 executable controller ordering/vector failed'};Set-NgxPass 'NGX-P20'
+  if(@(Get-NginxEffectiveGraph $nginxPrefix $nginxMain $nginxManaged).servers|Where-Object{Test-NginxServerClaims443Domain $_}){throw 'NGX-P21 port 80 false collision'};Set-NgxPass 'NGX-P21'
+  [IO.File]::WriteAllText($second443,"server { listen 443 ssl; server_name baogiang.dtnt-damsan.edu.vn; }`n",[Text.UTF8Encoding]::new($false));$collisionPlanPath=Join-Path $nginxEvidence 'collision-plan.json';if((Invoke-NgxPlanFixture $collisionPlanPath).state -cne 'CONFLICT'){throw 'NGX-P22 duplicate 443 accepted'};Set-NgxPass 'NGX-P22';Remove-Item $second443
+  if(-not [Linq.Enumerable]::SequenceEqual([byte[]][IO.File]::ReadAllBytes($nginxNeighbor),[byte[]]$neighborOriginal)){throw 'NGX-P23 neighbor bytes drifted'};Set-NgxPass 'NGX-P23'
+  if($nginxResults.Count -ne 23 -or @($nginxResults.Values|Where-Object{$_ -ne 'PASS'}).Count -ne 0){throw 'NGX fixture matrix incomplete'}
+  Write-Output '[deployment-windows] PASS (ACL-P1..ACL-P8, PATH-P1..PATH-P3, SB-P1..SB-P14, RPT-P1..RPT-P9, NGX-P1..NGX-P23, preflight isolation, SSH host-key/firewall, exact psql, privacy, safe-stop, migration and transfer fixtures)'
 } finally {
   if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Recurse -Force }
 }

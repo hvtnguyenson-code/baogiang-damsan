@@ -31,7 +31,7 @@ $report = [ordered]@{ schemaVersion = 1; generatedAtUtc = [DateTime]::UtcNow.ToS
 $migrationAttempted = $false; $migrationCompleted = $false; $switched = $false; $restartAttempted = $false
 try {
   Read-ValidatedProductionEnvironment -EnvFile $p.EnvFile -ExpectedBaseUrl $p.ExpectedBaseUrl | Out-Null
-  Invoke-NativeChecked $p.NginxExe @('-t','-c',$p.NginxConfig) 'nginx configuration test' | Out-Null
+  Invoke-ReviewedNginxSyntaxTest -NginxExe $p.NginxExe -NginxPrefix $marker.foreignIsolation.reviewedNginxPrefix -NginxConfig $p.NginxConfig | Out-Null
   if ($hasCurrentRelease) { $report.previousRelease = Split-Path (Assert-ReleasePointerTarget -PointerPath (Join-Path $canonicalRoot 'current') -Root $canonicalRoot) -Leaf }
   Move-Item -LiteralPath $source -Destination $incoming
   & (Join-Path $PSScriptRoot 'install-release.ps1') -ReleaseSha $p.ReleaseSha -Root $canonicalRoot -SourceArchive $incoming -ExpectedSha256 $p.ExpectedSha256 -NpmExe $p.NpmExe -NpxExe $p.NpxExe -NodeExe $p.NodeExe -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName

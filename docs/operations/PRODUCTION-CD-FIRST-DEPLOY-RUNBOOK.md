@@ -53,7 +53,16 @@ Every P1 root/ACL or startup-bundle plan/verifier report must target an existing
 6. Run `production-startup-bundle-verify.ps1` with the reviewed plan file and its separately reviewed SHA-256. `INSTALL_REQUIRED` means the operator step is still required and performs no creation. Only `PASS / EXACT_BUNDLE_VERIFIED` proves the exact pair, canonical layout, hashes, non-reparse state and shared ACL policy. Every `CONFLICT` requires review; the verifier never repairs or overwrites.
 7. Only after both verifiers pass may a separately approved operator operation create/update `shared\deployment-identity.json` and bind the Scheduled Task to the exact versioned wrapper. The marker schema remains version 1 and continues to store only exact absolute wrapper/common paths and hashes; this startup-bundle authority does not add a commit field.
 8. Continue server-side environment evidence with `validate-production-environment.ps1`, then use the existing P0-3 activation contract: exact task verification, explicit enable, re-verification, start and bounded process/port proof. Bootstrap keeps the task disabled until that separately reviewed activation. Windows Service first-deploy remains unsupported.
-9. Configure/verify the dedicated Nginx block only under its separate authority: HTTPS domain, SPA fallback, `/api` to `127.0.0.1:3100`, forwarded headers and reviewed limits. Run exact `nginx -t -c <reviewed-config>` before a targeted reload; never restart all Nginx.
+9. Use the dedicated Nginx authority in this exact sequence:
+   1. Generate and review `production-nginx-plan.ps1` outside the production root, reviewed Nginx prefix, and source repository.
+   2. If the managed include already exists, preserve its exact bytes at the reviewed rollback-snapshot path and regenerate the plan until it is `READY_FOR_MANUAL_APPLY`.
+   3. Obtain independent review of the plan digest, include boundary, neighbor hashes, desired bytes, and structured command vectors.
+   4. Manually apply only the exact managed Báo giảng include; do not patch the main config or neighboring files.
+   5. Run `production-nginx-verify.ps1 -Mode Desired`; require `EXACT_NGINX_AUTHORITY_VERIFIED` and the exact prefix-bound syntax test `<exe> -p <prefix> -t -c <config>`.
+   6. After explicit operator approval, the operator manually executes the exact reload vector recorded in the plan and then performs health/evidence checks.
+   7. On failure, manually restore only the managed target to its recorded pre-state, run the exact syntax test, manually run the same planned reload vector, run `production-nginx-verify.ps1 -Mode Restored`, and repeat health/evidence checks.
+
+Nginx reload re-reads configuration for the exact reviewed Nginx instance; it does not reload an individual server block. Neither Nginx P1 tool writes production config nor executes reload.
 10. For commit B, generate and review a new plan and install only `startup-bundles\<B>`. Keep verified commit A byte-for-byte unchanged. After B verifies, marker/task re-binding is a separate approval; rollback may re-bind to a prior verified directory. Do not overwrite, rename or delete earlier versions.
 
 Stop for independent review of the provenance plan/digest, ACL plan, both verifier reports, marker, wrapper action, env validation, Nginx test and isolation evidence. The plan/verifier tools write reports only; every production filesystem, ACL, marker, task and Nginx mutation remains a separately approved manual operator action.
