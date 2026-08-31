@@ -26,9 +26,217 @@ function Assert-ExistingDirectory([Parameter(Mandatory = $true)][string]$Path) {
   return Get-CanonicalPath $Path
 }
 
+function Get-ProductionRequiredDirectoryNames {
+  return @('releases','staging','incoming','shared','logs','backups')
+}
+
+function Get-PathSecurityClassification(
+  [Parameter(Mandatory = $true)][string]$Path,
+  [Parameter(Mandatory = $true)][ValidateSet('directory','file')][string]$Kind
+) {
+  $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+  if ($null -eq $item) { return [pscustomobject]@{ state = 'MISSING'; path = Get-CanonicalPath $Path; kind = $Kind } }
+  $actualKind = if ($item.PSIsContainer) { 'directory' } else { 'file' }
+  if ($actualKind -ne $Kind) { return [pscustomobject]@{ state = 'TYPE_MISMATCH'; path = Get-CanonicalPath $Path; kind = $Kind } }
+  if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { return [pscustomobject]@{ state = 'REPARSE_POINT'; path = Get-CanonicalPath $Path; kind = $Kind } }
+  return [pscustomobject]@{ state = 'PASS'; path = Get-CanonicalPath $Path; kind = $Kind }
+}
+
+function Assert-ExistingNonReparseDirectory(
+  [Parameter(Mandatory = $true)][string]$Path,
+  [Parameter(Mandatory = $true)][ValidateSet('PRODUCTION_ROOT','PRODUCTION_SUBDIRECTORY')][string]$Role
+) {
+  $classification = Get-PathSecurityClassification -Path $Path -Kind directory
+  if ($Role -eq 'PRODUCTION_ROOT') {
+    if ($classification.state -eq 'REPARSE_POINT') { throw 'PRODUCTION_ROOT_REPARSE_POINT' }
+    if ($classification.state -eq 'MISSING') { throw 'PRODUCTION_ROOT_MISSING' }
+    if ($classification.state -eq 'TYPE_MISMATCH') { throw 'PRODUCTION_ROOT_TYPE_MISMATCH' }
+  } else {
+    if ($classification.state -eq 'REPARSE_POINT') { throw 'PRODUCTION_SUBDIRECTORY_REPARSE_POINT' }
+    if ($classification.state -eq 'MISSING') { throw 'PRODUCTION_SUBDIRECTORY_MISSING' }
+    if ($classification.state -eq 'TYPE_MISMATCH') { throw 'PRODUCTION_SUBDIRECTORY_TYPE_MISMATCH' }
+  }
+  return $classification.path
+}
+
 function Assert-ExistingLeaf([Parameter(Mandatory = $true)][string]$Path,[string]$Label = 'Executable') {
   if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw "$Label must be an existing file: $Path" }
   return Get-CanonicalPath $Path
+}
+
+function Resolve-ReviewedIdentitySid([Parameter(Mandatory = $true)][ValidateNotNullOrEmpty()][string]$Identity) {
+  try {
+    if ($Identity -match '^S-1-(?:\d+-)+\d+$') { return ([Security.Principal.SecurityIdentifier]::new($Identity)).Value }
+    $account = [Security.Principal.NTAccount]::new($Identity)
+    return ($account.Translate([Security.Principal.SecurityIdentifier])).Value
+  } catch { throw 'ACL_IDENTITY_RESOLUTION_FAILED' }
+}
+
+function New-ProductionAclRule(
+  [Parameter(Mandatory = $true)][string]$Role,
+  [Parameter(Mandatory = $true)][string]$Sid,
+  [Parameter(Mandatory = $true)][Security.AccessControl.FileSystemRights]$Rights,
+  [Security.AccessControl.InheritanceFlags]$InheritanceFlags = [Security.AccessControl.InheritanceFlags]::None,
+  [Security.AccessControl.PropagationFlags]$PropagationFlags = [Security.AccessControl.PropagationFlags]::None
+) {
+  return [pscustomobject][ordered]@{
+    role = $Role
+    sid = $Sid
+    accessControlType = 'Allow'
+    accessControlTypeValue = [int][Security.AccessControl.AccessControlType]::Allow
+    rights = $Rights.ToString()
+    rightsValue = [int64]$Rights
+    inheritanceFlags = $InheritanceFlags.ToString()
+    inheritanceFlagsValue = [int]$InheritanceFlags
+    propagationFlags = $PropagationFlags.ToString()
+    propagationFlagsValue = [int]$PropagationFlags
+    isInherited = $false
+  }
+}
+
+function Merge-ProductionAclRules([Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Rule) {
+  $groups = [ordered]@{}
+  $groupOrder = [Collections.Generic.List[string]]::new()
+  foreach ($candidate in $Rule) {
+    $normalized = Normalize-AclRule $candidate
+    $key = @($normalized.sid,$normalized.accessControlTypeValue,$normalized.inheritanceFlagsValue,$normalized.propagationFlagsValue,$normalized.isInherited) -join '|'
+    if (-not $groups.Contains($key)) {
+      $groups[$key] = [pscustomobject]@{ roles = [Collections.Generic.List[string]]::new(); sid = $normalized.sid; rightsValue = [int64]0; inheritanceFlagsValue = $normalized.inheritanceFlagsValue; propagationFlagsValue = $normalized.propagationFlagsValue }
+      $groupOrder.Add($key)
+    }
+    $groups[$key].roles.Add([string]$candidate.role)
+    $groups[$key].rightsValue = [int64]$groups[$key].rightsValue -bor [int64]$normalized.rightsValue
+  }
+  return @($groupOrder | ForEach-Object {
+    $group = $groups[$_]
+    New-ProductionAclRule -Role (@($group.roles) -join '+') -Sid $group.sid -Rights ([Security.AccessControl.FileSystemRights]$group.rightsValue) -InheritanceFlags ([Security.AccessControl.InheritanceFlags]$group.inheritanceFlagsValue) -PropagationFlags ([Security.AccessControl.PropagationFlags]$group.propagationFlagsValue)
+  })
+}
+
+function Get-ProductionAclPolicy(
+  [Parameter(Mandatory = $true)][string]$CanonicalRoot,
+  [Parameter(Mandatory = $true)][string]$DeploymentIdentity,
+  [Parameter(Mandatory = $true)][string]$ApiRuntimeIdentity,
+  [Parameter(Mandatory = $true)][string]$WebRuntimeIdentity,
+  [Parameter(Mandatory = $true)][string]$EnvFile,
+  [Parameter(Mandatory = $true)][string]$StartupWrapper
+) {
+  $root = Assert-DedicatedRoot $CanonicalRoot
+  $shared = Assert-ExactChildPath -Root $root -RelativePath 'shared'
+  $environmentPath = Get-CanonicalPath $EnvFile
+  $wrapperPath = Get-CanonicalPath $StartupWrapper
+  if ((Normalize-ComparablePath (Split-Path -Parent $wrapperPath)) -ne (Normalize-ComparablePath $shared)) { throw 'STARTUP_BUNDLE_AUTHORITY_CONFLICT' }
+  $commonPath = Get-CanonicalPath (Join-Path $shared 'deployment-common.ps1')
+  $markerPath = Get-CanonicalPath (Join-Path $shared 'deployment-identity.json')
+
+  $identitySids = [ordered]@{
+    SYSTEM = 'S-1-5-18'
+    Administrators = 'S-1-5-32-544'
+    DeploymentIdentity = Resolve-ReviewedIdentitySid $DeploymentIdentity
+    ApiRuntimeIdentity = Resolve-ReviewedIdentitySid $ApiRuntimeIdentity
+    WebRuntimeIdentity = Resolve-ReviewedIdentitySid $WebRuntimeIdentity
+  }
+  $broadSids = @('S-1-1-0','S-1-5-11','S-1-5-32-545')
+  if (@($identitySids.Values | Where-Object { $_ -in $broadSids }).Count -gt 0) { throw 'ACL_BROAD_PRINCIPAL_NOT_ALLOWED' }
+
+  $inherit = [Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [Security.AccessControl.InheritanceFlags]::ObjectInherit
+  function New-DirectoryRules([string[]]$Roles,[hashtable]$RightsByRole) {
+    return @(Merge-ProductionAclRules @($Roles | ForEach-Object { New-ProductionAclRule -Role $_ -Sid $identitySids[$_] -Rights $RightsByRole[$_] -InheritanceFlags $inherit }))
+  }
+  function New-LeafRules([string[]]$Roles,[hashtable]$RightsByRole) {
+    return @(Merge-ProductionAclRules @($Roles | ForEach-Object { New-ProductionAclRule -Role $_ -Sid $identitySids[$_] -Rights $RightsByRole[$_] }))
+  }
+
+  $directoryRights = @{
+    SYSTEM = [Security.AccessControl.FileSystemRights]::FullControl
+    Administrators = [Security.AccessControl.FileSystemRights]::FullControl
+    DeploymentIdentity = [Security.AccessControl.FileSystemRights]::Modify
+    ApiRuntimeIdentity = [Security.AccessControl.FileSystemRights]::ReadAndExecute
+    WebRuntimeIdentity = [Security.AccessControl.FileSystemRights]::ReadAndExecute
+  }
+  $paths = [Collections.Generic.List[object]]::new()
+  $paths.Add([pscustomobject][ordered]@{ path = $root; kind = 'directory'; inheritanceProtected = $true; desiredAces = @(New-DirectoryRules @('SYSTEM','Administrators','DeploymentIdentity','ApiRuntimeIdentity','WebRuntimeIdentity') $directoryRights) })
+  $logRights = @{} + $directoryRights
+  $logRights.ApiRuntimeIdentity = [Security.AccessControl.FileSystemRights]::Modify
+  foreach ($name in Get-ProductionRequiredDirectoryNames) {
+    $roles = switch ($name) {
+      'releases' { @('SYSTEM','Administrators','DeploymentIdentity','ApiRuntimeIdentity','WebRuntimeIdentity') }
+      { $_ -in @('staging','incoming','backups') } { @('SYSTEM','Administrators','DeploymentIdentity') }
+      { $_ -in @('shared','logs') } { @('SYSTEM','Administrators','DeploymentIdentity','ApiRuntimeIdentity') }
+      default { throw 'PRODUCTION_DIRECTORY_POLICY_MISSING' }
+    }
+    $rights = if ($name -eq 'logs') { $logRights } else { $directoryRights }
+    $paths.Add([pscustomobject][ordered]@{ path = (Join-Path $root $name); kind = 'directory'; inheritanceProtected = $true; desiredAces = @(New-DirectoryRules $roles $rights) })
+  }
+
+  $leafRights = @{
+    SYSTEM = [Security.AccessControl.FileSystemRights]::FullControl
+    Administrators = [Security.AccessControl.FileSystemRights]::FullControl
+    DeploymentIdentity = [Security.AccessControl.FileSystemRights]::Modify
+    ApiRuntimeIdentity = [Security.AccessControl.FileSystemRights]::Read
+  }
+  foreach ($leafPath in @($markerPath,$environmentPath)) {
+    $paths.Add([pscustomobject][ordered]@{ path = $leafPath; kind = 'file'; inheritanceProtected = $true; desiredAces = @(New-LeafRules @('SYSTEM','Administrators','DeploymentIdentity','ApiRuntimeIdentity') $leafRights) })
+  }
+  $leafRights.ApiRuntimeIdentity = [Security.AccessControl.FileSystemRights]::ReadAndExecute
+  foreach ($leafPath in @($wrapperPath,$commonPath)) {
+    $paths.Add([pscustomobject][ordered]@{ path = $leafPath; kind = 'file'; inheritanceProtected = $true; desiredAces = @(New-LeafRules @('SYSTEM','Administrators','DeploymentIdentity','ApiRuntimeIdentity') $leafRights) })
+  }
+
+  $normalizedPaths = @($paths | ForEach-Object { Normalize-ComparablePath $_.path })
+  if (@($normalizedPaths | Sort-Object -Unique).Count -ne $normalizedPaths.Count) { throw 'ACL_PROTECTED_PATH_COLLISION' }
+  return [pscustomobject][ordered]@{ schemaVersion = 1; canonicalRoot = $root; identities = $identitySids; protectedPaths = @($paths) }
+}
+
+function Normalize-AclRule([Parameter(Mandatory = $true)]$Rule) {
+  $properties = @($Rule.PSObject.Properties.Name)
+  if ($properties -contains 'sid') { $sid = [string]$Rule.sid }
+  else {
+    try { $sid = ($Rule.IdentityReference.Translate([Security.Principal.SecurityIdentifier])).Value }
+    catch { throw 'ACL_IDENTITY_RESOLUTION_FAILED' }
+  }
+  $accessType = if ($properties -contains 'accessControlTypeValue') { [int]$Rule.accessControlTypeValue } else { [int]$Rule.AccessControlType }
+  $rightsValue = if ($properties -contains 'rightsValue') { [int64]$Rule.rightsValue } else { [int64]$Rule.FileSystemRights }
+  $inheritanceValue = if ($properties -contains 'inheritanceFlagsValue') { [int]$Rule.inheritanceFlagsValue } else { [int]$Rule.InheritanceFlags }
+  $propagationValue = if ($properties -contains 'propagationFlagsValue') { [int]$Rule.propagationFlagsValue } else { [int]$Rule.PropagationFlags }
+  $inherited = if ($properties -contains 'isInherited') { [bool]$Rule.isInherited } else { [bool]$Rule.IsInherited }
+  return [pscustomobject][ordered]@{ sid = $sid; accessControlTypeValue = $accessType; rightsValue = $rightsValue; inheritanceFlagsValue = $inheritanceValue; propagationFlagsValue = $propagationValue; isInherited = $inherited }
+}
+
+function Get-AclRuleKey([Parameter(Mandatory = $true)]$Rule,[switch]$WithoutRights) {
+  $normalized = Normalize-AclRule $Rule
+  $parts = @($normalized.sid,$normalized.accessControlTypeValue)
+  if (-not $WithoutRights) { $parts += $normalized.rightsValue }
+  $parts += @($normalized.inheritanceFlagsValue,$normalized.propagationFlagsValue,$normalized.isInherited)
+  return ($parts -join '|')
+}
+
+function Compare-AclSnapshotToPolicy(
+  [Parameter(Mandatory = $true)]$PolicyPath,
+  [Parameter(Mandatory = $true)]$Snapshot
+) {
+  if ([bool]$Snapshot.inheritanceProtected -ne [bool]$PolicyPath.inheritanceProtected) { return [pscustomobject]@{ state = 'INHERITANCE_MISMATCH'; issues = @('INHERITANCE_PROTECTION') } }
+  $expected = @($PolicyPath.desiredAces | ForEach-Object { Normalize-AclRule $_ })
+  $actual = @($Snapshot.access | ForEach-Object { Normalize-AclRule $_ })
+  if (@($actual | Where-Object { $_.accessControlTypeValue -eq [int][Security.AccessControl.AccessControlType]::Deny }).Count -gt 0) { return [pscustomobject]@{ state = 'DENY_ACE'; issues = @('EXPLICIT_OR_INHERITED_DENY') } }
+
+  $actualKeys = @($actual | ForEach-Object { Get-AclRuleKey $_ })
+  if (@($actualKeys | Group-Object | Where-Object { $_.Count -gt 1 }).Count -gt 0) { return [pscustomobject]@{ state = 'UNEXPECTED_ACE'; issues = @('DUPLICATE_SEMANTIC_ACE') } }
+  foreach ($rule in $expected) {
+    $exactKey = Get-AclRuleKey $rule
+    if ($actualKeys -contains $exactKey) { continue }
+    $structuralKey = Get-AclRuleKey $rule -WithoutRights
+    if (@($actual | Where-Object { (Get-AclRuleKey $_ -WithoutRights) -eq $structuralKey }).Count -gt 0) { return [pscustomobject]@{ state = 'RIGHTS_MISMATCH'; issues = @('WRONG_RIGHTS') } }
+    return [pscustomobject]@{ state = 'MISSING_ACE'; issues = @('REQUIRED_ACE_MISSING') }
+  }
+  $expectedKeys = @($expected | ForEach-Object { Get-AclRuleKey $_ })
+  if (@($actualKeys | Where-Object { $_ -notin $expectedKeys }).Count -gt 0) { return [pscustomobject]@{ state = 'UNEXPECTED_ACE'; issues = @('ACE_OUTSIDE_EXACT_POLICY') } }
+  return [pscustomobject]@{ state = 'PASS'; issues = @() }
+}
+
+function Get-ActualAclSnapshot([Parameter(Mandatory = $true)][string]$Path) {
+  $acl = Get-Acl -LiteralPath $Path -ErrorAction Stop
+  return [pscustomobject]@{ inheritanceProtected = [bool]$acl.AreAccessRulesProtected; access = @($acl.Access | ForEach-Object { Normalize-AclRule $_ }) }
 }
 
 function Normalize-ComparablePath([string]$Path) {
@@ -329,6 +537,10 @@ function Read-DeploymentIdentity(
   [string]$NginxConfig
 ) {
   $canonicalRoot = Assert-DedicatedRoot $Root
+  Assert-ExistingNonReparseDirectory -Path $canonicalRoot -Role PRODUCTION_ROOT | Out-Null
+  foreach ($name in Get-ProductionRequiredDirectoryNames) {
+    Assert-ExistingNonReparseDirectory -Path (Join-Path $canonicalRoot $name) -Role PRODUCTION_SUBDIRECTORY | Out-Null
+  }
   $markerPath = Join-Path $canonicalRoot 'shared\deployment-identity.json'
   if (-not (Test-Path -LiteralPath $markerPath -PathType Leaf)) { throw 'Dedicated deployment identity marker is missing.' }
   $marker = Get-Content -LiteralPath $markerPath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -340,7 +552,6 @@ function Read-DeploymentIdentity(
   if (-not [string]::IsNullOrWhiteSpace($NodeExe) -and (Normalize-ComparablePath $marker.nodeExe) -ne (Normalize-ComparablePath $NodeExe)) { throw 'Deployment identity marker Node executable mismatch.' }
   if (-not [string]::IsNullOrWhiteSpace($NginxExe) -and (Normalize-ComparablePath $marker.nginxExe) -ne (Normalize-ComparablePath $NginxExe)) { throw 'Deployment identity marker Nginx executable mismatch.' }
   if (-not [string]::IsNullOrWhiteSpace($NginxConfig) -and (Normalize-ComparablePath $marker.nginxConfig) -ne (Normalize-ComparablePath $NginxConfig)) { throw 'Deployment identity marker Nginx config mismatch.' }
-  foreach ($name in @('releases','staging','incoming','shared','logs','backups')) { Assert-ExistingDirectory (Join-Path $canonicalRoot $name) | Out-Null }
   if ((Normalize-ComparablePath $marker.startupBundle.wrapperPath) -ne (Normalize-ComparablePath $StartupWrapper)) { throw 'Deployment marker startup bundle wrapper path mismatch.' }
   $commonPath = Join-Path (Split-Path -Parent $StartupWrapper) 'deployment-common.ps1'
   if ((Normalize-ComparablePath $marker.startupBundle.commonPath) -ne (Normalize-ComparablePath $commonPath)) { throw 'Deployment marker startup bundle helper path mismatch.' }

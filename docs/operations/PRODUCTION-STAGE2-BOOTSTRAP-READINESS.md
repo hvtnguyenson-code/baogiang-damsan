@@ -1,7 +1,7 @@
 # Production Stage 2 Bootstrap Readiness Audit
 
-Status: Candidate — P0-4 CLOSED CANDIDATE; Stage 2 overall NO-GO
-Baseline: 5ff81b6e5ea26d1082130de6fea7985a00c41406
+Status: Candidate — P1 ROOT/ACL CLOSED CANDIDATE; Stage 2 overall NO-GO
+Baseline: 5f8a521d29bd8814363b4c1e837a26689f8a47ae
 
 ## 1. Scope
 
@@ -11,13 +11,13 @@ Các giá trị thực tế của VPS vẫn là `OPERATOR VERIFICATION REQUIRED`
 
 ## 2. Existing Stage 2 architecture
 
-Stage 2 hiện là **manual instructions only**, có các verifier read-only và controller deploy source-controlled ở giai đoạn sau. Không có source-controlled Stage 2 executor, manifest generator hoặc desired-state validator hoàn chỉnh.
+Stage 2 giữ kiến trúc **source-controlled plan/verify + manual mutation**. Root/ACL đã có desired-state plan và verifier read-only; các mutation bootstrap vẫn do operator thực hiện dưới approval riêng. Startup bundle provenance/update và Nginx plan/verify vẫn chưa hoàn chỉnh.
 
 | Bootstrap operation | Source-controlled implementation | Manual only | Verifier hiện có | Rollback/recovery |
 |---|---|---|---|---|
-| Dedicated root | Không có creator | Có | `Assert-DedicatedRoot`; PASS 2 snapshot | Operator sửa/xóa theo review riêng |
-| Required subdirectories | Không có creator | Có | `Read-DeploymentIdentity` kiểm tra tồn tại | Không có bootstrap recovery |
-| ACLs | Không có policy/creator | Có | PASS 2 chỉ xuất ACL để review | Không có |
+| Dedicated root | Không có creator | Có | Exact path, existence, non-reparse và protected DACL verifier | Operator sửa/xóa theo review riêng |
+| Required subdirectories | Không có creator | Có | Exact six-directory non-reparse + DACL verifier | Không có bootstrap recovery |
+| ACLs | Deterministic desired-state plan; không có mutating executor | Có | Exact SID/numeric-rights/inheritance verifier | Manual correction dưới approval riêng |
 | Startup bundle | Không có installer | Có | Exact sibling path, file existence và SHA-256 | Không có update/rotation procedure |
 | Identity marker | Không có generator | Có | `Read-DeploymentIdentity`, handshake và runtime verifier, nhưng schema chưa đầy đủ | Operator correction |
 | Production environment | Không có creator | Có | `Import-ServerEnvironment`, nhưng chưa có standalone pre-first-deploy validator | Không có cleanup tổng quát |
@@ -30,18 +30,13 @@ Manual bootstrap không tự thân là defect. Defect xuất hiện khi manual s
 
 ## 3. Root/ACL findings
 
-`Assert-DedicatedRoot` chặn drive root, Windows/system paths và tên/path thuộc DamSanV5/boarding; release pointers được giới hạn vào direct child SHA dưới `releases`. Tuy nhiên root và sáu thư mục bắt buộc chỉ được canonicalize bằng đường dẫn và kiểm tra tồn tại. Reparse point của root/subdirectories không bị fail-closed trong `Read-DeploymentIdentity`; PASS 2 chỉ đưa reparse target và ACL vào report để operator review.
+`Assert-DedicatedRoot` tiếp tục chặn drive root, Windows/system paths và tên/path thuộc DamSanV5/boarding. `Read-DeploymentIdentity` nay fail closed nếu root thiếu/sai type/là reparse point hoặc nếu bất kỳ direct child bắt buộc nào trong `releases`, `staging`, `incoming`, `shared`, `logs`, `backups` thiếu/sai type/là reparse point.
 
-Repository chưa có:
+`Get-ProductionAclPolicy` là authority duy nhất nhận ba reviewed role identities, normalize về SID và tạo exact protected-DACL policy cho root, sáu thư mục và marker/env/startup bundle leaves. `production-root-acl-plan.ps1` xuất deterministic JSON desired state; `production-root-acl-verify.ps1` dùng cùng helper, đọc `Get-Acl`, normalize SID/type/numeric rights/inheritance/propagation/`IsInherited`, rồi fail khi thiếu/thừa/sai ACE, có DENY, duplicate semantic ACE, broad principal hoặc inheritance protection sai. Hai tool không mutate ACL và không tạo production directory; correction vẫn manual.
 
-- ACL policy authority mô tả identity-to-rights và inheritance mong muốn;
-- ACL verifier so desired state với effective ACL;
-- ACL creation/correction mechanism;
-- source-controlled quyền riêng cho marker, env, backup và immutable startup bundle.
+Policy không authority hóa owner và không chứng minh toàn bộ effective token authorization qua nested local/domain group membership. Những membership đó, account thực và actual VPS DACL vẫn là `OPERATOR VERIFICATION REQUIRED`; limitation không cho phép broad ACE ngoài exact policy.
 
-Vì không được invent account, policy phải nhận các identity đã review làm input và chỉ xuất plan/diff không chứa secret. Trạng thái thực của inherited ACL, deployment identity, runtime identity, backup, env và bundle là `OPERATOR VERIFICATION REQUIRED`.
-
-Kết luận: path isolation có guard hữu ích, nhưng root/subdirectory/ACL bootstrap chưa deterministic. Mức **P1**.
+Kết luận: **P1 ROOT/ACL = CLOSED CANDIDATE**. Stage 2 tổng thể vẫn NO-GO.
 
 ## 4. Marker authority matrix
 
@@ -159,7 +154,7 @@ Recommendation duy nhất: **B — source-controlled plan/verify tool, manual mu
 
 | Gate | Evidence | Result |
 |---|---|---|
-| Desired root/subdirs/ACL state exact | Paths có guard; ACL chỉ operator review | NO-GO |
+| Desired root/subdirs/ACL state exact | Shared policy + deterministic plan + read-only exact verifier + reparse fixtures | CLOSED CANDIDATE |
 | Marker complete, non-bypassable | P0 marker-schema correction đã có; vẫn cần plan/verify bootstrap P1 | CLOSED CANDIDATE |
 | Clean pre-first-deploy env PASS | Standalone validation contract P0 đã có; VPS evidence vẫn operator-only | CLOSED CANDIDATE |
 | Scheduled Task activation/recovery | P0-3 verify → enable → reverify → start, safe-stop và reboot contract | CLOSED CANDIDATE |
@@ -183,7 +178,7 @@ Một correction plan duy nhất, theo thứ tự bắt buộc:
 
 ### P1 — deterministic bootstrap plan/verify
 
-5. Root/subdirectory/ACL desired-state manifest và non-mutating verifier, bao gồm inheritance/reparse, marker/env/backup/bundle access.
+5. **Root/subdirectory/ACL:** **CLOSED CANDIDATE** — desired-state manifest và non-mutating verifier bao gồm inheritance/reparse, marker/env/backup/bundle access.
 6. Startup bundle source-provenance/install-plan/overwrite-refusal/update-rotation verifier.
 7. Nginx value-free plan/verify contract, neighboring-block isolation, exact test/reload/restore evidence.
 
@@ -212,6 +207,6 @@ PASS 1/PASS 2 reports phải được operator và independent reviewer đánh g
 
 **NO-GO / CORRECTION NEEDED**.
 
-Stage 2 tổng thể vẫn **NO-GO / chưa GO** vì các P1/P2 và operator-only evidence còn lại. P0-4 chỉ đóng fail-closed restriction cho Service first deploy; không tuyên bố Service architecture hay Production Stage 2 hoàn tất.
+Stage 2 tổng thể vẫn **NO-GO / chưa GO** vì startup bundle provenance/install/update P1, Nginx plan/verify/reload/restore P1, full marker pre-transfer handshake P2 và operator-only production evidence còn lại. P1 ROOT/ACL chỉ là closed candidate; không tuyên bố Production Stage 2 hoàn tất.
 
 Điều kiện để audit lại vẫn gồm hoàn tất các P1/P2 áp dụng được, operator evidence độc lập và architecture B plan/verify cho ACL, bundle và Nginx. Không được bắt đầu Stage 2 mutation chỉ dựa trên CI xanh hoặc tài liệu manual hiện tại.

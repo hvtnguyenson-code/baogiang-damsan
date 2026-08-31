@@ -6,7 +6,7 @@ const workflowPath = path.join(root, '.github', 'workflows', 'deploy-production.
 const firstDeployRunbookPath = path.join(root, 'docs', 'operations', 'PRODUCTION-CD-FIRST-DEPLOY-RUNBOOK.md');
 const environmentConfigurationPath = path.join(root, 'docs', 'operations', 'PRODUCTION-ENVIRONMENT-CONFIGURATION.md');
 const scriptDir = path.join(root, 'scripts', 'deploy', 'windows');
-const required = ['deployment-common.ps1','production-preflight-readonly.ps1','production-protected-neighbor-discovery.ps1','install-release.ps1','backup-database.ps1','run-migrations.ps1','sync-capability-catalog.ps1','switch-current-release.ps1','restart-baogiang-api.ps1','start-baogiang-api.ps1','validate-production-environment.ps1','test-production-health.ps1','rollback-release.ps1','invoke-production-deploy.ps1'];
+const required = ['deployment-common.ps1','production-root-acl-plan.ps1','production-root-acl-verify.ps1','production-preflight-readonly.ps1','production-protected-neighbor-discovery.ps1','install-release.ps1','backup-database.ps1','run-migrations.ps1','sync-capability-catalog.ps1','switch-current-release.ps1','restart-baogiang-api.ps1','start-baogiang-api.ps1','validate-production-environment.ps1','test-production-health.ps1','rollback-release.ps1','invoke-production-deploy.ps1'];
 const fail = (message) => { throw new Error(`[deployment-static] ${message}`); };
 const read = (file) => fs.readFileSync(file, 'utf8');
 if (!fs.existsSync(workflowPath)) fail('workflow is missing');
@@ -36,6 +36,18 @@ const common = read(path.join(scriptDir, 'deployment-common.ps1'));
 const rollback = read(path.join(scriptDir, 'rollback-release.ps1'));
 const invoke = read(path.join(scriptDir, 'invoke-production-deploy.ps1'));
 const preflight = read(path.join(scriptDir, 'production-preflight-readonly.ps1'));
+const aclPlan = read(path.join(scriptDir, 'production-root-acl-plan.ps1'));
+const aclVerify = read(path.join(scriptDir, 'production-root-acl-verify.ps1'));
+for (const [label, aclTool] of [['plan', aclPlan], ['verifier', aclVerify]]) {
+  if (/\b(Set-Acl|takeown|SetAccessRule|SetAccessRuleProtection|AddAccessRule|RemoveAccessRule|New-Item|Remove-Item)\b/i.test(aclTool)) fail(`ACL ${label} must remain read-only`);
+  if (/\bicacls\b/i.test(aclTool)) fail(`ACL ${label} must not invoke icacls`);
+  if (!aclTool.includes('mutationsPerformed = $false')) fail(`ACL ${label} must declare read-only evidence`);
+  if (!aclTool.includes('Get-ProductionAclPolicy') || /function\s+Get-ProductionAclPolicy/i.test(aclTool)) fail(`ACL ${label} must consume the single shared policy authority`);
+}
+if (!common.includes("return @('releases','staging','incoming','shared','logs','backups')")) fail('exact required production-directory authority drifted');
+for (const token of ['function Get-ProductionAclPolicy','function Normalize-AclRule','function Compare-AclSnapshotToPolicy','AreAccessRulesProtected','S-1-1-0','S-1-5-11','S-1-5-32-545']) if (!common.includes(token)) fail(`ACL authority control missing: ${token}`);
+if ((common.match(/function\s+Get-ProductionAclPolicy/g) || []).length !== 1) fail('ACL desired policy must have exactly one production authority');
+if (!(common.indexOf('Assert-ExistingNonReparseDirectory -Path $canonicalRoot -Role PRODUCTION_ROOT') < common.indexOf("$markerPath = Join-Path $canonicalRoot 'shared\\deployment-identity.json'"))) fail('Read-DeploymentIdentity must reject root reparse before reading the marker');
 const workflowValidation = workflow.slice(workflow.indexOf('- name: Validate target, pinned SSH identity and environment contract'), workflow.indexOf('- name: Verify exact target CI success'));
 if (!workflowValidation.includes('[[ "$PROD_SERVICE_KIND" == "scheduled-task" ]]') || !workflowValidation.includes('Production CD currently supports scheduled-task only.')) fail('production workflow must restrict runtime kind to scheduled-task only');
 if (/\bservice\b/.test(workflowValidation)) fail('production workflow validation must not permit service runtime kind');
