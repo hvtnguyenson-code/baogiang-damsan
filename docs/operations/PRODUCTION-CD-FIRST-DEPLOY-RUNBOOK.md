@@ -55,10 +55,10 @@ Every P1 root/ACL or startup-bundle plan/verifier report must target an existing
 8. Continue server-side environment evidence with `validate-production-environment.ps1`, then use the existing P0-3 activation contract: exact task verification, explicit enable, re-verification, start and bounded process/port proof. Bootstrap keeps the task disabled until that separately reviewed activation. Windows Service first-deploy remains unsupported.
 9. Use the dedicated Nginx authority in this exact sequence:
    1. Generate and review `production-nginx-plan.ps1` outside the production root, reviewed Nginx prefix, and source repository.
-   2. If the managed include already exists, preserve its exact bytes at the reviewed rollback-snapshot path and regenerate the plan until it is `READY_FOR_MANUAL_APPLY`.
+   2. If the managed include already exists, preserve its exact bytes at a separately reviewed rollback-snapshot path and regenerate the plan until it is `READY_FOR_MANUAL_APPLY`. The snapshot must remain outside the production root, Nginx prefix and source repository, and must not alias the managed config, Nginx executable/config, marker, plan/report, TLS certificate or TLS private key.
    3. Obtain independent review of the plan digest, include boundary, neighbor hashes, desired bytes, and structured command vectors.
    4. Manually apply only the exact managed Báo giảng include; do not patch the main config or neighboring files.
-   5. Run `production-nginx-verify.ps1 -Mode Desired`; require `EXACT_NGINX_AUTHORITY_VERIFIED` and the exact prefix-bound syntax test `<exe> -p <prefix> -t -c <config>`.
+   5. Run `production-nginx-verify.ps1 -Mode Desired`; it rechecks that the exact reviewed rollback snapshot still exists as an ordinary non-reparse file with the original SHA-256 immediately before reload authorization. A deleted, tampered, substituted or reparse snapshot is a mandatory STOP. Require `EXACT_NGINX_AUTHORITY_VERIFIED` and the exact prefix-bound syntax test `<exe> -p <prefix> -t -c <config>`.
    6. After explicit operator approval, the operator manually executes the exact reload vector recorded in the plan and then performs health/evidence checks.
    7. On failure, manually restore only the managed target to its recorded pre-state, run the exact syntax test, manually run the same planned reload vector, run `production-nginx-verify.ps1 -Mode Restored`, and repeat health/evidence checks.
 

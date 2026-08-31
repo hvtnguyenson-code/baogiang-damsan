@@ -39,16 +39,8 @@ $snapshot = [pscustomobject][ordered]@{path=$null;sha256=$null;state=if($preStat
 if ($preState.state -eq 'EXISTS') {
   if ([string]::IsNullOrWhiteSpace($RollbackSnapshot)) { if ($state -eq 'READY_FOR_MANUAL_APPLY') { $state='SNAPSHOT_REQUIRED' } }
   else {
-    $snapshotPath = Get-CanonicalPath $RollbackSnapshot
-    $protected = (Test-PathWithin $snapshotPath $binding.root) -or (Test-PathWithin $snapshotPath $binding.nginxPrefix) -or (Test-PathWithin $snapshotPath $repository)
-    if ($protected) { if ($state -eq 'READY_FOR_MANUAL_APPLY') { $state='SNAPSHOT_REQUIRED' }; $snapshot.state='INVALID_BOUNDARY' }
-    else {
-      Assert-PathAncestorChainNonReparse -Directory (Split-Path -Parent $snapshotPath) | Out-Null
-      if ((Get-PathSecurityClassification $snapshotPath file).state -eq 'PASS') {
-        $snapshotHash=Get-FileSha256FromBytes $snapshotPath; $snapshot.path=$snapshotPath; $snapshot.sha256=$snapshotHash
-        if ($snapshotHash -ceq $preState.sha256) { $snapshot.state='EXACT' } else { $snapshot.state='HASH_MISMATCH'; if($state -eq 'READY_FOR_MANUAL_APPLY'){$state='SNAPSHOT_REQUIRED'} }
-      } else { if($state -eq 'READY_FOR_MANUAL_APPLY'){$state='SNAPSHOT_REQUIRED'} }
-    }
+    $snapshot = Assert-NginxRollbackSnapshotEvidence -SnapshotPath $RollbackSnapshot -ProductionRoot $binding.root -NginxPrefix $binding.nginxPrefix -RepositoryRoot $repository -ManagedConfig $managed -NginxExe $binding.nginxExe -NginxConfig $binding.nginxConfig -MarkerPath $binding.markerPath -TlsCertificate $certificate -TlsPrivateKey $privateKey -ReportPath $safeReport -ExpectedSha256 $preState.sha256
+    if ($snapshot.state -cne 'EXACT' -and $state -eq 'READY_FOR_MANUAL_APPLY') { $state='SNAPSHOT_REQUIRED' }
   }
 }
 if ($null -ne $graph) {
@@ -67,5 +59,6 @@ $report = [pscustomobject][ordered]@{
   commands=Get-NginxCommandPlan $binding.nginxExe $binding.nginxPrefix $binding.nginxConfig
   safety=[pscustomobject][ordered]@{configMutationPerformed=$false;reloadExecuted=$false;privateKeyContentRead=$false}
 }
+Assert-NginxPlanSchema $report | Out-Null
 [IO.File]::WriteAllText($safeReport,($report|ConvertTo-Json -Depth 12),[Text.UTF8Encoding]::new($false))
 Write-Output ($report|ConvertTo-Json -Depth 12)

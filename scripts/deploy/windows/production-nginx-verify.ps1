@@ -26,19 +26,7 @@ if ((Get-PathSecurityClassification $planFile file).state -ne 'PASS' -or (Get-Fi
 $safeReport=Assert-SafeReadOnlyReportPath -ReportPath $ReportPath -ProductionRoot $binding.root -AdditionalProtectedRoot $binding.nginxPrefix -ProtectedLeaf @($planFile,$binding.nginxExe,$binding.nginxConfig,$ManagedConfig,$TlsCertificate,$TlsPrivateKey,$binding.markerPath)
 if (Test-PathWithin $safeReport $repository) { throw 'READ_ONLY_REPORT_PATH_CONFLICT' }
 $plan=Get-Content -LiteralPath $planFile -Raw -Encoding UTF8|ConvertFrom-Json
-$expectedTop=@('schemaVersion','mode','mutationsPerformed','state','reason','domain','binding','desired','preState','rollbackSnapshot','neighbors','preGraphFiles','commands','safety')
-Assert-StartupBundlePlanObject $plan $expectedTop
-if($plan.schemaVersion -ne 1 -or $plan.mode -cne 'READ_ONLY_NGINX_PLAN' -or $plan.mutationsPerformed -ne $false -or $plan.domain -cne 'baogiang.dtnt-damsan.edu.vn'){throw 'NGINX_PLAN_SCHEMA_INVALID'}
-Assert-StartupBundlePlanObject $plan.binding @('root','nginxExe','nginxPrefix','nginxConfig','managedConfig','tlsCertificate','tlsPrivateKey','clientMaxBodySize','repositoryRoot')
-Assert-StartupBundlePlanObject $plan.desired @('encoding','eol','sha256','contentBase64')
-Assert-StartupBundlePlanObject $plan.preState @('state','sha256','restoreAction')
-Assert-StartupBundlePlanObject $plan.rollbackSnapshot @('path','sha256','state')
-Assert-StartupBundlePlanObject $plan.commands @('syntaxTest','reload')
-Assert-StartupBundlePlanObject $plan.commands.syntaxTest @('executable','arguments')
-Assert-StartupBundlePlanObject $plan.commands.reload @('executable','arguments','execution')
-Assert-StartupBundlePlanObject $plan.safety @('configMutationPerformed','reloadExecuted','privateKeyContentRead')
-if($plan.state -notin @('READY_FOR_MANUAL_APPLY','SNAPSHOT_REQUIRED','BLOCKED_INCLUDE_BOUNDARY','CONFLICT') -or ($null -ne $plan.reason -and $plan.reason -isnot [string]) -or $plan.desired.encoding -cne 'UTF-8_NO_BOM' -or $plan.desired.eol -cne 'LF' -or $plan.desired.sha256 -notmatch '^[0-9a-f]{64}$' -or $plan.safety.configMutationPerformed -ne $false -or $plan.safety.reloadExecuted -ne $false -or $plan.safety.privateKeyContentRead -ne $false){throw 'NGINX_PLAN_SCHEMA_INVALID'}
-foreach($neighbor in @($plan.neighbors)){Assert-StartupBundlePlanObject $neighbor @('path','sha256');if($neighbor.path -isnot [string] -or $neighbor.sha256 -notmatch '^[0-9a-f]{64}$'){throw 'NGINX_PLAN_SCHEMA_INVALID'}}
+Assert-NginxPlanSchema $plan | Out-Null
 $managed=Get-CanonicalPath $ManagedConfig; $certificate=Assert-NginxTlsLeafMetadata $TlsCertificate 'CERTIFICATE'; $privateKey=Assert-NginxTlsLeafMetadata $TlsPrivateKey 'PRIVATE_KEY'
 foreach($pair in @(@($plan.binding.root,$binding.root),@($plan.binding.nginxExe,$binding.nginxExe),@($plan.binding.nginxPrefix,$binding.nginxPrefix),@($plan.binding.nginxConfig,$binding.nginxConfig),@($plan.binding.managedConfig,$managed),@($plan.binding.tlsCertificate,$certificate),@($plan.binding.tlsPrivateKey,$privateKey),@($plan.binding.repositoryRoot,$repository))){if((Normalize-ComparablePath $pair[0]) -ne (Normalize-ComparablePath $pair[1])){throw 'NGINX_PLAN_BINDING_CONFLICT'}}
 if($plan.binding.clientMaxBodySize -cne $ClientMaxBodySize){throw 'NGINX_PLAN_BINDING_CONFLICT'}
@@ -51,6 +39,9 @@ Assert-NginxNeighborSnapshot @($plan.neighbors) $graph $managed
 $resultCategory=''
 if($Mode -eq 'Desired'){
   if($plan.state -cne 'READY_FOR_MANUAL_APPLY'){throw 'NGINX_PLAN_NOT_READY'}
+  if($plan.preState.state -ceq 'EXISTS') {
+    Assert-NginxRollbackSnapshotEvidence -SnapshotPath $plan.rollbackSnapshot.path -ProductionRoot $binding.root -NginxPrefix $binding.nginxPrefix -RepositoryRoot $repository -ManagedConfig $managed -NginxExe $binding.nginxExe -NginxConfig $binding.nginxConfig -MarkerPath $binding.markerPath -TlsCertificate $certificate -TlsPrivateKey $privateKey -PlanPath $planFile -ReportPath $safeReport -ExpectedSha256 $plan.preState.sha256 -RequireExact | Out-Null
+  }
   if((Get-PathSecurityClassification $managed file).state -ne 'PASS'){throw 'NGINX_MANAGED_FILE_INVALID'}
   $actualBytes=[IO.File]::ReadAllBytes($managed); $expectedBytes=[Convert]::FromBase64String([string]$plan.desired.contentBase64)
   if((Get-Sha256FromBytes $actualBytes) -cne $plan.desired.sha256 -or (Get-Sha256FromBytes $expectedBytes) -cne $plan.desired.sha256 -or -not [Linq.Enumerable]::SequenceEqual([byte[]]$actualBytes,[byte[]]$expectedBytes)){throw 'NGINX_DESIRED_BYTES_CONFLICT'}

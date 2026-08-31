@@ -1161,6 +1161,109 @@ function Assert-NginxNeighborSnapshot([object[]]$Expected,[object]$Graph,[string
   for ($i=0;$i -lt $actual.Count;$i++) { if ((Normalize-ComparablePath $actual[$i].path) -ne (Normalize-ComparablePath $Expected[$i].path) -or $actual[$i].sha256 -cne $Expected[$i].sha256) { throw 'NGINX_NEIGHBOR_CONFLICT' } }
 }
 
+function Assert-NginxPlanSchema([Parameter(Mandatory = $true)]$Plan) {
+  try {
+    Assert-StartupBundlePlanObject $Plan @('schemaVersion','mode','mutationsPerformed','state','reason','domain','binding','desired','preState','rollbackSnapshot','neighbors','preGraphFiles','commands','safety')
+    Assert-StartupBundlePlanObject $Plan.binding @('root','nginxExe','nginxPrefix','nginxConfig','managedConfig','tlsCertificate','tlsPrivateKey','clientMaxBodySize','repositoryRoot')
+    Assert-StartupBundlePlanObject $Plan.desired @('encoding','eol','sha256','contentBase64')
+    Assert-StartupBundlePlanObject $Plan.preState @('state','sha256','restoreAction')
+    Assert-StartupBundlePlanObject $Plan.rollbackSnapshot @('path','sha256','state')
+    Assert-StartupBundlePlanObject $Plan.commands @('syntaxTest','reload')
+    Assert-StartupBundlePlanObject $Plan.commands.syntaxTest @('executable','arguments')
+    Assert-StartupBundlePlanObject $Plan.commands.reload @('executable','arguments','execution')
+    Assert-StartupBundlePlanObject $Plan.safety @('configMutationPerformed','reloadExecuted','privateKeyContentRead')
+  } catch { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+  if (($Plan.schemaVersion -isnot [int] -and $Plan.schemaVersion -isnot [long]) -or [long]$Plan.schemaVersion -ne 1 -or
+      $Plan.mode -isnot [string] -or $Plan.mode -cne 'READ_ONLY_NGINX_PLAN' -or $Plan.mutationsPerformed -isnot [bool] -or $Plan.mutationsPerformed -or
+      $Plan.state -isnot [string] -or $Plan.state -notin @('READY_FOR_MANUAL_APPLY','SNAPSHOT_REQUIRED','BLOCKED_INCLUDE_BOUNDARY','CONFLICT') -or
+      ($null -ne $Plan.reason -and $Plan.reason -isnot [string]) -or $Plan.domain -isnot [string] -or $Plan.domain -cne 'baogiang.dtnt-damsan.edu.vn') { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+  if ($Plan.state -in @('READY_FOR_MANUAL_APPLY','SNAPSHOT_REQUIRED') -and $null -ne $Plan.reason) { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+  if ($Plan.state -in @('BLOCKED_INCLUDE_BOUNDARY','CONFLICT') -and ($Plan.reason -isnot [string] -or [string]::IsNullOrWhiteSpace($Plan.reason))) { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+  foreach ($pathField in @('root','nginxExe','nginxPrefix','nginxConfig','managedConfig','tlsCertificate','tlsPrivateKey','repositoryRoot')) {
+    $value = $Plan.binding.$pathField
+    if ($value -isnot [string] -or [string]::IsNullOrWhiteSpace($value) -or -not [IO.Path]::IsPathRooted($value) -or (Get-CanonicalPath $value) -cne $value) { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+  }
+  if ($Plan.binding.clientMaxBodySize -isnot [string] -or $Plan.binding.clientMaxBodySize -notmatch '^[1-9][0-9]*(?:[kKmMgG])?$') { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+  if ($Plan.desired.encoding -isnot [string] -or $Plan.desired.encoding -cne 'UTF-8_NO_BOM' -or $Plan.desired.eol -isnot [string] -or $Plan.desired.eol -cne 'LF' -or
+      $Plan.desired.sha256 -isnot [string] -or $Plan.desired.sha256 -notmatch '^[0-9a-f]{64}$' -or $Plan.desired.contentBase64 -isnot [string]) { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+  try { $desiredPlanBytes = [Convert]::FromBase64String($Plan.desired.contentBase64) } catch { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+  if ((Get-Sha256FromBytes $desiredPlanBytes) -cne $Plan.desired.sha256) { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+  if ($Plan.preState.state -isnot [string] -or $Plan.preState.state -notin @('MISSING','EXISTS') -or $Plan.preState.restoreAction -isnot [string]) { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+  if ($Plan.preState.state -ceq 'MISSING') {
+    if ($null -ne $Plan.preState.sha256 -or $Plan.preState.restoreAction -cne 'REMOVE_EXACT_MANAGED_FILE' -or
+        $Plan.rollbackSnapshot.state -isnot [string] -or $Plan.rollbackSnapshot.state -cne 'NOT_REQUIRED' -or
+        $null -ne $Plan.rollbackSnapshot.path -or $null -ne $Plan.rollbackSnapshot.sha256 -or $Plan.state -ceq 'SNAPSHOT_REQUIRED') { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+  } else {
+    if ($Plan.preState.sha256 -isnot [string] -or $Plan.preState.sha256 -notmatch '^[0-9a-f]{64}$' -or $Plan.preState.restoreAction -cne 'RESTORE_EXACT_SNAPSHOT_BYTES' -or
+        $Plan.rollbackSnapshot.state -isnot [string] -or $Plan.rollbackSnapshot.state -notin @('REQUIRED','MISSING','EXACT','HASH_MISMATCH')) { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+    if ($Plan.rollbackSnapshot.state -ceq 'EXACT') {
+      if ($Plan.rollbackSnapshot.path -isnot [string] -or [string]::IsNullOrWhiteSpace($Plan.rollbackSnapshot.path) -or -not [IO.Path]::IsPathRooted($Plan.rollbackSnapshot.path) -or
+          (Get-CanonicalPath $Plan.rollbackSnapshot.path) -cne $Plan.rollbackSnapshot.path -or $Plan.rollbackSnapshot.sha256 -isnot [string] -or
+          $Plan.rollbackSnapshot.sha256 -cne $Plan.preState.sha256) { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+    } elseif ($Plan.rollbackSnapshot.state -ceq 'HASH_MISMATCH') {
+      if ($Plan.rollbackSnapshot.path -isnot [string] -or -not [IO.Path]::IsPathRooted($Plan.rollbackSnapshot.path) -or $Plan.rollbackSnapshot.sha256 -isnot [string] -or $Plan.rollbackSnapshot.sha256 -notmatch '^[0-9a-f]{64}$' -or $Plan.rollbackSnapshot.sha256 -ceq $Plan.preState.sha256) { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+    } elseif ($null -ne $Plan.rollbackSnapshot.path -or $null -ne $Plan.rollbackSnapshot.sha256) { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+    if ($Plan.state -ceq 'READY_FOR_MANUAL_APPLY' -and $Plan.rollbackSnapshot.state -cne 'EXACT') { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+    if ($Plan.state -ceq 'SNAPSHOT_REQUIRED' -and $Plan.rollbackSnapshot.state -ceq 'EXACT') { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+  }
+  if ($Plan.neighbors -isnot [object[]] -or $Plan.preGraphFiles -isnot [object[]]) { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+  $neighborPaths = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+  foreach ($neighbor in @($Plan.neighbors)) {
+    try { Assert-StartupBundlePlanObject $neighbor @('path','sha256') } catch { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+    if ($neighbor.path -isnot [string] -or -not [IO.Path]::IsPathRooted($neighbor.path) -or (Get-CanonicalPath $neighbor.path) -cne $neighbor.path -or
+        $neighbor.sha256 -isnot [string] -or $neighbor.sha256 -notmatch '^[0-9a-f]{64}$' -or -not $neighborPaths.Add($neighbor.path)) { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+  }
+  $graphPaths = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+  foreach ($graphPath in @($Plan.preGraphFiles)) { if ($graphPath -isnot [string] -or -not [IO.Path]::IsPathRooted($graphPath) -or (Get-CanonicalPath $graphPath) -cne $graphPath -or -not $graphPaths.Add($graphPath)) { throw 'NGINX_PLAN_SCHEMA_INVALID' } }
+  if ($Plan.commands.syntaxTest.executable -isnot [string] -or $Plan.commands.reload.executable -isnot [string] -or
+      $Plan.commands.syntaxTest.executable -cne $Plan.binding.nginxExe -or $Plan.commands.reload.executable -cne $Plan.binding.nginxExe -or
+      $Plan.commands.syntaxTest.arguments -isnot [object[]] -or $Plan.commands.reload.arguments -isnot [object[]] -or
+      (($Plan.commands.syntaxTest.arguments -join "`n") -cne (@('-p',$Plan.binding.nginxPrefix,'-t','-c',$Plan.binding.nginxConfig) -join "`n")) -or
+      (($Plan.commands.reload.arguments -join "`n") -cne (@('-p',$Plan.binding.nginxPrefix,'-c',$Plan.binding.nginxConfig,'-s','reload') -join "`n")) -or
+      $Plan.commands.reload.execution -isnot [string] -or $Plan.commands.reload.execution -cne 'MANUAL_ONLY') { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+  foreach ($safetyField in @('configMutationPerformed','reloadExecuted','privateKeyContentRead')) { if ($Plan.safety.$safetyField -isnot [bool] -or $Plan.safety.$safetyField) { throw 'NGINX_PLAN_SCHEMA_INVALID' } }
+  return $Plan
+}
+
+function Assert-NginxRollbackSnapshotEvidence(
+  [Parameter(Mandatory = $true)][string]$SnapshotPath,
+  [Parameter(Mandatory = $true)][string]$ProductionRoot,
+  [Parameter(Mandatory = $true)][string]$NginxPrefix,
+  [Parameter(Mandatory = $true)][string]$RepositoryRoot,
+  [Parameter(Mandatory = $true)][string]$ManagedConfig,
+  [Parameter(Mandatory = $true)][string]$NginxExe,
+  [Parameter(Mandatory = $true)][string]$NginxConfig,
+  [Parameter(Mandatory = $true)][string]$MarkerPath,
+  [Parameter(Mandatory = $true)][string]$TlsCertificate,
+  [Parameter(Mandatory = $true)][string]$TlsPrivateKey,
+  [string]$PlanPath = '',
+  [string]$ReportPath = '',
+  [string]$ExpectedSha256 = '',
+  [switch]$RequireExact
+) {
+  if ([string]::IsNullOrWhiteSpace($SnapshotPath)) { if ($RequireExact) { throw 'NGINX_ROLLBACK_SNAPSHOT_MISSING' }; return [pscustomobject][ordered]@{path=$null;sha256=$null;state='MISSING'} }
+  $snapshot = Get-CanonicalPath $SnapshotPath
+  foreach ($boundary in @($ProductionRoot,$NginxPrefix,$RepositoryRoot)) { if (Test-PathWithin $snapshot (Get-CanonicalPath $boundary)) { throw 'NGINX_ROLLBACK_SNAPSHOT_BOUNDARY_INVALID' } }
+  foreach ($protectedLeaf in @($ManagedConfig,$NginxExe,$NginxConfig,$MarkerPath,$TlsCertificate,$TlsPrivateKey,$PlanPath,$ReportPath)) {
+    if (-not [string]::IsNullOrWhiteSpace($protectedLeaf) -and (Normalize-ComparablePath $snapshot) -eq (Normalize-ComparablePath $protectedLeaf)) { throw 'NGINX_ROLLBACK_SNAPSHOT_PROTECTED_LEAF' }
+  }
+  try { Assert-PathAncestorChainNonReparse -Directory (Split-Path -Parent $snapshot) | Out-Null } catch {
+    if ($_.Exception.Message -match 'REPARSE_POINT') { throw 'NGINX_ROLLBACK_SNAPSHOT_REPARSE_POINT' }
+    throw 'NGINX_ROLLBACK_SNAPSHOT_BOUNDARY_INVALID'
+  }
+  $classification = Get-PathSecurityClassification -Path $snapshot -Kind file
+  if ($classification.state -eq 'MISSING') { if ($RequireExact) { throw 'NGINX_ROLLBACK_SNAPSHOT_MISSING' }; return [pscustomobject][ordered]@{path=$null;sha256=$null;state='MISSING'} }
+  if ($classification.state -eq 'REPARSE_POINT') { throw 'NGINX_ROLLBACK_SNAPSHOT_REPARSE_POINT' }
+  if ($classification.state -ne 'PASS') { throw 'NGINX_ROLLBACK_SNAPSHOT_BOUNDARY_INVALID' }
+  if (-not [string]::IsNullOrWhiteSpace($ExpectedSha256) -and $ExpectedSha256 -notmatch '^[0-9a-f]{64}$') { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+  $snapshotHash = Get-FileSha256FromBytes $snapshot
+  if (-not [string]::IsNullOrWhiteSpace($ExpectedSha256) -and $snapshotHash -cne $ExpectedSha256) {
+    if ($RequireExact) { throw 'NGINX_ROLLBACK_SNAPSHOT_HASH_MISMATCH' }
+    return [pscustomobject][ordered]@{path=$snapshot;sha256=$snapshotHash;state='HASH_MISMATCH'}
+  }
+  return [pscustomobject][ordered]@{path=$snapshot;sha256=$snapshotHash;state='EXACT'}
+}
+
 function Get-ManagedProductionEnvironmentNames {
   return @('NODE_ENV','TZ','API_HOST','API_PORT','HTTP_TRUST_PROXY_HOPS','DATABASE_URL','CORS_ORIGINS','AUTH_SESSION_TTL_SECONDS','AUTH_LAST_SEEN_UPDATE_SECONDS','AUTH_COOKIE_NAME','AUTH_COOKIE_PATH','AUTH_COOKIE_DOMAIN','AUTH_COOKIE_SECURE','AUTH_COOKIE_SAME_SITE','AUTH_LOCKOUT_THRESHOLD','AUTH_LOCKOUT_DURATION_SECONDS','AUTH_PASSWORD_MIN_LENGTH','AUTH_LOGIN_RATE_LIMIT_MAX','AUTH_LOGIN_RATE_LIMIT_WINDOW_SECONDS','AUTH_LOGIN_RATE_LIMIT_MAX_KEYS','AI_ENABLED','AI_ACTIVE_MODE_ENABLED','AI_PASSIVE_MODE_ENABLED','WEB_PUSH_ENABLED','LOG_LEVEL','TEST_DATABASE_URL','BOOTSTRAP_ADMIN_USERNAME','BOOTSTRAP_ADMIN_DISPLAY_NAME','BOOTSTRAP_ADMIN_PASSWORD')
 }
