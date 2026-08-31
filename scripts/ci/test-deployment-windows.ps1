@@ -263,6 +263,105 @@ if ($safeTaskEvidence -match 'arbitrary-secret-value|another-secret|--token|--pa
 $temp = Join-Path ([IO.Path]::GetTempPath()) ("baogiang-deploy-test-" + [guid]::NewGuid().ToString('N'))
 try {
   New-Item -ItemType Directory -Path $temp -Force | Out-Null
+  $aclRoot = Join-Path $temp 'acl-authority-root'
+  $aclShared = Join-Path $aclRoot 'shared'
+  foreach ($directory in @(Get-ProductionRequiredDirectoryNames)) { New-Item -ItemType Directory -Path (Join-Path $aclRoot $directory) -Force | Out-Null }
+  $aclEnv = Join-Path $aclShared 'production.env'
+  $aclWrapper = Join-Path $aclShared 'start-baogiang-api.ps1'
+  $aclCommon = Join-Path $aclShared 'deployment-common.ps1'
+  $aclMarker = Join-Path $aclShared 'deployment-identity.json'
+  foreach ($leaf in @($aclEnv,$aclWrapper,$aclCommon,$aclMarker)) { Set-Content -LiteralPath $leaf -Value 'fixture' -Encoding UTF8 }
+  $aclInputs = @{
+    CanonicalRoot = $aclRoot
+    DeploymentIdentity = 'S-1-5-21-100-200-300-1001'
+    ApiRuntimeIdentity = 'S-1-5-21-100-200-300-1002'
+    WebRuntimeIdentity = 'S-1-5-21-100-200-300-1003'
+    EnvFile = $aclEnv
+    StartupWrapper = $aclWrapper
+  }
+  $aclPolicyA = Get-ProductionAclPolicy @aclInputs
+  $aclPolicyB = Get-ProductionAclPolicy @aclInputs
+  if (($aclPolicyA | ConvertTo-Json -Depth 12 -Compress) -cne ($aclPolicyB | ConvertTo-Json -Depth 12 -Compress)) { throw 'ACL-P1 deterministic policy generation failed.' }
+  function Assert-AclPolicyPath([string]$Path,[string]$Kind,[hashtable]$ExpectedRights) {
+    $policyPath = @($aclPolicyA.protectedPaths | Where-Object { (Normalize-ComparablePath $_.path) -eq (Normalize-ComparablePath $Path) })
+    if ($policyPath.Count -ne 1 -or $policyPath[0].kind -ne $Kind -or -not $policyPath[0].inheritanceProtected) { throw "ACL-P1 protected path shape mismatch: $Path" }
+    if (@($policyPath[0].desiredAces).Count -ne $ExpectedRights.Count) { throw "ACL-P1 ACE count mismatch: $Path" }
+    $expectedInheritance = if ($Kind -eq 'directory') { [int]([Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [Security.AccessControl.InheritanceFlags]::ObjectInherit) } else { [int][Security.AccessControl.InheritanceFlags]::None }
+    foreach ($ace in @($policyPath[0].desiredAces)) {
+      if (-not $ExpectedRights.ContainsKey($ace.role) -or $ace.sid -ne $aclPolicyA.identities[$ace.role] -or [int64]$ace.rightsValue -ne [int64]$ExpectedRights[$ace.role] -or $ace.accessControlType -ne 'Allow' -or [int]$ace.inheritanceFlagsValue -ne $expectedInheritance -or [int]$ace.propagationFlagsValue -ne 0 -or [bool]$ace.isInherited) { throw "ACL-P1 exact ACE mismatch: $Path" }
+    }
+  }
+  $aclFull = [Security.AccessControl.FileSystemRights]::FullControl
+  $aclModify = [Security.AccessControl.FileSystemRights]::Modify
+  $aclReadExecute = [Security.AccessControl.FileSystemRights]::ReadAndExecute
+  $aclRead = [Security.AccessControl.FileSystemRights]::Read
+  $rootRights = @{ SYSTEM = $aclFull; Administrators = $aclFull; DeploymentIdentity = $aclModify; ApiRuntimeIdentity = $aclReadExecute; WebRuntimeIdentity = $aclReadExecute }
+  $deploymentOnlyRights = @{ SYSTEM = $aclFull; Administrators = $aclFull; DeploymentIdentity = $aclModify }
+  $apiReadExecuteRights = @{ SYSTEM = $aclFull; Administrators = $aclFull; DeploymentIdentity = $aclModify; ApiRuntimeIdentity = $aclReadExecute }
+  Assert-AclPolicyPath -Path $aclRoot -Kind directory -ExpectedRights $rootRights
+  Assert-AclPolicyPath -Path (Join-Path $aclRoot 'releases') -Kind directory -ExpectedRights $rootRights
+  foreach ($directory in @('staging','incoming','backups')) { Assert-AclPolicyPath -Path (Join-Path $aclRoot $directory) -Kind directory -ExpectedRights $deploymentOnlyRights }
+  Assert-AclPolicyPath -Path (Join-Path $aclRoot 'shared') -Kind directory -ExpectedRights $apiReadExecuteRights
+  Assert-AclPolicyPath -Path (Join-Path $aclRoot 'logs') -Kind directory -ExpectedRights @{ SYSTEM = $aclFull; Administrators = $aclFull; DeploymentIdentity = $aclModify; ApiRuntimeIdentity = $aclModify }
+  foreach ($leaf in @($aclMarker,$aclEnv)) { Assert-AclPolicyPath -Path $leaf -Kind file -ExpectedRights @{ SYSTEM = $aclFull; Administrators = $aclFull; DeploymentIdentity = $aclModify; ApiRuntimeIdentity = $aclRead } }
+  foreach ($leaf in @($aclWrapper,$aclCommon)) { Assert-AclPolicyPath -Path $leaf -Kind file -ExpectedRights $apiReadExecuteRights }
+  $aclPlanScript = Join-Path $repo 'scripts\deploy\windows\production-root-acl-plan.ps1'
+  $aclPlanReportA = Join-Path $temp 'acl-plan-a.json'
+  $aclPlanReportB = Join-Path $temp 'acl-plan-b.json'
+  foreach ($planReport in @($aclPlanReportA,$aclPlanReportB)) {
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $aclPlanScript -Root $aclRoot -DeploymentIdentity $aclInputs.DeploymentIdentity -ApiRuntimeIdentity $aclInputs.ApiRuntimeIdentity -WebRuntimeIdentity $aclInputs.WebRuntimeIdentity -EnvFile $aclEnv -StartupWrapper $aclWrapper -ReportPath $planReport | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'ACL-P1 standalone plan invocation failed.' }
+  }
+  if ((Get-Content -LiteralPath $aclPlanReportA -Raw) -cne (Get-Content -LiteralPath $aclPlanReportB -Raw)) { throw 'ACL-P1 standalone JSON plan was not deterministic.' }
+  $aclPolicyPath = $aclPolicyA.protectedPaths | Where-Object { (Normalize-ComparablePath $_.path) -eq (Normalize-ComparablePath (Join-Path $aclRoot 'releases')) } | Select-Object -First 1
+  $exactAclSnapshot = [pscustomobject]@{ inheritanceProtected = $true; access = @($aclPolicyPath.desiredAces | ForEach-Object { Normalize-AclRule $_ }) }
+
+  $missingAclSnapshot = [pscustomobject]@{ inheritanceProtected = $true; access = @($exactAclSnapshot.access | Select-Object -Skip 1) }
+  if ((Compare-AclSnapshotToPolicy $aclPolicyPath $missingAclSnapshot).state -ne 'MISSING_ACE') { throw 'ACL-P2 missing required ACE did not fail.' }
+
+  $broadAclRule = New-ProductionAclRule -Role 'UnexpectedBroadPrincipal' -Sid 'S-1-5-32-545' -Rights ([Security.AccessControl.FileSystemRights]::ReadAndExecute) -InheritanceFlags ([Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [Security.AccessControl.InheritanceFlags]::ObjectInherit)
+  $broadAclSnapshot = [pscustomobject]@{ inheritanceProtected = $true; access = @($exactAclSnapshot.access) + @(Normalize-AclRule $broadAclRule) }
+  if ((Compare-AclSnapshotToPolicy $aclPolicyPath $broadAclSnapshot).state -ne 'UNEXPECTED_ACE') { throw 'ACL-P3 unexpected broad ACE did not fail.' }
+
+  $denyAclRule = Normalize-AclRule $aclPolicyPath.desiredAces[0]
+  $denyAclRule.accessControlTypeValue = [int][Security.AccessControl.AccessControlType]::Deny
+  $denyAclSnapshot = [pscustomobject]@{ inheritanceProtected = $true; access = @($exactAclSnapshot.access) + @($denyAclRule) }
+  if ((Compare-AclSnapshotToPolicy $aclPolicyPath $denyAclSnapshot).state -ne 'DENY_ACE') { throw 'ACL-P4 explicit DENY did not fail.' }
+
+  $wrongRights = @($exactAclSnapshot.access | ForEach-Object { $_ | Select-Object * })
+  $wrongRights[0].rightsValue = [int64][Security.AccessControl.FileSystemRights]::Read
+  $wrongRightsSnapshot = [pscustomobject]@{ inheritanceProtected = $true; access = $wrongRights }
+  if ((Compare-AclSnapshotToPolicy $aclPolicyPath $wrongRightsSnapshot).state -ne 'RIGHTS_MISMATCH') { throw 'ACL-P5 wrong rights did not fail.' }
+
+  $wrongInheritanceSnapshot = [pscustomobject]@{ inheritanceProtected = $false; access = @($exactAclSnapshot.access) }
+  if ((Compare-AclSnapshotToPolicy $aclPolicyPath $wrongInheritanceSnapshot).state -ne 'INHERITANCE_MISMATCH') { throw 'ACL-P6 wrong inheritance protection did not fail.' }
+
+  $equivalentRights = @($aclPolicyPath.desiredAces | ForEach-Object { $_ | Select-Object * })
+  foreach ($rule in $equivalentRights) { $rule.rights = 'Equivalent composite representation ignored by authority' }
+  $equivalentSnapshot = [pscustomobject]@{ inheritanceProtected = $true; access = $equivalentRights }
+  if ((Compare-AclSnapshotToPolicy $aclPolicyPath $equivalentSnapshot).state -ne 'PASS') { throw 'ACL-P7 numeric equivalent rights representation did not pass.' }
+  if ((Compare-AclSnapshotToPolicy $aclPolicyPath $exactAclSnapshot).state -ne 'PASS') { throw 'ACL-P8 exact desired DACL snapshot did not pass.' }
+
+  $pathTarget = Join-Path $temp 'path-target'
+  New-Item -ItemType Directory -Path $pathTarget -Force | Out-Null
+  $pathRootJunction = Join-Path $temp 'path-root-junction'
+  New-Item -ItemType Junction -Path $pathRootJunction -Target $pathTarget | Out-Null
+  $pathRejected = $false
+  try { Assert-ExistingNonReparseDirectory -Path $pathRootJunction -Role PRODUCTION_ROOT | Out-Null } catch { if ($_.Exception.Message -eq 'PRODUCTION_ROOT_REPARSE_POINT') { $pathRejected = $true } }
+  if (-not $pathRejected) { throw 'PATH-P1 root reparse point did not fail categorically.' }
+
+  $pathFixtureRoot = Join-Path $temp 'path-fixture-root'
+  New-Item -ItemType Directory -Path $pathFixtureRoot -Force | Out-Null
+  foreach ($directory in @('staging','incoming','shared','logs','backups')) { New-Item -ItemType Directory -Path (Join-Path $pathFixtureRoot $directory) -Force | Out-Null }
+  $pathReleases = Join-Path $pathFixtureRoot 'releases'
+  New-Item -ItemType Junction -Path $pathReleases -Target $pathTarget | Out-Null
+  $pathRejected = $false
+  try { Assert-ExistingNonReparseDirectory -Path $pathReleases -Role PRODUCTION_SUBDIRECTORY | Out-Null } catch { if ($_.Exception.Message -eq 'PRODUCTION_SUBDIRECTORY_REPARSE_POINT') { $pathRejected = $true } }
+  if (-not $pathRejected) { throw 'PATH-P2 required subdirectory reparse point did not fail categorically.' }
+  Remove-Item -LiteralPath $pathReleases -Force
+  New-Item -ItemType Directory -Path $pathReleases | Out-Null
+  foreach ($directory in Get-ProductionRequiredDirectoryNames) { Assert-ExistingNonReparseDirectory -Path (Join-Path $pathFixtureRoot $directory) -Role PRODUCTION_SUBDIRECTORY | Out-Null }
+
   $schemaRoot = 'C:\fixture\baogiang'
   $validMarker = [pscustomobject]@{
     schemaVersion = [long]1; systemId = 'baogiang-damsan'; canonicalRoot = $schemaRoot; domain = 'https://baogiang.dtnt-damsan.edu.vn'; apiPort = [long]3100
@@ -340,6 +439,21 @@ try {
   if (Test-Path -LiteralPath $firstDeployMarker.entryPoint -PathType Leaf) { throw 'Pre-first-deploy fixture unexpectedly has a current entry point.' }
   function Get-FileHash([string]$LiteralPath,[string]$Algorithm) { [pscustomobject]@{ Hash = Get-SensitiveTextHash ([IO.File]::ReadAllText($LiteralPath)) } }
   Read-DeploymentIdentity -Root $firstDeployRoot -ServiceKind scheduled-task -ServiceName BaoGiangBackend -EnvFile $firstDeployEnv -StartupWrapper $firstDeployWrapper -ExpectedEntryPoint $firstDeployMarker.entryPoint -NodeExe $firstDeployNode -NginxExe $firstDeployNginx -NginxConfig $firstDeployConfig | Out-Null
+  $identityRootJunction = Join-Path $temp 'identity-root-junction'
+  New-Item -ItemType Junction -Path $identityRootJunction -Target $firstDeployRoot | Out-Null
+  $identityReparseRejected = $false
+  try { Read-DeploymentIdentity -Root $identityRootJunction -ServiceKind scheduled-task -ServiceName BaoGiangBackend -EnvFile $firstDeployEnv -StartupWrapper $firstDeployWrapper -ExpectedEntryPoint $firstDeployMarker.entryPoint | Out-Null } catch { if ($_.Exception.Message -eq 'PRODUCTION_ROOT_REPARSE_POINT') { $identityReparseRejected = $true } }
+  if (-not $identityReparseRejected) { throw 'Read-DeploymentIdentity accepted a reparse production root.' }
+  $identityReparseTarget = Join-Path $temp 'identity-subdirectory-target'
+  New-Item -ItemType Directory -Path $identityReparseTarget | Out-Null
+  $identityBackups = Join-Path $firstDeployRoot 'backups'
+  Remove-Item -LiteralPath $identityBackups -Force
+  New-Item -ItemType Junction -Path $identityBackups -Target $identityReparseTarget | Out-Null
+  $identityReparseRejected = $false
+  try { Read-DeploymentIdentity -Root $firstDeployRoot -ServiceKind scheduled-task -ServiceName BaoGiangBackend -EnvFile $firstDeployEnv -StartupWrapper $firstDeployWrapper -ExpectedEntryPoint $firstDeployMarker.entryPoint | Out-Null } catch { if ($_.Exception.Message -eq 'PRODUCTION_SUBDIRECTORY_REPARSE_POINT') { $identityReparseRejected = $true } }
+  if (-not $identityReparseRejected) { throw 'Read-DeploymentIdentity accepted a reparse required subdirectory.' }
+  Remove-Item -LiteralPath $identityBackups -Force
+  New-Item -ItemType Directory -Path $identityBackups | Out-Null
   foreach ($bindingFixture in @(
     @{ label = 'Node expected-value mismatch'; node = (Join-Path $temp 'other-node.exe'); nginx = $firstDeployNginx; config = $firstDeployConfig },
     @{ label = 'Nginx executable mismatch'; node = $firstDeployNode; nginx = (Join-Path $temp 'other-nginx.exe'); config = $firstDeployConfig },
@@ -634,7 +748,7 @@ try {
   $global:LASTEXITCODE = 77
   & { [pscustomobject]@{ state = 'completed' } } | Out-Null
   if ($LASTEXITCODE -ne 77) { throw 'Fixture did not preserve stale native exit code.' }
-  Write-Output '[deployment-windows] PASS (preflight isolation, SSH host-key/firewall, exact psql, privacy, safe-stop, migration, path and transfer fixtures)'
+  Write-Output '[deployment-windows] PASS (ACL-P1..ACL-P8, PATH-P1..PATH-P3, preflight isolation, SSH host-key/firewall, exact psql, privacy, safe-stop, migration and transfer fixtures)'
 } finally {
   if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Recurse -Force }
 }

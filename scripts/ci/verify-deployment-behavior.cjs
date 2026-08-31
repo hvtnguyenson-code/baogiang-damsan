@@ -17,6 +17,8 @@ const catalog = read('scripts/deploy/windows/sync-capability-catalog.ps1');
 const discovery = read('scripts/deploy/windows/production-protected-neighbor-discovery.ps1');
 const preflight = read('scripts/deploy/windows/production-preflight-readonly.ps1');
 const validator = read('scripts/deploy/windows/validate-production-environment.ps1');
+const aclPlan = read('scripts/deploy/windows/production-root-acl-plan.ps1');
+const aclVerify = read('scripts/deploy/windows/production-root-acl-verify.ps1');
 const firstDeployRunbook = read('docs/operations/PRODUCTION-CD-FIRST-DEPLOY-RUNBOOK.md');
 const remote = require('./build-windows-remote-command.cjs');
 
@@ -97,4 +99,10 @@ assert.match(preflight, /RequireReviewedIsolation/); assert.match(preflight, /Ge
 assert.match(preflight, /Resolve-ExpectedCandidateRuntimeName/); assert.match(preflight, /Get-SshDirectConfigEvidence/); assert.match(preflight, /Get-SshPortEvidence/); assert.match(preflight, /-SshPort @\(\$portEvidence\.agreedPorts\)/); assert.doesNotMatch(preflight, /\$ports \+ \$listeningPorts/);
 assert.match(preflight, /Resolve-DatabaseVerifierExecutable/); assert.doesNotMatch(preflight, /Get-Command\s+psql\b/i); assert.match(preflight, /& \$databaseVerifier --tuples-only/);
 assert.doesNotMatch(preflight, /argumentsRedacted|pathNameRedacted/); assert.match(preflight, /argumentsSha256/); assert.match(preflight, /pathNameSha256/);
+for (const aclTool of [aclPlan, aclVerify]) { assert.match(aclTool, /Get-ProductionAclPolicy/); assert.doesNotMatch(aclTool, /function\s+Get-ProductionAclPolicy|Set-Acl|SetAccessRule|SetAccessRuleProtection|\bicacls\b|takeown/i); }
+assert.match(common, /function Get-ProductionRequiredDirectoryNames/); assert.match(common, /function Assert-ExistingNonReparseDirectory/); assert.match(common, /PRODUCTION_ROOT_REPARSE_POINT/); assert.match(common, /PRODUCTION_SUBDIRECTORY_REPARSE_POINT/);
+assert.ok(common.indexOf('Assert-ExistingNonReparseDirectory -Path $canonicalRoot -Role PRODUCTION_ROOT') < common.indexOf("$markerPath = Join-Path $canonicalRoot 'shared\\deployment-identity.json'"));
+assert.match(common, /function Get-ProductionAclPolicy/); assert.match(common, /function Normalize-AclRule/); assert.match(common, /rightsValue/); assert.match(common, /function Compare-AclSnapshotToPolicy/); assert.match(common, /INHERITANCE_MISMATCH/); assert.match(common, /DENY_ACE/); assert.match(common, /DUPLICATE_SEMANTIC_ACE/);
+assert.match(aclVerify, /Get-ActualAclSnapshot/); assert.match(aclVerify, /broadPrincipalDetected/); assert.match(aclVerify, /PRODUCTION_ROOT_ACL_VERIFY_FAILED/); assert.doesNotMatch(aclVerify, /Join-Path \$policy\.canonicalRoot 'current'/);
+assert.ok(aclVerify.indexOf('Get-PathSecurityClassification -Path $canonicalRoot') < aclVerify.indexOf('$policy = Get-ProductionAclPolicy')); assert.ok(aclVerify.indexOf('foreach ($name in Get-ProductionRequiredDirectoryNames)') < aclVerify.indexOf('$policy = Get-ProductionAclPolicy')); assert.ok(aclVerify.indexOf('Get-ProductionAclPolicy') < aclVerify.indexOf('Get-ActualAclSnapshot'));
 console.log('[deployment-behavior] PASS (redaction, identity, preflight evidence, artifact, migration, rollback and transfer fixtures)');
