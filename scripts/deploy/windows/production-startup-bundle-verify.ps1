@@ -14,8 +14,7 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'deployment-common.ps1')
 
 $canonicalRoot = Assert-DedicatedRoot $Root
-$canonicalReport = Get-CanonicalPath $ReportPath
-Assert-ExistingDirectory (Split-Path -Parent $canonicalReport) | Out-Null
+$canonicalReport = Assert-SafeReadOnlyReportPath -ReportPath $ReportPath -ProductionRoot $canonicalRoot -ProtectedLeaf @($PlanPath)
 function Write-StartupBundleVerification([string]$State,[string]$Category,[object[]]$Checks) {
   $report = [pscustomobject][ordered]@{
     schemaVersion = 1

@@ -318,6 +318,15 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'ACL-P1 standalone plan invocation failed.' }
   }
   if ((Get-Content -LiteralPath $aclPlanReportA -Raw) -cne (Get-Content -LiteralPath $aclPlanReportB -Raw)) { throw 'ACL-P1 standalone JSON plan was not deterministic.' }
+  $aclVerifyScript = Join-Path $repo 'scripts\deploy\windows\production-root-acl-verify.ps1'
+  $aclReportCollisionSentinel = $aclMarker
+  $aclReportCollisionHash = Get-Sha256FromBytes ([IO.File]::ReadAllBytes($aclReportCollisionSentinel))
+  foreach ($aclReadOnlyTool in @($aclPlanScript,$aclVerifyScript)) {
+    $savedErrorActionPreference = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    $aclCollisionOutput = (& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $aclReadOnlyTool -Root $aclRoot -DeploymentIdentity $aclInputs.DeploymentIdentity -ApiRuntimeIdentity $aclInputs.ApiRuntimeIdentity -WebRuntimeIdentity $aclInputs.WebRuntimeIdentity -EnvFile $aclEnv -StartupWrapper $aclWrapper -ReportPath $aclReportCollisionSentinel 2>&1 | Out-String)
+    $aclCollisionExit = $LASTEXITCODE; $ErrorActionPreference = $savedErrorActionPreference
+    if ($aclCollisionExit -eq 0 -or $aclCollisionOutput -notmatch 'READ_ONLY_REPORT_PATH_CONFLICT' -or (Get-Sha256FromBytes ([IO.File]::ReadAllBytes($aclReportCollisionSentinel))) -ne $aclReportCollisionHash) { throw "RPT-P6 root ACL report collision was not rejected safely: $aclReadOnlyTool" }
+  }
   $aclPolicyPath = $aclPolicyA.protectedPaths | Where-Object { (Normalize-ComparablePath $_.path) -eq (Normalize-ComparablePath (Join-Path $aclRoot 'releases')) } | Select-Object -First 1
   $exactAclSnapshot = [pscustomobject]@{ inheritanceProtected = $true; access = @($aclPolicyPath.desiredAces | ForEach-Object { Normalize-AclRule $_ }) }
 
@@ -397,6 +406,9 @@ try {
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $sbPlanScript -RepositoryRoot $sbRepo -ReviewedCommitSha $sbCommitA -Root $sbRoot -ReportPath $planReport | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'SB-P1 exact-commit provenance plan failed.' }
   }
+  if (-not (Test-Path -LiteralPath $sbPlanA1 -PathType Leaf) -or (Test-PathWithin -Path $sbPlanA1 -Parent $sbRoot) -or (Test-PathWithin -Path $sbPlanA1 -Parent $sbRepo)) { throw 'RPT-P1 safe external report was not created outside protected roots.' }
+  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $sbPlanScript -RepositoryRoot $sbRepo -ReviewedCommitSha $sbCommitA -Root $sbRoot -ReportPath $sbPlanA1 | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw 'RPT-P1 prior ordinary external report could not be safely replaced.' }
   $sbPlanA = Get-Content -LiteralPath $sbPlanA1 -Raw | ConvertFrom-Json
   $sbPlanARepeat = Get-Content -LiteralPath $sbPlanA2 -Raw | ConvertFrom-Json
   if (($sbPlanA | ConvertTo-Json -Depth 10 -Compress) -cne ($sbPlanARepeat | ConvertTo-Json -Depth 10 -Compress) -or $sbPlanA.source.wrapper.sha256 -ne (Get-Sha256FromBytes $sbWrapperABytes) -or $sbPlanA.source.common.sha256 -ne (Get-Sha256FromBytes $sbCommonABytes) -or $sbPlanA.source.wrapper.gitBlobOid -notmatch '^[0-9a-f]{40,64}$' -or $sbPlanA.source.common.gitBlobOid -notmatch '^[0-9a-f]{40,64}$') { throw 'SB-P1 deterministic Git-blob provenance failed.' }
@@ -407,6 +419,11 @@ try {
   & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $sbPlanScript -RepositoryRoot $sbRepo -ReviewedCommitSha $sbCommitA -Root $sbRoot -ReportPath $sbDirtyPlan | Out-Null
   $sbDirtyAuthority = Get-Content -LiteralPath $sbDirtyPlan -Raw | ConvertFrom-Json
   if ($LASTEXITCODE -ne 0 -or $sbDirtyAuthority.source.wrapper.sha256 -ne $sbPlanA.source.wrapper.sha256 -or $sbDirtyAuthority.source.common.sha256 -ne $sbPlanA.source.common.sha256 -or $sbDirtyAuthority.source.wrapper.gitBlobOid -ne $sbPlanA.source.wrapper.gitBlobOid -or $sbDirtyAuthority.source.common.gitBlobOid -ne $sbPlanA.source.common.gitBlobOid) { throw 'SB-P2 dirty working tree changed provenance authority.' }
+  $sourceSentinelHash = Get-Sha256FromBytes ([IO.File]::ReadAllBytes($sbSourceWrapper))
+  $savedErrorActionPreference = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+  $sourceCollisionOutput = (& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $sbPlanScript -RepositoryRoot $sbRepo -ReviewedCommitSha $sbCommitA -Root $sbRoot -ReportPath $sbSourceWrapper 2>&1 | Out-String)
+  $sourceCollisionExit = $LASTEXITCODE; $ErrorActionPreference = $savedErrorActionPreference
+  if ($sourceCollisionExit -eq 0 -or $sourceCollisionOutput -notmatch 'READ_ONLY_REPORT_PATH_CONFLICT' -or (Get-Sha256FromBytes ([IO.File]::ReadAllBytes($sbSourceWrapper))) -ne $sourceSentinelHash) { throw 'RPT-P3 source repository report collision was not rejected without mutation.' }
 
   $invalidPlanReport = Join-Path $temp 'startup-plan-invalid.json'
   $savedErrorActionPreference = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
@@ -454,6 +471,37 @@ try {
 
   $sbShared = Join-Path $sbRoot 'shared'
   New-Item -ItemType Directory -Path $sbShared -Force | Out-Null
+  $productionReportSentinel = Join-Path $sbShared 'deployment-identity.json'
+  [IO.File]::WriteAllBytes($productionReportSentinel,[Text.Encoding]::UTF8.GetBytes('production report collision sentinel'))
+  $productionReportSentinelHash = Get-Sha256FromBytes ([IO.File]::ReadAllBytes($productionReportSentinel))
+  $savedErrorActionPreference = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+  $productionCollisionOutput = (& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $sbPlanScript -RepositoryRoot $sbRepo -ReviewedCommitSha $sbCommitA -Root $sbRoot -ReportPath $productionReportSentinel 2>&1 | Out-String)
+  $productionCollisionExit = $LASTEXITCODE; $ErrorActionPreference = $savedErrorActionPreference
+  if ($productionCollisionExit -eq 0 -or $productionCollisionOutput -notmatch 'READ_ONLY_REPORT_PATH_CONFLICT' -or (Get-Sha256FromBytes ([IO.File]::ReadAllBytes($productionReportSentinel))) -ne $productionReportSentinelHash) { throw 'RPT-P2 production-root report collision was not rejected without mutation.' }
+
+  $reportJunctionTarget = Join-Path $sbRoot 'report-junction-target'
+  New-Item -ItemType Directory -Path $reportJunctionTarget -Force | Out-Null
+  $reportParentJunction = Join-Path $temp 'report-parent-junction'
+  New-Item -ItemType Junction -Path $reportParentJunction -Target $reportJunctionTarget | Out-Null
+  $savedErrorActionPreference = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+  $reportParentOutput = (& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $sbPlanScript -RepositoryRoot $sbRepo -ReviewedCommitSha $sbCommitA -Root $sbRoot -ReportPath (Join-Path $reportParentJunction 'report.json') 2>&1 | Out-String)
+  $reportParentExit = $LASTEXITCODE; $ErrorActionPreference = $savedErrorActionPreference
+  if ($reportParentExit -eq 0 -or $reportParentOutput -notmatch 'READ_ONLY_REPORT_PARENT_REPARSE_POINT' -or (Test-Path -LiteralPath (Join-Path $reportJunctionTarget 'report.json'))) { throw 'RPT-P7 reparse report parent was followed or not rejected categorically.' }
+  Remove-Item -LiteralPath $reportParentJunction -Force
+  $reportTargetJunction = Join-Path $temp 'report-target-reparse.json'
+  New-Item -ItemType Junction -Path $reportTargetJunction -Target $reportJunctionTarget | Out-Null
+  $savedErrorActionPreference = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+  $reportTargetOutput = (& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $sbPlanScript -RepositoryRoot $sbRepo -ReviewedCommitSha $sbCommitA -Root $sbRoot -ReportPath $reportTargetJunction 2>&1 | Out-String)
+  $reportTargetExit = $LASTEXITCODE; $ErrorActionPreference = $savedErrorActionPreference
+  if ($reportTargetExit -eq 0 -or $reportTargetOutput -notmatch 'READ_ONLY_REPORT_TARGET_REPARSE_POINT') { throw 'RPT-P7 reparse report target was not rejected categorically.' }
+  Remove-Item -LiteralPath $reportTargetJunction -Force
+  $reportTargetDirectory = Join-Path $temp 'report-target-directory.json'
+  New-Item -ItemType Directory -Path $reportTargetDirectory -Force | Out-Null
+  $savedErrorActionPreference = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+  $reportTypeOutput = (& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $sbPlanScript -RepositoryRoot $sbRepo -ReviewedCommitSha $sbCommitA -Root $sbRoot -ReportPath $reportTargetDirectory 2>&1 | Out-String)
+  $reportTypeExit = $LASTEXITCODE; $ErrorActionPreference = $savedErrorActionPreference
+  if ($reportTypeExit -eq 0 -or $reportTypeOutput -notmatch 'READ_ONLY_REPORT_TARGET_TYPE_MISMATCH') { throw 'RPT-P7 report target directory was not rejected categorically.' }
+  Remove-Item -LiteralPath $reportTargetDirectory -Force
   $sbReparseTarget = Join-Path $temp 'startup-bundle-reparse-target'
   New-Item -ItemType Directory -Path $sbReparseTarget -Force | Out-Null
   New-Item -ItemType Junction -Path $expectedLayoutA.bundleRoot -Target $sbReparseTarget | Out-Null
@@ -514,6 +562,17 @@ try {
     if ($fixtureAclComparison.state -ne 'PASS') { throw "SB-P10 fixture ACL setup mismatch. Policy=$($policyPath.desiredAces | ConvertTo-Json -Depth 4 -Compress) Actual=$($fixtureAclSnapshot.access | ConvertTo-Json -Depth 4 -Compress)" }
   }
   Assert-StartupVerifierState -PlanPath $sbPlanA1 -ExpectedState PASS -ExpectedCategory EXACT_BUNDLE_VERIFIED -ShouldFail $false | Out-Null
+  $rptWrapperHash = Get-Sha256FromBytes ([IO.File]::ReadAllBytes($expectedLayoutA.wrapperPath))
+  $rptCommonHash = Get-Sha256FromBytes ([IO.File]::ReadAllBytes($expectedLayoutA.commonPath))
+  $planDigestA = Get-Sha256FromBytes ([IO.File]::ReadAllBytes($sbPlanA1))
+  $savedErrorActionPreference = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+  $wrapperCollisionOutput = (& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $sbVerifyScript -PlanPath $sbPlanA1 -ExpectedPlanSha256 $planDigestA -Root $sbRoot -DeploymentIdentity $sbDeploymentSid -ApiRuntimeIdentity $sbApiSid -WebRuntimeIdentity $sbWebSid -EnvFile $sbEnv -ReportPath $expectedLayoutA.wrapperPath 2>&1 | Out-String)
+  $wrapperCollisionExit = $LASTEXITCODE; $ErrorActionPreference = $savedErrorActionPreference
+  if ($wrapperCollisionExit -eq 0 -or $wrapperCollisionOutput -notmatch 'READ_ONLY_REPORT_PATH_CONFLICT' -or (Get-Sha256FromBytes ([IO.File]::ReadAllBytes($expectedLayoutA.wrapperPath))) -ne $rptWrapperHash -or (Get-Sha256FromBytes ([IO.File]::ReadAllBytes($expectedLayoutA.commonPath))) -ne $rptCommonHash) { throw 'RPT-P4 verifier overwrote or accepted the installed wrapper report sink.' }
+  $savedErrorActionPreference = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+  $planCollisionOutput = (& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $sbVerifyScript -PlanPath $sbPlanA1 -ExpectedPlanSha256 $planDigestA -Root $sbRoot -DeploymentIdentity $sbDeploymentSid -ApiRuntimeIdentity $sbApiSid -WebRuntimeIdentity $sbWebSid -EnvFile $sbEnv -ReportPath $sbPlanA1 2>&1 | Out-String)
+  $planCollisionExit = $LASTEXITCODE; $ErrorActionPreference = $savedErrorActionPreference
+  if ($planCollisionExit -eq 0 -or $planCollisionOutput -notmatch 'READ_ONLY_REPORT_PATH_CONFLICT' -or (Get-Sha256FromBytes ([IO.File]::ReadAllBytes($sbPlanA1))) -ne $planDigestA) { throw 'RPT-P5 verifier overwrote or accepted its reviewed PlanPath.' }
   $sbAWrapperHashBefore = Get-Sha256FromBytes ([IO.File]::ReadAllBytes($expectedLayoutA.wrapperPath))
   $sbACommonHashBefore = Get-Sha256FromBytes ([IO.File]::ReadAllBytes($expectedLayoutA.commonPath))
   Assert-StartupVerifierState -PlanPath $sbPlanA1 -ExpectedState PASS -ExpectedCategory EXACT_BUNDLE_VERIFIED -ShouldFail $false | Out-Null
@@ -959,7 +1018,7 @@ try {
   $global:LASTEXITCODE = 77
   & { [pscustomobject]@{ state = 'completed' } } | Out-Null
   if ($LASTEXITCODE -ne 77) { throw 'Fixture did not preserve stale native exit code.' }
-  Write-Output '[deployment-windows] PASS (ACL-P1..ACL-P8, PATH-P1..PATH-P3, SB-P1..SB-P14, preflight isolation, SSH host-key/firewall, exact psql, privacy, safe-stop, migration and transfer fixtures)'
+  Write-Output '[deployment-windows] PASS (ACL-P1..ACL-P8, PATH-P1..PATH-P3, SB-P1..SB-P14, RPT-P1..RPT-P7, preflight isolation, SSH host-key/firewall, exact psql, privacy, safe-stop, migration and transfer fixtures)'
 } finally {
   if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Recurse -Force }
 }

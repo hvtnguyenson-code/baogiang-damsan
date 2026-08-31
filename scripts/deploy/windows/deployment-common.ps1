@@ -413,6 +413,30 @@ function Test-PathWithin([Parameter(Mandatory = $true)][string]$Path,[Parameter(
   return $candidate -eq $container -or $candidate.StartsWith("$container\", [StringComparison]::OrdinalIgnoreCase)
 }
 
+function Assert-SafeReadOnlyReportPath(
+  [Parameter(Mandatory = $true)][string]$ReportPath,
+  [Parameter(Mandatory = $true)][string]$ProductionRoot,
+  [string]$AdditionalProtectedRoot = '',
+  [string[]]$ProtectedLeaf = @()
+) {
+  $canonicalReport = Get-CanonicalPath $ReportPath
+  foreach ($protectedRoot in @($ProductionRoot,$AdditionalProtectedRoot)) {
+    if (-not [string]::IsNullOrWhiteSpace($protectedRoot) -and (Test-PathWithin -Path $canonicalReport -Parent (Get-CanonicalPath $protectedRoot))) { throw 'READ_ONLY_REPORT_PATH_CONFLICT' }
+  }
+  foreach ($leaf in @($ProtectedLeaf)) {
+    if (-not [string]::IsNullOrWhiteSpace($leaf) -and (Normalize-ComparablePath $canonicalReport) -eq (Normalize-ComparablePath $leaf)) { throw 'READ_ONLY_REPORT_PATH_CONFLICT' }
+  }
+
+  $parentClassification = Get-PathSecurityClassification -Path (Split-Path -Parent $canonicalReport) -Kind directory
+  if ($parentClassification.state -eq 'REPARSE_POINT') { throw 'READ_ONLY_REPORT_PARENT_REPARSE_POINT' }
+  if ($parentClassification.state -ne 'PASS') { throw 'READ_ONLY_REPORT_PARENT_INVALID' }
+
+  $targetClassification = Get-PathSecurityClassification -Path $canonicalReport -Kind file
+  if ($targetClassification.state -eq 'REPARSE_POINT') { throw 'READ_ONLY_REPORT_TARGET_REPARSE_POINT' }
+  if ($targetClassification.state -eq 'TYPE_MISMATCH') { throw 'READ_ONLY_REPORT_TARGET_TYPE_MISMATCH' }
+  return $canonicalReport
+}
+
 function Assert-ExactChildPath([Parameter(Mandatory = $true)][string]$Root,[Parameter(Mandatory = $true)][string]$RelativePath) {
   $canonicalRoot = Assert-DedicatedRoot $Root
   $candidate = Get-CanonicalPath (Join-Path $canonicalRoot $RelativePath)

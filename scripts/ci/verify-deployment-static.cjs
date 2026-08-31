@@ -40,6 +40,12 @@ const aclPlan = read(path.join(scriptDir, 'production-root-acl-plan.ps1'));
 const aclVerify = read(path.join(scriptDir, 'production-root-acl-verify.ps1'));
 const startupBundlePlan = read(path.join(scriptDir, 'production-startup-bundle-plan.ps1'));
 const startupBundleVerify = read(path.join(scriptDir, 'production-startup-bundle-verify.ps1'));
+const p1ReadOnlyReportTools = [['root ACL plan', aclPlan], ['root ACL verifier', aclVerify], ['startup bundle plan', startupBundlePlan], ['startup bundle verifier', startupBundleVerify]];
+for (const [label, tool] of p1ReadOnlyReportTools) {
+  const guard = tool.indexOf('Assert-SafeReadOnlyReportPath');
+  const write = tool.indexOf('Set-Content -LiteralPath $canonicalReport');
+  if (guard < 0 || write < 0 || guard >= write) fail(`${label} must authorize the shared report sink before Set-Content`);
+}
 for (const [label, aclTool] of [['plan', aclPlan], ['verifier', aclVerify]]) {
   if (/\b(Set-Acl|takeown|SetAccessRule|SetAccessRuleProtection|AddAccessRule|RemoveAccessRule|New-Item|Remove-Item)\b/i.test(aclTool)) fail(`ACL ${label} must remain read-only`);
   if (/\bicacls\b/i.test(aclTool)) fail(`ACL ${label} must not invoke icacls`);
@@ -58,6 +64,9 @@ if (/function\s+(Get-ProductionAclPolicy|Normalize-AclRule|Compare-AclSnapshotTo
 if (!common.includes("return @('releases','staging','incoming','shared','logs','backups')")) fail('exact required production-directory authority drifted');
 for (const token of ['function Get-ProductionAclPolicy','function Normalize-AclRule','function Compare-AclSnapshotToPolicy','AreAccessRulesProtected','S-1-1-0','S-1-5-11','S-1-5-32-545']) if (!common.includes(token)) fail(`ACL authority control missing: ${token}`);
 for (const token of ['function Get-CanonicalStartupBundleLayout','function Get-CanonicalStartupBundleLayoutFromWrapper','function Get-StartupBundleProvenancePlan','function Assert-StartupBundlePlanSchema',"'shared\\startup-bundles'",'cat-file','BaseStream']) if (!common.includes(token)) fail(`startup bundle shared authority control missing: ${token}`);
+for (const token of ['function Assert-SafeReadOnlyReportPath','Test-PathWithin -Path $canonicalReport','READ_ONLY_REPORT_PATH_CONFLICT','READ_ONLY_REPORT_PARENT_REPARSE_POINT','READ_ONLY_REPORT_TARGET_REPARSE_POINT','READ_ONLY_REPORT_TARGET_TYPE_MISMATCH']) if (!common.includes(token)) fail(`shared read-only report boundary missing: ${token}`);
+if (!startupBundlePlan.includes('-AdditionalProtectedRoot $canonicalRepository')) fail('startup provenance plan must exclude its source repository from report sinks');
+if (!startupBundleVerify.includes('-ProtectedLeaf @($PlanPath)')) fail('startup verifier must protect its reviewed PlanPath from report overwrite');
 if ((common.match(/function\s+Get-ProductionAclPolicy/g) || []).length !== 1) fail('ACL desired policy must have exactly one production authority');
 if (!(common.indexOf('Assert-ExistingNonReparseDirectory -Path $canonicalRoot -Role PRODUCTION_ROOT') < common.indexOf("$markerPath = Join-Path $canonicalRoot 'shared\\deployment-identity.json'"))) fail('Read-DeploymentIdentity must reject root reparse before reading the marker');
 const workflowValidation = workflow.slice(workflow.indexOf('- name: Validate target, pinned SSH identity and environment contract'), workflow.indexOf('- name: Verify exact target CI success'));
