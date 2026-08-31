@@ -19,6 +19,8 @@ const preflight = read('scripts/deploy/windows/production-preflight-readonly.ps1
 const validator = read('scripts/deploy/windows/validate-production-environment.ps1');
 const aclPlan = read('scripts/deploy/windows/production-root-acl-plan.ps1');
 const aclVerify = read('scripts/deploy/windows/production-root-acl-verify.ps1');
+const startupBundlePlan = read('scripts/deploy/windows/production-startup-bundle-plan.ps1');
+const startupBundleVerify = read('scripts/deploy/windows/production-startup-bundle-verify.ps1');
 const firstDeployRunbook = read('docs/operations/PRODUCTION-CD-FIRST-DEPLOY-RUNBOOK.md');
 const remote = require('./build-windows-remote-command.cjs');
 
@@ -100,6 +102,17 @@ assert.match(preflight, /Resolve-ExpectedCandidateRuntimeName/); assert.match(pr
 assert.match(preflight, /Resolve-DatabaseVerifierExecutable/); assert.doesNotMatch(preflight, /Get-Command\s+psql\b/i); assert.match(preflight, /& \$databaseVerifier --tuples-only/);
 assert.doesNotMatch(preflight, /argumentsRedacted|pathNameRedacted/); assert.match(preflight, /argumentsSha256/); assert.match(preflight, /pathNameSha256/);
 for (const aclTool of [aclPlan, aclVerify]) { assert.match(aclTool, /Get-ProductionAclPolicy/); assert.doesNotMatch(aclTool, /function\s+Get-ProductionAclPolicy|Set-Acl|SetAccessRule|SetAccessRuleProtection|\bicacls\b|takeown/i); }
+assert.match(common, /mutationsPerformed = \$false/); assert.match(startupBundleVerify, /mutationsPerformed = \$false/);
+for (const startupTool of [startupBundlePlan, startupBundleVerify]) { assert.doesNotMatch(startupTool, /Copy-Item|Move-Item|Remove-Item|New-Item|Set-Acl|SetAccessRule|SetAccessRuleProtection|AddAccessRule|RemoveAccessRule|\bicacls\b|\btakeown\b/i); }
+assert.match(startupBundlePlan, /Get-StartupBundleProvenancePlan/); assert.match(common, /READ_ONLY_STARTUP_BUNDLE_PLAN/);
+assert.match(common, /function Invoke-GitCapturedBytes/); assert.match(common, /StandardOutput\.BaseStream\.CopyTo/); assert.match(common, /git cat-file failed|cat-file/); assert.match(common, /scripts\/deploy\/windows\/start-baogiang-api\.ps1/); assert.match(common, /scripts\/deploy\/windows\/deployment-common\.ps1/);
+assert.match(common, /function Get-CanonicalStartupBundleLayout/); assert.match(common, /shared\\startup-bundles/); assert.match(common, /function Assert-StartupBundlePlanSchema/); assert.match(common, /overwriteExisting/); assert.match(common, /deletePreviousVersions/); assert.match(common, /updateRequiresNewCommitDirectory/);
+assert.match(common, /function Assert-PathAncestorChainNonReparse/); assert.match(common, /function Assert-SafeReadOnlyReportPath/); assert.match(common, /Assert-PathAncestorChainNonReparse -Directory/); assert.match(common, /while \(-not \[string\]::IsNullOrWhiteSpace\(\$current\)\)/); assert.match(common, /Split-Path -Parent \$current/); assert.match(common, /READ_ONLY_REPORT_ANCESTOR_REPARSE_POINT/); assert.match(common, /Test-PathWithin -Path \$canonicalReport/); assert.match(common, /READ_ONLY_REPORT_PARENT_REPARSE_POINT/); assert.match(common, /READ_ONLY_REPORT_TARGET_REPARSE_POINT/);
+for (const reportTool of [aclPlan, aclVerify, startupBundlePlan, startupBundleVerify]) { assert.ok(reportTool.indexOf('Assert-SafeReadOnlyReportPath') >= 0); assert.ok(reportTool.indexOf('Assert-SafeReadOnlyReportPath') < reportTool.indexOf('Set-Content -LiteralPath $canonicalReport')); }
+assert.match(startupBundlePlan, /AdditionalProtectedRoot \$canonicalRepository/); assert.match(startupBundleVerify, /ProtectedLeaf @\(\$PlanPath\)/);
+assert.match(startupBundleVerify, /Assert-StartupBundlePlanSchema/); assert.match(startupBundleVerify, /Get-ProductionAclPolicy/); assert.match(startupBundleVerify, /Get-ActualAclSnapshot/); assert.match(startupBundleVerify, /Compare-AclSnapshotToPolicy/); assert.doesNotMatch(startupBundleVerify, /function\s+(Get-ProductionAclPolicy|Normalize-AclRule|Compare-AclSnapshotToPolicy|Get-ActualAclSnapshot)/);
+for (const category of ['INSTALL_REQUIRED','DESTINATION_MISSING','PARTIAL_DESTINATION','HASH_MISMATCH','REPARSE_POINT','ACL_MISMATCH','UNEXPECTED_FILE','LAYOUT_CONFLICT','PLAN_INVALID','EXACT_BUNDLE_VERIFIED']) assert.match(startupBundleVerify, new RegExp(category));
+assert.match(startupBundleVerify, /Get-ChildItem[^\n]+versionDirectory/); assert.match(startupBundleVerify, /entries\.Count -ne 2/); assert.match(startupBundleVerify, /ReadAllBytes/);
 assert.match(common, /function Get-ProductionRequiredDirectoryNames/); assert.match(common, /function Assert-ExistingNonReparseDirectory/); assert.match(common, /PRODUCTION_ROOT_REPARSE_POINT/); assert.match(common, /PRODUCTION_SUBDIRECTORY_REPARSE_POINT/);
 assert.ok(common.indexOf('Assert-ExistingNonReparseDirectory -Path $canonicalRoot -Role PRODUCTION_ROOT') < common.indexOf("$markerPath = Join-Path $canonicalRoot 'shared\\deployment-identity.json'"));
 assert.match(common, /function Get-ProductionAclPolicy/); assert.match(common, /function Normalize-AclRule/); assert.match(common, /rightsValue/); assert.match(common, /function Compare-AclSnapshotToPolicy/); assert.match(common, /INHERITANCE_MISMATCH/); assert.match(common, /DENY_ACE/); assert.match(common, /DUPLICATE_SEMANTIC_ACE/);

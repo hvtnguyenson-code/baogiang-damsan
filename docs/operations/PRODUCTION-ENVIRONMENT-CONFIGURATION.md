@@ -51,7 +51,7 @@ Bootstrap must create `<PROD_BAOGIANG_ROOT>\shared\deployment-identity.json` bef
   "apiPort": 3100,
   "nodeExe": "<reviewed absolute node.exe>",
   "envFile": "<reviewed server-side env path>",
-  "startupWrapper": "<reviewed start-baogiang-api.ps1 path>",
+  "startupWrapper": "<root>\\shared\\startup-bundles\\<reviewed 40hex commit>\\start-baogiang-api.ps1",
   "entryPoint": "<root>\current\apps\api\dist\apps\api\src\main.js",
   "nginxExe": "<reviewed nginx.exe path>",
   "nginxConfig": "<reviewed nginx config path>",
@@ -62,9 +62,9 @@ Bootstrap must create `<PROD_BAOGIANG_ROOT>\shared\deployment-identity.json` bef
     "bootstrapReportReference": "<redacted reviewed inventory report>"
   },
   "startupBundle": {
-    "wrapperPath": "<immutable shared start-baogiang-api.ps1 path>",
+    "wrapperPath": "<root>\\shared\\startup-bundles\\<reviewed 40hex commit>\\start-baogiang-api.ps1",
     "wrapperSha256": "<reviewed SHA-256>",
-    "commonPath": "<immutable shared deployment-common.ps1 path>",
+    "commonPath": "<root>\\shared\\startup-bundles\\<reviewed 40hex commit>\\deployment-common.ps1",
     "commonSha256": "<reviewed SHA-256>"
   },
   "service": {
@@ -81,7 +81,7 @@ Bootstrap must create `<PROD_BAOGIANG_ROOT>\shared\deployment-identity.json` bef
 
 `foreignIsolation` has exactly `reviewedNginxPrefix`, `reviewedNginxConfig`, `foreignRoots`, and `bootstrapReportReference`. `foreignRoots` is a non-empty JSON array of distinct absolute paths that do not overlap the dedicated root; the reviewed Nginx prefix also must not overlap it. `reviewedNginxConfig` binds exactly to top-level `nginxConfig`. The report reference is never emitted in errors.
 
-`startupBundle` has exactly `wrapperPath`, `wrapperSha256`, `commonPath`, and `commonSha256`; both hashes are 64-character hexadecimal SHA-256 values. The bundle paths bind to the approved wrapper and sibling `deployment-common.ps1` and both files are hash-verified.
+`startupBundle` has exactly `wrapperPath`, `wrapperSha256`, `commonPath`, and `commonSha256`; both hashes are 64-character hexadecimal SHA-256 values. For a new Stage 2 bootstrap, both paths are siblings under the canonical immutable `shared\startup-bundles\<reviewed lowercase 40hex commit>\` directory and both files are hash-verified. The reviewed commit, Git blob OIDs and exact-blob SHA-256 evidence live in the separately reviewed startup-bundle plan; no commit field is added to marker schema version 1.
 
 For `service.kind: "scheduled-task"`, the exact shape is `kind`, `name`, `taskPath`, `account`, `execute`, `arguments`, and `workingDirectory`. For `service.kind: "service"`, it is exactly `kind`, `name`, `account`, and `pathName`; `account` corresponds to Windows Service `StartName`. The shapes are discriminated and cannot carry each other's fields. A PowerShell script alone is not a Windows Service. The workflow and every mutating script refuse a missing marker, schema mismatch, root mismatch, bundle hash mismatch, path mismatch, service/task mismatch, port conflict, protected root, or missing pre-created directory.
 

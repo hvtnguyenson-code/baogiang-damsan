@@ -12,8 +12,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'deployment-common.ps1')
 
-$canonicalReport = Get-CanonicalPath $ReportPath
-Assert-ExistingDirectory (Split-Path -Parent $canonicalReport) | Out-Null
+$canonicalRoot = Assert-DedicatedRoot $Root
+$canonicalReport = Assert-SafeReadOnlyReportPath -ReportPath $ReportPath -ProductionRoot $canonicalRoot
 function Write-AclVerificationReport([string]$State,[string]$CanonicalRoot,[object[]]$Results) {
   $report = [pscustomobject][ordered]@{
     schemaVersion = 1
@@ -28,7 +28,6 @@ function Write-AclVerificationReport([string]$State,[string]$CanonicalRoot,[obje
   return $report
 }
 
-$canonicalRoot = Assert-DedicatedRoot $Root
 $rootClassification = Get-PathSecurityClassification -Path $canonicalRoot -Kind directory
 if ($rootClassification.state -ne 'PASS') {
   Write-AclVerificationReport -State FAIL -CanonicalRoot $canonicalRoot -Results @([pscustomobject][ordered]@{ path = $canonicalRoot; kind = 'directory'; state = $rootClassification.state; issues = @($rootClassification.state); broadPrincipalDetected = $false }) | Out-Null
