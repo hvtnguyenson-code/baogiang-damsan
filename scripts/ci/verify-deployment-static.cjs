@@ -78,6 +78,9 @@ for (const [label, nginxTool] of [['plan', nginxPlan], ['verifier', nginxVerify]
   if (/function\s+(Get-NginxTokens|Read-NginxAst|Get-NginxEffectiveGraph|Get-CanonicalNginxManagedBytes)/i.test(nginxTool)) fail(`Nginx ${label} duplicates shared parser/policy authority`);
 }
 for (const token of ['function Get-NginxRuntimeBinding','reviewedNginxPrefix','function Get-NginxTokens','function Read-NginxAst','function Get-NginxEffectiveGraph','function Get-CanonicalNginxManagedBytes','function Invoke-ReviewedNginxSyntaxTest',"@('-p'", "'-t'", "'-c'"]) if (!common.includes(token)) fail(`Nginx shared authority missing: ${token}`);
+for (const token of ['function Normalize-NginxExactServerName','function Get-NginxServerNameClassification',"kind='EXACT'","kind='WILDCARD'","kind='REGEX'",'ToLowerInvariant()','TrimEnd(\'.\')']) if (!common.includes(token)) fail(`Nginx hostname normalization authority missing: ${token}`);
+const collisionAuthority = common.slice(common.indexOf('function Test-NginxServerClaims443Domain'), common.indexOf('function Get-CanonicalNginxManagedBytes'));
+if (collisionAuthority.includes('-ccontains $Domain') || !collisionAuthority.includes('Get-NginxServerNameClassification') || !collisionAuthority.includes('normalizedExactName')) fail('Nginx collision authority must use normalized exact-name classification, not raw case-sensitive equality');
 for (const token of ['function Assert-NginxPlanSchema','function Assert-NginxRollbackSnapshotEvidence','NGINX_ROLLBACK_SNAPSHOT_PROTECTED_LEAF','NGINX_ROLLBACK_SNAPSHOT_HASH_MISMATCH']) if (!common.includes(token)) fail(`Nginx rollback authority missing: ${token}`);
 if ((common.match(/function\s+Assert-NginxPlanSchema/g) || []).length !== 1 || (common.match(/function\s+Assert-NginxRollbackSnapshotEvidence/g) || []).length !== 1) fail('Nginx schema and rollback snapshot must each have exactly one shared authority');
 for (const [label, tool] of [['plan', nginxPlan], ['verifier', nginxVerify]]) {

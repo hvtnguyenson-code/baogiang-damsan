@@ -1129,10 +1129,30 @@ function Get-NginxEffectiveGraph([string]$NginxPrefix,[string]$NginxConfig,[stri
 }
 
 function Get-NginxDirective([object]$Node,[string]$Name) { return @($Node.children | Where-Object { $_.name -ceq $Name }) }
+
+function Normalize-NginxExactServerName([Parameter(Mandatory = $true)][string]$ServerName) {
+  if ([string]::IsNullOrWhiteSpace($ServerName) -or $ServerName -match '[\x00-\x20\x7f/\\]' -or $ServerName.StartsWith('~') -or $ServerName.Contains('*') -or $ServerName.StartsWith('.') -or $ServerName.Contains('$')) { throw 'NGINX_SERVER_NAME_NOT_EXACT' }
+  $normalized = $ServerName.TrimEnd('.').ToLowerInvariant()
+  if ([string]::IsNullOrWhiteSpace($normalized) -or $normalized.Contains('..') -or $normalized.Length -gt 253 -or
+      $normalized -notmatch '^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$') { throw 'NGINX_SERVER_NAME_NOT_EXACT' }
+  return $normalized
+}
+
+function Get-NginxServerNameClassification([Parameter(Mandatory = $true)][string]$ServerName) {
+  if ([string]::IsNullOrWhiteSpace($ServerName) -or $ServerName -match '[\x00-\x20\x7f/\\]') { return [pscustomobject][ordered]@{kind='SPECIAL';normalizedExactName=$null} }
+  if ($ServerName.StartsWith('~')) { return [pscustomobject][ordered]@{kind='REGEX';normalizedExactName=$null} }
+  if ($ServerName.Contains('$')) { return [pscustomobject][ordered]@{kind='SPECIAL';normalizedExactName=$null} }
+  if ($ServerName.Contains('*') -or $ServerName.StartsWith('.')) { return [pscustomobject][ordered]@{kind='WILDCARD';normalizedExactName=$null} }
+  try { return [pscustomobject][ordered]@{kind='EXACT';normalizedExactName=Normalize-NginxExactServerName $ServerName} }
+  catch { return [pscustomobject][ordered]@{kind='OTHER';normalizedExactName=$null} }
+}
+
 function Test-NginxServerClaims443Domain([object]$Server,[string]$Domain = 'baogiang.dtnt-damsan.edu.vn') {
   $names = @(Get-NginxDirective $Server.node 'server_name' | ForEach-Object { $_.arguments })
   $listens = @(Get-NginxDirective $Server.node 'listen' | ForEach-Object { $_.arguments -join ' ' })
-  return ($names -ccontains $Domain) -and @($listens | Where-Object { $_ -match '(^|:)443(?:\s|$)' }).Count -gt 0
+  $approvedName = Normalize-NginxExactServerName $Domain
+  $claimsExactName = @($names | ForEach-Object { Get-NginxServerNameClassification $_ } | Where-Object { $_.kind -ceq 'EXACT' -and $_.normalizedExactName -ceq $approvedName }).Count -gt 0
+  return $claimsExactName -and @($listens | Where-Object { $_ -match '(^|:)443(?:\s|$)' }).Count -gt 0
 }
 
 function Get-CanonicalNginxManagedBytes([string]$Root,[string]$CertificatePath,[string]$PrivateKeyPath,[string]$ClientMaxBodySize) {
