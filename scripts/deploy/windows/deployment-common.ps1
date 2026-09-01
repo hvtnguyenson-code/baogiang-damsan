@@ -115,6 +115,10 @@ function Get-Sha256FromBytes([Parameter(Mandatory = $true)][byte[]]$Bytes) {
   return ([BitConverter]::ToString($digest)).Replace('-','').ToLowerInvariant()
 }
 
+function Get-FileSha256FromBytes([Parameter(Mandatory = $true)][string]$Path) {
+  return Get-Sha256FromBytes ([IO.File]::ReadAllBytes((Get-CanonicalPath $Path)))
+}
+
 function Invoke-GitCapturedBytes(
   [Parameter(Mandatory = $true)][string]$RepositoryRoot,
   [Parameter(Mandatory = $true)][ValidateNotNullOrEmpty()][string[]]$Argument
@@ -977,6 +981,307 @@ function Invoke-NativeChecked(
   & $FilePath @ArgumentList
   $exitCode = $LASTEXITCODE
   if ($exitCode -ne 0) { throw "$Operation failed with exit code $exitCode." }
+}
+
+function Get-NginxRuntimeBinding(
+  [Parameter(Mandatory = $true)][string]$Root,
+  [Parameter(Mandatory = $true)][string]$NginxExe,
+  [Parameter(Mandatory = $true)][string]$NginxPrefix,
+  [Parameter(Mandatory = $true)][string]$NginxConfig
+) {
+  $canonicalRoot = Assert-DedicatedRoot $Root
+  $markerPath = Get-CanonicalPath (Join-Path $canonicalRoot 'shared\deployment-identity.json')
+  Assert-PathAncestorChainNonReparse -Directory (Split-Path -Parent $markerPath) | Out-Null
+  if ((Get-PathSecurityClassification -Path $markerPath -Kind file).state -ne 'PASS') { throw 'NGINX_MARKER_INVALID' }
+  $marker = Get-Content -LiteralPath $markerPath -Raw -Encoding UTF8 | ConvertFrom-Json
+  Assert-DeploymentMarkerSchema -Marker $marker -CanonicalRoot $canonicalRoot | Out-Null
+  $binding = [pscustomobject][ordered]@{
+    nginxExe = Get-CanonicalPath $NginxExe
+    nginxPrefix = Get-CanonicalPath $NginxPrefix
+    nginxConfig = Get-CanonicalPath $NginxConfig
+  }
+  if ((Normalize-ComparablePath $binding.nginxExe) -ne (Normalize-ComparablePath $marker.nginxExe) -or
+      (Normalize-ComparablePath $binding.nginxPrefix) -ne (Normalize-ComparablePath $marker.foreignIsolation.reviewedNginxPrefix) -or
+      (Normalize-ComparablePath $binding.nginxConfig) -ne (Normalize-ComparablePath $marker.nginxConfig) -or
+      (Normalize-ComparablePath $binding.nginxConfig) -ne (Normalize-ComparablePath $marker.foreignIsolation.reviewedNginxConfig)) { throw 'NGINX_MARKER_BINDING_CONFLICT' }
+  foreach ($leaf in @($binding.nginxExe,$binding.nginxConfig)) {
+    Assert-PathAncestorChainNonReparse -Directory (Split-Path -Parent $leaf) | Out-Null
+    if ((Get-PathSecurityClassification -Path $leaf -Kind file).state -ne 'PASS') { throw 'NGINX_RUNTIME_LEAF_INVALID' }
+  }
+  Assert-PathAncestorChainNonReparse -Directory $binding.nginxPrefix | Out-Null
+  if ((Get-PathSecurityClassification -Path $binding.nginxPrefix -Kind directory).state -ne 'PASS') { throw 'NGINX_PREFIX_INVALID' }
+  return [pscustomobject][ordered]@{ root = $canonicalRoot; markerPath = $markerPath; marker = $marker; nginxExe = $binding.nginxExe; nginxPrefix = $binding.nginxPrefix; nginxConfig = $binding.nginxConfig }
+}
+
+function Get-NginxCommandPlan([string]$NginxExe,[string]$NginxPrefix,[string]$NginxConfig) {
+  return [pscustomobject][ordered]@{
+    syntaxTest = [pscustomobject][ordered]@{ executable = $NginxExe; arguments = @('-p',$NginxPrefix,'-t','-c',$NginxConfig) }
+    reload = [pscustomobject][ordered]@{ executable = $NginxExe; arguments = @('-p',$NginxPrefix,'-c',$NginxConfig,'-s','reload'); execution = 'MANUAL_ONLY' }
+  }
+}
+
+function Invoke-ReviewedNginxSyntaxTest([string]$NginxExe,[string]$NginxPrefix,[string]$NginxConfig) {
+  $arguments = @('-p',(Get-CanonicalPath $NginxPrefix),'-t','-c',(Get-CanonicalPath $NginxConfig))
+  & (Get-CanonicalPath $NginxExe) @arguments *> $null
+  if ($LASTEXITCODE -ne 0) { throw 'NGINX_SYNTAX_TEST_FAILED' }
+  return [pscustomobject][ordered]@{ executable = Get-CanonicalPath $NginxExe; arguments = $arguments; exitCode = 0 }
+}
+
+function ConvertTo-NginxPath([string]$Path) { return (Get-CanonicalPath $Path).Replace('\','/') }
+
+function Get-NginxTokens([Parameter(Mandatory = $true)][string]$Text) {
+  $tokens = [Collections.Generic.List[string]]::new(); $buffer = [Text.StringBuilder]::new()
+  $quote = [char]0; $escaped = $false
+  for ($index = 0; $index -lt $Text.Length; $index++) {
+    $character = $Text[$index]
+    if ($quote -ne [char]0) {
+      if ($escaped) { [void]$buffer.Append($character); $escaped = $false; continue }
+      if ($character -eq '\') { $escaped = $true; continue }
+      if ($character -eq $quote) { $tokens.Add($buffer.ToString()); [void]$buffer.Clear(); $quote = [char]0; continue }
+      [void]$buffer.Append($character); continue
+    }
+    if ($character -eq '#') { while ($index -lt $Text.Length -and $Text[$index] -notin @("`r","`n")) { $index++ }; continue }
+    if ($character -eq '"' -or $character -eq "'") {
+      if ($buffer.Length -gt 0) { throw 'NGINX_PARSE_AMBIGUOUS' }
+      $quote = $character; continue
+    }
+    if ([char]::IsWhiteSpace($character)) { if ($buffer.Length -gt 0) { $tokens.Add($buffer.ToString()); [void]$buffer.Clear() }; continue }
+    if ($character -in @('{','}',';')) { if ($buffer.Length -gt 0) { $tokens.Add($buffer.ToString()); [void]$buffer.Clear() }; $tokens.Add([string]$character); continue }
+    [void]$buffer.Append($character)
+  }
+  if ($quote -ne [char]0 -or $escaped) { throw 'NGINX_PARSE_AMBIGUOUS' }
+  if ($buffer.Length -gt 0) { $tokens.Add($buffer.ToString()) }
+  return @($tokens)
+}
+
+function Read-NginxAst([string]$Path) {
+  $bytes = [IO.File]::ReadAllBytes($Path)
+  $text = [Text.UTF8Encoding]::new($false,$true).GetString($bytes)
+  $tokens = @(Get-NginxTokens $text); $state = [pscustomobject]@{ position = 0 }
+  function Read-NginxBlock([bool]$Nested) {
+    $nodes = [Collections.Generic.List[object]]::new()
+    while ($state.position -lt $tokens.Count) {
+      if ($tokens[$state.position] -eq '}') { if (-not $Nested) { throw 'NGINX_PARSE_AMBIGUOUS' }; $state.position++; return @($nodes) }
+      $words = [Collections.Generic.List[string]]::new()
+      while ($state.position -lt $tokens.Count -and $tokens[$state.position] -notin @('{','}',';')) { $words.Add($tokens[$state.position]); $state.position++ }
+      if ($words.Count -eq 0 -or $state.position -ge $tokens.Count -or $tokens[$state.position] -eq '}') { throw 'NGINX_PARSE_AMBIGUOUS' }
+      $delimiter = $tokens[$state.position]; $state.position++
+      if ($delimiter -eq ';') { $nodes.Add([pscustomobject]@{ name=$words[0]; arguments=@($words | Select-Object -Skip 1); children=@(); file=(Get-CanonicalPath $Path) }) }
+      elseif ($delimiter -eq '{') { $nodes.Add([pscustomobject]@{ name=$words[0]; arguments=@($words | Select-Object -Skip 1); children=@(Read-NginxBlock $true); file=(Get-CanonicalPath $Path) }) }
+      else { throw 'NGINX_PARSE_AMBIGUOUS' }
+    }
+    if ($Nested) { throw 'NGINX_PARSE_AMBIGUOUS' }
+    return @($nodes)
+  }
+  $ast = @(Read-NginxBlock $false)
+  if ($state.position -ne $tokens.Count) { throw 'NGINX_PARSE_AMBIGUOUS' }
+  return [pscustomobject]@{ path=Get-CanonicalPath $Path; sha256=Get-Sha256FromBytes $bytes; nodes=$ast }
+}
+
+function Get-NginxEffectiveGraph([string]$NginxPrefix,[string]$NginxConfig,[string]$PlannedManagedPath = '') {
+  $prefix = Get-CanonicalPath $NginxPrefix; $main = Get-CanonicalPath $NginxConfig
+  $files = [Collections.Generic.List[object]]::new(); $servers = [Collections.Generic.List[object]]::new(); $includes = [Collections.Generic.List[object]]::new()
+  $visited = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase); $active = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+  function Visit-NginxFile([string]$FilePath,[string[]]$InheritedContext) {
+    $canonical = Get-CanonicalPath $FilePath
+    if (-not (Test-PathWithin $canonical $prefix)) { throw 'NGINX_INCLUDE_OUTSIDE_PREFIX' }
+    Assert-PathAncestorChainNonReparse -Directory (Split-Path -Parent $canonical) | Out-Null
+    if ((Get-PathSecurityClassification -Path $canonical -Kind file).state -ne 'PASS') { throw 'NGINX_CONFIG_FILE_INVALID' }
+    if ($active.Contains($canonical)) { throw 'NGINX_INCLUDE_CYCLE' }
+    if (-not $visited.Add($canonical)) { throw 'NGINX_INCLUDE_AMBIGUOUS' }
+    [void]$active.Add($canonical); $parsed = Read-NginxAst $canonical; $files.Add($parsed)
+    function Walk-NginxNodes([object[]]$Nodes,[string[]]$Context) {
+      foreach ($node in $Nodes) {
+        if ($node.name -ceq 'include') {
+          if ($node.arguments.Count -ne 1 -or $node.arguments[0] -match '\$') { throw 'NGINX_INCLUDE_DYNAMIC_OR_AMBIGUOUS' }
+          $pattern = [string]$node.arguments[0]
+          $wild = $pattern.IndexOfAny([char[]]'*?[') -ge 0
+          if ($wild) {
+            $rawPattern = if ([IO.Path]::IsPathRooted($pattern)) { $pattern } else { Join-Path $prefix $pattern }
+            $parent = Get-CanonicalPath (Split-Path -Parent $rawPattern); $resolvedPattern = Join-Path $parent (Split-Path -Leaf $rawPattern)
+            if (-not (Test-PathWithin $parent $prefix)) { throw 'NGINX_INCLUDE_OUTSIDE_PREFIX' }
+            Assert-PathAncestorChainNonReparse $parent | Out-Null
+            if ((Get-PathSecurityClassification $parent directory).state -ne 'PASS') { throw 'NGINX_INCLUDE_BOUNDARY_INVALID' }
+            $matches = @(Get-ChildItem -Path $resolvedPattern -File -ErrorAction SilentlyContinue | Sort-Object FullName)
+            $plannedMatch = -not [string]::IsNullOrWhiteSpace($PlannedManagedPath) -and (Get-CanonicalPath $PlannedManagedPath) -like $resolvedPattern
+            if ($matches.Count -eq 0 -and -not $plannedMatch) { throw 'NGINX_INCLUDE_UNRESOLVED' }
+            $includes.Add([pscustomobject]@{source=$canonical;pattern=$resolvedPattern;wildcard=$true;plannedMatch=$plannedMatch;matches=@($matches.FullName | ForEach-Object { Get-CanonicalPath $_ })})
+            foreach ($match in $matches) { Visit-NginxFile $match.FullName $Context }
+          } else {
+            $resolvedPattern = if ([IO.Path]::IsPathRooted($pattern)) { Get-CanonicalPath $pattern } else { Get-CanonicalPath (Join-Path $prefix $pattern) }
+            if (-not (Test-PathWithin $resolvedPattern $prefix)) { throw 'NGINX_INCLUDE_OUTSIDE_PREFIX' }
+            $isPlanned = -not [string]::IsNullOrWhiteSpace($PlannedManagedPath) -and (Normalize-ComparablePath $resolvedPattern) -eq (Normalize-ComparablePath $PlannedManagedPath)
+            $includes.Add([pscustomobject]@{source=$canonical;pattern=$resolvedPattern;wildcard=$false;plannedMatch=$isPlanned;matches=if(Test-Path -LiteralPath $resolvedPattern){@($resolvedPattern)}else{@()}})
+            if (Test-Path -LiteralPath $resolvedPattern) { Visit-NginxFile $resolvedPattern $Context } elseif (-not $isPlanned) { throw 'NGINX_INCLUDE_UNRESOLVED' }
+          }
+        }
+        if ($node.name -ceq 'server') {
+          if ($Context.Count -eq 0 -or $Context[$Context.Count-1] -cne 'http') { throw 'NGINX_SERVER_CONTEXT_AMBIGUOUS' }
+          $servers.Add([pscustomobject]@{file=$canonical;context=@($Context);node=$node})
+        }
+        if ($node.children.Count -gt 0) { Walk-NginxNodes $node.children @($Context + $node.name) }
+      }
+    }
+    Walk-NginxNodes $parsed.nodes $InheritedContext; [void]$active.Remove($canonical)
+  }
+  Visit-NginxFile $main @()
+  return [pscustomobject][ordered]@{ main=$main; files=@($files); includes=@($includes); servers=@($servers) }
+}
+
+function Get-NginxDirective([object]$Node,[string]$Name) { return @($Node.children | Where-Object { $_.name -ceq $Name }) }
+
+function Normalize-NginxExactServerName([Parameter(Mandatory = $true)][string]$ServerName) {
+  if ([string]::IsNullOrWhiteSpace($ServerName) -or $ServerName -match '[\x00-\x20\x7f/\\]' -or $ServerName.StartsWith('~') -or $ServerName.Contains('*') -or $ServerName.StartsWith('.') -or $ServerName.Contains('$')) { throw 'NGINX_SERVER_NAME_NOT_EXACT' }
+  $normalized = $ServerName.TrimEnd('.').ToLowerInvariant()
+  if ([string]::IsNullOrWhiteSpace($normalized) -or $normalized.Contains('..') -or $normalized.Length -gt 253 -or
+      $normalized -notmatch '^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$') { throw 'NGINX_SERVER_NAME_NOT_EXACT' }
+  return $normalized
+}
+
+function Get-NginxServerNameClassification([Parameter(Mandatory = $true)][string]$ServerName) {
+  if ([string]::IsNullOrWhiteSpace($ServerName) -or $ServerName -match '[\x00-\x20\x7f/\\]') { return [pscustomobject][ordered]@{kind='SPECIAL';normalizedExactName=$null} }
+  if ($ServerName.StartsWith('~')) { return [pscustomobject][ordered]@{kind='REGEX';normalizedExactName=$null} }
+  if ($ServerName.Contains('$')) { return [pscustomobject][ordered]@{kind='SPECIAL';normalizedExactName=$null} }
+  if ($ServerName.Contains('*') -or $ServerName.StartsWith('.')) { return [pscustomobject][ordered]@{kind='WILDCARD';normalizedExactName=$null} }
+  try { return [pscustomobject][ordered]@{kind='EXACT';normalizedExactName=Normalize-NginxExactServerName $ServerName} }
+  catch { return [pscustomobject][ordered]@{kind='OTHER';normalizedExactName=$null} }
+}
+
+function Test-NginxServerClaims443Domain([object]$Server,[string]$Domain = 'baogiang.dtnt-damsan.edu.vn') {
+  $names = @(Get-NginxDirective $Server.node 'server_name' | ForEach-Object { $_.arguments })
+  $listens = @(Get-NginxDirective $Server.node 'listen' | ForEach-Object { $_.arguments -join ' ' })
+  $approvedName = Normalize-NginxExactServerName $Domain
+  $claimsExactName = @($names | ForEach-Object { Get-NginxServerNameClassification $_ } | Where-Object { $_.kind -ceq 'EXACT' -and $_.normalizedExactName -ceq $approvedName }).Count -gt 0
+  return $claimsExactName -and @($listens | Where-Object { $_ -match '(^|:)443(?:\s|$)' }).Count -gt 0
+}
+
+function Get-CanonicalNginxManagedBytes([string]$Root,[string]$CertificatePath,[string]$PrivateKeyPath,[string]$ClientMaxBodySize) {
+  if ($ClientMaxBodySize -notmatch '^[1-9][0-9]*(?:[kKmMgG])?$') { throw 'NGINX_REQUEST_SIZE_INVALID' }
+  $webRoot = ConvertTo-NginxPath (Join-Path (Assert-DedicatedRoot $Root) 'current\apps\web\dist')
+  $certificate = ConvertTo-NginxPath $CertificatePath; $privateKey = ConvertTo-NginxPath $PrivateKeyPath
+  $content = @(
+    'server {','    listen 443 ssl;','    server_name baogiang.dtnt-damsan.edu.vn;',"    root `"$webRoot`";",'    index index.html;',"    client_max_body_size $ClientMaxBodySize;", "    ssl_certificate `"$certificate`";", "    ssl_certificate_key `"$privateKey`";",'', '    location / {','        try_files $uri $uri/ /index.html;','    }','', '    location /api/ {','        proxy_pass http://127.0.0.1:3100;','        proxy_http_version 1.1;','        proxy_set_header Host $host;','        proxy_set_header X-Real-IP $remote_addr;','        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;','        proxy_set_header X-Forwarded-Proto $scheme;','    }','}',''
+  ) -join "`n"
+  return [Text.UTF8Encoding]::new($false).GetBytes($content)
+}
+
+function Assert-NginxTlsLeafMetadata([string]$Path,[string]$Label) {
+  Assert-PathAncestorChainNonReparse -Directory (Split-Path -Parent (Get-CanonicalPath $Path)) | Out-Null
+  if ((Get-PathSecurityClassification -Path $Path -Kind file).state -ne 'PASS') { throw "NGINX_${Label}_INVALID" }
+  return Get-CanonicalPath $Path
+}
+
+function Get-NginxNeighborSnapshot([object]$Graph,[string]$ManagedPath) {
+  return @($Graph.files | Where-Object { (Normalize-ComparablePath $_.path) -ne (Normalize-ComparablePath $ManagedPath) } | Sort-Object path | ForEach-Object { [pscustomobject][ordered]@{path=$_.path;sha256=$_.sha256} })
+}
+
+function Assert-NginxNeighborSnapshot([object[]]$Expected,[object]$Graph,[string]$ManagedPath) {
+  $actual = @(Get-NginxNeighborSnapshot $Graph $ManagedPath)
+  if ($actual.Count -ne @($Expected).Count) { throw 'NGINX_NEIGHBOR_CONFLICT' }
+  for ($i=0;$i -lt $actual.Count;$i++) { if ((Normalize-ComparablePath $actual[$i].path) -ne (Normalize-ComparablePath $Expected[$i].path) -or $actual[$i].sha256 -cne $Expected[$i].sha256) { throw 'NGINX_NEIGHBOR_CONFLICT' } }
+}
+
+function Assert-NginxPlanSchema([Parameter(Mandatory = $true)]$Plan) {
+  try {
+    Assert-StartupBundlePlanObject $Plan @('schemaVersion','mode','mutationsPerformed','state','reason','domain','binding','desired','preState','rollbackSnapshot','neighbors','preGraphFiles','commands','safety')
+    Assert-StartupBundlePlanObject $Plan.binding @('root','nginxExe','nginxPrefix','nginxConfig','managedConfig','tlsCertificate','tlsPrivateKey','clientMaxBodySize','repositoryRoot')
+    Assert-StartupBundlePlanObject $Plan.desired @('encoding','eol','sha256','contentBase64')
+    Assert-StartupBundlePlanObject $Plan.preState @('state','sha256','restoreAction')
+    Assert-StartupBundlePlanObject $Plan.rollbackSnapshot @('path','sha256','state')
+    Assert-StartupBundlePlanObject $Plan.commands @('syntaxTest','reload')
+    Assert-StartupBundlePlanObject $Plan.commands.syntaxTest @('executable','arguments')
+    Assert-StartupBundlePlanObject $Plan.commands.reload @('executable','arguments','execution')
+    Assert-StartupBundlePlanObject $Plan.safety @('configMutationPerformed','reloadExecuted','privateKeyContentRead')
+  } catch { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+  if (($Plan.schemaVersion -isnot [int] -and $Plan.schemaVersion -isnot [long]) -or [long]$Plan.schemaVersion -ne 1 -or
+      $Plan.mode -isnot [string] -or $Plan.mode -cne 'READ_ONLY_NGINX_PLAN' -or $Plan.mutationsPerformed -isnot [bool] -or $Plan.mutationsPerformed -or
+      $Plan.state -isnot [string] -or $Plan.state -notin @('READY_FOR_MANUAL_APPLY','SNAPSHOT_REQUIRED','BLOCKED_INCLUDE_BOUNDARY','CONFLICT') -or
+      ($null -ne $Plan.reason -and $Plan.reason -isnot [string]) -or $Plan.domain -isnot [string] -or $Plan.domain -cne 'baogiang.dtnt-damsan.edu.vn') { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+  if ($Plan.state -in @('READY_FOR_MANUAL_APPLY','SNAPSHOT_REQUIRED') -and $null -ne $Plan.reason) { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+  if ($Plan.state -in @('BLOCKED_INCLUDE_BOUNDARY','CONFLICT') -and ($Plan.reason -isnot [string] -or [string]::IsNullOrWhiteSpace($Plan.reason))) { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+  foreach ($pathField in @('root','nginxExe','nginxPrefix','nginxConfig','managedConfig','tlsCertificate','tlsPrivateKey','repositoryRoot')) {
+    $value = $Plan.binding.$pathField
+    if ($value -isnot [string] -or [string]::IsNullOrWhiteSpace($value) -or -not [IO.Path]::IsPathRooted($value) -or (Get-CanonicalPath $value) -cne $value) { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+  }
+  if ($Plan.binding.clientMaxBodySize -isnot [string] -or $Plan.binding.clientMaxBodySize -notmatch '^[1-9][0-9]*(?:[kKmMgG])?$') { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+  if ($Plan.desired.encoding -isnot [string] -or $Plan.desired.encoding -cne 'UTF-8_NO_BOM' -or $Plan.desired.eol -isnot [string] -or $Plan.desired.eol -cne 'LF' -or
+      $Plan.desired.sha256 -isnot [string] -or $Plan.desired.sha256 -notmatch '^[0-9a-f]{64}$' -or $Plan.desired.contentBase64 -isnot [string]) { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+  try { $desiredPlanBytes = [Convert]::FromBase64String($Plan.desired.contentBase64) } catch { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+  if ((Get-Sha256FromBytes $desiredPlanBytes) -cne $Plan.desired.sha256) { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+  if ($Plan.preState.state -isnot [string] -or $Plan.preState.state -notin @('MISSING','EXISTS') -or $Plan.preState.restoreAction -isnot [string]) { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+  if ($Plan.preState.state -ceq 'MISSING') {
+    if ($null -ne $Plan.preState.sha256 -or $Plan.preState.restoreAction -cne 'REMOVE_EXACT_MANAGED_FILE' -or
+        $Plan.rollbackSnapshot.state -isnot [string] -or $Plan.rollbackSnapshot.state -cne 'NOT_REQUIRED' -or
+        $null -ne $Plan.rollbackSnapshot.path -or $null -ne $Plan.rollbackSnapshot.sha256 -or $Plan.state -ceq 'SNAPSHOT_REQUIRED') { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+  } else {
+    if ($Plan.preState.sha256 -isnot [string] -or $Plan.preState.sha256 -notmatch '^[0-9a-f]{64}$' -or $Plan.preState.restoreAction -cne 'RESTORE_EXACT_SNAPSHOT_BYTES' -or
+        $Plan.rollbackSnapshot.state -isnot [string] -or $Plan.rollbackSnapshot.state -notin @('REQUIRED','MISSING','EXACT','HASH_MISMATCH')) { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+    if ($Plan.rollbackSnapshot.state -ceq 'EXACT') {
+      if ($Plan.rollbackSnapshot.path -isnot [string] -or [string]::IsNullOrWhiteSpace($Plan.rollbackSnapshot.path) -or -not [IO.Path]::IsPathRooted($Plan.rollbackSnapshot.path) -or
+          (Get-CanonicalPath $Plan.rollbackSnapshot.path) -cne $Plan.rollbackSnapshot.path -or $Plan.rollbackSnapshot.sha256 -isnot [string] -or
+          $Plan.rollbackSnapshot.sha256 -cne $Plan.preState.sha256) { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+    } elseif ($Plan.rollbackSnapshot.state -ceq 'HASH_MISMATCH') {
+      if ($Plan.rollbackSnapshot.path -isnot [string] -or -not [IO.Path]::IsPathRooted($Plan.rollbackSnapshot.path) -or $Plan.rollbackSnapshot.sha256 -isnot [string] -or $Plan.rollbackSnapshot.sha256 -notmatch '^[0-9a-f]{64}$' -or $Plan.rollbackSnapshot.sha256 -ceq $Plan.preState.sha256) { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+    } elseif ($null -ne $Plan.rollbackSnapshot.path -or $null -ne $Plan.rollbackSnapshot.sha256) { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+    if ($Plan.state -ceq 'READY_FOR_MANUAL_APPLY' -and $Plan.rollbackSnapshot.state -cne 'EXACT') { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+    if ($Plan.state -ceq 'SNAPSHOT_REQUIRED' -and $Plan.rollbackSnapshot.state -ceq 'EXACT') { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+  }
+  if ($Plan.neighbors -isnot [object[]] -or $Plan.preGraphFiles -isnot [object[]]) { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+  $neighborPaths = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+  foreach ($neighbor in @($Plan.neighbors)) {
+    try { Assert-StartupBundlePlanObject $neighbor @('path','sha256') } catch { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+    if ($neighbor.path -isnot [string] -or -not [IO.Path]::IsPathRooted($neighbor.path) -or (Get-CanonicalPath $neighbor.path) -cne $neighbor.path -or
+        $neighbor.sha256 -isnot [string] -or $neighbor.sha256 -notmatch '^[0-9a-f]{64}$' -or -not $neighborPaths.Add($neighbor.path)) { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+  }
+  $graphPaths = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+  foreach ($graphPath in @($Plan.preGraphFiles)) { if ($graphPath -isnot [string] -or -not [IO.Path]::IsPathRooted($graphPath) -or (Get-CanonicalPath $graphPath) -cne $graphPath -or -not $graphPaths.Add($graphPath)) { throw 'NGINX_PLAN_SCHEMA_INVALID' } }
+  if ($Plan.commands.syntaxTest.executable -isnot [string] -or $Plan.commands.reload.executable -isnot [string] -or
+      $Plan.commands.syntaxTest.executable -cne $Plan.binding.nginxExe -or $Plan.commands.reload.executable -cne $Plan.binding.nginxExe -or
+      $Plan.commands.syntaxTest.arguments -isnot [object[]] -or $Plan.commands.reload.arguments -isnot [object[]] -or
+      (($Plan.commands.syntaxTest.arguments -join "`n") -cne (@('-p',$Plan.binding.nginxPrefix,'-t','-c',$Plan.binding.nginxConfig) -join "`n")) -or
+      (($Plan.commands.reload.arguments -join "`n") -cne (@('-p',$Plan.binding.nginxPrefix,'-c',$Plan.binding.nginxConfig,'-s','reload') -join "`n")) -or
+      $Plan.commands.reload.execution -isnot [string] -or $Plan.commands.reload.execution -cne 'MANUAL_ONLY') { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+  foreach ($safetyField in @('configMutationPerformed','reloadExecuted','privateKeyContentRead')) { if ($Plan.safety.$safetyField -isnot [bool] -or $Plan.safety.$safetyField) { throw 'NGINX_PLAN_SCHEMA_INVALID' } }
+  return $Plan
+}
+
+function Assert-NginxRollbackSnapshotEvidence(
+  [Parameter(Mandatory = $true)][string]$SnapshotPath,
+  [Parameter(Mandatory = $true)][string]$ProductionRoot,
+  [Parameter(Mandatory = $true)][string]$NginxPrefix,
+  [Parameter(Mandatory = $true)][string]$RepositoryRoot,
+  [Parameter(Mandatory = $true)][string]$ManagedConfig,
+  [Parameter(Mandatory = $true)][string]$NginxExe,
+  [Parameter(Mandatory = $true)][string]$NginxConfig,
+  [Parameter(Mandatory = $true)][string]$MarkerPath,
+  [Parameter(Mandatory = $true)][string]$TlsCertificate,
+  [Parameter(Mandatory = $true)][string]$TlsPrivateKey,
+  [string]$PlanPath = '',
+  [string]$ReportPath = '',
+  [string]$ExpectedSha256 = '',
+  [switch]$RequireExact
+) {
+  if ([string]::IsNullOrWhiteSpace($SnapshotPath)) { if ($RequireExact) { throw 'NGINX_ROLLBACK_SNAPSHOT_MISSING' }; return [pscustomobject][ordered]@{path=$null;sha256=$null;state='MISSING'} }
+  $snapshot = Get-CanonicalPath $SnapshotPath
+  foreach ($boundary in @($ProductionRoot,$NginxPrefix,$RepositoryRoot)) { if (Test-PathWithin $snapshot (Get-CanonicalPath $boundary)) { throw 'NGINX_ROLLBACK_SNAPSHOT_BOUNDARY_INVALID' } }
+  foreach ($protectedLeaf in @($ManagedConfig,$NginxExe,$NginxConfig,$MarkerPath,$TlsCertificate,$TlsPrivateKey,$PlanPath,$ReportPath)) {
+    if (-not [string]::IsNullOrWhiteSpace($protectedLeaf) -and (Normalize-ComparablePath $snapshot) -eq (Normalize-ComparablePath $protectedLeaf)) { throw 'NGINX_ROLLBACK_SNAPSHOT_PROTECTED_LEAF' }
+  }
+  try { Assert-PathAncestorChainNonReparse -Directory (Split-Path -Parent $snapshot) | Out-Null } catch {
+    if ($_.Exception.Message -match 'REPARSE_POINT') { throw 'NGINX_ROLLBACK_SNAPSHOT_REPARSE_POINT' }
+    throw 'NGINX_ROLLBACK_SNAPSHOT_BOUNDARY_INVALID'
+  }
+  $classification = Get-PathSecurityClassification -Path $snapshot -Kind file
+  if ($classification.state -eq 'MISSING') { if ($RequireExact) { throw 'NGINX_ROLLBACK_SNAPSHOT_MISSING' }; return [pscustomobject][ordered]@{path=$null;sha256=$null;state='MISSING'} }
+  if ($classification.state -eq 'REPARSE_POINT') { throw 'NGINX_ROLLBACK_SNAPSHOT_REPARSE_POINT' }
+  if ($classification.state -ne 'PASS') { throw 'NGINX_ROLLBACK_SNAPSHOT_BOUNDARY_INVALID' }
+  if (-not [string]::IsNullOrWhiteSpace($ExpectedSha256) -and $ExpectedSha256 -notmatch '^[0-9a-f]{64}$') { throw 'NGINX_PLAN_SCHEMA_INVALID' }
+  $snapshotHash = Get-FileSha256FromBytes $snapshot
+  if (-not [string]::IsNullOrWhiteSpace($ExpectedSha256) -and $snapshotHash -cne $ExpectedSha256) {
+    if ($RequireExact) { throw 'NGINX_ROLLBACK_SNAPSHOT_HASH_MISMATCH' }
+    return [pscustomobject][ordered]@{path=$snapshot;sha256=$snapshotHash;state='HASH_MISMATCH'}
+  }
+  return [pscustomobject][ordered]@{path=$snapshot;sha256=$snapshotHash;state='EXACT'}
 }
 
 function Get-ManagedProductionEnvironmentNames {

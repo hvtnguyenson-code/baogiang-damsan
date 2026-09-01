@@ -1,7 +1,7 @@
 # Production Stage 2 Bootstrap Readiness Audit
 
-Status: Candidate — P1 ROOT/ACL + STARTUP BUNDLE CLOSED CANDIDATE; Stage 2 overall NO-GO
-Baseline: 357620a4f256e087f773d308817cde252687f230
+Status: Candidate — P1 ROOT/ACL + STARTUP BUNDLE + NGINX CLOSED CANDIDATE; Stage 2 overall NO-GO
+Baseline: 186d388699ab8bc4167eeaac949d41f563f41d41
 
 ## 1. Scope
 
@@ -11,7 +11,7 @@ Các giá trị thực tế của VPS vẫn là `OPERATOR VERIFICATION REQUIRED`
 
 ## 2. Existing Stage 2 architecture
 
-Stage 2 giữ kiến trúc **source-controlled plan/verify + manual mutation**. Root/ACL và startup bundle đã có plan/verifier read-only; mọi mutation bootstrap vẫn do operator thực hiện dưới approval riêng. Nginx plan/verify vẫn chưa hoàn chỉnh.
+Stage 2 giữ kiến trúc **source-controlled plan/verify + manual mutation**. Root/ACL, startup bundle và Nginx đã có plan/verifier read-only; mọi mutation bootstrap và Nginx reload vẫn do operator thực hiện dưới approval riêng.
 
 | Bootstrap operation | Source-controlled implementation | Manual only | Verifier hiện có | Rollback/recovery |
 |---|---|---|---|---|
@@ -23,7 +23,7 @@ Stage 2 giữ kiến trúc **source-controlled plan/verify + manual mutation**. 
 | Production environment | Không có creator | Có | `Import-ServerEnvironment`, nhưng chưa có standalone pre-first-deploy validator | Không có cleanup tổng quát |
 | Scheduled Task | Không có register/enable implementation | Có | Exact name/account/action checks | Safe-stop disable/stop; không có re-enable path |
 | Windows Service | Không có service host/install implementation | Có | Exact name/account/`PathName` checks | Safe-stop disable/stop; không có startup-type recovery |
-| Nginx config | Không có template/generator | Có | Discovery/PASS 2 partial snapshot; controller chạy `nginx -t` | Targeted reload/restore do operator, chưa thành contract |
+| Nginx config | Canonical managed-include renderer + plan; không có writer | Có | Exact include graph, desired/restored verifier, prefix-bound syntax test | Exact manual reload/restore vectors; verifier không mutate |
 | Runtime activation | Có restart controller | Không | Exact process/port bounded check | Rollback/safe-stop có, nhưng lifecycle disabled không khép kín |
 
 Manual bootstrap không tự thân là defect. Defect xuất hiện khi manual step không có desired state đủ chính xác, verifier độc lập hoặc failure/recovery transition xác định.
@@ -106,17 +106,13 @@ Windows Service production bootstrap vẫn deferred cho tới khi có reviewed S
 
 ## 9. Nginx bootstrap findings
 
-Stage 2 yêu cầu dedicated HTTPS block, SPA fallback, `/api` tới `127.0.0.1:3100`, forwarded headers, reviewed limits, exact `nginx -t -c ...` và targeted reload. Repository không có production template/generator hoặc reload helper; operator phải viết/mutate config và reload thủ công.
+Stage 2 yêu cầu dedicated HTTPS block, SPA fallback, `/api/` giữ nguyên URI tới `127.0.0.1:3100`, forwarded headers, reviewed limits, exact prefix-bound syntax test và targeted manual reload. Repository nay render canonical bytes cho duy nhất managed Báo giảng include, nhưng operator vẫn là authority duy nhất được apply/restore config và reload.
 
-Read-only discovery thu thập config/include trong reviewed Nginx root và server-block hints; PASS 2 tự mô tả là partial/direct-reference snapshot. Controller chạy exact parameter `nginx -t -c` trước khi move archive/install/database actions, bảo vệ syntax/global configuration tại thời điểm deploy nhưng không chứng minh dedicated block semantics và không reload. Marker exact binding bị bypass nếu Nginx fields empty. Neighbor protection dựa vào PASS 1/PASS 2 operator review, còn nested `foreignIsolation` marker không được validate.
+Read-only discovery vẫn chỉ là discovery authority và PASS 2 vẫn tự mô tả là partial/direct-reference snapshot. Authority P1 riêng dùng token/context parser, recursive bounded include graph, cycle/dynamic/out-of-prefix/reparse rejection, exact neighbor path/hash snapshot, duplicate 443-domain detection, rollback snapshot gate và Desired/Restored verification. Exact-host collision comparison là ASCII case-insensitive, coi terminal DNS dot là tương đương và vẫn port-specific; wildcard/regex không bị biến thành exact claim. Controller dùng shared helper với exact `<exe> -p <prefix> -t -c <config>` trước archive move hoặc business mutation; không reload.
 
-Phân loại:
+Plan ghi canonical UTF-8/no-BOM/LF desired bytes/hash, exact exe/prefix/config bindings, TLS paths chỉ dưới dạng metadata, immutable neighbor hashes, pre-state/snapshot semantics và structured syntax/reload vectors. Shared full-schema validator không tin plan digest nếu `preState`, snapshot và plan state mâu thuẫn. Với pre-state `EXISTS`, Desired verifier tái kiểm exact snapshot path/boundary/non-reparse/SHA ngay tại verification time trước syntax test hoặc reload approval; snapshot mất, bị sửa hoặc bị thay bằng reparse là STOP. Snapshot không được alias private key, certificate hoặc authority leaf, và protected-leaf comparison xảy ra trước mọi snapshot byte read. Restored verifier vẫn chứng minh exact pre-state mà không đòi snapshot còn tồn tại sau restoration. Fixture NGX-P1..NGX-P37 chứng minh lifecycle, hostile states và normalized exact-host collisions mà không đọc private-key contents hoặc execute reload.
 
-- read-only validation: có nhưng partial;
-- configuration mutation: operator-only, chưa có deterministic plan/template;
-- reload mutation: operator-only, targeted command/rollback authority chưa source-controlled.
-
-Sau P0 marker correction, cần **P1** Nginx plan/verify contract: value-free template/schema, include-boundary and neighboring-block diff, exact exe/config/prefix binding, syntax test evidence, targeted reload command plan và restore verification. Không tự sinh production-specific config trong correction audit.
+Kết luận: **P1 NGINX = CLOSED CANDIDATE**. Đây là repository authority; không phải bằng chứng production đã cấu hình hoặc reload.
 
 ## 10. Handshake boundary
 
@@ -155,7 +151,7 @@ Recommendation duy nhất: **B — source-controlled plan/verify tool, manual mu
 | Scheduled Task activation/recovery | P0-3 verify → enable → reverify → start, safe-stop và reboot contract | CLOSED CANDIDATE |
 | Service first-deploy authority | P0-4 restricted to Scheduled Task; generic Service code remains non-authoritative | CLOSED CANDIDATE |
 | Startup bundle deterministic | Exact Git-blob plan + canonical immutable layout + read-only content/ACL verifier + A/B rotation fixtures | CLOSED CANDIDATE |
-| Nginx deterministic and neighbor-safe | Partial verifier; mutation/reload manual | NO-GO (P1) |
+| Nginx deterministic and neighbor-safe | Exact managed plan/Desired/Restored verifier; mutation/reload manual | CLOSED CANDIDATE |
 | Transfer boundary proportionate | Minimal handshake trước isolated staging; controller trước critical mutation | GO WITH P2 HARDENING |
 
 Overall: **NO-GO / CORRECTION NEEDED**.
@@ -175,7 +171,7 @@ Một correction plan duy nhất, theo thứ tự bắt buộc:
 
 5. **Root/subdirectory/ACL:** **CLOSED CANDIDATE** — desired-state manifest và non-mutating verifier bao gồm inheritance/reparse, marker/env/backup/bundle access.
 6. **Startup bundle:** **CLOSED CANDIDATE** — exact Git-blob provenance, canonical immutable commit directory, overwrite/delete refusal, shared ACL verification và A/B rotation fixtures.
-7. Nginx value-free plan/verify contract, neighboring-block isolation, exact test/reload/restore evidence.
+7. Operator execution and independent production evidence for the closed-candidate Nginx plan/verify contract.
 
 ### P2 — defense in depth
 
@@ -200,8 +196,8 @@ PASS 1/PASS 2 reports phải được operator và independent reviewer đánh g
 
 ## 15. Final verdict
 
-**NO-GO / CORRECTION NEEDED**.
+**NO-GO / OPERATOR EVIDENCE AND P2 STILL REQUIRED**.
 
-Stage 2 tổng thể vẫn **NO-GO / chưa GO** vì Nginx plan/verify/reload/restore P1, shared marker validator/pre-transfer handshake P2 và operator-only production evidence còn lại. P1 ROOT/ACL và P1 STARTUP BUNDLE chỉ là closed candidates; không tuyên bố Production Stage 2 hoàn tất.
+Stage 2 tổng thể vẫn **NO-GO / chưa GO** vì shared marker validator/pre-transfer handshake P2 và operator-only production evidence còn lại. P1 ROOT/ACL, P1 STARTUP BUNDLE và P1 NGINX chỉ là closed candidates; không tuyên bố Production Stage 2 hoàn tất, Nginx production đã được cấu hình, hoặc reload production đã xảy ra.
 
-Điều kiện để audit lại vẫn gồm hoàn tất Nginx P1 và handshake P2, operator evidence độc lập, cùng review thực tế các plan/verifier ACL và startup bundle. Không được bắt đầu Stage 2 mutation chỉ dựa trên CI xanh hoặc tài liệu manual hiện tại.
+Điều kiện để audit lại vẫn gồm handshake P2, operator evidence độc lập, cùng review thực tế các plan/verifier ACL, startup bundle và Nginx. Không được bắt đầu Stage 2 mutation chỉ dựa trên CI xanh hoặc tài liệu manual hiện tại.
