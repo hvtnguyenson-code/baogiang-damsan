@@ -1,5 +1,11 @@
 # Production Environment Configuration Contract
 
+## Shared marker handshake contract
+
+Các biến path/runtime production hiện có được truyền nguyên vẹn vào shared `Read-DeploymentIdentity`; không có secret hay variable mới cho P2. `deployment-identity.json` vẫn có `schemaVersion: 1`, nhưng executable marker-validator authority có contract version độc lập là integer `1` qua `Get-DeploymentMarkerAuthorityContractVersion`.
+
+Active startup wrapper phải có layout exact `shared\startup-bundles\<lowercase-40hex>\start-baogiang-api.ps1`; common là sibling `deployment-common.ps1`. Expected hashes đến từ exact Git blobs của reviewed first-parent main commit, không đến từ marker, working tree hoặc `target-source`. Remote common không execute trước khi exact bytes của cả wrapper/common đã được xác minh. Root và mọi existing ancestor phải là ordinary non-reparse directories.
+
 This file is a value-free contract. Configure it only after the read-only VPS inventory has been reviewed. Never commit a secret, connection string, private key, database dump, or server-side environment file.
 
 ## GitHub Environment

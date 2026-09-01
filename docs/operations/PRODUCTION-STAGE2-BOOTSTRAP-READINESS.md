@@ -1,7 +1,15 @@
 # Production Stage 2 Bootstrap Readiness Audit
 
-Status: Candidate — P1 ROOT/ACL + STARTUP BUNDLE + NGINX CLOSED CANDIDATE; Stage 2 overall NO-GO
-Baseline: 186d388699ab8bc4167eeaac949d41f563f41d41
+## P2 repository closure candidate
+
+Pre-transfer authority dùng cùng `Assert-DeploymentMarkerSchema` + `Read-DeploymentIdentity` như deployment controller. Read-only handshake không mutation; `prepare-transfer` revalidate cùng authority ngay trước mutation remote đầu tiên. First deploy có thể chưa có `current`, nhưng exact marker, startup bundle, env/executable/config leaves và sáu production directories vẫn bắt buộc.
+
+Startup common chỉ được trust sau Git-blob SHA-256 precheck và phải expose marker authority contract version `1`. Production root không được đi qua ancestor junction, bao gồm planned missing root; cleanup fail closed nếu transfer candidate hoặc ancestor chain trở thành reparse point.
+
+Nếu toàn bộ repository gates xanh, trạng thái là `P2 SHARED MARKER / PRE-TRANSFER HANDSHAKE = CLOSED CANDIDATE` và, nếu P1/P0 vẫn closed, `REPOSITORY STAGE 2 AUTHORITY = CLOSED CANDIDATE`. `PRODUCTION STAGE 2 = NO-GO / OPERATOR EVIDENCE REQUIRED`: repository tests không chứng minh trạng thái VPS; Nginx chưa được sửa; production chưa deploy; operator evidence vẫn bắt buộc; hệ thống Nội trú lân cận được bảo vệ phải được đối soát với trạng thái production cuối trước mọi mutation.
+
+Status: Candidate — P2 SHARED MARKER / PRE-TRANSFER HANDSHAKE CLOSED CANDIDATE; repository Stage 2 authority CLOSED CANDIDATE; production Stage 2 NO-GO / OPERATOR EVIDENCE REQUIRED
+Baseline: 798b4360e0e73df733d4d537938d6b9697ad98fa
 
 ## 1. Scope
 

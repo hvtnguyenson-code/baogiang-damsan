@@ -18,8 +18,11 @@ function Assert-DedicatedRoot([Parameter(Mandatory = $true)][string]$Root) {
   ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
   foreach ($path in $blocked) { if ($canonical.StartsWith((Get-CanonicalPath $path), [StringComparison]::OrdinalIgnoreCase)) { throw 'The application root is a protected Windows/system path.' } }
   if ($canonical -match '(?i)DamSanV5|boarding[-_ ]?management|quan.?ly.?noi.?tru|noi.?tru') { throw 'The application root conflicts with a protected neighboring system.' }
+  Assert-PathAncestorChainNonReparse -Directory $canonical -AllowMissing -CategoryPrefix 'PRODUCTION_ROOT' | Out-Null
   return $canonical
 }
+
+function Get-DeploymentMarkerAuthorityContractVersion { return 1 }
 
 function Assert-ExistingDirectory([Parameter(Mandatory = $true)][string]$Path) {
   if (-not (Test-Path -LiteralPath $Path -PathType Container)) { throw "A bootstrapped directory is missing: $Path" }
@@ -417,22 +420,46 @@ function Test-PathWithin([Parameter(Mandatory = $true)][string]$Path,[Parameter(
   return $candidate -eq $container -or $candidate.StartsWith("$container\", [StringComparison]::OrdinalIgnoreCase)
 }
 
-function Assert-PathAncestorChainNonReparse([Parameter(Mandatory = $true)][string]$Directory) {
+function Assert-PathAncestorChainNonReparse(
+  [Parameter(Mandatory = $true)][string]$Directory,
+  [switch]$AllowMissing,
+  [ValidatePattern('^[A-Z0-9_]+$')][string]$CategoryPrefix = 'READ_ONLY_REPORT'
+) {
   $fullDirectory = [IO.Path]::GetFullPath($Directory)
   $filesystemRoot = [IO.Path]::GetPathRoot($fullDirectory)
   $current = if ($fullDirectory.TrimEnd('\') -ieq $filesystemRoot.TrimEnd('\')) { $filesystemRoot } else { $fullDirectory.TrimEnd('\') }
   $visited = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
   $isImmediateParent = $true
   while (-not [string]::IsNullOrWhiteSpace($current)) {
-    if (-not $visited.Add($current)) { throw 'READ_ONLY_REPORT_ANCESTOR_INVALID' }
-    $classification = Get-PathSecurityClassification -Path $current -Kind directory
-    if ($classification.state -eq 'REPARSE_POINT') {
-      if ($isImmediateParent) { throw 'READ_ONLY_REPORT_PARENT_REPARSE_POINT' }
-      throw 'READ_ONLY_REPORT_ANCESTOR_REPARSE_POINT'
+    if (-not $visited.Add($current)) {
+      if ($CategoryPrefix -eq 'PRODUCTION_ROOT') { throw 'PRODUCTION_ROOT_ANCESTOR_UNVERIFIABLE' }
+      if ($CategoryPrefix -eq 'READ_ONLY_REPORT') { throw 'READ_ONLY_REPORT_ANCESTOR_INVALID' }
+      throw "${CategoryPrefix}_ANCESTOR_UNVERIFIABLE"
     }
-    if ($classification.state -ne 'PASS') {
-      if ($isImmediateParent) { throw 'READ_ONLY_REPORT_PARENT_INVALID' }
-      throw 'READ_ONLY_REPORT_ANCESTOR_INVALID'
+    try {
+      $item = Get-Item -LiteralPath $current -Force -ErrorAction Stop
+      if (-not $item.PSIsContainer) { throw "${CategoryPrefix}_ANCESTOR_UNVERIFIABLE" }
+      if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        if ($CategoryPrefix -eq 'PRODUCTION_ROOT' -and $isImmediateParent) { throw 'PRODUCTION_ROOT_REPARSE_POINT' }
+        if ($CategoryPrefix -eq 'READ_ONLY_REPORT' -and $isImmediateParent) { throw 'READ_ONLY_REPORT_PARENT_REPARSE_POINT' }
+        if ($CategoryPrefix -eq 'PRODUCTION_ROOT') { throw 'PRODUCTION_ROOT_ANCESTOR_REPARSE_POINT' }
+        if ($CategoryPrefix -eq 'READ_ONLY_REPORT') { throw 'READ_ONLY_REPORT_ANCESTOR_REPARSE_POINT' }
+        throw "${CategoryPrefix}_ANCESTOR_REPARSE_POINT"
+      }
+    } catch {
+      if ($_.Exception.Message -match "^(?:${CategoryPrefix}_|PRODUCTION_ROOT_)") { throw }
+      $exists = $false
+      try { $exists = Test-Path -LiteralPath $current -ErrorAction Stop } catch {
+        if ($CategoryPrefix -eq 'PRODUCTION_ROOT') { throw 'PRODUCTION_ROOT_ANCESTOR_UNVERIFIABLE' }
+        if ($CategoryPrefix -eq 'READ_ONLY_REPORT') { throw 'READ_ONLY_REPORT_ANCESTOR_INVALID' }
+        throw "${CategoryPrefix}_ANCESTOR_UNVERIFIABLE"
+      }
+      if ($exists -or -not $AllowMissing) {
+        if ($CategoryPrefix -eq 'READ_ONLY_REPORT' -and $isImmediateParent) { throw 'READ_ONLY_REPORT_PARENT_INVALID' }
+        if ($CategoryPrefix -eq 'READ_ONLY_REPORT') { throw 'READ_ONLY_REPORT_ANCESTOR_INVALID' }
+        if ($CategoryPrefix -eq 'PRODUCTION_ROOT') { throw 'PRODUCTION_ROOT_ANCESTOR_UNVERIFIABLE' }
+        throw "${CategoryPrefix}_ANCESTOR_UNVERIFIABLE"
+      }
     }
     if ($current.TrimEnd('\') -ieq $filesystemRoot.TrimEnd('\')) { break }
     $parent = Split-Path -Parent $current
@@ -774,7 +801,7 @@ function Read-DeploymentIdentity(
   if ((Normalize-ComparablePath $marker.startupBundle.commonPath) -ne (Normalize-ComparablePath $commonPath)) { throw 'Deployment marker startup bundle helper path mismatch.' }
   foreach ($bundleFile in @(@{ path = $marker.startupBundle.wrapperPath; hash = $marker.startupBundle.wrapperSha256 }, @{ path = $marker.startupBundle.commonPath; hash = $marker.startupBundle.commonSha256 })) {
     Assert-ExistingLeaf $bundleFile.path 'Startup runtime bundle file' | Out-Null
-    if ((Get-FileHash -LiteralPath $bundleFile.path -Algorithm SHA256).Hash -ine $bundleFile.hash) { throw 'Startup runtime bundle hash mismatch.' }
+    if ((Get-FileSha256FromBytes -Path $bundleFile.path) -ine $bundleFile.hash) { throw 'Startup runtime bundle hash mismatch.' }
   }
   foreach ($requiredLeaf in @(@{ path = $marker.nodeExe; label = 'Node executable' }, @{ path = $marker.envFile; label = 'Production environment file' }, @{ path = $marker.nginxExe; label = 'Nginx executable' }, @{ path = $marker.nginxConfig; label = 'Nginx config' })) { Assert-ExistingLeaf $requiredLeaf.path $requiredLeaf.label | Out-Null }
   if ($marker.service.kind -eq 'scheduled-task') {
