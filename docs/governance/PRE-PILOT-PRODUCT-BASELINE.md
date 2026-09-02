@@ -29,6 +29,19 @@ For product/business semantics, every future task must read, in order:
 
 A later minimum-core ADR must never silently erase a broader product requirement. If a task intentionally defers a requirement, the parent task cannot close until the deferred item has a row in `PRE-PILOT-TASK-REGISTER.md` with an explicit re-entry trigger.
 
+### 2.1 Authoritative source fingerprints and rebase trigger
+
+The P0 audit is pinned to these exact authoritative source blobs on the starting baseline:
+
+- `docs/specifications/PA-B-VPS-PostgreSQL-v1.2-AI-governance.docx` — Git blob `c2c61a4e8acb9fde0e5fc5232467662048fd3380`;
+- `docs/specifications/PA-B-VPS-PostgreSQL-v1.3-IMPLEMENTATION-ADDENDUM.md` — Git blob `5876af5920d12ea6fcecf42d1b8a392cc4825f16`.
+
+P0 did not claim a new direct binary OOXML extraction of the v1.2 DOCX through the GitHub connector. Instead it relies on reviewed canonical audits already in this repository — especially `LOCAL-FC-05A0-PPCT-TEACHING-EXECUTION-REPORTING-ARCHITECTURE-AUDIT.md` — which explicitly record direct read-only OOXML extraction of this unchanged v1.2 source, including all 1,471 Word paragraphs and 67 tables, with the relevant sections and appendices reviewed.
+
+This distinction is intentional: the traceability matrix may reuse that existing direct-source evidence only while the authoritative source fingerprint remains unchanged.
+
+If either source blob changes, or an explicit Product Owner decision contradicts this baseline, task `P0-900` becomes mandatory before dependent product work continues. `P0-900` must re-read the changed authoritative source and reconcile this baseline, applicable ADRs, traceability and the task register. A source change must never be absorbed silently by a later implementation task.
+
 ## 3. Foundations to KEEP
 
 The following foundations remain valid and must not be rebuilt merely to implement the pre-pilot corrections:
