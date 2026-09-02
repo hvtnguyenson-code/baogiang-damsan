@@ -135,7 +135,7 @@ function Get-DatabaseSnapshot {
     $parts = Set-PostgresProcessEnvironment -DatabaseUrl $url -ExpectedPort $ExpectedPostgresPort
     # Query A is always safe on a greenfield database: it never references the relation.
     $queryA = (Get-DatabaseEvidenceQueryPlan -MigrationTablePresent:$false)[0].sql
-    $output = @(& $databaseVerifier --tuples-only --no-align --command $queryA 2>$null)
+    $output = @(Invoke-ReviewedPostgresEvidenceQuery -PsqlExe $databaseVerifier -Sql $queryA)
     if ($LASTEXITCODE -ne 0) { return [ordered]@{ state = 'CONFLICT'; reason = 'Read-only PostgreSQL verification failed.' } }
     $parsedA = $null
     try {
@@ -158,7 +158,7 @@ function Get-DatabaseSnapshot {
     if ($migrationsPresent) {
       # Query B is only constructed/executed after Query A proved the relation exists.
       $queryB = (Get-DatabaseEvidenceQueryPlan -MigrationTablePresent:$true)[1].sql
-      $summaryOutput = @(& $databaseVerifier --tuples-only --no-align --command $queryB 2>$null)
+      $summaryOutput = @(Invoke-ReviewedPostgresEvidenceQuery -PsqlExe $databaseVerifier -Sql $queryB)
       if ($LASTEXITCODE -eq 0) {
         try {
           $parsedB = Parse-PostgresStructuredEvidence -Lines $summaryOutput
@@ -174,7 +174,7 @@ function Get-DatabaseSnapshot {
     if ($foreignIsolationRequested -and $KnownForeignDatabase.Count -eq 0) { throw 'Reviewed foreign database names are required for requested cross-database isolation evidence.' }
     foreach ($foreignDatabase in @(if ($foreignIsolationRequested) { $KnownForeignDatabase } else { @() })) {
       $foreignQuery = Get-ForeignDatabaseIsolationQuery -DatabaseName $foreignDatabase
-      $foreignOutput = @(& $databaseVerifier --tuples-only --no-align --command $foreignQuery 2>$null)
+      $foreignOutput = @(Invoke-ReviewedPostgresEvidenceQuery -PsqlExe $databaseVerifier -Sql $foreignQuery)
       $foreignRecord = [pscustomobject][ordered]@{ database = $foreignDatabase; existence = 'MISSING'; state = 'NOT_VERIFIED' }
       if ($LASTEXITCODE -eq 0) {
         try {

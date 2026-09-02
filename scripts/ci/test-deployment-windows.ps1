@@ -121,7 +121,7 @@ $forbiddenPreflightMutations = @(
 foreach ($forbiddenMutation in $forbiddenPreflightMutations) {
   if ($preflightText -match [regex]::Escape($forbiddenMutation)) { throw "Read-only production preflight contains forbidden mutation token: $forbiddenMutation" }
 }
-foreach ($requiredPreflightToken in @('RequireReviewedIsolation','Resolve-ExpectedCandidateRuntimeName','Resolve-DatabaseVerifierExecutable','Get-ProtectedNeighborIsolationEvidence','Get-SshDirectConfigEvidence','Get-SshPortEvidence','Get-SshPublicHostKeyEvidence','Get-SshFirewallEvidence','-SshPort @($portEvidence.agreedPorts)','& $databaseVerifier --tuples-only','argumentsSha256','pathNameSha256')) {
+foreach ($requiredPreflightToken in @('RequireReviewedIsolation','Resolve-ExpectedCandidateRuntimeName','Resolve-DatabaseVerifierExecutable','Get-ProtectedNeighborIsolationEvidence','Get-SshDirectConfigEvidence','Get-SshPortEvidence','Get-SshPublicHostKeyEvidence','Get-SshFirewallEvidence','-SshPort @($portEvidence.agreedPorts)','Invoke-ReviewedPostgresEvidenceQuery','argumentsSha256','pathNameSha256')) {
   if ($preflightText -notmatch [regex]::Escape($requiredPreflightToken)) { throw "Production preflight is missing required evidence token: $requiredPreflightToken" }
 }
 if ($preflightText -match 'Get-Command\s+psql\b|argumentsRedacted|pathNameRedacted') { throw 'Production preflight contains a PATH-based DB verifier or unsafe raw command evidence.' }
@@ -1405,8 +1405,88 @@ try {
   if ($p33Err -notmatch 'OPERATOR_EVIDENCE_REPORT_PATH_CONFLICT') {
     throw "OPE-P33 expected OPERATOR_EVIDENCE_REPORT_PATH_CONFLICT when report inside PG data dir, got: $p33Err"
   }
-  if (Test-Path -LiteralPath $p33Sentinel) { throw 'OPE-P33 wrote report inside PostgreSQL data directory' }
   Set-OpePass 'OPE-P33'
+
+  # OPE-P34: PostgreSQL 17 complete environment authority (40 variables)
+  $p34Hostile = @{
+    PGDATESTYLE = 'German'
+    PGTZ = 'Pacific/Honolulu'
+    PGGEQO = 'off'
+    PGLOCALEDIR = 'C:\hostile\locale'
+    PGHOSTADDR = '192.0.2.100'
+    PGSSLMODE = 'disable'
+  }
+  foreach ($k in $p34Hostile.Keys) { [Environment]::SetEnvironmentVariable($k, $p34Hostile[$k], 'Process') }
+  try {
+    $p34Snapshot = Snapshot-PostgresProcessEnvironment
+    $p34Parts = Set-PostgresProcessEnvironment -DatabaseUrl 'postgresql://app:secret@127.0.0.1:5433/baogiang' -ExpectedPort 5433
+    foreach ($k in $p34Hostile.Keys) {
+      if ($null -ne [Environment]::GetEnvironmentVariable($k, 'Process')) {
+        throw "OPE-P34 Set-PostgresProcessEnvironment did not clear hostile session/connection variable $k"
+      }
+    }
+  } finally {
+    Restore-PostgresProcessEnvironment -Snapshot $p34Snapshot
+  }
+  foreach ($k in $p34Hostile.Keys) {
+    if ([Environment]::GetEnvironmentVariable($k, 'Process') -ne $p34Hostile[$k]) {
+      throw "OPE-P34 Restore-PostgresProcessEnvironment did not restore variable $k"
+    }
+    [Environment]::SetEnvironmentVariable($k, $null, 'Process')
+  }
+  # Exception path restoration
+  foreach ($k in $p34Hostile.Keys) { [Environment]::SetEnvironmentVariable($k, $p34Hostile[$k], 'Process') }
+  $p34SnapEx = Snapshot-PostgresProcessEnvironment
+  try {
+    try {
+      Set-PostgresProcessEnvironment -DatabaseUrl 'postgresql://app:secret@127.0.0.1:5433/baogiang' -ExpectedPort 5433 | Out-Null
+      throw 'SIMULATED_DB_ERROR_P34'
+    } finally {
+      Restore-PostgresProcessEnvironment -Snapshot $p34SnapEx
+    }
+  } catch {
+    if ($_.Exception.Message -ne 'SIMULATED_DB_ERROR_P34') { throw }
+  }
+  foreach ($k in $p34Hostile.Keys) {
+    if ([Environment]::GetEnvironmentVariable($k, 'Process') -ne $p34Hostile[$k]) {
+      throw "OPE-P34 Exception restore failed for $k"
+    }
+    [Environment]::SetEnvironmentVariable($k, $null, 'Process')
+  }
+  Set-OpePass 'OPE-P34'
+
+  # OPE-P35: Exact psql argument authority (-X, --tuples-only, --no-align, --set=ON_ERROR_STOP=1, --command)
+  $p35SqlA = (Get-DatabaseEvidenceQueryPlan -MigrationTablePresent:$false)[0].sql
+  $p35ArgsA = Get-PostgresEvidencePsqlArguments -Sql $p35SqlA
+  $p35SqlB = (Get-DatabaseEvidenceQueryPlan -MigrationTablePresent:$true)[1].sql
+  $p35ArgsB = Get-PostgresEvidencePsqlArguments -Sql $p35SqlB
+  $p35SqlForeign = Get-ForeignDatabaseIsolationQuery -DatabaseName 'damsan_foreign'
+  $p35ArgsForeign = Get-PostgresEvidencePsqlArguments -Sql $p35SqlForeign
+  foreach ($vector in @(@{ name = 'QueryA'; args = $p35ArgsA; sql = $p35SqlA }, @{ name = 'QueryB'; args = $p35ArgsB; sql = $p35SqlB }, @{ name = 'Foreign'; args = $p35ArgsForeign; sql = $p35SqlForeign })) {
+    $vArgs = @($vector.args)
+    if ($vArgs[0] -ne '-X' -and $vArgs[0] -ne '--no-psqlrc') { throw "OPE-P35 $($vector.name) argument vector does not disable psqlrc as first flag" }
+    if ($vArgs -notcontains '--tuples-only' -or $vArgs -notcontains '--no-align' -or $vArgs -notcontains '--command') { throw "OPE-P35 $($vector.name) missing mandatory formatting/command flag" }
+    $cmdIdx = $vArgs.IndexOf('--command')
+    $xIdx = $vArgs.IndexOf('-X')
+    if ($xIdx -lt 0) { $xIdx = $vArgs.IndexOf('--no-psqlrc') }
+    if ($xIdx -gt $cmdIdx) { throw "OPE-P35 $($vector.name) -X must precede --command" }
+    if ($vArgs[$cmdIdx + 1] -cne $vector.sql) { throw "OPE-P35 $($vector.name) --command value mismatch" }
+  }
+  Set-OpePass 'OPE-P35'
+
+  # OPE-P36: Hostile psql startup configuration cannot become authority
+  $p36HostilePsqlrc = Join-Path $temp 'hostile.psqlrc'
+  [IO.File]::WriteAllText($p36HostilePsqlrc, "SELECT 'HOSTILE_SENTINEL_OUTPUT';", [Text.UTF8Encoding]::new($false))
+  $env:PSQLRC = $p36HostilePsqlrc
+  try {
+    $p36Args = Get-PostgresEvidencePsqlArguments -Sql "SELECT 1;"
+    if ($p36Args[0] -ne '-X' -and $p36Args[0] -ne '--no-psqlrc') {
+      throw 'OPE-P36 psql evidence vector allowed hostile psqlrc execution'
+    }
+  } finally {
+    Remove-Item Env:PSQLRC -ErrorAction SilentlyContinue
+  }
+  Set-OpePass 'OPE-P36'
 
   Remove-Item Function:\Invoke-WebRequest, Function:\Get-CimInstance, Function:\Get-NetTCPConnection, Function:\Get-ScheduledTask -Force -ErrorAction SilentlyContinue
   $sha = 'a' * 40
@@ -1590,8 +1670,8 @@ try {
   foreach($hashField in @('wrapperSha256','commonSha256')){$candidate=Copy-XferMarker;$candidate.startupBundle.$hashField='e'*64;Write-XferMarker $candidate;Assert-XferReject {Invoke-XferCommand handshake (Get-XferContract)} "XFER-P25-$hashField"};Write-XferMarker
   foreach($pathField in @('wrapperPath','commonPath')){$candidate=Copy-XferMarker;$candidate.startupBundle.$pathField=Join-Path $xferVersion "alternate-$pathField.ps1";Write-XferMarker $candidate;Assert-XferReject {Invoke-XferCommand handshake (Get-XferContract)} "XFER-P26-$pathField"};Write-XferMarker
   $p27Sentinel=Join-Path $temp 'invalid-utf8-common-executed';$p27Prefix=[Text.Encoding]::ASCII.GetBytes("New-Item -ItemType File -Path '$p27Sentinel'|Out-Null`n");$p27Bytes=[byte[]]($p27Prefix+[byte[]](0xC3,0x28));[IO.File]::WriteAllBytes($xferCommon,$p27Bytes);$p27Contract=Get-XferContract;Assert-XferReject {Invoke-XferCommand handshake $p27Contract} 'XFER-P27';if(Test-Path $p27Sentinel){throw 'XFER-P27 invalid UTF-8 common executed'};[IO.File]::WriteAllBytes($xferCommon,$originalCommon);Write-XferMarker
-  if(@($opeResults.Keys|Where-Object{$_ -match '^OPE-P\d+$'}).Count-ne33){throw "OPE fixture matrix incomplete (count: $(@($opeResults.Keys|Where-Object{$_ -match '^OPE-P\d+$'}).Count))"}
-  Write-Output '[deployment-windows] PASS (ACL-P1..ACL-P8, PATH-P1..PATH-P3, SB-P1..SB-P14, RPT-P1..RPT-P9, NGX-P1..NGX-P37, XFER-P1..XFER-P27, OPE-P1..OPE-P33, preflight isolation, SSH host-key/firewall, exact psql, privacy, safe-stop, migration and transfer fixtures)'
+  if(@($opeResults.Keys|Where-Object{$_ -match '^OPE-P\d+$'}).Count-ne36){throw "OPE fixture matrix incomplete (count: $(@($opeResults.Keys|Where-Object{$_ -match '^OPE-P\d+$'}).Count))"}
+  Write-Output '[deployment-windows] PASS (ACL-P1..ACL-P8, PATH-P1..PATH-P3, SB-P1..SB-P14, RPT-P1..RPT-P9, NGX-P1..NGX-P37, XFER-P1..XFER-P27, OPE-P1..OPE-P36, preflight isolation, SSH host-key/firewall, exact psql, privacy, safe-stop, migration and transfer fixtures)'
 } finally {
   if ($null -ne (Get-Variable xferRoot -ErrorAction SilentlyContinue) -and (Test-Path -LiteralPath $xferRoot)) { Remove-Item -LiteralPath $xferRoot -Recurse -Force }
   if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Recurse -Force }

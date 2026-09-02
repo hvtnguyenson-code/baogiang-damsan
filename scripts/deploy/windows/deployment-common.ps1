@@ -1592,6 +1592,19 @@ function Get-DatabaseParts([Parameter(Mandatory = $true)][string]$DatabaseUrl) {
   [ordered]@{ host = $uri.Host; port = if ($uri.Port -gt 0) { $uri.Port } else { 5432 }; database = $uri.AbsolutePath.Trim('/'); user = [Uri]::UnescapeDataString($userinfo[0]); password = [Uri]::UnescapeDataString($userinfo[1]) }
 }
 
+function Get-PostgresEvidencePsqlArguments([Parameter(Mandatory = $true)][string]$Sql) {
+  if ([string]::IsNullOrWhiteSpace($Sql)) { throw 'POSTGRES_EVIDENCE_SQL_REQUIRED' }
+  return @('-X', '--tuples-only', '--no-align', '--set=ON_ERROR_STOP=1', '--command', $Sql)
+}
+
+function Invoke-ReviewedPostgresEvidenceQuery(
+  [Parameter(Mandatory = $true)][string]$PsqlExe,
+  [Parameter(Mandatory = $true)][string]$Sql
+) {
+  $args = Get-PostgresEvidencePsqlArguments -Sql $Sql
+  return @(& $PsqlExe @args 2>$null)
+}
+
 function Get-ManagedPostgresEnvironmentNames {
   return @(
     'PGHOST','PGHOSTADDR','PGPORT','PGDATABASE','PGUSER','PGPASSWORD','PGPASSFILE',
@@ -1600,7 +1613,8 @@ function Get-ManagedPostgresEnvironmentNames {
     'PGCONNECT_TIMEOUT','PGCLIENTENCODING','PGTARGETSESSIONATTRS','PGREQUIREAUTH',
     'PGCHANNELBINDING','PGSSLNEGOTIATION','PGSSLCOMPRESSION','PGSSLCERTMODE',
     'PGREQUIREPEER','PGSSLMINPROTOCOLVERSION','PGSSLMAXPROTOCOLVERSION','PGGSSENCMODE',
-    'PGKRBSRVNAME','PGGSSLIB','PGGSSDELEGATION','PGLOADBALANCEHOSTS','PGSYSCONFDIR'
+    'PGKRBSRVNAME','PGGSSLIB','PGGSSDELEGATION','PGLOADBALANCEHOSTS','PGSYSCONFDIR',
+    'PGDATESTYLE','PGTZ','PGGEQO','PGLOCALEDIR'
   )
 }
 

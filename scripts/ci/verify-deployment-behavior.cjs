@@ -118,11 +118,14 @@ const reviewedTools = preflight.slice(preflight.indexOf('tools = @('), preflight
 assert.match(reviewedTools, /Get-ReviewedExecutableSnapshot/); assert.doesNotMatch(reviewedTools, /Get-CommandSnapshot|Get-Command\s/);
 assert.match(preflight, /-NodeExe \$NodeExe -NginxExe \$NginxExe -NginxConfig \$NginxConfig/); assert.match(preflight, /Get-ListenerSnapshot \$ExpectedPostgresPort/); assert.doesNotMatch(preflight, /Get-ListenerSnapshot 5433/);
 assert.match(preflight, /dnsTlsHttp = if \(\$VerifyPublicEndpoint\) \{ Get-TlsHttpSnapshot \}/); assert.match(preflight, /if \(-not \$VerifyDatabase\) \{ return \[ordered\]@\{ state = 'NOT_RUN'/);
-for (const token of ['rolsuper','rolcreatedb','rolcreaterole','rolreplication','rolbypassrls','has_database_privilege','KnownForeignDatabaseRole','RequireForeignDatabaseIsolation','pg_auth_members','directMembershipCount','ConvertTo-ReviewedForeignDatabaseEvidence','DATABASE_FOREIGN_EVIDENCE_BINDING_CONFLICT','ReviewedPostgresDataDirectory']) assert.match(`${common}\n${preflight}`, new RegExp(token));
+for (const token of ['rolsuper','rolcreatedb','rolcreaterole','rolreplication','rolbypassrls','has_database_privilege','KnownForeignDatabaseRole','RequireForeignDatabaseIsolation','pg_auth_members','directMembershipCount','ConvertTo-ReviewedForeignDatabaseEvidence','DATABASE_FOREIGN_EVIDENCE_BINDING_CONFLICT','ReviewedPostgresDataDirectory','Get-PostgresEvidencePsqlArguments','Invoke-ReviewedPostgresEvidenceQuery','PGDATESTYLE','PGTZ','PGGEQO','PGLOCALEDIR']) assert.match(`${common}\n${preflight}`, new RegExp(token));
 assert.ok(firstDeployRunbook.indexOf('production-protected-neighbor-discovery.ps1') < firstDeployRunbook.indexOf('production-preflight-readonly.ps1'));
 assert.match(preflight, /RequireReviewedIsolation/); assert.match(preflight, /Get-ProtectedNeighborIsolationEvidence/); assert.match(preflight, /Get-SshPublicHostKeyEvidence/); assert.match(preflight, /Get-SshFirewallEvidence/);
 assert.match(preflight, /Resolve-ExpectedCandidateRuntimeName/); assert.match(preflight, /Get-SshDirectConfigEvidence/); assert.match(preflight, /Get-SshPortEvidence/); assert.match(preflight, /-SshPort @\(\$portEvidence\.agreedPorts\)/); assert.doesNotMatch(preflight, /\$ports \+ \$listeningPorts/);
-assert.match(preflight, /Resolve-DatabaseVerifierExecutable/); assert.doesNotMatch(preflight, /Get-Command\s+psql\b/i); assert.match(preflight, /& \$databaseVerifier --tuples-only/);
+assert.match(preflight, /Resolve-DatabaseVerifierExecutable/); assert.doesNotMatch(preflight, /Get-Command\s+psql\b/i);
+assert.match(preflight, /Invoke-ReviewedPostgresEvidenceQuery\s+-PsqlExe\s+\$databaseVerifier\s+-Sql\s+\$queryA/);
+assert.doesNotMatch(preflight, /&\s*\$databaseVerifier\b/);
+assert.match(common, /'-X',\s*'--tuples-only',\s*'--no-align'/);
 assert.doesNotMatch(preflight, /Split-Path -Parent \(Get-CanonicalPath \$NginxExe\)/);
 assert.doesNotMatch(preflight, /argumentsRedacted|pathNameRedacted/); assert.match(preflight, /argumentsSha256/); assert.match(preflight, /pathNameSha256/);
 for (const aclTool of [aclPlan, aclVerify]) { assert.match(aclTool, /Get-ProductionAclPolicy/); assert.doesNotMatch(aclTool, /function\s+Get-ProductionAclPolicy|Set-Acl|SetAccessRule|SetAccessRuleProtection|\bicacls\b|takeown/i); }
