@@ -2,7 +2,7 @@
 
 ## Status
 
-**IN_PROGRESS — documentation/governance only.**
+**IN_REVIEW — documentation/governance only. Independent GitHub review and CI/merge gates remain.**
 
 - Repository: `hvtnguyenson-code/baogiang-damsan`
 - Canonical starting baseline: `main@4bcf2e7fb2104304fd044693a0bf8838f6038d85`
@@ -69,6 +69,10 @@ The task is not complete until all of the following are true:
 - no implementation or production mutation occurs;
 - an independent GitHub diff review is performed before merge;
 - merge remains a separate explicit user decision.
+
+## Review-state evidence
+
+The branch now contains all required governance/current-state deliverables and is ready for independent GitHub diff review. This status does **not** claim P0 is merged or closed.
 
 ## Closure rule
 
