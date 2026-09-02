@@ -36,6 +36,19 @@ The following are now accepted current governance/product authorities:
 
 Every major task must be registered before implementation, cite applicable traceability rows, obey dependency gates, and complete post-merge documentation synchronization before dependent major work starts. Untracked plain `DEFERRED`/`later`/`future slice` is prohibited.
 
+## Current active/review task
+
+`P1-010` — Homeroom responsibility architecture closure — **IN_REVIEW**.
+
+- branch: `docs/homeroom-responsibility-architecture-010`;
+- exact starting main: `dd8ee41a3edb3eff04802d405bd402dd046528dd`;
+- primary traceability: T13, T14;
+- proposed authority: `ADR-045-HOMEROOM-RESPONSIBILITY.md`;
+- architecture/docs only; no schema, migration, capability seed, API/runtime, UI, CI/CD, VPS or production mutation;
+- review also recovered two previously unresolved Special Programme boundaries as T43/T44 and bound them to existing P4 tasks so they cannot disappear as prose-only deferrals.
+
+P1-010 becomes accepted only after exact-head review/CI and merge. `P1-011` must not start until P1-010 is `CLOSED` after mandatory post-merge documentation synchronization.
+
 ## Current implemented foundation
 
 The repository contains reviewed implementation for:
@@ -67,31 +80,31 @@ P0 has closed the product/governance authority gap, but the registered implement
 ## Critical pre-pilot gaps
 
 1. Current SpecialActivity is a valid runtime occurrence primitive but not a complete GDĐP/HĐTN programme model.
-2. Canonical date-effective HomeroomAssignment is absent.
+2. Canonical date-effective HomeroomAssignment persistence/control plane is absent; P1-010 is closing architecture authority only.
 3. GDĐP grade/year plan and HĐTN CLASS/GRADE/SCHOOL programme semantics are absent.
 4. Programme planning cannot assign different exact teacher sets to different exact slots.
-5. Existing `GDDDP_COORDINATOR` / `HĐTN_COORDINATOR` capability intent is not wired to programme-resource authority.
-6. Typed/versioned Business Configuration Control Plane is absent.
-7. Delayed go-live / operational-start policy and historical pre-operational evidence workflow are absent.
-8. PPCT real-school import is intentionally deferred pending an authoritative workbook contract.
-9. Native Đam San timetable adapter and class-view/teacher-view peer reconciliation are absent.
-10. Morning/afternoon selective timetable update with explicit carry-forward is absent.
-11. Special-activity participation is not yet integrated into official workload/reporting aggregation.
-12. WorkloadAdjustmentRule remains trigger-gated/deferred.
-13. Installable PWA baseline is absent.
-14. Dedicated Báo giảng Telegram bot/linking/notification lifecycle is absent.
-15. First-certificate HTTP-01/Nginx authority for the Báo giảng subdomain is incomplete.
-16. Actual VPS Stage 1 evidence has not yet been collected for first deployment.
+5. Special-program absence/replacement and programme-level confirmation authority remain explicitly registered for P4 closure (T43/T44).
+6. Existing `GDDDP_COORDINATOR` / `HĐTN_COORDINATOR` capability intent is not wired to programme-resource authority.
+7. Typed/versioned Business Configuration Control Plane is absent.
+8. Delayed go-live / operational-start policy and historical pre-operational evidence workflow are absent.
+9. PPCT real-school import is intentionally deferred pending an authoritative workbook contract.
+10. Native Đam San timetable adapter and class-view/teacher-view peer reconciliation are absent.
+11. Morning/afternoon selective timetable update with explicit carry-forward is absent.
+12. Special-activity participation is not yet integrated into official workload/reporting aggregation.
+13. WorkloadAdjustmentRule remains trigger-gated/deferred.
+14. Installable PWA baseline is absent.
+15. Dedicated Báo giảng Telegram bot/linking/notification lifecycle is absent.
+16. First-certificate HTTP-01/Nginx authority for the Báo giảng subdomain is incomplete.
+17. Actual VPS Stage 1 evidence has not yet been collected for first deployment.
 
-## Tasks now eligible to start
+## Other tasks currently eligible to start
 
-After `SYNC-P0-001` merges, the register marks these direct P0 dependents `READY`:
+While P1-010 is under review, independent direct P0 dependents remain `READY`:
 
-- `P1-010` — Homeroom responsibility architecture closure;
 - `P1-020` — Business Configuration Control Plane architecture;
 - `P6-010` — Pre-deploy TLS/HTTP-01 authority.
 
-Task sequencing must still follow the register and one-task-per-branch rule. Readiness is not automatic authorization to merge/deploy.
+Task sequencing must still follow the register and one-task-per-branch rule. No dependent P1-011 work starts until P1-010 is `CLOSED`.
 
 ## Decisions/evidence still blocking other paths
 
@@ -117,7 +130,7 @@ Direct P0 inspection found `main` is currently not protected server-side. This i
 
 ## Production state
 
-Production remains **pre-operational**. No P0 or SYNC-P0-001 action authorizes or performs deployment, migration, Nginx/TLS change, PostgreSQL mutation or application-process mutation.
+Production remains **pre-operational**. No P0, SYNC-P0-001 or P1-010 action authorizes or performs deployment, migration, Nginx/TLS change, PostgreSQL mutation or application-process mutation.
 
 ## Protected external system boundary
 
