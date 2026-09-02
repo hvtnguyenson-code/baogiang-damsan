@@ -1,38 +1,49 @@
 # Bối cảnh Dự án — Hệ thống Báo giảng Đam San
 
+## Current-state authority
+
+Tài liệu này chỉ giữ **bối cảnh bền vững**. Trạng thái task/PR/CI hiện hành không còn được duy trì thủ công theo từng phase tại đây vì cách đó đã gây stale chronology.
+
+Nguồn current-state bắt buộc:
+
+1. `docs/governance/CURRENT-PROJECT-STATUS.md`
+2. `docs/governance/PRE-PILOT-TASK-REGISTER.md`
+3. `docs/governance/PRE-PILOT-TRACEABILITY-MATRIX.md`
+4. `docs/governance/PRE-PILOT-PRODUCT-BASELINE.md`
+
+Nếu có mâu thuẫn về **trạng thái hiện tại**, các file governance trên thắng tài liệu này. Historical per-slice status vẫn tồn tại trong Git history, ADRs, phase reports và PRs.
+
 ## Thông tin dự án
-
-## LOCAL-FC-05E2 / 05E2B / 05F0 / 05F1 / 05F2 / 05G0 / 05G1 status
-
-LOCAL-FC-05G1 is **CLOSED / GREEN** as the internal `TEACHING_PROGRESS_DEBT_V1` projection: PR #59 final head `352842d5dcc9615c26b3549fd512f23b8e247632`, PR CI #230 SUCCESS, merge/canonical main `cade4896ff7e25cdb9221e204bd714105d4bd52a`, and post-merge CI #231 SUCCESS. LOCAL-FC-05H0 is CLOSED / GREEN through PR #60, merge commit 8390c1d5ed0da253aeaf0b0ce2e27db8463e95ec, and post-merge main CI #233 SUCCESS. LOCAL-FC-05H0D is finalized locally with ADR-041 and is pending independent review/CI; 05H1 is next but not started.
-
-Canonical main entering LOCAL-FC-05E2 is `92ea9133748f0864ba1d600b76a23d1d18e9e0e3`. LOCAL-FC-05D2 is **CLOSED / GREEN** through merged PR #50 and CI #203 PASS. It provides the bounded SpecialActivity runtime control plane; Room remains `NOT_ASSESSED`.
-
-LOCAL-FC-05E0 is **CLOSED / GREEN** through PR #51 and CI #205 PASS. LOCAL-FC-05E1 is **CLOSED / GREEN** through PR #52 at head `76f0d389358d4f23f2a39e347a329c222d580d3c`, authoritative PR CI #208 PASS, merge commit/canonical main `92ea9133748f0864ba1d600b76a23d1d18e9e0e3`, and post-merge main CI #209 PASS. It implements the derived-only internal `RESOLVED_LESSON_OCCURRENCE_STRUCTURAL_V1` resolver. Structural V1 remains unchanged with `PPCT_ITEM_ALLOCATION = NOT_ASSESSED`.
-
-LOCAL-FC-05E2 is **CLOSED / GREEN** through PR #53 at head `1328a6be42e4438df3d23425f0fd0920c5d69224`, authoritative PR CI #210 PASS, canonical merge/main `641d0ed94cf56b948888d1fc2870d60e5fc3f53f`, and post-merge main CI #211 PASS. ADR-037 defines the downstream `PPCT_OCCURRENCE_ALLOCATION_V1` profile.
-
-LOCAL-FC-05E2B is **CLOSED / GREEN** through PR #54 at final head `1731b7496c98961a96c09fd3b4aa7d397f7c679d`, authoritative PR CI #213 PASS, merge/current canonical main `07cba9d15b4335ac7d167ef11fa3ef21b66ee28a`, and post-merge main CI #214 PASS. Its profile remains `PPCT_OCCURRENCE_ALLOCATION_V1`, with `teachingExecution`, `completion`, `debt` and `reporting` all `NOT_ASSESSED`.
-
-LOCAL-FC-05F0 Teaching Execution architecture is **CLOSED / GREEN** through PR #55 at final head `c857fe108e0a816e12c3403376e4d917c68f6569`, authoritative PR CI #215 PASS, merge/current baseline `7937a53953e44aa4f41bc4071131495c241cf006`, and post-merge CI #216 PASS. LOCAL-FC-05F1 persistence foundation is **CLOSED / GREEN** through merged PR #56, canonical main `1d2bcd5baaa0a9390f65c386b884a4b2e621275d`, and post-merge CI #220 SUCCESS. LOCAL-FC-05F2 Teaching Execution Control Plane is **CLOSED / GREEN** through PR #57 at final head `03bc8e9c08349547f7a447cef9dc4428a0bc55d8`, authoritative PR CI #224 SUCCESS, merge/current main `354b1723d45fdb8cadc31aeded05ebcbd88cfdb3`, and post-merge CI #225 SUCCESS. LOCAL-FC-05G0 closes progress/debt/late architecture through ADR-040; LOCAL-FC-05G1 is CLOSED / GREEN through PR #59, CI #230/#231 and canonical main cade4896ff7e25cdb9221e204bd714105d4bd52a. LOCAL-FC-05H0 is CLOSED / GREEN through PR #60, merge commit 8390c1d5ed0da253aeaf0b0ce2e27db8463e95ec and post-merge CI #233 SUCCESS. LOCAL-FC-05H0D is finalized locally, pending independent review/CI; 05H1 is next and has not started.
 
 | Mục | Nội dung |
 |---|---|
-| **Tên dự án** | Hệ thống Báo giảng và Thống kê Tiết dạy Tự động |
-| **Đơn vị** | Trường PTDTNT THPT Đam San |
-| **Repository** | `hvtnguyenson-code/baogiang-damsan` |
-| **Thư mục local** | `D:\baogiang-damsan` |
-| **Stable branch** | `main` |
-| **Trạng thái sản phẩm** | Backend lõi đã hoàn thành qua 05G1 deterministic progress/debt/late projection; 05H0 đã CLOSED / GREEN; 05H0D finalized locally, pending independent review/CI; 05H1 là next implementation slice chưa bắt đầu; pre-operational, chưa go-live |
+| Tên | Hệ thống Báo giảng và Thống kê Tiết dạy Tự động |
+| Đơn vị | Trường PTDTNT THPT Đam San |
+| Repository | `hvtnguyenson-code/baogiang-damsan` |
+| Local canonical | `D:\baogiang-damsan` |
+| Stable branch | `main` |
+| Production domain | `baogiang.dtnt-damsan.edu.vn` |
+| API loopback | `127.0.0.1:3100` |
+| Database | PostgreSQL 17 |
+| Production OS | Windows Server 2022 |
+| Business timezone | `Asia/Ho_Chi_Minh` |
 
 ## Phương án chính thức
 
-Phương án triển khai chính thức là:
+Phương án chính thức là Phương án B:
 
-- **Phương án B** — VPS Windows Server 2022 + PostgreSQL 17.
-- Đặc tả ưu tiên cao nhất: `docs/specifications/PA-B-VPS-PostgreSQL-v1.3-IMPLEMENTATION-ADDENDUM.md`, bổ sung và thay thế nội dung tương ứng của v1.2.
-- Đặc tả nền: `docs/specifications/PA-B-VPS-PostgreSQL-v1.2-AI-governance.docx`.
-- Phương án A chỉ lưu để đối chiếu và tham khảo.
+- Windows VPS + PostgreSQL + Nginx;
+- domain chính thức `baogiang.dtnt-damsan.edu.vn`;
+- source lên VPS phải đi từ exact GitHub commit đã review;
+- database production ở trạng thái pre-operational cho tới quyết định pilot/go-live;
+- local không dùng database VPS làm automated test database;
+- deployment/migration cần task và phê duyệt riêng.
+
+Authority môi trường/delivery cao nhất vẫn là:
+
+- `docs/specifications/PA-B-VPS-PostgreSQL-v1.3-IMPLEMENTATION-ADDENDUM.md`;
+- `docs/decisions/ADR-005-OFFICIAL-VPS-CI-CD.md`;
+- production runbooks/authority hiện hành.
 
 ## Công nghệ
 
@@ -46,91 +57,120 @@ Phương án triển khai chính thức là:
 | Package manager | npm workspaces |
 | CI | GitHub Actions |
 
-## Môi trường làm việc local
+## Kiến trúc hiện có cần bảo toàn
 
-Máy local chủ yếu dùng cho editor, Codex/Antigravity, lint, typecheck và targeted unit tests. PostgreSQL không bắt buộc cài/chạy local. Integration, migration và E2E có database chạy bằng PostgreSQL cô lập trong CI/test environment.
-
-Các cổng dưới đây chỉ là cổng tiến trình ứng dụng khi cần chạy local; chúng không hàm ý có database local:
-
-| Dịch vụ | Cổng |
-|---|---|
-| Web | `127.0.0.1:5173` |
-| API | `127.0.0.1:3100` |
-| API prefix | `/api` |
-
-## Hiện trạng kiến trúc
-
-Backend hiện có các boundary đã được review và version hóa:
+Repository hiện có các boundary đã được review/version hóa và không được rebuild chỉ vì pre-pilot realignment:
 
 - identity, session, capability/scope default-deny và audit;
-- cấu trúc năm học với `AcademicCalendarVersion`, tuần nghiệp vụ, phân đoạn, quãng nghỉ và lớp theo năm;
-- lịch sử `TeachingAssignment` theo ngày dân sự;
-- khung tiết theo giờ thực và các revision bất biến;
-- `TimetableVersion`/`TimetableEntry`, DRAFT/validation, approval/activation, supersession và historical resolution;
-- import TKB XLSX gồm profile/alias, bounded workbook inspection, canonical preview, confirmation phía server, semantic/request replay, imported-DRAFT lock và adversarial security corpus qua LOCAL-FC-04B3D1.
+- AcademicYear + retained AcademicCalendarVersion + business weeks/segments/interruption/classes;
+- TeachingAssignment history theo ngày dân sự;
+- exact TimeSlotDefinition revisions và real-time collision;
+- retained TimetableVersion/TimetableEntry + lifecycle/historical resolution;
+- timetable import profile/alias/canonical preview infrastructure;
+- PPCT shared plan/version/item/revision/lineage/class association;
+- operational overlays;
+- SpecialActivity exact-slot/frozen-class/staffing/collision runtime primitive;
+- PPCT occurrence allocation;
+- CurricularTeachingExecution và SpecialActivityParticipationExecution;
+- progress/debt/late projection;
+- reporting projection, Personal Reporting Projection và Reporting Statement;
+- Windows production deployment control plane and operator-evidence tooling.
 
-Ngoài PPCT persistence/control plane của 05A1–05A2, bounded readiness của 05B1, và operational-overlay persistence/control plane của 05C1–05C2A, chuỗi 05D0D–05D2 đã đóng và triển khai Special Activity minimum core. LOCAL-FC-05E0D/ADR-036 đóng kiến trúc structural resolved occurrence, 05E1 đã **CLOSED / GREEN**, LOCAL-FC-05E2D/ADR-037 đã **CLOSED / GREEN** kiến trúc allocation, và 05E2B deterministic allocation read model đã **CLOSED / GREEN** qua PR #54. LOCAL-FC-05F0/ADR-038 đã **CLOSED / GREEN** qua PR #55 và CI #215/#216; LOCAL-FC-05F1/ADR-039 đã **CLOSED / GREEN** qua merged PR #56 và CI #220; LOCAL-FC-05F2 Teaching Execution control plane đã **CLOSED / GREEN** qua PR #57, CI #224/#225 và main `354b1723d45fdb8cadc31aeded05ebcbd88cfdb3`. LOCAL-FC-05G0/ADR-040 đóng kiến trúc projection progress/debt/late proof-backed; 05G1 đã implemented và CLOSED / GREEN qua PR #59, CI #230/#231 cùng canonical main cade4896ff7e25cdb9221e204bd714105d4bd52a. Reporting implementation chưa tồn tại; 05H0D/ADR-041 đã đóng architecture locally, pending independent review/CI; 05H1 chưa bắt đầu. Statement và approval snapshot vẫn chưa được triển khai. PPCT import, capacity, make-up public runtime, Room/Location và UI business semantics vẫn ngoài phạm vi.
+Chi tiết KEEP/REALIGN/RESTORE nằm trong `docs/governance/PRE-PILOT-TRACEABILITY-MATRIX.md`.
 
-`LOCAL-FC-05A0` đã merged qua PR #37. Closure 05A0D và ADR-027 đã xác lập kiến trúc PPCT: logical master dùng chung có scope `AcademicYear + Subject + Grade`, còn tiến độ phân phối/hoàn thành/nợ độc lập theo từng class-subject stream và gắn lịch sử với exact PPCT version/item.
+## Pre-pilot realignment
 
-`LOCAL-FC-05A1`/ADR-028 đã merged và thiết lập persistence foundation: stable item UUID tách khỏi version-local revision/order, split/merge có lineage tới exact revisions, và class-subject association gắn exact PPCT version theo khoảng ngày dân sự không chồng lấp. `LOCAL-FC-05A2`/ADR-029 đã thiết lập control plane, lifecycle DRAFT/PUBLISHED/SUPERSEDED, exact historical reads, class switch và `PPCT_MANAGE` theo môn/toàn trường. `LOCAL-FC-05B1`/ADR-030 đã thiết lập read model thuần đọc `NORMAL_BASE_PPCT_V1` cho normal-base + exact PPCT binding; đây không phải full operational readiness. PPCT import vẫn deferred sang lát cắt riêng; 05C2A mới chỉ cung cấp runtime cho ngoại lệ lịch và disposition, chưa có make-up runtime, capacity, progress, execution, reporting hoặc UI.
+Project hiện đang realign vì một số minimum-core/deferred quyết định chưa đại diện đầy đủ sản phẩm thực tế. Các miền phải re-enter trước pilot tùy exact scope gồm:
 
-`LOCAL-FC-05C0D`/ADR-031 xác lập ba aggregate operational overlay độc lập; `LOCAL-FC-05C1`/ADR-032 cung cấp persistence foundation và `LOCAL-FC-05C2A`/ADR-033 cung cấp bounded runtime cho `CalendarException` cùng `OperationalLessonDisposition`. `LOCAL-FC-05D0D`/ADR-034, 05D1/ADR-035 và 05D2 đã hoàn thành Special Activity architecture, persistence và runtime minimum core. Make-up public runtime vẫn fail-closed; persisted resolved occurrence, TeachingExecution, progress/debt, reporting và UI business semantics không được 05E0 bổ sung.
+- HomeroomAssignment;
+- GDĐP annual/grade programme planning;
+- HĐTN CLASS/GRADE/SCHOOL programme planning;
+- exact per-slot special-program staffing;
+- coordinator authority;
+- Business Configuration Control Plane;
+- delayed go-live + historical pre-operational execution;
+- PPCT authoritative workbook import;
+- native Đam San timetable workbook adapter;
+- class-view/teacher-view peer reconciliation;
+- morning/afternoon selective timetable update + explicit carry-forward;
+- SpecialActivity workload/reporting;
+- deferred WorkloadAdjustmentRule when official adjusted workload is in scope;
+- PWA/Telegram pilot integration;
+- first-cert HTTP-01/TLS authority and actual VPS evidence.
 
-ADR-036 giữ Structural V1 ở dạng recomputed `RepeatableRead`, không persistence/cache/snapshot/audit mutation. Normal candidates giữ cả suppression state; make-up và Special Activity là các occurrence family độc lập. PPCT binding resolve tới exact association/version/plan và allocation vẫn `NOT_ASSESSED` trong profile này. ADR-037 định nghĩa profile downstream `PPCT_OCCURRENCE_ALLOCATION_V1`: replay theo class-subject stream, exact-version stable-UUID/lineage semantics và fail-closed blockers; không thay đổi ý nghĩa Structural V1.
+Không suy ra rằng một area đã hoàn chỉnh chỉ vì minimum-core implementation hiện có PASS CI.
 
-LOCAL-FC-05E2B không deploy, không migration production và không thay đổi schema/database hay public HTTP contract. LOCAL-FC-05F1 đã merged với persistence foundation/schema verification và không triển khai runtime source, public contract, capability, seed, controller, workflow, UI, deployment hay production mutation. LOCAL-FC-05F2 đã đóng runtime Teaching Execution control plane. LOCAL-FC-05G1 đã **CLOSED / GREEN** qua PR #59, CI #230/#231 và canonical main `cade4896ff7e25cdb9221e204bd714105d4bd52a`. 05H0 đã CLOSED / GREEN qua PR #60, merge commit 8390c1d5ed0da253aeaf0b0ce2e27db8463e95ec và post-merge CI #233 SUCCESS. LOCAL-FC-05H0D/ADR-041 đã finalized locally, pending independent review/CI; 05H1 là next internal implementation slice và chưa bắt đầu.
+## Layering rule
 
-Thứ tự không đổi: hoàn thành chuỗi backend đến `CORE BACKEND FREEZE` trước khi UI được phép chốt business semantics.
+```text
+Planning facts
+  Calendar • PPCT • Base timetable • Programme plans
+        ↓
+Operational facts
+  Exceptions • Dispositions • Make-up • SpecialActivity runtime
+        ↓
+Execution evidence
+  CurricularTeachingExecution • ActivityParticipationExecution
+        ↓
+Derived state
+  Progress • Debt • Late • Workload
+        ↓
+Official record
+  Reporting Statement snapshot/lifecycle
+```
 
-## Hạ tầng production chính thức — pre-operational
+Downstream layer có thể tham chiếu retained upstream identities/evidence nhưng không được rewrite lịch sử upstream để làm reporting tiện hơn.
 
-| Mục | Giá trị |
-|---|---|
-| Hệ điều hành | Windows Server 2022 |
-| Domain chính thức | `baogiang.dtnt-damsan.edu.vn` |
-| Backend | `127.0.0.1:3100` sau Nginx |
-| PostgreSQL | PostgreSQL 17, `localhost:5433` |
+## Source/authority discipline
 
-VPS, PostgreSQL và domain là hạ tầng chính thức ngay trong giai đoạn phát triển. Database chưa có dữ liệu vận hành thực tế; chỉ dùng tài khoản và dữ liệu giả cho đến quyết định go-live, không dùng cho test phá hủy hoặc test suite tự động. Delivery đi qua commit GitHub, CI, review, merge được phép và CD có kiểm soát. Mỗi lần truy cập VPS, deploy hoặc migration vẫn cần task/phê duyệt riêng.
+Mọi major task phải đọc:
 
-Local không kết nối database VPS theo mặc định. Mọi nhu cầu kết nối phải có phương thức an toàn và phê duyệt riêng; không mở PostgreSQL công khai chỉ để local truy cập. Kiểm thử trên môi trường thật chỉ diễn ra sau CD qua domain chính thức.
+- `AGENTS.md`;
+- current governance authority;
+- v1.3 addendum;
+- applicable accepted ADRs;
+- v1.2/source audit liên quan;
+- exact current implementation evidence.
 
-## Hệ thống không được tác động
+Khi traceability đánh dấu `RESTORE`, `REALIGN` hoặc `NEW_PRODUCT_AUTHORITY`, agent không được dùng minimum-core ADR cũ để tự suy ra broader product semantics.
 
-- `D:\Quan_li_noi_tru`
-- `D:\Edu_DamSan`
-- dữ liệu và cấu hình PostgreSQL của hệ thống khác
-- dịch vụ, Scheduled Task và Nginx của hệ thống nội trú
-- tài nguyên VPS production ngoài phạm vi task hoặc khi chưa có phê duyệt tương ứng
+## Task governance
 
-## AI — tắt mặc định
+Major task bắt buộc:
 
-- AI chưa được tích hợp thật trong các phase nghiệp vụ lõi.
-- Phase 00 chỉ có ports, policy contracts và disabled adapter.
-- Ba kill switch bắt buộc mặc định `false`:
-  - `AI_ENABLED`
-  - `AI_ACTIVE_MODE_ENABLED`
-  - `AI_PASSIVE_MODE_ENABLED`
-- Không có chatbot hoặc ô prompt tự do cho giáo viên.
-- AI không được ghi trực tiếp dữ liệu nghiệp vụ.
+- có Task ID trong `PRE-PILOT-TASK-REGISTER.md` trước khi code;
+- dependency phải `CLOSED`;
+- branch riêng từ exact reviewed main SHA;
+- update task/status/traceability docs trước review;
+- merge không đồng nghĩa `CLOSED`;
+- sau merge phải ghi exact main SHA + authoritative post-merge CI và sync tài liệu;
+- task phụ thuộc tiếp theo bị block khi predecessor còn `MERGED_AWAITING_DOC_SYNC`;
+- không để `deferred/later/not assessed` orphan ngoài register.
 
-## Prototype — chỉ tham khảo
+Quy tắc đầy đủ: `docs/governance/MAJOR-TASK-DOCUMENTATION-SYNC-PROTOCOL.md`.
 
-`docs/prototypes/ui-reference-phuong-an-b.html` chỉ dùng tham khảo bố cục và định hướng thị giác.
+## UI/UX
 
-Không sao chép:
+Trước UI task phải đọc `.codex/skills/damsan-ui/SKILL.md` và `DESIGN.md` đầy đủ. UI không được invent business semantics hay authorization. Backend/current product authority phải đóng trước khi UI chốt workflow tương ứng.
 
-- JavaScript của prototype;
-- role selector;
-- mô hình `Level_1`, `Level_2`, `Level_Max`;
-- logic khóa PPCT;
-- logic phân quyền hoặc phê duyệt.
+## AI
 
-Thứ tự ưu tiên nguồn yêu cầu:
+AI mặc định tắt theo ADR-002/004. AI ports/policy foundation không phải bằng chứng active AI business integration. Bất kỳ activation nào cần task Product Owner riêng sau pilot-stability/security/cost review.
 
-1. Addendum Phương án B v1.3.
-2. ADR hiện hành.
-3. Đặc tả Phương án B v1.2 được phê duyệt.
-4. Tài liệu phase và governance đã được đối chiếu.
-5. Prototype HTML — chỉ tham khảo UI/UX.
+## Protected systems
+
+Không được tác động nếu task không explicit authorize:
+
+- `D:\Quan_li_noi_tru`;
+- `D:\Edu_DamSan`;
+- DamSanV5 / Quản lí nội trú application/process/database/Scheduled Task/config;
+- Nội trú Nginx/TLS/monitoring state;
+- production resources ngoài exact task scope.
+
+## Production safety
+
+- Green CI không chứng minh VPS readiness.
+- Không dùng destructive test trên production database.
+- Không `prisma migrate reset` production.
+- Không reboot VPS/restart PostgreSQL/kill all node processes.
+- Báo giảng phải có isolated root/port/task/database/role/domain/TLS/bot/log/backup lifecycle theo accepted production design.
