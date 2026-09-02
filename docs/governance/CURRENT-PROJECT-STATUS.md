@@ -10,44 +10,49 @@ It is **not** a self-referential registry of the latest Git commit. Exact curren
 
 ## Last closed major task
 
-`P0-001` — `BAOGIANG-PRE-PILOT-SPEC-REALIGNMENT-001` — **CLOSED**.
+`P1-010` — Homeroom responsibility architecture closure — **CLOSED** by `SYNC-P1-010`.
 
 Closure evidence:
 
-- starting main: `4bcf2e7fb2104304fd044693a0bf8838f6038d85`;
-- reviewed PR head: `475418e62879bfe70c6d56d7154da8522ffad623`;
-- PR: #91 `docs(governance): establish pre-pilot product realignment authority`;
-- exact-head PR CI: #327 — SUCCESS;
-- merge/main SHA: `7ae5e6bf86dc5d2bedd9329996235b17a3643ff7`;
-- post-merge main CI: #328 — SUCCESS;
-- administrative closure: `SYNC-P0-001`.
+- exact starting main: `dd8ee41a3edb3eff04802d405bd402dd046528dd`;
+- branch: `docs/homeroom-responsibility-architecture-010`;
+- reviewed PR head: `c125a0b1224c23fa1cf15d31123a9f5338ab8a4f`;
+- PR: #93 `docs(homeroom): close P1-010 responsibility architecture`;
+- independent GitHub diff review: PASS after correcting the historical-eligibility assumption so current account state cannot falsify bounded historical GVCN truth;
+- exact-head PR CI: #333 — SUCCESS;
+- merge/main SHA: `5cbfe8b25c1e40b1fb7d0a5b524b823c689c0463`;
+- authoritative post-merge main CI: #334 — SUCCESS;
+- administrative closure: `SYNC-P1-010`.
 
-P0 changed documentation/governance only. It did not change Prisma, migrations, API/runtime, frontend runtime, CI/CD behavior, VPS, TLS, database or production state.
+P1-010 changed architecture/governance documentation only. It did not change Prisma, migrations, capability catalog/runtime, API/runtime, frontend runtime, CI/CD behavior, VPS, TLS, database or production state.
 
-## Accepted authority after P0
+## Accepted product/domain authority
 
-The following are now accepted current governance/product authorities:
+`ADR-045-HOMEROOM-RESPONSIBILITY.md` is now accepted authority for canonical homeroom responsibility:
+
+- separate AcademicYear-owned, SchoolClass/date-effective `HomeroomAssignment` domain;
+- inclusive civil-date history with one effective current-truth GVCN per class/date and fail-closed gaps;
+- current/future operational eligibility is distinct from bounded historical truth;
+- current account/profile state cannot silently invalidate or replace a historically correct GVCN;
+- no TeachingAssignment, AdditionalDuty, timetable-text or SpecialActivity-staffing inference as alternate GVCN authority;
+- dedicated future `HOMEROOM_ASSIGNMENT_MANAGE / SCHOOL_WIDE` management capability;
+- HĐTN `CLASS` resolves exact GVCN by occurrence date and downstream materialization freezes source provenance;
+- `HomeroomAssignment` existence alone is not teaching-execution evidence or HĐTN period credit.
+
+P1-010 review also recovered and registered Special Programme boundaries T43/T44: absence/replacement/substitution semantics and programme-level confirmation authority/topology. Those remain for P4; they were not silently solved inside HomeroomAssignment.
+
+## Accepted governance authority
+
+The following remain current governance/product authorities:
 
 - `docs/governance/PRE-PILOT-PRODUCT-BASELINE.md`;
 - `docs/governance/PRE-PILOT-TRACEABILITY-MATRIX.md`;
 - `docs/governance/PRE-PILOT-TASK-REGISTER.md`;
 - `docs/governance/MAJOR-TASK-DOCUMENTATION-SYNC-PROTOCOL.md`;
-- `docs/decisions/ADR-044-PRE-PILOT-PRODUCT-REALIGNMENT-GOVERNANCE.md`.
+- `docs/decisions/ADR-044-PRE-PILOT-PRODUCT-REALIGNMENT-GOVERNANCE.md`;
+- `docs/decisions/ADR-045-HOMEROOM-RESPONSIBILITY.md`.
 
 Every major task must be registered before implementation, cite applicable traceability rows, obey dependency gates, and complete post-merge documentation synchronization before dependent major work starts. Untracked plain `DEFERRED`/`later`/`future slice` is prohibited.
-
-## Current active/review task
-
-`P1-010` — Homeroom responsibility architecture closure — **IN_REVIEW**.
-
-- branch: `docs/homeroom-responsibility-architecture-010`;
-- exact starting main: `dd8ee41a3edb3eff04802d405bd402dd046528dd`;
-- primary traceability: T13, T14;
-- proposed authority: `ADR-045-HOMEROOM-RESPONSIBILITY.md`;
-- architecture/docs only; no schema, migration, capability seed, API/runtime, UI, CI/CD, VPS or production mutation;
-- review also recovered two previously unresolved Special Programme boundaries as T43/T44 and bound them to existing P4 tasks so they cannot disappear as prose-only deferrals.
-
-P1-010 becomes accepted only after exact-head review/CI and merge. `P1-011` must not start until P1-010 is `CLOSED` after mandatory post-merge documentation synchronization.
 
 ## Current implemented foundation
 
@@ -69,25 +74,25 @@ The repository contains reviewed implementation for:
 - Reporting Statement persistence/control plane/UI enablement/product UI work;
 - hardened Windows production deployment control-plane/runbooks through PR #90.
 
-Therefore any document that says the entire PPCT -> execution -> progress/debt -> reporting/statement chain is “not implemented” is stale.
+Homeroom **architecture authority** is now closed, but its persistence/control plane/UI are not yet implemented.
 
 ## Pre-pilot verdict
 
 **NOT READY FOR TEACHER PILOT YET.**
 
-P0 has closed the product/governance authority gap, but the registered implementation and evidence tasks remain.
+The registered implementation, data-evidence, product and production-readiness tasks remain.
 
 ## Critical pre-pilot gaps
 
 1. Current SpecialActivity is a valid runtime occurrence primitive but not a complete GDĐP/HĐTN programme model.
-2. Canonical date-effective HomeroomAssignment persistence/control plane is absent; P1-010 is closing architecture authority only.
+2. HomeroomAssignment persistence, control plane and administration workspace remain absent; architecture is now accepted through ADR-045.
 3. GDĐP grade/year plan and HĐTN CLASS/GRADE/SCHOOL programme semantics are absent.
 4. Programme planning cannot assign different exact teacher sets to different exact slots.
 5. Special-program absence/replacement and programme-level confirmation authority remain explicitly registered for P4 closure (T43/T44).
 6. Existing `GDDDP_COORDINATOR` / `HĐTN_COORDINATOR` capability intent is not wired to programme-resource authority.
 7. Typed/versioned Business Configuration Control Plane is absent.
 8. Delayed go-live / operational-start policy and historical pre-operational evidence workflow are absent.
-9. PPCT real-school import is intentionally deferred pending an authoritative workbook contract.
+9. PPCT real-school import is intentionally blocked pending an authoritative workbook contract.
 10. Native Đam San timetable adapter and class-view/teacher-view peer reconciliation are absent.
 11. Morning/afternoon selective timetable update with explicit carry-forward is absent.
 12. Special-activity participation is not yet integrated into official workload/reporting aggregation.
@@ -97,14 +102,16 @@ P0 has closed the product/governance authority gap, but the registered implement
 16. First-certificate HTTP-01/Nginx authority for the Báo giảng subdomain is incomplete.
 17. Actual VPS Stage 1 evidence has not yet been collected for first deployment.
 
-## Other tasks currently eligible to start
+## Tasks currently eligible to start
 
-While P1-010 is under review, independent direct P0 dependents remain `READY`:
+After `SYNC-P1-010` merges, dependency gates permit these registered tasks to start on their own branches:
 
+- `P1-011` — Homeroom persistence foundation;
 - `P1-020` — Business Configuration Control Plane architecture;
+- `P4-010` — GDĐP/HĐTN programme architecture closure;
 - `P6-010` — Pre-deploy TLS/HTTP-01 authority.
 
-Task sequencing must still follow the register and one-task-per-branch rule. No dependent P1-011 work starts until P1-010 is `CLOSED`.
+Readiness is not permission to bypass one-task-per-branch, review, CI or mandatory closure-sync gates. P1-012 still depends on P1-011; P4 runtime work remains gated by its registered dependencies.
 
 ## Decisions/evidence still blocking other paths
 
@@ -130,7 +137,7 @@ Direct P0 inspection found `main` is currently not protected server-side. This i
 
 ## Production state
 
-Production remains **pre-operational**. No P0, SYNC-P0-001 or P1-010 action authorizes or performs deployment, migration, Nginx/TLS change, PostgreSQL mutation or application-process mutation.
+Production remains **pre-operational**. No P0, P1-010 or closure-sync action authorizes or performs deployment, migration, Nginx/TLS change, PostgreSQL mutation or application-process mutation.
 
 ## Protected external system boundary
 
