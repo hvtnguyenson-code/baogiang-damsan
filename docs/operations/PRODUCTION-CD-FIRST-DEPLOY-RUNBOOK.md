@@ -1,5 +1,13 @@
 # Production CD First Deploy Runbook
 
+## P2 pre-transfer authority
+
+Production CD không còn marker parser riêng trong workflow hoặc command builder. Runner lấy exact bytes của `start-baogiang-api.ps1` và `deployment-common.ps1` bằng `git cat-file` từ commit của active startup bundle, yêu cầu commit đó thuộc first-parent `origin/main`, rồi tính SHA-256 trên chính blob bytes. Remote kiểm exact layout, non-reparse ancestor chain và hai hash trước khi dot-source common; common phải cung cấp `Get-DeploymentMarkerAuthorityContractVersion` bằng `1`.
+
+Read-only handshake gọi duy nhất shared `Read-DeploymentIdentity` với toàn bộ workflow bindings. `prepare-transfer` lặp lại cùng trust bootstrap và shared validation trong chính invocation tạo thư mục transfer, đóng khoảng TOCTOU trước `New-Item`. Không SFTP trước cả hai PASS. Bootstrap hợp lệ vẫn được phép chưa có `current`; handshake không import environment và không khởi động runtime.
+
+Root production, kể cả planned root chưa tồn tại, không được đi qua junction/reparse tại bất kỳ existing ancestor nào. Artifact transfer bị thay bằng junction phải để lại cho operator xử lý; guarded cleanup không recursive-delete qua reparse target.
+
 This is an executable, staged runbook for the official Windows VPS in pre-operational state. Codex does not run the inventory, access the VPS, configure GitHub secrets, run migrations, or activate deployment. At every stop point record `EXISTS AND VERIFIED`, `MISSING`, or `CONFLICT`, then obtain independent review before proceeding.
 
 ## Stage 0 — repository and authority

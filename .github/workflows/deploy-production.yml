@@ -154,6 +154,17 @@ jobs:
           set -euo pipefail
           node -e 'const fs=require("node:fs"); const e=process.env; const root=e.PROD_BAOGIANG_ROOT; const run=`${e.GITHUB_RUN_ID}-${e.GITHUB_RUN_ATTEMPT}`; const p={ReleaseSha:e.TARGET_SHA,Root:root,TransferDirectoryName:`control-${run}-${e.TARGET_SHA}`,SourceArchiveName:`release-${e.TARGET_SHA}.zip`,ExpectedSha256:e.RELEASE_SHA256,NodeExe:e.PROD_NODE_EXE,NpmExe:e.PROD_NPM_EXE,NpxExe:e.PROD_NPX_EXE,PsqlExe:e.PROD_PSQL_EXE,PgDumpExe:e.PROD_PG_DUMP_EXE,PgRestoreExe:e.PROD_PG_RESTORE_EXE,EnvFile:e.PROD_ENV_FILE,StartupWrapper:e.PROD_STARTUP_WRAPPER,NginxExe:e.PROD_NGINX_EXE,NginxConfig:e.PROD_NGINX_CONFIG,ExpectedBaseUrl:e.PROD_BASE_URL,ServiceKind:e.PROD_SERVICE_KIND,ServiceName:e.PROD_SERVICE_NAME,ExpectedEntryPoint:e.PROD_API_ENTRYPOINT,MigrationRequested:true,ProductionMigrationApproved:true,RollbackCompatibilityApproved:e.ROLLBACK_COMPATIBILITY==="true",ReportFileName:`deploy-report-${e.TARGET_SHA}.json`}; fs.writeFileSync("deploy-parameters.json",JSON.stringify(p,null,2),{encoding:"utf8",mode:0o600});'
 
+      - name: Derive active startup-bundle Git evidence
+        shell: bash
+        env:
+          PROD_BAOGIANG_ROOT: ${{ vars.PROD_BAOGIANG_ROOT }}
+          PROD_STARTUP_WRAPPER: ${{ vars.PROD_STARTUP_WRAPPER }}
+        run: |
+          set -euo pipefail
+          input="$(node -e 'process.stdout.write(JSON.stringify({repositoryRoot:"control-plane",canonicalMainRef:"origin/main",root:process.env.PROD_BAOGIANG_ROOT,startupWrapper:process.env.PROD_STARTUP_WRAPPER}))')"
+          node control-plane/scripts/ci/resolve-startup-bundle-handshake-evidence.cjs "$input" > startup-bundle-handshake-evidence.json
+          chmod 600 startup-bundle-handshake-evidence.json
+
       - name: Prepare pinned SSH files
         id: ssh
         shell: bash
@@ -183,16 +194,23 @@ jobs:
           PROD_BAOGIANG_ROOT: ${{ vars.PROD_BAOGIANG_ROOT }}
           PROD_SERVICE_KIND: ${{ vars.PROD_SERVICE_KIND }}
           PROD_SERVICE_NAME: ${{ vars.PROD_SERVICE_NAME }}
+          PROD_ENV_FILE: ${{ vars.PROD_ENV_FILE }}
+          PROD_STARTUP_WRAPPER: ${{ vars.PROD_STARTUP_WRAPPER }}
+          PROD_API_ENTRYPOINT: ${{ vars.PROD_API_ENTRYPOINT }}
+          PROD_NODE_EXE: ${{ vars.PROD_NODE_EXE }}
+          PROD_NGINX_EXE: ${{ vars.PROD_NGINX_EXE }}
+          PROD_NGINX_CONFIG: ${{ vars.PROD_NGINX_CONFIG }}
         run: |
           set -euo pipefail
-          payload="$(node control-plane/scripts/ci/build-windows-remote-command.cjs handshake "$(node -e 'process.stdout.write(JSON.stringify({root:process.env.PROD_BAOGIANG_ROOT,serviceKind:process.env.PROD_SERVICE_KIND,serviceName:process.env.PROD_SERVICE_NAME}))')")"
+          contract="$(node -e 'const fs=require("node:fs");const e=process.env;const evidence=JSON.parse(fs.readFileSync("startup-bundle-handshake-evidence.json","utf8"));process.stdout.write(JSON.stringify({...evidence,root:e.PROD_BAOGIANG_ROOT,serviceKind:e.PROD_SERVICE_KIND,serviceName:e.PROD_SERVICE_NAME,envFile:e.PROD_ENV_FILE,startupWrapper:e.PROD_STARTUP_WRAPPER,expectedEntryPoint:e.PROD_API_ENTRYPOINT,nodeExe:e.PROD_NODE_EXE,nginxExe:e.PROD_NGINX_EXE,nginxConfig:e.PROD_NGINX_CONFIG}))')"
+          payload="$(node control-plane/scripts/ci/build-windows-remote-command.cjs handshake "$contract")"
           ssh -i "$SSH_KEY" -p "$PROD_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "$PROD_SSH_USER@$PROD_SSH_HOST" powershell.exe -NoProfile -NonInteractive -EncodedCommand "$payload" | grep -Fx BAOGIANG_HANDSHAKE_PASS
           run_id="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           [[ "$run_id" =~ ^[0-9-]+$ ]]
           echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
           echo "transfer_name=control-$run_id-$TARGET_SHA" >> "$GITHUB_OUTPUT"
 
-      - name: Create verified unique transfer directory
+      - name: Revalidate authority and prepare unique transfer directory
         shell: bash
         env:
           SSH_KEY: ${{ steps.ssh.outputs.keyfile }}
@@ -201,12 +219,20 @@ jobs:
           PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT }}
           PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
           PROD_BAOGIANG_ROOT: ${{ vars.PROD_BAOGIANG_ROOT }}
+          PROD_SERVICE_KIND: ${{ vars.PROD_SERVICE_KIND }}
+          PROD_SERVICE_NAME: ${{ vars.PROD_SERVICE_NAME }}
+          PROD_ENV_FILE: ${{ vars.PROD_ENV_FILE }}
+          PROD_STARTUP_WRAPPER: ${{ vars.PROD_STARTUP_WRAPPER }}
+          PROD_API_ENTRYPOINT: ${{ vars.PROD_API_ENTRYPOINT }}
+          PROD_NODE_EXE: ${{ vars.PROD_NODE_EXE }}
+          PROD_NGINX_EXE: ${{ vars.PROD_NGINX_EXE }}
+          PROD_NGINX_CONFIG: ${{ vars.PROD_NGINX_CONFIG }}
         run: |
           set -euo pipefail
           transfer='${{ steps.handshake.outputs.transfer_name }}'
-          command="\$ErrorActionPreference='Stop'; \$root='${PROD_BAOGIANG_ROOT//\'/\'\'}'; \$dir=Join-Path \$root ('incoming\\' + '$transfer'); if(Test-Path -LiteralPath \$dir){throw 'Transfer directory already exists.'}; New-Item -ItemType Directory -LiteralPath \$dir | Out-Null"
-          encoded="$(printf '%s' "$command" | iconv -f UTF-8 -t UTF-16LE | base64 -w0)"
-          ssh -i "$SSH_KEY" -p "$PROD_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "$PROD_SSH_USER@$PROD_SSH_HOST" powershell.exe -NoProfile -NonInteractive -EncodedCommand "$encoded"
+          contract="$(TRANSFER_NAME="$transfer" node -e 'const fs=require("node:fs");const e=process.env;const evidence=JSON.parse(fs.readFileSync("startup-bundle-handshake-evidence.json","utf8"));process.stdout.write(JSON.stringify({...evidence,root:e.PROD_BAOGIANG_ROOT,serviceKind:e.PROD_SERVICE_KIND,serviceName:e.PROD_SERVICE_NAME,envFile:e.PROD_ENV_FILE,startupWrapper:e.PROD_STARTUP_WRAPPER,expectedEntryPoint:e.PROD_API_ENTRYPOINT,nodeExe:e.PROD_NODE_EXE,nginxExe:e.PROD_NGINX_EXE,nginxConfig:e.PROD_NGINX_CONFIG,transferName:e.TRANSFER_NAME}))')"
+          payload="$(node control-plane/scripts/ci/build-windows-remote-command.cjs prepare-transfer "$contract")"
+          ssh -i "$SSH_KEY" -p "$PROD_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "$PROD_SSH_USER@$PROD_SSH_HOST" powershell.exe -NoProfile -NonInteractive -EncodedCommand "$payload" | grep -Fx BAOGIANG_PREPARE_TRANSFER_PASS
 
       - name: Upload reviewed transfer bundle through SFTP
         shell: bash
@@ -291,4 +317,4 @@ jobs:
             encoded="$(node control-plane/scripts/ci/build-windows-remote-command.cjs cleanup "$root" "$transfer")"
             ssh -i "$SSH_KEY" -p "$PROD_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "$PROD_SSH_USER@$PROD_SSH_HOST" powershell.exe -NoProfile -NonInteractive -EncodedCommand "$encoded"
           fi
-          rm -f "$SSH_KEY" "$KNOWN_HOSTS" deploy-parameters.json
+          rm -f "$SSH_KEY" "$KNOWN_HOSTS" deploy-parameters.json startup-bundle-handshake-evidence.json
