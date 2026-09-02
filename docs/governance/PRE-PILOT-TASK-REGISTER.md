@@ -50,7 +50,7 @@ Dependency cells below contain **task IDs only**. Conditions/evidence triggers b
 
 | Task | Status | Depends on | Deliverable / closure | Traceability |
 |---|---|---|---|---|
-| `P1-010` Homeroom responsibility architecture closure | `READY` | `P0-001` | Date-effective retained GVCN product/authorization/history semantics; no schema yet | T13, T14 |
+| `P1-010` Homeroom responsibility architecture closure | `IN_PROGRESS` | `P0-001` | Date-effective retained GVCN product/authorization/history semantics; no schema yet | T13, T14 |
 | `P1-011` Homeroom persistence foundation | `PLANNED` | `P1-010` | Schema/migration/invariants for retained HomeroomAssignment history | T13, T14 |
 | `P1-012` Homeroom control plane | `PLANNED` | `P1-011` | Capability-controlled create/change/end/read, audit, historical resolution | T13, T14 |
 | `P1-013` Homeroom administration workspace | `PLANNED` | `P1-012` | Bounded admin/PHT UI using frozen backend contracts; no UI-invented authority | T13, T14 |
