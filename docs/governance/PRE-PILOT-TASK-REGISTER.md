@@ -36,7 +36,7 @@ A dependent major task must not start if:
 
 | Task | Status | Depends on | Deliverable / closure | Trigger / notes |
 |---|---|---|---|---|
-| `P0-001` BAOGIANG-PRE-PILOT-SPEC-REALIGNMENT-001 | `IN_PROGRESS` | none | Product baseline, traceability, task register, current status authority, sync protocol, ADR, stale status normalization | Branch `docs/pre-pilot-spec-realignment-001`; no runtime mutation |
+| `P0-001` BAOGIANG-PRE-PILOT-SPEC-REALIGNMENT-001 | `IN_REVIEW` | none | Product baseline, traceability, task register, current status authority, sync protocol, ADR, stale status normalization | Branch `docs/pre-pilot-spec-realignment-001`; no runtime mutation; independent GitHub review/CI/merge still required |
 | `P0-002` Close stale PR #11 hosting-portability direction | `BLOCKED_DECISION` | `P0-001` | Close PR #11 as superseded if Product Owner explicitly authorizes | Must not merge old standalone-Linux direction into current Windows/shared-Nginx architecture |
 | `P0-003` Pilot scope decision: CORE vs FULL BUSINESS | `BLOCKED_DECISION` | `P0-001` | Record Product Owner decision before P5 pilot freeze | Does not block common P1-P3 foundations |
 
