@@ -508,7 +508,14 @@ function Assert-OperatorEvidenceReportPath(
   if ($parentState.state -ne 'PASS') { throw 'OPERATOR_EVIDENCE_REPORT_PARENT_INVALID' }
   Assert-PathAncestorChainNonReparse -Directory $parent -CategoryPrefix 'OPERATOR_EVIDENCE_REPORT' | Out-Null
   foreach ($protectedRoot in @($CandidateRoot,$RepositoryRoot) + @($NginxRoot) + @($KnownForeignRoot) + @($AdditionalProtectedRoot)) {
-    if (-not [string]::IsNullOrWhiteSpace($protectedRoot) -and (Test-PathWithin -Path $canonicalReport -Parent (Get-CanonicalPath $protectedRoot))) { throw 'OPERATOR_EVIDENCE_REPORT_PATH_CONFLICT' }
+    if (-not [string]::IsNullOrWhiteSpace($protectedRoot)) {
+      try {
+        $canonProtected = Get-CanonicalPath $protectedRoot
+        if (Test-PathWithin -Path $canonicalReport -Parent $canonProtected) { throw 'OPERATOR_EVIDENCE_REPORT_PATH_CONFLICT' }
+      } catch {
+        if ($_.Exception.Message -eq 'OPERATOR_EVIDENCE_REPORT_PATH_CONFLICT') { throw }
+      }
+    }
   }
   foreach ($leaf in @($ProtectedLeaf)) {
     if (-not [string]::IsNullOrWhiteSpace($leaf) -and (Normalize-ComparablePath $canonicalReport) -eq (Normalize-ComparablePath $leaf)) { throw 'OPERATOR_EVIDENCE_REPORT_PATH_CONFLICT' }
@@ -999,10 +1006,116 @@ function Get-SafeStopPollingDecision([Parameter(Mandatory = $true)][AllowEmptyCo
   return [ordered]@{ state = 'WAIT'; exactProcessCount = $exactIds.Count; listenerCount = $rows.Count; foreignListenerCount = 0 }
 }
 
-function Get-DatabaseEvidenceClassification([Parameter(Mandatory = $true)][string]$ActualDatabase,[Parameter(Mandatory = $true)][string]$ExpectedDatabase,[Parameter(Mandatory = $true)][string]$ActualRole,[Parameter(Mandatory = $true)][string]$ExpectedRole,[Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$ActualExtensions,[Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$RequiredExtensions,[Parameter(Mandatory = $true)][bool]$MigrationTablePresent,[int]$UnfinishedMigrations = 0,[int]$RolledBackMigrations = 0,[bool]$MigrationSummaryVerified = $false,[bool]$RoleSafetyVerified = $false,[bool]$RoleIsSuperuser = $false,[bool]$RoleCanCreateDatabase = $false,[bool]$RoleCanCreateRole = $false,[bool]$RoleCanReplicate = $false,[bool]$RoleBypassesRls = $false,[bool]$RequireForeignIsolation = $false,[AllowEmptyCollection()][object[]]$ForeignIsolation = @(),[AllowEmptyCollection()][string[]]$KnownForeignDatabaseRole = @()) {
+function Parse-PostgresStructuredEvidence([Parameter(Mandatory = $true)][string[]]$Lines) {
+  $records = [ordered]@{
+    identity = $null
+    extensions = [Collections.Generic.List[string]]::new()
+    migrationTable = $null
+    roleSafety = $null
+    migrationSummary = $null
+    foreignDatabases = [Collections.Generic.List[object]]::new()
+  }
+  foreach ($rawLine in $Lines) {
+    $line = $rawLine.ToString().Trim()
+    if ([string]::IsNullOrWhiteSpace($line)) { continue }
+    $obj = $null
+    try {
+      $obj = $line | ConvertFrom-Json -ErrorAction Stop
+    } catch {
+      throw 'DATABASE_STRUCTURED_OUTPUT_INVALID'
+    }
+    if ($null -eq $obj -or $null -eq $obj.record -or $obj.record -isnot [string]) {
+      throw 'DATABASE_STRUCTURED_OUTPUT_INVALID'
+    }
+    $recordType = $obj.record
+    $props = @($obj.PSObject.Properties.Name)
+    switch ($recordType) {
+      'identity' {
+        if ($null -ne $records.identity) { throw 'DATABASE_STRUCTURED_OUTPUT_DUPLICATE' }
+        if ($props.Count -ne 3 -or -not ($props -ccontains 'database') -or -not ($props -ccontains 'role')) { throw 'DATABASE_STRUCTURED_OUTPUT_INVALID' }
+        if ($obj.database -isnot [string] -or $obj.role -isnot [string]) { throw 'DATABASE_STRUCTURED_OUTPUT_INVALID' }
+        $records.identity = [pscustomobject][ordered]@{ database = $obj.database; role = $obj.role }
+      }
+      'extension' {
+        if ($props.Count -ne 2 -or -not ($props -ccontains 'name')) { throw 'DATABASE_STRUCTURED_OUTPUT_INVALID' }
+        if ($obj.name -isnot [string]) { throw 'DATABASE_STRUCTURED_OUTPUT_INVALID' }
+        $records.extensions.Add($obj.name)
+      }
+      'migrationTable' {
+        if ($null -ne $records.migrationTable) { throw 'DATABASE_STRUCTURED_OUTPUT_DUPLICATE' }
+        if ($props.Count -ne 2 -or -not ($props -ccontains 'present')) { throw 'DATABASE_STRUCTURED_OUTPUT_INVALID' }
+        if ($obj.present -isnot [bool]) { throw 'DATABASE_STRUCTURED_OUTPUT_INVALID' }
+        $records.migrationTable = [pscustomobject][ordered]@{ present = $obj.present }
+      }
+      'roleSafety' {
+        if ($null -ne $records.roleSafety) { throw 'DATABASE_STRUCTURED_OUTPUT_DUPLICATE' }
+        if ($props.Count -ne 7 -or -not ($props -ccontains 'superuser') -or -not ($props -ccontains 'createDatabase') -or -not ($props -ccontains 'createRole') -or -not ($props -ccontains 'replication') -or -not ($props -ccontains 'bypassRls') -or -not ($props -ccontains 'directMembershipCount')) { throw 'DATABASE_STRUCTURED_OUTPUT_INVALID' }
+        if ($obj.superuser -isnot [bool] -or $obj.createDatabase -isnot [bool] -or $obj.createRole -isnot [bool] -or $obj.replication -isnot [bool] -or $obj.bypassRls -isnot [bool]) { throw 'DATABASE_STRUCTURED_OUTPUT_INVALID' }
+        if ($obj.directMembershipCount -isnot [int] -and $obj.directMembershipCount -isnot [long]) { throw 'DATABASE_STRUCTURED_OUTPUT_INVALID' }
+        if ([int]$obj.directMembershipCount -lt 0) { throw 'DATABASE_STRUCTURED_OUTPUT_INVALID' }
+        $records.roleSafety = [pscustomobject][ordered]@{
+          superuser = [bool]$obj.superuser
+          createDatabase = [bool]$obj.createDatabase
+          createRole = [bool]$obj.createRole
+          replication = [bool]$obj.replication
+          bypassRls = [bool]$obj.bypassRls
+          directMembershipCount = [int]$obj.directMembershipCount
+        }
+      }
+      'migrationSummary' {
+        if ($null -ne $records.migrationSummary) { throw 'DATABASE_STRUCTURED_OUTPUT_DUPLICATE' }
+        if ($props.Count -ne 3 -or -not ($props -ccontains 'unfinished') -or -not ($props -ccontains 'rolledBack')) { throw 'DATABASE_STRUCTURED_OUTPUT_INVALID' }
+        if (($obj.unfinished -isnot [int] -and $obj.unfinished -isnot [long]) -or ($obj.rolledBack -isnot [int] -and $obj.rolledBack -isnot [long])) { throw 'DATABASE_STRUCTURED_OUTPUT_INVALID' }
+        if ([int]$obj.unfinished -lt 0 -or [int]$obj.rolledBack -lt 0) { throw 'DATABASE_STRUCTURED_OUTPUT_INVALID' }
+        $records.migrationSummary = [pscustomobject][ordered]@{
+          unfinished = [int]$obj.unfinished
+          rolledBack = [int]$obj.rolledBack
+        }
+      }
+      'foreignDatabase' {
+        if ($props.Count -ne 4 -or -not ($props -ccontains 'database') -or -not ($props -ccontains 'present') -or -not ($props -ccontains 'connect')) { throw 'DATABASE_STRUCTURED_OUTPUT_INVALID' }
+        if ($obj.database -isnot [string] -or $obj.present -isnot [bool] -or $obj.connect -isnot [bool]) { throw 'DATABASE_STRUCTURED_OUTPUT_INVALID' }
+        $records.foreignDatabases.Add([pscustomobject][ordered]@{
+          database = $obj.database
+          present = [bool]$obj.present
+          connect = [bool]$obj.connect
+        })
+      }
+      Default {
+        throw 'DATABASE_STRUCTURED_OUTPUT_INVALID'
+      }
+    }
+  }
+  return $records
+}
+
+function Get-DatabaseEvidenceClassification(
+  [Parameter(Mandatory = $true)][string]$ActualDatabase,
+  [Parameter(Mandatory = $true)][string]$ExpectedDatabase,
+  [Parameter(Mandatory = $true)][string]$ActualRole,
+  [Parameter(Mandatory = $true)][string]$ExpectedRole,
+  [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$ActualExtensions,
+  [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$RequiredExtensions,
+  [Parameter(Mandatory = $true)][bool]$MigrationTablePresent,
+  [int]$UnfinishedMigrations = 0,
+  [int]$RolledBackMigrations = 0,
+  [bool]$MigrationSummaryVerified = $false,
+  [bool]$RoleSafetyVerified = $false,
+  [bool]$RoleIsSuperuser = $false,
+  [bool]$RoleCanCreateDatabase = $false,
+  [bool]$RoleCanCreateRole = $false,
+  [bool]$RoleCanReplicate = $false,
+  [bool]$RoleBypassesRls = $false,
+  [int]$DirectMembershipCount = 0,
+  [bool]$RequireForeignIsolation = $false,
+  [AllowEmptyCollection()][object[]]$ForeignIsolation = @(),
+  [AllowEmptyCollection()][string[]]$KnownForeignDatabaseRole = @()
+) {
   if ($ActualDatabase -cne $ExpectedDatabase -or $ActualRole -cne $ExpectedRole) { return [ordered]@{ state = 'CONFLICT'; identityState = 'CONFLICT' } }
   if (@($KnownForeignDatabaseRole | Where-Object { $_ -ceq $ActualRole }).Count -gt 0) { return [ordered]@{ state = 'CONFLICT'; identityState = 'CONFLICT'; reason = 'CURRENT_ROLE_ALIASES_PROTECTED_FOREIGN_ROLE' } }
-  if ($RoleIsSuperuser -or $RoleCanCreateDatabase -or $RoleCanCreateRole -or $RoleCanReplicate -or $RoleBypassesRls) { return [ordered]@{ state = 'CONFLICT'; identityState = 'EXISTS AND VERIFIED'; roleSafetyState = 'CONFLICT' } }
+  if ($RoleIsSuperuser -or $RoleCanCreateDatabase -or $RoleCanCreateRole -or $RoleCanReplicate -or $RoleBypassesRls -or $DirectMembershipCount -gt 0) {
+    return [ordered]@{ state = 'CONFLICT'; identityState = 'EXISTS AND VERIFIED'; roleSafetyState = 'CONFLICT'; directMembershipCount = $DirectMembershipCount }
+  }
   $missing = @($RequiredExtensions | Where-Object { $ActualExtensions -notcontains $_ })
   if ($missing.Count -gt 0) { return [ordered]@{ state = 'CONFLICT'; identityState = 'EXISTS AND VERIFIED'; missingExtensions = $missing } }
   if ($RequireForeignIsolation) {
@@ -1019,15 +1132,18 @@ function Get-DatabaseEvidenceClassification([Parameter(Mandatory = $true)][strin
 }
 
 function Get-DatabaseEvidenceQueryPlan([Parameter(Mandatory = $true)][bool]$MigrationTablePresent) {
-  $plan = @([pscustomobject]@{ name = 'identity'; sql = "SELECT current_database() || '|' || current_user; SELECT extname FROM pg_extension ORDER BY extname; SELECT CASE WHEN to_regclass('_prisma_migrations') IS NULL THEN 'MISSING' ELSE 'PRESENT' END; SELECT rolsuper::text || '|' || rolcreatedb::text || '|' || rolcreaterole::text || '|' || rolreplication::text || '|' || rolbypassrls::text FROM pg_roles WHERE rolname = current_user;" })
-  if ($MigrationTablePresent) { $plan += [pscustomobject]@{ name = 'migration-summary'; sql = "SELECT count(*) FILTER (WHERE finished_at IS NULL)::text || '|' || count(*) FILTER (WHERE rolled_back_at IS NOT NULL)::text FROM _prisma_migrations;" } }
+  $queryA = "SELECT json_build_object('record', 'identity', 'database', current_database(), 'role', current_user)::text; SELECT json_build_object('record', 'extension', 'name', extname)::text FROM pg_extension ORDER BY extname; SELECT json_build_object('record', 'migrationTable', 'present', to_regclass('_prisma_migrations') IS NOT NULL)::text; SELECT json_build_object('record', 'roleSafety', 'superuser', rolsuper, 'createDatabase', rolcreatedb, 'createRole', rolcreaterole, 'replication', rolreplication, 'bypassRls', rolbypassrls, 'directMembershipCount', (SELECT count(*)::int FROM pg_auth_members WHERE member = pg_roles.oid))::text FROM pg_roles WHERE rolname = current_user;"
+  $plan = @([pscustomobject]@{ name = 'identity'; sql = $queryA })
+  if ($MigrationTablePresent) {
+    $queryB = "SELECT json_build_object('record', 'migrationSummary', 'unfinished', (count(*) FILTER (WHERE finished_at IS NULL))::int, 'rolledBack', (count(*) FILTER (WHERE rolled_back_at IS NOT NULL))::int)::text FROM _prisma_migrations;"
+    $plan += [pscustomobject]@{ name = 'migration-summary'; sql = $queryB }
+  }
   return $plan
 }
 
 function Get-ForeignDatabaseIsolationQuery([Parameter(Mandatory = $true)][string]$DatabaseName) {
-  if ([string]::IsNullOrWhiteSpace($DatabaseName) -or $DatabaseName.IndexOf([char]0) -ge 0) { throw 'FOREIGN_DATABASE_NAME_INVALID' }
-  $literal = $DatabaseName.Replace("'","''")
-  return "SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = '$literal') THEN 'MISSING|NOT_VERIFIED' WHEN has_database_privilege(current_user, '$literal', 'CONNECT') THEN 'EXISTS|CONFLICT' ELSE 'EXISTS|PASS' END;"
+  if ([string]::IsNullOrWhiteSpace($DatabaseName) -or $DatabaseName -notmatch '^[a-z][a-z0-9_]*$') { throw 'FOREIGN_DATABASE_NAME_INVALID' }
+  return "SELECT json_build_object('record', 'foreignDatabase', 'database', '$DatabaseName', 'present', (EXISTS (SELECT 1 FROM pg_database WHERE datname = '$DatabaseName')), 'connect', (CASE WHEN EXISTS (SELECT 1 FROM pg_database WHERE datname = '$DatabaseName') THEN has_database_privilege(current_user, '$DatabaseName', 'CONNECT') ELSE false END))::text;"
 }
 
 function Stop-ExactBaoGiangRuntime([Parameter(Mandatory = $true)]$Marker,[Parameter(Mandatory = $true)][ValidateSet('scheduled-task','service')][string]$ServiceKind,[Parameter(Mandatory = $true)][string]$ServiceName,[ValidateRange(1,10)][int]$MaxAttempts = 6,[ValidateRange(0,10)][int]$DelaySeconds = 1) {
@@ -1453,15 +1569,48 @@ function Get-DatabaseParts([Parameter(Mandatory = $true)][string]$DatabaseUrl) {
   [ordered]@{ host = $uri.Host; port = if ($uri.Port -gt 0) { $uri.Port } else { 5432 }; database = $uri.AbsolutePath.Trim('/'); user = [Uri]::UnescapeDataString($userinfo[0]); password = [Uri]::UnescapeDataString($userinfo[1]) }
 }
 
-function Set-PostgresProcessEnvironment([Parameter(Mandatory = $true)][string]$DatabaseUrl,[int]$ExpectedPort = 5433) {
-  $parts = Get-DatabaseParts $DatabaseUrl
-  if ([int]$parts.port -ne $ExpectedPort) { throw 'DATABASE_URL PostgreSQL port does not match the reviewed inventory.' }
-  $env:PGHOST = $parts.host; $env:PGPORT = [string]$parts.port; $env:PGDATABASE = $parts.database; $env:PGUSER = $parts.user; $env:PGPASSWORD = $parts.password
-  return $parts
+function Get-ManagedPostgresEnvironmentNames {
+  return @(
+    'PGHOST','PGHOSTADDR','PGPORT','PGDATABASE','PGUSER','PGPASSWORD','PGPASSFILE',
+    'PGSERVICE','PGSERVICEFILE','PGOPTIONS','PGAPPNAME','PGSSLMODE','PGREQUIRESSL',
+    'PGSSLCERT','PGSSLKEY','PGSSLROOTCERT','PGSSLCRL','PGSSLCRLDIR','PGSSLSNI',
+    'PGCONNECT_TIMEOUT','PGCLIENTENCODING','PGTARGETSESSIONATTRS','PGREQUIREAUTH',
+    'PGCHANNELBINDING'
+  )
+}
+
+function Snapshot-PostgresProcessEnvironment {
+  $pgEnvSnapshot = [ordered]@{}
+  foreach ($name in Get-ManagedPostgresEnvironmentNames) {
+    $val = [Environment]::GetEnvironmentVariable($name, 'Process')
+    $pgEnvSnapshot[$name] = [pscustomobject]@{ existed = ($null -ne $val); value = $val }
+  }
+  return $pgEnvSnapshot
+}
+
+function Restore-PostgresProcessEnvironment([Parameter(Mandatory = $true)][hashtable]$Snapshot) {
+  foreach ($name in $Snapshot.Keys) {
+    $entry = $Snapshot[$name]
+    if ($entry.existed) {
+      [Environment]::SetEnvironmentVariable($name, $entry.value, 'Process')
+    } else {
+      [Environment]::SetEnvironmentVariable($name, $null, 'Process')
+    }
+  }
 }
 
 function Clear-PostgresProcessEnvironment {
-  foreach ($name in @('PGHOST','PGPORT','PGDATABASE','PGUSER','PGPASSWORD')) { Remove-Item "Env:$name" -ErrorAction SilentlyContinue }
+  foreach ($name in Get-ManagedPostgresEnvironmentNames) {
+    [Environment]::SetEnvironmentVariable($name, $null, 'Process')
+  }
+}
+
+function Set-PostgresProcessEnvironment([Parameter(Mandatory = $true)][string]$DatabaseUrl,[int]$ExpectedPort = 5433) {
+  $parts = Get-DatabaseParts $DatabaseUrl
+  if ([int]$parts.port -ne $ExpectedPort) { throw 'DATABASE_URL PostgreSQL port does not match the reviewed inventory.' }
+  Clear-PostgresProcessEnvironment
+  $env:PGHOST = $parts.host; $env:PGPORT = [string]$parts.port; $env:PGDATABASE = $parts.database; $env:PGUSER = $parts.user; $env:PGPASSWORD = $parts.password
+  return $parts
 }
 
 function Get-SafeErrorCategory([Parameter(Mandatory = $true)]$ErrorRecord) {

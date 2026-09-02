@@ -127,39 +127,106 @@ function Get-DatabaseSnapshot {
   if (-not $VerifyDatabase) { return [ordered]@{ state = 'NOT_RUN'; reason = 'No approved local database authentication was provided.' } }
   $url = [Environment]::GetEnvironmentVariable($DatabaseUrlEnvironmentVariable)
   if ([string]::IsNullOrWhiteSpace($url)) { return [ordered]@{ state = 'NOT_RUN'; reason = 'Approved server-side database environment is unavailable.' } }
-  $parts = Set-PostgresProcessEnvironment -DatabaseUrl $url -ExpectedPort $ExpectedPostgresPort
+  $envSnapshot = Snapshot-PostgresProcessEnvironment
   try {
+    $parts = Set-PostgresProcessEnvironment -DatabaseUrl $url -ExpectedPort $ExpectedPostgresPort
     # Query A is always safe on a greenfield database: it never references the relation.
     $queryA = (Get-DatabaseEvidenceQueryPlan -MigrationTablePresent:$false)[0].sql
     $output = @(& $databaseVerifier --tuples-only --no-align --command $queryA 2>$null)
     if ($LASTEXITCODE -ne 0) { return [ordered]@{ state = 'CONFLICT'; reason = 'Read-only PostgreSQL verification failed.' } }
-    $actual = ($output | ForEach-Object { $_.ToString().Trim() } | Where-Object { $_ })
-    $identity = $actual | Select-Object -First 1
-    $identityParts = $identity -split '\|', 2
-    $roleFlagsText = @($actual | Where-Object { $_ -match '^(?:true|false)\|(?:true|false)\|(?:true|false)\|(?:true|false)\|(?:true|false)$' } | Select-Object -Last 1)
-    $roleFlagsVerified = $roleFlagsText.Count -eq 1
-    $roleFlags = if ($roleFlagsVerified) { $roleFlagsText[0] -split '\|' } else { @('','','','','') }
-    $extensions = @($actual | Select-Object -Skip 1 | Where-Object { $_ -notin @('MISSING','PRESENT') -and $_ -notmatch '^(?:true|false)\|(?:true|false)\|(?:true|false)\|(?:true|false)\|(?:true|false)$' })
-    $migrationsPresent = $actual -contains 'PRESENT'
-    if ($identityParts.Count -ne 2 -or $identityParts[0] -cne $ExpectedDatabase -or $identityParts[1] -cne $ExpectedDatabaseRole -or [int]$parts.port -ne $ExpectedPostgresPort) { return [ordered]@{ state = 'CONFLICT'; database = if($identityParts.Count -gt 0){$identityParts[0]}else{$null}; role = if($identityParts.Count -gt 1){$identityParts[1]}else{$null}; port = $parts.port; reason = 'Actual database/role/port does not match reviewed expectations.' } }
-    $summary = @('0','0'); $summaryVerified = $false
+    $parsedA = $null
+    try {
+      $parsedA = Parse-PostgresStructuredEvidence -Lines $output
+    } catch {
+      return [ordered]@{ state = 'CONFLICT'; reason = 'Structured database evidence parsing failed.' }
+    }
+    if ($null -eq $parsedA.identity -or $null -eq $parsedA.migrationTable -or $null -eq $parsedA.roleSafety) {
+      return [ordered]@{ state = 'CONFLICT'; reason = 'Structured database identity/roleSafety/migrationTable record missing.' }
+    }
+    $identity = $parsedA.identity
+    $roleSafety = $parsedA.roleSafety
+    $extensions = @($parsedA.extensions)
+    $migrationsPresent = $parsedA.migrationTable.present
+    if ($identity.database -cne $ExpectedDatabase -or $identity.role -cne $ExpectedDatabaseRole -or [int]$parts.port -ne $ExpectedPostgresPort) {
+      return [ordered]@{ state = 'CONFLICT'; database = $identity.database; role = $identity.role; port = $parts.port; reason = 'Actual database/role/port does not match reviewed expectations.' }
+    }
+    $summary = [pscustomobject]@{ unfinished = 0; rolledBack = 0 }
+    $summaryVerified = $false
     if ($migrationsPresent) {
       # Query B is only constructed/executed after Query A proved the relation exists.
       $queryB = (Get-DatabaseEvidenceQueryPlan -MigrationTablePresent:$true)[1].sql
       $summaryOutput = @(& $databaseVerifier --tuples-only --no-align --command $queryB 2>$null)
-      if ($LASTEXITCODE -eq 0 -and $summaryOutput.Count -eq 1 -and $summaryOutput[0].ToString().Trim() -match '^\d+\|\d+$') { $summary = $summaryOutput[0].ToString().Trim() -split '\|'; $summaryVerified = $true }
+      if ($LASTEXITCODE -eq 0) {
+        try {
+          $parsedB = Parse-PostgresStructuredEvidence -Lines $summaryOutput
+          if ($null -ne $parsedB.migrationSummary) {
+            $summary = $parsedB.migrationSummary
+            $summaryVerified = $true
+          }
+        } catch {}
+      }
     }
-    $foreignIsolation = @(); $foreignIsolationRequested = $RequireForeignDatabaseIsolation -or $KnownForeignDatabase.Count -gt 0
+    $foreignIsolation = @()
+    $foreignIsolationRequested = $RequireForeignDatabaseIsolation -or $KnownForeignDatabase.Count -gt 0
     if ($foreignIsolationRequested -and $KnownForeignDatabase.Count -eq 0) { throw 'Reviewed foreign database names are required for requested cross-database isolation evidence.' }
-    foreach ($foreignDatabase in @(if($foreignIsolationRequested){$KnownForeignDatabase}else{@()})) {
-      $foreignOutput = @(& $databaseVerifier --tuples-only --no-align --command (Get-ForeignDatabaseIsolationQuery -DatabaseName $foreignDatabase) 2>$null)
-      $value = if ($LASTEXITCODE -eq 0 -and $foreignOutput.Count -eq 1) { $foreignOutput[0].ToString().Trim() } else { 'MISSING|NOT_VERIFIED' }
-      $valueParts = $value -split '\|',2
-      $foreignIsolation += [pscustomobject][ordered]@{ database = $foreignDatabase; existence = $valueParts[0]; state = if ($valueParts.Count -eq 2) { $valueParts[1] } else { 'NOT_VERIFIED' } }
+    foreach ($foreignDatabase in @(if ($foreignIsolationRequested) { $KnownForeignDatabase } else { @() })) {
+      $foreignQuery = Get-ForeignDatabaseIsolationQuery -DatabaseName $foreignDatabase
+      $foreignOutput = @(& $databaseVerifier --tuples-only --no-align --command $foreignQuery 2>$null)
+      $foreignState = 'NOT_VERIFIED'
+      $existence = 'MISSING'
+      if ($LASTEXITCODE -eq 0) {
+        try {
+          $parsedForeign = Parse-PostgresStructuredEvidence -Lines $foreignOutput
+          if ($parsedForeign.foreignDatabases.Count -eq 1) {
+            $fRec = $parsedForeign.foreignDatabases[0]
+            $existence = if ($fRec.present) { 'EXISTS' } else { 'MISSING' }
+            $foreignState = if (-not $fRec.present) { 'NOT_VERIFIED' } elseif ($fRec.connect) { 'CONFLICT' } else { 'PASS' }
+          }
+        } catch {}
+      }
+      $foreignIsolation += [pscustomobject][ordered]@{ database = $foreignDatabase; existence = $existence; state = $foreignState }
     }
-    $classification = Get-DatabaseEvidenceClassification -ActualDatabase $identityParts[0] -ExpectedDatabase $ExpectedDatabase -ActualRole $identityParts[1] -ExpectedRole $ExpectedDatabaseRole -ActualExtensions $extensions -RequiredExtensions $RequiredDatabaseExtension -MigrationTablePresent $migrationsPresent -UnfinishedMigrations ([int]$summary[0]) -RolledBackMigrations ([int]$summary[1]) -MigrationSummaryVerified $summaryVerified -RoleSafetyVerified:$roleFlagsVerified -RoleIsSuperuser:($roleFlags[0] -eq 'true') -RoleCanCreateDatabase:($roleFlags[1] -eq 'true') -RoleCanCreateRole:($roleFlags[2] -eq 'true') -RoleCanReplicate:($roleFlags[3] -eq 'true') -RoleBypassesRls:($roleFlags[4] -eq 'true') -RequireForeignIsolation:$foreignIsolationRequested -ForeignIsolation $foreignIsolation -KnownForeignDatabaseRole $KnownForeignDatabaseRole
-    $classification.database = $identityParts[0]; $classification.role = $identityParts[1]; $classification.port = $parts.port; $classification.extensions = $extensions; $classification.roleClusterSafety = [ordered]@{ state = if ($roleFlagsVerified) { if (@($roleFlags | Where-Object { $_ -eq 'true' }).Count -eq 0) { 'PASS' } else { 'CONFLICT' } } else { 'NOT_VERIFIED' }; superuser = $roleFlags[0] -eq 'true'; createDatabase = $roleFlags[1] -eq 'true'; createRole = $roleFlags[2] -eq 'true'; replication = $roleFlags[3] -eq 'true'; bypassRls = $roleFlags[4] -eq 'true' }; $classification.foreignDatabaseIsolation = $foreignIsolation; $classification.migrationsTablePresent = $migrationsPresent; $classification.migrationSummary = [ordered]@{ unfinished = [int]$summary[0]; rolledBack = [int]$summary[1] }; $classification
-  } finally { Clear-PostgresProcessEnvironment }
+    $classification = Get-DatabaseEvidenceClassification `
+      -ActualDatabase $identity.database `
+      -ExpectedDatabase $ExpectedDatabase `
+      -ActualRole $identity.role `
+      -ExpectedRole $ExpectedDatabaseRole `
+      -ActualExtensions $extensions `
+      -RequiredExtensions $RequiredDatabaseExtension `
+      -MigrationTablePresent $migrationsPresent `
+      -UnfinishedMigrations $summary.unfinished `
+      -RolledBackMigrations $summary.rolledBack `
+      -MigrationSummaryVerified $summaryVerified `
+      -RoleSafetyVerified:$true `
+      -RoleIsSuperuser:$roleSafety.superuser `
+      -RoleCanCreateDatabase:$roleSafety.createDatabase `
+      -RoleCanCreateRole:$roleSafety.createRole `
+      -RoleCanReplicate:$roleSafety.replication `
+      -RoleBypassesRls:$roleSafety.bypassRls `
+      -DirectMembershipCount $roleSafety.directMembershipCount `
+      -RequireForeignIsolation:$foreignIsolationRequested `
+      -ForeignIsolation $foreignIsolation `
+      -KnownForeignDatabaseRole $KnownForeignDatabaseRole
+    $classification.database = $identity.database
+    $classification.role = $identity.role
+    $classification.port = $parts.port
+    $classification.extensions = $extensions
+    $classification.roleClusterSafety = [ordered]@{
+      state = if (-not ($roleSafety.superuser -or $roleSafety.createDatabase -or $roleSafety.createRole -or $roleSafety.replication -or $roleSafety.bypassRls -or $roleSafety.directMembershipCount -gt 0)) { 'PASS' } else { 'CONFLICT' }
+      superuser = $roleSafety.superuser
+      createDatabase = $roleSafety.createDatabase
+      createRole = $roleSafety.createRole
+      replication = $roleSafety.replication
+      bypassRls = $roleSafety.bypassRls
+      directMembershipCount = $roleSafety.directMembershipCount
+    }
+    $classification.foreignDatabaseIsolation = $foreignIsolation
+    $classification.migrationsTablePresent = $migrationsPresent
+    $classification.migrationSummary = [ordered]@{ unfinished = $summary.unfinished; rolledBack = $summary.rolledBack }
+    return $classification
+  } finally {
+    Restore-PostgresProcessEnvironment -Snapshot $envSnapshot
+  }
 }
 
 function Get-TlsHttpSnapshot {
