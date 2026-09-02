@@ -1,96 +1,187 @@
-# Core Backend Roadmap
+# Core Backend / Pre-Pilot Roadmap
 
-**Status:** Planning guide after LOCAL-FC-05H0 CLOSED / GREEN through PR #60, canonical merge/main `8390c1d5ed0da253aeaf0b0ce2e27db8463e95ec` and post-merge CI #233 SUCCESS. LOCAL-FC-05G1 is CLOSED / GREEN. LOCAL-FC-05H0D is finalized locally, pending independent review/CI; 05H1 is next and has not started. This document is not an accepted requirements source and does not authorize implementation.
+## Status
 
-## Purpose
+**Current planning guide for the pre-pilot realignment.**
 
-LOCAL-FC-05D2 is **CLOSED / GREEN**. It implements the SpecialActivity runtime slice with `CANONICAL_CLASS_TEACHER_TIME_V1`; SpecialActivity is assessed for class/teacher interval collisions and Room remains not assessed.
+This document is not the canonical task-status source. Exact current state and dependencies are maintained in:
 
-The remaining backend must be delivered as one dependency chain, not as independent screens:
+- `docs/governance/CURRENT-PROJECT-STATUS.md`
+- `docs/governance/PRE-PILOT-TASK-REGISTER.md`
+- `docs/governance/PRE-PILOT-TRACEABILITY-MATRIX.md`
 
-```mermaid
-flowchart LR
-  CAL["Academic calendar"] --> PPCT["PPCT plan"]
-  CAL --> TKB["Base timetable"]
-  PPCT --> READY["Operational readiness"]
-  TKB --> READY
-  READY --> OVERLAY["Operational overlays"]
-  OVERLAY --> OCC["05E1 structural resolved occurrence"]
-  PPCT --> OCC
-  OCC --> ALLOC_ARCH["05E2 allocation architecture closure"]
-  ALLOC_ARCH --> ALLOC["05E2B deterministic allocation read model"]
-  ALLOC --> EXEC_ARCH["05F0 execution architecture closure"]
-  EXEC_ARCH --> EXEC_DB["05F1 execution persistence foundation"]
-  EXEC_DB --> EXEC_RT["05F2 execution evidence runtime"]
-  EXEC_RT --> PROG_ARCH["05G0 progress / debt / late architecture closure"]
-  PROG_ARCH --> PROG["05G1 deterministic progress / debt / late projection"]
-  PROG --> REPORT["Reporting projection"]
-  REPORT --> SNAP["Submission / approval snapshot"]
+The old per-slice 05E/05F/05G/05H chronology is retained in Git history, ADRs and phase reports; it is no longer duplicated here as mutable current status.
+
+## Current architecture fact
+
+The repository already contains the core chain:
+
+```text
+Calendar / Classes / Time Slots
+          ↓
+TeachingAssignment
+          ↓
+Timetable + PPCT
+          ↓
+Operational Overlays + SpecialActivity runtime
+          ↓
+PPCT Occurrence Allocation
+          ↓
+Teaching Execution Evidence
+          ↓
+Progress / Debt / Late
+          ↓
+Reporting Projection / Personal Reporting
+          ↓
+Reporting Statement
 ```
 
-An upstream plan is never rewritten to represent a downstream fact. Later facts overlay, fulfill, reverse or supersede earlier facts while retaining their original identity.
-
-## Completed backend foundation
-
-The repository currently contains:
-
-1. Identity, server-side session, capability/scope authorization and audit.
-2. AcademicYear, immutable AcademicCalendarVersion aggregates, business weeks, split segments, reserve weeks, interruptions and year-scoped classes.
-3. Historical TeachingAssignment responsibility by AcademicYear + class + subject + inclusive civil date.
-4. AcademicYear-owned immutable time-slot revisions and real wall-clock collision semantics.
-5. AcademicYear-owned TimetableVersion history, normalized normal TimetableEntry rows, DRAFT/validation, approval/activation, supersession and civil-date historical resolution.
-6. Timetable XLSX import through LOCAL-FC-04B3D1: immutable profile revisions, typed aliases, bounded parsing, canonical preview, server-side confirmation, semantic/request replay, imported-DRAFT protection and adversarial workbook tests.
-7. Bounded deterministic `NORMAL_BASE_PPCT_V1` readiness over retained normal-base evidence and exact date-effective PPCT binding, with all unavailable operational dimensions explicitly `NOT_ASSESSED`.
-
-The accepted timetable meaning remains deliberately partial: `VALIDATED` and `ACTIVE` prove only the implemented normal-base checks. They do not prove timetable completeness, PPCT association or special-activity collision readiness.
-
-## Remaining core sequence
-
-LOCAL-FC-05A0 is merged. LOCAL-FC-05A0D closed the seven PPCT architecture prerequisites and ADR-027 is Accepted. LOCAL-FC-05A1 established the six-model persistence foundation through ADR-028. LOCAL-FC-05A2 established the subject-authorized PPCT control plane, lifecycle commands and exact historical resolution through ADR-029. LOCAL-FC-05B1 established bounded normal-base readiness through ADR-030. LOCAL-FC-05C0D closed R1-R22 through ADR-031, LOCAL-FC-05C1 established the three-family persistence foundation through ADR-032, and LOCAL-FC-05C2A established the bounded `CalendarException` plus `OperationalLessonDisposition` control plane through ADR-033. LOCAL-FC-05D0D closed Special Activity architecture through ADR-034, LOCAL-FC-05D1 established its persistence foundation through ADR-035, and LOCAL-FC-05D2 is CLOSED / GREEN after its runtime control plane. LOCAL-FC-05E0D and ADR-036 now close only the structural resolved-occurrence architecture. The sequence below remains planning guidance subject to each slice's own authorization and gate; the applicable ADR/decision closure remains authoritative.
-
-1. **05A1 — PPCT persistence foundation (established by ADR-028).** The shared `AcademicYear + Subject + Grade` master, immutable version/item history, explicit lineage and date-effective exact-version class association now have database-enforced structural foundations. No API, lifecycle command, capability runtime or import is implied.
-2. **05A2 — PPCT control plane and lifecycle (established by ADR-029).** Transactional lifecycle commands, published immutability, correction/supersession, class binding, historical reads and `PPCT_MANAGE` authorization are available. No import, progress, execution, reporting or UI is implied.
-3. **PPCT import, if later authorized.** Separate contract/security audit after authoritative workbook/workflow evidence; do not encode it in 05A1 or assume timetable-import formats or identifiers apply.
-4. **Bounded timetable readiness foundation (established by ADR-030).** The first pure read profile assesses retained normal-base timetable evidence plus exact PPCT association binding only. It does not assess capacity, overlays, special activities or full operational readiness.
-5. **05C1 — operational-overlay persistence foundation (established by ADR-032).** The three ADR-031 aggregate families now have lifecycle/source/reversal history, exact composite provenance, idempotency support and database invariants. No API, capability runtime, resolved-occurrence execution, debt/reporting, move/swap or Special Activity semantics are implied.
-6. **05C2A — bounded operational-overlay control plane (established by ADR-033).** `CalendarException` and `OperationalLessonDisposition` now have capability-controlled create/reverse/read, server-derived source, idempotency/CAS and bounded pre-Special-Activity collision checks. Make-up runtime is deferred until an authoritative exact incomplete-obligation proof source exists. Special Activity, resolved occurrence, execution, progress/debt, reporting/snapshots and UI business semantics remain absent.
-7. **05D1 — Special Activity Persistence Foundation (established by ADR-035).** The ADR-034 root, exact-slot, frozen-class-target and roleless-staffing persistence direction now has retained provenance and database invariants. No runtime, execution, PPCT/progress/reporting, Room or UI is implied.
-8. **05D2 — Special Activity runtime control plane (CLOSED / GREEN).** Capability-controlled create/read/reverse, frozen class/staff provenance, idempotency/CAS and canonical class/teacher/time collision behavior are established. Room remains `NOT_ASSESSED`.
-9. **05E0 — Resolved Lesson Occurrence Architecture (closed by 05E0D/ADR-036).** Architecture/decision closure only; no runtime, persistence or allocation algorithm.
-10. **05E1 — Structural Resolved Lesson Occurrence Read Model (CLOSED / GREEN).** Derived-only and schema-free internal `RepeatableRead` composition of normal, make-up and Special Activity families, normal suppression evidence, exact PPCT association/version/plan provenance and fail-closed blockers. PR #52 / PR CI #208 / post-merge CI #209 passed. `PPCT_ITEM_ALLOCATION = NOT_ASSESSED` remains explicit and unchanged.
-11. **05E2 — PPCT Occurrence Allocation Architecture Closure (CLOSED / GREEN).** ADR-037 closes deterministic class-subject replay, exact-version stable UUID, split/merge, SpecialActivity suppression, exhaustion and distribution-obligation provenance. PR #53 / PR CI #210 / post-merge CI #211 passed; canonical main is `641d0ed94cf56b948888d1fc2870d60e5fc3f53f`.
-12. **05E2B — Deterministic PPCT Allocation Read Model (CLOSED / GREEN).** PR #54 at final head `1731b7496c98961a96c09fd3b4aa7d397f7c679d`, authoritative PR CI #213 PASS, merge/current canonical main `07cba9d15b4335ac7d167ef11fa3ef21b66ee28a`, and post-merge CI #214 PASS. Internal, schema-free and fail-closed `PPCT_OCCURRENCE_ALLOCATION_V1` runs under one bounded `RepeatableRead`; execution/completion/debt/reporting remain `NOT_ASSESSED` in that profile.
-13. **05F0 — Teaching Execution architecture closure (CLOSED / GREEN).** ADR-038 defines separate curricular fulfillment and Special Activity teacher-slot participation evidence, exact provenance, server-derived actual teacher/content, exactly-once active fulfillment, immutable reversal, time/week gates, authorization and one-transaction future runtime requirements. PR #55 / PR CI #215 / post-merge CI #216 passed; merge/current baseline is `7937a53953e44aa4f41bc4071131495c241cf006`.
-14. **05F1 — Teaching Execution persistence foundation (CLOSED / GREEN).** ADR-039 implements the two persistence families, exact provenance, bounded display snapshots, immutable lifecycle, request identities, replacement integrity and database uniqueness. Merged PR #56 and post-merge CI #220 closed this foundation. No runtime/controller/capability seed or progress/reporting behavior is included.
-15. **05F2 — Teaching Execution control plane / Báo giảng evidence runtime (CLOSED / GREEN).** PR #57 final head `03bc8e9c08349547f7a447cef9dc4428a0bc55d8`, PR CI #224 SUCCESS, merge/current main `354b1723d45fdb8cadc31aeded05ebcbd88cfdb3` and post-merge CI #225 SUCCESS. It establishes server-derived confirmation/read/correction, tx-aware allocation and one outer `SERIALIZABLE` evidence transaction without public make-up scheduling.
-16. **05G0 — Progress / Debt / Late architecture closure (CLOSED).** ADR-040 defines projection-only truth, exact direct-obligation distribution, source-slot elapsed policy, proof-backed debt, visible unconfirmed gaps, V1 late and fail-closed reconciliation.
-17. **05G1 — Deterministic Progress / Debt / Late Projection (CLOSED / GREEN).** PR #59 final head `352842d5dcc9615c26b3549fd512f23b8e247632`, PR CI #230 SUCCESS, merge/current canonical main `cade4896ff7e25cdb9221e204bd714105d4bd52a`, and post-merge CI #231 SUCCESS. Internal, reproducible read projection/service from retained facts only; make-up fulfills an original obligation exactly once. No public controller/capability is implied.
-18. **05H0 — Reporting Projection Architecture Audit (CLOSED / GREEN).** PR #60, merge commit 8390c1d5ed0da253aeaf0b0ce2e27db8463e95ec and post-merge main CI #233 SUCCESS complete the audit.
-19. **05H0D — Reporting Projection Decision Closure (finalized locally; pending independent review/CI).** Product Owner accepted D1–D15 and ADR-041 records the accepted architecture. 05H1 has not started.
-20. **05H1 — Internal Reporting Projection (next; not implemented).** Separately authorized schema-free/internal deterministic projection only.
-21. **05H2 — Public Reporting read/control plane (later).** Requires separate authorization, read scope and pagination/performance closure.
-22. **Submission and approval snapshot.** Immutable submitted/approved snapshots or immutable reference manifests with explicit capability/scope checks and no self-approval.
-23. **Cross-domain closure.** Concurrency, idempotency, correction, replay, historical drift and performance validation across the full chain.
-24. **CORE BACKEND FREEZE.** Contracts, state transitions, precedence, source references and capability matrix are accepted and regression-covered.
-25. **UI business completion afterward.** Product UI consumes frozen backend contracts and does not invent PPCT, debt, occurrence, approval or correction semantics.
+The pre-pilot issue is therefore **not “finish the missing core backend from scratch.”** It is to restore/re-enter product requirements that were previously minimum-core/deferred and to connect real school data/go-live/production constraints without weakening retained-history invariants.
 
 ## Layering rule
 
 ```mermaid
 flowchart TB
-  PLAN["Planning facts\nCalendar • PPCT • Base timetable"]
-  REALITY["Operational facts\nExceptions • Cancellation • Substitution • Make-up • Special activity"]
-  EVIDENCE["Execution evidence\nExpected/actual content • Responsible/actual teacher"]
+  PLAN["Planning facts\nCalendar • PPCT • Base timetable • Programme plans"]
+  REALITY["Operational facts\nExceptions • Dispositions • Make-up • SpecialActivity runtime"]
+  EVIDENCE["Execution evidence\nCurricular • Activity teacher-slot participation"]
   DERIVED["Derived state\nProgress • Debt • Late • Workload"]
-  OFFICIAL["Official record\nSubmitted/approved report snapshot"]
+  OFFICIAL["Official record\nReporting Statement"]
   PLAN --> REALITY --> EVIDENCE --> DERIVED --> OFFICIAL
 ```
 
-Dependencies point downward. A lower layer may reference immutable upstream identities and snapshots; it must not update an upstream historical row to make current reporting convenient.
+A downstream layer may reference exact retained upstream identities but must not rewrite upstream historical meaning.
 
-## Planning qualifiers
+## Foundations to preserve
 
-- Future task IDs, ordering refinements and estimates are planning guidance, not accepted requirements.
-- A slice may be split after its architecture audit, but no dependency may be skipped merely to deliver UI sooner.
-- No UI business semantics are permitted before the corresponding backend contracts are frozen.
-- No “God aggregate” owns PPCT, timetable, operational events, execution and reporting together.
+Do not rebuild without separate evidence-backed authority:
+
+1. Identity/session/capability/audit.
+2. Academic calendar/business-week history.
+3. TeachingAssignment date-effective history.
+4. TimeSlotDefinition revisions and real-time collision.
+5. TimetableVersion/TimetableEntry retained history.
+6. Generic timetable import profile/alias/canonical preview foundation.
+7. PPCT stable identity/version/revision/lineage/class association.
+8. Operational overlays.
+9. Existing SpecialActivity exact-slot/frozen-class/staffing/collision runtime primitive.
+10. CurricularTeachingExecution and SpecialActivityParticipationExecution.
+11. Proof-based progress/debt/late.
+12. Reporting/Personal Reporting/Reporting Statement foundations.
+13. Hardened Windows production deployment control plane.
+
+## Pre-pilot sequence
+
+### P0 — Product/spec realignment and governance
+
+Goal:
+
+- establish one product baseline;
+- establish cross-domain traceability;
+- register every planned/deferred item;
+- make post-merge documentation synchronization mandatory;
+- remove stale current-status claims.
+
+No runtime/schema/production mutation.
+
+### P1 — Business foundations
+
+1. **HomeroomAssignment** — date-effective retained GVCN responsibility required for HĐTN `CLASS`.
+2. **Business Configuration Control Plane** — typed/versioned business policy, explicitly separated from secrets/technical env.
+3. **Delayed go-live operational-start policy** — explicit start authority without inventing historical debt.
+
+### P2 — Real school data ingestion
+
+1. PPCT authoritative workbook audit.
+2. PPCT native importer.
+3. Đam San native TKB workbook audit.
+4. Native TKB adapter with class/teacher peer evidence and fail-closed mismatch.
+5. Morning/afternoon selective update with explicit carry-forward into one coherent canonical timetable version.
+
+### P3 — Historical go-live continuity
+
+1. Pre-operational historical execution/reconciliation architecture.
+2. Controlled historical evidence ingestion/confirmation.
+3. Preserve current invariant: missing execution alone does not prove debt.
+4. Public make-up runtime remains a separate trigger-based re-entry if required.
+
+### P4 — GDĐP / HĐTN programmes and workload
+
+1. Programme/version/item/occurrence architecture.
+2. GDĐP `AcademicYear + Grade` planning.
+3. HĐTN `CLASS / GRADE / SCHOOL_WIDE` planning.
+4. Date-effective homeroom resolution for class activities.
+5. Exact per-slot teacher assignment.
+6. Programme coordinator authorization.
+7. Deterministic bridge into existing SpecialActivity runtime primitive.
+8. Confirmed activity teacher-slot workload/reporting aggregation.
+9. WorkloadAdjustmentRule re-entry when official adjusted workload is in pilot scope.
+
+### P5 — Pilot product closure
+
+1. Product Owner chooses `CORE PILOT` or `FULL BUSINESS PILOT`.
+2. Cross-domain regression/business freeze for the chosen claim.
+3. Installable PWA baseline with safe caching/update behavior.
+4. Dedicated Báo giảng Telegram bot/linking/notification lifecycle.
+
+### P6 — Production readiness and controlled pilot
+
+1. Repo-side Báo giảng first-cert HTTP-01/Nginx/TLS authority.
+2. Passive VPS neighbour discovery and exact readonly preflight.
+3. Controlled root/ACL/task/env/Nginx/database bootstrap.
+4. Exact reviewed commit deploy + migration/rollback/health evidence.
+5. TLS monitor multi-certificate extension after separate Báo giảng certificate exists.
+6. Real teacher pilot verification.
+
+## Dependency principle
+
+The exact dependency graph is authoritative only in `PRE-PILOT-TASK-REGISTER.md`. At a high level:
+
+```text
+P0
+├── P1
+├── P2 audits
+└── P6 TLS repo authority
+
+P1 + P2
+   ↓
+P3
+
+P1 Homeroom + P0
+   ↓
+P4
+
+Chosen P1-P4 scope
+   ↓
+P5 freeze
+
+P5 + P6 evidence
+   ↓
+Production pilot
+```
+
+## Deferred-work rule
+
+There is no untracked “later” queue.
+
+Every intentionally postponed area must be either:
+
+- `DEFERRED_WITH_TRIGGER` in the task register; or
+- explicit `NON_PILOT`/`CANCELLED` Product Owner scope.
+
+Room/Location, arbitrary student rosters, active AI integration, managed activity-category catalogue and other non-pilot items remain visible in the register with re-entry triggers.
+
+## Major-task closure rule
+
+A major task is not `CLOSED` at merge. It becomes `MERGED_AWAITING_DOC_SYNC` until:
+
+- exact merge/main SHA is known;
+- authoritative post-merge CI is successful when applicable;
+- independent GitHub review evidence is complete;
+- task register/current status/traceability and applicable summaries are synchronized.
+
+No dependent major task starts before that sync closes.
+
+## UI/product rule
+
+UI must not invent missing programme, go-live, workload, import or authorization semantics. A pilot-critical UI workflow may proceed only after the corresponding backend/product authority is accepted.
