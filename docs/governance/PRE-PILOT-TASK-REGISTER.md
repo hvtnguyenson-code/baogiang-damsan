@@ -50,7 +50,7 @@ Dependency cells below contain **task IDs only**. Conditions/evidence triggers b
 
 | Task | Status | Depends on | Deliverable / closure | Traceability |
 |---|---|---|---|---|
-| `P1-010` Homeroom responsibility architecture closure | `READY` | `P0-001` | Date-effective retained GVCN product/authorization/history semantics; no schema yet | T13, T14 |
+| `P1-010` Homeroom responsibility architecture closure | `IN_REVIEW` | `P0-001` | Date-effective retained GVCN product/authorization/history semantics; no schema yet | T13, T14 |
 | `P1-011` Homeroom persistence foundation | `PLANNED` | `P1-010` | Schema/migration/invariants for retained HomeroomAssignment history | T13, T14 |
 | `P1-012` Homeroom control plane | `PLANNED` | `P1-011` | Capability-controlled create/change/end/read, audit, historical resolution | T13, T14 |
 | `P1-013` Homeroom administration workspace | `PLANNED` | `P1-012` | Bounded admin/PHT UI using frozen backend contracts; no UI-invented authority | T13, T14 |
@@ -94,11 +94,11 @@ Dependency cells below contain **task IDs only**. Conditions/evidence triggers b
 
 | Task | Status | Depends on | Deliverable / closure | Traceability |
 |---|---|---|---|---|
-| `P4-010` GDĐP/HĐTN programme architecture closure | `PLANNED` | `P0-001`, `P1-010` | Programme/version/item/occurrence topology; GDĐP grade plans; HĐTN CLASS/GRADE/SCHOOL; exact per-slot staffing | T12, T15–T17 |
+| `P4-010` GDĐP/HĐTN programme architecture closure | `PLANNED` | `P0-001`, `P1-010` | Programme/version/item/occurrence topology; GDĐP grade plans; HĐTN CLASS/GRADE/SCHOOL; exact per-slot staffing; absence/replacement semantics; confirmation topology | T12, T15–T17, T43, T44 |
 | `P4-020` Special-programme persistence + control plane | `PLANNED` | `P1-012`, `P4-010` | Retained plan history, planning commands, audit, no overload of SpecialActivity runtime primitive | T16, T17 |
-| `P4-030` Programme coordinator authorization | `PLANNED` | `P4-020` | Exact coordinator resource/scope semantics using explicit capabilities; no role/title inference | T18 |
-| `P4-040` Programme-to-SpecialActivity runtime bridge | `PLANNED` | `P4-030` | Deterministic materialization/provenance into existing SpecialActivity collision/runtime foundation | T12, T17, T31 |
-| `P4-050` Special-activity workload/reporting projection | `PLANNED` | `P4-040` | Confirmed teacher-slot participation contributes exactly once; no class-target fan-out multiplication; statement policy defined | T19, T20 |
+| `P4-030` Programme coordinator authorization | `PLANNED` | `P4-020` | Exact coordinator resource/scope semantics using explicit capabilities; no role/title inference | T18, T44 |
+| `P4-040` Programme-to-SpecialActivity runtime bridge | `PLANNED` | `P4-030` | Deterministic materialization/provenance into existing SpecialActivity collision/runtime foundation | T12, T17, T31, T43, T44 |
+| `P4-050` Special-activity workload/reporting projection | `PLANNED` | `P4-040` | Confirmed teacher-slot participation contributes exactly once; no class-target fan-out multiplication; statement policy defined | T19, T20, T44 |
 | `P4-060` Workload adjustment architecture | `DEFERRED_WITH_TRIGGER` | `P1-020` | Close reduction/percentage/override semantics, effectivity and frozen-report provenance | Trigger: chosen pilot/official reporting scope claims adjusted workload; T23 |
 | `P4-061` Workload adjustment implementation | `DEFERRED_WITH_TRIGGER` | `P1-021`, `P4-060` | Implement accepted adjustment policy without hardcoded fallback | Same trigger as P4-060; remains non-startable unless trigger fires and P4-060 becomes CLOSED; T23 |
 

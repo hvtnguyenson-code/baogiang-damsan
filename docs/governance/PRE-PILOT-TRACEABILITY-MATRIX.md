@@ -2,7 +2,9 @@
 
 ## Status
 
-**PROPOSED / REVIEW REQUIRED.**
+**ACCEPTED / MANDATORY CURRENT TRACEABILITY AUTHORITY.**
+
+Accepted through P0-001 / ADR-044. Rows may be updated by an in-review registered task to describe that task's proposed post-merge state; such row changes become canonical only if the task is explicitly approved and merged.
 
 Baseline audited: `main@4bcf2e7fb2104304fd044693a0bf8838f6038d85`.
 
@@ -33,8 +35,8 @@ This matrix is the mandatory cross-domain map from source requirement to current
 | T10 | Submitted/approved statement is immutable/frozen and must not drift with source changes | PA-B v1.2 §12; ADR-041–043 | Preserved | Reporting Statement implementation exists | `KEEP` | none |
 | T11 | GDĐP/HĐTN are not reducible to one normal TimetableEntry/TeachingAssignment | PA-B v1.2 §11; ADR-012/017; LOCAL-FC-04 audit | Preserved in principle | Separate SpecialActivity family exists | `KEEP` | none |
 | T12 | Special activities may target class/grade/school and may involve multiple teachers | PA-B v1.2 §11; 05A0/05D0 audits | ADR-034 chose one atomic generic root with frozen classes + roleless staff | Implemented | `REALIGN` | `P4-010`–`P4-040` |
-| T13 | HĐTN class-level activity can derive from homeroom responsibility | LOCAL-FC-04 audit; 05A0 explicitly left HomeroomAssignment unresolved and said it would reopen activity integration | HomeroomAssignment remained deferred | No canonical model | `RESTORE` | `P1-010` architecture -> `P1-011` persistence -> `P1-012` control plane |
-| T14 | Historical homeroom responsibility must not drift after teacher change | historical-retention rules from ADR-010/012/038 | No product model yet | Absent | `RESTORE` | `P1-010`–`P1-012`; `P1-013` adds admin UI only |
+| T13 | HĐTN class-level activity uses effective homeroom responsibility | LOCAL-FC-05A0 confirms class HĐTN uses effective homeroom teacher; ADR-010/012 had deferred the canonical domain | P1-010 proposes ADR-045: separate AcademicYear-owned, class/date-effective HomeroomAssignment with exact fail-closed resolver and dedicated management authority | Canonical persistence/control plane still absent | `RESTORE` | `P1-011` persistence -> `P1-012` control plane; `P4-010` consumes the accepted authority |
+| T14 | Historical homeroom responsibility must not drift after teacher change | historical-retention rules from ADR-010/012/038 + P0 baseline | P1-010 proposes frozen downstream GVCN provenance, retained effective intervals and explicit correction semantics | Canonical persistence/control plane still absent | `RESTORE` | `P1-011`–`P1-012`; `P1-013` adds admin UI only |
 | T15 | HĐTN has distinct CLASS / GRADE / SCHOOL_WIDE business modes | Product Owner pre-pilot direction + earlier activity scope evidence | Current SpecialActivity has generic selector only | Partial runtime support | `REALIGN` | `P4-010`–`P4-040` |
 | T16 | GDĐP requires a year/grade programme with planned weekly/topic content | Product Owner pre-pilot direction; PA-B v1.2 special-activity/content examples | ADR-034 explicitly omitted category/programme/series | Absent | `RESTORE` | `P4-010`–`P4-020` |
 | T17 | Different exact slots of one special programme may have different teacher sets | Product Owner pre-pilot direction; execution is already teacher-slot granular | Current create input accepts flat `slots[]` + `teachers[]` | Cannot express exact programme assignment topology | `REALIGN` | `P4-010`–`P4-040` |
@@ -63,6 +65,8 @@ This matrix is the mandatory cross-domain map from source requirement to current
 | T40 | Arbitrary student roster/enrollment activity targeting | ADR-034 explicit non-scope | Intentionally absent | Absent | `NON_PILOT` | `D-ROSTER-001` trigger = product requires roster/attendance |
 | T41 | AI active business integration | ADR-002/004 policy; disabled by default | Deferred | Ports/policy only | `NON_PILOT` | `D-AI-001` trigger = separate Product Owner activation decision |
 | T42 | A change to an authoritative v1.2/v1.3 source or a contradictory explicit Product Owner decision must force governance rebase before dependent implementation continues | P0 source fingerprints and source-priority rule | No repository-wide source-change trigger existed before P0 | P0 pins exact blobs and registers re-entry | `DEFERRED_WITH_TRIGGER` | `P0-900`; trigger = source fingerprint change or explicit contradiction |
+| T43 | GDĐP/HĐTN special-program absence, replacement and substitute-teacher semantics must be explicit rather than inferred from curricular substitution rules | LOCAL-FC-05A0 marked absence/substitution within activities UNRESOLVED; ADR-038 minimum core requires actual teacher = scheduled teacher and rejects arbitrary substitution | Current participation evidence is valid only for exact scheduled teacher-slot; no programme replacement authority exists | Partial minimum-core runtime only | `REALIGN` | `P4-010` must close programme semantics; `P4-040` may implement only the accepted bridge/runtime behavior |
+| T44 | Special-program confirmation authority/topology must reconcile coordinator/BGH confirmation with per-teacher-slot participation evidence and prevent double counting | LOCAL-FC-05A0 records v1.2 coordinator-or-BGH confirmation intent and flags whether the OR policy remains final; ADR-038 later models exact scheduled teacher-slot participation evidence | Current execution can record teacher-slot participation but does not settle programme-level confirmation/attestation authority | Partial minimum-core runtime only | `REALIGN` | `P4-010` architecture -> `P4-030` authorization -> `P4-040` runtime bridge -> `P4-050` workload regression |
 
 ## Required review rule
 
