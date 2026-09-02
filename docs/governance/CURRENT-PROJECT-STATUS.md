@@ -67,7 +67,9 @@ Reason: product/business alignment is incomplete even though the backend foundat
 
 `P0-001` — BAOGIANG-PRE-PILOT-SPEC-REALIGNMENT-001
 
-Current state: **IN_PROGRESS** on `docs/pre-pilot-spec-realignment-001`.
+Current state: **IN_REVIEW** on `docs/pre-pilot-spec-realignment-001`.
+
+The branch contains the proposed product baseline, traceability matrix, task register, current-status authority, documentation-sync protocol, ADR-044 proposal, stale-status normalization and repository PR/agent governance changes. Independent GitHub diff review and merge authorization remain pending.
 
 Allowed work: documentation/governance only.
 
