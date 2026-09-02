@@ -2,7 +2,9 @@
 
 ## Status and authority
 
-**PROPOSED NORMATIVE BASELINE — repository acceptance requires explicit review and merge.**
+**ACCEPTED NORMATIVE BASELINE.**
+
+Accepted by explicit Product Owner merge authorization for PR #91. Canonical merge: `7ae5e6bf86dc5d2bedd9329996235b17a3643ff7`. Authoritative post-merge CI: #328 — SUCCESS.
 
 This document records the Product Owner direction accepted for pre-pilot realignment on 2026-09-03. It does not authorize schema, runtime, UI, deployment or production mutation by itself.
 
