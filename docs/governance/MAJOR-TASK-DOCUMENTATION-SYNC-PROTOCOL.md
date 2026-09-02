@@ -2,9 +2,9 @@
 
 ## Status
 
-**PROPOSED MANDATORY GOVERNANCE RULE.**
+**ACCEPTED / MANDATORY GOVERNANCE RULE.**
 
-This protocol becomes repository authority only after the P0 realignment PR is explicitly approved and merged. It defines when a major task is actually complete and prevents stale current-state documentation or forgotten deferred work.
+Accepted through P0-001 / ADR-044. This protocol defines when a major task is actually complete and prevents stale current-state documentation or forgotten deferred work.
 
 ## 1. What counts as a major task
 
