@@ -1,6 +1,6 @@
 # ADR-044 — Pre-Pilot Product Realignment Governance
 
-- **Status:** Proposed on P0 branch; becomes Accepted only after explicit Product Owner approval and merge.
+- **Status:** Accepted via explicit Product Owner merge authorization for PR #91; canonical merge `7ae5e6bf86dc5d2bedd9329996235b17a3643ff7`; post-merge CI #328 SUCCESS.
 - **Date:** 2026-09-03
 - **Scope:** Product/spec governance and pre-pilot re-entry control only
 - **Starting baseline:** `main@4bcf2e7fb2104304fd044693a0bf8838f6038d85`
