@@ -26,6 +26,28 @@ Runbook này diễn giải đường đi chính thức từ thay đổi local t�
 - Sau CD, smoke/health/application checks dùng domain chính thức và không biến database thành test fixture phá hủy.
 - Deploy, migration và truy cập VPS luôn cần task/phê duyệt riêng.
 
+## Hosting portability và hướng hợp nhất dài hạn
+
+Báo giảng phải giữ nguyên khả năng chạy trên nhiều deployment profile. Business/application code không được phụ thuộc vào hostname/IP VPS hiện tại, Quản lí nội trú, `C:\damsan`, `DamSanV5`, shared Nginx, PostgreSQL service cụ thể hoặc Windows Scheduled Task.
+
+Deployment hiện được tạm dừng để ưu tiên hoàn thiện chức năng trên local. Khi production bootstrap được mở lại, hướng ưu tiên là dựng một VPS Linux mới, đưa Báo giảng lên vận hành trước và giữ VPS Windows Quản lí nội trú hiện tại hoạt động độc lập.
+
+Sau đó Quản lí nội trú mới được audit Linux portability, dựng bản staging trên VPS Linux bằng database copy và kiểm thử/rehearsal riêng. VPS Windows cũ tiếp tục là production/source of truth cho đến khi bản Linux vượt qua toàn bộ readiness gate. Không cho hai bản Quản lí nội trú cùng nhận ghi production độc lập.
+
+Một VPS Linux riêng là deployment target được hỗ trợ. Node runtime, listener, database/role, service identity, logs, backups, release path và secrets của từng ứng dụng phải nằm trong namespace riêng. Giao diện quản trị web như Cockpit có thể được dùng để tăng khả năng quan sát cho operator, nhưng quyền truy cập quản trị phải bị giới hạn rõ ràng và không được mở rộng attack surface mặc định.
+
+Nếu sau này hai hệ thống chạy chung một Linux VPS, chúng có thể dùng chung Nginx daemon và PostgreSQL server process nhưng vẫn phải có database/role, thư mục, service, port, log, backup, release history và secret riêng. Shared infrastructure không cho phép một application tự restart/stop daemon chỉ vì deploy application đó.
+
+Tên miền ứng dụng nên tách ngay từ đầu: `baogiang.dtnt-damsan.edu.vn` cho Báo giảng; `noitru.dtnt-damsan.edu.vn` cho Quản lí nội trú sau cutover; staging Quản lí nội trú dùng hostname test riêng. DNS/TLS cutover là thao tác hạ tầng được review riêng.
+
+**Thời điểm migration không khóa theo tháng/năm.** Hướng kiến trúc đã chốt nhưng cutover chỉ xảy ra khi portability audit, staging, restore rehearsal, backup/rollback, capacity review và kiểm thử đồng thời hai hệ thống đều đạt. Ranh giới cuối/đầu năm học có thể là thời điểm vận hành thuận lợi nhưng không thay thế readiness gate.
+
+Sizing phải dựa trên monitoring thực tế và chất lượng provider, không chỉ headline CPU/RAM. Khi hợp nhất hai hệ thống, một planning floor khoảng 4 GB RAM / 50 GB storage có thể hợp lý nhưng không phải hard-coded application requirement.
+
+Backup database/attachments quan trọng phải có ít nhất một bản recoverable ngoài chính production VPS. Firewall tiếp tục theo least privilege; ưu tiên build/package ngoài production và chuyển artifact đã review lên server thay vì phụ thuộc production có Internet outbound rộng cho `npm install`, `git pull` hoặc tải runtime.
+
+Chi tiết quyết định và readiness gate: `docs/decisions/ADR-010-HOSTING-PORTABILITY-AND-STAGED-CONSOLIDATION.md`.
+
 ## Delivery path
 
 1. Viết code local trên branch riêng cho một task.
