@@ -25,7 +25,7 @@ Construct this value only after PASS 1 discovery and PASS 2 review have identifi
 Required non-secret variables, all copied from the reviewed inventory, are:
 
 - `PROD_BAOGIANG_ROOT`
-- `PROD_SERVICE_KIND` — `scheduled-task` or `service`
+- `PROD_SERVICE_KIND` — current first-deploy value is exactly `scheduled-task`; `service` is not accepted for first deploy
 - `PROD_SERVICE_NAME`
 - `PROD_ENV_FILE`
 - `PROD_STARTUP_WRAPPER`
@@ -40,9 +40,9 @@ Required non-secret variables, all copied from the reviewed inventory, are:
 - `PROD_NGINX_CONFIG`
 - `PROD_BASE_URL` — exactly `https://baogiang.dtnt-damsan.edu.vn`
 
-Every executable and file path must be an existing Windows absolute leaf path on the VPS. Bare `node`, `npm`, `npx`, `psql`, `pg_dump`, `pg_restore`, or `nginx` values are invalid. The workflow validates safe host/user/service-name syntax, numeric SSH port, dedicated root paths, and exact domain.
+Every executable and file path must come from PASS 2 exact-path evidence and be an existing Windows absolute ordinary, non-reparse leaf with a non-reparse ancestor chain. Bare `node`, `npm`, `npx`, `psql`, `pg_dump`, `pg_restore`, or `nginx` values and values copied from PATH discovery are invalid. The workflow validates safe host/user/service-name syntax, numeric SSH port, dedicated root paths, and exact domain.
 
-PASS 1 tool paths are discovery candidates only. Authenticated PASS 2 database evidence must use the separately reviewed exact absolute `PsqlExe` whose leaf is `psql.exe`; it never resolves the verifier through `PATH`. `PROD_PSQL_EXE` is configured from that reviewed evidence only.
+PASS 1 tool paths and PASS 2 `discoveryTools` are discovery candidates only. PASS 2 `tools` binds reviewed `NodeExe`, `NpmExe`, `NpxExe`, `PsqlExe`, `PgDumpExe`, `PgRestoreExe`, and `NginxExe`; role-specific leaves are enforced and version commands run only through those exact paths. Authenticated database evidence uses that exact `PsqlExe` and never resolves through PATH. Every corresponding `PROD_*` value is configured from reviewed exact-path evidence only.
 
 ## Dedicated identity marker
 

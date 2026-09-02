@@ -38,6 +38,7 @@ const common = read(path.join(scriptDir, 'deployment-common.ps1'));
 const rollback = read(path.join(scriptDir, 'rollback-release.ps1'));
 const invoke = read(path.join(scriptDir, 'invoke-production-deploy.ps1'));
 const preflight = read(path.join(scriptDir, 'production-preflight-readonly.ps1'));
+const discovery = read(path.join(scriptDir, 'production-protected-neighbor-discovery.ps1'));
 const aclPlan = read(path.join(scriptDir, 'production-root-acl-plan.ps1'));
 const aclVerify = read(path.join(scriptDir, 'production-root-acl-verify.ps1'));
 const startupBundlePlan = read(path.join(scriptDir, 'production-startup-bundle-plan.ps1'));
@@ -69,6 +70,23 @@ if (!common.includes("return @('releases','staging','incoming','shared','logs','
 for (const token of ['function Get-ProductionAclPolicy','function Normalize-AclRule','function Compare-AclSnapshotToPolicy','AreAccessRulesProtected','S-1-1-0','S-1-5-11','S-1-5-32-545']) if (!common.includes(token)) fail(`ACL authority control missing: ${token}`);
 for (const token of ['function Get-CanonicalStartupBundleLayout','function Get-CanonicalStartupBundleLayoutFromWrapper','function Get-StartupBundleProvenancePlan','function Assert-StartupBundlePlanSchema',"'shared\\startup-bundles'",'cat-file','BaseStream']) if (!common.includes(token)) fail(`startup bundle shared authority control missing: ${token}`);
 for (const token of ['function Assert-PathAncestorChainNonReparse','function Assert-SafeReadOnlyReportPath','Assert-PathAncestorChainNonReparse -Directory','Test-PathWithin -Path $canonicalReport','READ_ONLY_REPORT_PATH_CONFLICT','READ_ONLY_REPORT_PARENT_REPARSE_POINT','READ_ONLY_REPORT_ANCESTOR_REPARSE_POINT','READ_ONLY_REPORT_TARGET_REPARSE_POINT','READ_ONLY_REPORT_TARGET_TYPE_MISMATCH']) if (!common.includes(token)) fail(`shared read-only report boundary missing: ${token}`);
+for (const token of ['function Assert-OperatorEvidenceReportPath','function Assert-SafeDiscoveryReadPath','function Get-ReviewedExecutableSnapshot','OPERATOR_EVIDENCE_REPORT_PATH_CONFLICT','REVIEWED_EXECUTABLE_ROLE_LEAF_CONFLICT','function Get-ForeignDatabaseIsolationQuery','rolsuper','rolcreatedb','rolcreaterole','rolreplication','rolbypassrls','has_database_privilege']) if (!common.includes(token)) fail(`operator evidence authority missing: ${token}`);
+for (const [label, tool] of [['PASS 1 discovery', discovery], ['PASS 2 preflight', preflight]]) {
+  const finalGuard = tool.lastIndexOf('Assert-OperatorEvidenceReportPath');
+  const write = tool.lastIndexOf('[IO.File]::WriteAllText');
+  if (finalGuard < 0 || write < 0 || finalGuard >= write) fail(`${label} must perform its final shared report authorization immediately before write`);
+}
+if (!discovery.includes(". (Join-Path $PSScriptRoot 'deployment-common.ps1')") || !discovery.includes('Assert-SafeDiscoveryReadPath') || /function\s+(?:Test-ContainedPath|Assert-PathAncestorChainNonReparse|Get-PathSecurityClassification)/i.test(discovery)) fail('PASS 1 must consume shared reparse/containment authority without a local path walker');
+for (const token of ["'AMBIGUOUS'","authority='DISCOVERY'","parserState='DISCOVERY'",'candidateBindings','prefixSource','configSource']) if (!discovery.includes(token)) fail(`PASS 1 Nginx discovery control missing: ${token}`);
+for (const role of ['NodeExe','NpmExe','NpxExe','PsqlExe','PgDumpExe','PgRestoreExe','NginxExe','NginxConfig']) if (!preflight.includes(role)) fail(`PASS 2 reviewed executable/config input missing: ${role}`);
+const reviewedTools = preflight.slice(preflight.indexOf('tools = @('), preflight.indexOf('discoveryTools ='));
+if (!reviewedTools.includes('Get-ReviewedExecutableSnapshot') || reviewedTools.includes('Get-CommandSnapshot') || reviewedTools.includes('Get-Command ')) fail('PASS 2 reviewed tools field must never use PATH discovery');
+if (!preflight.includes('discoveryTools =') || !preflight.includes('-NodeExe $NodeExe -NginxExe $NginxExe -NginxConfig $NginxConfig')) fail('PASS 2 discovery labeling or Node marker binding is missing');
+if (!preflight.includes('Get-ListenerSnapshot $ExpectedPostgresPort') || /Get-ListenerSnapshot\s+5433/.test(preflight)) fail('PASS 2 PostgreSQL listener must use ExpectedPostgresPort');
+if (!preflight.includes('dnsTlsHttp = if ($VerifyPublicEndpoint) { Get-TlsHttpSnapshot }') || preflight.indexOf('Invoke-WebRequest') > preflight.indexOf('dnsTlsHttp = if ($VerifyPublicEndpoint)')) fail('public probe must only be reachable through VerifyPublicEndpoint');
+if (!preflight.includes("if (-not $VerifyDatabase) { return [ordered]@{ state = 'NOT_RUN'")) fail('database authentication must remain opt-in');
+const databaseSql = `${common.slice(common.indexOf('function Get-DatabaseEvidenceQueryPlan'), common.indexOf('function Stop-ExactBaoGiangRuntime'))}\n${preflight.slice(preflight.indexOf('function Get-DatabaseSnapshot'), preflight.indexOf('function Get-TlsHttpSnapshot'))}`;
+if (/\b(?:INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|TRUNCATE|GRANT|REVOKE)\b/i.test(databaseSql)) fail('operator database evidence SQL must remain SELECT-only');
 const reportGuardStart = common.indexOf('function Assert-SafeReadOnlyReportPath');
 const reportGuardEnd = common.indexOf('function Assert-ExactChildPath', reportGuardStart);
 if (!(common.indexOf('function Assert-PathAncestorChainNonReparse') < reportGuardStart && common.slice(reportGuardStart, reportGuardEnd).includes('Assert-PathAncestorChainNonReparse -Directory'))) fail('report sink guard must delegate to the shared ancestor-chain authority');

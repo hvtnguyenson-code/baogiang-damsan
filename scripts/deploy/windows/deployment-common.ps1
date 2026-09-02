@@ -492,6 +492,72 @@ function Assert-SafeReadOnlyReportPath(
   return $canonicalReport
 }
 
+function Assert-OperatorEvidenceReportPath(
+  [Parameter(Mandatory = $true)][string]$ReportPath,
+  [Parameter(Mandatory = $true)][string]$CandidateRoot,
+  [Parameter(Mandatory = $true)][string]$RepositoryRoot,
+  [string[]]$NginxRoot = @(),
+  [string[]]$KnownForeignRoot = @(),
+  [string[]]$AdditionalProtectedRoot = @(),
+  [string[]]$ProtectedLeaf = @()
+) {
+  $canonicalReport = Get-CanonicalPath $ReportPath
+  $parent = Split-Path -Parent $canonicalReport
+  $parentState = Get-PathSecurityClassification -Path $parent -Kind directory
+  if ($parentState.state -eq 'REPARSE_POINT') { throw 'OPERATOR_EVIDENCE_REPORT_PARENT_REPARSE_POINT' }
+  if ($parentState.state -ne 'PASS') { throw 'OPERATOR_EVIDENCE_REPORT_PARENT_INVALID' }
+  Assert-PathAncestorChainNonReparse -Directory $parent -CategoryPrefix 'OPERATOR_EVIDENCE_REPORT' | Out-Null
+  foreach ($protectedRoot in @($CandidateRoot,$RepositoryRoot) + @($NginxRoot) + @($KnownForeignRoot) + @($AdditionalProtectedRoot)) {
+    if (-not [string]::IsNullOrWhiteSpace($protectedRoot) -and (Test-PathWithin -Path $canonicalReport -Parent (Get-CanonicalPath $protectedRoot))) { throw 'OPERATOR_EVIDENCE_REPORT_PATH_CONFLICT' }
+  }
+  foreach ($leaf in @($ProtectedLeaf)) {
+    if (-not [string]::IsNullOrWhiteSpace($leaf) -and (Normalize-ComparablePath $canonicalReport) -eq (Normalize-ComparablePath $leaf)) { throw 'OPERATOR_EVIDENCE_REPORT_PATH_CONFLICT' }
+  }
+  $target = Get-PathSecurityClassification -Path $canonicalReport -Kind file
+  if ($target.state -eq 'REPARSE_POINT') { throw 'OPERATOR_EVIDENCE_REPORT_TARGET_REPARSE_POINT' }
+  if ($target.state -eq 'TYPE_MISMATCH') { throw 'OPERATOR_EVIDENCE_REPORT_TARGET_TYPE_MISMATCH' }
+  if ($target.state -notin @('MISSING','PASS')) { throw 'OPERATOR_EVIDENCE_REPORT_TARGET_INVALID' }
+  return $canonicalReport
+}
+
+function Assert-SafeDiscoveryReadPath(
+  [Parameter(Mandatory = $true)][string]$Path,
+  [Parameter(Mandatory = $true)][ValidateSet('directory','file')][string]$Kind,
+  [Parameter(Mandatory = $true)][string[]]$AllowedRoot
+) {
+  $canonical = Get-CanonicalPath $Path
+  if (@($AllowedRoot | Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and (Test-PathWithin -Path $canonical -Parent (Get-CanonicalPath $_)) }).Count -eq 0) { throw 'DISCOVERY_PATH_OUTSIDE_CANDIDATE_ROOT' }
+  $directory = if ($Kind -eq 'directory') { $canonical } else { Split-Path -Parent $canonical }
+  Assert-PathAncestorChainNonReparse -Directory $directory -CategoryPrefix 'DISCOVERY_READ' | Out-Null
+  if ((Get-PathSecurityClassification -Path $canonical -Kind $Kind).state -ne 'PASS') { throw 'DISCOVERY_READ_PATH_INVALID' }
+  return $canonical
+}
+
+function Get-ReviewedExecutableSnapshot(
+  [Parameter(Mandatory = $true)][ValidateSet('node','npm','npx','psql','pg_dump','pg_restore','nginx')][string]$Role,
+  [AllowNull()][string]$Path,
+  [switch]$SkipVersion
+) {
+  if ([string]::IsNullOrWhiteSpace($Path)) { return [ordered]@{ role = $Role; state = 'NOT_PROVIDED' } }
+  $canonical = Get-CanonicalPath $Path
+  Assert-PathAncestorChainNonReparse -Directory (Split-Path -Parent $canonical) -CategoryPrefix 'REVIEWED_EXECUTABLE' | Out-Null
+  if ((Get-PathSecurityClassification -Path $canonical -Kind file).state -ne 'PASS') { throw 'REVIEWED_EXECUTABLE_INVALID' }
+  $leaf = Split-Path -Leaf $canonical
+  $allowedLeaves = switch ($Role) {
+    'node' { @('node.exe') }
+    'npm' { @('npm.cmd','npm.exe') }
+    'npx' { @('npx.cmd','npx.exe') }
+    'psql' { @('psql.exe') }
+    'pg_dump' { @('pg_dump.exe') }
+    'pg_restore' { @('pg_restore.exe') }
+    'nginx' { @('nginx.exe') }
+  }
+  if ($leaf -cnotin $allowedLeaves) { throw "REVIEWED_EXECUTABLE_ROLE_LEAF_CONFLICT: $Role" }
+  $version = if ($SkipVersion) { 'NOT_RUN' } else { 'NOT_VERIFIED' }
+  if (-not $SkipVersion) { try { $versionArguments = if ($Role -eq 'nginx') { @('-v') } else { @('--version') }; $output = @(& $canonical @versionArguments 2>&1); if ($output.Count -gt 0) { $version = Redact-SensitiveText ([string]$output[0]) } } catch { } }
+  return [ordered]@{ role = $Role; state = 'EXISTS AND REVIEWED'; exactPath = $canonical; version = $version }
+}
+
 function Assert-ExactChildPath([Parameter(Mandatory = $true)][string]$Root,[Parameter(Mandatory = $true)][string]$RelativePath) {
   $canonicalRoot = Assert-DedicatedRoot $Root
   $candidate = Get-CanonicalPath (Join-Path $canonicalRoot $RelativePath)
@@ -525,7 +591,7 @@ function Get-NormalizedProcessIdentity([Parameter(Mandatory = $true)]$Process) {
     pid = [int]$Process.ProcessId
     executablePath = $Process.ExecutablePath
     executableName = if ($Process.ExecutablePath) { Split-Path -Leaf $Process.ExecutablePath } else { $null }
-    commandLineSha256 = if ($commandLine) { (Get-FileHash -InputStream ([IO.MemoryStream]::new([Text.Encoding]::UTF8.GetBytes($commandLine))) -Algorithm SHA256).Hash } else { $null }
+    commandLineSha256 = if ($commandLine) { Get-SensitiveTextHash $commandLine } else { $null }
   }
 }
 
@@ -541,10 +607,7 @@ function Get-SensitiveTextHash([AllowNull()][string]$Text) {
 }
 
 function Assert-ExactPsqlExecutable([Parameter(Mandatory = $true)][string]$Path) {
-  if (-not [IO.Path]::IsPathRooted($Path)) { throw 'PsqlExe must be an absolute path.' }
-  $exact = Assert-ExistingLeaf -Path $Path -Label 'PsqlExe'
-  if ((Split-Path -Leaf $exact) -cne 'psql.exe') { throw 'PsqlExe must identify the exact psql.exe leaf.' }
-  return $exact
+  return (Get-ReviewedExecutableSnapshot -Role psql -Path $Path -SkipVersion).exactPath
 }
 
 function Resolve-DatabaseVerifierExecutable([switch]$VerifyDatabase,[AllowNull()][string]$PsqlExe) {
@@ -616,7 +679,7 @@ function Get-SshDirectConfigEvidence([Parameter(Mandatory = $true)][string]$Conf
   return [ordered]@{ effectiveConfigState = 'DISCOVERED'; configPath = $config; configuredPorts = $ports; activeIncludes = @(); defaultPortApplied = $defaultApplied }
 }
 
-function Get-SshPortEvidence([Parameter(Mandatory = $true)][string]$EffectiveConfigState,[Parameter(Mandatory = $true)][AllowEmptyCollection()][int[]]$ConfiguredPort,[Parameter(Mandatory = $true)][AllowEmptyCollection()][int[]]$ListeningPort,[switch]$ServiceRunning) {
+function Get-SshPortEvidence([Parameter(Mandatory = $true)][string]$EffectiveConfigState,[AllowNull()][AllowEmptyCollection()][int[]]$ConfiguredPort = @(),[AllowNull()][AllowEmptyCollection()][int[]]$ListeningPort = @(),[switch]$ServiceRunning) {
   $configured = @($ConfiguredPort | ForEach-Object { [int]$_ } | Sort-Object -Unique)
   $listening = @($ListeningPort | ForEach-Object { [int]$_ } | Sort-Object -Unique)
   if ($EffectiveConfigState -ne 'DISCOVERED') { return [ordered]@{ state = 'NOT_VERIFIED'; configuredPorts = $configured; listeningPorts = $listening; agreedPorts = @(); reason = 'EFFECTIVE_CONFIG_NOT_VERIFIED' } }
@@ -936,10 +999,19 @@ function Get-SafeStopPollingDecision([Parameter(Mandatory = $true)][AllowEmptyCo
   return [ordered]@{ state = 'WAIT'; exactProcessCount = $exactIds.Count; listenerCount = $rows.Count; foreignListenerCount = 0 }
 }
 
-function Get-DatabaseEvidenceClassification([Parameter(Mandatory = $true)][string]$ActualDatabase,[Parameter(Mandatory = $true)][string]$ExpectedDatabase,[Parameter(Mandatory = $true)][string]$ActualRole,[Parameter(Mandatory = $true)][string]$ExpectedRole,[Parameter(Mandatory = $true)][string[]]$ActualExtensions,[Parameter(Mandatory = $true)][string[]]$RequiredExtensions,[Parameter(Mandatory = $true)][bool]$MigrationTablePresent,[int]$UnfinishedMigrations = 0,[int]$RolledBackMigrations = 0,[bool]$MigrationSummaryVerified = $false) {
+function Get-DatabaseEvidenceClassification([Parameter(Mandatory = $true)][string]$ActualDatabase,[Parameter(Mandatory = $true)][string]$ExpectedDatabase,[Parameter(Mandatory = $true)][string]$ActualRole,[Parameter(Mandatory = $true)][string]$ExpectedRole,[Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$ActualExtensions,[Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$RequiredExtensions,[Parameter(Mandatory = $true)][bool]$MigrationTablePresent,[int]$UnfinishedMigrations = 0,[int]$RolledBackMigrations = 0,[bool]$MigrationSummaryVerified = $false,[bool]$RoleSafetyVerified = $false,[bool]$RoleIsSuperuser = $false,[bool]$RoleCanCreateDatabase = $false,[bool]$RoleCanCreateRole = $false,[bool]$RoleCanReplicate = $false,[bool]$RoleBypassesRls = $false,[bool]$RequireForeignIsolation = $false,[AllowEmptyCollection()][object[]]$ForeignIsolation = @(),[AllowEmptyCollection()][string[]]$KnownForeignDatabaseRole = @()) {
   if ($ActualDatabase -cne $ExpectedDatabase -or $ActualRole -cne $ExpectedRole) { return [ordered]@{ state = 'CONFLICT'; identityState = 'CONFLICT' } }
+  if (@($KnownForeignDatabaseRole | Where-Object { $_ -ceq $ActualRole }).Count -gt 0) { return [ordered]@{ state = 'CONFLICT'; identityState = 'CONFLICT'; reason = 'CURRENT_ROLE_ALIASES_PROTECTED_FOREIGN_ROLE' } }
+  if ($RoleIsSuperuser -or $RoleCanCreateDatabase -or $RoleCanCreateRole -or $RoleCanReplicate -or $RoleBypassesRls) { return [ordered]@{ state = 'CONFLICT'; identityState = 'EXISTS AND VERIFIED'; roleSafetyState = 'CONFLICT' } }
   $missing = @($RequiredExtensions | Where-Object { $ActualExtensions -notcontains $_ })
   if ($missing.Count -gt 0) { return [ordered]@{ state = 'CONFLICT'; identityState = 'EXISTS AND VERIFIED'; missingExtensions = $missing } }
+  if ($RequireForeignIsolation) {
+    if (@($ForeignIsolation).Count -eq 0 -or @($ForeignIsolation | Where-Object { $_.state -ne 'PASS' }).Count -gt 0) {
+      $foreignConflict = @($ForeignIsolation | Where-Object { $_.state -eq 'CONFLICT' }).Count -gt 0
+      return [ordered]@{ state = if ($foreignConflict) { 'CONFLICT' } else { 'PARTIAL' }; identityState = 'EXISTS AND VERIFIED'; roleSafetyState = 'PASS'; foreignIsolationState = if ($foreignConflict) { 'CONFLICT' } else { 'NOT_VERIFIED' } }
+    }
+  }
+  if (-not $RoleSafetyVerified) { return [ordered]@{ state = 'PARTIAL'; identityState = 'EXISTS AND VERIFIED'; roleSafetyState = 'NOT_VERIFIED' } }
   if (-not $MigrationTablePresent) { return [ordered]@{ state = 'PARTIAL'; identityState = 'EXISTS AND VERIFIED'; migrationState = 'NOT_APPLIED' } }
   if (-not $MigrationSummaryVerified) { return [ordered]@{ state = 'PARTIAL'; identityState = 'EXISTS AND VERIFIED'; migrationState = 'NOT_VERIFIED' } }
   if ($UnfinishedMigrations -gt 0 -or $RolledBackMigrations -gt 0) { return [ordered]@{ state = 'CONFLICT'; identityState = 'EXISTS AND VERIFIED'; migrationState = 'BLOCKING_ROWS'; unfinished = $UnfinishedMigrations; rolledBack = $RolledBackMigrations } }
@@ -947,9 +1019,15 @@ function Get-DatabaseEvidenceClassification([Parameter(Mandatory = $true)][strin
 }
 
 function Get-DatabaseEvidenceQueryPlan([Parameter(Mandatory = $true)][bool]$MigrationTablePresent) {
-  $plan = @([pscustomobject]@{ name = 'identity'; sql = "SELECT current_database() || '|' || current_user; SELECT extname FROM pg_extension ORDER BY extname; SELECT CASE WHEN to_regclass('_prisma_migrations') IS NULL THEN 'MISSING' ELSE 'PRESENT' END;" })
+  $plan = @([pscustomobject]@{ name = 'identity'; sql = "SELECT current_database() || '|' || current_user; SELECT extname FROM pg_extension ORDER BY extname; SELECT CASE WHEN to_regclass('_prisma_migrations') IS NULL THEN 'MISSING' ELSE 'PRESENT' END; SELECT rolsuper::text || '|' || rolcreatedb::text || '|' || rolcreaterole::text || '|' || rolreplication::text || '|' || rolbypassrls::text FROM pg_roles WHERE rolname = current_user;" })
   if ($MigrationTablePresent) { $plan += [pscustomobject]@{ name = 'migration-summary'; sql = "SELECT count(*) FILTER (WHERE finished_at IS NULL)::text || '|' || count(*) FILTER (WHERE rolled_back_at IS NOT NULL)::text FROM _prisma_migrations;" } }
   return $plan
+}
+
+function Get-ForeignDatabaseIsolationQuery([Parameter(Mandatory = $true)][string]$DatabaseName) {
+  if ([string]::IsNullOrWhiteSpace($DatabaseName) -or $DatabaseName.IndexOf([char]0) -ge 0) { throw 'FOREIGN_DATABASE_NAME_INVALID' }
+  $literal = $DatabaseName.Replace("'","''")
+  return "SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = '$literal') THEN 'MISSING|NOT_VERIFIED' WHEN has_database_privilege(current_user, '$literal', 'CONNECT') THEN 'EXISTS|CONFLICT' ELSE 'EXISTS|PASS' END;"
 }
 
 function Stop-ExactBaoGiangRuntime([Parameter(Mandatory = $true)]$Marker,[Parameter(Mandatory = $true)][ValidateSet('scheduled-task','service')][string]$ServiceKind,[Parameter(Mandatory = $true)][string]$ServiceName,[ValidateRange(1,10)][int]$MaxAttempts = 6,[ValidateRange(0,10)][int]$DelaySeconds = 1) {

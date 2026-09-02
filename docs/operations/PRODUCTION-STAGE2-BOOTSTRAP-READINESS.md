@@ -1,211 +1,77 @@
-# Production Stage 2 Bootstrap Readiness Audit
+# Production Stage 2 Bootstrap Readiness
 
-## P2 repository closure candidate
+## Current repository verdict
 
-Pre-transfer authority dùng cùng `Assert-DeploymentMarkerSchema` + `Read-DeploymentIdentity` như deployment controller. Read-only handshake không mutation; `prepare-transfer` revalidate cùng authority ngay trước mutation remote đầu tiên. First deploy có thể chưa có `current`, nhưng exact marker, startup bundle, env/executable/config leaves và sáu production directories vẫn bắt buộc.
+- **REPOSITORY STAGE 2 AUTHORITY = CLOSED**
+- **OPERATOR EVIDENCE TOOLING = CLOSED CANDIDATE**
+- **PRODUCTION STAGE 2 = NO-GO / ACTUAL VPS EVIDENCE REQUIRED**
 
-Startup common chỉ được trust sau Git-blob SHA-256 precheck và phải expose marker authority contract version `1`. Production root không được đi qua ancestor junction, bao gồm planned missing root; cleanup fail closed nếu transfer candidate hoặc ancestor chain trở thành reparse point.
+This verdict is repository-only. No VPS, production filesystem, Nginx, PostgreSQL, Scheduled Task, public endpoint, deployment, or migration was accessed by O1. Green CI does not prove the production host is ready.
 
-Nếu toàn bộ repository gates xanh, trạng thái là `P2 SHARED MARKER / PRE-TRANSFER HANDSHAKE = CLOSED CANDIDATE` và, nếu P1/P0 vẫn closed, `REPOSITORY STAGE 2 AUTHORITY = CLOSED CANDIDATE`. `PRODUCTION STAGE 2 = NO-GO / OPERATOR EVIDENCE REQUIRED`: repository tests không chứng minh trạng thái VPS; Nginx chưa được sửa; production chưa deploy; operator evidence vẫn bắt buộc; hệ thống Nội trú lân cận được bảo vệ phải được đối soát với trạng thái production cuối trước mọi mutation.
+## Canonical authority now present
 
-Status: Candidate — P2 SHARED MARKER / PRE-TRANSFER HANDSHAKE CLOSED CANDIDATE; repository Stage 2 authority CLOSED CANDIDATE; production Stage 2 NO-GO / OPERATOR EVIDENCE REQUIRED
-Baseline: 798b4360e0e73df733d4d537938d6b9697ad98fa
+The repository has one strict `deployment-identity.json` schema (`schemaVersion: 1`) and one shared executable reader. Unknown, missing, empty, wrong-type, wrong-layout, hash-mismatched, or reparse-routed authority fails closed. Marker validation binds exact Node, Nginx, environment, entry point, service/task, foreign isolation, and immutable startup-bundle paths/hashes.
 
-## 1. Scope
+The standalone environment validator performs value-free validation without requiring `current`, the marker, Node, Nginx, PostgreSQL, or runtime activation. Production variables cannot be satisfied by inherited ambient state.
 
-Tài liệu này audit contract Stage 2 tại canonical baseline nêu trên. Phạm vi chỉ gồm repository authority, desired state, verifier, failure behavior và activation lifecycle. Audit không truy cập VPS, không đọc production environment, không tạo root/ACL/task/service, không sửa Nginx, không migration và không deploy.
+Scheduled Task first-deploy authority is closed: verify exact task contract, explicitly authorize enable, re-verify, start, prove exact runtime/port, and fail-safe disable/stop on failure. Current first deploy supports `scheduled-task` only; generic Windows Service code is not accepted as first-deploy authority.
 
-Các giá trị thực tế của VPS vẫn là `OPERATOR VERIFICATION REQUIRED`. CI xanh chỉ chứng minh control plane hiện tại vượt qua test hiện có; nó không tự chứng minh bootstrap production sẵn sàng.
+Root/ACL, immutable startup bundle, Nginx plan/verify, deployment controller, rollback, and P2 pre-transfer handshake consume shared authorities. The handshake verifies exact reviewed common bytes before in-memory execution, validates the full marker with Node/Nginx bindings, and revalidates before creating a transfer directory.
 
-## 2. Existing Stage 2 architecture
+## Operator evidence closure candidate
 
-Stage 2 giữ kiến trúc **source-controlled plan/verify + manual mutation**. Root/ACL, startup bundle và Nginx đã có plan/verifier read-only; mọi mutation bootstrap và Nginx reload vẫn do operator thực hiện dưới approval riêng.
+PASS 1 (`production-protected-neighbor-discovery.ps1`) is passive discovery only:
 
-| Bootstrap operation | Source-controlled implementation | Manual only | Verifier hiện có | Rollback/recovery |
-|---|---|---|---|---|
-| Dedicated root | Không có creator | Có | Exact path, existence, non-reparse và protected DACL verifier | Operator sửa/xóa theo review riêng |
-| Required subdirectories | Không có creator | Có | Exact six-directory non-reparse + DACL verifier | Không có bootstrap recovery |
-| ACLs | Deterministic desired-state plan; không có mutating executor | Có | Exact SID/numeric-rights/inheritance verifier | Manual correction dưới approval riêng |
-| Startup bundle | Exact-commit Git-blob provenance plan; không có installer | Có | Canonical layout, exact pair/blob hashes, reparse/content/ACL verifier | Commit mới dùng directory mới; giữ nguyên prior bundle |
-| Identity marker | Không có generator | Có | `Read-DeploymentIdentity`, handshake và runtime verifier, nhưng schema chưa đầy đủ | Operator correction |
-| Production environment | Không có creator | Có | `Import-ServerEnvironment`, nhưng chưa có standalone pre-first-deploy validator | Không có cleanup tổng quát |
-| Scheduled Task | Không có register/enable implementation | Có | Exact name/account/action checks | Safe-stop disable/stop; không có re-enable path |
-| Windows Service | Không có service host/install implementation | Có | Exact name/account/`PathName` checks | Safe-stop disable/stop; không có startup-type recovery |
-| Nginx config | Canonical managed-include renderer + plan; không có writer | Có | Exact include graph, desired/restored verifier, prefix-bound syntax test | Exact manual reload/restore vectors; verifier không mutate |
-| Runtime activation | Có restart controller | Không | Exact process/port bounded check | Rollback/safe-stop có, nhưng lifecycle disabled không khép kín |
+- shared report-sink and reparse authority;
+- no database authentication and no public endpoint request;
+- running Nginx executable/`-p`/`-c` candidate derivation;
+- ambiguity reported instead of selecting a root hint;
+- Nginx include and PostgreSQL config reads stop at junction/reparse boundaries;
+- final report authorization includes roots discovered during collection;
+- conclusion remains `REQUIRES_REVIEW` and Nginx remains `DISCOVERY/PARTIAL`.
 
-Manual bootstrap không tự thân là defect. Defect xuất hiện khi manual step không có desired state đủ chính xác, verifier độc lập hoặc failure/recovery transition xác định.
+PASS 2 (`production-preflight-readonly.ps1`) records reviewed authority:
 
-## 3. Root/ACL findings
+- exact absolute Node/npm/npx/psql/pg_dump/pg_restore/Nginx snapshots, separate from PATH-only `discoveryTools`;
+- marker verification receives exact `NodeExe`, `NginxExe`, and `NginxConfig`;
+- listener evidence uses the reviewed `ExpectedPostgresPort`;
+- database authentication and public HTTP/TLS probing are independent opt-in operations;
+- authenticated database evidence proves exact identity, extensions/migrations, safe cluster-role flags, and requested protected-database `CONNECT=false` isolation without connecting to foreign databases;
+- final report authorization runs after privacy validation and before write.
 
-`Assert-DedicatedRoot` tiếp tục chặn drive root, Windows/system paths và tên/path thuộc DamSanV5/boarding. `Read-DeploymentIdentity` nay fail closed nếu root thiếu/sai type/là reparse point hoặc nếu bất kỳ direct child bắt buộc nào trong `releases`, `staging`, `incoming`, `shared`, `logs`, `backups` thiếu/sai type/là reparse point.
+The executable OPE-P1…OPE-P19 fixtures cover safe sinks, candidate/foreign/discovered-root collisions, junction and target rejection, PATH decoys, marker binding, dynamic PostgreSQL port, probe/DB opt-in, cluster-role and foreign isolation, Nginx include reparse, ambiguous bindings, and discovery non-overclaim. Existing ACL, PATH, SB, RPT, NGX, XFER, SSH, migration, rollback, and workflow fixtures remain enabled.
 
-`Get-ProductionAclPolicy` là authority duy nhất nhận ba reviewed role identities, normalize về SID và tạo exact protected-DACL policy cho root, sáu thư mục, marker/env, startup-bundles parent, commit directory và hai runtime leaves. `production-root-acl-plan.ps1` xuất deterministic JSON desired state; `production-root-acl-verify.ps1` và startup verifier dùng cùng comparator/snapshot authority, normalize SID/type/numeric rights/inheritance/propagation/`IsInherited`, rồi fail khi thiếu/thừa/sai ACE, có DENY, duplicate semantic ACE, broad principal hoặc inheritance protection sai. Các tool không mutate ACL và không tạo production directory; correction vẫn manual.
+## Historical findings — resolved
 
-Policy không authority hóa owner và không chứng minh toàn bộ effective token authorization qua nested local/domain group membership. Những membership đó, account thực và actual VPS DACL vẫn là `OPERATOR VERIFICATION REQUIRED`; limitation không cho phép broad ACE ngoài exact policy.
+The following findings described older repository states and are now resolved:
 
-Kết luận: **P1 ROOT/ACL = CLOSED CANDIDATE**. Stage 2 tổng thể vẫn NO-GO.
+| Historical finding | Exact closure |
+|---|---|
+| Marker lacked `schemaVersion` and rejected-property semantics | Strict version-1 discriminated schema and fixtures |
+| `foreignIsolation` could be empty or weakly typed | Exact nested schema, non-empty reviewed roots, overlap checks |
+| Node/Nginx marker bindings were optional | Exact `Read-DeploymentIdentity` inputs and marker comparisons |
+| No standalone environment validator | `validate-production-environment.ps1` with isolated value-free validation |
+| Scheduled Task activation/recovery was incomplete | Shared authorization, verify-enable-reverify-start, health and safe-stop lifecycle |
+| Nginx P1 lacked deterministic authority | Shared effective graph, plan/Desired/Restored verify, neighbor/snapshot/reparse gates |
+| P2 handshake used a weaker marker model | Verified common bytes plus shared marker validation before transfer mutation |
+| Operator reports trusted parent existence only | Shared full ancestor/target/protected-root report-sink authority |
+| PASS 2 treated PATH as reviewed tool authority | Exact reviewed snapshots; PATH is separately labeled discovery only |
+| Public endpoint and PostgreSQL evidence could run as initial inventory | Independent explicit opt-in switches; defaults are `NOT_RUN` |
 
-## 4. Marker authority matrix
+## Remaining operator-only evidence
 
-Authority được đối chiếu giữa `PRODUCTION-ENVIRONMENT-CONFIGURATION.md`, `Read-DeploymentIdentity`, pre-transfer handshake, `invoke-production-deploy.ps1` và startup/restart logic.
+Before any Stage 2 production mutation, an authorized operator and independent reviewer must establish:
 
-| Marker field | Documented | `Read-DeploymentIdentity` | Handshake | Controller/runtime | Kết luận |
-|---|---|---|---|---|---|
-| `systemId` | Required exact | Exact | Exact | Inherited from reader | Strong |
-| `canonicalRoot` | Required exact | Exact normalized | Exact case-insensitive | Dedicated-root guard | Strong, nhưng không resolve root reparse |
-| `domain`, `apiPort` | Exact domain/3100 | Exact | Exact | Base URL/port guards | Strong |
-| `envFile`, `startupWrapper`, `entryPoint` | Required paths | Exact against inputs | Không kiểm | Exact against workflow inputs | Binding mạnh khi inputs đầy đủ |
-| `startupBundle.*` | Paths + hashes | Canonical versioned sibling paths, existing non-reparse leaves, exact hashes | Không kiểm | Reader chạy trước business-critical mutation | Runtime binding giữ nguyên; reviewed commit được chứng minh trong plan riêng, không đổi marker schema |
-| `foreignIsolation` | 4 nested evidence fields | Chỉ kiểm property tồn tại | Không kiểm | Không đọc nested evidence | `{}` pass; **P0** |
-| `nginxExe`, `nginxConfig` | Required exact paths | Chỉ kiểm property tồn tại | Không kiểm | Chỉ compare khi marker value truthy | `""` bypass marker binding; **P0** |
-| `nodeExe` | Required exact path | Không require/compare | Không kiểm | Listener check chỉ compare nếu truthy; restart dùng workflow input riêng | Missing/empty bypass marker Node authority; **P0** |
-| Scheduled Task `kind`, `name` | Required | Exact against non-empty inputs | Exact | Exact | Strong |
-| Task `taskPath` | Required exact | Không validate completeness | Không kiểm | Compare có điều kiện; safe-stop lại cần exact value | Empty có thể bypass verifier rồi làm recovery không khả thi; **P0** |
-| Task `account`, `execute`, `arguments`, `workingDirectory` | Required exact | Không validate non-empty/type | Không kiểm | So actual values; arguments không được semantic-bind độc lập với wrapper | Incomplete schema; một số empty value chỉ bị loại tình cờ bởi host state, không bởi contract |
-| Service `account/startName`, `pathName` | Required exact | Không validate completeness | Không kiểm | Exact actual comparison | Không có discriminated schema hoặc non-empty validation |
-| Unknown properties | Không định nghĩa | Được chấp nhận | Được chấp nhận | Bị bỏ qua | Schema drift/ambiguous fields không bị reject |
-| `schemaVersion` | Không có | Không có | Không có | Không có | Cần thiết kế/versioning trước khi thêm, không tự thêm trong audit |
+1. stable protected Nội trú state and exact protected roots/task/service/database/role identities;
+2. reviewed script provenance from an approved green commit;
+3. PASS 1 report from a safe external sink;
+4. PASS 2 report with exact reviewed executable, Nginx, runtime and isolation inputs;
+5. separately approved database evidence, if required;
+6. separately approved public DNS/TLS/HTTP evidence only after exact Nginx/domain review;
+7. actual root/ACL, startup bundle, marker, Scheduled Task, environment, Nginx plan/verify, backup and migration evidence.
 
-`foreignIsolation` empty object pass vì reader chỉ dùng `PSObject.Properties.Name.Contains('foreignIsolation')`. `nginxExe`/`nginxConfig` empty pass reader và làm comparison có điều kiện trong controller bị bỏ qua. `nodeExe` không nằm trong required-property loop và listener verifier coi thiếu value là match. Đây là marker-authority bypass được GO rule chỉ rõ, nên Stage 2 bắt buộc NO-GO.
+Any `MISSING`, `NOT_VERIFIED`, `PARTIAL`, `AMBIGUOUS`, or `CONFLICT` affecting a required gate is a stop condition. Do not infer production readiness from repository closure.
 
-Correction phải dùng một discriminated, versioned marker schema được định nghĩa và test trước khi cân nhắc thêm `schemaVersion`: reject missing/empty/wrong-type/unknown fields; validate absolute existing leaves phù hợp boundary; validate four `foreignIsolation` fields; bind exact Node/Nginx/env/wrapper/entry point; và tách schema task/service.
+## Decision
 
-## 5. Startup bundle findings
-
-`production-startup-bundle-plan.ps1` nhận repository root, lowercase reviewed commit SHA, canonical production root và report path. Shared helper kiểm commit/path/blob bằng Git object database, đọc binary stdout của `git cat-file blob`, rồi SHA-256 exact bytes cho hai fixed paths. Working-tree content và EOL không tham gia authority. Plan value-free bind blob OID/hash vào duy nhất `shared\startup-bundles\<reviewedCommitSha>\` và tuyên bố rõ no-overwrite/no-delete/new-directory-on-update.
-
-`production-startup-bundle-verify.ps1` xác thực digest và exact schema/type/root binding của plan trước khi tin destination. Nó phân biệt `INSTALL_REQUIRED`, reusable `PASS / EXACT_BUNDLE_VERIFIED`, và deterministic `CONFLICT` cho plan/layout/partial/hash/reparse/unexpected-file/ACL mismatch. PASS yêu cầu directory chỉ có đúng hai non-reparse sibling files với exact hashes và bốn startup paths cùng pass shared `Get-ProductionAclPolicy`/ACL comparator. Tool chỉ ghi report; không create/copy/move/delete/ACL-fix/marker/task mutation.
-
-Commit A và B luôn dùng hai directory 40-hex khác nhau và có thể cùng tồn tại. B cần plan, manual install và verify riêng; A không bị overwrite, rename hoặc delete. Chỉ sau PASS, operator mới được re-bind marker/task dưới approval riêng. `Read-DeploymentIdentity` tiếp tục kiểm exact active wrapper/common absolute paths và hashes, nên version rotation không làm yếu P0-3 runtime binding và không cần đổi marker schema.
-
-Kết luận: **P1 STARTUP BUNDLE = CLOSED CANDIDATE**. Đây là repository authority, không phải bằng chứng bundle/ACL/task thực tế trên VPS; Stage 2 tổng thể vẫn NO-GO.
-
-## 6. Environment validation findings
-
-Preliminary finding được xác nhận: `start-baogiang-api.ps1` gọi `Read-DeploymentIdentity` → `Import-ServerEnvironment` → yêu cầu current API entry point tồn tại → chạy Node. Trước first deploy, `current` được phép chưa tồn tại, nên startup wrapper không thể cho một clean environment-only PASS.
-
-Không có standalone production env validator. `Import-ServerEnvironment` kiểm tra duplicate/unknown/forbidden variables và các safety invariants mà không echo values, nhưng nó set từng process variable trước khi toàn bộ file/invariants đã pass. Ngoài `TZ`, các safety variables không được yêu cầu phải xuất hiện trong `$seen`; invariant đọc trực tiếp `$env:*`, nên một file thiếu field có thể thừa hưởng giá trị đã tồn tại trong process và pass không sạch. Nếu lỗi sau import hoặc trước Node start, wrapper không có `finally`; `Clear-PostgresProcessEnvironment` chỉ chạy sau Node exit và chỉ xóa năm `PG*` variables, không xóa các biến đã import. Trong process riêng, process termination giới hạn lifetime; repository vẫn chưa contract/test isolation mode hoặc cleanup-on-failure, nên operator có tín hiệu và side-effect semantics mơ hồ.
-
-Correction **P0**: tạo validator độc lập chỉ đọc exact env file trong child process cô lập, parse/validate toàn bộ trước khi apply, không phụ thuộc marker current/entry point/Node start, không xuất tên/value nhạy cảm ngoài redacted category, luôn cleanup trong `finally`, và có fixtures cho success, parse failure, invariant failure, secret-redaction và no-current state.
-
-## 7. Scheduled Task lifecycle state machine
-
-P0-3 authority hóa một contract duy nhất: Scheduled Task có đúng một enabled `MSFT_TaskBootTrigger`/`AtStartup` trigger, không có trigger bổ sung. Shared verifier kiểm exact task name/path/account/action/wrapper/working directory và trigger; scheduler state Disabled là lifecycle state hợp lệ, không phải identity failure.
-
-| State | Enabled | Running | Automatic trigger | `current` | Runtime expected | Repository transition/evidence |
-|---|---|---|---|---|---|---|
-| BOOTSTRAP | No | No | One enabled Boot trigger, whole task disabled | No | No | Exact verifier accepts configuration-valid Disabled task |
-| FIRST DEPLOY AFTER SWITCH | Explicit controller authorization | Starts after enable/reverify | One enabled Boot trigger | Yes | Yes | verify → enable → reverify → start → bounded process/port proof |
-| HEALTHY | Yes | Yes | One enabled Boot trigger | Yes | Yes | Exact Báo giảng process owns port 3100; scheduler starts task after reboot |
-| FIRST-DEPLOY FAILURE | No | No | Trigger remains in definition, task disabled | Quarantined; no `current` | No | Disable → stop → bounded verification → Disabled re-fetch |
-| POST-MIGRATION FAILURE WITHOUT ROLLBACK APPROVAL | No | No | Trigger remains in definition, task disabled | Failed current giữ lại | No | Fail-safe stop; no automatic re-enable |
-| ROLLBACK SUCCESS | Yes, explicit controller authorization | Yes | One enabled Boot trigger | Previous release | Yes | Same shared verifier and activation state machine |
-| NEXT DEPLOY AFTER QUARANTINE | Enabled only through explicit reviewed activation | Yes after health proof | One enabled Boot trigger | After reviewed switch | Yes | Deterministic recovery path |
-| SERVER REBOOT | Yes in HEALTHY state | Scheduler starts exact task | One enabled Boot trigger | Prior healthy release | Yes | Repository-wide reboot-persistence contract |
-
-`restart-baogiang-api.ps1` từ chối Scheduled Task khi thiếu `-AllowScheduledTaskActivation`, trước mọi lifecycle mutation. Activation failure sau khi đã bắt đầu phải gọi shared safe-stop; nếu cleanup thất bại, controller báo riêng failure cleanup. Không cho phép operator ad-hoc enable nằm ngoài controller/evidence. P0-3 là closure candidate cho lifecycle Scheduled Task; Stage 2 vẫn chưa GO vì P0-4 và các P1/P2 khác.
-
-## 8. Windows Service readiness
-
-P0-4 là **CLOSED CANDIDATE**: production CD chỉ chấp nhận `scheduled-task`; verified-first-deploy preflight từ chối `service`; và deploy controller từ chối `service` khi chưa có `current` trước mutation business-critical. Generic Service code/schema vẫn future-compatible và non-authoritative; P0-4 không tạo service host, installer/uninstaller, startup-type policy, recovery policy hoặc reboot architecture.
-
-Windows Service production bootstrap vẫn deferred cho tới khi có reviewed Service architecture, gồm native host authority, installer/uninstaller, exact `PathName`/account/startup-type schema, guarded Disabled-to-approved-startup transition, recovery/reboot tests và rollback procedure.
-
-## 9. Nginx bootstrap findings
-
-Stage 2 yêu cầu dedicated HTTPS block, SPA fallback, `/api/` giữ nguyên URI tới `127.0.0.1:3100`, forwarded headers, reviewed limits, exact prefix-bound syntax test và targeted manual reload. Repository nay render canonical bytes cho duy nhất managed Báo giảng include, nhưng operator vẫn là authority duy nhất được apply/restore config và reload.
-
-Read-only discovery vẫn chỉ là discovery authority và PASS 2 vẫn tự mô tả là partial/direct-reference snapshot. Authority P1 riêng dùng token/context parser, recursive bounded include graph, cycle/dynamic/out-of-prefix/reparse rejection, exact neighbor path/hash snapshot, duplicate 443-domain detection, rollback snapshot gate và Desired/Restored verification. Exact-host collision comparison là ASCII case-insensitive, coi terminal DNS dot là tương đương và vẫn port-specific; wildcard/regex không bị biến thành exact claim. Controller dùng shared helper với exact `<exe> -p <prefix> -t -c <config>` trước archive move hoặc business mutation; không reload.
-
-Plan ghi canonical UTF-8/no-BOM/LF desired bytes/hash, exact exe/prefix/config bindings, TLS paths chỉ dưới dạng metadata, immutable neighbor hashes, pre-state/snapshot semantics và structured syntax/reload vectors. Shared full-schema validator không tin plan digest nếu `preState`, snapshot và plan state mâu thuẫn. Với pre-state `EXISTS`, Desired verifier tái kiểm exact snapshot path/boundary/non-reparse/SHA ngay tại verification time trước syntax test hoặc reload approval; snapshot mất, bị sửa hoặc bị thay bằng reparse là STOP. Snapshot không được alias private key, certificate hoặc authority leaf, và protected-leaf comparison xảy ra trước mọi snapshot byte read. Restored verifier vẫn chứng minh exact pre-state mà không đòi snapshot còn tồn tại sau restoration. Fixture NGX-P1..NGX-P37 chứng minh lifecycle, hostile states và normalized exact-host collisions mà không đọc private-key contents hoặc execute reload.
-
-Kết luận: **P1 NGINX = CLOSED CANDIDATE**. Đây là repository authority; không phải bằng chứng production đã cấu hình hoặc reload.
-
-## 10. Handshake boundary
-
-Pre-transfer handshake hiện chỉ kiểm:
-
-1. marker file tồn tại và JSON parse được;
-2. exact `systemId`, canonical root, domain và port 3100;
-3. exact service kind/name;
-4. bootstrapped `incoming` tồn tại.
-
-Sau PASS này workflow mới tạo unique `incoming\control-<run>-<sha>` và upload archive/parameter/scripts. Trước transfer, handshake **không** kiểm bundle hashes, nested `foreignIsolation`, env/startup/Nginx binding, Node identity hoặc runtime action completeness.
-
-Sau upload, `invoke-production-deploy.ps1` chạy reader, runtime identity check, executable existence, env import và `nginx -t` trước khi move archive ra khỏi isolated transfer directory. Vì vậy full-but-currently-incomplete controller validation xảy ra trước archive install, backup, migration, catalog sync, pointer switch và runtime restart. Upload vào isolated `incoming` là bounded staging mutation, không tương đương DB/runtime mutation.
-
-Kết luận: minimal handshake **intentionally sufficient cho isolated transfer risk hiện tại**, với điều kiện unique/contained cleanup vẫn giữ nguyên. Strengthening handshake thành cùng schema validator là **P2 defense-in-depth**, không phải nguyên nhân P0; full validator phải được sửa trước và vẫn bắt buộc chạy lại server-side trước business-critical mutation.
-
-## 11. Manual vs automated bootstrap decision
-
-| Option | Safety | Secret exposure | Reproducibility | Rollback | Operator error | Testability |
-|---|---|---|---|---|---|---|
-| A. Fully manual + stronger verifier | Mutation blast radius thấp | Thấp nếu discipline tốt | Trung bình/thấp | Phụ thuộc runbook | Vẫn cao | Verifier test được, execution không |
-| B. Source-controlled plan/verify; manual mutations | Cao: tool không mutate và operator review exact plan | Thấp; secret chỉ được validate trong isolated process | Cao cho desired state/evidence | Có thể plan/verify before/after và restore plan | Giảm đáng kể | Cao với fixtures và hostile states |
-| C. Guarded one-time executor | Có thể cao về lâu dài nhưng blast radius hiện lớn | Cao hơn vì chạm env/ACL/accounts | Cao | Phải xây transaction/compensation phức tạp | Thấp khi hoàn thiện | Cao nhưng cần Windows integration lab |
-
-Recommendation duy nhất: **B — source-controlled plan/verify tool, manual mutations**.
-
-Đây là correction boundary phù hợp hiện tại: source-control hóa schema, desired-state manifest, exact commands/diffs và post-checks nhưng không sở hữu secrets hoặc tự mutate ACL/task/service/Nginx. Chỉ cân nhắc C sau khi B đã ổn định, có Windows lab fixtures, recovery design và phê duyệt riêng.
-
-## 12. GO/NO-GO matrix
-
-| Gate | Evidence | Result |
-|---|---|---|
-| Desired root/subdirs/ACL state exact | Shared policy + deterministic plan + read-only exact verifier + reparse fixtures | CLOSED CANDIDATE |
-| Marker complete, non-bypassable | P0 marker-schema correction đã có; vẫn cần plan/verify bootstrap P1 | CLOSED CANDIDATE |
-| Clean pre-first-deploy env PASS | Standalone validation contract P0 đã có; VPS evidence vẫn operator-only | CLOSED CANDIDATE |
-| Scheduled Task activation/recovery | P0-3 verify → enable → reverify → start, safe-stop và reboot contract | CLOSED CANDIDATE |
-| Service first-deploy authority | P0-4 restricted to Scheduled Task; generic Service code remains non-authoritative | CLOSED CANDIDATE |
-| Startup bundle deterministic | Exact Git-blob plan + canonical immutable layout + read-only content/ACL verifier + A/B rotation fixtures | CLOSED CANDIDATE |
-| Nginx deterministic and neighbor-safe | Exact managed plan/Desired/Restored verifier; mutation/reload manual | CLOSED CANDIDATE |
-| Transfer boundary proportionate | Minimal handshake trước isolated staging; controller trước critical mutation | GO WITH P2 HARDENING |
-
-Overall: **NO-GO / CORRECTION NEEDED**.
-
-## 13. Required correction slices
-
-Một correction plan duy nhất, theo thứ tự bắt buộc:
-
-### P0 — closed candidates
-
-1. **Marker schema authority:** đã có correction schema/fixture P0; không mở lại schema trong P0-4.
-2. **Standalone env validation:** đã có validate-only contract P0; không mở lại env handling trong P0-4.
-3. **Scheduled Task state machine:** P0-3 đã authority hóa bootstrap state, activation, safe-stop, retry/quarantine, rollback và reboot semantics.
-4. **Service restriction:** **CLOSED CANDIDATE (P0-4)** — fail closed khi `service` được chọn cho first deploy; không xây Service architecture trong slice này.
-
-### P1 — deterministic bootstrap plan/verify
-
-5. **Root/subdirectory/ACL:** **CLOSED CANDIDATE** — desired-state manifest và non-mutating verifier bao gồm inheritance/reparse, marker/env/backup/bundle access.
-6. **Startup bundle:** **CLOSED CANDIDATE** — exact Git-blob provenance, canonical immutable commit directory, overwrite/delete refusal, shared ACL verification và A/B rotation fixtures.
-7. Operator execution and independent production evidence for the closed-candidate Nginx plan/verify contract.
-
-### P2 — defense in depth
-
-8. Dùng cùng marker schema validator trong pre-transfer handshake, vẫn giữ full server-side revalidation trước mutation quan trọng.
-9. Bổ sung audit report schema liên kết reviewed commit, plan digest, verifier results và operator approvals mà không chứa secret.
-
-Mỗi slice cần branch riêng, full Windows hostile fixtures, five deployment gates, independent GitHub review; không gộp mutation production vào correction code.
-
-## 14. Operator-only facts
-
-Repository audit không xác nhận và không được đoán các facts sau:
-
-- actual VPS root — `OPERATOR VERIFICATION REQUIRED`;
-- actual deployment/runtime accounts và effective ACLs — `OPERATOR VERIFICATION REQUIRED`;
-- actual Scheduled Task/Windows Service, state, triggers, action và recovery — `OPERATOR VERIFICATION REQUIRED`;
-- actual Nginx executable/config/prefix/server blocks/TLS/reload behavior — `OPERATOR VERIFICATION REQUIRED`;
-- actual production environment file/values — `OPERATOR VERIFICATION REQUIRED`;
-- actual PostgreSQL database/role/extensions/listeners/backups — `OPERATOR VERIFICATION REQUIRED`;
-- actual SSH configuration/keys/firewall/session — `OPERATOR VERIFICATION REQUIRED`.
-
-PASS 1/PASS 2 reports phải được operator và independent reviewer đánh giá riêng; không được đưa raw commands, secrets, env, keys, dumps hoặc unrelated process details vào repository.
-
-## 15. Final verdict
-
-**NO-GO / OPERATOR EVIDENCE AND P2 STILL REQUIRED**.
-
-Stage 2 tổng thể vẫn **NO-GO / chưa GO** vì shared marker validator/pre-transfer handshake P2 và operator-only production evidence còn lại. P1 ROOT/ACL, P1 STARTUP BUNDLE và P1 NGINX chỉ là closed candidates; không tuyên bố Production Stage 2 hoàn tất, Nginx production đã được cấu hình, hoặc reload production đã xảy ra.
-
-Điều kiện để audit lại vẫn gồm handshake P2, operator evidence độc lập, cùng review thực tế các plan/verifier ACL, startup bundle và Nginx. Không được bắt đầu Stage 2 mutation chỉ dựa trên CI xanh hoặc tài liệu manual hiện tại.
+The code authority required to collect and review Stage 2 evidence is closed in the repository. Actual Production Stage 2 remains **NO-GO** until all operator-only VPS evidence is collected, independently reviewed, and explicitly approved. No deployment or production mutation is authorized by this document.
