@@ -2,11 +2,11 @@
 
 ## Status
 
-**CANONICAL PRE-PILOT WORK REGISTER — proposed by P0 realignment.**
+**CANONICAL PRE-PILOT WORK REGISTER — ACCEPTED.**
 
 Starting baseline: `main@4bcf2e7fb2104304fd044693a0bf8838f6038d85`.
 
-This register exists to prevent planned or deferred work from disappearing between phases. After this register is accepted, no pre-pilot requirement may be left only in prose such as “later”, “deferred”, “future slice” or “out of scope”. It must have a row here.
+This register exists to prevent planned or deferred work from disappearing between phases. No pre-pilot requirement may be left only in prose such as “later”, “deferred”, “future slice” or “out of scope”. It must have a row here.
 
 ## Status vocabulary
 
@@ -38,10 +38,10 @@ Dependency cells below contain **task IDs only**. Conditions/evidence triggers b
 
 | Task | Status | Depends on | Deliverable / closure | Trigger / notes |
 |---|---|---|---|---|
-| `P0-001` BAOGIANG-PRE-PILOT-SPEC-REALIGNMENT-001 | `IN_REVIEW` | none | Product baseline, traceability, task register, current status authority, sync protocol, ADR, stale status normalization | Branch `docs/pre-pilot-spec-realignment-001`; no runtime mutation; independent GitHub review/CI/merge still required |
+| `P0-001` BAOGIANG-PRE-PILOT-SPEC-REALIGNMENT-001 | `CLOSED` | none | Product baseline, traceability, task register, current status authority, sync protocol, ADR, stale status normalization | PR #91; reviewed head `475418e62879bfe70c6d56d7154da8522ffad623`; merge/main `7ae5e6bf86dc5d2bedd9329996235b17a3643ff7`; PR CI #327 SUCCESS; post-merge main CI #328 SUCCESS; closed by `SYNC-P0-001` |
 | `P0-002` Close stale PR #11 hosting-portability direction | `BLOCKED_DECISION` | `P0-001` | Close PR #11 as superseded if Product Owner explicitly authorizes | Must not merge old standalone-Linux direction into current Windows/shared-Nginx architecture |
 | `P0-003` Pilot scope decision: CORE vs FULL BUSINESS | `BLOCKED_DECISION` | `P0-001` | Record Product Owner decision before P5 pilot freeze | Does not block common P1-P3 foundations |
-| `P0-004` GitHub main branch protection/ruleset enforcement | `BLOCKED_DECISION` | `P0-001` | Review and, only with explicit Product Owner authorization, enforce server-side protection against accidental direct-main bypass and require the agreed PR/CI gates | Baseline inspection shows `main` currently `protected: false`; repository-settings mutation is outside P0-001 and must not be performed implicitly |
+| `P0-004` GitHub main branch protection/ruleset enforcement | `BLOCKED_DECISION` | `P0-001` | Review and, only with explicit Product Owner authorization, enforce server-side protection against accidental direct-main bypass and require the agreed PR/CI gates | Baseline inspection shows `main` currently `protected: false`; repository-settings mutation must not be performed implicitly |
 | `P0-900` Authoritative specification rebase audit | `DEFERRED_WITH_TRIGGER` | `P0-001` | Re-read changed authoritative source, reconcile baseline/ADR/traceability/register before dependent product work continues | Trigger if PA-B v1.2 blob changes from `c2c61a4e8acb9fde0e5fc5232467662048fd3380`, PA-B v1.3 blob changes from `5876af5920d12ea6fcecf42d1b8a392cc4825f16`, or an explicit Product Owner decision contradicts the accepted baseline; T42 |
 
 ## P1 — Governance/business foundation
@@ -50,7 +50,7 @@ Dependency cells below contain **task IDs only**. Conditions/evidence triggers b
 
 | Task | Status | Depends on | Deliverable / closure | Traceability |
 |---|---|---|---|---|
-| `P1-010` Homeroom responsibility architecture closure | `PLANNED` | `P0-001` | Date-effective retained GVCN product/authorization/history semantics; no schema yet | T13, T14 |
+| `P1-010` Homeroom responsibility architecture closure | `READY` | `P0-001` | Date-effective retained GVCN product/authorization/history semantics; no schema yet | T13, T14 |
 | `P1-011` Homeroom persistence foundation | `PLANNED` | `P1-010` | Schema/migration/invariants for retained HomeroomAssignment history | T13, T14 |
 | `P1-012` Homeroom control plane | `PLANNED` | `P1-011` | Capability-controlled create/change/end/read, audit, historical resolution | T13, T14 |
 | `P1-013` Homeroom administration workspace | `PLANNED` | `P1-012` | Bounded admin/PHT UI using frozen backend contracts; no UI-invented authority | T13, T14 |
@@ -59,7 +59,7 @@ Dependency cells below contain **task IDs only**. Conditions/evidence triggers b
 
 | Task | Status | Depends on | Deliverable / closure | Traceability |
 |---|---|---|---|---|
-| `P1-020` Business Configuration Control Plane architecture | `PLANNED` | `P0-001` | Typed/versioned business-policy families, effectivity/history, capability boundary and explicit separation from technical secrets/env | T21, T22 |
+| `P1-020` Business Configuration Control Plane architecture | `READY` | `P0-001` | Typed/versioned business-policy families, effectivity/history, capability boundary and explicit separation from technical secrets/env | T21, T22 |
 | `P1-021` Business Configuration persistence/control plane | `PLANNED` | `P1-020` | Approved policy persistence, lifecycle, authorization, audit and exact historical reads | T21, T22 |
 | `P1-022` Business Configuration administration workspace | `PLANNED` | `P1-021` | PHT/admin UI for approved business policy only; no access to secrets/TLS/database/process settings | T21, T22 |
 
@@ -114,7 +114,7 @@ Dependency cells below contain **task IDs only**. Conditions/evidence triggers b
 
 | Task | Status | Depends on | Deliverable / closure | Trigger / traceability |
 |---|---|---|---|---|
-| `P6-010` Pre-deploy TLS/HTTP-01 authority | `PLANNED` | `P0-001` | Repo-side port-80 ACME challenge + redirect authority, separate Báo giảng PEM/renewal/reload lifecycle, collision tests | T34 |
+| `P6-010` Pre-deploy TLS/HTTP-01 authority | `READY` | `P0-001` | Repo-side port-80 ACME challenge + redirect authority, separate Báo giảng PEM/renewal/reload lifecycle, collision tests | T34 |
 | `P6-020` Production Stage 1 passive VPS evidence | `DEFERRED_WITH_TRIGGER` | `P5-010`, `P6-010` | PASS1 passive neighbour discovery + reviewed PASS2 exact readonly preflight | Trigger: exact pilot commit is a production deployment candidate; T35 |
 | `P6-030` Production bootstrap + first controlled deploy | `PLANNED` | `P6-020` | Root/ACL/task/env/Nginx/DB/TLS bootstrap, first certificate activation as applicable, migration gates, exact commit deploy, rollback and health evidence | No mutation before separate explicit approval |
 | `P6-040` TLS monitor multi-certificate refactor | `PLANNED` | `P6-030` | Extend existing monitor by certificate groups after Báo giảng certificate exists, without breaking Nội trú monitoring | Isolated infrastructure task only |
