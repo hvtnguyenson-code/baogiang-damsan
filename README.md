@@ -2,7 +2,10 @@
 
 **Đơn vị sử dụng:** Trường PTDTNT THPT Đam San
 
-> ⚠️ Hệ thống đã có nền tảng backend cho identity/access, cấu trúc năm học, phân công giảng dạy, khung tiết, thời khóa biểu và import XLSX. Chuỗi PPCT → thực hiện dạy → tiến độ/nợ → báo cáo/phê duyệt chưa được triển khai, nên hệ thống chưa hoàn chỉnh nghiệp vụ. Hạ tầng VPS, PostgreSQL và domain là production chính thức ở trạng thái **pre-operational**; chỉ dùng tài khoản và dữ liệu giả cho đến quyết định go-live.
+> **Trạng thái hiện hành:** repository đã có chuỗi backend từ identity/access, lịch học, phân công, TKB, PPCT, operational overlays, Teaching Execution, progress/debt/late, reporting đến Reporting Statement. Tuy nhiên hệ thống **chưa sẵn sàng cho teacher pilot** vì đang thực hiện Pre-Pilot Product/Spec Realignment để khôi phục các yêu cầu programme GDĐP/HĐTN, homeroom, delayed go-live, import dữ liệu thật, workload và các gate PWA/Telegram/TLS/production. Không suy ra pilot-readiness chỉ từ việc core backend đã tồn tại.
+
+**Current-state authority:** `docs/governance/CURRENT-PROJECT-STATUS.md`  
+**Canonical work register:** `docs/governance/PRE-PILOT-TASK-REGISTER.md`
 
 ---
 
@@ -112,7 +115,7 @@ npm run build
 
 ## Cấu trúc dự án
 
-```
+```text
 baogiang-damsan/
 ├── apps/
 │   ├── web/          # React frontend
@@ -122,29 +125,59 @@ baogiang-damsan/
 │   └── config/       # Shared constants
 ├── tests/e2e/        # Playwright E2E tests
 ├── prisma/           # Prisma schema
-└── docs/             # Specifications, ADRs, reports
+└── docs/             # Specifications, ADRs, governance, reports
 ```
 
 ---
 
-## Nguyên tắc phát triển
+## Kiến trúc nghiệp vụ hiện có
 
-- Máy local chủ yếu chạy editor, Codex/Antigravity, lint, typecheck và targeted unit tests; mỗi task trên một branch riêng.
-- Delivery chính thức đi qua GitHub: push → CI → review → merge `main` khi được phép → CD có kiểm soát.
-- Push tự nó không phải deploy; deploy chỉ xảy ra khi các CI/review/authorization gate của CD được thỏa mãn.
-- Database VPS chính thức đang pre-operational và chỉ dùng dữ liệu giả; không dùng nó cho test phá hủy hoặc test suite tự động. Integration/migration/E2E dùng PostgreSQL cô lập trong CI. Thay đổi schema đi qua migration đã commit và `prisma migrate deploy` được phê duyệt trong task riêng.
-- Không tác động hệ thống quản lý nội trú hiện có.
-- AI tắt mặc định — xem `docs/decisions/ADR-002-AI-READY-BUT-DISABLED.md`.
+Current `main` đã có các foundation chính:
 
-Quy tắc đầy đủ: `AGENTS.md`, `docs/specifications/PA-B-VPS-PostgreSQL-v1.3-IMPLEMENTATION-ADDENDUM.md` và `docs/operations/DEVELOPMENT-DEPLOYMENT-DATABASE.md`.
+- identity, session, capability/scope default-deny và audit;
+- AcademicYear, versioned calendar, business weeks/segments/interruptions/classes;
+- TeachingAssignment history;
+- exact retained time slots;
+- TimetableVersion/TimetableEntry, lifecycle, historical resolution và XLSX import infrastructure;
+- PPCT version/item/lineage/class association;
+- operational overlays;
+- SpecialActivity minimum-core runtime/collision;
+- PPCT occurrence allocation;
+- curricular TeachingExecution và SpecialActivityParticipationExecution;
+- progress/debt/late projection;
+- reporting projection, Personal Reporting Projection và Reporting Statement lifecycle/UI work;
+- hardened Windows production deployment control plane.
 
-## Production
+Các foundation này **không đồng nghĩa** mọi yêu cầu sản phẩm đã khép kín. Danh sách gap/re-entry hiện hành nằm trong:
 
-- Domain: `baogiang.dtnt-damsan.edu.vn`
-- Backend: `127.0.0.1:3100` (sau Nginx proxy)
-- Reverse proxy: Nginx
-- Trạng thái: hạ tầng chính thức, pre-operational; chưa có dữ liệu vận hành thực tế.
+- `docs/governance/PRE-PILOT-PRODUCT-BASELINE.md`;
+- `docs/governance/PRE-PILOT-TRACEABILITY-MATRIX.md`;
+- `docs/governance/PRE-PILOT-TASK-REGISTER.md`.
 
 ---
 
-*Xem `docs/phase-reports/PHASE-00-REPORT.md` cho lịch sử Phase 00 và addendum v1.3 cho hướng hiện hành.*
+## Quy tắc phát triển bắt buộc
+
+- Mỗi task dùng một branch riêng.
+- Trước major task phải đọc `AGENTS.md` và toàn bộ current governance authority.
+- Major task phải có Task ID trong `PRE-PILOT-TASK-REGISTER.md` trước khi code.
+- Không để requirement ở trạng thái `deferred/later` chỉ trong prose; phải có task re-entry và trigger.
+- Merge **không** tự động đồng nghĩa task `CLOSED`; post-merge SHA/CI và tài liệu current-state phải được sync trước khi task phụ thuộc tiếp theo bắt đầu.
+- Không reset/clean/stash/rebase/amend/squash/force-push theo workflow repository.
+- Database chính thức không dùng cho destructive automated tests.
+- Không tác động hệ thống Quản lí nội trú/DamSanV5 ngoài task hạ tầng được phê duyệt riêng.
+- AI mặc định tắt theo ADR-002/004.
+
+Quy tắc đầy đủ: `AGENTS.md` và `docs/governance/MAJOR-TASK-DOCUMENTATION-SYNC-PROTOCOL.md`.
+
+---
+
+## Production
+
+- Domain dự kiến/chính thức: `baogiang.dtnt-damsan.edu.vn`
+- Backend loopback: `127.0.0.1:3100`
+- Reverse proxy: Nginx
+- PostgreSQL: PostgreSQL 17
+- Trạng thái: **pre-operational; chưa teacher pilot**
+
+Green CI không chứng minh VPS ready. First deploy vẫn phải đi qua task register P6, passive evidence/preflight, TLS/HTTP-01 authority, bootstrap và explicit production authorization.
