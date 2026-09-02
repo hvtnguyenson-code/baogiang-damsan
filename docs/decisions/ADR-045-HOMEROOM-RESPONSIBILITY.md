@@ -49,26 +49,29 @@ Therefore P1 must not add a teacher-side overlap/uniqueness rule without a separ
 
 The first product contract also does not introduce co-homeroom teachers. If a future policy requires two simultaneous GVCN identities for one class/date, that is a new product requirement and must be registered before implementation; it must not be simulated by weakening the one-effective-GVCN invariant.
 
-### 4. Teacher eligibility is professional, but not subject-specific
+### 4. Teacher identity, current eligibility, and historical truth are distinct
 
-Creating or changing a homeroom assignment must require the selected teacher to be operationally eligible as teaching staff at command time:
+Homeroom responsibility always references one exact existing `User`. It is professional responsibility, but it is not subject-specific, so `StaffSubject` coverage is never required merely to be GVCN.
 
-- exact existing `User`;
+For a create/change command whose resulting assignment is effective on the command business date or extends into the future, the selected teacher must be currently operationally eligible:
+
 - `User.status = ACTIVE`;
 - canonical `StaffProfile` exists;
 - `isTeachingStaff = true`.
 
-No `StaffSubject` coverage is required merely to be GVCN, because homeroom responsibility is not a subject assignment.
+Those **current** mutable flags must not be used to falsify a bounded historical interval. For an explicitly historical/backfill assignment whose `validUntil` is before the command business date, a teacher who is now disabled, inactive, retired, transferred, or no longer flagged as teaching staff may still be the correct historical GVCN. Such a command must retain the exact User identity, require explicit administrative provenance/reason, and must not infer past eligibility from current `User.status` or current `isTeachingStaff`.
 
-A later User/profile status change does not rewrite historical HomeroomAssignment rows. Future workflows that need the assignment must validate current operational eligibility and fail closed rather than silently choosing another teacher.
+A later User/profile status change therefore never rewrites or invalidates historical HomeroomAssignment truth. Historical resolution returns the exact retained assignment even when the teacher's current account is no longer operational. Current/future workflows may separately require present operational eligibility before creating a new future-facing occurrence, but they must not replace the historical teacher silently.
+
+The exact historical-command evidence fields and validation surface belong to P1-011/P1-012; the distinction above is binding.
 
 ### 5. SchoolClass and calendar rules
 
 New/change commands require:
 
 - the exact `SchoolClass` belongs to the same AcademicYear;
-- the class is operationally usable at command time;
-- exactly one active `AcademicCalendarVersion` exists for write validation;
+- the class is operationally usable for current/future-facing authoring;
+- exactly one active `AcademicCalendarVersion` exists for write-envelope validation;
 - requested effectivity lies inside that active calendar's civil-date envelope.
 
 Reads and historical resolution remain available even if there is no active calendar.
@@ -91,7 +94,7 @@ There is no generic PATCH and no physical-delete public command for historically
 
 A legitimate teacher change is a transactional interval split: the prior responsibility ends on the civil day before the new assignment begins, and the replacement begins on the requested date.
 
-Backdated entry is permitted inside the validated AcademicYear/calendar envelope so pre-operational history can be established explicitly. It is never inferred from the current teacher, current UI, AdditionalDuty, TeachingAssignment, timetable text, or activity staffing.
+Backdated entry is permitted inside the validated AcademicYear/calendar envelope so pre-operational history can be established explicitly. It is never inferred from the current teacher, current UI, AdditionalDuty, TeachingAssignment, timetable text, or activity staffing. A bounded historical row is not rejected merely because the retained teacher is no longer an ACTIVE account at command time.
 
 ### 7. Data correction is explicit and must retain evidence
 
@@ -127,13 +130,14 @@ The domain must expose an internal deterministic resolver conceptually equivalen
 
 `resolveEffectiveHomeroomTeacher(academicYearId, schoolClassId, civilDate)`.
 
-It returns exactly one canonical assignment + teacher identity or a typed missing/invalid result. It must never:
+It returns exactly one canonical assignment + teacher identity or a typed missing/ambiguous/corrupt result. Current account status is not part of historical identity resolution. It must never:
 
 - select the newest row regardless of date;
 - fall back to `TeachingAssignment`;
 - infer from `AdditionalDutyAssignment` or a duty label;
 - infer from timetable/import text;
 - infer from the current teacher when historical data is missing;
+- discard a historical assignment because the teacher is currently disabled/inactive;
 - use fuzzy name matching.
 
 Public callers remain subject to their own capability rules. An internal resolver is not an authorization bypass.
@@ -142,10 +146,9 @@ Public callers remain subject to their own capability rules. An internal resolve
 
 P4 HĐTN `CLASS` planning must resolve the effective GVCN on the exact planned occurrence civil date.
 
-Before materialization:
+For a current/future-facing occurrence, missing effective GVCN or a teacher who is not currently operationally eligible blocks new materialization rather than silently selecting another teacher.
 
-- missing effective GVCN blocks the class-level occurrence;
-- an ineligible effective teacher blocks the occurrence rather than silently selecting another teacher.
+For a retrospective/pre-operational occurrence, historical resolution must preserve the exact teacher who was GVCN on that civil date; a later account disablement or teaching-staff flag change does not replace or invalidate that historical identity. Any separate evidence required to prove that the historical activity actually occurred belongs to the Special Programme / participation execution path, not to current User status.
 
 Current ADR-038 SpecialActivity participation minimum-core explicitly requires actual teacher to equal scheduled teacher and rejects arbitrary substitution. The earlier 05A0 audit separately recorded activity absence/substitution as unresolved. Therefore `P4-010` must explicitly close special-program absence/substitution and confirmation authority before `P4-040` may implement any broader replacement behavior. Until that accepted authority exists, homeroom resolution has **no fallback substitution rule**.
 
@@ -171,7 +174,8 @@ Workload calculation itself remains governed by registered Business Configuratio
 
 Homeroom data is a source of responsibility/provenance, not a mechanism for retroactively recalculating already frozen official records.
 
-- current non-frozen planning may use corrected current-truth homeroom history;
+- current non-frozen future planning may use corrected current-truth homeroom history plus current operational eligibility;
+- retrospective reconstruction resolves exact retained historical responsibility without replacing it from current account state;
 - materialized activity staffing remains frozen until explicitly corrected in its own domain;
 - confirmed participation execution retains its teacher evidence;
 - submitted/approved Reporting Statements remain immutable under ADR-041–043.
@@ -186,6 +190,7 @@ P1-011 must map this authority into Prisma/PostgreSQL with regression coverage f
 - at most one effective current-truth GVCN per class/date;
 - allowed teacher responsibility across different classes;
 - retained correction/reversal evidence;
+- retained historical identity after later User/profile state changes;
 - parent deletion protection;
 - indexes required for exact class/date resolution.
 
@@ -196,7 +201,8 @@ P1-011 may choose the exact correction-lineage/status column topology, but it ma
 P1-012 must implement and test:
 
 - dedicated capability catalog/runtime authority;
-- exact professional eligibility checks;
+- current/future professional eligibility checks distinct from bounded historical/backfill validation;
+- explicit provenance/reason for historical backfill when current eligibility no longer proves anything about the historical interval;
 - create/change/end/correct/read/resolve commands;
 - serializable or equivalently safe mutation semantics;
 - same-transaction success audit;
@@ -217,6 +223,7 @@ P1-013 may build a bounded administration workspace only after P1-012 closes. It
 - Treat the latest row as the teacher for all historical dates.
 - Permit two active GVCN identities for the same class/date without new authority.
 - Require StaffSubject coverage for homeroom responsibility.
+- Reject or rewrite a historically correct GVCN solely because the teacher's account/profile is different now.
 - Make `ACADEMIC_STRUCTURE_MANAGE`, `SUBJECT_MANAGE`, `SYSTEM_ADMIN`, job title, or HĐTN staffing implicitly authorize homeroom changes.
 - Invent HĐTN substitute staffing inside HomeroomAssignment.
 - Let a later GVCN change rewrite historical HĐTN staffing or frozen reporting.
