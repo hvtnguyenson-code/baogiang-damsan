@@ -8,19 +8,37 @@ It is **not** a self-referential registry of the latest Git commit. Exact curren
 
 **Status snapshot date:** 2026-09-03
 
-## Canonical repository state at P0 start
+## Last closed major task
 
-- Repository: `hvtnguyenson-code/baogiang-damsan`
-- Stable branch: `main`
-- Canonical starting SHA for P0: `4bcf2e7fb2104304fd044693a0bf8838f6038d85`
-- Merge at that SHA: PR #90, production operator-evidence authority hardening
-- Exact post-merge main CI observed before P0: CI #318 — success
-- P0 task branch: `docs/pre-pilot-spec-realignment-001`
-- Production state: pre-operational; no P0 deployment/migration/VPS mutation authorized
+`P0-001` — `BAOGIANG-PRE-PILOT-SPEC-REALIGNMENT-001` — **CLOSED**.
 
-## Current implemented foundation on starting main
+Closure evidence:
 
-The repository currently contains reviewed implementation for:
+- starting main: `4bcf2e7fb2104304fd044693a0bf8838f6038d85`;
+- reviewed PR head: `475418e62879bfe70c6d56d7154da8522ffad623`;
+- PR: #91 `docs(governance): establish pre-pilot product realignment authority`;
+- exact-head PR CI: #327 — SUCCESS;
+- merge/main SHA: `7ae5e6bf86dc5d2bedd9329996235b17a3643ff7`;
+- post-merge main CI: #328 — SUCCESS;
+- administrative closure: `SYNC-P0-001`.
+
+P0 changed documentation/governance only. It did not change Prisma, migrations, API/runtime, frontend runtime, CI/CD behavior, VPS, TLS, database or production state.
+
+## Accepted authority after P0
+
+The following are now accepted current governance/product authorities:
+
+- `docs/governance/PRE-PILOT-PRODUCT-BASELINE.md`;
+- `docs/governance/PRE-PILOT-TRACEABILITY-MATRIX.md`;
+- `docs/governance/PRE-PILOT-TASK-REGISTER.md`;
+- `docs/governance/MAJOR-TASK-DOCUMENTATION-SYNC-PROTOCOL.md`;
+- `docs/decisions/ADR-044-PRE-PILOT-PRODUCT-REALIGNMENT-GOVERNANCE.md`.
+
+Every major task must be registered before implementation, cite applicable traceability rows, obey dependency gates, and complete post-merge documentation synchronization before dependent major work starts. Untracked plain `DEFERRED`/`later`/`future slice` is prohibited.
+
+## Current implemented foundation
+
+The repository contains reviewed implementation for:
 
 - identity, session/authentication, capability/scope authorization and audit;
 - academic years, versioned retained calendars, business weeks/segments/reserve weeks/interruptions and classes;
@@ -35,7 +53,7 @@ The repository currently contains reviewed implementation for:
 - proof-based progress/debt/late projection;
 - reporting projection and public reporting read path;
 - Personal Reporting Projection;
-- Reporting Statement persistence/control plane/UI enablement/product UI work already present on current main;
+- Reporting Statement persistence/control plane/UI enablement/product UI work;
 - hardened Windows production deployment control-plane/runbooks through PR #90.
 
 Therefore any document that says the entire PPCT -> execution -> progress/debt -> reporting/statement chain is “not implemented” is stale.
@@ -44,7 +62,7 @@ Therefore any document that says the entire PPCT -> execution -> progress/debt -
 
 **NOT READY FOR TEACHER PILOT YET.**
 
-Reason: product/business alignment is incomplete even though the backend foundation is substantial. P0 is correcting authority and re-entry planning before further implementation.
+P0 has closed the product/governance authority gap, but the registered implementation and evidence tasks remain.
 
 ## Critical pre-pilot gaps
 
@@ -59,49 +77,47 @@ Reason: product/business alignment is incomplete even though the backend foundat
 9. Native Đam San timetable adapter and class-view/teacher-view peer reconciliation are absent.
 10. Morning/afternoon selective timetable update with explicit carry-forward is absent.
 11. Special-activity participation is not yet integrated into official workload/reporting aggregation.
-12. WorkloadAdjustmentRule remains deferred.
+12. WorkloadAdjustmentRule remains trigger-gated/deferred.
 13. Installable PWA baseline is absent.
 14. Dedicated Báo giảng Telegram bot/linking/notification lifecycle is absent.
 15. First-certificate HTTP-01/Nginx authority for the Báo giảng subdomain is incomplete.
 16. Actual VPS Stage 1 evidence has not yet been collected for first deployment.
 
-## Active task
+## Tasks now eligible to start
 
-`P0-001` — BAOGIANG-PRE-PILOT-SPEC-REALIGNMENT-001
+After `SYNC-P0-001` merges, the register marks these direct P0 dependents `READY`:
 
-Current state: **IN_REVIEW** on `docs/pre-pilot-spec-realignment-001`.
+- `P1-010` — Homeroom responsibility architecture closure;
+- `P1-020` — Business Configuration Control Plane architecture;
+- `P6-010` — Pre-deploy TLS/HTTP-01 authority.
 
-The branch contains the proposed product baseline, traceability matrix, task register, current-status authority, documentation-sync protocol, ADR-044 proposal, stale-status normalization and repository PR/agent governance changes. Independent GitHub diff review and merge authorization remain pending.
+Task sequencing must still follow the register and one-task-per-branch rule. Readiness is not automatic authorization to merge/deploy.
 
-Allowed work: documentation/governance only.
+## Decisions/evidence still blocking other paths
 
-No schema, runtime, UI, CI/CD behavior, VPS, TLS, database or production mutation is authorized by P0.
-
-## Next-task gate
-
-No P1-P6 implementation task should begin until:
-
-1. P0 PR receives independent GitHub review;
-2. Product Owner explicitly authorizes merge;
-3. merge completes;
-4. authoritative post-merge CI succeeds where applicable;
-5. administrative closure sync `SYNC-P0-001` records the P0 major-task merge SHA/CI and closes `P0-001`.
-
-The closure-sync PR is non-recursive: it records the already-established P0 evidence and does not need another sync task. At the next task start, exact current `main` is fetched directly from Git/GitHub.
-
-After P0 closes, common foundations P1 and evidence-gathering P2 audits may proceed according to `PRE-PILOT-TASK-REGISTER.md`.
+- `P0-002` — stale PR #11 closure: Product Owner decision required.
+- `P0-003` — CORE vs FULL BUSINESS pilot scope: Product Owner decision required before P5 freeze.
+- `P0-004` — GitHub main branch protection/ruleset: Product Owner decision required before repository-settings mutation.
+- `P2-010` — authoritative PPCT workbook/template evidence required.
+- `P2-030` — authoritative Đam San TKB source evidence must be available to the task in a durable/reviewable form.
+- `P0-900` — rebase audit triggers if pinned source blobs change or Product Owner authority contradicts the accepted baseline.
 
 ## Authoritative source-change gate
 
-P0 pins the authoritative specification fingerprints in `PRE-PILOT-PRODUCT-BASELINE.md`. If PA-B v1.2 or v1.3 changes, or an explicit Product Owner decision contradicts the accepted baseline, `P0-900` becomes mandatory before dependent product work continues.
+Accepted P0 fingerprints:
 
-## Canonical planning/authority files
+- PA-B v1.2 DOCX blob: `c2c61a4e8acb9fde0e5fc5232467662048fd3380`;
+- PA-B v1.3 addendum blob: `5876af5920d12ea6fcecf42d1b8a392cc4825f16`.
 
-- Product baseline: `docs/governance/PRE-PILOT-PRODUCT-BASELINE.md`
-- Traceability: `docs/governance/PRE-PILOT-TRACEABILITY-MATRIX.md`
-- Task register: `docs/governance/PRE-PILOT-TASK-REGISTER.md`
-- Documentation sync rule: `docs/governance/MAJOR-TASK-DOCUMENTATION-SYNC-PROTOCOL.md`
-- Proposed governance ADR: `docs/decisions/ADR-044-PRE-PILOT-PRODUCT-REALIGNMENT-GOVERNANCE.md`
+If either changes, or an explicit Product Owner decision contradicts the accepted baseline, `P0-900` becomes mandatory before dependent product work continues.
+
+## Repository protection gap
+
+Direct P0 inspection found `main` is currently not protected server-side. This is registered as `P0-004`; no repository-setting mutation was performed implicitly.
+
+## Production state
+
+Production remains **pre-operational**. No P0 or SYNC-P0-001 action authorizes or performs deployment, migration, Nginx/TLS change, PostgreSQL mutation or application-process mutation.
 
 ## Protected external system boundary
 
