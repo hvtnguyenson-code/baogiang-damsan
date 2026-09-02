@@ -50,8 +50,8 @@ Dependency cells below contain **task IDs only**. Conditions/evidence triggers b
 
 | Task | Status | Depends on | Deliverable / closure | Traceability |
 |---|---|---|---|---|
-| `P1-010` Homeroom responsibility architecture closure | `IN_REVIEW` | `P0-001` | Date-effective retained GVCN product/authorization/history semantics; no schema yet | T13, T14 |
-| `P1-011` Homeroom persistence foundation | `PLANNED` | `P1-010` | Schema/migration/invariants for retained HomeroomAssignment history | T13, T14 |
+| `P1-010` Homeroom responsibility architecture closure | `CLOSED` | `P0-001` | Date-effective retained GVCN product/authorization/history semantics; no schema yet | T13, T14; PR #93; reviewed head `c125a0b1224c23fa1cf15d31123a9f5338ab8a4f`; independent GitHub diff review PASS after historical-eligibility correction; PR CI #333 SUCCESS; merge/main `5cbfe8b25c1e40b1fb7d0a5b524b823c689c0463`; post-merge main CI #334 SUCCESS; closed by `SYNC-P1-010`; follow-up boundaries T43/T44 registered in P4 |
+| `P1-011` Homeroom persistence foundation | `READY` | `P1-010` | Schema/migration/invariants for retained HomeroomAssignment history | T13, T14 |
 | `P1-012` Homeroom control plane | `PLANNED` | `P1-011` | Capability-controlled create/change/end/read, audit, historical resolution | T13, T14 |
 | `P1-013` Homeroom administration workspace | `PLANNED` | `P1-012` | Bounded admin/PHT UI using frozen backend contracts; no UI-invented authority | T13, T14 |
 
@@ -94,7 +94,7 @@ Dependency cells below contain **task IDs only**. Conditions/evidence triggers b
 
 | Task | Status | Depends on | Deliverable / closure | Traceability |
 |---|---|---|---|---|
-| `P4-010` GDĐP/HĐTN programme architecture closure | `PLANNED` | `P0-001`, `P1-010` | Programme/version/item/occurrence topology; GDĐP grade plans; HĐTN CLASS/GRADE/SCHOOL; exact per-slot staffing; absence/replacement semantics; confirmation topology | T12, T15–T17, T43, T44 |
+| `P4-010` GDĐP/HĐTN programme architecture closure | `READY` | `P0-001`, `P1-010` | Programme/version/item/occurrence topology; GDĐP grade plans; HĐTN CLASS/GRADE/SCHOOL; exact per-slot staffing; absence/replacement semantics; confirmation topology | T12, T15–T17, T43, T44 |
 | `P4-020` Special-programme persistence + control plane | `PLANNED` | `P1-012`, `P4-010` | Retained plan history, planning commands, audit, no overload of SpecialActivity runtime primitive | T16, T17 |
 | `P4-030` Programme coordinator authorization | `PLANNED` | `P4-020` | Exact coordinator resource/scope semantics using explicit capabilities; no role/title inference | T18, T44 |
 | `P4-040` Programme-to-SpecialActivity runtime bridge | `PLANNED` | `P4-030` | Deterministic materialization/provenance into existing SpecialActivity collision/runtime foundation | T12, T17, T31, T43, T44 |

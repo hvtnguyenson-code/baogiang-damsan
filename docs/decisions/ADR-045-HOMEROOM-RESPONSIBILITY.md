@@ -1,6 +1,6 @@
 # ADR-045 — Homeroom Responsibility
 
-- **Status:** Proposed by `P1-010`; becomes Accepted only after explicit Product Owner approval and merge.
+- **Status:** Accepted via explicit Product Owner authorization for PR #93; reviewed head `c125a0b1224c23fa1cf15d31123a9f5338ab8a4f`; canonical merge `5cbfe8b25c1e40b1fb7d0a5b524b823c689c0463`; exact-head PR CI #333 SUCCESS; post-merge main CI #334 SUCCESS.
 - **Date:** 2026-09-03
 - **Scope:** Canonical GVCN responsibility semantics, history, authorization boundary, and downstream HĐTN `CLASS` resolution.
 - **Task baseline:** `main@dd8ee41a3edb3eff04802d405bd402dd046528dd`
