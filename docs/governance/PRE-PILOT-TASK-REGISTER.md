@@ -41,6 +41,7 @@ Dependency cells below contain **task IDs only**. Conditions/evidence triggers b
 | `P0-001` BAOGIANG-PRE-PILOT-SPEC-REALIGNMENT-001 | `IN_REVIEW` | none | Product baseline, traceability, task register, current status authority, sync protocol, ADR, stale status normalization | Branch `docs/pre-pilot-spec-realignment-001`; no runtime mutation; independent GitHub review/CI/merge still required |
 | `P0-002` Close stale PR #11 hosting-portability direction | `BLOCKED_DECISION` | `P0-001` | Close PR #11 as superseded if Product Owner explicitly authorizes | Must not merge old standalone-Linux direction into current Windows/shared-Nginx architecture |
 | `P0-003` Pilot scope decision: CORE vs FULL BUSINESS | `BLOCKED_DECISION` | `P0-001` | Record Product Owner decision before P5 pilot freeze | Does not block common P1-P3 foundations |
+| `P0-900` Authoritative specification rebase audit | `DEFERRED_WITH_TRIGGER` | `P0-001` | Re-read changed authoritative source, reconcile baseline/ADR/traceability/register before dependent product work continues | Trigger if PA-B v1.2 blob changes from `c2c61a4e8acb9fde0e5fc5232467662048fd3380`, PA-B v1.3 blob changes from `5876af5920d12ea6fcecf42d1b8a392cc4825f16`, or an explicit Product Owner decision contradicts the accepted baseline; T42 |
 
 ## P1 — Governance/business foundation
 
@@ -86,7 +87,7 @@ Dependency cells below contain **task IDs only**. Conditions/evidence triggers b
 | `P3-010` Pre-operational historical execution architecture | `PLANNED` | `P1-031`, `P2-020`, `P2-050` | Historical evidence/reconciliation contract; provenance, correction, PPCT allocation and no-auto-debt invariants | T28–T30 |
 | `P3-020` Pre-operational history ingestion/reconciliation runtime | `PLANNED` | `P3-010` | Controlled import/confirmation API and bounded UI for historical taught evidence; exact audit and reconciliation | T29, T30 |
 | `P3-030` Public make-up scheduling re-entry architecture | `DEFERRED_WITH_TRIGGER` | `P3-010` | Re-audit exact incomplete-obligation proof, authority, collision and correction before public scheduling | Trigger: chosen pilot scope requires public make-up scheduling; T08 |
-| `P3-031` Public make-up scheduling runtime | `PLANNED` | `P3-030` | Create/reverse/read runtime only after P3-030 closes | Must not start unless P3-030 trigger fired and task became CLOSED; T08 |
+| `P3-031` Public make-up scheduling runtime | `DEFERRED_WITH_TRIGGER` | `P3-030` | Create/reverse/read runtime only after P3-030 closes | Same trigger as P3-030; remains non-startable unless trigger fires and P3-030 becomes CLOSED; T08 |
 
 ## P4 — Special programmes and workload
 
@@ -98,7 +99,7 @@ Dependency cells below contain **task IDs only**. Conditions/evidence triggers b
 | `P4-040` Programme-to-SpecialActivity runtime bridge | `PLANNED` | `P4-030` | Deterministic materialization/provenance into existing SpecialActivity collision/runtime foundation | T12, T17, T31 |
 | `P4-050` Special-activity workload/reporting projection | `PLANNED` | `P4-040` | Confirmed teacher-slot participation contributes exactly once; no class-target fan-out multiplication; statement policy defined | T19, T20 |
 | `P4-060` Workload adjustment architecture | `DEFERRED_WITH_TRIGGER` | `P1-020` | Close reduction/percentage/override semantics, effectivity and frozen-report provenance | Trigger: chosen pilot/official reporting scope claims adjusted workload; T23 |
-| `P4-061` Workload adjustment implementation | `PLANNED` | `P1-021`, `P4-060` | Implement accepted adjustment policy without hardcoded fallback | Must not start unless P4-060 trigger fired and task became CLOSED; T23 |
+| `P4-061` Workload adjustment implementation | `DEFERRED_WITH_TRIGGER` | `P1-021`, `P4-060` | Implement accepted adjustment policy without hardcoded fallback | Same trigger as P4-060; remains non-startable unless trigger fires and P4-060 becomes CLOSED; T23 |
 
 ## P5 — Pilot product closure
 
@@ -136,13 +137,13 @@ Every future execution prompt for a major task must include:
 
 - exact task ID from this register;
 - current task status and dependencies;
-- exact canonical main SHA;
+- exact canonical main SHA fetched directly from Git/GitHub;
 - traceability row IDs affected;
 - files/domains allowed and forbidden;
 - required tests/evidence;
 - documentation files that must be synchronized before review;
 - explicit statement that merge/deploy remains separately authorized.
 
-If a planned implementation task depends on a `DEFERRED_WITH_TRIGGER` architecture task, the implementation task remains non-startable until the trigger fires and the architecture task is `CLOSED`.
+If an implementation task depends on a `DEFERRED_WITH_TRIGGER` architecture task, the implementation task remains non-startable until the trigger fires and the architecture task is `CLOSED`.
 
 If the requested work is not in this register, create/register it first. Do not begin implementation and “document it later”.
