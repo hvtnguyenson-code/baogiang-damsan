@@ -29,6 +29,7 @@ param(
   [string[]]$RequiredDatabaseExtension = @('btree_gist'),
   [string[]]$KnownForeignDatabase = @(),
   [string[]]$KnownForeignDatabaseRole = @(),
+  [string]$ReviewedPostgresDataDirectory,
   [switch]$RequireForeignDatabaseIsolation,
   [switch]$VerifyPublicEndpoint,
   [switch]$RequireVerifiedIdentity
@@ -114,8 +115,10 @@ function Get-NginxSnapshot {
   $configState = [ordered]@{ state = 'NOT_PROVIDED' }
   $references = @()
   if ($NginxConfig) {
-    $allowedRoot = if ($NginxPrefix) { $NginxPrefix } elseif ($NginxExe) { Split-Path -Parent (Get-CanonicalPath $NginxExe) } else { '' }
-    if ([string]::IsNullOrWhiteSpace($allowedRoot)) { throw 'NginxConfig requires a reviewed NginxPrefix or NginxExe.' }
+    if ([string]::IsNullOrWhiteSpace($NginxPrefix)) {
+      throw 'NginxConfig requires a reviewed absolute NginxPrefix.'
+    }
+    $allowedRoot = Get-CanonicalPath $NginxPrefix
     $config = Assert-SafeDiscoveryReadPath -Path $NginxConfig -Kind file -AllowedRoot @($allowedRoot)
     $configState = [ordered]@{ state = 'EXISTS AND REVIEWED'; exactPath = $config; authority = 'REVIEWED_INPUT' }
     $references = @(Get-Content -LiteralPath $config | Where-Object { $_ -match 'server_name|proxy_pass|root\s+' } | ForEach-Object { Redact-SensitiveText $_.Trim() })
@@ -172,19 +175,16 @@ function Get-DatabaseSnapshot {
     foreach ($foreignDatabase in @(if ($foreignIsolationRequested) { $KnownForeignDatabase } else { @() })) {
       $foreignQuery = Get-ForeignDatabaseIsolationQuery -DatabaseName $foreignDatabase
       $foreignOutput = @(& $databaseVerifier --tuples-only --no-align --command $foreignQuery 2>$null)
-      $foreignState = 'NOT_VERIFIED'
-      $existence = 'MISSING'
+      $foreignRecord = [pscustomobject][ordered]@{ database = $foreignDatabase; existence = 'MISSING'; state = 'NOT_VERIFIED' }
       if ($LASTEXITCODE -eq 0) {
         try {
           $parsedForeign = Parse-PostgresStructuredEvidence -Lines $foreignOutput
-          if ($parsedForeign.foreignDatabases.Count -eq 1) {
-            $fRec = $parsedForeign.foreignDatabases[0]
-            $existence = if ($fRec.present) { 'EXISTS' } else { 'MISSING' }
-            $foreignState = if (-not $fRec.present) { 'NOT_VERIFIED' } elseif ($fRec.connect) { 'CONFLICT' } else { 'PASS' }
-          }
-        } catch {}
+          $foreignRecord = ConvertTo-ReviewedForeignDatabaseEvidence -RequestedDatabase $foreignDatabase -ParsedEvidence $parsedForeign
+        } catch {
+          $foreignRecord = [pscustomobject][ordered]@{ database = $foreignDatabase; existence = 'MISSING'; state = 'NOT_VERIFIED' }
+        }
       }
-      $foreignIsolation += [pscustomobject][ordered]@{ database = $foreignDatabase; existence = $existence; state = $foreignState }
+      $foreignIsolation += $foreignRecord
     }
     $classification = Get-DatabaseEvidenceClassification `
       -ActualDatabase $identity.database `
@@ -240,12 +240,21 @@ function Get-TlsHttpSnapshot {
 
 $canonicalRoot = Assert-DedicatedRoot $CandidateRoot
 $repositoryRoot = Get-CanonicalPath (Join-Path $PSScriptRoot '..\..\..')
-$reviewedNginxRoots = @($NginxPrefix)
-if ($NginxExe) { $reviewedNginxRoots += Split-Path -Parent (Get-CanonicalPath $NginxExe) }
+$reviewedNginxRoots = if ([string]::IsNullOrWhiteSpace($NginxPrefix)) { @() } else { @((Get-CanonicalPath $NginxPrefix)) }
+$additionalProtectedRoots = @()
+if (-not [string]::IsNullOrWhiteSpace($ReviewedPostgresDataDirectory)) {
+  $canonicalPgData = Get-CanonicalPath $ReviewedPostgresDataDirectory
+  $pgDataState = Get-PathSecurityClassification -Path $canonicalPgData -Kind directory
+  if ($pgDataState.state -eq 'REPARSE_POINT') { throw 'POSTGRES_DATA_DIRECTORY_REPARSE_POINT' }
+  Assert-PathAncestorChainNonReparse -Directory $canonicalPgData -CategoryPrefix 'POSTGRES_DATA_DIRECTORY' | Out-Null
+  $additionalProtectedRoots += $canonicalPgData
+} elseif ($RequireReviewedIsolation) {
+  throw 'ReviewedPostgresDataDirectory is required under reviewed isolation.'
+}
 $operatorProtectedLeaves = @($EnvFile,$StartupWrapper,$ExpectedEntryPoint,$NodeExe,$NpmExe,$NpxExe,$PsqlExe,$PgDumpExe,$PgRestoreExe,$NginxExe,$NginxConfig)
 $reviewedPsql = if ([string]::IsNullOrWhiteSpace($PsqlExe)) { $null } else { Assert-ExactPsqlExecutable -Path $PsqlExe }
 $databaseVerifier = Resolve-DatabaseVerifierExecutable -VerifyDatabase:$VerifyDatabase -PsqlExe $PsqlExe
-$canonicalReport = Assert-OperatorEvidenceReportPath -ReportPath $ReportPath -CandidateRoot $canonicalRoot -RepositoryRoot $repositoryRoot -NginxRoot $reviewedNginxRoots -KnownForeignRoot $KnownForeignRoot -ProtectedLeaf $operatorProtectedLeaves
+$canonicalReport = Assert-OperatorEvidenceReportPath -ReportPath $ReportPath -CandidateRoot $canonicalRoot -RepositoryRoot $repositoryRoot -NginxRoot $reviewedNginxRoots -KnownForeignRoot $KnownForeignRoot -AdditionalProtectedRoot $additionalProtectedRoots -ProtectedLeaf $operatorProtectedLeaves
 $directoryPaths = @($canonicalRoot,'releases','staging','incoming','shared','logs','backups' | ForEach-Object { if ($_ -eq $canonicalRoot) { $_ } else { Join-Path $canonicalRoot $_ } })
 Assert-PreflightRuntimeKindSupported -RequireReviewedIsolation:$RequireReviewedIsolation -ServiceKind $ServiceKind
 $candidateRuntimeName = Resolve-ExpectedCandidateRuntimeName -ServiceKind $ServiceKind -ExpectedTaskName $ExpectedTaskName -ExpectedServiceName $ExpectedServiceName -RequireReviewedIsolation:$RequireReviewedIsolation
@@ -259,6 +268,10 @@ if ($RequireVerifiedIdentity) {
   if (-not [string]::IsNullOrWhiteSpace($NginxExe)) { Get-ReviewedExecutableSnapshot -Role nginx -Path $NginxExe | Out-Null }
   $identityServiceName = if ($ServiceKind -eq 'service') { $ExpectedServiceName } else { $ExpectedTaskName }
   $identity = Read-DeploymentIdentity -Root $canonicalRoot -ServiceKind $ServiceKind -ServiceName $identityServiceName -EnvFile $EnvFile -StartupWrapper $StartupWrapper -ExpectedEntryPoint $ExpectedEntryPoint -NodeExe $NodeExe -NginxExe $NginxExe -NginxConfig $NginxConfig
+  $markerPrefix = $identity.marker.foreignIsolation.reviewedNginxPrefix
+  if ([string]::IsNullOrWhiteSpace($NginxPrefix) -or (Normalize-ComparablePath $NginxPrefix) -ne (Normalize-ComparablePath $markerPrefix)) {
+    throw 'Deployment identity marker Nginx prefix mismatch.'
+  }
   Assert-VerifiedRuntimeIdentity -Marker $identity.marker -ServiceKind $ServiceKind -ServiceName $identityServiceName | Out-Null
   $identityStatus = 'EXISTS AND VERIFIED'
 }
@@ -285,6 +298,6 @@ $report = [ordered]@{
 }
 $json = $report | ConvertTo-Json -Depth 12
 if ($json -match '(?i)postgres(?:ql)?://[^\s"'']+:[^\s"'']+@|BEGIN .*PRIVATE KEY|PGPASSWORD=|DATABASE_URL=|"arguments(?:Redacted)?"\s*:|"pathName(?:Redacted)?"\s*:') { throw 'Inventory report redaction failed.' }
-$canonicalReport = Assert-OperatorEvidenceReportPath -ReportPath $canonicalReport -CandidateRoot $canonicalRoot -RepositoryRoot $repositoryRoot -NginxRoot $reviewedNginxRoots -KnownForeignRoot $KnownForeignRoot -ProtectedLeaf $operatorProtectedLeaves
+$canonicalReport = Assert-OperatorEvidenceReportPath -ReportPath $canonicalReport -CandidateRoot $canonicalRoot -RepositoryRoot $repositoryRoot -NginxRoot $reviewedNginxRoots -KnownForeignRoot $KnownForeignRoot -AdditionalProtectedRoot $additionalProtectedRoots -ProtectedLeaf $operatorProtectedLeaves
 [IO.File]::WriteAllText($canonicalReport, $json, [Text.UTF8Encoding]::new($false))
 Write-Output $json

@@ -1049,23 +1049,49 @@ try {
   $savedPath = $env:PATH; $env:PATH = "$decoyTools;$savedPath"; try { $p8Report = Join-Path $opeEvidence 'p8.json'; & $preflightScript -ReportPath $p8Report -CandidateRoot $opeCandidate -NodeExe (Join-Path $reviewedTools 'node.exe') -NpmExe (Join-Path $reviewedTools 'npm.cmd') -NpxExe (Join-Path $reviewedTools 'npx.cmd') -PsqlExe (Join-Path $reviewedTools 'psql.exe') -PgDumpExe (Join-Path $reviewedTools 'pg_dump.exe') -PgRestoreExe (Join-Path $reviewedTools 'pg_restore.exe') -NginxExe (Join-Path $reviewedTools 'nginx.exe') | Out-Null; $p8 = Get-Content $p8Report -Raw | ConvertFrom-Json; foreach ($tool in @($p8.tools)) { if ($tool.exactPath -and -not (Test-PathWithin $tool.exactPath $reviewedTools)) { throw 'OPE-P8 PATH decoy became reviewed authority' } }; Set-OpePass 'OPE-P8' } finally { $env:PATH = $savedPath }
 
   # OPE-P9: Production preflight fails closed when RequireVerifiedIdentity has a NodeExe mismatch against marker
-  $p9Root = Join-Path $temp 'ope-p9-root'; New-Item -ItemType Directory (Join-Path $p9Root 'shared') -Force | Out-Null
+  $p9Root = Join-Path $temp 'ope-p9-root'
+  foreach ($sub in @('releases','staging','incoming','shared','logs','backups')) { New-Item -ItemType Directory (Join-Path $p9Root $sub) -Force | Out-Null }
+  $p9Sha = 'b' * 40
+  $p9BundleDir = Join-Path $p9Root "shared\startup-bundles\$p9Sha"
+  New-Item -ItemType Directory -Path $p9BundleDir -Force | Out-Null
+  $p9Wrapper = Join-Path $p9BundleDir 'start-baogiang-api.ps1'
+  $p9Common = Join-Path $p9BundleDir 'deployment-common.ps1'
+  [IO.File]::WriteAllText($p9Wrapper, (Get-Content -LiteralPath (Join-Path $repo 'scripts\deploy\windows\start-baogiang-api.ps1') -Raw), [Text.UTF8Encoding]::new($false))
+  [IO.File]::WriteAllText($p9Common, (Get-Content -LiteralPath (Join-Path $repo 'scripts\deploy\windows\deployment-common.ps1') -Raw), [Text.UTF8Encoding]::new($false))
   $p9Env = Join-Path $p9Root 'shared\production.env'; [IO.File]::WriteAllLines($p9Env, $validEnvLines, [Text.UTF8Encoding]::new($false))
-  $p9Wrapper = Join-Path $p9Root 'shared\start-baogiang-api.ps1'; [IO.File]::WriteAllText($p9Wrapper, 'wrapper', [Text.UTF8Encoding]::new($false))
-  $p9Common = Join-Path $p9Root 'shared\deployment-common.ps1'; [IO.File]::WriteAllText($p9Common, 'common', [Text.UTF8Encoding]::new($false))
+  $p9Node = Join-Path $reviewedTools 'node.exe'
+  $p9Nginx = Join-Path $reviewedTools 'nginx.exe'
+  $p9NginxConfig = Join-Path $nginxConf 'nginx.conf'
+  $p9EntryPoint = Join-Path $p9Root 'current\apps\api\dist\main.js'
+  $p9Task = [ordered]@{ kind = 'scheduled-task'; name = 'BaoGiangTask'; taskPath = '\BaoGiang\'; account = 'fixture'; execute = $powershellExe; arguments = "-File `"$p9Wrapper`""; workingDirectory = (Join-Path $p9Root 'shared') }
   $p9Marker = [ordered]@{
     schemaVersion = [long]1; systemId = 'baogiang-damsan'; canonicalRoot = (Get-CanonicalPath $p9Root); domain = 'https://baogiang.dtnt-damsan.edu.vn'; apiPort = [long]3100
-    nodeExe = (Join-Path $reviewedTools 'node.exe'); envFile = $p9Env; startupWrapper = $p9Wrapper; entryPoint = (Join-Path $p9Root 'current\apps\api\dist\main.js'); nginxExe = (Join-Path $reviewedTools 'nginx.exe'); nginxConfig = (Join-Path $nginxConf 'nginx.conf')
-    foreignIsolation = [ordered]@{ reviewedNginxPrefix = $nginxRoot; reviewedNginxConfig = (Join-Path $nginxConf 'nginx.conf'); foreignRoots = @((Join-Path $temp 'foreign')); bootstrapReportReference = 'fixture' }
+    nodeExe = $p9Node; envFile = $p9Env; startupWrapper = $p9Wrapper; entryPoint = $p9EntryPoint; nginxExe = $p9Nginx; nginxConfig = $p9NginxConfig
+    foreignIsolation = [ordered]@{ reviewedNginxPrefix = $nginxRoot; reviewedNginxConfig = $p9NginxConfig; foreignRoots = @((Join-Path $temp 'foreign')); bootstrapReportReference = 'fixture' }
     startupBundle = [ordered]@{ wrapperPath = $p9Wrapper; wrapperSha256 = (Get-FileSha256FromBytes $p9Wrapper); commonPath = $p9Common; commonSha256 = (Get-FileSha256FromBytes $p9Common) }
-    service = [ordered]@{ kind = 'scheduled-task'; name = 'BaoGiangTask'; taskPath = '\BaoGiang\'; account = 'fixture'; execute = 'powershell.exe'; arguments = '-File fixture.ps1'; workingDirectory = (Join-Path $p9Root 'shared') }
+    service = $p9Task
   }
   [IO.File]::WriteAllText((Join-Path $p9Root 'shared\deployment-identity.json'), ($p9Marker | ConvertTo-Json -Depth 10), [Text.UTF8Encoding]::new($false))
-  $p9MismatchNode = Join-Path $temp 'mismatch-node.exe'; Copy-Item $powershellExe $p9MismatchNode
-  $p9Report = Join-Path $opeEvidence 'p9.json'
-  Assert-OpeReject {
-    & $preflightScript -ReportPath $p9Report -CandidateRoot $p9Root -RequireVerifiedIdentity -ExpectedTaskName 'BaoGiangTask' -ServiceKind 'scheduled-task' -EnvFile $p9Env -StartupWrapper $p9Wrapper -ExpectedEntryPoint $p9Marker.entryPoint -NodeExe $p9MismatchNode -NginxExe (Join-Path $reviewedTools 'nginx.exe') -NginxConfig (Join-Path $nginxConf 'nginx.conf')
-  } 'OPE-P9'
+  $p9Trigger = [pscustomobject]@{ CimClass = [pscustomobject]@{ CimClassName = 'MSFT_TaskBootTrigger' }; Enabled = $true }
+  function global:Get-ScheduledTask { @([pscustomobject]@{ TaskName = 'BaoGiangTask'; TaskPath = '\BaoGiang\'; State = 'Disabled'; Principal = [pscustomobject]@{ UserId = 'fixture' }; Actions = @([pscustomobject]@{ Execute = $powershellExe; Arguments = "-File `"$p9Wrapper`""; WorkingDirectory = (Join-Path $p9Root 'shared') }); Triggers = @($p9Trigger) }) }
+  function global:Get-NetTCPConnection { @() }
+  $p9ControlReport = Join-Path $opeEvidence 'p9-control.json'
+  & $preflightScript -ReportPath $p9ControlReport -CandidateRoot $p9Root -RequireVerifiedIdentity -ExpectedTaskName 'BaoGiangTask' -ServiceKind 'scheduled-task' -EnvFile $p9Env -StartupWrapper $p9Wrapper -ExpectedEntryPoint $p9EntryPoint -NodeExe $p9Node -NginxExe $p9Nginx -NginxPrefix $nginxRoot -NginxConfig $p9NginxConfig | Out-Null
+  $p9ControlJson = Get-Content -LiteralPath $p9ControlReport -Raw | ConvertFrom-Json
+  if ($p9ControlJson.identity.status -ne 'EXISTS AND VERIFIED') { throw 'OPE-P9 control preflight identity verification failed' }
+  $p9AltDir = Join-Path $temp 'p9-alt-node'
+  New-Item -ItemType Directory -Path $p9AltDir -Force | Out-Null
+  $p9MismatchNode = Join-Path $p9AltDir 'node.exe'
+  Copy-Item $powershellExe $p9MismatchNode
+  $p9MismatchReport = Join-Path $opeEvidence 'p9-mismatch.json'
+  $p9Err = $null
+  try {
+    & $preflightScript -ReportPath $p9MismatchReport -CandidateRoot $p9Root -RequireVerifiedIdentity -ExpectedTaskName 'BaoGiangTask' -ServiceKind 'scheduled-task' -EnvFile $p9Env -StartupWrapper $p9Wrapper -ExpectedEntryPoint $p9EntryPoint -NodeExe $p9MismatchNode -NginxExe $p9Nginx -NginxPrefix $nginxRoot -NginxConfig $p9NginxConfig 2>&1 | Out-Null
+  } catch {
+    $p9Err = $_.Exception.Message
+  }
+  if ($p9Err -notmatch 'Deployment identity marker Node executable mismatch') { throw "OPE-P9 expected Node executable mismatch rejection, got: $p9Err" }
+  Set-OpePass 'OPE-P9'
 
   if (@($opeP2Json.listeners | Where-Object { $_.port -eq 5544 }).Count -eq 0 -or @($opeP2Json.listeners | Where-Object { $_.port -eq 5433 }).Count -ne 0) { throw 'OPE-P10 dynamic PostgreSQL listener authority failed' }; Set-OpePass 'OPE-P10'; Set-OpePass 'OPE-P11'
   $p12Report = Join-Path $opeEvidence 'p12.json'; & $preflightScript -ReportPath $p12Report -CandidateRoot $opeCandidate -VerifyPublicEndpoint | Out-Null; if ($global:OpeHttpCount -ne 1) { throw 'OPE-P12 explicit probe count failed' }; Set-OpePass 'OPE-P12'
@@ -1091,13 +1117,30 @@ try {
   }
   Set-OpePass 'OPE-P14'
 
-  # OPE-P15: structured foreign database parsing and classification
-  $fConnectTrue = Parse-PostgresStructuredEvidence -Lines @('{"record":"foreignDatabase","database":"damsan_foreign","present":true,"connect":true}')
-  $fConnectTrueClass = Get-DatabaseEvidenceClassification -ActualDatabase 'baogiang' -ExpectedDatabase 'baogiang' -ActualRole 'baogiang_app' -ExpectedRole 'baogiang_app' -ActualExtensions @('btree_gist') -RequiredExtensions @('btree_gist') -MigrationTablePresent:$false -RoleSafetyVerified:$true -RequireForeignIsolation:$true -ForeignIsolation @([pscustomobject]@{ database = $fConnectTrue.foreignDatabases[0].database; existence = 'EXISTS'; state = 'CONFLICT' })
-  if ($fConnectTrueClass.state -ne 'CONFLICT') { throw 'OPE-P15 foreign CONNECT=true was not CONFLICT' }
-  $fConnectFalse = Parse-PostgresStructuredEvidence -Lines @('{"record":"foreignDatabase","database":"damsan_foreign","present":true,"connect":false}')
-  $fConnectFalseClass = Get-DatabaseEvidenceClassification -ActualDatabase 'baogiang' -ExpectedDatabase 'baogiang' -ActualRole 'baogiang_app' -ExpectedRole 'baogiang_app' -ActualExtensions @('btree_gist') -RequiredExtensions @('btree_gist') -MigrationTablePresent:$false -RoleSafetyVerified:$true -RequireForeignIsolation:$true -ForeignIsolation @([pscustomobject]@{ database = $fConnectFalse.foreignDatabases[0].database; existence = 'EXISTS'; state = 'PASS' })
-  if ($fConnectFalseClass.state -ne 'PARTIAL') { throw 'OPE-P15 foreign CONNECT=false was not PARTIAL (migration unapplied)' }
+  # OPE-P15: production-authoritative foreign database pipeline
+  $fQuery = Get-ForeignDatabaseIsolationQuery -DatabaseName 'damsan_foreign'
+  if ($fQuery -notmatch 'damsan_foreign') { throw 'OPE-P15 query generation failed' }
+  # CONNECT=true -> CONFLICT
+  $fConnectTrueLines = @('{"record":"foreignDatabase","database":"damsan_foreign","present":true,"connect":true}')
+  $fParsedTrue = Parse-PostgresStructuredEvidence -Lines $fConnectTrueLines
+  $fEvidenceTrue = ConvertTo-ReviewedForeignDatabaseEvidence -RequestedDatabase 'damsan_foreign' -ParsedEvidence $fParsedTrue
+  if ($fEvidenceTrue.state -ne 'CONFLICT' -or $fEvidenceTrue.existence -ne 'EXISTS') { throw 'OPE-P15 foreign CONNECT=true was not CONFLICT' }
+  $fConnectTrueClass = Get-DatabaseEvidenceClassification -ActualDatabase 'baogiang' -ExpectedDatabase 'baogiang' -ActualRole 'baogiang_app' -ExpectedRole 'baogiang_app' -ActualExtensions @('btree_gist') -RequiredExtensions @('btree_gist') -MigrationTablePresent:$false -RoleSafetyVerified:$true -RequireForeignIsolation:$true -ForeignIsolation @($fEvidenceTrue)
+  if ($fConnectTrueClass.state -ne 'CONFLICT') { throw 'OPE-P15 classification CONNECT=true was not CONFLICT' }
+  # CONNECT=false -> PASS/PARTIAL
+  $fConnectFalseLines = @('{"record":"foreignDatabase","database":"damsan_foreign","present":true,"connect":false}')
+  $fParsedFalse = Parse-PostgresStructuredEvidence -Lines $fConnectFalseLines
+  $fEvidenceFalse = ConvertTo-ReviewedForeignDatabaseEvidence -RequestedDatabase 'damsan_foreign' -ParsedEvidence $fParsedFalse
+  if ($fEvidenceFalse.state -ne 'PASS' -or $fEvidenceFalse.existence -ne 'EXISTS') { throw 'OPE-P15 foreign CONNECT=false was not PASS' }
+  $fConnectFalseClass = Get-DatabaseEvidenceClassification -ActualDatabase 'baogiang' -ExpectedDatabase 'baogiang' -ActualRole 'baogiang_app' -ExpectedRole 'baogiang_app' -ActualExtensions @('btree_gist') -RequiredExtensions @('btree_gist') -MigrationTablePresent:$false -RoleSafetyVerified:$true -RequireForeignIsolation:$true -ForeignIsolation @($fEvidenceFalse)
+  if ($fConnectFalseClass.state -ne 'PARTIAL') { throw 'OPE-P15 classification CONNECT=false was not PARTIAL (migration unapplied)' }
+  # MISSING -> NOT_VERIFIED
+  $fMissingLines = @('{"record":"foreignDatabase","database":"damsan_foreign","present":false,"connect":false}')
+  $fParsedMissing = Parse-PostgresStructuredEvidence -Lines $fMissingLines
+  $fEvidenceMissing = ConvertTo-ReviewedForeignDatabaseEvidence -RequestedDatabase 'damsan_foreign' -ParsedEvidence $fParsedMissing
+  if ($fEvidenceMissing.state -ne 'NOT_VERIFIED' -or $fEvidenceMissing.existence -ne 'MISSING') { throw 'OPE-P15 missing foreign database was not NOT_VERIFIED' }
+  $fMissingClass = Get-DatabaseEvidenceClassification -ActualDatabase 'baogiang' -ExpectedDatabase 'baogiang' -ActualRole 'baogiang_app' -ExpectedRole 'baogiang_app' -ActualExtensions @('btree_gist') -RequiredExtensions @('btree_gist') -MigrationTablePresent:$false -RoleSafetyVerified:$true -RequireForeignIsolation:$true -ForeignIsolation @($fEvidenceMissing)
+  if ($fMissingClass.foreignIsolationState -ne 'NOT_VERIFIED') { throw 'OPE-P15 missing foreign isolation classification was not NOT_VERIFIED' }
   Set-OpePass 'OPE-P15'
 
   # OPE-P16: foreign role alias
@@ -1234,6 +1277,136 @@ try {
   }
   Remove-Item Env:PGOPTIONS, Env:PGSERVICE, Env:PGHOSTADDR, Env:PGSSLMODE -ErrorAction SilentlyContinue
   Set-OpePass 'OPE-P28'
+
+  # OPE-P29: Mixed Nginx processes (1 proven -p + 1 unproven no -p) -> AMBIGUOUS / NOT_VERIFIED, no active config read
+  $p29PrefixA = Join-Path $temp 'p29-nginx-prefix-a'
+  $p29ConfA = Join-Path $p29PrefixA 'conf'
+  New-Item -ItemType Directory -Path $p29ConfA -Force | Out-Null
+  [IO.File]::WriteAllText((Join-Path $p29ConfA 'nginx.conf'), "events {}`nhttp { server { listen 8089; server_name p29.test; } }`n", [Text.UTF8Encoding]::new($false))
+  $global:p29Processes = @(
+    [pscustomobject]@{ ProcessId = 3291; ParentProcessId = 1; Name = 'nginx.exe'; ExecutablePath = $p20Exe; CommandLine = "nginx.exe -p `"$p29PrefixA`"" },
+    [pscustomobject]@{ ProcessId = 3292; ParentProcessId = 1; Name = 'nginx.exe'; ExecutablePath = $p20Exe; CommandLine = 'nginx.exe' }
+  )
+  function global:Get-CimInstance([string]$ClassName, [string]$Filter) {
+    if ($ClassName -eq 'Win32_Process') { return $global:p29Processes }
+    if ($ClassName -eq 'Win32_Service') { return @() }
+    [pscustomobject]@{ Caption = 'Fixture Windows' }
+  }
+  $p29Report = Join-Path $opeEvidence 'p29.json'
+  & $neighborDiscoveryPath -ReportPath $p29Report -CandidateBaoGiangRoot $opeCandidate -NginxRoot $nginxRoot | Out-Null
+  $p29Json = Get-Content -LiteralPath $p29Report -Raw -Encoding UTF8 | ConvertFrom-Json
+  if ($p29Json.nginx.state -notin @('AMBIGUOUS','NOT_VERIFIED') -or @($p29Json.nginx.configFiles).Count -ne 0 -or @($p29Json.nginx.serverBlocks).Count -ne 0) {
+    throw 'OPE-P29 mixed Nginx bindings allowed unique active config authority'
+  }
+  Set-OpePass 'OPE-P29'
+  Remove-Item Function:\Get-CimInstance -Force
+
+  # OPE-P30A: Valid marker + mismatched NginxPrefix -> exact rejection
+  $p30aReport = Join-Path $opeEvidence 'p30a.json'
+  $p30aWrongPrefix = Join-Path $temp 'wrong-nginx-prefix'
+  New-Item -ItemType Directory -Path $p30aWrongPrefix -Force | Out-Null
+  $p30aErr = $null
+  try {
+    & $preflightScript -ReportPath $p30aReport -CandidateRoot $p9Root -RequireVerifiedIdentity -ExpectedTaskName 'BaoGiangTask' -ServiceKind 'scheduled-task' -EnvFile $p9Env -StartupWrapper $p9Wrapper -ExpectedEntryPoint $p9EntryPoint -NodeExe $p9Node -NginxExe $p9Nginx -NginxPrefix $p30aWrongPrefix -NginxConfig $p9NginxConfig 2>&1 | Out-Null
+  } catch {
+    $p30aErr = $_.Exception.Message
+  }
+  if ($p30aErr -notmatch 'Deployment identity marker Nginx prefix mismatch') { throw "OPE-P30A expected Nginx prefix mismatch rejection, got: $p30aErr" }
+
+  # OPE-P30B: Reviewed NginxConfig + missing NginxPrefix -> no exe-directory fallback; rejection
+  $p30bReport = Join-Path $opeEvidence 'p30b.json'
+  $p30bErr = $null
+  try {
+    & $preflightScript -ReportPath $p30bReport -CandidateRoot $opeCandidate -NginxExe (Join-Path $reviewedTools 'nginx.exe') -NginxConfig (Join-Path $nginxConf 'nginx.conf') 2>&1 | Out-Null
+  } catch {
+    $p30bErr = $_.Exception.Message
+  }
+  if ($p30bErr -notmatch 'NginxConfig requires a reviewed absolute NginxPrefix') { throw "OPE-P30B expected NginxConfig requires reviewed NginxPrefix rejection, got: $p30bErr" }
+  Set-OpePass 'OPE-P30'
+
+  # OPE-P31: Full PostgreSQL 17 libpq environment isolation and exception safety
+  $hostileVars = @{
+    PGSSLNEGOTIATION = 'direct'
+    PGSSLCERTMODE = 'allow'
+    PGGSSENCMODE = 'require'
+    PGKRBSRVNAME = 'hostile_service'
+    PGLOADBALANCEHOSTS = 'random'
+    PGSSLCOMPRESSION = '1'
+    PGREQUIREPEER = 'hostile_user'
+    PGSSLMINPROTOCOLVERSION = 'TLSv1.2'
+    PGSSLMAXPROTOCOLVERSION = 'TLSv1.3'
+    PGGSSLIB = 'gssapi'
+    PGGSSDELEGATION = '1'
+    PGSYSCONFDIR = 'C:\hostile\conf'
+  }
+  foreach ($k in $hostileVars.Keys) { [Environment]::SetEnvironmentVariable($k, $hostileVars[$k], 'Process') }
+  try {
+    $p31Snapshot = Snapshot-PostgresProcessEnvironment
+    $p31Parts = Set-PostgresProcessEnvironment -DatabaseUrl 'postgresql://app:secret@127.0.0.1:5433/baogiang' -ExpectedPort 5433
+    foreach ($k in $hostileVars.Keys) {
+      if ($null -ne [Environment]::GetEnvironmentVariable($k, 'Process')) {
+        throw "OPE-P31 Set-PostgresProcessEnvironment did not clear hostile variable $k"
+      }
+    }
+  } finally {
+    Restore-PostgresProcessEnvironment -Snapshot $p31Snapshot
+  }
+  foreach ($k in $hostileVars.Keys) {
+    if ([Environment]::GetEnvironmentVariable($k, 'Process') -ne $hostileVars[$k]) {
+      throw "OPE-P31 Restore-PostgresProcessEnvironment did not restore variable $k"
+    }
+    [Environment]::SetEnvironmentVariable($k, $null, 'Process')
+  }
+  # Test restoration on exception inside database lifecycle
+  foreach ($k in $hostileVars.Keys) { [Environment]::SetEnvironmentVariable($k, $hostileVars[$k], 'Process') }
+  $p31SnapEx = Snapshot-PostgresProcessEnvironment
+  try {
+    try {
+      Set-PostgresProcessEnvironment -DatabaseUrl 'postgresql://app:secret@127.0.0.1:5433/baogiang' -ExpectedPort 5433 | Out-Null
+      throw 'SIMULATED_DB_ERROR'
+    } finally {
+      Restore-PostgresProcessEnvironment -Snapshot $p31SnapEx
+    }
+  } catch {
+    if ($_.Exception.Message -ne 'SIMULATED_DB_ERROR') { throw }
+  }
+  foreach ($k in $hostileVars.Keys) {
+    if ([Environment]::GetEnvironmentVariable($k, 'Process') -ne $hostileVars[$k]) {
+      throw "OPE-P31 Exception restore failed for $k"
+    }
+    [Environment]::SetEnvironmentVariable($k, $null, 'Process')
+  }
+  Set-OpePass 'OPE-P31'
+
+  # OPE-P32: ConvertTo-ReviewedForeignDatabaseEvidence binds exact requested database name
+  $p32MismatchedLines = @('{"record":"foreignDatabase","database":"other_database","present":true,"connect":false}')
+  $p32Parsed = Parse-PostgresStructuredEvidence -Lines $p32MismatchedLines
+  $p32Err = $null
+  try {
+    ConvertTo-ReviewedForeignDatabaseEvidence -RequestedDatabase 'damsan' -ParsedEvidence $p32Parsed | Out-Null
+  } catch {
+    $p32Err = $_.Exception.Message
+  }
+  if ($p32Err -ne 'DATABASE_FOREIGN_EVIDENCE_BINDING_CONFLICT') {
+    throw "OPE-P32 expected DATABASE_FOREIGN_EVIDENCE_BINDING_CONFLICT, got: $p32Err"
+  }
+  Set-OpePass 'OPE-P32'
+
+  # OPE-P33: PASS 2 protects ReviewedPostgresDataDirectory from ReportPath write
+  $p33PgData = Join-Path $temp 'p33-postgres-data'
+  New-Item -ItemType Directory -Path $p33PgData -Force | Out-Null
+  $p33Sentinel = Join-Path $p33PgData 'p33-report.json'
+  $p33Err = $null
+  try {
+    & $preflightScript -ReportPath $p33Sentinel -CandidateRoot $opeCandidate -ReviewedPostgresDataDirectory $p33PgData 2>&1 | Out-Null
+  } catch {
+    $p33Err = $_.Exception.Message
+  }
+  if ($p33Err -notmatch 'OPERATOR_EVIDENCE_REPORT_PATH_CONFLICT') {
+    throw "OPE-P33 expected OPERATOR_EVIDENCE_REPORT_PATH_CONFLICT when report inside PG data dir, got: $p33Err"
+  }
+  if (Test-Path -LiteralPath $p33Sentinel) { throw 'OPE-P33 wrote report inside PostgreSQL data directory' }
+  Set-OpePass 'OPE-P33'
 
   Remove-Item Function:\Invoke-WebRequest, Function:\Get-CimInstance, Function:\Get-NetTCPConnection, Function:\Get-ScheduledTask -Force -ErrorAction SilentlyContinue
   $sha = 'a' * 40
@@ -1417,8 +1590,8 @@ try {
   foreach($hashField in @('wrapperSha256','commonSha256')){$candidate=Copy-XferMarker;$candidate.startupBundle.$hashField='e'*64;Write-XferMarker $candidate;Assert-XferReject {Invoke-XferCommand handshake (Get-XferContract)} "XFER-P25-$hashField"};Write-XferMarker
   foreach($pathField in @('wrapperPath','commonPath')){$candidate=Copy-XferMarker;$candidate.startupBundle.$pathField=Join-Path $xferVersion "alternate-$pathField.ps1";Write-XferMarker $candidate;Assert-XferReject {Invoke-XferCommand handshake (Get-XferContract)} "XFER-P26-$pathField"};Write-XferMarker
   $p27Sentinel=Join-Path $temp 'invalid-utf8-common-executed';$p27Prefix=[Text.Encoding]::ASCII.GetBytes("New-Item -ItemType File -Path '$p27Sentinel'|Out-Null`n");$p27Bytes=[byte[]]($p27Prefix+[byte[]](0xC3,0x28));[IO.File]::WriteAllBytes($xferCommon,$p27Bytes);$p27Contract=Get-XferContract;Assert-XferReject {Invoke-XferCommand handshake $p27Contract} 'XFER-P27';if(Test-Path $p27Sentinel){throw 'XFER-P27 invalid UTF-8 common executed'};[IO.File]::WriteAllBytes($xferCommon,$originalCommon);Write-XferMarker
-  if(@($opeResults.Keys|Where-Object{$_ -match '^OPE-P\d+$'}).Count-ne28){throw "OPE fixture matrix incomplete (count: $(@($opeResults.Keys|Where-Object{$_ -match '^OPE-P\d+$'}).Count))"}
-  Write-Output '[deployment-windows] PASS (ACL-P1..ACL-P8, PATH-P1..PATH-P3, SB-P1..SB-P14, RPT-P1..RPT-P9, NGX-P1..NGX-P37, XFER-P1..XFER-P27, OPE-P1..OPE-P28, preflight isolation, SSH host-key/firewall, exact psql, privacy, safe-stop, migration and transfer fixtures)'
+  if(@($opeResults.Keys|Where-Object{$_ -match '^OPE-P\d+$'}).Count-ne33){throw "OPE fixture matrix incomplete (count: $(@($opeResults.Keys|Where-Object{$_ -match '^OPE-P\d+$'}).Count))"}
+  Write-Output '[deployment-windows] PASS (ACL-P1..ACL-P8, PATH-P1..PATH-P3, SB-P1..SB-P14, RPT-P1..RPT-P9, NGX-P1..NGX-P37, XFER-P1..XFER-P27, OPE-P1..OPE-P33, preflight isolation, SSH host-key/firewall, exact psql, privacy, safe-stop, migration and transfer fixtures)'
 } finally {
   if ($null -ne (Get-Variable xferRoot -ErrorAction SilentlyContinue) -and (Test-Path -LiteralPath $xferRoot)) { Remove-Item -LiteralPath $xferRoot -Recurse -Force }
   if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Recurse -Force }

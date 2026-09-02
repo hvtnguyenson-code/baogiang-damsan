@@ -1089,6 +1089,29 @@ function Parse-PostgresStructuredEvidence([Parameter(Mandatory = $true)][string[
   return $records
 }
 
+function ConvertTo-ReviewedForeignDatabaseEvidence(
+  [Parameter(Mandatory = $true)][string]$RequestedDatabase,
+  [Parameter(Mandatory = $true)]$ParsedEvidence
+) {
+  if ($null -eq $ParsedEvidence -or $null -eq $ParsedEvidence.foreignDatabases -or $ParsedEvidence.foreignDatabases.Count -ne 1) {
+    throw 'DATABASE_FOREIGN_EVIDENCE_BINDING_CONFLICT'
+  }
+  $rec = $ParsedEvidence.foreignDatabases[0]
+  if ($rec.database -cne $RequestedDatabase) {
+    throw 'DATABASE_FOREIGN_EVIDENCE_BINDING_CONFLICT'
+  }
+  if ($rec.present -isnot [bool] -or $rec.connect -isnot [bool]) {
+    throw 'DATABASE_FOREIGN_EVIDENCE_BINDING_CONFLICT'
+  }
+  $existence = if ($rec.present) { 'EXISTS' } else { 'MISSING' }
+  $state = if (-not $rec.present) { 'NOT_VERIFIED' } elseif ($rec.connect) { 'CONFLICT' } else { 'PASS' }
+  return [pscustomobject][ordered]@{
+    database = $RequestedDatabase
+    existence = $existence
+    state = $state
+  }
+}
+
 function Get-DatabaseEvidenceClassification(
   [Parameter(Mandatory = $true)][string]$ActualDatabase,
   [Parameter(Mandatory = $true)][string]$ExpectedDatabase,
@@ -1575,7 +1598,9 @@ function Get-ManagedPostgresEnvironmentNames {
     'PGSERVICE','PGSERVICEFILE','PGOPTIONS','PGAPPNAME','PGSSLMODE','PGREQUIRESSL',
     'PGSSLCERT','PGSSLKEY','PGSSLROOTCERT','PGSSLCRL','PGSSLCRLDIR','PGSSLSNI',
     'PGCONNECT_TIMEOUT','PGCLIENTENCODING','PGTARGETSESSIONATTRS','PGREQUIREAUTH',
-    'PGCHANNELBINDING'
+    'PGCHANNELBINDING','PGSSLNEGOTIATION','PGSSLCOMPRESSION','PGSSLCERTMODE',
+    'PGREQUIREPEER','PGSSLMINPROTOCOLVERSION','PGSSLMAXPROTOCOLVERSION','PGGSSENCMODE',
+    'PGKRBSRVNAME','PGGSSLIB','PGGSSDELEGATION','PGLOADBALANCEHOSTS','PGSYSCONFDIR'
   )
 }
 

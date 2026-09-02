@@ -26,6 +26,7 @@ PASS 1 (`production-protected-neighbor-discovery.ps1`) is passive discovery only
 - no database authentication and no public endpoint request;
 - discovered binaries (node, psql, pg_dump, pg_restore, nginx) are not executed (`NOT_EXECUTED`);
 - running Nginx executable/`-p`/`-c` candidate derivation; missing `-p` or relative `-p` is reported as `NOT_VERIFIED` (`NGINX_DISCOVERY_PREFIX_NOT_PROVEN` / `NGINX_DISCOVERY_RELATIVE_PREFIX_UNPROVEN`) without inferring prefix from executable directory or reading configuration;
+- mixed running Nginx candidates (e.g. 1 proven and 1 unproven) fail closed as `AMBIGUOUS` or `NOT_VERIFIED` without representing any active configuration as uniquely authoritative;
 - ambiguity reported instead of selecting a root hint;
 - Nginx include and PostgreSQL config reads stop at junction/reparse boundaries;
 - final report authorization includes roots discovered during collection;
@@ -34,15 +35,17 @@ PASS 1 (`production-protected-neighbor-discovery.ps1`) is passive discovery only
 PASS 2 (`production-preflight-readonly.ps1`) records reviewed authority:
 
 - exact absolute Node/npm/npx/psql/pg_dump/pg_restore/Nginx snapshots, separate from PATH-only `discoveryTools`;
-- marker verification receives exact `NodeExe`, `NginxExe`, and `NginxConfig`;
+- `NginxPrefix` is an exact reviewed input and never derived from `nginx.exe` directory;
+- marker verification receives exact `NodeExe`, `NginxExe`, `NginxPrefix`, and `NginxConfig`;
 - listener evidence uses the reviewed `ExpectedPostgresPort`;
 - database authentication and public HTTP/TLS probing are independent opt-in operations;
-- ambient `libpq` process environment variables (`PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`, `PGOPTIONS`, `PGSERVICE`, `PGSSLMODE`, etc.) are snapshotted, cleared, and restored in `finally`;
+- full ambient `libpq` process environment variables (`PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`, `PGOPTIONS`, `PGSERVICE`, `PGSSLMODE`, `PGSSLNEGOTIATION`, `PGSSLCERTMODE`, `PGGSSENCMODE`, `PGKRBSRVNAME`, `PGLOADBALANCEHOSTS`, etc.) are snapshotted, cleared, and restored in `finally`;
 - authenticated database evidence uses structured JSON object output (`json_build_object`) with strict schema and fail-closed property checking;
+- foreign database isolation query results are bound to the exact requested database name via `ConvertTo-ReviewedForeignDatabaseEvidence`;
 - proves exact identity, extensions/migrations, safe cluster-role flags (`rolsuper`, `rolcreatedb`, `rolcreaterole`, `rolreplication`, `rolbypassrls`), zero direct role memberships via `pg_auth_members` (`directMembershipCount = 0`), and requested protected-database `CONNECT=false` isolation without connecting to foreign databases;
-- final report authorization runs after privacy validation and before write.
+- final report authorization protects candidate root, repository, Nginx prefix, foreign roots, leaves, and `ReviewedPostgresDataDirectory` after privacy validation and before write.
 
-The executable OPE-P1…OPE-P28 fixtures cover safe sinks, candidate/foreign/discovered-root collisions, junction and target rejection, PATH decoys, marker binding, dynamic PostgreSQL port, probe/DB opt-in, cluster-role and foreign isolation, Nginx include reparse, ambiguous bindings, discovery non-overclaim, Nginx unproven prefix without `-p`, explicit `-p` discovery, passive binaries, zero direct role membership enforcement, structured psql parsing, duplicate/malformed JSON rejection, and `libpq` ambient environment snapshot/restoration. Existing ACL, PATH, SB, RPT, NGX, XFER, SSH, migration, rollback, and workflow fixtures remain enabled.
+The executable OPE-P1…OPE-P33 fixtures cover safe sinks, candidate/foreign/discovered-root collisions, junction and target rejection, PATH decoys, marker binding, dynamic PostgreSQL port, probe/DB opt-in, cluster-role and foreign isolation, Nginx include reparse, ambiguous bindings, discovery non-overclaim, Nginx unproven prefix without `-p`, explicit `-p` discovery, passive binaries, zero direct role membership enforcement, structured psql parsing, duplicate/malformed JSON rejection, full `libpq` ambient environment snapshot/restoration, mixed Nginx candidate fail-closed, PASS 2 exact NginxPrefix marker binding, foreign database request/result binding, and PostgreSQL data directory report protection. Existing ACL, PATH, SB, RPT, NGX, XFER, SSH, migration, rollback, and workflow fixtures remain enabled.
 
 ## Historical findings — resolved
 

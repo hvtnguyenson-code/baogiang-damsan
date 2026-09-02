@@ -103,10 +103,11 @@ function Get-NginxDiscovery($Processes, $Ports, [string]$RootHint) {
     }
   }
   $valid = @($candidates | Where-Object { $_.PSObject.Properties.Name -contains 'prefix' })
+  $unverified = @($candidates | Where-Object { $_.PSObject.Properties.Name -contains 'state' -and $_.state -eq 'NOT_VERIFIED' })
   $keys = @($valid | ForEach-Object { "$($_.executablePath)|$($_.prefix)|$($_.configPath)" } | Select-Object -Unique)
-  if ($keys.Count -ne 1) {
+  if ($keys.Count -ne 1 -or $unverified.Count -gt 0) {
     return [ordered]@{
-      state = if ($keys.Count -gt 1) { 'AMBIGUOUS' } else { 'NOT_VERIFIED' }
+      state = if ($keys.Count -gt 1 -or ($keys.Count -eq 1 -and $unverified.Count -gt 0)) { 'AMBIGUOUS' } else { 'NOT_VERIFIED' }
       authority = 'DISCOVERY'
       rootHint = $RootHint
       candidateBindings = @($candidates)
