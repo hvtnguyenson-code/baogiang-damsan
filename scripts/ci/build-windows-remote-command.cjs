@@ -40,12 +40,20 @@ function trustedAuthorityScript(input) {
     `for($i=1;$i -lt $segments.Count;$i++){if($segments[$i] -eq ''){continue};$cursor=Join-Path $cursor $segments[$i];if(-not $visited.Add($cursor)){throw 'HANDSHAKE_ROOT_ANCESTOR_UNVERIFIABLE'};try{$item=Get-Item -LiteralPath $cursor -Force -ErrorAction Stop}catch{throw 'HANDSHAKE_ROOT_ANCESTOR_UNVERIFIABLE'};if(($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw 'HANDSHAKE_ROOT_ANCESTOR_REPARSE_POINT'};if(-not $item.PSIsContainer){throw 'HANDSHAKE_ROOT_ANCESTOR_UNVERIFIABLE'}}`,
     `foreach($directory in @((Join-Path $root 'shared'),(Join-Path $root 'shared\\startup-bundles'),$expectedVersion)){try{$item=Get-Item -LiteralPath $directory -Force -ErrorAction Stop}catch{throw 'HANDSHAKE_STARTUP_LAYOUT_MISSING'};if(-not $item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw 'HANDSHAKE_STARTUP_LAYOUT_REPARSE'}}`,
     `foreach($file in @($wrapper,$common)){try{$item=Get-Item -LiteralPath $file -Force -ErrorAction Stop}catch{throw 'HANDSHAKE_STARTUP_FILE_MISSING'};if($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw 'HANDSHAKE_STARTUP_FILE_REPARSE'}}`,
-    `if(([BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash([IO.File]::ReadAllBytes($wrapper))).Replace('-','').ToLowerInvariant()) -cne ${v.wrapperSha256}){throw 'HANDSHAKE_WRAPPER_HASH_MISMATCH'}`,
-    `if(([BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash([IO.File]::ReadAllBytes($common))).Replace('-','').ToLowerInvariant()) -cne ${v.commonSha256}){throw 'HANDSHAKE_COMMON_HASH_MISMATCH'}`,
-    `. $common`,
+    `$commonStream=$null;$commonMemory=$null;try{$commonStream=[IO.FileStream]::new($common,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read);$commonMemory=[IO.MemoryStream]::new();$commonStream.CopyTo($commonMemory);$commonBytes=$commonMemory.ToArray()}finally{if($null -ne $commonMemory){$commonMemory.Dispose()};if($null -ne $commonStream){$commonStream.Dispose()}}`,
+    `if(([BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash($commonBytes)).Replace('-','').ToLowerInvariant()) -cne ${v.commonSha256}){throw 'HANDSHAKE_COMMON_HASH_MISMATCH'}`,
+    `$wrapperStream=$null;$wrapperMemory=$null;try{$wrapperStream=[IO.FileStream]::new($wrapper,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read);$wrapperMemory=[IO.MemoryStream]::new();$wrapperStream.CopyTo($wrapperMemory);$wrapperBytes=$wrapperMemory.ToArray()}finally{if($null -ne $wrapperMemory){$wrapperMemory.Dispose()};if($null -ne $wrapperStream){$wrapperStream.Dispose()}}`,
+    `if(([BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash($wrapperBytes)).Replace('-','').ToLowerInvariant()) -cne ${v.wrapperSha256}){throw 'HANDSHAKE_WRAPPER_HASH_MISMATCH'}`,
+    `$utf8=[Text.UTF8Encoding]::new($false,$true);try{$commonText=$utf8.GetString($commonBytes)}catch{throw 'HANDSHAKE_COMMON_UTF8_INVALID'}`,
+    `$trustedCommon=[ScriptBlock]::Create($commonText)`,
+    `. $trustedCommon`,
     `if(-not (Test-Path Function:\\Get-DeploymentMarkerAuthorityContractVersion) -or (Get-DeploymentMarkerAuthorityContractVersion) -ne ${c.markerAuthorityContractVersion}){throw 'HANDSHAKE_MARKER_AUTHORITY_VERSION_MISMATCH'}`,
     `$identity=Read-DeploymentIdentity -Root $root -ServiceKind ${v.serviceKind} -ServiceName ${v.serviceName} -EnvFile ${v.envFile} -StartupWrapper $wrapper -ExpectedEntryPoint ${v.expectedEntryPoint} -NodeExe ${v.nodeExe} -NginxExe ${v.nginxExe} -NginxConfig ${v.nginxConfig}`,
     `if($null -eq $identity){throw 'HANDSHAKE_IDENTITY_MISSING'}`,
+    `if((Normalize-ComparablePath $identity.marker.startupBundle.wrapperPath) -ne (Normalize-ComparablePath ${v.wrapperPath})){throw 'HANDSHAKE_MARKER_WRAPPER_PATH_EVIDENCE_MISMATCH'}`,
+    `if((Normalize-ComparablePath $identity.marker.startupBundle.commonPath) -ne (Normalize-ComparablePath ${v.commonPath})){throw 'HANDSHAKE_MARKER_COMMON_PATH_EVIDENCE_MISMATCH'}`,
+    `if([string]$identity.marker.startupBundle.wrapperSha256 -cne ${v.wrapperSha256}){throw 'HANDSHAKE_MARKER_WRAPPER_HASH_EVIDENCE_MISMATCH'}`,
+    `if([string]$identity.marker.startupBundle.commonSha256 -cne ${v.commonSha256}){throw 'HANDSHAKE_MARKER_COMMON_HASH_EVIDENCE_MISMATCH'}`,
   ];
 }
 
