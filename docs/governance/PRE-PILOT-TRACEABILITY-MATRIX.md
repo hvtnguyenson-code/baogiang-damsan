@@ -62,7 +62,8 @@ This matrix is the mandatory cross-domain map from source requirement to current
 | T39 | Room/location collision | ADR-034 explicitly NOT_ASSESSED | Intentionally outside current minimum core | Absent | `NON_PILOT` unless scope changes | `D-ROOM-001` trigger = pilot/product requires room booking/collision |
 | T40 | Arbitrary student roster/enrollment activity targeting | ADR-034 explicit non-scope | Intentionally absent | Absent | `NON_PILOT` | `D-ROSTER-001` trigger = product requires roster/attendance |
 | T41 | AI active business integration | ADR-002/004 policy; disabled by default | Deferred | Ports/policy only | `NON_PILOT` | `D-AI-001` trigger = separate Product Owner activation decision |
+| T42 | A change to an authoritative v1.2/v1.3 source or a contradictory explicit Product Owner decision must force governance rebase before dependent implementation continues | P0 source fingerprints and source-priority rule | No repository-wide source-change trigger existed before P0 | P0 pins exact blobs and registers re-entry | `DEFERRED_WITH_TRIGGER` | `P0-900`; trigger = source fingerprint change or explicit contradiction |
 
 ## Required review rule
 
-Every future architecture or implementation task that touches one of these rows must cite the row IDs in its task document. If a task discovers a new requirement or creates a new deferral, the same PR must update this matrix and `PRE-PILOT-TASK-REGISTER.md`; otherwise that task is not merge-ready.
+Every future architecture or implementation task that touches one of these rows must cite the row IDs in its task document. If a task discovers a new requirement, creates a new deferral, or observes an authoritative source fingerprint change, the same PR must update this matrix and `PRE-PILOT-TASK-REGISTER.md` or stop for `P0-900`; otherwise that task is not merge-ready.
