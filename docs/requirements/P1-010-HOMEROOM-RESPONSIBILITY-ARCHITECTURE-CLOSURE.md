@@ -49,15 +49,15 @@ Homeroom responsibility is added between those foundations; it does not replace 
 | H3 | Time semantics | Inclusive civil `DATE` interval `validFrom..validUntil`; null end is open-ended within operational year envelope. |
 | H4 | Cardinality | At most one effective current-truth GVCN per class/date. Gaps allowed. No teacher-side one-class-only invariant is invented. |
 | H5 | Co-homeroom | Not part of current authority. Do not simulate by weakening H4. A future explicit requirement must be registered first. |
-| H6 | Teacher eligibility | ACTIVE User + canonical StaffProfile + `isTeachingStaff=true`; no StaffSubject requirement. |
+| H6 | Teacher eligibility vs historical truth | Current/future-facing assignment requires ACTIVE User + StaffProfile + `isTeachingStaff=true`; no StaffSubject requirement. A bounded historical/backfill interval must not be rejected or rewritten solely because the teacher's current account/profile state later changed. |
 | H7 | Calendar relationship | Writes validate against exactly one active calendar envelope; reads/history survive without an active calendar; calendar replacement does not rewrite assignments. |
 | H8 | Real teacher change | Transactional interval split/end; explicit civil effective date. |
-| H9 | Backdated history | Allowed through explicit command within validated envelope; never inferred from present state. |
+| H9 | Backdated history | Allowed through explicit command within validated envelope; historical backfill requires explicit administrative provenance/reason and is never inferred from present state. |
 | H10 | Data-entry correction | Explicit audited correction/reversal with retained prior evidence; no physical delete or silent in-place reassignment. Physical lineage shape belongs to P1-011. |
 | H11 | Management authorization | New dedicated `HOMEROOM_ASSIGNMENT_MANAGE`, first supported at `SCHOOL_WIDE` only; no implicit SYSTEM_ADMIN/title/GVCN bypass. |
-| H12 | Historical resolution | Exact `AcademicYear + SchoolClass + civilDate`; exactly one assignment or typed missing/invalid result; fail closed. |
+| H12 | Historical resolution | Exact `AcademicYear + SchoolClass + civilDate`; exactly one retained assignment or typed missing/ambiguous/corrupt result. Current User status is not part of historical identity resolution. |
 | H13 | HĐTN `CLASS` | Resolve GVCN for exact occurrence date, then freeze resolved teacher + source homeroom provenance when the downstream occurrence is materialized. |
-| H14 | Later GVCN change | Must not silently rewrite already materialized activity staffing, participation execution or frozen statements. |
+| H14 | Later GVCN/User-state change | Must not silently rewrite or invalidate retained historical responsibility, already materialized activity staffing, participation execution or frozen statements. |
 | H15 | Workload relationship | Homeroom identity is one authority only. AdditionalDuty may not become a duplicate GVCN identity source; later workload policy derives from canonical homeroom data or an explicit linked rule. |
 
 ## 4. Why a separate domain is necessary
@@ -101,7 +101,11 @@ Example: the system recorded A for 01/09..30/09, but signed school evidence show
 
 The application must retain correction evidence and establish B as corrected current truth. It must not physically delete the old assertion or silently mutate already frozen downstream records.
 
-The exact persistence topology for status/lineage/reversal is intentionally assigned to existing registered task `P1-011`. This is not an orphan deferral: P1-011 is the direct dependency-gated persistence task and may not weaken this closure.
+### C. Historical backfill after current account state changed
+
+Example: teacher A was the correct GVCN in September but is disabled/transferred by the time the system is initialized in October. The September assignment is still historical truth. Current `User.status` or current `isTeachingStaff` must not be used to replace A with another teacher or reject the bounded historical interval. The backfill command must retain exact identity and explicit administrative provenance/reason.
+
+The exact persistence topology for status/lineage/reversal and historical-command evidence is assigned to existing registered tasks `P1-011` / `P1-012`. This is not an orphan deferral; those tasks may not weaken this closure.
 
 ## 6. Downstream HĐTN `CLASS` contract
 
@@ -124,9 +128,13 @@ AcademicYear + SchoolClass + occurrence civil date
       freeze teacher + source provenance
 ```
 
-The resolver may not substitute another teacher because the assigned GVCN is inactive or missing. Missing/invalid responsibility is a data-readiness problem and blocks materialization unless a later explicitly accepted exception/substitution policy is introduced.
+For current/future-facing occurrence authoring, missing effective GVCN or a currently ineligible effective teacher blocks new materialization rather than silently selecting another teacher.
+
+For retrospective/pre-operational reconstruction, the exact historical GVCN must still resolve even if that teacher's account/profile later changed. Current account status is not historical execution evidence and must not rewrite the past.
 
 A later GVCN change affects later unresolved occurrences according to date effectivity. It does not alter already materialized occurrences.
+
+The resolver also may not invent substitute staffing. Current ADR-038 SpecialActivity participation minimum-core requires actual teacher to equal scheduled teacher and rejects arbitrary substitution, while the earlier 05A0 audit left activity absence/substitution unresolved. T43/T44 therefore bind that closure to P4 before any broader replacement/confirmation behavior may be implemented.
 
 ## 7. Authorization closure
 
@@ -138,7 +146,7 @@ Therefore the architecture introduces a dedicated capability authority:
 
 `HOMEROOM_ASSIGNMENT_MANAGE / SCHOOL_WIDE`.
 
-This permits the Product Owner's intended operational model: a Phó Hiệu trưởng or other designated business administrator can manage GVCN data through an explicit grant, without hardcoding their title and without becoming a technical administrator.
+This permits a Phó Hiệu trưởng or other designated business administrator to manage GVCN data through an explicit grant, without hardcoding title and without becoming a technical administrator.
 
 P1-012 owns the capability catalog/seed/runtime implementation and must preserve ADR-008 default-deny behavior.
 
@@ -153,6 +161,7 @@ P1-011 is not allowed to merge unless tests demonstrate:
 - adjacent assignment history is allowed;
 - same teacher across different classes is not rejected merely by identity;
 - retained correction evidence;
+- retained historical assignment identity after later User/profile state changes;
 - parent deletion protection;
 - deterministic indexable exact-date resolution.
 
@@ -165,9 +174,10 @@ P1-012 must include:
 - explicit create/change/end/correct/read/resolve commands;
 - `HOMEROOM_ASSIGNMENT_MANAGE / SCHOOL_WIDE` checks on management endpoints;
 - no implicit `SYSTEM_ADMIN` bypass;
-- professional eligibility validation;
-- active-calendar write envelope validation;
-- candidate-calendar activation revalidation;
+- current/future professional eligibility checks separated from bounded historical/backfill validation;
+- explicit administrative provenance/reason for historical backfill when current status cannot prove historical eligibility;
+- active-calendar write-envelope validation;
+- candidate-calendar activation revalidation without rewriting historical rows;
 - concurrency-safe interval changes;
 - same-transaction success audit;
 - no success audit on failed mutation;
@@ -182,6 +192,7 @@ The administration workspace must:
 - show class, teacher and exact effective dates;
 - display gaps and history rather than only the current teacher;
 - expose explicit change/end/correct actions instead of arbitrary row editing;
+- distinguish current operational eligibility from retained historical identity;
 - show that authority comes from capability, not position title;
 - never infer or auto-fill historical GVCN from the current teacher.
 
@@ -196,7 +207,7 @@ P4 must cite the exact HomeroomAssignment source identity/revision semantics acc
 P1-010 leaves no discovered current-pilot requirement only in prose.
 
 - persistence details -> already registered `P1-011`;
-- control plane/capability -> already registered `P1-012`;
+- control plane/capability/historical command validation -> already registered `P1-012`;
 - admin workspace -> already registered `P1-013`;
 - HĐTN programme consumption -> already registered `P4-010` and downstream P4 tasks;
 - workload adjustment -> already registered trigger-gated P4 workload tasks;
