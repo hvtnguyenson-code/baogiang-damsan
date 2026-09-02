@@ -1405,9 +1405,21 @@ try {
   if ($p33Err -notmatch 'OPERATOR_EVIDENCE_REPORT_PATH_CONFLICT') {
     throw "OPE-P33 expected OPERATOR_EVIDENCE_REPORT_PATH_CONFLICT when report inside PG data dir, got: $p33Err"
   }
+  if (Test-Path -LiteralPath $p33Sentinel) { throw 'OPE-P33 wrote report inside PostgreSQL data directory' }
   Set-OpePass 'OPE-P33'
 
   # OPE-P34: PostgreSQL 17 complete environment authority (40 variables)
+  $managedPgEnvironmentNames = @(Get-ManagedPostgresEnvironmentNames)
+  if ($managedPgEnvironmentNames.Count -ne 40) {
+    throw "OPE-P34 expected 40 managed PostgreSQL environment variables, got: $($managedPgEnvironmentNames.Count)"
+  }
+  $uniquePgEnvNames = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+  foreach ($name in $managedPgEnvironmentNames) {
+    if (-not $uniquePgEnvNames.Add($name)) {
+      throw "OPE-P34 duplicate managed PostgreSQL environment variable: $name"
+    }
+  }
+
   $p34Hostile = @{
     PGDATESTYLE = 'German'
     PGTZ = 'Pacific/Honolulu'
