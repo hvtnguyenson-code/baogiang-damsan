@@ -2,12 +2,13 @@
 
 ## Status
 
-**PROPOSED / IN_PROGRESS.**
+**PROPOSED / IN_REVIEW.**
 
 - Task: `P1-010`
 - Branch: `docs/homeroom-responsibility-architecture-010`
 - Exact starting main: `dd8ee41a3edb3eff04802d405bd402dd046528dd`
-- Traceability: T13, T14
+- Primary traceability: T13, T14
+- Additional deferred boundaries discovered and registered during review: T43, T44
 - Scope: architecture/docs only
 - No schema, migration, capability seed, API/runtime, UI, CI/CD, VPS or production mutation is authorized.
 
@@ -192,13 +193,15 @@ P4 must cite the exact HomeroomAssignment source identity/revision semantics acc
 
 ## 12. No new orphan deferrals
 
-P1-010 introduces no unregistered current-pilot deferral.
+P1-010 leaves no discovered current-pilot requirement only in prose.
 
 - persistence details -> already registered `P1-011`;
 - control plane/capability -> already registered `P1-012`;
 - admin workspace -> already registered `P1-013`;
 - HĐTN programme consumption -> already registered `P4-010` and downstream P4 tasks;
-- workload adjustment -> already registered trigger-gated P4 workload tasks.
+- workload adjustment -> already registered trigger-gated P4 workload tasks;
+- special-program absence/replacement/substitute-teacher semantics discovered in 05A0 review -> traceability T43 and binding to `P4-010` / `P4-040`;
+- special-program confirmation authority/topology discovered in 05A0 review -> traceability T44 and binding to `P4-010` / `P4-030` / `P4-040` / `P4-050`.
 
 Co-homeroom is not a known current product requirement and is therefore not falsely registered as planned work. If the Product Owner later requires it, governance requires a new traceability/register entry before implementation.
 
