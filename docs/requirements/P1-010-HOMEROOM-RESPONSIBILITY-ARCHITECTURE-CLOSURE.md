@@ -2,15 +2,23 @@
 
 ## Status
 
-**PROPOSED / IN_REVIEW.**
+**ACCEPTED / CLOSED by `SYNC-P1-010`.**
+
+Closure evidence:
 
 - Task: `P1-010`
-- Branch: `docs/homeroom-responsibility-architecture-010`
 - Exact starting main: `dd8ee41a3edb3eff04802d405bd402dd046528dd`
+- Branch: `docs/homeroom-responsibility-architecture-010`
+- Reviewed PR head: `c125a0b1224c23fa1cf15d31123a9f5338ab8a4f`
+- PR: #93 `docs(homeroom): close P1-010 responsibility architecture`
+- Independent GitHub diff review: PASS after correcting the historical-eligibility assumption
+- Exact-head PR CI: #333 — SUCCESS
+- Canonical merge/main: `5cbfe8b25c1e40b1fb7d0a5b524b823c689c0463`
+- Authoritative post-merge main CI: #334 — SUCCESS
+- Closure microtask: `SYNC-P1-010`
 - Primary traceability: T13, T14
-- Additional deferred boundaries discovered and registered during review: T43, T44
-- Scope: architecture/docs only
-- No schema, migration, capability seed, API/runtime, UI, CI/CD, VPS or production mutation is authorized.
+- Additional boundaries recovered and registered during review: T43, T44
+- Scope: architecture/docs only; no schema, migration, capability seed, API/runtime, UI, CI/CD behavior, VPS or production mutation occurred.
 
 ## 1. Why this task exists
 
@@ -22,13 +30,13 @@ Evidence chain:
 2. `ADR-012-TEACHING-ASSIGNMENT-FOUNDATION.md` explicitly deferred `HomeroomAssignment` again and separately established that multi-teacher GDĐP/HĐTN semantics do not belong in normal TeachingAssignment.
 3. `LOCAL-FC-04-TIMETABLE-DOMAIN-SPEC.md` directly read the authoritative v1.2 OOXML and confirmed the special-activity boundary rather than forcing GDĐP/HĐTN into normal timetable staffing.
 4. `LOCAL-FC-05A0-PPCT-TEACHING-EXECUTION-REPORTING-ARCHITECTURE-AUDIT.md` directly read the same pinned v1.2 source and states: class HĐTN uses the effective homeroom teacher; grade/school HĐTN and GDĐP may use multiple assigned teachers. The same audit marked the canonical homeroom domain unresolved.
-5. P0 traceability rows T13/T14 therefore classify HomeroomAssignment as `RESTORE`, and accepted ADR-044 requires P1-010 before HĐTN programme implementation.
+5. P0 traceability rows T13/T14 therefore classify HomeroomAssignment as `RESTORE`, and accepted ADR-044 required P1-010 before HĐTN programme implementation.
 
 No source change trigger fired: the authoritative v1.2/v1.3 fingerprints remain those accepted by P0.
 
-## 2. Existing architecture that must remain valid
+## 2. Existing architecture that remains valid
 
-P1-010 must not reopen or rebuild:
+P1-010 did not reopen or rebuild:
 
 - `AcademicYear` / `SchoolClass` identity;
 - retained/versioned calendar history;
@@ -38,7 +46,7 @@ P1-010 must not reopen or rebuild:
 - SpecialActivityParticipationExecution evidence;
 - immutable/frozen Reporting Statement semantics.
 
-Homeroom responsibility is added between those foundations; it does not replace them.
+Homeroom responsibility is added as accepted product/domain authority between those foundations; it does not replace them.
 
 ## 3. Questions closed by P1-010
 
@@ -54,7 +62,7 @@ Homeroom responsibility is added between those foundations; it does not replace 
 | H8 | Real teacher change | Transactional interval split/end; explicit civil effective date. |
 | H9 | Backdated history | Allowed through explicit command within validated envelope; historical backfill requires explicit administrative provenance/reason and is never inferred from present state. |
 | H10 | Data-entry correction | Explicit audited correction/reversal with retained prior evidence; no physical delete or silent in-place reassignment. Physical lineage shape belongs to P1-011. |
-| H11 | Management authorization | New dedicated `HOMEROOM_ASSIGNMENT_MANAGE`, first supported at `SCHOOL_WIDE` only; no implicit SYSTEM_ADMIN/title/GVCN bypass. |
+| H11 | Management authorization | Dedicated future `HOMEROOM_ASSIGNMENT_MANAGE`, first supported at `SCHOOL_WIDE` only; no implicit SYSTEM_ADMIN/title/GVCN bypass. |
 | H12 | Historical resolution | Exact `AcademicYear + SchoolClass + civilDate`; exactly one retained assignment or typed missing/ambiguous/corrupt result. Current User status is not part of historical identity resolution. |
 | H13 | HĐTN `CLASS` | Resolve GVCN for exact occurrence date, then freeze resolved teacher + source homeroom provenance when the downstream occurrence is materialized. |
 | H14 | Later GVCN/User-state change | Must not silently rewrite or invalidate retained historical responsibility, already materialized activity staffing, participation execution or frozen statements. |
@@ -105,7 +113,7 @@ The application must retain correction evidence and establish B as corrected cur
 
 Example: teacher A was the correct GVCN in September but is disabled/transferred by the time the system is initialized in October. The September assignment is still historical truth. Current `User.status` or current `isTeachingStaff` must not be used to replace A with another teacher or reject the bounded historical interval. The backfill command must retain exact identity and explicit administrative provenance/reason.
 
-The exact persistence topology for status/lineage/reversal and historical-command evidence is assigned to existing registered tasks `P1-011` / `P1-012`. This is not an orphan deferral; those tasks may not weaken this closure.
+The exact persistence topology for status/lineage/reversal and historical-command evidence is assigned to existing registered tasks `P1-011` / `P1-012`. Those tasks may not weaken this accepted closure.
 
 ## 6. Downstream HĐTN `CLASS` contract
 
@@ -142,7 +150,7 @@ Current supported capability scopes are `PERSONAL`, `SUBJECT_GROUP`, `SUBJECT`, 
 
 Reusing `SUBJECT_MANAGE` would be wrong because GVCN is not subject-owned. Reusing `ACTIVITY` would be wrong because the assignment exists independently of one activity. Reusing `ACADEMIC_STRUCTURE_MANAGE` would unnecessarily grant calendar/class-structure mutation to a person who may only need GVCN administration.
 
-Therefore the architecture introduces a dedicated capability authority:
+Therefore the accepted architecture introduces a dedicated capability authority:
 
 `HOMEROOM_ASSIGNMENT_MANAGE / SCHOOL_WIDE`.
 
@@ -198,24 +206,26 @@ The administration workspace must:
 
 ## 11. Downstream dependency gate
 
-`P4-010` may consume the HomeroomAssignment architecture after P1-010 is `CLOSED`, but P4 runtime implementation cannot materialize class HĐTN safely until the required P1 persistence/control plane dependencies are also closed according to the task register.
+`P4-010` may consume the HomeroomAssignment architecture after P1-010 is `CLOSED`, but P4 runtime implementation cannot materialize class HĐTN safely until the required P1 persistence/control-plane dependencies are also closed according to the task register.
 
 P4 must cite the exact HomeroomAssignment source identity/revision semantics accepted by P1-011 when it defines programme occurrence provenance.
 
-## 12. No new orphan deferrals
+## 12. No orphan deferrals
 
-P1-010 leaves no discovered current-pilot requirement only in prose.
+P1-010 closed without leaving discovered current-pilot requirements only in prose.
 
-- persistence details -> already registered `P1-011`;
-- control plane/capability/historical command validation -> already registered `P1-012`;
-- admin workspace -> already registered `P1-013`;
-- HĐTN programme consumption -> already registered `P4-010` and downstream P4 tasks;
-- workload adjustment -> already registered trigger-gated P4 workload tasks;
+- persistence details -> registered `P1-011`;
+- control plane/capability/historical command validation -> registered `P1-012`;
+- admin workspace -> registered `P1-013`;
+- HĐTN programme consumption -> registered `P4-010` and downstream P4 tasks;
+- workload adjustment -> registered trigger-gated P4 workload tasks;
 - special-program absence/replacement/substitute-teacher semantics discovered in 05A0 review -> traceability T43 and binding to `P4-010` / `P4-040`;
 - special-program confirmation authority/topology discovered in 05A0 review -> traceability T44 and binding to `P4-010` / `P4-030` / `P4-040` / `P4-050`.
 
 Co-homeroom is not a known current product requirement and is therefore not falsely registered as planned work. If the Product Owner later requires it, governance requires a new traceability/register entry before implementation.
 
-## 13. Proposed authority
+## 13. Accepted authority and next gate
 
-If this closure is explicitly approved and merged, `ADR-045-HOMEROOM-RESPONSIBILITY.md` becomes the controlling homeroom product/domain authority. P1-011/P1-012/P1-013 must implement it without reopening the closed business decisions unless new evidence triggers a registered architecture correction.
+`ADR-045-HOMEROOM-RESPONSIBILITY.md` is the controlling homeroom product/domain authority. `P1-011`, `P1-012` and `P1-013` must implement it without reopening the closed business decisions unless new evidence triggers a registered architecture correction.
+
+`P1-011` becomes `READY` only through the `SYNC-P1-010` closure update. No dependent implementation was performed by P1-010 or this sync.
