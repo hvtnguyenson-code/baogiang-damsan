@@ -2,7 +2,9 @@
 
 ## Authority
 
-This is the canonical mutable current-state document for Báo giảng. Historical phase reports, `README.md`, `docs/PROJECT_CONTEXT.md` and roadmap text may summarize this status but must not contradict it.
+This is the canonical mutable **product/task status** document for Báo giảng. Historical phase reports, `README.md`, `docs/PROJECT_CONTEXT.md` and roadmap text may summarize this status but must not contradict it.
+
+It is **not** a self-referential registry of the latest Git commit. Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub at the start of every task. SHAs recorded here are evidence for the stated baseline or last closed major task.
 
 **Status snapshot date:** 2026-09-03
 
@@ -83,9 +85,15 @@ No P1-P6 implementation task should begin until:
 2. Product Owner explicitly authorizes merge;
 3. merge completes;
 4. authoritative post-merge CI succeeds where applicable;
-5. P0 post-merge documentation sync changes `P0-001` to `CLOSED`.
+5. administrative closure sync `SYNC-P0-001` records the P0 major-task merge SHA/CI and closes `P0-001`.
+
+The closure-sync PR is non-recursive: it records the already-established P0 evidence and does not need another sync task. At the next task start, exact current `main` is fetched directly from Git/GitHub.
 
 After P0 closes, common foundations P1 and evidence-gathering P2 audits may proceed according to `PRE-PILOT-TASK-REGISTER.md`.
+
+## Authoritative source-change gate
+
+P0 pins the authoritative specification fingerprints in `PRE-PILOT-PRODUCT-BASELINE.md`. If PA-B v1.2 or v1.3 changes, or an explicit Product Owner decision contradicts the accepted baseline, `P0-900` becomes mandatory before dependent product work continues.
 
 ## Canonical planning/authority files
 
