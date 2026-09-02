@@ -145,7 +145,9 @@ P4 HĐTN `CLASS` planning must resolve the effective GVCN on the exact planned o
 Before materialization:
 
 - missing effective GVCN blocks the class-level occurrence;
-- an ineligible effective teacher blocks the occurrence until the responsibility data is corrected or a later explicitly authorized exception policy exists.
+- an ineligible effective teacher blocks the occurrence rather than silently selecting another teacher.
+
+Current ADR-038 SpecialActivity participation minimum-core explicitly requires actual teacher to equal scheduled teacher and rejects arbitrary substitution. The earlier 05A0 audit separately recorded activity absence/substitution as unresolved. Therefore `P4-010` must explicitly close special-program absence/substitution and confirmation authority before `P4-040` may implement any broader replacement behavior. Until that accepted authority exists, homeroom resolution has **no fallback substitution rule**.
 
 When a planned HĐTN class occurrence is materialized into the existing SpecialActivity runtime, downstream persistence must retain at least:
 
@@ -160,6 +162,8 @@ A later GVCN change or correction must not silently rewrite already materialized
 Generic AdditionalDuty data may later participate in configurable workload adjustment/reporting policy, but it must not become a competing authority for **who is GVCN of a class on a date**.
 
 If GVCN workload reduction/credit is implemented later, the policy must derive from canonical HomeroomAssignment history or an explicitly linked rule rather than requiring administrators to maintain the same homeroom identity independently in two authoritative places.
+
+`HomeroomAssignment` existence by itself is **not evidence that an HĐTN teaching period occurred** and must not be counted as a teaching execution. HĐTN period credit comes only from the accepted special-program occurrence/participation execution evidence. A separate configurable GVCN duty-reduction policy, if applicable, belongs to the registered Business Configuration/workload path.
 
 Workload calculation itself remains governed by registered Business Configuration / workload tasks and is not implemented by P1-010.
 
@@ -214,9 +218,10 @@ P1-013 may build a bounded administration workspace only after P1-012 closes. It
 - Permit two active GVCN identities for the same class/date without new authority.
 - Require StaffSubject coverage for homeroom responsibility.
 - Make `ACADEMIC_STRUCTURE_MANAGE`, `SUBJECT_MANAGE`, `SYSTEM_ADMIN`, job title, or HĐTN staffing implicitly authorize homeroom changes.
+- Invent HĐTN substitute staffing inside HomeroomAssignment.
 - Let a later GVCN change rewrite historical HĐTN staffing or frozen reporting.
 - Hardcode a particular Phó Hiệu trưởng or position title as the manager.
 
 ## Implementation authorization
 
-None. P1-010 is architecture authority only. Schema/migration is `P1-011`; control plane/capability changes are `P1-012`; administration UI is `P1-013`; HĐTN programme consumption is `P4-010` and later registered tasks.
+None. P1-010 is architecture authority only. Schema/migration is `P1-011`; control plane/capability changes are `P1-012`; administration UI is `P1-013`; HĐTN programme consumption and the unresolved special-program absence/substitution/confirmation boundary are `P4-010` and later registered P4 tasks.
