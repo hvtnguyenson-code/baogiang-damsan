@@ -2,7 +2,7 @@
 
 ## Status
 
-**IN_PROGRESS.**
+**CLOSED — implementation, independent review, exact-head CI, merge, post-merge CI and `SYNC-P1-011` closure evidence satisfied.**
 
 - Task: `P1-011`
 - Branch: `feat/homeroom-persistence-foundation-011`
@@ -12,7 +12,19 @@
 - Traceability: T13, T14
 - Scope: Prisma/PostgreSQL persistence foundation + migration/static/integration regression coverage only.
 
-No API/controller/service command surface, capability catalog/runtime mutation, admin UI, Special Programme runtime, workload/reporting change, CI/CD behavior change, VPS/TLS/database-production mutation, or DamSanV5/Quản lí nội trú mutation is authorized by this task.
+Closure evidence:
+
+- opening contract commit: `e0385a4829332275781224815dd3ee15dd4b18d0`;
+- reviewed implementation head: `ae5515d63fb38987e9479ea69b3425b1e910a11a`;
+- PR #95: `feat(homeroom): add P1-011 persistence foundation`;
+- independent GitHub diff review: PASS;
+- exact-head PR CI #337: SUCCESS, including the isolated PostgreSQL migration behavior suite;
+- merge/main: `7530022d9027e0ba94add9ca25b70822c87b792a`;
+- authoritative post-merge main CI #338: SUCCESS;
+- no correction/re-entry task required;
+- administrative closure: `SYNC-P1-011`.
+
+No API/controller/service command surface, capability catalog/runtime mutation, admin UI, Special Programme runtime, workload/reporting change, CI/CD behavior change, VPS/TLS/database-production mutation, or DamSanV5/Quản lí nội trú mutation was authorized or introduced by this task.
 
 ## 1. Persistence objective
 
@@ -183,6 +195,8 @@ P1-011 may not enter review unless repository tests prove at least:
 13. Migration deploy works on the repository's isolated PostgreSQL migration gate.
 14. Existing schema/static/migration regression suites remain green.
 
+The exact-head GitHub CI #337 and post-merge CI #338 established these repository gates on the merged implementation. P1-012 remains responsible for command-layer cycle/topology validation and for exercising correction commands that may create multiple replacement rows from one retained reversed assertion.
+
 ## 6. Files/domains allowed
 
 Expected changes are limited to:
@@ -208,8 +222,8 @@ Do not modify in P1-011:
 
 ## 8. Closure rule
 
-P1-011 can become `CLOSED` only after:
+P1-011 required:
 
 `implementation -> independent diff review -> exact-head PR CI SUCCESS -> merge -> exact merge SHA -> post-merge main CI SUCCESS -> SYNC-P1-011`.
 
-Only then may `P1-012` become `READY`.
+All gates are satisfied. `P1-012` may become `READY` only after the `SYNC-P1-011` closure PR itself is independently reviewed, merged and its post-merge main CI is green under the non-recursive governance protocol.

@@ -10,25 +10,28 @@ It is **not** a self-referential registry of the latest Git commit. Exact curren
 
 ## Last closed major task
 
-`P1-010` — Homeroom responsibility architecture closure — **CLOSED** by `SYNC-P1-010`.
+`P1-011` — Homeroom persistence foundation — **CLOSED** by `SYNC-P1-011`.
 
 Closure evidence:
 
-- exact starting main: `dd8ee41a3edb3eff04802d405bd402dd046528dd`;
-- branch: `docs/homeroom-responsibility-architecture-010`;
-- reviewed PR head: `c125a0b1224c23fa1cf15d31123a9f5338ab8a4f`;
-- PR: #93 `docs(homeroom): close P1-010 responsibility architecture`;
-- independent GitHub diff review: PASS after correcting the historical-eligibility assumption so current account state cannot falsify bounded historical GVCN truth;
-- exact-head PR CI: #333 — SUCCESS;
-- merge/main SHA: `5cbfe8b25c1e40b1fb7d0a5b524b823c689c0463`;
-- authoritative post-merge main CI: #334 — SUCCESS;
-- administrative closure: `SYNC-P1-010`.
+- exact starting main: `172e1c13e5dbbdc6f91b4f014ea2729fcc3977ca`;
+- branch: `feat/homeroom-persistence-foundation-011`;
+- contract/opening commit: `e0385a4829332275781224815dd3ee15dd4b18d0`;
+- reviewed implementation head: `ae5515d63fb38987e9479ea69b3425b1e910a11a`;
+- PR: #95 `feat(homeroom): add P1-011 persistence foundation`;
+- independent GitHub diff review: PASS; implementation matched ADR-045 and the P1-011 contract with no API/UI/capability/production drift;
+- local non-database verification: PASS; local PostgreSQL migration suite was environment-blocked and no local DB PASS was claimed;
+- exact-head PR CI: #337 — SUCCESS, including the isolated PostgreSQL migration behavior suite, integration tests, builds, Playwright and Windows deployment contract;
+- merge/main SHA: `7530022d9027e0ba94add9ca25b70822c87b792a`;
+- authoritative post-merge main CI: #338 — SUCCESS;
+- administrative closure: `SYNC-P1-011`;
+- no correction/re-entry task was required by review or CI.
 
-P1-010 changed architecture/governance documentation only. It did not change Prisma, migrations, capability catalog/runtime, API/runtime, frontend runtime, CI/CD behavior, VPS, TLS, database or production state.
+P1-011 changed retained persistence and regression coverage only. It did not add the Homeroom management capability, command/control plane, admin UI, Special Programme runtime, workload/reporting behavior, deployment behavior, VPS/TLS state or production database state.
 
 ## Accepted product/domain authority
 
-`ADR-045-HOMEROOM-RESPONSIBILITY.md` is now accepted authority for canonical homeroom responsibility:
+`ADR-045-HOMEROOM-RESPONSIBILITY.md` remains accepted authority for canonical homeroom responsibility:
 
 - separate AcademicYear-owned, SchoolClass/date-effective `HomeroomAssignment` domain;
 - inclusive civil-date history with one effective current-truth GVCN per class/date and fail-closed gaps;
@@ -61,6 +64,7 @@ The repository contains reviewed implementation for:
 - identity, session/authentication, capability/scope authorization and audit;
 - academic years, versioned retained calendars, business weeks/segments/reserve weeks/interruptions and classes;
 - date-effective TeachingAssignment history;
+- **retained HomeroomAssignment persistence** with inclusive civil DATE intervals, ACTIVE/REVERSED history, same-class/date ACTIVE overlap prevention, exact retained teacher/actor identities and correction lineage;
 - retained exact time-slot revisions and real wall-clock collision semantics;
 - retained timetable versions/entries, validation, lifecycle, historical resolution and XLSX canonical import infrastructure;
 - PPCT persistence/control plane, stable item identity/revisions/lineage and exact class-subject version association;
@@ -74,7 +78,7 @@ The repository contains reviewed implementation for:
 - Reporting Statement persistence/control plane/UI enablement/product UI work;
 - hardened Windows production deployment control-plane/runbooks through PR #90.
 
-Homeroom **architecture authority** is now closed, but its persistence/control plane/UI are not yet implemented.
+Homeroom architecture and persistence are now closed. The Homeroom **control plane/capability and administration UI are not yet implemented**.
 
 ## Pre-pilot verdict
 
@@ -85,7 +89,7 @@ The registered implementation, data-evidence, product and production-readiness t
 ## Critical pre-pilot gaps
 
 1. Current SpecialActivity is a valid runtime occurrence primitive but not a complete GDĐP/HĐTN programme model.
-2. HomeroomAssignment persistence, control plane and administration workspace remain absent; architecture is now accepted through ADR-045.
+2. HomeroomAssignment control plane/capability and administration workspace remain absent; architecture and persistence are now closed through ADR-045/P1-011.
 3. GDĐP grade/year plan and HĐTN CLASS/GRADE/SCHOOL programme semantics are absent.
 4. Programme planning cannot assign different exact teacher sets to different exact slots.
 5. Special-program absence/replacement and programme-level confirmation authority remain explicitly registered for P4 closure (T43/T44).
@@ -104,14 +108,14 @@ The registered implementation, data-evidence, product and production-readiness t
 
 ## Tasks currently eligible to start
 
-After `SYNC-P1-010` merges, dependency gates permit these registered tasks to start on their own branches:
+After `SYNC-P1-011` merges, dependency gates permit these registered tasks to start on their own branches:
 
-- `P1-011` — Homeroom persistence foundation;
+- `P1-012` — Homeroom control plane;
 - `P1-020` — Business Configuration Control Plane architecture;
 - `P4-010` — GDĐP/HĐTN programme architecture closure;
 - `P6-010` — Pre-deploy TLS/HTTP-01 authority.
 
-Readiness is not permission to bypass one-task-per-branch, review, CI or mandatory closure-sync gates. P1-012 still depends on P1-011; P4 runtime work remains gated by its registered dependencies.
+Readiness is not permission to bypass one-task-per-branch, review, CI or mandatory closure-sync gates. `P1-013` still depends on `P1-012`; P4 runtime work remains gated by its registered dependencies.
 
 ## Decisions/evidence still blocking other paths
 
@@ -137,7 +141,7 @@ Direct P0 inspection found `main` is currently not protected server-side. This i
 
 ## Production state
 
-Production remains **pre-operational**. No P0, P1-010 or closure-sync action authorizes or performs deployment, migration, Nginx/TLS change, PostgreSQL mutation or application-process mutation.
+Production remains **pre-operational**. P1-011 and `SYNC-P1-011` do not authorize or perform deployment, production migration, Nginx/TLS change, PostgreSQL production mutation or application-process mutation.
 
 ## Protected external system boundary
 
