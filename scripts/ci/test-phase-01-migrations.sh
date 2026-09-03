@@ -77,6 +77,9 @@ psql "$fresh_psql_url" -v ON_ERROR_STOP=1 -f scripts/ci/verify-academic-structur
 echo "[migration-test] Teaching assignment constraint and history verification"
 psql "$fresh_psql_url" -v ON_ERROR_STOP=1 -f scripts/ci/verify-teaching-assignment-schema.sql
 
+echo "[migration-test] Homeroom assignment persistence constraint and history verification"
+psql "$fresh_psql_url" -v ON_ERROR_STOP=1 -f scripts/ci/verify-homeroom-assignment-schema.sql
+
 echo "[migration-test] Time-slot constraint and history verification"
 psql "$fresh_psql_url" -v ON_ERROR_STOP=1 -f scripts/ci/verify-time-slot-schema.sql
 

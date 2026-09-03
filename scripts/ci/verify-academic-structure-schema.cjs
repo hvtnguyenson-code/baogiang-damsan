@@ -10,6 +10,8 @@ const academicMigrationName = '20260810000000_academic_structure_schema_foundati
 const academicMigration = read('prisma', 'migrations', academicMigrationName, 'migration.sql');
 const teachingMigrationName = '20260810010000_teaching_assignment_schema_foundation';
 const teachingMigration = read('prisma', 'migrations', teachingMigrationName, 'migration.sql');
+const homeroomMigrationName = '20260903010000_homeroom_persistence_foundation';
+const homeroomMigration = read('prisma', 'migrations', homeroomMigrationName, 'migration.sql');
 const timeSlotMigrationName = '20260811020000_time_slot_schema_foundation';
 const timeSlotMigration = read('prisma', 'migrations', timeSlotMigrationName, 'migration.sql');
 const timetableMigrationName = '20260811030000_timetable_schema_foundation';
@@ -62,6 +64,7 @@ for (const model of [
   'CalendarInterruption',
   'SchoolClass',
   'TeachingAssignment',
+  'HomeroomAssignment',
   'TimeSlotDefinition',
   'TimetableVersion',
   'TimetableEntry',
@@ -99,6 +102,7 @@ assert.deepEqual(enumValues('TimetableImportSemanticField'), ['WEEKDAY', 'SESSIO
 assert.deepEqual(enumValues('TimetableImportAliasEntityType'), ['TEACHER', 'SCHOOL_CLASS', 'SUBJECT']);
 assert.deepEqual(enumValues('PpctVersionStatus'), ['DRAFT', 'PUBLISHED', 'SUPERSEDED']);
 assert.deepEqual(enumValues('OperationalOverlayStatus'), ['ACTIVE', 'REVERSED']);
+assert.deepEqual(enumValues('HomeroomAssignmentStatus'), ['ACTIVE', 'REVERSED']);
 assert.deepEqual(enumValues('CalendarExceptionScope'), ['SCHOOL_WIDE', 'GRADE', 'CLASS']);
 assert.deepEqual(enumValues('CalendarExceptionTimeSelector'), ['WHOLE_DAY', 'SESSION', 'EXACT_SLOTS']);
 assert.deepEqual(enumValues('OperationalLessonDispositionType'), [
@@ -160,7 +164,7 @@ assert.match(segment, /fields:\s*\[academicWeekId, calendarVersionId\][\s\S]*ref
 const schoolClass = modelBlock('SchoolClass');
 assert.match(schoolClass, /@@unique\(\[id, academicYearId\]\)/u);
 assert.match(schoolClass, /@@unique\(\[academicYearId, code\]\)/u);
-assert.doesNotMatch(schema, /\bmodel\s+(HomeroomAssignment|Timetable|Student|Enrollment|TimeSlot)\s+\{/u);
+assert.doesNotMatch(schema, /\bmodel\s+(Timetable|Student|Enrollment|TimeSlot)\s+\{/u);
 assert.doesNotMatch(schema, /\b35\b/u, 'Week counts must be data, not a schema constant');
 
 const teachingAssignment = modelBlock('TeachingAssignment');
@@ -177,6 +181,43 @@ assert.match(teachingAssignment, /academicYear\s+AcademicYear\s+@relation\(field
 assert.match(teachingAssignment, /schoolClass\s+SchoolClass\s+@relation\("TeachingAssignmentSchoolClass",\s*fields:\s*\[schoolClassId, academicYearId\],\s*references:\s*\[id, academicYearId\],\s*onDelete:\s*Restrict\)/u);
 assert.match(teachingAssignment, /subject\s+Subject\s+@relation\(fields:\s*\[subjectId\],\s*references:\s*\[id\],\s*onDelete:\s*Restrict\)/u);
 assert.match(teachingAssignment, /teacher\s+User\s+@relation\("TeachingAssignmentTeacher",\s*fields:\s*\[teacherUserId\],\s*references:\s*\[id\],\s*onDelete:\s*Restrict\)/u);
+
+const homeroomAssignment = modelBlock('HomeroomAssignment');
+assert.equal((schema.match(/\bmodel\s+HomeroomAssignment\s+\{/gu) ?? []).length, 1);
+for (const field of ['id', 'academicYearId', 'schoolClassId', 'teacherUserId', 'replacesId', 'createdByUserId', 'reversedByUserId']) {
+  assert.match(homeroomAssignment, new RegExp(`${field}\\s+String\\??[\\s\\S]*?@db\\.Uuid`, 'u'), `${field} must use UUID`);
+}
+assert.match(homeroomAssignment, /status\s+HomeroomAssignmentStatus\s+@default\(ACTIVE\)/u);
+assert.match(homeroomAssignment, /validFrom\s+DateTime\s+@map\("valid_from"\)\s+@db\.Date/u);
+assert.match(homeroomAssignment, /validUntil\s+DateTime\?\s+@map\("valid_until"\)\s+@db\.Date/u);
+for (const field of ['createdAt', 'updatedAt', 'reversedAt']) {
+  assert.match(homeroomAssignment, new RegExp(`${field}\\s+DateTime\\??[\\s\\S]*?@db\\.Timestamptz\\(3\\)`, 'u'), `${field} must use TIMESTAMPTZ(3)`);
+}
+assert.match(homeroomAssignment, /academicYear\s+AcademicYear\s+@relation\(fields:\s*\[academicYearId\],\s*references:\s*\[id\],\s*onDelete:\s*Restrict\)/u);
+assert.match(homeroomAssignment, /schoolClass\s+SchoolClass\s+@relation\("HomeroomAssignmentSchoolClass",\s*fields:\s*\[schoolClassId, academicYearId\],\s*references:\s*\[id, academicYearId\],\s*onDelete:\s*Restrict\)/u);
+assert.match(homeroomAssignment, /teacher\s+User\s+@relation\("HomeroomAssignmentTeacher",\s*fields:\s*\[teacherUserId\],\s*references:\s*\[id\],\s*onDelete:\s*Restrict\)/u);
+assert.match(homeroomAssignment, /createdBy\s+User\s+@relation\("HomeroomAssignmentCreatedBy",\s*fields:\s*\[createdByUserId\],\s*references:\s*\[id\],\s*onDelete:\s*Restrict\)/u);
+assert.match(homeroomAssignment, /reversedBy\s+User\?\s+@relation\("HomeroomAssignmentReversedBy",\s*fields:\s*\[reversedByUserId\],\s*references:\s*\[id\],\s*onDelete:\s*Restrict\)/u);
+assert.match(homeroomAssignment, /replaces\s+HomeroomAssignment\?\s+@relation\("HomeroomAssignmentReplacementLineage",\s*fields:\s*\[replacesId\],\s*references:\s*\[id\],\s*onDelete:\s*Restrict\)/u);
+assert.match(homeroomAssignment, /replacements\s+HomeroomAssignment\[\]\s+@relation\("HomeroomAssignmentReplacementLineage"\)/u);
+assert.match(homeroomAssignment, /@@unique\(\[id, academicYearId, schoolClassId, teacherUserId\],\s*map:\s*"homeroom_assignments_provenance_key"\)/u);
+for (const index of [
+  'homeroom_assignments_class_status_validity_idx',
+  'homeroom_assignments_teacher_year_validity_idx',
+  'homeroom_assignments_replaces_id_idx',
+]) {
+  assert.match(homeroomAssignment, new RegExp(`map:\\s*"${index}"`, 'u'), `HomeroomAssignment missing ${index}`);
+}
+assert.doesNotMatch(homeroomAssignment, /subjectId|staffSubject|additionalDuty|calendarVersion|academicCalendarVersion|academicWeek|timetableVersion/iu);
+assert.match(modelBlock('AcademicYear'), /homeroomAssignments\s+HomeroomAssignment\[\]/u);
+assert.match(modelBlock('SchoolClass'), /homeroomAssignments\s+HomeroomAssignment\[\]\s+@relation\("HomeroomAssignmentSchoolClass"\)/u);
+for (const inverse of [
+  'homeroomAssignments\\s+HomeroomAssignment\\[\\]\\s+@relation\\("HomeroomAssignmentTeacher"\\)',
+  'homeroomAssignmentsCreated\\s+HomeroomAssignment\\[\\]\\s+@relation\\("HomeroomAssignmentCreatedBy"\\)',
+  'homeroomAssignmentsReversed\\s+HomeroomAssignment\\[\\]\\s+@relation\\("HomeroomAssignmentReversedBy"\\)',
+]) {
+  assert.match(modelBlock('User'), new RegExp(inverse, 'u'));
+}
 
 const academicYear = modelBlock('AcademicYear');
 const timeSlot = modelBlock('TimeSlotDefinition');
@@ -286,6 +327,44 @@ for (const constraint of [
 assert.equal((teachingMigration.match(/EXCLUDE USING gist/gu) ?? []).length, 1);
 assert.doesNotMatch(teachingMigration, /CREATE\s+(OR\s+REPLACE\s+)?TRIGGER/iu);
 assert.doesNotMatch(teachingMigration, /calendar_version_id/iu);
+
+assert.match(homeroomMigration, /CREATE TYPE "HomeroomAssignmentStatus" AS ENUM \('ACTIVE', 'REVERSED'\)/u);
+assert.match(homeroomMigration, /CREATE TABLE "homeroom_assignments"/u);
+for (const column of ['id', 'academic_year_id', 'school_class_id', 'teacher_user_id', 'created_by_user_id']) {
+  assert.match(homeroomMigration, new RegExp(`"${column}" UUID NOT NULL`, 'u'), `Homeroom migration missing UUID ${column}`);
+}
+assert.match(homeroomMigration, /"valid_from" DATE NOT NULL/u);
+assert.match(homeroomMigration, /"valid_until" DATE/u);
+for (const column of ['created_at', 'updated_at']) {
+  assert.match(homeroomMigration, new RegExp(`"${column}" TIMESTAMPTZ\\(3\\) NOT NULL`, 'u'));
+}
+assert.match(homeroomMigration, /"reversed_at" TIMESTAMPTZ\(3\)/u);
+assert.match(homeroomMigration, /"homeroom_assignments_validity_check"[\s\S]*"valid_until" IS NULL OR "valid_until" >= "valid_from"/u);
+assert.match(homeroomMigration, /"homeroom_assignments_no_active_overlap"[\s\S]*EXCLUDE USING gist[\s\S]*"academic_year_id" WITH =[\s\S]*"school_class_id" WITH =[\s\S]*daterange\("valid_from", "valid_until", '\[\]'\) WITH &&[\s\S]*WHERE \("status" = 'ACTIVE'\)/u);
+assert.match(homeroomMigration, /"homeroom_assignments_reversal_evidence_check"[\s\S]*"status" = 'ACTIVE'[\s\S]*"status" = 'REVERSED'[\s\S]*btrim\("reversal_reason"\) <> ''/u);
+assert.match(homeroomMigration, /"homeroom_assignments_no_self_replacement_check"[\s\S]*"replaces_id" IS NULL OR "replaces_id" <> "id"/u);
+for (const index of [
+  'homeroom_assignments_provenance_key',
+  'homeroom_assignments_class_status_validity_idx',
+  'homeroom_assignments_teacher_year_validity_idx',
+  'homeroom_assignments_replaces_id_idx',
+]) {
+  assert.match(homeroomMigration, new RegExp(`CREATE (?:UNIQUE )?INDEX "${index}"`, 'u'), `Homeroom migration missing ${index}`);
+}
+for (const constraint of [
+  'homeroom_assignments_academic_year_id_fkey',
+  'homeroom_assignments_school_class_year_fkey',
+  'homeroom_assignments_teacher_user_id_fkey',
+  'homeroom_assignments_created_by_user_id_fkey',
+  'homeroom_assignments_reversed_by_user_id_fkey',
+  'homeroom_assignments_replaces_id_fkey',
+]) {
+  assert.match(homeroomMigration, new RegExp(`"${constraint}"[\\s\\S]*?ON DELETE RESTRICT`, 'u'), `${constraint} must restrict deletion`);
+}
+assert.match(homeroomMigration, /"homeroom_assignments_school_class_year_fkey"[\s\S]*FOREIGN KEY \("school_class_id", "academic_year_id"\)[\s\S]*REFERENCES "classes"\("id", "academic_year_id"\)/u);
+assert.doesNotMatch(homeroomMigration, /subject_id|staff_subject|additional_duty|calendar_version|academic_week|timetable_version/iu);
+assert.doesNotMatch(homeroomMigration, /CREATE\s+(OR\s+REPLACE\s+)?TRIGGER/iu);
+assert.doesNotMatch(homeroomMigration, /ON DELETE CASCADE/iu);
 
 assert.match(timeSlotMigration, /CREATE TYPE "TimeSlotSession" AS ENUM \('MORNING', 'AFTERNOON', 'EVENING'\)/u);
 assert.match(timeSlotMigration, /CREATE TABLE "time_slot_definitions"/u);
@@ -1002,4 +1081,4 @@ for (const [name, expected] of legacyHashes) {
   assert.equal(sha256(read('prisma', 'migrations', name, 'migration.sql')), expected, `Historical migration ${name} changed`);
 }
 
-console.log(`Academic, teaching-assignment, time-slot, timetable, timetable-import, PPCT, operational-overlay, Special Activity, and Teaching Execution schema static verification PASS (${academicMigrationName}, ${teachingMigrationName}, ${timeSlotMigrationName}, ${timetableMigrationName}, ${timetableImportMigrationName}, ${timetableImportRequestKeyMigrationName}, ${ppctMigrationName}, ${overlayMigrationName}, ${specialActivityMigrationName}, ${teachingExecutionMigrationName}).`);
+console.log(`Academic, teaching-assignment, homeroom, time-slot, timetable, timetable-import, PPCT, operational-overlay, Special Activity, and Teaching Execution schema static verification PASS (${academicMigrationName}, ${teachingMigrationName}, ${homeroomMigrationName}, ${timeSlotMigrationName}, ${timetableMigrationName}, ${timetableImportMigrationName}, ${timetableImportRequestKeyMigrationName}, ${ppctMigrationName}, ${overlayMigrationName}, ${specialActivityMigrationName}, ${teachingExecutionMigrationName}).`);
