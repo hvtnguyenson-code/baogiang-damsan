@@ -29,6 +29,15 @@ Closure evidence:
 
 P1-011 changed retained persistence and regression coverage only. It did not add the Homeroom management capability, command/control plane, admin UI, Special Programme runtime, workload/reporting behavior, deployment behavior, VPS/TLS state or production database state.
 
+## Active major task
+
+`P1-012` — Homeroom control plane — **IN_PROGRESS** on
+`feat/homeroom-control-plane-012`, from canonical main
+`1d51580ddc501a5cf132688a66d6b7b1941570d0`.
+
+`P1-011` is CLOSED. P1-012 implementation is not yet claimed complete;
+independent review and CI remain required before it may enter closure flow.
+
 ## Accepted product/domain authority
 
 `ADR-045-HOMEROOM-RESPONSIBILITY.md` remains accepted authority for canonical homeroom responsibility:

@@ -52,7 +52,7 @@ Dependency cells below contain **task IDs only**. Conditions/evidence triggers b
 |---|---|---|---|---|
 | `P1-010` Homeroom responsibility architecture closure | `CLOSED` | `P0-001` | Date-effective retained GVCN product/authorization/history semantics; no schema yet | T13, T14; PR #93; reviewed head `c125a0b1224c23fa1cf15d31123a9f5338ab8a4f`; independent GitHub diff review PASS after historical-eligibility correction; PR CI #333 SUCCESS; merge/main `5cbfe8b25c1e40b1fb7d0a5b524b823c689c0463`; post-merge main CI #334 SUCCESS; closed by `SYNC-P1-010`; follow-up boundaries T43/T44 registered in P4 |
 | `P1-011` Homeroom persistence foundation | `CLOSED` | `P1-010` | Schema/migration/invariants for retained HomeroomAssignment history | T13, T14; PR #95; reviewed head `ae5515d63fb38987e9479ea69b3425b1e910a11a`; independent GitHub diff review PASS; exact-head PR CI #337 SUCCESS including isolated PostgreSQL migration behavior; merge/main `7530022d9027e0ba94add9ca25b70822c87b792a`; post-merge main CI #338 SUCCESS; closed by `SYNC-P1-011`; no correction/re-entry task required |
-| `P1-012` Homeroom control plane | `READY` | `P1-011` | Capability-controlled create/change/end/correct/read/resolve, audit, historical resolution and command-layer regression for retained correction lineage | T13, T14 |
+| `P1-012` Homeroom control plane | `IN_PROGRESS` | `P1-011` | Capability-controlled create/change/end/correct/read/resolve, audit, historical resolution and command-layer regression for retained correction lineage | T13, T14 |
 | `P1-013` Homeroom administration workspace | `PLANNED` | `P1-012` | Bounded admin/PHT UI using frozen backend contracts; no UI-invented authority | T13, T14 |
 
 ### Business configuration
