@@ -31,12 +31,12 @@ P1-011 changed retained persistence and regression coverage only. It did not add
 
 ## Active major task
 
-`P1-012` — Homeroom control plane — **IN_PROGRESS** on
+`P1-012` — Homeroom control plane — **IN_REVIEW** on
 `feat/homeroom-control-plane-012`, from canonical main
 `1d51580ddc501a5cf132688a66d6b7b1941570d0`.
 
-`P1-011` is CLOSED. P1-012 implementation is not yet claimed complete;
-independent review and CI remain required before it may enter closure flow.
+`P1-011` is CLOSED. P1-012 branch implementation and local non-database gates are complete;
+independent GitHub review, exact-head CI and isolated PostgreSQL execution remain required before merge or closure flow.
 
 ## Accepted product/domain authority
 

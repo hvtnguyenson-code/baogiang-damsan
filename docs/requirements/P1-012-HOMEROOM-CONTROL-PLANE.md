@@ -2,7 +2,7 @@
 
 ## Status
 
-**IN_PROGRESS.**
+**IN_REVIEW.**
 
 - Task: `P1-012`
 - Branch: `feat/homeroom-control-plane-012`
@@ -424,11 +424,47 @@ Before P1-012 is ready for independent review, its branch must:
 - mark P1-012 `IN_REVIEW` in `PRE-PILOT-TASK-REGISTER.md`;
 - update `CURRENT-PROJECT-STATUS.md` to describe the branch as pending review, not merged/closed;
 - update T13/T14 implementation coverage in `PRE-PILOT-TRACEABILITY-MATRIX.md` without claiming closure before merge;
-- update this task document with exact final branch HEAD, changed-file list and test evidence;
+- record the exact reviewed branch HEAD in external Git/GitHub review and CI evidence after the final commit; do not embed a self-referential SHA in the commit that creates it;
+- update this task document with the changed-file list and local test evidence;
 - update README/PROJECT_CONTEXT/roadmap only if they would otherwise become false;
 - register any genuinely discovered deferred/follow-up item with an exact task/trigger in the same PR; plain `later`/`future`/orphan deferral is prohibited.
 
 No Product Baseline or new ADR change is expected because P1-012 implements already-accepted ADR-045 authority. If implementation discovers a true semantic contradiction, stop and register an architecture correction rather than silently deciding it in code.
+
+### 19.1 Branch implementation evidence
+
+Changed files for P1-012 are limited to:
+
+- `apps/api/src/academic-structure/academic-structure.service.ts`;
+- `apps/api/src/app.module.ts`;
+- `apps/api/src/homeroom-assignments/dto.ts`;
+- `apps/api/src/homeroom-assignments/homeroom-assignment-policy.ts`;
+- `apps/api/src/homeroom-assignments/homeroom-assignments.controller.ts`;
+- `apps/api/src/homeroom-assignments/homeroom-assignments.module.ts`;
+- `apps/api/src/homeroom-assignments/homeroom-assignments.service.ts`;
+- `apps/api/test/helpers/phase01-test-harness.ts`;
+- `apps/api/test/homeroom-assignments/homeroom-assignment-policy.spec.ts`;
+- `apps/api/test/homeroom-assignments/homeroom-assignments.integration.spec.ts`;
+- `apps/api/test/homeroom-assignments/homeroom-assignments.service.spec.ts`;
+- `apps/api/test/homeroom-assignments/homeroom-capability.spec.ts`;
+- `apps/web/src/lib/capabilities.ts`;
+- `packages/contracts/src/index.ts`;
+- `prisma/capability-catalog.cjs`;
+- `scripts/ci/verify-schema-foundation.cjs`;
+- this task document plus `CURRENT-PROJECT-STATUS.md`, `PRE-PILOT-TASK-REGISTER.md` and `PRE-PILOT-TRACEABILITY-MATRIX.md`.
+
+Local evidence on the task branch:
+
+- Prisma schema validation: PASS using a non-connecting placeholder URL required only for schema parsing;
+- schema static gates: PASS;
+- repository lint: PASS;
+- repository typecheck: PASS;
+- complete unit suites: PASS — web 14 suites/157 tests; API 63 suites/914 tests;
+- targeted Homeroom unit regression: PASS — 3 suites/11 tests;
+- affected Homeroom/academic-structure/capability unit regression: PASS — 11 suites/59 tests;
+- production build: PASS;
+- `git diff --check`: PASS;
+- isolated PostgreSQL integration and canonical full suite: **NOT RUN / BỊ CHẶN DO MÔI TRƯỜNG** — no explicitly certified isolated PostgreSQL environment with the current schema was available; no production or uncertified database was used.
 
 ## 20. Closure rule
 

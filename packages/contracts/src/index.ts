@@ -120,6 +120,7 @@ export type CapabilityKey =
   | 'PPCT_MANAGE'
   | 'CALENDAR_EXCEPTION_MANAGE'
   | 'TEACHING_OPERATION_MANAGE'
+  | 'HOMEROOM_ASSIGNMENT_MANAGE'
   | 'SPECIAL_ACTIVITY_MANAGE'
   | 'TEACHING_EXECUTION_RECORD'
   | 'TEACHING_EXECUTION_MANAGE'
@@ -589,6 +590,27 @@ export interface TeachingAssignmentEligibleTeacherListResponse {
   pageSize: number;
   total: number;
 }
+
+export type HomeroomAssignmentStatus = 'ACTIVE' | 'REVERSED';
+export interface HomeroomAssignmentClassSummary { id: string; code: string; name: string; gradeLevel: number; status: CatalogStatus; }
+export interface HomeroomAssignmentTeacherSummary { userId: string; username: string; displayName: string; staffCode: string | null; userStatus: UserStatus; isTeachingStaff: boolean | null; }
+export interface HomeroomAssignmentRecord {
+  id: string; academicYearId: string; schoolClassId: string; teacherUserId: string;
+  validFrom: CivilDateString; validUntil: CivilDateString | null; status: HomeroomAssignmentStatus;
+  note: string | null; entryReason: string | null; replacesId: string | null; createdByUserId: string;
+  reversedByUserId: string | null; reversedAt: string | null; reversalReason: string | null;
+  createdAt: string; updatedAt: string; schoolClass: HomeroomAssignmentClassSummary; teacher: HomeroomAssignmentTeacherSummary;
+}
+export interface HomeroomAssignmentListResponse { items: HomeroomAssignmentRecord[]; page: number; pageSize: number; total: number; }
+export interface HomeroomAssignmentChangeResult { previous: HomeroomAssignmentRecord; replacement: HomeroomAssignmentRecord; }
+export interface HomeroomAssignmentCorrectionResult { source: HomeroomAssignmentRecord; replacements: HomeroomAssignmentRecord[]; }
+export type HomeroomResolutionResult =
+  | { outcome: 'RESOLVED'; assignment: HomeroomAssignmentRecord }
+  | { outcome: 'MISSING' | 'AMBIGUOUS' | 'CORRUPT' };
+export interface HomeroomAssignmentAcademicYearOption { id: string; code: string; name: string; }
+export interface HomeroomAssignmentAcademicYearOptionListResponse { items: HomeroomAssignmentAcademicYearOption[]; page: number; pageSize: number; total: number; }
+export interface HomeroomAssignmentWorkspaceOptionsResponse { academicYear: HomeroomAssignmentAcademicYearOption; activeCalendar: { id: string; versionNumber: number; startDate: CivilDateString; endDate: CivilDateString } | null; classes: HomeroomAssignmentClassSummary[]; historicalTeachers: HomeroomAssignmentTeacherSummary[]; }
+export interface HomeroomAssignmentEligibleTeacherListResponse { items: HomeroomAssignmentTeacherSummary[]; page: number; pageSize: number; total: number; }
 
 // ============================================================
 // Phase 04 Timetable / Time-slot Contracts
