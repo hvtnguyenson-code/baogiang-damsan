@@ -76,6 +76,11 @@ enum OperationalOverlayStatus {
   REVERSED
 }
 
+enum HomeroomAssignmentStatus {
+  ACTIVE
+  REVERSED
+}
+
 enum CalendarExceptionScope {
   SCHOOL_WIDE
   GRADE
@@ -191,6 +196,9 @@ model User {
   auditEvents                       AuditEvent[]                            @relation("AuditActor")
   additionalDutyAssignmentsCreated  StaffAdditionalDutyAssignment[]         @relation("AdditionalDutyAssignmentCreator")
   teachingAssignments               TeachingAssignment[]                    @relation("TeachingAssignmentTeacher")
+  homeroomAssignments               HomeroomAssignment[]                    @relation("HomeroomAssignmentTeacher")
+  homeroomAssignmentsCreated        HomeroomAssignment[]                    @relation("HomeroomAssignmentCreatedBy")
+  homeroomAssignmentsReversed       HomeroomAssignment[]                    @relation("HomeroomAssignmentReversedBy")
   timetableVersionsCreated          TimetableVersion[]                      @relation("TimetableVersionCreatedBy")
   timetableVersionsValidated        TimetableVersion[]                      @relation("TimetableVersionValidatedBy")
   timetableVersionsApproved         TimetableVersion[]                      @relation("TimetableVersionApprovedBy")
@@ -458,6 +466,7 @@ model AcademicYear {
   calendarVersions       AcademicCalendarVersion[]
   classes                SchoolClass[]
   teachingAssignments    TeachingAssignment[]
+  homeroomAssignments    HomeroomAssignment[]
   timeSlotDefinitions    TimeSlotDefinition[]
   timetableVersions      TimetableVersion[]
   timetableEntries       TimetableEntry[]
@@ -637,6 +646,7 @@ model SchoolClass {
 
   academicYear             AcademicYear                 @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
   teachingAssignments      TeachingAssignment[]         @relation("TeachingAssignmentSchoolClass")
+  homeroomAssignments      HomeroomAssignment[]         @relation("HomeroomAssignmentSchoolClass")
   timetableEntries         TimetableEntry[]             @relation("TimetableEntrySchoolClass")
   timetableImportAliases   TimetableImportEntityAlias[] @relation("TimetableImportAliasSchoolClass")
   ppctClassAssociations    PpctClassAssociation[]       @relation("PpctClassAssociationSchoolClass")
@@ -804,6 +814,39 @@ model TeachingAssignment {
   @@index([teacherUserId, academicYearId, validFrom, validUntil], map: "teaching_assignments_teacher_year_validity_idx")
   @@index([subjectId, academicYearId, validFrom, validUntil], map: "teaching_assignments_subject_year_validity_idx")
   @@map("teaching_assignments")
+}
+
+model HomeroomAssignment {
+  id               String                   @id @default(uuid()) @db.Uuid
+  academicYearId   String                   @map("academic_year_id") @db.Uuid
+  schoolClassId    String                   @map("school_class_id") @db.Uuid
+  teacherUserId    String                   @map("teacher_user_id") @db.Uuid
+  validFrom        DateTime                 @map("valid_from") @db.Date
+  validUntil       DateTime?                @map("valid_until") @db.Date
+  status           HomeroomAssignmentStatus @default(ACTIVE)
+  note             String?                  @db.VarChar(500)
+  entryReason      String?                  @map("entry_reason") @db.Text
+  replacesId       String?                  @map("replaces_id") @db.Uuid
+  createdByUserId  String                   @map("created_by_user_id") @db.Uuid
+  reversedByUserId String?                  @map("reversed_by_user_id") @db.Uuid
+  reversedAt       DateTime?                @map("reversed_at") @db.Timestamptz(3)
+  reversalReason   String?                  @map("reversal_reason") @db.Text
+  createdAt        DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime                 @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  academicYear AcademicYear         @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  schoolClass  SchoolClass          @relation("HomeroomAssignmentSchoolClass", fields: [schoolClassId, academicYearId], references: [id, academicYearId], onDelete: Restrict)
+  teacher      User                 @relation("HomeroomAssignmentTeacher", fields: [teacherUserId], references: [id], onDelete: Restrict)
+  createdBy    User                 @relation("HomeroomAssignmentCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  reversedBy   User?                @relation("HomeroomAssignmentReversedBy", fields: [reversedByUserId], references: [id], onDelete: Restrict)
+  replaces     HomeroomAssignment?  @relation("HomeroomAssignmentReplacementLineage", fields: [replacesId], references: [id], onDelete: Restrict)
+  replacements HomeroomAssignment[] @relation("HomeroomAssignmentReplacementLineage")
+
+  @@unique([id, academicYearId, schoolClassId, teacherUserId], map: "homeroom_assignments_provenance_key")
+  @@index([academicYearId, schoolClassId, status, validFrom, validUntil], map: "homeroom_assignments_class_status_validity_idx")
+  @@index([teacherUserId, academicYearId, validFrom, validUntil], map: "homeroom_assignments_teacher_year_validity_idx")
+  @@index([replacesId], map: "homeroom_assignments_replaces_id_idx")
+  @@map("homeroom_assignments")
 }
 
 model TimetableVersion {
