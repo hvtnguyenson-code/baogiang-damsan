@@ -150,4 +150,19 @@ describe('Homeroom administration workspace', () => {
     const fetchMock = fetchFor({ rows: [activeRow] }); vi.stubGlobal('fetch', fetchMock); const user = userEvent.setup(); renderWithQuery(<HomeroomAssignmentsPage />); await user.click(within(await screen.findByRole('region', { name: 'Sổ phân công chủ nhiệm' })).getByRole('button', { name: 'Hiệu chỉnh' }));
     await user.click(screen.getByRole('button', { name: 'Xác nhận hiệu chỉnh' })); expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith('/correct') && init?.method === 'POST')).toBe(false);
   });
+
+  it('blocks historical create without entry reason, then sends the exact retained DTO', async () => {
+    const fetchMock = fetchFor({ rows: [] }); vi.stubGlobal('fetch', fetchMock); const user = userEvent.setup(); renderWithQuery(<HomeroomAssignmentsPage />); await user.click(await screen.findByRole('button', { name: 'Tạo phân công' })); const form = screen.getByRole('heading', { name: 'Tạo phân công chủ nhiệm' }).closest('form')!;
+    fireEvent.change(within(form).getByLabelText('Có hiệu lực từ'), { target: { value: '2026-08-31' } }); fireEvent.change(within(form).getByLabelText('Có hiệu lực đến'), { target: { value: '2026-09-03' } }); await user.selectOptions(within(form).getByLabelText('Lớp'), 'class-2'); await user.type(within(form).getByLabelText('Tìm danh tính giáo viên lịch sử'), 'An'); await waitFor(() => expect(within(form).getByLabelText('Giáo viên theo danh tính lịch sử')).toBeEnabled()); await user.selectOptions(within(form).getByLabelText('Giáo viên theo danh tính lịch sử'), 'teacher-1'); await user.click(within(form).getByRole('button', { name: 'Lưu phân công' }));
+    expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith('/homeroom-assignments') && init?.method === 'POST')).toBe(false); expect(screen.getAllByText(/nguồn hoặc lý do nhập/i).length).toBeGreaterThan(1);
+  });
+
+  it('resets filters and workflow when changing academic year', async () => {
+    const fetchMock = fetchFor(); vi.stubGlobal('fetch', fetchMock); const user = userEvent.setup(); renderWithQuery(<HomeroomAssignmentsPage />); await screen.findByRole('region', { name: 'Sổ phân công chủ nhiệm' }); await user.selectOptions(screen.getByLabelText('Lớp'), 'class-1'); await user.click(screen.getByRole('button', { name: 'Tạo phân công' })); await user.selectOptions(screen.getByLabelText('Năm học'), 'year-2');
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/academic-years/year-2/homeroom-assignments?page=1&pageSize=20'))).toBe(true)); expect(screen.queryByRole('heading', { name: 'Tạo phân công chủ nhiệm' })).not.toBeInTheDocument(); expect(screen.getByLabelText('Lớp')).toHaveValue('');
+  });
+
+  it('does not allow a 51st correction replacement', async () => {
+    vi.stubGlobal('fetch', fetchFor({ rows: [activeRow] })); const user = userEvent.setup(); renderWithQuery(<HomeroomAssignmentsPage />); await user.click(within(await screen.findByRole('region', { name: 'Sổ phân công chủ nhiệm' })).getByRole('button', { name: 'Hiệu chỉnh' })); const add = screen.getByRole('button', { name: 'Thêm khoảng' }); for (let index = 1; index < 50; index += 1) await user.click(add); expect(add).toBeDisabled(); expect(screen.getByLabelText('Bản ghi thay thế đang chỉnh').querySelectorAll('option')).toHaveLength(50);
+  });
 });

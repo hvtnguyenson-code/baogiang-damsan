@@ -118,7 +118,7 @@ After `SYNC-P1-012A` merges, dependency gates permit these registered tasks to s
 - `P4-010` — GDĐP/HĐTN programme architecture closure;
 - `P6-010` — Pre-deploy TLS/HTTP-01 authority.
 
-Readiness is not permission to bypass one-task-per-branch, review, CI or mandatory closure-sync gates. P1-013 has not started; P4 runtime work remains gated by its registered dependencies.
+Readiness is not permission to bypass one-task-per-branch, review, CI or mandatory closure-sync gates. P1-013 is `IN_REVIEW` and must not be treated as `CLOSED` until exact-head PR review/CI, merge, authoritative post-merge CI and mandatory documentation synchronization complete; P4 runtime work remains gated by its registered dependencies.
 
 ## Decisions/evidence still blocking other paths
 

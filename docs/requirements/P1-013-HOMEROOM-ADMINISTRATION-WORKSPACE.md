@@ -30,4 +30,4 @@ The route is `/quan-tri/phan-cong-chu-nhiem` and is visible/accessible only to `
 
 ## Evidence state
 
-This branch is ready for independent review. Local lint, TypeScript checking, targeted Homeroom API/navigation unit tests and production build were run; the full web suite also encountered an existing WebSocket-port contention in this local environment and is not represented as a green CI claim. This document does not claim PR approval, CI success, merge, deployment, or production behavior.
+This branch is ready for independent review. Local evidence is green: the page-level Homeroom regression suite, Homeroom API/navigation targeted suites, full web unit suite (16 files / 181 tests), lint, TypeScript checking, production build and diff-check all passed. This is local evidence only: no exact-head GitHub PR CI success, PR approval, merge, deployment or production evidence is claimed. P1-013 remains `IN_REVIEW`.
