@@ -29,9 +29,9 @@ P1-012 added the dedicated `HOMEROOM_ASSIGNMENT_MANAGE / SCHOOL_WIDE` capability
 
 ## Active major task
 
-`P1-012A` — Homeroom historical identity read-model correction — **IN_PROGRESS** on `fix/homeroom-historical-identity-read-model-012a`, from canonical main `9ac9ae1e510858bc1039da313af90f908b773a93`.
+`P1-012A` — Homeroom historical identity read-model correction — **IN_REVIEW** on `fix/homeroom-historical-identity-read-model-012a`, from canonical main `9ac9ae1e510858bc1039da313af90f908b773a93`.
 
-P1-012 remains CLOSED. A post-closure audit found that the frozen P1-012 workspace read model cannot discover an exact historical User who is currently inactive/non-teaching or lacks a current StaffProfile unless that User is already referenced by HomeroomAssignment. It also does not expose the server-owned Homeroom business civil date. P1-012A corrects those bounded read-model gaps without changing ADR-045 product authority, schema, migrations, Homeroom command/resolver semantics or current/future eligibility.
+P1-012 remains CLOSED. A post-closure audit found that the frozen P1-012 workspace read model cannot discover an exact historical User who is currently inactive/non-teaching or lacks a current StaffProfile unless that User is already referenced by HomeroomAssignment. It also does not expose the server-owned Homeroom business civil date. P1-012A now adds the bounded Homeroom-authorized identity search and server business date without changing ADR-045 product authority, schema, migrations, Homeroom command/resolver semantics or current/future eligibility. Targeted local non-database gates pass; independent GitHub review, exact-head CI and isolated PostgreSQL integration evidence remain pending.
 
 P1-013 is **PLANNED** and has not started. It now depends on P1-012A so the administration workspace can remain UI-only and avoid `USER_MANAGE`, generic user-directory access, raw UUID entry or browser-local business-date inference.
 

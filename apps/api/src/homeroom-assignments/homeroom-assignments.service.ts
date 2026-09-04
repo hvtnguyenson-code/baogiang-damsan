@@ -7,7 +7,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { AuditResult, Prisma, UserStatus } from '@prisma/client';
-import { CivilDateString, HomeroomResolutionResult } from '@baogiang/contracts';
+import {
+  CivilDateString,
+  HomeroomAssignmentHistoricalTeacherIdentityListResponse,
+  HomeroomAssignmentWorkspaceOptionsResponse,
+  HomeroomResolutionResult,
+} from '@baogiang/contracts';
 import { AuditService } from '../audit/audit.service';
 import { RequestMeta } from '../auth/auth.types';
 import { formatCivilDate, parseCivilDate } from '../common/validation/civil-date';
@@ -18,6 +23,7 @@ import {
   CreateHomeroomAssignmentDto,
   EndHomeroomAssignmentDto,
   HomeroomEligibleTeachersDto,
+  HomeroomHistoricalTeacherIdentitiesDto,
   HomeroomPageDto,
   ListHomeroomAssignmentsDto,
 } from './dto';
@@ -399,7 +405,7 @@ export class HomeroomAssignmentsService {
     return { items, page: query.page, pageSize: query.pageSize, total };
   }
 
-  async workspace(academicYearId: string) {
+  async workspace(academicYearId: string): Promise<HomeroomAssignmentWorkspaceOptionsResponse> {
     const academicYear = await this.prisma.academicYear.findUnique({
       where: { id: academicYearId }, select: { id: true, code: true, name: true },
     });
@@ -421,6 +427,7 @@ export class HomeroomAssignmentsService {
       }),
     ]);
     return {
+      businessDate: homeroomBusinessDate(),
       academicYear,
       activeCalendar: activeCalendar ? {
         ...activeCalendar,
@@ -429,6 +436,44 @@ export class HomeroomAssignmentsService {
       } : null,
       classes,
       historicalTeachers: historicalTeachers.map((teacher) => this.teacherSummary(teacher)),
+    };
+  }
+
+  async historicalTeacherIdentities(
+    academicYearId: string,
+    query: HomeroomHistoricalTeacherIdentitiesDto,
+  ): Promise<HomeroomAssignmentHistoricalTeacherIdentityListResponse> {
+    await this.requireAcademicYear(academicYearId);
+    const term = query.q.trim();
+    if (term.length < 2) throw new BadRequestException('Từ khóa tìm kiếm phải có ít nhất 2 ký tự.');
+    const where: Prisma.UserWhereInput = {
+      OR: [
+        { username: { contains: term, mode: 'insensitive' } },
+        { profile: { is: { displayName: { contains: term, mode: 'insensitive' } } } },
+        { profile: { is: { staffCode: { contains: term, mode: 'insensitive' } } } },
+      ],
+    };
+    const select = {
+      id: true,
+      username: true,
+      status: true,
+      profile: { select: { displayName: true, staffCode: true, isTeachingStaff: true } },
+    } satisfies Prisma.UserSelect;
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.user.findMany({
+        where,
+        select,
+        skip: (query.page - 1) * query.pageSize,
+        take: query.pageSize,
+        orderBy: [{ username: 'asc' }, { id: 'asc' }],
+      }),
+      this.prisma.user.count({ where }),
+    ]);
+    return {
+      items: items.map((teacher) => this.teacherSummary(teacher)),
+      page: query.page,
+      pageSize: query.pageSize,
+      total,
     };
   }
 

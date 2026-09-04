@@ -2,7 +2,7 @@
 
 ## Status
 
-**IN_PROGRESS.**
+**IN_REVIEW — implementation and targeted local gates complete; independent GitHub review and exact-head CI pending.**
 
 - Task: `P1-012A`
 - Branch: `fix/homeroom-historical-identity-read-model-012a`
@@ -66,3 +66,39 @@ Targeted tests must prove:
 Before independent review, P1-012A becomes `IN_REVIEW`; current status and T13/T14 must describe the correction as pending review/CI; P1-012 remains `CLOSED`; P1-013 remains `PLANNED` and depends on P1-012A.
 
 P1-012A becomes `CLOSED` only after implementation, independent GitHub review, exact-head CI SUCCESS, merge, authoritative post-merge main CI SUCCESS and non-recursive `SYNC-P1-012A` closure. Only then may P1-013 become `READY` again.
+
+## 6. Branch implementation evidence
+
+Changed files are limited to:
+
+- `packages/contracts/src/index.ts`;
+- `apps/api/src/homeroom-assignments/dto.ts`;
+- `apps/api/src/homeroom-assignments/homeroom-assignments.controller.ts`;
+- `apps/api/src/homeroom-assignments/homeroom-assignments.service.ts`;
+- `apps/api/test/homeroom-assignments/homeroom-assignments.service.spec.ts`;
+- `apps/api/test/homeroom-assignments/homeroom-assignments.integration.spec.ts`;
+- this task document;
+- `docs/governance/CURRENT-PROJECT-STATUS.md`;
+- `docs/governance/PRE-PILOT-TASK-REGISTER.md`;
+- `docs/governance/PRE-PILOT-TRACEABILITY-MATRIX.md`.
+
+Implementation provides:
+
+- `businessDate: CivilDateString` on the workspace response, sourced only from `homeroomBusinessDate()`;
+- `GET /api/homeroom-assignment-options/academic-years/:academicYearId/historical-teacher-identities` with trimmed 2..100-character search, page >= 1 and pageSize 1..100;
+- case-insensitive exact-field discovery across username, display name and staff code;
+- public-safe identity summaries for inactive, non-teaching and profile-less Users without current-eligibility filtering;
+- the existing class-level `HOMEROOM_ASSIGNMENT_MANAGE / SCHOOL_WIDE` guard, with explicit denial regressions for no grant and unrelated SYSTEM_ADMIN/USER_MANAGE/SUBJECT_MANAGE grants;
+- unchanged strict current/future `eligible-teachers` filtering.
+
+Local evidence:
+
+- contracts lint/typecheck: PASS;
+- API lint/typecheck: PASS;
+- targeted Homeroom unit/capability regression: PASS — 3 suites / 19 tests;
+- API build: PASS;
+- isolated PostgreSQL Homeroom integration: **NOT RUN / BỊ CHẶN DO MÔI TRƯỜNG** — the safety harness refused execution because no explicitly certified isolated `TEST_DATABASE_URL` was available; no production or uncertified database was used;
+- Prisma validate: NOT RUN / not applicable because schema and migrations are unchanged;
+- `git diff --check`: PASS.
+
+P1-013 UI is not implemented on this branch. Exact-head GitHub CI remains required before merge or closure claims.

@@ -5,7 +5,7 @@ import { AuthenticatedRequest } from '../auth/auth.types';
 import { SessionAuthGuard } from '../auth/session-auth.guard';
 import { CapabilityGuard } from '../authorization/capability.guard';
 import { RequireCapability } from '../authorization/require-capability.decorator';
-import { ChangeHomeroomTeacherDto, CorrectHomeroomAssignmentDto, CreateHomeroomAssignmentDto, EndHomeroomAssignmentDto, HomeroomEligibleTeachersDto, HomeroomPageDto, ListHomeroomAssignmentsDto, ResolveHomeroomAssignmentDto } from './dto';
+import { ChangeHomeroomTeacherDto, CorrectHomeroomAssignmentDto, CreateHomeroomAssignmentDto, EndHomeroomAssignmentDto, HomeroomEligibleTeachersDto, HomeroomHistoricalTeacherIdentitiesDto, HomeroomPageDto, ListHomeroomAssignmentsDto, ResolveHomeroomAssignmentDto } from './dto';
 import { HomeroomAssignmentsService } from './homeroom-assignments.service';
 @Controller()
 @RequireCapability('HOMEROOM_ASSIGNMENT_MANAGE', { scope: 'SCHOOL_WIDE' })
@@ -20,5 +20,6 @@ export class HomeroomAssignmentsController {
   @Get('academic-years/:academicYearId/homeroom-assignments/resolve') @UseGuards(SessionAuthGuard, CapabilityGuard) resolve(@Param('academicYearId', ParseUUIDPipe) year: string, @Query() dto: ResolveHomeroomAssignmentDto) { return this.service.resolve(year, dto.schoolClassId, dto.on); }
   @Get('homeroom-assignment-options/academic-years') @UseGuards(SessionAuthGuard, CapabilityGuard) years(@Query() q:HomeroomPageDto){return this.service.optionYears(q);}
   @Get('homeroom-assignment-options/academic-years/:academicYearId') @UseGuards(SessionAuthGuard, CapabilityGuard) workspace(@Param('academicYearId',ParseUUIDPipe) year:string){return this.service.workspace(year);}
+  @Get('homeroom-assignment-options/academic-years/:academicYearId/historical-teacher-identities') @UseGuards(SessionAuthGuard, CapabilityGuard) historicalTeacherIdentities(@Param('academicYearId', ParseUUIDPipe) year: string, @Query() q: HomeroomHistoricalTeacherIdentitiesDto) { return this.service.historicalTeacherIdentities(year, q); }
   @Get('homeroom-assignment-options/academic-years/:academicYearId/eligible-teachers') @UseGuards(SessionAuthGuard, CapabilityGuard) eligible(@Param('academicYearId',ParseUUIDPipe) year:string,@Query() q:HomeroomEligibleTeachersDto){return this.service.eligibleTeachers(year,q);}
 }

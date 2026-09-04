@@ -1,5 +1,5 @@
-import { Type } from 'class-transformer';
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, ValidateNested } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
 import { IsCivilDate } from '../common/validation/civil-date';
 
 export class HomeroomPageDto { @IsOptional() @Type(() => Number) @IsInt() @Min(1) page = 1; @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) pageSize = 20; }
@@ -10,4 +10,5 @@ export class ChangeHomeroomTeacherDto { @IsUUID() newTeacherUserId!: string; @Is
 export class HomeroomReplacementDto { @IsUUID() teacherUserId!: string; @IsCivilDate() validFrom!: string; @IsOptional() @IsCivilDate() validUntil?: string; @IsOptional() @IsString() @MaxLength(500) note?: string; @IsOptional() @IsString() @MaxLength(2000) entryReason?: string; }
 export class CorrectHomeroomAssignmentDto { @IsString() @MaxLength(2000) reason!: string; @IsArray() @ArrayMinSize(1) @ArrayMaxSize(50) @ValidateNested({ each: true }) @Type(() => HomeroomReplacementDto) replacements!: HomeroomReplacementDto[]; }
 export class HomeroomEligibleTeachersDto extends HomeroomPageDto { @IsCivilDate() validFrom!: string; @IsOptional() @IsCivilDate() validUntil?: string; }
+export class HomeroomHistoricalTeacherIdentitiesDto extends HomeroomPageDto { @Transform(({ value }) => typeof value === 'string' ? value.trim() : value) @IsString() @MinLength(2) @MaxLength(100) q!: string; }
 export class ResolveHomeroomAssignmentDto { @IsUUID() schoolClassId!: string; @IsCivilDate() on!: string; }

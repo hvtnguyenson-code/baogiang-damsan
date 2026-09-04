@@ -1,10 +1,14 @@
 import { BadRequestException, ConflictException, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
 import {
   classifyHomeroomResolutionRows,
   HomeroomAssignmentsService,
   HomeroomResolutionRow,
 } from '../../src/homeroom-assignments/homeroom-assignments.service';
+import { HomeroomHistoricalTeacherIdentitiesDto } from '../../src/homeroom-assignments/dto';
+import * as homeroomPolicy from '../../src/homeroom-assignments/homeroom-assignment-policy';
 
 function lineage(overrides: Partial<HomeroomResolutionRow> = {}): HomeroomResolutionRow {
   return {
@@ -181,5 +185,92 @@ describe('Homeroom mutation transaction behavior', () => {
     }, 'actor', { requestId: 'external-conflict' })).rejects.toBeInstanceOf(ConflictException);
     expect(tx.homeroomAssignment.updateMany).not.toHaveBeenCalled();
     expect(audit.write).not.toHaveBeenCalled();
+  });
+});
+
+describe('Homeroom workspace historical identity read model', () => {
+  it('returns the canonical server-owned business date with workspace options', async () => {
+    const businessDate = jest.spyOn(homeroomPolicy, 'homeroomBusinessDate').mockReturnValue('2026-09-04');
+    const prisma = {
+      academicYear: { findUnique: jest.fn().mockResolvedValue({ id: 'year', code: '2026', name: '2026-2027' }) },
+      academicCalendarVersion: { findFirst: jest.fn().mockResolvedValue(null) },
+      schoolClass: { findMany: jest.fn().mockResolvedValue([]) },
+      user: { findMany: jest.fn().mockResolvedValue([]) },
+      $transaction: jest.fn((operations: unknown[]) => Promise.all(operations)),
+    };
+    const service = new HomeroomAssignmentsService(prisma as never, {} as never);
+
+    await expect(service.workspace('year')).resolves.toMatchObject({
+      businessDate: '2026-09-04',
+      academicYear: { id: 'year' },
+      activeCalendar: null,
+    });
+    expect(businessDate).toHaveBeenCalledWith();
+    businessDate.mockRestore();
+  });
+
+  it('searches bounded public identity fields without current eligibility filters', async () => {
+    const identity = {
+      id: 'inactive-user', username: 'former.teacher', status: 'DISABLED', profile: null,
+    };
+    const prisma = {
+      academicYear: { findUnique: jest.fn().mockResolvedValue({ id: 'year' }) },
+      user: {
+        findMany: jest.fn().mockResolvedValue([identity]),
+        count: jest.fn().mockResolvedValue(1),
+      },
+      $transaction: jest.fn((operations: unknown[]) => Promise.all(operations)),
+    };
+    const service = new HomeroomAssignmentsService(prisma as never, {} as never);
+
+    await expect(service.historicalTeacherIdentities('year', { q: ' former ', page: 1, pageSize: 20 })).resolves.toEqual({
+      items: [{
+        userId: 'inactive-user', username: 'former.teacher', displayName: 'former.teacher', staffCode: null,
+        userStatus: 'DISABLED', isTeachingStaff: null,
+      }],
+      page: 1,
+      pageSize: 20,
+      total: 1,
+    });
+    expect(prisma.user.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: {
+        OR: [
+          { username: { contains: 'former', mode: 'insensitive' } },
+          { profile: { is: { displayName: { contains: 'former', mode: 'insensitive' } } } },
+          { profile: { is: { staffCode: { contains: 'former', mode: 'insensitive' } } } },
+        ],
+      },
+      skip: 0,
+      take: 20,
+    }));
+  });
+
+  it('rejects a too-short term and DTO validation bounds query and pagination', async () => {
+    const prisma = {
+      academicYear: { findUnique: jest.fn().mockResolvedValue({ id: 'year' }) },
+      user: { findMany: jest.fn(), count: jest.fn() },
+    };
+    const service = new HomeroomAssignmentsService(prisma as never, {} as never);
+    await expect(service.historicalTeacherIdentities('year', { q: ' ', page: 1, pageSize: 20 })).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.user.findMany).not.toHaveBeenCalled();
+
+    const tooShort = plainToInstance(HomeroomHistoricalTeacherIdentitiesDto, { q: ' x ' });
+    const tooLarge = plainToInstance(HomeroomHistoricalTeacherIdentitiesDto, { q: 'teacher', pageSize: 101 });
+    expect(await validate(tooShort)).not.toHaveLength(0);
+    expect(await validate(tooLarge)).not.toHaveLength(0);
+  });
+
+  it('keeps current eligible-teacher filtering strict and StaffSubject-independent', async () => {
+    const calendar = { startDate: new Date('2026-08-01T00:00:00Z'), endDate: new Date('2027-05-31T00:00:00Z') };
+    const prisma = {
+      academicCalendarVersion: { findMany: jest.fn().mockResolvedValue([calendar]) },
+      user: { findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0) },
+      $transaction: jest.fn((operations: unknown[]) => Promise.all(operations)),
+    };
+    const service = new HomeroomAssignmentsService(prisma as never, {} as never);
+    await service.eligibleTeachers('year', { validFrom: '2026-09-10', page: 1, pageSize: 20 });
+    expect(prisma.user.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { status: 'ACTIVE', profile: { is: { isTeachingStaff: true } } },
+    }));
   });
 });
