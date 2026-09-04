@@ -2,7 +2,7 @@
 
 ## Status
 
-**IN_REVIEW — implementation and targeted local gates complete; independent GitHub review and exact-head CI pending.**
+**CLOSED — implementation, independent review, exact-head PR CI, merge, post-merge main CI and `SYNC-P1-012A` closure evidence satisfied.**
 
 - Task: `P1-012A`
 - Branch: `fix/homeroom-historical-identity-read-model-012a`
@@ -11,6 +11,20 @@
 - Governing authority: `ADR-045-HOMEROOM-RESPONSIBILITY.md`, P1-010 and P1-012
 - Traceability: T13, T14
 - Scope: bounded Homeroom-authorized historical User identity discovery and server-owned Homeroom business-date read model required before P1-013.
+
+Closure evidence:
+
+- exact starting main: `9ac9ae1e510858bc1039da313af90f908b773a93`;
+- implementation branch: `fix/homeroom-historical-identity-read-model-012a`;
+- governance registration commit: `c7f3d860549b324eb5daf65eed79c9c534096be5`;
+- final reviewed head: `a13a69dca60bef6f99c124f420affa8196b7822a`;
+- PR #99;
+- independent GitHub review: PASS;
+- exact-head PR CI #347 (workflow run `33832457894`): final SUCCESS; attempt 1 failed at npm audit because the registry returned 503, with no dependency change or vulnerability finding, and the targeted failed-job rerun completed as successful attempt 2;
+- merge/main: `530f418d3e144826cd801f572d6367bb679d398a`;
+- authoritative post-merge main CI #348 (workflow run `33834641625`, event `push`, exact head `530f418d3e144826cd801f572d6367bb679d398a`): SUCCESS;
+- no separate correction/re-entry task required;
+- administrative closure: `SYNC-P1-012A`.
 
 ## 1. Audited gap
 
@@ -63,9 +77,9 @@ Targeted tests must prove:
 
 ## 5. Documentation and closure
 
-Before independent review, P1-012A becomes `IN_REVIEW`; current status and T13/T14 must describe the correction as pending review/CI; P1-012 remains `CLOSED`; P1-013 remains `PLANNED` and depends on P1-012A.
+Before independent review, P1-012A became `IN_REVIEW`; current status and T13/T14 described the correction as pending review/CI; P1-012 remained `CLOSED`; P1-013 remained `PLANNED` and depended on P1-012A.
 
-P1-012A becomes `CLOSED` only after implementation, independent GitHub review, exact-head CI SUCCESS, merge, authoritative post-merge main CI SUCCESS and non-recursive `SYNC-P1-012A` closure. Only then may P1-013 become `READY` again.
+P1-012A required implementation, independent GitHub review, exact-head CI SUCCESS, merge, authoritative post-merge main CI SUCCESS and non-recursive `SYNC-P1-012A` closure. All gates are satisfied. P1-013 may become `READY` only after the `SYNC-P1-012A` closure PR itself is independently reviewed, merged and its post-merge main CI is green; P1-013 has not started.
 
 ## 6. Branch implementation evidence
 
@@ -101,4 +115,4 @@ Local evidence:
 - Prisma validate: NOT RUN / not applicable because schema and migrations are unchanged;
 - `git diff --check`: PASS.
 
-P1-013 UI is not implemented on this branch. Exact-head GitHub CI remains required before merge or closure claims.
+P1-013 UI was not implemented by P1-012A. Exact-head PR CI #347 and post-merge main CI #348 established the required repository evidence for the merged correction.

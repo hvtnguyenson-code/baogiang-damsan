@@ -10,30 +10,27 @@ It is **not** a self-referential registry of the latest Git commit. Exact curren
 
 ## Last closed major task
 
-`P1-012` — Homeroom control plane — **CLOSED** by `SYNC-P1-012`.
+`P1-012A` — Homeroom historical identity read-model correction — **CLOSED** by `SYNC-P1-012A`.
 
 Closure evidence:
 
-- exact starting main: `1d51580ddc501a5cf132688a66d6b7b1941570d0`;
-- implementation branch: `feat/homeroom-control-plane-012`;
-- final reviewed head: `6af8bb27367763bec143a6bf26e7af22115394e1`;
-- PR: #97 `feat(homeroom): add P1-012 control plane`;
+- exact starting main: `9ac9ae1e510858bc1039da313af90f908b773a93`;
+- implementation branch: `fix/homeroom-historical-identity-read-model-012a`;
+- governance registration commit: `c7f3d860549b324eb5daf65eed79c9c534096be5`;
+- final reviewed head: `a13a69dca60bef6f99c124f420affa8196b7822a`;
+- PR: #99;
 - independent GitHub diff review: PASS;
-- exact-head PR CI: #343 (workflow run `33825153273`) — SUCCESS;
-- merge/main SHA: `3bf0589db17534700d8c8a15ce59645663d3ef40`;
-- authoritative post-merge main CI: #344 (workflow run `33825691809`, event `push`, exact head `3bf0589db17534700d8c8a15ce59645663d3ef40`) — SUCCESS;
-- administrative closure: `SYNC-P1-012`;
-- independent-review and CI #341/#342 corrections were absorbed as forward commits before merge; no separate correction/re-entry task was required.
+- exact-head PR CI: #347 (workflow run `33832457894`) — final SUCCESS; attempt 1 failed only because the npm registry returned 503 during audit, with no dependency change or vulnerability finding, and the targeted failed-job rerun completed as successful attempt 2;
+- merge/main SHA: `530f418d3e144826cd801f572d6367bb679d398a`;
+- authoritative post-merge main CI: #348 (workflow run `33834641625`, event `push`, exact head `530f418d3e144826cd801f572d6367bb679d398a`) — SUCCESS;
+- administrative closure: `SYNC-P1-012A`;
+- no separate correction/re-entry task was required.
 
-P1-012 added the dedicated `HOMEROOM_ASSIGNMENT_MANAGE / SCHOOL_WIDE` capability, capability-controlled create/change/end/correct/read/options control plane, exact fail-closed resolver, calendar compatibility, same-transaction audit and bounded SERIALIZABLE conflict handling. It did not add the P1-013 administration UI, Special Programme runtime, workload/reporting behavior, deployment behavior, VPS/TLS state or production database state.
+P1-012A completed the bounded `HOMEROOM_ASSIGNMENT_MANAGE / SCHOOL_WIDE` historical User identity discovery and server-owned Homeroom `businessDate` read model required by P1-013. It did not introduce `USER_MANAGE` dependency, weaken strict current/future eligible-teacher semantics, change ADR-045 authority, or add schema, migration, UI, deployment or production behavior.
 
-## Active major task
+## Next Homeroom task
 
-`P1-012A` — Homeroom historical identity read-model correction — **IN_REVIEW** on `fix/homeroom-historical-identity-read-model-012a`, from canonical main `9ac9ae1e510858bc1039da313af90f908b773a93`.
-
-P1-012 remains CLOSED. A post-closure audit found that the frozen P1-012 workspace read model cannot discover an exact historical User who is currently inactive/non-teaching or lacks a current StaffProfile unless that User is already referenced by HomeroomAssignment. It also does not expose the server-owned Homeroom business civil date. P1-012A now adds the bounded Homeroom-authorized identity search and server business date without changing ADR-045 product authority, schema, migrations, Homeroom command/resolver semantics or current/future eligibility. Targeted local non-database gates pass; independent GitHub review, exact-head CI and isolated PostgreSQL integration evidence remain pending.
-
-P1-013 is **PLANNED** and has not started. It now depends on P1-012A so the administration workspace can remain UI-only and avoid `USER_MANAGE`, generic user-directory access, raw UUID entry or browser-local business-date inference.
+`P1-013` — Homeroom administration workspace — **READY**, not started. P1-012 and P1-012A are CLOSED; P1-013 retains dependency on P1-012A and must start through its own exact-main verification, dedicated branch, UI-authority review and normal CI/closure workflow.
 
 ## Accepted product/domain authority
 
@@ -71,7 +68,7 @@ The repository contains reviewed implementation for:
 - academic years, versioned retained calendars, business weeks/segments/reserve weeks/interruptions and classes;
 - date-effective TeachingAssignment history;
 - **retained HomeroomAssignment persistence** with inclusive civil DATE intervals, ACTIVE/REVERSED history, same-class/date ACTIVE overlap prevention, exact retained teacher/actor identities and correction lineage;
-- **Homeroom control plane and capability** with dedicated `HOMEROOM_ASSIGNMENT_MANAGE / SCHOOL_WIDE` authority, explicit lifecycle commands, workspace-safe reads/options, exact typed historical resolution, calendar compatibility and same-transaction audit;
+- **Homeroom control plane and capability** with dedicated `HOMEROOM_ASSIGNMENT_MANAGE / SCHOOL_WIDE` authority, explicit lifecycle commands, workspace-safe reads/options, bounded historical identity discovery without `USER_MANAGE`, server-owned business date, exact typed historical resolution, calendar compatibility and same-transaction audit;
 - retained exact time-slot revisions and real wall-clock collision semantics;
 - retained timetable versions/entries, validation, lifecycle, historical resolution and XLSX canonical import infrastructure;
 - PPCT persistence/control plane, stable item identity/revisions/lineage and exact class-subject version association;
@@ -85,7 +82,7 @@ The repository contains reviewed implementation for:
 - Reporting Statement persistence/control plane/UI enablement/product UI work;
 - hardened Windows production deployment control-plane/runbooks through PR #90.
 
-Homeroom architecture, persistence and control plane/capability are now closed. Only the Homeroom **administration workspace UI** remains to be implemented by P1-013.
+Homeroom architecture, persistence, control plane/capability and the P1-013 prerequisite read model are closed. Only the Homeroom **administration workspace UI** remains to be implemented by P1-013.
 
 ## Pre-pilot verdict
 
@@ -96,7 +93,7 @@ The registered implementation, data-evidence, product and production-readiness t
 ## Critical pre-pilot gaps
 
 1. Current SpecialActivity is a valid runtime occurrence primitive but not a complete GDĐP/HĐTN programme model.
-2. HomeroomAssignment administration workspace/UI remains absent; architecture, persistence and control plane/capability are closed through ADR-045/P1-011/P1-012.
+2. HomeroomAssignment administration workspace/UI remains absent; architecture, persistence, control plane/capability and its historical-identity/business-date read model are closed through ADR-045/P1-011/P1-012/P1-012A.
 3. GDĐP grade/year plan and HĐTN CLASS/GRADE/SCHOOL programme semantics are absent.
 4. Programme planning cannot assign different exact teacher sets to different exact slots.
 5. Special-program absence/replacement and programme-level confirmation authority remain explicitly registered for P4 closure (T43/T44).
@@ -115,13 +112,14 @@ The registered implementation, data-evidence, product and production-readiness t
 
 ## Tasks currently eligible to start
 
-While P1-012A is active, dependency gates permit these other registered tasks to start on their own branches:
+After `SYNC-P1-012A` merges, dependency gates permit these registered tasks to start on their own branches:
 
+- `P1-013` — Homeroom administration workspace;
 - `P1-020` — Business Configuration Control Plane architecture;
 - `P4-010` — GDĐP/HĐTN programme architecture closure;
 - `P6-010` — Pre-deploy TLS/HTTP-01 authority.
 
-Readiness is not permission to bypass one-task-per-branch, review, CI or mandatory closure-sync gates. P1-013 remains blocked on P1-012A closure; P4 runtime work remains gated by its registered dependencies.
+Readiness is not permission to bypass one-task-per-branch, review, CI or mandatory closure-sync gates. P1-013 has not started; P4 runtime work remains gated by its registered dependencies.
 
 ## Decisions/evidence still blocking other paths
 
@@ -147,7 +145,7 @@ Direct P0 inspection found `main` is currently not protected server-side. This i
 
 ## Production state
 
-Production remains **pre-operational**. P1-012 and `SYNC-P1-012` do not authorize or perform deployment, production migration, VPS/Nginx/TLS change, PostgreSQL production mutation or application-process mutation.
+Production remains **pre-operational**. P1-012A and `SYNC-P1-012A` do not authorize or perform deployment, production migration, VPS/Nginx/TLS change, PostgreSQL production mutation or application-process mutation.
 
 ## Protected external system boundary
 
