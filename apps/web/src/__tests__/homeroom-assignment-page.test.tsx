@@ -16,9 +16,10 @@ function workspace(activeCalendar = false) {
   return { businessDate: '2026-09-04', academicYear: year, activeCalendar: activeCalendar ? { id: 'calendar-1', versionNumber: 1, startDate: '2026-08-31', endDate: '2027-05-31' } : null, classes: [activeClass, inactiveClass], historicalTeachers: [teacher] };
 }
 const activeCalendar = { id: 'calendar-1', versionNumber: 1, startDate: '2026-08-31', endDate: '2027-05-31' };
+type CalendarFixture = typeof activeCalendar;
 const activeRow = { id: 'row-1', academicYearId: 'year-1', schoolClassId: 'class-1', teacherUserId: 'teacher-2', validFrom: '2026-08-31', validUntil: '2026-09-10', status: 'ACTIVE' as const, note: 'Ghi chú', entryReason: null, replacesId: null, createdByUserId: 'actor-1', reversedByUserId: null, reversedAt: null, reversalReason: null, createdAt: '', updatedAt: '', schoolClass: activeClass, teacher: currentTeacher };
 const reversedRow = { ...activeRow, id: 'row-2', status: 'REVERSED' as const, reversalReason: 'Sai nguồn', reversedAt: '2026-09-05T10:00:00.000Z', reversedByUserId: 'actor-2', teacher };
-function fullWorkspace(calendar = activeCalendar) { return { ...workspace(Boolean(calendar)), activeCalendar: calendar }; }
+function fullWorkspace(calendar: CalendarFixture | null = activeCalendar) { return { ...workspace(Boolean(calendar)), activeCalendar: calendar }; }
 function fetchFor(options: { calendar?: typeof activeCalendar | null; rows?: unknown[]; status?: number } = {}) {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input); const method = init?.method ?? 'GET';
