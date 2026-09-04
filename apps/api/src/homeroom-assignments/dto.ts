@@ -10,3 +10,4 @@ export class ChangeHomeroomTeacherDto { @IsUUID() newTeacherUserId!: string; @Is
 export class HomeroomReplacementDto { @IsUUID() teacherUserId!: string; @IsCivilDate() validFrom!: string; @IsOptional() @IsCivilDate() validUntil?: string; @IsOptional() @IsString() @MaxLength(500) note?: string; @IsOptional() @IsString() @MaxLength(2000) entryReason?: string; }
 export class CorrectHomeroomAssignmentDto { @IsString() @MaxLength(2000) reason!: string; @IsArray() @ArrayMinSize(1) @ArrayMaxSize(50) @ValidateNested({ each: true }) @Type(() => HomeroomReplacementDto) replacements!: HomeroomReplacementDto[]; }
 export class HomeroomEligibleTeachersDto extends HomeroomPageDto { @IsCivilDate() validFrom!: string; @IsOptional() @IsCivilDate() validUntil?: string; }
+export class ResolveHomeroomAssignmentDto { @IsUUID() schoolClassId!: string; @IsCivilDate() on!: string; }

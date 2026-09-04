@@ -201,6 +201,8 @@ export class HomeroomAssignmentsService {
       const endDate = dto.endDate as CivilDateString;
       const validFrom = formatCivilDate(old.validFrom);
       const previousValidUntil = old.validUntil ? formatCivilDate(old.validUntil) : null;
+      const calendar = await requireHomeroomActiveCalendar(tx, old.academicYearId);
+      requireHomeroomEnvelope(validFrom, endDate, calendar);
       if (endDate < validFrom) throw new BadRequestException('Ngày kết thúc không hợp lệ.');
       if (previousValidUntil !== null && endDate > previousValidUntil) {
         throw new ConflictException('Không thể kéo dài phân công đã có ngày kết thúc.');
@@ -309,7 +311,8 @@ export class HomeroomAssignmentsService {
           throw new BadRequestException('Khoảng hiệu chỉnh vượt ngoài assertion nguồn.');
         }
         const previous = sorted[index - 1];
-        if (previous && (previous.validUntil === undefined || replacement.validFrom <= previous.validUntil)) {
+        const previousUntil = previous?.validUntil ?? null;
+        if (previous && (previousUntil === null || replacement.validFrom <= previousUntil)) {
           throw new BadRequestException('Các khoảng hiệu chỉnh bị chồng lấn.');
         }
       }
@@ -354,6 +357,12 @@ export class HomeroomAssignmentsService {
       }
       await this.writeAudit(tx, actorUserId, meta, 'HOMEROOM_ASSIGNMENT_CORRECTED', id, {
         replacementIds: children.map((child) => child.id),
+        replacements: children.map((child) => ({
+          id: child.id,
+          teacherUserId: child.teacherUserId,
+          validFrom: formatCivilDate(child.validFrom),
+          validUntil: child.validUntil ? formatCivilDate(child.validUntil) : null,
+        })),
         reason: dto.reason.trim(),
       });
       return { source: this.record(reversed), replacements: children.map((child) => this.record(child)) };
@@ -362,6 +371,7 @@ export class HomeroomAssignmentsService {
 
   async resolve(academicYearId: string, schoolClassId: string, on: string): Promise<HomeroomResolutionResult> {
     await this.requireAcademicYear(academicYearId);
+    await this.requireSchoolClassForAcademicYear(academicYearId, schoolClassId);
     const onDate = parseCivilDate(on);
     const rows = await this.prisma.homeroomAssignment.findMany({
       where: { academicYearId, schoolClassId },
@@ -454,6 +464,12 @@ export class HomeroomAssignmentsService {
     if (!await tx.academicYear.findUnique({ where: { id }, select: { id: true } })) {
       throw new NotFoundException('Không tìm thấy năm học.');
     }
+  }
+
+  private async requireSchoolClassForAcademicYear(academicYearId: string, schoolClassId: string): Promise<void> {
+    const schoolClass = await this.prisma.schoolClass.findUnique({ where: { id: schoolClassId }, select: { academicYearId: true } });
+    if (!schoolClass) throw new NotFoundException('Không tìm thấy lớp học.');
+    if (schoolClass.academicYearId !== academicYearId) throw new BadRequestException('Lớp học không thuộc năm học đã chọn.');
   }
 
   private async mutate<T>(operation: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {

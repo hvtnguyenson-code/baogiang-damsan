@@ -1,24 +1,31 @@
 import { CatalogStatus, UserStatus } from '@prisma/client';
 import request, { Agent } from 'supertest';
 import { Phase01Harness, integration, testOrigin } from '../helpers/phase01-test-harness';
+import * as homeroomPolicy from '../../src/homeroom-assignments/homeroom-assignment-policy';
 
 const capability = 'HOMEROOM_ASSIGNMENT_MANAGE';
 const origin = { Origin: testOrigin };
 
 integration('Homeroom assignment control plane (isolated PostgreSQL integration)', () => {
   const h = new Phase01Harness();
+  let businessDateSpy: jest.SpyInstance;
 
-  beforeAll(async () => h.start());
+  beforeAll(async () => {
+    businessDateSpy = jest.spyOn(homeroomPolicy, 'homeroomBusinessDate').mockReturnValue('2026-09-01');
+    await h.start();
+  });
   beforeEach(async () => {
     await h.clean();
     await h.seedCapabilities([
       { key: capability, scopes: ['SCHOOL_WIDE'] },
       { key: 'SYSTEM_ADMIN', scopes: ['SCHOOL_WIDE'] },
+      { key: 'ACADEMIC_STRUCTURE_MANAGE', scopes: ['SCHOOL_WIDE'] },
     ]);
   });
   afterAll(async () => {
     await h.clean();
     await h.stop();
+    businessDateSpy.mockRestore();
   });
 
   async function manager(): Promise<{ agent: Agent; id: string }> {
@@ -77,9 +84,21 @@ integration('Homeroom assignment control plane (isolated PostgreSQL integration)
     expect((await none.agent.get(`/api/academic-years/${refs.year.id}/homeroom-assignments`)).status).toBe(403);
     const systemAdmin = await h.actor({ grants: [{ capabilityKey: 'SYSTEM_ADMIN' }] });
     expect((await systemAdmin.agent.get(`/api/academic-years/${refs.year.id}/homeroom-assignments`)).status).toBe(403);
+    const academicManager = await h.actor({ grants: [{ capabilityKey: 'ACADEMIC_STRUCTURE_MANAGE' }] });
+    expect((await academicManager.agent.get(`/api/academic-years/${refs.year.id}/homeroom-assignments`)).status).toBe(403);
     const authorized = await manager();
     expect((await authorized.agent.get(`/api/academic-years/${refs.year.id}/homeroom-assignments`)).status).toBe(200);
     expect((await authorized.agent.post(`/api/academic-years/${refs.year.id}/homeroom-assignments`).send({})).status).toBe(403);
+    expect((await authorized.agent.get(`/api/academic-years/${refs.year.id}/homeroom-assignments/resolve`)
+      .query({ schoolClassId: refs.schoolClass.id, on: 'not-a-date' })).status).toBe(400);
+    expect((await authorized.agent.get(`/api/academic-years/${refs.year.id}/homeroom-assignments/resolve`)
+      .query({ schoolClassId: refs.schoolClass.id, on: '2026-02-30' })).status).toBe(400);
+    expect((await authorized.agent.get(`/api/academic-years/${refs.year.id}/homeroom-assignments/resolve`)
+      .query({ schoolClassId: crypto.randomUUID(), on: '2026-08-10' })).status).toBe(404);
+    const otherYear = await h.prisma.academicYear.create({ data: { code: `OTHER-${crypto.randomUUID().slice(0, 8)}`, name: 'Other year' } });
+    const otherYearClass = await h.prisma.schoolClass.create({ data: { academicYearId: otherYear.id, code: '10B1', name: '10B1', gradeLevel: 10 } });
+    expect((await authorized.agent.get(`/api/academic-years/${refs.year.id}/homeroom-assignments/resolve`)
+      .query({ schoolClassId: otherYearClass.id, on: '2026-08-10' })).status).toBe(400);
   });
 
   it('provides Homeroom-only workspace options with historical identities and StaffSubject-independent eligibility', async () => {
@@ -172,7 +191,7 @@ integration('Homeroom assignment control plane (isolated PostgreSQL integration)
     });
     expect(escape.status).toBe(400);
 
-    const corrected = await agent.post(`/api/homeroom-assignments/${replacementId}/correct`).set(origin).send({
+    const corrected = await agent.post(`/api/homeroom-assignments/${replacementId}/correct`).set(origin).set('X-Request-Id', 'correct-success').send({
       reason: 'Correct retained record', replacements: [
         { teacherUserId: refs.firstTeacher.id, validFrom: '2026-08-11', validUntil: '2026-08-14', entryReason: 'History' },
         { teacherUserId: refs.secondTeacher.id, validFrom: '2026-08-16', validUntil: '2026-08-20', entryReason: 'History' },
@@ -184,6 +203,15 @@ integration('Homeroom assignment control plane (isolated PostgreSQL integration)
     expect(corrected.body.replacements).toEqual(expect.arrayContaining([
       expect.objectContaining({ replacesId: replacementId }), expect.objectContaining({ replacesId: replacementId }),
     ]));
+    const correctionAudit = await h.prisma.auditEvent.findFirstOrThrow({ where: { requestId: 'correct-success' } });
+    expect(correctionAudit.metadata).toMatchObject({
+      reason: 'Correct retained record',
+      replacementIds: corrected.body.replacements.map((replacement: { id: string }) => replacement.id),
+      replacements: expect.arrayContaining([
+        expect.objectContaining({ teacherUserId: refs.firstTeacher.id, validFrom: '2026-08-11', validUntil: '2026-08-14' }),
+        expect.objectContaining({ teacherUserId: refs.secondTeacher.id, validFrom: '2026-08-16', validUntil: '2026-08-20' }),
+      ]),
+    });
 
     await h.prisma.user.update({ where: { id: refs.firstTeacher.id }, data: { status: UserStatus.DISABLED } });
     await h.prisma.academicCalendarVersion.update({ where: { id: refs.calendar.id }, data: { isActive: false, activatedAt: null } });
@@ -221,5 +249,23 @@ integration('Homeroom assignment control plane (isolated PostgreSQL integration)
     const extension = await agent.post(`/api/homeroom-assignments/${created.body.id as string}/end`).set(origin)
       .send({ endDate: '2026-09-21' });
     expect(extension.status).toBe(409);
+  });
+
+  it('rejects explicit null correction self-overlap before database writes', async () => {
+    const refs = await setup();
+    const { agent } = await manager();
+    const source = await create(agent, refs.year.id, {
+      schoolClassId: refs.schoolClass.id, teacherUserId: refs.firstTeacher.id, validFrom: '2026-09-10',
+    });
+    const response = await agent.post(`/api/homeroom-assignments/${source.body.id as string}/correct`).set(origin)
+      .set('X-Request-Id', 'correct-null-overlap').send({
+        reason: 'Open ended overlap', replacements: [
+          { teacherUserId: refs.firstTeacher.id, validFrom: '2026-09-10' },
+          { teacherUserId: refs.secondTeacher.id, validFrom: '2026-09-11' },
+        ],
+      });
+    expect(response.status).toBe(400);
+    expect(await h.prisma.homeroomAssignment.findUniqueOrThrow({ where: { id: source.body.id as string } })).toMatchObject({ status: 'ACTIVE' });
+    expect(await successAudit('HOMEROOM_ASSIGNMENT_CORRECTED', 'correct-null-overlap')).toBe(0);
   });
 });

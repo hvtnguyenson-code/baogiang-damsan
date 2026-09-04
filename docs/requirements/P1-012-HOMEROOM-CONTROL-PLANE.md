@@ -466,6 +466,12 @@ Local evidence on the task branch:
 - `git diff --check`: PASS;
 - isolated PostgreSQL integration and canonical full suite: **NOT RUN / BỊ CHẶN DO MÔI TRƯỜNG** — no explicitly certified isolated PostgreSQL environment with the current schema was available; no production or uncertified database was used.
 
+### 19.2 Independent-review correction evidence
+
+The forward correction after independent review closes the following branch findings without changing P1-011 persistence: `end` now requires exactly one active calendar and validates its resulting interval in the same SERIALIZABLE transaction; resolver input is DTO-validated and verifies the exact AcademicYear/SchoolClass relationship; correction audit metadata now retains each replacement's exact ID, teacher and interval; explicit `null` end values are normalized as open-ended for command-layer self-overlap rejection.
+
+Additional bounded regression covers wrong-capability denial, invalid resolver dates and identities, missing active calendar on end, command-layer corrupt lineage, external ACTIVE correction conflict, explicit-null self-overlap, correction audit intervals, and a fixed business-date spy for integration semantics. Local correction gates: Homeroom unit PASS (3 suites/15 tests), affected academic-structure/capability unit PASS (3 suites/23 tests), API lint/typecheck/build PASS, and `git diff --check` PASS. Isolated PostgreSQL integration remains **NOT RUN / BỊ CHẶN DO MÔI TRƯỜNG**.
+
 ## 20. Closure rule
 
 P1-012 becomes `CLOSED` only after:
