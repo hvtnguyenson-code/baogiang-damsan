@@ -27,9 +27,13 @@ Closure evidence:
 
 P1-012 added the dedicated `HOMEROOM_ASSIGNMENT_MANAGE / SCHOOL_WIDE` capability, capability-controlled create/change/end/correct/read/options control plane, exact fail-closed resolver, calendar compatibility, same-transaction audit and bounded SERIALIZABLE conflict handling. It did not add the P1-013 administration UI, Special Programme runtime, workload/reporting behavior, deployment behavior, VPS/TLS state or production database state.
 
-## Next Homeroom task
+## Active major task
 
-`P1-013` — Homeroom administration workspace — **READY**, not started. Its dependency P1-012 is closed by `SYNC-P1-012`; starting P1-013 still requires its own exact-main verification, dedicated branch and normal review/CI/closure workflow.
+`P1-012A` — Homeroom historical identity read-model correction — **IN_PROGRESS** on `fix/homeroom-historical-identity-read-model-012a`, from canonical main `9ac9ae1e510858bc1039da313af90f908b773a93`.
+
+P1-012 remains CLOSED. A post-closure audit found that the frozen P1-012 workspace read model cannot discover an exact historical User who is currently inactive/non-teaching or lacks a current StaffProfile unless that User is already referenced by HomeroomAssignment. It also does not expose the server-owned Homeroom business civil date. P1-012A corrects those bounded read-model gaps without changing ADR-045 product authority, schema, migrations, Homeroom command/resolver semantics or current/future eligibility.
+
+P1-013 is **PLANNED** and has not started. It now depends on P1-012A so the administration workspace can remain UI-only and avoid `USER_MANAGE`, generic user-directory access, raw UUID entry or browser-local business-date inference.
 
 ## Accepted product/domain authority
 
@@ -111,14 +115,13 @@ The registered implementation, data-evidence, product and production-readiness t
 
 ## Tasks currently eligible to start
 
-After `SYNC-P1-012` merges, dependency gates permit these registered tasks to start on their own branches:
+While P1-012A is active, dependency gates permit these other registered tasks to start on their own branches:
 
-- `P1-013` — Homeroom administration workspace;
 - `P1-020` — Business Configuration Control Plane architecture;
 - `P4-010` — GDĐP/HĐTN programme architecture closure;
 - `P6-010` — Pre-deploy TLS/HTTP-01 authority.
 
-Readiness is not permission to bypass one-task-per-branch, review, CI or mandatory closure-sync gates. P1-013 has not started; P4 runtime work remains gated by its registered dependencies.
+Readiness is not permission to bypass one-task-per-branch, review, CI or mandatory closure-sync gates. P1-013 remains blocked on P1-012A closure; P4 runtime work remains gated by its registered dependencies.
 
 ## Decisions/evidence still blocking other paths
 
