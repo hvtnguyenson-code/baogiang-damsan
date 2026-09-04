@@ -137,6 +137,7 @@ Current `main` đã có các foundation chính:
 - identity, session, capability/scope default-deny và audit;
 - AcademicYear, versioned calendar, business weeks/segments/interruptions/classes;
 - TeachingAssignment history;
+- HomeroomAssignment retained history, control plane and capability-gated administration workspace;
 - exact retained time slots;
 - TimetableVersion/TimetableEntry, lifecycle, historical resolution và XLSX import infrastructure;
 - PPCT version/item/lineage/class association;

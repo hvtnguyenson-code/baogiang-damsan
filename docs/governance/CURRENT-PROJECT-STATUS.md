@@ -10,7 +10,7 @@ It is **not** a self-referential registry of the latest Git commit. Exact curren
 
 ## Last closed major task
 
-`P1-012A` — Homeroom historical identity read-model correction — **CLOSED** by `SYNC-P1-012A`.
+`P1-013` — Homeroom administration workspace — **CLOSED** by `SYNC-P1-013`.
 
 Closure evidence:
 
@@ -26,11 +26,11 @@ Closure evidence:
 - administrative closure: `SYNC-P1-012A`;
 - no separate correction/re-entry task was required.
 
-P1-012A completed the bounded `HOMEROOM_ASSIGNMENT_MANAGE / SCHOOL_WIDE` historical User identity discovery and server-owned Homeroom `businessDate` read model required by P1-013. It did not introduce `USER_MANAGE` dependency, weaken strict current/future eligible-teacher semantics, change ADR-045 authority, or add schema, migration, UI, deployment or production behavior.
+Closure evidence: branch `feat/homeroom-administration-workspace-013`, reviewed head `7f8514237bef5868162f19941b31cef9ca9ff9b3`, independent GitHub diff review PASS, PR #101, exact-head CI #351 (run `33885773354`) SUCCESS, merge/main `b5bda19f79029851dda323f2cf20ee86308fdd04`, and post-merge main CI #352 (run `33886718375`) SUCCESS. No correction/re-entry task, deployment, or production evidence is claimed.
 
-## Next Homeroom task
+## Homeroom chain
 
-`P1-013` — Homeroom administration workspace — **IN_REVIEW** on `feat/homeroom-administration-workspace-013`, started from canonical `main@3f8a1763991cc53c9767638ba380aff7ce66e4f2`. Its bounded UI implementation and local evidence are ready for independent review; exact-head CI, PR approval, merge and closure synchronization remain pending. P1-012 and P1-012A are CLOSED. This task is UI-only: it consumes the frozen Homeroom APIs and does not alter backend authority, schema, migration, capability semantics, CI/CD or production state.
+The registered pre-pilot Homeroom chain is closed: P1-010 architecture, P1-011 persistence, P1-012 control plane, P1-012A historical identity/business-date read model, and P1-013 capability-gated administration workspace. The implemented foundation includes retained history/filter/pagination; explicit create/end/change/correction workflows; current/future versus bounded-historical candidate authority; and exact retained correction lineage plus historical identity behavior. This does not make the project teacher-pilot ready; production remains pre-operational.
 
 ## Accepted product/domain authority
 
@@ -82,7 +82,7 @@ The repository contains reviewed implementation for:
 - Reporting Statement persistence/control plane/UI enablement/product UI work;
 - hardened Windows production deployment control-plane/runbooks through PR #90.
 
-Homeroom architecture, persistence, control plane/capability and the P1-013 prerequisite read model are closed. Only the Homeroom **administration workspace UI** remains to be implemented by P1-013.
+Homeroom architecture, persistence, control plane/capability, historical read model and administration workspace UI are closed for the registered pre-pilot scope.
 
 ## Pre-pilot verdict
 
@@ -93,9 +93,8 @@ The registered implementation, data-evidence, product and production-readiness t
 ## Critical pre-pilot gaps
 
 1. Current SpecialActivity is a valid runtime occurrence primitive but not a complete GDĐP/HĐTN programme model.
-2. HomeroomAssignment administration workspace/UI is implemented on the P1-013 review branch and awaits independent review/CI; architecture, persistence, control plane/capability and its historical-identity/business-date read model remain closed through ADR-045/P1-011/P1-012/P1-012A.
-3. GDĐP grade/year plan and HĐTN CLASS/GRADE/SCHOOL programme semantics are absent.
-4. Programme planning cannot assign different exact teacher sets to different exact slots.
+2. GDĐP grade/year plan and HĐTN CLASS/GRADE/SCHOOL programme semantics are absent.
+3. Programme planning cannot assign different exact teacher sets to different exact slots.
 5. Special-program absence/replacement and programme-level confirmation authority remain explicitly registered for P4 closure (T43/T44).
 6. Existing `GDDDP_COORDINATOR` / `HĐTN_COORDINATOR` capability intent is not wired to programme-resource authority.
 7. Typed/versioned Business Configuration Control Plane is absent.
@@ -112,13 +111,13 @@ The registered implementation, data-evidence, product and production-readiness t
 
 ## Tasks currently eligible to start
 
-After `SYNC-P1-012A` merges, dependency gates permit these registered tasks to start on their own branches:
+After `SYNC-P1-013`, dependency gates permit these registered tasks to start on their own branches:
 
 - `P1-020` — Business Configuration Control Plane architecture;
 - `P4-010` — GDĐP/HĐTN programme architecture closure;
 - `P6-010` — Pre-deploy TLS/HTTP-01 authority.
 
-Readiness is not permission to bypass one-task-per-branch, review, CI or mandatory closure-sync gates. P1-013 is `IN_REVIEW` and must not be treated as `CLOSED` until exact-head PR review/CI, merge, authoritative post-merge CI and mandatory documentation synchronization complete; P4 runtime work remains gated by its registered dependencies.
+Readiness is not permission to bypass one-task-per-branch, review, CI or mandatory closure-sync gates. P4 runtime work remains gated by its registered dependencies.
 
 ## Decisions/evidence still blocking other paths
 
