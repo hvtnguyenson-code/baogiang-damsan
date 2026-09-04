@@ -451,6 +451,7 @@ Changed files for P1-012 are limited to:
 - `packages/contracts/src/index.ts`;
 - `prisma/capability-catalog.cjs`;
 - `scripts/ci/verify-schema-foundation.cjs`;
+- `scripts/ci/verify-phase-01-schema.sql`;
 - this task document plus `CURRENT-PROJECT-STATUS.md`, `PRE-PILOT-TASK-REGISTER.md` and `PRE-PILOT-TRACEABILITY-MATRIX.md`.
 
 Local evidence on the task branch:
@@ -471,6 +472,8 @@ Local evidence on the task branch:
 The forward correction after independent review closes the following branch findings without changing P1-011 persistence: `end` now requires exactly one active calendar and validates its resulting interval in the same SERIALIZABLE transaction; resolver input is DTO-validated and verifies the exact AcademicYear/SchoolClass relationship; correction audit metadata now retains each replacement's exact ID, teacher and interval; explicit `null` end values are normalized as open-ended for command-layer self-overlap rejection.
 
 Additional bounded regression covers wrong-capability denial, invalid resolver dates and identities, missing active calendar on end, command-layer corrupt lineage, external ACTIVE correction conflict, explicit-null self-overlap, correction audit intervals, and a fixed business-date spy for integration semantics. Local correction gates: Homeroom unit PASS (3 suites/15 tests), affected academic-structure/capability unit PASS (3 suites/23 tests), API lint/typecheck/build PASS, and `git diff --check` PASS. Isolated PostgreSQL integration remains **NOT RUN / BỊ CHẶN DO MÔI TRƯỜNG**.
+
+PR CI #341 identified a stale Phase-01 capability-count verifier: the canonical catalog contains 37 entries after `HOMEROOM_ASSIGNMENT_MANAGE`, while the SQL verifier still expected 36. The verifier is synchronized to 37 and now asserts that this key allows exactly `SCHOOL_WIDE`; this correction changes neither migration nor retained persistence. A new CI result is required before any PASS claim.
 
 ## 20. Closure rule
 
