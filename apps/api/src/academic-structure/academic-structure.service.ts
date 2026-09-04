@@ -12,6 +12,7 @@ import { RequestMeta } from '../auth/auth.types';
 import { formatCivilDate, parseCivilDate } from '../common/validation/civil-date';
 import { PrismaService } from '../prisma/prisma.service';
 import { ensureCalendarActivationCompatibility } from '../teaching-assignments/teaching-assignment-policy';
+import { ensureHomeroomCalendarActivationCompatibility } from '../homeroom-assignments/homeroom-assignment-policy';
 import { CalendarAggregateInput, validateCalendarAggregate } from './calendar-invariants';
 import {
   CreateAcademicYearDto, CreateCalendarVersionDto, CreateSchoolClassDto, ListSchoolClassesDto,
@@ -194,6 +195,7 @@ export class AcademicStructureService {
         if (!target) throw new NotFoundException('Không tìm thấy phiên lịch năm học.');
         validateCalendarAggregate(storedAggregate(target));
         await ensureCalendarActivationCompatibility(tx, target);
+        await ensureHomeroomCalendarActivationCompatibility(tx, target);
         const previous = await tx.academicCalendarVersion.findFirst({
           where: { academicYearId: target.academicYearId, isActive: true }, orderBy: [{ versionNumber: 'asc' }, { id: 'asc' }],
         });

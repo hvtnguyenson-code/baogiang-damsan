@@ -9,7 +9,7 @@ BEGIN
     SELECT count(*), count(DISTINCT "key")
       INTO capability_count, distinct_count
       FROM "capability_definitions";
-    IF capability_count <> 36 OR distinct_count <> 36 THEN
+    IF capability_count <> 37 OR distinct_count <> 37 THEN
         RAISE EXCEPTION 'Capability seed is not idempotent: count %, distinct %',
             capability_count, distinct_count;
     END IF;
@@ -52,6 +52,17 @@ BEGIN
            AND "allowed_scope_types" <@ ARRAY['SCHOOL_WIDE']::text[]
     ) THEN
         RAISE EXCEPTION 'SPECIAL_ACTIVITY_MANAGE must allow exactly SCHOOL_WIDE';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+          FROM "capability_definitions"
+         WHERE "key" = 'HOMEROOM_ASSIGNMENT_MANAGE'
+           AND cardinality("allowed_scope_types") = 1
+           AND "allowed_scope_types" @> ARRAY['SCHOOL_WIDE']::text[]
+           AND "allowed_scope_types" <@ ARRAY['SCHOOL_WIDE']::text[]
+    ) THEN
+        RAISE EXCEPTION 'HOMEROOM_ASSIGNMENT_MANAGE must allow exactly SCHOOL_WIDE';
     END IF;
 
     SELECT count(*)

@@ -55,7 +55,7 @@ for (const constraint of [
 }
 
 const capabilityKeys = CAPABILITIES.map(([key]) => key);
-assert.equal(capabilityKeys.length, 36);
+assert.equal(capabilityKeys.length, 37);
 assert.equal(new Set(capabilityKeys).size, capabilityKeys.length);
 assert.equal(validateCapabilityCatalog(), true);
 assert.throws(() => validateCapabilityCatalog([['BAD', 'bad', ['PERSONAL']], ['BAD', 'duplicate', ['PERSONAL']]]));
@@ -73,6 +73,7 @@ for (const requiredKey of [
   'PPCT_MANAGE',
   'CALENDAR_EXCEPTION_MANAGE',
   'TEACHING_OPERATION_MANAGE',
+  'HOMEROOM_ASSIGNMENT_MANAGE',
   'SPECIAL_ACTIVITY_MANAGE',
   'TEACHING_EXECUTION_RECORD',
   'TEACHING_EXECUTION_MANAGE',
@@ -85,6 +86,7 @@ for (const requiredKey of [
 const capabilityScopes = new Map(CAPABILITIES.map(([key, , scopes]) => [key, scopes]));
 assert.deepEqual(capabilityScopes.get('CALENDAR_EXCEPTION_MANAGE'), ['SCHOOL_WIDE']);
 assert.deepEqual(capabilityScopes.get('TEACHING_OPERATION_MANAGE'), ['SUBJECT', 'SCHOOL_WIDE']);
+assert.deepEqual(capabilityScopes.get('HOMEROOM_ASSIGNMENT_MANAGE'), ['SCHOOL_WIDE']);
 assert.deepEqual(capabilityScopes.get('SPECIAL_ACTIVITY_MANAGE'), ['SCHOOL_WIDE']);
 assert.deepEqual(capabilityScopes.get('TEACHING_EXECUTION_RECORD'), ['PERSONAL']);
 assert.deepEqual(capabilityScopes.get('TEACHING_EXECUTION_MANAGE'), ['SUBJECT', 'SCHOOL_WIDE']);

@@ -91,6 +91,7 @@ export function accessibleManagementRoutes(auth: AuthMeResponse | null): Managem
 }
 
 export const capabilityLabels: Partial<Record<CapabilityKey, string>> = {
+  HOMEROOM_ASSIGNMENT_MANAGE: 'Quản lý giáo viên chủ nhiệm',
   ACADEMIC_STRUCTURE_MANAGE: 'Quản lý cấu trúc năm học',
   TEACHER_BASE: 'Công việc giáo viên cơ bản',
   SUBJECT_GROUP_LEAD: 'Phụ trách tổ chuyên môn',

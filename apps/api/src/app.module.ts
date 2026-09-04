@@ -13,6 +13,7 @@ import { AuditModule } from './audit/audit.module';
 import { AdditionalDutiesModule } from './additional-duties/additional-duties.module';
 import { AcademicStructureModule } from './academic-structure/academic-structure.module';
 import { TeachingAssignmentsModule } from './teaching-assignments/teaching-assignments.module';
+import { HomeroomAssignmentsModule } from './homeroom-assignments/homeroom-assignments.module';
 import { TimeSlotsModule } from './time-slots/time-slots.module';
 import { TimetablesModule } from './timetables/timetables.module';
 import { TimetableImportModule } from './timetable-import/timetable-import.module';
@@ -55,6 +56,7 @@ import { ReportingStatementsModule } from './reporting-statements/reporting-stat
     AdditionalDutiesModule,
     AcademicStructureModule,
     TeachingAssignmentsModule,
+    HomeroomAssignmentsModule,
     TimeSlotsModule,
     TimetablesModule,
     TimetableImportModule,
