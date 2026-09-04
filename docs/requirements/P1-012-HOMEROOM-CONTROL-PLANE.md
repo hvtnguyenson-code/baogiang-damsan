@@ -2,7 +2,7 @@
 
 ## Status
 
-**IN_REVIEW.**
+**CLOSED — implementation, independent review, exact-head PR CI, merge, post-merge main CI and `SYNC-P1-012` closure evidence satisfied.**
 
 - Task: `P1-012`
 - Branch: `feat/homeroom-control-plane-012`
@@ -12,7 +12,19 @@
 - Traceability: T13, T14
 - Scope: dedicated HomeroomAssignment capability, API/control plane, exact resolver, workspace-safe read model, calendar-activation compatibility and regression coverage.
 
-P1-012 must implement the accepted ADR-045 authority without reopening P1-010/P1-011 business decisions. No Homeroom administration workspace UI, Special Programme runtime, workload/reporting semantics, deployment/VPS/TLS/production mutation, or DamSanV5/Quản lí nội trú mutation is authorized.
+Closure evidence:
+
+- exact starting main: `1d51580ddc501a5cf132688a66d6b7b1941570d0`;
+- final reviewed implementation head: `6af8bb27367763bec143a6bf26e7af22115394e1`;
+- PR #97: `feat(homeroom): add P1-012 control plane`;
+- independent GitHub diff review: PASS;
+- exact-head PR CI #343 (workflow run `33825153273`): SUCCESS;
+- merge/main: `3bf0589db17534700d8c8a15ce59645663d3ef40`;
+- authoritative post-merge main CI #344 (workflow run `33825691809`, event `push`, exact head `3bf0589db17534700d8c8a15ce59645663d3ef40`): SUCCESS;
+- independent-review and CI #341/#342 corrections were absorbed as forward commits before merge; no separate correction/re-entry task was required;
+- administrative closure: `SYNC-P1-012`.
+
+P1-012 implemented the accepted ADR-045 authority without reopening P1-010/P1-011 business decisions. No Homeroom administration workspace UI, Special Programme runtime, workload/reporting semantics, deployment/VPS/TLS/production mutation, or DamSanV5/Quản lí nội trú mutation was authorized or introduced.
 
 ## 1. Existing foundations to preserve
 
@@ -473,14 +485,14 @@ The forward correction after independent review closes the following branch find
 
 Additional bounded regression covers wrong-capability denial, invalid resolver dates and identities, missing active calendar on end, command-layer corrupt lineage, external ACTIVE correction conflict, explicit-null self-overlap, correction audit intervals, and a fixed business-date spy for integration semantics. Local correction gates: Homeroom unit PASS (3 suites/15 tests), affected academic-structure/capability unit PASS (3 suites/23 tests), API lint/typecheck/build PASS, and `git diff --check` PASS. Isolated PostgreSQL integration remains **NOT RUN / BỊ CHẶN DO MÔI TRƯỜNG**.
 
-PR CI #341 identified a stale Phase-01 capability-count verifier: the canonical catalog contains 37 entries after `HOMEROOM_ASSIGNMENT_MANAGE`, while the SQL verifier still expected 36. The verifier is synchronized to 37 and now asserts that this key allows exactly `SCHOOL_WIDE`; this correction changes neither migration nor retained persistence. A new CI result is required before any PASS claim.
+PR CI #341 identified a stale Phase-01 capability-count verifier: the canonical catalog contains 37 entries after `HOMEROOM_ASSIGNMENT_MANAGE`, while the SQL verifier still expected 36. The verifier was synchronized to 37 and now asserts that this key allows exactly `SCHOOL_WIDE`; this correction changed neither migration nor retained persistence.
 
-PR CI #342 passed the migration-verifier correction, then exposed a Homeroom integration fixture that generated lowercase UUID fragments for `AcademicYear.code`. Both year fixtures now reuse the existing `normalizedCode` helper; production semantics, schema and migrations are unchanged. A new CI result is required before any PASS claim.
+PR CI #342 passed the migration-verifier correction, then exposed a Homeroom integration fixture that generated lowercase UUID fragments for `AcademicYear.code`. Both year fixtures were changed to reuse the existing `normalizedCode` helper; production semantics, schema and migrations were unchanged. Exact-head PR CI #343 subsequently passed the complete workflow at reviewed head `6af8bb27367763bec143a6bf26e7af22115394e1`.
 
 ## 20. Closure rule
 
-P1-012 becomes `CLOSED` only after:
+P1-012 required:
 
 `implementation -> independent GitHub diff review -> exact-head PR CI SUCCESS -> merge -> exact merge/main SHA -> post-merge main CI SUCCESS -> SYNC-P1-012`.
 
-Only then may `P1-013` become `READY` and any downstream P4 runtime dependency consume the completed Homeroom control plane.
+All gates are satisfied. P1-013 may become `READY` only after the `SYNC-P1-012` closure PR itself is independently reviewed, merged and its post-merge main CI is green under the non-recursive governance protocol. P1-013 has not started.

@@ -6,37 +6,30 @@ This is the canonical mutable **product/task status** document for Báo giảng.
 
 It is **not** a self-referential registry of the latest Git commit. Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub at the start of every task. SHAs recorded here are evidence for the stated baseline or last closed major task.
 
-**Status snapshot date:** 2026-09-03
+**Status snapshot date:** 2026-09-04
 
 ## Last closed major task
 
-`P1-011` — Homeroom persistence foundation — **CLOSED** by `SYNC-P1-011`.
+`P1-012` — Homeroom control plane — **CLOSED** by `SYNC-P1-012`.
 
 Closure evidence:
 
-- exact starting main: `172e1c13e5dbbdc6f91b4f014ea2729fcc3977ca`;
-- branch: `feat/homeroom-persistence-foundation-011`;
-- contract/opening commit: `e0385a4829332275781224815dd3ee15dd4b18d0`;
-- reviewed implementation head: `ae5515d63fb38987e9479ea69b3425b1e910a11a`;
-- PR: #95 `feat(homeroom): add P1-011 persistence foundation`;
-- independent GitHub diff review: PASS; implementation matched ADR-045 and the P1-011 contract with no API/UI/capability/production drift;
-- local non-database verification: PASS; local PostgreSQL migration suite was environment-blocked and no local DB PASS was claimed;
-- exact-head PR CI: #337 — SUCCESS, including the isolated PostgreSQL migration behavior suite, integration tests, builds, Playwright and Windows deployment contract;
-- merge/main SHA: `7530022d9027e0ba94add9ca25b70822c87b792a`;
-- authoritative post-merge main CI: #338 — SUCCESS;
-- administrative closure: `SYNC-P1-011`;
-- no correction/re-entry task was required by review or CI.
+- exact starting main: `1d51580ddc501a5cf132688a66d6b7b1941570d0`;
+- implementation branch: `feat/homeroom-control-plane-012`;
+- final reviewed head: `6af8bb27367763bec143a6bf26e7af22115394e1`;
+- PR: #97 `feat(homeroom): add P1-012 control plane`;
+- independent GitHub diff review: PASS;
+- exact-head PR CI: #343 (workflow run `33825153273`) — SUCCESS;
+- merge/main SHA: `3bf0589db17534700d8c8a15ce59645663d3ef40`;
+- authoritative post-merge main CI: #344 (workflow run `33825691809`, event `push`, exact head `3bf0589db17534700d8c8a15ce59645663d3ef40`) — SUCCESS;
+- administrative closure: `SYNC-P1-012`;
+- independent-review and CI #341/#342 corrections were absorbed as forward commits before merge; no separate correction/re-entry task was required.
 
-P1-011 changed retained persistence and regression coverage only. It did not add the Homeroom management capability, command/control plane, admin UI, Special Programme runtime, workload/reporting behavior, deployment behavior, VPS/TLS state or production database state.
+P1-012 added the dedicated `HOMEROOM_ASSIGNMENT_MANAGE / SCHOOL_WIDE` capability, capability-controlled create/change/end/correct/read/options control plane, exact fail-closed resolver, calendar compatibility, same-transaction audit and bounded SERIALIZABLE conflict handling. It did not add the P1-013 administration UI, Special Programme runtime, workload/reporting behavior, deployment behavior, VPS/TLS state or production database state.
 
-## Active major task
+## Next Homeroom task
 
-`P1-012` — Homeroom control plane — **IN_REVIEW** on
-`feat/homeroom-control-plane-012`, from canonical main
-`1d51580ddc501a5cf132688a66d6b7b1941570d0`.
-
-`P1-011` is CLOSED. P1-012 branch implementation and local non-database gates are complete;
-independent GitHub review, exact-head CI and isolated PostgreSQL execution remain required before merge or closure flow.
+`P1-013` — Homeroom administration workspace — **READY**, not started. Its dependency P1-012 is closed by `SYNC-P1-012`; starting P1-013 still requires its own exact-main verification, dedicated branch and normal review/CI/closure workflow.
 
 ## Accepted product/domain authority
 
@@ -74,6 +67,7 @@ The repository contains reviewed implementation for:
 - academic years, versioned retained calendars, business weeks/segments/reserve weeks/interruptions and classes;
 - date-effective TeachingAssignment history;
 - **retained HomeroomAssignment persistence** with inclusive civil DATE intervals, ACTIVE/REVERSED history, same-class/date ACTIVE overlap prevention, exact retained teacher/actor identities and correction lineage;
+- **Homeroom control plane and capability** with dedicated `HOMEROOM_ASSIGNMENT_MANAGE / SCHOOL_WIDE` authority, explicit lifecycle commands, workspace-safe reads/options, exact typed historical resolution, calendar compatibility and same-transaction audit;
 - retained exact time-slot revisions and real wall-clock collision semantics;
 - retained timetable versions/entries, validation, lifecycle, historical resolution and XLSX canonical import infrastructure;
 - PPCT persistence/control plane, stable item identity/revisions/lineage and exact class-subject version association;
@@ -87,7 +81,7 @@ The repository contains reviewed implementation for:
 - Reporting Statement persistence/control plane/UI enablement/product UI work;
 - hardened Windows production deployment control-plane/runbooks through PR #90.
 
-Homeroom architecture and persistence are now closed. The Homeroom **control plane/capability and administration UI are not yet implemented**.
+Homeroom architecture, persistence and control plane/capability are now closed. Only the Homeroom **administration workspace UI** remains to be implemented by P1-013.
 
 ## Pre-pilot verdict
 
@@ -98,7 +92,7 @@ The registered implementation, data-evidence, product and production-readiness t
 ## Critical pre-pilot gaps
 
 1. Current SpecialActivity is a valid runtime occurrence primitive but not a complete GDĐP/HĐTN programme model.
-2. HomeroomAssignment control plane/capability and administration workspace remain absent; architecture and persistence are now closed through ADR-045/P1-011.
+2. HomeroomAssignment administration workspace/UI remains absent; architecture, persistence and control plane/capability are closed through ADR-045/P1-011/P1-012.
 3. GDĐP grade/year plan and HĐTN CLASS/GRADE/SCHOOL programme semantics are absent.
 4. Programme planning cannot assign different exact teacher sets to different exact slots.
 5. Special-program absence/replacement and programme-level confirmation authority remain explicitly registered for P4 closure (T43/T44).
@@ -117,14 +111,14 @@ The registered implementation, data-evidence, product and production-readiness t
 
 ## Tasks currently eligible to start
 
-After `SYNC-P1-011` merges, dependency gates permit these registered tasks to start on their own branches:
+After `SYNC-P1-012` merges, dependency gates permit these registered tasks to start on their own branches:
 
-- `P1-012` — Homeroom control plane;
+- `P1-013` — Homeroom administration workspace;
 - `P1-020` — Business Configuration Control Plane architecture;
 - `P4-010` — GDĐP/HĐTN programme architecture closure;
 - `P6-010` — Pre-deploy TLS/HTTP-01 authority.
 
-Readiness is not permission to bypass one-task-per-branch, review, CI or mandatory closure-sync gates. `P1-013` still depends on `P1-012`; P4 runtime work remains gated by its registered dependencies.
+Readiness is not permission to bypass one-task-per-branch, review, CI or mandatory closure-sync gates. P1-013 has not started; P4 runtime work remains gated by its registered dependencies.
 
 ## Decisions/evidence still blocking other paths
 
@@ -150,7 +144,7 @@ Direct P0 inspection found `main` is currently not protected server-side. This i
 
 ## Production state
 
-Production remains **pre-operational**. P1-011 and `SYNC-P1-011` do not authorize or perform deployment, production migration, Nginx/TLS change, PostgreSQL production mutation or application-process mutation.
+Production remains **pre-operational**. P1-012 and `SYNC-P1-012` do not authorize or perform deployment, production migration, VPS/Nginx/TLS change, PostgreSQL production mutation or application-process mutation.
 
 ## Protected external system boundary
 
