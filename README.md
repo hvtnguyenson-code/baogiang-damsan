@@ -2,7 +2,7 @@
 
 **Đơn vị sử dụng:** Trường PTDTNT THPT Đam San
 
-> **Trạng thái hiện hành:** repository đã có chuỗi backend từ identity/access, lịch học, phân công, TKB, PPCT, operational overlays, Teaching Execution, progress/debt/late, reporting đến Reporting Statement. Tuy nhiên hệ thống **chưa sẵn sàng cho teacher pilot** vì đang thực hiện Pre-Pilot Product/Spec Realignment để khôi phục các yêu cầu programme GDĐP/HĐTN, homeroom, delayed go-live, import dữ liệu thật, workload và các gate PWA/Telegram/TLS/production. Không suy ra pilot-readiness chỉ từ việc core backend đã tồn tại.
+> **Trạng thái hiện hành:** repository đã có chuỗi backend từ identity/access, lịch học, phân công, TKB, PPCT, operational overlays, Teaching Execution, progress/debt/late, reporting đến Reporting Statement. Tuy nhiên hệ thống **chưa sẵn sàng cho teacher pilot** vì đang thực hiện Pre-Pilot Product/Spec Realignment để khôi phục các yêu cầu programme GDĐP/HĐTN, delayed go-live, import dữ liệu thật, workload và các gate PWA/Telegram/TLS/production. Không suy ra pilot-readiness chỉ từ việc core backend đã tồn tại.
 
 **Current-state authority:** `docs/governance/CURRENT-PROJECT-STATUS.md`  
 **Canonical work register:** `docs/governance/PRE-PILOT-TASK-REGISTER.md`
@@ -137,6 +137,7 @@ Current `main` đã có các foundation chính:
 - identity, session, capability/scope default-deny và audit;
 - AcademicYear, versioned calendar, business weeks/segments/interruptions/classes;
 - TeachingAssignment history;
+- HomeroomAssignment retained history, control plane and capability-gated administration workspace;
 - exact retained time slots;
 - TimetableVersion/TimetableEntry, lifecycle, historical resolution và XLSX import infrastructure;
 - PPCT version/item/lineage/class association;

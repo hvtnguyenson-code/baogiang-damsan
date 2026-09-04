@@ -64,6 +64,7 @@ Repository hiện có các boundary đã được review/version hóa và không
 - identity, session, capability/scope default-deny và audit;
 - AcademicYear + retained AcademicCalendarVersion + business weeks/segments/interruption/classes;
 - TeachingAssignment history theo ngày dân sự;
+- HomeroomAssignment retained history, control plane và administration workspace đã hoàn tất pre-pilot re-entry;
 - exact TimeSlotDefinition revisions và real-time collision;
 - retained TimetableVersion/TimetableEntry + lifecycle/historical resolution;
 - timetable import profile/alias/canonical preview infrastructure;
@@ -82,7 +83,6 @@ Chi tiết KEEP/REALIGN/RESTORE nằm trong `docs/governance/PRE-PILOT-TRACEABIL
 
 Project hiện đang realign vì một số minimum-core/deferred quyết định chưa đại diện đầy đủ sản phẩm thực tế. Các miền phải re-enter trước pilot tùy exact scope gồm:
 
-- HomeroomAssignment;
 - GDĐP annual/grade programme planning;
 - HĐTN CLASS/GRADE/SCHOOL programme planning;
 - exact per-slot special-program staffing;
