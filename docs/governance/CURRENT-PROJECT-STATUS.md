@@ -12,21 +12,7 @@ It is **not** a self-referential registry of the latest Git commit. Exact curren
 
 `P1-013` — Homeroom administration workspace — **CLOSED** by `SYNC-P1-013`.
 
-Closure evidence:
-
-- exact starting main: `9ac9ae1e510858bc1039da313af90f908b773a93`;
-- implementation branch: `fix/homeroom-historical-identity-read-model-012a`;
-- governance registration commit: `c7f3d860549b324eb5daf65eed79c9c534096be5`;
-- final reviewed head: `a13a69dca60bef6f99c124f420affa8196b7822a`;
-- PR: #99;
-- independent GitHub diff review: PASS;
-- exact-head PR CI: #347 (workflow run `33832457894`) — final SUCCESS; attempt 1 failed only because the npm registry returned 503 during audit, with no dependency change or vulnerability finding, and the targeted failed-job rerun completed as successful attempt 2;
-- merge/main SHA: `530f418d3e144826cd801f572d6367bb679d398a`;
-- authoritative post-merge main CI: #348 (workflow run `33834641625`, event `push`, exact head `530f418d3e144826cd801f572d6367bb679d398a`) — SUCCESS;
-- administrative closure: `SYNC-P1-012A`;
-- no separate correction/re-entry task was required.
-
-Closure evidence: branch `feat/homeroom-administration-workspace-013`, reviewed head `7f8514237bef5868162f19941b31cef9ca9ff9b3`, independent GitHub diff review PASS, PR #101, exact-head CI #351 (run `33885773354`) SUCCESS, merge/main `b5bda19f79029851dda323f2cf20ee86308fdd04`, and post-merge main CI #352 (run `33886718375`) SUCCESS. No correction/re-entry task, deployment, or production evidence is claimed.
+Closure evidence: exact starting main `3f8a1763991cc53c9767638ba380aff7ce66e4f2`; implementation branch `feat/homeroom-administration-workspace-013`; final reviewed head `7f8514237bef5868162f19941b31cef9ca9ff9b3`; independent GitHub diff review PASS; PR #101; exact-head PR CI #351 (run `33885773354`) SUCCESS; merge/main `b5bda19f79029851dda323f2cf20ee86308fdd04`; authoritative post-merge main CI #352 (run `33886718375`) SUCCESS; administrative closure `SYNC-P1-013`; no correction/re-entry task, deployment, or production evidence is claimed.
 
 ## Homeroom chain
 
@@ -41,7 +27,7 @@ The registered pre-pilot Homeroom chain is closed: P1-010 architecture, P1-011 p
 - current/future operational eligibility is distinct from bounded historical truth;
 - current account/profile state cannot silently invalidate or replace a historically correct GVCN;
 - no TeachingAssignment, AdditionalDuty, timetable-text or SpecialActivity-staffing inference as alternate GVCN authority;
-- dedicated future `HOMEROOM_ASSIGNMENT_MANAGE / SCHOOL_WIDE` management capability;
+- dedicated `HOMEROOM_ASSIGNMENT_MANAGE / SCHOOL_WIDE` management capability;
 - HĐTN `CLASS` resolves exact GVCN by occurrence date and downstream materialization freezes source provenance;
 - `HomeroomAssignment` existence alone is not teaching-execution evidence or HĐTN period credit.
 
@@ -95,19 +81,19 @@ The registered implementation, data-evidence, product and production-readiness t
 1. Current SpecialActivity is a valid runtime occurrence primitive but not a complete GDĐP/HĐTN programme model.
 2. GDĐP grade/year plan and HĐTN CLASS/GRADE/SCHOOL programme semantics are absent.
 3. Programme planning cannot assign different exact teacher sets to different exact slots.
-5. Special-program absence/replacement and programme-level confirmation authority remain explicitly registered for P4 closure (T43/T44).
-6. Existing `GDDDP_COORDINATOR` / `HĐTN_COORDINATOR` capability intent is not wired to programme-resource authority.
-7. Typed/versioned Business Configuration Control Plane is absent.
-8. Delayed go-live / operational-start policy and historical pre-operational evidence workflow are absent.
-9. PPCT real-school import is intentionally blocked pending an authoritative workbook contract.
-10. Native Đam San timetable adapter and class-view/teacher-view peer reconciliation are absent.
-11. Morning/afternoon selective timetable update with explicit carry-forward is absent.
-12. Special-activity participation is not yet integrated into official workload/reporting aggregation.
-13. WorkloadAdjustmentRule remains trigger-gated/deferred.
-14. Installable PWA baseline is absent.
-15. Dedicated Báo giảng Telegram bot/linking/notification lifecycle is absent.
-16. First-certificate HTTP-01/Nginx authority for the Báo giảng subdomain is incomplete.
-17. Actual VPS Stage 1 evidence has not yet been collected for first deployment.
+4. Special-program absence/replacement and programme-level confirmation authority remain explicitly registered for P4 closure (T43/T44).
+5. Existing `GDDDP_COORDINATOR` / `HĐTN_COORDINATOR` capability intent is not wired to programme-resource authority.
+6. Typed/versioned Business Configuration Control Plane is absent.
+7. Delayed go-live / operational-start policy and historical pre-operational evidence workflow are absent.
+8. PPCT real-school import is intentionally blocked pending an authoritative workbook contract.
+9. Native Đam San timetable adapter and class-view/teacher-view peer reconciliation are absent.
+10. Morning/afternoon selective timetable update with explicit carry-forward is absent.
+11. Special-activity participation is not yet integrated into official workload/reporting aggregation.
+12. WorkloadAdjustmentRule remains trigger-gated/deferred.
+13. Installable PWA baseline is absent.
+14. Dedicated Báo giảng Telegram bot/linking/notification lifecycle is absent.
+15. First-certificate HTTP-01/Nginx authority for the Báo giảng subdomain is incomplete.
+16. Actual VPS Stage 1 evidence has not yet been collected for first deployment.
 
 ## Tasks currently eligible to start
 
@@ -143,7 +129,7 @@ Direct P0 inspection found `main` is currently not protected server-side. This i
 
 ## Production state
 
-Production remains **pre-operational**. P1-012A and `SYNC-P1-012A` do not authorize or perform deployment, production migration, VPS/Nginx/TLS change, PostgreSQL production mutation or application-process mutation.
+Production remains **pre-operational**. P1-013 and `SYNC-P1-013` do not authorize or perform deployment, production migration, VPS/Nginx/TLS changes, PostgreSQL production mutation, or application-process mutation.
 
 ## Protected external system boundary
 
