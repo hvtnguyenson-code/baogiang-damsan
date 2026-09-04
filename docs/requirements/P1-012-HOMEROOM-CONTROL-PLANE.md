@@ -475,6 +475,8 @@ Additional bounded regression covers wrong-capability denial, invalid resolver d
 
 PR CI #341 identified a stale Phase-01 capability-count verifier: the canonical catalog contains 37 entries after `HOMEROOM_ASSIGNMENT_MANAGE`, while the SQL verifier still expected 36. The verifier is synchronized to 37 and now asserts that this key allows exactly `SCHOOL_WIDE`; this correction changes neither migration nor retained persistence. A new CI result is required before any PASS claim.
 
+PR CI #342 passed the migration-verifier correction, then exposed a Homeroom integration fixture that generated lowercase UUID fragments for `AcademicYear.code`. Both year fixtures now reuse the existing `normalizedCode` helper; production semantics, schema and migrations are unchanged. A new CI result is required before any PASS claim.
+
 ## 20. Closure rule
 
 P1-012 becomes `CLOSED` only after:

@@ -1,6 +1,6 @@
 import { CatalogStatus, UserStatus } from '@prisma/client';
 import request, { Agent } from 'supertest';
-import { Phase01Harness, integration, testOrigin } from '../helpers/phase01-test-harness';
+import { Phase01Harness, integration, normalizedCode, testOrigin } from '../helpers/phase01-test-harness';
 import * as homeroomPolicy from '../../src/homeroom-assignments/homeroom-assignment-policy';
 
 const capability = 'HOMEROOM_ASSIGNMENT_MANAGE';
@@ -46,7 +46,7 @@ integration('Homeroom assignment control plane (isolated PostgreSQL integration)
 
   async function setup() {
     const year = await h.prisma.academicYear.create({
-      data: { code: `HR-${crypto.randomUUID().slice(0, 8)}`, name: 'Homeroom year' },
+      data: { code: normalizedCode('HR-'), name: 'Homeroom year' },
     });
     const calendar = await h.prisma.academicCalendarVersion.create({
       data: {
@@ -95,7 +95,7 @@ integration('Homeroom assignment control plane (isolated PostgreSQL integration)
       .query({ schoolClassId: refs.schoolClass.id, on: '2026-02-30' })).status).toBe(400);
     expect((await authorized.agent.get(`/api/academic-years/${refs.year.id}/homeroom-assignments/resolve`)
       .query({ schoolClassId: crypto.randomUUID(), on: '2026-08-10' })).status).toBe(404);
-    const otherYear = await h.prisma.academicYear.create({ data: { code: `OTHER-${crypto.randomUUID().slice(0, 8)}`, name: 'Other year' } });
+    const otherYear = await h.prisma.academicYear.create({ data: { code: normalizedCode('OTHER-'), name: 'Other year' } });
     const otherYearClass = await h.prisma.schoolClass.create({ data: { academicYearId: otherYear.id, code: '10B1', name: '10B1', gradeLevel: 10 } });
     expect((await authorized.agent.get(`/api/academic-years/${refs.year.id}/homeroom-assignments/resolve`)
       .query({ schoolClassId: otherYearClass.id, on: '2026-08-10' })).status).toBe(400);
