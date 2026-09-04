@@ -95,13 +95,21 @@ The registered implementation, data-evidence, product and production-readiness t
 15. First-certificate HTTP-01/Nginx authority for the Báo giảng subdomain is incomplete.
 16. Actual VPS Stage 1 evidence has not yet been collected for first deployment.
 
+## Production VPS topology decision
+
+The final production-host topology is intentionally unresolved and explicitly deferred by the Product Owner:
+
+- Supported candidate topologies are `SHARED_VPS` (coexisting with DamSanV5 / Quản lí nội trú on the existing Windows Server 2022 VPS, retaining shared-host isolation, Nginx coexistence, and process/port/database/TLS neighbour protection) and `DEDICATED_VPS` (a separate newly rented Windows Server 2022 VPS dedicated to Báo giảng, with application/domain/business architecture preserved, requiring production runbooks and P6 authority to be audited and realigned for dedicated-host topology before use).
+- Both topologies target Windows Server 2022.
+- The choice between `SHARED_VPS` and `DEDICATED_VPS` is an explicit Product Owner decision, not an agent inference. No agent may infer a topology from existing infrastructure.
+- A mandatory HARD STOP exists immediately before `P6-010`: `P6-010` cannot start until `P6-005` is `CLOSED`.
+
 ## Tasks currently eligible to start
 
 After `SYNC-P1-013`, dependency gates permit these registered tasks to start on their own branches:
 
 - `P1-020` — Business Configuration Control Plane architecture;
-- `P4-010` — GDĐP/HĐTN programme architecture closure;
-- `P6-010` — Pre-deploy TLS/HTTP-01 authority.
+- `P4-010` — GDĐP/HĐTN programme architecture closure.
 
 Readiness is not permission to bypass one-task-per-branch, review, CI or mandatory closure-sync gates. P4 runtime work remains gated by its registered dependencies.
 
@@ -112,6 +120,7 @@ Readiness is not permission to bypass one-task-per-branch, review, CI or mandato
 - `P0-004` — GitHub main branch protection/ruleset: Product Owner decision required before repository-settings mutation.
 - `P2-010` — authoritative PPCT workbook/template evidence required.
 - `P2-030` — authoritative Đam San TKB source evidence must be available to the task in a durable/reviewable form.
+- `P6-005` — Production VPS topology decision: explicit Product Owner selection of `SHARED_VPS` vs `DEDICATED_VPS` required; HARD STOP blocks `P6-010`.
 - `P0-900` — rebase audit triggers if pinned source blobs change or Product Owner authority contradicts the accepted baseline.
 
 ## Authoritative source-change gate

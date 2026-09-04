@@ -10,6 +10,18 @@ Root production, kể cả planned root chưa tồn tại, không được đi q
 
 This is an executable, staged runbook for the official Windows VPS in pre-operational state. Codex does not run the inventory, access the VPS, configure GitHub secrets, run migrations, or activate deployment. At every stop point record `EXISTS AND VERIFIED`, `MISSING`, or `CONFLICT`, then obtain independent review before proceeding.
 
+## Production topology hard gate
+
+> [!CAUTION]
+> **MANDATORY HARD STOP — TOPOLOGY DECISION GATE P6-005**
+>
+> - **DO NOT** execute Stage 0, Stage 1, Stage 2, or any later production action in this runbook until `P6-005` is **CLOSED**.
+> - The production-host topology decision (`SHARED_VPS` vs `DEDICATED_VPS`) has been explicitly deferred by the Product Owner. If topology is unresolved: **STOP** and request an explicit Product Owner decision.
+> - **`SHARED_VPS`**: this runbook may proceed only after the applicable shared-host P6 authority (`P6-010`) is reviewed and accepted.
+> - **`DEDICATED_VPS`**: this current runbook contains shared/protected-neighbour assumptions (such as protected foreign roots, shared Nginx, foreign tasks/processes, and shared PostgreSQL) and **MUST** be independently audited and realigned before execution.
+> - Never treat the absence of DamSanV5 / Quản lí nội trú resources on a dedicated VPS as a failed deployment condition merely because current shared-host runbook expects foreign-neighbour evidence.
+> - **No VPS access, inventory, TLS issuance, Nginx change, PostgreSQL mutation or deployment is authorized by this documentation task.**
+
 ## Stage 0 — repository and authority
 
 1. Confirm the approved application commit is a full SHA reachable from `main` and its authoritative CI run is completed/successful.
