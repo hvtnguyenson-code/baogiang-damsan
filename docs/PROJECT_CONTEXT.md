@@ -39,6 +39,14 @@ Phương án chính thức là Phương án B:
 - local không dùng database VPS làm automated test database;
 - deployment/migration cần task và phê duyệt riêng.
 
+Hạ tầng và topology production:
+
+- Windows Server 2022 là OS authority chính thức cho môi trường production trong mọi trường hợp.
+- Quyết định topology host cuối cùng được Product Owner chủ động hoãn lại để chốt chính thức tại decision gate `P6-005`: lựa chọn giữa `SHARED_VPS` (dùng chung Windows Server 2022 VPS hiện hữu với DamSanV5 / Quản lí nội trú, duy trì triệt để cách ly láng giềng) và `DEDICATED_VPS` (thuê một Windows Server 2022 VPS riêng biệt dành hoàn toàn cho Báo giảng).
+- Ứng dụng, kiến trúc lưu trữ PostgreSQL và domain chính thức `baogiang.dtnt-damsan.edu.vn` phải luôn sẵn sàng deploy được trên cả hai topology này.
+- Các công việc bảo đảm cách ly shared-host và runbook hiện có không phải là thẩm quyền ép buộc Product Owner phải dùng chung VPS Nội trú hiện hữu.
+- Không có bất kỳ task production/TLS nào được ngầm định trước topology khi `P6-005` chưa được `CLOSED`.
+
 Authority môi trường/delivery cao nhất vẫn là:
 
 - `docs/specifications/PA-B-VPS-PostgreSQL-v1.3-IMPLEMENTATION-ADDENDUM.md`;
