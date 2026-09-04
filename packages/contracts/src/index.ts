@@ -609,8 +609,10 @@ export type HomeroomResolutionResult =
   | { outcome: 'MISSING' | 'AMBIGUOUS' | 'CORRUPT' };
 export interface HomeroomAssignmentAcademicYearOption { id: string; code: string; name: string; }
 export interface HomeroomAssignmentAcademicYearOptionListResponse { items: HomeroomAssignmentAcademicYearOption[]; page: number; pageSize: number; total: number; }
-export interface HomeroomAssignmentWorkspaceOptionsResponse { academicYear: HomeroomAssignmentAcademicYearOption; activeCalendar: { id: string; versionNumber: number; startDate: CivilDateString; endDate: CivilDateString } | null; classes: HomeroomAssignmentClassSummary[]; historicalTeachers: HomeroomAssignmentTeacherSummary[]; }
+export interface HomeroomAssignmentWorkspaceOptionsResponse { businessDate: CivilDateString; academicYear: HomeroomAssignmentAcademicYearOption; activeCalendar: { id: string; versionNumber: number; startDate: CivilDateString; endDate: CivilDateString } | null; classes: HomeroomAssignmentClassSummary[]; historicalTeachers: HomeroomAssignmentTeacherSummary[]; }
 export interface HomeroomAssignmentEligibleTeacherListResponse { items: HomeroomAssignmentTeacherSummary[]; page: number; pageSize: number; total: number; }
+export interface HomeroomAssignmentHistoricalTeacherIdentitySummary { userId: string; username: string; displayName: string; staffCode: string | null; userStatus: UserStatus; isTeachingStaff: boolean | null; }
+export interface HomeroomAssignmentHistoricalTeacherIdentityListResponse { items: HomeroomAssignmentHistoricalTeacherIdentitySummary[]; page: number; pageSize: number; total: number; }
 
 // ============================================================
 // Phase 04 Timetable / Time-slot Contracts

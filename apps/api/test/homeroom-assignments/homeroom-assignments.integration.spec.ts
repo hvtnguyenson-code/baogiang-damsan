@@ -20,6 +20,8 @@ integration('Homeroom assignment control plane (isolated PostgreSQL integration)
       { key: capability, scopes: ['SCHOOL_WIDE'] },
       { key: 'SYSTEM_ADMIN', scopes: ['SCHOOL_WIDE'] },
       { key: 'ACADEMIC_STRUCTURE_MANAGE', scopes: ['SCHOOL_WIDE'] },
+      { key: 'USER_MANAGE', scopes: ['SCHOOL_WIDE'] },
+      { key: 'SUBJECT_MANAGE', scopes: ['SCHOOL_WIDE'] },
     ]);
   });
   afterAll(async () => {
@@ -117,6 +119,7 @@ integration('Homeroom assignment control plane (isolated PostgreSQL integration)
       .query({ validFrom: '2026-09-10' });
     expect(years.status).toBe(200);
     expect(workspace.status).toBe(200);
+    expect(workspace.body.businessDate).toBe('2026-09-01');
     expect(workspace.body.historicalTeachers).toEqual(expect.arrayContaining([
       expect.objectContaining({ userId: refs.firstTeacher.id, userStatus: 'DISABLED' }),
     ]));
@@ -125,6 +128,61 @@ integration('Homeroom assignment control plane (isolated PostgreSQL integration)
       expect.objectContaining({ userId: refs.secondTeacher.id, isTeachingStaff: true }),
     ]));
     expect(eligible.body.items).not.toEqual(expect.arrayContaining([expect.objectContaining({ userId: refs.firstTeacher.id })]));
+  });
+
+  it('provides bounded Homeroom-only historical identity discovery without claiming current eligibility', async () => {
+    const refs = await setup();
+    const { agent } = await manager();
+    const inactive = await teacher({ status: UserStatus.DISABLED, displayName: 'Archived Identity' });
+    const nonTeaching = await teacher({ isTeachingStaff: false, displayName: 'Former Classroom Teacher' });
+    const profileless = await h.prisma.user.create({
+      data: {
+        username: `legacyprofileless-${crypto.randomUUID().slice(0, 8)}`,
+        passwordHash: 'integration-only',
+        status: UserStatus.DISABLED,
+        mustChangePassword: false,
+      },
+    });
+    const route = `/api/homeroom-assignment-options/academic-years/${refs.year.id}/historical-teacher-identities`;
+
+    const none = await h.actor();
+    const systemAdmin = await h.actor({ grants: [{ capabilityKey: 'SYSTEM_ADMIN' }] });
+    const userManager = await h.actor({ grants: [{ capabilityKey: 'USER_MANAGE' }] });
+    const subjectManager = await h.actor({ grants: [{ capabilityKey: 'SUBJECT_MANAGE' }] });
+    for (const denied of [none.agent, systemAdmin.agent, userManager.agent, subjectManager.agent]) {
+      expect((await denied.get(route).query({ q: 'teacher' })).status).toBe(403);
+    }
+
+    expect((await agent.get(route).query({ q: '' })).status).toBe(400);
+    expect((await agent.get(route).query({ q: 'x' })).status).toBe(400);
+    expect((await agent.get(route).query({ q: 'teacher', pageSize: 101 })).status).toBe(400);
+
+    const inactiveResult = await agent.get(route).query({ q: 'archived identity', page: 1, pageSize: 1 });
+    expect(inactiveResult.status).toBe(200);
+    expect(inactiveResult.body).toMatchObject({ page: 1, pageSize: 1, total: 1 });
+    expect(inactiveResult.body.items).toHaveLength(1);
+    expect(inactiveResult.body.items[0]).toMatchObject({
+      userId: inactive.id, userStatus: 'DISABLED', isTeachingStaff: true,
+    });
+    expect(Object.keys(inactiveResult.body.items[0]).sort()).toEqual([
+      'displayName', 'isTeachingStaff', 'staffCode', 'userId', 'userStatus', 'username',
+    ]);
+
+    const nonTeachingResult = await agent.get(route).query({ q: 'former classroom' });
+    expect(nonTeachingResult.body.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ userId: nonTeaching.id, isTeachingStaff: false }),
+    ]));
+    const profilelessResult = await agent.get(route).query({ q: 'legacyprofileless' });
+    expect(profilelessResult.body.items).toEqual([
+      expect.objectContaining({
+        userId: profileless.id,
+        username: profileless.username,
+        displayName: profileless.username,
+        staffCode: null,
+        userStatus: 'DISABLED',
+        isTeachingStaff: null,
+      }),
+    ]);
   });
 
   it('enforces current and bounded-historical eligibility, same-class exclusion, and atomic failure audits', async () => {
