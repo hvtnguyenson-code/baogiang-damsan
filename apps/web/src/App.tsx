@@ -20,6 +20,7 @@ import { AcademicYearsPage } from './pages/AcademicYearsPage';
 import { AcademicCalendarPage } from './pages/AcademicCalendarPage';
 import { SchoolClassesPage } from './pages/SchoolClassesPage';
 import { TeachingAssignmentsPage } from './pages/TeachingAssignmentsPage';
+import { HomeroomAssignmentsPage } from './pages/HomeroomAssignmentsPage';
 import { AccessibleReportingStatementsPage } from './pages/AccessibleReportingStatementsPage';
 import { PendingReportingStatementsPage } from './pages/PendingReportingStatementsPage';
 import { ReportingStatementDetailPage } from './pages/ReportingStatementDetailPage';
@@ -61,6 +62,7 @@ export default function App() {
             <Route path="/quan-tri/phan-cong-mon" element={<TemporalAssignmentsPage kind="staff-subjects" />} />
             <Route path="/quan-tri/phan-cong-giang-day" element={<TeachingAssignmentsPage />} />
           </Route>
+          <Route element={<CapabilityRoute allow={(c) => hasSchoolCapability(c, 'HOMEROOM_ASSIGNMENT_MANAGE')} />}><Route path="/quan-tri/phan-cong-chu-nhiem" element={<HomeroomAssignmentsPage />} /></Route>
           <Route element={<CapabilityRoute allow={(c) => hasSchoolCapability(c, 'CAPABILITY_GRANT')} />}><Route path="/quan-tri/quyen" element={<CapabilitiesPage />} /></Route>
           <Route element={<CapabilityRoute allow={(c) => hasSchoolCapability(c, 'AUDIT_VIEW')} />}><Route path="/quan-tri/nhat-ky" element={<AuditPage />} /></Route>
           <Route element={<CapabilityRoute allow={(c) => hasSchoolCapability(c, 'ADDITIONAL_DUTY_CATALOG_MANAGE')} />}><Route path="/quan-tri/kiem-nhiem/danh-muc" element={<DutyCatalogPage />} /></Route>

@@ -30,7 +30,7 @@ P1-012A completed the bounded `HOMEROOM_ASSIGNMENT_MANAGE / SCHOOL_WIDE` histori
 
 ## Next Homeroom task
 
-`P1-013` — Homeroom administration workspace — **READY**, not started. P1-012 and P1-012A are CLOSED; P1-013 retains dependency on P1-012A and must start through its own exact-main verification, dedicated branch, UI-authority review and normal CI/closure workflow.
+`P1-013` — Homeroom administration workspace — **IN_REVIEW** on `feat/homeroom-administration-workspace-013`, started from canonical `main@3f8a1763991cc53c9767638ba380aff7ce66e4f2`. Its bounded UI implementation and local evidence are ready for independent review; exact-head CI, PR approval, merge and closure synchronization remain pending. P1-012 and P1-012A are CLOSED. This task is UI-only: it consumes the frozen Homeroom APIs and does not alter backend authority, schema, migration, capability semantics, CI/CD or production state.
 
 ## Accepted product/domain authority
 
@@ -93,7 +93,7 @@ The registered implementation, data-evidence, product and production-readiness t
 ## Critical pre-pilot gaps
 
 1. Current SpecialActivity is a valid runtime occurrence primitive but not a complete GDĐP/HĐTN programme model.
-2. HomeroomAssignment administration workspace/UI remains absent; architecture, persistence, control plane/capability and its historical-identity/business-date read model are closed through ADR-045/P1-011/P1-012/P1-012A.
+2. HomeroomAssignment administration workspace/UI is implemented on the P1-013 review branch and awaits independent review/CI; architecture, persistence, control plane/capability and its historical-identity/business-date read model remain closed through ADR-045/P1-011/P1-012/P1-012A.
 3. GDĐP grade/year plan and HĐTN CLASS/GRADE/SCHOOL programme semantics are absent.
 4. Programme planning cannot assign different exact teacher sets to different exact slots.
 5. Special-program absence/replacement and programme-level confirmation authority remain explicitly registered for P4 closure (T43/T44).
@@ -114,7 +114,6 @@ The registered implementation, data-evidence, product and production-readiness t
 
 After `SYNC-P1-012A` merges, dependency gates permit these registered tasks to start on their own branches:
 
-- `P1-013` — Homeroom administration workspace;
 - `P1-020` — Business Configuration Control Plane architecture;
 - `P4-010` — GDĐP/HĐTN programme architecture closure;
 - `P6-010` — Pre-deploy TLS/HTTP-01 authority.
