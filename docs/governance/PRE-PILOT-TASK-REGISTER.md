@@ -60,7 +60,7 @@ Dependency cells below contain **task IDs only**. Conditions/evidence triggers b
 
 | Task | Status | Depends on | Deliverable / closure | Traceability |
 |---|---|---|---|---|
-| `P1-020` Business Configuration Control Plane architecture | `READY` | `P0-001` | Typed/versioned business-policy families, effectivity/history, capability boundary and explicit separation from technical secrets/env | T21, T22 |
+| `P1-020` Business Configuration Control Plane architecture | `IN_REVIEW` | `P0-001` | Typed/versioned business-policy families, effectivity/history, capability boundary and explicit separation from technical secrets/env | T21, T22; proposed ADR-046 and architecture closure; branch `docs/business-configuration-architecture-020`; canonical start `28fc52dd0f62a78eda97a3e631770be47d465efa`; architecture/docs only; not merged or closed |
 | `P1-021` Business Configuration persistence/control plane | `PLANNED` | `P1-020` | Approved policy persistence, lifecycle, authorization, audit and exact historical reads | T21, T22 |
 | `P1-022` Business Configuration administration workspace | `PLANNED` | `P1-021` | PHT/admin UI for approved business policy only; no access to secrets/TLS/database/process settings | T21, T22 |
 
