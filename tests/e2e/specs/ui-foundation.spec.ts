@@ -408,7 +408,7 @@ test('real Phase 01 management flow preserves history and capability boundaries'
   await page.getByRole('button', { name: 'Tạo phân công' }).click();
   const staffSubjectForm = page.locator('form.inline-work-form');
   await selectOptionMatching(staffSubjectForm.getByLabel('Người được phân công'), /Giáo viên E2E Phase 01/);
-  await selectOptionMatching(staffSubjectForm.getByLabel('Môn học'), /E2EMON/);
+  await selectOptionMatching(staffSubjectForm.getByLabel('Môn học'), /^E2EMON — Môn E2E Phase 01$/);
   await staffSubjectForm.getByRole('button', { name: 'Lưu phân công' }).click();
   await expect(page.getByRole('status').getByText('Đã lưu phân công.', { exact: true })).toBeVisible();
   const staffSubjectRow = page.locator('tbody tr', { hasText: 'Giáo viên E2E Phase 01' }).filter({ hasText: 'E2EMON' });
