@@ -6,7 +6,7 @@ This is the canonical mutable **product/task status** document for Báo giảng.
 
 It is **not** a self-referential registry of the latest Git commit. Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub at the start of every task. SHAs recorded here are evidence for the stated baseline or last closed major task.
 
-**Status snapshot date:** 2026-09-04
+**Status snapshot date:** 2026-09-06
 
 ## Last closed major task
 
@@ -32,6 +32,12 @@ The registered pre-pilot Homeroom chain is closed: P1-010 architecture, P1-011 p
 - `HomeroomAssignment` existence alone is not teaching-execution evidence or HĐTN period credit.
 
 P1-010 review also recovered and registered Special Programme boundaries T43/T44: absence/replacement/substitution semantics and programme-level confirmation authority/topology. Those remain for P4; they were not silently solved inside HomeroomAssignment.
+
+## Business Configuration architecture under review
+
+`P1-020` is **IN_REVIEW** on branch `docs/business-configuration-architecture-020`, based on exact canonical start `28fc52dd0f62a78eda97a3e631770be47d465efa`. Proposed ADR-046 defines a separate typed/allowlisted, version-aware and civil-date-effective Business Configuration authority with retained correction history, exact fail-closed resolution and dedicated future `BUSINESS_CONFIGURATION_MANAGE / SCHOOL_WIDE` authorization. It explicitly excludes `SystemSetting`, environment/secrets and technical/deployment configuration from business-policy authority.
+
+This is proposed architecture/docs only: no schema, migration, capability seed, resolver, API/runtime, UI, deployment or production behavior is implemented. P1-021 remains `PLANNED` and non-startable until P1-020 is independently reviewed, merged, has authoritative post-merge CI, and is closed through `SYNC-P1-020`. P1-022 remains `PLANNED` behind P1-021.
 
 ## Accepted governance authority
 
@@ -83,7 +89,7 @@ The registered implementation, data-evidence, product and production-readiness t
 3. Programme planning cannot assign different exact teacher sets to different exact slots.
 4. Special-program absence/replacement and programme-level confirmation authority remain explicitly registered for P4 closure (T43/T44).
 5. Existing `GDDDP_COORDINATOR` / `HĐTN_COORDINATOR` capability intent is not wired to programme-resource authority.
-6. Typed/versioned Business Configuration Control Plane is absent.
+6. Typed/versioned Business Configuration architecture is in review under P1-020; persistence, control plane and administration UI remain absent.
 7. Delayed go-live / operational-start policy and historical pre-operational evidence workflow are absent.
 8. PPCT real-school import is intentionally blocked pending an authoritative workbook contract.
 9. Native Đam San timetable adapter and class-view/teacher-view peer reconciliation are absent.
@@ -106,12 +112,11 @@ The final production-host topology is intentionally unresolved and explicitly de
 
 ## Tasks currently eligible to start
 
-After `SYNC-P1-013`, dependency gates permit these registered tasks to start on their own branches:
+With P1-020 already in review, dependency gates continue to permit this independent registered task to start on its own branch:
 
-- `P1-020` — Business Configuration Control Plane architecture;
 - `P4-010` — GDĐP/HĐTN programme architecture closure.
 
-Readiness is not permission to bypass one-task-per-branch, review, CI or mandatory closure-sync gates. P4 runtime work remains gated by its registered dependencies.
+P1-021 is not eligible: P1-020 has not merged or completed `SYNC-P1-020`. Readiness is not permission to bypass one-task-per-branch, review, CI or mandatory closure-sync gates. P4 runtime work remains gated by its registered dependencies.
 
 ## Decisions/evidence still blocking other paths
 
@@ -138,7 +143,7 @@ Direct P0 inspection found `main` is currently not protected server-side. This i
 
 ## Production state
 
-Production remains **pre-operational**. P1-013 and `SYNC-P1-013` do not authorize or perform deployment, production migration, VPS/Nginx/TLS changes, PostgreSQL production mutation, or application-process mutation.
+Production remains **pre-operational**. P1-020 is architecture/docs only and does not authorize or perform deployment, production migration, VPS/Nginx/TLS changes, PostgreSQL production mutation, or application-process mutation. P6 remains blocked by the explicit P6-005 topology decision gate.
 
 ## Protected external system boundary
 
