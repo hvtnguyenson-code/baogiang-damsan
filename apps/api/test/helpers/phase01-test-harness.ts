@@ -56,15 +56,12 @@ export class Phase01Harness {
   }
 
   async clean(): Promise<void> {
-    await this.prisma.businessPolicyVersion.updateMany({
-      data: {
-        replacesVersionId: null,
-        correctsVersionId: null,
-      },
-    });
-    await this.prisma.businessPolicyCommand.deleteMany();
-    await this.prisma.businessPolicyVersion.deleteMany();
-    await this.prisma.businessPolicyStream.deleteMany();
+    await this.prisma.$executeRawUnsafe(`
+      TRUNCATE TABLE
+        "business_policy_commands",
+        "business_policy_versions",
+        "business_policy_streams";
+    `);
     await this.prisma.auditEvent.deleteMany();
     await this.prisma.authSession.deleteMany();
     await this.prisma.reportingStatementHistory.deleteMany();

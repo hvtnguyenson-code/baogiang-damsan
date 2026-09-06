@@ -677,7 +677,7 @@ describe('BusinessConfigurationService', () => {
       );
     });
 
-    it('records full audit metadata for REPLACE', async () => {
+    it('records full audit metadata for REPLACE with explicit before/after effectivity', async () => {
       jest.spyOn(service, 'businessCivilDate').mockReturnValue('2026-09-01');
       mockTx.businessPolicyVersion.findUnique.mockResolvedValue({
         id: 'published-rep-1',
@@ -707,20 +707,22 @@ describe('BusinessConfigurationService', () => {
             resource: { kind: 'SCHOOL_WIDE' },
             sourceVersionId: 'published-rep-1',
             replacementVersionId: 'replacement-v2',
-            priorEffectiveFrom: '2026-09-01',
-            priorEffectiveUntil: '2026-09-09',
-            effectiveFrom: '2026-09-10',
-            effectiveUntil: null,
+            sourceEffectiveFrom: '2026-09-01',
+            sourceEffectiveUntilBefore: null,
+            sourceEffectiveUntilAfter: '2026-09-09',
+            replacementEffectiveFrom: '2026-09-10',
+            replacementEffectiveUntil: null,
             validatorVersion: 'v1',
             replacesVersionId: 'published-rep-1',
             commandId: 'cmd-rep-meta',
+            payloadFingerprint: expect.any(String),
           }),
         }),
         expect.anything(),
       );
     });
 
-    it('records full audit metadata for RETIRE', async () => {
+    it('records full audit metadata for RETIRE with explicit before/after effectivity', async () => {
       jest.spyOn(service, 'businessCivilDate').mockReturnValue('2026-09-01');
       mockTx.businessPolicyVersion.findUnique.mockResolvedValue({
         id: 'published-ret-1',
@@ -747,7 +749,8 @@ describe('BusinessConfigurationService', () => {
             resource: { kind: 'SCHOOL_WIDE' },
             versionId: 'published-ret-1',
             effectiveFrom: '2026-09-01',
-            effectiveUntil: '2026-09-20',
+            effectiveUntilBefore: null,
+            effectiveUntilAfter: '2026-09-20',
             reason: 'Normal retirement',
             commandId: 'cmd-ret-meta',
           }),
@@ -756,7 +759,7 @@ describe('BusinessConfigurationService', () => {
       );
     });
 
-    it('records full audit metadata for CORRECT', async () => {
+    it('records full audit metadata for CORRECT with source/corrected effectivity', async () => {
       mockTx.businessPolicyVersion.findUnique.mockResolvedValue({
         id: 'published-cor-1',
         streamId: 'stream-1',
@@ -784,13 +787,66 @@ describe('BusinessConfigurationService', () => {
             family: 'TEST_FAMILY',
             resource: { kind: 'SCHOOL_WIDE' },
             sourceVersionId: 'published-cor-1',
+            sourceEffectiveFrom: '2026-09-01',
+            sourceEffectiveUntil: null,
             correctedVersionId: 'corrected-v2',
-            effectiveFrom: '2026-09-01',
-            effectiveUntil: null,
+            correctedEffectiveFrom: '2026-09-01',
+            correctedEffectiveUntil: null,
             validatorVersion: 'v1',
             correctsVersionId: 'published-cor-1',
             reason: 'Fix typographical threshold mistake',
             commandId: 'cmd-cor-meta',
+            payloadFingerprint: expect.any(String),
+          }),
+        }),
+        expect.anything(),
+      );
+    });
+
+    it('records full audit metadata for CORRECT with modified interval', async () => {
+      mockTx.businessPolicyVersion.findUnique.mockResolvedValue({
+        id: 'published-cor-2',
+        streamId: 'stream-1',
+        status: 'PUBLISHED',
+        effectiveFrom: new Date('2026-09-01T00:00:00.000Z'),
+        effectiveUntil: null,
+        stream: { familyKey: 'TEST_FAMILY', resourceKind: 'SCHOOL_WIDE', academicYearId: null },
+      });
+      mockTx.businessPolicyVersion.aggregate.mockResolvedValue({ _max: { versionNumber: 1 } });
+      mockTx.businessPolicyVersion.updateMany.mockResolvedValue({ count: 1 });
+      mockTx.businessPolicyVersion.create.mockResolvedValue({ id: 'corrected-v3' });
+
+      await service.correct(
+        'published-cor-2',
+        {
+          commandId: 'cmd-cor-interval',
+          effectiveFrom: '2026-09-05',
+          effectiveUntil: '2026-09-25',
+          payload: { enabled: true, threshold: 75 },
+          reason: 'Adjust effective dates and parameters',
+        },
+        'actor-1',
+        mockMeta,
+      );
+      expect(mockAudit.write).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actorUserId: 'actor-1',
+          action: 'BUSINESS_POLICY_CORRECTED',
+          entityId: 'published-cor-2',
+          metadata: expect.objectContaining({
+            family: 'TEST_FAMILY',
+            resource: { kind: 'SCHOOL_WIDE' },
+            sourceVersionId: 'published-cor-2',
+            sourceEffectiveFrom: '2026-09-01',
+            sourceEffectiveUntil: null,
+            correctedVersionId: 'corrected-v3',
+            correctedEffectiveFrom: '2026-09-05',
+            correctedEffectiveUntil: '2026-09-25',
+            validatorVersion: 'v1',
+            correctsVersionId: 'published-cor-2',
+            reason: 'Adjust effective dates and parameters',
+            commandId: 'cmd-cor-interval',
+            payloadFingerprint: expect.any(String),
           }),
         }),
         expect.anything(),

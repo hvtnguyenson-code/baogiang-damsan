@@ -158,13 +158,15 @@ export class BusinessConfigurationService {
         resource: this.streamResource(source.stream),
         sourceVersionId: source.id,
         replacementVersionId: replacement.id,
-        priorEffectiveFrom: this.format(source.effectiveFrom),
-        priorEffectiveUntil: previousUntil,
-        effectiveFrom: from,
-        effectiveUntil: null,
+        sourceEffectiveFrom: this.format(source.effectiveFrom),
+        sourceEffectiveUntilBefore: null,
+        sourceEffectiveUntilAfter: previousUntil,
+        replacementEffectiveFrom: from,
+        replacementEffectiveUntil: null,
         validatorVersion: validator.version,
         replacesVersionId: source.id,
         commandId: dto.commandId,
+        payloadFingerprint: this.fingerprint(payload),
       });
       return { outcome: 'REPLACED', versionId: replacement.id };
     });
@@ -184,7 +186,8 @@ export class BusinessConfigurationService {
         resource: this.streamResource(row.stream),
         versionId: id,
         effectiveFrom: this.format(row.effectiveFrom),
-        effectiveUntil: until,
+        effectiveUntilBefore: null,
+        effectiveUntilAfter: until,
         reason: dto.reason?.trim() || null,
         commandId: dto.commandId,
       });
@@ -229,13 +232,16 @@ export class BusinessConfigurationService {
         family: family.key,
         resource: this.streamResource(source.stream),
         sourceVersionId: source.id,
+        sourceEffectiveFrom: this.format(source.effectiveFrom),
+        sourceEffectiveUntil: source.effectiveUntil ? this.format(source.effectiveUntil) : null,
         correctedVersionId: corrected.id,
-        effectiveFrom: dates.from,
-        effectiveUntil: dates.until,
+        correctedEffectiveFrom: dates.from,
+        correctedEffectiveUntil: dates.until,
         validatorVersion: validator.version,
         correctsVersionId: source.id,
         reason: dto.reason.trim(),
         commandId: dto.commandId,
+        payloadFingerprint: this.fingerprint(payload),
       });
       return { outcome: 'CORRECTED', versionId: corrected.id };
     });

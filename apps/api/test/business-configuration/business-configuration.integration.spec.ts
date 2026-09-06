@@ -722,12 +722,55 @@ integration('Business Configuration API (isolated PostgreSQL integration)', () =
         manager.agent.post(`/api/business-configuration/policy-versions/${draft2.body.versionId}/publish`).set('Origin', testOrigin).send({ commandId: 'cmd-win-2' }),
       ]);
 
-      const statuses = [
-        (res1 as PromiseFulfilledResult<{ status: number }>).value.status,
-        (res2 as PromiseFulfilledResult<{ status: number }>).value.status,
-      ].sort();
-      expect(statuses).toEqual([200, 409]);
+      const resp1 = (res1 as PromiseFulfilledResult<{ status: number; body: { versionId?: string } }>).value;
+      const resp2 = (res2 as PromiseFulfilledResult<{ status: number; body: { versionId?: string } }>).value;
+
+      const [winnerRes, loserRes, winnerCmd, loserCmd, winnerDraftId, loserDraftId] =
+        resp1.status === 200
+          ? [resp1, resp2, 'cmd-win-1', 'cmd-win-2', draft1.body.versionId as string, draft2.body.versionId as string]
+          : [resp2, resp1, 'cmd-win-2', 'cmd-win-1', draft2.body.versionId as string, draft1.body.versionId as string];
+
+      expect(winnerRes.status).toBe(200);
+      expect(loserRes.status).toBe(409);
       expect(await h.prisma.businessPolicyVersion.count({ where: { status: 'PUBLISHED' } })).toBe(1);
+
+      // Receipt idempotency & audit assertions
+      const winnerReceipt = await h.prisma.businessPolicyCommand.findUnique({
+        where: { actorUserId_commandId: { actorUserId: manager.id, commandId: winnerCmd } },
+      });
+      expect(winnerReceipt).not.toBeNull();
+
+      const loserReceipt = await h.prisma.businessPolicyCommand.findUnique({
+        where: { actorUserId_commandId: { actorUserId: manager.id, commandId: loserCmd } },
+      });
+      expect(loserReceipt).toBeNull();
+
+      const commandReceipts = await h.prisma.businessPolicyCommand.count({
+        where: { actorUserId: manager.id, commandId: { in: ['cmd-win-1', 'cmd-win-2'] } },
+      });
+      expect(commandReceipts).toBe(1);
+
+      const publishAudits = await h.prisma.auditEvent.findMany({
+        where: {
+          action: 'BUSINESS_POLICY_PUBLISHED',
+          entityId: { in: [draft1.body.versionId, draft2.body.versionId] },
+        },
+      });
+      expect(publishAudits).toHaveLength(1);
+      expect(publishAudits[0].entityId).toBe(winnerDraftId);
+
+      const loserAudits = await h.prisma.auditEvent.count({
+        where: {
+          action: 'BUSINESS_POLICY_PUBLISHED',
+          entityId: loserDraftId,
+        },
+      });
+      expect(loserAudits).toBe(0);
+
+      const loserDraft = await h.prisma.businessPolicyVersion.findUnique({
+        where: { id: loserDraftId },
+      });
+      expect(loserDraft?.status).toBe('DRAFT');
     });
   });
 
@@ -746,12 +789,74 @@ integration('Business Configuration API (isolated PostgreSQL integration)', () =
         manager.agent.post(`/api/business-configuration/policy-versions/${draft.body.versionId}/replace`).set('Origin', testOrigin).send({ commandId: 'rep-par-2', effectiveFrom: '2026-10-01', payload: { enabled: true, threshold: 20 } }),
       ]);
 
-      const statuses = [
-        (res1 as PromiseFulfilledResult<{ status: number }>).value.status,
-        (res2 as PromiseFulfilledResult<{ status: number }>).value.status,
-      ].sort();
-      expect(statuses).toEqual([200, 409]);
-      expect(await h.prisma.businessPolicyVersion.count({ where: { status: 'PUBLISHED', replacesVersionId: draft.body.versionId } })).toBe(1);
+      const resp1 = (res1 as PromiseFulfilledResult<{ status: number; body: { versionId?: string } }>).value;
+      const resp2 = (res2 as PromiseFulfilledResult<{ status: number; body: { versionId?: string } }>).value;
+
+      const [winnerRes, loserRes, winnerCmd, loserCmd] =
+        resp1.status === 200
+          ? [resp1, resp2, 'rep-par-1', 'rep-par-2']
+          : [resp2, resp1, 'rep-par-2', 'rep-par-1'];
+
+      expect(winnerRes.status).toBe(200);
+      expect(loserRes.status).toBe(409);
+
+      // Source effectiveUntil closed exactly once to exact expected date (2026-09-30)
+      const updatedSource = await h.prisma.businessPolicyVersion.findUnique({
+        where: { id: draft.body.versionId },
+      });
+      expect(updatedSource).not.toBeNull();
+      expect(updatedSource!.effectiveUntil).toEqual(new Date('2026-09-30T00:00:00.000Z'));
+
+      // Exactly one replacement child exists in stream
+      const replacements = await h.prisma.businessPolicyVersion.findMany({
+        where: { replacesVersionId: draft.body.versionId },
+      });
+      expect(replacements).toHaveLength(1);
+      expect(replacements[0].id).toBe(winnerRes.body.versionId);
+      expect(replacements[0].status).toBe('PUBLISHED');
+      expect(replacements[0].effectiveFrom).toEqual(new Date('2026-10-01T00:00:00.000Z'));
+      expect(replacements[0].effectiveUntil).toBeNull();
+
+      // Exactly one receipt
+      const winnerReceipt = await h.prisma.businessPolicyCommand.findUnique({
+        where: { actorUserId_commandId: { actorUserId: manager.id, commandId: winnerCmd } },
+      });
+      expect(winnerReceipt).not.toBeNull();
+
+      const loserReceipt = await h.prisma.businessPolicyCommand.findUnique({
+        where: { actorUserId_commandId: { actorUserId: manager.id, commandId: loserCmd } },
+      });
+      expect(loserReceipt).toBeNull();
+
+      const replaceReceipts = await h.prisma.businessPolicyCommand.count({
+        where: { actorUserId: manager.id, commandId: { in: ['rep-par-1', 'rep-par-2'] } },
+      });
+      expect(replaceReceipts).toBe(1);
+
+      // Exactly one BUSINESS_POLICY_REPLACED audit
+      const replaceAudits = await h.prisma.auditEvent.findMany({
+        where: {
+          action: 'BUSINESS_POLICY_REPLACED',
+          entityId: draft.body.versionId,
+        },
+      });
+      expect(replaceAudits).toHaveLength(1);
+      const auditMeta = replaceAudits[0].metadata as Record<string, unknown>;
+      expect(auditMeta.replacementVersionId).toBe(winnerRes.body.versionId);
+      expect(auditMeta.commandId).toBe(winnerCmd);
+      expect(auditMeta.sourceEffectiveUntilBefore).toBeNull();
+      expect(auditMeta.sourceEffectiveUntilAfter).toBe('2026-09-30');
+      expect(auditMeta.replacementEffectiveFrom).toBe('2026-10-01');
+      expect(auditMeta.replacementEffectiveUntil).toBeNull();
+
+      // Loser left no partial audit
+      const loserAudits = await h.prisma.auditEvent.count({
+        where: {
+          action: 'BUSINESS_POLICY_REPLACED',
+          metadata: { path: ['commandId'], equals: loserCmd },
+        },
+      });
+      expect(loserAudits).toBe(0);
     });
   });
 
@@ -765,6 +870,46 @@ integration('Business Configuration API (isolated PostgreSQL integration)', () =
       const result = await manager.agent.get('/api/business-configuration/resolve?family=TEST_BOOLEAN_THRESHOLD&kind=SCHOOL_WIDE&civilDate=2026-09-01');
       expect(result.status).toBe(200);
       expect(result.body.outcome).toBe('POLICY_NOT_CONFIGURED');
+    });
+  });
+
+  // =========================================================================
+  // Section 25: Harness Cleanup Regression Evidence
+  // =========================================================================
+  describe('Harness cleanup regression (replacement and correction lineage)', () => {
+    it('cleans tables successfully after replacement lineage without violating immutable triggers', async () => {
+      const manager = await h.actor({ grants: [{ capabilityKey: 'BUSINESS_CONFIGURATION_MANAGE' }] });
+
+      const draft = await manager.agent.post('/api/business-configuration/policies/drafts').set('Origin', testOrigin).send(body('cleanup-rep-draft', { enabled: true, threshold: 1 }));
+      await manager.agent.post(`/api/business-configuration/policy-versions/${draft.body.versionId}/publish`).set('Origin', testOrigin).send({ commandId: 'cleanup-rep-pub' });
+      await manager.agent.post(`/api/business-configuration/policy-versions/${draft.body.versionId}/replace`).set('Origin', testOrigin).send({ commandId: 'cleanup-rep-rep', effectiveFrom: '2026-10-01', payload: { enabled: true, threshold: 2 } });
+
+      // Verify replacement lineage exists
+      expect(await h.prisma.businessPolicyVersion.count({ where: { replacesVersionId: draft.body.versionId } })).toBe(1);
+
+      // Execute h.clean() and assert all business policy tables are zero
+      await h.clean();
+      expect(await h.prisma.businessPolicyCommand.count()).toBe(0);
+      expect(await h.prisma.businessPolicyVersion.count()).toBe(0);
+      expect(await h.prisma.businessPolicyStream.count()).toBe(0);
+    });
+
+    it('cleans tables successfully after correction lineage without violating immutable triggers', async () => {
+      const manager = await h.actor({ grants: [{ capabilityKey: 'BUSINESS_CONFIGURATION_MANAGE' }] });
+
+      const draft = await manager.agent.post('/api/business-configuration/policies/drafts').set('Origin', testOrigin).send(body('cleanup-cor-draft', { enabled: true, threshold: 1 }));
+      await manager.agent.post(`/api/business-configuration/policy-versions/${draft.body.versionId}/publish`).set('Origin', testOrigin).send({ commandId: 'cleanup-cor-pub' });
+      await manager.agent.post(`/api/business-configuration/policy-versions/${draft.body.versionId}/correct`).set('Origin', testOrigin).send({ commandId: 'cleanup-cor-cor', payload: { enabled: true, threshold: 3 }, reason: 'Correction for test' });
+
+      // Verify correction lineage and REVERSED status exist
+      expect(await h.prisma.businessPolicyVersion.count({ where: { status: 'REVERSED' } })).toBe(1);
+      expect(await h.prisma.businessPolicyVersion.count({ where: { correctsVersionId: draft.body.versionId } })).toBe(1);
+
+      // Execute h.clean() and assert all business policy tables are zero
+      await h.clean();
+      expect(await h.prisma.businessPolicyCommand.count()).toBe(0);
+      expect(await h.prisma.businessPolicyVersion.count()).toBe(0);
+      expect(await h.prisma.businessPolicyStream.count()).toBe(0);
     });
   });
 });
