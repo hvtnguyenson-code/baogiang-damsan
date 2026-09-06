@@ -1,6 +1,6 @@
 # ADR-046 — Business Configuration Control Plane
 
-- **Status:** Proposed by P1-020; pending independent review, merge and `SYNC-P1-020` acceptance.
+- **Status:** Accepted through P1-020 parent merge; administrative closure recorded by `SYNC-P1-020`.
 - **Date:** 2026-09-06
 - **Scope:** Typed/versioned business-policy authority, effectivity, lifecycle, authorization, historical resolution and technical-configuration exclusion.
 - **Task baseline:** `main@28fc52dd0f62a78eda97a3e631770be47d465efa`

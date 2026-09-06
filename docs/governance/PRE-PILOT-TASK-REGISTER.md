@@ -60,15 +60,15 @@ Dependency cells below contain **task IDs only**. Conditions/evidence triggers b
 
 | Task | Status | Depends on | Deliverable / closure | Traceability |
 |---|---|---|---|---|
-| `P1-020` Business Configuration Control Plane architecture | `IN_REVIEW` | `P0-001` | Typed/versioned business-policy families, effectivity/history, capability boundary and explicit separation from technical secrets/env | T21, T22; proposed ADR-046 and architecture closure; branch `docs/business-configuration-architecture-020`; canonical start `28fc52dd0f62a78eda97a3e631770be47d465efa`; architecture/docs only; not merged or closed |
-| `P1-021` Business Configuration persistence/control plane | `PLANNED` | `P1-020` | Approved policy persistence, lifecycle, authorization, audit and exact historical reads | T21, T22 |
+| `P1-020` Business Configuration Control Plane architecture | `CLOSED` | `P0-001` | Typed/versioned business-policy families, effectivity/history, capability boundary and explicit separation from technical secrets/env | T21, T22; ADR-046 accepted; canonical start `28fc52dd0f62a78eda97a3e631770be47d465efa`; branch `docs/business-configuration-architecture-020`; original architecture commit `03475e28e09bb414b692d9ba375805f76a1298b6`; final reviewed head `21d4e743ec34a654f046d23eb701427f8f4dac64`; independent GitHub architecture review PASS; PR #104; final exact-head CI #360 / run `33984667141` SUCCESS; merge/main `98e06d65d68f15c63009596d8a164f0d53f2c872`; post-merge main CI #361 / run `33985130852` SUCCESS; CLOSED by `SYNC-P1-020`; existing Playwright harness defect was independently corrected through PR #105 before final P1-020 CI; no P1-020 semantic correction/re-entry task required |
+| `P1-021` Business Configuration persistence/control plane | `READY` | `P1-020` | Approved policy persistence, lifecycle, authorization, audit and exact historical reads | T21, T22 |
 | `P1-022` Business Configuration administration workspace | `PLANNED` | `P1-021` | PHT/admin UI for approved business policy only; no access to secrets/TLS/database/process settings | T21, T22 |
 
 ### Delayed go-live policy
 
 | Task | Status | Depends on | Deliverable / closure | Traceability |
 |---|---|---|---|---|
-| `P1-030` Delayed go-live / operational-start architecture | `PLANNED` | `P1-020` | Exact business semantics for operational start, historical boundary and no-auto-debt invariants | T28, T30 |
+| `P1-030` Delayed go-live / operational-start architecture | `READY` | `P1-020` | Exact business semantics for operational start, historical boundary and no-auto-debt invariants | T28, T30 |
 | `P1-031` Operational-start policy implementation | `PLANNED` | `P1-021`, `P1-030` | Typed/versioned policy runtime and read authority using Business Configuration foundation | T28, T30 |
 | `P1-032` Operational-start admin UI integration | `PLANNED` | `P1-022`, `P1-031` | Safe business UI for authorized start policy with effectivity/audit visibility | T28, T30 |
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-**PROPOSED / IN_REVIEW.**
+**CLOSED by `SYNC-P1-020`.** ADR-046 became accepted architecture authority through the P1-020 parent merge.
 
 - Task: `P1-020`
 - Exact starting main: `28fc52dd0f62a78eda97a3e631770be47d465efa`
@@ -12,7 +12,7 @@
 - Scope: architecture and documentation only
 - Implementation owners: `P1-021` persistence/control plane; `P1-022` administration workspace
 
-This task creates no schema, migration, capability seed, API/runtime, UI, deployment or production change. It does not authorize P1-021 or P1-022 to start before P1-020 is merged, post-merge CI succeeds, and `SYNC-P1-020` closes the task.
+This task created no schema, migration, capability seed, API/runtime, UI, deployment or production change. P1-021 remains required for persistence/control plane, and P1-022 remains required for administration UI.
 
 ## 1. Purpose and evidence
 
@@ -283,6 +283,14 @@ P1-022 starts only after P1-021 is closed. Its workspace must:
 
 ## 15. Governance outcome
 
-On this branch P1-020 is `IN_REVIEW`, T21 records the proposed architecture while remaining truthful that persistence/runtime/UI are absent, and T22 records the architectural exclusion without claiming enforcement not yet implemented. P1-021 remains `PLANNED` and non-startable until merge, authoritative post-merge CI and `SYNC-P1-020`.
+P1-020 is `CLOSED` by `SYNC-P1-020`. T21 records accepted architecture while remaining truthful that persistence/runtime/UI are absent, and T22 records the accepted technical-exclusion boundary without claiming enforcement already exists. P1-021 is `READY`; P1-022 remains `PLANNED` behind P1-021.
 
-P4-010 remains independently `READY` if its own dependencies remain satisfied. P6 remains blocked by P6-005. Production remains pre-operational.
+P1-030 is `READY`; P4-010 remains independently `READY`; P6 remains blocked by P6-005. Production remains pre-operational.
+
+## 16. Closure evidence
+
+- Canonical start: `28fc52dd0f62a78eda97a3e631770be47d465efa`; branch: `docs/business-configuration-architecture-020`; original architecture commit: `03475e28e09bb414b692d9ba375805f76a1298b6` (`docs(config): close P1-020 architecture`).
+- Final reviewed head: `21d4e743ec34a654f046d23eb701427f8f4dac64`; independent GitHub content/diff review: PASS; parent PR #104, `docs(config): close P1-020 architecture`.
+- Initial PR CI #357 failed only because the existing Playwright subject selector `/E2EMON/` matched two generated E2E subjects. PR #105 independently corrected that test-harness ambiguity before final P1-020 review; it was not a P1-020 architecture or business-semantic defect.
+- Final exact-head PR CI #360 / run `33984667141`: SUCCESS. Parent merge/main: `98e06d65d68f15c63009596d8a164f0d53f2c872`. Authoritative post-merge main CI #361 / run `33985130852`: SUCCESS.
+- Administrative closure: `SYNC-P1-020`. No P1-020 semantic re-entry/correction was required. No deployment or production mutation occurred.
