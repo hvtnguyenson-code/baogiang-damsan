@@ -49,24 +49,24 @@ Thay vì chỉ định danh qua `familyKey`, mỗi adapter được định danh
 export interface BusinessPolicyUiAdapter<T extends Record<string, unknown> = Record<string, unknown>> {
   readonly familyKey: string;
   readonly validatorVersion: string;
-  readonly resourceKind: BusinessConfigurationResource['kind'];
-  readonly label: string;
+  readonly displayName: string;
   readonly description: string;
-  renderSummary(payload: T): ReactNode;
-  EditorComponent: ComponentType<BusinessPolicyEditorProps<T>>;
-  ResourceEditorComponent?: ComponentType<BusinessPolicyResourceEditorProps>;
-  initialPayload(): T;
-  validateDraft(payload: T): BusinessPolicyValidationError[];
+  readonly resourceKind: BusinessConfigurationResource['kind'];
+  readonly initialPayload: () => T;
+  readonly validatePayload: (value: unknown) => { valid: true; payload: T } | { valid: false; error: string };
+  readonly EditorComponent: ComponentType<BusinessPolicyEditorProps<Record<string, unknown>>>;
+  readonly SummaryComponent: ComponentType<BusinessPolicySummaryProps<Record<string, unknown>>>;
+  readonly ResourceEditorComponent?: ComponentType<BusinessPolicyResourceEditorProps>;
 }
 ```
 
 ### 3.2. Cơ chế Tra cứu & Khớp nối Adapter (Resolution & Matching Rules)
-- **Tạo bản thảo (Create draft):** Bắt buộc khớp chính xác `family.key` + `family.currentValidatorVersion` + `family.resourceKind`. Nếu thiếu adapter hoặc thiếu `ResourceEditorComponent` (khi resourceKind cần), chức năng bị vô hiệu hóa kèm thông báo rõ ràng: `"Giao diện quản trị chưa hỗ trợ phiên bản hợp đồng hiện tại của nhóm chính sách."`.
-- **Thay thế (Replace) & Hiệu chỉnh (Correct):** Backend tạo phiên bản mới theo `currentValidatorVersion` của nhóm chính sách, do đó bắt buộc sử dụng adapter của phiên bản hiện tại.
+- **Tạo bản thảo (Create draft):** Bắt buộc khớp chính xác bộ ba: `family.key` + `family.currentValidatorVersion` + `family.resourceKind`. Thao tác chỉ cho phép khi `family.publicationEnabled === true`. Nếu thiếu adapter hoặc thiếu `ResourceEditorComponent` (khi resourceKind cần), chức năng bị vô hiệu hóa kèm thông báo rõ ràng: `"Giao diện quản trị chưa hỗ trợ phiên bản hợp đồng hiện tại của nhóm chính sách."`.
+- **Thay thế (Replace) & Hiệu chỉnh (Correct):** Backend tạo phiên bản mới theo `currentValidatorVersion` của nhóm chính sách, do đó bắt buộc sử dụng adapter của phiên bản hiện tại và `publicationEnabled === true`.
   - *An toàn dữ liệu khi Correct:* Không tự động ép kiểu payload từ v1 sang v2. Nếu `source.validatorVersion === family.currentValidatorVersion`, payload nguồn được khởi tạo vào editor. Ngược lại, editor được khởi tạo sạch từ `currentAdapter.initialPayload()`.
-- **Chỉnh sửa & Phát hành bản thảo cũ (Edit / Publish old draft):** P1-021 giữ lại validator version cũ của draft; do đó giao diện tra cứu adapter theo đúng `draft.validatorVersion`. Bản thảo cũ chỉ được phép chỉnh sửa và phát hành khi hệ thống có adapter khớp chính xác phiên bản đó.
-- **Tóm tắt lịch sử (Historical Summary):** Sử dụng adapter khớp chính xác `version.validatorVersion`. Nếu không có adapter cho phiên bản lịch sử, hiển thị an toàn các trường metadata bằng chứng (không hiển thị raw JSON).
-- **Tra cứu ngày hiệu lực (Resolution):** Kết quả tra cứu (`BusinessPolicyResolution`) hiển thị tóm tắt qua adapter khớp `resolution.family` + `resolution.validatorVersion`. Nếu thiếu adapter, chỉ hiển thị metadata bằng chứng.
+- **Chỉnh sửa & Phát hành bản thảo cũ (Edit / Publish old draft):** P1-021 giữ lại validator version cũ của draft; do đó giao diện tra cứu adapter theo đúng `draft.validatorVersion` + `draft.resource.kind`. Thao tác sửa và phát hành chỉ được phép khi `family.publicationEnabled === true` và có adapter khớp chính xác phiên bản/tài nguyên lưu trữ. Khi `publicationEnabled === false`, giao diện ẩn hoàn toàn các nút thao tác (Edit/Publish) và hiển thị thông báo giới hạn: `"Nhóm chính sách hiện đang tạm dừng công bố và không cho phép thao tác quản trị."`.
+- **Tóm tắt lịch sử (Historical Summary):** Sử dụng adapter khớp chính xác `stream.familyKey` + `version.validatorVersion` + `stream.resourceKind`. Nếu không có adapter hoặc sai loại tài nguyên (resourceKind mismatch), hệ thống fail closed: không hiển thị tóm tắt kiểu hóa và chỉ hiển thị an toàn các trường metadata bằng chứng (không hiển thị raw JSON).
+- **Tra cứu ngày hiệu lực (Resolution):** Danh sách chọn nhóm chính sách chỉ liệt kê các family có adapter đọc hợp lệ (`isEligibleForRead`), không phụ thuộc `publicationEnabled`. Kết quả tra cứu (`BusinessPolicyResolution`) hiển thị tóm tắt qua adapter khớp `resolution.family` + `resolution.validatorVersion` + `resolution.resource.kind`. Nếu thiếu adapter, chỉ hiển thị metadata bằng chứng.
 
 ---
 
@@ -74,6 +74,7 @@ export interface BusinessPolicyUiAdapter<T extends Record<string, unknown> = Rec
 - Với loại tài nguyên `SCHOOL_WIDE`: Tài nguyên cố định là `{ kind: 'SCHOOL_WIDE' }`, không yêu cầu trường định danh.
 - Với loại tài nguyên `ACADEMIC_YEAR`:
   - Tuyệt đối không sinh mã rỗng (ví dụ `academicYearId: ''`) hay mã ngẫu nhiên giả mạo.
+  - UI có thể tạm thời nắm giữ trạng thái tài nguyên chưa được chọn trong nội bộ (internal unselected state), nhưng tuyệt đối không bao giờ gửi một `academicYearId` rỗng hay giả mạo lên máy chủ.
   - Adapter định nghĩa component `ResourceEditorComponent` để quản lý việc lựa chọn tài nguyên hợp lệ.
   - Nếu adapter thiếu `ResourceEditorComponent`, thao tác tạo draft và tra cứu hiệu lực lập tức khóa lại (fail-closed).
   - Không mượn API ngoài, không phụ thuộc quyền `ACADEMIC_STRUCTURE_MANAGE` hay các API không thuộc phạm vi nhiệm vụ.

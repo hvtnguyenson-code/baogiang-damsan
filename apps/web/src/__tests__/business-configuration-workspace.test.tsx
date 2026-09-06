@@ -9,7 +9,13 @@ import type {
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { isValidCivilDate } from '../lib/business-configuration-api';
-import type { BusinessPolicyUiAdapter } from '../lib/business-policy-ui-registry';
+import {
+  findUiAdapter,
+  matchUiAdapterForMutation,
+  matchUiAdapterForRead,
+  matchVersionUiAdapterForMutation,
+  type BusinessPolicyUiAdapter,
+} from '../lib/business-policy-ui-registry';
 import { BusinessConfigurationPage } from '../pages/BusinessConfigurationPage';
 import { jsonResponse, normalAuth, renderApp, renderWithQuery } from './test-utils';
 
@@ -1627,5 +1633,448 @@ describe('P1-022 Business Configuration administration workspace', () => {
     // In v2, initial threshold is 25 (NOT the 10 from v1!)
     const input = screen.getByRole('spinbutton', { name: 'Ngưỡng tối thiểu v2' }) as HTMLInputElement;
     expect(input.value).toBe('25');
+  });
+
+  // --- UNIT TESTS: REGISTRY & MATCHING HELPERS ---
+  describe('findUiAdapter and matching helpers', () => {
+    it('requires exact triple identity (familyKey, validatorVersion, resourceKind)', () => {
+      const adapters = [TEST_BOOLEAN_THRESHOLD_ADAPTER];
+      expect(findUiAdapter(adapters, 'TEST_BOOLEAN_THRESHOLD', '1.0.0', 'SCHOOL_WIDE')).toBe(
+        TEST_BOOLEAN_THRESHOLD_ADAPTER,
+      );
+      // Mismatched resourceKind returns undefined
+      expect(findUiAdapter(adapters, 'TEST_BOOLEAN_THRESHOLD', '1.0.0', 'ACADEMIC_YEAR')).toBeUndefined();
+      // Mismatched validatorVersion returns undefined
+      expect(findUiAdapter(adapters, 'TEST_BOOLEAN_THRESHOLD', '2.0.0', 'SCHOOL_WIDE')).toBeUndefined();
+      // Mismatched familyKey returns undefined
+      expect(findUiAdapter(adapters, 'OTHER_KEY', '1.0.0', 'SCHOOL_WIDE')).toBeUndefined();
+    });
+
+    it('matchUiAdapterForRead allows publicationEnabled=false while matchUiAdapterForMutation disallows it', () => {
+      const family: BusinessPolicyFamilyMetadata = {
+        key: 'TEST_BOOLEAN_THRESHOLD',
+        resourceKind: 'SCHOOL_WIDE',
+        currentValidatorVersion: '1.0.0',
+        publicationEnabled: false,
+        downstreamAuthority: 'TEST_AUTHORITY',
+      };
+      const adapters = [TEST_BOOLEAN_THRESHOLD_ADAPTER];
+      const readMatch = matchUiAdapterForRead(adapters, family);
+      expect(readMatch.isEligibleForRead).toBe(true);
+      expect(readMatch.adapter).toBe(TEST_BOOLEAN_THRESHOLD_ADAPTER);
+
+      const mutationMatch = matchUiAdapterForMutation(adapters, family);
+      expect(mutationMatch.isEligibleForMutation).toBe(false);
+      expect(mutationMatch.mismatchReason).toContain('tạm dừng công bố');
+    });
+
+    it('matchVersionUiAdapterForMutation checks publicationEnabled, exact version, and exact resourceKind', () => {
+      const family: BusinessPolicyFamilyMetadata = {
+        key: 'TEST_BOOLEAN_THRESHOLD',
+        resourceKind: 'SCHOOL_WIDE',
+        currentValidatorVersion: '2.0.0',
+        publicationEnabled: true,
+        downstreamAuthority: 'TEST_AUTHORITY',
+      };
+      const adapters = [TEST_BOOLEAN_THRESHOLD_ADAPTER, TEST_BOOLEAN_THRESHOLD_V2_ADAPTER];
+      // Matching v1 draft for publicationEnabled=true family
+      const v1Match = matchVersionUiAdapterForMutation(adapters, family, '1.0.0', 'SCHOOL_WIDE');
+      expect(v1Match.isEligibleForMutation).toBe(true);
+      expect(v1Match.adapter).toBe(TEST_BOOLEAN_THRESHOLD_ADAPTER);
+
+      // Mismatched resourceKind
+      const kindMismatch = matchVersionUiAdapterForMutation(adapters, family, '1.0.0', 'ACADEMIC_YEAR');
+      expect(kindMismatch.isEligibleForMutation).toBe(false);
+      expect(kindMismatch.mismatchReason).toContain('không khớp');
+
+      // Disabled family
+      const disabledMatch = matchVersionUiAdapterForMutation(
+        adapters,
+        { ...family, publicationEnabled: false },
+        '1.0.0',
+        'SCHOOL_WIDE',
+      );
+      expect(disabledMatch.isEligibleForMutation).toBe(false);
+      expect(disabledMatch.mismatchReason).toContain('tạm dừng công bố');
+    });
+  });
+
+  // --- §4: DISABLED-FAMILY DRAFT ACTIONS ---
+  it('17.1: hides Edit and Publish for DRAFT when family has publicationEnabled=false, showing bounded message', async () => {
+    const families: BusinessPolicyFamilyMetadata[] = [
+      {
+        key: 'TEST_BOOLEAN_THRESHOLD',
+        resourceKind: 'SCHOOL_WIDE',
+        currentValidatorVersion: '1.0.0',
+        publicationEnabled: false,
+        downstreamAuthority: 'TEST_AUTHORITY',
+      },
+    ];
+    const stream: BusinessPolicyStreamRecord = {
+      id: 'stream-draft-disabled',
+      familyKey: 'TEST_BOOLEAN_THRESHOLD',
+      resourceKind: 'SCHOOL_WIDE',
+      academicYearId: null,
+      createdAt: '2026-09-01T00:00:00.000Z',
+      updatedAt: '2026-09-01T00:00:00.000Z',
+      versions: [
+        makeMockVersion({
+          id: 'ver-draft-dis',
+          streamId: 'stream-draft-disabled',
+          versionNumber: 1,
+          status: 'DRAFT',
+          validatorVersion: '1.0.0',
+          payload: { enabled: true, threshold: 10 },
+        }),
+      ],
+    };
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/business-configuration/families')) return jsonResponse(families);
+      if (url.includes('/business-configuration/policies/stream-draft-disabled')) return jsonResponse(stream);
+      if (url.includes('/business-configuration/policies')) return jsonResponse({ items: [stream], page: 1, pageSize: 20, total: 1 });
+      return jsonResponse({});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWithQuery(<BusinessConfigurationPage adapters={[TEST_BOOLEAN_THRESHOLD_ADAPTER]} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Xem lịch sử' }));
+
+    // Edit and Publish must be hidden
+    expect(screen.queryByRole('button', { name: 'Chỉnh sửa bản nháp' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Công bố' })).not.toBeInTheDocument();
+
+    // Bounded message must be displayed
+    expect(
+      await screen.findByText('Nhóm chính sách hiện đang tạm dừng công bố và không cho phép thao tác quản trị.'),
+    ).toBeInTheDocument();
+  });
+
+  it('17.2: shows Edit and Publish for DRAFT when family has publicationEnabled=true and exact adapter exists', async () => {
+    const families: BusinessPolicyFamilyMetadata[] = [
+      {
+        key: 'TEST_BOOLEAN_THRESHOLD',
+        resourceKind: 'SCHOOL_WIDE',
+        currentValidatorVersion: '1.0.0',
+        publicationEnabled: true,
+        downstreamAuthority: 'TEST_AUTHORITY',
+      },
+    ];
+    const stream: BusinessPolicyStreamRecord = {
+      id: 'stream-draft-enabled',
+      familyKey: 'TEST_BOOLEAN_THRESHOLD',
+      resourceKind: 'SCHOOL_WIDE',
+      academicYearId: null,
+      createdAt: '2026-09-01T00:00:00.000Z',
+      updatedAt: '2026-09-01T00:00:00.000Z',
+      versions: [
+        makeMockVersion({
+          id: 'ver-draft-en',
+          streamId: 'stream-draft-enabled',
+          versionNumber: 1,
+          status: 'DRAFT',
+          validatorVersion: '1.0.0',
+          payload: { enabled: true, threshold: 10 },
+        }),
+      ],
+    };
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/business-configuration/families')) return jsonResponse(families);
+      if (url.includes('/business-configuration/policies/stream-draft-enabled')) return jsonResponse(stream);
+      if (url.includes('/business-configuration/policies')) return jsonResponse({ items: [stream], page: 1, pageSize: 20, total: 1 });
+      return jsonResponse({});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWithQuery(<BusinessConfigurationPage adapters={[TEST_BOOLEAN_THRESHOLD_ADAPTER]} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Xem lịch sử' }));
+
+    // Edit and Publish must be visible
+    expect(await screen.findByRole('button', { name: 'Chỉnh sửa bản nháp' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Công bố' })).toBeInTheDocument();
+  });
+
+  // --- §5: RESOURCE-KIND MISMATCH REGRESSION ---
+  it('18.1: fails closed when stream is SCHOOL_WIDE but adapter has same family/version with ACADEMIC_YEAR', async () => {
+    const MISMATCHED_KIND_ADAPTER: BusinessPolicyUiAdapter<{ threshold: number }> = {
+      familyKey: 'TEST_BOOLEAN_THRESHOLD',
+      validatorVersion: '1.0.0',
+      displayName: 'Adapter sai resourceKind',
+      description: 'Adapter ACADEMIC_YEAR cho family SCHOOL_WIDE',
+      resourceKind: 'ACADEMIC_YEAR',
+      initialPayload: () => ({ threshold: 10 }),
+      validatePayload: (v) => ({ valid: true, payload: v as { threshold: number } }),
+      EditorComponent: () => <div>Editor</div>,
+      SummaryComponent: () => <div data-testid="mismatched-summary">Summary</div>,
+      ResourceEditorComponent: () => <div>Resource Editor</div>,
+    };
+
+    const families: BusinessPolicyFamilyMetadata[] = [
+      {
+        key: 'TEST_BOOLEAN_THRESHOLD',
+        resourceKind: 'SCHOOL_WIDE',
+        currentValidatorVersion: '1.0.0',
+        publicationEnabled: true,
+        downstreamAuthority: 'TEST_AUTHORITY',
+      },
+    ];
+
+    const stream: BusinessPolicyStreamRecord = {
+      id: 'stream-kind-mismatch',
+      familyKey: 'TEST_BOOLEAN_THRESHOLD',
+      resourceKind: 'SCHOOL_WIDE',
+      academicYearId: null,
+      createdAt: '2026-09-01T00:00:00.000Z',
+      updatedAt: '2026-09-01T00:00:00.000Z',
+      versions: [
+        makeMockVersion({
+          id: 'ver-kind-mismatch-draft',
+          streamId: 'stream-kind-mismatch',
+          versionNumber: 1,
+          status: 'DRAFT',
+          validatorVersion: '1.0.0',
+          payload: { enabled: true, threshold: 10 },
+        }),
+      ],
+    };
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/business-configuration/families')) return jsonResponse(families);
+      if (url.includes('/business-configuration/policies/stream-kind-mismatch')) return jsonResponse(stream);
+      if (url.includes('/business-configuration/policies')) return jsonResponse({ items: [stream], page: 1, pageSize: 20, total: 1 });
+      return jsonResponse({});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWithQuery(<BusinessConfigurationPage adapters={[MISMATCHED_KIND_ADAPTER]} />);
+
+    // Section A table must NOT label this mismatch adapter as "Đã phê duyệt"
+    await screen.findByRole('heading', { name: 'Chính sách nghiệp vụ' });
+    expect(screen.queryByText('Đã phê duyệt')).not.toBeInTheDocument();
+    expect(screen.getByText('Chưa có giao diện')).toBeInTheDocument();
+
+    // Stream history fail closed
+    fireEvent.click(await screen.findByRole('button', { name: 'Xem lịch sử' }));
+
+    // No typed summary component
+    expect(screen.queryByTestId('mismatched-summary')).not.toBeInTheDocument();
+
+    // No Edit or Publish button
+    expect(screen.queryByRole('button', { name: 'Chỉnh sửa bản nháp' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Công bố' })).not.toBeInTheDocument();
+
+    // Safe mismatch message
+    expect(
+      await screen.findByText('Phạm vi tài nguyên của giao diện không khớp với định nghĩa hệ thống.'),
+    ).toBeInTheDocument();
+  });
+
+  // --- §7: RESOLUTION FAIL-CLOSED TESTS ---
+  it('19.1: resolution picker excludes family without matching adapter and blocks resolution request', async () => {
+    const families: BusinessPolicyFamilyMetadata[] = [
+      {
+        key: 'NO_ADAPTER_FAMILY',
+        resourceKind: 'SCHOOL_WIDE',
+        currentValidatorVersion: '1.0.0',
+        publicationEnabled: true,
+        downstreamAuthority: 'TEST_AUTHORITY',
+      },
+    ];
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/business-configuration/families')) return jsonResponse(families);
+      if (url.includes('/business-configuration/policies')) return jsonResponse({ items: [], page: 1, pageSize: 20, total: 0 });
+      return jsonResponse({});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWithQuery(<BusinessConfigurationPage adapters={[]} />);
+    await screen.findByRole('heading', { name: 'Chính sách nghiệp vụ' });
+
+    const select = screen.getByRole('combobox', { name: 'Nhóm chính sách' });
+    expect(select.querySelector('option[value="NO_ADAPTER_FAMILY"]')).toBeNull();
+    expect(screen.getByText('Không có nhóm chính sách nào có giao diện hỗ trợ tra cứu')).toBeInTheDocument();
+  });
+
+  it('19.2: resolution picker includes family with exact read adapter and executes resolution request', async () => {
+    const families: BusinessPolicyFamilyMetadata[] = [
+      {
+        key: 'TEST_BOOLEAN_THRESHOLD',
+        resourceKind: 'SCHOOL_WIDE',
+        currentValidatorVersion: '1.0.0',
+        publicationEnabled: true,
+        downstreamAuthority: 'TEST_AUTHORITY',
+      },
+    ];
+
+    const resolutionResult: BusinessPolicyResolution = {
+      outcome: 'RESOLVED',
+      family: 'TEST_BOOLEAN_THRESHOLD',
+      requestedCivilDate: '2026-09-01',
+      resource: { kind: 'SCHOOL_WIDE' },
+      policyVersionId: 'ver-res-1',
+      validatorVersion: '1.0.0',
+      payload: { enabled: true, threshold: 10 },
+      effectiveFrom: '2026-09-01',
+      effectiveUntil: null,
+    };
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/business-configuration/families')) return jsonResponse(families);
+      if (url.includes('/business-configuration/policies')) return jsonResponse({ items: [], page: 1, pageSize: 20, total: 0 });
+      if (url.includes('/business-configuration/resolve')) return jsonResponse(resolutionResult);
+      return jsonResponse({});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWithQuery(<BusinessConfigurationPage adapters={[TEST_BOOLEAN_THRESHOLD_ADAPTER]} />);
+    await screen.findByRole('heading', { name: 'Chính sách nghiệp vụ' });
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Nhóm chính sách' }), {
+      target: { value: 'TEST_BOOLEAN_THRESHOLD' },
+    });
+    fireEvent.change(screen.getByLabelText(/ngày dân sự cần tra cứu/i), {
+      target: { value: '2026-09-01' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Tra cứu' }));
+
+    expect(await screen.findByTestId('test-adapter-summary')).toBeInTheDocument();
+  });
+
+  it('19.3: resolution picker excludes family when adapter has mismatched resourceKind', async () => {
+    const WRONG_KIND_ADAPTER: BusinessPolicyUiAdapter<{ threshold: number }> = {
+      familyKey: 'TEST_BOOLEAN_THRESHOLD',
+      validatorVersion: '1.0.0',
+      displayName: 'Sai resourceKind',
+      description: 'Mismatched resource kind',
+      resourceKind: 'ACADEMIC_YEAR',
+      initialPayload: () => ({ threshold: 10 }),
+      validatePayload: (v) => ({ valid: true, payload: v as { threshold: number } }),
+      EditorComponent: () => <div>Editor</div>,
+      SummaryComponent: () => <div>Summary</div>,
+      ResourceEditorComponent: () => <div>ResourceEditor</div>,
+    };
+
+    const families: BusinessPolicyFamilyMetadata[] = [
+      {
+        key: 'TEST_BOOLEAN_THRESHOLD',
+        resourceKind: 'SCHOOL_WIDE',
+        currentValidatorVersion: '1.0.0',
+        publicationEnabled: true,
+        downstreamAuthority: 'TEST_AUTHORITY',
+      },
+    ];
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/business-configuration/families')) return jsonResponse(families);
+      if (url.includes('/business-configuration/policies')) return jsonResponse({ items: [], page: 1, pageSize: 20, total: 0 });
+      return jsonResponse({});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWithQuery(<BusinessConfigurationPage adapters={[WRONG_KIND_ADAPTER]} />);
+    await screen.findByRole('heading', { name: 'Chính sách nghiệp vụ' });
+
+    const select = screen.getByRole('combobox', { name: 'Nhóm chính sách' });
+    expect(select.querySelector('option[value="TEST_BOOLEAN_THRESHOLD"]')).toBeNull();
+    expect(screen.getByText('Không có nhóm chính sách nào có giao diện hỗ trợ tra cứu')).toBeInTheDocument();
+  });
+
+  it('19.4: resolution picker excludes ACADEMIC_YEAR family when adapter lacks ResourceEditorComponent', async () => {
+    const NO_RESOURCE_EDITOR_ADAPTER: BusinessPolicyUiAdapter<{ maxCredits: number }> = {
+      familyKey: 'TEST_ACADEMIC_YEAR_CONFIG',
+      validatorVersion: '1.0.0',
+      displayName: 'Không có resource editor',
+      description: 'Adapter thiếu ResourceEditorComponent',
+      resourceKind: 'ACADEMIC_YEAR',
+      initialPayload: () => ({ maxCredits: 30 }),
+      validatePayload: (v) => ({ valid: true, payload: v as { maxCredits: number } }),
+      EditorComponent: () => <div>Editor</div>,
+      SummaryComponent: () => <div>Summary</div>,
+    };
+
+    const families: BusinessPolicyFamilyMetadata[] = [
+      {
+        key: 'TEST_ACADEMIC_YEAR_CONFIG',
+        resourceKind: 'ACADEMIC_YEAR',
+        currentValidatorVersion: '1.0.0',
+        publicationEnabled: true,
+        downstreamAuthority: 'ACADEMIC_OFFICE',
+      },
+    ];
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/business-configuration/families')) return jsonResponse(families);
+      if (url.includes('/business-configuration/policies')) return jsonResponse({ items: [], page: 1, pageSize: 20, total: 0 });
+      return jsonResponse({});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWithQuery(<BusinessConfigurationPage adapters={[NO_RESOURCE_EDITOR_ADAPTER]} />);
+    await screen.findByRole('heading', { name: 'Chính sách nghiệp vụ' });
+
+    const select = screen.getByRole('combobox', { name: 'Nhóm chính sách' });
+    expect(select.querySelector('option[value="TEST_ACADEMIC_YEAR_CONFIG"]')).toBeNull();
+    expect(screen.getByText('Không có nhóm chính sách nào có giao diện hỗ trợ tra cứu')).toBeInTheDocument();
+  });
+
+  it('19.5: allows resolution for family with publicationEnabled=false while mutation controls remain disabled', async () => {
+    const families: BusinessPolicyFamilyMetadata[] = [
+      {
+        key: 'TEST_BOOLEAN_THRESHOLD',
+        resourceKind: 'SCHOOL_WIDE',
+        currentValidatorVersion: '1.0.0',
+        publicationEnabled: false,
+        downstreamAuthority: 'TEST_AUTHORITY',
+      },
+    ];
+
+    const resolutionResult: BusinessPolicyResolution = {
+      outcome: 'RESOLVED',
+      family: 'TEST_BOOLEAN_THRESHOLD',
+      requestedCivilDate: '2026-09-01',
+      resource: { kind: 'SCHOOL_WIDE' },
+      policyVersionId: 'ver-res-disabled',
+      validatorVersion: '1.0.0',
+      payload: { enabled: true, threshold: 10 },
+      effectiveFrom: '2026-09-01',
+      effectiveUntil: null,
+    };
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/business-configuration/families')) return jsonResponse(families);
+      if (url.includes('/business-configuration/policies')) return jsonResponse({ items: [], page: 1, pageSize: 20, total: 0 });
+      if (url.includes('/business-configuration/resolve')) return jsonResponse(resolutionResult);
+      return jsonResponse({});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWithQuery(<BusinessConfigurationPage adapters={[TEST_BOOLEAN_THRESHOLD_ADAPTER]} />);
+    await screen.findByRole('heading', { name: 'Chính sách nghiệp vụ' });
+
+    // Mutation control is disabled in Section A
+    expect(screen.queryByRole('button', { name: 'Tạo bản nháp' })).not.toBeInTheDocument();
+    expect(screen.getByText('Nhóm chính sách này hiện đang tạm dừng công bố.')).toBeInTheDocument();
+
+    // But resolution picker includes this family for read inspection
+    fireEvent.change(screen.getByRole('combobox', { name: 'Nhóm chính sách' }), {
+      target: { value: 'TEST_BOOLEAN_THRESHOLD' },
+    });
+    fireEvent.change(screen.getByLabelText(/ngày dân sự cần tra cứu/i), {
+      target: { value: '2026-09-01' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Tra cứu' }));
+
+    // Resolution summary renders successfully
+    expect(await screen.findByTestId('test-adapter-summary')).toBeInTheDocument();
   });
 });

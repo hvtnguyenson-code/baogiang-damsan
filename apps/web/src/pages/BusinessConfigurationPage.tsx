@@ -34,7 +34,9 @@ import {
 } from '../lib/business-configuration-api';
 import {
   findUiAdapter,
-  matchUiAdapter,
+  matchUiAdapterForMutation,
+  matchUiAdapterForRead,
+  matchVersionUiAdapterForMutation,
   PRODUCTION_BUSINESS_POLICY_UI_ADAPTERS,
   type BusinessPolicyUiAdapter,
 } from '../lib/business-policy-ui-registry';
@@ -261,7 +263,7 @@ export function BusinessConfigurationPage({
   // Action handlers
   const handleStartCreate = (family: BusinessPolicyFamilyMetadata) => {
     clearFeedback();
-    const match = matchUiAdapter(adapters, family);
+    const match = matchUiAdapterForMutation(adapters, family);
     if (!match.isEligibleForMutation || !match.adapter) {
       setFormError(match.mismatchReason ?? 'Không thể tạo bản nháp cho nhóm chính sách này.');
       return;
@@ -289,12 +291,19 @@ export function BusinessConfigurationPage({
     version: BusinessPolicyVersionRecord,
     family: BusinessPolicyFamilyMetadata,
     streamId: string,
+    resourceKind: BusinessConfigurationResource['kind'],
   ) => {
     clearFeedback();
-    const exactDraftAdapter = findUiAdapter(adapters, family.key, version.validatorVersion);
-    if (!exactDraftAdapter) {
+    const match = matchVersionUiAdapterForMutation(
+      adapters,
+      family,
+      version.validatorVersion,
+      resourceKind,
+    );
+    if (!match.isEligibleForMutation || !match.adapter) {
       setFormError(
-        `Không thể chỉnh sửa bản nháp vì hệ thống thiếu giao diện quản trị cho phiên bản hợp đồng ${version.validatorVersion}.`,
+        match.mismatchReason ??
+          `Không thể chỉnh sửa bản nháp vì hệ thống thiếu giao diện quản trị cho phiên bản hợp đồng ${version.validatorVersion}.`,
       );
       return;
     }
@@ -304,7 +313,7 @@ export function BusinessConfigurationPage({
       streamId,
       version,
       family,
-      adapter: exactDraftAdapter,
+      adapter: match.adapter,
       payload: { ...version.payload },
     });
   };
@@ -313,12 +322,19 @@ export function BusinessConfigurationPage({
     version: BusinessPolicyVersionRecord,
     family: BusinessPolicyFamilyMetadata,
     streamId: string,
+    resourceKind: BusinessConfigurationResource['kind'],
   ) => {
     clearFeedback();
-    const exactDraftAdapter = findUiAdapter(adapters, family.key, version.validatorVersion);
-    if (!exactDraftAdapter) {
+    const match = matchVersionUiAdapterForMutation(
+      adapters,
+      family,
+      version.validatorVersion,
+      resourceKind,
+    );
+    if (!match.isEligibleForMutation || !match.adapter) {
       setFormError(
-        `Không thể công bố bản nháp vì hệ thống thiếu giao diện quản trị cho phiên bản hợp đồng ${version.validatorVersion}.`,
+        match.mismatchReason ??
+          `Không thể công bố bản nháp vì hệ thống thiếu giao diện quản trị cho phiên bản hợp đồng ${version.validatorVersion}.`,
       );
       return;
     }
@@ -328,7 +344,7 @@ export function BusinessConfigurationPage({
       streamId,
       version,
       family,
-      adapter: exactDraftAdapter,
+      adapter: match.adapter,
     });
   };
 
@@ -338,7 +354,7 @@ export function BusinessConfigurationPage({
     streamId: string,
   ) => {
     clearFeedback();
-    const match = matchUiAdapter(adapters, family);
+    const match = matchUiAdapterForMutation(adapters, family);
     if (!match.isEligibleForMutation || !match.adapter) {
       setFormError(match.mismatchReason ?? 'Không thể thay thế vì nhóm chính sách này chưa có giao diện quản trị đã được phê duyệt.');
       return;
@@ -377,7 +393,7 @@ export function BusinessConfigurationPage({
     streamId: string,
   ) => {
     clearFeedback();
-    const match = matchUiAdapter(adapters, family);
+    const match = matchUiAdapterForMutation(adapters, family);
     if (!match.isEligibleForMutation || !match.adapter) {
       setFormError(match.mismatchReason ?? 'Không thể sửa sai vì nhóm chính sách này chưa có giao diện quản trị đã được phê duyệt.');
       return;
@@ -578,6 +594,15 @@ export function BusinessConfigurationPage({
       return;
     }
 
+    // Fail-closed read adapter re-verification before API call
+    const readMatch = matchUiAdapterForRead(adapters, selectedFamily);
+    if (!readMatch.isEligibleForRead || !readMatch.adapter) {
+      setResolutionError(
+        readMatch.mismatchReason ?? 'Nhóm chính sách này chưa có giao diện quản trị tương thích để tra cứu.',
+      );
+      return;
+    }
+
     if (selectedFamily.resourceKind === 'ACADEMIC_YEAR') {
       if (resolveResource.kind !== 'ACADEMIC_YEAR' || !resolveResource.academicYearId) {
         setResolutionError('Vui lòng chọn năm học hợp lệ trước khi tra cứu.');
@@ -665,8 +690,9 @@ export function BusinessConfigurationPage({
             ]}
           >
             {families.map((family) => {
-              const adapter = findUiAdapter(adapters, family.key, family.currentValidatorVersion);
-              const match = matchUiAdapter(adapters, family);
+              const readMatch = matchUiAdapterForRead(adapters, family);
+              const mutationMatch = matchUiAdapterForMutation(adapters, family);
+              const adapter = readMatch.adapter;
               return (
                 <tr key={family.key}>
                   <td className="technical-value">{family.key}</td>
@@ -682,14 +708,14 @@ export function BusinessConfigurationPage({
                   </td>
                   <td>{family.downstreamAuthority}</td>
                   <td>
-                    {adapter ? (
+                    {readMatch.isEligibleForRead ? (
                       <span style={{ color: '#246b45', fontWeight: 600 }}>Đã phê duyệt</span>
                     ) : (
-                      <span className="muted-copy">Chưa có giao diện quản trị đã được phê duyệt.</span>
+                      <span className="muted-copy">Chưa có giao diện</span>
                     )}
                   </td>
                   <td className="row-actions">
-                    {match.isEligibleForMutation ? (
+                    {mutationMatch.isEligibleForMutation ? (
                       <Button
                         type="button"
                         variant="secondary"
@@ -699,7 +725,7 @@ export function BusinessConfigurationPage({
                       </Button>
                     ) : (
                       <span className="muted-copy" style={{ fontSize: '0.8rem' }}>
-                        {match.mismatchReason}
+                        {mutationMatch.mismatchReason}
                       </span>
                     )}
                   </td>
@@ -1179,13 +1205,22 @@ export function BusinessConfigurationPage({
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                   {selectedStream.versions.map((ver) => {
                     const family = families.find((f) => f.key === selectedStream.familyKey);
-                    // Historical summary uses exact version adapter
+                    // Triple-identity exact lookup for historical summary
                     const versionAdapter = findUiAdapter(
                       adapters,
                       selectedStream.familyKey,
                       ver.validatorVersion,
+                      selectedStream.resourceKind,
                     );
-                    const currentMatch = family ? matchUiAdapter(adapters, family) : { isEligibleForMutation: false };
+                    const currentMutationMatch = family
+                      ? matchUiAdapterForMutation(adapters, family)
+                      : { isEligibleForMutation: false, mismatchReason: 'Nhóm chính sách không tồn tại.' };
+                    const draftMutationMatch = matchVersionUiAdapterForMutation(
+                      adapters,
+                      family,
+                      ver.validatorVersion,
+                      selectedStream.resourceKind,
+                    );
                     const isOpenEnded = ver.status === 'PUBLISHED' && !ver.effectiveUntil;
 
                     return (
@@ -1238,28 +1273,43 @@ export function BusinessConfigurationPage({
 
                           {/* Action buttons fail-closed */}
                           <div className="row-actions">
-                            {ver.status === 'DRAFT' && family && (
+                            {ver.status === 'DRAFT' && (
                               <>
-                                {versionAdapter ? (
+                                {draftMutationMatch.isEligibleForMutation && draftMutationMatch.adapter ? (
                                   <>
                                     <Button
                                       type="button"
                                       variant="secondary"
-                                      onClick={() => handleStartEdit(ver, family, selectedStream.id)}
+                                      onClick={() =>
+                                        handleStartEdit(
+                                          ver,
+                                          family!,
+                                          selectedStream.id,
+                                          selectedStream.resourceKind,
+                                        )
+                                      }
                                     >
                                       Chỉnh sửa bản nháp
                                     </Button>
                                     <Button
                                       type="button"
                                       variant="primary"
-                                      onClick={() => handleStartPublish(ver, family, selectedStream.id)}
+                                      onClick={() =>
+                                        handleStartPublish(
+                                          ver,
+                                          family!,
+                                          selectedStream.id,
+                                          selectedStream.resourceKind,
+                                        )
+                                      }
                                     >
                                       Công bố
                                     </Button>
                                   </>
                                 ) : (
                                   <span className="muted-copy" style={{ fontSize: '0.8rem' }}>
-                                    Không thể thao tác vì thiếu giao diện cho phiên bản {ver.validatorVersion}.
+                                    {draftMutationMatch.mismatchReason ??
+                                      `Không thể thao tác vì thiếu giao diện cho phiên bản ${ver.validatorVersion}.`}
                                   </span>
                                 )}
                               </>
@@ -1267,7 +1317,7 @@ export function BusinessConfigurationPage({
 
                             {ver.status === 'PUBLISHED' && family && (
                               <>
-                                {isOpenEnded && currentMatch.isEligibleForMutation && (
+                                {isOpenEnded && currentMutationMatch.isEligibleForMutation && (
                                   <>
                                     <Button
                                       type="button"
@@ -1285,7 +1335,7 @@ export function BusinessConfigurationPage({
                                     </Button>
                                   </>
                                 )}
-                                {currentMatch.isEligibleForMutation && (
+                                {currentMutationMatch.isEligibleForMutation && (
                                   <Button
                                     type="button"
                                     variant="secondary"
@@ -1294,6 +1344,11 @@ export function BusinessConfigurationPage({
                                   >
                                     Sửa sai lịch sử
                                   </Button>
+                                )}
+                                {!currentMutationMatch.isEligibleForMutation && (
+                                  <span className="muted-copy" style={{ fontSize: '0.8rem' }}>
+                                    {currentMutationMatch.mismatchReason}
+                                  </span>
                                 )}
                               </>
                             )}
@@ -1423,23 +1478,37 @@ export function BusinessConfigurationPage({
 
         <form onSubmit={handleResolve} style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '24px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', alignItems: 'end' }}>
-            <SelectField
-              id="resolve-family"
-              label="Nhóm chính sách"
-              value={resolveFamilyKey}
-              onChange={(e) => handleResolutionFamilyChange(e.target.value)}
-              required
-            >
-              <option value="">-- Chọn nhóm chính sách --</option>
-              {families.map((f) => {
-                const adapter = findUiAdapter(adapters, f.key, f.currentValidatorVersion);
-                return (
-                  <option key={f.key} value={f.key}>
-                    {adapter ? `${adapter.displayName} (${f.key})` : f.key}
-                  </option>
-                );
-              })}
-            </SelectField>
+            {(() => {
+              const eligibleFamilies = families.filter(
+                (f) => matchUiAdapterForRead(adapters, f).isEligibleForRead,
+              );
+              return (
+                <SelectField
+                  id="resolve-family"
+                  label="Nhóm chính sách"
+                  value={resolveFamilyKey}
+                  onChange={(e) => handleResolutionFamilyChange(e.target.value)}
+                  required
+                >
+                  <option value="">-- Chọn nhóm chính sách --</option>
+                  {eligibleFamilies.length === 0 ? (
+                    <option value="" disabled>
+                      Không có nhóm chính sách nào có giao diện hỗ trợ tra cứu
+                    </option>
+                  ) : (
+                    eligibleFamilies.map((f) => {
+                      const readMatch = matchUiAdapterForRead(adapters, f);
+                      const displayName = readMatch.adapter?.displayName ?? f.key;
+                      return (
+                        <option key={f.key} value={f.key}>
+                          {displayName} ({f.key})
+                        </option>
+                      );
+                    })
+                  )}
+                </SelectField>
+              );
+            })()}
 
             <FormField
               id="resolve-civil-date"
@@ -1462,7 +1531,8 @@ export function BusinessConfigurationPage({
             if (!resolveFamilyKey) return null;
             const selFamily = families.find((f) => f.key === resolveFamilyKey);
             if (selFamily?.resourceKind !== 'ACADEMIC_YEAR') return null;
-            const currentAdapter = findUiAdapter(adapters, selFamily.key, selFamily.currentValidatorVersion);
+            const readMatch = matchUiAdapterForRead(adapters, selFamily);
+            const currentAdapter = readMatch.adapter;
 
             if (!currentAdapter?.ResourceEditorComponent) {
               return (
@@ -1531,6 +1601,7 @@ export function BusinessConfigurationPage({
                     adapters,
                     resolutionResult.family,
                     resolutionResult.validatorVersion ?? '',
+                    resolutionResult.resource.kind,
                   );
                   if (resolvedAdapter && resolutionResult.payload) {
                     const Summary = resolvedAdapter.SummaryComponent;
