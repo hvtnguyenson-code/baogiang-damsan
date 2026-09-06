@@ -41,7 +41,8 @@ import {
 
 type CreateWorkflow = {
   kind: 'create';
-  familyKey: string;
+  family: BusinessPolicyFamilyMetadata;
+  adapter: BusinessPolicyUiAdapter;
   resource: BusinessConfigurationResource;
   effectiveFrom: string;
   effectiveUntil: string;
@@ -53,6 +54,7 @@ type EditWorkflow = {
   streamId: string;
   version: BusinessPolicyVersionRecord;
   family: BusinessPolicyFamilyMetadata;
+  adapter: BusinessPolicyUiAdapter;
   payload: Record<string, unknown>;
 };
 
@@ -61,6 +63,7 @@ type PublishWorkflow = {
   streamId: string;
   version: BusinessPolicyVersionRecord;
   family: BusinessPolicyFamilyMetadata;
+  adapter: BusinessPolicyUiAdapter;
 };
 
 type ReplaceWorkflow = {
@@ -68,6 +71,7 @@ type ReplaceWorkflow = {
   streamId: string;
   version: BusinessPolicyVersionRecord;
   family: BusinessPolicyFamilyMetadata;
+  adapter: BusinessPolicyUiAdapter;
   effectiveFrom: string;
   payload: Record<string, unknown>;
 };
@@ -86,6 +90,7 @@ type CorrectWorkflow = {
   streamId: string;
   version: BusinessPolicyVersionRecord;
   family: BusinessPolicyFamilyMetadata;
+  adapter: BusinessPolicyUiAdapter;
   reason: string;
   effectiveFrom: string;
   effectiveUntil: string;
@@ -104,7 +109,9 @@ export interface BusinessConfigurationPageProps {
   adapters?: readonly BusinessPolicyUiAdapter[];
 }
 
-export function BusinessConfigurationPage({ adapters = PRODUCTION_BUSINESS_POLICY_UI_ADAPTERS }: BusinessConfigurationPageProps) {
+export function BusinessConfigurationPage({
+  adapters = PRODUCTION_BUSINESS_POLICY_UI_ADAPTERS,
+}: BusinessConfigurationPageProps) {
   const queryClient = useQueryClient();
 
   const [page, setPage] = useState(1);
@@ -117,6 +124,9 @@ export function BusinessConfigurationPage({ adapters = PRODUCTION_BUSINESS_POLIC
   // Resolution tool state
   const [resolveFamilyKey, setResolveFamilyKey] = useState('');
   const [resolveCivilDate, setResolveCivilDate] = useState('');
+  const [resolveResource, setResolveResource] = useState<BusinessConfigurationResource>({
+    kind: 'SCHOOL_WIDE',
+  });
   const [resolutionResult, setResolutionResult] = useState<BusinessPolicyResolution | null>(null);
   const [resolutionError, setResolutionError] = useState<string | null>(null);
   const [isResolving, setIsResolving] = useState(false);
@@ -236,7 +246,9 @@ export function BusinessConfigurationPage({ adapters = PRODUCTION_BUSINESS_POLIC
     onMutate: clearFeedback,
     onSuccess: async () => {
       setWorkflow(null);
-      setSuccessMessage('Đã thực hiện sửa sai lịch sử: phiên bản trước đã đảo ngược và phiên bản hiệu chỉnh đã được công bố.');
+      setSuccessMessage(
+        'Đã thực hiện sửa sai lịch sử: phiên bản trước đã đảo ngược và phiên bản hiệu chỉnh đã được công bố.',
+      );
       await invalidateData();
     },
     onError: async (err: unknown) => {
@@ -254,66 +266,100 @@ export function BusinessConfigurationPage({ adapters = PRODUCTION_BUSINESS_POLIC
       setFormError(match.mismatchReason ?? 'Không thể tạo bản nháp cho nhóm chính sách này.');
       return;
     }
-    const initialPayload = match.adapter.initialPayload();
+
+    const adapter = match.adapter;
+    const initialPayload = adapter.initialPayload();
+    const initialResource: BusinessConfigurationResource =
+      family.resourceKind === 'ACADEMIC_YEAR'
+        ? { kind: 'ACADEMIC_YEAR', academicYearId: '' }
+        : { kind: 'SCHOOL_WIDE' };
+
     setWorkflow({
       kind: 'create',
-      familyKey: family.key,
-      resource: { kind: family.resourceKind } as BusinessConfigurationResource,
+      family,
+      adapter,
+      resource: initialResource,
       effectiveFrom: '',
       effectiveUntil: '',
       payload: initialPayload,
     });
   };
 
-  const handleStartEdit = (version: BusinessPolicyVersionRecord, family: BusinessPolicyFamilyMetadata, streamId: string) => {
+  const handleStartEdit = (
+    version: BusinessPolicyVersionRecord,
+    family: BusinessPolicyFamilyMetadata,
+    streamId: string,
+  ) => {
     clearFeedback();
-    const match = matchUiAdapter(adapters, family);
-    if (!match.isEligibleForMutation || !match.adapter) {
-      setFormError(match.mismatchReason ?? 'Không thể chỉnh sửa bản nháp vì nhóm chính sách này chưa có giao diện quản trị đã được phê duyệt.');
+    const exactDraftAdapter = findUiAdapter(adapters, family.key, version.validatorVersion);
+    if (!exactDraftAdapter) {
+      setFormError(
+        `Không thể chỉnh sửa bản nháp vì hệ thống thiếu giao diện quản trị cho phiên bản hợp đồng ${version.validatorVersion}.`,
+      );
       return;
     }
+
     setWorkflow({
       kind: 'edit',
       streamId,
       version,
       family,
+      adapter: exactDraftAdapter,
       payload: { ...version.payload },
     });
   };
 
-  const handleStartPublish = (version: BusinessPolicyVersionRecord, family: BusinessPolicyFamilyMetadata, streamId: string) => {
+  const handleStartPublish = (
+    version: BusinessPolicyVersionRecord,
+    family: BusinessPolicyFamilyMetadata,
+    streamId: string,
+  ) => {
     clearFeedback();
-    const match = matchUiAdapter(adapters, family);
-    if (!match.isEligibleForMutation || !match.adapter) {
-      setFormError(match.mismatchReason ?? 'Không thể công bố vì nhóm chính sách này chưa có giao diện quản trị đã được phê duyệt.');
+    const exactDraftAdapter = findUiAdapter(adapters, family.key, version.validatorVersion);
+    if (!exactDraftAdapter) {
+      setFormError(
+        `Không thể công bố bản nháp vì hệ thống thiếu giao diện quản trị cho phiên bản hợp đồng ${version.validatorVersion}.`,
+      );
       return;
     }
+
     setWorkflow({
       kind: 'publish',
       streamId,
       version,
       family,
+      adapter: exactDraftAdapter,
     });
   };
 
-  const handleStartReplace = (version: BusinessPolicyVersionRecord, family: BusinessPolicyFamilyMetadata, streamId: string) => {
+  const handleStartReplace = (
+    version: BusinessPolicyVersionRecord,
+    family: BusinessPolicyFamilyMetadata,
+    streamId: string,
+  ) => {
     clearFeedback();
     const match = matchUiAdapter(adapters, family);
     if (!match.isEligibleForMutation || !match.adapter) {
       setFormError(match.mismatchReason ?? 'Không thể thay thế vì nhóm chính sách này chưa có giao diện quản trị đã được phê duyệt.');
       return;
     }
+
     setWorkflow({
       kind: 'replace',
       streamId,
       version,
       family,
+      adapter: match.adapter,
       effectiveFrom: '',
       payload: match.adapter.initialPayload(),
     });
   };
 
-  const handleStartRetire = (version: BusinessPolicyVersionRecord, family: BusinessPolicyFamilyMetadata, streamId: string) => {
+  const handleStartRetire = (
+    version: BusinessPolicyVersionRecord,
+    family: BusinessPolicyFamilyMetadata,
+    streamId: string,
+  ) => {
     clearFeedback();
     setWorkflow({
       kind: 'retire',
@@ -325,22 +371,36 @@ export function BusinessConfigurationPage({ adapters = PRODUCTION_BUSINESS_POLIC
     });
   };
 
-  const handleStartCorrect = (version: BusinessPolicyVersionRecord, family: BusinessPolicyFamilyMetadata, streamId: string) => {
+  const handleStartCorrect = (
+    version: BusinessPolicyVersionRecord,
+    family: BusinessPolicyFamilyMetadata,
+    streamId: string,
+  ) => {
     clearFeedback();
     const match = matchUiAdapter(adapters, family);
     if (!match.isEligibleForMutation || !match.adapter) {
       setFormError(match.mismatchReason ?? 'Không thể sửa sai vì nhóm chính sách này chưa có giao diện quản trị đã được phê duyệt.');
       return;
     }
+
+    // Version-safe rule: do not blindly preload an old v1 source payload into a v2 correction editor.
+    // If source validatorVersion === family.currentValidatorVersion, source payload may initialize editor;
+    // otherwise initialize from current adapter initialPayload().
+    const initialCorrectPayload =
+      version.validatorVersion === family.currentValidatorVersion
+        ? { ...version.payload }
+        : match.adapter.initialPayload();
+
     setWorkflow({
       kind: 'correct',
       streamId,
       version,
       family,
+      adapter: match.adapter,
       reason: '',
       effectiveFrom: normalizeCivilDate(version.effectiveFrom) ?? '',
       effectiveUntil: normalizeCivilDate(version.effectiveUntil) ?? '',
-      payload: { ...version.payload },
+      payload: initialCorrectPayload,
     });
   };
 
@@ -348,11 +408,13 @@ export function BusinessConfigurationPage({ adapters = PRODUCTION_BUSINESS_POLIC
   const handleSubmitCreate = (e: FormEvent) => {
     e.preventDefault();
     if (workflow?.kind !== 'create') return;
-    const adapter = findUiAdapter(adapters, workflow.familyKey);
-    if (!adapter) {
-      setFormError('Nhóm chính sách này chưa có giao diện quản trị đã được phê duyệt.');
+    const adapter = workflow.adapter;
+
+    if (workflow.resource.kind === 'ACADEMIC_YEAR' && !workflow.resource.academicYearId) {
+      setFormError('Vui lòng chọn năm học hợp lệ trước khi tạo bản nháp.');
       return;
     }
+
     if (!isValidCivilDate(workflow.effectiveFrom)) {
       setFormError('Ngày bắt đầu hiệu lực phải là ngày dân sự hợp lệ (YYYY-MM-DD).');
       return;
@@ -361,13 +423,15 @@ export function BusinessConfigurationPage({ adapters = PRODUCTION_BUSINESS_POLIC
       setFormError('Ngày kết thúc hiệu lực phải là ngày dân sự hợp lệ (YYYY-MM-DD).');
       return;
     }
+
     const valResult = adapter.validatePayload(workflow.payload);
     if (!valResult.valid) {
       setFormError(valResult.error);
       return;
     }
+
     createMutation.mutate({
-      family: workflow.familyKey,
+      family: workflow.family.key,
       resource: workflow.resource,
       payload: valResult.payload,
       effectiveFrom: workflow.effectiveFrom,
@@ -378,16 +442,14 @@ export function BusinessConfigurationPage({ adapters = PRODUCTION_BUSINESS_POLIC
   const handleSubmitEdit = (e: FormEvent) => {
     e.preventDefault();
     if (workflow?.kind !== 'edit') return;
-    const adapter = findUiAdapter(adapters, workflow.family.key);
-    if (!adapter) {
-      setFormError('Nhóm chính sách này chưa có giao diện quản trị đã được phê duyệt.');
-      return;
-    }
+    const adapter = workflow.adapter;
+
     const valResult = adapter.validatePayload(workflow.payload);
     if (!valResult.valid) {
       setFormError(valResult.error);
       return;
     }
+
     editMutation.mutate({
       versionId: workflow.version.id,
       input: {
@@ -406,20 +468,19 @@ export function BusinessConfigurationPage({ adapters = PRODUCTION_BUSINESS_POLIC
   const handleSubmitReplace = (e: FormEvent) => {
     e.preventDefault();
     if (workflow?.kind !== 'replace') return;
-    const adapter = findUiAdapter(adapters, workflow.family.key);
-    if (!adapter) {
-      setFormError('Nhóm chính sách này chưa có giao diện quản trị đã được phê duyệt.');
-      return;
-    }
+    const adapter = workflow.adapter;
+
     if (!isValidCivilDate(workflow.effectiveFrom)) {
       setFormError('Ngày bắt đầu hiệu lực mới phải là ngày dân sự hợp lệ (YYYY-MM-DD).');
       return;
     }
+
     const valResult = adapter.validatePayload(workflow.payload);
     if (!valResult.valid) {
       setFormError(valResult.error);
       return;
     }
+
     replaceMutation.mutate({
       versionId: workflow.version.id,
       input: {
@@ -436,6 +497,7 @@ export function BusinessConfigurationPage({ adapters = PRODUCTION_BUSINESS_POLIC
       setFormError('Ngày kết thúc hiệu lực phải là ngày dân sự hợp lệ (YYYY-MM-DD).');
       return;
     }
+
     retireMutation.mutate({
       versionId: workflow.version.id,
       input: {
@@ -452,11 +514,9 @@ export function BusinessConfigurationPage({ adapters = PRODUCTION_BUSINESS_POLIC
       setFormError('Bắt buộc phải nhập lý do khi thực hiện sửa sai lịch sử.');
       return;
     }
-    const adapter = findUiAdapter(adapters, workflow.family.key);
-    if (!adapter) {
-      setFormError('Nhóm chính sách này chưa có giao diện quản trị đã được phê duyệt.');
-      return;
-    }
+
+    const adapter = workflow.adapter;
+
     if (workflow.effectiveFrom && !isValidCivilDate(workflow.effectiveFrom)) {
       setFormError('Ngày bắt đầu hiệu lực phải là ngày dân sự hợp lệ (YYYY-MM-DD).');
       return;
@@ -465,11 +525,13 @@ export function BusinessConfigurationPage({ adapters = PRODUCTION_BUSINESS_POLIC
       setFormError('Ngày kết thúc hiệu lực phải là ngày dân sự hợp lệ (YYYY-MM-DD).');
       return;
     }
+
     const valResult = adapter.validatePayload(workflow.payload);
     if (!valResult.valid) {
       setFormError(valResult.error);
       return;
     }
+
     correctMutation.mutate({
       versionId: workflow.version.id,
       input: {
@@ -479,6 +541,20 @@ export function BusinessConfigurationPage({ adapters = PRODUCTION_BUSINESS_POLIC
         ...(workflow.effectiveUntil ? { effectiveUntil: workflow.effectiveUntil } : {}),
       },
     });
+  };
+
+  // Resolution family change handler
+  const handleResolutionFamilyChange = (nextFamilyKey: string) => {
+    setResolveFamilyKey(nextFamilyKey);
+    setResolutionResult(null);
+    setResolutionError(null);
+
+    const family = familiesQuery.data?.find((f) => f.key === nextFamilyKey);
+    if (family?.resourceKind === 'ACADEMIC_YEAR') {
+      setResolveResource({ kind: 'ACADEMIC_YEAR', academicYearId: '' });
+    } else {
+      setResolveResource({ kind: 'SCHOOL_WIDE' });
+    }
   };
 
   // Resolution lookup handler
@@ -496,16 +572,24 @@ export function BusinessConfigurationPage({ adapters = PRODUCTION_BUSINESS_POLIC
       return;
     }
 
-    const family = familiesQuery.data?.find((f) => f.key === resolveFamilyKey);
-    const resource: BusinessConfigurationResource = family?.resourceKind === 'ACADEMIC_YEAR'
-      ? { kind: 'ACADEMIC_YEAR', academicYearId: '' }
-      : { kind: 'SCHOOL_WIDE' };
+    const selectedFamily = familiesQuery.data?.find((f) => f.key === resolveFamilyKey);
+    if (!selectedFamily) {
+      setResolutionError('Nhóm chính sách đã chọn không tồn tại.');
+      return;
+    }
+
+    if (selectedFamily.resourceKind === 'ACADEMIC_YEAR') {
+      if (resolveResource.kind !== 'ACADEMIC_YEAR' || !resolveResource.academicYearId) {
+        setResolutionError('Vui lòng chọn năm học hợp lệ trước khi tra cứu.');
+        return;
+      }
+    }
 
     setIsResolving(true);
     try {
       const res = await businessConfigurationApi.resolvePolicy({
         family: resolveFamilyKey,
-        resource,
+        resource: resolveResource,
         civilDate: resolveCivilDate,
       });
       setResolutionResult(res);
@@ -517,7 +601,7 @@ export function BusinessConfigurationPage({ adapters = PRODUCTION_BUSINESS_POLIC
     }
   };
 
-  if (familiesQuery.isPending || streamsQuery.isPending) {
+  if (familiesQuery.isPending) {
     return (
       <div className="management-page">
         <PageLoading />
@@ -540,10 +624,7 @@ export function BusinessConfigurationPage({ adapters = PRODUCTION_BUSINESS_POLIC
 
   return (
     <div className="management-page business-configuration-workspace">
-      <PageHeader
-        eyebrow="Quản trị cấu hình"
-        title="Chính sách nghiệp vụ"
-      >
+      <PageHeader eyebrow="Quản trị cấu hình" title="Chính sách nghiệp vụ">
         Quản lý và theo dõi các luồng chính sách nghiệp vụ đã được phê duyệt và công bố theo ngày dân sự.
       </PageHeader>
 
@@ -584,7 +665,7 @@ export function BusinessConfigurationPage({ adapters = PRODUCTION_BUSINESS_POLIC
             ]}
           >
             {families.map((family) => {
-              const adapter = findUiAdapter(adapters, family.key);
+              const adapter = findUiAdapter(adapters, family.key, family.currentValidatorVersion);
               const match = matchUiAdapter(adapters, family);
               return (
                 <tr key={family.key}>
@@ -645,14 +726,18 @@ export function BusinessConfigurationPage({ adapters = PRODUCTION_BUSINESS_POLIC
                 <FormField
                   id="create-family"
                   label="Nhóm chính sách"
-                  value={workflow.familyKey}
+                  value={workflow.family.key}
                   readOnly
                   disabled
                 />
                 <FormField
-                  id="create-resource"
+                  id="create-resource-kind"
                   label="Phạm vi tài nguyên"
-                  value={workflow.resource.kind === 'SCHOOL_WIDE' ? 'Toàn trường (SCHOOL_WIDE)' : 'Năm học (ACADEMIC_YEAR)'}
+                  value={
+                    workflow.family.resourceKind === 'SCHOOL_WIDE'
+                      ? 'Toàn trường (SCHOOL_WIDE)'
+                      : 'Năm học (ACADEMIC_YEAR)'
+                  }
                   readOnly
                   disabled
                 />
@@ -673,21 +758,29 @@ export function BusinessConfigurationPage({ adapters = PRODUCTION_BUSINESS_POLIC
                 />
               </div>
 
-              {(() => {
-                const adapter = findUiAdapter(adapters, workflow.familyKey);
-                if (!adapter) return null;
-                const Editor = adapter.EditorComponent;
-                return (
-                  <div style={{ marginTop: '16px' }}>
-                    <h3 style={{ fontSize: '1rem', marginBottom: '8px' }}>Nội dung chính sách (Theo mẫu phê duyệt)</h3>
-                    <Editor
-                      value={workflow.payload}
-                      onChange={(next) => setWorkflow({ ...workflow, payload: next as Record<string, unknown> })}
-                      disabled={createMutation.isPending}
-                    />
-                  </div>
-                );
-              })()}
+              {/* Wire ResourceEditorComponent if applicable */}
+              {workflow.resource.kind === 'ACADEMIC_YEAR' && workflow.adapter.ResourceEditorComponent && (
+                <div style={{ marginTop: '16px', padding: '12px', background: '#f8fafb', border: '1px solid #c9d4da' }}>
+                  <h3 style={{ fontSize: '1rem', marginBottom: '8px' }}>Chọn tài nguyên năm học</h3>
+                  <workflow.adapter.ResourceEditorComponent
+                    resource={workflow.resource}
+                    onChange={(nextResource) => setWorkflow({ ...workflow, resource: nextResource })}
+                    disabled={createMutation.isPending}
+                  />
+                </div>
+              )}
+
+              {/* Typed editor component */}
+              <div style={{ marginTop: '16px' }}>
+                <h3 style={{ fontSize: '1rem', marginBottom: '8px' }}>
+                  Nội dung chính sách (Theo mẫu {workflow.adapter.displayName} v{workflow.adapter.validatorVersion})
+                </h3>
+                <workflow.adapter.EditorComponent
+                  value={workflow.payload}
+                  onChange={(next) => setWorkflow({ ...workflow, payload: next as Record<string, unknown> })}
+                  disabled={createMutation.isPending}
+                />
+              </div>
 
               <div className="form-actions" style={{ marginTop: '20px', display: 'flex', gap: '12px' }}>
                 <Button type="submit" loading={createMutation.isPending}>
@@ -709,22 +802,15 @@ export function BusinessConfigurationPage({ adapters = PRODUCTION_BUSINESS_POLIC
             <form onSubmit={handleSubmitEdit}>
               <h2 id="workflow-heading">Chỉnh sửa bản nháp chính sách</h2>
               <p className="muted-copy" style={{ marginBottom: '16px' }}>
-                Phiên bản v{workflow.version.versionNumber} · Lần sửa đổi hiện tại: {workflow.version.draftRevision}
+                Phiên bản v{workflow.version.versionNumber} · Lần sửa đổi hiện tại: {workflow.version.draftRevision} · Hợp đồng xác thực: {workflow.adapter.validatorVersion}
               </p>
-              {(() => {
-                const adapter = findUiAdapter(adapters, workflow.family.key);
-                if (!adapter) return null;
-                const Editor = adapter.EditorComponent;
-                return (
-                  <div>
-                    <Editor
-                      value={workflow.payload}
-                      onChange={(next) => setWorkflow({ ...workflow, payload: next as Record<string, unknown> })}
-                      disabled={editMutation.isPending}
-                    />
-                  </div>
-                );
-              })()}
+              <div>
+                <workflow.adapter.EditorComponent
+                  value={workflow.payload}
+                  onChange={(next) => setWorkflow({ ...workflow, payload: next as Record<string, unknown> })}
+                  disabled={editMutation.isPending}
+                />
+              </div>
               <div className="form-actions" style={{ marginTop: '20px', display: 'flex', gap: '12px' }}>
                 <Button type="submit" loading={editMutation.isPending}>
                   Lưu thay đổi
@@ -746,7 +832,7 @@ export function BusinessConfigurationPage({ adapters = PRODUCTION_BUSINESS_POLIC
               <h2 id="workflow-heading">Xác nhận công bố chính sách nghiệp vụ</h2>
               <p style={{ marginBlock: '12px 20px' }}>
                 Bạn có chắc chắn muốn công bố phiên bản <strong>v{workflow.version.versionNumber}</strong> của nhóm{' '}
-                <strong>{workflow.family.key}</strong>? Sau khi công bố, chính sách sẽ có hiệu lực từ ngày{' '}
+                <strong>{workflow.family.key}</strong> theo phiên bản hợp đồng <strong>{workflow.adapter.validatorVersion}</strong>? Sau khi công bố, chính sách sẽ có hiệu lực từ ngày{' '}
                 <strong>{normalizeCivilDate(workflow.version.effectiveFrom)}</strong>.
               </p>
               <div className="form-actions" style={{ display: 'flex', gap: '12px' }}>
@@ -769,7 +855,7 @@ export function BusinessConfigurationPage({ adapters = PRODUCTION_BUSINESS_POLIC
             <form onSubmit={handleSubmitReplace}>
               <h2 id="workflow-heading">Thay đổi chính sách trong tương lai</h2>
               <div className="limitation-note" style={{ marginBlock: '12px' }}>
-                <strong>Lưu ý:</strong> Ngày hiệu lực được máy chủ kiểm tra theo ngày nghiệp vụ. Phiên bản hiện tại sẽ tự động được kết thúc hiệu lực vào ngày liền kề trước ngày bắt đầu mới.
+                <strong>Lưu ý:</strong> Ngày hiệu lực được máy chủ kiểm tra theo ngày nghiệp vụ. Phiên bản hiện tại sẽ tự động được kết thúc hiệu lực vào ngày liền kề trước ngày bắt đầu mới. Phiên bản mới sẽ áp dụng bộ xác thực hiện tại (v{workflow.adapter.validatorVersion}).
               </div>
               <div className="form-grid">
                 <FormField
@@ -781,21 +867,16 @@ export function BusinessConfigurationPage({ adapters = PRODUCTION_BUSINESS_POLIC
                   onChange={(e) => setWorkflow({ ...workflow, effectiveFrom: e.target.value })}
                 />
               </div>
-              {(() => {
-                const adapter = findUiAdapter(adapters, workflow.family.key);
-                if (!adapter) return null;
-                const Editor = adapter.EditorComponent;
-                return (
-                  <div style={{ marginTop: '16px' }}>
-                    <h3 style={{ fontSize: '1rem', marginBottom: '8px' }}>Nội dung chính sách mới</h3>
-                    <Editor
-                      value={workflow.payload}
-                      onChange={(next) => setWorkflow({ ...workflow, payload: next as Record<string, unknown> })}
-                      disabled={replaceMutation.isPending}
-                    />
-                  </div>
-                );
-              })()}
+              <div style={{ marginTop: '16px' }}>
+                <h3 style={{ fontSize: '1rem', marginBottom: '8px' }}>
+                  Nội dung chính sách mới (v{workflow.adapter.validatorVersion})
+                </h3>
+                <workflow.adapter.EditorComponent
+                  value={workflow.payload}
+                  onChange={(next) => setWorkflow({ ...workflow, payload: next as Record<string, unknown> })}
+                  disabled={replaceMutation.isPending}
+                />
+              </div>
               <div className="form-actions" style={{ marginTop: '20px', display: 'flex', gap: '12px' }}>
                 <Button type="submit" loading={replaceMutation.isPending}>
                   Xác nhận thay thế
@@ -856,7 +937,13 @@ export function BusinessConfigurationPage({ adapters = PRODUCTION_BUSINESS_POLIC
                 Sửa sai lịch sử chính sách nghiệp vụ
               </h2>
               <div className="alert alert--error" style={{ marginBlock: '12px' }}>
-                <strong>Cảnh báo:</strong> Thao tác này sẽ đảo ngược (REVERSED) phiên bản <strong>v{workflow.version.versionNumber}</strong> và tạo một phiên bản mới thay thế đã hiệu chỉnh. Lịch sử đảo ngược được lưu vết vĩnh viễn trong nhật ký kiểm toán.
+                <strong>Cảnh báo:</strong> Thao tác này sẽ đảo ngược (REVERSED) phiên bản{' '}
+                <strong>v{workflow.version.versionNumber}</strong> và tạo một phiên bản hiệu chỉnh mới theo bộ xác thực hiện hành (v{workflow.adapter.validatorVersion}).
+                {workflow.version.validatorVersion !== workflow.adapter.validatorVersion && (
+                  <p style={{ marginTop: '6px', fontWeight: 600 }}>
+                    Lưu ý: Phiên bản nguồn dùng bộ xác thực cũ ({workflow.version.validatorVersion}) khác với phiên bản hiện tại ({workflow.adapter.validatorVersion}). Biểu mẫu đã được khởi tạo sạch để tránh xung đột cấu trúc.
+                  </p>
+                )}
               </div>
               <TextareaField
                 id="correct-reason"
@@ -882,21 +969,16 @@ export function BusinessConfigurationPage({ adapters = PRODUCTION_BUSINESS_POLIC
                   onChange={(e) => setWorkflow({ ...workflow, effectiveUntil: e.target.value })}
                 />
               </div>
-              {(() => {
-                const adapter = findUiAdapter(adapters, workflow.family.key);
-                if (!adapter) return null;
-                const Editor = adapter.EditorComponent;
-                return (
-                  <div style={{ marginTop: '16px' }}>
-                    <h3 style={{ fontSize: '1rem', marginBottom: '8px' }}>Nội dung hiệu chỉnh</h3>
-                    <Editor
-                      value={workflow.payload}
-                      onChange={(next) => setWorkflow({ ...workflow, payload: next as Record<string, unknown> })}
-                      disabled={correctMutation.isPending}
-                    />
-                  </div>
-                );
-              })()}
+              <div style={{ marginTop: '16px' }}>
+                <h3 style={{ fontSize: '1rem', marginBottom: '8px' }}>
+                  Nội dung hiệu chỉnh (Bộ xác thực v{workflow.adapter.validatorVersion})
+                </h3>
+                <workflow.adapter.EditorComponent
+                  value={workflow.payload}
+                  onChange={(next) => setWorkflow({ ...workflow, payload: next as Record<string, unknown> })}
+                  disabled={correctMutation.isPending}
+                />
+              </div>
               <div className="form-actions" style={{ marginTop: '20px', display: 'flex', gap: '12px' }}>
                 <Button type="submit" loading={correctMutation.isPending} className="button--danger">
                   Xác nhận sửa sai
@@ -920,12 +1002,20 @@ export function BusinessConfigurationPage({ adapters = PRODUCTION_BUSINESS_POLIC
         <h2 id="streams-heading" style={{ fontSize: '1.25rem', marginBottom: '16px' }}>
           Danh sách luồng chính sách
         </h2>
-        {streams.length === 0 ? (
+        {streamsQuery.isPending && <PageLoading />}
+        {streamsQuery.isError && (
+          <QueryFailure
+            error={streamsQuery.error}
+            retry={() => void streamsQuery.refetch()}
+          />
+        )}
+        {!streamsQuery.isPending && !streamsQuery.isError && streams.length === 0 && (
           <EmptyState
             title="Chưa có luồng chính sách nào"
             message="Các luồng chính sách sẽ xuất hiện tại đây khi bản nháp đầu tiên được tạo."
           />
-        ) : (
+        )}
+        {!streamsQuery.isPending && !streamsQuery.isError && streams.length > 0 && (
           <>
             <DataTable
               label="Danh sách luồng chính sách"
@@ -940,13 +1030,11 @@ export function BusinessConfigurationPage({ adapters = PRODUCTION_BUSINESS_POLIC
             >
               {streams.map((stream) => {
                 const latestVersion = stream.versions?.[0];
-                const adapter = findUiAdapter(adapters, stream.familyKey);
                 const isSelected = selectedStreamId === stream.id;
                 return (
                   <tr key={stream.id} style={{ background: isSelected ? '#f3f6f7' : undefined }}>
                     <td>
-                      <strong>{adapter ? adapter.displayName : stream.familyKey}</strong>
-                      <span className="table-secondary technical-value">{stream.familyKey}</span>
+                      <strong>{stream.familyKey}</strong>
                     </td>
                     <td>
                       {stream.resourceKind === 'SCHOOL_WIDE'
@@ -1013,7 +1101,7 @@ export function BusinessConfigurationPage({ adapters = PRODUCTION_BUSINESS_POLIC
       </section>
 
       {/* SECTION C: SELECTED STREAM HISTORY */}
-      {selectedStream && (
+      {selectedStreamId && (
         <section
           className="stream-detail-section"
           aria-labelledby="detail-heading"
@@ -1024,7 +1112,14 @@ export function BusinessConfigurationPage({ adapters = PRODUCTION_BUSINESS_POLIC
             background: '#fff',
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '16px',
+            }}
+          >
             <h2 id="detail-heading" style={{ fontSize: '1.25rem', margin: 0 }}>
               Chi tiết luồng và lịch sử phiên bản
             </h2>
@@ -1037,189 +1132,274 @@ export function BusinessConfigurationPage({ adapters = PRODUCTION_BUSINESS_POLIC
             </Button>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '20px', padding: '12px', background: '#f8fafb', border: '1px solid #e1e8ec' }}>
-            <div>
-              <span className="muted-copy" style={{ fontSize: '0.8rem' }}>Mã luồng:</span>
-              <div className="technical-value" style={{ fontSize: '0.8rem' }}>{selectedStream.id}</div>
-            </div>
-            <div>
-              <span className="muted-copy" style={{ fontSize: '0.8rem' }}>Nhóm chính sách:</span>
-              <div>{selectedStream.familyKey}</div>
-            </div>
-            <div>
-              <span className="muted-copy" style={{ fontSize: '0.8rem' }}>Phạm vi:</span>
-              <div>{selectedStream.resourceKind === 'SCHOOL_WIDE' ? 'Toàn trường' : 'Năm học'}</div>
-            </div>
-          </div>
+          {selectedStreamQuery.isPending && <PageLoading />}
+          {selectedStreamQuery.isError && (
+            <QueryFailure
+              error={selectedStreamQuery.error}
+              retry={() => void selectedStreamQuery.refetch()}
+            />
+          )}
 
-          <h3 style={{ fontSize: '1.05rem', marginBottom: '12px' }}>Các phiên bản đã lưu trữ</h3>
+          {selectedStream && (
+            <>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                  gap: '12px',
+                  marginBottom: '20px',
+                  padding: '12px',
+                  background: '#f8fafb',
+                  border: '1px solid #e1e8ec',
+                }}
+              >
+                <div>
+                  <span className="muted-copy" style={{ fontSize: '0.8rem' }}>Mã luồng:</span>
+                  <div className="technical-value" style={{ fontSize: '0.8rem' }}>{selectedStream.id}</div>
+                </div>
+                <div>
+                  <span className="muted-copy" style={{ fontSize: '0.8rem' }}>Nhóm chính sách:</span>
+                  <div>{selectedStream.familyKey}</div>
+                </div>
+                <div>
+                  <span className="muted-copy" style={{ fontSize: '0.8rem' }}>Phạm vi:</span>
+                  <div>
+                    {selectedStream.resourceKind === 'SCHOOL_WIDE'
+                      ? 'Toàn trường'
+                      : `Năm học (${selectedStream.academicYearId})`}
+                  </div>
+                </div>
+              </div>
 
-          {(!selectedStream.versions || selectedStream.versions.length === 0) ? (
-            <EmptyState title="Chưa có phiên bản nào" message="Luồng này chưa có phiên bản được tạo." />
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {selectedStream.versions.map((ver) => {
-                const family = families.find((f) => f.key === selectedStream.familyKey);
-                const adapter = findUiAdapter(adapters, selectedStream.familyKey);
-                const match = family ? matchUiAdapter(adapters, family) : { isEligibleForMutation: false };
-                const isOpenEnded = ver.status === 'PUBLISHED' && !ver.effectiveUntil;
+              <h3 style={{ fontSize: '1.05rem', marginBottom: '12px' }}>Các phiên bản đã lưu trữ</h3>
 
-                return (
-                  <div
-                    key={ver.id}
-                    className="version-card"
-                    style={{
-                      border: '1px solid #c9d4da',
-                      borderLeft: `5px solid ${ver.status === 'PUBLISHED' ? '#246b45' : ver.status === 'REVERSED' ? '#a32929' : '#7a4b00'}`,
-                      padding: '16px',
-                      background: '#fff',
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '8px' }}>
-                      <div>
-                        <span style={{ fontSize: '1.1rem', fontWeight: 700, marginRight: '12px' }}>
-                          Phiên bản v{ver.versionNumber}
-                        </span>
-                        <StatusText
-                          active={ver.status === 'PUBLISHED'}
-                          activeLabel="Đã công bố"
-                          inactiveLabel={
-                            ver.status === 'DRAFT'
-                              ? 'Bản nháp'
-                              : 'Đã đảo ngược (sửa sai)'
-                          }
-                          inactiveTone={ver.status === 'REVERSED' ? 'error' : 'warning'}
-                        />
-                        <span className="technical-value" style={{ marginLeft: '12px', fontSize: '0.8rem', color: '#49616f' }}>
-                          Xác thực: {ver.validatorVersion}
-                        </span>
-                      </div>
+              {!selectedStream.versions || selectedStream.versions.length === 0 ? (
+                <EmptyState title="Chưa có phiên bản nào" message="Luồng này chưa có phiên bản được tạo." />
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  {selectedStream.versions.map((ver) => {
+                    const family = families.find((f) => f.key === selectedStream.familyKey);
+                    // Historical summary uses exact version adapter
+                    const versionAdapter = findUiAdapter(
+                      adapters,
+                      selectedStream.familyKey,
+                      ver.validatorVersion,
+                    );
+                    const currentMatch = family ? matchUiAdapter(adapters, family) : { isEligibleForMutation: false };
+                    const isOpenEnded = ver.status === 'PUBLISHED' && !ver.effectiveUntil;
 
-                      {/* Action buttons fail-closed */}
-                      <div className="row-actions">
-                        {ver.status === 'DRAFT' && match.isEligibleForMutation && family && (
-                          <>
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              onClick={() => handleStartEdit(ver, family, selectedStream.id)}
-                            >
-                              Chỉnh sửa bản nháp
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="primary"
-                              onClick={() => handleStartPublish(ver, family, selectedStream.id)}
-                            >
-                              Công bố
-                            </Button>
-                          </>
-                        )}
-
-                        {ver.status === 'PUBLISHED' && match.isEligibleForMutation && family && (
-                          <>
-                            {isOpenEnded && (
-                              <>
-                                <Button
-                                  type="button"
-                                  variant="secondary"
-                                  onClick={() => handleStartReplace(ver, family, selectedStream.id)}
-                                >
-                                  Thay đổi trong tương lai
-                                </Button>
-                                <Button
-                                  type="button"
-                                  variant="secondary"
-                                  onClick={() => handleStartRetire(ver, family, selectedStream.id)}
-                                >
-                                  Kết thúc hiệu lực
-                                </Button>
-                              </>
-                            )}
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              onClick={() => handleStartCorrect(ver, family, selectedStream.id)}
-                              style={{ color: '#a32929', borderColor: '#a32929' }}
-                            >
-                              Sửa sai lịch sử
-                            </Button>
-                          </>
-                        )}
-
-                        {ver.status === 'REVERSED' && (
-                          <span className="muted-copy" style={{ fontSize: '0.82rem', fontStyle: 'italic' }}>
-                            Bản ghi chỉ đọc (Đã sửa sai)
-                          </span>
-                        )}
-
-                        {!match.isEligibleForMutation && ver.status !== 'REVERSED' && (
-                          <span className="muted-copy" style={{ fontSize: '0.8rem' }}>
-                            Chưa có giao diện quản trị đã được phê duyệt.
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div style={{ marginBlock: '10px 14px', fontSize: '0.9rem' }}>
-                      Hiệu lực: Từ <strong>{normalizeCivilDate(ver.effectiveFrom)}</strong> đến{' '}
-                      <strong>{ver.effectiveUntil ? normalizeCivilDate(ver.effectiveUntil) : 'Không thời hạn'}</strong>
-                      {ver.status === 'DRAFT' && (
-                        <span style={{ marginLeft: '16px', color: '#7a4b00', fontWeight: 600 }}>
-                          (Lần sửa đổi nháp: {ver.draftRevision})
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Lineage and provenance evidence */}
-                    {(ver.replacesVersionId || ver.correctsVersionId || ver.correctionReason || ver.reversedAt) && (
+                    return (
                       <div
+                        key={ver.id}
+                        className="version-card"
                         style={{
-                          marginBlock: '8px 14px',
-                          padding: '8px 12px',
-                          background: '#f8fafb',
-                          border: '1px solid #e1e8ec',
-                          fontSize: '0.85rem',
+                          border: '1px solid #c9d4da',
+                          borderLeft: `5px solid ${
+                            ver.status === 'PUBLISHED'
+                              ? '#246b45'
+                              : ver.status === 'REVERSED'
+                              ? '#a32929'
+                              : '#7a4b00'
+                          }`,
+                          padding: '16px',
+                          background: '#fff',
                         }}
                       >
-                        {ver.replacesVersionId && (
-                          <div>Thay thế cho phiên bản ID: <span className="technical-value">{ver.replacesVersionId}</span></div>
-                        )}
-                        {ver.correctsVersionId && (
-                          <div>Hiệu chỉnh cho phiên bản ID: <span className="technical-value">{ver.correctsVersionId}</span></div>
-                        )}
-                        {ver.correctionReason && (
-                          <div style={{ color: '#a32929', fontWeight: 600 }}>
-                            Lý do sửa sai: {ver.correctionReason}
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'flex-start',
+                            flexWrap: 'wrap',
+                            gap: '8px',
+                          }}
+                        >
+                          <div>
+                            <span style={{ fontSize: '1.1rem', fontWeight: 700, marginRight: '12px' }}>
+                              Phiên bản v{ver.versionNumber}
+                            </span>
+                            <StatusText
+                              active={ver.status === 'PUBLISHED'}
+                              activeLabel="Đã công bố"
+                              inactiveLabel={
+                                ver.status === 'DRAFT'
+                                  ? 'Bản nháp'
+                                  : 'Đã đảo ngược (sửa sai)'
+                              }
+                              inactiveTone={ver.status === 'REVERSED' ? 'error' : 'warning'}
+                            />
+                            <span
+                              className="technical-value"
+                              style={{ marginLeft: '12px', fontSize: '0.8rem', color: '#49616f' }}
+                            >
+                              Bộ xác thực: {ver.validatorVersion}
+                            </span>
                           </div>
-                        )}
-                        {ver.reversedAt && (
-                          <div className="muted-copy">
-                            Đã đảo ngược lúc: {formatAuditTimestamp(ver.reversedAt)}
-                          </div>
-                        )}
-                      </div>
-                    )}
 
-                    {/* Typed payload display */}
-                    <div style={{ marginTop: '12px' }}>
-                      <h4 style={{ fontSize: '0.9rem', color: '#49616f', marginBottom: '6px' }}>
-                        Nội dung chính sách:
-                      </h4>
-                      {adapter ? (
-                        <div style={{ padding: '10px', background: '#f8fafb', border: '1px solid #c9d4da' }}>
-                          <adapter.SummaryComponent payload={ver.payload} />
+                          {/* Action buttons fail-closed */}
+                          <div className="row-actions">
+                            {ver.status === 'DRAFT' && family && (
+                              <>
+                                {versionAdapter ? (
+                                  <>
+                                    <Button
+                                      type="button"
+                                      variant="secondary"
+                                      onClick={() => handleStartEdit(ver, family, selectedStream.id)}
+                                    >
+                                      Chỉnh sửa bản nháp
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      variant="primary"
+                                      onClick={() => handleStartPublish(ver, family, selectedStream.id)}
+                                    >
+                                      Công bố
+                                    </Button>
+                                  </>
+                                ) : (
+                                  <span className="muted-copy" style={{ fontSize: '0.8rem' }}>
+                                    Không thể thao tác vì thiếu giao diện cho phiên bản {ver.validatorVersion}.
+                                  </span>
+                                )}
+                              </>
+                            )}
+
+                            {ver.status === 'PUBLISHED' && family && (
+                              <>
+                                {isOpenEnded && currentMatch.isEligibleForMutation && (
+                                  <>
+                                    <Button
+                                      type="button"
+                                      variant="secondary"
+                                      onClick={() => handleStartReplace(ver, family, selectedStream.id)}
+                                    >
+                                      Thay đổi trong tương lai
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      variant="secondary"
+                                      onClick={() => handleStartRetire(ver, family, selectedStream.id)}
+                                    >
+                                      Kết thúc hiệu lực
+                                    </Button>
+                                  </>
+                                )}
+                                {currentMatch.isEligibleForMutation && (
+                                  <Button
+                                    type="button"
+                                    variant="secondary"
+                                    onClick={() => handleStartCorrect(ver, family, selectedStream.id)}
+                                    style={{ color: '#a32929', borderColor: '#a32929' }}
+                                  >
+                                    Sửa sai lịch sử
+                                  </Button>
+                                )}
+                              </>
+                            )}
+
+                            {ver.status === 'REVERSED' && (
+                              <span
+                                className="muted-copy"
+                                style={{ fontSize: '0.82rem', fontStyle: 'italic' }}
+                              >
+                                Bản ghi chỉ đọc (Đã sửa sai)
+                              </span>
+                            )}
+                          </div>
                         </div>
-                      ) : (
-                        <p className="muted-copy" style={{ fontStyle: 'italic', fontSize: '0.85rem' }}>
-                          Không thể hiển thị nội dung chi tiết vì nhóm chính sách chưa có giao diện quản trị đã được phê duyệt.
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+
+                        {/* Stable Version ID Evidence */}
+                        <div style={{ marginTop: '6px', fontSize: '0.82rem' }}>
+                          <span className="muted-copy">Mã định danh phiên bản:</span>{' '}
+                          <span className="technical-value">{ver.id}</span>
+                        </div>
+
+                        {/* Effectivity Evidence */}
+                        <div style={{ marginBlock: '8px 10px', fontSize: '0.9rem' }}>
+                          Hiệu lực: Từ <strong>{normalizeCivilDate(ver.effectiveFrom)}</strong> đến{' '}
+                          <strong>
+                            {ver.effectiveUntil ? normalizeCivilDate(ver.effectiveUntil) : 'Không thời hạn'}
+                          </strong>
+                          {ver.status === 'DRAFT' && (
+                            <span style={{ marginLeft: '16px', color: '#7a4b00', fontWeight: 600 }}>
+                              (Lần sửa đổi nháp: {ver.draftRevision})
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Provenance and Lifecycle Evidence */}
+                        <div
+                          style={{
+                            marginBlock: '8px 12px',
+                            padding: '8px 12px',
+                            background: '#f8fafb',
+                            border: '1px solid #e1e8ec',
+                            fontSize: '0.82rem',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '4px',
+                          }}
+                        >
+                          <div>
+                            <span className="muted-copy">Khởi tạo:</span> Bởi người dùng{' '}
+                            <span className="technical-value">{ver.createdByUserId}</span> lúc{' '}
+                            {formatAuditTimestamp(ver.createdAt)}
+                          </div>
+                          {ver.publishedAt && (
+                            <div>
+                              <span className="muted-copy">Công bố:</span> Bởi người dùng{' '}
+                              <span className="technical-value">{ver.publishedByUserId ?? '—'}</span> lúc{' '}
+                              {formatAuditTimestamp(ver.publishedAt)}
+                            </div>
+                          )}
+                          {ver.reversedAt && (
+                            <div style={{ color: '#a32929' }}>
+                              <span>Đảo ngược:</span> Bởi người dùng{' '}
+                              <span className="technical-value">{ver.reversedByUserId ?? '—'}</span> lúc{' '}
+                              {formatAuditTimestamp(ver.reversedAt)}
+                            </div>
+                          )}
+                          {ver.correctionReason && (
+                            <div style={{ color: '#a32929', fontWeight: 600 }}>
+                              Lý do sửa sai: {ver.correctionReason}
+                            </div>
+                          )}
+                          {ver.replacesVersionId && (
+                            <div>
+                              <span className="muted-copy">Thay thế cho phiên bản ID:</span>{' '}
+                              <span className="technical-value">{ver.replacesVersionId}</span>
+                            </div>
+                          )}
+                          {ver.correctsVersionId && (
+                            <div>
+                              <span className="muted-copy">Hiệu chỉnh cho phiên bản ID:</span>{' '}
+                              <span className="technical-value">{ver.correctsVersionId}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Typed payload display with exact version adapter */}
+                        <div style={{ marginTop: '12px' }}>
+                          <h4 style={{ fontSize: '0.9rem', color: '#49616f', marginBottom: '6px' }}>
+                            Nội dung chính sách:
+                          </h4>
+                          {versionAdapter ? (
+                            <div style={{ padding: '10px', background: '#f8fafb', border: '1px solid #c9d4da' }}>
+                              <versionAdapter.SummaryComponent payload={ver.payload} />
+                            </div>
+                          ) : (
+                            <p className="muted-copy" style={{ fontStyle: 'italic', fontSize: '0.85rem' }}>
+                              Giao diện quản trị chưa hỗ trợ hiển thị nội dung cho phiên bản xác thực này ({ver.validatorVersion}).
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
           )}
         </section>
       )}
@@ -1241,39 +1421,68 @@ export function BusinessConfigurationPage({ adapters = PRODUCTION_BUSINESS_POLIC
           Tra cứu chính sách có hiệu lực chính xác cho một ngày dân sự cụ thể. Không sử dụng giờ cục bộ của trình duyệt làm căn cứ hiệu lực.
         </p>
 
-        <form onSubmit={handleResolve} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', alignItems: 'end', marginBottom: '24px' }}>
-          <SelectField
-            id="resolve-family"
-            label="Nhóm chính sách"
-            value={resolveFamilyKey}
-            onChange={(e) => setResolveFamilyKey(e.target.value)}
-            required
-          >
-            <option value="">-- Chọn nhóm chính sách --</option>
-            {families.map((f) => {
-              const adapter = findUiAdapter(adapters, f.key);
-              return (
-                <option key={f.key} value={f.key}>
-                  {adapter ? `${adapter.displayName} (${f.key})` : f.key}
-                </option>
-              );
-            })}
-          </SelectField>
+        <form onSubmit={handleResolve} style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '24px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', alignItems: 'end' }}>
+            <SelectField
+              id="resolve-family"
+              label="Nhóm chính sách"
+              value={resolveFamilyKey}
+              onChange={(e) => handleResolutionFamilyChange(e.target.value)}
+              required
+            >
+              <option value="">-- Chọn nhóm chính sách --</option>
+              {families.map((f) => {
+                const adapter = findUiAdapter(adapters, f.key, f.currentValidatorVersion);
+                return (
+                  <option key={f.key} value={f.key}>
+                    {adapter ? `${adapter.displayName} (${f.key})` : f.key}
+                  </option>
+                );
+              })}
+            </SelectField>
 
-          <FormField
-            id="resolve-civil-date"
-            label="Ngày dân sự cần tra cứu (YYYY-MM-DD)"
-            type="date"
-            required
-            value={resolveCivilDate}
-            onChange={(e) => setResolveCivilDate(e.target.value)}
-          />
+            <FormField
+              id="resolve-civil-date"
+              label="Ngày dân sự cần tra cứu (YYYY-MM-DD)"
+              type="date"
+              required
+              value={resolveCivilDate}
+              onChange={(e) => setResolveCivilDate(e.target.value)}
+            />
 
-          <div>
-            <Button type="submit" loading={isResolving}>
-              Tra cứu
-            </Button>
+            <div>
+              <Button type="submit" loading={isResolving}>
+                Tra cứu
+              </Button>
+            </div>
           </div>
+
+          {/* Wire ResourceEditorComponent for resolution lookup if family requires ACADEMIC_YEAR */}
+          {(() => {
+            if (!resolveFamilyKey) return null;
+            const selFamily = families.find((f) => f.key === resolveFamilyKey);
+            if (selFamily?.resourceKind !== 'ACADEMIC_YEAR') return null;
+            const currentAdapter = findUiAdapter(adapters, selFamily.key, selFamily.currentValidatorVersion);
+
+            if (!currentAdapter?.ResourceEditorComponent) {
+              return (
+                <div className="alert alert--warning" style={{ fontSize: '0.85rem' }}>
+                  Giao diện quản trị thiếu thành phần chọn tài nguyên năm học bắt buộc cho nhóm chính sách này.
+                </div>
+              );
+            }
+
+            return (
+              <div style={{ padding: '12px', background: '#f8fafb', border: '1px solid #c9d4da' }}>
+                <h4 style={{ fontSize: '0.9rem', marginBottom: '8px' }}>Chọn năm học tra cứu:</h4>
+                <currentAdapter.ResourceEditorComponent
+                  resource={resolveResource}
+                  onChange={(r) => setResolveResource(r)}
+                  disabled={isResolving}
+                />
+              </div>
+            );
+          })()}
         </form>
 
         {resolutionError && (
@@ -1318,19 +1527,25 @@ export function BusinessConfigurationPage({ adapters = PRODUCTION_BUSINESS_POLIC
                   </strong>
                 </p>
                 {(() => {
-                  const adapter = findUiAdapter(adapters, resolutionResult.family);
-                  if (adapter && resolutionResult.payload) {
-                    const Summary = adapter.SummaryComponent;
+                  const resolvedAdapter = findUiAdapter(
+                    adapters,
+                    resolutionResult.family,
+                    resolutionResult.validatorVersion ?? '',
+                  );
+                  if (resolvedAdapter && resolutionResult.payload) {
+                    const Summary = resolvedAdapter.SummaryComponent;
                     return (
                       <div style={{ padding: '12px', background: '#f8fafb', border: '1px solid #c9d4da' }}>
-                        <h4 style={{ fontSize: '0.9rem', marginBottom: '8px', color: '#49616f' }}>Nội dung áp dụng:</h4>
+                        <h4 style={{ fontSize: '0.9rem', marginBottom: '8px', color: '#49616f' }}>
+                          Nội dung áp dụng:
+                        </h4>
                         <Summary payload={resolutionResult.payload} />
                       </div>
                     );
                   }
                   return (
                     <p className="muted-copy" style={{ fontStyle: 'italic' }}>
-                      Không thể hiển thị nội dung chi tiết vì nhóm chính sách chưa có giao diện quản trị đã được phê duyệt.
+                      Giao diện quản trị chưa hỗ trợ hiển thị nội dung cho phiên bản xác thực này ({resolutionResult.validatorVersion}).
                     </p>
                   );
                 })()}

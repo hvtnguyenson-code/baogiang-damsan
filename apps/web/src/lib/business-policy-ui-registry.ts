@@ -19,6 +19,7 @@ export interface BusinessPolicyResourceEditorProps {
 
 export interface BusinessPolicyUiAdapter<T extends Record<string, unknown> = Record<string, unknown>> {
   readonly familyKey: string;
+  readonly validatorVersion: string;
   readonly displayName: string;
   readonly description: string;
   readonly resourceKind: BusinessConfigurationResource['kind'];
@@ -38,8 +39,11 @@ export const PRODUCTION_BUSINESS_POLICY_UI_ADAPTERS: readonly BusinessPolicyUiAd
 export function findUiAdapter(
   adapters: readonly BusinessPolicyUiAdapter[],
   familyKey: string,
+  validatorVersion: string,
 ): BusinessPolicyUiAdapter | undefined {
-  return adapters.find((adapter) => adapter.familyKey === familyKey);
+  return adapters.find(
+    (adapter) => adapter.familyKey === familyKey && adapter.validatorVersion === validatorVersion,
+  );
 }
 
 export interface AdapterMatchResult {
@@ -50,13 +54,25 @@ export interface AdapterMatchResult {
 
 export function matchUiAdapter(
   adapters: readonly BusinessPolicyUiAdapter[],
-  family?: { key: string; resourceKind: BusinessConfigurationResource['kind']; publicationEnabled: boolean },
+  family?: {
+    key: string;
+    resourceKind: BusinessConfigurationResource['kind'];
+    currentValidatorVersion: string;
+    publicationEnabled: boolean;
+  },
 ): AdapterMatchResult {
   if (!family) {
     return { isEligibleForMutation: false, mismatchReason: 'Nhóm chính sách không tồn tại.' };
   }
-  const adapter = findUiAdapter(adapters, family.key);
+  const adapter = findUiAdapter(adapters, family.key, family.currentValidatorVersion);
   if (!adapter) {
+    const anyVersionAdapter = adapters.find((a) => a.familyKey === family.key);
+    if (anyVersionAdapter) {
+      return {
+        isEligibleForMutation: false,
+        mismatchReason: 'Giao diện quản trị chưa hỗ trợ phiên bản hợp đồng hiện tại của nhóm chính sách.',
+      };
+    }
     return {
       isEligibleForMutation: false,
       mismatchReason: 'Nhóm chính sách này chưa có giao diện quản trị đã được phê duyệt.',
@@ -66,6 +82,13 @@ export function matchUiAdapter(
     return {
       isEligibleForMutation: false,
       mismatchReason: 'Phạm vi tài nguyên của giao diện không khớp với định nghĩa hệ thống.',
+    };
+  }
+  if (family.resourceKind === 'ACADEMIC_YEAR' && !adapter.ResourceEditorComponent) {
+    return {
+      isEligibleForMutation: false,
+      adapter,
+      mismatchReason: 'Giao diện quản trị thiếu thành phần chọn tài nguyên năm học bắt buộc.',
     };
   }
   if (!family.publicationEnabled) {

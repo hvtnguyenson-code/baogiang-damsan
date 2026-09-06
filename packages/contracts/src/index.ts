@@ -344,18 +344,19 @@ export interface BusinessPolicyVersionRecord {
   status: BusinessPolicyVersionStatus;
   payload: Record<string, unknown>;
   validatorVersion: string;
-  effectiveFrom: CivilDateString;
-  effectiveUntil: CivilDateString | null;
+  effectiveFrom: string;
+  effectiveUntil: string | null;
   draftRevision: number;
+  createdByUserId: string;
+  publishedByUserId: string | null;
+  publishedAt: string | null;
+  reversedByUserId: string | null;
   reversedAt: string | null;
   correctionReason: string | null;
+  replacesVersionId: string | null;
+  correctsVersionId: string | null;
   createdAt: string;
   updatedAt: string;
-  createdByUserId?: string;
-  publishedByUserId?: string | null;
-  reversedByUserId?: string | null;
-  replacesVersionId?: string | null;
-  correctsVersionId?: string | null;
 }
 
 export interface BusinessPolicyStreamRecord {

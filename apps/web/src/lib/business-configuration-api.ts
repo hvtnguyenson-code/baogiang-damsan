@@ -44,22 +44,58 @@ export const KNOWN_POLICY_ERROR_MESSAGES: Record<string, string> = {
   POLICY_CORRUPT: 'Dữ liệu chính sách không toàn vẹn hoặc phiên bản kiểm tra không khớp (POLICY_CORRUPT).',
 };
 
+export const GENERIC_UNKNOWN_POLICY_ERROR =
+  'Yêu cầu không thực hiện được. Vui lòng tải lại dữ liệu và thử lại.';
+
 export function translatePolicyError(message: string | undefined): string {
-  if (!message) return 'Đã xảy ra lỗi khi thực hiện thao tác.';
+  if (!message) return GENERIC_UNKNOWN_POLICY_ERROR;
   for (const [code, vietnamese] of Object.entries(KNOWN_POLICY_ERROR_MESSAGES)) {
     if (message.includes(code)) return vietnamese;
   }
-  return message;
+  return GENERIC_UNKNOWN_POLICY_ERROR;
+}
+
+export function isLeapYear(year: number): boolean {
+  return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+}
+
+export function isValidCivilDate(value: string): boolean {
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  const match = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return false;
+  const year = parseInt(match[1], 10);
+  const month = parseInt(match[2], 10);
+  const day = parseInt(match[3], 10);
+
+  if (year < 1 || month < 1 || month > 12 || day < 1) {
+    return false;
+  }
+
+  const daysInMonth = [
+    31, // Jan
+    isLeapYear(year) ? 29 : 28, // Feb
+    31, // Mar
+    30, // Apr
+    31, // May
+    30, // Jun
+    31, // Jul
+    31, // Aug
+    30, // Sep
+    31, // Oct
+    30, // Nov
+    31, // Dec
+  ];
+
+  return day <= daysInMonth[month - 1];
 }
 
 export function normalizeCivilDate(value: unknown): CivilDateString | null {
   if (typeof value !== 'string') return null;
   const match = value.match(/^(\d{4}-\d{2}-\d{2})/);
-  return match ? (match[1] as CivilDateString) : null;
-}
-
-export function isValidCivilDate(value: string): boolean {
-  return /^\d{4}-\d{2}-\d{2}$/.test(value.trim());
+  if (!match) return null;
+  const dateStr = match[1];
+  return isValidCivilDate(dateStr) ? (dateStr as CivilDateString) : null;
 }
 
 export function formatAuditTimestamp(timestamp: string | null | undefined): string {
