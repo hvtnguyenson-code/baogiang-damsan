@@ -10,9 +10,9 @@ It is **not** a self-referential registry of the latest Git commit. Exact curren
 
 ## Last closed major task
 
-`P1-021` — Business Configuration persistence/control plane — **CLOSED** by `SYNC-P1-021`.
+`P1-022` — Business Configuration administration workspace — **CLOSED** by `SYNC-P1-022`.
 
-Closure evidence: exact starting main `836e56ca3277986c72139080a8da70ea78796a3f`; feature branch `feat/business-configuration-persistence-control-plane-021`; final reviewed head `b188d02ffb1ecd974e72ead205f26ccc9f6f308d`; independent GitHub review PASS; PR #107; exact-head PR CI #367 (run `34032770124`) SUCCESS; merge/main `04dcafa80b2ce0142e258e5d587a60c48df3f418`; authoritative post-merge main CI #368 (run `34034146835`) SUCCESS; review/CI forward corrections absorbed into the feature branch before merge; no separate correction/re-entry task; administrative closure `SYNC-P1-021`; no deployment, production migration, or production behavior claimed.
+Closure evidence: exact starting main `d9e546f3ee3f29dba139eeed400ea888eaf5e902`; feature branch `feat/business-configuration-administration-workspace-022`; final reviewed head `cf1ec8c394edcdd0c4a0e416c6a35708fa6f331d`; independent GitHub review PASS; PR #109; exact-head PR CI #371 (run `34044755481`) SUCCESS; merge/main `fd3248e57124c948998bd78ec69d1341da2a08c1`; authoritative post-merge main CI #372 (run `34045209071`) SUCCESS; review forward corrections absorbed into the feature branch before merge; no separate correction/re-entry task; administrative closure `SYNC-P1-022`; no deployment, production migration, or production behavior claimed.
 
 ## Homeroom chain
 
@@ -35,7 +35,7 @@ P1-010 review also recovered and registered Special Programme boundaries T43/T44
 
 ## Accepted Business Configuration domain
 
-`P1-020` (architecture) and `P1-021` (persistence/control plane) are **CLOSED**. ADR-046 is accepted architecture authority and P1-021 is closed persistence/control-plane implementation for a separate typed/allowlisted, version-aware and civil-date-effective Business Configuration domain. It implements:
+`P1-020` (architecture), `P1-021` (persistence/control plane), and `P1-022` (administration workspace) are **CLOSED**. ADR-046 is accepted architecture authority, P1-021 is closed persistence/control-plane implementation, and P1-022 is closed capability-gated administration workspace for a separate typed/allowlisted, version-aware and civil-date-effective Business Configuration domain. It implements:
 
 - separate retained `BusinessPolicyStream` / `BusinessPolicyVersion` / `BusinessPolicyCommand` persistence topology;
 - `SCHOOL_WIDE` / `ACADEMIC_YEAR` exact resource semantics;
@@ -47,14 +47,25 @@ P1-010 review also recovered and registered Special Programme boundaries T43/T44
 - retained correction/reversal lineage;
 - immutable published semantics;
 - dedicated `BUSINESS_CONFIGURATION_MANAGE / SCHOOL_WIDE` authorization;
+- capability-gated route `/quan-tri/chinh-sach-nghiep-vu`;
+- `SYSTEM_ADMIN` alone does not grant access;
+- typed code-defined UI adapters with triple identity (familyKey + validatorVersion + resourceKind);
+- current versus historical validator handling;
+- lifecycle workflows: create draft, edit, publish, prospective replace, retire, correct;
+- exact-date resolver UI;
+- strict civil-date client arithmetic without local timezone drift;
+- retained lifecycle/lineage evidence display;
+- explicit query failures with retry;
+- sanitized unknown server errors;
+- fail-closed unsupported family/version/resource behavior;
 - same-transaction audit;
 - command idempotency receipts;
 - bounded Serializable mutation retry;
 - typed fail-closed resolver;
 - `SystemSetting` exclusion;
-- technical config/secrets exclusion.
+- technical config/secrets exclusion (no raw JSON, no generic key/value editor).
 
-The production policy registry is intentionally empty: P1-021 does not enable operational-start, workload, or reporting policy semantics. Those semantics remain owned by their registered downstream tasks. `P1-022` remains required for the administration UI workspace.
+The production policy family registry and production UI adapter registry remain intentionally empty: generic P1-020/P1-021/P1-022 platform capability does not enable operational-start, workload, or reporting policy semantics. Therefore, the current production workspace legitimately shows no approved editable policy family; this reflects intentional empty production registration, not incomplete implementation. Concrete production policy families are enabled only by their owner tasks (operational-start under P1-030–P1-032, workload under P4-060/P4-061).
 
 ## Accepted governance authority
 
@@ -89,10 +100,10 @@ The repository contains reviewed implementation for:
 - reporting projection and public reporting read path;
 - Personal Reporting Projection;
 - Reporting Statement persistence/control plane/UI enablement/product UI work;
-- **retained Business Configuration persistence and control plane** (separate BusinessPolicyStream / BusinessPolicyVersion / BusinessPolicyCommand topology), strict civil-date intervals, DB-level non-overlapping published exclusion, retained replacement and reversal/correction lineage, immutable published payload, exact historical validator-version resolution, dedicated BUSINESS_CONFIGURATION_MANAGE / SCHOOL_WIDE capability, bounded Serializable mutation retry, idempotency receipts, same-transaction audit and typed fail-closed resolver, with production registry intentionally empty;
+- **retained Business Configuration persistence, control plane and administration workspace** (separate BusinessPolicyStream / BusinessPolicyVersion / BusinessPolicyCommand topology, strict civil-date intervals, DB-level non-overlapping published exclusion, retained replacement and reversal/correction lineage, immutable published payload, exact historical validator-version resolution, dedicated `BUSINESS_CONFIGURATION_MANAGE / SCHOOL_WIDE` capability, capability-gated route `/quan-tri/chinh-sach-nghiep-vu`, typed/version-aware UI adapter architecture with triple identity, lifecycle UI for draft/edit/publish/replace/retire/correct, historical typed rendering, exact-date resolver UI, bounded Serializable mutation retry, idempotency receipts, same-transaction audit, sanitized errors and typed fail-closed resolver, with backend production registry and production UI adapter registry intentionally empty);
 - hardened Windows production deployment control-plane/runbooks through PR #90.
 
-Homeroom architecture, persistence, control plane/capability, historical read model and administration workspace UI are closed for the registered pre-pilot scope.
+Homeroom architecture, persistence, control plane/capability, historical read model and administration workspace UI are closed for the registered pre-pilot scope. Business Configuration architecture (P1-020), persistence/control plane (P1-021) and administration workspace (P1-022) are closed for the registered pre-pilot scope.
 
 ## Pre-pilot verdict
 
@@ -107,17 +118,16 @@ The registered implementation, data-evidence, product and production-readiness t
 3. Programme planning cannot assign different exact teacher sets to different exact slots.
 4. Special-program absence/replacement and programme-level confirmation authority remain explicitly registered for P4 closure (T43/T44).
 5. Existing `GDDDP_COORDINATOR` / `HĐTN_COORDINATOR` capability intent is not wired to programme-resource authority.
-6. Business Configuration architecture (P1-020) and persistence/control plane (P1-021) are closed; administration workspace UI remains absent under P1-022, and concrete production policy families remain enabled only by their owner tasks, not by generic P1-021.
-7. Delayed go-live / operational-start policy and historical pre-operational evidence workflow are absent.
-8. PPCT real-school import is intentionally blocked pending an authoritative workbook contract.
-9. Native Đam San timetable adapter and class-view/teacher-view peer reconciliation are absent.
-10. Morning/afternoon selective timetable update with explicit carry-forward is absent.
-11. Special-activity participation is not yet integrated into official workload/reporting aggregation.
-12. WorkloadAdjustmentRule remains trigger-gated/deferred.
-13. Installable PWA baseline is absent.
-14. Dedicated Báo giảng Telegram bot/linking/notification lifecycle is absent.
-15. First-certificate HTTP-01/Nginx authority for the Báo giảng subdomain is incomplete.
-16. Actual VPS Stage 1 evidence has not yet been collected for first deployment.
+6. Delayed go-live / operational-start policy and historical pre-operational evidence workflow are absent.
+7. PPCT real-school import is intentionally blocked pending an authoritative workbook contract.
+8. Native Đam San timetable adapter and class-view/teacher-view peer reconciliation are absent.
+9. Morning/afternoon selective timetable update with explicit carry-forward is absent.
+10. Special-activity participation is not yet integrated into official workload/reporting aggregation.
+11. WorkloadAdjustmentRule remains trigger-gated/deferred.
+12. Installable PWA baseline is absent.
+13. Dedicated Báo giảng Telegram bot/linking/notification lifecycle is absent.
+14. First-certificate HTTP-01/Nginx authority for the Báo giảng subdomain is incomplete.
+15. Actual VPS Stage 1 evidence has not yet been collected for first deployment.
 
 ## Production VPS topology decision
 
@@ -132,7 +142,6 @@ The final production-host topology is intentionally unresolved and explicitly de
 
 The following registered tasks are eligible to start, each only on its own dedicated branch:
 
-- `P1-022` — Business Configuration administration workspace.
 - `P1-030` — Delayed go-live / operational-start architecture.
 - `P4-010` — GDĐP/HĐTN programme architecture closure.
 
@@ -163,7 +172,7 @@ Direct P0 inspection found `main` is currently not protected server-side. This i
 
 ## Production state
 
-Production remains **pre-operational**. P1-021 implementation is merged and canonical, but its production registry is intentionally empty and no production business family was enabled. Merge did not deploy or migrate production; no production database, VPS, Nginx, TLS, or application process mutation occurred. P6 remains blocked by the explicit P6-005 topology decision gate.
+Production remains **pre-operational**. P1-020, P1-021, and P1-022 implementations are merged and canonical, but backend production policy registry and production UI adapter registry remain intentionally empty and no production business policy family is enabled. Merge did not deploy or migrate production; no production database migration, VPS, Nginx, TLS, or application process mutation occurred from P1-022. P6 remains blocked by the explicit P6-005 topology decision gate.
 
 ## Protected external system boundary
 
