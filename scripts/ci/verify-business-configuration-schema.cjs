@@ -52,6 +52,11 @@ const requiredMigrationTokens = [
 for (const token of requiredMigrationTokens) {
   assert.match(migration, new RegExp(token), `Missing migration token: ${token}`);
 }
+assert.match(
+  migration,
+  /CONSTRAINT\s+"business_policy_versions_no_self_lineage_check"\s+CHECK\s*\(\s*\("replaces_version_id"\s+IS\s+NULL\s+OR\s+"replaces_version_id"\s+<>\s+"id"\)\s+AND\s+\("corrects_version_id"\s+IS\s+NULL\s+OR\s+"corrects_version_id"\s+<>\s+"id"\)\s*\)/,
+  'business_policy_versions_no_self_lineage_check must be present with exact self-reference check expression',
+);
 
 // 6. Capability catalog verification
 const configManage = CAPABILITIES.find(([key]) => key === 'BUSINESS_CONFIGURATION_MANAGE');

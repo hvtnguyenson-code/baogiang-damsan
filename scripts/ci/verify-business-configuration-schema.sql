@@ -192,6 +192,7 @@ BEGIN
   RETURNING "id" INTO v_stream_lineage;
 
   -- 16. self replacement/correction lineage FAIL.
+  v_expected_failure := FALSE;
   BEGIN
     INSERT INTO "business_policy_versions" (
       "id", "stream_id", "version_number", "status", "payload", "validator_version",
@@ -200,9 +201,19 @@ BEGIN
       'cccccccc-0000-0000-0000-000000000001', v_stream_lineage, 1, 'DRAFT', '{"a":1}', 'v1',
       DATE '2026-09-01', NULL, v_user_id, 'cccccccc-0000-0000-0000-000000000001'
     );
-    RAISE EXCEPTION 'Invariant 16 failed: self lineage must fail check constraint';
-  EXCEPTION WHEN check_violation THEN NULL;
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM = 'business policy replacement must remain in its stream' THEN
+        v_expected_failure := TRUE;
+      ELSE
+        RAISE;
+      END IF;
+    WHEN check_violation THEN
+      v_expected_failure := TRUE;
   END;
+  IF NOT v_expected_failure THEN
+    RAISE EXCEPTION 'Invariant 16 failed: self lineage must be rejected';
+  END IF;
 
   -- Insert base version in v_stream_lineage
   INSERT INTO "business_policy_versions" (
