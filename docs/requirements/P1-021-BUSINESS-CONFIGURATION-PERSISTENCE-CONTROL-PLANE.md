@@ -2,11 +2,18 @@
 
 ## Trạng thái
 
-**IN_PROGRESS** trên branch `feat/business-configuration-persistence-control-plane-021`, bắt đầu từ `origin/main@836e56ca3277986c72139080a8da70ea78796a3f`.
+**CLOSED bởi SYNC-P1-021**, merge vào `main@04dcafa80b2ce0142e258e5d587a60c48df3f418`.
 
+- Canonical base: `836e56ca3277986c72139080a8da70ea78796a3f`.
+- Feature branch: `feat/business-configuration-persistence-control-plane-021`.
+- Final reviewed feature HEAD: `b188d02ffb1ecd974e72ead205f26ccc9f6f308d`.
+- Independent GitHub review: PASS.
+- Pull Request: #107 (`feat(config): add business configuration control plane`).
+- Exact-head PR CI: #367 (Run ID `34032770124`) SUCCESS.
+- Post-merge main CI: #368 (Run ID `34034146835`) SUCCESS trên `main@04dcafa80b2ce0142e258e5d587a60c48df3f418`.
 - Authority: ADR-046 và P1-020 đã CLOSED.
 - Traceability: T21, T22.
-- P1-021 không đóng task, không tạo PR/CI/merge evidence, không deploy và không mở P1-022.
+- Production registry intentionally empty; không deploy, không production DB mutation, không kích hoạt business-policy family semantics cho operational-start, workload hay reporting. P1-022 tiếp tục đảm nhiệm administration UI.
 
 ## Topology và boundary
 
@@ -60,7 +67,18 @@ Lifecycle mutation dùng Serializable transaction kèm bounded retry (tối đa 
 - `npm run build -w packages/contracts`: PASS.
 - `npm run lint -w apps/api`: PASS.
 - `npm run typecheck -w apps/api`: PASS.
-- `npm run test:unit -w apps/api`: PASS (66 test suites, 983 tests passed).
+- `npm run test:unit -w apps/api`: PASS (local pre-final-correction evidence: 66 test suites, 983 tests passed; final remote correction suite passed trên GitHub CI).
 - `npm run build -w apps/api`: PASS.
 - `npm exec --workspace apps/api -- jest --listTests`: PASS (`business-configuration.integration.spec.ts` discovered).
 - PostgreSQL integration/migration test execution: `LOCAL NOT RUN — thiếu isolated PostgreSQL environment`.
+
+## Authoritative GitHub CI evidence
+
+- **Exact-head PR CI #367 (Run ID `34032770124`, commit `b188d02ffb1ecd974e72ead205f26ccc9f6f308d`) SUCCESS**:
+  - Schema/migration verifier PASS (fresh migration chain, second deploy idempotency, legacy upgrade, constraints, GIST exclusion, immutability, lineage, bounded retry SQL verification);
+  - API integration PASS (`business-configuration.integration.spec.ts` 25 sections on isolated PostgreSQL);
+  - Unit / lint / typecheck / build PASS (contracts & API);
+  - Playwright smoke PASS;
+  - Windows deployment contract PASS.
+- **Post-merge main CI #368 (Run ID `34034146835`, commit `04dcafa80b2ce0142e258e5d587a60c48df3f418`) SUCCESS**:
+  - Authoritative validation gates lặp lại đầy đủ và PASS trên canonical `main`.
