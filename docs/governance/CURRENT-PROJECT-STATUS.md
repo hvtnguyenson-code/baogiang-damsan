@@ -54,7 +54,7 @@ P1-010 review also recovered and registered Special Programme boundaries T43/T44
 - `SystemSetting` exclusion;
 - technical config/secrets exclusion.
 
-The production policy registry is intentionally empty: P1-021 does not enable operational-start, workload, or reporting policy semantics. Those semantics remain owned by their registered downstream tasks. `P1-022` remains required for the administration UI workspace.
+The production policy registry is intentionally empty: P1-021 does not enable operational-start, workload, or reporting policy semantics. Those semantics remain owned by their registered downstream tasks. `P1-022` (Business Configuration administration workspace) is currently in review on branch `feat/business-configuration-administration-workspace-022`, implementing the bounded web workspace (`/quan-tri/chinh-sach-nghiep-vu`) with capability gating, fail-closed adapter registry, empty production registry, typed lifecycle workflows, and civil-date resolution lookup.
 
 ## Accepted governance authority
 

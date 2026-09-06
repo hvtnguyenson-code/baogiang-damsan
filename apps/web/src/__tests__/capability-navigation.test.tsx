@@ -15,6 +15,7 @@ describe('capability-aware navigation', () => {
     ['CAPABILITY_GRANT', 'Cấp quyền'], ['AUDIT_VIEW', 'Nhật ký'], ['ADDITIONAL_DUTY_CATALOG_MANAGE', 'Danh mục kiêm nhiệm'],
     ['ADDITIONAL_DUTY_ASSIGNMENT_MANAGE', 'Phân công kiêm nhiệm'],
     ['ACADEMIC_STRUCTURE_MANAGE', 'Cấu trúc năm học'],
+    ['BUSINESS_CONFIGURATION_MANAGE', 'Chính sách nghiệp vụ'],
   ] as const)('shows %s only when effective school-wide', async (key, label) => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(authWith(key))));
     renderApp('/');
@@ -30,6 +31,7 @@ describe('capability-aware navigation', () => {
     expect(screen.queryByRole('link', { name: 'Cấu trúc năm học' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Phân công giảng dạy' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Phân công chủ nhiệm' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Chính sách nghiệp vụ' })).not.toBeInTheDocument();
   });
 
   it('shows both distinct subject-management assignment routes and renders the teaching ledger', async () => {

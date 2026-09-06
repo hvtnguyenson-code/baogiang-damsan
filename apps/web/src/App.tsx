@@ -25,6 +25,8 @@ import { AccessibleReportingStatementsPage } from './pages/AccessibleReportingSt
 import { PendingReportingStatementsPage } from './pages/PendingReportingStatementsPage';
 import { ReportingStatementDetailPage } from './pages/ReportingStatementDetailPage';
 import { ReportingStatementsPage } from './pages/ReportingStatementsPage';
+import { BusinessConfigurationPage } from './pages/BusinessConfigurationPage';
+import type { BusinessPolicyUiAdapter } from './lib/business-policy-ui-registry';
 import {
   canManageDutyAssignments,
   canOpenReportingDetail,
@@ -35,7 +37,7 @@ import {
   hasSchoolCapability,
 } from './lib/capabilities';
 
-export default function App() {
+export default function App({ businessPolicyAdapters }: { businessPolicyAdapters?: readonly BusinessPolicyUiAdapter[] } = {}) {
   return (
     <Routes>
       <Route element={<LoginRoute />}>
@@ -72,6 +74,9 @@ export default function App() {
             <Route path="/quan-tri/cau-truc-nam-hoc/:academicYearId" element={<Navigate to="lich" replace />} />
             <Route path="/quan-tri/cau-truc-nam-hoc/:academicYearId/lich" element={<AcademicCalendarPage />} />
             <Route path="/quan-tri/cau-truc-nam-hoc/:academicYearId/lop" element={<SchoolClassesPage />} />
+          </Route>
+          <Route element={<CapabilityRoute allow={(c) => hasSchoolCapability(c, 'BUSINESS_CONFIGURATION_MANAGE')} />}>
+            <Route path="/quan-tri/chinh-sach-nghiep-vu" element={<BusinessConfigurationPage adapters={businessPolicyAdapters} />} />
           </Route>
         </Route>
       </Route>

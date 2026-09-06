@@ -85,6 +85,7 @@ export const managementRoutes: ManagementRoute[] = [
   { to: '/quan-tri/nhat-ky', label: 'Nhật ký', isVisible: (c) => hasSchoolCapability(c, 'AUDIT_VIEW') },
   { to: '/quan-tri/kiem-nhiem/danh-muc', label: 'Danh mục kiêm nhiệm', isVisible: (c) => hasSchoolCapability(c, 'ADDITIONAL_DUTY_CATALOG_MANAGE') },
   { to: '/quan-tri/kiem-nhiem/phan-cong', label: 'Phân công kiêm nhiệm', isVisible: canManageDutyAssignments },
+  { to: '/quan-tri/chinh-sach-nghiep-vu', label: 'Chính sách nghiệp vụ', isVisible: (c) => hasSchoolCapability(c, 'BUSINESS_CONFIGURATION_MANAGE') },
 ];
 
 export function accessibleManagementRoutes(auth: AuthMeResponse | null): ManagementRoute[] {
@@ -92,6 +93,7 @@ export function accessibleManagementRoutes(auth: AuthMeResponse | null): Managem
 }
 
 export const capabilityLabels: Partial<Record<CapabilityKey, string>> = {
+  BUSINESS_CONFIGURATION_MANAGE: 'Quản lý chính sách nghiệp vụ',
   HOMEROOM_ASSIGNMENT_MANAGE: 'Quản lý giáo viên chủ nhiệm',
   ACADEMIC_STRUCTURE_MANAGE: 'Quản lý cấu trúc năm học',
   TEACHER_BASE: 'Công việc giáo viên cơ bản',

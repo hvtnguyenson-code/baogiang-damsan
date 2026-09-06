@@ -313,13 +313,81 @@ export interface AuditEventRecord {
 export interface AuditEventListResponse { items: AuditEventRecord[]; page: number; pageSize: number; total: number; }
 
 // ============================================================
-// Business Configuration (P1-021)
+// Business Configuration (P1-021 & P1-022)
 // ============================================================
 export type BusinessConfigurationResource = { kind: 'SCHOOL_WIDE' } | { kind: 'ACADEMIC_YEAR'; academicYearId: string };
 export type BusinessPolicyVersionStatus = 'DRAFT' | 'PUBLISHED' | 'REVERSED';
 export type BusinessPolicyResolutionOutcome = 'RESOLVED' | 'UNKNOWN_POLICY_FAMILY' | 'INVALID_POLICY_RESOURCE' | 'INVALID_EFFECTIVE_DATE' | 'POLICY_NOT_CONFIGURED' | 'POLICY_AMBIGUOUS' | 'POLICY_CORRUPT';
-export interface BusinessPolicyFamilyMetadata { key: string; resourceKind: BusinessConfigurationResource['kind']; validatorVersion: string; publicationEnabled: boolean; downstreamAuthority: string; }
-export interface BusinessPolicyResolution { outcome: BusinessPolicyResolutionOutcome; family: string; resource: BusinessConfigurationResource; requestedCivilDate: CivilDateString; policyVersionId?: string; validatorVersion?: string; payload?: Record<string, unknown>; effectiveFrom?: CivilDateString; effectiveUntil?: CivilDateString | null; }
+export interface BusinessPolicyFamilyMetadata {
+  key: string;
+  resourceKind: BusinessConfigurationResource['kind'];
+  currentValidatorVersion: string;
+  publicationEnabled: boolean;
+  downstreamAuthority: string;
+}
+export interface BusinessPolicyResolution {
+  outcome: BusinessPolicyResolutionOutcome;
+  family: string;
+  resource: BusinessConfigurationResource;
+  requestedCivilDate: CivilDateString;
+  policyVersionId?: string;
+  validatorVersion?: string;
+  payload?: Record<string, unknown>;
+  effectiveFrom?: CivilDateString;
+  effectiveUntil?: CivilDateString | null;
+}
+
+export interface BusinessPolicyVersionRecord {
+  id: string;
+  streamId: string;
+  versionNumber: number;
+  status: BusinessPolicyVersionStatus;
+  payload: Record<string, unknown>;
+  validatorVersion: string;
+  effectiveFrom: CivilDateString;
+  effectiveUntil: CivilDateString | null;
+  draftRevision: number;
+  reversedAt: string | null;
+  correctionReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+  createdByUserId?: string;
+  publishedByUserId?: string | null;
+  reversedByUserId?: string | null;
+  replacesVersionId?: string | null;
+  correctsVersionId?: string | null;
+}
+
+export interface BusinessPolicyStreamRecord {
+  id: string;
+  familyKey: string;
+  resourceKind: BusinessConfigurationResource['kind'];
+  academicYearId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  versions?: BusinessPolicyVersionRecord[];
+}
+
+export interface BusinessPolicyListResponse {
+  items: BusinessPolicyStreamRecord[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+export type BusinessPolicyMutationOutcome =
+  | 'CREATED'
+  | 'UPDATED'
+  | 'PUBLISHED'
+  | 'REPLACED'
+  | 'RETIRED'
+  | 'CORRECTED';
+
+export interface BusinessPolicyMutationResult {
+  outcome: BusinessPolicyMutationOutcome;
+  versionId: string;
+  streamId?: string;
+}
 
 // ============================================================
 // Teaching execution evidence
