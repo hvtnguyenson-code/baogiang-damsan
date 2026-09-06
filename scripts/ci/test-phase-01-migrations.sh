@@ -80,6 +80,9 @@ psql "$fresh_psql_url" -v ON_ERROR_STOP=1 -f scripts/ci/verify-teaching-assignme
 echo "[migration-test] Homeroom assignment persistence constraint and history verification"
 psql "$fresh_psql_url" -v ON_ERROR_STOP=1 -f scripts/ci/verify-homeroom-assignment-schema.sql
 
+echo "[migration-test] Business Configuration persistence constraint and history verification"
+psql "$fresh_psql_url" -v ON_ERROR_STOP=1 -f scripts/ci/verify-business-configuration-schema.sql
+
 echo "[migration-test] Time-slot constraint and history verification"
 psql "$fresh_psql_url" -v ON_ERROR_STOP=1 -f scripts/ci/verify-time-slot-schema.sql
 

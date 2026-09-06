@@ -26,7 +26,7 @@ export class Phase01Harness {
   prisma!: PrismaClient;
   passwords!: PasswordService;
 
-  async start(): Promise<void> {
+  async start(overrides: Array<{ token: unknown; value: unknown }> = []): Promise<void> {
     const safeDatabaseUrl = resolveSafeTestDatabaseUrl(process.env);
     if (!safeDatabaseUrl) throw new Error('TEST_DATABASE_URL is required after destructive-test safety approval.');
     process.env['DATABASE_URL'] = safeDatabaseUrl;
@@ -34,7 +34,9 @@ export class Phase01Harness {
     process.env['CORS_ORIGINS'] = testOrigin;
     process.env['AUTH_COOKIE_SECURE'] = 'false';
     process.env['AUTH_LOGIN_RATE_LIMIT_MAX'] = '100';
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    let builder = Test.createTestingModule({ imports: [AppModule] });
+    for (const override of overrides) builder = builder.overrideProvider(override.token).useValue(override.value);
+    const moduleRef = await builder.compile();
     this.app = moduleRef.createNestApplication();
     this.app.setGlobalPrefix('api');
     this.app.useGlobalPipes(new ValidationPipe({
@@ -54,6 +56,12 @@ export class Phase01Harness {
   }
 
   async clean(): Promise<void> {
+    await this.prisma.$executeRawUnsafe(`
+      TRUNCATE TABLE
+        "business_policy_commands",
+        "business_policy_versions",
+        "business_policy_streams";
+    `);
     await this.prisma.auditEvent.deleteMany();
     await this.prisma.authSession.deleteMany();
     await this.prisma.reportingStatementHistory.deleteMany();

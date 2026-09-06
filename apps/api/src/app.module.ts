@@ -26,6 +26,7 @@ import { TeachingExecutionsModule } from './teaching-executions/teaching-executi
 import { ProgressDebtModule } from './progress-debt/progress-debt.module';
 import { ReportingProjectionModule } from './reporting-projection/reporting-projection.module';
 import { ReportingStatementsModule } from './reporting-statements/reporting-statements.module';
+import { BusinessConfigurationModule } from './business-configuration/business-configuration.module';
 
 @Module({
   imports: [
@@ -69,6 +70,7 @@ import { ReportingStatementsModule } from './reporting-statements/reporting-stat
     ProgressDebtModule,
     ReportingProjectionModule,
     ReportingStatementsModule,
+    BusinessConfigurationModule,
   ],
 })
 export class AppModule {}
