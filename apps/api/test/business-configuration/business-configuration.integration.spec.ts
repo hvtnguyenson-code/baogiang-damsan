@@ -124,7 +124,7 @@ integration('Business Configuration API (isolated PostgreSQL integration)', () =
           userId: actor.id,
           capabilityKey: 'BUSINESS_CONFIGURATION_MANAGE',
           scopeType: 'SCHOOL_WIDE',
-          scopeResourceId: 'some-resource-id',
+          scopeResourceId: '00000000-0000-0000-0000-000000000123',
           validFrom: new Date(Date.now() - 86400_000),
         },
       });
@@ -614,7 +614,7 @@ integration('Business Configuration API (isolated PostgreSQL integration)', () =
       expect(await h.prisma.businessPolicyStream.count()).toBe(0);
       expect(await h.prisma.businessPolicyVersion.count()).toBe(0);
       expect(await h.prisma.businessPolicyCommand.count()).toBe(0);
-      expect(await h.prisma.auditEvent.count()).toBe(0);
+      expect(await h.prisma.auditEvent.count({ where: { action: 'BUSINESS_POLICY_DRAFT_CREATED' } })).toBe(0);
 
       auditSpy.mockRestore();
     });

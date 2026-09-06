@@ -320,6 +320,7 @@ export class BusinessConfigurationService {
     } catch (error) {
       if (error instanceof ConflictException || error instanceof BadRequestException || error instanceof NotFoundException) throw error;
       if (this.isRetryableRace(error)) throw conflict();
+      if (this.isPolicyConstraintConflict(error)) throw conflict();
       if (error instanceof Prisma.PrismaClientKnownRequestError && ['P2002', 'P2003', 'P2004', 'P2034'].includes(error.code)) throw conflict();
       if (error instanceof Prisma.PrismaClientUnknownRequestError && /\b(?:40P01|40001)\b/u.test(error.message)) throw conflict();
       throw error;
@@ -336,5 +337,13 @@ export class BusinessConfigurationService {
     if (typeof message === 'string' && /\b(?:40P01|40001)\b/u.test(message)) return true;
     return false;
   }
+
+  private isPolicyConstraintConflict(error: unknown): boolean {
+    const message = (error as { message?: unknown })?.message;
+    return typeof message === 'string'
+      && /\b23P01\b/u.test(message)
+      && /business_policy_versions_no_published_overlap/u.test(message);
+  }
+
   private async successAudit(tx: Prisma.TransactionClient, actor: string, meta: RequestMeta, action: string, id: string, metadata: Record<string, unknown>) { await this.audit.write({ actorUserId: actor, action, entityType: 'BusinessPolicyVersion', entityId: id, requestId: meta.requestId, result: AuditResult.SUCCESS, metadata }, tx); }
 }
