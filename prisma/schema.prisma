@@ -81,6 +81,17 @@ enum HomeroomAssignmentStatus {
   REVERSED
 }
 
+enum BusinessConfigurationResourceKind {
+  SCHOOL_WIDE
+  ACADEMIC_YEAR
+}
+
+enum BusinessPolicyVersionStatus {
+  DRAFT
+  PUBLISHED
+  REVERSED
+}
+
 enum CalendarExceptionScope {
   SCHOOL_WIDE
   GRADE
@@ -236,6 +247,10 @@ model User {
   reportingStatementSeriesSubmitted ReportingStatementSeries[]              @relation("ReportingStatementSeriesSubmitter")
   reportingStatementCommands        ReportingStatementCommand[]             @relation("ReportingStatementCommandActor")
   reportingStatementHistories       ReportingStatementHistory[]             @relation("ReportingStatementHistoryActor")
+  businessPolicyVersionsCreated     BusinessPolicyVersion[]                 @relation("BusinessPolicyVersionCreatedBy")
+  businessPolicyVersionsPublished   BusinessPolicyVersion[]                 @relation("BusinessPolicyVersionPublishedBy")
+  businessPolicyVersionsReversed    BusinessPolicyVersion[]                 @relation("BusinessPolicyVersionReversedBy")
+  businessPolicyCommands            BusinessPolicyCommand[]                 @relation("BusinessPolicyCommandActor")
 
   @@index([status])
   @@map("users")
@@ -467,6 +482,7 @@ model AcademicYear {
   classes                SchoolClass[]
   teachingAssignments    TeachingAssignment[]
   homeroomAssignments    HomeroomAssignment[]
+  businessPolicyStreams  BusinessPolicyStream[]
   timeSlotDefinitions    TimeSlotDefinition[]
   timetableVersions      TimetableVersion[]
   timetableEntries       TimetableEntry[]
@@ -847,6 +863,70 @@ model HomeroomAssignment {
   @@index([teacherUserId, academicYearId, validFrom, validUntil], map: "homeroom_assignments_teacher_year_validity_idx")
   @@index([replacesId], map: "homeroom_assignments_replaces_id_idx")
   @@map("homeroom_assignments")
+}
+
+model BusinessPolicyStream {
+  id           String                            @id @default(uuid()) @db.Uuid
+  familyKey    String                            @map("family_key") @db.VarChar(100)
+  resourceKind BusinessConfigurationResourceKind @map("resource_kind")
+  academicYearId String?                         @map("academic_year_id") @db.Uuid
+  createdAt    DateTime                          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime                          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  academicYear AcademicYear?           @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  versions     BusinessPolicyVersion[]
+
+  @@index([familyKey, resourceKind, academicYearId])
+  @@map("business_policy_streams")
+}
+
+model BusinessPolicyVersion {
+  id                    String                      @id @default(uuid()) @db.Uuid
+  streamId              String                      @map("stream_id") @db.Uuid
+  versionNumber         Int                         @map("version_number")
+  status                BusinessPolicyVersionStatus @default(DRAFT)
+  payload               Json                        @db.JsonB
+  validatorVersion      String                      @map("validator_version") @db.VarChar(100)
+  effectiveFrom         DateTime                    @map("effective_from") @db.Date
+  effectiveUntil        DateTime?                   @map("effective_until") @db.Date
+  draftRevision         Int                         @default(1) @map("draft_revision")
+  createdByUserId       String                      @map("created_by_user_id") @db.Uuid
+  publishedByUserId     String?                     @map("published_by_user_id") @db.Uuid
+  publishedAt           DateTime?                   @map("published_at") @db.Timestamptz(3)
+  replacesVersionId     String?                     @map("replaces_version_id") @db.Uuid
+  correctsVersionId     String?                     @map("corrects_version_id") @db.Uuid
+  reversedByUserId      String?                     @map("reversed_by_user_id") @db.Uuid
+  reversedAt            DateTime?                   @map("reversed_at") @db.Timestamptz(3)
+  correctionReason      String?                     @map("correction_reason") @db.Text
+  createdAt             DateTime                    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime                    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  stream                BusinessPolicyStream       @relation(fields: [streamId], references: [id], onDelete: Restrict)
+  createdBy             User                        @relation("BusinessPolicyVersionCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  publishedBy           User?                       @relation("BusinessPolicyVersionPublishedBy", fields: [publishedByUserId], references: [id], onDelete: Restrict)
+  reversedBy            User?                       @relation("BusinessPolicyVersionReversedBy", fields: [reversedByUserId], references: [id], onDelete: Restrict)
+  replacesVersion       BusinessPolicyVersion?      @relation("BusinessPolicyReplacement", fields: [replacesVersionId], references: [id], onDelete: Restrict)
+  replacementVersions   BusinessPolicyVersion[]     @relation("BusinessPolicyReplacement")
+  correctsVersion       BusinessPolicyVersion?      @relation("BusinessPolicyCorrection", fields: [correctsVersionId], references: [id], onDelete: Restrict)
+  correctedVersions     BusinessPolicyVersion[]     @relation("BusinessPolicyCorrection")
+
+  @@unique([streamId, versionNumber])
+  @@index([streamId, status, effectiveFrom, effectiveUntil])
+  @@map("business_policy_versions")
+}
+
+model BusinessPolicyCommand {
+  id              String   @id @default(uuid()) @db.Uuid
+  actorUserId     String   @map("actor_user_id") @db.Uuid
+  commandId       String   @map("command_id") @db.VarChar(100)
+  fingerprint     String   @db.VarChar(128)
+  result          Json     @db.JsonB
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  actor           User     @relation("BusinessPolicyCommandActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@unique([actorUserId, commandId])
+  @@map("business_policy_commands")
 }
 
 model TimetableVersion {

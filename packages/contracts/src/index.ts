@@ -101,6 +101,7 @@ export type CapabilityScope =
  * Full capability definitions come in Phase 01+.
  */
 export type CapabilityKey =
+  | 'BUSINESS_CONFIGURATION_MANAGE'
   | 'TEACHER_BASE'           // every professional user
   | 'SUBJECT_GROUP_LEAD'     // tổ trưởng capabilities
   | 'APPROVAL_PRINCIPAL'     // hiệu trưởng approval scope
@@ -310,6 +311,15 @@ export interface AuditEventRecord {
   createdAt: string;
 }
 export interface AuditEventListResponse { items: AuditEventRecord[]; page: number; pageSize: number; total: number; }
+
+// ============================================================
+// Business Configuration (P1-021)
+// ============================================================
+export type BusinessConfigurationResource = { kind: 'SCHOOL_WIDE' } | { kind: 'ACADEMIC_YEAR'; academicYearId: string };
+export type BusinessPolicyVersionStatus = 'DRAFT' | 'PUBLISHED' | 'REVERSED';
+export type BusinessPolicyResolutionOutcome = 'RESOLVED' | 'UNKNOWN_POLICY_FAMILY' | 'INVALID_POLICY_RESOURCE' | 'INVALID_EFFECTIVE_DATE' | 'POLICY_NOT_CONFIGURED' | 'POLICY_AMBIGUOUS' | 'POLICY_CORRUPT';
+export interface BusinessPolicyFamilyMetadata { key: string; resourceKind: BusinessConfigurationResource['kind']; validatorVersion: string; publicationEnabled: boolean; downstreamAuthority: string; }
+export interface BusinessPolicyResolution { outcome: BusinessPolicyResolutionOutcome; family: string; resource: BusinessConfigurationResource; requestedCivilDate: CivilDateString; policyVersionId?: string; validatorVersion?: string; payload?: Record<string, unknown>; effectiveFrom?: CivilDateString; effectiveUntil?: CivilDateString | null; }
 
 // ============================================================
 // Teaching execution evidence
