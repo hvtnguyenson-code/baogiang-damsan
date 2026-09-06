@@ -159,6 +159,50 @@ export class BusinessConfigurationService {
   private previousDate(value: string) { const date = this.date(value); date.setUTCDate(date.getUTCDate() - 1); return this.format(date); }
   private fingerprint(value: unknown) { return createHash('sha256').update(this.canonicalJson(value)).digest('hex'); }
   private canonicalJson(value: unknown): string { if (Array.isArray(value)) return `[${value.map((item) => this.canonicalJson(item)).join(',')}]`; if (value && typeof value === 'object') return `{${Object.keys(value as Record<string, unknown>).sort().map((key) => `${JSON.stringify(key)}:${this.canonicalJson((value as Record<string, unknown>)[key])}`).join(',')}}`; return JSON.stringify(value); }
-  private async mutate<T>(actor: string, commandId: string, input: unknown, operation: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> { const fingerprint = this.fingerprint(input); try { return await this.prisma.$transaction(async (tx) => { const receipt = await tx.businessPolicyCommand.findUnique({ where: { actorUserId_commandId: { actorUserId: actor, commandId } } }); if (receipt) { if (receipt.fingerprint !== fingerprint) throw conflict(); return receipt.result as T; } const result = await operation(tx); await tx.businessPolicyCommand.create({ data: { actorUserId: actor, commandId, fingerprint, result: result as Prisma.InputJsonValue } }); return result; }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }); } catch (error) { if (error instanceof ConflictException || error instanceof BadRequestException || error instanceof NotFoundException) throw error; if (error instanceof Prisma.PrismaClientKnownRequestError && ['P2002', 'P2003', 'P2004', 'P2034'].includes(error.code)) throw conflict(); throw error; } }
+  private async mutate<T>(actor: string, commandId: string, input: unknown, operation: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    const fingerprint = this.fingerprint(input);
+    try {
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        try {
+          return await this.prisma.$transaction(
+            async (tx) => {
+              const receipt = await tx.businessPolicyCommand.findUnique({
+                where: { actorUserId_commandId: { actorUserId: actor, commandId } },
+              });
+              if (receipt) {
+                if (receipt.fingerprint !== fingerprint) throw conflict();
+                return receipt.result as T;
+              }
+              const result = await operation(tx);
+              await tx.businessPolicyCommand.create({
+                data: { actorUserId: actor, commandId, fingerprint, result: result as Prisma.InputJsonValue },
+              });
+              return result;
+            },
+            { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+          );
+        } catch (error) {
+          if (!this.isRetryableRace(error) || attempt === 3) throw error;
+        }
+      }
+    } catch (error) {
+      if (error instanceof ConflictException || error instanceof BadRequestException || error instanceof NotFoundException) throw error;
+      if (this.isRetryableRace(error)) throw conflict();
+      if (error instanceof Prisma.PrismaClientKnownRequestError && ['P2002', 'P2003', 'P2004', 'P2034'].includes(error.code)) throw conflict();
+      if (error instanceof Prisma.PrismaClientUnknownRequestError && /\b(?:40P01|40001)\b/u.test(error.message)) throw conflict();
+      throw error;
+    }
+    throw conflict();
+  }
+
+  private isRetryableRace(error: unknown): boolean {
+    if (error instanceof Prisma.PrismaClientKnownRequestError) return error.code === 'P2034';
+    if (error instanceof Prisma.PrismaClientUnknownRequestError) return /\b(?:40P01|40001)\b/u.test(error.message);
+    const code = (error as { code?: unknown })?.code;
+    if (typeof code === 'string' && (code === '40001' || code === '40P01' || code === 'P2034')) return true;
+    const message = (error as { message?: unknown })?.message;
+    if (typeof message === 'string' && /\b(?:40P01|40001)\b/u.test(message)) return true;
+    return false;
+  }
   private async successAudit(tx: Prisma.TransactionClient, actor: string, meta: RequestMeta, action: string, id: string, metadata: Record<string, unknown>) { await this.audit.write({ actorUserId: actor, action, entityType: 'BusinessPolicyVersion', entityId: id, requestId: meta.requestId, result: AuditResult.SUCCESS, metadata }, tx); }
 }
