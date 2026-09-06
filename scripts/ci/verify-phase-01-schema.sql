@@ -9,9 +9,20 @@ BEGIN
     SELECT count(*), count(DISTINCT "key")
       INTO capability_count, distinct_count
       FROM "capability_definitions";
-    IF capability_count <> 37 OR distinct_count <> 37 THEN
+    IF capability_count <> 38 OR distinct_count <> 38 THEN
         RAISE EXCEPTION 'Capability seed is not idempotent: count %, distinct %',
             capability_count, distinct_count;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+          FROM "capability_definitions"
+         WHERE "key" = 'BUSINESS_CONFIGURATION_MANAGE'
+           AND cardinality("allowed_scope_types") = 1
+           AND "allowed_scope_types" @> ARRAY['SCHOOL_WIDE']::text[]
+           AND "allowed_scope_types" <@ ARRAY['SCHOOL_WIDE']::text[]
+    ) THEN
+        RAISE EXCEPTION 'BUSINESS_CONFIGURATION_MANAGE must allow exactly SCHOOL_WIDE';
     END IF;
 
     IF NOT EXISTS (SELECT 1 FROM "capability_definitions" WHERE "key" = 'REPORTING_STATEMENT_SUBMIT' AND cardinality("allowed_scope_types") = 1 AND "allowed_scope_types" @> ARRAY['PERSONAL']::text[] AND "allowed_scope_types" <@ ARRAY['PERSONAL']::text[]) THEN
