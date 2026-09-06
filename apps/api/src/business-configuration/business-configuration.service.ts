@@ -4,37 +4,126 @@ import { BusinessConfigurationResource, BusinessPolicyResolution } from '@baogia
 import { createHash } from 'node:crypto';
 import { AuditService } from '../audit/audit.service';
 import { RequestMeta } from '../auth/auth.types';
+import { isCivilDate } from '../common/validation/civil-date';
 import { PrismaService } from '../prisma/prisma.service';
-import { BUSINESS_POLICY_REGISTRY, BusinessPolicyFamilyDefinition, familyFor, validateResource } from './business-policy-registry';
+import {
+  BUSINESS_POLICY_REGISTRY,
+  BusinessPolicyFamilyDefinition,
+  currentValidator,
+  familyFor,
+  validateResource,
+  validatorForVersion,
+} from './business-policy-registry';
 import { CreateBusinessPolicyDraftDto, EditBusinessPolicyDraftDto, LifecycleBusinessPolicyDto } from './dto';
 
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/u;
 const conflict = () => new ConflictException('BUSINESS_POLICY_CONFLICT');
 type Db = Prisma.TransactionClient | PrismaService;
 
 @Injectable()
 export class BusinessConfigurationService {
   constructor(private readonly prisma: PrismaService, private readonly audit: AuditService, @Inject(BUSINESS_POLICY_REGISTRY) private readonly families: readonly BusinessPolicyFamilyDefinition[]) {}
-  familiesList() { return this.families.map(({ validate: _validate, ...family }) => family); }
+  familiesList() { return this.families.map(({ validators: _validators, ...family }) => family); }
 
   async list(page = 1, pageSize = 25) { const [items, total] = await this.prisma.$transaction([this.prisma.businessPolicyStream.findMany({ include: { versions: { orderBy: { versionNumber: 'desc' }, take: 1 } }, orderBy: { createdAt: 'desc' }, skip: (page - 1) * pageSize, take: pageSize }), this.prisma.businessPolicyStream.count()]); return { items, page, pageSize, total }; }
   async get(streamId: string) { const stream = await this.prisma.businessPolicyStream.findUnique({ where: { id: streamId }, include: { versions: { orderBy: { versionNumber: 'asc' } } } }); if (!stream) throw new NotFoundException('Không tìm thấy policy stream.'); return stream; }
 
   async createDraft(dto: CreateBusinessPolicyDraftDto, actor: string, meta: RequestMeta) {
     return this.mutate(actor, dto.commandId, dto, async (tx) => {
-      const family = this.family(dto.family); const resource = this.resource(dto.resource); validateResource(family, resource); const payload = family.validate(dto.payload); const dates = this.dates(dto.effectiveFrom, dto.effectiveUntil);
+      const family = this.family(dto.family);
+      const resource = this.resource(dto.resource);
+      validateResource(family, resource);
+      const validator = currentValidator(family);
+      const payload = validator.validate(dto.payload);
+      const dates = this.dates(dto.effectiveFrom, dto.effectiveUntil);
       if (resource.kind === 'ACADEMIC_YEAR' && !await tx.academicYear.findUnique({ where: { id: resource.academicYearId }, select: { id: true } })) throw new BadRequestException('INVALID_POLICY_RESOURCE');
       let stream = await tx.businessPolicyStream.findFirst({ where: { familyKey: family.key, resourceKind: resource.kind, academicYearId: resource.kind === 'ACADEMIC_YEAR' ? resource.academicYearId : null } });
       if (!stream) stream = await tx.businessPolicyStream.create({ data: { familyKey: family.key, resourceKind: resource.kind, academicYearId: resource.kind === 'ACADEMIC_YEAR' ? resource.academicYearId : null } });
       const last = await tx.businessPolicyVersion.aggregate({ where: { streamId: stream.id }, _max: { versionNumber: true } });
-      const version = await tx.businessPolicyVersion.create({ data: { streamId: stream.id, versionNumber: (last._max.versionNumber ?? 0) + 1, payload: payload as Prisma.InputJsonValue, validatorVersion: family.validatorVersion, effectiveFrom: this.date(dates.from), effectiveUntil: dates.until ? this.date(dates.until) : null, createdByUserId: actor } });
-      await this.successAudit(tx, actor, meta, 'BUSINESS_POLICY_DRAFT_CREATED', version.id, { family: family.key, resource, validatorVersion: family.validatorVersion, commandId: dto.commandId, payloadFingerprint: this.fingerprint(payload) });
+      const version = await tx.businessPolicyVersion.create({
+        data: {
+          streamId: stream.id,
+          versionNumber: (last._max.versionNumber ?? 0) + 1,
+          payload: payload as Prisma.InputJsonValue,
+          validatorVersion: validator.version,
+          effectiveFrom: this.date(dates.from),
+          effectiveUntil: dates.until ? this.date(dates.until) : null,
+          createdByUserId: actor,
+        },
+      });
+      await this.successAudit(tx, actor, meta, 'BUSINESS_POLICY_DRAFT_CREATED', version.id, {
+        family: family.key,
+        resource,
+        versionId: version.id,
+        effectiveFrom: dates.from,
+        effectiveUntil: dates.until,
+        validatorVersion: validator.version,
+        commandId: dto.commandId,
+        payloadFingerprint: this.fingerprint(payload),
+      });
       return { outcome: 'CREATED', streamId: stream.id, versionId: version.id };
     });
   }
 
-  async editDraft(id: string, dto: EditBusinessPolicyDraftDto, actor: string, meta: RequestMeta) { return this.mutate(actor, dto.commandId, dto, async (tx) => { const current = await tx.businessPolicyVersion.findUnique({ where: { id }, include: { stream: true } }); if (!current) throw new NotFoundException('Không tìm thấy policy version.'); if (current.status !== 'DRAFT' || current.draftRevision !== dto.expectedRevision) throw conflict(); const family = this.family(current.stream.familyKey); const payload = family.validate(dto.payload); const updated = await tx.businessPolicyVersion.updateMany({ where: { id, status: 'DRAFT', draftRevision: dto.expectedRevision }, data: { payload: payload as Prisma.InputJsonValue, draftRevision: { increment: 1 } } }); if (updated.count !== 1) throw conflict(); await this.successAudit(tx, actor, meta, 'BUSINESS_POLICY_DRAFT_EDITED', id, { commandId: dto.commandId, payloadFingerprint: this.fingerprint(payload) }); return { outcome: 'UPDATED', versionId: id }; }); }
-  async publish(id: string, dto: LifecycleBusinessPolicyDto, actor: string, meta: RequestMeta) { return this.mutate(actor, dto.commandId, dto, async (tx) => { const row = await tx.businessPolicyVersion.findUnique({ where: { id }, include: { stream: true } }); if (!row) throw new NotFoundException('Không tìm thấy policy version.'); const family = this.family(row.stream.familyKey); if (!family.publicationEnabled) throw new BadRequestException('POLICY_FAMILY_PUBLICATION_DISABLED'); validateResource(family, this.streamResource(row.stream)); family.validate(row.payload); if (row.validatorVersion !== family.validatorVersion) throw new BadRequestException('POLICY_CORRUPT'); if (row.status !== 'DRAFT') throw conflict(); const updated = await tx.businessPolicyVersion.updateMany({ where: { id, status: 'DRAFT' }, data: { status: 'PUBLISHED', publishedByUserId: actor, publishedAt: new Date() } }); if (updated.count !== 1) throw conflict(); await this.successAudit(tx, actor, meta, 'BUSINESS_POLICY_PUBLISHED', id, { commandId: dto.commandId, family: family.key }); return { outcome: 'PUBLISHED', versionId: id }; }); }
+  async editDraft(id: string, dto: EditBusinessPolicyDraftDto, actor: string, meta: RequestMeta) {
+    return this.mutate(actor, dto.commandId, dto, async (tx) => {
+      const current = await tx.businessPolicyVersion.findUnique({ where: { id }, include: { stream: true } });
+      if (!current) throw new NotFoundException('Không tìm thấy policy version.');
+      if (current.status !== 'DRAFT' || current.draftRevision !== dto.expectedRevision) throw conflict();
+      const family = this.family(current.stream.familyKey);
+      const validator = validatorForVersion(family, current.validatorVersion);
+      if (!validator) throw new BadRequestException('POLICY_CORRUPT');
+      const payload = validator.validate(dto.payload);
+      const updated = await tx.businessPolicyVersion.updateMany({
+        where: { id, status: 'DRAFT', draftRevision: dto.expectedRevision },
+        data: { payload: payload as Prisma.InputJsonValue, draftRevision: { increment: 1 } },
+      });
+      if (updated.count !== 1) throw conflict();
+      const resultingRevision = current.draftRevision + 1;
+      await this.successAudit(tx, actor, meta, 'BUSINESS_POLICY_DRAFT_EDITED', id, {
+        family: family.key,
+        resource: this.streamResource(current.stream),
+        versionId: id,
+        effectiveFrom: this.format(current.effectiveFrom),
+        effectiveUntil: current.effectiveUntil ? this.format(current.effectiveUntil) : null,
+        validatorVersion: current.validatorVersion,
+        commandId: dto.commandId,
+        payloadFingerprint: this.fingerprint(payload),
+        draftRevision: resultingRevision,
+      });
+      return { outcome: 'UPDATED', versionId: id };
+    });
+  }
+
+  async publish(id: string, dto: LifecycleBusinessPolicyDto, actor: string, meta: RequestMeta) {
+    return this.mutate(actor, dto.commandId, dto, async (tx) => {
+      const row = await tx.businessPolicyVersion.findUnique({ where: { id }, include: { stream: true } });
+      if (!row) throw new NotFoundException('Không tìm thấy policy version.');
+      const family = this.family(row.stream.familyKey);
+      if (!family.publicationEnabled) throw new BadRequestException('POLICY_FAMILY_PUBLICATION_DISABLED');
+      const resource = this.streamResource(row.stream);
+      validateResource(family, resource);
+      const validator = validatorForVersion(family, row.validatorVersion);
+      if (!validator) throw new BadRequestException('POLICY_CORRUPT');
+      validator.validate(row.payload);
+      if (row.status !== 'DRAFT') throw conflict();
+      const updated = await tx.businessPolicyVersion.updateMany({
+        where: { id, status: 'DRAFT' },
+        data: { status: 'PUBLISHED', publishedByUserId: actor, publishedAt: new Date() },
+      });
+      if (updated.count !== 1) throw conflict();
+      await this.successAudit(tx, actor, meta, 'BUSINESS_POLICY_PUBLISHED', id, {
+        family: family.key,
+        resource,
+        versionId: id,
+        effectiveFrom: this.format(row.effectiveFrom),
+        effectiveUntil: row.effectiveUntil ? this.format(row.effectiveUntil) : null,
+        validatorVersion: row.validatorVersion,
+        commandId: dto.commandId,
+      });
+      return { outcome: 'PUBLISHED', versionId: id };
+    });
+  }
+
   async replace(id: string, dto: LifecycleBusinessPolicyDto, actor: string, meta: RequestMeta) {
     return this.mutate(actor, dto.commandId, dto, async (tx) => {
       const source = await tx.businessPolicyVersion.findUnique({ where: { id }, include: { stream: true } });
@@ -43,7 +132,8 @@ export class BusinessConfigurationService {
       if (!family.publicationEnabled || !dto.effectiveFrom || !dto.payload) throw new BadRequestException('INVALID_POLICY_REPLACEMENT');
       const from = this.dates(dto.effectiveFrom).from;
       if (from <= this.businessDate() || from <= this.format(source.effectiveFrom)) throw new BadRequestException('INVALID_POLICY_REPLACEMENT');
-      const payload = family.validate(dto.payload);
+      const validator = currentValidator(family);
+      const payload = validator.validate(dto.payload);
       const nextNumber = (await tx.businessPolicyVersion.aggregate({ where: { streamId: source.streamId }, _max: { versionNumber: true } }))._max.versionNumber! + 1;
       const previousUntil = this.previousDate(from);
       const close = await tx.businessPolicyVersion.updateMany({ where: { id, status: 'PUBLISHED', effectiveUntil: null }, data: { effectiveUntil: this.date(previousUntil) } });
@@ -54,7 +144,7 @@ export class BusinessConfigurationService {
           versionNumber: nextNumber,
           status: 'PUBLISHED',
           payload: payload as Prisma.InputJsonValue,
-          validatorVersion: family.validatorVersion,
+          validatorVersion: validator.version,
           effectiveFrom: this.date(from),
           effectiveUntil: null,
           createdByUserId: actor,
@@ -63,22 +153,45 @@ export class BusinessConfigurationService {
           replacesVersionId: source.id,
         },
       });
-      await this.successAudit(tx, actor, meta, 'BUSINESS_POLICY_REPLACED', source.id, { commandId: dto.commandId, replacementVersionId: replacement.id, effectiveFrom: from });
+      await this.successAudit(tx, actor, meta, 'BUSINESS_POLICY_REPLACED', source.id, {
+        family: family.key,
+        resource: this.streamResource(source.stream),
+        sourceVersionId: source.id,
+        replacementVersionId: replacement.id,
+        priorEffectiveFrom: this.format(source.effectiveFrom),
+        priorEffectiveUntil: previousUntil,
+        effectiveFrom: from,
+        effectiveUntil: null,
+        validatorVersion: validator.version,
+        replacesVersionId: source.id,
+        commandId: dto.commandId,
+      });
       return { outcome: 'REPLACED', versionId: replacement.id };
     });
   }
+
   async retire(id: string, dto: LifecycleBusinessPolicyDto, actor: string, meta: RequestMeta) {
     return this.mutate(actor, dto.commandId, dto, async (tx) => {
-      const row = await tx.businessPolicyVersion.findUnique({ where: { id } });
+      const row = await tx.businessPolicyVersion.findUnique({ where: { id }, include: { stream: true } });
       if (!row || row.status !== 'PUBLISHED' || row.effectiveUntil !== null || !dto.effectiveUntil) throw conflict();
       const until = this.dates(this.format(row.effectiveFrom), dto.effectiveUntil).until!;
       if (until < this.businessDate()) throw conflict();
       const updated = await tx.businessPolicyVersion.updateMany({ where: { id, status: 'PUBLISHED', effectiveUntil: null }, data: { effectiveUntil: this.date(until) } });
       if (updated.count !== 1) throw conflict();
-      await this.successAudit(tx, actor, meta, 'BUSINESS_POLICY_RETIRED', id, { commandId: dto.commandId, effectiveUntil: until, reason: dto.reason?.trim() || null });
+      const family = this.family(row.stream.familyKey);
+      await this.successAudit(tx, actor, meta, 'BUSINESS_POLICY_RETIRED', id, {
+        family: family.key,
+        resource: this.streamResource(row.stream),
+        versionId: id,
+        effectiveFrom: this.format(row.effectiveFrom),
+        effectiveUntil: until,
+        reason: dto.reason?.trim() || null,
+        commandId: dto.commandId,
+      });
       return { outcome: 'RETIRED', versionId: id };
     });
   }
+
   async correct(id: string, dto: LifecycleBusinessPolicyDto, actor: string, meta: RequestMeta) {
     return this.mutate(actor, dto.commandId, dto, async (tx) => {
       if (!dto.reason?.trim() || !dto.payload) throw new BadRequestException('CORRECTION_REASON_REQUIRED');
@@ -86,7 +199,8 @@ export class BusinessConfigurationService {
       if (!source || source.status !== 'PUBLISHED') throw conflict();
       const family = this.family(source.stream.familyKey);
       if (!family.publicationEnabled) throw new BadRequestException('POLICY_FAMILY_PUBLICATION_DISABLED');
-      const payload = family.validate(dto.payload);
+      const validator = currentValidator(family);
+      const payload = validator.validate(dto.payload);
       const dates = dto.effectiveFrom
         ? this.dates(dto.effectiveFrom, dto.effectiveUntil)
         : { from: this.format(source.effectiveFrom), until: source.effectiveUntil ? this.format(source.effectiveUntil) : null };
@@ -102,7 +216,7 @@ export class BusinessConfigurationService {
           versionNumber: nextNumber,
           status: 'PUBLISHED',
           payload: payload as Prisma.InputJsonValue,
-          validatorVersion: family.validatorVersion,
+          validatorVersion: validator.version,
           effectiveFrom: this.date(dates.from),
           effectiveUntil: dates.until ? this.date(dates.until) : null,
           createdByUserId: actor,
@@ -111,13 +225,24 @@ export class BusinessConfigurationService {
           correctsVersionId: source.id,
         },
       });
-      await this.successAudit(tx, actor, meta, 'BUSINESS_POLICY_CORRECTED', id, { commandId: dto.commandId, correctedVersionId: corrected.id, reason: dto.reason.trim() });
+      await this.successAudit(tx, actor, meta, 'BUSINESS_POLICY_CORRECTED', id, {
+        family: family.key,
+        resource: this.streamResource(source.stream),
+        sourceVersionId: source.id,
+        correctedVersionId: corrected.id,
+        effectiveFrom: dates.from,
+        effectiveUntil: dates.until,
+        validatorVersion: validator.version,
+        correctsVersionId: source.id,
+        reason: dto.reason.trim(),
+        commandId: dto.commandId,
+      });
       return { outcome: 'CORRECTED', versionId: corrected.id };
     });
   }
 
   async resolveEffectiveBusinessPolicy(familyKey: string, resource: BusinessConfigurationResource, civilDate: string, db: Db = this.prisma): Promise<BusinessPolicyResolution> {
-    if (!ISO_DATE.test(civilDate)) return { outcome: 'INVALID_EFFECTIVE_DATE', family: familyKey, resource, requestedCivilDate: civilDate as never };
+    if (!isCivilDate(civilDate)) return { outcome: 'INVALID_EFFECTIVE_DATE', family: familyKey, resource, requestedCivilDate: civilDate as never };
     const family = familyFor(this.families, familyKey);
     if (!family) return { outcome: 'UNKNOWN_POLICY_FAMILY', family: familyKey, resource, requestedCivilDate: civilDate as never };
     try { validateResource(family, resource); } catch { return { outcome: 'INVALID_POLICY_RESOURCE', family: familyKey, resource, requestedCivilDate: civilDate as never }; }
@@ -128,8 +253,9 @@ export class BusinessConfigurationService {
     if (rows.length !== 1) return { outcome: 'POLICY_AMBIGUOUS', family: familyKey, resource, requestedCivilDate: civilDate as never };
     const row = rows[0];
     try {
-      if (row.validatorVersion !== family.validatorVersion) throw new Error('UNKNOWN_VALIDATOR_VERSION');
-      const payload = family.validate(row.payload);
+      const validator = validatorForVersion(family, row.validatorVersion);
+      if (!validator) throw new Error('UNKNOWN_VALIDATOR_VERSION');
+      const payload = validator.validate(row.payload);
       if (row.replacesVersionId) {
         const ancestor = await db.businessPolicyVersion.findUnique({ where: { id: row.replacesVersionId } });
         if (!ancestor || ancestor.streamId !== row.streamId || ancestor.effectiveUntil === null || ancestor.effectiveUntil >= row.effectiveFrom) {
@@ -151,7 +277,7 @@ export class BusinessConfigurationService {
   private family(key: string) { const family = familyFor(this.families, key); if (!family) throw new BadRequestException('UNKNOWN_POLICY_FAMILY'); return family; }
   private resource(resource: { kind: 'SCHOOL_WIDE' | 'ACADEMIC_YEAR'; academicYearId?: string }): BusinessConfigurationResource { if (resource.kind === 'SCHOOL_WIDE') { if (resource.academicYearId !== undefined) throw new BadRequestException('INVALID_POLICY_RESOURCE'); return { kind: 'SCHOOL_WIDE' }; } return { kind: 'ACADEMIC_YEAR', academicYearId: resource.academicYearId! }; }
   private streamResource(stream: { resourceKind: 'SCHOOL_WIDE' | 'ACADEMIC_YEAR'; academicYearId: string | null }): BusinessConfigurationResource { return stream.resourceKind === 'SCHOOL_WIDE' ? { kind: 'SCHOOL_WIDE' } : { kind: 'ACADEMIC_YEAR', academicYearId: stream.academicYearId! }; }
-  private dates(from: string, until?: string) { if (!ISO_DATE.test(from) || (until !== undefined && !ISO_DATE.test(until)) || (until && until < from)) throw new BadRequestException('INVALID_EFFECTIVE_DATE'); return { from, until: until ?? null }; }
+  private dates(from: string, until?: string) { if (!isCivilDate(from) || (until !== undefined && !isCivilDate(until)) || (until && until < from)) throw new BadRequestException('INVALID_EFFECTIVE_DATE'); return { from, until: until ?? null }; }
   private date(value: string) { return new Date(`${value}T00:00:00.000Z`); }
   private format(value: Date) { return value.toISOString().slice(0, 10); }
   businessCivilDate() { const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date()); return `${parts.find((item) => item.type === 'year')!.value}-${parts.find((item) => item.type === 'month')!.value}-${parts.find((item) => item.type === 'day')!.value}`; }

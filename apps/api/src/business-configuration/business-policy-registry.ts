@@ -1,13 +1,18 @@
 import { BadRequestException, InjectionToken } from '@nestjs/common';
 import { BusinessConfigurationResource } from '@baogiang/contracts';
 
+export interface BusinessPolicyPayloadValidator {
+  version: string;
+  validate(payload: unknown): Record<string, unknown>;
+}
+
 export interface BusinessPolicyFamilyDefinition {
   key: string;
   resourceKind: BusinessConfigurationResource['kind'];
-  validatorVersion: string;
+  currentValidatorVersion: string;
+  validators: readonly BusinessPolicyPayloadValidator[];
   publicationEnabled: boolean;
   downstreamAuthority: string;
-  validate(payload: unknown): Record<string, unknown>;
 }
 
 /** Production has intentionally no enabled policy semantics until its owner task closes them. */
@@ -22,7 +27,26 @@ export function strictObject(payload: unknown): Record<string, unknown> {
 export function familyFor(
   families: readonly BusinessPolicyFamilyDefinition[],
   key: string,
-): BusinessPolicyFamilyDefinition | undefined { return families.find((family) => family.key === key); }
+): BusinessPolicyFamilyDefinition | undefined {
+  return families.find((family) => family.key === key);
+}
+
+export function validatorForVersion(
+  family: BusinessPolicyFamilyDefinition,
+  version: string,
+): BusinessPolicyPayloadValidator | undefined {
+  return family.validators.find((validator) => validator.version === version);
+}
+
+export function currentValidator(
+  family: BusinessPolicyFamilyDefinition,
+): BusinessPolicyPayloadValidator {
+  const validator = validatorForVersion(family, family.currentValidatorVersion);
+  if (!validator) {
+    throw new Error(`Current validator ${family.currentValidatorVersion} not found for family ${family.key}`);
+  }
+  return validator;
+}
 
 export function validateResource(family: BusinessPolicyFamilyDefinition, resource: BusinessConfigurationResource): void {
   if (family.resourceKind !== resource.kind) throw new BadRequestException('INVALID_POLICY_RESOURCE');

@@ -79,6 +79,9 @@ BEGIN
     IF NEW.status = 'PUBLISHED' AND OLD.effective_until IS NOT NULL AND NEW.effective_until IS DISTINCT FROM OLD.effective_until THEN
       RAISE EXCEPTION 'closed published business policy effective_until cannot be modified';
     END IF;
+    IF NEW.status = 'REVERSED' AND NEW.effective_until IS DISTINCT FROM OLD.effective_until THEN
+      RAISE EXCEPTION 'reversing published business policy cannot modify effective_until';
+    END IF;
   END IF;
   RETURN NEW;
 END $$;

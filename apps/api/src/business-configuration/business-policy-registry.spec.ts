@@ -8,6 +8,13 @@ describe('Business policy registry boundary', () => {
     expect(() => strictObject([])).toThrow(BadRequestException);
   });
   it('rejects a resource kind outside the family contract', () => {
-    expect(() => validateResource({ key: 'TEST', resourceKind: 'SCHOOL_WIDE', validatorVersion: 'v1', publicationEnabled: true, downstreamAuthority: 'test', validate: strictObject }, { kind: 'ACADEMIC_YEAR', academicYearId: '00000000-0000-4000-8000-000000000001' })).toThrow('INVALID_POLICY_RESOURCE');
+    expect(() => validateResource({
+      key: 'TEST',
+      resourceKind: 'SCHOOL_WIDE',
+      currentValidatorVersion: 'v1',
+      validators: [{ version: 'v1', validate: strictObject }],
+      publicationEnabled: true,
+      downstreamAuthority: 'test',
+    }, { kind: 'ACADEMIC_YEAR', academicYearId: '00000000-0000-4000-8000-000000000001' })).toThrow('INVALID_POLICY_RESOURCE');
   });
 });

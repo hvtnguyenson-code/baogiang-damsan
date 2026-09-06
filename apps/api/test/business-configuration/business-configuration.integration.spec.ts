@@ -132,6 +132,26 @@ integration('Business Configuration API (isolated PostgreSQL integration)', () =
       expect(res.status).toBe(403);
     });
 
+    it('denies access when user status is DISABLED', async () => {
+      const actor = await h.actor({ grants: [{ capabilityKey: 'BUSINESS_CONFIGURATION_MANAGE', scopeType: 'SCHOOL_WIDE' }] });
+      await h.prisma.user.update({
+        where: { id: actor.id },
+        data: { status: UserStatus.DISABLED },
+      });
+      const res = await actor.agent.get('/api/business-configuration/families');
+      expect(res.status).toBe(401);
+    });
+
+    it('denies access when user is locked', async () => {
+      const actor = await h.actor({ grants: [{ capabilityKey: 'BUSINESS_CONFIGURATION_MANAGE', scopeType: 'SCHOOL_WIDE' }] });
+      await h.prisma.user.update({
+        where: { id: actor.id },
+        data: { lockedUntil: new Date(Date.now() + 3_600_000) },
+      });
+      const res = await actor.agent.get('/api/business-configuration/families');
+      expect(res.status).toBe(401);
+    });
+
     it('denies mutation and writes NO success audit on unauthorized attempts', async () => {
       const unauthorized = await h.actor({ grants: [{ capabilityKey: 'SYSTEM_ADMIN' }] });
       const res = await unauthorized.agent
@@ -254,7 +274,7 @@ integration('Business Configuration API (isolated PostgreSQL integration)', () =
 
       const v = await h.prisma.businessPolicyVersion.findUnique({ where: { id: versionId } });
       expect(v?.draftRevision).toBe(2);
-      expect((v?.payload as any).threshold).toBe(15);
+      expect((v?.payload as Record<string, unknown>).threshold).toBe(15);
 
       // Stale revision edit (expectedRevision = 1 fails now that revision is 2)
       const editRes2 = await manager.agent
@@ -516,7 +536,7 @@ integration('Business Configuration API (isolated PostgreSQL integration)', () =
       // Source still exists, is REVERSED, payload untouched
       const sourceRow = await h.prisma.businessPolicyVersion.findUnique({ where: { id: vSource } });
       expect(sourceRow?.status).toBe('REVERSED');
-      expect((sourceRow?.payload as any).threshold).toBe(5);
+      expect((sourceRow?.payload as Record<string, unknown>).threshold).toBe(5);
       expect(sourceRow?.correctionReason).toBe('Đính chính mức ngưỡng theo quyết định mới');
       expect(sourceRow?.reversedByUserId).toBe(manager.id);
       expect(sourceRow?.reversedAt).not.toBeNull();
@@ -525,7 +545,7 @@ integration('Business Configuration API (isolated PostgreSQL integration)', () =
       const correctedRow = await h.prisma.businessPolicyVersion.findUnique({ where: { id: vCorrected } });
       expect(correctedRow?.status).toBe('PUBLISHED');
       expect(correctedRow?.correctsVersionId).toBe(vSource);
-      expect((correctedRow?.payload as any).threshold).toBe(8);
+      expect((correctedRow?.payload as Record<string, unknown>).threshold).toBe(8);
 
       // Resolver returns corrected policy
       const res = await manager.agent.get('/api/business-configuration/resolve?family=TEST_BOOLEAN_THRESHOLD&kind=SCHOOL_WIDE&civilDate=2026-09-15');
@@ -603,31 +623,86 @@ integration('Business Configuration API (isolated PostgreSQL integration)', () =
   // =========================================================================
   // Section 20: Corruption Detection
   // =========================================================================
+  // =========================================================================
+  // Section 21: Corruption handling
+  // =========================================================================
   describe('Corruption handling', () => {
     it('detects unknown validator version, invalid payload, or corrupt lineage', async () => {
       const manager = await h.actor({ grants: [{ capabilityKey: 'BUSINESS_CONFIGURATION_MANAGE' }] });
 
-      const draft = await manager.agent
-        .post('/api/business-configuration/policies/drafts')
-        .set('Origin', testOrigin)
-        .send(body('corrupt-draft', { enabled: true, threshold: 10 }));
-      await manager.agent.post(`/api/business-configuration/policy-versions/${draft.body.versionId}/publish`).set('Origin', testOrigin).send({ commandId: 'corrupt-pub' });
-
-      // 1. Stored validator version mismatch
-      await h.prisma.businessPolicyVersion.update({
-        where: { id: draft.body.versionId },
-        data: { validatorVersion: 'unknown_version_99' },
+      // Create stream
+      const stream = await h.prisma.businessPolicyStream.create({
+        data: {
+          familyKey: 'TEST_BOOLEAN_THRESHOLD',
+          resourceKind: 'SCHOOL_WIDE',
+        },
       });
+
+      // 1. Stored validator version unknown in registry (direct INSERT fixture with complete publication evidence)
+      const corruptValidatorVersion = await h.prisma.businessPolicyVersion.create({
+        data: {
+          streamId: stream.id,
+          versionNumber: 1,
+          status: 'PUBLISHED',
+          payload: { enabled: true, threshold: 10 },
+          validatorVersion: 'unknown_version_99',
+          effectiveFrom: new Date('2026-09-01T00:00:00.000Z'),
+          effectiveUntil: new Date('2026-09-10T00:00:00.000Z'),
+          createdByUserId: manager.id,
+          publishedByUserId: manager.id,
+          publishedAt: new Date(),
+        },
+      });
+
       const res1 = await manager.agent.get('/api/business-configuration/resolve?family=TEST_BOOLEAN_THRESHOLD&kind=SCHOOL_WIDE&civilDate=2026-09-05');
       expect(res1.body.outcome).toBe('POLICY_CORRUPT');
 
-      // 2. Corrupt payload violating validator
-      await h.prisma.businessPolicyVersion.update({
-        where: { id: draft.body.versionId },
-        data: { validatorVersion: 'v1', payload: { corrupt: true } },
+      // 2. Corrupt payload violating validator (direct INSERT fixture)
+      await h.prisma.businessPolicyVersion.create({
+        data: {
+          streamId: stream.id,
+          versionNumber: 2,
+          status: 'PUBLISHED',
+          payload: { corrupt: true },
+          validatorVersion: 'v1',
+          effectiveFrom: new Date('2026-09-11T00:00:00.000Z'),
+          effectiveUntil: new Date('2026-09-20T00:00:00.000Z'),
+          createdByUserId: manager.id,
+          publishedByUserId: manager.id,
+          publishedAt: new Date(),
+        },
       });
-      const res2 = await manager.agent.get('/api/business-configuration/resolve?family=TEST_BOOLEAN_THRESHOLD&kind=SCHOOL_WIDE&civilDate=2026-09-05');
+
+      const res2 = await manager.agent.get('/api/business-configuration/resolve?family=TEST_BOOLEAN_THRESHOLD&kind=SCHOOL_WIDE&civilDate=2026-09-15');
       expect(res2.body.outcome).toBe('POLICY_CORRUPT');
+
+      // 3. Corrupt lineage: correctsVersionId pointing to non-REVERSED version (direct INSERT fixture)
+      await h.prisma.businessPolicyVersion.create({
+        data: {
+          streamId: stream.id,
+          versionNumber: 3,
+          status: 'PUBLISHED',
+          payload: { enabled: true, threshold: 30 },
+          validatorVersion: 'v1',
+          effectiveFrom: new Date('2026-09-21T00:00:00.000Z'),
+          effectiveUntil: new Date('2026-09-30T00:00:00.000Z'),
+          createdByUserId: manager.id,
+          publishedByUserId: manager.id,
+          publishedAt: new Date(),
+          correctsVersionId: corruptValidatorVersion.id, // ancestor is PUBLISHED, not REVERSED
+        },
+      });
+
+      const res3 = await manager.agent.get('/api/business-configuration/resolve?family=TEST_BOOLEAN_THRESHOLD&kind=SCHOOL_WIDE&civilDate=2026-09-25');
+      expect(res3.body.outcome).toBe('POLICY_CORRUPT');
+
+      // 4. Immutable DB trigger verification: direct SQL update on published row is rejected
+      await expect(
+        h.prisma.businessPolicyVersion.update({
+          where: { id: corruptValidatorVersion.id },
+          data: { payload: { tampered: true } },
+        }),
+      ).rejects.toThrow();
     });
   });
 
@@ -648,8 +723,8 @@ integration('Business Configuration API (isolated PostgreSQL integration)', () =
       ]);
 
       const statuses = [
-        (res1 as PromiseFulfilledResult<any>).value.status,
-        (res2 as PromiseFulfilledResult<any>).value.status,
+        (res1 as PromiseFulfilledResult<{ status: number }>).value.status,
+        (res2 as PromiseFulfilledResult<{ status: number }>).value.status,
       ].sort();
       expect(statuses).toEqual([200, 409]);
       expect(await h.prisma.businessPolicyVersion.count({ where: { status: 'PUBLISHED' } })).toBe(1);
@@ -672,8 +747,8 @@ integration('Business Configuration API (isolated PostgreSQL integration)', () =
       ]);
 
       const statuses = [
-        (res1 as PromiseFulfilledResult<any>).value.status,
-        (res2 as PromiseFulfilledResult<any>).value.status,
+        (res1 as PromiseFulfilledResult<{ status: number }>).value.status,
+        (res2 as PromiseFulfilledResult<{ status: number }>).value.status,
       ].sort();
       expect(statuses).toEqual([200, 409]);
       expect(await h.prisma.businessPolicyVersion.count({ where: { status: 'PUBLISHED', replacesVersionId: draft.body.versionId } })).toBe(1);

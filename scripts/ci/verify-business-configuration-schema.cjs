@@ -47,6 +47,7 @@ const requiredMigrationTokens = [
   'business_policy_versions_immutable_guard',
   'business_policy_commands_shape_check',
   'business_policy_commands_actor_command_key',
+  'reversing published business policy cannot modify effective_until',
 ];
 for (const token of requiredMigrationTokens) {
   assert.match(migration, new RegExp(token), `Missing migration token: ${token}`);
@@ -57,8 +58,19 @@ const configManage = CAPABILITIES.find(([key]) => key === 'BUSINESS_CONFIGURATIO
 assert.ok(configManage, 'BUSINESS_CONFIGURATION_MANAGE must be registered in capability catalog');
 assert.deepEqual(configManage[2], ['SCHOOL_WIDE'], 'BUSINESS_CONFIGURATION_MANAGE allowed scope must be strictly SCHOOL_WIDE');
 
-// 7. Production registry isolation
+// 7. Production registry isolation & multi-validator structure
 assert.match(registrySource, /PRODUCTION_BUSINESS_POLICY_FAMILIES:\s+readonly\s+BusinessPolicyFamilyDefinition\[\]\s+=\s+\[\];/);
 assert.doesNotMatch(registrySource, /TEST_BOOLEAN_THRESHOLD/);
+assert.match(registrySource, /currentValidatorVersion:\s+string;/);
+assert.match(registrySource, /validators:\s+readonly\s+BusinessPolicyPayloadValidator\[\];/);
+assert.match(registrySource, /export function validatorForVersion/);
+assert.match(registrySource, /export function currentValidator/);
+
+// 8. SQL runtime verifier assertions check
+const sqlVerifier = fs.readFileSync(path.join(root, 'scripts/ci/verify-business-configuration-schema.sql'), 'utf8');
+assert.match(sqlVerifier, /reversing published business policy cannot modify effective_until/);
+assert.match(sqlVerifier, /business policy replacement must remain in its stream/);
+assert.match(sqlVerifier, /published business policy semantics are immutable/);
+assert.match(sqlVerifier, /reversed business policy versions are immutable/);
 
 console.log('Business Configuration static schema verification PASS.');

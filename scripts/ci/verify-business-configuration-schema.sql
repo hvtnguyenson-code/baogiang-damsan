@@ -15,6 +15,7 @@ DECLARE
   v_v_published UUID;
   v_v_reversed UUID;
   v_cmd_id UUID;
+  v_expected_failure BOOLEAN;
 BEGIN
   -- Setup test dependencies
   INSERT INTO "users" ("id", "username", "password_hash", "status")
@@ -213,6 +214,7 @@ BEGIN
   );
 
   -- 17. cross-stream lineage FAIL. (replaces_version_id pointing to version in v_stream_sw)
+  v_expected_failure := FALSE;
   BEGIN
     INSERT INTO "business_policy_versions" (
       "stream_id", "version_number", "status", "payload", "validator_version",
@@ -221,9 +223,16 @@ BEGIN
       v_stream_lineage, 2, 'DRAFT', '{"a":2}', 'v1',
       DATE '2026-09-11', NULL, v_user_id, v_v_published
     );
-    RAISE EXCEPTION 'Invariant 17 failed: cross-stream lineage must fail trigger';
-  EXCEPTION WHEN raise_exception THEN NULL;
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM = 'business policy replacement must remain in its stream' THEN
+      v_expected_failure := TRUE;
+    ELSE
+      RAISE;
+    END IF;
   END;
+  IF NOT v_expected_failure THEN
+    RAISE EXCEPTION 'Invariant 17 failed: cross-stream lineage must fail trigger';
+  END IF;
 
   -- 18. valid same-stream lineage PASS.
   INSERT INTO "business_policy_versions" (
@@ -321,46 +330,132 @@ BEGIN
   -- =========================================================================
 
   -- 24. direct SQL update payload FAIL.
+  v_expected_failure := FALSE;
   BEGIN
     UPDATE "business_policy_versions" SET "payload" = '{"tampered":true}' WHERE "id" = v_v_published;
-    RAISE EXCEPTION 'Invariant 24 failed: direct update payload on PUBLISHED version must fail';
-  EXCEPTION WHEN raise_exception THEN NULL;
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM = 'published business policy semantics are immutable' THEN
+      v_expected_failure := TRUE;
+    ELSE
+      RAISE;
+    END IF;
   END;
+  IF NOT v_expected_failure THEN
+    RAISE EXCEPTION 'Invariant 24 failed: direct update payload on PUBLISHED version must fail';
+  END IF;
 
   -- 25. direct SQL update validator version FAIL.
+  v_expected_failure := FALSE;
   BEGIN
     UPDATE "business_policy_versions" SET "validator_version" = 'v999' WHERE "id" = v_v_published;
-    RAISE EXCEPTION 'Invariant 25 failed: direct update validator_version on PUBLISHED version must fail';
-  EXCEPTION WHEN raise_exception THEN NULL;
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM = 'published business policy semantics are immutable' THEN
+      v_expected_failure := TRUE;
+    ELSE
+      RAISE;
+    END IF;
   END;
+  IF NOT v_expected_failure THEN
+    RAISE EXCEPTION 'Invariant 25 failed: direct update validator_version on PUBLISHED version must fail';
+  END IF;
 
   -- 26. direct SQL update effectiveFrom FAIL.
+  v_expected_failure := FALSE;
   BEGIN
     UPDATE "business_policy_versions" SET "effective_from" = DATE '2026-01-01' WHERE "id" = v_v_published;
-    RAISE EXCEPTION 'Invariant 26 failed: direct update effective_from on PUBLISHED version must fail';
-  EXCEPTION WHEN raise_exception THEN NULL;
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM = 'published business policy semantics are immutable' THEN
+      v_expected_failure := TRUE;
+    ELSE
+      RAISE;
+    END IF;
   END;
+  IF NOT v_expected_failure THEN
+    RAISE EXCEPTION 'Invariant 26 failed: direct update effective_from on PUBLISHED version must fail';
+  END IF;
 
   -- 27. prohibited stream/resource identity mutation FAIL.
+  v_expected_failure := FALSE;
   BEGIN
     UPDATE "business_policy_versions" SET "stream_id" = v_stream_ay WHERE "id" = v_v_published;
-    RAISE EXCEPTION 'Invariant 27 failed: direct update stream_id on PUBLISHED version must fail';
-  EXCEPTION WHEN raise_exception THEN NULL;
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM = 'published business policy semantics are immutable' THEN
+      v_expected_failure := TRUE;
+    ELSE
+      RAISE;
+    END IF;
   END;
+  IF NOT v_expected_failure THEN
+    RAISE EXCEPTION 'Invariant 27 failed: direct update stream_id on PUBLISHED version must fail';
+  END IF;
 
   -- =========================================================================
-  -- F. Allowed lifecycle mutation (28 - 29)
+  -- F. Allowed lifecycle mutation and Reversal Immutability (28 - 29d)
   -- =========================================================================
 
   -- 28. intended effectiveUntil close PASS. (v_v2 is open-ended PUBLISHED: 2026-10-01..NULL)
   UPDATE "business_policy_versions" SET "effective_until" = DATE '2026-10-15' WHERE "id" = v_v2;
 
   -- 29. unrelated semantic mutation still FAIL (updating closed effective_until or payload).
+  v_expected_failure := FALSE;
   BEGIN
     UPDATE "business_policy_versions" SET "payload" = '{"hacked":true}' WHERE "id" = v_v2;
-    RAISE EXCEPTION 'Invariant 29 failed: semantic mutation on closed PUBLISHED version must fail';
-  EXCEPTION WHEN raise_exception THEN NULL;
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM = 'published business policy semantics are immutable' THEN
+      v_expected_failure := TRUE;
+    ELSE
+      RAISE;
+    END IF;
   END;
+  IF NOT v_expected_failure THEN
+    RAISE EXCEPTION 'Invariant 29 failed: semantic mutation on closed PUBLISHED version must fail';
+  END IF;
+
+  -- 29b. PUBLISHED -> REVERSED with modified effective_until FAIL.
+  v_expected_failure := FALSE;
+  BEGIN
+    UPDATE "business_policy_versions"
+    SET "status" = 'REVERSED',
+        "reversed_by_user_id" = v_user2_id,
+        "reversed_at" = NOW(),
+        "correction_reason" = 'Attempt to modify effective_until during reversal',
+        "effective_until" = DATE '2026-10-20'
+    WHERE "id" = v_v2;
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM = 'reversing published business policy cannot modify effective_until' THEN
+      v_expected_failure := TRUE;
+    ELSE
+      RAISE;
+    END IF;
+  END;
+  IF NOT v_expected_failure THEN
+    RAISE EXCEPTION 'Invariant 29b failed: reversing published version with changed effective_until must fail';
+  END IF;
+
+  -- 29c. PUBLISHED -> REVERSED with same effectivity PASS.
+  UPDATE "business_policy_versions"
+  SET "status" = 'REVERSED',
+      "reversed_by_user_id" = v_user2_id,
+      "reversed_at" = NOW(),
+      "correction_reason" = 'Legitimate reversal with preserved effective_until'
+  WHERE "id" = v_v2;
+
+  -- 29d. REVERSED row is completely immutable FAIL.
+  v_expected_failure := FALSE;
+  BEGIN
+    UPDATE "business_policy_versions"
+    SET "correction_reason" = 'Attempt to modify immutable reversed record'
+    WHERE "id" = v_v2;
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM = 'reversed business policy versions are immutable' THEN
+      v_expected_failure := TRUE;
+    ELSE
+      RAISE;
+    END IF;
+  END;
+  IF NOT v_expected_failure THEN
+    RAISE EXCEPTION 'Invariant 29d failed: mutating REVERSED version must fail';
+  END IF;
 
   -- =========================================================================
   -- G. Command receipt invariants (30 - 32)
