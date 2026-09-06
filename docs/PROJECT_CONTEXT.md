@@ -83,7 +83,7 @@ Repository hiện có các boundary đã được review/version hóa và không
 - CurricularTeachingExecution và SpecialActivityParticipationExecution;
 - progress/debt/late projection;
 - reporting projection, Personal Reporting Projection và Reporting Statement;
-- accepted ADR-046 architecture and implemented P1-021 retained Business Configuration persistence/control plane: typed allowlisted families, versioned validator registry, retained version/effectivity history, command idempotency, same-transaction audit, strict separation from `SystemSetting`, environment/secrets and technical/deployment configuration, with production family registry intentionally empty;
+- accepted ADR-046 architecture, implemented P1-021 retained Business Configuration persistence/control plane, and implemented P1-022 capability-gated administration workspace: typed allowlisted families, versioned validator registry, retained version/effectivity history, command idempotency, same-transaction audit, typed/version-aware code-defined UI adapters with triple identity, exact `BUSINESS_CONFIGURATION_MANAGE / SCHOOL_WIDE` capability gate, strict separation from `SystemSetting`, environment/secrets and technical/deployment configuration (no raw JSON, no generic key/value editor), with production backend family registry and production UI adapter registry intentionally empty;
 - Windows production deployment control plane and operator-evidence tooling.
 
 Chi tiết KEEP/REALIGN/RESTORE nằm trong `docs/governance/PRE-PILOT-TRACEABILITY-MATRIX.md`.
@@ -96,7 +96,6 @@ Project hiện đang realign vì một số minimum-core/deferred quyết địn
 - HĐTN CLASS/GRADE/SCHOOL programme planning;
 - exact per-slot special-program staffing;
 - coordinator authority;
-- Business Configuration administration workspace (P1-022);
 - delayed go-live + historical pre-operational execution;
 - PPCT authoritative workbook import;
 - native Đam San timetable workbook adapter;

@@ -5,7 +5,15 @@
 - **Tên nhiệm vụ:** Business Configuration administration workspace
 - **Nhánh làm việc (Branch):** `feat/business-configuration-administration-workspace-022`
 - **Canonical Main Base SHA:** `d9e546f3ee3f29dba139eeed400ea888eaf5e902`
-- **Trạng thái (Task Status):** `IN_REVIEW — forward correction after independent remote audit; PR not yet opened`
+- **Trạng thái (Task Status):** `CLOSED by SYNC-P1-022`
+- **Bằng chứng đóng nhiệm vụ (Closure Evidence):**
+  - Canonical Main Base SHA: `d9e546f3ee3f29dba139eeed400ea888eaf5e902`
+  - Final Reviewed Feature HEAD: `cf1ec8c394edcdd0c4a0e416c6a35708fa6f331d`
+  - Đánh giá độc lập GitHub (Independent Review): `PASS`
+  - Pull Request: `#109 — feat(config): add business configuration administration workspace`
+  - Exact-head PR CI: `#371` (Run ID: `34044755481`) — `SUCCESS`
+  - Merge commit vào main: `fd3248e57124c948998bd78ec69d1341da2a08c1`
+  - Authoritative Post-merge main CI: `#372` (Run ID: `34045209071`) — `SUCCESS`
 - **Tiền đề phụ thuộc (Dependencies):**
   - `P1-020`: `CLOSED` — Kiến trúc Business Configuration Control Plane (ADR-046).
   - `P1-021`: `CLOSED` — Business Configuration Database Schema & Control Plane Service.
@@ -97,9 +105,43 @@ export interface BusinessPolicyUiAdapter<T extends Record<string, unknown> = Rec
 
 ---
 
-## 6. Bằng chứng kiểm thử & Xác minh cục bộ (Verification & Evidence)
-- Khai báo test adapter đa phiên bản (`v1.0.0` và `v2.0.0`) cùng test-only `ACADEMIC_YEAR` adapter trong test suite `business-configuration-workspace.test.tsx`.
-- Thử nghiệm hiển thị ngày ISO Date từ Prisma (`2026-09-05T00:00:00.000Z`) chứng minh không bị lệch múi giờ.
-- Kiểm thử đầy đủ 8 kịch bản hồi quy phiên bản hóa (version-aware regression tests).
-- Bằng chứng cục bộ được ghi nhận qua các lệnh `lint`, `typecheck`, `build` và chạy test Vitest thành công.
-- Chưa có bằng chứng PR, merge hoặc deploy (PR not yet opened).
+## 6. Bằng chứng kiểm thử & Xác minh (Verification & Evidence)
+
+### 6.1. Bằng chứng kiểm thử cục bộ (Local Evidence)
+- **Kiểm thử mục tiêu P1-022:** `46/46 tests PASS` (`business-configuration-workspace.test.tsx`), bao gồm:
+  - Khai báo test adapter đa phiên bản (`v1.0.0` và `v2.0.0`) cùng test-only `ACADEMIC_YEAR` adapter;
+  - Thử nghiệm hiển thị ngày ISO Date từ Prisma (`2026-09-05T00:00:00.000Z`) chứng minh không bị lệch múi giờ;
+  - Kiểm thử đầy đủ các kịch bản hồi quy phiên bản hóa (version-aware regression tests);
+  - Kiểm thử tra cứu định danh tam phân nghiêm ngặt (triple identity: `familyKey` + `validatorVersion` + `resourceKind`);
+  - Kiểm thử ẩn nút Edit/Publish cho bản nháp khi family bị tạm dừng công bố (`publicationEnabled === false`);
+  - Kiểm thử loại trừ các nhóm chính sách không có adapter hoặc sai resourceKind khỏi danh sách tra cứu ngày.
+- **Kiểm thử quyền hạn & điều hướng:** `34/34 tests PASS` (`capability-navigation.test.tsx`).
+- **Toàn bộ test suite Web:** `17/17 test files PASS`, `236/236 tests PASS` (`npm run test:unit -w apps/web`).
+- **Chất lượng mã nguồn & Build:**
+  - `npm run lint -w packages/contracts`: `PASS` (0 cảnh báo, 0 lỗi).
+  - `npm run typecheck -w packages/contracts`: `PASS`.
+  - `npm run build -w packages/contracts`: `PASS`.
+  - `npm run lint -w apps/web`: `PASS` (0 warnings, 0 errors).
+  - `npm run typecheck -w apps/web`: `PASS`.
+  - `npm run build -w apps/web`: `PASS` (Vite production bundle build thành công).
+  - `git diff --check`: `PASS`.
+
+### 6.2. Bằng chứng CI GitHub trên exact-head (PR #109 CI Evidence)
+- **Workflow Run:** CI `#371` (Run ID: `34044755481`) trên commit exact head `cf1ec8c394edcdd0c4a0e416c6a35708fa6f331d`.
+- **Kết quả:** `SUCCESS` trên toàn bộ các job:
+  - Schema / static gates;
+  - Lint & typecheck;
+  - API unit tests;
+  - Web unit tests;
+  - PostgreSQL API integration tests;
+  - Production build;
+  - Playwright smoke tests;
+  - Windows deployment contract verification.
+
+### 6.3. Bằng chứng Post-merge main CI (Authoritative Merge Evidence)
+- **Workflow Run:** CI `#372` (Run ID: `34045209071`) trên nhánh `main` tại SHA `fd3248e57124c948998bd78ec69d1341da2a08c1`.
+- **Kết quả:** `SUCCESS`.
+- **Trạng thái môi trường Production:**
+  - Production backend family registry và production UI adapter registry tiếp tục giữ trạng thái rỗng (`PRODUCTION_BUSINESS_POLICY_FAMILIES = []`, `PRODUCTION_BUSINESS_POLICY_UI_ADAPTERS = []`).
+  - Không có bất kỳ lệnh deploy nào được kích hoạt.
+  - Không có migration hay đột biến dữ liệu production nào phát sinh từ P1-022.
