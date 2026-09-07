@@ -76,7 +76,7 @@ Repository hiện có các boundary đã được review/version hóa và không
 - exact TimeSlotDefinition revisions và real-time collision;
 - retained TimetableVersion/TimetableEntry + lifecycle/historical resolution;
 - timetable import profile/alias/canonical preview infrastructure;
-- accepted ADR-047 Đam San native timetable workbook architecture: exact four-sheet/boundary contract, class-view/teacher-view peer reconciliation, structural `TeacherSourceRowRef`, exact derived teacher-code identity, morning/afternoon session separation, fail-closed mismatch taxonomy và privacy-sanitized deterministic fixture; runtime adapter vẫn thuộc `P2-040`, selective session update/carry-forward vẫn thuộc `P2-050`;
+- accepted ADR-047 Đam San native timetable workbook architecture, implemented P2-040 native adapter runtime (`DamSanNativeTimetableAdapter`) và bidirectional peer reconciliation: exact four-sheet/boundary contract, class-view/teacher-view peer reconciliation, structural `TeacherSourceRowRef`, exact derived teacher-code identity, fail-closed mismatch taxonomy, 455 normal teacher-linked curricular rows persisted as canonical `TimetableEntry`, 120 special non-peer slots recognized/validated without fake assignments, transient raw XLSX SHA-256 participating in confirm request fingerprinting without schema modifications, và privacy-sanitized deterministic fixture; selective morning/afternoon session update và explicit carry-forward vẫn thuộc `P2-050`;
 - PPCT shared plan/version/item/revision/lineage/class association;
 - operational overlays;
 - SpecialActivity exact-slot/frozen-class/staffing/collision runtime primitive;
@@ -99,15 +99,13 @@ Project hiện đang realign vì một số minimum-core/deferred quyết địn
 - coordinator authority;
 - delayed go-live + historical pre-operational execution;
 - PPCT authoritative workbook import;
-- native Đam San timetable workbook adapter;
-- class-view/teacher-view peer reconciliation;
-- morning/afternoon selective timetable update + explicit carry-forward;
+- morning/afternoon selective timetable update + explicit carry-forward (P2-050);
 - SpecialActivity workload/reporting;
 - deferred WorkloadAdjustmentRule when official adjusted workload is in scope;
 - PWA/Telegram pilot integration;
 - first-cert HTTP-01/TLS authority and actual VPS evidence.
 
-Không suy ra rằng một area đã hoàn chỉnh chỉ vì minimum-core implementation hiện có PASS CI. Với Đam San native timetable, ADR-047 đã đóng kiến trúc/evidence; các dòng re-entry ở trên vẫn tồn tại vì runtime enforcement và selective update chưa được triển khai.
+Không suy ra rằng một area đã hoàn chỉnh chỉ vì minimum-core implementation hiện có PASS CI. Với Đam San native timetable, ADR-047 architecture và P2-040 native adapter runtime đã hoàn tất và đóng; selective morning/afternoon update và explicit carry-forward vẫn là khoảng trống đang chờ triển khai ở P2-050.
 
 ## Layering rule
 
