@@ -20,10 +20,13 @@ import {
 } from './workbook-canonicalization';
 import { ParsedWorkbook } from './workbook-parser.types';
 import {
+  DAMSAN_NATIVE_AFTERNOON_SHEET_SENTINEL,
   DAMSAN_NATIVE_HEADER_ROW_SENTINEL,
+  DAMSAN_NATIVE_MORNING_SHEET_SENTINEL,
   DAMSAN_NATIVE_SHEETS,
   DAMSAN_NATIVE_SHEET_SENTINEL,
   DamSanNativeErrorCode,
+  DamSanNativeTimetableException,
   NativeSession,
   SafeEvidence,
 } from './damsan-native-adapter.types';
@@ -80,14 +83,15 @@ export class DamSanNativeTimetableAdapter {
       });
     }
 
-    const structure = validateAndExtractWorkbookStructure(parsed);
-    const reconciliation = reconcileNativeWorkbook(structure);
+    const sessionMode = dto.nativeSessionMode ?? 'BOTH';
+    const structure = validateAndExtractWorkbookStructure(parsed, sessionMode);
+    const reconciliation = reconcileNativeWorkbook(structure, sessionMode);
 
     const target = await this.resolveTarget(dto, db);
     const context = await this.loadResolutionContext(revision.profileId, dto.academicYearId, db);
 
     const issues: TimetableImportPreviewIssue[] = [];
-    const rows: TimetableImportCanonicalPreviewRow[] = [];
+    const authoredRows: TimetableImportCanonicalPreviewRow[] = [];
     const transient: EnrichedTimetableEntry[] = [];
 
     // 0. Verify effective date matches target week
@@ -100,80 +104,84 @@ export class DamSanNativeTimetableAdapter {
       ));
     }
 
-    // 1. Resolve Classes from Row 6 headers for both Morning and Afternoon
+    // 1. Resolve Classes from Row 6 headers for selected session(s)
     const morningClassMap = new Map<string, { id: string; code: string; gradeLevel: number }>();
-    const morningResolvedClassIds = new Set<string>();
-    for (const classCode of structure.morningClasses) {
-      const resolved = this.resolveClass(classCode, context.classes, context.classAliases);
-      if (resolved.conflict) {
-        issues.push(this.issue(
-          'CLASS_IDENTITY_CONFLICT',
-          6,
-          `Morning class header "${classCode}" has conflicting canonical identity.`,
-          { sheet: DAMSAN_NATIVE_SHEETS.MORNING_CLASS, classCode },
-        ));
-      } else if (resolved.inactive) {
-        issues.push(this.issue(
-          'CLASS_INACTIVE',
-          6,
-          `Morning class header "${classCode}" resolves to an inactive class.`,
-          { sheet: DAMSAN_NATIVE_SHEETS.MORNING_CLASS, classCode },
-        ));
-      } else if (!resolved.item) {
-        issues.push(this.issue(
-          DamSanNativeErrorCode.TKB_NATIVE_CLASS_HEADER_UNKNOWN,
-          6,
-          `Morning class header "${classCode}" was not found in active classes.`,
-          { sheet: DAMSAN_NATIVE_SHEETS.MORNING_CLASS, classCode },
-        ));
-      } else if (morningResolvedClassIds.has(resolved.item.id)) {
-        issues.push(this.issue(
-          'CLASS_IDENTITY_CONFLICT',
-          6,
-          `Morning class header "${classCode}" resolves to duplicate canonical class identity "${resolved.item.code}".`,
-          { sheet: DAMSAN_NATIVE_SHEETS.MORNING_CLASS, classCode },
-        ));
-      } else {
-        morningResolvedClassIds.add(resolved.item.id);
-        morningClassMap.set(classCode, resolved.item);
+    if (sessionMode === 'BOTH' || sessionMode === 'MORNING') {
+      const morningResolvedClassIds = new Set<string>();
+      for (const classCode of structure.morningClasses) {
+        const resolved = this.resolveClass(classCode, context.classes, context.classAliases);
+        if (resolved.conflict) {
+          issues.push(this.issue(
+            'CLASS_IDENTITY_CONFLICT',
+            6,
+            `Morning class header "${classCode}" has conflicting canonical identity.`,
+            { sheet: DAMSAN_NATIVE_SHEETS.MORNING_CLASS, classCode },
+          ));
+        } else if (resolved.inactive) {
+          issues.push(this.issue(
+            'CLASS_INACTIVE',
+            6,
+            `Morning class header "${classCode}" resolves to an inactive class.`,
+            { sheet: DAMSAN_NATIVE_SHEETS.MORNING_CLASS, classCode },
+          ));
+        } else if (!resolved.item) {
+          issues.push(this.issue(
+            DamSanNativeErrorCode.TKB_NATIVE_CLASS_HEADER_UNKNOWN,
+            6,
+            `Morning class header "${classCode}" was not found in active classes.`,
+            { sheet: DAMSAN_NATIVE_SHEETS.MORNING_CLASS, classCode },
+          ));
+        } else if (morningResolvedClassIds.has(resolved.item.id)) {
+          issues.push(this.issue(
+            'CLASS_IDENTITY_CONFLICT',
+            6,
+            `Morning class header "${classCode}" resolves to duplicate canonical class identity "${resolved.item.code}".`,
+            { sheet: DAMSAN_NATIVE_SHEETS.MORNING_CLASS, classCode },
+          ));
+        } else {
+          morningResolvedClassIds.add(resolved.item.id);
+          morningClassMap.set(classCode, resolved.item);
+        }
       }
     }
 
     const afternoonClassMap = new Map<string, { id: string; code: string; gradeLevel: number }>();
-    const afternoonResolvedClassIds = new Set<string>();
-    for (const classCode of structure.afternoonClasses) {
-      const resolved = this.resolveClass(classCode, context.classes, context.classAliases);
-      if (resolved.conflict) {
-        issues.push(this.issue(
-          'CLASS_IDENTITY_CONFLICT',
-          6,
-          `Afternoon class header "${classCode}" has conflicting canonical identity.`,
-          { sheet: DAMSAN_NATIVE_SHEETS.AFTERNOON_CLASS, classCode },
-        ));
-      } else if (resolved.inactive) {
-        issues.push(this.issue(
-          'CLASS_INACTIVE',
-          6,
-          `Afternoon class header "${classCode}" resolves to an inactive class.`,
-          { sheet: DAMSAN_NATIVE_SHEETS.AFTERNOON_CLASS, classCode },
-        ));
-      } else if (!resolved.item) {
-        issues.push(this.issue(
-          DamSanNativeErrorCode.TKB_NATIVE_CLASS_HEADER_UNKNOWN,
-          6,
-          `Afternoon class header "${classCode}" was not found in active classes.`,
-          { sheet: DAMSAN_NATIVE_SHEETS.AFTERNOON_CLASS, classCode },
-        ));
-      } else if (afternoonResolvedClassIds.has(resolved.item.id)) {
-        issues.push(this.issue(
-          'CLASS_IDENTITY_CONFLICT',
-          6,
-          `Afternoon class header "${classCode}" resolves to duplicate canonical class identity "${resolved.item.code}".`,
-          { sheet: DAMSAN_NATIVE_SHEETS.AFTERNOON_CLASS, classCode },
-        ));
-      } else {
-        afternoonResolvedClassIds.add(resolved.item.id);
-        afternoonClassMap.set(classCode, resolved.item);
+    if (sessionMode === 'BOTH' || sessionMode === 'AFTERNOON') {
+      const afternoonResolvedClassIds = new Set<string>();
+      for (const classCode of structure.afternoonClasses) {
+        const resolved = this.resolveClass(classCode, context.classes, context.classAliases);
+        if (resolved.conflict) {
+          issues.push(this.issue(
+            'CLASS_IDENTITY_CONFLICT',
+            6,
+            `Afternoon class header "${classCode}" has conflicting canonical identity.`,
+            { sheet: DAMSAN_NATIVE_SHEETS.AFTERNOON_CLASS, classCode },
+          ));
+        } else if (resolved.inactive) {
+          issues.push(this.issue(
+            'CLASS_INACTIVE',
+            6,
+            `Afternoon class header "${classCode}" resolves to an inactive class.`,
+            { sheet: DAMSAN_NATIVE_SHEETS.AFTERNOON_CLASS, classCode },
+          ));
+        } else if (!resolved.item) {
+          issues.push(this.issue(
+            DamSanNativeErrorCode.TKB_NATIVE_CLASS_HEADER_UNKNOWN,
+            6,
+            `Afternoon class header "${classCode}" was not found in active classes.`,
+            { sheet: DAMSAN_NATIVE_SHEETS.AFTERNOON_CLASS, classCode },
+          ));
+        } else if (afternoonResolvedClassIds.has(resolved.item.id)) {
+          issues.push(this.issue(
+            'CLASS_IDENTITY_CONFLICT',
+            6,
+            `Afternoon class header "${classCode}" resolves to duplicate canonical class identity "${resolved.item.code}".`,
+            { sheet: DAMSAN_NATIVE_SHEETS.AFTERNOON_CLASS, classCode },
+          ));
+        } else {
+          afternoonResolvedClassIds.add(resolved.item.id);
+          afternoonClassMap.set(classCode, resolved.item);
+        }
       }
     }
 
@@ -282,7 +290,7 @@ export class DamSanNativeTimetableAdapter {
         TEACHER: slot.derivedTeacherCode,
       };
 
-      rows.push({
+      authoredRows.push({
         sourceRowNumber: classSlot.rowNumber,
         weekday: classSlot.weekday,
         timeSlotDefinitionId: timeSlot.id,
@@ -316,7 +324,94 @@ export class DamSanNativeTimetableAdapter {
       } as EnrichedTimetableEntry);
     }
 
-    // 5. Add duplicate issues and timetable-wide validation
+    // 5. Load Baseline and Perform Exact Carry-Forward for Selective Modes
+    const baseline = await this.loadBaseline(dto.academicYearId, target.effectiveFrom, db);
+
+    if (sessionMode !== 'BOTH' && !baseline.version) {
+      throw new DamSanNativeTimetableException(
+        DamSanNativeErrorCode.TKB_NATIVE_CARRY_FORWARD_BASELINE_MISSING,
+        `Cannot selectively import ${sessionMode} timetable without an active or superseded canonical baseline effective at ${target.effectiveFrom}.`,
+        { expected: target.effectiveFrom },
+      );
+    }
+
+    const carriedRows: TimetableImportCanonicalPreviewRow[] = [];
+    if (sessionMode !== 'BOTH' && baseline.version && baseline.entries.length > 0) {
+      const slotMap = new Map(context.slots.map((s) => [s.id, s]));
+      const classMap = new Map(context.classes.map((c) => [c.id, c]));
+      const subjectMapById = new Map(context.subjects.map((s) => [s.id, s]));
+      const userMapById = new Map(context.users.map((u) => [u.id, u]));
+      const assignmentMapById = new Map(context.assignments.map((a) => [a.id, a]));
+
+      for (const entry of baseline.entries) {
+        const slotDef = slotMap.get(entry.timeSlotDefinitionId);
+        // Only carry forward rows whose session is NOT authored by this request
+        if (slotDef && slotDef.session === sessionMode) {
+          continue;
+        }
+
+        const schoolClass = classMap.get(entry.schoolClassId);
+        const subject = subjectMapById.get(entry.subjectId);
+        const user = userMapById.get(entry.teacherUserId);
+        const assignment = assignmentMapById.get(entry.teachingAssignmentId);
+
+        carriedRows.push({
+          sourceRowNumber: 0,
+          weekday: entry.weekday,
+          timeSlotDefinitionId: entry.timeSlotDefinitionId,
+          schoolClassId: entry.schoolClassId,
+          schoolClassCode: schoolClass?.code ?? '',
+          subjectId: entry.subjectId,
+          subjectCode: subject?.code ?? '',
+          teachingAssignmentId: entry.teachingAssignmentId,
+          teacherUserId: entry.teacherUserId,
+          teacherDisplayName: user?.profile?.displayName ?? '',
+          teacherStaffCode: user?.profile?.staffCode ?? null,
+          normalizedSourceValues: {
+            WEEKDAY: entry.weekday,
+            SESSION: slotDef?.session === 'MORNING' ? 'Sáng' : slotDef?.session === 'AFTERNOON' ? 'Chiều' : (slotDef?.session ?? ''),
+            PERIOD_ORDINAL: slotDef ? String(slotDef.ordinal) : '',
+            SCHOOL_CLASS: schoolClass?.code ?? '',
+            SUBJECT: subject?.code ?? '',
+            TEACHER: user?.profile?.staffCode ?? user?.profile?.displayName ?? '',
+          },
+        });
+
+        transient.push({
+          id: `carried-entry-${entry.id}`,
+          timetableVersionId: 'preview',
+          academicYearId: dto.academicYearId,
+          weekday: entry.weekday,
+          timeSlotDefinitionId: entry.timeSlotDefinitionId,
+          schoolClassId: entry.schoolClassId,
+          subjectId: entry.subjectId,
+          teachingAssignmentId: entry.teachingAssignmentId,
+          teacherUserId: entry.teacherUserId,
+          createdAt: entry.createdAt,
+          timeSlotDefinition: (slotDef ?? {
+            id: entry.timeSlotDefinitionId,
+            session: 'MORNING',
+            ordinal: 1,
+            startTime: new Date('1970-01-01T07:00:00.000Z'),
+            endTime: new Date('1970-01-01T07:45:00.000Z'),
+            isActive: true,
+            allowRegularTeaching: true,
+          }) as unknown as EnrichedTimetableEntry['timeSlotDefinition'],
+          schoolClass: (schoolClass ?? { id: entry.schoolClassId, code: '', status: 'ACTIVE' }) as unknown as EnrichedTimetableEntry['schoolClass'],
+          subject: (subject ?? { id: entry.subjectId, code: '', status: 'ACTIVE' }) as unknown as EnrichedTimetableEntry['subject'],
+          teacher: (user ?? { id: entry.teacherUserId, status: 'ACTIVE', profile: { displayName: '', staffCode: null, isTeachingStaff: true } }) as unknown as EnrichedTimetableEntry['teacher'],
+          teachingAssignment: (assignment ?? {
+            id: entry.teachingAssignmentId,
+            validFrom: target.effectiveFrom ? parseCivilDate(target.effectiveFrom) : new Date('2026-09-01T00:00:00.000Z'),
+            validUntil: null,
+          }) as unknown as EnrichedTimetableEntry['teachingAssignment'],
+        } as EnrichedTimetableEntry);
+      }
+    }
+
+    const rows = [...authoredRows, ...carriedRows];
+
+    // 6. Add duplicate issues and timetable-wide validation on composed timetable
     this.addDuplicateIssues(rows, issues);
     for (const validation of evaluateTimetableEntries({
       entries: transient,
@@ -335,14 +430,21 @@ export class DamSanNativeTimetableAdapter {
 
     const orderedIssues = sortPreviewIssues(issues);
     const blockingIssueCount = orderedIssues.filter((item) => item.severity === 'ERROR').length;
-    const baseline = await this.loadBaseline(dto.academicYearId, target.effectiveFrom, db);
     const diff = blockingIssueCount === 0
       ? computePreviewDiff(rows.map(this.diffRow), baseline.entries.map(this.baselineDiffRow))
       : null;
 
-    const sheetName = DAMSAN_NATIVE_SHEET_SENTINEL;
+    const sheetName = sessionMode === 'MORNING'
+      ? DAMSAN_NATIVE_MORNING_SHEET_SENTINEL
+      : sessionMode === 'AFTERNOON'
+        ? DAMSAN_NATIVE_AFTERNOON_SHEET_SENTINEL
+        : DAMSAN_NATIVE_SHEET_SENTINEL;
     const headerRowNumber = DAMSAN_NATIVE_HEADER_ROW_SENTINEL;
-    const sourceRowCount = structure.morningClassSlots.length + structure.afternoonClassSlots.length;
+    const sourceRowCount = sessionMode === 'MORNING'
+      ? structure.morningClassSlots.length
+      : sessionMode === 'AFTERNOON'
+        ? structure.afternoonClassSlots.length
+        : structure.morningClassSlots.length + structure.afternoonClassSlots.length;
 
     return {
       profileId: revision.profileId,
@@ -366,6 +468,13 @@ export class DamSanNativeTimetableAdapter {
       warningCount: orderedIssues.filter((item) => item.severity === 'WARNING').length,
       canConfirm: blockingIssueCount === 0,
       baseline: { date: target.effectiveFrom, timetableVersion: baseline.version },
+      composition: {
+        mode: sessionMode,
+        baselineTimetableVersionId: baseline.version?.id ?? null,
+        authoredEntryCount: authoredRows.length,
+        carriedForwardEntryCount: carriedRows.length,
+        finalEntryCount: rows.length,
+      },
       diff,
     };
   }

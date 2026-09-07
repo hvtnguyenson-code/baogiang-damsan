@@ -2,7 +2,7 @@ import { AcademicWeekday } from '@prisma/client';
 import { parseCivilDate } from '../common/validation/civil-date';
 import { MAX_PARSER_CELL_TEXT_LENGTH } from './workbook-limits';
 import { ParsedWorkbook, ParsedWorkbookCell, ParsedWorkbookSheet } from './workbook-parser.types';
-import { TimetableImportPreviewIssueCode } from '@baogiang/contracts';
+import { TimetableImportNativeSessionMode, TimetableImportPreviewIssueCode } from '@baogiang/contracts';
 import {
   ALL_DAMSAN_NATIVE_SHEETS,
   DAMSAN_NATIVE_BOUNDARIES,
@@ -39,21 +39,42 @@ export function normalizeSheetName(name: string): string {
   return name.trim().normalize('NFKC');
 }
 
-export function validateSheetStructure(workbook: ParsedWorkbook): void {
-  if (workbook.sheets.length !== ALL_DAMSAN_NATIVE_SHEETS.length) {
-    throw new DamSanNativeTimetableException(
-      DamSanNativeErrorCode.TKB_NATIVE_SHEET_STRUCTURE_INVALID,
-      `Workbook must contain exactly ${ALL_DAMSAN_NATIVE_SHEETS.length} sheets, found ${workbook.sheets.length}.`,
-      { expected: ALL_DAMSAN_NATIVE_SHEETS.length, actual: workbook.sheets.length },
-    );
+export function validateSheetStructure(
+  workbook: ParsedWorkbook,
+  sessionMode: TimetableImportNativeSessionMode = 'BOTH',
+): void {
+  if (sessionMode === 'BOTH') {
+    if (workbook.sheets.length !== ALL_DAMSAN_NATIVE_SHEETS.length) {
+      throw new DamSanNativeTimetableException(
+        DamSanNativeErrorCode.TKB_NATIVE_SHEET_STRUCTURE_INVALID,
+        `Workbook must contain exactly ${ALL_DAMSAN_NATIVE_SHEETS.length} sheets, found ${workbook.sheets.length}.`,
+        { expected: ALL_DAMSAN_NATIVE_SHEETS.length, actual: workbook.sheets.length },
+      );
+    }
+
+    const existingSheetNames = new Set(workbook.sheets.map((sheet) => normalizeSheetName(sheet.name)));
+    for (const expectedSheet of ALL_DAMSAN_NATIVE_SHEETS) {
+      if (!existingSheetNames.has(normalizeSheetName(expectedSheet))) {
+        throw new DamSanNativeTimetableException(
+          DamSanNativeErrorCode.TKB_NATIVE_SHEET_STRUCTURE_INVALID,
+          `Missing required worksheet: ${expectedSheet}`,
+          { sheet: expectedSheet },
+        );
+      }
+    }
+    return;
   }
 
+  const requiredSheets = sessionMode === 'MORNING'
+    ? [DAMSAN_NATIVE_SHEETS.MORNING_CLASS, DAMSAN_NATIVE_SHEETS.MORNING_TEACHER]
+    : [DAMSAN_NATIVE_SHEETS.AFTERNOON_CLASS, DAMSAN_NATIVE_SHEETS.AFTERNOON_TEACHER];
+
   const existingSheetNames = new Set(workbook.sheets.map((sheet) => normalizeSheetName(sheet.name)));
-  for (const expectedSheet of ALL_DAMSAN_NATIVE_SHEETS) {
+  for (const expectedSheet of requiredSheets) {
     if (!existingSheetNames.has(normalizeSheetName(expectedSheet))) {
       throw new DamSanNativeTimetableException(
         DamSanNativeErrorCode.TKB_NATIVE_SHEET_STRUCTURE_INVALID,
-        `Missing required worksheet: ${expectedSheet}`,
+        `Missing required worksheet for ${sessionMode} mode: ${expectedSheet}`,
         { sheet: expectedSheet },
       );
     }
@@ -535,56 +556,133 @@ function validateAndExtractTeacherSheet(
   return { slots, teacherRows };
 }
 
-export function validateAndExtractWorkbookStructure(workbook: ParsedWorkbook): NativeWorkbookStructure {
-  validateSheetStructure(workbook);
+export function validateAndExtractWorkbookStructure(
+  workbook: ParsedWorkbook,
+  sessionMode: TimetableImportNativeSessionMode = 'BOTH',
+): NativeWorkbookStructure {
+  validateSheetStructure(workbook, sessionMode);
 
   const morningClassSheet = workbook.sheets.find(
     (sheet) => normalizeSheetName(sheet.name) === normalizeSheetName(DAMSAN_NATIVE_SHEETS.MORNING_CLASS),
-  )!;
+  );
   const morningTeacherSheet = workbook.sheets.find(
     (sheet) => normalizeSheetName(sheet.name) === normalizeSheetName(DAMSAN_NATIVE_SHEETS.MORNING_TEACHER),
-  )!;
+  );
   const afternoonClassSheet = workbook.sheets.find(
     (sheet) => normalizeSheetName(sheet.name) === normalizeSheetName(DAMSAN_NATIVE_SHEETS.AFTERNOON_CLASS),
-  )!;
+  );
   const afternoonTeacherSheet = workbook.sheets.find(
     (sheet) => normalizeSheetName(sheet.name) === normalizeSheetName(DAMSAN_NATIVE_SHEETS.AFTERNOON_TEACHER),
-  )!;
+  );
 
-  const morningClassDate = extractEffectiveDate(morningClassSheet);
-  const morningTeacherDate = extractEffectiveDate(morningTeacherSheet);
-  const afternoonClassDate = extractEffectiveDate(afternoonClassSheet);
-  const afternoonTeacherDate = extractEffectiveDate(afternoonTeacherSheet);
+  let effectiveDate: string;
+  let morningClasses: string[] = [];
+  let morningClassSlots: ParsedClassCell[] = [];
+  let morningTeacherSlots: ParsedTeacherCell[] = [];
+  let morningTeacherRows = new Map<number, { rowRef: TeacherSourceRowRef; untrustedDisplayName: string }>();
 
-  if (
-    morningClassDate !== morningTeacherDate
-    || morningClassDate !== afternoonClassDate
-    || morningClassDate !== afternoonTeacherDate
-  ) {
-    throw new DamSanNativeTimetableException(
-      DamSanNativeErrorCode.TKB_NATIVE_EFFECTIVE_DATE_MISMATCH,
-      `Effective dates do not match across all 4 sheets: MorningClass=${morningClassDate}, MorningTeacher=${morningTeacherDate}, AfternoonClass=${afternoonClassDate}, AfternoonTeacher=${afternoonTeacherDate}.`,
-      {
-        expected: morningClassDate,
-        actual: `${morningTeacherDate},${afternoonClassDate},${afternoonTeacherDate}`,
-      },
-    );
+  let afternoonClasses: string[] = [];
+  let afternoonClassSlots: ParsedClassCell[] = [];
+  let afternoonTeacherSlots: ParsedTeacherCell[] = [];
+  let afternoonTeacherRows = new Map<number, { rowRef: TeacherSourceRowRef; untrustedDisplayName: string }>();
+
+  if (sessionMode === 'BOTH') {
+    const morningClassDate = extractEffectiveDate(morningClassSheet!);
+    const morningTeacherDate = extractEffectiveDate(morningTeacherSheet!);
+    const afternoonClassDate = extractEffectiveDate(afternoonClassSheet!);
+    const afternoonTeacherDate = extractEffectiveDate(afternoonTeacherSheet!);
+
+    if (
+      morningClassDate !== morningTeacherDate
+      || morningClassDate !== afternoonClassDate
+      || morningClassDate !== afternoonTeacherDate
+    ) {
+      throw new DamSanNativeTimetableException(
+        DamSanNativeErrorCode.TKB_NATIVE_EFFECTIVE_DATE_MISMATCH,
+        `Effective dates do not match across all 4 sheets: MorningClass=${morningClassDate}, MorningTeacher=${morningTeacherDate}, AfternoonClass=${afternoonClassDate}, AfternoonTeacher=${afternoonTeacherDate}.`,
+        {
+          expected: morningClassDate,
+          actual: `${morningTeacherDate},${afternoonClassDate},${afternoonTeacherDate}`,
+        },
+      );
+    }
+
+    effectiveDate = morningClassDate;
+
+    const morningClassResult = validateAndExtractClassSheet(morningClassSheet!, 'MORNING');
+    const morningTeacherResult = validateAndExtractTeacherSheet(morningTeacherSheet!, 'MORNING');
+    const afternoonClassResult = validateAndExtractClassSheet(afternoonClassSheet!, 'AFTERNOON');
+    const afternoonTeacherResult = validateAndExtractTeacherSheet(afternoonTeacherSheet!, 'AFTERNOON');
+
+    morningClasses = morningClassResult.classes;
+    morningClassSlots = morningClassResult.slots;
+    morningTeacherSlots = morningTeacherResult.slots;
+    morningTeacherRows = morningTeacherResult.teacherRows;
+
+    afternoonClasses = afternoonClassResult.classes;
+    afternoonClassSlots = afternoonClassResult.slots;
+    afternoonTeacherSlots = afternoonTeacherResult.slots;
+    afternoonTeacherRows = afternoonTeacherResult.teacherRows;
+  } else if (sessionMode === 'MORNING') {
+    const morningClassDate = extractEffectiveDate(morningClassSheet!);
+    const morningTeacherDate = extractEffectiveDate(morningTeacherSheet!);
+
+    if (morningClassDate !== morningTeacherDate) {
+      throw new DamSanNativeTimetableException(
+        DamSanNativeErrorCode.TKB_NATIVE_EFFECTIVE_DATE_MISMATCH,
+        `Effective dates do not match across morning sheets: MorningClass=${morningClassDate}, MorningTeacher=${morningTeacherDate}.`,
+        {
+          expected: morningClassDate,
+          actual: morningTeacherDate,
+        },
+      );
+    }
+
+    effectiveDate = morningClassDate;
+
+    const morningClassResult = validateAndExtractClassSheet(morningClassSheet!, 'MORNING');
+    const morningTeacherResult = validateAndExtractTeacherSheet(morningTeacherSheet!, 'MORNING');
+
+    morningClasses = morningClassResult.classes;
+    morningClassSlots = morningClassResult.slots;
+    morningTeacherSlots = morningTeacherResult.slots;
+    morningTeacherRows = morningTeacherResult.teacherRows;
+  } else {
+    // AFTERNOON
+    const afternoonClassDate = extractEffectiveDate(afternoonClassSheet!);
+    const afternoonTeacherDate = extractEffectiveDate(afternoonTeacherSheet!);
+
+    if (afternoonClassDate !== afternoonTeacherDate) {
+      throw new DamSanNativeTimetableException(
+        DamSanNativeErrorCode.TKB_NATIVE_EFFECTIVE_DATE_MISMATCH,
+        `Effective dates do not match across afternoon sheets: AfternoonClass=${afternoonClassDate}, AfternoonTeacher=${afternoonTeacherDate}.`,
+        {
+          expected: afternoonClassDate,
+          actual: afternoonTeacherDate,
+        },
+      );
+    }
+
+    effectiveDate = afternoonClassDate;
+
+    const afternoonClassResult = validateAndExtractClassSheet(afternoonClassSheet!, 'AFTERNOON');
+    const afternoonTeacherResult = validateAndExtractTeacherSheet(afternoonTeacherSheet!, 'AFTERNOON');
+
+    afternoonClasses = afternoonClassResult.classes;
+    afternoonClassSlots = afternoonClassResult.slots;
+    afternoonTeacherSlots = afternoonTeacherResult.slots;
+    afternoonTeacherRows = afternoonTeacherResult.teacherRows;
   }
 
-  const morningClassResult = validateAndExtractClassSheet(morningClassSheet, 'MORNING');
-  const morningTeacherResult = validateAndExtractTeacherSheet(morningTeacherSheet, 'MORNING');
-  const afternoonClassResult = validateAndExtractClassSheet(afternoonClassSheet, 'AFTERNOON');
-  const afternoonTeacherResult = validateAndExtractTeacherSheet(afternoonTeacherSheet, 'AFTERNOON');
-
   return {
-    effectiveDate: morningClassDate,
-    morningClasses: morningClassResult.classes,
-    afternoonClasses: afternoonClassResult.classes,
-    morningClassSlots: morningClassResult.slots,
-    afternoonClassSlots: afternoonClassResult.slots,
-    morningTeacherSlots: morningTeacherResult.slots,
-    afternoonTeacherSlots: afternoonTeacherResult.slots,
-    morningTeacherRows: morningTeacherResult.teacherRows,
-    afternoonTeacherRows: afternoonTeacherResult.teacherRows,
+    effectiveDate,
+    morningClasses,
+    afternoonClasses,
+    morningClassSlots,
+    afternoonClassSlots,
+    morningTeacherSlots,
+    afternoonTeacherSlots,
+    morningTeacherRows,
+    afternoonTeacherRows,
   };
 }

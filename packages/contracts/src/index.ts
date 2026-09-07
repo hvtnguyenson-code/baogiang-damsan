@@ -1135,6 +1135,7 @@ export type TimetableImportWorksheetState = 'VISIBLE' | 'HIDDEN' | 'VERY_HIDDEN'
 export type TimetableImportIssueSeverity = 'ERROR' | 'WARNING';
 export type TimetableImportIssueCategory = 'WORKBOOK' | 'SHEET' | 'HEADER' | 'ROW' | 'RESOLUTION' | 'VALIDATION';
 export type TimetableImportSourceFormat = 'GENERIC' | 'DAMSAN_NATIVE';
+export type TimetableImportNativeSessionMode = 'BOTH' | 'MORNING' | 'AFTERNOON';
 
 export type TimetableImportPreviewIssueCode =
   | 'HIDDEN_MAPPED_DATA' | 'NONBLANK_ROW_WITHOUT_MAPPED_DATA' | 'PARTIALLY_BLANK_MAPPED_ROW'
@@ -1159,7 +1160,8 @@ export type TimetableImportPreviewIssueCode =
   | 'TKB_NATIVE_PEER_CONFLICT'
   | 'TKB_NATIVE_TEACHER_CODE_CONFLICT'
   | 'TKB_NATIVE_TEACHER_IDENTITY_UNKNOWN'
-  | 'TKB_NATIVE_SUBJECT_UNKNOWN';
+  | 'TKB_NATIVE_SUBJECT_UNKNOWN'
+  | 'TKB_NATIVE_CARRY_FORWARD_BASELINE_MISSING';
 
 export interface TimetableImportPreviewIssue {
   code: TimetableImportPreviewIssueCode;
@@ -1236,6 +1238,14 @@ export interface TimetableImportPreviewDiff {
   counts: { added: number; changed: number; removed: number; unchanged: number };
 }
 
+export interface TimetableImportPreviewComposition {
+  mode: TimetableImportNativeSessionMode;
+  baselineTimetableVersionId: string | null;
+  authoredEntryCount: number;
+  carriedForwardEntryCount: number;
+  finalEntryCount: number;
+}
+
 export interface TimetableImportWorkbookPreviewResponse {
   profileId: string;
   profileRevisionId: string;
@@ -1248,6 +1258,7 @@ export interface TimetableImportWorkbookPreviewResponse {
   canConfirm: boolean;
   baseline: { date: CivilDateString; timetableVersion: null | { id: string; versionNumber: number; status: TimetableVersionStatus; effectiveFrom: CivilDateString | null; effectiveUntil: CivilDateString | null } };
   diff: TimetableImportPreviewDiff | null;
+  composition?: TimetableImportPreviewComposition;
 }
 
 export type TimetableImportConfirmationOutcome = 'CREATED' | 'IDEMPOTENT_REPLAY';
