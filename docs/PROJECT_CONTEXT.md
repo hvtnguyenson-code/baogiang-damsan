@@ -76,6 +76,7 @@ Repository hiện có các boundary đã được review/version hóa và không
 - exact TimeSlotDefinition revisions và real-time collision;
 - retained TimetableVersion/TimetableEntry + lifecycle/historical resolution;
 - timetable import profile/alias/canonical preview infrastructure;
+- accepted ADR-047 Đam San native timetable workbook architecture: exact four-sheet/boundary contract, class-view/teacher-view peer reconciliation, structural `TeacherSourceRowRef`, exact derived teacher-code identity, morning/afternoon session separation, fail-closed mismatch taxonomy và privacy-sanitized deterministic fixture; runtime adapter vẫn thuộc `P2-040`, selective session update/carry-forward vẫn thuộc `P2-050`;
 - PPCT shared plan/version/item/revision/lineage/class association;
 - operational overlays;
 - SpecialActivity exact-slot/frozen-class/staffing/collision runtime primitive;
@@ -106,7 +107,7 @@ Project hiện đang realign vì một số minimum-core/deferred quyết địn
 - PWA/Telegram pilot integration;
 - first-cert HTTP-01/TLS authority and actual VPS evidence.
 
-Không suy ra rằng một area đã hoàn chỉnh chỉ vì minimum-core implementation hiện có PASS CI.
+Không suy ra rằng một area đã hoàn chỉnh chỉ vì minimum-core implementation hiện có PASS CI. Với Đam San native timetable, ADR-047 đã đóng kiến trúc/evidence; các dòng re-entry ở trên vẫn tồn tại vì runtime enforcement và selective update chưa được triển khai.
 
 ## Layering rule
 

@@ -3,10 +3,14 @@
 ## Status
 
 - **Task ID**: `P2-030`
-- **Status**: `IN_REVIEW` (branch `docs/tkb-native-workbook-architecture-030`)
+- **Status**: `CLOSED` by `SYNC-P2-030`
 - **Canonical Starting Commit**: `7e99a245f2b1dcf112d63721563d1082a0ea237f`
+- **Final Reviewed Branch**: `docs/tkb-native-workbook-architecture-030-clean`
+- **Final Reviewed Head**: `bd7021ce8944848edbe1c3f10342a0a644b78f47`
+- **Review / CI / Merge Evidence**: independent GitHub diff/privacy review PASS; PR #111; exact-head PR CI #375 (run `34076797404`) SUCCESS; merge/main `6fde93eaf12a2dceb3bb9bc5ea3ccc46e27878b2`; authoritative post-merge main CI #376 (run `34077121063`) SUCCESS.
+- **Privacy Review Note**: the superseded pre-PR working branch was not merged after review found raw teacher-code examples in its fixture README; a privacy-clean one-commit branch was reconstructed from the exact canonical base without force-push, rebase or amend.
 - **Relevant Traceability**: `T25`, `T26`, `T27`
-- **Decision Authority**: `ADR-047-TKB-NATIVE-WORKBOOK-ARCHITECTURE.md`
+- **Decision Authority**: accepted `ADR-047-TKB-NATIVE-WORKBOOK-ARCHITECTURE.md`
 - **Downstream Implementations**:
   - `P2-040`: Đam San TKB native adapter implementation (`DamSanNativeTimetableAdapter`) on top of canonical importer pipeline.
   - `P2-050`: Morning/afternoon selective update and carry-forward workflow.

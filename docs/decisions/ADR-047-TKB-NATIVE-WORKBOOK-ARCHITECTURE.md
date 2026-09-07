@@ -1,10 +1,11 @@
 # ADR-047 — Đam San TKB Native Workbook Architecture
 
-- **Status:** Proposed on branch `docs/tkb-native-workbook-architecture-030` (`IN_REVIEW`)
+- **Status:** Accepted by closed `P2-030` / `SYNC-P2-030`
 - **Date:** 2026-09-07
 - **Scope:** Authoritative 4-sheet workbook contracts, cell parser precedence, class/teacher peer cross-check, session separation, teacher code resolution, special activity classification, and fail-closed mismatch taxonomy.
 - **Task baseline:** `main@7e99a245f2b1dcf112d63721563d1082a0ea237f`
 - **Traceability:** T25, T26, T27; downstream P2-040, P2-050
+- **Acceptance evidence:** privacy-clean branch `docs/tkb-native-workbook-architecture-030-clean`; reviewed head `bd7021ce8944848edbe1c3f10342a0a644b78f47`; independent GitHub diff/privacy review PASS; PR #111; exact-head CI #375 (run `34076797404`) SUCCESS; merge/main `6fde93eaf12a2dceb3bb9bc5ea3ccc46e27878b2`; post-merge main CI #376 (run `34077121063`) SUCCESS.
 
 ---
 
