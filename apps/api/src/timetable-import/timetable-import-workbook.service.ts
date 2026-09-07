@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { AuditResult, Prisma, TimetableImportReceipt, TimetableVersionStatus } from '@prisma/client';
 import {
+  TimetableImportNativeSessionMode,
   TimetableImportReceiptRecord,
   TimetableImportSourceFormat,
   TimetableImportWorkbookConfirmResponse,
@@ -31,7 +32,9 @@ import { WorkbookCanonicalizationService } from './workbook-canonicalization.ser
 import { WorkbookParserService } from './workbook-parser.service';
 import { DamSanNativeTimetableAdapter } from './damsan-native-adapter.service';
 import {
+  DAMSAN_NATIVE_AFTERNOON_SHEET_SENTINEL,
   DAMSAN_NATIVE_HEADER_ROW_SENTINEL,
+  DAMSAN_NATIVE_MORNING_SHEET_SENTINEL,
   DAMSAN_NATIVE_SHEET_SENTINEL,
 } from './damsan-native-adapter.types';
 
@@ -74,8 +77,15 @@ export class TimetableImportWorkbookService {
     file: UploadedWorkbookFile | undefined,
     profileRevisionId: string,
     sourceFormat?: TimetableImportSourceFormat,
+    nativeSessionMode?: TimetableImportNativeSessionMode,
   ): Promise<TimetableImportWorkbookInspectionResponse> {
     this.validateFile(file);
+    if (sourceFormat !== 'DAMSAN_NATIVE' && nativeSessionMode !== undefined) {
+      throw new BadRequestException({
+        error: 'TIMETABLE_IMPORT_INVALID_SOURCE_FORMAT',
+        message: 'Chỉ định nativeSessionMode chỉ hợp lệ khi sourceFormat là DAMSAN_NATIVE.',
+      });
+    }
     const revision = await this.canonicalization.requireActiveRevision(profileRevisionId);
     const parsed = await this.parser.parse(file!.buffer);
     if (sourceFormat === 'DAMSAN_NATIVE') {
@@ -87,6 +97,7 @@ export class TimetableImportWorkbookService {
         profileRevisionId,
         revision.profileId,
         this.sourceFileName(file!.originalname),
+        nativeSessionMode ?? 'BOTH',
       );
     }
     const inspection = inspectParsedWorkbook(
@@ -107,6 +118,12 @@ export class TimetableImportWorkbookService {
     dto: PreviewTimetableImportWorkbookDto,
   ): Promise<TimetableImportWorkbookPreviewResponse> {
     this.validateFile(file);
+    if (dto.sourceFormat !== 'DAMSAN_NATIVE' && dto.nativeSessionMode !== undefined) {
+      throw new BadRequestException({
+        error: 'TIMETABLE_IMPORT_INVALID_SOURCE_FORMAT',
+        message: 'Chỉ định nativeSessionMode chỉ hợp lệ khi sourceFormat là DAMSAN_NATIVE.',
+      });
+    }
     await this.canonicalization.requireActiveRevision(dto.profileRevisionId);
     const parsed = await this.parser.parse(file!.buffer);
     if (dto.sourceFormat === 'DAMSAN_NATIVE') {
@@ -125,11 +142,23 @@ export class TimetableImportWorkbookService {
     meta: RequestMeta,
   ): Promise<TimetableImportWorkbookConfirmResponse> {
     this.validateFile(file);
+    if (dto.sourceFormat !== 'DAMSAN_NATIVE' && dto.nativeSessionMode !== undefined) {
+      throw new BadRequestException({
+        error: 'TIMETABLE_IMPORT_INVALID_SOURCE_FORMAT',
+        message: 'Chỉ định nativeSessionMode chỉ hợp lệ khi sourceFormat là DAMSAN_NATIVE.',
+      });
+    }
     const workbookSha256 = computeWorkbookSha256(file!.buffer);
     const sourceFileName = this.sourceFileName(file!.originalname);
 
     const isNative = dto.sourceFormat === 'DAMSAN_NATIVE';
-    const effectiveSheetName = isNative ? DAMSAN_NATIVE_SHEET_SENTINEL : (dto.sheetName ?? '');
+    const effectiveSheetName = isNative
+      ? (dto.nativeSessionMode === 'MORNING'
+        ? DAMSAN_NATIVE_MORNING_SHEET_SENTINEL
+        : dto.nativeSessionMode === 'AFTERNOON'
+          ? DAMSAN_NATIVE_AFTERNOON_SHEET_SENTINEL
+          : DAMSAN_NATIVE_SHEET_SENTINEL)
+      : (dto.sheetName ?? '');
     const effectiveHeaderRowNumber = isNative ? DAMSAN_NATIVE_HEADER_ROW_SENTINEL : (dto.headerRowNumber ?? 0);
     const effectiveDto: ConfirmTimetableImportWorkbookDto = {
       ...dto,
@@ -304,6 +333,13 @@ export class TimetableImportWorkbookService {
               semanticChecksum,
               requestFingerprint,
               outcome: 'CREATED',
+              ...(canonical.composition ? {
+                nativeSessionMode: canonical.composition.mode,
+                baselineTimetableVersionId: canonical.composition.baselineTimetableVersionId,
+                authoredEntryCount: canonical.composition.authoredEntryCount,
+                carriedForwardEntryCount: canonical.composition.carriedForwardEntryCount,
+                finalEntryCount: canonical.composition.finalEntryCount,
+              } : {}),
             },
           }, tx);
           const reloaded = await tx.timetableVersion.findUniqueOrThrow({
@@ -377,7 +413,13 @@ export class TimetableImportWorkbookService {
         message: 'Receipt-linked version has an invalid semantic checksum.',
       });
     }
-    const effectiveSheetName = dto.sourceFormat === 'DAMSAN_NATIVE' ? DAMSAN_NATIVE_SHEET_SENTINEL : (dto.sheetName ?? '');
+    const effectiveSheetName = dto.sourceFormat === 'DAMSAN_NATIVE'
+      ? (dto.nativeSessionMode === 'MORNING'
+          ? DAMSAN_NATIVE_MORNING_SHEET_SENTINEL
+          : dto.nativeSessionMode === 'AFTERNOON'
+            ? DAMSAN_NATIVE_AFTERNOON_SHEET_SENTINEL
+            : DAMSAN_NATIVE_SHEET_SENTINEL)
+      : (dto.sheetName ?? '');
     const effectiveHeaderRowNumber = dto.sourceFormat === 'DAMSAN_NATIVE' ? DAMSAN_NATIVE_HEADER_ROW_SENTINEL : (dto.headerRowNumber ?? 0);
     const incoming = computeConfirmRequestFingerprint({
       workbookSha256,

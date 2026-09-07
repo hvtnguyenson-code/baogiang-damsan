@@ -158,7 +158,7 @@ Morning and afternoon sheets represent independent session streams:
 ### 9. Effective-Date Extraction & Checksum Provenance
 
 - The civil effective date is extracted from the standardized title on Row 4 (`ÁP DỤNG TỪ NGÀY DD/MM/YYYY`).
-- All 4 sheets must state identical effective dates; mismatch fails closed.
+- For `BOTH` mode, all 4 sheets must state identical effective dates; mismatch fails closed. For selective modes (`MORNING` or `AFTERNOON`), the selected source pair (Sheets 1 & 2 for `MORNING`, Sheets 3 & 4 for `AFTERNOON`) must state identical effective dates; unselected sheets are non-authoritative and ignored.
 - The effective date must match an active `AcademicWeek` within the target calendar.
 - The raw XLSX SHA-256 digest is computed server-side to participate in `confirm-request-v1` request fingerprinting (`requestFingerprint`) and idempotent replays per `ADR-021`/`ADR-026`. Persisted canonical business identity on `TimetableVersion` is governed by `semantic-v1` checksum (`contentChecksum`). Raw workbook bytes are not persisted, and no new receipt column is introduced by P2-040.
 
@@ -168,6 +168,32 @@ Morning and afternoon sheets represent independent session streams:
 - The fixture preserves 100% of matrix layout, coordinates, class codes, subject codes, and reconciliation counts while using synthetic teacher names (`Giáo viên 01`..`Giáo viên 38`) and synthetic teacher codes (`GV01`..`GV38`).
 - Verified zero leak count: 0 real teacher names, 0 raw teacher codes.
 - Fixture profile under ADR-017/P4 boundary reconciliation: 455 normal teacher-linked curricular rows persisted as canonical `TimetableEntry`, and 120 permitted non-peer slots (`CC`: 18, `GDĐP`: 48, `TN-HN`: 54) verified and reconciled as structural non-peer timetable evidence without fabricating artificial teacher/assignment semantics.
+
+### 11. Selective Session Authoring & Carry-Forward Boundary (P2-050)
+
+- **Native Authoring Modes**:
+  - `BOTH`: Default mode for `DAMSAN_NATIVE`. All four sheets are strictly required, validated, and source-authoritative.
+  - `MORNING`: Sheets 1 & 2 (`TKB THEO LỚP BUỔI SÁNG` and `TKB-GV-SANG`) are source-authoritative. Unselected afternoon sheets in the uploaded workbook are non-authoritative and ignored.
+  - `AFTERNOON`: Sheets 3 & 4 (`TKB THEO LỚP BUỔI CHIỀU` and `TKB-GV-CHIỀU`) are source-authoritative. Unselected morning sheets in the uploaded workbook are non-authoritative and ignored.
+  - Supplying `nativeSessionMode` on generic import requests (`sourceFormat !== 'DAMSAN_NATIVE'`) fails closed with `TIMETABLE_IMPORT_INVALID_SOURCE_FORMAT` across inspect, preview, and confirm.
+- **Date-Effective Canonical Baseline**:
+  - For selective authoring (`MORNING` or `AFTERNOON`), the canonical baseline timetable is resolved strictly at `target.effectiveFrom` using ADR-020 historical resolution: `academicYearId` match, `status in ['ACTIVE', 'SUPERSEDED']`, `effectiveFrom <= targetDate`, `effectiveUntil null OR >= targetDate`.
+  - Non-published candidates (`DRAFT`, `VALIDATED`, `APPROVED`) and later/earlier non-overlapping versions cannot serve as baseline.
+  - If no effective baseline exists for a selective update, the operation fails closed with `TKB_NATIVE_CARRY_FORWARD_BASELINE_MISSING`. Partial TimetableVersions are never created.
+- **Exact Carry-Forward Composition & Provenance Invariants**:
+  - The final composed timetable equals the newly authored rows from the selected session plus exact carried-forward baseline rows whose `TimeSlotDefinition.session` is unauthored.
+  - Carried rows preserve exact original canonical provenance IDs (`weekday`, `timeSlotDefinitionId`, `schoolClassId`, `subjectId`, `teachingAssignmentId`, `teacherUserId`).
+  - Carried rows require every referenced canonical entity (`TimeSlotDefinition`, `SchoolClass`, `Subject`, `User`, `TeachingAssignment`) to be resolvable by retained ID. If any required provenance entity is missing, the operation fails closed with `TKB_NATIVE_CARRY_FORWARD_PROVENANCE_INVALID` without synthesizing fake fallback objects.
+  - Carried rows are never re-resolved through current teacher codes, aliases, class codes, or staff assignments.
+- **Full Composed Validation & Checksum**:
+  - Canonical validation (`evaluateTimetableEntries`) is executed across the entire composed transient entry set (authored + carried forward), blocking cross-session class/teacher wall-clock collisions (`CLASS_TIME_OVERLAP`, `TEACHER_TIME_OVERLAP`) or invalid canonical entity states (`SLOT_NOT_ACTIVE`, `SLOT_NOT_REGULAR_TEACHING`, `CLASS_INACTIVE`, `SUBJECT_INACTIVE`, `TEACHER_INACTIVE`, `TEACHER_NOT_TEACHING_STAFF`, `ASSIGNMENT_COVERAGE_GAP`, `EMPTY_TIMETABLE`, `WEEKDAY_NOT_IN_CALENDAR`).
+  - The canonical `semanticChecksum` is calculated over the full composed canonical rows.
+- **Preview & Request Idempotency**:
+  - Preview diff compares the full composed timetable against the ADR-020 effective baseline timetable and returns bounded composition metadata (`mode`, `baselineTimetableVersionId`, `authoredEntryCount`, `carriedForwardEntryCount`, `finalEntryCount`).
+  - Request replay and idempotency use server-owned sheet sentinels (`ALL_SHEETS`, `MORNING_SHEETS`, `AFTERNOON_SHEETS`) to encode native authoring mode without client override or schema change.
+- **Schema & P4 Invariants**:
+  - Session authority resides strictly in `TimeSlotDefinition.session`; no session column is added to `TimetableEntry` or `TimetableVersion`.
+  - Special non-peer activities (`CC`, `GDĐP`, `TN-HN`) remain non-persisted structural evidence; no fake teacher assignments or P4 semantics are fabricated.
 
 ---
 
@@ -181,5 +207,5 @@ Morning and afternoon sheets represent independent session streams:
 - Strict privacy adherence: zero real teacher names and zero raw teacher codes committed to Git.
 
 ### Neutral / Trade-offs
-- School staff must upload workbooks conforming to the 4-sheet format. Variations in sheet naming or matrix coordinates will fail closed until an explicit profile update or adapter configuration is registered.
+- For full authoring (`BOTH`), uploaded workbooks must conform to the 4-sheet format. For selective authoring (`MORNING` or `AFTERNOON`), the workbook must contain the exact selected two-sheet pair with conforming structure; unselected sheets may be omitted or non-authoritative. Variations in sheet naming or matrix coordinates within the selected sheets will fail closed until an explicit profile update or adapter configuration is registered.
 - Special activities (`CC`, `GDĐP`, `TN-HN`, 120 slots) are verified structurally and proven free of teacher-peer collisions; per `ADR-017`, `TimetableEntry` stores teacher-linked curricular lessons (455 rows), while modular programme occurrence materialization remains governed by `P4` special programme rules where applicable. Raw upload bytes are not persisted.

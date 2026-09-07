@@ -21,7 +21,7 @@ import {
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
-import { TimetableImportSourceFormat } from '@baogiang/contracts';
+import { TimetableImportNativeSessionMode, TimetableImportSourceFormat } from '@baogiang/contracts';
 import { MAX_HEADER_SCAN_ROWS } from './workbook-limits';
 
 export class TimetableImportColumnMappingDto {
@@ -123,6 +123,10 @@ export class InspectTimetableImportWorkbookDto {
   @IsOptional()
   @IsEnum(['GENERIC', 'DAMSAN_NATIVE'] as const)
   sourceFormat?: TimetableImportSourceFormat;
+
+  @IsOptional()
+  @IsEnum(['BOTH', 'MORNING', 'AFTERNOON'] as const)
+  nativeSessionMode?: TimetableImportNativeSessionMode;
 }
 
 export class PreviewTimetableImportWorkbookDto extends InspectTimetableImportWorkbookDto {
