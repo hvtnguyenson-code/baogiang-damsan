@@ -95,17 +95,27 @@ Class-view markers are classified as follows:
 
 ### 6. Class-View ↔ Teacher-View Peer Reconciliation (T26)
 
-Class view and teacher view are **peer evidence sources**. Ingestion requires bidirectional cross-validation across all scheduled slots:
+Class view and teacher view are **peer evidence sources**. Ingestion requires bidirectional cross-validation across all scheduled slots using structural source row references:
 
-1. **Class -> Teacher Matching**: For every non-blank class slot `(Session, Day, Period, Class)` with marker `SubjectCode-TeacherCode` (including `SH-*`):
-   - Exactly one teacher in the corresponding teacher view must have `Class` assigned at `(Day, Period)`.
-   - The teacher's bound code must match `TeacherCode`.
-2. **Teacher -> Class Matching**: For every non-blank teacher slot `(Session, Day, Period, Teacher)` with target `Class`:
-   - The class view must have an active assignment for that class at `(Day, Period)` with a matching teacher code.
-3. **Orphan & Collision Rejection**:
-   - Multiple teachers assigned to the same class slot in teacher view = fatal collision (`TKB_NATIVE_PEER_DUPLICATE`).
-   - Teacher assigned in teacher view without class-view peer = fatal inconsistency (`TKB_NATIVE_PEER_ORPHAN`).
-   - Mismatches fail closed. No silent fallback or unilateral preference for either sheet is permitted.
+1. **Teacher Source Row Indexing**:
+   - Each teacher row (8..45) is indexed as `TeacherSourceRowRef = (sheet, rowNumber)`.
+   - For every non-blank cell at `(Day, Period)`, record `(Session, Day, Period, TargetClass) -> TeacherSourceRowRef`.
+   - Column A display text is untrusted source decoration / audit evidence only; it is NOT canonical identity authority and MUST NOT be used to resolve Users.
+   - If multiple teacher rows claim the same `(Session, Day, Period, TargetClass)`: fail closed immediately with `TKB_NATIVE_PEER_DUPLICATE`.
+2. **Class-View Peer Correlator**:
+   - For every non-blank class slot `(Session, Day, Period, Class)` with teacher-linked marker `SubjectCode-TeacherCode` (including `SH-*`):
+     - Lookup corresponding teacher slot for `(Session, Day, Period, Class)`.
+     - If not found: fail closed with `TKB_NATIVE_PEER_MISSING`.
+     - Associate the slot's `TeacherCode` with the matched `TeacherSourceRowRef`.
+3. **Orphan & Non-Peer Conflict Rejection**:
+   - For every indexed teacher slot `(Session, Day, Period, TargetClass)`: the class view must have a matching scheduled slot.
+   - If class slot is blank or contains a non-peer special activity (`CC`, `GDĐP`, `TN-HN`): fail closed with `TKB_NATIVE_PEER_ORPHAN` or `TKB_NATIVE_PEER_CONFLICT`.
+4. **Row TeacherCode Derivation**:
+   - Collect all `TeacherCode` tokens from matched class-view peers for each active `TeacherSourceRowRef`.
+   - Each active teacher row MUST derive exactly ONE distinct `TeacherCode`.
+   - If a row's matched slots imply multiple distinct teacher codes: fail closed with `TKB_NATIVE_TEACHER_CODE_CONFLICT`.
+5. **Zero-Allocation Teacher Rows**:
+   - Rows with 0 scheduled morning and 0 scheduled afternoon slots (e.g. Row 25 in the authoritative workbook) are treated as inert roster evidence: no `TeacherCode` is derived, no canonical `User` is resolved, and no failure occurs.
 - **Traceability Boundary**: ADR-047 defines the peer cross-check architecture; runtime enforcement is implemented in `P2-040`.
 
 ### 7. Morning / Afternoon Session Decoupling (T27)
@@ -118,11 +128,31 @@ Morning and afternoon sheets represent independent session streams:
 - The adapter parses both sessions as distinct structural models before combining them into a canonical draft.
 - **Traceability Boundary**: ADR-047 preserves session decoupling and data structures; selective session update and carry-forward workflow remain owned by `P2-050`.
 
-### 8. Teacher Identity Resolution & Zero PII in Fixtures
+### 8. Teacher Identity Resolution & Display-Name Privacy Boundary
 
-- Teacher markers in class view use compact abbreviations (`GV01`..`GV38` in synthetic fixture).
-- **Privacy & Security Constraint**: Real staff names and real teacher codes from the operational workbook must NEVER be committed to Git or hardcoded in application source code or test fixtures.
-- The adapter resolves teacher codes dynamically via peer alignment with the teacher view and the school user/staff catalog (`User.profile.staffCode` / `TimetableImportEntityAlias`). Unresolvable teacher names or codes trigger fail-closed errors.
+- **No Display Name Authority**: Column A display text is untrusted source decoration. The adapter MUST NOT attempt `TeacherName -> User` or fuzzy/accent-folded name matching.
+- **Derived TeacherCode as Identity Key**: Canonical teacher resolution operates strictly on the single `TeacherCode` derived from peer-reconciled class markers:
+  ```text
+  teacher-view source row (TeacherSourceRowRef)
+      +
+  matched class-view teacher-linked slots
+      ↓
+  exact derived TeacherCode
+      ↓
+  canonical exact code/alias resolver
+      ↓
+  User
+  ```
+- **Canonical Resolution Authority (ADR-024 Alignment)**:
+  - Resolution reuses exact canonical timetable-import authority: active `StaffProfile.staffCode` and approved `TimetableImportEntityAlias` (scope `TEACHER`).
+  - 0 active candidates -> fail closed with `TKB_NATIVE_TEACHER_IDENTITY_UNKNOWN`.
+  - Multiple candidates or disagreement between staffCode and alias -> fail closed with `TKB_NATIVE_TEACHER_CODE_CONFLICT`.
+  - If staffCode and approved alias point to the same active `User` -> deduplicate and PASS.
+  - No heuristic, fuzzy, or namespace-preference precedence is permitted.
+- **Display-Name Privacy Boundary**:
+  - Teacher display text is not persisted as canonical teacher key and is not required for successful resolution.
+  - Client-facing diagnostics must reference grid coordinates `(sheet, rowNumber, column)` and derived `TeacherCode`, never unscrubbed raw display names.
+  - Test fixtures use synthetic codes (`GV01`..`GV38`) and synthetic names (`Giáo viên 01`..`Giáo viên 38`) with 0 real-world leaks.
 
 ### 9. Effective-Date Extraction & Checksum Provenance
 

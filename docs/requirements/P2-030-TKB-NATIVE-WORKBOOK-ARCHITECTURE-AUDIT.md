@@ -40,9 +40,9 @@ The native Đam San timetable workbook consists of exactly four worksheets repre
 
 | Index | Exact Sheet Name | Semantic Role | Declared Dimension | Authoritative Slot Grid | Populated Content Extent |
 |---|---|---|---|---|---|
-| 1 | `TKB THEO LỚP BUỔI SÁNG` | Morning Class View | `R1C1:R41C20` (44 rows × 31 cols declared) | Rows 7..36, Cols C..T (Cols 3..20) | Rows 1..38 (Non-empty content ends at row 38) |
+| 1 | `TKB THEO LỚP BUỔI SÁNG` | Morning Class View | `R1C1:R41C20` (41 rows × 20 cols declared) | Rows 7..36, Cols C..T (Cols 3..20) | Rows 1..38 (Non-empty content ends at row 38) |
 | 2 | `TKB-GV-SANG` | Morning Teacher View | `R1C1:R45C31` (45 rows × 31 cols declared) | Rows 8..45, Cols B..AE (Cols 2..31) | Rows 1..45 |
-| 3 | `TKB THEO LỚP BUỔI CHIỀU` | Afternoon Class View | `R1C1:R41C20` (44 rows × 31 cols declared) | Rows 7..36, Cols C..T (Cols 3..20) | Rows 1..37 (Non-empty content ends at row 37) |
+| 3 | `TKB THEO LỚP BUỔI CHIỀU` | Afternoon Class View | `R1C1:R41C20` (41 rows × 20 cols declared) | Rows 7..36, Cols C..T (Cols 3..20) | Rows 1..37 (Non-empty content ends at row 37) |
 | 4 | `TKB-GV-CHIỀU` | Afternoon Teacher View | `R1C1:R45C31` (45 rows × 31 cols declared) | Rows 8..45, Cols B..AE (Cols 2..31) | Rows 1..45 |
 
 ### Sheet Recognition Invariants
@@ -56,9 +56,9 @@ The native Đam San timetable workbook consists of exactly four worksheets repre
 ## 3. Strict Boundary & Matrix Structure
 
 To avoid ambiguity between declared spreadsheet dimensions and actual data, the parser strictly distinguishes:
-- **Declared OOXML Dimensions**: May include empty padded rows/columns created by Excel print layouts.
-- **Meaningful Populated Content Extent**: Actual rows containing text/formatting.
-- **Authoritative Parser Grid**: The strict row/column coordinate box evaluated by the timetable ingestion engine.
+- **Declared OOXML Dimensions**: Declared coordinate rectangle in sheet XML (`R1C1:R41C20` for class sheets; `R1C1:R45C31` for teacher sheets).
+- **Meaningful Populated Content Extent**: Actual rows containing business text or signatures.
+- **Authoritative Parser Grid**: The strict row/column coordinate box evaluated by the timetable ingestion engine (Rows 7–36, Cols C..T for class views; Rows 8–45, Cols B..AE for teacher views).
 
 ### 3.1 Class-View Sheets (`TKB THEO LỚP BUỔI SÁNG` & `TKB THEO LỚP BUỔI CHIỀU`)
 
@@ -82,8 +82,8 @@ To avoid ambiguity between declared spreadsheet dimensions and actual data, the 
     - Cols 1–15: Symbol abbreviations (`"Kí hiệu: Chào cờ-CC; Toán-TO; Lí-LI; Hóa-HO; Sinh-SI; Tin-TI; Công nghệ-CN; Văn-VA; Sử-SU; Địa-DI;Tiếng Anh-NN; Giáo dục KT và PL-CD; Trải nghiệm, hướng nghiệp-TN-HN; Giáo dục địa phương-GDĐP"`).
     - Cols 17–20: Approval block (`"KT. HIỆU TRƯỞNG \n PHÓ HIỆU TRƯỞNG"`).
   - **Row 38**:
-    - Cols 1–15: Explanatory note: `"Lưu ý: TKB của Hoạt động TN-HN và GDĐP thay đổi theo tuần. GVBM sẽ thông báo trước ít nhất 1 tuần để HS chuẩn bị."` (visually merged across rows 38..39).
-  - **Rows 39+ (Morning) / Rows 38+ (Afternoon)**: Contain no relevant business content for the timetable parser.
+    - Cols 1–15: Explanatory note value is anchored at Row 38: `"Lưu ý: TKB của Hoạt động TN-HN và GDĐP thay đổi theo tuần. GVBM sẽ thông báo trước ít nhất 1 tuần để HS chuẩn bị."` Visual/presentation merge spans Rows 38..39, but Row 39 has no independent business cell value.
+  - **Rows 40+ (Morning) / Rows 38+ (Afternoon)**: Contain no relevant business content for the timetable parser.
   - **Parser Boundary Rule**: The parser MUST NOT parse rows ≥ 37 as timetable slot data. Row 36 is the strict lower boundary of the authoritative class-view grid.
 
 ### 3.2 Teacher-View Sheets (`TKB-GV-SANG` & `TKB-GV-CHIỀU`)
@@ -103,10 +103,27 @@ To avoid ambiguity between declared spreadsheet dimensions and actual data, the 
 - **Row 7 (Period Ordinal Header Row)**:
   - Column 1 (`C1`): `"Giáo viên"`.
   - Columns 2–31 (`C2`–`C31`): Repeating sequence of period ordinals: `1`, `2`, `3`, `4`, `5` for each day.
+### 3.2 Teacher-View Sheets (`TKB-GV-SANG` & `TKB-GV-CHIỀU`)
+
+- **Rows 1–3**: Organizational and issuing metadata.
+- **Row 4**: Document title with session, academic year, and effective date (`THỜI KHÓA BIỂU GIÁO VIÊN BUỔI SÁNG - ÁP DỤNG TỪ NGÀY 07/9/2026`).
+- **Row 5**: Blank delimiter row.
+- **Row 6 (Day Group Header Row)**:
+  - Column 1 (`C1`): `"Giáo viên"`.
+  - Columns 2–31 (`C2`–`C31` / Cols B..AE): 30 columns representing 6 days × 5 periods:
+    - Cols 2–6: `"Thứ 2"` (5 columns).
+    - Cols 7–11: `"Thứ 3"` (5 columns).
+    - Cols 12–16: `"Thứ 4"` (5 columns).
+    - Cols 17–21: `"Thứ 5"` (5 columns).
+    - Cols 22–26: `"Thứ 6"` (5 columns).
+    - Cols 27–31: `"Thứ 7"` (5 columns).
+- **Row 7 (Period Ordinal Header Row)**:
+  - Column 1 (`C1`): `"Giáo viên"`.
+  - Columns 2–31 (`C2`–`C31`): Repeating sequence of period ordinals: `1`, `2`, `3`, `4`, `5` for each day.
 - **Rows 8–45 (Authoritative Teacher Data Rows)**:
-  - Exactly 38 rows representing 38 staff positions.
-  - Column 1 contains teacher display identity.
-  - Columns 2–31 contain the class code assigned to that teacher at `(Day, Period)`, or blank if not teaching.
+  - Exactly 38 rows representing 38 staff positions, modeled as structural references: `TeacherSourceRowRef = (sheet, rowNumber)`.
+  - Column 1 contains teacher display text. This text is **untrusted source decoration / evidence only**, NOT a canonical identity authority, and MUST NOT be used for runtime identity resolution.
+  - Columns 2–31 contain the class code assigned to that teacher source row at `(Day, Period)`, or blank if not teaching.
 - **Rows 46+ (Non-Data Boundary)**:
   - Empty rows. The parser MUST stop after Row 45.
 
@@ -176,16 +193,68 @@ The authoritative workbook exhibits the following subject codes in its legend:
 
 *(In addition, `SH` appears as a teacher-linked code in the morning timetable matrix).*
 
-### 4.4 Teacher-Code Resolution Invariants
+### 4.4 Teacher-Row -> Teacher-Code Derivation & Identity Resolution
 
-- **Split Rule**: Splitting by the last hyphen (`lastIndexOf('-')`) is structurally safe across all 455 regular subject lessons and 18 `SH-*` lessons.
-- **Uniqueness Finding in Evidence**:
-  - 33 distinct teacher codes in Morning; each maps to exactly ONE teacher row (0 ambiguous codes).
-  - 4 distinct teacher codes in Afternoon (`TD1`, `TD2`, `TD4`, `TD5`); each maps to exactly ONE teacher row (0 ambiguous codes).
-  - Zero teacher rows possess multiple distinct codes.
-- **Parser Authority Invariant**:
-  - Teacher codes must NEVER be hardcoded to specific staff names in application source code.
-  - The native adapter must resolve teacher identities via peer cross-validation with the teacher view and the system's `TimetableImportEntityAlias` or `User.profile.staffCode` catalog.
+- **Split Rule**: Splitting by the last hyphen (`lastIndexOf('-')`) is structurally safe across all 455 teacher-linked lessons (437 regular subject lessons and 18 `SH-*` lessons).
+- **Teacher-View Row Modeling**:
+  Teacher-view rows (Rows 8–45) are identified structurally by `TeacherSourceRowRef = (sheet, rowNumber)`. Column 1 display text is untrusted evidence only; runtime identity does NOT depend on or resolve from Column 1 display text.
+
+#### Required Four-Step Derivation Algorithm
+
+For each session (`MORNING` and `AFTERNOON`):
+
+1. **Step A — Parse Teacher Source Rows**:
+   - Parse each row 8..45 into `TeacherSourceRowRef = (sheet, rowNumber)`.
+   - Extract non-blank `(Day, Period) -> ClassCode` assignments.
+   - Do NOT resolve Column 1 display text to `User`.
+2. **Step B — Cross-Correlate with Class-View Slots**:
+   - For every non-blank teacher slot `(Session, Day, Period, Class) -> TeacherSourceRowRef`:
+     - Lookup the class-view slot at `(Session, Day, Period, Class)`.
+     - The class-view slot must contain a teacher-linked marker `<SubjectCode>-<TeacherCode>`.
+     - If the class-view slot is blank or contains a non-peer marker (`CC`, `GDĐP`, `TN-HN`), fail closed per peer reconciliation taxonomy.
+3. **Step C — Derive Row Teacher Code**:
+   - Collect `TeacherCode` from all matched class-view peers for that `TeacherSourceRowRef`.
+   - For any teacher source row with at least one scheduled slot:
+     - The set of distinct `TeacherCode` tokens **MUST equal exactly 1**.
+     - If > 1 distinct `TeacherCode` is derived: **FAIL CLOSED** with `TKB_NATIVE_TEACHER_CODE_CONFLICT`. Never select a code by majority vote or first match.
+     - If no code can be derived for a row with active teaching slots: **FAIL CLOSED** with appropriate peer error.
+4. **Step D — Zero-Allocation Teacher Row**:
+   - The authoritative workbook contains exactly 1 teacher row (Row 25) with 0 morning slots and 0 afternoon slots.
+   - For any teacher source row with **zero** scheduled slots:
+     - Do NOT derive a `TeacherCode`.
+     - Do NOT attempt canonical `User` resolution.
+     - Do NOT fail validation because Column 1 display name is unresolvable.
+     - Do NOT generate timetable entries.
+     - The row is treated as inert roster evidence in that workbook version.
+
+#### Canonical User Resolution from Derived TeacherCode
+
+After an active teacher source row derives exactly one valid `TeacherCode`:
+- Resolve the **derived `TeacherCode`** (NOT Column 1 display text) against the canonical authority established by ADR-024:
+  - Exact `StaffProfile.staffCode`;
+  - Exact approved `TimetableImportEntityAlias` for entity type `TEACHER`;
+  - Existing canonical exact-resolution semantics.
+- **Forbidden Resolution Paths**:
+  - NO fuzzy name matching;
+  - NO display-name matching;
+  - NO accent-folded name heuristics;
+  - NO first name / surname heuristics;
+  - NO hardcoded `TeacherCode -> User` dictionary in source code;
+  - NO row-number -> User positional inference.
+- **Candidate Semantics**:
+  - 0 canonical User candidates -> `TKB_NATIVE_TEACHER_IDENTITY_UNKNOWN`.
+  - Multiple / disagreeing canonical candidates -> `TKB_NATIVE_TEACHER_CODE_CONFLICT`.
+  - Exactly 1 active teaching User candidate -> **PASS**.
+  - If `staffCode` and approved `TimetableImportEntityAlias` both resolve to the same User: deduplicate and **PASS**.
+  - If `staffCode` and approved alias resolve to different Users: **FAIL CLOSED**. No silent namespace preference.
+
+#### Display-Name Privacy Boundary
+
+- Column 1 display text is untrusted source decoration and not canonical authority.
+- It is not required for successful runtime identity resolution.
+- It MUST NOT be stored as the canonical teacher key.
+- It MUST NOT be echoed in unbounded/raw client-facing validation errors.
+- Diagnostics report by `sheet`, `rowNumber`, `column`, `coordinate`, and derived `TeacherCode` where safe.
 
 ---
 
@@ -217,26 +286,56 @@ The authoritative evidence for Thứ 7 (Rows 32–36) demonstrates the following
 
 For each session (`MORNING` and `AFTERNOON`):
 
-1. **Index Teacher Slots**:
+1. **Index Teacher Source Rows & Slots**:
    - For each teacher row (8..45) and time coordinate `(Day, Period)` where cell value is non-blank:
      - Target class = `normalize(cell.value)`.
-     - Record tuple: `(Session, Day, Period, TargetClass) -> TeacherIdentity`.
-     - Assert that no two teacher rows claim the same `(Session, Day, Period, TargetClass)` (Duplicate Teacher Detection).
-2. **Index Class Slots**:
+     - Record tuple: `(Session, Day, Period, TargetClass) -> TeacherSourceRowRef` where `TeacherSourceRowRef = (sheet, rowNumber)`.
+     - Column A display name is NOT used for identity resolution (retained as source decoration / manual audit evidence only).
+     - Assert that no two teacher rows claim the same `(Session, Day, Period, TargetClass)` (Duplicate Teacher Detection). If duplicate claims occur, fail closed with `TKB_NATIVE_PEER_DUPLICATE`.
+2. **Index Class Slots & Correlate Peers**:
    - For each class column (3..20) and time coordinate `(Day, Period)` where cell value is non-blank:
      - Extract `Marker = normalize(cell.value)`.
      - If `Marker` ∈ {`CC`, `GDĐP`, `TN-HN`}:
        - Tag as `PERMITTED_NON_PEER_SPECIAL_ACTIVITY`.
        - Assert that NO teacher view slot exists for `(Session, Day, Period, Class)`. If a teacher view cell exists, fail closed with `TKB_NATIVE_PEER_CONFLICT`.
      - Else (`Marker` is teacher-linked, including `SH-<TeacherCode>`):
-       - Decompose `Marker` -> `(SubjectCode, TeacherCode)`.
+       - Decompose `Marker` -> `(SubjectCode, TeacherCode)` via last-hyphen split (pre-classifying `TN-HN` first).
        - Lookup corresponding teacher slot for `(Session, Day, Period, Class)`.
        - If not found: Fail closed with `TKB_NATIVE_PEER_MISSING`.
-       - If multiple teachers found: Fail closed with `TKB_NATIVE_PEER_DUPLICATE`.
-       - Validate that the teacher's bound code matches `TeacherCode`.
+       - If multiple teacher rows found: Fail closed with `TKB_NATIVE_PEER_DUPLICATE`.
+       - Link this scheduled slot to the matched `TeacherSourceRowRef`.
 3. **Check Inverse (Orphan Teacher Slots)**:
-   - For every indexed teacher slot `(Session, Day, Period, TargetClass)`, verify that a corresponding filled class slot exists with matching teacher code.
-   - If class slot is blank or has a conflicting marker: Fail closed with `TKB_NATIVE_PEER_ORPHAN`.
+   - For every indexed teacher slot `(Session, Day, Period, TargetClass)`, verify that a corresponding filled class slot exists.
+   - If class slot is blank or contains a non-peer marker (`CC`, `GDĐP`, `TN-HN`): Fail closed with `TKB_NATIVE_PEER_ORPHAN`.
+4. **Derive Row Teacher Code & Resolve Canonical User**:
+   - For each active `TeacherSourceRowRef` (rows with ≥1 reconciled slot):
+     - Collect `TeacherCode` from all matched class-view peers for that row.
+     - Enforce exact code consistency: distinct `TeacherCode` count MUST equal exactly 1.
+     - If distinct `TeacherCode` count > 1: Fail closed with `TKB_NATIVE_TEACHER_CODE_CONFLICT`.
+     - If distinct count == 1: The row's derived source code is that single `TeacherCode`.
+     - Resolve the derived `TeacherCode` against canonical authority:
+       - Match against active `StaffProfile.staffCode` and approved `TimetableImportEntityAlias` (scope `TEACHER`).
+       - If 0 active candidates match: Fail closed with `TKB_NATIVE_TEACHER_IDENTITY_UNKNOWN`.
+       - If multiple distinct `User` candidates emerge: Fail closed with `TKB_NATIVE_TEACHER_CODE_CONFLICT`.
+       - If both `staffCode` and `alias` point to the same active `User`: deduplicate and PASS.
+       - Assert teacher-view slot matches the derived code and reconciled class marker.
+   - For zero-allocation teacher rows (0 morning and 0 afternoon scheduled slots):
+     - Do not derive `TeacherCode`.
+     - Do not resolve canonical `User`.
+     - Do not fail import. Row is treated as inert roster evidence.
+
+Conceptual verification path:
+```text
+teacher-view source row (TeacherSourceRowRef)
+    +
+matched class-view teacher-linked slots
+    ↓
+exact derived TeacherCode
+    ↓
+canonical exact code/alias resolver
+    ↓
+User
+```
 
 ### 6.2 Authoritative Reconciliation Audit Results
 
@@ -246,29 +345,37 @@ The exact local audit of `TKB-LAN-1-TUAN-1-03.9.26-in.xlsx` yielded:
 - Total Class Coordinate Cells: 30 periods × 18 classes = **540** cells.
 - Blank Cells: **18** cells (Thứ 7, Tiết 5 for all 18 classes).
 - Scheduled Class Cells: **522** cells.
-- **Teacher-Linked Class Slots Reconciled 1:1**: Exactly **402** slots (including 18 `SH-*` slots).
+- **Teacher-Linked Class Slots Reconciled 1:1**: Exactly **402** slots:
+  - `SH` teacher-linked: **18** slots (Thứ 7, Tiết 1, classes 10A1–12A6).
+  - Non-SH teacher-linked: **384** slots.
 - **Duplicate Teacher Peers**: **0**.
 - **Orphan Teacher Slots**: **0**.
 - **Permitted Non-Peer Special Activities**: Exactly **120** slots:
   - `CC` (Chào cờ): **18** slots (Thứ 2, Tiết 1, classes 10A1–12A6).
   - `GDĐP` (Giáo dục địa phương): **48** slots.
   - `TN-HN` (Trải nghiệm, hướng nghiệp): **54** slots (Thứ 7, Tiết 2, 3, 4, classes 10A1–12A6).
-- Total Morning Schedule: `402 (Reconciled) + 120 (Special Non-Peer) = 522` slots.
+- Total Morning Schedule: `402 (Reconciled teacher-linked) + 120 (Special Non-Peer) = 522` slots.
 
 #### Afternoon Session (`AFTERNOON`)
 - Total Class Coordinate Cells: 30 periods × 18 classes = **540** cells.
 - Blank Cells: **487** cells.
-- Scheduled Class Cells: **53** cells (`TD`: 35 slots, `QP`: 18 slots).
+- Scheduled Class Cells: **53** cells (`TD`: 35 slots, `QP`: 18 slots; all non-SH teacher-linked).
 - **Teacher-Linked Class Slots Reconciled 1:1**: Exactly **53** slots.
 - **Duplicate Teacher Peers**: **0**.
 - **Orphan Teacher Slots**: **0**.
 - **Non-Peer Slots**: **0**.
 
+#### Total Teacher-Linked Slots Across Sessions
+- **Total Teacher-Linked Reconciled Slots**: Exactly **455** slots:
+  - Non-SH teacher-linked: **437** slots (384 morning + 53 afternoon).
+  - SH teacher-linked: **18** slots (18 morning).
+  - `437 + 18 = 455`.
+
 #### Teacher Roster Topology
 - Total Teacher Rows in View: Rows 8 to 45 = **38** rows.
-- Morning-active teachers: **33** staff.
-- Afternoon-active teachers: **4** staff (PE/Defense in rows 42, 43, 44, 45).
-- Zero-allocation staff: **1** row (Row 25 has 0 morning and 0 afternoon periods on this timetable version).
+- Morning-active teachers: **33** rows (each deriving exactly 1 distinct TeacherCode across its slots).
+- Afternoon-active teachers: **4** rows (PE/Defense in rows 42, 43, 44, 45; each deriving exactly 1 distinct TeacherCode).
+- Zero-allocation staff: **1** row (Row 25 has 0 morning and 0 afternoon scheduled periods; inert roster evidence, no derived TeacherCode, no User resolution).
 - Cross-Sheet Teacher Row Alignment: Rows 8 to 45 have **100% identical names** between `TKB-GV-SANG` and `TKB-GV-CHIỀU` (38/38 rows match).
 
 ---
@@ -281,11 +388,11 @@ P2-030 formally closes the following 20 architectural contracts:
 2. **Four-Sheet Recognition Contract**: Require exact presence of `TKB THEO LỚP BUỔI SÁNG`, `TKB-GV-SANG`, `TKB THEO LỚP BUỔI CHIỀU`, `TKB-GV-CHIỀU`.
 3. **Strict Boundary Recognition**: Class data is bounded to Rows 7–36, Cols C..T; Teacher data is bounded to Rows 8–45, Cols B..AE. Footers (Rows ≥ 37 in class, Rows ≥ 46 in teacher) are strictly excluded.
 4. **Class-View Parser Contract**: Parse `(Day, Period, Class, Marker)` with support for merged day cells and whitespace trimming.
-5. **Teacher-View Parser Contract**: Parse `(TeacherName, Day, Period, TargetClass)` with 2-level headers (Row 6 day, Row 7 period).
-6. **Teacher-Code Identity & Reconciliation Contract**: Extract `<TeacherCode>` via last-hyphen split; bind to teacher identities via peer cross-check; reject unresolvable codes.
+5. **Teacher-View Parser Contract**: Parse `(TeacherSourceRowRef, Day, Period, TargetClass)` where `TeacherSourceRowRef = (sheet, rowNumber)` with 2-level headers (Row 6 day, Row 7 period); Column A display text is untrusted source decoration/audit evidence only, not canonical identity authority.
+6. **Teacher-Code Identity & Reconciliation Contract**: Extract `<TeacherCode>` via last-hyphen split from class-view marker; correlate class slots with `TeacherSourceRowRef`; structurally derive exactly one `TeacherCode` per active teacher source row; resolve canonical `User` via exact staff-code / approved teacher-alias authority; reject unresolvable codes or conflicting derivations.
 7. **Special-Marker Classification Contract**: Only `CC`, `GDĐP`, and `TN-HN` are classified as legitimate non-peer activities. All other markers (including `SH-*`) require a teacher peer.
 8. **Morning/Afternoon Session Contract**: Sessions are parsed independently as two coherent models and then composed.
-9. **Peer Reconciliation Contract**: Bidirectional cross-verification between class view and teacher view is mandatory.
+9. **Peer Reconciliation Contract**: Bidirectional cross-verification between class view and teacher view is mandatory using `TeacherSourceRowRef` and derived `TeacherCode`.
 10. **Fail-Closed Mismatch Taxonomy**: Comprehensive taxonomy of domain-specific errors (see §8).
 11. **Duplicate / Collision Handling**: Any multiple-teacher claim on a single slot fails closed immediately.
 12. **Unknown Code Handling**: Unrecognized classes, subjects, or teacher identities fail closed with exact grid coordinates.
@@ -299,7 +406,7 @@ P2-030 formally closes the following 20 architectural contracts:
     - `P2-050`: Selective session update and carry-forward workflow.
 18. **No Raw Staff Names or Codes as Code Authority**: Source code and test fixtures must not embed real teacher names or codes; matching is dynamic against database catalogs.
 19. **No Guessed PPCT Mapping**: Timetable parsing produces timetable entries only; syllabus order linkage is deferred to PPCT allocation rules.
-20. **No Runtime/Schema/UI Drift**: No schema migrations, UI changes, or deployment mutations are performed in this task.
+20. **No Runtime/UI Drift**: No runtime code changes, schema migrations, UI changes, or deployment mutations are performed in this task.
 
 ---
 
@@ -319,8 +426,8 @@ The native adapter in `P2-040` must emit the following structured domain errors 
 | `TKB_NATIVE_PEER_DUPLICATE` | Multiple teachers are assigned to the same `(Day, Period, Class)` in teacher view | ERROR |
 | `TKB_NATIVE_PEER_ORPHAN` | Teacher view assigns teacher to a class slot that is blank or conflicting in class view | ERROR |
 | `TKB_NATIVE_PEER_CONFLICT` | Non-peer activity (`CC`, `GDĐP`, `TN-HN`) has an unexpected teacher assignment | ERROR |
-| `TKB_NATIVE_TEACHER_CODE_CONFLICT` | Teacher code in marker resolves to a different teacher than teacher-view peer | ERROR |
-| `TKB_NATIVE_TEACHER_IDENTITY_UNKNOWN` | Teacher name in teacher view cannot be resolved to active `User` / `StaffProfile` | ERROR |
+| `TKB_NATIVE_TEACHER_CODE_CONFLICT` | One teacher-view row's reconciled slots imply more than one distinct TeacherCode, OR the single derived source TeacherCode resolves to disagreeing/multiple canonical Users | ERROR |
+| `TKB_NATIVE_TEACHER_IDENTITY_UNKNOWN` | The single TeacherCode structurally derived for an active teacher-view row resolves to no active teaching User through approved exact staff-code/teacher-alias authority | ERROR |
 | `TKB_NATIVE_SUBJECT_UNKNOWN` | Subject code in marker cannot be resolved to active `Subject` catalog | ERROR |
 
 ---
