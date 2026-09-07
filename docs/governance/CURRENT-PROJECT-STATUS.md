@@ -6,13 +6,13 @@ This is the canonical mutable **product/task status** document for Báo giảng.
 
 It is **not** a self-referential registry of the latest Git commit. Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub at the start of every task. SHAs recorded here are evidence for the stated baseline or last closed major task.
 
-**Status snapshot date:** 2026-09-06
+**Status snapshot date:** 2026-09-07
 
 ## Last closed major task
 
-`P1-022` — Business Configuration administration workspace — **CLOSED** by `SYNC-P1-022`.
+`P2-030` — Đam San TKB native-workbook architecture audit — **CLOSED** by `SYNC-P2-030`.
 
-Closure evidence: exact starting main `d9e546f3ee3f29dba139eeed400ea888eaf5e902`; feature branch `feat/business-configuration-administration-workspace-022`; final reviewed head `cf1ec8c394edcdd0c4a0e416c6a35708fa6f331d`; independent GitHub review PASS; PR #109; exact-head PR CI #371 (run `34044755481`) SUCCESS; merge/main `fd3248e57124c948998bd78ec69d1341da2a08c1`; authoritative post-merge main CI #372 (run `34045209071`) SUCCESS; review forward corrections absorbed into the feature branch before merge; no separate correction/re-entry task; administrative closure `SYNC-P1-022`; no deployment, production migration, or production behavior claimed.
+Closure evidence: exact starting main `7e99a245f2b1dcf112d63721563d1082a0ea237f`; privacy-clean feature branch `docs/tkb-native-workbook-architecture-030-clean`; final reviewed head `bd7021ce8944848edbe1c3f10342a0a644b78f47`; independent GitHub diff/privacy review PASS; PR #111; exact-head PR CI #375 (run `34076797404`) SUCCESS; merge/main `6fde93eaf12a2dceb3bb9bc5ea3ccc46e27878b2`; authoritative post-merge main CI #376 (run `34077121063`) SUCCESS; the pre-PR README privacy defect on the superseded working branch was removed by reconstructing a clean one-commit branch from the exact canonical base rather than rewriting history; no separate semantic correction/re-entry task required; administrative closure `SYNC-P2-030`; no schema, runtime, UI, deployment or production mutation claimed.
 
 ## Homeroom chain
 
@@ -67,11 +67,11 @@ P1-010 review also recovered and registered Special Programme boundaries T43/T44
 
 The production policy family registry and production UI adapter registry remain intentionally empty: generic P1-020/P1-021/P1-022 platform capability does not enable operational-start, workload, or reporting policy semantics. Therefore, the current production workspace legitimately shows no approved editable policy family; this reflects intentional empty production registration, not incomplete implementation. Concrete production policy families are enabled only by their owner tasks (operational-start under P1-030–P1-032, workload under P4-060/P4-061).
 
-## Native timetable workbook architecture
+## Accepted native timetable workbook architecture
 
-`P2-030` is **IN_REVIEW** on branch `docs/tkb-native-workbook-architecture-030`, based on exact canonical start `7e99a245f2b1dcf112d63721563d1082a0ea237f`.
+`P2-030` is **CLOSED**. `ADR-047-TKB-NATIVE-WORKBOOK-ARCHITECTURE.md` is accepted architecture authority for the real Đam San four-sheet timetable workbook. Runtime implementation remains owned by P2-040 and selective morning/afternoon carry-forward remains owned by P2-050.
 
-The authoritative Đam San timetable workbook (`TKB-LAN-1-TUAN-1-03.9.26-in.xlsx`, SHA-256 `3ea242433d1d291912749cf9f2f6b39b700847bfc09384dec9c6849b15597c72`, 38,974 bytes) was located and audited locally. Proposed `ADR-047` and architecture specification define:
+The authoritative Đam San timetable workbook (`TKB-LAN-1-TUAN-1-03.9.26-in.xlsx`, SHA-256 `3ea242433d1d291912749cf9f2f6b39b700847bfc09384dec9c6849b15597c72`, 38,974 bytes) was audited locally. The accepted architecture defines:
 - dedicated `DamSanNativeTimetableAdapter` positioned upstream of canonical timetable importer (runtime adapter owned by P2-040);
 - strict recognition of 4 sheets: `TKB THEO LỚP BUỔI SÁNG`, `TKB-GV-SANG`, `TKB THEO LỚP BUỔI CHIỀU`, `TKB-GV-CHIỀU`;
 - strict boundary enforcement: class grid rows 7–36 (cols C..T, 18 classes), teacher grid rows 8–45 (cols B..AE, 38 staff rows), with non-slot headers (1–6) and footers (rows ≥ 37 in class, rows ≥ 46 in teacher) excluded;
@@ -90,7 +90,7 @@ The authoritative Đam San timetable workbook (`TKB-LAN-1-TUAN-1-03.9.26-in.xlsx
 - effective date extraction (`2026-09-07`) and SHA-256 provenance recording;
 - sanitized structural test fixture `apps/api/test/fixtures/tkb/sanitized-dam-san-tkb-fixture.xlsx` generated with zero real teacher names and zero raw teacher codes (using synthetic `Giáo viên 01`..`Giáo viên 38` and `GV01`..`GV38`), preserving 100% of grid topology and reconciliation counts.
 
-This is proposed architecture/docs only: no schema, migration, runtime importer, UI, deployment or production mutation is performed. P2-030 architecture and evidence are complete on this branch, pending independent remote review/CI; P2-040 remains `PLANNED` behind P2-030 closure.
+P2-030 was architecture/evidence only: no schema, migration, runtime importer, UI, deployment or production mutation was performed. P2-040 is now eligible to implement the accepted native adapter contract on its own dedicated branch.
 
 ## Accepted governance authority
 
@@ -102,7 +102,8 @@ The following remain current governance/product authorities:
 - `docs/governance/MAJOR-TASK-DOCUMENTATION-SYNC-PROTOCOL.md`;
 - `docs/decisions/ADR-044-PRE-PILOT-PRODUCT-REALIGNMENT-GOVERNANCE.md`;
 - `docs/decisions/ADR-045-HOMEROOM-RESPONSIBILITY.md`;
-- `docs/decisions/ADR-046-BUSINESS-CONFIGURATION-CONTROL-PLANE.md`.
+- `docs/decisions/ADR-046-BUSINESS-CONFIGURATION-CONTROL-PLANE.md`;
+- `docs/decisions/ADR-047-TKB-NATIVE-WORKBOOK-ARCHITECTURE.md`.
 
 Every major task must be registered before implementation, cite applicable traceability rows, obey dependency gates, and complete post-merge documentation synchronization before dependent major work starts. Untracked plain `DEFERRED`/`later`/`future slice` is prohibited.
 
@@ -117,6 +118,7 @@ The repository contains reviewed implementation for:
 - **Homeroom control plane and capability** with dedicated `HOMEROOM_ASSIGNMENT_MANAGE / SCHOOL_WIDE` authority, explicit lifecycle commands, workspace-safe reads/options, bounded historical identity discovery without `USER_MANAGE`, server-owned business date, exact typed historical resolution, calendar compatibility and same-transaction audit;
 - retained exact time-slot revisions and real wall-clock collision semantics;
 - retained timetable versions/entries, validation, lifecycle, historical resolution and XLSX canonical import infrastructure;
+- accepted ADR-047 native Đam San timetable workbook architecture and privacy-sanitized structural fixture; native adapter runtime remains intentionally absent until P2-040;
 - PPCT persistence/control plane, stable item identity/revisions/lineage and exact class-subject version association;
 - operational overlays;
 - SpecialActivity minimum-core persistence/runtime with exact slots, frozen classes, staffing and class/teacher/time collision checks;
@@ -129,7 +131,7 @@ The repository contains reviewed implementation for:
 - **retained Business Configuration persistence, control plane and administration workspace** (separate BusinessPolicyStream / BusinessPolicyVersion / BusinessPolicyCommand topology, strict civil-date intervals, DB-level non-overlapping published exclusion, retained replacement and reversal/correction lineage, immutable published payload, exact historical validator-version resolution, dedicated `BUSINESS_CONFIGURATION_MANAGE / SCHOOL_WIDE` capability, capability-gated route `/quan-tri/chinh-sach-nghiep-vu`, typed/version-aware UI adapter architecture with triple identity, lifecycle UI for draft/edit/publish/replace/retire/correct, historical typed rendering, exact-date resolver UI, bounded Serializable mutation retry, idempotency receipts, same-transaction audit, sanitized errors and typed fail-closed resolver, with backend production registry and production UI adapter registry intentionally empty);
 - hardened Windows production deployment control-plane/runbooks through PR #90.
 
-Homeroom architecture, persistence, control plane/capability, historical read model and administration workspace UI are closed for the registered pre-pilot scope. Business Configuration architecture (P1-020), persistence/control plane (P1-021) and administration workspace (P1-022) are closed for the registered pre-pilot scope.
+Homeroom architecture, persistence, control plane/capability, historical read model and administration workspace UI are closed for the registered pre-pilot scope. Business Configuration architecture (P1-020), persistence/control plane (P1-021) and administration workspace (P1-022) are closed for the registered pre-pilot scope. P2-030 native timetable workbook architecture/evidence is closed; P2-040/P2-050 runtime work remains separate.
 
 ## Pre-pilot verdict
 
@@ -146,7 +148,7 @@ The registered implementation, data-evidence, product and production-readiness t
 5. Existing `GDDDP_COORDINATOR` / `HĐTN_COORDINATOR` capability intent is not wired to programme-resource authority.
 6. Delayed go-live / operational-start policy and historical pre-operational evidence workflow are absent.
 7. PPCT real-school import is intentionally blocked pending an authoritative workbook contract.
-8. Native Đam San timetable adapter and class-view/teacher-view peer reconciliation are absent.
+8. Native Đam San timetable adapter runtime and enforced class-view/teacher-view peer reconciliation are absent (architecture accepted under P2-030; implementation is P2-040).
 9. Morning/afternoon selective timetable update with explicit carry-forward is absent.
 10. Special-activity participation is not yet integrated into official workload/reporting aggregation.
 11. WorkloadAdjustmentRule remains trigger-gated/deferred.
@@ -169,9 +171,10 @@ The final production-host topology is intentionally unresolved and explicitly de
 The following registered tasks are eligible to start, each only on its own dedicated branch:
 
 - `P1-030` — Delayed go-live / operational-start architecture.
+- `P2-040` — Đam San TKB native adapter implementation.
 - `P4-010` — GDĐP/HĐTN programme architecture closure.
 
-Eligibility does not imply concurrent execution or permission to bypass one-task-per-branch, review, CI or mandatory closure-sync gates. P4 runtime work remains gated by its registered dependencies, and P6 remains blocked by P6-005.
+Eligibility does not imply concurrent execution or permission to bypass one-task-per-branch, review, CI or mandatory closure-sync gates. P2-040 must implement only the accepted ADR-047/P2-030 contract; P4 runtime work remains gated by its registered dependencies, and P6 remains blocked by P6-005.
 
 ## Decisions/evidence still blocking other paths
 
@@ -197,7 +200,7 @@ Direct P0 inspection found `main` is currently not protected server-side. This i
 
 ## Production state
 
-Production remains **pre-operational**. P1-020, P1-021, and P1-022 implementations are merged and canonical, but backend production policy registry and production UI adapter registry remain intentionally empty and no production business policy family is enabled. Merge did not deploy or migrate production; no production database migration, VPS, Nginx, TLS, or application process mutation occurred from P1-022. P6 remains blocked by the explicit P6-005 topology decision gate.
+Production remains **pre-operational**. P1-020, P1-021, and P1-022 implementations are merged and canonical, but backend production policy registry and production UI adapter registry remain intentionally empty and no production business policy family is enabled. P2-030 architecture/evidence is merged and accepted but introduced no runtime or production behavior. No production database migration, VPS, Nginx, TLS, or application process mutation occurred from P2-030. P6 remains blocked by the explicit P6-005 topology decision gate.
 
 ## Protected external system boundary
 
