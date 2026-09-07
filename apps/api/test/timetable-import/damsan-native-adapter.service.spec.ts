@@ -3,6 +3,7 @@ import { resolve } from 'path';
 import { AcademicWeekday, CatalogStatus, UserStatus } from '@prisma/client';
 import { DamSanNativeTimetableAdapter } from '../../src/timetable-import/damsan-native-adapter.service';
 import {
+  DAMSAN_NATIVE_SHEETS,
   DamSanNativeErrorCode,
 } from '../../src/timetable-import/damsan-native-adapter.types';
 import {
@@ -326,7 +327,7 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
       adapter,
     );
 
-    return { prisma, audit, adapter, service, classes, subjects, users, assignments, slots };
+    return { prisma, audit, parser, adapter, service, classes, subjects, users, assignments, slots };
   }
 
   beforeAll(async () => {
@@ -933,6 +934,72 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
         expect(res.receipt.sheetName).toBe('ALL_SHEETS');
         expect(res.receipt.headerRowNumber).toBe(6);
       });
+
+      it('4a. native inspect, mode omitted defaults to BOTH', async () => {
+        const { service } = buildMockContext();
+        const res = await service.inspect(uploadFile, mockIds.profileRevisionId, 'DAMSAN_NATIVE');
+        expect(res.sheets.length).toBe(4);
+      });
+
+      it('4b. BOTH inspect still fails if any of 4 required sheets is missing/corrupt', async () => {
+        const { service, parser } = buildMockContext();
+        const morningOnlyParsed = {
+          ...parsedFixture,
+          sheets: parsedFixture.sheets.filter((s) => !s.name.includes('CHIỀU')),
+        };
+        parser.parse.mockResolvedValueOnce(morningOnlyParsed);
+        await expect(service.inspect(uploadFile, mockIds.profileRevisionId, 'DAMSAN_NATIVE', 'BOTH'))
+          .rejects.toThrow();
+      });
+
+      it('4c. MORNING inspect succeeds with afternoon sheets completely absent', async () => {
+        const { service, parser } = buildMockContext();
+        const morningOnlyParsed = {
+          ...parsedFixture,
+          sheets: parsedFixture.sheets.filter((s) => !s.name.includes('CHIỀU')),
+        };
+        parser.parse.mockResolvedValueOnce(morningOnlyParsed);
+        const res = await service.inspect(uploadFile, mockIds.profileRevisionId, 'DAMSAN_NATIVE', 'MORNING');
+        expect(res.sheets.length).toBe(2);
+      });
+
+      it('4d. MORNING inspect succeeds when unselected afternoon sheets are malformed', async () => {
+        const { service, parser } = buildMockContext();
+        const morningWithMalformedAfternoon = {
+          ...parsedFixture,
+          sheets: parsedFixture.sheets.map((sheet) => {
+            if (sheet.name.includes('CHIỀU')) {
+              return { ...sheet, rowCount: 1, columnCount: 1, rows: [['corrupt']] };
+            }
+            return sheet;
+          }),
+        };
+        parser.parse.mockResolvedValueOnce(morningWithMalformedAfternoon);
+        const res = await service.inspect(uploadFile, mockIds.profileRevisionId, 'DAMSAN_NATIVE', 'MORNING');
+        expect(res.sheets.length).toBe(4);
+      });
+
+      it('4e. AFTERNOON inspect succeeds with morning sheets absent/malformed', async () => {
+        const { service, parser } = buildMockContext();
+        const afternoonOnlyParsed = {
+          ...parsedFixture,
+          sheets: parsedFixture.sheets.filter((s) => !s.name.includes('SÁNG') && !s.name.includes('SANG')),
+        };
+        parser.parse.mockResolvedValueOnce(afternoonOnlyParsed);
+        const res = await service.inspect(uploadFile, mockIds.profileRevisionId, 'DAMSAN_NATIVE', 'AFTERNOON');
+        expect(res.sheets.length).toBe(2);
+      });
+
+      it('4f. missing/corrupt selected pair fails closed at inspect', async () => {
+        const { service, parser } = buildMockContext();
+        const missingMorningClass = {
+          ...parsedFixture,
+          sheets: parsedFixture.sheets.filter((s) => s.name !== 'TKB THEO LỚP BUỔI SÁNG'),
+        };
+        parser.parse.mockResolvedValueOnce(missingMorningClass);
+        await expect(service.inspect(uploadFile, mockIds.profileRevisionId, 'DAMSAN_NATIVE', 'MORNING'))
+          .rejects.toThrow();
+      });
     });
 
     describe('B. Morning Selective', () => {
@@ -1172,7 +1239,7 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
           timeSlotDefinitionId: 'slot-MONDAY-AFTERNOON-1',
           schoolClassId: 'class-10A1',
           subjectId: 'subj-TO',
-          teachingAssignmentId: 'assign-carried-xyz',
+          teachingAssignmentId: 'assign-10A1-TO-GV01',
           teacherUserId: 'user-GV01',
           createdAt: new Date('2026-09-01T00:00:00Z'),
         };
@@ -1186,7 +1253,7 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
         prisma.timetableEntry.findMany.mockResolvedValue([customCarriedEntry]);
 
         const res = await adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'MORNING' }, 'fixture.xlsx');
-        const matched = res.rows.find((r) => r.teachingAssignmentId === 'assign-carried-xyz');
+        const matched = res.rows.find((r) => r.teachingAssignmentId === 'assign-10A1-TO-GV01');
         expect(matched).toBeDefined();
         expect(matched?.teacherUserId).toBe('user-GV01');
         expect(matched?.subjectId).toBe('subj-TO');
@@ -1204,7 +1271,7 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
           timeSlotDefinitionId: 'slot-MONDAY-AFTERNOON-1',
           schoolClassId: 'class-10A1',
           subjectId: 'subj-TO',
-          teachingAssignmentId: 'assign-original',
+          teachingAssignmentId: 'assign-10A1-TO-GV01',
           teacherUserId: 'user-GV01',
           createdAt: new Date('2026-09-01T00:00:00Z'),
         };
@@ -1218,27 +1285,21 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
         prisma.timetableEntry.findMany.mockResolvedValue([baselineEntry]);
 
         const res = await adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'MORNING' }, 'fixture.xlsx');
-        const carried = res.rows.find((r) => r.teachingAssignmentId === 'assign-original');
-        expect(carried?.teachingAssignmentId).toBe('assign-original');
+        const carried = res.rows.find((r) => r.teachingAssignmentId === 'assign-10A1-TO-GV01');
+        expect(carried?.teachingAssignmentId).toBe('assign-10A1-TO-GV01');
       });
-    });
 
-    describe('F. Final Validation', () => {
-      it('19. authored row conflicting with carried row is blocked by full composition validation', async () => {
+      it('18a. missing baseline TimeSlotDefinition fails closed with TKB_NATIVE_CARRY_FORWARD_PROVENANCE_INVALID', async () => {
         const { adapter, prisma } = buildMockContext();
-        // Baseline has an entry in Afternoon slot 1 with teacher GV01
-        // If authored Morning row also had GV01 in the exact same time slot definition ID (overlap simulation),
-        // let's simulate an overlap by putting GV01 on Monday slot-MONDAY-MORNING-1 in baseline as well
-        const conflictingEntry = {
-          id: 'conflict-b',
+        const entryWithMissingSlot = {
+          id: 'entry-missing-slot',
           timetableVersionId: 'baseline-ver-1',
           academicYearId: mockIds.academicYearId,
           weekday: AcademicWeekday.MONDAY,
-          // Intentionally assign to MORNING slot in baseline while importing AFTERNOON
-          timeSlotDefinitionId: 'slot-MONDAY-MORNING-1',
-          schoolClassId: 'class-10A1', // class overlap
+          timeSlotDefinitionId: 'non-existent-slot-id',
+          schoolClassId: 'class-10A1',
           subjectId: 'subj-TO',
-          teachingAssignmentId: 'assign-carried',
+          teachingAssignmentId: 'assign-10A1-TO-GV01',
           teacherUserId: 'user-GV01',
           createdAt: new Date('2026-09-01T00:00:00Z'),
         };
@@ -1249,13 +1310,208 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
           effectiveFrom: new Date('2026-09-07T00:00:00Z'),
           effectiveUntil: null,
         });
-        prisma.timetableEntry.findMany.mockResolvedValue([conflictingEntry]);
+        prisma.timetableEntry.findMany.mockResolvedValue([entryWithMissingSlot]);
 
-        // When importing MORNING, the MORNING slot is authored, so conflictingEntry session is MORNING => not carried forward.
-        // But when importing AFTERNOON, conflictingEntry (MORNING) IS carried forward.
-        // If conflictingEntry has a slot or teacher overlap with an afternoon slot, it's evaluated.
-        const res = await adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'AFTERNOON' }, 'fixture.xlsx');
+        await expect(adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'MORNING' }, 'fixture.xlsx'))
+          .rejects.toMatchObject({
+            response: {
+              error: DamSanNativeErrorCode.TKB_NATIVE_CARRY_FORWARD_PROVENANCE_INVALID,
+              entryId: 'entry-missing-slot',
+              missingRelation: 'TimeSlotDefinition',
+              referenceId: 'non-existent-slot-id',
+            },
+          });
+      });
+
+      it('18b. missing baseline SchoolClass fails closed with TKB_NATIVE_CARRY_FORWARD_PROVENANCE_INVALID', async () => {
+        const { adapter, prisma } = buildMockContext();
+        const entryWithMissingClass = {
+          id: 'entry-missing-class',
+          timetableVersionId: 'baseline-ver-1',
+          academicYearId: mockIds.academicYearId,
+          weekday: AcademicWeekday.MONDAY,
+          timeSlotDefinitionId: 'slot-MONDAY-AFTERNOON-1',
+          schoolClassId: 'non-existent-class-id',
+          subjectId: 'subj-TO',
+          teachingAssignmentId: 'assign-10A1-TO-GV01',
+          teacherUserId: 'user-GV01',
+          createdAt: new Date('2026-09-01T00:00:00Z'),
+        };
+        prisma.timetableVersion.findFirst.mockResolvedValue({
+          id: 'baseline-ver-1',
+          versionNumber: 1,
+          status: 'ACTIVE',
+          effectiveFrom: new Date('2026-09-07T00:00:00Z'),
+          effectiveUntil: null,
+        });
+        prisma.timetableEntry.findMany.mockResolvedValue([entryWithMissingClass]);
+
+        await expect(adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'MORNING' }, 'fixture.xlsx'))
+          .rejects.toMatchObject({
+            response: {
+              error: DamSanNativeErrorCode.TKB_NATIVE_CARRY_FORWARD_PROVENANCE_INVALID,
+              entryId: 'entry-missing-class',
+              missingRelation: 'SchoolClass',
+              referenceId: 'non-existent-class-id',
+            },
+          });
+      });
+
+      it('18c. missing baseline Subject fails closed with TKB_NATIVE_CARRY_FORWARD_PROVENANCE_INVALID', async () => {
+        const { adapter, prisma } = buildMockContext();
+        const entryWithMissingSubject = {
+          id: 'entry-missing-subject',
+          timetableVersionId: 'baseline-ver-1',
+          academicYearId: mockIds.academicYearId,
+          weekday: AcademicWeekday.MONDAY,
+          timeSlotDefinitionId: 'slot-MONDAY-AFTERNOON-1',
+          schoolClassId: 'class-10A1',
+          subjectId: 'non-existent-subject-id',
+          teachingAssignmentId: 'assign-10A1-TO-GV01',
+          teacherUserId: 'user-GV01',
+          createdAt: new Date('2026-09-01T00:00:00Z'),
+        };
+        prisma.timetableVersion.findFirst.mockResolvedValue({
+          id: 'baseline-ver-1',
+          versionNumber: 1,
+          status: 'ACTIVE',
+          effectiveFrom: new Date('2026-09-07T00:00:00Z'),
+          effectiveUntil: null,
+        });
+        prisma.timetableEntry.findMany.mockResolvedValue([entryWithMissingSubject]);
+
+        await expect(adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'MORNING' }, 'fixture.xlsx'))
+          .rejects.toMatchObject({
+            response: {
+              error: DamSanNativeErrorCode.TKB_NATIVE_CARRY_FORWARD_PROVENANCE_INVALID,
+              entryId: 'entry-missing-subject',
+              missingRelation: 'Subject',
+              referenceId: 'non-existent-subject-id',
+            },
+          });
+      });
+
+      it('18d. missing baseline User fails closed with TKB_NATIVE_CARRY_FORWARD_PROVENANCE_INVALID', async () => {
+        const { adapter, prisma } = buildMockContext();
+        const entryWithMissingUser = {
+          id: 'entry-missing-user',
+          timetableVersionId: 'baseline-ver-1',
+          academicYearId: mockIds.academicYearId,
+          weekday: AcademicWeekday.MONDAY,
+          timeSlotDefinitionId: 'slot-MONDAY-AFTERNOON-1',
+          schoolClassId: 'class-10A1',
+          subjectId: 'subj-TO',
+          teachingAssignmentId: 'assign-10A1-TO-GV01',
+          teacherUserId: 'non-existent-user-id',
+          createdAt: new Date('2026-09-01T00:00:00Z'),
+        };
+        prisma.timetableVersion.findFirst.mockResolvedValue({
+          id: 'baseline-ver-1',
+          versionNumber: 1,
+          status: 'ACTIVE',
+          effectiveFrom: new Date('2026-09-07T00:00:00Z'),
+          effectiveUntil: null,
+        });
+        prisma.timetableEntry.findMany.mockResolvedValue([entryWithMissingUser]);
+
+        await expect(adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'MORNING' }, 'fixture.xlsx'))
+          .rejects.toMatchObject({
+            response: {
+              error: DamSanNativeErrorCode.TKB_NATIVE_CARRY_FORWARD_PROVENANCE_INVALID,
+              entryId: 'entry-missing-user',
+              missingRelation: 'User',
+              referenceId: 'non-existent-user-id',
+            },
+          });
+      });
+
+      it('18e. missing baseline TeachingAssignment fails closed with TKB_NATIVE_CARRY_FORWARD_PROVENANCE_INVALID', async () => {
+        const { adapter, prisma } = buildMockContext();
+        const entryWithMissingAssignment = {
+          id: 'entry-missing-assignment',
+          timetableVersionId: 'baseline-ver-1',
+          academicYearId: mockIds.academicYearId,
+          weekday: AcademicWeekday.MONDAY,
+          timeSlotDefinitionId: 'slot-MONDAY-AFTERNOON-1',
+          schoolClassId: 'class-10A1',
+          subjectId: 'subj-TO',
+          teachingAssignmentId: 'non-existent-assignment-id',
+          teacherUserId: 'user-GV01',
+          createdAt: new Date('2026-09-01T00:00:00Z'),
+        };
+        prisma.timetableVersion.findFirst.mockResolvedValue({
+          id: 'baseline-ver-1',
+          versionNumber: 1,
+          status: 'ACTIVE',
+          effectiveFrom: new Date('2026-09-07T00:00:00Z'),
+          effectiveUntil: null,
+        });
+        prisma.timetableEntry.findMany.mockResolvedValue([entryWithMissingAssignment]);
+
+        await expect(adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'MORNING' }, 'fixture.xlsx'))
+          .rejects.toMatchObject({
+            response: {
+              error: DamSanNativeErrorCode.TKB_NATIVE_CARRY_FORWARD_PROVENANCE_INVALID,
+              entryId: 'entry-missing-assignment',
+              missingRelation: 'TeachingAssignment',
+              referenceId: 'non-existent-assignment-id',
+            },
+          });
+      });
+    });
+
+    describe('F. Final Validation', () => {
+      it('19. authored row conflicting with carried row on real wall-clock overlap is blocked by full composition validation', async () => {
+        const { adapter, prisma, slots } = buildMockContext();
+        // Standard Monday Morning Period 2 in fixture has:
+        // startTime: 1970-01-01T08:00:00.000Z, endTime: 1970-01-01T08:45:00.000Z
+        // Standard Monday Afternoon Period 1 in fixture has:
+        // startTime: 1970-01-01T13:00:00.000Z, endTime: 1970-01-01T13:45:00.000Z
+        // Replace slot-MONDAY-AFTERNOON-1 with a slot whose wall-clock time overlaps with Morning Period 2 (08:15-09:00)
+        const mutatedSlots = slots.map((s) => {
+          if (s.id === 'slot-MONDAY-AFTERNOON-1') {
+            return {
+              ...s,
+              startTime: new Date('1970-01-01T08:15:00.000Z'),
+              endTime: new Date('1970-01-01T09:00:00.000Z'),
+            };
+          }
+          return s;
+        });
+        prisma.timeSlotDefinition.findMany.mockResolvedValue(mutatedSlots);
+
+        // In sanitized fixture, Monday Morning Period 2 has class 10A1 assigned to subject TO, teacher GV01
+        // Baseline has a carried afternoon entry for class 10A1 using slot-MONDAY-AFTERNOON-1
+        const conflictingCarriedEntry = {
+          id: 'carried-overlapping-entry',
+          timetableVersionId: 'baseline-ver-1',
+          academicYearId: mockIds.academicYearId,
+          weekday: AcademicWeekday.MONDAY,
+          timeSlotDefinitionId: 'slot-MONDAY-AFTERNOON-1',
+          schoolClassId: 'class-10A1', // class collision with morning 10A1!
+          subjectId: 'subj-VA',
+          teachingAssignmentId: 'assign-10A1-VA-GV02',
+          teacherUserId: 'user-GV02',
+          createdAt: new Date('2026-09-01T00:00:00Z'),
+        };
+        prisma.timetableVersion.findFirst.mockResolvedValue({
+          id: 'baseline-ver-1',
+          versionNumber: 1,
+          status: 'ACTIVE',
+          effectiveFrom: new Date('2026-09-07T00:00:00Z'),
+          effectiveUntil: null,
+        });
+        prisma.timetableEntry.findMany.mockResolvedValue([conflictingCarriedEntry]);
+
+        const res = await adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'MORNING' }, 'fixture.xlsx');
+        expect(res.canConfirm).toBe(false);
         expect(res.composition?.carriedForwardEntryCount).toBe(1);
+        expect(res.issues).toContainEqual(
+          expect.objectContaining({
+            code: 'CLASS_TIME_OVERLAP',
+            severity: 'ERROR',
+          }),
+        );
       });
 
       it('20. validator receives full composed timetable', async () => {
@@ -1273,6 +1529,319 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
         const res = await adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'MORNING' }, 'fixture.xlsx');
         expect(res.rows).toHaveLength(455);
         expect(res.blockingIssueCount).toBe(0);
+      });
+
+      it('21. selected session can be deliberately cleared without erasing the untouched session', async () => {
+        const { adapter, prisma } = buildMockContext();
+        const baselineEntries = await getFullBaselineEntries();
+        prisma.timetableVersion.findFirst.mockResolvedValue({
+          id: 'baseline-ver-1',
+          versionNumber: 1,
+          status: 'ACTIVE',
+          effectiveFrom: new Date('2026-09-07T00:00:00Z'),
+          effectiveUntil: null,
+        });
+        prisma.timetableEntry.findMany.mockResolvedValue(baselineEntries);
+
+        // Mutate parsedFixture: blank all morning teacher-linked class allocations & teacher allocations
+        // Keep structural markers (like CC, SH) and keep headers valid
+        const clearedMorningParsed: ParsedWorkbook = {
+          ...parsedFixture,
+          sheets: parsedFixture.sheets.map((sheet) => {
+            if (sheet.name === DAMSAN_NATIVE_SHEETS.MORNING_CLASS) {
+              return {
+                ...sheet,
+                rows: sheet.rows.map((row, rowIdx) => {
+                  if (rowIdx < 6) return row; // keep headers and meta
+                  // Clear cells in rows 6+ except weekday/period columns (colIdx < 2)
+                  return {
+                    ...row,
+                    cells: row.cells.map((cell, colIdx) => (colIdx < 2 ? cell : { ...cell, text: '', kind: 'BLANK' })),
+                  };
+                }),
+              };
+            }
+            if (sheet.name === DAMSAN_NATIVE_SHEETS.MORNING_TEACHER) {
+              return {
+                ...sheet,
+                rows: sheet.rows.map((row, rowIdx) => {
+                  if (rowIdx < 7) return row; // keep headers (rows 6 and 7)
+                  // Clear cells in teacher rows except teacher name column (colIdx < 1)
+                  return {
+                    ...row,
+                    cells: row.cells.map((cell, colIdx) => (colIdx < 1 ? cell : { ...cell, text: '', kind: 'BLANK' })),
+                  };
+                }),
+              };
+            }
+            return sheet;
+          }),
+        };
+
+        const res = await adapter.preview(clearedMorningParsed, { ...previewDto, nativeSessionMode: 'MORNING' }, 'fixture.xlsx');
+        expect(res.canConfirm).toBe(true);
+        expect(res.composition).toEqual({
+          mode: 'MORNING',
+          baselineTimetableVersionId: 'baseline-ver-1',
+          authoredEntryCount: 0,
+          carriedForwardEntryCount: 53,
+          finalEntryCount: 53,
+        });
+        expect(res.rows).toHaveLength(53);
+        expect(res.issues.some((i) => i.code === 'EMPTY_TIMETABLE')).toBe(false);
+      });
+
+      it('21a. carried row with inactive TimeSlotDefinition fails closed with SLOT_NOT_ACTIVE', async () => {
+        const { adapter, prisma, slots } = buildMockContext();
+        const mutatedSlots = slots.map((s) => (s.id === 'slot-MONDAY-AFTERNOON-1' ? { ...s, isActive: false } : s));
+        prisma.timeSlotDefinition.findMany.mockResolvedValue(mutatedSlots);
+
+        const carriedEntry = {
+          id: 'carried-inactive-slot',
+          timetableVersionId: 'baseline-ver-1',
+          academicYearId: mockIds.academicYearId,
+          weekday: AcademicWeekday.MONDAY,
+          timeSlotDefinitionId: 'slot-MONDAY-AFTERNOON-1',
+          schoolClassId: 'class-10A1',
+          subjectId: 'subj-TO',
+          teachingAssignmentId: 'assign-10A1-TO-GV01',
+          teacherUserId: 'user-GV01',
+          createdAt: new Date('2026-09-01T00:00:00Z'),
+        };
+        prisma.timetableVersion.findFirst.mockResolvedValue({
+          id: 'baseline-ver-1',
+          versionNumber: 1,
+          status: 'ACTIVE',
+          effectiveFrom: new Date('2026-09-07T00:00:00Z'),
+          effectiveUntil: null,
+        });
+        prisma.timetableEntry.findMany.mockResolvedValue([carriedEntry]);
+
+        const res = await adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'MORNING' }, 'fixture.xlsx');
+        expect(res.canConfirm).toBe(false);
+        expect(res.issues).toContainEqual(
+          expect.objectContaining({
+            code: 'SLOT_NOT_ACTIVE',
+            severity: 'ERROR',
+          }),
+        );
+      });
+
+      it('21b. carried row with slot not allowing regular teaching fails closed with SLOT_NOT_REGULAR_TEACHING', async () => {
+        const { adapter, prisma, slots } = buildMockContext();
+        const mutatedSlots = slots.map((s) => (s.id === 'slot-MONDAY-AFTERNOON-1' ? { ...s, allowRegularTeaching: false } : s));
+        prisma.timeSlotDefinition.findMany.mockResolvedValue(mutatedSlots);
+
+        const carriedEntry = {
+          id: 'carried-irregular-slot',
+          timetableVersionId: 'baseline-ver-1',
+          academicYearId: mockIds.academicYearId,
+          weekday: AcademicWeekday.MONDAY,
+          timeSlotDefinitionId: 'slot-MONDAY-AFTERNOON-1',
+          schoolClassId: 'class-10A1',
+          subjectId: 'subj-TO',
+          teachingAssignmentId: 'assign-10A1-TO-GV01',
+          teacherUserId: 'user-GV01',
+          createdAt: new Date('2026-09-01T00:00:00Z'),
+        };
+        prisma.timetableVersion.findFirst.mockResolvedValue({
+          id: 'baseline-ver-1',
+          versionNumber: 1,
+          status: 'ACTIVE',
+          effectiveFrom: new Date('2026-09-07T00:00:00Z'),
+          effectiveUntil: null,
+        });
+        prisma.timetableEntry.findMany.mockResolvedValue([carriedEntry]);
+
+        const res = await adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'MORNING' }, 'fixture.xlsx');
+        expect(res.canConfirm).toBe(false);
+        expect(res.issues).toContainEqual(
+          expect.objectContaining({
+            code: 'SLOT_NOT_REGULAR_TEACHING',
+            severity: 'ERROR',
+          }),
+        );
+      });
+
+      it('21c. carried row with inactive SchoolClass fails closed with CLASS_INACTIVE', async () => {
+        const { adapter, prisma, classes } = buildMockContext();
+        const mutatedClasses = classes.map((c) => (c.id === 'class-10A1' ? { ...c, status: CatalogStatus.INACTIVE } : c));
+        prisma.schoolClass.findMany.mockResolvedValue(mutatedClasses);
+
+        const carriedEntry = {
+          id: 'carried-inactive-class',
+          timetableVersionId: 'baseline-ver-1',
+          academicYearId: mockIds.academicYearId,
+          weekday: AcademicWeekday.MONDAY,
+          timeSlotDefinitionId: 'slot-MONDAY-AFTERNOON-1',
+          schoolClassId: 'class-10A1',
+          subjectId: 'subj-TO',
+          teachingAssignmentId: 'assign-10A1-TO-GV01',
+          teacherUserId: 'user-GV01',
+          createdAt: new Date('2026-09-01T00:00:00Z'),
+        };
+        prisma.timetableVersion.findFirst.mockResolvedValue({
+          id: 'baseline-ver-1',
+          versionNumber: 1,
+          status: 'ACTIVE',
+          effectiveFrom: new Date('2026-09-07T00:00:00Z'),
+          effectiveUntil: null,
+        });
+        prisma.timetableEntry.findMany.mockResolvedValue([carriedEntry]);
+
+        const res = await adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'MORNING' }, 'fixture.xlsx');
+        expect(res.canConfirm).toBe(false);
+        expect(res.issues).toContainEqual(
+          expect.objectContaining({
+            code: 'CLASS_INACTIVE',
+            severity: 'ERROR',
+          }),
+        );
+      });
+
+      it('21d. carried row with inactive Subject fails closed with SUBJECT_INACTIVE', async () => {
+        const { adapter, prisma, subjects } = buildMockContext();
+        const mutatedSubjects = subjects.map((s) => (s.id === 'subj-TO' ? { ...s, status: CatalogStatus.INACTIVE } : s));
+        prisma.subject.findMany.mockResolvedValue(mutatedSubjects);
+
+        const carriedEntry = {
+          id: 'carried-inactive-subject',
+          timetableVersionId: 'baseline-ver-1',
+          academicYearId: mockIds.academicYearId,
+          weekday: AcademicWeekday.MONDAY,
+          timeSlotDefinitionId: 'slot-MONDAY-AFTERNOON-1',
+          schoolClassId: 'class-10A1',
+          subjectId: 'subj-TO',
+          teachingAssignmentId: 'assign-10A1-TO-GV01',
+          teacherUserId: 'user-GV01',
+          createdAt: new Date('2026-09-01T00:00:00Z'),
+        };
+        prisma.timetableVersion.findFirst.mockResolvedValue({
+          id: 'baseline-ver-1',
+          versionNumber: 1,
+          status: 'ACTIVE',
+          effectiveFrom: new Date('2026-09-07T00:00:00Z'),
+          effectiveUntil: null,
+        });
+        prisma.timetableEntry.findMany.mockResolvedValue([carriedEntry]);
+
+        const res = await adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'MORNING' }, 'fixture.xlsx');
+        expect(res.canConfirm).toBe(false);
+        expect(res.issues).toContainEqual(
+          expect.objectContaining({
+            code: 'SUBJECT_INACTIVE',
+            severity: 'ERROR',
+          }),
+        );
+      });
+
+      it('21e. carried row with inactive Teacher fails closed with TEACHER_INACTIVE', async () => {
+        const { adapter, prisma, users } = buildMockContext();
+        const mutatedUsers = users.map((u) => (u.id === 'user-GV01' ? { ...u, status: UserStatus.DISABLED } : u));
+        prisma.user.findMany.mockResolvedValue(mutatedUsers);
+
+        const carriedEntry = {
+          id: 'carried-inactive-teacher',
+          timetableVersionId: 'baseline-ver-1',
+          academicYearId: mockIds.academicYearId,
+          weekday: AcademicWeekday.MONDAY,
+          timeSlotDefinitionId: 'slot-MONDAY-AFTERNOON-1',
+          schoolClassId: 'class-10A1',
+          subjectId: 'subj-TO',
+          teachingAssignmentId: 'assign-10A1-TO-GV01',
+          teacherUserId: 'user-GV01',
+          createdAt: new Date('2026-09-01T00:00:00Z'),
+        };
+        prisma.timetableVersion.findFirst.mockResolvedValue({
+          id: 'baseline-ver-1',
+          versionNumber: 1,
+          status: 'ACTIVE',
+          effectiveFrom: new Date('2026-09-07T00:00:00Z'),
+          effectiveUntil: null,
+        });
+        prisma.timetableEntry.findMany.mockResolvedValue([carriedEntry]);
+
+        const res = await adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'MORNING' }, 'fixture.xlsx');
+        expect(res.canConfirm).toBe(false);
+        expect(res.issues).toContainEqual(
+          expect.objectContaining({
+            code: 'TEACHER_INACTIVE',
+            severity: 'ERROR',
+          }),
+        );
+      });
+
+      it('21f. carried row with teacher who is no longer teaching staff fails closed with TEACHER_NOT_TEACHING_STAFF', async () => {
+        const { adapter, prisma, users } = buildMockContext();
+        const mutatedUsers = users.map((u) => (u.id === 'user-GV01' ? { ...u, profile: { ...u.profile, isTeachingStaff: false } } : u));
+        prisma.user.findMany.mockResolvedValue(mutatedUsers);
+
+        const carriedEntry = {
+          id: 'carried-non-teaching-staff',
+          timetableVersionId: 'baseline-ver-1',
+          academicYearId: mockIds.academicYearId,
+          weekday: AcademicWeekday.MONDAY,
+          timeSlotDefinitionId: 'slot-MONDAY-AFTERNOON-1',
+          schoolClassId: 'class-10A1',
+          subjectId: 'subj-TO',
+          teachingAssignmentId: 'assign-10A1-TO-GV01',
+          teacherUserId: 'user-GV01',
+          createdAt: new Date('2026-09-01T00:00:00Z'),
+        };
+        prisma.timetableVersion.findFirst.mockResolvedValue({
+          id: 'baseline-ver-1',
+          versionNumber: 1,
+          status: 'ACTIVE',
+          effectiveFrom: new Date('2026-09-07T00:00:00Z'),
+          effectiveUntil: null,
+        });
+        prisma.timetableEntry.findMany.mockResolvedValue([carriedEntry]);
+
+        const res = await adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'MORNING' }, 'fixture.xlsx');
+        expect(res.canConfirm).toBe(false);
+        expect(res.issues).toContainEqual(
+          expect.objectContaining({
+            code: 'TEACHER_NOT_TEACHING_STAFF',
+            severity: 'ERROR',
+          }),
+        );
+      });
+
+      it('21g. carried row with assignment coverage gap fails closed with ASSIGNMENT_COVERAGE_GAP', async () => {
+        const { adapter, prisma, assignments } = buildMockContext();
+        // Valid until before calendar end date (2027-05-31)
+        const mutatedAssignments = assignments.map((a) => (a.id === 'assign-10A1-TO-GV01' ? { ...a, validUntil: new Date('2026-10-01T00:00:00Z') } : a));
+        prisma.teachingAssignment.findMany.mockResolvedValue(mutatedAssignments);
+
+        const carriedEntry = {
+          id: 'carried-gap-assignment',
+          timetableVersionId: 'baseline-ver-1',
+          academicYearId: mockIds.academicYearId,
+          weekday: AcademicWeekday.MONDAY,
+          timeSlotDefinitionId: 'slot-MONDAY-AFTERNOON-1',
+          schoolClassId: 'class-10A1',
+          subjectId: 'subj-TO',
+          teachingAssignmentId: 'assign-10A1-TO-GV01',
+          teacherUserId: 'user-GV01',
+          createdAt: new Date('2026-09-01T00:00:00Z'),
+        };
+        prisma.timetableVersion.findFirst.mockResolvedValue({
+          id: 'baseline-ver-1',
+          versionNumber: 1,
+          status: 'ACTIVE',
+          effectiveFrom: new Date('2026-09-07T00:00:00Z'),
+          effectiveUntil: null,
+        });
+        prisma.timetableEntry.findMany.mockResolvedValue([carriedEntry]);
+
+        const res = await adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'MORNING' }, 'fixture.xlsx');
+        expect(res.canConfirm).toBe(false);
+        expect(res.issues).toContainEqual(
+          expect.objectContaining({
+            code: 'ASSIGNMENT_COVERAGE_GAP',
+            severity: 'ERROR',
+          }),
+        );
       });
     });
 
@@ -1344,8 +1913,17 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
     });
 
     describe('H. Contract & Boundaries', () => {
-      it('26. nativeSessionMode on GENERIC request is rejected', async () => {
+      it('26. nativeSessionMode on GENERIC request is rejected with TIMETABLE_IMPORT_INVALID_SOURCE_FORMAT', async () => {
         const { service } = buildMockContext();
+        // 1. inspect
+        await expect(service.inspect(uploadFile, mockIds.profileRevisionId, 'GENERIC', 'MORNING'))
+          .rejects.toMatchObject({
+            response: expect.objectContaining({
+              error: 'TIMETABLE_IMPORT_INVALID_SOURCE_FORMAT',
+            }),
+          });
+
+        // 2. preview
         const genericPreviewDto: PreviewTimetableImportWorkbookDto = {
           profileRevisionId: mockIds.profileRevisionId,
           academicYearId: mockIds.academicYearId,
@@ -1354,17 +1932,24 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
           sourceFormat: 'GENERIC',
           nativeSessionMode: 'MORNING',
         };
-        await expect(service.preview(uploadFile, genericPreviewDto)).rejects.toThrow(
-          'Chỉ định nativeSessionMode chỉ hợp lệ khi sourceFormat là DAMSAN_NATIVE.',
-        );
+        await expect(service.preview(uploadFile, genericPreviewDto)).rejects.toMatchObject({
+          response: expect.objectContaining({
+            error: 'TIMETABLE_IMPORT_INVALID_SOURCE_FORMAT',
+          }),
+        });
 
+        // 3. confirm
         const genericConfirmDto: ConfirmTimetableImportWorkbookDto = {
           ...genericPreviewDto,
           sheetName: 'Sheet1',
           headerRowNumber: 1,
         };
         await expect(service.confirm(uploadFile, genericConfirmDto, mockIds.actorUserId, { requestId: 'r-gen' }))
-          .rejects.toThrow('Chỉ định nativeSessionMode chỉ hợp lệ khi sourceFormat là DAMSAN_NATIVE.');
+          .rejects.toMatchObject({
+            response: expect.objectContaining({
+              error: 'TIMETABLE_IMPORT_INVALID_SOURCE_FORMAT',
+            }),
+          });
       });
 
       it('27. preview composition counts and IDs are exact', async () => {
@@ -1392,8 +1977,23 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
         expect(resSelective.composition?.baselineTimetableVersionId).toBe('active-baseline-id');
       });
 
-      it('28. audit metadata exact and bounded for selective confirmation', async () => {
-        const { service, audit } = buildMockContext();
+      it('28. audit metadata exact and bounded for selective confirmation with carried forward baseline', async () => {
+        const { service, audit, prisma } = buildMockContext();
+        const baselineEntries = await getFullBaselineEntries();
+        prisma.timetableVersion.findFirst.mockImplementation(({ where }) => {
+          if (where?.contentChecksum) {
+            return Promise.resolve(null);
+          }
+          return Promise.resolve({
+            id: 'active-baseline-id',
+            versionNumber: 1,
+            status: 'ACTIVE',
+            effectiveFrom: new Date('2026-09-07T00:00:00Z'),
+            effectiveUntil: null,
+          });
+        });
+        prisma.timetableEntry.findMany.mockResolvedValue(baselineEntries);
+
         await service.confirm(
           uploadFile,
           { ...previewDto, nativeSessionMode: 'MORNING', requestIdempotencyKey: 'idemp-audit-check' },
@@ -1404,9 +2004,10 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
           expect.objectContaining({
             metadata: expect.objectContaining({
               nativeSessionMode: 'MORNING',
+              baselineTimetableVersionId: 'active-baseline-id',
               authoredEntryCount: 402,
-              carriedForwardEntryCount: 0,
-              finalEntryCount: 402,
+              carriedForwardEntryCount: 53,
+              finalEntryCount: 455,
             }),
           }),
           expect.anything(),

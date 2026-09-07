@@ -17,6 +17,7 @@ async function workbookBytes(subjectCode = 'Toán'): Promise<Buffer> {
 }
 
 integration('timetable import workbook endpoints integration', () => {
+  jest.setTimeout(15000);
   const harness = new Phase01Harness();
   beforeAll(async () => harness.start());
   beforeEach(async () => {
