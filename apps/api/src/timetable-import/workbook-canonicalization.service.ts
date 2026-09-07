@@ -103,6 +103,13 @@ export class WorkbookCanonicalizationService {
   ): Promise<TimetableImportWorkbookPreviewResponse> {
     const revision = await this.requireActiveRevision(dto.profileRevisionId, db);
     const target = await this.resolveTarget(dto, db);
+    if (!dto.sheetName || dto.headerRowNumber === undefined) {
+      throw new BadRequestException({
+        error: 'TIMETABLE_IMPORT_GENERIC_PARAMS_REQUIRED',
+        message: 'sheetName and headerRowNumber are required for generic workbook import.',
+      });
+    }
+    const headerRowNumber = dto.headerRowNumber;
     const sheet = parsed.sheets.find((item) => item.name === dto.sheetName);
     if (!sheet || sheet.state !== 'VISIBLE' || !sheet.rows.some((row) => row.cells.some((cell) => cell.kind !== 'BLANK'))) {
       throw new BadRequestException({
@@ -110,7 +117,7 @@ export class WorkbookCanonicalizationService {
         message: 'Selected worksheet is not visible and nonblank.',
       });
     }
-    const located = locateHeader(sheet, dto.headerRowNumber, this.headerMappings(revision));
+    const located = locateHeader(sheet, headerRowNumber, this.headerMappings(revision));
     if (!located?.candidate.complete) {
       throw new BadRequestException({
         error: 'TIMETABLE_IMPORT_HEADER_NOT_COMPLETE',
@@ -123,7 +130,7 @@ export class WorkbookCanonicalizationService {
     const transient: EnrichedTimetableEntry[] = [];
     let sourceRowCount = 0;
 
-    for (const sourceRow of sheet.rows.filter((row) => row.number > dto.headerRowNumber)) {
+    for (const sourceRow of sheet.rows.filter((row) => row.number > headerRowNumber)) {
       if (sourceRow.cells.every((cell) => cell.kind === 'BLANK')) continue;
       sourceRowCount += 1;
       const mapped = Object.fromEntries(
@@ -267,7 +274,7 @@ export class WorkbookCanonicalizationService {
     return {
       profileId: revision.profileId,
       profileRevisionId: revision.id,
-      source: { sourceFileName, sheetName: sheet.name, headerRowNumber: dto.headerRowNumber, sourceRowCount },
+      source: { sourceFileName, sheetName: sheet.name, headerRowNumber, sourceRowCount },
       target: {
         academicYearId: dto.academicYearId,
         calendarVersionId: dto.calendarVersionId,

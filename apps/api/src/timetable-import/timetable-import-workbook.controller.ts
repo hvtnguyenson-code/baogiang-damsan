@@ -24,7 +24,7 @@ export class TimetableImportWorkbookController {
   @Post('inspect')
   @UseInterceptors(upload)
   inspect(@UploadedFile() file: UploadedWorkbookFile | undefined, @Body() dto: InspectTimetableImportWorkbookDto): Promise<TimetableImportWorkbookInspectionResponse> {
-    return this.service.inspect(file, dto.profileRevisionId);
+    return this.service.inspect(file, dto.profileRevisionId, dto.sourceFormat);
   }
 
   @Post('preview')

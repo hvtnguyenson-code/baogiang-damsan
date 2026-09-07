@@ -1,0 +1,439 @@
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
+import { AcademicWeekday, CatalogStatus, UserStatus } from '@prisma/client';
+import { DamSanNativeTimetableAdapter } from '../../src/timetable-import/damsan-native-adapter.service';
+import {
+  DamSanNativeErrorCode,
+} from '../../src/timetable-import/damsan-native-adapter.types';
+import {
+  ConfirmTimetableImportWorkbookDto,
+  PreviewTimetableImportWorkbookDto,
+} from '../../src/timetable-import/dto';
+import { TimetableImportWorkbookService, UploadedWorkbookFile } from '../../src/timetable-import/timetable-import-workbook.service';
+import { parseWorkbookBuffer } from '../../src/timetable-import/workbook-parser.worker';
+import { ParsedWorkbook } from '../../src/timetable-import/workbook-parser.types';
+
+describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', () => {
+  const fixturePath = resolve(__dirname, '../fixtures/tkb/sanitized-dam-san-tkb-fixture.xlsx');
+  const fixtureBuffer = readFileSync(fixturePath);
+  let parsedFixture: ParsedWorkbook;
+
+  const mockIds = {
+    academicYearId: '10000000-0000-4000-8000-000000000001',
+    calendarVersionId: '10000000-0000-4000-8000-000000000002',
+    effectiveAcademicWeekId: '10000000-0000-4000-8000-000000000003',
+    profileId: '10000000-0000-4000-8000-000000000004',
+    profileRevisionId: '10000000-0000-4000-8000-000000000005',
+    actorUserId: '10000000-0000-4000-8000-000000000006',
+  };
+
+  const weekdays = [
+    AcademicWeekday.MONDAY,
+    AcademicWeekday.TUESDAY,
+    AcademicWeekday.WEDNESDAY,
+    AcademicWeekday.THURSDAY,
+    AcademicWeekday.FRIDAY,
+    AcademicWeekday.SATURDAY,
+  ];
+
+  // 18 classes in sanitized fixture
+  const classCodes = [
+    '10A1', '10A2', '10A3', '10A4', '10A5', '10A6',
+    '11A1', '11A2', '11A3', '11A4', '11A5', '11A6',
+    '12A1', '12A2', '12A3', '12A4', '12A5', '12A6',
+  ];
+
+  // Subjects present in sanitized fixture
+  const subjectCodes = [
+    'TO', 'VA', 'LI', 'HO', 'SI', 'TI', 'CN', 'SU', 'DI', 'NN', 'CD', 'TD', 'QP', 'SH',
+  ];
+
+  // 38 synthetic teachers
+  const teacherCodes = Array.from({ length: 38 }, (_, i) => `GV${(i + 1).toString().padStart(2, '0')}`);
+
+  function buildMockContext() {
+    const classes = classCodes.map((code) => ({
+      id: `class-${code}`,
+      code,
+      name: `Lớp ${code}`,
+      academicYearId: mockIds.academicYearId,
+      gradeLevel: Number(code.slice(0, 2)),
+      status: CatalogStatus.ACTIVE,
+    }));
+
+    const subjects = subjectCodes.map((code) => ({
+      id: `subj-${code}`,
+      code,
+      name: `Môn ${code}`,
+      status: CatalogStatus.ACTIVE,
+    }));
+
+    const users = teacherCodes.map((staffCode, idx) => ({
+      id: `user-${staffCode}`,
+      username: staffCode.toLowerCase(),
+      status: UserStatus.ACTIVE,
+      profile: {
+        staffCode,
+        displayName: `Giáo viên ${(idx + 1).toString().padStart(2, '0')}`,
+        isTeachingStaff: true,
+      },
+    }));
+
+    const slots: Array<{
+      id: string;
+      academicYearId: string;
+      weekday: AcademicWeekday;
+      session: 'MORNING' | 'AFTERNOON';
+      ordinal: number;
+      startTime: Date;
+      endTime: Date;
+      revision: number;
+      isActive: boolean;
+      allowRegularTeaching: boolean;
+    }> = [];
+
+    for (const weekday of weekdays) {
+      for (const session of ['MORNING', 'AFTERNOON'] as const) {
+        for (let ordinal = 1; ordinal <= 5; ordinal += 1) {
+          const baseHour = session === 'MORNING' ? 6 + ordinal : 12 + ordinal;
+          slots.push({
+            id: `slot-${weekday}-${session}-${ordinal}`,
+            academicYearId: mockIds.academicYearId,
+            weekday,
+            session,
+            ordinal,
+            startTime: new Date(`1970-01-01T${baseHour.toString().padStart(2, '0')}:00:00.000Z`),
+            endTime: new Date(`1970-01-01T${baseHour.toString().padStart(2, '0')}:45:00.000Z`),
+            revision: 1,
+            isActive: true,
+            allowRegularTeaching: true,
+          });
+        }
+      }
+    }
+
+    // Comprehensive teaching assignments: every class x subject x teacher
+    const assignments: Array<{
+      id: string;
+      academicYearId: string;
+      schoolClassId: string;
+      subjectId: string;
+      teacherUserId: string;
+      validFrom: Date;
+      validUntil: Date | null;
+    }> = [];
+
+    for (const c of classes) {
+      for (const s of subjects) {
+        for (const u of users) {
+          assignments.push({
+            id: `assign-${c.code}-${s.code}-${u.profile.staffCode}`,
+            academicYearId: mockIds.academicYearId,
+            schoolClassId: c.id,
+            subjectId: s.id,
+            teacherUserId: u.id,
+            validFrom: new Date('2026-09-01T00:00:00Z'),
+            validUntil: new Date('2027-05-31T00:00:00Z'),
+          });
+        }
+      }
+    }
+
+    const revision = {
+      id: mockIds.profileRevisionId,
+      profileId: mockIds.profileId,
+      isActive: true,
+      sheetNameHint: 'TKB THEO LỚP BUỔI SÁNG',
+      teacherIdentifierMode: 'GENERIC_EXACT',
+      profile: { id: mockIds.profileId, name: 'Đam San TKB Profile' },
+      columnMappings: [],
+    };
+
+    const year = {
+      id: mockIds.academicYearId,
+      code: '2026-2027',
+      name: '2026-2027',
+    };
+
+    const calendar = {
+      id: mockIds.calendarVersionId,
+      academicYearId: mockIds.academicYearId,
+      startDate: new Date('2026-09-01T00:00:00Z'),
+      endDate: new Date('2027-05-31T00:00:00Z'),
+      teachingWeekdays: weekdays,
+    };
+
+    const week = {
+      id: mockIds.effectiveAcademicWeekId,
+      calendarVersionId: mockIds.calendarVersionId,
+      segments: [{
+        startDate: new Date('2026-09-07T00:00:00Z'),
+        endDate: new Date('2026-09-12T00:00:00Z'),
+      }],
+    };
+
+    const prisma = {
+      timetableImportProfileRevision: { findUnique: jest.fn().mockResolvedValue(revision) },
+      academicYear: { findUnique: jest.fn().mockResolvedValue(year) },
+      academicCalendarVersion: { findUnique: jest.fn().mockResolvedValue(calendar) },
+      academicWeek: { findUnique: jest.fn().mockResolvedValue(week) },
+      schoolClass: { findMany: jest.fn().mockResolvedValue(classes) },
+      subject: { findMany: jest.fn().mockResolvedValue(subjects) },
+      user: { findMany: jest.fn().mockResolvedValue(users) },
+      timetableImportEntityAlias: { findMany: jest.fn().mockResolvedValue([]) },
+      timeSlotDefinition: { findMany: jest.fn().mockResolvedValue(slots) },
+      teachingAssignment: { findMany: jest.fn().mockResolvedValue(assignments) },
+      timetableVersion: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        aggregate: jest.fn().mockResolvedValue({ _max: { versionNumber: 0 } }),
+        create: jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: 'created-version-id', ...data })),
+        findUniqueOrThrow: jest.fn().mockImplementation(({ where }) => Promise.resolve({
+          id: where.id,
+          versionNumber: 1,
+          status: 'DRAFT',
+          calendarVersionId: mockIds.calendarVersionId,
+          effectiveAcademicWeekId: mockIds.effectiveAcademicWeekId,
+          effectiveFrom: new Date('2026-09-07T00:00:00Z'),
+          effectiveUntil: null,
+          activatedAt: null,
+          supersededAt: null,
+          createdAt: new Date('2026-09-07T12:00:00Z'),
+          updatedAt: new Date('2026-09-07T12:00:00Z'),
+          _count: { entries: 455 },
+        })),
+      },
+      timetableEntry: {
+        findMany: jest.fn().mockResolvedValue([]),
+        createMany: jest.fn().mockResolvedValue({ count: 455 }),
+      },
+      timetableImportReceipt: {
+        create: jest.fn().mockImplementation(({ data }) => Promise.resolve({
+          id: 'created-receipt-id',
+          committedAt: new Date('2026-09-07T12:00:00Z'),
+          ...data,
+        })),
+      },
+      timetableImportRequestKey: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue({ id: 'created-key-id' }),
+      },
+      $transaction: jest.fn().mockImplementation((fn: (tx: unknown) => Promise<unknown>) => fn(prisma)),
+    };
+
+    const audit = { write: jest.fn().mockResolvedValue(undefined) };
+    const parser = { parse: jest.fn().mockResolvedValue(parsedFixture) };
+    const canonicalization = { requireActiveRevision: jest.fn().mockResolvedValue(revision) };
+
+    const adapter = new DamSanNativeTimetableAdapter(prisma as never);
+    const service = new TimetableImportWorkbookService(
+      prisma as never,
+      parser as never,
+      canonicalization as never,
+      audit as never,
+      adapter,
+    );
+
+    return { prisma, audit, adapter, service, classes, subjects, users, assignments, slots };
+  }
+
+  beforeAll(async () => {
+    parsedFixture = await parseWorkbookBuffer(fixtureBuffer);
+  });
+
+  const uploadFile: UploadedWorkbookFile = {
+    originalname: 'sanitized-dam-san-tkb-fixture.xlsx',
+    mimetype: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    size: fixtureBuffer.length,
+    buffer: fixtureBuffer,
+  };
+
+  const previewDto: PreviewTimetableImportWorkbookDto = {
+    profileRevisionId: mockIds.profileRevisionId,
+    academicYearId: mockIds.academicYearId,
+    calendarVersionId: mockIds.calendarVersionId,
+    effectiveAcademicWeekId: mockIds.effectiveAcademicWeekId,
+    sourceFormat: 'DAMSAN_NATIVE',
+  };
+
+  describe('DamSanNativeTimetableAdapter.inspect', () => {
+    it('inspects native workbook and returns 4 visible/selectable worksheets without issues', () => {
+      const { adapter } = buildMockContext();
+      const inspection = adapter.inspect(
+        parsedFixture,
+        mockIds.profileRevisionId,
+        mockIds.profileId,
+        'fixture.xlsx',
+      );
+
+      expect(inspection.sheets).toHaveLength(4);
+      for (const sheet of inspection.sheets) {
+        expect(sheet.selectable).toBe(true);
+        expect(sheet.nonBlank).toBe(true);
+      }
+      expect(inspection.issues).toHaveLength(0);
+    });
+  });
+
+  describe('DamSanNativeTimetableAdapter.preview', () => {
+    it('generates 455 canonical rows with canConfirm=true and 0 blocking issues on sanitized fixture', async () => {
+      const { adapter } = buildMockContext();
+      const result = await adapter.preview(parsedFixture, previewDto, 'fixture.xlsx');
+
+      expect(result.canConfirm).toBe(true);
+      expect(result.blockingIssueCount).toBe(0);
+      expect(result.rows).toHaveLength(455);
+      expect(result.issues).toHaveLength(0);
+      expect(result.target.effectiveFrom).toBe('2026-09-07');
+      expect(result.diff).toMatchObject({
+        counts: { added: 455, changed: 0, removed: 0, unchanged: 0 },
+      });
+    });
+
+    it('emits TKB_NATIVE_CLASS_HEADER_UNKNOWN when a class code is not found in the catalog', async () => {
+      const { adapter, prisma, classes } = buildMockContext();
+      // Remove class 10A1 from active classes
+      prisma.schoolClass.findMany.mockResolvedValue(classes.filter((c) => c.code !== '10A1'));
+
+      const result = await adapter.preview(parsedFixture, previewDto, 'fixture.xlsx');
+      expect(result.canConfirm).toBe(false);
+      expect(result.blockingIssueCount).toBeGreaterThanOrEqual(1);
+      expect(result.issues).toContainEqual(
+        expect.objectContaining({
+          code: DamSanNativeErrorCode.TKB_NATIVE_CLASS_HEADER_UNKNOWN,
+        }),
+      );
+    });
+
+    it('emits TKB_NATIVE_SUBJECT_UNKNOWN when a subject code is not found in the catalog', async () => {
+      const { adapter, prisma, subjects } = buildMockContext();
+      // Remove subject TO from active subjects
+      prisma.subject.findMany.mockResolvedValue(subjects.filter((s) => s.code !== 'TO'));
+
+      const result = await adapter.preview(parsedFixture, previewDto, 'fixture.xlsx');
+      expect(result.canConfirm).toBe(false);
+      expect(result.blockingIssueCount).toBeGreaterThanOrEqual(1);
+      expect(result.issues).toContainEqual(
+        expect.objectContaining({
+          code: DamSanNativeErrorCode.TKB_NATIVE_SUBJECT_UNKNOWN,
+        }),
+      );
+    });
+
+    it('emits TKB_NATIVE_TEACHER_IDENTITY_UNKNOWN when derived teacher code cannot be resolved', async () => {
+      const { adapter, prisma, users } = buildMockContext();
+      // Remove GV01 from active users
+      prisma.user.findMany.mockResolvedValue(users.filter((u) => u.profile.staffCode !== 'GV01'));
+
+      const result = await adapter.preview(parsedFixture, previewDto, 'fixture.xlsx');
+      expect(result.canConfirm).toBe(false);
+      expect(result.blockingIssueCount).toBeGreaterThanOrEqual(1);
+      expect(result.issues).toContainEqual(
+        expect.objectContaining({
+          code: DamSanNativeErrorCode.TKB_NATIVE_TEACHER_IDENTITY_UNKNOWN,
+        }),
+      );
+    });
+
+    it('deduplicates when staffCode and approved alias point to the same User (PASS)', async () => {
+      const { adapter, prisma } = buildMockContext();
+      // Add alias for GV01 pointing to user-GV01
+      prisma.timetableImportEntityAlias.findMany.mockResolvedValue([
+        {
+          id: 'alias-gv01',
+          sourceValueKey: 'gv01',
+          teacherUserId: 'user-GV01',
+          entityType: 'TEACHER',
+          academicYearId: null,
+        },
+      ]);
+
+      const result = await adapter.preview(parsedFixture, previewDto, 'fixture.xlsx');
+      expect(result.canConfirm).toBe(true);
+      expect(result.blockingIssueCount).toBe(0);
+      expect(result.rows).toHaveLength(455);
+    });
+
+    it('emits TKB_NATIVE_TEACHER_CODE_CONFLICT when staffCode and alias disagree (point to DIFFERENT Users)', async () => {
+      const { adapter, prisma } = buildMockContext();
+      // Alias for GV01 pointing to user-GV02 (different user)
+      prisma.timetableImportEntityAlias.findMany.mockResolvedValue([
+        {
+          id: 'alias-conflict',
+          sourceValueKey: 'gv01',
+          teacherUserId: 'user-GV02',
+          entityType: 'TEACHER',
+          academicYearId: null,
+        },
+      ]);
+
+      const result = await adapter.preview(parsedFixture, previewDto, 'fixture.xlsx');
+      expect(result.canConfirm).toBe(false);
+      expect(result.blockingIssueCount).toBeGreaterThanOrEqual(1);
+      expect(result.issues).toContainEqual(
+        expect.objectContaining({
+          code: DamSanNativeErrorCode.TKB_NATIVE_TEACHER_CODE_CONFLICT,
+        }),
+      );
+    });
+  });
+
+  describe('TimetableImportWorkbookService Integration (Inspect, Preview, Confirm)', () => {
+    it('delegates service.inspect to native adapter when sourceFormat is DAMSAN_NATIVE', async () => {
+      const { service } = buildMockContext();
+      const inspection = await service.inspect(uploadFile, mockIds.profileRevisionId, 'DAMSAN_NATIVE');
+      expect(inspection.sheets).toHaveLength(4);
+      expect(inspection.issues).toHaveLength(0);
+    });
+
+    it('delegates service.preview to native adapter when sourceFormat is DAMSAN_NATIVE', async () => {
+      const { service } = buildMockContext();
+      const preview = await service.preview(uploadFile, previewDto);
+      expect(preview.canConfirm).toBe(true);
+      expect(preview.rows).toHaveLength(455);
+    });
+
+    it('confirms native import into canonical draft version and receipt with audit logging', async () => {
+      const { service, prisma, audit } = buildMockContext();
+      const confirmDto: ConfirmTimetableImportWorkbookDto = {
+        ...previewDto,
+        requestIdempotencyKey: 'idempotency-key-native-123',
+      };
+
+      const result = await service.confirm(
+        uploadFile,
+        confirmDto,
+        mockIds.actorUserId,
+        { requestId: 'req-1' },
+      );
+
+      expect(result.outcome).toBe('CREATED');
+      expect(result.version).toMatchObject({
+        id: 'created-version-id',
+        status: 'DRAFT',
+      });
+      expect(result.receipt).toMatchObject({
+        id: 'created-receipt-id',
+        normalizedEntryCount: 455,
+      });
+
+      // Verify entries were persisted to canonical timetableEntry table
+      expect(prisma.timetableEntry.createMany).toHaveBeenCalledWith({
+        data: expect.arrayContaining([
+          expect.objectContaining({
+            timetableVersionId: 'created-version-id',
+            academicYearId: mockIds.academicYearId,
+          }),
+        ]),
+      });
+
+      // Verify audit was written
+      expect(audit.write).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'TIMETABLE_IMPORT_COMMITTED',
+          entityType: 'TimetableImportReceipt',
+        }),
+        expect.anything(),
+      );
+    });
+  });
+});
