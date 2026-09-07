@@ -34,7 +34,7 @@ const ISSUE_ORDER = [
 ] as const;
 
 export function sortPreviewIssues(issues: TimetableImportPreviewIssue[]): TimetableImportPreviewIssue[] {
-  const order = new Map(ISSUE_ORDER.map((code, index) => [code, index]));
+  const order = new Map<string, number>(ISSUE_ORDER.map((code, index) => [code, index]));
   return [...issues].sort((a, b) => (a.sourceRowNumber ?? 0) - (b.sourceRowNumber ?? 0)
     || (order.get(a.code) ?? 99) - (order.get(b.code) ?? 99)
     || (a.semanticField ?? '').localeCompare(b.semanticField ?? ''));

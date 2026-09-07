@@ -8,6 +8,12 @@ It is **not** a self-referential registry of the latest Git commit. Exact curren
 
 **Status snapshot date:** 2026-09-07
 
+## Active major task
+
+`P2-040` — Đam San TKB native adapter implementation — **IN_PROGRESS**.
+
+Active branch: `feat/tkb-native-adapter-040`, based on canonical `origin/main@54f5a61b2045e866cd566290cf38c6273e7c28ff`. Traceability: T25, T26. Implementing native 4-sheet structural parsing, bidirectional peer reconciliation, derived teacher-code identity resolution, and canonical import pipeline integration under accepted ADR-047; P2-050 remains separate.
+
 ## Last closed major task
 
 `P2-030` — Đam San TKB native-workbook architecture audit — **CLOSED** by `SYNC-P2-030`.
