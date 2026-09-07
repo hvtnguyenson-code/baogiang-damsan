@@ -53,6 +53,7 @@ export enum DamSanNativeErrorCode {
   TKB_NATIVE_TEACHER_IDENTITY_UNKNOWN = 'TKB_NATIVE_TEACHER_IDENTITY_UNKNOWN',
   TKB_NATIVE_SUBJECT_UNKNOWN = 'TKB_NATIVE_SUBJECT_UNKNOWN',
   TKB_NATIVE_CARRY_FORWARD_BASELINE_MISSING = 'TKB_NATIVE_CARRY_FORWARD_BASELINE_MISSING',
+  TKB_NATIVE_CARRY_FORWARD_PROVENANCE_INVALID = 'TKB_NATIVE_CARRY_FORWARD_PROVENANCE_INVALID',
 }
 
 export interface SafeEvidence {
@@ -68,6 +69,9 @@ export interface SafeEvidence {
   day?: number;
   period?: number;
   weekday?: string;
+  missingRelation?: string;
+  referenceId?: string;
+  entryId?: string;
 }
 
 export class DamSanNativeTimetableException extends BadRequestException {
@@ -98,6 +102,9 @@ function sanitizeEvidence(evidence: SafeEvidence): SafeEvidence {
   if (typeof evidence.day === 'number') sanitized.day = evidence.day;
   if (typeof evidence.period === 'number') sanitized.period = evidence.period;
   if (typeof evidence.weekday === 'string') sanitized.weekday = evidence.weekday.slice(0, 20);
+  if (typeof evidence.missingRelation === 'string') sanitized.missingRelation = evidence.missingRelation.slice(0, 50);
+  if (typeof evidence.referenceId === 'string') sanitized.referenceId = evidence.referenceId.slice(0, 50);
+  if (typeof evidence.entryId === 'string') sanitized.entryId = evidence.entryId.slice(0, 50);
   return sanitized;
 }
 

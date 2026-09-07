@@ -2,11 +2,14 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { AcademicWeekday, Prisma, TimetableImportSemanticField } from '@prisma/client';
 import {
   TimetableImportCanonicalPreviewRow,
+  TimetableImportNativeSessionMode,
   TimetableImportPreviewDiffRow,
   TimetableImportPreviewIssue,
+  TimetableImportPreviewIssueCode,
   TimetableImportWorkbookInspectionResponse,
   TimetableImportWorkbookPreviewResponse,
   TimetableImportWorksheetInspection,
+  TimetableValidationIssueCode,
 } from '@baogiang/contracts';
 import { formatCivilDate, parseCivilDate } from '../common/validation/civil-date';
 import { PrismaService } from '../prisma/prisma.service';
@@ -42,8 +45,9 @@ export class DamSanNativeTimetableAdapter {
     profileRevisionId: string,
     profileId: string,
     sourceFileName: string,
+    mode: TimetableImportNativeSessionMode = 'BOTH',
   ): TimetableImportWorkbookInspectionResponse {
-    validateAndExtractWorkbookStructure(parsed);
+    validateAndExtractWorkbookStructure(parsed, mode);
 
     const sheets: TimetableImportWorksheetInspection[] = parsed.sheets.map((sheet) => ({
       name: sheet.name,
@@ -305,6 +309,8 @@ export class DamSanNativeTimetableAdapter {
         normalizedSourceValues,
       });
 
+      const fullUser = context.users.find((u) => u.id === teacher.id) ?? teacher;
+
       transient.push({
         id: `source-slot-${classSlot.session}-${classSlot.day}-${classSlot.period}-${classSlot.classCode}`,
         timetableVersionId: 'preview',
@@ -319,7 +325,7 @@ export class DamSanNativeTimetableAdapter {
         timeSlotDefinition: timeSlot,
         schoolClass,
         subject,
-        teacher,
+        teacher: fullUser,
         teachingAssignment: assignment,
       } as EnrichedTimetableEntry);
     }
@@ -345,35 +351,94 @@ export class DamSanNativeTimetableAdapter {
 
       for (const entry of baseline.entries) {
         const slotDef = slotMap.get(entry.timeSlotDefinitionId);
+        if (!slotDef) {
+          throw new DamSanNativeTimetableException(
+            DamSanNativeErrorCode.TKB_NATIVE_CARRY_FORWARD_PROVENANCE_INVALID,
+            `Không tìm thấy khung tiết hợp lệ cho dòng bảo lưu ${entry.id}.`,
+            {
+              entryId: entry.id,
+              missingRelation: 'TimeSlotDefinition',
+              referenceId: entry.timeSlotDefinitionId,
+            },
+          );
+        }
+
         // Only carry forward rows whose session is NOT authored by this request
-        if (slotDef && slotDef.session === sessionMode) {
+        if (slotDef.session === sessionMode) {
           continue;
         }
 
         const schoolClass = classMap.get(entry.schoolClassId);
+        if (!schoolClass) {
+          throw new DamSanNativeTimetableException(
+            DamSanNativeErrorCode.TKB_NATIVE_CARRY_FORWARD_PROVENANCE_INVALID,
+            `Không tìm thấy lớp học hợp lệ cho dòng bảo lưu ${entry.id}.`,
+            {
+              entryId: entry.id,
+              missingRelation: 'SchoolClass',
+              referenceId: entry.schoolClassId,
+            },
+          );
+        }
+
         const subject = subjectMapById.get(entry.subjectId);
+        if (!subject) {
+          throw new DamSanNativeTimetableException(
+            DamSanNativeErrorCode.TKB_NATIVE_CARRY_FORWARD_PROVENANCE_INVALID,
+            `Không tìm thấy môn học hợp lệ cho dòng bảo lưu ${entry.id}.`,
+            {
+              entryId: entry.id,
+              missingRelation: 'Subject',
+              referenceId: entry.subjectId,
+            },
+          );
+        }
+
         const user = userMapById.get(entry.teacherUserId);
+        if (!user) {
+          throw new DamSanNativeTimetableException(
+            DamSanNativeErrorCode.TKB_NATIVE_CARRY_FORWARD_PROVENANCE_INVALID,
+            `Không tìm thấy giáo viên hợp lệ cho dòng bảo lưu ${entry.id}.`,
+            {
+              entryId: entry.id,
+              missingRelation: 'User',
+              referenceId: entry.teacherUserId,
+            },
+          );
+        }
+
         const assignment = assignmentMapById.get(entry.teachingAssignmentId);
+        if (!assignment) {
+          throw new DamSanNativeTimetableException(
+            DamSanNativeErrorCode.TKB_NATIVE_CARRY_FORWARD_PROVENANCE_INVALID,
+            `Không tìm thấy phân công giảng dạy hợp lệ cho dòng bảo lưu ${entry.id}.`,
+            {
+              entryId: entry.id,
+              missingRelation: 'TeachingAssignment',
+              referenceId: entry.teachingAssignmentId,
+            },
+          );
+        }
 
         carriedRows.push({
           sourceRowNumber: 0,
           weekday: entry.weekday,
           timeSlotDefinitionId: entry.timeSlotDefinitionId,
           schoolClassId: entry.schoolClassId,
-          schoolClassCode: schoolClass?.code ?? '',
+          schoolClassCode: schoolClass.code,
           subjectId: entry.subjectId,
-          subjectCode: subject?.code ?? '',
+          subjectCode: subject.code,
           teachingAssignmentId: entry.teachingAssignmentId,
           teacherUserId: entry.teacherUserId,
-          teacherDisplayName: user?.profile?.displayName ?? '',
-          teacherStaffCode: user?.profile?.staffCode ?? null,
+          teacherDisplayName: user.profile?.displayName ?? '',
+          teacherStaffCode: user.profile?.staffCode ?? null,
           normalizedSourceValues: {
             WEEKDAY: entry.weekday,
-            SESSION: slotDef?.session === 'MORNING' ? 'Sáng' : slotDef?.session === 'AFTERNOON' ? 'Chiều' : (slotDef?.session ?? ''),
-            PERIOD_ORDINAL: slotDef ? String(slotDef.ordinal) : '',
-            SCHOOL_CLASS: schoolClass?.code ?? '',
-            SUBJECT: subject?.code ?? '',
-            TEACHER: user?.profile?.staffCode ?? user?.profile?.displayName ?? '',
+            SESSION: slotDef.session === 'MORNING' ? 'Sáng' : slotDef.session === 'AFTERNOON' ? 'Chiều' : slotDef.session,
+            PERIOD_ORDINAL: String(slotDef.ordinal),
+            SCHOOL_CLASS: schoolClass.code,
+            SUBJECT: subject.code,
+            TEACHER: user.profile?.staffCode ?? user.profile?.displayName ?? '',
           },
         });
 
@@ -388,23 +453,11 @@ export class DamSanNativeTimetableAdapter {
           teachingAssignmentId: entry.teachingAssignmentId,
           teacherUserId: entry.teacherUserId,
           createdAt: entry.createdAt,
-          timeSlotDefinition: (slotDef ?? {
-            id: entry.timeSlotDefinitionId,
-            session: 'MORNING',
-            ordinal: 1,
-            startTime: new Date('1970-01-01T07:00:00.000Z'),
-            endTime: new Date('1970-01-01T07:45:00.000Z'),
-            isActive: true,
-            allowRegularTeaching: true,
-          }) as unknown as EnrichedTimetableEntry['timeSlotDefinition'],
-          schoolClass: (schoolClass ?? { id: entry.schoolClassId, code: '', status: 'ACTIVE' }) as unknown as EnrichedTimetableEntry['schoolClass'],
-          subject: (subject ?? { id: entry.subjectId, code: '', status: 'ACTIVE' }) as unknown as EnrichedTimetableEntry['subject'],
-          teacher: (user ?? { id: entry.teacherUserId, status: 'ACTIVE', profile: { displayName: '', staffCode: null, isTeachingStaff: true } }) as unknown as EnrichedTimetableEntry['teacher'],
-          teachingAssignment: (assignment ?? {
-            id: entry.teachingAssignmentId,
-            validFrom: target.effectiveFrom ? parseCivilDate(target.effectiveFrom) : new Date('2026-09-01T00:00:00.000Z'),
-            validUntil: null,
-          }) as unknown as EnrichedTimetableEntry['teachingAssignment'],
+          timeSlotDefinition: slotDef,
+          schoolClass,
+          subject,
+          teacher: user,
+          teachingAssignment: assignment,
         } as EnrichedTimetableEntry);
       }
     }
@@ -419,9 +472,10 @@ export class DamSanNativeTimetableAdapter {
       effectiveFrom: target.effectiveFrom,
       calendarEndDate: target.calendarEndDate,
     })) {
-      if (!['EMPTY_TIMETABLE', 'WEEKDAY_NOT_IN_CALENDAR', 'CLASS_TIME_OVERLAP', 'TEACHER_TIME_OVERLAP'].includes(validation.code)) continue;
+      const mappedCode = mapValidationCodeToPreviewIssueCode(validation.code);
+      if (!mappedCode) continue;
       issues.push({
-        code: validation.code as TimetableImportPreviewIssue['code'],
+        code: mappedCode,
         severity: 'ERROR',
         category: 'VALIDATION',
         message: validation.message,
@@ -761,5 +815,27 @@ export class DamSanNativeTimetableAdapter {
       calendarEndDate: formatCivilDate(calendar.endDate),
       teachingWeekdays: calendar.teachingWeekdays,
     };
+  }
+}
+
+function mapValidationCodeToPreviewIssueCode(code: TimetableValidationIssueCode): TimetableImportPreviewIssueCode | null {
+  switch (code) {
+    case 'EMPTY_TIMETABLE':
+    case 'WEEKDAY_NOT_IN_CALENDAR':
+    case 'SLOT_NOT_ACTIVE':
+    case 'SLOT_NOT_REGULAR_TEACHING':
+    case 'TEACHER_NOT_TEACHING_STAFF':
+    case 'ASSIGNMENT_COVERAGE_GAP':
+    case 'CLASS_TIME_OVERLAP':
+    case 'TEACHER_TIME_OVERLAP':
+      return code;
+    case 'CLASS_NOT_ACTIVE':
+      return 'CLASS_INACTIVE';
+    case 'SUBJECT_NOT_ACTIVE':
+      return 'SUBJECT_INACTIVE';
+    case 'TEACHER_NOT_ACTIVE':
+      return 'TEACHER_INACTIVE';
+    default:
+      return null;
   }
 }

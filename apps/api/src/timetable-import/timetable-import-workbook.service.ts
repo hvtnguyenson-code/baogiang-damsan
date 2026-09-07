@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { AuditResult, Prisma, TimetableImportReceipt, TimetableVersionStatus } from '@prisma/client';
 import {
+  TimetableImportNativeSessionMode,
   TimetableImportReceiptRecord,
   TimetableImportSourceFormat,
   TimetableImportWorkbookConfirmResponse,
@@ -76,8 +77,15 @@ export class TimetableImportWorkbookService {
     file: UploadedWorkbookFile | undefined,
     profileRevisionId: string,
     sourceFormat?: TimetableImportSourceFormat,
+    nativeSessionMode?: TimetableImportNativeSessionMode,
   ): Promise<TimetableImportWorkbookInspectionResponse> {
     this.validateFile(file);
+    if (sourceFormat !== 'DAMSAN_NATIVE' && nativeSessionMode !== undefined) {
+      throw new BadRequestException({
+        error: 'TIMETABLE_IMPORT_INVALID_SOURCE_FORMAT',
+        message: 'Chỉ định nativeSessionMode chỉ hợp lệ khi sourceFormat là DAMSAN_NATIVE.',
+      });
+    }
     const revision = await this.canonicalization.requireActiveRevision(profileRevisionId);
     const parsed = await this.parser.parse(file!.buffer);
     if (sourceFormat === 'DAMSAN_NATIVE') {
@@ -89,6 +97,7 @@ export class TimetableImportWorkbookService {
         profileRevisionId,
         revision.profileId,
         this.sourceFileName(file!.originalname),
+        nativeSessionMode ?? 'BOTH',
       );
     }
     const inspection = inspectParsedWorkbook(
@@ -111,7 +120,7 @@ export class TimetableImportWorkbookService {
     this.validateFile(file);
     if (dto.sourceFormat !== 'DAMSAN_NATIVE' && dto.nativeSessionMode !== undefined) {
       throw new BadRequestException({
-        error: 'INVALID_SOURCE_FORMAT_NATIVE_SESSION_MODE',
+        error: 'TIMETABLE_IMPORT_INVALID_SOURCE_FORMAT',
         message: 'Chỉ định nativeSessionMode chỉ hợp lệ khi sourceFormat là DAMSAN_NATIVE.',
       });
     }
@@ -135,7 +144,7 @@ export class TimetableImportWorkbookService {
     this.validateFile(file);
     if (dto.sourceFormat !== 'DAMSAN_NATIVE' && dto.nativeSessionMode !== undefined) {
       throw new BadRequestException({
-        error: 'INVALID_SOURCE_FORMAT_NATIVE_SESSION_MODE',
+        error: 'TIMETABLE_IMPORT_INVALID_SOURCE_FORMAT',
         message: 'Chỉ định nativeSessionMode chỉ hợp lệ khi sourceFormat là DAMSAN_NATIVE.',
       });
     }

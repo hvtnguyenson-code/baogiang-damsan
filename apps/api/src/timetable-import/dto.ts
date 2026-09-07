@@ -123,6 +123,10 @@ export class InspectTimetableImportWorkbookDto {
   @IsOptional()
   @IsEnum(['GENERIC', 'DAMSAN_NATIVE'] as const)
   sourceFormat?: TimetableImportSourceFormat;
+
+  @IsOptional()
+  @IsEnum(['BOTH', 'MORNING', 'AFTERNOON'] as const)
+  nativeSessionMode?: TimetableImportNativeSessionMode;
 }
 
 export class PreviewTimetableImportWorkbookDto extends InspectTimetableImportWorkbookDto {
@@ -141,10 +145,6 @@ export class PreviewTimetableImportWorkbookDto extends InspectTimetableImportWor
   @Min(1)
   @Max(MAX_HEADER_SCAN_ROWS)
   headerRowNumber?: number;
-
-  @IsOptional()
-  @IsEnum(['BOTH', 'MORNING', 'AFTERNOON'] as const)
-  nativeSessionMode?: TimetableImportNativeSessionMode;
 }
 
 export class ConfirmTimetableImportWorkbookDto extends PreviewTimetableImportWorkbookDto {
