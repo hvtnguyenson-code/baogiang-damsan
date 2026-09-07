@@ -10,26 +10,32 @@ It is **not** a self-referential registry of the latest Git commit. Exact curren
 
 ## Active major task
 
-`P2-050` — Morning/afternoon selective update and carry-forward — **IN_REVIEW** on dedicated branch `feat/tkb-selective-session-carry-forward-050`. Baseline main SHA: `f41a5ba2454f1803fada06296479548d7a71ca68`.
+None. `P2-050` is closed by `SYNC-P2-050`. The next eligible major tasks (`P1-030`, `P4-010`) await task start on their own dedicated branches.
 
 ## Last closed major task
 
-`P2-040` — Đam San TKB native adapter implementation — **CLOSED** by `SYNC-P2-040`.
+`P2-050` — Morning/afternoon selective update and carry-forward — **CLOSED** by `SYNC-P2-050`.
 
 Closure evidence:
-- starting main/base: `54f5a61b2045e866cd566290cf38c6273e7c28ff`;
-- dedicated task branch: `feat/tkb-native-adapter-040`;
-- final reviewed feature head: `cb4afe2b634705508a49742169772c437ed9cc33`;
+- starting main/base: `f41a5ba2454f1803fada06296479548d7a71ca68`;
+- dedicated task branch: `feat/tkb-selective-session-carry-forward-050`;
+- final reviewed feature head: `9a01b1c625edf1ab6eabec1e8846cb44a032585a`;
 - independent GitHub review: PASS;
-- parent PR: #114;
-- exact-head PR CI: CI #386 (run id: `34125951676`), SUCCESS;
-- merge/main commit: `2d2f69e5bb5a24e3b3a9bf7dfcfc2124d3d7c772`;
-- authoritative post-merge main CI: CI #387 (run id: `34126553341`), SUCCESS;
-- closed by administrative closure `SYNC-P2-040`;
-- merged file set: 19 files, strictly bounded to timetable-import runtime, contracts, test suites, and P2-040 documentation/governance;
-- review and correction outcome: all 15 review findings (Findings 1–15) resolved and verified with exhaustive regression tests before merge; Hard Stops A & B resolved by authority reconciliation (ADR-017 for 455 normal teacher-linked curricular rows persisted as canonical `TimetableEntry`, 120 permitted special non-peer slots `CC`/`GDĐP`/`TN-HN` recognized and structurally validated without fabricating teacher assignments or P4 semantics; ADR-021/026 server-side transient XLSX SHA-256 participating in `confirm-request-v1` request fingerprinting without persisting raw bytes or adding new receipt columns);
+- parent PR: #116 (`feat(timetable): add selective native session carry-forward`);
+- exact-head PR CI: CI #390 (run id: `34143795736`), SUCCESS;
+- merge/main commit: `42a0f058381a5b8faa6eb2d233481e48156523c6`;
+- authoritative post-merge main CI: CI #391 (run id: `34144327762`), SUCCESS;
+- closed by administrative closure `SYNC-P2-050`;
+- merged file set: 14 files, strictly bounded to timetable-import runtime, contracts, test suites, and P2-050 documentation/governance;
+- review and correction outcome: initial implementation underwent independent review; Findings 1–6 from final review correction were resolved and verified with exhaustive regression tests before merge:
+  1. `nativeSessionMode` wired end-to-end through inspect -> preview -> confirm (Inspect DTO, controller, service, adapter; unselected sheets non-authoritative in selective inspect; generic import rejected with `TIMETABLE_IMPORT_INVALID_SOURCE_FORMAT`);
+  2. full canonical validation enforced across complete composed timetable via centralized mapping (`mapValidationCodeToPreviewIssueCode`), blocking on inactive slots, inactive classes, inactive subjects, inactive teachers, non-teaching staff, assignment coverage gaps, and time overlaps;
+  3. fabricated carry-forward provenance fallbacks completely removed; missing referenced `TimeSlotDefinition`, `SchoolClass`, `Subject`, `User`, or `TeachingAssignment` fails closed with `TKB_NATIVE_CARRY_FORWARD_PROVENANCE_INVALID`;
+  4. real wall-clock cross-session collision regression added (`CLASS_TIME_OVERLAP`), and explicit selected-session clearing/removal regression added (authored=0, carried=53, final=53, canConfirm=true);
+  5. mandatory API integration test gate passed (`timetable-import-workbook.integration.spec.ts`, `timetable-import.integration.spec.ts`);
+  6. ADR-047 aligned with actual runtime contract;
 - no remaining correction or re-entry task;
-- zero schema modifications or migrations, no auth/session/authorization changes, no CI/CD changes, no P2-050/P4 implementation, and no deployment or production mutation.
+- zero schema modifications or migrations, no auth/session/authorization changes, no CI/CD changes, no P3/P4 implementation, and no deployment or production mutation.
 
 ## Homeroom chain
 
@@ -86,7 +92,7 @@ The production policy family registry and production UI adapter registry remain 
 
 ## Accepted native timetable workbook architecture
 
-`P2-030` (architecture) and `P2-040` (native adapter implementation) are **CLOSED**. `ADR-047-TKB-NATIVE-WORKBOOK-ARCHITECTURE.md` is accepted architecture authority for the real Đam San four-sheet timetable workbook. Selective morning/afternoon carry-forward remains owned by P2-050.
+`P2-030` (architecture), `P2-040` (native adapter implementation), and `P2-050` (morning/afternoon selective update and carry-forward) are **CLOSED**. `ADR-047-TKB-NATIVE-WORKBOOK-ARCHITECTURE.md` is accepted architecture authority for the real Đam San four-sheet timetable workbook and selective session workflow.
 
 The authoritative Đam San timetable workbook (`TKB-LAN-1-TUAN-1-03.9.26-in.xlsx`, SHA-256 `3ea242433d1d291912749cf9f2f6b39b700847bfc09384dec9c6849b15597c72`, 38,974 bytes) was audited locally and implemented in `DamSanNativeTimetableAdapter`:
 - dedicated `DamSanNativeTimetableAdapter` positioned upstream of canonical timetable importer;
@@ -105,9 +111,19 @@ The authoritative Đam San timetable workbook (`TKB-LAN-1-TUAN-1-03.9.26-in.xlsx
   - canonical User resolution resolves the derived `TeacherCode` through exact `StaffProfile.staffCode` or approved `TimetableImportEntityAlias` (TEACHER) per ADR-024 (no fuzzy matching, no display-name matching, disagreement fails closed);
 - fail-closed mismatch taxonomy (13 structured domain error codes);
 - effective date extraction (`2026-09-07`) and server-side raw XLSX SHA-256 participating in `confirm-request-v1` request fingerprinting without persisting raw bytes or adding new receipt columns;
-- sanitized structural test fixture `apps/api/test/fixtures/tkb/sanitized-dam-san-tkb-fixture.xlsx` generated with zero real teacher names and zero raw teacher codes (using synthetic `Giáo viên 01`..`Giáo viên 38` and `GV01`..`GV38`), preserving 100% of grid topology and reconciliation counts.
+- sanitized structural test fixture `apps/api/test/fixtures/tkb/sanitized-dam-san-tkb-fixture.xlsx` generated with zero real teacher names and zero raw teacher codes (using synthetic `Giáo viên 01`..`Giáo viên 38` and `GV01`..`GV38`), preserving 100% of grid topology and reconciliation counts;
+- selective morning/afternoon session authoring and carry-forward (P2-050):
+  - `nativeSessionMode` (`BOTH` / `MORNING` / `AFTERNOON`), defaulting to `BOTH` when omitted; rejected on generic importer with `TIMETABLE_IMPORT_INVALID_SOURCE_FORMAT`;
+  - source authority: `BOTH` requires exact four-sheet source; `MORNING` uses selected morning pair (Sheets 1 & 2); `AFTERNOON` uses selected afternoon pair (Sheets 3 & 4); unselected sheets are non-authoritative in selective mode;
+  - ADR-020 date-effective canonical baseline lookup at `target.effectiveFrom` (`status in ['ACTIVE', 'SUPERSEDED']`, `effectiveFrom <= targetDate`, `effectiveUntil null OR >= targetDate`); fails closed with `TKB_NATIVE_CARRY_FORWARD_BASELINE_MISSING` if no effective baseline exists;
+  - exact carry-forward of unauthored session rows preserving original canonical provenance IDs (`timeSlotDefinitionId`, `schoolClassId`, `subjectId`, `teachingAssignmentId`, `teacherUserId`); missing retained provenance fails closed with `TKB_NATIVE_CARRY_FORWARD_PROVENANCE_INVALID` without fabricated fallback objects;
+  - full composed canonical validation (`evaluateTimetableEntries` mapped into preview issue vocabulary) blocking cross-session class/teacher wall-clock collisions (`CLASS_TIME_OVERLAP`, `TEACHER_TIME_OVERLAP`) and invalid entity states (`SLOT_NOT_ACTIVE`, `SLOT_NOT_REGULAR_TEACHING`, `CLASS_INACTIVE`, `SUBJECT_INACTIVE`, `TEACHER_INACTIVE`, `TEACHER_NOT_TEACHING_STAFF`, `ASSIGNMENT_COVERAGE_GAP`);
+  - explicit selected-session clear/removal semantics (authored=0, carried=53, final=53, canConfirm=true);
+  - full semantic checksum across composed canonical rows;
+  - server-owned sentinels (`ALL_SHEETS`, `MORNING_SHEETS`, `AFTERNOON_SHEETS`) for request replay/idempotency;
+  - bounded preview composition metadata (`mode`, `baselineTimetableVersionId`, `authoredEntryCount`, `carriedForwardEntryCount`, `finalEntryCount`).
 
-P2-040 is closed; P2-050 is now eligible to implement selective session updates and explicit carry-forward on its own dedicated branch.
+`P2-040` and `P2-050` are closed by `SYNC-P2-040` and `SYNC-P2-050` respectively.
 
 ## Accepted governance authority
 
@@ -135,7 +151,7 @@ The repository contains reviewed implementation for:
 - **Homeroom control plane and capability** with dedicated `HOMEROOM_ASSIGNMENT_MANAGE / SCHOOL_WIDE` authority, explicit lifecycle commands, workspace-safe reads/options, bounded historical identity discovery without `USER_MANAGE`, server-owned business date, exact typed historical resolution, calendar compatibility and same-transaction audit;
 - retained exact time-slot revisions and real wall-clock collision semantics;
 - retained timetable versions/entries, validation, lifecycle, historical resolution and XLSX canonical import infrastructure;
-- **native Đam San timetable workbook adapter (`DamSanNativeTimetableAdapter`) and bidirectional peer reconciliation runtime** on top of canonical import pipeline, four-sheet structural validation, locked parser precedence, `TeacherSourceRowRef` structural identity, exact derived teacher code resolution, fail-closed class/subject code + alias conflict handling, 455 normal curricular teacher-linked rows persisted to `TimetableEntry`, 120 special non-peer slots structurally validated without fabricating teacher assignments, transient raw XLSX SHA-256 participating in confirm request fingerprinting per ADR-021/026, and privacy-sanitized structural test fixture;
+- **native Đam San timetable workbook adapter (`DamSanNativeTimetableAdapter`), bidirectional peer reconciliation runtime, and selective session authoring with explicit carry-forward** on top of canonical import pipeline, four-sheet structural validation, selective morning/afternoon mode (`BOTH` / `MORNING` / `AFTERNOON`), locked parser precedence, `TeacherSourceRowRef` structural identity, exact derived teacher code resolution, fail-closed class/subject code + alias conflict handling, 455 normal curricular teacher-linked rows persisted to `TimetableEntry`, 120 special non-peer slots structurally validated without fabricating teacher assignments, transient raw XLSX SHA-256 participating in confirm request fingerprinting per ADR-021/026, ADR-020 date-effective canonical baseline resolution, exact unauthored-session carry-forward preserving canonical provenance without fallback fabrication, full composed canonical validation (`evaluateTimetableEntries`) and semantic checksum, and privacy-sanitized structural test fixture;
 - PPCT persistence/control plane, stable item identity/revisions/lineage and exact class-subject version association;
 - operational overlays;
 - SpecialActivity minimum-core persistence/runtime with exact slots, frozen classes, staffing and class/teacher/time collision checks;
@@ -148,7 +164,7 @@ The repository contains reviewed implementation for:
 - **retained Business Configuration persistence, control plane and administration workspace** (separate BusinessPolicyStream / BusinessPolicyVersion / BusinessPolicyCommand topology, strict civil-date intervals, DB-level non-overlapping published exclusion, retained replacement and reversal/correction lineage, immutable published payload, exact historical validator-version resolution, dedicated `BUSINESS_CONFIGURATION_MANAGE / SCHOOL_WIDE` capability, capability-gated route `/quan-tri/chinh-sach-nghiep-vu`, typed/version-aware UI adapter architecture with triple identity, lifecycle UI for draft/edit/publish/replace/retire/correct, historical typed rendering, exact-date resolver UI, bounded Serializable mutation retry, idempotency receipts, same-transaction audit, sanitized errors and typed fail-closed resolver, with backend production registry and production UI adapter registry intentionally empty);
 - hardened Windows production deployment control-plane/runbooks through PR #90.
 
-Homeroom architecture, persistence, control plane/capability, historical read model and administration workspace UI are closed for the registered pre-pilot scope. Business Configuration architecture (P1-020), persistence/control plane (P1-021) and administration workspace (P1-022) are closed for the registered pre-pilot scope. P2-030 native timetable workbook architecture/evidence and P2-040 native adapter runtime implementation are closed; P2-050 selective morning/afternoon update and carry-forward remains separate.
+Homeroom architecture, persistence, control plane/capability, historical read model and administration workspace UI are closed for the registered pre-pilot scope. Business Configuration architecture (P1-020), persistence/control plane (P1-021) and administration workspace (P1-022) are closed for the registered pre-pilot scope. P2-030 native timetable workbook architecture/evidence, P2-040 native adapter runtime implementation, and P2-050 selective morning/afternoon update and carry-forward are closed.
 
 ## Pre-pilot verdict
 
@@ -165,13 +181,12 @@ The registered implementation, data-evidence, product and production-readiness t
 5. Existing `GDDDP_COORDINATOR` / `HĐTN_COORDINATOR` capability intent is not wired to programme-resource authority.
 6. Delayed go-live / operational-start policy and historical pre-operational evidence workflow are absent.
 7. PPCT real-school import is intentionally blocked pending an authoritative workbook contract.
-8. Morning/afternoon selective timetable update with explicit carry-forward is absent (owned by P2-050).
-9. Special-activity participation is not yet integrated into official workload/reporting aggregation.
-10. WorkloadAdjustmentRule remains trigger-gated/deferred.
-11. Installable PWA baseline is absent.
-12. Dedicated Báo giảng Telegram bot/linking/notification lifecycle is absent.
-13. First-certificate HTTP-01/Nginx authority for the Báo giảng subdomain is incomplete.
-14. Actual VPS Stage 1 evidence has not yet been collected for first deployment.
+8. Special-activity participation is not yet integrated into official workload/reporting aggregation.
+9. WorkloadAdjustmentRule remains trigger-gated/deferred.
+10. Installable PWA baseline is absent.
+11. Dedicated Báo giảng Telegram bot/linking/notification lifecycle is absent.
+12. First-certificate HTTP-01/Nginx authority for the Báo giảng subdomain is incomplete.
+13. Actual VPS Stage 1 evidence has not yet been collected for first deployment.
 
 ## Production VPS topology decision
 
@@ -187,10 +202,9 @@ The final production-host topology is intentionally unresolved and explicitly de
 The following registered tasks are eligible to start, each only on its own dedicated branch:
 
 - `P1-030` — Delayed go-live / operational-start architecture.
-- `P2-050` — Morning/afternoon selective update and carry-forward.
 - `P4-010` — GDĐP/HĐTN programme architecture closure.
 
-Eligibility does not imply concurrent execution or permission to bypass one-task-per-branch, review, CI or mandatory closure-sync gates. P2-050 must implement only its accepted scope; P4 runtime work remains gated by its registered dependencies, and P6 remains blocked by P6-005.
+Eligibility does not imply concurrent execution or permission to bypass one-task-per-branch, review, CI or mandatory closure-sync gates. P4 runtime work remains gated by its registered dependencies, and P6 remains blocked by P6-005.
 
 ## Decisions/evidence still blocking other paths
 
@@ -216,7 +230,7 @@ Direct P0 inspection found `main` is currently not protected server-side. This i
 
 ## Production state
 
-Production remains **pre-operational**. P1-020, P1-021, and P1-022 implementations are merged and canonical, but backend production policy registry and production UI adapter registry remain intentionally empty and no production business policy family is enabled. P2-030 architecture/evidence and P2-040 native adapter runtime implementation are merged to canonical `main`, but did NOT deploy or mutate VPS, database, Nginx, TLS, scheduled tasks, or application process state. P6 remains blocked by the explicit P6-005 topology decision gate.
+Production remains **pre-operational**. P1-020, P1-021, and P1-022 implementations are merged and canonical, but backend production policy registry and production UI adapter registry remain intentionally empty and no production business policy family is enabled. P2-030 architecture/evidence, P2-040 native adapter runtime implementation, and P2-050 selective session authoring and carry-forward are merged to canonical `main`, but did NOT deploy or mutate VPS, database, Nginx, TLS, scheduled tasks, or application process state. P6 remains blocked by the explicit P6-005 topology decision gate.
 
 ## Protected external system boundary
 
