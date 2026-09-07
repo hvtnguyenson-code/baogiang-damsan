@@ -9,6 +9,7 @@ import {
 import { AuditResult, Prisma, TimetableImportReceipt, TimetableVersionStatus } from '@prisma/client';
 import {
   TimetableImportReceiptRecord,
+  TimetableImportSourceFormat,
   TimetableImportWorkbookConfirmResponse,
   TimetableImportWorkbookInspectionResponse,
   TimetableImportWorkbookPreviewResponse,
@@ -28,6 +29,11 @@ import { inspectParsedWorkbook } from './workbook-inspection';
 import { MAX_XLSX_BYTES } from './workbook-limits';
 import { WorkbookCanonicalizationService } from './workbook-canonicalization.service';
 import { WorkbookParserService } from './workbook-parser.service';
+import { DamSanNativeTimetableAdapter } from './damsan-native-adapter.service';
+import {
+  DAMSAN_NATIVE_HEADER_ROW_SENTINEL,
+  DAMSAN_NATIVE_SHEET_SENTINEL,
+} from './damsan-native-adapter.types';
 
 export interface UploadedWorkbookFile {
   originalname: string;
@@ -61,15 +67,28 @@ export class TimetableImportWorkbookService {
     private readonly parser: WorkbookParserService,
     private readonly canonicalization: WorkbookCanonicalizationService,
     private readonly audit: AuditService,
+    private readonly nativeAdapter?: DamSanNativeTimetableAdapter,
   ) {}
 
   async inspect(
     file: UploadedWorkbookFile | undefined,
     profileRevisionId: string,
+    sourceFormat?: TimetableImportSourceFormat,
   ): Promise<TimetableImportWorkbookInspectionResponse> {
     this.validateFile(file);
     const revision = await this.canonicalization.requireActiveRevision(profileRevisionId);
     const parsed = await this.parser.parse(file!.buffer);
+    if (sourceFormat === 'DAMSAN_NATIVE') {
+      if (!this.nativeAdapter) {
+        throw new BadRequestException({ error: 'NATIVE_ADAPTER_UNAVAILABLE', message: 'Native adapter is not configured.' });
+      }
+      return this.nativeAdapter.inspect(
+        parsed,
+        profileRevisionId,
+        revision.profileId,
+        this.sourceFileName(file!.originalname),
+      );
+    }
     const inspection = inspectParsedWorkbook(
       parsed,
       this.canonicalization.headerMappings(revision),
@@ -90,6 +109,12 @@ export class TimetableImportWorkbookService {
     this.validateFile(file);
     await this.canonicalization.requireActiveRevision(dto.profileRevisionId);
     const parsed = await this.parser.parse(file!.buffer);
+    if (dto.sourceFormat === 'DAMSAN_NATIVE') {
+      if (!this.nativeAdapter) {
+        throw new BadRequestException({ error: 'NATIVE_ADAPTER_UNAVAILABLE', message: 'Native adapter is not configured.' });
+      }
+      return this.nativeAdapter.preview(parsed, dto, this.sourceFileName(file!.originalname));
+    }
     return this.canonicalization.preview(parsed, dto, this.sourceFileName(file!.originalname));
   }
 
@@ -103,9 +128,18 @@ export class TimetableImportWorkbookService {
     const workbookSha256 = computeWorkbookSha256(file!.buffer);
     const sourceFileName = this.sourceFileName(file!.originalname);
 
+    const isNative = dto.sourceFormat === 'DAMSAN_NATIVE';
+    const effectiveSheetName = isNative ? DAMSAN_NATIVE_SHEET_SENTINEL : (dto.sheetName ?? '');
+    const effectiveHeaderRowNumber = isNative ? DAMSAN_NATIVE_HEADER_ROW_SENTINEL : (dto.headerRowNumber ?? 0);
+    const effectiveDto: ConfirmTimetableImportWorkbookDto = {
+      ...dto,
+      sheetName: effectiveSheetName,
+      headerRowNumber: effectiveHeaderRowNumber,
+    };
+
     if (dto.requestIdempotencyKey) {
       const existing = await this.loadReplayBinding(dto.requestIdempotencyKey, this.prisma);
-      if (existing) return this.verifyBoundReplay(existing, dto, workbookSha256);
+      if (existing) return this.verifyBoundReplay(existing, effectiveDto, workbookSha256);
     }
 
     const parsed = await this.parser.parse(file!.buffer);
@@ -114,10 +148,13 @@ export class TimetableImportWorkbookService {
         return await this.prisma.$transaction(async (tx) => {
           if (dto.requestIdempotencyKey) {
             const existing = await this.loadReplayBinding(dto.requestIdempotencyKey, tx);
-            if (existing) return this.verifyBoundReplay(existing, dto, workbookSha256);
+            if (existing) return this.verifyBoundReplay(existing, effectiveDto, workbookSha256);
           }
 
-          const canonical = await this.canonicalization.preview(parsed, dto, sourceFileName, tx);
+          const canonical = isNative
+            ? await this.nativeAdapter!.preview(parsed, effectiveDto, sourceFileName, tx)
+            : await this.canonicalization.preview(parsed, dto, sourceFileName, tx);
+
           if (canonical.blockingIssueCount > 0) {
             throw new ConflictException({
               error: 'TIMETABLE_IMPORT_CONFIRM_BLOCKED',
@@ -135,8 +172,8 @@ export class TimetableImportWorkbookService {
               academicYearId: dto.academicYearId,
               calendarVersionId: dto.calendarVersionId,
               effectiveAcademicWeekId: dto.effectiveAcademicWeekId,
-              sheetName: dto.sheetName,
-              headerRowNumber: dto.headerRowNumber,
+              sheetName: effectiveSheetName,
+              headerRowNumber: effectiveHeaderRowNumber,
               semanticChecksum,
             })
             : null;
@@ -233,8 +270,8 @@ export class TimetableImportWorkbookService {
               requestIdempotencyKey: dto.requestIdempotencyKey ?? null,
               requestFingerprint,
               sourceFileName,
-              sheetName: dto.sheetName,
-              headerRowNumber: dto.headerRowNumber,
+              sheetName: effectiveSheetName,
+              headerRowNumber: effectiveHeaderRowNumber,
               sourceRowCount: canonical.source.sourceRowCount,
               normalizedEntryCount: canonical.rows.length,
               createdByUserId: actorUserId,
@@ -340,14 +377,16 @@ export class TimetableImportWorkbookService {
         message: 'Receipt-linked version has an invalid semantic checksum.',
       });
     }
+    const effectiveSheetName = dto.sourceFormat === 'DAMSAN_NATIVE' ? DAMSAN_NATIVE_SHEET_SENTINEL : (dto.sheetName ?? '');
+    const effectiveHeaderRowNumber = dto.sourceFormat === 'DAMSAN_NATIVE' ? DAMSAN_NATIVE_HEADER_ROW_SENTINEL : (dto.headerRowNumber ?? 0);
     const incoming = computeConfirmRequestFingerprint({
       workbookSha256,
       profileRevisionId: dto.profileRevisionId,
       academicYearId: dto.academicYearId,
       calendarVersionId: dto.calendarVersionId,
       effectiveAcademicWeekId: dto.effectiveAcademicWeekId,
-      sheetName: dto.sheetName,
-      headerRowNumber: dto.headerRowNumber,
+      sheetName: effectiveSheetName,
+      headerRowNumber: effectiveHeaderRowNumber,
       semanticChecksum: version.contentChecksum,
     });
     if (incoming !== binding.requestFingerprint) {

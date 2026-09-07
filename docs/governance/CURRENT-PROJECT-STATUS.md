@@ -8,6 +8,12 @@ It is **not** a self-referential registry of the latest Git commit. Exact curren
 
 **Status snapshot date:** 2026-09-07
 
+## Active major task
+
+`P2-040` — Đam San TKB native adapter implementation — **IN_REVIEW**.
+
+Active branch: `feat/tkb-native-adapter-040`, based on canonical `origin/main@54f5a61b2045e866cd566290cf38c6273e7c28ff`. Traceability: T25, T26. Following independent ChatGPT GitHub review rounds 1 and 2, all findings (Findings 1–12) were resolved and verified with exhaustive regression tests: composite `TeacherSourceRowRef` keying; server-owned native sentinels (`ALL_SHEETS` / `6`) immune to client DTO override; workbook effective date reconciliation against target week; Row 4 cell safety assertions; class Day coordinate source verification (merged-aware); blank-kind unsafe cell metadata assertions; fail-closed hidden mapped business data checks; missing physical teacher source row detection; fail-closed class and subject exact code + alias conflict resolution; and zero-allocation inert row handling. Hard Stop A (special non-peer activities CC, GDĐP, TN-HN) and Hard Stop B (raw workbook SHA-256 provenance) are fully RESOLVED by authority reconciliation with accepted ADR-017 (normal curricular teacher-linked lessons persisted as TimetableEntry, 455 rows; 120 special non-peer slots recognized/validated as structural evidence only without fabricating teacher assignments) and ADR-021/026 (transient workbook SHA-256 participates in confirm request fingerprinting, semantic checksum governs canonical version identity, no raw bytes stored, no new receipt column). Zero schema modifications or migrations. Full unit and native test suites pass. P2-040 remains `IN_REVIEW`; P2-050 remains `PLANNED`.
+
 ## Last closed major task
 
 `P2-030` — Đam San TKB native-workbook architecture audit — **CLOSED** by `SYNC-P2-030`.

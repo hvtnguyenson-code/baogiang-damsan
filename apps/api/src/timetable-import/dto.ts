@@ -18,8 +18,10 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
+import { TimetableImportSourceFormat } from '@baogiang/contracts';
 import { MAX_HEADER_SCAN_ROWS } from './workbook-limits';
 
 export class TimetableImportColumnMappingDto {
@@ -117,14 +119,28 @@ export class CreateTimetableImportAliasDto {
 export class InspectTimetableImportWorkbookDto {
   @IsUUID()
   profileRevisionId!: string;
+
+  @IsOptional()
+  @IsEnum(['GENERIC', 'DAMSAN_NATIVE'] as const)
+  sourceFormat?: TimetableImportSourceFormat;
 }
 
 export class PreviewTimetableImportWorkbookDto extends InspectTimetableImportWorkbookDto {
   @IsUUID() academicYearId!: string;
   @IsUUID() calendarVersionId!: string;
   @IsUUID() effectiveAcademicWeekId!: string;
-  @IsString() @MaxLength(150) sheetName!: string;
-  @Type(() => Number) @IsInt() @Min(1) @Max(MAX_HEADER_SCAN_ROWS) headerRowNumber!: number;
+
+  @ValidateIf((o: PreviewTimetableImportWorkbookDto) => o.sourceFormat !== 'DAMSAN_NATIVE')
+  @IsString()
+  @MaxLength(150)
+  sheetName?: string;
+
+  @ValidateIf((o: PreviewTimetableImportWorkbookDto) => o.sourceFormat !== 'DAMSAN_NATIVE')
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(MAX_HEADER_SCAN_ROWS)
+  headerRowNumber?: number;
 }
 
 export class ConfirmTimetableImportWorkbookDto extends PreviewTimetableImportWorkbookDto {

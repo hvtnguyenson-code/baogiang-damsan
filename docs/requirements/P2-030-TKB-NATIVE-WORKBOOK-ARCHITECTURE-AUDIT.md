@@ -385,7 +385,7 @@ P2-030 formally closes the following 20 architectural contracts:
 12. **Unknown Code Handling**: Unrecognized classes, subjects, or teacher identities fail closed with exact grid coordinates.
 13. **Blank-Cell Semantics**: Blank indicates unscheduled period; Saturday Period 5 blank is evidence in this workbook, not an immutable format constraint.
 14. **Effective-Date Extraction Contract**: Row 4 text `ÁP DỤNG TỪ NGÀY DD/MM/YYYY` is strictly extracted, validated against ISO civil date, and checked for consistency across sheets.
-15. **Workbook Checksum & Provenance**: SHA-256 is computed upon ingestion and retained on import receipts for idempotency and replay proof.
+15. **Workbook Checksum & Provenance**: Raw XLSX SHA-256 is computed server-side to participate in `confirm-request-v1` request fingerprinting (`requestFingerprint`) and idempotent replays per ADR-021/026. Semantic-v1 contentChecksum (`contentChecksum`) remains canonical business identity on `TimetableVersion`. Raw workbook bytes are not persisted, and no separate raw digest receipt column is introduced.
 16. **Sanitized Test Fixture**: Synthetic fixture `apps/api/test/fixtures/tkb/sanitized-dam-san-tkb-fixture.xlsx` generated with synthetic teacher names (`Giáo viên 01`..`Giáo viên 38`) and synthetic teacher codes (`GV01`..`GV38`), with 100% structural fidelity and verified 0 name/code leaks.
 17. **Task Boundaries**:
     - `P2-030` (this task): Architecture, structural audit, reconciliation specifications, sanitized fixture.

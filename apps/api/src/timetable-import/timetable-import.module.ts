@@ -6,6 +6,7 @@ import { TimetableImportController } from './timetable-import.controller';
 import { TimetableImportService } from './timetable-import.service';
 import { TimetableImportWorkbookController } from './timetable-import-workbook.controller';
 import { TimetableImportWorkbookService } from './timetable-import-workbook.service';
+import { DamSanNativeTimetableAdapter } from './damsan-native-adapter.service';
 import { WorkbookParserService } from './workbook-parser.service';
 import { WorkbookCanonicalizationService } from './workbook-canonicalization.service';
 
@@ -17,6 +18,8 @@ import { WorkbookCanonicalizationService } from './workbook-canonicalization.ser
     TimetableImportWorkbookService,
     WorkbookCanonicalizationService,
     WorkbookParserService,
+    DamSanNativeTimetableAdapter,
   ],
+  exports: [DamSanNativeTimetableAdapter],
 })
 export class TimetableImportModule {}
