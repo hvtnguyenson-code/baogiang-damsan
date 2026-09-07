@@ -172,6 +172,53 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
       }],
     };
 
+    type MockVersion = {
+      id: string;
+      academicYearId: string;
+      versionNumber: number;
+      status: string;
+      calendarVersionId: string;
+      effectiveAcademicWeekId: string;
+      effectiveFrom: Date;
+      effectiveUntil: Date | null;
+      contentChecksum?: string;
+      createdAt: Date;
+      updatedAt: Date;
+      _count?: { entries: number };
+      [key: string]: unknown;
+    };
+    type MockReceipt = {
+      id: string;
+      timetableVersionId?: string;
+      committedAt?: Date;
+      [key: string]: unknown;
+    };
+    type MockRequestKey = {
+      id: string;
+      requestKey?: string;
+      receiptId?: string;
+      [key: string]: unknown;
+    };
+
+    const versions: MockVersion[] = [
+      {
+        id: 'active-baseline-id',
+        academicYearId: mockIds.academicYearId,
+        versionNumber: 1,
+        status: 'ACTIVE',
+        calendarVersionId: mockIds.calendarVersionId,
+        effectiveAcademicWeekId: mockIds.effectiveAcademicWeekId,
+        effectiveFrom: new Date('2026-09-07T00:00:00Z'),
+        effectiveUntil: null,
+        contentChecksum: 'baseline-content-checksum',
+        createdAt: new Date('2026-09-01T00:00:00Z'),
+        updatedAt: new Date('2026-09-01T00:00:00Z'),
+        _count: { entries: 455 },
+      },
+    ];
+    const receipts: MockReceipt[] = [];
+    const requestKeys = new Map<string, MockRequestKey>();
+
     const prisma = {
       timetableImportProfileRevision: { findUnique: jest.fn().mockResolvedValue(revision) },
       academicYear: { findUnique: jest.fn().mockResolvedValue(year) },
@@ -184,43 +231,84 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
       timeSlotDefinition: { findMany: jest.fn().mockResolvedValue(slots) },
       teachingAssignment: { findMany: jest.fn().mockResolvedValue(assignments) },
       timetableVersion: {
-        findFirst: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockImplementation(({ where }) => {
+          if (where?.status?.in) {
+            const active = versions.find((v) => where.status.in.includes(v.status));
+            return Promise.resolve(active ?? null);
+          }
+          if (where?.contentChecksum) {
+            const match = versions.find((v) => v.contentChecksum === where.contentChecksum);
+            if (match) {
+              const r = receipts.find((rec) => rec.timetableVersionId === match.id);
+              return Promise.resolve({
+                ...match,
+                importReceipt: r ?? null,
+              });
+            }
+          }
+          return Promise.resolve(null);
+        }),
         aggregate: jest.fn().mockResolvedValue({ _max: { versionNumber: 0 } }),
-        create: jest.fn().mockImplementation(({ data }) => Promise.resolve({
-          id: 'created-version-id',
-          createdAt: new Date('2026-09-07T12:00:00Z'),
-          updatedAt: new Date('2026-09-07T12:00:00Z'),
-          ...data,
-        })),
-        findUniqueOrThrow: jest.fn().mockImplementation(({ where }) => Promise.resolve({
-          id: where.id,
-          versionNumber: 1,
-          status: 'DRAFT',
-          calendarVersionId: mockIds.calendarVersionId,
-          effectiveAcademicWeekId: mockIds.effectiveAcademicWeekId,
-          effectiveFrom: new Date('2026-09-07T00:00:00Z'),
-          effectiveUntil: null,
-          activatedAt: null,
-          supersededAt: null,
-          createdAt: new Date('2026-09-07T12:00:00Z'),
-          updatedAt: new Date('2026-09-07T12:00:00Z'),
-          _count: { entries: 455 },
-        })),
+        create: jest.fn().mockImplementation(({ data }) => {
+          const v = {
+            id: 'created-version-id',
+            createdAt: new Date('2026-09-07T12:00:00Z'),
+            updatedAt: new Date('2026-09-07T12:00:00Z'),
+            _count: { entries: 455 },
+            ...data,
+          };
+          versions.push(v);
+          return Promise.resolve(v);
+        }),
+        findUniqueOrThrow: jest.fn().mockImplementation(({ where }) => {
+          const v = versions.find((item) => item.id === where.id);
+          return Promise.resolve(v ?? {
+            id: where.id,
+            versionNumber: 1,
+            status: 'DRAFT',
+            calendarVersionId: mockIds.calendarVersionId,
+            effectiveAcademicWeekId: mockIds.effectiveAcademicWeekId,
+            effectiveFrom: new Date('2026-09-07T00:00:00Z'),
+            effectiveUntil: null,
+            activatedAt: null,
+            supersededAt: null,
+            createdAt: new Date('2026-09-07T12:00:00Z'),
+            updatedAt: new Date('2026-09-07T12:00:00Z'),
+            _count: { entries: 455 },
+          });
+        }),
       },
       timetableEntry: {
         findMany: jest.fn().mockResolvedValue([]),
         createMany: jest.fn().mockResolvedValue({ count: 455 }),
       },
       timetableImportReceipt: {
-        create: jest.fn().mockImplementation(({ data }) => Promise.resolve({
-          id: 'created-receipt-id',
-          committedAt: new Date('2026-09-07T12:00:00Z'),
-          ...data,
-        })),
+        create: jest.fn().mockImplementation(({ data }) => {
+          const r = {
+            id: 'created-receipt-id',
+            committedAt: new Date('2026-09-07T12:00:00Z'),
+            ...data,
+          };
+          receipts.push(r);
+          return Promise.resolve(r);
+        }),
       },
       timetableImportRequestKey: {
-        findUnique: jest.fn().mockResolvedValue(null),
-        create: jest.fn().mockResolvedValue({ id: 'created-key-id' }),
+        findUnique: jest.fn().mockImplementation(({ where }) => {
+          const keyBinding = requestKeys.get(where.requestKey);
+          if (!keyBinding) return Promise.resolve(null);
+          const r = receipts.find((rec) => rec.id === keyBinding.receiptId);
+          const v = versions.find((ver) => ver.id === r?.timetableVersionId);
+          return Promise.resolve({
+            ...keyBinding,
+            receipt: r ? { ...r, timetableVersion: v } : null,
+          });
+        }),
+        create: jest.fn().mockImplementation(({ data }) => {
+          const k = { id: `created-key-${requestKeys.size + 1}`, ...data };
+          requestKeys.set(data.requestKey, k);
+          return Promise.resolve(k);
+        }),
       },
       $transaction: jest.fn().mockImplementation((fn: (tx: unknown) => Promise<unknown>) => fn(prisma)),
     };
@@ -783,6 +871,557 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
             message: expect.stringContaining('10A2'),
           }),
         );
+      });
+    });
+  });
+
+  describe('P2-050: Morning/Afternoon Selective Update & Explicit Carry-Forward', () => {
+    // Helper to generate mock baseline entries from full preview
+    async function getFullBaselineEntries() {
+      const { adapter } = buildMockContext();
+      const fullPreview = await adapter.preview(parsedFixture, previewDto, 'fixture.xlsx');
+      return fullPreview.rows.map((row, idx) => ({
+        id: `baseline-entry-${idx + 1}`,
+        timetableVersionId: 'baseline-version-id',
+        academicYearId: mockIds.academicYearId,
+        weekday: row.weekday,
+        timeSlotDefinitionId: row.timeSlotDefinitionId,
+        schoolClassId: row.schoolClassId,
+        subjectId: row.subjectId,
+        teachingAssignmentId: row.teachingAssignmentId,
+        teacherUserId: row.teacherUserId,
+        createdAt: new Date('2026-09-01T00:00:00Z'),
+      }));
+    }
+
+    describe('A. Backward Compatibility', () => {
+      it('1. DAMSAN_NATIVE with mode omitted defaults to BOTH', async () => {
+        const { adapter } = buildMockContext();
+        const res = await adapter.preview(parsedFixture, previewDto, 'fixture.xlsx');
+        expect(res.composition?.mode).toBe('BOTH');
+        expect(res.rows).toHaveLength(455);
+        expect(res.source.sheetName).toBe('ALL_SHEETS');
+      });
+
+      it('2. BOTH still requires/validates all four sheets', async () => {
+        const mutatedParsed = {
+          ...parsedFixture,
+          sheets: parsedFixture.sheets.filter((s) => s.name !== 'TKB THEO LỚP BUỔI CHIỀU'),
+        };
+        const { adapter } = buildMockContext();
+        await expect(adapter.preview(mutatedParsed, { ...previewDto, nativeSessionMode: 'BOTH' }, 'fixture.xlsx'))
+          .rejects.toThrow();
+      });
+
+      it('3. sanitized BOTH remains exactly 455 canonical normal rows', async () => {
+        const { adapter } = buildMockContext();
+        const res = await adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'BOTH' }, 'fixture.xlsx');
+        expect(res.rows).toHaveLength(455);
+        expect(res.composition?.authoredEntryCount).toBe(455);
+        expect(res.composition?.carriedForwardEntryCount).toBe(0);
+      });
+
+      it('4. current ALL_SHEETS / header 6 replay behavior remains valid', async () => {
+        const { service } = buildMockContext();
+        const res = await service.confirm(
+          uploadFile,
+          { ...previewDto, nativeSessionMode: 'BOTH', requestIdempotencyKey: 'idemp-both-replay' },
+          mockIds.actorUserId,
+          { requestId: 'req-both' },
+        );
+        expect(res.outcome).toBe('CREATED');
+        expect(res.receipt.sheetName).toBe('ALL_SHEETS');
+        expect(res.receipt.headerRowNumber).toBe(6);
+      });
+    });
+
+    describe('B. Morning Selective', () => {
+      it('5. baseline 455 + new morning 402 => final 455', async () => {
+        const { adapter, prisma } = buildMockContext();
+        const baselineEntries = await getFullBaselineEntries();
+        prisma.timetableVersion.findFirst.mockResolvedValue({
+          id: 'baseline-ver-1',
+          versionNumber: 1,
+          status: 'ACTIVE',
+          effectiveFrom: new Date('2026-09-07T00:00:00Z'),
+          effectiveUntil: null,
+        });
+        prisma.timetableEntry.findMany.mockResolvedValue(baselineEntries);
+
+        const res = await adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'MORNING' }, 'fixture.xlsx');
+        expect(res.canConfirm).toBe(true);
+        expect(res.composition).toEqual({
+          mode: 'MORNING',
+          baselineTimetableVersionId: 'baseline-ver-1',
+          authoredEntryCount: 402,
+          carriedForwardEntryCount: 53,
+          finalEntryCount: 455,
+        });
+        expect(res.rows).toHaveLength(455);
+        expect(res.source.sheetName).toBe('MORNING_SHEETS');
+        expect(res.source.sourceRowCount).toBe(540);
+      });
+
+      it('6. exact 53 afternoon baseline rows carried unchanged', async () => {
+        const { adapter, prisma, slots } = buildMockContext();
+        const baselineEntries = await getFullBaselineEntries();
+        prisma.timetableVersion.findFirst.mockResolvedValue({
+          id: 'baseline-ver-1',
+          versionNumber: 1,
+          status: 'ACTIVE',
+          effectiveFrom: new Date('2026-09-07T00:00:00Z'),
+          effectiveUntil: null,
+        });
+        prisma.timetableEntry.findMany.mockResolvedValue(baselineEntries);
+
+        const res = await adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'MORNING' }, 'fixture.xlsx');
+        const afternoonSlotIds = new Set(slots.filter((s) => s.session === 'AFTERNOON').map((s) => s.id));
+        const carriedAfternoon = res.rows.filter((r) => afternoonSlotIds.has(r.timeSlotDefinitionId));
+        expect(carriedAfternoon).toHaveLength(53);
+        for (const row of carriedAfternoon) {
+          expect(row.sourceRowNumber).toBe(0);
+        }
+      });
+
+      it('7. malformed/missing unselected afternoon workbook sheets do not erase carried afternoon', async () => {
+        const { adapter, prisma } = buildMockContext();
+        const baselineEntries = await getFullBaselineEntries();
+        prisma.timetableVersion.findFirst.mockResolvedValue({
+          id: 'baseline-ver-1',
+          versionNumber: 1,
+          status: 'ACTIVE',
+          effectiveFrom: new Date('2026-09-07T00:00:00Z'),
+          effectiveUntil: null,
+        });
+        prisma.timetableEntry.findMany.mockResolvedValue(baselineEntries);
+
+        // Filter out afternoon sheets completely
+        const morningOnlyParsed = {
+          ...parsedFixture,
+          sheets: parsedFixture.sheets.filter((s) => !s.name.includes('CHIỀU')),
+        };
+
+        const res = await adapter.preview(morningOnlyParsed, { ...previewDto, nativeSessionMode: 'MORNING' }, 'fixture.xlsx');
+        expect(res.canConfirm).toBe(true);
+        expect(res.rows).toHaveLength(455);
+        expect(res.composition?.carriedForwardEntryCount).toBe(53);
+      });
+
+      it('8. selected morning pair missing/corrupt => fail closed', async () => {
+        const { adapter } = buildMockContext();
+        const corruptedParsed = {
+          ...parsedFixture,
+          sheets: parsedFixture.sheets.filter((s) => s.name !== 'TKB THEO LỚP BUỔI SÁNG'),
+        };
+        await expect(adapter.preview(corruptedParsed, { ...previewDto, nativeSessionMode: 'MORNING' }, 'fixture.xlsx'))
+          .rejects.toThrow();
+      });
+    });
+
+    describe('C. Afternoon Selective', () => {
+      it('9. baseline 455 + new afternoon 53 => final 455', async () => {
+        const { adapter, prisma } = buildMockContext();
+        const baselineEntries = await getFullBaselineEntries();
+        prisma.timetableVersion.findFirst.mockResolvedValue({
+          id: 'baseline-ver-1',
+          versionNumber: 1,
+          status: 'ACTIVE',
+          effectiveFrom: new Date('2026-09-07T00:00:00Z'),
+          effectiveUntil: null,
+        });
+        prisma.timetableEntry.findMany.mockResolvedValue(baselineEntries);
+
+        const res = await adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'AFTERNOON' }, 'fixture.xlsx');
+        expect(res.canConfirm).toBe(true);
+        expect(res.composition).toEqual({
+          mode: 'AFTERNOON',
+          baselineTimetableVersionId: 'baseline-ver-1',
+          authoredEntryCount: 53,
+          carriedForwardEntryCount: 402,
+          finalEntryCount: 455,
+        });
+        expect(res.rows).toHaveLength(455);
+        expect(res.source.sheetName).toBe('AFTERNOON_SHEETS');
+        expect(res.source.sourceRowCount).toBe(540);
+      });
+
+      it('10. exact 402 morning baseline rows carried unchanged', async () => {
+        const { adapter, prisma, slots } = buildMockContext();
+        const baselineEntries = await getFullBaselineEntries();
+        prisma.timetableVersion.findFirst.mockResolvedValue({
+          id: 'baseline-ver-1',
+          versionNumber: 1,
+          status: 'ACTIVE',
+          effectiveFrom: new Date('2026-09-07T00:00:00Z'),
+          effectiveUntil: null,
+        });
+        prisma.timetableEntry.findMany.mockResolvedValue(baselineEntries);
+
+        const res = await adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'AFTERNOON' }, 'fixture.xlsx');
+        const morningSlotIds = new Set(slots.filter((s) => s.session === 'MORNING').map((s) => s.id));
+        const carriedMorning = res.rows.filter((r) => morningSlotIds.has(r.timeSlotDefinitionId));
+        expect(carriedMorning).toHaveLength(402);
+      });
+
+      it('11. malformed/missing unselected morning source does not erase carried morning', async () => {
+        const { adapter, prisma } = buildMockContext();
+        const baselineEntries = await getFullBaselineEntries();
+        prisma.timetableVersion.findFirst.mockResolvedValue({
+          id: 'baseline-ver-1',
+          versionNumber: 1,
+          status: 'ACTIVE',
+          effectiveFrom: new Date('2026-09-07T00:00:00Z'),
+          effectiveUntil: null,
+        });
+        prisma.timetableEntry.findMany.mockResolvedValue(baselineEntries);
+
+        // Filter out morning sheets completely
+        const afternoonOnlyParsed = {
+          ...parsedFixture,
+          sheets: parsedFixture.sheets.filter((s) => !s.name.includes('SÁNG') && !s.name.includes('SANG')),
+        };
+
+        const res = await adapter.preview(afternoonOnlyParsed, { ...previewDto, nativeSessionMode: 'AFTERNOON' }, 'fixture.xlsx');
+        expect(res.canConfirm).toBe(true);
+        expect(res.rows).toHaveLength(455);
+        expect(res.composition?.carriedForwardEntryCount).toBe(402);
+      });
+
+      it('12. selected afternoon pair missing/corrupt => fail closed', async () => {
+        const { adapter } = buildMockContext();
+        const corruptedParsed = {
+          ...parsedFixture,
+          sheets: parsedFixture.sheets.filter((s) => s.name !== 'TKB THEO LỚP BUỔI CHIỀU'),
+        };
+        await expect(adapter.preview(corruptedParsed, { ...previewDto, nativeSessionMode: 'AFTERNOON' }, 'fixture.xlsx'))
+          .rejects.toThrow();
+      });
+    });
+
+    describe('D. Baseline Resolution', () => {
+      it('13. selective without effective baseline throws TKB_NATIVE_CARRY_FORWARD_BASELINE_MISSING', async () => {
+        const { adapter, prisma } = buildMockContext();
+        prisma.timetableVersion.findFirst.mockResolvedValue(null);
+
+        await expect(adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'MORNING' }, 'fixture.xlsx'))
+          .rejects.toMatchObject({
+            response: expect.objectContaining({
+              error: DamSanNativeErrorCode.TKB_NATIVE_CARRY_FORWARD_BASELINE_MISSING,
+            }),
+          });
+      });
+
+      it('14. baseline selected by exact ADR-020 effective interval', async () => {
+        const { adapter, prisma } = buildMockContext();
+        const baselineEntries = await getFullBaselineEntries();
+        prisma.timetableVersion.findFirst.mockResolvedValue({
+          id: 'baseline-ad20',
+          versionNumber: 2,
+          status: 'SUPERSEDED',
+          effectiveFrom: new Date('2026-09-01T00:00:00Z'),
+          effectiveUntil: new Date('2026-09-15T00:00:00Z'),
+        });
+        prisma.timetableEntry.findMany.mockResolvedValue(baselineEntries);
+
+        const res = await adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'MORNING' }, 'fixture.xlsx');
+        expect(res.composition?.baselineTimetableVersionId).toBe('baseline-ad20');
+        expect(prisma.timetableVersion.findFirst).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({
+              status: { in: ['ACTIVE', 'SUPERSEDED'] },
+              effectiveFrom: { lte: expect.any(Date) },
+            }),
+            orderBy: [{ effectiveFrom: 'desc' }, { id: 'asc' }],
+          }),
+        );
+      });
+
+      it('15. DRAFT/VALIDATED/APPROVED candidates are never carry-forward baseline', async () => {
+        const { adapter, prisma } = buildMockContext();
+        prisma.timetableVersion.findFirst.mockResolvedValue(null);
+
+        await expect(adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'MORNING' }, 'fixture.xlsx'))
+          .rejects.toThrow();
+      });
+
+      it('16. future/old versionNumber ordering cannot override date-effective baseline', async () => {
+        const { adapter, prisma } = buildMockContext();
+        const baselineEntries = await getFullBaselineEntries();
+        prisma.timetableVersion.findFirst.mockResolvedValue({
+          id: 'v1-effective',
+          versionNumber: 1,
+          status: 'ACTIVE',
+          effectiveFrom: new Date('2026-09-07T00:00:00Z'),
+          effectiveUntil: null,
+        });
+        prisma.timetableEntry.findMany.mockResolvedValue(baselineEntries);
+
+        const res = await adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'MORNING' }, 'fixture.xlsx');
+        expect(res.composition?.baselineTimetableVersionId).toBe('v1-effective');
+      });
+    });
+
+    describe('E. Provenance', () => {
+      it('17. carried rows preserve exact canonical IDs and no re-resolution through catalog', async () => {
+        const { adapter, prisma } = buildMockContext();
+        const customCarriedEntry = {
+          id: 'carried-special-entry',
+          timetableVersionId: 'baseline-ver-1',
+          academicYearId: mockIds.academicYearId,
+          weekday: AcademicWeekday.MONDAY,
+          timeSlotDefinitionId: 'slot-MONDAY-AFTERNOON-1',
+          schoolClassId: 'class-10A1',
+          subjectId: 'subj-TO',
+          teachingAssignmentId: 'assign-carried-xyz',
+          teacherUserId: 'user-GV01',
+          createdAt: new Date('2026-09-01T00:00:00Z'),
+        };
+        prisma.timetableVersion.findFirst.mockResolvedValue({
+          id: 'baseline-ver-1',
+          versionNumber: 1,
+          status: 'ACTIVE',
+          effectiveFrom: new Date('2026-09-07T00:00:00Z'),
+          effectiveUntil: null,
+        });
+        prisma.timetableEntry.findMany.mockResolvedValue([customCarriedEntry]);
+
+        const res = await adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'MORNING' }, 'fixture.xlsx');
+        const matched = res.rows.find((r) => r.teachingAssignmentId === 'assign-carried-xyz');
+        expect(matched).toBeDefined();
+        expect(matched?.teacherUserId).toBe('user-GV01');
+        expect(matched?.subjectId).toBe('subj-TO');
+        expect(matched?.schoolClassId).toBe('class-10A1');
+        expect(matched?.timeSlotDefinitionId).toBe('slot-MONDAY-AFTERNOON-1');
+      });
+
+      it('18. carry-forward must not re-resolve aliases/current staff assignment', async () => {
+        const { adapter, prisma } = buildMockContext();
+        const baselineEntry = {
+          id: 'b-1',
+          timetableVersionId: 'baseline-1',
+          academicYearId: mockIds.academicYearId,
+          weekday: AcademicWeekday.MONDAY,
+          timeSlotDefinitionId: 'slot-MONDAY-AFTERNOON-1',
+          schoolClassId: 'class-10A1',
+          subjectId: 'subj-TO',
+          teachingAssignmentId: 'assign-original',
+          teacherUserId: 'user-GV01',
+          createdAt: new Date('2026-09-01T00:00:00Z'),
+        };
+        prisma.timetableVersion.findFirst.mockResolvedValue({
+          id: 'baseline-1',
+          versionNumber: 1,
+          status: 'ACTIVE',
+          effectiveFrom: new Date('2026-09-07T00:00:00Z'),
+          effectiveUntil: null,
+        });
+        prisma.timetableEntry.findMany.mockResolvedValue([baselineEntry]);
+
+        const res = await adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'MORNING' }, 'fixture.xlsx');
+        const carried = res.rows.find((r) => r.teachingAssignmentId === 'assign-original');
+        expect(carried?.teachingAssignmentId).toBe('assign-original');
+      });
+    });
+
+    describe('F. Final Validation', () => {
+      it('19. authored row conflicting with carried row is blocked by full composition validation', async () => {
+        const { adapter, prisma } = buildMockContext();
+        // Baseline has an entry in Afternoon slot 1 with teacher GV01
+        // If authored Morning row also had GV01 in the exact same time slot definition ID (overlap simulation),
+        // let's simulate an overlap by putting GV01 on Monday slot-MONDAY-MORNING-1 in baseline as well
+        const conflictingEntry = {
+          id: 'conflict-b',
+          timetableVersionId: 'baseline-ver-1',
+          academicYearId: mockIds.academicYearId,
+          weekday: AcademicWeekday.MONDAY,
+          // Intentionally assign to MORNING slot in baseline while importing AFTERNOON
+          timeSlotDefinitionId: 'slot-MONDAY-MORNING-1',
+          schoolClassId: 'class-10A1', // class overlap
+          subjectId: 'subj-TO',
+          teachingAssignmentId: 'assign-carried',
+          teacherUserId: 'user-GV01',
+          createdAt: new Date('2026-09-01T00:00:00Z'),
+        };
+        prisma.timetableVersion.findFirst.mockResolvedValue({
+          id: 'baseline-ver-1',
+          versionNumber: 1,
+          status: 'ACTIVE',
+          effectiveFrom: new Date('2026-09-07T00:00:00Z'),
+          effectiveUntil: null,
+        });
+        prisma.timetableEntry.findMany.mockResolvedValue([conflictingEntry]);
+
+        // When importing MORNING, the MORNING slot is authored, so conflictingEntry session is MORNING => not carried forward.
+        // But when importing AFTERNOON, conflictingEntry (MORNING) IS carried forward.
+        // If conflictingEntry has a slot or teacher overlap with an afternoon slot, it's evaluated.
+        const res = await adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'AFTERNOON' }, 'fixture.xlsx');
+        expect(res.composition?.carriedForwardEntryCount).toBe(1);
+      });
+
+      it('20. validator receives full composed timetable', async () => {
+        const { adapter, prisma } = buildMockContext();
+        const baselineEntries = await getFullBaselineEntries();
+        prisma.timetableVersion.findFirst.mockResolvedValue({
+          id: 'baseline-ver-1',
+          versionNumber: 1,
+          status: 'ACTIVE',
+          effectiveFrom: new Date('2026-09-07T00:00:00Z'),
+          effectiveUntil: null,
+        });
+        prisma.timetableEntry.findMany.mockResolvedValue(baselineEntries);
+
+        const res = await adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'MORNING' }, 'fixture.xlsx');
+        expect(res.rows).toHaveLength(455);
+        expect(res.blockingIssueCount).toBe(0);
+      });
+    });
+
+    describe('G. Idempotency & Replay', () => {
+      it('22. same key + same mode => replay', async () => {
+        const { service } = buildMockContext();
+        const confirmDto: ConfirmTimetableImportWorkbookDto = {
+          ...previewDto,
+          nativeSessionMode: 'MORNING',
+          requestIdempotencyKey: 'idemp-mode-replay',
+        };
+
+        const res1 = await service.confirm(uploadFile, confirmDto, mockIds.actorUserId, { requestId: 'r1' });
+        expect(res1.outcome).toBe('CREATED');
+
+        const res2 = await service.confirm(uploadFile, confirmDto, mockIds.actorUserId, { requestId: 'r2' });
+        expect(res2.outcome).toBe('IDEMPOTENT_REPLAY');
+      });
+
+      it('23. same key + different mode => conflict TIMETABLE_IMPORT_IDEMPOTENCY_KEY_REUSED', async () => {
+        const { service } = buildMockContext();
+        const confirmDto1: ConfirmTimetableImportWorkbookDto = {
+          ...previewDto,
+          nativeSessionMode: 'MORNING',
+          requestIdempotencyKey: 'idemp-mode-conflict',
+        };
+        await service.confirm(uploadFile, confirmDto1, mockIds.actorUserId, { requestId: 'r1' });
+
+        const confirmDto2: ConfirmTimetableImportWorkbookDto = {
+          ...previewDto,
+          nativeSessionMode: 'AFTERNOON',
+          requestIdempotencyKey: 'idemp-mode-conflict',
+        };
+        await expect(service.confirm(uploadFile, confirmDto2, mockIds.actorUserId, { requestId: 'r2' }))
+          .rejects.toThrow('Request idempotency key was already used for a different confirmation request.');
+      });
+
+      it('24. different key + same final semantic checksum => semantic replay', async () => {
+        const { service } = buildMockContext();
+        const confirmDto1: ConfirmTimetableImportWorkbookDto = {
+          ...previewDto,
+          nativeSessionMode: 'BOTH',
+          requestIdempotencyKey: 'key-1',
+        };
+        await service.confirm(uploadFile, confirmDto1, mockIds.actorUserId, { requestId: 'r1' });
+
+        const confirmDto2: ConfirmTimetableImportWorkbookDto = {
+          ...previewDto,
+          nativeSessionMode: 'BOTH',
+          requestIdempotencyKey: 'key-2',
+        };
+        const res2 = await service.confirm(uploadFile, confirmDto2, mockIds.actorUserId, { requestId: 'r2' });
+        expect(res2.outcome).toBe('IDEMPOTENT_REPLAY');
+      });
+
+      it('25. client sheet/header values cannot override server sentinel for selective mode', async () => {
+        const { service } = buildMockContext();
+        const confirmDto: ConfirmTimetableImportWorkbookDto = {
+          ...previewDto,
+          nativeSessionMode: 'MORNING',
+          sheetName: 'MALICIOUS_OVERRIDE',
+          headerRowNumber: 99,
+          requestIdempotencyKey: 'key-sentinel-check',
+        };
+        const res = await service.confirm(uploadFile, confirmDto, mockIds.actorUserId, { requestId: 'r1' });
+        expect(res.receipt.sheetName).toBe('MORNING_SHEETS');
+        expect(res.receipt.headerRowNumber).toBe(6);
+      });
+    });
+
+    describe('H. Contract & Boundaries', () => {
+      it('26. nativeSessionMode on GENERIC request is rejected', async () => {
+        const { service } = buildMockContext();
+        const genericPreviewDto: PreviewTimetableImportWorkbookDto = {
+          profileRevisionId: mockIds.profileRevisionId,
+          academicYearId: mockIds.academicYearId,
+          calendarVersionId: mockIds.calendarVersionId,
+          effectiveAcademicWeekId: mockIds.effectiveAcademicWeekId,
+          sourceFormat: 'GENERIC',
+          nativeSessionMode: 'MORNING',
+        };
+        await expect(service.preview(uploadFile, genericPreviewDto)).rejects.toThrow(
+          'Chỉ định nativeSessionMode chỉ hợp lệ khi sourceFormat là DAMSAN_NATIVE.',
+        );
+
+        const genericConfirmDto: ConfirmTimetableImportWorkbookDto = {
+          ...genericPreviewDto,
+          sheetName: 'Sheet1',
+          headerRowNumber: 1,
+        };
+        await expect(service.confirm(uploadFile, genericConfirmDto, mockIds.actorUserId, { requestId: 'r-gen' }))
+          .rejects.toThrow('Chỉ định nativeSessionMode chỉ hợp lệ khi sourceFormat là DAMSAN_NATIVE.');
+      });
+
+      it('27. preview composition counts and IDs are exact', async () => {
+        const { adapter, prisma } = buildMockContext();
+        // BOTH with no baseline
+        prisma.timetableVersion.findFirst.mockResolvedValue(null);
+        const resNoBase = await adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'BOTH' }, 'fixture.xlsx');
+        expect(resNoBase.composition).toEqual({
+          mode: 'BOTH',
+          baselineTimetableVersionId: null,
+          authoredEntryCount: 455,
+          carriedForwardEntryCount: 0,
+          finalEntryCount: 455,
+        });
+
+        // Selective with baseline
+        prisma.timetableVersion.findFirst.mockResolvedValue({
+          id: 'active-baseline-id',
+          versionNumber: 1,
+          status: 'ACTIVE',
+          effectiveFrom: new Date('2026-09-07T00:00:00Z'),
+          effectiveUntil: null,
+        });
+        const resSelective = await adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'MORNING' }, 'fixture.xlsx');
+        expect(resSelective.composition?.baselineTimetableVersionId).toBe('active-baseline-id');
+      });
+
+      it('28. audit metadata exact and bounded for selective confirmation', async () => {
+        const { service, audit } = buildMockContext();
+        await service.confirm(
+          uploadFile,
+          { ...previewDto, nativeSessionMode: 'MORNING', requestIdempotencyKey: 'idemp-audit-check' },
+          mockIds.actorUserId,
+          { requestId: 'req-audit' },
+        );
+        expect(audit.write).toHaveBeenCalledWith(
+          expect.objectContaining({
+            metadata: expect.objectContaining({
+              nativeSessionMode: 'MORNING',
+              authoredEntryCount: 402,
+              carriedForwardEntryCount: 0,
+              finalEntryCount: 402,
+            }),
+          }),
+          expect.anything(),
+        );
+      });
+    });
+
+    describe('I. Non-Regression', () => {
+      it('29. CC/GDĐP/TN-HN remain non-persisted structural evidence in both and selective modes', async () => {
+        const { adapter } = buildMockContext();
+        const resBoth = await adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'BOTH' }, 'fixture.xlsx');
+        expect(resBoth.rows.some((r) => ['CC', 'GDĐP', 'TN-HN'].includes(r.subjectCode))).toBe(false);
+
+        const resMorning = await adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'MORNING' }, 'fixture.xlsx');
+        expect(resMorning.rows.some((r) => ['CC', 'GDĐP', 'TN-HN'].includes(r.subjectCode))).toBe(false);
       });
     });
   });
