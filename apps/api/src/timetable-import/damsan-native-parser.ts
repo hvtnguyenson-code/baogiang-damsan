@@ -35,6 +35,10 @@ function normalizeCellText(cell: ParsedWorkbookCell | undefined): string {
   return cell.text.trim().normalize('NFKC');
 }
 
+export function normalizeSheetName(name: string): string {
+  return name.trim().normalize('NFKC');
+}
+
 export function validateSheetStructure(workbook: ParsedWorkbook): void {
   if (workbook.sheets.length !== ALL_DAMSAN_NATIVE_SHEETS.length) {
     throw new DamSanNativeTimetableException(
@@ -44,9 +48,9 @@ export function validateSheetStructure(workbook: ParsedWorkbook): void {
     );
   }
 
-  const existingSheetNames = new Set(workbook.sheets.map((sheet) => sheet.name.trim().normalize('NFKC')));
+  const existingSheetNames = new Set(workbook.sheets.map((sheet) => normalizeSheetName(sheet.name)));
   for (const expectedSheet of ALL_DAMSAN_NATIVE_SHEETS) {
-    if (!existingSheetNames.has(expectedSheet)) {
+    if (!existingSheetNames.has(normalizeSheetName(expectedSheet))) {
       throw new DamSanNativeTimetableException(
         DamSanNativeErrorCode.TKB_NATIVE_SHEET_STRUCTURE_INVALID,
         `Missing required worksheet: ${expectedSheet}`,
@@ -292,6 +296,7 @@ function validateAndExtractClassSheet(
   }
 
   const classes: string[] = [];
+  const seenClassHeaders = new Set<string>();
   for (let c = DAMSAN_NATIVE_BOUNDARIES.CLASS_COL_START; c <= DAMSAN_NATIVE_BOUNDARIES.CLASS_COL_END; c += 1) {
     const cell = headerRow.cells[c - 1];
     assertCellSafety(cell, sheet.name, DAMSAN_NATIVE_BOUNDARIES.CLASS_HEADER_ROW, c, { cellCategory: 'class header', allowMerged: false });
@@ -303,6 +308,14 @@ function validateAndExtractClassSheet(
         { sheet: sheet.name, rowNumber: DAMSAN_NATIVE_BOUNDARIES.CLASS_HEADER_ROW, column: c },
       );
     }
+    if (seenClassHeaders.has(classCode)) {
+      throw new DamSanNativeTimetableException(
+        DamSanNativeErrorCode.TKB_NATIVE_HEADER_INVALID,
+        `Duplicate class header "${classCode}" at column ${c} on sheet ${sheet.name}.`,
+        { sheet: sheet.name, rowNumber: DAMSAN_NATIVE_BOUNDARIES.CLASS_HEADER_ROW, column: c, classCode },
+      );
+    }
+    seenClassHeaders.add(classCode);
     classes.push(classCode);
   }
 
@@ -337,18 +350,19 @@ function validateAndExtractClassSheet(
     assertCellSafety(coordCellDay, sheet.name, r, 1, { cellCategory: 'class coordinate day', allowMerged: true });
     assertCellSafety(coordCellPeriod, sheet.name, r, 2, { cellCategory: 'class coordinate period', allowMerged: false });
 
-    // Validate Day coordinate (Finding 9)
+    // Validate Day coordinate (Finding 9 & Finding 15: exact matching, no substring)
     const expectedDayToken = `thứ ${day}`;
     const dayText = normalizeCellText(coordCellDay).toLowerCase();
+    const isExactDayMatch = dayText === expectedDayToken || dayText === String(day);
     if (period === 1) {
-      if (!dayText || (!dayText.includes(expectedDayToken) && dayText !== String(day))) {
+      if (!dayText || !isExactDayMatch) {
         throw new DamSanNativeTimetableException(
           DamSanNativeErrorCode.TKB_NATIVE_HEADER_INVALID,
           `Class row ${r} day coordinate expected "${expectedDayToken}", found "${dayText}" on sheet ${sheet.name}.`,
           { sheet: sheet.name, rowNumber: r, column: 1, expected: expectedDayToken, actual: dayText, day },
         );
       }
-    } else if (dayText && !dayText.includes(expectedDayToken) && dayText !== String(day)) {
+    } else if (dayText && !isExactDayMatch) {
       throw new DamSanNativeTimetableException(
         DamSanNativeErrorCode.TKB_NATIVE_HEADER_INVALID,
         `Class row ${r} day coordinate expected "${expectedDayToken}", found "${dayText}" on sheet ${sheet.name}.`,
@@ -445,7 +459,8 @@ function validateAndExtractTeacherSheet(
       assertCellSafety(periodCell, sheet.name, DAMSAN_NATIVE_BOUNDARIES.TEACHER_PERIOD_HEADER_ROW, col, { cellCategory: 'teacher period header', allowMerged: false });
 
       const dayText = normalizeCellText(dayCell).toLowerCase();
-      if (!dayText.includes(expectedDay)) {
+      // Finding 15: Exact matching, no substring matching
+      if (dayText !== expectedDay) {
         throw new DamSanNativeTimetableException(
           DamSanNativeErrorCode.TKB_NATIVE_HEADER_INVALID,
           `Teacher day header at column ${col} on sheet ${sheet.name} expected "${expectedDay}", found "${dayText}".`,
@@ -523,10 +538,18 @@ function validateAndExtractTeacherSheet(
 export function validateAndExtractWorkbookStructure(workbook: ParsedWorkbook): NativeWorkbookStructure {
   validateSheetStructure(workbook);
 
-  const morningClassSheet = workbook.sheets.find((sheet) => sheet.name.trim() === DAMSAN_NATIVE_SHEETS.MORNING_CLASS)!;
-  const morningTeacherSheet = workbook.sheets.find((sheet) => sheet.name.trim() === DAMSAN_NATIVE_SHEETS.MORNING_TEACHER)!;
-  const afternoonClassSheet = workbook.sheets.find((sheet) => sheet.name.trim() === DAMSAN_NATIVE_SHEETS.AFTERNOON_CLASS)!;
-  const afternoonTeacherSheet = workbook.sheets.find((sheet) => sheet.name.trim() === DAMSAN_NATIVE_SHEETS.AFTERNOON_TEACHER)!;
+  const morningClassSheet = workbook.sheets.find(
+    (sheet) => normalizeSheetName(sheet.name) === normalizeSheetName(DAMSAN_NATIVE_SHEETS.MORNING_CLASS),
+  )!;
+  const morningTeacherSheet = workbook.sheets.find(
+    (sheet) => normalizeSheetName(sheet.name) === normalizeSheetName(DAMSAN_NATIVE_SHEETS.MORNING_TEACHER),
+  )!;
+  const afternoonClassSheet = workbook.sheets.find(
+    (sheet) => normalizeSheetName(sheet.name) === normalizeSheetName(DAMSAN_NATIVE_SHEETS.AFTERNOON_CLASS),
+  )!;
+  const afternoonTeacherSheet = workbook.sheets.find(
+    (sheet) => normalizeSheetName(sheet.name) === normalizeSheetName(DAMSAN_NATIVE_SHEETS.AFTERNOON_TEACHER),
+  )!;
 
   const morningClassDate = extractEffectiveDate(morningClassSheet);
   const morningTeacherDate = extractEffectiveDate(morningTeacherSheet);

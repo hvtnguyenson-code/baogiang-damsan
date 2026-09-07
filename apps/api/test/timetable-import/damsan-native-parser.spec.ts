@@ -592,5 +592,89 @@ describe('DamSanNativeParser (Checkpoint A - Structural Core)', () => {
         expect(() => validateAndExtractWorkbookStructure(wb)).not.toThrow();
       });
     });
+
+    describe('Finding 13: Duplicate Class Header Must Fail Closed', () => {
+      it('rejects duplicate raw class header on morning class sheet with TKB_NATIVE_HEADER_INVALID', () => {
+        const wb = cloneWorkbook(parsedFixture);
+        const classSheet = wb.sheets.find((s) => s.name === DAMSAN_NATIVE_SHEETS.MORNING_CLASS)!;
+        const headerRow = classSheet.rows.find((r) => r.number === 6)!;
+        // Set col 4 (10A2) to duplicate col 3 (10A1)
+        headerRow.cells[3] = { ...headerRow.cells[2]!, text: headerRow.cells[2]!.text };
+
+        expect(() => validateAndExtractWorkbookStructure(wb)).toThrow(DamSanNativeTimetableException);
+        try {
+          validateAndExtractWorkbookStructure(wb);
+        } catch (err) {
+          expect(err).toBeInstanceOf(DamSanNativeTimetableException);
+          expect((err as DamSanNativeTimetableException).errorCode).toBe(DamSanNativeErrorCode.TKB_NATIVE_HEADER_INVALID);
+          expect((err as DamSanNativeTimetableException).message).toContain('Duplicate class header');
+        }
+      });
+
+      it('rejects duplicate raw class header on afternoon class sheet with TKB_NATIVE_HEADER_INVALID', () => {
+        const wb = cloneWorkbook(parsedFixture);
+        const classSheet = wb.sheets.find((s) => s.name === DAMSAN_NATIVE_SHEETS.AFTERNOON_CLASS)!;
+        const headerRow = classSheet.rows.find((r) => r.number === 6)!;
+        // Set col 4 to duplicate col 3
+        headerRow.cells[3] = { ...headerRow.cells[2]!, text: headerRow.cells[2]!.text };
+
+        expect(() => validateAndExtractWorkbookStructure(wb)).toThrow(DamSanNativeTimetableException);
+        try {
+          validateAndExtractWorkbookStructure(wb);
+        } catch (err) {
+          expect(err).toBeInstanceOf(DamSanNativeTimetableException);
+          expect((err as DamSanNativeTimetableException).errorCode).toBe(DamSanNativeErrorCode.TKB_NATIVE_HEADER_INVALID);
+          expect((err as DamSanNativeTimetableException).message).toContain('Duplicate class header');
+        }
+      });
+    });
+
+    describe('Finding 14: Sheet Name Normalization Consistency', () => {
+      it('deterministically accepts workbook whose sheet names use decomposed Unicode (NFD) normalized to NFKC', () => {
+        const wb = cloneWorkbook(parsedFixture);
+        wb.sheets = wb.sheets.map((s) => ({
+          ...s,
+          name: s.name.normalize('NFD'),
+        }));
+
+        expect(() => validateSheetStructure(wb)).not.toThrow();
+        expect(() => validateAndExtractWorkbookStructure(wb)).not.toThrow();
+      });
+    });
+
+    describe('Finding 15: Day Token Matching Must Be Exact, Not Substring', () => {
+      it('rejects malformed day coordinate "Thứ 20" at Monday class row 7 with TKB_NATIVE_HEADER_INVALID', () => {
+        const wb = cloneWorkbook(parsedFixture);
+        const classSheet = wb.sheets.find((s) => s.name === DAMSAN_NATIVE_SHEETS.MORNING_CLASS)!;
+        const row7 = classSheet.rows.find((r) => r.number === 7)!;
+        row7.cells[0] = { kind: 'TEXT', text: 'Thứ 20', textOverLimit: false, formula: false, hyperlink: false, merged: false };
+
+        expect(() => validateAndExtractWorkbookStructure(wb)).toThrow(DamSanNativeTimetableException);
+        try {
+          validateAndExtractWorkbookStructure(wb);
+        } catch (err) {
+          expect(err).toBeInstanceOf(DamSanNativeTimetableException);
+          expect((err as DamSanNativeTimetableException).errorCode).toBe(DamSanNativeErrorCode.TKB_NATIVE_HEADER_INVALID);
+          expect((err as DamSanNativeTimetableException).message).toContain('day coordinate expected "thứ 2", found "thứ 20"');
+        }
+      });
+
+      it('rejects malformed teacher row 6 day header containing "Thứ 2" as substring with TKB_NATIVE_HEADER_INVALID', () => {
+        const wb = cloneWorkbook(parsedFixture);
+        const teacherSheet = wb.sheets.find((s) => s.name === DAMSAN_NATIVE_SHEETS.MORNING_TEACHER)!;
+        const row6 = teacherSheet.rows.find((r) => r.number === 6)!;
+        // Col 2 is the first Monday column (indices: col 2 is index 1)
+        row6.cells[1] = { kind: 'TEXT', text: 'Thứ 20', textOverLimit: false, formula: false, hyperlink: false, merged: true };
+
+        expect(() => validateAndExtractWorkbookStructure(wb)).toThrow(DamSanNativeTimetableException);
+        try {
+          validateAndExtractWorkbookStructure(wb);
+        } catch (err) {
+          expect(err).toBeInstanceOf(DamSanNativeTimetableException);
+          expect((err as DamSanNativeTimetableException).errorCode).toBe(DamSanNativeErrorCode.TKB_NATIVE_HEADER_INVALID);
+          expect((err as DamSanNativeTimetableException).message).toContain('Teacher day header at column 2');
+        }
+      });
+    });
   });
 });

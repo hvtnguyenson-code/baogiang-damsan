@@ -756,6 +756,34 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
           }),
         );
       });
+
+      it('emits CLASS_IDENTITY_CONFLICT when two distinct class header tokens resolve to same SchoolClass ID', async () => {
+        const { adapter, prisma, classes } = buildMockContext();
+        // Suppose 10A2 is renamed/mapped via alias to class-10A1 (and 10A2 is not a direct code in class catalog)
+        const mutatedClasses = classes.filter((c) => c.code !== '10A2');
+        prisma.schoolClass.findMany.mockResolvedValue(mutatedClasses);
+        prisma.timetableImportEntityAlias.findMany.mockResolvedValue([
+          {
+            id: 'alias-class-collision',
+            entityType: 'SCHOOL_CLASS',
+            sourceValueKey: '10a2',
+            schoolClassId: 'class-10A1',
+            subjectId: null,
+            teacherUserId: null,
+            academicYearId: mockIds.academicYearId,
+            isActive: true,
+          },
+        ]);
+
+        const result = await adapter.preview(parsedFixture, previewDto, 'fixture.xlsx');
+        expect(result.canConfirm).toBe(false);
+        expect(result.issues).toContainEqual(
+          expect.objectContaining({
+            code: 'CLASS_IDENTITY_CONFLICT',
+            message: expect.stringContaining('10A2'),
+          }),
+        );
+      });
     });
   });
 });

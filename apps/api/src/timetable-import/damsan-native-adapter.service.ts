@@ -102,6 +102,7 @@ export class DamSanNativeTimetableAdapter {
 
     // 1. Resolve Classes from Row 6 headers for both Morning and Afternoon
     const morningClassMap = new Map<string, { id: string; code: string; gradeLevel: number }>();
+    const morningResolvedClassIds = new Set<string>();
     for (const classCode of structure.morningClasses) {
       const resolved = this.resolveClass(classCode, context.classes, context.classAliases);
       if (resolved.conflict) {
@@ -125,12 +126,21 @@ export class DamSanNativeTimetableAdapter {
           `Morning class header "${classCode}" was not found in active classes.`,
           { sheet: DAMSAN_NATIVE_SHEETS.MORNING_CLASS, classCode },
         ));
+      } else if (morningResolvedClassIds.has(resolved.item.id)) {
+        issues.push(this.issue(
+          'CLASS_IDENTITY_CONFLICT',
+          6,
+          `Morning class header "${classCode}" resolves to duplicate canonical class identity "${resolved.item.code}".`,
+          { sheet: DAMSAN_NATIVE_SHEETS.MORNING_CLASS, classCode },
+        ));
       } else {
+        morningResolvedClassIds.add(resolved.item.id);
         morningClassMap.set(classCode, resolved.item);
       }
     }
 
     const afternoonClassMap = new Map<string, { id: string; code: string; gradeLevel: number }>();
+    const afternoonResolvedClassIds = new Set<string>();
     for (const classCode of structure.afternoonClasses) {
       const resolved = this.resolveClass(classCode, context.classes, context.classAliases);
       if (resolved.conflict) {
@@ -154,7 +164,15 @@ export class DamSanNativeTimetableAdapter {
           `Afternoon class header "${classCode}" was not found in active classes.`,
           { sheet: DAMSAN_NATIVE_SHEETS.AFTERNOON_CLASS, classCode },
         ));
+      } else if (afternoonResolvedClassIds.has(resolved.item.id)) {
+        issues.push(this.issue(
+          'CLASS_IDENTITY_CONFLICT',
+          6,
+          `Afternoon class header "${classCode}" resolves to duplicate canonical class identity "${resolved.item.code}".`,
+          { sheet: DAMSAN_NATIVE_SHEETS.AFTERNOON_CLASS, classCode },
+        ));
       } else {
+        afternoonResolvedClassIds.add(resolved.item.id);
         afternoonClassMap.set(classCode, resolved.item);
       }
     }
