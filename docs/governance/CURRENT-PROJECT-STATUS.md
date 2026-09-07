@@ -67,6 +67,31 @@ P1-010 review also recovered and registered Special Programme boundaries T43/T44
 
 The production policy family registry and production UI adapter registry remain intentionally empty: generic P1-020/P1-021/P1-022 platform capability does not enable operational-start, workload, or reporting policy semantics. Therefore, the current production workspace legitimately shows no approved editable policy family; this reflects intentional empty production registration, not incomplete implementation. Concrete production policy families are enabled only by their owner tasks (operational-start under P1-030–P1-032, workload under P4-060/P4-061).
 
+## Native timetable workbook architecture
+
+`P2-030` is **IN_REVIEW** on branch `docs/tkb-native-workbook-architecture-030`, based on exact canonical start `7e99a245f2b1dcf112d63721563d1082a0ea237f`.
+
+The authoritative Đam San timetable workbook (`TKB-LAN-1-TUAN-1-03.9.26-in.xlsx`, SHA-256 `3ea242433d1d291912749cf9f2f6b39b700847bfc09384dec9c6849b15597c72`, 38,974 bytes) was located and audited locally. Proposed `ADR-047` and architecture specification define:
+- dedicated `DamSanNativeTimetableAdapter` positioned upstream of canonical timetable importer (runtime adapter owned by P2-040);
+- strict recognition of 4 sheets: `TKB THEO LỚP BUỔI SÁNG`, `TKB-GV-SANG`, `TKB THEO LỚP BUỔI CHIỀU`, `TKB-GV-CHIỀU`;
+- strict boundary enforcement: class grid rows 7–36 (cols C..T, 18 classes), teacher grid rows 8–45 (cols B..AE, 38 staff rows), with non-slot headers (1–6) and footers (rows ≥ 37 in class, rows ≥ 46 in teacher) excluded;
+- locked cell parser precedence: normalize -> blank (unscheduled) -> exact special non-peer allowlist (`CC`, `GDĐP`, `TN-HN`) -> teacher-linked token (`<SubjectCode>-<TeacherCode>` split at last hyphen with mandatory peer evidence); `TN-HN` is intercepted before hyphen-split;
+- mandatory bidirectional peer reconciliation between class view and teacher view:
+  - Morning: 402 teacher-linked slots reconcile 1:1 with 0 duplicate and 0 orphan (including 18 `SH` teacher-linked and 384 non-SH teacher-linked); 120 permitted non-peer special activity slots (`CC` = 18, `GDĐP` = 48, `TN-HN` = 54);
+  - Afternoon: 53 teacher-linked slots reconcile 1:1 with 0 duplicate and 0 orphan (all non-SH teacher-linked);
+  - Total across sessions: exactly 455 teacher-linked slots (= 437 non-SH teacher-linked + 18 SH teacher-linked);
+  - Saturday schedule: Period 1 = `SH-<TeacherCode>` (18 slots, teacher-linked, reconciles 1:1; business label not asserted by P2-030 evidence); Periods 2–4 = `TN-HN` (54 slots, permitted non-peer); Period 5 = blank across all 18 classes in this workbook evidence (treated as evidence, not an immutable format invariant);
+- teacher identity derivation contract:
+  - teacher rows modeled structurally as `TeacherSourceRowRef = (sheet, rowNumber)`; Column A display text is untrusted source decoration / audit evidence only, never canonical identity authority;
+  - active teacher rows structurally derive exactly one `TeacherCode` from matched class-view peers (33 morning rows and 4 afternoon rows each derive exactly 1 distinct code; any row with multiple codes fails closed with `TKB_NATIVE_TEACHER_CODE_CONFLICT`);
+  - zero-allocation staff row (Row 25) is inert roster evidence (no derived code, no canonical User resolution, no failure);
+  - canonical User resolution resolves the derived `TeacherCode` through exact `StaffProfile.staffCode` or approved `TimetableImportEntityAlias` (TEACHER) per ADR-024 (no fuzzy matching, no display-name matching, disagreement fails closed);
+- fail-closed mismatch taxonomy (13 structured domain error codes);
+- effective date extraction (`2026-09-07`) and SHA-256 provenance recording;
+- sanitized structural test fixture `apps/api/test/fixtures/tkb/sanitized-dam-san-tkb-fixture.xlsx` generated with zero real teacher names and zero raw teacher codes (using synthetic `Giáo viên 01`..`Giáo viên 38` and `GV01`..`GV38`), preserving 100% of grid topology and reconciliation counts.
+
+This is proposed architecture/docs only: no schema, migration, runtime importer, UI, deployment or production mutation is performed. P2-030 architecture and evidence are complete on this branch, pending independent remote review/CI; P2-040 remains `PLANNED` behind P2-030 closure.
+
 ## Accepted governance authority
 
 The following remain current governance/product authorities:
@@ -76,7 +101,8 @@ The following remain current governance/product authorities:
 - `docs/governance/PRE-PILOT-TASK-REGISTER.md`;
 - `docs/governance/MAJOR-TASK-DOCUMENTATION-SYNC-PROTOCOL.md`;
 - `docs/decisions/ADR-044-PRE-PILOT-PRODUCT-REALIGNMENT-GOVERNANCE.md`;
-- `docs/decisions/ADR-045-HOMEROOM-RESPONSIBILITY.md`.
+- `docs/decisions/ADR-045-HOMEROOM-RESPONSIBILITY.md`;
+- `docs/decisions/ADR-046-BUSINESS-CONFIGURATION-CONTROL-PLANE.md`.
 
 Every major task must be registered before implementation, cite applicable traceability rows, obey dependency gates, and complete post-merge documentation synchronization before dependent major work starts. Untracked plain `DEFERRED`/`later`/`future slice` is prohibited.
 
@@ -153,7 +179,6 @@ Eligibility does not imply concurrent execution or permission to bypass one-task
 - `P0-003` — CORE vs FULL BUSINESS pilot scope: Product Owner decision required before P5 freeze.
 - `P0-004` — GitHub main branch protection/ruleset: Product Owner decision required before repository-settings mutation.
 - `P2-010` — authoritative PPCT workbook/template evidence required.
-- `P2-030` — authoritative Đam San TKB source evidence must be available to the task in a durable/reviewable form.
 - `P6-005` — Production VPS topology decision: explicit Product Owner selection of `SHARED_VPS` vs `DEDICATED_VPS` required; HARD STOP blocks `P6-010`.
 - `P0-900` — rebase audit triggers if pinned source blobs change or Product Owner authority contradicts the accepted baseline.
 
