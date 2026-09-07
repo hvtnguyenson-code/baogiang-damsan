@@ -72,19 +72,20 @@ The production policy family registry and production UI adapter registry remain 
 `P2-030` is **IN_REVIEW** on branch `docs/tkb-native-workbook-architecture-030`, based on exact canonical start `7e99a245f2b1dcf112d63721563d1082a0ea237f`.
 
 The authoritative Đam San timetable workbook (`TKB-LAN-1-TUAN-1-03.9.26-in.xlsx`, SHA-256 `3ea242433d1d291912749cf9f2f6b39b700847bfc09384dec9c6849b15597c72`, 38,974 bytes) was located and audited locally. Proposed `ADR-047` and architecture specification define:
-- dedicated `DamSanNativeTimetableAdapter` positioned upstream of canonical timetable importer;
+- dedicated `DamSanNativeTimetableAdapter` positioned upstream of canonical timetable importer (runtime adapter owned by P2-040);
 - strict recognition of 4 sheets: `TKB THEO LỚP BUỔI SÁNG`, `TKB-GV-SANG`, `TKB THEO LỚP BUỔI CHIỀU`, `TKB-GV-CHIỀU`;
-- strict boundary enforcement: class grid rows 7–36 (cols 3–20, 18 classes), teacher grid rows 8–45 (cols 2–31, 38 staff rows), with non-slot headers (1–6) and footers (37–39) excluded;
+- strict boundary enforcement: class grid rows 7–36 (cols C..T, 18 classes), teacher grid rows 8–45 (cols B..AE, 38 staff rows), with non-slot headers (1–6) and footers (rows ≥ 37 in class, rows ≥ 46 in teacher) excluded;
+- locked cell parser precedence: normalize -> blank (unscheduled) -> exact special non-peer allowlist (`CC`, `GDĐP`, `TN-HN`) -> teacher-linked token (`<SubjectCode>-<TeacherCode>` split at last hyphen with mandatory peer evidence); `TN-HN` is intercepted before hyphen-split;
 - mandatory bidirectional peer reconciliation between class view and teacher view:
   - Morning: 402 teacher-linked slots reconcile 1:1 with 0 duplicate and 0 orphan; 120 permitted non-peer special activity slots (`CC` = 18, `GDĐP` = 48, `TN-HN` = 54);
   - Afternoon: 53 teacher-linked slots reconcile 1:1 with 0 duplicate and 0 orphan;
-  - Saturday Period 5 is half-day unscheduled blank across all 18 classes;
+  - Saturday schedule: Period 1 = `SH-<TeacherCode>` (18 slots, teacher-linked, reconciles 1:1; business label not asserted by P2-030 evidence); Periods 2–4 = `TN-HN` (54 slots, permitted non-peer); Period 5 = blank across all 18 classes in this workbook evidence (treated as evidence, not an immutable format invariant);
 - teacher-code identity: 33 morning codes and 4 afternoon codes map 1:1 to teacher rows with 0 ambiguity; dynamic resolution against system user/staff catalogs without hardcoded names in code;
-- fail-closed mismatch taxonomy;
+- fail-closed mismatch taxonomy (13 structured domain error codes);
 - effective date extraction (`2026-09-07`) and SHA-256 provenance recording;
-- sanitized structural test fixture `apps/api/test/fixtures/tkb/sanitized-dam-san-tkb-fixture.xlsx` generated with zero staff PII.
+- sanitized structural test fixture `apps/api/test/fixtures/tkb/sanitized-dam-san-tkb-fixture.xlsx` generated with zero real teacher names and zero raw teacher codes (using synthetic `Giáo viên 01`..`Giáo viên 38` and `GV01`..`GV38`), preserving 100% of grid topology and reconciliation counts.
 
-This is proposed architecture/docs only: no schema, migration, runtime importer, UI, deployment or production mutation is performed. P2-040 remains `PLANNED` behind P2-030 closure.
+This is proposed architecture/docs only: no schema, migration, runtime importer, UI, deployment or production mutation is performed. P2-030 architecture and evidence are complete on this branch, pending independent remote review/CI; P2-040 remains `PLANNED` behind P2-030 closure.
 
 ## Accepted governance authority
 

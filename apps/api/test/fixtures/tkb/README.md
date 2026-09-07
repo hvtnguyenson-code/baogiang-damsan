@@ -17,15 +17,25 @@ The fixture preserves 100% of the operational grid, matrix coordinates, and stru
    - `TKB-GV-SANG` (Teacher view, Morning)
    - `TKB THEO LỚP BUỔI CHIỀU` (Class view, Afternoon)
    - `TKB-GV-CHIỀU` (Teacher view, Afternoon)
-2. **Matrix Dimensions**:
-   - Class views: Columns 1..20 (Day, Period, Classes `10A1`..`12A6`), Rows 7..36 (30 periods, Monday–Saturday, Periods 1–5).
-   - Teacher views: Columns 1..31 (Teacher name, 6 days × 5 periods), Rows 8..45 (38 teacher rows).
+2. **Matrix Dimensions & Grid Extent**:
+   - Class views: Columns C..T (Cols 3..20: Classes `10A1`..`12A6`), Rows 7..36 (30 periods, Monday–Saturday, Periods 1–5).
+     - Morning non-empty business/footer content ends at Row 38 (Row 37 = legend/signature; Row 38 = TN-HN/GDĐP note spanning 38..39; Row 40+ = blank).
+     - Afternoon non-empty content ends at Row 37 (Row 37 = legend/signature; Row 38+ = blank).
+   - Teacher views: Columns B..AE (Cols 2..31: 6 days × 5 periods = 30 period columns), Rows 8..45 (38 teacher rows).
 3. **Reconciliation Counts**:
-   - Morning: 402 teacher-linked slots (1:1 peer match), 120 permitted non-peer special activity slots (`CC` = 18, `GDĐP` = 48, `TN-HN` = 54), 18 blank slots (Saturday Period 5).
+   - Morning: 402 teacher-linked slots (1:1 peer match), 120 permitted non-peer special activity slots (`CC` = 18, `GDĐP` = 48, `TN-HN` = 54), 18 blank slots (Saturday Period 5 in this workbook).
    - Afternoon: 53 teacher-linked slots (1:1 peer match), 0 non-peer slots, 487 blank slots.
    - Total scheduled slots: 575.
+4. **Saturday Schedule Topology**:
+   - Period 1: `SH-<TeacherCode>` (`SH-GV*`) (18 slots, teacher-linked, reconciles 1:1 with teacher view).
+   - Period 2: `TN-HN` (18 slots, permitted non-peer).
+   - Period 3: `TN-HN` (18 slots, permitted non-peer).
+   - Period 4: `TN-HN` (18 slots, permitted non-peer).
+   - Period 5: blank across all 18 classes in this workbook evidence (treated as evidence, not a rigid format invariant).
 
 ## Privacy & Sanitization Boundary
 
-- **Zero Staff PII**: Real teacher names in Column 1 of `TKB-GV-SANG` and `TKB-GV-CHIỀU` are replaced with synthetic identifiers: `Giáo viên 01` through `Giáo viên 38`.
-- **Structural Codes Preserved**: Subject abbreviations (`TO`, `VA`, `LI`, `HO`, `SI`, `TI`, `CN`, `SU`, `DI`, `NN`, `CD`, `TD`, `QP`), teacher code suffixes (`T1`, `V3`, `TD4`, etc.), and special activity codes (`CC`, `GDĐP`, `TN-HN`, `SH-*`) are preserved because they are structural identifiers without personal data.
+- **Zero Staff PII**: Real teacher names in Column 1 of `TKB-GV-SANG` and `TKB-GV-CHIỀU` are replaced with deterministic synthetic identifiers: `Giáo viên 01` through `Giáo viên 38`.
+- **Zero Real Teacher Codes**: Real teacher codes from the authoritative workbook (e.g. `V4`, `L3`, `KP2`, `T2`, `TD4`, etc.) are replaced with deterministic synthetic codes: `GV01` through `GV38` across all class-view subject-teacher markers and `SH-*` markers.
+- **Structural Integrity**: Subject codes (`TO`, `VA`, `LI`, `HO`, `SI`, `TI`, `CN`, `SU`, `DI`, `NN`, `CD`, `TD`, `QP`), special markers (`CC`, `GDĐP`, `TN-HN`), and class codes (`10A1`..`12A6`) are preserved.
+- **Verified Leak Count**: 0 real names, 0 raw teacher codes.
