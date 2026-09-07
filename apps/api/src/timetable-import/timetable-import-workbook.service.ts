@@ -30,6 +30,10 @@ import { MAX_XLSX_BYTES } from './workbook-limits';
 import { WorkbookCanonicalizationService } from './workbook-canonicalization.service';
 import { WorkbookParserService } from './workbook-parser.service';
 import { DamSanNativeTimetableAdapter } from './damsan-native-adapter.service';
+import {
+  DAMSAN_NATIVE_HEADER_ROW_SENTINEL,
+  DAMSAN_NATIVE_SHEET_SENTINEL,
+} from './damsan-native-adapter.types';
 
 export interface UploadedWorkbookFile {
   originalname: string;
@@ -125,8 +129,8 @@ export class TimetableImportWorkbookService {
     const sourceFileName = this.sourceFileName(file!.originalname);
 
     const isNative = dto.sourceFormat === 'DAMSAN_NATIVE';
-    const effectiveSheetName = dto.sheetName || (isNative ? 'TKB THEO LỚP BUỔI SÁNG' : '');
-    const effectiveHeaderRowNumber = dto.headerRowNumber || (isNative ? 6 : 0);
+    const effectiveSheetName = dto.sheetName || (isNative ? DAMSAN_NATIVE_SHEET_SENTINEL : '');
+    const effectiveHeaderRowNumber = dto.headerRowNumber !== undefined ? dto.headerRowNumber : (isNative ? DAMSAN_NATIVE_HEADER_ROW_SENTINEL : 0);
     const effectiveDto: ConfirmTimetableImportWorkbookDto = {
       ...dto,
       sheetName: effectiveSheetName,
@@ -373,8 +377,8 @@ export class TimetableImportWorkbookService {
         message: 'Receipt-linked version has an invalid semantic checksum.',
       });
     }
-    const effectiveSheetName = dto.sourceFormat === 'DAMSAN_NATIVE' ? 'ALL_SHEETS' : (dto.sheetName ?? '');
-    const effectiveHeaderRowNumber = dto.sourceFormat === 'DAMSAN_NATIVE' ? 6 : (dto.headerRowNumber ?? 0);
+    const effectiveSheetName = dto.sourceFormat === 'DAMSAN_NATIVE' ? DAMSAN_NATIVE_SHEET_SENTINEL : (dto.sheetName ?? '');
+    const effectiveHeaderRowNumber = dto.sourceFormat === 'DAMSAN_NATIVE' ? DAMSAN_NATIVE_HEADER_ROW_SENTINEL : (dto.headerRowNumber ?? 0);
     const incoming = computeConfirmRequestFingerprint({
       workbookSha256,
       profileRevisionId: dto.profileRevisionId,

@@ -1,4 +1,6 @@
 import {
+  DAMSAN_NATIVE_BOUNDARIES,
+  DAMSAN_NATIVE_SHEETS,
   DamSanNativeErrorCode,
   DamSanNativeTimetableException,
   NativeSession,
@@ -6,6 +8,7 @@ import {
   ParsedClassCell,
   ParsedTeacherCell,
   TeacherSourceRowRef,
+  teacherSourceRowRefKey,
 } from './damsan-native-adapter.types';
 
 export interface ReconciledSlot {
@@ -15,13 +18,10 @@ export interface ReconciledSlot {
 }
 
 export interface ReconciledTeacherRow {
-  rowNumber: number;
-  morningRowRef: TeacherSourceRowRef;
-  afternoonRowRef: TeacherSourceRowRef;
+  refKey: string;
+  rowRef: TeacherSourceRowRef;
   untrustedDisplayName: string;
   totalAllocatedSlots: number;
-  morningSlotCount: number;
-  afternoonSlotCount: number;
   isZeroAllocation: boolean;
   derivedTeacherCode?: string;
 }
@@ -29,7 +29,8 @@ export interface ReconciledTeacherRow {
 export interface NativeReconciliationResult {
   structure: NativeWorkbookStructure;
   reconciledSlots: ReconciledSlot[];
-  teacherRows: Map<number, ReconciledTeacherRow>;
+  teacherRows: Map<string, ReconciledTeacherRow>;
+  sourceRows: Map<string, ReconciledTeacherRow>;
   activeTeacherRowCount: number;
   zeroAllocationRowCount: number;
   morningTeacherLinkedCount: number;
@@ -44,12 +45,20 @@ function sessionCoordinateKey(session: NativeSession, day: number, period: numbe
 
 export function reconcileNativeWorkbook(structure: NativeWorkbookStructure): NativeReconciliationResult {
   const reconciledSlots: ReconciledSlot[] = [];
-  const rowCodesMap = new Map<number, Set<string>>();
-  const rowSlotCounts = new Map<number, { morning: number; afternoon: number }>();
 
-  for (let r = 8; r <= 45; r += 1) {
-    rowCodesMap.set(r, new Set());
-    rowSlotCounts.set(r, { morning: 0, afternoon: 0 });
+  const morningSheetName = structure.morningTeacherSlots[0]?.teacherRowRef.sheet ?? DAMSAN_NATIVE_SHEETS.MORNING_TEACHER;
+  const afternoonSheetName = structure.afternoonTeacherSlots[0]?.teacherRowRef.sheet ?? DAMSAN_NATIVE_SHEETS.AFTERNOON_TEACHER;
+
+  const refCodesMap = new Map<string, Set<string>>();
+  const refSlotCounts = new Map<string, number>();
+
+  for (let r = DAMSAN_NATIVE_BOUNDARIES.TEACHER_ROW_START; r <= DAMSAN_NATIVE_BOUNDARIES.TEACHER_ROW_END; r += 1) {
+    const mKey = teacherSourceRowRefKey({ sheet: morningSheetName, rowNumber: r });
+    const aKey = teacherSourceRowRefKey({ sheet: afternoonSheetName, rowNumber: r });
+    refCodesMap.set(mKey, new Set());
+    refCodesMap.set(aKey, new Set());
+    refSlotCounts.set(mKey, 0);
+    refSlotCounts.set(aKey, 0);
   }
 
   function reconcileSession(
@@ -68,9 +77,8 @@ export function reconcileNativeWorkbook(structure: NativeWorkbookStructure): Nat
       }
       teacherIndex.get(key)!.push(tSlot);
 
-      const counts = rowSlotCounts.get(tSlot.teacherRowRef.rowNumber)!;
-      if (session === 'MORNING') counts.morning += 1;
-      else counts.afternoon += 1;
+      const refKey = teacherSourceRowRefKey(tSlot.teacherRowRef);
+      refSlotCounts.set(refKey, (refSlotCounts.get(refKey) ?? 0) + 1);
     }
 
     // 1b. Check for duplicate teacher claims on the same slot
@@ -139,8 +147,8 @@ export function reconcileNativeWorkbook(structure: NativeWorkbookStructure): Nat
         }
 
         const matchedTeacherSlot = teacherClaims[0]!;
-        const rowNum = matchedTeacherSlot.teacherRowRef.rowNumber;
-        rowCodesMap.get(rowNum)!.add(cSlot.teacherCode!);
+        const refKey = teacherSourceRowRefKey(matchedTeacherSlot.teacherRowRef);
+        refCodesMap.get(refKey)!.add(cSlot.teacherCode!);
 
         reconciledSlots.push({
           classSlot: cSlot,
@@ -173,68 +181,103 @@ export function reconcileNativeWorkbook(structure: NativeWorkbookStructure): Nat
     'MORNING',
     structure.morningClassSlots,
     structure.morningTeacherSlots,
-    structure.morningTeacherSlots[0]?.teacherRowRef.sheet ?? 'TKB-GV-SANG',
-    'TKB THEO LỚP BUỔI SÁNG',
+    morningSheetName,
+    DAMSAN_NATIVE_SHEETS.MORNING_CLASS,
   );
   reconcileSession(
     'AFTERNOON',
     structure.afternoonClassSlots,
     structure.afternoonTeacherSlots,
-    structure.afternoonTeacherSlots[0]?.teacherRowRef.sheet ?? 'TKB-GV-CHIỀU',
-    'TKB THEO LỚP BUỔI CHIỀU',
+    afternoonSheetName,
+    DAMSAN_NATIVE_SHEETS.AFTERNOON_CLASS,
   );
 
-  // 4. Derive TeacherCode per active teacher row and check consistency
-  const teacherRows = new Map<number, ReconciledTeacherRow>();
+  // 4. Derive TeacherCode per active TeacherSourceRowRef independently
+  const sourceRows = new Map<string, ReconciledTeacherRow>();
   let activeTeacherRowCount = 0;
   let zeroAllocationRowCount = 0;
 
-  for (let r = 8; r <= 45; r += 1) {
-    const codes = rowCodesMap.get(r)!;
-    const counts = rowSlotCounts.get(r)!;
-    const totalAllocatedSlots = counts.morning + counts.afternoon;
+  for (let r = DAMSAN_NATIVE_BOUNDARIES.TEACHER_ROW_START; r <= DAMSAN_NATIVE_BOUNDARIES.TEACHER_ROW_END; r += 1) {
     const morningRowInfo = structure.morningTeacherRows.get(r)!;
     const afternoonRowInfo = structure.afternoonTeacherRows.get(r)!;
+    const mKey = teacherSourceRowRefKey(morningRowInfo.rowRef);
+    const aKey = teacherSourceRowRefKey(afternoonRowInfo.rowRef);
 
-    if (totalAllocatedSlots === 0) {
-      zeroAllocationRowCount += 1;
-      teacherRows.set(r, {
-        rowNumber: r,
-        morningRowRef: morningRowInfo.rowRef,
-        afternoonRowRef: afternoonRowInfo.rowRef,
+    const mCount = refSlotCounts.get(mKey) ?? 0;
+    const aCount = refSlotCounts.get(aKey) ?? 0;
+    const mCodes = refCodesMap.get(mKey)!;
+    const aCodes = refCodesMap.get(aKey)!;
+
+    // Morning source row ref derivation
+    if (mCount === 0) {
+      sourceRows.set(mKey, {
+        refKey: mKey,
+        rowRef: morningRowInfo.rowRef,
         untrustedDisplayName: morningRowInfo.untrustedDisplayName,
         totalAllocatedSlots: 0,
-        morningSlotCount: 0,
-        afternoonSlotCount: 0,
         isZeroAllocation: true,
       });
-      continue;
+    } else {
+      if (mCodes.size !== 1) {
+        throw new DamSanNativeTimetableException(
+          DamSanNativeErrorCode.TKB_NATIVE_TEACHER_CODE_CONFLICT,
+          `Teacher source row ${morningRowInfo.rowRef.sheet} Row ${r} matched multiple distinct teacher codes: ${[...mCodes].join(', ')}.`,
+          {
+            sheet: morningRowInfo.rowRef.sheet,
+            rowNumber: r,
+            actual: [...mCodes].join(','),
+            derivedTeacherCode: [...mCodes].join(','),
+          },
+        );
+      }
+      sourceRows.set(mKey, {
+        refKey: mKey,
+        rowRef: morningRowInfo.rowRef,
+        untrustedDisplayName: morningRowInfo.untrustedDisplayName,
+        totalAllocatedSlots: mCount,
+        isZeroAllocation: false,
+        derivedTeacherCode: [...mCodes][0]!,
+      });
     }
 
-    if (codes.size !== 1) {
-      throw new DamSanNativeTimetableException(
-        DamSanNativeErrorCode.TKB_NATIVE_TEACHER_CODE_CONFLICT,
-        `Teacher source row ${r} matched multiple distinct teacher codes: ${[...codes].join(', ')}.`,
-        {
-          rowNumber: r,
-          actual: [...codes].join(','),
-        },
-      );
+    // Afternoon source row ref derivation
+    if (aCount === 0) {
+      sourceRows.set(aKey, {
+        refKey: aKey,
+        rowRef: afternoonRowInfo.rowRef,
+        untrustedDisplayName: afternoonRowInfo.untrustedDisplayName,
+        totalAllocatedSlots: 0,
+        isZeroAllocation: true,
+      });
+    } else {
+      if (aCodes.size !== 1) {
+        throw new DamSanNativeTimetableException(
+          DamSanNativeErrorCode.TKB_NATIVE_TEACHER_CODE_CONFLICT,
+          `Teacher source row ${afternoonRowInfo.rowRef.sheet} Row ${r} matched multiple distinct teacher codes: ${[...aCodes].join(', ')}.`,
+          {
+            sheet: afternoonRowInfo.rowRef.sheet,
+            rowNumber: r,
+            actual: [...aCodes].join(','),
+            derivedTeacherCode: [...aCodes].join(','),
+          },
+        );
+      }
+      sourceRows.set(aKey, {
+        refKey: aKey,
+        rowRef: afternoonRowInfo.rowRef,
+        untrustedDisplayName: afternoonRowInfo.untrustedDisplayName,
+        totalAllocatedSlots: aCount,
+        isZeroAllocation: false,
+        derivedTeacherCode: [...aCodes][0]!,
+      });
     }
 
-    const derivedCode = [...codes][0]!;
-    activeTeacherRowCount += 1;
-    teacherRows.set(r, {
-      rowNumber: r,
-      morningRowRef: morningRowInfo.rowRef,
-      afternoonRowRef: afternoonRowInfo.rowRef,
-      untrustedDisplayName: morningRowInfo.untrustedDisplayName,
-      totalAllocatedSlots,
-      morningSlotCount: counts.morning,
-      afternoonSlotCount: counts.afternoon,
-      isZeroAllocation: false,
-      derivedTeacherCode: derivedCode,
-    });
+    const physicalAllocated = mCount + aCount;
+    if (physicalAllocated === 0) {
+      zeroAllocationRowCount += 1;
+    } else {
+      activeTeacherRowCount += 1;
+    }
   }
 
   const morningTeacherLinkedCount = reconciledSlots.filter((s) => s.classSlot.session === 'MORNING').length;
@@ -245,7 +288,8 @@ export function reconcileNativeWorkbook(structure: NativeWorkbookStructure): Nat
   return {
     structure,
     reconciledSlots,
-    teacherRows,
+    teacherRows: sourceRows,
+    sourceRows,
     activeTeacherRowCount,
     zeroAllocationRowCount,
     morningTeacherLinkedCount,

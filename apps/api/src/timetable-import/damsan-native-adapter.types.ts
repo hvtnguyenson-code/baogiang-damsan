@@ -100,11 +100,18 @@ function sanitizeEvidence(evidence: SafeEvidence): SafeEvidence {
   return sanitized;
 }
 
+export const DAMSAN_NATIVE_SHEET_SENTINEL = 'ALL_SHEETS';
+export const DAMSAN_NATIVE_HEADER_ROW_SENTINEL = 6;
+
 export type NativeSession = 'MORNING' | 'AFTERNOON';
 
 export interface TeacherSourceRowRef {
   sheet: string;
   rowNumber: number;
+}
+
+export function teacherSourceRowRefKey(ref: TeacherSourceRowRef): string {
+  return `${ref.sheet}\0${ref.rowNumber}`;
 }
 
 export type NativeClassCellKind = 'UNSCHEDULED' | 'SPECIAL_NON_PEER' | 'TEACHER_LINKED';

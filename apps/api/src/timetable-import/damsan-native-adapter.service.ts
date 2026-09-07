@@ -20,6 +20,9 @@ import {
 } from './workbook-canonicalization';
 import { ParsedWorkbook } from './workbook-parser.types';
 import {
+  DAMSAN_NATIVE_HEADER_ROW_SENTINEL,
+  DAMSAN_NATIVE_SHEETS,
+  DAMSAN_NATIVE_SHEET_SENTINEL,
   DamSanNativeErrorCode,
   NativeSession,
   SafeEvidence,
@@ -87,19 +90,44 @@ export class DamSanNativeTimetableAdapter {
     const rows: TimetableImportCanonicalPreviewRow[] = [];
     const transient: EnrichedTimetableEntry[] = [];
 
-    // 1. Resolve Classes from Row 6 headers
-    const classMap = new Map<string, { id: string; code: string; gradeLevel: number }>();
+    // 0. Verify effective date matches target week
+    if (structure.effectiveDate !== target.effectiveFrom) {
+      issues.push(this.issue(
+        DamSanNativeErrorCode.TKB_NATIVE_EFFECTIVE_DATE_MISMATCH,
+        4,
+        `Workbook effective date "${structure.effectiveDate}" does not match target week effective date "${target.effectiveFrom}".`,
+        { expected: target.effectiveFrom, actual: structure.effectiveDate },
+      ));
+    }
+
+    // 1. Resolve Classes from Row 6 headers for both Morning and Afternoon
+    const morningClassMap = new Map<string, { id: string; code: string; gradeLevel: number }>();
     for (const classCode of structure.morningClasses) {
       const resolved = this.resolveClass(classCode, context.classes, context.classAliases);
       if (!resolved.item) {
         issues.push(this.issue(
           DamSanNativeErrorCode.TKB_NATIVE_CLASS_HEADER_UNKNOWN,
           6,
-          'Class header code was not found in active classes.',
-          { classCode },
+          `Morning class header "${classCode}" was not found in active classes.`,
+          { sheet: DAMSAN_NATIVE_SHEETS.MORNING_CLASS, classCode },
         ));
       } else {
-        classMap.set(classCode, resolved.item);
+        morningClassMap.set(classCode, resolved.item);
+      }
+    }
+
+    const afternoonClassMap = new Map<string, { id: string; code: string; gradeLevel: number }>();
+    for (const classCode of structure.afternoonClasses) {
+      const resolved = this.resolveClass(classCode, context.classes, context.classAliases);
+      if (!resolved.item) {
+        issues.push(this.issue(
+          DamSanNativeErrorCode.TKB_NATIVE_CLASS_HEADER_UNKNOWN,
+          6,
+          `Afternoon class header "${classCode}" was not found in active classes.`,
+          { sheet: DAMSAN_NATIVE_SHEETS.AFTERNOON_CLASS, classCode },
+        ));
+      } else {
+        afternoonClassMap.set(classCode, resolved.item);
       }
     }
 
@@ -113,16 +141,16 @@ export class DamSanNativeTimetableAdapter {
       if (teacherResult.status === 'NOT_FOUND') {
         issues.push(this.issue(
           DamSanNativeErrorCode.TKB_NATIVE_TEACHER_IDENTITY_UNKNOWN,
-          rowInfo.rowNumber,
+          rowInfo.rowRef.rowNumber,
           `Derived teacher code "${rowInfo.derivedTeacherCode}" could not be resolved to an active teaching user.`,
-          { rowNumber: rowInfo.rowNumber, derivedTeacherCode: rowInfo.derivedTeacherCode },
+          { sheet: rowInfo.rowRef.sheet, rowNumber: rowInfo.rowRef.rowNumber, derivedTeacherCode: rowInfo.derivedTeacherCode },
         ));
       } else if (teacherResult.status === 'CONFLICT') {
         issues.push(this.issue(
           DamSanNativeErrorCode.TKB_NATIVE_TEACHER_CODE_CONFLICT,
-          rowInfo.rowNumber,
+          rowInfo.rowRef.rowNumber,
           `Derived teacher code "${rowInfo.derivedTeacherCode}" resolved to multiple or conflicting users.`,
-          { rowNumber: rowInfo.rowNumber, derivedTeacherCode: rowInfo.derivedTeacherCode },
+          { sheet: rowInfo.rowRef.sheet, rowNumber: rowInfo.rowRef.rowNumber, derivedTeacherCode: rowInfo.derivedTeacherCode },
         ));
       } else if (teacherResult.user) {
         teacherUserMap.set(rowInfo.derivedTeacherCode, teacherResult.user);
@@ -151,6 +179,7 @@ export class DamSanNativeTimetableAdapter {
     // 4. Map Reconciled Slots to Canonical Preview Rows
     for (const slot of reconciliation.reconciledSlots) {
       const { classSlot } = slot;
+      const classMap = classSlot.session === 'MORNING' ? morningClassMap : afternoonClassMap;
       const schoolClass = classMap.get(classSlot.classCode);
       const subject = classSlot.subjectCode ? subjectMap.get(classSlot.subjectCode) : undefined;
       const teacher = slot.derivedTeacherCode ? teacherUserMap.get(slot.derivedTeacherCode) : undefined;
@@ -251,8 +280,8 @@ export class DamSanNativeTimetableAdapter {
       ? computePreviewDiff(rows.map(this.diffRow), baseline.entries.map(this.baselineDiffRow))
       : null;
 
-    const sheetName = dto.sheetName || 'TKB THEO LỚP BUỔI SÁNG';
-    const headerRowNumber = dto.headerRowNumber || 6;
+    const sheetName = dto.sheetName || DAMSAN_NATIVE_SHEET_SENTINEL;
+    const headerRowNumber = dto.headerRowNumber || DAMSAN_NATIVE_HEADER_ROW_SENTINEL;
     const sourceRowCount = structure.morningClassSlots.length + structure.afternoonClassSlots.length;
 
     return {

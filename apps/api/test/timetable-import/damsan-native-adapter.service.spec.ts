@@ -186,7 +186,12 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
       timetableVersion: {
         findFirst: jest.fn().mockResolvedValue(null),
         aggregate: jest.fn().mockResolvedValue({ _max: { versionNumber: 0 } }),
-        create: jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: 'created-version-id', ...data })),
+        create: jest.fn().mockImplementation(({ data }) => Promise.resolve({
+          id: 'created-version-id',
+          createdAt: new Date('2026-09-07T12:00:00Z'),
+          updatedAt: new Date('2026-09-07T12:00:00Z'),
+          ...data,
+        })),
         findUniqueOrThrow: jest.fn().mockImplementation(({ where }) => Promise.resolve({
           id: where.id,
           versionNumber: 1,
@@ -433,6 +438,104 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
           entityType: 'TimetableImportReceipt',
         }),
         expect.anything(),
+      );
+    });
+    it('handles idempotent replay and reused key error cleanly', async () => {
+      const { service, prisma } = buildMockContext();
+      const confirmDto: ConfirmTimetableImportWorkbookDto = {
+        ...previewDto,
+        requestIdempotencyKey: 'idempotency-key-native-replay',
+      };
+
+      const result1 = await service.confirm(
+        uploadFile,
+        confirmDto,
+        mockIds.actorUserId,
+        { requestId: 'req-1' },
+      );
+      expect(result1.outcome).toBe('CREATED');
+
+      const createdVersion = await (prisma.timetableVersion.create as jest.Mock).mock.results[0].value;
+      // Setup replay state in mock prisma: requestKey exists pointing to the created version
+      const existingKey = {
+        id: 'created-key-id',
+        idempotencyKey: 'idempotency-key-native-replay',
+        requestFingerprint: (prisma.timetableImportRequestKey.create as jest.Mock).mock.calls[0][0].data.requestFingerprint,
+        timetableVersionId: 'created-version-id',
+        academicYearId: mockIds.academicYearId,
+        committedByUserId: mockIds.actorUserId,
+        createdAt: new Date('2026-09-07T12:00:00Z'),
+        receipt: {
+          id: 'created-receipt-id',
+          committedAt: new Date('2026-09-07T12:00:00Z'),
+          timetableVersion: {
+            ...createdVersion,
+            _count: { entries: 455 },
+          },
+        },
+      };
+      prisma.timetableImportRequestKey.findUnique.mockResolvedValue(existingKey);
+
+      // Replay with exact same workbook and DTO -> IDEMPOTENT_REPLAY
+      const result2 = await service.confirm(
+        uploadFile,
+        confirmDto,
+        mockIds.actorUserId,
+        { requestId: 'req-2' },
+      );
+      expect(result2.outcome).toBe('IDEMPOTENT_REPLAY');
+
+      // Replay with altered DTO but same key -> throws TIMETABLE_IMPORT_IDEMPOTENCY_KEY_REUSED
+      const alteredDto: ConfirmTimetableImportWorkbookDto = {
+        ...confirmDto,
+        calendarVersionId: 'different-calendar-id',
+      };
+      await expect(
+        service.confirm(uploadFile, alteredDto, mockIds.actorUserId, { requestId: 'req-3' }),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({
+          error: 'TIMETABLE_IMPORT_IDEMPOTENCY_KEY_REUSED',
+        }),
+      });
+    });
+
+    it('Finding 3 regression: emits TKB_NATIVE_EFFECTIVE_DATE_MISMATCH when target week effectiveFrom does not match workbook date', async () => {
+      const { adapter, prisma } = buildMockContext();
+      // Target week starts on 2026-09-14 instead of workbook date 2026-09-07
+      prisma.academicWeek.findUnique.mockResolvedValue({
+        id: mockIds.effectiveAcademicWeekId,
+        calendarVersionId: mockIds.calendarVersionId,
+        segments: [{
+          startDate: new Date('2026-09-14T00:00:00Z'),
+          endDate: new Date('2026-09-19T00:00:00Z'),
+        }],
+      });
+
+      const result = await adapter.preview(parsedFixture, previewDto, 'fixture.xlsx');
+      expect(result.canConfirm).toBe(false);
+      expect(result.blockingIssueCount).toBeGreaterThanOrEqual(1);
+      expect(result.issues).toContainEqual(
+        expect.objectContaining({
+          code: DamSanNativeErrorCode.TKB_NATIVE_EFFECTIVE_DATE_MISMATCH,
+          message: expect.stringContaining('2026-09-07'),
+        }),
+      );
+    });
+
+    it('Finding 5 regression: emits TKB_NATIVE_CLASS_HEADER_UNKNOWN when an afternoon class is missing in catalog', async () => {
+      const { adapter, prisma, classes } = buildMockContext();
+      // Filter out 11A1 which is in both morning and afternoon sheets
+      prisma.schoolClass.findMany.mockResolvedValue(classes.filter((c) => c.code !== '11A1'));
+
+      const result = await adapter.preview(parsedFixture, previewDto, 'fixture.xlsx');
+      expect(result.canConfirm).toBe(false);
+      expect(result.blockingIssueCount).toBeGreaterThanOrEqual(1);
+      // It should emit TKB_NATIVE_CLASS_HEADER_UNKNOWN specifically for Afternoon
+      expect(result.issues).toContainEqual(
+        expect.objectContaining({
+          code: DamSanNativeErrorCode.TKB_NATIVE_CLASS_HEADER_UNKNOWN,
+          message: 'Afternoon class header "11A1" was not found in active classes.',
+        }),
       );
     });
   });

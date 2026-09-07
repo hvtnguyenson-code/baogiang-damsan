@@ -2,9 +2,11 @@ import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { AcademicWeekday } from '@prisma/client';
 import {
+  DAMSAN_NATIVE_SHEETS,
   DamSanNativeErrorCode,
   DamSanNativeTimetableException,
   NativeWorkbookStructure,
+  teacherSourceRowRefKey,
 } from '../../src/timetable-import/damsan-native-adapter.types';
 import { validateAndExtractWorkbookStructure } from '../../src/timetable-import/damsan-native-parser';
 import { reconcileNativeWorkbook } from '../../src/timetable-import/damsan-native-reconciler';
@@ -55,19 +57,27 @@ describe('DamSanNativeReconciler (Checkpoint B - Peer Reconciliation & TeacherCo
       expect(result.activeTeacherRowCount).toBe(37);
       expect(result.zeroAllocationRowCount).toBe(1);
 
-      // Verify zero-allocation row 25
-      const row25 = result.teacherRows.get(25)!;
-      expect(row25).toBeDefined();
-      expect(row25.isZeroAllocation).toBe(true);
-      expect(row25.totalAllocatedSlots).toBe(0);
-      expect(row25.derivedTeacherCode).toBeUndefined();
+      // Verify zero-allocation row 25 on both sheets
+      const row25Morning = result.sourceRows.get(teacherSourceRowRefKey({ sheet: DAMSAN_NATIVE_SHEETS.MORNING_TEACHER, rowNumber: 25 }))!;
+      expect(row25Morning).toBeDefined();
+      expect(row25Morning.isZeroAllocation).toBe(true);
+      expect(row25Morning.totalAllocatedSlots).toBe(0);
+      expect(row25Morning.derivedTeacherCode).toBeUndefined();
+
+      const row25Afternoon = result.sourceRows.get(teacherSourceRowRefKey({ sheet: DAMSAN_NATIVE_SHEETS.AFTERNOON_TEACHER, rowNumber: 25 }))!;
+      expect(row25Afternoon).toBeDefined();
+      expect(row25Afternoon.isZeroAllocation).toBe(true);
+      expect(row25Afternoon.totalAllocatedSlots).toBe(0);
+      expect(row25Afternoon.derivedTeacherCode).toBeUndefined();
 
       // Verify all active rows derived exactly 1 distinct code
-      for (const [rowNum, rowInfo] of result.teacherRows.entries()) {
-        if (rowNum === 25) continue;
-        expect(rowInfo.isZeroAllocation).toBe(false);
-        expect(rowInfo.derivedTeacherCode).toMatch(/^GV\d{2}$/);
-        expect(rowInfo.totalAllocatedSlots).toBeGreaterThan(0);
+      for (const rowInfo of result.sourceRows.values()) {
+        if (rowInfo.isZeroAllocation) {
+          expect(rowInfo.derivedTeacherCode).toBeUndefined();
+        } else {
+          expect(rowInfo.derivedTeacherCode).toMatch(/^GV\d{2}$/);
+          expect(rowInfo.totalAllocatedSlots).toBeGreaterThan(0);
+        }
       }
     });
   });
@@ -263,9 +273,12 @@ describe('DamSanNativeReconciler (Checkpoint B - Peer Reconciliation & TeacherCo
 
       const result = reconcileNativeWorkbook(struct);
       expect(result.zeroAllocationRowCount).toBe(1);
-      const r25 = result.teacherRows.get(25)!;
-      expect(r25.isZeroAllocation).toBe(true);
-      expect(r25.derivedTeacherCode).toBeUndefined();
+      const r25M = result.sourceRows.get(teacherSourceRowRefKey({ sheet: DAMSAN_NATIVE_SHEETS.MORNING_TEACHER, rowNumber: 25 }))!;
+      expect(r25M.isZeroAllocation).toBe(true);
+      expect(r25M.derivedTeacherCode).toBeUndefined();
+      const r25A = result.sourceRows.get(teacherSourceRowRefKey({ sheet: DAMSAN_NATIVE_SHEETS.AFTERNOON_TEACHER, rowNumber: 25 }))!;
+      expect(r25A.isZeroAllocation).toBe(true);
+      expect(r25A.derivedTeacherCode).toBeUndefined();
     });
 
     it('changing Column A teacher display text does not alter derived TeacherCode or reconciliation result', () => {
@@ -273,7 +286,7 @@ describe('DamSanNativeReconciler (Checkpoint B - Peer Reconciliation & TeacherCo
       // Change display name of row 8
       struct.morningTeacherRows.get(8)!.untrustedDisplayName = 'TÊN GIÁO VIÊN ĐÃ BỊ ĐỔI HOÀN TOÀN';
       const result = reconcileNativeWorkbook(struct);
-      const r8 = result.teacherRows.get(8)!;
+      const r8 = result.sourceRows.get(teacherSourceRowRefKey({ sheet: DAMSAN_NATIVE_SHEETS.MORNING_TEACHER, rowNumber: 8 }))!;
       expect(r8.derivedTeacherCode).toBe('GV01');
       expect(result.activeTeacherRowCount).toBe(37);
     });
@@ -329,6 +342,74 @@ describe('DamSanNativeReconciler (Checkpoint B - Peer Reconciliation & TeacherCo
         const responseJson = JSON.stringify(err.getResponse());
         expect(responseJson).not.toContain('SECRET_PII_TEACHER_NAME');
       }
+    });
+
+    it('derives TeacherCode independently per TeacherSourceRowRef without cross-sheet rowNumber collapse (Finding 1)', () => {
+      const struct = cloneStructure(baseStructure);
+      // Row 8 in Morning derives GV01 from existing morning slots.
+      // In Afternoon, row 8 has 0 allocations in the baseline fixture.
+      // Add a valid afternoon teacher slot on row 8 pointing to 10A1, and matching afternoon class slot with teacherCode GV02.
+      const targetClass = '10A1';
+      const day = 2; // Monday
+      const period = 1;
+      const classSlot = struct.afternoonClassSlots.find(
+        (c) => c.day === day && c.period === period && c.classCode === targetClass,
+      )!;
+      classSlot.kind = 'TEACHER_LINKED';
+      classSlot.subjectCode = 'TO';
+      classSlot.teacherCode = 'GV02';
+
+      struct.afternoonTeacherSlots.push({
+        session: 'AFTERNOON',
+        day,
+        weekday: AcademicWeekday.MONDAY,
+        period,
+        teacherRowRef: { sheet: DAMSAN_NATIVE_SHEETS.AFTERNOON_TEACHER, rowNumber: 8 },
+        rowNumber: 8,
+        colNumber: 2,
+        targetClass,
+      });
+
+      // Reconcile must PASS without TKB_NATIVE_TEACHER_CODE_CONFLICT
+      const result = reconcileNativeWorkbook(struct);
+      const morningRow8 = result.sourceRows.get(teacherSourceRowRefKey({ sheet: DAMSAN_NATIVE_SHEETS.MORNING_TEACHER, rowNumber: 8 }))!;
+      const afternoonRow8 = result.sourceRows.get(teacherSourceRowRefKey({ sheet: DAMSAN_NATIVE_SHEETS.AFTERNOON_TEACHER, rowNumber: 8 }))!;
+
+      expect(morningRow8.derivedTeacherCode).toBe('GV01');
+      expect(afternoonRow8.derivedTeacherCode).toBe('GV02');
+      expect(morningRow8.derivedTeacherCode).not.toBe(afternoonRow8.derivedTeacherCode);
+    });
+
+    it('same row number deriving same code on both morning and afternoon remains valid (Finding 1)', () => {
+      const struct = cloneStructure(baseStructure);
+      // In Afternoon, add a valid teacher slot on row 8 pointing to 10A1, with teacherCode GV01 (same as Morning row 8)
+      const targetClass = '10A1';
+      const day = 2; // Monday
+      const period = 1;
+      const classSlot = struct.afternoonClassSlots.find(
+        (c) => c.day === day && c.period === period && c.classCode === targetClass,
+      )!;
+      classSlot.kind = 'TEACHER_LINKED';
+      classSlot.subjectCode = 'TO';
+      classSlot.teacherCode = 'GV01';
+
+      struct.afternoonTeacherSlots.push({
+        session: 'AFTERNOON',
+        day,
+        weekday: AcademicWeekday.MONDAY,
+        period,
+        teacherRowRef: { sheet: DAMSAN_NATIVE_SHEETS.AFTERNOON_TEACHER, rowNumber: 8 },
+        rowNumber: 8,
+        colNumber: 2,
+        targetClass,
+      });
+
+      const result = reconcileNativeWorkbook(struct);
+      const morningRow8 = result.sourceRows.get(teacherSourceRowRefKey({ sheet: DAMSAN_NATIVE_SHEETS.MORNING_TEACHER, rowNumber: 8 }))!;
+      const afternoonRow8 = result.sourceRows.get(teacherSourceRowRefKey({ sheet: DAMSAN_NATIVE_SHEETS.AFTERNOON_TEACHER, rowNumber: 8 }))!;
+
+      expect(morningRow8.derivedTeacherCode).toBe('GV01');
+      expect(afternoonRow8.derivedTeacherCode).toBe('GV01');
     });
   });
 });
