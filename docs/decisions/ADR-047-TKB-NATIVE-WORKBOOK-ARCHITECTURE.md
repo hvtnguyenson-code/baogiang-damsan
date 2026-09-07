@@ -160,13 +160,14 @@ Morning and afternoon sheets represent independent session streams:
 - The civil effective date is extracted from the standardized title on Row 4 (`ÁP DỤNG TỪ NGÀY DD/MM/YYYY`).
 - All 4 sheets must state identical effective dates; mismatch fails closed.
 - The effective date must match an active `AcademicWeek` within the target calendar.
-- The SHA-256 digest of the ingested workbook is computed and recorded on `TimetableImportReceipt` to guarantee auditability and idempotent replays.
+- The raw XLSX SHA-256 digest is computed server-side to participate in `confirm-request-v1` request fingerprinting (`requestFingerprint`) and idempotent replays per `ADR-021`/`ADR-026`. Persisted canonical business identity on `TimetableVersion` is governed by `semantic-v1` checksum (`contentChecksum`). Raw workbook bytes are not persisted, and no new receipt column is introduced by P2-040.
 
 ### 10. Sanitized Fixture Contract for Downstream Tests
 
 - Automated deterministic testing for `P2-040` must use the sanitized fixture `apps/api/test/fixtures/tkb/sanitized-dam-san-tkb-fixture.xlsx`.
 - The fixture preserves 100% of matrix layout, coordinates, class codes, subject codes, and reconciliation counts while using synthetic teacher names (`Giáo viên 01`..`Giáo viên 38`) and synthetic teacher codes (`GV01`..`GV38`).
 - Verified zero leak count: 0 real teacher names, 0 raw teacher codes.
+- Fixture profile under ADR-017/P4 boundary reconciliation: 455 normal teacher-linked curricular rows persisted as canonical `TimetableEntry`, and 120 permitted non-peer slots (`CC`: 18, `GDĐP`: 48, `TN-HN`: 54) verified and reconciled as structural non-peer timetable evidence without fabricating artificial teacher/assignment semantics.
 
 ---
 
@@ -181,4 +182,4 @@ Morning and afternoon sheets represent independent session streams:
 
 ### Neutral / Trade-offs
 - School staff must upload workbooks conforming to the 4-sheet format. Variations in sheet naming or matrix coordinates will fail closed until an explicit profile update or adapter configuration is registered.
-- Special activities `GDĐP` and `TN-HN` are ingested into timetable slots without teacher assignment; actual teaching execution and teacher workload for these programmes remain governed by `P4` special programme rules.
+- Special activities (`CC`, `GDĐP`, `TN-HN`, 120 slots) are verified structurally and proven free of teacher-peer collisions; per `ADR-017`, `TimetableEntry` stores teacher-linked curricular lessons (455 rows), while modular programme occurrence materialization remains governed by `P4` special programme rules where applicable. Raw upload bytes are not persisted.
