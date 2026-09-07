@@ -10,7 +10,7 @@ It is **not** a self-referential registry of the latest Git commit. Exact curren
 
 ## Active major task
 
-None currently active. `P2-040` was merged to canonical `main` and closed by `SYNC-P2-040`. `P2-050` is `READY` to start on a dedicated branch.
+`P2-050` — Morning/afternoon selective update and carry-forward — **IN_REVIEW** on dedicated branch `feat/tkb-selective-session-carry-forward-050`. Baseline main SHA: `f41a5ba2454f1803fada06296479548d7a71ca68`.
 
 ## Last closed major task
 

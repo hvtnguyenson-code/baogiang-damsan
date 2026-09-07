@@ -169,6 +169,31 @@ Morning and afternoon sheets represent independent session streams:
 - Verified zero leak count: 0 real teacher names, 0 raw teacher codes.
 - Fixture profile under ADR-017/P4 boundary reconciliation: 455 normal teacher-linked curricular rows persisted as canonical `TimetableEntry`, and 120 permitted non-peer slots (`CC`: 18, `GDĐP`: 48, `TN-HN`: 54) verified and reconciled as structural non-peer timetable evidence without fabricating artificial teacher/assignment semantics.
 
+### 11. Selective Session Authoring & Carry-Forward Boundary (P2-050)
+
+- **Native Authoring Modes**:
+  - `BOTH`: Default mode for `DAMSAN_NATIVE`. All four sheets are strictly required, validated, and source-authoritative.
+  - `MORNING`: Sheets 1 & 2 (`TKB THEO LỚP BUỔI SÁNG` and `TKB-GV-SANG`) are source-authoritative. Unselected afternoon sheets in the uploaded workbook are non-authoritative and ignored.
+  - `AFTERNOON`: Sheets 3 & 4 (`TKB THEO LỚP BUỔI CHIỀU` and `TKB-GV-CHIỀU`) are source-authoritative. Unselected morning sheets in the uploaded workbook are non-authoritative and ignored.
+  - Supplying `nativeSessionMode` on generic import requests (`sourceFormat !== 'DAMSAN_NATIVE'`) fails closed with `TIMETABLE_IMPORT_INVALID_SOURCE_FORMAT`.
+- **Date-Effective Canonical Baseline**:
+  - For selective authoring (`MORNING` or `AFTERNOON`), the canonical baseline timetable is resolved strictly at `target.effectiveFrom` using ADR-020 historical resolution: `academicYearId` match, `status in ['ACTIVE', 'SUPERSEDED']`, `effectiveFrom <= targetDate`, `effectiveUntil null OR >= targetDate`.
+  - Non-published candidates (`DRAFT`, `VALIDATED`, `APPROVED`) and later/earlier non-overlapping versions cannot serve as baseline.
+  - If no effective baseline exists for a selective update, the operation fails closed with `TKB_NATIVE_CARRY_FORWARD_BASELINE_MISSING`. Partial TimetableVersions are never created.
+- **Exact Carry-Forward Composition**:
+  - The final composed timetable equals the newly authored rows from the selected session plus exact carried-forward baseline rows whose `TimeSlotDefinition.session` is unauthored.
+  - Carried rows preserve exact original canonical provenance IDs (`weekday`, `timeSlotDefinitionId`, `schoolClassId`, `subjectId`, `teachingAssignmentId`, `teacherUserId`).
+  - Carried rows are never re-resolved through current teacher codes, aliases, class codes, or staff assignments.
+- **Full Composed Validation & Checksum**:
+  - Canonical validation (`evaluateTimetableEntries`) is executed across the entire composed transient entry set (authored + carried forward), preventing cross-session room/teacher collisions or invalid states.
+  - The canonical `semanticChecksum` is calculated over the full composed canonical rows.
+- **Preview & Request Idempotency**:
+  - Preview diff compares the full composed timetable against the ADR-020 effective baseline timetable and returns bounded composition metadata (`mode`, `baselineTimetableVersionId`, `authoredEntryCount`, `carriedForwardEntryCount`, `finalEntryCount`).
+  - Request replay and idempotency use server-owned sheet sentinels (`ALL_SHEETS`, `MORNING_SHEETS`, `AFTERNOON_SHEETS`) to encode native authoring mode without client override or schema change.
+- **Schema & P4 Invariants**:
+  - Session authority resides strictly in `TimeSlotDefinition.session`; no session column is added to `TimetableEntry` or `TimetableVersion`.
+  - Special non-peer activities (`CC`, `GDĐP`, `TN-HN`) remain non-persisted structural evidence; no fake teacher assignments or P4 semantics are fabricated.
+
 ---
 
 ## Consequences
