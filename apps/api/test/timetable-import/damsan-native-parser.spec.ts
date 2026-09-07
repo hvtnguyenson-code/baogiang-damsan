@@ -297,4 +297,114 @@ describe('DamSanNativeParser (Checkpoint A - Structural Core)', () => {
       expect(structure.afternoonTeacherSlots).toHaveLength(53);
     });
   });
+
+  describe('Finding 4 & 6 Regression: Header Validation & Cell Safety', () => {
+    function cloneWorkbook(wb: ParsedWorkbook): ParsedWorkbook {
+      return {
+        sheets: wb.sheets.map((sheet) => ({
+          ...sheet,
+          rows: sheet.rows.map((row) => ({
+            ...row,
+            cells: row.cells.map((cell) => ({ ...cell })),
+          })),
+        })),
+      };
+    }
+
+    it('Finding 4: throws TKB_NATIVE_HEADER_INVALID when a teacher day header is corrupt', () => {
+      const wb = cloneWorkbook(parsedFixture);
+      const teacherSheet = wb.sheets.find((s) => s.name === DAMSAN_NATIVE_SHEETS.MORNING_TEACHER)!;
+      const row6 = teacherSheet.rows.find((r) => r.number === 6)!;
+      // Corrupt Monday day header at col 2
+      row6.cells[1] = { kind: 'TEXT', text: 'SAI_HEADER_THU', textOverLimit: false, formula: false, hyperlink: false, merged: true };
+
+      expect(() => validateAndExtractWorkbookStructure(wb)).toThrow(DamSanNativeTimetableException);
+      try {
+        validateAndExtractWorkbookStructure(wb);
+      } catch (err) {
+        expect(err).toBeInstanceOf(DamSanNativeTimetableException);
+        expect((err as DamSanNativeTimetableException).errorCode).toBe(DamSanNativeErrorCode.TKB_NATIVE_HEADER_INVALID);
+      }
+    });
+
+    it('Finding 4: throws TKB_NATIVE_HEADER_INVALID when a teacher period header is corrupt', () => {
+      const wb = cloneWorkbook(parsedFixture);
+      const teacherSheet = wb.sheets.find((s) => s.name === DAMSAN_NATIVE_SHEETS.MORNING_TEACHER)!;
+      const row7 = teacherSheet.rows.find((r) => r.number === 7)!;
+      // Corrupt Period 1 header under Monday (col 2)
+      row7.cells[1] = { kind: 'TEXT', text: '99', textOverLimit: false, formula: false, hyperlink: false, merged: false };
+
+      expect(() => validateAndExtractWorkbookStructure(wb)).toThrow(DamSanNativeTimetableException);
+      try {
+        validateAndExtractWorkbookStructure(wb);
+      } catch (err) {
+        expect(err).toBeInstanceOf(DamSanNativeTimetableException);
+        expect((err as DamSanNativeTimetableException).errorCode).toBe(DamSanNativeErrorCode.TKB_NATIVE_HEADER_INVALID);
+      }
+    });
+
+    it('Finding 4: throws TKB_NATIVE_HEADER_INVALID when a class coordinate period header is corrupt', () => {
+      const wb = cloneWorkbook(parsedFixture);
+      const classSheet = wb.sheets.find((s) => s.name === DAMSAN_NATIVE_SHEETS.MORNING_CLASS)!;
+      const row7 = classSheet.rows.find((r) => r.number === 7)!;
+      // Corrupt period coordinate at col 2 of row 7
+      row7.cells[1] = { kind: 'TEXT', text: 'WRONG_PERIOD', textOverLimit: false, formula: false, hyperlink: false, merged: false };
+
+      expect(() => validateAndExtractWorkbookStructure(wb)).toThrow(DamSanNativeTimetableException);
+      try {
+        validateAndExtractWorkbookStructure(wb);
+      } catch (err) {
+        expect(err).toBeInstanceOf(DamSanNativeTimetableException);
+        expect((err as DamSanNativeTimetableException).errorCode).toBe(DamSanNativeErrorCode.TKB_NATIVE_HEADER_INVALID);
+      }
+    });
+
+    it('Finding 6: throws TKB_NATIVE_HEADER_INVALID when a class timetable marker has a formula', () => {
+      const wb = cloneWorkbook(parsedFixture);
+      const classSheet = wb.sheets.find((s) => s.name === DAMSAN_NATIVE_SHEETS.MORNING_CLASS)!;
+      const row7 = classSheet.rows.find((r) => r.number === 7)!;
+      // Put formula in col 3 (class 10A1 cell)
+      row7.cells[2] = { kind: 'TEXT', text: 'TO-GV01', textOverLimit: false, formula: true, hyperlink: false, merged: false };
+
+      expect(() => validateAndExtractWorkbookStructure(wb)).toThrow(DamSanNativeTimetableException);
+      try {
+        validateAndExtractWorkbookStructure(wb);
+      } catch (err) {
+        expect(err).toBeInstanceOf(DamSanNativeTimetableException);
+        expect((err as DamSanNativeTimetableException).errorCode).toBe(DamSanNativeErrorCode.TKB_NATIVE_HEADER_INVALID);
+      }
+    });
+
+    it('Finding 6: throws TKB_NATIVE_HEADER_INVALID when a teacher target-class cell has a hyperlink', () => {
+      const wb = cloneWorkbook(parsedFixture);
+      const teacherSheet = wb.sheets.find((s) => s.name === DAMSAN_NATIVE_SHEETS.MORNING_TEACHER)!;
+      const row8 = teacherSheet.rows.find((r) => r.number === 8)!;
+      // Put hyperlink in col 2
+      row8.cells[1] = { kind: 'TEXT', text: '10A1', textOverLimit: false, formula: false, hyperlink: true, merged: false };
+
+      expect(() => validateAndExtractWorkbookStructure(wb)).toThrow(DamSanNativeTimetableException);
+      try {
+        validateAndExtractWorkbookStructure(wb);
+      } catch (err) {
+        expect(err).toBeInstanceOf(DamSanNativeTimetableException);
+        expect((err as DamSanNativeTimetableException).errorCode).toBe(DamSanNativeErrorCode.TKB_NATIVE_HEADER_INVALID);
+      }
+    });
+
+    it('Finding 6: throws TKB_NATIVE_HEADER_INVALID when a business cell is an unsafe merged cell', () => {
+      const wb = cloneWorkbook(parsedFixture);
+      const classSheet = wb.sheets.find((s) => s.name === DAMSAN_NATIVE_SHEETS.MORNING_CLASS)!;
+      const row7 = classSheet.rows.find((r) => r.number === 7)!;
+      // Mark col 3 as merged
+      row7.cells[2] = { kind: 'TEXT', text: 'TO-GV01', textOverLimit: false, formula: false, hyperlink: false, merged: true };
+
+      expect(() => validateAndExtractWorkbookStructure(wb)).toThrow(DamSanNativeTimetableException);
+      try {
+        validateAndExtractWorkbookStructure(wb);
+      } catch (err) {
+        expect(err).toBeInstanceOf(DamSanNativeTimetableException);
+        expect((err as DamSanNativeTimetableException).errorCode).toBe(DamSanNativeErrorCode.TKB_NATIVE_HEADER_INVALID);
+      }
+    });
+  });
 });

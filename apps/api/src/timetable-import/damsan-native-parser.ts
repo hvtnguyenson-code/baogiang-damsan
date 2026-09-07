@@ -202,6 +202,59 @@ export function parseClassCell(
   };
 }
 
+function assertCellSafety(
+  cell: ParsedWorkbookCell | undefined,
+  sheetName: string,
+  rowNumber: number,
+  colNumber: number,
+  options: {
+    cellCategory: string;
+    allowMerged?: boolean;
+  },
+): void {
+  if (!cell || cell.kind === 'BLANK') return;
+
+  if (cell.formula) {
+    throw new DamSanNativeTimetableException(
+      DamSanNativeErrorCode.TKB_NATIVE_HEADER_INVALID,
+      `Formula is forbidden in native ${options.cellCategory} cell on sheet "${sheetName}" row ${rowNumber} col ${colNumber}.`,
+      { sheet: sheetName, rowNumber, column: colNumber },
+    );
+  }
+
+  if (cell.hyperlink) {
+    throw new DamSanNativeTimetableException(
+      DamSanNativeErrorCode.TKB_NATIVE_HEADER_INVALID,
+      `Hyperlink is forbidden in native ${options.cellCategory} cell on sheet "${sheetName}" row ${rowNumber} col ${colNumber}.`,
+      { sheet: sheetName, rowNumber, column: colNumber },
+    );
+  }
+
+  if (cell.merged && !options.allowMerged) {
+    throw new DamSanNativeTimetableException(
+      DamSanNativeErrorCode.TKB_NATIVE_HEADER_INVALID,
+      `Merged cell is forbidden in native ${options.cellCategory} cell on sheet "${sheetName}" row ${rowNumber} col ${colNumber}.`,
+      { sheet: sheetName, rowNumber, column: colNumber },
+    );
+  }
+
+  if (cell.textOverLimit) {
+    throw new DamSanNativeTimetableException(
+      DamSanNativeErrorCode.TKB_NATIVE_MARKER_SYNTAX_INVALID,
+      `Cell text length exceeds limit in native ${options.cellCategory} cell on sheet "${sheetName}" row ${rowNumber} col ${colNumber}.`,
+      { sheet: sheetName, rowNumber, column: colNumber },
+    );
+  }
+
+  if (cell.kind !== 'TEXT' && cell.kind !== 'NUMBER') {
+    throw new DamSanNativeTimetableException(
+      DamSanNativeErrorCode.TKB_NATIVE_HEADER_INVALID,
+      `Unsupported cell kind "${cell.kind}" in native ${options.cellCategory} cell on sheet "${sheetName}" row ${rowNumber} col ${colNumber}.`,
+      { sheet: sheetName, rowNumber, column: colNumber },
+    );
+  }
+}
+
 function validateAndExtractClassSheet(
   sheet: ParsedWorkbookSheet,
   session: NativeSession,
@@ -215,8 +268,13 @@ function validateAndExtractClassSheet(
     );
   }
 
-  const col1 = normalizeCellText(headerRow.cells[0]);
-  const col2 = normalizeCellText(headerRow.cells[1]);
+  const cellCol1 = headerRow.cells[0];
+  const cellCol2 = headerRow.cells[1];
+  assertCellSafety(cellCol1, sheet.name, DAMSAN_NATIVE_BOUNDARIES.CLASS_HEADER_ROW, 1, { cellCategory: 'class structural header', allowMerged: true });
+  assertCellSafety(cellCol2, sheet.name, DAMSAN_NATIVE_BOUNDARIES.CLASS_HEADER_ROW, 2, { cellCategory: 'class structural header', allowMerged: true });
+
+  const col1 = normalizeCellText(cellCol1);
+  const col2 = normalizeCellText(cellCol2);
   if (!col1.toLowerCase().includes('thứ') || !col2.toLowerCase().includes('tiết')) {
     throw new DamSanNativeTimetableException(
       DamSanNativeErrorCode.TKB_NATIVE_HEADER_INVALID,
@@ -227,7 +285,9 @@ function validateAndExtractClassSheet(
 
   const classes: string[] = [];
   for (let c = DAMSAN_NATIVE_BOUNDARIES.CLASS_COL_START; c <= DAMSAN_NATIVE_BOUNDARIES.CLASS_COL_END; c += 1) {
-    const classCode = normalizeCellText(headerRow.cells[c - 1]);
+    const cell = headerRow.cells[c - 1];
+    assertCellSafety(cell, sheet.name, DAMSAN_NATIVE_BOUNDARIES.CLASS_HEADER_ROW, c, { cellCategory: 'class header', allowMerged: false });
+    const classCode = normalizeCellText(cell);
     if (!classCode) {
       throw new DamSanNativeTimetableException(
         DamSanNativeErrorCode.TKB_NATIVE_HEADER_INVALID,
@@ -255,9 +315,33 @@ function validateAndExtractClassSheet(
     const period = (rowOffset % DAMSAN_NATIVE_BOUNDARIES.PERIODS_PER_DAY) + 1;
 
     const rowObj = sheet.rows.find((row) => row.number === r);
+    if (!rowObj) {
+      throw new DamSanNativeTimetableException(
+        DamSanNativeErrorCode.TKB_NATIVE_HEADER_INVALID,
+        `Class row ${r} is missing on sheet ${sheet.name}.`,
+        { sheet: sheet.name, rowNumber: r },
+      );
+    }
+
+    // Validate coordinate columns: Col 1 is day (merged or number matching day), Col 2 is period 1..5
+    const coordCellDay = rowObj.cells[0];
+    const coordCellPeriod = rowObj.cells[1];
+    assertCellSafety(coordCellDay, sheet.name, r, 1, { cellCategory: 'class coordinate day', allowMerged: true });
+    assertCellSafety(coordCellPeriod, sheet.name, r, 2, { cellCategory: 'class coordinate period', allowMerged: false });
+
+    const periodText = normalizeCellText(coordCellPeriod);
+    if (periodText !== String(period)) {
+      throw new DamSanNativeTimetableException(
+        DamSanNativeErrorCode.TKB_NATIVE_HEADER_INVALID,
+        `Class row ${r} period coordinate expected "${period}", found "${periodText}" on sheet ${sheet.name}.`,
+        { sheet: sheet.name, rowNumber: r, column: 2, expected: period, actual: periodText },
+      );
+    }
+
     for (let c = DAMSAN_NATIVE_BOUNDARIES.CLASS_COL_START; c <= DAMSAN_NATIVE_BOUNDARIES.CLASS_COL_END; c += 1) {
       const classCode = classes[c - DAMSAN_NATIVE_BOUNDARIES.CLASS_COL_START]!;
-      const cell = rowObj ? rowObj.cells[c - 1] : undefined;
+      const cell = rowObj.cells[c - 1];
+      assertCellSafety(cell, sheet.name, r, c, { cellCategory: 'class timetable marker', allowMerged: false });
       const rawText = normalizeCellText(cell);
       const parsedSlot = parseClassCell(rawText, {
         session,
@@ -293,8 +377,13 @@ function validateAndExtractTeacherSheet(
     );
   }
 
-  const col1Row6 = normalizeCellText(row6.cells[0]);
-  const col1Row7 = normalizeCellText(row7.cells[0]);
+  const cellCol1Row6 = row6.cells[0];
+  const cellCol1Row7 = row7.cells[0];
+  assertCellSafety(cellCol1Row6, sheet.name, DAMSAN_NATIVE_BOUNDARIES.TEACHER_DAY_HEADER_ROW, 1, { cellCategory: 'teacher structural header', allowMerged: true });
+  assertCellSafety(cellCol1Row7, sheet.name, DAMSAN_NATIVE_BOUNDARIES.TEACHER_PERIOD_HEADER_ROW, 1, { cellCategory: 'teacher structural header', allowMerged: true });
+
+  const col1Row6 = normalizeCellText(cellCol1Row6);
+  const col1Row7 = normalizeCellText(cellCol1Row7);
   if (!col1Row6.toLowerCase().includes('giáo viên') || !col1Row7.toLowerCase().includes('giáo viên')) {
     throw new DamSanNativeTimetableException(
       DamSanNativeErrorCode.TKB_NATIVE_HEADER_INVALID,
@@ -303,13 +392,50 @@ function validateAndExtractTeacherSheet(
     );
   }
 
+  // Validate Row 6 Day headers (Monday -> Saturday across 6 groups of 5 columns)
+  // and Row 7 Period headers (1..5 under each day)
+  const EXPECTED_DAYS = ['thứ 2', 'thứ 3', 'thứ 4', 'thứ 5', 'thứ 6', 'thứ 7'];
+  for (let dayIdx = 0; dayIdx < DAMSAN_NATIVE_BOUNDARIES.DAYS_COUNT; dayIdx += 1) {
+    const expectedDay = EXPECTED_DAYS[dayIdx]!;
+    for (let p = 1; p <= DAMSAN_NATIVE_BOUNDARIES.PERIODS_PER_DAY; p += 1) {
+      const col = DAMSAN_NATIVE_BOUNDARIES.TEACHER_COL_START + (dayIdx * DAMSAN_NATIVE_BOUNDARIES.PERIODS_PER_DAY) + (p - 1);
+      const dayCell = row6.cells[col - 1];
+      const periodCell = row7.cells[col - 1];
+
+      // Row 6 day cell: merged across 5 columns in genuine workbook, check formula/hyperlink safety
+      assertCellSafety(dayCell, sheet.name, DAMSAN_NATIVE_BOUNDARIES.TEACHER_DAY_HEADER_ROW, col, { cellCategory: 'teacher day header', allowMerged: true });
+      // Row 7 period cell: unmerged, number or text 1..5
+      assertCellSafety(periodCell, sheet.name, DAMSAN_NATIVE_BOUNDARIES.TEACHER_PERIOD_HEADER_ROW, col, { cellCategory: 'teacher period header', allowMerged: false });
+
+      const dayText = normalizeCellText(dayCell).toLowerCase();
+      if (!dayText.includes(expectedDay)) {
+        throw new DamSanNativeTimetableException(
+          DamSanNativeErrorCode.TKB_NATIVE_HEADER_INVALID,
+          `Teacher day header at column ${col} on sheet ${sheet.name} expected "${expectedDay}", found "${dayText}".`,
+          { sheet: sheet.name, rowNumber: DAMSAN_NATIVE_BOUNDARIES.TEACHER_DAY_HEADER_ROW, column: col },
+        );
+      }
+
+      const periodText = normalizeCellText(periodCell);
+      if (periodText !== String(p)) {
+        throw new DamSanNativeTimetableException(
+          DamSanNativeErrorCode.TKB_NATIVE_HEADER_INVALID,
+          `Teacher period header at column ${col} on sheet ${sheet.name} expected "${p}", found "${periodText}".`,
+          { sheet: sheet.name, rowNumber: DAMSAN_NATIVE_BOUNDARIES.TEACHER_PERIOD_HEADER_ROW, column: col },
+        );
+      }
+    }
+  }
+
   const slots: ParsedTeacherCell[] = [];
   const teacherRows = new Map<number, { rowRef: TeacherSourceRowRef; untrustedDisplayName: string }>();
 
   for (let r = DAMSAN_NATIVE_BOUNDARIES.TEACHER_ROW_START; r <= DAMSAN_NATIVE_BOUNDARIES.TEACHER_ROW_END; r += 1) {
     const rowObj = sheet.rows.find((row) => row.number === r);
     const rowRef: TeacherSourceRowRef = { sheet: sheet.name, rowNumber: r };
-    const untrustedDisplayName = normalizeCellText(rowObj?.cells[0]);
+    const col1Cell = rowObj?.cells[0];
+    assertCellSafety(col1Cell, sheet.name, r, 1, { cellCategory: 'teacher display name', allowMerged: false });
+    const untrustedDisplayName = normalizeCellText(col1Cell);
     teacherRows.set(r, { rowRef, untrustedDisplayName });
 
     for (let c = DAMSAN_NATIVE_BOUNDARIES.TEACHER_COL_START; c <= DAMSAN_NATIVE_BOUNDARIES.TEACHER_COL_END; c += 1) {
@@ -320,6 +446,7 @@ function validateAndExtractTeacherSheet(
       const period = (colOffset % DAMSAN_NATIVE_BOUNDARIES.PERIODS_PER_DAY) + 1;
 
       const cell = rowObj ? rowObj.cells[c - 1] : undefined;
+      assertCellSafety(cell, sheet.name, r, c, { cellCategory: 'teacher target class cell', allowMerged: false });
       const targetClass = normalizeCellText(cell);
       if (targetClass) {
         slots.push({
