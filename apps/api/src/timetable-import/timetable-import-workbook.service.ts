@@ -129,8 +129,8 @@ export class TimetableImportWorkbookService {
     const sourceFileName = this.sourceFileName(file!.originalname);
 
     const isNative = dto.sourceFormat === 'DAMSAN_NATIVE';
-    const effectiveSheetName = dto.sheetName || (isNative ? DAMSAN_NATIVE_SHEET_SENTINEL : '');
-    const effectiveHeaderRowNumber = dto.headerRowNumber !== undefined ? dto.headerRowNumber : (isNative ? DAMSAN_NATIVE_HEADER_ROW_SENTINEL : 0);
+    const effectiveSheetName = isNative ? DAMSAN_NATIVE_SHEET_SENTINEL : (dto.sheetName ?? '');
+    const effectiveHeaderRowNumber = isNative ? DAMSAN_NATIVE_HEADER_ROW_SENTINEL : (dto.headerRowNumber ?? 0);
     const effectiveDto: ConfirmTimetableImportWorkbookDto = {
       ...dto,
       sheetName: effectiveSheetName,

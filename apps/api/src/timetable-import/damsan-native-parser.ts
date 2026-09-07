@@ -2,6 +2,7 @@ import { AcademicWeekday } from '@prisma/client';
 import { parseCivilDate } from '../common/validation/civil-date';
 import { MAX_PARSER_CELL_TEXT_LENGTH } from './workbook-limits';
 import { ParsedWorkbook, ParsedWorkbookCell, ParsedWorkbookSheet } from './workbook-parser.types';
+import { TimetableImportPreviewIssueCode } from '@baogiang/contracts';
 import {
   ALL_DAMSAN_NATIVE_SHEETS,
   DAMSAN_NATIVE_BOUNDARIES,
@@ -65,7 +66,12 @@ export function extractEffectiveDate(sheet: ParsedWorkbookSheet): string {
     );
   }
 
-  for (const cell of row4.cells) {
+  for (let c = 0; c < row4.cells.length; c += 1) {
+    const cell = row4.cells[c];
+    assertCellSafety(cell, sheet.name, DAMSAN_NATIVE_BOUNDARIES.EFFECTIVE_DATE_ROW, c + 1, {
+      cellCategory: 'effective date row',
+      allowMerged: true,
+    });
     const text = normalizeCellText(cell);
     if (!text) continue;
     const match = EFFECTIVE_DATE_REGEX.exec(text);
@@ -212,7 +218,7 @@ function assertCellSafety(
     allowMerged?: boolean;
   },
 ): void {
-  if (!cell || cell.kind === 'BLANK') return;
+  if (!cell) return;
 
   if (cell.formula) {
     throw new DamSanNativeTimetableException(
@@ -229,6 +235,8 @@ function assertCellSafety(
       { sheet: sheetName, rowNumber, column: colNumber },
     );
   }
+
+  if (cell.kind === 'BLANK') return;
 
   if (cell.merged && !options.allowMerged) {
     throw new DamSanNativeTimetableException(
@@ -329,6 +337,25 @@ function validateAndExtractClassSheet(
     assertCellSafety(coordCellDay, sheet.name, r, 1, { cellCategory: 'class coordinate day', allowMerged: true });
     assertCellSafety(coordCellPeriod, sheet.name, r, 2, { cellCategory: 'class coordinate period', allowMerged: false });
 
+    // Validate Day coordinate (Finding 9)
+    const expectedDayToken = `thứ ${day}`;
+    const dayText = normalizeCellText(coordCellDay).toLowerCase();
+    if (period === 1) {
+      if (!dayText || (!dayText.includes(expectedDayToken) && dayText !== String(day))) {
+        throw new DamSanNativeTimetableException(
+          DamSanNativeErrorCode.TKB_NATIVE_HEADER_INVALID,
+          `Class row ${r} day coordinate expected "${expectedDayToken}", found "${dayText}" on sheet ${sheet.name}.`,
+          { sheet: sheet.name, rowNumber: r, column: 1, expected: expectedDayToken, actual: dayText, day },
+        );
+      }
+    } else if (dayText && !dayText.includes(expectedDayToken) && dayText !== String(day)) {
+      throw new DamSanNativeTimetableException(
+        DamSanNativeErrorCode.TKB_NATIVE_HEADER_INVALID,
+        `Class row ${r} day coordinate expected "${expectedDayToken}", found "${dayText}" on sheet ${sheet.name}.`,
+        { sheet: sheet.name, rowNumber: r, column: 1, expected: expectedDayToken, actual: dayText, day },
+      );
+    }
+
     const periodText = normalizeCellText(coordCellPeriod);
     if (periodText !== String(period)) {
       throw new DamSanNativeTimetableException(
@@ -343,6 +370,16 @@ function validateAndExtractClassSheet(
       const cell = rowObj.cells[c - 1];
       assertCellSafety(cell, sheet.name, r, c, { cellCategory: 'class timetable marker', allowMerged: false });
       const rawText = normalizeCellText(cell);
+
+      // Hidden business data check (Finding 11)
+      if (rawText && (rowObj.hidden || sheet.hiddenColumns.includes(c))) {
+        throw new DamSanNativeTimetableException(
+          'HIDDEN_MAPPED_DATA' as TimetableImportPreviewIssueCode,
+          `Hidden mapped data in class timetable cell on sheet "${sheet.name}" row ${r} col ${c}.`,
+          { sheet: sheet.name, rowNumber: r, column: c },
+        );
+      }
+
       const parsedSlot = parseClassCell(rawText, {
         session,
         day,
@@ -432,8 +469,15 @@ function validateAndExtractTeacherSheet(
 
   for (let r = DAMSAN_NATIVE_BOUNDARIES.TEACHER_ROW_START; r <= DAMSAN_NATIVE_BOUNDARIES.TEACHER_ROW_END; r += 1) {
     const rowObj = sheet.rows.find((row) => row.number === r);
+    if (!rowObj) {
+      throw new DamSanNativeTimetableException(
+        DamSanNativeErrorCode.TKB_NATIVE_HEADER_INVALID,
+        `Teacher row ${r} is missing on sheet ${sheet.name}.`,
+        { sheet: sheet.name, rowNumber: r },
+      );
+    }
     const rowRef: TeacherSourceRowRef = { sheet: sheet.name, rowNumber: r };
-    const col1Cell = rowObj?.cells[0];
+    const col1Cell = rowObj.cells[0];
     assertCellSafety(col1Cell, sheet.name, r, 1, { cellCategory: 'teacher display name', allowMerged: false });
     const untrustedDisplayName = normalizeCellText(col1Cell);
     teacherRows.set(r, { rowRef, untrustedDisplayName });
@@ -445,9 +489,19 @@ function validateAndExtractTeacherSheet(
       const weekday = WEEKDAYS[dayIndex]!;
       const period = (colOffset % DAMSAN_NATIVE_BOUNDARIES.PERIODS_PER_DAY) + 1;
 
-      const cell = rowObj ? rowObj.cells[c - 1] : undefined;
+      const cell = rowObj.cells[c - 1];
       assertCellSafety(cell, sheet.name, r, c, { cellCategory: 'teacher target class cell', allowMerged: false });
       const targetClass = normalizeCellText(cell);
+
+      // Hidden business data check (Finding 11)
+      if (targetClass && (rowObj.hidden || sheet.hiddenColumns.includes(c))) {
+        throw new DamSanNativeTimetableException(
+          'HIDDEN_MAPPED_DATA' as TimetableImportPreviewIssueCode,
+          `Hidden mapped data in teacher timetable cell on sheet "${sheet.name}" row ${r} col ${c}.`,
+          { sheet: sheet.name, rowNumber: r, column: c },
+        );
+      }
+
       if (targetClass) {
         slots.push({
           session,

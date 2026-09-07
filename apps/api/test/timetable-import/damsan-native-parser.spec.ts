@@ -406,5 +406,191 @@ describe('DamSanNativeParser (Checkpoint A - Structural Core)', () => {
         expect((err as DamSanNativeTimetableException).errorCode).toBe(DamSanNativeErrorCode.TKB_NATIVE_HEADER_INVALID);
       }
     });
+
+    describe('Finding 9: Class Day Coordinate Validation', () => {
+      it('throws TKB_NATIVE_HEADER_INVALID when morning class day coordinate is corrupted (e.g. Monday row 7 says Thứ 6)', () => {
+        const wb = cloneWorkbook(parsedFixture);
+        const classSheet = wb.sheets.find((s) => s.name === DAMSAN_NATIVE_SHEETS.MORNING_CLASS)!;
+        const row7 = classSheet.rows.find((r) => r.number === 7)!;
+        row7.cells[0] = { kind: 'TEXT', text: 'Thứ 6', textOverLimit: false, formula: false, hyperlink: false, merged: true };
+
+        expect(() => validateAndExtractWorkbookStructure(wb)).toThrow(DamSanNativeTimetableException);
+        try {
+          validateAndExtractWorkbookStructure(wb);
+        } catch (err) {
+          expect(err).toBeInstanceOf(DamSanNativeTimetableException);
+          expect((err as DamSanNativeTimetableException).errorCode).toBe(DamSanNativeErrorCode.TKB_NATIVE_HEADER_INVALID);
+        }
+      });
+
+      it('throws TKB_NATIVE_HEADER_INVALID when afternoon class day coordinate is corrupted', () => {
+        const wb = cloneWorkbook(parsedFixture);
+        const classSheet = wb.sheets.find((s) => s.name === DAMSAN_NATIVE_SHEETS.AFTERNOON_CLASS)!;
+        const row7 = classSheet.rows.find((r) => r.number === 7)!;
+        row7.cells[0] = { kind: 'TEXT', text: 'Thứ 3', textOverLimit: false, formula: false, hyperlink: false, merged: true };
+
+        expect(() => validateAndExtractWorkbookStructure(wb)).toThrow(DamSanNativeTimetableException);
+        try {
+          validateAndExtractWorkbookStructure(wb);
+        } catch (err) {
+          expect(err).toBeInstanceOf(DamSanNativeTimetableException);
+          expect((err as DamSanNativeTimetableException).errorCode).toBe(DamSanNativeErrorCode.TKB_NATIVE_HEADER_INVALID);
+        }
+      });
+
+      it('passes when genuine merged fixture day coordinates are intact', () => {
+        expect(() => validateAndExtractWorkbookStructure(parsedFixture)).not.toThrow();
+      });
+    });
+
+    describe('Finding 10: Row 4 Effective-Date Source Safety', () => {
+      it('rejects Row 4 cell containing formula with cached date text', () => {
+        const wb = cloneWorkbook(parsedFixture);
+        const classSheet = wb.sheets.find((s) => s.name === DAMSAN_NATIVE_SHEETS.MORNING_CLASS)!;
+        const row4 = classSheet.rows.find((r) => r.number === 4)!;
+        const dateCellIdx = row4.cells.findIndex((c) => c.text && c.text.includes('ÁP DỤNG'));
+        row4.cells[dateCellIdx] = {
+          ...row4.cells[dateCellIdx]!,
+          formula: true,
+        };
+
+        expect(() => validateAndExtractWorkbookStructure(wb)).toThrow(DamSanNativeTimetableException);
+        try {
+          validateAndExtractWorkbookStructure(wb);
+        } catch (err) {
+          expect(err).toBeInstanceOf(DamSanNativeTimetableException);
+          expect((err as DamSanNativeTimetableException).errorCode).toBe(DamSanNativeErrorCode.TKB_NATIVE_HEADER_INVALID);
+        }
+      });
+
+      it('rejects Row 4 cell containing hyperlink', () => {
+        const wb = cloneWorkbook(parsedFixture);
+        const classSheet = wb.sheets.find((s) => s.name === DAMSAN_NATIVE_SHEETS.MORNING_CLASS)!;
+        const row4 = classSheet.rows.find((r) => r.number === 4)!;
+        const dateCellIdx = row4.cells.findIndex((c) => c.text && c.text.includes('ÁP DỤNG'));
+        row4.cells[dateCellIdx] = {
+          ...row4.cells[dateCellIdx]!,
+          hyperlink: true,
+        };
+
+        expect(() => validateAndExtractWorkbookStructure(wb)).toThrow(DamSanNativeTimetableException);
+        try {
+          validateAndExtractWorkbookStructure(wb);
+        } catch (err) {
+          expect(err).toBeInstanceOf(DamSanNativeTimetableException);
+          expect((err as DamSanNativeTimetableException).errorCode).toBe(DamSanNativeErrorCode.TKB_NATIVE_HEADER_INVALID);
+        }
+      });
+
+      it('rejects Row 4 cell containing unsupported kind', () => {
+        const wb = cloneWorkbook(parsedFixture);
+        const classSheet = wb.sheets.find((s) => s.name === DAMSAN_NATIVE_SHEETS.MORNING_CLASS)!;
+        const row4 = classSheet.rows.find((r) => r.number === 4)!;
+        const dateCellIdx = row4.cells.findIndex((c) => c.text && c.text.includes('ÁP DỤNG'));
+        row4.cells[dateCellIdx] = {
+          ...row4.cells[dateCellIdx]!,
+          kind: 'BOOLEAN',
+        };
+
+        expect(() => validateAndExtractWorkbookStructure(wb)).toThrow(DamSanNativeTimetableException);
+        try {
+          validateAndExtractWorkbookStructure(wb);
+        } catch (err) {
+          expect(err).toBeInstanceOf(DamSanNativeTimetableException);
+          expect((err as DamSanNativeTimetableException).errorCode).toBe(DamSanNativeErrorCode.TKB_NATIVE_HEADER_INVALID);
+        }
+      });
+    });
+
+    describe('Finding 11: Cell Safety Order and Hidden Data', () => {
+      it('rejects formula metadata on a cell whose cached/kind representation is BLANK', () => {
+        const wb = cloneWorkbook(parsedFixture);
+        const classSheet = wb.sheets.find((s) => s.name === DAMSAN_NATIVE_SHEETS.MORNING_CLASS)!;
+        const row7 = classSheet.rows.find((r) => r.number === 7)!;
+        // Unscheduled cell with formula
+        row7.cells[5] = { kind: 'BLANK', text: '', textOverLimit: false, formula: true, hyperlink: false, merged: false };
+
+        expect(() => validateAndExtractWorkbookStructure(wb)).toThrow(DamSanNativeTimetableException);
+        try {
+          validateAndExtractWorkbookStructure(wb);
+        } catch (err) {
+          expect(err).toBeInstanceOf(DamSanNativeTimetableException);
+          expect((err as DamSanNativeTimetableException).errorCode).toBe(DamSanNativeErrorCode.TKB_NATIVE_HEADER_INVALID);
+        }
+      });
+
+      it('rejects nonblank hidden class timetable business row', () => {
+        const wb = cloneWorkbook(parsedFixture);
+        const classSheet = wb.sheets.find((s) => s.name === DAMSAN_NATIVE_SHEETS.MORNING_CLASS)!;
+        const row7 = classSheet.rows.find((r) => r.number === 7)!;
+        row7.hidden = true;
+
+        expect(() => validateAndExtractWorkbookStructure(wb)).toThrow(DamSanNativeTimetableException);
+        try {
+          validateAndExtractWorkbookStructure(wb);
+        } catch (err) {
+          expect(err).toBeInstanceOf(DamSanNativeTimetableException);
+          expect((err as DamSanNativeTimetableException).errorCode).toBe('HIDDEN_MAPPED_DATA');
+        }
+      });
+
+      it('rejects nonblank hidden teacher target-class business column', () => {
+        const wb = cloneWorkbook(parsedFixture);
+        const teacherSheet = wb.sheets.find((s) => s.name === DAMSAN_NATIVE_SHEETS.MORNING_TEACHER)!;
+        const row8 = teacherSheet.rows.find((r) => r.number === 8)!;
+        row8.cells[1] = { kind: 'TEXT', text: '10A1', textOverLimit: false, formula: false, hyperlink: false, merged: false };
+        teacherSheet.hiddenColumns = [2]; // Col 2 is Monday Period 1
+
+        expect(() => validateAndExtractWorkbookStructure(wb)).toThrow(DamSanNativeTimetableException);
+        try {
+          validateAndExtractWorkbookStructure(wb);
+        } catch (err) {
+          expect(err).toBeInstanceOf(DamSanNativeTimetableException);
+          expect((err as DamSanNativeTimetableException).errorCode).toBe('HIDDEN_MAPPED_DATA');
+        }
+      });
+    });
+
+    describe('Finding 12: Missing Teacher Physical Row != Zero Allocation', () => {
+      it('rejects when physical teacher row 25 is completely missing', () => {
+        const wb = cloneWorkbook(parsedFixture);
+        const teacherSheet = wb.sheets.find((s) => s.name === DAMSAN_NATIVE_SHEETS.MORNING_TEACHER)!;
+        teacherSheet.rows = teacherSheet.rows.filter((r) => r.number !== 25);
+
+        expect(() => validateAndExtractWorkbookStructure(wb)).toThrow(DamSanNativeTimetableException);
+        try {
+          validateAndExtractWorkbookStructure(wb);
+        } catch (err) {
+          expect(err).toBeInstanceOf(DamSanNativeTimetableException);
+          expect((err as DamSanNativeTimetableException).errorCode).toBe(DamSanNativeErrorCode.TKB_NATIVE_HEADER_INVALID);
+        }
+      });
+
+      it('rejects when physical teacher row 25 is missing on afternoon teacher sheet', () => {
+        const wb = cloneWorkbook(parsedFixture);
+        const teacherSheet = wb.sheets.find((s) => s.name === DAMSAN_NATIVE_SHEETS.AFTERNOON_TEACHER)!;
+        teacherSheet.rows = teacherSheet.rows.filter((r) => r.number !== 25);
+
+        expect(() => validateAndExtractWorkbookStructure(wb)).toThrow(DamSanNativeTimetableException);
+        try {
+          validateAndExtractWorkbookStructure(wb);
+        } catch (err) {
+          expect(err).toBeInstanceOf(DamSanNativeTimetableException);
+          expect((err as DamSanNativeTimetableException).errorCode).toBe(DamSanNativeErrorCode.TKB_NATIVE_HEADER_INVALID);
+        }
+      });
+
+      it('passes when teacher row 25 is physically present but has blank column A and zero allocations', () => {
+        const wb = cloneWorkbook(parsedFixture);
+        const teacherSheet = wb.sheets.find((s) => s.name === DAMSAN_NATIVE_SHEETS.MORNING_TEACHER)!;
+        const row25 = teacherSheet.rows.find((r) => r.number === 25)!;
+        // Blank out column 1 and all target cells
+        for (let c = 0; c < row25.cells.length; c += 1) {
+          row25.cells[c] = { kind: 'BLANK', text: '', textOverLimit: false, formula: false, hyperlink: false, merged: false };
+        }
+        // Also ensure no class view refers to row 25's teacher
+        expect(() => validateAndExtractWorkbookStructure(wb)).not.toThrow();
+      });
+    });
   });
 });

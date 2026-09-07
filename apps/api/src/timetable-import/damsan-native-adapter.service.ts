@@ -104,7 +104,21 @@ export class DamSanNativeTimetableAdapter {
     const morningClassMap = new Map<string, { id: string; code: string; gradeLevel: number }>();
     for (const classCode of structure.morningClasses) {
       const resolved = this.resolveClass(classCode, context.classes, context.classAliases);
-      if (!resolved.item) {
+      if (resolved.conflict) {
+        issues.push(this.issue(
+          'CLASS_IDENTITY_CONFLICT',
+          6,
+          `Morning class header "${classCode}" has conflicting canonical identity.`,
+          { sheet: DAMSAN_NATIVE_SHEETS.MORNING_CLASS, classCode },
+        ));
+      } else if (resolved.inactive) {
+        issues.push(this.issue(
+          'CLASS_INACTIVE',
+          6,
+          `Morning class header "${classCode}" resolves to an inactive class.`,
+          { sheet: DAMSAN_NATIVE_SHEETS.MORNING_CLASS, classCode },
+        ));
+      } else if (!resolved.item) {
         issues.push(this.issue(
           DamSanNativeErrorCode.TKB_NATIVE_CLASS_HEADER_UNKNOWN,
           6,
@@ -119,7 +133,21 @@ export class DamSanNativeTimetableAdapter {
     const afternoonClassMap = new Map<string, { id: string; code: string; gradeLevel: number }>();
     for (const classCode of structure.afternoonClasses) {
       const resolved = this.resolveClass(classCode, context.classes, context.classAliases);
-      if (!resolved.item) {
+      if (resolved.conflict) {
+        issues.push(this.issue(
+          'CLASS_IDENTITY_CONFLICT',
+          6,
+          `Afternoon class header "${classCode}" has conflicting canonical identity.`,
+          { sheet: DAMSAN_NATIVE_SHEETS.AFTERNOON_CLASS, classCode },
+        ));
+      } else if (resolved.inactive) {
+        issues.push(this.issue(
+          'CLASS_INACTIVE',
+          6,
+          `Afternoon class header "${classCode}" resolves to an inactive class.`,
+          { sheet: DAMSAN_NATIVE_SHEETS.AFTERNOON_CLASS, classCode },
+        ));
+      } else if (!resolved.item) {
         issues.push(this.issue(
           DamSanNativeErrorCode.TKB_NATIVE_CLASS_HEADER_UNKNOWN,
           6,
@@ -164,7 +192,21 @@ export class DamSanNativeTimetableAdapter {
     );
     for (const subjectCode of distinctSubjectCodes) {
       const resolved = this.resolveSubject(subjectCode, context.subjects, context.subjectAliases);
-      if (!resolved.item) {
+      if (resolved.conflict) {
+        issues.push(this.issue(
+          'SUBJECT_IDENTITY_CONFLICT',
+          undefined,
+          `Subject code "${subjectCode}" has conflicting canonical identity.`,
+          { subjectCode },
+        ));
+      } else if (resolved.inactive) {
+        issues.push(this.issue(
+          'SUBJECT_INACTIVE',
+          undefined,
+          `Subject code "${subjectCode}" resolves to an inactive subject.`,
+          { subjectCode },
+        ));
+      } else if (!resolved.item) {
         issues.push(this.issue(
           DamSanNativeErrorCode.TKB_NATIVE_SUBJECT_UNKNOWN,
           undefined,
@@ -280,8 +322,8 @@ export class DamSanNativeTimetableAdapter {
       ? computePreviewDiff(rows.map(this.diffRow), baseline.entries.map(this.baselineDiffRow))
       : null;
 
-    const sheetName = dto.sheetName || DAMSAN_NATIVE_SHEET_SENTINEL;
-    const headerRowNumber = dto.headerRowNumber || DAMSAN_NATIVE_HEADER_ROW_SENTINEL;
+    const sheetName = DAMSAN_NATIVE_SHEET_SENTINEL;
+    const headerRowNumber = DAMSAN_NATIVE_HEADER_ROW_SENTINEL;
     const sourceRowCount = structure.morningClassSlots.length + structure.afternoonClassSlots.length;
 
     return {
@@ -314,34 +356,50 @@ export class DamSanNativeTimetableAdapter {
     code: string,
     classes: Array<{ id: string; code: string; status: string; gradeLevel: number }>,
     aliases: Array<{ sourceValueKey: string; schoolClassId: string | null }>,
-  ): { item?: { id: string; code: string; gradeLevel: number } } {
+  ): { item?: { id: string; code: string; gradeLevel: number }; conflict?: boolean; inactive?: boolean } {
     const key = normalizeLookupKey(code);
-    const matchedClass = classes.find((c) => normalizeLookupKey(c.code) === key && c.status === 'ACTIVE');
-    if (matchedClass) return { item: matchedClass };
+    const candidateIds = new Set<string>();
+    const directMatch = classes.find((c) => normalizeLookupKey(c.code) === key);
+    if (directMatch) candidateIds.add(directMatch.id);
 
-    const matchedAlias = aliases.find((a) => a.sourceValueKey === key && a.schoolClassId);
-    if (matchedAlias) {
-      const aliasClass = classes.find((c) => c.id === matchedAlias.schoolClassId && c.status === 'ACTIVE');
-      if (aliasClass) return { item: aliasClass };
+    for (const alias of aliases) {
+      if (alias.sourceValueKey === key && alias.schoolClassId) {
+        candidateIds.add(alias.schoolClassId);
+      }
     }
-    return {};
+
+    if (candidateIds.size === 0) return {};
+    if (candidateIds.size > 1) return { conflict: true };
+
+    const candidateId = [...candidateIds][0]!;
+    const candidate = classes.find((c) => c.id === candidateId);
+    if (!candidate || candidate.status !== 'ACTIVE') return { inactive: true };
+    return { item: candidate };
   }
 
   private resolveSubject(
     code: string,
     subjects: Array<{ id: string; code: string; status: string }>,
     aliases: Array<{ sourceValueKey: string; subjectId: string | null }>,
-  ): { item?: { id: string; code: string } } {
+  ): { item?: { id: string; code: string }; conflict?: boolean; inactive?: boolean } {
     const key = normalizeLookupKey(code);
-    const matched = subjects.find((s) => normalizeLookupKey(s.code) === key && s.status === 'ACTIVE');
-    if (matched) return { item: matched };
+    const candidateIds = new Set<string>();
+    const directMatch = subjects.find((s) => normalizeLookupKey(s.code) === key);
+    if (directMatch) candidateIds.add(directMatch.id);
 
-    const matchedAlias = aliases.find((a) => a.sourceValueKey === key && a.subjectId);
-    if (matchedAlias) {
-      const aliasSubject = subjects.find((s) => s.id === matchedAlias.subjectId && s.status === 'ACTIVE');
-      if (aliasSubject) return { item: aliasSubject };
+    for (const alias of aliases) {
+      if (alias.sourceValueKey === key && alias.subjectId) {
+        candidateIds.add(alias.subjectId);
+      }
     }
-    return {};
+
+    if (candidateIds.size === 0) return {};
+    if (candidateIds.size > 1) return { conflict: true };
+
+    const candidateId = [...candidateIds][0]!;
+    const candidate = subjects.find((s) => s.id === candidateId);
+    if (!candidate || candidate.status !== 'ACTIVE') return { inactive: true };
+    return { item: candidate };
   }
 
   private resolveTeacher(

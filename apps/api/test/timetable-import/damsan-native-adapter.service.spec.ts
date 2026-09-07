@@ -538,5 +538,224 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
         }),
       );
     });
+
+    describe('Finding 7: Server-Owned Native Provenance Sentinel', () => {
+      it('forces preview source metadata to ALL_SHEETS and 6 even when client submits arbitrary sheetName and headerRowNumber', async () => {
+        const { adapter } = buildMockContext();
+        const clientOverriddenDto: PreviewTimetableImportWorkbookDto = {
+          ...previewDto,
+          sheetName: 'SOME_CLIENT_SHEET',
+          headerRowNumber: 99,
+        };
+
+        const result = await adapter.preview(parsedFixture, clientOverriddenDto, 'fixture.xlsx');
+        expect(result.source.sheetName).toBe('ALL_SHEETS');
+        expect(result.source.headerRowNumber).toBe(6);
+      });
+
+      it('forces first confirm fingerprint/receipt to ALL_SHEETS and 6, and allows replay with same key despite client override', async () => {
+        const { service, prisma } = buildMockContext();
+        const clientOverriddenConfirmDto: ConfirmTimetableImportWorkbookDto = {
+          ...previewDto,
+          sheetName: 'SOME_CLIENT_SHEET',
+          headerRowNumber: 99,
+          requestIdempotencyKey: 'idempotency-key-client-override',
+        };
+
+        const result1 = await service.confirm(
+          uploadFile,
+          clientOverriddenConfirmDto,
+          mockIds.actorUserId,
+          { requestId: 'req-override-1' },
+        );
+        expect(result1.outcome).toBe('CREATED');
+        expect(result1.receipt.sheetName).toBe('ALL_SHEETS');
+        expect(result1.receipt.headerRowNumber).toBe(6);
+
+        // Verify fingerprint creation used ALL_SHEETS and 6
+        const createdReceipt = (prisma.timetableImportReceipt.create as jest.Mock).mock.calls[0][0].data;
+        expect(createdReceipt.sheetName).toBe('ALL_SHEETS');
+        expect(createdReceipt.headerRowNumber).toBe(6);
+
+        const createdVersion = await (prisma.timetableVersion.create as jest.Mock).mock.results[0].value;
+        const existingKey = {
+          id: 'created-key-override-id',
+          idempotencyKey: 'idempotency-key-client-override',
+          requestFingerprint: (prisma.timetableImportRequestKey.create as jest.Mock).mock.calls[0][0].data.requestFingerprint,
+          timetableVersionId: 'created-version-id',
+          academicYearId: mockIds.academicYearId,
+          committedByUserId: mockIds.actorUserId,
+          createdAt: new Date('2026-09-07T12:00:00Z'),
+          receipt: {
+            id: 'created-receipt-id',
+            committedAt: new Date('2026-09-07T12:00:00Z'),
+            timetableVersion: {
+              ...createdVersion,
+              _count: { entries: 455 },
+            },
+          },
+        };
+        prisma.timetableImportRequestKey.findUnique.mockResolvedValue(existingKey);
+
+        // Replay with exact same key and client override returns IDEMPOTENT_REPLAY
+        const result2 = await service.confirm(
+          uploadFile,
+          clientOverriddenConfirmDto,
+          mockIds.actorUserId,
+          { requestId: 'req-override-2' },
+        );
+        expect(result2.outcome).toBe('IDEMPOTENT_REPLAY');
+      });
+    });
+
+    describe('Finding 8: Class and Subject Exact Code + Alias Conflict Resolution', () => {
+      it('passes when class exact code and alias point to the same canonical ID', async () => {
+        const { adapter, prisma } = buildMockContext();
+        // Add alias for 10A1 pointing to class-10A1
+        prisma.timetableImportEntityAlias.findMany.mockResolvedValue([
+          {
+            id: 'alias-1',
+            entityType: 'SCHOOL_CLASS',
+            sourceValueKey: '10a1',
+            schoolClassId: 'class-10A1',
+            subjectId: null,
+            teacherUserId: null,
+            academicYearId: mockIds.academicYearId,
+            isActive: true,
+          },
+        ]);
+
+        const result = await adapter.preview(parsedFixture, previewDto, 'fixture.xlsx');
+        expect(result.issues.filter((i) => i.code === 'CLASS_IDENTITY_CONFLICT')).toHaveLength(0);
+      });
+
+      it('emits CLASS_IDENTITY_CONFLICT when class exact code and alias point to different canonical IDs', async () => {
+        const { adapter, prisma } = buildMockContext();
+        // Alias for 10A1 pointing to class-10A2
+        prisma.timetableImportEntityAlias.findMany.mockResolvedValue([
+          {
+            id: 'alias-conflict-class',
+            entityType: 'SCHOOL_CLASS',
+            sourceValueKey: '10a1',
+            schoolClassId: 'class-10A2',
+            subjectId: null,
+            teacherUserId: null,
+            academicYearId: mockIds.academicYearId,
+            isActive: true,
+          },
+        ]);
+
+        const result = await adapter.preview(parsedFixture, previewDto, 'fixture.xlsx');
+        expect(result.canConfirm).toBe(false);
+        expect(result.issues).toContainEqual(
+          expect.objectContaining({
+            code: 'CLASS_IDENTITY_CONFLICT',
+            message: expect.stringContaining('10A1'),
+          }),
+        );
+      });
+
+      it('does not silently bypass inactive direct class when alias points to an active class', async () => {
+        const { adapter, prisma, classes } = buildMockContext();
+        // Mark class-10A1 as INACTIVE in catalog, and add alias pointing to active class-10A2
+        const mutatedClasses = classes.map((c) => (c.code === '10A1' ? { ...c, status: CatalogStatus.INACTIVE } : c));
+        prisma.schoolClass.findMany.mockResolvedValue(mutatedClasses);
+        prisma.timetableImportEntityAlias.findMany.mockResolvedValue([
+          {
+            id: 'alias-inactive-bypass',
+            entityType: 'SCHOOL_CLASS',
+            sourceValueKey: '10a1',
+            schoolClassId: 'class-10A2',
+            subjectId: null,
+            teacherUserId: null,
+            academicYearId: mockIds.academicYearId,
+            isActive: true,
+          },
+        ]);
+
+        const result = await adapter.preview(parsedFixture, previewDto, 'fixture.xlsx');
+        expect(result.canConfirm).toBe(false);
+        // Both 10A1 and 10A2 are distinct candidate IDs -> conflict!
+        expect(result.issues).toContainEqual(
+          expect.objectContaining({
+            code: 'CLASS_IDENTITY_CONFLICT',
+          }),
+        );
+      });
+
+      it('emits CLASS_INACTIVE when sole candidate class is inactive', async () => {
+        const { adapter, prisma, classes } = buildMockContext();
+        const mutatedClasses = classes.map((c) => (c.code === '10A1' ? { ...c, status: CatalogStatus.INACTIVE } : c));
+        prisma.schoolClass.findMany.mockResolvedValue(mutatedClasses);
+
+        const result = await adapter.preview(parsedFixture, previewDto, 'fixture.xlsx');
+        expect(result.canConfirm).toBe(false);
+        expect(result.issues).toContainEqual(
+          expect.objectContaining({
+            code: 'CLASS_INACTIVE',
+          }),
+        );
+      });
+
+      it('passes when subject exact code and alias point to the same canonical ID', async () => {
+        const { adapter, prisma } = buildMockContext();
+        // Add alias for TO pointing to subj-TO
+        prisma.timetableImportEntityAlias.findMany.mockResolvedValue([
+          {
+            id: 'alias-subj-1',
+            entityType: 'SUBJECT',
+            sourceValueKey: 'to',
+            schoolClassId: null,
+            subjectId: 'subj-TO',
+            teacherUserId: null,
+            academicYearId: null,
+            isActive: true,
+          },
+        ]);
+
+        const result = await adapter.preview(parsedFixture, previewDto, 'fixture.xlsx');
+        expect(result.issues.filter((i) => i.code === 'SUBJECT_IDENTITY_CONFLICT')).toHaveLength(0);
+      });
+
+      it('emits SUBJECT_IDENTITY_CONFLICT when subject exact code and alias point to different canonical IDs', async () => {
+        const { adapter, prisma } = buildMockContext();
+        // Alias for TO pointing to subject-VA
+        prisma.timetableImportEntityAlias.findMany.mockResolvedValue([
+          {
+            id: 'alias-subj-conflict',
+            entityType: 'SUBJECT',
+            sourceValueKey: 'to',
+            schoolClassId: null,
+            subjectId: 'subject-VA',
+            teacherUserId: null,
+            academicYearId: null,
+            isActive: true,
+          },
+        ]);
+
+        const result = await adapter.preview(parsedFixture, previewDto, 'fixture.xlsx');
+        expect(result.canConfirm).toBe(false);
+        expect(result.issues).toContainEqual(
+          expect.objectContaining({
+            code: 'SUBJECT_IDENTITY_CONFLICT',
+            message: expect.stringContaining('TO'),
+          }),
+        );
+      });
+
+      it('emits SUBJECT_INACTIVE when sole candidate subject is inactive', async () => {
+        const { adapter, prisma, subjects } = buildMockContext();
+        const mutatedSubjects = subjects.map((s) => (s.code === 'TO' ? { ...s, status: CatalogStatus.INACTIVE } : s));
+        prisma.subject.findMany.mockResolvedValue(mutatedSubjects);
+
+        const result = await adapter.preview(parsedFixture, previewDto, 'fixture.xlsx');
+        expect(result.canConfirm).toBe(false);
+        expect(result.issues).toContainEqual(
+          expect.objectContaining({
+            code: 'SUBJECT_INACTIVE',
+          }),
+        );
+      });
+    });
   });
 });
