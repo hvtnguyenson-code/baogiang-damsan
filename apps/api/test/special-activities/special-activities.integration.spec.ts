@@ -1,6 +1,13 @@
 import { CatalogStatus, PpctVersionStatus, UserStatus } from '@prisma/client';
 import request from 'supertest';
+import { OVERLAY_CLOCK } from '../../src/operational-overlays/operational-overlay-policy';
+import { SPECIAL_ACTIVITY_CLOCK } from '../../src/special-activities/special-activity-policy';
 import { integration, normalizedCode, Phase01Harness, testOrigin } from '../helpers/phase01-test-harness';
+
+const fixedNow = new Date('2026-09-07T08:00:00.000Z');
+const fixedClock = {
+  now: () => new Date(fixedNow.getTime()),
+};
 
 integration('special activity runtime control plane (PostgreSQL)', () => {
   const h = new Phase01Harness();
@@ -24,7 +31,10 @@ integration('special activity runtime control plane (PostgreSQL)', () => {
     await h.clean();
   }
 
-  beforeAll(async () => h.start());
+  beforeAll(async () => h.start([
+    { token: SPECIAL_ACTIVITY_CLOCK, value: fixedClock },
+    { token: OVERLAY_CLOCK, value: fixedClock },
+  ]));
   beforeEach(async () => {
     await clean();
     await h.seedCapabilities([
