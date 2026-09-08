@@ -42,7 +42,7 @@ Dependency cells below contain **task IDs only**. Conditions/evidence triggers b
 | `P0-002` Close stale PR #11 hosting-portability direction | `BLOCKED_DECISION` | `P0-001` | Close PR #11 as superseded if Product Owner explicitly authorizes | Must not merge old standalone-Linux direction into current Windows/shared-Nginx architecture |
 | `P0-003` Pilot scope decision: CORE vs FULL BUSINESS | `BLOCKED_DECISION` | `P0-001` | Record Product Owner decision before P5 pilot freeze | Does not block common P1-P3 foundations |
 | `P0-004` GitHub main branch protection/ruleset enforcement | `BLOCKED_DECISION` | `P0-001` | Review and, only with explicit Product Owner authorization, enforce server-side protection against accidental direct-main bypass and require the agreed PR/CI gates | Baseline inspection shows `main` currently `protected: false`; repository-settings mutation must not be performed implicitly |
-| `P0-900` Authoritative specification rebase audit | `DEFERRED_WITH_TRIGGER` | `P0-001` | Re-read changed authoritative source, reconcile baseline/ADR/traceability/register before dependent product work continues | Trigger if PA-B v1.2 blob changes from `c2c61a4e8acb9fde0e5fc5232467662048fd3380`, PA-B v1.3 blob changes from `5876af5920d12ea6fcecf42d1b8a392cc4825f16`, or an explicit Product Owner decision contradicts the accepted baseline; T42 |
+| `P0-900` Authoritative specification rebase audit | `IN_REVIEW` | `P0-001` | Verify authoritative source fingerprints; re-read changed source when applicable; reconcile changed source and/or contradictory explicit Product Owner authority across baseline, ADRs, traceability and task register before dependent product work continues; audit completed on branch docs/p0-900-ppct-curricular-component-rebase, independent review/CI pending | Trigger fired 2026-09-08 via explicit Product Owner authority; T42, T45, T46 |
 
 ## P1 — Governance/business foundation
 
@@ -68,16 +68,32 @@ Dependency cells below contain **task IDs only**. Conditions/evidence triggers b
 
 | Task | Status | Depends on | Deliverable / closure | Traceability |
 |---|---|---|---|---|
-| `P1-030` Delayed go-live / operational-start architecture | `READY` | `P1-020` | Exact business semantics for operational start, historical boundary and no-auto-debt invariants | T28, T30 |
-| `P1-031` Operational-start policy implementation | `PLANNED` | `P1-021`, `P1-030` | Typed/versioned policy runtime and read authority using Business Configuration foundation | T28, T30 |
+| `P1-030` Delayed go-live / operational-start architecture | `PLANNED` | `P1-020`, `P2-001` | Exact business semantics for operational start, historical boundary and no-auto-debt invariants | T28, T30 |
+| `P1-031` Operational-start policy implementation | `PLANNED` | `P1-021`, `P1-030`, `P2-003` | Typed/versioned policy runtime and read authority using Business Configuration foundation | T28, T30 |
 | `P1-032` Operational-start admin UI integration | `PLANNED` | `P1-022`, `P1-031` | Safe business UI for authorized start policy with effectivity/audit visibility | T28, T30 |
 
 ## P2 — School data ingestion
 
+### Curricular component realignment
+
+| Task | Status | Depends on | Deliverable / closure | Traceability |
+|---|---|---|---|---|
+| `P2-001` PPCT curricular-component architecture re-entry | `PLANNED` | `P0-900` | Architectural re-entry closure: component topology and version-package lifecycle, sequence scoping, class-subject applicability, weekly last-opportunity routing, atypical weeks deterministic behavior (0 or 1 opportunity, truncations, cutovers), legacy-data mapping semantics, independent progression, and non-debt semantics | T45, T46 |
+| `P2-002` PPCT component persistence + control-plane realignment | `PLANNED` | `P2-001` | Schema migration for component model and applicability, version control plane, CAS/Serializable concurrency, and backward-compatible migration preserving retained history according to P2-001's accepted legacy-data semantics | T45, T46 |
+| `P2-003` Component-aware PPCT allocation and curricular projections | `PLANNED` | `P2-002` | Deterministic component-aware weekly routing allocator, independent progression coverage, progress/debt/late projection realignment, and execution/report provenance | T45, T46 |
+| `P2-004` Specialized-study class-subject administration workspace | `PLANNED` | `P2-003` | Capability-gated administrative UI for managing class-subject specialized-study applicability with effectivity and audit trails | T45, T46 |
+
+### School PPCT workbook ingestion
+
+| Task | Status | Depends on | Deliverable / closure | Trigger / notes |
+|---|---|---|---|---|
+| `P2-010` PPCT real-workbook contract/security audit | `BLOCKED_EVIDENCE` | `P2-001` | Read authoritative school PPCT workbook/template; determine exact physical sheet names, columns, identity, replay, and error contracts mapping physical sheets to logical CORE and SPECIALIZED_STUDY components | Trigger: actual authoritative school workbook supplied; T24, T45 |
+| `P2-020` PPCT native importer implementation | `PLANNED` | `P2-002`, `P2-010` | Import pipeline using approved PPCT contract; no guessed mapping | T24, T45 |
+
+### Native timetable workbook adapter (CLOSED)
+
 | Task | Status | Depends on | Deliverable / closure | Trigger / traceability |
 |---|---|---|---|---|
-| `P2-010` PPCT real-workbook contract/security audit | `BLOCKED_EVIDENCE` | `P0-001` | Read authoritative school PPCT workbook/template; define sheet/column/identity/replay/error contract | Trigger: actual authoritative workbook supplied; T24 |
-| `P2-020` PPCT native importer implementation | `PLANNED` | `P2-010` | Import pipeline using approved PPCT contract; no guessed mapping | T24 |
 | `P2-030` Đam San TKB native-workbook architecture audit | `CLOSED` | `P0-001` | Authoritative four-sheet school TKB audit and accepted ADR-047: strict matrix/boundary parsing, structural `TeacherSourceRowRef`, exact derived teacher-code identity resolution, bidirectional peer reconciliation, permitted non-peer activities (`CC`, `GDĐP`, `TN-HN`), fail-closed mismatch taxonomy, session separation and privacy-sanitized deterministic fixture | Trigger fired: authoritative workbook audited (SHA-256 `3ea242433d1d291912749cf9f2f6b39b700847bfc09384dec9c6849b15597c72`); canonical start `7e99a245f2b1dcf112d63721563d1082a0ea237f`; privacy-clean branch `docs/tkb-native-workbook-architecture-030-clean`; final reviewed head `bd7021ce8944848edbe1c3f10342a0a644b78f47`; independent GitHub diff/privacy review PASS; PR #111; exact-head PR CI #375 (run `34076797404`) SUCCESS; merge/main `6fde93eaf12a2dceb3bb9bc5ea3ccc46e27878b2`; post-merge main CI #376 (run `34077121063`) SUCCESS; CLOSED by `SYNC-P2-030`; superseded pre-PR working branch was not merged after privacy review found raw teacher-code examples in its README; clean history reconstructed without force-push/rebase/amend; no semantic correction/re-entry task required; no schema/runtime/UI/deploy/production mutation; T25–T27 |
 | `P2-040` Đam San TKB native adapter implementation | `CLOSED` | `P2-030` | Native adapter on top of canonical importer; class/teacher peer cross-check; fail-closed mismatch | T25, T26; implement accepted ADR-047/P2-030 contract; starting main/base `54f5a61b2045e866cd566290cf38c6273e7c28ff`; dedicated branch `feat/tkb-native-adapter-040`; final reviewed feature head `cb4afe2b634705508a49742169772c437ed9cc33`; independent GitHub review PASS; PR #114; exact-head PR CI #386 (run `34125951676`) SUCCESS; merge/main `2d2f69e5bb5a24e3b3a9bf7dfcfc2124d3d7c772`; post-merge main CI #387 (run `34126553341`) SUCCESS; CLOSED by `SYNC-P2-040`; Findings 1–15 resolved with regression tests before merge; Hard Stops A & B resolved by authority reconciliation (ADR-017 for 455 normal rows + structural validation of 120 non-peer slots; ADR-021/026 request-fingerprint provenance); no remaining correction or re-entry task; zero schema changes, no migrations, no auth/session/authorization changes, no CI/CD changes, no deployment or production mutation |
 | `P2-050` Morning/afternoon selective update and carry-forward | `CLOSED` | `P2-040` | Independently author morning or afternoon while creating one coherent retained canonical version; untouched session explicitly carried forward; inspect/preview/confirm selective workflow, ADR-020 canonical baseline resolution, full composed canonical validation and semantic checksum, exact retained provenance carry-forward, fail-closed without fabricated fallbacks | T27; implement accepted ADR-047 selective session contract; starting canonical main/base `f41a5ba2454f1803fada06296479548d7a71ca68`; dedicated feature branch `feat/tkb-selective-session-carry-forward-050`; final reviewed head `9a01b1c625edf1ab6eabec1e8846cb44a032585a`; independent GitHub review PASS; PR #116; exact-head PR CI #390 (run `34143795736`) SUCCESS; merge/main `42a0f058381a5b8faa6eb2d233481e48156523c6`; authoritative post-merge main CI #391 (run `34144327762`) SUCCESS; CLOSED by `SYNC-P2-050`; Findings 1–6 resolved before merge (inspect mode wiring, full canonical validation mapping, fabricated carry-forward fallbacks removed, real wall-clock collision regression, selected-session clearing regression, mandatory integration gate passed, ADR-047 contract alignment); no correction or re-entry task remains; zero schema changes, no migrations, no auth/session/authorization changes, no CI/CD changes, no deployment or production mutation |
@@ -86,7 +102,7 @@ Dependency cells below contain **task IDs only**. Conditions/evidence triggers b
 
 | Task | Status | Depends on | Deliverable / closure | Trigger / traceability |
 |---|---|---|---|---|
-| `P3-010` Pre-operational historical execution architecture | `PLANNED` | `P1-031`, `P2-020`, `P2-050` | Historical evidence/reconciliation contract; provenance, correction, PPCT allocation and no-auto-debt invariants | T28–T30 |
+| `P3-010` Pre-operational historical execution architecture | `PLANNED` | `P1-031`, `P2-003`, `P2-020`, `P2-050` | Historical evidence/reconciliation contract; provenance, correction, PPCT allocation and no-auto-debt invariants | T28–T30 |
 | `P3-020` Pre-operational history ingestion/reconciliation runtime | `PLANNED` | `P3-010` | Controlled import/confirmation API and bounded UI for historical taught evidence; exact audit and reconciliation | T29, T30 |
 | `P3-030` Public make-up scheduling re-entry architecture | `DEFERRED_WITH_TRIGGER` | `P3-010` | Re-audit exact incomplete-obligation proof, authority, collision and correction before public scheduling | Trigger: chosen pilot scope requires public make-up scheduling; T08 |
 | `P3-031` Public make-up scheduling runtime | `DEFERRED_WITH_TRIGGER` | `P3-030` | Create/reverse/read runtime only after P3-030 closes | Same trigger as P3-030; remains non-startable unless trigger fires and P3-030 becomes CLOSED; T08 |

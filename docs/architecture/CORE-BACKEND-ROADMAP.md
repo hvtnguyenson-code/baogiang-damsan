@@ -90,24 +90,36 @@ No runtime/schema/production mutation.
 2. **Business Configuration Control Plane** — typed/versioned business policy, explicitly separated from secrets/technical env.
 3. **Delayed go-live operational-start policy** — explicit start authority without inventing historical debt.
 
-### P2 — Real school data ingestion
+### P2 — Real school data ingestion & Curricular components
 
-1. PPCT authoritative workbook audit.
-2. PPCT native importer.
-3. Đam San native TKB workbook audit.
-4. Native TKB adapter with class/teacher peer evidence and fail-closed mismatch.
-5. Morning/afternoon selective update with explicit carry-forward into one coherent canonical timetable version.
+Exact task statuses and prerequisites are maintained authoritatively in `PRE-PILOT-TASK-REGISTER.md`. High-level sequence:
+
+1. **Curricular component realignment stream:**
+   `P0-900` closure
+     -> `P2-001` component architecture
+     -> `P2-002` persistence/control plane
+     -> `P2-003` allocation/projection runtime
+     -> `P2-004` admin applicability workspace
+2. **Parallel evidence-bound school PPCT workbook path:**
+   `P2-001` + authoritative school workbook evidence
+     -> `P2-010` real-workbook contract/security audit (determines physical sheet names and mapping to logical CORE and SPECIALIZED_STUDY components)
+   `P2-002` + `P2-010`
+     -> `P2-020` PPCT native importer implementation
+3. **Đam San native TKB workbook adapter (`CLOSED` foundation):**
+   - `P2-030` Đam San TKB native-workbook architecture audit (`CLOSED`).
+   - `P2-040` Native TKB adapter with class/teacher peer evidence and fail-closed mismatch (`CLOSED`).
+   - `P2-050` Morning/afternoon selective update with explicit carry-forward into one coherent canonical timetable version (`CLOSED`).
 
 ### P3 — Historical go-live continuity
 
-1. Pre-operational historical execution/reconciliation architecture.
-2. Controlled historical evidence ingestion/confirmation.
+1. Pre-operational historical execution/reconciliation architecture (`P3-010`, depends on `P1-031`, `P2-003`, `P2-020`, and closed `P2-050`).
+2. Controlled historical evidence ingestion/confirmation (`P3-020`).
 3. Preserve current invariant: missing execution alone does not prove debt.
 4. Public make-up runtime remains a separate trigger-based re-entry if required.
 
 ### P4 — GDĐP / HĐTN programmes and workload
 
-1. Programme/version/item/occurrence architecture.
+1. Programme/version/item/occurrence architecture (`P4-010`, remains independent/`READY` after `P0-900` closure).
 2. GDĐP `AcademicYear + Grade` planning.
 3. HĐTN `CLASS / GRADE / SCHOOL_WIDE` planning.
 4. Date-effective homeroom resolution for class activities.
@@ -138,26 +150,29 @@ No runtime/schema/production mutation.
 The exact dependency graph is authoritative only in `PRE-PILOT-TASK-REGISTER.md`. At a high level:
 
 ```text
-P0
-├── P1
-├── P2 audits
-└── P6 TLS repo authority
+P0-900 closure
+└── P2-001 (Curricular component architecture)
+    ├── P1-030 (Delayed go-live architecture)
+    │   └── P1-031 (Operational-start policy, waits for P2-003)
+    ├── P2-002 (Component persistence & control plane)
+    │   └── P2-003 (Component allocation & projections)
+    │       ├── P2-004 (Admin applicability workspace)
+    │       ├── P1-031 (Operational-start policy)
+    │       └── P3-010 (Pre-operational historical execution)
+    └── P2-010 (PPCT real-workbook audit, needs real workbook evidence)
+        └── P2-020 (PPCT native importer, needs P2-002 + P2-010)
+            └── P3-010 (needs P1-031 + P2-003 + P2-020 + closed P2-050)
 
-P1 + P2
-   ↓
-P3
-
-P1 Homeroom + P0
-   ↓
-P4
+Independent tracks:
+- P4-010 (GDĐP/HĐTN programme architecture; independent / READY)
+- P6 production readiness & TLS authority (governed independently by canonical gates P6-005 -> P6-010 etc.)
+- Native TKB foundation: P2-030, P2-040, P2-050 are CLOSED.
 
 Chosen P1-P4 scope
    ↓
 P5 freeze
-
-P5 + P6 evidence
    ↓
-Production pilot
+P5 + P6 evidence -> Production pilot
 ```
 
 ## Deferred-work rule

@@ -5,6 +5,17 @@
 - **Scope:** LOCAL-FC-05E2 architecture closure; no implementation authorization
 - **Authority:** `docs/requirements/LOCAL-FC-05E2D-PPCT-OCCURRENCE-ALLOCATION-DECISION-CLOSURE.md`
 
+> [!WARNING]
+> **MAJOR RE-ENTRY NOTICE (2026-09-08 — TASK P0-900 / T45 / T46):**
+> This historical decision remains retained as evidence of the CORE-only single-stream allocation model. However, its core architectural assumptions:
+> 1. That a class-subject stream has exactly one allocation progression cursor;
+> 2. That direct obligations and `DISTRIBUTION_COVERED_ITEMS` form a single undifferentiated universe;
+> 3. That the next item is unconditionally the lowest-sequence unallocated item across the entire version;
+> 4. That normal opportunities are consumed chronologically without weekly routing between CORE and SPECIALIZED_STUDY;
+> have undergone **MAJOR RE-ENTRY** under explicit Product Owner authority recorded on 2026-09-08 (`P0-900`, `T45`, `T46`).
+> `P0-900` / `T45` / `T46` are higher-priority current authority. No dependent implementation may use the single-stream allocation profile to authorize component-aware implementation until `P2-001` architecture closes and `P2-003` realigns runtime allocation.
+> Replay principles, transactional isolation, and immutable source-provenance rules remain valid conceptually.
+
 ## Context
 
 ADR-036 established `RESOLVED_LESSON_OCCURRENCE_STRUCTURAL_V1` as a derived internal read model and deliberately left expected normal PPCT item allocation `NOT_ASSESSED`. The retained repository now provides exact structural opportunity provenance, exact PPCT association/version/item revisions and lineage, operational disposition meaning, Special Activity suppression and make-up source provenance, but no canonical numeric distribution cursor or progress ledger.

@@ -5,6 +5,12 @@
 - **Scope:** LOCAL-FC-05G0 architecture closure; no implementation authorization
 - **Authority:** `docs/requirements/LOCAL-FC-05G0D-PROGRESS-DEBT-LATE-DECISION-CLOSURE.md`
 
+> [!WARNING]
+> **RE-ENTRY NOTICE (2026-09-08 — TASK P0-900 / T45 / T46):**
+> This historical decision remains retained. However, the projection's internal upstream inputs (`DIRECT_DISTRIBUTION_OBLIGATIONS`) must become component-aware under Product Owner authority (`P0-900`, `T45`, `T46`), so that progress, open debt, unconfirmed gaps, and late counts are tracked and reconciled per component (`CORE` vs `SPECIALIZED_STUDY`) for enabled class-subjects.
+> `P0-900` / `T45` / `T46` are higher-priority current authority. No dependent implementation may assume a single-component direct obligation universe until `P2-001` architecture closes and `P2-003` realigns projection runtime.
+> All unaffected clauses (class-subject aggregate root, proof-backed debt taxonomy, missing execution alone is not debt proof, and non-mutation invariants) remain Accepted.
+
 ## Context
 
 ADR-037 provides exact `DIRECT_DISTRIBUTION_OBLIGATIONS` without assessing completion, debt or reporting. ADR-038/ADR-039 retain immutable curricular execution evidence with exact original and actual provenance; ADR-031 retains the operational dispositions that can positively explain incomplete teaching. The next downstream read must distinguish a proven debt from an absence of evidence without inventing a mutable ledger or changing historical source rows.

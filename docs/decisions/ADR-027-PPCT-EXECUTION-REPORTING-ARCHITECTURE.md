@@ -6,6 +6,12 @@
 - **Audit nguồn:** `docs/requirements/LOCAL-FC-05A0-PPCT-TEACHING-EXECUTION-REPORTING-ARCHITECTURE-AUDIT.md`
 - **Closure:** `docs/requirements/LOCAL-FC-05A0D-PPCT-DECISION-CLOSURE.md`
 
+> [!WARNING]
+> **THÔNG BÁO RE-ENTRY (2026-09-08 — TASK P0-900 / T45 / T46):**
+> Quyết định lịch sử này tiếp tục được lưu giữ (retained). Tuy nhiên, giả định tại Mục 1 về **tiến độ một luồng đơn nhất không phân biệt thành phần chương trình (single undifferentiated class-subject progression stream)** đã chính thức được mở lại (reopened) theo thẩm quyền mới của Product Owner ngày 2026-09-08 (`P0-900`, `T45`, `T46`).
+> Thẩm quyền `P0-900` / `T45` / `T46` có mức ưu tiên cao hơn (higher-priority current authority). Không triển khai phụ thuộc nào được sử dụng giả định tiến độ đơn luồng đã mở lại này cho đến khi kiến trúc `P2-001` được đóng chính thức.
+> Tất cả các điều khoản không bị ảnh hưởng (quyền sở hữu plan dùng chung `AcademicYear + Subject + Grade`, lịch sử phiên bản bất biến, phân tầng execution/reporting, không đưa trường PPCT vào `TimetableEntry`) tiếp tục giữ nguyên hiệu lực (Accepted).
+
 ## Bối cảnh
 
 Đặc tả v1.2 xác lập chuỗi nghiệp vụ từ phân phối chương trình (PPCT), thời khóa biểu, điều chỉnh vận hành, thực thi giảng dạy, tiến độ/nợ tiết đến báo cáo và duyệt báo cáo. Nền tảng hiện tại đã có năm học, lịch nghiệp vụ, phân công giảng dạy, tiết học, thời khóa biểu và nhập XLSX an toàn; các miền PPCT, thực thi, nợ tiết và báo cáo chưa được triển khai.

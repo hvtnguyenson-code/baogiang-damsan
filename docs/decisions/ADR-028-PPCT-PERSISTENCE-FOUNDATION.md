@@ -5,6 +5,16 @@
 - **Scope:** LOCAL-FC-05A1 PPCT persistence foundation
 - **Authority:** ADR-027 and `LOCAL-FC-05A0D-PPCT-DECISION-CLOSURE.md`
 
+> [!WARNING]
+> **RE-ENTRY NOTICE (2026-09-08 — TASK P0-900 / T45 / T46):**
+> This historical decision remains retained. However, the assumptions that:
+> 1. The physical schema topology is permanently restricted to exactly six models;
+> 2. `sequence` uniqueness is version-wide (`@@unique([versionId, sequence])`) across an undifferentiated subject plan;
+> 3. `PpctClassAssociation` does not track class-subject specialized-study applicability;
+> have been formally reopened under explicit Product Owner authority recorded on 2026-09-08 (`P0-900`, `T45`, `T46`).
+> `P0-900` / `T45` / `T46` are higher-priority current authority. No dependent implementation may use the reopened clauses until `P2-001` architecture closes.
+> All unaffected clauses (shared plan master identity, immutable published version history, stable item UUID, revision lineage graph, and historical retention invariants) remain Accepted.
+
 ## Context
 
 ADR-027 and the accepted 05A0D closure establish a shared, versioned PPCT aggregate without class-owned plans, calendar ownership, global progress state or import assumptions. LOCAL-FC-05A1 needs a physical PostgreSQL/Prisma representation that preserves exact historical identity and lets later control-plane commands enforce lifecycle semantics transactionally.

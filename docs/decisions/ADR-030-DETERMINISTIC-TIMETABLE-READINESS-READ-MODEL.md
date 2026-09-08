@@ -5,6 +5,12 @@
 - **Scope:** LOCAL-FC-05B1
 - **Authority:** `LOCAL-FC-05B0D-TIMETABLE-OPERATIONAL-READINESS-DECISION-CLOSURE.md`
 
+> [!WARNING]
+> **RE-ENTRY NOTICE (2026-09-08 — TASK P0-900 / T45 / T46):**
+> This historical decision remains retained. However, the `NORMAL_BASE_PPCT_V1` profile's assumption that PPCT binding readiness is evaluated without assessing specialized study applicability or component capacity has been reopened for extension under Product Owner authority (`P0-900`, `T45`, `T46`).
+> `P0-900` / `T45` / `T46` are higher-priority current authority. Dependent implementations requiring component-aware readiness must await `P2-001` architecture closure.
+> All unaffected clauses (deterministic retained readiness pattern, exact source provenance, finite civil-date window, and non-mutation invariants) remain Accepted.
+
 ## Context
 
 ADR-020 retains immutable normal-base timetable lifecycle evidence and exact calendar targets. ADR-029 retains date-effective class-subject associations to exact PPCT versions. The accepted 05B0D closure authorizes the first bounded readiness profile without claiming complete operational readiness or changing either source aggregate.

@@ -6,11 +6,30 @@ This is the canonical mutable **product/task status** document for Báo giảng.
 
 It is **not** a self-referential registry of the latest Git commit. Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub at the start of every task. SHAs recorded here are evidence for the stated baseline or last closed major task.
 
-**Status snapshot date:** 2026-09-07
+**Status snapshot date:** 2026-09-08
 
 ## Active major task
 
-None. `P2-050` is closed by `SYNC-P2-050`. The next eligible major tasks (`P1-030`, `P4-010`) await task start on their own dedicated branches.
+`P0-900` — Authoritative specification rebase audit (PPCT Curricular Component Product-Authority Realignment) — **IN_REVIEW** on task branch `docs/p0-900-ppct-curricular-component-rebase`.
+
+- **Trigger:** Trigger T42 fired on 2026-09-08 via explicit Product Owner authority establishing that normal curricular subjects may contain `CORE` and `SPECIALIZED_STUDY` components with class-subject applicability and independent PPCT progression.
+- **Scope:** Major documentation, governance and architecture-rebase task; zero schema, migration, API, contract, UI, runtime, or deployment changes.
+- **Deliverables:**
+  - Authoritative rebase audit: `docs/requirements/P0-900-PPCT-CURRICULAR-COMPONENT-REBASE-AUDIT.md`;
+  - Traceability matrix synchronized: updated T24, T42 (fired); registered T45 and T46;
+  - Task register synchronized: `P0-900` -> `IN_REVIEW`; P2 reorganized into Curricular component realignment (`P2-001`–`P2-004`), PPCT workbook ingestion (`P2-010`–`P2-020`), and native timetable adapter (CLOSED `P2-030`–`P2-050`); `P1-030` moved from `READY` to `PLANNED` (depends on `P1-020`, `P2-001`); `P1-031` depends on `P2-003`; `P3-010` depends on `P2-003`; `P4-010` remains `READY`;
+  - Product baseline synchronized: Section 4.13 added and 4.9 updated;
+  - ADR re-entry notices applied: ADR-027, ADR-028, ADR-029, ADR-030, ADR-037, ADR-040 and `LOCAL-FC-05A0D-PPCT-DECISION-CLOSURE.md` flagged with dated re-entry notices; ADR-045, ADR-046, ADR-047 remain unaffected.
+- **Core realignment principles:**
+  1. Normal curricular component taxonomy: `CORE` (phần cốt lõi) vs `SPECIALIZED_STUDY` (chuyên đề học tập). Specialized study is curricular, not an ad-hoc `SpecialActivity`.
+  2. Shared master plan foundation: Both components belong to `AcademicYear + Subject + Grade` within the same curricular Subject domain; exact component lifecycle and version packaging model (whether unified under one `PpctVersion` or another retained topology) is explicitly assigned to `P2-001` to determine.
+  3. Single Teaching Assignment: `TeachingAssignment` covers the class-subject; the assigned teacher teaches both `CORE` and `SPECIALIZED_STUDY`.
+  4. Administrative applicability: Class-subject specialized study applicability is configured explicitly by administration; non-applicable items are `NOT_APPLICABLE` (not debt).
+  5. Component-free TimetableEntry: Timetable assigns periods to subjects; `TimetableEntry` remains component-free.
+  6. Weekly last-opportunity routing: In an `AcademicWeek`, for enabled class-subjects, chronologically LAST normal opportunity is `SPECIALIZED_STUDY`; earlier opportunities are `CORE`. Exact deterministic behavior for atypical weeks (0 or 1 opportunity, truncations, cutovers) remains assigned to `P2-001`. Operational disruptions do not dynamically reclassify planned components.
+  7. Independent progression: `CORE` and `SPECIALIZED_STUDY` maintain independent sequential progression cursors.
+  8. Combined reporting: Ordinary curricular statements report combined totals.
+  9. Preferred source direction: One workbook with separate logical content/sheets for ordinary PPCT (logical component CORE) and Chuyên đề học tập (logical component SPECIALIZED_STUDY); exact physical sheet names, spellings, and workbook structure remain unapproved and evidence-bound to P2-010.
 
 ## Last closed major task
 
@@ -180,13 +199,14 @@ The registered implementation, data-evidence, product and production-readiness t
 4. Special-program absence/replacement and programme-level confirmation authority remain explicitly registered for P4 closure (T43/T44).
 5. Existing `GDDDP_COORDINATOR` / `HĐTN_COORDINATOR` capability intent is not wired to programme-resource authority.
 6. Delayed go-live / operational-start policy and historical pre-operational evidence workflow are absent.
-7. PPCT real-school import is intentionally blocked pending an authoritative workbook contract.
+7. PPCT real-school import is intentionally blocked pending an authoritative workbook contract; preferred direction is one workbook with separate logical content for ordinary PPCT (CORE) and Chuyên đề học tập (SPECIALIZED_STUDY), with exact physical sheet names and structure evidence-bound to P2-010.
 8. Special-activity participation is not yet integrated into official workload/reporting aggregation.
 9. WorkloadAdjustmentRule remains trigger-gated/deferred.
 10. Installable PWA baseline is absent.
 11. Dedicated Báo giảng Telegram bot/linking/notification lifecycle is absent.
 12. First-certificate HTTP-01/Nginx authority for the Báo giảng subdomain is incomplete.
 13. Actual VPS Stage 1 evidence has not yet been collected for first deployment.
+14. Curricular component realignment (`P2-001`–`P2-004`): PPCT architecture, persistence, weekly routing allocation, and admin applicability workspace for CORE vs SPECIALIZED_STUDY are required following P0-900 rebase.
 
 ## Production VPS topology decision
 
@@ -199,10 +219,11 @@ The final production-host topology is intentionally unresolved and explicitly de
 
 ## Tasks currently eligible to start
 
-The following registered tasks are eligible to start, each only on its own dedicated branch:
+The following registered task is eligible to start on its own dedicated branch:
 
-- `P1-030` — Delayed go-live / operational-start architecture.
 - `P4-010` — GDĐP/HĐTN programme architecture closure.
+
+Note: `P1-030` was previously eligible but now depends on `P2-001` (curricular-component architecture re-entry), which in turn awaits `P0-900` closure.
 
 Eligibility does not imply concurrent execution or permission to bypass one-task-per-branch, review, CI or mandatory closure-sync gates. P4 runtime work remains gated by its registered dependencies, and P6 remains blocked by P6-005.
 
@@ -213,7 +234,7 @@ Eligibility does not imply concurrent execution or permission to bypass one-task
 - `P0-004` — GitHub main branch protection/ruleset: Product Owner decision required before repository-settings mutation.
 - `P2-010` — authoritative PPCT workbook/template evidence required.
 - `P6-005` — Production VPS topology decision: explicit Product Owner selection of `SHARED_VPS` vs `DEDICATED_VPS` required; HARD STOP blocks `P6-010`.
-- `P0-900` — rebase audit triggers if pinned source blobs change or Product Owner authority contradicts the accepted baseline.
+- `P0-900` — trigger fired 2026-09-08; rebase audit completed on branch and `IN_REVIEW`. Once merged and closed by `SYNC-P0-900`, `P2-001` becomes eligible.
 
 ## Authoritative source-change gate
 
@@ -222,7 +243,7 @@ Accepted P0 fingerprints:
 - PA-B v1.2 DOCX blob: `c2c61a4e8acb9fde0e5fc5232467662048fd3380`;
 - PA-B v1.3 addendum blob: `5876af5920d12ea6fcecf42d1b8a392cc4825f16`.
 
-If either changes, or an explicit Product Owner decision contradicts the accepted baseline, `P0-900` becomes mandatory before dependent product work continues.
+The contradiction trigger under T42 fired on 2026-09-08 via explicit Product Owner authority on curricular components, initiating task `P0-900`. Future blob changes or contradictory decisions will require another registered rebase audit.
 
 ## Repository protection gap
 

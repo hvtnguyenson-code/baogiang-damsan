@@ -8,6 +8,12 @@ This closure follows merged `LOCAL-FC-05A0` (PR #37, CI #168) and closes only th
 
 05A0D authorizes no schema, migration, API, contract, seed, capability catalog, import, runtime, UI, CI/CD, deployment or data change. Implementation requires a separately authorized task and branch.
 
+> [!WARNING]
+> **RE-ENTRY NOTICE (2026-09-08 — TASK P0-900 / T45 / T46):**
+> This historical decision closure remains retained as architecture authority for the 05A1 baseline. However, the re-entry trigger for Decision D1 / D2 ("Real evidence of multiple programs/tracks/books or class-specific curricula") has fired via explicit Product Owner authority recorded on 2026-09-08 (`P0-900`, `T45`, `T46`), establishing that a subject plan may contain `CORE` and `SPECIALIZED_STUDY` components with class-specific applicability and independent progression.
+> `P0-900` / `T45` / `T46` are higher-priority current authority. No dependent implementation may rely on the undifferentiated single-progression assumption of D1/D2/D3 until `P2-001` closes.
+> All unaffected decisions (aggregate owner `AcademicYear + Subject + Grade`, immutable item UUID, publication lifecycle D4, calendar independence D5, `PPCT_MANAGE` capability D7, and deferred import D8) remain Accepted.
+
 ## 2. Baseline
 
 - Canonical repository: `hvtnguyenson-code/baogiang-damsan`
