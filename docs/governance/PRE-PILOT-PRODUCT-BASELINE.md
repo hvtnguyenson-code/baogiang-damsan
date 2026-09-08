@@ -184,15 +184,14 @@ The exact model is not authorized here.
 On 2026-09-08, the Product Owner established explicit authority realigning PPCT progression and timetable consumption:
 
 1. **Component taxonomy:** A normal curricular subject may contain two curricular components: `CORE` (phần cốt lõi) and `SPECIALIZED_STUDY` (chuyên đề học tập). Specialized study is strictly curricular, not an ad-hoc `SpecialActivity`.
-2. **Shared master plan:** Both components belong to the single subject master plan (`AcademicYear + Subject + Grade`) and are versioned together in `PpctVersion`.
+2. **Shared master plan foundation:** Both components belong to the single subject master plan (`AcademicYear + Subject + Grade`) and represent the same curricular Subject domain (not separate Subject catalog entities). The exact component lifecycle and version packaging model (whether CORE and SPECIALIZED_STUDY publication/correction are atomic under one `PpctVersion` or require another retained topology) is explicitly assigned to `P2-001` to determine.
 3. **Single Teaching Assignment:** `TeachingAssignment` remains bounded to `(academicYearId, classId, subjectId, teacherId)`. The teacher assigned to teach the class-subject teaches both `CORE` and `SPECIALIZED_STUDY`; no secondary teacher assignment is created.
 4. **Administrative applicability:** Whether a class takes specialized study in a subject is determined explicitly by business administration configuration (never guessed by system heuristics). Classes not taking specialized study consider specialized items `NOT_APPLICABLE`, never debt or unfulfilled obligation.
 5. **Component-free TimetableEntry:** Native timetable and `TimetableEntry` remain component-free. The timetable assigns periods to normal curricular subjects, exactly matching native school reality.
 6. **Weekly last-opportunity routing:** Within an `AcademicWeek`, for an enabled class-subject:
-   - The chronologically LAST canonical normal opportunity is designated for `SPECIALIZED_STUDY`.
-   - All earlier canonical normal opportunities in that week are designated for `CORE`.
-   - In atypical weeks (holidays/interruptions) where only 1 opportunity occurs, it routes to `CORE` (unless an explicit business override is defined).
-   - Operational cancellations or adjustments affect actual execution evidence, not the planned opportunity classification.
+   - General rule: the chronologically LAST canonical normal opportunity in the week is designated for `SPECIALIZED_STUDY`; all earlier canonical normal opportunities in that week are designated for `CORE`.
+   - Exact deterministic behavior for atypical weeks (weeks with zero opportunities, exactly one opportunity, holiday/interruption truncations, and mid-week timetable cutovers) remains assigned to `P2-001` to determine. P0-900 does not invent or predetermine this rule.
+   - Operational disruptions, cancellations, or adjustments affect actual execution evidence and do NOT dynamically reclassify an already established planned component classification.
 7. **Independent progression:** `CORE` and `SPECIALIZED_STUDY` progress as independent sequential cursors. Consuming a specialized opportunity advances the specialized sequence, not the core sequence.
 8. **Combined reporting:** Ordinary curricular reporting combines totals from both components into canonical class-subject statements.
 

@@ -78,8 +78,8 @@ Dependency cells below contain **task IDs only**. Conditions/evidence triggers b
 
 | Task | Status | Depends on | Deliverable / closure | Traceability |
 |---|---|---|---|---|
-| `P2-001` PPCT curricular-component architecture re-entry | `PLANNED` | `P0-900` | Architectural re-entry closure: component topology, sequence scoping, class-subject applicability, weekly last-opportunity routing, atypical weeks, independent progression, and non-debt semantics | T45, T46 |
-| `P2-002` PPCT component persistence + control-plane realignment | `PLANNED` | `P2-001` | Schema migration for component model and applicability, version control plane, CAS/Serializable concurrency, and backward-compatible default migration | T45, T46 |
+| `P2-001` PPCT curricular-component architecture re-entry | `PLANNED` | `P0-900` | Architectural re-entry closure: component topology and version-package lifecycle, sequence scoping, class-subject applicability, weekly last-opportunity routing, atypical weeks deterministic behavior (0 or 1 opportunity, truncations, cutovers), legacy-data mapping semantics, independent progression, and non-debt semantics | T45, T46 |
+| `P2-002` PPCT component persistence + control-plane realignment | `PLANNED` | `P2-001` | Schema migration for component model and applicability, version control plane, CAS/Serializable concurrency, and backward-compatible migration preserving retained history according to P2-001's accepted legacy-data semantics | T45, T46 |
 | `P2-003` Component-aware PPCT allocation and curricular projections | `PLANNED` | `P2-002` | Deterministic component-aware weekly routing allocator, independent progression coverage, progress/debt/late projection realignment, and execution/report provenance | T45, T46 |
 | `P2-004` Specialized-study class-subject administration workspace | `PLANNED` | `P2-003` | Capability-gated administrative UI for managing class-subject specialized-study applicability with effectivity and audit trails | T45, T46 |
 

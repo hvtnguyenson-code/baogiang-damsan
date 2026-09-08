@@ -22,11 +22,11 @@ It is **not** a self-referential registry of the latest Git commit. Exact curren
   - ADR re-entry notices applied: ADR-027, ADR-028, ADR-029, ADR-030, ADR-037, ADR-040 and `LOCAL-FC-05A0D-PPCT-DECISION-CLOSURE.md` flagged with dated re-entry notices; ADR-045, ADR-046, ADR-047 remain unaffected.
 - **Core realignment principles:**
   1. Normal curricular component taxonomy: `CORE` (phần cốt lõi) vs `SPECIALIZED_STUDY` (chuyên đề học tập). Specialized study is curricular, not an ad-hoc `SpecialActivity`.
-  2. Shared master plan: Both components belong to `AcademicYear + Subject + Grade` and are versioned together in `PpctVersion`.
+  2. Shared master plan foundation: Both components belong to `AcademicYear + Subject + Grade` within the same curricular Subject domain; exact component lifecycle and version packaging model (whether unified under one `PpctVersion` or another retained topology) is explicitly assigned to `P2-001` to determine.
   3. Single Teaching Assignment: `TeachingAssignment` covers the class-subject; the assigned teacher teaches both `CORE` and `SPECIALIZED_STUDY`.
   4. Administrative applicability: Class-subject specialized study applicability is configured explicitly by administration; non-applicable items are `NOT_APPLICABLE` (not debt).
   5. Component-free TimetableEntry: Timetable assigns periods to subjects; `TimetableEntry` remains component-free.
-  6. Weekly last-opportunity routing: In an `AcademicWeek`, for enabled class-subjects, chronologically LAST normal opportunity is `SPECIALIZED_STUDY`; earlier opportunities are `CORE`. Atypical 1-opportunity weeks route to `CORE`.
+  6. Weekly last-opportunity routing: In an `AcademicWeek`, for enabled class-subjects, chronologically LAST normal opportunity is `SPECIALIZED_STUDY`; earlier opportunities are `CORE`. Exact deterministic behavior for atypical weeks (0 or 1 opportunity, truncations, cutovers) remains assigned to `P2-001`. Operational disruptions do not dynamically reclassify planned components.
   7. Independent progression: `CORE` and `SPECIALIZED_STUDY` maintain independent sequential progression cursors.
   8. Combined reporting: Ordinary curricular statements report combined totals.
   9. Preferred source direction: One workbook with `CORE` sheet and `SPECIALIZED_STUDY` sheet.
