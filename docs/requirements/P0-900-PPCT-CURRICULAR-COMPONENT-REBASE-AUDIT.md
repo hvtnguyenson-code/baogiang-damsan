@@ -52,7 +52,7 @@ Mọi nhiệm vụ kiến trúc, quản trị và triển khai sau này bắt bu
 Các điều khoản dưới đây xác lập **THẨM QUYỀN SẢN PHẨM MỚI (NEW PRODUCT AUTHORITY)** ghi nhận ngày 2026-09-08:
 
 ### A. Phân định Thành phần Chương trình (Curricular Components)
-Chương trình môn học chính khóa thông thường có thể chứa hai thành phần phân biệt:
+Chương trình môn học thông thường có thể chứa hai thành phần phân biệt:
 1. `CORE` (Kiến thức cốt lõi / cơ bản);
 2. `SPECIALIZED_STUDY` (Chuyên đề học tập của chính môn học đó).
 
@@ -71,7 +71,7 @@ Hệ thống không đặt ra yêu cầu phân công giáo viên riêng biệt t
 
 ### C. Ranh giới Thời khóa biểu (Timetable Boundary)
 `SPECIALIZED_STUDY` **không** bị gắn cố định vào bất kỳ vị trí tiết cố định nào trên thời khóa biểu hàng tuần.
-Thời khóa biểu gốc (TKB) chỉ xếp tiết cho môn học chính khóa nói chung (ví dụ: "Toán").
+Thời khóa biểu gốc (TKB) chỉ xếp tiết cho môn học nói chung (ví dụ: "Toán").
 Do đó:
 - `TimetableEntry` **KHÔNG ĐƯỢC** chứa bất kỳ trường hay nhãn thành phần chương trình nào;
 - Trình phân tích workbook TKB gốc, luồng nhập dữ liệu chuẩn tắc và checksum ngữ nghĩa của TKB được bảo toàn hoàn toàn không mang khái niệm thành phần chương trình.
@@ -86,20 +86,20 @@ Ví dụ:
 **Các bất biến nghiệp vụ:**
 - Tính áp dụng chuyên đề là dữ liệu cấu hình nghiệp vụ chính thức do quản trị viên có thẩm quyền thiết lập và quản lý.
 - Tính áp dụng **TUYỆT ĐỐI KHÔNG** được suy diễn tự động từ số tiết thời khóa biểu, cách viết mã môn học, giáo viên được phân công, `lessonType`, tên lớp hay các thuật toán phỏng đoán.
-- `CORE` được áp dụng phổ quát cho toàn bộ các luồng lớp-môn chính khóa thông thường.
+- `CORE` được áp dụng phổ quát cho toàn bộ các luồng lớp-môn thông thường.
 - `SPECIALIZED_STUDY` **chỉ** áp dụng khi được cấu hình bật rõ ràng bởi quản trị viên.
 - Đối với luồng lớp-môn không áp dụng chuyên đề, các nội dung PPCT chuyên đề có trạng thái `NOT_APPLICABLE` (không bị coi là bỏ sót, không thiếu tiết, không trễ hạn và không bao giờ tạo nợ tiến độ - progress debt).
 
 ### E. Quy tắc Định tuyến Cơ hội Dạy học Hàng tuần (Weekly Routing Rule)
 Đối với mỗi luồng lớp-môn đã được cấu hình áp dụng `SPECIALIZED_STUDY`:
-- Trong mỗi tuần học (`AcademicWeek`), quy tắc chung của Product Owner là: cơ hội dạy học chính khóa chuẩn tắc **CUỐI CÙNG** theo trình tự thời gian trong tuần được chỉ định cho `SPECIALIZED_STUDY`.
-- Tất cả các cơ hội dạy học chính khóa chuẩn tắc sớm hơn trong cùng tuần đó được chỉ định cho `CORE`.
+- Trong mỗi tuần học (`AcademicWeek`), quy tắc chung của Product Owner là: cơ hội dạy học bình thường của lớp-môn theo TKB chuẩn tắc (normal timetable opportunity) **CUỐI CÙNG** theo trình tự thời gian trong tuần được chỉ định cho `SPECIALIZED_STUDY`.
+- Tất cả các cơ hội TKB bình thường của lớp-môn (normal timetable opportunity) sớm hơn trong cùng tuần đó được chỉ định cho `CORE`.
 
 **Hành vi tất định cho tuần dị thường (Atypical Weeks):**
 - Quy tắc chung trên xác lập định hướng cho tuần bình thường có đầy đủ các cơ hội.
 - Tuy nhiên, hành vi tất định chính xác đối với các tuần dị thường thuộc thẩm quyền quyết định kiến trúc của nhiệm vụ `P2-001`, bao gồm:
-  - Tuần có 0 cơ hội (toàn bộ tuần rơi vào kỳ nghỉ/gián đoạn);
-  - Tuần chỉ có đúng 1 cơ hội dạy học chính khóa chuẩn tắc;
+  - Tuần có 0 cơ hội;
+  - Tuần chỉ có đúng 1 cơ hội TKB bình thường của lớp-môn (normal timetable opportunity);
   - Tuần bị cắt ngắn do ngày nghỉ lễ hoặc gián đoạn lịch học;
   - Tuần có sự chuyển giao phiên bản thời khóa biểu giữa tuần.
 - Nhiệm vụ `P0-900` **không tự ý suy diễn hoặc chốt trước** kết quả cho các trường hợp dị thường này (không tự ý đặt quy tắc "nếu tuần có 1 cơ hội thì chuyển vào CORE").
@@ -123,21 +123,22 @@ Ví dụ:
 - Tiết dạy bù tiếp tục thực hiện đúng nghĩa vụ lịch sử ban đầu đã bị lỡ và không tiêu thụ nội dung PPCT mới, đồng thời bảo toàn nguyên vẹn định danh thành phần của nghĩa vụ ban đầu đó.
 
 ### G. Tổng hợp Báo cáo (Reporting Aggregation)
-- Thống kê và báo cáo chính khóa thông thường tiếp tục được tổng hợp ở cấp độ `SchoolClass + Subject` và `Teacher`;
-- Số tiết đã dạy của `CORE` và `SPECIALIZED_STUDY` được cộng gộp chung trong các bảng tổng hợp chính khóa thông thường;
+- Thống kê và báo cáo môn học thông thường tiếp tục được tổng hợp ở cấp độ `SchoolClass + Subject` và `Teacher`;
+- Số tiết đã dạy của `CORE` và `SPECIALIZED_STUDY` được cộng gộp chung trong các bảng tổng hợp môn học thông thường;
 - Trong phạm vi phiên bản pre-pilot v1, không bắt buộc phải tách báo cáo tổng hợp cấp cao riêng biệt cho hai thành phần;
 - Tuy nhiên, chi tiết thực hiện ở cấp từng tiết, thông tin nguồn gốc (provenance) và nhật ký kiểm toán phải bảo toàn độ chi tiết cần thiết để phân biệt rõ ràng tiết đã dạy hoặc đã phân bổ là `CORE` hay `SPECIALIZED_STUDY`;
 - `GDĐP` và `HĐTN-HN` tiếp tục là các miền báo cáo chương trình/hoạt động hoàn toàn độc lập.
 
 ### H. Định hướng Nguồn PPCT và Bao gói Phiên bản (PPCT Source Direction & Packaging)
-- Định hướng cấu trúc file PPCT từ nhà trường trong tương lai được ưu tiên: một workbook Excel duy nhất cho mỗi khối-môn chứa hai sheet:
-  - Một sheet phân phối chương trình cốt lõi (`CORE`);
-  - Một sheet phân phối chương trình chuyên đề (`SPECIALIZED_STUDY`).
+- Định hướng cấu trúc file PPCT từ nhà trường trong tương lai được ưu tiên: một workbook Excel duy nhất cho mỗi khối-môn chứa các vùng nội dung/sheet tách biệt cho:
+  1. Phân phối chương trình thông thường / phần cốt lõi (Sheet nội dung PPCT) -> ánh xạ sang thành phần logic `CORE`;
+  2. Chuyên đề học tập (Sheet nội dung Chuyên đề học tập) -> ánh xạ sang thành phần logic `SPECIALIZED_STUDY`.
+- **Lưu ý về bản chất định danh:** `CORE` và `SPECIALIZED_STUDY` là các định danh miền nghiệp vụ logic (domain identifiers) của hệ thống, **TUYỆT ĐỐI KHÔNG PHẢI** là tên sheet vật lý chính thức trong file Excel. Tên sheet vật lý chính xác, cách viết hoa/thường, cấu trúc cột, tiêu đề và bố cục bảng tính vẫn **CHƯA ĐƯỢC PHÊ DUYỆT** và phụ thuộc hoàn toàn vào bằng chứng kiểm tra thực tế của nhiệm vụ `P2-010`.
 - Nhà trường cũng có thể cung cấp hai file độc lập trên thực tế vận hành.
 - **Nền tảng giữ lại:** Nền tảng kế hoạch tổng thể dùng chung theo `AcademicYear + Subject + Grade` hiện có là cơ sở vững chắc; `CORE` và `SPECIALIZED_STUDY` thuộc cùng một thực thể môn học logic chứ không phải hai môn học tách rời.
 - **Trách nhiệm của P2-001:** Nhiệm vụ `P2-001` phải quyết định chính thức mô hình chu kỳ phiên bản và bao gói (lifecycle / version package): liệu việc ban hành và điều chỉnh của `CORE` và `SPECIALIZED_STUDY` bắt buộc phải đồng thời nguyên tử trong cùng một bản ghi `PpctVersion`, hay áp dụng một cấu trúc bao gói retained topology phù hợp khác.
 - `P0-900` không tự ý áp đặt một mô hình phiên bản vật lý khép kín và không tạo mới schema khi chưa có thiết kế kiến trúc từ `P2-001`.
-- Nhiệm vụ `P2-010` tiếp tục ở trạng thái `BLOCKED_EVIDENCE` cho tới khi có workbook thực tế từ nhà trường. Tuyệt đối không tự suy diễn tên sheet, cấu trúc cột, tiêu đề hay công thức trước khi `P2-010` hoàn thành kiểm tra.
+- Nhiệm vụ `P2-010` tiếp tục ở trạng thái `BLOCKED_EVIDENCE` cho tới khi có workbook thực tế từ nhà trường. Nhiệm vụ `P2-010` chịu trách nhiệm xác định tên sheet vật lý chính xác và quy tắc ánh xạ sang các thành phần logic `CORE` và `SPECIALIZED_STUDY`.
 
 ## 7. Bằng chứng Thực tế trong Schema và Runtime Hiện hành
 
@@ -168,7 +169,7 @@ Kiểm tra trực tiếp mã nguồn repository hiện hữu phản ánh hiện 
 | **Tính Độc lập Tiến độ** | Một con trỏ tiến độ và một không gian bao phủ `DISTRIBUTION_COVERED_ITEMS` duy nhất cho mỗi lớp-môn (`ADR-037`). | `CORE` và `SPECIALIZED_STUDY` tiến hành độc lập; gián đoạn của thành phần này không làm trôi thành phần kia. | **MÂU THUẪN:** Không gian phân bổ đơn luồng gây xáo trộn con trỏ giữa các thành phần. |
 | **Mô hình Thời khóa biểu** | Tiết TKB đại diện cho việc dạy môn học nói chung (`ADR-017`, `ADR-047`). | Chuyên đề là phân loại định tuyến cơ hội dạy học thông thường, không phải một tiết TKB chuyên biệt. | **ĐỒNG THUẬN / TƯƠNG THÍCH:** TKB gốc và `TimetableEntry` tiếp tục không mang trường thành phần. |
 | **Phân công Giảng dạy** | Phân công theo `SchoolClass + Subject` (`ADR-012`). | Cùng một giáo viên phụ trách cả CORE và SPECIALIZED_STUDY cho lớp-môn đó. | **ĐỒNG THUẬN / TƯƠNG THÍCH:** `TeachingAssignment` giữ nguyên, không mang trường thành phần. |
-| **Tổng hợp Báo cáo** | Báo cáo chính khóa tổng hợp theo lớp-môn và giáo viên (`ADR-041`). | CORE và SPECIALIZED_STUDY được cộng gộp trong số liệu chính khóa thông thường. | **ĐỒNG THUẬN / TƯƠNG THÍCH:** Tổng hợp báo cáo thông thường giữ nguyên ở cấp độ lớp-môn. |
+| **Tổng hợp Báo cáo** | Báo cáo môn học thông thường tổng hợp theo lớp-môn và giáo viên (`ADR-041`). | CORE và SPECIALIZED_STUDY được cộng gộp trong số liệu môn học thông thường. | **ĐỒNG THUẬN / TƯƠNG THÍCH:** Tổng hợp báo cáo thông thường giữ nguyên ở cấp độ lớp-môn. |
 
 ## 9. Phân loại Tác động Kiến trúc (Bảng KEEP / RE-ENTRY)
 
@@ -183,7 +184,7 @@ Kiểm tra trực tiếp mã nguồn repository hiện hữu phản ánh hiện 
 | **ADR-038** (Thực thi Giảng dạy) | **GIỮ LẠI VÀ MỞ RỘNG NGUỒN GỐC** | Mở lại: Cần nhận thông tin thành phần từ nghĩa vụ trực tiếp thượng nguồn vào chi tiết thực thi. | **GIỮ LẠI:** Nhóm thực thể `CurricularTeachingExecution`; phân biệt rõ nguồn gốc ban đầu và thực tế dạy; không tạo thực thể thực thi riêng biệt cho từng thành phần. |
 | **ADR-039** (Lưu trữ Thực thi) | **KIỂM TRA / DỰ KIẾN GIỮ LẠI** | Không phát sinh nhu cầu thay đổi trừ khi `P2-001` chứng minh có yêu cầu schema cụ thể. | **GIỮ LẠI:** Cấu trúc lưu trữ, vết kiểm toán và ràng buộc thực thi. |
 | **ADR-040** (Tiến độ / Nợ / Trễ) | **PARTIAL RE-ENTRY** | Mở lại: Nghĩa vụ trực tiếp từ thượng nguồn phải mang thông tin thành phần để tính toán tiến độ, khoảng trống và nợ chính xác theo từng thành phần. | **GIỮ LẠI:** Cụm tổng hợp theo lớp-môn; việc thiếu tiết thực thi đơn thuần không tạo nợ; bảng phân loại nợ dựa trên chứng cứ (`PROVEN_OPEN_DEBT`, `UNCONFIRMED_COMPLETION_GAP`). |
-| **ADR-041** (Chiếu Báo cáo) | **GIỮ LẠI VÀ BỔ SUNG CHI TIẾT** | Nhỏ: Bảng xem chi tiết cần hiển thị nguồn gốc thành phần, trong khi số liệu tổng hợp thông thường tiếp tục cộng gộp. | **GIỮ LẠI:** Báo cáo tổng hợp theo lớp-môn và giáo viên; số liệu chính khóa gộp chung; tách biệt với báo cáo `SpecialActivity`. |
+| **ADR-041** (Chiếu Báo cáo) | **GIỮ LẠI VÀ BỔ SUNG CHI TIẾT** | Nhỏ: Bảng xem chi tiết cần hiển thị nguồn gốc thành phần, trong khi số liệu tổng hợp thông thường tiếp tục cộng gộp. | **GIỮ LẠI:** Báo cáo tổng hợp theo lớp-môn và giáo viên; số liệu môn học thông thường gộp chung; tách biệt với báo cáo `SpecialActivity`. |
 | **ADR-042 / ADR-043** (Sổ Báo giảng) | **GIỮ NGUYÊN (KEEP)** | Không. Bản chụp sổ báo giảng lưu giữ các sự kiện thực tế đã diễn ra bất kể cơ cấu thành phần bên trong. | **GIỮ LẠI:** Bản chụp bất biến, quy trình phê duyệt và các góc nhìn báo cáo cá nhân. |
 | **ADR-047** (Kiến trúc TKB Gốc) | **GIỮ NGUYÊN (KEEP)** | Không. TKB gốc không phân loại thành phần chương trình. | **GIỮ LẠI:** Cấu trúc bốn sheet, đối soát chéo lớp-giáo viên, kế thừa buổi học và `TimetableEntry` không mang trường thành phần. |
 
@@ -198,7 +199,7 @@ Các ranh giới kiến trúc sau đây được bảo vệ nghiêm ngặt và *
 3. **Mảng TKB Gốc (P2-030 / P2-040 / P2-050) Tiếp tục Giữ Trạng thái CLOSED:**
    Trình nạp TKB gốc, adapter xử lý workbook, kiểm tra đối soát ngang hàng và kế thừa buổi học đã hoàn thành và hoàn toàn độc lập với khái niệm thành phần chương trình.
 4. **SpecialActivity Hoàn toàn Tách biệt:**
-   `SPECIALIZED_STUDY` là việc học tập môn học chính khóa thông thường, **KHÔNG PHẢI** là `SpecialActivity`. Không sử dụng mô hình, quy tắc xung đột hay luồng điều phối của `SpecialActivity` cho chuyên đề. Kiến trúc chương trình GDĐP và HĐTN-HN (P4) tiếp tục là một miền hoàn toàn độc lập.
+   `SPECIALIZED_STUDY` là việc học tập môn học thông thường trong chương trình, **KHÔNG PHẢI** là `SpecialActivity`. Không sử dụng mô hình, quy tắc xung đột hay luồng điều phối của `SpecialActivity` cho chuyên đề. Kiến trúc chương trình GDĐP và HĐTN-HN (P4) tiếp tục là một miền hoàn toàn độc lập.
 
 ## 11. Nguyên tắc Chuyển đổi và Bảo toàn Lịch sử (Migration & History Preservation)
 
@@ -219,7 +220,7 @@ Các dòng sau đây được cập nhật chính thức vào `PRE-PILOT-TRACEAB
 
 ### Hàng T45
 - **Mã định danh:** `T45`
-- **Yêu cầu / Thực tế Sản phẩm:** Mô hình thành phần môn học chính khóa và phạm vi áp dụng theo lớp-môn. Một môn học chính khóa có thể bao gồm thành phần `CORE` và `SPECIALIZED_STUDY` trên nền tảng kế hoạch khung môn học dùng chung; cùng một `TeachingAssignment` phụ trách cả hai; phạm vi áp dụng được quản trị viên cấu hình rõ ràng theo từng lớp-môn; với lớp không học chuyên đề, nội dung chuyên đề có trạng thái `NOT_APPLICABLE` (không phải nợ/thiếu); chuyên đề là môn học chính khóa, không phải `SpecialActivity`; mô hình chu kỳ phiên bản và bao gói cụ thể do `P2-001` xác định.
+- **Yêu cầu / Thực tế Sản phẩm:** Mô hình thành phần môn học và phạm vi áp dụng theo lớp-môn. Một môn học thông thường trong chương trình có thể bao gồm thành phần `CORE` và `SPECIALIZED_STUDY` trên nền tảng kế hoạch khung môn học dùng chung; cùng một `TeachingAssignment` phụ trách cả hai; phạm vi áp dụng được quản trị viên cấu hình rõ ràng theo từng lớp-môn; với lớp không học chuyên đề, nội dung chuyên đề có trạng thái `NOT_APPLICABLE` (không phải nợ/thiếu); chuyên đề là môn học thông thường trong chương trình, không phải `SpecialActivity`; mô hình chu kỳ phiên bản và bao gói cụ thể do `P2-001` xác định.
 - **Bằng chứng Nguồn:** Thẩm quyền Product Owner ghi nhận ngày 2026-09-08 (là nguồn xác lập ngữ nghĩa mới của `CORE`/`SPECIALIZED_STUDY` và tính áp dụng theo lớp; PA-B v1.2 chỉ được dẫn chiếu như bối cảnh môn học/PPCT chung, không phải bằng chứng v1.2 đã quy định mô hình thành phần này).
 - **Quyết định Sau / Kiến trúc Hiện tại:** Kiểm tra `P0-900`; kích hoạt re-entry cho `ADR-027`, `ADR-028`, `ADR-029`; được chốt bởi kiến trúc `P2-001`.
 - **Hiện trạng Triển khai:** Schema và allocator hiện tại mặc định một chuỗi thứ tự đơn duy nhất cho mỗi phiên bản và áp dụng đồng nhất cho mọi lớp.
@@ -228,7 +229,7 @@ Các dòng sau đây được cập nhật chính thức vào `PRE-PILOT-TRACEAB
 
 ### Hàng T46
 - **Mã định danh:** `T46`
-- **Yêu cầu / Thực tế Sản phẩm:** Định tuyến cơ hội chuyên đề tuần và tiến trình độc lập. Trong mỗi `AcademicWeek`, cơ hội dạy học chính khóa chuẩn tắc CUỐI CÙNG của lớp có chuyên đề được chỉ định cho `SPECIALIZED_STUDY`; các cơ hội trước đó là `CORE`; đây là phân loại lập kế hoạch độc lập với các biến động vận hành; `CORE` và `SPECIALIZED_STUDY` có con trỏ tiến độ PPCT độc lập; báo cáo chính khóa thông thường gộp chung cả hai thành phần; `TimetableEntry` không mang trường thành phần.
+- **Yêu cầu / Thực tế Sản phẩm:** Định tuyến cơ hội chuyên đề tuần và tiến trình độc lập. Trong mỗi `AcademicWeek`, cơ hội dạy học bình thường của lớp-môn theo TKB chuẩn tắc (normal timetable opportunity) CUỐI CÙNG của lớp có chuyên đề được chỉ định cho `SPECIALIZED_STUDY`; các cơ hội trước đó là `CORE`; đây là phân loại lập kế hoạch độc lập với các biến động vận hành; `CORE` và `SPECIALIZED_STUDY` có con trỏ tiến độ PPCT độc lập; báo cáo môn học thông thường gộp chung cả hai thành phần; `TimetableEntry` không mang trường thành phần.
 - **Bằng chứng Nguồn:** Thẩm quyền Product Owner ghi nhận ngày 2026-09-08.
 - **Quyết định Sau / Kiến trúc Hiện tại:** Kiểm tra `P0-900`; kích hoạt re-entry cho `ADR-030`, `ADR-037`, `ADR-040`; được chốt bởi kiến trúc `P2-001`.
 - **Hiện trạng Triển khai:** Module `PPCT_OCCURRENCE_ALLOCATION_V1` hiện duyệt luồng thời gian đơn tuyến mà không gom nhóm theo tuần hay phân tách thành phần.
@@ -236,7 +237,7 @@ Các dòng sau đây được cập nhật chính thức vào `PRE-PILOT-TRACEAB
 - **Lộ trình Đóng:** `P2-001` chốt kiến trúc -> `P2-003` runtime phân bổ và phóng chiếu -> `P2-004` giao diện quản trị.
 
 ### Cập nhật Hàng T24
-- Hàng `T24` được cập nhật để ghi nhận định hướng nguồn ưa thích của Product Owner: một workbook duy nhất gồm sheet `CORE` và sheet `SPECIALIZED_STUDY`.
+- Hàng `T24` được cập nhật để ghi nhận định hướng nguồn ưa thích của Product Owner: một workbook duy nhất chứa các vùng nội dung/sheet tách biệt cho PPCT thông thường (`CORE`) và Chuyên đề học tập (`SPECIALIZED_STUDY`); tên sheet vật lý chính xác và cấu trúc file phụ thuộc vào bằng chứng thực tế tại `P2-010`.
 - Trạng thái duy trì nghiêm ngặt `DEFERRED_WITH_TRIGGER` (`BLOCKED_EVIDENCE`), vì hợp đồng phân tích workbook chỉ có thể được phê duyệt khi có file mẫu thực tế từ nhà trường.
 
 ## 13. Đồ thị Bàn giao và Phụ thuộc Nhiệm vụ Mới (Delivery Graph)
@@ -285,7 +286,7 @@ flowchart TD
 - **`P2-002`**: PPCT component persistence + control-plane realignment. Trạng thái: `PLANNED`. Phụ thuộc: `P2-001`. Truy xuất: `T45`, `T46`.
 - **`P2-003`**: Component-aware PPCT allocation and curricular projections. Trạng thái: `PLANNED`. Phụ thuộc: `P2-002`. Truy xuất: `T45`, `T46`.
 - **`P2-004`**: Specialized-study class-subject administration workspace. Trạng thái: `PLANNED`. Phụ thuộc: `P2-003`. Truy xuất: `T45`, `T46`.
-- **`P2-010`**: PPCT real-workbook contract/security audit. Trạng thái: `BLOCKED_EVIDENCE`. Phụ thuộc: `P2-001`. Trigger: Cung cấp workbook thực tế từ nhà trường. Truy xuất: `T24`, `T45`.
+- **`P2-010`**: PPCT real-workbook contract/security audit. Trạng thái: `BLOCKED_EVIDENCE`. Phụ thuộc: `P2-001`. Trigger: Cung cấp workbook thực tế từ nhà trường; xác định tên sheet vật lý chính xác và ánh xạ sang các thành phần logic `CORE` và `SPECIALIZED_STUDY`. Truy xuất: `T24`, `T45`.
 - **`P2-020`**: PPCT native importer implementation. Trạng thái: `PLANNED`. Phụ thuộc: `P2-002`, `P2-010`. Truy xuất: `T24`, `T45`.
 - **`P1-030`**: Delayed go-live / operational-start architecture. Trạng thái: `PLANNED` (chuyển từ `READY` vì việc phát lại lịch sử phụ thuộc vào kiến trúc thành phần). Phụ thuộc: `P1-020`, `P2-001`. Truy xuất: `T28`, `T30`.
 - **`P1-031`**: Operational-start policy implementation. Trạng thái: `PLANNED`. Phụ thuộc: `P1-021`, `P1-030`, `P2-003`. Truy xuất: `T28`, `T30`.
@@ -295,10 +296,10 @@ flowchart TD
 
 ## 14. Định hướng Nguồn Workbook so với Bằng chứng Thực tế bị Chặn P2-010
 
-Mặc dù Product Owner đã nêu định hướng cấu trúc workbook mong muốn là một file Excel gồm sheet `CORE` và sheet `SPECIALIZED_STUDY`:
+Mặc dù Product Owner đã nêu định hướng cấu trúc workbook mong muốn là một file Excel có các vùng nội dung/sheet tách biệt cho PPCT thông thường (`CORE`) và Chuyên đề học tập (`SPECIALIZED_STUDY`):
 - Phát biểu này cấu thành **hướng dẫn định hướng nguồn**, không phải hợp đồng kỹ thuật cho bộ phân tích.
 - Nhiệm vụ `P2-010` duy trì nghiêm ngặt trạng thái `BLOCKED_EVIDENCE` cho tới khi nhận được file Excel thực tế từ nhà trường.
-- Tuyệt đối không cài đặt hay giả định bất kỳ logic phân tích, ánh xạ cột, nhận diện tiêu đề hay quy tắc kiểm tra dữ liệu nào trước khi `P2-010` thực hiện kiểm tra cấu trúc và nhị phân toàn diện trên bằng chứng đó.
+- Nhiệm vụ `P2-010` có trách nhiệm xác định tên sheet vật lý chính xác cùng các quy tắc ánh xạ kỹ thuật. Tuyệt đối không cài đặt hay giả định bất kỳ logic phân tích, ánh xạ cột, nhận diện tiêu đề hay quy tắc kiểm tra dữ liệu nào trước khi `P2-010` thực hiện kiểm tra cấu trúc và nhị phân toàn diện trên bằng chứng đó.
 
 ## 15. Các Câu hỏi Kiến trúc Chưa giải quyết Giao cho P2-001
 
@@ -315,11 +316,11 @@ Nhiệm vụ `P0-900` chủ động không phỏng đoán hay chốt sớm các 
 5. **Thay đổi Cấu hình Áp dụng Giữa năm hoặc Giữa tuần:**
    Quy tắc nghiệp vụ và hành vi hệ thống khi một lớp bật hoặc tắt chuyên đề giữa năm học hoặc giữa tuần (fail-closed, mốc ngày trong tương lai, hay cố định theo năm học).
 6. **Định nghĩa Chuẩn tắc của "Cơ hội Cuối cùng trong Tuần":**
-   Thuật toán chuẩn tắc xác định cơ hội dạy học cuối cùng theo thời gian trong tuần (`AcademicWeek`) của lớp-môn (sắp xếp theo ngày dân sự, giờ bắt đầu tiết học, giờ kết thúc và cơ chế phân xử hòa tất định).
+   Thuật toán chuẩn tắc xác định cơ hội dạy học bình thường của lớp-môn (normal timetable opportunity) cuối cùng theo thời gian trong tuần (`AcademicWeek`) (sắp xếp theo ngày dân sự, giờ bắt đầu tiết học, giờ kết thúc và cơ chế phân xử hòa tất định).
 7. **Hành vi Tất định cho các Tuần Dị thường (Atypical Weeks):**
    Xác lập quy tắc định tuyến tất định khi tuần học lệch khỏi lịch chuẩn:
-   - Tuần có 0 cơ hội (toàn bộ tuần nghỉ/gián đoạn);
-   - Tuần có đúng 1 cơ hội (phân bổ cho CORE hay chuyên đề?);
+   - Tuần có 0 cơ hội;
+   - Tuần có đúng 1 cơ hội TKB bình thường của lớp-môn (normal timetable opportunity) (phân bổ cho CORE hay chuyên đề?);
    - Chuyển giao phiên bản TKB giữa tuần;
    - Gián đoạn lịch học cắt mất cơ hội cuối tuần theo kế hoạch.
 8. **Quy tắc Dung lượng Tiết Tối thiểu và Tính Sẵn sàng:**

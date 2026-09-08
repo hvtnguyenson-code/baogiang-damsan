@@ -151,7 +151,7 @@ Required invariants:
 
 PPCT import remains intentionally deferred until the real authoritative school workbook/template/workflow is available and reviewed. The existing PPCT core must not be polluted with guessed workbook fields.
 
-Under 2026-09-08 Product Owner authority, the expected school source direction is one workbook containing both a CORE sheet and a SPECIALIZED_STUDY sheet for subjects that include specialized study.
+Under 2026-09-08 Product Owner authority, the expected school source direction is one workbook containing separate logical content/sheets for ordinary PPCT (logical component CORE) and Chuyên đề học tập (logical component SPECIALIZED_STUDY). Exact physical sheet names, spellings, header structures, and mappings remain unapproved and evidence-bound to P2-010.
 
 When the source workbook is available, the sequence is: contract/security audit -> approved import profile/identity rules -> implementation -> regression evidence.
 

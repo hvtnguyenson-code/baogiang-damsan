@@ -42,7 +42,7 @@ Dependency cells below contain **task IDs only**. Conditions/evidence triggers b
 | `P0-002` Close stale PR #11 hosting-portability direction | `BLOCKED_DECISION` | `P0-001` | Close PR #11 as superseded if Product Owner explicitly authorizes | Must not merge old standalone-Linux direction into current Windows/shared-Nginx architecture |
 | `P0-003` Pilot scope decision: CORE vs FULL BUSINESS | `BLOCKED_DECISION` | `P0-001` | Record Product Owner decision before P5 pilot freeze | Does not block common P1-P3 foundations |
 | `P0-004` GitHub main branch protection/ruleset enforcement | `BLOCKED_DECISION` | `P0-001` | Review and, only with explicit Product Owner authorization, enforce server-side protection against accidental direct-main bypass and require the agreed PR/CI gates | Baseline inspection shows `main` currently `protected: false`; repository-settings mutation must not be performed implicitly |
-| `P0-900` Authoritative specification rebase audit | `IN_REVIEW` | `P0-001` | Re-read changed authoritative source, reconcile baseline/ADR/traceability/register before dependent product work continues; audit completed on branch docs/p0-900-ppct-curricular-component-rebase, independent review/CI pending | Trigger fired 2026-09-08 via explicit Product Owner authority; T42, T45, T46 |
+| `P0-900` Authoritative specification rebase audit | `IN_REVIEW` | `P0-001` | Verify authoritative source fingerprints; re-read changed source when applicable; reconcile changed source and/or contradictory explicit Product Owner authority across baseline, ADRs, traceability and task register before dependent product work continues; audit completed on branch docs/p0-900-ppct-curricular-component-rebase, independent review/CI pending | Trigger fired 2026-09-08 via explicit Product Owner authority; T42, T45, T46 |
 
 ## P1 — Governance/business foundation
 
@@ -87,7 +87,7 @@ Dependency cells below contain **task IDs only**. Conditions/evidence triggers b
 
 | Task | Status | Depends on | Deliverable / closure | Trigger / notes |
 |---|---|---|---|---|
-| `P2-010` PPCT real-workbook contract/security audit | `BLOCKED_EVIDENCE` | `P2-001` | Read authoritative school PPCT workbook/template; define sheet/column/identity/replay/error contract for CORE and SPECIALIZED_STUDY sheets | Trigger: actual authoritative school workbook supplied; T24, T45 |
+| `P2-010` PPCT real-workbook contract/security audit | `BLOCKED_EVIDENCE` | `P2-001` | Read authoritative school PPCT workbook/template; determine exact physical sheet names, columns, identity, replay, and error contracts mapping physical sheets to logical CORE and SPECIALIZED_STUDY components | Trigger: actual authoritative school workbook supplied; T24, T45 |
 | `P2-020` PPCT native importer implementation | `PLANNED` | `P2-002`, `P2-010` | Import pipeline using approved PPCT contract; no guessed mapping | T24, T45 |
 
 ### Native timetable workbook adapter (CLOSED)

@@ -29,7 +29,7 @@ It is **not** a self-referential registry of the latest Git commit. Exact curren
   6. Weekly last-opportunity routing: In an `AcademicWeek`, for enabled class-subjects, chronologically LAST normal opportunity is `SPECIALIZED_STUDY`; earlier opportunities are `CORE`. Exact deterministic behavior for atypical weeks (0 or 1 opportunity, truncations, cutovers) remains assigned to `P2-001`. Operational disruptions do not dynamically reclassify planned components.
   7. Independent progression: `CORE` and `SPECIALIZED_STUDY` maintain independent sequential progression cursors.
   8. Combined reporting: Ordinary curricular statements report combined totals.
-  9. Preferred source direction: One workbook with `CORE` sheet and `SPECIALIZED_STUDY` sheet.
+  9. Preferred source direction: One workbook with separate logical content/sheets for ordinary PPCT (logical component CORE) and Chuyên đề học tập (logical component SPECIALIZED_STUDY); exact physical sheet names, spellings, and workbook structure remain unapproved and evidence-bound to P2-010.
 
 ## Last closed major task
 
@@ -199,7 +199,7 @@ The registered implementation, data-evidence, product and production-readiness t
 4. Special-program absence/replacement and programme-level confirmation authority remain explicitly registered for P4 closure (T43/T44).
 5. Existing `GDDDP_COORDINATOR` / `HĐTN_COORDINATOR` capability intent is not wired to programme-resource authority.
 6. Delayed go-live / operational-start policy and historical pre-operational evidence workflow are absent.
-7. PPCT real-school import is intentionally blocked pending an authoritative workbook contract; preferred direction is one workbook with CORE and SPECIALIZED_STUDY sheets.
+7. PPCT real-school import is intentionally blocked pending an authoritative workbook contract; preferred direction is one workbook with separate logical content for ordinary PPCT (CORE) and Chuyên đề học tập (SPECIALIZED_STUDY), with exact physical sheet names and structure evidence-bound to P2-010.
 8. Special-activity participation is not yet integrated into official workload/reporting aggregation.
 9. WorkloadAdjustmentRule remains trigger-gated/deferred.
 10. Installable PWA baseline is absent.

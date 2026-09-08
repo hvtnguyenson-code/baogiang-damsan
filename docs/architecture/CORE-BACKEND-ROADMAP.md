@@ -102,7 +102,7 @@ Exact task statuses and prerequisites are maintained authoritatively in `PRE-PIL
      -> `P2-004` admin applicability workspace
 2. **Parallel evidence-bound school PPCT workbook path:**
    `P2-001` + authoritative school workbook evidence
-     -> `P2-010` real-workbook contract/security audit
+     -> `P2-010` real-workbook contract/security audit (determines physical sheet names and mapping to logical CORE and SPECIALIZED_STUDY components)
    `P2-002` + `P2-010`
      -> `P2-020` PPCT native importer implementation
 3. **Đam San native TKB workbook adapter (`CLOSED` foundation):**
@@ -151,21 +151,22 @@ The exact dependency graph is authoritative only in `PRE-PILOT-TASK-REGISTER.md`
 
 ```text
 P0-900 closure
-├── P2-001 (Curricular component architecture)
-│   ├── P1-030 (Delayed go-live architecture)
-│   │   └── P1-031 (Operational-start policy, waits for P2-003)
-│   ├── P2-002 (Component persistence & control plane)
-│   │   └── P2-003 (Component allocation & projections)
-│   │       ├── P2-004 (Admin applicability workspace)
-│   │       ├── P1-031 (Operational-start policy)
-│   │       └── P3-010 (Pre-operational historical execution)
-│   └── P2-010 (PPCT real-workbook audit, needs real workbook evidence)
-│       └── P2-020 (PPCT native importer, needs P2-002 + P2-010)
-│           └── P3-010 (needs P1-031 + P2-003 + P2-020 + closed P2-050)
-├── P4-010 (GDĐP/HĐTN programme architecture; independent / READY)
-└── P6 (TLS repo authority)
+└── P2-001 (Curricular component architecture)
+    ├── P1-030 (Delayed go-live architecture)
+    │   └── P1-031 (Operational-start policy, waits for P2-003)
+    ├── P2-002 (Component persistence & control plane)
+    │   └── P2-003 (Component allocation & projections)
+    │       ├── P2-004 (Admin applicability workspace)
+    │       ├── P1-031 (Operational-start policy)
+    │       └── P3-010 (Pre-operational historical execution)
+    └── P2-010 (PPCT real-workbook audit, needs real workbook evidence)
+        └── P2-020 (PPCT native importer, needs P2-002 + P2-010)
+            └── P3-010 (needs P1-031 + P2-003 + P2-020 + closed P2-050)
 
-Native TKB foundation: P2-030, P2-040, P2-050 are CLOSED.
+Independent tracks:
+- P4-010 (GDĐP/HĐTN programme architecture; independent / READY)
+- P6 production readiness & TLS authority (governed independently by canonical gates P6-005 -> P6-010 etc.)
+- Native TKB foundation: P2-030, P2-040, P2-050 are CLOSED.
 
 Chosen P1-P4 scope
    ↓
