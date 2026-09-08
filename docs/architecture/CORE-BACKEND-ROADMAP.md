@@ -95,8 +95,8 @@ No runtime/schema/production mutation.
 Exact task statuses and prerequisites are maintained authoritatively in `PRE-PILOT-TASK-REGISTER.md`. High-level sequence:
 
 1. **Curricular component realignment stream:**
-   `P0-900` closure
-     -> `P2-001` component architecture
+   `P0-900` (`CLOSED`)
+     -> `P2-001` component architecture (`READY`)
      -> `P2-002` persistence/control plane
      -> `P2-003` allocation/projection runtime
      -> `P2-004` admin applicability workspace
@@ -119,7 +119,7 @@ Exact task statuses and prerequisites are maintained authoritatively in `PRE-PIL
 
 ### P4 — GDĐP / HĐTN programmes and workload
 
-1. Programme/version/item/occurrence architecture (`P4-010`, remains independent/`READY` after `P0-900` closure).
+1. Programme/version/item/occurrence architecture (`P4-010`, remains independent / `READY`).
 2. GDĐP `AcademicYear + Grade` planning.
 3. HĐTN `CLASS / GRADE / SCHOOL_WIDE` planning.
 4. Date-effective homeroom resolution for class activities.
@@ -150,8 +150,8 @@ Exact task statuses and prerequisites are maintained authoritatively in `PRE-PIL
 The exact dependency graph is authoritative only in `PRE-PILOT-TASK-REGISTER.md`. At a high level:
 
 ```text
-P0-900 closure
-└── P2-001 (Curricular component architecture)
+P0-900 (CLOSED)
+└── P2-001 (Curricular component architecture, READY)
     ├── P1-030 (Delayed go-live architecture)
     │   └── P1-031 (Operational-start policy, waits for P2-003)
     ├── P2-002 (Component persistence & control plane)

@@ -4,11 +4,12 @@
 
 - **Mã nhiệm vụ (Task ID):** `P0-900`
 - **Tên nhiệm vụ:** Kiểm tra và tái căn chỉnh đặc tả thẩm quyền: Phân định thành phần chương trình PPCT theo quyết định của Product Owner
-- **Trạng thái trên nhánh:** `IN_REVIEW`
+- **Trạng thái nhiệm vụ:** `CLOSED by SYNC-P0-900`
 - **Công cụ thực thi:** ANTIGRAVITY IDE
 - **Repository:** `hvtnguyenson-code/baogiang-damsan`
-- **Nhánh chuyên trách:** `docs/p0-900-ppct-curricular-component-rebase`
-- **Phạm vi:** Kiểm tra, tái căn chỉnh tài liệu đặc tả, tài liệu quản trị và kiến trúc tổng thể. Tuyệt đối không thay đổi mã nguồn runtime, schema, migration, API, hợp đồng dữ liệu, giao diện UI, hoặc triển khai deployment.
+- **Nhánh chuyên trách mẹ:** `docs/p0-900-ppct-curricular-component-rebase`
+- **Nhánh đồng bộ đóng hành chính:** `docs/sync-p0-900-closure`
+- **Phạm vi:** Kiểm tra, tái căn chỉnh tài liệu đặc tả, tài liệu quản trị và kiến trúc tổng thể (strictly docs-only). Tuyệt đối không thay đổi mã nguồn runtime, schema, migration, API, hợp đồng dữ liệu, giao diện UI, CI/CD, hoặc triển khai deployment.
 
 ## 2. Trigger và Ngày Kích hoạt
 
@@ -16,11 +17,18 @@
 - **Nguyên nhân kích hoạt:** Quyết định thẩm quyền bằng văn bản trực tiếp từ Product Owner ghi nhận ngày 2026-09-08.
 - **Bản chất trigger:** Nhiệm vụ `P0-900` ban đầu được đăng ký trong `PRE-PILOT-TASK-REGISTER.md` dưới trạng thái `DEFERRED_WITH_TRIGGER` gắn với dòng ma trận truy xuất nguồn gốc `T42`. Trigger tái thẩm tra đã chính thức kích hoạt do các chỉ đạo mới của Product Owner vào ngày 2026-09-08 trực tiếp mâu thuẫn với giả định nền tảng trước đây rằng một luồng PPCT lớp-môn chỉ bao gồm một tiến trình đơn nhất, không phân chia thành phần.
 
-## 3. SHA Main Khởi đầu Chuẩn tắc
+## 3. Bằng chứng Hợp nhất và Đóng Nhiệm vụ Chuẩn tắc (Closure Evidence)
 
-- **SHA canonical `origin/main` dự kiến khởi đầu:** `bdcfecbc92d9f129247ec40c7128bc6adc6ef8cf`
-- **HEAD nhánh local tại thời điểm bắt đầu:** `bdcfecbc92d9f129247ec40c7128bc6adc6ef8cf`
-- **Độ phân kỳ ban đầu:** `0 0` (nhánh chuyên trách tạo trực tiếp từ commit canonical `origin/main` đã được kiểm duyệt).
+- **SHA canonical `origin/main` khởi đầu:** `bdcfecbc92d9f129247ec40c7128bc6adc6ef8cf`
+- **HEAD nhánh chuyên trách được review độc lập lần cuối:** `79532ff2ba621ab6d2c43ba7818e04c560d617ce`
+- **Kết quả kiểm duyệt độc lập (Independent GitHub Review):** PASS sau hai vòng hiệu chỉnh chuyển tiếp (forward corrections);
+- **Pull Request:** PR #119 (`docs(governance): rebase PPCT curricular-component authority`);
+- **Authoritative PR CI:** CI #397 (run id: `34246372215`), kết quả: SUCCESS;
+- **Commit hợp nhất vào canonical `main`:** `eb1fc74686b0070935f8dcf23c13a5623b94ca1a`;
+- **Authoritative post-merge main CI:** CI #398 (run id: `34247079386`), kết quả: SUCCESS;
+- **Đóng nhiệm vụ:** `CLOSED by SYNC-P0-900`;
+- **Bảo toàn phạm vi:** 6 commit chuyển tiếp, 14 file thay đổi đều nằm dưới thư mục `docs/`; hoàn toàn không có thay đổi mã nguồn, schema, migration, API, UI, authorization, deploy hay đột biến môi trường production;
+- **Không phát sinh lỗi hay nhiệm vụ sửa sai:** Không có nhiệm vụ sửa sai nào phát sinh từ review độc lập hoặc CI; chuỗi bàn giao hạ nguồn `P2-001`–`P2-004` được đăng ký có chủ đích và `P2-001` chính thức chuyển sang trạng thái `READY`.
 
 ## 4. Xác minh Dấu vân tay Nguồn (Source Fingerprints)
 
@@ -246,10 +254,10 @@ Các dòng sau đây được cập nhật chính thức vào `PRE-PILOT-TRACEAB
 
 ```mermaid
 flowchart TD
-  P0_900["P0-900: Spec Rebase Audit\n(IN_REVIEW)"]
+  P0_900["P0-900: Spec Rebase Audit\n(CLOSED)"]
 
   subgraph Curricular_Component_Realignment ["A. Tái căn chỉnh Thành phần Chương trình"]
-    P2_001["P2-001: Kiến trúc Thành phần\n(PLANNED)"]
+    P2_001["P2-001: Kiến trúc Thành phần\n(READY)"]
     P2_002["P2-002: Lưu trữ & Control Plane Thành phần\n(PLANNED)"]
     P2_003["P2-003: Phân bổ & Phóng chiếu Thành phần\n(PLANNED)"]
     P2_004["P2-004: Workspace Quản trị Áp dụng Lớp-Môn\n(PLANNED)"]
@@ -282,7 +290,8 @@ flowchart TD
 ```
 
 ### Ánh xạ Sổ đăng ký Nhiệm vụ (Task Register Mapping)
-- **`P2-001`**: PPCT curricular-component architecture re-entry. Trạng thái: `PLANNED`. Phụ thuộc: `P0-900`. Truy xuất: `T45`, `T46`.
+- **`P0-900`**: Authoritative specification rebase audit. Trạng thái: `CLOSED by SYNC-P0-900`.
+- **`P2-001`**: PPCT curricular-component architecture re-entry. Trạng thái: `READY` (chuyển từ `PLANNED` sau khi `P0-900` được đóng chính thức). Phụ thuộc: `P0-900` (`CLOSED`). Truy xuất: `T45`, `T46`.
 - **`P2-002`**: PPCT component persistence + control-plane realignment. Trạng thái: `PLANNED`. Phụ thuộc: `P2-001`. Truy xuất: `T45`, `T46`.
 - **`P2-003`**: Component-aware PPCT allocation and curricular projections. Trạng thái: `PLANNED`. Phụ thuộc: `P2-002`. Truy xuất: `T45`, `T46`.
 - **`P2-004`**: Specialized-study class-subject administration workspace. Trạng thái: `PLANNED`. Phụ thuộc: `P2-003`. Truy xuất: `T45`, `T46`.
