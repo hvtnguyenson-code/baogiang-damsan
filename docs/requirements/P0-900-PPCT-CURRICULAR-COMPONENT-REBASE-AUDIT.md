@@ -246,14 +246,14 @@ Các dòng sau đây được cập nhật chính thức vào `PRE-PILOT-TRACEAB
 ```mermaid
 flowchart TD
   P0_900["P0-900: Spec Rebase Audit\n(IN_REVIEW)"]
-  
+
   subgraph Curricular_Component_Realignment ["A. Tái căn chỉnh Thành phần Chương trình"]
     P2_001["P2-001: Kiến trúc Thành phần\n(PLANNED)"]
     P2_002["P2-002: Lưu trữ & Control Plane Thành phần\n(PLANNED)"]
     P2_003["P2-003: Phân bổ & Phóng chiếu Thành phần\n(PLANNED)"]
     P2_004["P2-004: Workspace Quản trị Áp dụng Lớp-Môn\n(PLANNED)"]
   end
-  
+
   subgraph School_Workbook_Ingestion ["B. Nhập Workbook PPCT Nhà trường"]
     P2_010["P2-010: Kiểm tra Workbook PPCT Thực tế\n(BLOCKED_EVIDENCE)"]
     P2_020["P2-020: Trình nạp PPCT Gốc\n(PLANNED)"]
