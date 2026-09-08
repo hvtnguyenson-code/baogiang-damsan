@@ -151,6 +151,8 @@ Required invariants:
 
 PPCT import remains intentionally deferred until the real authoritative school workbook/template/workflow is available and reviewed. The existing PPCT core must not be polluted with guessed workbook fields.
 
+Under 2026-09-08 Product Owner authority, the expected school source direction is one workbook containing both a CORE sheet and a SPECIALIZED_STUDY sheet for subjects that include specialized study.
+
 When the source workbook is available, the sequence is: contract/security audit -> approved import profile/identity rules -> implementation -> regression evidence.
 
 ### 4.10 Native Đam San timetable ingestion
@@ -176,6 +178,23 @@ Planned staffing is not execution evidence. Teacher workload credit requires acc
 The previously deferred `WorkloadAdjustmentRule` concept must be re-entered before the product claims official workload/teaching-load calculations that depend on reductions, percentage adjustments or overrides.
 
 The exact model is not authorized here.
+
+### 4.13 Curricular components: CORE vs Chuyên đề học tập (Product Owner authority 2026-09-08)
+
+On 2026-09-08, the Product Owner established explicit authority realigning PPCT progression and timetable consumption:
+
+1. **Component taxonomy:** A normal curricular subject may contain two curricular components: `CORE` (phần cốt lõi) and `SPECIALIZED_STUDY` (chuyên đề học tập). Specialized study is strictly curricular, not an ad-hoc `SpecialActivity`.
+2. **Shared master plan:** Both components belong to the single subject master plan (`AcademicYear + Subject + Grade`) and are versioned together in `PpctVersion`.
+3. **Single Teaching Assignment:** `TeachingAssignment` remains bounded to `(academicYearId, classId, subjectId, teacherId)`. The teacher assigned to teach the class-subject teaches both `CORE` and `SPECIALIZED_STUDY`; no secondary teacher assignment is created.
+4. **Administrative applicability:** Whether a class takes specialized study in a subject is determined explicitly by business administration configuration (never guessed by system heuristics). Classes not taking specialized study consider specialized items `NOT_APPLICABLE`, never debt or unfulfilled obligation.
+5. **Component-free TimetableEntry:** Native timetable and `TimetableEntry` remain component-free. The timetable assigns periods to normal curricular subjects, exactly matching native school reality.
+6. **Weekly last-opportunity routing:** Within an `AcademicWeek`, for an enabled class-subject:
+   - The chronologically LAST canonical normal opportunity is designated for `SPECIALIZED_STUDY`.
+   - All earlier canonical normal opportunities in that week are designated for `CORE`.
+   - In atypical weeks (holidays/interruptions) where only 1 opportunity occurs, it routes to `CORE` (unless an explicit business override is defined).
+   - Operational cancellations or adjustments affect actual execution evidence, not the planned opportunity classification.
+7. **Independent progression:** `CORE` and `SPECIALIZED_STUDY` progress as independent sequential cursors. Consuming a specialized opportunity advances the specialized sequence, not the core sequence.
+8. **Combined reporting:** Ordinary curricular reporting combines totals from both components into canonical class-subject statements.
 
 ## 5. Deliberately unresolved product decision
 
