@@ -6,10 +6,9 @@
 - **Authority:** `LOCAL-FC-05B0D-TIMETABLE-OPERATIONAL-READINESS-DECISION-CLOSURE.md`
 
 > [!WARNING]
-> **RE-ENTRY NOTICE (2026-09-08 — TASK P0-900 / T45 / T46):**
-> This historical decision remains retained. However, the `NORMAL_BASE_PPCT_V1` profile's assumption that PPCT binding readiness is evaluated without assessing specialized study applicability or component capacity has been reopened for extension under Product Owner authority (`P0-900`, `T45`, `T46`).
-> `P0-900` / `T45` / `T46` are higher-priority current authority. Dependent implementations requiring component-aware readiness must await `P2-001` architecture closure.
-> All unaffected clauses (deterministic retained readiness pattern, exact source provenance, finite civil-date window, and non-mutation invariants) remain Accepted.
+> **RE-ENTRY NOTICE (2026-09-08 — TASK P2-001 / ADR-048 / T45 / T46):**
+> This historical decision remains retained. While `NORMAL_BASE_PPCT_V1` is preserved for historical compatibility, the requirement for component-aware readiness evaluation (assessing `curricularProfile`, mid-week split detection, specialized content availability, and weekly routing capacity) is formally addressed and superseded for future component-aware profiles by `ADR-048-PPCT-CURRICULAR-COMPONENT-ARCHITECTURE.md` (defining `NORMAL_BASE_PPCT_COMPONENT_V2`, established under `P2-001`, `T45`, `T46`).
+> Upon closure of `P2-001`, `ADR-048` provides the governing readiness architecture for downstream implementation in `P2-003`. All unaffected clauses (deterministic retained readiness pattern, exact source provenance, finite civil-date window, and non-mutation invariants) remain Accepted.
 
 ## Context
 

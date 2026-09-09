@@ -96,7 +96,7 @@ Exact task statuses and prerequisites are maintained authoritatively in `PRE-PIL
 
 1. **Curricular component realignment stream:**
    `P0-900` (`CLOSED`)
-     -> `P2-001` component architecture (`READY`)
+     -> `P2-001` component architecture (`IN_REVIEW`)
      -> `P2-002` persistence/control plane
      -> `P2-003` allocation/projection runtime
      -> `P2-004` admin applicability workspace
@@ -151,7 +151,7 @@ The exact dependency graph is authoritative only in `PRE-PILOT-TASK-REGISTER.md`
 
 ```text
 P0-900 (CLOSED)
-└── P2-001 (Curricular component architecture, READY)
+└── P2-001 (Curricular component architecture, IN_REVIEW)
     ├── P1-030 (Delayed go-live architecture)
     │   └── P1-031 (Operational-start policy, waits for P2-003)
     ├── P2-002 (Component persistence & control plane)

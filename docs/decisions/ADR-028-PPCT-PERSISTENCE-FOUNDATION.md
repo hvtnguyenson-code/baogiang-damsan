@@ -6,14 +6,13 @@
 - **Authority:** ADR-027 and `LOCAL-FC-05A0D-PPCT-DECISION-CLOSURE.md`
 
 > [!WARNING]
-> **RE-ENTRY NOTICE (2026-09-08 — TASK P0-900 / T45 / T46):**
-> This historical decision remains retained. However, the assumptions that:
-> 1. The physical schema topology is permanently restricted to exactly six models;
-> 2. `sequence` uniqueness is version-wide (`@@unique([versionId, sequence])`) across an undifferentiated subject plan;
-> 3. `PpctClassAssociation` does not track class-subject specialized-study applicability;
-> have been formally reopened under explicit Product Owner authority recorded on 2026-09-08 (`P0-900`, `T45`, `T46`).
-> `P0-900` / `T45` / `T46` are higher-priority current authority. No dependent implementation may use the reopened clauses until `P2-001` architecture closes.
-> All unaffected clauses (shared plan master identity, immutable published version history, stable item UUID, revision lineage graph, and historical retention invariants) remain Accepted.
+> **RE-ENTRY NOTICE (2026-09-08 — TASK P2-001 / ADR-048 / T45 / T46):**
+> This historical decision remains retained. However, the reopened assumptions:
+> 1. That `sequence` uniqueness is version-wide (`@@unique([versionId, sequence])`) across an undifferentiated plan;
+> 2. That `PpctClassAssociation` does not track class-subject specialized-study applicability (`curricularProfile`);
+> 3. That `PpctItem` and `PpctItemRevision` lack explicit curricular component coordinates (`CORE` vs `SPECIALIZED_STUDY`);
+> are formally addressed and superseded by the proposed architecture in `ADR-048-PPCT-CURRICULAR-COMPONENT-ARCHITECTURE.md` (established under `P2-001`, `T45`, `T46`).
+> Upon closure of `P2-001`, `ADR-048` serves as canonical authority for the replaced component-aware persistence rules. All unaffected clauses (shared plan master identity `AcademicYear + Subject + Grade`, immutable published version history, stable item UUID, revision lineage graph, and historical retention invariants) remain Accepted.
 
 ## Context
 

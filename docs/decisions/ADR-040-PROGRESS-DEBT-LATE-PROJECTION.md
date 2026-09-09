@@ -6,10 +6,9 @@
 - **Authority:** `docs/requirements/LOCAL-FC-05G0D-PROGRESS-DEBT-LATE-DECISION-CLOSURE.md`
 
 > [!WARNING]
-> **RE-ENTRY NOTICE (2026-09-08 — TASK P0-900 / T45 / T46):**
-> This historical decision remains retained. However, the projection's internal upstream inputs (`DIRECT_DISTRIBUTION_OBLIGATIONS`) must become component-aware under Product Owner authority (`P0-900`, `T45`, `T46`), so that progress, open debt, unconfirmed gaps, and late counts are tracked and reconciled per component (`CORE` vs `SPECIALIZED_STUDY`) for enabled class-subjects.
-> `P0-900` / `T45` / `T46` are higher-priority current authority. No dependent implementation may assume a single-component direct obligation universe until `P2-001` architecture closes and `P2-003` realigns projection runtime.
-> All unaffected clauses (class-subject aggregate root, proof-backed debt taxonomy, missing execution alone is not debt proof, and non-mutation invariants) remain Accepted.
+> **RE-ENTRY NOTICE (2026-09-08 — TASK P2-001 / ADR-048 / T45 / T46):**
+> This historical decision remains retained. However, the requirement that the projection's internal upstream inputs (`DIRECT_DISTRIBUTION_OBLIGATIONS`) become component-aware—tracking and reconciling progress, debt, unconfirmed gaps, and late counts per component (`CORE` vs `SPECIALIZED_STUDY`) for enabled class-subjects while aggregating combined curricular totals for official statements—is formally addressed and superseded by `ADR-048-PPCT-CURRICULAR-COMPONENT-ARCHITECTURE.md` (established under `P2-001`, `T45`, `T46`).
+> Upon closure of `P2-001`, `ADR-048` provides the governing rules for downstream projection implementation in `P2-003`. All unaffected clauses (class-subject aggregate root, proof-backed debt taxonomy, missing execution alone is not debt proof, and non-mutation invariants) remain Accepted.
 
 ## Context
 

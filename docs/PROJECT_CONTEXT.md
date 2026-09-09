@@ -93,7 +93,7 @@ Chi tiết KEEP/REALIGN/RESTORE nằm trong `docs/governance/PRE-PILOT-TRACEABIL
 
 Project hiện đang realign vì một số minimum-core/deferred quyết định chưa đại diện đầy đủ sản phẩm thực tế. Các miền phải re-enter trước pilot tùy exact scope gồm:
 
-- phân định thành phần chương trình PPCT (CORE vs SPECIALIZED_STUDY), áp dụng theo lớp-môn và định tuyến cơ hội dạy học tuần (P0-900 đã CLOSED, P2-001 READY -> P2-002..P2-004);
+- phân định thành phần chương trình PPCT (CORE vs SPECIALIZED_STUDY), áp dụng theo lớp-môn và định tuyến cơ hội dạy học tuần (P0-900 đã CLOSED, P2-001 IN_REVIEW -> P2-002..P2-004);
 - GDĐP annual/grade programme planning;
 - HĐTN CLASS/GRADE/SCHOOL programme planning;
 - exact per-slot special-program staffing;
