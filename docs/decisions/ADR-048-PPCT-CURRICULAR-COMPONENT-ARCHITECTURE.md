@@ -50,9 +50,15 @@ Tuy nhiên, các ranh giới kiến trúc bất biến sau đây tiếp tục đ
      ```sql
      FOREIGN KEY (ppct_item_id, ppct_plan_id, component)
        REFERENCES ppct_items(id, ppct_plan_id, component)
+       ON DELETE RESTRICT
+       ON UPDATE RESTRICT
      ```
-     chứng minh đồng thời: đúng bài học ổn định, đúng kế hoạch môn học, và đúng thành phần bất biến (`revision.component == item.component`), loại trừ hoàn toàn rủi ro trôi lệch thành phần (component drift).
-   - `PpctItemRevision` phơi bày tọa độ duy nhất phức hợp phục vụ liên kết phả hệ:
+     chứng minh đồng thời: đúng bài học ổn định, đúng kế hoạch môn học, và đúng thành phần bất biến (`revision.component == item.component`), loại trừ hoàn toàn rủi ro trôi lệch thành phần (component drift). Tuyệt đối không sử dụng `ON UPDATE CASCADE` cho các quan hệ nguồn gốc mang thành phần.
+   - Bảo toàn các tọa độ duy nhất phục vụ nguồn gốc hiện hữu trên `PpctItemRevision`:
+     - `@@unique([ppctVersionId, ppctItemId, ppctPlanId], map: "ppct_item_revisions_provenance_key")` (bắt buộc duy trì cho `MakeupTeachingSchedule`);
+     - `@@unique([id, ppctVersionId, ppctItemId, ppctPlanId], map: "ppct_item_revisions_execution_provenance_key")` (bắt buộc duy trì cho `CurricularTeachingExecution`);
+     - `@@unique([ppctVersionId, ppctItemId])`.
+   - `PpctItemRevision` phơi bày tọa độ duy nhất phức hợp BỔ SUNG (additive, không thay thế các khóa hiện hữu) phục vụ liên kết phả hệ và kiểm chứng quan hệ:
      ```prisma
      @@unique([ppctVersionId, ppctItemId, ppctPlanId, component], map: "ppct_item_revisions_provenance_component_key")
      ```
@@ -97,13 +103,14 @@ Tuy nhiên, các ranh giới kiến trúc bất biến sau đây tiếp tục đ
      CORE_PLUS_SPECIALIZED_STUDY
    }
    ```
-2. **Vị trí Lưu trữ:**
+2. **Vị trí Lưu trữ và Ngữ nghĩa Khoảng ngày Chuẩn tắc:**
    - Bổ sung trường `curricularProfile: PpctClassCurricularProfile` vào bảng `PpctClassAssociation`.
    - Không đưa vào cấu hình chung của `BusinessConfiguration` và không tạo bảng khoảng ngày thứ hai.
-   - `PpctClassAssociation` tiếp tục sử dụng các trường ngày chuẩn tắc `effectiveFrom: DateTime @db.Date` và `effectiveUntil: DateTime? @db.Date` (đóng vai trò khoảng ngày có hiệu lực bao gồm - inclusive date range).
+   - `PpctClassAssociation` tiếp tục sử dụng các trường ngày chuẩn tắc `effectiveFrom: DateTime @db.Date` và `effectiveUntil: DateTime? @db.Date` đóng vai trò các mốc ngày dân sự bao gồm (inclusive civil DATE bounds). Giá trị `effectiveUntil` là `NULL` mang ngữ nghĩa khoảng mở về tương lai (open-ended).
    - Cơ sở dữ liệu duy trì bảo vệ toàn vẹn lịch sử bằng ràng buộc loại trừ PostgreSQL daterange / GiST exclusion backstop:
-     `daterange(effective_from, COALESCE(effective_until, 'infinity'::date), '[)')`
-     ngăn chặn khoảng ngày chồng lấn cho cùng một luồng `(academic_year_id, school_class_id, subject_id)`.
+     `daterange(effective_from, effective_until, '[]')`
+     (trùng khớp chính xác với migration hiện hành `ppct_class_associations_no_overlap`), ngăn chặn khoảng ngày chồng lấn cho cùng một luồng `(academic_year_id, school_class_id, subject_id)`.
+   - Tuyệt đối không đưa vào trường vật lý hư cấu `effectiveRange` và không sử dụng các công thức chuyển đổi sai lệch như `COALESCE(effective_until, 'infinity'::date), '[)'`.
 3. **Quy tắc Thẩm quyền:**
    - Hồ sơ áp dụng là dữ liệu cấu hình nghiệp vụ chính thức do quản trị viên thiết lập.
    - Tuyệt đối không suy diễn hồ sơ áp dụng từ số tiết thời khóa biểu, tên lớp, mã môn, `lessonType`, giáo viên, hay các thuật toán phỏng đoán.
@@ -111,20 +118,32 @@ Tuy nhiên, các ranh giới kiến trúc bất biến sau đây tiếp tục đ
    - `CORE_ONLY`: Chỉ áp dụng thành phần `CORE`. Các bài `SPECIALIZED_STUDY` có trạng thái `NOT_APPLICABLE` (không bao giờ bị coi là thiếu tiết, không trễ hạn, và không tạo nợ tiến độ).
    - `CORE_PLUS_SPECIALIZED_STUDY`: Áp dụng cả hai thành phần. Phiên bản PPCT được liên kết bắt buộc phải có ít nhất một bài `SPECIALIZED_STUDY`.
 
-### 2.5 Hiệu lực Khoảng ngày và Quy tắc Biên Phân đoạn Tuần học (AcademicWeekSegment)
+### 2.5 Hiệu lực Khoảng ngày và Quy tắc Phân định Ranh giới Tuần học (AcademicWeekSegment)
 
 1. **Bảo toàn Lịch sử Liên kết:**
    - Khi thay đổi phiên bản hoặc hồ sơ áp dụng, tạo bản ghi `PpctClassAssociation` mới với khoảng ngày dân sự kế tiếp. Không sửa đè lịch sử.
 2. **Đối soát Cấu trúc Tuần học Lịch học (AcademicWeek vs AcademicWeekSegment):**
    - Theo chuẩn kiến trúc `ADR-010` và `ADR-011`, `AcademicWeek` là một định danh tuần nghiệp vụ được lưu trữ (stored business-week identity); bản thân nó không có khoảng ngày dân sự liên tục đơn tuyến.
    - Khoảng ngày dân sự thực tế thuộc về thực thể `AcademicWeekSegment`. Một `AcademicWeek` có thể chứa nhiều phân đoạn không liên tục (ví dụ: phân đoạn 5a và phân đoạn 5b, bị phân tách bởi khoảng gián đoạn lịch học `CalendarInterruption`).
-3. **Quy tắc Đồng nhất trên Toàn bộ các Phân đoạn Tuần:**
-   - Hồ sơ `curricularProfile` bắt buộc phải đồng nhất trên HỢP khoảng ngày (union of date ranges) của toàn bộ các `AcademicWeekSegment` thuộc về cùng một `AcademicWeek` chuẩn tắc.
-4. **Chặn Lỗi Phân tách Tuần (Fail-Closed):**
-   - Nếu trong phạm vi hợp các phân đoạn của cùng một tuần học xuất hiện sự thay đổi `curricularProfile` (bao gồm cả trường hợp ngày bắt đầu hiệu lực `effectiveFrom` rơi vào khoảng gián đoạn giữa các phân đoạn):
-     Hệ thống lập tức **DỪNG LẠI VÀ BÁO LỖI (FAIL-CLOSED)** với mã lỗi:
+3. **Phân định Rõ ràng giữa Tập Định tuyến và Bao đóng Bảo vệ Chuyển tiếp Hồ sơ:**
+   - **A. Tập Thành viên Định tuyến / Dung lượng Tuần (Routing / Capacity Membership):**
+     Chỉ những ngày dân sự nằm trong các bản ghi `AcademicWeekSegment` thực tế mới thuộc tập ứng viên định tuyến tuần:
+     `Routing Set = union(tất cả các khoảng ngày AcademicWeekSegment của exact AcademicWeek)`.
+     Các cơ hội TKB cấu trúc rơi vào khoảng trống gián đoạn lịch học (`CalendarInterruption` gap) hoàn toàn nằm ngoài tập định tuyến này.
+   - **B. Bao đóng Bảo vệ Chuyển tiếp Hồ sơ (Curricular Profile Transition Protection Envelope):**
+     Đối với các thay đổi `curricularProfile`, bao đóng tuần nghiệp vụ được bảo vệ trải dài từ:
+     `thời điểm bắt đầu của phân đoạn đầu tiên` đến `thời điểm kết thúc của phân đoạn cuối cùng`
+     của cùng cặp `(exact AcademicCalendarVersion, exact AcademicWeek.id)`, BAO GỒM CẢ các khoảng gián đoạn lịch học nội bộ (`CalendarInterruption` gaps).
+   - Do đó, một liên kết `PpctClassAssociation` có `effectiveFrom` rơi vào khoảng gián đoạn nội bộ giữa phân đoạn 5a và 5b của cùng một tuần học mà làm thay đổi `curricularProfile` vẫn tạo thành chia cắt tuần nghiệp vụ và bị từ chối.
+   - Tuyệt đối không đồng nhất khoảng gián đoạn nội bộ là thuộc về tập hợp định tuyến.
+   - Thay đổi phiên bản PPCT đơn thuần (version transition) nhưng GIỮ NGUYÊN `curricularProfile` không kích hoạt lỗi phân tách hồ sơ này.
+   - Không sử dụng số tuần ISO để tính toán ranh giới. Hồ sơ mới chỉ được phép bắt đầu tại một ranh giới tuần nghiệp vụ chuẩn tắc, thông thường là thời điểm bắt đầu của phân đoạn đầu tiên của tuần học có thẩm quyền tiếp theo.
+4. **Thực thi Thẩm quyền Phía Máy chủ tại P2-002 (Server-Side Enforcement):**
+   - `P2-002` bắt buộc phải thực thi kiểm tra thẩm quyền ở tầng máy chủ (authoritative server-side enforcement): Mọi thao tác tạo mới / cập nhật / thay thế trên `PpctClassAssociation` làm thay đổi `curricularProfile` BẮT BUỘC PHẢI BỊ TỪ CHỐI nếu sự chuyển tiếp này dẫn đến sự tồn tại của nhiều giá trị `curricularProfile` khác nhau trong cùng một `AcademicWeek` nghiệp vụ.
+   - Hệ thống lập tức **FAIL-CLOSED** với mã lỗi ngữ nghĩa:
      `PPCT_COMPONENT_APPLICABILITY_WEEK_SPLIT`
-   - Quản trị viên chỉ được áp dụng thay đổi hồ sơ tại điểm ranh giới chuẩn tắc giữa hai tuần học.
+   - Giao diện `P2-004` có thể hiển thị cảnh báo và hướng dẫn người dùng chọn mốc hợp lệ, nhưng hướng dẫn UI tuyệt đối không thay thế được quyền lực kiểm soát của server.
+   - `P2-003`, bộ đánh giá readiness, và luồng replay kiểm tra độc lập cấu trúc tuần/lịch retained; nếu các bản ghi liên kết lịch sử dẫn đến chia cắt hồ sơ dưới tuần học đang phát lại, hệ thống fail-closed chứ tuyệt đối không tự ý viết lại lịch sử liên kết để sửa chữa.
 
 ### 2.6 Thuật toán Định tuyến Cơ hội Hàng tuần (Weekly Routing Algorithm)
 
@@ -202,8 +221,14 @@ Tuy nhiên, các ranh giới kiến trúc bất biến sau đây tiếp tục đ
 
 ### 2.10 Hợp đồng Phả hệ Bài học Ràng buộc Cơ sở Dữ liệu (Database-Backed Lineage Contract)
 
-1. **Cấm Tuyệt đối Lineage Vượt Thành phần:**
-   - Mọi quan hệ phả hệ (`CARRY_FORWARD`, tách `1 -> N`, gộp `N -> 1`) bắt buộc phải diễn ra trong cùng một thành phần.
+1. **Phân định Bản chất Lineage và Kế thừa Cùng UUID (CARRY_FORWARD):**
+   - Cơ chế kế thừa cùng UUID (`CARRY_FORWARD`) qua các phiên bản sử dụng CÙNG một `PpctItem.id` bất biến, **KHÔNG TẠO** bản ghi trong `PpctItemLineage` và không khai báo cạnh tiền nhiệm. Tính liên tục của thành phần chương trình được đảm bảo tự động nhờ tính bất biến của thuộc tính `PpctItem.component`.
+   - Bảng `PpctItemLineage` chỉ đại diện cho các cạnh tiền nhiệm - kế nhiệm rõ ràng (tách `SPLIT 1 -> N`, gộp `MERGE N -> 1`) giữa các UUID bài học KHÁC NHAU.
+   - Cơ sở dữ liệu bảo toàn các bất biến hiện có:
+     `predecessorVersionId != successorVersionId`
+     `predecessorItemId != successorItemId`.
+2. **Cấm Tuyệt đối Lineage Vượt Thành phần trên các Cạnh Tách/Gộp:**
+   - Mọi cạnh phả hệ trong `PpctItemLineage` (`SPLIT`, `MERGE`) bắt buộc phải diễn ra trong cùng một thành phần.
    - Bảng `PpctItemLineage` bổ sung một cột tọa độ thành phần:
      ```prisma
      component PpctCurricularComponent
@@ -212,18 +237,24 @@ Tuy nhiên, các ranh giới kiến trúc bất biến sau đây tiếp tục đ
      ```sql
      FOREIGN KEY (predecessor_version_id, predecessor_item_id, ppct_plan_id, component)
        REFERENCES ppct_item_revisions(ppct_version_id, ppct_item_id, ppct_plan_id, component)
+       ON DELETE RESTRICT
+       ON UPDATE RESTRICT
 
      FOREIGN KEY (successor_version_id, successor_item_id, ppct_plan_id, component)
        REFERENCES ppct_item_revisions(ppct_version_id, ppct_item_id, ppct_plan_id, component)
+       ON DELETE RESTRICT
+       ON UPDATE RESTRICT
      ```
    - Ràng buộc quan hệ cơ sở dữ liệu bảo đảm:
      `predecessor.component == lineage.component == successor.component`
-   - Tiền nhiệm `CORE` không bao giờ có thể trỏ tới kế nhiệm `SPECIALIZED_STUDY` (và ngược lại) ngay ở tầng lưu trữ vật lý.
+   - Tiền nhiệm `CORE` không bao giờ có thể trỏ tới kế nhiệm `SPECIALIZED_STUDY` (và ngược lại) ngay ở tầng lưu trữ vật lý. Tuyệt đối không sử dụng `ON UPDATE CASCADE`.
    - Control plane kiểm tra và từ chối với mã lỗi ngữ nghĩa:
      `PPCT_COMPONENT_LINEAGE_CROSS_COMPONENT`
-2. **Xử lý Di chuyển Chủ đề:**
-   - Nếu chương trình di chuyển chủ đề giữa hai thành phần: Xóa bài ở thành phần nguồn (`REMOVED`) và Tạo mới bài học ở thành phần đích với UUID mới (`NEW`). Tuyệt đối không kế thừa tín chỉ hoàn thành.
-3. **Bảo tồn Topology:**
+3. **Tính Bất biến của Thành phần và Cơ chế Ngăn Chặn Cập nhật Dây chuyền (No Update Cascade):**
+   - `PpctItem.component` là định danh lịch sử bất biến. Các khóa ngoại mang thành phần (`PpctItemRevision -> PpctItem`, `PpctItemLineage -> PpctItemRevision`) bắt buộc sử dụng `ON DELETE RESTRICT ON UPDATE RESTRICT` (hoặc PostgreSQL `NO ACTION` tương đương).
+   - Control plane không phơi bày bất kỳ lệnh nào cho phép thay đổi `PpctItem.component` sau khi tạo.
+   - Nếu chương trình di chuyển chủ đề giữa hai thành phần: Xóa bài ở thành phần nguồn (`REMOVED`) và Tạo mới bài học ở thành phần đích với UUID mới (`NEW`). Tuyệt đối không kế thừa tín chỉ hoàn thành và không tạo cạnh lineage xuyên thành phần.
+4. **Bảo tồn Topology:**
    - Giữ nguyên topology 6 bảng PPCT, không tạo thêm model/table mới.
 
 ### 2.11 Ánh xạ Dữ liệu Lịch sử và Ràng buộc Cơ sở Dữ liệu Mục tiêu
@@ -237,17 +268,25 @@ Tuy nhiên, các ranh giới kiến trúc bất biến sau đây tiếp tục đ
 2. **Ràng buộc Cơ sở Dữ liệu Mục tiêu (`P2-002`):**
    - Cột `component` và `curricularProfile` là `NOT NULL`.
    - Composite FK bảo vệ `PpctItemRevision -> PpctItem`:
-     `FOREIGN KEY (ppctItemId, ppctPlanId, component) REFERENCES PpctItem(id, ppctPlanId, component)`.
-   - Composite FK bảo vệ `PpctItemLineage -> PpctItemRevision` cho cả tiền nhiệm và kế nhiệm cùng `component`.
-   - Chỉ mục duy nhất: `@@unique([ppctVersionId, component, sequence])`.
-   - Giữ nguyên `ON DELETE RESTRICT` cho lịch sử.
+     `FOREIGN KEY (ppctItemId, ppctPlanId, component) REFERENCES PpctItem(id, ppctPlanId, component) ON DELETE RESTRICT ON UPDATE RESTRICT`.
+   - Composite FK kép bảo vệ `PpctItemLineage -> PpctItemRevision` cho cả tiền nhiệm và kế nhiệm cùng `component`, sử dụng `ON DELETE RESTRICT ON UPDATE RESTRICT`.
+   - Bảo toàn các khóa duy nhất hiện hữu trên `PpctItemRevision`:
+     - `@@unique([ppctVersionId, ppctItemId, ppctPlanId], map: "ppct_item_revisions_provenance_key")`
+     - `@@unique([id, ppctVersionId, ppctItemId, ppctPlanId], map: "ppct_item_revisions_execution_provenance_key")`
+     - `@@unique([ppctVersionId, ppctItemId])`
+   - Tọa độ duy nhất BỔ SUNG cho lineage:
+     `@@unique([ppctVersionId, ppctItemId, ppctPlanId, component], map: "ppct_item_revisions_provenance_component_key")`.
+   - Chỉ mục duy nhất thay thế sequence: `@@unique([ppctVersionId, component, sequence])`.
+   - Giữ nguyên `ON DELETE RESTRICT` cho toàn bộ lịch sử.
    - Một bản ghi `PUBLISHED` duy nhất cho mỗi kế hoạch.
 
 ### 2.12 Nguồn gốc Thực thi, Dạy bù, Báo cáo và Kiểm soát Đồng thời
 
-1. **Nguồn gốc Dẫn xuất (Derived Provenance):**
+1. **Nguồn gốc Dẫn xuất và Cấu trúc Tọa độ Vật lý Chính xác:**
    - Tuyệt đối không thêm cột `component` vào `CurricularTeachingExecution`, `MakeupTeachingSchedule`, `TimetableEntry`, `TeachingAssignment`.
-   - Nguồn gốc thành phần được truy xuất tất định từ `PpctItem` / `PpctItemRevision` được ghim trong bằng chứng thực thi.
+   - `CurricularTeachingExecution`: trường vật lý chính xác là `ppctItemRevisionId`. Mối quan hệ nguồn gốc sửa đổi được duy trì qua bộ tọa độ `(ppctItemRevisionId, ppctVersionId, ppctItemId, ppctPlanId)` đối chiếu `PpctItemRevision(id, ppctVersionId, ppctItemId, ppctPlanId)`.
+   - `MakeupTeachingSchedule`: **HOÀN TOÀN KHÔNG** có trường `ppctItemRevisionId` và **KHÔNG** có trường `ppctRevisionId`. Thực thể này ghim chính xác bản sửa đổi PPCT thông qua bộ 3 tọa độ `(ppctVersionId, ppctItemId, ppctPlanId)` đối chiếu `PpctItemRevision(ppctVersionId, ppctItemId, ppctPlanId)`.
+   - Nguồn gốc thành phần được truy xuất tất định từ bản ghi PPCT được ghim trong quan hệ.
    - DTO trả về: `component`, `sequence`, `displaySequence` (ví dụ: `"1"` hoặc `"CD1"`).
    - Dạy bù (`MAKEUP`) hoàn thành đúng nghĩa vụ bị lỡ ban đầu, kế thừa trọn vẹn thành phần của nghĩa vụ đó và không tiêu thụ bài mới.
 2. **Tổng hợp Báo cáo:**
@@ -268,13 +307,17 @@ Tuy nhiên, các ranh giới kiến trúc bất biến sau đây tiếp tục đ
 - **Định tuyến:** T2 -> CORE (tiêu thụ CORE 1), T4 -> CORE (tiêu thụ CORE 2), T6 -> SPECIALIZED_STUDY (tiêu thụ CD 1, hiển thị `"CD1"`). Tiến trình độc lập.
 
 ### Ví dụ B — Lớp 10A6 Môn Địa lí, không học Chuyên đề
-- **TKB tuần:** T2, T4, T6.
+- **TKB tuần:** T2, T4, T6 (thuộc `AcademicWeekSegment`).
 - **Hồ sơ:** `CORE_ONLY`.
 - **Định tuyến:** T2, T4, T6 đều là CORE (tiêu thụ CORE 1, 2, 3). Các bài chuyên đề là `NOT_APPLICABLE` (không nợ, không thiếu).
 
-### Ví dụ C — Cơ hội Chuyên đề Cuối tuần bị Gián đoạn / Hủy bỏ
-- T2 (CORE), T4 (CORE), T6 (SPECIALIZED_STUDY).
-- T6 bị nghỉ lễ / hủy tiết: T6 giữ nguyên định danh kế hoạch là chuyên đề, tiêu thụ 0 bài. T4 tuyệt đối không bị đôn lên làm chuyên đề. Bài chuyên đề chờ đến cơ hội chuyên đề tuần kế tiếp.
+### Ví dụ C — Cơ hội Chuyên đề Cuối tuần chịu Biến động Vận hành (Operational Suppression)
+- **TKB tuần:** T2, T4, T6 đều thuộc `AcademicWeekSegment` hợp lệ của tuần.
+- **Hồ sơ:** `CORE_PLUS_SPECIALIZED_STUDY`.
+- **Phân loại lập kế hoạch ban đầu:** T2 -> CORE, T4 -> CORE, T6 -> SPECIALIZED_STUDY.
+- **Sự kiện vận hành:** T6 sau đó bị hủy hoặc thay thế bởi sự kiện vận hành trong tuần (`CalendarException` hoặc `AUTHORIZED_CANCELLATION` được duyệt).
+- **Kết quả:** T6 giữ nguyên định danh kế hoạch là `SPECIALIZED_STUDY`, tiêu thụ 0 bài PPCT. T4 tuyệt đối không bị đôn lên làm chuyên đề. Bài chuyên đề đang chờ (`SPECIALIZED_STUDY 1`) giữ nguyên cho cơ hội chuyên đề của tuần tiếp theo.
+- *(Ghi chú: Đối với các tiết rơi vào khoảng trống gián đoạn `CalendarInterruption` không có `AcademicWeekSegment` sở hữu, xem chi tiết tại Ví dụ G).*
 
 ### Ví dụ D — Tuần Dị thường Chỉ có Đúng 1 Cơ hội
 - Hồ sơ: `CORE_PLUS_SPECIALIZED_STUDY`. Tuần chỉ xếp đúng 1 tiết.
