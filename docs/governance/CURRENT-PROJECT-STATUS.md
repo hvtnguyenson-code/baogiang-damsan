@@ -10,7 +10,21 @@ It is **not** a self-referential registry of the latest Git commit. Exact curren
 
 ## Active major task
 
-None. All preceding major tasks are closed. Next major tasks eligible to start: `P2-001` (preferred on critical path) and `P4-010` (independently eligible).
+`P2-001` — PPCT Curricular-Component Architecture Re-Entry — **IN_REVIEW**.
+
+- Task branch: `docs/ppct-curricular-component-architecture-001`;
+- Starting canonical `origin/main` base: `a58ba312913a519ed665d1d7fc701f87a7beccfb`;
+- Authority & Scope: Strictly architecture and documentation only (`T45`, `T46`); zero schema/migrations, zero API/runtime, zero UI, zero tests, zero deployment or production mutation;
+- Deliverables authored:
+  1. `docs/requirements/P2-001-PPCT-CURRICULAR-COMPONENT-ARCHITECTURE-AUDIT.md`;
+  2. `docs/requirements/P2-001D-PPCT-CURRICULAR-COMPONENT-DECISION-CLOSURE.md`;
+  3. `docs/decisions/ADR-048-PPCT-CURRICULAR-COMPONENT-ARCHITECTURE.md` (Proposed replacement authority for reopened clauses of ADR-027, ADR-028, ADR-029, ADR-030, ADR-037, ADR-040);
+- All 15 architecture questions from P0-900 Section 15 resolved in proposed authority (component topology, immutable item UUID component, duplicated revision coordinate with composite FK, `(versionId, component, sequence)` uniqueness, atomic single-version package, `PpctClassCurricularProfile` on class association with GiST range, mid-week split fail-closed `PPCT_COMPONENT_APPLICABILITY_WEEK_SPLIT`, deterministic weekly routing, atypical week fail-closed `PPCT_COMPONENT_WEEK_CAPACITY_INVALID`, planning classification preceding operational suppression, component-aware readiness `NORMAL_BASE_PPCT_COMPONENT_V2`, independent progression/exhaustion, prohibited cross-component lineage `PPCT_COMPONENT_LINEAGE_CROSS_COMPONENT`, legacy mapping to CORE/CORE_ONLY, derived execution/report provenance);
+- Predecessor task `P0-900` remains **CLOSED**;
+- `P2-001` closes the architecture questions if merged and later closed through `SYNC-P2-001`; no schema/runtime implementation has occurred;
+- Downstream task `P2-002` remains `PLANNED` and strictly blocked until `P2-001` parent merge and post-merge `SYNC-P2-001` closure;
+- Task `P4-010` remains independently `READY` but not started concurrently;
+- Production environment remains strictly **PRE-OPERATIONAL**.
 
 ## Last closed major task
 
