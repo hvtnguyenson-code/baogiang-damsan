@@ -6,7 +6,7 @@ This is the canonical mutable **product/task status** document for Báo giảng.
 
 It is **not** a self-referential registry of the latest Git commit. Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub at the start of every task. SHAs recorded here are evidence for the stated baseline or last closed major task.
 
-**Status snapshot date:** 2026-09-08
+**Status snapshot date:** 2026-09-09
 
 ## Active major task
 
@@ -19,7 +19,7 @@ It is **not** a self-referential registry of the latest Git commit. Exact curren
   1. `docs/requirements/P2-001-PPCT-CURRICULAR-COMPONENT-ARCHITECTURE-AUDIT.md`;
   2. `docs/requirements/P2-001D-PPCT-CURRICULAR-COMPONENT-DECISION-CLOSURE.md`;
   3. `docs/decisions/ADR-048-PPCT-CURRICULAR-COMPONENT-ARCHITECTURE.md` (Proposed replacement authority for reopened clauses of ADR-027, ADR-028, ADR-029, ADR-030, ADR-037, ADR-040);
-- All 15 architecture questions from P0-900 Section 15 resolved in proposed authority (component topology, immutable item UUID component, duplicated revision coordinate with composite FK, `(versionId, component, sequence)` uniqueness, atomic single-version package, `PpctClassCurricularProfile` on class association with GiST range, mid-week split fail-closed `PPCT_COMPONENT_APPLICABILITY_WEEK_SPLIT`, deterministic weekly routing, atypical week fail-closed `PPCT_COMPONENT_WEEK_CAPACITY_INVALID`, planning classification preceding operational suppression, component-aware readiness `NORMAL_BASE_PPCT_COMPONENT_V2`, independent progression/exhaustion, prohibited cross-component lineage `PPCT_COMPONENT_LINEAGE_CROSS_COMPONENT`, legacy mapping to CORE/CORE_ONLY, derived execution/report provenance);
+- All 15 architecture questions from P0-900 Section 15 resolved in proposed authority (component topology, immutable item UUID component with `(id, ppctPlanId, component)`, duplicated revision coordinate with composite FK `(ppctItemId, ppctPlanId, component) REFERENCES PpctItem`, database-backed lineage coordinate `component` with composite FKs, `(ppctVersionId, component, sequence)` uniqueness, atomic single-version package, `PpctClassCurricularProfile` on class association with inclusive `effectiveFrom`/`effectiveUntil` and PostgreSQL daterange/GiST exclusion backstop, mid-week split fail-closed `PPCT_COMPONENT_APPLICABILITY_WEEK_SPLIT`, deterministic weekly routing on `AcademicWeekSegment` union, CalendarInterruption-gap non-consumption semantics, mid-week cutover with calendar split fail-closed `PPCT_COMPONENT_WEEK_CALENDAR_SPLIT`, atypical week fail-closed `PPCT_COMPONENT_WEEK_CAPACITY_INVALID`, planning classification preceding operational suppression, component-aware readiness `NORMAL_BASE_PPCT_COMPONENT_V2`, independent progression/exhaustion, prohibited cross-component lineage `PPCT_COMPONENT_LINEAGE_CROSS_COMPONENT`, legacy mapping to CORE/CORE_ONLY, derived execution/report provenance);
 - Predecessor task `P0-900` remains **CLOSED**;
 - `P2-001` closes the architecture questions if merged and later closed through `SYNC-P2-001`; no schema/runtime implementation has occurred;
 - Downstream task `P2-002` remains `PLANNED` and strictly blocked until `P2-001` parent merge and post-merge `SYNC-P2-001` closure;
@@ -43,7 +43,8 @@ Closure evidence:
 - merged file set: 14 changed files (6 forward commits), strictly bounded to `docs/` (zero apps/packages/prisma/.github/deploy/scripts changes, zero runtime/schema/migration/API/UI/auth/CI/deploy/production mutation);
 - authoritative source blobs verified and unchanged: v1.2 (`c2c61a4e8acb9fde0e5fc5232467662048fd3380`), v1.3 (`5876af5920d12ea6fcecf42d1b8a392cc4825f16`); trigger was explicit Product Owner authority on 2026-09-08;
 - no additional correction/re-entry task emerged from review or CI;
-- downstream delivery stream registered: `P2-001`–`P2-004` (with `P2-001` now `READY`), parallel workbook path `P2-010` (`BLOCKED_EVIDENCE`) -> `P2-020`.
+- downstream delivery stream registered: `P2-001`–`P2-004` (with `P2-001` became READY when P0-900 closed and is currently `IN_REVIEW`), parallel workbook path `P2-010` (`BLOCKED_EVIDENCE`) -> `P2-020`.
+
 - Core realignment principles accepted into baseline:
   1. Normal curricular component taxonomy: `CORE` (phần cốt lõi) vs `SPECIALIZED_STUDY` (chuyên đề học tập). Specialized study is curricular, not an ad-hoc `SpecialActivity`.
   2. Shared master plan foundation: Both components belong to `AcademicYear + Subject + Grade` within the same curricular Subject domain; exact component lifecycle and version packaging model (whether unified under one `PpctVersion` or another retained topology) is explicitly assigned to `P2-001` to determine.
@@ -222,10 +223,11 @@ The final production-host topology is intentionally unresolved and explicitly de
 
 The following registered tasks are genuinely eligible to start on dedicated branches after this closure sync merges:
 
-1. `P2-001` — PPCT curricular-component architecture re-entry (`READY`; sole dependency `P0-900` closed by `SYNC-P0-900`).
+1. `P2-001` — PPCT curricular-component architecture re-entry (became `READY` when `P0-900` closed; currently `IN_REVIEW` on dedicated task branch `docs/ppct-curricular-component-architecture-001`).
 2. `P4-010` — GDĐP/HĐTN programme architecture closure (`READY`; independent track).
 
 **Critical-path sequencing guidance:** `P2-001` is preferred next because it blocks normal curricular PPCT, P1 delayed-go-live architecture (`P1-030`) and later P3 continuity. This is sequencing guidance only; `P4-010` does not depend on `P2-001` and remains independently startable.
+
 
 Note: `P1-030` remains `PLANNED` because it depends on `P2-001` `CLOSED`. `P2-010` remains `BLOCKED_EVIDENCE` pending actual authoritative PPCT workbook/template.
 
