@@ -349,6 +349,14 @@ Nhiệm vụ `P0-900` chủ động không phỏng đoán hay chốt sớm các 
 15. **Ranh giới Giao dịch và Kiểm soát Đồng thời (Concurrency):**
     Ranh giới giao dịch Prisma, mức độ cô lập (isolation level) và khóa kiểm soát đồng thời cần thiết khi phân giải, phát lại và phân bổ hai con trỏ thành phần độc lập trong cùng một luồng lớp-môn.
 
+> [!NOTE]
+> **ĐỐI SOÁT KIẾN TRÚC NHIỆM VỤ P2-001 (TASK RECONCILIATION NOTE — 2026-09-08):**
+> Nhiệm vụ `P2-001` đã hoàn thành việc xây dựng toàn bộ đề xuất giải quyết cho cả 15 câu hỏi kiến trúc nêu trên thông qua bộ tài liệu thẩm quyền:
+> - Báo cáo kiểm tra kiến trúc: `docs/requirements/P2-001-PPCT-CURRICULAR-COMPONENT-ARCHITECTURE-AUDIT.md`;
+> - Văn bản đóng quyết định: `docs/requirements/P2-001D-PPCT-CURRICULAR-COMPONENT-DECISION-CLOSURE.md`;
+> - Quyết định kiến trúc chuẩn tắc: `docs/decisions/ADR-048-PPCT-CURRICULAR-COMPONENT-ARCHITECTURE.md`.
+> Hiện tại trên nhánh chuyên trách, nhiệm vụ `P2-001` đang ở trạng thái `IN_REVIEW` (chưa `CLOSED`). Nhiệm vụ hạ nguồn `P2-002` vẫn ở trạng thái `PLANNED` và tuyệt đối chưa được phép bắt đầu cho đến khi `P2-001` được hợp nhất độc lập và đóng chính thức qua quy trình `SYNC-P2-001`.
+
 ## 16. Không Cho phép Triển khai Sớm (No Implementation Authorization)
 
 Tài liệu này là báo cáo kiểm tra và tái căn chỉnh đặc tả thẩm quyền và quản trị.
