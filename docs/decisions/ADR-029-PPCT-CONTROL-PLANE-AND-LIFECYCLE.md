@@ -6,10 +6,9 @@
 - **Authority:** ADR-027, ADR-028 và `LOCAL-FC-05A0D-PPCT-DECISION-CLOSURE.md`
 
 > [!WARNING]
-> **RE-ENTRY NOTICE (2026-09-08 — TASK P0-900 / T45 / T46):**
-> This historical decision remains retained. However, the draft replacement semantics (assuming a single sequence list per version) and class association switching/resolution (lacking component applicability configuration) have been reopened for component-aware extension under Product Owner authority (`P0-900`, `T45`, `T46`).
-> `P0-900` / `T45` / `T46` are higher-priority current authority. No dependent implementation may use the reopened single-sequence draft/association assumptions until `P2-001` architecture closes.
-> All unaffected clauses (`PPCT_MANAGE` capability authorization, CAS concurrency tokens, `Serializable` transactions, and immutable published history) remain Accepted.
+> **RE-ENTRY NOTICE (2026-09-08 — TASK P2-001 / ADR-048 / T45 / T46):**
+> This historical decision remains retained. However, the reopened draft replacement semantics (previously assuming a single sequence list per version) and class association switching/resolution (previously lacking component applicability configuration) are addressed and superseded by the proposed component-aware control-plane architecture in `ADR-048-PPCT-CURRICULAR-COMPONENT-ARCHITECTURE.md` (established under `P2-001`, `T45`, `T46`).
+> Upon closure of `P2-001`, `ADR-048` provides the governing rules for component-aware draft DTOs and class-subject applicability. All unaffected clauses (`PPCT_MANAGE` capability authorization, CAS concurrency tokens, `Serializable` transactions, and immutable published history) remain Accepted.
 
 ## Context
 
