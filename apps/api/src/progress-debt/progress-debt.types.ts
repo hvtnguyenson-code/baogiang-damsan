@@ -1,6 +1,9 @@
+import { PpctCurricularComponent } from '@prisma/client';
 import { CivilDateString } from '@baogiang/contracts';
 
-export const TEACHING_PROGRESS_DEBT_PROFILE = 'TEACHING_PROGRESS_DEBT_V1' as const;
+export const TEACHING_PROGRESS_DEBT_PROFILE_V1 = 'TEACHING_PROGRESS_DEBT_V1' as const;
+export const TEACHING_PROGRESS_DEBT_PROFILE_V2 = 'TEACHING_PROGRESS_DEBT_V2' as const;
+export const TEACHING_PROGRESS_DEBT_PROFILE = TEACHING_PROGRESS_DEBT_PROFILE_V2;
 
 export interface ResolveProgressDebtInput {
   academicYearId: string;
@@ -47,6 +50,7 @@ export interface ProgressDebtItem {
   ppctVersionId: string;
   ppctItemId: string;
   ppctItemRevisionId: string;
+  component: PpctCurricularComponent;
   operationalLessonDispositionId: string | null;
   operationalDispositionType: string | null;
   fulfillmentExecutionId: string | null;
