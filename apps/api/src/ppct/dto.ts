@@ -15,7 +15,7 @@ import {
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
-import { PpctVersionStatus } from '@prisma/client';
+import { PpctClassCurricularProfile, PpctCurricularComponent, PpctVersionStatus } from '@prisma/client';
 import { IsAbsoluteInstant } from '../common/validation/is-absolute-instant.decorator';
 import { IsCivilDate } from '../common/validation/civil-date';
 
@@ -54,6 +54,7 @@ export class PpctPredecessorDto {
 export class ReplacePpctItemDto {
   @IsUUID() itemId!: string;
   @IsEnum(PpctItemIdentityMode) identityMode!: PpctItemIdentityMode;
+  @IsEnum(PpctCurricularComponent) component!: PpctCurricularComponent;
   @Type(() => Number) @IsInt() @Min(1) sequence!: number;
   @IsString() @Matches(/\S/u) @MaxLength(500) title!: string;
   @IsString() @Matches(/\S/u) @MaxLength(100) lessonType!: string;
@@ -75,6 +76,7 @@ export class PublishPpctVersionDto {
 
 export class SwitchPpctAssociationDto {
   @IsUUID() ppctVersionId!: string;
+  @IsEnum(PpctClassCurricularProfile) curricularProfile!: PpctClassCurricularProfile;
   @IsCivilDate() effectiveFrom!: string;
   @ValidateIf((_object, value) => value !== null) @IsUUID()
   expectedLatestAssociationId!: string | null;

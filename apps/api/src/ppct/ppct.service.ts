@@ -1,5 +1,11 @@
 import { BadRequestException, ConflictException, HttpException, Injectable, NotFoundException } from '@nestjs/common';
-import { AuditResult, PpctVersionStatus, Prisma } from '@prisma/client';
+import {
+  AuditResult,
+  PpctClassCurricularProfile,
+  PpctCurricularComponent,
+  PpctVersionStatus,
+  Prisma,
+} from '@prisma/client';
 import {
   CivilDateString,
   PpctAssociationHistoryResponse,
@@ -119,11 +125,35 @@ export class PpctService {
       return await this.prisma.$transaction(async (tx) => {
         const persistedPlan = await tx.ppctPlan.findUnique({ where: { id: planId } });
         if (!persistedPlan) throw new NotFoundException('Không tìm thấy kế hoạch PPCT.');
-        let source: { id: string; ppctPlanId: string; status: PpctVersionStatus; itemRevisions: Array<{ ppctItemId: string; sequence: number; title: string; lessonType: string }> } | null = null;
+        let source: {
+          id: string;
+          ppctPlanId: string;
+          status: PpctVersionStatus;
+          itemRevisions: Array<{
+            ppctItemId: string;
+            component: PpctCurricularComponent;
+            sequence: number;
+            title: string;
+            lessonType: string;
+          }>;
+        } | null = null;
         if (dto.sourceVersionId) {
           source = await tx.ppctVersion.findUnique({
             where: { id: dto.sourceVersionId },
-            select: { id: true, ppctPlanId: true, status: true, itemRevisions: { select: { ppctItemId: true, sequence: true, title: true, lessonType: true } } },
+            select: {
+              id: true,
+              ppctPlanId: true,
+              status: true,
+              itemRevisions: {
+                select: {
+                  ppctItemId: true,
+                  component: true,
+                  sequence: true,
+                  title: true,
+                  lessonType: true,
+                },
+              },
+            },
           });
           if (!source) throw new NotFoundException('Không tìm thấy phiên bản PPCT nguồn.');
           if (source.ppctPlanId !== planId || source.status === PpctVersionStatus.DRAFT) {
@@ -140,6 +170,7 @@ export class PpctService {
             ppctVersionId: version.id,
             ppctPlanId: planId,
             ppctItemId: item.ppctItemId,
+            component: item.component,
             sequence: item.sequence,
             title: item.title,
             lessonType: item.lessonType,
@@ -185,7 +216,7 @@ export class PpctService {
           include: { revisions: { include: { ppctVersion: { select: { id: true, versionNumber: true, status: true } } } } },
         });
         const itemMap = new Map(existingItems.map((item) => [item.id, item]));
-        const newItemIds: string[] = [];
+        const newItems: Array<{ id: string; ppctPlanId: string; component: PpctCurricularComponent }> = [];
         for (const requested of dto.items) {
           const item = itemMap.get(requested.itemId);
           if (requested.identityMode === PpctItemIdentityMode.CARRY_FORWARD) {
@@ -195,19 +226,29 @@ export class PpctService {
               && revision.ppctVersion.status !== PpctVersionStatus.DRAFT)) {
               throw new ConflictException('Mã nghĩa vụ CARRY_FORWARD không có lịch sử hợp lệ trước bản nháp này.');
             }
+            if (item.component !== requested.component) {
+              throw new ConflictException('Mã nghĩa vụ CARRY_FORWARD không được thay đổi thành phần chương trình (component).');
+            }
             if ((requested.predecessors?.length ?? 0) > 0) throw new ConflictException('CARRY_FORWARD không được khai báo predecessor.');
           } else if (!item) {
-            newItemIds.push(requested.itemId);
+            newItems.push({ id: requested.itemId, ppctPlanId: version.ppctPlanId, component: requested.component });
           } else {
             const hasCurrentDraftRevision = item.revisions.some((revision) => revision.ppctVersion.id === id);
             const hasRevisionInAnotherVersion = item.revisions.some((revision) => revision.ppctVersion.id !== id);
             if (item.ppctPlanId !== version.ppctPlanId || !hasCurrentDraftRevision || hasRevisionInAnotherVersion) {
               throw new ConflictException('Mã nghĩa vụ lịch sử không được tái sử dụng như một nghĩa vụ NEW.');
             }
+            if (item.component !== requested.component) {
+              throw new ConflictException('Mã nghĩa vụ NEW đã thiết lập không được thay đổi thành phần chương trình (component).');
+            }
           }
         }
 
-        const predecessorRefs = dto.items.flatMap((item) => (item.predecessors ?? []).map((ref) => ({ ...ref, successorItemId: item.itemId })));
+        const predecessorRefs = dto.items.flatMap((item) => (item.predecessors ?? []).map((ref) => ({
+          ...ref,
+          successorItemId: item.itemId,
+          successorComponent: item.component,
+        })));
         const predecessorVersions = [...new Set(predecessorRefs.map((ref) => ref.versionId))];
         const predecessorItems = [...new Set(predecessorRefs.map((ref) => ref.itemId))];
         const predecessorRows = predecessorRefs.length === 0 ? [] : await tx.ppctItemRevision.findMany({
@@ -224,6 +265,12 @@ export class PpctService {
             || predecessor.ppctItemId === ref.successorItemId) {
             throw new ConflictException('Predecessor PPCT không hợp lệ cho bản nháp này.');
           }
+          if (predecessor.component !== ref.successorComponent) {
+            throw new ConflictException({
+              error: 'PPCT_COMPONENT_LINEAGE_CROSS_COMPONENT',
+              message: 'Predecessor thuộc thành phần chương trình khác; không thể tạo liên kết phả hệ chéo thành phần.',
+            });
+          }
         }
 
         const nextToken = advancedInstant(version.updatedAt);
@@ -233,19 +280,21 @@ export class PpctService {
           data: { updatedAt: nextToken },
         });
         if (claimed.count !== 1) throw new ConflictException(STALE_DRAFT_MESSAGE);
-        if (newItemIds.length) await tx.ppctItem.createMany({ data: newItemIds.map((itemId) => ({ id: itemId, ppctPlanId: version.ppctPlanId })) });
+        if (newItems.length) await tx.ppctItem.createMany({ data: newItems });
         await tx.ppctItemLineage.deleteMany({ where: { successorVersionId: id } });
         await tx.ppctItemRevision.deleteMany({ where: { ppctVersionId: id } });
         if (dto.items.length) await tx.ppctItemRevision.createMany({ data: dto.items.map((item) => ({
           ppctVersionId: id,
           ppctPlanId: version.ppctPlanId,
           ppctItemId: item.itemId,
+          component: item.component,
           sequence: item.sequence,
           title: item.title.trim(),
           lessonType: item.lessonType.trim(),
         })) });
         if (predecessorRefs.length) await tx.ppctItemLineage.createMany({ data: predecessorRefs.map((ref) => ({
           ppctPlanId: version.ppctPlanId,
+          component: ref.successorComponent,
           predecessorVersionId: ref.versionId,
           predecessorItemId: ref.itemId,
           successorVersionId: id,
@@ -271,7 +320,15 @@ export class PpctService {
     await this.access.requireSubject(request, persisted.ppctPlan.subjectId);
     try {
       return await this.prisma.$transaction(async (tx) => {
-        const draft = await tx.ppctVersion.findUnique({ where: { id }, include: { ppctPlan: true, _count: { select: { itemRevisions: true } } } });
+        const draft = await tx.ppctVersion.findUnique({
+          where: { id },
+          include: {
+            ppctPlan: true,
+            itemRevisions: {
+              select: { component: true },
+            },
+          },
+        });
         if (!draft) throw new NotFoundException('Không tìm thấy phiên bản PPCT.');
         if (draft.status !== PpctVersionStatus.DRAFT) throw new ConflictException('Chỉ bản nháp PPCT mới được công bố.');
         if (draft.updatedAt.getTime() !== new Date(dto.expectedUpdatedAt).getTime()) throw new ConflictException(STALE_DRAFT_MESSAGE);
@@ -280,7 +337,11 @@ export class PpctService {
           orderBy: [{ versionNumber: 'asc' }, { id: 'asc' }],
         });
         if ((head?.id ?? null) !== dto.expectedPublishedVersionId) throw new ConflictException(STALE_HEAD_MESSAGE);
-        if (draft._count.itemRevisions === 0) throw new ConflictException('Không thể công bố bản nháp PPCT rỗng.');
+        if (draft.itemRevisions.length === 0) throw new ConflictException('Không thể công bố bản nháp PPCT rỗng.');
+        const hasCore = draft.itemRevisions.some((item) => item.component === PpctCurricularComponent.CORE);
+        if (!hasCore) {
+          throw new ConflictException('Bản nháp PPCT phải chứa ít nhất một bài học cốt lõi (CORE) để công bố.');
+        }
         const now = advancedInstant(draft.updatedAt);
         if (head) {
           const superseded = await tx.ppctVersion.updateMany({
@@ -336,10 +397,23 @@ export class PpctService {
           where: { academicYearId_subjectId_gradeLevel: { academicYearId, subjectId, gradeLevel: schoolClass.gradeLevel } },
         });
         if (!plan) throw new NotFoundException('Không tìm thấy kế hoạch PPCT phù hợp với năm học, môn và khối lớp.');
-        const target = await tx.ppctVersion.findUnique({ where: { id: dto.ppctVersionId } });
+        const target = await tx.ppctVersion.findUnique({
+          where: { id: dto.ppctVersionId },
+          include: {
+            itemRevisions: {
+              select: { component: true },
+            },
+          },
+        });
         if (!target) throw new NotFoundException('Không tìm thấy phiên bản PPCT đích.');
         if (target.ppctPlanId !== plan.id || target.status !== PpctVersionStatus.PUBLISHED) {
           throw new ConflictException('Phiên bản PPCT đích phải là bản đang công bố của đúng kế hoạch lớp.');
+        }
+        if (dto.curricularProfile === PpctClassCurricularProfile.CORE_PLUS_SPECIALIZED_STUDY) {
+          const hasSpecialized = target.itemRevisions.some((r) => r.component === PpctCurricularComponent.SPECIALIZED_STUDY);
+          if (!hasSpecialized) {
+            throw new ConflictException('Phiên bản PPCT đích không chứa chuyên đề học tập để áp dụng hồ sơ chuyên đề.');
+          }
         }
         const latest = await tx.ppctClassAssociation.findFirst({
           where: { academicYearId, schoolClassId, subjectId },
@@ -349,6 +423,37 @@ export class PpctService {
         if ((latest?.id ?? null) !== dto.expectedLatestAssociationId) throw new ConflictException(STALE_ASSOCIATION_MESSAGE);
         const effectiveFrom = parseCivilDate(dto.effectiveFrom);
         if (latest && effectiveFrom <= latest.effectiveFrom) throw new ConflictException('Ngày chuyển PPCT phải sau ngày bắt đầu của liên kết mới nhất.');
+
+        if (latest && latest.curricularProfile !== dto.curricularProfile) {
+          const calendar = await tx.academicCalendarVersion.findFirst({
+            where: { academicYearId, isActive: true },
+            orderBy: [{ versionNumber: 'desc' }, { id: 'asc' }],
+            include: {
+              weeks: {
+                include: {
+                  segments: {
+                    orderBy: [{ startDate: 'asc' }],
+                  },
+                },
+              },
+            },
+          });
+          if (!calendar) {
+            throw new ConflictException('Năm học chưa có phiên lịch hoạt động để xác thực ranh giới tuần học.');
+          }
+          for (const week of calendar.weeks) {
+            if (week.segments.length === 0) continue;
+            const envelopeStart = week.segments[0].startDate;
+            const envelopeEnd = week.segments[week.segments.length - 1].endDate;
+            if (effectiveFrom > envelopeStart && effectiveFrom <= envelopeEnd) {
+              throw new ConflictException({
+                error: 'PPCT_COMPONENT_APPLICABILITY_WEEK_SPLIT',
+                message: 'Thay đổi hồ sơ áp dụng chương trình không được chia cắt tuần học nghiệp vụ.',
+              });
+            }
+          }
+        }
+
         let previous = latest;
         if (latest && (latest.effectiveUntil === null || latest.effectiveUntil >= effectiveFrom)) {
           const previousDay = new Date(effectiveFrom);
@@ -367,6 +472,7 @@ export class PpctService {
             gradeLevel: schoolClass.gradeLevel,
             ppctPlanId: plan.id,
             ppctVersionId: target.id,
+            curricularProfile: dto.curricularProfile,
             effectiveFrom,
             effectiveUntil: null,
             createdByUserId: request.auth!.user.id,
@@ -379,8 +485,10 @@ export class PpctService {
           subjectId,
           previousAssociationId: latest?.id ?? null,
           previousVersionId: latest?.ppctVersionId ?? null,
+          previousCurricularProfile: latest?.curricularProfile ?? null,
           newAssociationId: association.id,
           newVersionId: target.id,
+          newCurricularProfile: dto.curricularProfile,
           effectiveFrom: dto.effectiveFrom,
         });
         return { previousAssociation: previous ? toPpctAssociationRecord(previous) : null, association: toPpctAssociationRecord(association) };
@@ -452,18 +560,19 @@ export class PpctService {
   }
 
   private requireUniqueRequestedContent(dto: ReplacePpctContentDto): void {
-    const sequences = new Set<number>();
+    const componentSequences = new Set<string>();
     const itemIds = new Set<string>();
     for (const item of dto.items) {
-      if (sequences.has(item.sequence)) throw new BadRequestException('sequence PPCT không được trùng trong một phiên bản.');
+      const key = `${item.component}:${item.sequence}`;
+      if (componentSequences.has(key)) throw new BadRequestException('sequence PPCT không được trùng trong cùng thành phần chương trình.');
       if (itemIds.has(item.itemId)) throw new BadRequestException('itemId PPCT không được trùng trong một phiên bản.');
-      sequences.add(item.sequence);
+      componentSequences.add(key);
       itemIds.add(item.itemId);
       const refs = new Set<string>();
       for (const predecessor of item.predecessors ?? []) {
-        const key = `${predecessor.versionId}:${predecessor.itemId}`;
-        if (refs.has(key)) throw new BadRequestException('Predecessor PPCT không được khai báo trùng.');
-        refs.add(key);
+        const refKey = `${predecessor.versionId}:${predecessor.itemId}`;
+        if (refs.has(refKey)) throw new BadRequestException('Predecessor PPCT không được khai báo trùng.');
+        refs.add(refKey);
       }
     }
   }
@@ -471,7 +580,7 @@ export class PpctService {
   private async loadContent(db: PrismaService | Prisma.TransactionClient, id: string): Promise<PpctVersionContent> {
     const [version, items, lineage] = await Promise.all([
       db.ppctVersion.findUnique({ where: { id }, include: ppctVersionInclude }),
-      db.ppctItemRevision.findMany({ where: { ppctVersionId: id }, orderBy: [{ sequence: 'asc' }, { ppctItemId: 'asc' }] }),
+      db.ppctItemRevision.findMany({ where: { ppctVersionId: id }, orderBy: [{ component: 'asc' }, { sequence: 'asc' }, { ppctItemId: 'asc' }] }),
       db.ppctItemLineage.findMany({ where: { successorVersionId: id }, orderBy: [
         { successorItemId: 'asc' }, { predecessorVersionId: 'asc' }, { predecessorItemId: 'asc' }, { id: 'asc' },
       ] }),

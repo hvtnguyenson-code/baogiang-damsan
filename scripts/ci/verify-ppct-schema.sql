@@ -8,6 +8,7 @@ DECLARE
     table_count integer;
     date_count integer;
     forbidden_count integer;
+    not_null_count integer;
 BEGIN
     SELECT count(*) INTO table_count
     FROM unnest(ARRAY[
@@ -22,9 +23,28 @@ BEGIN
     SELECT array_agg(e.enumlabel ORDER BY e.enumsortorder) INTO enum_values
     FROM pg_enum e
     JOIN pg_type t ON t.oid = e.enumtypid
-    WHERE t.typname = 'PpctVersionStatus';
+    JOIN pg_namespace n ON n.oid = t.typnamespace
+    WHERE n.nspname = 'public' AND t.typname = 'PpctVersionStatus';
     IF enum_values <> ARRAY['DRAFT', 'PUBLISHED', 'SUPERSEDED'] THEN
         RAISE EXCEPTION 'Unexpected PpctVersionStatus values: %', enum_values;
+    END IF;
+
+    SELECT array_agg(e.enumlabel ORDER BY e.enumsortorder) INTO enum_values
+    FROM pg_enum e
+    JOIN pg_type t ON t.oid = e.enumtypid
+    JOIN pg_namespace n ON n.oid = t.typnamespace
+    WHERE n.nspname = 'public' AND t.typname = 'PpctCurricularComponent';
+    IF enum_values <> ARRAY['CORE', 'SPECIALIZED_STUDY'] THEN
+        RAISE EXCEPTION 'Unexpected PpctCurricularComponent values: %', enum_values;
+    END IF;
+
+    SELECT array_agg(e.enumlabel ORDER BY e.enumsortorder) INTO enum_values
+    FROM pg_enum e
+    JOIN pg_type t ON t.oid = e.enumtypid
+    JOIN pg_namespace n ON n.oid = t.typnamespace
+    WHERE n.nspname = 'public' AND t.typname = 'PpctClassCurricularProfile';
+    IF enum_values <> ARRAY['CORE_ONLY', 'CORE_PLUS_SPECIALIZED_STUDY'] THEN
+        RAISE EXCEPTION 'Unexpected PpctClassCurricularProfile values: %', enum_values;
     END IF;
 
     SELECT count(*) INTO date_count
@@ -35,6 +55,21 @@ BEGIN
       AND data_type = 'date';
     IF date_count <> 2 THEN
         RAISE EXCEPTION 'PPCT association boundaries must use DATE';
+    END IF;
+
+    -- Verify new columns are NOT NULL
+    SELECT count(*) INTO not_null_count
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND is_nullable = 'NO'
+      AND (
+          (table_name = 'ppct_items' AND column_name = 'component')
+          OR (table_name = 'ppct_item_revisions' AND column_name = 'component')
+          OR (table_name = 'ppct_item_lineage' AND column_name = 'component')
+          OR (table_name = 'ppct_class_associations' AND column_name = 'curricular_profile')
+      );
+    IF not_null_count <> 4 THEN
+        RAISE EXCEPTION 'Expected all 4 PPCT component/profile columns to be NOT NULL, found %', not_null_count;
     END IF;
 
     SELECT count(*) INTO forbidden_count
@@ -49,12 +84,111 @@ BEGIN
         RAISE EXCEPTION 'Forbidden calendar/week/completion/import persistence found in PPCT tables';
     END IF;
 
+    -- Downstream boundary preservation: assert no component columns in downstream tables
     IF EXISTS (
         SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'timetable_entries'
-          AND column_name LIKE 'ppct%'
+        WHERE table_schema = 'public'
+          AND table_name IN ('timetable_entries', 'teaching_assignments', 'curricular_teaching_executions', 'makeup_teaching_schedules')
+          AND (column_name LIKE '%component%' OR column_name LIKE '%curricular_profile%')
     ) THEN
-        RAISE EXCEPTION 'TimetableEntry must not own PPCT references';
+        RAISE EXCEPTION 'Downstream tables must remain component-free and profile-free';
+    END IF;
+
+    -- Assert legacy version-wide sequence uniqueness index is gone
+    IF EXISTS (
+        SELECT 1 FROM pg_indexes
+        WHERE schemaname = 'public'
+          AND tablename = 'ppct_item_revisions'
+          AND indexname = 'ppct_item_revisions_version_sequence_key'
+    ) THEN
+        RAISE EXCEPTION 'Obsolete version-wide sequence unique index must be dropped';
+    END IF;
+
+    -- Assert component-aware sequence uniqueness index exists
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_indexes
+        WHERE schemaname = 'public'
+          AND tablename = 'ppct_item_revisions'
+          AND indexname = 'ppct_item_revisions_version_component_sequence_key'
+    ) THEN
+        RAISE EXCEPTION 'Component-aware sequence unique index must exist';
+    END IF;
+
+    -- Assert obsolete pre-component revision -> item FK is gone
+    IF EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'ppct_item_revisions_item_plan_fkey'
+          AND conrelid = 'ppct_item_revisions'::regclass
+    ) THEN
+        RAISE EXCEPTION 'Obsolete ppct_item_revisions_item_plan_fkey must be dropped';
+    END IF;
+
+    -- Assert component-aware revision -> item FK exists and has RESTRICT update/delete
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'ppct_item_revisions_item_plan_component_fkey'
+          AND conrelid = 'ppct_item_revisions'::regclass
+          AND confrelid = 'ppct_items'::regclass
+          AND contype = 'f'
+          AND confdeltype IN ('r', 'a')
+          AND confupdtype IN ('r', 'a')
+    ) THEN
+        RAISE EXCEPTION 'Component-aware ppct_item_revisions_item_plan_component_fkey missing or invalid';
+    END IF;
+
+    -- Assert component-aware lineage predecessor FK exists and has RESTRICT update/delete (no CASCADE)
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'ppct_item_lineage_predecessor_revision_fkey'
+          AND conrelid = 'ppct_item_lineage'::regclass
+          AND confrelid = 'ppct_item_revisions'::regclass
+          AND contype = 'f'
+          AND confdeltype IN ('r', 'a')
+          AND confupdtype IN ('r', 'a')
+    ) THEN
+        RAISE EXCEPTION 'Component-aware ppct_item_lineage_predecessor_revision_fkey missing or invalid';
+    END IF;
+
+    -- Assert component-aware lineage successor FK exists and has RESTRICT update/delete (no CASCADE)
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'ppct_item_lineage_successor_revision_fkey'
+          AND conrelid = 'ppct_item_lineage'::regclass
+          AND confrelid = 'ppct_item_revisions'::regclass
+          AND contype = 'f'
+          AND confdeltype IN ('r', 'a')
+          AND confupdtype IN ('r', 'a')
+    ) THEN
+        RAISE EXCEPTION 'Component-aware ppct_item_lineage_successor_revision_fkey missing or invalid';
+    END IF;
+
+    -- Assert retained provenance unique indexes on ppct_item_revisions exist
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_indexes
+        WHERE schemaname = 'public'
+          AND tablename = 'ppct_item_revisions'
+          AND indexname = 'ppct_item_revisions_provenance_key'
+    ) THEN
+        RAISE EXCEPTION 'Required ppct_item_revisions_provenance_key index missing';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_indexes
+        WHERE schemaname = 'public'
+          AND tablename = 'ppct_item_revisions'
+          AND indexname = 'ppct_item_revisions_execution_provenance_key'
+    ) THEN
+        RAISE EXCEPTION 'Required ppct_item_revisions_execution_provenance_key index missing';
+    END IF;
+
+    -- Assert GiST exclusion constraint on ppct_class_associations exists
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'ppct_class_associations_no_overlap'
+          AND conrelid = 'ppct_class_associations'::regclass
+          AND contype = 'x'
+    ) THEN
+        RAISE EXCEPTION 'Required ppct_class_associations_no_overlap exclusion constraint missing';
     END IF;
 END $$;
 
@@ -179,12 +313,12 @@ END $$;
 -- Create a binding while v1 is PUBLISHED; it must survive the later supersession.
 INSERT INTO "ppct_class_associations" (
     "id", "academic_year_id", "school_class_id", "subject_id", "grade_level",
-    "ppct_plan_id", "ppct_version_id", "effective_from", "effective_until", "created_by_user_id"
+    "ppct_plan_id", "ppct_version_id", "curricular_profile", "effective_from", "effective_until", "created_by_user_id"
 ) VALUES (
     '25a10000-0000-0000-0000-000000000001', 'a5a10000-0000-0000-0000-000000000001',
     'c5a10000-0000-0000-0000-000000000001', 'b5a10000-0000-0000-0000-000000000001', 10,
     'e5a10000-0000-0000-0000-000000000001', 'f5a10000-0000-0000-0000-000000000001',
-    DATE '2026-09-01', DATE '2026-12-31', 'd5a10000-0000-0000-0000-000000000001'
+    'CORE_ONLY', DATE '2026-09-01', DATE '2026-12-31', 'd5a10000-0000-0000-0000-000000000001'
 );
 
 UPDATE "ppct_versions"
@@ -200,67 +334,79 @@ INSERT INTO "ppct_versions" (
     'd5a10000-0000-0000-0000-000000000001', 'd5a10000-0000-0000-0000-000000000002', TIMESTAMPTZ '2026-08-11 08:00:00+07'
 );
 
-INSERT INTO "ppct_items" ("id", "ppct_plan_id") VALUES
-    ('15a10000-0000-0000-0000-000000000001', 'e5a10000-0000-0000-0000-000000000001'),
-    ('15a10000-0000-0000-0000-000000000002', 'e5a10000-0000-0000-0000-000000000001'),
-    ('15a10000-0000-0000-0000-000000000003', 'e5a10000-0000-0000-0000-000000000001'),
-    ('15a10000-0000-0000-0000-000000000004', 'e5a10000-0000-0000-0000-000000000001'),
-    ('15a10000-0000-0000-0000-000000000006', 'e5a10000-0000-0000-0000-000000000001'),
-    ('15a10000-0000-0000-0000-000000000007', 'e5a10000-0000-0000-0000-000000000001'),
-    ('15a10000-0000-0000-0000-000000000005', 'e5a10000-0000-0000-0000-000000000002');
+INSERT INTO "ppct_items" ("id", "ppct_plan_id", "component") VALUES
+    ('15a10000-0000-0000-0000-000000000001', 'e5a10000-0000-0000-0000-000000000001', 'CORE'),
+    ('15a10000-0000-0000-0000-000000000002', 'e5a10000-0000-0000-0000-000000000001', 'CORE'),
+    ('15a10000-0000-0000-0000-000000000003', 'e5a10000-0000-0000-0000-000000000001', 'CORE'),
+    ('15a10000-0000-0000-0000-000000000004', 'e5a10000-0000-0000-0000-000000000001', 'CORE'),
+    ('15a10000-0000-0000-0000-000000000006', 'e5a10000-0000-0000-0000-000000000001', 'CORE'),
+    ('15a10000-0000-0000-0000-000000000007', 'e5a10000-0000-0000-0000-000000000001', 'CORE'),
+    ('15a10000-0000-0000-0000-000000000005', 'e5a10000-0000-0000-0000-000000000002', 'CORE'),
+    ('15a10000-0000-0000-0000-000000000008', 'e5a10000-0000-0000-0000-000000000001', 'SPECIALIZED_STUDY');
 
 -- The same stable UUID appears in two versions by design.
+-- Both CORE sequence 1 and SPECIALIZED_STUDY sequence 1 coexist in version f5a1...002.
 INSERT INTO "ppct_item_revisions" (
-    "ppct_version_id", "ppct_plan_id", "ppct_item_id", "sequence", "title", "lesson_type"
+    "ppct_version_id", "ppct_plan_id", "ppct_item_id", "component", "sequence", "title", "lesson_type"
 ) VALUES
-    ('f5a10000-0000-0000-0000-000000000001', 'e5a10000-0000-0000-0000-000000000001', '15a10000-0000-0000-0000-000000000001', 1, 'Preserved obligation v1', 'Lesson'),
-    ('f5a10000-0000-0000-0000-000000000001', 'e5a10000-0000-0000-0000-000000000001', '15a10000-0000-0000-0000-000000000002', 2, 'Split source', 'Lesson'),
-    ('f5a10000-0000-0000-0000-000000000001', 'e5a10000-0000-0000-0000-000000000001', '15a10000-0000-0000-0000-000000000003', 3, 'Merge source', 'Lesson'),
-    ('f5a10000-0000-0000-0000-000000000002', 'e5a10000-0000-0000-0000-000000000001', '15a10000-0000-0000-0000-000000000001', 1, 'Preserved obligation v2', 'Lesson'),
-    ('f5a10000-0000-0000-0000-000000000002', 'e5a10000-0000-0000-0000-000000000001', '15a10000-0000-0000-0000-000000000004', 2, 'Split and merge successor', 'Lesson'),
-    ('f5a10000-0000-0000-0000-000000000002', 'e5a10000-0000-0000-0000-000000000001', '15a10000-0000-0000-0000-000000000006', 3, 'Second split successor', 'Lesson'),
-    ('f5a10000-0000-0000-0000-000000000003', 'e5a10000-0000-0000-0000-000000000002', '15a10000-0000-0000-0000-000000000005', 1, 'Other plan item', 'Lesson');
+    ('f5a10000-0000-0000-0000-000000000001', 'e5a10000-0000-0000-0000-000000000001', '15a10000-0000-0000-0000-000000000001', 'CORE', 1, 'Preserved obligation v1', 'Lesson'),
+    ('f5a10000-0000-0000-0000-000000000001', 'e5a10000-0000-0000-0000-000000000001', '15a10000-0000-0000-0000-000000000002', 'CORE', 2, 'Split source', 'Lesson'),
+    ('f5a10000-0000-0000-0000-000000000001', 'e5a10000-0000-0000-0000-000000000001', '15a10000-0000-0000-0000-000000000003', 'CORE', 3, 'Merge source', 'Lesson'),
+    ('f5a10000-0000-0000-0000-000000000002', 'e5a10000-0000-0000-0000-000000000001', '15a10000-0000-0000-0000-000000000001', 'CORE', 1, 'Preserved obligation v2', 'Lesson'),
+    ('f5a10000-0000-0000-0000-000000000002', 'e5a10000-0000-0000-0000-000000000001', '15a10000-0000-0000-0000-000000000004', 'CORE', 2, 'Split and merge successor', 'Lesson'),
+    ('f5a10000-0000-0000-0000-000000000002', 'e5a10000-0000-0000-0000-000000000001', '15a10000-0000-0000-0000-000000000006', 'CORE', 3, 'Second split successor', 'Lesson'),
+    ('f5a10000-0000-0000-0000-000000000002', 'e5a10000-0000-0000-0000-000000000001', '15a10000-0000-0000-0000-000000000008', 'SPECIALIZED_STUDY', 1, 'Specialized study topic 1', 'SpecializedTopic'),
+    ('f5a10000-0000-0000-0000-000000000003', 'e5a10000-0000-0000-0000-000000000002', '15a10000-0000-0000-0000-000000000005', 'CORE', 1, 'Other plan item', 'Lesson');
 
 DO $$
 BEGIN
+    -- Duplicate sequence in the same component (CORE 2) must be rejected
     BEGIN
-        INSERT INTO "ppct_item_revisions" ("ppct_version_id", "ppct_plan_id", "ppct_item_id", "sequence", "title", "lesson_type")
-        VALUES ('f5a10000-0000-0000-0000-000000000002', 'e5a10000-0000-0000-0000-000000000001', '15a10000-0000-0000-0000-000000000002', 2, 'Duplicate sequence', 'Lesson');
-        RAISE EXCEPTION 'Expected duplicate sequence rejection';
+        INSERT INTO "ppct_item_revisions" ("ppct_version_id", "ppct_plan_id", "ppct_item_id", "component", "sequence", "title", "lesson_type")
+        VALUES ('f5a10000-0000-0000-0000-000000000002', 'e5a10000-0000-0000-0000-000000000001', '15a10000-0000-0000-0000-000000000002', 'CORE', 2, 'Duplicate sequence', 'Lesson');
+        RAISE EXCEPTION 'Expected duplicate sequence in component rejection';
     EXCEPTION WHEN unique_violation THEN NULL;
     END;
 
+    -- Component mismatch between revision and item must be rejected by composite FK
     BEGIN
-        INSERT INTO "ppct_item_revisions" ("ppct_version_id", "ppct_plan_id", "ppct_item_id", "sequence", "title", "lesson_type")
-        VALUES ('f5a10000-0000-0000-0000-000000000002', 'e5a10000-0000-0000-0000-000000000001', '15a10000-0000-0000-0000-000000000001', 9, 'Duplicate item', 'Lesson');
+        INSERT INTO "ppct_item_revisions" ("ppct_version_id", "ppct_plan_id", "ppct_item_id", "component", "sequence", "title", "lesson_type")
+        VALUES ('f5a10000-0000-0000-0000-000000000002', 'e5a10000-0000-0000-0000-000000000001', '15a10000-0000-0000-0000-000000000007', 'SPECIALIZED_STUDY', 9, 'Component mismatch', 'Lesson');
+        RAISE EXCEPTION 'Expected component mismatch rejection between revision and item';
+    EXCEPTION WHEN foreign_key_violation THEN NULL;
+    END;
+
+    BEGIN
+        INSERT INTO "ppct_item_revisions" ("ppct_version_id", "ppct_plan_id", "ppct_item_id", "component", "sequence", "title", "lesson_type")
+        VALUES ('f5a10000-0000-0000-0000-000000000002', 'e5a10000-0000-0000-0000-000000000001', '15a10000-0000-0000-0000-000000000001', 'CORE', 9, 'Duplicate item', 'Lesson');
         RAISE EXCEPTION 'Expected duplicate item in version rejection';
     EXCEPTION WHEN unique_violation THEN NULL;
     END;
 
     BEGIN
-        INSERT INTO "ppct_item_revisions" ("ppct_version_id", "ppct_plan_id", "ppct_item_id", "sequence", "title", "lesson_type")
-        VALUES ('f5a10000-0000-0000-0000-000000000002', 'e5a10000-0000-0000-0000-000000000001', '15a10000-0000-0000-0000-000000000005', 9, 'Cross plan item', 'Lesson');
+        INSERT INTO "ppct_item_revisions" ("ppct_version_id", "ppct_plan_id", "ppct_item_id", "component", "sequence", "title", "lesson_type")
+        VALUES ('f5a10000-0000-0000-0000-000000000002', 'e5a10000-0000-0000-0000-000000000001', '15a10000-0000-0000-0000-000000000005', 'CORE', 9, 'Cross plan item', 'Lesson');
         RAISE EXCEPTION 'Expected cross-plan revision rejection';
     EXCEPTION WHEN foreign_key_violation THEN NULL;
     END;
 
     BEGIN
-        INSERT INTO "ppct_item_revisions" ("ppct_version_id", "ppct_plan_id", "ppct_item_id", "sequence", "title", "lesson_type")
-        VALUES ('f5a10000-0000-0000-0000-000000000002', 'e5a10000-0000-0000-0000-000000000001', '15a10000-0000-0000-0000-000000000007', 0, 'Invalid sequence', 'Lesson');
+        INSERT INTO "ppct_item_revisions" ("ppct_version_id", "ppct_plan_id", "ppct_item_id", "component", "sequence", "title", "lesson_type")
+        VALUES ('f5a10000-0000-0000-0000-000000000002', 'e5a10000-0000-0000-0000-000000000001', '15a10000-0000-0000-0000-000000000007', 'CORE', 0, 'Invalid sequence', 'Lesson');
         RAISE EXCEPTION 'Expected non-positive sequence rejection';
     EXCEPTION WHEN check_violation THEN NULL;
     END;
 
     BEGIN
-        INSERT INTO "ppct_item_revisions" ("ppct_version_id", "ppct_plan_id", "ppct_item_id", "sequence", "title", "lesson_type")
-        VALUES ('f5a10000-0000-0000-0000-000000000002', 'e5a10000-0000-0000-0000-000000000001', '15a10000-0000-0000-0000-000000000007', 9, '   ', 'Lesson');
+        INSERT INTO "ppct_item_revisions" ("ppct_version_id", "ppct_plan_id", "ppct_item_id", "component", "sequence", "title", "lesson_type")
+        VALUES ('f5a10000-0000-0000-0000-000000000002', 'e5a10000-0000-0000-0000-000000000001', '15a10000-0000-0000-0000-000000000007', 'CORE', 9, '   ', 'Lesson');
         RAISE EXCEPTION 'Expected blank title rejection';
     EXCEPTION WHEN check_violation THEN NULL;
     END;
 
     BEGIN
-        INSERT INTO "ppct_item_revisions" ("ppct_version_id", "ppct_plan_id", "ppct_item_id", "sequence", "title", "lesson_type")
-        VALUES ('f5a10000-0000-0000-0000-000000000002', 'e5a10000-0000-0000-0000-000000000001', '15a10000-0000-0000-0000-000000000007', 9, 'Valid title', '   ');
+        INSERT INTO "ppct_item_revisions" ("ppct_version_id", "ppct_plan_id", "ppct_item_id", "component", "sequence", "title", "lesson_type")
+        VALUES ('f5a10000-0000-0000-0000-000000000002', 'e5a10000-0000-0000-0000-000000000001', '15a10000-0000-0000-0000-000000000007', 'CORE', 9, 'Valid title', '   ');
         RAISE EXCEPTION 'Expected blank lesson type rejection';
     EXCEPTION WHEN check_violation THEN NULL;
     END;
@@ -268,83 +414,91 @@ END $$;
 
 -- One predecessor to two successors is a split; two predecessors to one successor is a merge.
 INSERT INTO "ppct_item_lineage" (
-    "ppct_plan_id", "predecessor_version_id", "predecessor_item_id", "successor_version_id", "successor_item_id"
+    "ppct_plan_id", "component", "predecessor_version_id", "predecessor_item_id", "successor_version_id", "successor_item_id"
 ) VALUES
-    ('e5a10000-0000-0000-0000-000000000001', 'f5a10000-0000-0000-0000-000000000001', '15a10000-0000-0000-0000-000000000002', 'f5a10000-0000-0000-0000-000000000002', '15a10000-0000-0000-0000-000000000004'),
-    ('e5a10000-0000-0000-0000-000000000001', 'f5a10000-0000-0000-0000-000000000001', '15a10000-0000-0000-0000-000000000002', 'f5a10000-0000-0000-0000-000000000002', '15a10000-0000-0000-0000-000000000006'),
-    ('e5a10000-0000-0000-0000-000000000001', 'f5a10000-0000-0000-0000-000000000001', '15a10000-0000-0000-0000-000000000003', 'f5a10000-0000-0000-0000-000000000002', '15a10000-0000-0000-0000-000000000004');
+    ('e5a10000-0000-0000-0000-000000000001', 'CORE', 'f5a10000-0000-0000-0000-000000000001', '15a10000-0000-0000-0000-000000000002', 'f5a10000-0000-0000-0000-000000000002', '15a10000-0000-0000-0000-000000000004'),
+    ('e5a10000-0000-0000-0000-000000000001', 'CORE', 'f5a10000-0000-0000-0000-000000000001', '15a10000-0000-0000-0000-000000000002', 'f5a10000-0000-0000-0000-000000000002', '15a10000-0000-0000-0000-000000000006'),
+    ('e5a10000-0000-0000-0000-000000000001', 'CORE', 'f5a10000-0000-0000-0000-000000000001', '15a10000-0000-0000-0000-000000000003', 'f5a10000-0000-0000-0000-000000000002', '15a10000-0000-0000-0000-000000000004');
 
 DO $$
 BEGIN
     BEGIN
-        INSERT INTO "ppct_item_lineage" ("ppct_plan_id", "predecessor_version_id", "predecessor_item_id", "successor_version_id", "successor_item_id")
-        VALUES ('e5a10000-0000-0000-0000-000000000001', 'f5a10000-0000-0000-0000-000000000001', '15a10000-0000-0000-0000-000000000002', 'f5a10000-0000-0000-0000-000000000002', '15a10000-0000-0000-0000-000000000004');
+        INSERT INTO "ppct_item_lineage" ("ppct_plan_id", "component", "predecessor_version_id", "predecessor_item_id", "successor_version_id", "successor_item_id")
+        VALUES ('e5a10000-0000-0000-0000-000000000001', 'CORE', 'f5a10000-0000-0000-0000-000000000001', '15a10000-0000-0000-0000-000000000002', 'f5a10000-0000-0000-0000-000000000002', '15a10000-0000-0000-0000-000000000004');
         RAISE EXCEPTION 'Expected duplicate lineage edge rejection';
     EXCEPTION WHEN unique_violation THEN NULL;
     END;
 
     BEGIN
-        INSERT INTO "ppct_item_lineage" ("ppct_plan_id", "predecessor_version_id", "predecessor_item_id", "successor_version_id", "successor_item_id")
-        VALUES ('e5a10000-0000-0000-0000-000000000001', 'f5a10000-0000-0000-0000-000000000001', '15a10000-0000-0000-0000-000000000001', 'f5a10000-0000-0000-0000-000000000002', '15a10000-0000-0000-0000-000000000001');
+        INSERT INTO "ppct_item_lineage" ("ppct_plan_id", "component", "predecessor_version_id", "predecessor_item_id", "successor_version_id", "successor_item_id")
+        VALUES ('e5a10000-0000-0000-0000-000000000001', 'CORE', 'f5a10000-0000-0000-0000-000000000001', '15a10000-0000-0000-0000-000000000001', 'f5a10000-0000-0000-0000-000000000002', '15a10000-0000-0000-0000-000000000001');
         RAISE EXCEPTION 'Expected same-item lineage rejection';
     EXCEPTION WHEN check_violation THEN NULL;
     END;
 
     BEGIN
-        INSERT INTO "ppct_item_lineage" ("ppct_plan_id", "predecessor_version_id", "predecessor_item_id", "successor_version_id", "successor_item_id")
-        VALUES ('e5a10000-0000-0000-0000-000000000002', 'f5a10000-0000-0000-0000-000000000001', '15a10000-0000-0000-0000-000000000002', 'f5a10000-0000-0000-0000-000000000003', '15a10000-0000-0000-0000-000000000005');
+        INSERT INTO "ppct_item_lineage" ("ppct_plan_id", "component", "predecessor_version_id", "predecessor_item_id", "successor_version_id", "successor_item_id")
+        VALUES ('e5a10000-0000-0000-0000-000000000002', 'CORE', 'f5a10000-0000-0000-0000-000000000001', '15a10000-0000-0000-0000-000000000002', 'f5a10000-0000-0000-0000-000000000003', '15a10000-0000-0000-0000-000000000005');
         RAISE EXCEPTION 'Expected cross-plan lineage rejection';
+    EXCEPTION WHEN foreign_key_violation THEN NULL;
+    END;
+
+    -- Cross-component lineage must be rejected by foreign key constraint
+    BEGIN
+        INSERT INTO "ppct_item_lineage" ("ppct_plan_id", "component", "predecessor_version_id", "predecessor_item_id", "successor_version_id", "successor_item_id")
+        VALUES ('e5a10000-0000-0000-0000-000000000001', 'CORE', 'f5a10000-0000-0000-0000-000000000001', '15a10000-0000-0000-0000-000000000002', 'f5a10000-0000-0000-0000-000000000002', '15a10000-0000-0000-0000-000000000008');
+        RAISE EXCEPTION 'Expected cross-component lineage rejection';
     EXCEPTION WHEN foreign_key_violation THEN NULL;
     END;
 END $$;
 
 INSERT INTO "ppct_class_associations" (
     "id", "academic_year_id", "school_class_id", "subject_id", "grade_level",
-    "ppct_plan_id", "ppct_version_id", "effective_from", "effective_until", "created_by_user_id"
+    "ppct_plan_id", "ppct_version_id", "curricular_profile", "effective_from", "effective_until", "created_by_user_id"
 ) VALUES
-    ('25a10000-0000-0000-0000-000000000002', 'a5a10000-0000-0000-0000-000000000001', 'c5a10000-0000-0000-0000-000000000001', 'b5a10000-0000-0000-0000-000000000001', 10, 'e5a10000-0000-0000-0000-000000000001', 'f5a10000-0000-0000-0000-000000000002', DATE '2027-01-01', NULL, 'd5a10000-0000-0000-0000-000000000001'),
-    ('25a10000-0000-0000-0000-000000000003', 'a5a10000-0000-0000-0000-000000000001', 'c5a10000-0000-0000-0000-000000000002', 'b5a10000-0000-0000-0000-000000000001', 10, 'e5a10000-0000-0000-0000-000000000001', 'f5a10000-0000-0000-0000-000000000002', DATE '2026-09-01', NULL, 'd5a10000-0000-0000-0000-000000000001');
+    ('25a10000-0000-0000-0000-000000000002', 'a5a10000-0000-0000-0000-000000000001', 'c5a10000-0000-0000-0000-000000000001', 'b5a10000-0000-0000-0000-000000000001', 10, 'e5a10000-0000-0000-0000-000000000001', 'f5a10000-0000-0000-0000-000000000002', 'CORE_PLUS_SPECIALIZED_STUDY', DATE '2027-01-01', NULL, 'd5a10000-0000-0000-0000-000000000001'),
+    ('25a10000-0000-0000-0000-000000000003', 'a5a10000-0000-0000-0000-000000000001', 'c5a10000-0000-0000-0000-000000000002', 'b5a10000-0000-0000-0000-000000000001', 10, 'e5a10000-0000-0000-0000-000000000001', 'f5a10000-0000-0000-0000-000000000002', 'CORE_ONLY', DATE '2026-09-01', NULL, 'd5a10000-0000-0000-0000-000000000001');
 
 DO $$
 BEGIN
     BEGIN
-        INSERT INTO "ppct_class_associations" ("academic_year_id", "school_class_id", "subject_id", "grade_level", "ppct_plan_id", "ppct_version_id", "effective_from", "effective_until", "created_by_user_id")
-        VALUES ('a5a10000-0000-0000-0000-000000000001', 'c5a10000-0000-0000-0000-000000000001', 'b5a10000-0000-0000-0000-000000000001', 10, 'e5a10000-0000-0000-0000-000000000001', 'f5a10000-0000-0000-0000-000000000002', DATE '2027-03-01', DATE '2027-02-01', 'd5a10000-0000-0000-0000-000000000001');
+        INSERT INTO "ppct_class_associations" ("academic_year_id", "school_class_id", "subject_id", "grade_level", "ppct_plan_id", "ppct_version_id", "curricular_profile", "effective_from", "effective_until", "created_by_user_id")
+        VALUES ('a5a10000-0000-0000-0000-000000000001', 'c5a10000-0000-0000-0000-000000000001', 'b5a10000-0000-0000-0000-000000000001', 10, 'e5a10000-0000-0000-0000-000000000001', 'f5a10000-0000-0000-0000-000000000002', 'CORE_ONLY', DATE '2027-03-01', DATE '2027-02-01', 'd5a10000-0000-0000-0000-000000000001');
         RAISE EXCEPTION 'Expected invalid association interval rejection';
     EXCEPTION WHEN check_violation THEN NULL;
     END;
 
     BEGIN
-        INSERT INTO "ppct_class_associations" ("academic_year_id", "school_class_id", "subject_id", "grade_level", "ppct_plan_id", "ppct_version_id", "effective_from", "effective_until", "created_by_user_id")
-        VALUES ('a5a10000-0000-0000-0000-000000000001', 'c5a10000-0000-0000-0000-000000000001', 'b5a10000-0000-0000-0000-000000000001', 10, 'e5a10000-0000-0000-0000-000000000001', 'f5a10000-0000-0000-0000-000000000002', DATE '2026-12-31', DATE '2027-02-01', 'd5a10000-0000-0000-0000-000000000001');
+        INSERT INTO "ppct_class_associations" ("academic_year_id", "school_class_id", "subject_id", "grade_level", "ppct_plan_id", "ppct_version_id", "curricular_profile", "effective_from", "effective_until", "created_by_user_id")
+        VALUES ('a5a10000-0000-0000-0000-000000000001', 'c5a10000-0000-0000-0000-000000000001', 'b5a10000-0000-0000-0000-000000000001', 10, 'e5a10000-0000-0000-0000-000000000001', 'f5a10000-0000-0000-0000-000000000002', 'CORE_ONLY', DATE '2026-12-31', DATE '2027-02-01', 'd5a10000-0000-0000-0000-000000000001');
         RAISE EXCEPTION 'Expected inclusive overlap rejection';
     EXCEPTION WHEN exclusion_violation THEN NULL;
     END;
 
     BEGIN
-        INSERT INTO "ppct_class_associations" ("academic_year_id", "school_class_id", "subject_id", "grade_level", "ppct_plan_id", "ppct_version_id", "effective_from", "created_by_user_id")
-        VALUES ('a5a10000-0000-0000-0000-000000000002', 'c5a10000-0000-0000-0000-000000000001', 'b5a10000-0000-0000-0000-000000000001', 11, 'e5a10000-0000-0000-0000-000000000004', 'f5a10000-0000-0000-0000-000000000005', DATE '2027-09-01', 'd5a10000-0000-0000-0000-000000000001');
+        INSERT INTO "ppct_class_associations" ("academic_year_id", "school_class_id", "subject_id", "grade_level", "ppct_plan_id", "ppct_version_id", "curricular_profile", "effective_from", "created_by_user_id")
+        VALUES ('a5a10000-0000-0000-0000-000000000002', 'c5a10000-0000-0000-0000-000000000001', 'b5a10000-0000-0000-0000-000000000001', 11, 'e5a10000-0000-0000-0000-000000000004', 'f5a10000-0000-0000-0000-000000000005', 'CORE_ONLY', DATE '2027-09-01', 'd5a10000-0000-0000-0000-000000000001');
         RAISE EXCEPTION 'Expected wrong AcademicYear class binding rejection';
     EXCEPTION WHEN foreign_key_violation THEN NULL;
     END;
 
     BEGIN
-        INSERT INTO "ppct_class_associations" ("academic_year_id", "school_class_id", "subject_id", "grade_level", "ppct_plan_id", "ppct_version_id", "effective_from", "created_by_user_id")
-        VALUES ('a5a10000-0000-0000-0000-000000000001', 'c5a10000-0000-0000-0000-000000000002', 'b5a10000-0000-0000-0000-000000000002', 10, 'e5a10000-0000-0000-0000-000000000001', 'f5a10000-0000-0000-0000-000000000001', DATE '2028-01-01', 'd5a10000-0000-0000-0000-000000000001');
+        INSERT INTO "ppct_class_associations" ("academic_year_id", "school_class_id", "subject_id", "grade_level", "ppct_plan_id", "ppct_version_id", "curricular_profile", "effective_from", "created_by_user_id")
+        VALUES ('a5a10000-0000-0000-0000-000000000001', 'c5a10000-0000-0000-0000-000000000002', 'b5a10000-0000-0000-0000-000000000002', 10, 'e5a10000-0000-0000-0000-000000000001', 'f5a10000-0000-0000-0000-000000000001', 'CORE_ONLY', DATE '2028-01-01', 'd5a10000-0000-0000-0000-000000000001');
         RAISE EXCEPTION 'Expected wrong Subject plan binding rejection';
     EXCEPTION WHEN foreign_key_violation THEN NULL;
     END;
 
     BEGIN
-        INSERT INTO "ppct_class_associations" ("academic_year_id", "school_class_id", "subject_id", "grade_level", "ppct_plan_id", "ppct_version_id", "effective_from", "created_by_user_id")
-        VALUES ('a5a10000-0000-0000-0000-000000000001', 'c5a10000-0000-0000-0000-000000000002', 'b5a10000-0000-0000-0000-000000000002', 11, 'e5a10000-0000-0000-0000-000000000006', 'f5a10000-0000-0000-0000-000000000006', DATE '2028-01-01', 'd5a10000-0000-0000-0000-000000000001');
+        INSERT INTO "ppct_class_associations" ("academic_year_id", "school_class_id", "subject_id", "grade_level", "ppct_plan_id", "ppct_version_id", "curricular_profile", "effective_from", "created_by_user_id")
+        VALUES ('a5a10000-0000-0000-0000-000000000001', 'c5a10000-0000-0000-0000-000000000002', 'b5a10000-0000-0000-0000-000000000002', 11, 'e5a10000-0000-0000-0000-000000000006', 'f5a10000-0000-0000-0000-000000000006', 'CORE_ONLY', DATE '2028-01-01', 'd5a10000-0000-0000-0000-000000000001');
         RAISE EXCEPTION 'Expected wrong Grade class binding rejection';
     EXCEPTION WHEN foreign_key_violation THEN NULL;
     END;
 
     BEGIN
-        INSERT INTO "ppct_class_associations" ("academic_year_id", "school_class_id", "subject_id", "grade_level", "ppct_plan_id", "ppct_version_id", "effective_from", "created_by_user_id")
-        VALUES ('a5a10000-0000-0000-0000-000000000001', 'c5a10000-0000-0000-0000-000000000001', 'b5a10000-0000-0000-0000-000000000002', 10, 'e5a10000-0000-0000-0000-000000000002', 'f5a10000-0000-0000-0000-000000000001', DATE '2028-01-01', 'd5a10000-0000-0000-0000-000000000001');
+        INSERT INTO "ppct_class_associations" ("academic_year_id", "school_class_id", "subject_id", "grade_level", "ppct_plan_id", "ppct_version_id", "curricular_profile", "effective_from", "created_by_user_id")
+        VALUES ('a5a10000-0000-0000-0000-000000000001', 'c5a10000-0000-0000-0000-000000000001', 'b5a10000-0000-0000-0000-000000000002', 10, 'e5a10000-0000-0000-0000-000000000002', 'f5a10000-0000-0000-0000-000000000001', 'CORE_ONLY', DATE '2028-01-01', 'd5a10000-0000-0000-0000-000000000001');
         RAISE EXCEPTION 'Expected version from another plan rejection';
     EXCEPTION WHEN foreign_key_violation THEN NULL;
     END;

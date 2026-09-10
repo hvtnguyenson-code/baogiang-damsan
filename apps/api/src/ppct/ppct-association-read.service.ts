@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { PpctVersionStatus, Prisma } from '@prisma/client';
+import { PpctClassCurricularProfile, PpctVersionStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 export type PpctReadClient = PrismaService | Prisma.TransactionClient;
@@ -18,6 +18,7 @@ export interface ExactPpctAssociation {
   ppctPlanId: string;
   ppctVersionId: string;
   ppctVersionStatus: PpctVersionStatus;
+  curricularProfile: PpctClassCurricularProfile;
   effectiveFrom: Date;
   effectiveUntil: Date | null;
 }
@@ -63,6 +64,7 @@ export class PpctAssociationReadService {
         subjectId: true,
         ppctPlanId: true,
         ppctVersionId: true,
+        curricularProfile: true,
         effectiveFrom: true,
         effectiveUntil: true,
         ppctVersion: { select: { status: true } },
@@ -77,6 +79,7 @@ export class PpctAssociationReadService {
       ppctPlanId: row.ppctPlanId,
       ppctVersionId: row.ppctVersionId,
       ppctVersionStatus: row.ppctVersion.status,
+      curricularProfile: row.curricularProfile,
       effectiveFrom: row.effectiveFrom,
       effectiveUntil: row.effectiveUntil,
     }));
@@ -102,6 +105,7 @@ export class PpctAssociationReadService {
         subjectId: true,
         ppctPlanId: true,
         ppctVersionId: true,
+        curricularProfile: true,
         effectiveFrom: true,
         effectiveUntil: true,
         ppctVersion: { select: { status: true } },
@@ -122,6 +126,7 @@ export class PpctAssociationReadService {
       ppctPlanId: row.ppctPlanId,
       ppctVersionId: row.ppctVersionId,
       ppctVersionStatus: row.ppctVersion.status,
+      curricularProfile: row.curricularProfile,
       effectiveFrom: row.effectiveFrom,
       effectiveUntil: row.effectiveUntil,
     }));

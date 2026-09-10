@@ -26,7 +26,7 @@ integration('resolved lesson occurrences structural read model (PostgreSQL)', ()
     const timetableEntry = await h.prisma.timetableEntry.create({ data: { timetableVersionId: timetable.id, academicYearId: year.id, weekday: 'MONDAY', timeSlotDefinitionId: slot.id, schoolClassId: schoolClass.id, subjectId: subject.id, teachingAssignmentId: assignment.id, teacherUserId: actor.id } });
     const plan = await h.prisma.ppctPlan.create({ data: { academicYearId: year.id, subjectId: subject.id, gradeLevel: 10 } });
     const ppctVersion = await h.prisma.ppctVersion.create({ data: { ppctPlanId: plan.id, versionNumber: 1, status: PpctVersionStatus.PUBLISHED, createdByUserId: actor.id, publishedByUserId: actor.id, publishedAt: new Date('2026-08-01Z') } });
-    const association = await h.prisma.ppctClassAssociation.create({ data: { academicYearId: year.id, schoolClassId: schoolClass.id, subjectId: subject.id, gradeLevel: 10, ppctPlanId: plan.id, ppctVersionId: ppctVersion.id, effectiveFrom: new Date('2026-09-01Z'), createdByUserId: actor.id } });
+    const association = await h.prisma.ppctClassAssociation.create({ data: { academicYearId: year.id, schoolClassId: schoolClass.id, subjectId: subject.id, gradeLevel: 10, ppctPlanId: plan.id, ppctVersionId: ppctVersion.id, curricularProfile: 'CORE_ONLY', effectiveFrom: new Date('2026-09-01Z'), createdByUserId: actor.id } });
     const service = h.app.get(ResolvedLessonOccurrencesService);
     return { year, actor, calendar, schoolClass, subject, slot, touchingSlot, assignment, timetable, timetableEntry, plan, ppctVersion, association, service };
   }

@@ -97,7 +97,7 @@ Exact task statuses and prerequisites are maintained authoritatively in `PRE-PIL
 1. **Curricular component realignment stream:**
    `P0-900` (`CLOSED`)
      -> `P2-001` component architecture (`CLOSED` by `SYNC-P2-001`, `ADR-048` Accepted)
-     -> `P2-002` persistence/control plane (`READY`)
+     -> `P2-002` persistence/control plane (`IN_REVIEW`)
      -> `P2-003` allocation/projection runtime (`PLANNED`)
      -> `P2-004` admin applicability workspace (`PLANNED`)
 2. **Parallel evidence-bound school PPCT workbook path:**

@@ -22,6 +22,8 @@ const timetableImportRequestKeyMigrationName = '20260812020000_timetable_import_
 const timetableImportRequestKeyMigration = read('prisma', 'migrations', timetableImportRequestKeyMigrationName, 'migration.sql');
 const ppctMigrationName = '20260813010000_ppct_persistence_foundation';
 const ppctMigration = read('prisma', 'migrations', ppctMigrationName, 'migration.sql');
+const ppctComponentMigrationName = '20260910010000_ppct_component_persistence_foundation';
+const ppctComponentMigration = read('prisma', 'migrations', ppctComponentMigrationName, 'migration.sql');
 const overlayMigrationName = '20260814010000_operational_overlay_persistence_foundation';
 const overlayMigration = read('prisma', 'migrations', overlayMigrationName, 'migration.sql');
 const specialActivityMigrationName = '20260815010000_special_activity_persistence_foundation';
@@ -101,6 +103,8 @@ assert.deepEqual(enumValues('TimetableImportTeacherIdentifierMode'), ['GENERIC_E
 assert.deepEqual(enumValues('TimetableImportSemanticField'), ['WEEKDAY', 'SESSION', 'PERIOD_ORDINAL', 'SCHOOL_CLASS', 'SUBJECT', 'TEACHER']);
 assert.deepEqual(enumValues('TimetableImportAliasEntityType'), ['TEACHER', 'SCHOOL_CLASS', 'SUBJECT']);
 assert.deepEqual(enumValues('PpctVersionStatus'), ['DRAFT', 'PUBLISHED', 'SUPERSEDED']);
+assert.deepEqual(enumValues('PpctCurricularComponent'), ['CORE', 'SPECIALIZED_STUDY']);
+assert.deepEqual(enumValues('PpctClassCurricularProfile'), ['CORE_ONLY', 'CORE_PLUS_SPECIALIZED_STUDY']);
 assert.deepEqual(enumValues('OperationalOverlayStatus'), ['ACTIVE', 'REVERSED']);
 assert.deepEqual(enumValues('HomeroomAssignmentStatus'), ['ACTIVE', 'REVERSED']);
 assert.deepEqual(enumValues('CalendarExceptionScope'), ['SCHOOL_WIDE', 'GRADE', 'CLASS']);
@@ -660,27 +664,38 @@ assert.match(ppctVersion, /@@index\(\[ppctPlanId, status\],\s*map:\s*"ppct_versi
 
 assert.match(ppctItem, /id\s+String\s+@id[\s\S]*?@db\.Uuid/u);
 assert.match(ppctItem, /ppctPlanId\s+String\s+@map\("ppct_plan_id"\)\s+@db\.Uuid/u);
+assert.match(ppctItem, /component\s+PpctCurricularComponent/u);
 assert.match(ppctItem, /@@unique\(\[id, ppctPlanId\],\s*map:\s*"ppct_items_id_ppct_plan_id_key"\)/u);
+assert.match(ppctItem, /@@unique\(\[id, ppctPlanId, component\],\s*map:\s*"ppct_items_identity_component_key"\)/u);
 assert.doesNotMatch(ppctItem, /sequence|title|lessonType|completed|updatedAt/u);
 
 for (const field of ['ppctVersionId', 'ppctPlanId', 'ppctItemId']) {
   assert.match(ppctItemRevision, new RegExp(`${field}\\s+String[\\s\\S]*?@db\\.Uuid`, 'u'));
 }
+assert.match(ppctItemRevision, /component\s+PpctCurricularComponent/u);
 assert.match(ppctItemRevision, /sequence\s+Int/u);
 assert.match(ppctItemRevision, /title\s+String\s+@db\.VarChar\(500\)/u);
 assert.match(ppctItemRevision, /lessonType\s+String\s+@map\("lesson_type"\)\s+@db\.VarChar\(100\)/u);
 assert.match(ppctItemRevision, /fields:\s*\[ppctVersionId, ppctPlanId\][\s\S]*references:\s*\[id, ppctPlanId\]/u);
-assert.match(ppctItemRevision, /fields:\s*\[ppctItemId, ppctPlanId\][\s\S]*references:\s*\[id, ppctPlanId\]/u);
-assert.match(ppctItemRevision, /@@unique\(\[ppctVersionId, sequence\],\s*map:\s*"ppct_item_revisions_version_sequence_key"\)/u);
+assert.match(ppctItemRevision, /ppctItem\s+PpctItem\s+@relation\(fields:\s*\[ppctItemId,\s*ppctPlanId,\s*component\],\s*references:\s*\[id,\s*ppctPlanId,\s*component\],\s*onDelete:\s*Restrict,\s*onUpdate:\s*Restrict,\s*map:\s*"ppct_item_revisions_item_plan_component_fkey"\)/u);
+assert.match(ppctItemRevision, /onUpdate:\s*Restrict/u, 'PpctItemRevision.ppctItem must explicitly declare onUpdate: Restrict in Prisma schema');
+assert.doesNotMatch(ppctItemRevision, /onUpdate:\s*Cascade/u, 'PpctItemRevision must not use onUpdate: Cascade');
+assert.match(ppctItemRevision, /@@unique\(\[ppctVersionId, component, sequence\],\s*map:\s*"ppct_item_revisions_version_component_sequence_key"\)/u);
 assert.match(ppctItemRevision, /@@unique\(\[ppctVersionId, ppctItemId\],\s*map:\s*"ppct_item_revisions_version_item_key"\)/u);
 assert.match(ppctItemRevision, /@@unique\(\[ppctVersionId, ppctItemId, ppctPlanId\],\s*map:\s*"ppct_item_revisions_provenance_key"\)/u);
+assert.match(ppctItemRevision, /@@unique\(\[ppctVersionId, ppctItemId, ppctPlanId, component\],\s*map:\s*"ppct_item_revisions_provenance_component_key"\)/u);
+assert.match(ppctItemRevision, /@@unique\(\[id, ppctVersionId, ppctItemId, ppctPlanId\],\s*map:\s*"ppct_item_revisions_execution_provenance_key"\)/u);
 assert.doesNotMatch(ppctItemRevision, /updatedAt|completed/u);
 
-assert.match(ppctItemLineage, /fields:\s*\[predecessorVersionId, predecessorItemId, ppctPlanId\][\s\S]*references:\s*\[ppctVersionId, ppctItemId, ppctPlanId\]/u);
-assert.match(ppctItemLineage, /fields:\s*\[successorVersionId, successorItemId, ppctPlanId\][\s\S]*references:\s*\[ppctVersionId, ppctItemId, ppctPlanId\]/u);
+assert.match(ppctItemLineage, /component\s+PpctCurricularComponent/u);
+assert.match(ppctItemLineage, /predecessorRevision\s+PpctItemRevision\s+@relation\("PpctItemLineagePredecessor",\s*fields:\s*\[predecessorVersionId,\s*predecessorItemId,\s*ppctPlanId,\s*component\],\s*references:\s*\[ppctVersionId,\s*ppctItemId,\s*ppctPlanId,\s*component\],\s*onDelete:\s*Restrict,\s*onUpdate:\s*Restrict,\s*map:\s*"ppct_item_lineage_predecessor_revision_fkey"\)/u);
+assert.match(ppctItemLineage, /successorRevision\s+PpctItemRevision\s+@relation\("PpctItemLineageSuccessor",\s*fields:\s*\[successorVersionId,\s*successorItemId,\s*ppctPlanId,\s*component\],\s*references:\s*\[ppctVersionId,\s*ppctItemId,\s*ppctPlanId,\s*component\],\s*onDelete:\s*Restrict,\s*onUpdate:\s*Restrict,\s*map:\s*"ppct_item_lineage_successor_revision_fkey"\)/u);
+assert.equal((ppctItemLineage.match(/onUpdate:\s*Restrict/gu) ?? []).length, 2, 'Both predecessor and successor relations must declare onUpdate: Restrict');
+assert.doesNotMatch(ppctItemLineage, /onUpdate:\s*Cascade/u, 'PpctItemLineage relations must not use onUpdate: Cascade');
 assert.match(ppctItemLineage, /@@unique\(\[predecessorVersionId, predecessorItemId, successorVersionId, successorItemId\],\s*map:\s*"ppct_item_lineage_edge_key"\)/u);
 assert.doesNotMatch(ppctItemLineage, /split|merge|LineageType/u);
 
+assert.match(ppctClassAssociation, /curricularProfile\s+PpctClassCurricularProfile\s+@map\("curricular_profile"\)/u);
 assert.match(ppctClassAssociation, /effectiveFrom\s+DateTime\s+@map\("effective_from"\)\s+@db\.Date/u);
 assert.match(ppctClassAssociation, /effectiveUntil\s+DateTime\?\s+@map\("effective_until"\)\s+@db\.Date/u);
 assert.match(ppctClassAssociation, /fields:\s*\[schoolClassId, academicYearId, gradeLevel\][\s\S]*references:\s*\[id, academicYearId, gradeLevel\]/u);
@@ -739,6 +754,34 @@ for (const constraint of [
 assert.doesNotMatch(ppctMigration, /CREATE\s+(OR\s+REPLACE\s+)?TRIGGER/iu);
 assert.doesNotMatch(ppctMigration, /ON DELETE CASCADE/iu);
 assert.doesNotMatch(ppctMigration, /calendar_version_id|academic_week_id|\bcompleted\b|checksum|workbook|sheet_name|column_mapping|import_profile|request_idempotency/iu);
+
+assert.match(ppctComponentMigration, /CREATE TYPE "PpctCurricularComponent" AS ENUM \('CORE', 'SPECIALIZED_STUDY'\)/u);
+assert.match(ppctComponentMigration, /CREATE TYPE "PpctClassCurricularProfile" AS ENUM \('CORE_ONLY', 'CORE_PLUS_SPECIALIZED_STUDY'\)/u);
+assert.match(ppctComponentMigration, /ALTER TABLE "ppct_items" ADD COLUMN\s+"component" "PpctCurricularComponent"/u);
+assert.match(ppctComponentMigration, /ALTER TABLE "ppct_item_revisions" ADD COLUMN\s+"component" "PpctCurricularComponent"/u);
+assert.match(ppctComponentMigration, /ALTER TABLE "ppct_item_lineage" ADD COLUMN\s+"component" "PpctCurricularComponent"/u);
+assert.match(ppctComponentMigration, /ALTER TABLE "ppct_class_associations" ADD COLUMN\s+"curricular_profile" "PpctClassCurricularProfile"/u);
+assert.match(ppctComponentMigration, /UPDATE "ppct_items" SET "component" = 'CORE' WHERE "component" IS NULL/u);
+assert.match(ppctComponentMigration, /UPDATE "ppct_item_revisions" SET "component" = 'CORE' WHERE "component" IS NULL/u);
+assert.match(ppctComponentMigration, /UPDATE "ppct_item_lineage" SET "component" = 'CORE' WHERE "component" IS NULL/u);
+assert.match(ppctComponentMigration, /UPDATE "ppct_class_associations" SET "curricular_profile" = 'CORE_ONLY' WHERE "curricular_profile" IS NULL/u);
+assert.match(ppctComponentMigration, /ALTER TABLE "ppct_items" ALTER COLUMN "component" SET NOT NULL/u);
+assert.match(ppctComponentMigration, /ALTER TABLE "ppct_item_revisions" ALTER COLUMN "component" SET NOT NULL/u);
+assert.match(ppctComponentMigration, /ALTER TABLE "ppct_item_lineage" ALTER COLUMN "component" SET NOT NULL/u);
+assert.match(ppctComponentMigration, /ALTER TABLE "ppct_class_associations" ALTER COLUMN "curricular_profile" SET NOT NULL/u);
+assert.match(ppctComponentMigration, /CREATE UNIQUE INDEX "ppct_items_identity_component_key"[\s\S]*\("id", "ppct_plan_id", "component"\)/u);
+assert.match(ppctComponentMigration, /CREATE UNIQUE INDEX "ppct_item_revisions_provenance_component_key"[\s\S]*\("ppct_version_id", "ppct_item_id", "ppct_plan_id", "component"\)/u);
+assert.match(ppctComponentMigration, /CREATE UNIQUE INDEX "ppct_item_revisions_version_component_sequence_key"[\s\S]*\("ppct_version_id", "component", "sequence"\)/u);
+assert.match(ppctComponentMigration, /DROP INDEX IF EXISTS "ppct_item_revisions_version_sequence_key"|DROP INDEX "ppct_item_revisions_version_sequence_key"/u);
+assert.match(ppctComponentMigration, /"ppct_item_revisions_item_plan_component_fkey"[\s\S]*FOREIGN KEY \("ppct_item_id", "ppct_plan_id", "component"\)[\s\S]*REFERENCES "ppct_items"\("id", "ppct_plan_id", "component"\)[\s\S]*ON DELETE RESTRICT ON UPDATE RESTRICT/u);
+assert.match(ppctComponentMigration, /"ppct_item_lineage_predecessor_revision_fkey"[\s\S]*FOREIGN KEY \("predecessor_version_id", "predecessor_item_id", "ppct_plan_id", "component"\)[\s\S]*REFERENCES "ppct_item_revisions"\("ppct_version_id", "ppct_item_id", "ppct_plan_id", "component"\)[\s\S]*ON DELETE RESTRICT ON UPDATE RESTRICT/u);
+assert.match(ppctComponentMigration, /"ppct_item_lineage_successor_revision_fkey"[\s\S]*FOREIGN KEY \("successor_version_id", "successor_item_id", "ppct_plan_id", "component"\)[\s\S]*REFERENCES "ppct_item_revisions"\("ppct_version_id", "ppct_item_id", "ppct_plan_id", "component"\)[\s\S]*ON DELETE RESTRICT ON UPDATE RESTRICT/u);
+assert.doesNotMatch(ppctComponentMigration, /CASCADE/iu);
+assert.doesNotMatch(ppctComponentMigration, /CREATE\s+(OR\s+REPLACE\s+)?TRIGGER/iu);
+
+for (const model of ['TimetableEntry', 'TeachingAssignment', 'CurricularTeachingExecution', 'MakeupTeachingSchedule']) {
+  assert.doesNotMatch(modelBlock(model), /component|PpctCurricularComponent/u, `${model} must remain component-free`);
+}
 
 const calendarException = modelBlock('CalendarException');
 const calendarExceptionTimeSlot = modelBlock('CalendarExceptionTimeSlot');
@@ -1076,9 +1119,10 @@ const legacyHashes = new Map([
   ['20260812010000_timetable_import_persistence_foundation', '6118DC8B909C400A11CDA38A6C09B3D8BAAB23B79DC3647B6F3136EAE9EF2CA8'],
   ['20260812020000_timetable_import_idempotency_bindings', '266490FC3BD49FAC9E5C91A6CDAA233717DB227F6BD5AD1529C607C5716199B9'],
   ['20260813010000_ppct_persistence_foundation', 'DFF5874CBCCE3A513644A84D1D6D1532B82F71C175B448B9C1F6BF8D22E75A63'],
+  ['20260910010000_ppct_component_persistence_foundation', 'CBD123305B52CC61C991655E59AEF9D6C8EF1216C943C0917144FF3E741F5A58'],
 ]);
 for (const [name, expected] of legacyHashes) {
   assert.equal(sha256(read('prisma', 'migrations', name, 'migration.sql')), expected, `Historical migration ${name} changed`);
 }
 
-console.log(`Academic, teaching-assignment, homeroom, time-slot, timetable, timetable-import, PPCT, operational-overlay, Special Activity, and Teaching Execution schema static verification PASS (${academicMigrationName}, ${teachingMigrationName}, ${homeroomMigrationName}, ${timeSlotMigrationName}, ${timetableMigrationName}, ${timetableImportMigrationName}, ${timetableImportRequestKeyMigrationName}, ${ppctMigrationName}, ${overlayMigrationName}, ${specialActivityMigrationName}, ${teachingExecutionMigrationName}).`);
+console.log(`Academic, teaching-assignment, homeroom, time-slot, timetable, timetable-import, PPCT, operational-overlay, Special Activity, and Teaching Execution schema static verification PASS (${academicMigrationName}, ${teachingMigrationName}, ${homeroomMigrationName}, ${timeSlotMigrationName}, ${timetableMigrationName}, ${timetableImportMigrationName}, ${timetableImportRequestKeyMigrationName}, ${ppctMigrationName}, ${ppctComponentMigrationName}, ${overlayMigrationName}, ${specialActivityMigrationName}, ${teachingExecutionMigrationName}).`);

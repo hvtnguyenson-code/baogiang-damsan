@@ -35,22 +35,22 @@ integration('PPCT occurrence allocation read model (PostgreSQL)', () => {
     const items = new Map<string, { id: string }>();
     async function item(name: string) {
       const existing = items.get(name); if (existing) return existing;
-      const created = await h.prisma.ppctItem.create({ data: { ppctPlanId: plan.id } }); items.set(name, created); return created;
+      const created = await h.prisma.ppctItem.create({ data: { ppctPlanId: plan.id, component: 'CORE' } }); items.set(name, created); return created;
     }
     async function addVersion(versionNumber: number, names: string[], status: PpctVersionStatus) {
       const version = await h.prisma.ppctVersion.create({ data: { ppctPlanId: plan.id, versionNumber, status, createdByUserId: actor.id, publishedByUserId: actor.id, publishedAt: lifecycleAt, ...(status === PpctVersionStatus.SUPERSEDED ? { supersededByUserId: actor.id, supersededAt: new Date(lifecycleAt.getTime() + versionNumber * 1000) } : {}) } });
       const revisions = [];
       for (let index = 0; index < names.length; index += 1) {
         const stable = await item(names[index]!);
-        revisions.push(await h.prisma.ppctItemRevision.create({ data: { ppctVersionId: version.id, ppctPlanId: plan.id, ppctItemId: stable.id, sequence: index + 1, title: names[index]!, lessonType: 'LESSON' } }));
+        revisions.push(await h.prisma.ppctItemRevision.create({ data: { ppctVersionId: version.id, ppctPlanId: plan.id, ppctItemId: stable.id, component: 'CORE', sequence: index + 1, title: names[index]!, lessonType: 'LESSON' } }));
       }
       return { version, revisions };
     }
     async function associate(ppctVersionId: string, from: string, until?: string) {
-      return h.prisma.ppctClassAssociation.create({ data: { academicYearId: year.id, schoolClassId: schoolClass.id, subjectId: subject.id, gradeLevel: 10, ppctPlanId: plan.id, ppctVersionId, effectiveFrom: new Date(`${from}T00:00:00Z`), effectiveUntil: until ? new Date(`${until}T00:00:00Z`) : null, createdByUserId: actor.id } });
+      return h.prisma.ppctClassAssociation.create({ data: { academicYearId: year.id, schoolClassId: schoolClass.id, subjectId: subject.id, gradeLevel: 10, ppctPlanId: plan.id, ppctVersionId, curricularProfile: 'CORE_ONLY', effectiveFrom: new Date(`${from}T00:00:00Z`), effectiveUntil: until ? new Date(`${until}T00:00:00Z`) : null, createdByUserId: actor.id } });
     }
     async function lineage(predecessor: { version: { id: string }; revisions: Array<{ ppctItemId: string }> }, predecessorIndex: number, successor: { version: { id: string }; revisions: Array<{ ppctItemId: string }> }, successorIndex: number) {
-      return h.prisma.ppctItemLineage.create({ data: { ppctPlanId: plan.id, predecessorVersionId: predecessor.version.id, predecessorItemId: predecessor.revisions[predecessorIndex]!.ppctItemId, successorVersionId: successor.version.id, successorItemId: successor.revisions[successorIndex]!.ppctItemId } });
+      return h.prisma.ppctItemLineage.create({ data: { ppctPlanId: plan.id, predecessorVersionId: predecessor.version.id, predecessorItemId: predecessor.revisions[predecessorIndex]!.ppctItemId, successorVersionId: successor.version.id, successorItemId: successor.revisions[successorIndex]!.ppctItemId, component: 'CORE' } });
     }
     async function addMakeup(options: { id?: string; associationId: string; ppctVersionId: string; ppctItemId: string; sourceDate: string; targetDate: string }) {
       return h.prisma.makeupTeachingSchedule.create({ data: { id: options.id, academicYearId: year.id, originalTimetableVersionId: timetable.id, originalTimetableEntryId: timetableEntry.id, originalCivilDate: new Date(`${options.sourceDate}T00:00:00Z`), originalAcademicCalendarVersionId: calendar.id, originalTimeSlotDefinitionId: slot.id, schoolClassId: schoolClass.id, subjectId: subject.id, originalTeachingAssignmentId: assignment.id, responsibleTeacherUserId: actor.id, ppctClassAssociationId: options.associationId, ppctPlanId: plan.id, ppctVersionId: options.ppctVersionId, ppctItemId: options.ppctItemId, targetCivilDate: new Date(`${options.targetDate}T00:00:00Z`), targetAcademicCalendarVersionId: calendar.id, targetTimeSlotDefinitionId: slot.id, scheduledTeacherUserId: actor.id, eligibilityCheckedAt: lifecycleAt, eligibilityWasActive: true, eligibilityWasTeachingStaff: true, eligibilitySameSubject: true, eligibilityStaffSubjectId: staffSubject.id, status: OperationalOverlayStatus.ACTIVE, createRequestKey: crypto.randomUUID(), createRequestFingerprint: crypto.randomUUID(), createdByUserId: actor.id } });

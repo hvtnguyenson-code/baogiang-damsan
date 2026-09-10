@@ -1,5 +1,6 @@
-import { Prisma } from '@prisma/client';
+import { PpctCurricularComponent, Prisma } from '@prisma/client';
 import {
+  formatPpctDisplaySequence,
   PpctClassAssociationRecord,
   PpctItemRevisionRecord,
   PpctLineageEdgeRecord,
@@ -42,20 +43,41 @@ export function toPpctVersionRecord(row: PpctVersionWithCount): PpctVersionRecor
   };
 }
 
-export function toPpctItemRevisionRecord(row: { id: string; ppctVersionId: string; ppctPlanId: string; ppctItemId: string; sequence: number; title: string; lessonType: string; createdAt: Date }): PpctItemRevisionRecord {
+export function toPpctItemRevisionRecord(row: {
+  id: string;
+  ppctVersionId: string;
+  ppctPlanId: string;
+  ppctItemId: string;
+  component: PpctCurricularComponent;
+  sequence: number;
+  title: string;
+  lessonType: string;
+  createdAt: Date;
+}): PpctItemRevisionRecord {
   return {
     id: row.id,
     ppctVersionId: row.ppctVersionId,
     ppctPlanId: row.ppctPlanId,
     itemId: row.ppctItemId,
+    component: row.component,
     sequence: row.sequence,
+    displaySequence: formatPpctDisplaySequence(row.component, row.sequence),
     title: row.title,
     lessonType: row.lessonType,
     createdAt: row.createdAt.toISOString(),
   };
 }
 
-export function toPpctLineageEdgeRecord(row: { id: string; ppctPlanId: string; predecessorVersionId: string; predecessorItemId: string; successorVersionId: string; successorItemId: string; createdAt: Date }): PpctLineageEdgeRecord {
+export function toPpctLineageEdgeRecord(row: {
+  id: string;
+  ppctPlanId: string;
+  component: PpctCurricularComponent;
+  predecessorVersionId: string;
+  predecessorItemId: string;
+  successorVersionId: string;
+  successorItemId: string;
+  createdAt: Date;
+}): PpctLineageEdgeRecord {
   return { ...row, createdAt: row.createdAt.toISOString() };
 }
 
@@ -69,6 +91,7 @@ export function toPpctAssociationRecord(row: PpctAssociationWithVersion): PpctCl
     ppctPlanId: row.ppctPlanId,
     ppctVersionId: row.ppctVersionId,
     ppctVersionStatus: row.ppctVersion.status,
+    curricularProfile: row.curricularProfile,
     effectiveFrom: formatCivilDate(row.effectiveFrom),
     effectiveUntil: row.effectiveUntil ? formatCivilDate(row.effectiveUntil) : null,
     createdByUserId: row.createdByUserId,
