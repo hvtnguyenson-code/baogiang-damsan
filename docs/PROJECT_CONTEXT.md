@@ -77,10 +77,10 @@ Repository hiện có các boundary đã được review/version hóa và không
 - retained TimetableVersion/TimetableEntry + lifecycle/historical resolution;
 - timetable import profile/alias/canonical preview infrastructure;
 - accepted ADR-047 Đam San native timetable workbook architecture, implemented P2-040 native adapter runtime (`DamSanNativeTimetableAdapter`) và bidirectional peer reconciliation, và implemented P2-050 selective session authoring + explicit carry-forward: exact four-sheet/boundary contract, class-view/teacher-view peer reconciliation, structural `TeacherSourceRowRef`, exact derived teacher-code identity, fail-closed mismatch taxonomy, 455 normal teacher-linked curricular rows persisted as canonical `TimetableEntry`, 120 special non-peer slots recognized/validated without fake assignments, transient raw XLSX SHA-256 participating in confirm request fingerprinting without schema modifications, privacy-sanitized deterministic fixture, selective morning/afternoon mode (`BOTH` / `MORNING` / `AFTERNOON`), ADR-020 date-effective canonical baseline lookup, exact unauthored-session carry-forward preserving canonical provenance IDs, full composed canonical validation và semantic checksum;
-- PPCT shared plan/version/item/revision/lineage/class association retained-history foundation (lưu ý: implementation PPCT occurrence allocation hiện có xử lý một thành phần / luồng đơn và đang trong diện re-entry phân định thành phần chương trình: P0-900 đã CLOSED, P2-001 đã CLOSED bởi `SYNC-P2-001` với `ADR-048` Accepted, mở đường cho P2-002 IN_REVIEW -> P2-003..P2-004; trong khi đó TeachingAssignment, TimetableEntry và native TKB được bảo toàn tuyệt đối không mang thuộc tính component);
+- PPCT shared plan/version/item/revision/lineage/class association retained-history foundation đã được realign thành component-aware persistence/control plane theo ADR-048 và P2-002 (`CLOSED` bởi `SYNC-P2-002`): `CORE`/`SPECIALIZED_STUDY`, immutable stable-item component, component-aware revision/lineage provenance, independent per-component sequence space, `PpctClassCurricularProfile`, legacy CORE/CORE_ONLY migration và server-side business-week profile split prevention; `TeachingAssignment`, `TimetableEntry`, `CurricularTeachingExecution` và `MakeupTeachingSchedule` vẫn component-free;
 - operational overlays;
 - SpecialActivity exact-slot/frozen-class/staffing/collision runtime primitive;
-- PPCT occurrence allocation (đang re-entry theo chuỗi P2-001..P2-004; kiến trúc đã chốt tại ADR-048 / P2-001, hiện P2-002 IN_REVIEW);
+- PPCT occurrence allocation vẫn là runtime cần realign tiếp theo: P2-003 hiện `READY` để triển khai weekly component routing, independent progression/exhaustion và downstream projections; P2-004 admin applicability workspace vẫn `PLANNED` sau P2-003;
 - CurricularTeachingExecution và SpecialActivityParticipationExecution;
 - progress/debt/late projection;
 - reporting projection, Personal Reporting Projection và Reporting Statement;
@@ -93,7 +93,7 @@ Chi tiết KEEP/REALIGN/RESTORE nằm trong `docs/governance/PRE-PILOT-TRACEABIL
 
 Project hiện đang realign vì một số minimum-core/deferred quyết định chưa đại diện đầy đủ sản phẩm thực tế. Các miền phải re-enter trước pilot tùy exact scope gồm:
 
-- phân định thành phần chương trình PPCT (CORE vs SPECIALIZED_STUDY), áp dụng theo lớp-môn và định tuyến cơ hội dạy học tuần (P0-900 đã CLOSED, P2-001 CLOSED bởi `SYNC-P2-001`, ADR-048 Accepted -> P2-002 IN_REVIEW -> P2-003..P2-004);
+- phân định thành phần chương trình PPCT (CORE vs SPECIALIZED_STUDY), áp dụng theo lớp-môn và định tuyến cơ hội dạy học tuần: P0-900 và P2-001 đã `CLOSED`, P2-002 persistence/control plane đã `CLOSED` bởi `SYNC-P2-002`, P2-003 allocation/projection runtime hiện `READY`, P2-004 vẫn `PLANNED`;
 - GDĐP annual/grade programme planning;
 - HĐTN CLASS/GRADE/SCHOOL programme planning;
 - exact per-slot special-program staffing;
@@ -105,7 +105,7 @@ Project hiện đang realign vì một số minimum-core/deferred quyết địn
 - PWA/Telegram pilot integration;
 - first-cert HTTP-01/TLS authority and actual VPS evidence.
 
-Không suy ra rằng một area đã hoàn chỉnh chỉ vì minimum-core implementation hiện có PASS CI. Với Đam San native timetable, ADR-047 architecture, P2-040 native adapter runtime, và P2-050 selective session authoring + explicit carry-forward đã hoàn tất và đóng bằng `SYNC-P2-050`; với đặc tả và kiến trúc thành phần chương trình, P0-900 đã đóng bằng `SYNC-P0-900` và P2-001 (ADR-048 Accepted) đã đóng bằng `SYNC-P2-001`.
+Không suy ra rằng một area đã hoàn chỉnh chỉ vì minimum-core implementation hiện có PASS CI. Với Đam San native timetable, ADR-047 architecture, P2-040 native adapter runtime, và P2-050 selective session authoring + explicit carry-forward đã hoàn tất và đóng bằng `SYNC-P2-050`; với thành phần chương trình PPCT, P0-900 đã đóng bằng `SYNC-P0-900`, P2-001/ADR-048 đã đóng bằng `SYNC-P2-001`, và persistence/control-plane P2-002 đã đóng bằng `SYNC-P2-002`; weekly allocator/projection runtime vẫn thuộc P2-003.
 
 ## Layering rule
 

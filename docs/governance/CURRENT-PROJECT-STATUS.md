@@ -10,11 +10,10 @@ It is **not** a self-referential registry of the latest Git commit. Exact curren
 
 ## Active major task
 
-`P2-002` — PPCT component persistence + control-plane realignment — **IN_REVIEW**.
-- Dedicated branch: `feat/ppct-component-persistence-control-plane-002`
-- Starting canonical base: `main@0594bbab58bf49a058ab4a744499366f3acbaf78` (baseline CI: CI #408 SUCCESS)
-- Implementation status: completed schema migration (`20260910010000_ppct_component_persistence_foundation`), control plane, server-side calendar week-split prevention, and read contracts. Downstream models preserved component-free. All unit, schema, static, and integration regressions PASS.
-- Awaiting independent GitHub review.
+None currently in progress. `P2-002` has completed implementation, independent review, merge, post-merge CI and closure synchronization.
+
+Next critical-path implementation task:
+- `P2-003` — Component-aware PPCT allocation and curricular projections — **READY** (dependency `P2-002` CLOSED).
 
 Also eligible:
 - `P1-030` — Delayed go-live / operational-start architecture — **READY** (dependencies `P1-020` and `P2-001` both `CLOSED`).
@@ -23,11 +22,35 @@ Also eligible:
 Blocked:
 - `P2-010` — PPCT real-workbook contract/security audit — **BLOCKED_EVIDENCE** (pending authoritative school PPCT workbook/template).
 
+Consequently `P2-020` remains `PLANNED`: its `P2-002` dependency is closed, but `P2-010` is not.
+
 Production environment remains strictly **PRE-OPERATIONAL**. No production deployment has occurred.
 
 ## Last closed major task
 
-`P2-001` — PPCT Curricular-Component Architecture Re-Entry — **CLOSED** by `SYNC-P2-001`.
+`P2-002` — PPCT component persistence + control-plane realignment — **CLOSED** by `SYNC-P2-002`.
+
+Closure evidence:
+- starting canonical base: `main@0594bbab58bf49a058ab4a744499366f3acbaf78`;
+- baseline CI: CI #408 SUCCESS;
+- dedicated implementation branch: `feat/ppct-component-persistence-control-plane-002`;
+- final independently reviewed implementation head: `3d00ebc2bc5b3600104c3889b41c7e1432ae74d6`;
+- independent GitHub review: PASS, including final referential-action correction (`onUpdate: Restrict`) and bounded scope verification;
+- parent PR: #124 (`feat(ppct): add curricular component persistence control plane`);
+- exact-head PR CI: CI #409 (run id: `34468164396`), SUCCESS;
+- merge/main commit: `a3151b049d02f6cae9677d7b93b7df2086d421b3`;
+- authoritative post-merge main CI: CI #410 (run id: `34468753060`), SUCCESS;
+- merged file set: 24 changed files (1356 additions, 162 deletions), covering schema/migration, PPCT control plane/contracts/tests, CI verifiers/replay and governance docs;
+- legacy PPCT data migration preserves retained UUIDs/business values while mapping existing item/revision/lineage rows to `CORE` and class associations to `CORE_ONLY`;
+- component-bearing provenance FKs are explicitly `ON DELETE RESTRICT ON UPDATE RESTRICT`; stable item component is immutable; sequence uniqueness is component-scoped;
+- `PpctClassCurricularProfile` and server-side `AcademicWeek`/segment-envelope split prevention are implemented;
+- `TeachingAssignment`, `TimetableEntry`, `CurricularTeachingExecution` and `MakeupTeachingSchedule` remain component-free;
+- no P2-003 allocator/progress/readiness runtime or P2-004 UI was smuggled into P2-002;
+- no correction/re-entry task emerged from review or CI; no deployment/production mutation occurred;
+- closed by administrative closure: `SYNC-P2-002`;
+- downstream: `P2-003` is now READY; `P2-004` remains PLANNED; `P2-010` remains BLOCKED_EVIDENCE and therefore `P2-020` remains PLANNED.
+
+Predecessor closed major task: `P2-001` — PPCT Curricular-Component Architecture Re-Entry — **CLOSED** by `SYNC-P2-001`.
 
 Closure evidence:
 - starting canonical `origin/main` base: `a58ba312913a519ed665d1d7fc701f87a7beccfb`;
@@ -45,7 +68,7 @@ Closure evidence:
 - merged file set: 15 changed files (1125 additions, 39 deletions), strictly docs-only under `docs/**` (zero runtime/schema/migration/API/UI/auth/CI/deploy/production mutation);
 - accepted authority: `ADR-048-PPCT-CURRICULAR-COMPONENT-ARCHITECTURE.md` Accepted;
 - all 15 architecture questions from P0-900 Section 15 resolved;
-- downstream delivery stream: `P2-002` (READY for persistence/control plane), `P1-030` (READY for operational-start architecture), `P4-010` (independently READY), parallel workbook path `P2-010` (BLOCKED_EVIDENCE) -> `P2-020`.
+- downstream delivery stream: `P2-002` (now CLOSED by `SYNC-P2-002`), `P2-003` (READY), `P1-030` (READY), `P4-010` (independently READY), parallel workbook path `P2-010` (BLOCKED_EVIDENCE) -> `P2-020`.
 
 Predecessor closed major task: `P0-900` — Authoritative specification rebase audit (PPCT Curricular Component Product-Authority Realignment) — **CLOSED** by `SYNC-P0-900` (merge `eb1fc74686b0070935f8dcf23c13a5623b94ca1a`, PR #119, PR CI #397 SUCCESS, post-merge main CI #398 SUCCESS).
 
@@ -62,17 +85,17 @@ Closure evidence:
 - merged file set: 14 changed files (6 forward commits), strictly bounded to `docs/` (zero apps/packages/prisma/.github/deploy/scripts changes, zero runtime/schema/migration/API/UI/auth/CI/deploy/production mutation);
 - authoritative source blobs verified and unchanged: v1.2 (`c2c61a4e8acb9fde0e5fc5232467662048fd3380`), v1.3 (`5876af5920d12ea6fcecf42d1b8a392cc4825f16`); trigger was explicit Product Owner authority on 2026-09-08;
 - no additional correction/re-entry task emerged from review or CI;
-- downstream delivery stream registered: `P2-001`–`P2-004` (with `P2-001` became READY when P0-900 closed and is now `CLOSED` by `SYNC-P2-001`), parallel workbook path `P2-010` (`BLOCKED_EVIDENCE`) -> `P2-020`.
+- downstream delivery stream registered: `P2-001`–`P2-004` (P2-001 and P2-002 are now CLOSED; P2-003 is READY; P2-004 remains PLANNED), parallel workbook path `P2-010` (`BLOCKED_EVIDENCE`) -> `P2-020`.
 
 - Core realignment principles accepted into baseline:
   1. Normal curricular component taxonomy: `CORE` (phần cốt lõi) vs `SPECIALIZED_STUDY` (chuyên đề học tập). Specialized study is curricular, not an ad-hoc `SpecialActivity`.
-  2. Shared master plan foundation: Both components belong to `AcademicYear + Subject + Grade` within the same curricular Subject domain; exact component lifecycle and version packaging model (whether unified under one `PpctVersion` or another retained topology) is explicitly assigned to `P2-001` to determine.
+  2. Shared master plan foundation: Both components belong to `AcademicYear + Subject + Grade` within the same curricular Subject domain; exact component lifecycle and version packaging model is defined by accepted ADR-048 and realized at persistence/control-plane layer by closed P2-002.
   3. Single Teaching Assignment: `TeachingAssignment` covers the class-subject; the assigned teacher teaches both `CORE` and `SPECIALIZED_STUDY`.
   4. Administrative applicability: Class-subject specialized study applicability is configured explicitly by administration; non-applicable items are `NOT_APPLICABLE` (not debt).
   5. Component-free TimetableEntry: Timetable assigns periods to subjects; `TimetableEntry` remains component-free.
-  6. Weekly last-opportunity routing: In an `AcademicWeek`, for enabled class-subjects, chronologically LAST normal opportunity is `SPECIALIZED_STUDY`; earlier opportunities are `CORE`. Exact deterministic behavior for atypical weeks (0 or 1 opportunity, truncations, cutovers) remains assigned to `P2-001`. Operational disruptions do not dynamically reclassify planned components.
-  7. Independent progression: `CORE` and `SPECIALIZED_STUDY` maintain independent sequential progression cursors.
-  8. Combined reporting: Ordinary curricular statements report combined totals.
+  6. Weekly last-opportunity routing: In an `AcademicWeek`, for enabled class-subjects, chronologically LAST normal opportunity is `SPECIALIZED_STUDY`; earlier opportunities are `CORE`. Runtime realization belongs to P2-003. Operational disruptions do not dynamically reclassify planned components.
+  7. Independent progression: `CORE` and `SPECIALIZED_STUDY` maintain independent sequential progression cursors; runtime realization belongs to P2-003.
+  8. Combined reporting: Ordinary curricular statements report combined totals; downstream realization remains governed by P2-003.
   9. Preferred source direction: One workbook with separate logical content/sheets for ordinary PPCT (logical component CORE) and Chuyên đề học tập (logical component SPECIALIZED_STUDY); exact physical sheet names, spellings, and workbook structure remain unapproved and evidence-bound to P2-010.
 
 Predecessor closed major task: `P2-050` — Morning/afternoon selective update and carry-forward (CLOSED by `SYNC-P2-050`, merge `42a0f058381a5b8faa6eb2d233481e48156523c6`, PR #116, PR CI #390 SUCCESS, post-merge main CI #391 SUCCESS).
@@ -193,10 +216,10 @@ The repository contains reviewed implementation for:
 - retained exact time-slot revisions and real wall-clock collision semantics;
 - retained timetable versions/entries, validation, lifecycle, historical resolution and XLSX canonical import infrastructure;
 - **native Đam San timetable workbook adapter (`DamSanNativeTimetableAdapter`), bidirectional peer reconciliation runtime, and selective session authoring with explicit carry-forward** on top of canonical import pipeline, four-sheet structural validation, selective morning/afternoon mode (`BOTH` / `MORNING` / `AFTERNOON`), locked parser precedence, `TeacherSourceRowRef` structural identity, exact derived teacher code resolution, fail-closed class/subject code + alias conflict handling, 455 normal curricular teacher-linked rows persisted to `TimetableEntry`, 120 special non-peer slots structurally validated without fabricating teacher assignments, transient raw XLSX SHA-256 participating in confirm request fingerprinting per ADR-021/026, ADR-020 date-effective canonical baseline resolution, exact unauthored-session carry-forward preserving canonical provenance without fallback fabrication, full composed canonical validation (`evaluateTimetableEntries`) and semantic checksum, and privacy-sanitized structural test fixture;
-- PPCT persistence/control plane, stable item identity/revisions/lineage and exact class-subject version association;
+- component-aware PPCT persistence/control plane closed by P2-002, including stable component identity on `PpctItem`, component-aware revision/lineage provenance, per-component sequence uniqueness, `PpctClassCurricularProfile`, legacy CORE/CORE_ONLY migration and server-side business-week profile split prevention;
 - operational overlays;
 - SpecialActivity minimum-core persistence/runtime with exact slots, frozen classes, staffing and class/teacher/time collision checks;
-- PPCT occurrence allocation;
+- PPCT occurrence allocation (legacy/single-stream runtime remains pending P2-003 component-aware realignment);
 - curricular TeachingExecution and SpecialActivityParticipationExecution evidence;
 - proof-based progress/debt/late projection;
 - reporting projection and public reporting read path;
@@ -205,7 +228,7 @@ The repository contains reviewed implementation for:
 - **retained Business Configuration persistence, control plane and administration workspace** (separate BusinessPolicyStream / BusinessPolicyVersion / BusinessPolicyCommand topology, strict civil-date intervals, DB-level non-overlapping published exclusion, retained replacement and reversal/correction lineage, immutable published payload, exact historical validator-version resolution, dedicated `BUSINESS_CONFIGURATION_MANAGE / SCHOOL_WIDE` capability, capability-gated route `/quan-tri/chinh-sach-nghiep-vu`, typed/version-aware UI adapter architecture with triple identity, lifecycle UI for draft/edit/publish/replace/retire/correct, historical typed rendering, exact-date resolver UI, bounded Serializable mutation retry, idempotency receipts, same-transaction audit, sanitized errors and typed fail-closed resolver, with backend production registry and production UI adapter registry intentionally empty);
 - hardened Windows production deployment control-plane/runbooks through PR #90.
 
-Homeroom architecture, persistence, control plane/capability, historical read model and administration workspace UI are closed for the registered pre-pilot scope. Business Configuration architecture (P1-020), persistence/control plane (P1-021) and administration workspace (P1-022) are closed for the registered pre-pilot scope. P2-030 native timetable workbook architecture/evidence, P2-040 native adapter runtime implementation, and P2-050 selective morning/afternoon update and carry-forward are closed.
+Homeroom architecture, persistence, control plane/capability, historical read model and administration workspace UI are closed for the registered pre-pilot scope. Business Configuration architecture (P1-020), persistence/control plane (P1-021) and administration workspace (P1-022) are closed for the registered pre-pilot scope. P2-030 native timetable workbook architecture/evidence, P2-040 native adapter runtime implementation, P2-050 selective morning/afternoon update and carry-forward, and P2-002 PPCT component persistence/control plane are closed.
 
 ## Pre-pilot verdict
 
@@ -228,7 +251,7 @@ The registered implementation, data-evidence, product and production-readiness t
 11. Dedicated Báo giảng Telegram bot/linking/notification lifecycle is absent.
 12. First-certificate HTTP-01/Nginx authority for the Báo giảng subdomain is incomplete.
 13. Actual VPS Stage 1 evidence has not yet been collected for first deployment.
-14. Curricular component realignment (`P2-001`–`P2-004`): PPCT architecture (`P2-001`) is **CLOSED** by `SYNC-P2-001` (`ADR-048` Accepted); component persistence (`P2-002`, **READY**), weekly routing allocation runtime (`P2-003`, `PLANNED`), and admin applicability workspace (`P2-004`, `PLANNED`) for CORE vs SPECIALIZED_STUDY remain downstream delivery requirements.
+14. Curricular component realignment (`P2-001`–`P2-004`): PPCT architecture (`P2-001`) and component persistence/control plane (`P2-002`) are **CLOSED**; weekly routing/allocation/projection runtime (`P2-003`) is **READY**; admin applicability workspace (`P2-004`) remains `PLANNED` after P2-003.
 
 ## Production VPS topology decision
 
@@ -243,11 +266,11 @@ The final production-host topology is intentionally unresolved and explicitly de
 
 The following registered tasks are genuinely eligible to start on dedicated branches:
 
-1. `P2-002` — PPCT component persistence + control-plane realignment (`READY`; sole registered dependency `P2-001` is `CLOSED`).
+1. `P2-003` — Component-aware PPCT allocation and curricular projections (`READY`; dependency `P2-002` is `CLOSED`).
 2. `P1-030` — Delayed go-live / operational-start architecture (`READY`; dependencies `P1-020` and `P2-001` are both `CLOSED`).
 3. `P4-010` — GDĐP/HĐTN programme architecture closure (`READY`; independent track).
 
-**Critical-path sequencing guidance:** Preferred critical-path continuation is `P2-002` because it unlocks `P2-003` (allocation/projection runtime), `P2-004` (admin applicability workspace), and is required by `P2-020` (PPCT native importer). Do not imply all three ready tasks should be started concurrently; each task requires a dedicated branch and strict discipline.
+**Critical-path sequencing guidance:** Preferred critical-path continuation is `P2-003` because P2-002 persistence prerequisites are now closed; P2-003 unlocks `P2-004`, satisfies a dependency of `P1-031`, and is required by `P3-010`. `P2-020` remains blocked by `P2-010` evidence despite P2-002 being closed. Do not imply all three ready tasks should be started concurrently; each task requires a dedicated branch and strict discipline.
 
 Note: `P2-010` remains `BLOCKED_EVIDENCE` pending actual authoritative school PPCT workbook/template evidence.
 
@@ -276,7 +299,7 @@ Direct P0 inspection found `main` is currently not protected server-side. This i
 
 ## Production state
 
-Production remains **pre-operational**. No production deployment has occurred. P1-020, P1-021, and P1-022 implementations are merged and canonical, but backend production policy registry and production UI adapter registry remain intentionally empty and no production business policy family is enabled. P2-030 architecture/evidence, P2-040 native adapter runtime implementation, and P2-050 selective session authoring and carry-forward are merged to canonical `main`, but did NOT deploy or mutate VPS, database, Nginx, TLS, scheduled tasks, or application process state. P2-001 architecture is closed strictly docs-only without runtime/schema/deployment mutation. P6 remains blocked by the explicit P6-005 topology decision gate.
+Production remains **pre-operational**. No production deployment has occurred. P1-020, P1-021, and P1-022 implementations are merged and canonical, but backend production policy registry and production UI adapter registry remain intentionally empty and no production business policy family is enabled. P2-030 architecture/evidence, P2-040 native adapter runtime implementation, P2-050 selective session authoring and carry-forward, and P2-002 PPCT component persistence/control plane are merged to canonical `main`, but did NOT deploy or mutate VPS, database, Nginx, TLS, scheduled tasks, or application process state. P2-001 architecture remains accepted authority under ADR-048. P6 remains blocked by the explicit P6-005 topology decision gate.
 
 ## Protected external system boundary
 
