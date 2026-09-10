@@ -2,13 +2,20 @@
 
 ## Trạng thái
 
-**IN_REVIEW** trên dedicated feature branch `feat/ppct-component-persistence-control-plane-002`.
+**CLOSED** bởi closure-sync hành chính `SYNC-P2-002` sau khi implementation PR và post-merge main CI đều thành công.
 
 - Canonical baseline: `main@0594bbab58bf49a058ab4a744499366f3acbaf78` (baseline CI: CI #408 SUCCESS).
-- Dedicated branch: `feat/ppct-component-persistence-control-plane-002`.
+- Dedicated implementation branch: `feat/ppct-component-persistence-control-plane-002`.
+- Final independently reviewed implementation head: `3d00ebc2bc5b3600104c3889b41c7e1432ae74d6`.
+- Parent PR: #124 (`feat(ppct): add curricular component persistence control plane`).
+- Exact-head PR CI: CI #409 (run `34468164396`) — SUCCESS.
+- Merge/main commit: `a3151b049d02f6cae9677d7b93b7df2086d421b3`.
+- Authoritative post-merge main CI: CI #410 (run `34468753060`) — SUCCESS.
+- Independent GitHub review: PASS; không có review thread/request-changes blocker và không phát sinh correction/re-entry task riêng.
 - Authority: ADR-048 Accepted; P2-001 CLOSED bởi SYNC-P2-001; P0-900 CLOSED.
 - Traceability: T45, T46.
-- Awaiting independent review (không commit, không push, không PR, không merge, không deploy trong phiên thực thi này).
+- Closure consequence: `P2-003` được mở khóa thành `READY`; `P2-004` vẫn `PLANNED`; `P2-010` vẫn `BLOCKED_EVIDENCE`, vì vậy `P2-020` vẫn chưa startable.
+- Không có deployment hoặc production mutation trong P2-002.
 
 ## Phạm vi thực hiện
 
@@ -93,3 +100,10 @@
 
 7. **Deployment & Security Gates**:
    - `npm run test:secrets`, `npm run test:deploy:static`, `npm run test:deploy:behavior`, `npm run test:workflow:contract`, `npm run test:deploy:powershell`, `npm run test:ui:static`: tất cả PASS.
+
+8. **GitHub closure evidence**:
+   - Independent final diff review: PASS.
+   - PR #124 exact-head CI #409 (run `34468164396`): SUCCESS trên head `3d00ebc2bc5b3600104c3889b41c7e1432ae74d6`.
+   - PR #124 merged bằng regular merge thành `main@a3151b049d02f6cae9677d7b93b7df2086d421b3`.
+   - Authoritative post-merge main CI #410 (run `34468753060`): SUCCESS.
+   - Closure được ghi nhận bởi non-recursive administrative microtask `SYNC-P2-002`; không có correction/re-entry task mới phát sinh.
