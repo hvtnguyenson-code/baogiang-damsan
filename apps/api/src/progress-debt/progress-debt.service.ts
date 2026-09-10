@@ -1,8 +1,8 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { OperationalOverlayStatus, Prisma, TeachingExecutionStatus } from '@prisma/client';
 import { formatCivilDate } from '../common/validation/civil-date';
-import { PpctOccurrenceAllocationService } from '../ppct-occurrence-allocation/ppct-occurrence-allocation.service';
-import { ExpectedPpctItem, NormalPpctAllocation } from '../ppct-occurrence-allocation/ppct-occurrence-allocation.types';
+import { PpctOccurrenceAllocationV2Service } from '../ppct-occurrence-allocation/ppct-occurrence-allocation-v2.service';
+import { ComponentExpectedPpctItem, ComponentNormalPpctAllocation } from '../ppct-occurrence-allocation/ppct-occurrence-allocation-v2.types';
 import { PrismaService } from '../prisma/prisma.service';
 import { TEACHING_EXECUTION_CLOCK, TeachingExecutionClock } from '../teaching-executions/teaching-execution-policy';
 import { hasEndedAt, hcmCivilDate } from './progress-debt.policy';
@@ -13,13 +13,13 @@ import {
 
 const executionInclude = { executionTimeSlot: { select: { endTime: true } } } satisfies Prisma.CurricularTeachingExecutionInclude;
 type Execution = Prisma.CurricularTeachingExecutionGetPayload<{ include: typeof executionInclude }>;
-type DirectAllocation = NormalPpctAllocation & { expectedPpctItem: ExpectedPpctItem };
+type DirectAllocation = ComponentNormalPpctAllocation & { expectedPpctItem: ComponentExpectedPpctItem };
 
 @Injectable()
 export class ProgressDebtService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly allocation: PpctOccurrenceAllocationService,
+    private readonly allocation: PpctOccurrenceAllocationV2Service,
     @Inject(TEACHING_EXECUTION_CLOCK) private readonly clock: TeachingExecutionClock,
   ) {}
 
@@ -41,7 +41,7 @@ export class ProgressDebtService {
       throughCivilDate,
     });
     if (allocated.status === 'BLOCKED') {
-      return this.blocked(input, [{ severity: 'BLOCKER', code: 'UPSTREAM_ALLOCATION_BLOCKED', reason: 'PPCT occurrence allocation is blocked.', occurrenceKey: null, entityIds: allocated.findings.flatMap((finding) => finding.entityIds).sort() }]);
+      return this.blocked(input, [{ severity: 'BLOCKER', code: 'UPSTREAM_ALLOCATION_BLOCKED', reason: 'PPCT occurrence allocation V2 is blocked.', occurrenceKey: null, entityIds: allocated.findings.flatMap((finding) => finding.entityIds).sort() }]);
     }
 
     const direct = allocated.normalAllocations.filter((row): row is DirectAllocation => row.allocationEffect === 'CONSUMES_NEXT_ITEM' && row.allocationStatus === 'ALLOCATED' && row.expectedPpctItem !== null)
@@ -108,7 +108,7 @@ export class ProgressDebtService {
     if (asOfInstant > this.clock.now()) throw new BadRequestException('asOfInstant cannot be in the future.');
   }
 
-  private reconcileExecution(allocation: DirectAllocation, execution: Execution, schedule: { [key: string]: unknown } | null, matches: Array<{ makeupTeachingScheduleId: string; sourceNormalOccurrenceKey: string; status: string; expectedPpctItem: ExpectedPpctItem | null }>): string | null {
+  private reconcileExecution(allocation: DirectAllocation, execution: Execution, schedule: { [key: string]: unknown } | null, matches: Array<{ makeupTeachingScheduleId: string; sourceNormalOccurrenceKey: string; status: string; expectedPpctItem: ComponentExpectedPpctItem | null }>): string | null {
     const occurrence = allocation.occurrence; const expected = allocation.expectedPpctItem;
     const common: Array<[string, unknown, unknown]> = [
       ['academicYearId', execution.academicYearId, occurrence.academicYearId], ['schoolClassId', execution.schoolClassId, occurrence.schoolClass.id], ['subjectId', execution.subjectId, occurrence.subjectId], ['sourceNormalOccurrenceKey', execution.sourceNormalOccurrenceKey, occurrence.occurrenceKey],
@@ -134,16 +134,17 @@ export class ProgressDebtService {
 
   private item(allocation: DirectAllocation, classification: ProgressDebtItem['classification'], execution: Execution | null): ProgressDebtItem {
     const occurrence = allocation.occurrence; const expected = allocation.expectedPpctItem;
-    return { classification, sourceNormalOccurrenceKey: occurrence.occurrenceKey, originalTimetableVersionId: occurrence.timetableVersionId, originalTimetableEntryId: occurrence.timetableEntryId, sourceCivilDate: occurrence.civilDate, sourceAcademicCalendarVersionId: occurrence.academicCalendarVersionId, sourceTimeSlotDefinitionId: occurrence.timeSlot.id, originalTeachingAssignmentId: occurrence.teachingAssignmentId, responsibleTeacherUserId: occurrence.responsibleTeacherUserId, ppctClassAssociationId: expected.ppctClassAssociationId, ppctPlanId: expected.ppctPlanId, ppctVersionId: expected.ppctVersionId, ppctItemId: expected.ppctItemId, ppctItemRevisionId: expected.ppctItemRevisionId, operationalLessonDispositionId: occurrence.disposition?.id ?? null, operationalDispositionType: occurrence.disposition?.dispositionType ?? null, fulfillmentExecutionId: execution?.id ?? null, fulfillmentKind: execution?.kind ?? null, makeupTeachingScheduleId: execution?.makeupTeachingScheduleId ?? null, executionCivilDate: execution ? formatCivilDate(execution.executionCivilDate) : null, executionAcademicCalendarVersionId: execution?.executionAcademicCalendarVersionId ?? null, executionTimeSlotDefinitionId: execution?.executionTimeSlotDefinitionId ?? null, actualTeacherUserId: execution?.actualTeacherUserId ?? null };
+    return { classification, sourceNormalOccurrenceKey: occurrence.occurrenceKey, originalTimetableVersionId: occurrence.timetableVersionId, originalTimetableEntryId: occurrence.timetableEntryId, sourceCivilDate: occurrence.civilDate, sourceAcademicCalendarVersionId: occurrence.academicCalendarVersionId, sourceTimeSlotDefinitionId: occurrence.timeSlot.id, originalTeachingAssignmentId: occurrence.teachingAssignmentId, responsibleTeacherUserId: occurrence.responsibleTeacherUserId, ppctClassAssociationId: expected.ppctClassAssociationId, ppctPlanId: expected.ppctPlanId, ppctVersionId: expected.ppctVersionId, ppctItemId: expected.ppctItemId, ppctItemRevisionId: expected.ppctItemRevisionId, component: expected.component, operationalLessonDispositionId: occurrence.disposition?.id ?? null, operationalDispositionType: occurrence.disposition?.dispositionType ?? null, fulfillmentExecutionId: execution?.id ?? null, fulfillmentKind: execution?.kind ?? null, makeupTeachingScheduleId: execution?.makeupTeachingScheduleId ?? null, executionCivilDate: execution ? formatCivilDate(execution.executionCivilDate) : null, executionAcademicCalendarVersionId: execution?.executionAcademicCalendarVersionId ?? null, executionTimeSlotDefinitionId: execution?.executionTimeSlotDefinitionId ?? null, actualTeacherUserId: execution?.actualTeacherUserId ?? null };
   }
 
-  private sameExpectedPpctItem(left: ExpectedPpctItem, right: ExpectedPpctItem): boolean {
+  private sameExpectedPpctItem(left: ComponentExpectedPpctItem, right: ComponentExpectedPpctItem): boolean {
     return left.distributionObligationKey === right.distributionObligationKey
       && left.ppctClassAssociationId === right.ppctClassAssociationId
       && left.ppctPlanId === right.ppctPlanId
       && left.ppctVersionId === right.ppctVersionId
       && left.ppctItemId === right.ppctItemId
-      && left.ppctItemRevisionId === right.ppctItemRevisionId;
+      && left.ppctItemRevisionId === right.ppctItemRevisionId
+      && left.component === right.component;
   }
 
   private finding(code: ProgressDebtFinding['code'], reason: string, occurrenceKey: string | null, entityIds: string[]): ProgressDebtFinding { return { severity: 'BLOCKER', code, reason, occurrenceKey, entityIds: [...entityIds].sort() }; }
