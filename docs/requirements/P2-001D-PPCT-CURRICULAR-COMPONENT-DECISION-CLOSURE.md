@@ -1,11 +1,12 @@
 # P2-001D — Đóng Quyết định Kiến trúc: Phân định Thành phần Chương trình PPCT (Curricular-Component Decision Closure)
 
 - **Mã nhiệm vụ (Task ID):** `P2-001` / `P2-001D`
-- **Trạng thái:** Proposed Decision Closure (Chờ kiểm duyệt độc lập và hợp nhất)
+- **Trạng thái:** Accepted Decision Closure (Đã đóng qua `SYNC-P2-001`)
 - **Ngày xác lập:** 2026-09-09
 - **Truy xuất nguồn gốc (Traceability):** `T45`, `T46`
 - **Tài liệu kiểm tra căn cứ:** `docs/requirements/P2-001-PPCT-CURRICULAR-COMPONENT-ARCHITECTURE-AUDIT.md`
-- **ADR đề xuất:** `docs/decisions/ADR-048-PPCT-CURRICULAR-COMPONENT-ARCHITECTURE.md`
+- **Quyết định kiến trúc chuẩn tắc:** `docs/decisions/ADR-048-PPCT-CURRICULAR-COMPONENT-ARCHITECTURE.md` (Accepted)
+- **Bằng chứng hợp nhất & đóng:** Kiểm duyệt kiến trúc độc lập PASS; PR #121 merged; PR CI #404 (run `34338997019`) SUCCESS; post-merge main CI #405 (run `34340490592`) SUCCESS; đóng quản trị qua `SYNC-P2-001`; nhiệm vụ P2-001 chính thức `CLOSED`.
 - **Phạm vi thẩm quyền:** Strictly Docs & Architecture Only. Bộ quyết định chuẩn tắc này đóng vai trò là kim chỉ nam kỹ thuật bắt buộc cho các agent triển khai hạ nguồn (`P2-002`, `P2-003`, `P2-004`).
 
 ---

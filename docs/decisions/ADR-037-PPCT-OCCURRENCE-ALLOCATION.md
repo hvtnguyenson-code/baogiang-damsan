@@ -13,7 +13,7 @@
 > 3. That the next item is unconditionally the lowest-sequence unallocated item across the entire version;
 > 4. That normal opportunities are consumed chronologically without weekly routing between CORE and SPECIALIZED_STUDY;
 > are formally addressed and superseded by the component-aware weekly routing allocator and independent progression architecture in `ADR-048-PPCT-CURRICULAR-COMPONENT-ARCHITECTURE.md` (established under `P2-001`, `T45`, `T46`).
-> Upon closure of `P2-001`, `ADR-048` serves as canonical authority for downstream implementation in `P2-003`. General replay principles, in-memory replay invariants, transactional isolation, and immutable source-provenance rules remain valid conceptually.
+> With `P2-001` closed by `SYNC-P2-001`, `ADR-048` is Accepted and serves as canonical authority for the replaced component-aware semantics and downstream implementation in `P2-003`. General replay principles, in-memory replay invariants, transactional isolation, and immutable source-provenance rules remain valid conceptually.
 
 ## Context
 
