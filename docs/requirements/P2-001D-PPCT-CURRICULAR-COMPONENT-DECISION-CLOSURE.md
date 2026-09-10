@@ -1,5 +1,6 @@
 # P2-001D — Đóng Quyết định Kiến trúc: Phân định Thành phần Chương trình PPCT (Curricular-Component Decision Closure)
 
+- **Mã nhiệm vụ (Task ID):** `P2-001` / `P2-001D`
 - **Trạng thái:** Accepted Decision Closure (Đã đóng qua `SYNC-P2-001`)
 - **Ngày xác lập:** 2026-09-09
 - **Truy xuất nguồn gốc (Traceability):** `T45`, `T46`
