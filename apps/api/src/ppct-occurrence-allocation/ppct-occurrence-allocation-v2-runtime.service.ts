@@ -104,6 +104,7 @@ const comparePlanningMembers = (a: PlanningMember, b: PlanningMember) => a.civil
   || a.startTime.localeCompare(b.startTime)
   || a.endTime.localeCompare(b.endTime)
   || a.occurrenceKey.localeCompare(b.occurrenceKey);
+const versionNumberOf = (value: PpctGraphVersionV2 | null): number | undefined => value?.versionNumber;
 
 @Injectable()
 export class PpctOccurrenceAllocationV2Service {
@@ -253,8 +254,8 @@ export class PpctOccurrenceAllocationV2Service {
         addFinding({ severity: 'BLOCKER', code: 'PPCT_ALLOCATION_HISTORY_BLOCKED', occurrenceKey: occurrence.occurrenceKey, reason: 'NON_FORWARD_VERSION_TRANSITION', entityIds: [currentVersion.id, target.id] });
         blockHistoryAt(occurrencePosition);
       } else {
-        const currentNumber = currentVersion?.versionNumber;
-        const frontier = currentNumber !== undefined
+        const currentNumber: number | undefined = versionNumberOf(currentVersion);
+        const frontier: PpctGraphVersionV2[] = currentNumber !== undefined
           ? graph.versions.filter((version) => version.status !== 'DRAFT' && version.versionNumber > currentNumber && version.versionNumber <= target.versionNumber)
           : [target];
         for (const version of frontier.sort((a, b) => a.versionNumber - b.versionNumber || a.id.localeCompare(b.id))) {

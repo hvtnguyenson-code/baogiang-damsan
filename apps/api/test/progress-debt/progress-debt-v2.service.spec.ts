@@ -51,8 +51,8 @@ function harness(normalAllocations: ReturnType<typeof normalAllocation>[]) {
 describe('P2-003 TEACHING_PROGRESS_DEBT_V2', () => {
   it('carries exact component provenance while preserving combined count invariant', async () => {
     const h = harness([
-      normalAllocation(PpctCurricularComponent.CORE, 'NORMAL:core:2026-09-14', 'C1'),
-      normalAllocation(PpctCurricularComponent.SPECIALIZED_STUDY, 'NORMAL:specialized:2026-09-18', 'S1'),
+      normalAllocation(PpctCurricularComponent.CORE, 'NORMAL:core:2026-09-14', '2026-09-14', 'C1'),
+      normalAllocation(PpctCurricularComponent.SPECIALIZED_STUDY, 'NORMAL:specialized:2026-09-18', '2026-09-18', 'S1'),
     ]);
     const result = await h.service.resolveInTransaction(h.tx as never, { academicYearId: 'year', schoolClassId: 'class', subjectId: 'subject', asOfInstant: asOf });
     expect(result.profile).toBe('TEACHING_PROGRESS_DEBT_V2');
@@ -62,7 +62,7 @@ describe('P2-003 TEACHING_PROGRESS_DEBT_V2', () => {
   });
 
   it('does not synthesize specialized debt when upstream CORE_ONLY allocation exposes only CORE obligations', async () => {
-    const h = harness([normalAllocation(PpctCurricularComponent.CORE, 'NORMAL:core:2026-09-14', 'C1')]);
+    const h = harness([normalAllocation(PpctCurricularComponent.CORE, 'NORMAL:core:2026-09-14', '2026-09-14', 'C1')]);
     const result = await h.service.resolveInTransaction(h.tx as never, { academicYearId: 'year', schoolClassId: 'class', subjectId: 'subject', asOfInstant: asOf });
     expect(result.status).toBe('PASS');
     expect(result.items).toHaveLength(1);
