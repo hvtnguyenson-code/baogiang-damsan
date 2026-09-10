@@ -8,7 +8,7 @@
 > [!WARNING]
 > **RE-ENTRY NOTICE (2026-09-08 — TASK P2-001 / ADR-048 / T45 / T46):**
 > This historical decision remains retained. However, the requirement that the projection's internal upstream inputs (`DIRECT_DISTRIBUTION_OBLIGATIONS`) become component-aware—tracking and reconciling progress, debt, unconfirmed gaps, and late counts per component (`CORE` vs `SPECIALIZED_STUDY`) for enabled class-subjects while aggregating combined curricular totals for official statements—is formally addressed and superseded by `ADR-048-PPCT-CURRICULAR-COMPONENT-ARCHITECTURE.md` (established under `P2-001`, `T45`, `T46`).
-> Upon closure of `P2-001`, `ADR-048` provides the governing rules for downstream projection implementation in `P2-003`. All unaffected clauses (class-subject aggregate root, proof-backed debt taxonomy, missing execution alone is not debt proof, and non-mutation invariants) remain Accepted.
+> With `P2-001` closed by `SYNC-P2-001`, `ADR-048` is Accepted and provides the governing canonical authority for downstream projection implementation in `P2-003`. All unaffected clauses (class-subject aggregate root, proof-backed debt taxonomy, missing execution alone is not debt proof, and non-mutation invariants) remain Accepted.
 
 ## Context
 

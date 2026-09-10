@@ -96,10 +96,10 @@ Exact task statuses and prerequisites are maintained authoritatively in `PRE-PIL
 
 1. **Curricular component realignment stream:**
    `P0-900` (`CLOSED`)
-     -> `P2-001` component architecture (`IN_REVIEW`)
-     -> `P2-002` persistence/control plane
-     -> `P2-003` allocation/projection runtime
-     -> `P2-004` admin applicability workspace
+     -> `P2-001` component architecture (`CLOSED` by `SYNC-P2-001`, `ADR-048` Accepted)
+     -> `P2-002` persistence/control plane (`READY`)
+     -> `P2-003` allocation/projection runtime (`PLANNED`)
+     -> `P2-004` admin applicability workspace (`PLANNED`)
 2. **Parallel evidence-bound school PPCT workbook path:**
    `P2-001` + authoritative school workbook evidence
      -> `P2-010` real-workbook contract/security audit (determines physical sheet names and mapping to logical CORE and SPECIALIZED_STUDY components)
@@ -151,15 +151,15 @@ The exact dependency graph is authoritative only in `PRE-PILOT-TASK-REGISTER.md`
 
 ```text
 P0-900 (CLOSED)
-└── P2-001 (Curricular component architecture, IN_REVIEW)
-    ├── P1-030 (Delayed go-live architecture)
+└── P2-001 (Curricular component architecture, CLOSED by SYNC-P2-001, ADR-048 Accepted)
+    ├── P1-030 (Delayed go-live architecture, READY)
     │   └── P1-031 (Operational-start policy, waits for P2-003)
-    ├── P2-002 (Component persistence & control plane)
-    │   └── P2-003 (Component allocation & projections)
+    ├── P2-002 (Component persistence & control plane, READY)
+    │   └── P2-003 (Component allocation & projections, PLANNED)
     │       ├── P2-004 (Admin applicability workspace)
     │       ├── P1-031 (Operational-start policy)
     │       └── P3-010 (Pre-operational historical execution)
-    └── P2-010 (PPCT real-workbook audit, needs real workbook evidence)
+    └── P2-010 (PPCT real-workbook audit, BLOCKED_EVIDENCE, needs real workbook evidence)
         └── P2-020 (PPCT native importer, needs P2-002 + P2-010)
             └── P3-010 (needs P1-031 + P2-003 + P2-020 + closed P2-050)
 

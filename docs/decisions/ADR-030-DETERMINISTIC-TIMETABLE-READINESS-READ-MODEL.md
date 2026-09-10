@@ -8,7 +8,7 @@
 > [!WARNING]
 > **RE-ENTRY NOTICE (2026-09-08 — TASK P2-001 / ADR-048 / T45 / T46):**
 > This historical decision remains retained. While `NORMAL_BASE_PPCT_V1` is preserved for historical compatibility, the requirement for component-aware readiness evaluation (assessing `curricularProfile`, mid-week split detection, specialized content availability, and weekly routing capacity) is formally addressed and superseded for future component-aware profiles by `ADR-048-PPCT-CURRICULAR-COMPONENT-ARCHITECTURE.md` (defining `NORMAL_BASE_PPCT_COMPONENT_V2`, established under `P2-001`, `T45`, `T46`).
-> Upon closure of `P2-001`, `ADR-048` provides the governing readiness architecture for downstream implementation in `P2-003`. All unaffected clauses (deterministic retained readiness pattern, exact source provenance, finite civil-date window, and non-mutation invariants) remain Accepted.
+> With `P2-001` closed by `SYNC-P2-001`, `ADR-048` is Accepted and is canonical authority for the governing readiness architecture for downstream implementation in `P2-003`. All unaffected clauses (deterministic retained readiness pattern, exact source provenance, finite civil-date window, and non-mutation invariants) remain Accepted.
 
 ## Context
 

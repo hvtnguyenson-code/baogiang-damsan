@@ -1,6 +1,6 @@
 # ADR-048 — Kiến trúc Phân định Thành phần Chương trình PPCT (PPCT Curricular-Component Architecture)
 
-- **Trạng thái:** Proposed
+- **Trạng thái:** Accepted
 - **Ngày:** 2026-09-09
 - **Phạm vi:** `P2-001` / `T45` / `T46`
 - **Tài liệu kiểm tra nguồn:** `docs/requirements/P2-001-PPCT-CURRICULAR-COMPONENT-ARCHITECTURE-AUDIT.md`

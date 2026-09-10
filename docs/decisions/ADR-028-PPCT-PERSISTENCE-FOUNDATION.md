@@ -11,8 +11,8 @@
 > 1. That `sequence` uniqueness is version-wide (`@@unique([versionId, sequence])`) across an undifferentiated plan;
 > 2. That `PpctClassAssociation` does not track class-subject specialized-study applicability (`curricularProfile`);
 > 3. That `PpctItem` and `PpctItemRevision` lack explicit curricular component coordinates (`CORE` vs `SPECIALIZED_STUDY`);
-> are formally addressed and superseded by the proposed architecture in `ADR-048-PPCT-CURRICULAR-COMPONENT-ARCHITECTURE.md` (established under `P2-001`, `T45`, `T46`).
-> Upon closure of `P2-001`, `ADR-048` serves as canonical authority for the replaced component-aware persistence rules. All unaffected clauses (shared plan master identity `AcademicYear + Subject + Grade`, immutable published version history, stable item UUID, revision lineage graph, and historical retention invariants) remain Accepted.
+> are formally addressed and superseded by the component-aware architecture in `ADR-048-PPCT-CURRICULAR-COMPONENT-ARCHITECTURE.md` (established under `P2-001`, `T45`, `T46`).
+> With `P2-001` closed by `SYNC-P2-001`, `ADR-048` is Accepted and is canonical authority for the replaced component-aware persistence rules. All unaffected clauses (shared plan master identity `AcademicYear + Subject + Grade`, immutable published version history, stable item UUID, revision lineage graph, and historical retention invariants) remain Accepted.
 
 ## Context
 

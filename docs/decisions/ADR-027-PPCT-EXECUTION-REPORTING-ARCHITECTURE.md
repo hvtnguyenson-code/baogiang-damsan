@@ -8,8 +8,8 @@
 
 > [!WARNING]
 > **THÔNG BÁO RE-ENTRY (2026-09-08 — TASK P2-001 / ADR-048 / T45 / T46):**
-> Quyết định lịch sử này tiếp tục được lưu giữ (retained). Tuy nhiên, giả định tại Mục 1 về **tiến độ một luồng đơn nhất không phân biệt thành phần chương trình (single undifferentiated class-subject progression stream)** đã được mở lại tại `P0-900` (`T45`, `T46`) và được đề xuất thay thế chuẩn tắc bởi kiến trúc phân định thành phần chương trình tại `P2-001` (`ADR-048-PPCT-CURRICULAR-COMPONENT-ARCHITECTURE.md`).
-> Sau khi hợp nhất và đóng `P2-001`, `ADR-048` là thẩm quyền chuẩn tắc thay thế cho các điều khoản đã mở lại nói trên. Tất cả các điều khoản không bị ảnh hưởng (quyền sở hữu plan dùng chung `AcademicYear + Subject + Grade`, lịch sử phiên bản bất biến, phân tầng execution/reporting, không đưa trường PPCT vào `TimetableEntry`) tiếp tục giữ nguyên hiệu lực (Accepted).
+> Quyết định lịch sử này tiếp tục được lưu giữ (retained). Tuy nhiên, giả định tại Mục 1 về **tiến độ một luồng đơn nhất không phân biệt thành phần chương trình (single undifferentiated class-subject progression stream)** đã được mở lại tại `P0-900` (`T45`, `T46`) và được thay thế chuẩn tắc bởi kiến trúc phân định thành phần chương trình (`P2-001` đóng qua `SYNC-P2-001`).
+> `ADR-048-PPCT-CURRICULAR-COMPONENT-ARCHITECTURE.md` đã được chấp thuận (Accepted) và là thẩm quyền chuẩn tắc thay thế cho các điều khoản đã mở lại nói trên. Tất cả các điều khoản không bị ảnh hưởng (quyền sở hữu plan dùng chung `AcademicYear + Subject + Grade`, lịch sử phiên bản bất biến, phân tầng execution/reporting, không đưa trường PPCT vào `TimetableEntry`) tiếp tục giữ nguyên hiệu lực (Accepted).
 
 ## Bối cảnh
 

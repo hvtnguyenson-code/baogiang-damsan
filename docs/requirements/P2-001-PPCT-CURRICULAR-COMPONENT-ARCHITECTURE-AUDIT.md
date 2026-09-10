@@ -4,16 +4,26 @@
 
 - **Mã nhiệm vụ (Task ID):** `P2-001`
 - **Tên nhiệm vụ:** Kiểm tra và thiết kế kiến trúc tái nhập: Phân định thành phần chương trình PPCT (PPCT Curricular-Component Architecture Re-Entry)
-- **Trạng thái nhiệm vụ trên nhánh:** `IN_REVIEW`
+- **Trạng thái nhiệm vụ:** `CLOSED` bởi `SYNC-P2-001`
 - **Ngày lập tài liệu:** 2026-09-09
 - **Công cụ thực thi:** ANTIGRAVITY IDE
 - **Repository:** `hvtnguyenson-code/baogiang-damsan`
 - **Nhánh chuyên trách:** `docs/ppct-curricular-component-architecture-001`
 - **SHA canonical `origin/main` khởi đầu:** `a58ba312913a519ed665d1d7fc701f87a7beccfb`
 - **Authoritative Main CI trước nhiệm vụ:** CI #400 / run `34250442087` — SUCCESS
-- **Phạm vi nhiệm vụ:** Strictly Docs & Architecture Only. Tuyệt đối không thay đổi mã nguồn runtime (`apps/`), schema/migrations (`prisma/`), contracts/config (`packages/`), CI/CD workflows (`.github/`), scripts triển khai (`deploy/`, `scripts/`), giao diện người dùng UI, test runtime, hoặc đột biến môi trường production.
+- **Semantically final reviewed architecture head:** `562ea83b41d2f6c123df08a01a48a0a0082ff92a`
+- **Independent architecture review:** PASS
+- **Security-gate incident & independent repair:** CI #401 (run `34320711905`) phát hiện lỗ hổng high-severity mới từ upstream advisory đối với `multer 2.2.0`; đây là trôi lệch feed phụ thuộc bảo mật ngoại vi, không phải lỗi ngữ nghĩa kiến trúc của P2-001; đã được sửa chữa độc lập qua PR #122 (`540c05d512de83f91598bfb1307baaaa8dbf6651`, CI #402 SUCCESS, merge `ff77a625abc51c89e782282241e5a3633e6391bf`, post-merge CI #403 SUCCESS) và forward-merge vào nhánh P2-001
+- **Final PR head sau khi tích hợp baseline bảo mật:** `b7585272558cfa872168f12e1a7c37357894bea8`
+- **Parent PR:** PR #121 (`docs(ppct): close curricular-component architecture`)
+- **Authoritative final PR CI:** CI #404 / run `34338997019` — SUCCESS
+- **Merge/main commit:** `719bef92e58412da9ebd149663e6890da7626a85`
+- **Authoritative post-merge main CI:** CI #405 / run `34340490592` — SUCCESS
+- **Đóng quản trị hành chính:** `SYNC-P2-001`
+- **Phạm vi nhiệm vụ:** Strictly Docs & Architecture Only (15 changed files dưới `docs/**`, 1125 additions, 39 deletions). Tuyệt đối không thay đổi mã nguồn runtime (`apps/`), schema/migrations (`prisma/`), contracts/config (`packages/`), CI/CD workflows (`.github/`), scripts triển khai (`deploy/`, `scripts/`), giao diện người dùng UI, test runtime, hoặc đột biến môi trường production.
 - **Truy xuất nguồn gốc (Traceability):** `T45`, `T46`.
 - **Nhiệm vụ tiền nhiệm:** `P0-900` (`CLOSED by SYNC-P0-900`).
+- **Nhiệm vụ hạ nguồn kế tiếp:** `P2-002` (`READY`), `P1-030` (`READY`).
 
 ---
 
