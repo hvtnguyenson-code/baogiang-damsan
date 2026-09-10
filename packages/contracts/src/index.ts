@@ -942,6 +942,14 @@ export interface TimetableReadinessResponse {
 
 export type PpctVersionStatus = 'DRAFT' | 'PUBLISHED' | 'SUPERSEDED';
 
+export type PpctCurricularComponent = 'CORE' | 'SPECIALIZED_STUDY';
+
+export type PpctClassCurricularProfile = 'CORE_ONLY' | 'CORE_PLUS_SPECIALIZED_STUDY';
+
+export function formatPpctDisplaySequence(component: PpctCurricularComponent, sequence: number): string {
+  return component === 'SPECIALIZED_STUDY' ? `CD${sequence}` : String(sequence);
+}
+
 export interface PpctPlanRecord {
   id: string;
   academicYearId: string;
@@ -971,7 +979,9 @@ export interface PpctItemRevisionRecord {
   ppctVersionId: string;
   ppctPlanId: string;
   itemId: string;
+  component: PpctCurricularComponent;
   sequence: number;
+  displaySequence: string;
   title: string;
   lessonType: string;
   createdAt: string;
@@ -980,6 +990,7 @@ export interface PpctItemRevisionRecord {
 export interface PpctLineageEdgeRecord {
   id: string;
   ppctPlanId: string;
+  component: PpctCurricularComponent;
   predecessorVersionId: string;
   predecessorItemId: string;
   successorVersionId: string;
@@ -1002,6 +1013,7 @@ export interface PpctClassAssociationRecord {
   ppctPlanId: string;
   ppctVersionId: string;
   ppctVersionStatus: PpctVersionStatus;
+  curricularProfile: PpctClassCurricularProfile;
   effectiveFrom: CivilDateString;
   effectiveUntil: CivilDateString | null;
   createdByUserId: string;

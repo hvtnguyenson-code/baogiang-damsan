@@ -71,6 +71,16 @@ enum PpctVersionStatus {
   SUPERSEDED
 }
 
+enum PpctCurricularComponent {
+  CORE
+  SPECIALIZED_STUDY
+}
+
+enum PpctClassCurricularProfile {
+  CORE_ONLY
+  CORE_PLUS_SPECIALIZED_STUDY
+}
+
 enum OperationalOverlayStatus {
   ACTIVE
   REVERSED
@@ -723,53 +733,58 @@ model PpctVersion {
 }
 
 model PpctItem {
-  id         String   @id @default(uuid()) @db.Uuid
-  ppctPlanId String   @map("ppct_plan_id") @db.Uuid
-  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  id         String                  @id @default(uuid()) @db.Uuid
+  ppctPlanId String                  @map("ppct_plan_id") @db.Uuid
+  component  PpctCurricularComponent
+  createdAt  DateTime                @default(now()) @map("created_at") @db.Timestamptz(3)
 
   ppctPlan  PpctPlan           @relation(fields: [ppctPlanId], references: [id], onDelete: Restrict)
   revisions PpctItemRevision[]
 
   @@unique([id, ppctPlanId], map: "ppct_items_id_ppct_plan_id_key")
+  @@unique([id, ppctPlanId, component], map: "ppct_items_identity_component_key")
   @@index([ppctPlanId], map: "ppct_items_ppct_plan_id_idx")
   @@map("ppct_items")
 }
 
 model PpctItemRevision {
-  id            String   @id @default(uuid()) @db.Uuid
-  ppctVersionId String   @map("ppct_version_id") @db.Uuid
-  ppctPlanId    String   @map("ppct_plan_id") @db.Uuid
-  ppctItemId    String   @map("ppct_item_id") @db.Uuid
+  id            String                  @id @default(uuid()) @db.Uuid
+  ppctVersionId String                  @map("ppct_version_id") @db.Uuid
+  ppctPlanId    String                  @map("ppct_plan_id") @db.Uuid
+  ppctItemId    String                  @map("ppct_item_id") @db.Uuid
+  component     PpctCurricularComponent
   sequence      Int
-  title         String   @db.VarChar(500)
-  lessonType    String   @map("lesson_type") @db.VarChar(100)
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  title         String                  @db.VarChar(500)
+  lessonType    String                  @map("lesson_type") @db.VarChar(100)
+  createdAt     DateTime                @default(now()) @map("created_at") @db.Timestamptz(3)
 
   ppctVersion          PpctVersion                   @relation(fields: [ppctVersionId, ppctPlanId], references: [id, ppctPlanId], onDelete: Restrict)
-  ppctItem             PpctItem                      @relation(fields: [ppctItemId, ppctPlanId], references: [id, ppctPlanId], onDelete: Restrict)
+  ppctItem             PpctItem                      @relation(fields: [ppctItemId, ppctPlanId, component], references: [id, ppctPlanId, component], onDelete: Restrict, onUpdate: Restrict, map: "ppct_item_revisions_item_plan_component_fkey")
   predecessorEdges     PpctItemLineage[]             @relation("PpctItemLineagePredecessor")
   successorEdges       PpctItemLineage[]             @relation("PpctItemLineageSuccessor")
   makeupSchedules      MakeupTeachingSchedule[]      @relation("MakeupSchedulePpctItemRevision")
   curricularExecutions CurricularTeachingExecution[] @relation("CurricularExecutionPpctRevision")
 
-  @@unique([ppctVersionId, sequence], map: "ppct_item_revisions_version_sequence_key")
+  @@unique([ppctVersionId, component, sequence], map: "ppct_item_revisions_version_component_sequence_key")
   @@unique([ppctVersionId, ppctItemId], map: "ppct_item_revisions_version_item_key")
   @@unique([ppctVersionId, ppctItemId, ppctPlanId], map: "ppct_item_revisions_provenance_key")
+  @@unique([ppctVersionId, ppctItemId, ppctPlanId, component], map: "ppct_item_revisions_provenance_component_key")
   @@unique([id, ppctVersionId, ppctItemId, ppctPlanId], map: "ppct_item_revisions_execution_provenance_key")
   @@map("ppct_item_revisions")
 }
 
 model PpctItemLineage {
-  id                   String   @id @default(uuid()) @db.Uuid
-  ppctPlanId           String   @map("ppct_plan_id") @db.Uuid
-  predecessorVersionId String   @map("predecessor_version_id") @db.Uuid
-  predecessorItemId    String   @map("predecessor_item_id") @db.Uuid
-  successorVersionId   String   @map("successor_version_id") @db.Uuid
-  successorItemId      String   @map("successor_item_id") @db.Uuid
-  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  id                   String                  @id @default(uuid()) @db.Uuid
+  ppctPlanId           String                  @map("ppct_plan_id") @db.Uuid
+  component            PpctCurricularComponent
+  predecessorVersionId String                  @map("predecessor_version_id") @db.Uuid
+  predecessorItemId    String                  @map("predecessor_item_id") @db.Uuid
+  successorVersionId   String                  @map("successor_version_id") @db.Uuid
+  successorItemId      String                  @map("successor_item_id") @db.Uuid
+  createdAt            DateTime                @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  predecessorRevision PpctItemRevision @relation("PpctItemLineagePredecessor", fields: [predecessorVersionId, predecessorItemId, ppctPlanId], references: [ppctVersionId, ppctItemId, ppctPlanId], onDelete: Restrict)
-  successorRevision   PpctItemRevision @relation("PpctItemLineageSuccessor", fields: [successorVersionId, successorItemId, ppctPlanId], references: [ppctVersionId, ppctItemId, ppctPlanId], onDelete: Restrict)
+  predecessorRevision PpctItemRevision @relation("PpctItemLineagePredecessor", fields: [predecessorVersionId, predecessorItemId, ppctPlanId, component], references: [ppctVersionId, ppctItemId, ppctPlanId, component], onDelete: Restrict, onUpdate: Restrict, map: "ppct_item_lineage_predecessor_revision_fkey")
+  successorRevision   PpctItemRevision @relation("PpctItemLineageSuccessor", fields: [successorVersionId, successorItemId, ppctPlanId, component], references: [ppctVersionId, ppctItemId, ppctPlanId, component], onDelete: Restrict, onUpdate: Restrict, map: "ppct_item_lineage_successor_revision_fkey")
 
   @@unique([predecessorVersionId, predecessorItemId, successorVersionId, successorItemId], map: "ppct_item_lineage_edge_key")
   @@index([ppctPlanId, predecessorVersionId, predecessorItemId], map: "ppct_item_lineage_predecessor_idx")
@@ -778,18 +793,19 @@ model PpctItemLineage {
 }
 
 model PpctClassAssociation {
-  id              String    @id @default(uuid()) @db.Uuid
-  academicYearId  String    @map("academic_year_id") @db.Uuid
-  schoolClassId   String    @map("school_class_id") @db.Uuid
-  subjectId       String    @map("subject_id") @db.Uuid
-  gradeLevel      Int       @map("grade_level")
-  ppctPlanId      String    @map("ppct_plan_id") @db.Uuid
-  ppctVersionId   String    @map("ppct_version_id") @db.Uuid
-  effectiveFrom   DateTime  @map("effective_from") @db.Date
-  effectiveUntil  DateTime? @map("effective_until") @db.Date
-  createdByUserId String    @map("created_by_user_id") @db.Uuid
-  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id                String                     @id @default(uuid()) @db.Uuid
+  academicYearId    String                     @map("academic_year_id") @db.Uuid
+  schoolClassId     String                     @map("school_class_id") @db.Uuid
+  subjectId         String                     @map("subject_id") @db.Uuid
+  gradeLevel        Int                        @map("grade_level")
+  ppctPlanId        String                     @map("ppct_plan_id") @db.Uuid
+  ppctVersionId     String                     @map("ppct_version_id") @db.Uuid
+  curricularProfile PpctClassCurricularProfile @map("curricular_profile")
+  effectiveFrom     DateTime                   @map("effective_from") @db.Date
+  effectiveUntil    DateTime?                  @map("effective_until") @db.Date
+  createdByUserId   String                     @map("created_by_user_id") @db.Uuid
+  createdAt         DateTime                   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime                   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   academicYear         AcademicYear                  @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
   schoolClass          SchoolClass                   @relation("PpctClassAssociationSchoolClass", fields: [schoolClassId, academicYearId, gradeLevel], references: [id, academicYearId, gradeLevel], onDelete: Restrict)

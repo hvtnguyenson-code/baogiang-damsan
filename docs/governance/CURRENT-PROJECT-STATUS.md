@@ -10,9 +10,11 @@ It is **not** a self-referential registry of the latest Git commit. Exact curren
 
 ## Active major task
 
-None currently in progress. Canonical documentation synchronization completed by `SYNC-P2-001`.
-
-Next critical-path implementation task: `P2-002` (PPCT component persistence + control-plane realignment) — **READY**.
+`P2-002` — PPCT component persistence + control-plane realignment — **IN_REVIEW**.
+- Dedicated branch: `feat/ppct-component-persistence-control-plane-002`
+- Starting canonical base: `main@0594bbab58bf49a058ab4a744499366f3acbaf78` (baseline CI: CI #408 SUCCESS)
+- Implementation status: completed schema migration (`20260910010000_ppct_component_persistence_foundation`), control plane, server-side calendar week-split prevention, and read contracts. Downstream models preserved component-free. All unit, schema, static, and integration regressions PASS.
+- Awaiting independent GitHub review.
 
 Also eligible:
 - `P1-030` — Delayed go-live / operational-start architecture — **READY** (dependencies `P1-020` and `P2-001` both `CLOSED`).
@@ -20,8 +22,6 @@ Also eligible:
 
 Blocked:
 - `P2-010` — PPCT real-workbook contract/security audit — **BLOCKED_EVIDENCE** (pending authoritative school PPCT workbook/template).
-
-Preferred critical-path continuation is `P2-002` because it unlocks `P2-003` and `P2-004`, and is required by `P2-020`. Do not imply all three ready tasks should be started concurrently.
 
 Production environment remains strictly **PRE-OPERATIONAL**. No production deployment has occurred.
 

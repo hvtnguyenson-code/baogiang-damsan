@@ -9,10 +9,11 @@ MIGRATION_DB_HOST="${MIGRATION_DB_HOST:-127.0.0.1}"
 MIGRATION_DB_PORT="${MIGRATION_DB_PORT:-5432}"
 FRESH_DB="${FRESH_MIGRATION_DB:-baogiang_migration_fresh}"
 LEGACY_DB="${LEGACY_MIGRATION_DB:-baogiang_migration_legacy}"
+REPLAY_PPCT_DB="${REPLAY_PPCT_MIGRATION_DB:-baogiang_migration_replay_ppct}"
 BASELINE_MIGRATION="20260728000000_phase_00_baseline"
 SCHEMA_PATH="prisma/schema.prisma"
 
-for identifier in "$MIGRATION_DB_USER" "$FRESH_DB" "$LEGACY_DB"; do
+for identifier in "$MIGRATION_DB_USER" "$FRESH_DB" "$LEGACY_DB" "$REPLAY_PPCT_DB"; do
   if [[ ! "$identifier" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
     echo "Unsafe PostgreSQL identifier supplied." >&2
     exit 1
@@ -95,14 +96,27 @@ psql "$fresh_psql_url" -v ON_ERROR_STOP=1 -f scripts/ci/verify-timetable-import-
 echo "[migration-test] PPCT persistence constraint and history verification"
 psql "$fresh_psql_url" -v ON_ERROR_STOP=1 -f scripts/ci/verify-ppct-schema.sql
 
+echo "[migration-test] Canonical PPCT legacy migration replay verification"
+POSTGRES_ADMIN_URL="$POSTGRES_ADMIN_URL" \
+MIGRATION_DB_USER="$MIGRATION_DB_USER" \
+MIGRATION_DB_PASSWORD="$MIGRATION_DB_PASSWORD" \
+MIGRATION_DB_HOST="$MIGRATION_DB_HOST" \
+MIGRATION_DB_PORT="$MIGRATION_DB_PORT" \
+REPLAY_TEST_DB="$REPLAY_PPCT_DB" \
+node scripts/ci/test-canonical-ppct-migration-replay.cjs
+
 echo "[migration-test] Operational-overlay persistence constraint and history verification"
 # The 05C overlay verifier intentionally asserts that its persistence slice did not
 # introduce Teaching Execution tables. The current full migration chain now includes
 # the legitimate 05F1 downstream table, so hide only that table transactionally while
-# replaying the historical verifier. Its own ROLLBACK restores the original table name.
+# replaying the historical verifier. It also predates P2-002 component columns, so
+# supply historical defaults transactionally. Its own ROLLBACK restores the original state.
 psql "$fresh_psql_url" -v ON_ERROR_STOP=1 <<'SQL'
 BEGIN;
 ALTER TABLE "curricular_teaching_executions" RENAME TO "__05c_downstream_curricular_evidence";
+ALTER TABLE "ppct_items" ALTER COLUMN "component" SET DEFAULT 'CORE';
+ALTER TABLE "ppct_item_revisions" ALTER COLUMN "component" SET DEFAULT 'CORE';
+ALTER TABLE "ppct_class_associations" ALTER COLUMN "curricular_profile" SET DEFAULT 'CORE_ONLY';
 \i scripts/ci/verify-operational-overlay-schema.sql
 SQL
 
@@ -110,8 +124,15 @@ echo "[migration-test] Special Activity persistence constraint and history verif
 psql "$fresh_psql_url" -v ON_ERROR_STOP=1 -f scripts/ci/verify-special-activity-schema.sql
 
 echo "[migration-test] Teaching Execution persistence constraint and history verification"
-psql "$fresh_psql_url" -v ON_ERROR_STOP=1 \
-  -f scripts/ci/verify-teaching-execution-schema.sql
+# The 05F1 execution verifier predates P2-002 component columns. Supply historical defaults
+# transactionally; its own ROLLBACK restores the original state.
+psql "$fresh_psql_url" -v ON_ERROR_STOP=1 <<'SQL'
+BEGIN;
+ALTER TABLE "ppct_items" ALTER COLUMN "component" SET DEFAULT 'CORE';
+ALTER TABLE "ppct_item_revisions" ALTER COLUMN "component" SET DEFAULT 'CORE';
+ALTER TABLE "ppct_class_associations" ALTER COLUMN "curricular_profile" SET DEFAULT 'CORE_ONLY';
+\i scripts/ci/verify-teaching-execution-schema.sql
+SQL
 
 echo "[migration-test] Reporting Statement persistence constraint verification"
 psql "$fresh_psql_url" -v ON_ERROR_STOP=1 -f scripts/ci/verify-reporting-statement-schema.sql

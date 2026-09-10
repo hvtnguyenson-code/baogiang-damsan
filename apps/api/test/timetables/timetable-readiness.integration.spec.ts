@@ -100,14 +100,14 @@ integration('deterministic timetable readiness read model (PostgreSQL)', () => {
       ppctPlanId: plan.id, versionNumber: 1, status: PpctVersionStatus.PUBLISHED, createdByUserId: actorUserId,
       publishedByUserId: actorUserId, publishedAt: new Date('2026-08-14T00:00:00Z'),
     } });
-    const item = await h.prisma.ppctItem.create({ data: { ppctPlanId: plan.id } });
+    const item = await h.prisma.ppctItem.create({ data: { ppctPlanId: plan.id, component: 'CORE' } });
     await h.prisma.ppctItemRevision.create({ data: {
       ppctVersionId: ppctVersion.id, ppctPlanId: plan.id, ppctItemId: item.id,
-      sequence: 1, title: 'Bài 1', lessonType: 'Lý thuyết',
+      component: 'CORE', sequence: 1, title: 'Bài 1', lessonType: 'Lý thuyết',
     } });
     const association = await h.prisma.ppctClassAssociation.create({ data: {
       academicYearId: year.id, schoolClassId: schoolClass.id, subjectId: subject.id, gradeLevel: 10,
-      ppctPlanId: plan.id, ppctVersionId: ppctVersion.id, effectiveFrom: new Date('2026-09-01Z'),
+      ppctPlanId: plan.id, ppctVersionId: ppctVersion.id, curricularProfile: 'CORE_ONLY', effectiveFrom: new Date('2026-09-01Z'),
       effectiveUntil: null, createdByUserId: actorUserId,
     } });
     return { year, calendar, reserveWeek, schoolClass, subject, teacher, timetable, plan, ppctVersion, association };
@@ -289,7 +289,7 @@ integration('deterministic timetable readiness read model (PostgreSQL)', () => {
     } });
     const secondAssociation = await h.prisma.ppctClassAssociation.create({ data: {
       academicYearId: f.year.id, schoolClassId: f.schoolClass.id, subjectId: f.subject.id, gradeLevel: 10,
-      ppctPlanId: f.plan.id, ppctVersionId: current.id, effectiveFrom: new Date('2026-09-08Z'),
+      ppctPlanId: f.plan.id, ppctVersionId: current.id, curricularProfile: 'CORE_ONLY', effectiveFrom: new Date('2026-09-08Z'),
       effectiveUntil: null, createdByUserId: manager.id,
     } });
     const response = await manager.agent.get(`/api/timetable-versions/${f.timetable.id}/readiness?from=2026-09-07&to=2026-09-21`);

@@ -12,6 +12,11 @@ integration('PPCT control plane and lifecycle (PostgreSQL)', () => {
     await h.prisma.ppctItem.deleteMany();
     await h.prisma.ppctVersion.deleteMany();
     await h.prisma.ppctPlan.deleteMany();
+    await h.prisma.calendarInterruption.deleteMany();
+    await h.prisma.semester.deleteMany();
+    await h.prisma.academicWeekSegment.deleteMany();
+    await h.prisma.academicWeek.deleteMany();
+    await h.prisma.academicCalendarVersion.deleteMany();
     await h.clean();
   }
 
@@ -56,7 +61,7 @@ integration('PPCT control plane and lifecycle (PostgreSQL)', () => {
   }
 
   const contentItem = (itemId: string, sequence: number, overrides: Record<string, unknown> = {}) => ({
-    itemId, identityMode: 'NEW', sequence, title: ` Bài ${sequence} `, lessonType: ' Lý thuyết ', ...overrides,
+    itemId, identityMode: 'NEW', component: 'CORE', sequence, title: ` Bài ${sequence} `, lessonType: ' Lý thuyết ', ...overrides,
   });
 
   async function author(
@@ -358,7 +363,7 @@ integration('PPCT control plane and lifecycle (PostgreSQL)', () => {
     expect((await publish(manager, draft.body.id, authored.body.version.updatedAt, null)).status).toBe(200);
     const stream = `/api/academic-years/${f.year.id}/classes/${f.schoolClass.id}/subjects/${f.subject.id}`;
     const initial = await manager.agent.post(`${stream}/ppct-associations/switch`).set('Origin', testOrigin).send({
-      ppctVersionId: draft.body.id, effectiveFrom: '2026-09-01', expectedLatestAssociationId: null,
+      ppctVersionId: draft.body.id, curricularProfile: 'CORE_ONLY', effectiveFrom: '2026-09-01', expectedLatestAssociationId: null,
     });
     expect(initial.status).toBe(201);
     expect(initial.body.association).toMatchObject({
@@ -368,6 +373,7 @@ integration('PPCT control plane and lifecycle (PostgreSQL)', () => {
       gradeLevel: 10,
       ppctPlanId: plan.body.id,
       ppctVersionId: draft.body.id,
+      curricularProfile: 'CORE_ONLY',
       effectiveFrom: '2026-09-01',
       effectiveUntil: null,
     });
@@ -378,10 +384,10 @@ integration('PPCT control plane and lifecycle (PostgreSQL)', () => {
     const otherYear = await h.prisma.academicYear.create({ data: { code: normalizedCode('Y2'), name: '2027-2028' } });
     const wrongTuple = `/api/academic-years/${otherYear.id}/classes/${f.schoolClass.id}/subjects/${f.subject.id}`;
     expect((await manager.agent.post(`${wrongTuple}/ppct-associations/switch`).set('Origin', testOrigin).send({
-      ppctVersionId: draft.body.id, effectiveFrom: '2026-09-02', expectedLatestAssociationId: null,
+      ppctVersionId: draft.body.id, curricularProfile: 'CORE_ONLY', effectiveFrom: '2026-09-02', expectedLatestAssociationId: null,
     })).status).toBe(409);
     expect((await otherManager.agent.post(`${stream}/ppct-associations/switch`).set('Origin', testOrigin).send({
-      ppctVersionId: draft.body.id, effectiveFrom: '2026-09-02', expectedLatestAssociationId: initial.body.association.id,
+      ppctVersionId: draft.body.id, curricularProfile: 'CORE_ONLY', effectiveFrom: '2026-09-02', expectedLatestAssociationId: initial.body.association.id,
     })).status).toBe(403);
 
     const wrongGrade = await createPlanAndDraft(manager, f, { gradeLevel: 11 });
@@ -392,6 +398,7 @@ integration('PPCT control plane and lifecycle (PostgreSQL)', () => {
     expect((await publish(manager, wrongGrade.draft.body.id, wrongGradeAuthored.body.version.updatedAt, null)).status).toBe(200);
     expect((await manager.agent.post(`${stream}/ppct-associations/switch`).set('Origin', testOrigin).send({
       ppctVersionId: wrongGrade.draft.body.id,
+      curricularProfile: 'CORE_ONLY',
       effectiveFrom: '2026-09-02',
       expectedLatestAssociationId: initial.body.association.id,
     })).status).toBe(409);
@@ -406,6 +413,7 @@ integration('PPCT control plane and lifecycle (PostgreSQL)', () => {
     )).status).toBe(200);
     expect((await manager.agent.post(`${stream}/ppct-associations/switch`).set('Origin', testOrigin).send({
       ppctVersionId: wrongSubject.draft.body.id,
+      curricularProfile: 'CORE_ONLY',
       effectiveFrom: '2026-09-02',
       expectedLatestAssociationId: initial.body.association.id,
     })).status).toBe(409);
@@ -422,12 +430,14 @@ integration('PPCT control plane and lifecycle (PostgreSQL)', () => {
     expect(unchangedAfterPublish).toEqual(initialBeforeSwitch);
     expect((await manager.agent.post(`${stream}/ppct-associations/switch`).set('Origin', testOrigin).send({
       ppctVersionId: draft.body.id,
+      curricularProfile: 'CORE_ONLY',
       effectiveFrom: '2026-09-10',
       expectedLatestAssociationId: initial.body.association.id,
     })).status).toBe(409);
 
     const switched = await manager.agent.post(`${stream}/ppct-associations/switch`).set('Origin', testOrigin).send({
       ppctVersionId: correction.body.id,
+      curricularProfile: 'CORE_ONLY',
       effectiveFrom: '2026-09-10',
       expectedLatestAssociationId: initial.body.association.id,
     });
@@ -442,6 +452,7 @@ integration('PPCT control plane and lifecycle (PostgreSQL)', () => {
       gradeLevel: initialBeforeSwitch.gradeLevel,
       ppctPlanId: initialBeforeSwitch.ppctPlanId,
       ppctVersionId: initialBeforeSwitch.ppctVersionId,
+      curricularProfile: 'CORE_ONLY',
     });
     const initialAfterSwitch = await h.prisma.ppctClassAssociation.findUniqueOrThrow({
       where: { id: initial.body.association.id },
@@ -455,6 +466,7 @@ integration('PPCT control plane and lifecycle (PostgreSQL)', () => {
       gradeLevel: initialBeforeSwitch.gradeLevel,
       ppctPlanId: initialBeforeSwitch.ppctPlanId,
       ppctVersionId: initialBeforeSwitch.ppctVersionId,
+      curricularProfile: 'CORE_ONLY',
       createdByUserId: initialBeforeSwitch.createdByUserId,
       createdAt: initialBeforeSwitch.createdAt,
       effectiveUntil: new Date('2026-09-09T00:00:00.000Z'),
@@ -462,6 +474,7 @@ integration('PPCT control plane and lifecycle (PostgreSQL)', () => {
     expect(initialAfterSwitch.updatedAt.getTime()).toBeGreaterThanOrEqual(initialBeforeSwitch.updatedAt.getTime());
     expect((await manager.agent.post(`${stream}/ppct-associations/switch`).set('Origin', testOrigin).send({
       ppctVersionId: correction.body.id,
+      curricularProfile: 'CORE_ONLY',
       effectiveFrom: '2026-09-20',
       expectedLatestAssociationId: initial.body.association.id,
     })).status).toBe(409);
@@ -471,6 +484,7 @@ integration('PPCT control plane and lifecycle (PostgreSQL)', () => {
     });
     const afterGap = await manager.agent.post(`${stream}/ppct-associations/switch`).set('Origin', testOrigin).send({
       ppctVersionId: correction.body.id,
+      curricularProfile: 'CORE_ONLY',
       effectiveFrom: '2026-09-25',
       expectedLatestAssociationId: switched.body.association.id,
     });
@@ -486,6 +500,7 @@ integration('PPCT control plane and lifecycle (PostgreSQL)', () => {
       gradeLevel: 10,
       ppctPlanId: plan.body.id,
       ppctVersionId: correction.body.id,
+      curricularProfile: 'CORE_ONLY',
       effectiveFrom: new Date('2026-09-05T00:00:00.000Z'),
       effectiveUntil: new Date('2026-09-12T00:00:00.000Z'),
       createdByUserId: manager.id,
@@ -506,15 +521,15 @@ integration('PPCT control plane and lifecycle (PostgreSQL)', () => {
     const gap = await manager.agent.get(`${stream}/ppct-resolution?date=2026-09-22`);
     expect(old.body).toMatchObject({
       resolved: true,
-      association: { id: initial.body.association.id, ppctVersionId: draft.body.id },
+      association: { id: initial.body.association.id, ppctVersionId: draft.body.id, curricularProfile: 'CORE_ONLY' },
       version: { id: draft.body.id, status: 'SUPERSEDED' },
     });
     expect(newer.body).toMatchObject({
       resolved: true,
-      association: { id: switched.body.association.id, ppctVersionId: correction.body.id },
+      association: { id: switched.body.association.id, ppctVersionId: correction.body.id, curricularProfile: 'CORE_ONLY' },
       version: { id: correction.body.id, status: 'PUBLISHED' },
     });
-    expect(newer.body.items[0]).toMatchObject({ itemId: item, title: 'Bài sửa' });
+    expect(newer.body.items[0]).toMatchObject({ itemId: item, title: 'Bài sửa', component: 'CORE', displaySequence: '1' });
     expect(gap.body).toEqual({
       resolved: false,
       academicYearId: f.year.id,
@@ -533,5 +548,305 @@ integration('PPCT control plane and lifecycle (PostgreSQL)', () => {
       'PPCT_VERSION_SUPERSEDED',
       'PPCT_CLASS_ASSOCIATION_SWITCHED',
     ]));
+  });
+
+  it('enforces PPCT component persistence, sequence independence, immutability, and cross-component lineage rejection', async () => {
+    const f = await fixture();
+    const manager = await subjectManager(f.subject.id);
+    const { plan, draft } = await createPlanAndDraft(manager, f);
+
+    const core1 = crypto.randomUUID();
+    const spec1 = crypto.randomUUID();
+    const spec2 = crypto.randomUUID();
+
+    // 1. Independent sequence spaces: CORE seq 1 and SPECIALIZED_STUDY seq 1 must succeed in same version
+    const authored = await author(manager, draft.body.id, draft.body.updatedAt, [
+      contentItem(core1, 1, { component: 'CORE', title: 'Bài cốt lõi 1' }),
+      contentItem(spec1, 1, { component: 'SPECIALIZED_STUDY', title: 'Chuyên đề 1' }),
+      contentItem(spec2, 2, { component: 'SPECIALIZED_STUDY', title: 'Chuyên đề 2' }),
+    ]);
+    expect(authored.status).toBe(200);
+    expect(authored.body.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ itemId: core1, component: 'CORE', sequence: 1, displaySequence: '1' }),
+      expect.objectContaining({ itemId: spec1, component: 'SPECIALIZED_STUDY', sequence: 1, displaySequence: 'CD1' }),
+      expect.objectContaining({ itemId: spec2, component: 'SPECIALIZED_STUDY', sequence: 2, displaySequence: 'CD2' }),
+    ]));
+
+    // 2. Duplicate sequence in same component must be rejected
+    const dupCore = await author(manager, draft.body.id, authored.body.version.updatedAt, [
+      contentItem(core1, 1, { component: 'CORE' }),
+      contentItem(crypto.randomUUID(), 1, { component: 'CORE' }),
+    ]);
+    expect(dupCore.status).toBe(400);
+
+    // 3. Publish initial version
+    const pub = await publish(manager, draft.body.id, authored.body.version.updatedAt, null);
+    expect(pub.status).toBe(200);
+
+    // 4. Create draft from source version: clone preserves component faithfully
+    const nextDraft = await manager.agent.post(`/api/ppct-plans/${plan.body.id as string}/versions`)
+      .set('Origin', testOrigin).send({ sourceVersionId: draft.body.id });
+    expect(nextDraft.status).toBe(201);
+    const cloned = await manager.agent.get(`/api/ppct-versions/${nextDraft.body.id as string}/content`);
+    expect(cloned.body.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ itemId: core1, component: 'CORE' }),
+      expect.objectContaining({ itemId: spec1, component: 'SPECIALIZED_STUDY' }),
+      expect.objectContaining({ itemId: spec2, component: 'SPECIALIZED_STUDY' }),
+    ]));
+
+    // 5. CARRY_FORWARD with component drift must be rejected
+    const driftAttempt = await author(manager, nextDraft.body.id, nextDraft.body.updatedAt, [
+      contentItem(core1, 1, { identityMode: 'CARRY_FORWARD', component: 'SPECIALIZED_STUDY' }),
+    ]);
+    expect(driftAttempt.status).toBe(409);
+
+    // 6. Same-component SPLIT/MERGE lineage succeeds
+    const specSuccessor = crypto.randomUUID();
+    const validLineage = await author(manager, nextDraft.body.id, nextDraft.body.updatedAt, [
+      contentItem(core1, 1, { identityMode: 'CARRY_FORWARD', component: 'CORE' }),
+      contentItem(specSuccessor, 1, {
+        identityMode: 'NEW',
+        component: 'SPECIALIZED_STUDY',
+        predecessors: [{ versionId: draft.body.id, itemId: spec1 }],
+      }),
+    ]);
+    expect(validLineage.status).toBe(200);
+    expect(validLineage.body.lineage).toEqual([
+      expect.objectContaining({
+        predecessorItemId: spec1,
+        successorItemId: specSuccessor,
+        component: 'SPECIALIZED_STUDY',
+      }),
+    ]);
+
+    // 7. Cross-component lineage (CORE predecessor -> SPECIALIZED_STUDY successor) must be rejected with exact error code
+    const crossSuccessor = crypto.randomUUID();
+    const crossLineage = await author(manager, nextDraft.body.id, validLineage.body.version.updatedAt, [
+      contentItem(core1, 1, { identityMode: 'CARRY_FORWARD', component: 'CORE' }),
+      contentItem(crossSuccessor, 1, {
+        identityMode: 'NEW',
+        component: 'SPECIALIZED_STUDY',
+        predecessors: [{ versionId: draft.body.id, itemId: core1 }],
+      }),
+    ]);
+    expect(crossLineage.status).toBe(409);
+    expect(crossLineage.body).toMatchObject({
+      error: 'PPCT_COMPONENT_LINEAGE_CROSS_COMPONENT',
+    });
+  });
+
+  it('enforces publication rules: rejects empty or specialized-only drafts, publishes CORE-only and mixed atomically', async () => {
+    const f = await fixture();
+    const manager = await subjectManager(f.subject.id);
+    const { plan, draft } = await createPlanAndDraft(manager, f);
+
+    // Empty draft rejected
+    expect((await publish(manager, draft.body.id, draft.body.updatedAt, null)).status).toBe(409);
+
+    // Specialized-only draft rejected
+    const specOnly = await author(manager, draft.body.id, draft.body.updatedAt, [
+      contentItem(crypto.randomUUID(), 1, { component: 'SPECIALIZED_STUDY', title: 'Chuyên đề đơn độc' }),
+    ]);
+    expect(specOnly.status).toBe(200);
+    const pubSpecOnly = await publish(manager, draft.body.id, specOnly.body.version.updatedAt, null);
+    expect(pubSpecOnly.status).toBe(409);
+
+    // CORE-only draft publishes
+    const coreOnly = await author(manager, draft.body.id, specOnly.body.version.updatedAt, [
+      contentItem(crypto.randomUUID(), 1, { component: 'CORE', title: 'Bài cốt lõi' }),
+    ]);
+    expect(coreOnly.status).toBe(200);
+    const pubCoreOnly = await publish(manager, draft.body.id, coreOnly.body.version.updatedAt, null);
+    expect(pubCoreOnly.status).toBe(200);
+    expect(pubCoreOnly.body).toMatchObject({ status: 'PUBLISHED' });
+
+    // Mixed CORE + SPECIALIZED_STUDY publishes atomically
+    const draft2 = await manager.agent.post(`/api/ppct-plans/${plan.body.id as string}/versions`)
+      .set('Origin', testOrigin).send({ sourceVersionId: draft.body.id });
+    const mixed = await author(manager, draft2.body.id, draft2.body.updatedAt, [
+      contentItem(coreOnly.body.items[0].itemId, 1, { identityMode: 'CARRY_FORWARD', component: 'CORE' }),
+      contentItem(crypto.randomUUID(), 1, { component: 'SPECIALIZED_STUDY', title: 'Chuyên đề 1' }),
+    ]);
+    expect(mixed.status).toBe(200);
+    const pubMixed = await publish(manager, draft2.body.id, mixed.body.version.updatedAt, draft.body.id);
+    expect(pubMixed.status).toBe(200);
+    expect(pubMixed.body).toMatchObject({ status: 'PUBLISHED', versionNumber: 2 });
+  });
+
+  it('enforces class association curricular profile rules and server-side calendar week-split prevention', async () => {
+    const f = await fixture();
+    const manager = await subjectManager(f.subject.id);
+
+    // Setup active AcademicCalendarVersion with a week having 2 segments and an internal gap
+    const calendar = await h.prisma.academicCalendarVersion.create({
+      data: {
+        academicYearId: f.year.id,
+        versionNumber: 1,
+        startDate: new Date('2026-09-01T00:00:00.000Z'),
+        endDate: new Date('2027-05-31T00:00:00.000Z'),
+        officialWeekCount: 35,
+        reserveWeekCount: 1,
+        teachingWeekdays: ['MONDAY', 'TUESDAY', 'THURSDAY', 'FRIDAY'],
+        isActive: true,
+        activatedAt: new Date('2026-09-01T00:00:00.000Z'),
+      },
+    });
+    const week2 = await h.prisma.academicWeek.create({
+      data: {
+        calendarVersionId: calendar.id,
+        kind: 'OFFICIAL',
+        officialWeekNumber: 2,
+        displayLabel: 'Tuần 2',
+        sortOrder: 2,
+      },
+    });
+    await h.prisma.academicWeekSegment.createMany({
+      data: [
+        {
+          academicWeekId: week2.id,
+          calendarVersionId: calendar.id,
+          label: 'T2a',
+          segmentOrder: 1,
+          startDate: new Date('2026-09-07T00:00:00.000Z'),
+          endDate: new Date('2026-09-08T00:00:00.000Z'),
+        },
+        {
+          academicWeekId: week2.id,
+          calendarVersionId: calendar.id,
+          label: 'T2b',
+          segmentOrder: 2,
+          startDate: new Date('2026-09-10T00:00:00.000Z'),
+          endDate: new Date('2026-09-11T00:00:00.000Z'),
+        },
+      ],
+    });
+
+    const week3 = await h.prisma.academicWeek.create({
+      data: {
+        calendarVersionId: calendar.id,
+        kind: 'OFFICIAL',
+        officialWeekNumber: 3,
+        displayLabel: 'Tuần 3',
+        sortOrder: 3,
+      },
+    });
+    await h.prisma.academicWeekSegment.create({
+      data: {
+        academicWeekId: week3.id,
+        calendarVersionId: calendar.id,
+        label: 'T3',
+        segmentOrder: 1,
+        startDate: new Date('2026-09-14T00:00:00.000Z'),
+        endDate: new Date('2026-09-18T00:00:00.000Z'),
+      },
+    });
+
+    const { plan, draft: draft1 } = await createPlanAndDraft(manager, f);
+    const coreItem = crypto.randomUUID();
+    const authored1 = await author(manager, draft1.body.id, draft1.body.updatedAt, [
+      contentItem(coreItem, 1, { component: 'CORE' }),
+    ]);
+    await publish(manager, draft1.body.id, authored1.body.version.updatedAt, null);
+
+    const stream = `/api/academic-years/${f.year.id}/classes/${f.schoolClass.id}/subjects/${f.subject.id}`;
+
+    // CORE_PLUS_SPECIALIZED_STUDY against a version with 0 specialized items must be rejected
+    const noSpecAttempt = await manager.agent.post(`${stream}/ppct-associations/switch`).set('Origin', testOrigin).send({
+      ppctVersionId: draft1.body.id,
+      curricularProfile: 'CORE_PLUS_SPECIALIZED_STUDY',
+      effectiveFrom: '2026-09-01',
+      expectedLatestAssociationId: null,
+    });
+    expect(noSpecAttempt.status).toBe(409);
+
+    // Initial binding with CORE_ONLY succeeds
+    const initial = await manager.agent.post(`${stream}/ppct-associations/switch`).set('Origin', testOrigin).send({
+      ppctVersionId: draft1.body.id,
+      curricularProfile: 'CORE_ONLY',
+      effectiveFrom: '2026-09-01',
+      expectedLatestAssociationId: null,
+    });
+    expect(initial.status).toBe(201);
+    expect(initial.body.association.curricularProfile).toBe('CORE_ONLY');
+
+    // Create and publish v2 with SPECIALIZED_STUDY
+    const draft2 = await manager.agent.post(`/api/ppct-plans/${plan.body.id as string}/versions`)
+      .set('Origin', testOrigin).send({ sourceVersionId: draft1.body.id });
+    const specItem = crypto.randomUUID();
+    const authored2 = await author(manager, draft2.body.id, draft2.body.updatedAt, [
+      contentItem(coreItem, 1, { identityMode: 'CARRY_FORWARD', component: 'CORE' }),
+      contentItem(specItem, 1, { component: 'SPECIALIZED_STUDY', title: 'Chuyên đề 1' }),
+    ]);
+    await publish(manager, draft2.body.id, authored2.body.version.updatedAt, draft1.body.id);
+
+    // Profile change from CORE_ONLY to CORE_PLUS_SPECIALIZED_STUDY inside Week 2:
+    // a. Inside normal AcademicWeekSegment (2026-09-08) -> rejected with PPCT_COMPONENT_APPLICABILITY_WEEK_SPLIT
+    const splitSeg1 = await manager.agent.post(`${stream}/ppct-associations/switch`).set('Origin', testOrigin).send({
+      ppctVersionId: draft2.body.id,
+      curricularProfile: 'CORE_PLUS_SPECIALIZED_STUDY',
+      effectiveFrom: '2026-09-08',
+      expectedLatestAssociationId: initial.body.association.id,
+    });
+    expect(splitSeg1.status).toBe(409);
+    expect(splitSeg1.body).toMatchObject({
+      error: 'PPCT_COMPONENT_APPLICABILITY_WEEK_SPLIT',
+    });
+
+    // b. Inside internal CalendarInterruption gap between segments belonging to SAME AcademicWeek (2026-09-09) -> rejected with PPCT_COMPONENT_APPLICABILITY_WEEK_SPLIT
+    const splitGap = await manager.agent.post(`${stream}/ppct-associations/switch`).set('Origin', testOrigin).send({
+      ppctVersionId: draft2.body.id,
+      curricularProfile: 'CORE_PLUS_SPECIALIZED_STUDY',
+      effectiveFrom: '2026-09-09',
+      expectedLatestAssociationId: initial.body.association.id,
+    });
+    expect(splitGap.status).toBe(409);
+    expect(splitGap.body).toMatchObject({
+      error: 'PPCT_COMPONENT_APPLICABILITY_WEEK_SPLIT',
+    });
+
+    // c. Mid-week PPCT VERSION switch with unchanged curricularProfile (CORE_ONLY -> CORE_ONLY on 2026-09-08) -> SUCCEEDS (allowed!)
+    const sameProfileMidWeek = await manager.agent.post(`${stream}/ppct-associations/switch`).set('Origin', testOrigin).send({
+      ppctVersionId: draft2.body.id,
+      curricularProfile: 'CORE_ONLY',
+      effectiveFrom: '2026-09-08',
+      expectedLatestAssociationId: initial.body.association.id,
+    });
+    expect(sameProfileMidWeek.status).toBe(201);
+    expect(sameProfileMidWeek.body.association.curricularProfile).toBe('CORE_ONLY');
+
+    // d. Profile transition at first segment start of next exact AcademicWeek (2026-09-14) -> SUCCEEDS (accepted!)
+    const nextWeekFirstSegmentStart = await manager.agent.post(`${stream}/ppct-associations/switch`).set('Origin', testOrigin).send({
+      ppctVersionId: draft2.body.id,
+      curricularProfile: 'CORE_PLUS_SPECIALIZED_STUDY',
+      effectiveFrom: '2026-09-14',
+      expectedLatestAssociationId: sameProfileMidWeek.body.association.id,
+    });
+    expect(nextWeekFirstSegmentStart.status).toBe(201);
+    expect(nextWeekFirstSegmentStart.body.association.curricularProfile).toBe('CORE_PLUS_SPECIALIZED_STUDY');
+
+    // e. Profile transition inside next AcademicWeekSegment (2026-09-15) -> rejected with PPCT_COMPONENT_APPLICABILITY_WEEK_SPLIT
+    const splitNextWeekSeg1 = await manager.agent.post(`${stream}/ppct-associations/switch`).set('Origin', testOrigin).send({
+      ppctVersionId: draft2.body.id,
+      curricularProfile: 'CORE_ONLY',
+      effectiveFrom: '2026-09-15',
+      expectedLatestAssociationId: nextWeekFirstSegmentStart.body.association.id,
+    });
+    expect(splitNextWeekSeg1.status).toBe(409);
+    expect(splitNextWeekSeg1.body).toMatchObject({
+      error: 'PPCT_COMPONENT_APPLICABILITY_WEEK_SPLIT',
+    });
+  });
+
+  it('asserts downstream entities TimetableEntry, TeachingAssignment, CurricularTeachingExecution, MakeupTeachingSchedule remain component-free', async () => {
+    // Assert at runtime that Prisma client models do not have component field
+    const dmmf = (h.prisma as unknown as { _dmmf?: { datamodel?: { models?: Array<{ name: string; fields: Array<{ name: string }> }> } } })._dmmf;
+    if (dmmf?.datamodel?.models) {
+      for (const modelName of ['TimetableEntry', 'TeachingAssignment', 'CurricularTeachingExecution', 'MakeupTeachingSchedule']) {
+        const model = dmmf.datamodel.models.find((m) => m.name === modelName);
+        expect(model).toBeDefined();
+        const componentField = model?.fields.find((f) => f.name.toLowerCase().includes('component') || f.name.toLowerCase().includes('curricularprofile'));
+        expect(componentField).toBeUndefined();
+      }
+    }
   });
 });

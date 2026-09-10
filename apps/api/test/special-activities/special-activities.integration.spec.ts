@@ -95,9 +95,9 @@ integration('special activity runtime control plane (PostgreSQL)', () => {
   async function createMakeup(f: Awaited<ReturnType<typeof fixture>>, entry: typeof f.entryA, scheduledTeacherId: string, eligibilityStaffSubjectId: string, targetSlotId: string) {
     const plan = await h.prisma.ppctPlan.create({ data: { academicYearId: f.year.id, subjectId: entry.subjectId, gradeLevel: 10 } });
     const ppctVersion = await h.prisma.ppctVersion.create({ data: { ppctPlanId: plan.id, versionNumber: 1, status: PpctVersionStatus.PUBLISHED, createdByUserId: f.version.createdByUserId, publishedByUserId: f.version.createdByUserId, publishedAt: new Date('2026-08-14T00:00:00Z') } });
-    const item = await h.prisma.ppctItem.create({ data: { ppctPlanId: plan.id } });
-    await h.prisma.ppctItemRevision.create({ data: { ppctVersionId: ppctVersion.id, ppctPlanId: plan.id, ppctItemId: item.id, sequence: 1, title: 'Lesson 1', lessonType: 'Theory' } });
-    const association = await h.prisma.ppctClassAssociation.create({ data: { academicYearId: f.year.id, schoolClassId: entry.schoolClassId, subjectId: entry.subjectId, gradeLevel: 10, ppctPlanId: plan.id, ppctVersionId: ppctVersion.id, effectiveFrom: new Date('2026-09-01Z'), createdByUserId: f.version.createdByUserId } });
+    const item = await h.prisma.ppctItem.create({ data: { ppctPlanId: plan.id, component: 'CORE' } });
+    await h.prisma.ppctItemRevision.create({ data: { ppctVersionId: ppctVersion.id, ppctPlanId: plan.id, ppctItemId: item.id, component: 'CORE', sequence: 1, title: 'Lesson 1', lessonType: 'Theory' } });
+    const association = await h.prisma.ppctClassAssociation.create({ data: { academicYearId: f.year.id, schoolClassId: entry.schoolClassId, subjectId: entry.subjectId, gradeLevel: 10, ppctPlanId: plan.id, ppctVersionId: ppctVersion.id, curricularProfile: 'CORE_ONLY', effectiveFrom: new Date('2026-09-01Z'), createdByUserId: f.version.createdByUserId } });
     return h.prisma.makeupTeachingSchedule.create({ data: {
       academicYearId: f.year.id, originalTimetableVersionId: f.version.id, originalTimetableEntryId: entry.id,
       originalCivilDate: new Date('2026-09-14Z'), originalAcademicCalendarVersionId: f.calendar.id,
