@@ -33,7 +33,6 @@ function normal(
 
 function harness(options?: {
   profile?: PpctClassCurricularProfile;
-  through?: CivilDate;
   suppressFirstFriday?: boolean;
   specializedCount?: number;
   onlyMonday?: boolean;
@@ -42,9 +41,10 @@ function harness(options?: {
   const profile = options?.profile ?? PpctClassCurricularProfile.CORE_PLUS_SPECIALIZED_STUDY;
   const onlyMonday = options?.onlyMonday ?? false;
   const segmentWeeks = options?.segmentWeeks ?? [{ id: 'w1', start: '2026-09-07', end: '2026-09-13' }];
+  const version = { id: 'timetable', calendarVersionId: 'calendar', effectiveFrom: date('2026-09-07'), effectiveUntil: null };
   const entries = [
-    { weekday: 'MONDAY', timetableVersion: { effectiveFrom: date('2026-09-07'), effectiveUntil: null } },
-    ...(!onlyMonday ? [{ weekday: 'FRIDAY', timetableVersion: { effectiveFrom: date('2026-09-07'), effectiveUntil: null } }] : []),
+    { id: 'mon', weekday: 'MONDAY', timeSlotDefinition: { startTime: new Date('1970-01-01T07:00:00Z'), endTime: new Date('1970-01-01T07:45:00Z') }, timetableVersion: version },
+    ...(!onlyMonday ? [{ id: 'fri', weekday: 'FRIDAY', timeSlotDefinition: { startTime: new Date('1970-01-01T09:00:00Z'), endTime: new Date('1970-01-01T09:45:00Z') }, timetableVersion: version }] : []),
   ];
   const segments = segmentWeeks.map((week, index) => ({ id: `seg-${week.id}`, academicWeekId: week.id, calendarVersionId: 'calendar', segmentOrder: index + 1, startDate: date(week.start), endDate: date(week.end) }));
   const core = ['C1', 'C2', 'C3'].map((title, index) => ({ id: `r-${title}`, ppctVersionId: 'version', ppctPlanId: 'plan', ppctItemId: title, component: PpctCurricularComponent.CORE, sequence: index + 1, title, lessonType: 'LESSON' }));
@@ -86,6 +86,15 @@ describe('PpctOccurrenceAllocationV2Service', () => {
       ['2026-09-07', PpctCurricularComponent.CORE, 'C1'],
       ['2026-09-11', PpctCurricularComponent.SPECIALIZED_STUDY, 'S1'],
     ]);
+  });
+
+  it('uses the complete retained business week for Monday planning without consuming Friday early', async () => {
+    const h = harness();
+    const result = await h.service.resolve({ academicYearId: 'year', schoolClassId: 'class', subjectId: 'subject', throughCivilDate: '2026-09-07' });
+    expect(result.status).toBe('PASS');
+    expect(result.normalAllocations).toHaveLength(1);
+    expect(result.normalAllocations[0]).toMatchObject({ plannedComponent: PpctCurricularComponent.CORE, allocationStatus: 'ALLOCATED', expectedPpctItem: { title: 'C1', component: PpctCurricularComponent.CORE } });
+    expect(result.findings.some((finding) => finding.code === 'PPCT_COMPONENT_WEEK_CAPACITY_INVALID')).toBe(false);
   });
 
   it('keeps a suppressed weekly-last opportunity specialized without promoting CORE', async () => {
