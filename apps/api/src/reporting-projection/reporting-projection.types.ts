@@ -1,3 +1,4 @@
+import { PpctCurricularComponent } from '@prisma/client';
 import { CivilDateString } from '@baogiang/contracts';
 import { ProgressDebtClassification, ProgressDebtCounts, ProgressDebtFinding } from '../progress-debt/progress-debt.types';
 export type ReportingFindingCode = ProgressDebtFinding['code'] | 'SOURCE_TIME_SLOT_PROVENANCE_MISSING';
@@ -17,7 +18,7 @@ export interface ReportingDetail {
   sourceNormalOccurrenceKey: string; originalTimetableVersionId: string; originalTimetableEntryId: string;
   sourceCivilDate: CivilDateString; sourceAcademicCalendarVersionId: string; sourceTimeSlotDefinitionId: string;
   sourceSlotStart: string; sourceSlotEnd: string; originalTeachingAssignmentId: string; responsibleTeacherUserId: string;
-  ppctClassAssociationId: string; ppctPlanId: string; ppctVersionId: string; ppctItemId: string; ppctItemRevisionId: string;
+  ppctClassAssociationId: string; ppctPlanId: string; ppctVersionId: string; ppctItemId: string; ppctItemRevisionId: string; component: PpctCurricularComponent;
   operationalLessonDispositionId: string | null; operationalDispositionType: string | null;
   fulfillmentExecutionId: string | null; fulfillmentKind: 'NORMAL' | 'MAKEUP' | null; makeupTeachingScheduleId: string | null;
   executionCivilDate: CivilDateString | null; executionAcademicCalendarVersionId: string | null; executionTimeSlotDefinitionId: string | null; actualTeacherUserId: string | null;
