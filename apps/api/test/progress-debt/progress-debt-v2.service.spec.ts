@@ -4,6 +4,7 @@ import { ProgressDebtService } from '../../src/progress-debt/progress-debt.servi
 const asOf = new Date('2026-09-18T12:00:00.000Z');
 const clock = { now: () => new Date('2026-09-19T00:00:00.000Z') };
 
+// Keep civilDate explicit because progress/debt evaluates obligation chronology from the occurrence itself.
 function normalAllocation(component: PpctCurricularComponent, occurrenceKey: string, civilDate: string, itemId: string) {
   return {
     occurrence: {
