@@ -18,7 +18,9 @@ export interface ReportingDetail {
   sourceNormalOccurrenceKey: string; originalTimetableVersionId: string; originalTimetableEntryId: string;
   sourceCivilDate: CivilDateString; sourceAcademicCalendarVersionId: string; sourceTimeSlotDefinitionId: string;
   sourceSlotStart: string; sourceSlotEnd: string; originalTeachingAssignmentId: string; responsibleTeacherUserId: string;
-  ppctClassAssociationId: string; ppctPlanId: string; ppctVersionId: string; ppctItemId: string; ppctItemRevisionId: string; component: PpctCurricularComponent;
+  ppctClassAssociationId: string; ppctPlanId: string; ppctVersionId: string; ppctItemId: string; ppctItemRevisionId: string;
+  /** Present for component-aware P2-003 projections; optional only for retained V1 compatibility fixtures/consumers. */
+  component?: PpctCurricularComponent;
   operationalLessonDispositionId: string | null; operationalDispositionType: string | null;
   fulfillmentExecutionId: string | null; fulfillmentKind: 'NORMAL' | 'MAKEUP' | null; makeupTeachingScheduleId: string | null;
   executionCivilDate: CivilDateString | null; executionAcademicCalendarVersionId: string | null; executionTimeSlotDefinitionId: string | null; actualTeacherUserId: string | null;
