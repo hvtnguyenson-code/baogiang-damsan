@@ -72,7 +72,10 @@ export class ResolveTimetableDateDto {
   @IsCivilDate() date!: string;
 }
 
+import { TimetableReadinessProfile } from '@baogiang/contracts';
+
 export class EvaluateTimetableReadinessDto {
   @IsCivilDate() from!: string;
   @IsCivilDate() to!: string;
+  @IsOptional() @IsString() profile?: TimetableReadinessProfile;
 }

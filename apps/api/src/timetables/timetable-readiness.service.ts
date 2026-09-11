@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { AcademicWeekday, PpctVersionStatus, Prisma, TimetableVersionStatus } from '@prisma/client';
 import {
   CivilDateString,
@@ -14,11 +14,14 @@ import {
   isPpctAssociationEffectiveOn,
   PpctAssociationReadService,
 } from '../ppct/ppct-association-read.service';
+import { PpctOccurrenceAllocationService } from '../ppct-occurrence-allocation/ppct-occurrence-allocation.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { EvaluateTimetableReadinessDto } from './dto';
 
 const PROFILE = 'NORMAL_BASE_PPCT_V1' as const;
 const PRODUCT_LABEL = 'TIMETABLE READINESS — NORMAL BASE + PPCT BINDING' as const;
+const PROFILE_V2 = 'NORMAL_BASE_PPCT_COMPONENT_V2' as const;
+const PRODUCT_LABEL_V2 = 'TIMETABLE READINESS — NORMAL BASE + PPCT COMPONENT' as const;
 const ASSESSABLE_STATUSES: TimetableVersionStatus[] = [
   TimetableVersionStatus.VALIDATED,
   TimetableVersionStatus.APPROVED,
@@ -60,11 +63,22 @@ export class TimetableReadinessService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly associationRead: PpctAssociationReadService,
+    @Optional() private readonly allocation?: PpctOccurrenceAllocationService,
   ) {}
 
   evaluate(id: string, query: EvaluateTimetableReadinessDto): Promise<TimetableReadinessResponse> {
+    if (query.profile === PROFILE_V2) {
+      return this.evaluateV2(id, query);
+    }
     return this.prisma.$transaction(
       (tx) => this.evaluateSnapshot(tx, id, query),
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
+  }
+
+  evaluateV2(id: string, query: EvaluateTimetableReadinessDto): Promise<TimetableReadinessResponse> {
+    return this.prisma.$transaction(
+      (tx) => this.evaluateSnapshotV2(tx, id, query),
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
   }
@@ -221,6 +235,225 @@ export class TimetableReadinessService {
     };
   }
 
+  private async evaluateSnapshotV2(
+    tx: Prisma.TransactionClient,
+    id: string,
+    query: EvaluateTimetableReadinessDto,
+  ): Promise<TimetableReadinessResponse> {
+    const version = await tx.timetableVersion.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        academicYearId: true,
+        status: true,
+        calendarVersionId: true,
+        effectiveAcademicWeekId: true,
+        effectiveFrom: true,
+        effectiveUntil: true,
+        validatedAt: true,
+        validatedByUserId: true,
+        entries: { select: { id: true, weekday: true, schoolClassId: true, subjectId: true } },
+      },
+    });
+    if (!version) throw new NotFoundException('Không tìm thấy phiên bản thời khóa biểu.');
+    if (version.status === TimetableVersionStatus.DRAFT) {
+      throw new ConflictException('Phiên bản thời khóa biểu DRAFT chưa thể đánh giá mức sẵn sàng.');
+    }
+
+    const from = parseCivilDate(query.from);
+    const to = parseCivilDate(query.to);
+    if (from > to) throw new BadRequestException('Khoảng đánh giá mức sẵn sàng không hợp lệ: from phải không sau to.');
+    if (version.effectiveFrom && from < version.effectiveFrom) {
+      throw new BadRequestException('from không được trước ngày hiệu lực của phiên bản thời khóa biểu.');
+    }
+    if (version.effectiveUntil && to > version.effectiveUntil) {
+      throw new BadRequestException('to không được sau ngày kết thúc hiệu lực của phiên bản thời khóa biểu.');
+    }
+
+    const calendar = version.calendarVersionId
+      ? await tx.academicCalendarVersion.findUnique({
+          where: { id: version.calendarVersionId },
+          select: {
+            id: true,
+            academicYearId: true,
+            endDate: true,
+            teachingWeekdays: true,
+            weeks: {
+              select: {
+                id: true,
+                segments: { select: { startDate: true, endDate: true, segmentOrder: true } },
+              },
+            },
+          },
+        })
+      : null;
+    if (calendar && to > calendar.endDate) {
+      throw new BadRequestException('to không được sau ngày kết thúc của phiên lịch đã lưu.');
+    }
+
+    const findings = this.foundationFindings(version, calendar);
+    const opportunities = calendar
+      ? this.deriveOpportunities(
+          version.academicYearId,
+          version.entries,
+          calendar.teachingWeekdays,
+          calendar.weeks.flatMap((week) => week.segments),
+          from,
+          to,
+        )
+      : [];
+    const affectedStreams = distinctStreams(opportunities);
+    const associations = await this.associationRead.findOverlappingRange(
+      tx,
+      affectedStreams.map((stream) => ({ academicYearId: version.academicYearId, ...stream })),
+      from,
+      to,
+    );
+    const usedAssociationIds = new Set<string>();
+    const usedVersionIds = new Set<string>();
+
+    for (const opportunity of opportunities) {
+      const matches = associations.filter((association) => covers(association, opportunity));
+      if (matches.length === 0) {
+        findings.push({
+          code: 'PPCT_ASSOCIATION_MISSING',
+          dimension: 'PPCT_ASSOCIATION_BINDING',
+          severity: 'BLOCKER',
+          message: 'Không có liên kết PPCT hiệu lực cho cơ hội dạy học này.',
+          stream: streamOf(opportunity),
+          date: opportunity.date,
+          timetableEntryIds: opportunity.timetableEntryIds,
+        });
+        continue;
+      }
+      if (matches.length > 1) {
+        findings.push({
+          code: 'PPCT_ASSOCIATION_AMBIGUOUS',
+          dimension: 'PPCT_ASSOCIATION_BINDING',
+          severity: 'BLOCKER',
+          message: 'Có nhiều liên kết PPCT cùng hiệu lực cho cơ hội dạy học này.',
+          stream: streamOf(opportunity),
+          date: opportunity.date,
+          timetableEntryIds: opportunity.timetableEntryIds,
+        });
+        continue;
+      }
+      const association = matches[0]!;
+      if (!VALID_PPCT_STATUSES.has(association.ppctVersionStatus)) {
+        findings.push({
+          code: 'PPCT_ASSOCIATION_INVALID_TARGET',
+          dimension: 'PPCT_ASSOCIATION_BINDING',
+          severity: 'BLOCKER',
+          message: 'Liên kết PPCT lịch sử trỏ tới phiên bản không hợp lệ.',
+          stream: streamOf(opportunity),
+          date: opportunity.date,
+          timetableEntryIds: opportunity.timetableEntryIds,
+          ppctClassAssociationId: association.id,
+          ppctVersionId: association.ppctVersionId,
+        });
+        continue;
+      }
+      usedAssociationIds.add(association.id);
+      usedVersionIds.add(association.ppctVersionId);
+    }
+
+    // --- V2 CAPACITY & COMPONENT EVALUATION ---
+    const activeUsedAssociations = associations.filter((a) => usedAssociationIds.has(a.id));
+
+    for (const stream of affectedStreams) {
+      const streamAssocs = activeUsedAssociations.filter(
+        (a) => a.schoolClassId === stream.schoolClassId && a.subjectId === stream.subjectId,
+      );
+
+      // Check specialized content requirement for CORE_PLUS_SPECIALIZED_STUDY
+      for (const assoc of streamAssocs) {
+        if (assoc.curricularProfile === 'CORE_PLUS_SPECIALIZED_STUDY') {
+          const specCount = await tx.ppctItemRevision.count({
+            where: {
+              ppctVersionId: assoc.ppctVersionId,
+              component: 'SPECIALIZED_STUDY',
+            },
+          });
+          if (specCount === 0) {
+            findings.push({
+              code: 'PPCT_SPECIALIZED_CONTENT_MISSING',
+              dimension: 'PPCT_CAPACITY',
+              severity: 'BLOCKER',
+              message: 'Chương trình học CORE_PLUS_SPECIALIZED_STUDY yêu cầu phiên bản PPCT phải có ít nhất một tiết chuyên đề.',
+              stream: { academicYearId: version.academicYearId, schoolClassId: stream.schoolClassId, subjectId: stream.subjectId },
+              ppctClassAssociationId: assoc.id,
+              ppctVersionId: assoc.ppctVersionId,
+            });
+          }
+        }
+      }
+
+      // Reuse Allocator V2 to detect allocation risks, capacity limits, calendar split, profile split
+      if (this.allocation) {
+        const allocResult = await this.allocation.resolveInTransactionV2(tx, {
+          academicYearId: version.academicYearId,
+          schoolClassId: stream.schoolClassId,
+          subjectId: stream.subjectId,
+          throughCivilDate: query.to as CivilDateString,
+        });
+
+        if (allocResult.status === 'BLOCKED') {
+          for (const af of allocResult.findings) {
+            findings.push({
+              code: af.code,
+              dimension: 'PPCT_CAPACITY',
+              severity: 'BLOCKER',
+              message: af.reason ?? 'Lỗi điều kiện phân bổ PPCT V2.',
+              stream: { academicYearId: version.academicYearId, schoolClassId: stream.schoolClassId, subjectId: stream.subjectId },
+            });
+          }
+        }
+      }
+    }
+
+    const seenFindingKeys = new Set<string>();
+    const uniqueFindings = findings.filter((f) => {
+      const k = `${f.code}:${f.dimension}:${f.stream?.schoolClassId ?? ''}:${f.stream?.subjectId ?? ''}:${f.date ?? ''}:${f.ppctClassAssociationId ?? ''}:${f.ppctVersionId ?? ''}`;
+      if (seenFindingKeys.has(k)) return false;
+      seenFindingKeys.add(k);
+      return true;
+    });
+
+    uniqueFindings.sort(compareFindings);
+    const foundationFailed = uniqueFindings.some(
+      (f) => f.dimension === 'NORMAL_BASE_TIMETABLE_FOUNDATION' && f.severity === 'BLOCKER',
+    );
+    const bindingFailed = uniqueFindings.some(
+      (f) => f.dimension === 'PPCT_ASSOCIATION_BINDING' && f.severity === 'BLOCKER',
+    );
+    const capacityFailed = uniqueFindings.some(
+      (f) => f.dimension === 'PPCT_CAPACITY' && f.severity === 'BLOCKER',
+    );
+    const dimensions = dimensionsForV2(foundationFailed, bindingFailed, capacityFailed);
+
+    return {
+      profile: PROFILE_V2,
+      productLabel: PRODUCT_LABEL_V2,
+      scope: {
+        timetableVersionId: version.id,
+        academicYearId: version.academicYearId,
+        from: query.from as CivilDateString,
+        to: query.to as CivilDateString,
+        affectedStreams,
+      },
+      result: foundationFailed || bindingFailed || capacityFailed ? 'FAIL' : 'PASS',
+      dimensions,
+      findings: uniqueFindings,
+      provenance: {
+        timetableVersionId: version.id,
+        academicCalendarVersionId: version.calendarVersionId,
+        ppctClassAssociationIds: [...usedAssociationIds].sort(),
+        ppctVersionIds: [...usedVersionIds].sort(),
+      },
+      evaluatedAt: new Date().toISOString(),
+    };
+  }
+
   private foundationFindings(
     version: {
       status: TimetableVersionStatus;
@@ -333,6 +566,19 @@ function dimensionsFor(foundationFailed: boolean, bindingFailed: boolean): Timet
   return DIMENSION_KEYS.map((key) => {
     if (key === 'NORMAL_BASE_TIMETABLE_FOUNDATION') return { key, state: foundationFailed ? 'FAIL' : 'PASS', required: true };
     if (key === 'PPCT_ASSOCIATION_BINDING') return { key, state: bindingFailed ? 'FAIL' : 'PASS', required: true };
+    return { key, state: 'NOT_ASSESSED', required: false };
+  });
+}
+
+function dimensionsForV2(
+  foundationFailed: boolean,
+  bindingFailed: boolean,
+  capacityFailed: boolean,
+): TimetableReadinessDimensionResult[] {
+  return DIMENSION_KEYS.map((key) => {
+    if (key === 'NORMAL_BASE_TIMETABLE_FOUNDATION') return { key, state: foundationFailed ? 'FAIL' : 'PASS', required: true };
+    if (key === 'PPCT_ASSOCIATION_BINDING') return { key, state: bindingFailed ? 'FAIL' : 'PASS', required: true };
+    if (key === 'PPCT_CAPACITY') return { key, state: capacityFailed ? 'FAIL' : 'PASS', required: true };
     return { key, state: 'NOT_ASSESSED', required: false };
   });
 }

@@ -1,7 +1,11 @@
-import { CivilDateString } from '@baogiang/contracts';
+import { CivilDateString, PpctCurricularComponent } from '@baogiang/contracts';
 import { NormalStructuralOccurrence, StructuralOccurrenceFindingCode } from '../resolved-occurrences/resolved-occurrence.types';
 
 export const PPCT_OCCURRENCE_ALLOCATION_PROFILE = 'PPCT_OCCURRENCE_ALLOCATION_V1' as const;
+export const PPCT_OCCURRENCE_ALLOCATION_PROFILE_V2 = 'PPCT_OCCURRENCE_ALLOCATION_V2' as const;
+export type PpctOccurrenceAllocationProfile =
+  | typeof PPCT_OCCURRENCE_ALLOCATION_PROFILE
+  | typeof PPCT_OCCURRENCE_ALLOCATION_PROFILE_V2;
 
 export interface ResolvePpctOccurrenceAllocationInput {
   academicYearId: string;
@@ -24,6 +28,7 @@ export interface ExpectedPpctItem {
   sequence: number;
   title: string;
   lessonType: string;
+  component?: PpctCurricularComponent;
 }
 
 export interface NormalPpctAllocation {
@@ -32,6 +37,7 @@ export interface NormalPpctAllocation {
   allocationReason: string;
   allocationStatus: AllocationStatus;
   expectedPpctItem: ExpectedPpctItem | null;
+  plannedComponent?: PpctCurricularComponent | null;
 }
 
 export interface MakeupSourceMatch {
@@ -52,7 +58,10 @@ export type PpctAllocationFindingCode =
   | 'PPCT_VERSION_TRANSITION_SPLIT_AFTER_DISTRIBUTION'
   | 'PPCT_VERSION_TRANSITION_MERGE_PARTIAL_DISTRIBUTION'
   | 'PPCT_VERSION_TRANSITION_LINEAGE_AMBIGUOUS'
-  | 'PPCT_MAKEUP_SOURCE_ALLOCATION_MISMATCH';
+  | 'PPCT_MAKEUP_SOURCE_ALLOCATION_MISMATCH'
+  | 'PPCT_COMPONENT_WEEK_CAPACITY_INVALID'
+  | 'PPCT_COMPONENT_WEEK_CALENDAR_SPLIT'
+  | 'PPCT_COMPONENT_APPLICABILITY_WEEK_SPLIT';
 
 export interface PpctAllocationFinding {
   severity: 'BLOCKER';
@@ -60,10 +69,11 @@ export interface PpctAllocationFinding {
   occurrenceKey: string | null;
   reason?: string;
   entityIds: string[];
+  component?: PpctCurricularComponent;
 }
 
 export interface PpctOccurrenceAllocationResult {
-  profile: typeof PPCT_OCCURRENCE_ALLOCATION_PROFILE;
+  profile: PpctOccurrenceAllocationProfile;
   scope: ResolvePpctOccurrenceAllocationInput;
   status: 'PASS' | 'BLOCKED';
   replayOrigin: CivilDateString | null;
@@ -95,6 +105,7 @@ export interface PpctGraphItemRevision {
   sequence: number;
   title: string;
   lessonType: string;
+  component?: PpctCurricularComponent;
 }
 
 export interface PpctGraphVersion {
@@ -112,6 +123,7 @@ export interface PpctGraphLineage {
   predecessorItemId: string;
   successorVersionId: string;
   successorItemId: string;
+  component?: PpctCurricularComponent;
 }
 
 export interface PpctPlanGraph {

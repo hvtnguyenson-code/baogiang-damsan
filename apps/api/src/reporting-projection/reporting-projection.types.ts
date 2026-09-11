@@ -1,5 +1,5 @@
 import { CivilDateString } from '@baogiang/contracts';
-import { ProgressDebtClassification, ProgressDebtCounts, ProgressDebtFinding } from '../progress-debt/progress-debt.types';
+import { CurricularComponent, ProgressDebtClassification, ProgressDebtCounts, ProgressDebtFinding } from '../progress-debt/progress-debt.types';
 export type ReportingFindingCode = ProgressDebtFinding['code'] | 'SOURCE_TIME_SLOT_PROVENANCE_MISSING';
 export interface ReportingFinding { severity: 'BLOCKER'; code: ReportingFindingCode; reason: string; entityIds: string[]; occurrenceKey: string | null; }
 
@@ -14,6 +14,7 @@ export interface ReportingCounts extends ProgressDebtCounts {}
 export interface ReportingDetail {
   academicYearId: string; schoolClassId: string; subjectId: string;
   classification: ProgressDebtClassification;
+  component?: CurricularComponent;
   sourceNormalOccurrenceKey: string; originalTimetableVersionId: string; originalTimetableEntryId: string;
   sourceCivilDate: CivilDateString; sourceAcademicCalendarVersionId: string; sourceTimeSlotDefinitionId: string;
   sourceSlotStart: string; sourceSlotEnd: string; originalTeachingAssignmentId: string; responsibleTeacherUserId: string;

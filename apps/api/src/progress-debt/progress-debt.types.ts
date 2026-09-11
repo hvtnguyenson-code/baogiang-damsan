@@ -1,6 +1,12 @@
-import { CivilDateString } from '@baogiang/contracts';
+import { CivilDateString, PpctCurricularComponent } from '@baogiang/contracts';
+
+export type CurricularComponent = PpctCurricularComponent;
 
 export const TEACHING_PROGRESS_DEBT_PROFILE = 'TEACHING_PROGRESS_DEBT_V1' as const;
+export const TEACHING_PROGRESS_DEBT_PROFILE_V2 = 'TEACHING_PROGRESS_DEBT_V2' as const;
+export type TeachingProgressDebtProfile =
+  | typeof TEACHING_PROGRESS_DEBT_PROFILE
+  | typeof TEACHING_PROGRESS_DEBT_PROFILE_V2;
 
 export interface ResolveProgressDebtInput {
   academicYearId: string;
@@ -64,6 +70,20 @@ export interface ProgressDebtProjection {
   status: 'PASS' | 'BLOCKED';
   counts: ProgressDebtCounts | null;
   items: ProgressDebtItem[];
+  findings: ProgressDebtFinding[];
+  evaluatedAt: string;
+}
+
+export interface ProgressDebtItemV2 extends ProgressDebtItem {
+  component: CurricularComponent;
+}
+
+export interface ProgressDebtProjectionV2 {
+  profile: typeof TEACHING_PROGRESS_DEBT_PROFILE_V2;
+  scope: ResolveProgressDebtInput;
+  status: 'PASS' | 'BLOCKED';
+  counts: ProgressDebtCounts | null;
+  items: ProgressDebtItemV2[];
   findings: ProgressDebtFinding[];
   evaluatedAt: string;
 }

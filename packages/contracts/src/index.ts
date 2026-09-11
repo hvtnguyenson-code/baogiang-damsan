@@ -867,7 +867,7 @@ export interface TimetableEffectiveResolution {
 // LOCAL-FC-05B1 Deterministic Timetable Readiness Read Model
 // ============================================================
 
-export type TimetableReadinessProfile = 'NORMAL_BASE_PPCT_V1';
+export type TimetableReadinessProfile = 'NORMAL_BASE_PPCT_V1' | 'NORMAL_BASE_PPCT_COMPONENT_V2';
 
 export type TimetableReadinessRootState = 'PASS' | 'FAIL';
 
@@ -925,9 +925,13 @@ export interface TimetableReadinessProvenance {
   ppctVersionIds: string[];
 }
 
+export type TimetableReadinessProductLabel =
+  | 'TIMETABLE READINESS — NORMAL BASE + PPCT BINDING'
+  | 'TIMETABLE READINESS — NORMAL BASE + PPCT COMPONENT';
+
 export interface TimetableReadinessResponse {
   profile: TimetableReadinessProfile;
-  productLabel: 'TIMETABLE READINESS — NORMAL BASE + PPCT BINDING';
+  productLabel: TimetableReadinessProductLabel;
   scope: TimetableReadinessScope;
   result: TimetableReadinessRootState;
   dimensions: TimetableReadinessDimensionResult[];

@@ -77,7 +77,7 @@ export class TeachingExecutionsService {
   private async confirmNormalTx(tx: Prisma.TransactionClient, dto: ConfirmNormalTeachingExecutionDto, request: AuthenticatedRequest): Promise<TeachingExecutionMutationResult<CurricularTeachingExecutionRecord>> {
     const fingerprint = createFingerprint('CURRICULAR_NORMAL', { academicYearId: dto.academicYearId, schoolClassId: dto.schoolClassId, subjectId: dto.subjectId, timetableEntryId: dto.timetableEntryId, sourceCivilDate: dto.sourceCivilDate, note: dto.note ?? null, replacesId: dto.replacesId ?? null });
     const replay = await this.curricularReplay(tx, dto.requestKey, fingerprint, request); if (replay) return replay;
-    const allocation = await this.allocation.resolveInTransaction(tx, { academicYearId: dto.academicYearId, schoolClassId: dto.schoolClassId, subjectId: dto.subjectId, throughCivilDate: dto.sourceCivilDate as `${number}-${number}-${number}` });
+    const allocation = await this.allocation.resolveInTransactionV2(tx, { academicYearId: dto.academicYearId, schoolClassId: dto.schoolClassId, subjectId: dto.subjectId, throughCivilDate: dto.sourceCivilDate as `${number}-${number}-${number}` });
     const key = `NORMAL:${dto.timetableEntryId}:${dto.sourceCivilDate}`;
     const selected = allocation.normalAllocations.find((item) => item.occurrence.occurrenceKey === key);
     if (!selected || selected.allocationStatus !== 'ALLOCATED' || !selected.expectedPpctItem) throw new ConflictException('Cơ hội normal không có phân phối PPCT ALLOCATED đáng tin cậy.');
@@ -103,7 +103,7 @@ export class TeachingExecutionsService {
     const m = await tx.makeupTeachingSchedule.findUnique({ where: { id: dto.makeupTeachingScheduleId }, include: { targetTimeSlotDefinition: true } });
     if (!m || m.status !== OperationalOverlayStatus.ACTIVE) throw new ConflictException('Lịch dạy bù không còn ACTIVE.');
     const targetDate = formatCivilDate(m.targetCivilDate);
-    const allocation = await this.allocation.resolveInTransaction(tx, { academicYearId: m.academicYearId, schoolClassId: m.schoolClassId, subjectId: m.subjectId, throughCivilDate: targetDate });
+    const allocation = await this.allocation.resolveInTransactionV2(tx, { academicYearId: m.academicYearId, schoolClassId: m.schoolClassId, subjectId: m.subjectId, throughCivilDate: targetDate });
     const match = allocation.makeupSourceMatches.find((item) => item.makeupTeachingScheduleId === m.id);
     if (!match || match.status !== 'MATCH' || !match.expectedPpctItem) throw new ConflictException('Nguồn PPCT của lịch dạy bù không khớp hoặc bị chặn lịch sử.');
     await this.assertEnded(targetDate, m.targetTimeSlotDefinition.endTime.toISOString().slice(11, 19), this.clock.now());

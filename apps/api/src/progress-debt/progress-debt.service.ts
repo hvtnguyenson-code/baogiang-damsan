@@ -7,13 +7,19 @@ import { PrismaService } from '../prisma/prisma.service';
 import { TEACHING_EXECUTION_CLOCK, TeachingExecutionClock } from '../teaching-executions/teaching-execution-policy';
 import { hasEndedAt, hcmCivilDate } from './progress-debt.policy';
 import {
-  ProgressDebtCounts, ProgressDebtFinding, ProgressDebtItem, ProgressDebtProjection,
-  ResolveProgressDebtInput, TEACHING_PROGRESS_DEBT_PROFILE,
+  CurricularComponent,
+  ProgressDebtCounts, ProgressDebtFinding, ProgressDebtItem, ProgressDebtItemV2,
+  ProgressDebtProjection, ProgressDebtProjectionV2,
+  ResolveProgressDebtInput, TEACHING_PROGRESS_DEBT_PROFILE, TEACHING_PROGRESS_DEBT_PROFILE_V2,
 } from './progress-debt.types';
 
 const executionInclude = { executionTimeSlot: { select: { endTime: true } } } satisfies Prisma.CurricularTeachingExecutionInclude;
 type Execution = Prisma.CurricularTeachingExecutionGetPayload<{ include: typeof executionInclude }>;
 type DirectAllocation = NormalPpctAllocation & { expectedPpctItem: ExpectedPpctItem };
+type DirectAllocationV2 = NormalPpctAllocation & {
+  expectedPpctItem: ExpectedPpctItem;
+  plannedComponent: CurricularComponent;
+};
 
 @Injectable()
 export class ProgressDebtService {
@@ -103,6 +109,173 @@ export class ProgressDebtService {
     return { profile: TEACHING_PROGRESS_DEBT_PROFILE, scope: input, status: 'PASS', counts, items: items.sort((a, b) => a.sourceNormalOccurrenceKey.localeCompare(b.sourceNormalOccurrenceKey)), findings: [], evaluatedAt: this.clock.now().toISOString() };
   }
 
+  async resolveV2(input: ResolveProgressDebtInput): Promise<ProgressDebtProjectionV2> {
+    this.assertAsOf(input.asOfInstant);
+    return this.prisma.$transaction(
+      (tx) => this.resolveInTransactionV2(tx, input),
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
+  }
+
+  async resolveInTransactionV2(tx: Prisma.TransactionClient, input: ResolveProgressDebtInput): Promise<ProgressDebtProjectionV2> {
+    this.assertAsOf(input.asOfInstant);
+    const throughCivilDate = hcmCivilDate(input.asOfInstant);
+    const allocated = await this.allocation.resolveInTransactionV2(tx, {
+      academicYearId: input.academicYearId,
+      schoolClassId: input.schoolClassId,
+      subjectId: input.subjectId,
+      throughCivilDate,
+    });
+    if (allocated.status === 'BLOCKED') {
+      return this.blockedV2(input, [{
+        severity: 'BLOCKER',
+        code: 'UPSTREAM_ALLOCATION_BLOCKED',
+        reason: 'PPCT occurrence allocation is blocked.',
+        occurrenceKey: null,
+        entityIds: allocated.findings.flatMap((finding) => finding.entityIds).sort(),
+      }]);
+    }
+
+    const direct = allocated.normalAllocations
+      .filter((row): row is DirectAllocationV2 =>
+        row.allocationEffect === 'CONSUMES_NEXT_ITEM' &&
+        row.allocationStatus === 'ALLOCATED' &&
+        row.expectedPpctItem !== null &&
+        row.plannedComponent !== undefined,
+      )
+      .filter((row) => hasEndedAt(row.occurrence.civilDate, row.occurrence.timeSlot.endTime, input.asOfInstant));
+
+    const componentMismatch = direct.find((row) => row.plannedComponent !== row.expectedPpctItem.component);
+    if (componentMismatch) {
+      return this.blockedV2(input, [this.finding(
+        'RECONCILIATION_REQUIRED',
+        `Direct allocation planned component ${componentMismatch.plannedComponent} does not match PPCT item component ${componentMismatch.expectedPpctItem.component}.`,
+        componentMismatch.occurrence.occurrenceKey,
+        [componentMismatch.expectedPpctItem.ppctItemId],
+      )]);
+    }
+
+    const executions = await tx.curricularTeachingExecution.findMany({
+      where: {
+        academicYearId: input.academicYearId,
+        schoolClassId: input.schoolClassId,
+        subjectId: input.subjectId,
+        sourceCivilDate: { lte: new Date(`${throughCivilDate}T00:00:00.000Z`) },
+      },
+      include: executionInclude,
+      orderBy: { id: 'asc' },
+    }) as Execution[];
+
+    const candidates = new Map<string, Execution[]>();
+    for (const execution of executions) {
+      if (
+        execution.status !== TeachingExecutionStatus.ACTIVE ||
+        !execution.executionTimeSlot ||
+        !hasEndedAt(
+          formatCivilDate(execution.executionCivilDate),
+          execution.executionTimeSlot.endTime.toISOString().slice(11, 19),
+          input.asOfInstant,
+        )
+      ) {
+        continue;
+      }
+      candidates.set(execution.sourceNormalOccurrenceKey, [
+        ...(candidates.get(execution.sourceNormalOccurrenceKey) ?? []),
+        execution,
+      ]);
+    }
+
+    const makeupIds = executions
+      .filter((execution) => execution.kind === 'MAKEUP' && execution.makeupTeachingScheduleId)
+      .map((execution) => execution.makeupTeachingScheduleId!);
+    const schedules = makeupIds.length
+      ? await tx.makeupTeachingSchedule.findMany({
+          where: { id: { in: [...new Set(makeupIds)].sort() } },
+          orderBy: { id: 'asc' },
+        })
+      : [];
+    const schedulesById = new Map(schedules.map((schedule) => [schedule.id, schedule]));
+
+    const items: ProgressDebtItemV2[] = [];
+    const findings: ProgressDebtFinding[] = [];
+
+    for (const allocation of direct) {
+      const sourceKey = allocation.occurrence.occurrenceKey;
+      const eligible = candidates.get(sourceKey) ?? [];
+      if (eligible.length > 1) {
+        findings.push(
+          this.finding(
+            'ACTIVE_FULFILLMENT_AMBIGUOUS',
+            'More than one ended ACTIVE curricular execution claims the exact original obligation.',
+            sourceKey,
+            eligible.map((execution) => execution.id),
+          ),
+        );
+        continue;
+      }
+      if (eligible.length === 1) {
+        const execution = eligible[0]!;
+        const issue = this.reconcileExecutionV2(
+          allocation,
+          execution,
+          schedulesById.get(execution.makeupTeachingScheduleId ?? '') ?? null,
+          allocated.makeupSourceMatches,
+        );
+        if (issue) {
+          findings.push(this.finding('RECONCILIATION_REQUIRED', issue, sourceKey, [execution.id]));
+          continue;
+        }
+        items.push(this.itemV2(allocation, 'COMPLETED', execution));
+        continue;
+      }
+      const kind = allocation.occurrence.effectiveKind;
+      const disposition = allocation.occurrence.disposition?.dispositionType ?? null;
+      if (
+        kind === 'OPERATIONAL_DISPOSITION' &&
+        (disposition === 'ABSENCE_NO_REPLACEMENT' || disposition === 'DIFFERENT_SUBJECT_SUPERVISION')
+      ) {
+        items.push(this.itemV2(allocation, 'PROVEN_OPEN_DEBT', null));
+      } else if (
+        kind === 'BASE_TIMETABLE' ||
+        (kind === 'OPERATIONAL_DISPOSITION' && disposition === 'SAME_SUBJECT_SUBSTITUTION')
+      ) {
+        items.push(this.itemV2(allocation, 'UNCONFIRMED_COMPLETION_GAP', null));
+      } else {
+        findings.push(
+          this.finding(
+            'OPERATIONAL_MEANING_UNCLASSIFIABLE',
+            `Allocated direct obligation has unsupported operational meaning ${kind}:${disposition ?? 'null'}.`,
+            sourceKey,
+            [],
+          ),
+        );
+      }
+    }
+
+    if (findings.length) return this.blockedV2(input, findings);
+
+    const counts: ProgressDebtCounts = {
+      distributedElapsedCount: items.length,
+      completedCount: items.filter((item) => item.classification === 'COMPLETED').length,
+      openDebtCount: items.filter((item) => item.classification === 'PROVEN_OPEN_DEBT').length,
+      lateCount: items.filter((item) => item.classification === 'PROVEN_OPEN_DEBT').length,
+      unconfirmedGapCount: items.filter((item) => item.classification === 'UNCONFIRMED_COMPLETION_GAP').length,
+    };
+    if (counts.distributedElapsedCount !== counts.completedCount + counts.openDebtCount + counts.unconfirmedGapCount) {
+      throw new Error('Progress/debt invariant violated.');
+    }
+
+    return {
+      profile: TEACHING_PROGRESS_DEBT_PROFILE_V2,
+      scope: input,
+      status: 'PASS',
+      counts,
+      items: items.sort((a, b) => a.sourceNormalOccurrenceKey.localeCompare(b.sourceNormalOccurrenceKey)),
+      findings: [],
+      evaluatedAt: this.clock.now().toISOString(),
+    };
+  }
+
   private assertAsOf(asOfInstant: Date): void {
     if (!(asOfInstant instanceof Date) || Number.isNaN(asOfInstant.getTime())) throw new BadRequestException('asOfInstant must be a valid instant.');
     if (asOfInstant > this.clock.now()) throw new BadRequestException('asOfInstant cannot be in the future.');
@@ -148,4 +321,45 @@ export class ProgressDebtService {
 
   private finding(code: ProgressDebtFinding['code'], reason: string, occurrenceKey: string | null, entityIds: string[]): ProgressDebtFinding { return { severity: 'BLOCKER', code, reason, occurrenceKey, entityIds: [...entityIds].sort() }; }
   private blocked(input: ResolveProgressDebtInput, findings: ProgressDebtFinding[]): ProgressDebtProjection { return { profile: TEACHING_PROGRESS_DEBT_PROFILE, scope: input, status: 'BLOCKED', counts: null, items: [], findings: findings.sort((a, b) => `${a.code}:${a.occurrenceKey ?? ''}:${a.entityIds.join(',')}`.localeCompare(`${b.code}:${b.occurrenceKey ?? ''}:${b.entityIds.join(',')}`)), evaluatedAt: this.clock.now().toISOString() }; }
+
+  private reconcileExecutionV2(
+    allocation: DirectAllocationV2,
+    execution: Execution,
+    schedule: { [key: string]: unknown } | null,
+    matches: Array<{ makeupTeachingScheduleId: string; sourceNormalOccurrenceKey: string; status: string; expectedPpctItem: ExpectedPpctItem | null }>,
+  ): string | null {
+    const issueV1 = this.reconcileExecution(allocation, execution, schedule, matches);
+    if (issueV1) return issueV1;
+    if (execution.kind === 'MAKEUP') {
+      const match = matches.find((item) => item.makeupTeachingScheduleId === execution.makeupTeachingScheduleId);
+      if (match?.expectedPpctItem && match.expectedPpctItem.component !== allocation.plannedComponent) {
+        return 'MAKEUP match component does not match direct obligation planned component.';
+      }
+    }
+    return null;
+  }
+
+  private itemV2(
+    allocation: DirectAllocationV2,
+    classification: ProgressDebtItem['classification'],
+    execution: Execution | null,
+  ): ProgressDebtItemV2 {
+    const base = this.item(allocation, classification, execution);
+    return {
+      ...base,
+      component: allocation.plannedComponent,
+    };
+  }
+
+  private blockedV2(input: ResolveProgressDebtInput, findings: ProgressDebtFinding[]): ProgressDebtProjectionV2 {
+    return {
+      profile: TEACHING_PROGRESS_DEBT_PROFILE_V2,
+      scope: input,
+      status: 'BLOCKED',
+      counts: null,
+      items: [],
+      findings: findings.sort((a, b) => `${a.code}:${a.occurrenceKey ?? ''}:${a.entityIds.join(',')}`.localeCompare(`${b.code}:${b.occurrenceKey ?? ''}:${b.entityIds.join(',')}`)),
+      evaluatedAt: this.clock.now().toISOString(),
+    };
+  }
 }

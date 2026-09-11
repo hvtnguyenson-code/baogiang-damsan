@@ -45,7 +45,12 @@ describe('TeachingExecutionsService confirmation transaction boundary', () => {
   function normalHarness(overrides: { allocation?: object; now?: Date } = {}) {
     const tx = { curricularTeachingExecution: { findUnique: jest.fn().mockResolvedValue(null), create: jest.fn().mockResolvedValue(curricular()) } };
     const prisma = { $transaction: jest.fn((callback: (input: typeof tx) => Promise<unknown>) => callback(tx)) };
-    const allocation = { resolve: jest.fn(), resolveInTransaction: jest.fn().mockResolvedValue(overrides.allocation ?? { normalAllocations: [{ occurrence: occurrence(), allocationStatus: 'ALLOCATED', expectedPpctItem: expected }] }) };
+    const defaultAlloc = overrides.allocation ?? { normalAllocations: [{ occurrence: occurrence(), allocationStatus: 'ALLOCATED', expectedPpctItem: expected }] };
+    const allocation = {
+      resolve: jest.fn(),
+      resolveInTransaction: jest.fn().mockResolvedValue(defaultAlloc),
+      resolveInTransactionV2: jest.fn().mockResolvedValue(defaultAlloc),
+    };
     const access = { requireCurricular: jest.fn().mockResolvedValue('PERSONAL'), requireActivity: jest.fn() };
     const sut = new TeachingExecutionsService(prisma as never, allocation as never, { resolveInTransaction: jest.fn() } as never, { write: jest.fn() } as never, access as never, { now: () => overrides.now ?? new Date('2026-08-01T00:45:00.000Z') });
     Object.assign(sut as object, {
@@ -61,7 +66,7 @@ describe('TeachingExecutionsService confirmation transaction boundary', () => {
     await h.sut.confirmNormal({ academicYearId: 'year', schoolClassId: 'class', subjectId: 'subject', timetableEntryId: 'entry', sourceCivilDate: '2026-08-01', requestKey: 'key' }, request);
     expect(h.prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: 'Serializable' });
     expect(h.allocation.resolve).not.toHaveBeenCalled();
-    expect(h.allocation.resolveInTransaction).toHaveBeenCalledWith(h.tx, expect.objectContaining({ throughCivilDate: '2026-08-01' }));
+    expect(h.allocation.resolveInTransactionV2).toHaveBeenCalledWith(h.tx, expect.objectContaining({ throughCivilDate: '2026-08-01' }));
     expect(h.tx.curricularTeachingExecution.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ actualTeacherUserId: 'teacher', ppctItemId: 'item', ppctItemRevisionId: 'revision', operationalLessonDispositionId: null, operationalDispositionType: null }) }));
   });
 
@@ -89,7 +94,12 @@ describe('TeachingExecutionsService makeup and activity confirmation', () => {
   it('confirms an ACTIVE MATCH makeup with retained original and target bundles', async () => {
     const tx = { curricularTeachingExecution: { findUnique: jest.fn().mockResolvedValue(null), create: jest.fn().mockResolvedValue(curricular()) }, makeupTeachingSchedule: { findUnique: jest.fn().mockResolvedValue(makeup()) } };
     const prisma = { $transaction: jest.fn((callback: (input: typeof tx) => Promise<unknown>) => callback(tx)) };
-    const allocation = { resolve: jest.fn(), resolveInTransaction: jest.fn().mockResolvedValue({ makeupSourceMatches: [{ makeupTeachingScheduleId: 'makeup', sourceNormalOccurrenceKey: 'NORMAL:original-entry:2026-07-31', status: 'MATCH', expectedPpctItem: ppct }] }) };
+    const matchPayload = { makeupSourceMatches: [{ makeupTeachingScheduleId: 'makeup', sourceNormalOccurrenceKey: 'NORMAL:original-entry:2026-07-31', status: 'MATCH', expectedPpctItem: ppct }] };
+    const allocation = {
+      resolve: jest.fn(),
+      resolveInTransaction: jest.fn().mockResolvedValue(matchPayload),
+      resolveInTransactionV2: jest.fn().mockResolvedValue(matchPayload),
+    };
     const sut = new TeachingExecutionsService(prisma as never, allocation as never, {} as never, { write: jest.fn() } as never, { requireCurricular: jest.fn().mockResolvedValue('PERSONAL') } as never, { now: () => new Date('2026-08-01T00:45:00Z') });
     Object.assign(sut as object, { requireWeek: jest.fn().mockResolvedValue({ weekId: 'week', segmentId: 'segment' }), requireCurricularReplacement: jest.fn(), curricularSnapshots: jest.fn().mockResolvedValue({ schoolClassCodeSnapshot: '10A', schoolClassNameSnapshot: '10A', subjectCodeSnapshot: 'M', subjectNameSnapshot: 'Math', responsibleTeacherDisplayNameSnapshot: 'Responsible', actualTeacherDisplayNameSnapshot: 'Teacher' }), successAudit: jest.fn() });
     await sut.confirmMakeup({ makeupTeachingScheduleId: 'makeup', requestKey: 'key' }, request);
