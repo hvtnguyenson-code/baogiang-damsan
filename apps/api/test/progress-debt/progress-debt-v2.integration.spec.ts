@@ -1,4 +1,4 @@
-import { CatalogStatus, OperationalLessonDispositionType, OperationalOverlayStatus, PpctClassCurricularProfile, PpctCurricularComponent, PpctVersionStatus, UserStatus } from '@prisma/client';
+import { CatalogStatus, OperationalLessonDispositionType, PpctClassCurricularProfile, PpctCurricularComponent, PpctVersionStatus } from '@prisma/client';
 import { ProgressDebtService } from '../../src/progress-debt/progress-debt.service';
 import { TEACHING_PROGRESS_DEBT_PROFILE_V2 } from '../../src/progress-debt/progress-debt.types';
 import { integration, normalizedCode, Phase01Harness, testOrigin } from '../helpers/phase01-test-harness';

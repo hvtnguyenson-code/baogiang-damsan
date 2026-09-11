@@ -1,5 +1,3 @@
-import { BadRequestException, ConflictException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
 import { TimetableReadinessService } from '../../src/timetables/timetable-readiness.service';
 
 const evaluatedFrom = '2026-09-07';
