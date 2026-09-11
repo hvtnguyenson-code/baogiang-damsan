@@ -80,7 +80,7 @@ Repository hiện có các boundary đã được review/version hóa và không
 - PPCT shared plan/version/item/revision/lineage/class association retained-history foundation đã được realign thành component-aware persistence/control plane theo ADR-048 và P2-002 (`CLOSED` bởi `SYNC-P2-002`): `CORE`/`SPECIALIZED_STUDY`, immutable stable-item component, component-aware revision/lineage provenance, independent per-component sequence space, `PpctClassCurricularProfile`, legacy CORE/CORE_ONLY migration và server-side business-week profile split prevention; `TeachingAssignment`, `TimetableEntry`, `CurricularTeachingExecution` và `MakeupTeachingSchedule` vẫn component-free;
 - operational overlays;
 - SpecialActivity exact-slot/frozen-class/staffing/collision runtime primitive;
-- PPCT occurrence allocation vẫn là runtime cần realign tiếp theo: P2-003 hiện `READY` để triển khai weekly component routing, independent progression/exhaustion và downstream projections; P2-004 admin applicability workspace vẫn `PLANNED` sau P2-003;
+- PPCT occurrence allocation đã được triển khai runtime component-aware: P2-003 hiện đang `IN_REVIEW` (triển khai cục bộ và full validation hoàn tất, chờ remote review/CI/merge); P2-004 admin applicability workspace vẫn `PLANNED` sau P2-003;
 - CurricularTeachingExecution và SpecialActivityParticipationExecution;
 - progress/debt/late projection;
 - reporting projection, Personal Reporting Projection và Reporting Statement;
@@ -93,7 +93,7 @@ Chi tiết KEEP/REALIGN/RESTORE nằm trong `docs/governance/PRE-PILOT-TRACEABIL
 
 Project hiện đang realign vì một số minimum-core/deferred quyết định chưa đại diện đầy đủ sản phẩm thực tế. Các miền phải re-enter trước pilot tùy exact scope gồm:
 
-- phân định thành phần chương trình PPCT (CORE vs SPECIALIZED_STUDY), áp dụng theo lớp-môn và định tuyến cơ hội dạy học tuần: P0-900 và P2-001 đã `CLOSED`, P2-002 persistence/control plane đã `CLOSED` bởi `SYNC-P2-002`, P2-003 allocation/projection runtime hiện `READY`, P2-004 vẫn `PLANNED`;
+- phân định thành phần chương trình PPCT (CORE vs SPECIALIZED_STUDY), áp dụng theo lớp-môn và định tuyến cơ hội dạy học tuần: P0-900 và P2-001 đã `CLOSED`, P2-002 persistence/control plane đã `CLOSED` bởi `SYNC-P2-002`, P2-003 allocation/projection runtime hiện đang `IN_REVIEW`, P2-004 vẫn `PLANNED`;
 - GDĐP annual/grade programme planning;
 - HĐTN CLASS/GRADE/SCHOOL programme planning;
 - exact per-slot special-program staffing;

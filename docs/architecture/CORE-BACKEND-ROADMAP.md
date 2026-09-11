@@ -98,7 +98,7 @@ Exact task statuses and prerequisites are maintained authoritatively in `PRE-PIL
    `P0-900` (`CLOSED`)
      -> `P2-001` component architecture (`CLOSED` by `SYNC-P2-001`, `ADR-048` Accepted)
      -> `P2-002` persistence/control plane (`CLOSED` by `SYNC-P2-002`)
-     -> `P2-003` allocation/projection runtime (`READY`)
+     -> `P2-003` allocation/projection runtime (`IN_REVIEW`)
      -> `P2-004` admin applicability workspace (`PLANNED`)
 2. **Parallel evidence-bound school PPCT workbook path:**
    `P2-001` + authoritative school workbook evidence
@@ -155,7 +155,7 @@ P0-900 (CLOSED)
     ├── P1-030 (Delayed go-live architecture, READY)
     │   └── P1-031 (Operational-start policy, waits for P2-003)
     ├── P2-002 (Component persistence & control plane, CLOSED by SYNC-P2-002)
-    │   └── P2-003 (Component allocation & projections, READY)
+    │   └── P2-003 (Component allocation & projections, IN_REVIEW)
     │       ├── P2-004 (Admin applicability workspace)
     │       ├── P1-031 (Operational-start policy)
     │       └── P3-010 (Pre-operational historical execution)

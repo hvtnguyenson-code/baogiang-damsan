@@ -315,3 +315,55 @@ Expected in-review state after implementation/tests, before merge:
 - `P2-020` remains `PLANNED` pending P2-010
 
 Closure to `CLOSED` occurs only after independent review, exact-head PR CI, merge, authoritative post-merge main CI and non-recursive documentation sync.
+
+## 18. Implementation and validation evidence (IN_REVIEW)
+
+- Task status: `IN_REVIEW`
+- Candidate implementation HEAD before governance sync: `dd3463b8108a712a85d42fd56f04b6460126bef2`
+- Dedicated branch: `feat/ppct-component-aware-allocation-projections-003`
+
+### 18.1 Candidate commit chain
+
+1. `d34fec72643036542932cf8653d5beeeba86db1b` — `docs(ppct): define P2-003 implementation contract`
+2. `08b2ac4ace2676909dcfc637285e9176780e779a` — `feat(ppct): add component-aware allocator v2`
+3. `0d5de34a5fb983a3e087281afd1984af84fcbde7` — `feat(ppct): add component-aware progress debt v2`
+4. `bc33830f690678b4c0089c7f781c80bfe37a98db` — `fix(ppct): use component-aware allocator for teaching execution`
+5. `7d3bc73f8c1e6c259caf2eef2a51362a860d9c9d` — `feat(ppct): add component-aware readiness v2`
+6. `84d640b31efe6b33db1218a24ba6ddc24c163d5c` — `feat(ppct): project component-aware reporting`
+7. `dd3463b8108a712a85d42fd56f04b6460126bef2` — `test(ppct): clean component-aware regression imports`
+
+### 18.2 Implemented runtime profiles and scope boundary
+
+- `PPCT_OCCURRENCE_ALLOCATION_V2`: deterministic weekly routing over `AcademicWeekSegment` union; chronological sorting with stable tie-break; planned component established before operational suppression (`CORE_ONLY` -> `CORE`, `CORE_PLUS_SPECIALIZED_STUDY` -> chronologically last opportunity `SPECIALIZED_STUDY`, earlier `CORE`); independent sequential progression cursors; fail-closed on split/capacity/exhaustion.
+- `TEACHING_PROGRESS_DEBT_V2`: component-aware progress and debt calculations; independent cursors; proof-based completed/debt/gap accounting per component and combined totals.
+- `NORMAL_BASE_PPCT_COMPONENT_V2`: timetable readiness profile validating component capacity, profile, calendar and exhaustion rules; V1 readiness remains available for compatibility.
+- Teaching Execution: transaction-aware Allocator V2 for both NORMAL and MAKEUP; makeup resolves exact source obligation preserving component without persisting component downstream.
+- Reporting projection: ordinary reporting consumes Progress/Debt V2; combines CORE and SPECIALIZED_STUDY totals into single class-subject aggregate exactly once without inventing `TEACHING_REPORTING_PROJECTION_V2`.
+- Zero Prisma schema changes, zero migrations added, no component columns added downstream.
+
+### 18.3 Local validation evidence
+
+- Targeted unit and integration tests for all implemented profiles: PASS
+- Full API unit suite: 1162/1162 PASS
+- Web unit suite: 236/236 PASS
+- Full API integration suite on clean isolated database: 33/33 suites, 333/333 tests PASS
+- Full monorepo lint: PASS across all 4 workspaces (`@baogiang/web`, `@baogiang/api`, `@baogiang/contracts`, `@baogiang/config`)
+- Typecheck: PASS across all 4 workspaces
+- Build: PASS across all 4 workspaces
+- Static schema/security/deployment gates: PASS (`test:secrets`, `test:deploy:static`, `test:deploy:behavior`, `test:workflow:contract`, `test:deploy:powershell`, `test:ui:static`, `test:deploy:windows`)
+- Capability catalog synchronization integration: PASS on isolated test database
+- Playwright smoke suite: 12/12 PASS on isolated local runtime
+- Production dependency security audit: `npm audit --omit=dev --audit-level=high` PASS (0 high, 0 critical)
+- Canonical migration CI and replay: `npm run test:migrations:ci` PASS (`[migration-test] PASS`)
+- `git diff --check`: PASS
+
+### 18.4 Explicit pending closure gates
+
+The following steps remain pending and must occur before `P2-003` can transition to `CLOSED`:
+1. Remote branch push (`feat/ppct-component-aware-allocation-projections-003`)
+2. Independent GitHub review
+3. Pull Request creation
+4. Exact-head PR CI execution and PASS
+5. Merge to `main`
+6. Authoritative post-merge `main` CI execution and PASS
+7. Administrative closure documentation sync (`SYNC-P2-003`).
