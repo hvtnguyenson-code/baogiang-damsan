@@ -1,4 +1,4 @@
-﻿import { Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { OperationalOverlayStatus, Prisma, TimetableVersionStatus } from '@prisma/client';
 import { CivilDateString, PpctCurricularComponent } from '@baogiang/contracts';
 import { formatCivilDate, parseCivilDate } from '../common/validation/civil-date';
@@ -304,11 +304,32 @@ export class PpctOccurrenceAllocationService {
       : [];
 
     type SegmentType = (typeof segments)[0];
+    const segmentsByCalendarVersion = new Map<string, SegmentType[]>();
+    for (const seg of segments) {
+      const list = segmentsByCalendarVersion.get(seg.calendarVersionId) ?? [];
+      list.push(seg);
+      segmentsByCalendarVersion.set(seg.calendarVersionId, list);
+    }
+
+    const loadCalendarSegments = async (calId: string): Promise<SegmentType[]> => {
+      let list = segmentsByCalendarVersion.get(calId);
+      if (!list) {
+        list = await tx.academicWeekSegment.findMany({
+          where: { calendarVersionId: calId },
+          include: { academicWeek: true },
+          orderBy: [{ startDate: 'asc' }, { segmentOrder: 'asc' }],
+        });
+        segmentsByCalendarVersion.set(calId, list);
+      }
+      return list;
+    };
+
     const occSegmentMap = new Map<string, SegmentType>();
     for (const occurrence of normals) {
       const date = parseCivilDate(occurrence.civilDate);
-      const matched = segments.find(
-        (s) => s.calendarVersionId === occurrence.academicCalendarVersionId && s.startDate <= date && s.endDate >= date,
+      const calSegs = segmentsByCalendarVersion.get(occurrence.academicCalendarVersionId) ?? [];
+      const matched = calSegs.find(
+        (s) => s.startDate <= date && s.endDate >= date,
       );
       if (matched) {
         occSegmentMap.set(occurrence.occurrenceKey, matched);
@@ -316,9 +337,13 @@ export class PpctOccurrenceAllocationService {
     }
 
     // 2. Discover business weeks and canonical week routing sets
+    interface DatedWeekBlocker {
+      finding: PpctAllocationFinding;
+      boundaryPosition: HistoryPosition;
+    }
+    const datedWeekBlockers: DatedWeekBlocker[] = [];
     const weekIds = [...new Set([...occSegmentMap.values()].map((s) => s.academicWeekId))];
-    const plannedComponentMap = new Map<string, PpctCurricularComponent>();
-    const weekBlockerFindings: PpctAllocationFinding[] = [];
+    const plannedComponentMap = new Map<string, PpctCurricularComponent | null>();
 
     for (const weekId of weekIds) {
       const weekSegments = segments
@@ -328,6 +353,7 @@ export class PpctOccurrenceAllocationService {
 
       const envelopeStart = weekSegments[0]!.startDate;
       const envelopeEnd = weekSegments[weekSegments.length - 1]!.endDate;
+      const currentWeekCalendarVersionId = weekSegments[0]!.calendarVersionId;
 
       // Check for profile applicability split in protected week envelope
       const associationsInEnvelope = await tx.ppctClassAssociation.findMany({
@@ -341,19 +367,31 @@ export class PpctOccurrenceAllocationService {
         orderBy: [{ effectiveFrom: 'asc' }, { id: 'asc' }],
       });
       const uniqueProfiles = [...new Set(associationsInEnvelope.map((a) => a.curricularProfile))];
-      if (uniqueProfiles.length > 1) {
-        weekBlockerFindings.push({
-          severity: 'BLOCKER',
-          code: 'PPCT_COMPONENT_APPLICABILITY_WEEK_SPLIT',
-          occurrenceKey: null,
-          entityIds: associationsInEnvelope.map((a) => a.id).sort(),
-        });
-      }
+      const weekProfileSplit = uniqueProfiles.length > 1;
 
       // Collect all routing occurrences in this business week
       const weekOccurrences: NormalStructuralOccurrence[] = normals.filter(
         (o) => occSegmentMap.get(o.occurrenceKey)?.academicWeekId === weekId,
       );
+      const weekStructuralFindings: StructuralOccurrenceFinding[] = [];
+      const distinctCalVersions = new Set<string>();
+      for (const occ of weekOccurrences) {
+        distinctCalVersions.add(occ.academicCalendarVersionId);
+      }
+      let calendarSplitDetected = false;
+
+      // Inspect any existing normals falling inside the envelope for calendar/week mismatches
+      const normalsInEnvelope = normals.filter((o) => {
+        const d = parseCivilDate(o.civilDate);
+        return d >= envelopeStart && d <= envelopeEnd;
+      });
+      for (const occ of normalsInEnvelope) {
+        distinctCalVersions.add(occ.academicCalendarVersionId);
+        const seg = occSegmentMap.get(occ.occurrenceKey);
+        if (seg && seg.academicWeekId !== weekId) {
+          calendarSplitDetected = true;
+        }
+      }
 
       // If week extends beyond throughDate, discover future opportunities in week segments
       if (envelopeEnd > throughDate) {
@@ -361,41 +399,125 @@ export class PpctOccurrenceAllocationService {
         const futureDates = await this.discoverCandidateDates(tx, input, envelopeEnd, nextDay);
         for (const fDateStr of futureDates) {
           const fDate = parseCivilDate(fDateStr);
-          const matchedSeg = weekSegments.find((s) => s.startDate <= fDate && s.endDate >= fDate);
-          if (matchedSeg) {
-            const fResult = await this.structural.resolveInTransaction(tx, {
-              academicYearId: input.academicYearId,
-              civilDate: fDateStr,
-            });
-            const fNormals = fResult.normalOccurrences.filter(
-              (o) => o.schoolClass.id === input.schoolClassId && o.subjectId === input.subjectId,
-            );
-            weekOccurrences.push(...fNormals);
+          if (fDate < envelopeStart || fDate > envelopeEnd) continue;
+
+          const fResult = await this.structural.resolveInTransaction(tx, {
+            academicYearId: input.academicYearId,
+            civilDate: fDateStr,
+          });
+          const fNormals = fResult.normalOccurrences.filter(
+            (o) => o.schoolClass.id === input.schoolClassId && o.subjectId === input.subjectId,
+          );
+          const fKeys = new Set(fNormals.map((o) => o.occurrenceKey));
+
+          // Finding #3: Retain structural findings from look-ahead
+          for (const finding of fResult.findings) {
+            if (GLOBAL_STRUCTURAL_CODES.has(finding.code)) {
+              weekStructuralFindings.push(finding);
+            } else if (finding.occurrenceKey !== null && fKeys.has(finding.occurrenceKey)) {
+              weekStructuralFindings.push(finding);
+            }
+          }
+
+          for (const fNormal of fNormals) {
+            distinctCalVersions.add(fNormal.academicCalendarVersionId);
+            const fSegs = await loadCalendarSegments(fNormal.academicCalendarVersionId);
+            const fMatchedSeg = fSegs.find((s) => s.startDate <= fDate && s.endDate >= fDate);
+
+            // Finding #2: Look-ahead member must match exact calendar version and academicWeekId
+            if (
+              fNormal.academicCalendarVersionId !== currentWeekCalendarVersionId ||
+              !fMatchedSeg ||
+              fMatchedSeg.academicWeekId !== weekId
+            ) {
+              calendarSplitDetected = true;
+            } else {
+              occSegmentMap.set(fNormal.occurrenceKey, fMatchedSeg);
+              weekOccurrences.push(fNormal);
+            }
           }
         }
       }
 
+      // Earliest routing occurrence boundary for week-level blockers
+      const earliestOcc = weekOccurrences[0];
+      const earliestWeekBoundary: HistoryPosition = earliestOcc
+        ? historyPositionForNormal(earliestOcc)
+        : historyPositionAtDateStart(formatCivilDate(envelopeStart));
+
+      // Check for profile split
+      if (weekProfileSplit) {
+        datedWeekBlockers.push({
+          finding: {
+            severity: 'BLOCKER',
+            code: 'PPCT_COMPONENT_APPLICABILITY_WEEK_SPLIT',
+            occurrenceKey: null,
+            entityIds: associationsInEnvelope.map((a) => a.id).sort(),
+          },
+          boundaryPosition: earliestWeekBoundary,
+        });
+        continue;
+      }
+
       // Check for calendar / week split among all opportunities in the business week envelope
-      const envelopeOccurrences = normals.filter((o) => {
-        const d = parseCivilDate(o.civilDate);
-        return d >= envelopeStart && d <= envelopeEnd;
-      });
-      const distinctCalVersionsInEnvelope = new Set(envelopeOccurrences.map((o) => o.academicCalendarVersionId));
-      const distinctWeeksInEnvelope = new Set(
-        envelopeOccurrences.map((o) => occSegmentMap.get(o.occurrenceKey)?.academicWeekId).filter(Boolean),
-      );
-      if (distinctCalVersionsInEnvelope.size > 1 || distinctWeeksInEnvelope.size > 1) {
-        const splitAlreadyReported = weekBlockerFindings.some(
-          (f) => f.code === 'PPCT_COMPONENT_WEEK_CALENDAR_SPLIT',
-        );
-        if (!splitAlreadyReported) {
-          weekBlockerFindings.push({
+      if (calendarSplitDetected || distinctCalVersions.size > 1) {
+        datedWeekBlockers.push({
+          finding: {
             severity: 'BLOCKER',
             code: 'PPCT_COMPONENT_WEEK_CALENDAR_SPLIT',
-            occurrenceKey: envelopeOccurrences[0]?.occurrenceKey ?? null,
-            entityIds: [...distinctCalVersionsInEnvelope].sort(),
+            occurrenceKey: earliestOcc?.occurrenceKey ?? null,
+            entityIds: [...distinctCalVersions].sort(),
+          },
+          boundaryPosition: earliestWeekBoundary,
+        });
+        continue;
+      }
+
+      // Check for structural blockers discovered in future week members (Finding #3)
+      if (weekStructuralFindings.length > 0) {
+        for (const sf of weekStructuralFindings) {
+          datedWeekBlockers.push({
+            finding: {
+              severity: 'BLOCKER',
+              code: sf.code as PpctAllocationFinding['code'],
+              occurrenceKey: sf.occurrenceKey,
+              entityIds: [...sf.entityIds].sort(),
+            },
+            boundaryPosition: earliestWeekBoundary,
           });
         }
+        continue;
+      }
+
+      // Overlap validation over complete weekly routing set used for planning (Finding #3)
+      const consumingInWeek = weekOccurrences.filter((o) => consumptionDecision(o).effect === 'CONSUMES_NEXT_ITEM');
+      const weekOverlapKeys = new Set<string>();
+      for (let i = 0; i < consumingInWeek.length; i += 1) {
+        for (let j = i + 1; j < consumingInWeek.length; j += 1) {
+          const a = consumingInWeek[i]!;
+          const b = consumingInWeek[j]!;
+          if (
+            a.civilDate === b.civilDate &&
+            a.timeSlot.startTime < b.timeSlot.endTime &&
+            b.timeSlot.startTime < a.timeSlot.endTime
+          ) {
+            weekOverlapKeys.add(a.occurrenceKey);
+            weekOverlapKeys.add(b.occurrenceKey);
+          }
+        }
+      }
+      if (weekOverlapKeys.size > 0) {
+        const overlappingMembers = [...weekOverlapKeys].sort();
+        const earliestOverlapping = weekOccurrences.find((o) => weekOverlapKeys.has(o.occurrenceKey))!;
+        datedWeekBlockers.push({
+          finding: {
+            severity: 'BLOCKER',
+            code: 'PPCT_ALLOCATION_OCCURRENCE_ORDER_AMBIGUOUS',
+            occurrenceKey: earliestOverlapping.occurrenceKey,
+            entityIds: overlappingMembers,
+          },
+          boundaryPosition: earliestWeekBoundary,
+        });
         continue;
       }
 
@@ -416,13 +538,18 @@ export class PpctOccurrenceAllocationService {
         }
       } else if (effectiveProfile === 'CORE_PLUS_SPECIALIZED_STUDY') {
         if (weekOccurrences.length === 1) {
-          weekBlockerFindings.push({
-            severity: 'BLOCKER',
-            code: 'PPCT_COMPONENT_WEEK_CAPACITY_INVALID',
-            occurrenceKey: weekOccurrences[0]!.occurrenceKey,
-            entityIds: [weekId, weekOccurrences[0]!.timetableEntryId].sort(),
+          // Finding #1: Exactly 1 routing opportunity must NOT be forced SPECIALIZED
+          const soleOcc = weekOccurrences[0]!;
+          datedWeekBlockers.push({
+            finding: {
+              severity: 'BLOCKER',
+              code: 'PPCT_COMPONENT_WEEK_CAPACITY_INVALID',
+              occurrenceKey: soleOcc.occurrenceKey,
+              entityIds: [weekId, soleOcc.timetableEntryId].sort(),
+            },
+            boundaryPosition: historyPositionForNormal(soleOcc),
           });
-          plannedComponentMap.set(weekOccurrences[0]!.occurrenceKey, 'SPECIALIZED_STUDY');
+          plannedComponentMap.set(soleOcc.occurrenceKey, null);
         } else if (weekOccurrences.length >= 2) {
           for (let i = 0; i < weekOccurrences.length - 1; i += 1) {
             plannedComponentMap.set(weekOccurrences[i]!.occurrenceKey, 'CORE');
@@ -433,13 +560,17 @@ export class PpctOccurrenceAllocationService {
     }
 
     // Chronological Allocation Loop
+    datedWeekBlockers.sort((a, b) => compareHistoryPositions(a.boundaryPosition, b.boundaryPosition));
     const findings: PpctAllocationFinding[] = [];
-    const addFinding = (finding: PpctAllocationFinding) =>
-      findings.push({ ...finding, entityIds: [...finding.entityIds].sort() });
-
-    for (const wb of weekBlockerFindings) {
-      addFinding(wb);
-    }
+    const reportedFindingSignatures = new Set<string>();
+    const addFinding = (finding: PpctAllocationFinding) => {
+      const normalized = { ...finding, entityIds: [...finding.entityIds].sort() };
+      const sig = `${normalized.code}:${normalized.occurrenceKey ?? ''}:${normalized.reason ?? ''}:${normalized.entityIds.join(',')}`;
+      if (!reportedFindingSignatures.has(sig)) {
+        reportedFindingSignatures.add(sig);
+        findings.push(normalized);
+      }
+    };
 
     const byOccurrence = new Map<string, StructuralOccurrenceFinding[]>();
     for (const item of structuralFindings) {
@@ -465,7 +596,7 @@ export class PpctOccurrenceAllocationService {
     const normalAllocations: NormalPpctAllocation[] = [];
     let currentVersion: PpctGraphVersion | null = null;
     let currentPlanId: string | null = null;
-    let historyBlocked = weekBlockerFindings.length > 0;
+    let historyBlocked = false;
     let firstHistoryBlockBoundary: HistoryPosition | null = null;
     let globalEventIndex = 0;
     const blockHistoryAt = (position: HistoryPosition) => {
@@ -475,15 +606,19 @@ export class PpctOccurrenceAllocationService {
       }
     };
 
-    if (historyBlocked && normals.length) {
-      firstHistoryBlockBoundary = historyPositionForNormal(normals[0]!);
-    }
-
     for (const occurrence of normals) {
       const decision = consumptionDecision(occurrence);
       const occurrencePosition = historyPositionForNormal(occurrence);
       const isRouting = occSegmentMap.has(occurrence.occurrenceKey);
-      const plannedComponent = isRouting ? (plannedComponentMap.get(occurrence.occurrenceKey) ?? 'CORE') : null;
+      const plannedComponent = isRouting ? (plannedComponentMap.get(occurrence.occurrenceKey) ?? null) : null;
+
+      // Finding #4: Activate dated week blockers whose boundary has been reached chronologically
+      for (const wb of datedWeekBlockers) {
+        if (compareHistoryPositions(wb.boundaryPosition, occurrencePosition) <= 0) {
+          addFinding(wb.finding);
+          blockHistoryAt(wb.boundaryPosition);
+        }
+      }
 
       while (globalEventIndex < globalEvents.length && globalEvents[globalEventIndex]!.civilDate <= occurrence.civilDate) {
         const event = globalEvents[globalEventIndex]!;
@@ -535,8 +670,21 @@ export class PpctOccurrenceAllocationService {
         continue;
       }
 
+      // Blocked by history or capacity/routing failure without planned component
+      if (historyBlocked || plannedComponent === null) {
+        normalAllocations.push({
+          occurrence,
+          allocationEffect: decision.effect,
+          allocationReason: decision.reason,
+          allocationStatus: 'BLOCKED',
+          expectedPpctItem: null,
+          plannedComponent,
+        });
+        continue;
+      }
+
       const binding = occurrence.ppctBinding;
-      if (!binding && !historyBlocked) {
+      if (!binding) {
         addFinding({
           severity: 'BLOCKER',
           code: 'PPCT_ALLOCATION_HISTORY_BLOCKED',
@@ -545,9 +693,6 @@ export class PpctOccurrenceAllocationService {
           entityIds: [occurrence.timetableEntryId],
         });
         blockHistoryAt(occurrencePosition);
-      }
-
-      if (historyBlocked || !binding) {
         normalAllocations.push({
           occurrence,
           allocationEffect: decision.effect,
@@ -697,6 +842,11 @@ export class PpctOccurrenceAllocationService {
       addFinding(event.finding);
       blockHistoryAt(historyPositionAtDateStart(event.civilDate));
       globalEventIndex += 1;
+    }
+
+    for (const wb of datedWeekBlockers) {
+      addFinding(wb.finding);
+      blockHistoryAt(wb.boundaryPosition);
     }
 
     const makeups = await tx.makeupTeachingSchedule.findMany({

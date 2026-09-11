@@ -27,9 +27,35 @@ function makeup(options: { id: string; sourceDate: string; sourceEntryId?: strin
 function harness(structuralResults?: Record<string, object>) {
   const tx = {
     timetableEntry: { findMany: jest.fn().mockResolvedValue([{ weekday: 'MONDAY', timetableVersion: { effectiveFrom: date('2026-08-03'), effectiveUntil: date('2026-08-17') } }]) },
-    ppctVersion: { findMany: jest.fn().mockResolvedValue([{ id: 'version', ppctPlanId: 'plan', versionNumber: 1, status: 'PUBLISHED', itemRevisions: [1, 2, 3].map((sequence) => ({ id: `revision-${sequence}`, ppctVersionId: 'version', ppctPlanId: 'plan', ppctItemId: `item-${sequence}`, sequence, title: `Item ${sequence}`, lessonType: 'LESSON' })) }]) },
+    ppctVersion: { findMany: jest.fn().mockResolvedValue([{ id: 'version', ppctPlanId: 'plan', versionNumber: 1, status: 'PUBLISHED', itemRevisions: [1, 2, 3].map((sequence) => ({ id: `revision-${sequence}`, ppctVersionId: 'version', ppctPlanId: 'plan', ppctItemId: `item-${sequence}`, sequence, title: `Item ${sequence}`, lessonType: 'LESSON', component: 'CORE' })) }]) },
     ppctItemLineage: { findMany: jest.fn().mockResolvedValue([]) },
     makeupTeachingSchedule: { findMany: jest.fn().mockResolvedValue([]) },
+    academicWeekSegment: {
+      findMany: jest.fn().mockResolvedValue([
+        {
+          academicWeekId: 'week-1',
+          calendarVersionId: 'calendar',
+          label: '1',
+          segmentOrder: 1,
+          startDate: date('2026-08-03'),
+          endDate: date('2026-08-07'),
+          academicWeek: { id: 'week-1' },
+        },
+      ]),
+    },
+    ppctClassAssociation: {
+      findMany: jest.fn().mockResolvedValue([
+        {
+          id: 'assoc-1',
+          academicYearId: 'year',
+          schoolClassId: 'class',
+          subjectId: 'subject',
+          curricularProfile: 'CORE_PLUS_SPECIALIZED_STUDY',
+          effectiveFrom: date('2026-08-01'),
+          effectiveUntil: null,
+        },
+      ]),
+    },
   };
   const prisma = { $transaction: jest.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)) };
   const structural = { resolveInTransaction: jest.fn(async (_tx: unknown, input: { civilDate: string }) => structuralResults?.[input.civilDate] ?? { normalOccurrences: [normal(input.civilDate as `${number}-${number}-${number}`)], findings: [] }), resolve: jest.fn() };
@@ -164,5 +190,49 @@ describe('PpctOccurrenceAllocationService', () => {
     const h = harness({ '2026-08-03': { normalOccurrences: [missing], findings: [{ severity: 'BLOCKER', code: 'PPCT_ASSOCIATION_MISSING', occurrenceKey: missing.occurrenceKey, entityIds: ['entry'] }] } });
     const result = await h.service.resolve({ academicYearId: 'year', schoolClassId: 'class', subjectId: 'subject', throughCivilDate: '2026-08-10' });
     expect(result.replayOrigin).toBe('2026-08-03'); expect(result.normalAllocations.map((allocation) => allocation.allocationStatus)).toEqual(['BLOCKED', 'BLOCKED']); expect(result.findings).toEqual([expect.objectContaining({ code: 'PPCT_ASSOCIATION_MISSING', occurrenceKey: missing.occurrenceKey })]);
+  });
+
+  it('S3 V2 look-ahead to future date in same week with overlapping consuming opportunities blocks with PPCT_ALLOCATION_OCCURRENCE_ORDER_AMBIGUOUS', async () => {
+    const monday = normal('2026-08-03');
+    const thu1 = {
+      ...normal('2026-08-06'),
+      occurrenceKey: 'NORMAL:thu1:2026-08-06',
+      timetableEntryId: 'thu1',
+      timeSlot: { ...normal('2026-08-06').timeSlot, weekday: 'THURSDAY' as const, startTime: '07:00:00', endTime: '08:00:00' },
+    };
+    const thu2 = {
+      ...normal('2026-08-06'),
+      occurrenceKey: 'NORMAL:thu2:2026-08-06',
+      timetableEntryId: 'thu2',
+      timeSlot: { ...normal('2026-08-06').timeSlot, weekday: 'THURSDAY' as const, startTime: '07:30:00', endTime: '08:30:00' },
+    };
+    const h = harness({
+      '2026-08-03': { normalOccurrences: [monday], findings: [] },
+      '2026-08-06': { normalOccurrences: [thu1, thu2], findings: [] },
+    });
+    // Candidate dates discovery finds Monday and Thursday
+    h.tx.timetableEntry.findMany.mockResolvedValue([
+      { weekday: 'MONDAY', timetableVersion: { effectiveFrom: date('2026-08-01'), effectiveUntil: date('2026-08-10') } },
+      { weekday: 'THURSDAY', timetableVersion: { effectiveFrom: date('2026-08-01'), effectiveUntil: date('2026-08-10') } },
+    ]);
+    const result = await h.service.resolveV2({
+      academicYearId: 'year',
+      schoolClassId: 'class',
+      subjectId: 'subject',
+      throughCivilDate: '2026-08-03',
+    });
+    expect(result.status).toBe('BLOCKED');
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'PPCT_ALLOCATION_OCCURRENCE_ORDER_AMBIGUOUS',
+          severity: 'BLOCKER',
+        }),
+      ]),
+    );
+    expect(result.normalAllocations).toHaveLength(1);
+    expect(result.normalAllocations[0]!.allocationStatus).toBe('BLOCKED');
+    expect(result.normalAllocations[0]!.plannedComponent).toBeNull();
+    expect(result.normalAllocations[0]!.expectedPpctItem).toBeNull();
   });
 });

@@ -47,6 +47,7 @@ integration('PPCT occurrence allocation V2 read model (PostgreSQL)', () => {
     await h.prisma.ppctItemRevision.deleteMany();
     await h.prisma.ppctItem.deleteMany();
     await h.prisma.ppctVersion.deleteMany();
+    await h.prisma.staffSubject.deleteMany();
     await h.prisma.ppctPlan.deleteMany();
     await h.clean();
   }
@@ -426,6 +427,56 @@ integration('PPCT occurrence allocation V2 read model (PostgreSQL)', () => {
       });
     }
 
+    const staffSubject = await h.prisma.staffSubject.create({
+      data: { userId: actor.id, subjectId: subject.id, validFrom: new Date('2026-08-01Z') },
+    });
+
+    async function addMakeup(options: {
+      id?: string;
+      associationId: string;
+      ppctVersionId: string;
+      ppctItemId: string;
+      sourceDate: string;
+      targetDate: string;
+      entry?: typeof entryMon;
+      targetSlot?: typeof slotFri;
+    }) {
+      const e = options.entry ?? entryMon;
+      const targetSlotDef = options.targetSlot ?? slotFri;
+      return h.prisma.makeupTeachingSchedule.create({
+        data: {
+          id: options.id,
+          academicYearId: year.id,
+          originalTimetableVersionId: timetable.id,
+          originalTimetableEntryId: e.id,
+          originalCivilDate: new Date(`${options.sourceDate}T00:00:00Z`),
+          originalAcademicCalendarVersionId: calendar.id,
+          originalTimeSlotDefinitionId: slotMon.id,
+          schoolClassId: schoolClass.id,
+          subjectId: subject.id,
+          originalTeachingAssignmentId: assignment.id,
+          responsibleTeacherUserId: actor.id,
+          ppctClassAssociationId: options.associationId,
+          ppctPlanId: plan.id,
+          ppctVersionId: options.ppctVersionId,
+          ppctItemId: options.ppctItemId,
+          targetCivilDate: new Date(`${options.targetDate}T00:00:00Z`),
+          targetAcademicCalendarVersionId: calendar.id,
+          targetTimeSlotDefinitionId: targetSlotDef.id,
+          scheduledTeacherUserId: actor.id,
+          eligibilityCheckedAt: lifecycleAt,
+          eligibilityWasActive: true,
+          eligibilityWasTeachingStaff: true,
+          eligibilitySameSubject: true,
+          eligibilityStaffSubjectId: staffSubject.id,
+          status: OperationalOverlayStatus.ACTIVE,
+          createRequestKey: crypto.randomUUID(),
+          createRequestFingerprint: crypto.randomUUID(),
+          createdByUserId: actor.id,
+        },
+      });
+    }
+
     return {
       year,
       actor,
@@ -446,9 +497,11 @@ integration('PPCT occurrence allocation V2 read model (PostgreSQL)', () => {
       entryThu,
       plan,
       service,
+      staffSubject,
       addVersion,
       associate,
       lineage,
+      addMakeup,
     };
   }
 
@@ -954,5 +1007,310 @@ integration('PPCT occurrence allocation V2 read model (PostgreSQL)', () => {
     expect(result.normalAllocations[0]!.expectedPpctItem?.component).toBe('CORE');
     expect(result.normalAllocations[0]!.expectedPpctItem?.title).toBe('C1');
     // Thursday was NOT consumed (in the future)
+  });
+
+  it('15. Finding 1 Regression: One-opportunity week with CORE_PLUS_SPECIALIZED_STUDY must NOT be forced SPECIALIZED and plannedComponent is null', async () => {
+    const f = await fixture();
+    // Only Monday entry exists
+    await h.prisma.timetableEntry.delete({ where: { id: f.entryThu.id } });
+
+    const v1 = await f.addVersion(1, ['C1'], ['S1']);
+    await f.associate(v1.version.id, DATES.W1_MON, 'CORE_PLUS_SPECIALIZED_STUDY');
+
+    const result = await f.service.resolveV2({
+      academicYearId: f.year.id,
+      schoolClassId: f.schoolClass.id,
+      subjectId: f.subject.id,
+      throughCivilDate: DATES.W1_MON,
+    });
+
+    expect(result.status).toBe('BLOCKED');
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'PPCT_COMPONENT_WEEK_CAPACITY_INVALID',
+          severity: 'BLOCKER',
+        }),
+      ]),
+    );
+    expect(result.normalAllocations).toHaveLength(1);
+    expect(result.normalAllocations[0]!.allocationStatus).toBe('BLOCKED');
+    expect(result.normalAllocations[0]!.plannedComponent).toBeNull();
+    expect(result.normalAllocations[0]!.expectedPpctItem).toBeNull();
+  });
+
+  it('16. Finding 2 Regression: Midweek cutover to Calendar B / Week B detected during Monday look-ahead blocks with PPCT_COMPONENT_WEEK_CALENDAR_SPLIT', async () => {
+    const f = await fixture({ secondCalendar: true });
+    // Timetable 1 applies to Monday only (superseded midweek Wednesday)
+    await h.prisma.timetableVersion.update({
+      where: { id: f.timetable.id },
+      data: {
+        effectiveUntil: new Date('2026-09-08T23:59:59Z'),
+        status: 'SUPERSEDED',
+        supersededAt: new Date(),
+      },
+    });
+
+    // Timetable 2 cutover on Wednesday 2026-09-09, using Calendar 2 and Week 1 Cal 2
+    const timetable2 = await h.prisma.timetableVersion.create({
+      data: {
+        academicYearId: f.year.id,
+        versionNumber: 2,
+        status: 'ACTIVE',
+        calendarVersionId: f.calendar2!.id,
+        effectiveAcademicWeekId: f.week1Cal2!.id,
+        effectiveFrom: new Date('2026-09-09T00:00:00Z'),
+        createdByUserId: f.actor.id,
+        validatedByUserId: f.actor.id,
+        validatedAt: new Date(),
+        approvedByUserId: f.actor.id,
+        approvedAt: new Date(),
+        activatedByUserId: f.actor.id,
+        activatedAt: new Date(),
+      },
+    });
+    // Thursday opportunity under Timetable 2 (Calendar 2)
+    await h.prisma.timetableEntry.create({
+      data: {
+        timetableVersionId: timetable2.id,
+        academicYearId: f.year.id,
+        weekday: 'THURSDAY',
+        timeSlotDefinitionId: f.slotThu.id,
+        schoolClassId: f.schoolClass.id,
+        subjectId: f.subject.id,
+        teachingAssignmentId: f.assignment.id,
+        teacherUserId: f.actor.id,
+      },
+    });
+
+    const v1 = await f.addVersion(1, ['C1', 'C2'], ['S1']);
+    await f.associate(v1.version.id, DATES.W1_MON, 'CORE_PLUS_SPECIALIZED_STUDY');
+
+    // Replay Monday only - look-ahead into Thursday must detect calendar/week split!
+    const result = await f.service.resolveV2({
+      academicYearId: f.year.id,
+      schoolClassId: f.schoolClass.id,
+      subjectId: f.subject.id,
+      throughCivilDate: DATES.W1_MON,
+    });
+
+    expect(result.status).toBe('BLOCKED');
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'PPCT_COMPONENT_WEEK_CALENDAR_SPLIT',
+          severity: 'BLOCKER',
+        }),
+      ]),
+    );
+    expect(result.normalAllocations).toHaveLength(1);
+    // Monday MUST NOT be planned as CORE based on an invalid combined weekly partition!
+    expect(result.normalAllocations[0]!.allocationStatus).toBe('BLOCKED');
+    expect(result.normalAllocations[0]!.plannedComponent).toBeNull();
+    expect(result.normalAllocations[0]!.expectedPpctItem).toBeNull();
+  });
+
+  it('17. Finding 3 Regression: Look-ahead discovers future structural blocker (RETAINED_CALENDAR_INVALID) and blocks weekly routing', async () => {
+    const f = await fixture();
+
+    // Supersede timetable 1 on Wednesday
+    await h.prisma.timetableVersion.update({
+      where: { id: f.timetable.id },
+      data: {
+        effectiveUntil: new Date('2026-09-08T23:59:59Z'),
+        status: 'SUPERSEDED',
+        supersededAt: new Date(),
+      },
+    });
+
+    // Calendar 2 is expired/invalid for Thursday (ends on 2026-09-08)
+    const calendar2 = await h.prisma.academicCalendarVersion.create({
+      data: {
+        academicYearId: f.year.id,
+        versionNumber: 2,
+        startDate: new Date('2026-09-01Z'),
+        endDate: new Date('2026-09-08Z'),
+        officialWeekCount: 35,
+        reserveWeekCount: 1,
+        teachingWeekdays: ['MONDAY', 'THURSDAY'],
+        isActive: false,
+      },
+    });
+    const weekCal2 = await h.prisma.academicWeek.create({
+      data: {
+        calendarVersionId: calendar2.id,
+        kind: 'OFFICIAL',
+        officialWeekNumber: 1,
+        displayLabel: 'Week 1 Expired',
+        sortOrder: 1,
+      },
+    });
+    await h.prisma.academicWeekSegment.create({
+      data: {
+        academicWeekId: weekCal2.id,
+        calendarVersionId: calendar2.id,
+        label: '1',
+        segmentOrder: 1,
+        startDate: new Date('2026-09-01T00:00:00Z'),
+        endDate: new Date('2026-09-08T00:00:00Z'),
+      },
+    });
+
+    // Timetable 2 cutover on Wednesday 2026-09-09 references calendar 2
+    const timetable2 = await h.prisma.timetableVersion.create({
+      data: {
+        academicYearId: f.year.id,
+        versionNumber: 2,
+        status: 'ACTIVE',
+        calendarVersionId: calendar2.id,
+        effectiveAcademicWeekId: weekCal2.id,
+        effectiveFrom: new Date('2026-09-09T00:00:00Z'),
+        createdByUserId: f.actor.id,
+        validatedByUserId: f.actor.id,
+        validatedAt: new Date(),
+        approvedByUserId: f.actor.id,
+        approvedAt: new Date(),
+        activatedByUserId: f.actor.id,
+        activatedAt: new Date(),
+      },
+    });
+    await h.prisma.timetableEntry.create({
+      data: {
+        timetableVersionId: timetable2.id,
+        academicYearId: f.year.id,
+        weekday: 'THURSDAY',
+        timeSlotDefinitionId: f.slotThu.id,
+        schoolClassId: f.schoolClass.id,
+        subjectId: f.subject.id,
+        teachingAssignmentId: f.assignment.id,
+        teacherUserId: f.actor.id,
+      },
+    });
+
+    const v1 = await f.addVersion(1, ['C1', 'C2', 'C3'], ['S1', 'S2']);
+    await f.associate(v1.version.id, DATES.W1_MON, 'CORE_PLUS_SPECIALIZED_STUDY');
+
+    // Replay Monday only - look-ahead to Thursday discovers RETAINED_CALENDAR_INVALID
+    const result = await f.service.resolveV2({
+      academicYearId: f.year.id,
+      schoolClassId: f.schoolClass.id,
+      subjectId: f.subject.id,
+      throughCivilDate: DATES.W1_MON,
+    });
+
+    expect(result.status).toBe('BLOCKED');
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'RETAINED_CALENDAR_INVALID',
+          severity: 'BLOCKER',
+        }),
+      ]),
+    );
+    expect(result.normalAllocations).toHaveLength(1);
+    expect(result.normalAllocations[0]!.allocationStatus).toBe('BLOCKED');
+    expect(result.normalAllocations[0]!.plannedComponent).toBeNull();
+    expect(result.normalAllocations[0]!.expectedPpctItem).toBeNull();
+  });
+
+  it('18. Finding 4 Regression: Week blockers are forward-only; valid Week 1 prefix remains ALLOCATED and preserves obligations', async () => {
+    const f = await fixture();
+    const v1 = await f.addVersion(1, ['C1', 'C2'], ['S1', 'S2']);
+    const assoc = await f.associate(v1.version.id, DATES.W1_MON, 'CORE_PLUS_SPECIALIZED_STUDY');
+
+    // Supersede timetable 1 at end of Week 1
+    await h.prisma.timetableVersion.update({
+      where: { id: f.timetable.id },
+      data: {
+        effectiveUntil: new Date('2026-09-13T23:59:59Z'),
+        status: 'SUPERSEDED',
+        supersededAt: new Date(),
+      },
+    });
+
+    // Timetable 2 in Week 2 has ONLY Monday entry (no Thursday) -> capacity invalid in Week 2!
+    const timetable2 = await h.prisma.timetableVersion.create({
+      data: {
+        academicYearId: f.year.id,
+        versionNumber: 2,
+        status: 'ACTIVE',
+        calendarVersionId: f.calendar.id,
+        effectiveAcademicWeekId: f.week2.id,
+        effectiveFrom: new Date('2026-09-14T00:00:00Z'),
+        createdByUserId: f.actor.id,
+        validatedByUserId: f.actor.id,
+        validatedAt: new Date(),
+        approvedByUserId: f.actor.id,
+        approvedAt: new Date(),
+        activatedByUserId: f.actor.id,
+        activatedAt: new Date(),
+      },
+    });
+    await h.prisma.timetableEntry.create({
+      data: {
+        timetableVersionId: timetable2.id,
+        academicYearId: f.year.id,
+        weekday: 'MONDAY',
+        timeSlotDefinitionId: f.slotMon.id,
+        schoolClassId: f.schoolClass.id,
+        subjectId: f.subject.id,
+        teachingAssignmentId: f.assignment.id,
+        teacherUserId: f.actor.id,
+      },
+    });
+
+    // Add a makeup schedule pointing to Week 1 Mon
+    const makeup = await f.addMakeup({
+      associationId: assoc.id,
+      ppctVersionId: v1.version.id,
+      ppctItemId: v1.coreRevisions[0]!.ppctItemId,
+      sourceDate: DATES.W1_MON,
+      targetDate: DATES.W1_FRI,
+    });
+
+    // Resolve through Week 2 Monday
+    const result = await f.service.resolveV2({
+      academicYearId: f.year.id,
+      schoolClassId: f.schoolClass.id,
+      subjectId: f.subject.id,
+      throughCivilDate: DATES.W2_MON,
+    });
+
+    // Overall result is BLOCKED because Week 2 has finding PPCT_COMPONENT_WEEK_CAPACITY_INVALID
+    expect(result.status).toBe('BLOCKED');
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'PPCT_COMPONENT_WEEK_CAPACITY_INVALID',
+          severity: 'BLOCKER',
+        }),
+      ]),
+    );
+
+    // Normal allocations: 3 total (W1_MON, W1_THU, W2_MON)
+    expect(result.normalAllocations).toHaveLength(3);
+
+    // Week 1 Mon is ALLOCATED as CORE 1 (NOT retroactively blocked!)
+    expect(result.normalAllocations[0]!.allocationStatus).toBe('ALLOCATED');
+    expect(result.normalAllocations[0]!.plannedComponent).toBe('CORE');
+    expect(result.normalAllocations[0]!.expectedPpctItem?.title).toBe('C1');
+    expect(result.normalAllocations[0]!.expectedPpctItem?.component).toBe('CORE');
+
+    // Week 1 Thu is ALLOCATED as SPECIALIZED 1 (NOT retroactively blocked!)
+    expect(result.normalAllocations[1]!.allocationStatus).toBe('ALLOCATED');
+    expect(result.normalAllocations[1]!.plannedComponent).toBe('SPECIALIZED_STUDY');
+    expect(result.normalAllocations[1]!.expectedPpctItem?.title).toBe('S1');
+    expect(result.normalAllocations[1]!.expectedPpctItem?.component).toBe('SPECIALIZED_STUDY');
+
+    // Week 2 Mon starts at/after blocker boundary => BLOCKED!
+    expect(result.normalAllocations[2]!.allocationStatus).toBe('BLOCKED');
+    expect(result.normalAllocations[2]!.plannedComponent).toBeNull();
+    expect(result.normalAllocations[2]!.expectedPpctItem).toBeNull();
+
+    // Makeup pointing to Week 1 Mon matches trusted prefix obligation!
+    const makeupMatch = result.makeupSourceMatches.find((m) => m.makeupTeachingScheduleId === makeup.id);
+    expect(makeupMatch).toBeDefined();
+    expect(makeupMatch!.status).toBe('MATCH');
+    expect(makeupMatch!.expectedPpctItem?.title).toBe('C1');
   });
 });
