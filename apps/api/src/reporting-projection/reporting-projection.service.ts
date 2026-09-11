@@ -4,7 +4,7 @@ import { parseCivilDate } from '../common/validation/civil-date';
 import { formatWallClockTime } from '../time-slots/wall-clock-time';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProgressDebtService } from '../progress-debt/progress-debt.service';
-import { ProgressDebtItem } from '../progress-debt/progress-debt.types';
+import { ProgressDebtItemV2 } from '../progress-debt/progress-debt.types';
 import { ReportingCounts, ReportingDetail, ReportingFinding, ReportingProjection, ReportingRootInput, ReportingRootProjection, ResolveReportingProjectionInput, TEACHING_REPORTING_PROJECTION_PROFILE } from './reporting-projection.types';
 
 @Injectable()
@@ -26,7 +26,7 @@ export class ReportingProjectionService {
     if (classes.length !== ids.length || classes.some((row) => row.academicYearId !== input.academicYearId)) throw new BadRequestException('Every reporting root school class must belong to academicYearId.');
     const roots: ReportingRootProjection[] = [];
     for (const root of [...input.roots].sort((a, b) => this.rootKey(a).localeCompare(this.rootKey(b)))) {
-      const upstream = await this.progressDebt.resolveInTransaction(tx, { academicYearId: input.academicYearId, schoolClassId: root.schoolClassId, subjectId: root.subjectId, asOfInstant: input.asOfInstant });
+      const upstream = await this.progressDebt.resolveInTransactionV2(tx, { academicYearId: input.academicYearId, schoolClassId: root.schoolClassId, subjectId: root.subjectId, asOfInstant: input.asOfInstant });
       if (upstream.status === 'BLOCKED') { roots.push({ scope: root, status: 'BLOCKED', counts: null, details: [], findings: upstream.findings }); continue; }
       const items = upstream.items.filter((item) => {
         const date = parseCivilDate(item.sourceCivilDate); return date >= from && date <= to;
@@ -49,9 +49,9 @@ export class ReportingProjectionService {
     if (from > to) throw new BadRequestException('fromCivilDate must be on or before toCivilDate.');
     if (!(input.asOfInstant instanceof Date) || Number.isNaN(input.asOfInstant.getTime())) throw new BadRequestException('asOfInstant must be a valid instant.');
   }
-  private detail(input: ResolveReportingProjectionInput, root: ReportingRootInput, item: ProgressDebtItem, slot: { id: string; startTime: Date; endTime: Date } | undefined): ReportingDetail {
+  private detail(input: ResolveReportingProjectionInput, root: ReportingRootInput, item: ProgressDebtItemV2, slot: { id: string; startTime: Date; endTime: Date } | undefined): ReportingDetail {
     if (!slot) throw new BadRequestException('Required retained source time-slot provenance cannot be resolved.');
-    return { academicYearId: input.academicYearId, schoolClassId: root.schoolClassId, subjectId: root.subjectId, ...item, sourceSlotStart: formatWallClockTime(slot.startTime), sourceSlotEnd: formatWallClockTime(slot.endTime) };
+    return { academicYearId: input.academicYearId, schoolClassId: root.schoolClassId, subjectId: root.subjectId, ...item, component: item.component, sourceSlotStart: formatWallClockTime(slot.startTime), sourceSlotEnd: formatWallClockTime(slot.endTime) };
   }
   private count(details: ReportingDetail[]): ReportingCounts { const completed = details.filter((x) => x.classification === 'COMPLETED').length; const debt = details.filter((x) => x.classification === 'PROVEN_OPEN_DEBT').length; const gap = details.length - completed - debt; return { distributedElapsedCount: details.length, completedCount: completed, openDebtCount: debt, lateCount: debt, unconfirmedGapCount: gap }; }
   private sum(roots: ReportingRootProjection[]): ReportingCounts { return roots.reduce((total, root) => { const count = root.counts!; return { distributedElapsedCount: total.distributedElapsedCount + count.distributedElapsedCount, completedCount: total.completedCount + count.completedCount, openDebtCount: total.openDebtCount + count.openDebtCount, lateCount: total.lateCount + count.lateCount, unconfirmedGapCount: total.unconfirmedGapCount + count.unconfirmedGapCount }; }, { distributedElapsedCount: 0, completedCount: 0, openDebtCount: 0, lateCount: 0, unconfirmedGapCount: 0 }); }
