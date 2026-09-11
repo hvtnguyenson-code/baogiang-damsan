@@ -3,6 +3,7 @@ import { AuditService } from '../audit/audit.service';
 import { AuthModule } from '../auth/auth.module';
 import { AuthorizationModule } from '../authorization/authorization.module';
 import { PpctModule } from '../ppct/ppct.module';
+import { PpctOccurrenceAllocationModule } from '../ppct-occurrence-allocation/ppct-occurrence-allocation.module';
 import {
   AcademicYearTimetableResolutionController,
   AcademicYearTimetableVersionsController,
@@ -13,7 +14,7 @@ import { TimetableReadinessController } from './timetable-readiness.controller';
 import { TimetableReadinessService } from './timetable-readiness.service';
 
 @Module({
-  imports: [AuthModule, AuthorizationModule, PpctModule],
+  imports: [AuthModule, AuthorizationModule, PpctModule, PpctOccurrenceAllocationModule],
   controllers: [
     AcademicYearTimetableVersionsController,
     AcademicYearTimetableResolutionController,
