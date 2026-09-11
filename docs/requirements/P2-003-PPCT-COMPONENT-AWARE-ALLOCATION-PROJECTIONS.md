@@ -357,13 +357,32 @@ Closure to `CLOSED` occurs only after independent review, exact-head PR CI, merg
 - Canonical migration CI and replay: `npm run test:migrations:ci` PASS (`[migration-test] PASS`)
 - `git diff --check`: PASS
 
-### 18.4 Explicit pending closure gates
+### 18.4 Closure gates execution
 
-The following steps remain pending and must occur before `P2-003` can transition to `CLOSED`:
-1. Remote branch push (`feat/ppct-component-aware-allocation-projections-003`)
-2. Independent GitHub review
-3. Pull Request creation
-4. Exact-head PR CI execution and PASS
-5. Merge to `main`
-6. Authoritative post-merge `main` CI execution and PASS
-7. Administrative closure documentation sync (`SYNC-P2-003`).
+The planned closure gates were fully executed:
+1. Remote branch push (`feat/ppct-component-aware-allocation-projections-003` at candidate HEAD `18a7742229fe9385490cddcaa30ff2f5c9a2087a`)
+2. Pull Request created: PR #127 (`feat(ppct): add component-aware allocation and curricular projections`)
+3. Independent GitHub review completed: PASS after one correction round absorbing 4 correctness findings (One-opportunity week, Future calendar look-ahead, Future structural blockers/overlap, Forward-only week blockers) committed at `7348221f38ac2cb9b87fa18d169e0198041a23b7`
+4. Exact-head PR CI executed: CI #423 (run id `34626664097`), SUCCESS
+5. Merged to `main` at `c6c6a294f102f125306fdfc65ac64750d49b91cb`
+6. Authoritative post-merge `main` CI executed: CI #424 (run id `34627529544`), SUCCESS
+7. Administrative closure documentation sync (`SYNC-P2-003`) completed.
+
+## 19. Final closure
+
+- Status: `CLOSED`
+- Closed by: `SYNC-P2-003`
+- Dedicated branch: `feat/ppct-component-aware-allocation-projections-003`
+- Final reviewed head: `7348221f38ac2cb9b87fa18d169e0198041a23b7`
+- Independent review: PASS (4 findings corrected before final CI)
+- PR: #127 (`feat(ppct): add component-aware allocation and curricular projections`)
+- Exact-head CI: CI #423 (run id `34626664097`), SUCCESS
+- Merge/main commit: `c6c6a294f102f125306fdfc65ac64750d49b91cb`
+- Authoritative post-merge CI: CI #424 (run id `34627529544`), SUCCESS
+- Scope: zero schema/migration added, no production deploy, no correction/re-entry task remains
+
+Closure consequences:
+- `P2-004` becomes `READY`
+- `P1-031` remains `PLANNED` until `P1-030` also `CLOSED`
+- `P2-010` remains `BLOCKED_EVIDENCE`
+- Production remains `PRE-OPERATIONAL`
