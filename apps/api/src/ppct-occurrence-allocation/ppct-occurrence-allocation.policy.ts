@@ -1,8 +1,9 @@
 import { NormalStructuralOccurrence } from '../resolved-occurrences/resolved-occurrence.types';
-import { CivilDateString } from '@baogiang/contracts';
+import { CivilDateString, PpctCurricularComponent } from '@baogiang/contracts';
 import {
   AllocationEffect,
   DirectDistributionObligation,
+  PpctGraphItemRevision,
   PpctGraphLineage,
   PpctGraphVersion,
   PpctPlanGraph,
@@ -123,4 +124,90 @@ export function applyVersionTransition(graph: PpctPlanGraph, target: PpctGraphVe
 export function pendingRevisions(version: PpctGraphVersion, covered: ReadonlySet<string>) {
   return version.itemRevisions.filter((revision) => !covered.has(revision.ppctItemId))
     .sort((a, b) => a.sequence - b.sequence || a.ppctItemId.localeCompare(b.ppctItemId) || a.id.localeCompare(b.id));
+}
+
+export function pendingRevisionsV2(
+  version: PpctGraphVersion,
+  component: PpctCurricularComponent,
+  covered: ReadonlySet<string>,
+): PpctGraphItemRevision[] {
+  return version.itemRevisions
+    .filter((revision) => (revision.component ?? 'CORE') === component && !covered.has(revision.ppctItemId))
+    .sort((a, b) => a.sequence - b.sequence || a.ppctItemId.localeCompare(b.ppctItemId) || a.id.localeCompare(b.id));
+}
+
+export function applyVersionTransitionV2(
+  graph: PpctPlanGraph,
+  target: PpctGraphVersion,
+  coveredByComponent: Record<PpctCurricularComponent, Set<string>>,
+): TransitionBlocker | null {
+  const versions = new Map(graph.versions.map((version) => [version.id, version]));
+  const incoming = graph.lineages.filter((edge) => edge.successorVersionId === target.id).sort((a, b) => a.id.localeCompare(b.id));
+
+  for (const edge of incoming) {
+    const predecessor = versions.get(edge.predecessorVersionId);
+    const targetRev = target.itemRevisions.find((revision) => revision.ppctItemId === edge.successorItemId);
+    const predRev = predecessor?.itemRevisions.find((revision) => revision.ppctItemId === edge.predecessorItemId);
+    if (
+      edge.ppctPlanId !== graph.planId ||
+      edge.successorVersionId !== target.id ||
+      !targetRev ||
+      !authoritative(predecessor) ||
+      predecessor.ppctPlanId !== graph.planId ||
+      !predRev ||
+      predecessor.versionNumber >= target.versionNumber
+    ) {
+      return { code: 'PPCT_VERSION_TRANSITION_LINEAGE_AMBIGUOUS', reason: 'MALFORMED_LINEAGE_PREDECESSOR', entityIds: [edge.id] };
+    }
+    const targetComp = targetRev.component ?? 'CORE';
+    const predComp = predRev.component ?? 'CORE';
+    if (targetComp !== predComp || (edge.component && edge.component !== targetComp)) {
+      return { code: 'PPCT_VERSION_TRANSITION_LINEAGE_AMBIGUOUS', reason: 'CROSS_COMPONENT_LINEAGE', entityIds: [edge.id] };
+    }
+    const successorPriorHistory = graph.versions.some(
+      (version) => version.status !== 'DRAFT' && version.versionNumber < target.versionNumber && version.itemRevisions.some((revision) => revision.ppctItemId === edge.successorItemId),
+    );
+    if (successorPriorHistory) {
+      return { code: 'PPCT_VERSION_TRANSITION_LINEAGE_AMBIGUOUS', reason: 'IMPERMISSIBLE_SUCCESSOR_HISTORY', entityIds: [edge.id, edge.successorItemId].sort() };
+    }
+  }
+
+  const components: PpctCurricularComponent[] = ['CORE', 'SPECIALIZED_STUDY'];
+  for (const comp of components) {
+    const incomingComp = incoming.filter((edge) => {
+      const targetRev = target.itemRevisions.find((r) => r.ppctItemId === edge.successorItemId);
+      return (targetRev?.component ?? 'CORE') === comp;
+    });
+    const targetItemsComp = new Set(
+      target.itemRevisions.filter((revision) => (revision.component ?? 'CORE') === comp).map((revision) => revision.ppctItemId),
+    );
+    const lineagePredsComp = new Set(incomingComp.map((edge) => edge.predecessorItemId));
+    const mixed = [...lineagePredsComp].filter((itemId) => targetItemsComp.has(itemId)).sort();
+    if (mixed.length) {
+      return { code: 'PPCT_VERSION_TRANSITION_LINEAGE_AMBIGUOUS', reason: 'MIXED_CARRY_FORWARD_AND_LINEAGE', entityIds: mixed };
+    }
+
+    const coveredComp = coveredByComponent[comp];
+    for (const componentEdges of connectedComponents(incomingComp)) {
+      const predecessors = [...new Set(componentEdges.map((edge) => edge.predecessorItemId))].sort();
+      const successors = [...new Set(componentEdges.map((edge) => edge.successorItemId))].sort();
+      if (predecessors.length > 1 && successors.length > 1) {
+        return { code: 'PPCT_VERSION_TRANSITION_LINEAGE_AMBIGUOUS', reason: 'MANY_TO_MANY_LINEAGE', entityIds: componentEdges.map((edge) => edge.id).sort() };
+      }
+      if (predecessors.length === 1 && successors.length > 1 && coveredComp.has(predecessors[0]!)) {
+        return { code: 'PPCT_VERSION_TRANSITION_SPLIT_AFTER_DISTRIBUTION', entityIds: [predecessors[0]!, ...successors].sort() };
+      }
+      if (predecessors.length > 1 && successors.length === 1) {
+        const coveredCount = predecessors.filter((itemId) => coveredComp.has(itemId)).length;
+        if (coveredCount > 0 && coveredCount < predecessors.length) {
+          return { code: 'PPCT_VERSION_TRANSITION_MERGE_PARTIAL_DISTRIBUTION', entityIds: [...predecessors, successors[0]!].sort() };
+        }
+        if (coveredCount === predecessors.length) {
+          coveredComp.add(successors[0]!);
+        }
+      }
+    }
+  }
+
+  return null;
 }
