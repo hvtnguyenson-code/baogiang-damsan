@@ -64,7 +64,8 @@ Người dùng quản trị thực hiện quy trình thiết lập/chuyển đ�
 3. **Chọn Môn học (`Subject`):** Danh mục môn học tải từ `GET /ppct-options/academic-years/:academicYearId`, được lọc thẩm quyền từ máy chủ (chỉ trả về môn actor được cấp quyền).
 4. **Hiển thị Lịch sử Liên kết được bảo toàn (`Retained Association History`):**
    - Tải từ API `GET /academic-years/:academicYearId/classes/:schoolClassId/subjects/:subjectId/ppct-associations`.
-   - Hiển thị bảng lịch sử với: ngày hiệu lực bắt đầu (`effectiveFrom`), ngày kết thúc (`effectiveUntil`), phiên bản PPCT (`versionNumber`), hồ sơ áp dụng (`curricularProfile`), thời điểm tạo và định danh bản ghi liên kết mới nhất (`latest`).
+   - Hiển thị bảng lịch sử với tối thiểu các trường chuẩn tắc: ngày hiệu lực bắt đầu (`effectiveFrom`), ngày kết thúc (`effectiveUntil`), định danh phiên bản PPCT (`ppctVersionId`), trạng thái phiên bản (`ppctVersionStatus`), hồ sơ áp dụng (`curricularProfile`), và nhãn phân biệt bản ghi mới nhất (`latest`).
+   - Các trường như số phiên bản (`versionNumber`), người tạo (`createdByUserId`), thời điểm tạo (`createdAt`) hoặc nhãn hiệu lực hiện hành (`current` / "Đang áp dụng") không bắt buộc trong phạm vi tối thiểu của P2-004.
 5. **Phân biệt Bản ghi Mới nhất và Hiệu lực Hiện hành (`Latest vs Currently-Effective Association`):**
    - Lịch sử liên kết được bảo toàn (`retained association history`) phải phân biệt rõ bản ghi mới nhất (`latest`, xác định theo thứ tự chuẩn tắc: `effectiveFrom DESC`, `createdAt DESC`, `id DESC`) với trạng thái hiệu lực hiện hành.
    - Bản ghi mở (`effectiveUntil === null`) biểu thị thời hạn hiệu lực không giới hạn về sau ("Không giới hạn"), tuyệt đối không đồng nghĩa với việc đang áp dụng tại thời điểm hiện tại (bản ghi có thể có `effectiveFrom` trong tương lai).
@@ -232,12 +233,13 @@ Theo đúng tiền lệ kiến trúc đã áp dụng thành công tại `teachin
 
 1. **Bảng Lịch sử Liên kết được bảo toàn (`Retained Association History Table`):**
    - Mỗi lần chuyển đổi tạo một bản ghi `PpctClassAssociation` mới và cập nhật `effectiveUntil` của bản ghi trước đó. Không bao giờ xóa bản ghi cũ.
-   - Bảng lịch sử bắt buộc hiển thị:
-     - Ngày bắt đầu (`effectiveFrom`) và Ngày kết thúc (`effectiveUntil` hoặc *"Hiện hành"* / *"Mở"*).
-     - Phiên bản PPCT (Số phiên bản, trạng thái `PUBLISHED`).
+   - Bảng lịch sử bắt buộc bao quát tập thuộc tính tối thiểu đã chốt:
+     - Ngày bắt đầu (`effectiveFrom`).
+     - Ngày kết thúc (`effectiveUntil`), hiển thị *"Không giới hạn"* khi giá trị là `null` (thời hạn mở về sau, không đồng nghĩa hiện hành).
+     - Định danh phiên bản PPCT (`ppctVersionId`) và trạng thái phiên bản (`ppctVersionStatus`).
      - Hồ sơ áp dụng (`CORE_ONLY` hoặc `CORE_PLUS_SPECIALIZED_STUDY`).
-     - Nhãn định danh bản ghi liên kết hiện hành (`current`) và liên kết mới nhất (`latest`).
-     - Người tạo và thời điểm tạo.
+     - Nhãn định danh bản ghi liên kết mới nhất (`latest` / *"Mới nhất"*).
+   - Các trường `versionNumber`, `createdByUserId`, `createdAt` và nhãn hiệu lực hiện hành (*"Đang áp dụng"*) không bắt buộc trong P2-004; nhãn hiện hành chỉ được phép hiển thị khi có ngày phân giải chuẩn tắc từ máy chủ.
 2. **Ranh giới Kiểm toán Backend (Backend Audit Trail):**
    - Backend service tại `P2-002` đã ghi nhận sự kiện `PPCT_CLASS_ASSOCIATION_SWITCHED` trong cùng một giao dịch Serializable.
    - Nhiệm vụ `P2-004` **KHÔNG** tích hợp thêm hệ thống ghi nhật ký kiểm toán kỹ thuật độc lập nào khác và không ghi đè/duplicate cơ chế lưu audit đã có.
@@ -378,9 +380,9 @@ Trước khi gửi Pull Request và yêu cầu đánh giá độc lập, mã ngu
 1. **Targeted Backend Integration Tests:** Toàn bộ API test của `ppct-options` đạt 100% PASS (bao gồm các test case 21-28).
 2. **Targeted Web Tests:** Toàn bộ test của P2-004 (`ppct-specialized-study-page.test.tsx`, `capability-navigation.test.tsx`) đạt 100% PASS.
 3. **Full Web & API Unit Tests:** Bộ kiểm thử đơn vị của toàn bộ repo chạy hoàn tất không có lỗi.
-4. **Lint:** `pnpm lint` sạch sẽ trên toàn bộ packages (`contracts`, `api`, `web`).
-5. **Typecheck:** `pnpm typecheck` hoàn toàn sạch lỗi kiểu TypeScript.
-6. **Build:** `pnpm build` hoàn tất thành công.
+4. **Lint:** `npm run lint` sạch sẽ trên toàn bộ packages (`contracts`, `api`, `web`).
+5. **Typecheck:** `npm run typecheck` hoàn toàn sạch lỗi kiểu TypeScript.
+6. **Build:** `npm run build` hoàn tất thành công.
 7. **Playwright Smoke:** Các kịch bản e2e smoke liên quan đến điều hướng và quản trị đạt kết quả PASS.
 8. **Full Canonical CI:** Toàn bộ pipeline CI của kho mã nguồn đạt trạng thái xanh trên GitHub Actions.
 
@@ -402,9 +404,9 @@ Trước khi gửi Pull Request và yêu cầu đánh giá độc lập, mã ngu
 - **Targeted web tests:** 71/71 PASS
 - **Full API unit tests:** 73/73 suites, 1167/1167 tests PASS
 - **Full web unit tests:** 18/18 suites, 273/273 tests PASS
-- **Lint:** PASS (`pnpm lint`)
-- **Typecheck:** PASS (`pnpm typecheck`)
-- **Build:** PASS (`pnpm build`)
+- **Lint:** PASS (`npm run lint`)
+- **Typecheck:** PASS (`npm run typecheck`)
+- **Build:** PASS (`npm run build`)
 - **Static / Security / Workflow tests:** PASS
 - **Migration & Capability checks:** PASS
 - **Dependency audit:** PASS (0 high/critical vulnerabilities)

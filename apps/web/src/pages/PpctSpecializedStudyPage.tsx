@@ -94,11 +94,12 @@ export function PpctSpecializedStudyPage() {
     }
   }, [targetVersionId, publishedVersions]);
 
-  // 5. Version content preflight
+  // 5. Version content preflight (only needed for specialized profile)
+  const isSpecializedProfile = curricularProfile === 'CORE_PLUS_SPECIALIZED_STUDY';
   const versionContent = useQuery({
     queryKey: ['ppct-version-content', targetVersionId],
     queryFn: () => ppctApi.versionContent(targetVersionId),
-    enabled: Boolean(targetVersionId),
+    enabled: Boolean(targetVersionId && isSpecializedProfile),
   });
 
   const hasSpecializedItems =
@@ -178,6 +179,7 @@ export function PpctSpecializedStudyPage() {
 
   function handleClassChange(classId: string) {
     setSelectedClassId(classId);
+    setSelectedSubjectId('');
     setTargetVersionId('');
     setCurricularProfile('CORE_ONLY');
     setEffectiveFrom('');
@@ -226,13 +228,20 @@ export function PpctSpecializedStudyPage() {
     selectedYearId &&
     selectedClassId &&
     selectedSubjectId &&
-    targetVersionId &&
-    isCivilDate(effectiveFrom) &&
     singlePlan &&
     !multiplePlans &&
+    versions.isSuccess &&
+    publishedVersions.length > 0 &&
+    targetVersionId &&
+    isCivilDate(effectiveFrom) &&
     !history.isPending &&
     !history.isError &&
-    (curricularProfile === 'CORE_ONLY' || (hasSpecializedItems && !versionContent.isPending))
+    (curricularProfile === 'CORE_ONLY' ||
+      (isSpecializedProfile &&
+        versionContent.isSuccess &&
+        !versionContent.isPending &&
+        !versionContent.isError &&
+        hasSpecializedItems))
   );
 
   if (years.isPending) {
@@ -382,27 +391,39 @@ export function PpctSpecializedStudyPage() {
                 <h2>Chuyển đổi hồ sơ áp dụng PPCT</h2>
 
                 <div className="form-grid">
-                  <SelectField
-                    label="Phiên bản PPCT công bố"
-                    id="ppct-target-version"
-                    value={targetVersionId}
-                    onChange={(e) => {
-                      setTargetVersionId(e.target.value);
-                      setSuccessMessage('');
-                      setErrorMessage('');
-                    }}
-                    required
-                  >
-                    {publishedVersions.length === 0 ? (
-                      <option value="">Chưa có phiên bản nào được công bố (PUBLISHED)</option>
-                    ) : (
-                      publishedVersions.map((v) => (
-                        <option key={v.id} value={v.id}>
-                          Bản {v.versionNumber} ({v.itemCount} bài học)
-                        </option>
-                      ))
-                    )}
-                  </SelectField>
+                  {versions.isPending ? (
+                    <div className="form-field">
+                      <label className="form-field__label" htmlFor="ppct-target-version">Phiên bản PPCT công bố</label>
+                      <p className="form-field__hint">Đang tải danh sách phiên bản PPCT...</p>
+                    </div>
+                  ) : versions.isError ? (
+                    <div className="form-field">
+                      <label className="form-field__label" htmlFor="ppct-target-version">Phiên bản PPCT công bố</label>
+                      <QueryFailure error={versions.error} retry={() => void versions.refetch()} />
+                    </div>
+                  ) : (
+                    <SelectField
+                      label="Phiên bản PPCT công bố"
+                      id="ppct-target-version"
+                      value={targetVersionId}
+                      onChange={(e) => {
+                        setTargetVersionId(e.target.value);
+                        setSuccessMessage('');
+                        setErrorMessage('');
+                      }}
+                      required
+                    >
+                      {publishedVersions.length === 0 ? (
+                        <option value="">Chưa có phiên bản nào được công bố (PUBLISHED)</option>
+                      ) : (
+                        publishedVersions.map((v) => (
+                          <option key={v.id} value={v.id}>
+                            Bản {v.versionNumber} ({v.itemCount} bài học)
+                          </option>
+                        ))
+                      )}
+                    </SelectField>
+                  )}
 
                   <SelectField
                     label="Hồ sơ áp dụng"
@@ -438,16 +459,31 @@ export function PpctSpecializedStudyPage() {
                   </div>
                 </div>
 
-                {/* Preflight alert for specialized study */}
-                {curricularProfile === 'CORE_PLUS_SPECIALIZED_STUDY' &&
-                  versionContent.data &&
-                  !hasSpecializedItems && (
-                    <InlineAlert title="Phiên bản không có chuyên đề" tone="warning">
-                      Phiên bản PPCT được chọn không chứa bài chuyên đề nào (SPECIALIZED_STUDY). Không thể áp dụng hồ sơ chuyên đề.
-                    </InlineAlert>
-                  )}
+                {/* Preflight alert / loading / error for specialized study */}
+                {isSpecializedProfile && targetVersionId && (
+                  <>
+                    {versionContent.isPending && (
+                      <p className="form-field__hint" data-testid="version-content-loading">
+                        Đang kiểm tra nội dung chuyên đề của phiên bản...
+                      </p>
+                    )}
+                    {versionContent.isError && (
+                      <div className="form-field">
+                        <QueryFailure
+                          error={versionContent.error}
+                          retry={() => void versionContent.refetch()}
+                        />
+                      </div>
+                    )}
+                    {versionContent.isSuccess && !hasSpecializedItems && (
+                      <InlineAlert title="Phiên bản không có chuyên đề" tone="warning">
+                        Phiên bản PPCT được chọn không chứa bài chuyên đề nào (SPECIALIZED_STUDY). Không thể áp dụng hồ sơ chuyên đề.
+                      </InlineAlert>
+                    )}
+                  </>
+                )}
 
-                {publishedVersions.length === 0 && (
+                {versions.isSuccess && publishedVersions.length === 0 && (
                   <p className="limitation-note">
                     Kế hoạch PPCT chưa có phiên bản nào được công bố (PUBLISHED). Không thể chuyển đổi liên kết.
                   </p>
@@ -483,7 +519,7 @@ export function PpctSpecializedStudyPage() {
                       'Hiệu lực từ',
                       'Hiệu lực đến',
                       'Hồ sơ áp dụng',
-                      'Phiên bản PPCT',
+                      'ID phiên bản PPCT',
                       'Trạng thái phiên bản',
                       'Nhãn / Trạng thái',
                     ]}
