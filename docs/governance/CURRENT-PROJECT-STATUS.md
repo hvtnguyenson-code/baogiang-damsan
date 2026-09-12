@@ -10,14 +10,11 @@ It is **not** a self-referential registry of the latest Git commit. Exact curren
 
 ## Active major task
 
-None currently active.
-
-Next critical-path task:
-- `P1-030` — Delayed go-live / operational-start architecture — **READY** (dependencies `P1-020` and `P2-001` both `CLOSED`).
+`P1-030` — Delayed go-live / operational-start architecture — **IN_PROGRESS** on dedicated branch `docs/delayed-go-live-operational-start-architecture-030`. Starting canonical main `fafd104c9af5b83833b8a6f324021cea226ffe63`; requirement closure draft `docs/requirements/P1-030-DELAYED-GO-LIVE-OPERATIONAL-START-ARCHITECTURE.md` and proposed `docs/decisions/ADR-049-DELAYED-GO-LIVE-OPERATIONAL-START-ARCHITECTURE.md` lock PO authority PO-1..PO-4, canonical `OPERATIONAL_START` family (`v1`, `ACADEMIC_YEAR`), expected PPCT progression via timetable replay, no-auto-debt invariants, and fail-closed missing policy.
 
 Other eligible & parallel tasks:
 - `P4-010` — GDĐP/HĐTN programme architecture closure — **READY** (independent track).
-- `P1-031` — Operational-start policy implementation — **PLANNED** (dependency `P2-003` is CLOSED, but `P1-030` remains READY / not yet CLOSED).
+- `P1-031` — Operational-start policy implementation — **PLANNED** (dependency `P2-003` is CLOSED, but `P1-030` remains IN_PROGRESS / not yet CLOSED).
 - `P2-010` — PPCT real-workbook contract/security audit — **BLOCKED_EVIDENCE** (pending authoritative school PPCT workbook/template).
 - `P2-020` — PPCT native importer implementation — **PLANNED** (pending `P2-010`).
 
@@ -307,14 +304,14 @@ The final production-host topology is intentionally unresolved and explicitly de
 - The choice between `SHARED_VPS` and `DEDICATED_VPS` is an explicit Product Owner decision, not an agent inference. No agent may infer a topology from existing infrastructure.
 - A mandatory HARD STOP exists immediately before `P6-010`: `P6-010` cannot start until `P6-005` is `CLOSED`.
 
-## Tasks currently eligible to start
+## Tasks currently active or eligible to start
 
-The following registered tasks are genuinely eligible to start on dedicated branches:
+The following registered tasks are active or genuinely eligible to start on dedicated branches:
 
-1. `P1-030` — Delayed go-live / operational-start architecture (`READY`; dependencies `P1-020` and `P2-001` are both `CLOSED`).
+1. `P1-030` — Delayed go-live / operational-start architecture (`IN_PROGRESS` on dedicated branch `docs/delayed-go-live-operational-start-architecture-030`).
 2. `P4-010` — GDĐP/HĐTN programme architecture closure (`READY`; independent track).
 
-`P1-031` remains dependency-gated until `P1-030` is also `CLOSED`. `P2-020` remains blocked by `P2-010` evidence (`BLOCKED_EVIDENCE`).
+`P1-031` remains dependency-gated until `P1-030` is `CLOSED`. `P2-020` remains blocked by `P2-010` evidence (`BLOCKED_EVIDENCE`).
 
 Note: `P2-010` remains `BLOCKED_EVIDENCE` pending actual authoritative school PPCT workbook/template evidence.
 

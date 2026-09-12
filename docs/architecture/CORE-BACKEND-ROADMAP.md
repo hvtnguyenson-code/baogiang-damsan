@@ -152,7 +152,7 @@ The exact dependency graph is authoritative only in `PRE-PILOT-TASK-REGISTER.md`
 ```text
 P0-900 (CLOSED)
 └── P2-001 (Curricular component architecture, CLOSED by SYNC-P2-001, ADR-048 Accepted)
-    ├── P1-030 (Delayed go-live architecture, READY)
+    ├── P1-030 (Delayed go-live architecture, IN_PROGRESS)
     │   └── P1-031 (Operational-start policy, waits for P1-030)
     ├── P2-002 (Component persistence & control plane, CLOSED by SYNC-P2-002)
     │   └── P2-003 (Component allocation & projections, CLOSED by SYNC-P2-003)
