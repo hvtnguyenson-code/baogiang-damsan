@@ -6,7 +6,7 @@
 - **Tên nhiệm vụ:** Specialized-study class-subject administration workspace
 - **Nhánh làm việc (Branch):** `feat/ppct-specialized-study-admin-workspace-004`
 - **Canonical Main Base SHA:** `b5ccfb2b563ea0633aae97a03ac62076a102bb98`
-- **Trạng thái (Task Status):** `IN_PROGRESS` (trên nhánh chuyên biệt `feat/ppct-specialized-study-admin-workspace-004`)
+- **Trạng thái (Task Status):** `IN_REVIEW` (trên nhánh chuyên biệt `feat/ppct-specialized-study-admin-workspace-004`)
 - **Cơ sở thẩm quyền kiến trúc (Architectural Authority):**
   - `docs/decisions/ADR-048-PPCT-CURRICULAR-COMPONENT-ARCHITECTURE.md` (chấp thuận kiến trúc thành phần chương trình CORE vs SPECIALIZED_STUDY, PpctClassCurricularProfile, và cơ chế chuyển đổi liên kết bất biến).
   - `docs/requirements/P2-001-PPCT-CURRICULAR-COMPONENT-ARCHITECTURE-AUDIT.md` & `docs/requirements/P2-001D-PPCT-CURRICULAR-COMPONENT-DECISION-CLOSURE.md` (đóng 15 quyết định kiến trúc thành phần PPCT).
@@ -383,3 +383,54 @@ Trước khi gửi Pull Request và yêu cầu đánh giá độc lập, mã ngu
 6. **Build:** `pnpm build` hoàn tất thành công.
 7. **Playwright Smoke:** Các kịch bản e2e smoke liên quan đến điều hướng và quản trị đạt kết quả PASS.
 8. **Full Canonical CI:** Toàn bộ pipeline CI của kho mã nguồn đạt trạng thái xanh trên GitHub Actions.
+
+---
+
+## 16. Hồ sơ Bằng chứng Triển khai & Kiểm thử (Implementation & Validation Evidence)
+
+### 16.1. Bằng chứng Triển khai (Implementation Evidence)
+- **Canonical Main Base:** `b5ccfb2b563ea0633aae97a03ac62076a102bb98`
+- **Nhánh triển khai chuyên biệt:** `feat/ppct-specialized-study-admin-workspace-004`
+- **Hợp đồng dữ liệu & read model contracts:** `98b977b0853e10d23da3e8af59088b35e53214ea`, `e7e71384ce34c02bcad2e5fd34be9ee5c787962e`
+- **Backend options read model:** `73cf71156c7e88ecee8fa9754a62450480f59d8c`
+- **Hiệu chỉnh test fixture tích hợp:** `521426189876a308cf729759cb05fce1d4a29ed1`
+- **Giao diện Web Workspace:** `94c36239c1ee1c5b2561d0d9ea98eaea2ce40fb5`
+- **Hiệu chỉnh tính đúng đắn Web UI (Web correctness):** `5eb1ffcf645e817bff7a2a6d6919eae6ff3f8d7f`
+
+### 16.2. Bằng chứng Kiểm thử Cục bộ (Local Validation Evidence)
+- **Targeted backend tests:** 33/33 PASS
+- **Targeted web tests:** 71/71 PASS
+- **Full API unit tests:** 73/73 suites, 1167/1167 tests PASS
+- **Full web unit tests:** 18/18 suites, 273/273 tests PASS
+- **Lint:** PASS (`pnpm lint`)
+- **Typecheck:** PASS (`pnpm typecheck`)
+- **Build:** PASS (`pnpm build`)
+- **Static / Security / Workflow tests:** PASS
+- **Migration & Capability checks:** PASS
+- **Dependency audit:** PASS (0 high/critical vulnerabilities)
+
+*(Lưu ý: Không xác nhận "full local integration PASS" do điều kiện môi trường cục bộ bên dưới).*
+
+### 16.3. Cảnh báo Môi trường Windows (Windows Integration Caveat)
+Canonical full integration trên local Windows chưa thể dùng làm closure evidence vì xuất hiện hiện tượng mất ổn định kết nối PostgreSQL gián đoạn (intermittent connectivity instability).
+
+Bằng chứng kiểm chứng có kiểm soát (Controlled Evidence):
+- **A. Cấu hình pool mặc định (Default pool):** Thỉnh thoảng phát sinh lỗi P1001: `Can't reach database server at 127.0.0.1:5432`.
+- **B. Giới hạn pool tạm thời trong process (`connection_limit=1`):** Lỗi P1001 không xuất hiện; tuy nhiên 4 suites gặp hiện tượng nghẽn tài nguyên kết nối (pool starvation / transaction acquisition timeout / Jest 5s timeout) do các giao dịch đồng thời; môi trường đã được khôi phục nguyên trạng; không có biến động repo.
+- **Kết luận:** "Evidence is consistent with Windows-local connection-pressure instability. Root transport mechanism is not proven." Không kết luận đây là lỗi xác nhận của Winsock, Prisma hay PostgreSQL.
+
+### 16.4. Cổng Kiểm soát Từ xa Chuẩn tắc (Authoritative Remote Gate)
+Nhiệm vụ `P2-004` được chuyển sang trạng thái `IN_REVIEW` để phục vụ quy trình đánh giá độc lập (independent review).
+
+Trước khi tiến hành sáp nhập (merge), bắt buộc phải có đầy đủ:
+- Chạy kiểm thử GitHub Actions CI trên môi trường Linux chuẩn tắc cho đúng commit HEAD;
+- Cổng tích hợp cơ sở dữ liệu PostgreSQL 17;
+- Kiểm thử Playwright smoke chuẩn tắc;
+- Toàn bộ các công việc CI bắt buộc đạt kết quả `SUCCESS`.
+
+Trạng thái hiện tại:
+- **Remote CI evidence:** `PENDING`
+- **PR:** `PENDING`
+- **Merge:** `PENDING`
+- **Deploy:** `NONE`
+- **Môi trường Production:** Tiếp tục duy trì ở trạng thái **`PRE-OPERATIONAL`**.

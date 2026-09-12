@@ -99,7 +99,7 @@ Exact task statuses and prerequisites are maintained authoritatively in `PRE-PIL
      -> `P2-001` component architecture (`CLOSED` by `SYNC-P2-001`, `ADR-048` Accepted)
      -> `P2-002` persistence/control plane (`CLOSED` by `SYNC-P2-002`)
      -> `P2-003` allocation/projection runtime (`CLOSED` by `SYNC-P2-003`)
-     -> `P2-004` admin applicability workspace (`READY`)
+     -> `P2-004` admin applicability workspace (`IN_REVIEW`)
 2. **Parallel evidence-bound school PPCT workbook path:**
    `P2-001` + authoritative school workbook evidence
      -> `P2-010` real-workbook contract/security audit (determines physical sheet names and mapping to logical CORE and SPECIALIZED_STUDY components)
@@ -156,7 +156,7 @@ P0-900 (CLOSED)
     │   └── P1-031 (Operational-start policy, waits for P1-030)
     ├── P2-002 (Component persistence & control plane, CLOSED by SYNC-P2-002)
     │   └── P2-003 (Component allocation & projections, CLOSED by SYNC-P2-003)
-    │       ├── P2-004 (Admin applicability workspace, READY)
+    │       ├── P2-004 (Admin applicability workspace, IN_REVIEW)
     │       ├── P1-031 (Operational-start policy, PLANNED, waits for P1-030)
     │       └── P3-010 (Pre-operational historical execution)
     └── P2-010 (PPCT real-workbook audit, BLOCKED_EVIDENCE, needs real workbook evidence)
