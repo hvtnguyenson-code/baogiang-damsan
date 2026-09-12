@@ -4,7 +4,6 @@ import type {
   PpctAssociationSwitchResult,
   PpctClassCurricularProfile,
   PpctPlanListResponse,
-  PpctResolution,
   PpctVersionContent,
   PpctVersionListResponse,
   PpctWorkspaceAcademicYearOptionListResponse,
@@ -87,18 +86,7 @@ export const ppctApi = {
     input: SwitchPpctAssociationInput,
   ) =>
     apiFetch<PpctAssociationSwitchResult>(
-      `/academic-years/${academicYearId}/classes/${schoolClassId}/subjects/${subjectId}/ppct-associations/switch`,
-      json(input),
-    ),
-
-  resolution: (
-    academicYearId: string,
-    schoolClassId: string,
-    subjectId: string,
-    date: CivilDateString,
-  ) =>
-    apiFetch<PpctResolution>(
-      `/academic-years/${academicYearId}/classes/${schoolClassId}/subjects/${subjectId}/ppct-resolution?date=${date}`,
-      { notifyUnauthorized: true },
-    ),
+       `/academic-years/${academicYearId}/classes/${schoolClassId}/subjects/${subjectId}/ppct-associations/switch`,
+       json(input),
+     ),
 };

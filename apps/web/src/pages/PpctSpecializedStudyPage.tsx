@@ -137,28 +137,28 @@ export function PpctSpecializedStudyPage() {
       });
     },
     onError: (error) => {
-      if (error instanceof ApiError && error.statusCode === 409) {
-        if (
-          error.message.includes('chia cắt tuần') ||
-          error.message.includes('PPCT_COMPONENT_APPLICABILITY_WEEK_SPLIT')
-        ) {
-          setErrorMessage(
-            'Ngày hiệu lực làm thay đổi hồ sơ trong cùng một tuần học. Hãy chọn ranh giới tuần hợp lệ.',
-          );
-          return;
-        }
-        if (
-          error.message.includes('Liên kết PPCT mới nhất') ||
-          error.message.includes('đã thay đổi')
-        ) {
-          setErrorMessage(
-            'Dữ liệu áp dụng đã thay đổi. Hệ thống đã tải lại lịch sử mới nhất; hãy kiểm tra trước khi lưu lại.',
-          );
-          void queryClient.invalidateQueries({
-            queryKey: ['ppct-associations', selectedYearId, selectedClassId, selectedSubjectId],
-          });
-          return;
-        }
+      if (
+        error instanceof ApiError &&
+        error.statusCode === 409 &&
+        error.serverError === 'PPCT_COMPONENT_APPLICABILITY_WEEK_SPLIT'
+      ) {
+        setErrorMessage(
+          'Ngày hiệu lực làm thay đổi hồ sơ trong cùng một tuần học. Hãy chọn ranh giới tuần hợp lệ.',
+        );
+        return;
+      }
+      if (
+        error instanceof ApiError &&
+        error.statusCode === 409 &&
+        error.message.includes('Liên kết PPCT mới nhất của lớp đã thay đổi; hãy tải lại trước khi tiếp tục.')
+      ) {
+        setErrorMessage(
+          'Dữ liệu áp dụng đã thay đổi. Hệ thống đã tải lại lịch sử mới nhất; hãy kiểm tra trước khi lưu lại.',
+        );
+        void queryClient.invalidateQueries({
+          queryKey: ['ppct-associations', selectedYearId, selectedClassId, selectedSubjectId],
+        });
+        return;
       }
       setErrorMessage(error instanceof Error ? error.message : 'Yêu cầu không thực hiện được.');
     },
@@ -527,7 +527,7 @@ function HistoryRow({
         {row.effectiveUntil ? (
           <span className="technical-value">{formatCivilDate(row.effectiveUntil)}</span>
         ) : (
-          <span className="technical-value">Mở / Hiện hành</span>
+          <span className="technical-value">Không giới hạn</span>
         )}
       </td>
       <td>
@@ -541,9 +541,10 @@ function HistoryRow({
       </td>
       <td>
         <div className="row-badges">
-          {isLatest && <span className="status-badge status-badge--active">Mới nhất</span>}
-          {!row.effectiveUntil && (
-            <span className="status-badge status-badge--active">Đang áp dụng</span>
+          {isLatest ? (
+            <span className="status-badge status-badge--active">Mới nhất</span>
+          ) : (
+            <span className="technical-value">—</span>
           )}
         </div>
       </td>

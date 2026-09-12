@@ -65,8 +65,10 @@ Người dùng quản trị thực hiện quy trình thiết lập/chuyển đ�
 4. **Hiển thị Lịch sử Liên kết được bảo toàn (`Retained Association History`):**
    - Tải từ API `GET /academic-years/:academicYearId/classes/:schoolClassId/subjects/:subjectId/ppct-associations`.
    - Hiển thị bảng lịch sử với: ngày hiệu lực bắt đầu (`effectiveFrom`), ngày kết thúc (`effectiveUntil`), phiên bản PPCT (`versionNumber`), hồ sơ áp dụng (`curricularProfile`), thời điểm tạo và định danh bản ghi liên kết mới nhất (`latest`).
-5. **Xác định Liên kết Hiện hành & Mới nhất (`Current / Latest Association`):**
-   - Phân biệt rõ liên kết đang có hiệu lực tại ngày hôm nay (`effectiveFrom <= today <= effectiveUntil`) và liên kết mới nhất theo thời gian (`latest` có `effectiveUntil === null` hoặc mốc xa nhất).
+5. **Phân biệt Bản ghi Mới nhất và Hiệu lực Hiện hành (`Latest vs Currently-Effective Association`):**
+   - Lịch sử liên kết được bảo toàn (`retained association history`) phải phân biệt rõ bản ghi mới nhất (`latest`, xác định theo thứ tự chuẩn tắc: `effectiveFrom DESC`, `createdAt DESC`, `id DESC`) với trạng thái hiệu lực hiện hành.
+   - Bản ghi mở (`effectiveUntil === null`) biểu thị thời hạn hiệu lực không giới hạn về sau ("Không giới hạn"), tuyệt đối không đồng nghĩa với việc đang áp dụng tại thời điểm hiện tại (bản ghi có thể có `effectiveFrom` trong tương lai).
+   - Nhãn hiệu lực hiện hành ("Đang áp dụng") chỉ được phép hiển thị khi có ngày phân giải chuẩn tắc (`authoritative as-of date`) được máy chủ xác nhận. Không gian làm việc P2-004 hiện tại không tự suy diễn thẩm quyền thời gian từ máy khách (no client-side date authority).
 6. **Chọn Phiên bản PPCT Đích (`Target PPCT Version`):**
    - Tải danh sách phiên bản thuộc kế hoạch của đúng Năm học - Môn học - Khối lớp (`gradeLevel`).
    - Chỉ cho phép chọn các phiên bản ở trạng thái đã công bố (`PpctVersionStatus.PUBLISHED`).

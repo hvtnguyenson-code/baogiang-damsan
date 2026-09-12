@@ -388,10 +388,32 @@ describe('PpctSpecializedStudyPage', () => {
 
     expect(await screen.findByRole('heading', { name: 'Lịch sử áp dụng hồ sơ PPCT' })).toBeInTheDocument();
     expect(screen.getByText('01/09/2026')).toBeInTheDocument();
-    expect(screen.getByText('Mở / Hiện hành')).toBeInTheDocument();
+    expect(screen.getByText('Không giới hạn')).toBeInTheDocument();
     expect(screen.getByRole('table')).toHaveTextContent('Chỉ nội dung cốt lõi');
     expect(screen.getByText('Mới nhất')).toBeInTheDocument();
-    expect(screen.getByText('Đang áp dụng')).toBeInTheDocument();
+    expect(screen.queryByText('Đang áp dụng')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Hiện hành/i)).not.toBeInTheDocument();
+  });
+
+  it('renders future association with Không giới hạn, Mới nhất, and never Đang áp dụng or Hiện hành', async () => {
+    const futureAssociation: PpctClassAssociationRecord = {
+      ...existingAssociation,
+      id: 'assoc-future',
+      effectiveFrom: '2028-09-01' as CivilDateString,
+      effectiveUntil: null,
+    };
+    setupMockFetch({ history: [futureAssociation] });
+    renderApp('/quan-tri/ppct/ap-dung-chuyen-de');
+
+    fireEvent.change(await screen.findByLabelText('Lớp học'), { target: { value: 'class-10a1' } });
+    fireEvent.change(await screen.findByLabelText('Môn học'), { target: { value: 'subject-math' } });
+
+    expect(await screen.findByRole('heading', { name: 'Lịch sử áp dụng hồ sơ PPCT' })).toBeInTheDocument();
+    expect(screen.getByText('01/09/2028')).toBeInTheDocument();
+    expect(screen.getByText('Không giới hạn')).toBeInTheDocument();
+    expect(screen.getByText('Mới nhất')).toBeInTheDocument();
+    expect(screen.queryByText('Đang áp dụng')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Hiện hành/i)).not.toBeInTheDocument();
   });
 
   it('renders initial empty state when no prior association history exists', async () => {
@@ -525,18 +547,20 @@ describe('PpctSpecializedStudyPage', () => {
     });
   });
 
-  // 24: Week-split error handling: message shown, form retained
-  it('displays business week-split error message and retains form values on 409 week split', async () => {
-    setupMockFetch({
-      switchHandler: () =>
-        jsonResponse(
+  // 24: Week-split error handling: message shown, form retained, no auto-retry, no history refetch
+  it('displays business week-split error message and retains form values on 409 week split without statusCode in body', async () => {
+    let switchCalls = 0;
+    const { capturedRequests } = setupMockFetch({
+      switchHandler: () => {
+        switchCalls += 1;
+        return jsonResponse(
           {
-            statusCode: 409,
             error: 'PPCT_COMPONENT_APPLICABILITY_WEEK_SPLIT',
             message: 'Thay đổi hồ sơ áp dụng chương trình không được chia cắt tuần học nghiệp vụ.',
           },
           409,
-        ),
+        );
+      },
     });
     renderApp('/quan-tri/ppct/ap-dung-chuyen-de');
 
@@ -546,14 +570,32 @@ describe('PpctSpecializedStudyPage', () => {
     const dateInput = await screen.findByLabelText(/Hiệu lực từ/i);
     fireEvent.change(dateInput, { target: { value: '2026-09-03' } });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Lưu thay đổi hồ sơ' }));
+    const profileSelect = screen.getByLabelText('Hồ sơ áp dụng') as HTMLSelectElement;
+    fireEvent.change(profileSelect, { target: { value: 'CORE_PLUS_SPECIALIZED_STUDY' } });
+
+    const targetVersionSelect = screen.getByLabelText('Phiên bản PPCT công bố') as HTMLSelectElement;
+    const originalVersionValue = targetVersionSelect.value;
+
+    const submitBtn = screen.getByRole('button', { name: 'Lưu thay đổi hồ sơ' });
+    await waitFor(() => expect(submitBtn).toBeEnabled());
+    fireEvent.click(submitBtn);
 
     expect(
       await screen.findByText('Ngày hiệu lực làm thay đổi hồ sơ trong cùng một tuần học. Hãy chọn ranh giới tuần hợp lệ.'),
     ).toBeInTheDocument();
+    expect(screen.queryByText(/Dữ liệu áp dụng đã thay đổi/i)).not.toBeInTheDocument();
 
-    // Form value retained
+    // Exactly 1 switch call (NO automatic retry)
+    expect(switchCalls).toBe(1);
+
+    // Form values retained
     expect((screen.getByLabelText(/Hiệu lực từ/i) as HTMLInputElement).value).toBe('2026-09-03');
+    expect((screen.getByLabelText('Hồ sơ áp dụng') as HTMLSelectElement).value).toBe('CORE_PLUS_SPECIALIZED_STUDY');
+    expect((screen.getByLabelText('Phiên bản PPCT công bố') as HTMLSelectElement).value).toBe(originalVersionValue);
+
+    // History is NOT refetched for week-split
+    const historyReqs = capturedRequests.filter((r) => r.url.includes('/ppct-associations') && r.method === 'GET');
+    expect(historyReqs.length).toBe(1);
   });
 
   // 25-26: Stale conflict CAS: no auto retry, refetches history, user can resubmit manually
@@ -586,6 +628,7 @@ describe('PpctSpecializedStudyPage', () => {
     expect(
       await screen.findByText('Dữ liệu áp dụng đã thay đổi. Hệ thống đã tải lại lịch sử mới nhất; hãy kiểm tra trước khi lưu lại.'),
     ).toBeInTheDocument();
+    expect(screen.queryByText(/chia cắt tuần học/i)).not.toBeInTheDocument();
 
     // Exactly 1 switch call (NO automatic retry)
     expect(switchCalls).toBe(1);
@@ -598,6 +641,17 @@ describe('PpctSpecializedStudyPage', () => {
       const historyReqs = capturedRequests.filter((r) => r.url.includes('/ppct-associations') && r.method === 'GET');
       expect(historyReqs.length).toBeGreaterThanOrEqual(2);
     });
+  });
+
+  it('does not send any dead ppct-resolution requests during normal workspace lifecycle', async () => {
+    const { capturedRequests } = setupMockFetch();
+    renderApp('/quan-tri/ppct/ap-dung-chuyen-de');
+
+    fireEvent.change(await screen.findByLabelText('Lớp học'), { target: { value: 'class-10a1' } });
+    fireEvent.change(await screen.findByLabelText('Môn học'), { target: { value: 'subject-math' } });
+
+    expect(await screen.findByRole('heading', { name: 'Áp dụng chuyên đề' })).toBeInTheDocument();
+    expect(capturedRequests.some((r) => r.url.includes('ppct-resolution'))).toBe(false);
   });
 
   // 27: Success flow
