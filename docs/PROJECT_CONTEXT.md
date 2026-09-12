@@ -80,7 +80,7 @@ Repository hiện có các boundary đã được review/version hóa và không
 - PPCT shared plan/version/item/revision/lineage/class association retained-history foundation đã được realign thành component-aware persistence/control plane theo ADR-048 và P2-002 (`CLOSED` bởi `SYNC-P2-002`): `CORE`/`SPECIALIZED_STUDY`, immutable stable-item component, component-aware revision/lineage provenance, independent per-component sequence space, `PpctClassCurricularProfile`, legacy CORE/CORE_ONLY migration và server-side business-week profile split prevention; `TeachingAssignment`, `TimetableEntry`, `CurricularTeachingExecution` và `MakeupTeachingSchedule` vẫn component-free;
 - operational overlays;
 - SpecialActivity exact-slot/frozen-class/staffing/collision runtime primitive;
-- PPCT occurrence allocation đã được triển khai runtime component-aware: P2-003 đã **CLOSED** bởi `SYNC-P2-003` (định tuyến cơ hội tuần, tiến độ độc lập và chiếu báo cáo kết hợp); P2-004 admin applicability workspace là downstream UI tiếp theo ở trạng thái **IN_REVIEW**;
+- PPCT occurrence allocation đã được triển khai runtime component-aware: P2-003 đã **CLOSED** bởi `SYNC-P2-003` (định tuyến cơ hội tuần, tiến độ độc lập và chiếu báo cáo kết hợp); P2-004 admin applicability workspace đã **CLOSED** bởi `SYNC-P2-004`;
 - CurricularTeachingExecution và SpecialActivityParticipationExecution;
 - progress/debt/late projection;
 - reporting projection, Personal Reporting Projection và Reporting Statement;
@@ -93,7 +93,7 @@ Chi tiết KEEP/REALIGN/RESTORE nằm trong `docs/governance/PRE-PILOT-TRACEABIL
 
 Project hiện đang realign vì một số minimum-core/deferred quyết định chưa đại diện đầy đủ sản phẩm thực tế. Các miền phải re-enter trước pilot tùy exact scope gồm:
 
-- phân định thành phần chương trình PPCT (CORE vs SPECIALIZED_STUDY), áp dụng theo lớp-môn và định tuyến cơ hội dạy học tuần: P0-900 và P2-001 đã `CLOSED`, P2-002 persistence/control plane đã `CLOSED` bởi `SYNC-P2-002`, P2-003 allocation/projection runtime đã `CLOSED` bởi `SYNC-P2-003`, P2-004 admin applicability workspace là `IN_REVIEW`;
+- phân định thành phần chương trình PPCT (CORE vs SPECIALIZED_STUDY), áp dụng theo lớp-môn và định tuyến cơ hội dạy học tuần: P0-900 và P2-001 đã `CLOSED`, P2-002 persistence/control plane đã `CLOSED` bởi `SYNC-P2-002`, P2-003 allocation/projection runtime đã `CLOSED` bởi `SYNC-P2-003`, P2-004 admin applicability workspace đã `CLOSED` bởi `SYNC-P2-004`;
 - GDĐP annual/grade programme planning;
 - HĐTN CLASS/GRADE/SCHOOL programme planning;
 - exact per-slot special-program staffing;
@@ -105,7 +105,7 @@ Project hiện đang realign vì một số minimum-core/deferred quyết địn
 - PWA/Telegram pilot integration;
 - first-cert HTTP-01/TLS authority and actual VPS evidence.
 
-Không suy ra rằng một area đã hoàn chỉnh chỉ vì minimum-core implementation hiện có PASS CI. Với Đam San native timetable, ADR-047 architecture, P2-040 native adapter runtime, và P2-050 selective session authoring + explicit carry-forward đã hoàn tất và đóng bằng `SYNC-P2-050`; với thành phần chương trình PPCT, P0-900 đã đóng bằng `SYNC-P0-900`, P2-001/ADR-048 đã đóng bằng `SYNC-P2-001`, persistence/control-plane P2-002 đã đóng bằng `SYNC-P2-002`, và weekly allocator/projection runtime P2-003 đã đóng bằng `SYNC-P2-003`; downstream UI P2-004 là `IN_REVIEW`.
+Không suy ra rằng một area đã hoàn chỉnh chỉ vì minimum-core implementation hiện có PASS CI. Với Đam San native timetable, ADR-047 architecture, P2-040 native adapter runtime, và P2-050 selective session authoring + explicit carry-forward đã hoàn tất và đóng bằng `SYNC-P2-050`; với thành phần chương trình PPCT, P0-900 đã đóng bằng `SYNC-P0-900`, P2-001/ADR-048 đã đóng bằng `SYNC-P2-001`, persistence/control-plane P2-002 đã đóng bằng `SYNC-P2-002`, và weekly allocator/projection runtime P2-003 đã đóng bằng `SYNC-P2-003`; downstream UI P2-004 đã `CLOSED` bởi `SYNC-P2-004`.
 
 ## Layering rule
 

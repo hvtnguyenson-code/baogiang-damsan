@@ -6,7 +6,7 @@
 - **Tên nhiệm vụ:** Specialized-study class-subject administration workspace
 - **Nhánh làm việc (Branch):** `feat/ppct-specialized-study-admin-workspace-004`
 - **Canonical Main Base SHA:** `b5ccfb2b563ea0633aae97a03ac62076a102bb98`
-- **Trạng thái (Task Status):** `IN_REVIEW` (trên nhánh chuyên biệt `feat/ppct-specialized-study-admin-workspace-004`)
+- **Trạng thái (Task Status):** `CLOSED` (đóng bởi `SYNC-P2-004` sau khi sáp nhập PR #129 vào `main`)
 - **Cơ sở thẩm quyền kiến trúc (Architectural Authority):**
   - `docs/decisions/ADR-048-PPCT-CURRICULAR-COMPONENT-ARCHITECTURE.md` (chấp thuận kiến trúc thành phần chương trình CORE vs SPECIALIZED_STUDY, PpctClassCurricularProfile, và cơ chế chuyển đổi liên kết bất biến).
   - `docs/requirements/P2-001-PPCT-CURRICULAR-COMPONENT-ARCHITECTURE-AUDIT.md` & `docs/requirements/P2-001D-PPCT-CURRICULAR-COMPONENT-DECISION-CLOSURE.md` (đóng 15 quyết định kiến trúc thành phần PPCT).
@@ -398,12 +398,15 @@ Trước khi gửi Pull Request và yêu cầu đánh giá độc lập, mã ngu
 - **Hiệu chỉnh test fixture tích hợp:** `521426189876a308cf729759cb05fce1d4a29ed1`
 - **Giao diện Web Workspace:** `94c36239c1ee1c5b2561d0d9ea98eaea2ce40fb5`
 - **Hiệu chỉnh tính đúng đắn Web UI (Web correctness):** `5eb1ffcf645e817bff7a2a6d6919eae6ff3f8d7f`
+- **Chuyển trạng thái governance sang In Review:** `e40e2116c2e103a5c98ac0f930436ca7232cc9bd`
+- **Đóng các review findings từ independent review:** `7847b93de75b16d2a64e0e695705b5cdbd3b1cfb`
+- **Final Reviewed Implementation HEAD:** `7847b93de75b16d2a64e0e695705b5cdbd3b1cfb`
 
 ### 16.2. Bằng chứng Kiểm thử Cục bộ (Local Validation Evidence)
 - **Targeted backend tests:** 33/33 PASS
 - **Targeted web tests:** 71/71 PASS
 - **Full API unit tests:** 73/73 suites, 1167/1167 tests PASS
-- **Full web unit tests:** 18/18 suites, 273/273 tests PASS
+- **Full web unit tests:** 18/18 suites, 273/273 tests PASS (sau review fix: 278/278 tests PASS)
 - **Lint:** PASS (`npm run lint`)
 - **Typecheck:** PASS (`npm run typecheck`)
 - **Build:** PASS (`npm run build`)
@@ -419,20 +422,18 @@ Canonical full integration trên local Windows chưa thể dùng làm closure ev
 Bằng chứng kiểm chứng có kiểm soát (Controlled Evidence):
 - **A. Cấu hình pool mặc định (Default pool):** Thỉnh thoảng phát sinh lỗi P1001: `Can't reach database server at 127.0.0.1:5432`.
 - **B. Giới hạn pool tạm thời trong process (`connection_limit=1`):** Lỗi P1001 không xuất hiện; tuy nhiên 4 suites gặp hiện tượng nghẽn tài nguyên kết nối (pool starvation / transaction acquisition timeout / Jest 5s timeout) do các giao dịch đồng thời; môi trường đã được khôi phục nguyên trạng; không có biến động repo.
-- **Kết luận:** "Evidence is consistent with Windows-local connection-pressure instability. Root transport mechanism is not proven." Không kết luận đây là lỗi xác nhận của Winsock, Prisma hay PostgreSQL.
+- **Kết luận:** "Evidence is consistent with Windows-local connection-pressure instability. Root transport mechanism is not proven." Không kết luận đây là lỗi xác nhận của Winsock, Prisma hay PostgreSQL. Bằng chứng kiểm thử tích hợp chuẩn tắc được cung cấp bởi môi trường Linux CI từ xa.
 
-### 16.4. Cổng Kiểm soát Từ xa Chuẩn tắc (Authoritative Remote Gate)
-Nhiệm vụ `P2-004` được chuyển sang trạng thái `IN_REVIEW` để phục vụ quy trình đánh giá độc lập (independent review).
+### 16.4. Cổng Kiểm soát Từ xa Chuẩn tắc & Đóng Nhiệm vụ (Authoritative Remote Gate & Closure Evidence)
+Quy trình đánh giá độc lập và kiểm định CI trên môi trường Linux chuẩn tắc đã hoàn tất:
 
-Trước khi tiến hành sáp nhập (merge), bắt buộc phải có đầy đủ:
-- Chạy kiểm thử GitHub Actions CI trên môi trường Linux chuẩn tắc cho đúng commit HEAD;
-- Cổng tích hợp cơ sở dữ liệu PostgreSQL 17;
-- Kiểm thử Playwright smoke chuẩn tắc;
-- Toàn bộ các công việc CI bắt buộc đạt kết quả `SUCCESS`.
-
-Trạng thái hiện tại:
-- **Remote CI evidence:** `PENDING`
-- **PR:** `PENDING`
-- **Merge:** `PENDING`
-- **Deploy:** `NONE`
+- **Đánh giá độc lập (Independent GitHub Review):** ĐẠT (PASS) sau 1 vòng hiệu chỉnh forward correction đóng toàn bộ 4 nhóm finding (P1-A, P1-B, P2, P3).
+- **Parent PR:** #129 (`feat(ppct): add specialized-study administration workspace`)
+- **Exact-head PR CI:** CI #428 (run id: `34695635149`) — `SUCCESS`
+- **Merge / Canonical Main Commit:** `a7b4a9035f04238d931f3e28f1dbac25f9b329ce`
+- **Authoritative Post-merge Main CI:** CI #429 (run id: `34696063973`) — `SUCCESS`
+- **Đóng hành chính:** `CLOSED` bởi nhiệm vụ hành chính `SYNC-P2-004`
+- **Biến động Schema/Migration:** KHÔNG (zero schema/migration changes)
+- **Deploy:** `NONE` (không deploy lên VPS)
 - **Môi trường Production:** Tiếp tục duy trì ở trạng thái **`PRE-OPERATIONAL`**.
+- **Nhiệm vụ tiếp theo trên đường găng (Next Critical Path):** `P1-030` (`READY`).

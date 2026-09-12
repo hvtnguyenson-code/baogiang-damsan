@@ -10,47 +10,14 @@ It is **not** a self-referential registry of the latest Git commit. Exact curren
 
 ## Active major task
 
-`P2-004` — Specialized-study class-subject administration workspace — **IN_REVIEW**.
-
-- Task branch: `feat/ppct-specialized-study-admin-workspace-004`;
-- Canonical main base: `b5ccfb2b563ea0633aae97a03ac62076a102bb98`;
-- Contract commits: `98b977b0853e10d23da3e8af59088b35e53214ea`, `e7e71384ce34c02bcad2e5fd34be9ee5c787962e`;
-- Backend/options commit: `73cf71156c7e88ecee8fa9754a62450480f59d8c`;
-- Integration fixture correction commit: `521426189876a308cf729759cb05fce1d4a29ed1`;
-- Web workspace commit: `94c36239c1ee1c5b2561d0d9ea98eaea2ce40fb5`;
-- Web correctness correction commit: `5eb1ffcf645e817bff7a2a6d6919eae6ff3f8d7f`;
-- Local validation evidence:
-  - Targeted backend: 33/33 PASS;
-  - Targeted web: 71/71 PASS;
-  - API unit: 73/73 suites, 1167/1167 tests PASS;
-  - Web unit: 18/18 suites, 273/273 tests PASS;
-  - Lint: PASS;
-  - Typecheck: PASS;
-  - Build: PASS;
-  - Static/security/workflow: PASS;
-  - Migration/capability: PASS;
-  - Dependency audit: PASS (0 high/critical);
-- Windows integration caveat:
-  - Canonical full integration on local Windows cannot serve as closure evidence due to intermittent PostgreSQL connectivity instability.
-  - Controlled evidence:
-    - Default pool: thỉnh thoảng P1001 `Can't reach database server at 127.0.0.1:5432`;
-    - Temporary process-local `connection_limit=1`: P1001 không xuất hiện; nhưng 4 suites bị pool starvation / transaction acquisition timeout / Jest 5s timeout; environment đã restore; không có repo mutation.
-  - Kết luận: "Evidence is consistent with Windows-local connection-pressure instability. Root transport mechanism is not proven."
-- Authoritative remote gate:
-  - P2-004 được chuyển IN_REVIEW để thực hiện independent remote review.
-  - Trước merge bắt buộc: exact-head GitHub Actions CI trên canonical Linux runner, PostgreSQL 17 integration gate, canonical Playwright smoke, all required jobs SUCCESS.
-  - Remote CI evidence: PENDING;
-  - PR: PENDING;
-  - Merge: PENDING;
-  - Deploy: NONE.
+None currently active.
 
 Next critical-path task:
-- `P2-004` is in review; downstream tasks await review and CI closure.
+- `P1-030` — Delayed go-live / operational-start architecture — **READY** (dependencies `P1-020` and `P2-001` both `CLOSED`).
 
 Other eligible & parallel tasks:
-- `P1-030` — Delayed go-live / operational-start architecture — **READY** (dependencies `P1-020` and `P2-001` both `CLOSED`).
-- `P1-031` — Operational-start policy implementation — **PLANNED** (dependency `P2-003` is CLOSED, but `P1-030` remains READY / not yet CLOSED).
 - `P4-010` — GDĐP/HĐTN programme architecture closure — **READY** (independent track).
+- `P1-031` — Operational-start policy implementation — **PLANNED** (dependency `P2-003` is CLOSED, but `P1-030` remains READY / not yet CLOSED).
 - `P2-010` — PPCT real-workbook contract/security audit — **BLOCKED_EVIDENCE** (pending authoritative school PPCT workbook/template).
 - `P2-020` — PPCT native importer implementation — **PLANNED** (pending `P2-010`).
 
@@ -58,7 +25,36 @@ Production environment remains strictly **PRE-OPERATIONAL**. No production deplo
 
 ## Last closed major task
 
-`P2-003` — Component-aware PPCT allocation and curricular projections — **CLOSED** by `SYNC-P2-003`.
+`P2-004` — Specialized-study class-subject administration workspace — **CLOSED** by `SYNC-P2-004`.
+
+Closure evidence:
+- dedicated implementation branch: `feat/ppct-specialized-study-admin-workspace-004`;
+- starting canonical main base: `b5ccfb2b563ea0633aae97a03ac62076a102bb98`;
+- final reviewed implementation HEAD: `7847b93de75b16d2a64e0e695705b5cdbd3b1cfb`;
+- implementation evidence commits:
+  - `98b977b0853e10d23da3e8af59088b35e53214ea` docs(ppct): define P2-004 administration workspace contract
+  - `e7e71384ce34c02bcad2e5fd34be9ee5c787962e` docs(ppct): correct P2-004 workspace read model contract
+  - `73cf71156c7e88ecee8fa9754a62450480f59d8c` feat(ppct): add administration workspace options
+  - `521426189876a308cf729759cb05fce1d4a29ed1` test(ppct): correct workspace options integration fixtures
+  - `94c36239c1ee1c5b2561d0d9ea98eaea2ce40fb5` feat(ppct): add specialized-study administration workspace
+  - `5eb1ffcf645e817bff7a2a6d6919eae6ff3f8d7f` fix(ppct): harden workspace error and history semantics
+  - `e40e2116c2e103a5c98ac0f930436ca7232cc9bd` docs(governance): move P2-004 to in review
+  - `7847b93de75b16d2a64e0e695705b5cdbd3b1cfb` fix(ppct): close administration workspace review findings;
+- independent GitHub review: PASS after one forward correction round absorbing review findings;
+- parent PR: #129 (`feat(ppct): add specialized-study administration workspace`);
+- exact-head PR CI: CI #428 (run id: `34695635149`), SUCCESS;
+- merge/main commit: `a7b4a9035f04238d931f3e28f1dbac25f9b329ce`;
+- authoritative post-merge main CI: CI #429 (run id: `34696063973`), SUCCESS;
+- closed by administrative closure: `SYNC-P2-004`;
+- delivered scope includes: `PPCT_MANAGE` capability-gated administration workspace, `SCHOOL_WIDE` and exact `SUBJECT` scoped authority, PPCT-specific academic-year/class/subject options read model (`/ppct/options`), route `/quan-tri/ppct/ap-dung-chuyen-de` (navigation "Áp dụng chuyên đề"), `CORE_ONLY` vs `CORE_PLUS_SPECIALIZED_STUDY` administration, target PUBLISHED PPCT version selection, specialized-content preflight query, retained class-subject association history table (latest distinction, open-ended `effectiveUntil=null`), CAS concurrency via `expectedLatestAssociationId`, server-side `PPCT_COMPONENT_APPLICABILITY_WEEK_SPLIT` error preservation with semantic error display;
+- Windows integration caveat: full local Windows integration was not used as authoritative closure evidence due to intermittent PostgreSQL connectivity instability (default pool occasionally triggers P1001 `Can't reach database server at 127.0.0.1:5432`; controlled temporary process-local `connection_limit=1` eliminated P1001 but caused transaction acquisition starvation / timeouts across 4 suites; environment restored; no repo mutation; conclusion: "Evidence is consistent with Windows-local connection-pressure instability. Root transport mechanism is not proven"). Authoritative integration/E2E evidence was provided by canonical Linux CI #428 (PR) and #429 (post-merge main), both SUCCESS;
+- zero schema/migration changes;
+- no production deploy;
+- no correction or re-entry task remains;
+- production remains PRE-OPERATIONAL;
+- unlocks downstream: next critical path `P1-030` (`READY`).
+
+Predecessor closed major task: `P2-003` — Component-aware PPCT allocation and curricular projections — **CLOSED** by `SYNC-P2-003`.
 
 Closure evidence:
 - dedicated implementation branch: `feat/ppct-component-aware-allocation-projections-003`;
@@ -74,7 +70,7 @@ Closure evidence:
 - no production deploy;
 - no correction or re-entry task remains;
 - production remains PRE-OPERATIONAL;
-- unlocks downstream: `P2-004` became `READY` (now `IN_REVIEW`).
+- unlocks downstream: `P2-004` became `READY` (now `CLOSED` by `SYNC-P2-004`).
 
 Predecessor closed major task: `P2-002` — PPCT component persistence + control-plane realignment — **CLOSED** by `SYNC-P2-002`.
 
@@ -96,7 +92,7 @@ Closure evidence:
 - no P2-003 allocator/progress/readiness runtime or P2-004 UI was smuggled into P2-002;
 - no correction/re-entry task emerged from review or CI; no deployment/production mutation occurred;
 - closed by administrative closure: `SYNC-P2-002`;
-- downstream at P2-002 closure: `P2-003` was unlocked to `READY` (now `CLOSED` by `SYNC-P2-003`); `P2-004` is `IN_REVIEW`; `P2-010` remains `BLOCKED_EVIDENCE` and therefore `P2-020` remains `PLANNED`.
+- downstream at P2-002 closure: `P2-003` was unlocked to `READY` (now `CLOSED` by `SYNC-P2-003`); `P2-004` is `CLOSED` by `SYNC-P2-004`; `P2-010` remains `BLOCKED_EVIDENCE` and therefore `P2-020` remains `PLANNED`.
 
 Predecessor closed major task: `P2-001` — PPCT Curricular-Component Architecture Re-Entry — **CLOSED** by `SYNC-P2-001`.
 
@@ -116,7 +112,7 @@ Closure evidence:
 - merged file set: 15 changed files (1125 additions, 39 deletions), strictly docs-only under `docs/**` (zero runtime/schema/migration/API/UI/auth/CI/deploy/production mutation);
 - accepted authority: `ADR-048-PPCT-CURRICULAR-COMPONENT-ARCHITECTURE.md` Accepted;
 - all 15 architecture questions from P0-900 Section 15 resolved;
-- downstream delivery stream at P2-001 closure: `P2-002` (now `CLOSED` by `SYNC-P2-002`), `P2-003` (now `CLOSED` by `SYNC-P2-003`), `P2-004` (`IN_REVIEW`), `P1-030` (`READY`), `P4-010` (independently `READY`), parallel workbook path `P2-010` (`BLOCKED_EVIDENCE`) -> `P2-020`.
+- downstream delivery stream at P2-001 closure: `P2-002` (now `CLOSED` by `SYNC-P2-002`), `P2-003` (now `CLOSED` by `SYNC-P2-003`), `P2-004` (now `CLOSED` by `SYNC-P2-004`), `P1-030` (`READY`), `P4-010` (independently `READY`), parallel workbook path `P2-010` (`BLOCKED_EVIDENCE`) -> `P2-020`.
 
 Predecessor closed major task: `P0-900` — Authoritative specification rebase audit (PPCT Curricular Component Product-Authority Realignment) — **CLOSED** by `SYNC-P0-900` (merge `eb1fc74686b0070935f8dcf23c13a5623b94ca1a`, PR #119, PR CI #397 SUCCESS, post-merge main CI #398 SUCCESS).
 
@@ -133,7 +129,7 @@ Closure evidence:
 - merged file set: 14 changed files (6 forward commits), strictly bounded to `docs/` (zero apps/packages/prisma/.github/deploy/scripts changes, zero runtime/schema/migration/API/UI/auth/CI/deploy/production mutation);
 - authoritative source blobs verified and unchanged: v1.2 (`c2c61a4e8acb9fde0e5fc5232467662048fd3380`), v1.3 (`5876af5920d12ea6fcecf42d1b8a392cc4825f16`); trigger was explicit Product Owner authority on 2026-09-08;
 - no additional correction/re-entry task emerged from review or CI;
-- downstream delivery stream registered at P0-900 closure: `P2-001`–`P2-004` (P2-001, P2-002, and P2-003 are now `CLOSED`; `P2-004` is `IN_REVIEW`), parallel workbook path `P2-010` (`BLOCKED_EVIDENCE`) -> `P2-020`.
+- downstream delivery stream registered at P0-900 closure: `P2-001`–`P2-004` (P2-001, P2-002, P2-003, and P2-004 are now `CLOSED`), parallel workbook path `P2-010` (`BLOCKED_EVIDENCE`) -> `P2-020`.
 
 - Core realignment principles accepted into baseline:
   1. Normal curricular component taxonomy: `CORE` (phần cốt lõi) vs `SPECIALIZED_STUDY` (chuyên đề học tập). Specialized study is curricular, not an ad-hoc `SpecialActivity`.
@@ -268,6 +264,7 @@ The repository contains reviewed implementation for:
 - operational overlays;
 - SpecialActivity minimum-core persistence/runtime with exact slots, frozen classes, staffing and class/teacher/time collision checks;
 - PPCT occurrence allocation (P2-003 component-aware weekly routing, independent progression and downstream projection runtime closed by P2-003 and merged to main);
+- specialized-study class-subject administration workspace (P2-004 capability-gated applicability administration, options read model, target version selection, specialized-content preflight, retained association history and CAS concurrency closed by P2-004 and merged to main);
 - curricular TeachingExecution and SpecialActivityParticipationExecution evidence;
 - proof-based progress/debt/late projection;
 - reporting projection and public reporting read path;
@@ -276,7 +273,7 @@ The repository contains reviewed implementation for:
 - **retained Business Configuration persistence, control plane and administration workspace** (separate BusinessPolicyStream / BusinessPolicyVersion / BusinessPolicyCommand topology, strict civil-date intervals, DB-level non-overlapping published exclusion, retained replacement and reversal/correction lineage, immutable published payload, exact historical validator-version resolution, dedicated `BUSINESS_CONFIGURATION_MANAGE / SCHOOL_WIDE` capability, capability-gated route `/quan-tri/chinh-sach-nghiep-vu`, typed/version-aware UI adapter architecture with triple identity, lifecycle UI for draft/edit/publish/replace/retire/correct, historical typed rendering, exact-date resolver UI, bounded Serializable mutation retry, idempotency receipts, same-transaction audit, sanitized errors and typed fail-closed resolver, with backend production registry and production UI adapter registry intentionally empty);
 - hardened Windows production deployment control-plane/runbooks through PR #90.
 
-Homeroom architecture, persistence, control plane/capability, historical read model and administration workspace UI are closed for the registered pre-pilot scope. Business Configuration architecture (P1-020), persistence/control plane (P1-021) and administration workspace (P1-022) are closed for the registered pre-pilot scope. P2-030 native timetable workbook architecture/evidence, P2-040 native adapter runtime implementation, P2-050 selective morning/afternoon update and carry-forward, P2-002 PPCT component persistence/control plane, and P2-003 component-aware allocation/projections runtime are closed.
+Homeroom architecture, persistence, control plane/capability, historical read model and administration workspace UI are closed for the registered pre-pilot scope. Business Configuration architecture (P1-020), persistence/control plane (P1-021) and administration workspace (P1-022) are closed for the registered pre-pilot scope. P2-030 native timetable workbook architecture/evidence, P2-040 native adapter runtime implementation, P2-050 selective morning/afternoon update and carry-forward, P2-002 PPCT component persistence/control plane, P2-003 component-aware allocation/projections runtime, and P2-004 specialized-study administration workspace are closed.
 
 ## Pre-pilot verdict
 
@@ -299,7 +296,7 @@ The registered implementation, data-evidence, product and production-readiness t
 11. Dedicated Báo giảng Telegram bot/linking/notification lifecycle is absent.
 12. First-certificate HTTP-01/Nginx authority for the Báo giảng subdomain is incomplete.
 13. Actual VPS Stage 1 evidence has not yet been collected for first deployment.
-14. Curricular component realignment (`P2-001`–`P2-004`): PPCT architecture (`P2-001`), component persistence/control plane (`P2-002`), and weekly routing/allocation/projection runtime (`P2-003`) are **CLOSED**; admin applicability workspace (`P2-004`) is **IN_REVIEW**.
+14. Curricular component realignment (`P2-001`–`P2-004`): PPCT architecture (`P2-001`), component persistence/control plane (`P2-002`), weekly routing/allocation/projection runtime (`P2-003`), and admin applicability workspace (`P2-004`) are **CLOSED**.
 
 ## Production VPS topology decision
 
@@ -316,8 +313,6 @@ The following registered tasks are genuinely eligible to start on dedicated bran
 
 1. `P1-030` — Delayed go-live / operational-start architecture (`READY`; dependencies `P1-020` and `P2-001` are both `CLOSED`).
 2. `P4-010` — GDĐP/HĐTN programme architecture closure (`READY`; independent track).
-
-`P2-004` is currently `IN_REVIEW`.
 
 `P1-031` remains dependency-gated until `P1-030` is also `CLOSED`. `P2-020` remains blocked by `P2-010` evidence (`BLOCKED_EVIDENCE`).
 
@@ -348,7 +343,7 @@ Direct P0 inspection found `main` is currently not protected server-side. This i
 
 ## Production state
 
-Production remains **pre-operational**. No production deployment has occurred. P1-020, P1-021, and P1-022 implementations are merged and canonical, but backend production policy registry and production UI adapter registry remain intentionally empty and no production business policy family is enabled. P2-030 architecture/evidence, P2-040 native adapter runtime implementation, P2-050 selective session authoring and carry-forward, P2-002 PPCT component persistence/control plane, and P2-003 component-aware allocation/projection runtime are merged to canonical `main`, but did NOT deploy or mutate VPS, database, Nginx, TLS, scheduled tasks, or application process state. P2-001 architecture remains accepted authority under ADR-048. P6 remains blocked by the explicit P6-005 topology decision gate.
+Production remains **pre-operational**. No production deployment has occurred. P1-020, P1-021, and P1-022 implementations are merged and canonical, but backend production policy registry and production UI adapter registry remain intentionally empty and no production business policy family is enabled. P2-030 architecture/evidence, P2-040 native adapter runtime implementation, P2-050 selective session authoring and carry-forward, P2-002 PPCT component persistence/control plane, P2-003 component-aware allocation/projection runtime, and P2-004 specialized-study administration workspace are merged to canonical `main`, but did NOT deploy or mutate VPS, database, Nginx, TLS, scheduled tasks, or application process state. P2-001 architecture remains accepted authority under ADR-048. P6 remains blocked by the explicit P6-005 topology decision gate.
 
 ## Protected external system boundary
 
