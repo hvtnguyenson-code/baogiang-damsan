@@ -95,18 +95,18 @@ Kiểm tra trực tiếp mã nguồn read-only trên nhánh chính tại commit 
 | Mã ID | Vấn đề Kiến trúc | Quyết định Chuẩn tắc Khóa Thẩm quyền |
 |---|---|---|
 | **D1** | Phạm vi tài nguyên của Chính sách (Resource Scope) | Thuộc tài nguyên **`ACADEMIC_YEAR`** (`{ kind: 'ACADEMIC_YEAR', academicYearId: string }`). Mỗi năm học có một chính sách độc lập; không dùng `SCHOOL_WIDE` để tránh việc một mốc ngày áp đặt vĩnh viễn xuyên các năm học khác nhau. |
-| **D2** | Hiệu lực Phiên bản vs Mốc Ngày Vận hành | **BẮT BUỘC TÁCH BIỆT**: `effectiveFrom..effectiveUntil` của phiên bản cấu hình quy định khoảng thời gian mà bản ghi cấu hình đó có hiệu lực pháp lý trong hệ thống; còn `operationalStartDate` là trường dữ liệu bắt buộc nằm trong payload (`{ operationalStartDate: "YYYY-MM-DD" }`) xác định thời điểm bắt đầu ghi nhận báo giảng. |
+| **D2** | Hiệu lực Phiên bản vs Mốc Ngày Vận hành | **BẮT BUỘC TÁCH BIỆT**: `effectiveFrom..effectiveUntil` của phiên bản cấu hình quy định khoảng thời gian mà bản ghi cấu hình đó có hiệu lực pháp lý trong hệ thống; còn `operationalStartDate` là trường dữ liệu bắt buộc nằm trong payload (`{ operationalStartDate: "YYYY-MM-DD" }`) xác định thời điểm bắt đầu ghi nhận báo giảng. *Ràng buộc bổ sung (P1-A)*: Bản ghi xuất bản ban đầu phải có `effectiveFrom <= operationalStartDate`; cấm deliberate gap; cấm hành vi `RETIRE`; thay thế tương lai (`REPLACE`) chỉ được phép trước khi mốc đã diễn ra; điều chỉnh sau khi mốc đã qua bắt buộc dùng `CORRECTION`. |
 | **D3** | Quy chuẩn Ngày Dân sự và Múi giờ | `operationalStartDate` là một **Civil DATE** chuẩn (`YYYY-MM-DD`). Ranh giới bắt đầu vận hành có hiệu lực từ thời điểm **bắt đầu ngày** (Start-of-day: 00:00:00.000) theo múi giờ chuẩn tắc Việt Nam **`Asia/Ho_Chi_Minh`** (UTC+7). Tuyệt đối không dùng giờ UTC midnight hay giờ địa phương của máy khách. |
 | **D4** | Phân loại Ranh giới Thời gian | Tiết học có `civilDate < operationalStartDate` được phân loại là **`PRE_OPERATIONAL`** (Tiền vận hành). Tiết học có `civilDate >= operationalStartDate` được phân loại là **`OPERATIONAL`** (Vận hành chính thức). |
 | **D5** | Nguyên tắc Bất biến Không Tự tạo Nợ | Tiết học trong giai đoạn `PRE_OPERATIONAL` mà không có bản ghi thực thi: **TUYỆT ĐỐI KHÔNG ĐƯỢC TÍNH VÀO NỢ TIẾT (`PROVEN_OPEN_DEBT`) HAY TRỄ HẠN (`lateCount`)**. Tiết học này cũng không được tự tiện coi là `COMPLETED` hay `NOT_APPLICABLE`. Trạng thái kiến trúc chuẩn tắc là **`PRE_OPERATIONAL_UNCONFIRMED`** và được loại trừ khỏi cửa sổ xét nợ vận hành. |
-| **D6** | Dạy học Lịch sử và Phân định với P3 | Tiết học tiền vận hành nếu được xác nhận giảng dạy qua minh chứng hợp lệ (thuộc phạm vi `P3-010`/`P3-020`) sẽ được tiêu thụ đúng bài PPCT lịch sử và tính định mức giảng dạy. `P1-030`/`P1-031` chỉ thiết lập ranh giới phân loại; `P3` sở hữu mô hình nạp và đối soát minh chứng lịch sử. |
+| **D6** | Dạy học Lịch sử và Phân định với P3 | Tiết học tiền vận hành nếu được xác nhận giảng dạy qua minh chứng hợp lệ (thuộc phạm vi `P3-010`/`P3-020`) sẽ được tiêu thụ đúng bài PPCT lịch sử và tính định mức giảng dạy. *Ràng buộc bổ sung (P1-B)*: Nghiêm cấm dùng API xác nhận thực thi thông thường (`createNormalCurricular`, `createMakeupCurricular`) cho các tiết có `sourceCivilDate < operationalStartDate` (hoặc dạy bù nghĩa vụ gốc tiền vận hành); đường dẫn này bắt buộc phải **FAIL CLOSED**. Quyền đọc/reverse minh chứng hợp lệ đã lưu trữ luôn được bảo tồn. |
 | **D7** | Xác lập Tiến độ PPCT sau Go-Live | Thực hiện theo thẩm quyền **PO-1**: Allocator replay TKB quá khứ để xác lập **Tiến độ Kỳ vọng (Expected Progression)**. Sau go-live, tiết đầu tiên sẽ nhận bài tiếp theo kế tiếp chuỗi TKB quá khứ. Nếu thiếu dữ liệu TKB/PPCT dẫn đến không thể replay tất định: **FAIL CLOSED** cho lớp-môn đó. Không tự ý quay về sequence 1; không bịa đặt baseline nhập tay. |
 | **D8** | Ranh giới giữa CORE và Chuyên đề học tập | Tuân thủ ADR-048: Cả `CORE` và `SPECIALIZED_STUDY` thuộc cùng một luồng môn học và **sử dụng chung một mốc `operationalStartDate`**. Không có mốc bắt đầu vận hành riêng lẻ theo từng thành phần chương trình. |
 | **D9** | Ranh giới với Hoạt động Đặc biệt (GDĐP/HĐTN) | Thực hiện theo thẩm quyền **PO-3**: Toàn trường dùng chung một mốc `operationalStartDate` của năm học. `P1-030`/`P1-031` chỉ sở hữu môn học chính khóa. Phân hệ `P4` tham chiếu mốc này nhưng sở hữu toàn bộ logic riêng cho GDĐP/HĐTN; `P1-030` không áp đặt công thức nợ môn học cho `SpecialActivity`. |
 | **D10** | Hành vi khi Thiếu Chính sách | Thực hiện theo thẩm quyền **PO-2**: **FAIL CLOSED** không có ngoại lệ. Khi resolver trả về `POLICY_NOT_CONFIGURED`, `POLICY_AMBIGUOUS` hoặc `POLICY_CORRUPT`, mọi consumer yêu cầu căn cứ vận hành phải chặn thực thi. Nếu trường dùng phần mềm từ đầu năm, bắt buộc phải phát hành policy với `operationalStartDate` bằng ngày khai giảng. |
 | **D11** | Tính Bất biến Lịch sử khi Điều chỉnh Chính sách | Khi chính sách bị điều chỉnh (`CORRECTED` tạo version mới): Các ngày đã qua không bị sửa đổi lịch sử tại chỗ. Các bản ghi `CurricularTeachingExecution` đã tạo giữ nguyên provenance. Các Báo cáo Thống kê (`ReportingStatement`) đã phê duyệt **TUYỆT ĐỐI KHÔNG BỊ DIỄN GIẢI LẠI**. Chỉ các phép tính động (live projections) thực hiện sau thời điểm sửa mới phản ánh ranh giới mới. |
-| **D12** | Lưu trữ Nguồn gốc Phiên bản Chính sách | Báo cáo chính thức (`ReportingStatement`): Snapshot và manifest bắt buộc phải ghim định danh phiên bản chính sách có hiệu lực (`operationalStartPolicyVersionId`). Bản ghi thực thi (`CurricularTeachingExecution`): Giữ nguyên cấu trúc schema hiện tại, không thêm cột policy version vì tính hợp lệ đã được kiểm soát tại thời điểm ghi nhận. |
-| **D13** | Điểm Tích hợp vào Công cụ Nợ và Báo cáo | Tích hợp tại tầng phân loại đầu vào của `ProgressDebtService` và `ReportingProjectionService`: Phân loại các nghĩa vụ theo ranh giới `operationalStartDate`. Các nghĩa vụ `PRE_OPERATIONAL` chưa có thực thi được tách khỏi tập xét nợ `openDebtCount`. Không làm thay đổi bản chất công thức chứng minh nợ của ADR-040. |
+| **D12** | Lưu trữ Nguồn gốc Phiên bản Chính sách | Báo cáo chính thức (`ReportingStatement`): Snapshot và manifest bắt buộc phải ghim định danh phiên bản chính sách có hiệu lực (`operationalStartPolicyVersionId`). *Ràng buộc bổ sung (P2)*: Ngày dân sự giải quyết chính sách tại lệnh submit bắt buộc phải đổi từ `pinnedAsOfInstant` sang múi giờ **`Asia/Ho_Chi_Minh`** (`YYYY-MM-DD`), tuyệt đối không dùng `asOfInstant.toISOString().slice(0, 10)`. Bản ghi thực thi (`CurricularTeachingExecution`): Giữ nguyên cấu trúc schema hiện tại. |
+| **D13** | Điểm Tích hợp vào Công cụ Nợ, Báo cáo và Thực thi | Tích hợp tại 3 điểm: (1) Bộ lọc ranh giới của `ProgressDebtService` và `ReportingProjectionService` tách các nghĩa vụ `PRE_OPERATIONAL` chưa có thực thi khỏi tập tính nợ; (2) Lệnh xác nhận thực thi chính khóa (`createNormalCurricular`, `createMakeupCurricular`) chặn ghi nhận tiết tiền vận hành; (3) Khâu đóng băng `ReportingStatement` ghim policyVersionId theo ngày dân sự HCM. Không làm thay đổi bản chất công thức chứng minh nợ của ADR-040. |
 | **D14** | Tác động đến Báo cáo và Định mức | Tiết dạy tiền vận hành có minh chứng xác nhận hợp lệ (qua P3): Được tính vào tổng số tiết dạy và định mức của giáo viên. Tiết tiền vận hành chưa xác nhận: Không xuất hiện dưới dạng nợ (`openDebtCount`) hay trễ (`lateCount`) trong bảng tổng hợp chính thức. |
 | **D15** | Kiểm tra Tính Sẵn sàng Vận hành | Thực hiện theo thẩm quyền **PO-4**: Không tạo vòng đời toàn cục `SYSTEM_OPERATIONAL`. Yêu cầu sự tồn tại hợp lệ của chính sách `OPERATIONAL_START` kết hợp với các cổng kiểm tra sẵn sàng cục bộ hiện có (TKB có hiệu lực, PPCT đã xuất bản, Phân công giảng dạy đầy đủ). |
 | **D16** | Đồ thị Nhiệm vụ Downstream | Phân công triển khai rõ ràng: `P1-031` triển khai policy backend; `P1-032` xây dựng giao diện quản trị cấu hình; `P3-010`/`P3-020` xây dựng kiến trúc nạp minh chứng lịch sử và đối soát; `P5-010` đóng băng toàn bộ nghiệp vụ phục vụ pilot. |
@@ -147,27 +147,28 @@ export interface OperationalStartPolicyPayloadV1 {
   Hệ thống sử dụng ngày dân sự của máy chủ sở hữu tại thời điểm thực hiện lệnh (`businessCivilDate()`) để làm mốc truy vấn phiên bản chính sách có hiệu lực:
   `resolveEffectiveBusinessPolicy('OPERATIONAL_START', { kind: 'ACADEMIC_YEAR', academicYearId }, currentCivilDate)`.
   Phiên bản chính sách duy nhất được tìm thấy sẽ cung cấp `payload.operationalStartDate` để phân loại toàn bộ các tiết học trong phạm vi đánh giá.
-- **Đối với Báo cáo Chính thức được Đóng băng (`ReportingStatement`):**
-  Sử dụng mốc `pinnedAsOfInstant` của lệnh submit để xác định ngày dân sự giải quyết chính sách, và ghim cố định `policyVersionId` vào manifest/provenance của báo cáo.
+- **Đối với Báo cáo Chính thức được Đóng băng (`ReportingStatement` - Thẩm quyền P2):**
+  1. Lệnh nộp báo cáo (`SUBMIT`) ghim chính xác mốc `asOfInstant` của máy chủ đúng một lần duy nhất; mọi retry giao dịch tái sử dụng chính mốc này.
+  2. Ngày dân sự giải quyết chính sách (`policyResolutionCivilDate`) bắt buộc phải tính bằng cách định dạng `asOfInstant` theo múi giờ chuẩn tắc **`Asia/Ho_Chi_Minh`** thành chuỗi `YYYY-MM-DD`.
+  3. **TUYỆT ĐỐI KHÔNG DÙNG** `asOfInstant.toISOString().slice(0, 10)` (vì đây là ngày theo giờ UTC, có thể gây trôi lệch ngày vào các khung giờ sáng sớm tại Việt Nam).
+  4. Thực hiện resolve chính sách với `ACADEMIC_YEAR` và ngày dân sự HCM đã tính; ghim cố định `policyVersionId` vào manifest/provenance bất biến của báo cáo.
 - **Quy tắc Bất biến:** Không bao giờ resolve chính sách bằng ngày của từng tiết học (`occurrence.civilDate`) một cách riêng rẽ, vì điều đó sẽ phá vỡ tính chất ranh giới duy nhất của năm học.
 
 ---
 
-## 5. Quy tắc Vòng đời và Điều chỉnh Chính sách (Policy Lifecycle Semantics)
+## 5. Quy tắc Vòng đời và Điều chỉnh Chính sách (Policy Lifecycle Semantics - Thẩm quyền P1-A)
 
-Chính sách `OPERATIONAL_START` là một ranh giới pháp lý trọng yếu của nhà trường, không phải một thông số thay đổi hàng tuần. Vòng đời của family này tuân thủ các quy tắc sau:
+Chính sách `OPERATIONAL_START` là một ranh giới pháp lý trọng yếu của nhà trường, không phải một thông số thay đổi tùy tiện. Do đó, ngoài các quy chuẩn generic của ADR-046, family này bắt buộc phải tuân thủ các ràng buộc vòng đời chuyên biệt sau:
 
-1. **Trước khi mốc `operationalStartDate` diễn ra:**
-   - Nhà trường có thể chỉnh sửa bản nháp (`DRAFT`) hoặc thay thế bản ghi đã xuất bản bằng một phiên bản mới (`replacesVersionId`) với ngày go-live mới nếu kế hoạch triển khai của trường bị lùi lại.
-   - Việc thay thế trước khi vận hành thực tế không làm ảnh hưởng đến dữ liệu quá khứ vì chưa có dữ liệu báo giảng chính thức nào được tạo ra.
-2. **Sau khi hệ thống đã vận hành chính thức (đã có bản ghi thực thi hoặc báo cáo đóng băng):**
-   - Nghiêm cấm việc thay thế ngầm hoặc xóa bỏ chính sách.
-   - Mọi thay đổi đối với mốc `operationalStartDate` trong quá khứ bắt buộc phải thực hiện thông qua quy trình **Sửa đổi Dữ liệu Lịch sử (Correction)** theo ADR-046:
-     + Chuyển phiên bản hiện tại sang `REVERSED`.
-     + Bắt buộc ghi nhận người thực hiện, thời điểm và lý do sửa đổi (`correctionReason`).
-     + Tạo phiên bản mới có liên kết phả hệ `correctsVersionId`.
-3. **Bảo toàn Báo cáo Đã đóng băng:**
-   - Một sửa đổi chính sách diễn ra hôm nay tuyệt đối không được tự động sửa đổi nội dung số liệu hay chữ ký băm của các Báo cáo Thống kê (`ReportingStatement`) đã được nộp hoặc phê duyệt trong quá khứ.
+1. **Hiệu lực ban đầu:** Phiên bản xuất bản đầu tiên bắt buộc phải thỏa mãn:
+   `effectiveFrom <= operationalStartDate`
+   để đảm bảo thẩm quyền kiểm soát đã tồn tại chậm nhất tại ngày bắt đầu vận hành.
+2. **Cấm khoảng trống hiệu lực (No deliberate gap):** Sau khi đã xuất bản chính thức, tuyệt đối không được tạo khoảng trống hiệu lực trong suốt thời gian năm học cần thẩm quyền vận hành.
+3. **Cấm lệnh `RETIRE`:** Hành vi kết thúc (`RETIRE`) của ADR-046 bị **TỪ CHỐI** đối với family `OPERATIONAL_START`. Luồng cấu hình retained phải luôn tồn tại để các truy vấn lịch sử luôn tìm thấy thẩm quyền.
+4. **Thay thế tương lai (Prospective Replacement):** Lệnh `REPLACE` chỉ được phép sử dụng **TRƯỚC KHI** mốc `operationalStartDate` hiện hành đã diễn ra (so với ngày dân sự máy chủ sở hữu). Bản ghi thay thế phải giữ tính liên tục hiệu lực và có `operationalStartDate` mới thuộc tương lai.
+5. **Điều chỉnh sau khi mốc đã diễn ra (Correction after Boundary):** Khi mốc `operationalStartDate` đã trôi qua trong quá khứ, nghiêm cấm dùng lệnh `REPLACE` để đổi ngày. Mọi thay đổi đối với sự thật lịch sử bắt buộc phải đi qua quy trình `CORRECTION` của ADR-046 (chuyển version cũ sang `REVERSED`, bắt buộc nhập lý do `correctionReason`, tạo version mới liên kết qua `correctsVersionId`).
+6. **Bảo toàn Báo cáo Đã đóng băng:** Sửa đổi chính sách hôm nay tuyệt đối không làm thay đổi các Báo cáo Thống kê (`ReportingStatement`) đã nộp hoặc phê duyệt trong quá khứ.
+7. **Thực thi tầng lệnh (Command-Layer Enforcement):** `P1-031` bắt buộc phải kiểm tra và thực thi các ràng buộc trên tại command layer của backend.
 
 ---
 
@@ -175,16 +176,22 @@ Chính sách `OPERATIONAL_START` là một ranh giới pháp lý trọng yếu c
 
 ### 6.1 Phạm vi sở hữu của P1-030 (Hiện tại)
 - Đóng toàn bộ kiến trúc, tài liệu chuẩn tắc và ban hành quyết định `ADR-049`.
-- Xác lập bất biến PO-1, PO-2, PO-3, PO-4.
+- Xác lập bất biến PO-1, PO-2, PO-3, PO-4 cùng các bổ sung P1-A, P1-B, P2.
 - Định nghĩa chi tiết hợp đồng kỹ thuật cho family `OPERATIONAL_START`.
 - Đồng bộ tài liệu quản trị dự án, chuyển trạng thái `P1-030` sang `IN_PROGRESS` (và sau đó là `IN_REVIEW`).
 - **Không thực hiện:** Không sửa mã nguồn runtime, không tạo bảng database, không sửa UI, không triển khai VPS.
 
-### 6.2 Phạm vi chuyển giao cho P1-031 (Backend Implementation)
+### 6.2 Phạm vi chuyển giao cho P1-031 (Backend Implementation - Thẩm quyền P1-B & P2)
 - Đăng ký chính thức family `OPERATIONAL_START` vào `PRODUCTION_BUSINESS_POLICY_FAMILIES`.
 - Hiện thực hóa `BusinessPolicyPayloadValidator` phiên bản `v1`.
 - Xây dựng typed resolver adapter cho consumer nội bộ.
-- Tích hợp ranh giới `operationalStartDate` vào `ProgressDebtService` và `ReportingProjectionService` để thực thi quy tắc không tự động tính nợ cho giai đoạn tiền vận hành.
+- Tích hợp ranh giới `operationalStartDate` vào `ProgressDebtService` và `ReportingProjectionService` để loại trừ các nghĩa vụ tiền vận hành khỏi tập tính nợ.
+- **Tích hợp kiểm soát lệnh ghi nhận thực thi (Execution Command Integration):** Tích hợp kiểm tra ranh giới `operationalStartDate` vào các lệnh xác nhận thực thi chính khóa (`createNormalCurricular`, `createMakeupCurricular`):
+  + Nếu `sourceCivilDate < operationalStartDate` (hoặc nghĩa vụ gốc của tiết dạy bù thuộc tiền vận hành): Bắt buộc **FAIL CLOSED** với lỗi nghiệp vụ từ chối ghi nhận tiết tiền vận hành.
+  + Không cho phép dùng API ghi nhận thông thường để tạo minh chứng lịch sử bypass P3.
+  + Bảo tồn đầy đủ quyền đọc và đảo ngược (`REVERSE`) minh chứng hợp lệ đã lưu trữ.
+- Tích hợp quy chuẩn chuyển đổi ngày dân sự `Asia/Ho_Chi_Minh` cho `ReportingStatement` khi nộp báo cáo.
+- Thực thi các ràng buộc vòng đời chuyên biệt của family (chặn `RETIRE`, kiểm soát prospective `REPLACE`, bắt buộc `CORRECTION`).
 - Bổ sung kiểm tra fail-closed khi thiếu chính sách (`POLICY_NOT_CONFIGURED`).
 - Viết unit test và integration test toàn diện chứng minh các bất biến kiến trúc.
 
@@ -213,6 +220,9 @@ Chính sách `OPERATIONAL_START` là một ranh giới pháp lý trọng yếu c
 5. **Cấm nhập tay con trỏ tiến độ:** Không được tự ý thêm chức năng can thiệp thủ công số thứ tự bài học ngoài luồng đối soát chuẩn tắc của P3.
 6. **Cấm sửa đổi báo cáo đã đóng băng:** Báo cáo thống kê đã được phê duyệt trong quá khứ là bất biến, không bao giờ được phép tính toán lại khi chính sách bắt đầu vận hành bị điều chỉnh.
 7. **Cấm tạo vòng đời toàn cục mới:** Không được tạo thêm cờ `SYSTEM_OPERATIONAL` hay bảng trạng thái hệ thống toàn cục làm phức tạp hóa kiến trúc.
+8. **Cấm dùng API thực thi thông thường cho tiết tiền vận hành:** Tuyệt đối không cho phép sử dụng `POST /teaching-executions/curricular/normal` hoặc `makeup` để tạo minh chứng tiền vận hành nhằm lách cổng kiểm soát của P3.
+9. **Cấm kết thúc chính sách (RETIRE) hoặc tạo gap:** Tuyệt đối không cho phép thực hiện thao tác `RETIRE` làm mất thẩm quyền của family `OPERATIONAL_START`.
+10. **Cấm dùng chuỗi ngày UTC để giải quyết chính sách báo cáo:** Nghiêm cấm sử dụng `asOfInstant.toISOString().slice(0, 10)` để resolve chính sách cho `ReportingStatement`. Bắt buộc phải chuyển đổi sang múi giờ `Asia/Ho_Chi_Minh`.
 
 ---
 
