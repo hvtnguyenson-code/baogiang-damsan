@@ -13,7 +13,7 @@
   - `docs/requirements/P2-002-PPCT-COMPONENT-PERSISTENCE-CONTROL-PLANE.md` (`CLOSED` — triển khai schema, service, CAS/Serializable concurrency, ngăn chặn chia cắt tuần học mid-week, kiểm toán và hợp đồng backend).
   - `docs/requirements/P2-003-PPCT-COMPONENT-AWARE-ALLOCATION-PROJECTIONS.md` (`CLOSED` — bộ phân bổ định tuyến tuần `PPCT_OCCURRENCE_ALLOCATION_V2`, dự báo tiến độ `TEACHING_PROGRESS_DEBT_V2`, kiểm chứng readiness TKB `NORMAL_BASE_PPCT_COMPONENT_V2`).
 - **Liên kết ma trận truy vết (Traceability):** `T45` (PPCT Curricular Component Lineage & Ingestion), `T46` (Curricular Component Class-Subject Applicability & Routing Projection).
-- **Mục tiêu chính:** Cung cấp giao diện quản trị web (administrative UI workspace) có kiểm soát capability nghiêm ngặt, cho phép người dùng được phân quyền quản lý hồ sơ áp dụng chương trình (`curricularProfile`: `CORE_ONLY` hoặc `CORE_PLUS_SPECIALIZED_STUDY`) và phiên bản PPCT theo từng cặp Lớp - Môn học, với đầy đủ lịch sử liên kết được bảo toàn (retained association history), kiểm soát đồng thời lạc quan (optimistic concurrency / CAS) và bắt lỗi ranh giới tuần học chuẩn tắc từ server.
+- **Mục tiêu chính:** Cung cấp giao diện quản trị web (administrative UI workspace) có kiểm soát capability nghiêm ngặt, cho phép người dùng được phân quyền quản lý hồ sơ áp dụng chương trình (`curricularProfile`: `CORE_ONLY` hoặc `CORE_PLUS_SPECIALIZED_STUDY`) và phiên bản PPCT theo từng cặp Lớp - Môn học, với đầy đủ lịch sử liên kết được bảo toàn (retained association history), kiểm soát đồng thời lạc quan (optimistic concurrency / CAS), bắt lỗi ranh giới tuần học chuẩn tắc từ server, cùng read model tùy chọn chuyên biệt (`ppct-options`) đảm bảo phân quyền chính xác và chống rò rỉ dữ liệu ngoài phạm vi grant.
 
 ---
 
@@ -48,9 +48,10 @@
     - Vai trò hệ thống (`SYSTEM_ADMIN` đứng một mình không có `PPCT_MANAGE` thì không có quyền).
     - Chức danh / vị trí công tác (`positionTitle`, giáo viên chủ nhiệm, tổ trưởng bộ môn).
     - Quyền quản lý tổ chuyên môn (`SUBJECT_GROUP_MANAGE` hay `SUBJECT_GROUP` scope không mang thẩm quyền ngầm định sang `PPCT_MANAGE`).
+    - Quyền quản lý danh mục môn học (`SUBJECT_MANAGE`) hay quyền quản lý cấu trúc học vụ (`ACADEMIC_STRUCTURE_MANAGE`).
     - Phân công giảng dạy hiện tại (`TeachingAssignment`).
 - **Thẩm quyền máy chủ là tối thượng:**
-  Client-side route guard (`CapabilityRoute`) chỉ đóng vai trò bảo vệ tầng trải nghiệm (UX protection). Máy chủ backend (`apps/api/src/ppct/ppct-access.service.ts`) luôn độc lập kiểm tra và ghi nhận nhật ký vi phạm (`AUTHORIZATION_DENIED`) nếu có yêu cầu trái phép.
+  Client-side route guard (`CapabilityRoute`) chỉ đóng vai trò bảo vệ tầng trải nghiệm (UX protection). Máy chủ backend (`apps/api/src/ppct/ppct-access.service.ts` và `PpctOptionsController`) luôn độc lập kiểm tra và ghi nhận nhật ký vi phạm (`AUTHORIZATION_DENIED`) nếu có yêu cầu trái phép.
 
 ---
 
@@ -58,9 +59,9 @@
 
 Người dùng quản trị thực hiện quy trình thiết lập/chuyển đổi liên kết PPCT theo các bước:
 
-1. **Chọn Năm học (`AcademicYear`):** Danh sách năm học tải từ hệ thống.
-2. **Chọn Lớp học (`SchoolClass`):** Danh sách lớp thuộc năm học đã chọn, cung cấp thuộc tính khối lớp (`gradeLevel`: 10, 11, 12).
-3. **Chọn Môn học (`Subject`):** Danh mục môn học (được lọc nghiêm ngặt theo quyền `SUBJECT` nếu user không có `SCHOOL_WIDE`).
+1. **Chọn Năm học (`AcademicYear`):** Danh sách năm học tải từ endpoint read model chuyên biệt của PPCT (`GET /ppct-options/academic-years`).
+2. **Chọn Lớp học (`SchoolClass`):** Danh sách lớp thuộc năm học đã chọn tải từ `GET /ppct-options/academic-years/:academicYearId`, cung cấp thuộc tính khối lớp (`gradeLevel`: 10, 11, 12).
+3. **Chọn Môn học (`Subject`):** Danh mục môn học tải từ `GET /ppct-options/academic-years/:academicYearId`, được lọc thẩm quyền từ máy chủ (chỉ trả về môn actor được cấp quyền).
 4. **Hiển thị Lịch sử Liên kết được bảo toàn (`Retained Association History`):**
    - Tải từ API `GET /academic-years/:academicYearId/classes/:schoolClassId/subjects/:subjectId/ppct-associations`.
    - Hiển thị bảng lịch sử với: ngày hiệu lực bắt đầu (`effectiveFrom`), ngày kết thúc (`effectiveUntil`), phiên bản PPCT (`versionNumber`), hồ sơ áp dụng (`curricularProfile`), thời điểm tạo và định danh bản ghi liên kết mới nhất (`latest`).
@@ -82,23 +83,95 @@ Người dùng quản trị thực hiện quy trình thiết lập/chuyển đ�
 
 ---
 
-## 5. Nguồn dữ liệu & Tái sử dụng API Backend (Data Sources & API Reuse)
+## 5. Xác nhận Lỗ hổng Kiến trúc Read-Model Backend & Giải pháp (Backend Read-Model Gap Confirmed)
 
-Audit kiến trúc xác nhận: **Toàn bộ API backend cần thiết đã được xây dựng hoàn thiện tại P2-002, hoàn toàn không có khoảng trống (zero API gap).**
+### 5.1. Bằng chứng kiểm toán lỗ hổng (The Proven Gap)
+Qua kiểm toán mã nguồn backend hiện hữu:
+1. `GET /subjects` tại `apps/api/src/catalogs/subjects.controller.ts` yêu cầu chặt chẽ:
+   `@RequireCapability('SUBJECT_MANAGE', { scope: 'SCHOOL_WIDE' })`
+2. `GET /academic-years` và `GET /academic-years/:academicYearId/classes` tại `apps/api/src/academic-structure/academic-years.controller.ts` yêu cầu:
+   `@RequireCapability('ACADEMIC_STRUCTURE_MANAGE', { scope: 'SCHOOL_WIDE' })`
+3. Thẩm quyền quản trị PPCT quy định tại ADR-048 và P2-001/P2-002 là:
+   `PPCT_MANAGE / SUBJECT` (hoặc `PPCT_MANAGE / SCHOOL_WIDE`).
 
-| Mục đích nghiệp vụ | Phương thức & Tuyến đường API | Nguồn dữ liệu / Trách nhiệm |
+Một người dùng được giao quản lý PPCT môn Toán (`PPCT_MANAGE` phạm vi `SUBJECT` môn Toán) **KHÔNG THỂ VÀ KHÔNG ĐƯỢC PHÉP** yêu cầu phải có quyền `SUBJECT_MANAGE` (quản trị danh mục môn học toàn trường) hay `ACADEMIC_STRUCTURE_MANAGE` (quản trị cấu trúc năm học và lớp toàn trường). Nếu UI gọi trực tiếp các generic endpoint trên, máy chủ sẽ lập tức trả về lỗi HTTP 403 Forbidden (`AUTHORIZATION_DENIED`).
+
+**Kết luận bắt buộc: BACKEND READ-MODEL GAP CONFIRMED.**
+
+### 5.2. Không nới lỏng quyền hạn của Generic Endpoints
+Tuyệt đối **KHÔNG** hạ cấp, mở rộng hay nới lỏng `@RequireCapability` của:
+- `GET /subjects`
+- `GET /academic-years`
+- `GET /academic-years/:academicYearId/classes`
+Các generic endpoint này quản trị cấu trúc nền tảng và không được phép bị suy giảm tính an toàn chỉ để phục vụ màn hình chọn dữ liệu của một phân hệ nghiệp vụ.
+
+### 5.3. Hợp đồng Read-Model Tùy chọn chuyên biệt cho PPCT (`ppct-options`)
+Theo đúng tiền lệ kiến trúc đã áp dụng thành công tại `teaching-assignment-options` (`apps/api/src/teaching-assignments/teaching-assignment-options.controller.ts`), P2-004 bổ sung bộ endpoint read-model chuyên biệt được bảo vệ bởi đúng thẩm quyền `PPCT_MANAGE`:
+
+#### A. Tuyến đường danh sách năm học:
+`GET /ppct-options/academic-years`
+- **Thẩm quyền:** Yêu cầu người dùng có `PPCT_MANAGE` (ít nhất một grant hợp lệ `SCHOOL_WIDE` hoặc `SUBJECT`).
+- **Phản hồi:** Danh sách rút gọn các năm học cần thiết cho workspace:
+  ```ts
+  export interface PpctWorkspaceAcademicYearOptionRecord {
+    id: string;
+    code: string;
+    name: string;
+  }
+  export interface PpctWorkspaceAcademicYearOptionListResponse {
+    items: PpctWorkspaceAcademicYearOptionRecord[];
+  }
+  ```
+
+#### B. Tuyến đường tùy chọn Lớp và Môn theo năm học:
+`GET /ppct-options/academic-years/:academicYearId`
+- **Thẩm quyền:** Yêu cầu `PPCT_MANAGE`.
+- **Quy tắc lọc dữ liệu phía máy chủ (Authoritative Server-side Filtering):**
+  - **Năm học (`academicYear`):** Tóm tắt thông tin năm học được chọn (`id, code, name`).
+  - **Lớp học (`classes`):** Toàn bộ các lớp học hợp lệ thuộc năm học đã chọn (`id, code, name, gradeLevel, status`).
+  - **Môn học (`subjects`):**
+    - Nếu actor có `PPCT_MANAGE / SCHOOL_WIDE`: Trả về tất cả các môn học đang hoạt động (`ACTIVE`) trong trường.
+    - Nếu actor có `PPCT_MANAGE / SUBJECT`: **CHỈ** trả về các môn học có `id` trùng khớp chính xác với `resourceId` được cấp trong grant hợp lệ của actor.
+- **Phản hồi:**
+  ```ts
+  export interface PpctWorkspaceClassOptionRecord {
+    id: string;
+    code: string;
+    name: string;
+    gradeLevel: 10 | 11 | 12;
+    status: string;
+  }
+  export interface PpctWorkspaceSubjectOptionRecord {
+    id: string;
+    code: string;
+    name: string;
+    status: string;
+  }
+  export interface PpctWorkspaceOptionsResponse {
+    academicYear: PpctWorkspaceAcademicYearOptionRecord;
+    classes: PpctWorkspaceClassOptionRecord[];
+    subjects: PpctWorkspaceSubjectOptionRecord[];
+  }
+  ```
+
+### 5.4. Ranh giới Chống Rò rỉ Dữ liệu (Data-Leakage Boundary)
+- **Không rò rỉ môn học ngoài grant:** Actor có phạm vi `SUBJECT` tuyệt đối không nhận được metadata (id, mã môn, tên môn) của bất kỳ môn học nào ngoài danh sách grant của mình.
+- **Không bypass CapabilityGuard:** Không dùng thủ thuật bypass bảo vệ để tái sử dụng generic endpoint; read-model `ppct-options` phải được phân quyền độc lập và kiểm tra chặt chẽ.
+- **Dữ liệu cấu trúc chỉ trả trong ngữ cảnh PPCT:** Metadata năm học và lớp học chỉ được trả về khi người dùng đã xác thực ít nhất một quyền `PPCT_MANAGE` hợp lệ.
+- **Không tạo capability key mới:** Tận dụng triệt để `PPCT_MANAGE` hiện có với hai scope chuẩn tắc `SCHOOL_WIDE` và `SUBJECT`.
+
+### 5.5. Tổng hợp các API phục vụ Workspace P2-004
+
+| Mục đích nghiệp vụ | Phương thức & Tuyến đường API | Trách nhiệm & Thẩm quyền |
 |---|---|---|
-| Danh sách năm học | `GET /academic-years` | Tái sử dụng `academicYearsApi.list` |
-| Danh sách lớp học theo năm | `GET /academic-years/:academicYearId/classes` | Tái sử dụng `schoolClassesApi.list` |
-| Danh mục môn học | `GET /subjects` | Tái sử dụng `catalogApi('subjects').list` |
-| Lấy kế hoạch PPCT khối-môn | `GET /academic-years/:academicYearId/ppct-plans?subjectId=...&gradeLevel=...` | Tái sử dụng `AcademicYearPpctPlansController` |
-| Lấy các phiên bản của kế hoạch | `GET /ppct-plans/:planId/versions` | Tái sử dụng `PpctPlansController` |
-| Kiểm tra nội dung phiên bản | `GET /ppct-versions/:versionId/content` | Tái sử dụng `PpctVersionsController` |
-| Lịch sử liên kết Lớp - Môn | `GET /academic-years/:academicYearId/classes/:schoolClassId/subjects/:subjectId/ppct-associations` | `PpctClassAssociationsController.history` |
-| Chuyển đổi liên kết Lớp - Môn | `POST /academic-years/:academicYearId/classes/:schoolClassId/subjects/:subjectId/ppct-associations/switch` | `PpctClassAssociationsController.switch` |
-| Chẩn đoán phân giải ngày | `GET /academic-years/:academicYearId/classes/:schoolClassId/subjects/:subjectId/ppct-resolution?date=...` | `PpctClassAssociationsController.resolve` |
-
-**Không tạo endpoint backend mới.** P2-004 là nhiệm vụ thuần túy Web UI & Client Contract.
+| Lấy danh sách năm học khả dụng | `GET /ppct-options/academic-years` | Read model mới — `PPCT_MANAGE` |
+| Lấy danh sách Lớp & Môn được phép | `GET /ppct-options/academic-years/:academicYearId` | Read model mới — `PPCT_MANAGE` (Server-filtered) |
+| Lấy kế hoạch PPCT khối-môn | `GET /academic-years/:academicYearId/ppct-plans?subjectId=...&gradeLevel=...` | API hiện hữu — `AcademicYearPpctPlansController` |
+| Lấy các phiên bản của kế hoạch | `GET /ppct-plans/:planId/versions` | API hiện hữu — `PpctPlansController` |
+| Kiểm tra nội dung phiên bản | `GET /ppct-versions/:versionId/content` | API hiện hữu — `PpctVersionsController` |
+| Lịch sử liên kết Lớp - Môn | `GET /academic-years/:academicYearId/classes/:schoolClassId/subjects/:subjectId/ppct-associations` | API hiện hữu — `PpctClassAssociationsController.history` |
+| Chuyển đổi liên kết Lớp - Môn | `POST /academic-years/:academicYearId/classes/:schoolClassId/subjects/:subjectId/ppct-associations/switch` | API hiện hữu — `PpctClassAssociationsController.switch` |
+| Chẩn đoán phân giải ngày | `GET /academic-years/:academicYearId/classes/:schoolClassId/subjects/:subjectId/ppct-resolution?date=...` | API hiện hữu — `PpctClassAssociationsController.resolve` |
 
 ---
 
@@ -173,12 +246,12 @@ Audit kiến trúc xác nhận: **Toàn bộ API backend cần thiết đã đư
 
 Giao diện người dùng phải xử lý đầy đủ và thanh lịch các trạng thái sau:
 
-- **Đang tải (`Loading`):** Hiển thị loading indicator thống nhất khi tải năm học, lớp, môn, kế hoạch hoặc lịch sử.
+- **Đang tải (`Loading`):** Hiển thị loading indicator thống nhất khi tải options, năm học, lớp, môn, kế hoạch hoặc lịch sử.
 - **Trống dữ liệu ban đầu (`Empty Filters`):** Chỉ dẫn người dùng lần lượt chọn Năm học -> Lớp học -> Môn học.
 - **Chưa có kế hoạch PPCT (`No PPCT Plan`):** Lớp và Môn được chọn nhưng khối lớp đó chưa được khởi tạo kế hoạch PPCT trong năm học.
 - **Chưa có phiên bản công bố (`No Published Version`):** Kế hoạch PPCT đã tạo nhưng chưa có phiên bản nào ở trạng thái `PUBLISHED`.
 - **Chưa có liên kết trước đó (`No Prior Association`):** Trạng thái khởi đầu hợp lệ; cho phép thực hiện liên kết đầu tiên với `expectedLatestAssociationId = null`.
-- **Môn học ngoài quyền hạn (`Unauthorized Subject`):** Người dùng có quyền `SUBJECT` bị hạn chế không được xem/chọn môn học ngoài danh sách grant.
+- **Môn học ngoài quyền hạn (`Unauthorized Subject`):** Người dùng có quyền `SUBJECT` bị hạn chế không được xem/chọn môn học ngoài danh sách grant (đã được server loại bỏ khỏi options).
 - **Phiên bản thiếu bài chuyên đề (`Target Lacks Specialized Content`):** Người dùng chọn hồ sơ `CORE_PLUS_SPECIALIZED_STUDY` nhưng phiên bản đã chọn chỉ có bài `CORE`.
 - **Chia cắt tuần học (`PPCT_COMPONENT_APPLICABILITY_WEEK_SPLIT`):** Lỗi nghiệp vụ từ chối ngày hiệu lực rơi vào giữa tuần học; form được giữ nguyên để sửa ngày.
 - **Xung đột tương tranh (`Stale Latest Association`):** Cảnh báo dữ liệu đã thay đổi, tự động tải lại lịch sử.
@@ -195,8 +268,17 @@ Tuân thủ nguyên tắc thiết kế thống nhất của hệ thống (`DESIG
    - Tạo `apps/web/src/pages/PpctSpecializedStudyPage.tsx`.
    - Kết nối vào `apps/web/src/App.tsx` dưới tuyến đường `/quan-tri/ppct/ap-dung-chuyen-de` với route guard `canManagePpct`.
 2. **Khối API Client & Hooks chuyên biệt (Dedicated API Client):**
-   - Tạo `apps/web/src/lib/ppct-api.ts` cung cấp các hàm gọi API có định kiểu đầy đủ từ `@baogiang/contracts`.
+   - Tạo `apps/web/src/lib/ppct-api.ts` cung cấp các hàm gọi API có định kiểu đầy đủ từ `@baogiang/contracts`:
+     - `fetchPpctWorkspaceAcademicYears`
+     - `fetchPpctWorkspaceOptions(academicYearId)`
+     - `fetchPpctAssociationHistory`
+     - `switchPpctAssociation`
+     - `fetchPpctPlans`
+     - `fetchPpctVersions`
+     - `fetchPpctVersionContent`
    - Quản lý trạng thái bằng React Query với query keys có cấu trúc rõ ràng:
+     - `['ppct-options', 'academic-years']`
+     - `['ppct-options', 'workspace', academicYearId]`
      - `['ppct-associations', academicYearId, schoolClassId, subjectId]`
      - `['ppct-plans', academicYearId, subjectId, gradeLevel]`
      - `['ppct-versions', planId]`
@@ -211,10 +293,11 @@ Tuân thủ nguyên tắc thiết kế thống nhất của hệ thống (`DESIG
 
 ---
 
-## 12. Ma trận Kiểm thử Tối thiểu (Test Matrix)
+## 12. Ma trận Kiểm thử Tối thiểu (Expanded Test Matrix)
 
-Bộ kiểm thử tự động của P2-004 bắt buộc bao quát tối thiểu 20 kịch bản sau:
+Bộ kiểm thử tự động của P2-004 bắt buộc bao quát tối thiểu 28 kịch bản sau:
 
+### A. Kiểm thử Giao diện & Phân quyền Client (UI & Client Authorization)
 1. Menu quản trị ẩn mục "Áp dụng chuyên đề" khi người dùng hoàn toàn không có quyền `PPCT_MANAGE`.
 2. Menu hiển thị mục "Áp dụng chuyên đề" khi người dùng có quyền `PPCT_MANAGE` phạm vi `SCHOOL_WIDE`.
 3. Menu hiển thị mục "Áp dụng chuyên đề" khi người dùng có ít nhất một quyền `PPCT_MANAGE` phạm vi `SUBJECT`.
@@ -236,6 +319,16 @@ Bộ kiểm thử tự động của P2-004 bắt buộc bao quát tối thiểu
 19. Không có bất kỳ sự suy diễn quyền hạn hay hồ sơ áp dụng nào từ role, title, hay dữ liệu thời khóa biểu.
 20. Kiểm thử tích hợp / smoke test luồng đăng nhập và điều hướng đến không gian làm việc áp dụng chuyên đề.
 
+### B. Kiểm thử Backend Read Model & Ranh giới Thẩm quyền (Backend Read-Model & Authority Boundary Tests)
+21. Người dùng có `PPCT_MANAGE / SUBJECT` tải thành công PPCT workspace options dù hoàn toàn không có quyền `SUBJECT_MANAGE`.
+22. Người dùng có `PPCT_MANAGE / SUBJECT` tải thành công năm học và lớp học trong PPCT workspace options mà không cần quyền `ACADEMIC_STRUCTURE_MANAGE`.
+23. Máy chủ lọc chặt chẽ và chỉ trả về các môn học được cấp quyền tường minh trong danh sách `subjects` của options response cho actor có scope `SUBJECT`.
+24. Người dùng có `PPCT_MANAGE / SCHOOL_WIDE` nhận được toàn bộ danh sách các môn học hợp lệ trong trường.
+25. Ranh giới chống rò rỉ: Metadata của các môn học ngoài grant tuyệt đối không xuất hiện trong phản hồi trả về cho actor phạm vi `SUBJECT` (no cross-subject leakage).
+26. Vai trò `SYSTEM_ADMIN` đơn lẻ (không có grant `PPCT_MANAGE`) bị từ chối với HTTP 403 khi gọi `GET /ppct-options/...`.
+27. Đảm bảo endpoint danh mục chung `GET /subjects` vẫn yêu cầu nghiêm ngặt `SUBJECT_MANAGE / SCHOOL_WIDE` và từ chối `PPCT_MANAGE / SUBJECT`.
+28. Đảm bảo endpoint học vụ chung `GET /academic-years` và `GET /academic-years/:id/classes` vẫn yêu cầu nghiêm ngặt `ACADEMIC_STRUCTURE_MANAGE / SCHOOL_WIDE` và từ chối `PPCT_MANAGE / SUBJECT`.
+
 ---
 
 ## 13. Các mục Nằm ngoài Phạm vi (Explicit Non-Goals)
@@ -243,6 +336,7 @@ Bộ kiểm thử tự động của P2-004 bắt buộc bao quát tối thiểu
 Để duy trì tính tập trung và an toàn kiến trúc, các nội dung sau tuyệt đối **KHÔNG** thuộc phạm vi của P2-004:
 
 - **Không thay đổi Prisma schema hay thêm migration:** Mô hình dữ liệu đã được chốt và di trú hoàn tất tại `P2-002`.
+- **Không nới lỏng quyền hạn của generic endpoints:** Giữ nguyên 100% `@RequireCapability` của `SubjectsController` và `AcademicYearsController`.
 - **Không xây dựng hay thay đổi bộ nhập liệu PPCT (Importer):** Thuộc phạm vi của `P2-010` và `P2-020`.
 - **Không xây dựng trình soạn thảo bài học PPCT (PPCT Item Editor):** Việc tạo/sửa bài học PPCT là chức năng độc lập khác.
 - **Không thay đổi bộ phân bổ thời khóa biểu hay phép chiếu tiến độ/nợ tiết:** Đã hoàn thành và đóng tại `P2-003`.
@@ -253,13 +347,21 @@ Bộ kiểm thử tự động của P2-004 bắt buộc bao quát tối thiểu
 
 ---
 
-## 14. Danh sách Tệp tin Dự kiến Triển khai (Planned Implementation Files)
+## 14. Danh sách Tệp tin Dự kiến Triển khai (Updated Planned Implementation Files)
 
-Dự kiến các tệp tin sẽ được tạo/chỉnh sửa trong pha thực thi tiếp theo (tuyệt đối không chỉnh sửa trong Checkpoint 0 này):
+Dự kiến các tệp tin sẽ được tạo/chỉnh sửa trong pha thực thi tiếp theo (tuyệt đối không chỉnh sửa code/test trong Checkpoint 0 và 0.1 này):
 
+### Backend & Contracts Scope:
+- `packages/contracts/src/index.ts`: Bổ sung kiểu dữ liệu cho read model tùy chọn workspace (`PpctWorkspaceAcademicYearOptionRecord`, `PpctWorkspaceAcademicYearOptionListResponse`, `PpctWorkspaceClassOptionRecord`, `PpctWorkspaceSubjectOptionRecord`, `PpctWorkspaceOptionsResponse`).
+- `apps/api/src/ppct/ppct-options.controller.ts`: Controller phục vụ các endpoint `GET /ppct-options/academic-years` và `GET /ppct-options/academic-years/:academicYearId`.
+- `apps/api/src/ppct/ppct-options.service.ts`: Service truy vấn năm học, lớp học và lọc môn học theo thẩm quyền `PPCT_MANAGE`.
+- `apps/api/src/ppct/ppct.module.ts`: Đăng ký controller và service tùy chọn mới vào module PPCT.
+- `apps/api/test/ppct/ppct-options.integration.spec.ts`: Bộ API integration test kiểm tra thẩm quyền `SCHOOL_WIDE`, `SUBJECT`, chống rò rỉ dữ liệu, từ chối `SYSTEM_ADMIN` đơn lẻ, và bảo toàn generic endpoints.
+
+### Web Frontend Scope:
 - `apps/web/src/App.tsx`: Đăng ký tuyến đường `/quan-tri/ppct/ap-dung-chuyen-de` và bảo vệ route guard.
 - `apps/web/src/lib/capabilities.ts`: Bổ sung hàm tiện ích `canManagePpct`, `subjectResources`, và nhãn điều hướng `managementRoutes`.
-- `apps/web/src/lib/ppct-api.ts`: Module API client gọi các endpoint PPCT và định nghĩa kiểu dữ liệu client.
+- `apps/web/src/lib/ppct-api.ts`: Module API client gọi các endpoint `ppct-options` và các endpoint PPCT hiện hữu.
 - `apps/web/src/pages/PpctSpecializedStudyPage.tsx`: Trang giao diện chính của không gian làm việc quản trị chuyên đề.
 - `apps/web/src/__tests__/ppct-specialized-study-page.test.tsx`: Bộ unit & integration test chuyên biệt cho trang.
 - `apps/web/src/__tests__/capability-navigation.test.tsx`: Bổ sung test case kiểm tra điều hướng menu với quyền `PPCT_MANAGE`.
@@ -271,10 +373,11 @@ Dự kiến các tệp tin sẽ được tạo/chỉnh sửa trong pha thực th
 
 Trước khi gửi Pull Request và yêu cầu đánh giá độc lập, mã nguồn triển khai phải vượt qua toàn bộ các cổng kiểm soát:
 
-1. **Targeted Web Tests:** Toàn bộ test của P2-004 (`ppct-specialized-study-page.test.tsx`, `capability-navigation.test.tsx`) đạt 100% PASS.
-2. **Full Web Unit Tests:** Bộ kiểm thử đơn vị của toàn bộ web app chạy hoàn tất không có lỗi.
-3. **Web Lint:** `pnpm --filter @baogiang/web lint` sạch sẽ, không có cảnh báo hoặc lỗi formatting/typing.
-4. **Web Typecheck:** `pnpm --filter @baogiang/web typecheck` hoàn toàn sạch lỗi kiểu TypeScript.
-5. **Web Build:** `pnpm --filter @baogiang/web build` xuất bản bundle thành công.
-6. **Playwright Smoke:** Các kịch bản e2e smoke liên quan đến điều hướng và quản trị đạt kết quả PASS.
-7. **Full Canonical CI:** Toàn bộ pipeline CI của kho mã nguồn (bao gồm backend regression) đạt trạng thái xanh trên GitHub Actions.
+1. **Targeted Backend Integration Tests:** Toàn bộ API test của `ppct-options` đạt 100% PASS (bao gồm các test case 21-28).
+2. **Targeted Web Tests:** Toàn bộ test của P2-004 (`ppct-specialized-study-page.test.tsx`, `capability-navigation.test.tsx`) đạt 100% PASS.
+3. **Full Web & API Unit Tests:** Bộ kiểm thử đơn vị của toàn bộ repo chạy hoàn tất không có lỗi.
+4. **Lint:** `pnpm lint` sạch sẽ trên toàn bộ packages (`contracts`, `api`, `web`).
+5. **Typecheck:** `pnpm typecheck` hoàn toàn sạch lỗi kiểu TypeScript.
+6. **Build:** `pnpm build` hoàn tất thành công.
+7. **Playwright Smoke:** Các kịch bản e2e smoke liên quan đến điều hướng và quản trị đạt kết quả PASS.
+8. **Full Canonical CI:** Toàn bộ pipeline CI của kho mã nguồn đạt trạng thái xanh trên GitHub Actions.
