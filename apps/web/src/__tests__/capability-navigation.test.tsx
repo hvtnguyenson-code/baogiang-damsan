@@ -16,6 +16,7 @@ describe('capability-aware navigation', () => {
     ['ADDITIONAL_DUTY_ASSIGNMENT_MANAGE', 'Phân công kiêm nhiệm'],
     ['ACADEMIC_STRUCTURE_MANAGE', 'Cấu trúc năm học'],
     ['BUSINESS_CONFIGURATION_MANAGE', 'Chính sách nghiệp vụ'],
+    ['PPCT_MANAGE', 'Áp dụng chuyên đề'],
   ] as const)('shows %s only when effective school-wide', async (key, label) => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(authWith(key))));
     renderApp('/');
@@ -129,5 +130,43 @@ describe('capability-aware navigation', () => {
     expect(screen.getByText(normalAuth.user.username)).toBeInTheDocument();
     expect(screen.getByText(/công việc giáo viên cơ bản/i)).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByText(/vai trò/i)).not.toBeInTheDocument());
+  });
+
+  it('shows Áp dụng chuyên đề for SUBJECT-scoped PPCT_MANAGE', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(authWith('PPCT_MANAGE', 'SUBJECT', 'sub-1'))));
+    renderApp('/');
+    expect((await screen.findAllByRole('link', { name: 'Áp dụng chuyên đề' })).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it.each([undefined, 'SYSTEM_ADMIN', 'SUBJECT_MANAGE', 'ACADEMIC_STRUCTURE_MANAGE', 'USER_MANAGE'] as const)(
+    'denies the PPCT specialized study route without PPCT_MANAGE (%s)',
+    async (key) => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(authWith(key))));
+      renderApp('/quan-tri/ppct/ap-dung-chuyen-de');
+      expect(await screen.findByRole('heading', { name: /không có quyền thực hiện thao tác này/i })).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'Áp dụng chuyên đề' })).not.toBeInTheDocument();
+    },
+  );
+
+  it('allows PPCT specialized study route for SUBJECT-scoped PPCT_MANAGE', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) return jsonResponse(authWith('PPCT_MANAGE', 'SUBJECT', 'sub-1'));
+      if (url.includes('/ppct-options/academic-years')) {
+        return jsonResponse({ items: [{ id: 'year-1', code: '2026-2027', name: 'Năm 2026-2027' }], page: 1, pageSize: 100, total: 1 });
+      }
+      if (url.includes('/ppct-options/academic-years/year-1')) {
+        return jsonResponse({
+          academicYear: { id: 'year-1', code: '2026-2027', name: 'Năm 2026-2027' },
+          classes: [],
+          subjects: [{ id: 'sub-1', code: 'TOAN', name: 'Toán học', status: 'ACTIVE' }],
+        });
+      }
+      return jsonResponse({ items: [], page: 1, pageSize: 100, total: 0 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    renderApp('/quan-tri/ppct/ap-dung-chuyen-de');
+    expect(await screen.findByRole('heading', { name: 'Áp dụng chuyên đề' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Áp dụng chuyên đề' })).toBeInTheDocument();
   });
 });

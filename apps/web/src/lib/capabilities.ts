@@ -72,6 +72,19 @@ export function canManageDutyAssignments(capabilities: ScopedCapability[]): bool
     || subjectGroupResources(capabilities, 'ADDITIONAL_DUTY_ASSIGNMENT_MANAGE').length > 0;
 }
 
+export function ppctSubjectResources(capabilities: ScopedCapability[]): string[] {
+  return Array.from(new Set(
+    capabilities
+      .filter((grant) => grant.key === 'PPCT_MANAGE' && grant.scope === 'SUBJECT' && Boolean(grant.resourceId))
+      .map((grant) => grant.resourceId!),
+  ));
+}
+
+export function canManagePpct(capabilities: ScopedCapability[]): boolean {
+  return hasSchoolCapability(capabilities, 'PPCT_MANAGE')
+    || ppctSubjectResources(capabilities).length > 0;
+}
+
 export const managementRoutes: ManagementRoute[] = [
   { to: '/quan-tri/cau-truc-nam-hoc', label: 'Cấu trúc năm học', isVisible: (c) => hasSchoolCapability(c, 'ACADEMIC_STRUCTURE_MANAGE') },
   { to: '/quan-tri/nguoi-dung', label: 'Người dùng', isVisible: (c) => hasSchoolCapability(c, 'USER_MANAGE') },
@@ -86,6 +99,7 @@ export const managementRoutes: ManagementRoute[] = [
   { to: '/quan-tri/kiem-nhiem/danh-muc', label: 'Danh mục kiêm nhiệm', isVisible: (c) => hasSchoolCapability(c, 'ADDITIONAL_DUTY_CATALOG_MANAGE') },
   { to: '/quan-tri/kiem-nhiem/phan-cong', label: 'Phân công kiêm nhiệm', isVisible: canManageDutyAssignments },
   { to: '/quan-tri/chinh-sach-nghiep-vu', label: 'Chính sách nghiệp vụ', isVisible: (c) => hasSchoolCapability(c, 'BUSINESS_CONFIGURATION_MANAGE') },
+  { to: '/quan-tri/ppct/ap-dung-chuyen-de', label: 'Áp dụng chuyên đề', isVisible: canManagePpct },
 ];
 
 export function accessibleManagementRoutes(auth: AuthMeResponse | null): ManagementRoute[] {
@@ -93,6 +107,7 @@ export function accessibleManagementRoutes(auth: AuthMeResponse | null): Managem
 }
 
 export const capabilityLabels: Partial<Record<CapabilityKey, string>> = {
+  PPCT_MANAGE: 'Quản lý PPCT',
   BUSINESS_CONFIGURATION_MANAGE: 'Quản lý chính sách nghiệp vụ',
   HOMEROOM_ASSIGNMENT_MANAGE: 'Quản lý giáo viên chủ nhiệm',
   ACADEMIC_STRUCTURE_MANAGE: 'Quản lý cấu trúc năm học',
