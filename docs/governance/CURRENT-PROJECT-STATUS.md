@@ -10,10 +10,42 @@ It is **not** a self-referential registry of the latest Git commit. Exact curren
 
 ## Active major task
 
-None. All currently open major work is awaiting task branch creation or unblocking triggers.
+`P2-004` — Specialized-study class-subject administration workspace — **IN_REVIEW**.
+
+- Task branch: `feat/ppct-specialized-study-admin-workspace-004`;
+- Canonical main base: `b5ccfb2b563ea0633aae97a03ac62076a102bb98`;
+- Contract commits: `98b977b0853e10d23da3e8af59088b35e53214ea`, `e7e71384ce34c02bcad2e5fd34be9ee5c787962e`;
+- Backend/options commit: `73cf71156c7e88ecee8fa9754a62450480f59d8c`;
+- Integration fixture correction commit: `521426189876a308cf729759cb05fce1d4a29ed1`;
+- Web workspace commit: `94c36239c1ee1c5b2561d0d9ea98eaea2ce40fb5`;
+- Web correctness correction commit: `5eb1ffcf645e817bff7a2a6d6919eae6ff3f8d7f`;
+- Local validation evidence:
+  - Targeted backend: 33/33 PASS;
+  - Targeted web: 71/71 PASS;
+  - API unit: 73/73 suites, 1167/1167 tests PASS;
+  - Web unit: 18/18 suites, 273/273 tests PASS;
+  - Lint: PASS;
+  - Typecheck: PASS;
+  - Build: PASS;
+  - Static/security/workflow: PASS;
+  - Migration/capability: PASS;
+  - Dependency audit: PASS (0 high/critical);
+- Windows integration caveat:
+  - Canonical full integration on local Windows cannot serve as closure evidence due to intermittent PostgreSQL connectivity instability.
+  - Controlled evidence:
+    - Default pool: thỉnh thoảng P1001 `Can't reach database server at 127.0.0.1:5432`;
+    - Temporary process-local `connection_limit=1`: P1001 không xuất hiện; nhưng 4 suites bị pool starvation / transaction acquisition timeout / Jest 5s timeout; environment đã restore; không có repo mutation.
+  - Kết luận: "Evidence is consistent with Windows-local connection-pressure instability. Root transport mechanism is not proven."
+- Authoritative remote gate:
+  - P2-004 được chuyển IN_REVIEW để thực hiện independent remote review.
+  - Trước merge bắt buộc: exact-head GitHub Actions CI trên canonical Linux runner, PostgreSQL 17 integration gate, canonical Playwright smoke, all required jobs SUCCESS.
+  - Remote CI evidence: PENDING;
+  - PR: PENDING;
+  - Merge: PENDING;
+  - Deploy: NONE.
 
 Next critical-path task:
-- `P2-004` — Specialized-study class-subject administration workspace — **READY** (dependency `P2-003` is `CLOSED`).
+- `P2-004` is in review; downstream tasks await review and CI closure.
 
 Other eligible & parallel tasks:
 - `P1-030` — Delayed go-live / operational-start architecture — **READY** (dependencies `P1-020` and `P2-001` both `CLOSED`).
@@ -42,7 +74,7 @@ Closure evidence:
 - no production deploy;
 - no correction or re-entry task remains;
 - production remains PRE-OPERATIONAL;
-- unlocks downstream: `P2-004` becomes `READY`.
+- unlocks downstream: `P2-004` became `READY` (now `IN_REVIEW`).
 
 Predecessor closed major task: `P2-002` — PPCT component persistence + control-plane realignment — **CLOSED** by `SYNC-P2-002`.
 
@@ -64,7 +96,7 @@ Closure evidence:
 - no P2-003 allocator/progress/readiness runtime or P2-004 UI was smuggled into P2-002;
 - no correction/re-entry task emerged from review or CI; no deployment/production mutation occurred;
 - closed by administrative closure: `SYNC-P2-002`;
-- downstream at P2-002 closure: `P2-003` was unlocked to `READY` (now `CLOSED` by `SYNC-P2-003`); `P2-004` is `READY`; `P2-010` remains `BLOCKED_EVIDENCE` and therefore `P2-020` remains `PLANNED`.
+- downstream at P2-002 closure: `P2-003` was unlocked to `READY` (now `CLOSED` by `SYNC-P2-003`); `P2-004` is `IN_REVIEW`; `P2-010` remains `BLOCKED_EVIDENCE` and therefore `P2-020` remains `PLANNED`.
 
 Predecessor closed major task: `P2-001` — PPCT Curricular-Component Architecture Re-Entry — **CLOSED** by `SYNC-P2-001`.
 
@@ -84,7 +116,7 @@ Closure evidence:
 - merged file set: 15 changed files (1125 additions, 39 deletions), strictly docs-only under `docs/**` (zero runtime/schema/migration/API/UI/auth/CI/deploy/production mutation);
 - accepted authority: `ADR-048-PPCT-CURRICULAR-COMPONENT-ARCHITECTURE.md` Accepted;
 - all 15 architecture questions from P0-900 Section 15 resolved;
-- downstream delivery stream at P2-001 closure: `P2-002` (now `CLOSED` by `SYNC-P2-002`), `P2-003` (now `CLOSED` by `SYNC-P2-003`), `P2-004` (`READY`), `P1-030` (`READY`), `P4-010` (independently `READY`), parallel workbook path `P2-010` (`BLOCKED_EVIDENCE`) -> `P2-020`.
+- downstream delivery stream at P2-001 closure: `P2-002` (now `CLOSED` by `SYNC-P2-002`), `P2-003` (now `CLOSED` by `SYNC-P2-003`), `P2-004` (`IN_REVIEW`), `P1-030` (`READY`), `P4-010` (independently `READY`), parallel workbook path `P2-010` (`BLOCKED_EVIDENCE`) -> `P2-020`.
 
 Predecessor closed major task: `P0-900` — Authoritative specification rebase audit (PPCT Curricular Component Product-Authority Realignment) — **CLOSED** by `SYNC-P0-900` (merge `eb1fc74686b0070935f8dcf23c13a5623b94ca1a`, PR #119, PR CI #397 SUCCESS, post-merge main CI #398 SUCCESS).
 
@@ -101,7 +133,7 @@ Closure evidence:
 - merged file set: 14 changed files (6 forward commits), strictly bounded to `docs/` (zero apps/packages/prisma/.github/deploy/scripts changes, zero runtime/schema/migration/API/UI/auth/CI/deploy/production mutation);
 - authoritative source blobs verified and unchanged: v1.2 (`c2c61a4e8acb9fde0e5fc5232467662048fd3380`), v1.3 (`5876af5920d12ea6fcecf42d1b8a392cc4825f16`); trigger was explicit Product Owner authority on 2026-09-08;
 - no additional correction/re-entry task emerged from review or CI;
-- downstream delivery stream registered at P0-900 closure: `P2-001`–`P2-004` (P2-001, P2-002, and P2-003 are now `CLOSED`; `P2-004` is `READY`), parallel workbook path `P2-010` (`BLOCKED_EVIDENCE`) -> `P2-020`.
+- downstream delivery stream registered at P0-900 closure: `P2-001`–`P2-004` (P2-001, P2-002, and P2-003 are now `CLOSED`; `P2-004` is `IN_REVIEW`), parallel workbook path `P2-010` (`BLOCKED_EVIDENCE`) -> `P2-020`.
 
 - Core realignment principles accepted into baseline:
   1. Normal curricular component taxonomy: `CORE` (phần cốt lõi) vs `SPECIALIZED_STUDY` (chuyên đề học tập). Specialized study is curricular, not an ad-hoc `SpecialActivity`.
@@ -267,7 +299,7 @@ The registered implementation, data-evidence, product and production-readiness t
 11. Dedicated Báo giảng Telegram bot/linking/notification lifecycle is absent.
 12. First-certificate HTTP-01/Nginx authority for the Báo giảng subdomain is incomplete.
 13. Actual VPS Stage 1 evidence has not yet been collected for first deployment.
-14. Curricular component realignment (`P2-001`–`P2-004`): PPCT architecture (`P2-001`), component persistence/control plane (`P2-002`), and weekly routing/allocation/projection runtime (`P2-003`) are **CLOSED**; admin applicability workspace (`P2-004`) is **READY**.
+14. Curricular component realignment (`P2-001`–`P2-004`): PPCT architecture (`P2-001`), component persistence/control plane (`P2-002`), and weekly routing/allocation/projection runtime (`P2-003`) are **CLOSED**; admin applicability workspace (`P2-004`) is **IN_REVIEW**.
 
 ## Production VPS topology decision
 
@@ -282,9 +314,10 @@ The final production-host topology is intentionally unresolved and explicitly de
 
 The following registered tasks are genuinely eligible to start on dedicated branches:
 
-1. `P2-004` — Specialized-study class-subject administration workspace (`READY`; dependency `P2-003` is `CLOSED`).
-2. `P1-030` — Delayed go-live / operational-start architecture (`READY`; dependencies `P1-020` and `P2-001` are both `CLOSED`).
-3. `P4-010` — GDĐP/HĐTN programme architecture closure (`READY`; independent track).
+1. `P1-030` — Delayed go-live / operational-start architecture (`READY`; dependencies `P1-020` and `P2-001` are both `CLOSED`).
+2. `P4-010` — GDĐP/HĐTN programme architecture closure (`READY`; independent track).
+
+`P2-004` is currently `IN_REVIEW`.
 
 `P1-031` remains dependency-gated until `P1-030` is also `CLOSED`. `P2-020` remains blocked by `P2-010` evidence (`BLOCKED_EVIDENCE`).
 

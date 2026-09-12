@@ -50,4 +50,58 @@ describe('api client', () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('socket details')));
     await expect(fetchAuthMe()).rejects.toMatchObject({ statusCode: 0, message: 'Không thể kết nối đến máy chủ.' });
   });
+
+  it('preserves standard error body with statusCode, serverError, and message', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({ statusCode: 409, error: 'Conflict', message: 'Tài nguyên đã tồn tại.' }, 409),
+      ),
+    );
+    const failure = apiFetch('/test').catch((err: unknown) => err);
+    const error = (await failure) as ApiError;
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error.statusCode).toBe(409);
+    expect(error.serverError).toBe('Conflict');
+    expect(error.message).toBe('Tài nguyên đã tồn tại.');
+  });
+
+  it('preserves custom semantic error body without statusCode', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse(
+          {
+            error: 'PPCT_COMPONENT_APPLICABILITY_WEEK_SPLIT',
+            message: 'Thay đổi hồ sơ áp dụng chương trình không được chia cắt tuần học nghiệp vụ.',
+          },
+          409,
+        ),
+      ),
+    );
+    const failure = apiFetch('/test').catch((err: unknown) => err);
+    const error = (await failure) as ApiError;
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error.statusCode).toBe(409);
+    expect(error.serverError).toBe('PPCT_COMPONENT_APPLICABILITY_WEEK_SPLIT');
+    expect(error.message).toBe('Thay đổi hồ sơ áp dụng chương trình không được chia cắt tuần học nghiệp vụ.');
+  });
+
+  it('normalizes malformed non-object or empty error body with sanitized generic message', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response('Internal Server Error Text', {
+          status: 500,
+          headers: { 'content-type': 'text/plain' },
+        }),
+      ),
+    );
+    const failure = apiFetch('/test').catch((err: unknown) => err);
+    const error = (await failure) as ApiError;
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error.statusCode).toBe(500);
+    expect(error.serverError).toBeUndefined();
+    expect(error.message).toBe('Yêu cầu không thực hiện được.');
+  });
 });

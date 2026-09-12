@@ -1,5 +1,4 @@
 import type {
-  ApiErrorResponse,
   AuthMeResponse,
   AuthMutationResponse,
   ChangePasswordRequest,
@@ -20,6 +19,7 @@ export class ApiError extends Error {
     public readonly statusCode: number,
     message: string,
     public readonly requestId?: string,
+    public readonly serverError?: string,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -57,8 +57,13 @@ export async function apiFetch<T>(path: string, options: ApiRequestOptions = {})
     if (response.status === 401 && notifyUnauthorized) {
       unauthorizedListeners.forEach((listener) => listener());
     }
-    const apiError = isApiErrorResponse(body) ? body : undefined;
-    throw new ApiError(response.status, normalizeMessage(apiError?.message), apiError?.requestId);
+    const parsed = parseApiErrorPayload(body);
+    throw new ApiError(
+      response.status,
+      normalizeMessage(parsed.message),
+      parsed.requestId,
+      parsed.serverError,
+    );
   }
 
   return body as T;
@@ -77,10 +82,22 @@ async function readJson(response: Response): Promise<unknown> {
   }
 }
 
-function isApiErrorResponse(value: unknown): value is ApiErrorResponse {
-  if (!value || typeof value !== 'object') return false;
-  const candidate = value as Partial<ApiErrorResponse>;
-  return typeof candidate.statusCode === 'number' && (typeof candidate.message === 'string' || Array.isArray(candidate.message));
+interface ParsedApiErrorPayload {
+  message?: string | string[];
+  requestId?: string;
+  serverError?: string;
+}
+
+function parseApiErrorPayload(value: unknown): ParsedApiErrorPayload {
+  if (!value || typeof value !== 'object') return {};
+  const candidate = value as Record<string, unknown>;
+  const message =
+    typeof candidate.message === 'string' || Array.isArray(candidate.message)
+      ? (candidate.message as string | string[])
+      : undefined;
+  const requestId = typeof candidate.requestId === 'string' ? candidate.requestId : undefined;
+  const serverError = typeof candidate.error === 'string' ? candidate.error : undefined;
+  return { message, requestId, serverError };
 }
 
 function normalizeMessage(message: string | string[] | undefined): string {

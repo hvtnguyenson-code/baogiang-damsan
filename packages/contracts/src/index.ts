@@ -1070,6 +1070,44 @@ export type PpctResolution =
     };
 
 // ============================================================
+// P2-004 PPCT Administration Workspace Options Contracts
+// ============================================================
+
+export interface PpctWorkspaceAcademicYearOption {
+  id: string;
+  code: string;
+  name: string;
+}
+
+export interface PpctWorkspaceAcademicYearOptionListResponse {
+  items: PpctWorkspaceAcademicYearOption[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+export interface PpctWorkspaceClassOption {
+  id: string;
+  code: string;
+  name: string;
+  gradeLevel: 10 | 11 | 12;
+  status: string;
+}
+
+export interface PpctWorkspaceSubjectOption {
+  id: string;
+  code: string;
+  name: string;
+  status: string;
+}
+
+export interface PpctWorkspaceOptionsResponse {
+  academicYear: PpctWorkspaceAcademicYearOption;
+  classes: PpctWorkspaceClassOption[];
+  subjects: PpctWorkspaceSubjectOption[];
+}
+
+// ============================================================
 // Phase 04B3 Timetable Import Configuration Contracts
 // ============================================================
 

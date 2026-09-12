@@ -65,4 +65,68 @@ describe('PpctAccessService', () => {
 
     await expect(service.requireSubject(request(), crypto.randomUUID())).rejects.toBeInstanceOf(ForbiddenException);
   });
+
+  it('resolves schoolWide=true when actor has PPCT_MANAGE/SCHOOL_WIDE', async () => {
+    const authorization = {
+      listEffectiveCapabilities: jest.fn().mockResolvedValue([
+        { key: 'PPCT_MANAGE', scope: 'SCHOOL_WIDE' },
+      ]),
+    };
+    const audit = { write: jest.fn() };
+    const service = new PpctAccessService(authorization as never, audit as never);
+
+    const result = await service.requireAnyManageScope(request());
+    expect(result).toEqual({ schoolWide: true, subjectIds: [] });
+    expect(audit.write).not.toHaveBeenCalled();
+  });
+
+  it('resolves subjectIds when actor has PPCT_MANAGE/SUBJECT grants', async () => {
+    const s1 = crypto.randomUUID();
+    const s2 = crypto.randomUUID();
+    const authorization = {
+      listEffectiveCapabilities: jest.fn().mockResolvedValue([
+        { key: 'PPCT_MANAGE', scope: 'SUBJECT', resourceId: s2 },
+        { key: 'PPCT_MANAGE', scope: 'SUBJECT', resourceId: s1 },
+        { key: 'TIMETABLE_MANAGE', scope: 'SCHOOL_WIDE' },
+      ]),
+    };
+    const audit = { write: jest.fn() };
+    const service = new PpctAccessService(authorization as never, audit as never);
+
+    const result = await service.requireAnyManageScope(request());
+    expect(result.schoolWide).toBe(false);
+    expect(result.subjectIds).toEqual([s1, s2].sort());
+    expect(audit.write).not.toHaveBeenCalled();
+  });
+
+  it('denies requireAnyManageScope when actor lacks PPCT_MANAGE', async () => {
+    const authorization = {
+      listEffectiveCapabilities: jest.fn().mockResolvedValue([
+        { key: 'SYSTEM_ADMIN', scope: 'SCHOOL_WIDE' },
+      ]),
+    };
+    const audit = { write: jest.fn().mockResolvedValue(undefined) };
+    const service = new PpctAccessService(authorization as never, audit as never);
+
+    await expect(service.requireAnyManageScope(request())).rejects.toBeInstanceOf(ForbiddenException);
+    expect(audit.write).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'AUTHORIZATION_DENIED',
+      entityType: 'CapabilityDefinition',
+      entityId: 'PPCT_MANAGE',
+      result: 'DENIED',
+      metadata: expect.objectContaining({ capabilityKey: 'PPCT_MANAGE', scope: 'SCHOOL_WIDE' }),
+    }));
+  });
+
+  it('denies requireAnyManageScope when password change is required', async () => {
+    const authorization = { listEffectiveCapabilities: jest.fn() };
+    const audit = { write: jest.fn().mockResolvedValue(undefined) };
+    const service = new PpctAccessService(authorization as never, audit as never);
+
+    await expect(service.requireAnyManageScope(request(true))).rejects.toBeInstanceOf(ForbiddenException);
+    expect(authorization.listEffectiveCapabilities).not.toHaveBeenCalled();
+    expect(audit.write).toHaveBeenCalledWith(expect.objectContaining({
+      metadata: expect.objectContaining({ reasonCode: 'PASSWORD_CHANGE_REQUIRED' }),
+    }));
+  });
 });

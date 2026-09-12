@@ -26,9 +26,11 @@ import { PendingReportingStatementsPage } from './pages/PendingReportingStatemen
 import { ReportingStatementDetailPage } from './pages/ReportingStatementDetailPage';
 import { ReportingStatementsPage } from './pages/ReportingStatementsPage';
 import { BusinessConfigurationPage } from './pages/BusinessConfigurationPage';
+import { PpctSpecializedStudyPage } from './pages/PpctSpecializedStudyPage';
 import type { BusinessPolicyUiAdapter } from './lib/business-policy-ui-registry';
 import {
   canManageDutyAssignments,
+  canManagePpct,
   canOpenReportingDetail,
   canReadAccessibleReporting,
   canReadPersonalReporting,
@@ -77,6 +79,9 @@ export default function App({ businessPolicyAdapters }: { businessPolicyAdapters
           </Route>
           <Route element={<CapabilityRoute allow={(c) => hasSchoolCapability(c, 'BUSINESS_CONFIGURATION_MANAGE')} />}>
             <Route path="/quan-tri/chinh-sach-nghiep-vu" element={<BusinessConfigurationPage adapters={businessPolicyAdapters} />} />
+          </Route>
+          <Route element={<CapabilityRoute allow={canManagePpct} />}>
+            <Route path="/quan-tri/ppct/ap-dung-chuyen-de" element={<PpctSpecializedStudyPage />} />
           </Route>
         </Route>
       </Route>
