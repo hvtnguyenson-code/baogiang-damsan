@@ -130,7 +130,7 @@ Nghiêm cấm việc sử dụng các API ghi nhận thực thi giảng dạy th
   - Đăng ký policy family `OPERATIONAL_START`, validator `v1`, resolver adapter cho consumer nội bộ.
   - Tích hợp kiểm tra ràng buộc vòng đời chuyên biệt (chặn `RETIRE`, kiểm soát prospective `REPLACE`, bắt buộc `CORRECTION` khi mốc đã qua).
   - Tích hợp bộ lọc ranh giới vào `ProgressDebtService` và `ReportingProjectionService`.
-  - Tích hợp kiểm tra ranh giới `operationalStartDate` vào các lệnh ghi nhận thực thi chính khóa (`createNormalCurricular`, `createMakeupCurricular`), bảo đảm fail-closed khi `sourceCivilDate < operationalStartDate`.
+  - Tích hợp kiểm tra ranh giới `operationalStartDate` vào ordinary NORMAL confirmation path (`TeachingExecutionsService.confirmNormal`, `POST /teaching-executions/curricular/normal`) và ordinary MAKEUP confirmation path (`TeachingExecutionsService.confirmMakeup`, `POST /teaching-executions/curricular/makeup`), bảo đảm fail-closed khi `sourceCivilDate < operationalStartDate` (hoặc nghĩa vụ gốc tiền vận hành đối với dạy bù).
   - Tích hợp quy chuẩn chuyển đổi ngày dân sự `Asia/Ho_Chi_Minh` cho `ReportingStatement`.
   - Viết unit test và integration test toàn diện chứng minh các bất biến kiến trúc.
 - **`P1-032`:** Xây dựng giao diện quản trị cấu hình chính sách typed cho `OPERATIONAL_START`.
