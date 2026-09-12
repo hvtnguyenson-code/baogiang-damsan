@@ -144,13 +144,14 @@ integration('PPCT administration workspace options (PostgreSQL integration)', ()
     await revokedActor.agent.get(`/api/ppct-options/academic-years/${y.id}`).expect(403);
 
     // Expired grant
-    const past = new Date(Date.now() - 3600_000);
+    const validFrom = new Date(Date.now() - 2 * 3600_000);
+    const validUntil = new Date(Date.now() - 3600_000);
     const expiredActor = await h.actor({
       grants: [{ capabilityKey: 'PPCT_MANAGE', scopeType: 'SUBJECT', scopeResourceId: s.id }],
     });
     await h.prisma.capabilityGrant.updateMany({
       where: { userId: expiredActor.id },
-      data: { validUntil: past },
+      data: { validFrom, validUntil },
     });
     await expiredActor.agent.get('/api/ppct-options/academic-years').expect(403);
     await expiredActor.agent.get(`/api/ppct-options/academic-years/${y.id}`).expect(403);
@@ -242,24 +243,27 @@ integration('PPCT administration workspace options (PostgreSQL integration)', ()
     await ppctSchool.agent.get(`/api/academic-years/${y.id}/classes`).expect(403);
   });
 
-  it('17. locked or inactive user cannot access workspace options', async () => {
+  it('17. disabled authenticated session is rejected with 401', async () => {
     const s = await h.prisma.subject.create({ data: { code: normalizedCode('S'), name: 'Toán', status: CatalogStatus.ACTIVE } });
     const y = await h.prisma.academicYear.create({ data: { code: normalizedCode('Y'), name: '2026-2027' } });
 
-    // Disabled user
     const disabledActor = await h.actor({
       grants: [{ capabilityKey: 'PPCT_MANAGE', scopeType: 'SUBJECT', scopeResourceId: s.id }],
     });
     await h.prisma.user.update({ where: { id: disabledActor.id }, data: { status: UserStatus.DISABLED } });
-    await disabledActor.agent.get('/api/ppct-options/academic-years').expect(403);
-    await disabledActor.agent.get(`/api/ppct-options/academic-years/${y.id}`).expect(403);
+    await disabledActor.agent.get('/api/ppct-options/academic-years').expect(401);
+    await disabledActor.agent.get(`/api/ppct-options/academic-years/${y.id}`).expect(401);
+  });
 
-    // Locked user
+  it('18. locked authenticated session is rejected with 401', async () => {
+    const s = await h.prisma.subject.create({ data: { code: normalizedCode('S'), name: 'Toán', status: CatalogStatus.ACTIVE } });
+    const y = await h.prisma.academicYear.create({ data: { code: normalizedCode('Y'), name: '2026-2027' } });
+
     const lockedActor = await h.actor({
       grants: [{ capabilityKey: 'PPCT_MANAGE', scopeType: 'SUBJECT', scopeResourceId: s.id }],
     });
     await h.prisma.user.update({ where: { id: lockedActor.id }, data: { lockedUntil: new Date(Date.now() + 3600_000) } });
-    await lockedActor.agent.get('/api/ppct-options/academic-years').expect(403);
-    await lockedActor.agent.get(`/api/ppct-options/academic-years/${y.id}`).expect(403);
+    await lockedActor.agent.get('/api/ppct-options/academic-years').expect(401);
+    await lockedActor.agent.get(`/api/ppct-options/academic-years/${y.id}`).expect(401);
   });
 });
