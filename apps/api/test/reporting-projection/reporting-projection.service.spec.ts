@@ -3,8 +3,24 @@ import { ReportingProjectionService } from '../../src/reporting-projection/repor
 const input = (roots = [{ schoolClassId: 'class', subjectId: 'subject' }]) => ({ academicYearId: 'year', roots, fromCivilDate: '2026-08-01' as never, toCivilDate: '2026-08-31' as never, asOfInstant: new Date('2026-08-10T00:00:00.000Z') });
 function harness() {
   const prisma = { $transaction: jest.fn() };
-  const progressDebt = { resolve: jest.fn(), resolveInTransaction: jest.fn() };
-  return { prisma, progressDebt, service: new ReportingProjectionService(prisma as never, progressDebt as never) };
+  const progressDebt = { resolve: jest.fn(), resolveInTransaction: jest.fn(), resolveInTransactionV2: jest.fn() };
+  const businessConfiguration = {
+    businessCivilDate: jest.fn().mockReturnValue('2026-08-13'),
+    resolveOperationalStartPolicy: jest.fn().mockResolvedValue({
+      academicYearId: 'year',
+      operationalStartDate: '2026-08-01',
+      policyVersionId: 'policy-v1',
+      validatorVersion: '1.0.0',
+      effectiveFrom: '2026-08-01',
+      effectiveUntil: null,
+    }),
+  };
+  return {
+    prisma,
+    progressDebt,
+    businessConfiguration,
+    service: new ReportingProjectionService(prisma as never, progressDebt as never, businessConfiguration as never),
+  };
 }
 describe('ReportingProjectionService input validation', () => {
   it('R1 rejects empty roots', async () => { const h = harness(); await expect(h.service.resolve(input([]))).rejects.toThrow('roots must be a non-empty array.'); expect(h.prisma.$transaction).not.toHaveBeenCalled(); });
@@ -42,7 +58,10 @@ function item(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
-function semanticHarness(results: unknown[] = [{ status: 'PASS', counts: {}, items: [item()], findings: [] }]) {
+function semanticHarness(
+  results: unknown[] = [{ status: 'PASS', counts: {}, items: [item()], findings: [] }],
+  operationalStartDate: string = '2026-08-01',
+) {
   const academicCalendarVersionFindFirst = jest.fn().mockResolvedValue({ id: 'cal', startDate: new Date('2026-08-01T00:00:00Z'), endDate: new Date('2026-09-30T00:00:00Z') });
   const schoolClassFindMany = jest.fn().mockImplementation((args: { where: { id: { in: string[] } } }) => Promise.resolve(args.where.id.in.map((id: string) => ({ id, academicYearId: 'year' }))));
   const timeSlotDefinitionFindMany = jest.fn().mockImplementation((args: { where: { id: { in: string[] } } }) => Promise.resolve(args.where.id.in.map((id: string) => ({ id, startTime: new Date('1970-01-01T07:00:00Z'), endTime: new Date('1970-01-01T07:45:00Z') }))));
@@ -53,9 +72,20 @@ function semanticHarness(results: unknown[] = [{ status: 'PASS', counts: {}, ite
     resolveInTransaction: jest.fn().mockImplementation(() => Promise.resolve(results.shift())),
     resolveInTransactionV2: jest.fn().mockImplementation(() => Promise.resolve(results.shift())),
   };
-  return { tx, prisma, progressDebt, service: new ReportingProjectionService(prisma as never, progressDebt as never) };
+  const businessConfiguration = {
+    businessCivilDate: jest.fn().mockReturnValue('2026-08-13'),
+    resolveOperationalStartPolicy: jest.fn().mockResolvedValue({
+      academicYearId: 'year',
+      operationalStartDate,
+      policyVersionId: 'policy-v1',
+      validatorVersion: '1.0.0',
+      effectiveFrom: '2026-08-01',
+      effectiveUntil: null,
+    }),
+  };
+  return { tx, prisma, progressDebt, businessConfiguration, service: new ReportingProjectionService(prisma as never, progressDebt as never, businessConfiguration as never) };
 }describe('ReportingProjectionService semantic harness', () => {
-  it('R4/R8/R9/R10/R13 cross-month uses one RepeatableRead transaction, same tx, calls resolveInTransactionV2, and filtered counts', async () => { const h = semanticHarness([{ status: 'PASS', counts: { distributedElapsedCount: 9, completedCount: 7, openDebtCount: 1, lateCount: 1, unconfirmedGapCount: 1 }, items: [item({ sourceCivilDate: '2026-08-30', classification: 'COMPLETED' }), item({ sourceCivilDate: '2026-09-02', classification: 'PROVEN_OPEN_DEBT' }), item({ sourceCivilDate: '2026-10-01' })], findings: [] }]); const result = await h.service.resolve({ ...input(), fromCivilDate: '2026-08-30' as never, toCivilDate: '2026-09-02' as never }); expect(result.counts).toEqual({ distributedElapsedCount: 2, completedCount: 1, openDebtCount: 1, lateCount: 1, unconfirmedGapCount: 0 }); expect(h.prisma.$transaction).toHaveBeenCalledTimes(1); expect((h.prisma.$transaction.mock.calls as unknown as Array<Array<unknown>>)[0]![1]).toMatchObject({ isolationLevel: 'RepeatableRead' }); expect(h.progressDebt.resolveInTransactionV2).toHaveBeenCalledWith(h.tx, expect.anything()); expect(h.progressDebt.resolveInTransaction).not.toHaveBeenCalled(); expect(h.progressDebt.resolve).not.toHaveBeenCalled(); });
+  it('R4/R8/R9/R10/R13 cross-month uses one RepeatableRead transaction, same tx, calls resolveInTransactionV2, and filtered counts', async () => { const h = semanticHarness([{ status: 'PASS', counts: { distributedElapsedCount: 9, completedCount: 7, openDebtCount: 1, lateCount: 1, unconfirmedGapCount: 1 }, items: [item({ sourceCivilDate: '2026-08-30', classification: 'COMPLETED' }), item({ sourceCivilDate: '2026-09-02', classification: 'PROVEN_OPEN_DEBT' }), item({ sourceCivilDate: '2026-10-01' })], findings: [] }]); const result = await h.service.resolve({ ...input(), fromCivilDate: '2026-08-30' as never, toCivilDate: '2026-09-02' as never }); expect(result.counts).toEqual({ distributedElapsedCount: 2, completedCount: 1, openDebtCount: 1, lateCount: 1, unconfirmedGapCount: 0 }); expect(h.prisma.$transaction).toHaveBeenCalledTimes(1); expect((h.prisma.$transaction.mock.calls as unknown as Array<Array<unknown>>)[0]![1]).toMatchObject({ isolationLevel: 'RepeatableRead' }); expect(h.progressDebt.resolveInTransactionV2).toHaveBeenCalledWith(h.tx, expect.anything(), expect.anything()); expect(h.progressDebt.resolveInTransaction).not.toHaveBeenCalled(); expect(h.progressDebt.resolve).not.toHaveBeenCalled(); });
   it('R5/R7 reject range and class outside authoritative ownership', async () => { const h = semanticHarness(); h.tx.academicCalendarVersion.findFirst.mockResolvedValue({ id: 'cal', startDate: new Date('2026-08-01T00:00:00Z'), endDate: new Date('2026-08-31T00:00:00Z') }); await expect(h.service.resolve({ ...input(), toCivilDate: '2026-09-01' as never })).rejects.toThrow('wholly within'); const x = semanticHarness(); x.tx.schoolClass.findMany.mockResolvedValue([{ id: 'class', academicYearId: 'other' }]); await expect(x.service.resolve(input())).rejects.toThrow('belong to academicYearId'); });
   it('R11/R12/R14-R21 preserves filtered classifications, teachers and MAKEUP source ownership', async () => { const h = semanticHarness([{ status: 'PASS', counts: {}, items: [item({ sourceCivilDate: '2026-08-01', classification: 'UNCONFIRMED_COMPLETION_GAP' }), item({ sourceCivilDate: '2026-08-31', classification: 'PROVEN_OPEN_DEBT', operationalDispositionType: 'DIFFERENT_SUBJECT_SUPERVISION', responsibleTeacherUserId: 'r', actualTeacherUserId: 'a', fulfillmentKind: 'MAKEUP', executionCivilDate: '2026-09-05' }), item({ sourceCivilDate: '2026-09-05', executionCivilDate: '2026-08-02' })], findings: [] }]); const result = await h.service.resolve(input()); expect(result.roots[0].details).toHaveLength(2); expect(result.roots[0].counts).toMatchObject({ completedCount: 0, openDebtCount: 1, lateCount: 1, unconfirmedGapCount: 1 }); expect(result.roots[0].details[1]).toMatchObject({ responsibleTeacherUserId: 'r', actualTeacherUserId: 'a', fulfillmentKind: 'MAKEUP' }); });
   it('R23/R24/R26/R27/R28 handles blocked roots, sums pass roots and does not cache or write', async () => { const h = semanticHarness([{ status: 'PASS', counts: {}, items: [item()], findings: [] }, { status: 'BLOCKED', items: [], findings: [{ code: 'RECONCILIATION_REQUIRED' }] }]); const blocked = await h.service.resolve(input([{ schoolClassId: 'class', subjectId: 'subject' }, { schoolClassId: 'class2', subjectId: 'subject2' }])); expect(blocked.status).toBe('BLOCKED'); expect(blocked.counts).toBeNull(); expect(blocked.roots.find((x) => x.status === 'BLOCKED')?.counts).toBeNull(); expect(h.tx.specialActivity.findMany).not.toHaveBeenCalled(); expect(h.tx.create).not.toHaveBeenCalled(); const next = semanticHarness([{ status: 'PASS', counts: {}, items: [item({ classification: 'COMPLETED' })], findings: [] }, { status: 'PASS', counts: {}, items: [item({ classification: 'PROVEN_OPEN_DEBT' })], findings: [] }]); expect((await next.service.resolve(input())).counts?.completedCount).toBe(1); expect((await next.service.resolve(input())).counts?.openDebtCount).toBe(1); });
@@ -395,5 +425,105 @@ describe('ReportingProjectionService P2-003 Checkpoint 4A component-aware report
     const c = result.counts!;
     expect(c.distributedElapsedCount).toBe(3);
     expect(c.distributedElapsedCount).toBe(c.completedCount + c.openDebtCount + c.unconfirmedGapCount);
+  });
+
+  describe('Checkpoint 4 reporting projection single authority resolution and live anchor', () => {
+    it('A. two reporting roots: resolveOperationalStartPolicy called exactly once', async () => {
+      const h = semanticHarness([
+        { status: 'PASS', counts: {}, items: [item()], findings: [] },
+        { status: 'PASS', counts: {}, items: [item()], findings: [] },
+      ]);
+      await h.service.resolve(
+        input([
+          { schoolClassId: 'class-1', subjectId: 'subject-1' },
+          { schoolClassId: 'class-2', subjectId: 'subject-2' },
+        ]),
+      );
+      expect(h.businessConfiguration.resolveOperationalStartPolicy).toHaveBeenCalledTimes(1);
+    });
+
+    it('B. both roots receive same supplied authority through ProgressDebt call', async () => {
+      const h = semanticHarness([
+        { status: 'PASS', counts: {}, items: [item()], findings: [] },
+        { status: 'PASS', counts: {}, items: [item()], findings: [] },
+      ]);
+      await h.service.resolve(
+        input([
+          { schoolClassId: 'class-1', subjectId: 'subject-1' },
+          { schoolClassId: 'class-2', subjectId: 'subject-2' },
+        ]),
+      );
+      expect(h.progressDebt.resolveInTransactionV2).toHaveBeenCalledTimes(2);
+      const firstCallAuthority = h.progressDebt.resolveInTransactionV2.mock.calls[0]![2];
+      const secondCallAuthority = h.progressDebt.resolveInTransactionV2.mock.calls[1]![2];
+      expect(firstCallAuthority).toBeDefined();
+      expect(firstCallAuthority).toMatchObject({
+        operationalStartDate: '2026-08-01',
+        policyVersionId: 'policy-v1',
+      });
+      expect(firstCallAuthority).toEqual(secondCallAuthority);
+    });
+
+    it('C. live policy anchor uses businessCivilDate(), NOT input.asOfInstant', async () => {
+      const h = semanticHarness();
+      h.businessConfiguration.businessCivilDate.mockReturnValue('2026-09-13');
+      // input.asOfInstant is 2026-08-10, civilDate from asOf would be 2026-08-10
+      await h.service.resolve(input());
+      expect(h.businessConfiguration.businessCivilDate).toHaveBeenCalled();
+      expect(h.businessConfiguration.resolveOperationalStartPolicy).toHaveBeenCalledWith(
+        'year',
+        '2026-09-13',
+        h.tx,
+      );
+    });
+
+    it('D. client historical asOfInstant khác current business date: resolver vẫn nhận current business date', async () => {
+      const h = semanticHarness();
+      h.businessConfiguration.businessCivilDate.mockReturnValue('2026-09-13');
+      const historicalInput = {
+        ...input(),
+        asOfInstant: new Date('2025-09-01T00:00:00.000Z'),
+      };
+      await h.service.resolve(historicalInput);
+      expect(h.businessConfiguration.resolveOperationalStartPolicy).toHaveBeenCalledWith(
+        'year',
+        '2026-09-13',
+        h.tx,
+      );
+    });
+
+    it('E. supplied pre-resolved authority: resolver NOT called', async () => {
+      const h = semanticHarness();
+      const suppliedContext = {
+        operationalStartPolicy: {
+          operationalStartDate: '2026-08-01' as const,
+          policyVersionId: 'pinned-policy-version',
+        },
+      };
+      await h.service.resolve(input(), suppliedContext);
+      expect(h.businessConfiguration.resolveOperationalStartPolicy).not.toHaveBeenCalled();
+      expect(h.progressDebt.resolveInTransactionV2).toHaveBeenCalledWith(
+        h.tx,
+        expect.anything(),
+        suppliedContext.operationalStartPolicy,
+      );
+    });
+
+    it('F. public projection output unchanged (no operationalStartDate or policyVersionId)', async () => {
+      const h = semanticHarness();
+      const res = await h.service.resolve(input());
+      expect((res as unknown as Record<string, unknown>).operationalStartDate).toBeUndefined();
+      expect((res as unknown as Record<string, unknown>).policyVersionId).toBeUndefined();
+      expect(res.profile).toBe('TEACHING_REPORTING_PROJECTION_V1');
+      expect(res.status).toBe('PASS');
+    });
+
+    it('G. policy missing: ConflictException POLICY_NOT_CONFIGURED propagates', async () => {
+      const h = semanticHarness();
+      h.businessConfiguration.resolveOperationalStartPolicy.mockRejectedValue(
+        new (await import('@nestjs/common')).ConflictException('POLICY_NOT_CONFIGURED'),
+      );
+      await expect(h.service.resolve(input())).rejects.toThrow('POLICY_NOT_CONFIGURED');
+    });
   });
 });

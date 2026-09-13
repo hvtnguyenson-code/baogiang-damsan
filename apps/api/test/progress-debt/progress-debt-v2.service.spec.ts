@@ -167,6 +167,7 @@ function harness(
   makeupSourceMatches: object[] = [],
   findings: object[] = [],
   status: 'PASS' | 'BLOCKED' = 'PASS',
+  operationalStartDate: string = '2026-08-01',
 ) {
   const tx = {
     curricularTeachingExecution: { findMany: jest.fn().mockResolvedValue(executions) },
@@ -181,8 +182,19 @@ function harness(
       findings,
     }),
   };
-  const service = new ProgressDebtService(prisma as never, resolver as never, clock);
-  return { tx, prisma, resolver, service };
+  const businessConfiguration = {
+    businessCivilDate: jest.fn().mockReturnValue('2026-08-13'),
+    resolveOperationalStartPolicy: jest.fn().mockResolvedValue({
+      academicYearId: 'year',
+      operationalStartDate,
+      policyVersionId: 'policy-v1',
+      validatorVersion: '1.0.0',
+      effectiveFrom: '2026-08-01',
+      effectiveUntil: null,
+    }),
+  };
+  const service = new ProgressDebtService(prisma as never, resolver as never, clock, businessConfiguration as never);
+  return { tx, prisma, resolver, businessConfiguration, service };
 }
 
 const input = () => ({ academicYearId: 'year', schoolClassId: 'class', subjectId: 'subject', asOfInstant: asOf });
@@ -518,5 +530,103 @@ describe('ProgressDebtService V2 Unit Tests', () => {
     const result = await h.service.resolveInTransactionV2(h.tx as never, input());
     expect(result.status).toBe('BLOCKED');
     expect(result.findings[0]!.code).toBe('RECONCILIATION_REQUIRED');
+  });
+
+  describe('Checkpoint 4 V2 operational-start boundary and component invariants', () => {
+    const preOpBoundary = '2026-08-15'; // occurrences on 2026-08-10 and 2026-08-11 are pre-operational
+
+    it('pre-op CORE no execution excluded from items and counts', async () => {
+      const h = harness([allocationCore()], [], [], [], [], 'PASS', preOpBoundary);
+      const res = await h.service.resolveInTransactionV2(h.tx as never, input());
+      expect(res.status).toBe('PASS');
+      expect(res.items).toHaveLength(0);
+      expect(res.counts).toEqual({
+        distributedElapsedCount: 0,
+        completedCount: 0,
+        openDebtCount: 0,
+        lateCount: 0,
+        unconfirmedGapCount: 0,
+      });
+    });
+
+    it('pre-op SPECIALIZED_STUDY no execution excluded from items and counts', async () => {
+      const h = harness([allocationSpec()], [], [], [], [], 'PASS', preOpBoundary);
+      const res = await h.service.resolveInTransactionV2(h.tx as never, input());
+      expect(res.status).toBe('PASS');
+      expect(res.items).toHaveLength(0);
+      expect(res.counts).toEqual({
+        distributedElapsedCount: 0,
+        completedCount: 0,
+        openDebtCount: 0,
+        lateCount: 0,
+        unconfirmedGapCount: 0,
+      });
+    });
+
+    it('pre-op valid CORE execution -> COMPLETED', async () => {
+      const h = harness([allocationCore()], [executionCore()], [], [], [], 'PASS', preOpBoundary);
+      const res = await h.service.resolveInTransactionV2(h.tx as never, input());
+      expect(res.status).toBe('PASS');
+      expect(res.items).toHaveLength(1);
+      expect(res.items[0]?.component).toBe('CORE');
+      expect(res.items[0]?.classification).toBe('COMPLETED');
+      expect(res.counts?.completedCount).toBe(1);
+      expect(res.counts?.distributedElapsedCount).toBe(1);
+    });
+
+    it('pre-op valid specialized execution -> COMPLETED', async () => {
+      const h = harness([allocationSpec()], [executionSpec()], [], [], [], 'PASS', preOpBoundary);
+      const res = await h.service.resolveInTransactionV2(h.tx as never, input());
+      expect(res.status).toBe('PASS');
+      expect(res.items).toHaveLength(1);
+      expect(res.items[0]?.component).toBe('SPECIALIZED_STUDY');
+      expect(res.items[0]?.classification).toBe('COMPLETED');
+      expect(res.counts?.completedCount).toBe(1);
+      expect(res.counts?.distributedElapsedCount).toBe(1);
+    });
+
+    it('post-op component semantics unchanged', async () => {
+      const h = harness([allocationCore(), allocationSpec()], [executionCore()], [], [], [], 'PASS', '2026-08-01');
+      const res = await h.service.resolveInTransactionV2(h.tx as never, input());
+      expect(res.status).toBe('PASS');
+      expect(res.items).toHaveLength(2);
+      expect(res.counts?.completedCount).toBe(1);
+      expect(res.counts?.unconfirmedGapCount).toBe(1);
+    });
+
+    it('component mismatch still blocks even when occurrence is pre-op', async () => {
+      const corruptedAlloc = {
+        ...allocationCore({ civilDate: '2026-08-10' }),
+        plannedComponent: 'SPECIALIZED_STUDY' as const,
+      };
+      const h = harness([corruptedAlloc], [], [], [], [], 'PASS', preOpBoundary);
+      const res = await h.service.resolveInTransactionV2(h.tx as never, input());
+      expect(res.status).toBe('BLOCKED');
+      expect(res.findings[0]!.code).toBe('RECONCILIATION_REQUIRED');
+    });
+
+    it('count invariants preserved across pre-op and post-op mixture', async () => {
+      // Core is pre-op with valid execution -> COMPLETED (in items)
+      // Spec is pre-op with no execution -> excluded (not in items)
+      const h = harness(
+        [allocationCore({ civilDate: '2026-08-10' }), allocationSpec({ civilDate: '2026-08-11' })],
+        [executionCore()],
+        [],
+        [],
+        [],
+        'PASS',
+        preOpBoundary,
+      );
+      const res = await h.service.resolveInTransactionV2(h.tx as never, input());
+      expect(res.status).toBe('PASS');
+      expect(res.items).toHaveLength(1);
+      expect(res.counts?.distributedElapsedCount).toBe(1);
+      expect(res.counts?.completedCount).toBe(1);
+      expect(res.counts?.openDebtCount).toBe(0);
+      expect(res.counts?.unconfirmedGapCount).toBe(0);
+      expect(res.counts?.distributedElapsedCount).toBe(
+        res.counts!.completedCount + res.counts!.openDebtCount + res.counts!.unconfirmedGapCount,
+      );
+    });
   });
 });

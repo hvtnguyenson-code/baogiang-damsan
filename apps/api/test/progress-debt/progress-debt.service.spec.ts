@@ -1,4 +1,6 @@
+import { ConflictException } from '@nestjs/common';
 import { ProgressDebtService } from '../../src/progress-debt/progress-debt.service';
+import { ProgressDebtOperationalStartAuthority } from '../../src/progress-debt/progress-debt.types';
 
 const asOf = new Date('2026-08-12T12:00:00.000Z');
 const clock = { now: () => new Date('2026-08-13T00:00:00.000Z') };
@@ -13,12 +15,28 @@ function execution(overrides: Record<string, unknown> = {}) {
   return { id: 'execution', kind: 'NORMAL', status: 'ACTIVE', academicYearId: 'year', schoolClassId: 'class', subjectId: 'subject', sourceNormalOccurrenceKey: 'NORMAL:entry:2026-08-10', originalTimetableVersionId: 'timetable', originalTimetableEntryId: 'entry', sourceCivilDate: new Date('2026-08-10T00:00:00.000Z'), sourceAcademicCalendarVersionId: 'calendar', sourceTimeSlotDefinitionId: 'slot', originalTeachingAssignmentId: 'assignment', responsibleTeacherUserId: 'teacher', ppctClassAssociationId: 'association', ppctPlanId: 'plan', ppctVersionId: 'version', ppctItemId: 'item', ppctItemRevisionId: 'revision', operationalLessonDispositionId: null, operationalDispositionType: null, makeupTeachingScheduleId: null, executionCivilDate: new Date('2026-08-10T00:00:00.000Z'), executionAcademicCalendarVersionId: 'calendar', executionTimeSlotDefinitionId: 'slot', actualTeacherUserId: 'teacher', executionTimeSlot: { endTime: new Date('1970-01-01T07:45:00.000Z') }, ...overrides };
 }
 
-function harness(result: unknown = allocation(), executions: object[] = [], schedules: object[] = []) {
+function harness(
+  result: unknown = allocation(),
+  executions: object[] = [],
+  schedules: object[] = [],
+  operationalStartDate: string = '2026-08-01',
+) {
   const tx = { curricularTeachingExecution: { findMany: jest.fn().mockResolvedValue(executions) }, makeupTeachingSchedule: { findMany: jest.fn().mockResolvedValue(schedules) } };
   const prisma = { $transaction: jest.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)) };
   const resolver = { resolveInTransaction: jest.fn().mockResolvedValue(result) };
-  const service = new ProgressDebtService(prisma as never, resolver as never, clock);
-  return { tx, prisma, resolver, service };
+  const businessConfiguration = {
+    businessCivilDate: jest.fn().mockReturnValue('2026-08-13'),
+    resolveOperationalStartPolicy: jest.fn().mockResolvedValue({
+      academicYearId: 'year',
+      operationalStartDate,
+      policyVersionId: 'policy-v1',
+      validatorVersion: '1.0.0',
+      effectiveFrom: '2026-08-01',
+      effectiveUntil: null,
+    }),
+  };
+  const service = new ProgressDebtService(prisma as never, resolver as never, clock, businessConfiguration as never);
+  return { tx, prisma, resolver, businessConfiguration, service };
 }
 
 const input = () => ({ academicYearId: 'year', schoolClassId: 'class', subjectId: 'subject', asOfInstant: asOf });
@@ -53,4 +71,157 @@ describe('ProgressDebtService', () => {
   it('blocks MAKEUP MATCH when a non-revision PPCT obligation identity differs', async () => { const mismatch = { ...expected, ppctVersionId: 'other-version' }; const h = harness({ ...allocation(), makeupSourceMatches: [{ makeupTeachingScheduleId: 'schedule', sourceNormalOccurrenceKey: 'NORMAL:entry:2026-08-10', status: 'MATCH', expectedPpctItem: mismatch }] }, [execution({ kind: 'MAKEUP', makeupTeachingScheduleId: 'schedule' })], [{ id: 'schedule', status: 'ACTIVE' }]); await expect(h.service.resolveInTransaction(h.tx as never, input())).resolves.toMatchObject({ status: 'BLOCKED', counts: null, findings: [expect.objectContaining({ code: 'RECONCILIATION_REQUIRED' })] }); });
   it('P19 opens one RepeatableRead transaction and passes exact allocator input through the same tx', async () => { const h = harness(); await h.service.resolve(input()); expect(h.prisma.$transaction).toHaveBeenCalledTimes(1); expect(h.prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: 'RepeatableRead' }); expect(h.resolver.resolveInTransaction).toHaveBeenCalledWith(h.tx, { academicYearId: 'year', schoolClassId: 'class', subjectId: 'subject', throughCivilDate: '2026-08-12' }); });
   it('rejects invalid and future asOf instants', async () => { const h = harness(); await expect(h.service.resolveInTransaction(h.tx as never, { ...input(), asOfInstant: new Date('invalid') })).rejects.toThrow('asOfInstant'); await expect(h.service.resolveInTransaction(h.tx as never, { ...input(), asOfInstant: new Date('2026-08-14T00:00:00.000Z') })).rejects.toThrow('future'); });
+});
+
+describe('ProgressDebtService Checkpoint 4 operational-start boundary and authority', () => {
+  const preOpBoundary = '2026-08-15'; // occurrence is 2026-08-10, so it's pre-operational
+
+  it('A. pre-op BASE no execution: items length = 0, all counts = 0', async () => {
+    const h = harness(allocation({ civilDate: '2026-08-10' }), [], [], preOpBoundary);
+    const res = await h.service.resolveInTransaction(h.tx as never, input());
+    expect(res.status).toBe('PASS');
+    expect(res.items).toHaveLength(0);
+    expect(res.counts).toEqual({
+      distributedElapsedCount: 0,
+      completedCount: 0,
+      openDebtCount: 0,
+      lateCount: 0,
+      unconfirmedGapCount: 0,
+    });
+  });
+
+  it('B. pre-op ABSENCE_NO_REPLACEMENT no execution: no debt, no late, no gap, items length = 0', async () => {
+    const h = harness(
+      allocation({
+        civilDate: '2026-08-10',
+        effectiveKind: 'OPERATIONAL_DISPOSITION',
+        disposition: { id: 'disp1', dispositionType: 'ABSENCE_NO_REPLACEMENT', assignedTeacherUserId: null },
+      }),
+      [],
+      [],
+      preOpBoundary,
+    );
+    const res = await h.service.resolveInTransaction(h.tx as never, input());
+    expect(res.status).toBe('PASS');
+    expect(res.items).toHaveLength(0);
+    expect(res.counts).toEqual({
+      distributedElapsedCount: 0,
+      completedCount: 0,
+      openDebtCount: 0,
+      lateCount: 0,
+      unconfirmedGapCount: 0,
+    });
+  });
+
+  it('C. pre-op DIFFERENT_SUBJECT_SUPERVISION no execution: same no debt', async () => {
+    const h = harness(
+      allocation({
+        civilDate: '2026-08-10',
+        effectiveKind: 'OPERATIONAL_DISPOSITION',
+        disposition: { id: 'disp2', dispositionType: 'DIFFERENT_SUBJECT_SUPERVISION', assignedTeacherUserId: 'other' },
+      }),
+      [],
+      [],
+      preOpBoundary,
+    );
+    const res = await h.service.resolveInTransaction(h.tx as never, input());
+    expect(res.status).toBe('PASS');
+    expect(res.items).toHaveLength(0);
+    expect(res.counts?.openDebtCount).toBe(0);
+    expect(res.counts?.lateCount).toBe(0);
+    expect(res.counts?.unconfirmedGapCount).toBe(0);
+  });
+
+  it('D. pre-op valid ACTIVE execution: COMPLETED emitted', async () => {
+    const h = harness(allocation({ civilDate: '2026-08-10' }), [execution()], [], preOpBoundary);
+    const res = await h.service.resolveInTransaction(h.tx as never, input());
+    expect(res.status).toBe('PASS');
+    expect(res.items).toHaveLength(1);
+    expect(res.items[0]?.classification).toBe('COMPLETED');
+    expect(res.counts).toEqual({
+      distributedElapsedCount: 1,
+      completedCount: 1,
+      openDebtCount: 0,
+      lateCount: 0,
+      unconfirmedGapCount: 0,
+    });
+  });
+
+  it('E. pre-op duplicate ACTIVE executions: ACTIVE_FULFILLMENT_AMBIGUOUS', async () => {
+    const h = harness(
+      allocation({ civilDate: '2026-08-10' }),
+      [execution({ id: 'exec-1' }), execution({ id: 'exec-2' })],
+      [],
+      preOpBoundary,
+    );
+    const res = await h.service.resolveInTransaction(h.tx as never, input());
+    expect(res.status).toBe('BLOCKED');
+    expect(res.findings).toContainEqual(
+      expect.objectContaining({ code: 'ACTIVE_FULFILLMENT_AMBIGUOUS' }),
+    );
+  });
+
+  it('F. pre-op execution reconciliation mismatch: RECONCILIATION_REQUIRED', async () => {
+    const h = harness(
+      allocation({ civilDate: '2026-08-10' }),
+      [execution({ ppctItemId: 'wrong-item' })],
+      [],
+      preOpBoundary,
+    );
+    const res = await h.service.resolveInTransaction(h.tx as never, input());
+    expect(res.status).toBe('BLOCKED');
+    expect(res.findings).toContainEqual(
+      expect.objectContaining({ code: 'RECONCILIATION_REQUIRED' }),
+    );
+  });
+
+  it('G. post-op base no execution: UNCONFIRMED_COMPLETION_GAP unchanged', async () => {
+    const h = harness(allocation({ civilDate: '2026-08-10' }), [], [], '2026-08-01');
+    const res = await h.service.resolveInTransaction(h.tx as never, input());
+    expect(res.status).toBe('PASS');
+    expect(res.items).toHaveLength(1);
+    expect(res.items[0]?.classification).toBe('UNCONFIRMED_COMPLETION_GAP');
+    expect(res.counts?.unconfirmedGapCount).toBe(1);
+  });
+
+  it('H. post-op absence: PROVEN_OPEN_DEBT + late unchanged', async () => {
+    const h = harness(
+      allocation({
+        civilDate: '2026-08-10',
+        effectiveKind: 'OPERATIONAL_DISPOSITION',
+        disposition: { id: 'disp3', dispositionType: 'ABSENCE_NO_REPLACEMENT', assignedTeacherUserId: null },
+      }),
+      [],
+      [],
+      '2026-08-01',
+    );
+    const res = await h.service.resolveInTransaction(h.tx as never, input());
+    expect(res.status).toBe('PASS');
+    expect(res.items).toHaveLength(1);
+    expect(res.items[0]?.classification).toBe('PROVEN_OPEN_DEBT');
+    expect(res.counts?.openDebtCount).toBe(1);
+    expect(res.counts?.lateCount).toBe(1);
+  });
+
+  it('I. missing policy: POLICY_NOT_CONFIGURED propagates', async () => {
+    const h = harness();
+    h.businessConfiguration.resolveOperationalStartPolicy.mockRejectedValue(
+      new ConflictException('POLICY_NOT_CONFIGURED'),
+    );
+    await expect(h.service.resolveInTransaction(h.tx as never, input())).rejects.toThrow(
+      ConflictException,
+    );
+  });
+
+  it('J. supplied authority: businessConfiguration resolver NOT called', async () => {
+    const h = harness();
+    const suppliedAuthority: ProgressDebtOperationalStartAuthority = {
+      operationalStartDate: '2026-08-01',
+      policyVersionId: 'supplied-v1',
+      validatorVersion: '1.0.0',
+    };
+    const res = await h.service.resolveInTransaction(h.tx as never, input(), suppliedAuthority);
+    expect(res.status).toBe('PASS');
+    expect(h.businessConfiguration.resolveOperationalStartPolicy).not.toHaveBeenCalled();
+  });
 });

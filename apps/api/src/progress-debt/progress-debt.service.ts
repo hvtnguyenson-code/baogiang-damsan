@@ -1,6 +1,7 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { OperationalOverlayStatus, Prisma, TeachingExecutionStatus } from '@prisma/client';
 import { formatCivilDate } from '../common/validation/civil-date';
+import { BusinessConfigurationService } from '../business-configuration/business-configuration.service';
 import { PpctOccurrenceAllocationService } from '../ppct-occurrence-allocation/ppct-occurrence-allocation.service';
 import { ExpectedPpctItem, NormalPpctAllocation } from '../ppct-occurrence-allocation/ppct-occurrence-allocation.types';
 import { PrismaService } from '../prisma/prisma.service';
@@ -9,6 +10,7 @@ import { hasEndedAt, hcmCivilDate } from './progress-debt.policy';
 import {
   CurricularComponent,
   ProgressDebtCounts, ProgressDebtFinding, ProgressDebtItem, ProgressDebtItemV2,
+  ProgressDebtOperationalStartAuthority,
   ProgressDebtProjection, ProgressDebtProjectionV2,
   ResolveProgressDebtInput, TEACHING_PROGRESS_DEBT_PROFILE, TEACHING_PROGRESS_DEBT_PROFILE_V2,
 } from './progress-debt.types';
@@ -27,18 +29,29 @@ export class ProgressDebtService {
     private readonly prisma: PrismaService,
     private readonly allocation: PpctOccurrenceAllocationService,
     @Inject(TEACHING_EXECUTION_CLOCK) private readonly clock: TeachingExecutionClock,
+    private readonly businessConfiguration: BusinessConfigurationService,
   ) {}
 
-  async resolve(input: ResolveProgressDebtInput): Promise<ProgressDebtProjection> {
+  async resolve(
+    input: ResolveProgressDebtInput,
+    authority?: ProgressDebtOperationalStartAuthority,
+  ): Promise<ProgressDebtProjection> {
     this.assertAsOf(input.asOfInstant);
+    const resolvedAuthority = authority ?? (await this.resolveLiveOperationalStartAuthority(input.academicYearId));
     return this.prisma.$transaction(
-      (tx) => this.resolveInTransaction(tx, input),
+      (tx) => this.resolveInTransaction(tx, input, resolvedAuthority),
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
   }
 
-  async resolveInTransaction(tx: Prisma.TransactionClient, input: ResolveProgressDebtInput): Promise<ProgressDebtProjection> {
+  async resolveInTransaction(
+    tx: Prisma.TransactionClient,
+    input: ResolveProgressDebtInput,
+    authority?: ProgressDebtOperationalStartAuthority,
+  ): Promise<ProgressDebtProjection> {
     this.assertAsOf(input.asOfInstant);
+    const resolvedAuthority = authority ?? (await this.resolveLiveOperationalStartAuthority(input.academicYearId, tx));
+    const operationalStartDate = resolvedAuthority.operationalStartDate;
     const throughCivilDate = hcmCivilDate(input.asOfInstant);
     const allocated = await this.allocation.resolveInTransaction(tx, {
       academicYearId: input.academicYearId,
@@ -75,6 +88,7 @@ export class ProgressDebtService {
     const findings: ProgressDebtFinding[] = [];
     for (const allocation of direct) {
       const sourceKey = allocation.occurrence.occurrenceKey;
+      const isPreOperational = allocation.occurrence.civilDate < operationalStartDate;
       const eligible = candidates.get(sourceKey) ?? [];
       if (eligible.length > 1) {
         findings.push(this.finding('ACTIVE_FULFILLMENT_AMBIGUOUS', 'More than one ended ACTIVE curricular execution claims the exact original obligation.', sourceKey, eligible.map((execution) => execution.id)));
@@ -85,6 +99,9 @@ export class ProgressDebtService {
         const issue = this.reconcileExecution(allocation, execution, schedulesById.get(execution.makeupTeachingScheduleId ?? '') ?? null, allocated.makeupSourceMatches);
         if (issue) { findings.push(this.finding('RECONCILIATION_REQUIRED', issue, sourceKey, [execution.id])); continue; }
         items.push(this.item(allocation, 'COMPLETED', execution));
+        continue;
+      }
+      if (isPreOperational) {
         continue;
       }
       const kind = allocation.occurrence.effectiveKind;
@@ -109,16 +126,26 @@ export class ProgressDebtService {
     return { profile: TEACHING_PROGRESS_DEBT_PROFILE, scope: input, status: 'PASS', counts, items: items.sort((a, b) => a.sourceNormalOccurrenceKey.localeCompare(b.sourceNormalOccurrenceKey)), findings: [], evaluatedAt: this.clock.now().toISOString() };
   }
 
-  async resolveV2(input: ResolveProgressDebtInput): Promise<ProgressDebtProjectionV2> {
+  async resolveV2(
+    input: ResolveProgressDebtInput,
+    authority?: ProgressDebtOperationalStartAuthority,
+  ): Promise<ProgressDebtProjectionV2> {
     this.assertAsOf(input.asOfInstant);
+    const resolvedAuthority = authority ?? (await this.resolveLiveOperationalStartAuthority(input.academicYearId));
     return this.prisma.$transaction(
-      (tx) => this.resolveInTransactionV2(tx, input),
+      (tx) => this.resolveInTransactionV2(tx, input, resolvedAuthority),
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
   }
 
-  async resolveInTransactionV2(tx: Prisma.TransactionClient, input: ResolveProgressDebtInput): Promise<ProgressDebtProjectionV2> {
+  async resolveInTransactionV2(
+    tx: Prisma.TransactionClient,
+    input: ResolveProgressDebtInput,
+    authority?: ProgressDebtOperationalStartAuthority,
+  ): Promise<ProgressDebtProjectionV2> {
     this.assertAsOf(input.asOfInstant);
+    const resolvedAuthority = authority ?? (await this.resolveLiveOperationalStartAuthority(input.academicYearId, tx));
+    const operationalStartDate = resolvedAuthority.operationalStartDate;
     const throughCivilDate = hcmCivilDate(input.asOfInstant);
     const allocated = await this.allocation.resolveInTransactionV2(tx, {
       academicYearId: input.academicYearId,
@@ -201,6 +228,7 @@ export class ProgressDebtService {
 
     for (const allocation of direct) {
       const sourceKey = allocation.occurrence.occurrenceKey;
+      const isPreOperational = allocation.occurrence.civilDate < operationalStartDate;
       const eligible = candidates.get(sourceKey) ?? [];
       if (eligible.length > 1) {
         findings.push(
@@ -226,6 +254,9 @@ export class ProgressDebtService {
           continue;
         }
         items.push(this.itemV2(allocation, 'COMPLETED', execution));
+        continue;
+      }
+      if (isPreOperational) {
         continue;
       }
       const kind = allocation.occurrence.effectiveKind;
@@ -360,6 +391,25 @@ export class ProgressDebtService {
       items: [],
       findings: findings.sort((a, b) => `${a.code}:${a.occurrenceKey ?? ''}:${a.entityIds.join(',')}`.localeCompare(`${b.code}:${b.occurrenceKey ?? ''}:${b.entityIds.join(',')}`)),
       evaluatedAt: this.clock.now().toISOString(),
+    };
+  }
+
+  private async resolveLiveOperationalStartAuthority(
+    academicYearId: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<ProgressDebtOperationalStartAuthority> {
+    const policyResolutionCivilDate = this.businessConfiguration.businessCivilDate();
+    const policy = await this.businessConfiguration.resolveOperationalStartPolicy(
+      academicYearId,
+      policyResolutionCivilDate,
+      tx,
+    );
+    return {
+      operationalStartDate: policy.operationalStartDate,
+      policyVersionId: policy.policyVersionId,
+      validatorVersion: policy.validatorVersion,
+      effectiveFrom: policy.effectiveFrom,
+      effectiveUntil: policy.effectiveUntil,
     };
   }
 }

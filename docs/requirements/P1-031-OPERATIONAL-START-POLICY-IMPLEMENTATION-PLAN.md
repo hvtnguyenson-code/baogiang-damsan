@@ -97,7 +97,12 @@
    - File: `apps/api/src/progress-debt/progress-debt.types.ts` (`ProgressDebtClassification`, `ProgressDebtCounts`)
    - Giữ nguyên `ProgressDebtClassification = 'COMPLETED' | 'PROVEN_OPEN_DEBT' | 'UNCONFIRMED_COMPLETION_GAP'`.
    - Giữ nguyên `ProgressDebtCounts`: `distributedElapsedCount`, `completedCount`, `openDebtCount`, `lateCount`, `unconfirmedGapCount`.
-   - Giải quyết chính sách `OPERATIONAL_START` cho năm học.
+   - Giải quyết chính sách `OPERATIONAL_START` cho năm học:
+     - **Thẩm quyền mốc giải quyết chính sách (Policy Resolution Anchor):**
+       - Đối với LIVE PROJECTION / direct API: Sử dụng ngày dân sự máy chủ hiện hành `policyResolutionCivilDate = server-owned businessCivilDate()` (hoặc HCM date từ `this.clock.now()`).
+       - `input.asOfInstant` và `throughCivilDate` chỉ dùng để: xác định occurrence trong evaluation window, kiểm tra `hasEndedAt`, truy vấn lịch sử thực thi tới mốc as-of, và tính tiến độ/nợ tại mốc as-of. **TUYỆT ĐỐI KHÔNG** dùng chúng để chọn phiên bản chính sách cho live projection.
+       - Hỗ trợ seam nhận `ProgressDebtOperationalStartAuthority` đã được giải quyết trước từ caller (`ReportingProjectionService` multi-root hoặc `ReportingStatementsService.submit`).
+       - Không giải quyết policy riêng theo từng `occurrence.civilDate`.
    - Đối với các cơ hội giảng dạy có `sourceCivilDate < operationalStartDate`:
      - Nếu có bản ghi thực thi hợp lệ (ended ACTIVE execution candidate đã đối soát): vẫn emit `COMPLETED` bình thường vào `items`.
      - Nếu bằng chứng thực thi bị trùng lặp hoặc sai hỏng: vẫn fail-closed với finding tương ứng (`ACTIVE_FULFILLMENT_AMBIGUOUS`, `RECONCILIATION_REQUIRED`).
@@ -179,7 +184,11 @@
 6. `apps/api/src/progress-debt/progress-debt.service.ts`:
    - Inject `BusinessConfigurationService`.
    - Trong `resolveInTransaction` và `resolveInTransactionV2`:
-     - Resolve `OPERATIONAL_START` của `academicYearId` tại ngày `throughCivilDate`. Nếu không có hoặc lỗi -> fail-closed.
+     - Xác định thẩm quyền mốc bắt đầu vận hành:
+       - Nếu caller cung cấp `authority`: sử dụng trực tiếp mà không giải quyết lại.
+       - Nếu không có: giải quyết `OPERATIONAL_START` của `academicYearId` tại ngày dân sự máy chủ `policyResolutionCivilDate = this.businessConfiguration.businessCivilDate()`.
+       - Nếu thiếu hoặc lỗi chính sách: fail-closed (`POLICY_NOT_CONFIGURED`, `POLICY_AMBIGUOUS`, `POLICY_CORRUPT`).
+       - `throughCivilDate` và `input.asOfInstant` chỉ dùng cho cửa sổ đánh giá, không dùng làm mốc giải quyết chính sách cho live calls.
      - Với mỗi allocation:
        - Nếu `occurrence.civilDate < operationalStartDate`:
          - Nếu có execution candidate kết thúc hợp lệ: reconcile và emit `COMPLETED`.
@@ -315,6 +324,10 @@
   - **KHÔNG** thêm `preOperationalUnconfirmedCount` vào `ProgressDebtCounts` hay `ReportingCounts`.
   - **KHÔNG** thay đổi schema cơ sở dữ liệu hay Postgres enum.
   - **KHÔNG** thay đổi Web UI `ReportingPresentation.tsx`.
+- **Thẩm quyền mốc giải quyết chính sách (Live vs Frozen Resolution Anchor):**
+  - **Live Progress/Debt & ReportingProjection:** Giải quyết `OPERATIONAL_START` tại ngày dân sự máy chủ hiện hành (`businessCivilDate()`). `throughCivilDate` và `asOfInstant` chỉ giới hạn cửa sổ đánh giá cơ hội và bằng chứng thực thi.
+  - **Frozen ReportingStatement (Checkpoint 5):** Ghim `asOfInstant`, giải quyết chính sách một lần duy nhất tại `hcmCivilDate(asOfInstant)` và truyền pre-resolved authority xuống `ReportingProjectionService` / `ProgressDebtService`.
+  - **ReportingProjectionService:** Giải quyết chính sách đúng MỘT LẦN cho toàn bộ request/live evaluation và truyền cùng authority cho tất cả các roots; không giải quyết lặp lại theo từng root.
 - **Cơ chế xử lý tại `ProgressDebtService`**:
   - Đối với các cơ hội TKB có `sourceCivilDate < operationalStartDate`:
     - Nếu có minh chứng giảng dạy hợp lệ (ACTIVE ended execution candidate): vẫn emit item `COMPLETED`.
