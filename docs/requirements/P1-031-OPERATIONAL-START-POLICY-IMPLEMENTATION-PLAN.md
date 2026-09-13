@@ -245,7 +245,8 @@
 
 Áp dụng cho family `OPERATIONAL_START` tại các phương thức của `BusinessConfigurationService`:
 1. **Lệnh `retire`:** Bị từ chối triệt để. Ném `BadRequestException('OPERATIONAL_START_RETIRE_FORBIDDEN')`.
-2. **Lệnh `publish` lần đầu:**
+2. **Lệnh `publish` (Chỉ cho phép thẩm quyền đầu tiên):**
+   - Chỉ được phép thiết lập thẩm quyền ban đầu (`initial-publish-only`). Sau khi luồng đã từng có phiên bản `PUBLISHED` hoặc `REVERSED`, mọi lệnh direct publish tiếp theo trên cùng luồng đều bị từ chối với `BadRequestException('OPERATIONAL_START_DIRECT_PUBLISH_AFTER_AUTHORITY_FORBIDDEN')` (phải đi qua `replace` hoặc `correct`).
    - Bắt buộc kiểm tra `effectiveFrom <= operationalStartDate`. Nếu vi phạm: ném `BadRequestException('OPERATIONAL_START_INITIAL_PUBLICATION_INVALID')`.
    - Không cho phép khoảng trống hiệu lực sau khi luồng đã được xuất bản.
 3. **Lệnh `replace` (Thay thế tương lai):**
@@ -351,6 +352,7 @@ Không sử dụng các định dạng mã lỗi mơ hồ (như 409/400). Mỗi 
 
 | Mã lỗi / Error Code | Exception Class | HTTP Status | Mục đích nghiệp vụ |
 |---|---|---|---|
+| `OPERATIONAL_START_DIRECT_PUBLISH_AFTER_AUTHORITY_FORBIDDEN` | `BadRequestException` | 400 | Từ chối lệnh direct publish khi luồng chính sách đã từng có thẩm quyền (phải dùng replace hoặc correct) |
 | `OPERATIONAL_START_RETIRE_FORBIDDEN` | `BadRequestException` | 400 | Từ chối lệnh retire đối với chính sách mốc vận hành |
 | `OPERATIONAL_START_REPLACE_AFTER_BOUNDARY_FORBIDDEN` | `BadRequestException` | 400 | Từ chối lệnh replace khi mốc vận hành đã diễn ra (phải dùng correct) |
 | `OPERATIONAL_START_INITIAL_PUBLICATION_INVALID` | `BadRequestException` | 400 | Từ chối xuất bản khi `effectiveFrom > operationalStartDate` |

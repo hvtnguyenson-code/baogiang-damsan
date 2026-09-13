@@ -120,6 +120,16 @@ export class BusinessConfigurationService {
         if (effectiveFrom > payload.operationalStartDate) {
           throw new BadRequestException('OPERATIONAL_START_INITIAL_PUBLICATION_INVALID');
         }
+        const priorAuthorityCount = await tx.businessPolicyVersion.count({
+          where: {
+            streamId: row.streamId,
+            id: { not: row.id },
+            status: { in: ['PUBLISHED', 'REVERSED'] },
+          },
+        });
+        if (priorAuthorityCount > 0) {
+          throw new BadRequestException('OPERATIONAL_START_DIRECT_PUBLISH_AFTER_AUTHORITY_FORBIDDEN');
+        }
       }
       const updated = await tx.businessPolicyVersion.updateMany({
 

@@ -1224,19 +1224,218 @@ integration('Business Configuration API (isolated PostgreSQL integration)', () =
       expect(beforeEffective.outcome).toBe('POLICY_NOT_CONFIGURED');
     });
 
-    it('preserves generic TEST policy family publication behavior without regression', async () => {
-      const draft = await manager.agent
+    it('blocks second direct publish on the same stream after initial authority is established', async () => {
+      await h.prisma.academicCalendarVersion.create({
+        data: {
+          academicYearId: academicYear.id,
+          versionNumber: 1,
+          startDate: new Date('2026-08-01T00:00:00.000Z'),
+          endDate: new Date('2027-05-31T00:00:00.000Z'),
+          officialWeekCount: 35,
+          reserveWeekCount: 1,
+          teachingWeekdays: ['MONDAY', 'TUESDAY'],
+          isActive: true,
+          activatedAt: new Date('2026-08-01T00:00:00.000Z'),
+        },
+      });
+
+      // A. Create valid first OPERATIONAL_START draft
+      const draft1 = await manager.agent
         .post('/api/business-configuration/policies/drafts')
         .set('Origin', testOrigin)
-        .send(body('generic-reg-draft', { enabled: true, threshold: 5 }));
-      expect(draft.status).toBe(201);
+        .send(opBody('op-draft-1', '2026-09-01', '2026-08-15'));
+      expect(draft1.status).toBe(201);
 
-      const pub = await manager.agent
-        .post(`/api/business-configuration/policy-versions/${draft.body.versionId}/publish`)
+      // B. Publish first successfully
+      const pub1 = await manager.agent
+        .post(`/api/business-configuration/policy-versions/${draft1.body.versionId}/publish`)
         .set('Origin', testOrigin)
-        .send({ commandId: 'generic-reg-pub' });
-      expect(pub.status).toBe(200);
-      expect(pub.body.outcome).toBe('PUBLISHED');
+        .send({ commandId: 'op-pub-1' });
+      expect(pub1.status).toBe(200);
+      expect(pub1.body.outcome).toBe('PUBLISHED');
+
+      // C. Create second draft in SAME stream, using non-overlapping/future interval
+      const draft2 = await manager.agent
+        .post('/api/business-configuration/policies/drafts')
+        .set('Origin', testOrigin)
+        .send(opBody('op-draft-2', '2026-10-01', '2026-09-15'));
+      expect(draft2.status).toBe(201);
+      expect(draft2.body.streamId).toBe(draft1.body.streamId);
+
+      // D. Attempt generic publish second draft -> fails with 400
+      const pub2 = await manager.agent
+        .post(`/api/business-configuration/policy-versions/${draft2.body.versionId}/publish`)
+        .set('Origin', testOrigin)
+        .send({ commandId: 'op-pub-2' });
+      expect(pub2.status).toBe(400);
+      expect(pub2.body.message).toBe('OPERATIONAL_START_DIRECT_PUBLISH_AFTER_AUTHORITY_FORBIDDEN');
+
+      // Verify:
+      // - second draft remains DRAFT
+      const row2 = await h.prisma.businessPolicyVersion.findUnique({ where: { id: draft2.body.versionId } });
+      expect(row2?.status).toBe('DRAFT');
+
+      // - first authority remains PUBLISHED
+      const row1 = await h.prisma.businessPolicyVersion.findUnique({ where: { id: draft1.body.versionId } });
+      expect(row1?.status).toBe('PUBLISHED');
+
+      // - no success audit BUSINESS_POLICY_PUBLISHED for second draft
+      const audits = await h.prisma.auditEvent.findMany({
+        where: { action: 'BUSINESS_POLICY_PUBLISHED', entityId: draft2.body.versionId },
+      });
+      expect(audits).toHaveLength(0);
+
+      // - resolver still resolves to first authority
+      const service = h.app.get(BusinessConfigurationService);
+      const resolved = await service.resolveEffectiveBusinessPolicy(
+        'OPERATIONAL_START',
+        { kind: 'ACADEMIC_YEAR', academicYearId: academicYear.id },
+        '2026-09-01',
+      );
+      expect(resolved.outcome).toBe('RESOLVED');
+      if (resolved.outcome === 'RESOLVED') {
+        expect(resolved.policyVersionId).toBe(draft1.body.versionId);
+        expect(resolved.payload).toEqual({ operationalStartDate: '2026-09-01' });
+      }
+    });
+
+    it('allows multiple drafts before first authority, but second publish fails after first is published', async () => {
+      await h.prisma.academicCalendarVersion.create({
+        data: {
+          academicYearId: academicYear.id,
+          versionNumber: 1,
+          startDate: new Date('2026-08-01T00:00:00.000Z'),
+          endDate: new Date('2027-05-31T00:00:00.000Z'),
+          officialWeekCount: 35,
+          reserveWeekCount: 1,
+          teachingWeekdays: ['MONDAY', 'TUESDAY'],
+          isActive: true,
+          activatedAt: new Date('2026-08-01T00:00:00.000Z'),
+        },
+      });
+
+      // Create draft A
+      const draftA = await manager.agent
+        .post('/api/business-configuration/policies/drafts')
+        .set('Origin', testOrigin)
+        .send(opBody('op-draft-multi-a', '2026-09-01', '2026-08-15'));
+      expect(draftA.status).toBe(201);
+
+      // Create draft B in same stream
+      const draftB = await manager.agent
+        .post('/api/business-configuration/policies/drafts')
+        .set('Origin', testOrigin)
+        .send(opBody('op-draft-multi-b', '2026-09-15', '2026-09-01'));
+      expect(draftB.status).toBe(201);
+      expect(draftB.body.streamId).toBe(draftA.body.streamId);
+
+      // Publish draft A successfully
+      const pubA = await manager.agent
+        .post(`/api/business-configuration/policy-versions/${draftA.body.versionId}/publish`)
+        .set('Origin', testOrigin)
+        .send({ commandId: 'op-pub-multi-a' });
+      expect(pubA.status).toBe(200);
+      expect(pubA.body.outcome).toBe('PUBLISHED');
+
+      // Attempt to publish draft B -> forbidden because stream now has prior authority
+      const pubB = await manager.agent
+        .post(`/api/business-configuration/policy-versions/${draftB.body.versionId}/publish`)
+        .set('Origin', testOrigin)
+        .send({ commandId: 'op-pub-multi-b' });
+      expect(pubB.status).toBe(400);
+      expect(pubB.body.message).toBe('OPERATIONAL_START_DIRECT_PUBLISH_AFTER_AUTHORITY_FORBIDDEN');
+
+      const rowB = await h.prisma.businessPolicyVersion.findUnique({ where: { id: draftB.body.versionId } });
+      expect(rowB?.status).toBe('DRAFT');
+    });
+
+    it('blocks direct publish when stream has retained REVERSED authority lineage', async () => {
+      await h.prisma.academicCalendarVersion.create({
+        data: {
+          academicYearId: academicYear.id,
+          versionNumber: 1,
+          startDate: new Date('2026-08-01T00:00:00.000Z'),
+          endDate: new Date('2027-05-31T00:00:00.000Z'),
+          officialWeekCount: 35,
+          reserveWeekCount: 1,
+          teachingWeekdays: ['MONDAY', 'TUESDAY'],
+          isActive: true,
+          activatedAt: new Date('2026-08-01T00:00:00.000Z'),
+        },
+      });
+
+      // Publish initial draft
+      const draft1 = await manager.agent
+        .post('/api/business-configuration/policies/drafts')
+        .set('Origin', testOrigin)
+        .send(opBody('op-draft-rev-1', '2026-09-01', '2026-08-15'));
+      expect(draft1.status).toBe(201);
+
+      const pub1 = await manager.agent
+        .post(`/api/business-configuration/policy-versions/${draft1.body.versionId}/publish`)
+        .set('Origin', testOrigin)
+        .send({ commandId: 'op-pub-rev-1' });
+      expect(pub1.status).toBe(200);
+
+      // Retain REVERSED status on the published version to simulate prior correction history
+      await h.prisma.businessPolicyVersion.update({
+        where: { id: draft1.body.versionId },
+        data: {
+          status: 'REVERSED',
+          reversedByUserId: manager.id,
+          reversedAt: new Date(),
+          correctionReason: 'Corrected in audit',
+        },
+      });
+
+      // Create new draft in same stream
+      const draft2 = await manager.agent
+        .post('/api/business-configuration/policies/drafts')
+        .set('Origin', testOrigin)
+        .send(opBody('op-draft-rev-2', '2026-09-10', '2026-08-20'));
+      expect(draft2.status).toBe(201);
+      expect(draft2.body.streamId).toBe(draft1.body.streamId);
+
+      // Direct publish must still be rejected because stream retains REVERSED authority history
+      const pub2 = await manager.agent
+        .post(`/api/business-configuration/policy-versions/${draft2.body.versionId}/publish`)
+        .set('Origin', testOrigin)
+        .send({ commandId: 'op-pub-rev-2' });
+      expect(pub2.status).toBe(400);
+      expect(pub2.body.message).toBe('OPERATIONAL_START_DIRECT_PUBLISH_AFTER_AUTHORITY_FORBIDDEN');
+
+      const row2 = await h.prisma.businessPolicyVersion.findUnique({ where: { id: draft2.body.versionId } });
+      expect(row2?.status).toBe('DRAFT');
+    });
+
+    it('preserves generic TEST policy family publication behavior without regression across multiple versions', async () => {
+      const draft1 = await manager.agent
+        .post('/api/business-configuration/policies/drafts')
+        .set('Origin', testOrigin)
+        .send(body('generic-reg-draft-1', { enabled: true, threshold: 5 }, { effectiveFrom: '2026-08-01', effectiveUntil: '2026-08-31' }));
+      expect(draft1.status).toBe(201);
+
+      const pub1 = await manager.agent
+        .post(`/api/business-configuration/policy-versions/${draft1.body.versionId}/publish`)
+        .set('Origin', testOrigin)
+        .send({ commandId: 'generic-reg-pub-1' });
+      expect(pub1.status).toBe(200);
+      expect(pub1.body.outcome).toBe('PUBLISHED');
+
+      // Second draft in same stream with non-overlapping interval
+      const draft2 = await manager.agent
+        .post('/api/business-configuration/policies/drafts')
+        .set('Origin', testOrigin)
+        .send(body('generic-reg-draft-2', { enabled: false, threshold: 10 }, { effectiveFrom: '2026-09-01' }));
+      expect(draft2.status).toBe(201);
+      expect(draft2.body.streamId).toBe(draft1.body.streamId);
+
+      const pub2 = await manager.agent
+        .post(`/api/business-configuration/policy-versions/${draft2.body.versionId}/publish`)
+        .set('Origin', testOrigin)
+        .send({ commandId: 'generic-reg-pub-2' });
+      expect(pub2.status).toBe(200);
+      expect(pub2.body.outcome).toBe('PUBLISHED');
     });
   });
 });
