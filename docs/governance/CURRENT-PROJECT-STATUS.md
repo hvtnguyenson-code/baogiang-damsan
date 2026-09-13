@@ -10,10 +10,7 @@ It is **not** a self-referential registry of the latest Git commit. Exact curren
 
 ## Active major task
 
-None currently active.
-
-Next critical path:
-- `P1-031` — Operational-start policy implementation — **READY** (unlocked by closed `P1-030`, `P1-021`, and `P2-003`).
+`P1-031` — Operational-start policy implementation — **IN_PROGRESS** on dedicated branch `feat/operational-start-policy-implementation-031`. Starting canonical base `13a87538b38312a2dfb482c358b17ac23f4b2ee8`; baseline CI #438 SUCCESS; implementing accepted `ADR-049` (`OPERATIONAL_START` / `v1` / `ACADEMIC_YEAR`), lifecycle enforcement (no RETIRE, prospective REPLACE, post-boundary CORRECTION), typed resolver, progress/debt pre-op exclusion, execution command gates, and ReportingStatement frozen provenance.
 
 Parallel eligible:
 - `P4-010` — GDĐP/HĐTN programme architecture closure — **READY** (independent track).
@@ -330,12 +327,10 @@ The final production-host topology is intentionally unresolved and explicitly de
 
 ## Tasks currently active or eligible to start
 
-Active major task: None currently active.
+Active major task: `P1-031` — Operational-start policy implementation (`IN_PROGRESS` on dedicated branch `feat/operational-start-policy-implementation-031`).
 
-The following registered tasks are genuinely eligible to start on dedicated branches:
-
-1. `P1-031` — Operational-start policy implementation (`READY`; next critical path, all dependencies `P1-021`, `P1-030`, `P2-003` are CLOSED).
-2. `P4-010` — GDĐP/HĐTN programme architecture closure (`READY`; independent track).
+Parallel eligible to start on a dedicated branch:
+1. `P4-010` — GDĐP/HĐTN programme architecture closure (`READY`; independent track).
 
 `P1-032` remains dependency-gated until `P1-031` is `CLOSED`. `P2-020` remains blocked by `P2-010` evidence (`BLOCKED_EVIDENCE`).
 

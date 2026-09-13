@@ -88,7 +88,7 @@ No runtime/schema/production mutation.
 
 1. **HomeroomAssignment** — date-effective retained GVCN responsibility required for HĐTN `CLASS`.
 2. **Business Configuration Control Plane** — typed/versioned business policy, explicitly separated from secrets/technical env.
-3. **Delayed go-live operational-start policy** — explicit start authority without inventing historical debt (`P1-030` CLOSED by `SYNC-P1-030`, `ADR-049` Accepted; `P1-031` READY; `P1-032` PLANNED).
+3. **Delayed go-live operational-start policy** — explicit start authority without inventing historical debt (`P1-030` CLOSED by `SYNC-P1-030`, `ADR-049` Accepted; `P1-031` IN_PROGRESS; `P1-032` PLANNED).
 
 ### P2 — Real school data ingestion & Curricular components
 
@@ -153,11 +153,11 @@ The exact dependency graph is authoritative only in `PRE-PILOT-TASK-REGISTER.md`
 P0-900 (CLOSED)
 └── P2-001 (Curricular component architecture, CLOSED by SYNC-P2-001, ADR-048 Accepted)
     ├── P1-030 (Delayed go-live architecture, CLOSED by SYNC-P1-030, ADR-049 Accepted)
-    │   └── P1-031 (Operational-start policy, READY)
+    │   └── P1-031 (Operational-start policy, IN_PROGRESS)
     ├── P2-002 (Component persistence & control plane, CLOSED by SYNC-P2-002)
     │   └── P2-003 (Component allocation & projections, CLOSED by SYNC-P2-003)
     │       ├── P2-004 (Admin applicability workspace, CLOSED by SYNC-P2-004)
-    │       ├── P1-031 (Operational-start policy, READY)
+    │       ├── P1-031 (Operational-start policy, IN_PROGRESS)
     │       └── P3-010 (Pre-operational historical execution)
     └── P2-010 (PPCT real-workbook audit, BLOCKED_EVIDENCE, needs real workbook evidence)
         └── P2-020 (PPCT native importer, needs P2-002 + P2-010)
