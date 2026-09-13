@@ -68,7 +68,7 @@ Dependency cells below contain **task IDs only**. Conditions/evidence triggers b
 
 | Task | Status | Depends on | Deliverable / closure | Traceability |
 |---|---|---|---|---|
-| `P1-030` Delayed go-live / operational-start architecture | `READY` | `P1-020`, `P2-001` | Exact business semantics for operational start, historical boundary and no-auto-debt invariants | T28, T30 |
+| `P1-030` Delayed go-live / operational-start architecture | `IN_PROGRESS` | `P1-020`, `P2-001` | Dedicated task branch `docs/delayed-go-live-operational-start-architecture-030`; starting canonical main `fafd104c9af5b83833b8a6f324021cea226ffe63`; closure draft `docs/requirements/P1-030-DELAYED-GO-LIVE-OPERATIONAL-START-ARCHITECTURE.md` and proposed `docs/decisions/ADR-049-DELAYED-GO-LIVE-OPERATIONAL-START-ARCHITECTURE.md` define exact `OPERATIONAL_START` family (`v1`, `ACADEMIC_YEAR`, `operationalStartDate`), PO authority PO-1..PO-4 locked, expected PPCT progression via timetable replay, no-auto-debt invariants, fail-closed missing policy, and explicit boundaries with P1-031, P1-032, P3-010/020, and P4 | T28, T30 |
 | `P1-031` Operational-start policy implementation | `PLANNED` | `P1-021`, `P1-030`, `P2-003` | Typed/versioned policy runtime and read authority using Business Configuration foundation | T28, T30 |
 | `P1-032` Operational-start admin UI integration | `PLANNED` | `P1-022`, `P1-031` | Safe business UI for authorized start policy with effectivity/audit visibility | T28, T30 |
 
