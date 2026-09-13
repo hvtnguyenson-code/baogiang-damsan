@@ -6,15 +6,20 @@ This is the canonical mutable **product/task status** document for Báo giảng.
 
 It is **not** a self-referential registry of the latest Git commit. Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub at the start of every task. SHAs recorded here are evidence for the stated baseline or last closed major task.
 
-**Status snapshot date:** 2026-09-12
+**Status snapshot date:** 2026-09-13
 
 ## Active major task
 
-`P1-030` — Delayed go-live / operational-start architecture — **IN_PROGRESS** on dedicated branch `docs/delayed-go-live-operational-start-architecture-030`. Starting canonical main `fafd104c9af5b83833b8a6f324021cea226ffe63`; requirement closure draft `docs/requirements/P1-030-DELAYED-GO-LIVE-OPERATIONAL-START-ARCHITECTURE.md` and proposed `docs/decisions/ADR-049-DELAYED-GO-LIVE-OPERATIONAL-START-ARCHITECTURE.md` lock PO authority PO-1..PO-4, canonical `OPERATIONAL_START` family (`v1`, `ACADEMIC_YEAR`), expected PPCT progression via timetable replay, no-auto-debt invariants, and fail-closed missing policy.
+None currently active.
 
-Other eligible & parallel tasks:
+Next critical path:
+- `P1-031` — Operational-start policy implementation — **READY** (unlocked by closed `P1-030`, `P1-021`, and `P2-003`).
+
+Parallel eligible:
 - `P4-010` — GDĐP/HĐTN programme architecture closure — **READY** (independent track).
-- `P1-031` — Operational-start policy implementation — **PLANNED** (dependency `P2-003` is CLOSED, but `P1-030` remains IN_PROGRESS / not yet CLOSED).
+
+Remain:
+- `P1-032` — Operational-start admin UI integration — **PLANNED** (waits for `P1-031`).
 - `P2-010` — PPCT real-workbook contract/security audit — **BLOCKED_EVIDENCE** (pending authoritative school PPCT workbook/template).
 - `P2-020` — PPCT native importer implementation — **PLANNED** (pending `P2-010`).
 
@@ -22,7 +27,26 @@ Production environment remains strictly **PRE-OPERATIONAL**. No production deplo
 
 ## Last closed major task
 
-`P2-004` — Specialized-study class-subject administration workspace — **CLOSED** by `SYNC-P2-004`.
+`P1-030` — Delayed go-live / operational-start architecture — **CLOSED** by `SYNC-P1-030`.
+
+Closure evidence:
+- dedicated task branch: `docs/delayed-go-live-operational-start-architecture-030`;
+- starting canonical main base: `fafd104c9af5b83833b8a6f324021cea226ffe63`;
+- final reviewed implementation HEAD: `c807d26a6a53609ac5259384661db52271460053`;
+- independent GitHub architecture review: PASS after bounded forward corrections;
+- parent PR: #131 (`docs(architecture): define operational-start policy`);
+- exact-head PR CI: CI #435 (run id: `34707601649`), SUCCESS;
+- merge/main commit: `c4ce704a67fab8e24e5bae3ac2ce81dbcb36c27d`;
+- authoritative post-merge main CI: CI #436 (run id: `34728703082`), SUCCESS;
+- accepted architecture: `ADR-049-DELAYED-GO-LIVE-OPERATIONAL-START-ARCHITECTURE.md` Accepted;
+- closed by administrative closure: `SYNC-P1-030`;
+- scope delivered: defined canonical `OPERATIONAL_START` policy family (`v1`, `ACADEMIC_YEAR`, payload `{ operationalStartDate: CivilDateString }`), locked Product Owner authorities PO-1..PO-4, expected PPCT progression via timetable replay, no-auto-debt invariants (`PRE_OPERATIONAL_UNCONFIRMED` excluding past unconfirmed periods from debt/late calculations), fail-closed missing policy, single boundary for CORE/SPECIALIZED_STUDY, and explicit boundaries with P1-031, P1-032, P3-010/020, and P4;
+- strictly docs-only scope under `docs/**` (zero runtime, schema, migration, UI, auth, CI, or deployment mutation);
+- no correction or re-entry task emerged from review or CI;
+- production remains strictly PRE-OPERATIONAL;
+- unlocks downstream: `P1-031` (`READY`).
+
+Predecessor closed major task: `P2-004` — Specialized-study class-subject administration workspace — **CLOSED** by `SYNC-P2-004`.
 
 Closure evidence:
 - dedicated implementation branch: `feat/ppct-specialized-study-admin-workspace-004`;
@@ -285,7 +309,7 @@ The registered implementation, data-evidence, product and production-readiness t
 3. Programme planning cannot assign different exact teacher sets to different exact slots.
 4. Special-program absence/replacement and programme-level confirmation authority remain explicitly registered for P4 closure (T43/T44).
 5. Existing `GDDDP_COORDINATOR` / `HĐTN_COORDINATOR` capability intent is not wired to programme-resource authority.
-6. Delayed go-live / operational-start policy and historical pre-operational evidence workflow are absent.
+6. Delayed go-live / operational-start policy runtime implementation (P1-031) and historical pre-operational evidence workflow (P3-010/P3-020) remain (P1-030 architecture is CLOSED).
 7. PPCT real-school import is intentionally blocked pending an authoritative workbook contract; preferred direction is one workbook with separate logical content for ordinary PPCT (CORE) and Chuyên đề học tập (SPECIALIZED_STUDY), with exact physical sheet names and structure evidence-bound to P2-010.
 8. Special-activity participation is not yet integrated into official workload/reporting aggregation.
 9. WorkloadAdjustmentRule remains trigger-gated/deferred.
@@ -306,12 +330,14 @@ The final production-host topology is intentionally unresolved and explicitly de
 
 ## Tasks currently active or eligible to start
 
-The following registered tasks are active or genuinely eligible to start on dedicated branches:
+Active major task: None currently active.
 
-1. `P1-030` — Delayed go-live / operational-start architecture (`IN_PROGRESS` on dedicated branch `docs/delayed-go-live-operational-start-architecture-030`).
+The following registered tasks are genuinely eligible to start on dedicated branches:
+
+1. `P1-031` — Operational-start policy implementation (`READY`; next critical path, all dependencies `P1-021`, `P1-030`, `P2-003` are CLOSED).
 2. `P4-010` — GDĐP/HĐTN programme architecture closure (`READY`; independent track).
 
-`P1-031` remains dependency-gated until `P1-030` is `CLOSED`. `P2-020` remains blocked by `P2-010` evidence (`BLOCKED_EVIDENCE`).
+`P1-032` remains dependency-gated until `P1-031` is `CLOSED`. `P2-020` remains blocked by `P2-010` evidence (`BLOCKED_EVIDENCE`).
 
 Note: `P2-010` remains `BLOCKED_EVIDENCE` pending actual authoritative school PPCT workbook/template evidence.
 
