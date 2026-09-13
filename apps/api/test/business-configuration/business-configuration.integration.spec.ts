@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { UserStatus } from '@prisma/client';
 import { AuditService } from '../../src/audit/audit.service';
 import { BusinessConfigurationService } from '../../src/business-configuration/business-configuration.service';
@@ -1436,6 +1436,598 @@ integration('Business Configuration API (isolated PostgreSQL integration)', () =
         .send({ commandId: 'generic-reg-pub-2' });
       expect(pub2.status).toBe(200);
       expect(pub2.body.outcome).toBe('PUBLISHED');
+    });
+
+    it('strictly forbids retire for OPERATIONAL_START policy version', async () => {
+      await h.prisma.academicCalendarVersion.create({
+        data: {
+          academicYearId: academicYear.id,
+          versionNumber: 1,
+          startDate: new Date('2026-08-01T00:00:00.000Z'),
+          endDate: new Date('2027-05-31T00:00:00.000Z'),
+          officialWeekCount: 35,
+          reserveWeekCount: 1,
+          teachingWeekdays: ['MONDAY', 'TUESDAY'],
+          isActive: true,
+          activatedAt: new Date('2026-08-01T00:00:00.000Z'),
+        },
+      });
+
+      const draft = await manager.agent
+        .post('/api/business-configuration/policies/drafts')
+        .set('Origin', testOrigin)
+        .send(opBody('op-retire-draft', '2026-09-01', '2026-08-15'));
+      expect(draft.status).toBe(201);
+
+      const pub = await manager.agent
+        .post(`/api/business-configuration/policy-versions/${draft.body.versionId}/publish`)
+        .set('Origin', testOrigin)
+        .send({ commandId: 'op-retire-pub' });
+      expect(pub.status).toBe(200);
+
+      // Attempt to retire
+      const ret = await manager.agent
+        .post(`/api/business-configuration/policy-versions/${draft.body.versionId}/retire`)
+        .set('Origin', testOrigin)
+        .send({ commandId: 'op-retire-cmd', effectiveUntil: '2026-10-31' });
+      expect(ret.status).toBe(400);
+      expect(ret.body.message).toBe('OPERATIONAL_START_RETIRE_FORBIDDEN');
+
+      // Verify row unchanged: status PUBLISHED, effectiveUntil null
+      const row = await h.prisma.businessPolicyVersion.findUnique({ where: { id: draft.body.versionId } });
+      expect(row?.status).toBe('PUBLISHED');
+      expect(row?.effectiveUntil).toBeNull();
+
+      // Verify resolver unchanged
+      const service = h.app.get(BusinessConfigurationService);
+      const res = await service.resolveEffectiveBusinessPolicy(
+        'OPERATIONAL_START',
+        { kind: 'ACADEMIC_YEAR', academicYearId: academicYear.id },
+        '2026-09-15',
+      );
+      expect(res.outcome).toBe('RESOLVED');
+
+      // Zero success retire audits
+      const retireAudits = await h.prisma.auditEvent.findMany({
+        where: { action: 'BUSINESS_POLICY_RETIRED', entityId: draft.body.versionId },
+      });
+      expect(retireAudits).toHaveLength(0);
+    });
+
+    describe('OPERATIONAL_START replace lifecycle semantics', () => {
+      let service: BusinessConfigurationService;
+      let dateSpy: jest.SpyInstance;
+
+      beforeEach(async () => {
+        service = h.app.get(BusinessConfigurationService);
+        dateSpy = jest.spyOn(service, 'businessCivilDate');
+        await h.prisma.academicCalendarVersion.create({
+          data: {
+            academicYearId: academicYear.id,
+            versionNumber: 1,
+            startDate: new Date('2026-08-01T00:00:00.000Z'),
+            endDate: new Date('2027-05-31T00:00:00.000Z'),
+            officialWeekCount: 35,
+            reserveWeekCount: 1,
+            teachingWeekdays: ['MONDAY', 'TUESDAY'],
+            isActive: true,
+            activatedAt: new Date('2026-08-01T00:00:00.000Z'),
+          },
+        });
+      });
+
+      afterEach(() => {
+        dateSpy.mockRestore();
+      });
+
+      it('successfully replaces before current boundary, maintaining exact continuity and lineage', async () => {
+        // Current: OSD = 2026-09-20, effectiveFrom = 2026-08-15
+        const draft = await manager.agent
+          .post('/api/business-configuration/policies/drafts')
+          .set('Origin', testOrigin)
+          .send(opBody('op-rep-init', '2026-09-20', '2026-08-15'));
+        expect(draft.status).toBe(201);
+        const pub = await manager.agent
+          .post(`/api/business-configuration/policy-versions/${draft.body.versionId}/publish`)
+          .set('Origin', testOrigin)
+          .send({ commandId: 'op-rep-init-pub' });
+        expect(pub.status).toBe(200);
+
+        // Deterministic business date before current boundary: 2026-09-10
+        dateSpy.mockReturnValue('2026-09-10');
+
+        // Replacement from: 2026-09-15, new OSD: 2026-09-25
+        const rep = await manager.agent
+          .post(`/api/business-configuration/policy-versions/${draft.body.versionId}/replace`)
+          .set('Origin', testOrigin)
+          .send({
+            commandId: 'op-rep-success-cmd',
+            effectiveFrom: '2026-09-15',
+            payload: { operationalStartDate: '2026-09-25' },
+          });
+        expect(rep.status).toBe(200);
+        expect(rep.body.outcome).toBe('REPLACED');
+        const replacementId = rep.body.versionId;
+
+        // Continuity check: source effectiveUntil = previous day of replacement effectiveFrom (2026-09-14)
+        const sourceRow = await h.prisma.businessPolicyVersion.findUnique({ where: { id: draft.body.versionId } });
+        expect(sourceRow?.effectiveUntil?.toISOString().slice(0, 10)).toBe('2026-09-14');
+
+        // Replacement row check: effectiveFrom = 2026-09-15, replacesVersionId = source.id
+        const repRow = await h.prisma.businessPolicyVersion.findUnique({ where: { id: replacementId } });
+        expect(repRow?.effectiveFrom.toISOString().slice(0, 10)).toBe('2026-09-15');
+        expect(repRow?.effectiveUntil).toBeNull();
+        expect(repRow?.replacesVersionId).toBe(draft.body.versionId);
+
+        // Resolver check: day before replacement (2026-09-14) resolves source; replacement day (2026-09-15) resolves replacement
+        const resSource = await service.resolveEffectiveBusinessPolicy(
+          'OPERATIONAL_START',
+          { kind: 'ACADEMIC_YEAR', academicYearId: academicYear.id },
+          '2026-09-14',
+        );
+        expect(resSource.outcome).toBe('RESOLVED');
+        if (resSource.outcome === 'RESOLVED') {
+          expect(resSource.policyVersionId).toBe(draft.body.versionId);
+          expect(resSource.payload).toEqual({ operationalStartDate: '2026-09-20' });
+        }
+
+        const resRep = await service.resolveEffectiveBusinessPolicy(
+          'OPERATIONAL_START',
+          { kind: 'ACADEMIC_YEAR', academicYearId: academicYear.id },
+          '2026-09-15',
+        );
+        expect(resRep.outcome).toBe('RESOLVED');
+        if (resRep.outcome === 'RESOLVED') {
+          expect(resRep.policyVersionId).toBe(replacementId);
+          expect(resRep.payload).toEqual({ operationalStartDate: '2026-09-25' });
+        }
+      });
+
+      it('rejects replace when businessDate == current operationalStartDate', async () => {
+        const draft = await manager.agent
+          .post('/api/business-configuration/policies/drafts')
+          .set('Origin', testOrigin)
+          .send(opBody('op-rep-b-eq', '2026-09-20', '2026-08-15'));
+        await manager.agent.post(`/api/business-configuration/policy-versions/${draft.body.versionId}/publish`).set('Origin', testOrigin).send({ commandId: 'p-b-eq' });
+
+        dateSpy.mockReturnValue('2026-09-20');
+
+        const rep = await manager.agent
+          .post(`/api/business-configuration/policy-versions/${draft.body.versionId}/replace`)
+          .set('Origin', testOrigin)
+          .send({
+            commandId: 'op-rep-eq-cmd',
+            effectiveFrom: '2026-09-22',
+            payload: { operationalStartDate: '2026-09-25' },
+          });
+        expect(rep.status).toBe(400);
+        expect(rep.body.message).toBe('OPERATIONAL_START_REPLACE_AFTER_BOUNDARY_FORBIDDEN');
+      });
+
+      it('rejects replace when businessDate > current operationalStartDate', async () => {
+        const draft = await manager.agent
+          .post('/api/business-configuration/policies/drafts')
+          .set('Origin', testOrigin)
+          .send(opBody('op-rep-b-gt', '2026-09-20', '2026-08-15'));
+        await manager.agent.post(`/api/business-configuration/policy-versions/${draft.body.versionId}/publish`).set('Origin', testOrigin).send({ commandId: 'p-b-gt' });
+
+        dateSpy.mockReturnValue('2026-09-21');
+
+        const rep = await manager.agent
+          .post(`/api/business-configuration/policy-versions/${draft.body.versionId}/replace`)
+          .set('Origin', testOrigin)
+          .send({
+            commandId: 'op-rep-gt-cmd',
+            effectiveFrom: '2026-09-25',
+            payload: { operationalStartDate: '2026-09-30' },
+          });
+        expect(rep.status).toBe(400);
+        expect(rep.body.message).toBe('OPERATIONAL_START_REPLACE_AFTER_BOUNDARY_FORBIDDEN');
+      });
+
+      it('rejects replace when new operationalStartDate is not in future relative to businessDate', async () => {
+        const draft = await manager.agent
+          .post('/api/business-configuration/policies/drafts')
+          .set('Origin', testOrigin)
+          .send(opBody('op-rep-new-past', '2026-09-20', '2026-08-15'));
+        await manager.agent.post(`/api/business-configuration/policy-versions/${draft.body.versionId}/publish`).set('Origin', testOrigin).send({ commandId: 'p-new-past' });
+
+        dateSpy.mockReturnValue('2026-09-10');
+
+        // new OSD == businessDate
+        const rep1 = await manager.agent
+          .post(`/api/business-configuration/policy-versions/${draft.body.versionId}/replace`)
+          .set('Origin', testOrigin)
+          .send({
+            commandId: 'op-rep-new-eq-cmd',
+            effectiveFrom: '2026-09-15',
+            payload: { operationalStartDate: '2026-09-10' },
+          });
+        expect(rep1.status).toBe(400);
+        expect(rep1.body.message).toBe('INVALID_POLICY_REPLACEMENT');
+
+        // new OSD < businessDate
+        const rep2 = await manager.agent
+          .post(`/api/business-configuration/policy-versions/${draft.body.versionId}/replace`)
+          .set('Origin', testOrigin)
+          .send({
+            commandId: 'op-rep-new-lt-cmd',
+            effectiveFrom: '2026-09-15',
+            payload: { operationalStartDate: '2026-09-08' },
+          });
+        expect(rep2.status).toBe(400);
+        expect(rep2.body.message).toBe('INVALID_POLICY_REPLACEMENT');
+      });
+
+      it('rejects replace when new operationalStartDate is outside active calendar', async () => {
+        const draft = await manager.agent
+          .post('/api/business-configuration/policies/drafts')
+          .set('Origin', testOrigin)
+          .send(opBody('op-rep-out-cal', '2026-09-20', '2026-08-15'));
+        await manager.agent.post(`/api/business-configuration/policy-versions/${draft.body.versionId}/publish`).set('Origin', testOrigin).send({ commandId: 'p-out-cal' });
+
+        dateSpy.mockReturnValue('2026-09-10');
+
+        const rep = await manager.agent
+          .post(`/api/business-configuration/policy-versions/${draft.body.versionId}/replace`)
+          .set('Origin', testOrigin)
+          .send({
+            commandId: 'op-rep-out-cal-cmd',
+            effectiveFrom: '2026-09-15',
+            payload: { operationalStartDate: '2027-06-15' },
+          });
+        expect(rep.status).toBe(400);
+        expect(rep.body.message).toBe('OPERATIONAL_START_DATE_OUTSIDE_CALENDAR');
+      });
+
+      it('rejects replace when active calendar is missing or ambiguous', async () => {
+        const draft = await manager.agent
+          .post('/api/business-configuration/policies/drafts')
+          .set('Origin', testOrigin)
+          .send(opBody('op-rep-amb-cal', '2026-09-20', '2026-08-15'));
+        await manager.agent.post(`/api/business-configuration/policy-versions/${draft.body.versionId}/publish`).set('Origin', testOrigin).send({ commandId: 'p-amb-cal' });
+
+        dateSpy.mockReturnValue('2026-09-10');
+
+        // Deactivate calendar -> missing
+        await h.prisma.academicCalendarVersion.updateMany({
+          where: { academicYearId: academicYear.id },
+          data: { isActive: false },
+        });
+
+        const repMissing = await manager.agent
+          .post(`/api/business-configuration/policy-versions/${draft.body.versionId}/replace`)
+          .set('Origin', testOrigin)
+          .send({
+            commandId: 'op-rep-mis-cal-cmd',
+            effectiveFrom: '2026-09-15',
+            payload: { operationalStartDate: '2026-09-25' },
+          });
+        expect(repMissing.status).toBe(400);
+        expect(repMissing.body.message).toBe('ACADEMIC_CALENDAR_VERSION_INVALID');
+
+        // Verify ambiguous calendar throws ACADEMIC_CALENDAR_VERSION_INVALID via service helper
+        type ServiceWithPrivate = {
+          requireActiveCalendar: (tx: unknown, academicYearId: string) => Promise<{ id: string; startDate: Date; endDate: Date }>;
+        };
+        const privateService = service as unknown as ServiceWithPrivate;
+        const mockTx = {
+          academicCalendarVersion: {
+            findMany: jest.fn().mockResolvedValue([
+              { id: 'cal-1', startDate: new Date('2026-08-01T00:00:00.000Z'), endDate: new Date('2027-05-31T00:00:00.000Z'), versionNumber: 1 },
+              { id: 'cal-2', startDate: new Date('2026-08-01T00:00:00.000Z'), endDate: new Date('2027-05-31T00:00:00.000Z'), versionNumber: 2 },
+            ]),
+          },
+        };
+        await expect(privateService.requireActiveCalendar(mockTx, academicYear.id)).rejects.toThrow(
+          'ACADEMIC_CALENDAR_VERSION_INVALID',
+        );
+      });
+
+      it('rejects replace with POLICY_CORRUPT when source payload is corrupt', async () => {
+        const stream = await h.prisma.businessPolicyStream.create({
+          data: {
+            familyKey: 'OPERATIONAL_START',
+            resourceKind: 'ACADEMIC_YEAR',
+            academicYearId: academicYear.id,
+          },
+        });
+
+        // Direct INSERT with corrupt payload avoiding immutable trigger on update
+        const corruptSource = await h.prisma.businessPolicyVersion.create({
+          data: {
+            streamId: stream.id,
+            versionNumber: 1,
+            status: 'PUBLISHED',
+            payload: { operationalStartDate: 'corrupt-not-a-date' },
+            validatorVersion: 'v1',
+            effectiveFrom: new Date('2026-08-15T00:00:00.000Z'),
+            effectiveUntil: null,
+            createdByUserId: manager.id,
+            publishedByUserId: manager.id,
+            publishedAt: new Date(),
+          },
+        });
+
+        dateSpy.mockReturnValue('2026-09-10');
+
+        const rep = await manager.agent
+          .post(`/api/business-configuration/policy-versions/${corruptSource.id}/replace`)
+          .set('Origin', testOrigin)
+          .send({
+            commandId: 'op-rep-corrupt-cmd',
+            effectiveFrom: '2026-09-15',
+            payload: { operationalStartDate: '2026-09-25' },
+          });
+        expect(rep.status).toBe(400);
+        expect(rep.body.message).toBe('POLICY_CORRUPT');
+      });
+    });
+
+    describe('OPERATIONAL_START correction lifecycle semantics', () => {
+      beforeEach(async () => {
+        await h.prisma.academicCalendarVersion.create({
+          data: {
+            academicYearId: academicYear.id,
+            versionNumber: 1,
+            startDate: new Date('2026-08-01T00:00:00.000Z'),
+            endDate: new Date('2027-05-31T00:00:00.000Z'),
+            officialWeekCount: 35,
+            reserveWeekCount: 1,
+            teachingWeekdays: ['MONDAY', 'TUESDAY'],
+            isActive: true,
+            activatedAt: new Date('2026-08-01T00:00:00.000Z'),
+          },
+        });
+      });
+
+      it('allows correction even after current boundary has occurred, retaining exact lineage and interval', async () => {
+        const draft = await manager.agent
+          .post('/api/business-configuration/policies/drafts')
+          .set('Origin', testOrigin)
+          .send(opBody('op-cor-init', '2026-09-01', '2026-08-15'));
+        await manager.agent.post(`/api/business-configuration/policy-versions/${draft.body.versionId}/publish`).set('Origin', testOrigin).send({ commandId: 'p-cor-init' });
+
+        const service = h.app.get(BusinessConfigurationService);
+        const dateSpy = jest.spyOn(service, 'businessCivilDate').mockReturnValue('2026-10-01');
+
+        try {
+          // Boundary has passed ('2026-10-01' > '2026-09-01'). Correct start date to 2026-09-10
+          const cor = await manager.agent
+            .post(`/api/business-configuration/policy-versions/${draft.body.versionId}/correct`)
+            .set('Origin', testOrigin)
+            .send({
+              commandId: 'op-cor-success-cmd',
+              reason: 'Adjusting historical operational start date for audit',
+              payload: { operationalStartDate: '2026-09-10' },
+            });
+          expect(cor.status).toBe(200);
+          expect(cor.body.outcome).toBe('CORRECTED');
+          const correctedId = cor.body.versionId;
+
+          // Old source is REVERSED with reason retained
+          const oldSource = await h.prisma.businessPolicyVersion.findUnique({ where: { id: draft.body.versionId } });
+          expect(oldSource?.status).toBe('REVERSED');
+          expect(oldSource?.correctionReason).toBe('Adjusting historical operational start date for audit');
+
+          // New version is PUBLISHED, correctsVersionId exact, exact interval preserved
+          const newRow = await h.prisma.businessPolicyVersion.findUnique({ where: { id: correctedId } });
+          expect(newRow?.status).toBe('PUBLISHED');
+          expect(newRow?.correctsVersionId).toBe(draft.body.versionId);
+          expect(newRow?.effectiveFrom.toISOString().slice(0, 10)).toBe('2026-08-15');
+          expect(newRow?.effectiveUntil).toBeNull();
+
+          // Resolver returns corrected version
+          const res = await service.resolveEffectiveBusinessPolicy(
+            'OPERATIONAL_START',
+            { kind: 'ACADEMIC_YEAR', academicYearId: academicYear.id },
+            '2026-09-15',
+          );
+          expect(res.outcome).toBe('RESOLVED');
+          if (res.outcome === 'RESOLVED') {
+            expect(res.policyVersionId).toBe(correctedId);
+            expect(res.payload).toEqual({ operationalStartDate: '2026-09-10' });
+          }
+        } finally {
+          dateSpy.mockRestore();
+        }
+      });
+
+      it('rejects correction without reason', async () => {
+        const draft = await manager.agent
+          .post('/api/business-configuration/policies/drafts')
+          .set('Origin', testOrigin)
+          .send(opBody('op-cor-no-reason', '2026-09-01', '2026-08-15'));
+        await manager.agent.post(`/api/business-configuration/policy-versions/${draft.body.versionId}/publish`).set('Origin', testOrigin).send({ commandId: 'p-cor-nr' });
+
+        const cor = await manager.agent
+          .post(`/api/business-configuration/policy-versions/${draft.body.versionId}/correct`)
+          .set('Origin', testOrigin)
+          .send({
+            commandId: 'op-cor-nr-cmd',
+            payload: { operationalStartDate: '2026-09-10' },
+          });
+        expect(cor.status).toBe(400);
+        expect(cor.body.message).toBe('CORRECTION_REASON_REQUIRED');
+      });
+
+      it('rejects correction when corrected operationalStartDate is outside active calendar', async () => {
+        const draft = await manager.agent
+          .post('/api/business-configuration/policies/drafts')
+          .set('Origin', testOrigin)
+          .send(opBody('op-cor-out-cal', '2026-09-01', '2026-08-15'));
+        await manager.agent.post(`/api/business-configuration/policy-versions/${draft.body.versionId}/publish`).set('Origin', testOrigin).send({ commandId: 'p-cor-oc' });
+
+        const cor = await manager.agent
+          .post(`/api/business-configuration/policy-versions/${draft.body.versionId}/correct`)
+          .set('Origin', testOrigin)
+          .send({
+            commandId: 'op-cor-oc-cmd',
+            reason: 'Correction outside calendar',
+            payload: { operationalStartDate: '2027-06-15' },
+          });
+        expect(cor.status).toBe(400);
+        expect(cor.body.message).toBe('OPERATIONAL_START_DATE_OUTSIDE_CALENDAR');
+      });
+
+      it('rejects correction when active calendar is invalid', async () => {
+        const draft = await manager.agent
+          .post('/api/business-configuration/policies/drafts')
+          .set('Origin', testOrigin)
+          .send(opBody('op-cor-inval-cal', '2026-09-01', '2026-08-15'));
+        await manager.agent.post(`/api/business-configuration/policy-versions/${draft.body.versionId}/publish`).set('Origin', testOrigin).send({ commandId: 'p-cor-ic' });
+
+        await h.prisma.academicCalendarVersion.updateMany({
+          where: { academicYearId: academicYear.id },
+          data: { isActive: false },
+        });
+
+        const cor = await manager.agent
+          .post(`/api/business-configuration/policy-versions/${draft.body.versionId}/correct`)
+          .set('Origin', testOrigin)
+          .send({
+            commandId: 'op-cor-ic-cmd',
+            reason: 'Correction no active calendar',
+            payload: { operationalStartDate: '2026-09-10' },
+          });
+        expect(cor.status).toBe(400);
+        expect(cor.body.message).toBe('ACADEMIC_CALENDAR_VERSION_INVALID');
+      });
+
+      it('rejects correction when caller attempts to change effectiveFrom or effectiveUntil', async () => {
+        const draft = await manager.agent
+          .post('/api/business-configuration/policies/drafts')
+          .set('Origin', testOrigin)
+          .send(opBody('op-cor-eff-chg', '2026-09-01', '2026-08-15'));
+        await manager.agent.post(`/api/business-configuration/policy-versions/${draft.body.versionId}/publish`).set('Origin', testOrigin).send({ commandId: 'p-cor-ec' });
+
+        // Changing effectiveFrom
+        const corFrom = await manager.agent
+          .post(`/api/business-configuration/policy-versions/${draft.body.versionId}/correct`)
+          .set('Origin', testOrigin)
+          .send({
+            commandId: 'op-cor-chg-from',
+            reason: 'Try change effectiveFrom',
+            effectiveFrom: '2026-08-01',
+            payload: { operationalStartDate: '2026-09-10' },
+          });
+        expect(corFrom.status).toBe(400);
+        expect(corFrom.body.message).toBe('OPERATIONAL_START_CORRECTION_EFFECTIVITY_CHANGE_FORBIDDEN');
+
+        // Changing effectiveUntil
+        const corUntil = await manager.agent
+          .post(`/api/business-configuration/policy-versions/${draft.body.versionId}/correct`)
+          .set('Origin', testOrigin)
+          .send({
+            commandId: 'op-cor-chg-until',
+            reason: 'Try change effectiveUntil',
+            effectiveUntil: '2027-05-31',
+            payload: { operationalStartDate: '2026-09-10' },
+          });
+        expect(corUntil.status).toBe(400);
+        expect(corUntil.body.message).toBe('OPERATIONAL_START_CORRECTION_EFFECTIVITY_CHANGE_FORBIDDEN');
+      });
+    });
+
+    describe('OPERATIONAL_START typed resolver (resolveOperationalStartPolicy)', () => {
+      beforeEach(async () => {
+        await h.prisma.academicCalendarVersion.create({
+          data: {
+            academicYearId: academicYear.id,
+            versionNumber: 1,
+            startDate: new Date('2026-08-01T00:00:00.000Z'),
+            endDate: new Date('2027-05-31T00:00:00.000Z'),
+            officialWeekCount: 35,
+            reserveWeekCount: 1,
+            teachingWeekdays: ['MONDAY', 'TUESDAY'],
+            isActive: true,
+            activatedAt: new Date('2026-08-01T00:00:00.000Z'),
+          },
+        });
+      });
+
+      it('resolves exact typed shape within transaction client', async () => {
+        const draft = await manager.agent
+          .post('/api/business-configuration/policies/drafts')
+          .set('Origin', testOrigin)
+          .send(opBody('op-res-tx-draft', '2026-09-01', '2026-08-15'));
+        await manager.agent.post(`/api/business-configuration/policy-versions/${draft.body.versionId}/publish`).set('Origin', testOrigin).send({ commandId: 'p-res-tx' });
+
+        const service = h.app.get(BusinessConfigurationService);
+
+        // Test with transaction client
+        const resolved = await h.prisma.$transaction(async (tx) => {
+          return service.resolveOperationalStartPolicy(academicYear.id, '2026-09-15', tx);
+        });
+
+        expect(resolved).toEqual({
+          academicYearId: academicYear.id,
+          operationalStartDate: '2026-09-01',
+          policyVersionId: draft.body.versionId,
+          validatorVersion: 'v1',
+          effectiveFrom: '2026-08-15',
+          effectiveUntil: null,
+        });
+      });
+
+      it('maps POLICY_NOT_CONFIGURED to ConflictException (409)', async () => {
+        const service = h.app.get(BusinessConfigurationService);
+        await expect(service.resolveOperationalStartPolicy(academicYear.id, '2026-09-15')).rejects.toThrow(
+          new ConflictException('POLICY_NOT_CONFIGURED'),
+        );
+      });
+
+      it('maps INVALID_EFFECTIVE_DATE to BadRequestException (400)', async () => {
+        const service = h.app.get(BusinessConfigurationService);
+        await expect(service.resolveOperationalStartPolicy(academicYear.id, 'invalid-date')).rejects.toThrow(
+          new BadRequestException('INVALID_EFFECTIVE_DATE'),
+        );
+      });
+
+      it('maps POLICY_CORRUPT to ConflictException (409)', async () => {
+        const stream = await h.prisma.businessPolicyStream.create({
+          data: {
+            familyKey: 'OPERATIONAL_START',
+            resourceKind: 'ACADEMIC_YEAR',
+            academicYearId: academicYear.id,
+          },
+        });
+
+        // Direct INSERT with unknown validator version avoiding immutable trigger on update
+        await h.prisma.businessPolicyVersion.create({
+          data: {
+            streamId: stream.id,
+            versionNumber: 1,
+            status: 'PUBLISHED',
+            payload: { operationalStartDate: '2026-09-01' },
+            validatorVersion: 'unknown-version',
+            effectiveFrom: new Date('2026-08-15T00:00:00.000Z'),
+            effectiveUntil: null,
+            createdByUserId: manager.id,
+            publishedByUserId: manager.id,
+            publishedAt: new Date(),
+          },
+        });
+
+        const service = h.app.get(BusinessConfigurationService);
+        await expect(service.resolveOperationalStartPolicy(academicYear.id, '2026-09-15')).rejects.toThrow(
+          new ConflictException('POLICY_CORRUPT'),
+        );
+      });
+
+      it('maps POLICY_AMBIGUOUS to ConflictException (409)', async () => {
+        const service = h.app.get(BusinessConfigurationService);
+        jest.spyOn(service, 'resolveEffectiveBusinessPolicy').mockResolvedValueOnce({
+          outcome: 'POLICY_AMBIGUOUS',
+          family: 'OPERATIONAL_START',
+          resource: { kind: 'ACADEMIC_YEAR', academicYearId: academicYear.id },
+          requestedCivilDate: '2026-09-15' as never,
+        });
+
+        await expect(service.resolveOperationalStartPolicy(academicYear.id, '2026-09-15')).rejects.toThrow(
+          new ConflictException('POLICY_AMBIGUOUS'),
+        );
+      });
     });
   });
 });

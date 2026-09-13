@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { AuditResult, Prisma } from '@prisma/client';
-import { BusinessConfigurationResource, BusinessPolicyResolution } from '@baogiang/contracts';
+import { BusinessConfigurationResource, BusinessPolicyResolution, CivilDateString } from '@baogiang/contracts';
 import { createHash } from 'node:crypto';
 import { AuditService } from '../audit/audit.service';
 import { RequestMeta } from '../auth/auth.types';
@@ -156,10 +156,44 @@ export class BusinessConfigurationService {
       if (!source || source.status !== 'PUBLISHED' || source.effectiveUntil !== null) throw conflict();
       const family = this.family(source.stream.familyKey);
       if (!family.publicationEnabled || !dto.effectiveFrom || !dto.payload) throw new BadRequestException('INVALID_POLICY_REPLACEMENT');
+      const businessDate = this.businessDate();
       const from = this.dates(dto.effectiveFrom).from;
-      if (from <= this.businessDate() || from <= this.format(source.effectiveFrom)) throw new BadRequestException('INVALID_POLICY_REPLACEMENT');
+      if (from <= businessDate || from <= this.format(source.effectiveFrom)) throw new BadRequestException('INVALID_POLICY_REPLACEMENT');
       const validator = currentValidator(family);
       const payload = validator.validate(dto.payload);
+
+      if (family.key === 'OPERATIONAL_START') {
+        const sourceValidator = validatorForVersion(family, source.validatorVersion);
+        if (!sourceValidator) throw new BadRequestException('POLICY_CORRUPT');
+        let currentPayload: unknown;
+        try {
+          currentPayload = sourceValidator.validate(source.payload);
+        } catch {
+          throw new BadRequestException('POLICY_CORRUPT');
+        }
+        const currentOperationalStartDate = (currentPayload as { operationalStartDate?: unknown })?.operationalStartDate;
+        if (typeof currentOperationalStartDate !== 'string' || !isCivilDate(currentOperationalStartDate)) {
+          throw new BadRequestException('POLICY_CORRUPT');
+        }
+        if (businessDate >= currentOperationalStartDate) {
+          throw new BadRequestException('OPERATIONAL_START_REPLACE_AFTER_BOUNDARY_FORBIDDEN');
+        }
+        const newOperationalStartDate = (payload as { operationalStartDate: string }).operationalStartDate;
+        if (newOperationalStartDate <= businessDate) {
+          throw new BadRequestException('INVALID_POLICY_REPLACEMENT');
+        }
+        const resource = this.streamResource(source.stream);
+        if (resource.kind !== 'ACADEMIC_YEAR') {
+          throw new BadRequestException('INVALID_POLICY_RESOURCE');
+        }
+        const calendar = await this.requireActiveCalendar(tx, resource.academicYearId);
+        const calStart = formatCivilDate(calendar.startDate);
+        const calEnd = formatCivilDate(calendar.endDate);
+        if (newOperationalStartDate < calStart || newOperationalStartDate > calEnd) {
+          throw new BadRequestException('OPERATIONAL_START_DATE_OUTSIDE_CALENDAR');
+        }
+      }
+
       const nextNumber = (await tx.businessPolicyVersion.aggregate({ where: { streamId: source.streamId }, _max: { versionNumber: true } }))._max.versionNumber! + 1;
       const previousUntil = this.previousDate(from);
       const close = await tx.businessPolicyVersion.updateMany({ where: { id, status: 'PUBLISHED', effectiveUntil: null }, data: { effectiveUntil: this.date(previousUntil) } });
@@ -202,11 +236,14 @@ export class BusinessConfigurationService {
     return this.mutate(actor, dto.commandId, dto, async (tx) => {
       const row = await tx.businessPolicyVersion.findUnique({ where: { id }, include: { stream: true } });
       if (!row || row.status !== 'PUBLISHED' || row.effectiveUntil !== null || !dto.effectiveUntil) throw conflict();
+      const family = this.family(row.stream.familyKey);
+      if (family.key === 'OPERATIONAL_START') {
+        throw new BadRequestException('OPERATIONAL_START_RETIRE_FORBIDDEN');
+      }
       const until = this.dates(this.format(row.effectiveFrom), dto.effectiveUntil).until!;
       if (until < this.businessDate()) throw conflict();
       const updated = await tx.businessPolicyVersion.updateMany({ where: { id, status: 'PUBLISHED', effectiveUntil: null }, data: { effectiveUntil: this.date(until) } });
       if (updated.count !== 1) throw conflict();
-      const family = this.family(row.stream.familyKey);
       await this.successAudit(tx, actor, meta, 'BUSINESS_POLICY_RETIRED', id, {
         family: family.key,
         resource: this.streamResource(row.stream),
@@ -230,9 +267,33 @@ export class BusinessConfigurationService {
       if (!family.publicationEnabled) throw new BadRequestException('POLICY_FAMILY_PUBLICATION_DISABLED');
       const validator = currentValidator(family);
       const payload = validator.validate(dto.payload);
+
+      const sourceFrom = this.format(source.effectiveFrom);
+      const sourceUntil = source.effectiveUntil ? this.format(source.effectiveUntil) : null;
+
+      if (family.key === 'OPERATIONAL_START') {
+        if (dto.effectiveFrom !== undefined && dto.effectiveFrom !== sourceFrom) {
+          throw new BadRequestException('OPERATIONAL_START_CORRECTION_EFFECTIVITY_CHANGE_FORBIDDEN');
+        }
+        if (dto.effectiveUntil !== undefined && (dto.effectiveUntil ?? null) !== sourceUntil) {
+          throw new BadRequestException('OPERATIONAL_START_CORRECTION_EFFECTIVITY_CHANGE_FORBIDDEN');
+        }
+        const resource = this.streamResource(source.stream);
+        if (resource.kind !== 'ACADEMIC_YEAR') {
+          throw new BadRequestException('INVALID_POLICY_RESOURCE');
+        }
+        const calendar = await this.requireActiveCalendar(tx, resource.academicYearId);
+        const calStart = formatCivilDate(calendar.startDate);
+        const calEnd = formatCivilDate(calendar.endDate);
+        const correctedOSD = (payload as { operationalStartDate: string }).operationalStartDate;
+        if (correctedOSD < calStart || correctedOSD > calEnd) {
+          throw new BadRequestException('OPERATIONAL_START_DATE_OUTSIDE_CALENDAR');
+        }
+      }
+
       const dates = dto.effectiveFrom
         ? this.dates(dto.effectiveFrom, dto.effectiveUntil)
-        : { from: this.format(source.effectiveFrom), until: source.effectiveUntil ? this.format(source.effectiveUntil) : null };
+        : { from: sourceFrom, until: sourceUntil };
       const nextNumber = (await tx.businessPolicyVersion.aggregate({ where: { streamId: source.streamId }, _max: { versionNumber: true } }))._max.versionNumber! + 1;
       const changed = await tx.businessPolicyVersion.updateMany({
         where: { id, status: 'PUBLISHED' },
@@ -258,8 +319,8 @@ export class BusinessConfigurationService {
         family: family.key,
         resource: this.streamResource(source.stream),
         sourceVersionId: source.id,
-        sourceEffectiveFrom: this.format(source.effectiveFrom),
-        sourceEffectiveUntil: source.effectiveUntil ? this.format(source.effectiveUntil) : null,
+        sourceEffectiveFrom: sourceFrom,
+        sourceEffectiveUntil: sourceUntil,
         correctedVersionId: corrected.id,
         correctedEffectiveFrom: dates.from,
         correctedEffectiveUntil: dates.until,
@@ -303,6 +364,72 @@ export class BusinessConfigurationService {
       return { outcome: 'RESOLVED', family: familyKey, resource, requestedCivilDate: civilDate as never, policyVersionId: row.id, validatorVersion: row.validatorVersion, payload, effectiveFrom: this.format(row.effectiveFrom) as never, effectiveUntil: row.effectiveUntil ? this.format(row.effectiveUntil) as never : null };
     } catch {
       return { outcome: 'POLICY_CORRUPT', family: familyKey, resource, requestedCivilDate: civilDate as never };
+    }
+  }
+
+  async resolveOperationalStartPolicy(
+    academicYearId: string,
+    civilDate: string,
+    db: Db = this.prisma,
+  ): Promise<{
+    academicYearId: string;
+    operationalStartDate: CivilDateString;
+    policyVersionId: string;
+    validatorVersion: string;
+    effectiveFrom: CivilDateString;
+    effectiveUntil: CivilDateString | null;
+  }> {
+    const result = await this.resolveEffectiveBusinessPolicy(
+      'OPERATIONAL_START',
+      {
+        kind: 'ACADEMIC_YEAR',
+        academicYearId,
+      },
+      civilDate,
+      db,
+    );
+
+    switch (result.outcome) {
+      case 'RESOLVED': {
+        const payload = result.payload as { operationalStartDate?: unknown } | null | undefined;
+        if (
+          !payload
+          || typeof payload !== 'object'
+          || typeof payload.operationalStartDate !== 'string'
+          || !isCivilDate(payload.operationalStartDate)
+          || typeof result.validatorVersion !== 'string'
+          || !result.validatorVersion
+          || typeof result.policyVersionId !== 'string'
+          || !result.policyVersionId
+          || typeof result.effectiveFrom !== 'string'
+          || !isCivilDate(result.effectiveFrom)
+          || (result.effectiveUntil !== null && (typeof result.effectiveUntil !== 'string' || !isCivilDate(result.effectiveUntil)))
+        ) {
+          throw new ConflictException('POLICY_CORRUPT');
+        }
+        return {
+          academicYearId,
+          operationalStartDate: payload.operationalStartDate as CivilDateString,
+          policyVersionId: result.policyVersionId,
+          validatorVersion: result.validatorVersion,
+          effectiveFrom: result.effectiveFrom as CivilDateString,
+          effectiveUntil: result.effectiveUntil as CivilDateString | null,
+        };
+      }
+      case 'POLICY_NOT_CONFIGURED':
+        throw new ConflictException('POLICY_NOT_CONFIGURED');
+      case 'POLICY_AMBIGUOUS':
+        throw new ConflictException('POLICY_AMBIGUOUS');
+      case 'POLICY_CORRUPT':
+        throw new ConflictException('POLICY_CORRUPT');
+      case 'UNKNOWN_POLICY_FAMILY':
+        throw new ConflictException('POLICY_CORRUPT');
+      case 'INVALID_POLICY_RESOURCE':
+        throw new BadRequestException('INVALID_POLICY_RESOURCE');
+      case 'INVALID_EFFECTIVE_DATE':
+        throw new BadRequestException('INVALID_EFFECTIVE_DATE');
+      default:
+        throw new ConflictException('POLICY_CORRUPT');
     }
   }
 

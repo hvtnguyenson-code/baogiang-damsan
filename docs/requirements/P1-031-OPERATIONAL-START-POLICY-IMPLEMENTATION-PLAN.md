@@ -252,10 +252,13 @@
 3. **Lệnh `replace` (Thay thế tương lai):**
    - Chỉ được phép khi `this.businessCivilDate() < currentOperationalStartDate`. Nếu ngày hiện tại đã `>= currentOperationalStartDate`: ném `BadRequestException('OPERATIONAL_START_REPLACE_AFTER_BOUNDARY_FORBIDDEN')`.
    - Mốc `operationalStartDate` mới phải lớn hơn ngày dân sự máy chủ hiện tại (`newOperationalStartDate > this.businessCivilDate()`).
+   - Mốc `operationalStartDate` mới phải nằm trong khoảng thời gian của lịch năm học active duy nhất (`startDate <= newOperationalStartDate <= endDate`), nếu vi phạm ném `BadRequestException('OPERATIONAL_START_DATE_OUTSIDE_CALENDAR')` hoặc `BadRequestException('ACADEMIC_CALENDAR_VERSION_INVALID')`.
    - Ngày hiệu lực thay thế phải liên tục với ngày kết thúc của phiên bản trước (không tạo gap).
 4. **Lệnh `correct` (Điều chỉnh có lưu vết):**
-   - Bắt buộc khi mốc `operationalStartDate` đã trôi qua trong quá khứ hoặc cần sửa sai dữ liệu.
+   - Được phép cả khi mốc `operationalStartDate` đã trôi qua trong quá khứ hoặc cần sửa sai dữ liệu.
    - Bắt buộc nhập `reason`, lưu trữ `correctsVersionId`, chuyển trạng thái phiên bản cũ sang `REVERSED`.
+   - Bắt buộc giữ nguyên khoảng hiệu lực `effectiveFrom` / `effectiveUntil` của phiên bản gốc, không cho phép mở gap hay thay đổi khoảng hiệu lực qua correction; nếu vi phạm ném `BadRequestException('OPERATIONAL_START_CORRECTION_EFFECTIVITY_CHANGE_FORBIDDEN')`.
+   - Mốc `operationalStartDate` sau điều chỉnh phải nằm trong lịch active duy nhất của năm học.
 
 ---
 
@@ -355,6 +358,7 @@ Không sử dụng các định dạng mã lỗi mơ hồ (như 409/400). Mỗi 
 | `OPERATIONAL_START_DIRECT_PUBLISH_AFTER_AUTHORITY_FORBIDDEN` | `BadRequestException` | 400 | Từ chối lệnh direct publish khi luồng chính sách đã từng có thẩm quyền (phải dùng replace hoặc correct) |
 | `OPERATIONAL_START_RETIRE_FORBIDDEN` | `BadRequestException` | 400 | Từ chối lệnh retire đối với chính sách mốc vận hành |
 | `OPERATIONAL_START_REPLACE_AFTER_BOUNDARY_FORBIDDEN` | `BadRequestException` | 400 | Từ chối lệnh replace khi mốc vận hành đã diễn ra (phải dùng correct) |
+| `OPERATIONAL_START_CORRECTION_EFFECTIVITY_CHANGE_FORBIDDEN` | `BadRequestException` | 400 | Từ chối lệnh correct khi thay đổi khoảng hiệu lực so với phiên bản gốc |
 | `OPERATIONAL_START_INITIAL_PUBLICATION_INVALID` | `BadRequestException` | 400 | Từ chối xuất bản khi `effectiveFrom > operationalStartDate` |
 | `OPERATIONAL_START_DATE_OUTSIDE_CALENDAR` | `BadRequestException` | 400 | Ngày vận hành nằm ngoài khoảng thời gian năm học active |
 | `ACADEMIC_CALENDAR_VERSION_INVALID` | `BadRequestException` | 400 | Năm học không có lịch active duy nhất |
