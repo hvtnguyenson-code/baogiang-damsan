@@ -90,20 +90,30 @@
 
 6. **Tiến trình PPCT và Phân bổ Cơ hội:**
    - File: `apps/api/src/ppct-occurrence-allocation/ppct-occurrence-allocation.service.ts`
-   - Bảo toàn 100% thuật toán replay TKB lịch sử. Không restart sequence 1, không loại bỏ các cơ hội TKB tiền vận hành khỏi replay của allocator để đảm bảo tiến độ PPCT kỳ vọng kế tục liền mạch.
+   - Bảo toàn 100% thuật toán replay TKB lịch sử của `PpctOccurrenceAllocationService`. Không lọc allocator. Không restart sequence 1. Toàn bộ các cơ hội TKB định kỳ trong giai đoạn tiền vận hành vẫn được phát lại đầy đủ để xác định tiến độ PPCT kỳ vọng kế tục liền mạch cho ngày bắt đầu vận hành.
 
-7. **Đánh giá Tiến độ, Nợ tiết và Trễ hạn:**
+7. **Đánh giá Tiến độ, Nợ tiết và Trễ hạn (Progress & Debt Boundary):**
    - File: `apps/api/src/progress-debt/progress-debt.service.ts` (`resolve`, `resolveV2`, `resolveInTransaction`, `resolveInTransactionV2`)
    - File: `apps/api/src/progress-debt/progress-debt.types.ts` (`ProgressDebtClassification`, `ProgressDebtCounts`)
+   - Giữ nguyên `ProgressDebtClassification = 'COMPLETED' | 'PROVEN_OPEN_DEBT' | 'UNCONFIRMED_COMPLETION_GAP'`.
+   - Giữ nguyên `ProgressDebtCounts`: `distributedElapsedCount`, `completedCount`, `openDebtCount`, `lateCount`, `unconfirmedGapCount`.
    - Giải quyết chính sách `OPERATIONAL_START` cho năm học.
-   - Đối với các cơ hội giảng dạy có `occurrence.civilDate < operationalStartDate` mà không có bản ghi thực thi: biểu diễn bằng phân loại kiến trúc `PRE_OPERATIONAL_UNCONFIRMED`.
-   - Loại trừ hoàn toàn nhóm này khỏi `openDebtCount`, `lateCount` và nợ vận hành. Các sự kiện tiêu cực (ví dụ: `ABSENCE_NO_REPLACEMENT`) tiền vận hành cũng không biến thành nợ chính thức.
+   - Đối với các cơ hội giảng dạy có `sourceCivilDate < operationalStartDate`:
+     - Nếu có bản ghi thực thi hợp lệ (ended ACTIVE execution candidate đã đối soát): vẫn emit `COMPLETED` bình thường vào `items`.
+     - Nếu bằng chứng thực thi bị trùng lặp hoặc sai hỏng: vẫn fail-closed với finding tương ứng (`ACTIVE_FULFILLMENT_AMBIGUOUS`, `RECONCILIATION_REQUIRED`).
+     - Nếu KHÔNG có bản ghi thực thi: trạng thái kiến trúc nội bộ là `PRE_OPERATIONAL_UNCONFIRMED` -> **KHÔNG emit item operational vào returned `items`**, **KHÔNG tạo `PROVEN_OPEN_DEBT`**, **KHÔNG tạo `UNCONFIRMED_COMPLETION_GAP`**, **KHÔNG tăng `openDebtCount`**, **KHÔNG tăng `lateCount`**, **KHÔNG tăng `unconfirmedGapCount`**.
+     - Các sự kiện vận hành tiêu cực tiền vận hành (như `ABSENCE_NO_REPLACEMENT`) khi không có bản ghi thực thi cũng không tự động biến thành nợ vận hành chính thức.
+   - Đối với các cơ hội giảng dạy có `sourceCivilDate >= operationalStartDate`: giữ nguyên toàn bộ ngữ nghĩa phân loại và đếm hiện hành.
+   - Bảo toàn đẳng thức đếm:
+     `distributedElapsedCount = completedCount + openDebtCount + unconfirmedGapCount`
+     `lateCount = openDebtCount`.
+   - `distributedElapsedCount` trong phép chiếu này đại diện cho số obligation/item được phát hành vào operational progress/debt projection sau khi áp dụng operational-start boundary (bao gồm cả tiết `COMPLETED` lịch sử nếu có minh chứng hợp lệ).
 
 8. **Cổng Lệnh Xác nhận Thực thi Giảng dạy:**
    - File: `apps/api/src/teaching-executions/teaching-executions.service.ts` (`confirmNormalTx`, `confirmMakeupTx`)
    - Routes: `POST /teaching-executions/curricular/normal` và `POST /teaching-executions/curricular/makeup`.
    - `confirmNormalTx`: Lấy `sourceCivilDate`, resolve `OPERATIONAL_START` trong cùng transaction. Nếu `sourceCivilDate < operationalStartDate`: fail-closed với `ConflictException('CANNOT_CONFIRM_PRE_OPERATIONAL_EXECUTION')`.
-   - `confirmMakeupTx`: Lấy ngày nghĩa vụ gốc `originalCivilDate = formatCivilDate(m.originalCivilDate)`, resolve `OPERATIONAL_START`. Nếu `originalCivilDate < operationalStartDate`: fail-closed với `ConflictException('CANNOT_CONFIRM_PRE_OPERATIONAL_MAKEUP_OBLIGATION')`.
+   - `confirmMakeupTx`: Lấy ngày nghĩa vụ gốc `originalCivilDate = formatCivilDate(m.originalCivilDate)`, resolve `OPERATIONAL_START`. Nếu `originalCivilDate < operationalStartDate`: fail-closed với `ConflictException('CANNOT_CONFIRM_PRE_OPERATIONAL_MAKEUP_OBLIGATION')`. Không cho phép dùng ngày dạy bù thực tế (`makeupTargetCivilDate`) để lách ranh giới nghĩa vụ tiền vận hành.
 
 9. **Đóng băng Báo cáo Thống kê Tiết dạy và Nguồn gốc (Provenance):**
    - File: `apps/api/src/reporting-statements/reporting-statements.service.ts` (`submit`)
@@ -118,6 +128,7 @@
      - `serializerVersion` giữ nguyên `REPORTING_STATEMENT_CANONICAL_JSON_V1` vì thuật toán tuần tự hóa JSON chuẩn tắc không đổi;
      - `statementProfile` giữ nguyên `PERSONAL_REPORTING_STATEMENT_PROFILE` (`PERSONAL_V1`);
      - Presenter và canonicalizer hỗ trợ cả V1 và V2 theo cơ chế kiểm tra toàn vẹn tương ứng từng profile.
+   - Vì pre-op unconfirmed không được emit từ `ProgressDebtService`, toàn bộ chuỗi hợp đồng downstream (`ReportingProjectionService`, `PersonalReportingProjectionService`, `packages/contracts`, và Web UI `ReportingPresentation.tsx`) **HOÀN TOÀN KHÔNG CẦN THAY ĐỔI** phân loại hay đếm.
 
 ---
 
@@ -158,17 +169,26 @@
 4. `apps/api/src/progress-debt/progress-debt.policy.ts`:
    - Ủy quyền `hcmCivilDate` sang helper dùng chung trong `civil-date.ts`.
 5. `apps/api/src/progress-debt/progress-debt.types.ts`:
-   - Mở rộng `ProgressDebtClassification`: thêm `'PRE_OPERATIONAL_UNCONFIRMED'`.
-   - Cập nhật `ProgressDebtCounts`: thêm trường `preOperationalUnconfirmedCount: number`.
+   - Giữ nguyên `ProgressDebtClassification = 'COMPLETED' | 'PROVEN_OPEN_DEBT' | 'UNCONFIRMED_COMPLETION_GAP'`.
+   - Giữ nguyên `ProgressDebtCounts` (không thêm trường mới).
 6. `apps/api/src/progress-debt/progress-debt.service.ts`:
    - Inject `BusinessConfigurationService`.
    - Trong `resolveInTransaction` và `resolveInTransactionV2`:
      - Resolve `OPERATIONAL_START` của `academicYearId` tại ngày `throughCivilDate`. Nếu không có hoặc lỗi -> fail-closed.
-     - Với mỗi allocation: nếu `occurrence.civilDate < operationalStartDate`:
-       - Nếu có execution hợp lệ: phân loại `COMPLETED`.
-       - Nếu không có execution: phân loại `PRE_OPERATIONAL_UNCONFIRMED`.
-     - Cập nhật `openDebtCount` và `lateCount` chỉ đếm `PROVEN_OPEN_DEBT` (thuộc thời kỳ vận hành).
-     - Đảm bảo bất biến tổng: `distributedElapsedCount = completedCount + openDebtCount + unconfirmedGapCount + preOperationalUnconfirmedCount`.
+     - Với mỗi allocation:
+       - Nếu `occurrence.civilDate < operationalStartDate`:
+         - Nếu có execution candidate kết thúc hợp lệ: reconcile và emit `COMPLETED`.
+         - Nếu execution candidate bị mơ hồ/sai hỏng: fail-closed với finding tương ứng.
+         - Nếu KHÔNG có execution candidate: coi là `PRE_OPERATIONAL_UNCONFIRMED` nội bộ -> không emit item operational vào `items`.
+       - Nếu `occurrence.civilDate >= operationalStartDate`:
+         - Giữ nguyên quy trình phân loại: `COMPLETED`, `PROVEN_OPEN_DEBT`, `UNCONFIRMED_COMPLETION_GAP`.
+     - Tính `counts` trên tập `items` đã emit:
+       - `distributedElapsedCount = items.length`
+       - `completedCount = items.filter(i => i.classification === 'COMPLETED').length`
+       - `openDebtCount = items.filter(i => i.classification === 'PROVEN_OPEN_DEBT').length`
+       - `lateCount = items.filter(i => i.classification === 'PROVEN_OPEN_DEBT').length`
+       - `unconfirmedGapCount = items.filter(i => i.classification === 'UNCONFIRMED_COMPLETION_GAP').length`
+     - Bất biến đếm hiện hành `distributedElapsedCount === completedCount + openDebtCount + unconfirmedGapCount` được bảo toàn tuyệt đối.
 
 ### D. Tầng Xác nhận Thực thi (Teaching Executions)
 7. `apps/api/src/teaching-executions/teaching-executions.service.ts`:
@@ -269,16 +289,25 @@
 
 ## 8. Kế hoạch Tích hợp Đánh giá Nợ tiết và Tiến trình PPCT (Progress/Debt Integration Plan)
 
-- **Giữ nguyên 100% thuật toán replay của `PpctOccurrenceAllocationService`**: Chuỗi các bài học PPCT trong giai đoạn tiền vận hành vẫn được phát lại đầy đủ để tính đúng bài học kế tiếp cho ngày bắt đầu vận hành.
+- **Giữ nguyên 100% thuật toán replay của `PpctOccurrenceAllocationService`**: Chuỗi các bài học PPCT trong giai đoạn tiền vận hành vẫn được phát lại đầy đủ để tính đúng bài học kế tiếp cho ngày bắt đầu vận hành. Không lọc allocator.
 - **Biểu diễn kỹ thuật của `PRE_OPERATIONAL_UNCONFIRMED`**:
-  - Là phân loại nội bộ trong bộ nhớ (`ProgressDebtClassification`) tại `progress-debt.types.ts`.
-  - Không tạo bảng cơ sở dữ liệu, không tạo Postgres enum.
-  - Trong `ProgressDebtService`:
-    - Các cơ hội TKB tiền vận hành (`occurrence.civilDate < operationalStartDate`) nếu không có execution được gán classification `'PRE_OPERATIONAL_UNCONFIRMED'`.
-    - Loại trừ các cơ hội này khỏi `openDebtCount`, `lateCount` và `unconfirmedGapCount`.
-    - Bổ sung trường `preOperationalUnconfirmedCount` vào `ProgressDebtCounts` để bảo toàn đẳng thức:
-      `distributedElapsedCount = completedCount + openDebtCount + unconfirmedGapCount + preOperationalUnconfirmedCount`.
-    - Các sự kiện vận hành tiêu cực (ví dụ `ABSENCE_NO_REPLACEMENT`) tiền vận hành cũng được xử lý như `PRE_OPERATIONAL_UNCONFIRMED`, không biến thành `PROVEN_OPEN_DEBT`.
+  - Là trạng thái đánh giá kiến trúc nội bộ (architectural / internal evaluation state) tại `ProgressDebtService`.
+  - **KHÔNG** thêm vào `ProgressDebtClassification`.
+  - **KHÔNG** thêm vào `ReportingProgressDebtClassification`.
+  - **KHÔNG** thêm `preOperationalUnconfirmedCount` vào `ProgressDebtCounts` hay `ReportingCounts`.
+  - **KHÔNG** thay đổi schema cơ sở dữ liệu hay Postgres enum.
+  - **KHÔNG** thay đổi Web UI `ReportingPresentation.tsx`.
+- **Cơ chế xử lý tại `ProgressDebtService`**:
+  - Đối với các cơ hội TKB có `sourceCivilDate < operationalStartDate`:
+    - Nếu có minh chứng giảng dạy hợp lệ (ACTIVE ended execution candidate): vẫn emit item `COMPLETED`.
+    - Nếu minh chứng giảng dạy bị xung đột/sai hỏng: fail-closed với finding tương ứng.
+    - Nếu không có minh chứng: coi là `PRE_OPERATIONAL_UNCONFIRMED` nội bộ -> **không emit item** vào returned `items`, không tạo nợ, không tạo trễ hạn, không tạo gap.
+    - Negative disposition tiền vận hành (ví dụ: `ABSENCE_NO_REPLACEMENT`) không có minh chứng cũng không biến thành `PROVEN_OPEN_DEBT`.
+  - Đối với các cơ hội có `sourceCivilDate >= operationalStartDate`: áp dụng đầy đủ quy tắc hiện hành (`COMPLETED`, `PROVEN_OPEN_DEBT`, `UNCONFIRMED_COMPLETION_GAP`).
+- **Bảo toàn bất biến hợp đồng đếm**:
+  - `distributedElapsedCount = completedCount + openDebtCount + unconfirmedGapCount`.
+  - `lateCount = openDebtCount`.
+  - Không làm vỡ downstream reconciliation tại `PersonalReportingProjectionService.count(...)`.
 
 ---
 
@@ -312,6 +341,7 @@
     - `serializerVersion` giữ nguyên `REPORTING_STATEMENT_CANONICAL_JSON_V1` (thuật toán canonical serialize không đổi).
     - `statementProfile` giữ nguyên `PERSONAL_REPORTING_STATEMENT_PROFILE` (`PERSONAL_V1`).
   - Presenter hỗ trợ đọc cả V1 và V2 fail-closed, kiểm tra hash SHA-256 tương ứng.
+  - Không cần thêm bất kỳ count hay classification mới nào ở tầng reporting.
 
 ---
 
@@ -344,9 +374,12 @@ Tuyệt đối không dùng generic 500 cho các trường hợp từ chối ngh
 2. `apps/api/test/progress-debt/progress-debt-policy.spec.ts`:
    - Kiểm tra hàm `hcmCivilDate` dùng chung và các trường hợp biên thời gian đầu ngày/cuối ngày.
 3. `apps/api/test/progress-debt/progress-debt-v2.service.spec.ts` & `apps/api/test/progress-debt/progress-debt.service.spec.ts`:
-   - Thêm test case kiểm thử loại trừ các cơ hội tiền vận hành khỏi `openDebtCount` và `lateCount`.
-   - Kiểm tra phân loại `PRE_OPERATIONAL_UNCONFIRMED`.
-   - Kiểm tra replay TKB vẫn giữ nguyên số thứ tự bài học PPCT kỳ vọng.
+   - Kiểm tra replay của allocator bảo toàn toàn bộ pre-op opportunities để giữ nguyên tiến trình PPCT kỳ vọng.
+   - Kiểm tra pre-op opportunity + no execution: không emit item operational, không tăng debt, không tăng late, không tăng unconfirmed gap.
+   - Kiểm tra pre-op negative disposition + no execution: không tạo `PROVEN_OPEN_DEBT`.
+   - Kiểm tra pre-op opportunity + valid historical execution: `COMPLETED` vẫn được emit, reconcile PPCT/provenance đúng.
+   - Kiểm tra pre-op duplicated/corrupt execution evidence: fail-closed với finding như hiện hành.
+   - Kiểm tra post-op opportunities: toàn bộ ngữ nghĩa phân loại và đếm giữ nguyên.
 4. `apps/api/test/teaching-executions/teaching-executions.service.spec.ts` & `apps/api/test/teaching-executions/teaching-executions.runtime.spec.ts`:
    - Thêm test case kiểm thử chặn `confirmNormal` khi `sourceCivilDate < operationalStartDate`.
    - Thêm test case kiểm thử chặn `confirmMakeup` khi nghĩa vụ gốc `originalCivilDate < operationalStartDate`.
@@ -358,6 +391,7 @@ Tuyệt đối không dùng generic 500 cho các trường hợp từ chối ngh
    - Kiểm tra presenter decode thành công cả V1 và V2 snapshot.
 7. `apps/api/test/reporting-statements/reporting-statements.submit.spec.ts`:
    - Kiểm tra việc ghim `operationalStartPolicyVersionId` và `operationalStartDate` vào snapshot khi submit.
+   - Kiểm tra `ReportingProjection` và `PersonalReportingProjection` không xuất classification mới, contract đếm giữ nguyên.
 
 ### B. Các tệp kiểm thử mới đề xuất (Exact New Test Files Proposed)
 8. `apps/api/test/business-configuration/operational-start-policy.spec.ts`:
@@ -374,7 +408,7 @@ Tuyệt đối không dùng generic 500 cho các trường hợp từ chối ngh
   1. Các bảng `BusinessPolicyStream`, `BusinessPolicyVersion`, `BusinessPolicyCommand` đã hỗ trợ trường `payload Json` và cấu trúc phả hệ đầy đủ, chứa trọn vẹn `{ operationalStartDate: string }`.
   2. Bảng `ReportingStatementRevision` lưu trữ toàn bộ dữ liệu snapshot trong cột `canonical_snapshot_json` (kiểu `Text`), đi kèm các trường metadata `snapshotProfile` (chuỗi), `serializerVersion` (chuỗi), `semanticHash` (chuỗi) và `asOfInstant` (timestamp). Việc nâng cấp snapshot sang `REPORTING_STATEMENT_SNAPSHOT_V2` chứa thêm các trường provenance được lưu trọn vẹn trong cột JSON text hiện có mà không đòi hỏi thêm cột DB.
   3. Bảng `CurricularTeachingExecution` được giữ nguyên cấu trúc theo quyết định kiến trúc ADR-049 §2.13.
-  4. Trạng thái `PRE_OPERATIONAL_UNCONFIRMED` là cấu trúc phân loại tính toán động trong bộ nhớ tại tầng chiếu tiến độ `ProgressDebtProjection`, không có bảng lưu trữ nợ tĩnh trong cơ sở dữ liệu.
+  4. Trạng thái `PRE_OPERATIONAL_UNCONFIRMED` là đánh giá nội bộ trong `ProgressDebtService`, không emit item, không thêm enum hay trường mới, hoàn toàn không có bảng lưu trữ nợ tĩnh trong cơ sở dữ liệu.
 
 ---
 
@@ -390,26 +424,30 @@ Tuyệt đối không dùng generic 500 cho các trường hợp từ chối ngh
 ## 15. Thứ tự Các Checkpoint Triển khai (Ordered Implementation Checkpoints)
 
 1. **Checkpoint 0 (Đã hoàn thành):** Khởi động task, audit code seams, đồng bộ tài liệu quản trị khởi động.
-2. **Checkpoint 0A (Hiện tại):** Sửa chữa toàn diện các sai lệch sự thật kỹ thuật trong Implementation Plan.
-3. **Checkpoint 1 (Registry, Validator & Shared Time Authority):**
+2. **Checkpoint 0A (Đã hoàn thành):** Sửa chữa toàn diện các sai lệch sự thật kỹ thuật trong Implementation Plan.
+3. **Checkpoint 0B (Hiện tại):** Khóa ranh giới hợp đồng chiếu tiến độ và nợ tiết tiền vận hành, giữ nguyên các hợp đồng public/internal downstream.
+4. **Checkpoint 1 (Registry, Validator & Shared Time Authority):**
    - Tạo helper `hcmCivilDate` dùng chung tại `apps/api/src/common/validation/civil-date.ts`.
    - Đăng ký `OPERATIONAL_START` trong `business-policy-registry.ts` với pure validator v1.
    - Thêm unit test tại `apps/api/test/business-configuration/operational-start-policy.spec.ts`.
-4. **Checkpoint 2 (Business Configuration Lifecycle Rules & Typed Resolver):**
+5. **Checkpoint 2 (Business Configuration Lifecycle Rules & Typed Resolver):**
    - Hiện thực hóa ràng buộc lịch active và các quy tắc vòng đời (`retire`, `publish`, `replace`, `correct`) trong `business-configuration.service.ts`.
    - Cung cấp typed helper `resolveOperationalStartPolicy(...)`.
    - Cập nhật test suite cho lifecycle và resolver.
-5. **Checkpoint 3 (Teaching Executions Execution Guards):**
+6. **Checkpoint 3 (Teaching Executions Execution Guards):**
    - Tích hợp kiểm tra ranh giới vào `confirmNormalTx` và `confirmMakeupTx`.
    - Cập nhật unit test và runtime test cho `teaching-executions`.
-6. **Checkpoint 4 (Progress/Debt Integration & Replay Protection):**
-   - Mở rộng phân loại `PRE_OPERATIONAL_UNCONFIRMED` trong `progress-debt.types.ts`.
-   - Tích hợp bộ lọc ranh giới vào `ProgressDebtService`.
+7. **Checkpoint 4 (Progress/Debt Integration & Replay Protection):**
+   - Tích hợp ranh giới `operationalStartDate` vào `ProgressDebtService`:
+     - Giữ nguyên historical allocator replay;
+     - Không emit pre-op unconfirmed opportunities vào `items`;
+     - Giữ nguyên `COMPLETED` cho pre-op opportunities có minh chứng hợp lệ;
+     - Bảo toàn count contract và đẳng thức đếm hiện hữu.
    - Cập nhật test suite cho progress/debt.
-7. **Checkpoint 5 (Reporting Statements Provenance & Snapshot V2):**
+8. **Checkpoint 5 (Reporting Statements Provenance & Snapshot V2):**
    - Định nghĩa `REPORTING_STATEMENT_SNAPSHOT_V2` trong canonicalizer.
    - Tích hợp resolver mốc vận hành vào `submit()` và presenter decode.
    - Cập nhật test suite cho reporting-statements.
-8. **Checkpoint 6 (Toàn diện Kiểm thử, Đồng bộ Tài liệu Hậu kiểm & Sẵn sàng Đánh giá):**
+9. **Checkpoint 6 (Toàn diện Kiểm thử, Đồng bộ Tài liệu Hậu kiểm & Sẵn sàng Đánh giá):**
    - Chạy toàn bộ test suite, lint, typecheck, static verifiers.
    - Đồng bộ trạng thái tài liệu sang `IN_REVIEW`.
