@@ -675,4 +675,69 @@ describe("PersonalReportingProjectionService V1-V20 validation", () => {
     await expect(h.service.resolve(input)).rejects.toThrow("academicYearId");
     expect(h.resolveInTransaction).not.toHaveBeenCalled();
   });
+
+  describe("PersonalReportingProjectionContext forwarding (Checkpoint 5 seam)", () => {
+    it("context absent leaves existing live behavior unchanged", async () => {
+      const h = makeHarness();
+      const result = await h.service.resolve(input);
+      expect(result.status).toBe("PASS");
+      expect(h.resolveInTransaction).toHaveBeenCalledWith(
+        h.tx,
+        expect.objectContaining({ academicYearId: "year" }),
+      );
+      expect(h.resolveInTransaction.mock.calls[0]).toHaveLength(2);
+    });
+
+    it("forwards supplied reporting projection context unchanged without mutation", async () => {
+      const h = makeHarness();
+      const context = {
+        reportingProjection: {
+          operationalStartPolicy: {
+            policyVersionId: "policy-v1",
+            operationalStartDate: "2026-08-15" as never,
+            validatorVersion: "v1",
+            effectiveFrom: "2026-08-01" as never,
+            effectiveUntil: null,
+          },
+          policyResolutionCivilDate: "2026-08-31" as never,
+        },
+      };
+      const contextClone = JSON.parse(JSON.stringify(context));
+
+      const result = await h.service.resolveInTransaction(h.tx as never, input, context);
+      expect(result.status).toBe("PASS");
+      expect(h.resolveInTransaction).toHaveBeenCalledWith(
+        h.tx,
+        expect.objectContaining({ academicYearId: "year" }),
+        context.reportingProjection,
+      );
+      expect(context).toEqual(contextClone);
+    });
+
+    it("public output schema remains unchanged whether context is present or absent", async () => {
+      const hWithout = makeHarness();
+      const resWithout = await hWithout.service.resolveInTransaction(hWithout.tx as never, input);
+
+      const hWith = makeHarness();
+      const resWith = await hWith.service.resolveInTransaction(hWith.tx as never, input, {
+        reportingProjection: {
+          operationalStartPolicy: {
+            policyVersionId: "policy-v1",
+            operationalStartDate: "2026-08-15" as never,
+            validatorVersion: "v1",
+            effectiveFrom: "2026-08-01" as never,
+            effectiveUntil: null,
+          },
+          policyResolutionCivilDate: "2026-08-31" as never,
+        },
+      });
+
+      expect(Object.keys(resWithout).sort()).toEqual(Object.keys(resWith).sort());
+      expect(resWith).toMatchObject({
+        profile: "PERSONAL_TEACHING_REPORTING_PROJECTION_V1",
+        responsibilityState: "RESPONSIBILITY_PRESENT",
+        status: "PASS",
+      });
+    });
+  });
 });

@@ -23,6 +23,7 @@ function setup(capabilities: Array<{ key: string; scope: string; resourceId?: st
     {} as never,
     authorization as never,
     audit as never,
+    {} as never,
     { now: jest.fn() },
   );
   return { service, prisma, authorization, audit };

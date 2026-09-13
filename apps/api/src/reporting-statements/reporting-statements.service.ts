@@ -13,7 +13,9 @@ import { AuditService } from '../audit/audit.service';
 import { requestMeta } from '../auth/auth-http';
 import { AuthenticatedRequest } from '../auth/auth.types';
 import { CapabilityAuthorizationService } from '../authorization/capability-authorization.service';
-import { formatCivilDate, parseCivilDate } from '../common/validation/civil-date';
+import { formatCivilDate, hcmCivilDate, parseCivilDate } from '../common/validation/civil-date';
+import { BusinessConfigurationService } from '../business-configuration/business-configuration.service';
+import { ProgressDebtOperationalStartAuthority } from '../progress-debt/progress-debt.types';
 import { PersonalReportingProjectionService } from '../personal-reporting-projection/personal-reporting-projection.service';
 import { freezeReportingStatementSnapshot } from '../reporting-statement-internal/reporting-statement-canonicalizer';
 import { ReportingStatementRepository } from '../reporting-statement-internal/reporting-statement.repository';
@@ -42,6 +44,7 @@ export class ReportingStatementsService {
     private readonly projection: PersonalReportingProjectionService,
     private readonly authorization: CapabilityAuthorizationService,
     private readonly audit: AuditService,
+    private readonly businessConfiguration: BusinessConfigurationService,
     @Inject(REPORTING_STATEMENT_CLOCK) private readonly clock: ReportingStatementClock,
   ) {}
 
@@ -272,21 +275,47 @@ export class ReportingStatementsService {
     if (prior.kind === 'FINGERPRINT_CONFLICT') throw new ConflictException('requestKey được dùng với nội dung khác.');
     if (prior.kind === 'REPLAY') return this.result(prior.command, true);
     const asOf = this.clock.now();
+    const policyResolutionCivilDate = hcmCivilDate(asOf);
     return this.retry(async () => {
       await this.require(request, 'REPORTING_STATEMENT_SUBMIT', 'PERSONAL');
       return this.prisma.$transaction(async tx => {
         const replay = await this.repository.classifyAcceptedCommand(tx, actor, Command.SUBMIT, dto.requestKey, fp);
         if (replay.kind === 'FINGERPRINT_CONFLICT') throw new ConflictException('requestKey được dùng với nội dung khác.');
         if (replay.kind === 'REPLAY') return this.result(replay.command, true);
+        const operationalStart = await this.businessConfiguration.resolveOperationalStartPolicy(
+          dto.academicYearId,
+          policyResolutionCivilDate,
+          tx,
+        );
+        const authority: ProgressDebtOperationalStartAuthority = {
+          operationalStartDate: operationalStart.operationalStartDate,
+          policyVersionId: operationalStart.policyVersionId,
+          validatorVersion: operationalStart.validatorVersion,
+          effectiveFrom: operationalStart.effectiveFrom,
+          effectiveUntil: operationalStart.effectiveUntil,
+        };
         const key = { statementProfile: PERSONAL_REPORTING_STATEMENT_PROFILE, submitterUserId: actor, academicYearId: dto.academicYearId, fromCivilDate: from, toCivilDate: to };
         const existing = await this.repository.findSeriesByLogicalKey(tx, key);
         if (existing) {
           await this.repository.lockSeries(tx, existing.id);
           if (await this.repository.loadCurrentSubmitted(tx, existing.id)) throw new ConflictException('Đã có Statement SUBMITTED chưa được xử lý.');
         }
-        const projection = await this.projection.resolveInTransaction(tx, { academicYearId: dto.academicYearId, targetUserId: actor, fromCivilDate: dto.fromCivilDate as never, toCivilDate: dto.toCivilDate as never, asOfInstant: asOf });
+        const projection = await this.projection.resolveInTransaction(
+          tx,
+          { academicYearId: dto.academicYearId, targetUserId: actor, fromCivilDate: dto.fromCivilDate as never, toCivilDate: dto.toCivilDate as never, asOfInstant: asOf },
+          { reportingProjection: { operationalStartPolicy: authority, policyResolutionCivilDate } },
+        );
         const profile = await tx.user.findUnique({ where: { id: actor }, include: { profile: true } });
-        const frozen = freezeReportingStatementSnapshot({ statementProfile: PERSONAL_REPORTING_STATEMENT_PROFILE, submitterUserId: actor, submitterDisplayNameSnapshot: profile?.profile?.displayName ?? null, submitterStaffCodeSnapshot: profile?.profile?.staffCode ?? null, asOfInstant: asOf, projection });
+        const frozen = freezeReportingStatementSnapshot({
+          statementProfile: PERSONAL_REPORTING_STATEMENT_PROFILE,
+          submitterUserId: actor,
+          submitterDisplayNameSnapshot: profile?.profile?.displayName ?? null,
+          submitterStaffCodeSnapshot: profile?.profile?.staffCode ?? null,
+          asOfInstant: asOf,
+          projection,
+          operationalStartPolicyVersionId: operationalStart.policyVersionId,
+          operationalStartDate: operationalStart.operationalStartDate,
+        });
         const tail = existing ? await this.repository.lineageTail(tx, existing.id) : null;
         if (tail === undefined) throw new ConflictException('Statement lineage không xác định.');
         const approved = existing ? await this.repository.loadCurrentApproved(tx, existing.id) : null;

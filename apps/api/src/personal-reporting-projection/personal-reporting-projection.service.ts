@@ -16,6 +16,7 @@ import {
   PersonalReportingClock,
   PersonalReportingFinding,
   PersonalReportingProjection,
+  PersonalReportingProjectionContext,
   PersonalReportingSection,
   ResolvePersonalReportingProjectionInput,
 } from "./personal-reporting-projection.types";
@@ -36,15 +37,17 @@ export class PersonalReportingProjectionService {
   ) {}
   async resolve(
     input: ResolvePersonalReportingProjectionInput,
+    context?: PersonalReportingProjectionContext,
   ): Promise<PersonalReportingProjection> {
     return this.prisma.$transaction(
-      (tx) => this.resolveInTransaction(tx, input),
+      (tx) => this.resolveInTransaction(tx, input, context),
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
   }
   async resolveInTransaction(
     tx: Prisma.TransactionClient,
     input: ResolvePersonalReportingProjectionInput,
+    context?: PersonalReportingProjectionContext,
   ): Promise<PersonalReportingProjection> {
     const from = parseCivilDate(input.fromCivilDate),
       to = parseCivilDate(input.toCivilDate);
@@ -164,13 +167,20 @@ export class PersonalReportingProjectionService {
         a.schoolClassId.localeCompare(b.schoolClassId) ||
         a.subjectId.localeCompare(b.subjectId),
     );
-    const upstream = await this.reporting.resolveInTransaction(tx, {
+    const reportingInput = {
       academicYearId: input.academicYearId,
       roots,
       fromCivilDate: input.fromCivilDate,
       toCivilDate: input.toCivilDate,
       asOfInstant: input.asOfInstant,
-    });
+    };
+    const upstream = context?.reportingProjection !== undefined
+      ? await this.reporting.resolveInTransaction(
+          tx,
+          reportingInput,
+          context.reportingProjection,
+        )
+      : await this.reporting.resolveInTransaction(tx, reportingInput);
     const keys = new Set(roots.map((r) => r.schoolClassId + ":" + r.subjectId));
     if (
       upstream.roots.length !== roots.length ||

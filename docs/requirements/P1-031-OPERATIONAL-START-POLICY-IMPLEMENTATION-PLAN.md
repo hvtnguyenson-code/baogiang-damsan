@@ -59,7 +59,7 @@
    - Hiện trạng:
      - `BusinessConfigurationService.businessCivilDate()` sử dụng `Asia/Ho_Chi_Minh` lấy trực tiếp `new Date()`.
      - `progress-debt.policy.ts` có `hcmCivilDate(instant: Date)`.
-   - Phương án P1-031: Đưa helper chuyển đổi chuẩn sang vị trí dùng chung `apps/api/src/common/validation/civil-date.ts` nhận tham số `instant: Date` (mặc định là `new Date()`), định dạng bằng `Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' })`.
+   - Phương án P1-031: Đưa helper chuyển đổi chuẩn sang vị trí dùng chung `apps/api/src/common/validation/civil-date.ts` nhận tham số `instant: Date` (bắt buộc, không có giá trị mặc định), định dạng bằng `Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' })`.
    - Các consumer tái sử dụng:
      - `BusinessConfigurationService.businessCivilDate()` ủy quyền tới helper dùng chung;
      - `ProgressDebt` tái sử dụng helper;
@@ -146,20 +146,20 @@
 
 ### A. Tầng Hợp đồng và Định nghĩa Family (Contracts & Registry)
 1. `apps/api/src/common/validation/civil-date.ts`:
-   - Bổ sung helper dùng chung: `hcmCivilDate(instant: Date = new Date()): CivilDateString` sử dụng `Intl.DateTimeFormat` với múi giờ `Asia/Ho_Chi_Minh`.
+   - Bổ sung helper dùng chung: `hcmCivilDate(instant: Date): CivilDateString` (bắt buộc nhận tham số `instant: Date`, không có default value) sử dụng `Intl.DateTimeFormat` với múi giờ `Asia/Ho_Chi_Minh`.
 2. `apps/api/src/business-configuration/business-policy-registry.ts`:
    - Định nghĩa `OPERATIONAL_START_FAMILY_DEFINITION`:
      - `key = 'OPERATIONAL_START'`
      - `resourceKind = 'ACADEMIC_YEAR'`
      - `currentValidatorVersion = 'v1'`
      - `publicationEnabled = true`
-     - `downstreamAuthority = 'docs/decisions/ADR-049-DELAYED-GO-LIVE-OPERATIONAL-START-ARCHITECTURE.md'`
+     - `downstreamAuthority = 'ADR-049'`
      - `validators`: mảng chứa validator `v1`.
    - Validator `v1` (pure synchronous validator):
      - Dùng `strictObject(payload)` hiện có.
      - Kiểm tra `Object.keys(row).length === 1 && typeof row.operationalStartDate === 'string'`.
      - Xác thực bằng `isCivilDate(row.operationalStartDate)` từ `civil-date.ts`.
-     - Bắt lỗi: ném `BadRequestException('Business policy payload phải chứa đúng 1 trường operationalStartDate dạng YYYY-MM-DD.')`. Không dùng hoặc nhắc tới `BusinessPolicyValidationError`.
+     - Bắt lỗi: ném `BadRequestException('INVALID_OPERATIONAL_START_POLICY_PAYLOAD')`. Không dùng hoặc nhắc tới `BusinessPolicyValidationError`.
    - Đưa `OPERATIONAL_START_FAMILY_DEFINITION` vào `PRODUCTION_BUSINESS_POLICY_FAMILIES`.
 
 ### B. Tầng Kiểm soát Vòng đời và Thẩm quyền Lịch (Business Configuration Service)
@@ -167,10 +167,10 @@
    - Cập nhật `businessCivilDate()` ủy quyền tới `hcmCivilDate()`.
    - Bổ sung helper nội bộ: `validateOperationalStartCalendar(tx, academicYearId, operationalStartDate)`.
    - Cập nhật các phương thức vòng đời hiện hành:
-     - `createDraft`: Nếu là `OPERATIONAL_START`, kiểm tra tính hợp lệ của `operationalStartDate` với lịch active của năm học.
-     - `editDraft`: Nếu là `OPERATIONAL_START`, kiểm tra `operationalStartDate` với lịch active.
-     - `publish`: Nếu là `OPERATIONAL_START`, kiểm tra `effectiveFrom <= operationalStartDate` và kiểm tra lịch active.
-     - `replace`: Nếu là `OPERATIONAL_START`, kiểm tra `this.businessCivilDate() < currentOperationalStartDate`, mốc mới phải `> this.businessCivilDate()`, kiểm tra lịch active, đảm bảo liên tục hiệu lực.
+     - `createDraft`: Pure synchronous payload validation only. Không kiểm tra DB hay active calendar.
+     - `editDraft`: Pure synchronous payload validation only. Không kiểm tra DB hay active calendar.
+     - `publish`: Nếu là `OPERATIONAL_START`, kiểm tra `effectiveFrom <= operationalStartDate` và kiểm tra lịch active duy nhất của năm học.
+     - `replace`: Nếu là `OPERATIONAL_START`, capture `const today = this.businessCivilDate()` một lần và reuse; kiểm tra `today < currentOperationalStartDate`, mốc mới phải `> today`, kiểm tra lịch active, đảm bảo liên tục hiệu lực.
      - `retire`: Nếu là `OPERATIONAL_START`, ném ngay `BadRequestException('OPERATIONAL_START_RETIRE_FORBIDDEN')`.
      - `correct`: Nếu là `OPERATIONAL_START`, kiểm tra lịch active, bắt buộc có lý do và bảo lưu lineage.
    - Bổ sung typed helper: `resolveOperationalStartPolicy(academicYearId, civilDate, db)`.
@@ -225,19 +225,36 @@
 
 ### E. Tầng Đóng băng Báo cáo (Reporting Statements)
 8. `apps/api/src/reporting-statement-internal/reporting-statement-canonicalizer.ts`:
+   - Giữ nguyên `REPORTING_STATEMENT_SNAPSHOT_V1` cho các bản ghi lịch sử và backward compatibility fixtures.
    - Định nghĩa snapshot profile mới: `export const REPORTING_STATEMENT_SNAPSHOT_V2 = 'REPORTING_STATEMENT_SNAPSHOT_V2' as const;`
-   - Định nghĩa `ReportingStatementSnapshotV2` kế thừa/mở rộng các trường của V1, bổ sung:
+   - `serializerVersion` giữ nguyên `REPORTING_STATEMENT_CANONICAL_JSON_V1` (thuật toán tuần tự hóa canonical không đổi, không tạo serializer V2).
+   - `statementProfile` giữ nguyên `PERSONAL_REPORTING_STATEMENT_PROFILE` (`PERSONAL_V1`).
+   - Định nghĩa `ReportingStatementSnapshotV2` kế thừa/mở rộng các trường của V1, bổ sung exact:
      - `operationalStartPolicyVersionId: string`
-     - `operationalStartDate: string`
-   - Cập nhật `freezeReportingStatementSnapshot` sinh `REPORTING_STATEMENT_SNAPSHOT_V2` cho các lệnh submit mới.
-   - Cập nhật `assertFrozenReportingStatementIntegrity` hỗ trợ xác thực fail-closed cả V1 và V2.
+     - `operationalStartDate: string` (CivilDateString)
+   - Không đưa `validatorVersion`, `effectiveFrom`, `effectiveUntil`, `policyResolutionCivilDate` vào frozen legal snapshot (ADR-049 không yêu cầu).
+   - Định nghĩa union: `ReportingStatementSnapshot = ReportingStatementSnapshotV1 | ReportingStatementSnapshotV2`.
+   - `freezeReportingStatementSnapshot`: Bắt buộc nhận `operationalStartPolicyVersionId` và `operationalStartDate`, sinh `REPORTING_STATEMENT_SNAPSHOT_V2` cho các lệnh submit mới (không cho phép silent fallback về V1).
+   - Cung cấp explicit legacy helper `freezeReportingStatementSnapshotV1` cho các test fixtures / retained read compatibility.
+   - Cập nhật `assertFrozenReportingStatementIntegrity`: Phân nhánh theo `snapshotProfile` (V1 hoặc V2); unknown profile -> fail-closed; serializerVersion sai -> fail-closed; V2 thiếu/sai định dạng provenance -> fail-closed.
 9. `apps/api/src/reporting-statements/reporting-statement.presenter.ts`:
    - Cập nhật `parseAndVerifyFrozenSnapshot` hỗ trợ parse và xác thực toàn vẹn cả `REPORTING_STATEMENT_SNAPSHOT_V1` và `REPORTING_STATEMENT_SNAPSHOT_V2`.
-10. `apps/api/src/reporting-statements/reporting-statements.service.ts`:
+   - Đối với V2: xác thực thêm `operationalStartPolicyVersionId` non-empty và `operationalStartDate` dạng CivilDate hợp lệ.
+   - Trả về union snapshot; không expose các trường provenance mới ra public API response (không sửa `packages/contracts`, DTO giữ nguyên).
+   - Đọc snapshot không re-resolve current policy.
+10. `apps/api/src/personal-reporting-projection/personal-reporting-projection.service.ts`:
+    - Bổ sung optional context seam `PersonalReportingProjectionContext` chứa `reportingProjection?: ReportingProjectionContext`.
+    - Forward context xuống `this.reporting.resolveInTransaction(tx, input, context?.reportingProjection)`.
+11. `apps/api/src/reporting-statements/reporting-statements.service.ts`:
+    - Inject `BusinessConfigurationService`.
     - Trong `submit`:
-      - Dùng `policyResolutionCivilDate = hcmCivilDate(asOf)`.
-      - Resolve `OPERATIONAL_START` theo giao dịch `tx`.
-      - Truyền `operationalStartPolicyVersionId` và `operationalStartDate` vào `freezeReportingStatementSnapshot`.
+      - Ghim `const asOf = this.clock.now()` một lần ngoài transaction retry.
+      - Xác định `const policyResolutionCivilDate = hcmCivilDate(asOf)` một lần ngoài transaction retry (không dùng `toISOString().slice(0, 10)`).
+      - Replay check trước tiên: nếu idempotent replay HIT -> trả về kết quả ngay, KHÔNG resolve current policy.
+      - Sau khi replay MISS: trong transaction `tx` của từng retry attempt, resolve `OPERATIONAL_START` đúng một lần: `resolveOperationalStartPolicy(dto.academicYearId, policyResolutionCivilDate, tx)`.
+      - Xây dựng full authority và truyền xuyên suốt: `ReportingStatements` -> `PersonalReportingProjection` -> `ReportingProjection` -> `ProgressDebt`. Downstream tuyệt đối KHÔNG resolve lại policy.
+      - Freeze snapshot V2 với exact `operationalStartPolicyVersionId` và `operationalStartDate`.
+      - Không thay đổi schema DB; lưu trữ snapshot JSON và metadata vào cột `canonical_snapshot_json` hiện hữu.
 
 ---
 
@@ -252,11 +269,11 @@
 ## 5. Phân tách Xác thực Payload và Kiểm tra Lịch Năm học (Policy Validator / Calendar Validation Split)
 
 - **Pure Payload Validator (Đồng bộ, không phụ thuộc DB):**
-  - Thực thi trong `BusinessPolicyPayloadValidator.validate(payload)`.
+  - Thực thi trong `BusinessPolicyPayloadValidator.validate(payload)`. Áp dụng thuần túy tại `createDraft` và `editDraft` (không truy vấn DB, không kiểm tra active calendar).
   - Kiểm tra tính nguyên vẹn về mặt cú pháp: đối tượng nghiêm ngặt (`strictObject`), chỉ chứa duy nhất trường `operationalStartDate`, chuỗi ngày dân sự ISO hợp lệ (`isCivilDate`).
-  - Ném `BadRequestException` khi sai lệch cú pháp. Không sử dụng và không phát minh class lỗi riêng.
+  - Ném `BadRequestException('INVALID_OPERATIONAL_START_POLICY_PAYLOAD')` khi sai lệch cú pháp. Không sử dụng và không phát minh class lỗi riêng.
 - **Calendar-Dependent Validation (Bất đồng bộ, phụ thuộc DB):**
-  - Thực thi trong `BusinessConfigurationService` tại các lệnh thay đổi trạng thái hoặc tạo mới phiên bản.
+  - Thực thi trong `BusinessConfigurationService` tại các lifecycle mutation gates: `publish`, `replace`, `correct` (hoàn toàn không chạy ở `createDraft` / `editDraft`).
   - Sử dụng `tx` để kiểm tra:
     1. Phiên bản lịch `AcademicCalendarVersion` đang `isActive = true` của năm học.
     2. Nếu không có hoặc có nhiều hơn 1 phiên bản lịch: fail-closed với `BadRequestException('ACADEMIC_CALENDAR_VERSION_INVALID')`.
@@ -273,8 +290,9 @@
    - Bắt buộc kiểm tra `effectiveFrom <= operationalStartDate`. Nếu vi phạm: ném `BadRequestException('OPERATIONAL_START_INITIAL_PUBLICATION_INVALID')`.
    - Không cho phép khoảng trống hiệu lực sau khi luồng đã được xuất bản.
 3. **Lệnh `replace` (Thay thế tương lai):**
-   - Chỉ được phép khi `this.businessCivilDate() < currentOperationalStartDate`. Nếu ngày hiện tại đã `>= currentOperationalStartDate`: ném `BadRequestException('OPERATIONAL_START_REPLACE_AFTER_BOUNDARY_FORBIDDEN')`.
-   - Mốc `operationalStartDate` mới phải lớn hơn ngày dân sự máy chủ hiện tại (`newOperationalStartDate > this.businessCivilDate()`).
+   - Capture `const today = this.businessCivilDate()` một lần duy nhất và tái sử dụng xuyên suốt command.
+   - Chỉ được phép khi `today < currentOperationalStartDate`. Nếu ngày hiện tại đã `>= currentOperationalStartDate`: ném `BadRequestException('OPERATIONAL_START_REPLACE_AFTER_BOUNDARY_FORBIDDEN')`.
+   - Mốc `operationalStartDate` mới phải lớn hơn ngày dân sự máy chủ hiện tại (`newOperationalStartDate > today`).
    - Mốc `operationalStartDate` mới phải nằm trong khoảng thời gian của lịch năm học active duy nhất (`startDate <= newOperationalStartDate <= endDate`), nếu vi phạm ném `BadRequestException('OPERATIONAL_START_DATE_OUTSIDE_CALENDAR')` hoặc `BadRequestException('ACADEMIC_CALENDAR_VERSION_INVALID')`.
    - Ngày hiệu lực thay thế phải liên tục với ngày kết thúc của phiên bản trước (không tạo gap).
 4. **Lệnh `correct` (Điều chỉnh có lưu vết):**
@@ -484,9 +502,17 @@ Tuyệt đối không dùng generic 500 cho các trường hợp từ chối ngh
      - Bảo toàn count contract và đẳng thức đếm hiện hữu.
    - Cập nhật test suite cho progress/debt.
 8. **Checkpoint 5 (Reporting Statements Provenance & Snapshot V2):**
-   - Định nghĩa `REPORTING_STATEMENT_SNAPSHOT_V2` trong canonicalizer.
-   - Tích hợp resolver mốc vận hành vào `submit()` và presenter decode.
-   - Cập nhật test suite cho reporting-statements.
+   - Định nghĩa `REPORTING_STATEMENT_SNAPSHOT_V2` trong canonicalizer với 2 trường provenance: `operationalStartPolicyVersionId` và `operationalStartDate`.
+   - Giữ nguyên `REPORTING_STATEMENT_SNAPSHOT_V1` cho các bản ghi và fixtures lịch sử.
+   - `serializerVersion` giữ nguyên `REPORTING_STATEMENT_CANONICAL_JSON_V1` (không tạo serializer V2).
+   - `statementProfile` giữ nguyên `PERSONAL_REPORTING_STATEMENT_PROFILE` (`PERSONAL_V1`).
+   - Mốc giải quyết chính sách: `policyResolutionCivilDate = hcmCivilDate(asOf)` với `asOf` được ghim trước retry.
+   - Replay check trước tiên: idempotent replay MISS mới resolve policy; replay HIT không query/re-resolve policy.
+   - Giải quyết exact policy authority đúng một lần trong transaction và truyền xuyên suốt: Personal -> Reporting -> ProgressDebt. Downstream không resolve lại policy.
+   - Freeze snapshot V2 với exact policy provenance; fail-closed khi thiếu/sai định dạng.
+   - Presenter hỗ trợ giải mã và xác thực toàn vẹn cả V1 và V2; fail-closed với profile lạ.
+   - Không thay đổi schema DB; không mở rộng public contracts API; Web UI giữ nguyên.
+   - Cập nhật test suite toàn diện: canonicalizer, presenter, submit, personal projection, repository, integration, HTTP integration.
 9. **Checkpoint 6 (Toàn diện Kiểm thử, Đồng bộ Tài liệu Hậu kiểm & Sẵn sàng Đánh giá):**
    - Chạy toàn bộ test suite, lint, typecheck, static verifiers.
    - Đồng bộ trạng thái tài liệu sang `IN_REVIEW`.

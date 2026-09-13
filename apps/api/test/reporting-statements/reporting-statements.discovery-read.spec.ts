@@ -51,6 +51,8 @@ function makeFrozenRevision(ownerId = 'owner-1', subjectIds = ['s1']) {
     submitterDisplayNameSnapshot: 'Teacher A',
     submitterStaffCodeSnapshot: 'GV001',
     asOfInstant: asOf,
+    operationalStartPolicyVersionId: 'policy-v1',
+    operationalStartDate: '2026-08-15',
     projection: {
       profile: 'PERSONAL_TEACHING_REPORTING_PROJECTION_V1',
       scope: { academicYearId: 'year-1', targetUserId: ownerId, fromCivilDate: '2026-08-01', toCivilDate: '2026-08-31', asOfInstant: asOf },
@@ -127,6 +129,7 @@ describe('ReportingStatementsService Discovery, Preview, and Read API', () => {
       projection as never,
       authorization as never,
       audit as never,
+      {} as never,
       clock,
     );
   });

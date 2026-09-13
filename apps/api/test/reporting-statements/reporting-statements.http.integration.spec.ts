@@ -13,6 +13,8 @@ function frozen(ownerId: string, academicYearId: string, subjectIds: string[]) {
     statementProfile: PERSONAL_REPORTING_STATEMENT_PROFILE,
     submitterUserId: ownerId,
     asOfInstant: asOf,
+    operationalStartPolicyVersionId: 'policy-version-1',
+    operationalStartDate: '2026-08-15',
     projection: {
       profile: 'PERSONAL_TEACHING_REPORTING_PROJECTION_V1',
       scope: { academicYearId, targetUserId: ownerId, fromCivilDate: '2026-08-01', toCivilDate: '2026-08-31', asOfInstant: asOf },
@@ -112,6 +114,28 @@ integration('Reporting Statement HTTP security boundary (isolated PostgreSQL)', 
     submitOnly = await harness.actor({ grants: [{ capabilityKey: 'REPORTING_STATEMENT_SUBMIT', scopeType: 'PERSONAL' }] });
     readPersonal = await harness.actor({ grants: [{ capabilityKey: 'REPORTING_STATEMENT_READ', scopeType: 'PERSONAL' }] });
     noReportingAuthority = await harness.actor({ grants: [{ capabilityKey: 'SYSTEM_ADMIN', scopeType: 'SCHOOL_WIDE' }] });
+
+    const stream = await prisma.businessPolicyStream.create({
+      data: {
+        familyKey: 'OPERATIONAL_START',
+        resourceKind: 'ACADEMIC_YEAR',
+        academicYearId,
+      },
+    });
+    await prisma.businessPolicyVersion.create({
+      data: {
+        streamId: stream.id,
+        versionNumber: 1,
+        status: 'PUBLISHED',
+        payload: { operationalStartDate: '2026-08-15' },
+        validatorVersion: 'v1',
+        effectiveFrom: new Date('2026-08-01T00:00:00.000Z'),
+        effectiveUntil: null,
+        publishedAt: new Date('2026-08-01T00:00:00.000Z'),
+        publishedByUserId: approver.id,
+        createdByUserId: approver.id,
+      },
+    });
   });
 
   afterEach(async () => cleanupSeededReportingStatements());
@@ -424,6 +448,16 @@ integration('Reporting Statement HTTP security boundary (isolated PostgreSQL)', 
     expect(submitReplacementRes.status).toBe(201);
     expect(submitReplacementRes.body.lifecycleState).toBe('SUBMITTED');
 
+    // Verify DB snapshot profile is V2 and contains frozen provenance
+    const submittedRevisionRow = await prisma.reportingStatementRevision.findUniqueOrThrow({
+      where: { id: submitReplacementRes.body.revisionId },
+    });
+    expect(submittedRevisionRow.snapshotProfile).toBe('REPORTING_STATEMENT_SNAPSHOT_V2');
+    expect(submittedRevisionRow.serializerVersion).toBe('REPORTING_STATEMENT_CANONICAL_JSON_V1');
+    const parsedSnapshot = JSON.parse(submittedRevisionRow.canonicalSnapshotJson);
+    expect(parsedSnapshot.operationalStartPolicyVersionId).toBeDefined();
+    expect(parsedSnapshot.operationalStartDate).toBe('2026-08-15');
+
     // Pending decision queue now shows the submitted replacement revision
     const pendingWithReplacement = await approver.agent.get('/api/reporting-statements/pending-decision');
     expect(pendingWithReplacement.status).toBe(200);
@@ -478,6 +512,8 @@ integration('Reporting Statement HTTP security boundary (isolated PostgreSQL)', 
     expect(res.body).not.toHaveProperty('requestFingerprint');
     expect(res.body).not.toHaveProperty('requestKey');
     expect(res.body).not.toHaveProperty('commandId');
+    expect(res.body).not.toHaveProperty('operationalStartPolicyVersionId');
+    expect(res.body).not.toHaveProperty('operationalStartDate');
 
     // Approver sees allowedActions = ['APPROVE', 'REJECT']
     const approverRead = await approver.agent.get(`/api/reporting-statements/${seeded.revision.id}`);

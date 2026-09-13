@@ -1,7 +1,10 @@
 import { InternalServerErrorException } from '@nestjs/common';
 import {
   freezeReportingStatementSnapshot,
+  freezeReportingStatementSnapshotV1,
+  REPORTING_STATEMENT_SERIALIZER_V1,
   REPORTING_STATEMENT_SNAPSHOT_V1,
+  REPORTING_STATEMENT_SNAPSHOT_V2,
 } from '../../src/reporting-statement-internal/reporting-statement-canonicalizer';
 import {
   FrozenRevisionRow,
@@ -12,101 +15,106 @@ import {
   PUBLIC_PRESENTATION_INTEGRITY_ERROR,
 } from '../../src/reporting-statements/reporting-statement.presenter';
 
-
 const asOf = new Date('2026-08-25T10:20:30.400Z');
 
-function createValidFrozenFixture(ownerId = 'user-1', subjectIds = ['sub-a', 'sub-b']) {
+function createProjection(ownerId: string, subjectIds: string[]) {
+  return {
+    profile: 'PERSONAL_TEACHING_REPORTING_PROJECTION_V1' as const,
+    scope: {
+      academicYearId: 'year-1',
+      targetUserId: ownerId,
+      fromCivilDate: '2026-08-01' as const,
+      toCivilDate: '2026-08-31' as const,
+      asOfInstant: asOf,
+    },
+    responsibilityState: 'RESPONSIBILITY_PRESENT' as const,
+    status: 'PASS' as const,
+    counts: {
+      distributedElapsedCount: 4,
+      completedCount: 4,
+      openDebtCount: 0,
+      lateCount: 0,
+      unconfirmedGapCount: 0,
+    },
+    responsibilityManifest: subjectIds.map((subjectId, index) => ({
+      teachingAssignmentId: `assignment-${index}`,
+      schoolClassId: `class-${index}`,
+      subjectId,
+      validFrom: '2026-08-01' as const,
+      validUntil: null,
+    })),
+    sections: subjectIds.map((subjectId, index) => ({
+      schoolClassId: `class-${index}`,
+      subjectId,
+      responsibilityIntervals: [
+        {
+          teachingAssignmentId: `assignment-${index}`,
+          schoolClassId: `class-${index}`,
+          subjectId,
+          validFrom: '2026-08-01' as const,
+          validUntil: null,
+        },
+      ],
+      status: 'PASS' as const,
+      counts: {
+        distributedElapsedCount: 2,
+        completedCount: 2,
+        openDebtCount: 0,
+        lateCount: 0,
+        unconfirmedGapCount: 0,
+      },
+      details: [
+        {
+          academicYearId: 'year-1',
+          schoolClassId: `class-${index}`,
+          subjectId,
+          classification: 'COMPLETED' as const,
+          sourceNormalOccurrenceKey: `occ-${index}`,
+          originalTimetableVersionId: 'tt-v1',
+          originalTimetableEntryId: 'tt-e1',
+          sourceCivilDate: '2026-08-10',
+          sourceAcademicCalendarVersionId: 'cal-v1',
+          sourceTimeSlotDefinitionId: 'slot-1',
+          sourceSlotStart: '07:00:00',
+          sourceSlotEnd: '07:45:00',
+          originalTeachingAssignmentId: `assignment-${index}`,
+          responsibleTeacherUserId: ownerId,
+          ppctClassAssociationId: 'ppct-a1',
+          ppctPlanId: 'ppct-p1',
+          ppctVersionId: 'ppct-v1',
+          ppctItemId: 'item-1',
+          ppctItemRevisionId: 'rev-1',
+          operationalLessonDispositionId: null,
+          operationalDispositionType: null,
+          fulfillmentExecutionId: `exec-${index}`,
+          fulfillmentKind: 'NORMAL' as const,
+          makeupTeachingScheduleId: null,
+          executionCivilDate: '2026-08-10',
+          executionAcademicCalendarVersionId: 'cal-v1',
+          executionTimeSlotDefinitionId: 'slot-1',
+          actualTeacherUserId: ownerId,
+        },
+      ],
+      findings: [],
+    })),
+    findings: [],
+    evaluatedAt: asOf.toISOString(),
+  };
+}
+
+function createValidFrozenFixtureV2(ownerId = 'user-1', subjectIds = ['sub-a', 'sub-b']) {
   const frozen = freezeReportingStatementSnapshot({
     statementProfile: 'PERSONAL_REPORTING_STATEMENT_V1',
     submitterUserId: ownerId,
     submitterDisplayNameSnapshot: 'Nguyen Van A',
     submitterStaffCodeSnapshot: 'GV001',
     asOfInstant: asOf,
-    projection: {
-      profile: 'PERSONAL_TEACHING_REPORTING_PROJECTION_V1',
-      scope: {
-        academicYearId: 'year-1',
-        targetUserId: ownerId,
-        fromCivilDate: '2026-08-01',
-        toCivilDate: '2026-08-31',
-        asOfInstant: asOf,
-      },
-      responsibilityState: 'RESPONSIBILITY_PRESENT',
-      status: 'PASS',
-      counts: {
-        distributedElapsedCount: 4,
-        completedCount: 4,
-        openDebtCount: 0,
-        lateCount: 0,
-        unconfirmedGapCount: 0,
-      },
-      responsibilityManifest: subjectIds.map((subjectId, index) => ({
-        teachingAssignmentId: `assignment-${index}`,
-        schoolClassId: `class-${index}`,
-        subjectId,
-        validFrom: '2026-08-01',
-        validUntil: null,
-      })),
-      sections: subjectIds.map((subjectId, index) => ({
-        schoolClassId: `class-${index}`,
-        subjectId,
-        responsibilityIntervals: [
-          {
-            teachingAssignmentId: `assignment-${index}`,
-            schoolClassId: `class-${index}`,
-            subjectId,
-            validFrom: '2026-08-01',
-            validUntil: null,
-          },
-        ],
-        status: 'PASS' as const,
-        counts: {
-          distributedElapsedCount: 2,
-          completedCount: 2,
-          openDebtCount: 0,
-          lateCount: 0,
-          unconfirmedGapCount: 0,
-        },
-        details: [
-          {
-            academicYearId: 'year-1',
-            schoolClassId: `class-${index}`,
-            subjectId,
-            classification: 'COMPLETED' as const,
-            sourceNormalOccurrenceKey: `occ-${index}`,
-            originalTimetableVersionId: 'tt-v1',
-            originalTimetableEntryId: 'tt-e1',
-            sourceCivilDate: '2026-08-10',
-            sourceAcademicCalendarVersionId: 'cal-v1',
-            sourceTimeSlotDefinitionId: 'slot-1',
-            sourceSlotStart: '07:00:00',
-            sourceSlotEnd: '07:45:00',
-            originalTeachingAssignmentId: `assignment-${index}`,
-            responsibleTeacherUserId: ownerId,
-            ppctClassAssociationId: 'ppct-a1',
-            ppctPlanId: 'ppct-p1',
-            ppctVersionId: 'ppct-v1',
-            ppctItemId: 'item-1',
-            ppctItemRevisionId: 'rev-1',
-            operationalLessonDispositionId: null,
-            operationalDispositionType: null,
-            fulfillmentExecutionId: `exec-${index}`,
-            fulfillmentKind: 'NORMAL' as const,
-            makeupTeachingScheduleId: null,
-            executionCivilDate: '2026-08-10',
-            executionAcademicCalendarVersionId: 'cal-v1',
-            executionTimeSlotDefinitionId: 'slot-1',
-            actualTeacherUserId: ownerId,
-          },
-        ],
-        findings: [],
-      })),
-      findings: [],
-      evaluatedAt: asOf.toISOString(),
-    } as never,
+    projection: createProjection(ownerId, subjectIds) as never,
+    operationalStartPolicyVersionId: 'policy-version-1',
+    operationalStartDate: '2026-08-15',
   });
 
-  const row = {
+  const row: FrozenRevisionRow = {
     id: 'revision-uuid-1',
     seriesId: 'series-uuid-1',
     snapshotProfile: frozen.snapshot.snapshotProfile,
@@ -143,17 +151,60 @@ function createValidFrozenFixture(ownerId = 'user-1', subjectIds = ['sub-a', 'su
         createdAt: new Date('2026-08-25T10:25:00.000Z'),
         causedByRevisionId: null,
       },
-    ] as Array<{
-      id: string;
-      eventType: 'SUBMITTED' | 'APPROVED' | 'REJECTED' | 'SUPERSEDED';
-      stateBefore: 'SUBMITTED' | 'APPROVED' | 'REJECTED' | 'SUPERSEDED' | null;
-      stateAfter: 'SUBMITTED' | 'APPROVED' | 'REJECTED' | 'SUPERSEDED';
-      actorUserId: string;
-      actorDisplayNameSnapshot: string | null;
-      actorStaffCodeSnapshot: string | null;
-      createdAt: Date;
-      causedByRevisionId: string | null;
-    }>,
+    ],
+  };
+
+  return { frozen, row };
+}
+
+function createValidFrozenFixtureV1(ownerId = 'user-1', subjectIds = ['sub-a', 'sub-b']) {
+  const frozen = freezeReportingStatementSnapshotV1({
+    statementProfile: 'PERSONAL_REPORTING_STATEMENT_V1',
+    submitterUserId: ownerId,
+    submitterDisplayNameSnapshot: 'Nguyen Van A',
+    submitterStaffCodeSnapshot: 'GV001',
+    asOfInstant: asOf,
+    projection: createProjection(ownerId, subjectIds) as never,
+  });
+
+  const row: FrozenRevisionRow = {
+    id: 'revision-uuid-v1',
+    seriesId: 'series-uuid-1',
+    snapshotProfile: frozen.snapshot.snapshotProfile,
+    serializerVersion: frozen.snapshot.serializerVersion,
+    canonicalSnapshotJson: frozen.canonicalSnapshotJson,
+    semanticHash: frozen.semanticHash,
+    asOfInstant: asOf,
+    submitterDisplayNameSnapshot: 'Nguyen Van A',
+    submitterStaffCodeSnapshot: 'GV001',
+    submittedAt: new Date('2026-08-25T10:25:00.000Z'),
+    predecessorRevisionId: null,
+    supersedesRevisionId: null,
+    series: {
+      statementProfile: 'PERSONAL_REPORTING_STATEMENT_V1',
+      submitterUserId: ownerId,
+      academicYearId: 'year-1',
+      fromCivilDate: new Date('2026-08-01'),
+      toCivilDate: new Date('2026-08-31'),
+    },
+    state: {
+      lifecycleState: 'SUBMITTED' as const,
+      lifecycleToken: 'token-uuid-v1',
+    },
+    subjects: subjectIds.map((subjectId) => ({ subjectId })),
+    historyEntries: [
+      {
+        id: 'hist-v1',
+        eventType: 'SUBMITTED',
+        stateBefore: null,
+        stateAfter: 'SUBMITTED',
+        actorUserId: ownerId,
+        actorDisplayNameSnapshot: 'Nguyen Van A',
+        actorStaffCodeSnapshot: 'GV001',
+        createdAt: new Date('2026-08-25T10:25:00.000Z'),
+        causedByRevisionId: null,
+      },
+    ],
   };
 
   return { frozen, row };
@@ -191,7 +242,7 @@ describe('Reporting Statement Presenter & Integrity', () => {
 
   describe('presentReportingStatementSummary', () => {
     it('presents a complete summary without exposing raw JSON or fingerprints', () => {
-      const { row } = createValidFrozenFixture();
+      const { row } = createValidFrozenFixtureV2();
       const summary = presentReportingStatementSummary(row);
 
       expect(summary).toEqual({
@@ -214,7 +265,7 @@ describe('Reporting Statement Presenter & Integrity', () => {
     });
 
     it('throws InternalServerErrorException if row is missing state', () => {
-      const { row } = createValidFrozenFixture();
+      const { row } = createValidFrozenFixtureV2();
       expect(() => presentReportingStatementSummary({ ...row, state: null })).toThrow(
         PUBLIC_PRESENTATION_INTEGRITY_ERROR,
       );
@@ -222,40 +273,93 @@ describe('Reporting Statement Presenter & Integrity', () => {
   });
 
   describe('parseAndVerifyFrozenSnapshot', () => {
-    it('verifies a valid snapshot successfully', () => {
-      const { row } = createValidFrozenFixture();
+    // A. valid historical V1 read PASS
+    it('reads valid historical V1 snapshot successfully without requiring provenance fields', () => {
+      const { row } = createValidFrozenFixtureV1();
       const snapshot = parseAndVerifyFrozenSnapshot(row);
       expect(snapshot.snapshotProfile).toBe(REPORTING_STATEMENT_SNAPSHOT_V1);
+      expect(snapshot.serializerVersion).toBe(REPORTING_STATEMENT_SERIALIZER_V1);
       expect(snapshot.submitterUserId).toBe('user-1');
       expect(snapshot.counts.completedCount).toBe(4);
+      expect((snapshot as unknown as Record<string, unknown>).operationalStartPolicyVersionId).toBeUndefined();
+      expect((snapshot as unknown as Record<string, unknown>).operationalStartDate).toBeUndefined();
     });
 
-    it('fails closed when snapshot profile or serializer version is invalid', () => {
-      const { row } = createValidFrozenFixture();
+    // B. valid V2 read PASS
+    it('reads valid V2 snapshot successfully with verified provenance fields', () => {
+      const { row } = createValidFrozenFixtureV2();
+      const snapshot = parseAndVerifyFrozenSnapshot(row);
+      expect(snapshot.snapshotProfile).toBe(REPORTING_STATEMENT_SNAPSHOT_V2);
+      expect(snapshot.serializerVersion).toBe(REPORTING_STATEMENT_SERIALIZER_V1);
+      expect(snapshot.submitterUserId).toBe('user-1');
+      expect(snapshot.counts.completedCount).toBe(4);
+      const v2 = snapshot as import('../../src/reporting-statement-internal/reporting-statement-canonicalizer').ReportingStatementSnapshotV2;
+      expect(v2.operationalStartPolicyVersionId).toBe('policy-version-1');
+      expect(v2.operationalStartDate).toBe('2026-08-15');
+    });
+
+    // D. row snapshotProfile V2 + canonical JSON V1: fail closed
+    it('fails closed when row snapshotProfile V2 does not match canonical JSON profile V1', () => {
+      const { row } = createValidFrozenFixtureV1();
       expect(() =>
-        parseAndVerifyFrozenSnapshot({ ...row, snapshotProfile: 'INVALID_PROFILE' }),
-      ).toThrow(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
-      expect(() =>
-        parseAndVerifyFrozenSnapshot({ ...row, serializerVersion: 'INVALID_VERSION' }),
+        parseAndVerifyFrozenSnapshot({ ...row, snapshotProfile: REPORTING_STATEMENT_SNAPSHOT_V2 }),
       ).toThrow(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
     });
 
-    it('fails closed when semantic hash does not match canonical JSON', () => {
-      const { row } = createValidFrozenFixture();
+    // E. V2 missing policyVersionId: fail closed
+    it('fails closed when V2 canonical JSON has missing or empty policyVersionId', () => {
+      const { row } = createValidFrozenFixtureV2();
+      const corruptedJson = row.canonicalSnapshotJson.replace(
+        '"operationalStartPolicyVersionId":"policy-version-1"',
+        '"operationalStartPolicyVersionId":""',
+      );
+      expect(() =>
+        parseAndVerifyFrozenSnapshot({ ...row, canonicalSnapshotJson: corruptedJson }),
+      ).toThrow(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
+    });
+
+    // F. V2 malformed operationalStartDate: fail closed
+    it('fails closed when V2 canonical JSON has malformed operationalStartDate', () => {
+      const { row } = createValidFrozenFixtureV2();
+      const corruptedJson = row.canonicalSnapshotJson.replace(
+        '"operationalStartDate":"2026-08-15"',
+        '"operationalStartDate":"2026-02-30"',
+      );
+      expect(() =>
+        parseAndVerifyFrozenSnapshot({ ...row, canonicalSnapshotJson: corruptedJson }),
+      ).toThrow(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
+    });
+
+    // G. V2 semantic hash tampering: fail closed
+    it('fails closed when V2 semantic hash does not match canonical JSON', () => {
+      const { row } = createValidFrozenFixtureV2();
       expect(() =>
         parseAndVerifyFrozenSnapshot({ ...row, semanticHash: 'f'.repeat(64) }),
       ).toThrow(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
     });
 
-    it('fails closed when canonical JSON is corrupted or invalid JSON', () => {
-      const { row } = createValidFrozenFixture();
+    // H. V2 canonical JSON tampering: fail closed
+    it('fails closed when V2 canonical JSON is corrupted or invalid JSON', () => {
+      const { row } = createValidFrozenFixtureV2();
       expect(() =>
         parseAndVerifyFrozenSnapshot({ ...row, canonicalSnapshotJson: '{ corrupted json ' }),
       ).toThrow(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
     });
 
+    // I. unknown profile: fail closed
+    it('fails closed on unknown snapshot profile or serializerVersion', () => {
+      const { row } = createValidFrozenFixtureV2();
+      expect(() =>
+        parseAndVerifyFrozenSnapshot({ ...row, snapshotProfile: 'UNKNOWN_PROFILE_V3' }),
+      ).toThrow(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
+      expect(() =>
+        parseAndVerifyFrozenSnapshot({ ...row, serializerVersion: 'CANONICAL_JSON_V2' }),
+      ).toThrow(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
+    });
+
+    // J. V1 regression cases all continue PASS
     it('fails closed when re-canonicalized bytes do not match stored canonical JSON', () => {
-      const { row, frozen } = createValidFrozenFixture();
+      const { row, frozen } = createValidFrozenFixtureV2();
       const whitespaceJson = frozen.canonicalSnapshotJson.replace('{', '{ ');
       expect(() =>
         parseAndVerifyFrozenSnapshot({
@@ -267,7 +371,7 @@ describe('Reporting Statement Presenter & Integrity', () => {
     });
 
     it('fails closed when series statementProfile does not match snapshot', () => {
-      const { row } = createValidFrozenFixture();
+      const { row } = createValidFrozenFixtureV2();
       expect(() =>
         parseAndVerifyFrozenSnapshot({
           ...row,
@@ -277,7 +381,7 @@ describe('Reporting Statement Presenter & Integrity', () => {
     });
 
     it('fails closed when series submitterUserId does not match snapshot', () => {
-      const { row } = createValidFrozenFixture();
+      const { row } = createValidFrozenFixtureV2();
       expect(() =>
         parseAndVerifyFrozenSnapshot({
           ...row,
@@ -287,7 +391,7 @@ describe('Reporting Statement Presenter & Integrity', () => {
     });
 
     it('fails closed when submitterDisplayNameSnapshot does not match snapshot', () => {
-      const { row } = createValidFrozenFixture();
+      const { row } = createValidFrozenFixtureV2();
       expect(() =>
         parseAndVerifyFrozenSnapshot({
           ...row,
@@ -297,7 +401,7 @@ describe('Reporting Statement Presenter & Integrity', () => {
     });
 
     it('fails closed when submitterStaffCodeSnapshot does not match snapshot', () => {
-      const { row } = createValidFrozenFixture();
+      const { row } = createValidFrozenFixtureV2();
       expect(() =>
         parseAndVerifyFrozenSnapshot({
           ...row,
@@ -307,7 +411,7 @@ describe('Reporting Statement Presenter & Integrity', () => {
     });
 
     it('fails closed when series academicYearId does not match snapshot', () => {
-      const { row } = createValidFrozenFixture();
+      const { row } = createValidFrozenFixtureV2();
       expect(() =>
         parseAndVerifyFrozenSnapshot({
           ...row,
@@ -317,7 +421,7 @@ describe('Reporting Statement Presenter & Integrity', () => {
     });
 
     it('fails closed when series date range does not match snapshot', () => {
-      const { row } = createValidFrozenFixture();
+      const { row } = createValidFrozenFixtureV2();
       expect(() =>
         parseAndVerifyFrozenSnapshot({
           ...row,
@@ -333,7 +437,7 @@ describe('Reporting Statement Presenter & Integrity', () => {
     });
 
     it('fails closed when subjects in DB do not match responsibilityManifest', () => {
-      const { row } = createValidFrozenFixture();
+      const { row } = createValidFrozenFixtureV2();
       expect(() =>
         parseAndVerifyFrozenSnapshot({
           ...row,
@@ -343,7 +447,7 @@ describe('Reporting Statement Presenter & Integrity', () => {
     });
 
     it('fails closed when asOfInstant does not match row.asOfInstant', () => {
-      const { row } = createValidFrozenFixture();
+      const { row } = createValidFrozenFixtureV2();
       expect(() =>
         parseAndVerifyFrozenSnapshot({
           ...row,
@@ -354,8 +458,9 @@ describe('Reporting Statement Presenter & Integrity', () => {
   });
 
   describe('presentReportingStatementDetail', () => {
-    it('presents sanitized public detail with verified snapshot and allowedActions', () => {
-      const { row } = createValidFrozenFixture();
+    // C. V2 public response remains same contract shape
+    it('presents sanitized public detail for V2 without exposing internal provenance fields', () => {
+      const { row } = createValidFrozenFixtureV2();
       const detail = presentReportingStatementDetail(row, ['APPROVE', 'REJECT']);
 
       expect(detail.revisionId).toBe('revision-uuid-1');
@@ -395,14 +500,25 @@ describe('Reporting Statement Presenter & Integrity', () => {
         causedByRevisionId: null,
       });
 
+      // Assert no internal provenance leakage
+      expect(detail).not.toHaveProperty('operationalStartPolicyVersionId');
+      expect(detail).not.toHaveProperty('operationalStartDate');
       expect(detail).not.toHaveProperty('canonicalSnapshotJson');
       expect(detail).not.toHaveProperty('requestFingerprint');
       expect(detail).not.toHaveProperty('requestKey');
       expect(detail).not.toHaveProperty('commandId');
     });
 
+    it('presents sanitized public detail for historical V1 without error', () => {
+      const { row } = createValidFrozenFixtureV1();
+      const detail = presentReportingStatementDetail(row, ['APPROVE', 'REJECT']);
+      expect(detail.revisionId).toBe('revision-uuid-v1');
+      expect(detail.counts.completedCount).toBe(4);
+      expect(detail).not.toHaveProperty('operationalStartPolicyVersionId');
+    });
+
     it('sorts history entries chronologically with deterministic tie-break', () => {
-      const { row } = createValidFrozenFixture();
+      const { row } = createValidFrozenFixtureV2();
       row.historyEntries = [
         {
           id: 'hist-2',
@@ -436,7 +552,7 @@ describe('Reporting Statement Presenter & Integrity', () => {
 
   describe('500 Exception Sanitization Security Guarantee', () => {
     it('ensures all integrity and decoding failures produce generic Vietnamese messages without internal leakage', () => {
-      const { row } = createValidFrozenFixture();
+      const { row } = createValidFrozenFixtureV2();
       const corruptedScenarios: FrozenRevisionRow[] = [
         { ...row, snapshotProfile: 'INVALID' },
         { ...row, serializerVersion: 'INVALID' },
