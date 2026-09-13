@@ -112,8 +112,13 @@
 8. **Cổng Lệnh Xác nhận Thực thi Giảng dạy:**
    - File: `apps/api/src/teaching-executions/teaching-executions.service.ts` (`confirmNormalTx`, `confirmMakeupTx`)
    - Routes: `POST /teaching-executions/curricular/normal` và `POST /teaching-executions/curricular/makeup`.
-   - `confirmNormalTx`: Lấy `sourceCivilDate`, resolve `OPERATIONAL_START` trong cùng transaction. Nếu `sourceCivilDate < operationalStartDate`: fail-closed với `ConflictException('CANNOT_CONFIRM_PRE_OPERATIONAL_EXECUTION')`.
-   - `confirmMakeupTx`: Lấy ngày nghĩa vụ gốc `originalCivilDate = formatCivilDate(m.originalCivilDate)`, resolve `OPERATIONAL_START`. Nếu `originalCivilDate < operationalStartDate`: fail-closed với `ConflictException('CANNOT_CONFIRM_PRE_OPERATIONAL_MAKEUP_OBLIGATION')`. Không cho phép dùng ngày dạy bù thực tế (`makeupTargetCivilDate`) để lách ranh giới nghĩa vụ tiền vận hành.
+   - **Thẩm quyền mốc giải quyết chính sách (Policy Resolution Anchor):**
+     - Luôn sử dụng thời điểm nhận lệnh của máy chủ: `const commandNow = this.clock.now()`.
+     - Quy đổi sang ngày dân sự chuẩn HCM: `const policyResolutionCivilDate = hcmCivilDate(commandNow)`.
+     - Giải quyết chính sách: `resolveOperationalStartPolicy(academicYearId, policyResolutionCivilDate, tx)`.
+     - `sourceCivilDate` (đối với NORMAL) và `originalCivilDate` (đối với MAKEUP) là **BUSINESS OBLIGATION DATE**, KHÔNG PHẢI mốc giải quyết chính sách. Tuyệt đối không giải quyết policy version riêng cho từng occurrence date.
+   - `confirmNormalTx`: Sau khi vượt qua kiểm tra idempotent replay (`curricularReplay`), capture `commandNow` một lần, resolve `OPERATIONAL_START` tại `policyResolutionCivilDate`. Nếu `dto.sourceCivilDate < operationalStartDate`: fail-closed với `ConflictException('CANNOT_CONFIRM_PRE_OPERATIONAL_EXECUTION')`. Tái sử dụng `commandNow` cho `assertEnded(...)`.
+   - `confirmMakeupTx`: Sau khi vượt qua idempotent replay và xác định lịch bù ACTIVE, capture `commandNow` một lần, resolve `OPERATIONAL_START` tại `policyResolutionCivilDate = hcmCivilDate(commandNow)`. Lấy ngày nghĩa vụ gốc `originalCivilDate = formatCivilDate(m.originalCivilDate)`. Nếu `originalCivilDate < operationalStartDate`: fail-closed với `ConflictException('CANNOT_CONFIRM_PRE_OPERATIONAL_MAKEUP_OBLIGATION')`. Không cho phép dùng ngày dạy bù thực tế (`targetCivilDate`) để lách ranh giới nghĩa vụ tiền vận hành. Tái sử dụng `commandNow` cho `assertEnded(...)`.
 
 9. **Đóng băng Báo cáo Thống kê Tiết dạy và Nguồn gốc (Provenance):**
    - File: `apps/api/src/reporting-statements/reporting-statements.service.ts` (`submit`)
@@ -194,11 +199,20 @@
 7. `apps/api/src/teaching-executions/teaching-executions.service.ts`:
    - Inject `BusinessConfigurationService`.
    - Trong `confirmNormalTx`:
-     - Resolve `OPERATIONAL_START` của `dto.academicYearId` tại `dto.sourceCivilDate`.
+     - Giữ `curricularReplay(...)` ở bước đầu tiên. Chỉ thực thi policy guard đối với các mutation mới.
+     - Capture `const commandNow = this.clock.now()`.
+     - Xác định `policyResolutionCivilDate = hcmCivilDate(commandNow)`.
+     - Resolve `OPERATIONAL_START` của `dto.academicYearId` tại `policyResolutionCivilDate` theo transaction `tx`.
      - Nếu `dto.sourceCivilDate < operationalStartDate`: ném `ConflictException('CANNOT_CONFIRM_PRE_OPERATIONAL_EXECUTION')`.
+     - Dùng cùng `commandNow` cho `assertEnded(...)`.
    - Trong `confirmMakeupTx`:
-     - Resolve `OPERATIONAL_START` của `m.academicYearId` tại `formatCivilDate(m.originalCivilDate)`.
-     - Nếu `formatCivilDate(m.originalCivilDate) < operationalStartDate`: ném `ConflictException('CANNOT_CONFIRM_PRE_OPERATIONAL_MAKEUP_OBLIGATION')`.
+     - Giữ `curricularReplay(...)` ở bước đầu tiên.
+     - Sau khi load và kiểm tra `makeupTeachingSchedule m` ACTIVE, capture `const commandNow = this.clock.now()`.
+     - Xác định `policyResolutionCivilDate = hcmCivilDate(commandNow)`.
+     - Resolve `OPERATIONAL_START` của `m.academicYearId` tại `policyResolutionCivilDate` theo transaction `tx`.
+     - Lấy ngày nghĩa vụ gốc `originalCivilDate = formatCivilDate(m.originalCivilDate)`.
+     - Nếu `originalCivilDate < operationalStartDate`: ném `ConflictException('CANNOT_CONFIRM_PRE_OPERATIONAL_MAKEUP_OBLIGATION')`.
+     - Dùng cùng `commandNow` cho `assertEnded(...)`.
 
 ### E. Tầng Đóng băng Báo cáo (Reporting Statements)
 8. `apps/api/src/reporting-statement-internal/reporting-statement-canonicalizer.ts`:
@@ -317,16 +331,22 @@
 
 ## 9. Kế hoạch Tích hợp Lệnh Xác nhận Thực thi (Execution Commands Integration Plan)
 
+- Bảo toàn thứ tự: Idempotent replay (`curricularReplay`) luôn chạy trước tiên. Policy guard chỉ áp dụng cho mutation mới khi không tìm thấy retained execution record.
+- **Thẩm quyền thời điểm lệnh (Command-Time Authority):**
+  - Khóa `const commandNow = this.clock.now()`.
+  - Tính `policyResolutionCivilDate = hcmCivilDate(commandNow)`.
+  - Tái sử dụng `commandNow` cho cả giải quyết chính sách và kiểm tra kết thúc tiết (`assertEnded`).
 - Trong `TeachingExecutionsService.confirmNormalTx`:
-  - Lấy `sourceCivilDate = dto.sourceCivilDate`.
-  - Resolve `OPERATIONAL_START` cho `dto.academicYearId` tại `sourceCivilDate` theo transaction `tx`.
-  - Nếu `sourceCivilDate < operationalStartDate`: Ném `ConflictException('CANNOT_CONFIRM_PRE_OPERATIONAL_EXECUTION')`.
+  - Sau replay check, resolve `OPERATIONAL_START` cho `dto.academicYearId` tại `policyResolutionCivilDate` theo transaction `tx`.
+  - So sánh ngày nghĩa vụ giảng dạy: nếu `dto.sourceCivilDate < operationalStartDate`: ném `ConflictException('CANNOT_CONFIRM_PRE_OPERATIONAL_EXECUTION')`.
+  - Nếu `dto.sourceCivilDate >= operationalStartDate`: cho phép tiếp tục flow phân bổ và tạo execution.
 - Trong `TeachingExecutionsService.confirmMakeupTx`:
+  - Sau replay check và kiểm tra schedule `m` ACTIVE, resolve `OPERATIONAL_START` cho `m.academicYearId` tại `policyResolutionCivilDate` theo transaction `tx`.
   - Lấy ngày nghĩa vụ gốc: `originalCivilDate = formatCivilDate(m.originalCivilDate)`.
-  - Resolve `OPERATIONAL_START` cho `m.academicYearId` tại `originalCivilDate` theo transaction `tx`.
-  - Nếu `originalCivilDate < operationalStartDate`: Ném `ConflictException('CANNOT_CONFIRM_PRE_OPERATIONAL_MAKEUP_OBLIGATION')`.
-  - Không cho phép dùng ngày dạy bù thực tế (`makeupTargetCivilDate`) để lách ranh giới nghĩa vụ tiền vận hành.
-- Bảo tồn toàn bộ quyền đọc (`read`) và đảo ngược (`reverse`) đối với các bản ghi thực thi đã tồn tại.
+  - So sánh: nếu `originalCivilDate < operationalStartDate`: ném `ConflictException('CANNOT_CONFIRM_PRE_OPERATIONAL_MAKEUP_OBLIGATION')`.
+  - Quy tắc này áp dụng tuyệt đối kể cả khi ngày dạy bù thực tế `targetCivilDate >= operationalStartDate`. Không cho phép dùng ngày bù để lách ranh giới nghĩa vụ tiền vận hành.
+- Bảo tồn toàn bộ quyền đọc (`read`) và đảo ngược (`reverse`) đối với các bản ghi thực thi đã tồn tại mà không yêu cầu giải quyết chính sách mốc vận hành.
+- Không áp dụng kiểm tra `OPERATIONAL_START` cho `confirmActivity` (phân hệ `P4` sở hữu SpecialActivity).
 
 ---
 
@@ -362,8 +382,8 @@ Không sử dụng các định dạng mã lỗi mơ hồ (như 409/400). Mỗi 
 | `OPERATIONAL_START_INITIAL_PUBLICATION_INVALID` | `BadRequestException` | 400 | Từ chối xuất bản khi `effectiveFrom > operationalStartDate` |
 | `OPERATIONAL_START_DATE_OUTSIDE_CALENDAR` | `BadRequestException` | 400 | Ngày vận hành nằm ngoài khoảng thời gian năm học active |
 | `ACADEMIC_CALENDAR_VERSION_INVALID` | `BadRequestException` | 400 | Năm học không có lịch active duy nhất |
-| `CANNOT_CONFIRM_PRE_OPERATIONAL_EXECUTION` | `ConflictException` | 409 | Từ chối xác nhận tiết dạy thường trước mốc vận hành |
-| `CANNOT_CONFIRM_PRE_OPERATIONAL_MAKEUP_OBLIGATION` | `ConflictException` | 409 | Từ chối xác nhận dạy bù cho nghĩa vụ tiền vận hành |
+| `CANNOT_CONFIRM_PRE_OPERATIONAL_EXECUTION` | `ConflictException` | 409 | Từ chối xác nhận tiết dạy thường trước mốc vận hành (được xác định theo chính sách có hiệu lực tại thời điểm lệnh command-time) |
+| `CANNOT_CONFIRM_PRE_OPERATIONAL_MAKEUP_OBLIGATION` | `ConflictException` | 409 | Từ chối xác nhận dạy bù khi nghĩa vụ gốc trước mốc vận hành (dù ngày bù diễn ra sau mốc, theo chính sách command-time) |
 | `POLICY_NOT_CONFIGURED` | `ConflictException` | 409 | Năm học chưa cấu hình chính sách bắt đầu vận hành |
 | `POLICY_AMBIGUOUS` | `ConflictException` | 409 | Tồn tại nhiều phiên bản chính sách xung đột hiệu lực |
 | `POLICY_CORRUPT` | `ConflictException` | 409 | Dữ liệu chính sách hoặc lineage bị sai hỏng |

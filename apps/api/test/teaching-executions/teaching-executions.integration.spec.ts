@@ -5,12 +5,13 @@ integration('Teaching Execution runtime relational invariants (PostgreSQL)', () 
   const h = new Phase01Harness();
   beforeAll(async () => h.start()); afterAll(async () => { try { await clean(); } finally { await h.stop(); } }); beforeEach(async () => clean());
   async function clean() {
+    await h.prisma.businessPolicyVersion.deleteMany(); await h.prisma.businessPolicyStream.deleteMany();
     await h.prisma.specialActivityParticipationExecution.deleteMany(); await h.prisma.curricularTeachingExecution.deleteMany();
     await h.prisma.specialActivityStaffing.deleteMany(); await h.prisma.specialActivityTimeSlot.deleteMany(); await h.prisma.specialActivityClassTarget.deleteMany(); await h.prisma.specialActivity.deleteMany();
     await h.prisma.makeupTeachingSchedule.deleteMany(); await h.prisma.operationalLessonDisposition.deleteMany(); await h.prisma.calendarExceptionTimeSlot.deleteMany(); await h.prisma.calendarException.deleteMany();
     await h.prisma.ppctItemLineage.deleteMany(); await h.prisma.ppctClassAssociation.deleteMany(); await h.prisma.ppctItemRevision.deleteMany(); await h.prisma.ppctItem.deleteMany(); await h.prisma.ppctVersion.deleteMany(); await h.prisma.ppctPlan.deleteMany(); await h.clean();
   }
-  async function fixture() {
+  async function fixture(operationalStartDate = '2026-08-01') {
     await h.seedCapabilities([{ key: 'TEACHING_EXECUTION_RECORD', scopes: ['PERSONAL'] }, { key: 'TEACHING_EXECUTION_MANAGE', scopes: ['SUBJECT','SCHOOL_WIDE'] }]);
     const actor = await h.actor({ grants: [{ capabilityKey: 'TEACHING_EXECUTION_RECORD', scopeType: 'PERSONAL' }] });
     const year = await h.prisma.academicYear.create({ data: { code: normalizedCode('EXEC'), name: 'Execution year' } });
@@ -28,7 +29,30 @@ integration('Teaching Execution runtime relational invariants (PostgreSQL)', () 
     const staffSubject = await h.prisma.staffSubject.create({ data: { userId: actor.id, subjectId: subject.id, validFrom: new Date('2026-08-01Z') } });
     const makeup = await h.prisma.makeupTeachingSchedule.create({ data: { academicYearId: year.id, originalTimetableVersionId: timetable.id, originalTimetableEntryId: entry.id, originalCivilDate: new Date('2026-08-10Z'), originalAcademicCalendarVersionId: calendar.id, originalTimeSlotDefinitionId: slot.id, schoolClassId: schoolClass.id, subjectId: subject.id, originalTeachingAssignmentId: assignment.id, responsibleTeacherUserId: actor.id, ppctClassAssociationId: association.id, ppctPlanId: plan.id, ppctVersionId: version.id, ppctItemId: item.id, targetCivilDate: new Date('2026-08-11Z'), targetAcademicCalendarVersionId: calendar.id, targetTimeSlotDefinitionId: makeupSlot.id, scheduledTeacherUserId: actor.id, eligibilityCheckedAt: new Date('2026-08-01Z'), eligibilityWasActive: true, eligibilityWasTeachingStaff: true, eligibilitySameSubject: true, eligibilityStaffSubjectId: staffSubject.id, createRequestKey: crypto.randomUUID(), createRequestFingerprint: crypto.randomUUID(), createdByUserId: actor.id } });
     const activity = await h.prisma.specialActivity.create({ data: { academicYearId: year.id, academicCalendarVersionId: calendar.id, civilDate: new Date('2026-08-10Z'), scope: 'SCHOOL_WIDE', title: 'Activity', createRequestKey: crypto.randomUUID(), createRequestFingerprint: crypto.randomUUID(), createdByUserId: actor.id, timeSlots: { create: { timeSlotDefinitionId: slot.id } }, staffing: { create: { scheduledTeacherUserId: actor.id, staffProfileId: (await h.prisma.staffProfile.findUniqueOrThrow({ where: { userId: actor.id } })).id, eligibilityCheckedAt: new Date('2026-08-01Z'), eligibilityWasActive: true, eligibilityWasTeachingStaff: true } } }, include: { timeSlots: true, staffing: true } });
-    return { actor, year, calendar, week, segment, schoolClass, subject, slot, makeupSlot, assignment, timetable, entry, plan, version, item, revision, association, makeup, activity };
+
+    const stream = await h.prisma.businessPolicyStream.create({
+      data: {
+        familyKey: 'OPERATIONAL_START',
+        resourceKind: 'ACADEMIC_YEAR',
+        academicYearId: year.id,
+      },
+    });
+    const policyVersion = await h.prisma.businessPolicyVersion.create({
+      data: {
+        streamId: stream.id,
+        versionNumber: 1,
+        status: 'PUBLISHED',
+        payload: { operationalStartDate },
+        validatorVersion: 'v1',
+        effectiveFrom: new Date('2026-08-01T00:00:00Z'),
+        effectiveUntil: null,
+        publishedAt: new Date('2026-08-01T00:00:00Z'),
+        publishedByUserId: actor.id,
+        createdByUserId: actor.id,
+      },
+    });
+
+    return { actor, year, calendar, week, segment, schoolClass, subject, slot, makeupSlot, assignment, timetable, entry, plan, version, item, revision, association, makeup, activity, stream, policyVersion };
   }
   const normalBody = (f: Awaited<ReturnType<typeof fixture>>, requestKey = crypto.randomUUID(), replacesId?: string) => ({ academicYearId: f.year.id, schoolClassId: f.schoolClass.id, subjectId: f.subject.id, timetableEntryId: f.entry.id, sourceCivilDate: '2026-08-10', requestKey, replacesId });
   const activityBody = (f: Awaited<ReturnType<typeof fixture>>, requestKey = crypto.randomUUID(), replacesId?: string) => ({ specialActivityId: f.activity.id, specialActivityStaffingId: f.activity.staffing[0]!.id, specialActivityTimeSlotId: f.activity.timeSlots[0]!.id, requestKey, replacesId });
@@ -67,4 +91,63 @@ integration('Teaching Execution runtime relational invariants (PostgreSQL)', () 
   });
   it('DB9 reversal retains immutable history and permits separately validated replacements in both families', async () => { const f = await fixture(); const made = await f.actor.agent.post('/api/teaching-executions/curricular/normal').set('Origin', testOrigin).send(normalBody(f)); expect(made.status).toBe(201); expect(made.body.outcome).toBe('CREATED'); const reversed = await f.actor.agent.post(`/api/teaching-executions/curricular/${made.body.item.id}/reverse`).set('Origin', testOrigin).send({ requestKey: crypto.randomUUID(), expectedUpdatedAt: made.body.item.updatedAt, reversalReason: 'Correction' }); expect(reversed.status).toBe(200); const replacement = await f.actor.agent.post('/api/teaching-executions/curricular/normal').set('Origin', testOrigin).send(normalBody(f, crypto.randomUUID(), made.body.item.id)); expect(replacement.status).toBe(201); expect(await h.prisma.curricularTeachingExecution.count()).toBe(2); const activity = await f.actor.agent.post('/api/teaching-executions/activity-participations').set('Origin', testOrigin).send(activityBody(f)); expect(activity.status).toBe(201); expect(activity.body.outcome).toBe('CREATED'); const activityReversed = await f.actor.agent.post(`/api/teaching-executions/activity-participations/${activity.body.item.id}/reverse`).set('Origin', testOrigin).send({ requestKey: crypto.randomUUID(), expectedUpdatedAt: activity.body.item.updatedAt, reversalReason: 'Correction' }); expect(activityReversed.status).toBe(200); expect((await f.actor.agent.post('/api/teaching-executions/activity-participations').set('Origin', testOrigin).send(activityBody(f, crypto.randomUUID(), activity.body.item.id))).status).toBe(201); });
   it('DB10 database uniqueness indexes are present for curricular obligations and activity participation', async () => { const indexes = await h.prisma.$queryRaw<Array<{ indexname: string }>>(Prisma.sql`SELECT indexname FROM pg_indexes WHERE indexname IN ('curricular_exec_one_active_obligation_key','activity_participation_one_active_key') ORDER BY indexname`); expect(indexes.map((x) => x.indexname)).toEqual(['activity_participation_one_active_key','curricular_exec_one_active_obligation_key']); });
+
+  it('DB11 NORMAL pre-op new confirmation rejects CANNOT_CONFIRM_PRE_OPERATIONAL_EXECUTION (409)', async () => {
+    const f = await fixture('2026-08-15'); // OSD is Aug 15
+    // sourceCivilDate in normalBody is 2026-08-10, which is < 2026-08-15
+    const response = await f.actor.agent.post('/api/teaching-executions/curricular/normal').set('Origin', testOrigin).send(normalBody(f));
+    expect(response.status).toBe(409);
+    expect(response.body.message).toContain('CANNOT_CONFIRM_PRE_OPERATIONAL_EXECUTION');
+    expect(await h.prisma.curricularTeachingExecution.count()).toBe(0);
+  });
+
+  it('DB12 NORMAL boundary sourceCivilDate === OSD succeeds (201)', async () => {
+    const f = await fixture('2026-08-10'); // OSD matches sourceCivilDate 2026-08-10
+    const response = await f.actor.agent.post('/api/teaching-executions/curricular/normal').set('Origin', testOrigin).send(normalBody(f));
+    expect(response.status).toBe(201);
+    expect(response.body.outcome).toBe('CREATED');
+  });
+
+  it('DB13 MAKEUP original pre-op + target post-op rejects CANNOT_CONFIRM_PRE_OPERATIONAL_MAKEUP_OBLIGATION (409)', async () => {
+    const f = await fixture('2026-08-11'); // original is 2026-08-10 (< 11), target is 2026-08-11 (>= 11)
+    const response = await f.actor.agent.post('/api/teaching-executions/curricular/makeup').set('Origin', testOrigin).send({ makeupTeachingScheduleId: f.makeup.id, requestKey: crypto.randomUUID() });
+    expect(response.status).toBe(409);
+    expect(response.body.message).toContain('CANNOT_CONFIRM_PRE_OPERATIONAL_MAKEUP_OBLIGATION');
+    expect(await h.prisma.curricularTeachingExecution.count()).toBe(0);
+  });
+
+  it('DB14 MAKEUP original boundary originalCivilDate === OSD succeeds (201)', async () => {
+    const f = await fixture('2026-08-10'); // original is 2026-08-10 === OSD
+    const response = await f.actor.agent.post('/api/teaching-executions/curricular/makeup').set('Origin', testOrigin).send({ makeupTeachingScheduleId: f.makeup.id, requestKey: crypto.randomUUID() });
+    expect(response.status).toBe(201);
+    expect(response.body.outcome).toBe('CREATED');
+  });
+
+  it('DB15 without configured OPERATIONAL_START rejects POLICY_NOT_CONFIGURED (409)', async () => {
+    const f = await fixture();
+    // delete policy to simulate unconfigured policy
+    await h.prisma.businessPolicyVersion.deleteMany();
+    await h.prisma.businessPolicyStream.deleteMany();
+    const response = await f.actor.agent.post('/api/teaching-executions/curricular/normal').set('Origin', testOrigin).send(normalBody(f));
+    expect(response.status).toBe(409);
+    expect(response.body.message).toContain('POLICY_NOT_CONFIGURED');
+  });
+
+  it('DB16 reverse retained curricular execution succeeds without policy dependency', async () => {
+    const f = await fixture('2026-08-01');
+    const made = await f.actor.agent.post('/api/teaching-executions/curricular/normal').set('Origin', testOrigin).send(normalBody(f));
+    expect(made.status).toBe(201);
+
+    // Delete policy after creation to prove reversal does not require policy resolution
+    await h.prisma.businessPolicyVersion.deleteMany();
+    await h.prisma.businessPolicyStream.deleteMany();
+
+    const reversed = await f.actor.agent.post(`/api/teaching-executions/curricular/${made.body.item.id}/reverse`).set('Origin', testOrigin).send({
+      requestKey: crypto.randomUUID(),
+      expectedUpdatedAt: made.body.item.updatedAt,
+      reversalReason: 'Historical correction after policy deletion',
+    });
+    expect(reversed.status).toBe(200);
+    expect(reversed.body.outcome).toBe('REVERSED');
+  });
 });
