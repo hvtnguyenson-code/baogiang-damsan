@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { UserStatus } from '@prisma/client';
 import { AuditService } from '../../src/audit/audit.service';
 import { BusinessConfigurationService } from '../../src/business-configuration/business-configuration.service';
@@ -5,7 +6,7 @@ import {
   BUSINESS_POLICY_REGISTRY,
   PRODUCTION_BUSINESS_POLICY_FAMILIES,
 } from '../../src/business-configuration/business-policy-registry';
-import { Phase01Harness, integration, testOrigin } from '../helpers/phase01-test-harness';
+import { Phase01Harness, integration, normalizedCode, testOrigin } from '../helpers/phase01-test-harness';
 import { TEST_BUSINESS_POLICY_REGISTRY } from './test-business-policy-registry';
 
 integration('Business Configuration API (isolated PostgreSQL integration)', () => {
@@ -14,6 +15,7 @@ integration('Business Configuration API (isolated PostgreSQL integration)', () =
   beforeAll(() => h.start([{ token: BUSINESS_POLICY_REGISTRY, value: TEST_BUSINESS_POLICY_REGISTRY }]));
   beforeEach(async () => {
     await h.clean();
+    await h.prisma.systemSetting.deleteMany();
     await h.seedCapabilities([
       { key: 'BUSINESS_CONFIGURATION_MANAGE', scopes: ['SCHOOL_WIDE'] },
       { key: 'SYSTEM_ADMIN', scopes: ['SCHOOL_WIDE'] },
@@ -910,6 +912,331 @@ integration('Business Configuration API (isolated PostgreSQL integration)', () =
       expect(await h.prisma.businessPolicyCommand.count()).toBe(0);
       expect(await h.prisma.businessPolicyVersion.count()).toBe(0);
       expect(await h.prisma.businessPolicyStream.count()).toBe(0);
+    });
+  });
+
+  // =========================================================================
+  // Section 25: OPERATIONAL_START Production Policy Family (ADR-049 / P1-031)
+  // =========================================================================
+  describe('OPERATIONAL_START production policy family (ADR-049 / P1-031)', () => {
+    let manager: Awaited<ReturnType<typeof h.actor>>;
+    let academicYear: { id: string; code: string; name: string };
+
+    beforeEach(async () => {
+      manager = await h.actor({ grants: [{ capabilityKey: 'BUSINESS_CONFIGURATION_MANAGE' }] });
+      academicYear = await h.prisma.academicYear.create({
+        data: { code: normalizedCode('YEAR'), name: '2026-2027' },
+      });
+    });
+
+    const opBody = (commandId: string, operationalStartDate: string, effectiveFrom: string, extra: Record<string, unknown> = {}) => ({
+      family: 'OPERATIONAL_START',
+      resource: { kind: 'ACADEMIC_YEAR', academicYearId: academicYear.id },
+      payload: { operationalStartDate },
+      effectiveFrom,
+      commandId,
+      ...extra,
+    });
+
+    it('rejects invalid payload at draft creation', async () => {
+      const res = await manager.agent
+        .post('/api/business-configuration/policies/drafts')
+        .set('Origin', testOrigin)
+        .send({
+          family: 'OPERATIONAL_START',
+          resource: { kind: 'ACADEMIC_YEAR', academicYearId: academicYear.id },
+          payload: { invalidKey: '2026-09-01' },
+          effectiveFrom: '2026-08-01',
+          commandId: 'op-invalid-payload',
+        });
+      expect(res.status).toBe(400);
+      expect(res.body.message).toBe('INVALID_OPERATIONAL_START_POLICY_PAYLOAD');
+    });
+
+    it('rejects publication when there is no active calendar', async () => {
+      const draft = await manager.agent
+        .post('/api/business-configuration/policies/drafts')
+        .set('Origin', testOrigin)
+        .send(opBody('op-draft-no-cal', '2026-09-01', '2026-08-01'));
+      expect(draft.status).toBe(201);
+
+      const pub = await manager.agent
+        .post(`/api/business-configuration/policy-versions/${draft.body.versionId}/publish`)
+        .set('Origin', testOrigin)
+        .send({ commandId: 'op-pub-no-cal' });
+      expect(pub.status).toBe(400);
+      expect(pub.body.message).toBe('ACADEMIC_CALENDAR_VERSION_INVALID');
+    });
+
+    it('rejects publication when there are two active calendars (ambiguous)', async () => {
+      const service = h.app.get(BusinessConfigurationService);
+
+      type ServiceWithPrivate = {
+        requireActiveCalendar: (tx: unknown, academicYearId: string) => Promise<{ id: string; startDate: Date; endDate: Date }>;
+      };
+      const privateService = service as unknown as ServiceWithPrivate;
+
+      // Verify exact transactional helper throws when multiple active calendars are detected
+      const mockTx = {
+        academicCalendarVersion: {
+          findMany: jest.fn().mockResolvedValue([
+            {
+              id: 'cal-1',
+              startDate: new Date('2026-08-01T00:00:00.000Z'),
+              endDate: new Date('2027-05-31T00:00:00.000Z'),
+              versionNumber: 1,
+            },
+            {
+              id: 'cal-2',
+              startDate: new Date('2026-08-01T00:00:00.000Z'),
+              endDate: new Date('2027-05-31T00:00:00.000Z'),
+              versionNumber: 2,
+            },
+          ]),
+        },
+      };
+      await expect(privateService.requireActiveCalendar(mockTx, academicYear.id)).rejects.toThrow(
+        'ACADEMIC_CALENDAR_VERSION_INVALID',
+      );
+
+      const draft = await manager.agent
+        .post('/api/business-configuration/policies/drafts')
+        .set('Origin', testOrigin)
+        .send(opBody('op-draft-two-cal', '2026-09-01', '2026-08-01'));
+      expect(draft.status).toBe(201);
+
+      jest.spyOn(privateService, 'requireActiveCalendar').mockRejectedValueOnce(
+        new BadRequestException('ACADEMIC_CALENDAR_VERSION_INVALID'),
+      );
+
+      const pub = await manager.agent
+        .post(`/api/business-configuration/policy-versions/${draft.body.versionId}/publish`)
+        .set('Origin', testOrigin)
+        .send({ commandId: 'op-pub-two-cal' });
+      expect(pub.status).toBe(400);
+      expect(pub.body.message).toBe('ACADEMIC_CALENDAR_VERSION_INVALID');
+    });
+
+    it('rejects publication when operationalStartDate is before calendar startDate', async () => {
+      await h.prisma.academicCalendarVersion.create({
+        data: {
+          academicYearId: academicYear.id,
+          versionNumber: 1,
+          startDate: new Date('2026-08-15T00:00:00.000Z'),
+          endDate: new Date('2027-05-31T00:00:00.000Z'),
+          officialWeekCount: 35,
+          reserveWeekCount: 1,
+          teachingWeekdays: ['MONDAY', 'TUESDAY'],
+          isActive: true,
+          activatedAt: new Date('2026-08-15T00:00:00.000Z'),
+        },
+      });
+
+      const draft = await manager.agent
+        .post('/api/business-configuration/policies/drafts')
+        .set('Origin', testOrigin)
+        .send(opBody('op-draft-before-start', '2026-08-10', '2026-08-01'));
+      expect(draft.status).toBe(201);
+
+      const pub = await manager.agent
+        .post(`/api/business-configuration/policy-versions/${draft.body.versionId}/publish`)
+        .set('Origin', testOrigin)
+        .send({ commandId: 'op-pub-before-start' });
+      expect(pub.status).toBe(400);
+      expect(pub.body.message).toBe('OPERATIONAL_START_DATE_OUTSIDE_CALENDAR');
+    });
+
+    it('rejects publication when operationalStartDate is after calendar endDate', async () => {
+      await h.prisma.academicCalendarVersion.create({
+        data: {
+          academicYearId: academicYear.id,
+          versionNumber: 1,
+          startDate: new Date('2026-08-15T00:00:00.000Z'),
+          endDate: new Date('2027-05-31T00:00:00.000Z'),
+          officialWeekCount: 35,
+          reserveWeekCount: 1,
+          teachingWeekdays: ['MONDAY', 'TUESDAY'],
+          isActive: true,
+          activatedAt: new Date('2026-08-15T00:00:00.000Z'),
+        },
+      });
+
+      const draft = await manager.agent
+        .post('/api/business-configuration/policies/drafts')
+        .set('Origin', testOrigin)
+        .send(opBody('op-draft-after-end', '2027-06-01', '2026-08-15'));
+      expect(draft.status).toBe(201);
+
+      const pub = await manager.agent
+        .post(`/api/business-configuration/policy-versions/${draft.body.versionId}/publish`)
+        .set('Origin', testOrigin)
+        .send({ commandId: 'op-pub-after-end' });
+      expect(pub.status).toBe(400);
+      expect(pub.body.message).toBe('OPERATIONAL_START_DATE_OUTSIDE_CALENDAR');
+    });
+
+    it('rejects publication when effectiveFrom > operationalStartDate (initial publication invariant)', async () => {
+      await h.prisma.academicCalendarVersion.create({
+        data: {
+          academicYearId: academicYear.id,
+          versionNumber: 1,
+          startDate: new Date('2026-08-01T00:00:00.000Z'),
+          endDate: new Date('2027-05-31T00:00:00.000Z'),
+          officialWeekCount: 35,
+          reserveWeekCount: 1,
+          teachingWeekdays: ['MONDAY', 'TUESDAY'],
+          isActive: true,
+          activatedAt: new Date('2026-08-01T00:00:00.000Z'),
+        },
+      });
+
+      const draft = await manager.agent
+        .post('/api/business-configuration/policies/drafts')
+        .set('Origin', testOrigin)
+        .send(opBody('op-draft-effective-after', '2026-09-01', '2026-09-15'));
+      expect(draft.status).toBe(201);
+
+      const pub = await manager.agent
+        .post(`/api/business-configuration/policy-versions/${draft.body.versionId}/publish`)
+        .set('Origin', testOrigin)
+        .send({ commandId: 'op-pub-effective-after' });
+      expect(pub.status).toBe(400);
+      expect(pub.body.message).toBe('OPERATIONAL_START_INITIAL_PUBLICATION_INVALID');
+    });
+
+    it('allows publication when operationalStartDate == calendar startDate', async () => {
+      await h.prisma.academicCalendarVersion.create({
+        data: {
+          academicYearId: academicYear.id,
+          versionNumber: 1,
+          startDate: new Date('2026-08-01T00:00:00.000Z'),
+          endDate: new Date('2027-05-31T00:00:00.000Z'),
+          officialWeekCount: 35,
+          reserveWeekCount: 1,
+          teachingWeekdays: ['MONDAY', 'TUESDAY'],
+          isActive: true,
+          activatedAt: new Date('2026-08-01T00:00:00.000Z'),
+        },
+      });
+
+      const draft = await manager.agent
+        .post('/api/business-configuration/policies/drafts')
+        .set('Origin', testOrigin)
+        .send(opBody('op-draft-exact-start', '2026-08-01', '2026-08-01'));
+      expect(draft.status).toBe(201);
+
+      const pub = await manager.agent
+        .post(`/api/business-configuration/policy-versions/${draft.body.versionId}/publish`)
+        .set('Origin', testOrigin)
+        .send({ commandId: 'op-pub-exact-start' });
+      expect(pub.status).toBe(200);
+      expect(pub.body.outcome).toBe('PUBLISHED');
+    });
+
+    it('allows publication when operationalStartDate == calendar endDate', async () => {
+      await h.prisma.academicCalendarVersion.create({
+        data: {
+          academicYearId: academicYear.id,
+          versionNumber: 1,
+          startDate: new Date('2026-08-01T00:00:00.000Z'),
+          endDate: new Date('2027-05-31T00:00:00.000Z'),
+          officialWeekCount: 35,
+          reserveWeekCount: 1,
+          teachingWeekdays: ['MONDAY', 'TUESDAY'],
+          isActive: true,
+          activatedAt: new Date('2026-08-01T00:00:00.000Z'),
+        },
+      });
+
+      const draft = await manager.agent
+        .post('/api/business-configuration/policies/drafts')
+        .set('Origin', testOrigin)
+        .send(opBody('op-draft-exact-end', '2027-05-31', '2026-08-01'));
+      expect(draft.status).toBe(201);
+
+      const pub = await manager.agent
+        .post(`/api/business-configuration/policy-versions/${draft.body.versionId}/publish`)
+        .set('Origin', testOrigin)
+        .send({ commandId: 'op-pub-exact-end' });
+      expect(pub.status).toBe(200);
+      expect(pub.body.outcome).toBe('PUBLISHED');
+    });
+
+    it('allows publication when effectiveFrom < operationalStartDate and validates resolver output', async () => {
+      await h.prisma.academicCalendarVersion.create({
+        data: {
+          academicYearId: academicYear.id,
+          versionNumber: 1,
+          startDate: new Date('2026-08-01T00:00:00.000Z'),
+          endDate: new Date('2027-05-31T00:00:00.000Z'),
+          officialWeekCount: 35,
+          reserveWeekCount: 1,
+          teachingWeekdays: ['MONDAY', 'TUESDAY'],
+          isActive: true,
+          activatedAt: new Date('2026-08-01T00:00:00.000Z'),
+        },
+      });
+
+      const service = h.app.get(BusinessConfigurationService);
+
+      // Verify resolver returns POLICY_NOT_CONFIGURED before publication
+      const beforePub = await service.resolveEffectiveBusinessPolicy(
+        'OPERATIONAL_START',
+        { kind: 'ACADEMIC_YEAR', academicYearId: academicYear.id },
+        '2026-09-15',
+      );
+      expect(beforePub.outcome).toBe('POLICY_NOT_CONFIGURED');
+
+      const draft = await manager.agent
+        .post('/api/business-configuration/policies/drafts')
+        .set('Origin', testOrigin)
+        .send(opBody('op-draft-valid', '2026-09-01', '2026-08-15'));
+      expect(draft.status).toBe(201);
+
+      const pub = await manager.agent
+        .post(`/api/business-configuration/policy-versions/${draft.body.versionId}/publish`)
+        .set('Origin', testOrigin)
+        .send({ commandId: 'op-pub-valid' });
+      expect(pub.status).toBe(200);
+      expect(pub.body.outcome).toBe('PUBLISHED');
+
+      // Verify resolver smoke test (Section 15)
+      const afterPub = await service.resolveEffectiveBusinessPolicy(
+        'OPERATIONAL_START',
+        { kind: 'ACADEMIC_YEAR', academicYearId: academicYear.id },
+        '2026-09-15',
+      );
+      expect(afterPub.outcome).toBe('RESOLVED');
+      if (afterPub.outcome === 'RESOLVED') {
+        expect(afterPub.policyVersionId).toBe(draft.body.versionId);
+        expect(afterPub.validatorVersion).toBe('v1');
+        expect(afterPub.payload).toEqual({ operationalStartDate: '2026-09-01' });
+        expect(afterPub.effectiveFrom).toBe('2026-08-15');
+        expect(afterPub.effectiveUntil).toBeNull();
+      }
+
+      // Verify missing date before effectiveFrom
+      const beforeEffective = await service.resolveEffectiveBusinessPolicy(
+        'OPERATIONAL_START',
+        { kind: 'ACADEMIC_YEAR', academicYearId: academicYear.id },
+        '2026-08-10',
+      );
+      expect(beforeEffective.outcome).toBe('POLICY_NOT_CONFIGURED');
+    });
+
+    it('preserves generic TEST policy family publication behavior without regression', async () => {
+      const draft = await manager.agent
+        .post('/api/business-configuration/policies/drafts')
+        .set('Origin', testOrigin)
+        .send(body('generic-reg-draft', { enabled: true, threshold: 5 }));
+      expect(draft.status).toBe(201);
+
+      const pub = await manager.agent
+        .post(`/api/business-configuration/policy-versions/${draft.body.versionId}/publish`)
+        .set('Origin', testOrigin)
+        .send({ commandId: 'generic-reg-pub' });
+      expect(pub.status).toBe(200);
+      expect(pub.body.outcome).toBe('PUBLISHED');
     });
   });
 });

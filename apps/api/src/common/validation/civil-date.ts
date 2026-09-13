@@ -51,3 +51,22 @@ export function IsCivilDate(validationOptions?: ValidationOptions): PropertyDeco
     });
   };
 }
+
+const HCM_DATE_FORMATTER = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Ho_Chi_Minh',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+export function hcmCivilDate(instant: Date): CivilDateString {
+  if (!(instant instanceof Date) || Number.isNaN(instant.getTime())) {
+    throw new TypeError('asOfInstant must be a valid Date.');
+  }
+  const parts = Object.fromEntries(
+    HCM_DATE_FORMATTER.formatToParts(instant)
+      .filter((part) => part.type !== 'literal')
+      .map((part) => [part.type, part.value]),
+  );
+  return `${parts.year}-${parts.month}-${parts.day}` as CivilDateString;
+}

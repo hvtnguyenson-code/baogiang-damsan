@@ -4,8 +4,9 @@ import { BusinessConfigurationResource, BusinessPolicyResolution } from '@baogia
 import { createHash } from 'node:crypto';
 import { AuditService } from '../audit/audit.service';
 import { RequestMeta } from '../auth/auth.types';
-import { isCivilDate } from '../common/validation/civil-date';
+import { formatCivilDate, hcmCivilDate, isCivilDate } from '../common/validation/civil-date';
 import { PrismaService } from '../prisma/prisma.service';
+
 import {
   BUSINESS_POLICY_REGISTRY,
   BusinessPolicyFamilyDefinition,
@@ -104,9 +105,24 @@ export class BusinessConfigurationService {
       validateResource(family, resource);
       const validator = validatorForVersion(family, row.validatorVersion);
       if (!validator) throw new BadRequestException('POLICY_CORRUPT');
-      validator.validate(row.payload);
+      const validatedPayload = validator.validate(row.payload);
       if (row.status !== 'DRAFT') throw conflict();
+      if (family.key === 'OPERATIONAL_START') {
+        if (resource.kind !== 'ACADEMIC_YEAR') throw new BadRequestException('INVALID_POLICY_RESOURCE');
+        const calendar = await this.requireActiveCalendar(tx, resource.academicYearId);
+        const payload = validatedPayload as { operationalStartDate: string };
+        const calStart = formatCivilDate(calendar.startDate);
+        const calEnd = formatCivilDate(calendar.endDate);
+        if (payload.operationalStartDate < calStart || payload.operationalStartDate > calEnd) {
+          throw new BadRequestException('OPERATIONAL_START_DATE_OUTSIDE_CALENDAR');
+        }
+        const effectiveFrom = this.format(row.effectiveFrom);
+        if (effectiveFrom > payload.operationalStartDate) {
+          throw new BadRequestException('OPERATIONAL_START_INITIAL_PUBLICATION_INVALID');
+        }
+      }
       const updated = await tx.businessPolicyVersion.updateMany({
+
         where: { id, status: 'DRAFT' },
         data: { status: 'PUBLISHED', publishedByUserId: actor, publishedAt: new Date() },
       });
@@ -286,8 +302,19 @@ export class BusinessConfigurationService {
   private dates(from: string, until?: string) { if (!isCivilDate(from) || (until !== undefined && !isCivilDate(until)) || (until && until < from)) throw new BadRequestException('INVALID_EFFECTIVE_DATE'); return { from, until: until ?? null }; }
   private date(value: string) { return new Date(`${value}T00:00:00.000Z`); }
   private format(value: Date) { return value.toISOString().slice(0, 10); }
-  businessCivilDate() { const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date()); return `${parts.find((item) => item.type === 'year')!.value}-${parts.find((item) => item.type === 'month')!.value}-${parts.find((item) => item.type === 'day')!.value}`; }
+  businessCivilDate(): string { return hcmCivilDate(new Date()); }
   private businessDate() { return this.businessCivilDate(); }
+  private async requireActiveCalendar(tx: Prisma.TransactionClient, academicYearId: string) {
+    const calendars = await tx.academicCalendarVersion.findMany({
+      where: { academicYearId, isActive: true },
+      select: { id: true, startDate: true, endDate: true, versionNumber: true },
+    });
+    if (calendars.length !== 1) {
+      throw new BadRequestException('ACADEMIC_CALENDAR_VERSION_INVALID');
+    }
+    return calendars[0]!;
+  }
+
   private previousDate(value: string) { const date = this.date(value); date.setUTCDate(date.getUTCDate() - 1); return this.format(date); }
   private fingerprint(value: unknown) { return createHash('sha256').update(this.canonicalJson(value)).digest('hex'); }
   private canonicalJson(value: unknown): string { if (Array.isArray(value)) return `[${value.map((item) => this.canonicalJson(item)).join(',')}]`; if (value && typeof value === 'object') return `{${Object.keys(value as Record<string, unknown>).sort().map((key) => `${JSON.stringify(key)}:${this.canonicalJson((value as Record<string, unknown>)[key])}`).join(',')}}`; return JSON.stringify(value); }

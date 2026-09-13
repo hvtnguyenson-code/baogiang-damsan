@@ -1,5 +1,8 @@
 import { BadRequestException } from '@nestjs/common';
-import { BusinessPolicyFamilyDefinition } from '../../src/business-configuration/business-policy-registry';
+import {
+  BusinessPolicyFamilyDefinition,
+  OPERATIONAL_START_FAMILY_DEFINITION,
+} from '../../src/business-configuration/business-policy-registry';
 
 export const TEST_BUSINESS_POLICY_FAMILY: BusinessPolicyFamilyDefinition = {
   key: 'TEST_BOOLEAN_THRESHOLD',
@@ -46,4 +49,5 @@ export const TEST_ACADEMIC_YEAR_POLICY_FAMILY: BusinessPolicyFamilyDefinition = 
 export const TEST_BUSINESS_POLICY_REGISTRY = [
   TEST_BUSINESS_POLICY_FAMILY,
   TEST_ACADEMIC_YEAR_POLICY_FAMILY,
+  OPERATIONAL_START_FAMILY_DEFINITION,
 ] as const;
