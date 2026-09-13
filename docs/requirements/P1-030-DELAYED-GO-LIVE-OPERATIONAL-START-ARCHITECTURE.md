@@ -4,7 +4,7 @@
 
 - **Mã task:** `P1-030`
 - **Tên task:** Delayed go-live / operational-start architecture
-- **Trạng thái nhánh làm việc:** `IN_PROGRESS` (Bản dự thảo kiến trúc đóng thẩm quyền đang được đánh giá)
+- **Trạng thái:** `CLOSED` (Đã sáp nhập qua PR #131; hoàn tất nghiệm thu tài liệu hậu sáp nhập qua `SYNC-P1-030`; reviewed head `c807d26a6a53609ac5259384661db52271460053`; merge/main `c4ce704a67fab8e24e5bae3ac2ce81dbcb36c27d`; PR CI #435 SUCCESS; post-merge main CI #436 SUCCESS)
 - **Commit xuất phát chuẩn tắc (Starting Main):** `fafd104c9af5b83833b8a6f324021cea226ffe63`
 - **authoritative Post-Merge CI xuất phát:** CI #432 (run id: `34698938801`) — SUCCESS
 - **Nhánh làm việc chuyên biệt (Dedicated Branch):** `docs/delayed-go-live-operational-start-architecture-030`
@@ -12,7 +12,7 @@
   - `P1-020` — Business Configuration Control Plane architecture: **CLOSED** (ADR-046 Accepted, đóng bởi `SYNC-P1-020`)
   - `P2-001` — PPCT curricular-component architecture re-entry: **CLOSED** (ADR-048 Accepted, đóng bởi `SYNC-P2-001`)
 - **Ma trận truy vết (Traceability Matrix):** `T28`, `T30`
-- **Quyết định kiến trúc kiểm soát (Controlling Decision):** `docs/decisions/ADR-049-DELAYED-GO-LIVE-OPERATIONAL-START-ARCHITECTURE.md` (Trạng thái: *Proposed by P1-030*)
+- **Quyết định kiến trúc kiểm soát (Controlling Decision):** `docs/decisions/ADR-049-DELAYED-GO-LIVE-OPERATIONAL-START-ARCHITECTURE.md` (Trạng thái: Accepted)
 - **Phạm vi task:** Kiến trúc và tài liệu chuẩn tắc (Architecture & Documentation ONLY). Tuyệt đối không thay đổi mã nguồn, cơ sở dữ liệu, API, giao diện hoặc cấu hình triển khai.
 - **Các nhiệm vụ kế nhiệm triển khai (Successors):**
   - `P1-031` — Operational-start policy implementation (Backend / Resolver / Contract)

@@ -105,7 +105,7 @@ Project hiện đang realign vì một số minimum-core/deferred quyết địn
 - PWA/Telegram pilot integration;
 - first-cert HTTP-01/TLS authority and actual VPS evidence.
 
-Không suy ra rằng một area đã hoàn chỉnh chỉ vì minimum-core implementation hiện có PASS CI. Với Đam San native timetable, ADR-047 architecture, P2-040 native adapter runtime, và P2-050 selective session authoring + explicit carry-forward đã hoàn tất và đóng bằng `SYNC-P2-050`; với thành phần chương trình PPCT, P0-900 đã đóng bằng `SYNC-P0-900`, P2-001/ADR-048 đã đóng bằng `SYNC-P2-001`, persistence/control-plane P2-002 đã đóng bằng `SYNC-P2-002`, và weekly allocator/projection runtime P2-003 đã đóng bằng `SYNC-P2-003`; downstream UI P2-004 đã `CLOSED` bởi `SYNC-P2-004`.
+Không suy ra rằng một area đã hoàn chỉnh chỉ vì minimum-core implementation hiện có PASS CI. Với Đam San native timetable, ADR-047 architecture, P2-040 native adapter runtime, và P2-050 selective session authoring + explicit carry-forward đã hoàn tất và đóng bằng `SYNC-P2-050`; với thành phần chương trình PPCT, P0-900 đã đóng bằng `SYNC-P0-900`, P2-001/ADR-048 đã đóng bằng `SYNC-P2-001`, persistence/control-plane P2-002 đã đóng bằng `SYNC-P2-002`, và weekly allocator/projection runtime P2-003 đã đóng bằng `SYNC-P2-003`; downstream UI P2-004 đã `CLOSED` bởi `SYNC-P2-004`; với chính sách bắt đầu vận hành (delayed go-live), kiến trúc P1-030 đã `CLOSED` bởi `SYNC-P1-030` (ADR-049 Accepted: `OPERATIONAL_START` / `v1` / `ACADEMIC_YEAR`), mở khóa `P1-031` (`READY`), môi trường production duy trì strictly `PRE-OPERATIONAL`.
 
 ## Layering rule
 

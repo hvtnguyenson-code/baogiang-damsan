@@ -1,6 +1,6 @@
 # ADR-049 — Kiến trúc Bắt đầu Vận hành và Go-Live Trễ (Delayed Go-Live / Operational-Start Architecture)
 
-- **Trạng thái:** Proposed by P1-030
+- **Trạng thái:** Accepted (Thông qua sáp nhập nhánh cha P1-030 tại PR #131; bằng chứng nghiệm thu hành chính ghi nhận bởi SYNC-P1-030: reviewed head `c807d26a6a53609ac5259384661db52271460053`, merge/main `c4ce704a67fab8e24e5bae3ac2ce81dbcb36c27d`, post-merge main CI #436 SUCCESS)
 - **Ngày:** 2026-09-12
 - **Phạm vi:** Phân định kiến trúc ngày bắt đầu vận hành chính thức, phân tách thời kỳ tiền vận hành và vận hành, nguyên tắc tiến độ PPCT kỳ vọng và bất biến không tự động tạo nợ.
 - **Tài liệu thẩm quyền kiểm soát:** `docs/requirements/P1-030-DELAYED-GO-LIVE-OPERATIONAL-START-ARCHITECTURE.md`
