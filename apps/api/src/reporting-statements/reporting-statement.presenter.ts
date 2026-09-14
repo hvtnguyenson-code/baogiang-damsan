@@ -8,11 +8,14 @@ import {
   ReportingStatementPublicFinding,
   ReportingStatementSummary,
 } from '@baogiang/contracts';
+import { isCivilDate } from '../common/validation/civil-date';
 import {
   canonicalizeJson,
   REPORTING_STATEMENT_SERIALIZER_V1,
   REPORTING_STATEMENT_SNAPSHOT_V1,
-  ReportingStatementSnapshotV1,
+  REPORTING_STATEMENT_SNAPSHOT_V2,
+  ReportingStatementSnapshot,
+  ReportingStatementSnapshotV2,
   sha256CanonicalJson,
 } from '../reporting-statement-internal/reporting-statement-canonicalizer';
 
@@ -163,9 +166,10 @@ export function presentReportingStatementSummary(row: RevisionSummaryRow): Repor
   };
 }
 
-export function parseAndVerifyFrozenSnapshot(row: FrozenRevisionRow): ReportingStatementSnapshotV1 {
+export function parseAndVerifyFrozenSnapshot(row: FrozenRevisionRow): ReportingStatementSnapshot {
   if (
-    row.snapshotProfile !== REPORTING_STATEMENT_SNAPSHOT_V1 ||
+    (row.snapshotProfile !== REPORTING_STATEMENT_SNAPSHOT_V1 &&
+      row.snapshotProfile !== REPORTING_STATEMENT_SNAPSHOT_V2) ||
     row.serializerVersion !== REPORTING_STATEMENT_SERIALIZER_V1
   ) {
     throw new InternalServerErrorException(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
@@ -186,10 +190,10 @@ export function parseAndVerifyFrozenSnapshot(row: FrozenRevisionRow): ReportingS
     throw new InternalServerErrorException(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
   }
 
-  const snapshot = parsed as ReportingStatementSnapshotV1;
+  const snapshot = parsed as ReportingStatementSnapshot;
 
   if (
-    snapshot.snapshotProfile !== REPORTING_STATEMENT_SNAPSHOT_V1 ||
+    snapshot.snapshotProfile !== row.snapshotProfile ||
     snapshot.serializerVersion !== REPORTING_STATEMENT_SERIALIZER_V1 ||
     snapshot.responsibilityState !== 'RESPONSIBILITY_PRESENT' ||
     !snapshot.counts ||
@@ -197,6 +201,18 @@ export function parseAndVerifyFrozenSnapshot(row: FrozenRevisionRow): ReportingS
     !Array.isArray(snapshot.responsibilityManifest)
   ) {
     throw new InternalServerErrorException(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
+  }
+
+  if (snapshot.snapshotProfile === REPORTING_STATEMENT_SNAPSHOT_V2) {
+    const v2 = snapshot as ReportingStatementSnapshotV2;
+    if (
+      typeof v2.operationalStartPolicyVersionId !== 'string' ||
+      !v2.operationalStartPolicyVersionId.trim() ||
+      typeof v2.operationalStartDate !== 'string' ||
+      !isCivilDate(v2.operationalStartDate)
+    ) {
+      throw new InternalServerErrorException(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
+    }
   }
 
   let recanonical: string;

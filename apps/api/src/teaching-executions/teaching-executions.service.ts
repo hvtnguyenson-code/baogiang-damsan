@@ -4,7 +4,8 @@ import { CurricularTeachingExecutionRecord, SpecialActivityParticipationExecutio
 import { AuditService } from '../audit/audit.service';
 import { requestMeta } from '../auth/auth-http';
 import { AuthenticatedRequest } from '../auth/auth.types';
-import { formatCivilDate, parseCivilDate } from '../common/validation/civil-date';
+import { formatCivilDate, hcmCivilDate, parseCivilDate } from '../common/validation/civil-date';
+import { BusinessConfigurationService } from '../business-configuration/business-configuration.service';
 import { PpctOccurrenceAllocationService } from '../ppct-occurrence-allocation/ppct-occurrence-allocation.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ResolvedLessonOccurrencesService } from '../resolved-occurrences/resolved-occurrences.service';
@@ -20,6 +21,7 @@ export class TeachingExecutionsService {
     private readonly structural: ResolvedLessonOccurrencesService,
     private readonly audit: AuditService,
     private readonly access: TeachingExecutionAccessService,
+    private readonly businessConfiguration: BusinessConfigurationService,
     @Inject(TEACHING_EXECUTION_CLOCK) private readonly clock: TeachingExecutionClock,
   ) {}
 
@@ -77,6 +79,16 @@ export class TeachingExecutionsService {
   private async confirmNormalTx(tx: Prisma.TransactionClient, dto: ConfirmNormalTeachingExecutionDto, request: AuthenticatedRequest): Promise<TeachingExecutionMutationResult<CurricularTeachingExecutionRecord>> {
     const fingerprint = createFingerprint('CURRICULAR_NORMAL', { academicYearId: dto.academicYearId, schoolClassId: dto.schoolClassId, subjectId: dto.subjectId, timetableEntryId: dto.timetableEntryId, sourceCivilDate: dto.sourceCivilDate, note: dto.note ?? null, replacesId: dto.replacesId ?? null });
     const replay = await this.curricularReplay(tx, dto.requestKey, fingerprint, request); if (replay) return replay;
+    const commandNow = this.clock.now();
+    const policyResolutionCivilDate = hcmCivilDate(commandNow);
+    const operationalStart = await this.businessConfiguration.resolveOperationalStartPolicy(
+      dto.academicYearId,
+      policyResolutionCivilDate,
+      tx,
+    );
+    if (dto.sourceCivilDate < operationalStart.operationalStartDate) {
+      throw new ConflictException('CANNOT_CONFIRM_PRE_OPERATIONAL_EXECUTION');
+    }
     const allocation = await this.allocation.resolveInTransactionV2(tx, { academicYearId: dto.academicYearId, schoolClassId: dto.schoolClassId, subjectId: dto.subjectId, throughCivilDate: dto.sourceCivilDate as `${number}-${number}-${number}` });
     const key = `NORMAL:${dto.timetableEntryId}:${dto.sourceCivilDate}`;
     const selected = allocation.normalAllocations.find((item) => item.occurrence.occurrenceKey === key);
@@ -86,7 +98,7 @@ export class TeachingExecutionsService {
     if (o.effectiveKind === 'BASE_TIMETABLE') actualTeacherUserId = o.responsibleTeacherUserId;
     else if (o.effectiveKind === 'OPERATIONAL_DISPOSITION' && o.disposition?.dispositionType === OperationalLessonDispositionType.SAME_SUBJECT_SUBSTITUTION && o.disposition.assignedTeacherUserId) { actualTeacherUserId = o.disposition.assignedTeacherUserId; dispositionId = o.disposition.id; dispositionType = o.disposition.dispositionType; }
     else throw new ConflictException('Ý nghĩa vận hành không đủ điều kiện xác nhận giảng dạy.');
-    await this.assertEnded(o.civilDate, o.timeSlot.endTime, this.clock.now());
+    await this.assertEnded(o.civilDate, o.timeSlot.endTime, commandNow);
     const week = await this.requireWeek(tx, o.academicCalendarVersionId, parseCivilDate(o.civilDate), true);
     const capabilityScope = await this.access.requireCurricular(request, actualTeacherUserId, o.subjectId);
     await this.requireCurricularReplacement(tx, dto.replacesId, { ...o, ppctItemId: selected.expectedPpctItem.ppctItemId });
@@ -102,11 +114,22 @@ export class TeachingExecutionsService {
     const replay = await this.curricularReplay(tx, dto.requestKey, fingerprint, request); if (replay) return replay;
     const m = await tx.makeupTeachingSchedule.findUnique({ where: { id: dto.makeupTeachingScheduleId }, include: { targetTimeSlotDefinition: true } });
     if (!m || m.status !== OperationalOverlayStatus.ACTIVE) throw new ConflictException('Lịch dạy bù không còn ACTIVE.');
+    const originalCivilDate = formatCivilDate(m.originalCivilDate);
     const targetDate = formatCivilDate(m.targetCivilDate);
+    const commandNow = this.clock.now();
+    const policyResolutionCivilDate = hcmCivilDate(commandNow);
+    const operationalStart = await this.businessConfiguration.resolveOperationalStartPolicy(
+      m.academicYearId,
+      policyResolutionCivilDate,
+      tx,
+    );
+    if (originalCivilDate < operationalStart.operationalStartDate) {
+      throw new ConflictException('CANNOT_CONFIRM_PRE_OPERATIONAL_MAKEUP_OBLIGATION');
+    }
     const allocation = await this.allocation.resolveInTransactionV2(tx, { academicYearId: m.academicYearId, schoolClassId: m.schoolClassId, subjectId: m.subjectId, throughCivilDate: targetDate });
     const match = allocation.makeupSourceMatches.find((item) => item.makeupTeachingScheduleId === m.id);
     if (!match || match.status !== 'MATCH' || !match.expectedPpctItem) throw new ConflictException('Nguồn PPCT của lịch dạy bù không khớp hoặc bị chặn lịch sử.');
-    await this.assertEnded(targetDate, m.targetTimeSlotDefinition.endTime.toISOString().slice(11, 19), this.clock.now());
+    await this.assertEnded(targetDate, m.targetTimeSlotDefinition.endTime.toISOString().slice(11, 19), commandNow);
     const week = await this.requireWeek(tx, m.targetAcademicCalendarVersionId, m.targetCivilDate, true);
     const capabilityScope = await this.access.requireCurricular(request, m.scheduledTeacherUserId, m.subjectId);
     await this.requireCurricularReplacement(tx, dto.replacesId, {

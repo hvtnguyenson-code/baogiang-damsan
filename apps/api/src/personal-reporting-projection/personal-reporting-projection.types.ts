@@ -58,3 +58,7 @@ export interface PersonalReportingProjection {
   evaluatedAt: string;
 }
 export type PersonalTx = Prisma.TransactionClient;
+
+export interface PersonalReportingProjectionContext {
+  reportingProjection?: import("../reporting-projection/reporting-projection.service").ReportingProjectionContext;
+}

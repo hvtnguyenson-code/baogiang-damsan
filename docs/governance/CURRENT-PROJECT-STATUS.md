@@ -10,16 +10,13 @@ It is **not** a self-referential registry of the latest Git commit. Exact curren
 
 ## Active major task
 
-None currently active.
-
-Next critical path:
-- `P1-031` — Operational-start policy implementation — **READY** (unlocked by closed `P1-030`, `P1-021`, and `P2-003`).
+`P1-031` — Operational-start policy implementation — **IN_REVIEW** on dedicated branch `feat/operational-start-policy-implementation-031`. Starting canonical base `13a87538b38312a2dfb482c358b17ac23f4b2ee8`; baseline CI #438 SUCCESS; runtime implementation completed at head `f263a9a4e69004047719f4ae0d051977a3609b8d`; stale production-registry test/static-gate repair completed at forward head `4485822ac71409d130ae5447e70c8d40a7d3cc5e`; implementing accepted `ADR-049` (`OPERATIONAL_START` / `v1` / `ACADEMIC_YEAR`), lifecycle enforcement (no RETIRE, prospective REPLACE, post-boundary CORRECTION, direct-publish guard), typed resolver, progress/debt pre-op exclusion, execution command gates, and ReportingStatement frozen provenance (SNAPSHOT_V2). Local implementation complete; architecture audit and local regression PASS (unit 1516/1516, integration 406/406, static/lint/typecheck/build PASS, local E2E not run; authoritative PR CI pending); independent GitHub review pending; PR / PR CI pending; merge pending; post-merge closure sync pending.
 
 Parallel eligible:
 - `P4-010` — GDĐP/HĐTN programme architecture closure — **READY** (independent track).
 
 Remain:
-- `P1-032` — Operational-start admin UI integration — **PLANNED** (waits for `P1-031`).
+- `P1-032` — Operational-start admin UI integration — **PLANNED** (waits for `P1-031` to be `CLOSED`).
 - `P2-010` — PPCT real-workbook contract/security audit — **BLOCKED_EVIDENCE** (pending authoritative school PPCT workbook/template).
 - `P2-020` — PPCT native importer implementation — **PLANNED** (pending `P2-010`).
 
@@ -330,12 +327,10 @@ The final production-host topology is intentionally unresolved and explicitly de
 
 ## Tasks currently active or eligible to start
 
-Active major task: None currently active.
+Active major task: `P1-031` — Operational-start policy implementation (`IN_REVIEW` on dedicated branch `feat/operational-start-policy-implementation-031`).
 
-The following registered tasks are genuinely eligible to start on dedicated branches:
-
-1. `P1-031` — Operational-start policy implementation (`READY`; next critical path, all dependencies `P1-021`, `P1-030`, `P2-003` are CLOSED).
-2. `P4-010` — GDĐP/HĐTN programme architecture closure (`READY`; independent track).
+Parallel eligible to start on a dedicated branch:
+1. `P4-010` — GDĐP/HĐTN programme architecture closure (`READY`; independent track).
 
 `P1-032` remains dependency-gated until `P1-031` is `CLOSED`. `P2-020` remains blocked by `P2-010` evidence (`BLOCKED_EVIDENCE`).
 

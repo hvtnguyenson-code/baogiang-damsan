@@ -15,6 +15,14 @@ export interface ResolveProgressDebtInput {
   asOfInstant: Date;
 }
 
+export interface ProgressDebtOperationalStartAuthority {
+  operationalStartDate: CivilDateString;
+  policyVersionId: string;
+  validatorVersion?: string;
+  effectiveFrom?: CivilDateString;
+  effectiveUntil?: CivilDateString | null;
+}
+
 export type ProgressDebtClassification = 'COMPLETED' | 'PROVEN_OPEN_DEBT' | 'UNCONFIRMED_COMPLETION_GAP';
 export type ProgressDebtFindingCode =
   | 'RECONCILIATION_REQUIRED'

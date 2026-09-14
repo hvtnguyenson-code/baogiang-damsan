@@ -16,6 +16,8 @@ function makeFrozenRow(ownerId = 'owner', subjectIds = ['subject']) {
     submitterDisplayNameSnapshot: 'Owner',
     submitterStaffCodeSnapshot: 'GV-01',
     asOfInstant: asOf,
+    operationalStartPolicyVersionId: 'policy-v1',
+    operationalStartDate: '2026-08-15',
     projection: {
       profile: 'PERSONAL_TEACHING_REPORTING_PROJECTION_V1',
       scope: { academicYearId: 'year', targetUserId: ownerId, fromCivilDate: '2026-08-01', toCivilDate: '2026-08-31', asOfInstant: asOf },
@@ -69,7 +71,7 @@ function setup(classifications: unknown[] = [replay], row: unknown = makeFrozenR
   const tx = { ...repository, user: { findUnique: jest.fn().mockResolvedValue({ profile: null }) } };
   const prisma = { $transaction: jest.fn(async (fn: TransactionCallback) => fn(tx)) };
   const auth = { evaluate: jest.fn().mockResolvedValue({ allowed: true }), listEffectiveCapabilities: jest.fn().mockResolvedValue([]) };
-  return { sut: new ReportingStatementsService(prisma as never, repository as never, {} as never, auth as never, { write: jest.fn() } as never, { now: jest.fn(() => asOf) }), repository, auth, prisma };
+  return { sut: new ReportingStatementsService(prisma as never, repository as never, {} as never, auth as never, { write: jest.fn() } as never, {} as never, { now: jest.fn(() => asOf) }), repository, auth, prisma };
 }
 
 describe('ReportingStatementsService decision/read', () => {

@@ -1,4 +1,6 @@
 import { OperationalLessonDispositionType } from '@prisma/client';
+import { ConflictException } from '@nestjs/common';
+import { BusinessConfigurationService } from '../../src/business-configuration/business-configuration.service';
 import { ProgressDebtService } from '../../src/progress-debt/progress-debt.service';
 import { integration, normalizedCode, Phase01Harness, testOrigin } from '../helpers/phase01-test-harness';
 
@@ -11,17 +13,25 @@ integration('Progress/debt projection (PostgreSQL)', () => {
   const h = new Phase01Harness();
   beforeAll(async () => h.start());
   afterAll(async () => { try { await clean(); } finally { await h.stop(); } });
-  beforeEach(async () => clean());
+  beforeEach(async () => {
+    await clean();
+    jest.spyOn(h.app.get(BusinessConfigurationService), 'businessCivilDate').mockReturnValue('2026-08-15');
+  });
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
 
   async function clean() {
     await h.prisma.specialActivityParticipationExecution.deleteMany(); await h.prisma.curricularTeachingExecution.deleteMany();
     await h.prisma.specialActivityStaffing.deleteMany(); await h.prisma.specialActivityClassTarget.deleteMany(); await h.prisma.specialActivityTimeSlot.deleteMany(); await h.prisma.specialActivity.deleteMany();
     await h.prisma.makeupTeachingSchedule.deleteMany(); await h.prisma.operationalLessonDisposition.deleteMany(); await h.prisma.calendarExceptionTimeSlot.deleteMany(); await h.prisma.calendarException.deleteMany();
     await h.prisma.ppctItemLineage.deleteMany(); await h.prisma.ppctClassAssociation.deleteMany(); await h.prisma.ppctItemRevision.deleteMany(); await h.prisma.ppctItem.deleteMany(); await h.prisma.ppctVersion.deleteMany(); await h.prisma.ppctPlan.deleteMany();
+    await h.prisma.businessPolicyVersion.deleteMany();
+    await h.prisma.businessPolicyStream.deleteMany();
     await h.clean();
   }
 
-  async function fixture() {
+  async function fixture(operationalStartDate = '2026-08-01', seedPolicy = true) {
     const lifecycleAt = new Date('2026-08-01T00:00:00.000Z');
     await h.seedCapabilities([{ key: 'TEACHING_EXECUTION_RECORD', scopes: ['PERSONAL'] }]);
     const actor = await h.actor({ grants: [{ capabilityKey: 'TEACHING_EXECUTION_RECORD', scopeType: 'PERSONAL' }] });
@@ -40,13 +50,38 @@ integration('Progress/debt projection (PostgreSQL)', () => {
     const plan = await h.prisma.ppctPlan.create({ data: { academicYearId: year.id, subjectId: subject.id, gradeLevel: 10 } });
     const version = await h.prisma.ppctVersion.create({ data: { ppctPlanId: plan.id, versionNumber: 1, status: 'PUBLISHED', createdByUserId: actor.id, publishedByUserId: actor.id, publishedAt: lifecycleAt } });
     const item = await h.prisma.ppctItem.create({ data: { ppctPlanId: plan.id, component: 'CORE' } });
-    await h.prisma.ppctItemRevision.create({ data: { ppctVersionId: version.id, ppctPlanId: plan.id, ppctItemId: item.id, component: 'CORE', sequence: 1, title: 'Lesson', lessonType: 'LESSON' } });
+    const revision = await h.prisma.ppctItemRevision.create({ data: { ppctVersionId: version.id, ppctPlanId: plan.id, ppctItemId: item.id, component: 'CORE', sequence: 1, title: 'Lesson', lessonType: 'LESSON' } });
     const association = await h.prisma.ppctClassAssociation.create({ data: { academicYearId: year.id, schoolClassId: schoolClass.id, subjectId: subject.id, gradeLevel: 10, ppctPlanId: plan.id, ppctVersionId: version.id, curricularProfile: 'CORE_ONLY', effectiveFrom: new Date('2026-08-01Z'), createdByUserId: actor.id } });
     const staffSubject = await h.prisma.staffSubject.create({ data: { userId: actor.id, subjectId: subject.id, validFrom: new Date('2026-08-01Z') } });
     const makeup = await h.prisma.makeupTeachingSchedule.create({ data: { academicYearId: year.id, originalTimetableVersionId: timetable.id, originalTimetableEntryId: entry.id, originalCivilDate: new Date(`${SOURCE_DATE}Z`), originalAcademicCalendarVersionId: calendar.id, originalTimeSlotDefinitionId: slot.id, schoolClassId: schoolClass.id, subjectId: subject.id, originalTeachingAssignmentId: assignment.id, responsibleTeacherUserId: actor.id, ppctClassAssociationId: association.id, ppctPlanId: plan.id, ppctVersionId: version.id, ppctItemId: item.id, targetCivilDate: new Date(`${MAKEUP_DATE}Z`), targetAcademicCalendarVersionId: calendar.id, targetTimeSlotDefinitionId: makeupSlot.id, scheduledTeacherUserId: actor.id, eligibilityCheckedAt: lifecycleAt, eligibilityWasActive: true, eligibilityWasTeachingStaff: true, eligibilitySameSubject: true, eligibilityStaffSubjectId: staffSubject.id, createRequestKey: crypto.randomUUID(), createRequestFingerprint: crypto.randomUUID(), createdByUserId: actor.id } });
     const profile = await h.prisma.staffProfile.findUniqueOrThrow({ where: { userId: actor.id } });
     const activity = await h.prisma.specialActivity.create({ data: { academicYearId: year.id, academicCalendarVersionId: calendar.id, civilDate: new Date(`${SOURCE_DATE}Z`), scope: 'SCHOOL_WIDE', title: 'Activity', createRequestKey: crypto.randomUUID(), createRequestFingerprint: crypto.randomUUID(), createdByUserId: actor.id, timeSlots: { create: { timeSlotDefinitionId: activitySlot.id } }, staffing: { create: { scheduledTeacherUserId: actor.id, staffProfileId: profile.id, eligibilityCheckedAt: lifecycleAt, eligibilityWasActive: true, eligibilityWasTeachingStaff: true } } }, include: { timeSlots: true, staffing: true } });
-    return { actor, year, calendar, schoolClass, subject, slot, assignment, timetable, entry, plan, makeup, activity, service: h.app.get(ProgressDebtService) };
+
+    if (seedPolicy) {
+      const stream = await h.prisma.businessPolicyStream.create({
+        data: {
+          familyKey: 'OPERATIONAL_START',
+          resourceKind: 'ACADEMIC_YEAR',
+          academicYearId: year.id,
+        },
+      });
+      await h.prisma.businessPolicyVersion.create({
+        data: {
+          streamId: stream.id,
+          versionNumber: 1,
+          status: 'PUBLISHED',
+          payload: { operationalStartDate },
+          validatorVersion: 'v1',
+          effectiveFrom: new Date('2026-08-01T00:00:00Z'),
+          effectiveUntil: null,
+          publishedAt: new Date('2026-08-01T00:00:00Z'),
+          publishedByUserId: actor.id,
+          createdByUserId: actor.id,
+        },
+      });
+    }
+
+    return { actor, year, calendar, schoolClass, subject, slot, makeupSlot, assignment, timetable, entry, plan, version, item, revision, association, makeup, activity, service: h.app.get(ProgressDebtService) };
   }
 
   function resolve(f: Awaited<ReturnType<typeof fixture>>, asOfInstant = SOURCE_AS_OF) { return f.service.resolve({ academicYearId: f.year.id, schoolClassId: f.schoolClass.id, subjectId: f.subject.id, asOfInstant }); }
@@ -63,4 +98,119 @@ integration('Progress/debt projection (PostgreSQL)', () => {
   it('DB6 REVERSED MAKEUP reopens debt while positive proof remains', async () => { const f = await fixture(); await absence(f); const made = await f.actor.agent.post('/api/teaching-executions/curricular/makeup').set('Origin', testOrigin).send({ makeupTeachingScheduleId: f.makeup.id, requestKey: crypto.randomUUID() }); expect(made.status).toBe(201); const reversed = await f.actor.agent.post(`/api/teaching-executions/curricular/${made.body.item.id}/reverse`).set('Origin', testOrigin).send({ requestKey: crypto.randomUUID(), expectedUpdatedAt: made.body.item.updatedAt, reversalReason: 'Correction' }); expect(reversed.status).toBe(200); await expect(resolve(f, MAKEUP_AS_OF)).resolves.toMatchObject({ status: 'PASS', counts: { completedCount: 0, openDebtCount: 1, lateCount: 1 } }); });
   it('DB7 SpecialActivityParticipationExecution has zero curricular projection effect', async () => { const f = await fixture(); const response = await f.actor.agent.post('/api/teaching-executions/activity-participations').set('Origin', testOrigin).send(activityBody(f)); expect(response.status).toBe(201); await expect(resolve(f)).resolves.toMatchObject({ status: 'PASS', counts: { distributedElapsedCount: 1, completedCount: 0, openDebtCount: 0, unconfirmedGapCount: 1 } }); });
   it('DB8 projection keeps all relevant persisted rows and audit events unchanged', async () => { const f = await fixture(); await absence(f); const before = await counts(f); await resolve(f); expect(await counts(f)).toEqual(before); });
+
+  describe('Checkpoint 4 operational-start integration evidence', () => {
+    it('1. pre-op no execution does not produce gap or debt', async () => {
+      // SOURCE_DATE is 2026-08-10, operational start is 2026-08-15 -> pre-op
+      const f = await fixture('2026-08-15');
+      const res = await resolve(f);
+      expect(res.status).toBe('PASS');
+      expect(res.items).toHaveLength(0);
+      expect(res.counts).toEqual({
+        distributedElapsedCount: 0,
+        completedCount: 0,
+        openDebtCount: 0,
+        lateCount: 0,
+        unconfirmedGapCount: 0,
+      });
+    });
+
+    it('2. pre-op negative disposition does not produce debt', async () => {
+      const f = await fixture('2026-08-15');
+      await absence(f);
+      const res = await resolve(f);
+      expect(res.status).toBe('PASS');
+      expect(res.items).toHaveLength(0);
+      expect(res.counts?.openDebtCount).toBe(0);
+      expect(res.counts?.lateCount).toBe(0);
+      expect(res.counts?.unconfirmedGapCount).toBe(0);
+    });
+
+    it('3. pre-op retained valid execution remains COMPLETED', async () => {
+      const f = await fixture('2026-08-01');
+      const response = await f.actor.agent.post('/api/teaching-executions/curricular/normal').set('Origin', testOrigin).send(normalBody(f));
+      expect(response.status).toBe(201);
+
+      const stream = await h.prisma.businessPolicyStream.findFirstOrThrow({
+        where: { academicYearId: f.year.id, familyKey: 'OPERATIONAL_START' },
+      });
+      await h.prisma.businessPolicyVersion.deleteMany({ where: { streamId: stream.id } });
+      await h.prisma.businessPolicyVersion.create({
+        data: {
+          streamId: stream.id,
+          versionNumber: 2,
+          status: 'PUBLISHED',
+          payload: { operationalStartDate: '2026-08-15' },
+          validatorVersion: 'v1',
+          effectiveFrom: new Date('2026-08-01T00:00:00Z'),
+          effectiveUntil: null,
+          publishedAt: new Date('2026-08-01T00:00:00Z'),
+          publishedByUserId: f.actor.id,
+          createdByUserId: f.actor.id,
+        },
+      });
+
+      const res = await resolve(f);
+      expect(res.status).toBe('PASS');
+      expect(res.items).toHaveLength(1);
+      expect(res.items[0]?.classification).toBe('COMPLETED');
+      expect(res.counts?.completedCount).toBe(1);
+      expect(res.counts?.distributedElapsedCount).toBe(1);
+    });
+
+    it('4. operational day behaves normally', async () => {
+      // SOURCE_DATE 2026-08-10, operational start 2026-08-01 -> post-op
+      const f = await fixture('2026-08-01');
+      const res = await resolve(f);
+      expect(res.status).toBe('PASS');
+      expect(res.items).toHaveLength(1);
+      expect(res.items[0]?.classification).toBe('UNCONFIRMED_COMPLETION_GAP');
+      expect(res.counts?.unconfirmedGapCount).toBe(1);
+    });
+
+    it('5. first operational PPCT sequence follows historical replay', async () => {
+      // Create second entry on Tuesday 2026-08-11
+      const f = await fixture('2026-08-11'); // Monday 2026-08-10 is pre-op, Tuesday 2026-08-11 is operational
+      const tuesdaySlot = f.makeupSlot; // 07:00 - 07:45 Tuesday
+      await h.prisma.timetableEntry.create({
+        data: {
+          timetableVersionId: f.timetable.id,
+          academicYearId: f.year.id,
+          weekday: 'TUESDAY',
+          timeSlotDefinitionId: tuesdaySlot.id,
+          schoolClassId: f.schoolClass.id,
+          subjectId: f.subject.id,
+          teachingAssignmentId: f.assignment.id,
+          teacherUserId: f.actor.id,
+        },
+      });
+      const item2 = await h.prisma.ppctItem.create({ data: { ppctPlanId: f.plan.id, component: 'CORE' } });
+      await h.prisma.ppctItemRevision.create({
+        data: {
+          ppctVersionId: f.version.id,
+          ppctPlanId: f.plan.id,
+          ppctItemId: item2.id,
+          component: 'CORE',
+          sequence: 2,
+          title: 'Lesson 2',
+          lessonType: 'LESSON',
+        },
+      });
+
+      // Tuesday asOf: both Monday and Tuesday have ended
+      const res = await resolve(f, MAKEUP_AS_OF);
+      expect(res.status).toBe('PASS');
+      // Monday is pre-op with no execution -> filtered out
+      // Tuesday is operational -> retained
+      expect(res.items).toHaveLength(1);
+      const tuesdayItem = res.items[0]!;
+      expect(tuesdayItem.sourceCivilDate).toBe('2026-08-11');
+      expect(tuesdayItem.ppctItemId).toBe(item2.id); // Consumed sequence 2! Historical sequence 1 was consumed by pre-op Monday in allocator
+    });
+
+    it('6. missing policy fails closed with POLICY_NOT_CONFIGURED', async () => {
+      const f = await fixture('2026-08-01', false); // seedPolicy = false
+      await expect(resolve(f)).rejects.toThrow(ConflictException);
+    });
+  });
 });
