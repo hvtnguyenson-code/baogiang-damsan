@@ -40,6 +40,13 @@ async function main() {
       ['e2e-rs-teacher', 'Giáo viên kiểm thử', true], ['e2e-rs-reader-a', 'Người đọc môn A', false], ['e2e-rs-reader-b', 'Người đọc môn B', false], ['e2e-rs-approver', 'Người phê duyệt kiểm thử', false],
     ].map(([username, displayName, isTeachingStaff]) => prisma.user.create({ data: { username, passwordHash, status: 'ACTIVE', mustChangePassword: false, profile: { create: { displayName, isTeachingStaff } } } })));
     const [teacher, readerA, readerB, approver] = users;
+    const operationalStartStream = await prisma.businessPolicyStream.create({ data: {
+      familyKey: 'OPERATIONAL_START', resourceKind: 'ACADEMIC_YEAR', academicYearId: year.id,
+    } });
+    await prisma.businessPolicyVersion.create({ data: {
+      streamId: operationalStartStream.id, versionNumber: 1, status: 'PUBLISHED', payload: { operationalStartDate: '2026-08-01' }, validatorVersion: 'v1',
+      effectiveFrom: new Date('2026-08-01T00:00:00.000Z'), effectiveUntil: null, createdByUserId: teacher.id, publishedByUserId: teacher.id, publishedAt: new Date('2026-08-01T00:00:00.000Z'),
+    } });
     await prisma.capabilityGrant.createMany({ data: [
       { userId: teacher.id, capabilityKey: 'REPORTING_STATEMENT_SUBMIT', scopeType: 'PERSONAL', grantedByUserId: teacher.id },
       { userId: teacher.id, capabilityKey: 'REPORTING_STATEMENT_READ', scopeType: 'PERSONAL', grantedByUserId: teacher.id },
