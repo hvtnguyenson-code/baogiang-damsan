@@ -4,7 +4,7 @@
 
 - **Mã task:** `P1-031`
 - **Tên task:** Operational-start policy implementation
-- **Trạng thái:** `IN_PROGRESS`
+- **Trạng thái:** `IN_REVIEW`
 - **Nhánh làm việc chuyên biệt (Dedicated Branch):** `feat/operational-start-policy-implementation-031`
 - **Commit xuất phát chuẩn tắc (Starting Canonical Base):** `13a87538b38312a2dfb482c358b17ac23f4b2ee8`
 - **Authoritative Baseline CI:** CI #438 (run id: `34730231091`) — SUCCESS
@@ -482,37 +482,53 @@ Tuyệt đối không dùng generic 500 cho các trường hợp từ chối ngh
 
 1. **Checkpoint 0 (Đã hoàn thành):** Khởi động task, audit code seams, đồng bộ tài liệu quản trị khởi động.
 2. **Checkpoint 0A (Đã hoàn thành):** Sửa chữa toàn diện các sai lệch sự thật kỹ thuật trong Implementation Plan.
-3. **Checkpoint 0B (Hiện tại):** Khóa ranh giới hợp đồng chiếu tiến độ và nợ tiết tiền vận hành, giữ nguyên các hợp đồng public/internal downstream.
-4. **Checkpoint 1 (Registry, Validator & Shared Time Authority):**
-   - Tạo helper `hcmCivilDate` dùng chung tại `apps/api/src/common/validation/civil-date.ts`.
-   - Đăng ký `OPERATIONAL_START` trong `business-policy-registry.ts` với pure validator v1.
-   - Thêm unit test tại `apps/api/test/business-configuration/operational-start-policy.spec.ts`.
-5. **Checkpoint 2 (Business Configuration Lifecycle Rules & Typed Resolver):**
-   - Hiện thực hóa ràng buộc lịch active và các quy tắc vòng đời (`retire`, `publish`, `replace`, `correct`) trong `business-configuration.service.ts`.
-   - Cung cấp typed helper `resolveOperationalStartPolicy(...)`.
-   - Cập nhật test suite cho lifecycle và resolver.
-6. **Checkpoint 3 (Teaching Executions Execution Guards):**
-   - Tích hợp kiểm tra ranh giới vào `confirmNormalTx` và `confirmMakeupTx`.
-   - Cập nhật unit test và runtime test cho `teaching-executions`.
-7. **Checkpoint 4 (Progress/Debt Integration & Replay Protection):**
-   - Tích hợp ranh giới `operationalStartDate` vào `ProgressDebtService`:
-     - Giữ nguyên historical allocator replay;
-     - Không emit pre-op unconfirmed opportunities vào `items`;
-     - Giữ nguyên `COMPLETED` cho pre-op opportunities có minh chứng hợp lệ;
-     - Bảo toàn count contract và đẳng thức đếm hiện hữu.
-   - Cập nhật test suite cho progress/debt.
-8. **Checkpoint 5 (Reporting Statements Provenance & Snapshot V2):**
-   - Định nghĩa `REPORTING_STATEMENT_SNAPSHOT_V2` trong canonicalizer với 2 trường provenance: `operationalStartPolicyVersionId` và `operationalStartDate`.
-   - Giữ nguyên `REPORTING_STATEMENT_SNAPSHOT_V1` cho các bản ghi và fixtures lịch sử.
-   - `serializerVersion` giữ nguyên `REPORTING_STATEMENT_CANONICAL_JSON_V1` (không tạo serializer V2).
-   - `statementProfile` giữ nguyên `PERSONAL_REPORTING_STATEMENT_PROFILE` (`PERSONAL_V1`).
-   - Mốc giải quyết chính sách: `policyResolutionCivilDate = hcmCivilDate(asOf)` với `asOf` được ghim trước retry.
-   - Replay check trước tiên: idempotent replay MISS mới resolve policy; replay HIT không query/re-resolve policy.
-   - Giải quyết exact policy authority đúng một lần trong transaction và truyền xuyên suốt: Personal -> Reporting -> ProgressDebt. Downstream không resolve lại policy.
-   - Freeze snapshot V2 với exact policy provenance; fail-closed khi thiếu/sai định dạng.
-   - Presenter hỗ trợ giải mã và xác thực toàn vẹn cả V1 và V2; fail-closed với profile lạ.
-   - Không thay đổi schema DB; không mở rộng public contracts API; Web UI giữ nguyên.
-   - Cập nhật test suite toàn diện: canonicalizer, presenter, submit, personal projection, repository, integration, HTTP integration.
-9. **Checkpoint 6 (Toàn diện Kiểm thử, Đồng bộ Tài liệu Hậu kiểm & Sẵn sàng Đánh giá):**
-   - Chạy toàn bộ test suite, lint, typecheck, static verifiers.
-   - Đồng bộ trạng thái tài liệu sang `IN_REVIEW`.
+3. **Checkpoint 0B (Đã hoàn thành):** Khóa ranh giới hợp đồng chiếu tiến độ và nợ tiết tiền vận hành, giữ nguyên các hợp đồng public/internal downstream.
+4. **Checkpoint 1 (Đã hoàn thành):** Đăng ký `OPERATIONAL_START` production family, pure validator v1, và kiểm tra ràng buộc lịch năm học active.
+5. **Checkpoint 1A (Đã hoàn thành):** Bổ sung guard `OPERATIONAL_START_DIRECT_PUBLISH_AFTER_AUTHORITY_FORBIDDEN` chống direct publish sau khi luồng chính sách đã có thẩm quyền.
+6. **Checkpoint 2 (Đã hoàn thành):** Hiện thực hóa quy tắc vòng đời chính sách (`retire`, `replace`, `correct`) và typed resolver `resolveOperationalStartPolicy`.
+7. **Checkpoint 3 (Đã hoàn thành):** Tích hợp kiểm tra ranh giới `operationalStartDate` vào các cổng lệnh thực thi giảng dạy (`confirmNormalTx`, `confirmMakeupTx`).
+8. **Checkpoint 4 (Đã hoàn thành):** Tích hợp ranh giới `operationalStartDate` vào `ProgressDebtService` và `ReportingProjectionService`: giữ nguyên historical allocator replay, loại trừ pre-op unconfirmed khỏi debt/late/gap, bảo tồn count invariants.
+9. **Checkpoint 5 (Đã hoàn thành):** Đóng băng snapshot V2 với exact policy provenance (`operationalStartPolicyVersionId`, `operationalStartDate`), bảo toàn tương thích ngược V1, submit ghim instant theo giờ VN.
+10. **Checkpoint 6A (Đã hoàn thành):** Sửa chữa 2 stale gate (unit test `business-policy-registry.spec.ts` và static gate `verify-business-configuration-schema.cjs`) còn mang giả định registry rỗng của P1-021.
+11. **Checkpoint 6B (Đã hoàn thành):** Đồng bộ hóa tài liệu quản trị pre-review, chuyển trạng thái `P1-031` sang `IN_REVIEW`.
+
+---
+
+## 16. Bằng chứng Triển khai và Nghiệm thu Hậu kiểm (Final Implementation & Regression Evidence)
+
+### A. Chuỗi Commit và Định danh Git
+- **Commit xuất phát chuẩn tắc (Starting Canonical Base):** `13a87538b38312a2dfb482c358b17ac23f4b2ee8`
+- **Head hoàn tất mã nguồn runtime (Runtime Implementation Head):** `f263a9a4e69004047719f4ae0d051977a3609b8d`
+- **Head hoàn tất sửa lỗi stale test/static gate (6A Head):** `4485822ac71409d130ae5447e70c8d40a7d3cc5e`
+- **Nhánh chuyên biệt:** `feat/operational-start-policy-implementation-031`
+
+### B. Tóm tắt Kết quả Kiểm thử Hồi quy Toàn diện (Local Regression Summary)
+- **Architecture audit:** PASS toàn bộ các bất biến của `ADR-049`.
+- **Static CI / Tooling gates:**
+  - `npm audit --omit=dev --audit-level=high`: PASS (0 vulnerabilities)
+  - `test:schema:static` (bao gồm foundation, academic-structure, business-configuration): PASS
+  - `test:secrets`: PASS
+  - `test:deploy:static`: PASS
+  - `test:deploy:behavior`: PASS
+  - `test:workflow:contract`: PASS
+  - `test:deploy:powershell`: PASS
+  - `test:deploy:windows`: PASS
+  - `test:ui:static`: PASS
+  - `npm run lint`: PASS (toàn bộ workspaces)
+  - `npm run typecheck`: PASS (toàn bộ workspaces)
+  - `npm run build`: PASS (toàn bộ workspaces)
+- **Full Unit Test Suite (sau Checkpoint 6A):**
+  - Web: 18/18 test files passed (278/278 tests passed)
+  - API: 74/74 test suites passed (1238/1238 tests passed)
+  - Tổng số tests unit: 1516 passed, 0 failed
+- **Full Integration Test Suite:**
+  - API Integration: 34/34 test suites passed (406/406 tests passed)
+  - Mã nguồn runtime hoàn toàn đồng nhất với `f263a9a4`
+- **E2E:** `LOCAL_E2E_NOT_RUN` — chờ kiểm chứng authoritative trên môi trường Linux PR CI. Không ghi nhận E2E pass cục bộ.
+
+### C. Ranh giới Kỷ luật Minh thị (Explicit Discipline Boundaries)
+- **Schema / Migration:** Hoàn toàn không thay đổi schema hoặc sinh migration mới (0 schema diff, 0 migrations).
+- **Public Contracts:** Không mở rộng enum hay thêm trường mới vào public API contracts.
+- **Web UI:** Không chỉnh sửa ứng dụng Web (thuộc phạm vi `P1-032`).
+- **Môi trường Sản xuất / VPS:** Không deploy, không chạy lệnh VPS; hệ thống sản xuất duy trì trạng thái strictly **PRE-OPERATIONAL**.
+- **Đánh giá Độc lập:** Task ở trạng thái `IN_REVIEW`, chờ quy trình review độc lập trên GitHub và PR CI; tuyệt đối không tự ý claim `CLOSED`.
