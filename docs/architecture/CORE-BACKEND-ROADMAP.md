@@ -88,7 +88,7 @@ No runtime/schema/production mutation.
 
 1. **HomeroomAssignment** — date-effective retained GVCN responsibility required for HĐTN `CLASS`.
 2. **Business Configuration Control Plane** — typed/versioned business policy, explicitly separated from secrets/technical env.
-3. **Delayed go-live operational-start policy** — explicit start authority without inventing historical debt (`P1-030` CLOSED by `SYNC-P1-030`, `ADR-049` Accepted; `P1-031` IN_REVIEW; `P1-032` PLANNED).
+3. **Delayed go-live operational-start policy** — explicit start authority without inventing historical debt (`P1-030` CLOSED by `SYNC-P1-030`, `ADR-049` Accepted; `P1-031` CLOSED by `SYNC-P1-031`; `P1-032` READY).
 
 ### P2 — Real school data ingestion & Curricular components
 
@@ -112,7 +112,7 @@ Exact task statuses and prerequisites are maintained authoritatively in `PRE-PIL
 
 ### P3 — Historical go-live continuity
 
-1. Pre-operational historical execution/reconciliation architecture (`P3-010`, depends on `P1-031`, `P2-003`, `P2-020`, and closed `P2-050`).
+1. Pre-operational historical execution/reconciliation architecture (`P3-010`, depends on closed `P1-031`, closed `P2-003`, `P2-020`, and closed `P2-050`).
 2. Controlled historical evidence ingestion/confirmation (`P3-020`).
 3. Preserve current invariant: missing execution alone does not prove debt.
 4. Public make-up runtime remains a separate trigger-based re-entry if required.
@@ -153,15 +153,16 @@ The exact dependency graph is authoritative only in `PRE-PILOT-TASK-REGISTER.md`
 P0-900 (CLOSED)
 └── P2-001 (Curricular component architecture, CLOSED by SYNC-P2-001, ADR-048 Accepted)
     ├── P1-030 (Delayed go-live architecture, CLOSED by SYNC-P1-030, ADR-049 Accepted)
-    │   └── P1-031 (Operational-start policy, IN_REVIEW)
+    │   └── P1-031 (Operational-start policy, CLOSED by SYNC-P1-031)
+    │       └── P1-032 (Operational-start admin UI, READY)
     ├── P2-002 (Component persistence & control plane, CLOSED by SYNC-P2-002)
     │   └── P2-003 (Component allocation & projections, CLOSED by SYNC-P2-003)
     │       ├── P2-004 (Admin applicability workspace, CLOSED by SYNC-P2-004)
-    │       ├── P1-031 (Operational-start policy, IN_REVIEW)
+    │       ├── P1-031 (Operational-start policy, CLOSED by SYNC-P1-031)
     │       └── P3-010 (Pre-operational historical execution)
     └── P2-010 (PPCT real-workbook audit, BLOCKED_EVIDENCE, needs real workbook evidence)
         └── P2-020 (PPCT native importer, needs P2-002 + P2-010)
-            └── P3-010 (needs P1-031 + P2-003 + P2-020 + closed P2-050)
+            └── P3-010 (needs closed P1-031 + closed P2-003 + P2-020 + closed P2-050)
 
 Independent tracks:
 - P4-010 (GDĐP/HĐTN programme architecture; independent / READY)

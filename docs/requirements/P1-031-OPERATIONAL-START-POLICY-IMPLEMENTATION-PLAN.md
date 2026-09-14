@@ -4,10 +4,15 @@
 
 - **Mã task:** `P1-031`
 - **Tên task:** Operational-start policy implementation
-- **Trạng thái:** `IN_REVIEW`
+- **Trạng thái:** `CLOSED` bởi `SYNC-P1-031`
 - **Nhánh làm việc chuyên biệt (Dedicated Branch):** `feat/operational-start-policy-implementation-031`
 - **Commit xuất phát chuẩn tắc (Starting Canonical Base):** `13a87538b38312a2dfb482c358b17ac23f4b2ee8`
 - **Authoritative Baseline CI:** CI #438 (run id: `34730231091`) — SUCCESS
+- **Final Reviewed Head:** `2bf98156f93db47bb986e8e803a137563eadcf18`
+- **Parent PR:** #133 (`feat(policy): implement operational-start authority`)
+- **Exact-head PR CI:** CI #440 (run id: `34856758210`) — SUCCESS
+- **Merge/Main:** `a5ee3190171bd5f617a4f32f029328547a0dd37a`
+- **Authoritative Post-merge Main CI:** CI #441 (run id: `34857669684`) — SUCCESS on attempt 2
 - **Nhiệm vụ tiền nhiệm bắt buộc (Dependencies):**
   - `P1-021` — Business Configuration persistence/control plane: **CLOSED** (đóng bởi `SYNC-P1-021`)
   - `P1-030` — Delayed go-live / operational-start architecture: **CLOSED** (đóng bởi `SYNC-P1-030`)
@@ -25,7 +30,7 @@
 
 1. **Đăng ký Policy Family:**
    - File: `apps/api/src/business-configuration/business-policy-registry.ts`
-   - `PRODUCTION_BUSINESS_POLICY_FAMILIES`: Hiện tại là mảng rỗng `[]`. Không có bất kỳ mock policy nào trong production registry (các family test gồm `TEST_BOOLEAN_THRESHOLD` và `TEST_ACADEMIC_YEAR_CONFIG` nằm riêng tại `apps/api/test/business-configuration/test-business-policy-registry.ts`).
+   - Tại **starting canonical base** của P1-031, `PRODUCTION_BUSINESS_POLICY_FAMILIES` là mảng rỗng `[]`. P1-031 đã thay đổi có kiểm soát seam này bằng cách đăng ký duy nhất family production `OPERATIONAL_START / v1 / ACADEMIC_YEAR`; các family test gồm `TEST_BOOLEAN_THRESHOLD` và `TEST_ACADEMIC_YEAR_CONFIG` vẫn nằm riêng tại `apps/api/test/business-configuration/test-business-policy-registry.ts`.
    - Cấu trúc chuẩn của `BusinessPolicyFamilyDefinition`:
      - `key: string`
      - `resourceKind: BusinessConfigurationResource['kind']`
@@ -45,7 +50,7 @@
      - `retire(id, dto, actor, meta)`
      - `correct(id, dto, actor, meta)`
      - `resolveEffectiveBusinessPolicy(familyKey, resource, civilDate, db)`
-   - Cần bổ sung các kiểm tra vòng đời chuyên biệt cho `OPERATIONAL_START` tại các phương thức này:
+   - Các kiểm tra vòng đời chuyên biệt cho `OPERATIONAL_START` được triển khai tại các phương thức này:
      - `retire`: Bị từ chối ngay lập tức (`BadRequestException('OPERATIONAL_START_RETIRE_FORBIDDEN')`).
      - `publish`: Kiểm tra `effectiveFrom <= operationalStartDate` và tính hợp lệ với lịch năm học.
      - `replace`: Chỉ cho phép khi `businessCivilDate() < currentOperationalStartDate`, mốc mới phải lớn hơn ngày hiện tại, đảm bảo tính liên tục (no gap).
@@ -56,10 +61,10 @@
    - Seam: Truy vấn `academicCalendarVersion` với điều kiện `{ where: { academicYearId, isActive: true } }`. Yêu cầu đúng 1 phiên bản active; kiểm tra `startDate <= operationalStartDate <= endDate`. Nếu thiếu, mơ hồ hoặc vi phạm khoảng lịch: fail-closed với `BadRequestException`.
 
 4. **Thẩm quyền Ngày Dân sự Máy chủ Sở hữu (Shared HCM Civil Date Authority):**
-   - Hiện trạng:
+   - Hiện trạng tại task start:
      - `BusinessConfigurationService.businessCivilDate()` sử dụng `Asia/Ho_Chi_Minh` lấy trực tiếp `new Date()`.
      - `progress-debt.policy.ts` có `hcmCivilDate(instant: Date)`.
-   - Phương án P1-031: Đưa helper chuyển đổi chuẩn sang vị trí dùng chung `apps/api/src/common/validation/civil-date.ts` nhận tham số `instant: Date` (bắt buộc, không có giá trị mặc định), định dạng bằng `Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' })`.
+   - P1-031 đã đưa helper chuyển đổi chuẩn sang vị trí dùng chung `apps/api/src/common/validation/civil-date.ts` nhận tham số `instant: Date` (bắt buộc, không có giá trị mặc định), định dạng bằng `Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' })`.
    - Các consumer tái sử dụng:
      - `BusinessConfigurationService.businessCivilDate()` ủy quyền tới helper dùng chung;
      - `ProgressDebt` tái sử dụng helper;
@@ -70,8 +75,8 @@
 
 5. **Bộ Giải quyết Chính sách (Resolver / Read Authority):**
    - File: `apps/api/src/business-configuration/business-configuration.service.ts`
-   - Phương thức hiện hữu: `resolveEffectiveBusinessPolicy(familyKey, resource, civilDate, db)`.
-   - Cung cấp typed helper chuyên trách:
+   - Phương thức nền hiện hữu: `resolveEffectiveBusinessPolicy(familyKey, resource, civilDate, db)`.
+   - Typed helper chuyên trách đã được triển khai:
      ```typescript
      async resolveOperationalStartPolicy(
        academicYearId: string,
@@ -491,6 +496,7 @@ Tuyệt đối không dùng generic 500 cho các trường hợp từ chối ngh
 9. **Checkpoint 5 (Đã hoàn thành):** Đóng băng snapshot V2 với exact policy provenance (`operationalStartPolicyVersionId`, `operationalStartDate`), bảo toàn tương thích ngược V1, submit ghim instant theo giờ VN.
 10. **Checkpoint 6A (Đã hoàn thành):** Sửa chữa 2 stale gate (unit test `business-policy-registry.spec.ts` và static gate `verify-business-configuration-schema.cjs`) còn mang giả định registry rỗng của P1-021.
 11. **Checkpoint 6B (Đã hoàn thành):** Đồng bộ hóa tài liệu quản trị pre-review, chuyển trạng thái `P1-031` sang `IN_REVIEW`.
+12. **Checkpoint 7 (Đã hoàn thành):** Independent review PASS, PR #133 exact-head CI #440 SUCCESS, merge vào `main@a5ee3190171bd5f617a4f32f029328547a0dd37a`, post-merge main CI #441 SUCCESS (attempt 2), sau đó `SYNC-P1-031` đóng task và mở `P1-032 = READY`.
 
 ---
 
@@ -500,12 +506,15 @@ Tuyệt đối không dùng generic 500 cho các trường hợp từ chối ngh
 - **Commit xuất phát chuẩn tắc (Starting Canonical Base):** `13a87538b38312a2dfb482c358b17ac23f4b2ee8`
 - **Head hoàn tất mã nguồn runtime (Runtime Implementation Head):** `f263a9a4e69004047719f4ae0d051977a3609b8d`
 - **Head hoàn tất sửa lỗi stale test/static gate (6A Head):** `4485822ac71409d130ae5447e70c8d40a7d3cc5e`
+- **Final reviewed PR head:** `2bf98156f93db47bb986e8e803a137563eadcf18`
 - **Nhánh chuyên biệt:** `feat/operational-start-policy-implementation-031`
+- **PR:** #133
+- **Merge/Main:** `a5ee3190171bd5f617a4f32f029328547a0dd37a`
 
-### B. Tóm tắt Kết quả Kiểm thử Hồi quy Toàn diện (Local Regression Summary)
+### B. Tóm tắt Kết quả Kiểm thử Hồi quy Toàn diện (Regression Summary)
 - **Architecture audit:** PASS toàn bộ các bất biến của `ADR-049`.
 - **Static CI / Tooling gates:**
-  - `npm audit --omit=dev --audit-level=high`: PASS (0 vulnerabilities)
+  - `npm audit --omit=dev --audit-level=high`: PASS theo gate cấu hình của CI
   - `test:schema:static` (bao gồm foundation, academic-structure, business-configuration): PASS
   - `test:secrets`: PASS
   - `test:deploy:static`: PASS
@@ -517,18 +526,19 @@ Tuyệt đối không dùng generic 500 cho các trường hợp từ chối ngh
   - `npm run lint`: PASS (toàn bộ workspaces)
   - `npm run typecheck`: PASS (toàn bộ workspaces)
   - `npm run build`: PASS (toàn bộ workspaces)
-- **Full Unit Test Suite (sau Checkpoint 6A):**
-  - Web: 18/18 test files passed (278/278 tests passed)
-  - API: 74/74 test suites passed (1238/1238 tests passed)
-  - Tổng số tests unit: 1516 passed, 0 failed
-- **Full Integration Test Suite:**
-  - API Integration: 34/34 test suites passed (406/406 tests passed)
-  - Mã nguồn runtime hoàn toàn đồng nhất với `f263a9a4`
-- **E2E:** `LOCAL_E2E_NOT_RUN` — chờ kiểm chứng authoritative trên môi trường Linux PR CI. Không ghi nhận E2E pass cục bộ.
+- **Local full regression trước PR:**
+  - Web unit: 18/18 test files passed (278/278 tests passed)
+  - API unit: 74/74 test suites passed (1238/1238 tests passed)
+  - Tổng unit: 1516 passed, 0 failed
+  - API integration: 34/34 test suites passed (406/406 tests passed)
+- **Authoritative exact-head PR evidence:** CI #440 / run `34856758210` — SUCCESS trên `2bf98156f93db47bb986e8e803a137563eadcf18`, gồm Linux full chain, Reporting Statement fixture bootstrap, Playwright smoke và Windows deployment contract.
+- **Authoritative post-merge evidence:** CI #441 / run `34857669684` — SUCCESS trên `main@a5ee3190171bd5f617a4f32f029328547a0dd37a`, attempt 2.
+- **CI #441 attempt 1:** rớt đúng một existing Web `auth-flow` unit assertion (`changes password, refreshes auth, and enters the workspace`); merge tree không có file delta so với reviewed PR head, cùng tree đã PASS toàn bộ CI #440 và PASS toàn bộ #441 attempt 2. Bằng chứng này được phân loại là flaky/timing hiện hữu, không phải regression semantics P1-031; không mở correction/re-entry task riêng.
 
 ### C. Ranh giới Kỷ luật Minh thị (Explicit Discipline Boundaries)
 - **Schema / Migration:** Hoàn toàn không thay đổi schema hoặc sinh migration mới (0 schema diff, 0 migrations).
 - **Public Contracts:** Không mở rộng enum hay thêm trường mới vào public API contracts.
 - **Web UI:** Không chỉnh sửa ứng dụng Web (thuộc phạm vi `P1-032`).
 - **Môi trường Sản xuất / VPS:** Không deploy, không chạy lệnh VPS; hệ thống sản xuất duy trì trạng thái strictly **PRE-OPERATIONAL**.
-- **Đánh giá Độc lập:** Task ở trạng thái `IN_REVIEW`, chờ quy trình review độc lập trên GitHub và PR CI; tuyệt đối không tự ý claim `CLOSED`.
+- **Đánh giá Độc lập:** PASS tại final reviewed head `2bf98156f93db47bb986e8e803a137563eadcf18`.
+- **Closure:** `P1-031` được đóng hành chính bởi `SYNC-P1-031`; `P1-032` chuyển sang `READY`; không phát sinh correction/re-entry task.
