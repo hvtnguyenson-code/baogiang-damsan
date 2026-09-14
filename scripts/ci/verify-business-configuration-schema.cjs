@@ -64,7 +64,26 @@ assert.ok(configManage, 'BUSINESS_CONFIGURATION_MANAGE must be registered in cap
 assert.deepEqual(configManage[2], ['SCHOOL_WIDE'], 'BUSINESS_CONFIGURATION_MANAGE allowed scope must be strictly SCHOOL_WIDE');
 
 // 7. Production registry isolation & multi-validator structure
-assert.match(registrySource, /PRODUCTION_BUSINESS_POLICY_FAMILIES:\s+readonly\s+BusinessPolicyFamilyDefinition\[\]\s+=\s+\[\];/);
+const operationalFamilyBlock = registrySource.match(
+  /export\s+const\s+OPERATIONAL_START_FAMILY_DEFINITION:\s*BusinessPolicyFamilyDefinition\s*=\s*\{([\s\S]*?)\n\};/u
+)?.[1] ?? '';
+assert.ok(operationalFamilyBlock, 'OPERATIONAL_START_FAMILY_DEFINITION must be exported as BusinessPolicyFamilyDefinition');
+assert.match(operationalFamilyBlock, /key:\s*['"]OPERATIONAL_START['"]/);
+assert.match(operationalFamilyBlock, /resourceKind:\s*['"]ACADEMIC_YEAR['"]/);
+assert.match(operationalFamilyBlock, /currentValidatorVersion:\s*['"]v1['"]/);
+assert.match(operationalFamilyBlock, /validators:\s*\[[\s\S]*?OPERATIONAL_START_VALIDATOR_V1[\s\S]*?\]/);
+assert.match(operationalFamilyBlock, /publicationEnabled:\s*true/);
+assert.match(operationalFamilyBlock, /downstreamAuthority:\s*['"]ADR-049['"]/);
+
+assert.match(registrySource, /export\s+const\s+OPERATIONAL_START_VALIDATOR_V1:\s*BusinessPolicyPayloadValidator/);
+assert.match(registrySource, /OPERATIONAL_START_VALIDATOR_V1[\s\S]*?version:\s*['"]v1['"]/);
+
+const productionRegistryBlock = registrySource.match(
+  /export\s+const\s+PRODUCTION_BUSINESS_POLICY_FAMILIES:\s*readonly\s+BusinessPolicyFamilyDefinition\[\]\s*=\s*\[([\s\S]*?)\];/u
+)?.[1] ?? '';
+assert.ok(productionRegistryBlock, 'PRODUCTION_BUSINESS_POLICY_FAMILIES must be exported as readonly BusinessPolicyFamilyDefinition[]');
+assert.match(productionRegistryBlock, /OPERATIONAL_START_FAMILY_DEFINITION/);
+
 assert.doesNotMatch(registrySource, /TEST_BOOLEAN_THRESHOLD/);
 assert.match(registrySource, /currentValidatorVersion:\s+string;/);
 assert.match(registrySource, /validators:\s+readonly\s+BusinessPolicyPayloadValidator\[\];/);
