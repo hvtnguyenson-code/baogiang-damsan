@@ -31,6 +31,9 @@ export class BusinessConfigurationService {
   async createDraft(dto: CreateBusinessPolicyDraftDto, actor: string, meta: RequestMeta) {
     return this.mutate(actor, dto.commandId, dto, async (tx) => {
       const family = this.family(dto.family);
+      if (family.key === 'OPERATIONAL_START' && dto.effectiveUntil !== undefined) {
+        throw new BadRequestException('OPERATIONAL_START_EFFECTIVE_UNTIL_FORBIDDEN');
+      }
       const resource = this.resource(dto.resource);
       validateResource(family, resource);
       const validator = currentValidator(family);
@@ -108,6 +111,9 @@ export class BusinessConfigurationService {
       const validatedPayload = validator.validate(row.payload);
       if (row.status !== 'DRAFT') throw conflict();
       if (family.key === 'OPERATIONAL_START') {
+        if (row.effectiveUntil !== null) {
+          throw new BadRequestException('OPERATIONAL_START_EFFECTIVE_UNTIL_FORBIDDEN');
+        }
         if (resource.kind !== 'ACADEMIC_YEAR') throw new BadRequestException('INVALID_POLICY_RESOURCE');
         const calendar = await this.requireActiveCalendar(tx, resource.academicYearId);
         const payload = validatedPayload as { operationalStartDate: string };
@@ -181,6 +187,9 @@ export class BusinessConfigurationService {
         const newOperationalStartDate = (payload as { operationalStartDate: string }).operationalStartDate;
         if (newOperationalStartDate <= businessDate) {
           throw new BadRequestException('INVALID_POLICY_REPLACEMENT');
+        }
+        if (from > currentOperationalStartDate || from > newOperationalStartDate) {
+          throw new BadRequestException('OPERATIONAL_START_REPLACEMENT_EFFECTIVITY_AFTER_BOUNDARY_FORBIDDEN');
         }
         const resource = this.streamResource(source.stream);
         if (resource.kind !== 'ACADEMIC_YEAR') {

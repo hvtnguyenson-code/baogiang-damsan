@@ -10,10 +10,12 @@ It is **not** a self-referential registry of the latest Git commit. Exact curren
 
 ## Active major task
 
-No implementation task is currently `IN_PROGRESS` or `IN_REVIEW` after `SYNC-P1-031`.
+`P1-031A` — Operational-start authority continuity correction — **IN_REVIEW** on dedicated branch `fix/operational-start-authority-continuity-031a`, starting from canonical `main@f1b160be25045d0f4c661e154ece24c92a3e0fc9` with dependency `P1-031` CLOSED and traceability `T28`, `T30`.
 
-Next critical-path task eligible to start:
-- `P1-032` — Operational-start admin UI integration — **READY** (dependencies `P1-022` and `P1-031` are CLOSED).
+The correction audits and repairs continuity across initial publication, replacement, correction and fail-closed resolution. The discovered defect permits an initial `OPERATIONAL_START` authority with finite `effectiveUntil`; publish does not reject it, RETIRE is forbidden, and REPLACE requires an open-ended source. That combination can create a policy gap which normal lifecycle commands cannot repair. Replacement also requires an explicit guarantee that its effectivity starts no later than both the current and new operational-start boundaries.
+
+Next critical-path task remains blocked:
+- `P1-032` — Operational-start admin UI integration — **PLANNED**; dependency set now includes `P1-031A`, and it cannot start until the correction is merged, passes authoritative post-merge CI, and is CLOSED by `SYNC-P1-031A`.
 
 Parallel eligible:
 - `P4-010` — GDĐP/HĐTN programme architecture closure — **READY** (independent track).
@@ -42,7 +44,7 @@ Closure evidence:
 - no Prisma schema/migration change, no public API contract expansion, no Web UI implementation, no deploy/VPS mutation;
 - production remains strictly PRE-OPERATIONAL;
 - closed by administrative closure: `SYNC-P1-031`;
-- unlocks downstream: `P1-032` (`READY`).
+- initially unlocked downstream `P1-032`; post-closure continuity audit registered `P1-031A`, which now blocks P1-032 until correction closure.
 
 Predecessor closed major task: `P1-030` — Delayed go-live / operational-start architecture — **CLOSED** by `SYNC-P1-030`.
 
@@ -203,7 +205,7 @@ P1-010 review also recovered and registered Special Programme boundaries T43/T44
 
 ## Accepted Business Configuration domain
 
-`P1-020` (architecture), `P1-021` (persistence/control plane), `P1-022` (administration workspace), and `P1-031` (operational-start backend family/runtime integration) are **CLOSED**. ADR-046 remains the generic Business Configuration architecture authority and ADR-049 is the accepted operational-start authority. The closed foundation now includes:
+`P1-020` (architecture), `P1-021` (persistence/control plane), `P1-022` (administration workspace), and `P1-031` (operational-start backend family/runtime integration) are **CLOSED**. `P1-031A` is **IN_REVIEW** to correct post-closure authority-continuity enforcement before UI integration. ADR-046 remains the generic Business Configuration architecture authority and ADR-049 is the accepted operational-start authority. The foundation includes:
 
 - separate retained `BusinessPolicyStream` / `BusinessPolicyVersion` / `BusinessPolicyCommand` persistence topology;
 - `SCHOOL_WIDE` / `ACADEMIC_YEAR` exact resource semantics;
@@ -311,7 +313,7 @@ The repository contains reviewed implementation for:
 - Personal Reporting Projection;
 - Reporting Statement persistence/control plane/UI enablement/product UI work;
 - **retained Business Configuration persistence, control plane and administration workspace** (separate BusinessPolicyStream / BusinessPolicyVersion / BusinessPolicyCommand topology, strict civil-date intervals, DB-level non-overlapping published exclusion, retained replacement and reversal/correction lineage, immutable published payload, exact historical validator-version resolution, dedicated `BUSINESS_CONFIGURATION_MANAGE / SCHOOL_WIDE` capability, capability-gated route `/quan-tri/chinh-sach-nghiep-vu`, typed/version-aware UI adapter architecture with triple identity, lifecycle UI for draft/edit/publish/replace/retire/correct, historical typed rendering, exact-date resolver UI, bounded Serializable mutation retry, idempotency receipts, same-transaction audit, sanitized errors and typed fail-closed resolver);
-- **operational-start backend authority** closed by P1-031: `OPERATIONAL_START / v1 / ACADEMIC_YEAR` production registration, strict validator/calendar/lifecycle rules, typed fail-closed resolver, execution guards, pre-op no-auto-debt projection, retained allocator replay, single-authority reporting integration, and ReportingStatement SNAPSHOT_V2 provenance; operational-start UI adapter remains P1-032;
+- **operational-start backend authority** closed by P1-031: `OPERATIONAL_START / v1 / ACADEMIC_YEAR` production registration, strict validator/calendar/lifecycle rules, typed fail-closed resolver, execution guards, pre-op no-auto-debt projection, retained allocator replay, single-authority reporting integration, and ReportingStatement SNAPSHOT_V2 provenance; P1-031A is correcting initial open-ended authority and replacement-boundary continuity before the P1-032 UI adapter may start;
 - hardened Windows production deployment control-plane/runbooks through PR #90.
 
 Homeroom architecture, persistence, control plane/capability, historical read model and administration workspace UI are closed for the registered pre-pilot scope. Business Configuration architecture (P1-020), persistence/control plane (P1-021), administration workspace (P1-022), and operational-start backend implementation (P1-031) are closed for their registered pre-pilot scopes. P2-030 native timetable workbook architecture/evidence, P2-040 native adapter runtime implementation, P2-050 selective morning/afternoon update and carry-forward, P2-002 PPCT component persistence/control plane, P2-003 component-aware allocation/projections runtime, and P2-004 specialized-study administration workspace are closed.
@@ -329,7 +331,7 @@ The registered implementation, data-evidence, product and production-readiness t
 3. Programme planning cannot assign different exact teacher sets to different exact slots.
 4. Special-program absence/replacement and programme-level confirmation authority remain explicitly registered for P4 closure (T43/T44).
 5. Existing `GDDDP_COORDINATOR` / `HĐTN_COORDINATOR` capability intent is not wired to programme-resource authority.
-6. Operational-start backend/runtime authority is CLOSED under P1-031; the operational-start admin UI (P1-032) and historical pre-operational evidence workflow (P3-010/P3-020) remain.
+6. Operational-start backend/runtime authority is CLOSED under P1-031, but P1-031A authority-continuity correction is active; the operational-start admin UI (P1-032) remains blocked until correction closure, and the historical pre-operational evidence workflow remains P3-010/P3-020.
 7. PPCT real-school import is intentionally blocked pending an authoritative workbook contract; preferred direction is one workbook with separate logical content for ordinary PPCT (CORE) and Chuyên đề học tập (SPECIALIZED_STUDY), with exact physical sheet names and structure evidence-bound to P2-010.
 8. Special-activity participation is not yet integrated into official workload/reporting aggregation.
 9. WorkloadAdjustmentRule remains trigger-gated/deferred.
@@ -350,11 +352,13 @@ The final production-host topology is intentionally unresolved and explicitly de
 
 ## Tasks currently active or eligible to start
 
-No implementation task is currently active after `SYNC-P1-031`.
+`P1-031A` is the active correction in `IN_REVIEW` on `fix/operational-start-authority-continuity-031a`.
 
 Eligible to start on a dedicated branch:
-1. `P1-032` — Operational-start admin UI integration (`READY`; next critical path).
-2. `P4-010` — GDĐP/HĐTN programme architecture closure (`READY`; independent track).
+1. `P4-010` — GDĐP/HĐTN programme architecture closure (`READY`; independent track).
+
+Not eligible to start:
+- `P1-032` — Operational-start admin UI integration (`PLANNED`; blocked by P1-031A implementation merge, post-merge CI and `SYNC-P1-031A`).
 
 `P2-020` remains blocked by `P2-010` evidence (`BLOCKED_EVIDENCE`).
 

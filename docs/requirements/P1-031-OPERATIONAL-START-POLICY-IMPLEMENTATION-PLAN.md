@@ -24,6 +24,10 @@
 - **Tài liệu yêu cầu chuẩn tắc:** `docs/requirements/P1-030-DELAYED-GO-LIVE-OPERATIONAL-START-ARCHITECTURE.md`
 - **Thẩm quyền Product Owner bất biến:** PO-1 (tiến trình PPCT replay TKB), PO-2 (không giá trị mặc định ngầm / fail-closed khi thiếu chính sách), PO-3 (ranh giới thống nhất cho chính khóa, tham chiếu cho P4), PO-4 (không tạo cờ trạng thái toàn cục).
 
+### Post-closure correction record
+
+Ngày 2026-09-14, audit hậu closure phát hiện defect về tính liên tục thẩm quyền: initial `OPERATIONAL_START` có thể được tạo/xuất bản với finite `effectiveUntil`, trong khi RETIRE bị cấm và REPLACE chỉ nhận open-ended source; replacement effectivity cũng chưa bị buộc phải bắt đầu không muộn hơn cả current/new operational-start boundary. Correction này được đăng ký riêng dưới `P1-031A`; tài liệu P1-031 giữ nguyên bằng chứng lịch sử và P1-032 bị chặn cho đến khi `P1-031A` được đóng bởi `SYNC-P1-031A`.
+
 ---
 
 ## 2. Điểm Nối Mã Nguồn Hiện Hữu Chuẩn xác (Exact Current Code Seams)
@@ -533,7 +537,7 @@ Tuyệt đối không dùng generic 500 cho các trường hợp từ chối ngh
   - API integration: 34/34 test suites passed (406/406 tests passed)
 - **Authoritative exact-head PR evidence:** CI #440 / run `34856758210` — SUCCESS trên `2bf98156f93db47bb986e8e803a137563eadcf18`, gồm Linux full chain, Reporting Statement fixture bootstrap, Playwright smoke và Windows deployment contract.
 - **Authoritative post-merge evidence:** CI #441 / run `34857669684` — SUCCESS trên `main@a5ee3190171bd5f617a4f32f029328547a0dd37a`, attempt 2.
-- **CI #441 attempt 1:** rớt đúng một existing Web `auth-flow` unit assertion (`changes password, refreshes auth, and enters the workspace`); merge tree không có file delta so với reviewed PR head, cùng tree đã PASS toàn bộ CI #440 và PASS toàn bộ #441 attempt 2. Bằng chứng này được phân loại là flaky/timing hiện hữu, không phải regression semantics P1-031; không mở correction/re-entry task riêng.
+- **CI #441 attempt 1:** rớt đúng một existing Web `auth-flow` unit assertion (`changes password, refreshes auth, and enters the workspace`); merge tree không có file delta so với reviewed PR head, cùng tree đã PASS toàn bộ CI #440 và PASS toàn bộ #441 attempt 2. Bằng chứng này được phân loại là flaky/timing hiện hữu, không phải regression semantics P1-031; tại thời điểm closure không mở correction/re-entry task từ sự cố CI này. Defect continuity được phát hiện độc lập sau closure và được đăng ký sau đó dưới P1-031A.
 
 ### C. Ranh giới Kỷ luật Minh thị (Explicit Discipline Boundaries)
 - **Schema / Migration:** Hoàn toàn không thay đổi schema hoặc sinh migration mới (0 schema diff, 0 migrations).
@@ -541,4 +545,4 @@ Tuyệt đối không dùng generic 500 cho các trường hợp từ chối ngh
 - **Web UI:** Không chỉnh sửa ứng dụng Web (thuộc phạm vi `P1-032`).
 - **Môi trường Sản xuất / VPS:** Không deploy, không chạy lệnh VPS; hệ thống sản xuất duy trì trạng thái strictly **PRE-OPERATIONAL**.
 - **Đánh giá Độc lập:** PASS tại final reviewed head `2bf98156f93db47bb986e8e803a137563eadcf18`.
-- **Closure:** `P1-031` được đóng hành chính bởi `SYNC-P1-031`; `P1-032` chuyển sang `READY`; không phát sinh correction/re-entry task.
+- **Closure:** `P1-031` được đóng hành chính bởi `SYNC-P1-031`; `P1-032` đã chuyển sang `READY` tại thời điểm closure. Audit hậu closure ngày 2026-09-14 sau đó đăng ký P1-031A và chặn lại P1-032 cho tới `SYNC-P1-031A`.

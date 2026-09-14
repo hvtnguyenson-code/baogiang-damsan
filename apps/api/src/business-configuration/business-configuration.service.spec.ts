@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { BusinessConfigurationService } from './business-configuration.service';
-import { BusinessPolicyFamilyDefinition } from './business-policy-registry';
+import { BusinessPolicyFamilyDefinition, OPERATIONAL_START_FAMILY_DEFINITION } from './business-policy-registry';
 import { CreateBusinessPolicyDraftDto } from './dto';
 
 describe('BusinessConfigurationService', () => {
@@ -73,6 +73,12 @@ describe('BusinessConfigurationService', () => {
   type MockFn = jest.Mock;
 
   interface MockTxClient {
+    academicYear: {
+      findUnique: MockFn;
+    };
+    academicCalendarVersion: {
+      findMany: MockFn;
+    };
     businessPolicyCommand: {
       findUnique: MockFn;
       create: MockFn;
@@ -84,6 +90,7 @@ describe('BusinessConfigurationService', () => {
     businessPolicyVersion: {
       aggregate: MockFn;
       create: MockFn;
+      count: MockFn;
       findUnique: MockFn;
       updateMany: MockFn;
     };
@@ -119,6 +126,17 @@ describe('BusinessConfigurationService', () => {
   };
 
   const mockTx: MockTxClient = {
+    academicYear: {
+      findUnique: jest.fn().mockResolvedValue({ id: '11111111-1111-4111-8111-111111111111' }),
+    },
+    academicCalendarVersion: {
+      findMany: jest.fn().mockResolvedValue([{
+        id: 'calendar-1',
+        startDate: new Date('2026-08-01T00:00:00.000Z'),
+        endDate: new Date('2027-05-31T00:00:00.000Z'),
+        versionNumber: 1,
+      }]),
+    },
     businessPolicyCommand: {
       findUnique: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue({ id: 'cmd-rec-1' }),
@@ -130,6 +148,7 @@ describe('BusinessConfigurationService', () => {
     businessPolicyVersion: {
       aggregate: jest.fn().mockResolvedValue({ _max: { versionNumber: 1 } }),
       create: jest.fn().mockResolvedValue({ id: 'version-1' }),
+      count: jest.fn().mockResolvedValue(0),
       findUnique: jest.fn().mockResolvedValue(null),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
@@ -138,6 +157,7 @@ describe('BusinessConfigurationService', () => {
   let service: BusinessConfigurationService;
 
   beforeEach(() => {
+    jest.restoreAllMocks();
     jest.clearAllMocks();
     mockPrisma.$transaction.mockImplementation(async (callback: (tx: Prisma.TransactionClient) => Promise<unknown>) =>
       callback(mockTx as unknown as Prisma.TransactionClient),
@@ -145,7 +165,7 @@ describe('BusinessConfigurationService', () => {
     service = new BusinessConfigurationService(
       mockPrisma as unknown as PrismaService,
       mockAudit,
-      [testFamily, multiVersionFamily],
+      [testFamily, multiVersionFamily, OPERATIONAL_START_FAMILY_DEFINITION],
     );
   });
 
@@ -153,6 +173,131 @@ describe('BusinessConfigurationService', () => {
     it('returns ISO YYYY-MM-DD format in Asia/Ho_Chi_Minh timezone', () => {
       const date = service.businessCivilDate();
       expect(date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    });
+  });
+
+  describe('OPERATIONAL_START authority continuity', () => {
+    it('rejects finite effectiveUntil at createDraft before persistence', async () => {
+      await expect(service.createDraft({
+        family: 'OPERATIONAL_START',
+        resource: { kind: 'ACADEMIC_YEAR', academicYearId: '11111111-1111-4111-8111-111111111111' },
+        payload: { operationalStartDate: '2026-09-01' },
+        effectiveFrom: '2026-08-15',
+        effectiveUntil: '2026-12-31',
+        commandId: 'op-finite-create-unit',
+      }, 'actor-1', mockMeta)).rejects.toThrow('OPERATIONAL_START_EFFECTIVE_UNTIL_FORBIDDEN');
+
+      expect(mockTx.businessPolicyStream.findFirst).not.toHaveBeenCalled();
+      expect(mockTx.businessPolicyVersion.create).not.toHaveBeenCalled();
+      expect(mockAudit.write).not.toHaveBeenCalled();
+    });
+
+    it('rejects a legacy finite draft at the publish defense-in-depth gate', async () => {
+      mockTx.businessPolicyVersion.findUnique.mockResolvedValueOnce({
+        id: 'legacy-finite-draft',
+        streamId: 'operational-stream',
+        status: 'DRAFT',
+        validatorVersion: 'v1',
+        payload: { operationalStartDate: '2026-09-20' },
+        effectiveFrom: new Date('2026-08-15T00:00:00.000Z'),
+        effectiveUntil: new Date('2026-12-31T00:00:00.000Z'),
+        stream: { familyKey: 'OPERATIONAL_START', resourceKind: 'ACADEMIC_YEAR', academicYearId: '11111111-1111-4111-8111-111111111111' },
+      });
+
+      await expect(service.publish(
+        'legacy-finite-draft',
+        { commandId: 'op-finite-publish-unit' },
+        'actor-1',
+        mockMeta,
+      )).rejects.toThrow('OPERATIONAL_START_EFFECTIVE_UNTIL_FORBIDDEN');
+
+      expect(mockTx.academicCalendarVersion.findMany).not.toHaveBeenCalled();
+      expect(mockTx.businessPolicyVersion.updateMany).not.toHaveBeenCalled();
+      expect(mockAudit.write).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      {
+        name: 'current operational boundary',
+        currentOperationalStartDate: '2026-09-20',
+        newOperationalStartDate: '2026-09-25',
+        replacementEffectiveFrom: '2026-09-21',
+      },
+      {
+        name: 'new operational boundary',
+        currentOperationalStartDate: '2026-09-30',
+        newOperationalStartDate: '2026-09-20',
+        replacementEffectiveFrom: '2026-09-25',
+      },
+    ])('rejects replacement effectivity after the $name', async ({
+      currentOperationalStartDate,
+      newOperationalStartDate,
+      replacementEffectiveFrom,
+    }) => {
+      jest.spyOn(service, 'businessCivilDate').mockReturnValue('2026-09-10');
+      mockTx.businessPolicyVersion.findUnique.mockResolvedValueOnce({
+        id: 'operational-source',
+        streamId: 'operational-stream',
+        status: 'PUBLISHED',
+        validatorVersion: 'v1',
+        payload: { operationalStartDate: currentOperationalStartDate },
+        effectiveFrom: new Date('2026-08-15T00:00:00.000Z'),
+        effectiveUntil: null,
+        stream: { familyKey: 'OPERATIONAL_START', resourceKind: 'ACADEMIC_YEAR', academicYearId: '11111111-1111-4111-8111-111111111111' },
+      });
+
+      await expect(service.replace(
+        'operational-source',
+        {
+          commandId: `op-replace-${replacementEffectiveFrom}`,
+          effectiveFrom: replacementEffectiveFrom,
+          payload: { operationalStartDate: newOperationalStartDate },
+        },
+        'actor-1',
+        mockMeta,
+      )).rejects.toThrow('OPERATIONAL_START_REPLACEMENT_EFFECTIVITY_AFTER_BOUNDARY_FORBIDDEN');
+
+      expect(mockTx.businessPolicyVersion.updateMany).not.toHaveBeenCalled();
+      expect(mockAudit.write).not.toHaveBeenCalled();
+    });
+
+    it('accepts a boundary-valid replacement and keeps the replacement open-ended', async () => {
+      jest.spyOn(service, 'businessCivilDate').mockReturnValue('2026-09-10');
+      mockTx.businessPolicyVersion.findUnique.mockResolvedValueOnce({
+        id: 'operational-source',
+        streamId: 'operational-stream',
+        status: 'PUBLISHED',
+        validatorVersion: 'v1',
+        payload: { operationalStartDate: '2026-09-20' },
+        effectiveFrom: new Date('2026-08-15T00:00:00.000Z'),
+        effectiveUntil: null,
+        stream: { familyKey: 'OPERATIONAL_START', resourceKind: 'ACADEMIC_YEAR', academicYearId: '11111111-1111-4111-8111-111111111111' },
+      });
+      mockTx.businessPolicyVersion.create.mockResolvedValueOnce({ id: 'operational-replacement' });
+
+      const result = await service.replace(
+        'operational-source',
+        {
+          commandId: 'op-valid-boundary-replacement',
+          effectiveFrom: '2026-09-15',
+          payload: { operationalStartDate: '2026-09-25' },
+        },
+        'actor-1',
+        mockMeta,
+      );
+
+      expect(result).toEqual({ outcome: 'REPLACED', versionId: 'operational-replacement' });
+      expect(mockTx.businessPolicyVersion.updateMany).toHaveBeenCalledWith({
+        where: { id: 'operational-source', status: 'PUBLISHED', effectiveUntil: null },
+        data: { effectiveUntil: new Date('2026-09-14T00:00:00.000Z') },
+      });
+      expect(mockTx.businessPolicyVersion.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({
+          effectiveFrom: new Date('2026-09-15T00:00:00.000Z'),
+          effectiveUntil: null,
+          replacesVersionId: 'operational-source',
+        }),
+      }));
     });
   });
 

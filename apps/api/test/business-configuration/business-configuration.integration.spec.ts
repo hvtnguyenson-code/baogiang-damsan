@@ -953,6 +953,51 @@ integration('Business Configuration API (isolated PostgreSQL integration)', () =
       expect(res.body.message).toBe('INVALID_OPERATIONAL_START_POLICY_PAYLOAD');
     });
 
+    it('rejects OPERATIONAL_START draft creation with finite effectiveUntil', async () => {
+      const res = await manager.agent
+        .post('/api/business-configuration/policies/drafts')
+        .set('Origin', testOrigin)
+        .send(opBody('op-finite-draft', '2026-09-01', '2026-08-01', { effectiveUntil: '2026-12-31' }));
+
+      expect(res.status).toBe(400);
+      expect(res.body.message).toBe('OPERATIONAL_START_EFFECTIVE_UNTIL_FORBIDDEN');
+      expect(await h.prisma.businessPolicyStream.count({
+        where: { familyKey: 'OPERATIONAL_START', academicYearId: academicYear.id },
+      })).toBe(0);
+    });
+
+    it('rejects publication of a legacy finite OPERATIONAL_START draft', async () => {
+      const stream = await h.prisma.businessPolicyStream.create({
+        data: {
+          familyKey: 'OPERATIONAL_START',
+          resourceKind: 'ACADEMIC_YEAR',
+          academicYearId: academicYear.id,
+        },
+      });
+      const legacyDraft = await h.prisma.businessPolicyVersion.create({
+        data: {
+          streamId: stream.id,
+          versionNumber: 1,
+          payload: { operationalStartDate: '2026-09-01' },
+          validatorVersion: 'v1',
+          effectiveFrom: new Date('2026-08-01T00:00:00.000Z'),
+          effectiveUntil: new Date('2026-12-31T00:00:00.000Z'),
+          createdByUserId: manager.id,
+        },
+      });
+
+      const pub = await manager.agent
+        .post(`/api/business-configuration/policy-versions/${legacyDraft.id}/publish`)
+        .set('Origin', testOrigin)
+        .send({ commandId: 'op-finite-legacy-publish' });
+
+      expect(pub.status).toBe(400);
+      expect(pub.body.message).toBe('OPERATIONAL_START_EFFECTIVE_UNTIL_FORBIDDEN');
+      const unchanged = await h.prisma.businessPolicyVersion.findUnique({ where: { id: legacyDraft.id } });
+      expect(unchanged?.status).toBe('DRAFT');
+      expect(unchanged?.effectiveUntil?.toISOString().slice(0, 10)).toBe('2026-12-31');
+    });
+
     it('rejects publication when there is no active calendar', async () => {
       const draft = await manager.agent
         .post('/api/business-configuration/policies/drafts')
@@ -1581,6 +1626,54 @@ integration('Business Configuration API (isolated PostgreSQL integration)', () =
           expect(resRep.policyVersionId).toBe(replacementId);
           expect(resRep.payload).toEqual({ operationalStartDate: '2026-09-25' });
         }
+      });
+
+      it('rejects replacement effectivity after the current operational boundary', async () => {
+        const draft = await manager.agent
+          .post('/api/business-configuration/policies/drafts')
+          .set('Origin', testOrigin)
+          .send(opBody('op-rep-after-current', '2026-09-20', '2026-08-15'));
+        await manager.agent
+          .post(`/api/business-configuration/policy-versions/${draft.body.versionId}/publish`)
+          .set('Origin', testOrigin)
+          .send({ commandId: 'op-rep-after-current-pub' });
+
+        dateSpy.mockReturnValue('2026-09-10');
+        const rep = await manager.agent
+          .post(`/api/business-configuration/policy-versions/${draft.body.versionId}/replace`)
+          .set('Origin', testOrigin)
+          .send({
+            commandId: 'op-rep-after-current-cmd',
+            effectiveFrom: '2026-09-21',
+            payload: { operationalStartDate: '2026-09-25' },
+          });
+
+        expect(rep.status).toBe(400);
+        expect(rep.body.message).toBe('OPERATIONAL_START_REPLACEMENT_EFFECTIVITY_AFTER_BOUNDARY_FORBIDDEN');
+      });
+
+      it('rejects replacement effectivity after the new operational boundary', async () => {
+        const draft = await manager.agent
+          .post('/api/business-configuration/policies/drafts')
+          .set('Origin', testOrigin)
+          .send(opBody('op-rep-after-new', '2026-09-30', '2026-08-15'));
+        await manager.agent
+          .post(`/api/business-configuration/policy-versions/${draft.body.versionId}/publish`)
+          .set('Origin', testOrigin)
+          .send({ commandId: 'op-rep-after-new-pub' });
+
+        dateSpy.mockReturnValue('2026-09-10');
+        const rep = await manager.agent
+          .post(`/api/business-configuration/policy-versions/${draft.body.versionId}/replace`)
+          .set('Origin', testOrigin)
+          .send({
+            commandId: 'op-rep-after-new-cmd',
+            effectiveFrom: '2026-09-25',
+            payload: { operationalStartDate: '2026-09-20' },
+          });
+
+        expect(rep.status).toBe(400);
+        expect(rep.body.message).toBe('OPERATIONAL_START_REPLACEMENT_EFFECTIVITY_AFTER_BOUNDARY_FORBIDDEN');
       });
 
       it('rejects replace when businessDate == current operationalStartDate', async () => {

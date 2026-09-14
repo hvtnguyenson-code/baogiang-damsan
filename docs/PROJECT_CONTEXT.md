@@ -105,7 +105,7 @@ Project hiện đang realign vì một số minimum-core/deferred quyết địn
 - PWA/Telegram pilot integration;
 - first-cert HTTP-01/TLS authority and actual VPS evidence.
 
-Không suy ra rằng một area đã hoàn chỉnh chỉ vì minimum-core implementation hiện có PASS CI. Với Đam San native timetable, ADR-047 architecture, P2-040 native adapter runtime, và P2-050 selective session authoring + explicit carry-forward đã hoàn tất và đóng bằng `SYNC-P2-050`; với thành phần chương trình PPCT, P0-900 đã đóng bằng `SYNC-P0-900`, P2-001/ADR-048 đã đóng bằng `SYNC-P2-001`, persistence/control-plane P2-002 đã đóng bằng `SYNC-P2-002`, weekly allocator/projection runtime P2-003 đã đóng bằng `SYNC-P2-003`, và downstream UI P2-004 đã `CLOSED` bởi `SYNC-P2-004`; với chính sách bắt đầu vận hành, kiến trúc P1-030 đã `CLOSED` bởi `SYNC-P1-030` và backend/runtime P1-031 đã `CLOSED` bởi `SYNC-P1-031` (ADR-049 Accepted: `OPERATIONAL_START` / `v1` / `ACADEMIC_YEAR`), mở khóa `P1-032` (`READY`) cho admin UI; môi trường production vẫn strictly `PRE-OPERATIONAL` và chưa có policy value production nào được cấu hình/deploy.
+Không suy ra rằng một area đã hoàn chỉnh chỉ vì minimum-core implementation hiện có PASS CI. Với Đam San native timetable, ADR-047 architecture, P2-040 native adapter runtime, và P2-050 selective session authoring + explicit carry-forward đã hoàn tất và đóng bằng `SYNC-P2-050`; với thành phần chương trình PPCT, P0-900 đã đóng bằng `SYNC-P0-900`, P2-001/ADR-048 đã đóng bằng `SYNC-P2-001`, persistence/control-plane P2-002 đã đóng bằng `SYNC-P2-002`, weekly allocator/projection runtime P2-003 đã đóng bằng `SYNC-P2-003`, và downstream UI P2-004 đã `CLOSED` bởi `SYNC-P2-004`; với chính sách bắt đầu vận hành, kiến trúc P1-030 đã `CLOSED` bởi `SYNC-P1-030` và backend/runtime P1-031 đã `CLOSED` bởi `SYNC-P1-031` (ADR-049 Accepted: `OPERATIONAL_START` / `v1` / `ACADEMIC_YEAR`), nhưng correction tính liên tục thẩm quyền `P1-031A` đang `IN_REVIEW`, vì vậy `P1-032` là `PLANNED` và bị chặn cho đến `SYNC-P1-031A`; môi trường production vẫn strictly `PRE-OPERATIONAL` và chưa có policy value production nào được cấu hình/deploy.
 
 ## Layering rule
 
@@ -158,7 +158,7 @@ Quy tắc đầy đủ: `docs/governance/MAJOR-TASK-DOCUMENTATION-SYNC-PROTOCOL.
 
 ## UI/UX
 
-Trước UI task phải đọc `.codex/skills/damsan-ui/SKILL.md` và `DESIGN.md` đầy đủ. UI không được invent business semantics hay authorization. Backend/current product authority phải đóng trước khi UI chốt workflow tương ứng. `P1-032` hiện đủ dependency để bắt đầu trên branch riêng, nhưng vẫn phải tuân thủ đầy đủ UI skill/design authority và không được suy diễn semantics ngoài ADR-049/P1-031.
+Trước UI task phải đọc `.codex/skills/damsan-ui/SKILL.md` và `DESIGN.md` đầy đủ. UI không được invent business semantics hay authorization. Backend/current product authority phải đóng trước khi UI chốt workflow tương ứng. `P1-032` chưa đủ dependency vì `P1-031A` chưa CLOSED; khi được mở lại, task vẫn phải tuân thủ đầy đủ UI skill/design authority và không được suy diễn semantics ngoài ADR-049/P1-031/P1-031A.
 
 ## AI
 
