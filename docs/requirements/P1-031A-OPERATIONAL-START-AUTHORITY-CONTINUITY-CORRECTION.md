@@ -3,12 +3,13 @@
 ## Task authority
 
 - **Task:** `P1-031A` — Operational-start authority continuity correction
-- **Status:** `IN_REVIEW`
+- **Status:** `BLOCKED_DECISION`
 - **Dependency:** `P1-031` — `CLOSED`
 - **Traceability:** `T28`, `T30`
 - **Dedicated branch:** `fix/operational-start-authority-continuity-031a`
 - **Canonical starting main:** `f1b160be25045d0f4c661e154ece24c92a3e0fc9`
 - **Controlling authority:** ADR-046, ADR-049 and the closed P1-030/P1-031 requirements
+- **Architecture re-entry gate:** `P1-031B` — `BLOCKED_DECISION`
 
 ## Defect and root cause
 
@@ -40,7 +41,16 @@ The replacement command also enforced `replacementEffectiveFrom > businessCivilD
 | TeachingExecution | Resolves command-time authority once and rejects ordinary pre-operational confirmation | No change |
 | Reporting | Resolves one live/frozen authority and pins policy provenance in SNAPSHOT_V2 | No change |
 
-No additional lifecycle defect with the same root cause was found.
+Independent review found one additional lifecycle edge that the accepted retained model cannot currently represent:
+
+- `businessDate < source.effectiveFrom == currentOperationalStartDate`;
+- ADR-049 permits that initial publication and requires a legitimate prospective adjustment before the current operational boundary;
+- generic `REPLACE` requires `replacementEffectiveFrom > source.effectiveFrom` so that the inclusive source interval can close on the preceding civil date;
+- P1-031A correctly also requires `replacementEffectiveFrom <= currentOperationalStartDate`.
+
+Those requirements are mutually unsatisfiable when `source.effectiveFrom == currentOperationalStartDate`. Allowing an equal replacement date would require the retained source either to have an invalid empty interval, overlap the replacement, be deleted, or become non-authoritative through a status/lifecycle meaning not currently accepted for ordinary replacement. Marking the source `REVERSED` would reuse the persistence state whose accepted meaning is correction of an erroneous assertion; ADR-046 does not authorize it for a legitimate planned future change.
+
+This is therefore an architecture representation gap, not a bounded P1-031A command-layer bug. No speculative runtime, schema or migration change is authorized on this branch. `P1-031B` is registered as the required architecture/decision re-entry.
 
 ## Enforced invariants
 
@@ -52,6 +62,8 @@ No additional lifecycle defect with the same root cause was found.
 6. The new operational-start date remains strictly after the server-owned business civil date and within the unique active AcademicCalendarVersion.
 7. CORRECTION preserves OPERATIONAL_START effectivity and changes only retained historical payload truth through correction lineage.
 8. Missing, ambiguous and corrupt policy authority remains fail closed.
+
+Invariant 3 can be implemented by the current retained lifecycle only when `replacementEffectiveFrom > source.effectiveFrom`. The equality edge above remains blocked pending P1-031B; P1-031A must not claim complete lifecycle closure before that decision is accepted and implemented.
 
 ## Regression evidence
 
@@ -78,11 +90,14 @@ Local evidence:
 - `npm run test:workflow:contract`: PASS;
 - Business Configuration integration suite contains the new database regressions, but local execution is safety-blocked when no explicitly certified isolated `TEST_DATABASE_URL` is supplied; no unapproved database was used.
 
+The independent-review equality case is not added as a misleading success regression because no accepted lifecycle rule can currently represent it. Existing tests and implementation remain intact as evidence for the already-bounded finite-interval and later-effectivity corrections; they do not prove closure of the newly identified architecture gap.
+
 ## Documentation and dependency effect
 
-- `P1-031A` is registered as the active correction.
-- `P1-032` is `PLANNED` and depends on `P1-031A`; it remains non-startable until the correction implementation is merged, authoritative post-merge CI succeeds, and `SYNC-P1-031A` closes the task.
-- ADR-049 semantics are unchanged; this correction makes implementation conform to its existing no-gap authority.
+- `P1-031A` is `BLOCKED_DECISION`; it cannot return to implementation/review until `P1-031B` closes the scheduled-authority representation gap.
+- `P1-031B` is the registered architecture re-entry and requires an explicit Product Owner choice of the retained lifecycle representation for a legitimate pre-boundary change when the published source has not yet become effective and `source.effectiveFrom == currentOperationalStartDate`.
+- `P1-032` is `PLANNED` and depends on `P1-031A`; it remains non-startable until P1-031B closes, the resulting P1-031A correction is merged, authoritative post-merge CI succeeds, and `SYNC-P1-031A` closes the task.
+- ADR-049 semantics are unchanged. This branch does not weaken the permitted `effectiveFrom <= operationalStartDate` rule or silently broaden CORRECTION.
 - PRE-PILOT-PRODUCT-BASELINE is unchanged because no new Product Owner authority was introduced.
 
 ## Explicit non-scope and production verdict

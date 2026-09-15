@@ -26,7 +26,7 @@
 
 ### Post-closure correction record
 
-Ngày 2026-09-14, audit hậu closure phát hiện defect về tính liên tục thẩm quyền: initial `OPERATIONAL_START` có thể được tạo/xuất bản với finite `effectiveUntil`, trong khi RETIRE bị cấm và REPLACE chỉ nhận open-ended source; replacement effectivity cũng chưa bị buộc phải bắt đầu không muộn hơn cả current/new operational-start boundary. Correction này được đăng ký riêng dưới `P1-031A`; tài liệu P1-031 giữ nguyên bằng chứng lịch sử và P1-032 bị chặn cho đến khi `P1-031A` được đóng bởi `SYNC-P1-031A`.
+Ngày 2026-09-14, audit hậu closure phát hiện defect về tính liên tục thẩm quyền: initial `OPERATIONAL_START` có thể được tạo/xuất bản với finite `effectiveUntil`, trong khi RETIRE bị cấm và REPLACE chỉ nhận open-ended source; replacement effectivity cũng chưa bị buộc phải bắt đầu không muộn hơn cả current/new operational-start boundary. Correction này được đăng ký riêng dưới `P1-031A`. Independent review ngày 2026-09-15 tiếp tục chứng minh retained lifecycle chưa biểu diễn được prospective adjustment khi `source.effectiveFrom == currentOperationalStartDate`; architecture re-entry `P1-031B` được đăng ký `BLOCKED_DECISION`, P1-031A chuyển thành `BLOCKED_DECISION`, và P1-032 tiếp tục bị chặn cho đến khi P1-031B đóng rồi P1-031A được đóng bởi `SYNC-P1-031A`. Tài liệu P1-031 giữ nguyên bằng chứng lịch sử.
 
 ---
 
