@@ -2317,7 +2317,14 @@ integration('Business Configuration API (isolated PostgreSQL integration)', () =
               supersededBeforeEffectiveAt: new Date(),
             },
           });
+          await tx.$executeRawUnsafe('SET CONSTRAINTS ALL IMMEDIATE');
         })).rejects.toThrow(/terminal scheduled authority must have exactly one successor/u);
+
+        const postOrphan = await h.prisma.businessPolicyVersion.findUniqueOrThrow({
+          where: { id: finiteDraft.id },
+        });
+        expect(postOrphan.status).toBe('PUBLISHED');
+        expect(postOrphan.supersededBeforeEffectiveByUserId).toBeNull();
 
         const forbiddenEvidence = [
           { supersededBeforeEffectiveByUserId: manager.id },
@@ -2366,10 +2373,44 @@ integration('Business Configuration API (isolated PostgreSQL integration)', () =
           });
         });
 
+        const validGrandchild = await h.prisma.$transaction(async (tx) => {
+          await tx.businessPolicyVersion.update({
+            where: { id: validChild.id },
+            data: {
+              status: 'SUPERSEDED_BEFORE_EFFECTIVE',
+              supersededBeforeEffectiveByUserId: manager.id,
+              supersededBeforeEffectiveAt: new Date(),
+            },
+          });
+          return tx.businessPolicyVersion.create({
+            data: {
+              streamId: stream.id,
+              versionNumber: 3,
+              status: 'PUBLISHED',
+              payload: { operationalStartDate: '2026-09-28' },
+              validatorVersion: 'v1',
+              effectiveFrom: new Date('2026-09-20T00:00:00.000Z'),
+              effectiveUntil: null,
+              createdByUserId: manager.id,
+              publishedByUserId: manager.id,
+              publishedAt: new Date(),
+              supersedesScheduledVersionId: validChild.id,
+            },
+          });
+        });
+        expect(validGrandchild.supersedesScheduledVersionId).toBe(validChild.id);
+        const intermediateRow = await h.prisma.businessPolicyVersion.findUniqueOrThrow({
+          where: { id: validChild.id },
+        });
+        expect(intermediateRow.status).toBe('SUPERSEDED_BEFORE_EFFECTIVE');
+        expect(intermediateRow.supersedesScheduledVersionId).toBe(finiteDraft.id);
+        expect(await h.prisma.businessPolicyVersion.count({ where: { supersedesScheduledVersionId: finiteDraft.id } })).toBe(1);
+        expect(await h.prisma.businessPolicyVersion.count({ where: { supersedesScheduledVersionId: validChild.id } })).toBe(1);
+
         await expect(h.prisma.businessPolicyVersion.create({
           data: {
             streamId: stream.id,
-            versionNumber: 3,
+            versionNumber: 4,
             status: 'PUBLISHED',
             payload: { operationalStartDate: '2026-09-26' },
             validatorVersion: 'v1',
@@ -2409,8 +2450,8 @@ integration('Business Configuration API (isolated PostgreSQL integration)', () =
           data: { payload: { operationalStartDate: '2026-09-30' } },
         })).rejects.toThrow(/superseded-before-effective business policy versions are immutable/u);
         await expect(h.prisma.businessPolicyVersion.update({
-          where: { id: validChild.id },
-          data: { supersedesScheduledVersionId: validChild.id },
+          where: { id: validGrandchild.id },
+          data: { supersedesScheduledVersionId: validGrandchild.id },
         })).rejects.toThrow();
       });
     });
