@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { BusinessConfigurationService } from './business-configuration.service';
-import { BusinessPolicyFamilyDefinition } from './business-policy-registry';
+import { BusinessPolicyFamilyDefinition, OPERATIONAL_START_FAMILY_DEFINITION } from './business-policy-registry';
 import { CreateBusinessPolicyDraftDto } from './dto';
 
 describe('BusinessConfigurationService', () => {
@@ -73,6 +73,7 @@ describe('BusinessConfigurationService', () => {
   type MockFn = jest.Mock;
 
   interface MockTxClient {
+    academicCalendarVersion: { findMany: MockFn };
     businessPolicyCommand: {
       findUnique: MockFn;
       create: MockFn;
@@ -83,6 +84,7 @@ describe('BusinessConfigurationService', () => {
     };
     businessPolicyVersion: {
       aggregate: MockFn;
+      count: MockFn;
       create: MockFn;
       findUnique: MockFn;
       updateMany: MockFn;
@@ -91,13 +93,13 @@ describe('BusinessConfigurationService', () => {
 
   interface MockPrismaClient {
     $transaction: MockFn;
-    businessPolicyStream: { findFirst: MockFn };
+    businessPolicyStream: { findFirst: MockFn; findUnique: MockFn };
     businessPolicyVersion: { findMany: MockFn; findUnique: MockFn };
   }
 
   const mockPrisma: MockPrismaClient = {
     $transaction: jest.fn(),
-    businessPolicyStream: { findFirst: jest.fn() },
+    businessPolicyStream: { findFirst: jest.fn(), findUnique: jest.fn() },
     businessPolicyVersion: { findMany: jest.fn(), findUnique: jest.fn() },
   };
 
@@ -119,6 +121,14 @@ describe('BusinessConfigurationService', () => {
   };
 
   const mockTx: MockTxClient = {
+    academicCalendarVersion: {
+      findMany: jest.fn().mockResolvedValue([{
+        id: 'calendar-1',
+        startDate: new Date('2026-08-01T00:00:00.000Z'),
+        endDate: new Date('2027-05-31T00:00:00.000Z'),
+        versionNumber: 1,
+      }]),
+    },
     businessPolicyCommand: {
       findUnique: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue({ id: 'cmd-rec-1' }),
@@ -129,6 +139,7 @@ describe('BusinessConfigurationService', () => {
     },
     businessPolicyVersion: {
       aggregate: jest.fn().mockResolvedValue({ _max: { versionNumber: 1 } }),
+      count: jest.fn().mockResolvedValue(0),
       create: jest.fn().mockResolvedValue({ id: 'version-1' }),
       findUnique: jest.fn().mockResolvedValue(null),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -145,7 +156,7 @@ describe('BusinessConfigurationService', () => {
     service = new BusinessConfigurationService(
       mockPrisma as unknown as PrismaService,
       mockAudit,
-      [testFamily, multiVersionFamily],
+      [testFamily, multiVersionFamily, OPERATIONAL_START_FAMILY_DEFINITION],
     );
   });
 
@@ -153,6 +164,274 @@ describe('BusinessConfigurationService', () => {
     it('returns ISO YYYY-MM-DD format in Asia/Ho_Chi_Minh timezone', () => {
       const date = service.businessCivilDate();
       expect(date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    });
+  });
+
+  describe('OPERATIONAL_START scheduled authority supersession', () => {
+    const source = {
+      id: 'scheduled-source',
+      streamId: 'operational-stream',
+      status: 'PUBLISHED',
+      validatorVersion: 'v1',
+      payload: { operationalStartDate: '2026-09-20' },
+      effectiveFrom: new Date('2026-09-20T00:00:00.000Z'),
+      effectiveUntil: null,
+      stream: {
+        familyKey: 'OPERATIONAL_START',
+        resourceKind: 'ACADEMIC_YEAR',
+        academicYearId: '11111111-1111-4111-8111-111111111111',
+      },
+    };
+
+    it('rejects a finite initial authority at draft creation', async () => {
+      await expect(service.createDraft(
+        {
+          family: 'OPERATIONAL_START',
+          resource: { kind: 'ACADEMIC_YEAR', academicYearId: '11111111-1111-4111-8111-111111111111' },
+          payload: { operationalStartDate: '2026-09-20' },
+          effectiveFrom: '2026-09-01',
+          effectiveUntil: '2026-12-31',
+          commandId: 'finite-initial',
+        },
+        'actor-1',
+        mockMeta,
+      )).rejects.toThrow('OPERATIONAL_START_EFFECTIVE_UNTIL_FORBIDDEN');
+      expect(mockTx.businessPolicyStream.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('rejects ordinary replacement whose effectivity crosses the current boundary', async () => {
+      jest.spyOn(service, 'businessCivilDate').mockReturnValue('2026-09-10');
+      mockTx.businessPolicyVersion.findUnique.mockResolvedValueOnce({
+        ...source,
+        effectiveFrom: new Date('2026-09-01T00:00:00.000Z'),
+      });
+
+      await expect(service.replace(
+        source.id,
+        {
+          commandId: 'replace-crosses-boundary',
+          effectiveFrom: '2026-09-21',
+          payload: { operationalStartDate: '2026-09-25' },
+        },
+        'actor-1',
+        mockMeta,
+      )).rejects.toThrow('OPERATIONAL_START_REPLACEMENT_EFFECTIVITY_AFTER_BOUNDARY_FORBIDDEN');
+    });
+
+    it('atomically terminalizes the source, creates the same-start successor, and audits the command', async () => {
+      jest.spyOn(service, 'businessCivilDate').mockReturnValue('2026-09-10');
+      mockTx.businessPolicyVersion.findUnique.mockResolvedValueOnce(source);
+      mockTx.businessPolicyVersion.count
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(0);
+      mockTx.businessPolicyVersion.aggregate.mockResolvedValueOnce({ _max: { versionNumber: 1 } });
+      mockTx.businessPolicyVersion.create.mockResolvedValueOnce({ id: 'scheduled-successor' });
+
+      const result = await service.supersedeScheduledAuthority(
+        source.id,
+        {
+          commandId: 'scheduled-command-1',
+          payload: { operationalStartDate: '2026-09-25' },
+          reason: '  Điều chỉnh kế hoạch  ',
+        },
+        'actor-1',
+        mockMeta,
+      );
+
+      expect(result).toEqual({ outcome: 'SCHEDULED_AUTHORITY_SUPERSEDED', versionId: 'scheduled-successor' });
+      expect(mockTx.businessPolicyVersion.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: { id: source.id, status: 'PUBLISHED', effectiveUntil: null },
+        data: expect.objectContaining({
+          status: 'SUPERSEDED_BEFORE_EFFECTIVE',
+          supersededBeforeEffectiveByUserId: 'actor-1',
+          supersededBeforeEffectiveReason: 'Điều chỉnh kế hoạch',
+        }),
+      }));
+      expect(mockTx.businessPolicyVersion.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({
+          status: 'PUBLISHED',
+          effectiveFrom: source.effectiveFrom,
+          effectiveUntil: null,
+          supersedesScheduledVersionId: source.id,
+        }),
+      }));
+      expect(mockAudit.write).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'BUSINESS_POLICY_SCHEDULED_AUTHORITY_SUPERSEDED',
+          entityId: source.id,
+          metadata: expect.objectContaining({
+            sourceVersionId: source.id,
+            successorVersionId: 'scheduled-successor',
+            businessCivilDate: '2026-09-10',
+            reason: 'Điều chỉnh kế hoạch',
+          }),
+        }),
+        expect.anything(),
+      );
+    });
+
+    it('accepts an earlier successor operational date when it remains future and no earlier than effectivity', async () => {
+      jest.spyOn(service, 'businessCivilDate').mockReturnValue('2026-09-10');
+      mockTx.businessPolicyVersion.findUnique.mockResolvedValueOnce({
+        ...source,
+        payload: { operationalStartDate: '2026-09-30' },
+      });
+      mockTx.businessPolicyVersion.count
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(0);
+      mockTx.businessPolicyVersion.aggregate.mockResolvedValueOnce({ _max: { versionNumber: 1 } });
+      mockTx.businessPolicyVersion.create.mockResolvedValueOnce({ id: 'scheduled-successor-earlier' });
+
+      await expect(service.supersedeScheduledAuthority(
+        source.id,
+        { commandId: 'scheduled-earlier-date', payload: { operationalStartDate: '2026-09-25' } },
+        'actor-1',
+        mockMeta,
+      )).resolves.toEqual({
+        outcome: 'SCHEDULED_AUTHORITY_SUPERSEDED',
+        versionId: 'scheduled-successor-earlier',
+      });
+    });
+
+    it('rejects equality with the scheduled effective date without mutation', async () => {
+      jest.spyOn(service, 'businessCivilDate').mockReturnValue('2026-09-20');
+      mockTx.businessPolicyVersion.findUnique.mockResolvedValueOnce(source);
+
+      await expect(service.supersedeScheduledAuthority(
+        source.id,
+        { commandId: 'scheduled-equality', payload: { operationalStartDate: '2026-09-25' } },
+        'actor-1',
+        mockMeta,
+      )).rejects.toThrow('OPERATIONAL_START_SCHEDULED_SUPERSESSION_TOO_LATE');
+
+      expect(mockTx.businessPolicyVersion.updateMany).not.toHaveBeenCalled();
+      expect(mockAudit.write).not.toHaveBeenCalled();
+    });
+
+    it('rejects an already elapsed source without mutation or audit', async () => {
+      jest.spyOn(service, 'businessCivilDate').mockReturnValue('2026-09-21');
+      mockTx.businessPolicyVersion.findUnique.mockResolvedValueOnce(source);
+
+      await expect(service.supersedeScheduledAuthority(
+        source.id,
+        { commandId: 'scheduled-elapsed', payload: { operationalStartDate: '2026-09-25' } },
+        'actor-1',
+        mockMeta,
+      )).rejects.toThrow('OPERATIONAL_START_SCHEDULED_SUPERSESSION_TOO_LATE');
+
+      expect(mockTx.businessPolicyVersion.updateMany).not.toHaveBeenCalled();
+      expect(mockAudit.write).not.toHaveBeenCalled();
+    });
+
+    it('rejects a successor operational date before the retained effective start', async () => {
+      jest.spyOn(service, 'businessCivilDate').mockReturnValue('2026-09-10');
+      mockTx.businessPolicyVersion.findUnique.mockResolvedValueOnce(source);
+
+      await expect(service.supersedeScheduledAuthority(
+        source.id,
+        { commandId: 'scheduled-invalid-date', payload: { operationalStartDate: '2026-09-15' } },
+        'actor-1',
+        mockMeta,
+      )).rejects.toThrow('OPERATIONAL_START_SCHEDULED_SUCCESSOR_DATE_INVALID');
+    });
+
+    it('rejects a successor date outside the active academic calendar', async () => {
+      jest.spyOn(service, 'businessCivilDate').mockReturnValue('2026-09-10');
+      mockTx.businessPolicyVersion.findUnique.mockResolvedValueOnce(source);
+
+      await expect(service.supersedeScheduledAuthority(
+        source.id,
+        { commandId: 'scheduled-outside-calendar', payload: { operationalStartDate: '2027-06-01' } },
+        'actor-1',
+        mockMeta,
+      )).rejects.toThrow('OPERATIONAL_START_DATE_OUTSIDE_CALENDAR');
+    });
+
+    it('fails closed unless exactly one active academic calendar exists', async () => {
+      jest.spyOn(service, 'businessCivilDate').mockReturnValue('2026-09-10');
+      mockTx.businessPolicyVersion.findUnique.mockResolvedValueOnce(source);
+      mockTx.academicCalendarVersion.findMany.mockResolvedValueOnce([]);
+
+      await expect(service.supersedeScheduledAuthority(
+        source.id,
+        { commandId: 'scheduled-no-calendar', payload: { operationalStartDate: '2026-09-25' } },
+        'actor-1',
+        mockMeta,
+      )).rejects.toThrow('ACADEMIC_CALENDAR_VERSION_INVALID');
+    });
+
+    it('serializes server-owned allowed actions before the boundary and none for terminal history', async () => {
+      const dateSpy = jest.spyOn(service, 'businessCivilDate').mockReturnValue('2026-09-10');
+      const baseVersion = {
+        id: 'version-read-1',
+        streamId: 'stream-read-1',
+        versionNumber: 1,
+        status: 'PUBLISHED',
+        payload: { operationalStartDate: '2026-09-25' },
+        validatorVersion: 'v1',
+        effectiveFrom: new Date('2026-09-20T00:00:00.000Z'),
+        effectiveUntil: null,
+        draftRevision: 1,
+        createdByUserId: 'actor-1',
+        publishedByUserId: 'actor-1',
+        publishedAt: new Date('2026-09-01T00:00:00.000Z'),
+        replacesVersionId: null,
+        correctsVersionId: null,
+        reversedByUserId: null,
+        reversedAt: null,
+        correctionReason: null,
+        supersedesScheduledVersionId: null,
+        supersededBeforeEffectiveByUserId: null,
+        supersededBeforeEffectiveAt: null,
+        supersededBeforeEffectiveReason: null,
+        createdAt: new Date('2026-09-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-09-01T00:00:00.000Z'),
+      };
+      mockPrisma.businessPolicyStream.findUnique.mockResolvedValueOnce({
+        id: 'stream-read-1',
+        familyKey: 'OPERATIONAL_START',
+        resourceKind: 'ACADEMIC_YEAR',
+        academicYearId: '11111111-1111-4111-8111-111111111111',
+        createdAt: new Date('2026-09-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-09-01T00:00:00.000Z'),
+        versions: [
+          baseVersion,
+          {
+            ...baseVersion,
+            id: 'version-read-terminal',
+            versionNumber: 2,
+            status: 'SUPERSEDED_BEFORE_EFFECTIVE',
+            supersededBeforeEffectiveByUserId: 'actor-1',
+            supersededBeforeEffectiveAt: new Date('2026-09-10T00:00:00.000Z'),
+            supersededBeforeEffectiveReason: 'Kế hoạch đổi',
+          },
+        ],
+      });
+
+      const detail = await service.get('stream-read-1');
+      expect(detail.versions[0]).toEqual(expect.objectContaining({
+        allowedActions: ['SUPERSEDE_SCHEDULED_AUTHORITY'],
+        actionEvaluationCivilDate: '2026-09-10',
+        supersedesScheduledVersionId: null,
+      }));
+      expect(detail.versions[1]).toEqual(expect.objectContaining({
+        allowedActions: [],
+        supersededBeforeEffectiveReason: 'Kế hoạch đổi',
+      }));
+
+      dateSpy.mockReturnValue('2026-09-20');
+      mockPrisma.businessPolicyStream.findUnique.mockResolvedValueOnce({
+        id: 'stream-read-1',
+        familyKey: 'OPERATIONAL_START',
+        resourceKind: 'ACADEMIC_YEAR',
+        academicYearId: '11111111-1111-4111-8111-111111111111',
+        createdAt: new Date('2026-09-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-09-01T00:00:00.000Z'),
+        versions: [baseVersion],
+      });
+      const equalityDetail = await service.get('stream-read-1');
+      expect(equalityDetail.versions[0].allowedActions).not.toContain('SUPERSEDE_SCHEDULED_AUTHORITY');
+      expect(equalityDetail.versions[0].actionEvaluationCivilDate).toBe('2026-09-20');
     });
   });
 

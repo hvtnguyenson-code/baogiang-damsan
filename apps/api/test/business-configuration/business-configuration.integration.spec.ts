@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { UserStatus } from '@prisma/client';
+import request from 'supertest';
 import { AuditService } from '../../src/audit/audit.service';
 import { BusinessConfigurationService } from '../../src/business-configuration/business-configuration.service';
 import {
@@ -1926,6 +1927,491 @@ integration('Business Configuration API (isolated PostgreSQL integration)', () =
           });
         expect(corUntil.status).toBe(400);
         expect(corUntil.body.message).toBe('OPERATIONAL_START_CORRECTION_EFFECTIVITY_CHANGE_FORBIDDEN');
+      });
+    });
+
+    describe('scheduled authority supersession lifecycle (P1-031A/P1-031B)', () => {
+      let service: BusinessConfigurationService;
+      let dateSpy: jest.SpyInstance;
+
+      beforeEach(async () => {
+        await h.prisma.academicCalendarVersion.create({
+          data: {
+            academicYearId: academicYear.id,
+            versionNumber: 1,
+            startDate: new Date('2026-08-01T00:00:00.000Z'),
+            endDate: new Date('2027-05-31T00:00:00.000Z'),
+            officialWeekCount: 35,
+            reserveWeekCount: 1,
+            teachingWeekdays: ['MONDAY', 'TUESDAY'],
+            isActive: true,
+            activatedAt: new Date('2026-08-01T00:00:00.000Z'),
+          },
+        });
+        service = h.app.get(BusinessConfigurationService);
+        dateSpy = jest.spyOn(service, 'businessCivilDate').mockReturnValue('2026-09-10');
+      });
+
+      afterEach(() => {
+        dateSpy.mockRestore();
+      });
+
+      async function publishedScheduledSource(commandPrefix: string) {
+        const draft = await manager.agent
+          .post('/api/business-configuration/policies/drafts')
+          .set('Origin', testOrigin)
+          .send(opBody(`${commandPrefix}-draft`, '2026-09-20', '2026-09-20'));
+        expect(draft.status).toBe(201);
+        const published = await manager.agent
+          .post(`/api/business-configuration/policy-versions/${draft.body.versionId}/publish`)
+          .set('Origin', testOrigin)
+          .send({ commandId: `${commandPrefix}-publish` });
+        expect(published.status).toBe(200);
+        return draft.body.versionId as string;
+      }
+
+      it('returns the exact HTTP result and retains a repeated same-start lineage chain', async () => {
+        const sourceId = await publishedScheduledSource('scheduled-chain');
+        const first = await manager.agent
+          .post(`/api/business-configuration/policy-versions/${sourceId}/supersede-scheduled-authority`)
+          .set('Origin', testOrigin)
+          .send({
+            commandId: 'scheduled-chain-first',
+            payload: { operationalStartDate: '2026-09-25' },
+            reason: '  Đổi kế hoạch lần một  ',
+          });
+        expect(first.status).toBe(200);
+        expect(first.body).toEqual({
+          outcome: 'SCHEDULED_AUTHORITY_SUPERSEDED',
+          versionId: expect.any(String),
+        });
+
+        const second = await manager.agent
+          .post(`/api/business-configuration/policy-versions/${first.body.versionId}/supersede-scheduled-authority`)
+          .set('Origin', testOrigin)
+          .send({
+            commandId: 'scheduled-chain-second',
+            payload: { operationalStartDate: '2026-09-30' },
+          });
+        expect(second.status).toBe(200);
+
+        const rows = await h.prisma.businessPolicyVersion.findMany({
+          where: { stream: { familyKey: 'OPERATIONAL_START', academicYearId: academicYear.id } },
+          orderBy: { versionNumber: 'asc' },
+        });
+        expect(rows).toHaveLength(3);
+        expect(rows.map((row) => row.status)).toEqual([
+          'SUPERSEDED_BEFORE_EFFECTIVE',
+          'SUPERSEDED_BEFORE_EFFECTIVE',
+          'PUBLISHED',
+        ]);
+        expect(rows[0].effectiveFrom.toISOString().slice(0, 10)).toBe('2026-09-20');
+        expect(rows[1].effectiveFrom.toISOString().slice(0, 10)).toBe('2026-09-20');
+        expect(rows[2].effectiveFrom.toISOString().slice(0, 10)).toBe('2026-09-20');
+        expect(rows[0].effectiveUntil).toBeNull();
+        expect(rows[1].effectiveUntil).toBeNull();
+        expect(rows[2].effectiveUntil).toBeNull();
+        expect(rows[1].supersedesScheduledVersionId).toBe(rows[0].id);
+        expect(rows[2].supersedesScheduledVersionId).toBe(rows[1].id);
+        expect(rows[0].supersededBeforeEffectiveReason).toBe('Đổi kế hoạch lần một');
+        expect(await h.prisma.businessPolicyVersion.count({ where: { supersedesScheduledVersionId: rows[0].id } })).toBe(1);
+        expect(await h.prisma.businessPolicyVersion.count({ where: { supersedesScheduledVersionId: rows[1].id } })).toBe(1);
+
+        const resolved = await service.resolveEffectiveBusinessPolicy(
+          'OPERATIONAL_START',
+          { kind: 'ACADEMIC_YEAR', academicYearId: academicYear.id },
+          '2026-09-20',
+        );
+        expect(resolved.outcome).toBe('RESOLVED');
+        expect(resolved.policyVersionId).toBe(rows[2].id);
+
+        const detail = await manager.agent.get(`/api/business-configuration/policies/${rows[0].streamId}`);
+        expect(detail.status).toBe(200);
+        expect(detail.body.versions[0].allowedActions).toEqual([]);
+        expect(detail.body.versions[1].allowedActions).toEqual([]);
+        expect(detail.body.versions[2].allowedActions).toEqual(['SUPERSEDE_SCHEDULED_AUTHORITY']);
+        expect(detail.body.versions[2].actionEvaluationCivilDate).toBe('2026-09-10');
+      });
+
+      it('replays the identical semantic command and rejects changed payload, reason, or source', async () => {
+        const sourceId = await publishedScheduledSource('scheduled-idempotency-a');
+        const otherSourceId = '99999999-9999-4999-8999-999999999999';
+        const command = {
+          commandId: 'scheduled-idempotent-command',
+          payload: { operationalStartDate: '2026-09-25' },
+          reason: '  Điều chỉnh kế hoạch  ',
+        };
+
+        const first = await manager.agent
+          .post(`/api/business-configuration/policy-versions/${sourceId}/supersede-scheduled-authority`)
+          .set('Origin', testOrigin)
+          .send(command);
+        const replay = await manager.agent
+          .post(`/api/business-configuration/policy-versions/${sourceId}/supersede-scheduled-authority`)
+          .set('Origin', testOrigin)
+          .send({ ...command, reason: 'Điều chỉnh kế hoạch' });
+        expect(first.status).toBe(200);
+        expect(replay.status).toBe(200);
+        expect(replay.body).toEqual(first.body);
+
+        for (const [targetId, changed] of [
+          [sourceId, { ...command, payload: { operationalStartDate: '2026-09-26' } }],
+          [sourceId, { ...command, reason: 'Lý do khác' }],
+          [otherSourceId, command],
+        ] as const) {
+          const conflict = await manager.agent
+            .post(`/api/business-configuration/policy-versions/${targetId}/supersede-scheduled-authority`)
+            .set('Origin', testOrigin)
+            .send(changed);
+          expect(conflict.status).toBe(409);
+          expect(conflict.body.message).toBe('BUSINESS_POLICY_CONFLICT');
+        }
+
+        expect(await h.prisma.businessPolicyCommand.count({
+          where: { actorUserId: manager.id, commandId: command.commandId },
+        })).toBe(1);
+        expect(await h.prisma.auditEvent.count({
+          where: { action: 'BUSINESS_POLICY_SCHEDULED_AUTHORITY_SUPERSEDED', entityId: sourceId },
+        })).toBe(1);
+      });
+
+      it('rolls back source, successor, audit, and receipt when the success audit fails', async () => {
+        const sourceId = await publishedScheduledSource('scheduled-rollback');
+        const audit = h.app.get(AuditService);
+        const auditSpy = jest.spyOn(audit, 'write').mockImplementationOnce(async () => {
+          throw new Error('SIMULATED_SCHEDULED_SUPERSESSION_AUDIT_FAILURE');
+        });
+        try {
+          const result = await manager.agent
+            .post(`/api/business-configuration/policy-versions/${sourceId}/supersede-scheduled-authority`)
+            .set('Origin', testOrigin)
+            .send({ commandId: 'scheduled-rollback-command', payload: { operationalStartDate: '2026-09-25' } });
+          expect(result.status).toBe(500);
+        } finally {
+          auditSpy.mockRestore();
+        }
+
+        const source = await h.prisma.businessPolicyVersion.findUniqueOrThrow({ where: { id: sourceId } });
+        expect(source.status).toBe('PUBLISHED');
+        expect(source.supersededBeforeEffectiveByUserId).toBeNull();
+        expect(await h.prisma.businessPolicyVersion.count({ where: { supersedesScheduledVersionId: sourceId } })).toBe(0);
+        expect(await h.prisma.businessPolicyCommand.count({ where: { commandId: 'scheduled-rollback-command' } })).toBe(0);
+        expect(await h.prisma.auditEvent.count({
+          where: { action: 'BUSINESS_POLICY_SCHEDULED_AUTHORITY_SUPERSEDED', entityId: sourceId },
+        })).toBe(0);
+      });
+
+      it('allows exactly one concurrent scheduled successor and leaves no losing receipt or audit', async () => {
+        const sourceId = await publishedScheduledSource('scheduled-race');
+        const [a, b] = await Promise.all([
+          manager.agent
+            .post(`/api/business-configuration/policy-versions/${sourceId}/supersede-scheduled-authority`)
+            .set('Origin', testOrigin)
+            .send({ commandId: 'scheduled-race-a', payload: { operationalStartDate: '2026-09-25' } }),
+          manager.agent
+            .post(`/api/business-configuration/policy-versions/${sourceId}/supersede-scheduled-authority`)
+            .set('Origin', testOrigin)
+            .send({ commandId: 'scheduled-race-b', payload: { operationalStartDate: '2026-09-26' } }),
+        ]);
+        expect([a.status, b.status].sort()).toEqual([200, 409]);
+        expect(await h.prisma.businessPolicyVersion.count({ where: { supersedesScheduledVersionId: sourceId } })).toBe(1);
+        expect(await h.prisma.businessPolicyCommand.count({
+          where: { commandId: { in: ['scheduled-race-a', 'scheduled-race-b'] } },
+        })).toBe(1);
+        expect(await h.prisma.auditEvent.count({
+          where: { action: 'BUSINESS_POLICY_SCHEDULED_AUTHORITY_SUPERSEDED', entityId: sourceId },
+        })).toBe(1);
+      });
+
+      it('allows exactly one winner when scheduled supersession races correction', async () => {
+        const sourceId = await publishedScheduledSource('scheduled-correction-race');
+        const [scheduled, correction] = await Promise.all([
+          manager.agent
+            .post(`/api/business-configuration/policy-versions/${sourceId}/supersede-scheduled-authority`)
+            .set('Origin', testOrigin)
+            .send({ commandId: 'scheduled-vs-correction-a', payload: { operationalStartDate: '2026-09-25' } }),
+          manager.agent
+            .post(`/api/business-configuration/policy-versions/${sourceId}/correct`)
+            .set('Origin', testOrigin)
+            .send({
+              commandId: 'scheduled-vs-correction-b',
+              reason: 'Đính chính dữ liệu nguồn',
+              payload: { operationalStartDate: '2026-09-26' },
+            }),
+        ]);
+        expect([scheduled.status, correction.status].sort()).toEqual([200, 409]);
+        expect(await h.prisma.businessPolicyCommand.count({
+          where: { commandId: { in: ['scheduled-vs-correction-a', 'scheduled-vs-correction-b'] } },
+        })).toBe(1);
+        expect(await h.prisma.auditEvent.count({
+          where: {
+            entityId: sourceId,
+            action: { in: ['BUSINESS_POLICY_SCHEDULED_AUTHORITY_SUPERSEDED', 'BUSINESS_POLICY_CORRECTED'] },
+          },
+        })).toBe(1);
+      });
+
+      it('keeps the terminal source history-only and blocks a fresh direct-publish bypass', async () => {
+        const sourceId = await publishedScheduledSource('scheduled-terminal-actions');
+        const superseded = await manager.agent
+          .post(`/api/business-configuration/policy-versions/${sourceId}/supersede-scheduled-authority`)
+          .set('Origin', testOrigin)
+          .send({ commandId: 'scheduled-terminalize', payload: { operationalStartDate: '2026-09-25' } });
+        expect(superseded.status).toBe(200);
+
+        const terminalCommands = [
+          manager.agent.post(`/api/business-configuration/policy-versions/${sourceId}/retire`).set('Origin', testOrigin)
+            .send({ commandId: 'scheduled-terminal-retire' }),
+          manager.agent.post(`/api/business-configuration/policy-versions/${sourceId}/replace`).set('Origin', testOrigin)
+            .send({ commandId: 'scheduled-terminal-replace', effectiveFrom: '2026-09-21', payload: { operationalStartDate: '2026-09-26' } }),
+          manager.agent.post(`/api/business-configuration/policy-versions/${sourceId}/correct`).set('Origin', testOrigin)
+            .send({ commandId: 'scheduled-terminal-correct', reason: 'Dữ liệu sai', payload: { operationalStartDate: '2026-09-26' } }),
+          manager.agent.post(`/api/business-configuration/policy-versions/${sourceId}/supersede-scheduled-authority`).set('Origin', testOrigin)
+            .send({ commandId: 'scheduled-terminal-again', payload: { operationalStartDate: '2026-09-26' } }),
+        ];
+        const results = await Promise.all(terminalCommands);
+        expect(results.map((result) => result.status)).toEqual([409, 409, 409, 409]);
+
+        const freshDraft = await manager.agent
+          .post('/api/business-configuration/policies/drafts')
+          .set('Origin', testOrigin)
+          .send(opBody('scheduled-direct-bypass-draft', '2026-10-01', '2026-10-01'));
+        expect(freshDraft.status).toBe(201);
+        const directPublish = await manager.agent
+          .post(`/api/business-configuration/policy-versions/${freshDraft.body.versionId}/publish`)
+          .set('Origin', testOrigin)
+          .send({ commandId: 'scheduled-direct-bypass-publish' });
+        expect(directPublish.status).toBe(400);
+        expect(directPublish.body.message).toBe('OPERATIONAL_START_DIRECT_PUBLISH_AFTER_AUTHORITY_FORBIDDEN');
+      });
+
+      it('rejects equality, forbidden DTO fields, missing capability, and invalid CSRF origin', async () => {
+        const sourceId = await publishedScheduledSource('scheduled-boundary');
+
+        const forbiddenFields = [
+          { effectiveFrom: '2026-09-20' },
+          { effectiveUntil: '2026-12-31' },
+          { businessDate: '2026-09-10' },
+          { status: 'PUBLISHED' },
+          { supersedesScheduledVersionId: sourceId },
+          { actorUserId: manager.id },
+          { supersededBeforeEffectiveAt: new Date().toISOString() },
+        ];
+        for (const [index, forbiddenField] of forbiddenFields.entries()) {
+          const forbidden = await manager.agent
+            .post(`/api/business-configuration/policy-versions/${sourceId}/supersede-scheduled-authority`)
+            .set('Origin', testOrigin)
+            .send({
+              commandId: `scheduled-forbidden-field-${index}`,
+              payload: { operationalStartDate: '2026-09-25' },
+              ...forbiddenField,
+            });
+          expect(forbidden.status).toBe(400);
+        }
+        const invalidPayload = await manager.agent
+          .post(`/api/business-configuration/policy-versions/${sourceId}/supersede-scheduled-authority`)
+          .set('Origin', testOrigin)
+          .send({
+            commandId: 'scheduled-invalid-strict-payload',
+            payload: { operationalStartDate: '2026-09-25', extra: true },
+          });
+        expect(invalidPayload.status).toBe(400);
+        expect(invalidPayload.body.message).toBe('INVALID_OPERATIONAL_START_POLICY_PAYLOAD');
+        const overlongReason = await manager.agent
+          .post(`/api/business-configuration/policy-versions/${sourceId}/supersede-scheduled-authority`)
+          .set('Origin', testOrigin)
+          .send({
+            commandId: 'scheduled-overlong-reason',
+            payload: { operationalStartDate: '2026-09-25' },
+            reason: 'x'.repeat(1001),
+          });
+        expect(overlongReason.status).toBe(400);
+
+        const noCapability = await h.actor({ grants: [] });
+        const denied = await noCapability.agent
+          .post(`/api/business-configuration/policy-versions/${sourceId}/supersede-scheduled-authority`)
+          .set('Origin', testOrigin)
+          .send({ commandId: 'scheduled-denied', payload: { operationalStartDate: '2026-09-25' } });
+        expect(denied.status).toBe(403);
+
+        const csrf = await manager.agent
+          .post(`/api/business-configuration/policy-versions/${sourceId}/supersede-scheduled-authority`)
+          .set('Origin', 'https://invalid.example')
+          .send({ commandId: 'scheduled-csrf', payload: { operationalStartDate: '2026-09-25' } });
+        expect(csrf.status).toBe(403);
+
+        dateSpy.mockReturnValue('2026-09-20');
+        const equality = await manager.agent
+          .post(`/api/business-configuration/policy-versions/${sourceId}/supersede-scheduled-authority`)
+          .set('Origin', testOrigin)
+          .send({ commandId: 'scheduled-equality', payload: { operationalStartDate: '2026-09-25' } });
+        expect(equality.status).toBe(400);
+        expect(equality.body.message).toBe('OPERATIONAL_START_SCHEDULED_SUPERSESSION_TOO_LATE');
+        expect(await h.prisma.businessPolicyVersion.count({ where: { streamId: (await h.prisma.businessPolicyVersion.findUniqueOrThrow({ where: { id: sourceId } })).streamId } })).toBe(1);
+
+        const unauthenticated = await request(h.app.getHttpServer())
+          .post(`/api/business-configuration/policy-versions/${sourceId}/supersede-scheduled-authority`)
+          .set('Origin', testOrigin)
+          .send({ commandId: 'scheduled-no-session', payload: { operationalStartDate: '2026-09-25' } });
+        expect(unauthenticated.status).toBe(401);
+      });
+
+      it('enforces family scope, open initial authority, and paired successor at the database boundary', async () => {
+        const genericStream = await h.prisma.businessPolicyStream.create({
+          data: { familyKey: 'TEST_DB_BYPASS', resourceKind: 'SCHOOL_WIDE' },
+        });
+        await expect(h.prisma.businessPolicyVersion.create({
+          data: {
+            streamId: genericStream.id,
+            versionNumber: 1,
+            status: 'SUPERSEDED_BEFORE_EFFECTIVE',
+            payload: { enabled: true },
+            validatorVersion: 'v1',
+            effectiveFrom: new Date('2026-09-20T00:00:00.000Z'),
+            effectiveUntil: null,
+            createdByUserId: manager.id,
+            publishedByUserId: manager.id,
+            publishedAt: new Date(),
+            supersededBeforeEffectiveByUserId: manager.id,
+            supersededBeforeEffectiveAt: new Date(),
+          },
+        })).rejects.toThrow(/scheduled authority lifecycle is restricted to OPERATIONAL_START/u);
+
+        const stream = await h.prisma.businessPolicyStream.create({
+          data: {
+            familyKey: 'OPERATIONAL_START',
+            resourceKind: 'ACADEMIC_YEAR',
+            academicYearId: academicYear.id,
+          },
+        });
+        const finiteDraft = await h.prisma.businessPolicyVersion.create({
+          data: {
+            streamId: stream.id,
+            versionNumber: 1,
+            payload: { operationalStartDate: '2026-09-20' },
+            validatorVersion: 'v1',
+            effectiveFrom: new Date('2026-09-20T00:00:00.000Z'),
+            effectiveUntil: new Date('2026-12-31T00:00:00.000Z'),
+            createdByUserId: manager.id,
+          },
+        });
+        await expect(h.prisma.businessPolicyVersion.update({
+          where: { id: finiteDraft.id },
+          data: { status: 'PUBLISHED', publishedByUserId: manager.id, publishedAt: new Date() },
+        })).rejects.toThrow(/initial OPERATIONAL_START authority must be open-ended/u);
+
+        await h.prisma.businessPolicyVersion.update({
+          where: { id: finiteDraft.id },
+          data: { effectiveUntil: null },
+        });
+        await h.prisma.businessPolicyVersion.update({
+          where: { id: finiteDraft.id },
+          data: { status: 'PUBLISHED', publishedByUserId: manager.id, publishedAt: new Date() },
+        });
+        await expect(h.prisma.$transaction(async (tx) => {
+          await tx.businessPolicyVersion.update({
+            where: { id: finiteDraft.id },
+            data: {
+              status: 'SUPERSEDED_BEFORE_EFFECTIVE',
+              supersededBeforeEffectiveByUserId: manager.id,
+              supersededBeforeEffectiveAt: new Date(),
+            },
+          });
+        })).rejects.toThrow(/terminal scheduled authority must have exactly one successor/u);
+
+        const forbiddenEvidence = [
+          { supersededBeforeEffectiveByUserId: manager.id },
+          { supersededBeforeEffectiveAt: new Date() },
+          { supersededBeforeEffectiveReason: 'Không hợp lệ' },
+          { supersedesScheduledVersionId: finiteDraft.id },
+        ];
+        for (const [index, evidence] of forbiddenEvidence.entries()) {
+          await expect(h.prisma.businessPolicyVersion.create({
+            data: {
+              streamId: genericStream.id,
+              versionNumber: index + 2,
+              payload: { enabled: true },
+              validatorVersion: 'v1',
+              effectiveFrom: new Date('2026-09-20T00:00:00.000Z'),
+              effectiveUntil: null,
+              createdByUserId: manager.id,
+              ...evidence,
+            },
+          })).rejects.toThrow();
+        }
+
+        const validChild = await h.prisma.$transaction(async (tx) => {
+          await tx.businessPolicyVersion.update({
+            where: { id: finiteDraft.id },
+            data: {
+              status: 'SUPERSEDED_BEFORE_EFFECTIVE',
+              supersededBeforeEffectiveByUserId: manager.id,
+              supersededBeforeEffectiveAt: new Date(),
+            },
+          });
+          return tx.businessPolicyVersion.create({
+            data: {
+              streamId: stream.id,
+              versionNumber: 2,
+              status: 'PUBLISHED',
+              payload: { operationalStartDate: '2026-09-25' },
+              validatorVersion: 'v1',
+              effectiveFrom: new Date('2026-09-20T00:00:00.000Z'),
+              effectiveUntil: null,
+              createdByUserId: manager.id,
+              publishedByUserId: manager.id,
+              publishedAt: new Date(),
+              supersedesScheduledVersionId: finiteDraft.id,
+            },
+          });
+        });
+
+        await expect(h.prisma.businessPolicyVersion.create({
+          data: {
+            streamId: stream.id,
+            versionNumber: 3,
+            status: 'PUBLISHED',
+            payload: { operationalStartDate: '2026-09-26' },
+            validatorVersion: 'v1',
+            effectiveFrom: new Date('2026-09-20T00:00:00.000Z'),
+            effectiveUntil: null,
+            createdByUserId: manager.id,
+            publishedByUserId: manager.id,
+            publishedAt: new Date(),
+            supersedesScheduledVersionId: finiteDraft.id,
+          },
+        })).rejects.toThrow();
+
+        const otherAcademicYear = await h.prisma.academicYear.create({
+          data: { code: normalizedCode('OTHER-YEAR'), name: '2027-2028' },
+        });
+        const otherStream = await h.prisma.businessPolicyStream.create({
+          data: { familyKey: 'OPERATIONAL_START', resourceKind: 'ACADEMIC_YEAR', academicYearId: otherAcademicYear.id },
+        });
+        await expect(h.prisma.businessPolicyVersion.create({
+          data: {
+            streamId: otherStream.id,
+            versionNumber: 1,
+            status: 'PUBLISHED',
+            payload: { operationalStartDate: '2026-09-25' },
+            validatorVersion: 'v1',
+            effectiveFrom: new Date('2026-09-20T00:00:00.000Z'),
+            effectiveUntil: null,
+            createdByUserId: manager.id,
+            publishedByUserId: manager.id,
+            publishedAt: new Date(),
+            supersedesScheduledVersionId: finiteDraft.id,
+          },
+        })).rejects.toThrow(/business policy scheduled supersession must remain in its stream|invalid scheduled authority lineage pair/u);
+
+        await expect(h.prisma.businessPolicyVersion.update({
+          where: { id: finiteDraft.id },
+          data: { payload: { operationalStartDate: '2026-09-30' } },
+        })).rejects.toThrow(/superseded-before-effective business policy versions are immutable/u);
+        await expect(h.prisma.businessPolicyVersion.update({
+          where: { id: validChild.id },
+          data: { supersedesScheduledVersionId: validChild.id },
+        })).rejects.toThrow();
       });
     });
 

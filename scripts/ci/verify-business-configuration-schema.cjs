@@ -4,7 +4,9 @@ const path = require('node:path');
 
 const root = path.resolve(__dirname, '..', '..');
 const schema = fs.readFileSync(path.join(root, 'prisma/schema.prisma'), 'utf8');
-const migration = fs.readFileSync(path.join(root, 'prisma/migrations/20260906020000_business_configuration_persistence_foundation/migration.sql'), 'utf8');
+const foundationMigration = fs.readFileSync(path.join(root, 'prisma/migrations/20260906020000_business_configuration_persistence_foundation/migration.sql'), 'utf8');
+const supersessionMigration = fs.readFileSync(path.join(root, 'prisma/migrations/20260916010000_operational_start_scheduled_authority_supersession/migration.sql'), 'utf8');
+const migration = `${foundationMigration}\n${supersessionMigration}`;
 const { CAPABILITIES } = require(path.join(root, 'prisma/capability-catalog.cjs'));
 const registrySource = fs.readFileSync(path.join(root, 'apps/api/src/business-configuration/business-policy-registry.ts'), 'utf8');
 
@@ -21,6 +23,9 @@ assert.match(schema, /effectiveFrom\s+DateTime\s+@map\("effective_from"\) @db.Da
 assert.match(schema, /effectiveUntil\s+DateTime\?\s+@map\("effective_until"\) @db.Date/);
 assert.match(schema, /payload\s+Json\s+@db.JsonB/);
 assert.match(schema, /result\s+Json\s+@db.JsonB/);
+assert.match(schema, /SUPERSEDED_BEFORE_EFFECTIVE/);
+assert.match(schema, /supersedesScheduledVersionId\s+String\?/);
+assert.match(schema, /supersededBeforeEffectiveByUserId\s+String\?/);
 
 // 3. FK Restrict references
 assert.match(schema, /academicYear\s+AcademicYear\?\s+@relation\(fields: \[academicYearId\], references: \[id\], onDelete: Restrict\)/);
@@ -48,15 +53,26 @@ const requiredMigrationTokens = [
   'business_policy_commands_shape_check',
   'business_policy_commands_actor_command_key',
   'reversing published business policy cannot modify effective_until',
+  'SUPERSEDED_BEFORE_EFFECTIVE',
+  'business_policy_versions_one_scheduled_child_key',
+  'business_policy_versions_scheduled_scope_guard',
+  'business_policy_versions_scheduled_chain_guard',
+  'DEFERRABLE INITIALLY DEFERRED',
+  'business_policy_versions_superseded_by_fkey',
+  'business_policy_versions_scheduled_reason_check',
+  'business_policy_versions_lifecycle_evidence_check',
+  'business_policy_versions_successor_lineage_shape_check',
+  'invalid scheduled authority terminal transition',
+  'superseded-before-effective business policy versions are immutable',
+  'scheduled authority lifecycle is restricted to OPERATIONAL_START',
+  'initial OPERATIONAL_START authority must be open-ended',
 ];
 for (const token of requiredMigrationTokens) {
   assert.match(migration, new RegExp(token), `Missing migration token: ${token}`);
 }
-assert.match(
-  migration,
-  /CONSTRAINT\s+"business_policy_versions_no_self_lineage_check"\s+CHECK\s*\(\s*\("replaces_version_id"\s+IS\s+NULL\s+OR\s+"replaces_version_id"\s+<>\s+"id"\)\s+AND\s+\("corrects_version_id"\s+IS\s+NULL\s+OR\s+"corrects_version_id"\s+<>\s+"id"\)\s*\)/,
-  'business_policy_versions_no_self_lineage_check must be present with exact self-reference check expression',
-);
+assert.match(migration, /num_nonnulls\("replaces_version_id", "corrects_version_id", "supersedes_scheduled_version_id"\) <= 1/);
+assert.match(migration, /CREATE UNIQUE INDEX "business_policy_versions_one_scheduled_child_key"/);
+assert.match(migration, /WHERE \("status" = 'PUBLISHED'\)/, 'GiST PUBLISHED overlap predicate must remain intact');
 
 // 6. Capability catalog verification
 const configManage = CAPABILITIES.find(([key]) => key === 'BUSINESS_CONFIGURATION_MANAGE');
@@ -96,5 +112,13 @@ assert.match(sqlVerifier, /reversing published business policy cannot modify eff
 assert.match(sqlVerifier, /business policy replacement must remain in its stream/);
 assert.match(sqlVerifier, /published business policy semantics are immutable/);
 assert.match(sqlVerifier, /reversed business policy versions are immutable/);
+assert.match(supersessionMigration, /source\.status = 'SUPERSEDED_BEFORE_EFFECTIVE'/);
+assert.match(supersessionMigration, /count\(child\.id\) <> 1/);
+assert.match(supersessionMigration, /scheduled authority lineage cycle is forbidden/);
+assert.doesNotMatch(
+  supersessionMigration,
+  /\bUPDATE\s+"business_policy_versions"/iu,
+  'P1-031A migration must perform zero-row/no-backfill data mutation',
+);
 
 console.log('Business Configuration static schema verification PASS.');

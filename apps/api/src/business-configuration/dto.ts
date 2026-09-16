@@ -25,3 +25,9 @@ export class LifecycleBusinessPolicyDto {
   @IsOptional() @IsObject() payload?: Record<string, unknown>;
   @IsOptional() @IsString() @MaxLength(1000) reason?: string;
 }
+
+export class SupersedeScheduledAuthorityDto {
+  @IsString() @IsNotEmpty() @MaxLength(100) commandId!: string;
+  @IsObject() payload!: Record<string, unknown>;
+  @IsOptional() @IsString() @MaxLength(1000) reason?: string;
+}
