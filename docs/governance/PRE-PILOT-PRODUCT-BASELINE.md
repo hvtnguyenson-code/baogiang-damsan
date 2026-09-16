@@ -147,6 +147,8 @@ Required invariants:
 - historical evidence/corrections must retain provenance and follow forward-correction rules;
 - no current-state setting may silently reinterpret already frozen official statements.
 
+Product Owner authority recorded by P1-031B adds one exact retained lifecycle rule for this domain: when an `OPERATIONAL_START` authority is already `PUBLISHED` but the server-owned HCM business date is still before its `effectiveFrom`, a legitimate planned change uses a distinct scheduled-authority supersession operation/state. The source is retained as `SUPERSEDED_BEFORE_EFFECTIVE`, the successor occupies the same scheduled `effectiveFrom`, and dedicated scheduled-supersession lineage preserves the chain. `CORRECTION` is not expanded and continues to mean correction of an erroneous retained assertion/history. Once the first effective civil date begins, this scheduled lifecycle is no longer available.
+
 ### 4.9 PPCT import
 
 PPCT import remains intentionally deferred until the real authoritative school workbook/template/workflow is available and reviewed. The existing PPCT core must not be polluted with guessed workbook fields.
