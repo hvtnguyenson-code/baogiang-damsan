@@ -24,6 +24,10 @@
 - **Tài liệu yêu cầu chuẩn tắc:** `docs/requirements/P1-030-DELAYED-GO-LIVE-OPERATIONAL-START-ARCHITECTURE.md`
 - **Thẩm quyền Product Owner bất biến:** PO-1 (tiến trình PPCT replay TKB), PO-2 (không giá trị mặc định ngầm / fail-closed khi thiếu chính sách), PO-3 (ranh giới thống nhất cho chính khóa, tham chiếu cho P4), PO-4 (không tạo cờ trạng thái toàn cục).
 
+### Post-closure correction and architecture re-entry record
+
+Audit hậu closure phát hiện P1-031 chưa chặn initial finite authority và chưa buộc replacement effectivity không muộn hơn current/new operational boundary; các correction runtime bị cô lập trên nhánh P1-031A và chưa canonical. Independent review tiếp tục chứng minh generic `REPLACE` không biểu diễn được planned change khi source đã `PUBLISHED` nhưng `businessDate < source.effectiveFrom`, đặc biệt equality `source.effectiveFrom == currentOperationalStartDate`. P1-031B vì vậy được đăng ký và đã đóng kiến trúc trên nhánh review bằng lifecycle riêng `SUPERSEDE_SCHEDULED_AUTHORITY`, terminal state `SUPERSEDED_BEFORE_EFFECTIVE` và dedicated `supersedesScheduledVersionId`; `CORRECTION` không được mở rộng. P1-031 giữ nguyên bằng chứng lịch sử; P1-031A/P1-032 không được coi là merged hoặc startable trước chuỗi closure đã đăng ký.
+
 ---
 
 ## 2. Điểm Nối Mã Nguồn Hiện Hữu Chuẩn xác (Exact Current Code Seams)
@@ -541,4 +545,4 @@ Tuyệt đối không dùng generic 500 cho các trường hợp từ chối ngh
 - **Web UI:** Không chỉnh sửa ứng dụng Web (thuộc phạm vi `P1-032`).
 - **Môi trường Sản xuất / VPS:** Không deploy, không chạy lệnh VPS; hệ thống sản xuất duy trì trạng thái strictly **PRE-OPERATIONAL**.
 - **Đánh giá Độc lập:** PASS tại final reviewed head `2bf98156f93db47bb986e8e803a137563eadcf18`.
-- **Closure:** `P1-031` được đóng hành chính bởi `SYNC-P1-031`; `P1-032` chuyển sang `READY`; không phát sinh correction/re-entry task.
+- **Closure:** `P1-031` được đóng hành chính bởi `SYNC-P1-031`; P1-032 đã chuyển sang `READY` tại thời điểm closure. Audit hậu closure sau đó đăng ký P1-031A/P1-031B và chặn lại P1-032; điều này không viết lại bằng chứng closure lịch sử của P1-031.
