@@ -3,13 +3,13 @@
 ## 1. Task authority and scope
 
 - **Task:** `P1-031B` — Operational-start scheduled-authority supersession architecture
-- **Status:** `IN_REVIEW`
+- **Status:** `CLOSED` by `SYNC-P1-031B`
 - **Dependency:** `P1-031` — `CLOSED`
 - **Traceability:** `T28`, `T30`
 - **Dedicated branch:** `docs/operational-start-scheduled-authority-supersession-031b`
 - **Canonical starting main:** `f1b160be25045d0f4c661e154ece24c92a3e0fc9`
 - **Controlling authority:** ADR-046, ADR-049, P1-030 and P1-031
-- **Related planned correction:** `P1-031A` on `fix/operational-start-authority-continuity-031a`; remote head `6b7b804a5e82fc54fb280424e82b66d4b48db955` was inspected as evidence only and is not merged or copied into this branch. It is `PLANNED` because dependency P1-031B is not yet `CLOSED`.
+- **Related implementation correction:** `P1-031A` is `READY`. The old `fix/operational-start-authority-continuity-031a` remote head `6b7b804a5e82fc54fb280424e82b66d4b48db955` was inspected as bounded pre-architecture evidence only and is not canonical or merge-ready.
 
 This task is documentation and architecture only. It authorizes no runtime, Prisma schema, migration, API, UI, deployment, VPS, production policy or production-data mutation.
 
@@ -511,11 +511,14 @@ Additional required evidence:
 - zero production backfill assertion and deterministic legacy-row migration behavior;
 - `npm run test:schema:business-configuration:static`, `npm run test:workflow:contract`, lint, typecheck and proportionate affected regressions.
 
-## 21. Dependency and closure effect
+## 21. Closure evidence and dependency effect
 
-- P1-031B is architecture-complete on this branch and moves to `IN_REVIEW`; it is not `CLOSED` until merge, authoritative post-merge CI and `SYNC-P1-031B`.
-- P1-031A is `PLANNED` because the Product Owner decision is closed but dependency P1-031B is not yet `CLOSED`. Its branch is not canonical and none of its runtime changes are claimed merged.
-- After `SYNC-P1-031B`, canonical dependency gates permit P1-031A to transition `PLANNED -> READY`; implementation then resumes on a dedicated correction branch and must implement this architecture plus its already-audited continuity corrections.
+- Dedicated branch: `docs/operational-start-scheduled-authority-supersession-031b`; starting canonical base: `f1b160be25045d0f4c661e154ece24c92a3e0fc9`.
+- Architecture commits: `4c6292f93ab2c50d79f415d0291b3f0c84118108`, `b23afcf18dbd69bde8227b4c5b06adb49554bfcc`, `17e36cdfc75906eb4ba5dcf3ad67941caf3c8d43`; final independently reviewed head: `17e36cdfc75906eb4ba5dcf3ad67941caf3c8d43`.
+- Independent GitHub architecture review PASS after two bounded forward corrections; PR #135 (`docs(policy): define scheduled authority supersession`); exact-head PR CI #444 (run `35059422741`) SUCCESS attempt 1.
+- Merge/main: `59fef75bfed7e96bb8ca2a396603256f2285402f`; authoritative post-merge main CI #445 (run `35059916674`) SUCCESS attempt 1; administrative closure: `SYNC-P1-031B`.
+- Scope remained docs-only architecture/governance: zero runtime/schema/migration/API implementation/UI/auth/CI/deploy/production mutation. Production remains strictly `PRE-OPERATIONAL`; no production `OPERATIONAL_START` authority is configured/deployed and production backfill is zero.
+- P1-031A is now `READY`; its implementation must consume this CLOSED architecture plus its already-audited finite-authority and replacement-continuity corrections. The prior evidence branch remains non-canonical and none of its runtime changes are claimed merged.
 - P1-032 remains `PLANNED` and non-startable until P1-031A is merged, passes authoritative post-merge CI and closes through `SYNC-P1-031A`.
 - Production remains strictly `PRE-OPERATIONAL`; no deployed `OPERATIONAL_START` policy exists and no production remediation/backfill is required.
 
