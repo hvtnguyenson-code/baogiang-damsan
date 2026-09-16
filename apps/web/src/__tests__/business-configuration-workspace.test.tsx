@@ -196,6 +196,12 @@ function makeMockVersion(overrides: Partial<BusinessPolicyVersionRecord> = {}): 
     correctionReason: overrides.correctionReason ?? null,
     replacesVersionId: overrides.replacesVersionId ?? null,
     correctsVersionId: overrides.correctsVersionId ?? null,
+    supersedesScheduledVersionId: overrides.supersedesScheduledVersionId ?? null,
+    supersededBeforeEffectiveByUserId: overrides.supersededBeforeEffectiveByUserId ?? null,
+    supersededBeforeEffectiveAt: overrides.supersededBeforeEffectiveAt ?? null,
+    supersededBeforeEffectiveReason: overrides.supersededBeforeEffectiveReason ?? null,
+    allowedActions: overrides.allowedActions ?? [],
+    actionEvaluationCivilDate: overrides.actionEvaluationCivilDate ?? '2026-09-05',
     createdAt: overrides.createdAt ?? '2026-09-05T08:00:00.000Z',
     updatedAt: overrides.updatedAt ?? '2026-09-05T08:00:00.000Z',
   };

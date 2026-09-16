@@ -100,6 +100,7 @@ enum BusinessPolicyVersionStatus {
   DRAFT
   PUBLISHED
   REVERSED
+  SUPERSEDED_BEFORE_EFFECTIVE
 }
 
 enum CalendarExceptionScope {
@@ -207,60 +208,61 @@ model User {
   createdAt          DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt          DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  profile                           StaffProfile?
-  subjectGroupMemberships           SubjectGroupMembership[]
-  staffSubjects                     StaffSubject[]
-  capabilityGrants                  CapabilityGrant[]                       @relation("CapabilityGrantSubject")
-  capabilityGrantsCreated           CapabilityGrant[]                       @relation("CapabilityGrantGrantedBy")
-  capabilityGrantsRevoked           CapabilityGrant[]                       @relation("CapabilityGrantRevokedBy")
-  authSessions                      AuthSession[]
-  auditEvents                       AuditEvent[]                            @relation("AuditActor")
-  additionalDutyAssignmentsCreated  StaffAdditionalDutyAssignment[]         @relation("AdditionalDutyAssignmentCreator")
-  teachingAssignments               TeachingAssignment[]                    @relation("TeachingAssignmentTeacher")
-  homeroomAssignments               HomeroomAssignment[]                    @relation("HomeroomAssignmentTeacher")
-  homeroomAssignmentsCreated        HomeroomAssignment[]                    @relation("HomeroomAssignmentCreatedBy")
-  homeroomAssignmentsReversed       HomeroomAssignment[]                    @relation("HomeroomAssignmentReversedBy")
-  timetableVersionsCreated          TimetableVersion[]                      @relation("TimetableVersionCreatedBy")
-  timetableVersionsValidated        TimetableVersion[]                      @relation("TimetableVersionValidatedBy")
-  timetableVersionsApproved         TimetableVersion[]                      @relation("TimetableVersionApprovedBy")
-  timetableVersionsActivated        TimetableVersion[]                      @relation("TimetableVersionActivatedBy")
-  timetableEntriesAsTeacher         TimetableEntry[]                        @relation("TimetableEntryTeacher")
-  timetableImportProfilesCreated    TimetableImportProfile[]                @relation("TimetableImportProfileCreatedBy")
-  timetableImportRevisionsCreated   TimetableImportProfileRevision[]        @relation("TimetableImportProfileRevisionCreatedBy")
-  timetableImportRevisionsRetired   TimetableImportProfileRevision[]        @relation("TimetableImportProfileRevisionRetiredBy")
-  timetableImportAliasesAsTeacher   TimetableImportEntityAlias[]            @relation("TimetableImportAliasTeacher")
-  timetableImportAliasesCreated     TimetableImportEntityAlias[]            @relation("TimetableImportAliasCreatedBy")
-  timetableImportAliasesRetired     TimetableImportEntityAlias[]            @relation("TimetableImportAliasRetiredBy")
-  timetableImportReceiptsCreated    TimetableImportReceipt[]                @relation("TimetableImportReceiptCreatedBy")
-  ppctVersionsCreated               PpctVersion[]                           @relation("PpctVersionCreatedBy")
-  ppctVersionsPublished             PpctVersion[]                           @relation("PpctVersionPublishedBy")
-  ppctVersionsSuperseded            PpctVersion[]                           @relation("PpctVersionSupersededBy")
-  ppctClassAssociationsCreated      PpctClassAssociation[]                  @relation("PpctClassAssociationCreatedBy")
-  calendarExceptionsCreated         CalendarException[]                     @relation("CalendarExceptionCreatedBy")
-  calendarExceptionsReversed        CalendarException[]                     @relation("CalendarExceptionReversedBy")
-  lessonDispositionsCreated         OperationalLessonDisposition[]          @relation("LessonDispositionCreatedBy")
-  lessonDispositionsReversed        OperationalLessonDisposition[]          @relation("LessonDispositionReversedBy")
-  lessonDispositionsAssigned        OperationalLessonDisposition[]          @relation("LessonDispositionAssignedTeacher")
-  makeupSchedulesCreated            MakeupTeachingSchedule[]                @relation("MakeupScheduleCreatedBy")
-  makeupSchedulesReversed           MakeupTeachingSchedule[]                @relation("MakeupScheduleReversedBy")
-  makeupSchedulesAsTeacher          MakeupTeachingSchedule[]                @relation("MakeupScheduleTeacher")
-  specialActivitiesCreated          SpecialActivity[]                       @relation("SpecialActivityCreatedBy")
-  specialActivitiesReversed         SpecialActivity[]                       @relation("SpecialActivityReversedBy")
-  specialActivityStaffing           SpecialActivityStaffing[]               @relation("SpecialActivityScheduledTeacher")
-  curricularExecutionsResponsible   CurricularTeachingExecution[]           @relation("CurricularExecutionResponsibleTeacher")
-  curricularExecutionsActual        CurricularTeachingExecution[]           @relation("CurricularExecutionActualTeacher")
-  curricularExecutionsCreated       CurricularTeachingExecution[]           @relation("CurricularExecutionCreatedBy")
-  curricularExecutionsReversed      CurricularTeachingExecution[]           @relation("CurricularExecutionReversedBy")
-  activityExecutionsActual          SpecialActivityParticipationExecution[] @relation("ActivityExecutionActualTeacher")
-  activityExecutionsCreated         SpecialActivityParticipationExecution[] @relation("ActivityExecutionCreatedBy")
-  activityExecutionsReversed        SpecialActivityParticipationExecution[] @relation("ActivityExecutionReversedBy")
-  reportingStatementSeriesSubmitted ReportingStatementSeries[]              @relation("ReportingStatementSeriesSubmitter")
-  reportingStatementCommands        ReportingStatementCommand[]             @relation("ReportingStatementCommandActor")
-  reportingStatementHistories       ReportingStatementHistory[]             @relation("ReportingStatementHistoryActor")
-  businessPolicyVersionsCreated     BusinessPolicyVersion[]                 @relation("BusinessPolicyVersionCreatedBy")
-  businessPolicyVersionsPublished   BusinessPolicyVersion[]                 @relation("BusinessPolicyVersionPublishedBy")
-  businessPolicyVersionsReversed    BusinessPolicyVersion[]                 @relation("BusinessPolicyVersionReversedBy")
-  businessPolicyCommands            BusinessPolicyCommand[]                 @relation("BusinessPolicyCommandActor")
+  profile                                   StaffProfile?
+  subjectGroupMemberships                   SubjectGroupMembership[]
+  staffSubjects                             StaffSubject[]
+  capabilityGrants                          CapabilityGrant[]                       @relation("CapabilityGrantSubject")
+  capabilityGrantsCreated                   CapabilityGrant[]                       @relation("CapabilityGrantGrantedBy")
+  capabilityGrantsRevoked                   CapabilityGrant[]                       @relation("CapabilityGrantRevokedBy")
+  authSessions                              AuthSession[]
+  auditEvents                               AuditEvent[]                            @relation("AuditActor")
+  additionalDutyAssignmentsCreated          StaffAdditionalDutyAssignment[]         @relation("AdditionalDutyAssignmentCreator")
+  teachingAssignments                       TeachingAssignment[]                    @relation("TeachingAssignmentTeacher")
+  homeroomAssignments                       HomeroomAssignment[]                    @relation("HomeroomAssignmentTeacher")
+  homeroomAssignmentsCreated                HomeroomAssignment[]                    @relation("HomeroomAssignmentCreatedBy")
+  homeroomAssignmentsReversed               HomeroomAssignment[]                    @relation("HomeroomAssignmentReversedBy")
+  timetableVersionsCreated                  TimetableVersion[]                      @relation("TimetableVersionCreatedBy")
+  timetableVersionsValidated                TimetableVersion[]                      @relation("TimetableVersionValidatedBy")
+  timetableVersionsApproved                 TimetableVersion[]                      @relation("TimetableVersionApprovedBy")
+  timetableVersionsActivated                TimetableVersion[]                      @relation("TimetableVersionActivatedBy")
+  timetableEntriesAsTeacher                 TimetableEntry[]                        @relation("TimetableEntryTeacher")
+  timetableImportProfilesCreated            TimetableImportProfile[]                @relation("TimetableImportProfileCreatedBy")
+  timetableImportRevisionsCreated           TimetableImportProfileRevision[]        @relation("TimetableImportProfileRevisionCreatedBy")
+  timetableImportRevisionsRetired           TimetableImportProfileRevision[]        @relation("TimetableImportProfileRevisionRetiredBy")
+  timetableImportAliasesAsTeacher           TimetableImportEntityAlias[]            @relation("TimetableImportAliasTeacher")
+  timetableImportAliasesCreated             TimetableImportEntityAlias[]            @relation("TimetableImportAliasCreatedBy")
+  timetableImportAliasesRetired             TimetableImportEntityAlias[]            @relation("TimetableImportAliasRetiredBy")
+  timetableImportReceiptsCreated            TimetableImportReceipt[]                @relation("TimetableImportReceiptCreatedBy")
+  ppctVersionsCreated                       PpctVersion[]                           @relation("PpctVersionCreatedBy")
+  ppctVersionsPublished                     PpctVersion[]                           @relation("PpctVersionPublishedBy")
+  ppctVersionsSuperseded                    PpctVersion[]                           @relation("PpctVersionSupersededBy")
+  ppctClassAssociationsCreated              PpctClassAssociation[]                  @relation("PpctClassAssociationCreatedBy")
+  calendarExceptionsCreated                 CalendarException[]                     @relation("CalendarExceptionCreatedBy")
+  calendarExceptionsReversed                CalendarException[]                     @relation("CalendarExceptionReversedBy")
+  lessonDispositionsCreated                 OperationalLessonDisposition[]          @relation("LessonDispositionCreatedBy")
+  lessonDispositionsReversed                OperationalLessonDisposition[]          @relation("LessonDispositionReversedBy")
+  lessonDispositionsAssigned                OperationalLessonDisposition[]          @relation("LessonDispositionAssignedTeacher")
+  makeupSchedulesCreated                    MakeupTeachingSchedule[]                @relation("MakeupScheduleCreatedBy")
+  makeupSchedulesReversed                   MakeupTeachingSchedule[]                @relation("MakeupScheduleReversedBy")
+  makeupSchedulesAsTeacher                  MakeupTeachingSchedule[]                @relation("MakeupScheduleTeacher")
+  specialActivitiesCreated                  SpecialActivity[]                       @relation("SpecialActivityCreatedBy")
+  specialActivitiesReversed                 SpecialActivity[]                       @relation("SpecialActivityReversedBy")
+  specialActivityStaffing                   SpecialActivityStaffing[]               @relation("SpecialActivityScheduledTeacher")
+  curricularExecutionsResponsible           CurricularTeachingExecution[]           @relation("CurricularExecutionResponsibleTeacher")
+  curricularExecutionsActual                CurricularTeachingExecution[]           @relation("CurricularExecutionActualTeacher")
+  curricularExecutionsCreated               CurricularTeachingExecution[]           @relation("CurricularExecutionCreatedBy")
+  curricularExecutionsReversed              CurricularTeachingExecution[]           @relation("CurricularExecutionReversedBy")
+  activityExecutionsActual                  SpecialActivityParticipationExecution[] @relation("ActivityExecutionActualTeacher")
+  activityExecutionsCreated                 SpecialActivityParticipationExecution[] @relation("ActivityExecutionCreatedBy")
+  activityExecutionsReversed                SpecialActivityParticipationExecution[] @relation("ActivityExecutionReversedBy")
+  reportingStatementSeriesSubmitted         ReportingStatementSeries[]              @relation("ReportingStatementSeriesSubmitter")
+  reportingStatementCommands                ReportingStatementCommand[]             @relation("ReportingStatementCommandActor")
+  reportingStatementHistories               ReportingStatementHistory[]             @relation("ReportingStatementHistoryActor")
+  businessPolicyVersionsCreated             BusinessPolicyVersion[]                 @relation("BusinessPolicyVersionCreatedBy")
+  businessPolicyVersionsPublished           BusinessPolicyVersion[]                 @relation("BusinessPolicyVersionPublishedBy")
+  businessPolicyVersionsReversed            BusinessPolicyVersion[]                 @relation("BusinessPolicyVersionReversedBy")
+  businessPolicyVersionsScheduledSuperseded BusinessPolicyVersion[]                 @relation("BusinessPolicyVersionScheduledSupersededBy")
+  businessPolicyCommands                    BusinessPolicyCommand[]                 @relation("BusinessPolicyCommandActor")
 
   @@index([status])
   @@map("users")
@@ -882,12 +884,12 @@ model HomeroomAssignment {
 }
 
 model BusinessPolicyStream {
-  id           String                            @id @default(uuid()) @db.Uuid
-  familyKey    String                            @map("family_key") @db.VarChar(100)
-  resourceKind BusinessConfigurationResourceKind @map("resource_kind")
-  academicYearId String?                         @map("academic_year_id") @db.Uuid
-  createdAt    DateTime                          @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt    DateTime                          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id             String                            @id @default(uuid()) @db.Uuid
+  familyKey      String                            @map("family_key") @db.VarChar(100)
+  resourceKind   BusinessConfigurationResourceKind @map("resource_kind")
+  academicYearId String?                           @map("academic_year_id") @db.Uuid
+  createdAt      DateTime                          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime                          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   academicYear AcademicYear?           @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
   versions     BusinessPolicyVersion[]
@@ -897,49 +899,57 @@ model BusinessPolicyStream {
 }
 
 model BusinessPolicyVersion {
-  id                    String                      @id @default(uuid()) @db.Uuid
-  streamId              String                      @map("stream_id") @db.Uuid
-  versionNumber         Int                         @map("version_number")
-  status                BusinessPolicyVersionStatus @default(DRAFT)
-  payload               Json                        @db.JsonB
-  validatorVersion      String                      @map("validator_version") @db.VarChar(100)
-  effectiveFrom         DateTime                    @map("effective_from") @db.Date
-  effectiveUntil        DateTime?                   @map("effective_until") @db.Date
-  draftRevision         Int                         @default(1) @map("draft_revision")
-  createdByUserId       String                      @map("created_by_user_id") @db.Uuid
-  publishedByUserId     String?                     @map("published_by_user_id") @db.Uuid
-  publishedAt           DateTime?                   @map("published_at") @db.Timestamptz(3)
-  replacesVersionId     String?                     @map("replaces_version_id") @db.Uuid
-  correctsVersionId     String?                     @map("corrects_version_id") @db.Uuid
-  reversedByUserId      String?                     @map("reversed_by_user_id") @db.Uuid
-  reversedAt            DateTime?                   @map("reversed_at") @db.Timestamptz(3)
-  correctionReason      String?                     @map("correction_reason") @db.Text
-  createdAt             DateTime                    @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt             DateTime                    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id                                String                      @id @default(uuid()) @db.Uuid
+  streamId                          String                      @map("stream_id") @db.Uuid
+  versionNumber                     Int                         @map("version_number")
+  status                            BusinessPolicyVersionStatus @default(DRAFT)
+  payload                           Json                        @db.JsonB
+  validatorVersion                  String                      @map("validator_version") @db.VarChar(100)
+  effectiveFrom                     DateTime                    @map("effective_from") @db.Date
+  effectiveUntil                    DateTime?                   @map("effective_until") @db.Date
+  draftRevision                     Int                         @default(1) @map("draft_revision")
+  createdByUserId                   String                      @map("created_by_user_id") @db.Uuid
+  publishedByUserId                 String?                     @map("published_by_user_id") @db.Uuid
+  publishedAt                       DateTime?                   @map("published_at") @db.Timestamptz(3)
+  replacesVersionId                 String?                     @map("replaces_version_id") @db.Uuid
+  correctsVersionId                 String?                     @map("corrects_version_id") @db.Uuid
+  reversedByUserId                  String?                     @map("reversed_by_user_id") @db.Uuid
+  reversedAt                        DateTime?                   @map("reversed_at") @db.Timestamptz(3)
+  correctionReason                  String?                     @map("correction_reason") @db.Text
+  supersedesScheduledVersionId      String?                     @map("supersedes_scheduled_version_id") @db.Uuid
+  supersededBeforeEffectiveByUserId String?                     @map("superseded_before_effective_by_user_id") @db.Uuid
+  supersededBeforeEffectiveAt       DateTime?                   @map("superseded_before_effective_at") @db.Timestamptz(3)
+  supersededBeforeEffectiveReason   String?                     @map("superseded_before_effective_reason") @db.Text
+  createdAt                         DateTime                    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                         DateTime                    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  stream                BusinessPolicyStream       @relation(fields: [streamId], references: [id], onDelete: Restrict)
-  createdBy             User                        @relation("BusinessPolicyVersionCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  publishedBy           User?                       @relation("BusinessPolicyVersionPublishedBy", fields: [publishedByUserId], references: [id], onDelete: Restrict)
-  reversedBy            User?                       @relation("BusinessPolicyVersionReversedBy", fields: [reversedByUserId], references: [id], onDelete: Restrict)
-  replacesVersion       BusinessPolicyVersion?      @relation("BusinessPolicyReplacement", fields: [replacesVersionId], references: [id], onDelete: Restrict)
-  replacementVersions   BusinessPolicyVersion[]     @relation("BusinessPolicyReplacement")
-  correctsVersion       BusinessPolicyVersion?      @relation("BusinessPolicyCorrection", fields: [correctsVersionId], references: [id], onDelete: Restrict)
-  correctedVersions     BusinessPolicyVersion[]     @relation("BusinessPolicyCorrection")
+  stream                      BusinessPolicyStream    @relation(fields: [streamId], references: [id], onDelete: Restrict)
+  createdBy                   User                    @relation("BusinessPolicyVersionCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  publishedBy                 User?                   @relation("BusinessPolicyVersionPublishedBy", fields: [publishedByUserId], references: [id], onDelete: Restrict)
+  reversedBy                  User?                   @relation("BusinessPolicyVersionReversedBy", fields: [reversedByUserId], references: [id], onDelete: Restrict)
+  supersededBeforeEffectiveBy User?                   @relation("BusinessPolicyVersionScheduledSupersededBy", fields: [supersededBeforeEffectiveByUserId], references: [id], onDelete: Restrict)
+  replacesVersion             BusinessPolicyVersion?  @relation("BusinessPolicyReplacement", fields: [replacesVersionId], references: [id], onDelete: Restrict)
+  replacementVersions         BusinessPolicyVersion[] @relation("BusinessPolicyReplacement")
+  correctsVersion             BusinessPolicyVersion?  @relation("BusinessPolicyCorrection", fields: [correctsVersionId], references: [id], onDelete: Restrict)
+  correctedVersions           BusinessPolicyVersion[] @relation("BusinessPolicyCorrection")
+  supersedesScheduledVersion  BusinessPolicyVersion?  @relation("BusinessPolicyScheduledSupersession", fields: [supersedesScheduledVersionId], references: [id], onDelete: Restrict)
+  scheduledSuccessorVersions  BusinessPolicyVersion[] @relation("BusinessPolicyScheduledSupersession")
 
   @@unique([streamId, versionNumber])
   @@index([streamId, status, effectiveFrom, effectiveUntil])
+  @@index([supersedesScheduledVersionId], map: "business_policy_versions_supersedes_scheduled_idx")
   @@map("business_policy_versions")
 }
 
 model BusinessPolicyCommand {
-  id              String   @id @default(uuid()) @db.Uuid
-  actorUserId     String   @map("actor_user_id") @db.Uuid
-  commandId       String   @map("command_id") @db.VarChar(100)
-  fingerprint     String   @db.VarChar(128)
-  result          Json     @db.JsonB
-  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  id          String   @id @default(uuid()) @db.Uuid
+  actorUserId String   @map("actor_user_id") @db.Uuid
+  commandId   String   @map("command_id") @db.VarChar(100)
+  fingerprint String   @db.VarChar(128)
+  result      Json     @db.JsonB
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  actor           User     @relation("BusinessPolicyCommandActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+  actor User @relation("BusinessPolicyCommandActor", fields: [actorUserId], references: [id], onDelete: Restrict)
 
   @@unique([actorUserId, commandId])
   @@map("business_policy_commands")

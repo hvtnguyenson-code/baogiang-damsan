@@ -1,6 +1,12 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { AuditResult, Prisma } from '@prisma/client';
-import { BusinessConfigurationResource, BusinessPolicyResolution, CivilDateString } from '@baogiang/contracts';
+import { AuditResult, BusinessPolicyVersion, Prisma } from '@prisma/client';
+import {
+  BusinessConfigurationResource,
+  BusinessPolicyAllowedAction,
+  BusinessPolicyResolution,
+  BusinessPolicyVersionRecord,
+  CivilDateString,
+} from '@baogiang/contracts';
 import { createHash } from 'node:crypto';
 import { AuditService } from '../audit/audit.service';
 import { RequestMeta } from '../auth/auth.types';
@@ -15,7 +21,7 @@ import {
   validateResource,
   validatorForVersion,
 } from './business-policy-registry';
-import { CreateBusinessPolicyDraftDto, EditBusinessPolicyDraftDto, LifecycleBusinessPolicyDto } from './dto';
+import { CreateBusinessPolicyDraftDto, EditBusinessPolicyDraftDto, LifecycleBusinessPolicyDto, SupersedeScheduledAuthorityDto } from './dto';
 
 const conflict = () => new ConflictException('BUSINESS_POLICY_CONFLICT');
 type Db = Prisma.TransactionClient | PrismaService;
@@ -25,12 +31,49 @@ export class BusinessConfigurationService {
   constructor(private readonly prisma: PrismaService, private readonly audit: AuditService, @Inject(BUSINESS_POLICY_REGISTRY) private readonly families: readonly BusinessPolicyFamilyDefinition[]) {}
   familiesList() { return this.families.map(({ validators: _validators, ...family }) => family); }
 
-  async list(page = 1, pageSize = 25) { const [items, total] = await this.prisma.$transaction([this.prisma.businessPolicyStream.findMany({ include: { versions: { orderBy: { versionNumber: 'desc' }, take: 1 } }, orderBy: { createdAt: 'desc' }, skip: (page - 1) * pageSize, take: pageSize }), this.prisma.businessPolicyStream.count()]); return { items, page, pageSize, total }; }
-  async get(streamId: string) { const stream = await this.prisma.businessPolicyStream.findUnique({ where: { id: streamId }, include: { versions: { orderBy: { versionNumber: 'asc' } } } }); if (!stream) throw new NotFoundException('Không tìm thấy policy stream.'); return stream; }
+  async list(page = 1, pageSize = 25) {
+    const actionEvaluationCivilDate = this.businessCivilDate() as CivilDateString;
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.businessPolicyStream.findMany({ include: { versions: { orderBy: { versionNumber: 'desc' }, take: 1 } }, orderBy: { createdAt: 'desc' }, skip: (page - 1) * pageSize, take: pageSize }),
+      this.prisma.businessPolicyStream.count(),
+    ]);
+    return {
+      items: items.map((stream) => ({
+        id: stream.id,
+        familyKey: stream.familyKey,
+        resourceKind: stream.resourceKind,
+        academicYearId: stream.academicYearId,
+        createdAt: stream.createdAt.toISOString(),
+        updatedAt: stream.updatedAt.toISOString(),
+        versions: stream.versions.map((version) => this.versionRecord(stream.familyKey, version, actionEvaluationCivilDate)),
+      })),
+      page,
+      pageSize,
+      total,
+    };
+  }
+
+  async get(streamId: string) {
+    const actionEvaluationCivilDate = this.businessCivilDate() as CivilDateString;
+    const stream = await this.prisma.businessPolicyStream.findUnique({ where: { id: streamId }, include: { versions: { orderBy: { versionNumber: 'asc' } } } });
+    if (!stream) throw new NotFoundException('Không tìm thấy policy stream.');
+    return {
+      id: stream.id,
+      familyKey: stream.familyKey,
+      resourceKind: stream.resourceKind,
+      academicYearId: stream.academicYearId,
+      createdAt: stream.createdAt.toISOString(),
+      updatedAt: stream.updatedAt.toISOString(),
+      versions: stream.versions.map((version) => this.versionRecord(stream.familyKey, version, actionEvaluationCivilDate)),
+    };
+  }
 
   async createDraft(dto: CreateBusinessPolicyDraftDto, actor: string, meta: RequestMeta) {
     return this.mutate(actor, dto.commandId, dto, async (tx) => {
       const family = this.family(dto.family);
+      if (family.key === 'OPERATIONAL_START' && dto.effectiveUntil !== undefined) {
+        throw new BadRequestException('OPERATIONAL_START_EFFECTIVE_UNTIL_FORBIDDEN');
+      }
       const resource = this.resource(dto.resource);
       validateResource(family, resource);
       const validator = currentValidator(family);
@@ -108,6 +151,9 @@ export class BusinessConfigurationService {
       const validatedPayload = validator.validate(row.payload);
       if (row.status !== 'DRAFT') throw conflict();
       if (family.key === 'OPERATIONAL_START') {
+        if (row.effectiveUntil !== null) {
+          throw new BadRequestException('OPERATIONAL_START_EFFECTIVE_UNTIL_FORBIDDEN');
+        }
         if (resource.kind !== 'ACADEMIC_YEAR') throw new BadRequestException('INVALID_POLICY_RESOURCE');
         const calendar = await this.requireActiveCalendar(tx, resource.academicYearId);
         const payload = validatedPayload as { operationalStartDate: string };
@@ -124,7 +170,7 @@ export class BusinessConfigurationService {
           where: {
             streamId: row.streamId,
             id: { not: row.id },
-            status: { in: ['PUBLISHED', 'REVERSED'] },
+            status: { in: ['PUBLISHED', 'REVERSED', 'SUPERSEDED_BEFORE_EFFECTIVE'] },
           },
         });
         if (priorAuthorityCount > 0) {
@@ -158,11 +204,15 @@ export class BusinessConfigurationService {
       if (!family.publicationEnabled || !dto.effectiveFrom || !dto.payload) throw new BadRequestException('INVALID_POLICY_REPLACEMENT');
       const businessDate = this.businessDate();
       const from = this.dates(dto.effectiveFrom).from;
-      if (from <= businessDate || from <= this.format(source.effectiveFrom)) throw new BadRequestException('INVALID_POLICY_REPLACEMENT');
+      const sourceFrom = this.format(source.effectiveFrom);
+      if (from <= businessDate || from <= sourceFrom) throw new BadRequestException('INVALID_POLICY_REPLACEMENT');
       const validator = currentValidator(family);
       const payload = validator.validate(dto.payload);
 
       if (family.key === 'OPERATIONAL_START') {
+        if (businessDate < sourceFrom) {
+          throw new BadRequestException('INVALID_POLICY_REPLACEMENT');
+        }
         const sourceValidator = validatorForVersion(family, source.validatorVersion);
         if (!sourceValidator) throw new BadRequestException('POLICY_CORRUPT');
         let currentPayload: unknown;
@@ -181,6 +231,9 @@ export class BusinessConfigurationService {
         const newOperationalStartDate = (payload as { operationalStartDate: string }).operationalStartDate;
         if (newOperationalStartDate <= businessDate) {
           throw new BadRequestException('INVALID_POLICY_REPLACEMENT');
+        }
+        if (from > currentOperationalStartDate || from > newOperationalStartDate) {
+          throw new BadRequestException('OPERATIONAL_START_REPLACEMENT_EFFECTIVITY_AFTER_BOUNDARY_FORBIDDEN');
         }
         const resource = this.streamResource(source.stream);
         if (resource.kind !== 'ACADEMIC_YEAR') {
@@ -229,6 +282,128 @@ export class BusinessConfigurationService {
         payloadFingerprint: this.fingerprint(payload),
       });
       return { outcome: 'REPLACED', versionId: replacement.id };
+    });
+  }
+
+  async supersedeScheduledAuthority(id: string, dto: SupersedeScheduledAuthorityDto, actor: string, meta: RequestMeta) {
+    const normalizedReason = dto.reason?.trim() || null;
+    const semanticRequest = {
+      operation: 'SUPERSEDE_SCHEDULED_AUTHORITY',
+      commandId: dto.commandId,
+      sourceVersionId: id,
+      payload: dto.payload,
+      reason: normalizedReason,
+    };
+    return this.mutate(actor, dto.commandId, semanticRequest, async (tx) => {
+      const source = await tx.businessPolicyVersion.findUnique({ where: { id }, include: { stream: true } });
+      if (!source) throw new NotFoundException('Không tìm thấy policy version.');
+      if (source.stream.familyKey !== 'OPERATIONAL_START' || source.stream.resourceKind !== 'ACADEMIC_YEAR' || !source.stream.academicYearId) {
+        throw new BadRequestException('INVALID_POLICY_RESOURCE');
+      }
+      if (source.status !== 'PUBLISHED' || source.effectiveUntil !== null) throw conflict();
+
+      const businessDate = this.businessCivilDate();
+      const sourceEffectiveFrom = this.format(source.effectiveFrom);
+      if (businessDate >= sourceEffectiveFrom) {
+        throw new BadRequestException('OPERATIONAL_START_SCHEDULED_SUPERSESSION_TOO_LATE');
+      }
+
+      const family = this.family(source.stream.familyKey);
+      const sourceValidator = validatorForVersion(family, source.validatorVersion);
+      if (!sourceValidator) throw new ConflictException('POLICY_CORRUPT');
+      let currentPayload: { operationalStartDate: string };
+      try {
+        currentPayload = sourceValidator.validate(source.payload) as { operationalStartDate: string };
+      } catch {
+        throw new ConflictException('POLICY_CORRUPT');
+      }
+      if (!isCivilDate(currentPayload.operationalStartDate)) throw new ConflictException('POLICY_CORRUPT');
+
+      const validator = currentValidator(family);
+      const payload = validator.validate(dto.payload) as { operationalStartDate: string };
+      if (payload.operationalStartDate <= businessDate || payload.operationalStartDate < sourceEffectiveFrom) {
+        throw new BadRequestException('OPERATIONAL_START_SCHEDULED_SUCCESSOR_DATE_INVALID');
+      }
+
+      const calendar = await this.requireActiveCalendar(tx, source.stream.academicYearId);
+      const calendarStart = formatCivilDate(calendar.startDate);
+      const calendarEnd = formatCivilDate(calendar.endDate);
+      if (
+        currentPayload.operationalStartDate < calendarStart
+        || currentPayload.operationalStartDate > calendarEnd
+        || payload.operationalStartDate < calendarStart
+        || payload.operationalStartDate > calendarEnd
+      ) {
+        throw new BadRequestException('OPERATIONAL_START_DATE_OUTSIDE_CALENDAR');
+      }
+
+      const [openAuthorityCount, childCount] = await Promise.all([
+        tx.businessPolicyVersion.count({
+          where: { streamId: source.streamId, status: 'PUBLISHED', effectiveUntil: null },
+        }),
+        tx.businessPolicyVersion.count({
+          where: {
+            OR: [
+              { replacesVersionId: source.id },
+              { correctsVersionId: source.id },
+              { supersedesScheduledVersionId: source.id },
+            ],
+          },
+        }),
+      ]);
+      if (openAuthorityCount !== 1 || childCount !== 0) throw conflict();
+
+      const now = new Date();
+      const terminalized = await tx.businessPolicyVersion.updateMany({
+        where: { id: source.id, status: 'PUBLISHED', effectiveUntil: null },
+        data: {
+          status: 'SUPERSEDED_BEFORE_EFFECTIVE',
+          supersededBeforeEffectiveByUserId: actor,
+          supersededBeforeEffectiveAt: now,
+          supersededBeforeEffectiveReason: normalizedReason,
+        },
+      });
+      if (terminalized.count !== 1) throw conflict();
+
+      const nextNumber = (await tx.businessPolicyVersion.aggregate({
+        where: { streamId: source.streamId },
+        _max: { versionNumber: true },
+      }))._max.versionNumber! + 1;
+      const successor = await tx.businessPolicyVersion.create({
+        data: {
+          streamId: source.streamId,
+          versionNumber: nextNumber,
+          status: 'PUBLISHED',
+          payload: payload as Prisma.InputJsonValue,
+          validatorVersion: validator.version,
+          effectiveFrom: source.effectiveFrom,
+          effectiveUntil: null,
+          createdByUserId: actor,
+          publishedByUserId: actor,
+          publishedAt: now,
+          supersedesScheduledVersionId: source.id,
+        },
+      });
+
+      await this.successAudit(tx, actor, meta, 'BUSINESS_POLICY_SCHEDULED_AUTHORITY_SUPERSEDED', source.id, {
+        command: 'SUPERSEDE_SCHEDULED_AUTHORITY',
+        commandId: dto.commandId,
+        family: family.key,
+        resource: this.streamResource(source.stream),
+        sourceVersionId: source.id,
+        successorVersionId: successor.id,
+        sourceValidatorVersion: source.validatorVersion,
+        successorValidatorVersion: validator.version,
+        sourcePayloadFingerprint: this.fingerprint(currentPayload),
+        successorPayloadFingerprint: this.fingerprint(payload),
+        effectiveFrom: sourceEffectiveFrom,
+        oldOperationalStartDate: currentPayload.operationalStartDate,
+        newOperationalStartDate: payload.operationalStartDate,
+        businessCivilDate: businessDate,
+        supersedesScheduledVersionId: source.id,
+        reason: normalizedReason,
+      });
+      return { outcome: 'SCHEDULED_AUTHORITY_SUPERSEDED' as const, versionId: successor.id };
     });
   }
 
@@ -361,6 +536,21 @@ export class BusinessConfigurationService {
           throw new Error('CORRUPT_CORRECTION_LINEAGE');
         }
       }
+      if (row.supersedesScheduledVersionId) {
+        const ancestor = await db.businessPolicyVersion.findUnique({ where: { id: row.supersedesScheduledVersionId } });
+        if (
+          !ancestor
+          || row.replacesVersionId
+          || row.correctsVersionId
+          || ancestor.streamId !== row.streamId
+          || ancestor.status !== 'SUPERSEDED_BEFORE_EFFECTIVE'
+          || ancestor.effectiveUntil !== null
+          || row.effectiveUntil !== null
+          || this.format(ancestor.effectiveFrom) !== this.format(row.effectiveFrom)
+        ) {
+          throw new Error('CORRUPT_SCHEDULED_SUPERSESSION_LINEAGE');
+        }
+      }
       return { outcome: 'RESOLVED', family: familyKey, resource, requestedCivilDate: civilDate as never, policyVersionId: row.id, validatorVersion: row.validatorVersion, payload, effectiveFrom: this.format(row.effectiveFrom) as never, effectiveUntil: row.effectiveUntil ? this.format(row.effectiveUntil) as never : null };
     } catch {
       return { outcome: 'POLICY_CORRUPT', family: familyKey, resource, requestedCivilDate: civilDate as never };
@@ -431,6 +621,73 @@ export class BusinessConfigurationService {
       default:
         throw new ConflictException('POLICY_CORRUPT');
     }
+  }
+
+  private versionRecord(
+    familyKey: string,
+    version: BusinessPolicyVersion,
+    actionEvaluationCivilDate: CivilDateString,
+  ): BusinessPolicyVersionRecord {
+    return {
+      id: version.id,
+      streamId: version.streamId,
+      versionNumber: version.versionNumber,
+      status: version.status,
+      payload: version.payload as Record<string, unknown>,
+      validatorVersion: version.validatorVersion,
+      effectiveFrom: this.format(version.effectiveFrom),
+      effectiveUntil: version.effectiveUntil ? this.format(version.effectiveUntil) : null,
+      draftRevision: version.draftRevision,
+      createdByUserId: version.createdByUserId,
+      publishedByUserId: version.publishedByUserId,
+      publishedAt: version.publishedAt?.toISOString() ?? null,
+      reversedByUserId: version.reversedByUserId,
+      reversedAt: version.reversedAt?.toISOString() ?? null,
+      correctionReason: version.correctionReason,
+      replacesVersionId: version.replacesVersionId,
+      correctsVersionId: version.correctsVersionId,
+      supersedesScheduledVersionId: version.supersedesScheduledVersionId,
+      supersededBeforeEffectiveByUserId: version.supersededBeforeEffectiveByUserId,
+      supersededBeforeEffectiveAt: version.supersededBeforeEffectiveAt?.toISOString() ?? null,
+      supersededBeforeEffectiveReason: version.supersededBeforeEffectiveReason,
+      allowedActions: this.allowedActions(familyKey, version, actionEvaluationCivilDate),
+      actionEvaluationCivilDate,
+      createdAt: version.createdAt.toISOString(),
+      updatedAt: version.updatedAt.toISOString(),
+    };
+  }
+
+  private allowedActions(
+    familyKey: string,
+    version: BusinessPolicyVersion,
+    evaluationDate: CivilDateString,
+  ): BusinessPolicyAllowedAction[] {
+    const family = familyFor(this.families, familyKey);
+    if (!family?.publicationEnabled) return [];
+    if (version.status === 'SUPERSEDED_BEFORE_EFFECTIVE' || version.status === 'REVERSED') return [];
+    if (version.status === 'DRAFT') return ['EDIT_DRAFT', 'PUBLISH'];
+    if (version.status !== 'PUBLISHED') return [];
+    if (familyKey !== 'OPERATIONAL_START') {
+      return version.effectiveUntil === null ? ['REPLACE', 'RETIRE', 'CORRECT'] : ['CORRECT'];
+    }
+    if (version.effectiveUntil === null && evaluationDate < this.format(version.effectiveFrom)) {
+      return ['SUPERSEDE_SCHEDULED_AUTHORITY'];
+    }
+    try {
+      const validator = validatorForVersion(family, version.validatorVersion);
+      const payload = validator?.validate(version.payload) as { operationalStartDate?: unknown } | undefined;
+      if (
+        version.effectiveUntil === null
+        && typeof payload?.operationalStartDate === 'string'
+        && isCivilDate(payload.operationalStartDate)
+        && evaluationDate < payload.operationalStartDate
+      ) {
+        return ['REPLACE', 'CORRECT'];
+      }
+    } catch {
+      return [];
+    }
+    return ['CORRECT'];
   }
 
   private family(key: string) { const family = familyFor(this.families, key); if (!family) throw new BadRequestException('UNKNOWN_POLICY_FAMILY'); return family; }

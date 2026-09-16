@@ -6,7 +6,7 @@ import { SessionAuthGuard } from '../auth/session-auth.guard';
 import { CapabilityGuard } from '../authorization/capability.guard';
 import { RequireCapability } from '../authorization/require-capability.decorator';
 import { BusinessConfigurationService } from './business-configuration.service';
-import { CreateBusinessPolicyDraftDto, EditBusinessPolicyDraftDto, LifecycleBusinessPolicyDto } from './dto';
+import { CreateBusinessPolicyDraftDto, EditBusinessPolicyDraftDto, LifecycleBusinessPolicyDto, SupersedeScheduledAuthorityDto } from './dto';
 
 @Controller('business-configuration')
 @RequireCapability('BUSINESS_CONFIGURATION_MANAGE', { scope: 'SCHOOL_WIDE' })
@@ -22,4 +22,5 @@ export class BusinessConfigurationController {
   @Post('policy-versions/:id/replace') @HttpCode(200) @UseGuards(SessionAuthGuard, CsrfOriginGuard, CapabilityGuard) replace(@Param('id', ParseUUIDPipe) id: string, @Body() dto: LifecycleBusinessPolicyDto, @Req() request: AuthenticatedRequest) { return this.service.replace(id, dto, request.auth!.user.id, requestMeta(request)); }
   @Post('policy-versions/:id/retire') @HttpCode(200) @UseGuards(SessionAuthGuard, CsrfOriginGuard, CapabilityGuard) retire(@Param('id', ParseUUIDPipe) id: string, @Body() dto: LifecycleBusinessPolicyDto, @Req() request: AuthenticatedRequest) { return this.service.retire(id, dto, request.auth!.user.id, requestMeta(request)); }
   @Post('policy-versions/:id/correct') @HttpCode(200) @UseGuards(SessionAuthGuard, CsrfOriginGuard, CapabilityGuard) correct(@Param('id', ParseUUIDPipe) id: string, @Body() dto: LifecycleBusinessPolicyDto, @Req() request: AuthenticatedRequest) { return this.service.correct(id, dto, request.auth!.user.id, requestMeta(request)); }
+  @Post('policy-versions/:id/supersede-scheduled-authority') @HttpCode(200) @UseGuards(SessionAuthGuard, CsrfOriginGuard, CapabilityGuard) supersedeScheduledAuthority(@Param('id', ParseUUIDPipe) id: string, @Body() dto: SupersedeScheduledAuthorityDto, @Req() request: AuthenticatedRequest) { return this.service.supersedeScheduledAuthority(id, dto, request.auth!.user.id, requestMeta(request)); }
 }

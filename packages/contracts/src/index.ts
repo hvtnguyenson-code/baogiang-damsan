@@ -316,7 +316,22 @@ export interface AuditEventListResponse { items: AuditEventRecord[]; page: numbe
 // Business Configuration (P1-021 & P1-022)
 // ============================================================
 export type BusinessConfigurationResource = { kind: 'SCHOOL_WIDE' } | { kind: 'ACADEMIC_YEAR'; academicYearId: string };
-export type BusinessPolicyVersionStatus = 'DRAFT' | 'PUBLISHED' | 'REVERSED';
+export type BusinessPolicyVersionStatus = 'DRAFT' | 'PUBLISHED' | 'REVERSED' | 'SUPERSEDED_BEFORE_EFFECTIVE';
+export type BusinessPolicyAllowedAction =
+  | 'EDIT_DRAFT'
+  | 'PUBLISH'
+  | 'REPLACE'
+  | 'RETIRE'
+  | 'CORRECT'
+  | 'SUPERSEDE_SCHEDULED_AUTHORITY';
+export interface OperationalStartPolicyPayloadV1 {
+  operationalStartDate: CivilDateString;
+}
+export interface SupersedeScheduledAuthorityRequest {
+  commandId: string;
+  payload: OperationalStartPolicyPayloadV1;
+  reason?: string;
+}
 export type BusinessPolicyResolutionOutcome = 'RESOLVED' | 'UNKNOWN_POLICY_FAMILY' | 'INVALID_POLICY_RESOURCE' | 'INVALID_EFFECTIVE_DATE' | 'POLICY_NOT_CONFIGURED' | 'POLICY_AMBIGUOUS' | 'POLICY_CORRUPT';
 export interface BusinessPolicyFamilyMetadata {
   key: string;
@@ -355,6 +370,12 @@ export interface BusinessPolicyVersionRecord {
   correctionReason: string | null;
   replacesVersionId: string | null;
   correctsVersionId: string | null;
+  supersedesScheduledVersionId: string | null;
+  supersededBeforeEffectiveByUserId: string | null;
+  supersededBeforeEffectiveAt: string | null;
+  supersededBeforeEffectiveReason: string | null;
+  allowedActions: BusinessPolicyAllowedAction[];
+  actionEvaluationCivilDate: CivilDateString;
   createdAt: string;
   updatedAt: string;
 }
@@ -382,7 +403,8 @@ export type BusinessPolicyMutationOutcome =
   | 'PUBLISHED'
   | 'REPLACED'
   | 'RETIRED'
-  | 'CORRECTED';
+  | 'CORRECTED'
+  | 'SCHEDULED_AUTHORITY_SUPERSEDED';
 
 export interface BusinessPolicyMutationResult {
   outcome: BusinessPolicyMutationOutcome;
