@@ -200,14 +200,15 @@ supersedesScheduledVersionId
 
 Lineage interpretation:
 
-- forward edge: a `PUBLISHED` successor points to exactly one `SUPERSEDED_BEFORE_EFFECTIVE` source through `supersedesScheduledVersionId`;
-- reverse history: the source exposes at most one scheduled successor through the inverse relation;
+- forward edge: a scheduled-lineage descendant points to exactly one `SUPERSEDED_BEFORE_EFFECTIVE` ancestor through `supersedesScheduledVersionId`; the descendant is `PUBLISHED` while it is the current scheduled leaf and may later become `SUPERSEDED_BEFORE_EFFECTIVE` when another scheduled successor supersedes it;
+- reverse history: every terminal source exposes exactly one scheduled successor through the inverse relation at transaction commit; the unique partial index permits at most one child and the deferred constraint trigger requires the child to exist;
 - source and successor must have the same `streamId` and exact same `effectiveFrom`;
 - source and successor must both remain open-ended at the stored interval level; authority is distinguished by status;
 - `replacesVersionId`, `correctsVersionId` and `supersedesScheduledVersionId` are mutually exclusive for one successor;
 - self-links, cross-stream links and cycles are forbidden;
-- a source may have at most one scheduled-successor child;
-- repeated planned changes target the current `PUBLISHED` successor and create a chain such as `A(SUPERSEDED) <- B(SUPERSEDED) <- C(PUBLISHED)`; they never mutate an earlier terminal node.
+- repeated planned changes target the current `PUBLISHED` successor and create a chain such as `A(SUPERSEDED) <- B(SUPERSEDED) <- C(PUBLISHED)`; only the current leaf is `PUBLISHED`;
+- intermediate `B` retains its successor-side `supersedesScheduledVersionId -> A` after terminalization and may simultaneously be the terminal source referenced by `C`; these are opposite lineage directions, not two successor-side lineage fields and not a violation of mutual exclusivity;
+- repeated supersession never mutates a previously terminal node; each command only atomically terminalizes the current `PUBLISHED` leaf and creates its child.
 
 The dedicated field is chosen for semantic clarity, not migration convenience.
 
@@ -272,10 +273,10 @@ P1-031A must add an immediate database trigger that joins every affected version
 2. non-null `supersedes_scheduled_version_id` is legal only for an `OPERATIONAL_START` successor whose linked source is also in the same exact stream;
 3. any non-null `superseded_before_effective_by_user_id`, `superseded_before_effective_at` or `superseded_before_effective_reason` is legal only on an `OPERATIONAL_START` row whose status is `SUPERSEDED_BEFORE_EFFECTIVE`;
 4. a non-`OPERATIONAL_START` stream must have none of the scheduled-only status, lineage or evidence fields, otherwise the database raises and aborts the transaction;
-5. a scheduled-lineage successor must be `PUBLISHED`; its source must be `SUPERSEDED_BEFORE_EFFECTIVE`; both are in the same stream and therefore the same exact family/resource;
+5. a row with non-null `supersedes_scheduled_version_id` must link to a `SUPERSEDED_BEFORE_EFFECTIVE` ancestor in the same exact stream, with exact-equal `effective_from`, open-ended stored intervals and valid scheduled lineage; the descendant itself may be either `PUBLISHED` as the current scheduled leaf or `SUPERSEDED_BEFORE_EFFECTIVE` as a retained intermediate chain node;
 6. no generic family can move a row out of the `status = 'PUBLISHED'` GiST predicate by assigning the OPERATIONAL_START-only terminal status.
 
-Because source transition and successor insertion occur in one transaction, the complete pair invariant must be checked at commit by a `DEFERRABLE INITIALLY DEFERRED` constraint trigger. At commit it proves exactly one successor for each newly terminal source, exact-equal `effectiveFrom`, both stored intervals open-ended, mutually exclusive lineage, no cycle and the status pairing above. The existing immediate GiST exclusion for `PUBLISHED` rows remains unchanged.
+Because source transition and successor insertion occur in one transaction, the complete pair invariant must be checked at commit by a `DEFERRABLE INITIALLY DEFERRED` constraint trigger. At commit it proves every terminal source has exactly one valid scheduled-successor child, combining the unique partial index's at-most-one guarantee with the trigger's existence requirement. Every edge must have exact-equal `effectiveFrom`, open-ended stored intervals, same-stream ancestry, mutually exclusive successor-side lineage and no cycle. A descendant with scheduled lineage may be terminal only when it is an intermediate node with its own one valid child; only the current leaf remains `PUBLISHED`. Retaining an intermediate node's pointer to its predecessor while a later node points to it is explicitly valid because the two edges have opposite directions. The existing immediate GiST exclusion for `PUBLISHED` rows remains unchanged.
 
 No existing row is automatically reclassified. Existing production has no configured or deployed `OPERATIONAL_START` authority, so production backfill is **zero rows / none**. Test/dev legacy rows remain in their existing statuses; invalid finite or corrupt rows are not silently repaired by migration and must fail closed until deliberately recreated in an isolated environment. The migration is additive and deterministic.
 
@@ -473,7 +474,7 @@ I. Ordinary `REPLACE` remains valid for `source.effectiveFrom <= businessDate < 
 
 J. `CORRECTION` retains existing reason, `REVERSED` and `correctsVersionId` semantics; no planned-change alias is accepted.
 
-K. Repeated scheduled supersession forms a valid retained dedicated lineage chain and rejects cycles/cross-stream/multiple-child corruption.
+K. Database-backed repeated supersession proves the complete chain invariant: `A terminal <- B published` commits; superseding B then commits `A terminal <- B terminal <- C published`; A and B each have exactly one child; C is the only `PUBLISHED` scheduled leaf; the resolver selects C at/after the shared scheduled start; intermediate B retains `supersedesScheduledVersionId -> A` after terminalization; and cycles, cross-stream links, multiple children or an orphan terminal source fail at commit.
 
 L. Concurrent scheduled supersession and concurrent publish/replace/correct races have one winner and stable losing conflict.
 
@@ -497,6 +498,8 @@ Additional required evidence:
 
 - status/lineage lifecycle and immutability constraint tests;
 - same-start migration/constraint behavior in isolated PostgreSQL;
+- two-step isolated PostgreSQL chain evidence proving `A terminal <- B published` and then `A terminal <- B terminal <- C published` both commit under the immediate and deferred triggers, with one child per terminal node, one published leaf and retained intermediate predecessor lineage;
+- database-bypass rejection of cycles, cross-stream lineage, multiple children and orphan terminal sources;
 - source transition + successor + audit + receipt rollback on injected failure;
 - endpoint authentication, CSRF, capability and forbidden-field DTO coverage;
 - shared contract serialization and exact success-body coverage;
