@@ -88,7 +88,7 @@ No runtime/schema/production mutation.
 
 1. **HomeroomAssignment** — date-effective retained GVCN responsibility required for HĐTN `CLASS`.
 2. **Business Configuration Control Plane** — typed/versioned business policy, explicitly separated from secrets/technical env.
-3. **Delayed go-live operational-start policy** — explicit start authority without inventing historical debt (`P1-030` CLOSED by `SYNC-P1-030`, `ADR-049` Accepted; `P1-031` CLOSED by `SYNC-P1-031`; distinct scheduled-authority lifecycle `P1-031B` IN_REVIEW; continuity correction `P1-031A` BLOCKED_DECISION pending P1-031B closure; `P1-032` PLANNED/non-startable).
+3. **Delayed go-live operational-start policy** — explicit start authority without inventing historical debt (`P1-030` CLOSED by `SYNC-P1-030`, `ADR-049` Accepted; `P1-031` CLOSED by `SYNC-P1-031`; distinct scheduled-authority lifecycle `P1-031B` IN_REVIEW; continuity correction `P1-031A` PLANNED pending P1-031B closure; `P1-032` PLANNED/non-startable).
 
 ### P2 — Real school data ingestion & Curricular components
 
@@ -155,7 +155,7 @@ P0-900 (CLOSED)
     ├── P1-030 (Delayed go-live architecture, CLOSED by SYNC-P1-030, ADR-049 Accepted)
     │   └── P1-031 (Operational-start policy, CLOSED by SYNC-P1-031)
     │       └── P1-031B (Scheduled-authority supersession architecture, IN_REVIEW)
-    │           └── P1-031A (Authority continuity correction, BLOCKED_DECISION pending P1-031B closure)
+    │           └── P1-031A (Authority continuity correction, PLANNED pending P1-031B closure)
     │               └── P1-032 (Operational-start admin UI, PLANNED)
     ├── P2-002 (Component persistence & control plane, CLOSED by SYNC-P2-002)
     │   └── P2-003 (Component allocation & projections, CLOSED by SYNC-P2-003)

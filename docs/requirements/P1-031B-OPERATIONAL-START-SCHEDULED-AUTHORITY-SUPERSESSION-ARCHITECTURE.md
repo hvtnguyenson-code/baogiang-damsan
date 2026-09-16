@@ -9,7 +9,7 @@
 - **Dedicated branch:** `docs/operational-start-scheduled-authority-supersession-031b`
 - **Canonical starting main:** `f1b160be25045d0f4c661e154ece24c92a3e0fc9`
 - **Controlling authority:** ADR-046, ADR-049, P1-030 and P1-031
-- **Related blocked correction:** `P1-031A` on `fix/operational-start-authority-continuity-031a`; remote head `6b7b804a5e82fc54fb280424e82b66d4b48db955` was inspected as evidence only and is not merged or copied into this branch.
+- **Related planned correction:** `P1-031A` on `fix/operational-start-authority-continuity-031a`; remote head `6b7b804a5e82fc54fb280424e82b66d4b48db955` was inspected as evidence only and is not merged or copied into this branch. It is `PLANNED` because dependency P1-031B is not yet `CLOSED`.
 
 This task is documentation and architecture only. It authorizes no runtime, Prisma schema, migration, API, UI, deployment, VPS, production policy or production-data mutation.
 
@@ -66,6 +66,69 @@ The command is distinct from `PUBLISH`, `REPLACE`, `RETIRE` and `CORRECT`. Its s
 
 It does **not** accept caller-selected `effectiveFrom` or `effectiveUntil`. The server derives both successor bounds: `effectiveFrom = source.effectiveFrom`, `effectiveUntil = null`.
 
+### 4.1 Exact HTTP mutation contract
+
+P1-031A must add this route following the existing Business Configuration version-command convention:
+
+```text
+POST /api/business-configuration/policy-versions/:id/supersede-scheduled-authority
+HTTP 200
+```
+
+`:id` is the UUID of the source version and is parsed with `ParseUUIDPipe`. The controller remains under its existing class-level authority:
+
+```text
+@RequireCapability('BUSINESS_CONFIGURATION_MANAGE', { scope: 'SCHOOL_WIDE' })
+```
+
+The new method uses exactly `@HttpCode(200)` and `@UseGuards(SessionAuthGuard, CsrfOriginGuard, CapabilityGuard)`. No new capability or resource-derived authorization is introduced.
+
+The dedicated DTO is `SupersedeScheduledAuthorityDto`:
+
+```ts
+export class SupersedeScheduledAuthorityDto {
+  @IsString() @IsNotEmpty() @MaxLength(100)
+  commandId!: string;
+
+  @IsObject()
+  payload!: Record<string, unknown>;
+
+  @IsOptional() @IsString() @MaxLength(1000)
+  reason?: string;
+}
+```
+
+The global validation pipe's `whitelist: true` and `forbidNonWhitelisted: true` contract is mandatory. The DTO has no `effectiveFrom`, `effectiveUntil`, `businessDate`, status, source/successor lineage ID, actor or timestamp field; supplying any of them is rejected before service mutation. `reason`, when present, is trimmed, stored as immutable terminal evidence and mirrored into audit metadata; blank-after-trim is normalized to `null`.
+
+The stable success body follows `BusinessPolicyMutationResult` conventions exactly:
+
+```json
+{
+  "outcome": "SCHEDULED_AUTHORITY_SUPERSEDED",
+  "versionId": "<successor-version-uuid>"
+}
+```
+
+`versionId` is always the newly created successor identity. The source identity remains the route `:id`; no redundant client-supplied identity is accepted.
+
+### 4.2 Shared command/outcome types
+
+`packages/contracts` must add:
+
+```ts
+export interface OperationalStartPolicyPayloadV1 {
+  operationalStartDate: CivilDateString;
+}
+
+export interface SupersedeScheduledAuthorityRequest {
+  commandId: string;
+  payload: OperationalStartPolicyPayloadV1;
+  reason?: string;
+}
+```
+
+The DTO still receives an object and the code-defined `OPERATIONAL_START/v1` validator enforces the exact single-field payload at runtime. `BusinessPolicyMutationOutcome` gains only `SCHEDULED_AUTHORITY_SUPERSEDED`; the existing `BusinessPolicyMutationResult` shape remains `outcome + versionId + optional streamId`. The Web API client eventually added by P1-032 must send only `SupersedeScheduledAuthorityRequest` to the exact route above.
+
 ## 5. Exact source eligibility
 
 The command may proceed only when all predicates below hold in the mutation transaction:
@@ -100,7 +163,7 @@ The source:
 - remains retained permanently;
 - keeps its original payload, validator version, `effectiveFrom` and open `effectiveUntil = null` unchanged;
 - retains original publication actor/time evidence;
-- gains dedicated terminal actor/time evidence;
+- gains dedicated terminal actor/time evidence and the normalized optional supersession reason;
 - is non-authoritative and is never selected by the resolver;
 - can never return to `DRAFT` or `PUBLISHED`;
 - cannot be retired, replaced, corrected, republished or superseded again;
@@ -148,6 +211,41 @@ Lineage interpretation:
 
 The dedicated field is chosen for semantic clarity, not migration convenience.
 
+### 8.1 Shared status and retained read contract
+
+`packages/contracts` must change the shared read authority exactly as follows:
+
+```ts
+export type BusinessPolicyVersionStatus =
+  | 'DRAFT'
+  | 'PUBLISHED'
+  | 'REVERSED'
+  | 'SUPERSEDED_BEFORE_EFFECTIVE';
+
+export type BusinessPolicyAllowedAction =
+  | 'EDIT_DRAFT'
+  | 'PUBLISH'
+  | 'REPLACE'
+  | 'RETIRE'
+  | 'CORRECT'
+  | 'SUPERSEDE_SCHEDULED_AUTHORITY';
+```
+
+`BusinessPolicyVersionRecord` gains these required fields:
+
+```ts
+supersedesScheduledVersionId: string | null;
+supersededBeforeEffectiveByUserId: string | null;
+supersededBeforeEffectiveAt: string | null;
+supersededBeforeEffectiveReason: string | null;
+allowedActions: BusinessPolicyAllowedAction[];
+actionEvaluationCivilDate: CivilDateString;
+```
+
+The first four fields are retained persistence evidence. `allowedActions` and `actionEvaluationCivilDate` are server-computed presentation fields and are not persisted. Existing `replacesVersionId`, `correctsVersionId`, reversal fields and correction reason remain unchanged.
+
+Both `GET /api/business-configuration/policies` and the exact stream-detail read `GET /api/business-configuration/policies/:streamId` must serialize conforming `BusinessPolicyVersionRecord` values rather than returning raw Prisma rows. P1-032 must use the exact stream-detail response as the action authority for the selected version.
+
 ## 9. Schema and migration verdict for P1-031A
 
 **Schema change is required.** P1-031A must implement one forward Prisma migration containing all of the following:
@@ -155,14 +253,29 @@ The dedicated field is chosen for semantic clarity, not migration convenience.
 1. add `SUPERSEDED_BEFORE_EFFECTIVE` to `BusinessPolicyVersionStatus`;
 2. add nullable `supersedes_scheduled_version_id UUID` with a self-FK using `ON DELETE RESTRICT` and repository-consistent update behavior;
 3. add a unique partial index on non-null `supersedes_scheduled_version_id` so one source has at most one scheduled successor;
-4. add nullable `superseded_before_effective_by_user_id UUID` and `superseded_before_effective_at TIMESTAMPTZ(3)` with retained User FK for terminal evidence;
+4. add nullable `superseded_before_effective_by_user_id UUID`, `superseded_before_effective_at TIMESTAMPTZ(3)` and `superseded_before_effective_reason TEXT`, with retained User FK and a maximum-1000-character/check-normalization contract for terminal evidence;
 5. extend lifecycle-evidence checks so the new status requires original publish evidence plus both scheduled-supersession actor/time fields, while correction-only fields remain null;
 6. add lineage-shape checks making the three successor lineage fields mutually exclusive and prohibiting self-link;
 7. extend the lineage trigger to require same-stream scheduled lineage and reject missing/cross-stream ancestors;
-8. add/extend a constraint trigger or equivalent database backstop proving scheduled source status, exact-equal `effectiveFrom`, open-ended bounds and no cycles;
+8. add an immediate family-scope trigger and a `DEFERRABLE INITIALLY DEFERRED` paired-lineage constraint trigger as specified below;
 9. extend the immutable-published trigger to permit only the atomic transition `PUBLISHED -> SUPERSEDED_BEFORE_EFFECTIVE` with terminal evidence populated and without changing payload, validator, effectivity, version number, creator, publisher or existing lineage;
 10. make `SUPERSEDED_BEFORE_EFFECTIVE` rows fully immutable;
 11. retain the current GiST exclusion predicate on `status = 'PUBLISHED'`; do not weaken generic overlap protection.
+
+### 9.1 Mandatory database family-scope backstop
+
+The new enum is physically shared, but its scheduled-supersession meaning is legal only for `BusinessPolicyStream.familyKey = 'OPERATIONAL_START'`. Command-layer checks are insufficient because migrations, maintenance SQL or later code could otherwise misuse the generic status to escape `PUBLISHED` overlap authority.
+
+P1-031A must add an immediate database trigger that joins every affected version to `business_policy_streams` and rejects the row when any of these rules fails:
+
+1. `status = 'SUPERSEDED_BEFORE_EFFECTIVE'` is legal only when the owning stream `family_key = 'OPERATIONAL_START'`;
+2. non-null `supersedes_scheduled_version_id` is legal only for an `OPERATIONAL_START` successor whose linked source is also in the same exact stream;
+3. any non-null `superseded_before_effective_by_user_id`, `superseded_before_effective_at` or `superseded_before_effective_reason` is legal only on an `OPERATIONAL_START` row whose status is `SUPERSEDED_BEFORE_EFFECTIVE`;
+4. a non-`OPERATIONAL_START` stream must have none of the scheduled-only status, lineage or evidence fields, otherwise the database raises and aborts the transaction;
+5. a scheduled-lineage successor must be `PUBLISHED`; its source must be `SUPERSEDED_BEFORE_EFFECTIVE`; both are in the same stream and therefore the same exact family/resource;
+6. no generic family can move a row out of the `status = 'PUBLISHED'` GiST predicate by assigning the OPERATIONAL_START-only terminal status.
+
+Because source transition and successor insertion occur in one transaction, the complete pair invariant must be checked at commit by a `DEFERRABLE INITIALLY DEFERRED` constraint trigger. At commit it proves exactly one successor for each newly terminal source, exact-equal `effectiveFrom`, both stored intervals open-ended, mutually exclusive lineage, no cycle and the status pairing above. The existing immediate GiST exclusion for `PUBLISHED` rows remains unchanged.
 
 No existing row is automatically reclassified. Existing production has no configured or deployed `OPERATIONAL_START` authority, so production backfill is **zero rows / none**. Test/dev legacy rows remain in their existing statuses; invalid finite or corrupt rows are not silently repaired by migration and must fail closed until deliberately recreated in an isolated environment. The migration is additive and deterministic.
 
@@ -243,14 +356,14 @@ One transaction must:
 1. load and validate source, family/resource, lineage, payload and unique active calendar;
 2. capture the server-owned HCM business date once;
 3. validate successor payload and derived effectivity;
-4. CAS-transition source from `PUBLISHED` to `SUPERSEDED_BEFORE_EFFECTIVE` with terminal actor/time evidence;
+4. CAS-transition source from `PUBLISHED` to `SUPERSEDED_BEFORE_EFFECTIVE` with terminal actor/time and normalized optional reason evidence;
 5. create the `PUBLISHED` successor with exact-equal start and dedicated lineage;
 6. write the distinct success audit;
 7. persist the idempotency receipt.
 
 No intermediate gap is externally visible because all changes commit atomically. Concurrent publish/replace/correct/scheduled-supersede attempts cannot yield two authoritative successors. The CAS, unique lineage index, published-overlap exclusion and serializable transaction permit one winner; a loser returns `BUSINESS_POLICY_CONFLICT` and writes no success audit or partial receipt.
 
-The command fingerprint must include the canonical operation name, source version identity, normalized strict successor payload and normalized optional reason/note. Repeating the same actor `commandId` with the identical semantic request returns the same stable outcome and successor ID. Reusing it with any semantic difference fails closed with `BUSINESS_POLICY_CONFLICT`.
+The command fingerprint must include the canonical operation name, source version identity, normalized strict successor payload and normalized optional `reason`. Repeating the same actor `commandId` with the identical semantic request returns the same stable outcome and successor ID. Reusing it with any semantic difference fails closed with `BUSINESS_POLICY_CONFLICT`.
 
 ## 15. Database constraint interaction
 
@@ -278,7 +391,7 @@ It must be distinguishable from `BUSINESS_POLICY_REPLACED` and `BUSINESS_POLICY_
 - old/new `operationalStartDate`;
 - captured server-owned HCM business civil date;
 - `supersedesScheduledVersionId` lineage;
-- optional normalized operator note/reason.
+- optional normalized `reason`.
 
 Source terminal transition, successor creation, audit and command receipt must commit together. Failed commands write no success audit.
 
@@ -290,19 +403,36 @@ A caller may perform a read-only future exact-date preview before supersession, 
 
 Existing frozen revisions remain immutable. Statements submitted on or after the scheduled start resolve and pin the successor version. No ReportingStatement schema/profile change is required by this lifecycle.
 
-## 18. Historical read and P1-032 UI contract
+## 18. Historical read and P1-032 server-authoritative action contract
 
-P1-032 must eventually present, through typed read models rather than raw JSON:
+The exact transport authority is the existing stream-detail read:
+
+```text
+GET /api/business-configuration/policies/:streamId
+```
+
+It remains protected by `SessionAuthGuard + CapabilityGuard` and `BUSINESS_CONFIGURATION_MANAGE / SCHOOL_WIDE`. The service captures `businessCivilDate()` exactly once per response and maps every version to the shared `BusinessPolicyVersionRecord` defined in §8.1.
+
+The server computes `allowedActions`; P1-032 renders actions only from that array:
+
+- eligible open `PUBLISHED OPERATIONAL_START` with `actionEvaluationCivilDate < effectiveFrom`: include `SUPERSEDE_SCHEDULED_AUTHORITY`; do not offer ordinary `REPLACE` for that planned-change state;
+- when `actionEvaluationCivilDate == effectiveFrom` or later: omit `SUPERSEDE_SCHEDULED_AUTHORITY`;
+- `SUPERSEDED_BEFORE_EFFECTIVE`: `allowedActions = []` exactly, making the row history-only;
+- `RETIRE` is never returned for `OPERATIONAL_START`;
+- `CORRECT` may be returned only under the existing erroneous-assertion lifecycle; its presence does not reclassify a planned change;
+- other generic draft/publish/replace/correct actions follow their existing server lifecycle and family gates.
+
+`actionEvaluationCivilDate` is evidence of the server evaluation anchor, not a client input. The browser must not add/remove actions by comparing its own clock. If a response crosses HCM midnight or becomes stale, the mutation command revalidates inside its transaction and may return the stable too-late/conflict error; P1-032 then refetches the stream detail.
+
+P1-032 presents, without raw JSON:
 
 - the original scheduled source and its original payload/effectivity;
 - localized status for `SUPERSEDED_BEFORE_EFFECTIVE`;
 - the active scheduled successor;
-- directional retained lineage and repeated-chain chronology;
+- directional `supersedesScheduledVersionId` chain chronology;
 - publication and scheduled-supersession actors/timestamps;
-- old/new operational-start dates, unchanged scheduled start and optional audit note;
-- allowed actions computed by the server, with terminal sources offering history only.
-
-The UI must not infer eligibility from the browser clock. It may explain a server rejection but cannot decide that supersession is still timely.
+- `supersededBeforeEffectiveReason`, old/new operational-start dates and unchanged scheduled start;
+- only the exact server-returned actions.
 
 ## 19. Stable error contract
 
@@ -327,7 +457,7 @@ A. `businessDate < source.effectiveFrom == currentOperationalStartDate` succeeds
 
 B. Successor keeps the exact source `effectiveFrom` and remains open-ended.
 
-C. Source becomes retained terminal `SUPERSEDED_BEFORE_EFFECTIVE` with unchanged payload/effectivity and complete actor/time evidence.
+C. Source becomes retained terminal `SUPERSEDED_BEFORE_EFFECTIVE` with unchanged payload/effectivity and complete actor/time/optional-reason evidence.
 
 D. Resolver never returns the superseded source after commit.
 
@@ -353,11 +483,25 @@ N. Direct publish remains forbidden after `SUPERSEDED_BEFORE_EFFECTIVE` history 
 
 O. Existing ReportingStatement V1/V2 frozen provenance remains byte/semantic-hash stable; a new statement at/after the scheduled start pins the successor.
 
+P. Exact POST mutation route requires session, valid CSRF origin and `BUSINESS_CONFIGURATION_MANAGE / SCHOOL_WIDE`; missing authentication/capability or invalid origin is rejected, and no new capability is accepted as a substitute.
+
+Q. `SupersedeScheduledAuthorityDto` accepts only `commandId`, strict successor payload and optional bounded `reason`; caller `effectiveFrom`, `effectiveUntil`, `businessDate`, status, lineage, actor or timestamp fields fail DTO validation.
+
+R. Stable success response is exactly `SCHEDULED_AUTHORITY_SUPERSEDED` with `versionId` equal to the successor, and shared status/read records expose scheduled lineage, actor, timestamp, reason, allowed actions and evaluation civil date with the declared nullability.
+
+S. Server-owned action contract returns `SUPERSEDE_SCHEDULED_AUTHORITY` before source `effectiveFrom`, omits it at equality/afterwards, and returns an empty action list for the terminal source; Web regression proves no browser-clock inference.
+
+T. Isolated database-bypass integration proves a non-`OPERATIONAL_START` family cannot persist `SUPERSEDED_BEFORE_EFFECTIVE`, scheduled lineage or any scheduled terminal evidence, while valid same-stream OPERATIONAL_START pairs commit and generic GiST overlap protection remains unchanged.
+
 Additional required evidence:
 
 - status/lineage lifecycle and immutability constraint tests;
 - same-start migration/constraint behavior in isolated PostgreSQL;
 - source transition + successor + audit + receipt rollback on injected failure;
+- endpoint authentication, CSRF, capability and forbidden-field DTO coverage;
+- shared contract serialization and exact success-body coverage;
+- server-owned action-list boundary and stale-response refetch coverage;
+- database-bypass family-scope rejection for status, lineage and every terminal-evidence field;
 - terminal-state action rejections;
 - before/on/after resolver table coverage;
 - unique active calendar and strict payload validation;
@@ -367,8 +511,8 @@ Additional required evidence:
 ## 21. Dependency and closure effect
 
 - P1-031B is architecture-complete on this branch and moves to `IN_REVIEW`; it is not `CLOSED` until merge, authoritative post-merge CI and `SYNC-P1-031B`.
-- P1-031A remains `BLOCKED_DECISION`/blocked on P1-031B closure. Its branch is not canonical and none of its runtime changes are claimed merged.
-- After `SYNC-P1-031B`, P1-031A may resume on a dedicated correction branch and must implement this architecture plus its already-audited continuity corrections.
+- P1-031A is `PLANNED` because the Product Owner decision is closed but dependency P1-031B is not yet `CLOSED`. Its branch is not canonical and none of its runtime changes are claimed merged.
+- After `SYNC-P1-031B`, canonical dependency gates permit P1-031A to transition `PLANNED -> READY`; implementation then resumes on a dedicated correction branch and must implement this architecture plus its already-audited continuity corrections.
 - P1-032 remains `PLANNED` and non-startable until P1-031A is merged, passes authoritative post-merge CI and closes through `SYNC-P1-031A`.
 - Production remains strictly `PRE-OPERATIONAL`; no deployed `OPERATIONAL_START` policy exists and no production remediation/backfill is required.
 

@@ -192,3 +192,13 @@ Amendment này ghi nhận quyết định Product Owner đã khóa cho `P1-031B`
 P1-031A phải thêm enum status, dedicated lineage và terminal actor/time evidence cùng database constraints/immutability guards tương ứng. Same-start successor chỉ hợp lệ vì source rời `PUBLISHED` và successor được tạo `PUBLISHED` nguyên tử trong một `SERIALIZABLE` transaction. Không được nới lỏng GiST overlap protection chung.
 
 Migration không tự động phân loại lại legacy rows. Production hiện strictly `PRE-OPERATIONAL` và chưa có deployed/configured `OPERATIONAL_START` authority, nên production backfill bằng không. P1-031B không tự nó cho phép implementation, migration, UI hoặc production mutation.
+
+### 5.5 HTTP, shared contract and action authority
+
+Future P1-031A implements exactly `POST /api/business-configuration/policy-versions/:id/supersede-scheduled-authority`, guarded by session, CSRF origin and `BUSINESS_CONFIGURATION_MANAGE / SCHOOL_WIDE`. Dedicated DTO accepts only `commandId`, strict successor payload and optional maximum-1000-character `reason`; effectivity, business date, status, lineage and evidence identities are server-owned. Success is `{ outcome: 'SCHEDULED_AUTHORITY_SUPERSEDED', versionId: successorId }`.
+
+Shared contracts add status `SUPERSEDED_BEFORE_EFFECTIVE`, dedicated lineage/actor/timestamp/reason read fields and server-computed `allowedActions` plus `actionEvaluationCivilDate`. Existing stream-detail read is the exact P1-032 action authority. Action identifier is `SUPERSEDE_SCHEDULED_AUTHORITY`; terminal rows return no actions. Browser time never determines eligibility.
+
+### 5.6 Database family-scope authority
+
+Database triggers must prove scheduled-only status, lineage and evidence are legal only when the owning stream family is exactly `OPERATIONAL_START`. Source/successor must remain the same exact stream/family/resource. A non-OPERATIONAL_START family cannot use the terminal status to leave the `PUBLISHED` GiST overlap predicate. Complete paired lineage is verified by a deferred constraint trigger at transaction commit; generic overlap protection is unchanged.
