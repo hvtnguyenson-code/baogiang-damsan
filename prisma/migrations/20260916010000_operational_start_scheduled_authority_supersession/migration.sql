@@ -1,5 +1,5 @@
 -- P1-031A: OPERATIONAL_START continuity and never-effective scheduled-authority supersession.
-ALTER TYPE "BusinessPolicyVersionStatus" ADD VALUE 'SUPERSEDED_BEFORE_EFFECTIVE';
+-- The enum value used below is established by the preceding ordered migration.
 
 ALTER TABLE "business_policy_versions"
   ADD COLUMN "supersedes_scheduled_version_id" UUID,

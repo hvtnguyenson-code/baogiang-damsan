@@ -5,8 +5,11 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '..', '..');
 const schema = fs.readFileSync(path.join(root, 'prisma/schema.prisma'), 'utf8');
 const foundationMigration = fs.readFileSync(path.join(root, 'prisma/migrations/20260906020000_business_configuration_persistence_foundation/migration.sql'), 'utf8');
-const supersessionMigration = fs.readFileSync(path.join(root, 'prisma/migrations/20260916010000_operational_start_scheduled_authority_supersession/migration.sql'), 'utf8');
-const migration = `${foundationMigration}\n${supersessionMigration}`;
+const enumMigrationName = '20260916000000_business_policy_version_status_superseded_before_effective';
+const supersessionMigrationName = '20260916010000_operational_start_scheduled_authority_supersession';
+const enumMigration = fs.readFileSync(path.join(root, 'prisma/migrations', enumMigrationName, 'migration.sql'), 'utf8');
+const supersessionMigration = fs.readFileSync(path.join(root, 'prisma/migrations', supersessionMigrationName, 'migration.sql'), 'utf8');
+const migration = `${foundationMigration}\n${enumMigration}\n${supersessionMigration}`;
 const { CAPABILITIES } = require(path.join(root, 'prisma/capability-catalog.cjs'));
 const registrySource = fs.readFileSync(path.join(root, 'apps/api/src/business-configuration/business-policy-registry.ts'), 'utf8');
 
@@ -37,6 +40,21 @@ assert.doesNotMatch(systemSetting, /BusinessPolicy/u);
 assert.doesNotMatch(migration, /system_settings/u);
 
 // 5. Migration constraints, indexes, triggers
+assert.ok(
+  enumMigrationName < supersessionMigrationName,
+  'The enum-introduction migration must run before the scheduled-authority migration',
+);
+const enumMigrationSql = enumMigration.replace(/--.*$/gmu, '').trim();
+assert.equal(
+  enumMigrationSql,
+  'ALTER TYPE "BusinessPolicyVersionStatus" ADD VALUE \'SUPERSEDED_BEFORE_EFFECTIVE\';',
+  'The first P1-031A migration must contain only the enum addition',
+);
+assert.doesNotMatch(
+  supersessionMigration,
+  /ALTER\s+TYPE\s+"BusinessPolicyVersionStatus"/iu,
+  'The second P1-031A migration must use, not introduce, the committed enum value',
+);
 const requiredMigrationTokens = [
   'business_policy_streams_resource_shape_check',
   'business_policy_streams_school_wide_family_key',
