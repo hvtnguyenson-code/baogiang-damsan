@@ -13,7 +13,7 @@ It is **not** a self-referential registry of the latest Git commit. Exact curren
 `P1-031C` — Operational-start Academic-Year options read-model enablement — is **CLOSED** by `SYNC-P1-031C` following parent PR #140 merge (`1403906282c5ef63d17d1053c72e5ed47b4fa080`) and authoritative post-merge CI #457 SUCCESS.
 
 Next critical-path implementation:
-- `P1-032` — Operational-start admin UI integration — **IN_PROGRESS** on dedicated task branch `feat/operational-start-admin-ui-integration-032` (started from canonical main `95d88867e85e7177ce7ae12adc4ec942f1567656`, PR #141 post-closure CI #459 SUCCESS). All prerequisite dependencies (`P1-022`, `P1-031`, `P1-031A`, `P1-031C`) are CLOSED. Obeying UI authority in `AGENTS.md`, `.codex/skills/damsan-ui/SKILL.md` and `DESIGN.md`.
+- `P1-032` — Operational-start admin UI integration — **IN_REVIEW** on dedicated task branch `feat/operational-start-admin-ui-integration-032` (started from canonical main `95d88867e85e7177ce7ae12adc4ec942f1567656`, PR #141 post-closure CI #459 SUCCESS). Implemented `OPERATIONAL_START/v1/ACADEMIC_YEAR` production adapter, AcademicYear options read picker via P1-031C endpoint, server-owned `allowedActions` authority, dedicated scheduled-authority supersession workflow, open-ended create without `effectiveUntil`, effectivity-preserving correction, `SUPERSEDED_BEFORE_EFFECTIVE` retained audit and lineage rendering; 55 unit tests passing; zero backend/contracts/schema/migration mutation; production remains strictly PRE-OPERATIONAL. Obeying UI authority in `AGENTS.md`, `.codex/skills/damsan-ui/SKILL.md` and `DESIGN.md`.
 
 Parallel eligible:
 - `P4-010` — GDĐP/HĐTN programme architecture closure — **READY** (independent track).

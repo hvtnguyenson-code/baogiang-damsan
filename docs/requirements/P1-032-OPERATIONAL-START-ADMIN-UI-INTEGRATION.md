@@ -6,7 +6,7 @@
 - Dependencies: `P1-022`, `P1-031`, `P1-031A`, `P1-031C` (all `CLOSED`)
 - Traceability: `T28`, `T30`
 - Controlling Authorities: `ADR-046` (Business Configuration Control Plane), `ADR-049` (Delayed Go-Live Operational-Start Architecture)
-- Status: `IN_PROGRESS`
+- Status: `IN_REVIEW`
 
 ---
 
@@ -177,3 +177,42 @@ The UI integration enables school administrators with `BUSINESS_CONFIGURATION_MA
 |                                              |           | TRƯỚC H.LỰC|           | 2026-09-05| Lý do: Lùi tựu trường   |
 +----------------------------------------------+-------------------------------------------------------------------------+
 ```
+
+---
+
+## 5. Implementation & Verification Evidence
+
+### 5.1 Delivered Changes
+1. **Production UI Adapter (`apps/web/src/lib/business-policy-ui-registry.ts`)**:
+   - Registered `OPERATIONAL_START / v1 / ACADEMIC_YEAR` as the sole production adapter in `PRODUCTION_BUSINESS_POLICY_UI_ADAPTERS`.
+   - Pure client arithmetic civil date validation (`isValidCivilDate`); strict rejection of invalid dates, extra properties, or non-object payloads; zero browser clock comparison.
+   - Resource editor component exhaustively consuming `GET /api/business-configuration/academic-year-options` (with loading, error/retry, and empty states).
+   - Dedicated editor and summary components displaying normalized civil date.
+2. **Web API Client (`apps/web/src/lib/business-configuration-api.ts`)**:
+   - `getAcademicYearOptions(page, pageSize)` reading `/business-configuration/academic-year-options`.
+   - `supersedeScheduledAuthority(versionId, input)` issuing `POST /business-configuration/policy-versions/:id/supersede-scheduled-authority` with typed body `{ commandId, payload: { operationalStartDate }, reason? }`.
+   - Added user-facing Vietnamese translations for `OPERATIONAL_START_*` error codes.
+3. **Business Configuration Workspace (`apps/web/src/pages/BusinessConfigurationPage.tsx`)**:
+   - Server-owned `ver.allowedActions` strictly controls lifecycle buttons (`EDIT_DRAFT`, `PUBLISH`, `SUPERSEDE_SCHEDULED_AUTHORITY`, `REPLACE`, `RETIRE`, `CORRECT`).
+   - Display of `actionEvaluationCivilDate` as audit evidence without browser clock inference.
+   - Dedicated `supersede_scheduled` workflow drawer with source version evidence, read-only scheduled start date, preloaded date editor, and optional reason.
+   - Open-ended create form omits `effectiveUntil`.
+   - Correction form locks effectivity dates to read-only evidence and omits them from the mutation request.
+   - Correct presentation of `SUPERSEDED_BEFORE_EFFECTIVE` status, retained audit metadata, and successor lineage.
+
+### 5.2 Verification Suite Results
+- **Web targeted unit tests (`business-configuration-workspace.test.tsx`)**: 55/55 passed (46 existing regression + 9 dedicated P1-032 tests).
+- **Web full unit test suite**: 286/287 passed (the single timeout in `homeroom-assignment-page.test.tsx` passed completely in isolated run, 23/23).
+- **Web lint (`npm run lint -w apps/web`)**: PASSED (0 warnings).
+- **Web typecheck (`npm run typecheck -w apps/web`)**: PASSED (0 errors).
+- **Web production build (`npm run build -w apps/web`)**: PASSED (dist built cleanly in 5.26s).
+- **Workflow contract verification (`npm run test:workflow:contract`)**: PASSED.
+- **Git diff check (`git diff --check`)**: PASSED (clean, no trailing whitespace or merge markers).
+
+### 5.3 Scope and Governance Invariants
+- Zero backend (`apps/api/**`) changes.
+- Zero shared contracts (`packages/contracts/**`) changes.
+- Zero database/schema/migration (`prisma/**`) changes.
+- Zero auth/session/capability changes.
+- Zero CI/CD changes.
+- Production remains strictly PRE-OPERATIONAL.
