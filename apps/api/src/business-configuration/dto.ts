@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsIn, IsInt, IsNotEmpty, IsObject, IsOptional, IsString, IsUUID, MaxLength, Min, ValidateIf, ValidateNested } from 'class-validator';
+import { IsIn, IsInt, IsNotEmpty, IsObject, IsOptional, IsString, IsUUID, Max, MaxLength, Min, ValidateIf, ValidateNested } from 'class-validator';
 
 export class BusinessResourceDto {
   @IsIn(['SCHOOL_WIDE', 'ACADEMIC_YEAR']) kind!: 'SCHOOL_WIDE' | 'ACADEMIC_YEAR';
@@ -30,4 +30,19 @@ export class SupersedeScheduledAuthorityDto {
   @IsString() @IsNotEmpty() @MaxLength(100) commandId!: string;
   @IsObject() payload!: Record<string, unknown>;
   @IsOptional() @IsString() @MaxLength(1000) reason?: string;
+}
+
+export class ListBusinessPolicyAcademicYearOptionsDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page: number = 1;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  pageSize: number = 20;
 }

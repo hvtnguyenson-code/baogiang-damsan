@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Inject, Injectable, NotFoundExc
 import { AuditResult, BusinessPolicyVersion, Prisma } from '@prisma/client';
 import {
   BusinessConfigurationResource,
+  BusinessPolicyAcademicYearOptionListResponse,
   BusinessPolicyAllowedAction,
   BusinessPolicyResolution,
   BusinessPolicyVersionRecord,
@@ -21,7 +22,13 @@ import {
   validateResource,
   validatorForVersion,
 } from './business-policy-registry';
-import { CreateBusinessPolicyDraftDto, EditBusinessPolicyDraftDto, LifecycleBusinessPolicyDto, SupersedeScheduledAuthorityDto } from './dto';
+import {
+  CreateBusinessPolicyDraftDto,
+  EditBusinessPolicyDraftDto,
+  LifecycleBusinessPolicyDto,
+  ListBusinessPolicyAcademicYearOptionsDto,
+  SupersedeScheduledAuthorityDto,
+} from './dto';
 
 const conflict = () => new ConflictException('BUSINESS_POLICY_CONFLICT');
 type Db = Prisma.TransactionClient | PrismaService;
@@ -30,6 +37,28 @@ type Db = Prisma.TransactionClient | PrismaService;
 export class BusinessConfigurationService {
   constructor(private readonly prisma: PrismaService, private readonly audit: AuditService, @Inject(BUSINESS_POLICY_REGISTRY) private readonly families: readonly BusinessPolicyFamilyDefinition[]) {}
   familiesList() { return this.families.map(({ validators: _validators, ...family }) => family); }
+
+  async academicYearOptions(
+    query: ListBusinessPolicyAcademicYearOptionsDto,
+  ): Promise<BusinessPolicyAcademicYearOptionListResponse> {
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 20;
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.academicYear.findMany({
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        select: { id: true, code: true, name: true },
+        orderBy: [{ code: 'asc' }, { id: 'asc' }],
+      }),
+      this.prisma.academicYear.count(),
+    ]);
+    return {
+      items,
+      page,
+      pageSize,
+      total,
+    };
+  }
 
   async list(page = 1, pageSize = 25) {
     const actionEvaluationCivilDate = this.businessCivilDate() as CivilDateString;
