@@ -13,7 +13,7 @@ It is **not** a self-referential registry of the latest Git commit. Exact curren
 `P1-031C` — Operational-start Academic-Year options read-model enablement — is **CLOSED** by `SYNC-P1-031C` following parent PR #140 merge (`1403906282c5ef63d17d1053c72e5ed47b4fa080`) and authoritative post-merge CI #457 SUCCESS.
 
 Next critical-path implementation:
-- `P1-032` — Operational-start admin UI integration — **READY**. All prerequisite dependencies (`P1-022`, `P1-031`, `P1-031A`, `P1-031C`) are CLOSED. `P1-032` has zero implementation commits so far. It is now eligible to start only after this `SYNC-P1-031C` PR is merged. When started, it must start on its own dedicated branch from then-current exact canonical main, and it must obey UI authority in `AGENTS.md`, `.codex/skills/damsan-ui/SKILL.md` and `DESIGN.md`.
+- `P1-032` — Operational-start admin UI integration — **IN_REVIEW** on dedicated task branch `feat/operational-start-admin-ui-integration-032` (started from canonical main `95d88867e85e7177ce7ae12adc4ec942f1567656`, PR #141 post-closure CI #459 SUCCESS). Implemented `OPERATIONAL_START/v1/ACADEMIC_YEAR` production adapter, AcademicYear options read picker via P1-031C endpoint, server-owned `allowedActions` authority, dedicated scheduled-authority supersession workflow, open-ended create without `effectiveUntil`, effectivity-preserving correction, `SUPERSEDED_BEFORE_EFFECTIVE` retained audit and lineage rendering; 55 unit tests passing; zero backend/contracts/schema/migration mutation; production remains strictly PRE-OPERATIONAL. Obeying UI authority in `AGENTS.md`, `.codex/skills/damsan-ui/SKILL.md` and `DESIGN.md`.
 
 Parallel eligible:
 - `P4-010` — GDĐP/HĐTN programme architecture closure — **READY** (independent track).
@@ -430,12 +430,14 @@ The final production-host topology is intentionally unresolved and explicitly de
 
 `P1-031C` is CLOSED by `SYNC-P1-031C`.
 
+Active in progress:
+- `P1-032` — Operational-start admin UI integration (`IN_PROGRESS` on dedicated branch `feat/operational-start-admin-ui-integration-032`).
+
 Active in review:
 - None.
 
 Eligible to start on a dedicated branch:
-1. `P1-032` — Operational-start admin UI integration (`READY`; all dependencies `P1-022`, `P1-031`, `P1-031A`, `P1-031C` are CLOSED; eligible to start on its own dedicated branch once `SYNC-P1-031C` is merged; contains zero implementation commits).
-2. `P4-010` — GDĐP/HĐTN programme architecture closure (`READY`; independent track).
+1. `P4-010` — GDĐP/HĐTN programme architecture closure (`READY`; independent track).
 
 Not eligible to start:
 - `P2-020` — `PLANNED`, blocked until `P2-010` evidence is provided.

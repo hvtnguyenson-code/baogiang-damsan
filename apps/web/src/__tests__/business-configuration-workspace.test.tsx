@@ -1,4 +1,5 @@
 import type {
+  BusinessConfigurationResource,
   BusinessPolicyFamilyMetadata,
   BusinessPolicyResolution,
   BusinessPolicyStreamRecord,
@@ -8,12 +9,14 @@ import type {
 } from '@baogiang/contracts';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { isValidCivilDate } from '../lib/business-configuration-api';
+import { isValidCivilDate, translatePolicyError } from '../lib/business-configuration-api';
 import {
   findUiAdapter,
   matchUiAdapterForMutation,
   matchUiAdapterForRead,
   matchVersionUiAdapterForMutation,
+  OPERATIONAL_START_UI_ADAPTER,
+  PRODUCTION_BUSINESS_POLICY_UI_ADAPTERS,
   type BusinessPolicyUiAdapter,
 } from '../lib/business-policy-ui-registry';
 import { BusinessConfigurationPage } from '../pages/BusinessConfigurationPage';
@@ -200,7 +203,13 @@ function makeMockVersion(overrides: Partial<BusinessPolicyVersionRecord> = {}): 
     supersededBeforeEffectiveByUserId: overrides.supersededBeforeEffectiveByUserId ?? null,
     supersededBeforeEffectiveAt: overrides.supersededBeforeEffectiveAt ?? null,
     supersededBeforeEffectiveReason: overrides.supersededBeforeEffectiveReason ?? null,
-    allowedActions: overrides.allowedActions ?? [],
+    allowedActions: overrides.allowedActions ?? (
+      (overrides.status ?? 'PUBLISHED') === 'DRAFT'
+        ? ['EDIT_DRAFT', 'PUBLISH']
+        : (overrides.status ?? 'PUBLISHED') === 'PUBLISHED'
+          ? (overrides.effectiveUntil ? ['CORRECT'] : ['REPLACE', 'RETIRE', 'CORRECT'])
+          : []
+    ),
     actionEvaluationCivilDate: overrides.actionEvaluationCivilDate ?? '2026-09-05',
     createdAt: overrides.createdAt ?? '2026-09-05T08:00:00.000Z',
     updatedAt: overrides.updatedAt ?? '2026-09-05T08:00:00.000Z',
@@ -2082,5 +2091,598 @@ describe('P1-022 Business Configuration administration workspace', () => {
 
     // Resolution summary renders successfully
     expect(await screen.findByTestId('test-adapter-summary')).toBeInTheDocument();
+  });
+});
+
+describe('P1-032 Operational-start admin UI integration', () => {
+  const OPERATIONAL_START_FAMILY: BusinessPolicyFamilyMetadata = {
+    key: 'OPERATIONAL_START',
+    resourceKind: 'ACADEMIC_YEAR',
+    currentValidatorVersion: 'v1',
+    publicationEnabled: true,
+    downstreamAuthority: 'TIMETABLE_AUTHORITY',
+  };
+
+  const MOCK_ACADEMIC_YEAR_OPTIONS = [
+    {
+      id: 'ay-2026-2027',
+      code: '2026-2027',
+      name: 'Năm học 2026-2027',
+    },
+    {
+      id: 'ay-2027-2028',
+      code: '2027-2028',
+      name: 'Năm học 2027-2028',
+    },
+  ];
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('A1: registers OPERATIONAL_START/v1/ACADEMIC_YEAR production adapter with exact triple identity', () => {
+    expect(PRODUCTION_BUSINESS_POLICY_UI_ADAPTERS).toHaveLength(1);
+    const adapter = PRODUCTION_BUSINESS_POLICY_UI_ADAPTERS[0];
+    expect(adapter.familyKey).toBe('OPERATIONAL_START');
+    expect(adapter.validatorVersion).toBe('v1');
+    expect(adapter.resourceKind).toBe('ACADEMIC_YEAR');
+    expect(adapter.displayName).toBe('Bắt đầu vận hành');
+    expect(adapter.ResourceEditorComponent).toBeDefined();
+    expect(OPERATIONAL_START_UI_ADAPTER).toBe(adapter);
+  });
+
+  it('A2: validates OPERATIONAL_START payload strictly without browser clock comparison', () => {
+    const adapter = OPERATIONAL_START_UI_ADAPTER;
+
+    // Initial payload
+    expect(adapter.initialPayload()).toEqual({ operationalStartDate: '' });
+
+    // Valid civil date
+    const validRes = adapter.validatePayload({ operationalStartDate: '2026-09-05' });
+    expect(validRes.valid).toBe(true);
+    if (validRes.valid) {
+      expect(validRes.payload).toEqual({ operationalStartDate: '2026-09-05' });
+    }
+
+    // Past and future dates are both accepted by client validation (no browser clock logic)
+    expect(adapter.validatePayload({ operationalStartDate: '2000-01-01' }).valid).toBe(true);
+    expect(adapter.validatePayload({ operationalStartDate: '2099-12-31' }).valid).toBe(true);
+
+    // Invalid calendar dates rejected by strict civil date arithmetic
+    expect(adapter.validatePayload({ operationalStartDate: '2026-02-29' }).valid).toBe(false); // not leap year
+    expect(adapter.validatePayload({ operationalStartDate: '2024-02-29' }).valid).toBe(true); // leap year
+    expect(adapter.validatePayload({ operationalStartDate: '2026-13-01' }).valid).toBe(false); // month 13
+    expect(adapter.validatePayload({ operationalStartDate: '2026-04-31' }).valid).toBe(false); // April has 30 days
+    expect(adapter.validatePayload({ operationalStartDate: '2026/09/05' }).valid).toBe(false); // wrong delimiter
+    expect(adapter.validatePayload({ operationalStartDate: '2026-9-5' }).valid).toBe(false); // non-padded
+    expect(adapter.validatePayload({ operationalStartDate: 'invalid' }).valid).toBe(false);
+    expect(adapter.validatePayload({ operationalStartDate: '' }).valid).toBe(false);
+
+    // Extra properties rejected
+    expect(
+      adapter.validatePayload({ operationalStartDate: '2026-09-05', extra: 'forbidden' }).valid,
+    ).toBe(false);
+
+    // Non-objects and arrays rejected
+    expect(adapter.validatePayload(null).valid).toBe(false);
+    expect(adapter.validatePayload(undefined).valid).toBe(false);
+    expect(adapter.validatePayload(['2026-09-05']).valid).toBe(false);
+    expect(adapter.validatePayload({}).valid).toBe(false);
+  });
+
+  it('B1: AcademicYear picker calls only the business-configuration academic-year-options endpoint and handles loading/empty/error', async () => {
+    const adapter = OPERATIONAL_START_UI_ADAPTER;
+    expect(adapter.ResourceEditorComponent).toBeDefined();
+    const ResourceEditor = adapter.ResourceEditorComponent!;
+
+    // Case 1: Successful load
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/business-configuration/academic-year-options')) {
+        return jsonResponse({
+          items: MOCK_ACADEMIC_YEAR_OPTIONS,
+          page: 1,
+          pageSize: 100,
+          total: 2,
+        });
+      }
+      return jsonResponse({});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    let selectedResource: BusinessConfigurationResource = { kind: 'ACADEMIC_YEAR', academicYearId: '' };
+    const handleChange = vi.fn((res: BusinessConfigurationResource) => {
+      selectedResource = res;
+    });
+
+    const { unmount } = renderWithQuery(
+      <ResourceEditor
+        resource={selectedResource}
+        onChange={handleChange}
+        disabled={false}
+      />,
+    );
+
+    // Renders options with code and name
+    expect(await screen.findByRole('option', { name: '2026-2027 — Năm học 2026-2027' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: '2027-2028 — Năm học 2027-2028' })).toBeInTheDocument();
+
+    // Verify endpoint called
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/business-configuration/academic-year-options'),
+      expect.anything(),
+    );
+
+    // Selecting an option emits actual ID
+    fireEvent.change(screen.getByRole('combobox', { name: 'Năm học áp dụng' }), {
+      target: { value: 'ay-2026-2027' },
+    });
+    expect(handleChange).toHaveBeenCalledWith({
+      kind: 'ACADEMIC_YEAR',
+      academicYearId: 'ay-2026-2027',
+    });
+
+    unmount();
+
+    // Case 2: Error state with retry
+    let failCount = 1;
+    const fetchFailMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/business-configuration/academic-year-options')) {
+        if (failCount > 0) {
+          failCount--;
+          return new Response(JSON.stringify({ message: 'Network error' }), { status: 500 });
+        }
+        return jsonResponse({
+          items: MOCK_ACADEMIC_YEAR_OPTIONS,
+          page: 1,
+          pageSize: 100,
+          total: 2,
+        });
+      }
+      return jsonResponse({});
+    });
+    vi.stubGlobal('fetch', fetchFailMock);
+
+    renderWithQuery(
+      <ResourceEditor
+        resource={{ kind: 'ACADEMIC_YEAR', academicYearId: '' }}
+        onChange={vi.fn()}
+        disabled={false}
+      />,
+    );
+
+    expect(await screen.findByText('Lỗi tải danh sách năm học')).toBeInTheDocument();
+    const retryBtn = screen.getByRole('button', { name: 'Thử lại' });
+    fireEvent.click(retryBtn);
+
+    // After retry succeeds, options appear
+    expect(await screen.findByRole('option', { name: '2026-2027 — Năm học 2026-2027' })).toBeInTheDocument();
+  });
+
+  it('B2: AcademicYear picker exhaustively loads all pages if total > pageSize', async () => {
+    const adapter = OPERATIONAL_START_UI_ADAPTER;
+    const ResourceEditor = adapter.ResourceEditorComponent!;
+
+    const page1Items = [{ id: 'ay-p1', code: '2025-2026', name: 'Năm học 2025-2026' }];
+    const page2Items = [{ id: 'ay-p2', code: '2026-2027', name: 'Năm học 2026-2027' }];
+
+    const fetchPagingMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/business-configuration/academic-year-options')) {
+        if (url.includes('page=1')) {
+          return jsonResponse({ items: page1Items, page: 1, pageSize: 1, total: 2 });
+        }
+        if (url.includes('page=2')) {
+          return jsonResponse({ items: page2Items, page: 2, pageSize: 1, total: 2 });
+        }
+      }
+      return jsonResponse({});
+    });
+    vi.stubGlobal('fetch', fetchPagingMock);
+
+    renderWithQuery(
+      <ResourceEditor
+        resource={{ kind: 'ACADEMIC_YEAR', academicYearId: '' }}
+        onChange={vi.fn()}
+        disabled={false}
+      />,
+    );
+
+    // Both pages must be loaded and displayed
+    expect(await screen.findByRole('option', { name: '2025-2026 — Năm học 2025-2026' })).toBeInTheDocument();
+    expect(await screen.findByRole('option', { name: '2026-2027 — Năm học 2026-2027' })).toBeInTheDocument();
+  });
+
+  it('C: OPERATIONAL_START create form omits effectiveUntil input and request omits effectiveUntil property', async () => {
+    let capturedBody: Record<string, unknown> | null = null;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/business-configuration/families')) return jsonResponse([OPERATIONAL_START_FAMILY]);
+      if (url.includes('/business-configuration/policies') && init?.method === 'POST') {
+        capturedBody = JSON.parse(String(init.body));
+        return jsonResponse({
+          streamId: 'stream-op-start-new',
+          versionId: 'ver-op-start-new',
+        });
+      }
+      if (url.includes('/business-configuration/academic-year-options')) {
+        return jsonResponse({ items: MOCK_ACADEMIC_YEAR_OPTIONS, page: 1, pageSize: 100, total: 2 });
+      }
+      if (url.includes('/business-configuration/policies')) {
+        return jsonResponse({ items: [], page: 1, pageSize: 20, total: 0 });
+      }
+      return jsonResponse({});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWithQuery(<BusinessConfigurationPage adapters={[OPERATIONAL_START_UI_ADAPTER]} />);
+
+    // Click "Tạo bản nháp"
+    fireEvent.click(await screen.findByRole('button', { name: 'Tạo bản nháp' }));
+    expect(await screen.findByRole('heading', { name: 'Tạo bản nháp chính sách nghiệp vụ' })).toBeInTheDocument();
+
+    // Verify effectiveFrom is present, but effectiveUntil is NOT present
+    expect(screen.getByLabelText(/ngày bắt đầu hiệu lực/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/ngày kết thúc hiệu lực/i)).not.toBeInTheDocument();
+
+    // Select Academic Year
+    await screen.findByRole('option', { name: '2026-2027 — Năm học 2026-2027' });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Năm học áp dụng' }), {
+      target: { value: 'ay-2026-2027' },
+    });
+
+    // Fill effectiveFrom and operationalStartDate
+    fireEvent.change(screen.getByLabelText(/ngày bắt đầu hiệu lực/i), {
+      target: { value: '2026-09-01' },
+    });
+    fireEvent.change(screen.getByLabelText('Ngày bắt đầu vận hành'), {
+      target: { value: '2026-09-05' },
+    });
+
+    // Submit form
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu bản nháp' }));
+
+    await waitFor(() => {
+      expect(capturedBody).not.toBeNull();
+    });
+
+    expect(capturedBody).toMatchObject({
+      family: 'OPERATIONAL_START',
+      resource: {
+        kind: 'ACADEMIC_YEAR',
+        academicYearId: 'ay-2026-2027',
+      },
+      effectiveFrom: '2026-09-01',
+      payload: {
+        operationalStartDate: '2026-09-05',
+      },
+    });
+    // Crucial: effectiveUntil must NOT be in the body
+    expect(capturedBody).not.toHaveProperty('effectiveUntil');
+  });
+
+  it('D: Server-owned allowedActions is the sole authority for lifecycle buttons (independent of browser clock)', async () => {
+    // Fixture with scheduled version: allowedActions = ['SUPERSEDE_SCHEDULED_AUTHORITY']
+    const streamScheduled: BusinessPolicyStreamRecord = {
+      id: 'stream-op-scheduled',
+      familyKey: 'OPERATIONAL_START',
+      resourceKind: 'ACADEMIC_YEAR',
+      academicYearId: 'ay-2026-2027',
+      createdAt: '2026-08-01T00:00:00.000Z',
+      updatedAt: '2026-08-01T00:00:00.000Z',
+      versions: [
+        makeMockVersion({
+          id: 'ver-scheduled-1',
+          streamId: 'stream-op-scheduled',
+          versionNumber: 1,
+          status: 'PUBLISHED',
+          effectiveFrom: '2026-09-01T00:00:00.000Z',
+          effectiveUntil: null,
+          allowedActions: ['SUPERSEDE_SCHEDULED_AUTHORITY'],
+          actionEvaluationCivilDate: '2026-08-15',
+          validatorVersion: 'v1',
+          payload: { operationalStartDate: '2026-09-05' },
+        }),
+      ],
+    };
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/business-configuration/families')) return jsonResponse([OPERATIONAL_START_FAMILY]);
+      if (url.includes('/business-configuration/policies/stream-op-scheduled')) return jsonResponse(streamScheduled);
+      if (url.includes('/business-configuration/policies')) return jsonResponse({ items: [streamScheduled], page: 1, pageSize: 20, total: 1 });
+      return jsonResponse({});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWithQuery(<BusinessConfigurationPage adapters={[OPERATIONAL_START_UI_ADAPTER]} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Xem lịch sử' }));
+
+    // Must show ONLY "Thay đổi lịch bắt đầu đã lên lịch"
+    expect(await screen.findByRole('button', { name: 'Thay đổi lịch bắt đầu đã lên lịch' })).toBeInTheDocument();
+
+    // Must NOT show Replace, Retire, or Correct
+    expect(screen.queryByRole('button', { name: 'Thay đổi trong tương lai' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Kết thúc hiệu lực' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Sửa sai lịch sử' })).not.toBeInTheDocument();
+
+    // Action evaluation civil date evidence is rendered
+    expect(screen.getByText('Ngày nghiệp vụ dùng để xác định thao tác:')).toBeInTheDocument();
+    expect(screen.getByText('2026-08-15')).toBeInTheDocument();
+  });
+
+  it('E: Dedicated scheduled supersession workflow executes POST with exact body and sanitized error handling', async () => {
+    const streamScheduled: BusinessPolicyStreamRecord = {
+      id: 'stream-op-supersede',
+      familyKey: 'OPERATIONAL_START',
+      resourceKind: 'ACADEMIC_YEAR',
+      academicYearId: 'ay-2026-2027',
+      createdAt: '2026-08-01T00:00:00.000Z',
+      updatedAt: '2026-08-01T00:00:00.000Z',
+      versions: [
+        makeMockVersion({
+          id: 'ver-to-supersede',
+          streamId: 'stream-op-supersede',
+          versionNumber: 1,
+          status: 'PUBLISHED',
+          effectiveFrom: '2026-09-01T00:00:00.000Z',
+          effectiveUntil: null,
+          allowedActions: ['SUPERSEDE_SCHEDULED_AUTHORITY'],
+          actionEvaluationCivilDate: '2026-08-20',
+          validatorVersion: 'v1',
+          payload: { operationalStartDate: '2026-09-05' },
+        }),
+      ],
+    };
+
+    let capturedPostUrl = '';
+    let capturedPostBody: Record<string, unknown> | null = null;
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/business-configuration/families')) return jsonResponse([OPERATIONAL_START_FAMILY]);
+      if (url.includes('/supersede-scheduled-authority') && init?.method === 'POST') {
+        capturedPostUrl = url;
+        capturedPostBody = JSON.parse(String(init.body));
+        return jsonResponse({
+          streamId: 'stream-op-supersede',
+          supersededVersionId: 'ver-to-supersede',
+          newVersionId: 'ver-superseded-successor',
+          versionNumber: 2,
+        });
+      }
+      if (url.includes('/business-configuration/policies/stream-op-supersede')) return jsonResponse(streamScheduled);
+      if (url.includes('/business-configuration/policies')) return jsonResponse({ items: [streamScheduled], page: 1, pageSize: 20, total: 1 });
+      return jsonResponse({});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWithQuery(<BusinessConfigurationPage adapters={[OPERATIONAL_START_UI_ADAPTER]} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Xem lịch sử' }));
+
+    // Click scheduled supersession button
+    fireEvent.click(await screen.findByRole('button', { name: 'Thay đổi lịch bắt đầu đã lên lịch' }));
+
+    // Verify modal heading
+    expect(await screen.findByRole('heading', { name: 'Thay đổi lịch bắt đầu đã lên lịch' })).toBeInTheDocument();
+
+    // Verify read-only evidence
+    expect(screen.getAllByText('ver-to-supersede').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('2026-08-20').length).toBeGreaterThanOrEqual(1);
+
+    // Verify no editable effectivity dates
+    expect(screen.queryByLabelText(/ngày bắt đầu hiệu lực mới/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/ngày kết thúc hiệu lực/i)).not.toBeInTheDocument();
+
+    // The editor should be pre-populated with source operationalStartDate ('2026-09-05')
+    const dateInput = screen.getByLabelText('Ngày bắt đầu vận hành');
+    expect(dateInput).toHaveValue('2026-09-05');
+
+    // Change the date to '2026-09-10'
+    fireEvent.change(dateInput, { target: { value: '2026-09-10' } });
+
+    // Enter optional reason
+    const reasonInput = screen.getByLabelText(/lý do thay đổi/i);
+    fireEvent.change(reasonInput, { target: { value: '  Điều chỉnh lịch khai giảng theo quyết định sở GD  ' } });
+
+    // Submit
+    fireEvent.click(screen.getByRole('button', { name: 'Xác nhận thay đổi lịch' }));
+
+    await waitFor(() => {
+      expect(capturedPostBody).not.toBeNull();
+    });
+
+    // Check exact route and body
+    expect(capturedPostUrl).toContain('/business-configuration/policy-versions/ver-to-supersede/supersede-scheduled-authority');
+    expect(capturedPostBody).toMatchObject({
+      payload: {
+        operationalStartDate: '2026-09-10',
+      },
+      reason: 'Điều chỉnh lịch khai giảng theo quyết định sở GD',
+    });
+    expect(typeof capturedPostBody!.commandId).toBe('string');
+
+    // Body must NOT include effectivity or timestamps
+    expect(capturedPostBody).not.toHaveProperty('effectiveFrom');
+    expect(capturedPostBody).not.toHaveProperty('effectiveUntil');
+    expect(capturedPostBody).not.toHaveProperty('businessDate');
+    expect(capturedPostBody).not.toHaveProperty('sourceVersionId');
+
+    // Success feedback rendered
+    expect(await screen.findByText(/Đã thay đổi lịch bắt đầu đã lên lịch thành công/)).toBeInTheDocument();
+  });
+
+  it('F: Retained evidence and lineage are correctly rendered for SUPERSEDED_BEFORE_EFFECTIVE', async () => {
+    const streamWithSuperseded: BusinessPolicyStreamRecord = {
+      id: 'stream-retained-evidence',
+      familyKey: 'OPERATIONAL_START',
+      resourceKind: 'ACADEMIC_YEAR',
+      academicYearId: 'ay-2026-2027',
+      createdAt: '2026-08-01T00:00:00.000Z',
+      updatedAt: '2026-08-25T00:00:00.000Z',
+      versions: [
+        makeMockVersion({
+          id: 'ver-superseded-source',
+          streamId: 'stream-retained-evidence',
+          versionNumber: 1,
+          status: 'SUPERSEDED_BEFORE_EFFECTIVE',
+          effectiveFrom: '2026-09-01T00:00:00.000Z',
+          effectiveUntil: null,
+          allowedActions: [],
+          validatorVersion: 'v1',
+          payload: { operationalStartDate: '2026-09-05' },
+          supersededBeforeEffectiveByUserId: 'user-operator-99',
+          supersededBeforeEffectiveAt: '2026-08-25T10:00:00.000Z',
+          supersededBeforeEffectiveReason: 'Đổi ngày bắt đầu học kỳ',
+        }),
+        makeMockVersion({
+          id: 'ver-superseded-successor',
+          streamId: 'stream-retained-evidence',
+          versionNumber: 2,
+          status: 'PUBLISHED',
+          effectiveFrom: '2026-09-01T00:00:00.000Z',
+          effectiveUntil: null,
+          allowedActions: ['SUPERSEDE_SCHEDULED_AUTHORITY'],
+          validatorVersion: 'v1',
+          payload: { operationalStartDate: '2026-09-10' },
+          supersedesScheduledVersionId: 'ver-superseded-source',
+        }),
+      ],
+    };
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/business-configuration/families')) return jsonResponse([OPERATIONAL_START_FAMILY]);
+      if (url.includes('/business-configuration/policies/stream-retained-evidence')) return jsonResponse(streamWithSuperseded);
+      if (url.includes('/business-configuration/policies')) return jsonResponse({ items: [streamWithSuperseded], page: 1, pageSize: 20, total: 1 });
+      return jsonResponse({});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWithQuery(<BusinessConfigurationPage adapters={[OPERATIONAL_START_UI_ADAPTER]} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Xem lịch sử' }));
+
+    // Status label: "Đã được thay thế trước khi có hiệu lực" (not "Đã đảo ngược")
+    expect(await screen.findByText('Đã được thay thế trước khi có hiệu lực')).toBeInTheDocument();
+    expect(screen.queryByText('Đã đảo ngược (sửa sai)')).not.toBeInTheDocument();
+
+    // Retained audit evidence
+    expect(await screen.findByText('user-operator-99')).toBeInTheDocument();
+    expect(screen.getByText('Lý do thay thế trước hiệu lực: Đổi ngày bắt đầu học kỳ')).toBeInTheDocument();
+
+    // Lineage: Successor mentions its predecessor
+    expect(screen.getByText('Kế nhiệm thẩm quyền đã lên lịch từ phiên bản ID:')).toBeInTheDocument();
+
+    // Terminal version with allowedActions=[] exposes no buttons
+    expect(screen.getByText('Bản ghi chỉ đọc (Đã được thay thế trước khi có hiệu lực)')).toBeInTheDocument();
+  });
+
+  it('G: OPERATIONAL_START correction preserves effectivity as read-only and omits effective dates from request', async () => {
+    const streamActive: BusinessPolicyStreamRecord = {
+      id: 'stream-op-correct',
+      familyKey: 'OPERATIONAL_START',
+      resourceKind: 'ACADEMIC_YEAR',
+      academicYearId: 'ay-2026-2027',
+      createdAt: '2026-08-01T00:00:00.000Z',
+      updatedAt: '2026-09-02T00:00:00.000Z',
+      versions: [
+        makeMockVersion({
+          id: 'ver-active-to-correct',
+          streamId: 'stream-op-correct',
+          versionNumber: 1,
+          status: 'PUBLISHED',
+          effectiveFrom: '2026-09-01T00:00:00.000Z',
+          effectiveUntil: null,
+          allowedActions: ['CORRECT'],
+          actionEvaluationCivilDate: '2026-09-05',
+          validatorVersion: 'v1',
+          payload: { operationalStartDate: '2026-09-05' },
+        }),
+      ],
+    };
+
+    let capturedCorrectBody: Record<string, unknown> | null = null;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/business-configuration/families')) return jsonResponse([OPERATIONAL_START_FAMILY]);
+      if (url.includes('/correct') && init?.method === 'POST') {
+        capturedCorrectBody = JSON.parse(String(init.body));
+        return jsonResponse({
+          streamId: 'stream-op-correct',
+          correctedVersionId: 'ver-active-to-correct',
+          newVersionId: 'ver-corrected-successor',
+          versionNumber: 2,
+        });
+      }
+      if (url.includes('/business-configuration/policies/stream-op-correct')) return jsonResponse(streamActive);
+      if (url.includes('/business-configuration/policies')) return jsonResponse({ items: [streamActive], page: 1, pageSize: 20, total: 1 });
+      return jsonResponse({});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWithQuery(<BusinessConfigurationPage adapters={[OPERATIONAL_START_UI_ADAPTER]} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Xem lịch sử' }));
+
+    // Click "Sửa sai lịch sử"
+    fireEvent.click(await screen.findByRole('button', { name: 'Sửa sai lịch sử' }));
+
+    expect(await screen.findByRole('heading', { name: 'Sửa sai lịch sử chính sách nghiệp vụ' })).toBeInTheDocument();
+
+    // Effectivity is shown as read-only notice, NOT editable inputs
+    expect(screen.getByText(/Thời gian hiệu lực \(cố định, không thể sửa sai\):/)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/ngày bắt đầu hiệu lực hiệu chỉnh/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/ngày kết thúc hiệu lực hiệu chỉnh/i)).not.toBeInTheDocument();
+
+    // Typed payload is editable
+    const dateInput = screen.getByLabelText('Ngày bắt đầu vận hành');
+    fireEvent.change(dateInput, { target: { value: '2026-09-06' } });
+
+    // Reason is mandatory
+    const reasonInput = screen.getByLabelText(/lý do sửa sai/i);
+    fireEvent.change(reasonInput, { target: { value: 'Đính chính ngày vận hành theo văn bản số 123' } });
+
+    // Submit correction
+    fireEvent.click(screen.getByRole('button', { name: 'Xác nhận sửa sai' }));
+
+    await waitFor(() => {
+      expect(capturedCorrectBody).not.toBeNull();
+    });
+
+    expect(capturedCorrectBody).toMatchObject({
+      payload: {
+        operationalStartDate: '2026-09-06',
+      },
+      reason: 'Đính chính ngày vận hành theo văn bản số 123',
+    });
+
+    // Crucial: effectiveFrom and effectiveUntil must NOT be in body for OPERATIONAL_START correction
+    expect(capturedCorrectBody).not.toHaveProperty('effectiveFrom');
+    expect(capturedCorrectBody).not.toHaveProperty('effectiveUntil');
+  });
+
+  it('H: translates OPERATIONAL_START error codes to accurate factual Vietnamese copy without misrepresenting authority boundaries', () => {
+    // 1. Initial publication invalid: effectiveFrom > operationalStartDate
+    expect(translatePolicyError('OPERATIONAL_START_INITIAL_PUBLICATION_INVALID')).toBe(
+      'Ngày bắt đầu hiệu lực của chính sách khởi tạo không được sau ngày bắt đầu vận hành.',
+    );
+
+    // 2. Replace after boundary: businessDate >= currentOperationalStartDate
+    expect(translatePolicyError('OPERATIONAL_START_REPLACE_AFTER_BOUNDARY_FORBIDDEN')).toBe(
+      'Không thể thay thế khi ngày nghiệp vụ đã đạt hoặc vượt ngày bắt đầu vận hành hiện tại.',
+    );
+
+    // 3. Direct publish after authority: forbids direct publish when stream had published/reversed/superseded authority
+    const directPublishMsg = translatePolicyError('OPERATIONAL_START_DIRECT_PUBLISH_AFTER_AUTHORITY_FORBIDDEN');
+    expect(directPublishMsg).toBe(
+      'Không thể công bố trực tiếp bản nháp mới vì luồng chính sách này đã từng có thẩm quyền được công bố; hãy dùng thao tác vòng đời phù hợp.',
+    );
+    // Must NOT state that it is only forbidden after entering operational period
+    expect(directPublishMsg).not.toContain('sau khi đã bước vào thời kỳ vận hành');
+
+    // 4. Scheduled successor date invalid: > businessDate and >= source.effectiveFrom
+    expect(translatePolicyError('OPERATIONAL_START_SCHEDULED_SUCCESSOR_DATE_INVALID')).toBe(
+      'Ngày bắt đầu vận hành mới phải sau ngày nghiệp vụ hiện tại và không được trước ngày hiệu lực đã lên lịch.',
+    );
   });
 });
