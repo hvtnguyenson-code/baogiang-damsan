@@ -2,11 +2,11 @@
 
 ## Status
 
-**IN_REVIEW — implementation complete on dedicated task branch `feat/business-configuration-academic-year-options-031c` (commit `01c6f28e1cbdeb3cf4a29f9c3df929111546df9a`), awaiting independent GitHub review and CI.**
+**CLOSED — implemented and closed by administrative closure `SYNC-P1-031C` following PR #140 merge (`1403906282c5ef63d17d1053c72e5ed47b4fa080`) and authoritative post-merge CI #457 SUCCESS.**
 
 - **Mã nhiệm vụ (Task ID):** `P1-031C`
 - **Tên chuẩn tắc (Canonical Name):** Operational-start Academic-Year options read-model enablement
-- **Trạng thái hiện tại (Current Status):** `IN_REVIEW` (Trạng thái tại thời điểm đăng ký: `READY`)
+- **Trạng thái hiện tại (Current Status):** `CLOSED` (Trạng thái tại thời điểm đăng ký: `READY`, trạng thái khi thẩm định độc lập: `IN_REVIEW`)
 - **Tiền đề phụ thuộc (Dependencies):**
   - `P1-021` — Business Configuration persistence/control plane (`CLOSED`)
   - `P1-031` — Operational-start policy implementation (`CLOSED`)
@@ -21,7 +21,7 @@
   - `docs/requirements/P1-031-OPERATIONAL-START-POLICY-IMPLEMENTATION-PLAN.md`
   - `docs/requirements/P1-031B-OPERATIONAL-START-SCHEDULED-AUTHORITY-SUPERSESSION-ARCHITECTURE.md`
 - **Phân công công cụ thực thi (Tool Assignment):** Giai đoạn đăng ký nhiệm vụ do ANTIGRAVITY IDE thực hiện dưới dạng tài liệu/quản trị thuần túy. Giai đoạn triển khai mã nguồn sau đó được ANTIGRAVITY IDE thực hiện theo sự phân công và cấp quyền phạm vi giới hạn tường minh (explicit bounded scope grant) từ prompt thực thi P1-031C. Việc cấp quyền này không làm thay đổi AGENTS.md; tính khả dụng của công cụ không làm thay đổi ngữ nghĩa sản phẩm hay hợp đồng API; các nhiệm vụ trong tương lai tiếp tục tuân thủ phân công công cụ theo quy định chuẩn tắc của AGENTS.md tại thời điểm thực hiện.
-- **Tác động tới nhiệm vụ kế tiếp:** `P1-032` (Operational-start admin UI integration) được chuyển trạng thái từ `READY` về lại `PLANNED` và phụ thuộc vào `P1-031C`. `P1-032` chưa từng bắt đầu, chưa có commit triển khai nào và không được phép bắt đầu cho đến khi `P1-031C` hoàn tất `CLOSED`.
+- **Tác động tới nhiệm vụ kế tiếp:** `P1-032` (Operational-start admin UI integration) được mở khóa và chuyển sang trạng thái `READY` sau khi `P1-031C` hoàn tất `CLOSED` qua `SYNC-P1-031C`. `P1-032` có đầy đủ các tiền đề phụ thuộc đã `CLOSED` và sẵn sàng khởi động trên nhánh chuyên biệt từ canonical main.
 
 ---
 
@@ -66,7 +66,7 @@ Do đó, bắt buộc phải có một read model bổ trợ tối thiểu thu�
 
 ---
 
-## 3. Hợp đồng Kỹ thuật Tương lai Tối thiểu (Minimal Future Contract)
+## 3. Hợp đồng Kỹ thuật Chuẩn tắc Đã hiện thực (Implemented Canonical Technical Contract)
 
 ### 3.1. Shared Contracts (`packages/contracts/src/index.ts`)
 Định nghĩa kiểu dữ liệu tối thiểu phục vụ picker:
@@ -195,9 +195,8 @@ Nhiệm vụ này là một read model hỗ trợ độc lập, không phụ thu
 
 Nhiệm vụ `P1-032` (Operational-start admin UI integration) được cập nhật:
 - Thêm `P1-031C` vào danh sách tiền đề: `P1-022`, `P1-031`, `P1-031A`, `P1-031C`.
-- Chuyển trạng thái từ `READY` về lại `PLANNED`.
-- Đây là sự hiệu chỉnh phụ thuộc tất yếu được phát hiện qua tiền khảo sát preflight khách quan, không phải là sự thoái lui hay suy thoái của mã nguồn đã hoàn thành.
-- `P1-032` tuyệt đối không được bắt đầu nhánh làm việc cho đến khi `P1-031C` hoàn tất đóng chuẩn tắc (`CLOSED`).
+- Chuyển trạng thái từ `PLANNED` sang `READY` sau khi `P1-031C` hoàn tất đóng chuẩn tắc (`CLOSED`) qua `SYNC-P1-031C`.
+- Tất cả các tiền đề phụ thuộc của `P1-032` hiện đã `CLOSED`. `P1-032` chứa 0 commit triển khai và đủ điều kiện khởi động sau khi PR đóng `SYNC-P1-031C` được merge vào `main`.
 
 ---
 
@@ -221,4 +220,37 @@ Nhiệm vụ `P1-032` (Operational-start admin UI integration) được cập nh
   - Unit tests (`business-configuration.service.spec.ts`): `PASS` (72 tests passed)
   - Workflow contract (`npm run test:workflow:contract`): `PASS`
   - Git diff check: `PASS`
-  - Tích hợp cục bộ: Bị chặn an toàn do môi trường cục bộ chưa có cơ sở dữ liệu `TEST_DATABASE_URL` được chứng nhận cô lập riêng (`Refusing destructive integration tests because TEST_DATABASE_URL has not been explicitly certified as an isolated test database`); CI chuẩn tắc trên GitHub sẽ thực thi xác thực tích hợp tự động sau khi mở PR.
+  - Tích hợp cục bộ: Bị chặn an toàn do môi trường cục bộ chưa có cơ sở dữ liệu `TEST_DATABASE_URL` được chứng nhận cô lập riêng (`Refusing destructive integration tests because TEST_DATABASE_URL has not been explicitly certified as an isolated test database`); CI chuẩn tắc trên GitHub đã thực thi xác thực tích hợp tự động qua PR CI #456 và post-merge CI #457.
+
+---
+
+## 13. Bằng chứng Đóng nhiệm vụ Chuẩn tắc (Authoritative Closure Evidence)
+
+- **Nhánh thực thi (Dedicated Task Branch):** `feat/business-configuration-academic-year-options-031c`
+- **Canonical origin/main cơ sở:** `2df682f2eb76f813418560673bbdabe4c31e9154`
+- **Commit triển khai runtime & test:** `01c6f28e1cbdeb3cf4a29f9c3df929111546df9a`
+- **Head hoàn tất sau thẩm định độc lập:** `ee478c5a7e6976a554c738482ba580b23784a2c8`
+- **Đánh giá độc lập trên GitHub (Independent GitHub Review):** `PASS` sau một vòng hiệu chỉnh tài liệu giới hạn (one bounded docs-only forward correction round).
+- **Parent Pull Request:** PR #140 (`feat(policy): add AcademicYear options read model`)
+- **Exact-head PR CI:** CI #456 (run id: `35209248425`), kết quả: `SUCCESS`
+- **Merge commit vào main:** `1403906282c5ef63d17d1053c72e5ed47b4fa080`
+- **Authoritative post-merge main CI:** CI #457 (run id: `35229426600`), attempt 1, kết quả: `SUCCESS`
+- **Bằng chứng post-merge CI #457 bao gồm:**
+  - Production dependency security audit gate: PASS
+  - Prisma validate & generate: PASS
+  - Schema/static verification: PASS
+  - Workflow contract (`npm run test:workflow:contract`): PASS
+  - Contracts, config, API, Web lint: PASS
+  - Contracts, config, API, Web typecheck: PASS
+  - API unit tests: PASS
+  - Web unit tests: PASS
+  - Capability synchronization integration: PASS
+  - API integration tests: PASS
+  - Contracts, config, API, Web builds: PASS
+  - Playwright test runner bootstrap: PASS
+  - Playwright smoke: PASS
+  - Windows deployment contract verification: PASS
+- **Nhiệm vụ sửa sai / tái nhập (Correction / Re-entry Tasks):** KHÔNG CÓ (NONE).
+- **Tác động môi trường production:** Không có di chuyển dữ liệu hay thay đổi schema/migration/auth/capability/UI; môi trường production giữ nguyên trạng thái **PRE-OPERATIONAL**.
+- **Đóng nhiệm vụ:** Đóng chính thức thông qua microtask quản trị `SYNC-P1-031C`.
+- **Mở khóa hạ nguồn:** Mở khóa nhiệm vụ `P1-032` (Operational-start admin UI integration) sang trạng thái **`READY`**.
