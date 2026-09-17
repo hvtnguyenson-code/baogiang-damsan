@@ -6,12 +6,19 @@ import { SessionAuthGuard } from '../auth/session-auth.guard';
 import { CapabilityGuard } from '../authorization/capability.guard';
 import { RequireCapability } from '../authorization/require-capability.decorator';
 import { BusinessConfigurationService } from './business-configuration.service';
-import { CreateBusinessPolicyDraftDto, EditBusinessPolicyDraftDto, LifecycleBusinessPolicyDto, SupersedeScheduledAuthorityDto } from './dto';
+import {
+  CreateBusinessPolicyDraftDto,
+  EditBusinessPolicyDraftDto,
+  LifecycleBusinessPolicyDto,
+  ListBusinessPolicyAcademicYearOptionsDto,
+  SupersedeScheduledAuthorityDto,
+} from './dto';
 
 @Controller('business-configuration')
 @RequireCapability('BUSINESS_CONFIGURATION_MANAGE', { scope: 'SCHOOL_WIDE' })
 export class BusinessConfigurationController {
   constructor(private readonly service: BusinessConfigurationService) {}
+  @Get('academic-year-options') @UseGuards(SessionAuthGuard, CapabilityGuard) academicYearOptions(@Query() query: ListBusinessPolicyAcademicYearOptionsDto) { return this.service.academicYearOptions(query); }
   @Get('families') @UseGuards(SessionAuthGuard, CapabilityGuard) families() { return this.service.familiesList(); }
   @Get('policies') @UseGuards(SessionAuthGuard, CapabilityGuard) list(@Query('page') page?: string, @Query('pageSize') pageSize?: string) { return this.service.list(Math.max(1, Number(page) || 1), Math.min(100, Math.max(1, Number(pageSize) || 25))); }
   @Get('policies/:streamId') @UseGuards(SessionAuthGuard, CapabilityGuard) get(@Param('streamId', ParseUUIDPipe) streamId: string) { return this.service.get(streamId); }

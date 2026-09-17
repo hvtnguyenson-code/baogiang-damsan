@@ -4,7 +4,7 @@ import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { BusinessConfigurationService } from './business-configuration.service';
 import { BusinessPolicyFamilyDefinition, OPERATIONAL_START_FAMILY_DEFINITION } from './business-policy-registry';
-import { CreateBusinessPolicyDraftDto } from './dto';
+import { CreateBusinessPolicyDraftDto, ListBusinessPolicyAcademicYearOptionsDto } from './dto';
 
 describe('BusinessConfigurationService', () => {
   const testFamily: BusinessPolicyFamilyDefinition = {
@@ -93,12 +93,14 @@ describe('BusinessConfigurationService', () => {
 
   interface MockPrismaClient {
     $transaction: MockFn;
+    academicYear: { findMany: MockFn; count: MockFn };
     businessPolicyStream: { findFirst: MockFn; findUnique: MockFn };
     businessPolicyVersion: { findMany: MockFn; findUnique: MockFn };
   }
 
   const mockPrisma: MockPrismaClient = {
     $transaction: jest.fn(),
+    academicYear: { findMany: jest.fn(), count: jest.fn() },
     businessPolicyStream: { findFirst: jest.fn(), findUnique: jest.fn() },
     businessPolicyVersion: { findMany: jest.fn(), findUnique: jest.fn() },
   };
@@ -150,9 +152,15 @@ describe('BusinessConfigurationService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockPrisma.$transaction.mockImplementation(async (callback: (tx: Prisma.TransactionClient) => Promise<unknown>) =>
-      callback(mockTx as unknown as Prisma.TransactionClient),
-    );
+    mockPrisma.$transaction.mockImplementation(async (arg: unknown) => {
+      if (typeof arg === 'function') {
+        return (arg as (tx: Prisma.TransactionClient) => Promise<unknown>)(mockTx as unknown as Prisma.TransactionClient);
+      }
+      if (Array.isArray(arg)) {
+        return Promise.all(arg);
+      }
+      return undefined;
+    });
     service = new BusinessConfigurationService(
       mockPrisma as unknown as PrismaService,
       mockAudit,
@@ -164,6 +172,98 @@ describe('BusinessConfigurationService', () => {
     it('returns ISO YYYY-MM-DD format in Asia/Ho_Chi_Minh timezone', () => {
       const date = service.businessCivilDate();
       expect(date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    });
+  });
+
+  describe('academicYearOptions', () => {
+    it('applies correct skip and take for pagination (page=2, pageSize=2 -> skip=2, take=2)', async () => {
+      mockPrisma.academicYear.findMany.mockResolvedValueOnce([
+        { id: 'ay-3', code: '2026-2027', name: 'Năm học 2026-2027' },
+        { id: 'ay-4', code: '2027-2028', name: 'Năm học 2027-2028' },
+      ]);
+      mockPrisma.academicYear.count.mockResolvedValueOnce(5);
+
+      const result = await service.academicYearOptions({ page: 2, pageSize: 2 });
+
+      expect(mockPrisma.academicYear.findMany).toHaveBeenCalledWith({
+        skip: 2,
+        take: 2,
+        select: { id: true, code: true, name: true },
+        orderBy: [{ code: 'asc' }, { id: 'asc' }],
+      });
+      expect(mockPrisma.academicYear.count).toHaveBeenCalledWith();
+      expect(result).toEqual({
+        items: [
+          { id: 'ay-3', code: '2026-2027', name: 'Năm học 2026-2027' },
+          { id: 'ay-4', code: '2027-2028', name: 'Năm học 2027-2028' },
+        ],
+        page: 2,
+        pageSize: 2,
+        total: 5,
+      });
+    });
+
+    it('queries with exact select for id, code, and name only', async () => {
+      mockPrisma.academicYear.findMany.mockResolvedValueOnce([]);
+      mockPrisma.academicYear.count.mockResolvedValueOnce(0);
+
+      await service.academicYearOptions({ page: 1, pageSize: 20 });
+
+      expect(mockPrisma.academicYear.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          select: { id: true, code: true, name: true },
+        }),
+      );
+    });
+
+    it('orders results deterministically by code asc then id asc', async () => {
+      mockPrisma.academicYear.findMany.mockResolvedValueOnce([]);
+      mockPrisma.academicYear.count.mockResolvedValueOnce(0);
+
+      await service.academicYearOptions({ page: 1, pageSize: 20 });
+
+      expect(mockPrisma.academicYear.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          orderBy: [{ code: 'asc' }, { id: 'asc' }],
+        }),
+      );
+    });
+
+    it('returns exact shape items, page, pageSize, total with default fallback values', async () => {
+      const mockItems = [
+        { id: 'ay-1', code: '2024-2025', name: 'Năm học 2024-2025' },
+        { id: 'ay-2', code: '2025-2026', name: 'Năm học 2025-2026' },
+      ];
+      mockPrisma.academicYear.findMany.mockResolvedValueOnce(mockItems);
+      mockPrisma.academicYear.count.mockResolvedValueOnce(2);
+
+      const result = await service.academicYearOptions(new ListBusinessPolicyAcademicYearOptionsDto());
+
+      expect(mockPrisma.academicYear.findMany).toHaveBeenCalledWith({
+        skip: 0,
+        take: 20,
+        select: { id: true, code: true, name: true },
+        orderBy: [{ code: 'asc' }, { id: 'asc' }],
+      });
+      expect(result).toEqual({
+        items: mockItems,
+        page: 1,
+        pageSize: 20,
+        total: 2,
+      });
+    });
+
+    it('invokes no policy mutation APIs or audit logging during read', async () => {
+      mockPrisma.academicYear.findMany.mockResolvedValueOnce([]);
+      mockPrisma.academicYear.count.mockResolvedValueOnce(0);
+
+      await service.academicYearOptions({ page: 1, pageSize: 20 });
+
+      expect(mockTx.businessPolicyCommand.create).not.toHaveBeenCalled();
+      expect(mockTx.businessPolicyStream.create).not.toHaveBeenCalled();
+      expect(mockTx.businessPolicyVersion.create).not.toHaveBeenCalled();
+      expect(mockTx.businessPolicyVersion.updateMany).not.toHaveBeenCalled();
+      expect(mockAudit.write).not.toHaveBeenCalled();
     });
   });
 

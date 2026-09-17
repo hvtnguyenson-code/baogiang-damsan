@@ -1712,3 +1712,20 @@ export interface ReportingStatementDetailResponse {
   history: ReportingStatementHistoryEntry[];
   allowedActions: ReportingStatementAllowedAction[];
 }
+
+// ============================================================
+// Business Configuration Contracts
+// ============================================================
+
+export interface BusinessPolicyAcademicYearOption {
+  id: string;
+  code: string;
+  name: string;
+}
+
+export interface BusinessPolicyAcademicYearOptionListResponse {
+  items: BusinessPolicyAcademicYearOption[];
+  page: number;
+  pageSize: number;
+  total: number;
+}

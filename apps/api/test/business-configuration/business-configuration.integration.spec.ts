@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { UserStatus } from '@prisma/client';
+import { BusinessPolicyAcademicYearOption } from '@baogiang/contracts';
 import request from 'supertest';
 import { AuditService } from '../../src/audit/audit.service';
 import { BusinessConfigurationService } from '../../src/business-configuration/business-configuration.service';
@@ -21,6 +22,10 @@ integration('Business Configuration API (isolated PostgreSQL integration)', () =
       { key: 'BUSINESS_CONFIGURATION_MANAGE', scopes: ['SCHOOL_WIDE'] },
       { key: 'SYSTEM_ADMIN', scopes: ['SCHOOL_WIDE'] },
       { key: 'TEACHER_BASE', scopes: ['PERSONAL'] },
+      { key: 'ACADEMIC_STRUCTURE_MANAGE', scopes: ['SCHOOL_WIDE'] },
+      { key: 'PPCT_MANAGE', scopes: ['SCHOOL_WIDE'] },
+      { key: 'SUBJECT_MANAGE', scopes: ['SCHOOL_WIDE'] },
+      { key: 'HOMEROOM_ASSIGNMENT_MANAGE', scopes: ['SCHOOL_WIDE'] },
     ]);
   });
   afterAll(async () => {
@@ -2554,6 +2559,161 @@ integration('Business Configuration API (isolated PostgreSQL integration)', () =
         await expect(service.resolveOperationalStartPolicy(academicYear.id, '2026-09-15')).rejects.toThrow(
           new ConflictException('POLICY_AMBIGUOUS'),
         );
+      });
+    });
+  });
+
+  // =========================================================================
+  // Section: Academic Year Options Read Model (P1-031C)
+  // =========================================================================
+  describe('GET /api/business-configuration/academic-year-options', () => {
+    describe('Authorization matrix', () => {
+      it('1. exact BUSINESS_CONFIGURATION_MANAGE / SCHOOL_WIDE -> 200', async () => {
+        const actor = await h.actor({
+          grants: [{ capabilityKey: 'BUSINESS_CONFIGURATION_MANAGE', scopeType: 'SCHOOL_WIDE' }],
+        });
+        const res = await actor.agent.get('/api/business-configuration/academic-year-options');
+        expect(res.status).toBe(200);
+        expect(res.body).toHaveProperty('items');
+        expect(res.body).toHaveProperty('page', 1);
+        expect(res.body).toHaveProperty('pageSize', 20);
+        expect(res.body).toHaveProperty('total');
+      });
+
+      it('2. no grant -> 403', async () => {
+        const actor = await h.actor();
+        const res = await actor.agent.get('/api/business-configuration/academic-year-options');
+        expect(res.status).toBe(403);
+        expect(JSON.stringify(res.body)).not.toContain('GRANT_NOT_FOUND');
+        const audit = await h.prisma.auditEvent.findFirst({
+          where: { action: 'AUTHORIZATION_DENIED', actorUserId: actor.id },
+          orderBy: { createdAt: 'desc' },
+        });
+        expect(audit).toBeDefined();
+        expect((audit?.metadata as Record<string, unknown>)?.reasonCode).toBe('GRANT_NOT_FOUND');
+      });
+
+      it('3. SYSTEM_ADMIN only -> 403', async () => {
+        const actor = await h.actor({
+          grants: [{ capabilityKey: 'SYSTEM_ADMIN', scopeType: 'SCHOOL_WIDE' }],
+        });
+        const res = await actor.agent.get('/api/business-configuration/academic-year-options');
+        expect(res.status).toBe(403);
+        expect(JSON.stringify(res.body)).not.toContain('GRANT_NOT_FOUND');
+      });
+
+      it('4. ACADEMIC_STRUCTURE_MANAGE only -> 403', async () => {
+        const actor = await h.actor({
+          grants: [{ capabilityKey: 'ACADEMIC_STRUCTURE_MANAGE', scopeType: 'SCHOOL_WIDE' }],
+        });
+        const res = await actor.agent.get('/api/business-configuration/academic-year-options');
+        expect(res.status).toBe(403);
+      });
+
+      it('5. PPCT_MANAGE only -> 403', async () => {
+        const actor = await h.actor({
+          grants: [{ capabilityKey: 'PPCT_MANAGE', scopeType: 'SCHOOL_WIDE' }],
+        });
+        const res = await actor.agent.get('/api/business-configuration/academic-year-options');
+        expect(res.status).toBe(403);
+      });
+
+      it('6. SUBJECT_MANAGE only -> 403', async () => {
+        const actor = await h.actor({
+          grants: [{ capabilityKey: 'SUBJECT_MANAGE', scopeType: 'SCHOOL_WIDE' }],
+        });
+        const res = await actor.agent.get('/api/business-configuration/academic-year-options');
+        expect(res.status).toBe(403);
+      });
+
+      it('7. HOMEROOM_ASSIGNMENT_MANAGE only -> 403', async () => {
+        const actor = await h.actor({
+          grants: [{ capabilityKey: 'HOMEROOM_ASSIGNMENT_MANAGE', scopeType: 'SCHOOL_WIDE' }],
+        });
+        const res = await actor.agent.get('/api/business-configuration/academic-year-options');
+        expect(res.status).toBe(403);
+      });
+    });
+
+    describe('Data and Pagination matrix', () => {
+      beforeEach(async () => {
+        // Create deterministic isolated AcademicYear fixtures with intentionally unsorted insertion order
+        await h.prisma.academicYear.createMany({
+          data: [
+            { id: '22222222-2222-4222-8222-222222222222', code: '2027-2028', name: 'Năm học 2027-2028' },
+            { id: '11111111-1111-4111-8111-111111111111', code: '2025-2026', name: 'Năm học 2025-2026' },
+            { id: '33333333-3333-4333-8333-333333333333', code: '2026-2027', name: 'Năm học 2026-2027' },
+            { id: '00000000-0000-4000-8000-000000000000', code: '2024-2025', name: 'Năm học 2024-2025' },
+          ],
+        });
+      });
+
+      it('applies default page=1 and pageSize=20 with deterministic code ASC then id ASC sorting', async () => {
+        const actor = await h.actor({
+          grants: [{ capabilityKey: 'BUSINESS_CONFIGURATION_MANAGE', scopeType: 'SCHOOL_WIDE' }],
+        });
+        const res = await actor.agent.get('/api/business-configuration/academic-year-options');
+        expect(res.status).toBe(200);
+        expect(res.body.page).toBe(1);
+        expect(res.body.pageSize).toBe(20);
+        expect(res.body.total).toBe(4);
+        expect(res.body.items).toHaveLength(4);
+        expect(res.body.items.map((i: BusinessPolicyAcademicYearOption) => i.code)).toEqual([
+          '2024-2025',
+          '2025-2026',
+          '2026-2027',
+          '2027-2028',
+        ]);
+        // Each item contains only id, code, name
+        for (const item of res.body.items) {
+          expect(Object.keys(item).sort()).toEqual(['code', 'id', 'name']);
+        }
+      });
+
+      it('supports explicit pagination with pageSize=2 across page 1 and page 2', async () => {
+        const actor = await h.actor({
+          grants: [{ capabilityKey: 'BUSINESS_CONFIGURATION_MANAGE', scopeType: 'SCHOOL_WIDE' }],
+        });
+        const page1 = await actor.agent.get('/api/business-configuration/academic-year-options?page=1&pageSize=2');
+        expect(page1.status).toBe(200);
+        expect(page1.body.page).toBe(1);
+        expect(page1.body.pageSize).toBe(2);
+        expect(page1.body.total).toBe(4);
+        expect(page1.body.items.map((i: BusinessPolicyAcademicYearOption) => i.code)).toEqual(['2024-2025', '2025-2026']);
+
+        const page2 = await actor.agent.get('/api/business-configuration/academic-year-options?page=2&pageSize=2');
+        expect(page2.status).toBe(200);
+        expect(page2.body.page).toBe(2);
+        expect(page2.body.pageSize).toBe(2);
+        expect(page2.body.total).toBe(4);
+        expect(page2.body.items.map((i: BusinessPolicyAcademicYearOption) => i.code)).toEqual(['2026-2027', '2027-2028']);
+      });
+
+      it('rejects malformed query values with 400 without silent clamping', async () => {
+        const actor = await h.actor({
+          grants: [{ capabilityKey: 'BUSINESS_CONFIGURATION_MANAGE', scopeType: 'SCHOOL_WIDE' }],
+        });
+        expect((await actor.agent.get('/api/business-configuration/academic-year-options?page=0')).status).toBe(400);
+        expect((await actor.agent.get('/api/business-configuration/academic-year-options?pageSize=0')).status).toBe(400);
+        expect((await actor.agent.get('/api/business-configuration/academic-year-options?pageSize=101')).status).toBe(400);
+        expect((await actor.agent.get('/api/business-configuration/academic-year-options?page=not-a-number')).status).toBe(400);
+        expect((await actor.agent.get('/api/business-configuration/academic-year-options?pageSize=abc')).status).toBe(400);
+      });
+
+      it('does not mutate policy streams, versions, or commands on read', async () => {
+        const actor = await h.actor({
+          grants: [{ capabilityKey: 'BUSINESS_CONFIGURATION_MANAGE', scopeType: 'SCHOOL_WIDE' }],
+        });
+        const streamsBefore = await h.prisma.businessPolicyStream.count();
+        const versionsBefore = await h.prisma.businessPolicyVersion.count();
+        const commandsBefore = await h.prisma.businessPolicyCommand.count();
+
+        const res = await actor.agent.get('/api/business-configuration/academic-year-options');
+        expect(res.status).toBe(200);
+
+        expect(await h.prisma.businessPolicyStream.count()).toBe(streamsBefore);
+        expect(await h.prisma.businessPolicyVersion.count()).toBe(versionsBefore);
+        expect(await h.prisma.businessPolicyCommand.count()).toBe(commandsBefore);
       });
     });
   });
