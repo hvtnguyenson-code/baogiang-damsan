@@ -9,7 +9,7 @@ import type {
 } from '@baogiang/contracts';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { isValidCivilDate } from '../lib/business-configuration-api';
+import { isValidCivilDate, translatePolicyError } from '../lib/business-configuration-api';
 import {
   findUiAdapter,
   matchUiAdapterForMutation,
@@ -2659,5 +2659,30 @@ describe('P1-032 Operational-start admin UI integration', () => {
     // Crucial: effectiveFrom and effectiveUntil must NOT be in body for OPERATIONAL_START correction
     expect(capturedCorrectBody).not.toHaveProperty('effectiveFrom');
     expect(capturedCorrectBody).not.toHaveProperty('effectiveUntil');
+  });
+
+  it('H: translates OPERATIONAL_START error codes to accurate factual Vietnamese copy without misrepresenting authority boundaries', () => {
+    // 1. Initial publication invalid: effectiveFrom > operationalStartDate
+    expect(translatePolicyError('OPERATIONAL_START_INITIAL_PUBLICATION_INVALID')).toBe(
+      'Ngày bắt đầu hiệu lực của chính sách khởi tạo không được sau ngày bắt đầu vận hành.',
+    );
+
+    // 2. Replace after boundary: businessDate >= currentOperationalStartDate
+    expect(translatePolicyError('OPERATIONAL_START_REPLACE_AFTER_BOUNDARY_FORBIDDEN')).toBe(
+      'Không thể thay thế khi ngày nghiệp vụ đã đạt hoặc vượt ngày bắt đầu vận hành hiện tại.',
+    );
+
+    // 3. Direct publish after authority: forbids direct publish when stream had published/reversed/superseded authority
+    const directPublishMsg = translatePolicyError('OPERATIONAL_START_DIRECT_PUBLISH_AFTER_AUTHORITY_FORBIDDEN');
+    expect(directPublishMsg).toBe(
+      'Không thể công bố trực tiếp bản nháp mới vì luồng chính sách này đã từng có thẩm quyền được công bố; hãy dùng thao tác vòng đời phù hợp.',
+    );
+    // Must NOT state that it is only forbidden after entering operational period
+    expect(directPublishMsg).not.toContain('sau khi đã bước vào thời kỳ vận hành');
+
+    // 4. Scheduled successor date invalid: > businessDate and >= source.effectiveFrom
+    expect(translatePolicyError('OPERATIONAL_START_SCHEDULED_SUCCESSOR_DATE_INVALID')).toBe(
+      'Ngày bắt đầu vận hành mới phải sau ngày nghiệp vụ hiện tại và không được trước ngày hiệu lực đã lên lịch.',
+    );
   });
 });

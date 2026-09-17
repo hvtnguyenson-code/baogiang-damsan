@@ -142,7 +142,7 @@ The UI integration enables school administrators with `BUSINESS_CONFIGURATION_MA
 |   Năm học: 2026-2027                     | [ Thay đổi lịch bắt đầu đã lên lịch ]                   |
 |   Bản mới nhất: Đã công bố (Scheduled)   | (Ngày nghiệp vụ xác định thao tác: 2026-08-15)          |
 |                                          | ------------------------------------------------------- |
-|                                          | [ WORKFLOW DRAWER / FORM nếu đang thao tác ]            |
+|                                          | [ WORKFLOW INLINE FORM nếu đang thao tác ]              |
 |                                          | - Phiên bản nguồn: ID abc-123                           |
 |                                          | - Ngày hiệu lực đã lên lịch: 2026-09-01 (Cố định)       |
 |                                          | - Ngày bắt đầu vận hành mới: [ 2026-09-08 ]             |
@@ -195,14 +195,14 @@ The UI integration enables school administrators with `BUSINESS_CONFIGURATION_MA
 3. **Business Configuration Workspace (`apps/web/src/pages/BusinessConfigurationPage.tsx`)**:
    - Server-owned `ver.allowedActions` strictly controls lifecycle buttons (`EDIT_DRAFT`, `PUBLISH`, `SUPERSEDE_SCHEDULED_AUTHORITY`, `REPLACE`, `RETIRE`, `CORRECT`).
    - Display of `actionEvaluationCivilDate` as audit evidence without browser clock inference.
-   - Dedicated `supersede_scheduled` workflow drawer with source version evidence, read-only scheduled start date, preloaded date editor, and optional reason.
+   - Dedicated `supersede_scheduled` inline workflow form with source version evidence, read-only scheduled start date, preloaded date editor, and optional reason.
    - Open-ended create form omits `effectiveUntil`.
    - Correction form locks effectivity dates to read-only evidence and omits them from the mutation request.
    - Correct presentation of `SUPERSEDED_BEFORE_EFFECTIVE` status, retained audit metadata, and successor lineage.
 
 ### 5.2 Verification Suite Results
-- **Web targeted unit tests (`business-configuration-workspace.test.tsx`)**: 55/55 passed (46 existing regression + 9 dedicated P1-032 tests).
-- **Web full unit test suite**: 286/287 passed (the single timeout in `homeroom-assignment-page.test.tsx` passed completely in isolated run, 23/23).
+- **Web targeted unit tests (`business-configuration-workspace.test.tsx`)**: 56/56 passed (46 existing regression + 10 dedicated P1-032 tests).
+- **Web full unit test suite**: 288/288 passed across 18/18 test suites (exit code 0). Note: the initial full suite run on starting HEAD encountered a transient local concurrency timeout in `homeroom-assignment-page.test.tsx` (producing 286/287); subsequent authoritative rerun on the exact same HEAD confirmed 287/287 passed without code or test mutation, with `homeroom-assignment-page.test.tsx` achieving 23/23 PASS within the full concurrent run. Following forward review correction adding factual error copy regression tests, the full suite achieved 288/288 PASS.
 - **Web lint (`npm run lint -w apps/web`)**: PASSED (0 warnings).
 - **Web typecheck (`npm run typecheck -w apps/web`)**: PASSED (0 errors).
 - **Web production build (`npm run build -w apps/web`)**: PASSED (dist built cleanly in 5.26s).

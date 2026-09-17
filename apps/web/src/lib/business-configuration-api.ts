@@ -49,21 +49,21 @@ export const KNOWN_POLICY_ERROR_MESSAGES: Record<string, string> = {
   OPERATIONAL_START_DATE_OUTSIDE_CALENDAR:
     'Ngày bắt đầu vận hành phải nằm trong phạm vi lịch của năm học được chọn.',
   OPERATIONAL_START_INITIAL_PUBLICATION_INVALID:
-    'Thời điểm công bố khởi tạo không hợp lệ theo quy định ngày bắt đầu vận hành.',
+    'Ngày bắt đầu hiệu lực của chính sách khởi tạo không được sau ngày bắt đầu vận hành.',
   OPERATIONAL_START_EFFECTIVE_UNTIL_FORBIDDEN:
     'Chính sách bắt đầu vận hành không cho phép đặt ngày kết thúc hiệu lực (phải có hiệu lực mở).',
   OPERATIONAL_START_REPLACE_AFTER_BOUNDARY_FORBIDDEN:
-    'Không thể thay thế chính sách sau khi đã vượt qua ranh giới vận hành.',
+    'Không thể thay thế khi ngày nghiệp vụ đã đạt hoặc vượt ngày bắt đầu vận hành hiện tại.',
   OPERATIONAL_START_REPLACEMENT_EFFECTIVITY_AFTER_BOUNDARY_FORBIDDEN:
     'Ngày hiệu lực của bản thay thế không hợp lệ so với ranh giới vận hành.',
   OPERATIONAL_START_CORRECTION_EFFECTIVITY_CHANGE_FORBIDDEN:
     'Thao tác sửa sai chính sách bắt đầu vận hành không được phép thay đổi ngày hiệu lực đã công bố.',
   OPERATIONAL_START_DIRECT_PUBLISH_AFTER_AUTHORITY_FORBIDDEN:
-    'Không thể công bố trực tiếp chính sách sau khi đã bước vào thời kỳ vận hành.',
+    'Không thể công bố trực tiếp bản nháp mới vì luồng chính sách này đã từng có thẩm quyền được công bố; hãy dùng thao tác vòng đời phù hợp.',
   OPERATIONAL_START_SCHEDULED_SUPERSESSION_TOO_LATE:
     'Không thể thay thế thẩm quyền đã lên lịch vì ngày nghiệp vụ hiện tại đã đạt hoặc vượt quá ngày hiệu lực.',
   OPERATIONAL_START_SCHEDULED_SUCCESSOR_DATE_INVALID:
-    'Ngày bắt đầu vận hành mới của bản kế nhiệm không hợp lệ.',
+    'Ngày bắt đầu vận hành mới phải sau ngày nghiệp vụ hiện tại và không được trước ngày hiệu lực đã lên lịch.',
   OPERATIONAL_START_RETIRE_FORBIDDEN:
     'Chính sách bắt đầu vận hành không cho phép kết thúc hiệu lực.',
 };
