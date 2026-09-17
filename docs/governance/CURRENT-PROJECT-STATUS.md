@@ -13,7 +13,7 @@ It is **not** a self-referential registry of the latest Git commit. Exact curren
 `P1-031A` — Operational-start authority continuity correction — is **CLOSED** by `SYNC-P1-031A` following parent PR #137 merge (`f19ec01d293c1c3da6ff46ebc257c9a43630112e`) and authoritative post-merge CI #451 SUCCESS.
 
 Next critical-path implementation:
-- `P1-031C` — Operational-start Academic-Year options read-model enablement — **READY**. All dependencies (`P1-021`, `P1-031`, `P1-031A`) are CLOSED. Smallest Business Configuration-owned AcademicYear options read model (`GET /api/business-configuration/academic-year-options`) under `BUSINESS_CONFIGURATION_MANAGE / SCHOOL_WIDE` required by P1-032 resource picker; implementation assigned to CODEX under AGENTS.md.
+- `P1-031C` — Operational-start Academic-Year options read-model enablement — **READY**. All dependencies (`P1-021`, `P1-031`) are CLOSED. Smallest Business Configuration-owned AcademicYear options read model (`GET /api/business-configuration/academic-year-options`) under `BUSINESS_CONFIGURATION_MANAGE / SCHOOL_WIDE` required by P1-032 resource picker; implementation tool must be selected per AGENTS.md at task start.
 - `P1-032` — Operational-start admin UI integration — **PLANNED**. Status returned from READY to PLANNED pending P1-031C options read-model enablement discovered during authorized P1-032 read-only preflight audit; zero implementation commits exist for P1-032.
 
 Parallel eligible:
@@ -46,7 +46,7 @@ Closure evidence:
 - no residual runtime correction/re-entry task remains from review/CI;
 - zero production deployment/configuration/data mutation; production remains strictly PRE-OPERATIONAL;
 - closed by administrative closure: `SYNC-P1-031A`;
-- unlocks downstream: `P1-031C` (`READY`), enabling Business Configuration AcademicYear options before `P1-032` (`PLANNED`).
+- downstream: `P1-031A` is CLOSED; downstream `P1-032` (`PLANNED`) awaits both `P1-031A` and its independent options read seam `P1-031C` (`READY`).
 
 Predecessor closed major task: `P1-031B` — Operational-start scheduled-authority supersession architecture — **CLOSED** by `SYNC-P1-031B`.
 
@@ -64,7 +64,7 @@ Closure evidence:
 - strictly docs-only architecture/governance scope; zero runtime/schema/migration/API implementation/UI/auth/CI/deploy/production mutation;
 - production remains strictly PRE-OPERATIONAL; no production `OPERATIONAL_START` authority is configured/deployed and production backfill is zero;
 - closed by administrative closure: `SYNC-P1-031B`;
-- unlocks `P1-031A` to `READY` (now `CLOSED` by `SYNC-P1-031A`); `P1-031C` is registered as `READY`; `P1-032` is `PLANNED` pending `P1-031C` closure.
+- unlocks `P1-031A` to `READY` (now `CLOSED` by `SYNC-P1-031A`); `P1-031C` is registered as `READY` (branching from `P1-031`); `P1-032` is `PLANNED` pending `P1-031C` closure.
 
 Predecessor closed major task: `P1-031` — Operational-start policy implementation — **CLOSED** by `SYNC-P1-031`.
 
@@ -82,7 +82,7 @@ Closure evidence:
 - no Prisma schema/migration change, no public API contract expansion, no Web UI implementation, no deploy/VPS mutation;
 - production remains strictly PRE-OPERATIONAL;
 - closed by administrative closure: `SYNC-P1-031`;
-- initially unlocked downstream P1-032; the post-closure continuity audit registered P1-031A/P1-031B (both CLOSED); P1-032 preflight then established the AcademicYear options read seam P1-031C (now READY); P1-032 is returned to PLANNED pending P1-031C closure.
+- initially unlocked downstream P1-032; P1-031 branches into scheduled supersession (P1-031B -> P1-031A, both CLOSED) and the newly registered options read seam P1-031C (READY); P1-032 is returned to PLANNED pending P1-031C closure.
 
 Predecessor closed major task: `P1-030` — Delayed go-live / operational-start architecture — **CLOSED** by `SYNC-P1-030`.
 
@@ -351,7 +351,7 @@ The repository contains reviewed implementation for:
 - Personal Reporting Projection;
 - Reporting Statement persistence/control plane/UI enablement/product UI work;
 - **retained Business Configuration persistence, control plane and administration workspace** (separate BusinessPolicyStream / BusinessPolicyVersion / BusinessPolicyCommand topology, strict civil-date intervals, DB-level non-overlapping published exclusion, retained replacement and reversal/correction lineage, immutable published payload, exact historical validator-version resolution, dedicated `BUSINESS_CONFIGURATION_MANAGE / SCHOOL_WIDE` capability, capability-gated route `/quan-tri/chinh-sach-nghiep-vu`, typed/version-aware UI adapter architecture with triple identity, lifecycle UI for draft/edit/publish/replace/retire/correct, historical typed rendering, exact-date resolver UI, bounded Serializable mutation retry, idempotency receipts, same-transaction audit, sanitized errors and typed fail-closed resolver);
-- **operational-start backend authority** closed by P1-031: `OPERATIONAL_START / v1 / ACADEMIC_YEAR` production registration, strict validator/calendar/lifecycle rules, typed fail-closed resolver, execution guards, pre-op no-auto-debt projection, retained allocator replay, single-authority reporting integration, and ReportingStatement SNAPSHOT_V2 provenance; P1-031B defines the distinct never-effective scheduled-authority lifecycle, and its P1-031A runtime realization is CLOSED by `SYNC-P1-031A`; P1-031C is registered as READY to provide the required AcademicYear options read seam before P1-032 (PLANNED);
+- **operational-start backend authority** closed by P1-031: `OPERATIONAL_START / v1 / ACADEMIC_YEAR` production registration, strict validator/calendar/lifecycle rules, typed fail-closed resolver, execution guards, pre-op no-auto-debt projection, retained allocator replay, single-authority reporting integration, and ReportingStatement SNAPSHOT_V2 provenance; P1-031B defines the distinct never-effective scheduled-authority lifecycle, and its P1-031A runtime realization is CLOSED by `SYNC-P1-031A`; `P1-031C` is registered as READY (depending on `P1-021` and `P1-031`) to provide the required AcademicYear options read seam before P1-032 (PLANNED);
 - hardened Windows production deployment control-plane/runbooks through PR #90.
 
 Homeroom architecture, persistence, control plane/capability, historical read model and administration workspace UI are closed for the registered pre-pilot scope. Business Configuration architecture (P1-020), persistence/control plane (P1-021), administration workspace (P1-022), and operational-start backend implementation (P1-031) are closed for their registered pre-pilot scopes. P2-030 native timetable workbook architecture/evidence, P2-040 native adapter runtime implementation, P2-050 selective morning/afternoon update and carry-forward, P2-002 PPCT component persistence/control plane, P2-003 component-aware allocation/projections runtime, and P2-004 specialized-study administration workspace are closed.
@@ -393,7 +393,7 @@ The final production-host topology is intentionally unresolved and explicitly de
 `P1-031A` is CLOSED by `SYNC-P1-031A`.
 
 Eligible to start on a dedicated branch:
-1. `P1-031C` — Operational-start Academic-Year options read-model enablement (`READY`; all dependencies `P1-021`, `P1-031`, `P1-031A` are CLOSED).
+1. `P1-031C` — Operational-start Academic-Year options read-model enablement (`READY`; all dependencies `P1-021`, `P1-031` are CLOSED).
 2. `P4-010` — GDĐP/HĐTN programme architecture closure (`READY`; independent track).
 
 Already active: none.
