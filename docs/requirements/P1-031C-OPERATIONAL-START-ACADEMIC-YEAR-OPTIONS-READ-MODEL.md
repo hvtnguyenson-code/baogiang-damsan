@@ -2,11 +2,11 @@
 
 ## Status
 
-**READY — registered major enablement task; dependencies CLOSED; awaiting dedicated implementation branch.**
+**IN_REVIEW — implementation complete on dedicated task branch `feat/business-configuration-academic-year-options-031c` (commit `01c6f28e1cbdeb3cf4a29f9c3df929111546df9a`), awaiting independent GitHub review and CI.**
 
 - **Mã nhiệm vụ (Task ID):** `P1-031C`
 - **Tên chuẩn tắc (Canonical Name):** Operational-start Academic-Year options read-model enablement
-- **Trạng thái tại thời điểm đăng ký (Status at Registration):** `READY`
+- **Trạng thái hiện tại (Current Status):** `IN_REVIEW` (Trạng thái tại thời điểm đăng ký: `READY`)
 - **Tiền đề phụ thuộc (Dependencies):**
   - `P1-021` — Business Configuration persistence/control plane (`CLOSED`)
   - `P1-031` — Operational-start policy implementation (`CLOSED`)
@@ -198,3 +198,27 @@ Nhiệm vụ `P1-032` (Operational-start admin UI integration) được cập nh
 - Chuyển trạng thái từ `READY` về lại `PLANNED`.
 - Đây là sự hiệu chỉnh phụ thuộc tất yếu được phát hiện qua tiền khảo sát preflight khách quan, không phải là sự thoái lui hay suy thoái của mã nguồn đã hoàn thành.
 - `P1-032` tuyệt đối không được bắt đầu nhánh làm việc cho đến khi `P1-031C` hoàn tất đóng chuẩn tắc (`CLOSED`).
+
+---
+
+## 12. Bằng chứng Triển khai và Kiểm thử (Implementation & Verification Evidence)
+
+- **Nhánh thực thi (Dedicated Task Branch):** `feat/business-configuration-academic-year-options-031c`
+- **Canonical origin/main cơ sở:** `2df682f2eb76f813418560673bbdabe4c31e9154`
+- **Commit triển khai runtime & test:** `01c6f28e1cbdeb3cf4a29f9c3df929111546df9a` (`feat(policy): add academic-year options read model`)
+- **Các tệp thay đổi trong commit triển khai:**
+  - `packages/contracts/src/index.ts`: Bổ sung `BusinessPolicyAcademicYearOption` và `BusinessPolicyAcademicYearOptionListResponse`.
+  - `apps/api/src/business-configuration/dto.ts`: Bổ sung DTO riêng `ListBusinessPolicyAcademicYearOptionsDto` (`page >= 1`, `1 <= pageSize <= 100`).
+  - `apps/api/src/business-configuration/business-configuration.service.ts`: Bổ sung phương thức chỉ đọc `academicYearOptions(query)` với giao dịch Prisma song song (`findMany` + `count`), sắp xếp tất định `code ASC, id ASC`, chỉ lấy `id`, `code`, `name`.
+  - `apps/api/src/business-configuration/business-configuration.controller.ts`: Bổ sung endpoint `GET /api/business-configuration/academic-year-options` được bảo vệ bởi `SessionAuthGuard` và `CapabilityGuard` với decorator quyền hạn hiện hữu `@RequireCapability('BUSINESS_CONFIGURATION_MANAGE', { scope: 'SCHOOL_WIDE' })`.
+  - `apps/api/src/business-configuration/business-configuration.service.spec.ts`: Bổ sung 6 ca unit test kiểm tra pagination (skip/take), select tối thiểu, sắp xếp tất định, cấu trúc phản hồi và xác nhận không kích hoạt mutation/audit API (72/72 unit test PASS).
+  - `apps/api/test/business-configuration/business-configuration.integration.spec.ts`: Mở rộng seed capability và bổ sung ma trận kiểm thử tích hợp 7 ca kiểm tra phân quyền (cho phép 200 đối với `BUSINESS_CONFIGURATION_MANAGE / SCHOOL_WIDE`, từ chối 403 với no grant, `SYSTEM_ADMIN`, `ACADEMIC_STRUCTURE_MANAGE`, `PPCT_MANAGE`, `SUBJECT_MANAGE`, `HOMEROOM_ASSIGNMENT_MANAGE`, kiểm tra sanitization của body 403 và audit metadata nội bộ `GRANT_NOT_FOUND`, kiểm tra phân trang và xác nhận zero mutation).
+- **Kết quả xác thực cục bộ (Local Verification):**
+  - Contracts lint & typecheck: `PASS`
+  - API typecheck (`tsc --noEmit`): `PASS`
+  - API lint (`npm run lint`): `PASS`
+  - API build (`npx nest build`): `PASS`
+  - Unit tests (`business-configuration.service.spec.ts`): `PASS` (72 tests passed)
+  - Workflow contract (`npm run test:workflow:contract`): `PASS`
+  - Git diff check: `PASS`
+  - Tích hợp cục bộ: Bị chặn an toàn do môi trường cục bộ chưa có cơ sở dữ liệu `TEST_DATABASE_URL` được chứng nhận cô lập riêng (`Refusing destructive integration tests because TEST_DATABASE_URL has not been explicitly certified as an isolated test database`); CI chuẩn tắc trên GitHub sẽ thực thi xác thực tích hợp tự động sau khi mở PR.

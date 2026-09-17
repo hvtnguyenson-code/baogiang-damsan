@@ -13,7 +13,7 @@ It is **not** a self-referential registry of the latest Git commit. Exact curren
 `P1-031A` — Operational-start authority continuity correction — is **CLOSED** by `SYNC-P1-031A` following parent PR #137 merge (`f19ec01d293c1c3da6ff46ebc257c9a43630112e`) and authoritative post-merge CI #451 SUCCESS.
 
 Next critical-path implementation:
-- `P1-031C` — Operational-start Academic-Year options read-model enablement — **READY**. All dependencies (`P1-021`, `P1-031`) are CLOSED. Smallest Business Configuration-owned AcademicYear options read model (`GET /api/business-configuration/academic-year-options`) under `BUSINESS_CONFIGURATION_MANAGE / SCHOOL_WIDE` required by P1-032 resource picker; implementation tool must be selected per AGENTS.md at task start.
+- `P1-031C` — Operational-start Academic-Year options read-model enablement — **IN_REVIEW**. Dedicated implementation branch `feat/business-configuration-academic-year-options-031c` from canonical main `2df682f2eb76f813418560673bbdabe4c31e9154`; implementation commit `01c6f28e1cbdeb3cf4a29f9c3df929111546df9a`; delivered `GET /api/business-configuration/academic-year-options` under existing `BUSINESS_CONFIGURATION_MANAGE / SCHOOL_WIDE` capability; 72/72 service unit tests pass; integration test matrix added; awaits independent review and CI.
 - `P1-032` — Operational-start admin UI integration — **PLANNED**. Status returned from READY to PLANNED pending P1-031C options read-model enablement discovered during authorized P1-032 read-only preflight audit; zero implementation commits exist for P1-032.
 
 Parallel eligible:
@@ -392,9 +392,11 @@ The final production-host topology is intentionally unresolved and explicitly de
 
 `P1-031A` is CLOSED by `SYNC-P1-031A`.
 
+Active in review:
+- `P1-031C` — Operational-start Academic-Year options read-model enablement (`IN_REVIEW` on `feat/business-configuration-academic-year-options-031c`).
+
 Eligible to start on a dedicated branch:
-1. `P1-031C` — Operational-start Academic-Year options read-model enablement (`READY`; all dependencies `P1-021`, `P1-031` are CLOSED).
-2. `P4-010` — GDĐP/HĐTN programme architecture closure (`READY`; independent track).
+1. `P4-010` — GDĐP/HĐTN programme architecture closure (`READY`; independent track).
 
 Already active: none.
 
