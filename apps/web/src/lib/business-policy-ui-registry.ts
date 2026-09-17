@@ -1,5 +1,25 @@
-import type { BusinessConfigurationResource } from '@baogiang/contracts';
-import type { ComponentType } from 'react';
+import type {
+  BusinessConfigurationResource,
+  BusinessPolicyAcademicYearOption,
+} from '@baogiang/contracts';
+import {
+  createElement,
+  useCallback,
+  useEffect,
+  useState,
+  type ChangeEvent,
+  type ComponentType,
+} from 'react';
+import { Button } from '../components/ui/button';
+import { InlineAlert } from '../components/ui/feedback';
+import { FormField } from '../components/ui/form-field';
+import { SelectField } from '../components/ui/management';
+import {
+  businessConfigurationApi,
+  isValidCivilDate,
+  normalizeCivilDate,
+  translatePolicyError,
+} from './business-configuration-api';
 
 export interface BusinessPolicyEditorProps<T = Record<string, unknown>> {
   value: T;
@@ -30,11 +50,252 @@ export interface BusinessPolicyUiAdapter<T extends Record<string, unknown> = Rec
   readonly ResourceEditorComponent?: ComponentType<BusinessPolicyResourceEditorProps>;
 }
 
+export interface OperationalStartPayload extends Record<string, unknown> {
+  operationalStartDate: string;
+}
+
+export function initialOperationalStartPayload(): OperationalStartPayload {
+  return {
+    operationalStartDate: '',
+  };
+}
+
+export function validateOperationalStartPayload(
+  value: unknown,
+): { valid: true; payload: OperationalStartPayload } | { valid: false; error: string } {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {
+      valid: false,
+      error: 'Dữ liệu chính sách bắt đầu vận hành phải là đối tượng hợp lệ.',
+    };
+  }
+
+  const keys = Object.keys(value as Record<string, unknown>);
+  if (keys.length !== 1 || keys[0] !== 'operationalStartDate') {
+    return {
+      valid: false,
+      error: 'Dữ liệu chính sách chỉ được phép chứa duy nhất trường ngày bắt đầu vận hành (operationalStartDate).',
+    };
+  }
+
+  const dateVal = (value as Record<string, unknown>).operationalStartDate;
+  if (typeof dateVal !== 'string' || !isValidCivilDate(dateVal)) {
+    return {
+      valid: false,
+      error: 'Ngày bắt đầu vận hành phải là ngày dân sự hợp lệ theo định dạng YYYY-MM-DD.',
+    };
+  }
+
+  return {
+    valid: true,
+    payload: {
+      operationalStartDate: dateVal,
+    },
+  };
+}
+
+export function OperationalStartEditor({
+  value,
+  onChange,
+  disabled,
+}: BusinessPolicyEditorProps<Record<string, unknown>>) {
+  const typedValue = (value ?? {}) as Partial<OperationalStartPayload>;
+
+  return createElement(
+    'div',
+    { className: 'operational-start-editor' },
+    createElement(FormField, {
+      id: 'operational-start-date',
+      label: 'Ngày bắt đầu vận hành',
+      type: 'text',
+      placeholder: 'YYYY-MM-DD',
+      hint: 'Định dạng chuẩn YYYY-MM-DD (ví dụ: 2026-09-05).',
+      value: typedValue.operationalStartDate ?? '',
+      disabled,
+      onChange: (e: ChangeEvent<HTMLInputElement>) => {
+        onChange({
+          ...value,
+          operationalStartDate: e.target.value.trim(),
+        });
+      },
+      required: true,
+    }),
+  );
+}
+
+export function OperationalStartSummary({
+  payload,
+}: BusinessPolicySummaryProps<Record<string, unknown>>) {
+  const typedPayload = (payload ?? {}) as Partial<OperationalStartPayload>;
+  const dateStr = typedPayload.operationalStartDate;
+  const normalized = normalizeCivilDate(dateStr);
+
+  return createElement(
+    'div',
+    { className: 'operational-start-summary' },
+    createElement(
+      'p',
+      { style: { margin: 0, fontSize: '0.92rem' } },
+      createElement('span', { className: 'muted-copy' }, 'Ngày bắt đầu vận hành: '),
+      createElement('strong', null, normalized ?? dateStr ?? '—'),
+    ),
+  );
+}
+
+export function OperationalStartResourceEditor({
+  resource,
+  onChange,
+  disabled,
+}: BusinessPolicyResourceEditorProps) {
+  const [options, setOptions] = useState<BusinessPolicyAcademicYearOption[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadAllOptions = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      let page = 1;
+      const pageSize = 100;
+      let allItems: BusinessPolicyAcademicYearOption[] = [];
+      let total = 0;
+
+      let hasMore = true;
+      do {
+        const res = await businessConfigurationApi.getAcademicYearOptions(page, pageSize);
+        allItems = allItems.concat(res.items);
+        total = res.total;
+        page += 1;
+        hasMore = allItems.length < total && res.items.length > 0;
+      } while (hasMore);
+
+      setOptions(allItems);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(translatePolicyError(msg) || 'Không thể tải danh sách năm học.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadAllOptions();
+  }, [loadAllOptions]);
+
+  const selectedAcademicYearId =
+    resource?.kind === 'ACADEMIC_YEAR' ? (resource.academicYearId ?? '') : '';
+
+  if (isLoading) {
+    return createElement(
+      'div',
+      {
+        className: 'academic-year-picker-loading',
+        style: { padding: '8px 0', fontSize: '0.9rem', color: '#49616f' },
+      },
+      'Đang tải danh sách năm học...',
+    );
+  }
+
+  if (error) {
+    return createElement(
+      'div',
+      {
+        className: 'academic-year-picker-error',
+        style: { display: 'flex', flexDirection: 'column', gap: '8px' },
+      },
+      createElement(
+        InlineAlert,
+        {
+          title: 'Lỗi tải danh sách năm học',
+          tone: 'error',
+          children: createElement(
+            'div',
+            null,
+            createElement('p', null, error),
+            createElement(
+              Button,
+              {
+                type: 'button',
+                variant: 'secondary',
+                onClick: () => void loadAllOptions(),
+                disabled,
+                children: 'Thử lại',
+              },
+            ),
+          ),
+        },
+      ),
+    );
+  }
+
+  if (options.length === 0) {
+    return createElement(
+      'div',
+      { className: 'academic-year-picker-empty' },
+      createElement(
+        'p',
+        {
+          className: 'muted-copy',
+          style: { fontStyle: 'italic', fontSize: '0.9rem' },
+        },
+        'Chưa có năm học nào trong hệ thống.',
+      ),
+    );
+  }
+
+  return createElement(
+    'div',
+    { className: 'academic-year-picker' },
+    createElement(
+      SelectField,
+      {
+        id: 'operational-start-academic-year-select',
+        label: 'Năm học áp dụng',
+        hint: 'Chọn năm học để xác lập thẩm quyền bắt đầu vận hành',
+        disabled,
+        value: selectedAcademicYearId,
+        onChange: (e: ChangeEvent<HTMLSelectElement>) => {
+          onChange({
+            kind: 'ACADEMIC_YEAR',
+            academicYearId: e.target.value,
+          });
+        },
+        required: true,
+        children: [
+          createElement('option', { key: 'empty', value: '' }, '-- Chọn năm học --'),
+          ...options.map((opt) =>
+            createElement(
+              'option',
+              { key: opt.id, value: opt.id },
+              `${opt.code} — ${opt.name}`,
+            ),
+          ),
+        ],
+      },
+    ),
+  );
+}
+
+export const OPERATIONAL_START_UI_ADAPTER: BusinessPolicyUiAdapter<OperationalStartPayload> = {
+  familyKey: 'OPERATIONAL_START',
+  validatorVersion: 'v1',
+  displayName: 'Bắt đầu vận hành',
+  description:
+    'Xác định ngày dân sự bắt đầu thẩm quyền vận hành bình thường cho năm học được chọn.',
+  resourceKind: 'ACADEMIC_YEAR',
+  initialPayload: initialOperationalStartPayload,
+  validatePayload: validateOperationalStartPayload,
+  EditorComponent: OperationalStartEditor,
+  SummaryComponent: OperationalStartSummary,
+  ResourceEditorComponent: OperationalStartResourceEditor,
+};
+
 /**
- * Production UI adapter registry is intentionally empty in P1-022.
- * Family-specific UI adapters will be registered when their owner tasks are approved.
+ * Production UI adapter registry contains exclusively OPERATIONAL_START in P1-032.
  */
-export const PRODUCTION_BUSINESS_POLICY_UI_ADAPTERS: readonly BusinessPolicyUiAdapter[] = [];
+export const PRODUCTION_BUSINESS_POLICY_UI_ADAPTERS: readonly BusinessPolicyUiAdapter[] = [
+  OPERATIONAL_START_UI_ADAPTER as unknown as BusinessPolicyUiAdapter,
+];
 
 export function findUiAdapter(
   adapters: readonly BusinessPolicyUiAdapter[],
