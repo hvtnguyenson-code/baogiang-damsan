@@ -9,7 +9,7 @@
 - **Dedicated branch:** `docs/operational-start-scheduled-authority-supersession-031b`
 - **Canonical starting main:** `f1b160be25045d0f4c661e154ece24c92a3e0fc9`
 - **Controlling authority:** ADR-046, ADR-049, P1-030 and P1-031
-- **Related implementation correction:** `P1-031A` is `IN_REVIEW` on `fix/operational-start-authority-continuity-031a-v2`. The old `fix/operational-start-authority-continuity-031a` remote head `6b7b804a5e82fc54fb280424e82b66d4b48db955` was inspected as bounded pre-architecture evidence only and is not canonical or merge-ready.
+- **Related implementation correction:** `P1-031A` is `CLOSED` by `SYNC-P1-031A` (PR #137, merge `f19ec01d293c1c3da6ff46ebc257c9a43630112e`, post-merge CI #451 SUCCESS). The old `fix/operational-start-authority-continuity-031a` remote head `6b7b804a5e82fc54fb280424e82b66d4b48db955` was inspected as bounded pre-architecture evidence only and is not canonical or merge-ready.
 
 This task is documentation and architecture only. It authorizes no runtime, Prisma schema, migration, API, UI, deployment, VPS, production policy or production-data mutation.
 
@@ -518,8 +518,8 @@ Additional required evidence:
 - Independent GitHub architecture review PASS after two bounded forward corrections; PR #135 (`docs(policy): define scheduled authority supersession`); exact-head PR CI #444 (run `35059422741`) SUCCESS attempt 1.
 - Merge/main: `59fef75bfed7e96bb8ca2a396603256f2285402f`; authoritative post-merge main CI #445 (run `35059916674`) SUCCESS attempt 1; administrative closure: `SYNC-P1-031B`.
 - Scope remained docs-only architecture/governance: zero runtime/schema/migration/API implementation/UI/auth/CI/deploy/production mutation. Production remains strictly `PRE-OPERATIONAL`; no production `OPERATIONAL_START` authority is configured/deployed and production backfill is zero.
-- P1-031A is now `IN_REVIEW`; its task branch consumes this CLOSED architecture plus the already-audited finite-authority and replacement-continuity corrections. The prior evidence branch remains non-canonical, and the current implementation is not claimed merged or canonical before independent review, CI, merge and `SYNC-P1-031A`.
-- P1-032 remains `PLANNED` and non-startable until P1-031A is merged, passes authoritative post-merge CI and closes through `SYNC-P1-031A`.
+- P1-031A is `CLOSED` by `SYNC-P1-031A`; its merged implementation consumed this CLOSED architecture plus the audited finite-authority and replacement-continuity corrections. The prior evidence branch remains non-canonical.
+- P1-032 is `READY` following P1-031A merge, authoritative post-merge CI #451 and `SYNC-P1-031A` closure.
 - Production remains strictly `PRE-OPERATIONAL`; no deployed `OPERATIONAL_START` policy exists and no production remediation/backfill is required.
 
 ## 22. Explicit non-scope
