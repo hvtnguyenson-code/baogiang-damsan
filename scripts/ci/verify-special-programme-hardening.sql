@@ -29,24 +29,37 @@ INSERT INTO "programme_masters" (
     'd4210000-0000-0000-0000-000000000001'
 );
 
--- Source plan is published and retained; destination plan remains a mutable draft.
+-- Source plan is created as draft, populated with topics, then published.
 INSERT INTO "programme_plan_versions" (
     "id", "programme_master_id", "version_number", "created_by_user_id"
-) VALUES
-    ('14210000-0000-0000-0000-000000000001', 'f4210000-0000-0000-0000-000000000001', 1, 'd4210000-0000-0000-0000-000000000001'),
-    ('14210000-0000-0000-0000-000000000002', 'f4210000-0000-0000-0000-000000000001', 2, 'd4210000-0000-0000-0000-000000000001');
+) VALUES (
+    '14210000-0000-0000-0000-000000000001', 'f4210000-0000-0000-0000-000000000001', 1, 'd4210000-0000-0000-0000-000000000001'
+);
 
 INSERT INTO "programme_topic_items" (
     "id", "programme_plan_version_id", "sequence", "title", "required_periods"
-) VALUES
-    ('24210000-0000-0000-0000-000000000001', '14210000-0000-0000-0000-000000000001', 1, 'Published source topic', 1),
-    ('24210000-0000-0000-0000-000000000002', '14210000-0000-0000-0000-000000000002', 1, 'Draft destination topic', 1);
+) VALUES (
+    '24210000-0000-0000-0000-000000000001', '14210000-0000-0000-0000-000000000001', 1, 'Published source topic', 1
+);
 
 UPDATE "programme_plan_versions"
 SET "status" = 'PUBLISHED',
     "published_by_user_id" = 'd4210000-0000-0000-0000-000000000001',
     "published_at" = CURRENT_TIMESTAMP
 WHERE "id" = '14210000-0000-0000-0000-000000000001';
+
+-- Destination plan remains a mutable draft after version 1 is published.
+INSERT INTO "programme_plan_versions" (
+    "id", "programme_master_id", "version_number", "created_by_user_id"
+) VALUES (
+    '14210000-0000-0000-0000-000000000002', 'f4210000-0000-0000-0000-000000000001', 2, 'd4210000-0000-0000-0000-000000000001'
+);
+
+INSERT INTO "programme_topic_items" (
+    "id", "programme_plan_version_id", "sequence", "title", "required_periods"
+) VALUES (
+    '24210000-0000-0000-0000-000000000002', '14210000-0000-0000-0000-000000000002', 1, 'Draft destination topic', 1
+);
 
 DO $$
 BEGIN

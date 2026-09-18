@@ -6,13 +6,17 @@ integration('Programme Planning Control Plane (PostgreSQL integration)', () => {
   let service: ProgrammePlanningService;
 
   async function clean(): Promise<void> {
-    await h.prisma.programmePlanningCommand.deleteMany();
-    await h.prisma.plannedSlotStaffing.deleteMany();
-    await h.prisma.plannedOccurrenceSlot.deleteMany();
-    await h.prisma.plannedProgrammeOccurrence.deleteMany();
-    await h.prisma.programmeTopicItem.deleteMany();
-    await h.prisma.programmePlanVersion.deleteMany();
-    await h.prisma.programmeMaster.deleteMany();
+    await h.prisma.$executeRawUnsafe(`
+      TRUNCATE TABLE
+        "programme_planning_commands",
+        "planned_slot_staffing",
+        "planned_occurrence_slots",
+        "planned_programme_occurrences",
+        "programme_topic_items",
+        "programme_plan_versions",
+        "programme_masters"
+      CASCADE;
+    `);
     await h.clean();
   }
 
@@ -38,17 +42,17 @@ integration('Programme Planning Control Plane (PostgreSQL integration)', () => {
     const teacherA = await h.actor();
     const teacherB = await h.actor();
 
-    await h.prisma.staffProfile.create({
+    await h.prisma.staffProfile.update({
+      where: { userId: teacherA.id },
       data: {
-        userId: teacherA.id,
         displayName: 'Giáo viên A',
         isTeachingStaff: true,
       },
     });
 
-    await h.prisma.staffProfile.create({
+    await h.prisma.staffProfile.update({
+      where: { userId: teacherB.id },
       data: {
-        userId: teacherB.id,
         displayName: 'Giáo viên B',
         isTeachingStaff: true,
       },
@@ -71,6 +75,7 @@ integration('Programme Planning Control Plane (PostgreSQL integration)', () => {
         reserveWeekCount: 1,
         teachingWeekdays: ['MONDAY', 'TUESDAY'],
         isActive: true,
+        activatedAt: new Date('2026-09-01T00:00:00.000Z'),
       },
     });
 
