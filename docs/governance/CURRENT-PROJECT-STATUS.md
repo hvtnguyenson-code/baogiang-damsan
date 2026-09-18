@@ -12,8 +12,8 @@ It is **not** a self-referential registry of the latest Git commit. Exact curren
 
 `P1-032` — Operational-start admin UI integration — is **CLOSED** by `SYNC-P1-032` following parent PR #142 merge (`adfa62e9a92dcfc83cf0ab2e805d206a86a682e6`) and authoritative post-merge CI #461 SUCCESS.
 
-Next eligible / critical-path implementation:
-- `P4-010` — GDĐP/HĐTN programme architecture closure — **READY** (independent track).
+Active major task in review:
+- `P4-010` — GDĐP/HĐTN programme architecture closure — **IN_REVIEW** (dedicated branch `docs/gddp-hdtn-programme-architecture-010`, canonical base `df8fdadc7e57d284e92cd336e234d95e8820cdc4`, Proposed ADR-050).
 
 Remain:
 - `P2-010` — PPCT real-workbook contract/security audit — **BLOCKED_EVIDENCE** (pending authoritative school PPCT workbook/template).
@@ -288,7 +288,7 @@ Closure evidence:
 - merged file set: 15 changed files (1125 additions, 39 deletions), strictly docs-only under `docs/**` (zero runtime/schema/migration/API/UI/auth/CI/deploy/production mutation);
 - accepted authority: `ADR-048-PPCT-CURRICULAR-COMPONENT-ARCHITECTURE.md` Accepted;
 - all 15 architecture questions from P0-900 Section 15 resolved;
-- downstream delivery stream at P2-001 closure: `P2-002` (now `CLOSED` by `SYNC-P2-002`), `P2-003` (now `CLOSED` by `SYNC-P2-003`), `P2-004` (now `CLOSED` by `SYNC-P2-004`), `P1-030` (`READY`, now CLOSED by `SYNC-P1-030`), `P4-010` (independently `READY`), parallel workbook path `P2-010` (`BLOCKED_EVIDENCE`) -> `P2-020`.
+- downstream delivery stream at P2-001 closure: `P2-002` (now `CLOSED` by `SYNC-P2-002`), `P2-003` (now `CLOSED` by `SYNC-P2-003`), `P2-004` (now `CLOSED` by `SYNC-P2-004`), `P1-030` (`READY`, now CLOSED by `SYNC-P1-030`), `P4-010` (now `IN_REVIEW`), parallel workbook path `P2-010` (`BLOCKED_EVIDENCE`) -> `P2-020`.
 
 Predecessor closed major task: `P0-900` — Authoritative specification rebase audit (PPCT Curricular Component Product-Authority Realignment) — **CLOSED** by `SYNC-P0-900` (merge `eb1fc74686b0070935f8dcf23c13a5623b94ca1a`, PR #119, PR CI #397 SUCCESS, post-merge main CI #398 SUCCESS).
 
@@ -494,10 +494,10 @@ Active in progress:
 - None.
 
 Active in review:
-- None.
+- `P4-010` — GDĐP/HĐTN programme architecture closure (dedicated branch `docs/gddp-hdtn-programme-architecture-010`, canonical base `df8fdadc7e57d284e92cd336e234d95e8820cdc4`, Proposed ADR-050, P4-010 requirement closure document, zero runtime/schema mutation).
 
 Eligible to start on a dedicated branch:
-1. `P4-010` — GDĐP/HĐTN programme architecture closure (`READY`; independent track).
+- None.
 
 Not eligible to start:
 - `P2-020` — `PLANNED`, blocked until `P2-010` evidence is provided.

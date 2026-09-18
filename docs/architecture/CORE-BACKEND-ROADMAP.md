@@ -119,7 +119,7 @@ Exact task statuses and prerequisites are maintained authoritatively in `PRE-PIL
 
 ### P4 — GDĐP / HĐTN programmes and workload
 
-1. Programme/version/item/occurrence architecture (`P4-010`, remains independent / `READY`).
+1. Programme/version/item/occurrence architecture (`P4-010`, `IN_REVIEW` on branch `docs/gddp-hdtn-programme-architecture-010`).
 2. GDĐP `AcademicYear + Grade` planning.
 3. HĐTN `CLASS / GRADE / SCHOOL_WIDE` planning.
 4. Date-effective homeroom resolution for class activities.
@@ -169,7 +169,7 @@ P0-900 (CLOSED)
             └── P3-010 (needs closed P1-031 + closed P2-003 + P2-020 + closed P2-050)
 
 Independent tracks:
-- P4-010 (GDĐP/HĐTN programme architecture; independent / READY)
+- P4-010 (GDĐP/HĐTN programme architecture; `IN_REVIEW` on branch `docs/gddp-hdtn-programme-architecture-010`)
 - P6 production readiness & TLS authority (governed independently by canonical gates P6-005 -> P6-010 etc.)
 - Native TKB foundation: P2-030, P2-040, P2-050 are CLOSED.
 
