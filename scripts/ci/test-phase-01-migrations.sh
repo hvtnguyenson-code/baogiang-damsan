@@ -134,6 +134,9 @@ ALTER TABLE "ppct_class_associations" ALTER COLUMN "curricular_profile" SET DEFA
 \i scripts/ci/verify-teaching-execution-schema.sql
 SQL
 
+echo "[migration-test] P4-020 special-programme persistence constraint and history verification"
+psql "$fresh_psql_url" -v ON_ERROR_STOP=1 -f scripts/ci/verify-special-programme-schema.sql
+
 echo "[migration-test] Reporting Statement persistence constraint verification"
 psql "$fresh_psql_url" -v ON_ERROR_STOP=1 -f scripts/ci/verify-reporting-statement-schema.sql
 psql "$fresh_psql_url" -v ON_ERROR_STOP=1 -f scripts/ci/verify-reporting-statement-schema.sql
