@@ -144,7 +144,14 @@ For any occurrence operating under mode `CLASS`:
 Special programme activities possess no subject or teaching assignment context. Curricular substitution rules (`SAME_SUBJECT_SUBSTITUTION`, `DIFFERENT_SUBJECT_SUPERVISION`) are inapplicable.
 
 1. **Negative Evidence Rule**: Missing `SpecialActivityParticipationExecution` proves only the absence of execution evidence; it does **not** inherently prove absence or misconduct. An official absence requires an explicit retained operational fact.
-2. **Absence Without Replacement & Fail-Closed Staffing Invariant**:
+2. **Absence Without Replacement & Scheduled Staffing Separation**:
+   - **Scheduled Staffing vs Actual Execution**: Scheduled staffing and actual participation are two distinct truths.
+   - An explicit absence fact does **not** automatically:
+     - remove scheduled staffing;
+     - rewrite planning truth;
+     - reverse runtime roots;
+     - cancel programme occurrences; or
+     - invalidate scheduled teacher identity.
    - If scheduled Teacher A is absent and no replacement is assigned:
      - The occurrence planning truth is preserved.
      - Scheduled staffing retains Teacher A as scheduled.
@@ -152,10 +159,12 @@ Special programme activities possess no subject or teaching assignment context. 
      - Teacher A receives **zero** workload contribution.
      - The absence of one scheduled teacher does not automatically cancel the entire programme occurrence.
      - Programme-level attestation cannot fabricate, substitute, or compensate for individual participation execution for Teacher A.
-   - **Fail-Closed Runtime Invariant**: Each affected runtime fragment must satisfy existing `SpecialActivity` staffing and eligibility invariants.
-     - If Teacher A was the sole scheduled teacher for an affected slot and is absent without replacement, the system **cannot** materialize that slot/root with empty staffing (which would violate `SpecialActivity` non-empty staffing constraints) $\longrightarrow$ the system **FAILS CLOSED** for that affected materialization/runtime fragment.
-     - The system must **never** invent another teacher, fabricate execution, or silently continue with empty staffing.
-     - If an occurrence slot is staffed by multiple teachers (e.g., $\{\text{Teacher A}, \text{Teacher B}\}$) and remaining staffing is valid and eligible, Teacher B's absence does not invalidate Teacher A's participation; Teacher A may execute and receive credit, while Teacher B records no execution and receives zero credit.
+   - **Multi-Teacher Slots**: If an occurrence slot is staffed by multiple teachers (e.g., $\{\text{Teacher A}, \text{Teacher B}\}$) and Teacher B is absent, Teacher B's absence does not invalidate Teacher A's valid participation; Teacher A may execute and receive credit, while Teacher B records no execution and receives zero credit.
+   - **Fail-Closed Runtime Staffing Boundary**:
+     - Materialization FAILS CLOSED **if and only if** the command preparing to create runtime actually fails to satisfy the invariant of having one or more valid, eligible scheduled staffing children.
+     - For example, if planning authorities forward-corrected staffing by removing Teacher A without assigning a replacement B, leaving the intended scheduled staffing set empty ($\emptyset$), materialization FAILS CLOSED.
+     - "Teacher A is absent" does **not** mean "staffing set is empty".
+   - **Cancellation Semantics**: If institutional policy or business authority determines that an occurrence is cancelled, that requires an explicit retained operational/correction fact. Cancellation is never inferred from absence alone. P4-010 does not invent a physical cancellation schema.
 3. **Replacement Representation**:
    - Teacher B cannot create execution evidence referencing Teacher A's staffing child. ADR-038 schema foreign key constraints (`actualTeacherUserId == scheduledTeacherUserId`) strictly prevent this at the database level.
    - Teacher B must be established as an explicit, authorized scheduled staffing record for that exact slot before Teacher B can confirm execution.
@@ -185,9 +194,13 @@ Special programme activities possess no subject or teaching assignment context. 
    - A programme occurrence confirmation condition is satisfied **if and only if** there exists at least one qualifying current, non-reversed programme attestation:
      $$\text{Programme Confirmation Gate Satisfied} \iff \exists \text{ qualifying, non-reversed programme attestation}$$
    - Qualifying attestors are strictly limited to:
-     - An authorized **Programme Coordinator** (`GDDDP_COORDINATOR` or `HĐTN_COORDINATOR`, bound via explicit capability); OR
-     - An authorized **BGH professional authority** (`APPROVAL_PRINCIPAL` or `APPROVAL_VICE_PRINCIPAL`, bound via explicit capability).
-   - **No Inference from Department Leadership**: Programme coordinator authority is specialized to the programme. It must **never** be inferred from subject group leadership (`SUBJECT_GROUP_LEAD` / Tổ trưởng chuyên môn), department roles, position titles, or user roles.
+     - An authorized **Programme Coordinator** (associated with the specific programme domain); OR
+     - An authorized **BGH professional authority**.
+   - **No Hardcoded Capability Key in P4-010**:
+     - BGH attestation requires an explicit qualifying professional capability. Existing catalog keys (such as `APPROVAL_PRINCIPAL` and `APPROVAL_VICE_PRINCIPAL`) represent current catalog evidence, but P4-010 does **not** bind the exact capability key. `P4-030` owns the exact key/resource/scope binding.
+     - Similarly, existing coordinator keys (`GDDDP_COORDINATOR`, `HĐTN_COORDINATOR`) provide current catalog evidence, while `P4-030` locks their exact resource and scope semantics.
+   - **No Inference from Department Leadership or Job Titles**:
+     - Programme coordinator authority is specialized to the programme. It must **never** be inferred from subject group leadership (`SUBJECT_GROUP_LEAD` / Tổ trưởng chuyên môn), department roles, position titles, user roles, or system administrator (`SYSTEM_ADMIN`) status.
    - **Existential Non-Multiplication**: Confirmation is existential, not additive. If both the Coordinator and BGH attest the same occurrence, the confirmation condition is satisfied exactly once. Multiple attestations are retained for audit but **never** duplicate completion status or multiply workload.
 3. **Conceptual Attestation Entity & Status Lifecycle**:
    - In this architecture, `ProgrammeOccurrenceAttestation` is a **conceptual** entity name representing retained attestation evidence. P4-010 does **not** mandate a specific physical table name or physical status enum (such as `ACTIVE`).
@@ -230,12 +243,14 @@ $$\text{Eligible Workload Contribution Source} \iff (\text{Valid Teacher-Slot Pa
    - Capability grants are the sole authority.
    - Being a principal, vice principal, homeroom teacher, subject group leader (`SUBJECT_GROUP_LEAD` / Tổ trưởng chuyên môn), or coordinator by job title confers zero system authority without explicit capability records.
    - `SYSTEM_ADMIN` confers no implicit programme coordinator or professional attestation authority.
-2. **Domain-Specific Capabilities**:
-   - `GDDDP_COORDINATOR`: Authorizes planning, staffing, and attesting GDĐP programmes within granted scope.
-   - `HĐTN_COORDINATOR`: Authorizes planning, staffing, and attesting HĐTN-HN programmes within granted scope.
-   - `SPECIAL_ACTIVITY_MANAGE`: Retains school-wide authority for ad-hoc operational events (assemblies, exams).
-   - `APPROVAL_PRINCIPAL` / `APPROVAL_VICE_PRINCIPAL`: Institutional school-wide oversight and attestation.
-3. P4-010 establishes these boundaries; P4-030 will implement the exact capability wiring, resource scopes, and guard contracts.
+2. **Catalog Evidence vs P4-030 Binding**:
+   - The repository's current capability catalog includes existing keys:
+     - `GDDDP_COORDINATOR`: Authorizes planning, staffing, and attesting GDĐP programmes.
+     - `HĐTN_COORDINATOR`: Authorizes planning, staffing, and attesting HĐTN-HN programmes.
+     - `APPROVAL_PRINCIPAL` / `APPROVAL_VICE_PRINCIPAL`: Institutional school-wide approval keys.
+     - `SPECIAL_ACTIVITY_MANAGE`: Baseline school-wide authority for ad-hoc operational events.
+   - These keys serve as **current catalog evidence**, but P4-010 does **not** mandate or hard-code them as final bindings.
+   - `P4-030` owns the exact capability keys, resource scopes, and guard contracts for both Coordinator and BGH attestation.
 
 ---
 
