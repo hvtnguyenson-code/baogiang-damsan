@@ -137,6 +137,9 @@ SQL
 echo "[migration-test] P4-020 special-programme persistence constraint and history verification"
 psql "$fresh_psql_url" -v ON_ERROR_STOP=1 -f scripts/ci/verify-special-programme-schema.sql
 
+echo "[migration-test] P4-020 special-programme published-child and weekday hardening verification"
+psql "$fresh_psql_url" -v ON_ERROR_STOP=1 -f scripts/ci/verify-special-programme-hardening.sql
+
 echo "[migration-test] Reporting Statement persistence constraint verification"
 psql "$fresh_psql_url" -v ON_ERROR_STOP=1 -f scripts/ci/verify-reporting-statement-schema.sql
 psql "$fresh_psql_url" -v ON_ERROR_STOP=1 -f scripts/ci/verify-reporting-statement-schema.sql
