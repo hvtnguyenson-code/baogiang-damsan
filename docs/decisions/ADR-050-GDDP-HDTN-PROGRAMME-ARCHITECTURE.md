@@ -1,6 +1,6 @@
 # ADR-050 — GDĐP / HĐTN Programme Architecture
 
-- **Status:** Proposed / Pending explicit merge authorization
+- **Status:** Accepted (accepted through parent PR #144, reviewed head `0763d15b428ebfa09ca551493deb0d872fcf1287`, merge/main `10de700723610efb6a79a0f62f8d6fc9f4ce44a3`, exact-head PR CI #464 SUCCESS, post-merge main CI #465 SUCCESS, independent GitHub review PASS; closure recorded by `SYNC-P4-010`)
 - **Date:** 2026-09-18
 - **Scope:** P4-010 Architecture Closure; documentation only (zero runtime, schema, migration, contracts, API, UI, capability catalog, CI/CD, or deployment mutation)
 - **Authority:** PA-B v1.2, ADR-034, ADR-035, ADR-038, ADR-044, ADR-045, `LOCAL-FC-05A0`, `LOCAL-FC-05D0D`, `LOCAL-FC-05F0D`, `P2-030`
@@ -285,8 +285,8 @@ $$\text{Eligible Workload Contribution Source} \iff (\text{Valid Teacher-Slot Pa
 
 ## 4. Consequences and Downstream Ownership
 
-- **P4-010 (Current)**: Proposed architecture closure under review; docs-only.
-- **P4-020 (Next Major Task)**: Implements persistence models for ProgrammeMaster, ProgrammePlanVersion, ProgrammeTopicItem, PlannedProgrammeOccurrence, PlannedOccurrenceSlot, and PlannedSlotStaffing (planning lifecycle and control plane only).
+- **P4-010 (Closed)**: Architecture closed and accepted by `SYNC-P4-010`; docs-only.
+- **P4-020 (Next Major Task)**: READY; implements persistence models for ProgrammeMaster, ProgrammePlanVersion, ProgrammeTopicItem, PlannedProgrammeOccurrence, PlannedOccurrenceSlot, and PlannedSlotStaffing (planning lifecycle and control plane only).
 - **P4-030**: Implements exact coordinator and BGH capability-resource-scope binding, guard contracts, and default-deny enforcement (current catalog keys are evidence only until P4-030 closes runtime authority).
 - **P4-040**: Implements the materialization bridge service transforming planned occurrences into `SpecialActivity` roots with exact partitioning, T43 runtime replacement/reversal handling, retained materialization provenance, and conceptual programme-attestation runtime persistence/control (T44 attestation recording/reversal semantics).
 - **P4-050**: Implements workload calculation logic enforcing the dual execution + attestation gate and anti-double-counting rules (execution + attestation gate projection, workload/anti-double-counting).

@@ -6,7 +6,7 @@
 - **Dependencies:** `P0-001` (CLOSED), `P1-010` (CLOSED)
 - **Traceability:** `T12`, `T15`, `T16`, `T17`, `T43`, `T44`
 - **Controlling Authorities:** PA-B v1.2, ADR-034, ADR-035, ADR-038, ADR-044, ADR-045, `LOCAL-FC-05A0`, `LOCAL-FC-05D0D`, `LOCAL-FC-05F0D`, `P2-030`, `P0-900`
-- **Status:** `IN_REVIEW`
+- **Status:** `CLOSED` (closed by `SYNC-P4-010` following parent PR #144, reviewed parent HEAD `0763d15b428ebfa09ca551493deb0d872fcf1287`, exact-head PR CI #464 SUCCESS, merge/main `10de700723610efb6a79a0f62f8d6fc9f4ce44a3`, authoritative post-merge main CI #465 SUCCESS, independent review PASS; no follow-up/re-entry task emerged; production remains PRE-OPERATIONAL)
 
 ---
 
@@ -30,7 +30,7 @@ Furthermore, several critical pre-pilot requirements remained unclosed:
 ### 2.1 Explicit Allowed Scope
 - Definition of upstream educational programme architecture for GDĐP and HĐTN-HN in `docs/decisions/ADR-050-GDDP-HDTN-PROGRAMME-ARCHITECTURE.md`.
 - Definition of architectural invariants, closure mapping, and acceptance criteria in this document.
-- Governance synchronization in `PRE-PILOT-TASK-REGISTER.md`, `PRE-PILOT-TRACEABILITY-MATRIX.md`, and `CURRENT-PROJECT-STATUS.md` moving `P4-010` to `IN_REVIEW`.
+- Governance synchronization in `PRE-PILOT-TASK-REGISTER.md`, `PRE-PILOT-TRACEABILITY-MATRIX.md`, and `CURRENT-PROJECT-STATUS.md` closing `P4-010` via `SYNC-P4-010`.
 
 ### 2.2 Strictly Forbidden Scope
 - Zero changes to Prisma schema or database migrations (`prisma/**`).
@@ -150,9 +150,9 @@ Furthermore, several critical pre-pilot requirements remained unclosed:
 ## 5. Downstream Task Ownership
 
 ```text
-P4-010 (This task)
+P4-010 (Closed by SYNC-P4-010)
   └── Architecture, governance invariants, T12/T15/T16/T17/T43/T44 closure (docs-only)
-P4-020
+P4-020 (READY)
   └── Database schema, migrations, ProgrammeMaster, ProgrammePlanVersion, ProgrammeTopicItem,
       PlannedProgrammeOccurrence, PlannedOccurrenceSlot, PlannedSlotStaffing (planning lifecycle and control plane only)
 P4-030
