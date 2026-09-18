@@ -27,6 +27,7 @@ import { ProgressDebtModule } from './progress-debt/progress-debt.module';
 import { ReportingProjectionModule } from './reporting-projection/reporting-projection.module';
 import { ReportingStatementsModule } from './reporting-statements/reporting-statements.module';
 import { BusinessConfigurationModule } from './business-configuration/business-configuration.module';
+import { ProgrammePlanningModule } from './programme-planning/programme-planning.module';
 
 @Module({
   imports: [
@@ -71,6 +72,7 @@ import { BusinessConfigurationModule } from './business-configuration/business-c
     ReportingProjectionModule,
     ReportingStatementsModule,
     BusinessConfigurationModule,
+    ProgrammePlanningModule,
   ],
 })
 export class AppModule {}
