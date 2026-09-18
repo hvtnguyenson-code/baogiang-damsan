@@ -154,12 +154,12 @@ P4-010 (This task)
   └── Architecture, governance invariants, T12/T15/T16/T17/T43/T44 closure (docs-only)
 P4-020
   └── Database schema, migrations, ProgrammeMaster, ProgrammePlanVersion, ProgrammeTopicItem,
-      PlannedProgrammeOccurrence, PlannedOccurrenceSlot, PlannedSlotStaffing, ProgrammeOccurrenceAttestation (conceptual entity)
+      PlannedProgrammeOccurrence, PlannedOccurrenceSlot, PlannedSlotStaffing (planning lifecycle and control plane only)
 P4-030
   └── Capability wiring: GDDDP_COORDINATOR, HĐTN_COORDINATOR, BGH attestation guards, scope checks
 P4-040
   └── Runtime bridge: materialization algorithms, 1->N partitioning, T43 replacement orchestration,
-      homeroom provenance binding
+      homeroom provenance binding, conceptual programme-attestation runtime persistence/control, and T44 attestation recording/reversal semantics
 P4-050
   └── Workload projection: dual execution + attestation gate, anti-double-counting, reporting integration
 P4-060 / P4-061

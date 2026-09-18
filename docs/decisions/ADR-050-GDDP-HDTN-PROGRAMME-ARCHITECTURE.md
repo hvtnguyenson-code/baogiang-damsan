@@ -96,7 +96,7 @@ To reconcile the requirement for an annual versioned content plan with the reali
    - `PUBLISHED`: Effective educational authority. Immutable in-place; neither items nor metadata can be edited without lineage.
    - `SUPERSEDED`: Replaced by a newer published version of the plan.
 2. In-place mutation of published plans is forbidden. Any modification to a published plan requires creating a successor version with retained lineage (`predecessorVersionId` / `replacesVersionId`) and an explicit audit reason.
-3. Historical plan versions and topics are never physically deleted (`ON DELETE RESTRICT`).
+3. Historical authoritative plan/version/item evidence must not be physically deleted through business workflows. P4-020 must select database constraints that enforce retained history; exact FK/on-delete representation belongs to persistence design.
 
 ### 2.5 Exact Per-Slot Staffing (T17 Invariant)
 
@@ -198,13 +198,14 @@ Special programme activities possess no subject or teaching assignment context. 
      - An authorized **BGH professional authority**.
    - **No Hardcoded Capability Key in P4-010**:
      - BGH attestation requires an explicit qualifying professional capability. Existing catalog keys (such as `APPROVAL_PRINCIPAL` and `APPROVAL_VICE_PRINCIPAL`) represent current catalog evidence, but P4-010 does **not** bind the exact capability key. `P4-030` owns the exact key/resource/scope binding.
-     - Similarly, existing coordinator keys (`GDDDP_COORDINATOR`, `HĐTN_COORDINATOR`) provide current catalog evidence, while `P4-030` locks their exact resource and scope semantics.
+     - Similarly, the current catalog contains coordinator capability keys (`GDDDP_COORDINATOR`, `HĐTN_COORDINATOR`) as programme authorization intent/evidence. Their exact P4 command authority is NOT yet active merely because the keys exist; `P4-030` owns their exact runtime binding, resource identity, and scope semantics.
    - **No Inference from Department Leadership or Job Titles**:
      - Programme coordinator authority is specialized to the programme. It must **never** be inferred from subject group leadership (`SUBJECT_GROUP_LEAD` / Tổ trưởng chuyên môn), department roles, position titles, user roles, or system administrator (`SYSTEM_ADMIN`) status.
    - **Existential Non-Multiplication**: Confirmation is existential, not additive. If both the Coordinator and BGH attest the same occurrence, the confirmation condition is satisfied exactly once. Multiple attestations are retained for audit but **never** duplicate completion status or multiply workload.
 3. **Conceptual Attestation Entity & Status Lifecycle**:
    - In this architecture, `ProgrammeOccurrenceAttestation` is a **conceptual** entity name representing retained attestation evidence. P4-010 does **not** mandate a specific physical table name or physical status enum (such as `ACTIVE`).
-   - P4-020 retains ownership of physical table names and physical status enums under the semantic invariant that:
+   - Exact physical name, status representation, database schema, and runtime persistence/control for attestation belong to `P4-040` (Traceability T44), while `P4-020` owns planning lifecycle and control plane models only.
+   - Downstream attestation persistence must satisfy the semantic invariants that:
      - historical attestations must not be mutated in-place or physically deleted; and
      - correction/reversal semantics must ensure that an invalidated/reversed attestation no longer satisfies the existential gate.
 
@@ -220,7 +221,7 @@ $$\text{Eligible Workload Contribution Source} \iff (\text{Valid Teacher-Slot Pa
    - P4-010 does **not** lock the final workload credit to a hardcoded 1.0 unit.
    - Final workload calculation, period weighting, and applicable coefficients belong to `P4-050` and the applicable business configuration/policy authority (which may define legitimate coefficients).
 3. **Execution without Attestation**:
-   - Individual teacher execution is recorded and visible in personal drafts, but remains unconfirmed at the programme level; it does **not** count as approved official workload until programme confirmation is satisfied.
+   - Valid teacher-slot participation execution remains retained source evidence. Before programme attestation it may appear in personal/reporting projections as unconfirmed-at-programme-level source evidence, but its own execution lifecycle remains ADR-038 ACTIVE/REVERSED; it does **not** count as approved official workload until the programme confirmation gate is satisfied.
 4. **Attestation without Execution**:
    - Programme attestation confirms student activity completion, but cannot grant workload credit to any teacher who lacks active participation execution evidence.
 
@@ -244,13 +245,12 @@ $$\text{Eligible Workload Contribution Source} \iff (\text{Valid Teacher-Slot Pa
    - Being a principal, vice principal, homeroom teacher, subject group leader (`SUBJECT_GROUP_LEAD` / Tổ trưởng chuyên môn), or coordinator by job title confers zero system authority without explicit capability records.
    - `SYSTEM_ADMIN` confers no implicit programme coordinator or professional attestation authority.
 2. **Catalog Evidence vs P4-030 Binding**:
-   - The repository's current capability catalog includes existing keys:
-     - `GDDDP_COORDINATOR`: Authorizes planning, staffing, and attesting GDĐP programmes.
-     - `HĐTN_COORDINATOR`: Authorizes planning, staffing, and attesting HĐTN-HN programmes.
-     - `APPROVAL_PRINCIPAL` / `APPROVAL_VICE_PRINCIPAL`: Institutional school-wide approval keys.
+   - The repository's current capability catalog contains coordinator and administrative capability keys:
+     - `GDDDP_COORDINATOR` / `HĐTN_COORDINATOR`: Exist in capability contracts reflecting programme coordination intent/evidence.
+     - `APPROVAL_PRINCIPAL` / `APPROVAL_VICE_PRINCIPAL`: Institutional school-wide approval keys reflecting current catalog evidence.
      - `SPECIAL_ACTIVITY_MANAGE`: Baseline school-wide authority for ad-hoc operational events.
-   - These keys serve as **current catalog evidence**, but P4-010 does **not** mandate or hard-code them as final bindings.
-   - `P4-030` owns the exact capability keys, resource scopes, and guard contracts for both Coordinator and BGH attestation.
+   - The current catalog contains coordinator capability keys as programme authorization intent/evidence. Their exact P4 command authority is NOT yet active merely because the keys exist; P4-030 owns exact runtime binding (exact capability key, resource identity, ACTIVITY/scope semantics, guard, default deny, and coordinator/BGH binding).
+   - Similarly, BGH keys represent current catalog evidence, not a mandatory or active P4 binding.
 
 ---
 
@@ -279,17 +279,17 @@ $$\text{Eligible Workload Contribution Source} \iff (\text{Valid Teacher-Slot Pa
 11. **Inferring Coordinator Authority from User Roles, Job Titles, or Subject Group / Department Leadership (`SUBJECT_GROUP_LEAD` / Tổ trưởng)**:
     - *Rejected*: Violates repository-wide capability authorization rules (ADR-008). Being a subject group lead or department chair confers no authority over special programmes. Special programme coordination and attestation require explicit programme coordinator or BGH capabilities.
 12. **Physical Deletion of Historical Programme Data**:
-    - *Rejected*: Violates repository-wide historical audit integrity. All models use soft reversal and lineage links.
+    - *Rejected*: Violates repository-wide historical audit integrity. Destructive removal of retained historical authority is rejected; downstream persistence tasks must enforce retained history, lineage links, and forward corrections.
 
 ---
 
 ## 4. Consequences and Downstream Ownership
 
-- **P4-010 (Current)**: Closed architecture and governance specification. Docs-only.
-- **P4-020 (Next Major Task)**: Implements persistence models for ProgrammeMaster, ProgrammePlanVersion, ProgrammeTopicItem, PlannedProgrammeOccurrence, PlannedOccurrenceSlot, PlannedSlotStaffing, and ProgrammeOccurrenceAttestation.
+- **P4-010 (Current)**: Proposed architecture closure under review; docs-only.
+- **P4-020 (Next Major Task)**: Implements persistence models for ProgrammeMaster, ProgrammePlanVersion, ProgrammeTopicItem, PlannedProgrammeOccurrence, PlannedOccurrenceSlot, and PlannedSlotStaffing (planning lifecycle and control plane only).
 - **P4-030**: Implements coordinator and BGH authorization wiring, capability scope definitions, and guard integration.
-- **P4-040**: Implements the materialization bridge service transforming planned occurrences into `SpecialActivity` roots with exact partitioning, T43 replacement handling, and homeroom provenance.
-- **P4-050**: Implements workload calculation logic enforcing the dual execution + attestation gate and anti-double-counting rules.
+- **P4-040**: Implements the materialization bridge service transforming planned occurrences into `SpecialActivity` roots with exact partitioning, T43 runtime replacement/reversal handling, retained materialization provenance, and conceptual programme-attestation runtime persistence/control (T44 attestation recording/reversal semantics).
+- **P4-050**: Implements workload calculation logic enforcing the dual execution + attestation gate and anti-double-counting rules (execution + attestation gate projection, workload/anti-double-counting).
 - **P4-060 / P4-061**: Workload adjustment policy (remains trigger-gated, unaffected).
 
 ---
