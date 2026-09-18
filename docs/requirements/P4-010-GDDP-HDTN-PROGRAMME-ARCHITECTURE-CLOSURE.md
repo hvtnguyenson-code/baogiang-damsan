@@ -85,7 +85,7 @@ Furthermore, several critical pre-pilot requirements remained unclosed:
   - Mere absence of a scheduled teacher does **not** mean the staffing set is empty.
 
 ### Example 3: Substitute Replacement Known Before Materialization
-- **Scenario**: Teacher A is scheduled for Grade 10 GDĐP on 2026-11-20. On 2026-11-15, Teacher A requests leave, and the authorized Coordinator assigns Teacher C as the replacement.
+- **Scenario**: Teacher A is scheduled for Grade 10 GDĐP on 2026-11-20. On 2026-11-15, Teacher A requests leave, and an actor holding qualifying explicit coordinator capability assigns Teacher C as the replacement.
 - **Invariant Rule**:
   - In the planning layer, replacement is recorded through valid planning lifecycle: direct edit if still in `DRAFT`, or retained forward correction/change with lineage if already `PUBLISHED`.
   - In-place mutation of published planning authority without lineage is forbidden.
@@ -97,7 +97,7 @@ Furthermore, several critical pre-pilot requirements remained unclosed:
 - **Invariant Rule**:
   - Teacher C **cannot** record execution on Teacher A's staffing child (blocked by DB foreign key constraint).
   - The system **does not** perform an in-place `UPDATE` of Teacher A's staffing child.
-  - The authorized operator/coordinator triggers a runtime replacement:
+  - An actor holding qualifying explicit replacement capability triggers a runtime replacement:
     1. The active `SpecialActivity` root is transitioned to `REVERSED` with reason "Substitute teacher replacement: C replaces A".
     2. A replacement `SpecialActivity` root is created (`replacesId = oldRoot.id`) containing Teacher C in its staffing child.
   - Teacher C confirms participation on the replacement root's staffing child.
@@ -116,22 +116,22 @@ Furthermore, several critical pre-pilot requirements remained unclosed:
   - Otherwise, historical materialization provenance remains intact.
 
 ### Example 7: Execution Confirmed but Programme Confirmation Gate Unsatisfied
-- **Scenario**: Teacher A teaches GDĐP Period 1 on 2026-10-10 and confirms execution on 2026-10-10 evening. The Programme Coordinator has not yet attested the week's occurrences.
+- **Scenario**: Teacher A teaches GDĐP Period 1 on 2026-10-10 and confirms execution on 2026-10-10 evening. No qualifying programme attestation has yet been recorded for the occurrence.
 - **Invariant Rule**:
-  - Teacher A's `SpecialActivityParticipationExecution` is valid.
+  - Teacher A's `SpecialActivityParticipationExecution` is valid retained evidence.
   - However, the Programme Confirmation gate is **unsatisfied** (no qualifying, non-reversed attestation exists yet).
-  - In Teacher A's personal dashboard, the period displays as "Đã ghi nhận (Chờ điều phối viên xác nhận)".
-  - The workload projection engine (`P4-050`) does **not** count this period toward approved official workload until programme confirmation is satisfied.
+  - The workload projection engine (`P4-050`) does **not** count this period toward approved official workload until the programme confirmation gate is satisfied.
+  - Downstream personal or reporting projections may surface this state as pending programme confirmation (or semantic equivalent); exact UI component, label, wording, color, and status copy belong to downstream UI/product work.
 
 ### Example 8: Programme Attested but Teacher Lacks Execution
-- **Scenario**: The Coordinator attests the GDĐP occurrence for 2026-10-10. Teacher B was scheduled for Period 2 but forgot to confirm execution or was absent.
+- **Scenario**: An actor holding qualifying explicit coordinator capability attests the GDĐP occurrence for 2026-10-10. Teacher B was scheduled for Period 2 but forgot to confirm execution or was absent.
 - **Invariant Rule**:
   - Programme attestation certifies student curriculum delivery.
   - However, Teacher B has no valid execution record.
   - The workload engine awards Teacher B **zero** workload contribution. Attestation never manufactures unrecorded teacher execution.
 
 ### Example 9: Dual Confirmation by Coordinator and BGH
-- **Scenario**: For an important school-wide event, the HĐTN Coordinator attests the occurrence at 16:00. The Vice Principal also attests the occurrence at 17:30.
+- **Scenario**: For an important school-wide event, an actor holding qualifying explicit coordinator capability attests the occurrence at 16:00. A qualifying BGH actor holding the required explicit professional capability (for example, a vice principal who holds the qualifying explicit professional capability) also attests the occurrence at 17:30.
 - **Invariant Rule**:
   - Both attestation records are stored for administrative audit (conceptual attestation entity).
   - The downstream gate evaluates $\exists \text{ qualifying non-reversed attestation} \equiv \text{TRUE}$.
@@ -156,7 +156,8 @@ P4-020
   └── Database schema, migrations, ProgrammeMaster, ProgrammePlanVersion, ProgrammeTopicItem,
       PlannedProgrammeOccurrence, PlannedOccurrenceSlot, PlannedSlotStaffing (planning lifecycle and control plane only)
 P4-030
-  └── Capability wiring: GDDDP_COORDINATOR, HĐTN_COORDINATOR, BGH attestation guards, scope checks
+  └── Exact coordinator/BGH capability-resource-scope binding and guards;
+      current catalog keys are evidence only until P4-030 closes authority
 P4-040
   └── Runtime bridge: materialization algorithms, 1->N partitioning, T43 replacement orchestration,
       homeroom provenance binding, conceptual programme-attestation runtime persistence/control, and T44 attestation recording/reversal semantics
