@@ -29,7 +29,7 @@ Closure evidence:
 - dedicated architecture branch: `docs/gddp-hdtn-programme-architecture-010`;
 - starting canonical main base: `df8fdadc7e57d284e92cd336e234d95e8820cdc4` (PR #143 post-closure CI #463 SUCCESS);
 - final independently reviewed HEAD: `0763d15b428ebfa09ca551493deb0d872fcf1287`;
-- independent GitHub review: PASS after two bounded docs-only forward correction rounds (`2a0e725c5da2b1a0813941107b7060008750f0a4` and `0763d15b428ebfa09ca551493deb0d872fcf1287`);
+- independent GitHub review: PASS after four bounded forward-fix commits following the initial architecture commit; all review findings were absorbed before parent merge;
 - parent PR: #144 (`docs(architecture): define GDĐP HĐTN programme authority`);
 - exact-head PR CI: CI #464 (run id: `35329948987`), SUCCESS on attempt 1;
 - merge/main commit: `10de700723610efb6a79a0f62f8d6fc9f4ce44a3`;
