@@ -10,20 +10,62 @@ It is **not** a self-referential registry of the latest Git commit. Exact curren
 
 ## Active / next critical path
 
-`P1-032` — Operational-start admin UI integration — is **CLOSED** by `SYNC-P1-032` following parent PR #142 merge (`adfa62e9a92dcfc83cf0ab2e805d206a86a682e6`) and authoritative post-merge CI #461 SUCCESS.
+`P4-010` — GDĐP/HĐTN programme architecture closure — is **CLOSED** by `SYNC-P4-010` following parent PR #144 merge (`10de700723610efb6a79a0f62f8d6fc9f4ce44a3`) and authoritative post-merge CI #465 SUCCESS.
 
-Active major task in review:
-- `P4-010` — GDĐP/HĐTN programme architecture closure — **IN_REVIEW** (dedicated branch `docs/gddp-hdtn-programme-architecture-010`, canonical base `df8fdadc7e57d284e92cd336e234d95e8820cdc4`, Proposed ADR-050).
+Eligible to start:
+- `P4-020` — Special-programme persistence + control plane — **READY** (dependencies `P1-012` and `P4-010` are both CLOSED).
 
 Remain:
 - `P2-010` — PPCT real-workbook contract/security audit — **BLOCKED_EVIDENCE** (pending authoritative school PPCT workbook/template).
 - `P2-020` — PPCT native importer implementation — **PLANNED** (pending `P2-010`).
 
-Production environment remains strictly **PRE-OPERATIONAL**. No production deployment has occurred. No production operational-start policy has been configured or deployed. P1-031A's migration is additive with explicit zero-row/no-backfill behavior and has not been applied to production. P1-031C introduced zero schema or migration change and zero production data mutation. P1-032 delivered administration Web UI integration with zero backend/contracts/schema/migration mutation.
+Production environment remains strictly **PRE-OPERATIONAL**. No production deployment has occurred. No production operational-start policy has been configured or deployed. P4-010 delivered documentation-only architectural closure under ADR-050 with zero runtime, schema, migration, contracts, API, UI, capability catalog, CI/CD, or deployment mutation.
 
 ## Last closed major task
 
-`P1-032` — Operational-start admin UI integration — **CLOSED** by `SYNC-P1-032`.
+`P4-010` — GDĐP/HĐTN programme architecture closure — **CLOSED** by `SYNC-P4-010`.
+
+Closure evidence:
+- dedicated architecture branch: `docs/gddp-hdtn-programme-architecture-010`;
+- starting canonical main base: `df8fdadc7e57d284e92cd336e234d95e8820cdc4` (PR #143 post-closure CI #463 SUCCESS);
+- final independently reviewed HEAD: `0763d15b428ebfa09ca551493deb0d872fcf1287`;
+- independent GitHub review: PASS after two bounded docs-only forward correction rounds (`2a0e725c5da2b1a0813941107b7060008750f0a4` and `0763d15b428ebfa09ca551493deb0d872fcf1287`);
+- parent PR: #144 (`docs(architecture): define GDĐP HĐTN programme authority`);
+- exact-head PR CI: CI #464 (run id: `35329948987`), SUCCESS on attempt 1;
+- merge/main commit: `10de700723610efb6a79a0f62f8d6fc9f4ce44a3`;
+- normal merge: YES;
+- GitHub verified signature: YES;
+- authoritative post-merge main CI: CI #465 (run id: `35331263693`), SUCCESS on attempt 1;
+- post-merge CI #465 evidence includes:
+  - Windows deployment contract: SUCCESS
+  - Lint · Typecheck · Test · Build: SUCCESS
+  - all substantive steps SUCCESS
+  - `Upload Playwright report on failure`: SKIPPED by design because no failure occurred;
+- local/review verification evidence:
+  - workflow contract PASS (`verify-workflow-contract.cjs`)
+  - git diff --check PASS;
+- delivered scope (strictly docs-only under `docs/**`):
+  - delivered `ADR-050-GDDP-HDTN-PROGRAMME-ARCHITECTURE.md` (Accepted) and `docs/requirements/P4-010-GDDP-HDTN-PROGRAMME-ARCHITECTURE-CLOSURE.md`;
+  - closed upstream programme layer placed upstream of `SpecialActivity`;
+  - GDĐP programme authority bounded by `AcademicYear + Grade` (Grades 10, 11, 12) with versioned content plan independent of weekly rotation;
+  - HĐTN educational programme operating under distinct business modes: `CLASS` (tied to date-effective homeroom responsibility), `GRADE`, and `SCHOOL_WIDE`;
+  - exact per-slot staffing ($\text{Slot} \to \text{Set<Teacher>}$) strictly prohibiting Cartesian $\text{Slots} \times \text{Teachers}$ multiplication;
+  - materialization bridge partitioning: one planned occurrence materializes into $1 \to N$ `SpecialActivity` roots partitioned by identical scheduled staffing sets;
+  - HĐTN `CLASS` deterministically consumes date-effective `HomeroomAssignment` via fail-closed resolver and freezes homeroom provenance upon materialization;
+  - decoupled absence and scheduled staffing: absence does not delete scheduled staffing, rewrite planning truth, or auto-cancel occurrences; absent teacher receives zero execution and zero workload;
+  - replacement representation: substitutes cannot execute on original staffing records; pre-materialization replacement reflects via planning lifecycle; post-materialization replacement uses standard CAS reverse + replacement `SpecialActivity` root;
+  - existential programme confirmation gate: satisfied if and only if $\ge 1$ qualifying current, non-reversed attestation exists from qualifying Programme Coordinator OR qualifying BGH professional authority (no role/title/department inference); dual confirmation satisfies gate exactly once;
+  - official workload eligibility requires BOTH valid individual teacher-slot participation execution AND satisfied programme confirmation gate; at most one contribution source per exact slot before valid policy/coefficients;
+  - anti-double-counting invariants: class cardinality never multiplies teacher workload ($\text{Workload} \ne \text{Slots} \times \text{ClassCount}$); attestation count never multiplies workload ($\text{Workload} \ne \text{Slots} \times \text{AttestationCount}$);
+  - exact authorization binding belongs to `P4-030` (current catalog keys are authorization intent/evidence only);
+  - exact attestation runtime persistence, schema, and status representation belong to `P4-040`;
+  - workload calculation logic and policy coefficients belong to `P4-050`;
+- zero runtime, schema, migration, contracts, API, UI, capability catalog, CI/CD, or deployment mutation;
+- no correction or re-entry task emerged from independent review or CI;
+- production remains strictly PRE-OPERATIONAL;
+- closed by administrative closure: `SYNC-P4-010`.
+
+Predecessor closed major task: `P1-032` — Operational-start admin UI integration — **CLOSED** by `SYNC-P1-032`.
 
 Closure evidence:
 - dedicated implementation branch: `feat/operational-start-admin-ui-integration-032`;
@@ -288,7 +330,7 @@ Closure evidence:
 - merged file set: 15 changed files (1125 additions, 39 deletions), strictly docs-only under `docs/**` (zero runtime/schema/migration/API/UI/auth/CI/deploy/production mutation);
 - accepted authority: `ADR-048-PPCT-CURRICULAR-COMPONENT-ARCHITECTURE.md` Accepted;
 - all 15 architecture questions from P0-900 Section 15 resolved;
-- downstream delivery stream at P2-001 closure: `P2-002` (now `CLOSED` by `SYNC-P2-002`), `P2-003` (now `CLOSED` by `SYNC-P2-003`), `P2-004` (now `CLOSED` by `SYNC-P2-004`), `P1-030` (`READY`, now CLOSED by `SYNC-P1-030`), `P4-010` (now `IN_REVIEW`), parallel workbook path `P2-010` (`BLOCKED_EVIDENCE`) -> `P2-020`.
+- downstream delivery stream at P2-001 closure: `P2-002` (now `CLOSED` by `SYNC-P2-002`), `P2-003` (now `CLOSED` by `SYNC-P2-003`), `P2-004` (now `CLOSED` by `SYNC-P2-004`), `P1-030` (`READY`, now CLOSED by `SYNC-P1-030`), `P4-010` (now `CLOSED` by `SYNC-P4-010`), parallel workbook path `P2-010` (`BLOCKED_EVIDENCE`) -> `P2-020`.
 
 Predecessor closed major task: `P0-900` — Authoritative specification rebase audit (PPCT Curricular Component Product-Authority Realignment) — **CLOSED** by `SYNC-P0-900` (merge `eb1fc74686b0070935f8dcf23c13a5623b94ca1a`, PR #119, PR CI #397 SUCCESS, post-merge main CI #398 SUCCESS).
 
@@ -462,11 +504,11 @@ The registered implementation, data-evidence, product and production-readiness t
 
 ## Critical pre-pilot gaps
 
-1. Current SpecialActivity is a valid runtime occurrence primitive but not a complete GDĐP/HĐTN programme model.
-2. GDĐP grade/year plan and HĐTN CLASS/GRADE/SCHOOL programme semantics are absent.
-3. Programme planning cannot assign different exact teacher sets to different exact slots.
-4. Special-program absence/replacement and programme-level confirmation authority remain explicitly registered for P4 closure (T43/T44).
-5. Existing `GDDDP_COORDINATOR` / `HĐTN_COORDINATOR` capability intent is not wired to programme-resource authority.
+1. Upstream GDĐP/HĐTN programme architecture is CLOSED and accepted under ADR-050 (P4-010), while persistence/control plane (P4-020), coordinator/BGH authorization (P4-030), bridge/attestation runtime (P4-040), and workload projection (P4-050) remain to be implemented.
+2. GDĐP grade/year plan and HĐTN CLASS/GRADE/SCHOOL programme architecture is defined; runtime models remain owned by P4-020/P4-040.
+3. Programme planning topology (Slot -> Set<Teacher>, non-Cartesian) is established in architecture; persistence schema belongs to P4-020.
+4. Special-program absence/replacement and programme-level confirmation authority architecture is closed (T43/T44); runtime bridge realization belongs to P4-040.
+5. Existing `GDDDP_COORDINATOR` / `HĐTN_COORDINATOR` capability intent is not wired to programme-resource authority (owned by P4-030).
 6. Operational-start backend/runtime authority (P1-031), scheduled-authority supersession architecture (P1-031B), authority continuity correction (P1-031A), options read-model enablement (P1-031C), and administration Web UI integration (P1-032) are CLOSED; while historical evidence workflow remains P3-010/P3-020.
 7. PPCT real-school import is intentionally blocked pending an authoritative workbook contract; preferred direction is one workbook with separate logical content for ordinary PPCT (CORE) and Chuyên đề học tập (SPECIALIZED_STUDY), with exact physical sheet names and structure evidence-bound to P2-010.
 8. Special-activity participation is not yet integrated into official workload/reporting aggregation.
@@ -488,19 +530,22 @@ The final production-host topology is intentionally unresolved and explicitly de
 
 ## Tasks currently active or eligible to start
 
-`P1-032` is CLOSED by `SYNC-P1-032`.
+`P4-010` is CLOSED by `SYNC-P4-010`.
 
 Active in progress:
 - None.
 
 Active in review:
-- `P4-010` — GDĐP/HĐTN programme architecture closure (dedicated branch `docs/gddp-hdtn-programme-architecture-010`, canonical base `df8fdadc7e57d284e92cd336e234d95e8820cdc4`, Proposed ADR-050, P4-010 requirement closure document, zero runtime/schema mutation).
+- None.
 
 Eligible to start on a dedicated branch:
-- None.
+- `P4-020` — Special-programme persistence + control plane — **READY** (dependencies `P1-012` and `P4-010` are both CLOSED).
 
 Not eligible to start:
 - `P2-020` — `PLANNED`, blocked until `P2-010` evidence is provided.
+- `P4-030` — `PLANNED`, depends on `P4-020`.
+- `P4-040` — `PLANNED`, depends on `P4-030`.
+- `P4-050` — `PLANNED`, depends on `P4-040`.
 
 `P2-020` remains blocked by `P2-010` evidence (`BLOCKED_EVIDENCE`).
 
