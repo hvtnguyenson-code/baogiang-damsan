@@ -50,8 +50,8 @@ Furthermore, several critical pre-pilot requirements remained unclosed:
 | **T15** | HĐTN has distinct `CLASS`, `GRADE`, and `SCHOOL_WIDE` business modes (Product Owner direction; ADR-045). | `SpecialActivityScope` exists, but has no binding to annual HĐTN educational plans or homeroom governance. | ADR-050 defines explicit HĐTN Business Modes (`CLASS`, `GRADE`, `SCHOOL_WIDE`). `CLASS` mode deterministically consumes date-effective `HomeroomAssignment` and freezes homeroom provenance upon materialization. | `P4-020` (Planning models), `P4-040` (Homeroom bridge) |
 | **T16** | GDĐP requires a year/grade programme with planned weekly/topic content (PA-B v1.2; P2-030 Row 38). | ADR-034 explicitly omitted category, programme, and series. Base timetable treats GDĐP as a non-peer rotating marker without assigned teachers. | ADR-050 defines GDĐP programme authority bounded by `AcademicYear + Grade` ($10, 11, 12$). Content plans (`ProgrammePlanVersion`, `ProgrammeTopicItem`) manage the syllabus independently of operational scheduling, accommodating dynamic weekly class rotation. | `P4-020` (Programme models), `P4-040` (Materialization) |
 | **T17** | Different exact slots of one special programme may have different teacher sets (Product Owner direction; ADR-038). | `SpecialActivity` create command accepts flat `slots[]` and `teachers[]`, creating an implied Cartesian product. | ADR-050 mandates exact per-slot staffing ($\text{Slot} \to \text{Set<Teacher>}$). When teacher sets differ across slots, the P4-040 bridge partitions the occurrence into multiple disjoint `SpecialActivity` roots ($1 \to N$ materialization). | `P4-020` (Slot staffing schema), `P4-040` (Bridge partitioning) |
-| **T43** | Special-program absence, replacement, and substitute teacher semantics must be explicit and decoupled from curricular substitution (LOCAL-FC-05A0; ADR-038). | Absence/substitution marked UNRESOLVED in 05A0. ADR-038 schema constraint `actualTeacherUserId == scheduledTeacherUserId` blocks direct substitute execution without staffing provenance. | ADR-050 closes replacement semantics: (1) Absence is not inferred from missing execution; (2) Substitutes cannot execute on original staffing; (3) Pre-materialization changes update planned staffing; (4) Post-materialization changes use runtime CAS reverse + replacement roots; (5) Substitutions require explicit authorization. | `P4-040` (Operational replacement & bridge orchestration) |
-| **T44** | Special-program confirmation authority must reconcile coordinator/BGH confirmation with per-teacher-slot participation evidence and prevent double counting (LOCAL-FC-05A0; ADR-038). | Confirmation marked UNRESOLVED in 05A0. Relationship between programme-level confirmation and individual teacher-slot execution was unspecified. | ADR-050 decouples Attestation from Execution and defines the Workload Gate: Official workload requires **BOTH** ACTIVE teacher participation execution **AND** at least one qualifying ACTIVE programme attestation (Coordinator or BGH). Extra attestations do not duplicate workload. Class count does not multiply workload. | `P4-030` (Authorization), `P4-040` (Attestation storage), `P4-050` (Workload projection) |
+| **T43** | Special-program absence, replacement, and substitute teacher semantics must be explicit and decoupled from curricular substitution (LOCAL-FC-05A0; ADR-038). | Absence/substitution marked UNRESOLVED in 05A0. ADR-038 schema constraint `actualTeacherUserId == scheduledTeacherUserId` blocks direct substitute execution without staffing provenance. | ADR-050 closes replacement semantics: (1) Absence is never inferred from missing execution; (2) Absence does not cancel occurrence nor fabricate execution, but affected runtime fragments must satisfy SpecialActivity staffing invariants (FAIL CLOSED if no valid staffing remains); (3) Substitutes cannot execute on original staffing; (4) Pre-materialization replacement reflects in planned staffing via planning lifecycle (draft edit under DRAFT or retained forward correction under PUBLISHED authority); (5) Post-materialization replacement uses runtime CAS reverse + replacement root; (6) Substitutions require explicit authorization (qualifying Coordinator or BGH, no department/title inference). | `P4-040` (Operational replacement & bridge orchestration) |
+| **T44** | Special-program confirmation authority must reconcile coordinator/BGH confirmation with per-teacher-slot participation evidence and prevent double counting (LOCAL-FC-05A0; ADR-038). | Confirmation marked UNRESOLVED in 05A0. Relationship between programme-level confirmation and individual teacher-slot execution was unspecified. | ADR-050 decouples Attestation from Execution and defines the Workload Gate: Official workload requires **BOTH** valid teacher participation execution **AND** a satisfied programme confirmation gate ($\exists$ qualifying current, non-reversed attestation from Coordinator or BGH professional authority). One qualifying participation contributes at most once to workload evidence before applying valid policy/coefficients. Dual attestations and class targets never multiply workload. | `P4-030` (Authorization), `P4-040` (Attestation storage), `P4-050` (Workload projection) |
 
 ---
 
@@ -66,20 +66,25 @@ Furthermore, several critical pre-pilot requirements remained unclosed:
   - Root 2: `civilDate: 2026-10-15`, `slot: Period 2`, `staffing: [Teacher B]`.
 - **Cartesian Prevention**: The system **never** creates a single root with `slots: [Period 1, Period 2]` and `staffing: [Teacher A, Teacher B]`, which would falsely claim that Teacher A taught Period 2 and Teacher B taught Period 1.
 
-### Example 2: Absence Without Replacement
-- **Scenario**: An occurrence has Period 1 staffed by $\{\text{Teacher A}, \text{Teacher B}\}$. Teacher A attends; Teacher B is absent with no replacement.
+### Example 2: Absence Without Replacement & Fail-Closed Invariant
+- **Scenario A (Multi-staffed slot)**: An occurrence has Period 1 staffed by $\{\text{Teacher A}, \text{Teacher B}\}$. Teacher A attends; Teacher B is absent with no replacement.
 - **Invariant Rule**:
   - Teacher A submits execution $\to$ `SpecialActivityParticipationExecution` created for A.
   - Teacher B records no execution.
-  - Teacher B receives **0** workload credit.
-  - The occurrence remains valid; Teacher A receives 1 slot of workload credit once programme attestation is granted.
+  - Teacher B receives **0** workload contribution.
+  - The occurrence slot remains valid for Teacher A; Teacher A's participation contributes to eligible workload evidence once programme confirmation is satisfied.
   - Programme attestation cannot manufacture execution evidence for Teacher B.
+- **Scenario B (Single-staffed slot)**: Period 2 is staffed solely by $\{\text{Teacher A}\}$, and Teacher A is absent with no replacement.
+- **Fail-Closed Invariant**:
+  - The system cannot materialize Period 2 with empty staffing (which violates `SpecialActivity` non-empty staffing invariants).
+  - The system **FAILS CLOSED** for Period 2's runtime materialization. It does not invent another teacher or silently proceed.
 
 ### Example 3: Substitute Replacement Known Before Materialization
-- **Scenario**: Teacher A is scheduled for Grade 10 GDĐP on 2026-11-20. On 2026-11-15, Teacher A requests leave, and the Coordinator assigns Teacher C as the replacement.
+- **Scenario**: Teacher A is scheduled for Grade 10 GDĐP on 2026-11-20. On 2026-11-15, Teacher A requests leave, and the authorized Coordinator assigns Teacher C as the replacement.
 - **Invariant Rule**:
-  - In the planning layer, `PlannedSlotStaffing` is prospectively updated to Teacher C with an audit log citing Teacher A and the leave approval.
-  - When the bridge materializes the occurrence on 2026-11-19, it generates a `SpecialActivity` root with `scheduledTeacherUserId = Teacher C`.
+  - In the planning layer, replacement is recorded through valid planning lifecycle: direct edit if still in `DRAFT`, or retained forward correction/change with lineage if already `PUBLISHED`.
+  - In-place mutation of published planning authority without lineage is forbidden.
+  - When the bridge materializes the occurrence, it generates a `SpecialActivity` root with `scheduledTeacherUserId = Teacher C`.
   - On 2026-11-20, Teacher C attends and records valid execution under C's own staffing provenance.
 
 ### Example 4: Substitute Replacement Arising After Materialization
@@ -105,34 +110,34 @@ Furthermore, several critical pre-pilot requirements remained unclosed:
   - If the school wishes Teacher Z to conduct the session, an explicit operational reschedule/reversal command is issued.
   - Otherwise, historical materialization provenance remains intact.
 
-### Example 7: Execution Confirmed but Programme Unattested
-- **Scenario**: Teacher A teaches GDĐP Period 1 on 2026-10-10 and confirms execution on 2026-10-10 evening. The Programme Coordinator has not yet reviewed or attested the week's occurrences.
+### Example 7: Execution Confirmed but Programme Confirmation Gate Unsatisfied
+- **Scenario**: Teacher A teaches GDĐP Period 1 on 2026-10-10 and confirms execution on 2026-10-10 evening. The Programme Coordinator has not yet attested the week's occurrences.
 - **Invariant Rule**:
-  - Teacher A's `SpecialActivityParticipationExecution` is `ACTIVE`.
-  - However, the Programme Attestation gate is **unsatisfied**.
+  - Teacher A's `SpecialActivityParticipationExecution` is valid.
+  - However, the Programme Confirmation gate is **unsatisfied** (no qualifying, non-reversed attestation exists yet).
   - In Teacher A's personal dashboard, the period displays as "Đã ghi nhận (Chờ điều phối viên xác nhận)".
-  - The workload projection engine (`P4-050`) does **not** include this period in approved official workload until attestation is registered.
+  - The workload projection engine (`P4-050`) does **not** count this period toward approved official workload until programme confirmation is satisfied.
 
 ### Example 8: Programme Attested but Teacher Lacks Execution
-- **Scenario**: The Coordinator attests the GDĐP occurrence for 2026-10-10. Teacher B was scheduled for Period 2 but forgot to confirm execution.
+- **Scenario**: The Coordinator attests the GDĐP occurrence for 2026-10-10. Teacher B was scheduled for Period 2 but forgot to confirm execution or was absent.
 - **Invariant Rule**:
-  - Programme attestation confirms student curriculum delivery.
-  - However, Teacher B has no active execution record.
-  - The workload engine awards Teacher B **zero** periods. Attestation never manufactures unrecorded teacher execution.
+  - Programme attestation certifies student curriculum delivery.
+  - However, Teacher B has no valid execution record.
+  - The workload engine awards Teacher B **zero** workload contribution. Attestation never manufactures unrecorded teacher execution.
 
 ### Example 9: Dual Confirmation by Coordinator and BGH
 - **Scenario**: For an important school-wide event, the HĐTN Coordinator attests the occurrence at 16:00. The Vice Principal also attests the occurrence at 17:30.
 - **Invariant Rule**:
-  - Both attestation records are stored for administrative audit (`ProgrammeOccurrenceAttestation`).
-  - The downstream gate evaluates $\exists \text{ qualifying active attestation} \equiv \text{TRUE}$.
-  - Participating teachers receive their exact 1-period credit. Workload is **never** doubled ($1 \times 2 = 2$ is strictly prevented).
+  - Both attestation records are stored for administrative audit (conceptual attestation entity).
+  - The downstream gate evaluates $\exists \text{ qualifying non-reversed attestation} \equiv \text{TRUE}$.
+  - Participating teachers receive at most one eligible workload contribution source for that exact slot. Workload contribution is **never** doubled ($1 \times 2 = 2$ is strictly prevented).
 
 ### Example 10: School-Wide Activity Targeting 18 Classes (Anti-Fan-Out)
 - **Scenario**: A school-wide HĐTN assembly lasts 1 period (Period 1, Monday) and involves all 18 classes of the school. Teacher A is the sole scheduled teacher.
 - **Invariant Rule**:
   - The materialized `SpecialActivity` contains 18 `SpecialActivityClassTarget` children.
   - Teacher A records execution for Period 1.
-  - Teacher A receives exactly **1 period** of teaching credit (or 1 multiplied by any approved policy coefficient).
+  - Teacher A receives **at most one** eligible workload contribution source for Period 1. Final credited workload is determined by P4-050 applying approved policy/coefficients.
   - Teacher A **never** receives $1 \times 18 = 18$ periods of credit. Class cardinality does not multiply teacher workload.
 
 ---
@@ -144,7 +149,7 @@ P4-010 (This task)
   └── Architecture, governance invariants, T12/T15/T16/T17/T43/T44 closure (docs-only)
 P4-020
   └── Database schema, migrations, ProgrammeMaster, ProgrammePlanVersion, ProgrammeTopicItem,
-      PlannedProgrammeOccurrence, PlannedOccurrenceSlot, PlannedSlotStaffing, ProgrammeOccurrenceAttestation
+      PlannedProgrammeOccurrence, PlannedOccurrenceSlot, PlannedSlotStaffing, ProgrammeOccurrenceAttestation (conceptual entity)
 P4-030
   └── Capability wiring: GDDDP_COORDINATOR, HĐTN_COORDINATOR, BGH attestation guards, scope checks
 P4-040
@@ -170,9 +175,9 @@ P4-060 / P4-061
 | Exact per-slot staffing (T17, non-Cartesian) | Satisfied | ADR-050 §2.5; $\text{Slot} \to \text{Set<Teacher>}$. |
 | Materialization partitioning ($1 \to N$ SpecialActivity roots) | Satisfied | ADR-050 §2.6; slot grouping on identical staffing sets. |
 | HĐTN `CLASS` homeroom resolution and freeze (ADR-045) | Satisfied | ADR-050 §2.7; fail-closed resolver, frozen provenance. |
-| Decoupled special programme absence/replacement (T43) | Satisfied | ADR-050 §2.8; CAS reverse + replacement root, no in-place child edit. |
-| Decoupled confirmation/attestation & existential gate (T44) | Satisfied | ADR-050 §2.9; Coordinator OR BGH, no double count. |
-| Dual-condition workload eligibility gate | Satisfied | ADR-050 §2.10; $\text{Active Execution} \land \text{Active Attestation}$. |
+| Decoupled special programme absence/replacement (T43) | Satisfied | ADR-050 §2.8; fail-closed staffing, planning lifecycle, CAS reverse + replacement root. |
+| Decoupled confirmation/attestation & existential gate (T44) | Satisfied | ADR-050 §2.9; Coordinator OR BGH, non-reversed attestation condition, no double count. |
+| Dual-condition workload eligibility gate | Satisfied | ADR-050 §2.10; $\text{Valid Execution} \land (\exists \text{ Non-Reversed Attestation})$; at most once before policy/coefficients. |
 | Anti-double-counting invariants | Satisfied | ADR-050 §2.11; no class multiplication, no attestation multiplication. |
-| Capability authorization boundary (P4-030 seam) | Satisfied | ADR-050 §2.12; domain capabilities, no role/title inference. |
+| Capability authorization boundary (P4-030 seam) | Satisfied | ADR-050 §2.12; domain capabilities, no role/title/department inference. |
 | Zero runtime/schema/production mutation | Satisfied | Strictly docs-only under `docs/**`. Production remains `PRE-OPERATIONAL`. |

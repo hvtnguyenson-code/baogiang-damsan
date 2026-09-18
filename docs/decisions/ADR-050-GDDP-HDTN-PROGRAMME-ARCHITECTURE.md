@@ -48,8 +48,10 @@ SPECIAL ACTIVITY RUNTIME (SpecialActivity roots, SpecialActivityTimeSlot, Specia
     ↓ [ADR-038 Confirmation]
 PARTICIPATION EXECUTION (SpecialActivityParticipationExecution)
     +
-PROGRAMME ATTESTATION (ProgrammeOccurrenceAttestation)
-    ↓ [P4-050 Workload Projection]
+PROGRAMME ATTESTATION (Conceptual: at least one qualifying, non-reversed attestation)
+    ↓ [Workload Gate: Execution AND Attestation Condition Satisfied]
+ELIGIBLE WORKLOAD CONTRIBUTION SOURCE (At most once per exact teacher-slot)
+    ↓ [P4-050 Policy / Coefficients Projection]
 OFFICIAL WORKLOAD CREDIT
 ```
 
@@ -110,8 +112,13 @@ The bridge from a `PlannedProgrammeOccurrence` into the runtime `SpecialActivity
 
 1. **Multiplicity ($\mathbf{1 \to N}$ Partitioning)**:
    - One planned programme occurrence may materialize into **one or more** `SpecialActivity` roots. It is not constrained to a $1:1$ mapping.
-   - A single runtime `SpecialActivity` root with multiple time-slots is valid **if and only if** the exact scheduled teacher set is identical across all slots in that root.
-   - Whenever teacher sets differ across slots within an occurrence, the materialization bridge **must** partition the occurrence into multiple disjoint `SpecialActivity` roots (e.g., one root per slot, or grouping slots having identical targets and identical teacher sets).
+   - One `SpecialActivity` per exact slot is always a valid and safe materialization implementation.
+   - Grouping multiple slots into a single runtime `SpecialActivity` root is valid **if and only if** all grouped slots share:
+     - identical occurrence civil date and calendar context;
+     - identical business target and scope (same exact classes or grade);
+     - exact identical scheduled teacher sets ($\text{TeacherSet}_i = \text{TeacherSet}_j$); and
+     - satisfaction of all existing `SpecialActivity` runtime validity invariants.
+   - Whenever scheduled teacher sets differ across slots within an occurrence, the materialization bridge **must** partition the occurrence into multiple disjoint `SpecialActivity` roots.
 2. **Retained Materialization Provenance**:
    - Every materialized `SpecialActivity` root must retain immutable provenance linking back to:
      - `ProgrammeMasterId`
@@ -137,26 +144,34 @@ For any occurrence operating under mode `CLASS`:
 Special programme activities possess no subject or teaching assignment context. Curricular substitution rules (`SAME_SUBJECT_SUBSTITUTION`, `DIFFERENT_SUBJECT_SUPERVISION`) are inapplicable.
 
 1. **Negative Evidence Rule**: Missing `SpecialActivityParticipationExecution` proves only the absence of execution evidence; it does **not** inherently prove absence or misconduct. An official absence requires an explicit retained operational fact.
-2. **Absence Without Replacement**:
+2. **Absence Without Replacement & Fail-Closed Staffing Invariant**:
    - If scheduled Teacher A is absent and no replacement is assigned:
      - The occurrence planning truth is preserved.
      - Scheduled staffing retains Teacher A as scheduled.
      - Teacher A records no participation execution.
-     - Teacher A receives **zero** workload credit.
-     - The occurrence is not cancelled solely because one scheduled teacher was absent.
-     - Programme-level attestation cannot fabricate or replace individual participation execution for Teacher A.
+     - Teacher A receives **zero** workload contribution.
+     - The absence of one scheduled teacher does not automatically cancel the entire programme occurrence.
+     - Programme-level attestation cannot fabricate, substitute, or compensate for individual participation execution for Teacher A.
+   - **Fail-Closed Runtime Invariant**: Each affected runtime fragment must satisfy existing `SpecialActivity` staffing and eligibility invariants.
+     - If Teacher A was the sole scheduled teacher for an affected slot and is absent without replacement, the system **cannot** materialize that slot/root with empty staffing (which would violate `SpecialActivity` non-empty staffing constraints) $\longrightarrow$ the system **FAILS CLOSED** for that affected materialization/runtime fragment.
+     - The system must **never** invent another teacher, fabricate execution, or silently continue with empty staffing.
+     - If an occurrence slot is staffed by multiple teachers (e.g., $\{\text{Teacher A}, \text{Teacher B}\}$) and remaining staffing is valid and eligible, Teacher B's absence does not invalidate Teacher A's participation; Teacher A may execute and receive credit, while Teacher B records no execution and receives zero credit.
 3. **Replacement Representation**:
    - Teacher B cannot create execution evidence referencing Teacher A's staffing child. ADR-038 schema foreign key constraints (`actualTeacherUserId == scheduledTeacherUserId`) strictly prevent this at the database level.
    - Teacher B must be established as an explicit, authorized scheduled staffing record for that exact slot before Teacher B can confirm execution.
 4. **Replacement Prior to Materialization**:
-   - Handled cleanly in the planning layer: the planned staffing record records the change/reassignment with actor, timestamp, and reason.
-   - The occurrence materializes with Teacher B as the authoritative scheduled staffing.
+   - Prior to materialization, replacement is reflected in canonical planned slot staffing through the valid lifecycle of the planning layer:
+     - direct edit when the plan/assignment is still in `DRAFT`; or
+     - retained forward correction/change with audit lineage when the planning authority is already `PUBLISHED`.
+   - In-place semantic mutation of published plans without lineage is forbidden. Exact physical persistence mechanisms belong to `P4-020`.
+   - The occurrence then materializes with Teacher B as the authoritative scheduled staffing.
 5. **Replacement After Materialization (Runtime Correction)**:
    - In-place mutation (`UPDATE` of `scheduledTeacherUserId` from A to B) on an active `SpecialActivityStaffing` child is **strictly forbidden**.
    - The runtime bridge applies the standard CAS reversal and replacement pattern: the affected `SpecialActivity` root is transitioned `ACTIVE -> REVERSED`, and a linked replacement `SpecialActivity` root is created with Teacher B in its staffing child.
    - If only one slot is affected, the materialization partitioning ensures only the affected slot root is reversed and replaced, leaving unaffected slot roots intact.
 6. **Replacement Authorization**:
-   - Assigning a substitute teacher is a professional administrative action requiring explicit capability (e.g., Programme Coordinator or BGH). It cannot be performed by regular teachers or inferred from system administrator roles.
+   - Assigning a substitute teacher is a professional administrative action requiring explicit capability (qualifying Programme Coordinator or BGH professional authority).
+   - Replacement authority must never be inferred from regular teaching staff, subject group leadership (`SUBJECT_GROUP_LEAD` / Tổ trưởng chuyên môn), user roles, or system administrator (`SYSTEM_ADMIN`) status.
 
 ### 2.9 Programme Confirmation and Attestation Semantics (T44)
 
@@ -166,36 +181,55 @@ Special programme activities possess no subject or teaching assignment context. 
    - **Teacher-Slot Execution**: Certifies that an individual teacher fulfilled their assigned teaching slot.
    - **Workload Projection**: Calculates recognized teaching workload from valid execution and attestation facts.
    - **Statement Freeze**: Freezes aggregated teacher workload for official submission/lock.
-2. **Qualifying Attestation (Existential Rule)**:
-   - A programme occurrence can be attested by:
-     - An authorized **Programme Coordinator** (`GDDDP_COORDINATOR` or `HĐTN_COORDINATOR`); OR
-     - An authorized **BGH member** (`APPROVAL_PRINCIPAL` or `APPROVAL_VICE_PRINCIPAL`).
-   - Confirmation is **existential**: $\exists \text{ qualifying active attestation}$.
-   - If both the Coordinator and BGH attest the same occurrence, the occurrence is confirmed exactly once. Extra attestations are retained for audit but **never** duplicate completion status or multiply workload.
-3. **Attestation Lifecycle and Correction**:
-   - Programme attestations use an immutable lifecycle: `ACTIVE -> REVERSED`.
-   - Data-entry errors in attestation are corrected by CAS-reversing the attestation with a mandatory reason. In-place editing is forbidden.
+2. **Qualifying Attestation (Existential Gate)**:
+   - A programme occurrence confirmation condition is satisfied **if and only if** there exists at least one qualifying current, non-reversed programme attestation:
+     $$\text{Programme Confirmation Gate Satisfied} \iff \exists \text{ qualifying, non-reversed programme attestation}$$
+   - Qualifying attestors are strictly limited to:
+     - An authorized **Programme Coordinator** (`GDDDP_COORDINATOR` or `HĐTN_COORDINATOR`, bound via explicit capability); OR
+     - An authorized **BGH professional authority** (`APPROVAL_PRINCIPAL` or `APPROVAL_VICE_PRINCIPAL`, bound via explicit capability).
+   - **No Inference from Department Leadership**: Programme coordinator authority is specialized to the programme. It must **never** be inferred from subject group leadership (`SUBJECT_GROUP_LEAD` / Tổ trưởng chuyên môn), department roles, position titles, or user roles.
+   - **Existential Non-Multiplication**: Confirmation is existential, not additive. If both the Coordinator and BGH attest the same occurrence, the confirmation condition is satisfied exactly once. Multiple attestations are retained for audit but **never** duplicate completion status or multiply workload.
+3. **Conceptual Attestation Entity & Status Lifecycle**:
+   - In this architecture, `ProgrammeOccurrenceAttestation` is a **conceptual** entity name representing retained attestation evidence. P4-010 does **not** mandate a specific physical table name or physical status enum (such as `ACTIVE`).
+   - P4-020 retains ownership of physical table names and physical status enums under the semantic invariant that:
+     - historical attestations must not be mutated in-place or physically deleted; and
+     - correction/reversal semantics must ensure that an invalidated/reversed attestation no longer satisfies the existential gate.
 
 ### 2.10 Official Workload Eligibility Gate
 
 To reconcile v1.2's coordinator confirmation requirement with ADR-038's individual teacher execution evidence, official teacher workload credit for GDĐP/HĐTN requires **BOTH** conditions to be satisfied:
 
-$$\text{Workload Eligible} \iff (\text{ACTIVE } \text{SpecialActivityParticipationExecution}) \land (\text{ACTIVE } \text{ProgrammeOccurrenceAttestation})$$
+$$\text{Eligible Workload Contribution Source} \iff (\text{Valid Teacher-Slot Participation Execution}) \land (\exists \text{ Qualifying Non-Reversed Programme Attestation})$$
 
-- **Execution without Attestation**: Individual teacher execution is recorded and visible in personal drafts, but remains unconfirmed at the programme level; it does **not** count as approved official workload until programme attestation is provided.
-- **Attestation without Execution**: Programme attestation confirms student activity completion, but cannot grant workload credit to any teacher who lacks active participation execution evidence.
+1. **At-Most-Once Contribution Source**:
+   - One qualifying exact teacher-slot participation contributes **at most once** to the eligible workload contribution source evidence before applying valid policy/coefficients.
+2. **No Hardcoded 1.0 Unit**:
+   - P4-010 does **not** lock the final workload credit to a hardcoded 1.0 unit.
+   - Final workload calculation, period weighting, and applicable coefficients belong to `P4-050` and the applicable business configuration/policy authority (which may define legitimate coefficients).
+3. **Execution without Attestation**:
+   - Individual teacher execution is recorded and visible in personal drafts, but remains unconfirmed at the programme level; it does **not** count as approved official workload until programme confirmation is satisfied.
+4. **Attestation without Execution**:
+   - Programme attestation confirms student activity completion, but cannot grant workload credit to any teacher who lacks active participation execution evidence.
 
 ### 2.11 Anti-Double-Counting Invariants
 
 1. **Class-Target Non-Multiplication (T20 / ADR-038 §58)**:
-   - When an activity targets a grade (e.g., 6 classes) or the whole school (e.g., 18 classes), the teacher workload unit is strictly based on the **time-slot duration**.
-   - Workload is **NEVER** multiplied by the number of target classes ($\text{Workload} \ne \text{Slots} \times \text{ClassCount}$).
+   - When an activity targets a grade (e.g., 6 classes) or the whole school (e.g., 18 classes), the teacher workload contribution source is strictly based on the **time-slot duration**.
+   - Workload contribution is **NEVER** multiplied by the number of target classes:
+     $$\text{Workload Contribution} \ne \text{Slots} \times \text{ClassCount}$$
 2. **Attestation Non-Multiplication**:
-   - Workload is **NEVER** multiplied by the number of attestations recorded ($\text{Workload} \ne \text{Slots} \times \text{AttestationCount}$).
+   - Workload contribution is **NEVER** multiplied by the number of attestations recorded:
+     $$\text{Workload Contribution} \ne \text{Slots} \times \text{AttestationCount}$$
+   - Dual confirmation by Coordinator and BGH satisfies the gate exactly once.
+3. **Idempotency**:
+   - Retry or repeated execution submission / attestation recording must never create duplicate workload contribution sources.
 
 ### 2.12 Authorization Boundaries (P4-030 Seam)
 
-1. **No Role/Title Inference**: Capability grants are the sole authority. Being a principal, vice principal, homeroom teacher, or coordinator by job title confers zero system authority without explicit capability records.
+1. **No Role/Title/Department Inference**:
+   - Capability grants are the sole authority.
+   - Being a principal, vice principal, homeroom teacher, subject group leader (`SUBJECT_GROUP_LEAD` / Tổ trưởng chuyên môn), or coordinator by job title confers zero system authority without explicit capability records.
+   - `SYSTEM_ADMIN` confers no implicit programme coordinator or professional attestation authority.
 2. **Domain-Specific Capabilities**:
    - `GDDDP_COORDINATOR`: Authorizes planning, staffing, and attesting GDĐP programmes within granted scope.
    - `HĐTN_COORDINATOR`: Authorizes planning, staffing, and attesting HĐTN-HN programmes within granted scope.
@@ -221,14 +255,14 @@ $$\text{Workload Eligible} \iff (\text{ACTIVE } \text{SpecialActivityParticipati
    - *Rejected*: Destroys auditability and breaks active execution foreign keys. Runtime corrections must follow the established CAS reverse + replacement pattern.
 7. **Applying Curricular Substitution Rules (`SAME_SUBJECT_SUBSTITUTION`) to Special Programmes**:
    - *Rejected*: Special programmes lack `Subject` and `TeachingAssignment` structures.
-8. **Programme Attestation Fabricating Teacher Execution**:
-   - *Rejected*: Would allow coordinators to create unverified workload claims for teachers who were not present.
+8. **Programme Attestation Fabricating Teacher Execution or Compensating for Missing Execution**:
+   - *Rejected*: Would allow coordinators or BGH to create unverified workload claims for teachers who were not present.
 9. **Multiplying Teacher Workload by Number of Target Classes**:
-   - *Rejected*: Grossly inflates teaching workload; a teacher supervising a 45-minute assembly for 18 classes teaches for 45 minutes, not 810 minutes.
-10. **Multiplying Teacher Workload by Number of Attestations**:
-    - *Rejected*: Dual confirmation by Coordinator and Principal would falsely double teacher workload.
-11. **Inferring Coordinator Authority from User Roles or Job Titles**:
-    - *Rejected*: Violates repository-wide capability authorization rules (ADR-008).
+   - *Rejected*: Grossly inflates teaching workload; a teacher supervising an assembly for 18 classes teaches for 1 session, not 18 sessions.
+10. **Multiplying Teacher Workload by Number of Attestations, or Hardcoding 1.0 Unit Ignoring Policy Coefficients**:
+    - *Rejected*: Dual confirmation by Coordinator and Principal must not double-count workload, nor should architecture artificially lock workload values away from legitimate policy coefficients.
+11. **Inferring Coordinator Authority from User Roles, Job Titles, or Subject Group / Department Leadership (`SUBJECT_GROUP_LEAD` / Tổ trưởng)**:
+    - *Rejected*: Violates repository-wide capability authorization rules (ADR-008). Being a subject group lead or department chair confers no authority over special programmes. Special programme coordination and attestation require explicit programme coordinator or BGH capabilities.
 12. **Physical Deletion of Historical Programme Data**:
     - *Rejected*: Violates repository-wide historical audit integrity. All models use soft reversal and lineage links.
 
