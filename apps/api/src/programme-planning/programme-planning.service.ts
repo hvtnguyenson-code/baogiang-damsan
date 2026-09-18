@@ -184,11 +184,17 @@ export class ProgrammePlanningService {
           throw new NotFoundException('ProgrammeMaster không tồn tại.');
         }
 
-        const existingDraft = await tx.programmePlanVersion.findFirst({
-          where: { programmeMasterId: dto.programmeMasterId, status: 'DRAFT' },
+        const existingVersion = await tx.programmePlanVersion.findFirst({
+          where: { programmeMasterId: dto.programmeMasterId },
+          select: { id: true, status: true },
         });
-        if (existingDraft) {
-          throw new ConflictException('Đã có một bản thảo DRAFT cho programme master này.');
+        if (existingVersion) {
+          if (existingVersion.status === 'DRAFT') {
+            throw new ConflictException('Đã có một bản thảo DRAFT cho programme master này.');
+          }
+          throw new ConflictException(
+            'Programme master already has retained plan history; create a successor draft instead.',
+          );
         }
 
         const maxVersion = await tx.programmePlanVersion.aggregate({
@@ -479,6 +485,11 @@ export class ProgrammePlanningService {
         });
 
         if (currentPublished) {
+          if (planVersion.predecessorVersionId !== currentPublished.id) {
+            throw new ConflictException(
+              'PLAN_VERSION_CONFLICT: draft predecessor does not match current published plan authority.',
+            );
+          }
           const superseded = await tx.programmePlanVersion.updateMany({
             where: { id: currentPublished.id, status: 'PUBLISHED' },
             data: {
@@ -489,6 +500,12 @@ export class ProgrammePlanningService {
           });
           if (superseded.count !== 1) {
             throw new ConflictException('PLAN_VERSION_CONFLICT: supersession race detected.');
+          }
+        } else {
+          if (planVersion.predecessorVersionId !== null) {
+            throw new ConflictException(
+              'PLAN_VERSION_CONFLICT: initial published plan version must not carry a predecessor lineage.',
+            );
           }
         }
 
@@ -700,8 +717,8 @@ export class ProgrammePlanningService {
           draftRevision: { increment: 1 },
           ...(dto.civilDate ? { civilDate: parseCivilDate(dto.civilDate) } : {}),
           ...(dto.mode ? { mode: dto.mode } : {}),
-          ...(dto.gradeLevel !== undefined ? { gradeLevel: dto.mode === 'GRADE' ? dto.gradeLevel : null } : {}),
-          ...(dto.schoolClassId !== undefined ? { schoolClassId: dto.mode === 'CLASS' ? dto.schoolClassId : null } : {}),
+          ...(dto.gradeLevel !== undefined ? { gradeLevel: targetMode === 'GRADE' ? dto.gradeLevel : null } : {}),
+          ...(dto.schoolClassId !== undefined ? { schoolClassId: targetMode === 'CLASS' ? dto.schoolClassId : null } : {}),
           ...(dto.programmeTopicItemId ? { programmeTopicItemId: dto.programmeTopicItemId } : {}),
           ...(dto.note !== undefined ? { note: dto.note?.trim() || null } : {}),
         };

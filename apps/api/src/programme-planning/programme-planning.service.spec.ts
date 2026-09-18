@@ -91,6 +91,7 @@ describe('ProgrammePlanningService', () => {
   const planVersionId = '55555555-5555-5555-5555-555555555555';
   const topicId = '66666666-6666-6666-6666-666666666666';
   const classGrade10Id = '77777777-7777-7777-7777-777777777777';
+  const classGrade10BId = '77777777-7777-7777-7777-777777777779';
   const classGrade11Id = '77777777-7777-7777-7777-777777777778';
   const timeSlotMon1Id = '88888888-8888-8888-8888-888888888881';
   const timeSlotMon2Id = '88888888-8888-8888-8888-888888888882';
@@ -181,6 +182,9 @@ describe('ProgrammePlanningService', () => {
           if (where.id === classGrade10Id) {
             return Promise.resolve({ id: classGrade10Id, academicYearId, gradeLevel: 10 });
           }
+          if (where.id === classGrade10BId) {
+            return Promise.resolve({ id: classGrade10BId, academicYearId, gradeLevel: 10 });
+          }
           if (where.id === classGrade11Id) {
             return Promise.resolve({ id: classGrade11Id, academicYearId, gradeLevel: 11 });
           }
@@ -262,7 +266,15 @@ describe('ProgrammePlanningService', () => {
           }
           return Promise.resolve(null);
         }),
-        findFirst: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockImplementation(({ where }: { where?: { programmeMasterId?: string; status?: string } } = {}) => {
+          if (!where) return Promise.resolve(null);
+          for (const item of planVersionStore.values()) {
+            if (where.programmeMasterId && item.programmeMasterId !== where.programmeMasterId) continue;
+            if (where.status && item.status !== where.status) continue;
+            return Promise.resolve(item);
+          }
+          return Promise.resolve(null);
+        }),
         aggregate: jest.fn().mockResolvedValue({ _max: { versionNumber: 0 } }),
         create: jest.fn().mockImplementation(({ data }: { data: Record<string, unknown> }) => {
           const item = {
@@ -489,6 +501,7 @@ describe('ProgrammePlanningService', () => {
   // =========================================================================
   describe('Programme Plan Version Lifecycle', () => {
     it('creates initial DRAFT with monotonic version number and topic items', async () => {
+      planVersionStore.clear();
       const dto: CreateDraftPlanVersionDto = {
         programmeMasterId: gddpMasterId,
         commandId: 'cmd-plan-draft-1',
@@ -508,12 +521,35 @@ describe('ProgrammePlanningService', () => {
     });
 
     it('rejects creating initial DRAFT if a DRAFT already exists for the master', async () => {
-      mockTx.programmePlanVersion.findFirst.mockResolvedValueOnce({ id: 'existing-draft', status: 'DRAFT' });
+      planVersionStore.clear();
+      planVersionStore.set('existing-draft', {
+        id: 'existing-draft',
+        programmeMasterId: gddpMasterId,
+        status: 'DRAFT',
+      });
       const dto: CreateDraftPlanVersionDto = {
         programmeMasterId: gddpMasterId,
         commandId: 'cmd-plan-draft-conflict',
       };
       await expect(service.createDraftPlanVersion(dto, actorUserId)).rejects.toThrow(ConflictException);
+    });
+
+    it('Test A — generic draft cannot follow published history', async () => {
+      planVersionStore.set(planVersionId, {
+        id: planVersionId,
+        programmeMasterId: gddpMasterId,
+        versionNumber: 1,
+        status: 'PUBLISHED',
+        draftRevision: 1,
+      });
+
+      const dto: CreateDraftPlanVersionDto = {
+        programmeMasterId: gddpMasterId,
+        commandId: 'cmd-generic-draft-after-published',
+      };
+      await expect(service.createDraftPlanVersion(dto, actorUserId)).rejects.toThrow(
+        ConflictException,
+      );
     });
 
     it('3. plan DRAFT optimistic concurrency: rejects edit if expectedRevision mismatches', async () => {
@@ -569,6 +605,7 @@ describe('ProgrammePlanningService', () => {
     });
 
     it('8. publish retains predecessor/supersession correctly', async () => {
+      planVersionStore.clear();
       const draftId = 'draft-v2-id';
       const existingPublishedId = 'published-v1-id';
 
@@ -578,6 +615,7 @@ describe('ProgrammePlanningService', () => {
         versionNumber: 2,
         status: 'DRAFT',
         draftRevision: 1,
+        predecessorVersionId: existingPublishedId,
         createdByUserId: actorUserId,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -593,7 +631,6 @@ describe('ProgrammePlanningService', () => {
         updatedAt: new Date(),
       });
 
-      mockTx.programmePlanVersion.findFirst.mockResolvedValueOnce(planVersionStore.get(existingPublishedId));
       mockTx.programmeTopicItem.count.mockResolvedValueOnce(2);
 
       const dto: PublishPlanVersionDto = {
@@ -629,6 +666,71 @@ describe('ProgrammePlanningService', () => {
         }),
         expect.anything(),
       );
+    });
+
+    it('Test B — successor path remains valid: creates successor draft and publishes with supersession', async () => {
+      planVersionStore.set(planVersionId, {
+        id: planVersionId,
+        programmeMasterId: gddpMasterId,
+        versionNumber: 1,
+        status: 'PUBLISHED',
+        draftRevision: 1,
+      });
+
+      const dto: CreateSuccessorDraftPlanVersionDto = {
+        programmeMasterId: gddpMasterId,
+        predecessorVersionId: planVersionId,
+        changeReason: 'Cập nhật phân phối số tiết',
+        commandId: 'cmd-succ-valid',
+      };
+      const v2 = await service.createSuccessorDraftPlanVersion(dto, actorUserId);
+      expect(v2.status).toBe('DRAFT');
+      expect(v2.predecessorVersionId).toBe(planVersionId);
+
+      mockTx.programmeTopicItem.count.mockResolvedValueOnce(1);
+      const pubDto: PublishPlanVersionDto = {
+        expectedRevision: 1,
+        commandId: 'cmd-publish-succ-v2',
+      };
+      const publishedV2 = await service.publishPlanVersion(v2.id, pubDto, actorUserId);
+      expect(publishedV2.status).toBe('PUBLISHED');
+
+      const v1 = planVersionStore.get(planVersionId);
+      expect(v1?.status).toBe('SUPERSEDED');
+    });
+
+    it('Test C — publish rejects lineage mismatch when predecessor does not match current published plan', async () => {
+      planVersionStore.set(planVersionId, {
+        id: planVersionId,
+        programmeMasterId: gddpMasterId,
+        versionNumber: 1,
+        status: 'PUBLISHED',
+      });
+
+      const draftId = 'draft-unlineaged-id';
+      planVersionStore.set(draftId, {
+        id: draftId,
+        programmeMasterId: gddpMasterId,
+        versionNumber: 2,
+        status: 'DRAFT',
+        draftRevision: 1,
+        predecessorVersionId: null,
+        createdByUserId: actorUserId,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      mockTx.programmeTopicItem.count.mockResolvedValueOnce(1);
+
+      const pubDto: PublishPlanVersionDto = {
+        expectedRevision: 1,
+        commandId: 'cmd-publish-mismatched-lineage',
+      };
+      await expect(service.publishPlanVersion(draftId, pubDto, actorUserId)).rejects.toThrow(
+        ConflictException,
+      );
+
+      const v1 = planVersionStore.get(planVersionId);
+      expect(v1?.status).toBe('PUBLISHED');
     });
 
     it('creates successor draft from published predecessor with changeReason', async () => {
@@ -894,6 +996,122 @@ describe('ProgrammePlanningService', () => {
       await service.createDraftOccurrence(dtoMultipleSlots, actorUserId);
       expect(mockTx.plannedOccurrenceSlot.create).toHaveBeenCalledTimes(2);
       expect(mockTx.plannedSlotStaffing.createMany).toHaveBeenCalledTimes(2);
+    });
+
+    it('partial edit preserves GRADE mode when updating gradeLevel without mode', async () => {
+      const hdtnPlanVersionId = 'plan-hdtn-version-id';
+      const hdtnTopicId = 'topic-hdtn-id';
+      planVersionStore.set(hdtnPlanVersionId, {
+        id: hdtnPlanVersionId,
+        programmeMasterId: hdtnMasterId,
+        versionNumber: 1,
+        status: 'PUBLISHED',
+      });
+      mockTx.programmeTopicItem.findUnique.mockImplementation(({ where }: { where: { id: string } }) => {
+        if (where.id === hdtnTopicId) {
+          return Promise.resolve({
+            id: hdtnTopicId,
+            programmePlanVersionId: hdtnPlanVersionId,
+          });
+        }
+        if (where.id === topicId) {
+          return Promise.resolve({
+            id: topicId,
+            programmePlanVersionId: planVersionId,
+          });
+        }
+        return Promise.resolve(null);
+      });
+
+      const occId = 'occ-grade-draft-1';
+      occurrenceStore.set(occId, {
+        id: occId,
+        programmeMasterId: hdtnMasterId,
+        programmePlanVersionId: hdtnPlanVersionId,
+        programmeTopicItemId: hdtnTopicId,
+        academicYearId,
+        civilDate: new Date('2026-10-05T00:00:00.000Z'),
+        mode: 'GRADE',
+        gradeLevel: 10,
+        schoolClassId: null,
+        status: 'DRAFT',
+        draftRevision: 1,
+        note: null,
+        replacesOccurrenceId: null,
+        changeReason: null,
+        createdByUserId: actorUserId,
+        publishedByUserId: null,
+        publishedAt: null,
+        supersededByUserId: null,
+        supersededAt: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      const editDto: EditDraftOccurrenceDto = {
+        expectedRevision: 1,
+        gradeLevel: 11,
+        commandId: 'cmd-edit-grade-partial',
+      };
+      await service.editDraftOccurrence(occId, editDto, actorUserId);
+
+      expect(mockTx.plannedProgrammeOccurrence.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: occId, status: 'DRAFT', draftRevision: 1 },
+          data: expect.objectContaining({
+            gradeLevel: 11,
+          }),
+        }),
+      );
+      const stored = occurrenceStore.get(occId);
+      expect(stored?.gradeLevel).toBe(11);
+      expect(stored?.mode).toBe('GRADE');
+    });
+
+    it('partial edit preserves CLASS mode when updating schoolClassId without mode', async () => {
+      const occId = 'occ-class-draft-1';
+      occurrenceStore.set(occId, {
+        id: occId,
+        programmeMasterId: gddpMasterId,
+        programmePlanVersionId: planVersionId,
+        programmeTopicItemId: topicId,
+        academicYearId,
+        civilDate: new Date('2026-10-05T00:00:00.000Z'),
+        mode: 'CLASS',
+        gradeLevel: null,
+        schoolClassId: classGrade10Id,
+        status: 'DRAFT',
+        draftRevision: 1,
+        note: null,
+        replacesOccurrenceId: null,
+        changeReason: null,
+        createdByUserId: actorUserId,
+        publishedByUserId: null,
+        publishedAt: null,
+        supersededByUserId: null,
+        supersededAt: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      const editDto: EditDraftOccurrenceDto = {
+        expectedRevision: 1,
+        schoolClassId: classGrade10BId,
+        commandId: 'cmd-edit-class-partial',
+      };
+      await service.editDraftOccurrence(occId, editDto, actorUserId);
+
+      expect(mockTx.plannedProgrammeOccurrence.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: occId, status: 'DRAFT', draftRevision: 1 },
+          data: expect.objectContaining({
+            schoolClassId: classGrade10BId,
+          }),
+        }),
+      );
+      const stored = occurrenceStore.get(occId);
+      expect(stored?.schoolClassId).toBe(classGrade10BId);
+      expect(stored?.mode).toBe('CLASS');
     });
   });
 

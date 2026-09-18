@@ -167,7 +167,7 @@ integration('Programme Planning Control Plane (PostgreSQL integration)', () => {
     expect(planV1.versionNumber).toBe(1);
     expect(planV1.status).toBe('DRAFT');
 
-    // 3. Publish Plan Version
+    // 3. Publish Plan Version V1
     const publishedV1 = await service.publishPlanVersion(
       planV1.id,
       { expectedRevision: 1, commandId: 'cmd-int-pub-v1' },
@@ -175,12 +175,43 @@ integration('Programme Planning Control Plane (PostgreSQL integration)', () => {
     );
     expect(publishedV1.status).toBe('PUBLISHED');
 
-    // 4. Occurrence: Monday 2026-10-05 with slotMon1
+    // 3b. Generic draft rejected after master has published history
+    await expect(
+      service.createDraftPlanVersion(
+        { programmeMasterId: gddpMaster.id, commandId: 'cmd-int-plan-unlineaged' },
+        f.actor.id,
+      ),
+    ).rejects.toThrow();
+
+    // 3c. Successor draft retains lineage and supersedes V1 upon publish
+    const successorV2 = await service.createSuccessorDraftPlanVersion(
+      {
+        programmeMasterId: gddpMaster.id,
+        predecessorVersionId: publishedV1.id,
+        changeReason: 'Cập nhật phân phối số tiết học kì 2',
+        commandId: 'cmd-int-plan-succ-v2',
+      },
+      f.actor.id,
+    );
+    expect(successorV2.versionNumber).toBe(2);
+    expect(successorV2.status).toBe('DRAFT');
+    expect(successorV2.predecessorVersionId).toBe(publishedV1.id);
+
+    const publishedV2 = await service.publishPlanVersion(
+      successorV2.id,
+      { expectedRevision: 1, commandId: 'cmd-int-pub-v2' },
+      f.actor.id,
+    );
+    expect(publishedV2.status).toBe('PUBLISHED');
+    const supersededV1 = await service.getPlanVersion(publishedV1.id);
+    expect(supersededV1.status).toBe('SUPERSEDED');
+
+    // 4. Occurrence: Monday 2026-10-05 with slotMon1 on published V2
     const occ = await service.createDraftOccurrence(
       {
         programmeMasterId: gddpMaster.id,
-        programmePlanVersionId: publishedV1.id,
-        programmeTopicItemId: publishedV1.topicItems[0].id,
+        programmePlanVersionId: publishedV2.id,
+        programmeTopicItemId: publishedV2.topicItems[0].id,
         academicYearId: f.year.id,
         civilDate: '2026-10-05',
         mode: 'CLASS',
@@ -197,10 +228,24 @@ integration('Programme Planning Control Plane (PostgreSQL integration)', () => {
     );
     expect(occ.status).toBe('DRAFT');
 
+    // 4b. Partial edit without mode preserves CLASS mode and schoolClassId
+    const editedOcc = await service.editDraftOccurrence(
+      occ.id,
+      {
+        expectedRevision: 1,
+        note: 'Ghi chú cập nhật không đổi mode',
+        commandId: 'cmd-int-occ-edit-partial',
+      },
+      f.actor.id,
+    );
+    expect(editedOcc.mode).toBe('CLASS');
+    expect(editedOcc.schoolClassId).toBe(f.class10A.id);
+    expect(editedOcc.note).toBe('Ghi chú cập nhật không đổi mode');
+
     // 5. Publish Occurrence
     const publishedOcc = await service.publishOccurrence(
       occ.id,
-      { expectedRevision: 1, commandId: 'cmd-int-pub-occ-1' },
+      { expectedRevision: 2, commandId: 'cmd-int-pub-occ-1' },
       f.actor.id,
     );
     expect(publishedOcc.status).toBe('PUBLISHED');
