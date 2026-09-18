@@ -6,7 +6,7 @@
 - Dependencies: `P1-022`, `P1-031`, `P1-031A`, `P1-031C` (all `CLOSED`)
 - Traceability: `T28`, `T30`
 - Controlling Authorities: `ADR-046` (Business Configuration Control Plane), `ADR-049` (Delayed Go-Live Operational-Start Architecture)
-- Status: `IN_REVIEW`
+- Status: `CLOSED`
 
 ---
 
@@ -216,3 +216,33 @@ The UI integration enables school administrators with `BUSINESS_CONFIGURATION_MA
 - Zero auth/session/capability changes.
 - Zero CI/CD changes.
 - Production remains strictly PRE-OPERATIONAL.
+
+---
+
+## 6. Closure Evidence
+
+- **Task Status**: `CLOSED` (closed administratively by `SYNC-P1-032`).
+- **Parent Branch**: `feat/operational-start-admin-ui-integration-032`.
+- **Canonical Start Base**: `95d88867e85e7177ce7ae12adc4ec942f1567656` (PR #141 post-closure CI #459 SUCCESS).
+- **Final Independently Reviewed HEAD**: `d510982250aa1d54e2aa63594a30ba78af76f971`.
+- **Independent GitHub Review**: PASS after one bounded forward correction round (`d510982250aa1d54e2aa63594a30ba78af76f971` `fix(policy): correct P1-032 review evidence and error copy` absorbing review findings).
+- **Parent Pull Request**: PR #142 (`feat(policy): add operational-start administration UI`).
+- **Exact-Head PR CI**: CI #460, SUCCESS.
+- **Merge / Canonical Main Commit**: `adfa62e9a92dcfc83cf0ab2e805d206a86a682e6` (normal merge, GitHub verified signature).
+- **Authoritative Post-Merge CI**: CI #461 (run id: `35249023817`), attempt 1, SUCCESS.
+- **Verification Evidence**:
+  - Targeted Business Configuration workspace: 56/56 PASS (`business-configuration-workspace.test.tsx`).
+  - Full Web unit test suite: 288/288 PASS across 18/18 test suites.
+  - Web lint: PASS (0 warnings).
+  - Web typecheck: PASS (0 errors).
+  - Web production build: PASS (clean bundle).
+  - Workflow contract: PASS.
+  - Git diff check: PASS (`git diff --check`).
+- **Scope and Non-Mutation Invariants**:
+  - Zero backend (`apps/api/**`) changes.
+  - Zero shared contracts (`packages/contracts/**`) changes.
+  - Zero database/schema/migration (`prisma/**`) changes.
+  - Zero authentication, session, or capability catalogue changes.
+  - Zero CI/CD or deployment script mutation.
+  - No new business semantics or architecture decisions invented.
+- **Production State**: Strictly `PRE-OPERATIONAL`. No deployment, no VPS mutation, no production operational-start policy configured or applied.

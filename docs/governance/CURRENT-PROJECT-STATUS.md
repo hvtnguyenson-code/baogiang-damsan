@@ -6,27 +6,87 @@ This is the canonical mutable **product/task status** document for Báo giảng.
 
 It is **not** a self-referential registry of the latest Git commit. Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub at the start of every task. SHAs recorded here are evidence for the stated baseline or last closed major task.
 
-**Status snapshot date:** 2026-09-17
+**Status snapshot date:** 2026-09-18
 
 ## Active / next critical path
 
-`P1-031C` — Operational-start Academic-Year options read-model enablement — is **CLOSED** by `SYNC-P1-031C` following parent PR #140 merge (`1403906282c5ef63d17d1053c72e5ed47b4fa080`) and authoritative post-merge CI #457 SUCCESS.
+`P1-032` — Operational-start admin UI integration — is **CLOSED** by `SYNC-P1-032` following parent PR #142 merge (`adfa62e9a92dcfc83cf0ab2e805d206a86a682e6`) and authoritative post-merge CI #461 SUCCESS.
 
-Next critical-path implementation:
-- `P1-032` — Operational-start admin UI integration — **IN_REVIEW** on dedicated task branch `feat/operational-start-admin-ui-integration-032` (started from canonical main `95d88867e85e7177ce7ae12adc4ec942f1567656`, PR #141 post-closure CI #459 SUCCESS). Implemented `OPERATIONAL_START/v1/ACADEMIC_YEAR` production adapter, AcademicYear options read picker via P1-031C endpoint, server-owned `allowedActions` authority, dedicated scheduled-authority supersession workflow, open-ended create without `effectiveUntil`, effectivity-preserving correction, `SUPERSEDED_BEFORE_EFFECTIVE` retained audit and lineage rendering; 55 unit tests passing; zero backend/contracts/schema/migration mutation; production remains strictly PRE-OPERATIONAL. Obeying UI authority in `AGENTS.md`, `.codex/skills/damsan-ui/SKILL.md` and `DESIGN.md`.
-
-Parallel eligible:
+Next eligible / critical-path implementation:
 - `P4-010` — GDĐP/HĐTN programme architecture closure — **READY** (independent track).
 
 Remain:
 - `P2-010` — PPCT real-workbook contract/security audit — **BLOCKED_EVIDENCE** (pending authoritative school PPCT workbook/template).
 - `P2-020` — PPCT native importer implementation — **PLANNED** (pending `P2-010`).
 
-Production environment remains strictly **PRE-OPERATIONAL**. No production deployment has occurred. No production operational-start policy has been configured or deployed. P1-031A's migration is additive with explicit zero-row/no-backfill behavior and has not been applied to production. P1-031C introduced zero schema or migration change and zero production data mutation.
+Production environment remains strictly **PRE-OPERATIONAL**. No production deployment has occurred. No production operational-start policy has been configured or deployed. P1-031A's migration is additive with explicit zero-row/no-backfill behavior and has not been applied to production. P1-031C introduced zero schema or migration change and zero production data mutation. P1-032 delivered administration Web UI integration with zero backend/contracts/schema/migration mutation.
 
 ## Last closed major task
 
-`P1-031C` — Operational-start Academic-Year options read-model enablement — **CLOSED** by `SYNC-P1-031C`.
+`P1-032` — Operational-start admin UI integration — **CLOSED** by `SYNC-P1-032`.
+
+Closure evidence:
+- dedicated implementation branch: `feat/operational-start-admin-ui-integration-032`;
+- starting canonical main base: `95d88867e85e7177ce7ae12adc4ec942f1567656` (PR #141 post-closure CI #459 SUCCESS);
+- final independently reviewed HEAD: `d510982250aa1d54e2aa63594a30ba78af76f971`;
+- independent GitHub review: PASS after one bounded forward correction round (`d510982250aa1d54e2aa63594a30ba78af76f971` `fix(policy): correct P1-032 review evidence and error copy`);
+- parent PR: #142 (`feat(policy): add operational-start administration UI`);
+- exact-head PR CI: CI #460, SUCCESS;
+- merge/main commit: `adfa62e9a92dcfc83cf0ab2e805d206a86a682e6`;
+- normal merge: YES;
+- GitHub verified signature: YES;
+- authoritative post-merge main CI: CI #461 (run id: `35249023817`), SUCCESS on attempt 1;
+- post-merge CI #461 evidence includes:
+  - Production dependency security gate PASS
+  - Prisma validate PASS
+  - Prisma generate PASS
+  - schema/static verification PASS
+  - auth secret scan PASS
+  - deployment static/behavior verification PASS
+  - workflow contract PASS
+  - PowerShell parser verification PASS
+  - UI foundation static verification PASS
+  - migration foundation tests PASS
+  - lint packages/contracts PASS
+  - lint packages/config PASS
+  - lint apps/api PASS
+  - lint apps/web PASS
+  - typecheck packages/contracts PASS
+  - typecheck packages/config PASS
+  - typecheck apps/api PASS
+  - typecheck apps/web PASS
+  - API unit tests PASS
+  - Web unit tests PASS
+  - isolated auth DB preparation PASS
+  - capability catalog synchronization integration PASS
+  - API integration tests PASS
+  - contracts/config/API/Web builds PASS
+  - isolated Playwright DB preparation PASS
+  - Reporting Statement fixture PASS
+  - API/UI technical admin bootstrap PASS
+  - Playwright browser install PASS
+  - API/Web startup + readiness PASS
+  - Playwright smoke PASS
+  - UI screenshot artifact PASS
+  - Windows deployment contract PASS
+  - Windows PowerShell parsing PASS
+  - Windows deployment behavior fixtures PASS
+  (`Upload Playwright report on failure` SKIPPED by design due to no test failures);
+- local/review verification evidence:
+  - targeted Business Configuration workspace: 56/56 PASS
+  - full Web unit: 288/288 PASS across 18/18 suites
+  - Web lint PASS (0 warnings)
+  - Web typecheck PASS (0 errors)
+  - Web build PASS (clean dist)
+  - workflow contract PASS
+  - git diff --check PASS;
+- delivered scope: `OPERATIONAL_START/v1/ACADEMIC_YEAR` production adapter in `apps/web/src/lib/business-policy-ui-registry.ts`, AcademicYear options read picker via P1-031C endpoint (`GET /api/business-configuration/academic-year-options`) and `supersedeScheduledAuthority` client method in `apps/web/src/lib/business-configuration-api.ts`, server-owned `allowedActions` authority (`actionEvaluationCivilDate` displayed without browser-clock inference), dedicated scheduled-authority supersession workflow (`SUPERSEDE_SCHEDULED_AUTHORITY`), open-ended create without `effectiveUntil`, effectivity-preserving correction, `SUPERSEDED_BEFORE_EFFECTIVE` retained audit and lineage rendering;
+- zero backend (`apps/api/**`), contracts (`packages/contracts/**`), schema/migration (`prisma/**`), auth/capability, CI/CD, or deployment mutation;
+- no correction or re-entry task emerged from independent review or CI;
+- production remains strictly PRE-OPERATIONAL;
+- closed by administrative closure: `SYNC-P1-032`.
+
+Predecessor closed major task: `P1-031C` — Operational-start Academic-Year options read-model enablement — **CLOSED** by `SYNC-P1-031C`.
 
 Closure evidence:
 - dedicated implementation branch: `feat/business-configuration-academic-year-options-031c`;
@@ -63,7 +123,7 @@ Closure evidence:
 - zero schema/migration/auth/capability/UI/deploy/production mutation occurred;
 - production remains strictly PRE-OPERATIONAL;
 - closed by administrative closure: `SYNC-P1-031C`;
-- downstream: unlocks `P1-032` (`READY`).
+- downstream: unlocked `P1-032` (now `CLOSED` by `SYNC-P1-032`).
 
 Predecessor closed major task: `P1-031A` — Operational-start authority continuity correction — **CLOSED** by `SYNC-P1-031A`.
 
@@ -84,7 +144,7 @@ Closure evidence:
 - no residual runtime correction/re-entry task remains from review/CI;
 - zero production deployment/configuration/data mutation; production remains strictly PRE-OPERATIONAL;
 - closed by administrative closure: `SYNC-P1-031A`;
-- downstream: `P1-031A` is CLOSED; downstream `P1-031C` is CLOSED by `SYNC-P1-031C`; `P1-032` is unlocked to `READY`.
+- downstream: `P1-031A` is CLOSED; downstream `P1-031C` is CLOSED by `SYNC-P1-031C`; `P1-032` is `CLOSED` by `SYNC-P1-032`.
 
 Predecessor closed major task: `P1-031B` — Operational-start scheduled-authority supersession architecture — **CLOSED** by `SYNC-P1-031B`.
 
@@ -102,7 +162,7 @@ Closure evidence:
 - strictly docs-only architecture/governance scope; zero runtime/schema/migration/API implementation/UI/auth/CI/deploy/production mutation;
 - production remains strictly PRE-OPERATIONAL; no production `OPERATIONAL_START` authority is configured/deployed and production backfill is zero;
 - closed by administrative closure: `SYNC-P1-031B`;
-- unlocks `P1-031A` to `READY` (now `CLOSED` by `SYNC-P1-031A`); `P1-031C` was registered as `READY` (now `CLOSED` by `SYNC-P1-031C`); `P1-032` is `READY`.
+- unlocks `P1-031A` to `READY` (now `CLOSED` by `SYNC-P1-031A`); `P1-031C` was registered as `READY` (now `CLOSED` by `SYNC-P1-031C`); `P1-032` is `CLOSED` by `SYNC-P1-032`.
 
 Predecessor closed major task: `P1-031` — Operational-start policy implementation — **CLOSED** by `SYNC-P1-031`.
 
@@ -120,7 +180,7 @@ Closure evidence:
 - no Prisma schema/migration change, no public API contract expansion, no Web UI implementation, no deploy/VPS mutation;
 - production remains strictly PRE-OPERATIONAL;
 - closed by administrative closure: `SYNC-P1-031`;
-- initially unlocked downstream P1-032; P1-031 branches into scheduled supersession (P1-031B -> P1-031A, both CLOSED) and the options read seam P1-031C (now CLOSED by `SYNC-P1-031C`); `P1-032` is `READY`.
+- initially unlocked downstream P1-032; P1-031 branches into scheduled supersession (P1-031B -> P1-031A, both CLOSED) and the options read seam P1-031C (now CLOSED by `SYNC-P1-031C`); `P1-032` is `CLOSED` by `SYNC-P1-032`.
 
 Predecessor closed major task: `P1-030` — Delayed go-live / operational-start architecture — **CLOSED** by `SYNC-P1-030`.
 
@@ -281,7 +341,7 @@ P1-010 review also recovered and registered Special Programme boundaries T43/T44
 
 ## Accepted Business Configuration domain
 
-`P1-020` (architecture), `P1-021` (persistence/control plane), `P1-022` (administration workspace), `P1-031` (operational-start backend family/runtime integration), `P1-031B` (scheduled-authority supersession architecture), `P1-031A` (authority continuity correction), and `P1-031C` (Academic-Year options read-model enablement) are **CLOSED**. `P1-032` is **READY**. ADR-046 remains the generic Business Configuration architecture authority and ADR-049 remains the accepted operational-start authority. The foundation includes:
+`P1-020` (architecture), `P1-021` (persistence/control plane), `P1-022` (administration workspace), `P1-031` (operational-start backend family/runtime integration), `P1-031B` (scheduled-authority supersession architecture), `P1-031A` (authority continuity correction), `P1-031C` (Academic-Year options read-model enablement), and `P1-032` (Operational-start admin UI integration) are **CLOSED**. ADR-046 remains the generic Business Configuration architecture authority and ADR-049 remains the accepted operational-start authority. The foundation includes:
 
 - separate retained `BusinessPolicyStream` / `BusinessPolicyVersion` / `BusinessPolicyCommand` persistence topology;
 - `SCHOOL_WIDE` / `ACADEMIC_YEAR` exact resource semantics;
@@ -312,7 +372,7 @@ P1-010 review also recovered and registered Special Programme boundaries T43/T44
 - technical config/secrets exclusion (no raw JSON, no generic key/value editor);
 - code-defined backend production registration of `OPERATIONAL_START / v1 / ACADEMIC_YEAR`, active-calendar validation, family-specific lifecycle restrictions, and typed resolver consumed by execution/progress/reporting paths.
 
-The backend production policy registry is no longer empty: P1-031 registers only the reviewed `OPERATIONAL_START` family. P1-031C is CLOSED by `SYNC-P1-031C` to enable the Business Configuration-owned AcademicYear options read model (`GET /api/business-configuration/academic-year-options` under `BUSINESS_CONFIGURATION_MANAGE / SCHOOL_WIDE`). The production Web UI adapter registry still has no operational-start adapter; P1-032 is READY. The generic administration workspace must continue to fail closed for unsupported operational-start editing UI. No production policy value has been configured or deployed.
+The backend production policy registry contains only the reviewed `OPERATIONAL_START` family enabled by P1-031. P1-031C is CLOSED by `SYNC-P1-031C`, providing the Business Configuration-owned AcademicYear options read model (`GET /api/business-configuration/academic-year-options` under `BUSINESS_CONFIGURATION_MANAGE / SCHOOL_WIDE`). The production Web UI adapter registry includes the reviewed `OPERATIONAL_START / v1 / ACADEMIC_YEAR` adapter delivered and CLOSED by `P1-032` (`SYNC-P1-032`). The generic administration workspace continues to fail closed for any unsupported policy editing UI. No production policy value has been configured or deployed.
 
 ## Accepted native timetable workbook architecture
 
@@ -389,7 +449,7 @@ The repository contains reviewed implementation for:
 - Personal Reporting Projection;
 - Reporting Statement persistence/control plane/UI enablement/product UI work;
 - **retained Business Configuration persistence, control plane and administration workspace** (separate BusinessPolicyStream / BusinessPolicyVersion / BusinessPolicyCommand topology, strict civil-date intervals, DB-level non-overlapping published exclusion, retained replacement and reversal/correction lineage, immutable published payload, exact historical validator-version resolution, dedicated `BUSINESS_CONFIGURATION_MANAGE / SCHOOL_WIDE` capability, capability-gated route `/quan-tri/chinh-sach-nghiep-vu`, typed/version-aware UI adapter architecture with triple identity, lifecycle UI for draft/edit/publish/replace/retire/correct, historical typed rendering, exact-date resolver UI, bounded Serializable mutation retry, idempotency receipts, same-transaction audit, sanitized errors and typed fail-closed resolver);
-- **operational-start backend authority** closed by P1-031: `OPERATIONAL_START / v1 / ACADEMIC_YEAR` production registration, strict validator/calendar/lifecycle rules, typed fail-closed resolver, execution guards, pre-op no-auto-debt projection, retained allocator replay, single-authority reporting integration, and ReportingStatement SNAPSHOT_V2 provenance; P1-031B defines the distinct never-effective scheduled-authority lifecycle, and its P1-031A runtime realization is CLOSED by `SYNC-P1-031A`; `P1-031C` is CLOSED by `SYNC-P1-031C` (depending on `P1-021` and `P1-031`) to provide the required AcademicYear options read seam before P1-032 (`READY`);
+- **operational-start backend authority and UI integration**: backend closed by P1-031 (`OPERATIONAL_START / v1 / ACADEMIC_YEAR` production registration, strict validator/calendar/lifecycle rules, typed fail-closed resolver, execution guards, pre-op no-auto-debt projection, retained allocator replay, single-authority reporting integration, and ReportingStatement SNAPSHOT_V2 provenance); P1-031B defines the distinct never-effective scheduled-authority lifecycle, and its P1-031A runtime realization is CLOSED by `SYNC-P1-031A`; `P1-031C` is CLOSED by `SYNC-P1-031C` (providing AcademicYear options read model); and `P1-032` is CLOSED by `SYNC-P1-032` (delivering production Web UI integration for operational-start administration);
 - hardened Windows production deployment control-plane/runbooks through PR #90.
 
 Homeroom architecture, persistence, control plane/capability, historical read model and administration workspace UI are closed for the registered pre-pilot scope. Business Configuration architecture (P1-020), persistence/control plane (P1-021), administration workspace (P1-022), and operational-start backend implementation (P1-031) are closed for their registered pre-pilot scopes. P2-030 native timetable workbook architecture/evidence, P2-040 native adapter runtime implementation, P2-050 selective morning/afternoon update and carry-forward, P2-002 PPCT component persistence/control plane, P2-003 component-aware allocation/projections runtime, and P2-004 specialized-study administration workspace are closed.
@@ -407,7 +467,7 @@ The registered implementation, data-evidence, product and production-readiness t
 3. Programme planning cannot assign different exact teacher sets to different exact slots.
 4. Special-program absence/replacement and programme-level confirmation authority remain explicitly registered for P4 closure (T43/T44).
 5. Existing `GDDDP_COORDINATOR` / `HĐTN_COORDINATOR` capability intent is not wired to programme-resource authority.
-6. Operational-start backend/runtime authority (P1-031), scheduled-authority supersession architecture (P1-031B), authority continuity correction (P1-031A), and options read-model enablement (P1-031C) are CLOSED; P1-032 is READY to start on a dedicated branch once this sync is merged, while historical evidence workflow remains P3-010/P3-020.
+6. Operational-start backend/runtime authority (P1-031), scheduled-authority supersession architecture (P1-031B), authority continuity correction (P1-031A), options read-model enablement (P1-031C), and administration Web UI integration (P1-032) are CLOSED; while historical evidence workflow remains P3-010/P3-020.
 7. PPCT real-school import is intentionally blocked pending an authoritative workbook contract; preferred direction is one workbook with separate logical content for ordinary PPCT (CORE) and Chuyên đề học tập (SPECIALIZED_STUDY), with exact physical sheet names and structure evidence-bound to P2-010.
 8. Special-activity participation is not yet integrated into official workload/reporting aggregation.
 9. WorkloadAdjustmentRule remains trigger-gated/deferred.
@@ -428,10 +488,10 @@ The final production-host topology is intentionally unresolved and explicitly de
 
 ## Tasks currently active or eligible to start
 
-`P1-031C` is CLOSED by `SYNC-P1-031C`.
+`P1-032` is CLOSED by `SYNC-P1-032`.
 
 Active in progress:
-- `P1-032` — Operational-start admin UI integration (`IN_PROGRESS` on dedicated branch `feat/operational-start-admin-ui-integration-032`).
+- None.
 
 Active in review:
 - None.
@@ -471,7 +531,7 @@ Direct P0 inspection found `main` is currently not protected server-side. This i
 
 ## Production state
 
-Production remains **pre-operational**. No production deployment has occurred. P1-020, P1-021, P1-022, P1-031, P1-031B, P1-031A, and P1-031C are CLOSED and canonical; P1-032 is READY. The backend production policy registry contains only the reviewed `OPERATIONAL_START` family enabled by P1-031. No production operational-start policy value has been configured or deployed, so the additive P1-031A migration performed zero production data backfill and has not been applied to production. P1-031C introduced zero schema or migration change and zero production data mutation. P2-030 architecture/evidence, P2-040 native adapter runtime implementation, P2-050 selective session authoring and carry-forward, P2-002 PPCT component persistence/control plane, P2-003 component-aware allocation/projection runtime, and P2-004 specialized-study administration workspace are merged to canonical `main`, but did NOT deploy or mutate VPS, database, Nginx, TLS, scheduled tasks, or application process state. P2-001 architecture remains accepted authority under ADR-048. P6 remains blocked by the explicit P6-005 topology decision gate.
+Production remains **pre-operational**. No production deployment has occurred. P1-020, P1-021, P1-022, P1-031, P1-031B, P1-031A, P1-031C, and P1-032 are CLOSED and canonical. The backend production policy registry contains only the reviewed `OPERATIONAL_START` family enabled by P1-031, and the Web UI registry includes the corresponding production adapter enabled by P1-032. No production operational-start policy value has been configured or deployed, so the additive P1-031A migration performed zero production data backfill and has not been applied to production. P1-031C introduced zero schema or migration change and zero production data mutation. P1-032 delivered administration Web UI integration with zero backend/contracts/schema/migration mutation. P2-030 architecture/evidence, P2-040 native adapter runtime implementation, P2-050 selective session authoring and carry-forward, P2-002 PPCT component persistence/control plane, P2-003 component-aware allocation/projection runtime, and P2-004 specialized-study administration workspace are merged to canonical `main`, but did NOT deploy or mutate VPS, database, Nginx, TLS, scheduled tasks, or application process state. P2-001 architecture remains accepted authority under ADR-048. P6 remains blocked by the explicit P6-005 topology decision gate.
 
 ## Protected external system boundary
 
