@@ -2,12 +2,21 @@
 
 ## Status
 
-**IMPLEMENTATION CONTRACT — P4-020 IN PROGRESS.**
+**CLOSED — IMPLEMENTED AND VERIFIED BY `SYNC-P4-020`.**
 
 Task branch: `feat/programme-persistence-control-plane-020`  
 Canonical starting main: `969d12d4f2f3e8ea3c66768daa3b35b4ccaa2fc0`  
+Final independently reviewed HEAD: `d8cb42614514f81ae16239a59c69e2da1f8ef246`  
+Parent PR: #146 (`feat(programme): implement P4-020 planning persistence control plane`)  
+Exact-head PR CI: CI #468, run `35370624212`, SUCCESS on attempt 1  
+Merge/main: `b68064e887f8646515e2820bd26423a5f9483f09`  
+Authoritative post-merge main CI: CI #469, run `35409557624`, SUCCESS on attempt 1  
 Architecture authority: ADR-050 and P4-010 closure.  
 Traceability: T16, T17.
+
+Independent read-only audit of the final parent HEAD returned `AUDIT PASS` with zero BLOCKER/HIGH/MEDIUM/LOW findings. The two late review findings were absorbed before merge: partial occurrence edits now persist against resolved `targetMode`, and plan publication enforces exact successor lineage against the current published authority. PostgreSQL integration, schema/hardening verifiers, Prisma validation/generation, lint, typecheck, static gates and exact-head GitHub CI all passed. No correction or re-entry task emerged from review or CI.
+
+Delivered scope is the retained planning persistence/control plane only. P4-030 owns exact coordinator/BGH authorization binding, P4-040 owns materialization/attestation runtime, and P4-050 owns workload/reporting projection. Production remains strictly PRE-OPERATIONAL; no deployment or production data/config mutation occurred.
 
 This document locks the physical persistence and command-layer boundaries for P4-020. It does not create coordinator/BGH authorization authority, runtime materialization, attestation persistence, execution semantics, workload projection, UI, deployment, or production mutation.
 
@@ -218,9 +227,9 @@ P4-040 consumes only published/current planning authority. It owns:
 
 P4-020 must not add programme provenance columns to `SpecialActivity`; that schema bridge belongs to P4-040.
 
-## 9. Acceptance evidence required before P4-020 review
+## 9. Acceptance and closure evidence
 
-P4-020 cannot enter `IN_REVIEW` until branch evidence covers:
+P4-020 acceptance evidence is satisfied by:
 
 - Prisma schema validation/generation;
 - isolated PostgreSQL migration application from canonical migration history;
@@ -228,6 +237,10 @@ P4-020 cannot enter `IN_REVIEW` until branch evidence covers:
 - service tests for plan lifecycle, occurrence lifecycle, exact slot staffing, lineage, idempotency, stale CAS and transaction audit;
 - regression proof that P4-020 did not modify `SpecialActivity` semantics or introduce attestation/workload/capability binding;
 - lint/typecheck/unit/integration/build gates applicable to changed packages;
-- documentation synchronization for P4-020 implementation state.
+- independent exact-diff review of final parent HEAD `d8cb42614514f81ae16239a59c69e2da1f8ef246` (`AUDIT PASS`);
+- exact-head PR CI #468 / run `35370624212` SUCCESS;
+- parent merge/main `b68064e887f8646515e2820bd26423a5f9483f09`;
+- authoritative post-merge main CI #469 / run `35409557624` SUCCESS;
+- closure synchronization through `SYNC-P4-020`.
 
-Authoritative exact-head GitHub CI remains required because the current execution environment cannot directly clone `github.com`. Merge and deployment remain separately authorized.
+P4-020 is CLOSED only by this administrative closure sync. No public controller/capability binding, runtime bridge, attestation persistence, workload projection, deployment, or production mutation is claimed by this closure.
