@@ -287,10 +287,19 @@ $$\text{Eligible Workload Contribution Source} \iff (\text{Valid Teacher-Slot Pa
 
 - **P4-010 (Closed)**: Architecture closed and accepted by `SYNC-P4-010`; docs-only.
 - **P4-020 (Next Major Task)**: READY; implements persistence models for ProgrammeMaster, ProgrammePlanVersion, ProgrammeTopicItem, PlannedProgrammeOccurrence, PlannedOccurrenceSlot, and PlannedSlotStaffing (planning lifecycle and control plane only).
-- **P4-030**: Implements exact coordinator and BGH capability-resource-scope binding, guard contracts, and default-deny enforcement (current catalog keys are evidence only until P4-030 closes runtime authority).
+- **P4-030 (In Review)**: Implements exact coordinator and BGH capability-resource-scope binding, guard contracts, and default-deny enforcement.
 - **P4-040**: Implements the materialization bridge service transforming planned occurrences into `SpecialActivity` roots with exact partitioning, T43 runtime replacement/reversal handling, retained materialization provenance, and conceptual programme-attestation runtime persistence/control (T44 attestation recording/reversal semantics).
 - **P4-050**: Implements workload calculation logic enforcing the dual execution + attestation gate and anti-double-counting rules (execution + attestation gate projection, workload/anti-double-counting).
 - **P4-060 / P4-061**: Workload adjustment policy (remains trigger-gated, unaffected).
+
+### 4.1 Downstream Realization Note: P4-030 (Programme Coordinator Authorization)
+- P4-030 establishes exact runtime authorization binding for GDĐP and HĐTN-HN programme planning:
+  - Coordinator authority is bound strictly to `ACTIVITY` capability scope with `scopeResourceId = exact ProgrammeMaster.id` (`GDDDP_COORDINATOR` for GDDP, `HĐTN_COORDINATOR` for HDTN_HN).
+  - BGH professional authority is bound strictly to `APPROVAL_PRINCIPAL / SCHOOL_WIDE` or `APPROVAL_VICE_PRINCIPAL / SCHOOL_WIDE`.
+  - Bootstrap invariant: only BGH professional authority can create canonical `ProgrammeMaster` records. Exact coordinator grants can only be issued once a master exists.
+  - Guarded façade `AuthorizedProgrammePlanningService` encapsulates raw `ProgrammePlanningService`; guarded `/api/programme-planning` HTTP surface is exposed.
+  - Exposes qualification seam (`isQualifyingProgrammeAttestor`) without attestation persistence.
+  - No change to P4-040 (materialization/attestation storage) or P4-050 (workload/reporting projection) boundaries.
 
 ---
 
