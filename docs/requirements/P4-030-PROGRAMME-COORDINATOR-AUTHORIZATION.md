@@ -2,13 +2,13 @@
 
 ## Status
 
-**IN_PROGRESS**
+**IN_REVIEW**
 
 - Task branch: `feat/programme-coordinator-authorization-030`
 - Canonical base: `ab4324e0094203bcab9fbfef9d4c4e952f46f48f`
 - Predecessor: `P4-020` (CLOSED by `SYNC-P4-020`)
 - Downstream: `P4-040` (PLANNED, depends on `P4-030`)
-- Architecture authority: `ADR-050-GDDP-HDTN-PROGRAMME-ARCHITECTURE.md`, `ADR-008-default-deny-capability-security.md`, `ADR-038-special-activity-execution-and-workload-accounting.md`
+- Architecture authority: `docs/decisions/ADR-050-GDDP-HDTN-PROGRAMME-ARCHITECTURE.md`, `docs/decisions/ADR-008-CAPABILITY-AUTHORIZATION-SEMANTICS.md`, `docs/decisions/ADR-038-TEACHING-EXECUTION-EVIDENCE.md`
 - Traceability: **T18**, **T44** (with strict **T43** boundary preservation)
 
 ---
