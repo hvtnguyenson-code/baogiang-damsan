@@ -12,14 +12,21 @@ import {
   PlannedSlotStaffing,
   Prisma,
   ProgrammeMaster,
+  ProgrammeMaterializedActivity,
+  ProgrammeOccurrenceAttestation,
   ProgrammePlanVersion,
   ProgrammeTopicItem,
+  SpecialActivity,
+  SpecialActivityScope,
 } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import { AuditService } from '../audit/audit.service';
 import { formatCivilDate, isCivilDate, parseCivilDate } from '../common/validation/civil-date';
+import { classifyHomeroomResolutionRows } from '../homeroom-assignments/homeroom-assignments.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { SpecialActivitiesService } from '../special-activities/special-activities.service';
 import {
+  AttestOccurrenceDto,
   CreateDraftOccurrenceDto,
   CreateDraftPlanVersionDto,
   CreateProgrammeMasterDto,
@@ -29,16 +36,23 @@ import {
   EditDraftPlanVersionDto,
   ListPlannedOccurrencesDto,
   ListProgrammeMastersDto,
+  MaterializeOccurrenceDto,
   PlannedProgrammeOccurrenceRecord,
   PlannedSlotStaffingInputDto,
   ProgrammeMasterRecord,
+  ProgrammeMaterializedActivityRecord,
+  ProgrammeOccurrenceAttestationRecord,
+  ProgrammeOccurrenceAttestationsListResponse,
   ProgrammePlanVersionRecord,
   ProgrammeTopicItemInputDto,
   ProgrammeTopicItemRecord,
   PublishOccurrenceDto,
   PublishPlanVersionDto,
+  ReplaceMaterializedSlotDto,
   ReplaceOccurrenceSlotsStaffingDto,
+  ReverseAttestationDto,
 } from './dto';
+import { ProgrammeAuthorityDecision } from './programme-planning-authorization.service';
 
 export function weekdayForCivilDate(date: Date): AcademicWeekday {
   return ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'][
@@ -51,6 +65,7 @@ export class ProgrammePlanningService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly specialActivities: SpecialActivitiesService,
   ) {}
 
   // =========================================================================
@@ -1632,5 +1647,560 @@ export class ProgrammePlanningService {
       staffing: staffingBySlot.get(s.id) ?? [],
     }));
     return this.toOccurrenceRecord(occurrence, slotsWithStaffing);
+  }
+
+  // =========================================================================
+  // SECTION 5: PROGRAMME RUNTIME BRIDGE & ATTESTATION (P4-040)
+  // =========================================================================
+
+  async materializeOccurrence(
+    id: string,
+    dto: MaterializeOccurrenceDto,
+    actorUserId: string,
+  ): Promise<ProgrammeMaterializedActivityRecord[]> {
+    return this.mutate(
+      actorUserId,
+      dto.commandId,
+      'MATERIALIZE_OCCURRENCE',
+      { occurrenceId: id, commandId: dto.commandId },
+      async (tx) => {
+        const occurrence = await tx.plannedProgrammeOccurrence.findUnique({
+          where: { id },
+        });
+        if (!occurrence) {
+          throw new NotFoundException('PlannedProgrammeOccurrence không tồn tại.');
+        }
+        if (occurrence.status !== 'PUBLISHED') {
+          throw new ConflictException('Chỉ có thể materialize occurrence ở trạng thái PUBLISHED.');
+        }
+
+        const existingMat = await tx.programmeMaterializedActivity.findMany({
+          where: { plannedProgrammeOccurrenceId: id },
+        });
+        if (existingMat.length > 0) {
+          throw new ConflictException('Occurrence đã được materialize trước đó.');
+        }
+
+        const master = await tx.programmeMaster.findUniqueOrThrow({
+          where: { id: occurrence.programmeMasterId },
+        });
+        const topic = await tx.programmeTopicItem.findUniqueOrThrow({
+          where: { id: occurrence.programmeTopicItemId },
+        });
+
+        const calendar = await tx.academicCalendarVersion.findFirst({
+          where: { academicYearId: occurrence.academicYearId, isActive: true },
+          select: { id: true, startDate: true, endDate: true },
+        });
+        if (!calendar) {
+          throw new ConflictException('Không tìm thấy phiên lịch học ACTIVE cho năm học.');
+        }
+        const dateObj = occurrence.civilDate;
+        if (dateObj < calendar.startDate || dateObj > calendar.endDate) {
+          throw new ConflictException('Ngày diễn ra nằm ngoài khoảng thời gian của phiên lịch học.');
+        }
+
+        const slots = await tx.plannedOccurrenceSlot.findMany({
+          where: { plannedProgrammeOccurrenceId: id },
+          orderBy: { createdAt: 'asc' },
+        });
+        if (slots.length === 0) {
+          throw new ConflictException('Occurrence không có slot nào để materialize.');
+        }
+
+        const slotStaffings = await tx.plannedSlotStaffing.findMany({
+          where: { plannedOccurrenceSlotId: { in: slots.map((s) => s.id) } },
+          orderBy: { createdAt: 'asc' },
+        });
+        const staffingBySlot = new Map<string, string[]>();
+        for (const st of slotStaffings) {
+          const list = staffingBySlot.get(st.plannedOccurrenceSlotId) ?? [];
+          list.push(st.teacherUserId);
+          staffingBySlot.set(st.plannedOccurrenceSlotId, list);
+        }
+        for (const slot of slots) {
+          const teachers = staffingBySlot.get(slot.id) ?? [];
+          if (teachers.length === 0) {
+            throw new ConflictException(`Slot ${slot.timeSlotDefinitionId} không có giáo viên nào được xếp.`);
+          }
+        }
+
+        let homeroomAssignmentId: string | null = null;
+        let homeroomTeacherUserId: string | null = null;
+        if (master.kind === 'HDTN_HN' && occurrence.mode === 'CLASS') {
+          if (!occurrence.schoolClassId) {
+            throw new ConflictException('HDTN_HN CLASS mode bắt buộc schoolClassId.');
+          }
+          const coveringAssignments = await tx.homeroomAssignment.findMany({
+            where: {
+              academicYearId: occurrence.academicYearId,
+              schoolClassId: occurrence.schoolClassId,
+              status: 'ACTIVE',
+              validFrom: { lte: dateObj },
+              OR: [{ validUntil: null }, { validUntil: { gte: dateObj } }],
+            },
+          });
+          const lineageRows = await tx.homeroomAssignment.findMany({
+            where: {
+              academicYearId: occurrence.academicYearId,
+              schoolClassId: occurrence.schoolClassId,
+            },
+            select: {
+              id: true,
+              academicYearId: true,
+              schoolClassId: true,
+              status: true,
+              replacesId: true,
+              reversedByUserId: true,
+              reversedAt: true,
+              reversalReason: true,
+            },
+          });
+          const classification = classifyHomeroomResolutionRows(coveringAssignments, lineageRows);
+          if (classification.outcome !== 'RESOLVED') {
+            if (classification.outcome === 'MISSING') {
+              throw new ConflictException('Không tìm thấy phân công chủ nhiệm ACTIVE cho lớp tại ngày diễn ra.');
+            }
+            if (classification.outcome === 'AMBIGUOUS') {
+              throw new ConflictException('Phân công chủ nhiệm của lớp bị chồng lấn không rõ ràng.');
+            }
+            throw new ConflictException('Dữ liệu phân công chủ nhiệm bị hỏng hoặc bất thường.');
+          }
+          const resolvedAssignment = classification.assignment;
+          const gvcnUser = await tx.user.findUnique({
+            where: { id: resolvedAssignment.teacherUserId },
+            include: { profile: true },
+          });
+          if (!gvcnUser || gvcnUser.status !== 'ACTIVE' || !gvcnUser.profile || !gvcnUser.profile.isTeachingStaff) {
+            throw new ConflictException('Giáo viên chủ nhiệm được phân công không phải nhân sự giảng dạy ACTIVE hợp lệ.');
+          }
+          homeroomAssignmentId = resolvedAssignment.id;
+          homeroomTeacherUserId = resolvedAssignment.teacherUserId;
+        }
+
+        const scope: SpecialActivityScope =
+          occurrence.mode === 'CLASS'
+            ? SpecialActivityScope.CLASS
+            : occurrence.mode === 'GRADE'
+            ? SpecialActivityScope.GRADE
+            : SpecialActivityScope.SCHOOL_WIDE;
+
+        const createdRecords: ProgrammeMaterializedActivityRecord[] = [];
+        for (const slot of slots) {
+          const scheduledTeacherUserIds = staffingBySlot.get(slot.id)!;
+          const requestKey = `mat:${occurrence.id}:${slot.id}`;
+          const specialActivity = await this.specialActivities.createMaterializedRoot(tx, {
+            academicYearId: occurrence.academicYearId,
+            academicCalendarVersionId: calendar.id,
+            civilDate: formatCivilDate(occurrence.civilDate),
+            scope,
+            gradeLevel: occurrence.gradeLevel,
+            schoolClassId: occurrence.schoolClassId,
+            exactTimeSlotDefinitionIds: [slot.timeSlotDefinitionId],
+            scheduledTeacherUserIds,
+            title: topic.title,
+            note: occurrence.note,
+            requestKey,
+            actorUserId,
+          });
+
+          const matRow = await tx.programmeMaterializedActivity.create({
+            data: {
+              programmeMasterId: master.id,
+              programmePlanVersionId: occurrence.programmePlanVersionId,
+              programmeTopicItemId: occurrence.programmeTopicItemId,
+              plannedProgrammeOccurrenceId: occurrence.id,
+              plannedOccurrenceSlotId: slot.id,
+              specialActivityId: specialActivity.id,
+              homeroomAssignmentId,
+              homeroomTeacherUserId,
+              materializedByUserId: actorUserId,
+            },
+          });
+
+          createdRecords.push(this.toMaterializedRecord(matRow, specialActivity));
+        }
+
+        await this.audit.write(
+          {
+            actorUserId,
+            action: 'PROGRAMME_OCCURRENCE_MATERIALIZED',
+            entityType: 'PlannedProgrammeOccurrence',
+            entityId: occurrence.id,
+            result: AuditResult.SUCCESS,
+            metadata: {
+              commandId: dto.commandId,
+              programmeMasterId: master.id,
+              occurrenceId: occurrence.id,
+              slotCount: slots.length,
+              materializedCount: createdRecords.length,
+            },
+          },
+          tx,
+        );
+
+        return createdRecords;
+      },
+    );
+  }
+
+  async getOccurrenceMaterialization(id: string): Promise<ProgrammeMaterializedActivityRecord[]> {
+    const records = await this.prisma.programmeMaterializedActivity.findMany({
+      where: { plannedProgrammeOccurrenceId: id },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (records.length === 0) {
+      return [];
+    }
+    const specialActivityIds = records.map((r) => r.specialActivityId);
+    const activities = await this.prisma.specialActivity.findMany({
+      where: { id: { in: specialActivityIds } },
+      include: {
+        timeSlots: true,
+        staffing: true,
+        classTargets: true,
+      },
+    });
+    const activityMap = new Map(activities.map((a) => [a.id, a]));
+    return records.map((r) => this.toMaterializedRecord(r, activityMap.get(r.specialActivityId)));
+  }
+
+  async replaceMaterializedSlot(
+    id: string,
+    dto: ReplaceMaterializedSlotDto,
+    actorUserId: string,
+  ): Promise<ProgrammeMaterializedActivityRecord> {
+    return this.mutate(
+      actorUserId,
+      dto.commandId,
+      'REPLACE_MATERIALIZED_SLOT',
+      { materializedActivityId: id, ...dto },
+      async (tx) => {
+        const currentMat = await tx.programmeMaterializedActivity.findUnique({
+          where: { id },
+        });
+        if (!currentMat) {
+          throw new NotFoundException('Không tìm thấy bản ghi ProgrammeMaterializedActivity.');
+        }
+
+        const oldSpecialActivity = await tx.specialActivity.findUnique({
+          where: { id: currentMat.specialActivityId },
+        });
+        if (!oldSpecialActivity) {
+          throw new NotFoundException('Không tìm thấy SpecialActivity tương ứng.');
+        }
+        if (oldSpecialActivity.status !== 'ACTIVE') {
+          throw new ConflictException('Chỉ có thể thay thế root SpecialActivity đang ở trạng thái ACTIVE.');
+        }
+
+        const topic = await tx.programmeTopicItem.findUniqueOrThrow({
+          where: { id: currentMat.programmeTopicItemId },
+        });
+        const slot = await tx.plannedOccurrenceSlot.findUniqueOrThrow({
+          where: { id: currentMat.plannedOccurrenceSlotId },
+        });
+
+        const teacherIds = [...new Set(dto.replacementTeacherUserIds)].sort();
+        if (teacherIds.length === 0) {
+          throw new BadRequestException('replacementTeacherUserIds không được để trống.');
+        }
+
+        const reverseKey = `rev-mat:${oldSpecialActivity.id}:${dto.commandId}`;
+        await this.specialActivities.reverseMaterializedRoot(tx, {
+          id: oldSpecialActivity.id,
+          expectedUpdatedAt: dto.expectedUpdatedAt,
+          reversalReason: dto.reversalReason,
+          requestKey: reverseKey,
+          actorUserId,
+        });
+
+        const createKey = `rep-mat:${oldSpecialActivity.id}:${dto.commandId}`;
+        const replacementRoot = await this.specialActivities.createMaterializedRoot(tx, {
+          academicYearId: oldSpecialActivity.academicYearId,
+          academicCalendarVersionId: oldSpecialActivity.academicCalendarVersionId,
+          civilDate: formatCivilDate(oldSpecialActivity.civilDate),
+          scope: oldSpecialActivity.scope,
+          gradeLevel: oldSpecialActivity.gradeLevel,
+          schoolClassId: oldSpecialActivity.schoolClassId,
+          exactTimeSlotDefinitionIds: [slot.timeSlotDefinitionId],
+          scheduledTeacherUserIds: teacherIds,
+          title: topic.title,
+          note: dto.note ?? oldSpecialActivity.note,
+          replacesId: oldSpecialActivity.id,
+          requestKey: createKey,
+          actorUserId,
+        });
+
+        const newMat = await tx.programmeMaterializedActivity.create({
+          data: {
+            programmeMasterId: currentMat.programmeMasterId,
+            programmePlanVersionId: currentMat.programmePlanVersionId,
+            programmeTopicItemId: currentMat.programmeTopicItemId,
+            plannedProgrammeOccurrenceId: currentMat.plannedProgrammeOccurrenceId,
+            plannedOccurrenceSlotId: currentMat.plannedOccurrenceSlotId,
+            specialActivityId: replacementRoot.id,
+            homeroomAssignmentId: currentMat.homeroomAssignmentId,
+            homeroomTeacherUserId: currentMat.homeroomTeacherUserId,
+            materializedByUserId: actorUserId,
+          },
+        });
+
+        await this.audit.write(
+          {
+            actorUserId,
+            action: 'MATERIALIZED_SLOT_REPLACED',
+            entityType: 'ProgrammeMaterializedActivity',
+            entityId: newMat.id,
+            result: AuditResult.SUCCESS,
+            metadata: {
+              commandId: dto.commandId,
+              previousMaterializedActivityId: currentMat.id,
+              previousSpecialActivityId: oldSpecialActivity.id,
+              replacementSpecialActivityId: replacementRoot.id,
+              replacesId: oldSpecialActivity.id,
+              replacementTeacherUserIds: teacherIds,
+            },
+          },
+          tx,
+        );
+
+        return this.toMaterializedRecord(newMat, replacementRoot);
+      },
+    );
+  }
+
+  async attestOccurrence(
+    id: string,
+    dto: AttestOccurrenceDto,
+    actorUserId: string,
+    authDecision: ProgrammeAuthorityDecision,
+  ): Promise<ProgrammeOccurrenceAttestationRecord> {
+    return this.mutate(
+      actorUserId,
+      dto.commandId,
+      'ATTEST_OCCURRENCE',
+      { occurrenceId: id, commandId: dto.commandId },
+      async (tx) => {
+        const occurrence = await tx.plannedProgrammeOccurrence.findUnique({
+          where: { id },
+        });
+        if (!occurrence) {
+          throw new NotFoundException('PlannedProgrammeOccurrence không tồn tại.');
+        }
+        if (occurrence.status !== 'PUBLISHED') {
+          throw new ConflictException('Chỉ có thể xác nhận (attest) occurrence ở trạng thái PUBLISHED.');
+        }
+
+        const existingActive = await tx.programmeOccurrenceAttestation.findFirst({
+          where: {
+            plannedProgrammeOccurrenceId: id,
+            attestedByUserId: actorUserId,
+            status: 'ACTIVE',
+          },
+        });
+        if (existingActive) {
+          throw new ConflictException('Người dùng đã xác nhận thực hiện cho occurrence này.');
+        }
+
+        const attestationFingerprint = this.fingerprint({
+          occurrenceId: id,
+          actorUserId,
+          commandId: dto.commandId,
+        });
+
+        const attestation = await tx.programmeOccurrenceAttestation.create({
+          data: {
+            programmeMasterId: occurrence.programmeMasterId,
+            plannedProgrammeOccurrenceId: occurrence.id,
+            attestedByUserId: actorUserId,
+            authorityType: authDecision.authorityType!,
+            capabilityKey: authDecision.capabilityKey!,
+            scope: authDecision.scope!,
+            scopeResourceId: authDecision.resourceId ?? null,
+            status: 'ACTIVE',
+            createRequestKey: dto.commandId,
+            createRequestFingerprint: attestationFingerprint,
+          },
+        });
+
+        await this.audit.write(
+          {
+            actorUserId,
+            action: 'PROGRAMME_OCCURRENCE_ATTESTED',
+            entityType: 'ProgrammeOccurrenceAttestation',
+            entityId: attestation.id,
+            result: AuditResult.SUCCESS,
+            metadata: {
+              commandId: dto.commandId,
+              occurrenceId: occurrence.id,
+              programmeMasterId: occurrence.programmeMasterId,
+              authorityType: attestation.authorityType,
+              capabilityKey: attestation.capabilityKey,
+            },
+          },
+          tx,
+        );
+
+        return this.toAttestationRecord(attestation);
+      },
+    );
+  }
+
+  async reverseAttestation(
+    attestationId: string,
+    dto: ReverseAttestationDto,
+    actorUserId: string,
+  ): Promise<ProgrammeOccurrenceAttestationRecord> {
+    return this.mutate(
+      actorUserId,
+      dto.commandId,
+      'REVERSE_ATTESTATION',
+      { attestationId, ...dto },
+      async (tx) => {
+        const attestation = await tx.programmeOccurrenceAttestation.findUnique({
+          where: { id: attestationId },
+        });
+        if (!attestation) {
+          throw new NotFoundException('ProgrammeOccurrenceAttestation không tồn tại.');
+        }
+        if (attestation.status !== 'ACTIVE') {
+          throw new ConflictException('Attestation không ở trạng thái ACTIVE.');
+        }
+
+        const expectedDate = new Date(dto.expectedUpdatedAt);
+        const now = new Date();
+        const reverseFingerprint = this.fingerprint({
+          attestationId,
+          expectedUpdatedAt: dto.expectedUpdatedAt,
+          reversalReason: dto.reversalReason.trim(),
+          commandId: dto.commandId,
+        });
+
+        const updated = await tx.programmeOccurrenceAttestation.updateMany({
+          where: {
+            id: attestationId,
+            status: 'ACTIVE',
+            updatedAt: expectedDate,
+          },
+          data: {
+            status: 'REVERSED',
+            reversedByUserId: actorUserId,
+            reversedAt: now,
+            reversalReason: dto.reversalReason.trim(),
+            reverseRequestKey: dto.commandId,
+            reverseRequestFingerprint: reverseFingerprint,
+            updatedAt: now,
+          },
+        });
+        if (updated.count !== 1) {
+          throw new ConflictException('Attestation đã thay đổi hoặc đã bị đảo ngược trước đó.');
+        }
+
+        const row = await tx.programmeOccurrenceAttestation.findUniqueOrThrow({
+          where: { id: attestationId },
+        });
+
+        await this.audit.write(
+          {
+            actorUserId,
+            action: 'PROGRAMME_ATTESTATION_REVERSED',
+            entityType: 'ProgrammeOccurrenceAttestation',
+            entityId: attestationId,
+            result: AuditResult.SUCCESS,
+            metadata: {
+              commandId: dto.commandId,
+              occurrenceId: row.plannedProgrammeOccurrenceId,
+              reversalReason: dto.reversalReason.trim(),
+            },
+          },
+          tx,
+        );
+
+        return this.toAttestationRecord(row);
+      },
+    );
+  }
+
+  async listOccurrenceAttestations(
+    occurrenceId: string,
+  ): Promise<ProgrammeOccurrenceAttestationsListResponse> {
+    const rows = await this.prisma.programmeOccurrenceAttestation.findMany({
+      where: { plannedProgrammeOccurrenceId: occurrenceId },
+      orderBy: { createdAt: 'asc' },
+    });
+    const items = rows.map((r) => this.toAttestationRecord(r));
+    return {
+      items,
+      hasQualifyingNonReversedAttestation: items.some((a) => a.status === 'ACTIVE'),
+      activeAttestationCount: items.filter((a) => a.status === 'ACTIVE').length,
+    };
+  }
+
+  async hasQualifyingNonReversedAttestation(occurrenceId: string): Promise<boolean> {
+    const count = await this.prisma.programmeOccurrenceAttestation.count({
+      where: { plannedProgrammeOccurrenceId: occurrenceId, status: 'ACTIVE' },
+    });
+    return count > 0;
+  }
+
+  private toMaterializedRecord(
+    row: ProgrammeMaterializedActivity,
+    specialActivity?: SpecialActivity & {
+      timeSlots?: Array<{ timeSlotDefinitionId: string }>;
+      staffing?: Array<{ scheduledTeacherUserId: string }>;
+      classTargets?: Array<{ schoolClassId: string }>;
+    },
+  ): ProgrammeMaterializedActivityRecord {
+    return {
+      id: row.id,
+      programmeMasterId: row.programmeMasterId,
+      programmePlanVersionId: row.programmePlanVersionId,
+      programmeTopicItemId: row.programmeTopicItemId,
+      plannedProgrammeOccurrenceId: row.plannedProgrammeOccurrenceId,
+      plannedOccurrenceSlotId: row.plannedOccurrenceSlotId,
+      specialActivityId: row.specialActivityId,
+      homeroomAssignmentId: row.homeroomAssignmentId,
+      homeroomTeacherUserId: row.homeroomTeacherUserId,
+      materializedByUserId: row.materializedByUserId,
+      materializedAt: row.materializedAt.toISOString(),
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
+      specialActivity: specialActivity
+        ? {
+            id: specialActivity.id,
+            status: specialActivity.status,
+            title: specialActivity.title,
+            civilDate: formatCivilDate(specialActivity.civilDate),
+            scope: specialActivity.scope,
+            gradeLevel: specialActivity.gradeLevel,
+            schoolClassId: specialActivity.schoolClassId,
+            replacesId: specialActivity.replacesId,
+            scheduledTeacherUserIds: specialActivity.staffing?.map((s) => s.scheduledTeacherUserId) ?? [],
+            exactTimeSlotDefinitionIds: specialActivity.timeSlots?.map((s) => s.timeSlotDefinitionId) ?? [],
+          }
+        : undefined,
+    };
+  }
+
+  private toAttestationRecord(
+    row: ProgrammeOccurrenceAttestation,
+  ): ProgrammeOccurrenceAttestationRecord {
+    return {
+      id: row.id,
+      programmeMasterId: row.programmeMasterId,
+      plannedProgrammeOccurrenceId: row.plannedProgrammeOccurrenceId,
+      attestedByUserId: row.attestedByUserId,
+      authorityType: row.authorityType,
+      capabilityKey: row.capabilityKey,
+      scope: row.scope,
+      scopeResourceId: row.scopeResourceId,
+      status: row.status,
+      attestedAt: row.attestedAt.toISOString(),
+      reversedByUserId: row.reversedByUserId,
+      reversedAt: row.reversedAt ? row.reversedAt.toISOString() : null,
+      reversalReason: row.reversalReason,
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
+    };
   }
 }

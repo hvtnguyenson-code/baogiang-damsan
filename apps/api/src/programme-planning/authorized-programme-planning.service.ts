@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { CapabilityAuthorizationService } from '../authorization/capability-authorization.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
+  AttestOccurrenceDto,
   CreateDraftOccurrenceDto,
   CreateDraftPlanVersionDto,
   CreateProgrammeMasterDto,
@@ -11,12 +12,18 @@ import {
   EditDraftPlanVersionDto,
   ListPlannedOccurrencesDto,
   ListProgrammeMastersDto,
+  MaterializeOccurrenceDto,
   PlannedProgrammeOccurrenceRecord,
   ProgrammeMasterRecord,
+  ProgrammeMaterializedActivityRecord,
+  ProgrammeOccurrenceAttestationRecord,
+  ProgrammeOccurrenceAttestationsListResponse,
   ProgrammePlanVersionRecord,
   PublishOccurrenceDto,
   PublishPlanVersionDto,
+  ReplaceMaterializedSlotDto,
   ReplaceOccurrenceSlotsStaffingDto,
+  ReverseAttestationDto,
 } from './dto';
 import {
   ProgrammeAuditContext,
@@ -459,5 +466,154 @@ export class AuthorizedProgrammePlanningService {
       }
     }
     return authorizedOccurrences;
+  }
+
+  // =========================================================================
+  // PROGRAMME RUNTIME BRIDGE & ATTESTATION (P4-040)
+  // =========================================================================
+
+  async materializeOccurrence(
+    id: string,
+    dto: MaterializeOccurrenceDto,
+    actorUserId: string,
+    auditContext?: ProgrammeAuditContext,
+  ): Promise<ProgrammeMaterializedActivityRecord[]> {
+    const occurrence = await this.prisma.plannedProgrammeOccurrence.findUnique({
+      where: { id },
+      select: { programmeMasterId: true },
+    });
+    if (!occurrence) {
+      throw new NotFoundException('Không tìm thấy occurrence.');
+    }
+    const master = await this.prisma.programmeMaster.findUnique({
+      where: { id: occurrence.programmeMasterId },
+      select: { id: true, kind: true },
+    });
+    if (!master) {
+      throw new NotFoundException('Không tìm thấy chương trình.');
+    }
+    await this.authService.requireProgrammeAuthority(actorUserId, master, auditContext);
+    return this.service.materializeOccurrence(id, dto, actorUserId);
+  }
+
+  async getOccurrenceMaterialization(
+    id: string,
+    actorUserId: string,
+    auditContext?: ProgrammeAuditContext,
+  ): Promise<ProgrammeMaterializedActivityRecord[]> {
+    const occurrence = await this.prisma.plannedProgrammeOccurrence.findUnique({
+      where: { id },
+      select: { programmeMasterId: true },
+    });
+    if (!occurrence) {
+      throw new NotFoundException('Không tìm thấy occurrence.');
+    }
+    const master = await this.prisma.programmeMaster.findUnique({
+      where: { id: occurrence.programmeMasterId },
+      select: { id: true, kind: true },
+    });
+    if (!master) {
+      throw new NotFoundException('Không tìm thấy chương trình.');
+    }
+    await this.authService.requireProgrammeAuthority(actorUserId, master, auditContext);
+    return this.service.getOccurrenceMaterialization(id);
+  }
+
+  async replaceMaterializedSlot(
+    id: string,
+    dto: ReplaceMaterializedSlotDto,
+    actorUserId: string,
+    auditContext?: ProgrammeAuditContext,
+  ): Promise<ProgrammeMaterializedActivityRecord> {
+    const mat = await this.prisma.programmeMaterializedActivity.findUnique({
+      where: { id },
+      select: { programmeMasterId: true },
+    });
+    if (!mat) {
+      throw new NotFoundException('Không tìm thấy bản ghi ProgrammeMaterializedActivity.');
+    }
+    const master = await this.prisma.programmeMaster.findUnique({
+      where: { id: mat.programmeMasterId },
+      select: { id: true, kind: true },
+    });
+    if (!master) {
+      throw new NotFoundException('Không tìm thấy chương trình.');
+    }
+    await this.authService.requireProgrammeAuthority(actorUserId, master, auditContext);
+    return this.service.replaceMaterializedSlot(id, dto, actorUserId);
+  }
+
+  async attestOccurrence(
+    id: string,
+    dto: AttestOccurrenceDto,
+    actorUserId: string,
+    auditContext?: ProgrammeAuditContext,
+  ): Promise<ProgrammeOccurrenceAttestationRecord> {
+    const occurrence = await this.prisma.plannedProgrammeOccurrence.findUnique({
+      where: { id },
+      select: { id: true, programmeMasterId: true },
+    });
+    if (!occurrence) {
+      throw new NotFoundException('Không tìm thấy occurrence.');
+    }
+    const master = await this.prisma.programmeMaster.findUnique({
+      where: { id: occurrence.programmeMasterId },
+      select: { id: true, kind: true },
+    });
+    if (!master) {
+      throw new NotFoundException('Không tìm thấy chương trình.');
+    }
+    const decision = await this.authService.isQualifyingProgrammeAttestor(actorUserId, master);
+    if (!decision.qualified) {
+      await this.authService.requireProgrammeAuthority(actorUserId, master, auditContext);
+    }
+    return this.service.attestOccurrence(id, dto, actorUserId, decision);
+  }
+
+  async reverseAttestation(
+    attestationId: string,
+    dto: ReverseAttestationDto,
+    actorUserId: string,
+    auditContext?: ProgrammeAuditContext,
+  ): Promise<ProgrammeOccurrenceAttestationRecord> {
+    const attestation = await this.prisma.programmeOccurrenceAttestation.findUnique({
+      where: { id: attestationId },
+      select: { programmeMasterId: true },
+    });
+    if (!attestation) {
+      throw new NotFoundException('Không tìm thấy bản ghi attestation.');
+    }
+    const master = await this.prisma.programmeMaster.findUnique({
+      where: { id: attestation.programmeMasterId },
+      select: { id: true, kind: true },
+    });
+    if (!master) {
+      throw new NotFoundException('Không tìm thấy chương trình.');
+    }
+    await this.authService.requireProgrammeAuthority(actorUserId, master, auditContext);
+    return this.service.reverseAttestation(attestationId, dto, actorUserId);
+  }
+
+  async listOccurrenceAttestations(
+    id: string,
+    actorUserId: string,
+    auditContext?: ProgrammeAuditContext,
+  ): Promise<ProgrammeOccurrenceAttestationsListResponse> {
+    const occurrence = await this.prisma.plannedProgrammeOccurrence.findUnique({
+      where: { id },
+      select: { programmeMasterId: true },
+    });
+    if (!occurrence) {
+      throw new NotFoundException('Không tìm thấy occurrence.');
+    }
+    const master = await this.prisma.programmeMaster.findUnique({
+      where: { id: occurrence.programmeMasterId },
+      select: { id: true, kind: true },
+    });
+    if (!master) {
+      throw new NotFoundException('Không tìm thấy chương trình.');
+    }
+    await this.authService.requireProgrammeAuthority(actorUserId, master, auditContext);
+    return this.service.listOccurrenceAttestations(id);
   }
 }

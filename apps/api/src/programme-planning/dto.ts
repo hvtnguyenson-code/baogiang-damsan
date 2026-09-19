@@ -423,3 +423,111 @@ export interface PlannedProgrammeOccurrenceRecord {
   updatedAt: string;
   slots: PlannedOccurrenceSlotRecord[];
 }
+
+export class MaterializeOccurrenceDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  commandId!: string;
+}
+
+export class ReplaceMaterializedSlotDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  commandId!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  expectedUpdatedAt!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(500)
+  reversalReason!: string;
+
+  @IsArray()
+  @IsNotEmpty({ each: true })
+  @IsUUID('4', { each: true })
+  replacementTeacherUserIds!: string[];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string | null;
+}
+
+export class AttestOccurrenceDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  commandId!: string;
+}
+
+export class ReverseAttestationDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  commandId!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  expectedUpdatedAt!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(500)
+  reversalReason!: string;
+}
+
+export interface ProgrammeMaterializedActivityRecord {
+  id: string;
+  programmeMasterId: string;
+  programmePlanVersionId: string;
+  programmeTopicItemId: string;
+  plannedProgrammeOccurrenceId: string;
+  plannedOccurrenceSlotId: string;
+  specialActivityId: string;
+  homeroomAssignmentId: string | null;
+  homeroomTeacherUserId: string | null;
+  materializedByUserId: string;
+  materializedAt: string;
+  createdAt: string;
+  updatedAt: string;
+  specialActivity?: {
+    id: string;
+    status: string;
+    title: string;
+    civilDate: string;
+    scope: string;
+    gradeLevel: number | null;
+    schoolClassId: string | null;
+    replacesId: string | null;
+    scheduledTeacherUserIds: string[];
+    exactTimeSlotDefinitionIds: string[];
+  };
+}
+
+export interface ProgrammeOccurrenceAttestationRecord {
+  id: string;
+  programmeMasterId: string;
+  plannedProgrammeOccurrenceId: string;
+  attestedByUserId: string;
+  authorityType: string;
+  capabilityKey: string;
+  scope: string;
+  scopeResourceId: string | null;
+  status: string;
+  attestedAt: string;
+  reversedByUserId: string | null;
+  reversedAt: string | null;
+  reversalReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProgrammeOccurrenceAttestationsListResponse {
+  items: ProgrammeOccurrenceAttestationRecord[];
+  hasQualifyingNonReversedAttestation: boolean;
+  activeAttestationCount: number;
+}

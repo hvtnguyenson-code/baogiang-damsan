@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, HttpException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { AuditResult, OperationalOverlayStatus, Prisma, SpecialActivityScope, SpecialActivityStatus, TimetableVersionStatus } from '@prisma/client';
+import { AuditResult, OperationalOverlayStatus, Prisma, SpecialActivity, SpecialActivityScope, SpecialActivityStatus, TimetableVersionStatus } from '@prisma/client';
 import { SpecialActivityCreateResult, SpecialActivityListResponse, SpecialActivityRecord, SpecialActivityReverseResult } from '@baogiang/contracts';
 import { AuditService } from '../audit/audit.service';
 import { requestMeta } from '../auth/auth-http';
@@ -76,6 +76,148 @@ export class SpecialActivitiesService {
       await this.writeAudit(tx, request, 'SPECIAL_ACTIVITY_REVERSED', id, { capabilityKey: 'SPECIAL_ACTIVITY_MANAGE', scope: 'SCHOOL_WIDE', requestKey: dto.requestKey.trim(), academicYearId: row.academicYearId, calendarVersionId: row.academicCalendarVersionId, civilDate: formatCivilDate(row.civilDate), collisionProfile: SPECIAL_ACTIVITY_COLLISION_COVERAGE.profile });
       return { outcome: 'REVERSED', record: toSpecialActivityRecord(row), collisionCoverage: SPECIAL_ACTIVITY_COLLISION_COVERAGE };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
+  }
+
+  /**
+   * Internal transactional seam for Programme Planning materialization (P4-040).
+   * Validates canonical collision semantics without requiring SPECIAL_ACTIVITY_MANAGE.
+   */
+  async createMaterializedRoot(
+    tx: Prisma.TransactionClient,
+    input: {
+      academicYearId: string;
+      academicCalendarVersionId: string;
+      civilDate: string;
+      scope: SpecialActivityScope;
+      gradeLevel: number | null;
+      schoolClassId: string | null;
+      exactTimeSlotDefinitionIds: string[];
+      scheduledTeacherUserIds: string[];
+      title: string;
+      note?: string | null;
+      replacesId?: string | null;
+      requestKey: string;
+      actorUserId: string;
+    },
+  ): Promise<SpecialActivity> {
+    const value = this.normalize({
+      academicYearId: input.academicYearId,
+      academicCalendarVersionId: input.academicCalendarVersionId,
+      civilDate: input.civilDate,
+      scope: input.scope,
+      gradeLevel: input.gradeLevel ?? undefined,
+      schoolClassId: input.schoolClassId ?? undefined,
+      exactTimeSlotDefinitionIds: input.exactTimeSlotDefinitionIds,
+      scheduledTeacherUserIds: input.scheduledTeacherUserIds,
+      title: input.title,
+      note: input.note ?? undefined,
+      replacesId: input.replacesId ?? undefined,
+      requestKey: input.requestKey,
+    });
+    const fingerprint = specialActivityCreateFingerprint(value);
+    const replay = await tx.specialActivity.findUnique({
+      where: { createRequestKey: input.requestKey.trim() },
+    });
+    if (replay) {
+      if (replay.createRequestFingerprint !== fingerprint) {
+        throw new ConflictException('requestKey đã được dùng với nội dung khác.');
+      }
+      return replay;
+    }
+    const context = await this.validateAndResolve(tx, value);
+    await this.assertNoCollision(tx, value, context.classIds, context.slots);
+    const root = await tx.specialActivity.create({
+      data: {
+        academicYearId: value.academicYearId,
+        academicCalendarVersionId: value.academicCalendarVersionId,
+        civilDate: parseCivilDate(value.civilDate),
+        scope: value.scope,
+        gradeLevel: value.gradeLevel,
+        schoolClassId: value.schoolClassId,
+        title: value.title,
+        note: value.note,
+        replacesId: value.replacesId,
+        createRequestKey: input.requestKey.trim(),
+        createRequestFingerprint: fingerprint,
+        createdByUserId: input.actorUserId,
+      },
+    });
+    await tx.specialActivityTimeSlot.createMany({
+      data: value.exactTimeSlotDefinitionIds.map((timeSlotDefinitionId) => ({
+        specialActivityId: root.id,
+        academicYearId: value.academicYearId,
+        timeSlotDefinitionId,
+      })),
+    });
+    await tx.specialActivityClassTarget.createMany({
+      data: context.classIds.map((schoolClassId) => ({
+        specialActivityId: root.id,
+        academicYearId: value.academicYearId,
+        schoolClassId,
+      })),
+    });
+    await tx.specialActivityStaffing.createMany({
+      data: context.staff.map((item) => ({
+        specialActivityId: root.id,
+        scheduledTeacherUserId: item.userId,
+        staffProfileId: item.profileId,
+        eligibilityCheckedAt: item.checkedAt,
+        eligibilityWasActive: true,
+        eligibilityWasTeachingStaff: true,
+      })),
+    });
+    return root;
+  }
+
+  /**
+   * Internal transactional seam for Programme Planning post-materialization CAS replacement (T43).
+   */
+  async reverseMaterializedRoot(
+    tx: Prisma.TransactionClient,
+    input: {
+      id: string;
+      expectedUpdatedAt: Date | string;
+      reversalReason: string;
+      requestKey: string;
+      actorUserId: string;
+    },
+  ): Promise<SpecialActivity> {
+    const fingerprint = specialActivityReverseFingerprint(
+      input.id,
+      typeof input.expectedUpdatedAt === 'string' ? input.expectedUpdatedAt : input.expectedUpdatedAt.toISOString(),
+      input.reversalReason.trim(),
+    );
+    const replay = await tx.specialActivity.findUnique({
+      where: { reverseRequestKey: input.requestKey.trim() },
+    });
+    if (replay) {
+      if (replay.id !== input.id || replay.reverseRequestFingerprint !== fingerprint) {
+        throw new ConflictException('requestKey đảo ngược đã được dùng với nội dung khác.');
+      }
+      return replay;
+    }
+    const existing = await tx.specialActivity.findUnique({ where: { id: input.id } });
+    if (!existing) throw new NotFoundException('Không tìm thấy hoạt động đặc biệt.');
+    const reversedAt = this.clock.now();
+    const expectedDate = typeof input.expectedUpdatedAt === 'string' ? new Date(input.expectedUpdatedAt) : input.expectedUpdatedAt;
+    const changed = await tx.specialActivity.updateMany({
+      where: {
+        id: input.id,
+        status: SpecialActivityStatus.ACTIVE,
+        updatedAt: expectedDate,
+      },
+      data: {
+        status: SpecialActivityStatus.REVERSED,
+        reversedByUserId: input.actorUserId,
+        reversedAt,
+        reversalReason: input.reversalReason.trim(),
+        reverseRequestKey: input.requestKey.trim(),
+        reverseRequestFingerprint: fingerprint,
+        updatedAt: reversedAt,
+      },
+    });
+    if (changed.count !== 1) throw new ConflictException(STALE);
+    return tx.specialActivity.findUniqueOrThrow({ where: { id: input.id } });
   }
 
   private normalize(dto: CreateSpecialActivityDto) {

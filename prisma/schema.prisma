@@ -219,6 +219,17 @@ enum ProgrammeOccurrenceStatus {
   SUPERSEDED
 }
 
+enum ProgrammeAttestationStatus {
+  ACTIVE
+  REVERSED
+}
+
+enum ProgrammeAttestorAuthorityType {
+  COORDINATOR
+  BGH_PRINCIPAL
+  BGH_VICE_PRINCIPAL
+}
+
 model User {
   id                 String     @id @default(uuid()) @db.Uuid
   username           String     @unique @db.VarChar(100)
@@ -1816,4 +1827,51 @@ model ProgrammePlanningCommand {
   @@unique([actorUserId, commandId], map: "programme_planning_commands_actor_command_key")
   @@index([createdAt], map: "programme_planning_commands_created_at_idx")
   @@map("programme_planning_commands")
+}
+
+model ProgrammeMaterializedActivity {
+  id                           String   @id @default(uuid()) @db.Uuid
+  programmeMasterId            String   @map("programme_master_id") @db.Uuid
+  programmePlanVersionId       String   @map("programme_plan_version_id") @db.Uuid
+  programmeTopicItemId         String   @map("programme_topic_item_id") @db.Uuid
+  plannedProgrammeOccurrenceId  String   @map("planned_programme_occurrence_id") @db.Uuid
+  plannedOccurrenceSlotId      String   @map("planned_occurrence_slot_id") @db.Uuid
+  specialActivityId            String   @unique(map: "programme_materialized_activities_special_activity_id_key") @map("special_activity_id") @db.Uuid
+  homeroomAssignmentId         String?  @map("homeroom_assignment_id") @db.Uuid
+  homeroomTeacherUserId        String?  @map("homeroom_teacher_user_id") @db.Uuid
+  materializedByUserId         String   @map("materialized_by_user_id") @db.Uuid
+  materializedAt               DateTime @default(now()) @map("materialized_at") @db.Timestamptz(3)
+  createdAt                    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([plannedProgrammeOccurrenceId], map: "programme_materialized_activities_occurrence_idx")
+  @@index([plannedOccurrenceSlotId], map: "programme_materialized_activities_slot_idx")
+  @@index([programmeMasterId], map: "programme_materialized_activities_master_idx")
+  @@map("programme_materialized_activities")
+}
+
+model ProgrammeOccurrenceAttestation {
+  id                           String                         @id @default(uuid()) @db.Uuid
+  programmeMasterId            String                         @map("programme_master_id") @db.Uuid
+  plannedProgrammeOccurrenceId  String                         @map("planned_programme_occurrence_id") @db.Uuid
+  attestedByUserId             String                         @map("attested_by_user_id") @db.Uuid
+  authorityType                ProgrammeAttestorAuthorityType @map("authority_type")
+  capabilityKey                String                         @map("capability_key") @db.VarChar(100)
+  scope                        String                         @db.VarChar(50)
+  scopeResourceId              String?                        @map("scope_resource_id") @db.Uuid
+  status                       ProgrammeAttestationStatus     @default(ACTIVE)
+  createRequestKey             String                         @unique(map: "programme_occurrence_attestations_create_request_key_key") @map("create_request_key") @db.VarChar(200)
+  createRequestFingerprint     String                         @map("create_request_fingerprint") @db.VarChar(128)
+  attestedAt                   DateTime                       @default(now()) @map("attested_at") @db.Timestamptz(3)
+  reversedByUserId             String?                        @map("reversed_by_user_id") @db.Uuid
+  reversedAt                   DateTime?                      @map("reversed_at") @db.Timestamptz(3)
+  reversalReason               String?                        @map("reversal_reason") @db.VarChar(500)
+  reverseRequestKey            String?                        @unique(map: "programme_occurrence_attestations_reverse_request_key_key") @map("reverse_request_key") @db.VarChar(200)
+  reverseRequestFingerprint    String?                        @map("reverse_request_fingerprint") @db.VarChar(128)
+  createdAt                    DateTime                       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                    DateTime                       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([plannedProgrammeOccurrenceId, status], map: "programme_occurrence_attestations_occurrence_status_idx")
+  @@index([programmeMasterId, status], map: "programme_occurrence_attestations_master_status_idx")
+  @@map("programme_occurrence_attestations")
 }
