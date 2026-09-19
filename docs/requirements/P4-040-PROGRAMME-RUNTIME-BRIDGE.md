@@ -43,13 +43,18 @@ P4-040 implements the runtime execution bridge and attestation control plane for
    - Mode `GRADE`: freezes all active canonical classes of that grade level.
    - Mode `SCHOOL_WIDE`: freezes all active canonical classes in the academic year.
 
-5. **HĐTN `CLASS` — Homeroom Assignment Resolution & Freeze**:
-   - For `ProgrammeMaster.kind === 'HDTN_HN'` and `mode === 'CLASS'`, resolves the effective homeroom assignment on the occurrence's `civilDate` using the canonical homeroom resolver (`classifyHomeroomResolutionRows`).
-   - Fails closed on missing, ambiguous, or corrupt homeroom assignments, or if the assigned homeroom teacher is not currently active and teaching staff.
+5. **HĐTN `CLASS` — Authoritative Runtime Staffing & Homeroom Resolution**:
+   - In accordance with ADR-050 Example 5, for `ProgrammeMaster.kind === 'HDTN_HN'` and `mode === 'CLASS'`, the date-effective resolved GVCN is the authoritative runtime scheduled teacher in `SpecialActivityStaffing` (replacing planned placeholder staffing at materialization time without mutating or rewriting the original `PlannedSlotStaffing` planning rows).
+   - Resolves the effective homeroom assignment on the occurrence's `civilDate` using the canonical homeroom resolver (`classifyHomeroomResolutionRows`).
+   - Fails closed on missing, ambiguous, or corrupt homeroom assignments.
+   - **Retrospective Rule**:
+     - For current/future occurrences (`civilDate >= homeroomBusinessDate()` or open-ended assignments): GVCN must be currently `ACTIVE` teaching staff.
+     - For historical occurrences (`civilDate < homeroomBusinessDate()`) covered by exact retained historical `HomeroomAssignment` (`validUntil !== null && validUntil < homeroomBusinessDate()`): historical materialization succeeds even if the historical GVCN subsequently became disabled or inactive; truthful historical eligibility snapshot (`eligibilityWasActive: false`) is preserved.
+     - Public ad-hoc `SpecialActivity` creation remains strictly gated to currently active teaching staff.
    - Freezes `homeroomAssignmentId` and `homeroomTeacherUserId` as immutable provenance in `ProgrammeMaterializedActivity`.
    - Historical immutability: subsequent homeroom assignment changes do not rewrite previously materialized roots.
 
-6. **Dedicated Immutable Materialization Provenance**:
+6. **Dedicated Immutable Materialization Provenance & DB Hardening**:
    - Implements `ProgrammeMaterializedActivity` relating each materialized `SpecialActivity` root to:
      - `programmeMasterId`
      - `programmePlanVersionId`
@@ -62,6 +67,11 @@ P4-040 implements the runtime execution bridge and attestation control plane for
      - `materializedByUserId`
      - `materializedAt`
    - Retained history with `onDelete: Restrict` foreign keys.
+   - **Database Hardening Trigger (`trg_programme_materialized_activity_guard`)**:
+     - Prohibits direct `UPDATE` and `DELETE` on `programme_materialized_activities` (enforcing immutable bridge history).
+     - Enforces coherent provenance tuple (plan belongs to master, topic belongs to plan, occurrence matches exact tuple, slot belongs to occurrence).
+     - Enforces homeroom pair coherence (`homeroomTeacherUserId` matches assignment's `teacherUserId`).
+     - Enforces active root exclusivity per planned slot: prevents duplicate `ACTIVE` roots from race conditions, while permitting legitimate replacement lineages where predecessors are `REVERSED`.
 
 7. **Post-Materialization Replacement (T43)**:
    - For an affected materialized slot root, CAS reverses the existing `SpecialActivity` root (`ACTIVE -> REVERSED`).
@@ -78,7 +88,7 @@ P4-040 implements the runtime execution bridge and attestation control plane for
      - Authority provenance: `authorityType`, `capabilityKey`, `scope`, `scopeResourceId`
      - Status: `ACTIVE` vs `REVERSED`
      - Reversal tracking: `reversedByUserId`, `reversedAt`, `reversalReason`
-     - Request keys and fingerprints for create and reverse idempotency.
+     - Request keys and fingerprints for create and reverse idempotency: uniquely scoped to `(attestedByUserId, createRequestKey)` and `(reversedByUserId, reverseRequestKey)`, matching canonical `ProgrammePlanningCommand` semantics and permitting distinct actors to use the same commandId.
    - Consumes `isQualifyingProgrammeAttestor` from P4-030 to validate attestor eligibility and freeze authority provenance.
    - Existential Confirmation Gate: `hasQualifyingNonReversedAttestation(plannedProgrammeOccurrenceId)` returns `true` if $\ge 1$ `ACTIVE` attestation exists. Multiple attestations satisfy the gate without multiplicative effects.
 
