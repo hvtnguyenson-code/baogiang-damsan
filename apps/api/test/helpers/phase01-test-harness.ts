@@ -84,6 +84,13 @@ export class Phase01Harness {
     await this.prisma.timetableImportColumnMapping.deleteMany();
     await this.prisma.timetableImportProfileRevision.deleteMany();
     await this.prisma.timetableImportProfile.deleteMany();
+    await this.prisma.plannedSlotStaffing.deleteMany();
+    await this.prisma.plannedOccurrenceSlot.deleteMany();
+    await this.prisma.plannedProgrammeOccurrence.deleteMany();
+    await this.prisma.programmeTopicItem.deleteMany();
+    await this.prisma.programmePlanVersion.deleteMany();
+    await this.prisma.programmeMaster.deleteMany();
+    await this.prisma.programmePlanningCommand.deleteMany();
     await this.prisma.timeSlotDefinition.deleteMany();
     await this.prisma.academicWeekSegment.deleteMany();
     await this.prisma.semester.deleteMany();

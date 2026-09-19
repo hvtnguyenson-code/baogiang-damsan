@@ -12,8 +12,8 @@ It is **not** a self-referential registry of the latest Git commit. Exact curren
 
 `P4-020` — Special-programme persistence + control plane — is **CLOSED** by `SYNC-P4-020` following parent PR #146 merge (`b68064e887f8646515e2820bd26423a5f9483f09`) and authoritative post-merge CI #469 SUCCESS.
 
-Eligible to start:
-- `P4-030` — Programme coordinator authorization — **READY** (dependency `P4-020` is CLOSED).
+Active major task:
+- `P4-030` — Programme coordinator authorization — **IN_REVIEW** on dedicated branch `feat/programme-coordinator-authorization-030` (canonical base `ab4324e0094203bcab9fbfef9d4c4e952f46f48f`).
 
 Remain:
 - `P2-010` — PPCT real-workbook contract/security audit — **BLOCKED_EVIDENCE** (pending authoritative school PPCT workbook/template).
@@ -571,10 +571,10 @@ Active in progress:
 - None.
 
 Active in review:
-- None.
+- `P4-030` — Programme coordinator authorization (`feat/programme-coordinator-authorization-030`, canonical base `ab4324e0094203bcab9fbfef9d4c4e952f46f48f`).
 
 Eligible to start on a dedicated branch:
-- `P4-030` — Programme coordinator authorization — **READY** (dependency `P4-020` is CLOSED).
+- None.
 
 Not eligible to start:
 - `P2-020` — `PLANNED`, blocked until `P2-010` evidence is provided.
