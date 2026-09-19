@@ -33,7 +33,7 @@ export class Phase01Harness {
     process.env['NODE_ENV'] = 'test';
     process.env['CORS_ORIGINS'] = testOrigin;
     process.env['AUTH_COOKIE_SECURE'] = 'false';
-    process.env['AUTH_LOGIN_RATE_LIMIT_MAX'] = '100';
+    process.env['AUTH_LOGIN_RATE_LIMIT_MAX'] = process.env['AUTH_LOGIN_RATE_LIMIT_MAX'] || '1000';
     let builder = Test.createTestingModule({ imports: [AppModule] });
     for (const override of overrides) builder = builder.overrideProvider(override.token).useValue(override.value);
     const moduleRef = await builder.compile();

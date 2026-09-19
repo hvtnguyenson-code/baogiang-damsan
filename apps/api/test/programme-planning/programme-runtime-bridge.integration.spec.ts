@@ -489,7 +489,7 @@ integration('ProgrammeRuntimeBridge (PostgreSQL integration P4-040)', () => {
     it('11: Same commandId with different payload produces conflict', async () => {
       const f = await setupBaseFixture();
 
-      const { occ } = await createOccurrenceWithStaffing(f, {
+      const { occ: occ1 } = await createOccurrenceWithStaffing(f, {
         masterId: f.gddpMaster.id,
         planVersionId: f.planVersion.id,
         topicItemId: f.topicItem.id,
@@ -498,15 +498,24 @@ integration('ProgrammeRuntimeBridge (PostgreSQL integration P4-040)', () => {
         slots: [{ slotDefId: f.slotDef1.id, teacherIds: [f.teacherA.id] }],
       });
 
+      const { occ: occ2 } = await createOccurrenceWithStaffing(f, {
+        masterId: f.gddpMaster.id,
+        planVersionId: f.planVersion.id,
+        topicItemId: f.topicItem.id,
+        civilDate: '2026-09-14T00:00:00.000Z',
+        creatorId: f.coordinatorGddp.id,
+        slots: [{ slotDefId: f.slotDef1.id, teacherIds: [f.teacherA.id] }],
+      });
+
       const res1 = await f.coordinatorGddp.agent
-        .post(`/api/programme-planning/occurrences/${occ.id}/materialize`)
+        .post(`/api/programme-planning/occurrences/${occ1.id}/materialize`)
         .set('Origin', testOrigin)
         .send({ commandId: 'cmd-diff-payload' });
       expect(res1.status).toBe(HttpStatus.OK);
 
-      // Same commandId but call from another actor (bghPrincipal) -> conflict
-      const res2 = await f.bghPrincipal.agent
-        .post(`/api/programme-planning/occurrences/${occ.id}/materialize`)
+      // Same actor (coordinatorGddp), same commandId, but different target/payload (occ2) -> fingerprint conflict
+      const res2 = await f.coordinatorGddp.agent
+        .post(`/api/programme-planning/occurrences/${occ2.id}/materialize`)
         .set('Origin', testOrigin)
         .send({ commandId: 'cmd-diff-payload' });
       expect(res2.status).toBe(HttpStatus.CONFLICT);
@@ -1281,6 +1290,699 @@ integration('ProgrammeRuntimeBridge (PostgreSQL integration P4-040)', () => {
 
       // Must be 403 Forbidden because coordinator does NOT have generic SPECIAL_ACTIVITY_MANAGE
       expect(res.status).toBe(HttpStatus.FORBIDDEN);
+    });
+
+    it('60: HĐTN CLASS uses resolved effective GVCN for SpecialActivityStaffing without rewriting planned staffing', async () => {
+      const f = await setupBaseFixture();
+
+      const hdtnMaster = await h.prisma.programmeMaster.create({
+        data: {
+          academicYearId: f.year.id,
+          kind: 'HDTN_HN',
+          gradeLevel: null,
+          createdByUserId: f.bghPrincipal.id,
+        },
+      });
+
+      const coordinatorHdtn = await h.actor({
+        usernamePrefix: 'coord-hdtn-staffing',
+        grants: [
+          {
+            capabilityKey: 'HĐTN_COORDINATOR',
+            scopeType: 'ACTIVITY',
+            scopeResourceId: hdtnMaster.id,
+          },
+        ],
+      });
+
+      const hdtnPlan = await h.prisma.programmePlanVersion.create({
+        data: {
+          programmeMasterId: hdtnMaster.id,
+          versionNumber: 1,
+          status: 'DRAFT',
+          createdByUserId: f.bghPrincipal.id,
+        },
+      });
+
+      const hdtnTopic = await h.prisma.programmeTopicItem.create({
+        data: {
+          programmePlanVersionId: hdtnPlan.id,
+          sequence: 1,
+          title: 'Chủ đề HĐTN Lớp 10',
+          requiredPeriods: 1,
+          guidelineWeekFrom: 1,
+          guidelineWeekTo: 2,
+        },
+      });
+
+      await h.prisma.programmePlanVersion.update({
+        where: { id: hdtnPlan.id },
+        data: {
+          status: 'PUBLISHED',
+          publishedByUserId: f.bghPrincipal.id,
+          publishedAt: new Date(),
+        },
+      });
+
+      // Homeroom assignment: Teacher Y (f.teacherB) is effective GVCN for activeClass10
+      const gvcnAssignment = await h.prisma.homeroomAssignment.create({
+        data: {
+          academicYearId: f.year.id,
+          schoolClassId: f.activeClass10.id,
+          teacherUserId: f.teacherB.id,
+          validFrom: new Date('2026-09-01T00:00:00.000Z'),
+          validUntil: null,
+          status: 'ACTIVE',
+          createdByUserId: f.bghPrincipal.id,
+        },
+      });
+
+      // Planning slot staffing = Teacher X (f.teacherA)
+      const { occ, slots } = await createOccurrenceWithStaffing(f, {
+        masterId: hdtnMaster.id,
+        planVersionId: hdtnPlan.id,
+        topicItemId: hdtnTopic.id,
+        civilDate: '2026-09-07T00:00:00.000Z',
+        mode: 'CLASS',
+        schoolClassId: f.activeClass10.id,
+        creatorId: coordinatorHdtn.id,
+        slots: [{ slotDefId: f.slotDef1.id, teacherIds: [f.teacherA.id] }],
+      });
+
+      // Materialize occurrence
+      const res = await coordinatorHdtn.agent
+        .post(`/api/programme-planning/occurrences/${occ.id}/materialize`)
+        .set('Origin', testOrigin)
+        .send({ commandId: 'cmd-hdtn-gvcn-staffing' });
+      expect(res.status).toBe(HttpStatus.OK);
+
+      // Verify SpecialActivityStaffing contains Teacher Y (f.teacherB), NOT Teacher X (f.teacherA)
+      const matRow = await h.prisma.programmeMaterializedActivity.findFirstOrThrow({
+        where: { plannedProgrammeOccurrenceId: occ.id },
+      });
+      expect(matRow.homeroomAssignmentId).toBe(gvcnAssignment.id);
+      expect(matRow.homeroomTeacherUserId).toBe(f.teacherB.id);
+
+      const staffings = await h.prisma.specialActivityStaffing.findMany({
+        where: { specialActivityId: matRow.specialActivityId },
+      });
+      expect(staffings).toHaveLength(1);
+      expect(staffings[0].scheduledTeacherUserId).toBe(f.teacherB.id);
+      expect(staffings[0].scheduledTeacherUserId).not.toBe(f.teacherA.id);
+
+      // Planned rows must NOT be updated or rewritten
+      const plannedStaffing = await h.prisma.plannedSlotStaffing.findMany({
+        where: { plannedOccurrenceSlotId: slots[0].id },
+      });
+      expect(plannedStaffing).toHaveLength(1);
+      expect(plannedStaffing[0].teacherUserId).toBe(f.teacherA.id);
+    });
+
+    it('61: Retrospective HĐTN CLASS allows historical inactive GVCN but fails closed for current/future', async () => {
+      const f = await setupBaseFixture();
+
+      const hdtnMaster = await h.prisma.programmeMaster.create({
+        data: {
+          academicYearId: f.year.id,
+          kind: 'HDTN_HN',
+          gradeLevel: null,
+          createdByUserId: f.bghPrincipal.id,
+        },
+      });
+
+      const coordinatorHdtn = await h.actor({
+        usernamePrefix: 'coord-hdtn-retro',
+        grants: [
+          {
+            capabilityKey: 'HĐTN_COORDINATOR',
+            scopeType: 'ACTIVITY',
+            scopeResourceId: hdtnMaster.id,
+          },
+        ],
+      });
+
+      const hdtnPlan = await h.prisma.programmePlanVersion.create({
+        data: {
+          programmeMasterId: hdtnMaster.id,
+          versionNumber: 1,
+          status: 'DRAFT',
+          createdByUserId: f.bghPrincipal.id,
+        },
+      });
+
+      const hdtnTopic = await h.prisma.programmeTopicItem.create({
+        data: {
+          programmePlanVersionId: hdtnPlan.id,
+          sequence: 1,
+          title: 'Chủ đề HĐTN Retro',
+          requiredPeriods: 1,
+          guidelineWeekFrom: 1,
+          guidelineWeekTo: 2,
+        },
+      });
+
+      await h.prisma.programmePlanVersion.update({
+        where: { id: hdtnPlan.id },
+        data: {
+          status: 'PUBLISHED',
+          publishedByUserId: f.bghPrincipal.id,
+          publishedAt: new Date(),
+        },
+      });
+
+      // Create an inactive teacher (formerly active GVCN)
+      const inactiveTeacher = await h.actor({ usernamePrefix: 'inactive-gvcn' });
+      await h.prisma.user.update({
+        where: { id: inactiveTeacher.id },
+        data: { status: 'DISABLED' },
+      });
+
+      // Bounded historical homeroom assignment with inactive teacher (historical GVCN)
+      const retroAssignment = await h.prisma.homeroomAssignment.create({
+        data: {
+          academicYearId: f.year.id,
+          schoolClassId: f.activeClass10.id,
+          teacherUserId: inactiveTeacher.id,
+          validFrom: new Date('2026-08-01T00:00:00.000Z'),
+          validUntil: new Date('2026-08-31T00:00:00.000Z'),
+          status: 'ACTIVE',
+          createdByUserId: f.bghPrincipal.id,
+        },
+      });
+
+      // Current/future homeroom assignment with inactive teacher
+      await h.prisma.homeroomAssignment.create({
+        data: {
+          academicYearId: f.year.id,
+          schoolClassId: f.activeClass10.id,
+          teacherUserId: inactiveTeacher.id,
+          validFrom: new Date('2026-09-01T00:00:00.000Z'),
+          validUntil: null,
+          status: 'ACTIVE',
+          createdByUserId: f.bghPrincipal.id,
+        },
+      });
+
+      // Case 1: Future occurrence with inactive GVCN => fail closed
+      const { occ: futureOcc } = await createOccurrenceWithStaffing(f, {
+        masterId: hdtnMaster.id,
+        planVersionId: hdtnPlan.id,
+        topicItemId: hdtnTopic.id,
+        civilDate: '2026-11-09T00:00:00.000Z',
+        mode: 'CLASS',
+        schoolClassId: f.activeClass10.id,
+        creatorId: coordinatorHdtn.id,
+        slots: [{ slotDefId: f.slotDef1.id, teacherIds: [f.teacherA.id] }],
+      });
+
+      const futureRes = await coordinatorHdtn.agent
+        .post(`/api/programme-planning/occurrences/${futureOcc.id}/materialize`)
+        .set('Origin', testOrigin)
+        .send({ commandId: 'cmd-hdtn-future-inactive' });
+      expect(futureRes.status).toBe(HttpStatus.CONFLICT);
+
+      // Case 2: Past occurrence with historical assignment and inactive teacher => succeeds
+      // Update calendar to cover past date
+      await h.prisma.academicCalendarVersion.update({
+        where: { id: f.calendarVersion.id },
+        data: { startDate: new Date('2026-08-01T00:00:00.000Z') },
+      });
+
+      const { occ: pastOcc } = await createOccurrenceWithStaffing(f, {
+        masterId: hdtnMaster.id,
+        planVersionId: hdtnPlan.id,
+        topicItemId: hdtnTopic.id,
+        civilDate: '2026-08-10T00:00:00.000Z',
+        mode: 'CLASS',
+        schoolClassId: f.activeClass10.id,
+        creatorId: coordinatorHdtn.id,
+        slots: [{ slotDefId: f.slotDef1.id, teacherIds: [f.teacherA.id] }],
+      });
+
+      const pastRes = await coordinatorHdtn.agent
+        .post(`/api/programme-planning/occurrences/${pastOcc.id}/materialize`)
+        .set('Origin', testOrigin)
+        .send({ commandId: 'cmd-hdtn-past-inactive' });
+      expect(pastRes.status).toBe(HttpStatus.OK);
+
+      const pastMatRow = await h.prisma.programmeMaterializedActivity.findFirstOrThrow({
+        where: { plannedProgrammeOccurrenceId: pastOcc.id },
+      });
+      expect(pastMatRow.homeroomAssignmentId).toBe(retroAssignment.id);
+      expect(pastMatRow.homeroomTeacherUserId).toBe(inactiveTeacher.id);
+
+      const pastStaffing = await h.prisma.specialActivityStaffing.findFirstOrThrow({
+        where: { specialActivityId: pastMatRow.specialActivityId },
+      });
+      expect(pastStaffing.scheduledTeacherUserId).toBe(inactiveTeacher.id);
+      expect(pastStaffing.eligibilityWasActive).toBe(false);
+
+      // Case 3: Public SpecialActivity creation with inactive teacher fails
+      const saMgr = await h.actor({
+        usernamePrefix: 'sa-mgr-61',
+        grants: [{ capabilityKey: 'SPECIAL_ACTIVITY_MANAGE' }],
+      });
+      const publicRes = await saMgr.agent
+        .post('/api/special-activities')
+        .set('Origin', testOrigin)
+        .send({
+          academicYearId: f.year.id,
+          academicCalendarVersionId: f.calendarVersion.id,
+          civilDate: '2026-09-07',
+          scope: 'GRADE',
+          gradeLevel: 10,
+          title: 'Adhoc activity with inactive teacher',
+          exactTimeSlotDefinitionIds: [f.slotDef1.id],
+          scheduledTeacherUserIds: [inactiveTeacher.id],
+          requestKey: 'req-public-inactive-attempt',
+        });
+      expect(publicRes.status).toBe(HttpStatus.CONFLICT);
+    });
+
+    it('62: Attestation request keys are actor-scoped so different actors can reuse same commandId', async () => {
+      const f = await setupBaseFixture();
+
+      const { occ: occ1 } = await createOccurrenceWithStaffing(f, {
+        masterId: f.gddpMaster.id,
+        planVersionId: f.planVersion.id,
+        topicItemId: f.topicItem.id,
+        civilDate: '2026-09-07T00:00:00.000Z',
+        creatorId: f.coordinatorGddp.id,
+        slots: [{ slotDefId: f.slotDef1.id, teacherIds: [f.teacherA.id] }],
+      });
+
+      const { occ: occ2 } = await createOccurrenceWithStaffing(f, {
+        masterId: f.gddpMaster.id,
+        planVersionId: f.planVersion.id,
+        topicItemId: f.topicItem.id,
+        civilDate: '2026-09-14T00:00:00.000Z',
+        creatorId: f.coordinatorGddp.id,
+        slots: [{ slotDefId: f.slotDef1.id, teacherIds: [f.teacherA.id] }],
+      });
+
+      const sharedCommandId = 'cmd-shared-attest-key';
+
+      // Actor A (coordinator) attests occ1 with sharedCommandId
+      const resA = await f.coordinatorGddp.agent
+        .post(`/api/programme-planning/occurrences/${occ1.id}/attestations`)
+        .set('Origin', testOrigin)
+        .send({ commandId: sharedCommandId });
+      expect(resA.status).toBe(HttpStatus.OK);
+
+      // Actor B (principal) attests SAME occ1 with SAME sharedCommandId -> succeeds due to actor scoping
+      const resB = await f.bghPrincipal.agent
+        .post(`/api/programme-planning/occurrences/${occ1.id}/attestations`)
+        .set('Origin', testOrigin)
+        .send({ commandId: sharedCommandId });
+      expect(resB.status).toBe(HttpStatus.OK);
+
+      // Replay Actor A with same payload is idempotent
+      const replayA = await f.coordinatorGddp.agent
+        .post(`/api/programme-planning/occurrences/${occ1.id}/attestations`)
+        .set('Origin', testOrigin)
+        .send({ commandId: sharedCommandId });
+      expect(replayA.status).toBe(HttpStatus.OK);
+      expect(replayA.body.id).toBe(resA.body.id);
+
+      // Actor A reusing sharedCommandId for DIFFERENT occurrence produces conflict
+      const conflictA = await f.coordinatorGddp.agent
+        .post(`/api/programme-planning/occurrences/${occ2.id}/attestations`)
+        .set('Origin', testOrigin)
+        .send({ commandId: sharedCommandId });
+      expect(conflictA.status).toBe(HttpStatus.CONFLICT);
+
+      // Reversal: Actor A and Actor B can both use same reversal commandId
+      const sharedRevCommandId = 'cmd-shared-reverse-key';
+      const revA = await f.coordinatorGddp.agent
+        .post(`/api/programme-planning/attestations/${resA.body.id}/reverse`)
+        .set('Origin', testOrigin)
+        .send({
+          commandId: sharedRevCommandId,
+          expectedUpdatedAt: resA.body.updatedAt,
+          reversalReason: 'Đảo ngược A',
+        });
+      expect(revA.status).toBe(HttpStatus.OK);
+
+      const revB = await f.bghPrincipal.agent
+        .post(`/api/programme-planning/attestations/${resB.body.id}/reverse`)
+        .set('Origin', testOrigin)
+        .send({
+          commandId: sharedRevCommandId,
+          expectedUpdatedAt: resB.body.updatedAt,
+          reversalReason: 'Đảo ngược B',
+        });
+      expect(revB.status).toBe(HttpStatus.OK);
+    });
+
+    it('63: Materialization rejects DRAFT and future SUPERSEDED plans, but allows historical retained SUPERSEDED', async () => {
+      const f = await setupBaseFixture();
+
+      const master63 = await h.prisma.programmeMaster.create({
+        data: {
+          academicYearId: f.year.id,
+          kind: 'GDDP',
+          gradeLevel: 12,
+          createdByUserId: f.bghPrincipal.id,
+        },
+      });
+
+      await h.prisma.schoolClass.create({
+        data: {
+          academicYearId: f.year.id,
+          code: '12A_BASE',
+          name: 'Lớp 12A Cơ Bản',
+          gradeLevel: 12,
+          status: 'ACTIVE',
+        },
+      });
+
+      const coordinator63 = await h.actor({
+        usernamePrefix: 'coord-63',
+        grants: [
+          {
+            capabilityKey: 'GDDDP_COORDINATOR',
+            scopeType: 'ACTIVITY',
+            scopeResourceId: master63.id,
+          },
+        ],
+      });
+
+      // DRAFT plan version
+      const draftPlan = await h.prisma.programmePlanVersion.create({
+        data: {
+          programmeMasterId: master63.id,
+          versionNumber: 1,
+          status: 'DRAFT',
+          createdByUserId: f.bghPrincipal.id,
+        },
+      });
+
+      const draftTopic = await h.prisma.programmeTopicItem.create({
+        data: {
+          programmePlanVersionId: draftPlan.id,
+          sequence: 1,
+          title: 'Topic in draft plan',
+          requiredPeriods: 1,
+          guidelineWeekFrom: 1,
+          guidelineWeekTo: 2,
+        },
+      });
+
+      // Temporarily publish to allow occurrence creation through DB trigger
+      await h.prisma.programmePlanVersion.update({
+        where: { id: draftPlan.id },
+        data: { status: 'PUBLISHED', publishedByUserId: f.bghPrincipal.id, publishedAt: new Date() },
+      });
+
+      const { occ: draftOcc } = await createOccurrenceWithStaffing(f, {
+        masterId: master63.id,
+        planVersionId: draftPlan.id,
+        topicItemId: draftTopic.id,
+        civilDate: '2026-09-07T00:00:00.000Z',
+        gradeLevel: 12,
+        creatorId: coordinator63.id,
+        slots: [{ slotDefId: f.slotDef1.id, teacherIds: [f.teacherA.id] }],
+      });
+
+      // Revert plan back to DRAFT to test materialization guard
+      await h.prisma.$executeRawUnsafe(
+        'ALTER TABLE programme_plan_versions DISABLE TRIGGER "programme_plan_version_immutability_guard"',
+      );
+      await h.prisma.$executeRawUnsafe(
+        `UPDATE programme_plan_versions SET status = 'DRAFT', published_at = null, published_by_user_id = null WHERE id = '${draftPlan.id}'`,
+      );
+      await h.prisma.$executeRawUnsafe(
+        'ALTER TABLE programme_plan_versions ENABLE TRIGGER "programme_plan_version_immutability_guard"',
+      );
+
+      // Occurrence on DRAFT plan cannot materialize
+      const draftRes = await coordinator63.agent
+        .post(`/api/programme-planning/occurrences/${draftOcc.id}/materialize`)
+        .set('Origin', testOrigin)
+        .send({ commandId: 'cmd-mat-draft-plan' });
+      expect(draftRes.status).toBe(HttpStatus.CONFLICT);
+
+      // Set draftPlan to SUPERSEDED with full lifecycle evidence so master63 has no active DRAFT or PUBLISHED plan
+      await h.prisma.$executeRawUnsafe(
+        'ALTER TABLE programme_plan_versions DISABLE TRIGGER "programme_plan_version_immutability_guard"',
+      );
+      await h.prisma.$executeRawUnsafe(
+        `UPDATE programme_plan_versions SET status = 'SUPERSEDED', published_by_user_id = '${f.bghPrincipal.id}', published_at = NOW(), superseded_by_user_id = '${f.bghPrincipal.id}', superseded_at = NOW() WHERE id = '${draftPlan.id}'`,
+      );
+      await h.prisma.$executeRawUnsafe(
+        'ALTER TABLE programme_plan_versions ENABLE TRIGGER "programme_plan_version_immutability_guard"',
+      );
+
+      // Now Plan 2: SUPERSEDED plan with publication evidence
+      const supersededPlan = await h.prisma.programmePlanVersion.create({
+        data: {
+          programmeMasterId: master63.id,
+          versionNumber: 2,
+          status: 'DRAFT',
+          predecessorVersionId: draftPlan.id,
+          changeReason: 'Lý do cập nhật phiên bản 2',
+          createdByUserId: f.bghPrincipal.id,
+        },
+      });
+
+      const supersededTopic = await h.prisma.programmeTopicItem.create({
+        data: {
+          programmePlanVersionId: supersededPlan.id,
+          sequence: 1,
+          title: 'Topic in superseded plan',
+          requiredPeriods: 1,
+          guidelineWeekFrom: 1,
+          guidelineWeekTo: 2,
+        },
+      });
+
+      await h.prisma.programmePlanVersion.update({
+        where: { id: supersededPlan.id },
+        data: {
+          status: 'PUBLISHED',
+          publishedByUserId: f.bghPrincipal.id,
+          publishedAt: new Date('2026-08-01T00:00:00.000Z'),
+        },
+      });
+
+      // Future occurrence on SUPERSEDED plan -> rejected
+      const { occ: futureSuperOcc } = await createOccurrenceWithStaffing(f, {
+        masterId: master63.id,
+        planVersionId: supersededPlan.id,
+        topicItemId: supersededTopic.id,
+        civilDate: '2026-11-09T00:00:00.000Z',
+        gradeLevel: 12,
+        creatorId: coordinator63.id,
+        slots: [{ slotDefId: f.slotDef1.id, teacherIds: [f.teacherA.id] }],
+      });
+
+      // Update calendar to cover past date
+      await h.prisma.academicCalendarVersion.update({
+        where: { id: f.calendarVersion.id },
+        data: { startDate: new Date('2026-08-01T00:00:00.000Z') },
+      });
+
+      const { occ: pastSuperOcc } = await createOccurrenceWithStaffing(f, {
+        masterId: master63.id,
+        planVersionId: supersededPlan.id,
+        topicItemId: supersededTopic.id,
+        civilDate: '2026-08-10T00:00:00.000Z',
+        gradeLevel: 12,
+        creatorId: coordinator63.id,
+        slots: [{ slotDefId: f.slotDef1.id, teacherIds: [f.teacherA.id] }],
+      });
+
+      // Now set supersededPlan to SUPERSEDED with retained evidence
+      await h.prisma.$executeRawUnsafe(
+        `UPDATE programme_plan_versions SET status = 'SUPERSEDED', superseded_by_user_id = '${f.bghPrincipal.id}', superseded_at = NOW() WHERE id = '${supersededPlan.id}'`,
+      );
+
+      const futureSuperRes = await coordinator63.agent
+        .post(`/api/programme-planning/occurrences/${futureSuperOcc.id}/materialize`)
+        .set('Origin', testOrigin)
+        .send({ commandId: 'cmd-mat-future-superseded' });
+      expect(futureSuperRes.status).toBe(HttpStatus.CONFLICT);
+
+      const pastSuperRes = await coordinator63.agent
+        .post(`/api/programme-planning/occurrences/${pastSuperOcc.id}/materialize`)
+        .set('Origin', testOrigin)
+        .send({ commandId: 'cmd-mat-past-superseded' });
+      expect(pastSuperRes.status).toBe(HttpStatus.OK);
+    });
+
+    it('64: DB trigger enforces coherent provenance, homeroom pairing, immutable history, and active root exclusivity', async () => {
+      const f = await setupBaseFixture();
+
+      const { occ, slots } = await createOccurrenceWithStaffing(f, {
+        masterId: f.gddpMaster.id,
+        planVersionId: f.planVersion.id,
+        topicItemId: f.topicItem.id,
+        civilDate: '2026-09-07T00:00:00.000Z',
+        creatorId: f.coordinatorGddp.id,
+        slots: [{ slotDefId: f.slotDef1.id, teacherIds: [f.teacherA.id] }],
+      });
+
+      // Materialize legitimate occurrence
+      const matRes = await f.coordinatorGddp.agent
+        .post(`/api/programme-planning/occurrences/${occ.id}/materialize`)
+        .set('Origin', testOrigin)
+        .send({ commandId: 'cmd-db-guard-legit' });
+      expect(matRes.status).toBe(HttpStatus.OK);
+
+      const matRow = await h.prisma.programmeMaterializedActivity.findFirstOrThrow({
+        where: { plannedProgrammeOccurrenceId: occ.id },
+      });
+
+      // A. Direct UPDATE on programme_materialized_activities is prohibited
+      await expect(
+        h.prisma.$executeRawUnsafe(
+          `UPDATE programme_materialized_activities SET materialized_by_user_id = '${f.bghPrincipal.id}' WHERE id = '${matRow.id}'`,
+        ),
+      ).rejects.toThrow(/immutable and cannot be updated/i);
+
+      // B. Direct DELETE on programme_materialized_activities is prohibited
+      await expect(
+        h.prisma.$executeRawUnsafe(
+          `DELETE FROM programme_materialized_activities WHERE id = '${matRow.id}'`,
+        ),
+      ).rejects.toThrow(/cannot be deleted; retained history must be preserved/i);
+
+      // C. Mismatched provenance tuple (plan does not belong to master)
+      const otherPlan = await h.prisma.programmePlanVersion.create({
+        data: {
+          programmeMasterId: f.otherMaster.id,
+          versionNumber: 1,
+          status: 'DRAFT',
+          createdByUserId: f.bghPrincipal.id,
+        },
+      });
+
+      await h.prisma.programmeTopicItem.create({
+        data: {
+          programmePlanVersionId: otherPlan.id,
+          sequence: 1,
+          title: 'Other topic',
+          requiredPeriods: 1,
+          guidelineWeekFrom: 1,
+          guidelineWeekTo: 2,
+        },
+      });
+
+      await h.prisma.programmePlanVersion.update({
+        where: { id: otherPlan.id },
+        data: {
+          status: 'PUBLISHED',
+          publishedByUserId: f.bghPrincipal.id,
+          publishedAt: new Date(),
+        },
+      });
+
+      const fakeSpecialActivity = await h.prisma.specialActivity.create({
+        data: {
+          academicYearId: f.year.id,
+          academicCalendarVersionId: f.calendarVersion.id,
+          civilDate: new Date('2026-09-07'),
+          scope: 'GRADE',
+          gradeLevel: 10,
+          title: 'Fake SpecialActivity for test',
+          createRequestKey: 'fake-sa-key-1',
+          createRequestFingerprint: 'fp-1',
+          createdByUserId: f.bghPrincipal.id,
+        },
+      });
+
+      await expect(
+        h.prisma.$executeRawUnsafe(
+          `INSERT INTO programme_materialized_activities (
+            id, programme_master_id, programme_plan_version_id, programme_topic_item_id,
+            planned_programme_occurrence_id, planned_occurrence_slot_id, special_activity_id,
+            materialized_by_user_id
+          ) VALUES (
+            gen_random_uuid(), '${f.gddpMaster.id}', '${otherPlan.id}', '${f.topicItem.id}',
+            '${occ.id}', '${slots[0].id}', '${fakeSpecialActivity.id}', '${f.bghPrincipal.id}'
+          )`,
+        ),
+      ).rejects.toThrow(/Coherent provenance check failed/i);
+
+      // D. Mismatched homeroom pair (teacher does not match homeroom_assignment)
+      const hrAssignment = await h.prisma.homeroomAssignment.create({
+        data: {
+          academicYearId: f.year.id,
+          schoolClassId: f.activeClass10.id,
+          teacherUserId: f.teacherB.id,
+          validFrom: new Date('2026-09-01T00:00:00.000Z'),
+          validUntil: null,
+          status: 'ACTIVE',
+          createdByUserId: f.bghPrincipal.id,
+        },
+      });
+
+      const fakeSpecialActivity2 = await h.prisma.specialActivity.create({
+        data: {
+          academicYearId: f.year.id,
+          academicCalendarVersionId: f.calendarVersion.id,
+          civilDate: new Date('2026-09-07'),
+          scope: 'GRADE',
+          gradeLevel: 10,
+          title: 'Fake SpecialActivity for test 2',
+          createRequestKey: 'fake-sa-key-2',
+          createRequestFingerprint: 'fp-2',
+          createdByUserId: f.bghPrincipal.id,
+        },
+      });
+
+      await expect(
+        h.prisma.$executeRawUnsafe(
+          `INSERT INTO programme_materialized_activities (
+            id, programme_master_id, programme_plan_version_id, programme_topic_item_id,
+            planned_programme_occurrence_id, planned_occurrence_slot_id, special_activity_id,
+            homeroom_assignment_id, homeroom_teacher_user_id, materialized_by_user_id
+          ) VALUES (
+            gen_random_uuid(), '${f.gddpMaster.id}', '${f.planVersion.id}', '${f.topicItem.id}',
+            '${occ.id}', '${slots[0].id}', '${fakeSpecialActivity2.id}',
+            '${hrAssignment.id}', '${f.teacherA.id}', '${f.bghPrincipal.id}'
+          )`,
+        ),
+      ).rejects.toThrow(/Homeroom pair check failed/i);
+
+      // E. Duplicate active root rejected (planned slot already has ACTIVE root matRow.specialActivityId)
+      await expect(
+        h.prisma.$executeRawUnsafe(
+          `INSERT INTO programme_materialized_activities (
+            id, programme_master_id, programme_plan_version_id, programme_topic_item_id,
+            planned_programme_occurrence_id, planned_occurrence_slot_id, special_activity_id,
+            materialized_by_user_id
+          ) VALUES (
+            gen_random_uuid(), '${f.gddpMaster.id}', '${f.planVersion.id}', '${f.topicItem.id}',
+            '${occ.id}', '${slots[0].id}', '${fakeSpecialActivity2.id}', '${f.bghPrincipal.id}'
+          )`,
+        ),
+      ).rejects.toThrow(/Duplicate active root check failed/i);
+
+      // F. Legitimate replacement succeeds when predecessor is REVERSED
+      await h.prisma.specialActivity.update({
+        where: { id: matRow.specialActivityId },
+        data: {
+          status: 'REVERSED',
+          reversedByUserId: f.bghPrincipal.id,
+          reversedAt: new Date(),
+          reversalReason: 'Test replacement',
+          reverseRequestKey: 'rev-key-test-64',
+          reverseRequestFingerprint: 'rev-fp-test-64',
+        },
+      });
+
+      const replaceResult = await h.prisma.$executeRawUnsafe(
+        `INSERT INTO programme_materialized_activities (
+          id, programme_master_id, programme_plan_version_id, programme_topic_item_id,
+          planned_programme_occurrence_id, planned_occurrence_slot_id, special_activity_id,
+          materialized_by_user_id
+        ) VALUES (
+          gen_random_uuid(), '${f.gddpMaster.id}', '${f.planVersion.id}', '${f.topicItem.id}',
+          '${occ.id}', '${slots[0].id}', '${fakeSpecialActivity2.id}', '${f.bghPrincipal.id}'
+        )`,
+      );
+      expect(replaceResult).toBe(1);
     });
   });
 });
