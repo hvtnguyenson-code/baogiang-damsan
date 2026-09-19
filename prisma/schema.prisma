@@ -1860,17 +1860,19 @@ model ProgrammeOccurrenceAttestation {
   scope                        String                         @db.VarChar(50)
   scopeResourceId              String?                        @map("scope_resource_id") @db.Uuid
   status                       ProgrammeAttestationStatus     @default(ACTIVE)
-  createRequestKey             String                         @unique(map: "programme_occurrence_attestations_create_request_key_key") @map("create_request_key") @db.VarChar(200)
+  createRequestKey             String                         @map("create_request_key") @db.VarChar(200)
   createRequestFingerprint     String                         @map("create_request_fingerprint") @db.VarChar(128)
   attestedAt                   DateTime                       @default(now()) @map("attested_at") @db.Timestamptz(3)
   reversedByUserId             String?                        @map("reversed_by_user_id") @db.Uuid
   reversedAt                   DateTime?                      @map("reversed_at") @db.Timestamptz(3)
   reversalReason               String?                        @map("reversal_reason") @db.VarChar(500)
-  reverseRequestKey            String?                        @unique(map: "programme_occurrence_attestations_reverse_request_key_key") @map("reverse_request_key") @db.VarChar(200)
+  reverseRequestKey            String?                        @map("reverse_request_key") @db.VarChar(200)
   reverseRequestFingerprint    String?                        @map("reverse_request_fingerprint") @db.VarChar(128)
   createdAt                    DateTime                       @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt                    DateTime                       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
+  @@unique([attestedByUserId, createRequestKey], map: "programme_occurrence_attestations_actor_create_key")
+  @@unique([reversedByUserId, reverseRequestKey], map: "programme_occurrence_attestations_actor_reverse_key")
   @@index([plannedProgrammeOccurrenceId, status], map: "programme_occurrence_attestations_occurrence_status_idx")
   @@index([programmeMasterId, status], map: "programme_occurrence_attestations_master_status_idx")
   @@map("programme_occurrence_attestations")
