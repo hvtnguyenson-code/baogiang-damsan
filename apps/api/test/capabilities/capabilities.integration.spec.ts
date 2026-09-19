@@ -68,7 +68,11 @@ integration('Capability management API (isolated PostgreSQL integration)', () =>
     const userId = await target();
     const group = await h.prisma.subjectGroup.create({ data: { code: 'CAP_GROUP', name: 'Group' } });
     const subject = await h.prisma.subject.create({ data: { code: 'CAP_SUBJECT', name: 'Subject' } });
-    const activityId = crypto.randomUUID();
+    const year = await h.prisma.academicYear.create({ data: { code: 'CAP_YEAR', name: 'Năm học Cap' } });
+    const master = await h.prisma.programmeMaster.create({
+      data: { academicYearId: year.id, kind: 'GDDP', gradeLevel: 10, createdByUserId: manager.id },
+    });
+    const activityId = master.id;
     const payloads = [
       { capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL' },
       { capabilityKey: 'SUBJECT_GROUP_LEAD', scopeType: 'SUBJECT_GROUP', scopeResourceId: group.id },

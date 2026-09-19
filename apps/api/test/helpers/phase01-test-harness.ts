@@ -93,6 +93,13 @@ export class Phase01Harness {
     await this.prisma.academicCalendarVersion.deleteMany();
     await this.prisma.teachingAssignment.deleteMany();
     await this.prisma.schoolClass.deleteMany();
+    await this.prisma.plannedSlotStaffing.deleteMany();
+    await this.prisma.plannedOccurrenceSlot.deleteMany();
+    await this.prisma.plannedProgrammeOccurrence.deleteMany();
+    await this.prisma.programmeTopicItem.deleteMany();
+    await this.prisma.programmePlanVersion.deleteMany();
+    await this.prisma.programmeMaster.deleteMany();
+    await this.prisma.programmePlanningCommand.deleteMany();
     await this.prisma.academicYear.deleteMany();
     await this.prisma.staffAdditionalDutyAssignment.deleteMany();
     await this.prisma.additionalDutyDefinition.deleteMany();

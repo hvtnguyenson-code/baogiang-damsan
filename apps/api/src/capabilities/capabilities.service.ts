@@ -167,7 +167,22 @@ export class CapabilitiesService {
       return null;
     }
     if (!dto.scopeResourceId) throw new BadRequestException('Scope cần resource.');
-    if (dto.scopeType === 'ACTIVITY') return dto.scopeResourceId;
+    if (dto.scopeType === 'ACTIVITY') {
+      if (dto.capabilityKey === 'GDDDP_COORDINATOR' || dto.capabilityKey === 'HĐTN_COORDINATOR') {
+        const master = await this.prisma.programmeMaster.findUnique({
+          where: { id: dto.scopeResourceId },
+          select: { id: true, kind: true },
+        });
+        if (!master) throw new NotFoundException('Không tìm thấy chương trình.');
+        if (dto.capabilityKey === 'GDDDP_COORDINATOR' && master.kind !== 'GDDP') {
+          throw new ConflictException('Chương trình không phải Giáo dục địa phương (GDDP).');
+        }
+        if (dto.capabilityKey === 'HĐTN_COORDINATOR' && master.kind !== 'HDTN_HN') {
+          throw new ConflictException('Chương trình không phải Hoạt động trải nghiệm, hướng nghiệp (HDTN_HN).');
+        }
+      }
+      return dto.scopeResourceId;
+    }
     if (dto.scopeType === 'SUBJECT_GROUP') {
       const group = await this.prisma.subjectGroup.findUnique({ where: { id: dto.scopeResourceId }, select: { status: true } });
       if (!group) throw new NotFoundException('Không tìm thấy tổ chuyên môn.');
