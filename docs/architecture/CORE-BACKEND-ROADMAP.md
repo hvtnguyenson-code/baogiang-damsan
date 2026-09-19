@@ -120,14 +120,13 @@ Exact task statuses and prerequisites are maintained authoritatively in `PRE-PIL
 ### P4 — GDĐP / HĐTN programmes and workload
 
 1. Programme/version/item/occurrence architecture (`P4-010`, `CLOSED` by `SYNC-P4-010`, ADR-050 Accepted).
-2. GDĐP `AcademicYear + Grade` planning.
-3. HĐTN `CLASS / GRADE / SCHOOL_WIDE` planning.
-4. Date-effective homeroom resolution for class activities.
-5. Exact per-slot teacher assignment.
-6. Programme coordinator authorization.
-7. Deterministic bridge into existing SpecialActivity runtime primitive.
-8. Confirmed activity teacher-slot workload/reporting aggregation.
-9. WorkloadAdjustmentRule re-entry when official adjusted workload is in pilot scope.
+2. Programme persistence + planning control plane (`P4-020`, `CLOSED` by `SYNC-P4-020`): retained master/version/topic/occurrence/slot/staffing history, exact `Slot -> Set<Teacher>`, CAS/SERIALIZABLE/idempotency/audit.
+3. Programme coordinator/BGH authorization (`P4-030`, `READY` after `SYNC-P4-020`).
+4. GDĐP `AcademicYear + Grade` and HĐTN `CLASS / GRADE / SCHOOL_WIDE` planning semantics are now represented in retained planning persistence; exact authorization remains P4-030.
+5. Date-effective homeroom resolution/freeze for class activities remains owned by the runtime bridge.
+6. Deterministic bridge into existing SpecialActivity runtime primitive (`P4-040`).
+7. Confirmed activity teacher-slot workload/reporting aggregation (`P4-050`).
+8. WorkloadAdjustmentRule re-entry when official adjusted workload is in pilot scope (`P4-060`/`P4-061`).
 
 ### P5 — Pilot product closure
 
@@ -170,7 +169,8 @@ P0-900 (CLOSED)
 
 Independent tracks:
 - P4-010 (GDĐP/HĐTN programme architecture; `CLOSED` by `SYNC-P4-010`, ADR-050 Accepted)
-- P4-020 (Special-programme persistence + control plane; `READY`)
+- P4-020 (Special-programme persistence + control plane; `CLOSED` by `SYNC-P4-020`)
+- P4-030 (Programme coordinator authorization; `READY`)
 - P6 production readiness & TLS authority (governed independently by canonical gates P6-005 -> P6-010 etc.)
 - Native TKB foundation: P2-030, P2-040, P2-050 are CLOSED.
 
