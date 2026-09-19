@@ -1199,13 +1199,68 @@ integration('ProgrammeRuntimeBridge (PostgreSQL integration P4-040)', () => {
   // =========================================================================
 
   describe('P4-050 Negative Boundary & SpecialActivity Separation', () => {
-    it('58. P4-040 operations never create ReportingStatement or mutate workload credit', async () => {
-      // Direct count on reporting_statements table
-      const statementsCount = await h.prisma.reportingStatementSeries.count();
-      expect(statementsCount).toBe(0);
+    it('58. P4-050 negative boundary: P4-040 materialization, attestation, and reversal never mutate reporting statements or produce workload credit', async () => {
+      const f = await setupBaseFixture();
+
+      // 1. Snapshot initial state of all reporting statement tables
+      const initialSeries = await h.prisma.reportingStatementSeries.count();
+      const initialRevisions = await h.prisma.reportingStatementRevision.count();
+      const initialHistories = await h.prisma.reportingStatementHistory.count();
+      const initialCommands = await h.prisma.reportingStatementCommand.count();
+
+      // 2. Setup published occurrence
+      const { occ } = await createOccurrenceWithStaffing(f, {
+        masterId: f.gddpMaster.id,
+        planVersionId: f.planVersion.id,
+        topicItemId: f.topicItem.id,
+        civilDate: '2026-09-07',
+        creatorId: f.coordinatorGddp.id,
+        status: 'PUBLISHED',
+        slots: [{ slotDefId: f.slotDef1.id, teacherIds: [f.teacherA.id] }],
+      });
+
+      // 3. Operation A: Materialization
+      const matRes = await f.coordinatorGddp.agent
+        .post(`/api/programme-planning/occurrences/${occ.id}/materialize`)
+        .set('Origin', testOrigin)
+        .send({ commandId: 'cmd-p4050-neg-mat' });
+      expect(matRes.status).toBe(HttpStatus.OK);
+
+      // 4. Operation B: Attestation
+      const attRes = await f.coordinatorGddp.agent
+        .post(`/api/programme-planning/occurrences/${occ.id}/attestations`)
+        .set('Origin', testOrigin)
+        .send({ commandId: 'cmd-p4050-neg-att' });
+      expect(attRes.status).toBe(HttpStatus.OK);
+      const attId = attRes.body.id;
+
+      // 5. Operation C: Reversal
+      const attDb = await h.prisma.programmeOccurrenceAttestation.findUniqueOrThrow({
+        where: { id: attId },
+      });
+      const revRes = await f.coordinatorGddp.agent
+        .post(`/api/programme-planning/attestations/${attId}/reverse`)
+        .set('Origin', testOrigin)
+        .send({
+          commandId: 'cmd-p4050-neg-rev',
+          expectedUpdatedAt: attDb.updatedAt.toISOString(),
+          reversalReason: 'Kiểm tra P4-050 negative boundary: đảo ngược không chạm reporting',
+        });
+      expect(revRes.status).toBe(HttpStatus.OK);
+
+      // 6. Prove zero change to any reporting statement tables
+      expect(await h.prisma.reportingStatementSeries.count()).toBe(initialSeries);
+      expect(await h.prisma.reportingStatementRevision.count()).toBe(initialRevisions);
+      expect(await h.prisma.reportingStatementHistory.count()).toBe(initialHistories);
+      expect(await h.prisma.reportingStatementCommand.count()).toBe(initialCommands);
+
+      // 7. Verify physical absence: no workload projection or credit models exist in repository (P4-050 PLANNED)
+      const prismaDelegateKeys = Object.keys(h.prisma).filter((k) => !k.startsWith('$') && !k.startsWith('_'));
+      expect(prismaDelegateKeys.some((k) => /workload/i.test(k))).toBe(false);
+      expect(prismaDelegateKeys.some((k) => /credit/i.test(k))).toBe(false);
     });
 
-    it('59. Programme Coordinator cannot call generic SpecialActivity mutation endpoints', async () => {
+    it('59. Authorization Separation: Programme Coordinator cannot call generic SpecialActivity mutation endpoints', async () => {
       const f = await setupBaseFixture();
 
       // Coordinator tries to POST /api/special-activities directly
