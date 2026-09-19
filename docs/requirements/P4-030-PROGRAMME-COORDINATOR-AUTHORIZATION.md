@@ -2,12 +2,17 @@
 
 ## Status
 
-**IN_REVIEW**
+**CLOSED — IMPLEMENTED AND VERIFIED BY `SYNC-P4-030`.**
 
 - Task branch: `feat/programme-coordinator-authorization-030`
 - Canonical base: `ab4324e0094203bcab9fbfef9d4c4e952f46f48f`
+- Final independently reviewed HEAD: `1f49f7f4d3cda83126373bb4df7ac6d31ce54859`
+- Parent PR: #148 (`feat(programme): implement P4-030 coordinator authorization`)
+- Exact-head PR CI: CI #472 (run id: `35420533601`), SUCCESS on attempt 1
+- Merge/main commit: `08d235ded260e38171f38409e7e2783c9c1f41f2` (GitHub verified signature)
+- Authoritative post-merge main CI: CI #473 (run id: `35420832787`), SUCCESS on attempt 1
 - Predecessor: `P4-020` (CLOSED by `SYNC-P4-020`)
-- Downstream: `P4-040` (PLANNED, depends on `P4-030`)
+- Downstream: `P4-040` (READY, unlocked by `SYNC-P4-030`)
 - Architecture authority: `docs/decisions/ADR-050-GDDP-HDTN-PROGRAMME-ARCHITECTURE.md`, `docs/decisions/ADR-008-CAPABILITY-AUTHORIZATION-SEMANTICS.md`, `docs/decisions/ADR-038-TEACHING-EXECUTION-EVIDENCE.md`
 - Traceability: **T18**, **T44** (with strict **T43** boundary preservation)
 
@@ -158,3 +163,34 @@ A minimum of 32 distinct security and regression test cases must pass:
 32. Raw `ProgrammePlanningService` is not exported from `ProgrammePlanningModule`.
 
 Plus real PostgreSQL end-to-end integration lifecycle test.
+
+---
+
+## 5. Acceptance and Closure Evidence
+
+P4-030 acceptance evidence is satisfied by:
+
+- **Feature branch**: `feat/programme-coordinator-authorization-030`
+- **Canonical starting base**: `ab4324e0094203bcab9fbfef9d4c4e952f46f48f`
+- **Final independently reviewed HEAD**: `1f49f7f4d3cda83126373bb4df7ac6d31ce54859`
+- **Independent review**: Initial exact-remote review findings (governance consistency, ADR-050 wording, T12/T15/T16/T17 status, ADR filenames, and persisted PostgreSQL denial audit evidence) were absorbed by forward commits `7ac3afe38cf6919716061b57947f56af632195c5` and `1f49f7f4d3cda83126373bb4df7ac6d31ce54859`. Final exact-remote audit returned `AUDIT PASS` with zero remaining findings.
+- **Parent PR**: #148 (`feat(programme): implement P4-030 coordinator authorization`) with 16 changed files, 4 commits, and no unresolved threads.
+- **Exact-head PR CI**: CI #472 (run `35420533601`, attempt 1), conclusion `SUCCESS`.
+- **Merge commit**: `08d235ded260e38171f38409e7e2783c9c1f41f2` on branch `main` with verified GitHub signature.
+- **Authoritative post-merge main CI**: CI #473 (run `35420832787`, attempt 1), conclusion `SUCCESS` across all jobs (`Windows deployment contract` and `Lint · Typecheck · Test · Build`, capability catalog synchronization, full API integration, Playwright smoke).
+- **Local verification suites**:
+  - Programme Planning unit suite: `92/92` PASS;
+  - Capabilities synchronization integration: `6/6` PASS;
+  - Coordinator authorization PostgreSQL integration: `31/31` PASS;
+  - Capability-catalog CI gate: SUCCESS.
+- **Administrative documentation closure**: `SYNC-P4-030`.
+- **Downstream impact**: `P4-040` unlocked to `READY`; `P4-050` remains dependency-gated by `P4-040`.
+
+### Non-Scope Confirmation
+P4-030 introduced:
+- zero schema tables or database migrations;
+- zero Web UI components;
+- zero `ProgrammeAttestation` storage or lifecycle runtime (owned by P4-040);
+- zero `SpecialActivity` runtime materialization or collision bridge (owned by P4-040);
+- zero workload calculation or reporting projection (owned by P4-050);
+- zero deployment or production configuration mutation (production remains strictly **PRE-OPERATIONAL**).
