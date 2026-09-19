@@ -60,8 +60,10 @@ describe('ProgrammeRuntimeBridge (P4-040)', () => {
   let materializedStore: Map<string, MockEntity>;
   let attestationStore: Map<string, MockEntity>;
   let commandStore: Map<string, MockEntity>;
+  let lastMasterId: string | null = null;
 
   beforeEach(() => {
+    lastMasterId = null;
     occurrenceStore = new Map();
     materializedStore = new Map();
     attestationStore = new Map();
@@ -132,6 +134,7 @@ describe('ProgrammeRuntimeBridge (P4-040)', () => {
       },
       programmeMaster: {
         findUniqueOrThrow: jest.fn().mockImplementation(({ where: { id } }) => {
+          lastMasterId = id;
           if (id === gddpMasterId) {
             return Promise.resolve({ id, academicYearId, kind: ProgrammeKind.GDDP, gradeLevel: 10 });
           }
@@ -141,9 +144,20 @@ describe('ProgrammeRuntimeBridge (P4-040)', () => {
           return Promise.resolve({ id, academicYearId, kind: ProgrammeKind.GDDP, gradeLevel: 10 });
         }),
       },
+      programmePlanVersion: {
+        findUniqueOrThrow: jest.fn().mockImplementation(({ where: { id } }) => {
+          return Promise.resolve({
+            id,
+            programmeMasterId: lastMasterId ?? gddpMasterId,
+            status: 'PUBLISHED',
+            publishedAt: new Date('2026-09-01T00:00:00.000Z'),
+          });
+        }),
+      },
       programmeTopicItem: {
         findUniqueOrThrow: jest.fn().mockResolvedValue({
           id: topicId,
+          programmePlanVersionId: planVersionId,
           title: 'Tìm hiểu lịch sử và văn hóa địa phương',
         }),
       },

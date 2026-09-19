@@ -563,9 +563,9 @@ export class AuthorizedProgrammePlanningService {
     if (!master) {
       throw new NotFoundException('Không tìm thấy chương trình.');
     }
-    const decision = await this.authService.isQualifyingProgrammeAttestor(actorUserId, master);
+    let decision = await this.authService.isQualifyingProgrammeAttestor(actorUserId, master);
     if (!decision.qualified) {
-      await this.authService.requireProgrammeAuthority(actorUserId, master, auditContext);
+      decision = await this.authService.requireProgrammeAuthority(actorUserId, master, auditContext);
     }
     return this.service.attestOccurrence(id, dto, actorUserId, decision);
   }

@@ -23,6 +23,10 @@ import { createHash } from 'node:crypto';
 import { AuditService } from '../audit/audit.service';
 import { formatCivilDate, isCivilDate, parseCivilDate } from '../common/validation/civil-date';
 import { classifyHomeroomResolutionRows } from '../homeroom-assignments/homeroom-assignments.service';
+import {
+  classifyHomeroomInterval,
+  homeroomBusinessDate,
+} from '../homeroom-assignments/homeroom-assignment-policy';
 import { PrismaService } from '../prisma/prisma.service';
 import { SpecialActivitiesService } from '../special-activities/special-activities.service';
 import {
@@ -1684,9 +1688,36 @@ export class ProgrammePlanningService {
         const master = await tx.programmeMaster.findUniqueOrThrow({
           where: { id: occurrence.programmeMasterId },
         });
+        const planVersion = await tx.programmePlanVersion.findUniqueOrThrow({
+          where: { id: occurrence.programmePlanVersionId },
+        });
         const topic = await tx.programmeTopicItem.findUniqueOrThrow({
           where: { id: occurrence.programmeTopicItemId },
         });
+
+        if (planVersion.status === 'DRAFT') {
+          throw new ConflictException('Không thể materialize occurrence của bản kế hoạch DRAFT.');
+        }
+        if (planVersion.programmeMasterId !== master.id) {
+          throw new ConflictException('Bản kế hoạch không thuộc về chương trình này.');
+        }
+        if (topic.programmePlanVersionId !== planVersion.id) {
+          throw new ConflictException('Chủ đề không thuộc về bản kế hoạch này.');
+        }
+
+        const occurrenceDateStr = formatCivilDate(occurrence.civilDate);
+        const businessDateStr = homeroomBusinessDate();
+        const isPastOccurrence = occurrenceDateStr < businessDateStr;
+
+        if (!isPastOccurrence) {
+          if (planVersion.status !== 'PUBLISHED') {
+            throw new ConflictException('Occurrence hiện tại hoặc tương lai yêu cầu bản kế hoạch đang PUBLISHED.');
+          }
+        } else {
+          if (planVersion.status === 'SUPERSEDED' && !planVersion.publishedAt) {
+            throw new ConflictException('Bản kế hoạch lịch sử không có bằng chứng đã từng PUBLISHED.');
+          }
+        }
 
         const calendar = await tx.academicCalendarVersion.findFirst({
           where: { academicYearId: occurrence.academicYearId, isActive: true },
@@ -1720,13 +1751,14 @@ export class ProgrammePlanningService {
         }
         for (const slot of slots) {
           const teachers = staffingBySlot.get(slot.id) ?? [];
-          if (teachers.length === 0) {
+          if (teachers.length === 0 && !(master.kind === 'HDTN_HN' && occurrence.mode === 'CLASS')) {
             throw new ConflictException(`Slot ${slot.timeSlotDefinitionId} không có giáo viên nào được xếp.`);
           }
         }
 
         let homeroomAssignmentId: string | null = null;
         let homeroomTeacherUserId: string | null = null;
+        let isHistoricalRetainedGvcn = false;
         if (master.kind === 'HDTN_HN' && occurrence.mode === 'CLASS') {
           if (!occurrence.schoolClassId) {
             throw new ConflictException('HDTN_HN CLASS mode bắt buộc schoolClassId.');
@@ -1771,8 +1803,20 @@ export class ProgrammePlanningService {
             where: { id: resolvedAssignment.teacherUserId },
             include: { profile: true },
           });
-          if (!gvcnUser || gvcnUser.status !== 'ACTIVE' || !gvcnUser.profile || !gvcnUser.profile.isTeachingStaff) {
-            throw new ConflictException('Giáo viên chủ nhiệm được phân công không phải nhân sự giảng dạy ACTIVE hợp lệ.');
+          if (!gvcnUser || !gvcnUser.profile) {
+            throw new ConflictException('Không tìm thấy người dùng hoặc hồ sơ giáo viên chủ nhiệm.');
+          }
+          const validUntilStr = resolvedAssignment.validUntil
+            ? formatCivilDate(resolvedAssignment.validUntil)
+            : null;
+          isHistoricalRetainedGvcn =
+            isPastOccurrence &&
+            classifyHomeroomInterval(validUntilStr, businessDateStr) === 'BOUNDED_HISTORICAL';
+
+          if (!isHistoricalRetainedGvcn) {
+            if (gvcnUser.status !== 'ACTIVE' || !gvcnUser.profile.isTeachingStaff) {
+              throw new ConflictException('Giáo viên chủ nhiệm được phân công không phải nhân sự giảng dạy ACTIVE hợp lệ.');
+            }
           }
           homeroomAssignmentId = resolvedAssignment.id;
           homeroomTeacherUserId = resolvedAssignment.teacherUserId;
@@ -1787,7 +1831,10 @@ export class ProgrammePlanningService {
 
         const createdRecords: ProgrammeMaterializedActivityRecord[] = [];
         for (const slot of slots) {
-          const scheduledTeacherUserIds = staffingBySlot.get(slot.id)!;
+          const scheduledTeacherUserIds =
+            master.kind === 'HDTN_HN' && occurrence.mode === 'CLASS'
+              ? [homeroomTeacherUserId!]
+              : staffingBySlot.get(slot.id)!;
           const requestKey = `mat:${occurrence.id}:${slot.id}`;
           const specialActivity = await this.specialActivities.createMaterializedRoot(tx, {
             academicYearId: occurrence.academicYearId,
@@ -1802,6 +1849,7 @@ export class ProgrammePlanningService {
             note: occurrence.note,
             requestKey,
             actorUserId,
+            allowHistoricalStaffing: isHistoricalRetainedGvcn,
           });
 
           const matRow = await tx.programmeMaterializedActivity.create({

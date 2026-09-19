@@ -98,6 +98,7 @@ export class SpecialActivitiesService {
       replacesId?: string | null;
       requestKey: string;
       actorUserId: string;
+      allowHistoricalStaffing?: boolean;
     },
   ): Promise<SpecialActivity> {
     const value = this.normalize({
@@ -124,7 +125,7 @@ export class SpecialActivitiesService {
       }
       return replay;
     }
-    const context = await this.validateAndResolve(tx, value);
+    const context = await this.validateAndResolve(tx, value, input.allowHistoricalStaffing ?? false);
     await this.assertNoCollision(tx, value, context.classIds, context.slots);
     const root = await tx.specialActivity.create({
       data: {
@@ -162,8 +163,8 @@ export class SpecialActivitiesService {
         scheduledTeacherUserId: item.userId,
         staffProfileId: item.profileId,
         eligibilityCheckedAt: item.checkedAt,
-        eligibilityWasActive: true,
-        eligibilityWasTeachingStaff: true,
+        eligibilityWasActive: item.eligibilityWasActive,
+        eligibilityWasTeachingStaff: item.eligibilityWasTeachingStaff,
       })),
     });
     return root;
@@ -227,7 +228,11 @@ export class SpecialActivitiesService {
     return value;
   }
 
-  private async validateAndResolve(tx: Prisma.TransactionClient, value: ReturnType<SpecialActivitiesService['normalize']>) {
+  private async validateAndResolve(
+    tx: Prisma.TransactionClient,
+    value: ReturnType<SpecialActivitiesService['normalize']>,
+    allowHistoricalStaffing = false,
+  ) {
     const date = parseCivilDate(value.civilDate); const past = this.isPast(value.civilDate);
     const [year, calendar, slots] = await Promise.all([tx.academicYear.findUnique({ where: { id: value.academicYearId }, select: { id: true } }), tx.academicCalendarVersion.findUnique({ where: { id: value.academicCalendarVersionId } }), tx.timeSlotDefinition.findMany({ where: { id: { in: value.exactTimeSlotDefinitionIds } } })]);
     if (!year) throw new NotFoundException('Không tìm thấy năm học.');
@@ -237,10 +242,25 @@ export class SpecialActivitiesService {
     if (value.scope === SpecialActivityScope.CLASS && classes.length !== 1) throw new ConflictException('Lớp không thuộc đúng năm học hoặc không còn current canonical.');
     const classIds = [...new Set(classes.map((x) => x.id))].sort(); if (!classIds.length) throw new ConflictException('Không có lớp canonical nào để đóng băng mục tiêu.');
     const users = await tx.user.findMany({ where: { id: { in: value.scheduledTeacherUserIds } }, include: { profile: true } });
-    if (users.length !== value.scheduledTeacherUserIds.length || users.some((u) => u.status !== 'ACTIVE' || !u.profile || !u.profile.isTeachingStaff)) throw new ConflictException('Giáo viên được xếp không phải nhân sự giảng dạy ACTIVE hợp lệ.');
+    if (users.length !== value.scheduledTeacherUserIds.length) throw new ConflictException('Không tìm thấy một hoặc nhiều giáo viên được xếp.');
+    if (allowHistoricalStaffing && past) {
+      if (users.some((u) => !u.profile)) throw new ConflictException('Giáo viên được xếp không có hồ sơ nhân sự.');
+    } else {
+      if (users.some((u) => u.status !== 'ACTIVE' || !u.profile || !u.profile.isTeachingStaff)) throw new ConflictException('Giáo viên được xếp không phải nhân sự giảng dạy ACTIVE hợp lệ.');
+    }
     if (value.replacesId) { const predecessor = await tx.specialActivity.findUnique({ where: { id: value.replacesId }, select: { status: true } }); if (!predecessor || predecessor.status !== SpecialActivityStatus.REVERSED) throw new ConflictException('Predecessor phải tồn tại và đã REVERSED.'); }
     const checkedAt = this.clock.now();
-    return { classIds, slots, staff: users.map((u) => ({ userId: u.id, profileId: u.profile!.id, checkedAt })) };
+    return {
+      classIds,
+      slots,
+      staff: users.map((u) => ({
+        userId: u.id,
+        profileId: u.profile!.id,
+        checkedAt,
+        eligibilityWasActive: u.status === 'ACTIVE',
+        eligibilityWasTeachingStaff: !!u.profile?.isTeachingStaff,
+      })),
+    };
   }
 
   private async assertNoCollision(tx: Prisma.TransactionClient, value: ReturnType<SpecialActivitiesService['normalize']>, classIds: string[], slots: Array<{ id: string; startTime: Date; endTime: Date }>) {
