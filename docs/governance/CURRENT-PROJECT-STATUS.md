@@ -13,10 +13,10 @@ It is **not** a self-referential registry of the latest Git commit. Exact curren
 `P4-030` — Programme coordinator authorization — is **CLOSED** by `SYNC-P4-030` following parent PR #148 merge (`08d235ded260e38171f38409e7e2783c9c1f41f2`) and authoritative post-merge CI #473 SUCCESS.
 
 Active major task:
-- `P4-040` — Programme-to-SpecialActivity runtime bridge — **IN_PROGRESS** on dedicated branch `feat/programme-runtime-bridge-040` (canonical base `3564b5a5c2f8659c1bc2b19d779ce83cb621f65e`).
+- `P4-040` — Programme-to-SpecialActivity runtime bridge — **IN_REVIEW** on dedicated branch `feat/programme-runtime-bridge-040` (canonical base `3564b5a5c2f8659c1bc2b19d779ce83cb621f65e`).
 
 Eligible next task:
-- None (P4-040 currently active).
+- None (P4-040 currently in review; downstream P4-050 remains dependency-gated).
 
 Remain:
 - `P2-010` — PPCT real-workbook contract/security audit — **BLOCKED_EVIDENCE** (pending authoritative school PPCT workbook/template).
