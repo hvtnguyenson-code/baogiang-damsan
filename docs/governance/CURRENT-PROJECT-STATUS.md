@@ -6,24 +6,57 @@ This is the canonical mutable **product/task status** document for Báo giảng.
 
 It is **not** a self-referential registry of the latest Git commit. Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub at the start of every task. SHAs recorded here are evidence for the stated baseline or last closed major task.
 
-**Status snapshot date:** 2026-09-18
+**Status snapshot date:** 2026-09-19
 
 ## Active / next critical path
 
-`P4-010` — GDĐP/HĐTN programme architecture closure — is **CLOSED** by `SYNC-P4-010` following parent PR #144 merge (`10de700723610efb6a79a0f62f8d6fc9f4ce44a3`) and authoritative post-merge CI #465 SUCCESS.
+`P4-020` — Special-programme persistence + control plane — is **CLOSED** by `SYNC-P4-020` following parent PR #146 merge (`b68064e887f8646515e2820bd26423a5f9483f09`) and authoritative post-merge CI #469 SUCCESS.
 
 Eligible to start:
-- `P4-020` — Special-programme persistence + control plane — **READY** (dependencies `P1-012` and `P4-010` are both CLOSED).
+- `P4-030` — Programme coordinator authorization — **READY** (dependency `P4-020` is CLOSED).
 
 Remain:
 - `P2-010` — PPCT real-workbook contract/security audit — **BLOCKED_EVIDENCE** (pending authoritative school PPCT workbook/template).
 - `P2-020` — PPCT native importer implementation — **PLANNED** (pending `P2-010`).
 
-Production environment remains strictly **PRE-OPERATIONAL**. No production deployment has occurred. No production operational-start policy has been configured or deployed. P4-010 delivered documentation-only architectural closure under ADR-050 with zero runtime, schema, migration, contracts, API, UI, capability catalog, CI/CD, or deployment mutation.
+Production environment remains strictly **PRE-OPERATIONAL**. No production deployment has occurred. P4-020 delivered retained programme planning persistence/control-plane foundations only; it did not add public controller authorization, runtime materialization, programme attestation, workload/reporting projection, deployment, or production data/config mutation.
 
 ## Last closed major task
 
-`P4-010` — GDĐP/HĐTN programme architecture closure — **CLOSED** by `SYNC-P4-010`.
+`P4-020` — Special-programme persistence + control plane — **CLOSED** by `SYNC-P4-020`.
+
+Closure evidence:
+- dedicated implementation branch: `feat/programme-persistence-control-plane-020`;
+- starting canonical main base: `969d12d4f2f3e8ea3c66768daa3b35b4ccaa2fc0`;
+- final independently reviewed HEAD: `d8cb42614514f81ae16239a59c69e2da1f8ef246`;
+- independent exact-diff review: `AUDIT PASS`, zero BLOCKER/HIGH/MEDIUM/LOW findings after bounded forward fixes for PostgreSQL verification fixtures, partial occurrence target persistence, and exact plan-successor lineage;
+- parent PR: #146 (`feat(programme): implement P4-020 planning persistence control plane`);
+- exact-head PR CI: CI #468 (run id: `35370624212`), SUCCESS on attempt 1;
+- merge/main commit: `b68064e887f8646515e2820bd26423a5f9483f09`;
+- normal merge: YES;
+- GitHub verified signature: YES;
+- authoritative post-merge main CI: CI #469 (run id: `35409557624`), SUCCESS on attempt 1;
+- post-merge CI #469 evidence includes:
+  - `Lint · Typecheck · Test · Build`: SUCCESS;
+  - `Windows deployment contract`: SUCCESS;
+  - all substantive workflow steps SUCCESS;
+  - `Upload Playwright report on failure`: SKIPPED by design because no failure occurred;
+- delivered scope:
+  - retained `ProgrammeMaster`, `ProgrammePlanVersion`, `ProgrammeTopicItem`, `PlannedProgrammeOccurrence`, `PlannedOccurrenceSlot`, `PlannedSlotStaffing`, and planning-command receipt persistence;
+  - retained `DRAFT -> PUBLISHED -> SUPERSEDED` plan/occurrence lifecycle with forward lineage rather than overwrite;
+  - exact `PlannedOccurrenceSlot -> Set<Teacher>` staffing topology with no Cartesian slot/teacher multiplication;
+  - target-shape and GDDP/HDTN mode invariants, academic-year and civil-date weekday slot integrity, retained-history guards, and immutable published children;
+  - optimistic/CAS revision checks, PostgreSQL `SERIALIZABLE` transactions, bounded retry, deterministic idempotency fingerprint + command type, and same-transaction audit;
+  - successor-plan publication guard requiring exact predecessor/current-published authority match before supersession;
+  - partial occurrence edits persist against resolved target mode so omitted `mode` cannot null a valid GRADE/CLASS target;
+- verification evidence includes 39/39 targeted programme-planning unit tests, PostgreSQL integration, both special-programme SQL verifiers, Prisma validate/generate, lint, typecheck and static gates, followed by authoritative CI #468/#469;
+- no public HTTP controller, coordinator/BGH capability binding, SpecialActivity materialization, attestation persistence/runtime, workload/reporting projection, deployment, or production mutation was introduced;
+- no correction or re-entry task emerged from independent review or CI;
+- production remains strictly PRE-OPERATIONAL;
+- closed by administrative closure: `SYNC-P4-020`;
+- downstream: `P4-030` is unlocked to `READY`; `P4-040` and `P4-050` remain dependency-gated.
+
+Predecessor closed major task: `P4-010` — GDĐP/HĐTN programme architecture closure — **CLOSED** by `SYNC-P4-010`.
 
 Closure evidence:
 - dedicated architecture branch: `docs/gddp-hdtn-programme-architecture-010`;
@@ -379,7 +412,7 @@ The registered pre-pilot Homeroom chain is closed: P1-010 architecture, P1-011 p
 - HĐTN `CLASS` resolves exact GVCN by occurrence date and downstream materialization freezes source provenance;
 - `HomeroomAssignment` existence alone is not teaching-execution evidence or HĐTN period credit.
 
-P1-010 review also recovered and registered Special Programme boundaries T43/T44: absence/replacement/substitution semantics and programme-level confirmation authority/topology. Those remain for P4; they were not silently solved inside HomeroomAssignment.
+P1-010 review also recovered and registered Special Programme boundaries T43/T44. P4-010 architecture and P4-020 planning persistence/control plane are now CLOSED; exact coordinator/BGH authorization remains P4-030, runtime materialization/attestation remains P4-040, and workload projection remains P4-050.
 
 ## Accepted Business Configuration domain
 
@@ -464,7 +497,8 @@ The following remain current governance/product authorities:
 - `docs/decisions/ADR-046-BUSINESS-CONFIGURATION-CONTROL-PLANE.md`;
 - `docs/decisions/ADR-047-TKB-NATIVE-WORKBOOK-ARCHITECTURE.md`;
 - `docs/decisions/ADR-048-PPCT-CURRICULAR-COMPONENT-ARCHITECTURE.md`;
-- `docs/decisions/ADR-049-DELAYED-GO-LIVE-OPERATIONAL-START-ARCHITECTURE.md`.
+- `docs/decisions/ADR-049-DELAYED-GO-LIVE-OPERATIONAL-START-ARCHITECTURE.md`;
+- `docs/decisions/ADR-050-GDDP-HDTN-PROGRAMME-ARCHITECTURE.md`.
 
 Every major task must be registered before implementation, cite applicable traceability rows, obey dependency gates, and complete post-merge documentation synchronization before dependent major work starts. Untracked plain `DEFERRED`/`later`/`future slice` is prohibited.
 
@@ -483,6 +517,7 @@ The repository contains reviewed implementation for:
 - component-aware PPCT persistence/control plane closed by P2-002, including stable component identity on `PpctItem`, component-aware revision/lineage provenance, per-component sequence uniqueness, `PpctClassCurricularProfile`, legacy CORE/CORE_ONLY migration and server-side business-week profile split prevention;
 - operational overlays;
 - SpecialActivity minimum-core persistence/runtime with exact slots, frozen classes, staffing and class/teacher/time collision checks;
+- **retained GDĐP/HĐTN programme planning persistence/control plane closed by P4-020**, including `ProgrammeMaster`, retained plan versions/topic items, prospective planned occurrences, exact slots and `Slot -> Set<Teacher>` staffing, DRAFT/PUBLISHED/SUPERSEDED lineage, DB hardening, CAS, SERIALIZABLE bounded retry, idempotency receipts and same-transaction audit; exact coordinator/BGH authorization is intentionally deferred to P4-030 and runtime materialization/attestation to P4-040;
 - PPCT occurrence allocation (P2-003 component-aware weekly routing, independent progression and downstream projection runtime closed by P2-003 and merged to main);
 - specialized-study class-subject administration workspace (P2-004 capability-gated applicability administration, options read model, target version selection, specialized-content preflight, retained association history and CAS concurrency closed by P2-004 and merged to main);
 - curricular TeachingExecution and SpecialActivityParticipationExecution evidence;
@@ -494,7 +529,7 @@ The repository contains reviewed implementation for:
 - **operational-start backend authority and UI integration**: backend closed by P1-031 (`OPERATIONAL_START / v1 / ACADEMIC_YEAR` production registration, strict validator/calendar/lifecycle rules, typed fail-closed resolver, execution guards, pre-op no-auto-debt projection, retained allocator replay, single-authority reporting integration, and ReportingStatement SNAPSHOT_V2 provenance); P1-031B defines the distinct never-effective scheduled-authority lifecycle, and its P1-031A runtime realization is CLOSED by `SYNC-P1-031A`; `P1-031C` is CLOSED by `SYNC-P1-031C` (providing AcademicYear options read model); and `P1-032` is CLOSED by `SYNC-P1-032` (delivering production Web UI integration for operational-start administration);
 - hardened Windows production deployment control-plane/runbooks through PR #90.
 
-Homeroom architecture, persistence, control plane/capability, historical read model and administration workspace UI are closed for the registered pre-pilot scope. Business Configuration architecture (P1-020), persistence/control plane (P1-021), administration workspace (P1-022), and operational-start backend implementation (P1-031) are closed for their registered pre-pilot scopes. P2-030 native timetable workbook architecture/evidence, P2-040 native adapter runtime implementation, P2-050 selective morning/afternoon update and carry-forward, P2-002 PPCT component persistence/control plane, P2-003 component-aware allocation/projections runtime, and P2-004 specialized-study administration workspace are closed.
+Homeroom architecture, persistence, control plane/capability, historical read model and administration workspace UI are closed for the registered pre-pilot scope. Business Configuration architecture (P1-020), persistence/control plane (P1-021), administration workspace (P1-022), and operational-start backend implementation (P1-031) are closed for their registered pre-pilot scopes. P2-030 native timetable workbook architecture/evidence, P2-040 native adapter runtime implementation, P2-050 selective morning/afternoon update and carry-forward, P2-002 PPCT component persistence/control plane, P2-003 component-aware allocation/projections runtime, P2-004 specialized-study administration workspace, P4-010 special-programme architecture, and P4-020 special-programme planning persistence/control plane are closed.
 
 ## Pre-pilot verdict
 
@@ -504,11 +539,11 @@ The registered implementation, data-evidence, product and production-readiness t
 
 ## Critical pre-pilot gaps
 
-1. Upstream GDĐP/HĐTN programme architecture is CLOSED and accepted under ADR-050 (P4-010), while persistence/control plane (P4-020), coordinator/BGH authorization (P4-030), bridge/attestation runtime (P4-040), and workload projection (P4-050) remain to be implemented.
-2. GDĐP grade/year plan and HĐTN CLASS/GRADE/SCHOOL programme architecture is defined; runtime models remain owned by P4-020/P4-040.
-3. Programme planning topology (Slot -> Set<Teacher>, non-Cartesian) is established in architecture; persistence schema belongs to P4-020.
-4. Special-program absence/replacement and programme-level confirmation authority architecture is closed (T43/T44); runtime bridge realization belongs to P4-040.
-5. Existing `GDDDP_COORDINATOR` / `HĐTN_COORDINATOR` capability intent is not wired to programme-resource authority (owned by P4-030).
+1. GDĐP/HĐTN programme architecture (P4-010) and retained planning persistence/control plane (P4-020) are CLOSED; exact coordinator/BGH authorization remains P4-030, runtime bridge/attestation remains P4-040, and workload projection remains P4-050.
+2. GDĐP `AcademicYear + Grade` and HĐTN `CLASS/GRADE/SCHOOL_WIDE` planning models are now persisted with retained plan/topic/occurrence history; they are not yet exposed through authorized public mutation surfaces.
+3. Exact programme `Slot -> Set<Teacher>` planning persistence is implemented; deterministic materialization/provenance into SpecialActivity remains P4-040.
+4. Special-program absence/replacement and programme-level confirmation architecture is closed (T43/T44); authorization is P4-030 and post-materialization/attestation runtime is P4-040.
+5. Existing `GDDDP_COORDINATOR` / `HĐTN_COORDINATOR` capability intent is not yet wired to programme-resource authority (P4-030).
 6. Operational-start backend/runtime authority (P1-031), scheduled-authority supersession architecture (P1-031B), authority continuity correction (P1-031A), options read-model enablement (P1-031C), and administration Web UI integration (P1-032) are CLOSED; while historical evidence workflow remains P3-010/P3-020.
 7. PPCT real-school import is intentionally blocked pending an authoritative workbook contract; preferred direction is one workbook with separate logical content for ordinary PPCT (CORE) and Chuyên đề học tập (SPECIALIZED_STUDY), with exact physical sheet names and structure evidence-bound to P2-010.
 8. Special-activity participation is not yet integrated into official workload/reporting aggregation.
@@ -530,7 +565,7 @@ The final production-host topology is intentionally unresolved and explicitly de
 
 ## Tasks currently active or eligible to start
 
-`P4-010` is CLOSED by `SYNC-P4-010`.
+`P4-020` is CLOSED by `SYNC-P4-020`.
 
 Active in progress:
 - None.
@@ -539,11 +574,10 @@ Active in review:
 - None.
 
 Eligible to start on a dedicated branch:
-- `P4-020` — Special-programme persistence + control plane — **READY** (dependencies `P1-012` and `P4-010` are both CLOSED).
+- `P4-030` — Programme coordinator authorization — **READY** (dependency `P4-020` is CLOSED).
 
 Not eligible to start:
 - `P2-020` — `PLANNED`, blocked until `P2-010` evidence is provided.
-- `P4-030` — `PLANNED`, depends on `P4-020`.
 - `P4-040` — `PLANNED`, depends on `P4-030`.
 - `P4-050` — `PLANNED`, depends on `P4-040`.
 
@@ -551,7 +585,7 @@ Not eligible to start:
 
 Note: `P2-010` remains `BLOCKED_EVIDENCE` pending actual authoritative school PPCT workbook/template evidence.
 
-Eligibility does not imply concurrent execution or permission to bypass one-task-per-branch, review, CI or mandatory closure-sync gates. P4 runtime work remains gated by its registered dependencies, and P6 remains blocked by P6-005.
+Eligibility does not imply permission to bypass one-task-per-branch, review, CI or mandatory closure-sync gates. P4-030 is now the next eligible dependent P4 task; P6 remains blocked by P6-005.
 
 ## Decisions/evidence still blocking other paths
 
@@ -576,7 +610,7 @@ Direct P0 inspection found `main` is currently not protected server-side. This i
 
 ## Production state
 
-Production remains **pre-operational**. No production deployment has occurred. P1-020, P1-021, P1-022, P1-031, P1-031B, P1-031A, P1-031C, and P1-032 are CLOSED and canonical. The backend production policy registry contains only the reviewed `OPERATIONAL_START` family enabled by P1-031, and the Web UI registry includes the corresponding production adapter enabled by P1-032. No production operational-start policy value has been configured or deployed, so the additive P1-031A migration performed zero production data backfill and has not been applied to production. P1-031C introduced zero schema or migration change and zero production data mutation. P1-032 delivered administration Web UI integration with zero backend/contracts/schema/migration mutation. P2-030 architecture/evidence, P2-040 native adapter runtime implementation, P2-050 selective session authoring and carry-forward, P2-002 PPCT component persistence/control plane, P2-003 component-aware allocation/projection runtime, and P2-004 specialized-study administration workspace are merged to canonical `main`, but did NOT deploy or mutate VPS, database, Nginx, TLS, scheduled tasks, or application process state. P2-001 architecture remains accepted authority under ADR-048. P6 remains blocked by the explicit P6-005 topology decision gate.
+Production remains **pre-operational**. No production deployment has occurred. P1-020, P1-021, P1-022, P1-031, P1-031B, P1-031A, P1-031C, P1-032, P4-010, and P4-020 are CLOSED and canonical. P4-020 schema/migrations and planning control-plane implementation are merged to canonical `main` but have not been deployed or applied to production. The backend production policy registry contains only the reviewed `OPERATIONAL_START` family enabled by P1-031, and the Web UI registry includes the corresponding production adapter enabled by P1-032. No production operational-start policy value has been configured or deployed, so the additive P1-031A migration performed zero production data backfill and has not been applied to production. P1-031C introduced zero schema or migration change and zero production data mutation. P1-032 delivered administration Web UI integration with zero backend/contracts/schema/migration mutation. P2-030 architecture/evidence, P2-040 native adapter runtime implementation, P2-050 selective session authoring and carry-forward, P2-002 PPCT component persistence/control plane, P2-003 component-aware allocation/projection runtime, and P2-004 specialized-study administration workspace are merged to canonical `main`, but did NOT deploy or mutate VPS, database, Nginx, TLS, scheduled tasks, or application process state. P2-001 architecture remains accepted authority under ADR-048. P6 remains blocked by the explicit P6-005 topology decision gate.
 
 ## Protected external system boundary
 
