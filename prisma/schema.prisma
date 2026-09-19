@@ -196,6 +196,29 @@ enum AuditResult {
   FAILURE
 }
 
+enum ProgrammeKind {
+  GDDP
+  HDTN_HN
+}
+
+enum ProgrammePlanVersionStatus {
+  DRAFT
+  PUBLISHED
+  SUPERSEDED
+}
+
+enum ProgrammeOccurrenceMode {
+  CLASS
+  GRADE
+  SCHOOL_WIDE
+}
+
+enum ProgrammeOccurrenceStatus {
+  DRAFT
+  PUBLISHED
+  SUPERSEDED
+}
+
 model User {
   id                 String     @id @default(uuid()) @db.Uuid
   username           String     @unique @db.VarChar(100)
@@ -1670,4 +1693,127 @@ model ReportingStatementHistory {
   @@index([seriesId, createdAt], map: "reporting_statement_histories_series_created_at_idx")
   @@index([revisionId], map: "reporting_statement_histories_revision_id_idx")
   @@map("reporting_statement_histories")
+}
+
+model ProgrammeMaster {
+  id              String        @id @default(uuid()) @db.Uuid
+  academicYearId  String        @map("academic_year_id") @db.Uuid
+  kind            ProgrammeKind
+  gradeLevel      Int?          @map("grade_level")
+  createdByUserId String        @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([id, academicYearId], map: "programme_masters_id_academic_year_id_key")
+  @@index([academicYearId, kind, gradeLevel], map: "programme_masters_year_kind_idx")
+  @@map("programme_masters")
+}
+
+model ProgrammePlanVersion {
+  id                   String                     @id @default(uuid()) @db.Uuid
+  programmeMasterId    String                     @map("programme_master_id") @db.Uuid
+  versionNumber        Int                        @map("version_number")
+  status               ProgrammePlanVersionStatus @default(DRAFT)
+  draftRevision        Int                        @default(1) @map("draft_revision")
+  predecessorVersionId String?                    @map("predecessor_version_id") @db.Uuid
+  changeReason         String?                    @map("change_reason") @db.Text
+  createdByUserId      String                     @map("created_by_user_id") @db.Uuid
+  publishedByUserId    String?                    @map("published_by_user_id") @db.Uuid
+  publishedAt          DateTime?                  @map("published_at") @db.Timestamptz(3)
+  supersededByUserId   String?                    @map("superseded_by_user_id") @db.Uuid
+  supersededAt         DateTime?                  @map("superseded_at") @db.Timestamptz(3)
+  createdAt            DateTime                   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime                   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([programmeMasterId, versionNumber], map: "programme_plan_versions_master_version_key")
+  @@unique([id, programmeMasterId], map: "programme_plan_versions_id_master_key")
+  @@index([programmeMasterId, status, versionNumber], map: "programme_plan_versions_master_status_idx")
+  @@map("programme_plan_versions")
+}
+
+model ProgrammeTopicItem {
+  id                    String   @id @default(uuid()) @db.Uuid
+  programmePlanVersionId String   @map("programme_plan_version_id") @db.Uuid
+  sequence              Int
+  title                 String   @db.VarChar(500)
+  requiredPeriods       Int      @map("required_periods")
+  guidelineWeekFrom     Int?     @map("guideline_week_from")
+  guidelineWeekTo       Int?     @map("guideline_week_to")
+  guidelineSegmentLabel String?  @map("guideline_segment_label") @db.VarChar(100)
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([programmePlanVersionId, sequence], map: "programme_topic_items_version_sequence_key")
+  @@unique([id, programmePlanVersionId], map: "programme_topic_items_id_version_key")
+  @@index([programmePlanVersionId, sequence], map: "programme_topic_items_version_idx")
+  @@map("programme_topic_items")
+}
+
+model PlannedProgrammeOccurrence {
+  id                     String                    @id @default(uuid()) @db.Uuid
+  programmeMasterId      String                    @map("programme_master_id") @db.Uuid
+  programmePlanVersionId String                    @map("programme_plan_version_id") @db.Uuid
+  programmeTopicItemId   String                    @map("programme_topic_item_id") @db.Uuid
+  academicYearId         String                    @map("academic_year_id") @db.Uuid
+  civilDate              DateTime                  @map("civil_date") @db.Date
+  mode                   ProgrammeOccurrenceMode
+  gradeLevel             Int?                      @map("grade_level")
+  schoolClassId          String?                   @map("school_class_id") @db.Uuid
+  status                 ProgrammeOccurrenceStatus @default(DRAFT)
+  draftRevision          Int                       @default(1) @map("draft_revision")
+  note                   String?                   @db.VarChar(500)
+  replacesOccurrenceId   String?                   @map("replaces_occurrence_id") @db.Uuid
+  changeReason           String?                   @map("change_reason") @db.Text
+  createdByUserId        String                    @map("created_by_user_id") @db.Uuid
+  publishedByUserId      String?                   @map("published_by_user_id") @db.Uuid
+  publishedAt            DateTime?                 @map("published_at") @db.Timestamptz(3)
+  supersededByUserId     String?                   @map("superseded_by_user_id") @db.Uuid
+  supersededAt           DateTime?                 @map("superseded_at") @db.Timestamptz(3)
+  createdAt              DateTime                  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt              DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([id, academicYearId], map: "planned_programme_occurrences_id_year_key")
+  @@unique([id, programmeMasterId], map: "planned_programme_occurrences_id_master_key")
+  @@index([programmeMasterId, civilDate, status], map: "planned_programme_occurrences_master_date_status_idx")
+  @@index([academicYearId, civilDate, mode], map: "planned_programme_occurrences_year_date_mode_idx")
+  @@index([programmePlanVersionId, programmeTopicItemId], map: "planned_programme_occurrences_plan_topic_idx")
+  @@map("planned_programme_occurrences")
+}
+
+model PlannedOccurrenceSlot {
+  id                           String   @id @default(uuid()) @db.Uuid
+  plannedProgrammeOccurrenceId String   @map("planned_programme_occurrence_id") @db.Uuid
+  academicYearId               String   @map("academic_year_id") @db.Uuid
+  timeSlotDefinitionId         String   @map("time_slot_definition_id") @db.Uuid
+  createdAt                    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([plannedProgrammeOccurrenceId, timeSlotDefinitionId], map: "planned_occurrence_slots_occurrence_slot_key")
+  @@unique([id, plannedProgrammeOccurrenceId], map: "planned_occurrence_slots_id_occurrence_key")
+  @@index([academicYearId, timeSlotDefinitionId], map: "planned_occurrence_slots_year_slot_idx")
+  @@map("planned_occurrence_slots")
+}
+
+model PlannedSlotStaffing {
+  id                      String   @id @default(uuid()) @db.Uuid
+  plannedOccurrenceSlotId String   @map("planned_occurrence_slot_id") @db.Uuid
+  teacherUserId           String   @map("teacher_user_id") @db.Uuid
+  createdAt               DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([plannedOccurrenceSlotId, teacherUserId], map: "planned_slot_staffing_slot_teacher_key")
+  @@index([teacherUserId, plannedOccurrenceSlotId], map: "planned_slot_staffing_teacher_slot_idx")
+  @@map("planned_slot_staffing")
+}
+
+model ProgrammePlanningCommand {
+  id          String   @id @default(uuid()) @db.Uuid
+  actorUserId String   @map("actor_user_id") @db.Uuid
+  commandId   String   @map("command_id") @db.VarChar(100)
+  commandType String   @map("command_type") @db.VarChar(100)
+  fingerprint String   @db.VarChar(128)
+  result      Json     @db.JsonB
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([actorUserId, commandId], map: "programme_planning_commands_actor_command_key")
+  @@index([createdAt], map: "programme_planning_commands_created_at_idx")
+  @@map("programme_planning_commands")
 }
