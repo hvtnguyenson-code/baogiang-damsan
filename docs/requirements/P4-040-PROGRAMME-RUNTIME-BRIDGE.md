@@ -2,12 +2,18 @@
 
 ## Status
 
-**IN_REVIEW**
+**CLOSED**
 
 - Task branch: `feat/programme-runtime-bridge-040`
 - Canonical base: `3564b5a5c2f8659c1bc2b19d779ce83cb621f65e`
+- Reviewed feature head: `591192fa635fd3a10ec3379a29f8450700c804d4`
+- Parent PR: #150 (`feat(programme): implement P4-040 programme runtime bridge`)
+- Exact-head PR CI: CI #476 (run `35482927399`) SUCCESS
+- Normal merge/main: `107bf295a4c7031062b0b37bf7bd343f1f667066`
+- Authoritative post-merge main CI: CI #477 (run `35483252074`) SUCCESS
+- Closed by: `SYNC-P4-040`
 - Predecessor: `P4-030` (CLOSED by `SYNC-P4-030`)
-- Downstream: `P4-050` (PLANNED, depends on `P4-040`)
+- Downstream: `P4-050` (READY, depends on `P4-040`)
 - Architecture authority: `docs/decisions/ADR-050-GDDP-HDTN-PROGRAMME-ARCHITECTURE.md`, `docs/decisions/ADR-034-SPECIAL-ACTIVITY-ARCHITECTURE.md`, `docs/decisions/ADR-035-SPECIAL-ACTIVITY-RUNTIME.md`, `docs/decisions/ADR-038-TEACHING-EXECUTION-EVIDENCE.md`, `docs/decisions/ADR-045-HOMEROOM-RESPONSIBILITY.md`
 - Traceability: **T12**, **T17**, **T31**, **T43**, **T44**
 

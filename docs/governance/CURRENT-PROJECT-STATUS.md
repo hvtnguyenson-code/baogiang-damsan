@@ -6,27 +6,57 @@ This is the canonical mutable **product/task status** document for Báo giảng.
 
 It is **not** a self-referential registry of the latest Git commit. Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub at the start of every task. SHAs recorded here are evidence for the stated baseline or last closed major task.
 
-**Status snapshot date:** 2026-09-19
+**Status snapshot date:** 2026-09-20
 
 ## Active / next critical path
 
-`P4-030` — Programme coordinator authorization — is **CLOSED** by `SYNC-P4-030` following parent PR #148 merge (`08d235ded260e38171f38409e7e2783c9c1f41f2`) and authoritative post-merge CI #473 SUCCESS.
+`P4-040` — Programme-to-SpecialActivity runtime bridge — is **CLOSED** by `SYNC-P4-040` following parent PR #150 merge (`107bf295a4c7031062b0b37bf7bd343f1f667066`) and authoritative post-merge CI #477 SUCCESS.
 
 Active major task:
-- `P4-040` — Programme-to-SpecialActivity runtime bridge — **IN_REVIEW** on dedicated branch `feat/programme-runtime-bridge-040` (canonical base `3564b5a5c2f8659c1bc2b19d779ce83cb621f65e`).
+- None currently in progress.
 
 Eligible next task:
-- None (P4-040 currently in review; downstream P4-050 remains dependency-gated).
+- `P4-050` — Special-activity workload/reporting projection — **READY** (all prerequisites P4-010, P4-020, P4-030, P4-040 CLOSED).
 
 Remain:
 - `P2-010` — PPCT real-workbook contract/security audit — **BLOCKED_EVIDENCE** (pending authoritative school PPCT workbook/template).
 - `P2-020` — PPCT native importer implementation — **PLANNED** (pending `P2-010`).
 
-Production environment remains strictly **PRE-OPERATIONAL**. No production deployment has occurred. P4-030 delivered exact coordinator/BGH programme authorization, guarded HTTP/control-plane seam, query isolation, and qualification seam for later attestation validation; it did not add schema/migrations, Web UI, runtime materialization, programme attestation persistence, workload/reporting projection, deployment, or production data/config mutation.
+Production environment remains strictly **PRE-OPERATIONAL**. No production deployment has occurred. P4-040 delivered deterministic materialization of published occurrences into SpecialActivity roots, collision/eligibility reuse, target class freezing, HĐTN CLASS homeroom resolution with historical retrospective rule, explicit retained relational evidence via `SpecialActivityStaffing.historicalHomeroomAssignmentId` backed by restored `special_activity_staffing_eligibility_shape_check` constraint, dedicated retained `ProgrammeMaterializedActivity` bridge model with enhanced `programme_materialized_activity_guard`, command idempotency, post-materialization CAS reversal and replacement root creation (T43), `ProgrammeOccurrenceAttestation` persistence, qualification seam consumption, retained reversal, actor-scoped idempotency keys, and existential confirmation gate read model (T44); it did not calculate teacher workload or update ReportingStatement (owned by P4-050), add Web UI, deploy, or mutate production data/configuration.
 
 ## Last closed major task
 
-`P4-030` — Programme coordinator authorization — **CLOSED** by `SYNC-P4-030`.
+`P4-040` — Programme-to-SpecialActivity runtime bridge — **CLOSED** by `SYNC-P4-040`.
+
+Closure evidence:
+- dedicated implementation branch: `feat/programme-runtime-bridge-040`;
+- starting canonical main base: `3564b5a5c2f8659c1bc2b19d779ce83cb621f65e`;
+- final independently reviewed HEAD: `591192fa635fd3a10ec3379a29f8450700c804d4`;
+- independent review + forward-fix story: initial remote audit required explicit retained relational evidence on historical staffing to restore named check constraint `special_activity_staffing_eligibility_shape_check` and complete homeroom assignment provenance verification in `programme_materialized_activity_guard`; all findings absorbed via forward migration `20260920010000_programme_runtime_bridge_staffing_homeroom_evidence` and forward commit `591192fa635fd3a10ec3379a29f8450700c804d4`; final exact-remote audit returned `AUDIT PASS`;
+- parent PR: #150 (`feat(programme): implement P4-040 programme runtime bridge`);
+- PR details: exact base `3564b5a5c2f8659c1bc2b19d779ce83cb621f65e`, exact head `591192fa635fd3a10ec3379a29f8450700c804d4`, normal merge to main;
+- exact-head PR CI: CI #476 (run id: `35482927399`), SUCCESS on attempt 1;
+- merge/main commit: `107bf295a4c7031062b0b37bf7bd343f1f667066`;
+- normal merge: YES;
+- GitHub verified signature: YES;
+- authoritative post-merge main CI: CI #477 (run id: `35483252074`), SUCCESS on attempt 1 (event: `push`, branch: `main`, exact SHA: `107bf295a4c7031062b0b37bf7bd343f1f667066`);
+- delivered scope:
+  - deterministic materialization of published occurrences into 1..N SpecialActivity roots (v1: 1 root per exact planned slot);
+  - exact Slot -> Set<Teacher> preservation;
+  - collision/eligibility reuse and target class freezing;
+  - HĐTN CLASS homeroom resolution with historical retrospective rule;
+  - explicit retained relational evidence via `SpecialActivityStaffing.historicalHomeroomAssignmentId` backed by restored `special_activity_staffing_eligibility_shape_check` constraint;
+  - dedicated retained `ProgrammeMaterializedActivity` bridge model with enhanced `programme_materialized_activity_guard` validating coherent provenance and complete homeroom assignment provenance;
+  - command idempotency via `ProgrammePlanningCommand`;
+  - post-materialization CAS reversal and replacement root creation (T43);
+  - `ProgrammeOccurrenceAttestation` persistence, qualification seam consumption, retained reversal, actor-scoped idempotency keys, and existential confirmation gate read model (T44);
+  - guarded HTTP surface under `/api/programme-planning`;
+  - zero workload calculation or UI;
+  - production remains strictly PRE-OPERATIONAL;
+  - closed by administrative closure: `SYNC-P4-040`;
+  - downstream: `P4-050` is unlocked to `READY`.
+
+Predecessor closed major task: `P4-030` — Programme coordinator authorization — **CLOSED** by `SYNC-P4-030`.
 
 Closure evidence:
 - dedicated implementation branch: `feat/programme-coordinator-authorization-030`;
