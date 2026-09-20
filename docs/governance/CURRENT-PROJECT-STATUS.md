@@ -13,10 +13,10 @@ It is **not** a self-referential registry of the latest Git commit. Exact curren
 `P4-040` — Programme-to-SpecialActivity runtime bridge — is **CLOSED** by `SYNC-P4-040` following parent PR #150 merge (`107bf295a4c7031062b0b37bf7bd343f1f667066`) and authoritative post-merge CI #477 SUCCESS.
 
 Active major task:
-- None currently in progress.
+- `P4-050` — Special-activity workload/reporting projection — **IN_PROGRESS** (all prerequisites P4-010, P4-020, P4-030, P4-040 CLOSED).
 
 Eligible next task:
-- `P4-050` — Special-activity workload/reporting projection — **READY** (all prerequisites P4-010, P4-020, P4-030, P4-040 CLOSED).
+- None currently (P4-050 active).
 
 Remain:
 - `P2-010` — PPCT real-workbook contract/security audit — **BLOCKED_EVIDENCE** (pending authoritative school PPCT workbook/template).
