@@ -909,6 +909,7 @@ model HomeroomAssignment {
   reversedBy   User?                @relation("HomeroomAssignmentReversedBy", fields: [reversedByUserId], references: [id], onDelete: Restrict)
   replaces     HomeroomAssignment?  @relation("HomeroomAssignmentReplacementLineage", fields: [replacesId], references: [id], onDelete: Restrict)
   replacements HomeroomAssignment[] @relation("HomeroomAssignmentReplacementLineage")
+  historicalSpecialActivityStaffings SpecialActivityStaffing[] @relation("HistoricalStaffingHomeroomAssignment")
 
   @@unique([id, academicYearId, schoolClassId, teacherUserId], map: "homeroom_assignments_provenance_key")
   @@index([academicYearId, schoolClassId, status, validFrom, validUntil], map: "homeroom_assignments_class_status_validity_idx")
@@ -1330,18 +1331,21 @@ model SpecialActivityStaffing {
   scheduledTeacherUserId      String   @map("scheduled_teacher_user_id") @db.Uuid
   staffProfileId              String   @map("staff_profile_id") @db.Uuid
   eligibilityCheckedAt        DateTime @map("eligibility_checked_at") @db.Timestamptz(3)
-  eligibilityWasActive        Boolean  @map("eligibility_was_active")
-  eligibilityWasTeachingStaff Boolean  @map("eligibility_was_teaching_staff")
-  createdAt                   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  eligibilityWasActive           Boolean  @map("eligibility_was_active")
+  eligibilityWasTeachingStaff    Boolean  @map("eligibility_was_teaching_staff")
+  historicalHomeroomAssignmentId String?  @map("historical_homeroom_assignment_id") @db.Uuid
+  createdAt                      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  specialActivity         SpecialActivity                         @relation(fields: [specialActivityId], references: [id], onDelete: Restrict)
-  scheduledTeacher        User                                    @relation("SpecialActivityScheduledTeacher", fields: [scheduledTeacherUserId], references: [id], onDelete: Restrict)
-  staffProfile            StaffProfile                            @relation(fields: [staffProfileId, scheduledTeacherUserId], references: [id, userId], onDelete: Restrict)
-  participationExecutions SpecialActivityParticipationExecution[] @relation("ActivityExecutionStaffing")
+  specialActivity              SpecialActivity                         @relation(fields: [specialActivityId], references: [id], onDelete: Restrict)
+  scheduledTeacher             User                                    @relation("SpecialActivityScheduledTeacher", fields: [scheduledTeacherUserId], references: [id], onDelete: Restrict)
+  staffProfile                 StaffProfile                            @relation(fields: [staffProfileId, scheduledTeacherUserId], references: [id, userId], onDelete: Restrict)
+  historicalHomeroomAssignment HomeroomAssignment?                     @relation("HistoricalStaffingHomeroomAssignment", fields: [historicalHomeroomAssignmentId], references: [id], onDelete: Restrict)
+  participationExecutions      SpecialActivityParticipationExecution[] @relation("ActivityExecutionStaffing")
 
   @@unique([specialActivityId, scheduledTeacherUserId], map: "special_activity_staffing_activity_teacher_key")
   @@unique([id, specialActivityId, scheduledTeacherUserId], map: "special_activity_staffing_execution_source_key")
   @@index([scheduledTeacherUserId, specialActivityId], map: "special_activity_staffing_teacher_activity_idx")
+  @@index([historicalHomeroomAssignmentId], map: "special_activity_staffing_historical_homeroom_idx")
   @@map("special_activity_staffing")
 }
 

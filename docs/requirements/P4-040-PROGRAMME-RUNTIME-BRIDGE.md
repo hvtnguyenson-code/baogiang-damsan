@@ -49,7 +49,7 @@ P4-040 implements the runtime execution bridge and attestation control plane for
    - Fails closed on missing, ambiguous, or corrupt homeroom assignments.
    - **Retrospective Rule**:
      - For current/future occurrences (`civilDate >= homeroomBusinessDate()` or open-ended assignments): GVCN must be currently `ACTIVE` teaching staff.
-     - For historical occurrences (`civilDate < homeroomBusinessDate()`) covered by exact retained historical `HomeroomAssignment` (`validUntil !== null && validUntil < homeroomBusinessDate()`): historical materialization succeeds even if the historical GVCN subsequently became disabled or inactive; truthful historical eligibility snapshot (`eligibilityWasActive: false`) is preserved.
+     - For historical occurrences (`civilDate < homeroomBusinessDate()`) covered by exact retained historical `HomeroomAssignment` (`validUntil !== null && validUntil < homeroomBusinessDate()`): historical materialization succeeds even if the historical GVCN subsequently became disabled or inactive; truthful historical eligibility snapshot (`eligibilityWasActive: false`) is preserved with explicit retained relational evidence in `SpecialActivityStaffing.historicalHomeroomAssignmentId` backed by the restored `special_activity_staffing_eligibility_shape_check` DB constraint.
      - Public ad-hoc `SpecialActivity` creation remains strictly gated to currently active teaching staff.
    - Freezes `homeroomAssignmentId` and `homeroomTeacherUserId` as immutable provenance in `ProgrammeMaterializedActivity`.
    - Historical immutability: subsequent homeroom assignment changes do not rewrite previously materialized roots.

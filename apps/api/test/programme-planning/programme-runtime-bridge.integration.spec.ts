@@ -1536,6 +1536,7 @@ integration('ProgrammeRuntimeBridge (PostgreSQL integration P4-040)', () => {
       });
       expect(pastStaffing.scheduledTeacherUserId).toBe(inactiveTeacher.id);
       expect(pastStaffing.eligibilityWasActive).toBe(false);
+      expect(pastStaffing.historicalHomeroomAssignmentId).toBe(retroAssignment.id);
 
       // Case 3: Public SpecialActivity creation with inactive teacher fails
       const saMgr = await h.actor({

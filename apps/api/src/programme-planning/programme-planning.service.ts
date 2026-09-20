@@ -1850,6 +1850,7 @@ export class ProgrammePlanningService {
             requestKey,
             actorUserId,
             allowHistoricalStaffing: isHistoricalRetainedGvcn,
+            historicalHomeroomAssignmentId: isHistoricalRetainedGvcn ? homeroomAssignmentId : null,
           });
 
           const matRow = await tx.programmeMaterializedActivity.create({
