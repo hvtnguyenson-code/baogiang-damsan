@@ -3,6 +3,7 @@ import {
   OPERATIONAL_START_FAMILY_DEFINITION,
   OPERATIONAL_START_VALIDATOR_V1,
   PRODUCTION_BUSINESS_POLICY_FAMILIES,
+  SPECIAL_PROGRAMME_WORKLOAD_FAMILY_DEFINITION,
 } from '../../src/business-configuration/business-policy-registry';
 
 describe('OPERATIONAL_START policy family registry and validator v1', () => {
@@ -18,8 +19,11 @@ describe('OPERATIONAL_START policy family registry and validator v1', () => {
       expect(family?.validators[0]?.version).toBe('v1');
     });
 
-    it('exposes exactly OPERATIONAL_START as production registered family', () => {
-      expect(PRODUCTION_BUSINESS_POLICY_FAMILIES).toEqual([OPERATIONAL_START_FAMILY_DEFINITION]);
+    it('exposes exactly the two production registered families', () => {
+      expect(PRODUCTION_BUSINESS_POLICY_FAMILIES).toEqual([
+        OPERATIONAL_START_FAMILY_DEFINITION,
+        SPECIAL_PROGRAMME_WORKLOAD_FAMILY_DEFINITION,
+      ]);
       expect(PRODUCTION_BUSINESS_POLICY_FAMILIES.some((f) => f.key === 'TEST_BOOLEAN_THRESHOLD')).toBe(false);
       expect(PRODUCTION_BUSINESS_POLICY_FAMILIES.some((f) => f.key === 'TEST_ACADEMIC_YEAR_CONFIG')).toBe(false);
     });

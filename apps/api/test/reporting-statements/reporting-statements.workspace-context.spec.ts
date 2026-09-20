@@ -25,6 +25,7 @@ function setup(capabilities: Array<{ key: string; scope: string; resourceId?: st
     audit as never,
     {} as never,
     { now: jest.fn() },
+    { resolve: jest.fn(), resolveInTransaction: jest.fn() } as never,
   );
   return { service, prisma, authorization, audit };
 }

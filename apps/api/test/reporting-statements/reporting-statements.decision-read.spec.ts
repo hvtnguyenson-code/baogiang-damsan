@@ -71,7 +71,21 @@ function setup(classifications: unknown[] = [replay], row: unknown = makeFrozenR
   const tx = { ...repository, user: { findUnique: jest.fn().mockResolvedValue({ profile: null }) } };
   const prisma = { $transaction: jest.fn(async (fn: TransactionCallback) => fn(tx)) };
   const auth = { evaluate: jest.fn().mockResolvedValue({ allowed: true }), listEffectiveCapabilities: jest.fn().mockResolvedValue([]) };
-  return { sut: new ReportingStatementsService(prisma as never, repository as never, {} as never, auth as never, { write: jest.fn() } as never, {} as never, { now: jest.fn(() => asOf) }), repository, auth, prisma };
+  return {
+    sut: new ReportingStatementsService(
+      prisma as never,
+      repository as never,
+      {} as never,
+      auth as never,
+      { write: jest.fn() } as never,
+      {} as never,
+      { now: jest.fn(() => asOf) },
+      { resolve: jest.fn(), resolveInTransaction: jest.fn() } as never,
+    ),
+    repository,
+    auth,
+    prisma,
+  };
 }
 
 describe('ReportingStatementsService decision/read', () => {
