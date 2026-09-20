@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { SpecialActivitiesService } from '../special-activities/special-activities.service';
 import { ProgrammePlanningService, weekdayForCivilDate } from './programme-planning.service';
 import {
   CreateDraftOccurrenceDto,
@@ -420,9 +421,15 @@ describe('ProgrammePlanningService', () => {
       write: jest.fn().mockResolvedValue(undefined),
     } as unknown as AuditService;
 
+    const mockSpecialActivities = {
+      createMaterializedRoot: jest.fn(),
+      reverseMaterializedRoot: jest.fn(),
+    } as unknown as SpecialActivitiesService;
+
     service = new ProgrammePlanningService(
       mockPrisma as unknown as PrismaService,
       mockAudit,
+      mockSpecialActivities,
     );
   });
 

@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, HttpException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { AuditResult, OperationalOverlayStatus, Prisma, SpecialActivityScope, SpecialActivityStatus, TimetableVersionStatus } from '@prisma/client';
+import { AuditResult, OperationalOverlayStatus, Prisma, SpecialActivity, SpecialActivityScope, SpecialActivityStatus, TimetableVersionStatus } from '@prisma/client';
 import { SpecialActivityCreateResult, SpecialActivityListResponse, SpecialActivityRecord, SpecialActivityReverseResult } from '@baogiang/contracts';
 import { AuditService } from '../audit/audit.service';
 import { requestMeta } from '../auth/auth-http';
@@ -78,6 +78,159 @@ export class SpecialActivitiesService {
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
   }
 
+  /**
+   * Internal transactional seam for Programme Planning materialization (P4-040).
+   * Validates canonical collision semantics without requiring SPECIAL_ACTIVITY_MANAGE.
+   */
+  async createMaterializedRoot(
+    tx: Prisma.TransactionClient,
+    input: {
+      academicYearId: string;
+      academicCalendarVersionId: string;
+      civilDate: string;
+      scope: SpecialActivityScope;
+      gradeLevel: number | null;
+      schoolClassId: string | null;
+      exactTimeSlotDefinitionIds: string[];
+      scheduledTeacherUserIds: string[];
+      title: string;
+      note?: string | null;
+      replacesId?: string | null;
+      requestKey: string;
+      actorUserId: string;
+      allowHistoricalStaffing?: boolean;
+      historicalHomeroomAssignmentId?: string | null;
+    },
+  ): Promise<SpecialActivity> {
+    const value = this.normalize({
+      academicYearId: input.academicYearId,
+      academicCalendarVersionId: input.academicCalendarVersionId,
+      civilDate: input.civilDate,
+      scope: input.scope,
+      gradeLevel: input.gradeLevel ?? undefined,
+      schoolClassId: input.schoolClassId ?? undefined,
+      exactTimeSlotDefinitionIds: input.exactTimeSlotDefinitionIds,
+      scheduledTeacherUserIds: input.scheduledTeacherUserIds,
+      title: input.title,
+      note: input.note ?? undefined,
+      replacesId: input.replacesId ?? undefined,
+      requestKey: input.requestKey,
+    });
+    const fingerprint = specialActivityCreateFingerprint(value);
+    const replay = await tx.specialActivity.findUnique({
+      where: { createRequestKey: input.requestKey.trim() },
+    });
+    if (replay) {
+      if (replay.createRequestFingerprint !== fingerprint) {
+        throw new ConflictException('requestKey đã được dùng với nội dung khác.');
+      }
+      return replay;
+    }
+    const context = await this.validateAndResolve(
+      tx,
+      value,
+      input.allowHistoricalStaffing ?? false,
+      input.historicalHomeroomAssignmentId,
+    );
+    await this.assertNoCollision(tx, value, context.classIds, context.slots);
+    const root = await tx.specialActivity.create({
+      data: {
+        academicYearId: value.academicYearId,
+        academicCalendarVersionId: value.academicCalendarVersionId,
+        civilDate: parseCivilDate(value.civilDate),
+        scope: value.scope,
+        gradeLevel: value.gradeLevel,
+        schoolClassId: value.schoolClassId,
+        title: value.title,
+        note: value.note,
+        replacesId: value.replacesId,
+        createRequestKey: input.requestKey.trim(),
+        createRequestFingerprint: fingerprint,
+        createdByUserId: input.actorUserId,
+      },
+    });
+    await tx.specialActivityTimeSlot.createMany({
+      data: value.exactTimeSlotDefinitionIds.map((timeSlotDefinitionId) => ({
+        specialActivityId: root.id,
+        academicYearId: value.academicYearId,
+        timeSlotDefinitionId,
+      })),
+    });
+    await tx.specialActivityClassTarget.createMany({
+      data: context.classIds.map((schoolClassId) => ({
+        specialActivityId: root.id,
+        academicYearId: value.academicYearId,
+        schoolClassId,
+      })),
+    });
+    await tx.specialActivityStaffing.createMany({
+      data: context.staff.map((item) => ({
+        specialActivityId: root.id,
+        scheduledTeacherUserId: item.userId,
+        staffProfileId: item.profileId,
+        eligibilityCheckedAt: item.checkedAt,
+        eligibilityWasActive: item.eligibilityWasActive,
+        eligibilityWasTeachingStaff: item.eligibilityWasTeachingStaff,
+        historicalHomeroomAssignmentId:
+          input.allowHistoricalStaffing && input.historicalHomeroomAssignmentId
+            ? input.historicalHomeroomAssignmentId
+            : null,
+      })),
+    });
+    return root;
+  }
+
+  /**
+   * Internal transactional seam for Programme Planning post-materialization CAS replacement (T43).
+   */
+  async reverseMaterializedRoot(
+    tx: Prisma.TransactionClient,
+    input: {
+      id: string;
+      expectedUpdatedAt: Date | string;
+      reversalReason: string;
+      requestKey: string;
+      actorUserId: string;
+    },
+  ): Promise<SpecialActivity> {
+    const fingerprint = specialActivityReverseFingerprint(
+      input.id,
+      typeof input.expectedUpdatedAt === 'string' ? input.expectedUpdatedAt : input.expectedUpdatedAt.toISOString(),
+      input.reversalReason.trim(),
+    );
+    const replay = await tx.specialActivity.findUnique({
+      where: { reverseRequestKey: input.requestKey.trim() },
+    });
+    if (replay) {
+      if (replay.id !== input.id || replay.reverseRequestFingerprint !== fingerprint) {
+        throw new ConflictException('requestKey đảo ngược đã được dùng với nội dung khác.');
+      }
+      return replay;
+    }
+    const existing = await tx.specialActivity.findUnique({ where: { id: input.id } });
+    if (!existing) throw new NotFoundException('Không tìm thấy hoạt động đặc biệt.');
+    const reversedAt = this.clock.now();
+    const expectedDate = typeof input.expectedUpdatedAt === 'string' ? new Date(input.expectedUpdatedAt) : input.expectedUpdatedAt;
+    const changed = await tx.specialActivity.updateMany({
+      where: {
+        id: input.id,
+        status: SpecialActivityStatus.ACTIVE,
+        updatedAt: expectedDate,
+      },
+      data: {
+        status: SpecialActivityStatus.REVERSED,
+        reversedByUserId: input.actorUserId,
+        reversedAt,
+        reversalReason: input.reversalReason.trim(),
+        reverseRequestKey: input.requestKey.trim(),
+        reverseRequestFingerprint: fingerprint,
+        updatedAt: reversedAt,
+      },
+    });
+    if (changed.count !== 1) throw new ConflictException(STALE);
+    return tx.specialActivity.findUniqueOrThrow({ where: { id: input.id } });
+  }
+
   private normalize(dto: CreateSpecialActivityDto) {
     const value = { academicYearId: dto.academicYearId, academicCalendarVersionId: dto.academicCalendarVersionId, civilDate: dto.civilDate, scope: dto.scope, gradeLevel: dto.gradeLevel ?? null, schoolClassId: dto.schoolClassId ?? null, exactTimeSlotDefinitionIds: [...new Set(dto.exactTimeSlotDefinitionIds)].sort(), scheduledTeacherUserIds: [...new Set(dto.scheduledTeacherUserIds)].sort(), title: dto.title.trim(), note: dto.note?.trim() ?? null, replacesId: dto.replacesId ?? null };
     const bad = value.scope === SpecialActivityScope.SCHOOL_WIDE && (value.gradeLevel !== null || value.schoolClassId !== null) || value.scope === SpecialActivityScope.GRADE && (![10, 11, 12].includes(value.gradeLevel ?? -1) || value.schoolClassId !== null) || value.scope === SpecialActivityScope.CLASS && (value.schoolClassId === null || value.gradeLevel !== null);
@@ -85,7 +238,12 @@ export class SpecialActivitiesService {
     return value;
   }
 
-  private async validateAndResolve(tx: Prisma.TransactionClient, value: ReturnType<SpecialActivitiesService['normalize']>) {
+  private async validateAndResolve(
+    tx: Prisma.TransactionClient,
+    value: ReturnType<SpecialActivitiesService['normalize']>,
+    allowHistoricalStaffing = false,
+    historicalHomeroomAssignmentId?: string | null,
+  ) {
     const date = parseCivilDate(value.civilDate); const past = this.isPast(value.civilDate);
     const [year, calendar, slots] = await Promise.all([tx.academicYear.findUnique({ where: { id: value.academicYearId }, select: { id: true } }), tx.academicCalendarVersion.findUnique({ where: { id: value.academicCalendarVersionId } }), tx.timeSlotDefinition.findMany({ where: { id: { in: value.exactTimeSlotDefinitionIds } } })]);
     if (!year) throw new NotFoundException('Không tìm thấy năm học.');
@@ -95,10 +253,38 @@ export class SpecialActivitiesService {
     if (value.scope === SpecialActivityScope.CLASS && classes.length !== 1) throw new ConflictException('Lớp không thuộc đúng năm học hoặc không còn current canonical.');
     const classIds = [...new Set(classes.map((x) => x.id))].sort(); if (!classIds.length) throw new ConflictException('Không có lớp canonical nào để đóng băng mục tiêu.');
     const users = await tx.user.findMany({ where: { id: { in: value.scheduledTeacherUserIds } }, include: { profile: true } });
-    if (users.length !== value.scheduledTeacherUserIds.length || users.some((u) => u.status !== 'ACTIVE' || !u.profile || !u.profile.isTeachingStaff)) throw new ConflictException('Giáo viên được xếp không phải nhân sự giảng dạy ACTIVE hợp lệ.');
+    if (users.length !== value.scheduledTeacherUserIds.length) throw new ConflictException('Không tìm thấy một hoặc nhiều giáo viên được xếp.');
+    const hasInactiveOrNonTeaching = users.some((u) => u.status !== 'ACTIVE' || !u.profile || !u.profile.isTeachingStaff);
+    if (allowHistoricalStaffing && past) {
+      if (users.some((u) => !u.profile)) throw new ConflictException('Giáo viên được xếp không có hồ sơ nhân sự.');
+      if (hasInactiveOrNonTeaching && !historicalHomeroomAssignmentId) {
+        throw new ConflictException('Phục hồi nhân sự lịch sử thiếu bằng chứng phân công chủ nhiệm.');
+      }
+    } else {
+      if (hasInactiveOrNonTeaching) throw new ConflictException('Giáo viên được xếp không phải nhân sự giảng dạy ACTIVE hợp lệ.');
+    }
+    if (historicalHomeroomAssignmentId) {
+      const assignment = await tx.homeroomAssignment.findUnique({
+        where: { id: historicalHomeroomAssignmentId },
+        select: { id: true },
+      });
+      if (!assignment) {
+        throw new ConflictException('Không tìm thấy bằng chứng phân công chủ nhiệm lịch sử.');
+      }
+    }
     if (value.replacesId) { const predecessor = await tx.specialActivity.findUnique({ where: { id: value.replacesId }, select: { status: true } }); if (!predecessor || predecessor.status !== SpecialActivityStatus.REVERSED) throw new ConflictException('Predecessor phải tồn tại và đã REVERSED.'); }
     const checkedAt = this.clock.now();
-    return { classIds, slots, staff: users.map((u) => ({ userId: u.id, profileId: u.profile!.id, checkedAt })) };
+    return {
+      classIds,
+      slots,
+      staff: users.map((u) => ({
+        userId: u.id,
+        profileId: u.profile!.id,
+        checkedAt,
+        eligibilityWasActive: u.status === 'ACTIVE',
+        eligibilityWasTeachingStaff: !!u.profile?.isTeachingStaff,
+      })),
+    };
   }
 
   private async assertNoCollision(tx: Prisma.TransactionClient, value: ReturnType<SpecialActivitiesService['normalize']>, classIds: string[], slots: Array<{ id: string; startTime: Date; endTime: Date }>) {

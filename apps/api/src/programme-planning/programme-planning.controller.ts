@@ -17,6 +17,7 @@ import { CsrfOriginGuard } from '../auth/csrf-origin.guard';
 import { SessionAuthGuard } from '../auth/session-auth.guard';
 import { AuthorizedProgrammePlanningService } from './authorized-programme-planning.service';
 import {
+  AttestOccurrenceDto,
   CreateDraftOccurrenceDto,
   CreateDraftPlanVersionDto,
   CreateProgrammeMasterDto,
@@ -26,12 +27,18 @@ import {
   EditDraftPlanVersionDto,
   ListPlannedOccurrencesDto,
   ListProgrammeMastersDto,
+  MaterializeOccurrenceDto,
   PlannedProgrammeOccurrenceRecord,
   ProgrammeMasterRecord,
+  ProgrammeMaterializedActivityRecord,
+  ProgrammeOccurrenceAttestationRecord,
+  ProgrammeOccurrenceAttestationsListResponse,
   ProgrammePlanVersionRecord,
   PublishOccurrenceDto,
   PublishPlanVersionDto,
+  ReplaceMaterializedSlotDto,
   ReplaceOccurrenceSlotsStaffingDto,
+  ReverseAttestationDto,
 } from './dto';
 
 @Controller('programme-planning')
@@ -243,5 +250,69 @@ export class ProgrammePlanningController {
       req.auth!.user.id,
       this.auditContext(req),
     );
+  }
+
+  // =========================================================================
+  // RUNTIME BRIDGE & ATTESTATION (P4-040)
+  // =========================================================================
+
+  @Post('occurrences/:id/materialize')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(CsrfOriginGuard)
+  async materializeOccurrence(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: MaterializeOccurrenceDto,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<ProgrammeMaterializedActivityRecord[]> {
+    return this.service.materializeOccurrence(id, dto, req.auth!.user.id, this.auditContext(req));
+  }
+
+  @Get('occurrences/:id/materialization')
+  async getOccurrenceMaterialization(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<ProgrammeMaterializedActivityRecord[]> {
+    return this.service.getOccurrenceMaterialization(id, req.auth!.user.id, this.auditContext(req));
+  }
+
+  @Post('materialized-slots/:id/replacements')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(CsrfOriginGuard)
+  async replaceMaterializedSlot(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ReplaceMaterializedSlotDto,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<ProgrammeMaterializedActivityRecord> {
+    return this.service.replaceMaterializedSlot(id, dto, req.auth!.user.id, this.auditContext(req));
+  }
+
+  @Post('occurrences/:id/attestations')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(CsrfOriginGuard)
+  async attestOccurrence(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AttestOccurrenceDto,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<ProgrammeOccurrenceAttestationRecord> {
+    return this.service.attestOccurrence(id, dto, req.auth!.user.id, this.auditContext(req));
+  }
+
+  @Get('occurrences/:id/attestations')
+  async listOccurrenceAttestations(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<ProgrammeOccurrenceAttestationsListResponse> {
+    return this.service.listOccurrenceAttestations(id, req.auth!.user.id, this.auditContext(req));
+  }
+
+  @Post('attestations/:attestationId/reverse')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(CsrfOriginGuard)
+  async reverseAttestation(
+    @Param('attestationId', ParseUUIDPipe) attestationId: string,
+    @Body() dto: ReverseAttestationDto,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<ProgrammeOccurrenceAttestationRecord> {
+    return this.service.reverseAttestation(attestationId, dto, req.auth!.user.id, this.auditContext(req));
   }
 }
