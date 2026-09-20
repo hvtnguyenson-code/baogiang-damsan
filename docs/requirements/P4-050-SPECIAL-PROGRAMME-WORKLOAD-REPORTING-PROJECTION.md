@@ -2,7 +2,7 @@
 
 ## Status
 
-**IN_REVIEW**
+**CLOSED**
 
 - Task branch: `feat/special-programme-workload-reporting-050`
 - Canonical base: `8709b12253fbbb8ba2e4f65be3e6d5d5f5e5372e`
@@ -10,6 +10,20 @@
 - Predecessor: `P4-040` (CLOSED by `SYNC-P4-040`)
 - Downstream: `P4-060` (DEFERRED_WITH_TRIGGER)
 - Traceability: **T19**, **T20**, **T44**
+
+## Closure evidence — SYNC-P4-050
+
+- Branch: `feat/special-programme-workload-reporting-050`
+- Canonical base: `8709b12253fbbb8ba2e4f65be3e6d5d5f5e5372e`
+- Final feature head: `5a7659a9d242a9b50c487259b348cb1dce082d88`
+- Parent PR #152: `feat(reporting): add P4-050 special programme workload projection`
+- Exact-head CI #482, run `35504549933`: **SUCCESS**
+- Merge/main: `8501ea3ce8920b5bccdb3e43273c51b493319496`
+- Authoritative post-merge main CI #483, run `35504905999`: **SUCCESS**
+- Independent audit/correction evidence: `fe63c12d5f26ddbf183964a2fdf05b656996ce85` → `475dffbe94a288dc76464689827e2fe31f86dbd8` → `1d66230b1a60b57b01b46bcca418f6cb1e7348d9` → `5a7659a9d242a9b50c487259b348cb1dce082d88`
+- CLOSED by `SYNC-P4-050`.
+- Production remains **PRE-OPERATIONAL**; no production deployment or mutation occurred.
+- `P4-060` and `P4-061` remain `DEFERRED_WITH_TRIGGER`; no adjustment/reduction semantics were unlocked.
 
 ---
 

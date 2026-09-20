@@ -10,23 +10,54 @@ It is **not** a self-referential registry of the latest Git commit. Exact curren
 
 ## Active / next critical path
 
-`P4-040` — Programme-to-SpecialActivity runtime bridge — is **CLOSED** by `SYNC-P4-040` following parent PR #150 merge (`107bf295a4c7031062b0b37bf7bd343f1f667066`) and authoritative post-merge CI #477 SUCCESS.
+`P4-050` — Special-activity workload/reporting projection — is **CLOSED** by `SYNC-P4-050` following parent PR #152 merge (`8501ea3ce8920b5bccdb3e43273c51b493319496`) and authoritative post-merge CI #483 SUCCESS.
 
 Active major task:
-- `P4-050` — Special-activity workload/reporting projection — **IN_REVIEW** (implementation and targeted tests complete on branch `feat/special-programme-workload-reporting-050`).
+- None.
 
 Eligible next task:
-- None currently (P4-050 active).
+- None currently; no next major task is inferred by this closure.
 
 Remain:
 - `P2-010` — PPCT real-workbook contract/security audit — **BLOCKED_EVIDENCE** (pending authoritative school PPCT workbook/template).
 - `P2-020` — PPCT native importer implementation — **PLANNED** (pending `P2-010`).
 
-Production environment remains strictly **PRE-OPERATIONAL**. No production deployment has occurred. P4-040 delivered deterministic materialization of published occurrences into SpecialActivity roots, collision/eligibility reuse, target class freezing, HĐTN CLASS homeroom resolution with historical retrospective rule, explicit retained relational evidence via `SpecialActivityStaffing.historicalHomeroomAssignmentId` backed by restored `special_activity_staffing_eligibility_shape_check` constraint, dedicated retained `ProgrammeMaterializedActivity` bridge model with enhanced `programme_materialized_activity_guard`, command idempotency, post-materialization CAS reversal and replacement root creation (T43), `ProgrammeOccurrenceAttestation` persistence, qualification seam consumption, retained reversal, actor-scoped idempotency keys, and existential confirmation gate read model (T44); it did not calculate teacher workload or update ReportingStatement (owned by P4-050), add Web UI, deploy, or mutate production data/configuration.
+Production environment remains strictly **PRE-OPERATIONAL**. No production deployment or mutation has occurred. P4-040 delivered the runtime materialization and attestation foundation; P4-050 delivered the downstream schema-free workload/reporting projection and V3 statement freeze documented below.
 
 ## Last closed major task
 
-`P4-040` — Programme-to-SpecialActivity runtime bridge — **CLOSED** by `SYNC-P4-040`.
+`P4-050` — Special-activity workload/reporting projection — **CLOSED** by `SYNC-P4-050`.
+
+Closure evidence:
+- dedicated implementation branch: `feat/special-programme-workload-reporting-050`;
+- canonical starting main base: `8709b12253fbbb8ba2e4f65be3e6d5d5f5e5372e`;
+- final feature head: `5a7659a9d242a9b50c487259b348cb1dce082d88`;
+- parent PR: #152 (`feat(reporting): add P4-050 special programme workload projection`);
+- exact-head PR CI: CI #482 (run `35504549933`), SUCCESS on attempt 1;
+- merge/main commit: `8501ea3ce8920b5bccdb3e43273c51b493319496`;
+- normal merge: YES;
+- GitHub verified merge signature: YES;
+- authoritative post-merge main CI: CI #483 (run `35504905999`), SUCCESS on attempt 1 (event: `push`, branch: `main`, exact SHA: `8501ea3ce8920b5bccdb3e43273c51b493319496`);
+- delivered scope:
+  - schema-free on-demand special-programme workload projection;
+  - ACTIVE-at-as-of execution plus existential qualifying programme-attestation dual gate;
+  - exact maximum one contribution per `(plannedOccurrenceSlotId, actualTeacherUserId)`;
+  - no class-target or attestation-count workload fan-out;
+  - reversal/replacement as-of semantics;
+  - fail-closed retained provenance and duplicate/ambiguous identity handling;
+  - strict `SPECIAL_PROGRAMME_WORKLOAD` / `v1` / `ACADEMIC_YEAR` business policy with no default or fallback coefficient;
+  - Reporting Statement `SNAPSHOT_V3` with workload, execution, programme, policy and attestation provenance;
+  - V1/V2 historical readability retained;
+  - generic ad-hoc `SpecialActivity` without programme materialization receives no programme workload;
+  - P4-060/P4-061 adjustment and reduction semantics untouched;
+  - no workload schema or migration added;
+  - no production deployment or mutation;
+- bounded correction story: initial implementation/review line reached `fe63c12d5f26ddbf183964a2fdf05b656996ce85`; independent remote audit hardening `475dffbe94a288dc76464689827e2fe31f86dbd8`; CI fixture alignment `1d66230b1a60b57b01b46bcca418f6cb1e7348d9`; final HTTP V3 and CI artifact guard correction `5a7659a9d242a9b50c487259b348cb1dce082d88`;
+- feature PR legitimately changed `.github/workflows/ci.yml` to avoid a false secondary screenshot-artifact failure when Playwright was skipped while retaining fail-closed upload behavior when Playwright runs;
+- closed by administrative closure: `SYNC-P4-050`;
+- production remains strictly **PRE-OPERATIONAL**.
+
+Predecessor closed major task: `P4-040` — Programme-to-SpecialActivity runtime bridge — **CLOSED** by `SYNC-P4-040`.
 
 Closure evidence:
 - dedicated implementation branch: `feat/programme-runtime-bridge-040`;
@@ -54,7 +85,7 @@ Closure evidence:
   - zero workload calculation or UI;
   - production remains strictly PRE-OPERATIONAL;
   - closed by administrative closure: `SYNC-P4-040`;
-  - downstream: `P4-050` is unlocked to `READY`.
+  - downstream: `P4-050` was unlocked to `READY` and is now **CLOSED** by `SYNC-P4-050`.
 
 Predecessor closed major task: `P4-030` — Programme coordinator authorization — **CLOSED** by `SYNC-P4-030`.
 
@@ -500,7 +531,7 @@ The registered pre-pilot Homeroom chain is closed: P1-010 architecture, P1-011 p
 - HĐTN `CLASS` resolves exact GVCN by occurrence date and downstream materialization freezes source provenance;
 - `HomeroomAssignment` existence alone is not teaching-execution evidence or HĐTN period credit.
 
-P1-010 review also recovered and registered Special Programme boundaries T43/T44. P4-010 architecture, P4-020 planning persistence/control plane, and P4-030 coordinator/BGH authorization are now CLOSED; runtime materialization/attestation remains P4-040, and workload projection remains P4-050.
+P1-010 review also recovered and registered Special Programme boundaries T43/T44. P4-010 architecture, P4-020 planning persistence/control plane, P4-030 coordinator/BGH authorization, P4-040 runtime materialization/attestation, and P4-050 workload projection are now CLOSED.
 
 ## Accepted Business Configuration domain
 
@@ -605,7 +636,7 @@ The repository contains reviewed implementation for:
 - component-aware PPCT persistence/control plane closed by P2-002, including stable component identity on `PpctItem`, component-aware revision/lineage provenance, per-component sequence uniqueness, `PpctClassCurricularProfile`, legacy CORE/CORE_ONLY migration and server-side business-week profile split prevention;
 - operational overlays;
 - SpecialActivity minimum-core persistence/runtime with exact slots, frozen classes, staffing and class/teacher/time collision checks;
-- **retained GDĐP/HĐTN programme planning persistence/control plane closed by P4-020 and coordinator/BGH authorization closed by P4-030**, including `ProgrammeMaster`, retained plan versions/topic items, prospective planned occurrences, exact slots and `Slot -> Set<Teacher>` staffing, DRAFT/PUBLISHED/SUPERSEDED lineage, DB hardening, CAS, SERIALIZABLE bounded retry, idempotency receipts and same-transaction audit; exact coordinator authority (`ACTIVITY + exact ProgrammeMaster.id`), `GDDDP_COORDINATOR` and `HĐTN_COORDINATOR` strict binding, BGH professional authority (`APPROVAL_PRINCIPAL` / `APPROVAL_VICE_PRINCIPAL`, `SCHOOL_WIDE`), BGH-only bootstrap invariant, coordinator grant target/kind normalization hardening, guarded `/api/programme-planning` HTTP surface, server-owned relation resolution, body/route mismatch rejection, list/query isolation, fail-closed `mustChangePassword`, persisted denial audit, and qualification seam for later attestation validation; runtime materialization and attestation persistence remain P4-040;
+- **retained GDĐP/HĐTN programme planning persistence/control plane closed by P4-020 and coordinator/BGH authorization closed by P4-030**, including `ProgrammeMaster`, retained plan versions/topic items, prospective planned occurrences, exact slots and `Slot -> Set<Teacher>` staffing, DRAFT/PUBLISHED/SUPERSEDED lineage, DB hardening, CAS, SERIALIZABLE bounded retry, idempotency receipts and same-transaction audit; exact coordinator authority (`ACTIVITY + exact ProgrammeMaster.id`), `GDDDP_COORDINATOR` and `HĐTN_COORDINATOR` strict binding, BGH professional authority (`APPROVAL_PRINCIPAL` / `APPROVAL_VICE_PRINCIPAL`, `SCHOOL_WIDE`), BGH-only bootstrap invariant, coordinator grant target/kind normalization hardening, guarded `/api/programme-planning` HTTP surface, server-owned relation resolution, body/route mismatch rejection, list/query isolation, fail-closed `mustChangePassword`, persisted denial audit, qualification seam for attestation validation, runtime materialization and attestation persistence closed by P4-040, and downstream workload/reporting projection closed by P4-050;
 - PPCT occurrence allocation (P2-003 component-aware weekly routing, independent progression and downstream projection runtime closed by P2-003 and merged to main);
 - specialized-study class-subject administration workspace (P2-004 capability-gated applicability administration, options read model, target version selection, specialized-content preflight, retained association history and CAS concurrency closed by P2-004 and merged to main);
 - curricular TeachingExecution and SpecialActivityParticipationExecution evidence;
@@ -617,7 +648,7 @@ The repository contains reviewed implementation for:
 - **operational-start backend authority and UI integration**: backend closed by P1-031 (`OPERATIONAL_START / v1 / ACADEMIC_YEAR` production registration, strict validator/calendar/lifecycle rules, typed fail-closed resolver, execution guards, pre-op no-auto-debt projection, retained allocator replay, single-authority reporting integration, and ReportingStatement SNAPSHOT_V2 provenance); P1-031B defines the distinct never-effective scheduled-authority lifecycle, and its P1-031A runtime realization is CLOSED by `SYNC-P1-031A`; `P1-031C` is CLOSED by `SYNC-P1-031C` (providing AcademicYear options read model); and `P1-032` is CLOSED by `SYNC-P1-032` (delivering production Web UI integration for operational-start administration);
 - hardened Windows production deployment control-plane/runbooks through PR #90.
 
-Homeroom architecture, persistence, control plane/capability, historical read model and administration workspace UI are closed for the registered pre-pilot scope. Business Configuration architecture (P1-020), persistence/control plane (P1-021), administration workspace (P1-022), and operational-start backend implementation (P1-031) are closed for their registered pre-pilot scopes. P2-030 native timetable workbook architecture/evidence, P2-040 native adapter runtime implementation, P2-050 selective morning/afternoon update and carry-forward, P2-002 PPCT component persistence/control plane, P2-003 component-aware allocation/projections runtime, P2-004 specialized-study administration workspace, P4-010 special-programme architecture, P4-020 special-programme planning persistence/control plane, and P4-030 programme coordinator authorization are closed.
+Homeroom architecture, persistence, control plane/capability, historical read model and administration workspace UI are closed for the registered pre-pilot scope. Business Configuration architecture (P1-020), persistence/control plane (P1-021), administration workspace (P1-022), and operational-start backend implementation (P1-031) are closed for their registered pre-pilot scopes. P2-030 native timetable workbook architecture/evidence, P2-040 native adapter runtime implementation, P2-050 selective morning/afternoon update and carry-forward, P2-002 PPCT component persistence/control plane, P2-003 component-aware allocation/projections runtime, P2-004 specialized-study administration workspace, P4-010 special-programme architecture, P4-020 special-programme planning persistence/control plane, P4-030 programme coordinator authorization, P4-040 programme runtime bridge, and P4-050 special-programme workload/reporting projection are closed.
 
 ## Pre-pilot verdict
 
@@ -627,14 +658,14 @@ The registered implementation, data-evidence, product and production-readiness t
 
 ## Critical pre-pilot gaps
 
-1. GDĐP/HĐTN programme architecture (P4-010), retained planning persistence/control plane (P4-020), and coordinator/BGH authorization (P4-030) are CLOSED; runtime materialization + attestation runtime remains next under P4-040, and workload/reporting projection remains downstream under P4-050.
-2. GDĐP `AcademicYear + Grade` and HĐTN `CLASS/GRADE/SCHOOL_WIDE` planning models and mutation commands are guarded by authorized HTTP surfaces (`/api/programme-planning`) and coordinator/BGH domain authorization (P4-030); Web UI and runtime materialization into SpecialActivity remain downstream.
-3. Exact programme `Slot -> Set<Teacher>` planning persistence and authorization are implemented; deterministic materialization/provenance into SpecialActivity remains P4-040.
-4. Special-program absence/replacement and programme-level confirmation architecture is closed (T43/T44); prospective planning replacement and qualification seam are closed by P4-030; post-materialization CAS reversal/replacement and attestation persistence/runtime remain P4-040.
-5. Coordinator and BGH professional authorization bindings are CLOSED by P4-030 (`ACTIVITY + exact ProgrammeMaster.id`, `APPROVAL_PRINCIPAL` / `APPROVAL_VICE_PRINCIPAL`, `SCHOOL_WIDE`); programme attestation persistence/runtime remains P4-040.
+1. GDĐP/HĐTN programme architecture (P4-010), retained planning persistence/control plane (P4-020), coordinator/BGH authorization (P4-030), runtime materialization + attestation (P4-040), and workload/reporting projection (P4-050) are CLOSED; workload reduction/adjustment semantics remain trigger-gated under P4-060/P4-061.
+2. GDĐP `AcademicYear + Grade` and HĐTN `CLASS/GRADE/SCHOOL_WIDE` planning models and mutation commands are guarded by authorized HTTP surfaces (`/api/programme-planning`) and coordinator/BGH domain authorization (P4-030); Web UI remains downstream.
+3. Exact programme `Slot -> Set<Teacher>` planning persistence, authorization, deterministic materialization and provenance into SpecialActivity are closed by P4-020/P4-030/P4-040; downstream workload/reporting projection is closed by P4-050.
+4. Special-program absence/replacement and programme-level confirmation architecture is closed (T43/T44); prospective planning replacement and qualification seam are closed by P4-030; post-materialization CAS reversal/replacement and attestation persistence/runtime are closed by P4-040.
+5. Coordinator and BGH professional authorization bindings are CLOSED by P4-030 (`ACTIVITY + exact ProgrammeMaster.id`, `APPROVAL_PRINCIPAL` / `APPROVAL_VICE_PRINCIPAL`, `SCHOOL_WIDE`); programme attestation persistence/runtime is closed by P4-040 and workload eligibility/reporting projection by P4-050.
 6. Operational-start backend/runtime authority (P1-031), scheduled-authority supersession architecture (P1-031B), authority continuity correction (P1-031A), options read-model enablement (P1-031C), and administration Web UI integration (P1-032) are CLOSED; while historical evidence workflow remains P3-010/P3-020.
 7. PPCT real-school import is intentionally blocked pending an authoritative workbook contract; preferred direction is one workbook with separate logical content for ordinary PPCT (CORE) and Chuyên đề học tập (SPECIALIZED_STUDY), with exact physical sheet names and structure evidence-bound to P2-010.
-8. Special-activity participation is not yet integrated into official workload/reporting aggregation.
+8. Workload reduction, percentage, override and manual adjustment semantics remain trigger-gated/deferred under P4-060/P4-061.
 9. WorkloadAdjustmentRule remains trigger-gated/deferred.
 10. Installable PWA baseline is absent.
 11. Dedicated Báo giảng Telegram bot/linking/notification lifecycle is absent.
@@ -653,10 +684,10 @@ The final production-host topology is intentionally unresolved and explicitly de
 
 ## Tasks currently active or eligible to start
 
-`P4-030` is CLOSED by `SYNC-P4-030`.
+`P4-050` is CLOSED by `SYNC-P4-050`; no major task is currently active or eligible to start.
 
 Active in progress:
-- `P4-040` — Programme-to-SpecialActivity runtime bridge (`feat/programme-runtime-bridge-040`, canonical base `3564b5a5c2f8659c1bc2b19d779ce83cb621f65e`).
+- None.
 
 Active in review:
 - None.
@@ -666,13 +697,12 @@ Eligible to start:
 
 Not eligible to start:
 - `P2-020` — `PLANNED`, blocked until `P2-010` evidence is provided.
-- `P4-050` — `PLANNED`, depends on `P4-040`.
 
 `P2-020` remains blocked by `P2-010` evidence (`BLOCKED_EVIDENCE`).
 
 Note: `P2-010` remains `BLOCKED_EVIDENCE` pending actual authoritative school PPCT workbook/template evidence.
 
-Eligibility does not imply permission to bypass one-task-per-branch, review, CI or mandatory closure-sync gates. P4-040 is now the next eligible dependent P4 task; P6 remains blocked by P6-005.
+Eligibility does not imply permission to bypass one-task-per-branch, review, CI or mandatory closure-sync gates. No next major task is inferred by this closure; P6 remains blocked by P6-005.
 
 ## Decisions/evidence still blocking other paths
 
