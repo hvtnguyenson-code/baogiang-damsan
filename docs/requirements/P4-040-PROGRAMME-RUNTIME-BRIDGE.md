@@ -7,7 +7,7 @@
 - Task branch: `feat/programme-runtime-bridge-040`
 - Canonical base: `3564b5a5c2f8659c1bc2b19d779ce83cb621f65e`
 - Reviewed feature head: `591192fa635fd3a10ec3379a29f8450700c804d4`
-- Parent PR: #150 (`feat(programme): implement P4-040 programme runtime bridge`)
+- Parent PR: #150 (`feat(programme): add P4-040 runtime bridge and attestation`)
 - Exact-head PR CI: CI #476 (run `35482927399`) SUCCESS
 - Normal merge/main: `107bf295a4c7031062b0b37bf7bd343f1f667066`
 - Authoritative post-merge main CI: CI #477 (run `35483252074`) SUCCESS

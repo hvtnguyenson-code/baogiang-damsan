@@ -33,7 +33,7 @@ Closure evidence:
 - starting canonical main base: `3564b5a5c2f8659c1bc2b19d779ce83cb621f65e`;
 - final independently reviewed HEAD: `591192fa635fd3a10ec3379a29f8450700c804d4`;
 - independent review + forward-fix story: initial remote audit required explicit retained relational evidence on historical staffing to restore named check constraint `special_activity_staffing_eligibility_shape_check` and complete homeroom assignment provenance verification in `programme_materialized_activity_guard`; all findings absorbed via forward migration `20260920010000_programme_runtime_bridge_staffing_homeroom_evidence` and forward commit `591192fa635fd3a10ec3379a29f8450700c804d4`; final exact-remote audit returned `AUDIT PASS`;
-- parent PR: #150 (`feat(programme): implement P4-040 programme runtime bridge`);
+- parent PR: #150 (`feat(programme): add P4-040 runtime bridge and attestation`);
 - PR details: exact base `3564b5a5c2f8659c1bc2b19d779ce83cb621f65e`, exact head `591192fa635fd3a10ec3379a29f8450700c804d4`, normal merge to main;
 - exact-head PR CI: CI #476 (run id: `35482927399`), SUCCESS on attempt 1;
 - merge/main commit: `107bf295a4c7031062b0b37bf7bd343f1f667066`;
