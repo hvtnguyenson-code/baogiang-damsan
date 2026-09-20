@@ -9,6 +9,7 @@ import {
 
 export const REPORTING_STATEMENT_SNAPSHOT_V1 = "REPORTING_STATEMENT_SNAPSHOT_V1" as const;
 export const REPORTING_STATEMENT_SNAPSHOT_V2 = "REPORTING_STATEMENT_SNAPSHOT_V2" as const;
+export const REPORTING_STATEMENT_SNAPSHOT_V3 = "REPORTING_STATEMENT_SNAPSHOT_V3" as const;
 export const REPORTING_STATEMENT_SERIALIZER_V1 = "REPORTING_STATEMENT_CANONICAL_JSON_V1" as const;
 
 type CanonicalValue =
@@ -24,6 +25,66 @@ type DeepReadonly<T> = T extends (infer U)[]
   : T extends object
     ? { readonly [K in keyof T]: DeepReadonly<T[K]> }
     : T;
+
+export interface SpecialProgrammeWorkloadAttestationEvidenceSnapshot {
+  readonly attestationId: string;
+  readonly attestedByUserId: string;
+  readonly authorityType: string;
+  readonly capabilityKey: string;
+  readonly scope: string;
+  readonly resourceId: string | null;
+  readonly attestedAt: string;
+}
+
+export interface SpecialProgrammeWorkloadContributionSnapshot {
+  readonly executionId: string;
+  readonly specialActivityId: string;
+  readonly specialActivityStaffingId: string;
+  readonly specialActivityTimeSlotId: string;
+  readonly programmeMasterId: string;
+  readonly programmePlanVersionId: string;
+  readonly programmeTopicItemId: string;
+  readonly plannedProgrammeOccurrenceId: string;
+  readonly plannedOccurrenceSlotId: string;
+  readonly programmeKind: string;
+  readonly occurrenceMode: string;
+  readonly executionCivilDate: string;
+  readonly actualTeacherUserId: string;
+  readonly coefficient: number;
+  readonly credit: number;
+  readonly policyVersionId: string;
+  readonly policyValidatorVersion: string;
+  readonly policyEffectiveFrom?: string;
+  readonly policyEffectiveUntil?: string | null;
+  readonly attestations: readonly SpecialProgrammeWorkloadAttestationEvidenceSnapshot[];
+}
+
+export interface SpecialProgrammeWorkloadPendingConfirmationSnapshot {
+  readonly executionId: string;
+  readonly specialActivityId: string;
+  readonly specialActivityStaffingId: string;
+  readonly specialActivityTimeSlotId: string;
+  readonly programmeMasterId: string;
+  readonly programmePlanVersionId: string;
+  readonly programmeTopicItemId: string;
+  readonly plannedProgrammeOccurrenceId: string;
+  readonly plannedOccurrenceSlotId: string;
+  readonly programmeKind: string;
+  readonly occurrenceMode: string;
+  readonly executionCivilDate: string;
+  readonly actualTeacherUserId: string;
+  readonly reason: string;
+}
+
+export interface SpecialProgrammeWorkloadSnapshot {
+  readonly projectionProfile: string;
+  readonly status: "PASS";
+  readonly totalCredit: number;
+  readonly contributionCount: number;
+  readonly contributions: readonly SpecialProgrammeWorkloadContributionSnapshot[];
+  readonly pendingConfirmation: readonly SpecialProgrammeWorkloadPendingConfirmationSnapshot[];
+  readonly evaluatedAt: string;
+}
 
 export interface ReportingStatementSnapshotCommon {
   readonly serializerVersion: typeof REPORTING_STATEMENT_SERIALIZER_V1;
@@ -52,9 +113,17 @@ export interface ReportingStatementSnapshotV2 extends ReportingStatementSnapshot
   readonly operationalStartDate: string;
 }
 
+export interface ReportingStatementSnapshotV3 extends ReportingStatementSnapshotCommon {
+  readonly snapshotProfile: typeof REPORTING_STATEMENT_SNAPSHOT_V3;
+  readonly operationalStartPolicyVersionId: string;
+  readonly operationalStartDate: string;
+  readonly specialProgrammeWorkload: DeepReadonly<SpecialProgrammeWorkloadSnapshot>;
+}
+
 export type ReportingStatementSnapshot =
   | ReportingStatementSnapshotV1
-  | ReportingStatementSnapshotV2;
+  | ReportingStatementSnapshotV2
+  | ReportingStatementSnapshotV3;
 
 export interface FreezeReportingStatementInputBase {
   statementProfile: string;
@@ -63,6 +132,12 @@ export interface FreezeReportingStatementInputBase {
   submitterStaffCodeSnapshot?: string | null;
   asOfInstant: Date;
   projection: PersonalReportingProjection;
+}
+
+export interface FreezeReportingStatementInputV3 extends FreezeReportingStatementInputBase {
+  operationalStartPolicyVersionId: string;
+  operationalStartDate: string;
+  specialProgrammeWorkload: SpecialProgrammeWorkloadSnapshot;
 }
 
 export interface FreezeReportingStatementInputV2 extends FreezeReportingStatementInputBase {
@@ -74,7 +149,9 @@ export interface FreezeReportingStatementInputV1 extends FreezeReportingStatemen
   snapshotProfile?: typeof REPORTING_STATEMENT_SNAPSHOT_V1;
 }
 
-export type FreezeReportingStatementInput = FreezeReportingStatementInputV2;
+export type FreezeReportingStatementInput =
+  | FreezeReportingStatementInputV3
+  | FreezeReportingStatementInputV2;
 
 export interface FrozenReportingStatementSnapshot<
   TSnapshot extends ReportingStatementSnapshot = ReportingStatementSnapshot,
@@ -121,7 +198,122 @@ function buildFrozenSnapshotBase(
   return { p, counts: p.counts, subjects };
 }
 
-export function freezeReportingStatementSnapshot(
+export function freezeReportingStatementSnapshotV3(
+  input: FreezeReportingStatementInputV3,
+): FrozenReportingStatementSnapshot<ReportingStatementSnapshotV3> {
+  const { p, counts, subjects } = buildFrozenSnapshotBase(input);
+
+  if (
+    typeof input.operationalStartPolicyVersionId !== "string" ||
+    !input.operationalStartPolicyVersionId.trim()
+  ) {
+    throw new BadRequestException("operationalStartPolicyVersionId must be a non-empty string.");
+  }
+  if (
+    typeof input.operationalStartDate !== "string" ||
+    !isCivilDate(input.operationalStartDate)
+  ) {
+    throw new BadRequestException("operationalStartDate must be a valid civil date in YYYY-MM-DD format.");
+  }
+
+  const wl = input.specialProgrammeWorkload;
+  if (!wl || typeof wl !== "object") {
+    throw new BadRequestException("specialProgrammeWorkload must be an object.");
+  }
+  if (wl.status !== "PASS") {
+    throw new BadRequestException("Only a PASS special programme workload projection can create a Statement.");
+  }
+  if (typeof wl.totalCredit !== "number" || !Number.isFinite(wl.totalCredit) || wl.totalCredit < 0) {
+    throw new BadRequestException("totalCredit must be a non-negative finite number.");
+  }
+  if (typeof wl.contributionCount !== "number" || !Number.isInteger(wl.contributionCount) || wl.contributionCount < 0) {
+    throw new BadRequestException("contributionCount must be a non-negative integer.");
+  }
+  if (!Array.isArray(wl.contributions) || !Array.isArray(wl.pendingConfirmation)) {
+    throw new BadRequestException("contributions and pendingConfirmation must be arrays.");
+  }
+  validateSpecialProgrammeWorkloadSnapshot(
+    wl,
+    input.submitterUserId,
+    (message) => {
+      throw new BadRequestException(message);
+    },
+  );
+
+  const sortedContributions = wl.contributions
+    .slice()
+    .sort(compareContributionSnapshot)
+    .map((c: SpecialProgrammeWorkloadContributionSnapshot) => ({
+      ...c,
+      attestations: (c.attestations || [])
+        .slice()
+        .sort((a: SpecialProgrammeWorkloadAttestationEvidenceSnapshot, b: SpecialProgrammeWorkloadAttestationEvidenceSnapshot) => compare(a.attestationId, b.attestationId))
+        .map((a: SpecialProgrammeWorkloadAttestationEvidenceSnapshot) => ({ ...a })),
+    }));
+
+  const sortedPending = wl.pendingConfirmation
+    .slice()
+    .sort(comparePendingSnapshot)
+    .map((pc) => ({ ...pc }));
+
+  const specialProgrammeWorkload: DeepReadonly<SpecialProgrammeWorkloadSnapshot> = {
+    projectionProfile: required(wl.projectionProfile),
+    status: "PASS",
+    totalCredit: wl.totalCredit,
+    contributionCount: wl.contributionCount,
+    contributions: sortedContributions,
+    pendingConfirmation: sortedPending,
+    evaluatedAt: required(wl.evaluatedAt),
+  };
+
+  const snapshot: ReportingStatementSnapshotV3 = {
+    snapshotProfile: REPORTING_STATEMENT_SNAPSHOT_V3,
+    serializerVersion: REPORTING_STATEMENT_SERIALIZER_V1,
+    statementProfile: required(input.statementProfile),
+    submitterUserId: required(input.submitterUserId),
+    submitterDisplayNameSnapshot: input.submitterDisplayNameSnapshot ?? null,
+    submitterStaffCodeSnapshot: input.submitterStaffCodeSnapshot ?? null,
+    academicYearId: required(p.scope.academicYearId),
+    fromCivilDate: civil(p.scope.fromCivilDate),
+    toCivilDate: civil(p.scope.toCivilDate),
+    asOfInstant: instant(input.asOfInstant),
+    personalProjectionProfile: p.profile,
+    responsibilityState: "RESPONSIBILITY_PRESENT",
+    responsibilityManifest: p.responsibilityManifest
+      .slice()
+      .sort(interval)
+      .map((x) => ({ ...x })),
+    sections: p.sections
+      .slice()
+      .sort(section)
+      .map((x) => ({
+        ...x,
+        responsibilityIntervals: x.responsibilityIntervals
+          .slice()
+          .sort(interval)
+          .map((i) => ({ ...i })),
+        details: x.details.slice().sort(detail).map((d) => ({ ...d })),
+        findings: x.findings
+          .slice()
+          .sort(finding)
+          .map((f) => ({ ...f, entityIds: f.entityIds.slice().sort(compare) })),
+      })),
+    counts: { ...counts },
+    operationalStartPolicyVersionId: required(input.operationalStartPolicyVersionId),
+    operationalStartDate: civil(input.operationalStartDate),
+    specialProgrammeWorkload,
+  };
+
+  const canonicalSnapshotJson = canonicalizeJson(snapshot as unknown as CanonicalValue);
+  return freezeDeep({
+    snapshot,
+    canonicalSnapshotJson,
+    semanticHash: sha256CanonicalJson(canonicalSnapshotJson),
+    frozenSubjectIds: subjects,
+  });
+}
+
+export function freezeReportingStatementSnapshotV2(
   input: FreezeReportingStatementInputV2,
 ): FrozenReportingStatementSnapshot<ReportingStatementSnapshotV2> {
   const { p, counts, subjects } = buildFrozenSnapshotBase(input);
@@ -183,6 +375,21 @@ export function freezeReportingStatementSnapshot(
     semanticHash: sha256CanonicalJson(canonicalSnapshotJson),
     frozenSubjectIds: subjects,
   });
+}
+
+export function freezeReportingStatementSnapshot(
+  input: FreezeReportingStatementInputV3,
+): FrozenReportingStatementSnapshot<ReportingStatementSnapshotV3>;
+export function freezeReportingStatementSnapshot(
+  input: FreezeReportingStatementInputV2,
+): FrozenReportingStatementSnapshot<ReportingStatementSnapshotV2>;
+export function freezeReportingStatementSnapshot(
+  input: FreezeReportingStatementInputV3 | FreezeReportingStatementInputV2,
+): FrozenReportingStatementSnapshot<ReportingStatementSnapshotV3 | ReportingStatementSnapshotV2> {
+  if ("specialProgrammeWorkload" in input && input.specialProgrammeWorkload !== undefined) {
+    return freezeReportingStatementSnapshotV3(input as FreezeReportingStatementInputV3);
+  }
+  return freezeReportingStatementSnapshotV2(input as FreezeReportingStatementInputV2);
 }
 
 export function freezeReportingStatementSnapshotV1(
@@ -249,24 +456,61 @@ export function assertFrozenReportingStatementIntegrity(
   }
   if (
     frozen.snapshot.snapshotProfile !== REPORTING_STATEMENT_SNAPSHOT_V1 &&
-    frozen.snapshot.snapshotProfile !== REPORTING_STATEMENT_SNAPSHOT_V2
+    frozen.snapshot.snapshotProfile !== REPORTING_STATEMENT_SNAPSHOT_V2 &&
+    frozen.snapshot.snapshotProfile !== REPORTING_STATEMENT_SNAPSHOT_V3
   ) {
     throw new Error("Frozen Reporting Statement unknown snapshot profile failed.");
   }
-  if (frozen.snapshot.snapshotProfile === REPORTING_STATEMENT_SNAPSHOT_V2) {
-    const v2 = frozen.snapshot as ReportingStatementSnapshotV2;
+  if (
+    frozen.snapshot.snapshotProfile === REPORTING_STATEMENT_SNAPSHOT_V2 ||
+    frozen.snapshot.snapshotProfile === REPORTING_STATEMENT_SNAPSHOT_V3
+  ) {
+    const v2orV3 = frozen.snapshot as ReportingStatementSnapshotV2 | ReportingStatementSnapshotV3;
     if (
-      typeof v2.operationalStartPolicyVersionId !== "string" ||
-      !v2.operationalStartPolicyVersionId.trim()
+      typeof v2orV3.operationalStartPolicyVersionId !== "string" ||
+      !v2orV3.operationalStartPolicyVersionId.trim()
     ) {
       throw new Error("Frozen Reporting Statement V2 policy version integrity failed.");
     }
     if (
-      typeof v2.operationalStartDate !== "string" ||
-      !isCivilDate(v2.operationalStartDate)
+      typeof v2orV3.operationalStartDate !== "string" ||
+      !isCivilDate(v2orV3.operationalStartDate)
     ) {
       throw new Error("Frozen Reporting Statement V2 operational start date integrity failed.");
     }
+  }
+  if (frozen.snapshot.snapshotProfile === REPORTING_STATEMENT_SNAPSHOT_V3) {
+    const v3 = frozen.snapshot as ReportingStatementSnapshotV3;
+    if (!v3.specialProgrammeWorkload || typeof v3.specialProgrammeWorkload !== "object") {
+      throw new Error("Frozen Reporting Statement V3 special programme workload integrity failed.");
+    }
+    if (v3.specialProgrammeWorkload.status !== "PASS") {
+      throw new Error("Frozen Reporting Statement V3 status integrity failed.");
+    }
+    if (
+      typeof v3.specialProgrammeWorkload.totalCredit !== "number" ||
+      !Number.isFinite(v3.specialProgrammeWorkload.totalCredit) ||
+      v3.specialProgrammeWorkload.totalCredit < 0
+    ) {
+      throw new Error("Frozen Reporting Statement V3 total credit integrity failed.");
+    }
+    if (
+      typeof v3.specialProgrammeWorkload.contributionCount !== "number" ||
+      !Number.isInteger(v3.specialProgrammeWorkload.contributionCount) ||
+      v3.specialProgrammeWorkload.contributionCount < 0
+    ) {
+      throw new Error("Frozen Reporting Statement V3 contribution count integrity failed.");
+    }
+    if (!Array.isArray(v3.specialProgrammeWorkload.contributions) || !Array.isArray(v3.specialProgrammeWorkload.pendingConfirmation)) {
+      throw new Error("Frozen Reporting Statement V3 array integrity failed.");
+    }
+    validateSpecialProgrammeWorkloadSnapshot(
+      v3.specialProgrammeWorkload,
+      v3.submitterUserId,
+      (message) => {
+        throw new Error(`Frozen Reporting Statement V3 ${message}`);
+      },
+    );
   }
   const subjects = [...new Set(frozen.snapshot.responsibilityManifest.map((x) => x.subjectId))].sort(compare);
   if (
@@ -406,4 +650,167 @@ function freezeDeep<T>(value: T): T {
     }
   }
   return value;
+}
+
+function compareContributionSnapshot(
+  a: { executionCivilDate: string; plannedOccurrenceSlotId: string; executionId: string },
+  b: { executionCivilDate: string; plannedOccurrenceSlotId: string; executionId: string },
+): number {
+  return (
+    compare(a.executionCivilDate, b.executionCivilDate) ||
+    compare(a.plannedOccurrenceSlotId, b.plannedOccurrenceSlotId) ||
+    compare(a.executionId, b.executionId)
+  );
+}
+
+function comparePendingSnapshot(
+  a: { executionCivilDate: string; plannedOccurrenceSlotId: string; executionId: string },
+  b: { executionCivilDate: string; plannedOccurrenceSlotId: string; executionId: string },
+): number {
+  return (
+    compare(a.executionCivilDate, b.executionCivilDate) ||
+    compare(a.plannedOccurrenceSlotId, b.plannedOccurrenceSlotId) ||
+    compare(a.executionId, b.executionId)
+  );
+}
+
+function validateSpecialProgrammeWorkloadSnapshot(
+  workload: SpecialProgrammeWorkloadSnapshot,
+  submitterUserId: string,
+  fail: (message: string) => never,
+): void {
+  if (workload.projectionProfile !== 'SPECIAL_PROGRAMME_WORKLOAD_PROJECTION_V1') {
+    fail('projection profile integrity failed.');
+  }
+  if (workload.status !== 'PASS') fail('status integrity failed.');
+  if (!Array.isArray(workload.contributions) || !Array.isArray(workload.pendingConfirmation)) {
+    fail('array integrity failed.');
+  }
+  if (
+    !Number.isInteger(workload.contributionCount) ||
+    workload.contributionCount < 0 ||
+    workload.contributionCount !== workload.contributions.length
+  ) {
+    fail('contribution count integrity failed.');
+  }
+  if (!Number.isFinite(workload.totalCredit) || workload.totalCredit < 0) {
+    fail('total credit integrity failed.');
+  }
+  if (!isValidInstantString(workload.evaluatedAt)) fail('evaluatedAt integrity failed.');
+
+  const identities = new Set<string>();
+  let totalCredit = 0;
+  for (const contribution of workload.contributions) {
+    const requiredContributionStrings: Array<keyof SpecialProgrammeWorkloadContributionSnapshot> = [
+      'executionId',
+      'specialActivityId',
+      'specialActivityStaffingId',
+      'specialActivityTimeSlotId',
+      'programmeMasterId',
+      'programmePlanVersionId',
+      'programmeTopicItemId',
+      'plannedProgrammeOccurrenceId',
+      'plannedOccurrenceSlotId',
+      'programmeKind',
+      'occurrenceMode',
+      'actualTeacherUserId',
+      'policyVersionId',
+      'policyValidatorVersion',
+    ];
+    for (const key of requiredContributionStrings) {
+      if (typeof contribution[key] !== 'string' || !contribution[key].trim()) {
+        fail(`contribution ${String(key)} integrity failed.`);
+      }
+    }
+    if (contribution.actualTeacherUserId !== submitterUserId) {
+      fail('contribution owner integrity failed.');
+    }
+    if (!isCivilDate(contribution.executionCivilDate)) {
+      fail('contribution civil date integrity failed.');
+    }
+    if (
+      !Number.isFinite(contribution.coefficient) ||
+      contribution.coefficient < 0 ||
+      !Number.isFinite(contribution.credit) ||
+      contribution.credit < 0 ||
+      contribution.credit !== contribution.coefficient
+    ) {
+      fail('contribution coefficient/credit integrity failed.');
+    }
+    if (contribution.policyEffectiveFrom !== undefined && !contribution.policyEffectiveFrom.trim()) {
+      fail('contribution policy effective-from integrity failed.');
+    }
+    if (
+      contribution.policyEffectiveUntil !== undefined &&
+      contribution.policyEffectiveUntil !== null &&
+      !contribution.policyEffectiveUntil.trim()
+    ) {
+      fail('contribution policy effective-until integrity failed.');
+    }
+    const identity = `${contribution.plannedOccurrenceSlotId}|${contribution.actualTeacherUserId}`;
+    if (identities.has(identity)) fail('duplicate contribution identity integrity failed.');
+    identities.add(identity);
+    if (!Array.isArray(contribution.attestations) || contribution.attestations.length < 1) {
+      fail('contribution attestation integrity failed.');
+    }
+    const attestationIds = new Set<string>();
+    for (const attestation of contribution.attestations) {
+      for (const key of ['attestationId', 'attestedByUserId', 'authorityType', 'capabilityKey', 'scope'] as const) {
+        if (typeof attestation[key] !== 'string' || !attestation[key].trim()) {
+          fail(`attestation ${key} integrity failed.`);
+        }
+      }
+      if (attestation.resourceId !== null && (typeof attestation.resourceId !== 'string' || !attestation.resourceId.trim())) {
+        fail('attestation resource integrity failed.');
+      }
+      if (!isValidInstantString(attestation.attestedAt)) fail('attestation timestamp integrity failed.');
+      if (attestationIds.has(attestation.attestationId)) fail('duplicate attestation integrity failed.');
+      attestationIds.add(attestation.attestationId);
+    }
+    totalCredit += contribution.credit;
+  }
+
+  const roundedTotal = Math.round(totalCredit * 10000) / 10000;
+  if (workload.totalCredit !== roundedTotal) fail('total credit reconciliation integrity failed.');
+
+  for (const pending of workload.pendingConfirmation) {
+    for (const key of [
+      'executionId',
+      'specialActivityId',
+      'specialActivityStaffingId',
+      'specialActivityTimeSlotId',
+      'programmeMasterId',
+      'programmePlanVersionId',
+      'programmeTopicItemId',
+      'plannedProgrammeOccurrenceId',
+      'plannedOccurrenceSlotId',
+      'actualTeacherUserId',
+      'reason',
+    ] as const) {
+      if (typeof pending[key] !== 'string' || !pending[key].trim()) {
+        fail(`pending confirmation ${key} integrity failed.`);
+      }
+    }
+    if (pending.actualTeacherUserId !== submitterUserId) {
+      fail('pending confirmation owner integrity failed.');
+    }
+    if (!isCivilDate(pending.executionCivilDate)) {
+      fail('pending confirmation civil date integrity failed.');
+    }
+  }
+}
+
+export function assertSpecialProgrammeWorkloadSnapshotIntegrity(
+  workload: SpecialProgrammeWorkloadSnapshot,
+  submitterUserId: string,
+): void {
+  validateSpecialProgrammeWorkloadSnapshot(workload, submitterUserId, (message) => {
+    throw new Error(message);
+  });
+}
+
+function isValidInstantString(value: unknown): value is string {
+  if (typeof value !== 'string' || !value.trim()) return false;
+  const parsed = new Date(value);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString() === value;
 }

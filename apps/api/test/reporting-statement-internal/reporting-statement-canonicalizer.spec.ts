@@ -6,6 +6,7 @@ import {
   REPORTING_STATEMENT_SERIALIZER_V1,
   REPORTING_STATEMENT_SNAPSHOT_V1,
   REPORTING_STATEMENT_SNAPSHOT_V2,
+  REPORTING_STATEMENT_SNAPSHOT_V3,
   sha256CanonicalJson,
 } from "../../src/reporting-statement-internal/reporting-statement-canonicalizer";
 
@@ -421,5 +422,234 @@ describe("Reporting Statement canonicalization", () => {
     expect(details[0].sourceCivilDate).toBe("2026-08-02");
     expect(Object.isFrozen(result)).toBe(true);
     expect(Object.isFrozen(result.snapshot.sections)).toBe(true);
+  });
+
+  // V3 tests
+  it("freezes production V3 with exact snapshotProfile, serializerVersion, and specialProgrammeWorkload", () => {
+    const workload = {
+      projectionProfile: "SPECIAL_PROGRAMME_WORKLOAD_PROJECTION_V1",
+      status: "PASS" as const,
+      totalCredit: 1.5,
+      contributionCount: 1,
+      contributions: [
+        {
+          executionId: "exec-1",
+          specialActivityId: "act-1",
+          specialActivityStaffingId: "staff-1",
+          specialActivityTimeSlotId: "slot-1",
+          programmeMasterId: "prog-1",
+          programmePlanVersionId: "plan-v1",
+          programmeTopicItemId: "topic-1",
+          plannedProgrammeOccurrenceId: "occ-1",
+          plannedOccurrenceSlotId: "pos-1",
+          programmeKind: "GDDP" as const,
+          occurrenceMode: "CLASS" as const,
+          executionCivilDate: "2026-08-10",
+          actualTeacherUserId: "teacher",
+          coefficient: 1.5,
+          credit: 1.5,
+          policyVersionId: "sp-policy-v1",
+          policyValidatorVersion: "v1",
+          attestations: [
+            {
+              attestationId: "att-1",
+              attestedByUserId: "principal",
+              authorityType: "CAPABILITY" as const,
+              capabilityKey: "SPECIAL_ACTIVITY_EXECUTION_ATTEST",
+              scope: "SCHOOL_WIDE" as const,
+              resourceId: null,
+              attestedAt: "2026-08-11T00:00:00.000Z",
+            },
+          ],
+        },
+      ],
+      pendingConfirmation: [],
+      findings: [],
+      evaluatedAt: asOf.toISOString(),
+    };
+    const v3 = freezeReportingStatementSnapshot({
+      statementProfile: "PERSONAL_V1",
+      submitterUserId: "teacher",
+      asOfInstant: asOf,
+      projection: projection() as never,
+      operationalStartPolicyVersionId: "policy-version-1",
+      operationalStartDate: "2026-08-15",
+      specialProgrammeWorkload: workload as never,
+    });
+    expect(v3.snapshot.snapshotProfile).toBe(REPORTING_STATEMENT_SNAPSHOT_V3);
+    expect(v3.snapshot.serializerVersion).toBe(REPORTING_STATEMENT_SERIALIZER_V1);
+    expect(v3.snapshot.operationalStartPolicyVersionId).toBe("policy-version-1");
+    expect(v3.snapshot.operationalStartDate).toBe("2026-08-15");
+    expect(v3.snapshot.specialProgrammeWorkload).toBeDefined();
+    expect(v3.snapshot.specialProgrammeWorkload?.totalCredit).toBe(1.5);
+    expect(v3.snapshot.specialProgrammeWorkload?.contributions).toHaveLength(1);
+    expect(v3.canonicalSnapshotJson).toContain(`"snapshotProfile":"${REPORTING_STATEMENT_SNAPSHOT_V3}"`);
+    expect(v3.canonicalSnapshotJson).toContain(`"specialProgrammeWorkload"`);
+    expect(() => assertFrozenReportingStatementIntegrity(v3)).not.toThrow();
+  });
+
+  it("produces deterministic canonical JSON and semanticHash for same semantic V3 input", () => {
+    const workload = {
+      projectionProfile: "SPECIAL_PROGRAMME_WORKLOAD_PROJECTION_V1",
+      status: "PASS" as const,
+      totalCredit: 0,
+      contributionCount: 0,
+      contributions: [],
+      pendingConfirmation: [],
+      findings: [],
+      evaluatedAt: asOf.toISOString(),
+    };
+    const first = freezeReportingStatementSnapshot({
+      statementProfile: "PERSONAL_V1",
+      submitterUserId: "teacher",
+      asOfInstant: asOf,
+      projection: projection() as never,
+      operationalStartPolicyVersionId: "policy-version-1",
+      operationalStartDate: "2026-08-15",
+      specialProgrammeWorkload: workload as never,
+    });
+    const second = freezeReportingStatementSnapshot({
+      statementProfile: "PERSONAL_V1",
+      submitterUserId: "teacher",
+      asOfInstant: asOf,
+      projection: projection() as never,
+      operationalStartPolicyVersionId: "policy-version-1",
+      operationalStartDate: "2026-08-15",
+      specialProgrammeWorkload: workload as never,
+    });
+    expect(first.canonicalSnapshotJson).toBe(second.canonicalSnapshotJson);
+    expect(first.semanticHash).toBe(second.semanticHash);
+    expect(() => assertFrozenReportingStatementIntegrity(first)).not.toThrow();
+  });
+
+  it("changes semantic text and hash when workload contribution changes in V3", () => {
+    const workloadA = {
+      projectionProfile: "SPECIAL_PROGRAMME_WORKLOAD_PROJECTION_V1",
+      status: "PASS" as const,
+      totalCredit: 1.0,
+      contributionCount: 1,
+      contributions: [
+        {
+          executionId: "exec-1",
+          specialActivityId: "act-1",
+          specialActivityStaffingId: "staff-1",
+          specialActivityTimeSlotId: "slot-1",
+          programmeMasterId: "prog-1",
+          programmePlanVersionId: "plan-v1",
+          programmeTopicItemId: "topic-1",
+          plannedProgrammeOccurrenceId: "occ-1",
+          plannedOccurrenceSlotId: "pos-1",
+          programmeKind: "GDDP" as const,
+          occurrenceMode: "CLASS" as const,
+          executionCivilDate: "2026-08-10",
+          actualTeacherUserId: "teacher",
+          coefficient: 1.0,
+          credit: 1.0,
+          policyVersionId: "sp-policy-v1",
+          policyValidatorVersion: "v1",
+           attestations: [
+             {
+               attestationId: "att-1",
+               attestedByUserId: "principal",
+               authorityType: "CAPABILITY",
+               capabilityKey: "SPECIAL_ACTIVITY_EXECUTION_ATTEST",
+               scope: "SCHOOL_WIDE",
+               resourceId: null,
+               attestedAt: "2026-08-11T00:00:00.000Z",
+             },
+           ],
+        },
+      ],
+      pendingConfirmation: [],
+      findings: [],
+      evaluatedAt: asOf.toISOString(),
+    };
+    const workloadB = {
+      ...workloadA,
+      totalCredit: 2.0,
+      contributions: [{ ...workloadA.contributions[0], coefficient: 2.0, credit: 2.0 }],
+    };
+    const base = freezeReportingStatementSnapshot({
+      statementProfile: "PERSONAL_V1",
+      submitterUserId: "teacher",
+      asOfInstant: asOf,
+      projection: projection() as never,
+      operationalStartPolicyVersionId: "policy-version-1",
+      operationalStartDate: "2026-08-15",
+      specialProgrammeWorkload: workloadA as never,
+    });
+    const changed = freezeReportingStatementSnapshot({
+      statementProfile: "PERSONAL_V1",
+      submitterUserId: "teacher",
+      asOfInstant: asOf,
+      projection: projection() as never,
+      operationalStartPolicyVersionId: "policy-version-1",
+      operationalStartDate: "2026-08-15",
+      specialProgrammeWorkload: workloadB as never,
+    });
+    expect(changed.canonicalSnapshotJson).not.toBe(base.canonicalSnapshotJson);
+    expect(changed.semanticHash).not.toBe(base.semanticHash);
+  });
+
+  it("fails closed on V3 integrity tampering with missing or malformed specialProgrammeWorkload", () => {
+    const workload = {
+      projectionProfile: "SPECIAL_PROGRAMME_WORKLOAD_PROJECTION_V1",
+      status: "PASS" as const,
+      totalCredit: 0,
+      contributionCount: 0,
+      contributions: [],
+      pendingConfirmation: [],
+      findings: [],
+      evaluatedAt: asOf.toISOString(),
+    };
+    const v3 = freezeReportingStatementSnapshot({
+      statementProfile: "PERSONAL_V1",
+      submitterUserId: "teacher",
+      asOfInstant: asOf,
+      projection: projection() as never,
+      operationalStartPolicyVersionId: "policy-version-1",
+      operationalStartDate: "2026-08-15",
+      specialProgrammeWorkload: workload as never,
+    });
+    const tampered = {
+      ...v3,
+      snapshot: { ...v3.snapshot, specialProgrammeWorkload: null },
+      canonicalSnapshotJson: canonicalizeJson({
+        ...v3.snapshot,
+        specialProgrammeWorkload: null,
+      } as never),
+      semanticHash: sha256CanonicalJson(
+        canonicalizeJson({ ...v3.snapshot, specialProgrammeWorkload: null } as never),
+      ),
+    };
+    expect(() => assertFrozenReportingStatementIntegrity(tampered as never)).toThrow(
+      "special programme workload integrity",
+    );
+  });
+
+  it("rejects null, mismatched, or non-reconciling V3 totals before freezing", () => {
+    const baseWorkload = {
+      projectionProfile: "SPECIAL_PROGRAMME_WORKLOAD_PROJECTION_V1",
+      status: "PASS" as const,
+      totalCredit: 0,
+      contributionCount: 0,
+      contributions: [],
+      pendingConfirmation: [],
+      evaluatedAt: asOf.toISOString(),
+    };
+    const freeze = (workload: unknown) =>
+      freezeReportingStatementSnapshot({
+        statementProfile: "PERSONAL_V1",
+        submitterUserId: "teacher",
+        asOfInstant: asOf,
+        projection: projection() as never,
+        operationalStartPolicyVersionId: "policy-version-1",
+        operationalStartDate: "2026-08-15",
+        specialProgrammeWorkload: workload as never,
+      });
+
+    expect(() => freeze({ ...baseWorkload, totalCredit: null })).toThrow();
+    expect(() => freeze({ ...baseWorkload, totalCredit: 1 })).toThrow();
+    expect(() => freeze({ ...baseWorkload, contributionCount: 1 })).toThrow();
   });
 });

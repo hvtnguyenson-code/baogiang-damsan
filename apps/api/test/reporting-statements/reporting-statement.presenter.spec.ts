@@ -2,9 +2,11 @@ import { InternalServerErrorException } from '@nestjs/common';
 import {
   freezeReportingStatementSnapshot,
   freezeReportingStatementSnapshotV1,
+  canonicalizeJson,
   REPORTING_STATEMENT_SERIALIZER_V1,
   REPORTING_STATEMENT_SNAPSHOT_V1,
   REPORTING_STATEMENT_SNAPSHOT_V2,
+  sha256CanonicalJson,
 } from '../../src/reporting-statement-internal/reporting-statement-canonicalizer';
 import {
   FrozenRevisionRow,
@@ -195,6 +197,104 @@ function createValidFrozenFixtureV1(ownerId = 'user-1', subjectIds = ['sub-a', '
     historyEntries: [
       {
         id: 'hist-v1',
+        eventType: 'SUBMITTED',
+        stateBefore: null,
+        stateAfter: 'SUBMITTED',
+        actorUserId: ownerId,
+        actorDisplayNameSnapshot: 'Nguyen Van A',
+        actorStaffCodeSnapshot: 'GV001',
+        createdAt: new Date('2026-08-25T10:25:00.000Z'),
+        causedByRevisionId: null,
+      },
+    ],
+  };
+
+  return { frozen, row };
+}
+
+function createValidFrozenFixtureV3(ownerId = 'user-1', subjectIds = ['sub-a', 'sub-b']) {
+  const workload = {
+    projectionProfile: 'SPECIAL_PROGRAMME_WORKLOAD_PROJECTION_V1',
+    status: 'PASS' as const,
+    totalCredit: 1.5,
+    contributionCount: 1,
+    contributions: [
+      {
+        executionId: 'exec-1',
+        specialActivityId: 'act-1',
+        specialActivityStaffingId: 'staff-1',
+        specialActivityTimeSlotId: 'slot-1',
+        programmeMasterId: 'prog-1',
+        programmePlanVersionId: 'plan-v1',
+        programmeTopicItemId: 'topic-1',
+        plannedProgrammeOccurrenceId: 'occ-1',
+        plannedOccurrenceSlotId: 'pos-1',
+        programmeKind: 'GDDP' as const,
+        occurrenceMode: 'CLASS' as const,
+        executionCivilDate: '2026-08-10',
+        actualTeacherUserId: ownerId,
+        coefficient: 1.5,
+        credit: 1.5,
+        policyVersionId: 'sp-policy-v1',
+        policyValidatorVersion: 'v1',
+        attestations: [
+          {
+            attestationId: 'att-1',
+            attestedByUserId: 'principal',
+            authorityType: 'CAPABILITY' as const,
+            capabilityKey: 'SPECIAL_ACTIVITY_EXECUTION_ATTEST',
+            scope: 'SCHOOL_WIDE' as const,
+            resourceId: null,
+            attestedAt: '2026-08-11T00:00:00.000Z',
+          },
+        ],
+      },
+    ],
+    pendingConfirmation: [],
+    findings: [],
+    evaluatedAt: asOf.toISOString(),
+  };
+
+  const frozen = freezeReportingStatementSnapshot({
+    statementProfile: 'PERSONAL_REPORTING_STATEMENT_V1',
+    submitterUserId: ownerId,
+    submitterDisplayNameSnapshot: 'Nguyen Van A',
+    submitterStaffCodeSnapshot: 'GV001',
+    asOfInstant: asOf,
+    projection: createProjection(ownerId, subjectIds) as never,
+    operationalStartPolicyVersionId: 'policy-version-1',
+    operationalStartDate: '2026-08-15',
+    specialProgrammeWorkload: workload as never,
+  });
+
+  const row: FrozenRevisionRow = {
+    id: 'revision-uuid-v3',
+    seriesId: 'series-uuid-1',
+    snapshotProfile: frozen.snapshot.snapshotProfile,
+    serializerVersion: frozen.snapshot.serializerVersion,
+    canonicalSnapshotJson: frozen.canonicalSnapshotJson,
+    semanticHash: frozen.semanticHash,
+    asOfInstant: asOf,
+    submitterDisplayNameSnapshot: 'Nguyen Van A',
+    submitterStaffCodeSnapshot: 'GV001',
+    submittedAt: new Date('2026-08-25T10:25:00.000Z'),
+    predecessorRevisionId: null,
+    supersedesRevisionId: null,
+    series: {
+      statementProfile: 'PERSONAL_REPORTING_STATEMENT_V1',
+      submitterUserId: ownerId,
+      academicYearId: 'year-1',
+      fromCivilDate: new Date('2026-08-01'),
+      toCivilDate: new Date('2026-08-31'),
+    },
+    state: {
+      lifecycleState: 'SUBMITTED' as const,
+      lifecycleToken: 'token-uuid-1',
+    },
+    subjects: subjectIds.map((subjectId) => ({ subjectId })),
+    historyEntries: [
+      {
+        id: 'hist-1',
         eventType: 'SUBMITTED',
         stateBefore: null,
         stateAfter: 'SUBMITTED',
@@ -515,6 +615,55 @@ describe('Reporting Statement Presenter & Integrity', () => {
       expect(detail.revisionId).toBe('revision-uuid-v1');
       expect(detail.counts.completedCount).toBe(4);
       expect(detail).not.toHaveProperty('operationalStartPolicyVersionId');
+    });
+
+    it('presents sanitized public detail for V3 with specialProgrammeWorkload', () => {
+      const { row } = createValidFrozenFixtureV3();
+      const detail = presentReportingStatementDetail(row, ['APPROVE', 'REJECT']);
+      expect(detail.revisionId).toBe('revision-uuid-v3');
+      expect(detail.counts.completedCount).toBe(4);
+      expect(detail.specialProgrammeWorkload).toBeDefined();
+      expect(detail.specialProgrammeWorkload?.totalCredit).toBe(1.5);
+      expect(detail.specialProgrammeWorkload?.contributions).toHaveLength(1);
+    });
+
+    it('fails closed for corrupt V3 count, sum, owner, and dedupe invariants', () => {
+      const { row } = createValidFrozenFixtureV3();
+      const snapshot = JSON.parse(row.canonicalSnapshotJson) as Record<string, unknown>;
+      const workload = snapshot.specialProgrammeWorkload as Record<string, unknown>;
+      const contributions = workload.contributions as Array<Record<string, unknown>>;
+      const contribution = contributions[0];
+      const corruptSnapshots = [
+        { ...snapshot, specialProgrammeWorkload: { ...workload, contributionCount: 2 } },
+        { ...snapshot, specialProgrammeWorkload: { ...workload, totalCredit: 999 } },
+        {
+          ...snapshot,
+          specialProgrammeWorkload: {
+            ...workload,
+            contributions: [{ ...contribution, actualTeacherUserId: 'different-owner' }],
+          },
+        },
+        {
+          ...snapshot,
+          specialProgrammeWorkload: {
+            ...workload,
+            contributionCount: 2,
+            totalCredit: 3,
+            contributions: [contribution, { ...contribution, executionId: 'exec-2' }],
+          },
+        },
+      ];
+
+      for (const corruptSnapshot of corruptSnapshots) {
+        const canonicalSnapshotJson = canonicalizeJson(corruptSnapshot as never);
+        expect(() =>
+          parseAndVerifyFrozenSnapshot({
+            ...row,
+            canonicalSnapshotJson,
+            semanticHash: sha256CanonicalJson(canonicalSnapshotJson),
+          }),
+        ).toThrow(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
+      }
     });
 
     it('sorts history entries chronologically with deterministic tie-break', () => {

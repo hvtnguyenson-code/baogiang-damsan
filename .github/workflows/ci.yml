@@ -291,6 +291,7 @@ jobs:
           npx wait-on http://127.0.0.1:3100/api/health/live http://127.0.0.1:5173 --timeout 30000
 
       - name: Run Playwright smoke tests
+        id: playwright-smoke
         working-directory: tests/e2e
         env:
           BASE_URL: http://127.0.0.1:5173
@@ -298,7 +299,7 @@ jobs:
         run: npm run test:e2e
 
       - name: Upload UI foundation screenshots
-        if: always()
+        if: always() && steps.playwright-smoke.outcome != 'skipped'
         uses: actions/upload-artifact@v4
         with:
           name: ui-foundation-screenshots

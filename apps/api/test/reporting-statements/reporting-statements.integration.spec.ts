@@ -5,7 +5,7 @@ import { PERSONAL_REPORTING_STATEMENT_PROFILE } from '../../src/reporting-statem
 import { ReportingStatementRepository } from '../../src/reporting-statement-internal/reporting-statement.repository';
 import {
   REPORTING_STATEMENT_SNAPSHOT_V1,
-  REPORTING_STATEMENT_SNAPSHOT_V2,
+  REPORTING_STATEMENT_SNAPSHOT_V3,
   REPORTING_STATEMENT_SERIALIZER_V1,
   freezeReportingStatementSnapshot,
   freezeReportingStatementSnapshotV1,
@@ -13,6 +13,7 @@ import {
 import { BusinessConfigurationService } from '../../src/business-configuration/business-configuration.service';
 import { PRODUCTION_BUSINESS_POLICY_FAMILIES } from '../../src/business-configuration/business-policy-registry';
 import { presentReportingStatementDetail } from '../../src/reporting-statements/reporting-statement.presenter';
+import { SpecialProgrammeWorkloadProjectionService } from '../../src/special-programme-workload/special-programme-workload-projection.service';
 import { integration, testDatabaseUrl } from '../helpers/phase01-test-harness';
 
 const asOf = new Date('2026-08-24T01:02:03.004Z');
@@ -106,6 +107,10 @@ integration('Reporting Statements control-plane PostgreSQL', () => {
     const auth = { evaluate: jest.fn().mockResolvedValue({ allowed: true }) };
     const auditService = new AuditService(prisma as never);
     businessConfiguration = new BusinessConfigurationService(prisma as never, auditService, PRODUCTION_BUSINESS_POLICY_FAMILIES);
+    const workloadProjection = new SpecialProgrammeWorkloadProjectionService(
+      prisma as never,
+      businessConfiguration,
+    );
     service = new ReportingStatementsService(
       prisma as never,
       repository,
@@ -114,6 +119,7 @@ integration('Reporting Statements control-plane PostgreSQL', () => {
       auditService,
       businessConfiguration,
       { now: jest.fn(() => asOf) },
+      workloadProjection,
     );
   });
 
@@ -371,8 +377,8 @@ integration('Reporting Statements control-plane PostgreSQL', () => {
   // CHECKPOINT 5 INTEGRATION SUITE (Items 30 - 34)
   // =========================================================================
 
-  // Item 30: INTEGRATION — NEW SUBMIT IS V2
-  it('CP5-30 new submit persists SNAPSHOT_V2 with canonical provenance and pinned asOf', async () => {
+  // Item 30: INTEGRATION — NEW SUBMIT IS V3
+  it('CP5-30 new submit persists SNAPSHOT_V3 with canonical provenance and pinned asOf', async () => {
     projection.resolveInTransaction.mockResolvedValue(personalProjection(subject, submitter, year));
     const dto = { academicYearId: year, fromCivilDate: '2026-08-01', toCivilDate: '2026-08-31', requestKey: 'cp5-submit-v2' };
     const result = await service.submit(dto, request(submitter));
@@ -381,12 +387,12 @@ integration('Reporting Statements control-plane PostgreSQL', () => {
       where: { id: result.revisionId },
     });
 
-    expect(row.snapshotProfile).toBe(REPORTING_STATEMENT_SNAPSHOT_V2);
+    expect(row.snapshotProfile).toBe(REPORTING_STATEMENT_SNAPSHOT_V3);
     expect(row.serializerVersion).toBe(REPORTING_STATEMENT_SERIALIZER_V1);
     expect(row.asOfInstant).toEqual(asOf);
 
     const parsed = JSON.parse(row.canonicalSnapshotJson);
-    expect(parsed.snapshotProfile).toBe(REPORTING_STATEMENT_SNAPSHOT_V2);
+    expect(parsed.snapshotProfile).toBe(REPORTING_STATEMENT_SNAPSHOT_V3);
     expect(parsed.serializerVersion).toBe(REPORTING_STATEMENT_SERIALIZER_V1);
     expect(parsed.operationalStartPolicyVersionId).toBe(operationalPolicyVersionId);
     expect(parsed.operationalStartDate).toBe('2026-08-15');
@@ -426,6 +432,10 @@ integration('Reporting Statements control-plane PostgreSQL', () => {
       new AuditService(prisma as never),
       businessConfiguration,
       { now: jest.fn(() => boundaryAsOf) },
+      new SpecialProgrammeWorkloadProjectionService(
+        prisma as never,
+        businessConfiguration,
+      ),
     );
 
     projection.resolveInTransaction.mockResolvedValue(personalProjection(subject, submitter, year, boundaryAsOf));
@@ -453,7 +463,7 @@ integration('Reporting Statements control-plane PostgreSQL', () => {
     );
 
     const before = await repository.readFrozenRevision(prisma, submitted.revisionId);
-    expect(before?.snapshotProfile).toBe(REPORTING_STATEMENT_SNAPSHOT_V2);
+    expect(before?.snapshotProfile).toBe(REPORTING_STATEMENT_SNAPSHOT_V3);
     const beforeParsed = JSON.parse(before!.canonicalSnapshotJson);
     expect(beforeParsed.operationalStartPolicyVersionId).toBe(operationalPolicyVersionId);
     expect(beforeParsed.operationalStartDate).toBe('2026-08-15');

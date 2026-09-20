@@ -17,6 +17,7 @@ import { formatCivilDate, hcmCivilDate, parseCivilDate } from '../common/validat
 import { BusinessConfigurationService } from '../business-configuration/business-configuration.service';
 import { ProgressDebtOperationalStartAuthority } from '../progress-debt/progress-debt.types';
 import { PersonalReportingProjectionService } from '../personal-reporting-projection/personal-reporting-projection.service';
+import { SpecialProgrammeWorkloadProjectionService } from '../special-programme-workload/special-programme-workload-projection.service';
 import { freezeReportingStatementSnapshot } from '../reporting-statement-internal/reporting-statement-canonicalizer';
 import { ReportingStatementRepository } from '../reporting-statement-internal/reporting-statement.repository';
 import { PrismaService } from '../prisma/prisma.service';
@@ -46,6 +47,7 @@ export class ReportingStatementsService {
     private readonly audit: AuditService,
     private readonly businessConfiguration: BusinessConfigurationService,
     @Inject(REPORTING_STATEMENT_CLOCK) private readonly clock: ReportingStatementClock,
+    private readonly specialProgrammeWorkloadProjection: SpecialProgrammeWorkloadProjectionService,
   ) {}
 
   async preview(dto: PreviewReportingStatementDto, request: AuthenticatedRequest): Promise<ReportingStatementPreviewResponse> {
@@ -61,8 +63,17 @@ export class ReportingStatementsService {
       toCivilDate: dto.toCivilDate as never,
       asOfInstant: asOf,
     });
+    const workload = await this.specialProgrammeWorkloadProjection.resolve({
+      academicYearId: dto.academicYearId,
+      targetUserId: actor,
+      fromCivilDate: dto.fromCivilDate as never,
+      toCivilDate: dto.toCivilDate as never,
+      asOfInstant: asOf,
+    });
     const eligibleForSubmission =
-      projection.status === 'PASS' && projection.responsibilityState === 'RESPONSIBILITY_PRESENT';
+      projection.status === 'PASS' &&
+      projection.responsibilityState === 'RESPONSIBILITY_PRESENT' &&
+      workload.status === 'PASS';
     return {
       previewAsOfInstant: asOf.toISOString(),
       status: projection.status,
@@ -80,6 +91,26 @@ export class ReportingStatementsService {
       })),
       findings: projection.findings.map((f) => mapToPublicFinding(f)),
       responsibilityManifest: projection.responsibilityManifest.map((i) => ({ ...i })),
+      specialProgrammeWorkload: {
+        profile: workload.profile,
+        status: workload.status,
+        scope: {
+          academicYearId: workload.scope.academicYearId,
+          targetUserId: workload.scope.targetUserId,
+          fromCivilDate: workload.scope.fromCivilDate,
+          toCivilDate: workload.scope.toCivilDate,
+          asOfInstant: workload.scope.asOfInstant,
+        },
+        totalCredit: workload.totalCredit,
+        contributionCount: workload.contributionCount,
+        contributions: workload.contributions.map((c) => ({
+          ...c,
+          attestations: c.attestations.map((a) => ({ ...a })),
+        })),
+        pendingConfirmation: workload.pendingConfirmation.map((p) => ({ ...p })),
+        findings: workload.findings.map((f) => ({ ...f })),
+        evaluatedAt: workload.evaluatedAt,
+      },
     };
   }
 
@@ -305,6 +336,28 @@ export class ReportingStatementsService {
           { academicYearId: dto.academicYearId, targetUserId: actor, fromCivilDate: dto.fromCivilDate as never, toCivilDate: dto.toCivilDate as never, asOfInstant: asOf },
           { reportingProjection: { operationalStartPolicy: authority, policyResolutionCivilDate } },
         );
+        const workload =
+          await this.specialProgrammeWorkloadProjection.resolveInTransaction(tx, {
+            academicYearId: dto.academicYearId,
+            targetUserId: actor,
+            fromCivilDate: dto.fromCivilDate as never,
+            toCivilDate: dto.toCivilDate as never,
+            asOfInstant: asOf,
+          });
+        if (workload.status === 'BLOCKED') {
+          throw new BadRequestException('SPECIAL_PROGRAMME_WORKLOAD_PROJECTION_BLOCKED');
+        }
+        if (
+          typeof workload.totalCredit !== 'number' ||
+          !Number.isFinite(workload.totalCredit) ||
+          workload.totalCredit < 0 ||
+          typeof workload.contributionCount !== 'number' ||
+          !Number.isInteger(workload.contributionCount) ||
+          workload.contributionCount < 0 ||
+          workload.contributionCount !== workload.contributions.length
+        ) {
+          throw new BadRequestException('SPECIAL_PROGRAMME_WORKLOAD_PROJECTION_INVALID');
+        }
         const profile = await tx.user.findUnique({ where: { id: actor }, include: { profile: true } });
         const frozen = freezeReportingStatementSnapshot({
           statementProfile: PERSONAL_REPORTING_STATEMENT_PROFILE,
@@ -315,6 +368,18 @@ export class ReportingStatementsService {
           projection,
           operationalStartPolicyVersionId: operationalStart.policyVersionId,
           operationalStartDate: operationalStart.operationalStartDate,
+          specialProgrammeWorkload: {
+            projectionProfile: workload.profile,
+            status: 'PASS',
+            totalCredit: workload.totalCredit,
+            contributionCount: workload.contributionCount,
+            contributions: workload.contributions.map((c) => ({
+              ...c,
+              attestations: c.attestations.map((a) => ({ ...a })),
+            })),
+            pendingConfirmation: workload.pendingConfirmation.map((p) => ({ ...p })),
+            evaluatedAt: workload.evaluatedAt,
+          },
         });
         const tail = existing ? await this.repository.lineageTail(tx, existing.id) : null;
         if (tail === undefined) throw new ConflictException('Statement lineage không xác định.');

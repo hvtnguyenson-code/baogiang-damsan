@@ -1,9 +1,13 @@
 import { AuditResult, CatalogStatus, PrismaClient, ReportingStatementLifecycleState as State } from '@prisma/client';
 import request, { Agent } from 'supertest';
-import { freezeReportingStatementSnapshot } from '../../src/reporting-statement-internal/reporting-statement-canonicalizer';
+import {
+  REPORTING_STATEMENT_SNAPSHOT_V3,
+  freezeReportingStatementSnapshot,
+} from '../../src/reporting-statement-internal/reporting-statement-canonicalizer';
 import { ReportingStatementRepository } from '../../src/reporting-statement-internal/reporting-statement.repository';
 import { PERSONAL_REPORTING_STATEMENT_PROFILE } from '../../src/reporting-statements/reporting-statement.policy';
 import { PUBLIC_PRESENTATION_INTEGRITY_ERROR } from '../../src/reporting-statements/reporting-statement.presenter';
+import { SPECIAL_PROGRAMME_WORKLOAD_PROJECTION_PROFILE_V1 } from '../../src/special-programme-workload/special-programme-workload-projection.types';
 import { Phase01Harness, integration, testOrigin } from '../helpers/phase01-test-harness';
 
 const asOf = new Date('2026-08-24T01:02:03.004Z');
@@ -448,15 +452,21 @@ integration('Reporting Statement HTTP security boundary (isolated PostgreSQL)', 
     expect(submitReplacementRes.status).toBe(201);
     expect(submitReplacementRes.body.lifecycleState).toBe('SUBMITTED');
 
-    // Verify DB snapshot profile is V2 and contains frozen provenance
+    // Verify DB snapshot profile is V3 and contains frozen provenance
     const submittedRevisionRow = await prisma.reportingStatementRevision.findUniqueOrThrow({
       where: { id: submitReplacementRes.body.revisionId },
     });
-    expect(submittedRevisionRow.snapshotProfile).toBe('REPORTING_STATEMENT_SNAPSHOT_V2');
+    expect(submittedRevisionRow.snapshotProfile).toBe(REPORTING_STATEMENT_SNAPSHOT_V3);
     expect(submittedRevisionRow.serializerVersion).toBe('REPORTING_STATEMENT_CANONICAL_JSON_V1');
     const parsedSnapshot = JSON.parse(submittedRevisionRow.canonicalSnapshotJson);
     expect(parsedSnapshot.operationalStartPolicyVersionId).toBeDefined();
     expect(parsedSnapshot.operationalStartDate).toBe('2026-08-15');
+    expect(parsedSnapshot.specialProgrammeWorkload).toBeDefined();
+    expect(parsedSnapshot.specialProgrammeWorkload.projectionProfile).toBe(SPECIAL_PROGRAMME_WORKLOAD_PROJECTION_PROFILE_V1);
+    expect(parsedSnapshot.specialProgrammeWorkload.status).toBe('PASS');
+    expect(parsedSnapshot.specialProgrammeWorkload.totalCredit).toBe(0);
+    expect(parsedSnapshot.specialProgrammeWorkload.contributionCount).toBe(0);
+    expect(parsedSnapshot.specialProgrammeWorkload.contributions).toEqual([]);
 
     // Pending decision queue now shows the submitted replacement revision
     const pendingWithReplacement = await approver.agent.get('/api/reporting-statements/pending-decision');

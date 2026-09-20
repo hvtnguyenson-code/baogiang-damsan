@@ -1,7 +1,9 @@
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, BadRequestException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { ReportingStatementsService } from '../../src/reporting-statements/reporting-statements.service';
-import { REPORTING_STATEMENT_SNAPSHOT_V2 } from '../../src/reporting-statement-internal/reporting-statement-canonicalizer';
+import {
+  REPORTING_STATEMENT_SNAPSHOT_V3,
+} from '../../src/reporting-statement-internal/reporting-statement-canonicalizer';
 
 const asOf = new Date('2026-08-25T00:00:00.000Z');
 const dto = {
@@ -103,6 +105,46 @@ function setup(classifications: unknown[], currentAsOf: Date = asOf) {
       effectiveUntil: null,
     }),
   };
+  const specialProgrammeWorkloadProjection = {
+    resolveInTransaction: jest.fn().mockImplementation(() =>
+      Promise.resolve({
+        profile: 'SPECIAL_PROGRAMME_WORKLOAD_PROJECTION_V1',
+        scope: {
+          academicYearId: 'year',
+          targetUserId: 'actor',
+          fromCivilDate: '2026-08-01',
+          toCivilDate: '2026-08-31',
+          asOfInstant: currentAsOf,
+        },
+        status: 'PASS',
+        totalCredit: 0,
+        contributionCount: 0,
+        contributions: [],
+        pendingConfirmation: [],
+        findings: [],
+        evaluatedAt: currentAsOf.toISOString(),
+      }),
+    ),
+    resolve: jest.fn().mockImplementation(() =>
+      Promise.resolve({
+        profile: 'SPECIAL_PROGRAMME_WORKLOAD_PROJECTION_V1',
+        scope: {
+          academicYearId: 'year',
+          targetUserId: 'actor',
+          fromCivilDate: '2026-08-01',
+          toCivilDate: '2026-08-31',
+          asOfInstant: currentAsOf,
+        },
+        status: 'PASS',
+        totalCredit: 0,
+        contributionCount: 0,
+        contributions: [],
+        pendingConfirmation: [],
+        findings: [],
+        evaluatedAt: currentAsOf.toISOString(),
+      }),
+    ),
+  };
 
   return {
     sut: new ReportingStatementsService(
@@ -113,9 +155,11 @@ function setup(classifications: unknown[], currentAsOf: Date = asOf) {
       { write: jest.fn() } as never,
       businessConfiguration as never,
       clock,
+      specialProgrammeWorkloadProjection as never,
     ),
     repository,
     resolver,
+    specialProgrammeWorkloadProjection,
     auth,
     clock,
     prisma,
@@ -210,12 +254,13 @@ describe('ReportingStatementsService.submit', () => {
       },
     );
 
-    // F. freeze snapshot persisted with V2 and exact provenance
+    // F. freeze snapshot persisted with V3 and exact provenance
     expect(x.repository.persistSubmittedRevision).toHaveBeenCalledTimes(1);
     const persistedCall = x.repository.persistSubmittedRevision.mock.calls[0][1];
-    expect(persistedCall.frozen.snapshot.snapshotProfile).toBe(REPORTING_STATEMENT_SNAPSHOT_V2);
+    expect(persistedCall.frozen.snapshot.snapshotProfile).toBe(REPORTING_STATEMENT_SNAPSHOT_V3);
     expect(persistedCall.frozen.snapshot.operationalStartPolicyVersionId).toBe('policy-v1');
     expect(persistedCall.frozen.snapshot.operationalStartDate).toBe('2026-08-15');
+    expect(persistedCall.frozen.snapshot.specialProgrammeWorkload).toBeDefined();
   });
 
   // B. HCM anchor exact at UTC/VN boundary
@@ -363,5 +408,107 @@ describe('ReportingStatementsService.submit', () => {
     x.repository.persistSubmittedRevision.mockRejectedValue(error);
     await expect(x.sut.submit(dto as never, request)).rejects.toBe(error);
     expect(x.prisma.$transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('prevents persist and throws BadRequestException when special programme workload is BLOCKED', async () => {
+    const x = setup([{ kind: 'MISS' }, { kind: 'MISS' }]);
+    x.specialProgrammeWorkloadProjection.resolveInTransaction.mockResolvedValueOnce({
+      profile: 'SPECIAL_PROGRAMME_WORKLOAD_PROJECTION_V1',
+      status: 'BLOCKED',
+      scope: {
+        academicYearId: 'year',
+        targetUserId: 'actor',
+        fromCivilDate: '2026-08-01',
+        toCivilDate: '2026-08-31',
+        asOfInstant: asOf,
+      },
+      totalCredit: null,
+      contributionCount: null,
+      contributions: [],
+      pendingConfirmation: [],
+      findings: [
+        {
+          code: 'POLICY_NOT_FOUND',
+          message: 'Missing policy',
+        },
+      ],
+      evaluatedAt: asOf.toISOString(),
+    });
+
+    await expect(x.sut.submit(dto as never, request)).rejects.toThrow(
+      new BadRequestException('SPECIAL_PROGRAMME_WORKLOAD_PROJECTION_BLOCKED'),
+    );
+    expect(x.repository.persistSubmittedRevision).not.toHaveBeenCalled();
+  });
+
+  it('freezes V3 with full workload contributions, attestations, and policy provenance, immune to later source mutations', async () => {
+    const x = setup([{ kind: 'MISS' }, { kind: 'MISS' }]);
+    const mockAttestation = {
+      attestationId: 'att-1',
+      attestedByUserId: 'principal',
+      authorityType: 'CAPABILITY' as const,
+      capabilityKey: 'SPECIAL_ACTIVITY_EXECUTION_ATTEST',
+      scope: 'SCHOOL_WIDE' as const,
+      resourceId: null,
+      attestedAt: '2026-08-11T00:00:00.000Z',
+    };
+    const mockContribution = {
+      executionId: 'exec-1',
+      specialActivityId: 'act-1',
+      specialActivityStaffingId: 'staff-1',
+      specialActivityTimeSlotId: 'slot-1',
+      programmeMasterId: 'prog-1',
+      programmePlanVersionId: 'plan-v1',
+      programmeTopicItemId: 'topic-1',
+      plannedProgrammeOccurrenceId: 'occ-1',
+      plannedOccurrenceSlotId: 'pos-1',
+      programmeKind: 'GDDP' as const,
+      occurrenceMode: 'CLASS' as const,
+      executionCivilDate: '2026-08-10',
+      actualTeacherUserId: 'actor',
+      coefficient: 1.5,
+      credit: 1.5,
+      policyVersionId: 'sp-policy-v1',
+      policyValidatorVersion: 'v1',
+      attestations: [mockAttestation],
+    };
+    x.specialProgrammeWorkloadProjection.resolveInTransaction.mockResolvedValueOnce({
+      profile: 'SPECIAL_PROGRAMME_WORKLOAD_PROJECTION_V1',
+      status: 'PASS',
+      scope: {
+        academicYearId: 'year',
+        targetUserId: 'actor',
+        fromCivilDate: '2026-08-01',
+        toCivilDate: '2026-08-31',
+        asOfInstant: asOf,
+      },
+      totalCredit: 1.5,
+      contributionCount: 1,
+      contributions: [mockContribution],
+      pendingConfirmation: [],
+      findings: [],
+      evaluatedAt: asOf.toISOString(),
+    });
+
+    await x.sut.submit(dto as never, request);
+
+    expect(x.repository.persistSubmittedRevision).toHaveBeenCalledTimes(1);
+    const persistedCall = x.repository.persistSubmittedRevision.mock.calls[0][1];
+    const snapshot = persistedCall.frozen.snapshot;
+    expect(snapshot.snapshotProfile).toBe(REPORTING_STATEMENT_SNAPSHOT_V3);
+    expect(snapshot.specialProgrammeWorkload).toBeDefined();
+    expect(snapshot.specialProgrammeWorkload.totalCredit).toBe(1.5);
+    expect(snapshot.specialProgrammeWorkload.contributionCount).toBe(1);
+    expect(snapshot.specialProgrammeWorkload.contributions[0].executionId).toBe('exec-1');
+    expect(snapshot.specialProgrammeWorkload.contributions[0].coefficient).toBe(1.5);
+    expect(snapshot.specialProgrammeWorkload.contributions[0].credit).toBe(1.5);
+    expect(snapshot.specialProgrammeWorkload.contributions[0].policyVersionId).toBe('sp-policy-v1');
+    expect(snapshot.specialProgrammeWorkload.contributions[0].attestations[0].attestationId).toBe('att-1');
+
+    // Mutating source object after submission does not mutate frozen snapshot
+    mockAttestation.attestationId = 'MUTATED';
+    mockContribution.credit = 999;
+    expect(snapshot.specialProgrammeWorkload.contributions[0].credit).toBe(1.5);
+    expect(snapshot.specialProgrammeWorkload.contributions[0].attestations[0].attestationId).toBe('att-1');
   });
 });
