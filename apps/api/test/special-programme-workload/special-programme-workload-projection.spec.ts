@@ -77,6 +77,9 @@ describe('SpecialProgrammeWorkloadProjectionService invariants (P4-050)', () => 
         findMany: jest.fn().mockImplementation(() => Promise.resolve(opts.attestations ?? [])),
       },
     };
+    (mockPrisma as Record<string, unknown>).$transaction = jest.fn(
+      async (callback: (tx: unknown) => unknown) => callback(mockPrisma),
+    );
 
     const mockBusinessConfiguration = {
       resolveEffectiveBusinessPolicy: jest
@@ -127,6 +130,8 @@ describe('SpecialProgrammeWorkloadProjectionService invariants (P4-050)', () => 
     const occurrence = {
       id: baseEntities.occurrenceId,
       programmeMasterId: baseEntities.masterId,
+      programmePlanVersionId: baseEntities.planVersionId,
+      programmeTopicItemId: baseEntities.topicItemId,
       academicYearId,
       mode: ProgrammeOccurrenceMode.CLASS,
     };
@@ -150,6 +155,7 @@ describe('SpecialProgrammeWorkloadProjectionService invariants (P4-050)', () => 
       plannedProgrammeOccurrenceId: baseEntities.occurrenceId,
       plannedOccurrenceSlotId: baseEntities.slotId1,
       specialActivityId: baseEntities.activityId1,
+      materializedAt: new Date('2026-09-10T07:00:00.000Z'),
     };
     const execution1 = {
       id: 'exec-1',
@@ -161,9 +167,13 @@ describe('SpecialProgrammeWorkloadProjectionService invariants (P4-050)', () => 
       executionCivilDate: new Date('2026-09-10T00:00:00.000Z'),
       actualTeacherUserId: teacherId1,
       createdAt: new Date('2026-09-10T08:00:00.000Z'),
+      reversedAt: null,
       specialActivity: {
         id: baseEntities.activityId1,
+        academicYearId,
         status: 'ACTIVE',
+        createdAt: new Date('2026-09-10T07:00:00.000Z'),
+        reversedAt: null,
       },
     };
     const attestation1 = {
@@ -177,6 +187,7 @@ describe('SpecialProgrammeWorkloadProjectionService invariants (P4-050)', () => 
       scopeResourceId: baseEntities.masterId,
       status: 'ACTIVE',
       attestedAt: new Date('2026-09-11T08:00:00.000Z'),
+      reversedAt: null,
     };
 
     return {
@@ -371,6 +382,7 @@ describe('SpecialProgrammeWorkloadProjectionService invariants (P4-050)', () => 
       plannedProgrammeOccurrenceId: baseEntities.occurrenceId,
       plannedOccurrenceSlotId: baseEntities.slotId2,
       specialActivityId: baseEntities.activityId2,
+      materializedAt: new Date('2026-09-10T07:00:00.000Z'),
     };
     const exec2 = {
       id: 'exec-2',
@@ -382,9 +394,13 @@ describe('SpecialProgrammeWorkloadProjectionService invariants (P4-050)', () => 
       executionCivilDate: new Date('2026-09-10T00:00:00.000Z'),
       actualTeacherUserId: teacherId1,
       createdAt: new Date('2026-09-10T08:00:00.000Z'),
+      reversedAt: null,
       specialActivity: {
         id: baseEntities.activityId2,
+        academicYearId,
         status: 'ACTIVE',
+        createdAt: new Date('2026-09-10T07:00:00.000Z'),
+        reversedAt: null,
       },
     };
 
@@ -419,6 +435,7 @@ describe('SpecialProgrammeWorkloadProjectionService invariants (P4-050)', () => 
     const reversedExec = {
       ...f.executions[0],
       status: 'REVERSED',
+      reversedAt: new Date('2026-09-19T00:00:00.000Z'),
     };
     const { service } = setupHarness({
       ...f,
@@ -444,13 +461,25 @@ describe('SpecialProgrammeWorkloadProjectionService invariants (P4-050)', () => 
     const f = createStandardFixtures();
     const root1ReversedExec = {
       ...f.executions[0],
-      specialActivity: { id: 'root-1', status: 'REVERSED' },
+      specialActivity: {
+        id: 'root-1',
+        academicYearId,
+        status: 'REVERSED',
+        createdAt: new Date('2026-09-10T07:00:00.000Z'),
+        reversedAt: asOfInstant,
+      },
     };
     const root2ActiveExec = {
       ...f.executions[0],
       id: 'exec-2',
       specialActivityId: 'root-2',
-      specialActivity: { id: 'root-2', status: 'ACTIVE' },
+      specialActivity: {
+        id: 'root-2',
+        academicYearId,
+        status: 'ACTIVE',
+        createdAt: new Date('2026-09-10T07:00:00.000Z'),
+        reversedAt: null,
+      },
     };
     const pmaReplacement = {
       ...f.pmas[0],
@@ -528,6 +557,7 @@ describe('SpecialProgrammeWorkloadProjectionService invariants (P4-050)', () => 
       plannedProgrammeOccurrenceId: baseEntities.occurrenceId,
       plannedOccurrenceSlotId: baseEntities.slotId2,
       specialActivityId: baseEntities.activityId2,
+      materializedAt: new Date('2026-09-10T07:00:00.000Z'),
     };
     const exec2 = {
       id: 'exec-2',
@@ -538,10 +568,14 @@ describe('SpecialProgrammeWorkloadProjectionService invariants (P4-050)', () => 
       academicYearId,
       executionCivilDate: new Date('2026-09-25T00:00:00.000Z'),
       actualTeacherUserId: teacherId1,
-      createdAt: new Date('2026-09-25T08:00:00.000Z'),
+      createdAt: new Date('2026-09-10T08:00:00.000Z'),
+      reversedAt: null,
       specialActivity: {
         id: baseEntities.activityId2,
+        academicYearId,
         status: 'ACTIVE',
+        createdAt: new Date('2026-09-10T07:00:00.000Z'),
+        reversedAt: null,
       },
     };
 
@@ -736,5 +770,63 @@ describe('SpecialProgrammeWorkloadProjectionService invariants (P4-050)', () => 
     expect(res.contributionCount).toBe(1);
     expect(res.totalCredit).toBe(1.5);
     expect(res.contributions[0].attestations).toHaveLength(3);
+  });
+
+  it('15. reversal after asOf remains active at asOf', async () => {
+    const f = createStandardFixtures();
+    const { service } = setupHarness({
+      ...f,
+      executions: [{ ...f.executions[0], status: 'REVERSED', reversedAt: new Date('2026-09-21T00:00:00.000Z') }],
+      attestations: [f.attestation1],
+    });
+
+    const res = await service.resolve({ academicYearId, targetUserId: teacherId1, fromCivilDate, toCivilDate, asOfInstant });
+
+    expect(res.status).toBe('PASS');
+    expect(res.contributionCount).toBe(1);
+  });
+
+  it('16. reversal before or exactly at asOf is not active at asOf', async () => {
+    const f = createStandardFixtures();
+    const { service } = setupHarness({
+      ...f,
+      executions: [{ ...f.executions[0], status: 'REVERSED', reversedAt: asOfInstant }],
+      attestations: [f.attestation1],
+    });
+
+    const res = await service.resolve({ academicYearId, targetUserId: teacherId1, fromCivilDate, toCivilDate, asOfInstant });
+
+    expect(res.status).toBe('PASS');
+    expect(res.contributionCount).toBe(0);
+    expect(res.totalCredit).toBe(0);
+  });
+
+  it('17. PMA provenance mismatch blocks instead of silently dropping the candidate', async () => {
+    const f = createStandardFixtures();
+    const { service } = setupHarness({
+      ...f,
+      pmas: [{ ...f.pmas[0], programmeMasterId: 'missing-master' }],
+      attestations: [f.attestation1],
+    });
+
+    const res = await service.resolve({ academicYearId, targetUserId: teacherId1, fromCivilDate, toCivilDate, asOfInstant });
+
+    expect(res.status).toBe('BLOCKED');
+    expect(res.findings[0].code).toBe('SPECIAL_PROGRAMME_WORKLOAD_PROVENANCE_MISMATCH');
+  });
+
+  it('18. duplicate active execution identity blocks instead of first-row-wins', async () => {
+    const f = createStandardFixtures();
+    const duplicate = { ...f.executions[0], id: 'exec-duplicate' };
+    const { service } = setupHarness({
+      ...f,
+      executions: [f.executions[0], duplicate],
+      attestations: [f.attestation1],
+    });
+
+    const res = await service.resolve({ academicYearId, targetUserId: teacherId1, fromCivilDate, toCivilDate, asOfInstant });
+
+    expect(res.status).toBe('BLOCKED');
+    expect(res.findings[0].code).toBe('SPECIAL_PROGRAMME_WORKLOAD_DUPLICATE_EXECUTION_IDENTITY');
   });
 });

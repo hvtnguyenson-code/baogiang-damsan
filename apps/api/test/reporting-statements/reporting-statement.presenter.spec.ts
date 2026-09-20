@@ -2,9 +2,11 @@ import { InternalServerErrorException } from '@nestjs/common';
 import {
   freezeReportingStatementSnapshot,
   freezeReportingStatementSnapshotV1,
+  canonicalizeJson,
   REPORTING_STATEMENT_SERIALIZER_V1,
   REPORTING_STATEMENT_SNAPSHOT_V1,
   REPORTING_STATEMENT_SNAPSHOT_V2,
+  sha256CanonicalJson,
 } from '../../src/reporting-statement-internal/reporting-statement-canonicalizer';
 import {
   FrozenRevisionRow,
@@ -623,6 +625,45 @@ describe('Reporting Statement Presenter & Integrity', () => {
       expect(detail.specialProgrammeWorkload).toBeDefined();
       expect(detail.specialProgrammeWorkload?.totalCredit).toBe(1.5);
       expect(detail.specialProgrammeWorkload?.contributions).toHaveLength(1);
+    });
+
+    it('fails closed for corrupt V3 count, sum, owner, and dedupe invariants', () => {
+      const { row } = createValidFrozenFixtureV3();
+      const snapshot = JSON.parse(row.canonicalSnapshotJson) as Record<string, unknown>;
+      const workload = snapshot.specialProgrammeWorkload as Record<string, unknown>;
+      const contributions = workload.contributions as Array<Record<string, unknown>>;
+      const contribution = contributions[0];
+      const corruptSnapshots = [
+        { ...snapshot, specialProgrammeWorkload: { ...workload, contributionCount: 2 } },
+        { ...snapshot, specialProgrammeWorkload: { ...workload, totalCredit: 999 } },
+        {
+          ...snapshot,
+          specialProgrammeWorkload: {
+            ...workload,
+            contributions: [{ ...contribution, actualTeacherUserId: 'different-owner' }],
+          },
+        },
+        {
+          ...snapshot,
+          specialProgrammeWorkload: {
+            ...workload,
+            contributionCount: 2,
+            totalCredit: 3,
+            contributions: [contribution, { ...contribution, executionId: 'exec-2' }],
+          },
+        },
+      ];
+
+      for (const corruptSnapshot of corruptSnapshots) {
+        const canonicalSnapshotJson = canonicalizeJson(corruptSnapshot as never);
+        expect(() =>
+          parseAndVerifyFrozenSnapshot({
+            ...row,
+            canonicalSnapshotJson,
+            semanticHash: sha256CanonicalJson(canonicalSnapshotJson),
+          }),
+        ).toThrow(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
+      }
     });
 
     it('sorts history entries chronologically with deterministic tie-break', () => {

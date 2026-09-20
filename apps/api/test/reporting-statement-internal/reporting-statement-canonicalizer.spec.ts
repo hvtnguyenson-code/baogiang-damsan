@@ -547,7 +547,17 @@ describe("Reporting Statement canonicalization", () => {
           credit: 1.0,
           policyVersionId: "sp-policy-v1",
           policyValidatorVersion: "v1",
-          attestations: [],
+           attestations: [
+             {
+               attestationId: "att-1",
+               attestedByUserId: "principal",
+               authorityType: "CAPABILITY",
+               capabilityKey: "SPECIAL_ACTIVITY_EXECUTION_ATTEST",
+               scope: "SCHOOL_WIDE",
+               resourceId: null,
+               attestedAt: "2026-08-11T00:00:00.000Z",
+             },
+           ],
         },
       ],
       pendingConfirmation: [],
@@ -615,5 +625,31 @@ describe("Reporting Statement canonicalization", () => {
     expect(() => assertFrozenReportingStatementIntegrity(tampered as never)).toThrow(
       "special programme workload integrity",
     );
+  });
+
+  it("rejects null, mismatched, or non-reconciling V3 totals before freezing", () => {
+    const baseWorkload = {
+      projectionProfile: "SPECIAL_PROGRAMME_WORKLOAD_PROJECTION_V1",
+      status: "PASS" as const,
+      totalCredit: 0,
+      contributionCount: 0,
+      contributions: [],
+      pendingConfirmation: [],
+      evaluatedAt: asOf.toISOString(),
+    };
+    const freeze = (workload: unknown) =>
+      freezeReportingStatementSnapshot({
+        statementProfile: "PERSONAL_V1",
+        submitterUserId: "teacher",
+        asOfInstant: asOf,
+        projection: projection() as never,
+        operationalStartPolicyVersionId: "policy-version-1",
+        operationalStartDate: "2026-08-15",
+        specialProgrammeWorkload: workload as never,
+      });
+
+    expect(() => freeze({ ...baseWorkload, totalCredit: null })).toThrow();
+    expect(() => freeze({ ...baseWorkload, totalCredit: 1 })).toThrow();
+    expect(() => freeze({ ...baseWorkload, contributionCount: 1 })).toThrow();
   });
 });

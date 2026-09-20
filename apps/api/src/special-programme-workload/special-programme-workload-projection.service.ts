@@ -27,7 +27,10 @@ export class SpecialProgrammeWorkloadProjectionService {
   async resolve(
     input: SpecialProgrammeWorkloadProjectionInput,
   ): Promise<SpecialProgrammeWorkloadProjection> {
-    return this.resolveInTransaction(this.prisma, input);
+    return this.prisma.$transaction(
+      (tx) => this.resolveInTransaction(tx, input),
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
   }
 
   async resolveInTransaction(
@@ -39,6 +42,31 @@ export class SpecialProgrammeWorkloadProjectionService {
     const fromDate = parseCivilDate(input.fromCivilDate);
     const toDate = parseCivilDate(input.toCivilDate);
     const evaluatedAt = new Date().toISOString();
+    const findings: SpecialProgrammeWorkloadFinding[] = [];
+
+    const addBlocker = (code: string, message: string, entityIds: string[]) => {
+      findings.push({ code, message, severity: 'BLOCKER', entityIds: [...entityIds].sort() });
+    };
+
+    const blockedResponse = (
+      pendingConfirmation: SpecialProgrammeWorkloadPendingConfirmation[] = [],
+    ): SpecialProgrammeWorkloadProjection => ({
+      profile: SPECIAL_PROGRAMME_WORKLOAD_PROJECTION_PROFILE_V1,
+      status: 'BLOCKED',
+      scope: {
+        academicYearId: input.academicYearId,
+        targetUserId: input.targetUserId,
+        fromCivilDate: input.fromCivilDate,
+        toCivilDate: input.toCivilDate,
+        asOfInstant: input.asOfInstant.toISOString(),
+      },
+      totalCredit: null,
+      contributionCount: null,
+      contributions: [],
+      pendingConfirmation: pendingConfirmation.slice().sort(comparePending),
+      findings: findings.slice().sort(compareFinding),
+      evaluatedAt,
+    });
 
     const emptyPassResponse = (
       pending: SpecialProgrammeWorkloadPendingConfirmation[] = [],
@@ -60,12 +88,12 @@ export class SpecialProgrammeWorkloadProjectionService {
       evaluatedAt,
     });
 
-    // 1. Fetch active executions for target user within civil date range created at or before asOfInstant
+    // 1. Fetch executions that existed at asOfInstant. Lifecycle state is evaluated below.
     const executions = await tx.specialActivityParticipationExecution.findMany({
       where: {
         academicYearId: input.academicYearId,
         actualTeacherUserId: input.targetUserId,
-        status: 'ACTIVE',
+        status: { in: ['ACTIVE', 'REVERSED'] },
         executionCivilDate: {
           gte: fromDate,
           lte: toDate,
@@ -78,16 +106,57 @@ export class SpecialProgrammeWorkloadProjectionService {
       orderBy: [{ executionCivilDate: 'asc' }, { id: 'asc' }],
     });
 
-    // 2. Filter executions whose status is ACTIVE and SpecialActivity root is ACTIVE
-    const activeExecutions = executions.filter(
-      (e) =>
-        e.status === 'ACTIVE' &&
-        e.specialActivity &&
-        e.specialActivity.status === 'ACTIVE',
-    );
+    // 2. Evaluate execution and root lifecycle at asOfInstant.
+    const activeExecutions: typeof executions = [];
+    for (const execution of executions) {
+      const executionState = evaluateLifecycle(
+        execution,
+        input.asOfInstant,
+        'execution',
+      );
+      if (executionState.malformed) {
+        addBlocker(
+          'SPECIAL_PROGRAMME_WORKLOAD_EXECUTION_LIFECYCLE_MALFORMED',
+          'Execution lifecycle shape is malformed.',
+          [execution.id],
+        );
+        continue;
+      }
+      if (!executionState.active) continue;
+      if (!execution.specialActivity) {
+        addBlocker(
+          'SPECIAL_PROGRAMME_WORKLOAD_ACTIVITY_MISSING',
+          'Active execution is missing its SpecialActivity root.',
+          [execution.id, execution.specialActivityId],
+        );
+        continue;
+      }
+      const activityState = evaluateLifecycle(
+        execution.specialActivity,
+        input.asOfInstant,
+        'activity',
+      );
+      if (activityState.malformed) {
+        addBlocker(
+          'SPECIAL_PROGRAMME_WORKLOAD_ACTIVITY_LIFECYCLE_MALFORMED',
+          'SpecialActivity lifecycle shape is malformed.',
+          [execution.specialActivityId],
+        );
+        continue;
+      }
+      if (execution.specialActivity.academicYearId !== input.academicYearId) {
+        addBlocker(
+          'SPECIAL_PROGRAMME_WORKLOAD_PROVENANCE_MISMATCH',
+          'SpecialActivity academic year does not match the projection scope.',
+          [execution.id, execution.specialActivityId],
+        );
+        continue;
+      }
+      if (activityState.active) activeExecutions.push(execution);
+    }
 
     if (activeExecutions.length === 0) {
-      return emptyPassResponse();
+      return findings.length ? blockedResponse() : emptyPassResponse();
     }
 
     // 3. Find ProgrammeMaterializedActivity provenance
@@ -100,7 +169,18 @@ export class SpecialProgrammeWorkloadProjectionService {
       },
     });
 
-    const pmaByActivityId = new Map(pmas.map((p) => [p.specialActivityId, p]));
+    const pmasAtAsOf = pmas.filter((p) => {
+      if (!(p.materializedAt instanceof Date) || Number.isNaN(p.materializedAt.getTime())) {
+        addBlocker(
+          'SPECIAL_PROGRAMME_WORKLOAD_PMA_LIFECYCLE_MALFORMED',
+          'ProgrammeMaterializedActivity materializedAt is malformed.',
+          [p.id, p.specialActivityId],
+        );
+        return false;
+      }
+      return p.materializedAt <= input.asOfInstant;
+    });
+    const pmaByActivityId = new Map(pmasAtAsOf.map((p) => [p.specialActivityId, p]));
 
     // Filter to executions that belong to programme-materialized activities (ignore ad-hoc)
     const programmeExecutions = activeExecutions.filter((e) =>
@@ -108,7 +188,7 @@ export class SpecialProgrammeWorkloadProjectionService {
     );
 
     if (programmeExecutions.length === 0) {
-      return emptyPassResponse();
+      return findings.length ? blockedResponse() : emptyPassResponse();
     }
 
     // 4. Batch query related entities to verify coherent linkage
@@ -153,7 +233,6 @@ export class SpecialProgrammeWorkloadProjectionService {
       tx.programmeOccurrenceAttestation.findMany({
         where: {
           plannedProgrammeOccurrenceId: { in: occurrenceIds },
-          status: 'ACTIVE',
           attestedAt: { lte: input.asOfInstant },
         },
         orderBy: [{ id: 'asc' }],
@@ -167,12 +246,23 @@ export class SpecialProgrammeWorkloadProjectionService {
     const slotMap = new Map(slots.map((s) => [s.id, s]));
     const activitySlotMap = new Map(activitySlots.map((as) => [as.id, as]));
 
-    // Group attestations by plannedProgrammeOccurrenceId
+    // Group attestations that are active at asOfInstant by occurrence. Malformed
+    // lifecycle rows are blockers, never silently ignored.
     const attestationsByOccurrenceId = new Map<
       string,
       typeof attestations
     >();
     for (const att of attestations) {
+      const attestationState = evaluateAttestationLifecycle(att, input.asOfInstant);
+      if (attestationState.malformed) {
+        addBlocker(
+          'SPECIAL_PROGRAMME_WORKLOAD_ATTESTATION_LIFECYCLE_MALFORMED',
+          'Programme occurrence attestation lifecycle shape is malformed.',
+          [att.id, att.plannedProgrammeOccurrenceId],
+        );
+        continue;
+      }
+      if (!attestationState.active) continue;
       const list = attestationsByOccurrenceId.get(att.plannedProgrammeOccurrenceId);
       if (list) {
         list.push(att);
@@ -181,15 +271,18 @@ export class SpecialProgrammeWorkloadProjectionService {
       }
     }
 
-    // 5. Group executions by plannedOccurrenceSlotId (at most one per plannedOccurrenceSlotId + actualTeacherUserId)
-    const slotExecutionsMap = new Map<
-      string,
-      typeof programmeExecutions[0]
-    >();
+    // 5. Validate every PMA provenance chain before applying the attestation gate.
+    interface ValidatedCandidate {
+      execution: typeof programmeExecutions[0];
+      pma: typeof pmasAtAsOf[0];
+      master: typeof masters[0];
+      occurrence: typeof occurrences[0];
+    }
+    const validatedCandidates: ValidatedCandidate[] = [];
 
     for (const exec of programmeExecutions) {
       const pma = pmaByActivityId.get(exec.specialActivityId);
-      if (!pma) continue;
+      if (!pma) continue; // generic ad-hoc activity boundary
 
       // Verify relational coherence
       const master = masterMap.get(pma.programmeMasterId);
@@ -200,23 +293,59 @@ export class SpecialProgrammeWorkloadProjectionService {
       const activitySlot = activitySlotMap.get(exec.specialActivityTimeSlotId);
 
       if (
+        !pma.id ||
+        !pma.specialActivityId ||
+        pma.specialActivityId !== exec.specialActivityId ||
+        !pma.programmeMasterId ||
+        !pma.programmePlanVersionId ||
+        !pma.programmeTopicItemId ||
+        !pma.plannedProgrammeOccurrenceId ||
+        !pma.plannedOccurrenceSlotId ||
         !master ||
+        master.academicYearId !== input.academicYearId ||
         !planVersion ||
         planVersion.programmeMasterId !== master.id ||
         !topicItem ||
         topicItem.programmePlanVersionId !== planVersion.id ||
         !occurrence ||
         occurrence.programmeMasterId !== master.id ||
+        occurrence.programmePlanVersionId !== planVersion.id ||
+        occurrence.programmeTopicItemId !== topicItem.id ||
+        occurrence.academicYearId !== input.academicYearId ||
         !slot ||
         slot.plannedProgrammeOccurrenceId !== occurrence.id ||
+        slot.academicYearId !== input.academicYearId ||
         !activitySlot ||
+        activitySlot.specialActivityId !== exec.specialActivityId ||
+        activitySlot.academicYearId !== input.academicYearId ||
         activitySlot.timeSlotDefinitionId !== slot.timeSlotDefinitionId
       ) {
+        addBlocker(
+          'SPECIAL_PROGRAMME_WORKLOAD_PROVENANCE_MISMATCH',
+          'Programme workload provenance does not reconcile across retained entities.',
+          [exec.id, pma.id, pma.plannedOccurrenceSlotId],
+        );
         continue;
       }
+      validatedCandidates.push({ execution: exec, pma, master, occurrence });
+    }
 
-      if (!slotExecutionsMap.has(pma.plannedOccurrenceSlotId)) {
-        slotExecutionsMap.set(pma.plannedOccurrenceSlotId, exec);
+    // Exact identity is (plannedOccurrenceSlotId, actualTeacherUserId). Never
+    // choose a first row when the current topology is ambiguous.
+    const candidatesByIdentity = new Map<string, ValidatedCandidate[]>();
+    for (const candidate of validatedCandidates) {
+      const key = `${candidate.pma.plannedOccurrenceSlotId}|${candidate.execution.actualTeacherUserId}`;
+      const list = candidatesByIdentity.get(key);
+      if (list) list.push(candidate);
+      else candidatesByIdentity.set(key, [candidate]);
+    }
+    for (const [identity, candidates] of candidatesByIdentity) {
+      if (candidates.length > 1) {
+        addBlocker(
+          'SPECIAL_PROGRAMME_WORKLOAD_DUPLICATE_EXECUTION_IDENTITY',
+          'More than one active execution candidate matches the same planned slot and teacher.',
+          [identity, ...candidates.map((candidate) => candidate.execution.id)],
+        );
       }
     }
 
@@ -230,10 +359,8 @@ export class SpecialProgrammeWorkloadProjectionService {
     }
     const eligibleCandidates: EligibleCandidate[] = [];
 
-    for (const [slotId, exec] of slotExecutionsMap.entries()) {
-      const pma = pmaByActivityId.get(exec.specialActivityId)!;
-      const master = masterMap.get(pma.programmeMasterId)!;
-      const occurrence = occurrenceMap.get(pma.plannedProgrammeOccurrenceId)!;
+    for (const candidate of validatedCandidates) {
+      const { execution: exec, pma, master, occurrence } = candidate;
       const occurrenceAtts =
         attestationsByOccurrenceId.get(occurrence.id) ?? [];
 
@@ -250,7 +377,7 @@ export class SpecialProgrammeWorkloadProjectionService {
           programmePlanVersionId: pma.programmePlanVersionId,
           programmeTopicItemId: pma.programmeTopicItemId,
           plannedProgrammeOccurrenceId: pma.plannedProgrammeOccurrenceId,
-          plannedOccurrenceSlotId: slotId,
+          plannedOccurrenceSlotId: pma.plannedOccurrenceSlotId,
           programmeKind: master.kind,
           occurrenceMode: occurrence.mode,
           executionCivilDate: civilDateStr,
@@ -271,14 +398,13 @@ export class SpecialProgrammeWorkloadProjectionService {
 
     // 6. Policy resolution
     if (eligibleCandidates.length === 0) {
-      return emptyPassResponse(pendingConfirmations);
+      return findings.length ? blockedResponse(pendingConfirmations) : emptyPassResponse(pendingConfirmations);
     }
 
     type EffectivePolicyResolution = Awaited<
       ReturnType<BusinessConfigurationService['resolveEffectiveBusinessPolicy']>
     >;
     const policyResolutionCache = new Map<string, EffectivePolicyResolution>();
-    const findings: SpecialProgrammeWorkloadFinding[] = [];
     const contributions: SpecialProgrammeWorkloadContribution[] = [];
 
     for (const candidate of eligibleCandidates) {
@@ -390,7 +516,7 @@ export class SpecialProgrammeWorkloadProjectionService {
         contributionCount: null,
         contributions: [],
         pendingConfirmation: sortedPending,
-        findings,
+        findings: findings.slice().sort(compareFinding),
         evaluatedAt,
       };
     }
@@ -464,4 +590,56 @@ function comparePending(
     a.plannedOccurrenceSlotId.localeCompare(b.plannedOccurrenceSlotId) ||
     a.executionId.localeCompare(b.executionId)
   );
+}
+
+function compareFinding(
+  a: SpecialProgrammeWorkloadFinding,
+  b: SpecialProgrammeWorkloadFinding,
+): number {
+  return a.code.localeCompare(b.code) || a.entityIds.join('|').localeCompare(b.entityIds.join('|'));
+}
+
+function evaluateLifecycle(
+  record: { status: unknown; createdAt: unknown; reversedAt?: unknown },
+  asOf: Date,
+  _kind: 'execution' | 'activity',
+): { active: boolean; malformed: boolean } {
+  if (!(record.createdAt instanceof Date) || Number.isNaN(record.createdAt.getTime())) {
+    return { active: false, malformed: true };
+  }
+  if (record.createdAt > asOf) return { active: false, malformed: false };
+
+  if (record.status === 'ACTIVE') {
+    return {
+      active: record.reversedAt === null,
+      malformed: record.reversedAt !== null,
+    };
+  }
+  if (record.status === 'REVERSED') {
+    if (!(record.reversedAt instanceof Date) || Number.isNaN(record.reversedAt.getTime())) {
+      return { active: false, malformed: true };
+    }
+    return { active: record.reversedAt > asOf, malformed: false };
+  }
+  return { active: false, malformed: true };
+}
+
+function evaluateAttestationLifecycle(
+  record: { status: unknown; attestedAt: unknown; reversedAt?: unknown },
+  asOf: Date,
+): { active: boolean; malformed: boolean } {
+  if (!(record.attestedAt instanceof Date) || Number.isNaN(record.attestedAt.getTime())) {
+    return { active: false, malformed: true };
+  }
+  if (record.attestedAt > asOf) return { active: false, malformed: false };
+  if (record.status === 'ACTIVE') {
+    return { active: record.reversedAt === null, malformed: record.reversedAt !== null };
+  }
+  if (record.status === 'REVERSED') {
+    if (!(record.reversedAt instanceof Date) || Number.isNaN(record.reversedAt.getTime())) {
+      return { active: false, malformed: true };
+    }
+    return { active: record.reversedAt > asOf, malformed: false };
+  }
+  return { active: false, malformed: true };
 }

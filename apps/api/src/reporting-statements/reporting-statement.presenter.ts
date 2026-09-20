@@ -18,6 +18,7 @@ import {
   ReportingStatementSnapshot,
   ReportingStatementSnapshotV2,
   ReportingStatementSnapshotV3,
+  assertSpecialProgrammeWorkloadSnapshotIntegrity,
   sha256CanonicalJson,
 } from '../reporting-statement-internal/reporting-statement-canonicalizer';
 
@@ -236,6 +237,11 @@ export function parseAndVerifyFrozenSnapshot(row: FrozenRevisionRow): ReportingS
       !Array.isArray(v3.specialProgrammeWorkload.contributions) ||
       !Array.isArray(v3.specialProgrammeWorkload.pendingConfirmation)
     ) {
+      throw new InternalServerErrorException(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
+    }
+    try {
+      assertSpecialProgrammeWorkloadSnapshotIntegrity(v3.specialProgrammeWorkload, snapshot.submitterUserId);
+    } catch {
       throw new InternalServerErrorException(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
     }
   }

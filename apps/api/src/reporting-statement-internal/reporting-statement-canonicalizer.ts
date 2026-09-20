@@ -232,6 +232,13 @@ export function freezeReportingStatementSnapshotV3(
   if (!Array.isArray(wl.contributions) || !Array.isArray(wl.pendingConfirmation)) {
     throw new BadRequestException("contributions and pendingConfirmation must be arrays.");
   }
+  validateSpecialProgrammeWorkloadSnapshot(
+    wl,
+    input.submitterUserId,
+    (message) => {
+      throw new BadRequestException(message);
+    },
+  );
 
   const sortedContributions = wl.contributions
     .slice()
@@ -497,6 +504,13 @@ export function assertFrozenReportingStatementIntegrity(
     if (!Array.isArray(v3.specialProgrammeWorkload.contributions) || !Array.isArray(v3.specialProgrammeWorkload.pendingConfirmation)) {
       throw new Error("Frozen Reporting Statement V3 array integrity failed.");
     }
+    validateSpecialProgrammeWorkloadSnapshot(
+      v3.specialProgrammeWorkload,
+      v3.submitterUserId,
+      (message) => {
+        throw new Error(`Frozen Reporting Statement V3 ${message}`);
+      },
+    );
   }
   const subjects = [...new Set(frozen.snapshot.responsibilityManifest.map((x) => x.subjectId))].sort(compare);
   if (
@@ -658,4 +672,145 @@ function comparePendingSnapshot(
     compare(a.plannedOccurrenceSlotId, b.plannedOccurrenceSlotId) ||
     compare(a.executionId, b.executionId)
   );
+}
+
+function validateSpecialProgrammeWorkloadSnapshot(
+  workload: SpecialProgrammeWorkloadSnapshot,
+  submitterUserId: string,
+  fail: (message: string) => never,
+): void {
+  if (workload.projectionProfile !== 'SPECIAL_PROGRAMME_WORKLOAD_PROJECTION_V1') {
+    fail('projection profile integrity failed.');
+  }
+  if (workload.status !== 'PASS') fail('status integrity failed.');
+  if (!Array.isArray(workload.contributions) || !Array.isArray(workload.pendingConfirmation)) {
+    fail('array integrity failed.');
+  }
+  if (
+    !Number.isInteger(workload.contributionCount) ||
+    workload.contributionCount < 0 ||
+    workload.contributionCount !== workload.contributions.length
+  ) {
+    fail('contribution count integrity failed.');
+  }
+  if (!Number.isFinite(workload.totalCredit) || workload.totalCredit < 0) {
+    fail('total credit integrity failed.');
+  }
+  if (!isValidInstantString(workload.evaluatedAt)) fail('evaluatedAt integrity failed.');
+
+  const identities = new Set<string>();
+  let totalCredit = 0;
+  for (const contribution of workload.contributions) {
+    const requiredContributionStrings: Array<keyof SpecialProgrammeWorkloadContributionSnapshot> = [
+      'executionId',
+      'specialActivityId',
+      'specialActivityStaffingId',
+      'specialActivityTimeSlotId',
+      'programmeMasterId',
+      'programmePlanVersionId',
+      'programmeTopicItemId',
+      'plannedProgrammeOccurrenceId',
+      'plannedOccurrenceSlotId',
+      'programmeKind',
+      'occurrenceMode',
+      'actualTeacherUserId',
+      'policyVersionId',
+      'policyValidatorVersion',
+    ];
+    for (const key of requiredContributionStrings) {
+      if (typeof contribution[key] !== 'string' || !contribution[key].trim()) {
+        fail(`contribution ${String(key)} integrity failed.`);
+      }
+    }
+    if (contribution.actualTeacherUserId !== submitterUserId) {
+      fail('contribution owner integrity failed.');
+    }
+    if (!isCivilDate(contribution.executionCivilDate)) {
+      fail('contribution civil date integrity failed.');
+    }
+    if (
+      !Number.isFinite(contribution.coefficient) ||
+      contribution.coefficient < 0 ||
+      !Number.isFinite(contribution.credit) ||
+      contribution.credit < 0 ||
+      contribution.credit !== contribution.coefficient
+    ) {
+      fail('contribution coefficient/credit integrity failed.');
+    }
+    if (contribution.policyEffectiveFrom !== undefined && !contribution.policyEffectiveFrom.trim()) {
+      fail('contribution policy effective-from integrity failed.');
+    }
+    if (
+      contribution.policyEffectiveUntil !== undefined &&
+      contribution.policyEffectiveUntil !== null &&
+      !contribution.policyEffectiveUntil.trim()
+    ) {
+      fail('contribution policy effective-until integrity failed.');
+    }
+    const identity = `${contribution.plannedOccurrenceSlotId}|${contribution.actualTeacherUserId}`;
+    if (identities.has(identity)) fail('duplicate contribution identity integrity failed.');
+    identities.add(identity);
+    if (!Array.isArray(contribution.attestations) || contribution.attestations.length < 1) {
+      fail('contribution attestation integrity failed.');
+    }
+    const attestationIds = new Set<string>();
+    for (const attestation of contribution.attestations) {
+      for (const key of ['attestationId', 'attestedByUserId', 'authorityType', 'capabilityKey', 'scope'] as const) {
+        if (typeof attestation[key] !== 'string' || !attestation[key].trim()) {
+          fail(`attestation ${key} integrity failed.`);
+        }
+      }
+      if (attestation.resourceId !== null && (typeof attestation.resourceId !== 'string' || !attestation.resourceId.trim())) {
+        fail('attestation resource integrity failed.');
+      }
+      if (!isValidInstantString(attestation.attestedAt)) fail('attestation timestamp integrity failed.');
+      if (attestationIds.has(attestation.attestationId)) fail('duplicate attestation integrity failed.');
+      attestationIds.add(attestation.attestationId);
+    }
+    totalCredit += contribution.credit;
+  }
+
+  const roundedTotal = Math.round(totalCredit * 10000) / 10000;
+  if (workload.totalCredit !== roundedTotal) fail('total credit reconciliation integrity failed.');
+
+  for (const pending of workload.pendingConfirmation) {
+    for (const key of [
+      'executionId',
+      'specialActivityId',
+      'specialActivityStaffingId',
+      'specialActivityTimeSlotId',
+      'programmeMasterId',
+      'programmePlanVersionId',
+      'programmeTopicItemId',
+      'plannedProgrammeOccurrenceId',
+      'plannedOccurrenceSlotId',
+      'actualTeacherUserId',
+      'reason',
+    ] as const) {
+      if (typeof pending[key] !== 'string' || !pending[key].trim()) {
+        fail(`pending confirmation ${key} integrity failed.`);
+      }
+    }
+    if (pending.actualTeacherUserId !== submitterUserId) {
+      fail('pending confirmation owner integrity failed.');
+    }
+    if (!isCivilDate(pending.executionCivilDate)) {
+      fail('pending confirmation civil date integrity failed.');
+    }
+  }
+}
+
+export function assertSpecialProgrammeWorkloadSnapshotIntegrity(
+  workload: SpecialProgrammeWorkloadSnapshot,
+  submitterUserId: string,
+): void {
+  validateSpecialProgrammeWorkloadSnapshot(workload, submitterUserId, (message) => {
+    throw new Error(message);
+  });
+}
+
+function isValidInstantString(value: unknown): value is string {
+  if (typeof value !== 'string' || !value.trim()) return false;
+  const parsed = new Date(value);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString() === value;
 }

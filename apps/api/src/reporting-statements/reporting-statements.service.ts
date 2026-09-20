@@ -347,6 +347,17 @@ export class ReportingStatementsService {
         if (workload.status === 'BLOCKED') {
           throw new BadRequestException('SPECIAL_PROGRAMME_WORKLOAD_PROJECTION_BLOCKED');
         }
+        if (
+          typeof workload.totalCredit !== 'number' ||
+          !Number.isFinite(workload.totalCredit) ||
+          workload.totalCredit < 0 ||
+          typeof workload.contributionCount !== 'number' ||
+          !Number.isInteger(workload.contributionCount) ||
+          workload.contributionCount < 0 ||
+          workload.contributionCount !== workload.contributions.length
+        ) {
+          throw new BadRequestException('SPECIAL_PROGRAMME_WORKLOAD_PROJECTION_INVALID');
+        }
         const profile = await tx.user.findUnique({ where: { id: actor }, include: { profile: true } });
         const frozen = freezeReportingStatementSnapshot({
           statementProfile: PERSONAL_REPORTING_STATEMENT_PROFILE,
@@ -360,8 +371,8 @@ export class ReportingStatementsService {
           specialProgrammeWorkload: {
             projectionProfile: workload.profile,
             status: 'PASS',
-            totalCredit: workload.totalCredit ?? 0,
-            contributionCount: workload.contributionCount ?? 0,
+            totalCredit: workload.totalCredit,
+            contributionCount: workload.contributionCount,
             contributions: workload.contributions.map((c) => ({
               ...c,
               attestations: c.attestations.map((a) => ({ ...a })),
