@@ -3,6 +3,7 @@ import { AuthModule } from '../auth/auth.module';
 import { AuthorizationModule } from '../authorization/authorization.module';
 import { BusinessConfigurationModule } from '../business-configuration/business-configuration.module';
 import { PersonalReportingProjectionModule } from '../personal-reporting-projection/personal-reporting-projection.module';
+import { SpecialProgrammeWorkloadProjectionModule } from '../special-programme-workload/special-programme-workload-projection.module';
 import { ReportingStatementRepository } from '../reporting-statement-internal/reporting-statement.repository';
 import { ReportingStatementsController } from './reporting-statements.controller';
 import { REPORTING_STATEMENT_CLOCK, SystemReportingStatementClock } from './reporting-statement.policy';
@@ -14,6 +15,7 @@ import { ReportingStatementsService } from './reporting-statements.service';
     AuthorizationModule,
     BusinessConfigurationModule,
     PersonalReportingProjectionModule,
+    SpecialProgrammeWorkloadProjectionModule,
   ],
   controllers: [ReportingStatementsController],
   providers: [

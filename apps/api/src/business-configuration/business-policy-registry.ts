@@ -1,5 +1,8 @@
 import { BadRequestException, InjectionToken } from '@nestjs/common';
-import { BusinessConfigurationResource, CivilDateString } from '@baogiang/contracts';
+import {
+  BusinessConfigurationResource,
+  CivilDateString,
+} from '@baogiang/contracts';
 import { isCivilDate } from '../common/validation/civil-date';
 
 export interface BusinessPolicyPayloadValidator {
@@ -32,6 +35,55 @@ export const OPERATIONAL_START_VALIDATOR_V1: BusinessPolicyPayloadValidator = {
   },
 };
 
+export const SPECIAL_PROGRAMME_WORKLOAD_VALIDATOR_V1: BusinessPolicyPayloadValidator = {
+  version: 'v1',
+  validate(payload: unknown): Record<string, unknown> {
+    const root = strictObject(payload);
+    const rootKeys = Object.keys(root);
+    if (rootKeys.length !== 1 || rootKeys[0] !== 'coefficients') {
+      throw new BadRequestException('INVALID_SPECIAL_PROGRAMME_WORKLOAD_POLICY_PAYLOAD');
+    }
+    const coefficients = strictObject(root.coefficients);
+    const coefKeys = Object.keys(coefficients).sort();
+    if (coefKeys.length !== 2 || coefKeys[0] !== 'GDDP' || coefKeys[1] !== 'HDTN_HN') {
+      throw new BadRequestException('INVALID_SPECIAL_PROGRAMME_WORKLOAD_POLICY_PAYLOAD');
+    }
+
+    const gddp = strictObject(coefficients.GDDP);
+    const gddpKeys = Object.keys(gddp).sort();
+    if (gddpKeys.length !== 2 || gddpKeys[0] !== 'CLASS' || gddpKeys[1] !== 'GRADE') {
+      throw new BadRequestException('INVALID_SPECIAL_PROGRAMME_WORKLOAD_POLICY_PAYLOAD');
+    }
+
+    const hdtn = strictObject(coefficients.HDTN_HN);
+    const hdtnKeys = Object.keys(hdtn).sort();
+    if (hdtnKeys.length !== 3 || hdtnKeys[0] !== 'CLASS' || hdtnKeys[1] !== 'GRADE' || hdtnKeys[2] !== 'SCHOOL_WIDE') {
+      throw new BadRequestException('INVALID_SPECIAL_PROGRAMME_WORKLOAD_POLICY_PAYLOAD');
+    }
+
+    const checkNumber = (val: unknown): number => {
+      if (typeof val !== 'number' || !Number.isFinite(val) || Number.isNaN(val) || val < 0) {
+        throw new BadRequestException('INVALID_SPECIAL_PROGRAMME_WORKLOAD_POLICY_PAYLOAD');
+      }
+      return val;
+    };
+
+    return {
+      coefficients: {
+        GDDP: {
+          CLASS: checkNumber(gddp.CLASS),
+          GRADE: checkNumber(gddp.GRADE),
+        },
+        HDTN_HN: {
+          CLASS: checkNumber(hdtn.CLASS),
+          GRADE: checkNumber(hdtn.GRADE),
+          SCHOOL_WIDE: checkNumber(hdtn.SCHOOL_WIDE),
+        },
+      },
+    };
+  },
+};
+
 export const OPERATIONAL_START_FAMILY_DEFINITION: BusinessPolicyFamilyDefinition = {
   key: 'OPERATIONAL_START',
   resourceKind: 'ACADEMIC_YEAR',
@@ -41,9 +93,19 @@ export const OPERATIONAL_START_FAMILY_DEFINITION: BusinessPolicyFamilyDefinition
   downstreamAuthority: 'ADR-049',
 };
 
+export const SPECIAL_PROGRAMME_WORKLOAD_FAMILY_DEFINITION: BusinessPolicyFamilyDefinition = {
+  key: 'SPECIAL_PROGRAMME_WORKLOAD',
+  resourceKind: 'ACADEMIC_YEAR',
+  currentValidatorVersion: 'v1',
+  validators: [SPECIAL_PROGRAMME_WORKLOAD_VALIDATOR_V1],
+  publicationEnabled: true,
+  downstreamAuthority: 'ADR-050',
+};
+
 /** Production business policy families. */
 export const PRODUCTION_BUSINESS_POLICY_FAMILIES: readonly BusinessPolicyFamilyDefinition[] = [
   OPERATIONAL_START_FAMILY_DEFINITION,
+  SPECIAL_PROGRAMME_WORKLOAD_FAMILY_DEFINITION,
 ];
 export const BUSINESS_POLICY_REGISTRY: InjectionToken = 'BUSINESS_POLICY_REGISTRY';
 

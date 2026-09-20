@@ -210,6 +210,104 @@ function createValidFrozenFixtureV1(ownerId = 'user-1', subjectIds = ['sub-a', '
   return { frozen, row };
 }
 
+function createValidFrozenFixtureV3(ownerId = 'user-1', subjectIds = ['sub-a', 'sub-b']) {
+  const workload = {
+    projectionProfile: 'SPECIAL_PROGRAMME_WORKLOAD_PROJECTION_V1',
+    status: 'PASS' as const,
+    totalCredit: 1.5,
+    contributionCount: 1,
+    contributions: [
+      {
+        executionId: 'exec-1',
+        specialActivityId: 'act-1',
+        specialActivityStaffingId: 'staff-1',
+        specialActivityTimeSlotId: 'slot-1',
+        programmeMasterId: 'prog-1',
+        programmePlanVersionId: 'plan-v1',
+        programmeTopicItemId: 'topic-1',
+        plannedProgrammeOccurrenceId: 'occ-1',
+        plannedOccurrenceSlotId: 'pos-1',
+        programmeKind: 'GDDP' as const,
+        occurrenceMode: 'CLASS' as const,
+        executionCivilDate: '2026-08-10',
+        actualTeacherUserId: ownerId,
+        coefficient: 1.5,
+        credit: 1.5,
+        policyVersionId: 'sp-policy-v1',
+        policyValidatorVersion: 'v1',
+        attestations: [
+          {
+            attestationId: 'att-1',
+            attestedByUserId: 'principal',
+            authorityType: 'CAPABILITY' as const,
+            capabilityKey: 'SPECIAL_ACTIVITY_EXECUTION_ATTEST',
+            scope: 'SCHOOL_WIDE' as const,
+            resourceId: null,
+            attestedAt: '2026-08-11T00:00:00.000Z',
+          },
+        ],
+      },
+    ],
+    pendingConfirmation: [],
+    findings: [],
+    evaluatedAt: asOf.toISOString(),
+  };
+
+  const frozen = freezeReportingStatementSnapshot({
+    statementProfile: 'PERSONAL_REPORTING_STATEMENT_V1',
+    submitterUserId: ownerId,
+    submitterDisplayNameSnapshot: 'Nguyen Van A',
+    submitterStaffCodeSnapshot: 'GV001',
+    asOfInstant: asOf,
+    projection: createProjection(ownerId, subjectIds) as never,
+    operationalStartPolicyVersionId: 'policy-version-1',
+    operationalStartDate: '2026-08-15',
+    specialProgrammeWorkload: workload as never,
+  });
+
+  const row: FrozenRevisionRow = {
+    id: 'revision-uuid-v3',
+    seriesId: 'series-uuid-1',
+    snapshotProfile: frozen.snapshot.snapshotProfile,
+    serializerVersion: frozen.snapshot.serializerVersion,
+    canonicalSnapshotJson: frozen.canonicalSnapshotJson,
+    semanticHash: frozen.semanticHash,
+    asOfInstant: asOf,
+    submitterDisplayNameSnapshot: 'Nguyen Van A',
+    submitterStaffCodeSnapshot: 'GV001',
+    submittedAt: new Date('2026-08-25T10:25:00.000Z'),
+    predecessorRevisionId: null,
+    supersedesRevisionId: null,
+    series: {
+      statementProfile: 'PERSONAL_REPORTING_STATEMENT_V1',
+      submitterUserId: ownerId,
+      academicYearId: 'year-1',
+      fromCivilDate: new Date('2026-08-01'),
+      toCivilDate: new Date('2026-08-31'),
+    },
+    state: {
+      lifecycleState: 'SUBMITTED' as const,
+      lifecycleToken: 'token-uuid-1',
+    },
+    subjects: subjectIds.map((subjectId) => ({ subjectId })),
+    historyEntries: [
+      {
+        id: 'hist-1',
+        eventType: 'SUBMITTED',
+        stateBefore: null,
+        stateAfter: 'SUBMITTED',
+        actorUserId: ownerId,
+        actorDisplayNameSnapshot: 'Nguyen Van A',
+        actorStaffCodeSnapshot: 'GV001',
+        createdAt: new Date('2026-08-25T10:25:00.000Z'),
+        causedByRevisionId: null,
+      },
+    ],
+  };
+
+  return { frozen, row };
+}
+
 describe('Reporting Statement Presenter & Integrity', () => {
   describe('mapToPublicFinding', () => {
     it.each([
@@ -515,6 +613,16 @@ describe('Reporting Statement Presenter & Integrity', () => {
       expect(detail.revisionId).toBe('revision-uuid-v1');
       expect(detail.counts.completedCount).toBe(4);
       expect(detail).not.toHaveProperty('operationalStartPolicyVersionId');
+    });
+
+    it('presents sanitized public detail for V3 with specialProgrammeWorkload', () => {
+      const { row } = createValidFrozenFixtureV3();
+      const detail = presentReportingStatementDetail(row, ['APPROVE', 'REJECT']);
+      expect(detail.revisionId).toBe('revision-uuid-v3');
+      expect(detail.counts.completedCount).toBe(4);
+      expect(detail.specialProgrammeWorkload).toBeDefined();
+      expect(detail.specialProgrammeWorkload?.totalCredit).toBe(1.5);
+      expect(detail.specialProgrammeWorkload?.contributions).toHaveLength(1);
     });
 
     it('sorts history entries chronologically with deterministic tie-break', () => {

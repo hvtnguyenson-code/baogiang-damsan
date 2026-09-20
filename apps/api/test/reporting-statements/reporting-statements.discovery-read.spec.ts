@@ -44,6 +44,29 @@ function createMockProjection(status: 'PASS' | 'BLOCKED' = 'PASS', responsibilit
   };
 }
 
+function createMockWorkload(status: 'PASS' | 'BLOCKED' = 'PASS') {
+  return {
+    profile: 'SPECIAL_PROGRAMME_WORKLOAD_PROJECTION_V1',
+    status,
+    scope: {
+      academicYearId: 'year-1',
+      targetUserId: 'actor-user-id',
+      fromCivilDate: '2026-08-01',
+      toCivilDate: '2026-08-31',
+      asOfInstant: asOf.toISOString(),
+    },
+    totalCredit: status === 'PASS' ? 0 : null,
+    contributionCount: status === 'PASS' ? 0 : null,
+    contributions: [],
+    pendingConfirmation: [],
+    findings:
+      status === 'BLOCKED'
+        ? [{ code: 'SPECIAL_PROGRAMME_WORKLOAD_POLICY_NOT_CONFIGURED', message: 'Blocked', severity: 'BLOCKER', entityIds: ['e1'] }]
+        : [],
+    evaluatedAt: asOf.toISOString(),
+  };
+}
+
 function makeFrozenRevision(ownerId = 'owner-1', subjectIds = ['s1']) {
   const f = freezeReportingStatementSnapshot({
     statementProfile: PERSONAL_REPORTING_STATEMENT_PROFILE,
@@ -100,6 +123,7 @@ describe('ReportingStatementsService Discovery, Preview, and Read API', () => {
     classifyAcceptedCommand: jest.Mock;
   };
   let projection: { resolve: jest.Mock; resolveInTransaction: jest.Mock };
+  let workloadProjection: { resolve: jest.Mock };
   let authorization: { evaluate: jest.Mock; listEffectiveCapabilities: jest.Mock };
   let audit: { write: jest.Mock };
   let clock: { now: jest.Mock };
@@ -116,6 +140,9 @@ describe('ReportingStatementsService Discovery, Preview, and Read API', () => {
       resolve: jest.fn().mockResolvedValue(createMockProjection('PASS', 'RESPONSIBILITY_PRESENT')),
       resolveInTransaction: jest.fn(),
     };
+    workloadProjection = {
+      resolve: jest.fn().mockResolvedValue(createMockWorkload()),
+    };
     authorization = {
       evaluate: jest.fn().mockResolvedValue({ allowed: true }),
       listEffectiveCapabilities: jest.fn().mockResolvedValue([]),
@@ -131,6 +158,7 @@ describe('ReportingStatementsService Discovery, Preview, and Read API', () => {
       audit as never,
       {} as never,
       clock,
+      workloadProjection as never,
     );
   });
 
@@ -180,7 +208,26 @@ describe('ReportingStatementsService Discovery, Preview, and Read API', () => {
         toCivilDate: '2026-08-31',
         asOfInstant: asOf,
       });
+      expect(workloadProjection.resolve).toHaveBeenCalledWith({
+        academicYearId: 'year-1',
+        targetUserId: 'user-1',
+        fromCivilDate: '2026-08-01',
+        toCivilDate: '2026-08-31',
+        asOfInstant: asOf,
+      });
+      expect(result.specialProgrammeWorkload.status).toBe('PASS');
       expect(audit.write).not.toHaveBeenCalled();
+    });
+
+    it('returns eligibleForSubmission = false when special-programme workload is BLOCKED', async () => {
+      workloadProjection.resolve.mockResolvedValueOnce(createMockWorkload('BLOCKED'));
+
+      const result = await sut.preview(previewDto, req());
+
+      expect(result.status).toBe('PASS');
+      expect(result.eligibleForSubmission).toBe(false);
+      expect(result.specialProgrammeWorkload.status).toBe('BLOCKED');
+      expect(result.specialProgrammeWorkload.totalCredit).toBeNull();
     });
 
     it('returns eligibleForSubmission = false on BLOCKED projection without erroring', async () => {

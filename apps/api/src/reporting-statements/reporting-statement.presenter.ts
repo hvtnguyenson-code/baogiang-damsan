@@ -14,8 +14,10 @@ import {
   REPORTING_STATEMENT_SERIALIZER_V1,
   REPORTING_STATEMENT_SNAPSHOT_V1,
   REPORTING_STATEMENT_SNAPSHOT_V2,
+  REPORTING_STATEMENT_SNAPSHOT_V3,
   ReportingStatementSnapshot,
   ReportingStatementSnapshotV2,
+  ReportingStatementSnapshotV3,
   sha256CanonicalJson,
 } from '../reporting-statement-internal/reporting-statement-canonicalizer';
 
@@ -169,7 +171,8 @@ export function presentReportingStatementSummary(row: RevisionSummaryRow): Repor
 export function parseAndVerifyFrozenSnapshot(row: FrozenRevisionRow): ReportingStatementSnapshot {
   if (
     (row.snapshotProfile !== REPORTING_STATEMENT_SNAPSHOT_V1 &&
-      row.snapshotProfile !== REPORTING_STATEMENT_SNAPSHOT_V2) ||
+      row.snapshotProfile !== REPORTING_STATEMENT_SNAPSHOT_V2 &&
+      row.snapshotProfile !== REPORTING_STATEMENT_SNAPSHOT_V3) ||
     row.serializerVersion !== REPORTING_STATEMENT_SERIALIZER_V1
   ) {
     throw new InternalServerErrorException(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
@@ -203,13 +206,35 @@ export function parseAndVerifyFrozenSnapshot(row: FrozenRevisionRow): ReportingS
     throw new InternalServerErrorException(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
   }
 
-  if (snapshot.snapshotProfile === REPORTING_STATEMENT_SNAPSHOT_V2) {
-    const v2 = snapshot as ReportingStatementSnapshotV2;
+  if (
+    snapshot.snapshotProfile === REPORTING_STATEMENT_SNAPSHOT_V2 ||
+    snapshot.snapshotProfile === REPORTING_STATEMENT_SNAPSHOT_V3
+  ) {
+    const v2orV3 = snapshot as ReportingStatementSnapshotV2 | ReportingStatementSnapshotV3;
     if (
-      typeof v2.operationalStartPolicyVersionId !== 'string' ||
-      !v2.operationalStartPolicyVersionId.trim() ||
-      typeof v2.operationalStartDate !== 'string' ||
-      !isCivilDate(v2.operationalStartDate)
+      typeof v2orV3.operationalStartPolicyVersionId !== 'string' ||
+      !v2orV3.operationalStartPolicyVersionId.trim() ||
+      typeof v2orV3.operationalStartDate !== 'string' ||
+      !isCivilDate(v2orV3.operationalStartDate)
+    ) {
+      throw new InternalServerErrorException(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
+    }
+  }
+
+  if (snapshot.snapshotProfile === REPORTING_STATEMENT_SNAPSHOT_V3) {
+    const v3 = snapshot as ReportingStatementSnapshotV3;
+    if (
+      !v3.specialProgrammeWorkload ||
+      typeof v3.specialProgrammeWorkload !== 'object' ||
+      v3.specialProgrammeWorkload.status !== 'PASS' ||
+      typeof v3.specialProgrammeWorkload.totalCredit !== 'number' ||
+      !Number.isFinite(v3.specialProgrammeWorkload.totalCredit) ||
+      v3.specialProgrammeWorkload.totalCredit < 0 ||
+      typeof v3.specialProgrammeWorkload.contributionCount !== 'number' ||
+      !Number.isInteger(v3.specialProgrammeWorkload.contributionCount) ||
+      v3.specialProgrammeWorkload.contributionCount < 0 ||
+      !Array.isArray(v3.specialProgrammeWorkload.contributions) ||
+      !Array.isArray(v3.specialProgrammeWorkload.pendingConfirmation)
     ) {
       throw new InternalServerErrorException(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
     }
@@ -330,5 +355,36 @@ export function presentReportingStatementDetail(
     frozenSubjectIds,
     history: historyEntries,
     allowedActions,
+    specialProgrammeWorkload:
+      snapshot.snapshotProfile === REPORTING_STATEMENT_SNAPSHOT_V3
+        ? {
+            projectionProfile:
+              (snapshot as ReportingStatementSnapshotV3).specialProgrammeWorkload
+                .projectionProfile,
+            status: 'PASS',
+            totalCredit:
+              (snapshot as ReportingStatementSnapshotV3).specialProgrammeWorkload
+                .totalCredit,
+            contributionCount:
+              (snapshot as ReportingStatementSnapshotV3).specialProgrammeWorkload
+                .contributionCount,
+            contributions: (
+              snapshot as ReportingStatementSnapshotV3
+            ).specialProgrammeWorkload.contributions.map((c) => ({
+              ...c,
+              executionCivilDate: c.executionCivilDate as CivilDateString,
+              attestations: c.attestations.map((a) => ({ ...a })),
+            })),
+            pendingConfirmation: (
+              snapshot as ReportingStatementSnapshotV3
+            ).specialProgrammeWorkload.pendingConfirmation.map((pc) => ({
+              ...pc,
+              executionCivilDate: pc.executionCivilDate as CivilDateString,
+            })),
+            evaluatedAt:
+              (snapshot as ReportingStatementSnapshotV3).specialProgrammeWorkload
+                .evaluatedAt,
+          }
+        : null,
   };
 }

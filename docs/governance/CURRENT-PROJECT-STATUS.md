@@ -13,7 +13,7 @@ It is **not** a self-referential registry of the latest Git commit. Exact curren
 `P4-040` — Programme-to-SpecialActivity runtime bridge — is **CLOSED** by `SYNC-P4-040` following parent PR #150 merge (`107bf295a4c7031062b0b37bf7bd343f1f667066`) and authoritative post-merge CI #477 SUCCESS.
 
 Active major task:
-- `P4-050` — Special-activity workload/reporting projection — **IN_PROGRESS** (all prerequisites P4-010, P4-020, P4-030, P4-040 CLOSED).
+- `P4-050` — Special-activity workload/reporting projection — **IN_REVIEW** (implementation and targeted tests complete on branch `feat/special-programme-workload-reporting-050`).
 
 Eligible next task:
 - None currently (P4-050 active).

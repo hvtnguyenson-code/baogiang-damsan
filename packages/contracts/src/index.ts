@@ -327,6 +327,19 @@ export type BusinessPolicyAllowedAction =
 export interface OperationalStartPolicyPayloadV1 {
   operationalStartDate: CivilDateString;
 }
+export interface SpecialProgrammeWorkloadPolicyPayloadV1 {
+  coefficients: {
+    GDDP: {
+      CLASS: number;
+      GRADE: number;
+    };
+    HDTN_HN: {
+      CLASS: number;
+      GRADE: number;
+      SCHOOL_WIDE: number;
+    };
+  };
+}
 export interface SupersedeScheduledAuthorityRequest {
   commandId: string;
   payload: OperationalStartPolicyPayloadV1;
@@ -1611,6 +1624,91 @@ export interface ReportingStatementPreviewRequest {
   toCivilDate: CivilDateString;
 }
 
+export interface SpecialProgrammeWorkloadAttestationEvidenceContract {
+  attestationId: string;
+  attestedByUserId: string;
+  authorityType: string;
+  capabilityKey: string;
+  scope: string;
+  resourceId: string | null;
+  attestedAt: string;
+}
+
+export interface SpecialProgrammeWorkloadContributionContract {
+  executionId: string;
+  specialActivityId: string;
+  specialActivityStaffingId: string;
+  specialActivityTimeSlotId: string;
+  programmeMasterId: string;
+  programmePlanVersionId: string;
+  programmeTopicItemId: string;
+  plannedProgrammeOccurrenceId: string;
+  plannedOccurrenceSlotId: string;
+  programmeKind: string;
+  occurrenceMode: string;
+  executionCivilDate: CivilDateString;
+  actualTeacherUserId: string;
+  coefficient: number;
+  credit: number;
+  policyVersionId: string;
+  policyValidatorVersion: string;
+  policyEffectiveFrom?: string;
+  policyEffectiveUntil?: string | null;
+  attestations: SpecialProgrammeWorkloadAttestationEvidenceContract[];
+}
+
+export interface SpecialProgrammeWorkloadPendingConfirmationContract {
+  executionId: string;
+  specialActivityId: string;
+  specialActivityStaffingId: string;
+  specialActivityTimeSlotId: string;
+  programmeMasterId: string;
+  programmePlanVersionId: string;
+  programmeTopicItemId: string;
+  plannedProgrammeOccurrenceId: string;
+  plannedOccurrenceSlotId: string;
+  programmeKind: string;
+  occurrenceMode: string;
+  executionCivilDate: CivilDateString;
+  actualTeacherUserId: string;
+  reason: string;
+}
+
+export interface SpecialProgrammeWorkloadFindingContract {
+  code: string;
+  message: string;
+  severity: 'BLOCKER' | 'WARNING';
+  entityIds: string[];
+}
+
+export interface SpecialProgrammeWorkloadProjectionContract {
+  profile: string;
+  status: 'PASS' | 'BLOCKED';
+  scope: {
+    academicYearId: string;
+    targetUserId: string;
+    fromCivilDate: CivilDateString;
+    toCivilDate: CivilDateString;
+    asOfInstant: string;
+  };
+  totalCredit: number | null;
+  contributionCount: number | null;
+  contributions: SpecialProgrammeWorkloadContributionContract[];
+  pendingConfirmation: SpecialProgrammeWorkloadPendingConfirmationContract[];
+  findings: SpecialProgrammeWorkloadFindingContract[];
+  evaluatedAt: string;
+}
+
+export interface SpecialProgrammeWorkloadSnapshotContract {
+  projectionProfile: string;
+  status: 'PASS';
+  totalCredit: number;
+  contributionCount: number;
+  contributions: SpecialProgrammeWorkloadContributionContract[];
+  pendingConfirmation: SpecialProgrammeWorkloadPendingConfirmationContract[];
+  evaluatedAt: string;
+}
+
 export interface ReportingStatementPreviewResponse {
   previewAsOfInstant: string;
   status: 'PASS' | 'BLOCKED';
@@ -1620,6 +1718,7 @@ export interface ReportingStatementPreviewResponse {
   sections: ReportingStatementPreviewSection[];
   findings: ReportingStatementPublicFinding[];
   responsibilityManifest: PersonalResponsibilityInterval[];
+  specialProgrammeWorkload: SpecialProgrammeWorkloadProjectionContract;
 }
 
 export interface ReportingStatementCommandResult {
@@ -1711,6 +1810,7 @@ export interface ReportingStatementDetailResponse {
   frozenSubjectIds: string[];
   history: ReportingStatementHistoryEntry[];
   allowedActions: ReportingStatementAllowedAction[];
+  specialProgrammeWorkload: SpecialProgrammeWorkloadSnapshotContract | null;
 }
 
 // ============================================================
