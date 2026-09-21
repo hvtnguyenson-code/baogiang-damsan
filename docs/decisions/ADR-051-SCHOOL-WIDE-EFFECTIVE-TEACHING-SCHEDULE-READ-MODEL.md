@@ -1,6 +1,6 @@
 # ADR-051 — School-wide Effective Teaching Schedule Read Model
 
-- **Status:** Proposed under `P2-060`; becomes Accepted only through reviewed/merged P2-060 closure.
+- **Status:** Accepted (accepted through parent PR #154, reviewed head `9ada66aad842d029435b9924a1f1f4cfaa63d773`, merge/main `fe22ab373536814cfe279d66d58418df0143e44e`, exact-head PR CI #486 SUCCESS, post-merge main CI #490 SUCCESS, independent GitHub review PASS; closure recorded by `SYNC-P2-060`)
 - **Date:** 2026-09-21
 - **Scope:** school-wide read-only effective teaching schedule authority and Teacher Workspace contract; documentation only.
 - **Authority:** explicit Product Owner/BGH product requirement recorded under `P2-060` / `T47`.
