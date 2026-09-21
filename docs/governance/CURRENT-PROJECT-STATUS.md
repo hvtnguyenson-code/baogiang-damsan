@@ -10,25 +10,56 @@ It is **not** a self-referential registry of the latest Git commit. Exact curren
 
 ## Active / next critical path
 
-`P4-070` — Special-programme workbook / timetable-slot bridge architecture — is **CLOSED** by `SYNC-P4-070` following parent PR #155 merge (`d303942373195d2f48c897f488887601c24e9f4f`) and authoritative post-merge CI #497 SUCCESS. `ADR-052` is **Accepted**.
-
-Active major task:
-- `P4-071` — Retained TKB special-programme marker bridge — is **IN_REVIEW** on task branch `feat/retained-tkb-special-programme-marker-bridge-071` (starting canonical base `702da874d0071ba804533a879e4b49a9bdcfc211`). Implementation complete: additive Prisma schema & migration (`TimetableSpecialProgrammeMarker`), native TKB adapter extraction (`GDĐP` -> `GDDP`, `TN-HN` -> `HDTN_HN`), `semantic-v2` checksum and confirmation fingerprinting, selective morning/afternoon carry-forward with fail-closed cutover gate, and internal read seam (`TimetableSpecialProgrammeMarkerService`). 83 unit/regression tests passing on sanitized fixture; static schema tests, lint, typecheck and builds passing. Awaiting independent review.
+`P4-071` — Retained TKB special-programme marker bridge — is **CLOSED** by `SYNC-P4-071` following parent PR #158 merge (`759839e9a7ff84044084e4b40fbc23d4b358ec52`) and authoritative post-merge CI #501 SUCCESS.
 
 Eligible next tasks:
+- `P4-072` — HĐTN-HN workbook importer — is **READY** (unlocked by `P4-071` closure; implementation not yet started; must not be described as implemented).
+- `P4-073` — GDĐP workbook importer — is **READY** (unlocked by `P4-071` closure; implementation not yet started; must not be described as implemented).
+- Preferred execution sequence: `P4-072` first, then `P4-073`, to avoid overlapping implementation branches. Both tasks are dependency-eligible.
 - `P2-061` — School-wide effective teaching schedule read model + Teacher Workspace — remains independently **READY** (unlocked by `P2-060` closure; implementation not yet started; must not be described as implemented).
-- `P4-072` — HĐTN-HN workbook importer — remains **PLANNED** (gated on P4-071 merge and SYNC-P4-071 closure).
-- `P4-073` — GDĐP workbook importer — remains **PLANNED** (gated on P4-071 merge and SYNC-P4-071 closure).
+- `P4-074` — Special-programme import lifecycle and E2E closure — remains **PLANNED** (gated on P4-072 and P4-073 closure).
 
 Remain:
 - `P2-010` — PPCT real-workbook contract/security audit — **BLOCKED_EVIDENCE** (pending authoritative school PPCT workbook/template).
 - `P2-020` — PPCT native importer implementation — **PLANNED** (pending `P2-010`).
 
-Production environment remains strictly **PRE-OPERATIONAL**. No production deployment or mutation has occurred. P4-071 delivery is bounded to its dedicated task branch pending independent review; zero production migration or deployment has been authorized.
+Production environment remains strictly **PRE-OPERATIONAL**. No production deployment or mutation has occurred. Zero production migration or deployment has been authorized.
 
 ## Last closed major task
 
-`P4-070` — Special-programme workbook / timetable-slot bridge architecture — **CLOSED** by `SYNC-P4-070`.
+`P4-071` — Retained TKB special-programme marker bridge — **CLOSED** by `SYNC-P4-071`.
+
+Closure evidence:
+- dedicated implementation branch: `feat/retained-tkb-special-programme-marker-bridge-071`;
+- canonical starting main base: `702da874d0071ba804533a879e4b49a9bdcfc211`;
+- final independently reviewed parent HEAD: `f05488aa75831602bae58be85fe3e4434c505400`;
+- review correction forward commit: `f05488a` absorbed before merge (removed mock receipt fabrication and optional delegate fallback, added harness cleanup for markers);
+- parent PR: #158 (`feat(timetable): retain special programme markers`);
+- exact-head PR CI: CI #500 (run `35615435936`), SUCCESS on attempt 1;
+- merge/main commit: `759839e9a7ff84044084e4b40fbc23d4b358ec52`;
+- normal merge: YES;
+- GitHub verified merge signature: YES;
+- authoritative post-merge main CI: CI #501 (run `35616276491`), SUCCESS on attempt 1 (event: `push`, branch: `main`, exact SHA: `759839e9a7ff84044084e4b40fbc23d4b358ec52`);
+- post-merge CI #501 passed all suites: schema migration foundation tests, full API integration, build, Playwright smoke, and Windows deployment contract;
+- delivered scope:
+  - additive Prisma schema & migration (`TimetableSpecialProgrammeMarker`, `ProgrammeKind` `GDDP` | `HDTN_HN`);
+  - composite unique index `@@unique([timetableVersionId, schoolClassId, timeSlotDefinitionId, kind])`;
+  - composite foreign keys enforcing same academic year for TimetableVersion, SchoolClass, TimeSlotDefinition with `ON DELETE RESTRICT`;
+  - native TKB adapter extraction (`GDĐP` -> `GDDP`, `TN-HN` -> `HDTN_HN`);
+  - `CC` recognized as permitted structural non-peer evidence only, not persisted as managed marker;
+  - `semantic-v2` checksum (`computeSemanticChecksumV2`) and confirmation fingerprinting preserving `semantic-v1` readability;
+  - selective morning/afternoon carry-forward with fail-closed cutover gate (rejecting legacy pre-marker baselines without `semantic-v2` receipt provenance);
+  - atomic confirmation transaction binding TimetableVersion, TimetableEntry, TimetableSpecialProgrammeMarker, TimetableImportReceipt, optional request key, and audit log;
+  - internal retained-marker read seam (`TimetableSpecialProgrammeMarkerService`);
+  - zero marker-to-TimetableEntry or TeachingAssignment fabrication; zero teacher/workload fabrication;
+  - 17 files changed (+1289 / -16);
+  - zero production migration, deployment or runtime mutation outside the tested boundaries;
+- independent exact-diff review: PASS after forward correction `f05488a`; no separate correction or re-entry task emerged;
+- closed by administrative closure: `SYNC-P4-071`;
+- downstream: `P4-072` unlocked to `READY`, `P4-073` unlocked to `READY`;
+- production remains strictly **PRE-OPERATIONAL**.
+
+Predecessor closed major task: `P4-070` — Special-programme workbook / timetable-slot bridge architecture — **CLOSED** by `SYNC-P4-070`.
 
 Closure evidence:
 - dedicated architecture branch: `docs/special-programme-workbook-slot-bridge-070`;
