@@ -218,7 +218,18 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
         _count: { entries: 455 },
       },
     ];
-    const receipts: MockReceipt[] = [];
+    const receipts: MockReceipt[] = [
+      {
+        id: 'baseline-receipt-id',
+        timetableVersionId: 'active-baseline-id',
+        serializationVersion: 'semantic-v2',
+        committedAt: new Date('2026-09-01T00:00:00Z'),
+        profileRevisionId: revision.id,
+        contentChecksum: 'baseline-content-checksum',
+        sourceFileSha256: 'baseline-sha256',
+        sourceFileName: 'baseline.xlsx',
+      } as MockReceipt,
+    ];
     const requestKeys = new Map<string, MockRequestKey>();
 
     const prisma = {
@@ -236,7 +247,14 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
         findFirst: jest.fn().mockImplementation(({ where }) => {
           if (where?.status?.in) {
             const active = versions.find((v) => where.status.in.includes(v.status));
-            return Promise.resolve(active ?? null);
+            if (active) {
+              const r = receipts.find((rec) => rec.timetableVersionId === active.id);
+              return Promise.resolve({
+                ...active,
+                importReceipt: r ?? null,
+              });
+            }
+            return Promise.resolve(null);
           }
           if (where?.contentChecksum) {
             const match = versions.find((v) => v.contentChecksum === where.contentChecksum);
@@ -1017,6 +1035,7 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
           status: 'ACTIVE',
           effectiveFrom: new Date('2026-09-07T00:00:00Z'),
           effectiveUntil: null,
+          importReceipt: { id: 'r-baseline-test', serializationVersion: 'semantic-v2' },
         });
         prisma.timetableEntry.findMany.mockResolvedValue(baselineEntries);
 
@@ -1043,6 +1062,7 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
           status: 'ACTIVE',
           effectiveFrom: new Date('2026-09-07T00:00:00Z'),
           effectiveUntil: null,
+          importReceipt: { id: 'r-baseline-test', serializationVersion: 'semantic-v2' },
         });
         prisma.timetableEntry.findMany.mockResolvedValue(baselineEntries);
 
@@ -1064,6 +1084,7 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
           status: 'ACTIVE',
           effectiveFrom: new Date('2026-09-07T00:00:00Z'),
           effectiveUntil: null,
+          importReceipt: { id: 'r-baseline-test', serializationVersion: 'semantic-v2' },
         });
         prisma.timetableEntry.findMany.mockResolvedValue(baselineEntries);
 
@@ -1100,6 +1121,7 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
           status: 'ACTIVE',
           effectiveFrom: new Date('2026-09-07T00:00:00Z'),
           effectiveUntil: null,
+          importReceipt: { id: 'r-baseline-test', serializationVersion: 'semantic-v2' },
         });
         prisma.timetableEntry.findMany.mockResolvedValue(baselineEntries);
 
@@ -1126,6 +1148,7 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
           status: 'ACTIVE',
           effectiveFrom: new Date('2026-09-07T00:00:00Z'),
           effectiveUntil: null,
+          importReceipt: { id: 'r-baseline-test', serializationVersion: 'semantic-v2' },
         });
         prisma.timetableEntry.findMany.mockResolvedValue(baselineEntries);
 
@@ -1144,6 +1167,7 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
           status: 'ACTIVE',
           effectiveFrom: new Date('2026-09-07T00:00:00Z'),
           effectiveUntil: null,
+          importReceipt: { id: 'r-baseline-test', serializationVersion: 'semantic-v2' },
         });
         prisma.timetableEntry.findMany.mockResolvedValue(baselineEntries);
 
@@ -1192,6 +1216,7 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
           status: 'SUPERSEDED',
           effectiveFrom: new Date('2026-09-01T00:00:00Z'),
           effectiveUntil: new Date('2026-09-15T00:00:00Z'),
+          importReceipt: { id: 'r-baseline-test', serializationVersion: 'semantic-v2' },
         });
         prisma.timetableEntry.findMany.mockResolvedValue(baselineEntries);
 
@@ -1225,6 +1250,7 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
           status: 'ACTIVE',
           effectiveFrom: new Date('2026-09-07T00:00:00Z'),
           effectiveUntil: null,
+          importReceipt: { id: 'r-baseline-test', serializationVersion: 'semantic-v2' },
         });
         prisma.timetableEntry.findMany.mockResolvedValue(baselineEntries);
 
@@ -1254,6 +1280,7 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
           status: 'ACTIVE',
           effectiveFrom: new Date('2026-09-07T00:00:00Z'),
           effectiveUntil: null,
+          importReceipt: { id: 'r-baseline-test', serializationVersion: 'semantic-v2' },
         });
         prisma.timetableEntry.findMany.mockResolvedValue([customCarriedEntry]);
 
@@ -1286,6 +1313,7 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
           status: 'ACTIVE',
           effectiveFrom: new Date('2026-09-07T00:00:00Z'),
           effectiveUntil: null,
+          importReceipt: { id: 'r-baseline-test', serializationVersion: 'semantic-v2' },
         });
         prisma.timetableEntry.findMany.mockResolvedValue([baselineEntry]);
 
@@ -1314,6 +1342,7 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
           status: 'ACTIVE',
           effectiveFrom: new Date('2026-09-07T00:00:00Z'),
           effectiveUntil: null,
+          importReceipt: { id: 'r-baseline-test', serializationVersion: 'semantic-v2' },
         });
         prisma.timetableEntry.findMany.mockResolvedValue([entryWithMissingSlot]);
 
@@ -1348,6 +1377,7 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
           status: 'ACTIVE',
           effectiveFrom: new Date('2026-09-07T00:00:00Z'),
           effectiveUntil: null,
+          importReceipt: { id: 'r-baseline-test', serializationVersion: 'semantic-v2' },
         });
         prisma.timetableEntry.findMany.mockResolvedValue([entryWithMissingClass]);
 
@@ -1382,6 +1412,7 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
           status: 'ACTIVE',
           effectiveFrom: new Date('2026-09-07T00:00:00Z'),
           effectiveUntil: null,
+          importReceipt: { id: 'r-baseline-test', serializationVersion: 'semantic-v2' },
         });
         prisma.timetableEntry.findMany.mockResolvedValue([entryWithMissingSubject]);
 
@@ -1416,6 +1447,7 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
           status: 'ACTIVE',
           effectiveFrom: new Date('2026-09-07T00:00:00Z'),
           effectiveUntil: null,
+          importReceipt: { id: 'r-baseline-test', serializationVersion: 'semantic-v2' },
         });
         prisma.timetableEntry.findMany.mockResolvedValue([entryWithMissingUser]);
 
@@ -1450,6 +1482,7 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
           status: 'ACTIVE',
           effectiveFrom: new Date('2026-09-07T00:00:00Z'),
           effectiveUntil: null,
+          importReceipt: { id: 'r-baseline-test', serializationVersion: 'semantic-v2' },
         });
         prisma.timetableEntry.findMany.mockResolvedValue([entryWithMissingAssignment]);
 
@@ -1505,6 +1538,7 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
           status: 'ACTIVE',
           effectiveFrom: new Date('2026-09-07T00:00:00Z'),
           effectiveUntil: null,
+          importReceipt: { id: 'r-baseline-test', serializationVersion: 'semantic-v2' },
         });
         prisma.timetableEntry.findMany.mockResolvedValue([conflictingCarriedEntry]);
 
@@ -1528,6 +1562,7 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
           status: 'ACTIVE',
           effectiveFrom: new Date('2026-09-07T00:00:00Z'),
           effectiveUntil: null,
+          importReceipt: { id: 'r-baseline-test', serializationVersion: 'semantic-v2' },
         });
         prisma.timetableEntry.findMany.mockResolvedValue(baselineEntries);
 
@@ -1545,6 +1580,7 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
           status: 'ACTIVE',
           effectiveFrom: new Date('2026-09-07T00:00:00Z'),
           effectiveUntil: null,
+          importReceipt: { id: 'r-baseline-test', serializationVersion: 'semantic-v2' },
         });
         prisma.timetableEntry.findMany.mockResolvedValue(baselineEntries);
 
@@ -1619,6 +1655,7 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
           status: 'ACTIVE',
           effectiveFrom: new Date('2026-09-07T00:00:00Z'),
           effectiveUntil: null,
+          importReceipt: { id: 'r-baseline-test', serializationVersion: 'semantic-v2' },
         });
         prisma.timetableEntry.findMany.mockResolvedValue([carriedEntry]);
 
@@ -1655,6 +1692,7 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
           status: 'ACTIVE',
           effectiveFrom: new Date('2026-09-07T00:00:00Z'),
           effectiveUntil: null,
+          importReceipt: { id: 'r-baseline-test', serializationVersion: 'semantic-v2' },
         });
         prisma.timetableEntry.findMany.mockResolvedValue([carriedEntry]);
 
@@ -1691,6 +1729,7 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
           status: 'ACTIVE',
           effectiveFrom: new Date('2026-09-07T00:00:00Z'),
           effectiveUntil: null,
+          importReceipt: { id: 'r-baseline-test', serializationVersion: 'semantic-v2' },
         });
         prisma.timetableEntry.findMany.mockResolvedValue([carriedEntry]);
 
@@ -1727,6 +1766,7 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
           status: 'ACTIVE',
           effectiveFrom: new Date('2026-09-07T00:00:00Z'),
           effectiveUntil: null,
+          importReceipt: { id: 'r-baseline-test', serializationVersion: 'semantic-v2' },
         });
         prisma.timetableEntry.findMany.mockResolvedValue([carriedEntry]);
 
@@ -1763,6 +1803,7 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
           status: 'ACTIVE',
           effectiveFrom: new Date('2026-09-07T00:00:00Z'),
           effectiveUntil: null,
+          importReceipt: { id: 'r-baseline-test', serializationVersion: 'semantic-v2' },
         });
         prisma.timetableEntry.findMany.mockResolvedValue([carriedEntry]);
 
@@ -1799,6 +1840,7 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
           status: 'ACTIVE',
           effectiveFrom: new Date('2026-09-07T00:00:00Z'),
           effectiveUntil: null,
+          importReceipt: { id: 'r-baseline-test', serializationVersion: 'semantic-v2' },
         });
         prisma.timetableEntry.findMany.mockResolvedValue([carriedEntry]);
 
@@ -1836,6 +1878,7 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
           status: 'ACTIVE',
           effectiveFrom: new Date('2026-09-07T00:00:00Z'),
           effectiveUntil: null,
+          importReceipt: { id: 'r-baseline-test', serializationVersion: 'semantic-v2' },
         });
         prisma.timetableEntry.findMany.mockResolvedValue([carriedEntry]);
 
@@ -1977,6 +2020,7 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
           status: 'ACTIVE',
           effectiveFrom: new Date('2026-09-07T00:00:00Z'),
           effectiveUntil: null,
+          importReceipt: { id: 'r-baseline-test', serializationVersion: 'semantic-v2' },
         });
         const resSelective = await adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'MORNING' }, 'fixture.xlsx');
         expect(resSelective.composition?.baselineTimetableVersionId).toBe('active-baseline-id');
@@ -1995,6 +2039,7 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
             status: 'ACTIVE',
             effectiveFrom: new Date('2026-09-07T00:00:00Z'),
             effectiveUntil: null,
+            importReceipt: { id: 'r-baseline-audit', serializationVersion: 'semantic-v2' },
           });
         });
         prisma.timetableEntry.findMany.mockResolvedValue(baselineEntries);

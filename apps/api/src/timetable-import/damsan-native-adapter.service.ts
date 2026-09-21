@@ -3,9 +3,7 @@ import {
   AcademicWeekday,
   Prisma,
   ProgrammeKind,
-  TimeSlotDefinition,
   TimetableImportSemanticField,
-  TimetableSpecialProgrammeMarker,
 } from '@prisma/client';
 import {
   TimetableImportCanonicalPreviewRow,
@@ -894,19 +892,10 @@ export class DamSanNativeTimetableAdapter {
       },
     });
     const entries = version ? await db.timetableEntry.findMany({ where: { timetableVersionId: version.id } }) : [];
-    const markerDelegate = (db as unknown as {
-      timetableSpecialProgrammeMarker?: {
-        findMany(args: {
-          where: { timetableVersionId: string };
-          include?: { timeSlotDefinition: boolean };
-        }): Promise<Array<TimetableSpecialProgrammeMarker & { timeSlotDefinition: TimeSlotDefinition }>>;
-      };
-    }).timetableSpecialProgrammeMarker;
-    const markers = version && markerDelegate ? await markerDelegate.findMany({
+    const markers = version ? await db.timetableSpecialProgrammeMarker.findMany({
       where: { timetableVersionId: version.id },
       include: { timeSlotDefinition: true },
     }) : [];
-    const versionReceipt = (version as unknown as { importReceipt?: { id?: string; serializationVersion?: string } | null } | null)?.importReceipt;
     return {
       entries,
       markers,
@@ -916,9 +905,10 @@ export class DamSanNativeTimetableAdapter {
         status: version.status,
         effectiveFrom: version.effectiveFrom ? formatCivilDate(version.effectiveFrom) : null,
         effectiveUntil: version.effectiveUntil ? formatCivilDate(version.effectiveUntil) : null,
-        importReceipt: versionReceipt !== undefined
-          ? versionReceipt
-          : { id: 'mock-receipt', serializationVersion: 'semantic-v2' },
+        importReceipt: version.importReceipt ? {
+          id: version.importReceipt.id,
+          serializationVersion: version.importReceipt.serializationVersion,
+        } : null,
       } : null,
     };
   }
