@@ -12,6 +12,7 @@ import {
 import { TimetablesService } from './timetables.service';
 import { TimetableReadinessController } from './timetable-readiness.controller';
 import { TimetableReadinessService } from './timetable-readiness.service';
+import { TimetableSpecialProgrammeMarkerService } from './timetable-special-programme-marker.service';
 
 @Module({
   imports: [AuthModule, AuthorizationModule, PpctModule, PpctOccurrenceAllocationModule],
@@ -21,6 +22,7 @@ import { TimetableReadinessService } from './timetable-readiness.service';
     TimetableVersionsController,
     TimetableReadinessController,
   ],
-  providers: [TimetablesService, TimetableReadinessService, AuditService],
+  providers: [TimetablesService, TimetableReadinessService, TimetableSpecialProgrammeMarkerService, AuditService],
+  exports: [TimetablesService, TimetableSpecialProgrammeMarkerService],
 })
 export class TimetablesModule {}

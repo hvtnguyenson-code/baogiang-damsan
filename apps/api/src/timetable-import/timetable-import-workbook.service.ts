@@ -24,6 +24,7 @@ import { ConfirmTimetableImportWorkbookDto, PreviewTimetableImportWorkbookDto } 
 import {
   computeConfirmRequestFingerprint,
   computeSemanticChecksum,
+  computeSemanticChecksumV2,
   computeWorkbookSha256,
 } from './import-identity';
 import { inspectParsedWorkbook } from './workbook-inspection';
@@ -193,7 +194,12 @@ export class TimetableImportWorkbookService {
             });
           }
 
-          const semanticChecksum = computeSemanticChecksum(canonical.rows);
+          const markers = canonical.markers ?? [];
+          const isMarkerAware = isNative;
+          const serializationVersion = isMarkerAware ? 'semantic-v2' : 'semantic-v1';
+          const semanticChecksum = isMarkerAware
+            ? computeSemanticChecksumV2({ entries: canonical.rows, markers })
+            : computeSemanticChecksum(canonical.rows);
           const requestFingerprint = dto.requestIdempotencyKey
             ? computeConfirmRequestFingerprint({
               workbookSha256,
@@ -290,12 +296,23 @@ export class TimetableImportWorkbookService {
               })),
             });
           }
+          if (markers.length > 0) {
+            await tx.timetableSpecialProgrammeMarker.createMany({
+              data: markers.map((marker) => ({
+                timetableVersionId: version.id,
+                academicYearId: marker.academicYearId,
+                schoolClassId: marker.schoolClassId,
+                timeSlotDefinitionId: marker.timeSlotDefinitionId,
+                kind: marker.kind,
+              })),
+            });
+          }
           const receipt = await tx.timetableImportReceipt.create({
             data: {
               timetableVersionId: version.id,
               profileRevisionId: dto.profileRevisionId,
               checksumAlgorithm: 'SHA-256',
-              serializationVersion: 'semantic-v1',
+              serializationVersion,
               requestIdempotencyKey: dto.requestIdempotencyKey ?? null,
               requestFingerprint,
               sourceFileName,
@@ -333,6 +350,7 @@ export class TimetableImportWorkbookService {
               semanticChecksum,
               requestFingerprint,
               outcome: 'CREATED',
+              retainedProgrammeMarkerCount: markers.length,
               ...(canonical.composition ? {
                 nativeSessionMode: canonical.composition.mode,
                 baselineTimetableVersionId: canonical.composition.baselineTimetableVersionId,
@@ -450,7 +468,7 @@ export class TimetableImportWorkbookService {
       timetableVersionId: row.timetableVersionId,
       profileRevisionId: row.profileRevisionId,
       checksumAlgorithm: 'SHA-256',
-      serializationVersion: 'semantic-v1',
+      serializationVersion: row.serializationVersion as 'semantic-v1' | 'semantic-v2',
       requestIdempotencyKey: row.requestIdempotencyKey,
       requestFingerprint: row.requestFingerprint,
       sourceFileName: row.sourceFileName,

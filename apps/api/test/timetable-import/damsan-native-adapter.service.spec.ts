@@ -13,6 +13,7 @@ import {
 import { TimetableImportWorkbookService, UploadedWorkbookFile } from '../../src/timetable-import/timetable-import-workbook.service';
 import { parseWorkbookBuffer } from '../../src/timetable-import/workbook-parser.worker';
 import { ParsedWorkbook } from '../../src/timetable-import/workbook-parser.types';
+import { computeSemanticChecksumV2 } from '../../src/timetable-import/import-identity';
 
 describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', () => {
   const fixturePath = resolve(__dirname, '../fixtures/tkb/sanitized-dam-san-tkb-fixture.xlsx');
@@ -282,6 +283,10 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
       timetableEntry: {
         findMany: jest.fn().mockResolvedValue([]),
         createMany: jest.fn().mockResolvedValue({ count: 455 }),
+      },
+      timetableSpecialProgrammeMarker: {
+        findMany: jest.fn().mockResolvedValue([]),
+        createMany: jest.fn().mockResolvedValue({ count: 102 }),
       },
       timetableImportReceipt: {
         create: jest.fn().mockImplementation(({ data }) => {
@@ -2024,6 +2029,555 @@ describe('DamSanNativeTimetableAdapter & Pipeline Integration (Checkpoint C)', (
         const resMorning = await adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'MORNING' }, 'fixture.xlsx');
         expect(resMorning.rows.some((r) => ['CC', 'GDĐP', 'TN-HN'].includes(r.subjectCode))).toBe(false);
       });
+    });
+  });
+
+  describe('P4-071: Retained TKB Special-Programme Marker Bridge (ADR-052 & Checkpoint C)', () => {
+    function cloneParsed(parsed: ParsedWorkbook): ParsedWorkbook {
+      return JSON.parse(JSON.stringify(parsed));
+    }
+
+    it('1 & 2. sanitized full BOTH: 455 ordinary entries, 102 retained markers (48 GDDP, 54 HDTN_HN, 0 CC), 120 permitted non-peers', async () => {
+      const { adapter } = buildMockContext();
+      const res = await adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'BOTH' }, 'fixture.xlsx');
+      expect(res.rows).toHaveLength(455);
+      expect(res.markers).toHaveLength(102);
+
+      const gddp = (res.markers ?? []).filter((m) => m.kind === 'GDDP');
+      const hdtn = (res.markers ?? []).filter((m) => m.kind === 'HDTN_HN');
+      expect(gddp).toHaveLength(48);
+      expect(hdtn).toHaveLength(54);
+      expect((res.markers ?? []).some((m) => (m.kind as string) === 'CC')).toBe(false);
+
+      // Permitted non-peer tokens in raw source total 120 (18 CC + 48 GDĐP + 54 TN-HN)
+      // They are excluded from normal lesson entries:
+      expect(res.rows.some((r) => ['CC', 'GDĐP', 'TN-HN', 'GDDP', 'HDTN_HN'].includes(r.subjectCode))).toBe(false);
+    });
+
+    it('3 & 4. no marker becomes TimetableEntry or TeachingAssignment', async () => {
+      const { adapter } = buildMockContext();
+      const res = await adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'BOTH' }, 'fixture.xlsx');
+      for (const marker of res.markers ?? []) {
+        const m = marker as unknown as Record<string, unknown>;
+        expect(m['teacherUserId']).toBeUndefined();
+        expect(m['teachingAssignmentId']).toBeUndefined();
+        expect(m['subjectId']).toBeUndefined();
+        expect(m['responsibleTeacher']).toBeUndefined();
+      }
+      for (const row of res.rows) {
+        expect(['GDDP', 'HDTN_HN', 'GDĐP', 'TN-HN', 'CC']).not.toContain(row.subjectCode);
+      }
+    });
+
+    it('5. moving one TN-HN source cell changes semantic checksum', async () => {
+      const { adapter } = buildMockContext();
+      const mutated = cloneParsed(parsedFixture);
+      const sheet = mutated.sheets.find((s) => s.name === 'TKB THEO LỚP BUỔI SÁNG')!;
+      let swapped = false;
+      for (let r = 6; r < sheet.rows.length; r++) {
+        for (let c = 2; c < sheet.rows[r].cells.length; c++) {
+          if (sheet.rows[r].cells[c]?.text === 'TN-HN') {
+            for (let targetR = 6; targetR < sheet.rows.length; targetR++) {
+              if (targetR !== r && !sheet.rows[targetR].cells[c]?.text) {
+                sheet.rows[targetR].cells[c] = { ...sheet.rows[targetR].cells[c], kind: 'TEXT', text: 'TN-HN' };
+                sheet.rows[r].cells[c] = { ...sheet.rows[r].cells[c], kind: 'BLANK', text: '' };
+                swapped = true;
+                break;
+              }
+            }
+            if (swapped) break;
+          }
+        }
+        if (swapped) break;
+      }
+      expect(swapped).toBe(true);
+
+      const res1 = await adapter.preview(parsedFixture, previewDto, 'fixture.xlsx');
+      const res2 = await adapter.preview(mutated, previewDto, 'fixture.xlsx');
+      expect(res1.markers).toHaveLength(102);
+      expect(res2.markers).toHaveLength(102);
+
+      const cs1 = computeSemanticChecksumV2({
+        entries: res1.rows.map((r) => ({
+          weekday: r.weekday,
+          schoolClassId: r.schoolClassId,
+          timeSlotDefinitionId: r.timeSlotDefinitionId,
+          subjectId: r.subjectId,
+          teacherUserId: r.teacherUserId,
+          teachingAssignmentId: r.teachingAssignmentId,
+        })),
+        markers: (res1.markers ?? []).map((m) => ({
+          schoolClassId: m.schoolClassId,
+          timeSlotDefinitionId: m.timeSlotDefinitionId,
+          kind: m.kind,
+        })),
+      });
+      const cs2 = computeSemanticChecksumV2({
+        entries: res2.rows.map((r) => ({
+          weekday: r.weekday,
+          schoolClassId: r.schoolClassId,
+          timeSlotDefinitionId: r.timeSlotDefinitionId,
+          subjectId: r.subjectId,
+          teacherUserId: r.teacherUserId,
+          teachingAssignmentId: r.teachingAssignmentId,
+        })),
+        markers: (res2.markers ?? []).map((m) => ({
+          schoolClassId: m.schoolClassId,
+          timeSlotDefinitionId: m.timeSlotDefinitionId,
+          kind: m.kind,
+        })),
+      });
+      expect(cs1).not.toBe(cs2);
+    });
+
+    it('6. moving one GDĐP source cell changes semantic checksum', async () => {
+      const { adapter } = buildMockContext();
+      const mutated = cloneParsed(parsedFixture);
+      const sheet = mutated.sheets.find((s) => s.name === 'TKB THEO LỚP BUỔI SÁNG')!;
+      let swapped = false;
+      for (let r = 6; r < sheet.rows.length; r++) {
+        for (let c = 2; c < sheet.rows[r].cells.length; c++) {
+          if (sheet.rows[r].cells[c]?.text === 'GDĐP') {
+            for (let targetR = 6; targetR < sheet.rows.length; targetR++) {
+              if (targetR !== r && !sheet.rows[targetR].cells[c]?.text) {
+                sheet.rows[targetR].cells[c] = { ...sheet.rows[targetR].cells[c], kind: 'TEXT', text: 'GDĐP' };
+                sheet.rows[r].cells[c] = { ...sheet.rows[r].cells[c], kind: 'BLANK', text: '' };
+                swapped = true;
+                break;
+              }
+            }
+            if (swapped) break;
+          }
+        }
+        if (swapped) break;
+      }
+      expect(swapped).toBe(true);
+
+      const res1 = await adapter.preview(parsedFixture, previewDto, 'fixture.xlsx');
+      const res2 = await adapter.preview(mutated, previewDto, 'fixture.xlsx');
+      const cs1 = computeSemanticChecksumV2({
+        entries: res1.rows.map((r) => ({
+          weekday: r.weekday,
+          schoolClassId: r.schoolClassId,
+          timeSlotDefinitionId: r.timeSlotDefinitionId,
+          subjectId: r.subjectId,
+          teacherUserId: r.teacherUserId,
+          teachingAssignmentId: r.teachingAssignmentId,
+        })),
+        markers: (res1.markers ?? []).map((m) => ({
+          schoolClassId: m.schoolClassId,
+          timeSlotDefinitionId: m.timeSlotDefinitionId,
+          kind: m.kind,
+        })),
+      });
+      const cs2 = computeSemanticChecksumV2({
+        entries: res2.rows.map((r) => ({
+          weekday: r.weekday,
+          schoolClassId: r.schoolClassId,
+          timeSlotDefinitionId: r.timeSlotDefinitionId,
+          subjectId: r.subjectId,
+          teacherUserId: r.teacherUserId,
+          teachingAssignmentId: r.teachingAssignmentId,
+        })),
+        markers: (res2.markers ?? []).map((m) => ({
+          schoolClassId: m.schoolClassId,
+          timeSlotDefinitionId: m.timeSlotDefinitionId,
+          kind: m.kind,
+        })),
+      });
+      expect(cs1).not.toBe(cs2);
+    });
+
+    it('7. marker input ordering change only does not change checksum', async () => {
+      const { adapter } = buildMockContext();
+      const res = await adapter.preview(parsedFixture, previewDto, 'fixture.xlsx');
+      const entries = res.rows.map((r) => ({
+        weekday: r.weekday,
+        schoolClassId: r.schoolClassId,
+        timeSlotDefinitionId: r.timeSlotDefinitionId,
+        subjectId: r.subjectId,
+        teacherUserId: r.teacherUserId,
+        teachingAssignmentId: r.teachingAssignmentId,
+      }));
+      const markers1 = (res.markers ?? []).map((m) => ({ schoolClassId: m.schoolClassId, timeSlotDefinitionId: m.timeSlotDefinitionId, kind: m.kind }));
+      const markers2 = [...markers1].reverse();
+      const cs1 = computeSemanticChecksumV2({ entries, markers: markers1 });
+      const cs2 = computeSemanticChecksumV2({ entries, markers: markers2 });
+      expect(cs1).toBe(cs2);
+    });
+
+    it('8. MORNING selective: newly authored morning markers + exact baseline afternoon markers', async () => {
+      const { adapter, prisma, slots } = buildMockContext();
+      const full = await adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'BOTH' }, 'fixture.xlsx');
+      const baselineMarkers = (full.markers ?? []).map((m, idx) => ({
+        id: `bm-${idx + 1}`,
+        timetableVersionId: 'baseline-ver-1',
+        academicYearId: mockIds.academicYearId,
+        schoolClassId: m.schoolClassId,
+        timeSlotDefinitionId: m.timeSlotDefinitionId,
+        kind: m.kind,
+        createdAt: new Date('2026-09-01T00:00:00Z'),
+        timeSlotDefinition: slots.find((s) => s.id === m.timeSlotDefinitionId),
+      }));
+
+      prisma.timetableVersion.findFirst.mockResolvedValue({
+        id: 'baseline-ver-1',
+        versionNumber: 1,
+        status: 'ACTIVE',
+        effectiveFrom: new Date('2026-09-07T00:00:00Z'),
+        effectiveUntil: null,
+        importReceipt: { id: 'r-1', serializationVersion: 'semantic-v2' },
+      });
+      prisma.timetableEntry.findMany.mockResolvedValue(full.rows.map((r, i) => ({
+        id: `be-${i + 1}`,
+        timetableVersionId: 'baseline-ver-1',
+        academicYearId: mockIds.academicYearId,
+        weekday: r.weekday,
+        timeSlotDefinitionId: r.timeSlotDefinitionId,
+        schoolClassId: r.schoolClassId,
+        subjectId: r.subjectId,
+        teachingAssignmentId: r.teachingAssignmentId,
+        teacherUserId: r.teacherUserId,
+        createdAt: new Date('2026-09-01T00:00:00Z'),
+      })));
+      prisma.timetableSpecialProgrammeMarker.findMany.mockResolvedValue(baselineMarkers);
+
+      const morningPreview = await adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'MORNING' }, 'fixture.xlsx');
+      expect(morningPreview.markers).toHaveLength(102);
+
+      const afternoonSlotIds = new Set(slots.filter((s) => s.session === 'AFTERNOON').map((s) => s.id));
+      const carriedAfternoonMarkers = (morningPreview.markers ?? []).filter((m) => afternoonSlotIds.has(m.timeSlotDefinitionId));
+      const morningSlotIds = new Set(slots.filter((s) => s.session === 'MORNING').map((s) => s.id));
+      const authoredMorningMarkers = (morningPreview.markers ?? []).filter((m) => morningSlotIds.has(m.timeSlotDefinitionId));
+
+      expect(carriedAfternoonMarkers.length + authoredMorningMarkers.length).toBe(102);
+    });
+
+    it('9. AFTERNOON selective: newly authored afternoon markers + exact baseline morning markers', async () => {
+      const { adapter, prisma, slots } = buildMockContext();
+      const full = await adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'BOTH' }, 'fixture.xlsx');
+      const baselineMarkers = (full.markers ?? []).map((m, idx) => ({
+        id: `bm-${idx + 1}`,
+        timetableVersionId: 'baseline-ver-1',
+        academicYearId: mockIds.academicYearId,
+        schoolClassId: m.schoolClassId,
+        timeSlotDefinitionId: m.timeSlotDefinitionId,
+        kind: m.kind,
+        createdAt: new Date('2026-09-01T00:00:00Z'),
+        timeSlotDefinition: slots.find((s) => s.id === m.timeSlotDefinitionId),
+      }));
+
+      prisma.timetableVersion.findFirst.mockResolvedValue({
+        id: 'baseline-ver-1',
+        versionNumber: 1,
+        status: 'ACTIVE',
+        effectiveFrom: new Date('2026-09-07T00:00:00Z'),
+        effectiveUntil: null,
+        importReceipt: { id: 'r-1', serializationVersion: 'semantic-v2' },
+      });
+      prisma.timetableEntry.findMany.mockResolvedValue(full.rows.map((r, i) => ({
+        id: `be-${i + 1}`,
+        timetableVersionId: 'baseline-ver-1',
+        academicYearId: mockIds.academicYearId,
+        weekday: r.weekday,
+        timeSlotDefinitionId: r.timeSlotDefinitionId,
+        schoolClassId: r.schoolClassId,
+        subjectId: r.subjectId,
+        teachingAssignmentId: r.teachingAssignmentId,
+        teacherUserId: r.teacherUserId,
+        createdAt: new Date('2026-09-01T00:00:00Z'),
+      })));
+      prisma.timetableSpecialProgrammeMarker.findMany.mockResolvedValue(baselineMarkers);
+
+      const afternoonPreview = await adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'AFTERNOON' }, 'fixture.xlsx');
+      expect(afternoonPreview.markers).toHaveLength(102);
+
+      const morningSlotIds = new Set(slots.filter((s) => s.session === 'MORNING').map((s) => s.id));
+      const carriedMorningMarkers = (afternoonPreview.markers ?? []).filter((m) => morningSlotIds.has(m.timeSlotDefinitionId));
+      const afternoonSlotIds = new Set(slots.filter((s) => s.session === 'AFTERNOON').map((s) => s.id));
+      const authoredAfternoonMarkers = (afternoonPreview.markers ?? []).filter((m) => afternoonSlotIds.has(m.timeSlotDefinitionId));
+
+      expect(carriedMorningMarkers.length + authoredAfternoonMarkers.length).toBe(102);
+    });
+
+    it('10. selected-session marker clearing removes only selected markers without resurrecting from baseline', async () => {
+      const { adapter, prisma, slots } = buildMockContext();
+      const clearedMorning = cloneParsed(parsedFixture);
+      for (const sheet of clearedMorning.sheets) {
+        if (sheet.name.includes('SÁNG')) {
+          for (let r = 6; r < sheet.rows.length; r++) {
+            for (let c = 2; c < sheet.rows[r].cells.length; c++) {
+              if (['GDĐP', 'TN-HN'].includes(sheet.rows[r].cells[c]?.text ?? '')) {
+                sheet.rows[r].cells[c] = { ...sheet.rows[r].cells[c], kind: 'BLANK', text: '' };
+              }
+            }
+          }
+        }
+      }
+      const full = await adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'BOTH' }, 'fixture.xlsx');
+      const baselineMarkers = [
+        ...(full.markers ?? []).map((m, idx) => ({
+          id: `bm-${idx + 1}`,
+          timetableVersionId: 'baseline-ver-1',
+          academicYearId: mockIds.academicYearId,
+          schoolClassId: m.schoolClassId,
+          timeSlotDefinitionId: m.timeSlotDefinitionId,
+          kind: m.kind,
+          createdAt: new Date('2026-09-01T00:00:00Z'),
+          timeSlotDefinition: slots.find((s) => s.id === m.timeSlotDefinitionId),
+        })),
+        {
+          id: 'bm-afternoon-extra',
+          timetableVersionId: 'baseline-ver-1',
+          academicYearId: mockIds.academicYearId,
+          schoolClassId: 'class-10A1',
+          timeSlotDefinitionId: 'slot-MONDAY-AFTERNOON-1',
+          kind: 'GDDP' as const,
+          createdAt: new Date('2026-09-01T00:00:00Z'),
+          timeSlotDefinition: slots.find((s) => s.id === 'slot-MONDAY-AFTERNOON-1'),
+        },
+      ];
+
+      prisma.timetableVersion.findFirst.mockResolvedValue({
+        id: 'baseline-ver-1',
+        versionNumber: 1,
+        status: 'ACTIVE',
+        effectiveFrom: new Date('2026-09-07T00:00:00Z'),
+        effectiveUntil: null,
+        importReceipt: { id: 'r-1', serializationVersion: 'semantic-v2' },
+      });
+      prisma.timetableEntry.findMany.mockResolvedValue(full.rows.map((r, i) => ({
+        id: `be-${i + 1}`,
+        timetableVersionId: 'baseline-ver-1',
+        academicYearId: mockIds.academicYearId,
+        weekday: r.weekday,
+        timeSlotDefinitionId: r.timeSlotDefinitionId,
+        schoolClassId: r.schoolClassId,
+        subjectId: r.subjectId,
+        teachingAssignmentId: r.teachingAssignmentId,
+        teacherUserId: r.teacherUserId,
+        createdAt: new Date('2026-09-01T00:00:00Z'),
+      })));
+      prisma.timetableSpecialProgrammeMarker.findMany.mockResolvedValue(baselineMarkers);
+
+      const res = await adapter.preview(clearedMorning, { ...previewDto, nativeSessionMode: 'MORNING' }, 'fixture.xlsx');
+      const morningSlotIds = new Set(slots.filter((s) => s.session === 'MORNING').map((s) => s.id));
+      const remainingMorningMarkers = (res.markers ?? []).filter((m) => morningSlotIds.has(m.timeSlotDefinitionId));
+      expect(remainingMorningMarkers).toHaveLength(0);
+
+      const afternoonSlotIds = new Set(slots.filter((s) => s.session === 'AFTERNOON').map((s) => s.id));
+      const carriedAfternoonMarkers = (res.markers ?? []).filter((m) => afternoonSlotIds.has(m.timeSlotDefinitionId));
+      expect(carriedAfternoonMarkers.length).toBeGreaterThan(0);
+    });
+
+    it('11. unchanged-session marker semantics preserved exactly', async () => {
+      const { adapter, prisma, slots } = buildMockContext();
+      const full = await adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'BOTH' }, 'fixture.xlsx');
+      const baselineMarkers = [
+        ...(full.markers ?? []).map((m, idx) => ({
+          id: `bm-${idx + 1}`,
+          timetableVersionId: 'baseline-ver-1',
+          academicYearId: mockIds.academicYearId,
+          schoolClassId: m.schoolClassId,
+          timeSlotDefinitionId: m.timeSlotDefinitionId,
+          kind: m.kind,
+          createdAt: new Date('2026-09-01T00:00:00Z'),
+          timeSlotDefinition: slots.find((s) => s.id === m.timeSlotDefinitionId),
+        })),
+        {
+          id: 'bm-afternoon-extra',
+          timetableVersionId: 'baseline-ver-1',
+          academicYearId: mockIds.academicYearId,
+          schoolClassId: 'class-10A1',
+          timeSlotDefinitionId: 'slot-MONDAY-AFTERNOON-1',
+          kind: 'GDDP' as const,
+          createdAt: new Date('2026-09-01T00:00:00Z'),
+          timeSlotDefinition: slots.find((s) => s.id === 'slot-MONDAY-AFTERNOON-1'),
+        },
+      ];
+
+      prisma.timetableVersion.findFirst.mockResolvedValue({
+        id: 'baseline-ver-1',
+        versionNumber: 1,
+        status: 'ACTIVE',
+        effectiveFrom: new Date('2026-09-07T00:00:00Z'),
+        effectiveUntil: null,
+        importReceipt: { id: 'r-1', serializationVersion: 'semantic-v2' },
+      });
+      prisma.timetableEntry.findMany.mockResolvedValue(full.rows.map((r, i) => ({
+        id: `be-${i + 1}`,
+        timetableVersionId: 'baseline-ver-1',
+        academicYearId: mockIds.academicYearId,
+        weekday: r.weekday,
+        timeSlotDefinitionId: r.timeSlotDefinitionId,
+        schoolClassId: r.schoolClassId,
+        subjectId: r.subjectId,
+        teachingAssignmentId: r.teachingAssignmentId,
+        teacherUserId: r.teacherUserId,
+        createdAt: new Date('2026-09-01T00:00:00Z'),
+      })));
+      prisma.timetableSpecialProgrammeMarker.findMany.mockResolvedValue(baselineMarkers);
+
+      const res = await adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'MORNING' }, 'fixture.xlsx');
+      const afternoonSlotIds = new Set(slots.filter((s) => s.session === 'AFTERNOON').map((s) => s.id));
+      const carriedAfternoonMarkers = (res.markers ?? []).filter((m) => afternoonSlotIds.has(m.timeSlotDefinitionId));
+      const baselineAfternoonMarkers = baselineMarkers.filter((m) => afternoonSlotIds.has(m.timeSlotDefinitionId));
+
+      expect(carriedAfternoonMarkers.length).toBe(baselineAfternoonMarkers.length);
+      for (const cam of carriedAfternoonMarkers) {
+        const match = baselineAfternoonMarkers.find(
+          (bm) => bm.schoolClassId === cam.schoolClassId && bm.timeSlotDefinitionId === cam.timeSlotDefinitionId && bm.kind === cam.kind,
+        );
+        expect(match).toBeDefined();
+      }
+    });
+
+    it('12. baseline marker provenance invalid (missing slot or class) fails closed', async () => {
+      const { adapter, prisma } = buildMockContext();
+      prisma.timetableVersion.findFirst.mockResolvedValue({
+        id: 'baseline-ver-1',
+        versionNumber: 1,
+        status: 'ACTIVE',
+        effectiveFrom: new Date('2026-09-07T00:00:00Z'),
+        effectiveUntil: null,
+        importReceipt: { id: 'r-1', serializationVersion: 'semantic-v2' },
+      });
+      prisma.timetableEntry.findMany.mockResolvedValue([]);
+      prisma.timetableSpecialProgrammeMarker.findMany.mockResolvedValue([
+        {
+          id: 'corrupt-marker-1',
+          timetableVersionId: 'baseline-ver-1',
+          academicYearId: mockIds.academicYearId,
+          schoolClassId: 'class-10A1',
+          timeSlotDefinitionId: 'non-existent-slot',
+          kind: 'GDDP',
+          createdAt: new Date('2026-09-01T00:00:00Z'),
+        },
+      ]);
+
+      await expect(adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'MORNING' }, 'fixture.xlsx'))
+        .rejects.toMatchObject({
+          response: {
+            error: DamSanNativeErrorCode.TKB_NATIVE_CARRY_FORWARD_PROVENANCE_INVALID,
+            missingRelation: 'TimeSlotDefinition',
+          },
+        });
+    });
+
+    it('13. pre-P4-071 baseline with semantic-v1 or missing receipt is blocked for selective carry-forward', async () => {
+      const { adapter, prisma } = buildMockContext();
+      prisma.timetableVersion.findFirst.mockResolvedValue({
+        id: 'baseline-v1-hist',
+        versionNumber: 1,
+        status: 'ACTIVE',
+        effectiveFrom: new Date('2026-09-07T00:00:00Z'),
+        effectiveUntil: null,
+        importReceipt: { id: 'r-v1', serializationVersion: 'semantic-v1' },
+      });
+      prisma.timetableEntry.findMany.mockResolvedValue([]);
+
+      await expect(adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'MORNING' }, 'fixture.xlsx'))
+        .rejects.toMatchObject({
+          response: {
+            error: DamSanNativeErrorCode.TKB_NATIVE_CARRY_FORWARD_PROVENANCE_INVALID,
+          },
+        });
+
+      prisma.timetableVersion.findFirst.mockResolvedValue({
+        id: 'baseline-no-receipt',
+        versionNumber: 1,
+        status: 'ACTIVE',
+        effectiveFrom: new Date('2026-09-07T00:00:00Z'),
+        effectiveUntil: null,
+        importReceipt: null,
+      });
+
+      await expect(adapter.preview(parsedFixture, { ...previewDto, nativeSessionMode: 'MORNING' }, 'fixture.xlsx'))
+        .rejects.toMatchObject({
+          response: {
+            error: DamSanNativeErrorCode.TKB_NATIVE_CARRY_FORWARD_PROVENANCE_INVALID,
+          },
+        });
+    });
+
+    it('14. historical TimetableVersion retains its original marker children after successor publication/import', async () => {
+      const { service, prisma } = buildMockContext();
+      const createdMarkers: unknown[] = [];
+      prisma.timetableSpecialProgrammeMarker.createMany.mockImplementation(({ data }: { data: unknown[] }) => {
+        createdMarkers.push(...data);
+        return Promise.resolve({ count: data.length });
+      });
+
+      const confirmRes = await service.confirm(
+        uploadFile,
+        { ...previewDto, nativeSessionMode: 'BOTH', requestIdempotencyKey: 'idemp-marker-persist' },
+        mockIds.actorUserId,
+        { requestId: 'req-marker-persist' },
+      );
+      expect(confirmRes.outcome).toBe('CREATED');
+      expect(prisma.timetableSpecialProgrammeMarker.createMany).toHaveBeenCalledWith({
+        data: expect.arrayContaining([
+          expect.objectContaining({
+            timetableVersionId: 'created-version-id',
+            academicYearId: mockIds.academicYearId,
+            kind: expect.stringMatching(/^(GDDP|HDTN_HN)$/),
+          }),
+        ]),
+      });
+    });
+
+    it('15, 16 & 17. semantic duplicate/replay accounts for marker set and distinguishes workbooks with differing markers', async () => {
+      const { adapter } = buildMockContext();
+      const resOriginal = await adapter.preview(parsedFixture, previewDto, 'fixture.xlsx');
+
+      const mutated = cloneParsed(parsedFixture);
+      const sheet = mutated.sheets.find((s) => s.name === 'TKB THEO LỚP BUỔI SÁNG')!;
+      for (let r = 6; r < sheet.rows.length; r++) {
+        let found = false;
+        for (let c = 2; c < sheet.rows[r].cells.length; c++) {
+          if (sheet.rows[r].cells[c]?.text === 'TN-HN') {
+            sheet.rows[r].cells[c] = { ...sheet.rows[r].cells[c], kind: 'BLANK', text: '' };
+            const nextRow = r === 6 ? 7 : 6;
+            sheet.rows[nextRow].cells[c] = { ...sheet.rows[nextRow].cells[c], kind: 'TEXT', text: 'TN-HN' };
+            found = true;
+            break;
+          }
+        }
+        if (found) break;
+      }
+      const resMutated = await adapter.preview(mutated, previewDto, 'fixture.xlsx');
+
+      // Verify normal entry rows are identical
+      expect(resOriginal.rows).toHaveLength(455);
+      expect(resMutated.rows).toHaveLength(455);
+      const entriesOriginal = resOriginal.rows.map((r) => ({
+        weekday: r.weekday,
+        schoolClassId: r.schoolClassId,
+        timeSlotDefinitionId: r.timeSlotDefinitionId,
+        subjectId: r.subjectId,
+        teacherUserId: r.teacherUserId,
+        teachingAssignmentId: r.teachingAssignmentId,
+      }));
+      const entriesMutated = resMutated.rows.map((r) => ({
+        weekday: r.weekday,
+        schoolClassId: r.schoolClassId,
+        timeSlotDefinitionId: r.timeSlotDefinitionId,
+        subjectId: r.subjectId,
+        teacherUserId: r.teacherUserId,
+        teachingAssignmentId: r.teachingAssignmentId,
+      }));
+      expect(entriesOriginal).toEqual(entriesMutated);
+
+      // But checksums differ because markers differ
+      const cs1 = computeSemanticChecksumV2({
+        entries: entriesOriginal,
+        markers: (resOriginal.markers ?? []).map((m) => ({ schoolClassId: m.schoolClassId, timeSlotDefinitionId: m.timeSlotDefinitionId, kind: m.kind })),
+      });
+      const cs2 = computeSemanticChecksumV2({
+        entries: entriesMutated,
+        markers: (resMutated.markers ?? []).map((m) => ({ schoolClassId: m.schoolClassId, timeSlotDefinitionId: m.timeSlotDefinitionId, kind: m.kind })),
+      });
+      expect(cs1).not.toBe(cs2);
     });
   });
 });
