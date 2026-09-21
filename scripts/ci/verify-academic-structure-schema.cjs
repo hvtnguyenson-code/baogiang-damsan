@@ -16,6 +16,8 @@ const timeSlotMigrationName = '20260811020000_time_slot_schema_foundation';
 const timeSlotMigration = read('prisma', 'migrations', timeSlotMigrationName, 'migration.sql');
 const timetableMigrationName = '20260811030000_timetable_schema_foundation';
 const timetableMigration = read('prisma', 'migrations', timetableMigrationName, 'migration.sql');
+const timetableMarkerMigrationName = '20260921010000_retained_timetable_special_programme_marker_bridge';
+const timetableMarkerMigration = read('prisma', 'migrations', timetableMarkerMigrationName, 'migration.sql');
 const timetableImportMigrationName = '20260812010000_timetable_import_persistence_foundation';
 const timetableImportMigration = read('prisma', 'migrations', timetableImportMigrationName, 'migration.sql');
 const timetableImportRequestKeyMigrationName = '20260812020000_timetable_import_idempotency_bindings';
@@ -70,6 +72,7 @@ for (const model of [
   'TimeSlotDefinition',
   'TimetableVersion',
   'TimetableEntry',
+  'TimetableSpecialProgrammeMarker',
   'TimetableImportProfile',
   'TimetableImportProfileRevision',
   'TimetableImportColumnMapping',
@@ -486,6 +489,35 @@ assert.doesNotMatch(timetableMigration, /\b(?:monday\s*[-â€“]\s*friday|five
 const timetableEntryTable = timetableMigration.match(/CREATE TABLE "timetable_entries" \(([\s\S]*?)\n\);/u);
 assert.ok(timetableEntryTable, 'Cannot inspect timetable_entries migration table');
 assert.doesNotMatch(timetableEntryTable[1], /\bDATE\b/u, 'TimetableEntry must not persist civil-date or effectivity rows');
+
+const timetableMarker = modelBlock('TimetableSpecialProgrammeMarker');
+assert.equal((schema.match(/\bmodel\s+TimetableSpecialProgrammeMarker\s+\{/gu) ?? []).length, 1);
+for (const field of [
+  'id', 'timetableVersionId', 'academicYearId', 'schoolClassId', 'timeSlotDefinitionId',
+]) {
+  assert.match(timetableMarker, new RegExp(`${field}\\s+String[\\s\\S]*?@db\\.Uuid`, 'u'), `${field} must use UUID`);
+}
+assert.match(timetableMarker, /kind\s+ProgrammeKind/u);
+assert.match(timetableMarker, /createdAt\s+DateTime[\s\S]*@db\.Timestamptz\(3\)/u);
+assert.doesNotMatch(timetableMarker, /teacherUserId|teachingAssignmentId|effectiveFrom|effectiveUntil|status|workload|coefficient/u);
+assert.match(timetableMarker, /timetableVersion\s+TimetableVersion\s+@relation\("TimetableSpecialProgrammeMarkerVersion",\s*fields:\s*\[timetableVersionId, academicYearId\],\s*references:\s*\[id, academicYearId\],\s*onDelete:\s*Restrict\)/u);
+assert.match(timetableMarker, /academicYear\s+AcademicYear\s+@relation\(fields:\s*\[academicYearId\],\s*references:\s*\[id\],\s*onDelete:\s*Restrict\)/u);
+assert.match(timetableMarker, /schoolClass\s+SchoolClass\s+@relation\("TimetableSpecialProgrammeMarkerClass",\s*fields:\s*\[schoolClassId, academicYearId\],\s*references:\s*\[id, academicYearId\],\s*onDelete:\s*Restrict\)/u);
+assert.match(timetableMarker, /timeSlotDefinition\s+TimeSlotDefinition\s+@relation\("TimetableSpecialProgrammeMarkerTimeSlot",\s*fields:\s*\[timeSlotDefinitionId, academicYearId\],\s*references:\s*\[id, academicYearId\],\s*onDelete:\s*Restrict\)/u);
+assert.match(timetableMarker, /map:\s*"timetable_special_programme_markers_version_class_slot_kind_key"/u);
+
+assert.match(timetableMarkerMigration, /CREATE TABLE "timetable_special_programme_markers"/u);
+assert.match(timetableMarkerMigration, /CREATE UNIQUE INDEX "timetable_special_programme_markers_version_class_slot_kind_key"/u);
+for (const constraint of [
+  'timetable_special_programme_markers_timetable_version_id_academic_year_id_fkey',
+  'timetable_special_programme_markers_academic_year_id_fkey',
+  'timetable_special_programme_markers_school_class_id_academic_year_id_fkey',
+  'timetable_special_programme_markers_time_slot_definition_id_academic_year_id_fkey',
+]) {
+  assert.match(timetableMarkerMigration, new RegExp(`"${constraint}"[\\s\\S]*?ON DELETE RESTRICT`, 'u'), `${constraint} must restrict deletion`);
+}
+assert.doesNotMatch(timetableMarkerMigration, /teacher_user_id|teaching_assignment_id/iu);
+assert.doesNotMatch(timetableMarkerMigration, /INSERT INTO "timetable_special_programme_markers"/iu, 'Marker migration must be zero-backfill');
 
 const importProfile = modelBlock('TimetableImportProfile');
 const importRevision = modelBlock('TimetableImportProfileRevision');
@@ -1125,4 +1157,4 @@ for (const [name, expected] of legacyHashes) {
   assert.equal(sha256(read('prisma', 'migrations', name, 'migration.sql')), expected, `Historical migration ${name} changed`);
 }
 
-console.log(`Academic, teaching-assignment, homeroom, time-slot, timetable, timetable-import, PPCT, operational-overlay, Special Activity, and Teaching Execution schema static verification PASS (${academicMigrationName}, ${teachingMigrationName}, ${homeroomMigrationName}, ${timeSlotMigrationName}, ${timetableMigrationName}, ${timetableImportMigrationName}, ${timetableImportRequestKeyMigrationName}, ${ppctMigrationName}, ${ppctComponentMigrationName}, ${overlayMigrationName}, ${specialActivityMigrationName}, ${teachingExecutionMigrationName}).`);
+console.log(`Academic, teaching-assignment, homeroom, time-slot, timetable, timetable-marker, timetable-import, PPCT, operational-overlay, Special Activity, and Teaching Execution schema static verification PASS (${academicMigrationName}, ${teachingMigrationName}, ${homeroomMigrationName}, ${timeSlotMigrationName}, ${timetableMigrationName}, ${timetableMarkerMigrationName}, ${timetableImportMigrationName}, ${timetableImportRequestKeyMigrationName}, ${ppctMigrationName}, ${ppctComponentMigrationName}, ${overlayMigrationName}, ${specialActivityMigrationName}, ${teachingExecutionMigrationName}).`);

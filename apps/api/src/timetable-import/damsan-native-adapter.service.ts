@@ -1,5 +1,10 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { AcademicWeekday, Prisma, TimetableImportSemanticField } from '@prisma/client';
+import {
+  AcademicWeekday,
+  Prisma,
+  ProgrammeKind,
+  TimetableImportSemanticField,
+} from '@prisma/client';
 import {
   TimetableImportCanonicalPreviewRow,
   TimetableImportNativeSessionMode,
@@ -31,6 +36,7 @@ import {
   DamSanNativeErrorCode,
   DamSanNativeTimetableException,
   NativeSession,
+  ParsedClassCell,
   SafeEvidence,
 } from './damsan-native-adapter.types';
 import { validateAndExtractWorkbookStructure } from './damsan-native-parser';
@@ -330,6 +336,48 @@ export class DamSanNativeTimetableAdapter {
       } as EnrichedTimetableEntry);
     }
 
+    // 4b. Map Authored Special Non-Peer Slots to Managed Special Programme Markers
+    const authoredMarkers: Array<{
+      schoolClassId: string;
+      timeSlotDefinitionId: string;
+      academicYearId: string;
+      kind: ProgrammeKind;
+    }> = [];
+
+    const authoredClassSlots: ParsedClassCell[] = [];
+    if (sessionMode === 'BOTH' || sessionMode === 'MORNING') {
+      authoredClassSlots.push(...structure.morningClassSlots);
+    }
+    if (sessionMode === 'BOTH' || sessionMode === 'AFTERNOON') {
+      authoredClassSlots.push(...structure.afternoonClassSlots);
+    }
+
+    for (const classSlot of authoredClassSlots) {
+      if (classSlot.kind !== 'SPECIAL_NON_PEER') continue;
+      if (classSlot.specialActivityCode !== 'GDĐP' && classSlot.specialActivityCode !== 'TN-HN') {
+        continue;
+      }
+      const kind: ProgrammeKind = classSlot.specialActivityCode === 'GDĐP' ? 'GDDP' : 'HDTN_HN';
+      const classMap = classSlot.session === 'MORNING' ? morningClassMap : afternoonClassMap;
+      const schoolClass = classMap.get(classSlot.classCode);
+      const timeSlot = this.resolveTimeSlot(
+        classSlot.session,
+        classSlot.weekday,
+        classSlot.period,
+        context.slots,
+        classSlot.rowNumber,
+        issues,
+      );
+      if (schoolClass && timeSlot) {
+        authoredMarkers.push({
+          schoolClassId: schoolClass.id,
+          timeSlotDefinitionId: timeSlot.id,
+          academicYearId: dto.academicYearId,
+          kind,
+        });
+      }
+    }
+
     // 5. Load Baseline and Perform Exact Carry-Forward for Selective Modes
     const baseline = await this.loadBaseline(dto.academicYearId, target.effectiveFrom, db);
 
@@ -462,6 +510,70 @@ export class DamSanNativeTimetableAdapter {
       }
     }
 
+    // 5b. Retained Special Programme Marker Carry-Forward
+    const carriedMarkers: Array<{
+      schoolClassId: string;
+      timeSlotDefinitionId: string;
+      academicYearId: string;
+      kind: ProgrammeKind;
+    }> = [];
+
+    if (sessionMode !== 'BOTH' && baseline.version) {
+      if (baseline.version.importReceipt?.serializationVersion !== 'semantic-v2') {
+        throw new DamSanNativeTimetableException(
+          DamSanNativeErrorCode.TKB_NATIVE_CARRY_FORWARD_PROVENANCE_INVALID,
+          `Cannot selectively import ${sessionMode} timetable because baseline timetable version ${baseline.version.id} lacks retained special-programme marker evidence (serializationVersion: ${baseline.version.importReceipt?.serializationVersion ?? 'none'}).`,
+          {
+            referenceId: baseline.version.id,
+          },
+        );
+      }
+
+      const slotMap = new Map(context.slots.map((s) => [s.id, s]));
+      const classMap = new Map(context.classes.map((c) => [c.id, c]));
+
+      for (const bm of baseline.markers) {
+        const slotDef = slotMap.get(bm.timeSlotDefinitionId);
+        if (!slotDef) {
+          throw new DamSanNativeTimetableException(
+            DamSanNativeErrorCode.TKB_NATIVE_CARRY_FORWARD_PROVENANCE_INVALID,
+            `Không tìm thấy khung tiết hợp lệ cho marker bảo lưu ${bm.id}.`,
+            {
+              entryId: bm.id,
+              missingRelation: 'TimeSlotDefinition',
+              referenceId: bm.timeSlotDefinitionId,
+            },
+          );
+        }
+
+        // Only carry forward markers whose session is NOT authored by this request
+        if (slotDef.session === sessionMode) {
+          continue;
+        }
+
+        const schoolClass = classMap.get(bm.schoolClassId);
+        if (!schoolClass) {
+          throw new DamSanNativeTimetableException(
+            DamSanNativeErrorCode.TKB_NATIVE_CARRY_FORWARD_PROVENANCE_INVALID,
+            `Không tìm thấy lớp học hợp lệ cho marker bảo lưu ${bm.id}.`,
+            {
+              entryId: bm.id,
+              missingRelation: 'SchoolClass',
+              referenceId: bm.schoolClassId,
+            },
+          );
+        }
+
+        carriedMarkers.push({
+          schoolClassId: bm.schoolClassId,
+          timeSlotDefinitionId: bm.timeSlotDefinitionId,
+          academicYearId: dto.academicYearId,
+          kind: bm.kind,
+        });
+      }
+    }
+
+    const markers = [...authoredMarkers, ...carriedMarkers];
     const rows = [...authoredRows, ...carriedRows];
 
     // 6. Add duplicate issues and timetable-wide validation on composed timetable
@@ -517,11 +629,21 @@ export class DamSanNativeTimetableAdapter {
         calendarEndDate: target.calendarEndDate,
       },
       rows,
+      markers,
       issues: orderedIssues,
       blockingIssueCount,
       warningCount: orderedIssues.filter((item) => item.severity === 'WARNING').length,
       canConfirm: blockingIssueCount === 0,
-      baseline: { date: target.effectiveFrom, timetableVersion: baseline.version },
+      baseline: {
+        date: target.effectiveFrom,
+        timetableVersion: baseline.version ? {
+          id: baseline.version.id,
+          versionNumber: baseline.version.versionNumber,
+          status: baseline.version.status,
+          effectiveFrom: baseline.version.effectiveFrom,
+          effectiveUntil: baseline.version.effectiveUntil,
+        } : null,
+      },
       composition: {
         mode: sessionMode,
         baselineTimetableVersionId: baseline.version?.id ?? null,
@@ -765,16 +887,28 @@ export class DamSanNativeTimetableAdapter {
         OR: [{ effectiveUntil: null }, { effectiveUntil: { gte: targetDate } }],
       },
       orderBy: [{ effectiveFrom: 'desc' }, { id: 'asc' }],
+      include: {
+        importReceipt: true,
+      },
     });
     const entries = version ? await db.timetableEntry.findMany({ where: { timetableVersionId: version.id } }) : [];
+    const markers = version ? await db.timetableSpecialProgrammeMarker.findMany({
+      where: { timetableVersionId: version.id },
+      include: { timeSlotDefinition: true },
+    }) : [];
     return {
       entries,
+      markers,
       version: version ? {
         id: version.id,
         versionNumber: version.versionNumber,
         status: version.status,
         effectiveFrom: version.effectiveFrom ? formatCivilDate(version.effectiveFrom) : null,
         effectiveUntil: version.effectiveUntil ? formatCivilDate(version.effectiveUntil) : null,
+        importReceipt: version.importReceipt ? {
+          id: version.importReceipt.id,
+          serializationVersion: version.importReceipt.serializationVersion,
+        } : null,
       } : null,
     };
   }

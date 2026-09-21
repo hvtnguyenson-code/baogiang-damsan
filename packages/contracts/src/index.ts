@@ -1336,12 +1336,20 @@ export interface TimetableImportPreviewComposition {
   finalEntryCount: number;
 }
 
+export interface TimetableImportSpecialProgrammeMarkerPreviewRow {
+  schoolClassId: string;
+  timeSlotDefinitionId: string;
+  academicYearId: string;
+  kind: 'GDDP' | 'HDTN_HN';
+}
+
 export interface TimetableImportWorkbookPreviewResponse {
   profileId: string;
   profileRevisionId: string;
   source: { sourceFileName: string; sheetName: string; headerRowNumber: number; sourceRowCount: number };
   target: { academicYearId: string; calendarVersionId: string; effectiveAcademicWeekId: string; effectiveFrom: CivilDateString; calendarEndDate: CivilDateString };
   rows: TimetableImportCanonicalPreviewRow[];
+  markers?: TimetableImportSpecialProgrammeMarkerPreviewRow[];
   issues: TimetableImportPreviewIssue[];
   blockingIssueCount: number;
   warningCount: number;
@@ -1358,7 +1366,7 @@ export interface TimetableImportReceiptRecord {
   timetableVersionId: string;
   profileRevisionId: string;
   checksumAlgorithm: 'SHA-256';
-  serializationVersion: 'semantic-v1';
+  serializationVersion: 'semantic-v1' | 'semantic-v2';
   requestIdempotencyKey: string | null;
   requestFingerprint: string | null;
   sourceFileName: string;

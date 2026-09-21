@@ -694,4 +694,135 @@ BEGIN
     BEGIN DELETE FROM "users" WHERE "id" = '55000000-0000-0000-0000-000000000004'; RAISE EXCEPTION 'Expected activator delete restriction'; EXCEPTION WHEN foreign_key_violation THEN NULL; END;
 END $$;
 
+-- P4-071 Retained Timetable Special-Programme Marker Bridge Verification
+DO $$
+DECLARE
+    v_marker_count integer;
+BEGIN
+    -- H. No default/backfill fabricated rows during migration
+    SELECT count(*) INTO v_marker_count FROM "timetable_special_programme_markers";
+    IF v_marker_count <> 0 THEN
+        RAISE EXCEPTION 'Expected zero fabricated marker rows initially, found %', v_marker_count;
+    END IF;
+
+    -- A. Marker insert valid: same exact academic year across TimetableVersion, SchoolClass, TimeSlotDefinition
+    INSERT INTO "timetable_special_programme_markers" (
+        "id", "timetable_version_id", "academic_year_id", "school_class_id", "time_slot_definition_id", "kind"
+    ) VALUES (
+        '59000000-0000-0000-0000-000000000001',
+        '57000000-0000-0000-0000-000000000002',
+        'a5000000-0000-0000-0000-000000000001',
+        'e5000000-0000-0000-0000-000000000001',
+        'd5000000-0000-0000-0000-000000000001',
+        'GDDP'
+    );
+
+    -- B. Semantic duplicate rejected: same version + class + slot + kind
+    BEGIN
+        INSERT INTO "timetable_special_programme_markers" (
+            "id", "timetable_version_id", "academic_year_id", "school_class_id", "time_slot_definition_id", "kind"
+        ) VALUES (
+            '59000000-0000-0000-0000-000000000002',
+            '57000000-0000-0000-0000-000000000002',
+            'a5000000-0000-0000-0000-000000000001',
+            'e5000000-0000-0000-0000-000000000001',
+            'd5000000-0000-0000-0000-000000000001',
+            'GDDP'
+        );
+        RAISE EXCEPTION 'Expected duplicate marker rejection';
+    EXCEPTION WHEN unique_violation THEN NULL;
+    END;
+
+    -- C. Different kind same class/slot is permitted by schema
+    INSERT INTO "timetable_special_programme_markers" (
+        "id", "timetable_version_id", "academic_year_id", "school_class_id", "time_slot_definition_id", "kind"
+    ) VALUES (
+        '59000000-0000-0000-0000-000000000003',
+        '57000000-0000-0000-0000-000000000002',
+        'a5000000-0000-0000-0000-000000000001',
+        'e5000000-0000-0000-0000-000000000001',
+        'd5000000-0000-0000-0000-000000000001',
+        'HDTN_HN'
+    );
+
+    -- D. Cross-year version relation rejected: version belongs to year A, but marker claims year B
+    BEGIN
+        INSERT INTO "timetable_special_programme_markers" (
+            "id", "timetable_version_id", "academic_year_id", "school_class_id", "time_slot_definition_id", "kind"
+        ) VALUES (
+            '59000000-0000-0000-0000-000000000004',
+            '57000000-0000-0000-0000-000000000002', -- year A version
+            'a5000000-0000-0000-0000-000000000002', -- year B
+            'e5000000-0000-0000-0000-000000000003', -- year B class
+            'd5000000-0000-0000-0000-000000000004', -- year B slot
+            'GDDP'
+        );
+        RAISE EXCEPTION 'Expected cross-year version rejection';
+    EXCEPTION WHEN foreign_key_violation THEN NULL;
+    END;
+
+    -- E. Cross-year class relation rejected: class belongs to year B, but marker and version claim year A
+    BEGIN
+        INSERT INTO "timetable_special_programme_markers" (
+            "id", "timetable_version_id", "academic_year_id", "school_class_id", "time_slot_definition_id", "kind"
+        ) VALUES (
+            '59000000-0000-0000-0000-000000000005',
+            '57000000-0000-0000-0000-000000000002', -- year A
+            'a5000000-0000-0000-0000-000000000001', -- year A
+            'e5000000-0000-0000-0000-000000000003', -- year B class
+            'd5000000-0000-0000-0000-000000000001', -- year A slot
+            'GDDP'
+        );
+        RAISE EXCEPTION 'Expected cross-year class rejection';
+    EXCEPTION WHEN foreign_key_violation THEN NULL;
+    END;
+
+    -- F. Cross-year TimeSlotDefinition relation rejected: slot belongs to year B, but marker claims year A
+    BEGIN
+        INSERT INTO "timetable_special_programme_markers" (
+            "id", "timetable_version_id", "academic_year_id", "school_class_id", "time_slot_definition_id", "kind"
+        ) VALUES (
+            '59000000-0000-0000-0000-000000000006',
+            '57000000-0000-0000-0000-000000000002', -- year A
+            'a5000000-0000-0000-0000-000000000001', -- year A
+            'e5000000-0000-0000-0000-000000000001', -- year A class
+            'd5000000-0000-0000-0000-000000000004', -- year B slot
+            'GDDP'
+        );
+        RAISE EXCEPTION 'Expected cross-year slot rejection';
+    EXCEPTION WHEN foreign_key_violation THEN NULL;
+    END;
+
+    -- G. Parent/history delete semantics respect RESTRICT
+    BEGIN
+        DELETE FROM "timetable_versions" WHERE "id" = '57000000-0000-0000-0000-000000000002';
+        RAISE EXCEPTION 'Expected parent version delete restriction';
+    EXCEPTION WHEN foreign_key_violation THEN NULL;
+    END;
+
+    BEGIN
+        DELETE FROM "classes" WHERE "id" = 'e5000000-0000-0000-0000-000000000001';
+        RAISE EXCEPTION 'Expected parent class delete restriction';
+    EXCEPTION WHEN foreign_key_violation THEN NULL;
+    END;
+
+    BEGIN
+        DELETE FROM "time_slot_definitions" WHERE "id" = 'd5000000-0000-0000-0000-000000000001';
+        RAISE EXCEPTION 'Expected parent slot delete restriction';
+    EXCEPTION WHEN foreign_key_violation THEN NULL;
+    END;
+
+    BEGIN
+        DELETE FROM "academic_years" WHERE "id" = 'a5000000-0000-0000-0000-000000000001';
+        RAISE EXCEPTION 'Expected parent year delete restriction';
+    EXCEPTION WHEN foreign_key_violation THEN NULL;
+    END;
+
+    -- Clean up test markers inserted in this block so subsequent checks are clean
+    DELETE FROM "timetable_special_programme_markers" WHERE "id" IN (
+        '59000000-0000-0000-0000-000000000001',
+        '59000000-0000-0000-0000-000000000003'
+    );
+END $$;
+
 SELECT 'Timetable schema PostgreSQL verification PASS; cross-slot real-time collision remains an 04B activation invariant.' AS result;

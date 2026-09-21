@@ -1,8 +1,10 @@
 import {
   computeConfirmRequestFingerprint,
   computeSemanticChecksum,
+  computeSemanticChecksumV2,
   serializeConfirmRequestV1,
   serializeSemanticV1,
+  serializeSemanticV2,
 } from '../../src/timetable-import/import-identity';
 
 const entry = (overrides: Record<string, string> = {}) => ({
@@ -100,5 +102,72 @@ describe('confirm-request-v1 identity', () => {
 
   it('returns exactly 64 lowercase hexadecimal characters', () => {
     expect(computeConfirmRequestFingerprint(envelope())).toMatch(/^[0-9a-f]{64}$/u);
+  });
+});
+
+describe('semantic-v2 identity', () => {
+  const marker = (overrides: Record<string, string> = {}) => ({
+    schoolClassId: '00000000-0000-4000-8000-000000000031',
+    timeSlotDefinitionId: '00000000-0000-4000-8000-000000000032',
+    kind: 'GDDP' as const,
+    ...overrides,
+  });
+
+  it('serializes entries and markers deterministically', () => {
+    const e1 = entry({ weekday: 'MONDAY' });
+    const e2 = entry({ weekday: 'TUESDAY' });
+    const m1 = marker({ kind: 'GDDP', schoolClassId: '00000000-0000-4000-8000-000000000031' });
+    const m2 = marker({ kind: 'HDTN_HN', schoolClassId: '00000000-0000-4000-8000-000000000032' });
+
+    const expected = JSON.stringify({
+      version: 'semantic-v2',
+      entries: [e1, e2],
+      markers: [m1, m2],
+    });
+
+    expect(serializeSemanticV2({ entries: [e2, e1], markers: [m2, m1] })).toBe(expected);
+    expect(computeSemanticChecksumV2({ entries: [e2, e1], markers: [m2, m1] }))
+      .toBe(computeSemanticChecksumV2({ entries: [e1, e2], markers: [m1, m2] }));
+  });
+
+  it('moving one TN-HN marker changes semantic checksum', () => {
+    const mOriginal = marker({ kind: 'HDTN_HN', timeSlotDefinitionId: '00000000-0000-4000-8000-000000000032' });
+    const mMoved = marker({ kind: 'HDTN_HN', timeSlotDefinitionId: '00000000-0000-4000-8000-000000000033' });
+
+    const c1 = computeSemanticChecksumV2({ entries: [entry()], markers: [mOriginal] });
+    const c2 = computeSemanticChecksumV2({ entries: [entry()], markers: [mMoved] });
+    expect(c1).not.toBe(c2);
+  });
+
+  it('moving one GDĐP marker changes semantic checksum', () => {
+    const mOriginal = marker({ kind: 'GDDP', timeSlotDefinitionId: '00000000-0000-4000-8000-000000000032' });
+    const mMoved = marker({ kind: 'GDDP', timeSlotDefinitionId: '00000000-0000-4000-8000-000000000033' });
+
+    const c1 = computeSemanticChecksumV2({ entries: [entry()], markers: [mOriginal] });
+    const c2 = computeSemanticChecksumV2({ entries: [entry()], markers: [mMoved] });
+    expect(c1).not.toBe(c2);
+  });
+
+  it('changing kind between GDDP and HDTN_HN changes checksum', () => {
+    const m1 = marker({ kind: 'GDDP' });
+    const m2 = marker({ kind: 'HDTN_HN' });
+
+    const c1 = computeSemanticChecksumV2({ entries: [entry()], markers: [m1] });
+    const c2 = computeSemanticChecksumV2({ entries: [entry()], markers: [m2] });
+    expect(c1).not.toBe(c2);
+  });
+
+  it('changing input order of markers only does not change checksum', () => {
+    const m1 = marker({ schoolClassId: '00000000-0000-4000-8000-000000000031' });
+    const m2 = marker({ schoolClassId: '00000000-0000-4000-8000-000000000032' });
+
+    const c1 = computeSemanticChecksumV2({ entries: [entry()], markers: [m1, m2] });
+    const c2 = computeSemanticChecksumV2({ entries: [entry()], markers: [m2, m1] });
+    expect(c1).toBe(c2);
+  });
+
+  it('empty markers produces valid 64 character hex checksum', () => {
+    const checksum = computeSemanticChecksumV2({ entries: [entry()], markers: [] });
+    expect(checksum).toMatch(/^[0-9a-f]{64}$/u);
   });
 });

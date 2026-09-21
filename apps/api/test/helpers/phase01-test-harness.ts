@@ -78,6 +78,7 @@ export class Phase01Harness {
     await this.prisma.reportingStatementSeries.deleteMany();
     await this.prisma.timetableImportRequestKey.deleteMany();
     await this.prisma.timetableImportReceipt.deleteMany();
+    await this.prisma.timetableSpecialProgrammeMarker.deleteMany();
     await this.prisma.timetableEntry.deleteMany();
     await this.prisma.timetableVersion.deleteMany();
     await this.prisma.timetableImportEntityAlias.deleteMany();

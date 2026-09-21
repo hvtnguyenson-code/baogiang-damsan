@@ -540,6 +540,7 @@ model AcademicYear {
   specialActivities      SpecialActivity[]
   specialActivitySlots   SpecialActivityTimeSlot[]
   specialActivityTargets SpecialActivityClassTarget[]
+  specialProgrammeMarkers TimetableSpecialProgrammeMarker[]
   curricularExecutions   CurricularTeachingExecution[]
   activityExecutions     SpecialActivityParticipationExecution[]
 
@@ -570,6 +571,7 @@ model TimeSlotDefinition {
   calendarExceptionSlots CalendarExceptionTimeSlot[]             @relation("CalendarExceptionExactTimeSlot")
   makeupScheduleTargets  MakeupTeachingSchedule[]                @relation("MakeupScheduleTargetTimeSlot")
   specialActivitySlots   SpecialActivityTimeSlot[]
+  specialProgrammeMarkers TimetableSpecialProgrammeMarker[]              @relation("TimetableSpecialProgrammeMarkerTimeSlot")
   curricularExecutions   CurricularTeachingExecution[]           @relation("CurricularExecutionTimeSlot")
   activityExecutions     SpecialActivityParticipationExecution[] @relation("ActivityExecutionTimeSlot")
 
@@ -715,6 +717,7 @@ model SchoolClass {
   calendarExceptions       CalendarException[]          @relation("CalendarExceptionSchoolClass")
   specialActivitySelectors SpecialActivity[]            @relation("SpecialActivitySchoolClass")
   specialActivityTargets   SpecialActivityClassTarget[]
+  specialProgrammeMarkers  TimetableSpecialProgrammeMarker[] @relation("TimetableSpecialProgrammeMarkerClass")
 
   @@unique([id, academicYearId])
   @@unique([id, academicYearId, gradeLevel], map: "classes_id_academic_year_id_grade_level_key")
@@ -1020,6 +1023,7 @@ model TimetableVersion {
   approvedBy              User?                          @relation("TimetableVersionApprovedBy", fields: [approvedByUserId], references: [id], onDelete: Restrict)
   activatedBy             User?                          @relation("TimetableVersionActivatedBy", fields: [activatedByUserId], references: [id], onDelete: Restrict)
   entries                 TimetableEntry[]               @relation("TimetableEntryVersion")
+  specialProgrammeMarkers TimetableSpecialProgrammeMarker[]      @relation("TimetableSpecialProgrammeMarkerVersion")
   importReceipt           TimetableImportReceipt?        @relation("TimetableImportReceiptVersion")
   lessonDispositions      OperationalLessonDisposition[] @relation("LessonDispositionTimetableVersion")
   makeupOriginalSchedules MakeupTeachingSchedule[]       @relation("MakeupScheduleOriginalTimetableVersion")
@@ -1191,6 +1195,27 @@ model TimetableEntry {
   @@index([timetableVersionId, teachingAssignmentId], map: "timetable_entries_version_assignment_idx")
   @@index([academicYearId, weekday, timeSlotDefinitionId], map: "timetable_entries_year_weekday_slot_idx")
   @@map("timetable_entries")
+}
+
+model TimetableSpecialProgrammeMarker {
+  id                   String        @id @default(uuid()) @db.Uuid
+  timetableVersionId   String        @map("timetable_version_id") @db.Uuid
+  academicYearId       String        @map("academic_year_id") @db.Uuid
+  schoolClassId        String        @map("school_class_id") @db.Uuid
+  timeSlotDefinitionId String        @map("time_slot_definition_id") @db.Uuid
+  kind                 ProgrammeKind
+  createdAt            DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  timetableVersion   TimetableVersion   @relation("TimetableSpecialProgrammeMarkerVersion", fields: [timetableVersionId, academicYearId], references: [id, academicYearId], onDelete: Restrict)
+  academicYear       AcademicYear       @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  schoolClass        SchoolClass        @relation("TimetableSpecialProgrammeMarkerClass", fields: [schoolClassId, academicYearId], references: [id, academicYearId], onDelete: Restrict)
+  timeSlotDefinition TimeSlotDefinition @relation("TimetableSpecialProgrammeMarkerTimeSlot", fields: [timeSlotDefinitionId, academicYearId], references: [id, academicYearId], onDelete: Restrict)
+
+  @@unique([timetableVersionId, schoolClassId, timeSlotDefinitionId, kind], map: "timetable_special_programme_markers_version_class_slot_kind_key")
+  @@index([timetableVersionId, schoolClassId], map: "timetable_special_programme_markers_version_class_idx")
+  @@index([timetableVersionId, kind], map: "timetable_special_programme_markers_version_kind_idx")
+  @@index([academicYearId, timeSlotDefinitionId], map: "timetable_special_programme_markers_year_slot_idx")
+  @@map("timetable_special_programme_markers")
 }
 
 model CalendarException {

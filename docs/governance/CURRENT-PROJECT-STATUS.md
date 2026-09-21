@@ -13,17 +13,18 @@ It is **not** a self-referential registry of the latest Git commit. Exact curren
 `P4-070` — Special-programme workbook / timetable-slot bridge architecture — is **CLOSED** by `SYNC-P4-070` following parent PR #155 merge (`d303942373195d2f48c897f488887601c24e9f4f`) and authoritative post-merge CI #497 SUCCESS. `ADR-052` is **Accepted**.
 
 Active major task:
-- None currently `IN_PROGRESS`.
+- `P4-071` — Retained TKB special-programme marker bridge — is **IN_REVIEW** on task branch `feat/retained-tkb-special-programme-marker-bridge-071` (starting canonical base `702da874d0071ba804533a879e4b49a9bdcfc211`). Implementation complete: additive Prisma schema & migration (`TimetableSpecialProgrammeMarker`), native TKB adapter extraction (`GDĐP` -> `GDDP`, `TN-HN` -> `HDTN_HN`), `semantic-v2` checksum and confirmation fingerprinting, selective morning/afternoon carry-forward with fail-closed cutover gate, and internal read seam (`TimetableSpecialProgrammeMarkerService`). 83 unit/regression tests passing on sanitized fixture; static schema tests, lint, typecheck and builds passing. Awaiting independent review.
 
 Eligible next tasks:
-- `P4-071` — Retained TKB special-programme marker bridge — is **READY** as the next task in the special-programme ingestion chain (unlocked by `P4-070` and `P2-050` closures; implementation not yet started; must not be described as implemented).
 - `P2-061` — School-wide effective teaching schedule read model + Teacher Workspace — remains independently **READY** (unlocked by `P2-060` closure; implementation not yet started; must not be described as implemented).
+- `P4-072` — HĐTN-HN workbook importer — remains **PLANNED** (gated on P4-071 merge and SYNC-P4-071 closure).
+- `P4-073` — GDĐP workbook importer — remains **PLANNED** (gated on P4-071 merge and SYNC-P4-071 closure).
 
 Remain:
 - `P2-010` — PPCT real-workbook contract/security audit — **BLOCKED_EVIDENCE** (pending authoritative school PPCT workbook/template).
 - `P2-020` — PPCT native importer implementation — **PLANNED** (pending `P2-010`).
 
-Production environment remains strictly **PRE-OPERATIONAL**. No production deployment or mutation has occurred. P4-070 delivered strictly docs-only architecture specifications (`ADR-052`, `P4-070-SPECIAL-PROGRAMME-WORKBOOK-SLOT-BRIDGE-ARCHITECTURE.md`, `P4-070-SOURCE-CONTRACT-SUMMARY.md`, `P4-071-074-SPECIAL-PROGRAMME-INGESTION-IMPLEMENTATION-PLAN.md`) with zero runtime, schema, migration, API, UI, capability catalog, CI/CD, or deployment mutation.
+Production environment remains strictly **PRE-OPERATIONAL**. No production deployment or mutation has occurred. P4-071 delivery is bounded to its dedicated task branch pending independent review; zero production migration or deployment has been authorized.
 
 ## Last closed major task
 

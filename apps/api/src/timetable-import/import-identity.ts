@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { AcademicWeekday } from '@prisma/client';
+import { AcademicWeekday, ProgrammeKind } from '@prisma/client';
 
 export interface TimetableImportSemanticEntry {
   weekday: AcademicWeekday;
@@ -8,6 +8,17 @@ export interface TimetableImportSemanticEntry {
   subjectId: string;
   teachingAssignmentId: string;
   teacherUserId: string;
+}
+
+export interface TimetableImportSemanticMarker {
+  schoolClassId: string;
+  timeSlotDefinitionId: string;
+  kind: ProgrammeKind;
+}
+
+export interface TimetableImportSemanticV2Input {
+  entries: TimetableImportSemanticEntry[];
+  markers?: TimetableImportSemanticMarker[];
 }
 
 export interface TimetableImportConfirmFingerprintInput {
@@ -39,6 +50,31 @@ export function computeSemanticChecksum(entries: TimetableImportSemanticEntry[])
   return digest(serializeSemanticV1(entries));
 }
 
+export function serializeSemanticV2(input: TimetableImportSemanticV2Input): string {
+  const sortedEntries = [...(input.entries ?? [])].sort(compareSemanticEntries).map((entry) => ({
+    weekday: entry.weekday,
+    timeSlotDefinitionId: entry.timeSlotDefinitionId,
+    schoolClassId: entry.schoolClassId,
+    subjectId: entry.subjectId,
+    teachingAssignmentId: entry.teachingAssignmentId,
+    teacherUserId: entry.teacherUserId,
+  }));
+  const sortedMarkers = [...(input.markers ?? [])].sort(compareSemanticMarkers).map((marker) => ({
+    schoolClassId: marker.schoolClassId,
+    timeSlotDefinitionId: marker.timeSlotDefinitionId,
+    kind: marker.kind,
+  }));
+  return JSON.stringify({
+    version: 'semantic-v2',
+    entries: sortedEntries,
+    markers: sortedMarkers,
+  });
+}
+
+export function computeSemanticChecksumV2(input: TimetableImportSemanticV2Input): string {
+  return digest(serializeSemanticV2(input));
+}
+
 export function computeWorkbookSha256(bytes: Buffer): string {
   return digest(bytes);
 }
@@ -68,6 +104,12 @@ function compareSemanticEntries(a: TimetableImportSemanticEntry, b: TimetableImp
     || compareOrdinal(a.subjectId, b.subjectId)
     || compareOrdinal(a.teachingAssignmentId, b.teachingAssignmentId)
     || compareOrdinal(a.teacherUserId, b.teacherUserId);
+}
+
+function compareSemanticMarkers(a: TimetableImportSemanticMarker, b: TimetableImportSemanticMarker): number {
+  return compareOrdinal(a.schoolClassId, b.schoolClassId)
+    || compareOrdinal(a.timeSlotDefinitionId, b.timeSlotDefinitionId)
+    || compareOrdinal(a.kind, b.kind);
 }
 
 function compareOrdinal(left: string, right: string): number {
