@@ -10,23 +10,57 @@ It is **not** a self-referential registry of the latest Git commit. Exact curren
 
 ## Active / next critical path
 
-`P2-060` — School-wide effective teaching schedule architecture closure — is **CLOSED** by `SYNC-P2-060` following parent PR #154 merge (`fe22ab373536814cfe279d66d58418df0143e44e`) and authoritative post-merge CI #490 SUCCESS. `ADR-051` is **Accepted**.
+`P4-070` — Special-programme workbook / timetable-slot bridge architecture — is **CLOSED** by `SYNC-P4-070` following parent PR #155 merge (`d303942373195d2f48c897f488887601c24e9f4f`) and authoritative post-merge CI #497 SUCCESS. `ADR-052` is **Accepted**.
 
 Active major task:
-- `P4-070` — Special-programme workbook slot bridge architecture — is currently `IN_REVIEW` on branch `docs/special-programme-workbook-slot-bridge-070`, not yet `CLOSED`.
+- None currently `IN_PROGRESS`.
 
-Eligible next task:
-- `P2-061` — School-wide effective teaching schedule read model + Teacher Workspace — is **READY** (unlocked by `P2-060` closure; implementation not yet started; must not be described as implemented).
+Eligible next tasks:
+- `P4-071` — Retained TKB special-programme marker bridge — is **READY** as the next task in the special-programme ingestion chain (unlocked by `P4-070` and `P2-050` closures; implementation not yet started; must not be described as implemented).
+- `P2-061` — School-wide effective teaching schedule read model + Teacher Workspace — remains independently **READY** (unlocked by `P2-060` closure; implementation not yet started; must not be described as implemented).
 
 Remain:
 - `P2-010` — PPCT real-workbook contract/security audit — **BLOCKED_EVIDENCE** (pending authoritative school PPCT workbook/template).
 - `P2-020` — PPCT native importer implementation — **PLANNED** (pending `P2-010`).
 
-Production environment remains strictly **PRE-OPERATIONAL**. No production deployment or mutation has occurred. P2-060 delivered strictly docs-only architecture and specification closures (`ADR-051`, `P2-060-SCHOOL-WIDE-EFFECTIVE-TEACHING-SCHEDULE-ARCHITECTURE.md`, `P2-061-SCHOOL-WIDE-EFFECTIVE-TEACHING-SCHEDULE-IMPLEMENTATION-TASK.md`) with zero runtime, schema, migration, API, UI, capability catalog, CI/CD, or deployment mutation.
+Production environment remains strictly **PRE-OPERATIONAL**. No production deployment or mutation has occurred. P4-070 delivered strictly docs-only architecture specifications (`ADR-052`, `P4-070-SPECIAL-PROGRAMME-WORKBOOK-SLOT-BRIDGE-ARCHITECTURE.md`, `P4-070-SOURCE-CONTRACT-SUMMARY.md`, `P4-071-074-SPECIAL-PROGRAMME-INGESTION-IMPLEMENTATION-PLAN.md`) with zero runtime, schema, migration, API, UI, capability catalog, CI/CD, or deployment mutation.
 
 ## Last closed major task
 
-`P2-060` — School-wide effective teaching schedule architecture closure — **CLOSED** by `SYNC-P2-060`.
+`P4-070` — Special-programme workbook / timetable-slot bridge architecture — **CLOSED** by `SYNC-P4-070`.
+
+Closure evidence:
+- dedicated architecture branch: `docs/special-programme-workbook-slot-bridge-070`;
+- canonical starting main base: `162ebbaa05d3755dca9c8308ffcaf37fc19d44c3`;
+- final independently reviewed parent HEAD: `9ade8e766f1669f79eedc7bcb58eef783419dc8b`;
+- parent PR: #155 (`docs(programme): define special programme workbook slot bridge`);
+- exact-head PR CI: CI #496 (run `35578527741`), SUCCESS on attempt 1;
+- merge/main commit: `d303942373195d2f48c897f488887601c24e9f4f`;
+- normal merge: YES;
+- GitHub verified merge signature: YES;
+- authoritative post-merge main CI: CI #497 (run `35579219222`), SUCCESS on attempt 1 (event: `push`, branch: `main`, exact SHA: `d303942373195d2f48c897f488887601c24e9f4f`);
+- post-merge CI #497 passed all suites: Windows deployment contract, lint, typecheck, API unit tests, Web unit tests, capability integration, API integration, builds, and Playwright smoke;
+- delivered scope:
+  - strictly docs-only architecture specification (8 docs files, 1134 additions, 0 deletions);
+  - `ADR-052-SPECIAL-PROGRAMME-WORKBOOK-SLOT-BRIDGE.md` (Accepted);
+  - `P4-070-SPECIAL-PROGRAMME-WORKBOOK-SLOT-BRIDGE-ARCHITECTURE.md` (CLOSED);
+  - `P4-070-SOURCE-CONTRACT-SUMMARY.md`;
+  - `P4-071-074-SPECIAL-PROGRAMME-INGESTION-IMPLEMENTATION-PLAN.md`;
+  - retained TimetableVersion-owned `GDDP`/`HDTN_HN` marker evidence model;
+  - official AcademicWeek and date-effective timetable resolution;
+  - HĐTN CLASS (historical date-effective GVCN), GRADE and SCHOOL_WIDE collapse rules;
+  - GDĐP GRADE collapse rules;
+  - fail-closed count, coverage and teacher identity resolution;
+  - import confirmation creating DRAFT programme state only;
+  - reuse of P4-040 materialization and P4-050 workload projection;
+  - frontend contracts fully Vietnamese;
+  - zero runtime, schema, migration, API, UI, auth, capability catalog, CI/CD, or deployment mutation;
+- independent exact-diff review: PASS; no correction or re-entry task emerged;
+- closed by administrative closure: `SYNC-P4-070`;
+- downstream: `P4-071` unlocked to `READY`;
+- production remains strictly **PRE-OPERATIONAL**.
+
+Predecessor closed major task: `P2-060` — School-wide effective teaching schedule architecture closure — **CLOSED** by `SYNC-P2-060`.
 
 Closure evidence:
 - dedicated architecture branch: `docs/school-wide-effective-schedule-authority-060`;

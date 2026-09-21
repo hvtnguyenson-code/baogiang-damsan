@@ -1,7 +1,7 @@
 # P4-070 — Special Programme Workbook / Timetable-Slot Bridge Architecture
 
 - **Task ID:** `P4-070`
-- **Status:** Architecture proposal for review
+- **Status:** `CLOSED` by `SYNC-P4-070`
 - **Starting canonical SHA:** `162ebbaa05d3755dca9c8308ffcaf37fc19d44c3`
 - **Branch:** `docs/special-programme-workbook-slot-bridge-070`
 - **Dependencies:** `P2-050` CLOSED, `P4-020` CLOSED, `P4-030` CLOSED, `P4-040` CLOSED, `P4-050` CLOSED
@@ -484,3 +484,20 @@ P4-070 is architecture-complete only when review agrees that:
 13. the implementation chain P4-071..P4-074 is registered before merge.
 
 P4-070 is docs-only. Merge, implementation and deployment remain separately authorized.
+
+## 20. Closure evidence
+
+P4-070 is **CLOSED** by `SYNC-P4-070`. Closure evidence:
+- dedicated architecture branch: `docs/special-programme-workbook-slot-bridge-070`;
+- canonical starting base: `162ebbaa05d3755dca9c8308ffcaf37fc19d44c3`;
+- final reviewed parent HEAD: `9ade8e766f1669f79eedc7bcb58eef783419dc8b`;
+- parent PR: #155 (`docs(programme): define special programme workbook slot bridge`);
+- exact-head PR CI: CI #496 (run `35578527741`), SUCCESS;
+- normal merge/main commit: `d303942373195d2f48c897f488887601c24e9f4f`;
+- authoritative post-merge main CI: CI #497 (run `35579219222`), SUCCESS;
+- independent exact-diff review: PASS;
+- docs-only scope: 8 files, 1134 additions, 0 deletions;
+- zero runtime/schema/migration/API/UI/auth/capability/CI/deploy mutation;
+- no correction/re-entry task emerged;
+- `ADR-052` Accepted;
+- downstream `P4-071` unlocked to `READY`.
