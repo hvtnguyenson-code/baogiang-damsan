@@ -1,7 +1,7 @@
 # P2-060 — School-wide Effective Teaching Schedule Architecture
 
 - **Task ID:** `P2-060`
-- **Status:** `IN_PROGRESS` — docs-only architecture closure on dedicated branch; implementation is forbidden until this task is reviewed, merged, synchronized and marked `CLOSED`.
+- **Status:** `CLOSED` by `SYNC-P2-060` (parent PR #154, reviewed head `9ada66aad842d029435b9924a1f1f4cfaa63d773`, exact-head PR CI #486 SUCCESS, merge/main `fe22ab373536814cfe279d66d58418df0143e44e`, authoritative post-merge main CI #490 SUCCESS; independent review PASS; downstream `P2-061` unlocked to `READY`).
 - **Product authority date:** 2026-09-21
 - **Traceability:** `T47`
 - **Depends on:** `P2-050`, `P4-040`
@@ -263,6 +263,12 @@ P2-061 must not:
 
 ## 10. Closure condition
 
-P2-060 closes only after this architecture, its ADR, `T47`, and task-register entries are independently reviewed, merged, CI-green where applicable, and canonical documentation is synchronized.
-
-P2-061 remains non-startable until P2-060 is `CLOSED`.
+P2-060 is **CLOSED** by `SYNC-P2-060`. Closure evidence:
+- parent branch: `docs/school-wide-effective-schedule-authority-060`;
+- reviewed head: `9ada66aad842d029435b9924a1f1f4cfaa63d773`;
+- parent PR: #154 (`docs(timetable): require school-wide effective teacher schedule`);
+- exact-head PR CI: CI #486 (run id: `35554722752`), SUCCESS;
+- merge/main commit: `fe22ab373536814cfe279d66d58418df0143e44e`;
+- post-merge main CI: CI #490 (run id: `35573948097`), SUCCESS;
+- independent review: PASS;
+- downstream `P2-061` is unlocked to `READY`.

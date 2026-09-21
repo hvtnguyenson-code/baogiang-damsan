@@ -6,27 +6,58 @@ This is the canonical mutable **product/task status** document for Báo giảng.
 
 It is **not** a self-referential registry of the latest Git commit. Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub at the start of every task. SHAs recorded here are evidence for the stated baseline or last closed major task.
 
-**Status snapshot date:** 2026-09-20
+**Status snapshot date:** 2026-09-21
 
 ## Active / next critical path
 
-`P4-050` — Special-activity workload/reporting projection — is **CLOSED** by `SYNC-P4-050` following parent PR #152 merge (`8501ea3ce8920b5bccdb3e43273c51b493319496`) and authoritative post-merge CI #483 SUCCESS.
+`P2-060` — School-wide effective teaching schedule architecture closure — is **CLOSED** by `SYNC-P2-060` following parent PR #154 merge (`fe22ab373536814cfe279d66d58418df0143e44e`) and authoritative post-merge CI #490 SUCCESS. `ADR-051` is **Accepted**.
 
 Active major task:
-- None.
+- `P4-070` — Special-programme workbook slot bridge architecture — is currently `IN_REVIEW` on branch `docs/special-programme-workbook-slot-bridge-070`, not yet `CLOSED`.
 
 Eligible next task:
-- None currently; no next major task is inferred by this closure.
+- `P2-061` — School-wide effective teaching schedule read model + Teacher Workspace — is **READY** (unlocked by `P2-060` closure; implementation not yet started; must not be described as implemented).
 
 Remain:
 - `P2-010` — PPCT real-workbook contract/security audit — **BLOCKED_EVIDENCE** (pending authoritative school PPCT workbook/template).
 - `P2-020` — PPCT native importer implementation — **PLANNED** (pending `P2-010`).
 
-Production environment remains strictly **PRE-OPERATIONAL**. No production deployment or mutation has occurred. P4-040 delivered the runtime materialization and attestation foundation; P4-050 delivered the downstream schema-free workload/reporting projection and V3 statement freeze documented below.
+Production environment remains strictly **PRE-OPERATIONAL**. No production deployment or mutation has occurred. P2-060 delivered strictly docs-only architecture and specification closures (`ADR-051`, `P2-060-SCHOOL-WIDE-EFFECTIVE-TEACHING-SCHEDULE-ARCHITECTURE.md`, `P2-061-SCHOOL-WIDE-EFFECTIVE-TEACHING-SCHEDULE-IMPLEMENTATION-TASK.md`) with zero runtime, schema, migration, API, UI, capability catalog, CI/CD, or deployment mutation.
 
 ## Last closed major task
 
-`P4-050` — Special-activity workload/reporting projection — **CLOSED** by `SYNC-P4-050`.
+`P2-060` — School-wide effective teaching schedule architecture closure — **CLOSED** by `SYNC-P2-060`.
+
+Closure evidence:
+- dedicated architecture branch: `docs/school-wide-effective-schedule-authority-060`;
+- canonical starting main base: `162ebbaa05d3755dca9c8308ffcaf37fc19d44c3`;
+- final independently reviewed parent HEAD: `9ada66aad842d029435b9924a1f1f4cfaa63d773`;
+- parent PR: #154 (`docs(timetable): require school-wide effective teacher schedule`);
+- exact-head PR CI: CI #486 (run `35554722752`), SUCCESS on attempt 1;
+- merge/main commit: `fe22ab373536814cfe279d66d58418df0143e44e`;
+- normal merge: YES;
+- GitHub verified merge signature: YES;
+- authoritative post-merge main CI: CI #490 (run `35573948097`), SUCCESS on attempt 1 (event: `push`, branch: `main`, exact SHA: `fe22ab373536814cfe279d66d58418df0143e44e`);
+- post-merge CI #490 passed all suites: Windows deployment contract, lint, typecheck, API unit tests, Web unit tests, capability integration, API integration, builds, and Playwright smoke;
+- delivered scope:
+  - strictly docs-only architecture specification (5 docs files, 589 additions, 0 deletions);
+  - `ADR-051-SCHOOL-WIDE-EFFECTIVE-TEACHING-SCHEDULE-READ-MODEL.md` (Accepted);
+  - `P2-060-SCHOOL-WIDE-EFFECTIVE-TEACHING-SCHEDULE-ARCHITECTURE.md` (CLOSED);
+  - `P2-061-SCHOOL-WIDE-EFFECTIVE-TEACHING-SCHEDULE-IMPLEMENTATION-TASK.md` (READY for implementation);
+  - canonical `SCHOOL_EFFECTIVE_TEACHING_SCHEDULE_V1` read profile;
+  - authenticated `TEACHER_BASE` explicit school-wide read authority;
+  - effective occupancy composed from timetable + overlays + make-up + SpecialActivity (including materialized GDĐP/HĐTN-HN);
+  - fail-closed blocked/ambiguous semantics (never rendered as empty or `Trống`);
+  - real-time interval comparison (`So sánh với lịch của tôi`) providing informational occupancy overlap without claiming mutation eligibility;
+  - centralized mutation authority preserved (read-only; no teacher-side mutation; `SYSTEM_ADMIN` does not imply teacher authority);
+  - Vietnamese Teacher Workspace UX and data minimization rules;
+  - zero runtime, schema, migration, API, UI, auth, capability catalog, CI/CD, or deployment mutation;
+- independent exact-diff review: PASS; no correction or re-entry task emerged;
+- closed by administrative closure: `SYNC-P2-060`;
+- downstream: `P2-061` unlocked to `READY`;
+- production remains strictly **PRE-OPERATIONAL**.
+
+Predecessor closed major task: `P4-050` — Special-activity workload/reporting projection — **CLOSED** by `SYNC-P4-050`.
 
 Closure evidence:
 - dedicated implementation branch: `feat/special-programme-workload-reporting-050`;
