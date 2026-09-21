@@ -1,6 +1,6 @@
 # ADR-052 — Special Programme Workbook / Timetable-Slot Bridge
 
-- **Status:** Proposed
+- **Status:** Accepted (accepted through parent PR #155, reviewed head `9ade8e766f1669f79eedc7bcb58eef783419dc8b`, merge/main `d303942373195d2f48c897f488887601c24e9f4f`, exact-head PR CI #496 SUCCESS, post-merge main CI #497 SUCCESS, independent GitHub review PASS; closure recorded by `SYNC-P4-070`)
 - **Date:** 2026-09-21
 - **Scope:** P4-070 architecture closure; docs only
 - **Authority:** `docs/requirements/P4-070-SPECIAL-PROGRAMME-WORKBOOK-SLOT-BRIDGE-ARCHITECTURE.md`
