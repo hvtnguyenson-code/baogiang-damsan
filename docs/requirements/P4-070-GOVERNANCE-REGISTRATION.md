@@ -2,16 +2,20 @@
 
 ## Status
 
-**MANDATORY PRE-MERGE GOVERNANCE SYNC.**
+**RETAINED GOVERNANCE RECONCILIATION EVIDENCE — CANONICAL REGISTRATION COMPLETED.**
 
-This file stages the exact canonical registry changes required for P4-070 while draft PR #154 concurrently owns edits to both:
+This file originally staged the exact canonical registry changes required for P4-070 while draft PR #154 concurrently owned edits to both:
 
 - `docs/governance/PRE-PILOT-TASK-REGISTER.md`
 - `docs/governance/PRE-PILOT-TRACEABILITY-MATRIX.md`
 
-P4-070 must not merge until those two canonical files are forward-synchronized from latest `main` and the staged rows below are incorporated without losing PR #154's T47 / P2-060 / P2-061 changes.
-
-This staging file is not a substitute for the canonical registries after merge.
+Reconciliation status:
+- PR #154 conflict and predecessor hard-stop are fully resolved following PR #154 merge and `SYNC-P2-060` closure (PR #156, canonical `main` SHA `0376549e5bf402077d143794b1ca6ab69bf2ab31`).
+- `P2-060` closure is canonical (`CLOSED`).
+- `T47` remains preserved in `docs/governance/PRE-PILOT-TRACEABILITY-MATRIX.md`.
+- `T48` has been canonically registered in `docs/governance/PRE-PILOT-TRACEABILITY-MATRIX.md`.
+- `P4-070`..`P4-074` have been canonically registered in `docs/governance/PRE-PILOT-TASK-REGISTER.md`.
+- This document is retained reconciliation evidence; it is **NO LONGER** the sole registration location for this requirement.
 
 ## Required traceability row
 
@@ -46,8 +50,11 @@ At the P4-070 merge/closure sequence:
 5. P4-072 and P4-073 remain non-startable until P4-071 is CLOSED.
 6. P4-074 remains non-startable until both P4-072 and P4-073 are CLOSED.
 
-## Hard stop
+## Hard stop (SATISFIED)
 
-Do not merge P4-070 while this staging file is still the only place containing T48/P4-070..074 registration.
-
-Before merge, reconcile latest main and write the rows into the canonical Task Register and Traceability Matrix in the same PR. No task may be started from this staging file alone.
+**HARD STOP SATISFIED**:
+- Latest canonical `main` (`0376549e5bf402077d143794b1ca6ab69bf2ab31`) post-`SYNC-P2-060` has been merged into this branch.
+- `T47` is preserved.
+- `T48` is canonically recorded in `docs/governance/PRE-PILOT-TRACEABILITY-MATRIX.md`.
+- `P4-070`..`P4-074` are canonically recorded in `docs/governance/PRE-PILOT-TASK-REGISTER.md`.
+- This staging file is no longer the sole registration location; canonical registries have been synchronized within PR #155.

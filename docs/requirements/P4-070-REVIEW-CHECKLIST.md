@@ -22,9 +22,9 @@ This checklist is intentionally short and review-oriented. P4-070 remains docs-o
 
 ## Governance checks
 
-- [ ] PR #154 state is reconciled before canonical governance files are edited.
-- [ ] `T48` is added to `PRE-PILOT-TRACEABILITY-MATRIX.md` on latest main.
-- [ ] `P4-070`..`P4-074` are added to `PRE-PILOT-TASK-REGISTER.md` on latest main.
-- [ ] `P4-070-GOVERNANCE-REGISTRATION.md` is no longer the sole registration location before merge.
+- [x] PR #154 state is reconciled before canonical governance files are edited.
+- [x] `T48` is added to `PRE-PILOT-TRACEABILITY-MATRIX.md` on latest main.
+- [x] `P4-070`..`P4-074` are added to `PRE-PILOT-TASK-REGISTER.md` on latest main.
+- [x] `P4-070-GOVERNANCE-REGISTRATION.md` is no longer the sole registration location before merge.
 - [ ] P4-070 remains `IN_REVIEW` until architecture review/CI passes.
 - [ ] Merge/deploy remain separately authorized.
