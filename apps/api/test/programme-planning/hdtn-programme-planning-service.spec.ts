@@ -970,5 +970,29 @@ describe('ProgrammePlanningService.importHdtnDraftPackage', () => {
       );
       expect(res.outcome).toBe('CREATED');
     });
+
+    it('Blocker C: staffCode change does NOT cause stale conflict for HĐTN teacher authority', async () => {
+      // Teacher-A staffCode changed / set on profile, but displayName and matchedUserId match
+      mockTx.user.findMany.mockImplementation(async ({ where }: { where?: { id?: { in?: string[] } } }) => {
+        const all = [
+          { id: 'teacher-a', username: 'teachera', status: 'ACTIVE', profile: { displayName: 'Nguyễn Văn A', staffCode: 'NEW_STAFF_CODE_999', isTeachingStaff: true } },
+          { id: 'gvcn-10a', username: 'gvcn10a', status: 'ACTIVE', profile: { displayName: 'Trần Thị B', staffCode: 'GVCN_A', isTeachingStaff: true } },
+          { id: 'gvcn-10b', username: 'gvcn10b', status: 'ACTIVE', profile: { displayName: 'Lê Văn C', staffCode: 'GVCN_B', isTeachingStaff: true } },
+        ];
+        if (where?.id?.in && Array.isArray(where.id.in)) {
+          return all.filter((u) => where.id!.in!.includes(u.id));
+        }
+        return all;
+      });
+
+      const res = await service.importHdtnDraftPackage(
+        actorUserId,
+        'cmd-staffcode-change-ok',
+        validPackage,
+        bghBootstrapContext,
+        validEvidence,
+      );
+      expect(res.outcome).toBe('CREATED');
+    });
   });
 });

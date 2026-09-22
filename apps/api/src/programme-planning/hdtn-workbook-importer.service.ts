@@ -625,7 +625,6 @@ export class HdtnWorkbookImporterService {
                   .replace(/\s+/gu, ' ')
                   .toLowerCase(),
                 matchedUserId: match.teacher.matchedUserId,
-                staffProfileId: match.teacher.staffCode ?? null,
                 displayName: match.teacher.displayName,
               });
             }

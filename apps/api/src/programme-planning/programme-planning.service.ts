@@ -156,7 +156,6 @@ export interface HdtnImportResolvedTeacherEvidence {
   sourceRowNumber: number;
   normalizedTeacherName: string;
   matchedUserId: string;
-  staffProfileId?: string | null;
   displayName: string;
 }
 
