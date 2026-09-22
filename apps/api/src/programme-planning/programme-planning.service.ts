@@ -20,6 +20,7 @@ import {
   SpecialActivityScope,
 } from '@prisma/client';
 import { createHash } from 'node:crypto';
+import { HdtnWorkbookConfirmResponse } from '@baogiang/contracts';
 import { AuditService } from '../audit/audit.service';
 import { formatCivilDate, isCivilDate, parseCivilDate } from '../common/validation/civil-date';
 import { classifyHomeroomResolutionRows } from '../homeroom-assignments/homeroom-assignments.service';
@@ -62,6 +63,36 @@ export function weekdayForCivilDate(date: Date): AcademicWeekday {
   return ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'][
     date.getUTCDay()
   ] as AcademicWeekday;
+}
+
+export interface ResolvedHdtnTopic {
+  sequence: number;
+  title: string;
+  requiredPeriods: number;
+  guidelineWeekFrom?: number | null;
+  guidelineWeekTo?: number | null;
+}
+
+export interface ResolvedHdtnSlot {
+  timeSlotDefinitionId: string;
+  teacherUserIds: string[];
+}
+
+export interface ResolvedHdtnOccurrence {
+  topicSequence: number;
+  civilDate: string;
+  mode: 'CLASS' | 'GRADE' | 'SCHOOL_WIDE';
+  gradeLevel: number | null;
+  schoolClassId: string | null;
+  note?: string | null;
+  slots: ResolvedHdtnSlot[];
+}
+
+export interface ResolvedHdtnDraftPackage {
+  academicYearId: string;
+  previewFingerprint: string;
+  topics: ResolvedHdtnTopic[];
+  occurrences: ResolvedHdtnOccurrence[];
 }
 
 @Injectable()
@@ -378,6 +409,212 @@ export class ProgrammePlanningService {
         );
 
         return this.fetchPlanVersionRecord(tx, planVersion.id);
+      },
+    );
+  }
+
+  async importHdtnDraftPackage(
+    actorUserId: string,
+    commandId: string,
+    pkg: ResolvedHdtnDraftPackage,
+  ): Promise<HdtnWorkbookConfirmResponse> {
+    const existingCommand = await this.prisma.programmePlanningCommand.findUnique({
+      where: { actorUserId_commandId: { actorUserId, commandId } },
+    });
+    if (existingCommand) {
+      const fingerprint = this.fingerprint({
+        academicYearId: pkg.academicYearId,
+        previewFingerprint: pkg.previewFingerprint,
+        topicCount: pkg.topics.length,
+        occurrenceCount: pkg.occurrences.length,
+      });
+      if (
+        existingCommand.commandType !== 'IMPORT_HDTN_HN_WORKBOOK_DRAFT' ||
+        existingCommand.fingerprint !== fingerprint
+      ) {
+        throw new ConflictException(
+          'Idempotency key already used with different command type or payload.',
+        );
+      }
+      return {
+        ...(existingCommand.result as unknown as HdtnWorkbookConfirmResponse),
+        outcome: 'IDEMPOTENT_REPLAY',
+      };
+    }
+
+    return this.mutate(
+      actorUserId,
+      commandId,
+      'IMPORT_HDTN_HN_WORKBOOK_DRAFT',
+      {
+        academicYearId: pkg.academicYearId,
+        previewFingerprint: pkg.previewFingerprint,
+        topicCount: pkg.topics.length,
+        occurrenceCount: pkg.occurrences.length,
+      },
+      async (tx) => {
+        const year = await tx.academicYear.findUnique({
+          where: { id: pkg.academicYearId },
+          select: { id: true },
+        });
+        if (!year) {
+          throw new NotFoundException('Năm học không tồn tại.');
+        }
+
+        let master = await tx.programmeMaster.findFirst({
+          where: { academicYearId: pkg.academicYearId, kind: 'HDTN_HN' },
+        });
+        if (!master) {
+          master = await tx.programmeMaster.create({
+            data: {
+              academicYearId: pkg.academicYearId,
+              kind: 'HDTN_HN',
+              gradeLevel: null,
+              createdByUserId: actorUserId,
+            },
+          });
+          await this.audit.write(
+            {
+              actorUserId,
+              action: 'PROGRAMME_MASTER_CREATED',
+              entityType: 'ProgrammeMaster',
+              entityId: master.id,
+              result: AuditResult.SUCCESS,
+              metadata: {
+                commandId,
+                academicYearId: pkg.academicYearId,
+                kind: 'HDTN_HN',
+              },
+            },
+            tx,
+          );
+        }
+
+        const existingDraft = await tx.programmePlanVersion.findFirst({
+          where: { programmeMasterId: master.id, status: 'DRAFT' },
+          select: { id: true },
+        });
+        if (existingDraft) {
+          throw new ConflictException('Đã có một bản thảo DRAFT cho programme master này.');
+        }
+
+        const maxVersion = await tx.programmePlanVersion.aggregate({
+          where: { programmeMasterId: master.id },
+          _max: { versionNumber: true },
+        });
+        const versionNumber = (maxVersion._max.versionNumber ?? 0) + 1;
+
+        const planVersion = await tx.programmePlanVersion.create({
+          data: {
+            programmeMasterId: master.id,
+            versionNumber,
+            status: 'DRAFT',
+            draftRevision: 1,
+            createdByUserId: actorUserId,
+          },
+        });
+
+        const topicMapBySequence = new Map<number, string>();
+        for (const t of pkg.topics) {
+          const item = await tx.programmeTopicItem.create({
+            data: {
+              programmePlanVersionId: planVersion.id,
+              sequence: t.sequence,
+              title: t.title.trim(),
+              requiredPeriods: t.requiredPeriods,
+              guidelineWeekFrom: t.guidelineWeekFrom ?? null,
+              guidelineWeekTo: t.guidelineWeekTo ?? null,
+              guidelineSegmentLabel: null,
+            },
+          });
+          topicMapBySequence.set(t.sequence, item.id);
+        }
+
+        let occurrenceCount = 0;
+        let slotCount = 0;
+        let staffingCount = 0;
+
+        for (const occ of pkg.occurrences) {
+          const topicItemId = topicMapBySequence.get(occ.topicSequence);
+          if (!topicItemId) {
+            throw new ConflictException(
+              `Không tìm thấy chủ đề với thứ tự ${occ.topicSequence}.`,
+            );
+          }
+
+          const occurrence = await tx.plannedProgrammeOccurrence.create({
+            data: {
+              programmeMasterId: master.id,
+              programmePlanVersionId: planVersion.id,
+              programmeTopicItemId: topicItemId,
+              academicYearId: pkg.academicYearId,
+              civilDate: parseCivilDate(occ.civilDate),
+              mode: occ.mode,
+              gradeLevel: occ.mode === 'GRADE' ? occ.gradeLevel : null,
+              schoolClassId: occ.mode === 'CLASS' ? occ.schoolClassId : null,
+              status: 'DRAFT',
+              draftRevision: 1,
+              note: occ.note ?? null,
+              createdByUserId: actorUserId,
+            },
+          });
+          occurrenceCount += 1;
+
+          for (const slotDto of occ.slots) {
+            const slot = await tx.plannedOccurrenceSlot.create({
+              data: {
+                plannedProgrammeOccurrenceId: occurrence.id,
+                academicYearId: pkg.academicYearId,
+                timeSlotDefinitionId: slotDto.timeSlotDefinitionId,
+              },
+            });
+            slotCount += 1;
+
+            if (slotDto.teacherUserIds.length > 0) {
+              await tx.plannedSlotStaffing.createMany({
+                data: slotDto.teacherUserIds.map((teacherUserId) => ({
+                  plannedOccurrenceSlotId: slot.id,
+                  teacherUserId,
+                })),
+              });
+              staffingCount += slotDto.teacherUserIds.length;
+            }
+          }
+        }
+
+        await this.audit.write(
+          {
+            actorUserId,
+            action: 'PROGRAMME_PLAN_VERSION_DRAFT_IMPORTED',
+            entityType: 'ProgrammePlanVersion',
+            entityId: planVersion.id,
+            result: AuditResult.SUCCESS,
+            metadata: {
+              commandId,
+              programmeMasterId: master.id,
+              versionNumber,
+              topicItemCount: pkg.topics.length,
+              occurrenceCount,
+              slotCount,
+              staffingCount,
+              previewFingerprint: pkg.previewFingerprint,
+            },
+          },
+          tx,
+        );
+
+        return {
+          outcome: 'CREATED',
+          commandId,
+          programmeMasterId: master.id,
+          programmePlanVersionId: planVersion.id,
+          versionNumber,
+          status: 'DRAFT',
+          topicItemCount: pkg.topics.length,
+          occurrenceCount,
+          slotCount,
+          staffingCount,
+        };
       },
     );
   }

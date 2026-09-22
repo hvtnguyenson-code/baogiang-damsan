@@ -1,8 +1,14 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  HdtnWorkbookConfirmResponse,
+  HdtnWorkbookInspectionResponse,
+  HdtnWorkbookPreviewResponse,
+} from '@baogiang/contracts';
 import { CapabilityAuthorizationService } from '../authorization/capability-authorization.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   AttestOccurrenceDto,
+  ConfirmHdtnWorkbookDto,
   CreateDraftOccurrenceDto,
   CreateDraftPlanVersionDto,
   CreateProgrammeMasterDto,
@@ -26,6 +32,10 @@ import {
   ReverseAttestationDto,
 } from './dto';
 import {
+  HdtnWorkbookImporterService,
+  UploadedWorkbookFile,
+} from './hdtn-workbook-importer.service';
+import {
   ProgrammeAuditContext,
   ProgrammePlanningAuthorizationService,
 } from './programme-planning-authorization.service';
@@ -38,6 +48,7 @@ export class AuthorizedProgrammePlanningService {
     private readonly authService: ProgrammePlanningAuthorizationService,
     private readonly authorization: CapabilityAuthorizationService,
     private readonly prisma: PrismaService,
+    private readonly hdtnImporter?: HdtnWorkbookImporterService,
   ) {}
 
   // =========================================================================
@@ -615,5 +626,66 @@ export class AuthorizedProgrammePlanningService {
     }
     await this.authService.requireProgrammeAuthority(actorUserId, master, auditContext);
     return this.service.listOccurrenceAttestations(id);
+  }
+
+  // =========================================================================
+  // HĐTN-HN WORKBOOK INGESTION
+  // =========================================================================
+
+  async inspectHdtnWorkbook(
+    file: UploadedWorkbookFile | undefined,
+  ): Promise<HdtnWorkbookInspectionResponse> {
+    if (!this.hdtnImporter) {
+      throw new BadRequestException('HdtnWorkbookImporterService is not configured.');
+    }
+    return this.hdtnImporter.inspect(file);
+  }
+
+  async previewHdtnWorkbook(
+    file: UploadedWorkbookFile | undefined,
+    academicYearId: string,
+    actorUserId: string,
+    auditContext?: ProgrammeAuditContext,
+  ): Promise<HdtnWorkbookPreviewResponse> {
+    if (!this.hdtnImporter) {
+      throw new BadRequestException('HdtnWorkbookImporterService is not configured.');
+    }
+    const master = await this.prisma.programmeMaster.findFirst({
+      where: { academicYearId, kind: 'HDTN_HN' },
+      select: { id: true, kind: true },
+    });
+    if (master) {
+      await this.authService.requireProgrammeAuthority(actorUserId, master, auditContext);
+    } else {
+      await this.authService.requireBghAuthority(actorUserId, auditContext);
+    }
+    return this.hdtnImporter.preview(file, academicYearId);
+  }
+
+  async confirmHdtnWorkbook(
+    file: UploadedWorkbookFile | undefined,
+    dto: ConfirmHdtnWorkbookDto,
+    actorUserId: string,
+    auditContext?: ProgrammeAuditContext,
+  ): Promise<HdtnWorkbookConfirmResponse> {
+    if (!this.hdtnImporter) {
+      throw new BadRequestException('HdtnWorkbookImporterService is not configured.');
+    }
+    const master = await this.prisma.programmeMaster.findFirst({
+      where: { academicYearId: dto.academicYearId, kind: 'HDTN_HN' },
+      select: { id: true, kind: true },
+    });
+    if (master) {
+      await this.authService.requireProgrammeAuthority(actorUserId, master, auditContext);
+    } else {
+      await this.authService.requireBghAuthority(actorUserId, auditContext);
+    }
+    return this.hdtnImporter.confirm(
+      file,
+      dto.academicYearId,
+      dto.expectedPreviewFingerprint,
+      dto.commandId,
+      actorUserId,
+    );
   }
 }
