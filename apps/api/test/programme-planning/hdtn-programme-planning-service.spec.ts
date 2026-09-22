@@ -25,6 +25,8 @@ describe('ProgrammePlanningService.importHdtnDraftPackage', () => {
     academicYearId,
     calendar: {
       calendarVersionId: 'cal-v1',
+      teachingWeekdays: ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'],
+      interruptions: [],
     },
     weeks: [
       { officialWeekNumber: 1, academicWeekId: 'week-1' },
@@ -47,6 +49,14 @@ describe('ProgrammePlanningService.importHdtnDraftPackage', () => {
       { civilDate: '2026-09-07', schoolClassId: 'class-10b', homeroomAssignmentId: 'hr-10b', teacherUserId: 'gvcn-10b' },
     ],
     explicitTeacherUserIds: ['teacher-a'],
+    resolvedTeachers: [
+      {
+        sourceRowNumber: 1,
+        normalizedTeacherName: 'nguyễn văn a',
+        matchedUserId: 'teacher-a',
+        displayName: 'Nguyễn Văn A',
+      },
+    ],
   };
 
   const validPackage: ResolvedHdtnDraftPackage = {
@@ -169,9 +179,9 @@ describe('ProgrammePlanningService.importHdtnDraftPackage', () => {
       user: {
         findMany: jest.fn().mockImplementation(async ({ where }: { where?: { id?: { in?: string[] } } }) => {
           const all = [
-            { id: 'teacher-a', username: 'teachera', status: 'ACTIVE', profile: { isTeachingStaff: true } },
-            { id: 'gvcn-10a', username: 'gvcn10a', status: 'ACTIVE', profile: { isTeachingStaff: true } },
-            { id: 'gvcn-10b', username: 'gvcn10b', status: 'ACTIVE', profile: { isTeachingStaff: true } },
+            { id: 'teacher-a', username: 'teachera', status: 'ACTIVE', profile: { displayName: 'Nguyễn Văn A', isTeachingStaff: true } },
+            { id: 'gvcn-10a', username: 'gvcn10a', status: 'ACTIVE', profile: { displayName: 'Trần Thị B', isTeachingStaff: true } },
+            { id: 'gvcn-10b', username: 'gvcn10b', status: 'ACTIVE', profile: { displayName: 'Lê Văn C', isTeachingStaff: true } },
           ];
           if (where?.id?.in && Array.isArray(where.id.in)) {
             const inList = where.id.in;
@@ -180,9 +190,9 @@ describe('ProgrammePlanningService.importHdtnDraftPackage', () => {
           return all;
         }),
         findUnique: jest.fn().mockImplementation(async ({ where }: { where: { id: string } }) => {
-          if (where.id === 'gvcn-10a') return { id: 'gvcn-10a', username: 'gvcn10a', status: 'ACTIVE', profile: { isTeachingStaff: true } };
-          if (where.id === 'gvcn-10b') return { id: 'gvcn-10b', username: 'gvcn10b', status: 'ACTIVE', profile: { isTeachingStaff: true } };
-          if (where.id === 'teacher-a') return { id: 'teacher-a', username: 'teachera', status: 'ACTIVE', profile: { isTeachingStaff: true } };
+          if (where.id === 'gvcn-10a') return { id: 'gvcn-10a', username: 'gvcn10a', status: 'ACTIVE', profile: { displayName: 'Trần Thị B', isTeachingStaff: true } };
+          if (where.id === 'gvcn-10b') return { id: 'gvcn-10b', username: 'gvcn10b', status: 'ACTIVE', profile: { displayName: 'Lê Văn C', isTeachingStaff: true } };
+          if (where.id === 'teacher-a') return { id: 'teacher-a', username: 'teachera', status: 'ACTIVE', profile: { displayName: 'Nguyễn Văn A', isTeachingStaff: true } };
           return null;
         }),
       },
@@ -193,6 +203,7 @@ describe('ProgrammePlanningService.importHdtnDraftPackage', () => {
           isActive: true,
           startDate: new Date('2026-09-01'),
           endDate: new Date('2027-05-31'),
+          teachingWeekdays: ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'],
         }),
         findUnique: jest.fn().mockResolvedValue({
           id: 'cal-v1',
@@ -200,6 +211,7 @@ describe('ProgrammePlanningService.importHdtnDraftPackage', () => {
           isActive: true,
           startDate: new Date('2026-09-01'),
           endDate: new Date('2027-05-31'),
+          teachingWeekdays: ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'],
         }),
         findMany: jest.fn().mockResolvedValue([
           {
@@ -208,8 +220,12 @@ describe('ProgrammePlanningService.importHdtnDraftPackage', () => {
             isActive: true,
             startDate: new Date('2026-09-01'),
             endDate: new Date('2027-05-31'),
+            teachingWeekdays: ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'],
           },
         ]),
+      },
+      calendarInterruption: {
+        findMany: jest.fn().mockResolvedValue([]),
       },
       academicWeek: {
         findMany: jest.fn().mockResolvedValue([
@@ -716,6 +732,243 @@ describe('ProgrammePlanningService.importHdtnDraftPackage', () => {
           actorUserId,
         ),
       ).rejects.toThrow(ConflictException);
+    });
+
+    it('Blocker A Regression: Grade 11 markers on same timetable do NOT stale Grade 10 import, but Grade 10 marker mutation DOES stale', async () => {
+      // 1. Database timetable markers: contains Grade 10 markers (m-1, m-2) and Grade 11 markers (m-11a, m-11b)
+      mockTx.timetableSpecialProgrammeMarker.findMany.mockImplementation(async ({ where }: { where: { schoolClassId: { in: string[] } } }) => {
+        const allMarkers = [
+          { id: 'm-1', timetableVersionId: 'tkb-v1', schoolClassId: 'class-10a', timeSlotDefinitionId: 'slot-m1', kind: 'HDTN_HN', timeSlotDefinition: { weekday: 'MONDAY' } },
+          { id: 'm-2', timetableVersionId: 'tkb-v1', schoolClassId: 'class-10b', timeSlotDefinitionId: 'slot-m2', kind: 'HDTN_HN', timeSlotDefinition: { weekday: 'MONDAY' } },
+          { id: 'm-11a', timetableVersionId: 'tkb-v1', schoolClassId: 'class-11a', timeSlotDefinitionId: 'slot-m1', kind: 'HDTN_HN', timeSlotDefinition: { weekday: 'MONDAY' } },
+          { id: 'm-11b', timetableVersionId: 'tkb-v1', schoolClassId: 'class-11b', timeSlotDefinitionId: 'slot-m2', kind: 'HDTN_HN', timeSlotDefinition: { weekday: 'MONDAY' } },
+        ];
+        return allMarkers.filter((m) => where.schoolClassId.in.includes(m.schoolClassId));
+      });
+
+      // Grade 10 row targets {10A, 10B}. Even though Grade 11 has markers, transaction revalidation PASSES!
+      const res = await service.importHdtnDraftPackage(
+        actorUserId,
+        'cmd-blocker-a-row-scope-pass',
+        validPackage,
+        bghBootstrapContext,
+        validEvidence,
+      );
+      expect(res.outcome).toBe('CREATED');
+
+      // 2. Grade 10 marker mutation: Grade 10 marker m-1 removed or replaced -> DOES stale!
+      mockTx.timetableSpecialProgrammeMarker.findMany.mockImplementation(async ({ where }: { where: { schoolClassId: { in: string[] } } }) => {
+        const mutatedMarkers = [
+          { id: 'm-2', timetableVersionId: 'tkb-v1', schoolClassId: 'class-10b', timeSlotDefinitionId: 'slot-m2', kind: 'HDTN_HN', timeSlotDefinition: { weekday: 'MONDAY' } },
+          { id: 'm-11a', timetableVersionId: 'tkb-v1', schoolClassId: 'class-11a', timeSlotDefinitionId: 'slot-m1', kind: 'HDTN_HN', timeSlotDefinition: { weekday: 'MONDAY' } },
+        ];
+        return mutatedMarkers.filter((m) => where.schoolClassId.in.includes(m.schoolClassId));
+      });
+
+      await expect(
+        service.importHdtnDraftPackage(
+          actorUserId,
+          'cmd-blocker-a-grade-10-stale',
+          validPackage,
+          bghBootstrapContext,
+          validEvidence,
+        ),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('Blocker B: blocks when teachingWeekdays changes between preview and transaction', async () => {
+      // TeachingWeekdays changed from Mon-Sat to Mon-Fri
+      mockTx.academicCalendarVersion.findMany.mockResolvedValueOnce([
+        {
+          id: 'cal-v1',
+          academicYearId,
+          isActive: true,
+          startDate: new Date('2026-09-01'),
+          endDate: new Date('2027-05-31'),
+          teachingWeekdays: ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY'], // Saturday removed
+        },
+      ]);
+
+      await expect(
+        service.importHdtnDraftPackage(
+          actorUserId,
+          'cmd-teaching-weekdays-changed',
+          validPackage,
+          bghBootstrapContext,
+          validEvidence,
+        ),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('Blocker B: blocks when interruption is added covering a candidate date', async () => {
+      // Interruption added in DB
+      mockTx.calendarInterruption.findMany.mockResolvedValueOnce([
+        {
+          id: 'inter-1',
+          calendarVersionId: 'cal-v1',
+          code: 'BAO_SO_1',
+          name: 'Nghỉ tránh bão số 1',
+          startDate: new Date('2026-09-07T00:00:00.000Z'),
+          endDate: new Date('2026-09-07T00:00:00.000Z'),
+        },
+      ]);
+
+      await expect(
+        service.importHdtnDraftPackage(
+          actorUserId,
+          'cmd-interruption-added',
+          validPackage,
+          bghBootstrapContext,
+          validEvidence,
+        ),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('Blocker B: blocks when interruption is removed exposing a new date', async () => {
+      const evidenceWithInterruption: HdtnImportAuthorityEvidence = {
+        ...validEvidence,
+        calendar: {
+          ...validEvidence.calendar,
+          interruptions: [
+            {
+              id: 'inter-1',
+              code: 'BAO_SO_1',
+              name: 'Nghỉ bão',
+              startDate: '2026-09-07',
+              endDate: '2026-09-07',
+            },
+          ],
+        },
+      };
+
+      // DB has 0 interruptions (it was removed)
+      mockTx.calendarInterruption.findMany.mockResolvedValueOnce([]);
+
+      await expect(
+        service.importHdtnDraftPackage(
+          actorUserId,
+          'cmd-interruption-removed',
+          validPackage,
+          bghBootstrapContext,
+          evidenceWithInterruption,
+        ),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('Blocker B: blocks when interruption date range changes', async () => {
+      const evidenceWithInterruption: HdtnImportAuthorityEvidence = {
+        ...validEvidence,
+        calendar: {
+          ...validEvidence.calendar,
+          interruptions: [
+            {
+              id: 'inter-1',
+              code: 'BAO_SO_1',
+              name: 'Nghỉ bão',
+              startDate: '2026-09-07',
+              endDate: '2026-09-08',
+            },
+          ],
+        },
+      };
+
+      // DB has changed endDate
+      mockTx.calendarInterruption.findMany.mockResolvedValueOnce([
+        {
+          id: 'inter-1',
+          calendarVersionId: 'cal-v1',
+          code: 'BAO_SO_1',
+          name: 'Nghỉ bão',
+          startDate: new Date('2026-09-07T00:00:00.000Z'),
+          endDate: new Date('2026-09-09T00:00:00.000Z'), // Changed
+        },
+      ]);
+
+      await expect(
+        service.importHdtnDraftPackage(
+          actorUserId,
+          'cmd-interruption-dates-changed',
+          validPackage,
+          bghBootstrapContext,
+          evidenceWithInterruption,
+        ),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('Blocker C: blocks when another active teaching user gains same normalized displayName (duplicate-name race)', async () => {
+      // Another user 'teacher-b' gains same displayName 'Nguyễn Văn A'
+      mockTx.user.findMany.mockImplementation(async ({ where }: { where?: { id?: { in?: string[] } } }) => {
+        const all = [
+          { id: 'teacher-a', username: 'teachera', status: 'ACTIVE', profile: { displayName: 'Nguyễn Văn A', isTeachingStaff: true } },
+          { id: 'teacher-b', username: 'teacherb', status: 'ACTIVE', profile: { displayName: 'Nguyễn Văn  A', isTeachingStaff: true } },
+          { id: 'gvcn-10a', username: 'gvcn10a', status: 'ACTIVE', profile: { displayName: 'Trần Thị B', isTeachingStaff: true } },
+          { id: 'gvcn-10b', username: 'gvcn10b', status: 'ACTIVE', profile: { displayName: 'Lê Văn C', isTeachingStaff: true } },
+        ];
+        if (where?.id?.in && Array.isArray(where.id.in)) {
+          return all.filter((u) => where.id!.in!.includes(u.id));
+        }
+        return all;
+      });
+
+      await expect(
+        service.importHdtnDraftPackage(
+          actorUserId,
+          'cmd-duplicate-teacher-name',
+          validPackage,
+          bghBootstrapContext,
+          validEvidence,
+        ),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('Blocker C: blocks when resolved teacher displayName changes after preview', async () => {
+      // Teacher-A displayName changed to 'Nguyễn Văn X'
+      mockTx.user.findMany.mockImplementation(async ({ where }: { where?: { id?: { in?: string[] } } }) => {
+        const all = [
+          { id: 'teacher-a', username: 'teachera', status: 'ACTIVE', profile: { displayName: 'Nguyễn Văn X', isTeachingStaff: true } },
+          { id: 'gvcn-10a', username: 'gvcn10a', status: 'ACTIVE', profile: { displayName: 'Trần Thị B', isTeachingStaff: true } },
+          { id: 'gvcn-10b', username: 'gvcn10b', status: 'ACTIVE', profile: { displayName: 'Lê Văn C', isTeachingStaff: true } },
+        ];
+        if (where?.id?.in && Array.isArray(where.id.in)) {
+          return all.filter((u) => where.id!.in!.includes(u.id));
+        }
+        return all;
+      });
+
+      await expect(
+        service.importHdtnDraftPackage(
+          actorUserId,
+          'cmd-teacher-name-changed',
+          validPackage,
+          bghBootstrapContext,
+          validEvidence,
+        ),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('Blocker C: unrelated teacher changes do NOT cause stale conflict', async () => {
+      // Unrelated teacher-z changes or appears
+      mockTx.user.findMany.mockImplementation(async ({ where }: { where?: { id?: { in?: string[] } } }) => {
+        const all = [
+          { id: 'teacher-a', username: 'teachera', status: 'ACTIVE', profile: { displayName: 'Nguyễn Văn A', isTeachingStaff: true } },
+          { id: 'teacher-z', username: 'teacherz', status: 'ACTIVE', profile: { displayName: 'Phạm Văn Z', isTeachingStaff: true } },
+          { id: 'gvcn-10a', username: 'gvcn10a', status: 'ACTIVE', profile: { displayName: 'Trần Thị B', isTeachingStaff: true } },
+          { id: 'gvcn-10b', username: 'gvcn10b', status: 'ACTIVE', profile: { displayName: 'Lê Văn C', isTeachingStaff: true } },
+        ];
+        if (where?.id?.in && Array.isArray(where.id.in)) {
+          return all.filter((u) => where.id!.in!.includes(u.id));
+        }
+        return all;
+      });
+
+      const res = await service.importHdtnDraftPackage(
+        actorUserId,
+        'cmd-unrelated-teacher-ok',
+        validPackage,
+        bghBootstrapContext,
+        validEvidence,
+      );
+      expect(res.outcome).toBe('CREATED');
     });
   });
 });

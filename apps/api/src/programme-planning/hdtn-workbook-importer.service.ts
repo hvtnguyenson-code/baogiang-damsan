@@ -39,7 +39,9 @@ import {
   HdtnImportCalendarEvidence,
   HdtnImportDateAuthority,
   HdtnImportHomeroomEvidence,
+  HdtnImportInterruptionEvidence,
   HdtnImportMarkerEvidence,
+  HdtnImportResolvedTeacherEvidence,
   HdtnImportScopeSnapshot,
   HdtnImportSegmentEvidence,
   HdtnImportWeekEvidence,
@@ -56,7 +58,9 @@ export type {
   HdtnImportCalendarEvidence,
   HdtnImportDateAuthority,
   HdtnImportHomeroomEvidence,
+  HdtnImportInterruptionEvidence,
   HdtnImportMarkerEvidence,
+  HdtnImportResolvedTeacherEvidence,
   HdtnImportScopeSnapshot,
   HdtnImportSegmentEvidence,
   HdtnImportWeekEvidence,
@@ -519,6 +523,7 @@ export class HdtnWorkbookImporterService {
     const markerEvidence: HdtnImportMarkerEvidence[] = [];
     const homeroomAssignments: HdtnImportHomeroomEvidence[] = [];
     const explicitTeacherUserIds = new Set<string>();
+    const resolvedTeacherEvidence: HdtnImportResolvedTeacherEvidence[] = [];
 
     const resolvedTopics: ResolvedHdtnTopic[] = [];
     const resolvedOccurrences: ResolvedHdtnOccurrence[] = [];
@@ -612,6 +617,17 @@ export class HdtnWorkbookImporterService {
               seenUserIds.add(match.teacher.matchedUserId);
               resolvedTeachers.push(match.teacher);
               explicitTeacherUserIds.add(match.teacher.matchedUserId);
+              resolvedTeacherEvidence.push({
+                sourceRowNumber: row.sourceRowNumber,
+                normalizedTeacherName: parsedTeacher.teacherName
+                  .normalize('NFC')
+                  .trim()
+                  .replace(/\s+/gu, ' ')
+                  .toLowerCase(),
+                matchedUserId: match.teacher.matchedUserId,
+                staffProfileId: match.teacher.staffCode ?? null,
+                displayName: match.teacher.displayName,
+              });
             }
           }
         }
@@ -718,6 +734,8 @@ export class HdtnWorkbookImporterService {
         }
       }
 
+      const targetClassIdSet = new Set(targetClasses.map((c) => c.id));
+
       scopeSnapshots.push({
         sourceRowNumber: row.sourceRowNumber,
         organizingScope: row.organizingScope,
@@ -796,6 +814,9 @@ export class HdtnWorkbookImporterService {
         const expectedWeekday = weekdayForCivilDate(parseCivilDate(cDate));
 
         for (const rm of retainedMarkers) {
+          if (!targetClassIdSet.has(rm.schoolClassId)) {
+            continue;
+          }
           const slotDef = timeSlotMap.get(rm.timeSlotDefinitionId);
           if (slotDef && slotDef.weekday === expectedWeekday) {
             markersForDates.push({
@@ -1158,6 +1179,16 @@ export class HdtnWorkbookImporterService {
       academicYearId,
       calendar: {
         calendarVersionId: calendar?.id ?? '',
+        teachingWeekdays: (calendar?.teachingWeekdays ?? []) as AcademicWeekday[],
+        interruptions: (calendar?.interruptions ?? [])
+          .map((i) => ({
+            id: i.id,
+            code: i.code,
+            name: i.name,
+            startDate: formatCivilDate(i.startDate),
+            endDate: formatCivilDate(i.endDate),
+          }))
+          .sort((a, b) => a.id.localeCompare(b.id)),
       },
       weeks: Array.from(weeksEvidenceMap.values()),
       segments: Array.from(segmentsEvidenceMap.values()),
@@ -1166,6 +1197,7 @@ export class HdtnWorkbookImporterService {
       markerEvidence,
       homeroomAssignments,
       explicitTeacherUserIds: Array.from(explicitTeacherUserIds),
+      resolvedTeachers: resolvedTeacherEvidence,
     };
 
     const blockingIssueCount = issues.filter((i) => i.severity === 'BLOCKER').length;
@@ -1256,7 +1288,7 @@ export class HdtnWorkbookImporterService {
 
   private isHdtnDataSheetName(name: string): boolean {
     const norm = name.trim().normalize('NFC').toUpperCase();
-    return norm === 'NHẬP HĐTN-HN' || norm === 'NHAP HDTN-HN';
+    return norm === 'NHẬP HĐTN-HN';
   }
 
   private checkHeaderRow(row: ParsedWorkbookRow | undefined): HdtnWorkbookPreviewIssue | null {
@@ -1431,6 +1463,21 @@ export class HdtnWorkbookImporterService {
     const payload = {
       academicYearId,
       calendarVersionId: evidence.calendar.calendarVersionId,
+      calendarTeachingWeekdays: [...(evidence.calendar.teachingWeekdays ?? [])],
+      calendarInterruptions: [
+        ...new Set(
+          (evidence.calendar.interruptions ?? []).map(
+            (i) => `${i.id}#${i.code}#${i.name}#${i.startDate}#${i.endDate}`,
+          ),
+        ),
+      ].sort(),
+      resolvedTeachers: [
+        ...new Set(
+          (evidence.resolvedTeachers ?? []).map(
+            (t) => `${t.sourceRowNumber}#${t.normalizedTeacherName}#${t.matchedUserId}#${t.displayName}`,
+          ),
+        ),
+      ].sort(),
       normalizedRows: parsedRows.map((r) => ({
         sourceRowNumber: r.sourceRowNumber,
         weekFrom: r.weekFrom,

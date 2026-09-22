@@ -96,8 +96,18 @@ export interface ResolvedHdtnDraftPackage {
   occurrences: ResolvedHdtnOccurrence[];
 }
 
+export interface HdtnImportInterruptionEvidence {
+  id: string;
+  code: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+}
+
 export interface HdtnImportCalendarEvidence {
   calendarVersionId: string;
+  teachingWeekdays: AcademicWeekday[];
+  interruptions: HdtnImportInterruptionEvidence[];
 }
 
 export interface HdtnImportWeekEvidence {
@@ -142,6 +152,14 @@ export interface HdtnImportHomeroomEvidence {
   teacherUserId: string;
 }
 
+export interface HdtnImportResolvedTeacherEvidence {
+  sourceRowNumber: number;
+  normalizedTeacherName: string;
+  matchedUserId: string;
+  staffProfileId?: string | null;
+  displayName: string;
+}
+
 export interface HdtnImportAuthorityEvidence {
   academicYearId: string;
   calendar: HdtnImportCalendarEvidence;
@@ -152,6 +170,7 @@ export interface HdtnImportAuthorityEvidence {
   markerEvidence: HdtnImportMarkerEvidence[];
   homeroomAssignments: HdtnImportHomeroomEvidence[];
   explicitTeacherUserIds: string[];
+  resolvedTeachers: HdtnImportResolvedTeacherEvidence[];
 }
 
 export interface HdtnImportBootstrapContext {
@@ -1874,6 +1893,44 @@ export class ProgrammePlanningService {
         'Lịch năm học đang kích hoạt đã thay đổi hoặc không còn là lịch duy nhất kể từ khi xem trước.',
       );
     }
+    const activeCalendar = activeCalendars[0]!;
+
+    // A1. AcademicCalendarVersion teachingWeekdays: exact canonical set and order
+    const currentTeachingWeekdays = activeCalendar.teachingWeekdays;
+    const expTeachingWeekdays = evidence.calendar.teachingWeekdays ?? [];
+    const isSameTeachingWeekdays =
+      currentTeachingWeekdays.length === expTeachingWeekdays.length &&
+      currentTeachingWeekdays.every((tw, idx) => tw === expTeachingWeekdays[idx]);
+    if (!isSameTeachingWeekdays) {
+      throw new ConflictException(
+        'Danh sách ngày học trong tuần (teachingWeekdays) của lịch năm học đã thay đổi kể từ khi xem trước.',
+      );
+    }
+
+    // A2. CalendarInterruptions: exact set equality and boundaries
+    const interruptionsInDb = await tx.calendarInterruption.findMany({
+      where: { calendarVersionId: evidence.calendar.calendarVersionId },
+      orderBy: { id: 'asc' },
+    });
+    const expInterruptions = evidence.calendar.interruptions ?? [];
+    if (interruptionsInDb.length !== expInterruptions.length) {
+      throw new ConflictException(
+        'Danh sách gián đoạn lịch học (interruptions) của lịch năm học đã thay đổi kể từ khi xem trước.',
+      );
+    }
+    for (const expInter of expInterruptions) {
+      const dbInter = interruptionsInDb.find((i) => i.id === expInter.id);
+      if (
+        !dbInter ||
+        dbInter.code !== expInter.code ||
+        formatCivilDate(dbInter.startDate) !== expInter.startDate ||
+        formatCivilDate(dbInter.endDate) !== expInter.endDate
+      ) {
+        throw new ConflictException(
+          'Thông tin hoặc khoảng thời gian gián đoạn lịch học (interruption) đã thay đổi kể từ khi xem trước.',
+        );
+      }
+    }
 
     // B. AcademicWeeks: exactly match each requested week
     const weeksInDb = await tx.academicWeek.findMany({
@@ -2045,6 +2102,42 @@ export class ProgrammePlanningService {
         throw new ConflictException(
           'Một hoặc nhiều giáo viên thực hiện không còn là nhân sự giảng dạy hoạt động.',
         );
+      }
+    }
+
+    // H1. Teacher name authority: exact normalized name must uniquely resolve to expected User
+    if (evidence.resolvedTeachers && evidence.resolvedTeachers.length > 0) {
+      const activeTeachingUsers = await tx.user.findMany({
+        where: {
+          status: 'ACTIVE',
+          profile: { isTeachingStaff: true },
+        },
+        include: { profile: true },
+      });
+
+      for (const item of evidence.resolvedTeachers) {
+        const normalizedTarget = item.normalizedTeacherName;
+        const matched = activeTeachingUsers.filter((u) => {
+          if (!u.profile?.displayName) return false;
+          const norm = u.profile.displayName.normalize('NFC').trim().replace(/\s+/gu, ' ').toLowerCase();
+          return norm === normalizedTarget;
+        });
+
+        if (matched.length === 0) {
+          throw new ConflictException(
+            `Giáo viên '${item.displayName}' tại dòng ${item.sourceRowNumber} không còn là nhân sự giảng dạy hoạt động hoặc đã đổi tên hiển thị.`,
+          );
+        }
+        if (matched.length > 1) {
+          throw new ConflictException(
+            `Phát hiện nhiều hơn một nhân sự giảng dạy hoạt động có tên trùng với '${item.displayName}' tại dòng ${item.sourceRowNumber}.`,
+          );
+        }
+        if (matched[0]!.id !== item.matchedUserId) {
+          throw new ConflictException(
+            `Giáo viên khớp với tên '${item.displayName}' tại dòng ${item.sourceRowNumber} không còn trùng khớp với danh tính đã ghi nhận.`,
+          );
+        }
       }
     }
 

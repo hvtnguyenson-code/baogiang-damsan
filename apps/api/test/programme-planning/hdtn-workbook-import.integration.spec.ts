@@ -221,6 +221,8 @@ integration('HdtnWorkbookImport (PostgreSQL integration P4-072)', () => {
       academicYearId: year.id,
       calendar: {
         calendarVersionId: calVersion.id,
+        teachingWeekdays: ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'],
+        interruptions: [],
       },
       weeks: [
         { officialWeekNumber: 1, academicWeekId: week1.id },
@@ -243,6 +245,14 @@ integration('HdtnWorkbookImport (PostgreSQL integration P4-072)', () => {
         { civilDate: '2026-09-07', schoolClassId: class10B.id, homeroomAssignmentId: hr10B.id, teacherUserId: gvcn10B.id },
       ],
       explicitTeacherUserIds: [teacherA.id],
+      resolvedTeachers: [
+        {
+          sourceRowNumber: 1,
+          normalizedTeacherName: 'nguyễn văn a',
+          matchedUserId: teacherA.id,
+          displayName: 'Nguyễn Văn A',
+        },
+      ],
     };
 
     const draftPackage: ResolvedHdtnDraftPackage = {
@@ -437,5 +447,75 @@ integration('HdtnWorkbookImport (PostgreSQL integration P4-072)', () => {
         env.authorityEvidence,
       ),
     ).rejects.toThrow(ConflictException);
+  });
+
+  it('rejects with ConflictException when target-scope marker set mutates before transaction and rolls back cleanly', async () => {
+    const env = await createValidEnvironment();
+
+    // Mutate relevant target-scope marker set: add an extra HDTN_HN marker on class 10A
+    await h.prisma.timetableSpecialProgrammeMarker.create({
+      data: {
+        timetableVersionId: env.tkbVersion.id,
+        academicYearId: env.year.id,
+        schoolClassId: env.class10A.id,
+        timeSlotDefinitionId: env.slotM2.id,
+        kind: 'HDTN_HN',
+      },
+    });
+
+    await expect(
+      service.importHdtnDraftPackage(
+        env.teacherA.id,
+        'cmd-pg-marker-race',
+        env.draftPackage,
+        env.bootstrapContext,
+        env.authorityEvidence,
+      ),
+    ).rejects.toThrow(ConflictException);
+
+    // Assert atomic rollback: no partial masters, versions, or occurrences remain
+    const mastersCount = await h.prisma.programmeMaster.count({ where: { academicYearId: env.year.id } });
+    const versionsCount = await h.prisma.programmePlanVersion.count();
+    const occurrencesCount = await h.prisma.plannedProgrammeOccurrence.count();
+    expect(mastersCount).toBe(0);
+    expect(versionsCount).toBe(0);
+    expect(occurrencesCount).toBe(0);
+  });
+
+  it('does NOT stale when unrelated non-target marker (Grade 11) is added for Grade 10 import', async () => {
+    const env = await createValidEnvironment();
+
+    // Create Grade 11 class and marker on same timetable
+    const class11A = await h.prisma.schoolClass.create({
+      data: {
+        academicYearId: env.year.id,
+        code: '11A',
+        name: 'Lớp 11A',
+        gradeLevel: 11,
+        status: 'ACTIVE',
+      },
+    });
+
+    await h.prisma.timetableSpecialProgrammeMarker.create({
+      data: {
+        timetableVersionId: env.tkbVersion.id,
+        academicYearId: env.year.id,
+        schoolClassId: class11A.id,
+        timeSlotDefinitionId: env.slotM1.id,
+        kind: 'HDTN_HN',
+      },
+    });
+
+    // Grade 10 import must succeed without conflict!
+    const result = await service.importHdtnDraftPackage(
+      env.teacherA.id,
+      'cmd-pg-grade-11-marker-isolation',
+      env.draftPackage,
+      env.bootstrapContext,
+      env.authorityEvidence,
+    );
+
+    expect(result.status).toBe('DRAFT');
+    expect(result.outcome).toBe('CREATED');
   });
 });

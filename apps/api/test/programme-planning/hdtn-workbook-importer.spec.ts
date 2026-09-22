@@ -325,6 +325,52 @@ describe('HdtnWorkbookImporterService & Authorization', () => {
       await expect(importerService.preview(dummyUpload, academicYearId)).rejects.toThrow(BadRequestException);
     });
 
+    it('Exact Sheet Contract: strictly requires canonical NHẬP HĐTN-HN and rejects accentless alias NHAP HDTN-HN', async () => {
+      // 1. Accentless alias NHAP HDTN-HN must fail inspect and block preview
+      mockParser.parse.mockResolvedValue({
+        sheets: [{
+          name: 'NHAP HDTN-HN',
+          state: 'VISIBLE',
+          rowCount: 2,
+          columnCount: 7,
+          rows: [
+            makeRow(1, HEADERS),
+            makeRow(2, ['1', '1', '1', 'Theo khối', '10', 'Chủ đề 1', 'Nguyễn Văn A']),
+          ],
+          hiddenColumns: [],
+        }],
+      });
+
+      const inspectRes = await importerService.inspect(dummyUpload);
+      expect(inspectRes.dataSheetFound).toBe(false);
+
+      await expect(importerService.preview(dummyUpload, academicYearId)).rejects.toThrow(BadRequestException);
+
+      // 2. Canonical NHẬP HĐTN-HN (with whitespace and NFC tolerance) succeeds
+      mockMarkerService.findRetainedMarkers.mockResolvedValue([
+        { schoolClassId: 'class-10a', timeSlotDefinitionId: 'slot-m1', kind: 'HDTN_HN' },
+        { schoolClassId: 'class-10b', timeSlotDefinitionId: 'slot-m1', kind: 'HDTN_HN' },
+      ]);
+
+      mockParser.parse.mockResolvedValue({
+        sheets: [{
+          name: '  NHẬP HĐTN-HN  ',
+          state: 'VISIBLE',
+          rowCount: 2,
+          columnCount: 7,
+          rows: [
+            makeRow(1, HEADERS),
+            makeRow(2, ['1', '1', '1', 'Theo khối', '10', 'Chủ đề 1', 'Nguyễn Văn A']),
+          ],
+          hiddenColumns: [],
+        }],
+      });
+
+      const previewRes = await importerService.preview(dummyUpload, academicYearId);
+      expect(previewRes.canConfirm).toBe(true);
+      expect(previewRes.sheetName).toBe('  NHẬP HĐTN-HN  ');
+    });
+
     it('blocks workbook with missing/renamed headers', async () => {
       const badHeaders = ['Tuần từ', 'Tuần đến', 'Số tiết', 'Khối', 'Chủ đề', 'Người thực hiện']; // missing Quy mô
       mockParser.parse.mockResolvedValue({
