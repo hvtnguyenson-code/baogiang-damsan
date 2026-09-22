@@ -42,7 +42,7 @@ integration('HdtnWorkbookImport (PostgreSQL integration P4-072)', () => {
 
     const teacherA = await h.prisma.user.create({
       data: {
-        username: normalizedCode('u_ta'),
+        username: normalizedCode('u_ta').toLowerCase(),
         passwordHash: 'hash',
         status: 'ACTIVE',
         profile: {
@@ -56,7 +56,7 @@ integration('HdtnWorkbookImport (PostgreSQL integration P4-072)', () => {
 
     const gvcn10A = await h.prisma.user.create({
       data: {
-        username: normalizedCode('u_g10a'),
+        username: normalizedCode('u_g10a').toLowerCase(),
         passwordHash: 'hash',
         status: 'ACTIVE',
         profile: {
@@ -70,7 +70,7 @@ integration('HdtnWorkbookImport (PostgreSQL integration P4-072)', () => {
 
     const gvcn10B = await h.prisma.user.create({
       data: {
-        username: normalizedCode('u_g10b'),
+        username: normalizedCode('u_g10b').toLowerCase(),
         passwordHash: 'hash',
         status: 'ACTIVE',
         profile: {
