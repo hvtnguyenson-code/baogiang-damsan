@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -49,7 +50,6 @@ import {
   ProgrammeOccurrenceAttestationRecord,
   ProgrammeOccurrenceAttestationsListResponse,
   ProgrammePlanVersionRecord,
-  ProgrammeTopicItemInputDto,
   ProgrammeTopicItemRecord,
   PublishOccurrenceDto,
   PublishPlanVersionDto,
@@ -93,6 +93,40 @@ export interface ResolvedHdtnDraftPackage {
   previewFingerprint: string;
   topics: ResolvedHdtnTopic[];
   occurrences: ResolvedHdtnOccurrence[];
+}
+
+export interface HdtnImportAuthorityEvidence {
+  academicYearId: string;
+  calendarVersionId: string;
+  academicWeekIds: string[];
+  academicWeekSegmentIds: string[];
+  segmentDateRanges: Array<{
+    segmentId: string;
+    startDate: string;
+    endDate: string;
+  }>;
+  targetClassIds: string[];
+  timetableVersionIds: string[];
+  timeSlotDefinitionIds: string[];
+  explicitTeacherUserIds: string[];
+  homeroomAssignments: Array<{
+    civilDate: string;
+    schoolClassId: string;
+    homeroomAssignmentId: string;
+    teacherUserId: string;
+  }>;
+  markerTuples: Array<{
+    timetableVersionId: string;
+    schoolClassId: string;
+    timeSlotDefinitionId: string;
+    kind: string;
+    civilDate: string;
+  }>;
+}
+
+export interface HdtnImportBootstrapContext {
+  expectedProgrammeMasterId: string | null;
+  canBootstrapMaster: boolean;
 }
 
 @Injectable()
@@ -417,17 +451,23 @@ export class ProgrammePlanningService {
     actorUserId: string,
     commandId: string,
     pkg: ResolvedHdtnDraftPackage,
+    authContext: HdtnImportBootstrapContext,
+    authorityEvidence: HdtnImportAuthorityEvidence,
   ): Promise<HdtnWorkbookConfirmResponse> {
+    const mutationPayload = {
+      previewFingerprint: pkg.previewFingerprint,
+      academicYearId: pkg.academicYearId,
+      topics: pkg.topics,
+      occurrences: pkg.occurrences,
+      authContext,
+      authorityEvidence,
+    };
+
     const existingCommand = await this.prisma.programmePlanningCommand.findUnique({
       where: { actorUserId_commandId: { actorUserId, commandId } },
     });
     if (existingCommand) {
-      const fingerprint = this.fingerprint({
-        academicYearId: pkg.academicYearId,
-        previewFingerprint: pkg.previewFingerprint,
-        topicCount: pkg.topics.length,
-        occurrenceCount: pkg.occurrences.length,
-      });
+      const fingerprint = this.fingerprint(mutationPayload);
       if (
         existingCommand.commandType !== 'IMPORT_HDTN_HN_WORKBOOK_DRAFT' ||
         existingCommand.fingerprint !== fingerprint
@@ -446,12 +486,7 @@ export class ProgrammePlanningService {
       actorUserId,
       commandId,
       'IMPORT_HDTN_HN_WORKBOOK_DRAFT',
-      {
-        academicYearId: pkg.academicYearId,
-        previewFingerprint: pkg.previewFingerprint,
-        topicCount: pkg.topics.length,
-        occurrenceCount: pkg.occurrences.length,
-      },
+      mutationPayload,
       async (tx) => {
         const year = await tx.academicYear.findUnique({
           where: { id: pkg.academicYearId },
@@ -461,59 +496,101 @@ export class ProgrammePlanningService {
           throw new NotFoundException('Năm học không tồn tại.');
         }
 
-        let master = await tx.programmeMaster.findFirst({
-          where: { academicYearId: pkg.academicYearId, kind: 'HDTN_HN' },
-        });
-        if (!master) {
-          master = await tx.programmeMaster.create({
-            data: {
-              academicYearId: pkg.academicYearId,
-              kind: 'HDTN_HN',
-              gradeLevel: null,
-              createdByUserId: actorUserId,
-            },
+        // 1. Master bootstrap safety
+        let master: ProgrammeMaster;
+        if (authContext.expectedProgrammeMasterId) {
+          const existingMaster = await tx.programmeMaster.findUnique({
+            where: { id: authContext.expectedProgrammeMasterId },
           });
-          await this.audit.write(
-            {
-              actorUserId,
-              action: 'PROGRAMME_MASTER_CREATED',
-              entityType: 'ProgrammeMaster',
-              entityId: master.id,
-              result: AuditResult.SUCCESS,
-              metadata: {
-                commandId,
+          if (
+            !existingMaster ||
+            existingMaster.academicYearId !== pkg.academicYearId ||
+            existingMaster.kind !== 'HDTN_HN'
+          ) {
+            throw new ConflictException(
+              'Chương trình HĐTN-HN đã bị thay đổi hoặc không tồn tại.',
+            );
+          }
+          master = existingMaster;
+        } else {
+          const existingMaster = await tx.programmeMaster.findFirst({
+            where: { academicYearId: pkg.academicYearId, kind: 'HDTN_HN' },
+          });
+          if (existingMaster) {
+            if (!authContext.canBootstrapMaster) {
+              throw new ForbiddenException(
+                'Không có quyền tự tạo mới hoặc tái sử dụng ProgrammeMaster HĐTN-HN.',
+              );
+            }
+            master = existingMaster;
+          } else {
+            if (!authContext.canBootstrapMaster) {
+              throw new ForbiddenException(
+                'Chỉ BGH mới có quyền khởi tạo ProgrammeMaster HĐTN-HN.',
+              );
+            }
+            master = await tx.programmeMaster.create({
+              data: {
                 academicYearId: pkg.academicYearId,
                 kind: 'HDTN_HN',
+                gradeLevel: null,
+                createdByUserId: actorUserId,
               },
-            },
-            tx,
+            });
+            await this.audit.write(
+              {
+                actorUserId,
+                action: 'PROGRAMME_MASTER_CREATED',
+                entityType: 'ProgrammeMaster',
+                entityId: master.id,
+                result: AuditResult.SUCCESS,
+                metadata: {
+                  commandId,
+                  academicYearId: pkg.academicYearId,
+                  kind: 'HDTN_HN',
+                },
+              },
+              tx,
+            );
+          }
+        }
+
+        // 2. Retained Plan History check
+        const existingVersions = await tx.programmePlanVersion.findMany({
+          where: { programmeMasterId: master.id },
+          select: { id: true, status: true },
+        });
+        if (existingVersions.some((v) => v.status === 'DRAFT')) {
+          throw new ConflictException('Đã có một bản thảo DRAFT cho programme master này.');
+        }
+        if (
+          existingVersions.some(
+            (v) => v.status === 'PUBLISHED' || v.status === 'SUPERSEDED',
+          )
+        ) {
+          throw new ConflictException(
+            'Chương trình HĐTN-HN đã có lịch sử phiên bản kế hoạch được ban hành. Nhập file kế hoạch từ đầu không thể ghi đè lịch sử; cần thực hiện quy trình tạo phiên bản kế tiếp.',
           );
         }
 
-        const existingDraft = await tx.programmePlanVersion.findFirst({
-          where: { programmeMasterId: master.id, status: 'DRAFT' },
-          select: { id: true },
-        });
-        if (existingDraft) {
-          throw new ConflictException('Đã có một bản thảo DRAFT cho programme master này.');
-        }
+        // 3. Revalidate Authority Evidence inside Mutate TX
+        await this.revalidateHdtnAuthorityEvidence(tx, authorityEvidence);
 
-        const maxVersion = await tx.programmePlanVersion.aggregate({
-          where: { programmeMasterId: master.id },
-          _max: { versionNumber: true },
-        });
-        const versionNumber = (maxVersion._max.versionNumber ?? 0) + 1;
+        // 4. Validate Topics
+        this.validateTopicItems(pkg.topics);
 
+        // 5. Create Plan Version
         const planVersion = await tx.programmePlanVersion.create({
           data: {
             programmeMasterId: master.id,
-            versionNumber,
+            versionNumber: 1,
             status: 'DRAFT',
             draftRevision: 1,
             createdByUserId: actorUserId,
           },
         });
 
+        // 6. Create Topic Items
         const topicMapBySequence = new Map<number, string>();
         for (const t of pkg.topics) {
           const item = await tx.programmeTopicItem.create({
@@ -530,6 +607,7 @@ export class ProgrammePlanningService {
           topicMapBySequence.set(t.sequence, item.id);
         }
 
+        // 7. Validate and Create Occurrences, Slots, Staffing
         let occurrenceCount = 0;
         let slotCount = 0;
         let staffingCount = 0;
@@ -541,6 +619,19 @@ export class ProgrammePlanningService {
               `Không tìm thấy chủ đề với thứ tự ${occ.topicSequence}.`,
             );
           }
+
+          // Canonical structural validation for occurrence
+          await this.validateOccurrenceStructureAndStaffing(tx, {
+            master,
+            planVersion: { id: planVersion.id, programmeMasterId: master.id },
+            topic: { id: topicItemId, programmePlanVersionId: planVersion.id },
+            academicYearId: pkg.academicYearId,
+            civilDate: occ.civilDate,
+            mode: occ.mode,
+            gradeLevel: occ.gradeLevel,
+            schoolClassId: occ.schoolClassId,
+            slots: occ.slots,
+          });
 
           const occurrence = await tx.plannedProgrammeOccurrence.create({
             data: {
@@ -592,7 +683,7 @@ export class ProgrammePlanningService {
             metadata: {
               commandId,
               programmeMasterId: master.id,
-              versionNumber,
+              versionNumber: 1,
               topicItemCount: pkg.topics.length,
               occurrenceCount,
               slotCount,
@@ -608,7 +699,7 @@ export class ProgrammePlanningService {
           commandId,
           programmeMasterId: master.id,
           programmePlanVersionId: planVersion.id,
-          versionNumber,
+          versionNumber: 1,
           status: 'DRAFT',
           topicItemCount: pkg.topics.length,
           occurrenceCount,
@@ -1553,7 +1644,15 @@ export class ProgrammePlanningService {
     return 'Database constraint conflict';
   }
 
-  private validateTopicItems(topics: ProgrammeTopicItemInputDto[]): void {
+  private validateTopicItems(
+    topics: Array<{
+      sequence: number;
+      title: string;
+      requiredPeriods: number;
+      guidelineWeekFrom?: number | null;
+      guidelineWeekTo?: number | null;
+    }>,
+  ): void {
     const sequences = new Set<number>();
     for (const t of topics) {
       if (!t.sequence || t.sequence <= 0 || !Number.isInteger(t.sequence)) {
@@ -1592,12 +1691,12 @@ export class ProgrammePlanningService {
     }
   }
 
-  private async validateOccurrenceContext(
+  private async validateOccurrenceStructureAndStaffing(
     tx: Prisma.TransactionClient,
     input: {
-      programmeMasterId: string;
-      programmePlanVersionId: string;
-      programmeTopicItemId: string;
+      master: ProgrammeMaster;
+      planVersion: { id: string; programmeMasterId: string };
+      topic: { id: string; programmePlanVersionId: string };
       academicYearId: string;
       civilDate: string;
       mode: 'CLASS' | 'GRADE' | 'SCHOOL_WIDE';
@@ -1611,36 +1710,15 @@ export class ProgrammePlanningService {
     }
     const civilDateObj = parseCivilDate(input.civilDate);
 
-    const master = await tx.programmeMaster.findUnique({
-      where: { id: input.programmeMasterId },
-    });
-    if (!master) {
-      throw new NotFoundException('ProgrammeMaster không tồn tại.');
-    }
-    if (master.academicYearId !== input.academicYearId) {
+    if (input.master.academicYearId !== input.academicYearId) {
       throw new BadRequestException('academicYearId của occurrence không khớp với master.');
     }
 
-    const planVersion = await tx.programmePlanVersion.findUnique({
-      where: { id: input.programmePlanVersionId },
-    });
-    if (!planVersion) {
-      throw new NotFoundException('ProgrammePlanVersion không tồn tại.');
-    }
-    if (planVersion.programmeMasterId !== input.programmeMasterId) {
+    if (input.planVersion.programmeMasterId !== input.master.id) {
       throw new BadRequestException('Plan version không thuộc về ProgrammeMaster đã chỉ định.');
     }
-    if (planVersion.status !== 'PUBLISHED') {
-      throw new ConflictException('Planned programme occurrences require a PUBLISHED programme plan version.');
-    }
 
-    const topic = await tx.programmeTopicItem.findUnique({
-      where: { id: input.programmeTopicItemId },
-    });
-    if (!topic) {
-      throw new NotFoundException('ProgrammeTopicItem không tồn tại.');
-    }
-    if (topic.programmePlanVersionId !== input.programmePlanVersionId) {
+    if (input.topic.programmePlanVersionId !== input.planVersion.id) {
       throw new ConflictException('ProgrammeTopicItem không thuộc về plan version đã chọn.');
     }
 
@@ -1664,21 +1742,21 @@ export class ProgrammePlanningService {
       if (!schoolClass || schoolClass.academicYearId !== input.academicYearId) {
         throw new NotFoundException('Lớp học không tồn tại hoặc không thuộc năm học này.');
       }
-      if (master.kind === 'GDDP' && schoolClass.gradeLevel !== master.gradeLevel) {
+      if (input.master.kind === 'GDDP' && schoolClass.gradeLevel !== input.master.gradeLevel) {
         throw new ConflictException('GDDP CLASS occurrence target must belong to the programme master grade.');
       }
     } else if (input.mode === 'GRADE') {
       if (input.schoolClassId || !input.gradeLevel || ![10, 11, 12].includes(input.gradeLevel)) {
         throw new BadRequestException('GRADE mode bắt buộc gradeLevel (10, 11, 12) và schoolClassId phải null.');
       }
-      if (master.kind === 'GDDP' && input.gradeLevel !== master.gradeLevel) {
+      if (input.master.kind === 'GDDP' && input.gradeLevel !== input.master.gradeLevel) {
         throw new ConflictException('GDDP GRADE occurrence target must equal the programme master grade.');
       }
     } else if (input.mode === 'SCHOOL_WIDE') {
       if (input.schoolClassId || (input.gradeLevel !== null && input.gradeLevel !== undefined)) {
         throw new BadRequestException('SCHOOL_WIDE mode bắt buộc cả schoolClassId và gradeLevel đều null.');
       }
-      if (master.kind === 'GDDP') {
+      if (input.master.kind === 'GDDP') {
         throw new ConflictException('GDDP occurrence cannot use SCHOOL_WIDE mode.');
       }
     } else {
@@ -1687,6 +1765,175 @@ export class ProgrammePlanningService {
 
     if (input.slots && input.slots.length > 0) {
       await this.validateSlotsAndStaffing(tx, input.academicYearId, civilDateObj, input.slots);
+    }
+  }
+
+  private async validateOccurrenceContext(
+    tx: Prisma.TransactionClient,
+    input: {
+      programmeMasterId: string;
+      programmePlanVersionId: string;
+      programmeTopicItemId: string;
+      academicYearId: string;
+      civilDate: string;
+      mode: 'CLASS' | 'GRADE' | 'SCHOOL_WIDE';
+      gradeLevel?: number | null;
+      schoolClassId?: string | null;
+      slots?: PlannedSlotStaffingInputDto[];
+    },
+  ): Promise<void> {
+    const master = await tx.programmeMaster.findUnique({
+      where: { id: input.programmeMasterId },
+    });
+    if (!master) {
+      throw new NotFoundException('ProgrammeMaster không tồn tại.');
+    }
+
+    const planVersion = await tx.programmePlanVersion.findUnique({
+      where: { id: input.programmePlanVersionId },
+    });
+    if (!planVersion) {
+      throw new NotFoundException('ProgrammePlanVersion không tồn tại.');
+    }
+    if (planVersion.status !== 'PUBLISHED') {
+      throw new ConflictException('Planned programme occurrences require a PUBLISHED programme plan version.');
+    }
+
+    const topic = await tx.programmeTopicItem.findUnique({
+      where: { id: input.programmeTopicItemId },
+    });
+    if (!topic) {
+      throw new NotFoundException('ProgrammeTopicItem không tồn tại.');
+    }
+
+    await this.validateOccurrenceStructureAndStaffing(tx, {
+      master,
+      planVersion,
+      topic,
+      academicYearId: input.academicYearId,
+      civilDate: input.civilDate,
+      mode: input.mode,
+      gradeLevel: input.gradeLevel,
+      schoolClassId: input.schoolClassId,
+      slots: input.slots,
+    });
+  }
+
+  private async revalidateHdtnAuthorityEvidence(
+    tx: Prisma.TransactionClient,
+    evidence: HdtnImportAuthorityEvidence,
+  ): Promise<void> {
+    const year = await tx.academicYear.findUnique({
+      where: { id: evidence.academicYearId },
+    });
+    if (!year) {
+      throw new ConflictException('Năm học không tồn tại hoặc đã bị xóa.');
+    }
+
+    const classes = await tx.schoolClass.findMany({
+      where: {
+        id: { in: evidence.targetClassIds },
+        academicYearId: evidence.academicYearId,
+        status: 'ACTIVE',
+      },
+    });
+    if (classes.length !== evidence.targetClassIds.length) {
+      throw new ConflictException(
+        'Danh sách lớp học mục tiêu đã thay đổi hoặc có lớp không còn hoạt động.',
+      );
+    }
+
+    const tvs = await tx.timetableVersion.findMany({
+      where: { id: { in: evidence.timetableVersionIds } },
+    });
+    if (tvs.length !== evidence.timetableVersionIds.length) {
+      throw new ConflictException('Thời khóa biểu có hiệu lực tại ngày thực dạy đã thay đổi.');
+    }
+
+    const slotDefs = await tx.timeSlotDefinition.findMany({
+      where: {
+        id: { in: evidence.timeSlotDefinitionIds },
+        academicYearId: evidence.academicYearId,
+        isActive: true,
+      },
+    });
+    if (slotDefs.length !== evidence.timeSlotDefinitionIds.length) {
+      throw new ConflictException(
+        'Khung tiết học (TimeSlotDefinition) đã thay đổi hoặc không còn kích hoạt.',
+      );
+    }
+
+    if (evidence.explicitTeacherUserIds.length > 0) {
+      const teachers = await tx.user.findMany({
+        where: {
+          id: { in: evidence.explicitTeacherUserIds },
+          status: 'ACTIVE',
+          profile: { isTeachingStaff: true },
+        },
+        include: { profile: true },
+      });
+      if (teachers.length !== evidence.explicitTeacherUserIds.length) {
+        throw new ConflictException(
+          'Một hoặc nhiều giáo viên thực hiện không còn là nhân sự giảng dạy hoạt động.',
+        );
+      }
+    }
+
+    const markers = await tx.timetableSpecialProgrammeMarker.findMany({
+      where: {
+        timetableVersionId: { in: evidence.timetableVersionIds },
+        kind: 'HDTN_HN',
+      },
+    });
+    const markerSet = new Set(
+      markers.map(
+        (m) =>
+          `${m.timetableVersionId}#${m.schoolClassId}#${m.timeSlotDefinitionId}#${m.kind}`,
+      ),
+    );
+    for (const t of evidence.markerTuples) {
+      const key = `${t.timetableVersionId}#${t.schoolClassId}#${t.timeSlotDefinitionId}#${t.kind}`;
+      if (!markerSet.has(key)) {
+        throw new ConflictException(
+          'Dữ liệu tiết HĐTN-HN trên thời khóa biểu đã thay đổi kể từ khi xem trước.',
+        );
+      }
+    }
+
+    for (const h of evidence.homeroomAssignments) {
+      const dateObj = parseCivilDate(h.civilDate);
+      const coveringAssignments = await tx.homeroomAssignment.findMany({
+        where: {
+          academicYearId: evidence.academicYearId,
+          schoolClassId: h.schoolClassId,
+          status: 'ACTIVE',
+          validFrom: { lte: dateObj },
+          OR: [{ validUntil: null }, { validUntil: { gte: dateObj } }],
+        },
+      });
+      const lineageRows = await tx.homeroomAssignment.findMany({
+        where: { academicYearId: evidence.academicYearId, schoolClassId: h.schoolClassId },
+        select: {
+          id: true,
+          academicYearId: true,
+          schoolClassId: true,
+          status: true,
+          replacesId: true,
+          reversedByUserId: true,
+          reversedAt: true,
+          reversalReason: true,
+        },
+      });
+      const classification = classifyHomeroomResolutionRows(coveringAssignments, lineageRows);
+      if (
+        classification.outcome !== 'RESOLVED' ||
+        classification.assignment.id !== h.homeroomAssignmentId ||
+        classification.assignment.teacherUserId !== h.teacherUserId
+      ) {
+        throw new ConflictException(
+          'Phân công GVCN của một hoặc nhiều lớp đã thay đổi kể từ khi xem trước.',
+        );
+      }
     }
   }
 

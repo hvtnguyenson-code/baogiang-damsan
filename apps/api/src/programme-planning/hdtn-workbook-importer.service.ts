@@ -34,19 +34,34 @@ import { ParsedWorkbookCell, ParsedWorkbookRow } from '../timetable-import/workb
 import { MAX_XLSX_BYTES } from '../timetable-import/workbook-limits';
 import { formatWallClockTime } from '../time-slots/wall-clock-time';
 import {
+  HdtnImportAuthorityEvidence,
+  HdtnImportBootstrapContext,
   ProgrammePlanningService,
   ResolvedHdtnDraftPackage,
   ResolvedHdtnOccurrence,
-  ResolvedHdtnSlot,
   ResolvedHdtnTopic,
   weekdayForCivilDate,
 } from './programme-planning.service';
+
+export type {
+  HdtnImportAuthorityEvidence,
+  HdtnImportBootstrapContext,
+  ResolvedHdtnDraftPackage,
+  ResolvedHdtnOccurrence,
+  ResolvedHdtnTopic,
+};
 
 export interface UploadedWorkbookFile {
   originalname: string;
   mimetype: string;
   size: number;
   buffer: Buffer;
+}
+
+export interface ResolvedWorkbookResult {
+  preview: HdtnWorkbookPreviewResponse;
+  resolvedPackage: ResolvedHdtnDraftPackage;
+  authorityEvidence: HdtnImportAuthorityEvidence;
 }
 
 const EXPECTED_HEADERS = [
@@ -151,6 +166,109 @@ export class HdtnWorkbookImporterService {
         if (headerCheck) {
           issues.push(headerCheck);
         }
+
+        // Structural check: unexpected extra columns beyond column 7
+        for (const row of dataSheet.rows) {
+          const extraCells = row.cells.slice(7);
+          const hasExtra = extraCells.some(
+            (c: ParsedWorkbookCell) => c.text && c.text.trim() !== '',
+          );
+          if (hasExtra) {
+            issues.push({
+              severity: 'BLOCKER',
+              code: 'EXTRA_COLUMNS_DETECTED',
+              message: `Dòng ${row.number}: Phát hiện cột dữ liệu thừa vượt quá 7 cột quy chuẩn của bảng tính HĐTN-HN.`,
+              sourceRowNumber: row.number,
+            });
+            break;
+          }
+        }
+
+        // Structural check: format validation for business rows
+        const rawRows = dataSheet.rows.slice(1);
+        for (const row of rawRows) {
+          const sourceRowNumber = row.number;
+          const isBlank = row.cells.every(
+            (c: ParsedWorkbookCell) => !c.text || c.text.trim() === '',
+          );
+          if (isBlank) continue;
+
+          const weekFromRaw = row.cells[0]?.text;
+          const weekToRaw = row.cells[1]?.text;
+          const periodsRaw = row.cells[2]?.text;
+          const scopeRaw = row.cells[3]?.text;
+          const gradeRaw = row.cells[4]?.text;
+          const topicRaw = row.cells[5]?.text;
+          const teacherRaw = row.cells[6]?.text;
+
+          const weekFrom = Number(weekFromRaw);
+          const weekTo = Number(weekToRaw);
+          const requiredPeriods = Number(periodsRaw);
+
+          if (
+            !Number.isInteger(weekFrom) ||
+            weekFrom < 1 ||
+            !Number.isInteger(weekTo) ||
+            weekTo < 1 ||
+            weekFrom > weekTo
+          ) {
+            issues.push({
+              severity: 'BLOCKER',
+              code: 'INVALID_WEEK_RANGE',
+              message: `Dòng ${sourceRowNumber}: Khoảng tuần không hợp lệ (${String(weekFromRaw)} - ${String(weekToRaw)}). Tuần phải là số nguyên dương và Tuần từ <= Tuần đến.`,
+              sourceRowNumber,
+            });
+          }
+
+          if (!Number.isInteger(requiredPeriods) || requiredPeriods < 1) {
+            issues.push({
+              severity: 'BLOCKER',
+              code: 'INVALID_REQUIRED_PERIODS',
+              message: `Dòng ${sourceRowNumber}: Số tiết phải là số nguyên dương (${String(periodsRaw)}).`,
+              sourceRowNumber,
+            });
+          }
+
+          const scopeNorm = String(scopeRaw ?? '').trim().normalize('NFC');
+          if (!['Theo lớp', 'Theo khối', 'Toàn trường'].includes(scopeNorm)) {
+            issues.push({
+              severity: 'BLOCKER',
+              code: 'INVALID_ORGANIZING_SCOPE',
+              message: `Dòng ${sourceRowNumber}: Quy mô tổ chức '${scopeNorm}' không hợp lệ. Chỉ chấp nhận: 'Theo lớp', 'Theo khối', 'Toàn trường'.`,
+              sourceRowNumber,
+            });
+          } else if (scopeNorm === 'Theo lớp' || scopeNorm === 'Theo khối') {
+            const parsedGrade = Number(gradeRaw);
+            if (![10, 11, 12].includes(parsedGrade)) {
+              issues.push({
+                severity: 'BLOCKER',
+                code: 'INVALID_GRADE_LEVEL',
+                message: `Dòng ${sourceRowNumber}: Khối lớp bắt buộc là 10, 11 hoặc 12 đối với quy mô '${scopeNorm}'.`,
+                sourceRowNumber,
+              });
+            }
+          }
+
+          const topicTitle = String(topicRaw ?? '').trim();
+          if (!topicTitle) {
+            issues.push({
+              severity: 'BLOCKER',
+              code: 'TOPIC_TITLE_REQUIRED',
+              message: `Dòng ${sourceRowNumber}: Tên chủ đề không được để trống.`,
+              sourceRowNumber,
+            });
+          }
+
+          const enteredTeacherText = String(teacherRaw ?? '').trim();
+          if (!enteredTeacherText) {
+            issues.push({
+              severity: 'BLOCKER',
+              code: 'TEACHER_TEXT_REQUIRED',
+              message: `Dòng ${sourceRowNumber}: Người thực hiện không được để trống.`,
+              sourceRowNumber,
+            });
+          }
+        }
       }
     }
 
@@ -162,10 +280,10 @@ export class HdtnWorkbookImporterService {
     };
   }
 
-  async preview(
+  async resolveWorkbook(
     file: UploadedWorkbookFile | undefined,
     academicYearId: string,
-  ): Promise<HdtnWorkbookPreviewResponse> {
+  ): Promise<ResolvedWorkbookResult> {
     this.validateFile(file);
     const parsed = await this.parser.parse(file!.buffer);
     const issues: HdtnWorkbookPreviewIssue[] = [];
@@ -181,6 +299,23 @@ export class HdtnWorkbookImporterService {
     const headerIssue = this.checkHeaderRow(dataSheet.rows[0]);
     if (headerIssue) {
       issues.push(headerIssue);
+    }
+
+    // Check for unexpected extra columns
+    for (const row of dataSheet.rows) {
+      const extraCells = row.cells.slice(7);
+      const hasExtra = extraCells.some(
+        (c: ParsedWorkbookCell) => c.text && c.text.trim() !== '',
+      );
+      if (hasExtra) {
+        issues.push({
+          severity: 'BLOCKER',
+          code: 'EXTRA_COLUMNS_DETECTED',
+          message: `Dòng ${row.number}: Phát hiện cột dữ liệu thừa vượt quá 7 cột quy chuẩn của bảng tính HĐTN-HN.`,
+          sourceRowNumber: row.number,
+        });
+        break;
+      }
     }
 
     const calendar = await this.prisma.academicCalendarVersion.findFirst({
@@ -350,9 +485,44 @@ export class HdtnWorkbookImporterService {
     const previewRows: HdtnWorkbookPreviewRow[] = [];
     const timetableVersionCache = new Map<string, TimetableVersion | null>();
 
-    for (const row of parsedRows) {
+    // Authority Evidence collectors
+    const academicWeekIds = new Set<string>();
+    const academicWeekSegmentIds = new Set<string>();
+    const segmentDateRanges: Array<{ segmentId: string; startDate: string; endDate: string }> = [];
+    const targetClassIds = new Set<string>();
+    const timetableVersionIds = new Set<string>();
+    const timeSlotDefinitionIds = new Set<string>();
+    const explicitTeacherUserIds = new Set<string>();
+    const homeroomAssignments: Array<{
+      civilDate: string;
+      schoolClassId: string;
+      homeroomAssignmentId: string;
+      teacherUserId: string;
+    }> = [];
+    const markerTuples: Array<{
+      timetableVersionId: string;
+      schoolClassId: string;
+      timeSlotDefinitionId: string;
+      kind: string;
+      civilDate: string;
+    }> = [];
+
+    const resolvedTopics: ResolvedHdtnTopic[] = [];
+    const resolvedOccurrences: ResolvedHdtnOccurrence[] = [];
+
+    for (let rowIndex = 0; rowIndex < parsedRows.length; rowIndex += 1) {
+      const row = parsedRows[rowIndex]!;
+      const topicSequence = rowIndex + 1;
       const rowIssues: HdtnWorkbookPreviewIssue[] = [];
       const resolvedTeachers: HdtnWorkbookResolvedTeacherSummary[] = [];
+
+      resolvedTopics.push({
+        sequence: topicSequence,
+        title: row.topicTitle,
+        requiredPeriods: row.requiredPeriods,
+        guidelineWeekFrom: row.weekFrom,
+        guidelineWeekTo: row.weekTo,
+      });
 
       // 1. Resolve teacher identity
       if (row.organizingScope === 'CLASS') {
@@ -368,7 +538,7 @@ export class HdtnWorkbookImporterService {
           issues.push(issue);
         }
       } else {
-        // GRADE or SCHOOL_WIDE: list of teachers separated by semicolon
+        // GRADE or SCHOOL_WIDE
         const teacherTokens = row.enteredTeacherText
           .split(';')
           .map((t) => t.trim())
@@ -387,6 +557,7 @@ export class HdtnWorkbookImporterService {
 
         const seenTokens = new Set<string>();
         const seenUserIds = new Set<string>();
+
         for (const rawToken of teacherTokens) {
           const normToken = rawToken.trim().normalize('NFC').toLowerCase();
           if (seenTokens.has(normToken)) {
@@ -414,9 +585,20 @@ export class HdtnWorkbookImporterService {
             rowIssues.push(match.issue);
             issues.push(match.issue);
           } else if (match.teacher) {
-            if (!seenUserIds.has(match.teacher.matchedUserId)) {
+            // Finding E: Duplicate detection on canonical resolved User.id
+            if (seenUserIds.has(match.teacher.matchedUserId)) {
+              const issue: HdtnWorkbookPreviewIssue = {
+                severity: 'BLOCKER',
+                code: 'DUPLICATE_RESOLVED_TEACHER',
+                message: `Dòng ${row.sourceRowNumber}: Giáo viên '${match.teacher.displayName}' bị chỉ định trùng lặp nhiều lần trong danh sách người thực hiện.`,
+                sourceRowNumber: row.sourceRowNumber,
+              };
+              rowIssues.push(issue);
+              issues.push(issue);
+            } else {
               seenUserIds.add(match.teacher.matchedUserId);
               resolvedTeachers.push(match.teacher);
+              explicitTeacherUserIds.add(match.teacher.matchedUserId);
             }
           }
         }
@@ -439,6 +621,8 @@ export class HdtnWorkbookImporterService {
             continue;
           }
 
+          academicWeekIds.add(week.id);
+
           if (week.segments.length === 0) {
             const issue: HdtnWorkbookPreviewIssue = {
               severity: 'BLOCKER',
@@ -452,6 +636,12 @@ export class HdtnWorkbookImporterService {
           }
 
           for (const segment of week.segments) {
+            academicWeekSegmentIds.add(segment.id);
+            segmentDateRanges.push({
+              segmentId: segment.id,
+              startDate: formatCivilDate(segment.startDate),
+              endDate: formatCivilDate(segment.endDate),
+            });
             const dates = this.enumerateTeachingDates(
               segment.startDate,
               segment.endDate,
@@ -475,7 +665,7 @@ export class HdtnWorkbookImporterService {
         issues.push(issue);
       }
 
-      // 3. Resolve markers and evaluate coverage / counts
+      // 3. Resolve target classes
       let targetClasses: SchoolClass[] = [];
       if (row.organizingScope === 'CLASS' || row.organizingScope === 'GRADE') {
         targetClasses = activeClasses.filter((c) => c.gradeLevel === row.gradeLevel);
@@ -503,11 +693,17 @@ export class HdtnWorkbookImporterService {
         }
       }
 
+      for (const cls of targetClasses) {
+        targetClassIds.add(cls.id);
+      }
+
+      // 4. Resolve date-effective timetable versions & retained markers
       const markersForDates: Array<{
         civilDate: CivilDateString;
         timeSlotDefinitionId: string;
         schoolClassId: string;
         timeSlot: TimeSlotDefinition;
+        timetableVersionId: string;
       }> = [];
 
       for (const cDate of uniqueCivilDates) {
@@ -538,6 +734,8 @@ export class HdtnWorkbookImporterService {
           continue;
         }
 
+        timetableVersionIds.add(tv.id);
+
         const retainedMarkers = await this.markerService.findRetainedMarkers({
           timetableVersionId: tv.id,
           kind: 'HDTN_HN',
@@ -548,19 +746,30 @@ export class HdtnWorkbookImporterService {
         for (const rm of retainedMarkers) {
           const slotDef = timeSlotMap.get(rm.timeSlotDefinitionId);
           if (slotDef && slotDef.weekday === expectedWeekday) {
+            timeSlotDefinitionIds.add(slotDef.id);
             markersForDates.push({
               civilDate: cDate,
               timeSlotDefinitionId: rm.timeSlotDefinitionId,
               schoolClassId: rm.schoolClassId,
               timeSlot: slotDef,
+              timetableVersionId: tv.id,
+            });
+            markerTuples.push({
+              timetableVersionId: tv.id,
+              schoolClassId: rm.schoolClassId,
+              timeSlotDefinitionId: rm.timeSlotDefinitionId,
+              kind: 'HDTN_HN',
+              civilDate: cDate,
             });
           }
         }
       }
 
-      const resolvedSlots: HdtnWorkbookResolvedSlot[] = [];
+      const previewRowSlots: HdtnWorkbookResolvedSlot[] = [];
 
+      // 5. Evaluate and build occurrences based on organizing scope
       if (row.organizingScope === 'CLASS') {
+        // Finding A: Each class must preserve its OWN exact slots
         for (const cls of targetClasses) {
           const classMarkers = markersForDates.filter((m) => m.schoolClassId === cls.id);
 
@@ -575,6 +784,9 @@ export class HdtnWorkbookImporterService {
             rowIssues.push(issue);
             issues.push(issue);
           }
+
+          const classMarkersByDate = new Map<string, typeof classMarkers>();
+          const gvcnByDate = new Map<string, string>();
 
           for (const cm of classMarkers) {
             const dateObj = parseCivilDate(cm.civilDate);
@@ -627,11 +839,43 @@ export class HdtnWorkbookImporterService {
                 };
                 rowIssues.push(issue);
                 issues.push(issue);
+              } else {
+                gvcnByDate.set(cm.civilDate, classification.assignment.teacherUserId);
+                homeroomAssignments.push({
+                  civilDate: cm.civilDate,
+                  schoolClassId: cls.id,
+                  homeroomAssignmentId: classification.assignment.id,
+                  teacherUserId: classification.assignment.teacherUserId,
+                });
               }
+            }
+
+            if (!classMarkersByDate.has(cm.civilDate)) {
+              classMarkersByDate.set(cm.civilDate, []);
+            }
+            classMarkersByDate.get(cm.civilDate)!.push(cm);
+          }
+
+          // Build occurrences for THIS CLASS only!
+          for (const [civilDate, cMarkers] of classMarkersByDate.entries()) {
+            const gvcnUserId = gvcnByDate.get(civilDate);
+            if (gvcnUserId) {
+              resolvedOccurrences.push({
+                topicSequence,
+                civilDate,
+                mode: 'CLASS',
+                gradeLevel: null,
+                schoolClassId: cls.id,
+                slots: cMarkers.map((m) => ({
+                  timeSlotDefinitionId: m.timeSlotDefinitionId,
+                  teacherUserIds: [gvcnUserId],
+                })),
+              });
             }
           }
         }
 
+        // Preview presentation row: union of unique slots for display
         const uniqueClassSlots = new Map<string, HdtnWorkbookResolvedSlot>();
         for (const m of markersForDates.filter((m) => targetClasses.some((c) => c.id === m.schoolClassId))) {
           const key = `${m.civilDate}#${m.timeSlotDefinitionId}`;
@@ -646,90 +890,251 @@ export class HdtnWorkbookImporterService {
             });
           }
         }
-        resolvedSlots.push(...this.sortResolvedSlots([...uniqueClassSlots.values()]));
+        previewRowSlots.push(...this.sortResolvedSlots([...uniqueClassSlots.values()]));
 
-      } else {
-        const targetClassIdSet = new Set(targetClasses.map((c) => c.id));
-        const slotsByCoordinate = new Map<string, Set<string>>();
-        const coordinateSlotDef = new Map<string, { civilDate: CivilDateString; timeSlot: TimeSlotDefinition }>();
-
-        for (const m of markersForDates) {
-          if (targetClassIdSet.has(m.schoolClassId)) {
-            const key = `${m.civilDate}#${m.timeSlotDefinitionId}`;
-            if (!slotsByCoordinate.has(key)) {
-              slotsByCoordinate.set(key, new Set());
-              coordinateSlotDef.set(key, { civilDate: m.civilDate, timeSlot: m.timeSlot });
-            }
-            slotsByCoordinate.get(key)!.add(m.schoolClassId);
+        previewRows.push({
+          sourceRowNumber: row.sourceRowNumber,
+          weekFrom: row.weekFrom,
+          weekTo: row.weekTo,
+          requiredPeriods: row.requiredPeriods,
+          organizingScope: row.organizingScope,
+          organizingScopeLabel: row.organizingScopeLabel,
+          gradeLevel: row.gradeLevel,
+          topicTitle: row.topicTitle,
+          enteredTeacherText: row.enteredTeacherText,
+          resolvedTeachers: [],
+          targetClassCodes: targetClasses.map((c) => c.code),
+          resolvedCandidateCount: row.requiredPeriods,
+          slots: previewRowSlots,
+          issues: rowIssues,
+        });
+      } else if (row.organizingScope === 'GRADE') {
+        const slotKeys = new Map<string, { civilDate: CivilDateString; timeSlot: TimeSlotDefinition }>();
+        for (const m of markersForDates.filter((m) => targetClasses.some((c) => c.id === m.schoolClassId))) {
+          const key = `${m.civilDate}#${m.timeSlotDefinitionId}`;
+          if (!slotKeys.has(key)) {
+            slotKeys.set(key, { civilDate: m.civilDate, timeSlot: m.timeSlot });
           }
         }
 
-        let completeCoverageSlotCount = 0;
-        for (const [key, classIds] of slotsByCoordinate.entries()) {
-          const info = coordinateSlotDef.get(key)!;
-          if (classIds.size === targetClasses.length) {
-            completeCoverageSlotCount += 1;
-            resolvedSlots.push({
-              civilDate: info.civilDate,
-              weekday: info.timeSlot.weekday as AcademicWeekday,
-              timeSlotDefinitionId: info.timeSlot.id,
-              periodNumber: info.timeSlot.ordinal,
-              startTime: formatWallClockTime(info.timeSlot.startTime),
-              endTime: formatWallClockTime(info.timeSlot.endTime),
-            });
-          } else {
-            const missingClasses = targetClasses
-              .filter((c) => !classIds.has(c.id))
+        const collapsedSlots: HdtnWorkbookResolvedSlot[] = [];
+        const slotsByCivilDate = new Map<string, Array<{ timeSlotDefinitionId: string }>>();
+
+        for (const [key, val] of slotKeys.entries()) {
+          const [, timeSlotDefinitionId] = key.split('#');
+          const coveringClasses = markersForDates.filter(
+            (m) =>
+              m.civilDate === val.civilDate &&
+              m.timeSlotDefinitionId === timeSlotDefinitionId &&
+              targetClasses.some((c) => c.id === m.schoolClassId),
+          );
+          const coveredClassIds = new Set(coveringClasses.map((m) => m.schoolClassId));
+
+          if (coveredClassIds.size !== targetClasses.length) {
+            const missingClassCodes = targetClasses
+              .filter((c) => !coveredClassIds.has(c.id))
               .map((c) => c.code);
             const issue: HdtnWorkbookPreviewIssue = {
               severity: 'BLOCKER',
-              code: row.organizingScope === 'GRADE' ? 'INCOMPLETE_GRADE_COVERAGE' : 'INCOMPLETE_SCHOOL_COVERAGE',
-              message: `Dòng ${row.sourceRowNumber}: Tiết học ngày ${info.civilDate} (${formatWallClockTime(info.timeSlot.startTime)}-${formatWallClockTime(info.timeSlot.endTime)}) không có đủ marker cho tất cả các lớp. Các lớp thiếu: ${missingClasses.join(', ')}.`,
+              code: 'GRADE_COVERAGE_INCOMPLETE',
+              message: `Dòng ${row.sourceRowNumber}: Tiết HĐTN-HN ngày ${val.civilDate} (tiết ${val.timeSlot.ordinal}) không phủ đủ 100% các lớp trong khối ${row.gradeLevel}. Thiếu các lớp: ${missingClassCodes.join(', ')}.`,
               sourceRowNumber: row.sourceRowNumber,
             };
             rowIssues.push(issue);
             issues.push(issue);
+          } else {
+            collapsedSlots.push({
+              civilDate: val.civilDate,
+              weekday: val.timeSlot.weekday as AcademicWeekday,
+              timeSlotDefinitionId: timeSlotDefinitionId!,
+              periodNumber: val.timeSlot.ordinal,
+              startTime: formatWallClockTime(val.timeSlot.startTime),
+              endTime: formatWallClockTime(val.timeSlot.endTime),
+            });
+            if (!slotsByCivilDate.has(val.civilDate)) {
+              slotsByCivilDate.set(val.civilDate, []);
+            }
+            slotsByCivilDate.get(val.civilDate)!.push({ timeSlotDefinitionId: timeSlotDefinitionId! });
           }
         }
 
-        if (completeCoverageSlotCount !== row.requiredPeriods && targetClasses.length > 0) {
-          const scopeLabel = row.organizingScope === 'GRADE' ? `Khối ${row.gradeLevel}` : 'Toàn trường';
+        if (collapsedSlots.length !== row.requiredPeriods) {
           const issue: HdtnWorkbookPreviewIssue = {
             severity: 'BLOCKER',
-            code: 'COLLAPSED_PERIOD_COUNT_MISMATCH',
-            message: `Dòng ${row.sourceRowNumber}: ${scopeLabel} tìm thấy ${completeCoverageSlotCount} tiết HĐTN-HN chung, không khớp với số tiết yêu cầu là ${row.requiredPeriods}.`,
+            code: 'GRADE_PERIOD_COUNT_MISMATCH',
+            message: `Dòng ${row.sourceRowNumber}: Số tiết HĐTN-HN toàn khối sau khi gộp là ${collapsedSlots.length}, không khớp với số tiết yêu cầu là ${row.requiredPeriods}.`,
             sourceRowNumber: row.sourceRowNumber,
           };
           rowIssues.push(issue);
           issues.push(issue);
         }
-      }
 
-      previewRows.push({
-        sourceRowNumber: row.sourceRowNumber,
-        weekFrom: row.weekFrom,
-        weekTo: row.weekTo,
-        requiredPeriods: row.requiredPeriods,
-        organizingScope: row.organizingScope,
-        organizingScopeLabel: row.organizingScopeLabel,
-        gradeLevel: row.gradeLevel,
-        topicTitle: row.topicTitle,
-        enteredTeacherText: row.enteredTeacherText,
-        resolvedTeachers,
-        targetClassCodes: targetClasses.map((c) => c.code),
-        resolvedCandidateCount: row.organizingScope === 'CLASS' ? row.requiredPeriods : resolvedSlots.length,
-        slots: this.sortResolvedSlots(resolvedSlots),
-        issues: rowIssues,
-      });
+        const explicitTeacherIds = resolvedTeachers.map((t) => t.matchedUserId);
+        for (const [civilDate, sList] of slotsByCivilDate.entries()) {
+          resolvedOccurrences.push({
+            topicSequence,
+            civilDate,
+            mode: 'GRADE',
+            gradeLevel: row.gradeLevel,
+            schoolClassId: null,
+            slots: sList.map((s) => ({
+              timeSlotDefinitionId: s.timeSlotDefinitionId,
+              teacherUserIds: explicitTeacherIds,
+            })),
+          });
+        }
+
+        previewRowSlots.push(...this.sortResolvedSlots(collapsedSlots));
+
+        previewRows.push({
+          sourceRowNumber: row.sourceRowNumber,
+          weekFrom: row.weekFrom,
+          weekTo: row.weekTo,
+          requiredPeriods: row.requiredPeriods,
+          organizingScope: row.organizingScope,
+          organizingScopeLabel: row.organizingScopeLabel,
+          gradeLevel: row.gradeLevel,
+          topicTitle: row.topicTitle,
+          enteredTeacherText: row.enteredTeacherText,
+          resolvedTeachers,
+          targetClassCodes: targetClasses.map((c) => c.code),
+          resolvedCandidateCount: collapsedSlots.length,
+          slots: previewRowSlots,
+          issues: rowIssues,
+        });
+      } else {
+        // SCHOOL_WIDE
+        const slotKeys = new Map<string, { civilDate: CivilDateString; timeSlot: TimeSlotDefinition }>();
+        for (const m of markersForDates.filter((m) => activeClasses.some((c) => c.id === m.schoolClassId))) {
+          const key = `${m.civilDate}#${m.timeSlotDefinitionId}`;
+          if (!slotKeys.has(key)) {
+            slotKeys.set(key, { civilDate: m.civilDate, timeSlot: m.timeSlot });
+          }
+        }
+
+        const collapsedSlots: HdtnWorkbookResolvedSlot[] = [];
+        const slotsByCivilDate = new Map<string, Array<{ timeSlotDefinitionId: string }>>();
+
+        for (const [key, val] of slotKeys.entries()) {
+          const [, timeSlotDefinitionId] = key.split('#');
+          const coveringClasses = markersForDates.filter(
+            (m) =>
+              m.civilDate === val.civilDate &&
+              m.timeSlotDefinitionId === timeSlotDefinitionId &&
+              activeClasses.some((c) => c.id === m.schoolClassId),
+          );
+          const coveredClassIds = new Set(coveringClasses.map((m) => m.schoolClassId));
+
+          if (coveredClassIds.size !== activeClasses.length) {
+            const missingClassCodes = activeClasses
+              .filter((c) => !coveredClassIds.has(c.id))
+              .map((c) => c.code);
+            const issue: HdtnWorkbookPreviewIssue = {
+              severity: 'BLOCKER',
+              code: 'SCHOOL_WIDE_COVERAGE_INCOMPLETE',
+              message: `Dòng ${row.sourceRowNumber}: Tiết HĐTN-HN ngày ${val.civilDate} (tiết ${val.timeSlot.ordinal}) không phủ đủ 100% tất cả các lớp trong toàn trường. Thiếu các lớp: ${missingClassCodes.join(', ')}.`,
+              sourceRowNumber: row.sourceRowNumber,
+            };
+            rowIssues.push(issue);
+            issues.push(issue);
+          } else {
+            collapsedSlots.push({
+              civilDate: val.civilDate,
+              weekday: val.timeSlot.weekday as AcademicWeekday,
+              timeSlotDefinitionId: timeSlotDefinitionId!,
+              periodNumber: val.timeSlot.ordinal,
+              startTime: formatWallClockTime(val.timeSlot.startTime),
+              endTime: formatWallClockTime(val.timeSlot.endTime),
+            });
+            if (!slotsByCivilDate.has(val.civilDate)) {
+              slotsByCivilDate.set(val.civilDate, []);
+            }
+            slotsByCivilDate.get(val.civilDate)!.push({ timeSlotDefinitionId: timeSlotDefinitionId! });
+          }
+        }
+
+        if (collapsedSlots.length !== row.requiredPeriods) {
+          const issue: HdtnWorkbookPreviewIssue = {
+            severity: 'BLOCKER',
+            code: 'SCHOOL_WIDE_PERIOD_COUNT_MISMATCH',
+            message: `Dòng ${row.sourceRowNumber}: Số tiết HĐTN-HN toàn trường sau khi gộp là ${collapsedSlots.length}, không khớp với số tiết yêu cầu là ${row.requiredPeriods}.`,
+            sourceRowNumber: row.sourceRowNumber,
+          };
+          rowIssues.push(issue);
+          issues.push(issue);
+        }
+
+        const explicitTeacherIds = resolvedTeachers.map((t) => t.matchedUserId);
+        for (const [civilDate, sList] of slotsByCivilDate.entries()) {
+          resolvedOccurrences.push({
+            topicSequence,
+            civilDate,
+            mode: 'SCHOOL_WIDE',
+            gradeLevel: null,
+            schoolClassId: null,
+            slots: sList.map((s) => ({
+              timeSlotDefinitionId: s.timeSlotDefinitionId,
+              teacherUserIds: explicitTeacherIds,
+            })),
+          });
+        }
+
+        previewRowSlots.push(...this.sortResolvedSlots(collapsedSlots));
+
+        previewRows.push({
+          sourceRowNumber: row.sourceRowNumber,
+          weekFrom: row.weekFrom,
+          weekTo: row.weekTo,
+          requiredPeriods: row.requiredPeriods,
+          organizingScope: row.organizingScope,
+          organizingScopeLabel: row.organizingScopeLabel,
+          gradeLevel: null,
+          topicTitle: row.topicTitle,
+          enteredTeacherText: row.enteredTeacherText,
+          resolvedTeachers,
+          targetClassCodes: activeClasses.map((c) => c.code),
+          resolvedCandidateCount: collapsedSlots.length,
+          slots: previewRowSlots,
+          issues: rowIssues,
+        });
+      }
     }
+
+    const authorityEvidence: HdtnImportAuthorityEvidence = {
+      academicYearId,
+      calendarVersionId: calendar?.id ?? '',
+      academicWeekIds: Array.from(academicWeekIds),
+      academicWeekSegmentIds: Array.from(academicWeekSegmentIds),
+      segmentDateRanges,
+      targetClassIds: Array.from(targetClassIds),
+      timetableVersionIds: Array.from(timetableVersionIds),
+      timeSlotDefinitionIds: Array.from(timeSlotDefinitionIds),
+      explicitTeacherUserIds: Array.from(explicitTeacherUserIds),
+      homeroomAssignments,
+      markerTuples,
+    };
 
     const blockingIssueCount = issues.filter((i) => i.severity === 'BLOCKER').length;
     const warningCount = issues.filter((i) => i.severity === 'WARNING').length;
-    const canConfirm = blockingIssueCount === 0 && parsedRows.length > 0;
+    const canConfirm = parsedRows.length > 0 && blockingIssueCount === 0;
 
-    const previewFingerprint = this.computePreviewFingerprint(academicYearId, calendar?.id ?? '', previewRows);
+    const resolvedPackage: ResolvedHdtnDraftPackage = {
+      academicYearId,
+      previewFingerprint: '',
+      topics: resolvedTopics,
+      occurrences: resolvedOccurrences,
+    };
 
-    return {
+    const previewFingerprint = this.computePreviewFingerprint(
+      academicYearId,
+      parsedRows,
+      authorityEvidence,
+      resolvedPackage,
+    );
+
+    resolvedPackage.previewFingerprint = previewFingerprint;
+
+    const preview: HdtnWorkbookPreviewResponse = {
       sourceFileName: this.sourceFileName(file!.originalname),
       sheetName: dataSheet.name,
       academicYearId,
@@ -742,6 +1147,20 @@ export class HdtnWorkbookImporterService {
       rows: previewRows,
       issues,
     };
+
+    return {
+      preview,
+      resolvedPackage,
+      authorityEvidence,
+    };
+  }
+
+  async preview(
+    file: UploadedWorkbookFile | undefined,
+    academicYearId: string,
+  ): Promise<HdtnWorkbookPreviewResponse> {
+    const resolved = await this.resolveWorkbook(file, academicYearId);
+    return resolved.preview;
   }
 
   async confirm(
@@ -750,165 +1169,35 @@ export class HdtnWorkbookImporterService {
     expectedPreviewFingerprint: string,
     commandId: string,
     actorUserId: string,
+    bootstrapContext: HdtnImportBootstrapContext = {
+      expectedProgrammeMasterId: null,
+      canBootstrapMaster: false,
+    },
   ): Promise<HdtnWorkbookConfirmResponse> {
-    const preview = await this.preview(file, academicYearId);
+    const resolved = await this.resolveWorkbook(file, academicYearId);
 
-    if (preview.previewFingerprint !== expectedPreviewFingerprint) {
+    if (resolved.preview.previewFingerprint !== expectedPreviewFingerprint) {
       throw new ConflictException({
         error: 'HDTN_IMPORT_STALE_PREVIEW',
-        message: 'Dữ liệu thời khóa biểu, lịch năm học hoặc phân công giáo viên đã thay đổi kể từ khi xem trước; vui lòng tải lại bản xem trước.',
+        message:
+          'Dữ liệu thời khóa biểu, lịch năm học hoặc phân công giáo viên đã thay đổi kể từ khi xem trước; vui lòng tải lại bản xem trước.',
       });
     }
 
-    if (!preview.canConfirm || preview.blockingIssueCount > 0) {
+    if (!resolved.preview.canConfirm || resolved.preview.blockingIssueCount > 0) {
       throw new ConflictException({
         error: 'HDTN_IMPORT_HAS_BLOCKERS',
         message: 'Workbook chứa lỗi chặn (blocker), không thể xác nhận import.',
       });
     }
 
-    const pkg = await this.buildDraftPackage(preview, academicYearId);
-    return this.planningService.importHdtnDraftPackage(actorUserId, commandId, pkg);
-  }
-
-  private async buildDraftPackage(
-    preview: HdtnWorkbookPreviewResponse,
-    academicYearId: string,
-  ): Promise<ResolvedHdtnDraftPackage> {
-    const activeClasses = await this.prisma.schoolClass.findMany({
-      where: { academicYearId, status: 'ACTIVE' },
-    });
-
-    const topics: ResolvedHdtnTopic[] = [];
-    const occurrences: ResolvedHdtnOccurrence[] = [];
-
-    for (let i = 0; i < preview.rows.length; i += 1) {
-      const row = preview.rows[i]!;
-      const topicSequence = i + 1;
-
-      topics.push({
-        sequence: topicSequence,
-        title: row.topicTitle,
-        requiredPeriods: row.requiredPeriods,
-        guidelineWeekFrom: row.weekFrom,
-        guidelineWeekTo: row.weekTo,
-      });
-
-      if (row.organizingScope === 'CLASS') {
-        const gradeClasses = activeClasses.filter((c) => c.gradeLevel === row.gradeLevel);
-
-        for (const cls of gradeClasses) {
-          const slotsByDate = new Map<string, ResolvedHdtnSlot[]>();
-
-          for (const s of row.slots) {
-            const dateObj = parseCivilDate(s.civilDate);
-            const coveringAssignments = await this.prisma.homeroomAssignment.findMany({
-              where: {
-                academicYearId,
-                schoolClassId: cls.id,
-                status: 'ACTIVE',
-                validFrom: { lte: dateObj },
-                OR: [{ validUntil: null }, { validUntil: { gte: dateObj } }],
-              },
-            });
-            const lineageRows = await this.prisma.homeroomAssignment.findMany({
-              where: { academicYearId, schoolClassId: cls.id },
-              select: {
-                id: true,
-                academicYearId: true,
-                schoolClassId: true,
-                status: true,
-                replacesId: true,
-                reversedByUserId: true,
-                reversedAt: true,
-                reversalReason: true,
-              },
-            });
-            const classification = classifyHomeroomResolutionRows(coveringAssignments, lineageRows);
-            if (classification.outcome !== 'RESOLVED') {
-              throw new ConflictException(
-                `Không thể xác định GVCN cho lớp ${cls.code} tại ngày ${s.civilDate}.`,
-              );
-            }
-            const gvcnTeacherUserId = classification.assignment.teacherUserId;
-
-            if (!slotsByDate.has(s.civilDate)) {
-              slotsByDate.set(s.civilDate, []);
-            }
-            slotsByDate.get(s.civilDate)!.push({
-              timeSlotDefinitionId: s.timeSlotDefinitionId,
-              teacherUserIds: [gvcnTeacherUserId],
-            });
-          }
-
-          for (const [civilDate, slots] of slotsByDate.entries()) {
-            occurrences.push({
-              topicSequence,
-              civilDate,
-              mode: 'CLASS',
-              gradeLevel: null,
-              schoolClassId: cls.id,
-              slots,
-            });
-          }
-        }
-      } else if (row.organizingScope === 'GRADE') {
-        const teacherUserIds = row.resolvedTeachers.map((t) => t.matchedUserId);
-        const slotsByDate = new Map<string, ResolvedHdtnSlot[]>();
-
-        for (const s of row.slots) {
-          if (!slotsByDate.has(s.civilDate)) {
-            slotsByDate.set(s.civilDate, []);
-          }
-          slotsByDate.get(s.civilDate)!.push({
-            timeSlotDefinitionId: s.timeSlotDefinitionId,
-            teacherUserIds,
-          });
-        }
-
-        for (const [civilDate, slots] of slotsByDate.entries()) {
-          occurrences.push({
-            topicSequence,
-            civilDate,
-            mode: 'GRADE',
-            gradeLevel: row.gradeLevel,
-            schoolClassId: null,
-            slots,
-          });
-        }
-      } else {
-        const teacherUserIds = row.resolvedTeachers.map((t) => t.matchedUserId);
-        const slotsByDate = new Map<string, ResolvedHdtnSlot[]>();
-
-        for (const s of row.slots) {
-          if (!slotsByDate.has(s.civilDate)) {
-            slotsByDate.set(s.civilDate, []);
-          }
-          slotsByDate.get(s.civilDate)!.push({
-            timeSlotDefinitionId: s.timeSlotDefinitionId,
-            teacherUserIds,
-          });
-        }
-
-        for (const [civilDate, slots] of slotsByDate.entries()) {
-          occurrences.push({
-            topicSequence,
-            civilDate,
-            mode: 'SCHOOL_WIDE',
-            gradeLevel: null,
-            schoolClassId: null,
-            slots,
-          });
-        }
-      }
-    }
-
-    return {
-      academicYearId,
-      previewFingerprint: preview.previewFingerprint,
-      topics,
-      occurrences,
-    };
+    return this.planningService.importHdtnDraftPackage(
+      actorUserId,
+      commandId,
+      resolved.resolvedPackage,
+      bootstrapContext,
+      resolved.authorityEvidence,
+    );
   }
 
   private isHdtnDataSheetName(name: string): boolean {
@@ -1081,13 +1370,14 @@ export class HdtnWorkbookImporterService {
 
   private computePreviewFingerprint(
     academicYearId: string,
-    calendarVersionId: string,
-    rows: HdtnWorkbookPreviewRow[],
+    parsedRows: NormalizedRowData[],
+    evidence: HdtnImportAuthorityEvidence,
+    resolvedPackage: ResolvedHdtnDraftPackage,
   ): string {
     const payload = {
       academicYearId,
-      calendarVersionId,
-      rows: rows.map((r) => ({
+      calendarVersionId: evidence.calendarVersionId,
+      normalizedRows: parsedRows.map((r) => ({
         sourceRowNumber: r.sourceRowNumber,
         weekFrom: r.weekFrom,
         weekTo: r.weekTo,
@@ -1096,14 +1386,67 @@ export class HdtnWorkbookImporterService {
         gradeLevel: r.gradeLevel,
         topicTitle: r.topicTitle,
         enteredTeacherText: r.enteredTeacherText,
-        resolvedTeacherIds: r.resolvedTeachers.map((t) => t.matchedUserId).sort(),
-        targetClassCodes: [...r.targetClassCodes].sort(),
-        slots: r.slots.map((s) => ({
-          civilDate: s.civilDate,
-          weekday: s.weekday,
-          timeSlotDefinitionId: s.timeSlotDefinitionId,
-        })),
       })),
+      academicWeekIds: [...new Set(evidence.academicWeekIds)].sort(),
+      academicWeekSegmentIds: [...new Set(evidence.academicWeekSegmentIds)].sort(),
+      segmentDateRanges: [
+        ...new Set(
+          evidence.segmentDateRanges.map(
+            (s) => `${s.segmentId}#${s.startDate}#${s.endDate}`,
+          ),
+        ),
+      ].sort(),
+      targetClassIds: [...new Set(evidence.targetClassIds)].sort(),
+      timetableVersionIds: [...new Set(evidence.timetableVersionIds)].sort(),
+      timeSlotDefinitionIds: [...new Set(evidence.timeSlotDefinitionIds)].sort(),
+      explicitTeacherUserIds: [...new Set(evidence.explicitTeacherUserIds)].sort(),
+      homeroomAssignments: [
+        ...new Set(
+          evidence.homeroomAssignments.map(
+            (h) =>
+              `${h.civilDate}#${h.schoolClassId}#${h.homeroomAssignmentId}#${h.teacherUserId}`,
+          ),
+        ),
+      ].sort(),
+      markerTuples: [
+        ...new Set(
+          evidence.markerTuples.map(
+            (m) =>
+              `${m.timetableVersionId}#${m.schoolClassId}#${m.timeSlotDefinitionId}#${m.kind}#${m.civilDate}`,
+          ),
+        ),
+      ].sort(),
+      resultingPackage: {
+        topics: resolvedPackage.topics.map((t) => ({
+          sequence: t.sequence,
+          title: t.title,
+          requiredPeriods: t.requiredPeriods,
+          guidelineWeekFrom: t.guidelineWeekFrom ?? null,
+          guidelineWeekTo: t.guidelineWeekTo ?? null,
+        })),
+        occurrences: resolvedPackage.occurrences
+          .map((o) => ({
+            topicSequence: o.topicSequence,
+            civilDate: o.civilDate,
+            mode: o.mode,
+            gradeLevel: o.gradeLevel,
+            schoolClassId: o.schoolClassId,
+            slots: o.slots
+              .map((s) => ({
+                timeSlotDefinitionId: s.timeSlotDefinitionId,
+                teacherUserIds: [...s.teacherUserIds].sort(),
+              }))
+              .sort((a, b) => a.timeSlotDefinitionId.localeCompare(b.timeSlotDefinitionId)),
+          }))
+          .sort((a, b) => {
+            if (a.topicSequence !== b.topicSequence) return a.topicSequence - b.topicSequence;
+            if (a.civilDate !== b.civilDate) return a.civilDate.localeCompare(b.civilDate);
+            if (a.mode !== b.mode) return a.mode.localeCompare(b.mode);
+            const classComp = (a.schoolClassId ?? '').localeCompare(b.schoolClassId ?? '');
+            if (classComp !== 0) return classComp;
+            return (a.gradeLevel ?? 0) - (b.gradeLevel ?? 0);
+          }),
+      },
     };
     return createHash('sha256').update(JSON.stringify(payload)).digest('hex');
   }

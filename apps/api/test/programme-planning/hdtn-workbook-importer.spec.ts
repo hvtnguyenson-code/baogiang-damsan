@@ -294,6 +294,28 @@ describe('HdtnWorkbookImporterService & Authorization', () => {
       expect(res.sheets[0].rowCount).toBe(2);
     });
 
+    it('blocks workbook with extra non-blank columns beyond column 7 during inspect', async () => {
+      mockParser.parse.mockResolvedValue({
+        sheets: [{
+          name: 'NHẬP HĐTN-HN',
+          state: 'VISIBLE',
+          rowCount: 2,
+          columnCount: 8,
+          rows: [
+            makeRow(1, [...HEADERS, 'Cột thừa']),
+            makeRow(2, ['1', '1', '1', 'Theo lớp', '10', 'Chủ đề 1', 'GVCN', 'Dữ liệu không mong muốn']),
+          ],
+          hiddenColumns: [],
+        }],
+      });
+
+      const res = await importerService.inspect(dummyUpload);
+      expect(res.issues).toContainEqual(expect.objectContaining({
+        code: 'EXTRA_COLUMNS_DETECTED',
+        severity: 'BLOCKER',
+      }));
+    });
+
     it('blocks workbook missing required NHẬP HĐTN-HN sheet', async () => {
       mockParser.parse.mockResolvedValue({
         sheets: [{ name: 'SHEET1', state: 'VISIBLE', rowCount: 1, columnCount: 1, rows: [], hiddenColumns: [] }],
@@ -494,6 +516,19 @@ describe('HdtnWorkbookImporterService & Authorization', () => {
         code: 'SUPPORTING_CLASS_NOT_FOUND',
       }));
     });
+
+    it('Finding E: blocks duplicate canonical User.id across multiple tokens after suffix normalization', async () => {
+      mockParser.parse.mockResolvedValue(createMockWorkbook([
+        ['1', '1', '1', 'Theo khối', '10', 'Chủ đề 1', 'Nguyễn Văn A; Nguyễn Văn A và lớp 10A'],
+      ]));
+
+      const res = await importerService.preview(dummyUpload, academicYearId);
+      expect(res.canConfirm).toBe(false);
+      expect(res.rows[0].issues).toContainEqual(expect.objectContaining({
+        code: 'DUPLICATE_RESOLVED_TEACHER',
+        severity: 'BLOCKER',
+      }));
+    });
   });
 
   describe('3. CLASS Mode & Historical GVCN Resolution', () => {
@@ -524,6 +559,37 @@ describe('HdtnWorkbookImporterService & Authorization', () => {
       expect(res.rows[0].slots).toHaveLength(1); // 1 distinct logical slot
       expect(res.rows[0].targetClassCodes).toEqual(['10A', '10B']);
       expect(res.rows[0].slots[0].weekday).toBe('MONDAY');
+    });
+
+    it('Finding A regression: preserves each class\'s own exact slot when classes have different timetable slots', async () => {
+      mockParser.parse.mockResolvedValue(createMockWorkbook([
+        ['1', '1', '1', 'Theo lớp', '10', 'Chủ đề 1', 'GVCN'],
+      ]));
+
+      // 10A has slot-m1, 10B has slot-m2
+      mockMarkerService.findRetainedMarkers.mockResolvedValue([
+        { schoolClassId: 'class-10a', timeSlotDefinitionId: 'slot-m1', kind: 'HDTN_HN' },
+        { schoolClassId: 'class-10b', timeSlotDefinitionId: 'slot-m2', kind: 'HDTN_HN' },
+      ]);
+
+      const res = await importerService.resolveWorkbook(dummyUpload, academicYearId);
+      expect(res.preview.canConfirm).toBe(true);
+
+      const occ10a = res.resolvedPackage.occurrences.find((o) => o.schoolClassId === 'class-10a');
+      const occ10b = res.resolvedPackage.occurrences.find((o) => o.schoolClassId === 'class-10b');
+
+      expect(occ10a).toBeDefined();
+      expect(occ10b).toBeDefined();
+
+      // 10A must have slot-m1 ONLY
+      expect(occ10a!.slots).toHaveLength(1);
+      expect(occ10a!.slots[0].timeSlotDefinitionId).toBe('slot-m1');
+      expect(occ10a!.slots[0].teacherUserIds).toEqual([gvcn10a.id]);
+
+      // 10B must have slot-m2 ONLY
+      expect(occ10b!.slots).toHaveLength(1);
+      expect(occ10b!.slots[0].timeSlotDefinitionId).toBe('slot-m2');
+      expect(occ10b!.slots[0].teacherUserIds).toEqual([gvcn10b.id]);
     });
 
     it('blocks package if a class is missing historical GVCN on civilDate', async () => {
@@ -591,7 +657,7 @@ describe('HdtnWorkbookImporterService & Authorization', () => {
       const res = await importerService.preview(dummyUpload, academicYearId);
       expect(res.canConfirm).toBe(false);
       expect(res.rows[0].issues).toContainEqual(expect.objectContaining({
-        code: 'COLLAPSED_PERIOD_COUNT_MISMATCH',
+        code: 'GRADE_COVERAGE_INCOMPLETE',
       }));
     });
 
@@ -627,7 +693,7 @@ describe('HdtnWorkbookImporterService & Authorization', () => {
       const res = await importerService.preview(dummyUpload, academicYearId);
       expect(res.canConfirm).toBe(false);
       expect(res.rows[0].issues).toContainEqual(expect.objectContaining({
-        code: 'COLLAPSED_PERIOD_COUNT_MISMATCH',
+        code: 'SCHOOL_WIDE_COVERAGE_INCOMPLETE',
       }));
     });
   });
@@ -647,7 +713,7 @@ describe('HdtnWorkbookImporterService & Authorization', () => {
       const res = await importerService.preview(dummyUpload, academicYearId);
       expect(res.canConfirm).toBe(false);
       expect(res.rows[0].issues).toContainEqual(expect.objectContaining({
-        code: 'COLLAPSED_PERIOD_COUNT_MISMATCH',
+        code: 'GRADE_PERIOD_COUNT_MISMATCH',
       }));
     });
 
@@ -667,7 +733,7 @@ describe('HdtnWorkbookImporterService & Authorization', () => {
       const res = await importerService.preview(dummyUpload, academicYearId);
       expect(res.canConfirm).toBe(false);
       expect(res.rows[0].issues).toContainEqual(expect.objectContaining({
-        code: 'COLLAPSED_PERIOD_COUNT_MISMATCH',
+        code: 'GRADE_PERIOD_COUNT_MISMATCH',
       }));
     });
   });
@@ -730,6 +796,115 @@ describe('HdtnWorkbookImporterService & Authorization', () => {
       expect(res1.previewFingerprint).toBe(res2.previewFingerprint);
       // Zero mutation assertion:
       expect(mockPlanningService.importHdtnDraftPackage).not.toHaveBeenCalled();
+    });
+
+    it('Finding B: fingerprint changes when TimetableVersion identity changes', async () => {
+      mockParser.parse.mockResolvedValue(createMockWorkbook([
+        ['1', '1', '1', 'Theo khối', '10', 'Chủ đề 1', 'Nguyễn Văn A'],
+      ]));
+      mockMarkerService.findRetainedMarkers.mockResolvedValue([
+        { schoolClassId: 'class-10a', timeSlotDefinitionId: 'slot-m1', kind: 'HDTN_HN' },
+        { schoolClassId: 'class-10b', timeSlotDefinitionId: 'slot-m1', kind: 'HDTN_HN' },
+      ]);
+
+      const res1 = await importerService.preview(dummyUpload, academicYearId);
+
+      mockPrisma.timetableVersion.findFirst.mockResolvedValueOnce({
+        id: 'tkb-uuid-2-different',
+        academicYearId,
+        status: 'ACTIVE',
+        effectiveFrom: new Date('2026-09-01T00:00:00.000Z'),
+        effectiveUntil: null,
+      });
+
+      const res2 = await importerService.preview(dummyUpload, academicYearId);
+      expect(res1.previewFingerprint).not.toBe(res2.previewFingerprint);
+    });
+
+    it('Finding B: fingerprint changes when retained marker identity changes', async () => {
+      mockParser.parse.mockResolvedValue(createMockWorkbook([
+        ['1', '1', '1', 'Theo khối', '10', 'Chủ đề 1', 'Nguyễn Văn A'],
+      ]));
+      mockMarkerService.findRetainedMarkers.mockResolvedValueOnce([
+        { schoolClassId: 'class-10a', timeSlotDefinitionId: 'slot-m1', kind: 'HDTN_HN' },
+        { schoolClassId: 'class-10b', timeSlotDefinitionId: 'slot-m1', kind: 'HDTN_HN' },
+      ]);
+      const res1 = await importerService.preview(dummyUpload, academicYearId);
+
+      mockMarkerService.findRetainedMarkers.mockResolvedValueOnce([
+        { schoolClassId: 'class-10a', timeSlotDefinitionId: 'slot-m2', kind: 'HDTN_HN' },
+        { schoolClassId: 'class-10b', timeSlotDefinitionId: 'slot-m2', kind: 'HDTN_HN' },
+      ]);
+      const res2 = await importerService.preview(dummyUpload, academicYearId);
+      expect(res1.previewFingerprint).not.toBe(res2.previewFingerprint);
+    });
+
+    it('Finding B: fingerprint changes when CLASS homeroomAssignment / GVCN changes', async () => {
+      mockParser.parse.mockResolvedValue(createMockWorkbook([
+        ['1', '1', '1', 'Theo lớp', '10', 'Chủ đề 1', 'GVCN'],
+      ]));
+      mockMarkerService.findRetainedMarkers.mockResolvedValue([
+        { schoolClassId: 'class-10a', timeSlotDefinitionId: 'slot-m1', kind: 'HDTN_HN' },
+        { schoolClassId: 'class-10b', timeSlotDefinitionId: 'slot-m1', kind: 'HDTN_HN' },
+      ]);
+
+      const res1 = await importerService.preview(dummyUpload, academicYearId);
+
+      mockPrisma.homeroomAssignment.findMany.mockImplementation(async ({ where }: { where: { schoolClassId: string } }) => {
+        if (where.schoolClassId === 'class-10a') {
+          return [{
+            id: 'hr-10a-new',
+            schoolClassId: 'class-10a',
+            teacherUserId: teacherB.id,
+            validFrom: new Date('2026-09-01T00:00:00.000Z'),
+            validUntil: null,
+            teacherUser: teacherB,
+          }];
+        }
+        return [{
+          id: 'hr-10b',
+          schoolClassId: 'class-10b',
+          teacherUserId: gvcn10b.id,
+          validFrom: new Date('2026-09-01T00:00:00.000Z'),
+          validUntil: null,
+          teacherUser: gvcn10b,
+        }];
+      });
+
+      const res2 = await importerService.preview(dummyUpload, academicYearId);
+      expect(res1.previewFingerprint).not.toBe(res2.previewFingerprint);
+    });
+
+    it('Finding B: fingerprint changes when AcademicWeek/segment identity changes', async () => {
+      mockParser.parse.mockResolvedValue(createMockWorkbook([
+        ['1', '1', '1', 'Theo khối', '10', 'Chủ đề 1', 'Nguyễn Văn A'],
+      ]));
+      mockMarkerService.findRetainedMarkers.mockResolvedValue([
+        { schoolClassId: 'class-10a', timeSlotDefinitionId: 'slot-m1', kind: 'HDTN_HN' },
+        { schoolClassId: 'class-10b', timeSlotDefinitionId: 'slot-m1', kind: 'HDTN_HN' },
+      ]);
+
+      const res1 = await importerService.preview(dummyUpload, academicYearId);
+
+      mockPrisma.academicCalendarVersion.findFirst.mockResolvedValueOnce({
+        ...defaultCalendar,
+        weeks: [
+          {
+            id: 'week-1-different',
+            officialWeekNumber: 1,
+            segments: [
+              {
+                id: 'seg-1-different',
+                startDate: new Date('2026-09-07T00:00:00.000Z'),
+                endDate: new Date('2026-09-12T00:00:00.000Z'),
+              },
+            ],
+          },
+        ],
+      });
+
+      const res2 = await importerService.preview(dummyUpload, academicYearId);
+      expect(res1.previewFingerprint).not.toBe(res2.previewFingerprint);
     });
 
     it('rejects confirm if expectedPreviewFingerprint does not match fresh evaluation', async () => {

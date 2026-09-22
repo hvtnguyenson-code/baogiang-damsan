@@ -686,6 +686,10 @@ export class AuthorizedProgrammePlanningService {
       dto.expectedPreviewFingerprint,
       dto.commandId,
       actorUserId,
+      {
+        expectedProgrammeMasterId: master ? master.id : null,
+        canBootstrapMaster: !master,
+      },
     );
   }
 }
