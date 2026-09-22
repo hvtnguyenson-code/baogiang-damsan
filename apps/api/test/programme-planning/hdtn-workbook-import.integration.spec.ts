@@ -185,6 +185,7 @@ integration('HdtnWorkbookImport (PostgreSQL integration P4-072)', () => {
       },
     });
 
+    const lifecycleAt = new Date('2026-09-01T00:00:00.000Z');
     const tkbVersion = await h.prisma.timetableVersion.create({
       data: {
         academicYearId: year.id,
@@ -194,6 +195,12 @@ integration('HdtnWorkbookImport (PostgreSQL integration P4-072)', () => {
         effectiveAcademicWeekId: week1.id,
         effectiveFrom: new Date('2026-09-01T00:00:00.000Z'),
         createdByUserId: teacherA.id,
+        validatedByUserId: teacherA.id,
+        validatedAt: lifecycleAt,
+        approvedByUserId: teacherA.id,
+        approvedAt: lifecycleAt,
+        activatedByUserId: teacherA.id,
+        activatedAt: lifecycleAt,
       },
     });
 
