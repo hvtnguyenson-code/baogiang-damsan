@@ -36,6 +36,13 @@ import { formatWallClockTime } from '../time-slots/wall-clock-time';
 import {
   HdtnImportAuthorityEvidence,
   HdtnImportBootstrapContext,
+  HdtnImportCalendarEvidence,
+  HdtnImportDateAuthority,
+  HdtnImportHomeroomEvidence,
+  HdtnImportMarkerEvidence,
+  HdtnImportScopeSnapshot,
+  HdtnImportSegmentEvidence,
+  HdtnImportWeekEvidence,
   ProgrammePlanningService,
   ResolvedHdtnDraftPackage,
   ResolvedHdtnOccurrence,
@@ -46,6 +53,13 @@ import {
 export type {
   HdtnImportAuthorityEvidence,
   HdtnImportBootstrapContext,
+  HdtnImportCalendarEvidence,
+  HdtnImportDateAuthority,
+  HdtnImportHomeroomEvidence,
+  HdtnImportMarkerEvidence,
+  HdtnImportScopeSnapshot,
+  HdtnImportSegmentEvidence,
+  HdtnImportWeekEvidence,
   ResolvedHdtnDraftPackage,
   ResolvedHdtnOccurrence,
   ResolvedHdtnTopic,
@@ -318,7 +332,7 @@ export class HdtnWorkbookImporterService {
       }
     }
 
-    const calendar = await this.prisma.academicCalendarVersion.findFirst({
+    const activeCalendars = await this.prisma.academicCalendarVersion.findMany({
       where: { academicYearId, isActive: true },
       include: {
         weeks: {
@@ -330,12 +344,21 @@ export class HdtnWorkbookImporterService {
       },
     });
 
-    if (!calendar) {
+    let calendar: (typeof activeCalendars)[0] | null = null;
+    if (activeCalendars.length === 0) {
       issues.push({
         severity: 'BLOCKER',
         code: 'ACTIVE_CALENDAR_NOT_FOUND',
         message: 'Năm học chưa có lịch năm học nào đang kích hoạt.',
       });
+    } else if (activeCalendars.length > 1) {
+      issues.push({
+        severity: 'BLOCKER',
+        code: 'ACTIVE_CALENDAR_AMBIGUOUS',
+        message: 'Phát hiện nhiều hơn một lịch năm học đang kích hoạt cho cùng một năm học.',
+      });
+    } else {
+      calendar = activeCalendars[0]!;
     }
 
     const activeClasses = await this.prisma.schoolClass.findMany({
@@ -483,29 +506,19 @@ export class HdtnWorkbookImporterService {
     });
 
     const previewRows: HdtnWorkbookPreviewRow[] = [];
-    const timetableVersionCache = new Map<string, TimetableVersion | null>();
+    const timetableVersionCache = new Map<
+      string,
+      { status: 'RESOLVED'; version: TimetableVersion } | { status: 'NOT_FOUND' } | { status: 'AMBIGUOUS' }
+    >();
 
     // Authority Evidence collectors
-    const academicWeekIds = new Set<string>();
-    const academicWeekSegmentIds = new Set<string>();
-    const segmentDateRanges: Array<{ segmentId: string; startDate: string; endDate: string }> = [];
-    const targetClassIds = new Set<string>();
-    const timetableVersionIds = new Set<string>();
-    const timeSlotDefinitionIds = new Set<string>();
+    const weeksEvidenceMap = new Map<number, HdtnImportWeekEvidence>();
+    const segmentsEvidenceMap = new Map<string, HdtnImportSegmentEvidence>();
+    const scopeSnapshots: HdtnImportScopeSnapshot[] = [];
+    const dateAuthorities: HdtnImportDateAuthority[] = [];
+    const markerEvidence: HdtnImportMarkerEvidence[] = [];
+    const homeroomAssignments: HdtnImportHomeroomEvidence[] = [];
     const explicitTeacherUserIds = new Set<string>();
-    const homeroomAssignments: Array<{
-      civilDate: string;
-      schoolClassId: string;
-      homeroomAssignmentId: string;
-      teacherUserId: string;
-    }> = [];
-    const markerTuples: Array<{
-      timetableVersionId: string;
-      schoolClassId: string;
-      timeSlotDefinitionId: string;
-      kind: string;
-      civilDate: string;
-    }> = [];
 
     const resolvedTopics: ResolvedHdtnTopic[] = [];
     const resolvedOccurrences: ResolvedHdtnOccurrence[] = [];
@@ -608,8 +621,8 @@ export class HdtnWorkbookImporterService {
       const civilDates: CivilDateString[] = [];
       if (calendar) {
         for (let w = row.weekFrom; w <= row.weekTo; w += 1) {
-          const week = calendar.weeks.find((item) => item.officialWeekNumber === w);
-          if (!week) {
+          const matchingWeeks = calendar.weeks.filter((item) => item.officialWeekNumber === w);
+          if (matchingWeeks.length === 0) {
             const issue: HdtnWorkbookPreviewIssue = {
               severity: 'BLOCKER',
               code: 'WEEK_NOT_IN_CALENDAR',
@@ -620,8 +633,20 @@ export class HdtnWorkbookImporterService {
             issues.push(issue);
             continue;
           }
+          if (matchingWeeks.length > 1) {
+            const issue: HdtnWorkbookPreviewIssue = {
+              severity: 'BLOCKER',
+              code: 'OFFICIAL_WEEK_AMBIGUOUS',
+              message: `Dòng ${row.sourceRowNumber}: Phát hiện nhiều tuần trùng số tuần chính thức ${w} trong lịch năm học.`,
+              sourceRowNumber: row.sourceRowNumber,
+            };
+            rowIssues.push(issue);
+            issues.push(issue);
+            continue;
+          }
 
-          academicWeekIds.add(week.id);
+          const week = matchingWeeks[0]!;
+          weeksEvidenceMap.set(w, { officialWeekNumber: w, academicWeekId: week.id });
 
           if (week.segments.length === 0) {
             const issue: HdtnWorkbookPreviewIssue = {
@@ -636,8 +661,8 @@ export class HdtnWorkbookImporterService {
           }
 
           for (const segment of week.segments) {
-            academicWeekSegmentIds.add(segment.id);
-            segmentDateRanges.push({
+            segmentsEvidenceMap.set(segment.id, {
+              academicWeekId: week.id,
               segmentId: segment.id,
               startDate: formatCivilDate(segment.startDate),
               endDate: formatCivilDate(segment.endDate),
@@ -693,13 +718,17 @@ export class HdtnWorkbookImporterService {
         }
       }
 
-      for (const cls of targetClasses) {
-        targetClassIds.add(cls.id);
-      }
+      scopeSnapshots.push({
+        sourceRowNumber: row.sourceRowNumber,
+        organizingScope: row.organizingScope,
+        gradeLevel: row.gradeLevel,
+        targetClassIds: targetClasses.map((c) => c.id),
+      });
 
       // 4. Resolve date-effective timetable versions & retained markers
       const markersForDates: Array<{
         civilDate: CivilDateString;
+        markerId: string;
         timeSlotDefinitionId: string;
         schoolClassId: string;
         timeSlot: TimeSlotDefinition;
@@ -707,22 +736,28 @@ export class HdtnWorkbookImporterService {
       }> = [];
 
       for (const cDate of uniqueCivilDates) {
-        let tv = timetableVersionCache.get(cDate);
-        if (!tv && !timetableVersionCache.has(cDate)) {
+        let tvResult = timetableVersionCache.get(cDate);
+        if (tvResult === undefined) {
           const targetDateObj = parseCivilDate(cDate);
-          tv = await this.prisma.timetableVersion.findFirst({
+          const candidateVersions = await this.prisma.timetableVersion.findMany({
             where: {
               academicYearId,
               status: { in: [TimetableVersionStatus.ACTIVE, TimetableVersionStatus.SUPERSEDED] },
               effectiveFrom: { lte: targetDateObj },
               OR: [{ effectiveUntil: null }, { effectiveUntil: { gte: targetDateObj } }],
             },
-            orderBy: [{ effectiveFrom: 'desc' }, { id: 'asc' }],
           });
-          timetableVersionCache.set(cDate, tv ?? null);
+          if (candidateVersions.length === 0) {
+            tvResult = { status: 'NOT_FOUND' };
+          } else if (candidateVersions.length > 1) {
+            tvResult = { status: 'AMBIGUOUS' };
+          } else {
+            tvResult = { status: 'RESOLVED', version: candidateVersions[0]! };
+          }
+          timetableVersionCache.set(cDate, tvResult);
         }
 
-        if (!tv) {
+        if (tvResult.status === 'NOT_FOUND') {
           const issue: HdtnWorkbookPreviewIssue = {
             severity: 'BLOCKER',
             code: 'TIMETABLE_VERSION_NOT_FOUND',
@@ -734,7 +769,24 @@ export class HdtnWorkbookImporterService {
           continue;
         }
 
-        timetableVersionIds.add(tv.id);
+        if (tvResult.status === 'AMBIGUOUS') {
+          const issue: HdtnWorkbookPreviewIssue = {
+            severity: 'BLOCKER',
+            code: 'TIMETABLE_VERSION_AMBIGUOUS',
+            message: `Dòng ${row.sourceRowNumber}: Phát hiện nhiều hơn một thời khóa biểu có hiệu lực tại ngày ${cDate}.`,
+            sourceRowNumber: row.sourceRowNumber,
+          };
+          rowIssues.push(issue);
+          issues.push(issue);
+          continue;
+        }
+
+        const tv = tvResult.version;
+        dateAuthorities.push({
+          sourceRowNumber: row.sourceRowNumber,
+          civilDate: cDate,
+          timetableVersionId: tv.id,
+        });
 
         const retainedMarkers = await this.markerService.findRetainedMarkers({
           timetableVersionId: tv.id,
@@ -746,20 +798,22 @@ export class HdtnWorkbookImporterService {
         for (const rm of retainedMarkers) {
           const slotDef = timeSlotMap.get(rm.timeSlotDefinitionId);
           if (slotDef && slotDef.weekday === expectedWeekday) {
-            timeSlotDefinitionIds.add(slotDef.id);
             markersForDates.push({
               civilDate: cDate,
+              markerId: rm.id,
               timeSlotDefinitionId: rm.timeSlotDefinitionId,
               schoolClassId: rm.schoolClassId,
               timeSlot: slotDef,
               timetableVersionId: tv.id,
             });
-            markerTuples.push({
+            markerEvidence.push({
+              sourceRowNumber: row.sourceRowNumber,
+              civilDate: cDate,
+              markerId: rm.id,
               timetableVersionId: tv.id,
               schoolClassId: rm.schoolClassId,
               timeSlotDefinitionId: rm.timeSlotDefinitionId,
               kind: 'HDTN_HN',
-              civilDate: cDate,
             });
           }
         }
@@ -1102,16 +1156,16 @@ export class HdtnWorkbookImporterService {
 
     const authorityEvidence: HdtnImportAuthorityEvidence = {
       academicYearId,
-      calendarVersionId: calendar?.id ?? '',
-      academicWeekIds: Array.from(academicWeekIds),
-      academicWeekSegmentIds: Array.from(academicWeekSegmentIds),
-      segmentDateRanges,
-      targetClassIds: Array.from(targetClassIds),
-      timetableVersionIds: Array.from(timetableVersionIds),
-      timeSlotDefinitionIds: Array.from(timeSlotDefinitionIds),
-      explicitTeacherUserIds: Array.from(explicitTeacherUserIds),
+      calendar: {
+        calendarVersionId: calendar?.id ?? '',
+      },
+      weeks: Array.from(weeksEvidenceMap.values()),
+      segments: Array.from(segmentsEvidenceMap.values()),
+      scopeSnapshots,
+      dateAuthorities,
+      markerEvidence,
       homeroomAssignments,
-      markerTuples,
+      explicitTeacherUserIds: Array.from(explicitTeacherUserIds),
     };
 
     const blockingIssueCount = issues.filter((i) => i.severity === 'BLOCKER').length;
@@ -1376,7 +1430,7 @@ export class HdtnWorkbookImporterService {
   ): string {
     const payload = {
       academicYearId,
-      calendarVersionId: evidence.calendarVersionId,
+      calendarVersionId: evidence.calendar.calendarVersionId,
       normalizedRows: parsedRows.map((r) => ({
         sourceRowNumber: r.sourceRowNumber,
         weekFrom: r.weekFrom,
@@ -1387,32 +1441,51 @@ export class HdtnWorkbookImporterService {
         topicTitle: r.topicTitle,
         enteredTeacherText: r.enteredTeacherText,
       })),
-      academicWeekIds: [...new Set(evidence.academicWeekIds)].sort(),
-      academicWeekSegmentIds: [...new Set(evidence.academicWeekSegmentIds)].sort(),
-      segmentDateRanges: [
+      weeks: [
         ...new Set(
-          evidence.segmentDateRanges.map(
-            (s) => `${s.segmentId}#${s.startDate}#${s.endDate}`,
+          (evidence.weeks ?? []).map((w) => `${w.officialWeekNumber}#${w.academicWeekId}`),
+        ),
+      ].sort(),
+      segments: [
+        ...new Set(
+          (evidence.segments ?? []).map(
+            (s) => `${s.academicWeekId}#${s.segmentId}#${s.startDate}#${s.endDate}`,
           ),
         ),
       ].sort(),
-      targetClassIds: [...new Set(evidence.targetClassIds)].sort(),
-      timetableVersionIds: [...new Set(evidence.timetableVersionIds)].sort(),
-      timeSlotDefinitionIds: [...new Set(evidence.timeSlotDefinitionIds)].sort(),
-      explicitTeacherUserIds: [...new Set(evidence.explicitTeacherUserIds)].sort(),
+      scopeSnapshots: (evidence.scopeSnapshots ?? [])
+        .map((s) => ({
+          sourceRowNumber: s.sourceRowNumber,
+          organizingScope: s.organizingScope,
+          gradeLevel: s.gradeLevel,
+          targetClassIds: [...s.targetClassIds].sort(),
+        }))
+        .sort(
+          (a, b) =>
+            a.sourceRowNumber - b.sourceRowNumber ||
+            a.organizingScope.localeCompare(b.organizingScope),
+        ),
+      dateAuthorities: [
+        ...new Set(
+          (evidence.dateAuthorities ?? []).map(
+            (d) => `${d.sourceRowNumber}#${d.civilDate}#${d.timetableVersionId}`,
+          ),
+        ),
+      ].sort(),
+      markerEvidence: [
+        ...new Set(
+          (evidence.markerEvidence ?? []).map(
+            (m) =>
+              `${m.sourceRowNumber}#${m.civilDate}#${m.markerId}#${m.timetableVersionId}#${m.schoolClassId}#${m.timeSlotDefinitionId}#${m.kind}`,
+          ),
+        ),
+      ].sort(),
+      explicitTeacherUserIds: [...new Set(evidence.explicitTeacherUserIds ?? [])].sort(),
       homeroomAssignments: [
         ...new Set(
-          evidence.homeroomAssignments.map(
+          (evidence.homeroomAssignments ?? []).map(
             (h) =>
               `${h.civilDate}#${h.schoolClassId}#${h.homeroomAssignmentId}#${h.teacherUserId}`,
-          ),
-        ),
-      ].sort(),
-      markerTuples: [
-        ...new Set(
-          evidence.markerTuples.map(
-            (m) =>
-              `${m.timetableVersionId}#${m.schoolClassId}#${m.timeSlotDefinitionId}#${m.kind}#${m.civilDate}`,
           ),
         ),
       ].sort(),

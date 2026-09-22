@@ -12,29 +12,7 @@ integration('HdtnWorkbookImport (PostgreSQL integration P4-072)', () => {
   let service: ProgrammePlanningService;
 
   async function clean(): Promise<void> {
-    await h.prisma.$executeRawUnsafe(`
-      TRUNCATE TABLE
-        "programme_planning_commands",
-        "planned_programme_slot_staffings",
-        "planned_programme_occurrence_slots",
-        "planned_programme_occurrences",
-        "programme_topic_items",
-        "programme_plan_versions",
-        "programme_masters",
-        "timetable_special_programme_markers",
-        "time_slot_definitions",
-        "timetable_versions",
-        "homeroom_assignments",
-        "school_classes",
-        "grades",
-        "academic_week_segments",
-        "academic_weeks",
-        "academic_calendar_versions",
-        "academic_years",
-        "staff_profiles",
-        "users"
-      CASCADE;
-    `);
+    await h.clean();
   }
 
   beforeAll(async () => {
@@ -54,7 +32,7 @@ integration('HdtnWorkbookImport (PostgreSQL integration P4-072)', () => {
     }
   });
 
-  it('atomically creates DRAFT package and supports idempotent replay or rollback', async () => {
+  async function createValidEnvironment() {
     const year = await h.prisma.academicYear.create({
       data: {
         code: normalizedCode('Y'),
@@ -66,11 +44,10 @@ integration('HdtnWorkbookImport (PostgreSQL integration P4-072)', () => {
       data: {
         username: normalizedCode('u_ta'),
         passwordHash: 'hash',
-        fullName: 'Nguyễn Văn A',
         status: 'ACTIVE',
         profile: {
           create: {
-            fullName: 'Nguyễn Văn A',
+            displayName: 'Nguyễn Văn A',
             isTeachingStaff: true,
           },
         },
@@ -81,11 +58,10 @@ integration('HdtnWorkbookImport (PostgreSQL integration P4-072)', () => {
       data: {
         username: normalizedCode('u_g10a'),
         passwordHash: 'hash',
-        fullName: 'Trần Thị B',
         status: 'ACTIVE',
         profile: {
           create: {
-            fullName: 'Trần Thị B',
+            displayName: 'Trần Thị B',
             isTeachingStaff: true,
           },
         },
@@ -96,11 +72,10 @@ integration('HdtnWorkbookImport (PostgreSQL integration P4-072)', () => {
       data: {
         username: normalizedCode('u_g10b'),
         passwordHash: 'hash',
-        fullName: 'Lê Văn C',
         status: 'ACTIVE',
         profile: {
           create: {
-            fullName: 'Lê Văn C',
+            displayName: 'Lê Văn C',
             isTeachingStaff: true,
           },
         },
@@ -111,45 +86,43 @@ integration('HdtnWorkbookImport (PostgreSQL integration P4-072)', () => {
       data: {
         academicYearId: year.id,
         versionNumber: 1,
-        status: 'ACTIVE',
-        startDate: new Date('2026-09-01'),
-        endDate: new Date('2027-05-31'),
+        startDate: new Date('2026-09-01T00:00:00.000Z'),
+        endDate: new Date('2027-05-31T00:00:00.000Z'),
+        officialWeekCount: 35,
+        reserveWeekCount: 1,
+        teachingWeekdays: ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'],
+        isActive: true,
+        activatedAt: new Date('2026-09-01T00:00:00.000Z'),
       },
     });
 
     const week1 = await h.prisma.academicWeek.create({
       data: {
         calendarVersionId: calVersion.id,
-        weekNumber: 1,
-        startDate: new Date('2026-09-07'),
-        endDate: new Date('2026-09-13'),
-        term: 'TERM_1',
+        kind: 'OFFICIAL',
+        officialWeekNumber: 1,
+        displayLabel: 'Tuần 1',
+        sortOrder: 1,
       },
     });
 
     const segment1 = await h.prisma.academicWeekSegment.create({
       data: {
-        weekId: week1.id,
-        segmentType: 'TEACHING',
-        startDate: new Date('2026-09-07'),
-        endDate: new Date('2026-09-13'),
-      },
-    });
-
-    const grade10 = await h.prisma.grade.create({
-      data: {
-        academicYearId: year.id,
-        level: 10,
-        code: 'K10',
+        academicWeekId: week1.id,
+        calendarVersionId: calVersion.id,
+        label: 'Đoạn 1',
+        segmentOrder: 1,
+        startDate: new Date('2026-09-07T00:00:00.000Z'),
+        endDate: new Date('2026-09-12T00:00:00.000Z'),
       },
     });
 
     const class10A = await h.prisma.schoolClass.create({
       data: {
         academicYearId: year.id,
-        gradeId: grade10.id,
         code: '10A',
         name: 'Lớp 10A',
+        gradeLevel: 10,
         status: 'ACTIVE',
       },
     });
@@ -157,9 +130,9 @@ integration('HdtnWorkbookImport (PostgreSQL integration P4-072)', () => {
     const class10B = await h.prisma.schoolClass.create({
       data: {
         academicYearId: year.id,
-        gradeId: grade10.id,
         code: '10B',
         name: 'Lớp 10B',
+        gradeLevel: 10,
         status: 'ACTIVE',
       },
     });
@@ -170,8 +143,8 @@ integration('HdtnWorkbookImport (PostgreSQL integration P4-072)', () => {
         schoolClassId: class10A.id,
         teacherUserId: gvcn10A.id,
         status: 'ACTIVE',
-        validFrom: new Date('2026-09-01'),
-        validUntil: null,
+        validFrom: new Date('2026-09-01T00:00:00.000Z'),
+        createdByUserId: teacherA.id,
       },
     });
 
@@ -181,8 +154,8 @@ integration('HdtnWorkbookImport (PostgreSQL integration P4-072)', () => {
         schoolClassId: class10B.id,
         teacherUserId: gvcn10B.id,
         status: 'ACTIVE',
-        validFrom: new Date('2026-09-01'),
-        validUntil: null,
+        validFrom: new Date('2026-09-01T00:00:00.000Z'),
+        createdByUserId: teacherA.id,
       },
     });
 
@@ -190,9 +163,11 @@ integration('HdtnWorkbookImport (PostgreSQL integration P4-072)', () => {
       data: {
         academicYearId: year.id,
         weekday: 'MONDAY',
-        period: 1,
-        startTime: '07:00',
-        endTime: '07:45',
+        session: 'MORNING',
+        ordinal: 1,
+        displayLabel: 'Thứ 2 Tiết 1',
+        startTime: new Date('1970-01-01T07:00:00.000Z'),
+        endTime: new Date('1970-01-01T07:45:00.000Z'),
         isActive: true,
       },
     });
@@ -201,9 +176,11 @@ integration('HdtnWorkbookImport (PostgreSQL integration P4-072)', () => {
       data: {
         academicYearId: year.id,
         weekday: 'MONDAY',
-        period: 2,
-        startTime: '07:50',
-        endTime: '08:35',
+        session: 'MORNING',
+        ordinal: 2,
+        displayLabel: 'Thứ 2 Tiết 2',
+        startTime: new Date('1970-01-01T07:50:00.000Z'),
+        endTime: new Date('1970-01-01T08:35:00.000Z'),
         isActive: true,
       },
     });
@@ -211,25 +188,29 @@ integration('HdtnWorkbookImport (PostgreSQL integration P4-072)', () => {
     const tkbVersion = await h.prisma.timetableVersion.create({
       data: {
         academicYearId: year.id,
-        title: 'TKB V1',
-        effectiveFrom: new Date('2026-09-01'),
-        effectiveUntil: null,
+        versionNumber: 1,
         status: 'ACTIVE',
+        calendarVersionId: calVersion.id,
+        effectiveAcademicWeekId: week1.id,
+        effectiveFrom: new Date('2026-09-01T00:00:00.000Z'),
+        createdByUserId: teacherA.id,
       },
     });
 
-    await h.prisma.timetableSpecialProgrammeMarker.create({
+    const marker1 = await h.prisma.timetableSpecialProgrammeMarker.create({
       data: {
         timetableVersionId: tkbVersion.id,
+        academicYearId: year.id,
         schoolClassId: class10A.id,
         timeSlotDefinitionId: slotM1.id,
         kind: 'HDTN_HN',
       },
     });
 
-    await h.prisma.timetableSpecialProgrammeMarker.create({
+    const marker2 = await h.prisma.timetableSpecialProgrammeMarker.create({
       data: {
         timetableVersionId: tkbVersion.id,
+        academicYearId: year.id,
         schoolClassId: class10B.id,
         timeSlotDefinitionId: slotM2.id,
         kind: 'HDTN_HN',
@@ -238,22 +219,30 @@ integration('HdtnWorkbookImport (PostgreSQL integration P4-072)', () => {
 
     const authorityEvidence: HdtnImportAuthorityEvidence = {
       academicYearId: year.id,
-      calendarVersionId: calVersion.id,
-      academicWeekIds: [week1.id],
-      academicWeekSegmentIds: [segment1.id],
-      segmentDateRanges: [{ segmentId: segment1.id, startDate: '2026-09-07', endDate: '2026-09-13' }],
-      targetClassIds: [class10A.id, class10B.id],
-      timetableVersionIds: [tkbVersion.id],
-      timeSlotDefinitionIds: [slotM1.id, slotM2.id],
-      explicitTeacherUserIds: [teacherA.id],
+      calendar: {
+        calendarVersionId: calVersion.id,
+      },
+      weeks: [
+        { officialWeekNumber: 1, academicWeekId: week1.id },
+      ],
+      segments: [
+        { academicWeekId: week1.id, segmentId: segment1.id, startDate: '2026-09-07', endDate: '2026-09-12' },
+      ],
+      scopeSnapshots: [
+        { sourceRowNumber: 1, organizingScope: 'CLASS', gradeLevel: 10, targetClassIds: [class10A.id, class10B.id] },
+      ],
+      dateAuthorities: [
+        { sourceRowNumber: 1, civilDate: '2026-09-07', timetableVersionId: tkbVersion.id },
+      ],
+      markerEvidence: [
+        { sourceRowNumber: 1, civilDate: '2026-09-07', markerId: marker1.id, timetableVersionId: tkbVersion.id, schoolClassId: class10A.id, timeSlotDefinitionId: slotM1.id, kind: 'HDTN_HN' },
+        { sourceRowNumber: 1, civilDate: '2026-09-07', markerId: marker2.id, timetableVersionId: tkbVersion.id, schoolClassId: class10B.id, timeSlotDefinitionId: slotM2.id, kind: 'HDTN_HN' },
+      ],
       homeroomAssignments: [
         { civilDate: '2026-09-07', schoolClassId: class10A.id, homeroomAssignmentId: hr10A.id, teacherUserId: gvcn10A.id },
         { civilDate: '2026-09-07', schoolClassId: class10B.id, homeroomAssignmentId: hr10B.id, teacherUserId: gvcn10B.id },
       ],
-      markerTuples: [
-        { timetableVersionId: tkbVersion.id, schoolClassId: class10A.id, timeSlotDefinitionId: slotM1.id, kind: 'HDTN_HN', civilDate: '2026-09-07' },
-        { timetableVersionId: tkbVersion.id, schoolClassId: class10B.id, timeSlotDefinitionId: slotM2.id, kind: 'HDTN_HN', civilDate: '2026-09-07' },
-      ],
+      explicitTeacherUserIds: [teacherA.id],
     };
 
     const draftPackage: ResolvedHdtnDraftPackage = {
@@ -287,13 +276,37 @@ integration('HdtnWorkbookImport (PostgreSQL integration P4-072)', () => {
       canBootstrapMaster: true,
     };
 
-    // 1. Initial import succeeds
-    const result1 = await service.importHdtnDraftPackage(
-      teacherA.id,
-      'cmd-pg-import-001',
+    return {
+      year,
+      teacherA,
+      gvcn10A,
+      gvcn10B,
+      calVersion,
+      week1,
+      segment1,
+      class10A,
+      class10B,
+      slotM1,
+      slotM2,
+      tkbVersion,
+      marker1,
+      marker2,
+      authorityEvidence,
       draftPackage,
       bootstrapContext,
-      authorityEvidence,
+    };
+  }
+
+  it('atomically creates DRAFT package and supports idempotent replay or conflict rejection', async () => {
+    const env = await createValidEnvironment();
+
+    // 1. Initial import succeeds
+    const result1 = await service.importHdtnDraftPackage(
+      env.teacherA.id,
+      'cmd-pg-import-001',
+      env.draftPackage,
+      env.bootstrapContext,
+      env.authorityEvidence,
     );
     expect(result1.status).toBe('DRAFT');
     expect(result1.outcome).toBe('CREATED');
@@ -301,65 +314,127 @@ integration('HdtnWorkbookImport (PostgreSQL integration P4-072)', () => {
     // Verify DB state
     const createdPlan = await h.prisma.programmePlanVersion.findUnique({
       where: { id: result1.programmePlanVersionId },
-      include: {
-        topics: true,
-        occurrences: {
-          include: {
-            slots: {
-              include: {
-                staffings: true,
-              },
-            },
-          },
-        },
-      },
     });
     expect(createdPlan).not.toBeNull();
-    expect(createdPlan!.topics.length).toBe(1);
-    expect(createdPlan!.occurrences.length).toBe(2);
+
+    const topics = await h.prisma.programmeTopicItem.findMany({
+      where: { programmePlanVersionId: result1.programmePlanVersionId },
+    });
+    const occurrences = await h.prisma.plannedProgrammeOccurrence.findMany({
+      where: { programmePlanVersionId: result1.programmePlanVersionId },
+    });
+    expect(topics.length).toBe(1);
+    expect(occurrences.length).toBe(2);
 
     // Finding A: verify per-class slots preserved in DB
-    const occ10A = createdPlan!.occurrences.find((o: { schoolClassId: string | null }) => o.schoolClassId === class10A.id);
-    const occ10B = createdPlan!.occurrences.find((o: { schoolClassId: string | null }) => o.schoolClassId === class10B.id);
-    expect(occ10A!.slots.length).toBe(1);
-    expect(occ10A!.slots[0]!.timeSlotDefinitionId).toBe(slotM1.id);
-    expect(occ10B!.slots.length).toBe(1);
-    expect(occ10B!.slots[0]!.timeSlotDefinitionId).toBe(slotM2.id);
+    const occ10A = occurrences.find((o) => o.schoolClassId === env.class10A.id);
+    const occ10B = occurrences.find((o) => o.schoolClassId === env.class10B.id);
+    expect(occ10A).toBeDefined();
+    expect(occ10B).toBeDefined();
+
+    const slots10A = await h.prisma.plannedOccurrenceSlot.findMany({
+      where: { plannedProgrammeOccurrenceId: occ10A!.id },
+    });
+    const slots10B = await h.prisma.plannedOccurrenceSlot.findMany({
+      where: { plannedProgrammeOccurrenceId: occ10B!.id },
+    });
+    expect(slots10A.length).toBe(1);
+    expect(slots10A[0]!.timeSlotDefinitionId).toBe(env.slotM1.id);
+    expect(slots10B.length).toBe(1);
+    expect(slots10B[0]!.timeSlotDefinitionId).toBe(env.slotM2.id);
 
     // 2. Exact idempotent replay succeeds
     const replayResult = await service.importHdtnDraftPackage(
-      teacherA.id,
+      env.teacherA.id,
       'cmd-pg-import-001',
-      draftPackage,
-      bootstrapContext,
-      authorityEvidence,
+      env.draftPackage,
+      env.bootstrapContext,
+      env.authorityEvidence,
     );
     expect(replayResult.outcome).toBe('IDEMPOTENT_REPLAY');
     expect(replayResult.programmePlanVersionId).toBe(result1.programmePlanVersionId);
 
     // 3. Command reuse with changed payload throws ConflictException
     const modifiedPackage: ResolvedHdtnDraftPackage = {
-      ...draftPackage,
+      ...env.draftPackage,
       previewFingerprint: 'different-fingerprint',
     };
     await expect(
       service.importHdtnDraftPackage(
-        teacherA.id,
+        env.teacherA.id,
         'cmd-pg-import-001',
         modifiedPackage,
-        bootstrapContext,
-        authorityEvidence,
+        env.bootstrapContext,
+        env.authorityEvidence,
       ),
     ).rejects.toThrow(ConflictException);
 
     // 4. New import when DRAFT already exists is blocked
     await expect(
       service.importHdtnDraftPackage(
-        teacherA.id,
+        env.teacherA.id,
         'cmd-pg-import-002',
-        draftPackage,
-        bootstrapContext,
-        authorityEvidence,
+        env.draftPackage,
+        env.bootstrapContext,
+        env.authorityEvidence,
+      ),
+    ).rejects.toThrow(ConflictException);
+  });
+
+  it('rolls back atomically and leaves no partial rows on transaction failure', async () => {
+    const env = await createValidEnvironment();
+
+    // Corrupt package with invalid weekday to cause validation failure inside transaction
+    const corruptedPackage: ResolvedHdtnDraftPackage = {
+      ...env.draftPackage,
+      occurrences: [
+        {
+          ...env.draftPackage.occurrences[0],
+          civilDate: '2026-09-08', // TUESDAY, but slot is MONDAY
+        },
+      ],
+    };
+
+    await expect(
+      service.importHdtnDraftPackage(
+        env.teacherA.id,
+        'cmd-pg-fail-atomic',
+        corruptedPackage,
+        env.bootstrapContext,
+        env.authorityEvidence,
+      ),
+    ).rejects.toThrow();
+
+    // Verify atomic rollback: no masters, plan versions, or occurrences created
+    const mastersCount = await h.prisma.programmeMaster.count({ where: { academicYearId: env.year.id } });
+    const versionsCount = await h.prisma.programmePlanVersion.count();
+    const occurrencesCount = await h.prisma.plannedProgrammeOccurrence.count();
+    expect(mastersCount).toBe(0);
+    expect(versionsCount).toBe(0);
+    expect(occurrencesCount).toBe(0);
+  });
+
+  it('rejects with ConflictException when new active class appears in scope before transaction', async () => {
+    const env = await createValidEnvironment();
+
+    // Before transaction commits, a new active class 10C is added to Grade 10
+    await h.prisma.schoolClass.create({
+      data: {
+        academicYearId: env.year.id,
+        code: '10C',
+        name: 'Lớp 10C',
+        gradeLevel: 10,
+        status: 'ACTIVE',
+      },
+    });
+
+    await expect(
+      service.importHdtnDraftPackage(
+        env.teacherA.id,
+        'cmd-pg-scope-race',
+        env.draftPackage,
+        env.bootstrapContext,
+        env.authorityEvidence,
       ),
     ).rejects.toThrow(ConflictException);
   });

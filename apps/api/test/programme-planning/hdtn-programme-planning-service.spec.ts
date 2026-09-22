@@ -23,22 +23,30 @@ describe('ProgrammePlanningService.importHdtnDraftPackage', () => {
 
   const validEvidence: HdtnImportAuthorityEvidence = {
     academicYearId,
-    calendarVersionId: 'cal-v1',
-    academicWeekIds: ['week-1'],
-    academicWeekSegmentIds: ['seg-1'],
-    segmentDateRanges: [{ segmentId: 'seg-1', startDate: '2026-09-07', endDate: '2026-09-12' }],
-    targetClassIds: ['class-10a', 'class-10b'],
-    timetableVersionIds: ['tkb-v1'],
-    timeSlotDefinitionIds: ['slot-m1', 'slot-m2'],
-    explicitTeacherUserIds: ['teacher-a'],
+    calendar: {
+      calendarVersionId: 'cal-v1',
+    },
+    weeks: [
+      { officialWeekNumber: 1, academicWeekId: 'week-1' },
+    ],
+    segments: [
+      { academicWeekId: 'week-1', segmentId: 'seg-1', startDate: '2026-09-07', endDate: '2026-09-12' },
+    ],
+    scopeSnapshots: [
+      { sourceRowNumber: 1, organizingScope: 'CLASS', gradeLevel: 10, targetClassIds: ['class-10a', 'class-10b'] },
+    ],
+    dateAuthorities: [
+      { sourceRowNumber: 1, civilDate: '2026-09-07', timetableVersionId: 'tkb-v1' },
+    ],
+    markerEvidence: [
+      { sourceRowNumber: 1, civilDate: '2026-09-07', markerId: 'm-1', timetableVersionId: 'tkb-v1', schoolClassId: 'class-10a', timeSlotDefinitionId: 'slot-m1', kind: 'HDTN_HN' },
+      { sourceRowNumber: 1, civilDate: '2026-09-07', markerId: 'm-2', timetableVersionId: 'tkb-v1', schoolClassId: 'class-10b', timeSlotDefinitionId: 'slot-m2', kind: 'HDTN_HN' },
+    ],
     homeroomAssignments: [
       { civilDate: '2026-09-07', schoolClassId: 'class-10a', homeroomAssignmentId: 'hr-10a', teacherUserId: 'gvcn-10a' },
       { civilDate: '2026-09-07', schoolClassId: 'class-10b', homeroomAssignmentId: 'hr-10b', teacherUserId: 'gvcn-10b' },
     ],
-    markerTuples: [
-      { timetableVersionId: 'tkb-v1', schoolClassId: 'class-10a', timeSlotDefinitionId: 'slot-m1', kind: 'HDTN_HN', civilDate: '2026-09-07' },
-      { timetableVersionId: 'tkb-v1', schoolClassId: 'class-10b', timeSlotDefinitionId: 'slot-m2', kind: 'HDTN_HN', civilDate: '2026-09-07' },
-    ],
+    explicitTeacherUserIds: ['teacher-a'],
   };
 
   const validPackage: ResolvedHdtnDraftPackage = {
@@ -96,7 +104,13 @@ describe('ProgrammePlanningService.importHdtnDraftPackage', () => {
         }),
       },
       timetableVersion: {
-        findMany: jest.fn().mockResolvedValue([{ id: 'tkb-v1', academicYearId, status: 'ACTIVE' }]),
+        findMany: jest.fn().mockResolvedValue([{
+          id: 'tkb-v1',
+          academicYearId,
+          status: 'ACTIVE',
+          effectiveFrom: new Date('2026-09-01T00:00:00.000Z'),
+          effectiveUntil: null,
+        }]),
       },
       timeSlotDefinition: {
         findMany: jest.fn().mockImplementation(async ({ where }: { where?: { id?: { in?: string[] } } }) => {
@@ -113,8 +127,8 @@ describe('ProgrammePlanningService.importHdtnDraftPackage', () => {
       },
       timetableSpecialProgrammeMarker: {
         findMany: jest.fn().mockResolvedValue([
-          { timetableVersionId: 'tkb-v1', schoolClassId: 'class-10a', timeSlotDefinitionId: 'slot-m1', kind: 'HDTN_HN' },
-          { timetableVersionId: 'tkb-v1', schoolClassId: 'class-10b', timeSlotDefinitionId: 'slot-m2', kind: 'HDTN_HN' },
+          { id: 'm-1', timetableVersionId: 'tkb-v1', schoolClassId: 'class-10a', timeSlotDefinitionId: 'slot-m1', kind: 'HDTN_HN', timeSlotDefinition: { weekday: 'MONDAY' } },
+          { id: 'm-2', timetableVersionId: 'tkb-v1', schoolClassId: 'class-10b', timeSlotDefinitionId: 'slot-m2', kind: 'HDTN_HN', timeSlotDefinition: { weekday: 'MONDAY' } },
         ]),
       },
       homeroomAssignment: {
@@ -175,9 +189,54 @@ describe('ProgrammePlanningService.importHdtnDraftPackage', () => {
       academicCalendarVersion: {
         findFirst: jest.fn().mockResolvedValue({
           id: 'cal-v1',
+          academicYearId,
+          isActive: true,
           startDate: new Date('2026-09-01'),
           endDate: new Date('2027-05-31'),
         }),
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'cal-v1',
+          academicYearId,
+          isActive: true,
+          startDate: new Date('2026-09-01'),
+          endDate: new Date('2027-05-31'),
+        }),
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'cal-v1',
+            academicYearId,
+            isActive: true,
+            startDate: new Date('2026-09-01'),
+            endDate: new Date('2027-05-31'),
+          },
+        ]),
+      },
+      academicWeek: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'week-1',
+            officialWeekNumber: 1,
+            calendarVersionId: 'cal-v1',
+            segments: [
+              {
+                id: 'seg-1',
+                academicWeekId: 'week-1',
+                startDate: new Date('2026-09-07T00:00:00.000Z'),
+                endDate: new Date('2026-09-12T00:00:00.000Z'),
+              },
+            ],
+          },
+        ]),
+      },
+      academicWeekSegment: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'seg-1',
+            academicWeekId: 'week-1',
+            startDate: new Date('2026-09-07T00:00:00.000Z'),
+            endDate: new Date('2026-09-12T00:00:00.000Z'),
+          },
+        ]),
       },
       programmeMaster: {
         findUnique: jest.fn().mockResolvedValue({ id: 'master-hdtn-1', academicYearId, kind: 'HDTN_HN', gradeLevel: null }),
@@ -476,6 +535,185 @@ describe('ProgrammePlanningService.importHdtnDraftPackage', () => {
           validPackage,
           bghBootstrapContext,
           validEvidence,
+        ),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('Scope-Race A: blocks when new active class 10C appears in GRADE scope before transaction', async () => {
+      // Preview expected targetClassIds = ['class-10a', 'class-10b']
+      // In transaction, a new active class 10C appears
+      mockTx.schoolClass.findMany.mockResolvedValueOnce([
+        { id: 'class-10a', academicYearId, code: '10A', status: 'ACTIVE', gradeLevel: 10 },
+        { id: 'class-10b', academicYearId, code: '10B', status: 'ACTIVE', gradeLevel: 10 },
+        { id: 'class-10c', academicYearId, code: '10C', status: 'ACTIVE', gradeLevel: 10 },
+      ]);
+
+      await expect(
+        service.importHdtnDraftPackage(
+          actorUserId,
+          'cmd-scope-race-a',
+          validPackage,
+          bghBootstrapContext,
+          validEvidence,
+        ),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('Scope-Race B: blocks when new active class appears in SCHOOL_WIDE scope before transaction', async () => {
+      const schoolWideEvidence: HdtnImportAuthorityEvidence = {
+        ...validEvidence,
+        scopeSnapshots: [
+          { sourceRowNumber: 1, organizingScope: 'SCHOOL_WIDE', gradeLevel: null, targetClassIds: ['class-10a', 'class-10b'] },
+        ],
+      };
+
+      mockTx.schoolClass.findMany.mockResolvedValueOnce([
+        { id: 'class-10a', academicYearId, code: '10A', status: 'ACTIVE', gradeLevel: 10 },
+        { id: 'class-10b', academicYearId, code: '10B', status: 'ACTIVE', gradeLevel: 10 },
+        { id: 'class-11a', academicYearId, code: '11A', status: 'ACTIVE', gradeLevel: 11 },
+      ]);
+
+      await expect(
+        service.importHdtnDraftPackage(
+          actorUserId,
+          'cmd-scope-race-b',
+          validPackage,
+          bghBootstrapContext,
+          schoolWideEvidence,
+        ),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('Scope-Race C: blocks when unexpected extra marker appears in relevant scope/date', async () => {
+      // Expected markers: m-1, m-2. In transaction, an extra marker m-3 appears
+      mockTx.timetableSpecialProgrammeMarker.findMany.mockResolvedValueOnce([
+        { id: 'm-1', timetableVersionId: 'tkb-v1', schoolClassId: 'class-10a', timeSlotDefinitionId: 'slot-m1', kind: 'HDTN_HN', timeSlotDefinition: { weekday: 'MONDAY' } },
+        { id: 'm-2', timetableVersionId: 'tkb-v1', schoolClassId: 'class-10b', timeSlotDefinitionId: 'slot-m2', kind: 'HDTN_HN', timeSlotDefinition: { weekday: 'MONDAY' } },
+        { id: 'm-3', timetableVersionId: 'tkb-v1', schoolClassId: 'class-10a', timeSlotDefinitionId: 'slot-m2', kind: 'HDTN_HN', timeSlotDefinition: { weekday: 'MONDAY' } },
+      ]);
+
+      await expect(
+        service.importHdtnDraftPackage(
+          actorUserId,
+          'cmd-scope-race-c',
+          validPackage,
+          bghBootstrapContext,
+          validEvidence,
+        ),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('Scope-Race C2: blocks when marker was replaced with new markerId even if tuple matches', async () => {
+      // Marker id changed from m-1 to m-rebuilt-1
+      mockTx.timetableSpecialProgrammeMarker.findMany.mockResolvedValueOnce([
+        { id: 'm-rebuilt-1', timetableVersionId: 'tkb-v1', schoolClassId: 'class-10a', timeSlotDefinitionId: 'slot-m1', kind: 'HDTN_HN', timeSlotDefinition: { weekday: 'MONDAY' } },
+        { id: 'm-2', timetableVersionId: 'tkb-v1', schoolClassId: 'class-10b', timeSlotDefinitionId: 'slot-m2', kind: 'HDTN_HN', timeSlotDefinition: { weekday: 'MONDAY' } },
+      ]);
+
+      await expect(
+        service.importHdtnDraftPackage(
+          actorUserId,
+          'cmd-scope-race-c2',
+          validPackage,
+          bghBootstrapContext,
+          validEvidence,
+        ),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('Scope-Race D: blocks when timetableVersion effectivity changes or becomes ambiguous', async () => {
+      // Two overlapping timetable versions found for civilDate
+      mockTx.timetableVersion.findMany.mockResolvedValueOnce([
+        { id: 'tkb-v1', academicYearId, status: 'ACTIVE', effectiveFrom: new Date('2026-09-01'), effectiveUntil: null },
+        { id: 'tkb-v2-overlap', academicYearId, status: 'ACTIVE', effectiveFrom: new Date('2026-09-01'), effectiveUntil: null },
+      ]);
+
+      await expect(
+        service.importHdtnDraftPackage(
+          actorUserId,
+          'cmd-scope-race-d',
+          validPackage,
+          bghBootstrapContext,
+          validEvidence,
+        ),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('Scope-Race E: blocks when academic calendar week segment boundary changes', async () => {
+      // Segment dates changed from 2026-09-07..12 to 2026-09-08..13
+      mockTx.academicWeekSegment.findMany.mockResolvedValueOnce([
+        {
+          id: 'seg-1',
+          academicWeekId: 'week-1',
+          startDate: new Date('2026-09-08T00:00:00.000Z'),
+          endDate: new Date('2026-09-13T00:00:00.000Z'),
+        },
+      ]);
+
+      await expect(
+        service.importHdtnDraftPackage(
+          actorUserId,
+          'cmd-scope-race-e',
+          validPackage,
+          bghBootstrapContext,
+          validEvidence,
+        ),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('Historical Retained Slot: allows inactive slot in HĐTN import (RETAINED_TIMETABLE_EVIDENCE), but blocks manual authoring', async () => {
+      // Slot slot-m1 is historical / inactive (isActive: false)
+      mockTx.timeSlotDefinition.findMany.mockImplementation(async ({ where }: { where?: { id?: { in?: string[] } } }) => {
+        const all = [
+          { id: 'slot-m1', academicYearId, weekday: 'MONDAY', ordinal: 1, isActive: false },
+          { id: 'slot-m2', academicYearId, weekday: 'MONDAY', ordinal: 2, isActive: true },
+        ];
+        if (where?.id?.in && Array.isArray(where.id.in)) {
+          const inList = where.id.in;
+          return all.filter((s) => inList.includes(s.id));
+        }
+        return all;
+      });
+
+      // 1. HĐTN import uses RETAINED_TIMETABLE_EVIDENCE -> should SUCCEED
+      const importRes = await service.importHdtnDraftPackage(
+        actorUserId,
+        'cmd-inactive-slot-import',
+        validPackage,
+        bghBootstrapContext,
+        validEvidence,
+      );
+      expect(importRes.outcome).toBe('CREATED');
+      expect(importRes.status).toBe('DRAFT');
+
+      // 2. Normal manual occurrence authoring uses CURRENT_AUTHORING -> should be BLOCKED with ConflictException
+      mockTx.programmePlanVersion.findUnique = jest.fn().mockResolvedValue({
+        id: 'plan-v1',
+        programmeMasterId: 'master-hdtn-1',
+        versionNumber: 1,
+        status: 'PUBLISHED',
+      });
+      mockTx.programmeTopicItem.findUnique = jest.fn().mockResolvedValue({
+        id: 'topic-item-1',
+        programmePlanVersionId: 'plan-v1',
+        sequence: 1,
+      });
+
+      await expect(
+        service.createDraftOccurrence(
+          {
+            commandId: 'cmd-manual-create-inactive',
+            programmeMasterId: 'master-hdtn-1',
+            programmePlanVersionId: 'plan-v1',
+            programmeTopicItemId: 'topic-item-1',
+            academicYearId,
+            civilDate: '2026-09-07',
+            mode: 'CLASS',
+            gradeLevel: null,
+            schoolClassId: 'class-10a',
+            slots: [{ timeSlotDefinitionId: 'slot-m1', teacherUserIds: ['gvcn-10a'] }],
+          },
+          actorUserId,
         ),
       ).rejects.toThrow(ConflictException);
     });

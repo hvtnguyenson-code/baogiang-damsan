@@ -19,6 +19,7 @@ import {
   ProgrammeTopicItem,
   SpecialActivity,
   SpecialActivityScope,
+  TimetableVersionStatus,
 } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import { HdtnWorkbookConfirmResponse } from '@baogiang/contracts';
@@ -95,33 +96,62 @@ export interface ResolvedHdtnDraftPackage {
   occurrences: ResolvedHdtnOccurrence[];
 }
 
+export interface HdtnImportCalendarEvidence {
+  calendarVersionId: string;
+}
+
+export interface HdtnImportWeekEvidence {
+  officialWeekNumber: number;
+  academicWeekId: string;
+}
+
+export interface HdtnImportSegmentEvidence {
+  academicWeekId: string;
+  segmentId: string;
+  startDate: string;
+  endDate: string;
+}
+
+export interface HdtnImportScopeSnapshot {
+  sourceRowNumber: number;
+  organizingScope: 'CLASS' | 'GRADE' | 'SCHOOL_WIDE';
+  gradeLevel: number | null;
+  targetClassIds: string[];
+}
+
+export interface HdtnImportDateAuthority {
+  sourceRowNumber: number;
+  civilDate: string;
+  timetableVersionId: string;
+}
+
+export interface HdtnImportMarkerEvidence {
+  sourceRowNumber: number;
+  civilDate: string;
+  markerId: string;
+  timetableVersionId: string;
+  schoolClassId: string;
+  timeSlotDefinitionId: string;
+  kind: string;
+}
+
+export interface HdtnImportHomeroomEvidence {
+  civilDate: string;
+  schoolClassId: string;
+  homeroomAssignmentId: string;
+  teacherUserId: string;
+}
+
 export interface HdtnImportAuthorityEvidence {
   academicYearId: string;
-  calendarVersionId: string;
-  academicWeekIds: string[];
-  academicWeekSegmentIds: string[];
-  segmentDateRanges: Array<{
-    segmentId: string;
-    startDate: string;
-    endDate: string;
-  }>;
-  targetClassIds: string[];
-  timetableVersionIds: string[];
-  timeSlotDefinitionIds: string[];
+  calendar: HdtnImportCalendarEvidence;
+  weeks: HdtnImportWeekEvidence[];
+  segments: HdtnImportSegmentEvidence[];
+  scopeSnapshots: HdtnImportScopeSnapshot[];
+  dateAuthorities: HdtnImportDateAuthority[];
+  markerEvidence: HdtnImportMarkerEvidence[];
+  homeroomAssignments: HdtnImportHomeroomEvidence[];
   explicitTeacherUserIds: string[];
-  homeroomAssignments: Array<{
-    civilDate: string;
-    schoolClassId: string;
-    homeroomAssignmentId: string;
-    teacherUserId: string;
-  }>;
-  markerTuples: Array<{
-    timetableVersionId: string;
-    schoolClassId: string;
-    timeSlotDefinitionId: string;
-    kind: string;
-    civilDate: string;
-  }>;
 }
 
 export interface HdtnImportBootstrapContext {
@@ -621,17 +651,21 @@ export class ProgrammePlanningService {
           }
 
           // Canonical structural validation for occurrence
-          await this.validateOccurrenceStructureAndStaffing(tx, {
-            master,
-            planVersion: { id: planVersion.id, programmeMasterId: master.id },
-            topic: { id: topicItemId, programmePlanVersionId: planVersion.id },
-            academicYearId: pkg.academicYearId,
-            civilDate: occ.civilDate,
-            mode: occ.mode,
-            gradeLevel: occ.gradeLevel,
-            schoolClassId: occ.schoolClassId,
-            slots: occ.slots,
-          });
+          await this.validateOccurrenceStructureAndStaffing(
+            tx,
+            {
+              master,
+              planVersion: { id: planVersion.id, programmeMasterId: master.id },
+              topic: { id: topicItemId, programmePlanVersionId: planVersion.id },
+              academicYearId: pkg.academicYearId,
+              civilDate: occ.civilDate,
+              mode: occ.mode,
+              gradeLevel: occ.gradeLevel,
+              schoolClassId: occ.schoolClassId,
+              slots: occ.slots,
+            },
+            'RETAINED_TIMETABLE_EVIDENCE',
+          );
 
           const occurrence = await tx.plannedProgrammeOccurrence.create({
             data: {
@@ -1704,6 +1738,7 @@ export class ProgrammePlanningService {
       schoolClassId?: string | null;
       slots?: PlannedSlotStaffingInputDto[];
     },
+    slotValidationMode: 'CURRENT_AUTHORING' | 'RETAINED_TIMETABLE_EVIDENCE' = 'CURRENT_AUTHORING',
   ): Promise<void> {
     if (!isCivilDate(input.civilDate)) {
       throw new BadRequestException('civilDate không đúng định dạng YYYY-MM-DD hợp lệ.');
@@ -1764,7 +1799,7 @@ export class ProgrammePlanningService {
     }
 
     if (input.slots && input.slots.length > 0) {
-      await this.validateSlotsAndStaffing(tx, input.academicYearId, civilDateObj, input.slots);
+      await this.validateSlotsAndStaffing(tx, input.academicYearId, civilDateObj, input.slots, slotValidationMode);
     }
   }
 
@@ -1830,39 +1865,173 @@ export class ProgrammePlanningService {
       throw new ConflictException('Năm học không tồn tại hoặc đã bị xóa.');
     }
 
-    const classes = await tx.schoolClass.findMany({
-      where: {
-        id: { in: evidence.targetClassIds },
-        academicYearId: evidence.academicYearId,
-        status: 'ACTIVE',
-      },
+    // A. AcademicCalendarVersion: exactly one active calendar, matches evidence
+    const activeCalendars = await tx.academicCalendarVersion.findMany({
+      where: { academicYearId: evidence.academicYearId, isActive: true },
     });
-    if (classes.length !== evidence.targetClassIds.length) {
+    if (activeCalendars.length !== 1 || activeCalendars[0]!.id !== evidence.calendar.calendarVersionId) {
       throw new ConflictException(
-        'Danh sách lớp học mục tiêu đã thay đổi hoặc có lớp không còn hoạt động.',
+        'Lịch năm học đang kích hoạt đã thay đổi hoặc không còn là lịch duy nhất kể từ khi xem trước.',
       );
     }
 
-    const tvs = await tx.timetableVersion.findMany({
-      where: { id: { in: evidence.timetableVersionIds } },
+    // B. AcademicWeeks: exactly match each requested week
+    const weeksInDb = await tx.academicWeek.findMany({
+      where: { calendarVersionId: evidence.calendar.calendarVersionId },
     });
-    if (tvs.length !== evidence.timetableVersionIds.length) {
-      throw new ConflictException('Thời khóa biểu có hiệu lực tại ngày thực dạy đã thay đổi.');
-    }
-
-    const slotDefs = await tx.timeSlotDefinition.findMany({
-      where: {
-        id: { in: evidence.timeSlotDefinitionIds },
-        academicYearId: evidence.academicYearId,
-        isActive: true,
-      },
-    });
-    if (slotDefs.length !== evidence.timeSlotDefinitionIds.length) {
-      throw new ConflictException(
-        'Khung tiết học (TimeSlotDefinition) đã thay đổi hoặc không còn kích hoạt.',
+    for (const expectedWeek of evidence.weeks) {
+      const matching = weeksInDb.filter(
+        (w) => w.officialWeekNumber === expectedWeek.officialWeekNumber,
       );
+      if (matching.length !== 1 || matching[0]!.id !== expectedWeek.academicWeekId) {
+        throw new ConflictException(
+          `Tuần chính thức số ${expectedWeek.officialWeekNumber} trong lịch năm học đã thay đổi kể từ khi xem trước.`,
+        );
+      }
     }
 
+    // C. AcademicWeekSegments: exact set and boundaries for each requested week
+    const requestedWeekIds = [...new Set(evidence.weeks.map((w) => w.academicWeekId))];
+    const segmentsInDb = await tx.academicWeekSegment.findMany({
+      where: { academicWeekId: { in: requestedWeekIds } },
+    });
+    for (const weekId of requestedWeekIds) {
+      const expectedForWeek = evidence.segments.filter((s) => s.academicWeekId === weekId);
+      const dbForWeek = segmentsInDb.filter((s) => s.academicWeekId === weekId);
+      if (expectedForWeek.length !== dbForWeek.length) {
+        throw new ConflictException(
+          'Các đoạn thời gian (segments) của tuần học đã thay đổi kể từ khi xem trước.',
+        );
+      }
+      for (const expSeg of expectedForWeek) {
+        const dbSeg = dbForWeek.find((s) => s.id === expSeg.segmentId);
+        if (
+          !dbSeg ||
+          formatCivilDate(dbSeg.startDate) !== expSeg.startDate ||
+          formatCivilDate(dbSeg.endDate) !== expSeg.endDate
+        ) {
+          throw new ConflictException(
+            'Khoảng thời gian của đoạn tuần học (segment) đã thay đổi kể từ khi xem trước.',
+          );
+        }
+      }
+    }
+
+    // D. Scope Class Sets: exact set equality for each scope snapshot
+    const activeClassesInYear = await tx.schoolClass.findMany({
+      where: { academicYearId: evidence.academicYearId, status: 'ACTIVE' },
+    });
+    for (const snapshot of evidence.scopeSnapshots) {
+      let currentClasses: typeof activeClassesInYear;
+      if (snapshot.organizingScope === 'CLASS' || snapshot.organizingScope === 'GRADE') {
+        currentClasses = activeClassesInYear.filter((c) => c.gradeLevel === snapshot.gradeLevel);
+      } else {
+        currentClasses = activeClassesInYear;
+      }
+      const currentClassIds = new Set(currentClasses.map((c) => c.id));
+      const expectedClassIds = new Set(snapshot.targetClassIds);
+
+      if (
+        currentClassIds.size !== expectedClassIds.size ||
+        ![...expectedClassIds].every((id) => currentClassIds.has(id))
+      ) {
+        throw new ConflictException(
+          `Danh sách lớp học đang hoạt động thuộc phạm vi dòng ${snapshot.sourceRowNumber} đã thay đổi kể từ khi xem trước.`,
+        );
+      }
+    }
+
+    // E. Timetable effectivity: exactly one version and matches expected
+    const verifiedDateVersions = new Map<string, string>();
+    for (const da of evidence.dateAuthorities) {
+      let resolvedVersionId = verifiedDateVersions.get(da.civilDate);
+      if (!resolvedVersionId) {
+        const targetDateObj = parseCivilDate(da.civilDate);
+        const candidateVersions = await tx.timetableVersion.findMany({
+          where: {
+            academicYearId: evidence.academicYearId,
+            status: { in: [TimetableVersionStatus.ACTIVE, TimetableVersionStatus.SUPERSEDED] },
+            effectiveFrom: { lte: targetDateObj },
+            OR: [{ effectiveUntil: null }, { effectiveUntil: { gte: targetDateObj } }],
+          },
+        });
+        if (candidateVersions.length !== 1 || candidateVersions[0]!.id !== da.timetableVersionId) {
+          throw new ConflictException(
+            `Thời khóa biểu có hiệu lực tại ngày ${da.civilDate} đã thay đổi hoặc trở nên không rõ ràng kể từ khi xem trước.`,
+          );
+        }
+        resolvedVersionId = candidateVersions[0]!.id;
+        verifiedDateVersions.set(da.civilDate, resolvedVersionId);
+      } else if (resolvedVersionId !== da.timetableVersionId) {
+        throw new ConflictException(
+          `Thời khóa biểu có hiệu lực tại ngày ${da.civilDate} không khớp với thẩm quyền đã ghi nhận.`,
+        );
+      }
+    }
+
+    // F. Retained Markers: exact set equality per (sourceRowNumber, civilDate)
+    for (const da of evidence.dateAuthorities) {
+      const snapshot = evidence.scopeSnapshots.find((s) => s.sourceRowNumber === da.sourceRowNumber);
+      if (!snapshot) continue;
+
+      const expectedWeekday = weekdayForCivilDate(parseCivilDate(da.civilDate));
+      const expectedMarkers = evidence.markerEvidence.filter(
+        (m) => m.sourceRowNumber === da.sourceRowNumber && m.civilDate === da.civilDate,
+      );
+
+      const dbMarkers = await tx.timetableSpecialProgrammeMarker.findMany({
+        where: {
+          timetableVersionId: da.timetableVersionId,
+          kind: 'HDTN_HN',
+          schoolClassId: { in: snapshot.targetClassIds },
+        },
+        include: {
+          timeSlotDefinition: true,
+        },
+      });
+
+      const matchingDbMarkers = dbMarkers.filter(
+        (m) => m.timeSlotDefinition && m.timeSlotDefinition.weekday === expectedWeekday,
+      );
+
+      const dbMarkerTuples = new Set(
+        matchingDbMarkers.map(
+          (m) => `${m.id}#${m.timetableVersionId}#${m.schoolClassId}#${m.timeSlotDefinitionId}#${m.kind}`,
+        ),
+      );
+      const expMarkerTuples = new Set(
+        expectedMarkers.map(
+          (m) => `${m.markerId}#${m.timetableVersionId}#${m.schoolClassId}#${m.timeSlotDefinitionId}#${m.kind}`,
+        ),
+      );
+
+      if (
+        dbMarkerTuples.size !== expMarkerTuples.size ||
+        ![...expMarkerTuples].every((t) => dbMarkerTuples.has(t))
+      ) {
+        throw new ConflictException(
+          `Dữ liệu tiết HĐTN-HN trên thời khóa biểu tại ngày ${da.civilDate} đã thay đổi kể từ khi xem trước.`,
+        );
+      }
+    }
+
+    // G. TimeSlotDefinition existence (historical retained slots do NOT require isActive: true)
+    const allSlotIds = [...new Set(evidence.markerEvidence.map((m) => m.timeSlotDefinitionId))];
+    if (allSlotIds.length > 0) {
+      const slotDefs = await tx.timeSlotDefinition.findMany({
+        where: {
+          id: { in: allSlotIds },
+          academicYearId: evidence.academicYearId,
+        },
+      });
+      if (slotDefs.length !== allSlotIds.length) {
+        throw new ConflictException(
+          'Khung tiết học (TimeSlotDefinition) đã thay đổi hoặc không còn tồn tại trong năm học.',
+        );
+      }
+    }
+
+    // H. Explicit teachers: active and teaching staff
     if (evidence.explicitTeacherUserIds.length > 0) {
       const teachers = await tx.user.findMany({
         where: {
@@ -1879,27 +2048,7 @@ export class ProgrammePlanningService {
       }
     }
 
-    const markers = await tx.timetableSpecialProgrammeMarker.findMany({
-      where: {
-        timetableVersionId: { in: evidence.timetableVersionIds },
-        kind: 'HDTN_HN',
-      },
-    });
-    const markerSet = new Set(
-      markers.map(
-        (m) =>
-          `${m.timetableVersionId}#${m.schoolClassId}#${m.timeSlotDefinitionId}#${m.kind}`,
-      ),
-    );
-    for (const t of evidence.markerTuples) {
-      const key = `${t.timetableVersionId}#${t.schoolClassId}#${t.timeSlotDefinitionId}#${t.kind}`;
-      if (!markerSet.has(key)) {
-        throw new ConflictException(
-          'Dữ liệu tiết HĐTN-HN trên thời khóa biểu đã thay đổi kể từ khi xem trước.',
-        );
-      }
-    }
-
+    // I. Homeroom Assignments
     for (const h of evidence.homeroomAssignments) {
       const dateObj = parseCivilDate(h.civilDate);
       const coveringAssignments = await tx.homeroomAssignment.findMany({
@@ -1942,6 +2091,7 @@ export class ProgrammePlanningService {
     academicYearId: string,
     civilDateObj: Date,
     slots: PlannedSlotStaffingInputDto[],
+    slotValidationMode: 'CURRENT_AUTHORING' | 'RETAINED_TIMETABLE_EVIDENCE' = 'CURRENT_AUTHORING',
   ): Promise<void> {
     const slotDefIds = slots.map((s) => s.timeSlotDefinitionId);
     if (new Set(slotDefIds).size !== slotDefIds.length) {
@@ -1964,7 +2114,7 @@ export class ProgrammePlanningService {
       if (def.weekday !== expectedWeekday) {
         throw new ConflictException('Planned programme slot weekday does not match occurrence civil date.');
       }
-      if (!def.isActive) {
+      if (slotValidationMode === 'CURRENT_AUTHORING' && !def.isActive) {
         throw new ConflictException('TimeSlotDefinition không ở trạng thái ACTIVE.');
       }
     }

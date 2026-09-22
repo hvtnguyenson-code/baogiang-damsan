@@ -153,6 +153,7 @@ describe('HdtnWorkbookImporterService & Authorization', () => {
       },
       academicCalendarVersion: {
         findFirst: jest.fn().mockResolvedValue(defaultCalendar),
+        findMany: jest.fn().mockResolvedValue([defaultCalendar]),
       },
       schoolClass: {
         findMany: jest.fn().mockResolvedValue(allActiveClasses),
@@ -739,6 +740,39 @@ describe('HdtnWorkbookImporterService & Authorization', () => {
   });
 
   describe('6. Calendar & Timetable Authority', () => {
+    it('blocks when 0 active calendar is found (ACTIVE_CALENDAR_NOT_FOUND)', async () => {
+      mockPrisma.academicCalendarVersion.findMany.mockResolvedValue([]);
+
+      mockParser.parse.mockResolvedValue(createMockWorkbook([
+        ['1', '1', '1', 'Theo khối', '10', 'Chủ đề 1', 'Nguyễn Văn A'],
+      ]));
+
+      const res = await importerService.preview(dummyUpload, academicYearId);
+      expect(res.canConfirm).toBe(false);
+      expect(res.issues).toContainEqual(expect.objectContaining({
+        code: 'ACTIVE_CALENDAR_NOT_FOUND',
+        severity: 'BLOCKER',
+      }));
+    });
+
+    it('blocks when >1 active calendar is found (ACTIVE_CALENDAR_AMBIGUOUS)', async () => {
+      mockPrisma.academicCalendarVersion.findMany.mockResolvedValue([
+        defaultCalendar,
+        { ...defaultCalendar, id: 'cal-uuid-2' },
+      ]);
+
+      mockParser.parse.mockResolvedValue(createMockWorkbook([
+        ['1', '1', '1', 'Theo khối', '10', 'Chủ đề 1', 'Nguyễn Văn A'],
+      ]));
+
+      const res = await importerService.preview(dummyUpload, academicYearId);
+      expect(res.canConfirm).toBe(false);
+      expect(res.issues).toContainEqual(expect.objectContaining({
+        code: 'ACTIVE_CALENDAR_AMBIGUOUS',
+        severity: 'BLOCKER',
+      }));
+    });
+
     it('blocks when official week number is not found in academic calendar', async () => {
       mockParser.parse.mockResolvedValue(createMockWorkbook([
         ['99', '99', '1', 'Theo khối', '10', 'Chủ đề 1', 'Nguyễn Văn A'],
@@ -751,8 +785,31 @@ describe('HdtnWorkbookImporterService & Authorization', () => {
       }));
     });
 
+    it('blocks when duplicate officialWeekNumber exists in calendar (OFFICIAL_WEEK_AMBIGUOUS)', async () => {
+      mockPrisma.academicCalendarVersion.findMany.mockResolvedValue([
+        {
+          ...defaultCalendar,
+          weeks: [
+            { id: 'week-1a', officialWeekNumber: 1, segments: defaultCalendar.weeks[0].segments },
+            { id: 'week-1b', officialWeekNumber: 1, segments: defaultCalendar.weeks[0].segments },
+          ],
+        },
+      ]);
+
+      mockParser.parse.mockResolvedValue(createMockWorkbook([
+        ['1', '1', '1', 'Theo khối', '10', 'Chủ đề 1', 'Nguyễn Văn A'],
+      ]));
+
+      const res = await importerService.preview(dummyUpload, academicYearId);
+      expect(res.canConfirm).toBe(false);
+      expect(res.rows[0].issues).toContainEqual(expect.objectContaining({
+        code: 'OFFICIAL_WEEK_AMBIGUOUS',
+        severity: 'BLOCKER',
+      }));
+    });
+
     it('blocks when no date-effective TimetableVersion exists for the date', async () => {
-      mockPrisma.timetableVersion.findFirst.mockResolvedValue(null); // No timetable
+      mockPrisma.timetableVersion.findMany.mockResolvedValue([]); // No timetable
 
       mockParser.parse.mockResolvedValue(createMockWorkbook([
         ['1', '1', '1', 'Theo khối', '10', 'Chủ đề 1', 'Nguyễn Văn A'],
@@ -762,6 +819,36 @@ describe('HdtnWorkbookImporterService & Authorization', () => {
       expect(res.canConfirm).toBe(false);
       expect(res.rows[0].issues).toContainEqual(expect.objectContaining({
         code: 'TIMETABLE_VERSION_NOT_FOUND',
+      }));
+    });
+
+    it('blocks when >1 date-effective TimetableVersion exists for date (TIMETABLE_VERSION_AMBIGUOUS)', async () => {
+      mockPrisma.timetableVersion.findMany.mockResolvedValue([
+        {
+          id: timetableVersionId,
+          academicYearId,
+          status: 'ACTIVE',
+          effectiveFrom: new Date('2026-09-01T00:00:00.000Z'),
+          effectiveUntil: null,
+        },
+        {
+          id: 'tkb-uuid-ambiguous',
+          academicYearId,
+          status: 'ACTIVE',
+          effectiveFrom: new Date('2026-09-01T00:00:00.000Z'),
+          effectiveUntil: null,
+        },
+      ]);
+
+      mockParser.parse.mockResolvedValue(createMockWorkbook([
+        ['1', '1', '1', 'Theo khối', '10', 'Chủ đề 1', 'Nguyễn Văn A'],
+      ]));
+
+      const res = await importerService.preview(dummyUpload, academicYearId);
+      expect(res.canConfirm).toBe(false);
+      expect(res.rows[0].issues).toContainEqual(expect.objectContaining({
+        code: 'TIMETABLE_VERSION_AMBIGUOUS',
+        severity: 'BLOCKER',
       }));
     });
 
@@ -809,13 +896,15 @@ describe('HdtnWorkbookImporterService & Authorization', () => {
 
       const res1 = await importerService.preview(dummyUpload, academicYearId);
 
-      mockPrisma.timetableVersion.findFirst.mockResolvedValueOnce({
-        id: 'tkb-uuid-2-different',
-        academicYearId,
-        status: 'ACTIVE',
-        effectiveFrom: new Date('2026-09-01T00:00:00.000Z'),
-        effectiveUntil: null,
-      });
+      mockPrisma.timetableVersion.findMany.mockResolvedValueOnce([
+        {
+          id: 'tkb-uuid-2-different',
+          academicYearId,
+          status: 'ACTIVE',
+          effectiveFrom: new Date('2026-09-01T00:00:00.000Z'),
+          effectiveUntil: null,
+        },
+      ]);
 
       const res2 = await importerService.preview(dummyUpload, academicYearId);
       expect(res1.previewFingerprint).not.toBe(res2.previewFingerprint);
@@ -850,26 +939,17 @@ describe('HdtnWorkbookImporterService & Authorization', () => {
 
       const res1 = await importerService.preview(dummyUpload, academicYearId);
 
-      mockPrisma.homeroomAssignment.findMany.mockImplementation(async ({ where }: { where: { schoolClassId: string } }) => {
-        if (where.schoolClassId === 'class-10a') {
-          return [{
-            id: 'hr-10a-new',
-            schoolClassId: 'class-10a',
-            teacherUserId: teacherB.id,
-            validFrom: new Date('2026-09-01T00:00:00.000Z'),
-            validUntil: null,
-            teacherUser: teacherB,
-          }];
-        }
-        return [{
-          id: 'hr-10b',
-          schoolClassId: 'class-10b',
-          teacherUserId: gvcn10b.id,
+      // Change homeroom assignment to a different teacher
+      mockPrisma.homeroomAssignment.findMany.mockImplementationOnce(async () => [
+        {
+          id: 'hr-10a-different',
+          schoolClassId: 'class-10a',
+          teacherUserId: teacherA.id,
           validFrom: new Date('2026-09-01T00:00:00.000Z'),
           validUntil: null,
-          teacherUser: gvcn10b,
-        }];
-      });
+          teacherUser: teacherA,
+        },
+      ]);
 
       const res2 = await importerService.preview(dummyUpload, academicYearId);
       expect(res1.previewFingerprint).not.toBe(res2.previewFingerprint);
@@ -886,25 +966,95 @@ describe('HdtnWorkbookImporterService & Authorization', () => {
 
       const res1 = await importerService.preview(dummyUpload, academicYearId);
 
-      mockPrisma.academicCalendarVersion.findFirst.mockResolvedValueOnce({
-        ...defaultCalendar,
-        weeks: [
-          {
-            id: 'week-1-different',
-            officialWeekNumber: 1,
-            segments: [
-              {
-                id: 'seg-1-different',
-                startDate: new Date('2026-09-07T00:00:00.000Z'),
-                endDate: new Date('2026-09-12T00:00:00.000Z'),
-              },
-            ],
-          },
-        ],
-      });
+      mockPrisma.academicCalendarVersion.findMany.mockResolvedValueOnce([
+        {
+          ...defaultCalendar,
+          weeks: [
+            {
+              id: 'week-1-different',
+              officialWeekNumber: 1,
+              segments: [
+                {
+                  id: 'seg-1-different',
+                  startDate: new Date('2026-09-07T00:00:00.000Z'),
+                  endDate: new Date('2026-09-12T00:00:00.000Z'),
+                },
+              ],
+            },
+          ],
+        },
+      ]);
 
       const res2 = await importerService.preview(dummyUpload, academicYearId);
       expect(res1.previewFingerprint).not.toBe(res2.previewFingerprint);
+    });
+
+    it('Finding B: fingerprint changes when target class set changes', async () => {
+      mockParser.parse.mockResolvedValue(createMockWorkbook([
+        ['1', '1', '1', 'Theo khối', '10', 'Chủ đề 1', 'Nguyễn Văn A'],
+      ]));
+      mockMarkerService.findRetainedMarkers.mockResolvedValue([
+        { id: 'm-10a', schoolClassId: 'class-10a', timeSlotDefinitionId: 'slot-m1', kind: 'HDTN_HN' },
+        { id: 'm-10b', schoolClassId: 'class-10b', timeSlotDefinitionId: 'slot-m1', kind: 'HDTN_HN' },
+      ]);
+
+      const res1 = await importerService.preview(dummyUpload, academicYearId);
+
+      // A new active class in Grade 10 appears: 10C
+      mockPrisma.schoolClass.findMany.mockResolvedValueOnce([
+        ...allActiveClasses,
+        { id: 'class-10c', academicYearId, code: '10C', name: '10C', gradeLevel: 10, status: 'ACTIVE' },
+      ]);
+      mockMarkerService.findRetainedMarkers.mockResolvedValueOnce([
+        { id: 'm-10a', schoolClassId: 'class-10a', timeSlotDefinitionId: 'slot-m1', kind: 'HDTN_HN' },
+        { id: 'm-10b', schoolClassId: 'class-10b', timeSlotDefinitionId: 'slot-m1', kind: 'HDTN_HN' },
+        { id: 'm-10c', schoolClassId: 'class-10c', timeSlotDefinitionId: 'slot-m1', kind: 'HDTN_HN' },
+      ]);
+
+      const res2 = await importerService.preview(dummyUpload, academicYearId);
+      expect(res1.previewFingerprint).not.toBe(res2.previewFingerprint);
+    });
+
+    it('Finding B: fingerprint changes when marker ID changes with same semantic tuple', async () => {
+      mockParser.parse.mockResolvedValue(createMockWorkbook([
+        ['1', '1', '1', 'Theo khối', '10', 'Chủ đề 1', 'Nguyễn Văn A'],
+      ]));
+      mockMarkerService.findRetainedMarkers.mockResolvedValueOnce([
+        { id: 'marker-original-1', schoolClassId: 'class-10a', timeSlotDefinitionId: 'slot-m1', kind: 'HDTN_HN' },
+        { id: 'marker-original-2', schoolClassId: 'class-10b', timeSlotDefinitionId: 'slot-m1', kind: 'HDTN_HN' },
+      ]);
+
+      const res1 = await importerService.preview(dummyUpload, academicYearId);
+
+      // Same classes, same slots, same kind, but different marker IDs (e.g. rebuilt marker table)
+      mockMarkerService.findRetainedMarkers.mockResolvedValueOnce([
+        { id: 'marker-rebuilt-1', schoolClassId: 'class-10a', timeSlotDefinitionId: 'slot-m1', kind: 'HDTN_HN' },
+        { id: 'marker-rebuilt-2', schoolClassId: 'class-10b', timeSlotDefinitionId: 'slot-m1', kind: 'HDTN_HN' },
+      ]);
+
+      const res2 = await importerService.preview(dummyUpload, academicYearId);
+      expect(res1.previewFingerprint).not.toBe(res2.previewFingerprint);
+    });
+
+    it('Finding B: fingerprint is stable when input/query iteration order is reversed without semantic change', async () => {
+      mockParser.parse.mockResolvedValue(createMockWorkbook([
+        ['1', '1', '1', 'Theo khối', '10', 'Chủ đề 1', 'Nguyễn Văn A'],
+      ]));
+      mockMarkerService.findRetainedMarkers.mockResolvedValueOnce([
+        { id: 'm-1', schoolClassId: 'class-10a', timeSlotDefinitionId: 'slot-m1', kind: 'HDTN_HN' },
+        { id: 'm-2', schoolClassId: 'class-10b', timeSlotDefinitionId: 'slot-m1', kind: 'HDTN_HN' },
+      ]);
+
+      const res1 = await importerService.preview(dummyUpload, academicYearId);
+
+      // Reversed marker iteration order
+      mockMarkerService.findRetainedMarkers.mockResolvedValueOnce([
+        { id: 'm-2', schoolClassId: 'class-10b', timeSlotDefinitionId: 'slot-m1', kind: 'HDTN_HN' },
+        { id: 'm-1', schoolClassId: 'class-10a', timeSlotDefinitionId: 'slot-m1', kind: 'HDTN_HN' },
+      ]);
+
+      const res2 = await importerService.preview(dummyUpload, academicYearId);
+      expect(res1.previewFingerprint).toBe(res2.previewFingerprint);
     });
 
     it('rejects confirm if expectedPreviewFingerprint does not match fresh evaluation', async () => {
