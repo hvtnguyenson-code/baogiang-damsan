@@ -3,17 +3,31 @@ import { integration, normalizedCode, Phase01Harness } from '../helpers/phase01-
 integration('P4-072 DRAFT plan/occurrence database guard', () => {
   const h = new Phase01Harness();
 
+  async function clean(): Promise<void> {
+    await h.prisma.$executeRawUnsafe(`
+      TRUNCATE TABLE
+        "audit_events",
+        "auth_sessions",
+        "capability_grants",
+        "capability_definitions",
+        "subject_groups",
+        "academic_years",
+        "users"
+      CASCADE;
+    `);
+  }
+
   beforeAll(async () => {
     await h.start();
   });
 
   beforeEach(async () => {
-    await h.clean();
+    await clean();
   });
 
   afterAll(async () => {
     try {
-      await h.clean();
+      await clean();
     } finally {
       await h.stop();
     }
@@ -22,7 +36,7 @@ integration('P4-072 DRAFT plan/occurrence database guard', () => {
   it('allows DRAFT/DRAFT import rows but blocks occurrence publication until the plan is PUBLISHED', async () => {
     const year = await h.prisma.academicYear.create({
       data: {
-        code: normalizedCode('Y_DRAFT_GUARD'),
+        code: normalizedCode('Y_DRAFT_G'),
         name: 'Năm học kiểm thử DRAFT guard',
       },
     });
