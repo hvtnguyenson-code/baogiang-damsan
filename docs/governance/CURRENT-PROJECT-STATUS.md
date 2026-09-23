@@ -44,10 +44,10 @@ Closure evidence:
 - authoritative post-merge main CI: CI #511 (run `35814368948`), SUCCESS (event: `push`, branch: `main`, exact SHA: `2979125c47290d467f20c0bbd3e7688fde5f333c`);
 - parent PR statistics: 18 files changed (+5639 / -41);
 - delivered scope:
-  - exact Vietnamese HĐTN-HN workbook contract: sheet `NHẬP HĐTN-HN`, 7 business columns (`STT`, `TIẾT PPCT`, `TÊN HOẠT ĐỘNG / CHỦ ĐỀ`, `HÌNH THỨC TỔ CHỨC`, `LỚP / KHỐI`, `TIẾT TKB`, `NGƯỜI THỰC HIỆN`);
+  - exact Vietnamese HĐTN-HN workbook contract: sheet `NHẬP HĐTN-HN`, 7 business columns (`Tuần từ`, `Tuần đến`, `Số tiết`, `Quy mô tổ chức`, `Khối`, `Chủ đề`, `Người thực hiện`);
   - inspect / preview / confirm backend flow under `/api/programme-planning/hdtn-import` (`/inspect`, `/preview`, `/confirm`);
   - HĐTN explicit teacher identity: exact normalized `StaffProfile.displayName` human names (no `staffCode` input requirement);
-  - CLASS: GVCN sentinel (`GVCN`, `GVCN lớp`), exact historical/date-effective `HomeroomAssignment`, exact per-class slot identity;
+  - CLASS: exact `GVCN` sentinel, exact historical/date-effective `HomeroomAssignment`, exact per-class slot identity;
   - GRADE / SCHOOL_WIDE: complete retained-marker coverage, one logical collapsed slot, no class fan-out;
   - official AcademicWeek + retained calendar segment resolution;
   - exact date-effective TimetableVersion + retained `HDTN_HN` marker evidence;
@@ -818,7 +818,7 @@ The final production-host topology is intentionally unresolved and explicitly de
 
 ## Tasks currently active or eligible to start
 
-`P4-050` is CLOSED by `SYNC-P4-050`; no major task is currently active or eligible to start.
+`P4-072` is CLOSED by `SYNC-P4-072`.
 
 Active in progress:
 - None.
@@ -827,14 +827,13 @@ Active in review:
 - None.
 
 Eligible to start:
-- None.
+- `P4-073` — GDĐP workbook importer — **READY**; preferred next P4 task (unlocked by `P4-071` closure; implementation not yet started; must not be described as implemented).
+- `P2-061` — School-wide effective teaching schedule read model + Teacher Workspace — **READY** independently (unlocked by `P2-060` closure; implementation not yet started; must not be described as implemented).
 
 Not eligible to start:
-- `P2-020` — `PLANNED`, blocked until `P2-010` evidence is provided.
-
-`P2-020` remains blocked by `P2-010` evidence (`BLOCKED_EVIDENCE`).
-
-Note: `P2-010` remains `BLOCKED_EVIDENCE` pending actual authoritative school PPCT workbook/template evidence.
+- `P4-074` — Special-programme import lifecycle and E2E closure — **PLANNED**; gated on `P4-073` closure.
+- `P2-020` — PPCT native importer implementation — **PLANNED**; blocked by `P2-010`.
+- `P2-010` — PPCT real-workbook contract/security audit — remains **BLOCKED_EVIDENCE** pending actual authoritative school PPCT workbook/template evidence.
 
 Eligibility does not imply permission to bypass one-task-per-branch, review, CI or mandatory closure-sync gates. No next major task is inferred by this closure; P6 remains blocked by P6-005.
 
