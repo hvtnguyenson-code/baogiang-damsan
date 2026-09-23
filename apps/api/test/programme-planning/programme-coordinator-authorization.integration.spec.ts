@@ -27,7 +27,7 @@ integration('Programme Coordinator Authorization (PostgreSQL integration)', () =
     await h.seedCapabilities([
       { key: 'APPROVAL_PRINCIPAL', scopes: ['SCHOOL_WIDE'] },
       { key: 'APPROVAL_VICE_PRINCIPAL', scopes: ['SCHOOL_WIDE'] },
-      { key: 'GDDDP_COORDINATOR', scopes: ['ACTIVITY'] },
+      { key: 'GDDP_COORDINATOR', scopes: ['ACTIVITY'] },
       { key: 'HĐTN_COORDINATOR', scopes: ['ACTIVITY'] },
       { key: 'CAPABILITY_GRANT', scopes: ['SCHOOL_WIDE'] },
       { key: 'AI_ACTIVE_USE_ACTIVITY', scopes: ['ACTIVITY'] },
@@ -174,7 +174,7 @@ integration('Programme Coordinator Authorization (PostgreSQL integration)', () =
     const masterId = createMasterRes.body.id as string;
     expect(masterId).toBeDefined();
 
-    // 2. Admin issues GDDDP_COORDINATOR grant for masterId to coordinator
+    // 2. Admin issues GDDP_COORDINATOR grant for masterId to coordinator
     const admin = await h.actor({ grants: [{ capabilityKey: 'CAPABILITY_GRANT' }] });
     const coordinator = await h.actor();
     const wrongActor = await h.actor();
@@ -183,7 +183,7 @@ integration('Programme Coordinator Authorization (PostgreSQL integration)', () =
       .post(`/api/users/${coordinator.id}/capability-grants`)
       .set('Origin', testOrigin)
       .send({
-        capabilityKey: 'GDDDP_COORDINATOR',
+        capabilityKey: 'GDDP_COORDINATOR',
         scopeType: 'ACTIVITY',
         scopeResourceId: masterId,
       });
@@ -259,7 +259,7 @@ integration('Programme Coordinator Authorization (PostgreSQL integration)', () =
   });
 
   describe('Coordinator Capability Grant Hardening (Tests 25-29)', () => {
-    it('25. GDDDP_COORDINATOR grant creation rejects nonexistent resource with 404', async () => {
+    it('25. GDDP_COORDINATOR grant creation rejects nonexistent resource with 404', async () => {
       const admin = await h.actor({ grants: [{ capabilityKey: 'CAPABILITY_GRANT' }] });
       const targetUser = await h.actor();
 
@@ -267,14 +267,14 @@ integration('Programme Coordinator Authorization (PostgreSQL integration)', () =
         .post(`/api/users/${targetUser.id}/capability-grants`)
         .set('Origin', testOrigin)
         .send({
-          capabilityKey: 'GDDDP_COORDINATOR',
+          capabilityKey: 'GDDP_COORDINATOR',
           scopeType: 'ACTIVITY',
           scopeResourceId: crypto.randomUUID(),
         });
       expect(res.status).toBe(HttpStatus.NOT_FOUND);
     });
 
-    it('26. GDDDP_COORDINATOR grant creation rejects HDTN_HN master with 409', async () => {
+    it('26. GDDP_COORDINATOR grant creation rejects HDTN_HN master with 409', async () => {
       const year = await setupYear();
       const admin = await h.actor({ grants: [{ capabilityKey: 'CAPABILITY_GRANT' }] });
       const targetUser = await h.actor();
@@ -291,7 +291,7 @@ integration('Programme Coordinator Authorization (PostgreSQL integration)', () =
         .post(`/api/users/${targetUser.id}/capability-grants`)
         .set('Origin', testOrigin)
         .send({
-          capabilityKey: 'GDDDP_COORDINATOR',
+          capabilityKey: 'GDDP_COORDINATOR',
           scopeType: 'ACTIVITY',
           scopeResourceId: hdtnMaster.id,
         });
@@ -341,7 +341,7 @@ integration('Programme Coordinator Authorization (PostgreSQL integration)', () =
         .post(`/api/users/${targetUser.id}/capability-grants`)
         .set('Origin', testOrigin)
         .send({
-          capabilityKey: 'GDDDP_COORDINATOR',
+          capabilityKey: 'GDDP_COORDINATOR',
           scopeType: 'ACTIVITY',
           scopeResourceId: gddpMaster.id,
         });
@@ -396,7 +396,7 @@ integration('Programme Coordinator Authorization (PostgreSQL integration)', () =
     it('3. Coordinator cannot bootstrap create ProgrammeMaster via HTTP', async () => {
       const year = await setupYear();
       const coordinator = await h.actor({
-        grants: [{ capabilityKey: 'GDDDP_COORDINATOR', scopeType: 'ACTIVITY', scopeResourceId: crypto.randomUUID() }],
+        grants: [{ capabilityKey: 'GDDP_COORDINATOR', scopeType: 'ACTIVITY', scopeResourceId: crypto.randomUUID() }],
       });
 
       const res = await coordinator.agent
@@ -448,7 +448,7 @@ integration('Programme Coordinator Authorization (PostgreSQL integration)', () =
       const year = await setupYear();
       const masterA = await createMasterDirect(year.id, 'GDDP', 10);
       const coord = await h.actor({
-        grants: [{ capabilityKey: 'GDDDP_COORDINATOR', scopeType: 'ACTIVITY', scopeResourceId: masterA.id }],
+        grants: [{ capabilityKey: 'GDDP_COORDINATOR', scopeType: 'ACTIVITY', scopeResourceId: masterA.id }],
       });
 
       const readRes = await coord.agent.get(`/api/programme-planning/masters/${masterA.id}`);
@@ -471,7 +471,7 @@ integration('Programme Coordinator Authorization (PostgreSQL integration)', () =
       const masterA = await createMasterDirect(year.id, 'GDDP', 10);
       const masterB = await createMasterDirect(year.id, 'GDDP', 11);
       const coord = await h.actor({
-        grants: [{ capabilityKey: 'GDDDP_COORDINATOR', scopeType: 'ACTIVITY', scopeResourceId: masterA.id }],
+        grants: [{ capabilityKey: 'GDDP_COORDINATOR', scopeType: 'ACTIVITY', scopeResourceId: masterA.id }],
       });
 
       const readRes = await coord.agent.get(`/api/programme-planning/masters/${masterB.id}`);
@@ -493,7 +493,7 @@ integration('Programme Coordinator Authorization (PostgreSQL integration)', () =
       const gddpMaster = await createMasterDirect(year.id, 'GDDP', 10);
       const hdtnMaster = await createMasterDirect(year.id, 'HDTN_HN');
       const coord = await h.actor({
-        grants: [{ capabilityKey: 'GDDDP_COORDINATOR', scopeType: 'ACTIVITY', scopeResourceId: gddpMaster.id }],
+        grants: [{ capabilityKey: 'GDDP_COORDINATOR', scopeType: 'ACTIVITY', scopeResourceId: gddpMaster.id }],
       });
 
       const readRes = await coord.agent.get(`/api/programme-planning/masters/${hdtnMaster.id}`);
@@ -755,7 +755,7 @@ integration('Programme Coordinator Authorization (PostgreSQL integration)', () =
       await h.prisma.capabilityGrant.create({
         data: {
           userId: coord.id,
-          capabilityKey: 'GDDDP_COORDINATOR',
+          capabilityKey: 'GDDP_COORDINATOR',
           scopeType: 'ACTIVITY',
           scopeResourceId: master.id,
           validFrom: new Date(Date.now() - 100_000),
@@ -776,7 +776,7 @@ integration('Programme Coordinator Authorization (PostgreSQL integration)', () =
       await h.prisma.capabilityGrant.create({
         data: {
           userId: coord.id,
-          capabilityKey: 'GDDDP_COORDINATOR',
+          capabilityKey: 'GDDP_COORDINATOR',
           scopeType: 'ACTIVITY',
           scopeResourceId: master.id,
           validFrom: new Date(Date.now() - 200_000),
@@ -796,7 +796,7 @@ integration('Programme Coordinator Authorization (PostgreSQL integration)', () =
       await h.prisma.capabilityGrant.create({
         data: {
           userId: coord.id,
-          capabilityKey: 'GDDDP_COORDINATOR',
+          capabilityKey: 'GDDP_COORDINATOR',
           scopeType: 'ACTIVITY',
           scopeResourceId: master.id,
           validFrom: new Date(Date.now() + 100_000),
@@ -816,7 +816,7 @@ integration('Programme Coordinator Authorization (PostgreSQL integration)', () =
       await h.prisma.capabilityGrant.create({
         data: {
           userId: coord.id,
-          capabilityKey: 'GDDDP_COORDINATOR',
+          capabilityKey: 'GDDP_COORDINATOR',
           scopeType: 'ACTIVITY',
           scopeResourceId: master.id,
           validFrom: new Date(Date.now() - 10_000),
@@ -835,7 +835,7 @@ integration('Programme Coordinator Authorization (PostgreSQL integration)', () =
       const master = await createMasterDirect(year.id, 'GDDP', 10);
       const coord = await h.actor({
         mustChangePassword: true,
-        grants: [{ capabilityKey: 'GDDDP_COORDINATOR', scopeType: 'ACTIVITY', scopeResourceId: master.id }],
+        grants: [{ capabilityKey: 'GDDP_COORDINATOR', scopeType: 'ACTIVITY', scopeResourceId: master.id }],
       });
 
       const mutateRes = await coord.agent
@@ -868,7 +868,7 @@ integration('Programme Coordinator Authorization (PostgreSQL integration)', () =
       const masterB = await createMasterDirect(year.id, 'GDDP', 11);
 
       const coord = await h.actor({
-        grants: [{ capabilityKey: 'GDDDP_COORDINATOR', scopeType: 'ACTIVITY', scopeResourceId: masterA.id }],
+        grants: [{ capabilityKey: 'GDDP_COORDINATOR', scopeType: 'ACTIVITY', scopeResourceId: masterA.id }],
       });
 
       const listRes = await coord.agent.get(`/api/programme-planning/masters?academicYearId=${year.id}`);
@@ -886,7 +886,7 @@ integration('Programme Coordinator Authorization (PostgreSQL integration)', () =
       const masterB = await createMasterDirect(year.id, 'GDDP', 11);
 
       const coord = await h.actor({
-        grants: [{ capabilityKey: 'GDDDP_COORDINATOR', scopeType: 'ACTIVITY', scopeResourceId: masterA.id }],
+        grants: [{ capabilityKey: 'GDDP_COORDINATOR', scopeType: 'ACTIVITY', scopeResourceId: masterA.id }],
       });
 
       const occRes = await coord.agent.get(`/api/programme-planning/masters/${masterB.id}/occurrences`);
@@ -921,12 +921,12 @@ integration('Programme Coordinator Authorization (PostgreSQL integration)', () =
       expect(audit).toBeDefined();
       expect(audit?.result).toBe('DENIED');
       expect(audit?.entityType).toBe('CapabilityDefinition');
-      expect(audit?.entityId).toBe('GDDDP_COORDINATOR');
+      expect(audit?.entityId).toBe('GDDP_COORDINATOR');
 
       const meta = audit?.metadata as Record<string, unknown>;
       expect(meta).toBeDefined();
       expect(meta.resourceId).toBe(master.id);
-      expect(meta.capabilityKey).toBe('GDDDP_COORDINATOR');
+      expect(meta.capabilityKey).toBe('GDDP_COORDINATOR');
       expect(meta.scope).toBe('ACTIVITY');
 
       // Verify no sensitive keys exist anywhere in metadata

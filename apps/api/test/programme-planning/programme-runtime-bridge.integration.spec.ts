@@ -28,7 +28,7 @@ integration('ProgrammeRuntimeBridge (PostgreSQL integration P4-040)', () => {
     await h.seedCapabilities([
       { key: 'APPROVAL_PRINCIPAL', scopes: ['SCHOOL_WIDE'] },
       { key: 'APPROVAL_VICE_PRINCIPAL', scopes: ['SCHOOL_WIDE'] },
-      { key: 'GDDDP_COORDINATOR', scopes: ['ACTIVITY'] },
+      { key: 'GDDP_COORDINATOR', scopes: ['ACTIVITY'] },
       { key: 'HĐTN_COORDINATOR', scopes: ['ACTIVITY'] },
       { key: 'SPECIAL_ACTIVITY_MANAGE', scopes: ['SCHOOL_WIDE'] },
       { key: 'SYSTEM_ADMIN', scopes: ['SCHOOL_WIDE'] },
@@ -118,7 +118,7 @@ integration('ProgrammeRuntimeBridge (PostgreSQL integration P4-040)', () => {
       usernamePrefix: 'coord-gddp',
       grants: [
         {
-          capabilityKey: 'GDDDP_COORDINATOR',
+          capabilityKey: 'GDDP_COORDINATOR',
           scopeType: 'ACTIVITY',
           scopeResourceId: gddpMaster.id,
         },
@@ -138,7 +138,7 @@ integration('ProgrammeRuntimeBridge (PostgreSQL integration P4-040)', () => {
       usernamePrefix: 'other-coord',
       grants: [
         {
-          capabilityKey: 'GDDDP_COORDINATOR',
+          capabilityKey: 'GDDP_COORDINATOR',
           scopeType: 'ACTIVITY',
           scopeResourceId: otherMaster.id,
         },
@@ -568,7 +568,7 @@ integration('ProgrammeRuntimeBridge (PostgreSQL integration P4-040)', () => {
         mustChangePassword: true,
         grants: [
           {
-            capabilityKey: 'GDDDP_COORDINATOR',
+            capabilityKey: 'GDDP_COORDINATOR',
             scopeType: 'ACTIVITY',
             scopeResourceId: f.gddpMaster.id,
           },
@@ -1097,7 +1097,7 @@ integration('ProgrammeRuntimeBridge (PostgreSQL integration P4-040)', () => {
 
       // 47. Authority provenance persisted
       expect(coordAtt.authorityType).toBe('COORDINATOR');
-      expect(coordAtt.capabilityKey).toBe('GDDDP_COORDINATOR');
+      expect(coordAtt.capabilityKey).toBe('GDDP_COORDINATOR');
       expect(coordAtt.scope).toBe('ACTIVITY');
       expect(coordAtt.scopeResourceId).toBe(f.gddpMaster.id);
       expect(coordAtt.status).toBe('ACTIVE');
@@ -1661,7 +1661,7 @@ integration('ProgrammeRuntimeBridge (PostgreSQL integration P4-040)', () => {
         usernamePrefix: 'coord-63',
         grants: [
           {
-            capabilityKey: 'GDDDP_COORDINATOR',
+            capabilityKey: 'GDDP_COORDINATOR',
             scopeType: 'ACTIVITY',
             scopeResourceId: master63.id,
           },
