@@ -8,7 +8,13 @@
 -- Preserve the existing database backstop while aligning it with the retained lifecycle:
 --   * a DRAFT plan version may own only DRAFT occurrences;
 --   * a PUBLISHED plan version may own occurrence rows under the existing occurrence lifecycle;
---   * a SUPERSEDED plan version cannot be used for new/provenance-changing occurrence rows.
+--   * a SUPERSEDED plan version cannot receive new/provenance-changing occurrence rows;
+--   * status-only retained lifecycle transitions remain possible without reopening provenance.
+--
+-- The original semantic trigger did not listen to occurrence status updates because DRAFT
+-- plans could not own occurrences at all. Now that P4-072 legitimately creates DRAFT/DRAFT
+-- packages, status must be part of the trigger surface so the database also prevents a
+-- DRAFT occurrence from becoming PUBLISHED while its owning plan is still DRAFT.
 --
 -- This is a forward-only trigger-function correction. It changes no table shape, enum,
 -- foreign key, retained row, or runtime/materialization semantics.
@@ -19,6 +25,7 @@ DECLARE
     master_grade INTEGER;
     plan_status "ProgrammePlanVersionStatus";
     class_grade INTEGER;
+    provenance_changed BOOLEAN := TRUE;
 BEGIN
     SELECT kind, grade_level INTO master_kind, master_grade
       FROM "programme_masters"
@@ -35,12 +42,34 @@ BEGIN
         RETURN NEW; -- composite FK will produce the canonical violation.
     END IF;
 
+    IF TG_OP = 'UPDATE' THEN
+        provenance_changed := ROW(
+            NEW.programme_master_id,
+            NEW.programme_plan_version_id,
+            NEW.programme_topic_item_id,
+            NEW.academic_year_id,
+            NEW.mode,
+            NEW.grade_level,
+            NEW.school_class_id
+        ) IS DISTINCT FROM ROW(
+            OLD.programme_master_id,
+            OLD.programme_plan_version_id,
+            OLD.programme_topic_item_id,
+            OLD.academic_year_id,
+            OLD.mode,
+            OLD.grade_level,
+            OLD.school_class_id
+        );
+    END IF;
+
     IF plan_status = 'DRAFT'::"ProgrammePlanVersionStatus" THEN
         IF NEW.status IS DISTINCT FROM 'DRAFT'::"ProgrammeOccurrenceStatus" THEN
             RAISE EXCEPTION 'Only DRAFT programme occurrences may reference a DRAFT programme plan version' USING ERRCODE = '23514';
         END IF;
-    ELSIF plan_status IS DISTINCT FROM 'PUBLISHED'::"ProgrammePlanVersionStatus" THEN
-        RAISE EXCEPTION 'Planned programme occurrences cannot reference a SUPERSEDED programme plan version for new or provenance-changing rows' USING ERRCODE = '23514';
+    ELSIF plan_status = 'SUPERSEDED'::"ProgrammePlanVersionStatus" THEN
+        IF TG_OP = 'INSERT' OR provenance_changed THEN
+            RAISE EXCEPTION 'Planned programme occurrences cannot reference a SUPERSEDED programme plan version for new or provenance-changing rows' USING ERRCODE = '23514';
+        END IF;
     END IF;
 
     IF NEW.mode = 'CLASS' THEN
@@ -61,3 +90,12 @@ BEGIN
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
+
+DROP TRIGGER "planned_programme_occurrence_semantic_guard"
+    ON "planned_programme_occurrences";
+
+CREATE TRIGGER "planned_programme_occurrence_semantic_guard"
+    BEFORE INSERT OR UPDATE OF "programme_master_id", "programme_plan_version_id", "programme_topic_item_id",
+        "academic_year_id", "mode", "grade_level", "school_class_id", "status"
+    ON "planned_programme_occurrences"
+    FOR EACH ROW EXECUTE FUNCTION planned_programme_occurrence_semantic_guard();
