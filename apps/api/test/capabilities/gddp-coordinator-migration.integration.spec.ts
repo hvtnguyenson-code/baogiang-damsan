@@ -4,6 +4,21 @@ import { integration, Phase01Harness } from '../helpers/phase01-test-harness';
 
 integration('GDĐP coordinator key normalization migration (PostgreSQL integration)', () => {
   const h = new Phase01Harness();
+
+  async function clean(): Promise<void> {
+    await h.prisma.$executeRawUnsafe(`
+      TRUNCATE TABLE
+        "audit_events",
+        "auth_sessions",
+        "capability_grants",
+        "capability_definitions",
+        "subject_groups",
+        "academic_years",
+        "users"
+      CASCADE;
+    `);
+  }
+
   const migrationSql = fs.readFileSync(
     path.join(
       __dirname,
@@ -18,14 +33,14 @@ integration('GDĐP coordinator key normalization migration (PostgreSQL integrati
 
   afterAll(async () => {
     try {
-      await h.clean();
+      await clean();
     } finally {
       await h.stop();
     }
   });
 
   beforeEach(async () => {
-    await h.clean();
+    await clean();
   });
 
   it('migrates GDDDP_COORDINATOR to GDDP_COORDINATOR preserving grants and attestation provenance', async () => {
