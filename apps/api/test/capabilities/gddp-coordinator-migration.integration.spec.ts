@@ -1,6 +1,7 @@
+import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { integration, Phase01Harness } from '../helpers/phase01-test-harness';
+import { integration, normalizedCode, Phase01Harness, testDatabaseUrl } from '../helpers/phase01-test-harness';
 
 integration('GDĐP coordinator key normalization migration (PostgreSQL integration)', () => {
   const h = new Phase01Harness();
@@ -19,13 +20,58 @@ integration('GDĐP coordinator key normalization migration (PostgreSQL integrati
     `);
   }
 
-  const migrationSql = fs.readFileSync(
-    path.join(
-      __dirname,
-      '../../../../prisma/migrations/20260923193000_gddp_coordinator_key_normalization/migration.sql',
-    ),
-    'utf-8',
+  const migrationFilePath = path.resolve(
+    __dirname,
+    '../../../../prisma/migrations/20260923193000_gddp_coordinator_key_normalization/migration.sql',
   );
+
+  async function executeMigrationScript(): Promise<void> {
+    const targetUrl = process.env.DATABASE_URL || testDatabaseUrl;
+    if (!targetUrl) {
+      throw new Error('No target database URL available for migration execution');
+    }
+
+    const parsed = new URL(targetUrl);
+    const host = parsed.hostname || '127.0.0.1';
+    const port = parsed.port || '5432';
+    const user = decodeURIComponent(parsed.username || 'postgres');
+    const password = decodeURIComponent(parsed.password || '');
+    const database = decodeURIComponent((parsed.pathname || '').replace(/^\//, ''));
+
+    const psqlBin = process.env.PSQL_PATH
+      || (process.platform === 'win32' && fs.existsSync('D:\\PostgreSQL\\bin\\psql.exe')
+        ? 'D:\\PostgreSQL\\bin\\psql.exe'
+        : 'psql');
+
+    const args = [
+      '-X',
+      '-h', host,
+      '-p', port,
+      '-U', user,
+      '-d', database,
+      '-v', 'ON_ERROR_STOP=1',
+      '-f', migrationFilePath,
+    ];
+
+    const result = spawnSync(psqlBin, args, {
+      env: {
+        ...process.env,
+        PGPASSWORD: password,
+      },
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+
+    if (result.error) {
+      throw new Error(`Failed to invoke psql (${psqlBin}): ${result.error.message}`);
+    }
+
+    if (result.status !== 0) {
+      const stderr = result.stderr ? String(result.stderr) : '';
+      const stdout = result.stdout ? String(result.stdout) : '';
+      throw new Error(`Migration execution failed (exit code ${result.status}):\n${stderr || stdout}`);
+    }
+  }
 
   beforeAll(async () => {
     await h.start();
@@ -50,7 +96,7 @@ integration('GDĐP coordinator key normalization migration (PostgreSQL integrati
       VALUES ('GDDDP_COORDINATOR', 'Điều phối Giáo dục địa phương.', ARRAY['ACTIVITY']::text[], true, true);
     `);
 
-    // 2. Create user, academic year, master, plan version, occurrence
+    // 2. Create user, academic year, master, plan version (DRAFT -> topic -> PUBLISHED), occurrence
     const user = await h.prisma.user.create({
       data: {
         username: `coord-${crypto.randomUUID()}`,
@@ -60,7 +106,7 @@ integration('GDĐP coordinator key normalization migration (PostgreSQL integrati
     });
     const year = await h.prisma.academicYear.create({
       data: {
-        code: `Y-${crypto.randomUUID().slice(0, 8)}`,
+        code: normalizedCode('Y_GDDP_'),
         name: 'Năm học test',
       },
     });
@@ -76,7 +122,8 @@ integration('GDĐP coordinator key normalization migration (PostgreSQL integrati
       data: {
         programmeMasterId: master.id,
         versionNumber: 1,
-        status: 'PUBLISHED',
+        status: 'DRAFT',
+        draftRevision: 1,
         createdByUserId: user.id,
       },
     });
@@ -90,6 +137,14 @@ integration('GDĐP coordinator key normalization migration (PostgreSQL integrati
         guidelineWeekTo: 2,
       },
     });
+    await h.prisma.programmePlanVersion.update({
+      where: { id: plan.id },
+      data: {
+        status: 'PUBLISHED',
+        publishedByUserId: user.id,
+        publishedAt: new Date('2026-09-01T08:00:00.000Z'),
+      },
+    });
     const occ = await h.prisma.plannedProgrammeOccurrence.create({
       data: {
         programmeMasterId: master.id,
@@ -101,6 +156,8 @@ integration('GDĐP coordinator key normalization migration (PostgreSQL integrati
         gradeLevel: 10,
         status: 'PUBLISHED',
         draftRevision: 1,
+        publishedByUserId: user.id,
+        publishedAt: new Date('2026-09-01T08:30:00.000Z'),
         createdByUserId: user.id,
       },
     });
@@ -133,8 +190,8 @@ integration('GDĐP coordinator key normalization migration (PostgreSQL integrati
       },
     });
 
-    // 5. Execute migration SQL
-    await h.prisma.$executeRawUnsafe(migrationSql);
+    // 5. Execute migration SQL via script executor
+    await executeMigrationScript();
 
     // 6. Assertions
     // A. capability_definitions contains GDDP_COORDINATOR
@@ -178,13 +235,13 @@ integration('GDĐP coordinator key normalization migration (PostgreSQL integrati
         ('GDDP_COORDINATOR', 'Điều phối Giáo dục địa phương (canonical).', ARRAY['ACTIVITY']::text[], true, true);
     `);
 
-    await expect(h.prisma.$executeRawUnsafe(migrationSql)).rejects.toThrow(
+    await expect(executeMigrationScript()).rejects.toThrow(
       /Both legacy and canonical GDĐP coordinator capability keys exist; reconciliation required/,
     );
   });
 
   it('is a no-op safe execution when GDDDP_COORDINATOR does not exist', async () => {
     // Empty database - neither key exists
-    await expect(h.prisma.$executeRawUnsafe(migrationSql)).resolves.not.toThrow();
+    await expect(executeMigrationScript()).resolves.not.toThrow();
   });
 });
