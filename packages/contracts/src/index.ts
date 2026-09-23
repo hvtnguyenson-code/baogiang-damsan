@@ -1837,3 +1837,95 @@ export interface BusinessPolicyAcademicYearOptionListResponse {
   pageSize: number;
   total: number;
 }
+
+// ============================================================
+// Special Programme HĐTN-HN Workbook Ingestion Contracts (P4-072)
+// ============================================================
+
+export type HdtnWorkbookOrganizingScope = 'CLASS' | 'GRADE' | 'SCHOOL_WIDE';
+
+export type HdtnWorkbookIssueSeverity = 'BLOCKER' | 'WARNING';
+
+export interface HdtnWorkbookPreviewIssue {
+  severity: HdtnWorkbookIssueSeverity;
+  code: string;
+  message: string;
+  sourceRowNumber?: number;
+  schoolClassCode?: string;
+  teacherName?: string;
+}
+
+export interface HdtnWorkbookResolvedTeacherSummary {
+  enteredName: string;
+  matchedUserId: string;
+  displayName: string;
+  staffCode: string | null;
+}
+
+export interface HdtnWorkbookResolvedSlot {
+  civilDate: CivilDateString;
+  weekday: AcademicWeekday;
+  timeSlotDefinitionId: string;
+  periodNumber?: number;
+  startTime?: string;
+  endTime?: string;
+}
+
+export interface HdtnWorkbookPreviewRow {
+  sourceRowNumber: number;
+  weekFrom: number;
+  weekTo: number;
+  requiredPeriods: number;
+  organizingScope: HdtnWorkbookOrganizingScope;
+  organizingScopeLabel: string;
+  gradeLevel: number | null;
+  topicTitle: string;
+  enteredTeacherText: string;
+  resolvedTeachers: HdtnWorkbookResolvedTeacherSummary[];
+  targetClassCodes: string[];
+  resolvedCandidateCount: number;
+  slots: HdtnWorkbookResolvedSlot[];
+  issues: HdtnWorkbookPreviewIssue[];
+}
+
+export interface HdtnWorkbookInspectionSheet {
+  name: string;
+  rowCount: number;
+  columnCount: number;
+  headers: string[];
+  isDataSheet: boolean;
+}
+
+export interface HdtnWorkbookInspectionResponse {
+  sourceFileName: string;
+  sheets: HdtnWorkbookInspectionSheet[];
+  dataSheetFound: boolean;
+  issues: HdtnWorkbookPreviewIssue[];
+}
+
+export interface HdtnWorkbookPreviewResponse {
+  sourceFileName: string;
+  sheetName: string;
+  academicYearId: string;
+  calendarVersionId: string;
+  previewFingerprint: string;
+  canConfirm: boolean;
+  blockingIssueCount: number;
+  warningCount: number;
+  totalRows: number;
+  rows: HdtnWorkbookPreviewRow[];
+  issues: HdtnWorkbookPreviewIssue[];
+}
+
+export interface HdtnWorkbookConfirmResponse {
+  outcome: 'CREATED' | 'IDEMPOTENT_REPLAY';
+  commandId: string;
+  programmeMasterId: string;
+  programmePlanVersionId: string;
+  versionNumber: number;
+  status: string;
+  topicItemCount: number;
+  occurrenceCount: number;
+  slotCount: number;
+  staffingCount: number;
+}

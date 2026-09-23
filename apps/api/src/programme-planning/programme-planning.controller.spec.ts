@@ -131,5 +131,42 @@ describe('ProgrammePlanningController', () => {
       await controller.publishOccurrence(occId, dto, fakeReq);
       expect(serviceMock.publishOccurrence).toHaveBeenCalledWith(occId, dto, actorId, expect.anything());
     });
+
+    it('inspectHdtnWorkbook dispatches to service with file', async () => {
+      serviceMock.inspectHdtnWorkbook = jest.fn().mockResolvedValue({ sourceFileName: 'test.xlsx' });
+      const fakeFile = { originalname: 'test.xlsx', buffer: Buffer.from('') } as never;
+      await controller.inspectHdtnWorkbook(fakeFile);
+      expect(serviceMock.inspectHdtnWorkbook).toHaveBeenCalledWith(fakeFile);
+    });
+
+    it('previewHdtnWorkbook dispatches to service with file, academicYearId, and actorId', async () => {
+      serviceMock.previewHdtnWorkbook = jest.fn().mockResolvedValue({ canConfirm: true });
+      const fakeFile = { originalname: 'test.xlsx', buffer: Buffer.from('') } as never;
+      const dto = { academicYearId: 'year-1' };
+      await controller.previewHdtnWorkbook(fakeFile, dto, fakeReq);
+      expect(serviceMock.previewHdtnWorkbook).toHaveBeenCalledWith(
+        fakeFile,
+        'year-1',
+        actorId,
+        expect.anything(),
+      );
+    });
+
+    it('confirmHdtnWorkbook dispatches to service with file, dto, and actorId', async () => {
+      serviceMock.confirmHdtnWorkbook = jest.fn().mockResolvedValue({ status: 'DRAFT' });
+      const fakeFile = { originalname: 'test.xlsx', buffer: Buffer.from('') } as never;
+      const dto = {
+        academicYearId: 'year-1',
+        commandId: 'cmd-1',
+        expectedPreviewFingerprint: 'fp-1',
+      };
+      await controller.confirmHdtnWorkbook(fakeFile, dto, fakeReq);
+      expect(serviceMock.confirmHdtnWorkbook).toHaveBeenCalledWith(
+        fakeFile,
+        dto,
+        actorId,
+        expect.anything(),
+      );
+    });
   });
 });

@@ -531,3 +531,22 @@ export interface ProgrammeOccurrenceAttestationsListResponse {
   hasQualifyingNonReversedAttestation: boolean;
   activeAttestationCount: number;
 }
+
+export class PreviewHdtnWorkbookDto {
+  @IsUUID()
+  academicYearId!: string;
+}
+
+export class ConfirmHdtnWorkbookDto {
+  @IsUUID()
+  academicYearId!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  expectedPreviewFingerprint!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  commandId!: string;
+}

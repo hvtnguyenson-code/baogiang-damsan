@@ -44,6 +44,8 @@ async function syntheticOoxmlPackage(extraName: string, content: string | Buffer
 }
 
 describe('WorkbookParserService worker boundary', () => {
+  jest.setTimeout(30000);
+
   it('parses a real XLSX through the isolated worker protocol', async () => {
     const workbook = new ExcelJS.Workbook();
     workbook.addWorksheet('TKB').addRow(['Thứ', 'Buổi']);

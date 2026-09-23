@@ -20,6 +20,6 @@ import { WorkbookCanonicalizationService } from './workbook-canonicalization.ser
     WorkbookParserService,
     DamSanNativeTimetableAdapter,
   ],
-  exports: [DamSanNativeTimetableAdapter],
+  exports: [DamSanNativeTimetableAdapter, WorkbookParserService],
 })
 export class TimetableImportModule {}

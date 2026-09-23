@@ -13,7 +13,7 @@ It is **not** a self-referential registry of the latest Git commit. Exact curren
 `P4-071` — Retained TKB special-programme marker bridge — is **CLOSED** by `SYNC-P4-071` following parent PR #158 merge (`759839e9a7ff84044084e4b40fbc23d4b358ec52`) and authoritative post-merge CI #501 SUCCESS.
 
 Eligible next tasks:
-- `P4-072` — HĐTN-HN workbook importer — is **READY** (unlocked by `P4-071` closure; implementation not yet started; must not be described as implemented).
+- `P4-072` — HĐTN-HN workbook importer — implementation complete on dedicated branch `feat/hdtn-hn-workbook-importer-072` and is **IN_REVIEW** pending independent review (T48).
 - `P4-073` — GDĐP workbook importer — is **READY** (unlocked by `P4-071` closure; implementation not yet started; must not be described as implemented).
 - Preferred execution sequence: `P4-072` first, then `P4-073`, to avoid overlapping implementation branches. Both tasks are dependency-eligible.
 - `P2-061` — School-wide effective teaching schedule read model + Teacher Workspace — remains independently **READY** (unlocked by `P2-060` closure; implementation not yet started; must not be described as implemented).

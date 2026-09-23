@@ -10,19 +10,32 @@ import {
   Post,
   Query,
   Req,
+  UploadedFile,
+  UseFilters,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  HdtnWorkbookConfirmResponse,
+  HdtnWorkbookInspectionResponse,
+  HdtnWorkbookPreviewResponse,
+} from '@baogiang/contracts';
 import { AuthenticatedRequest } from '../auth/auth.types';
 import { CsrfOriginGuard } from '../auth/csrf-origin.guard';
 import { SessionAuthGuard } from '../auth/session-auth.guard';
+import { WorkbookUploadExceptionFilter } from '../timetable-import/workbook-upload-exception.filter';
+import { MAX_XLSX_BYTES } from '../timetable-import/workbook-limits';
 import { AuthorizedProgrammePlanningService } from './authorized-programme-planning.service';
 import {
   AttestOccurrenceDto,
+  ConfirmHdtnWorkbookDto,
   CreateDraftOccurrenceDto,
   CreateDraftPlanVersionDto,
   CreateProgrammeMasterDto,
   CreateReplacementOccurrenceDto,
   CreateSuccessorDraftPlanVersionDto,
+  PreviewHdtnWorkbookDto,
   EditDraftOccurrenceDto,
   EditDraftPlanVersionDto,
   ListPlannedOccurrencesDto,
@@ -40,6 +53,7 @@ import {
   ReplaceOccurrenceSlotsStaffingDto,
   ReverseAttestationDto,
 } from './dto';
+import { UploadedWorkbookFile } from './hdtn-workbook-importer.service';
 
 @Controller('programme-planning')
 @UseGuards(SessionAuthGuard)
@@ -314,5 +328,68 @@ export class ProgrammePlanningController {
     @Req() req: AuthenticatedRequest,
   ): Promise<ProgrammeOccurrenceAttestationRecord> {
     return this.service.reverseAttestation(attestationId, dto, req.auth!.user.id, this.auditContext(req));
+  }
+
+  // =========================================================================
+  // HĐTN-HN WORKBOOK INGESTION
+  // =========================================================================
+
+  @Post('hdtn-import/inspect')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(CsrfOriginGuard)
+  @UseFilters(WorkbookUploadExceptionFilter)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: MAX_XLSX_BYTES, files: 1, fields: 8, parts: 9 },
+    }),
+  )
+  async inspectHdtnWorkbook(
+    @UploadedFile() file: UploadedWorkbookFile | undefined,
+  ): Promise<HdtnWorkbookInspectionResponse> {
+    return this.service.inspectHdtnWorkbook(file);
+  }
+
+  @Post('hdtn-import/preview')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(CsrfOriginGuard)
+  @UseFilters(WorkbookUploadExceptionFilter)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: MAX_XLSX_BYTES, files: 1, fields: 8, parts: 9 },
+    }),
+  )
+  async previewHdtnWorkbook(
+    @UploadedFile() file: UploadedWorkbookFile | undefined,
+    @Body() dto: PreviewHdtnWorkbookDto,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<HdtnWorkbookPreviewResponse> {
+    return this.service.previewHdtnWorkbook(
+      file,
+      dto.academicYearId,
+      req.auth!.user.id,
+      this.auditContext(req),
+    );
+  }
+
+  @Post('hdtn-import/confirm')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(CsrfOriginGuard)
+  @UseFilters(WorkbookUploadExceptionFilter)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: MAX_XLSX_BYTES, files: 1, fields: 8, parts: 9 },
+    }),
+  )
+  async confirmHdtnWorkbook(
+    @UploadedFile() file: UploadedWorkbookFile | undefined,
+    @Body() dto: ConfirmHdtnWorkbookDto,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<HdtnWorkbookConfirmResponse> {
+    return this.service.confirmHdtnWorkbook(
+      file,
+      dto,
+      req.auth!.user.id,
+      this.auditContext(req),
+    );
   }
 }
