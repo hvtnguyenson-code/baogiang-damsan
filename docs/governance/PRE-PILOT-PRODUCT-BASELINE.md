@@ -117,7 +117,7 @@ The existing runtime participation evidence may remain teacher-slot based; the n
 
 ### 4.6 Coordinator authority
 
-Existing `GDDDP_COORDINATOR` and `HĐTN_COORDINATOR` capabilities are evidence that programme-specific coordination was anticipated. Current `SPECIAL_ACTIVITY_MANAGE / SCHOOL_WIDE` must not silently replace coordinator semantics.
+Existing `GDDP_COORDINATOR` and `HĐTN_COORDINATOR` capabilities are evidence that programme-specific coordination was anticipated. Current `SPECIAL_ACTIVITY_MANAGE / SCHOOL_WIDE` must not silently replace coordinator semantics.
 
 A later authorization task must bind coordinator authority to exact programme/activity resources using explicit capability/scope rules. No role/title or staffing membership may imply mutation authority.
 

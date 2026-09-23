@@ -198,7 +198,7 @@ Special programme activities possess no subject or teaching assignment context. 
      - An authorized **BGH professional authority**.
    - **No Hardcoded Capability Key in P4-010**:
      - BGH attestation requires an explicit qualifying professional capability. Existing catalog keys (such as `APPROVAL_PRINCIPAL` and `APPROVAL_VICE_PRINCIPAL`) represent current catalog evidence, but P4-010 does **not** bind the exact capability key. `P4-030` owns the exact key/resource/scope binding.
-     - Similarly, the current catalog contains coordinator capability keys (`GDDDP_COORDINATOR`, `HĐTN_COORDINATOR`) as programme authorization intent/evidence. Their exact P4 command authority is NOT yet active merely because the keys exist; `P4-030` owns their exact runtime binding, resource identity, and scope semantics.
+     - Similarly, the current catalog contains coordinator capability keys (`GDDP_COORDINATOR`, `HĐTN_COORDINATOR`) as programme authorization intent/evidence. Their exact P4 command authority is NOT yet active merely because the keys exist; `P4-030` owns their exact runtime binding, resource identity, and scope semantics.
    - **No Inference from Department Leadership or Job Titles**:
      - Programme coordinator authority is specialized to the programme. It must **never** be inferred from subject group leadership (`SUBJECT_GROUP_LEAD` / Tổ trưởng chuyên môn), department roles, position titles, user roles, or system administrator (`SYSTEM_ADMIN`) status.
    - **Existential Non-Multiplication**: Confirmation is existential, not additive. If both the Coordinator and BGH attest the same occurrence, the confirmation condition is satisfied exactly once. Multiple attestations are retained for audit but **never** duplicate completion status or multiply workload.
@@ -246,7 +246,7 @@ $$\text{Eligible Workload Contribution Source} \iff (\text{Valid Teacher-Slot Pa
    - `SYSTEM_ADMIN` confers no implicit programme coordinator or professional attestation authority.
 2. **Catalog Evidence vs P4-030 Binding**:
    - The repository's current capability catalog contains coordinator and administrative capability keys:
-     - `GDDDP_COORDINATOR` / `HĐTN_COORDINATOR`: Exist in capability contracts reflecting programme coordination intent/evidence.
+     - `GDDP_COORDINATOR` / `HĐTN_COORDINATOR`: Exist in capability contracts reflecting programme coordination intent/evidence.
      - `APPROVAL_PRINCIPAL` / `APPROVAL_VICE_PRINCIPAL`: Institutional school-wide approval keys reflecting current catalog evidence.
      - `SPECIAL_ACTIVITY_MANAGE`: Baseline school-wide authority for ad-hoc operational events.
    - The current catalog contains coordinator capability keys as programme authorization intent/evidence. Their exact P4 command authority is NOT yet active merely because the keys exist; P4-030 owns exact runtime binding (exact capability key, resource identity, ACTIVITY/scope semantics, guard, default deny, and coordinator/BGH binding).
@@ -294,7 +294,7 @@ $$\text{Eligible Workload Contribution Source} \iff (\text{Valid Teacher-Slot Pa
 
 ### 4.1 Downstream Realization Note: P4-030 (Programme Coordinator Authorization)
 - P4-030 establishes exact runtime authorization binding for GDĐP and HĐTN-HN programme planning:
-  - Coordinator authority is bound strictly to `ACTIVITY` capability scope with `scopeResourceId = exact ProgrammeMaster.id` (`GDDDP_COORDINATOR` for GDDP, `HĐTN_COORDINATOR` for HDTN_HN).
+  - Coordinator authority is bound strictly to `ACTIVITY` capability scope with `scopeResourceId = exact ProgrammeMaster.id` (`GDDP_COORDINATOR` for GDDP, `HĐTN_COORDINATOR` for HDTN_HN).
   - BGH professional authority is bound strictly to `APPROVAL_PRINCIPAL / SCHOOL_WIDE` or `APPROVAL_VICE_PRINCIPAL / SCHOOL_WIDE`.
   - Bootstrap invariant: only BGH professional authority can create canonical `ProgrammeMaster` records. Exact coordinator grants can only be issued once a master exists.
   - Guarded façade `AuthorizedProgrammePlanningService` encapsulates raw `ProgrammePlanningService`; guarded `/api/programme-planning` HTTP surface is exposed.

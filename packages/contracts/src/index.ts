@@ -106,7 +106,7 @@ export type CapabilityKey =
   | 'SUBJECT_GROUP_LEAD'     // tổ trưởng capabilities
   | 'APPROVAL_PRINCIPAL'     // hiệu trưởng approval scope
   | 'APPROVAL_VICE_PRINCIPAL'// phó hiệu trưởng approval scope
-  | 'GDDDP_COORDINATOR'      // GDĐP coordination
+  | 'GDDP_COORDINATOR'       // GDĐP coordination
   | 'HĐTN_COORDINATOR'       // HĐTN-HN coordination
   | 'SYSTEM_ADMIN'           // system administration (NOT professional approval)
   | 'USER_MANAGE'

@@ -25,9 +25,9 @@ P4-030 establishes the runtime authorization layer for GDĐP and HĐTN-HN specia
 
 1. **Exact Coordinator Authorization Binding**:
    - Coordinator authority is bound to `ACTIVITY` capability scope with `scopeResourceId = exact ProgrammeMaster.id`.
-   - **GDĐP**: requires active `GDDDP_COORDINATOR` grant on `ACTIVITY + exact ProgrammeMaster.id` where `master.kind === 'GDDP'`.
+   - **GDĐP**: requires active `GDDP_COORDINATOR` grant on `ACTIVITY + exact ProgrammeMaster.id` where `master.kind === 'GDDP'`.
    - **HĐTN-HN**: requires active `HĐTN_COORDINATOR` grant on `ACTIVITY + exact ProgrammeMaster.id` where `master.kind === 'HDTN_HN'`.
-   - Strictly isolated across programmes: `GDDDP_COORDINATOR` cannot coordinate HĐTN-HN; `HĐTN_COORDINATOR` cannot coordinate GDĐP; coordinator of master A cannot manage master B.
+   - Strictly isolated across programmes: `GDDP_COORDINATOR` cannot coordinate HĐTN-HN; `HĐTN_COORDINATOR` cannot coordinate GDĐP; coordinator of master A cannot manage master B.
 
 2. **BGH Professional Authority Binding**:
    - BGH professional authority is bound strictly to `APPROVAL_PRINCIPAL / SCHOOL_WIDE` or `APPROVAL_VICE_PRINCIPAL / SCHOOL_WIDE`.
@@ -38,7 +38,7 @@ P4-030 establishes the runtime authorization layer for GDĐP and HĐTN-HN specia
    - Flow: (1) BGH creates `ProgrammeMaster`; (2) `CAPABILITY_GRANT` administrator issues coordinator grant for that exact master ID; (3) Coordinator exercises planning authority on that master.
 
 4. **Defense-in-Depth Coordinator Grant Validation**:
-   - `CapabilitiesService.normalizeResource()` is hardened specifically for `GDDDP_COORDINATOR` and `HĐTN_COORDINATOR` grants to verify that the target resource exists in `ProgrammeMaster` and matches the required `kind` (`GDDP` vs `HDTN_HN`).
+   - `CapabilitiesService.normalizeResource()` is hardened specifically for `GDDP_COORDINATOR` and `HĐTN_COORDINATOR` grants to verify that the target resource exists in `ProgrammeMaster` and matches the required `kind` (`GDDP` vs `HDTN_HN`).
    - Other `ACTIVITY` capabilities (e.g., `AI_ACTIVE_USE_ACTIVITY`) remain unchanged.
 
 5. **Programme Authorization Domain Service**:
@@ -90,7 +90,7 @@ Authority is **never** inferred from:
 ### 2.2 Traceability Mapping
 | Matrix Item | Description | P4-030 Enforcement |
 |---|---|---|
-| **T18** | Coordinator authority is distinct from generic school-wide activity mutation | Generic `SPECIAL_ACTIVITY_MANAGE` does not confer programme planning authority. Explicit `GDDDP_COORDINATOR` / `HĐTN_COORDINATOR` on exact `ProgrammeMaster.id` or BGH professional authority is required. |
+| **T18** | Coordinator authority is distinct from generic school-wide activity mutation | Generic `SPECIAL_ACTIVITY_MANAGE` does not confer programme planning authority. Explicit `GDDP_COORDINATOR` / `HĐTN_COORDINATOR` on exact `ProgrammeMaster.id` or BGH professional authority is required. |
 | **T44** | Special-program confirmation authority/topology | Defines existential qualification seam `isQualifyingProgrammeAttestor(actorUserId, master)` verifying whether an actor possesses qualifying Coordinator or BGH professional authority, satisfying the gate definition required by ADR-050 before P4-040 persistence. |
 | **T43** | Replacement authority boundary | Preserves planning lifecycle replacement authority (Coordinator/BGH prospective draft replacement on planned occurrences) while strictly deferring post-materialization `SpecialActivity` CAS reversal/re-rooting to P4-040. |
 
@@ -153,8 +153,8 @@ A minimum of 32 distinct security and regression test cases must pass:
 22. Body/route master ID mismatch is rejected before mutation.
 23. Body/route replacement occurrence ID mismatch is rejected before mutation.
 24. Unauthorized query list does not leak other programme masters.
-25. `GDDDP_COORDINATOR` grant creation rejects non-existent resource.
-26. `GDDDP_COORDINATOR` grant creation rejects HĐTN-HN master.
+25. `GDDP_COORDINATOR` grant creation rejects non-existent resource.
+26. `GDDP_COORDINATOR` grant creation rejects HĐTN-HN master.
 27. `HĐTN_COORDINATOR` grant creation rejects GDĐP master.
 28. Valid exact coordinator grant creations succeed.
 29. Unrelated `AI_ACTIVE_USE_ACTIVITY` grant creation behavior remains unchanged.

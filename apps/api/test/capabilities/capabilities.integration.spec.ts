@@ -14,7 +14,7 @@ integration('Capability management API (isolated PostgreSQL integration)', () =>
       { key: 'TEACHER_BASE', scopes: ['PERSONAL'] },
       { key: 'SUBJECT_GROUP_LEAD', scopes: ['SUBJECT_GROUP'] },
       { key: 'SUBJECT_MANAGE', scopes: ['SUBJECT'] },
-      { key: 'GDDDP_COORDINATOR', scopes: ['ACTIVITY'] },
+      { key: 'GDDP_COORDINATOR', scopes: ['ACTIVITY'] },
     ]);
   });
   afterAll(async () => {
@@ -50,9 +50,9 @@ integration('Capability management API (isolated PostgreSQL integration)', () =>
   it('strictly handles false filters and activeAt excludes revoked and validUntil boundary rows', async () => {
     const manager = await h.actor({ grants: [{ capabilityKey: 'CAPABILITY_GRANT' }] });
     const userId = await target();
-    await h.prisma.capabilityDefinition.update({ where: { key: 'GDDDP_COORDINATOR' }, data: { isActive: false } });
+    await h.prisma.capabilityDefinition.update({ where: { key: 'GDDP_COORDINATOR' }, data: { isActive: false } });
     const inactive = await manager.agent.get('/api/capabilities?isActive=false');
-    expect(inactive.body.items.map((row: { key: string }) => row.key)).toEqual(['GDDDP_COORDINATOR']);
+    expect(inactive.body.items.map((row: { key: string }) => row.key)).toEqual(['GDDP_COORDINATOR']);
     expect((await manager.agent.get('/api/capabilities?isActive=0')).status).toBe(400);
     await h.prisma.capabilityGrant.createMany({ data: [
       { userId, capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL', validFrom: new Date('2026-01-01'), validUntil: new Date('2026-02-01') },
@@ -77,9 +77,9 @@ integration('Capability management API (isolated PostgreSQL integration)', () =>
       { capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL' },
       { capabilityKey: 'SUBJECT_GROUP_LEAD', scopeType: 'SUBJECT_GROUP', scopeResourceId: group.id },
       { capabilityKey: 'SUBJECT_MANAGE', scopeType: 'SUBJECT', scopeResourceId: subject.id },
-      { capabilityKey: 'GDDDP_COORDINATOR', scopeType: 'ACTIVITY', scopeResourceId: activityId },
+      { capabilityKey: 'GDDP_COORDINATOR', scopeType: 'ACTIVITY', scopeResourceId: activityId },
     ];
-    await h.prisma.capabilityDefinition.update({ where: { key: 'GDDDP_COORDINATOR' }, data: { isActive: true } });
+    await h.prisma.capabilityDefinition.update({ where: { key: 'GDDP_COORDINATOR' }, data: { isActive: true } });
     for (const payload of payloads) {
       const response = await manager.agent.post(`/api/users/${userId}/capability-grants`).set('Origin', testOrigin).send(payload);
       expect(response.status).toBe(201);

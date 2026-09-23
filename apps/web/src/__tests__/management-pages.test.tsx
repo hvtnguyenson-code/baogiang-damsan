@@ -42,10 +42,10 @@ describe('Phase 01 management pages', () => {
   });
 
   it('marks ACTIVITY scope unavailable instead of showing a raw resource field', async () => {
-    const definitions = page([{ key: 'GDDDP_COORDINATOR', description: 'Điều phối', allowedScopeTypes: ['ACTIVITY'], isSystem: false, isActive: true }]);
+    const definitions = page([{ key: 'GDDP_COORDINATOR', description: 'Điều phối', allowedScopeTypes: ['ACTIVITY'], isSystem: false, isActive: true }]);
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => { const url = String(input); if (url.endsWith('/auth/me')) return jsonResponse(auth({ key: 'CAPABILITY_GRANT', scope: 'SCHOOL_WIDE' }, { key: 'USER_MANAGE', scope: 'SCHOOL_WIDE' })); if (url.includes('/capabilities')) return jsonResponse(definitions); if (url.includes('/users')) return jsonResponse(page([{ id: 'u1', username: 'gv01', status: 'ACTIVE', profile: { displayName: 'Nguyễn Bình' } }])); return jsonResponse(page()); });
     vi.stubGlobal('fetch', fetchMock); const user = userEvent.setup(); renderApp('/quan-tri/quyen');
-    await user.selectOptions(await screen.findByLabelText('Người nhận'), 'u1'); await user.selectOptions(screen.getByLabelText('Quyền'), 'GDDDP_COORDINATOR'); await user.selectOptions(screen.getByLabelText('Phạm vi'), 'ACTIVITY');
+    await user.selectOptions(await screen.findByLabelText('Người nhận'), 'u1'); await user.selectOptions(screen.getByLabelText('Quyền'), 'GDDP_COORDINATOR'); await user.selectOptions(screen.getByLabelText('Phạm vi'), 'ACTIVITY');
     expect(screen.getByText(/chưa có danh mục hoạt động/i)).toBeInTheDocument(); expect(screen.queryByLabelText(/mã tài nguyên/i)).not.toBeInTheDocument(); expect(screen.getByRole('button', { name: 'Cấp quyền' })).toBeDisabled();
   });
 

@@ -33,7 +33,7 @@ export class ProgrammePlanningAuthorizationService {
   /**
    * Deterministic resolution of programme authority for an exact ProgrammeMaster.
    * Precedence order:
-   * 1. Exact programme coordinator (GDDDP_COORDINATOR for GDDP, HĐTN_COORDINATOR for HDTN_HN);
+   * 1. Exact programme coordinator (GDDP_COORDINATOR for GDDP, HĐTN_COORDINATOR for HDTN_HN);
    * 2. APPROVAL_PRINCIPAL / SCHOOL_WIDE;
    * 3. APPROVAL_VICE_PRINCIPAL / SCHOOL_WIDE.
    * Fail-closed on mustChangePassword === true, inactive status, or lock.
@@ -59,7 +59,7 @@ export class ProgrammePlanningAuthorizationService {
       return { qualified: false, reasonCode: 'USER_LOCKED' };
     }
 
-    const coordinatorKey = master.kind === 'GDDP' ? 'GDDDP_COORDINATOR' : 'HĐTN_COORDINATOR';
+    const coordinatorKey = master.kind === 'GDDP' ? 'GDDP_COORDINATOR' : 'HĐTN_COORDINATOR';
 
     // 1. Coordinator check: ACTIVITY scope with exact ProgrammeMaster.id
     const coordinatorDecision = await this.authorization.evaluate({
@@ -136,7 +136,7 @@ export class ProgrammePlanningAuthorizationService {
       return decision;
     }
 
-    const coordinatorKey = master.kind === 'GDDP' ? 'GDDDP_COORDINATOR' : 'HĐTN_COORDINATOR';
+    const coordinatorKey = master.kind === 'GDDP' ? 'GDDP_COORDINATOR' : 'HĐTN_COORDINATOR';
     try {
       await this.audit.write({
         actorUserId,

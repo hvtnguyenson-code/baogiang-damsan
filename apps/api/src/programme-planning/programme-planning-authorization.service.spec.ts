@@ -48,7 +48,7 @@ describe('ProgrammePlanningAuthorizationService', () => {
     it('1. Coordinator grant takes highest precedence (Precedence 1)', async () => {
       // Mock both coordinator and principal allowed
       authMock.evaluate.mockImplementation(async ({ capabilityKey, requestedScope, resourceId }) => {
-        if (capabilityKey === 'GDDDP_COORDINATOR' && requestedScope === 'ACTIVITY' && resourceId === gddpMaster.id) {
+        if (capabilityKey === 'GDDP_COORDINATOR' && requestedScope === 'ACTIVITY' && resourceId === gddpMaster.id) {
           return { allowed: true, reasonCode: 'ALLOWED' };
         }
         if (capabilityKey === 'APPROVAL_PRINCIPAL') {
@@ -60,7 +60,7 @@ describe('ProgrammePlanningAuthorizationService', () => {
       const decision = await service.resolveProgrammeAuthority(actorId, gddpMaster);
       expect(decision.qualified).toBe(true);
       expect(decision.authorityType).toBe('COORDINATOR');
-      expect(decision.capabilityKey).toBe('GDDDP_COORDINATOR');
+      expect(decision.capabilityKey).toBe('GDDP_COORDINATOR');
       expect(decision.resourceId).toBe(gddpMaster.id);
     });
 
@@ -100,7 +100,7 @@ describe('ProgrammePlanningAuthorizationService', () => {
     it('4. GDDP coordinator mutates/reads authorized GDDP master', async () => {
       authMock.evaluate.mockImplementation(async ({ capabilityKey, resourceId }) => {
         return {
-          allowed: capabilityKey === 'GDDDP_COORDINATOR' && resourceId === gddpMaster.id,
+          allowed: capabilityKey === 'GDDP_COORDINATOR' && resourceId === gddpMaster.id,
           reasonCode: 'ALLOWED',
         };
       });
@@ -114,7 +114,7 @@ describe('ProgrammePlanningAuthorizationService', () => {
       const gddpMasterB = { id: 'master-gddp-2', kind: 'GDDP' as const };
       authMock.evaluate.mockImplementation(async ({ capabilityKey, resourceId }) => {
         return {
-          allowed: capabilityKey === 'GDDDP_COORDINATOR' && resourceId === gddpMaster.id,
+          allowed: capabilityKey === 'GDDP_COORDINATOR' && resourceId === gddpMaster.id,
           reasonCode: 'GRANT_NOT_FOUND',
         };
       });
@@ -126,12 +126,12 @@ describe('ProgrammePlanningAuthorizationService', () => {
     it('6. GDDP coordinator cannot access HDTN_HN master', async () => {
       authMock.evaluate.mockImplementation(async ({ capabilityKey }) => {
         return {
-          allowed: capabilityKey === 'GDDDP_COORDINATOR',
+          allowed: capabilityKey === 'GDDP_COORDINATOR',
           reasonCode: 'ALLOWED',
         };
       });
 
-      // evaluating hdtnMaster checks HĐTN_COORDINATOR, not GDDDP_COORDINATOR
+      // evaluating hdtnMaster checks HĐTN_COORDINATOR, not GDDP_COORDINATOR
       const decision = await service.resolveProgrammeAuthority(actorId, hdtnMaster);
       expect(decision.qualified).toBe(false);
     });
@@ -197,7 +197,7 @@ describe('ProgrammePlanningAuthorizationService', () => {
 
     it('3. Coordinator alone cannot bootstrap create ProgrammeMaster', async () => {
       authMock.evaluate.mockImplementation(async ({ capabilityKey }) => ({
-        allowed: capabilityKey === 'GDDDP_COORDINATOR',
+        allowed: capabilityKey === 'GDDP_COORDINATOR',
         reasonCode: 'ALLOWED',
       }));
 
@@ -280,7 +280,7 @@ describe('ProgrammePlanningAuthorizationService', () => {
     it('30. isQualifyingProgrammeAttestor returns true/provenance for coordinator and BGH, false for others', async () => {
       // Coordinator
       authMock.evaluate.mockImplementation(async ({ capabilityKey }) => ({
-        allowed: capabilityKey === 'GDDDP_COORDINATOR',
+        allowed: capabilityKey === 'GDDP_COORDINATOR',
         reasonCode: 'ALLOWED',
       }));
       const coord = await service.isQualifyingProgrammeAttestor(actorId, gddpMaster);
@@ -324,10 +324,10 @@ describe('ProgrammePlanningAuthorizationService', () => {
         actorUserId: actorId,
         action: 'AUTHORIZATION_DENIED',
         entityType: 'CapabilityDefinition',
-        entityId: 'GDDDP_COORDINATOR',
+        entityId: 'GDDP_COORDINATOR',
         result: 'DENIED',
         metadata: expect.objectContaining({
-          capabilityKey: 'GDDDP_COORDINATOR',
+          capabilityKey: 'GDDP_COORDINATOR',
           scope: 'ACTIVITY',
           resourceId: gddpMaster.id,
           route: '/api/test',

@@ -615,7 +615,7 @@ describe('ProgrammeRuntimeBridge (P4-040)', () => {
     const coordinatorDecision = {
       qualified: true,
       authorityType: 'COORDINATOR' as const,
-      capabilityKey: 'GDDDP_COORDINATOR',
+      capabilityKey: 'GDDP_COORDINATOR',
       scope: 'ACTIVITY',
       resourceId: gddpMasterId,
     };
@@ -635,7 +635,7 @@ describe('ProgrammeRuntimeBridge (P4-040)', () => {
       expect(record.status).toBe('ACTIVE');
       expect(record.attestedByUserId).toBe(actorUserId);
       expect(record.authorityType).toBe('COORDINATOR');
-      expect(record.capabilityKey).toBe('GDDDP_COORDINATOR');
+      expect(record.capabilityKey).toBe('GDDP_COORDINATOR');
       expect(record.scope).toBe('ACTIVITY');
       expect(record.scopeResourceId).toBe(gddpMasterId);
     });
@@ -683,7 +683,7 @@ describe('ProgrammeRuntimeBridge (P4-040)', () => {
         plannedProgrammeOccurrenceId: 'occ-pub-1',
         attestedByUserId: actorUserId,
         authorityType: 'COORDINATOR',
-        capabilityKey: 'GDDDP_COORDINATOR',
+        capabilityKey: 'GDDP_COORDINATOR',
         scope: 'ACTIVITY',
         scopeResourceId: gddpMasterId,
         status: 'ACTIVE',
@@ -736,7 +736,7 @@ describe('ProgrammeRuntimeBridge (P4-040)', () => {
         plannedProgrammeOccurrenceId: 'occ-pub-1',
         attestedByUserId: actorUserId,
         authorityType: 'COORDINATOR',
-        capabilityKey: 'GDDDP_COORDINATOR',
+        capabilityKey: 'GDDP_COORDINATOR',
         scope: 'ACTIVITY',
         scopeResourceId: gddpMasterId,
         status: 'ACTIVE',

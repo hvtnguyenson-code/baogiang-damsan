@@ -149,7 +149,7 @@ Canonical `main` is authoritative. Earlier branches and PRs were not used as acc
 - **INFERRED:** Historical activity semantic payload should be immutable and corrections forward-linked; physical deletion conflicts with repository-wide history rules.
 - **UNRESOLVED:** The 05C `ACTIVE/REVERSED` lifecycle cannot be copied automatically. PA-B v1.2’s activity draft/assigned/completed/confirmed examples include execution/reporting concerns and were not adopted by an Accepted ADR.
 - **UNRESOLVED:** Prospective authoring, retrospective authoritative creation and correction windows/reasons.
-- **INFERRED:** A new activity-specific management capability is required. Existing `GDDDP_COORDINATOR`, `HĐTN_COORDINATOR` and `AI_ACTIVE_USE_ACTIVITY` definitions do not constitute accepted Special Activity mutation authority.
+- **INFERRED:** A new activity-specific management capability is required. Existing `GDDP_COORDINATOR`, `HĐTN_COORDINATOR` and `AI_ACTIVE_USE_ACTIVITY` definitions do not constitute accepted Special Activity mutation authority.
 - **CONFIRMED:** Generic authorization supports `ACTIVITY` resource scope, but there is no persisted activity resource to validate at grant/command time. Business target scope (`GRADE`, `CLASS`) is not automatically an authorization scope.
 - **INFERRED:** The 05C command reliability pattern applies: versioned fingerprint, same-key replay, different-fingerprint conflict, independent semantic uniqueness, CAS lifecycle, `SERIALIZABLE` multi-row work, transactional success audit and DB uniqueness/exclusion where representable.
 - **UNRESOLVED:** Exact semantic key and lock set; they depend on root/session/target/staffing choices.

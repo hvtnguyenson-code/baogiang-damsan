@@ -168,14 +168,14 @@ export class CapabilitiesService {
     }
     if (!dto.scopeResourceId) throw new BadRequestException('Scope cần resource.');
     if (dto.scopeType === 'ACTIVITY') {
-      if (dto.capabilityKey === 'GDDDP_COORDINATOR' || dto.capabilityKey === 'HĐTN_COORDINATOR') {
+      if (dto.capabilityKey === 'GDDP_COORDINATOR' || dto.capabilityKey === 'HĐTN_COORDINATOR') {
         const master = await this.prisma.programmeMaster.findUnique({
           where: { id: dto.scopeResourceId },
           select: { id: true, kind: true },
         });
         if (!master) throw new NotFoundException('Không tìm thấy chương trình.');
-        if (dto.capabilityKey === 'GDDDP_COORDINATOR' && master.kind !== 'GDDP') {
-          throw new ConflictException('Chương trình không phải Giáo dục địa phương (GDDP).');
+        if (dto.capabilityKey === 'GDDP_COORDINATOR' && master.kind !== 'GDDP') {
+          throw new ConflictException('Chương trình không phải Giáo dục địa phương (GDĐP).');
         }
         if (dto.capabilityKey === 'HĐTN_COORDINATOR' && master.kind !== 'HDTN_HN') {
           throw new ConflictException('Chương trình không phải Hoạt động trải nghiệm, hướng nghiệp (HDTN_HN).');
