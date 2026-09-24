@@ -1,5 +1,8 @@
 import { ConflictException, ForbiddenException } from '@nestjs/common';
-import { GddpWorkbookImporterService } from '../../src/programme-planning/gddp-workbook-importer.service';
+import {
+  computeContiguousGuidelineRange,
+  GddpWorkbookImporterService,
+} from '../../src/programme-planning/gddp-workbook-importer.service';
 import { AuthorizedProgrammePlanningService } from '../../src/programme-planning/authorized-programme-planning.service';
 import { ParsedWorkbookCell, ParsedWorkbookRow, ParsedWorkbook } from '../../src/timetable-import/workbook-parser.types';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -121,7 +124,7 @@ describe('GddpWorkbookImporterService & Regression Matrix (P4-073)', () => {
     id: 'teacher-ambig-2',
     username: 'ambig2',
     status: 'ACTIVE',
-    profile: { staffCode: 'GV_AMBIG', displayName: 'Giáo viên Trùng 2', isTeachingStaff: true },
+    profile: { staffCode: 'gv_ambig', displayName: 'Giáo viên Trùng 2', isTeachingStaff: true },
   };
 
   const allKnownUsers = [
@@ -447,6 +450,16 @@ describe('GddpWorkbookImporterService & Regression Matrix (P4-073)', () => {
     expect(res.rows[0]!.officialWeeks).not.toContain(2);
     expect(res.rows[0]!.officialWeeks).not.toContain(4);
     expect(res.canConfirm).toBe(true);
+
+    const resolved = await importerService.resolveWorkbook(dummyFile, academicYearId);
+    // Non-contiguous week set must NOT produce a fake guideline range 1 -> 5
+    expect(resolved.resolvedPackage.topics[0]?.guidelineWeekFrom).toBeNull();
+    expect(resolved.resolvedPackage.topics[0]?.guidelineWeekTo).toBeNull();
+
+    // Verify helper rules for week ranges directly
+    expect(computeContiguousGuidelineRange([3])).toEqual({ guidelineWeekFrom: 3, guidelineWeekTo: 3 });
+    expect(computeContiguousGuidelineRange([3, 4, 5])).toEqual({ guidelineWeekFrom: 3, guidelineWeekTo: 5 });
+    expect(computeContiguousGuidelineRange([1, 3, 5])).toEqual({ guidelineWeekFrom: null, guidelineWeekTo: null });
   });
 
   // 4. Malformed PPCT text -> blocked
@@ -583,7 +596,7 @@ describe('GddpWorkbookImporterService & Regression Matrix (P4-073)', () => {
   });
 
   // 12. Duplicate/ambiguous staff-code authority -> blocked
-  it('12. blocks when multiple users have the same staff code (ambiguous authority)', async () => {
+  it('12. blocks when multiple users have the same staff code after normalization (ambiguous authority)', async () => {
     mockParser.parse.mockResolvedValue(
       createMockGddpWorkbook([
         ['10', '1', '1', 'Chủ đề trùng mã', 'GV_AMBIG'],
@@ -766,8 +779,8 @@ describe('GddpWorkbookImporterService & Regression Matrix (P4-073)', () => {
     expect(res.issues.some((i) => i.code === 'UNSUPPORTED_GRADE_LEVEL')).toBe(true);
   });
 
-  // 21. Frontend strings are Vietnamese
-  it('21. produces Vietnamese frontend strings and error messages', async () => {
+  // 21. User-facing strings are Vietnamese
+  it('21. produces Vietnamese user-facing preview and error messages', async () => {
     mockParser.parse.mockResolvedValue(
       createMockGddpWorkbook([
         ['10', '1', '1', '', 'GV01'], // Empty topic title

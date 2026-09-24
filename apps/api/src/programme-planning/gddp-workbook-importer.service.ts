@@ -69,6 +69,25 @@ export interface ResolvedGddpWorkbookResult {
   authorityEvidence: GddpImportAuthorityEvidence;
 }
 
+export function computeContiguousGuidelineRange(officialWeeks: number[]): {
+  guidelineWeekFrom: number | null;
+  guidelineWeekTo: number | null;
+} {
+  if (officialWeeks.length === 0) {
+    return { guidelineWeekFrom: null, guidelineWeekTo: null };
+  }
+  if (officialWeeks.length === 1) {
+    return { guidelineWeekFrom: officialWeeks[0]!, guidelineWeekTo: officialWeeks[0]! };
+  }
+  const sorted = [...new Set(officialWeeks)].sort((a, b) => a - b);
+  for (let i = 0; i < sorted.length - 1; i++) {
+    if (sorted[i + 1]! !== sorted[i]! + 1) {
+      return { guidelineWeekFrom: null, guidelineWeekTo: null };
+    }
+  }
+  return { guidelineWeekFrom: sorted[0]!, guidelineWeekTo: sorted[sorted.length - 1]! };
+}
+
 const EXPECTED_HEADERS = [
   'Khối',
   'Tiết PPCT',
@@ -505,12 +524,14 @@ export class GddpWorkbookImporterService {
       const rowIssues: GddpWorkbookPreviewIssue[] = [];
       const resolvedTeachers: GddpWorkbookResolvedTeacherSummary[] = [];
 
+      const guidelineRange = computeContiguousGuidelineRange(row.officialWeeks);
+
       resolvedTopics.push({
         sequence: topicSequence,
         title: row.topicTitle,
         requiredPeriods: row.requiredPeriods,
-        guidelineWeekFrom: row.officialWeeks.length > 0 ? Math.min(...row.officialWeeks) : null,
-        guidelineWeekTo: row.officialWeeks.length > 0 ? Math.max(...row.officialWeeks) : null,
+        guidelineWeekFrom: guidelineRange.guidelineWeekFrom,
+        guidelineWeekTo: guidelineRange.guidelineWeekTo,
         ppctCoordinates: row.ppctCoordinates,
       });
 

@@ -48,6 +48,7 @@ integration('GddpWorkbookImport (PostgreSQL integration P4-073)', () => {
         profile: {
           create: {
             displayName: 'Nguyễn Văn Địa Phương',
+            staffCode: 'GV01',
             isTeachingStaff: true,
           },
         },
@@ -164,7 +165,7 @@ integration('GddpWorkbookImport (PostgreSQL integration P4-073)', () => {
     const authorityEvidence: GddpImportAuthorityEvidence = {
       academicYearId: year.id,
       gradeLevel: 10,
-      activeClassIds: [class10A.id, class10B.id],
+      targetClassIds: [class10A.id, class10B.id],
       calendar: {
         calendarVersionId: calVersion.id,
         teachingWeekdays: ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'],
@@ -200,7 +201,7 @@ integration('GddpWorkbookImport (PostgreSQL integration P4-073)', () => {
       resolvedTeachers: [
         {
           sourceRowNumber: 2,
-          rawCode: 'GV01',
+          staffCode: 'GV01',
           matchedUserId: teacher.id,
           displayName: 'Nguyễn Văn Địa Phương',
         },
