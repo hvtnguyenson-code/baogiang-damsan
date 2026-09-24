@@ -17,6 +17,9 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
+  GddpWorkbookConfirmResponse,
+  GddpWorkbookInspectionResponse,
+  GddpWorkbookPreviewResponse,
   HdtnWorkbookConfirmResponse,
   HdtnWorkbookInspectionResponse,
   HdtnWorkbookPreviewResponse,
@@ -29,12 +32,14 @@ import { MAX_XLSX_BYTES } from '../timetable-import/workbook-limits';
 import { AuthorizedProgrammePlanningService } from './authorized-programme-planning.service';
 import {
   AttestOccurrenceDto,
+  ConfirmGddpWorkbookDto,
   ConfirmHdtnWorkbookDto,
   CreateDraftOccurrenceDto,
   CreateDraftPlanVersionDto,
   CreateProgrammeMasterDto,
   CreateReplacementOccurrenceDto,
   CreateSuccessorDraftPlanVersionDto,
+  PreviewGddpWorkbookDto,
   PreviewHdtnWorkbookDto,
   EditDraftOccurrenceDto,
   EditDraftPlanVersionDto,
@@ -386,6 +391,70 @@ export class ProgrammePlanningController {
     @Req() req: AuthenticatedRequest,
   ): Promise<HdtnWorkbookConfirmResponse> {
     return this.service.confirmHdtnWorkbook(
+      file,
+      dto,
+      req.auth!.user.id,
+      this.auditContext(req),
+    );
+  }
+
+  // =========================================================================
+  // GDĐP WORKBOOK INGESTION
+  // =========================================================================
+
+  @Post('gddp-import/inspect')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(CsrfOriginGuard)
+  @UseFilters(WorkbookUploadExceptionFilter)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: MAX_XLSX_BYTES, files: 1, fields: 8, parts: 9 },
+    }),
+  )
+  async inspectGddpWorkbook(
+    @UploadedFile() file: UploadedWorkbookFile | undefined,
+  ): Promise<GddpWorkbookInspectionResponse> {
+    return this.service.inspectGddpWorkbook(file);
+  }
+
+  @Post('gddp-import/preview')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(CsrfOriginGuard)
+  @UseFilters(WorkbookUploadExceptionFilter)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: MAX_XLSX_BYTES, files: 1, fields: 8, parts: 9 },
+    }),
+  )
+  async previewGddpWorkbook(
+    @UploadedFile() file: UploadedWorkbookFile | undefined,
+    @Body() dto: PreviewGddpWorkbookDto,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<GddpWorkbookPreviewResponse> {
+    return this.service.previewGddpWorkbook(
+      file,
+      dto.academicYearId,
+      dto.gradeLevel,
+      req.auth!.user.id,
+      this.auditContext(req),
+    );
+  }
+
+  @Post('gddp-import/confirm')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(CsrfOriginGuard)
+  @UseFilters(WorkbookUploadExceptionFilter)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: MAX_XLSX_BYTES, files: 1, fields: 8, parts: 9 },
+    }),
+  )
+  async confirmGddpWorkbook(
+    @UploadedFile() file: UploadedWorkbookFile | undefined,
+    @Body() dto: ConfirmGddpWorkbookDto,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<GddpWorkbookConfirmResponse> {
+    return this.service.confirmGddpWorkbook(
       file,
       dto,
       req.auth!.user.id,

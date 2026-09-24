@@ -8,6 +8,7 @@ import { TimetableImportModule } from '../timetable-import/timetable-import.modu
 import { TimetablesModule } from '../timetables/timetables.module';
 import { AuthorizedProgrammePlanningService } from './authorized-programme-planning.service';
 import { HdtnWorkbookImporterService } from './hdtn-workbook-importer.service';
+import { GddpWorkbookImporterService } from './gddp-workbook-importer.service';
 import { ProgrammePlanningAuthorizationService } from './programme-planning-authorization.service';
 import { ProgrammePlanningController } from './programme-planning.controller';
 import { ProgrammePlanningService } from './programme-planning.service';
@@ -28,11 +29,13 @@ import { ProgrammePlanningService } from './programme-planning.service';
     ProgrammePlanningAuthorizationService,
     AuthorizedProgrammePlanningService,
     HdtnWorkbookImporterService,
+    GddpWorkbookImporterService,
   ],
   exports: [
     AuthorizedProgrammePlanningService,
     ProgrammePlanningAuthorizationService,
     HdtnWorkbookImporterService,
+    GddpWorkbookImporterService,
   ],
 })
 export class ProgrammePlanningModule {}

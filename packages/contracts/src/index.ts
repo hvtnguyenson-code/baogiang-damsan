@@ -1929,3 +1929,92 @@ export interface HdtnWorkbookConfirmResponse {
   slotCount: number;
   staffingCount: number;
 }
+
+// ============================================================
+// Special Programme GDĐP Workbook Ingestion Contracts (P4-073)
+// ============================================================
+
+export interface GddpWorkbookPreviewIssue {
+  severity: 'BLOCKER' | 'WARNING';
+  code: string;
+  message: string;
+  sourceRowNumber?: number;
+  schoolClassCode?: string;
+  staffCode?: string;
+  teacherName?: string;
+}
+
+export interface GddpWorkbookResolvedTeacherSummary {
+  staffCode: string;
+  matchedUserId: string;
+  displayName: string;
+}
+
+export interface GddpWorkbookResolvedSlot {
+  civilDate: CivilDateString;
+  weekday: AcademicWeekday;
+  timeSlotDefinitionId: string;
+  periodNumber?: number;
+  startTime?: string;
+  endTime?: string;
+}
+
+export interface GddpWorkbookPreviewRow {
+  sourceRowNumber: number;
+  gradeLevel: number;
+  ppctCoordinates: number[];
+  ppctText: string;
+  officialWeeks: number[];
+  weeksText: string;
+  requiredPeriods: number;
+  topicTitle: string;
+  enteredTeacherText: string;
+  resolvedTeachers: GddpWorkbookResolvedTeacherSummary[];
+  targetClassCodes: string[];
+  resolvedCandidateCount: number;
+  slots: GddpWorkbookResolvedSlot[];
+  issues: GddpWorkbookPreviewIssue[];
+}
+
+export interface GddpWorkbookInspectionSheet {
+  name: string;
+  rowCount: number;
+  columnCount: number;
+  headers: string[];
+  isDataSheet: boolean;
+}
+
+export interface GddpWorkbookInspectionResponse {
+  sourceFileName: string;
+  sheets: GddpWorkbookInspectionSheet[];
+  dataSheetFound: boolean;
+  issues: GddpWorkbookPreviewIssue[];
+}
+
+export interface GddpWorkbookPreviewResponse {
+  sourceFileName: string;
+  sheetName: string;
+  academicYearId: string;
+  gradeLevel: number | null;
+  calendarVersionId: string;
+  previewFingerprint: string;
+  canConfirm: boolean;
+  blockingIssueCount: number;
+  warningCount: number;
+  totalRows: number;
+  rows: GddpWorkbookPreviewRow[];
+  issues: GddpWorkbookPreviewIssue[];
+}
+
+export interface GddpWorkbookConfirmResponse {
+  outcome: 'CREATED' | 'IDEMPOTENT_REPLAY';
+  commandId: string;
+  programmeMasterId: string;
+  programmePlanVersionId: string;
+  versionNumber: number;
+  status: string;
+  topicItemCount: number;
+  occurrenceCount: number;
+  slotCount: number;
+  staffingCount: number;
+}

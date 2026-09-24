@@ -550,3 +550,33 @@ export class ConfirmHdtnWorkbookDto {
   @MaxLength(100)
   commandId!: string;
 }
+
+export class PreviewGddpWorkbookDto {
+  @IsUUID()
+  academicYearId!: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(10)
+  @Max(12)
+  gradeLevel?: number;
+}
+
+export class ConfirmGddpWorkbookDto {
+  @IsUUID()
+  academicYearId!: string;
+
+  @IsInt()
+  @Min(10)
+  @Max(12)
+  gradeLevel!: number;
+
+  @IsString()
+  @IsNotEmpty()
+  expectedPreviewFingerprint!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  commandId!: string;
+}
