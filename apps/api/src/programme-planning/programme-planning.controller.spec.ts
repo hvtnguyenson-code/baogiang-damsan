@@ -168,5 +168,44 @@ describe('ProgrammePlanningController', () => {
         expect.anything(),
       );
     });
+
+    it('inspectGddpWorkbook dispatches to service with file', async () => {
+      serviceMock.inspectGddpWorkbook = jest.fn().mockResolvedValue({ sourceFileName: 'gddp.xlsx' });
+      const fakeFile = { originalname: 'gddp.xlsx', buffer: Buffer.from('') } as never;
+      await controller.inspectGddpWorkbook(fakeFile);
+      expect(serviceMock.inspectGddpWorkbook).toHaveBeenCalledWith(fakeFile);
+    });
+
+    it('previewGddpWorkbook dispatches to service with file, academicYearId, gradeLevel, and actorId', async () => {
+      serviceMock.previewGddpWorkbook = jest.fn().mockResolvedValue({ canConfirm: true });
+      const fakeFile = { originalname: 'gddp.xlsx', buffer: Buffer.from('') } as never;
+      const dto = { academicYearId: 'year-1', gradeLevel: 10 };
+      await controller.previewGddpWorkbook(fakeFile, dto, fakeReq);
+      expect(serviceMock.previewGddpWorkbook).toHaveBeenCalledWith(
+        fakeFile,
+        'year-1',
+        10,
+        actorId,
+        expect.anything(),
+      );
+    });
+
+    it('confirmGddpWorkbook dispatches to service with file, dto, and actorId', async () => {
+      serviceMock.confirmGddpWorkbook = jest.fn().mockResolvedValue({ status: 'DRAFT' });
+      const fakeFile = { originalname: 'gddp.xlsx', buffer: Buffer.from('') } as never;
+      const dto = {
+        academicYearId: 'year-1',
+        gradeLevel: 10,
+        commandId: 'cmd-gddp-1',
+        expectedPreviewFingerprint: 'fp-gddp-1',
+      };
+      await controller.confirmGddpWorkbook(fakeFile, dto, fakeReq);
+      expect(serviceMock.confirmGddpWorkbook).toHaveBeenCalledWith(
+        fakeFile,
+        dto,
+        actorId,
+        expect.anything(),
+      );
+    });
   });
 });

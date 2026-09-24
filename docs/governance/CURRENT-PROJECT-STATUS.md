@@ -17,7 +17,7 @@ It is **not** a self-referential registry of the latest Git commit. Exact curren
 - authoritative post-merge CI #511 (run `35814368948`) SUCCESS.
 
 Next preferred task:
-- `P4-073` — GDĐP workbook importer — is **READY** (unlocked by `P4-071` closure; preferred next implementation task; implementation not yet started; must not be described as implemented).
+- `P4-073` — GDĐP workbook importer — is **IN_REVIEW** on dedicated branch `feat/gddp-workbook-importer-073` (implementation candidate complete, local unit regression matrix passed, PostgreSQL integration coverage exists, zero-mutation preview verified, fail-closed exact collapse implemented; authoritative PostgreSQL integration and CI verification pending PR CI; awaiting independent GitHub review).
 
 Eligible tasks / status:
 - `P2-061` — School-wide effective teaching schedule read model + Teacher Workspace — remains independently **READY** (unlocked by `P2-060` closure; implementation not yet started; must not be described as implemented).
