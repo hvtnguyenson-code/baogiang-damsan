@@ -1,5 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import {
+  GddpWorkbookConfirmResponse,
+  GddpWorkbookInspectionResponse,
+  GddpWorkbookPreviewResponse,
   HdtnWorkbookConfirmResponse,
   HdtnWorkbookInspectionResponse,
   HdtnWorkbookPreviewResponse,
@@ -8,6 +11,7 @@ import { CapabilityAuthorizationService } from '../authorization/capability-auth
 import { PrismaService } from '../prisma/prisma.service';
 import {
   AttestOccurrenceDto,
+  ConfirmGddpWorkbookDto,
   ConfirmHdtnWorkbookDto,
   CreateDraftOccurrenceDto,
   CreateDraftPlanVersionDto,
@@ -35,6 +39,7 @@ import {
   HdtnWorkbookImporterService,
   UploadedWorkbookFile,
 } from './hdtn-workbook-importer.service';
+import { GddpWorkbookImporterService } from './gddp-workbook-importer.service';
 import {
   ProgrammeAuditContext,
   ProgrammePlanningAuthorizationService,
@@ -49,6 +54,7 @@ export class AuthorizedProgrammePlanningService {
     private readonly authorization: CapabilityAuthorizationService,
     private readonly prisma: PrismaService,
     private readonly hdtnImporter?: HdtnWorkbookImporterService,
+    private readonly gddpImporter?: GddpWorkbookImporterService,
   ) {}
 
   // =========================================================================
@@ -683,6 +689,92 @@ export class AuthorizedProgrammePlanningService {
     return this.hdtnImporter.confirm(
       file,
       dto.academicYearId,
+      dto.expectedPreviewFingerprint,
+      dto.commandId,
+      actorUserId,
+      {
+        expectedProgrammeMasterId: master ? master.id : null,
+        canBootstrapMaster: !master,
+      },
+    );
+  }
+
+  // =========================================================================
+  // GDĐP WORKBOOK INGESTION
+  // =========================================================================
+
+  async inspectGddpWorkbook(
+    file: UploadedWorkbookFile | undefined,
+  ): Promise<GddpWorkbookInspectionResponse> {
+    if (!this.gddpImporter) {
+      throw new BadRequestException('GddpWorkbookImporterService is not configured.');
+    }
+    return this.gddpImporter.inspect(file);
+  }
+
+  async previewGddpWorkbook(
+    file: UploadedWorkbookFile | undefined,
+    academicYearId: string,
+    gradeLevel: number | undefined,
+    actorUserId: string,
+    auditContext?: ProgrammeAuditContext,
+  ): Promise<GddpWorkbookPreviewResponse> {
+    if (!this.gddpImporter) {
+      throw new BadRequestException('GddpWorkbookImporterService is not configured.');
+    }
+    if (gradeLevel) {
+      const master = await this.prisma.programmeMaster.findFirst({
+        where: { academicYearId, kind: 'GDDP', gradeLevel },
+        select: { id: true, kind: true },
+      });
+      if (master) {
+        await this.authService.requireProgrammeAuthority(actorUserId, master, auditContext);
+      } else {
+        await this.authService.requireBghAuthority(actorUserId, auditContext);
+      }
+      return this.gddpImporter.preview(file, academicYearId, gradeLevel);
+    }
+
+    const previewResult = await this.gddpImporter.preview(file, academicYearId);
+    const resolvedGrade = previewResult.gradeLevel;
+    if (resolvedGrade) {
+      const master = await this.prisma.programmeMaster.findFirst({
+        where: { academicYearId, kind: 'GDDP', gradeLevel: resolvedGrade },
+        select: { id: true, kind: true },
+      });
+      if (master) {
+        await this.authService.requireProgrammeAuthority(actorUserId, master, auditContext);
+      } else {
+        await this.authService.requireBghAuthority(actorUserId, auditContext);
+      }
+    } else {
+      await this.authService.requireBghAuthority(actorUserId, auditContext);
+    }
+    return previewResult;
+  }
+
+  async confirmGddpWorkbook(
+    file: UploadedWorkbookFile | undefined,
+    dto: ConfirmGddpWorkbookDto,
+    actorUserId: string,
+    auditContext?: ProgrammeAuditContext,
+  ): Promise<GddpWorkbookConfirmResponse> {
+    if (!this.gddpImporter) {
+      throw new BadRequestException('GddpWorkbookImporterService is not configured.');
+    }
+    const master = await this.prisma.programmeMaster.findFirst({
+      where: { academicYearId: dto.academicYearId, kind: 'GDDP', gradeLevel: dto.gradeLevel },
+      select: { id: true, kind: true },
+    });
+    if (master) {
+      await this.authService.requireProgrammeAuthority(actorUserId, master, auditContext);
+    } else {
+      await this.authService.requireBghAuthority(actorUserId, auditContext);
+    }
+    return this.gddpImporter.confirm(
+      file,
+      dto.academicYearId,
+      dto.gradeLevel,
       dto.expectedPreviewFingerprint,
       dto.commandId,
       actorUserId,

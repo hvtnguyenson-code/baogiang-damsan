@@ -22,7 +22,7 @@ import {
   TimetableVersionStatus,
 } from '@prisma/client';
 import { createHash } from 'node:crypto';
-import { HdtnWorkbookConfirmResponse } from '@baogiang/contracts';
+import { GddpWorkbookConfirmResponse, HdtnWorkbookConfirmResponse } from '@baogiang/contracts';
 import { AuditService } from '../audit/audit.service';
 import { formatCivilDate, isCivilDate, parseCivilDate } from '../common/validation/civil-date';
 import { classifyHomeroomResolutionRows } from '../homeroom-assignments/homeroom-assignments.service';
@@ -173,6 +173,104 @@ export interface HdtnImportAuthorityEvidence {
 }
 
 export interface HdtnImportBootstrapContext {
+  expectedProgrammeMasterId: string | null;
+  canBootstrapMaster: boolean;
+}
+
+export interface ResolvedGddpTopic {
+  sequence: number;
+  title: string;
+  requiredPeriods: number;
+  guidelineWeekFrom?: number | null;
+  guidelineWeekTo?: number | null;
+  ppctCoordinates: number[];
+}
+
+export interface ResolvedGddpSlot {
+  timeSlotDefinitionId: string;
+  teacherUserIds: string[];
+}
+
+export interface ResolvedGddpOccurrence {
+  topicSequence: number;
+  civilDate: string;
+  mode: 'GRADE';
+  gradeLevel: number;
+  schoolClassId: null;
+  note?: string | null;
+  slots: ResolvedGddpSlot[];
+}
+
+export interface ResolvedGddpDraftPackage {
+  academicYearId: string;
+  gradeLevel: number;
+  previewFingerprint: string;
+  topics: ResolvedGddpTopic[];
+  occurrences: ResolvedGddpOccurrence[];
+}
+
+export interface GddpImportInterruptionEvidence {
+  id: string;
+  code: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+}
+
+export interface GddpImportCalendarEvidence {
+  calendarVersionId: string;
+  teachingWeekdays: AcademicWeekday[];
+  interruptions: GddpImportInterruptionEvidence[];
+}
+
+export interface GddpImportWeekEvidence {
+  officialWeekNumber: number;
+  academicWeekId: string;
+}
+
+export interface GddpImportSegmentEvidence {
+  academicWeekId: string;
+  segmentId: string;
+  startDate: string;
+  endDate: string;
+}
+
+export interface GddpImportDateAuthority {
+  sourceRowNumber: number;
+  civilDate: string;
+  timetableVersionId: string;
+}
+
+export interface GddpImportMarkerEvidence {
+  sourceRowNumber: number;
+  civilDate: string;
+  markerId: string;
+  timetableVersionId: string;
+  schoolClassId: string;
+  timeSlotDefinitionId: string;
+  kind: string;
+}
+
+export interface GddpImportResolvedTeacherEvidence {
+  sourceRowNumber: number;
+  staffCode: string;
+  matchedUserId: string;
+  displayName: string;
+}
+
+export interface GddpImportAuthorityEvidence {
+  academicYearId: string;
+  gradeLevel: number;
+  calendar: GddpImportCalendarEvidence;
+  weeks: GddpImportWeekEvidence[];
+  segments: GddpImportSegmentEvidence[];
+  targetClassIds: string[];
+  dateAuthorities: GddpImportDateAuthority[];
+  markerEvidence: GddpImportMarkerEvidence[];
+  resolvedTeachers: GddpImportResolvedTeacherEvidence[];
+}
+
+export interface GddpImportBootstrapContext {
   expectedProgrammeMasterId: string | null;
   canBootstrapMaster: boolean;
 }
@@ -735,6 +833,277 @@ export class ProgrammePlanningService {
             metadata: {
               commandId,
               programmeMasterId: master.id,
+              versionNumber: 1,
+              topicItemCount: pkg.topics.length,
+              occurrenceCount,
+              slotCount,
+              staffingCount,
+              previewFingerprint: pkg.previewFingerprint,
+            },
+          },
+          tx,
+        );
+
+        return {
+          outcome: 'CREATED',
+          commandId,
+          programmeMasterId: master.id,
+          programmePlanVersionId: planVersion.id,
+          versionNumber: 1,
+          status: 'DRAFT',
+          topicItemCount: pkg.topics.length,
+          occurrenceCount,
+          slotCount,
+          staffingCount,
+        };
+      },
+    );
+  }
+
+  async importGddpDraftPackage(
+    actorUserId: string,
+    commandId: string,
+    pkg: ResolvedGddpDraftPackage,
+    authContext: GddpImportBootstrapContext,
+    authorityEvidence: GddpImportAuthorityEvidence,
+  ): Promise<GddpWorkbookConfirmResponse> {
+    const mutationPayload = {
+      previewFingerprint: pkg.previewFingerprint,
+      academicYearId: pkg.academicYearId,
+      gradeLevel: pkg.gradeLevel,
+      topics: pkg.topics,
+      occurrences: pkg.occurrences,
+      authContext,
+      authorityEvidence,
+    };
+
+    const existingCommand = await this.prisma.programmePlanningCommand.findUnique({
+      where: { actorUserId_commandId: { actorUserId, commandId } },
+    });
+    if (existingCommand) {
+      const fingerprint = this.fingerprint(mutationPayload);
+      if (
+        existingCommand.commandType !== 'IMPORT_GDDP_WORKBOOK_DRAFT' ||
+        existingCommand.fingerprint !== fingerprint
+      ) {
+        throw new ConflictException(
+          'Idempotency key already used with different command type or payload.',
+        );
+      }
+      return {
+        ...(existingCommand.result as unknown as GddpWorkbookConfirmResponse),
+        outcome: 'IDEMPOTENT_REPLAY',
+      };
+    }
+
+    return this.mutate(
+      actorUserId,
+      commandId,
+      'IMPORT_GDDP_WORKBOOK_DRAFT',
+      mutationPayload,
+      async (tx) => {
+        const year = await tx.academicYear.findUnique({
+          where: { id: pkg.academicYearId },
+          select: { id: true },
+        });
+        if (!year) {
+          throw new NotFoundException('Năm học không tồn tại.');
+        }
+
+        // 1. Master bootstrap / reuse safety for (academicYearId, GDDP, gradeLevel)
+        let master: ProgrammeMaster;
+        if (authContext.expectedProgrammeMasterId) {
+          const existingMaster = await tx.programmeMaster.findUnique({
+            where: { id: authContext.expectedProgrammeMasterId },
+          });
+          if (
+            !existingMaster ||
+            existingMaster.academicYearId !== pkg.academicYearId ||
+            existingMaster.kind !== 'GDDP' ||
+            existingMaster.gradeLevel !== pkg.gradeLevel
+          ) {
+            throw new ConflictException(
+              'Chương trình GDĐP đã bị thay đổi hoặc không tồn tại.',
+            );
+          }
+          master = existingMaster;
+        } else {
+          const existingMaster = await tx.programmeMaster.findFirst({
+            where: {
+              academicYearId: pkg.academicYearId,
+              kind: 'GDDP',
+              gradeLevel: pkg.gradeLevel,
+            },
+          });
+          if (existingMaster) {
+            master = existingMaster;
+          } else {
+            if (!authContext.canBootstrapMaster) {
+              throw new ForbiddenException(
+                'Chỉ BGH mới có quyền khởi tạo ProgrammeMaster GDĐP.',
+              );
+            }
+            master = await tx.programmeMaster.create({
+              data: {
+                academicYearId: pkg.academicYearId,
+                kind: 'GDDP',
+                gradeLevel: pkg.gradeLevel,
+                createdByUserId: actorUserId,
+              },
+            });
+            await this.audit.write(
+              {
+                actorUserId,
+                action: 'PROGRAMME_MASTER_CREATED',
+                entityType: 'ProgrammeMaster',
+                entityId: master.id,
+                result: AuditResult.SUCCESS,
+                metadata: {
+                  commandId,
+                  academicYearId: pkg.academicYearId,
+                  kind: 'GDDP',
+                  gradeLevel: pkg.gradeLevel,
+                },
+              },
+              tx,
+            );
+          }
+        }
+
+        // 2. Retained Plan History check
+        const existingVersions = await tx.programmePlanVersion.findMany({
+          where: { programmeMasterId: master.id },
+          select: { id: true, status: true },
+        });
+        if (existingVersions.some((v) => v.status === 'DRAFT')) {
+          throw new ConflictException('Đã có một bản thảo DRAFT cho programme master này.');
+        }
+        if (
+          existingVersions.some(
+            (v) => v.status === 'PUBLISHED' || v.status === 'SUPERSEDED',
+          )
+        ) {
+          throw new ConflictException(
+            'Chương trình GDĐP đã có lịch sử phiên bản kế hoạch được ban hành. Nhập file kế hoạch từ đầu không thể ghi đè lịch sử; cần thực hiện quy trình tạo phiên bản kế tiếp.',
+          );
+        }
+
+        // 3. Revalidate Authority Evidence inside Mutate TX
+        await this.revalidateGddpAuthorityEvidence(tx, authorityEvidence);
+
+        // 4. Validate Topics
+        this.validateTopicItems(pkg.topics);
+
+        // 5. Create Plan Version
+        const planVersion = await tx.programmePlanVersion.create({
+          data: {
+            programmeMasterId: master.id,
+            versionNumber: 1,
+            status: 'DRAFT',
+            draftRevision: 1,
+            createdByUserId: actorUserId,
+          },
+        });
+
+        // 6. Create Topic Items
+        const topicMapBySequence = new Map<number, string>();
+        for (const t of pkg.topics) {
+          const item = await tx.programmeTopicItem.create({
+            data: {
+              programmePlanVersionId: planVersion.id,
+              sequence: t.sequence,
+              title: t.title.trim(),
+              requiredPeriods: t.requiredPeriods,
+              guidelineWeekFrom: t.guidelineWeekFrom ?? null,
+              guidelineWeekTo: t.guidelineWeekTo ?? null,
+              guidelineSegmentLabel: null,
+            },
+          });
+          topicMapBySequence.set(t.sequence, item.id);
+        }
+
+        // 7. Validate and Create Occurrences, Slots, Staffing
+        let occurrenceCount = 0;
+        let slotCount = 0;
+        let staffingCount = 0;
+
+        for (const occ of pkg.occurrences) {
+          const topicItemId = topicMapBySequence.get(occ.topicSequence);
+          if (!topicItemId) {
+            throw new ConflictException(
+              `Không tìm thấy chủ đề với thứ tự ${occ.topicSequence}.`,
+            );
+          }
+
+          // Canonical structural validation for occurrence
+          await this.validateOccurrenceStructureAndStaffing(
+            tx,
+            {
+              master,
+              planVersion: { id: planVersion.id, programmeMasterId: master.id },
+              topic: { id: topicItemId, programmePlanVersionId: planVersion.id },
+              academicYearId: pkg.academicYearId,
+              civilDate: occ.civilDate,
+              mode: occ.mode,
+              gradeLevel: occ.gradeLevel,
+              schoolClassId: occ.schoolClassId,
+              slots: occ.slots,
+            },
+            'RETAINED_TIMETABLE_EVIDENCE',
+          );
+
+          const occurrence = await tx.plannedProgrammeOccurrence.create({
+            data: {
+              programmeMasterId: master.id,
+              programmePlanVersionId: planVersion.id,
+              programmeTopicItemId: topicItemId,
+              academicYearId: pkg.academicYearId,
+              civilDate: parseCivilDate(occ.civilDate),
+              mode: occ.mode,
+              gradeLevel: occ.gradeLevel,
+              schoolClassId: null,
+              status: 'DRAFT',
+              draftRevision: 1,
+              note: occ.note ?? null,
+              createdByUserId: actorUserId,
+            },
+          });
+          occurrenceCount += 1;
+
+          for (const slotDto of occ.slots) {
+            const slot = await tx.plannedOccurrenceSlot.create({
+              data: {
+                plannedProgrammeOccurrenceId: occurrence.id,
+                academicYearId: pkg.academicYearId,
+                timeSlotDefinitionId: slotDto.timeSlotDefinitionId,
+              },
+            });
+            slotCount += 1;
+
+            if (slotDto.teacherUserIds.length > 0) {
+              await tx.plannedSlotStaffing.createMany({
+                data: slotDto.teacherUserIds.map((teacherUserId) => ({
+                  plannedOccurrenceSlotId: slot.id,
+                  teacherUserId,
+                })),
+              });
+              staffingCount += slotDto.teacherUserIds.length;
+            }
+          }
+        }
+
+        await this.audit.write(
+          {
+            actorUserId,
+            action: 'PROGRAMME_PLAN_VERSION_DRAFT_IMPORTED',
+            entityType: 'ProgrammePlanVersion',
+            entityId: planVersion.id,
+            result: AuditResult.SUCCESS,
+            metadata: {
+              commandId,
+              programmeMasterId: master.id,
+              kind: 'GDDP',
+              gradeLevel: pkg.gradeLevel,
               versionNumber: 1,
               topicItemCount: pkg.topics.length,
               occurrenceCount,
@@ -2174,6 +2543,249 @@ export class ProgrammePlanningService {
         throw new ConflictException(
           'Phân công GVCN của một hoặc nhiều lớp đã thay đổi kể từ khi xem trước.',
         );
+      }
+    }
+  }
+
+  private async revalidateGddpAuthorityEvidence(
+    tx: Prisma.TransactionClient,
+    evidence: GddpImportAuthorityEvidence,
+  ): Promise<void> {
+    const year = await tx.academicYear.findUnique({
+      where: { id: evidence.academicYearId },
+    });
+    if (!year) {
+      throw new ConflictException('Năm học không tồn tại hoặc đã bị xóa.');
+    }
+
+    // A. AcademicCalendarVersion: exactly one active calendar, matches evidence
+    const activeCalendars = await tx.academicCalendarVersion.findMany({
+      where: { academicYearId: evidence.academicYearId, isActive: true },
+    });
+    if (activeCalendars.length !== 1 || activeCalendars[0]!.id !== evidence.calendar.calendarVersionId) {
+      throw new ConflictException(
+        'Lịch năm học đang kích hoạt đã thay đổi hoặc không còn là lịch duy nhất kể từ khi xem trước.',
+      );
+    }
+    const activeCalendar = activeCalendars[0]!;
+
+    // A1. AcademicCalendarVersion teachingWeekdays: exact canonical set and order
+    const currentTeachingWeekdays = activeCalendar.teachingWeekdays;
+    const expTeachingWeekdays = evidence.calendar.teachingWeekdays ?? [];
+    const isSameTeachingWeekdays =
+      currentTeachingWeekdays.length === expTeachingWeekdays.length &&
+      currentTeachingWeekdays.every((tw, idx) => tw === expTeachingWeekdays[idx]);
+    if (!isSameTeachingWeekdays) {
+      throw new ConflictException(
+        'Danh sách ngày học trong tuần (teachingWeekdays) của lịch năm học đã thay đổi kể từ khi xem trước.',
+      );
+    }
+
+    // A2. CalendarInterruptions: exact set equality and boundaries
+    const interruptionsInDb = await tx.calendarInterruption.findMany({
+      where: { calendarVersionId: evidence.calendar.calendarVersionId },
+      orderBy: { id: 'asc' },
+    });
+    const expInterruptions = evidence.calendar.interruptions ?? [];
+    if (interruptionsInDb.length !== expInterruptions.length) {
+      throw new ConflictException(
+        'Danh sách gián đoạn lịch học (interruptions) của lịch năm học đã thay đổi kể từ khi xem trước.',
+      );
+    }
+    for (const expInter of expInterruptions) {
+      const dbInter = interruptionsInDb.find((i) => i.id === expInter.id);
+      if (
+        !dbInter ||
+        dbInter.code !== expInter.code ||
+        formatCivilDate(dbInter.startDate) !== expInter.startDate ||
+        formatCivilDate(dbInter.endDate) !== expInter.endDate
+      ) {
+        throw new ConflictException(
+          'Thông tin hoặc khoảng thời gian gián đoạn lịch học (interruption) đã thay đổi kể từ khi xem trước.',
+        );
+      }
+    }
+
+    // B. AcademicWeeks: exactly match each requested week
+    const weeksInDb = await tx.academicWeek.findMany({
+      where: { calendarVersionId: evidence.calendar.calendarVersionId },
+    });
+    for (const expectedWeek of evidence.weeks) {
+      const matching = weeksInDb.filter(
+        (w) => w.officialWeekNumber === expectedWeek.officialWeekNumber,
+      );
+      if (matching.length !== 1 || matching[0]!.id !== expectedWeek.academicWeekId) {
+        throw new ConflictException(
+          `Tuần chính thức số ${expectedWeek.officialWeekNumber} trong lịch năm học đã thay đổi kể từ khi xem trước.`,
+        );
+      }
+    }
+
+    // C. AcademicWeekSegments: exact set and boundaries for each requested week
+    const requestedWeekIds = [...new Set(evidence.weeks.map((w) => w.academicWeekId))];
+    const segmentsInDb = await tx.academicWeekSegment.findMany({
+      where: { academicWeekId: { in: requestedWeekIds } },
+    });
+    for (const weekId of requestedWeekIds) {
+      const expectedForWeek = evidence.segments.filter((s) => s.academicWeekId === weekId);
+      const dbForWeek = segmentsInDb.filter((s) => s.academicWeekId === weekId);
+      if (expectedForWeek.length !== dbForWeek.length) {
+        throw new ConflictException(
+          'Các đoạn thời gian (segments) của tuần học đã thay đổi kể từ khi xem trước.',
+        );
+      }
+      for (const expSeg of expectedForWeek) {
+        const dbSeg = dbForWeek.find((s) => s.id === expSeg.segmentId);
+        if (
+          !dbSeg ||
+          formatCivilDate(dbSeg.startDate) !== expSeg.startDate ||
+          formatCivilDate(dbSeg.endDate) !== expSeg.endDate
+        ) {
+          throw new ConflictException(
+            'Khoảng thời gian của đoạn tuần học (segment) đã thay đổi kể từ khi xem trước.',
+          );
+        }
+      }
+    }
+
+    // D. Target classes: exact set equality for the gradeLevel
+    const activeClassesInGrade = await tx.schoolClass.findMany({
+      where: {
+        academicYearId: evidence.academicYearId,
+        gradeLevel: evidence.gradeLevel,
+        status: 'ACTIVE',
+      },
+    });
+    const currentClassIds = new Set(activeClassesInGrade.map((c) => c.id));
+    const expectedClassIds = new Set(evidence.targetClassIds);
+    if (
+      currentClassIds.size !== expectedClassIds.size ||
+      ![...expectedClassIds].every((id) => currentClassIds.has(id))
+    ) {
+      throw new ConflictException(
+        `Danh sách lớp học đang hoạt động thuộc khối ${evidence.gradeLevel} đã thay đổi kể từ khi xem trước.`,
+      );
+    }
+
+    // E. Timetable effectivity: exactly one version and matches expected
+    const verifiedDateVersions = new Map<string, string>();
+    for (const da of evidence.dateAuthorities) {
+      let resolvedVersionId = verifiedDateVersions.get(da.civilDate);
+      if (!resolvedVersionId) {
+        const targetDateObj = parseCivilDate(da.civilDate);
+        const candidateVersions = await tx.timetableVersion.findMany({
+          where: {
+            academicYearId: evidence.academicYearId,
+            status: { in: [TimetableVersionStatus.ACTIVE, TimetableVersionStatus.SUPERSEDED] },
+            effectiveFrom: { lte: targetDateObj },
+            OR: [{ effectiveUntil: null }, { effectiveUntil: { gte: targetDateObj } }],
+          },
+        });
+        if (candidateVersions.length !== 1 || candidateVersions[0]!.id !== da.timetableVersionId) {
+          throw new ConflictException(
+            `Thời khóa biểu có hiệu lực tại ngày ${da.civilDate} đã thay đổi hoặc trở nên không rõ ràng kể từ khi xem trước.`,
+          );
+        }
+        resolvedVersionId = candidateVersions[0]!.id;
+        verifiedDateVersions.set(da.civilDate, resolvedVersionId);
+      } else if (resolvedVersionId !== da.timetableVersionId) {
+        throw new ConflictException(
+          `Thời khóa biểu có hiệu lực tại ngày ${da.civilDate} không khớp với thẩm quyền đã ghi nhận.`,
+        );
+      }
+    }
+
+    // F. Retained GDDP Markers: exact set equality per (sourceRowNumber, civilDate)
+    for (const da of evidence.dateAuthorities) {
+      const expectedWeekday = weekdayForCivilDate(parseCivilDate(da.civilDate));
+      const expectedMarkers = evidence.markerEvidence.filter(
+        (m) => m.sourceRowNumber === da.sourceRowNumber && m.civilDate === da.civilDate,
+      );
+
+      const dbMarkers = await tx.timetableSpecialProgrammeMarker.findMany({
+        where: {
+          timetableVersionId: da.timetableVersionId,
+          kind: 'GDDP',
+          schoolClassId: { in: evidence.targetClassIds },
+        },
+        include: {
+          timeSlotDefinition: true,
+        },
+      });
+
+      const matchingDbMarkers = dbMarkers.filter(
+        (m) => m.timeSlotDefinition && m.timeSlotDefinition.weekday === expectedWeekday,
+      );
+
+      const dbMarkerTuples = new Set(
+        matchingDbMarkers.map(
+          (m) => `${m.id}#${m.timetableVersionId}#${m.schoolClassId}#${m.timeSlotDefinitionId}#${m.kind}`,
+        ),
+      );
+      const expMarkerTuples = new Set(
+        expectedMarkers.map(
+          (m) => `${m.markerId}#${m.timetableVersionId}#${m.schoolClassId}#${m.timeSlotDefinitionId}#${m.kind}`,
+        ),
+      );
+
+      if (
+        dbMarkerTuples.size !== expMarkerTuples.size ||
+        ![...expMarkerTuples].every((t) => dbMarkerTuples.has(t))
+      ) {
+        throw new ConflictException(
+          `Dữ liệu tiết GDĐP trên thời khóa biểu tại ngày ${da.civilDate} đã thay đổi kể từ khi xem trước.`,
+        );
+      }
+    }
+
+    // G. TimeSlotDefinition existence
+    const allSlotIds = [...new Set(evidence.markerEvidence.map((m) => m.timeSlotDefinitionId))];
+    if (allSlotIds.length > 0) {
+      const slotDefs = await tx.timeSlotDefinition.findMany({
+        where: {
+          id: { in: allSlotIds },
+          academicYearId: evidence.academicYearId,
+        },
+      });
+      if (slotDefs.length !== allSlotIds.length) {
+        throw new ConflictException(
+          'Khung tiết học (TimeSlotDefinition) đã thay đổi hoặc không còn tồn tại trong năm học.',
+        );
+      }
+    }
+
+    // H. Resolved teachers: active, teaching staff, matching staffCode
+    if (evidence.resolvedTeachers && evidence.resolvedTeachers.length > 0) {
+      const activeTeachingUsers = await tx.user.findMany({
+        where: {
+          status: 'ACTIVE',
+          profile: { isTeachingStaff: true },
+        },
+        include: { profile: true },
+      });
+
+      for (const item of evidence.resolvedTeachers) {
+        const normCode = item.staffCode.trim().toLowerCase();
+        const matched = activeTeachingUsers.filter((u) => {
+          if (!u.profile?.staffCode) return false;
+          return u.profile.staffCode.trim().toLowerCase() === normCode;
+        });
+
+        if (matched.length === 0) {
+          throw new ConflictException(
+            `Giáo viên với mã '${item.staffCode}' tại dòng ${item.sourceRowNumber} không còn là nhân sự giảng dạy hoạt động.`,
+          );
+        }
+        if (matched.length > 1) {
+          throw new ConflictException(
+            `Phát hiện nhiều hơn một nhân sự giảng dạy hoạt động có mã trùng với '${item.staffCode}' tại dòng ${item.sourceRowNumber}.`,
+          );
+        }
+        if (matched[0]!.id !== item.matchedUserId) {
+          throw new ConflictException(
+            `Giáo viên khớp với mã '${item.staffCode}' tại dòng ${item.sourceRowNumber} không còn trùng khớp với danh tính đã ghi nhận.`,
+          );
+        }
       }
     }
   }
