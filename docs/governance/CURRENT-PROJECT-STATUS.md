@@ -46,18 +46,18 @@ Closure evidence:
 - authoritative post-merge main CI: CI #519 (run `35960845683`), SUCCESS (event: `push`, branch: `main`, exact SHA: `091d0a3771a642b4508f812359d6845c8579cba3`);
 - parent PR statistics: 13 files changed (+3678 / -29);
 - delivered scope:
-  - exact Vietnamese GDĐP workbook contract: 5 business columns (`Chủ đề`, `Tiết PPCT`, `Tuần`, `Khối`, `Người thực hiện / Mã GV`);
+  - exact Vietnamese GDĐP workbook contract: 5 business columns (`Khối`, `Tiết PPCT`, `Tuần dạy`, `Nội dung`, `Giáo viên dạy`);
   - inspect / preview / confirm backend flow under `/api/programme-planning/gddp-import` (`/inspect`, `/preview`, `/confirm`);
   - grades 10, 11, and 12 supported;
   - PPCT coordinate validation;
-  - exact official week semantics with non-contiguous week parsing without artificial week expansion (`parseGddpWeekRange`);
+  - official week declarations được parse bởi `parseWeeksText`; exact official week set được giữ cho resolver; non-contiguous set như 1,3,5 không bị fabricate thành contiguous guideline 1..5; `computeContiguousGuidelineRange` trả null/null cho non-contiguous set;
   - AcademicWeek -> civil date resolution via official calendar segment mapping;
   - date-effective TimetableVersion resolution;
   - retained GDDP markers (`TimetableSpecialProgrammeMarker`);
   - complete grade coverage validation (all active classes in the grade must have matching retained GDDP markers in that slot);
   - no class fan-out (single collapsed slot per grade occurrence);
   - exact candidate count validation;
-  - staffCode exact canonical resolution against `StaffProfile.staffCode` (and displayName fallback if qualified);
+  - GDĐP teacher identity resolves exclusively through normalized `StaffProfile.staffCode` (`displayName` chỉ là resolved display/evidence sau khi staffCode đã xác định giáo viên, KHÔNG phải fallback identity authority);
   - fail-closed semantics for missing, ambiguous, inactive, or ineligible teachers;
   - zero-mutation preview;
   - deterministic preview fingerprint;
