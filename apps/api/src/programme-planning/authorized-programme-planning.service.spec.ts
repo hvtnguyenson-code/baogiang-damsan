@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { AuthorizedProgrammePlanningService } from './authorized-programme-planning.service';
 import { ProgrammePlanningModule } from './programme-planning.module';
 import { ProgrammePlanningService } from './programme-planning.service';
@@ -69,12 +69,58 @@ describe('AuthorizedProgrammePlanningService', () => {
       },
     };
 
+    const workspaceServiceMock = {
+      getWorkspaceOptions: jest.fn().mockResolvedValue({ academicYears: [], masters: [] }),
+      getWorkspaceMasterDetail: jest.fn().mockResolvedValue({ master: { id: masterId } }),
+    };
+
     authorizedService = new AuthorizedProgrammePlanningService(
       rawServiceMock as never,
       authServiceMock as never,
       authorizationMock as never,
       prismaMock as never,
+      undefined,
+      undefined,
+      workspaceServiceMock as never,
     );
+  });
+
+  describe('Programme Workspace Read Foundation (P4-074A)', () => {
+    it('getWorkspaceOptions delegates to workspaceService', async () => {
+      const res = await authorizedService.getWorkspaceOptions(actorId, 'year-1');
+      expect(res).toEqual({ academicYears: [], masters: [] });
+    });
+
+    it('getWorkspaceMasterDetail checks authority and delegates to workspaceService', async () => {
+      const res = await authorizedService.getWorkspaceMasterDetail(masterId, actorId);
+      expect(prismaMock.programmeMaster.findUnique).toHaveBeenCalledWith({
+        where: { id: masterId },
+        select: { id: true, kind: true },
+      });
+      expect(authServiceMock.requireProgrammeAuthority).toHaveBeenCalledWith(
+        actorId,
+        gddpMaster,
+        undefined,
+      );
+      expect(res).toEqual({ master: { id: masterId } });
+    });
+
+    it('getWorkspaceMasterDetail throws NotFoundException if master does not exist', async () => {
+      prismaMock.programmeMaster.findUnique.mockResolvedValue(null);
+      await expect(
+        authorizedService.getWorkspaceMasterDetail('missing-id', actorId),
+      ).rejects.toThrow(NotFoundException);
+      expect(authServiceMock.requireProgrammeAuthority).not.toHaveBeenCalled();
+    });
+
+    it('getWorkspaceMasterDetail fails closed when actor is unauthorized', async () => {
+      authServiceMock.requireProgrammeAuthority.mockRejectedValue(
+        new ForbiddenException('Bạn không có quyền thực hiện thao tác này.'),
+      );
+      await expect(
+        authorizedService.getWorkspaceMasterDetail(masterId, actorId),
+      ).rejects.toThrow(ForbiddenException);
+    });
   });
 
   describe('Master Commands & Queries', () => {

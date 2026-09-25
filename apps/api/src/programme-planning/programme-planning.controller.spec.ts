@@ -208,4 +208,29 @@ describe('ProgrammePlanningController', () => {
       );
     });
   });
+
+  describe('Workspace Endpoints (P4-074A)', () => {
+    it('getWorkspaceOptions delegates to service with actorId and academicYearId', async () => {
+      serviceMock.getWorkspaceOptions = jest.fn().mockResolvedValue({
+        academicYears: [],
+        masters: [],
+      });
+      const res = await controller.getWorkspaceOptions({ academicYearId: 'year-1' }, fakeReq);
+      expect(serviceMock.getWorkspaceOptions).toHaveBeenCalledWith(actorId, 'year-1');
+      expect(res).toEqual({ academicYears: [], masters: [] });
+    });
+
+    it('getWorkspaceMasterDetail delegates to service with masterId, actorId, and auditContext', async () => {
+      serviceMock.getWorkspaceMasterDetail = jest.fn().mockResolvedValue({
+        master: { id: masterId },
+      });
+      const res = await controller.getWorkspaceMasterDetail(masterId, fakeReq);
+      expect(serviceMock.getWorkspaceMasterDetail).toHaveBeenCalledWith(
+        masterId,
+        actorId,
+        expect.objectContaining({ route: '/api/test', method: 'POST' }),
+      );
+      expect(res).toEqual({ master: { id: masterId } });
+    });
+  });
 });

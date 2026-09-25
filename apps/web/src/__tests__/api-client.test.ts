@@ -104,4 +104,100 @@ describe('api client', () => {
     expect(error.serverError).toBeUndefined();
     expect(error.message).toBe('Yêu cầu không thực hiện được.');
   });
+
+  it('sets Content-Type application/json for JSON request with body', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await apiFetch('/json-test', {
+      method: 'POST',
+      body: JSON.stringify({ key: 'value' }),
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/json-test',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        }),
+      }),
+    );
+  });
+
+  it('does not force Content-Type application/json for FormData request', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const formData = new FormData();
+    formData.append('file', 'mock-content');
+
+    await apiFetch('/upload-test', {
+      method: 'POST',
+      body: formData,
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/upload-test',
+      expect.objectContaining({
+        body: formData,
+        headers: expect.not.objectContaining({
+          'Content-Type': 'application/json',
+        }),
+      }),
+    );
+    const passedHeaders = fetchMock.mock.calls[0][1].headers;
+    expect(passedHeaders['Content-Type']).toBeUndefined();
+    expect(passedHeaders.Accept).toBe('application/json');
+  });
+
+  it('preserves custom headers and allows overriding defaults', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await apiFetch('/custom-headers', {
+      method: 'POST',
+      body: JSON.stringify({ test: 1 }),
+      headers: {
+        'X-Custom-Header': 'CustomValue',
+        'Content-Type': 'application/vnd.custom+json',
+      },
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/custom-headers',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Accept: 'application/json',
+          'X-Custom-Header': 'CustomValue',
+          'Content-Type': 'application/vnd.custom+json',
+        }),
+      }),
+    );
+  });
+
+  it('preserves unauthorized notification behavior for FormData requests without regression', async () => {
+    const listener = vi.fn();
+    const unsubscribe = onUnauthorized(listener);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({ statusCode: 401, error: 'Unauthorized', message: 'Phiên hết hạn' }, 401),
+      ),
+    );
+
+    const formData = new FormData();
+    formData.append('data', 'test');
+
+    await expect(
+      apiFetch('/upload-protected', {
+        method: 'POST',
+        body: formData,
+        notifyUnauthorized: true,
+      }),
+    ).rejects.toMatchObject({ statusCode: 401, message: 'Phiên hết hạn' });
+
+    expect(listener).toHaveBeenCalledOnce();
+    unsubscribe();
+  });
 });
