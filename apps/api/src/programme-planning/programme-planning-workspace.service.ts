@@ -1,4 +1,9 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   ProgrammeMaster,
   ProgrammeTopicItem,
@@ -251,10 +256,15 @@ export class ProgrammePlanningWorkspaceService {
       };
     }
 
-    const occurrences = await this.prisma.plannedProgrammeOccurrence.findMany({
-      where: { programmeMasterId: masterId },
-      orderBy: [{ civilDate: 'asc' }, { createdAt: 'asc' }],
-    });
+    const occurrences = latestPlanVersion
+      ? await this.prisma.plannedProgrammeOccurrence.findMany({
+          where: {
+            programmeMasterId: masterId,
+            programmePlanVersionId: latestPlanVersion.id,
+          },
+          orderBy: [{ civilDate: 'asc' }, { createdAt: 'asc' }],
+        })
+      : [];
 
     const occurrenceIds = occurrences.map((o) => o.id);
 
@@ -311,14 +321,13 @@ export class ProgrammePlanningWorkspaceService {
         })
       : [];
     const profileMap = new Map(profiles.map((p) => [p.userId, p]));
-    const missingProfileIds = teacherUserIds.filter((id) => !profileMap.has(id));
-    if (missingProfileIds.length > 0) {
-      const fallbackUsers = await this.prisma.user.findMany({
-        where: { id: { in: missingProfileIds } },
-        select: { id: true, username: true },
-      });
-      for (const u of fallbackUsers) {
-        profileMap.set(u.id, { userId: u.id, displayName: u.username, staffCode: null });
+
+    for (const teacherId of teacherUserIds) {
+      const p = profileMap.get(teacherId);
+      if (!p || !p.displayName || p.displayName.trim().length === 0) {
+        throw new ConflictException(
+          'Dữ liệu phân công giáo viên không đầy đủ: không xác định được hồ sơ nhân sự của một giáo viên trong kế hoạch.',
+        );
       }
     }
 
@@ -370,11 +379,11 @@ export class ProgrammePlanningWorkspaceService {
         const slotStaff = staffingBySlot.get(slot.id) ?? [];
         const teachers: ProgrammeWorkspaceTeacher[] = slotStaff
           .map((st) => {
-            const p = profileMap.get(st.teacherUserId);
+            const p = profileMap.get(st.teacherUserId)!;
             return {
               userId: st.teacherUserId,
-              displayName: p?.displayName ?? st.teacherUserId,
-              staffCode: p?.staffCode ?? null,
+              displayName: p.displayName.trim(),
+              staffCode: p.staffCode ?? null,
             };
           })
           .sort((a, b) => {

@@ -1,4 +1,4 @@
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { ProgrammePlanningWorkspaceService } from './programme-planning-workspace.service';
 
 describe('ProgrammePlanningWorkspaceService', () => {
@@ -773,6 +773,365 @@ describe('ProgrammePlanningWorkspaceService', () => {
       await expect(service.getWorkspaceMasterDetail('missing-master-id')).rejects.toThrow(
         NotFoundException,
       );
+    });
+  });
+
+  // =========================================================================
+  // CORRECTION REGRESSIONS
+  // =========================================================================
+  describe('Plan Version Isolation Regressions (Correction A)', () => {
+    const v1PlanId = 'plan-v1-uuid';
+    const v2PlanId = 'plan-v2-uuid';
+
+
+    const planV2 = {
+      id: v2PlanId,
+      programmeMasterId: hdtnMasterId,
+      versionNumber: 2,
+      status: 'DRAFT' as const,
+      draftRevision: 2,
+      changeReason: 'Kế hoạch v2 đang soạn',
+      publishedAt: null,
+    };
+
+    it('A: Master has plan v1 (PUBLISHED) and plan v2 (DRAFT) -> projection isolates strictly to v2', async () => {
+      prismaMock.programmeMaster.findUnique.mockResolvedValue(hdtnMaster);
+      prismaMock.programmePlanVersion.findFirst.mockResolvedValue(planV2);
+
+      const topicV2 = {
+        id: 'topic-v2-uuid',
+        programmePlanVersionId: v2PlanId,
+        sequence: 1,
+        title: 'Chủ đề v2',
+        requiredPeriods: 2,
+        guidelineWeekFrom: 1,
+        guidelineWeekTo: 2,
+        guidelineSegmentLabel: null,
+      };
+      prismaMock.programmeTopicItem.findMany.mockResolvedValue([topicV2]);
+
+      const occV1 = {
+        id: 'occ-v1-uuid',
+        programmeMasterId: hdtnMasterId,
+        programmePlanVersionId: v1PlanId,
+        programmeTopicItemId: 'topic-v1-uuid',
+        academicYearId: yearId,
+        civilDate: new Date('2024-09-09T00:00:00Z'),
+        mode: 'GRADE' as const,
+        gradeLevel: 10,
+        schoolClassId: null,
+        status: 'PUBLISHED' as const,
+        draftRevision: 1,
+        note: 'Tiết v1 cũ',
+        replacesOccurrenceId: null,
+      };
+
+      const occV2 = {
+        id: 'occ-v2-uuid',
+        programmeMasterId: hdtnMasterId,
+        programmePlanVersionId: v2PlanId,
+        programmeTopicItemId: topicV2.id,
+        academicYearId: yearId,
+        civilDate: new Date('2024-09-16T00:00:00Z'),
+        mode: 'GRADE' as const,
+        gradeLevel: 10,
+        schoolClassId: null,
+        status: 'DRAFT' as const,
+        draftRevision: 1,
+        note: 'Tiết v2 mới',
+        replacesOccurrenceId: null,
+      };
+
+      prismaMock.plannedProgrammeOccurrence.findMany.mockImplementation(
+        async ({ where }: { where?: { programmePlanVersionId?: string } }) => {
+          if (where?.programmePlanVersionId === v2PlanId) {
+            return [occV2];
+          }
+          if (where?.programmePlanVersionId === v1PlanId) {
+            return [occV1];
+          }
+          return [occV1, occV2];
+        },
+      );
+
+      prismaMock.programmeMaterializedActivity.findMany.mockImplementation(
+        async ({
+          where,
+        }: {
+          where?: { plannedProgrammeOccurrenceId?: { in?: string[] } };
+        }) => {
+          const ids = where?.plannedProgrammeOccurrenceId?.in ?? [];
+          if (ids.includes('occ-v1-uuid')) {
+            return [
+              {
+                id: 'mat-v1',
+                plannedProgrammeOccurrenceId: 'occ-v1-uuid',
+                specialActivityId: 'spec-v1',
+              },
+            ];
+          }
+          return [];
+        },
+      );
+
+      prismaMock.programmeOccurrenceAttestation.findMany.mockImplementation(
+        async ({
+          where,
+        }: {
+          where?: { plannedProgrammeOccurrenceId?: { in?: string[] } };
+        }) => {
+          const ids = where?.plannedProgrammeOccurrenceId?.in ?? [];
+          if (ids.includes('occ-v1-uuid')) {
+            return [
+              {
+                id: 'attest-v1',
+                plannedProgrammeOccurrenceId: 'occ-v1-uuid',
+                status: 'ACTIVE',
+              },
+            ];
+          }
+          return [];
+        },
+      );
+
+      const res = await service.getWorkspaceMasterDetail(hdtnMasterId);
+
+      expect(res.plan?.id).toBe(v2PlanId);
+      expect(res.plan?.versionNumber).toBe(2);
+      expect(res.plan?.status).toBe('DRAFT');
+
+      expect(res.occurrences).toHaveLength(1);
+      expect(res.occurrences[0].id).toBe('occ-v2-uuid');
+      expect(res.occurrences[0].status).toBe('DRAFT');
+
+      expect(res.occurrences[0].lifecycleSummary.materialized).toBe(false);
+      expect(res.occurrences[0].lifecycleSummary.materializedActivityCount).toBe(0);
+      expect(res.occurrences[0].lifecycleSummary.hasActiveAttestation).toBe(false);
+      expect(res.occurrences[0].lifecycleSummary.activeAttestationCount).toBe(0);
+
+      expect(res.lifecycleSummary.totalOccurrences).toBe(1);
+      expect(res.lifecycleSummary.materializedOccurrences).toBe(0);
+      expect(res.lifecycleSummary.attestedOccurrences).toBe(0);
+      expect(res.lifecycleSummary.isFullyMaterialized).toBe(false);
+
+      expect(prismaMock.plannedProgrammeOccurrence.findMany).toHaveBeenCalledWith({
+        where: {
+          programmeMasterId: hdtnMasterId,
+          programmePlanVersionId: v2PlanId,
+        },
+        orderBy: [{ civilDate: 'asc' }, { createdAt: 'asc' }],
+      });
+    });
+
+    it('B: v1 = SUPERSEDED, v2 = PUBLISHED -> plan is v2 and only occurrence v2 appears', async () => {
+      prismaMock.programmeMaster.findUnique.mockResolvedValue(hdtnMaster);
+      const planV2Pub = { ...planV2, status: 'PUBLISHED' as const };
+      prismaMock.programmePlanVersion.findFirst.mockResolvedValue(planV2Pub);
+
+      const occV2 = {
+        id: 'occ-v2-published',
+        programmeMasterId: hdtnMasterId,
+        programmePlanVersionId: v2PlanId,
+        programmeTopicItemId: 'topic-v2-id',
+        academicYearId: yearId,
+        civilDate: new Date('2024-09-16T00:00:00Z'),
+        mode: 'GRADE' as const,
+        gradeLevel: 10,
+        schoolClassId: null,
+        status: 'PUBLISHED' as const,
+        draftRevision: 1,
+        note: null,
+        replacesOccurrenceId: null,
+      };
+
+      prismaMock.plannedProgrammeOccurrence.findMany.mockImplementation(
+        async ({ where }: { where?: { programmePlanVersionId?: string } }) => {
+          if (where?.programmePlanVersionId === v2PlanId) {
+            return [occV2];
+          }
+          return [];
+        },
+      );
+
+      const res = await service.getWorkspaceMasterDetail(hdtnMasterId);
+
+      expect(res.plan?.id).toBe(v2PlanId);
+      expect(res.plan?.status).toBe('PUBLISHED');
+      expect(res.occurrences).toHaveLength(1);
+      expect(res.occurrences[0].id).toBe('occ-v2-published');
+    });
+
+    it('C: latest plan exists but has no occurrences -> occurrences is empty and lifecycle counts are 0', async () => {
+      prismaMock.programmeMaster.findUnique.mockResolvedValue(hdtnMaster);
+      prismaMock.programmePlanVersion.findFirst.mockResolvedValue(planV2);
+      prismaMock.plannedProgrammeOccurrence.findMany.mockResolvedValue([]);
+
+      const res = await service.getWorkspaceMasterDetail(hdtnMasterId);
+
+      expect(res.plan?.id).toBe(v2PlanId);
+      expect(res.occurrences).toEqual([]);
+      expect(res.lifecycleSummary.totalOccurrences).toBe(0);
+      expect(res.lifecycleSummary.materializedOccurrences).toBe(0);
+      expect(res.lifecycleSummary.attestedOccurrences).toBe(0);
+      expect(res.lifecycleSummary.isFullyMaterialized).toBe(false);
+    });
+
+    it('latest plan does not exist -> plan is null, occurrences is empty', async () => {
+      prismaMock.programmeMaster.findUnique.mockResolvedValue(hdtnMaster);
+      prismaMock.programmePlanVersion.findFirst.mockResolvedValue(null);
+
+      const res = await service.getWorkspaceMasterDetail(hdtnMasterId);
+
+      expect(res.plan).toBeNull();
+      expect(res.occurrences).toEqual([]);
+      expect(res.lifecycleSummary.totalOccurrences).toBe(0);
+      expect(prismaMock.plannedProgrammeOccurrence.findMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Teacher Identity Fail-Closed Regressions (Correction B)', () => {
+    const testSlotId = 'test-slot-1';
+    const testTimeSlotDefId = 'test-time-slot-def-1';
+    const testTeacherId = 'teacher-user-strict-1';
+
+    const baseOcc = {
+      id: 'occ-teacher-test',
+      programmeMasterId: hdtnMasterId,
+      programmePlanVersionId: 'plan-1-uuid',
+      programmeTopicItemId: 'topic-1-uuid',
+      academicYearId: yearId,
+      civilDate: new Date('2024-09-15T00:00:00Z'),
+      mode: 'CLASS' as const,
+      gradeLevel: 10,
+      schoolClassId: 'class-10a1-uuid',
+      status: 'PUBLISHED' as const,
+      draftRevision: 1,
+      note: null,
+      replacesOccurrenceId: null,
+    };
+
+    const baseSlot = {
+      id: testSlotId,
+      plannedProgrammeOccurrenceId: baseOcc.id,
+      academicYearId: yearId,
+      timeSlotDefinitionId: testTimeSlotDefId,
+      createdAt: new Date(),
+    };
+
+    const baseStaffing = {
+      id: 'staffing-test-1',
+      plannedOccurrenceSlotId: testSlotId,
+      teacherUserId: testTeacherId,
+      createdAt: new Date(),
+    };
+
+    const baseTimeSlotDef = {
+      id: testTimeSlotDefId,
+      ordinal: 1,
+      startTime: new Date('1970-01-01T07:00:00Z'),
+      endTime: new Date('1970-01-01T07:45:00Z'),
+      displayLabel: 'Tiết 1',
+    };
+
+    beforeEach(() => {
+      prismaMock.programmeMaster.findUnique.mockResolvedValue(hdtnMaster);
+      prismaMock.programmePlanVersion.findFirst.mockResolvedValue({
+        id: 'plan-1-uuid',
+        programmeMasterId: hdtnMasterId,
+        versionNumber: 1,
+        status: 'PUBLISHED' as const,
+        draftRevision: 1,
+        changeReason: null,
+        publishedAt: new Date(),
+      });
+      prismaMock.plannedProgrammeOccurrence.findMany.mockResolvedValue([baseOcc]);
+      prismaMock.plannedOccurrenceSlot.findMany.mockResolvedValue([baseSlot]);
+      prismaMock.plannedSlotStaffing.findMany.mockResolvedValue([baseStaffing]);
+      prismaMock.timeSlotDefinition.findMany.mockResolvedValue([baseTimeSlotDef]);
+    });
+
+    it('teacher has StaffProfile.displayName -> renders correctly', async () => {
+      prismaMock.staffProfile.findMany.mockResolvedValue([
+        {
+          userId: testTeacherId,
+          displayName: 'Nguyễn Văn C',
+          staffCode: 'GV003',
+        },
+      ]);
+
+      const res = await service.getWorkspaceMasterDetail(hdtnMasterId);
+
+      const teacher = res.occurrences[0].slots[0].staffing[0];
+      expect(teacher.userId).toBe(testTeacherId);
+      expect(teacher.displayName).toBe('Nguyễn Văn C');
+      expect(teacher.staffCode).toBe('GV003');
+    });
+
+    it('staffCode null but valid displayName -> still renders correctly', async () => {
+      prismaMock.staffProfile.findMany.mockResolvedValue([
+        {
+          userId: testTeacherId,
+          displayName: 'Lê Thị D',
+          staffCode: null,
+        },
+      ]);
+
+      const res = await service.getWorkspaceMasterDetail(hdtnMasterId);
+
+      const teacher = res.occurrences[0].slots[0].staffing[0];
+      expect(teacher.displayName).toBe('Lê Thị D');
+      expect(teacher.staffCode).toBeNull();
+    });
+
+    it('teacher does not have StaffProfile -> fail closed with ConflictException', async () => {
+      prismaMock.staffProfile.findMany.mockResolvedValue([]);
+
+      await expect(service.getWorkspaceMasterDetail(hdtnMasterId)).rejects.toThrow(
+        new ConflictException(
+          'Dữ liệu phân công giáo viên không đầy đủ: không xác định được hồ sơ nhân sự của một giáo viên trong kế hoạch.',
+        ),
+      );
+    });
+
+    it('StaffProfile.displayName is empty or whitespace -> fail closed with ConflictException', async () => {
+      prismaMock.staffProfile.findMany.mockResolvedValue([
+        {
+          userId: testTeacherId,
+          displayName: '   ',
+          staffCode: 'GV004',
+        },
+      ]);
+
+      await expect(service.getWorkspaceMasterDetail(hdtnMasterId)).rejects.toThrow(
+        new ConflictException(
+          'Dữ liệu phân công giáo viên không đầy đủ: không xác định được hồ sơ nhân sự của một giáo viên trong kế hoạch.',
+        ),
+      );
+    });
+
+    it('response/error does not use raw UUID as displayName', async () => {
+      prismaMock.staffProfile.findMany.mockResolvedValue([]);
+
+      try {
+        await service.getWorkspaceMasterDetail(hdtnMasterId);
+        fail('Should have thrown ConflictException');
+      } catch (err: unknown) {
+        expect(err).toBeInstanceOf(ConflictException);
+        const error = err as ConflictException;
+        expect(error.message).not.toContain(testTeacherId);
+      }
+    });
+
+    it('response does not use username as teacher display label', async () => {
+      prismaMock.user.findMany.mockResolvedValue([
+        { id: testTeacherId, username: 'teacher_username_test' },
+      ]);
+      prismaMock.staffProfile.findMany.mockResolvedValue([]);
+
+      await expect(service.getWorkspaceMasterDetail(hdtnMasterId)).rejects.toThrow(
+        ConflictException,
+      );
+      expect(prismaMock.user.findMany).not.toHaveBeenCalled();
     });
   });
 });
