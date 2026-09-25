@@ -6,32 +6,72 @@ This is the canonical mutable **product/task status** document for Báo giảng.
 
 It is **not** a self-referential registry of the latest Git commit. Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub at the start of every task. SHAs recorded here are evidence for the stated baseline or last closed major task.
 
-**Status snapshot date:** 2026-09-23
+**Status snapshot date:** 2026-09-25
 
 ## Active / next critical path
 
-`P4-072` — HĐTN-HN workbook importer — is **CLOSED** by `SYNC-P4-072` following:
-- parent PR #160 (`feat(programme): add HĐTN-HN workbook draft importer`);
-- exact-head CI #510 (run `35813906445`) SUCCESS;
-- normal merge/main `2979125c47290d467f20c0bbd3e7688fde5f333c`;
-- authoritative post-merge CI #511 (run `35814368948`) SUCCESS.
+`P4-073` — GDĐP workbook importer — is **CLOSED** by `SYNC-P4-073` following:
+- parent PR #163 (`feat(programme): add GDĐP workbook draft importer`);
+- exact-head CI #518 (run `35957352683`) SUCCESS;
+- normal merge/main `091d0a3771a642b4508f812359d6845c8579cba3`;
+- authoritative post-merge CI #519 (run `35960845683`) SUCCESS.
 
 Next preferred task:
-- `P4-073` — GDĐP workbook importer — is **IN_REVIEW** on dedicated branch `feat/gddp-workbook-importer-073` (implementation candidate complete, local unit regression matrix passed, PostgreSQL integration coverage exists, zero-mutation preview verified, fail-closed exact collapse implemented; authoritative PostgreSQL integration and CI verification pending PR CI; awaiting independent GitHub review).
+- `P4-074` — Special-programme import lifecycle and E2E closure — is **READY** (unlocked by `P4-072`, `P4-073`, `P4-040`, `P4-050` closure; implementation not yet started; must not be described as implemented).
 
 Eligible tasks / status:
+- `P4-074` — Special-programme import lifecycle and E2E closure — **READY**; preferred next P4 task (all dependencies `P4-072`, `P4-073`, `P4-040`, `P4-050` are `CLOSED`; implementation not yet started; must not be described as implemented).
 - `P2-061` — School-wide effective teaching schedule read model + Teacher Workspace — remains independently **READY** (unlocked by `P2-060` closure; implementation not yet started; must not be described as implemented).
-- `P4-074` — Special-programme import lifecycle and E2E closure — remains **PLANNED** (gated on P4-073 closure).
 
 Remain:
 - `P2-010` — PPCT real-workbook contract/security audit — **BLOCKED_EVIDENCE** (pending authoritative school PPCT workbook/template).
 - `P2-020` — PPCT native importer implementation — **PLANNED** (pending `P2-010`).
+- `P4-060` and `P4-061` remain **DEFERRED_WITH_TRIGGER**.
 
 Production environment remains strictly **PRE-OPERATIONAL**. No production deployment or mutation has occurred. Zero production migration or deployment has been authorized.
 
 ## Last closed major task
 
-`P4-072` — HĐTN-HN workbook importer — **CLOSED** by `SYNC-P4-072`.
+`P4-073` — GDĐP workbook importer — **CLOSED** by `SYNC-P4-073`.
+
+Closure evidence:
+- dedicated implementation branch: `feat/gddp-workbook-importer-073`;
+- canonical starting main base: `5fa085b2479d1be5932ad8dd409f54433bdd8db4`;
+- final independently reviewed parent HEAD: `b672c0aaa4a9f82e646ce0c6d68fb0dd6c260567`;
+- review correction forward commit: `b672c0a` absorbed review findings before merge;
+- parent PR: #163 (`feat(programme): add GDĐP workbook draft importer`);
+- exact-head PR CI: CI #518 (run `35957352683`), SUCCESS;
+- merge/main commit: `091d0a3771a642b4508f812359d6845c8579cba3`;
+- normal merge: YES;
+- authoritative post-merge main CI: CI #519 (run `35960845683`), SUCCESS (event: `push`, branch: `main`, exact SHA: `091d0a3771a642b4508f812359d6845c8579cba3`);
+- parent PR statistics: 13 files changed (+3678 / -29);
+- delivered scope:
+  - exact Vietnamese GDĐP workbook contract: 5 business columns (`Chủ đề`, `Tiết PPCT`, `Tuần`, `Khối`, `Người thực hiện / Mã GV`);
+  - inspect / preview / confirm backend flow under `/api/programme-planning/gddp-import` (`/inspect`, `/preview`, `/confirm`);
+  - grades 10, 11, and 12 supported;
+  - PPCT coordinate validation;
+  - exact official week semantics with non-contiguous week parsing without artificial week expansion (`parseGddpWeekRange`);
+  - AcademicWeek -> civil date resolution via official calendar segment mapping;
+  - date-effective TimetableVersion resolution;
+  - retained GDDP markers (`TimetableSpecialProgrammeMarker`);
+  - complete grade coverage validation (all active classes in the grade must have matching retained GDDP markers in that slot);
+  - no class fan-out (single collapsed slot per grade occurrence);
+  - exact candidate count validation;
+  - staffCode exact canonical resolution against `StaffProfile.staffCode` (and displayName fallback if qualified);
+  - fail-closed semantics for missing, ambiguous, inactive, or ineligible teachers;
+  - zero-mutation preview;
+  - deterministic preview fingerprint;
+  - stale-authority revalidation on confirmation;
+  - SERIALIZABLE atomic and idempotent DRAFT import via `ProgrammePlanningCommand`;
+  - no automatic publish, no SpecialActivity materialization, no workload calculation, no TeachingExecution creation;
+  - no P4-074 implementation;
+  - no production deployment; no production migration execution;
+- independent exact-diff review: PASS; review corrections absorbed; no separate correction or re-entry task emerged;
+- closed by administrative closure: `SYNC-P4-073`;
+- downstream: `P4-074` unlocked to `READY` (preferred next P4 task); `P2-061` remains independently `READY`;
+- production remains strictly **PRE-OPERATIONAL**.
+
+Predecessor closed major task: `P4-072` — HĐTN-HN workbook importer — **CLOSED** by `SYNC-P4-072`.
 
 Closure evidence:
 - dedicated implementation branch: `feat/hdtn-hn-workbook-importer-072`;
@@ -61,7 +101,7 @@ Closure evidence:
   - no production deployment; no production migration execution;
 - independent exact-diff review: PASS; no separate correction or re-entry task emerged;
 - closed by administrative closure: `SYNC-P4-072`;
-- downstream: `P4-073` remains `READY` (preferred next task); `P4-074` remains `PLANNED` (gated on `P4-073` closure);
+- downstream: `P4-073` is CLOSED by `SYNC-P4-073`; `P4-074` unlocked to `READY`;
 - production remains strictly **PRE-OPERATIONAL**.
 
 Predecessor closed major task: `P4-071` — Retained TKB special-programme marker bridge — **CLOSED** by `SYNC-P4-071`.
@@ -818,7 +858,7 @@ The final production-host topology is intentionally unresolved and explicitly de
 
 ## Tasks currently active or eligible to start
 
-`P4-072` is CLOSED by `SYNC-P4-072`.
+`P4-073` is CLOSED by `SYNC-P4-073`.
 
 Active in progress:
 - None.
@@ -827,11 +867,10 @@ Active in review:
 - None.
 
 Eligible to start:
-- `P4-073` — GDĐP workbook importer — **READY**; preferred next P4 task (unlocked by `P4-071` closure; implementation not yet started; must not be described as implemented).
+- `P4-074` — Special-programme import lifecycle and E2E closure — **READY**; preferred next P4 task (unlocked by `P4-072`, `P4-073`, `P4-040`, `P4-050` closure; implementation not yet started; must not be described as implemented).
 - `P2-061` — School-wide effective teaching schedule read model + Teacher Workspace — **READY** independently (unlocked by `P2-060` closure; implementation not yet started; must not be described as implemented).
 
 Not eligible to start:
-- `P4-074` — Special-programme import lifecycle and E2E closure — **PLANNED**; gated on `P4-073` closure.
 - `P2-020` — PPCT native importer implementation — **PLANNED**; blocked by `P2-010`.
 - `P2-010` — PPCT real-workbook contract/security audit — remains **BLOCKED_EVIDENCE** pending actual authoritative school PPCT workbook/template evidence.
 
