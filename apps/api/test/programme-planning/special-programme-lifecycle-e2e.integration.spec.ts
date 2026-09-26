@@ -1355,13 +1355,17 @@ integration('SpecialProgrammeLifecycleE2E (PostgreSQL integration P4-074C)', () 
       const topicCountBefore = await h.prisma.programmeTopicItem.count();
       const occurrenceCountBefore = await h.prisma.plannedProgrammeOccurrence.count();
       const slotCountBefore = await h.prisma.plannedOccurrenceSlot.count();
-      const staffingCountBefore = await h.prisma.specialActivityStaffing.count();
+      const plannedStaffingCountBefore = await h.prisma.plannedSlotStaffing.count();
 
       // 3. Perform a valid preview/import attempt for the same programme master
       const secondFile = await buildHdtnWorkbook([
-        [2, 2, 2, 'Theo lớp', 10, 'Chủ đề 2: Kế hoạch mới', 'GVCN'],
+        [1, 1, 1, 'Theo lớp', 10, 'Chủ đề 2: Kế hoạch mới', 'GVCN'],
       ]);
       const preview2 = await hdtnImporter.preview(secondFile, env.year.id);
+
+      expect(preview2.canConfirm).toBe(true);
+      expect(preview2.blockingIssueCount).toBe(0);
+      expect(preview2.previewFingerprint).toBeTruthy();
 
       // 4. Confirm with new commandId must fail closed with ConflictException
       await expect(
@@ -1384,7 +1388,18 @@ integration('SpecialProgrammeLifecycleE2E (PostgreSQL integration P4-074C)', () 
       expect(await h.prisma.programmeTopicItem.count()).toBe(topicCountBefore);
       expect(await h.prisma.plannedProgrammeOccurrence.count()).toBe(occurrenceCountBefore);
       expect(await h.prisma.plannedOccurrenceSlot.count()).toBe(slotCountBefore);
-      expect(await h.prisma.specialActivityStaffing.count()).toBe(staffingCountBefore);
+      expect(await h.prisma.plannedSlotStaffing.count()).toBe(plannedStaffingCountBefore);
+
+      expect(
+        await h.prisma.programmePlanningCommand.findUnique({
+          where: {
+            actorUserId_commandId: {
+              actorUserId: env.actor.id,
+              commandId: 'cmd-case-e-conflicting-attempt',
+            },
+          },
+        }),
+      ).toBeNull();
 
       // Retained history is preserved without overwrite; successor semantics remains mandatory path
     });
