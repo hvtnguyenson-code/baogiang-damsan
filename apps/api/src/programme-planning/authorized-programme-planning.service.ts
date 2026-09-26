@@ -6,6 +6,8 @@ import {
   HdtnWorkbookConfirmResponse,
   HdtnWorkbookInspectionResponse,
   HdtnWorkbookPreviewResponse,
+  ProgrammeWorkspaceDetailResponse,
+  ProgrammeWorkspaceOptionsResponse,
 } from '@baogiang/contracts';
 import { CapabilityAuthorizationService } from '../authorization/capability-authorization.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -40,6 +42,7 @@ import {
   UploadedWorkbookFile,
 } from './hdtn-workbook-importer.service';
 import { GddpWorkbookImporterService } from './gddp-workbook-importer.service';
+import { ProgrammePlanningWorkspaceService } from './programme-planning-workspace.service';
 import {
   ProgrammeAuditContext,
   ProgrammePlanningAuthorizationService,
@@ -55,6 +58,7 @@ export class AuthorizedProgrammePlanningService {
     private readonly prisma: PrismaService,
     private readonly hdtnImporter?: HdtnWorkbookImporterService,
     private readonly gddpImporter?: GddpWorkbookImporterService,
+    private readonly workspaceService?: ProgrammePlanningWorkspaceService,
   ) {}
 
   // =========================================================================
@@ -140,6 +144,40 @@ export class AuthorizedProgrammePlanningService {
     }
     return authorizedMasters;
   }
+
+  // =========================================================================
+  // PROGRAMME WORKSPACE READ PROJECTIONS (P4-074A)
+  // =========================================================================
+
+  async getWorkspaceOptions(
+    actorUserId: string,
+    academicYearId?: string,
+  ): Promise<ProgrammeWorkspaceOptionsResponse> {
+    if (!this.workspaceService) {
+      throw new Error('ProgrammePlanningWorkspaceService is not configured.');
+    }
+    return this.workspaceService.getWorkspaceOptions(actorUserId, academicYearId);
+  }
+
+  async getWorkspaceMasterDetail(
+    masterId: string,
+    actorUserId: string,
+    auditContext?: ProgrammeAuditContext,
+  ): Promise<ProgrammeWorkspaceDetailResponse> {
+    if (!this.workspaceService) {
+      throw new Error('ProgrammePlanningWorkspaceService is not configured.');
+    }
+    const master = await this.prisma.programmeMaster.findUnique({
+      where: { id: masterId },
+      select: { id: true, kind: true },
+    });
+    if (!master) {
+      throw new NotFoundException('Không tìm thấy chương trình.');
+    }
+    await this.authService.requireProgrammeAuthority(actorUserId, master, auditContext);
+    return this.workspaceService.getWorkspaceMasterDetail(masterId);
+  }
+
 
   // =========================================================================
   // PROGRAMME PLAN VERSION
