@@ -2,6 +2,7 @@ import { ConflictException } from '@nestjs/common';
 import ExcelJS from 'exceljs';
 import { CivilDateString } from '@baogiang/contracts';
 import {
+  AuditResult,
   SpecialActivityStatus,
   UserStatus,
 } from '@prisma/client';
@@ -1305,6 +1306,89 @@ integration('SpecialProgrammeLifecycleE2E (PostgreSQL integration P4-074C)', () 
       ).rejects.toThrow(ConflictException);
     });
 
+    it('E. Existing active programme version conflict: importing new plan when master already has active PUBLISHED version fails closed', async () => {
+      const env = await setupBaseEnvironment();
+
+      await h.prisma.timetableSpecialProgrammeMarker.create({
+        data: {
+          timetableVersionId: env.tkbVersion.id,
+          academicYearId: env.year.id,
+          schoolClassId: env.class10A.id,
+          timeSlotDefinitionId: env.slotM1.id,
+          kind: 'HDTN_HN',
+        },
+      });
+
+      const file = await buildHdtnWorkbook([
+        [1, 1, 1, 'Theo lớp', 10, 'Chủ đề 1: Khởi động', 'GVCN'],
+      ]);
+
+      const preview = await hdtnImporter.preview(file, env.year.id);
+
+      // 1. Initial confirm succeeds into DRAFT
+      const confirm1 = await hdtnImporter.confirm(
+        file,
+        env.year.id,
+        preview.previewFingerprint,
+        'cmd-case-e-initial',
+        env.actor.id,
+        { expectedProgrammeMasterId: null, canBootstrapMaster: true },
+      );
+      expect(confirm1.outcome).toBe('CREATED');
+      const initialVersionId = confirm1.programmePlanVersionId;
+      const initialMasterId = confirm1.programmeMasterId;
+
+      // 2. Publish plan version 1 to establish retained published history
+      await planningService.publishPlanVersion(
+        initialVersionId,
+        { commandId: 'cmd-case-e-publish-plan' },
+        env.actor.id,
+      );
+
+      const publishedVersion = await h.prisma.programmePlanVersion.findUniqueOrThrow({
+        where: { id: initialVersionId },
+      });
+      expect(publishedVersion.status).toBe('PUBLISHED');
+
+      // Baseline counts before conflicting import attempt
+      const planVersionCountBefore = await h.prisma.programmePlanVersion.count();
+      const topicCountBefore = await h.prisma.programmeTopicItem.count();
+      const occurrenceCountBefore = await h.prisma.plannedProgrammeOccurrence.count();
+      const slotCountBefore = await h.prisma.plannedOccurrenceSlot.count();
+      const staffingCountBefore = await h.prisma.specialActivityStaffing.count();
+
+      // 3. Perform a valid preview/import attempt for the same programme master
+      const secondFile = await buildHdtnWorkbook([
+        [2, 2, 2, 'Theo lớp', 10, 'Chủ đề 2: Kế hoạch mới', 'GVCN'],
+      ]);
+      const preview2 = await hdtnImporter.preview(secondFile, env.year.id);
+
+      // 4. Confirm with new commandId must fail closed with ConflictException
+      await expect(
+        hdtnImporter.confirm(
+          secondFile,
+          env.year.id,
+          preview2.previewFingerprint,
+          'cmd-case-e-conflicting-attempt',
+          env.actor.id,
+          { expectedProgrammeMasterId: initialMasterId, canBootstrapMaster: false },
+        ),
+      ).rejects.toThrow(ConflictException);
+
+      // 5. Assert: published plan remains intact, no new ProgrammePlanVersion, no hidden rows created
+      const publishedVersionAfter = await h.prisma.programmePlanVersion.findUniqueOrThrow({
+        where: { id: initialVersionId },
+      });
+      expect(publishedVersionAfter.status).toBe('PUBLISHED');
+      expect(await h.prisma.programmePlanVersion.count()).toBe(planVersionCountBefore);
+      expect(await h.prisma.programmeTopicItem.count()).toBe(topicCountBefore);
+      expect(await h.prisma.plannedProgrammeOccurrence.count()).toBe(occurrenceCountBefore);
+      expect(await h.prisma.plannedOccurrenceSlot.count()).toBe(slotCountBefore);
+      expect(await h.prisma.specialActivityStaffing.count()).toBe(staffingCountBefore);
+
+      // Retained history is preserved without overwrite; successor semantics remains mandatory path
+    });
+
     it('F. Materialization collision: deterministic conflict when materializing same occurrence twice', async () => {
       const env = await setupBaseEnvironment();
 
@@ -1451,6 +1535,37 @@ integration('SpecialProgrammeLifecycleE2E (PostgreSQL integration P4-074C)', () 
         env.actor.id,
         { expectedProgrammeMasterId: null, canBootstrapMaster: true },
       );
+
+      // A. Verify persisted ProgrammePlanningCommand evidence
+      const command = await h.prisma.programmePlanningCommand.findUniqueOrThrow({
+        where: {
+          actorUserId_commandId: {
+            actorUserId: env.actor.id,
+            commandId: 'cmd-provenance-test',
+          },
+        },
+      });
+      expect(command.commandType).toBe('IMPORT_HDTN_HN_WORKBOOK_DRAFT');
+      expect(command.fingerprint).toBeTruthy();
+      const commandResult = command.result as Record<string, unknown>;
+      expect(commandResult.programmePlanVersionId).toBe(confirmRes.programmePlanVersionId);
+      expect(commandResult.programmeMasterId).toBe(confirmRes.programmeMasterId);
+      expect(commandResult.status).toBe('DRAFT');
+
+      // B. Verify persisted AuditEvent evidence of action PROGRAMME_PLAN_VERSION_DRAFT_IMPORTED
+      const auditEvent = await h.prisma.auditEvent.findFirstOrThrow({
+        where: {
+          action: 'PROGRAMME_PLAN_VERSION_DRAFT_IMPORTED',
+          entityType: 'ProgrammePlanVersion',
+          entityId: confirmRes.programmePlanVersionId,
+        },
+      });
+      expect(auditEvent.actorUserId).toBe(env.actor.id);
+      expect(auditEvent.result).toBe(AuditResult.SUCCESS);
+      const auditMetadata = auditEvent.metadata as Record<string, unknown>;
+      expect(auditMetadata.commandId).toBe('cmd-provenance-test');
+      expect(auditMetadata.previewFingerprint).toBe(preview.previewFingerprint);
+      expect(auditMetadata.programmeMasterId).toBe(confirmRes.programmeMasterId);
 
       const occurrences = await h.prisma.plannedProgrammeOccurrence.findMany({
         where: { programmePlanVersionId: confirmRes.programmePlanVersionId },

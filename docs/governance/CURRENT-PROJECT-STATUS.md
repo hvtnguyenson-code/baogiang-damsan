@@ -6,7 +6,7 @@ This is the canonical mutable **product/task status** document for Báo giảng.
 
 It is **not** a self-referential registry of the latest Git commit. Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub at the start of every task. SHAs recorded here are evidence for the stated baseline or last closed major task.
 
-**Status snapshot date:** 2026-09-25
+**Status snapshot date:** 2026-09-26
 
 ## Active / next critical path
 

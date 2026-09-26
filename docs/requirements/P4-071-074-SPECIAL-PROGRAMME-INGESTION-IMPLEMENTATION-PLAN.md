@@ -328,7 +328,7 @@ If the chosen pilot scope includes HĐTN-HN or GDĐP import/operation, P4-074 mu
   - `dcbe149e999da30572072b6e6bb4514996ada6ca` (`fix(web): harden special programme workspace state`);
   - `fead7c212971ff1f5ffa79dae08967a9753aaf28` (`test(programme): add P4-074 lifecycle e2e closure`).
 - Delivered scope:
-  - Vietnamese admin/coordinator workspace read foundation (`/api/programme-planning/workspace`) and UI (`/special-programmes`) supporting HĐTN-HN and GDĐP inspection, preview, and explicit DRAFT confirmation;
+  - Vietnamese admin/coordinator workspace read foundation (`/api/programme-planning/workspace`) and UI (`/quan-tri/chuong-trinh-dac-thu`) supporting HĐTN-HN and GDĐP inspection, preview, and explicit DRAFT confirmation;
   - Lifecycle actions (publish plan, publish occurrence, materialize) orchestrate existing P4 domain services without schema changes or teaching execution fabrication;
   - Dedicated PostgreSQL E2E test suite in `apps/api/test/programme-planning/special-programme-lifecycle-e2e.integration.spec.ts` covering:
     - HĐTN CLASS (historical GVCN from HomeroomAssignment, class topology, zero mutation preview);
@@ -336,7 +336,7 @@ If the chosen pilot scope includes HĐTN-HN or GDĐP import/operation, P4-074 mu
     - HĐTN SCHOOL_WIDE (school-wide marker collapse, anti-fan-out);
     - GDĐP GRADE (5-column PPCT/week parsing, shared slot multi-teacher staffing);
     - P4-050 workload dual gates (execution ACTIVE + attestation ACTIVE; zero credit on missing gate; anti-double-counting; no multiplication by target class count);
-    - Failure matrix closure (stale preview rejection, ambiguous authority, marker changes, teacher identity changes, materialization collision, idempotent commands);
+    - Failure matrix closure (stale preview rejection, ambiguous authority, marker changes, teacher identity changes, existing active programme version conflict, materialization collision, idempotent commands);
     - Relational provenance and P2-061 downstream boundary verification;
   - Validation: typecheck PASS, lint PASS, build PASS, unit tests PASS; local PostgreSQL integration `BLOCKED_LOCAL_ENV` due to safety guard (authoritative evidence pending PR CI);
   - PR CI, PR creation, and independent GitHub review remain pending before merge/closure.
