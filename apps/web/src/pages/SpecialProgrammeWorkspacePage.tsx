@@ -42,7 +42,7 @@ function scopeLabel(mode: string): string {
     case 'SCHOOL_WIDE':
       return 'Toàn trường';
     default:
-      return mode;
+      return 'Không xác định';
   }
 }
 
@@ -55,7 +55,7 @@ function planStatusLabel(status: string): string {
     case 'SUPERSEDED':
       return 'Đã thay thế';
     default:
-      return status;
+      return 'Trạng thái không xác định';
   }
 }
 
@@ -70,7 +70,7 @@ function occurrenceStatusLabel(status: string): string {
     case 'SUPERSEDED':
       return 'Đã thay thế';
     default:
-      return status;
+      return 'Trạng thái không xác định';
   }
 }
 
@@ -102,8 +102,22 @@ export function SpecialProgrammeWorkspacePage() {
   const [workflowError, setWorkflowError] = useState<string | null>(null);
   const [workflowSuccess, setWorkflowSuccess] = useState<string | null>(null);
 
-  // Idempotency commandId refs
-  const confirmCommandIdRef = useRef<string | null>(null);
+  // Idempotency command state (in-memory per page session)
+  const hdtnConfirmCommandRef = useRef<{ id: string; key: string } | null>(null);
+  const gddpConfirmCommandRef = useRef<{ id: string; key: string } | null>(null);
+  const actionCommandsRef = useRef<Map<string, string>>(new Map());
+
+  function getOrCreateActionCommandId(key: string): string {
+    const existing = actionCommandsRef.current.get(key);
+    if (existing) return existing;
+    const newId = createCommandId();
+    actionCommandsRef.current.set(key, newId);
+    return newId;
+  }
+
+  function clearActionCommandId(key: string): void {
+    actionCommandsRef.current.delete(key);
+  }
 
   // 1. Query workspace options
   const optionsQuery = useQuery({
@@ -116,6 +130,11 @@ export function SpecialProgrammeWorkspacePage() {
 
   // Effective year
   const effectiveYearId = selectedAcademicYearId || (academicYears.length > 0 ? academicYears[0].id : '');
+
+  // Filter masters by effective year
+  const visibleMasters = effectiveYearId
+    ? masters.filter((m) => m.academicYearId === effectiveYearId)
+    : [];
 
   // 2. Query workspace detail for selected master
   const detailQuery = useQuery({
@@ -150,10 +169,12 @@ export function SpecialProgrammeWorkspacePage() {
       setWorkflowError(null);
       setWorkflowSuccess(null);
       if (kind === 'hdtn') {
+        hdtnConfirmCommandRef.current = null;
         const res = await programmePlanningApi.previewHdtnWorkbook(file, effectiveYearId);
         setHdtnPreviewResult(res);
         return res;
       } else {
+        gddpConfirmCommandRef.current = null;
         const res = await programmePlanningApi.previewGddpWorkbook(file, effectiveYearId, gddpGradeLevel);
         setGddpPreviewResult(res);
         return res;
@@ -169,33 +190,55 @@ export function SpecialProgrammeWorkspacePage() {
     mutationFn: async (kind: 'hdtn' | 'gddp') => {
       setWorkflowError(null);
       setWorkflowSuccess(null);
-      if (!confirmCommandIdRef.current) {
-        confirmCommandIdRef.current = createCommandId();
-      }
-      const commandId = confirmCommandIdRef.current;
 
       if (kind === 'hdtn') {
         if (!hdtnFile || !hdtnPreviewResult) throw new Error('Chưa có tệp hoặc kết quả xem trước');
-        const res = await programmePlanningApi.confirmHdtnWorkbook(hdtnFile, {
-          academicYearId: effectiveYearId,
-          expectedPreviewFingerprint: hdtnPreviewResult.previewFingerprint,
-          commandId,
-        });
-        confirmCommandIdRef.current = null;
-        return res;
+        const actionKey = `${effectiveYearId}:${hdtnPreviewResult.previewFingerprint}`;
+        if (!hdtnConfirmCommandRef.current || hdtnConfirmCommandRef.current.key !== actionKey) {
+          hdtnConfirmCommandRef.current = { id: createCommandId(), key: actionKey };
+        }
+        const commandId = hdtnConfirmCommandRef.current.id;
+
+        try {
+          const res = await programmePlanningApi.confirmHdtnWorkbook(hdtnFile, {
+            academicYearId: effectiveYearId,
+            expectedPreviewFingerprint: hdtnPreviewResult.previewFingerprint,
+            commandId,
+          });
+          hdtnConfirmCommandRef.current = null;
+          return res;
+        } catch (err) {
+          if (!(err instanceof ApiError && err.statusCode === 0)) {
+            hdtnConfirmCommandRef.current = null;
+          }
+          throw err;
+        }
       } else {
         if (!gddpFile || !gddpPreviewResult) throw new Error('Chưa có tệp hoặc kết quả xem trước');
         if (typeof gddpPreviewResult.gradeLevel !== 'number') {
           throw new Error('Chưa xác định được khối lớp từ kết quả xem trước.');
         }
-        const res = await programmePlanningApi.confirmGddpWorkbook(gddpFile, {
-          academicYearId: effectiveYearId,
-          gradeLevel: gddpPreviewResult.gradeLevel,
-          expectedPreviewFingerprint: gddpPreviewResult.previewFingerprint,
-          commandId,
-        });
-        confirmCommandIdRef.current = null;
-        return res;
+        const actionKey = `${effectiveYearId}:${gddpPreviewResult.gradeLevel}:${gddpPreviewResult.previewFingerprint}`;
+        if (!gddpConfirmCommandRef.current || gddpConfirmCommandRef.current.key !== actionKey) {
+          gddpConfirmCommandRef.current = { id: createCommandId(), key: actionKey };
+        }
+        const commandId = gddpConfirmCommandRef.current.id;
+
+        try {
+          const res = await programmePlanningApi.confirmGddpWorkbook(gddpFile, {
+            academicYearId: effectiveYearId,
+            gradeLevel: gddpPreviewResult.gradeLevel,
+            expectedPreviewFingerprint: gddpPreviewResult.previewFingerprint,
+            commandId,
+          });
+          gddpConfirmCommandRef.current = null;
+          return res;
+        } catch (err) {
+          if (!(err instanceof ApiError && err.statusCode === 0)) {
+            gddpConfirmCommandRef.current = null;
+          }
+          throw err;
+        }
       }
     },
     onSuccess: (data) => {
@@ -225,10 +268,21 @@ export function SpecialProgrammeWorkspacePage() {
     mutationFn: async ({ planVersionId, expectedRevision }: { planVersionId: string; expectedRevision: number }) => {
       setWorkflowError(null);
       setWorkflowSuccess(null);
-      return programmePlanningApi.publishPlanVersion(planVersionId, {
-        expectedRevision,
-        commandId: createCommandId(),
-      });
+      const actionKey = `publish-plan:${planVersionId}:${expectedRevision}`;
+      const commandId = getOrCreateActionCommandId(actionKey);
+      try {
+        const res = await programmePlanningApi.publishPlanVersion(planVersionId, {
+          expectedRevision,
+          commandId,
+        });
+        clearActionCommandId(actionKey);
+        return res;
+      } catch (err) {
+        if (!(err instanceof ApiError && err.statusCode === 0)) {
+          clearActionCommandId(actionKey);
+        }
+        throw err;
+      }
     },
     onSuccess: () => {
       setWorkflowSuccess('Đã ban hành kế hoạch thành công.');
@@ -251,10 +305,21 @@ export function SpecialProgrammeWorkspacePage() {
     mutationFn: async ({ occurrenceId, expectedRevision }: { occurrenceId: string; expectedRevision: number }) => {
       setWorkflowError(null);
       setWorkflowSuccess(null);
-      return programmePlanningApi.publishOccurrence(occurrenceId, {
-        expectedRevision,
-        commandId: createCommandId(),
-      });
+      const actionKey = `publish-occurrence:${occurrenceId}:${expectedRevision}`;
+      const commandId = getOrCreateActionCommandId(actionKey);
+      try {
+        const res = await programmePlanningApi.publishOccurrence(occurrenceId, {
+          expectedRevision,
+          commandId,
+        });
+        clearActionCommandId(actionKey);
+        return res;
+      } catch (err) {
+        if (!(err instanceof ApiError && err.statusCode === 0)) {
+          clearActionCommandId(actionKey);
+        }
+        throw err;
+      }
     },
     onSuccess: () => {
       setWorkflowSuccess('Đã ban hành hoạt động thành công.');
@@ -275,9 +340,20 @@ export function SpecialProgrammeWorkspacePage() {
     mutationFn: async (occurrenceId: string) => {
       setWorkflowError(null);
       setWorkflowSuccess(null);
-      return programmePlanningApi.materializeOccurrence(occurrenceId, {
-        commandId: createCommandId(),
-      });
+      const actionKey = `materialize:${occurrenceId}`;
+      const commandId = getOrCreateActionCommandId(actionKey);
+      try {
+        const res = await programmePlanningApi.materializeOccurrence(occurrenceId, {
+          commandId,
+        });
+        clearActionCommandId(actionKey);
+        return res;
+      } catch (err) {
+        if (!(err instanceof ApiError && err.statusCode === 0)) {
+          clearActionCommandId(actionKey);
+        }
+        throw err;
+      }
     },
     onSuccess: () => {
       setWorkflowSuccess('Đã đưa hoạt động vào lịch vận hành thành công.');
@@ -297,7 +373,7 @@ export function SpecialProgrammeWorkspacePage() {
     setHdtnInspectResult(null);
     setHdtnPreviewResult(null);
     setHdtnConfirmOpen(false);
-    confirmCommandIdRef.current = null;
+    hdtnConfirmCommandRef.current = null;
     const file = e.target.files?.[0] ?? null;
     setHdtnFile(file);
   };
@@ -308,7 +384,7 @@ export function SpecialProgrammeWorkspacePage() {
     setGddpInspectResult(null);
     setGddpPreviewResult(null);
     setGddpConfirmOpen(false);
-    confirmCommandIdRef.current = null;
+    gddpConfirmCommandRef.current = null;
     const file = e.target.files?.[0] ?? null;
     setGddpFile(file);
   };
@@ -349,12 +425,22 @@ export function SpecialProgrammeWorkspacePage() {
           id="academic-year-select"
           value={effectiveYearId}
           onChange={(e) => {
-            setSelectedAcademicYearId(e.target.value);
+            const nextYear = e.target.value;
+            setSelectedAcademicYearId(nextYear);
             setSelectedMasterId(null);
             setHdtnInspectResult(null);
             setHdtnPreviewResult(null);
+            setHdtnConfirmOpen(false);
+            hdtnConfirmCommandRef.current = null;
             setGddpInspectResult(null);
             setGddpPreviewResult(null);
+            setGddpConfirmOpen(false);
+            gddpConfirmCommandRef.current = null;
+            setPublishPlanConfirmOpen(false);
+            setMaterializeTarget(null);
+            actionCommandsRef.current.clear();
+            setWorkflowError(null);
+            setWorkflowSuccess(null);
           }}
         >
           {academicYears.map((year) => (
@@ -654,6 +740,11 @@ export function SpecialProgrammeWorkspacePage() {
                   onChange={(e) => {
                     const val = e.target.value;
                     setGddpGradeLevel(val ? Number(val) : undefined);
+                    setGddpPreviewResult(null);
+                    setGddpConfirmOpen(false);
+                    gddpConfirmCommandRef.current = null;
+                    setWorkflowError(null);
+                    setWorkflowSuccess(null);
                   }}
                 >
                   <option value="">Tự động nhận diện từ tệp</option>
@@ -865,14 +956,14 @@ export function SpecialProgrammeWorkspacePage() {
           {/* Danh sách các kế hoạch đã có trong năm học */}
           <div style={{ marginBlock: '16px 24px' }}>
             <h3>Các chương trình đã tạo trong năm học</h3>
-            {masters.length === 0 ? (
+            {visibleMasters.length === 0 ? (
               <EmptyState
                 title="Chưa có chương trình nào"
                 message="Hãy chuyển sang tab HĐTN-HN hoặc GDĐP để nhập kế hoạch mới từ tệp Excel."
               />
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '12px' }}>
-                {masters.map((m) => {
+                {visibleMasters.map((m) => {
                   const isSelected = m.id === selectedMasterId;
                   return (
                     <div
