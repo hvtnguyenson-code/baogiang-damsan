@@ -451,13 +451,13 @@ integration('SpecialProgrammeLifecycleE2E (PostgreSQL integration P4-074C)', () 
       });
       expect(planVersion.status).toBe('DRAFT');
 
-      const occurrences = await h.prisma.plannedProgrammeOccurrence.findMany({
+      const rawOccurrences = await h.prisma.plannedProgrammeOccurrence.findMany({
         where: { programmePlanVersionId: planVersionId },
-        include: { slots: { include: { staffing: true } } },
       });
-      expect(occurrences).toHaveLength(2); // 1 per class in CLASS mode
+      expect(rawOccurrences).toHaveLength(2); // 1 per class in CLASS mode
 
-      const occ10A = occurrences.find((o) => o.schoolClassId === env.class10A.id)!;
+      const rawOcc10A = rawOccurrences.find((o) => o.schoolClassId === env.class10A.id)!;
+      const occ10A = await planningService.getOccurrence(rawOcc10A.id);
       expect(occ10A.mode).toBe('CLASS');
       expect(occ10A.slots).toHaveLength(1);
       expect(occ10A.slots[0]?.timeSlotDefinitionId).toBe(env.slotM1.id);
@@ -479,16 +479,24 @@ integration('SpecialProgrammeLifecycleE2E (PostgreSQL integration P4-074C)', () 
       expect(projectionZero.contributionCount).toBe(0);
 
       // 5. Publish plan version
+      const planToPublish = await planningService.getPlanVersion(planVersionId);
       await planningService.publishPlanVersion(
         planVersionId,
-        { commandId: 'cmd-publish-plan-hdtn-001' },
+        {
+          expectedRevision: planToPublish.draftRevision,
+          commandId: 'cmd-publish-plan-hdtn-001',
+        },
         env.actor.id,
       );
 
       // 6. Publish occurrence
+      const occToPublish = await planningService.getOccurrence(occ10A.id);
       await planningService.publishOccurrence(
         occ10A.id,
-        { commandId: 'cmd-publish-occ-10a-001' },
+        {
+          expectedRevision: occToPublish.draftRevision,
+          commandId: 'cmd-publish-occ-10a-001',
+        },
         env.actor.id,
       );
 
@@ -685,13 +693,13 @@ integration('SpecialProgrammeLifecycleE2E (PostgreSQL integration P4-074C)', () 
         { expectedProgrammeMasterId: null, canBootstrapMaster: true },
       );
 
-      const occurrences = await h.prisma.plannedProgrammeOccurrence.findMany({
+      const rawOccurrences = await h.prisma.plannedProgrammeOccurrence.findMany({
         where: { programmePlanVersionId: confirmRes.programmePlanVersionId },
-        include: { slots: { include: { staffing: true } } },
       });
       // In GRADE mode: exactly 1 logical occurrence, NOT 2 occurrences
-      expect(occurrences).toHaveLength(1);
-      const occGrade = occurrences[0]!;
+      expect(rawOccurrences).toHaveLength(1);
+      const rawOccGrade = rawOccurrences[0]!;
+      const occGrade = await planningService.getOccurrence(rawOccGrade.id);
       expect(occGrade.mode).toBe('GRADE');
       expect(occGrade.schoolClassId).toBeNull();
       expect(occGrade.gradeLevel).toBe(10);
@@ -699,14 +707,21 @@ integration('SpecialProgrammeLifecycleE2E (PostgreSQL integration P4-074C)', () 
       expect(occGrade.slots[0]?.staffing).toHaveLength(2);
 
       // Publish plan and occurrence
+      const planGrade = await planningService.getPlanVersion(confirmRes.programmePlanVersionId);
       await planningService.publishPlanVersion(
         confirmRes.programmePlanVersionId,
-        { commandId: 'cmd-publish-plan-hdtn-grade' },
+        {
+          expectedRevision: planGrade.draftRevision,
+          commandId: 'cmd-publish-plan-hdtn-grade',
+        },
         env.actor.id,
       );
       await planningService.publishOccurrence(
         occGrade.id,
-        { commandId: 'cmd-publish-occ-hdtn-grade' },
+        {
+          expectedRevision: occGrade.draftRevision,
+          commandId: 'cmd-publish-occ-hdtn-grade',
+        },
         env.actor.id,
       );
 
@@ -883,14 +898,22 @@ integration('SpecialProgrammeLifecycleE2E (PostgreSQL integration P4-074C)', () 
       expect(occSw.gradeLevel).toBeNull();
 
       // Publish plan and occurrence
+      const planSw = await planningService.getPlanVersion(confirmRes.programmePlanVersionId);
+      const occSwRecord = await planningService.getOccurrence(occSw.id);
       await planningService.publishPlanVersion(
         confirmRes.programmePlanVersionId,
-        { commandId: 'cmd-publish-plan-hdtn-sw' },
+        {
+          expectedRevision: planSw.draftRevision,
+          commandId: 'cmd-publish-plan-hdtn-sw',
+        },
         env.actor.id,
       );
       await planningService.publishOccurrence(
         occSw.id,
-        { commandId: 'cmd-publish-occ-hdtn-sw' },
+        {
+          expectedRevision: occSwRecord.draftRevision,
+          commandId: 'cmd-publish-occ-hdtn-sw',
+        },
         env.actor.id,
       );
 
@@ -1005,9 +1028,11 @@ integration('SpecialProgrammeLifecycleE2E (PostgreSQL integration P4-074C)', () 
       expect(preview.rows[0]?.resolvedTeachers).toHaveLength(2);
 
       // Confirm DRAFT
+      expect(preview.gradeLevel).toBe(10);
       const confirmRes = await gddpImporter.confirm(
         file,
         env.year.id,
+        preview.gradeLevel!,
         preview.previewFingerprint,
         'cmd-gddp-grade-confirm-001',
         env.actor.id,
@@ -1015,26 +1040,33 @@ integration('SpecialProgrammeLifecycleE2E (PostgreSQL integration P4-074C)', () 
       );
       expect(confirmRes.status).toBe('DRAFT');
 
-      const occurrences = await h.prisma.plannedProgrammeOccurrence.findMany({
+      const rawOccurrences = await h.prisma.plannedProgrammeOccurrence.findMany({
         where: { programmePlanVersionId: confirmRes.programmePlanVersionId },
-        include: { slots: { include: { staffing: true } } },
       });
-      expect(occurrences).toHaveLength(1);
-      const occGddp = occurrences[0]!;
+      expect(rawOccurrences).toHaveLength(1);
+      const rawOccGddp = rawOccurrences[0]!;
+      const occGddp = await planningService.getOccurrence(rawOccGddp.id);
       expect(occGddp.mode).toBe('GRADE');
       expect(occGddp.gradeLevel).toBe(10);
       expect(occGddp.slots).toHaveLength(1);
       expect(occGddp.slots[0]?.staffing).toHaveLength(2);
 
       // Publish plan and occurrence
+      const planGddp = await planningService.getPlanVersion(confirmRes.programmePlanVersionId);
       await planningService.publishPlanVersion(
         confirmRes.programmePlanVersionId,
-        { commandId: 'cmd-publish-plan-gddp' },
+        {
+          expectedRevision: planGddp.draftRevision,
+          commandId: 'cmd-publish-plan-gddp',
+        },
         env.actor.id,
       );
       await planningService.publishOccurrence(
         occGddp.id,
-        { commandId: 'cmd-publish-occ-gddp' },
+        {
+          expectedRevision: occGddp.draftRevision,
+          commandId: 'cmd-publish-occ-gddp',
+        },
         env.actor.id,
       );
 
@@ -1288,10 +1320,15 @@ integration('SpecialProgrammeLifecycleE2E (PostgreSQL integration P4-074C)', () 
       const preview = await hdtnImporter.preview(file, env.year.id);
       expect(preview.canConfirm).toBe(true);
 
-      // Deactivate homeroom assignment
+      // Reverse homeroom assignment
       await h.prisma.homeroomAssignment.update({
         where: { id: env.hr10A.id },
-        data: { status: 'CANCELLED' },
+        data: {
+          status: 'REVERSED',
+          reversedByUserId: env.actor.id,
+          reversedAt: new Date(),
+          reversalReason: 'Teacher authority changed after preview',
+        },
       });
 
       await expect(
@@ -1339,9 +1376,13 @@ integration('SpecialProgrammeLifecycleE2E (PostgreSQL integration P4-074C)', () 
       const initialMasterId = confirm1.programmeMasterId;
 
       // 2. Publish plan version 1 to establish retained published history
+      const initialPlan = await planningService.getPlanVersion(initialVersionId);
       await planningService.publishPlanVersion(
         initialVersionId,
-        { commandId: 'cmd-case-e-publish-plan' },
+        {
+          expectedRevision: initialPlan.draftRevision,
+          commandId: 'cmd-case-e-publish-plan',
+        },
         env.actor.id,
       );
 
@@ -1435,15 +1476,23 @@ integration('SpecialProgrammeLifecycleE2E (PostgreSQL integration P4-074C)', () 
         where: { programmePlanVersionId: confirmRes.programmePlanVersionId },
       });
       const occ = occurrences[0]!;
+      const planCollision = await planningService.getPlanVersion(confirmRes.programmePlanVersionId);
+      const occRecord = await planningService.getOccurrence(occ.id);
 
       await planningService.publishPlanVersion(
         confirmRes.programmePlanVersionId,
-        { commandId: 'cmd-publish-plan-collision' },
+        {
+          expectedRevision: planCollision.draftRevision,
+          commandId: 'cmd-publish-plan-collision',
+        },
         env.actor.id,
       );
       await planningService.publishOccurrence(
         occ.id,
-        { commandId: 'cmd-publish-occ-collision' },
+        {
+          expectedRevision: occRecord.draftRevision,
+          commandId: 'cmd-publish-occ-collision',
+        },
         env.actor.id,
       );
 
@@ -1582,20 +1631,27 @@ integration('SpecialProgrammeLifecycleE2E (PostgreSQL integration P4-074C)', () 
       expect(auditMetadata.previewFingerprint).toBe(preview.previewFingerprint);
       expect(auditMetadata.programmeMasterId).toBe(confirmRes.programmeMasterId);
 
-      const occurrences = await h.prisma.plannedProgrammeOccurrence.findMany({
+      const rawOccurrences = await h.prisma.plannedProgrammeOccurrence.findMany({
         where: { programmePlanVersionId: confirmRes.programmePlanVersionId },
-        include: { slots: true },
       });
-      const occ = occurrences[0]!;
+      const rawOcc = rawOccurrences[0]!;
+      const occ = await planningService.getOccurrence(rawOcc.id);
+      const planProv = await planningService.getPlanVersion(confirmRes.programmePlanVersionId);
 
       await planningService.publishPlanVersion(
         confirmRes.programmePlanVersionId,
-        { commandId: 'cmd-publish-prov-plan' },
+        {
+          expectedRevision: planProv.draftRevision,
+          commandId: 'cmd-publish-prov-plan',
+        },
         env.actor.id,
       );
       await planningService.publishOccurrence(
         occ.id,
-        { commandId: 'cmd-publish-prov-occ' },
+        {
+          expectedRevision: occ.draftRevision,
+          commandId: 'cmd-publish-prov-occ',
+        },
         env.actor.id,
       );
 
