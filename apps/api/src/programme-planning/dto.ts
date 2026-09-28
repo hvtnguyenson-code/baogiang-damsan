@@ -580,3 +580,9 @@ export class ConfirmGddpWorkbookDto {
   @MaxLength(100)
   commandId!: string;
 }
+
+export class ProgrammeWorkspaceOptionsQueryDto {
+  @IsOptional()
+  @IsUUID()
+  academicYearId?: string;
+}

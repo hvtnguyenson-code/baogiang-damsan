@@ -12,6 +12,7 @@ import { GddpWorkbookImporterService } from './gddp-workbook-importer.service';
 import { ProgrammePlanningAuthorizationService } from './programme-planning-authorization.service';
 import { ProgrammePlanningController } from './programme-planning.controller';
 import { ProgrammePlanningService } from './programme-planning.service';
+import { ProgrammePlanningWorkspaceService } from './programme-planning-workspace.service';
 
 @Module({
   imports: [
@@ -28,12 +29,14 @@ import { ProgrammePlanningService } from './programme-planning.service';
     ProgrammePlanningService,
     ProgrammePlanningAuthorizationService,
     AuthorizedProgrammePlanningService,
+    ProgrammePlanningWorkspaceService,
     HdtnWorkbookImporterService,
     GddpWorkbookImporterService,
   ],
   exports: [
     AuthorizedProgrammePlanningService,
     ProgrammePlanningAuthorizationService,
+    ProgrammePlanningWorkspaceService,
     HdtnWorkbookImporterService,
     GddpWorkbookImporterService,
   ],

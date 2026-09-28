@@ -2018,3 +2018,118 @@ export interface GddpWorkbookConfirmResponse {
   slotCount: number;
   staffingCount: number;
 }
+
+// ============================================================
+// Special Programme Workspace Read Foundation (P4-074A)
+// ============================================================
+
+export interface ProgrammeWorkspaceAcademicYearOption {
+  id: string;
+  code: string;
+  name: string;
+}
+
+export interface ProgrammeWorkspaceMasterSummary {
+  id: string;
+  academicYearId: string;
+  academicYearCode: string;
+  academicYearName: string;
+  kind: 'GDDP' | 'HDTN_HN';
+  kindLabel: string;
+  gradeLevel: number | null;
+  label: string;
+  latestVersionNumber: number | null;
+  latestVersionStatus: string | null;
+}
+
+export interface ProgrammeWorkspaceOptionsResponse {
+  academicYears: ProgrammeWorkspaceAcademicYearOption[];
+  masters: ProgrammeWorkspaceMasterSummary[];
+}
+
+export interface ProgrammeWorkspaceTopicItem {
+  id: string;
+  sequence: number;
+  title: string;
+  requiredPeriods: number;
+  guidelineWeekFrom: number | null;
+  guidelineWeekTo: number | null;
+  guidelineSegmentLabel: string | null;
+}
+
+export interface ProgrammeWorkspacePlan {
+  id: string;
+  versionNumber: number;
+  status: string;
+  draftRevision: number;
+  changeReason: string | null;
+  publishedAt: string | null;
+  topics: ProgrammeWorkspaceTopicItem[];
+}
+
+export interface ProgrammeWorkspaceTeacher {
+  userId: string;
+  displayName: string;
+  staffCode: string | null;
+}
+
+export interface ProgrammeWorkspaceSlot {
+  id: string;
+  timeSlotDefinitionId: string;
+  periodNumber: number | null;
+  startTime: string | null;
+  endTime: string | null;
+  staffing: ProgrammeWorkspaceTeacher[];
+}
+
+export interface ProgrammeWorkspaceLifecycleSummary {
+  materialized: boolean;
+  materializedActivityCount: number;
+  hasActiveAttestation: boolean;
+  activeAttestationCount: number;
+}
+
+export interface ProgrammeWorkspaceOccurrence {
+  id: string;
+  status: string;
+  draftRevision: number;
+  topicItemId: string;
+  topicSequence: number;
+  topicTitle: string;
+  civilDate: string;
+  mode: 'CLASS' | 'GRADE' | 'SCHOOL_WIDE';
+  modeLabel: string;
+  gradeLevel: number | null;
+  schoolClassId: string | null;
+  schoolClassCode: string | null;
+  schoolClassName: string | null;
+  note: string | null;
+  replacesOccurrenceId: string | null;
+  slots: ProgrammeWorkspaceSlot[];
+  lifecycleSummary: ProgrammeWorkspaceLifecycleSummary;
+}
+
+export interface ProgrammeWorkspaceMasterDetail {
+  id: string;
+  kind: 'GDDP' | 'HDTN_HN';
+  kindLabel: string;
+  academicYearId: string;
+  academicYearCode: string;
+  academicYearName: string;
+  gradeLevel: number | null;
+  label: string;
+}
+
+export interface ProgrammeWorkspaceMasterLifecycleSummary {
+  totalOccurrences: number;
+  materializedOccurrences: number;
+  attestedOccurrences: number;
+  isFullyMaterialized: boolean;
+}
+
+export interface ProgrammeWorkspaceDetailResponse {
+  master: ProgrammeWorkspaceMasterDetail;
+  plan: ProgrammeWorkspacePlan | null;
+  occurrences: ProgrammeWorkspaceOccurrence[];
+  lifecycleSummary: ProgrammeWorkspaceMasterLifecycleSummary;
+}

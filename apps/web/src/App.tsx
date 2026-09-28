@@ -27,10 +27,12 @@ import { ReportingStatementDetailPage } from './pages/ReportingStatementDetailPa
 import { ReportingStatementsPage } from './pages/ReportingStatementsPage';
 import { BusinessConfigurationPage } from './pages/BusinessConfigurationPage';
 import { PpctSpecializedStudyPage } from './pages/PpctSpecializedStudyPage';
+import { SpecialProgrammeWorkspacePage } from './pages/SpecialProgrammeWorkspacePage';
 import type { BusinessPolicyUiAdapter } from './lib/business-policy-ui-registry';
 import {
   canManageDutyAssignments,
   canManagePpct,
+  canManageSpecialProgrammes,
   canOpenReportingDetail,
   canReadAccessibleReporting,
   canReadPersonalReporting,
@@ -82,6 +84,9 @@ export default function App({ businessPolicyAdapters }: { businessPolicyAdapters
           </Route>
           <Route element={<CapabilityRoute allow={canManagePpct} />}>
             <Route path="/quan-tri/ppct/ap-dung-chuyen-de" element={<PpctSpecializedStudyPage />} />
+          </Route>
+          <Route element={<CapabilityRoute allow={canManageSpecialProgrammes} />}>
+            <Route path="/quan-tri/chuong-trinh-dac-thu" element={<SpecialProgrammeWorkspacePage />} />
           </Route>
         </Route>
       </Route>

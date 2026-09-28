@@ -6,21 +6,22 @@ This is the canonical mutable **product/task status** document for Báo giảng.
 
 It is **not** a self-referential registry of the latest Git commit. Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub at the start of every task. SHAs recorded here are evidence for the stated baseline or last closed major task.
 
-**Status snapshot date:** 2026-09-25
+**Status snapshot date:** 2026-09-26
 
 ## Active / next critical path
 
-`P4-073` — GDĐP workbook importer — is **CLOSED** by `SYNC-P4-073` following:
-- parent PR #163 (`feat(programme): add GDĐP workbook draft importer`);
-- exact-head CI #518 (run `35957352683`) SUCCESS;
-- normal merge/main `091d0a3771a642b4508f812359d6845c8579cba3`;
-- authoritative post-merge CI #519 (run `35960845683`) SUCCESS.
-
-Next preferred task:
-- `P4-074` — Special-programme import lifecycle and E2E closure — is **READY** (unlocked by `P4-072`, `P4-073`, `P4-040`, `P4-050` closure; implementation not yet started; must not be described as implemented).
+`P4-074` — Special-programme import lifecycle and E2E closure — is **IN_REVIEW** on dedicated task branch `feat/special-programme-lifecycle-e2e-074`.
+- Canonical starting main base: `056d0603cb78469932af1f04d17232c13fbb0f69`.
+- Implementation commits:
+  - `b5f58a5548d3377c9ae6ddb5a9f03479abc52b0f` (`feat(programme): add special programme workspace read foundation`);
+  - `b7205c9e67620cc9f01a43fd3781d38764b30e4f` (`fix(programme): isolate workspace plan projection`);
+  - `46341b01923e6eae76c3ce8d8d104fd60f8d1d8e` (`feat(web): add special programme lifecycle workspace`);
+  - `dcbe149e999da30572072b6e6bb4514996ada6ca` (`fix(web): harden special programme workspace state`);
+  - `fead7c212971ff1f5ffa79dae08967a9753aaf28` (`test(programme): add P4-074 lifecycle e2e closure`).
+- Local validation results: typecheck PASS (0 errors), lint PASS (0 warnings), build PASS, web unit tests PASS (29/29 special-programme tests); local PostgreSQL integration `BLOCKED_LOCAL_ENV` due to safety guard (authoritative PostgreSQL evidence pending PR CI).
+- Status: **IN_REVIEW** pending PR creation, PR CI execution, and independent GitHub review. Merge, deployment, and production mutations have NOT occurred.
 
 Eligible tasks / status:
-- `P4-074` — Special-programme import lifecycle and E2E closure — **READY**; preferred next P4 task (all dependencies `P4-072`, `P4-073`, `P4-040`, `P4-050` are `CLOSED`; implementation not yet started; must not be described as implemented).
 - `P2-061` — School-wide effective teaching schedule read model + Teacher Workspace — remains independently **READY** (unlocked by `P2-060` closure; implementation not yet started; must not be described as implemented).
 
 Remain:
@@ -864,10 +865,9 @@ Active in progress:
 - None.
 
 Active in review:
-- None.
+- `P4-074` — Special-programme import lifecycle and E2E closure — **IN_REVIEW** on branch `feat/special-programme-lifecycle-e2e-074` (unlocked by `P4-072`, `P4-073`, `P4-040`, `P4-050` closure; workspace read foundation, Vietnamese UI, E2E tests and P4-050 workload gates completed; PR CI and independent review pending; must not be marked CLOSED until PR merge, post-merge CI, and SYNC-P4-074 closure).
 
 Eligible to start:
-- `P4-074` — Special-programme import lifecycle and E2E closure — **READY**; preferred next P4 task (unlocked by `P4-072`, `P4-073`, `P4-040`, `P4-050` closure; implementation not yet started; must not be described as implemented).
 - `P2-061` — School-wide effective teaching schedule read model + Teacher Workspace — **READY** independently (unlocked by `P2-060` closure; implementation not yet started; must not be described as implemented).
 
 Not eligible to start:

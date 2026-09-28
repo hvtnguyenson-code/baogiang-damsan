@@ -85,6 +85,13 @@ export function canManagePpct(capabilities: ScopedCapability[]): boolean {
     || ppctSubjectResources(capabilities).length > 0;
 }
 
+export function canManageSpecialProgrammes(capabilities: ScopedCapability[]): boolean {
+  return hasCapability(capabilities, 'APPROVAL_PRINCIPAL', 'SCHOOL_WIDE')
+    || hasCapability(capabilities, 'APPROVAL_VICE_PRINCIPAL', 'SCHOOL_WIDE')
+    || capabilities.some((grant) => grant.key === 'GDDP_COORDINATOR' && grant.scope === 'ACTIVITY')
+    || capabilities.some((grant) => grant.key === 'HĐTN_COORDINATOR' && grant.scope === 'ACTIVITY');
+}
+
 export const managementRoutes: ManagementRoute[] = [
   { to: '/quan-tri/cau-truc-nam-hoc', label: 'Cấu trúc năm học', isVisible: (c) => hasSchoolCapability(c, 'ACADEMIC_STRUCTURE_MANAGE') },
   { to: '/quan-tri/nguoi-dung', label: 'Người dùng', isVisible: (c) => hasSchoolCapability(c, 'USER_MANAGE') },
@@ -100,6 +107,7 @@ export const managementRoutes: ManagementRoute[] = [
   { to: '/quan-tri/kiem-nhiem/phan-cong', label: 'Phân công kiêm nhiệm', isVisible: canManageDutyAssignments },
   { to: '/quan-tri/chinh-sach-nghiep-vu', label: 'Chính sách nghiệp vụ', isVisible: (c) => hasSchoolCapability(c, 'BUSINESS_CONFIGURATION_MANAGE') },
   { to: '/quan-tri/ppct/ap-dung-chuyen-de', label: 'Áp dụng chuyên đề', isVisible: canManagePpct },
+  { to: '/quan-tri/chuong-trinh-dac-thu', label: 'HĐTN-HN & GDĐP', isVisible: canManageSpecialProgrammes },
 ];
 
 export function accessibleManagementRoutes(auth: AuthMeResponse | null): ManagementRoute[] {
@@ -120,6 +128,8 @@ export const capabilityLabels: Partial<Record<CapabilityKey, string>> = {
   AUDIT_VIEW: 'Xem nhật ký hệ thống',
   ADDITIONAL_DUTY_CATALOG_MANAGE: 'Quản lý danh mục kiêm nhiệm',
   ADDITIONAL_DUTY_ASSIGNMENT_MANAGE: 'Quản lý phân công kiêm nhiệm',
+  GDDP_COORDINATOR: 'Phụ trách Giáo dục địa phương',
+  HĐTN_COORDINATOR: 'Phụ trách Hoạt động trải nghiệm, hướng nghiệp',
   SYSTEM_ADMIN: 'Quản trị kỹ thuật hệ thống',
 };
 

@@ -23,6 +23,8 @@ import {
   HdtnWorkbookConfirmResponse,
   HdtnWorkbookInspectionResponse,
   HdtnWorkbookPreviewResponse,
+  ProgrammeWorkspaceDetailResponse,
+  ProgrammeWorkspaceOptionsResponse,
 } from '@baogiang/contracts';
 import { AuthenticatedRequest } from '../auth/auth.types';
 import { CsrfOriginGuard } from '../auth/csrf-origin.guard';
@@ -57,6 +59,7 @@ import {
   ReplaceMaterializedSlotDto,
   ReplaceOccurrenceSlotsStaffingDto,
   ReverseAttestationDto,
+  ProgrammeWorkspaceOptionsQueryDto,
 } from './dto';
 import { UploadedWorkbookFile } from './hdtn-workbook-importer.service';
 
@@ -100,6 +103,31 @@ export class ProgrammePlanningController {
   ): Promise<ProgrammeMasterRecord> {
     return this.service.getMaster(masterId, req.auth!.user.id, this.auditContext(req));
   }
+
+  // =========================================================================
+  // WORKSPACE (P4-074A)
+  // =========================================================================
+
+  @Get('workspace/options')
+  async getWorkspaceOptions(
+    @Query() query: ProgrammeWorkspaceOptionsQueryDto,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<ProgrammeWorkspaceOptionsResponse> {
+    return this.service.getWorkspaceOptions(req.auth!.user.id, query.academicYearId);
+  }
+
+  @Get('workspace/masters/:masterId')
+  async getWorkspaceMasterDetail(
+    @Param('masterId', ParseUUIDPipe) masterId: string,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<ProgrammeWorkspaceDetailResponse> {
+    return this.service.getWorkspaceMasterDetail(
+      masterId,
+      req.auth!.user.id,
+      this.auditContext(req),
+    );
+  }
+
 
   // =========================================================================
   // PLAN VERSIONS
