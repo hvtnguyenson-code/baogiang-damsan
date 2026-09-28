@@ -387,6 +387,32 @@ integration('SpecialProgrammeLifecycleE2E (PostgreSQL integration P4-074C)', () 
     };
   }
 
+  async function seedValidHdtnClassCoverage(
+    env: Awaited<ReturnType<typeof setupBaseEnvironment>>,
+  ) {
+    const marker10A = await h.prisma.timetableSpecialProgrammeMarker.create({
+      data: {
+        timetableVersionId: env.tkbVersion.id,
+        academicYearId: env.year.id,
+        schoolClassId: env.class10A.id,
+        timeSlotDefinitionId: env.slotM1.id,
+        kind: 'HDTN_HN',
+      },
+    });
+
+    const marker10B = await h.prisma.timetableSpecialProgrammeMarker.create({
+      data: {
+        timetableVersionId: env.tkbVersion.id,
+        academicYearId: env.year.id,
+        schoolClassId: env.class10B.id,
+        timeSlotDefinitionId: env.slotM2.id,
+        kind: 'HDTN_HN',
+      },
+    });
+
+    return { marker10A, marker10B };
+  }
+
   // =========================================================================
   // 5. E2E — HĐTN CLASS LIFECYCLE & WORKLOAD GATES
   // =========================================================================
@@ -574,7 +600,14 @@ integration('SpecialProgrammeLifecycleE2E (PostgreSQL integration P4-074C)', () 
       // Temporarily mark execution REVERSED to verify attestation-alone gives 0 credit
       await h.prisma.specialActivityParticipationExecution.update({
         where: { id: exec10A.id },
-        data: { status: 'REVERSED', reversedAt: asOf, reversedByUserId: env.actor.id },
+        data: {
+          status: 'REVERSED',
+          reversedByUserId: env.actor.id,
+          reversedAt: new Date(),
+          reversalReason: 'Kiểm thử cổng workload khi execution đã đảo ngược',
+          reverseRequestKey: 'req-reverse-exec-10a-001',
+          reverseRequestFingerprint: 'fp-reverse-exec-10a-001',
+        },
       });
 
       const master = await h.prisma.programmeMaster.findFirstOrThrow({
@@ -607,7 +640,14 @@ integration('SpecialProgrammeLifecycleE2E (PostgreSQL integration P4-074C)', () 
       // 10. Workload Gate 3: Execution ACTIVE + Attestation ACTIVE => eligible with exact policy coefficient (1.25)
       await h.prisma.specialActivityParticipationExecution.update({
         where: { id: exec10A.id },
-        data: { status: 'ACTIVE', reversedAt: null, reversedByUserId: null },
+        data: {
+          status: 'ACTIVE',
+          reversedByUserId: null,
+          reversedAt: null,
+          reversalReason: null,
+          reverseRequestKey: null,
+          reverseRequestFingerprint: null,
+        },
       });
 
       const projectionEligible = await workloadService.resolve({
@@ -1196,15 +1236,7 @@ integration('SpecialProgrammeLifecycleE2E (PostgreSQL integration P4-074C)', () 
     it('A. Stale preview: rejects confirm when timetable markers mutate after preview', async () => {
       const env = await setupBaseEnvironment();
 
-      const marker = await h.prisma.timetableSpecialProgrammeMarker.create({
-        data: {
-          timetableVersionId: env.tkbVersion.id,
-          academicYearId: env.year.id,
-          schoolClassId: env.class10A.id,
-          timeSlotDefinitionId: env.slotM1.id,
-          kind: 'HDTN_HN',
-        },
-      });
+      const markers = await seedValidHdtnClassCoverage(env);
 
       const file = await buildHdtnWorkbook([
         [1, 1, 1, 'Theo lớp', 10, 'Chủ đề 1', 'GVCN'],
@@ -1212,10 +1244,11 @@ integration('SpecialProgrammeLifecycleE2E (PostgreSQL integration P4-074C)', () 
 
       const preview = await hdtnImporter.preview(file, env.year.id);
       expect(preview.canConfirm).toBe(true);
+      expect(preview.blockingIssueCount).toBe(0);
 
       // Mutate marker authority after preview
       await h.prisma.timetableSpecialProgrammeMarker.delete({
-        where: { id: marker.id },
+        where: { id: markers.marker10A.id },
       });
 
       // Confirm with old fingerprint must fail closed
@@ -1235,31 +1268,33 @@ integration('SpecialProgrammeLifecycleE2E (PostgreSQL integration P4-074C)', () 
       expect(await h.prisma.plannedProgrammeOccurrence.count()).toBe(0);
     });
 
-    it('B. Calendar ambiguity: fails closed when multiple calendars are active', async () => {
+    it('B. Calendar authority ambiguity is prevented by the database invariant', async () => {
       const env = await setupBaseEnvironment();
 
-      // Create a second active calendar version
-      await h.prisma.academicCalendarVersion.create({
-        data: {
-          academicYearId: env.year.id,
-          versionNumber: 2,
-          startDate: new Date('2026-09-01T00:00:00.000Z'),
-          endDate: new Date('2027-05-31T23:59:59.999Z'),
-          officialWeekCount: 35,
-          reserveWeekCount: 1,
-          teachingWeekdays: ['MONDAY', 'TUESDAY'],
-          isActive: true, // Multiple active!
-        },
-      });
+      await expect(
+        h.prisma.academicCalendarVersion.create({
+          data: {
+            academicYearId: env.year.id,
+            versionNumber: 2,
+            startDate: new Date('2026-09-01T00:00:00.000Z'),
+            endDate: new Date('2027-05-31T23:59:59.999Z'),
+            officialWeekCount: 35,
+            reserveWeekCount: 1,
+            teachingWeekdays: ['MONDAY', 'TUESDAY'],
+            isActive: true,
+            activatedAt: new Date('2026-09-02T00:00:00.000Z'),
+          },
+        }),
+      ).rejects.toThrow();
 
-      const file = await buildHdtnWorkbook([
-        [1, 1, 1, 'Theo lớp', 10, 'Chủ đề 1', 'GVCN'],
-      ]);
-
-      const preview = await hdtnImporter.preview(file, env.year.id);
-      expect(preview.canConfirm).toBe(false);
-      expect(preview.blockingIssueCount).toBeGreaterThan(0);
-      expect(preview.issues.some((i) => i.code === 'ACTIVE_CALENDAR_AMBIGUOUS')).toBe(true);
+      expect(
+        await h.prisma.academicCalendarVersion.count({
+          where: {
+            academicYearId: env.year.id,
+            isActive: true,
+          },
+        }),
+      ).toBe(1);
     });
 
     it('C. Marker count changes: fails closed when marker topology changes', async () => {
@@ -1312,15 +1347,7 @@ integration('SpecialProgrammeLifecycleE2E (PostgreSQL integration P4-074C)', () 
     it('D. Teacher identity changes: fails closed when GVCN homeroom authority changes', async () => {
       const env = await setupBaseEnvironment();
 
-      await h.prisma.timetableSpecialProgrammeMarker.create({
-        data: {
-          timetableVersionId: env.tkbVersion.id,
-          academicYearId: env.year.id,
-          schoolClassId: env.class10A.id,
-          timeSlotDefinitionId: env.slotM1.id,
-          kind: 'HDTN_HN',
-        },
-      });
+      await seedValidHdtnClassCoverage(env);
 
       const file = await buildHdtnWorkbook([
         [1, 1, 1, 'Theo lớp', 10, 'Chủ đề 1', 'GVCN'],
@@ -1328,6 +1355,7 @@ integration('SpecialProgrammeLifecycleE2E (PostgreSQL integration P4-074C)', () 
 
       const preview = await hdtnImporter.preview(file, env.year.id);
       expect(preview.canConfirm).toBe(true);
+      expect(preview.blockingIssueCount).toBe(0);
 
       // Reverse homeroom assignment
       await h.prisma.homeroomAssignment.update({
@@ -1355,21 +1383,15 @@ integration('SpecialProgrammeLifecycleE2E (PostgreSQL integration P4-074C)', () 
     it('E. Existing active programme version conflict: importing new plan when master already has active PUBLISHED version fails closed', async () => {
       const env = await setupBaseEnvironment();
 
-      await h.prisma.timetableSpecialProgrammeMarker.create({
-        data: {
-          timetableVersionId: env.tkbVersion.id,
-          academicYearId: env.year.id,
-          schoolClassId: env.class10A.id,
-          timeSlotDefinitionId: env.slotM1.id,
-          kind: 'HDTN_HN',
-        },
-      });
+      await seedValidHdtnClassCoverage(env);
 
       const file = await buildHdtnWorkbook([
         [1, 1, 1, 'Theo lớp', 10, 'Chủ đề 1: Khởi động', 'GVCN'],
       ]);
 
       const preview = await hdtnImporter.preview(file, env.year.id);
+      expect(preview.canConfirm).toBe(true);
+      expect(preview.blockingIssueCount).toBe(0);
 
       // 1. Initial confirm succeeds into DRAFT
       const confirm1 = await hdtnImporter.confirm(
@@ -1457,21 +1479,16 @@ integration('SpecialProgrammeLifecycleE2E (PostgreSQL integration P4-074C)', () 
     it('F. Materialization collision: deterministic conflict when materializing same occurrence twice', async () => {
       const env = await setupBaseEnvironment();
 
-      await h.prisma.timetableSpecialProgrammeMarker.create({
-        data: {
-          timetableVersionId: env.tkbVersion.id,
-          academicYearId: env.year.id,
-          schoolClassId: env.class10A.id,
-          timeSlotDefinitionId: env.slotM1.id,
-          kind: 'HDTN_HN',
-        },
-      });
+      await seedValidHdtnClassCoverage(env);
 
       const file = await buildHdtnWorkbook([
         [1, 1, 1, 'Theo lớp', 10, 'Chủ đề 1', 'GVCN'],
       ]);
 
       const preview = await hdtnImporter.preview(file, env.year.id);
+      expect(preview.canConfirm).toBe(true);
+      expect(preview.blockingIssueCount).toBe(0);
+
       const confirmRes = await hdtnImporter.confirm(
         file,
         env.year.id,
@@ -1484,9 +1501,11 @@ integration('SpecialProgrammeLifecycleE2E (PostgreSQL integration P4-074C)', () 
       const occurrences = await h.prisma.plannedProgrammeOccurrence.findMany({
         where: { programmePlanVersionId: confirmRes.programmePlanVersionId },
       });
-      const occ = occurrences[0]!;
+      const occ10A = occurrences.find((o) => o.schoolClassId === env.class10A.id)!;
+      expect(occ10A).toBeDefined();
+
       const planCollision = await planningService.getPlanVersion(confirmRes.programmePlanVersionId);
-      const occRecord = await planningService.getOccurrence(occ.id);
+      const occRecord = await planningService.getOccurrence(occ10A.id);
 
       await planningService.publishPlanVersion(
         confirmRes.programmePlanVersionId,
@@ -1497,7 +1516,7 @@ integration('SpecialProgrammeLifecycleE2E (PostgreSQL integration P4-074C)', () 
         env.actor.id,
       );
       await planningService.publishOccurrence(
-        occ.id,
+        occ10A.id,
         {
           expectedRevision: occRecord.draftRevision,
           commandId: 'cmd-publish-occ-collision',
@@ -1507,7 +1526,7 @@ integration('SpecialProgrammeLifecycleE2E (PostgreSQL integration P4-074C)', () 
 
       // First materialization succeeds
       const mat1 = await planningService.materializeOccurrence(
-        occ.id,
+        occ10A.id,
         { commandId: 'cmd-mat-first' },
         env.actor.id,
       );
@@ -1516,7 +1535,7 @@ integration('SpecialProgrammeLifecycleE2E (PostgreSQL integration P4-074C)', () 
       // Second materialization with different commandId fails with deterministic conflict
       await expect(
         planningService.materializeOccurrence(
-          occ.id,
+          occ10A.id,
           { commandId: 'cmd-mat-second-duplicate' },
           env.actor.id,
         ),
@@ -1525,7 +1544,7 @@ integration('SpecialProgrammeLifecycleE2E (PostgreSQL integration P4-074C)', () 
       // No duplicate hidden rows
       expect(
         await h.prisma.programmeMaterializedActivity.count({
-          where: { plannedProgrammeOccurrenceId: occ.id },
+          where: { plannedProgrammeOccurrenceId: occ10A.id },
         }),
       ).toBe(1);
     });
@@ -1533,21 +1552,15 @@ integration('SpecialProgrammeLifecycleE2E (PostgreSQL integration P4-074C)', () 
     it('G. Repeated command: exact same commandId + same payload produces idempotent replay; different payload fails', async () => {
       const env = await setupBaseEnvironment();
 
-      await h.prisma.timetableSpecialProgrammeMarker.create({
-        data: {
-          timetableVersionId: env.tkbVersion.id,
-          academicYearId: env.year.id,
-          schoolClassId: env.class10A.id,
-          timeSlotDefinitionId: env.slotM1.id,
-          kind: 'HDTN_HN',
-        },
-      });
+      await seedValidHdtnClassCoverage(env);
 
       const file = await buildHdtnWorkbook([
         [1, 1, 1, 'Theo lớp', 10, 'Chủ đề 1', 'GVCN'],
       ]);
 
       const preview = await hdtnImporter.preview(file, env.year.id);
+      expect(preview.canConfirm).toBe(true);
+      expect(preview.blockingIssueCount).toBe(0);
       const sameCommandId = 'cmd-hdtn-idempotent-repeat';
 
       // 1. Initial confirm
@@ -1585,21 +1598,15 @@ integration('SpecialProgrammeLifecycleE2E (PostgreSQL integration P4-074C)', () 
     it('retains complete relational evidence linking workbook package, plan, occurrence, and SpecialActivity', async () => {
       const env = await setupBaseEnvironment();
 
-      await h.prisma.timetableSpecialProgrammeMarker.create({
-        data: {
-          timetableVersionId: env.tkbVersion.id,
-          academicYearId: env.year.id,
-          schoolClassId: env.class10A.id,
-          timeSlotDefinitionId: env.slotM1.id,
-          kind: 'HDTN_HN',
-        },
-      });
+      await seedValidHdtnClassCoverage(env);
 
       const file = await buildHdtnWorkbook([
         [1, 1, 1, 'Theo lớp', 10, 'Chủ đề 1: Khám phá trường mới', 'GVCN'],
       ]);
 
       const preview = await hdtnImporter.preview(file, env.year.id);
+      expect(preview.canConfirm).toBe(true);
+      expect(preview.blockingIssueCount).toBe(0);
       const confirmRes = await hdtnImporter.confirm(
         file,
         env.year.id,
@@ -1643,8 +1650,9 @@ integration('SpecialProgrammeLifecycleE2E (PostgreSQL integration P4-074C)', () 
       const rawOccurrences = await h.prisma.plannedProgrammeOccurrence.findMany({
         where: { programmePlanVersionId: confirmRes.programmePlanVersionId },
       });
-      const rawOcc = rawOccurrences[0]!;
-      const occ = await planningService.getOccurrence(rawOcc.id);
+      const rawOcc10A = rawOccurrences.find((o) => o.schoolClassId === env.class10A.id);
+      expect(rawOcc10A).toBeDefined();
+      const occ = await planningService.getOccurrence(rawOcc10A!.id);
       const planProv = await planningService.getPlanVersion(confirmRes.programmePlanVersionId);
 
       await planningService.publishPlanVersion(
