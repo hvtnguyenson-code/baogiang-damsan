@@ -65,6 +65,10 @@ async function buildGddpWorkbook(rows: unknown[][]): Promise<UploadedWorkbookFil
   };
 }
 
+function projectionAsOfAfterCurrentMutations(): Date {
+  return new Date(Date.now() + 5 * 60_000);
+}
+
 integration('SpecialProgrammeLifecycleE2E (PostgreSQL integration P4-074C)', () => {
   const h = new Phase01Harness();
   let planningService: ProgrammePlanningService;
@@ -73,15 +77,16 @@ integration('SpecialProgrammeLifecycleE2E (PostgreSQL integration P4-074C)', () 
   let workloadService: SpecialProgrammeWorkloadProjectionService;
 
   async function clean(): Promise<void> {
-    await h.prisma.specialActivityParticipationExecution.deleteMany();
-    await h.prisma.programmeOccurrenceAttestation.deleteMany();
-    await h.prisma.programmeMaterializedActivity.deleteMany();
-    await h.prisma.specialActivityClassTarget.deleteMany();
-    await h.prisma.specialActivityStaffing.deleteMany();
-    await h.prisma.specialActivityTimeSlot.deleteMany();
-    await h.prisma.specialActivity.deleteMany();
+    await h.prisma.$executeRawUnsafe(`
+      TRUNCATE TABLE
+        "programme_masters",
+        "special_activities"
+      CASCADE
+    `);
+
     await h.prisma.businessPolicyVersion.deleteMany();
     await h.prisma.businessPolicyStream.deleteMany();
+
     await h.clean();
   }
 
@@ -425,7 +430,11 @@ integration('SpecialProgrammeLifecycleE2E (PostgreSQL integration P4-074C)', () 
       expect(preview.blockingIssueCount).toBe(0);
       expect(preview.previewFingerprint).toBeTruthy();
       expect(preview.rows).toHaveLength(1);
-      expect(preview.rows[0]?.resolvedCandidateCount).toBe(2); // 10A and 10B
+      expect(preview.rows[0]?.resolvedCandidateCount).toBe(1);
+      expect([...(preview.rows[0]?.targetClassCodes ?? [])].sort()).toEqual([
+        '10A',
+        '10B',
+      ]);
 
       // Verify zero mutation before confirm
       expect(await h.prisma.programmePlanVersion.count()).toBe(0);
@@ -467,7 +476,7 @@ integration('SpecialProgrammeLifecycleE2E (PostgreSQL integration P4-074C)', () 
       expect(await h.prisma.specialActivityParticipationExecution.count()).toBe(0);
       expect(await h.prisma.programmeOccurrenceAttestation.count()).toBe(0);
 
-      const asOf = new Date('2026-09-15T00:00:00.000Z');
+      const asOf = projectionAsOfAfterCurrentMutations();
       const projectionZero = await workloadService.resolve({
         academicYearId: env.year.id,
         targetUserId: env.gvcn10A.id,
@@ -807,7 +816,7 @@ integration('SpecialProgrammeLifecycleE2E (PostgreSQL integration P4-074C)', () 
       );
 
       // Verify Teacher 1 workload: 1.25 credit (not multiplied by 2 classes!)
-      const asOf = new Date('2026-09-15T00:00:00.000Z');
+      const asOf = projectionAsOfAfterCurrentMutations();
       const projT1 = await workloadService.resolve({
         academicYearId: env.year.id,
         targetUserId: teacher1.id,
@@ -970,7 +979,7 @@ integration('SpecialProgrammeLifecycleE2E (PostgreSQL integration P4-074C)', () 
         },
       );
 
-      const asOf = new Date('2026-09-15T00:00:00.000Z');
+      const asOf = projectionAsOfAfterCurrentMutations();
       const projectionSw = await workloadService.resolve({
         academicYearId: env.year.id,
         targetUserId: teacher.id,
@@ -1152,7 +1161,7 @@ integration('SpecialProgrammeLifecycleE2E (PostgreSQL integration P4-074C)', () 
       );
 
       // Verify each teacher receives their own contribution with coefficient 1.25
-      const asOf = new Date('2026-09-15T00:00:00.000Z');
+      const asOf = projectionAsOfAfterCurrentMutations();
       const projGV01 = await workloadService.resolve({
         academicYearId: env.year.id,
         targetUserId: env.teacherGddp1.id,
