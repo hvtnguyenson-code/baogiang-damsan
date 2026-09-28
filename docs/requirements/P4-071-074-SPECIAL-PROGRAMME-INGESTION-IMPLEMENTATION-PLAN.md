@@ -317,29 +317,30 @@ If the chosen pilot scope includes HĐTN-HN or GDĐP import/operation, P4-074 mu
 - automatic schedule mutation;
 - teacher self-service mutation of school schedule.
 
-### Current implementation state & evidence (P4-074 IN_REVIEW)
+### Current implementation state & closure evidence (P4-074 CLOSED)
 
-- Task state: `IN_REVIEW` on dedicated branch `feat/special-programme-lifecycle-e2e-074`.
+- Task state: `CLOSED` by `SYNC-P4-074`.
+- Dedicated implementation branch: `feat/special-programme-lifecycle-e2e-074`.
 - Canonical starting main base: `056d0603cb78469932af1f04d17232c13fbb0f69`.
-- Implementation commits:
-  - `b5f58a5548d3377c9ae6ddb5a9f03479abc52b0f` (`feat(programme): add special programme workspace read foundation`);
-  - `b7205c9e67620cc9f01a43fd3781d38764b30e4f` (`fix(programme): isolate workspace plan projection`);
-  - `46341b01923e6eae76c3ce8d8d104fd60f8d1d8e` (`feat(web): add special programme lifecycle workspace`);
-  - `dcbe149e999da30572072b6e6bb4514996ada6ca` (`fix(web): harden special programme workspace state`);
-  - `fead7c212971ff1f5ffa79dae08967a9753aaf28` (`test(programme): add P4-074 lifecycle e2e closure`).
+- Final independently reviewed parent HEAD: `11b1e1abeb80f18cb35e6ad5e9bdd3cf3de53877`.
+- Parent PR: #165 (`feat(programme): complete special programme lifecycle workspace`).
+- Exact-head PR CI: CI #526 (run `36370967927`), SUCCESS.
+- Merge/main commit: `382a463dfbbf27f3de001afe26aad20f31a1d903`.
+- Authoritative post-merge main CI: CI #527 (run `36397819195`), SUCCESS (event: `push`, branch: `main`, exact SHA: `382a463dfbbf27f3de001afe26aad20f31a1d903`).
+- Parent PR statistics: 12 commits, 23 files changed (+6834 / -16); review and CI forward corrections were absorbed before merge; no residual correction/re-entry task emerged.
 - Delivered scope:
   - Vietnamese admin/coordinator workspace read foundation (`/api/programme-planning/workspace`) and UI (`/quan-tri/chuong-trinh-dac-thu`) supporting HĐTN-HN and GDĐP inspection, preview, and explicit DRAFT confirmation;
   - Lifecycle actions (publish plan, publish occurrence, materialize) orchestrate existing P4 domain services without schema changes or teaching execution fabrication;
-  - Dedicated PostgreSQL E2E test suite in `apps/api/test/programme-planning/special-programme-lifecycle-e2e.integration.spec.ts` covering:
-    - HĐTN CLASS (historical GVCN from HomeroomAssignment, class topology, zero mutation preview);
-    - HĐTN GRADE (marker collapse without class fan-out, multi-teacher staffing);
-    - HĐTN SCHOOL_WIDE (school-wide marker collapse, anti-fan-out);
-    - GDĐP GRADE (5-column PPCT/week parsing, shared slot multi-teacher staffing);
+  - Comprehensive valid PostgreSQL runtime test suite in `apps/api/test/programme-planning/special-programme-lifecycle-e2e.integration.spec.ts` covering:
+    - HĐTN CLASS (historical date-effective GVCN from HomeroomAssignment, class topology, zero mutation preview);
+    - HĐTN GRADE (complete grade marker collapse without class fan-out, multi-teacher staffing);
+    - HĐTN SCHOOL_WIDE (complete school-wide marker collapse, anti-fan-out);
+    - GDĐP GRADE (5-column PPCT/week/staffCode resolution, shared exact slot multi-teacher staffing);
     - P4-050 workload dual gates (execution ACTIVE + attestation ACTIVE; zero credit on missing gate; anti-double-counting; no multiplication by target class count);
-    - Failure matrix closure (stale preview rejection, ambiguous authority, marker changes, teacher identity changes, existing active programme version conflict, materialization collision, idempotent commands);
-    - Relational provenance and P2-061 downstream boundary verification;
-  - Validation: typecheck PASS, lint PASS, build PASS, unit tests PASS; local PostgreSQL integration `BLOCKED_LOCAL_ENV` due to safety guard (authoritative evidence pending PR CI);
-  - PR CI, PR creation, and independent GitHub review remain pending before merge/closure.
+    - Failure matrix closure: stale preview fingerprint rejection, calendar/timetable ambiguity defense-in-depth, marker topology changes, teacher identity changes, active published programme history conflict, materialization collision, same commandId/same payload idempotent replay, and same commandId/changed payload conflict;
+    - Persisted command provenance (`ProgrammePlanningCommand`), `AuditEvent`, and preview fingerprint to exact plan version;
+    - Downstream effective-schedule boundary preserved: `SCHOOL_EFFECTIVE_TEACHING_SCHEDULE_V1` remains downstream under P2-061 and is NOT implemented by P4-074;
+  - Zero P4-074 schema/migration expansion; zero deployment; zero production mutation; production remains PRE-OPERATIONAL.
 
 ## Task-chain closure rule
 

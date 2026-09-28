@@ -6,20 +6,11 @@ This is the canonical mutable **product/task status** document for Báo giảng.
 
 It is **not** a self-referential registry of the latest Git commit. Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub at the start of every task. SHAs recorded here are evidence for the stated baseline or last closed major task.
 
-**Status snapshot date:** 2026-09-26
+**Status snapshot date:** 2026-09-28
 
 ## Active / next critical path
 
-`P4-074` — Special-programme import lifecycle and E2E closure — is **IN_REVIEW** on dedicated task branch `feat/special-programme-lifecycle-e2e-074`.
-- Canonical starting main base: `056d0603cb78469932af1f04d17232c13fbb0f69`.
-- Implementation commits:
-  - `b5f58a5548d3377c9ae6ddb5a9f03479abc52b0f` (`feat(programme): add special programme workspace read foundation`);
-  - `b7205c9e67620cc9f01a43fd3781d38764b30e4f` (`fix(programme): isolate workspace plan projection`);
-  - `46341b01923e6eae76c3ce8d8d104fd60f8d1d8e` (`feat(web): add special programme lifecycle workspace`);
-  - `dcbe149e999da30572072b6e6bb4514996ada6ca` (`fix(web): harden special programme workspace state`);
-  - `fead7c212971ff1f5ffa79dae08967a9753aaf28` (`test(programme): add P4-074 lifecycle e2e closure`).
-- Local validation results: typecheck PASS (0 errors), lint PASS (0 warnings), build PASS, web unit tests PASS (29/29 special-programme tests); local PostgreSQL integration `BLOCKED_LOCAL_ENV` due to safety guard (authoritative PostgreSQL evidence pending PR CI).
-- Status: **IN_REVIEW** pending PR creation, PR CI execution, and independent GitHub review. Merge, deployment, and production mutations have NOT occurred.
+`P4-074` — Special-programme import lifecycle and E2E closure — is **CLOSED** by `SYNC-P4-074`.
 
 Eligible tasks / status:
 - `P2-061` — School-wide effective teaching schedule read model + Teacher Workspace — remains independently **READY** (unlocked by `P2-060` closure; implementation not yet started; must not be described as implemented).
@@ -33,7 +24,43 @@ Production environment remains strictly **PRE-OPERATIONAL**. No production deplo
 
 ## Last closed major task
 
-`P4-073` — GDĐP workbook importer — **CLOSED** by `SYNC-P4-073`.
+`P4-074` — Special-programme import lifecycle and E2E closure — **CLOSED** by `SYNC-P4-074`.
+
+Closure evidence:
+- dedicated implementation branch: `feat/special-programme-lifecycle-e2e-074`;
+- canonical starting main base: `056d0603cb78469932af1f04d17232c13fbb0f69`;
+- final independently reviewed parent HEAD: `11b1e1abeb80f18cb35e6ad5e9bdd3cf3de53877`;
+- parent PR: #165 (`feat(programme): complete special programme lifecycle workspace`);
+- exact-head PR CI: CI #526 (run `36370967927`), SUCCESS;
+- merge/main commit: `382a463dfbbf27f3de001afe26aad20f31a1d903`;
+- normal merge: YES;
+- authoritative post-merge main CI: CI #527 (run `36397819195`), SUCCESS (event: `push`, branch: `main`, exact SHA: `382a463dfbbf27f3de001afe26aad20f31a1d903`);
+- parent PR statistics: 12 commits, 23 files changed (+6834 / -16);
+- delivered scope:
+  - Vietnamese special-programme admin/coordinator workspace;
+  - Backend read foundation: `/api/programme-planning/workspace`;
+  - Web UI: `/quan-tri/chuong-trinh-dac-thu`;
+  - HĐTN-HN / GDĐP inspect + preview + explicit DRAFT confirm;
+  - Existing P4 lifecycle reused: publish plan, publish occurrence, materialize;
+  - Không tạo TeachingExecution từ import/publish/materialize;
+  - HĐTN CLASS: exact historical/date-effective GVCN, per-class topology;
+  - HĐTN GRADE: complete grade collapse, multi-teacher, no class fan-out;
+  - HĐTN SCHOOL_WIDE: complete school collapse, no class fan-out;
+  - GDĐP GRADE: five-column PPCT/week/staffCode path, shared exact slot multi-teacher staffing;
+  - P4-050 workload: execution ACTIVE + qualifying attestation ACTIVE, one contribution per exact slot/teacher, no fan-out by class targets/attestations;
+  - Failure evidence: stale fingerprint, calendar/timetable ambiguity defense-in-depth, marker topology changes, teacher identity changes, active published programme history conflict, materialization collision, same commandId/same payload idempotent replay, same commandId/changed payload conflict;
+  - Persisted provenance: `ProgrammePlanningCommand`, `AuditEvent`, preview fingerprint -> exact plan version;
+  - P2-061 boundary preserved: `SCHOOL_EFFECTIVE_TEACHING_SCHEDULE_V1` remains downstream, NOT implemented by P4-074;
+  - zero P4-074 schema/migration expansion;
+  - zero deploy;
+  - zero production mutation;
+- review/CI forward corrections: absorbed before merge; no residual correction/re-entry task emerged;
+- independent exact-diff review: PASS; review corrections absorbed; no separate correction or re-entry task emerged;
+- closed by administrative closure: `SYNC-P4-074`;
+- downstream: `P2-061` remains independently `READY`;
+- production remains strictly **PRE-OPERATIONAL**.
+
+Predecessor closed major task: `P4-073` — GDĐP workbook importer — **CLOSED** by `SYNC-P4-073`.
 
 Closure evidence:
 - dedicated implementation branch: `feat/gddp-workbook-importer-073`;
@@ -69,7 +96,7 @@ Closure evidence:
   - no production deployment; no production migration execution;
 - independent exact-diff review: PASS; review corrections absorbed; no separate correction or re-entry task emerged;
 - closed by administrative closure: `SYNC-P4-073`;
-- downstream: `P4-074` unlocked to `READY` (preferred next P4 task); `P2-061` remains independently `READY`;
+- downstream: `P4-074` is CLOSED by `SYNC-P4-074`; `P2-061` remains independently `READY`;
 - production remains strictly **PRE-OPERATIONAL**.
 
 Predecessor closed major task: `P4-072` — HĐTN-HN workbook importer — **CLOSED** by `SYNC-P4-072`.
@@ -102,7 +129,7 @@ Closure evidence:
   - no production deployment; no production migration execution;
 - independent exact-diff review: PASS; no separate correction or re-entry task emerged;
 - closed by administrative closure: `SYNC-P4-072`;
-- downstream: `P4-073` is CLOSED by `SYNC-P4-073`; `P4-074` unlocked to `READY`;
+- downstream: `P4-073` is CLOSED by `SYNC-P4-073`; `P4-074` is CLOSED by `SYNC-P4-074`; `P2-061` remains independently `READY`;
 - production remains strictly **PRE-OPERATIONAL**.
 
 Predecessor closed major task: `P4-071` — Retained TKB special-programme marker bridge — **CLOSED** by `SYNC-P4-071`.
@@ -859,13 +886,13 @@ The final production-host topology is intentionally unresolved and explicitly de
 
 ## Tasks currently active or eligible to start
 
-`P4-073` is CLOSED by `SYNC-P4-073`.
+`P4-074` is CLOSED by `SYNC-P4-074`.
 
 Active in progress:
 - None.
 
 Active in review:
-- `P4-074` — Special-programme import lifecycle and E2E closure — **IN_REVIEW** on branch `feat/special-programme-lifecycle-e2e-074` (unlocked by `P4-072`, `P4-073`, `P4-040`, `P4-050` closure; workspace read foundation, Vietnamese UI, E2E tests and P4-050 workload gates completed; PR CI and independent review pending; must not be marked CLOSED until PR merge, post-merge CI, and SYNC-P4-074 closure).
+- None.
 
 Eligible to start:
 - `P2-061` — School-wide effective teaching schedule read model + Teacher Workspace — **READY** independently (unlocked by `P2-060` closure; implementation not yet started; must not be described as implemented).
