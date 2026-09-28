@@ -1588,6 +1588,45 @@ integration('SpecialProgrammeLifecycleE2E (PostgreSQL integration P4-074C)', () 
 
       // Verify still exactly 1 plan version in DB
       expect(await h.prisma.programmePlanVersion.count()).toBe(1);
+
+      // 3. Replay with same commandId but changed payload fails with ConflictException
+      const changedFile = await buildHdtnWorkbook([
+        [1, 1, 1, 'Theo lớp', 10, 'Chủ đề 1 - Nội dung đã thay đổi', 'GVCN'],
+      ]);
+
+      const changedPreview = await hdtnImporter.preview(changedFile, env.year.id);
+      expect(changedPreview.canConfirm).toBe(true);
+      expect(changedPreview.blockingIssueCount).toBe(0);
+      expect(changedPreview.previewFingerprint).not.toBe(preview.previewFingerprint);
+
+      await expect(
+        hdtnImporter.confirm(
+          changedFile,
+          env.year.id,
+          changedPreview.previewFingerprint,
+          sameCommandId,
+          env.actor.id,
+          {
+            expectedProgrammeMasterId: null,
+            canBootstrapMaster: true,
+          },
+        ),
+      ).rejects.toThrow(ConflictException);
+
+      // Assert no mutation after conflict: plan count remains 1 and stored receipt is unchanged
+      expect(await h.prisma.programmePlanVersion.count()).toBe(1);
+
+      const storedCommand = await h.prisma.programmePlanningCommand.findUniqueOrThrow({
+        where: {
+          actorUserId_commandId: {
+            actorUserId: env.actor.id,
+            commandId: sameCommandId,
+          },
+        },
+      });
+
+      const storedResult = storedCommand.result as Record<string, unknown>;
+      expect(storedResult.programmePlanVersionId).toBe(res1.programmePlanVersionId);
     });
   });
 
