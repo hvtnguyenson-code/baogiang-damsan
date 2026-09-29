@@ -707,4 +707,282 @@ integration('School-wide Effective Teaching Schedule Read Model & API (isolated 
       expect(slot1.occupancyState).toBe('BLOCKED');
     });
   });
+
+  describe('Review Correction 001 Hardening Integration', () => {
+    it('Findings 1 & 2: blocked comparison has zero FREE semantic and safe Vietnamese blocked reasons without technical leakage', async () => {
+      const f = await fixture();
+
+      // Trigger structural blocker by deleting PPCT association
+      await h.prisma.ppctClassAssociation.deleteMany();
+
+      const compRes = await f.teacher1.agent.get(
+        `/api/effective-schedule/compare?academicYearId=${f.year.id}&academicWeekId=${f.week.id}&peerTeacherUserId=${f.teacher2.id}`,
+      );
+
+      expect(compRes.status).toBe(200);
+      expect(compRes.body.status).toBe('BLOCKED');
+      expect(compRes.body.blockedReasons).toContain('Chưa liên kết phân phối chương trình');
+      expect(JSON.stringify(compRes.body.blockedReasons)).not.toContain('PPCT_ASSOCIATION_MISSING');
+      expect(JSON.stringify(compRes.body.blockedReasons)).not.toContain('BLOCKER');
+
+      const mondayFacts = compRes.body.facts.filter((s: { civilDate: string }) => s.civilDate === civilDate);
+      expect(mondayFacts.length).toBeGreaterThan(0);
+      for (const fact of mondayFacts) {
+        expect(fact.comparisonState).toBe('BLOCKED');
+        expect(fact.selfOccupancy.occupancyState).toBe('BLOCKED');
+        expect(fact.selfOccupancy.isBusy).toBe(false);
+        expect(fact.peerOccupancy.occupancyState).toBe('BLOCKED');
+        expect(fact.peerOccupancy.isBusy).toBe(false);
+        // Fail-closed invariant: zero FREE semantics
+        expect(fact.selfOccupancy.occupancyState).not.toBe('FREE');
+        expect(fact.peerOccupancy.occupancyState).not.toBe('FREE');
+      }
+    });
+
+    it('Finding 3: SpecialActivity.note sentinel is not leaked into weekly or school-wide response', async () => {
+      const f = await fixture();
+
+      const activity = await h.prisma.specialActivity.create({
+        data: {
+          academicYearId: f.year.id,
+          academicCalendarVersionId: f.calendar.id,
+          civilDate: new Date(`${civilDate}T00:00:00Z`),
+          title: 'Hoạt động hướng nghiệp sentinel',
+          scope: 'SCHOOL_WIDE',
+          note: 'PRIVATE_ADMIN_NOTE_SENTINEL',
+          status: 'ACTIVE',
+          createRequestKey: crypto.randomUUID(),
+          createRequestFingerprint: crypto.randomUUID(),
+          createdByUserId: f.teacher1.id,
+        },
+      });
+
+      await h.prisma.specialActivityTimeSlot.create({
+        data: {
+          specialActivityId: activity.id,
+          academicYearId: f.year.id,
+          timeSlotDefinitionId: f.slot2.id,
+        },
+      });
+
+      await h.prisma.specialActivityStaffing.create({
+        data: {
+          specialActivityId: activity.id,
+          scheduledTeacherUserId: f.teacher2.id,
+          staffProfileId: f.profile2.id,
+          eligibilityCheckedAt: new Date(),
+          eligibilityWasActive: true,
+          eligibilityWasTeachingStaff: true,
+        },
+      });
+
+      const weeklyRes = await f.teacher1.agent.get(
+        `/api/effective-schedule/weekly?academicYearId=${f.year.id}&academicWeekId=${f.week.id}&teacherUserId=${f.teacher2.id}`,
+      );
+      const schoolWideRes = await f.teacher1.agent.get(
+        `/api/effective-schedule/school-wide?academicYearId=${f.year.id}&civilDate=${civilDate}`,
+      );
+
+      expect(JSON.stringify(weeklyRes.body)).not.toContain('PRIVATE_ADMIN_NOTE_SENTINEL');
+      expect(JSON.stringify(schoolWideRes.body)).not.toContain('PRIVATE_ADMIN_NOTE_SENTINEL');
+    });
+
+    it('Finding 4: enforces year, week, and calendar coherence (rejects cross-year or inactive calendar week)', async () => {
+      const f = await fixture();
+
+      // Create an unrelated year and week
+      const yearB = await h.prisma.academicYear.create({
+        data: { code: normalizedCode('YEAR-B'), name: 'Year B' },
+      });
+      const calB = await h.prisma.academicCalendarVersion.create({
+        data: {
+          academicYearId: yearB.id,
+          versionNumber: 1,
+          startDate: new Date('2027-09-01T00:00:00Z'),
+          endDate: new Date('2028-05-31T00:00:00Z'),
+          officialWeekCount: 35,
+          reserveWeekCount: 0,
+          teachingWeekdays: ['MONDAY'],
+          isActive: true,
+          activatedAt: new Date(),
+        },
+      });
+      const weekB = await h.prisma.academicWeek.create({
+        data: {
+          calendarVersionId: calB.id,
+          kind: 'OFFICIAL',
+          officialWeekNumber: 1,
+          displayLabel: 'Tuần 1 Năm B',
+          sortOrder: 1,
+        },
+      });
+
+      // A. Week from year B with academicYearId year A -> rejected
+      const crossYearRes = await f.teacher1.agent.get(
+        `/api/effective-schedule/weekly?academicYearId=${f.year.id}&academicWeekId=${weekB.id}`,
+      );
+      expect(crossYearRes.status).toBe(400);
+      expect(crossYearRes.body.message).toContain('Tuần học không thuộc năm học được chỉ định.');
+
+      // B. Week belonging to inactive calendar version -> rejected
+      await h.prisma.academicCalendarVersion.update({
+        where: { id: calB.id },
+        data: { isActive: false, activatedAt: null },
+      });
+      const inactiveCalRes = await f.teacher1.agent.get(
+        `/api/effective-schedule/weekly?academicYearId=${yearB.id}&academicWeekId=${weekB.id}`,
+      );
+      expect(inactiveCalRes.status).toBe(400);
+      expect(inactiveCalRes.body.message).toContain('Tuần học thuộc phiên bản lịch không còn hiệu lực.');
+
+      // C. Valid same-year/active calendar week -> PASS
+      const validRes = await f.teacher1.agent.get(
+        `/api/effective-schedule/weekly?academicYearId=${f.year.id}&academicWeekId=${f.week.id}`,
+      );
+      expect(validRes.status).toBe(200);
+    });
+
+    it('Finding 6: school-wide rejects dates outside authoritative active calendars', async () => {
+      const f = await fixture();
+
+      // Date outside all authoritative calendars (e.g. 2035-01-01)
+      const outsideRes = await f.teacher1.agent.get(
+        `/api/effective-schedule/school-wide?civilDate=2035-01-01`,
+      );
+      expect(outsideRes.status).toBe(400);
+      expect(outsideRes.body.message).toContain('không thuộc phạm vi của bất kỳ lịch học nào đang có hiệu lực');
+
+      // Date outside specified year's active calendar
+      const yearMismatchRes = await f.teacher1.agent.get(
+        `/api/effective-schedule/school-wide?academicYearId=${f.year.id}&civilDate=2028-01-01`,
+      );
+      expect(yearMismatchRes.status).toBe(400);
+      expect(yearMismatchRes.body.message).toContain('không nằm trong phạm vi lịch học hiệu lực của năm học này');
+
+      // Valid selected day
+      const validRes = await f.teacher1.agent.get(
+        `/api/effective-schedule/school-wide?academicYearId=${f.year.id}&civilDate=${civilDate}`,
+      );
+      expect(validRes.status).toBe(200);
+    });
+
+    it('Finding 7: enforces active teaching-staff targets (rejects inactive or non-teaching peer targets)', async () => {
+      const f = await fixture();
+
+      // Create inactive user
+      const inactiveUser = await h.actor({
+        grants: [{ capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL' }],
+      });
+      await h.prisma.user.update({
+        where: { id: inactiveUser.id },
+        data: { status: 'DISABLED' },
+      });
+      await h.prisma.staffProfile.update({
+        where: { userId: inactiveUser.id },
+        data: { isTeachingStaff: true },
+      });
+
+      // Create non-teaching user (isTeachingStaff = false)
+      const nonTeachingUser = await h.actor({
+        grants: [{ capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL' }],
+      });
+      await h.prisma.staffProfile.update({
+        where: { userId: nonTeachingUser.id },
+        data: { isTeachingStaff: false },
+      });
+
+      // Target inactive user in weekly -> 404
+      const weeklyInactiveRes = await f.teacher1.agent.get(
+        `/api/effective-schedule/weekly?academicYearId=${f.year.id}&academicWeekId=${f.week.id}&teacherUserId=${inactiveUser.id}`,
+      );
+      expect(weeklyInactiveRes.status).toBe(404);
+      expect(weeklyInactiveRes.body.message).toContain('không thuộc diện phân công giảng dạy');
+
+      // Target non-teaching user in weekly -> 404
+      const weeklyNonTeachingRes = await f.teacher1.agent.get(
+        `/api/effective-schedule/weekly?academicYearId=${f.year.id}&academicWeekId=${f.week.id}&teacherUserId=${nonTeachingUser.id}`,
+      );
+      expect(weeklyNonTeachingRes.status).toBe(404);
+      expect(weeklyNonTeachingRes.body.message).toContain('không thuộc diện phân công giảng dạy');
+
+      // Target inactive user in compare -> 404
+      const compareInactiveRes = await f.teacher1.agent.get(
+        `/api/effective-schedule/compare?academicYearId=${f.year.id}&academicWeekId=${f.week.id}&peerTeacherUserId=${inactiveUser.id}`,
+      );
+      expect(compareInactiveRes.status).toBe(404);
+
+      // Target active teaching staff -> 200
+      const compareValidRes = await f.teacher1.agent.get(
+        `/api/effective-schedule/compare?academicYearId=${f.year.id}&academicWeekId=${f.week.id}&peerTeacherUserId=${f.teacher2.id}`,
+      );
+      expect(compareValidRes.status).toBe(200);
+    });
+
+    it('Finding 8: compares distinct slot IDs by real intervals, touching boundaries do NOT overlap', async () => {
+      const f = await fixture();
+
+      // Slot 1 is 07:00-07:45 (f.slot1)
+      // Slot 2 is 07:45-08:30 (f.slot2)
+      // Teacher 1 has class in Slot 1 (07:00-07:45)
+      // Assign Teacher 2 to make-up in Slot 2 (07:45-08:30)
+      const staffSubject2 = await h.prisma.staffSubject.create({
+        data: {
+          userId: f.teacher2.id,
+          subjectId: f.subject.id,
+          validFrom: new Date('2026-08-01Z'),
+        },
+      });
+
+      await h.prisma.makeupTeachingSchedule.create({
+        data: {
+          academicYearId: f.year.id,
+          originalTimetableVersionId: f.timetable.id,
+          originalTimetableEntryId: f.entry.id,
+          originalCivilDate: new Date(`${civilDate}T00:00:00Z`),
+          originalAcademicCalendarVersionId: f.calendar.id,
+          originalTimeSlotDefinitionId: f.slot1.id,
+          schoolClassId: f.schoolClass.id,
+          subjectId: f.subject.id,
+          originalTeachingAssignmentId: f.assignment.id,
+          responsibleTeacherUserId: f.teacher1.id,
+          ppctClassAssociationId: f.association.id,
+          ppctPlanId: f.plan.id,
+          ppctVersionId: f.ppctVersion.id,
+          ppctItemId: f.item.id,
+          targetCivilDate: new Date(`${civilDate}T00:00:00Z`),
+          targetAcademicCalendarVersionId: f.calendar.id,
+          targetTimeSlotDefinitionId: f.slot2.id,
+          scheduledTeacherUserId: f.teacher2.id,
+          eligibilityCheckedAt: new Date('2026-08-01Z'),
+          eligibilityWasActive: true,
+          eligibilityWasTeachingStaff: true,
+          eligibilitySameSubject: true,
+          eligibilityStaffSubjectId: staffSubject2.id,
+          createRequestKey: crypto.randomUUID(),
+          createRequestFingerprint: crypto.randomUUID(),
+          createdByUserId: f.teacher1.id,
+        },
+      });
+
+      const compRes = await f.teacher1.agent.get(
+        `/api/effective-schedule/compare?academicYearId=${f.year.id}&academicWeekId=${f.week.id}&peerTeacherUserId=${f.teacher2.id}`,
+      );
+
+      expect(compRes.status).toBe(200);
+      const facts = compRes.body.facts.filter((s: { civilDate: string }) => s.civilDate === civilDate);
+
+      // Slot 1 (07:00-07:45): Teacher 1 busy, Teacher 2 free -> SELF_BUSY_PEER_FREE
+      const slot1Fact = facts.find((s: { slotLabel: string }) => s.slotLabel === 'Tiết 1');
+      expect(slot1Fact.comparisonState).toBe('SELF_BUSY_PEER_FREE');
+      expect(slot1Fact.selfOccupancy.isBusy).toBe(true);
+      expect(slot1Fact.peerOccupancy.isBusy).toBe(false);
+
+      // Slot 2 (07:45-08:30): Teacher 1 free, Teacher 2 busy -> SELF_FREE_PEER_BUSY
+      // Proves that touching boundary at 07:45:00 does NOT cause spurious overlap
+      const slot2Fact = facts.find((s: { slotLabel: string }) => s.slotLabel === 'Tiết 2');
+      expect(slot2Fact.comparisonState).toBe('SELF_FREE_PEER_BUSY');
+      expect(slot2Fact.selfOccupancy.isBusy).toBe(false);
+      expect(slot2Fact.peerOccupancy.isBusy).toBe(true);
+    });
+  });
 });

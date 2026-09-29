@@ -33,6 +33,7 @@ import {
 } from './dto';
 import {
   comparisonStateToVietnamese,
+  formatBlockedReason,
   intervalsOverlap,
   normalizeTimeString,
   sourceKindToVietnamese,
@@ -51,7 +52,6 @@ interface InternalDerivedOccupancy {
   schoolClassId?: string | null;
   subjectId?: string | null;
   activityTitle?: string | null;
-  notes?: string | null;
 }
 
 const weekdayNames = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'] as const;
@@ -139,19 +139,31 @@ export class EffectiveScheduleService {
       name: y.name,
     }));
 
+    const now = new Date();
+    const todayStr = formatCivilDate(now);
+    const todayDate = parseCivilDate(todayStr);
+
     let targetYearId = query.academicYearId;
-    if (!targetYearId && academicYears.length > 0) {
-      const activeCalendar = await this.prisma.academicCalendarVersion.findFirst({
-        where: { isActive: true },
-        select: { academicYearId: true },
+    if (!targetYearId) {
+      const activeCalendarsCoveringToday = await this.prisma.academicCalendarVersion.findMany({
+        where: {
+          isActive: true,
+          startDate: { lte: todayDate },
+          endDate: { gte: todayDate },
+        },
+        select: { id: true, academicYearId: true },
       });
-      targetYearId = activeCalendar?.academicYearId ?? academicYears[0]!.id;
+
+      if (activeCalendarsCoveringToday.length === 1) {
+        targetYearId = activeCalendarsCoveringToday[0]!.academicYearId;
+      } else {
+        // Zero or ambiguous matches -> do not arbitrarily guess an active calendar
+        targetYearId = undefined;
+      }
     }
 
     const weeks: EffectiveScheduleAcademicWeekOption[] = [];
     let currentAcademicWeekId: string | null = null;
-    const now = new Date();
-    const todayStr = formatCivilDate(now);
 
     if (targetYearId) {
       const calendar = await this.prisma.academicCalendarVersion.findFirst({
@@ -187,12 +199,16 @@ export class EffectiveScheduleService {
             kind: w.kind === 'RESERVE' ? 'RESERVE' : 'OFFICIAL',
           });
 
-          if (todayStr >= startStr && todayStr <= endStr) {
+          // Today belongs to week ONLY when it lies in an actual segment, not across gaps
+          const inActualSegment = w.segments.some((seg) => {
+            const segStart = formatCivilDate(seg.startDate);
+            const segEnd = formatCivilDate(seg.endDate);
+            return todayStr >= segStart && todayStr <= segEnd;
+          });
+
+          if (inActualSegment) {
             currentAcademicWeekId = w.id;
           }
-        }
-        if (!currentAcademicWeekId && weeks.length > 0) {
-          currentAcademicWeekId = weeks[0]!.id;
         }
       }
     }
@@ -218,24 +234,8 @@ export class EffectiveScheduleService {
 
     return this.prisma.$transaction(
       async (tx) => {
-        const week = await tx.academicWeek.findUnique({
-          where: { id: query.academicWeekId },
-          include: {
-            segments: { orderBy: { segmentOrder: 'asc' } },
-            calendarVersion: true,
-          },
-        });
-        if (!week) {
-          throw new NotFoundException('Không tìm thấy tuần học.');
-        }
-
-        const teacherUser = await tx.user.findUnique({
-          where: { id: targetUserId },
-          select: { id: true, profile: { select: { displayName: true } } },
-        });
-        if (!teacherUser) {
-          throw new NotFoundException('Không tìm thấy thông tin giáo viên.');
-        }
+        const week = await this.validateWeekAndYearCoherence(tx, query.academicYearId, query.academicWeekId);
+        const teacherUser = await this.requireActiveTeachingStaffUser(tx, targetUserId);
 
         const weekCivilDates = this.getTeachingDatesForWeek(week.segments, week.calendarVersion?.teachingWeekdays ?? []);
         const [timeSlots, schoolClasses, subjects] = await Promise.all([
@@ -272,10 +272,17 @@ export class EffectiveScheduleService {
           const isDayBlocked = resolution.status === 'BLOCKED';
           if (isDayBlocked) {
             overallBlocked = true;
-            for (const f of resolution.findings) {
-              const reason = `${f.code} (loại: ${f.severity})`;
-              if (!allBlockedReasons.includes(reason)) {
-                allBlockedReasons.push(reason);
+            if (resolution.findings.length > 0) {
+              for (const f of resolution.findings) {
+                const reason = formatBlockedReason(f);
+                if (!allBlockedReasons.includes(reason)) {
+                  allBlockedReasons.push(reason);
+                }
+              }
+            } else {
+              const defaultReason = 'Dữ liệu lịch dạy chưa đủ nhất quán để xác định.';
+              if (!allBlockedReasons.includes(defaultReason)) {
+                allBlockedReasons.push(defaultReason);
               }
             }
           }
@@ -304,14 +311,13 @@ export class EffectiveScheduleService {
                 startTime: slotStart,
                 endTime: slotEnd,
                 teacherUserId: targetUserId,
-                teacherDisplayName: teacherUser.profile?.displayName ?? 'Giáo viên',
+                teacherDisplayName: teacherUser.displayName,
                 occupancyState: isDayBlocked ? 'BLOCKED' : 'OCCUPIED',
                 sourceKind: match.sourceKind,
                 sourceLabel: sourceKindToVietnamese(match.sourceKind),
                 className: match.schoolClassId ? classMap.get(match.schoolClassId) ?? null : null,
                 subjectName: match.subjectId ? subjectMap.get(match.subjectId) ?? null : null,
                 activityTitle: match.activityTitle ?? null,
-                notes: match.notes ?? null,
               };
             }
 
@@ -325,14 +331,13 @@ export class EffectiveScheduleService {
               startTime: slotStart,
               endTime: slotEnd,
               teacherUserId: targetUserId,
-              teacherDisplayName: teacherUser.profile?.displayName ?? 'Giáo viên',
+              teacherDisplayName: teacherUser.displayName,
               occupancyState: isDayBlocked ? 'BLOCKED' : 'FREE',
               sourceKind: null,
               sourceLabel: isDayBlocked ? 'Bị chặn' : null,
               className: null,
               subjectName: null,
               activityTitle: null,
-              notes: isDayBlocked ? 'Không thể xác định do dữ liệu bị chặn' : null,
             };
           });
 
@@ -350,7 +355,7 @@ export class EffectiveScheduleService {
           academicWeekId: query.academicWeekId,
           weekLabel: week.displayLabel,
           teacherUserId: targetUserId,
-          teacherDisplayName: teacherUser.profile?.displayName ?? 'Giáo viên',
+          teacherDisplayName: teacherUser.displayName,
           status: overallBlocked ? 'BLOCKED' : 'PASS',
           blockedReasons: allBlockedReasons.length > 0 ? allBlockedReasons : undefined,
           days,
@@ -371,23 +376,37 @@ export class EffectiveScheduleService {
         const dateObj = parseCivilDate(query.civilDate);
 
         if (!academicYearId) {
-          const cal = await tx.academicCalendarVersion.findFirst({
+          const matchingCalendars = await tx.academicCalendarVersion.findMany({
             where: {
               isActive: true,
               startDate: { lte: dateObj },
               endDate: { gte: dateObj },
             },
-            select: { academicYearId: true },
+            select: { id: true, academicYearId: true },
           });
-          academicYearId = cal?.academicYearId;
-          if (!academicYearId) {
-            const anyYear = await tx.academicYear.findFirst({ orderBy: { createdAt: 'desc' } });
-            academicYearId = anyYear?.id;
-          }
-        }
 
-        if (!academicYearId) {
-          throw new BadRequestException('Không tìm thấy năm học hợp lệ cho ngày này.');
+          if (matchingCalendars.length === 0) {
+            throw new BadRequestException('Ngày đã chọn không thuộc phạm vi của bất kỳ lịch học nào đang có hiệu lực.');
+          }
+          if (matchingCalendars.length > 1) {
+            throw new BadRequestException('Ngày đã chọn trùng với nhiều lịch học đang có hiệu lực. Vui lòng chỉ định năm học cụ thể.');
+          }
+          academicYearId = matchingCalendars[0]!.academicYearId;
+        } else {
+          const calendar = await tx.academicCalendarVersion.findFirst({
+            where: {
+              academicYearId,
+              isActive: true,
+            },
+            select: { id: true, startDate: true, endDate: true },
+          });
+
+          if (!calendar) {
+            throw new BadRequestException('Năm học được chọn không có phiên bản lịch học nào đang có hiệu lực.');
+          }
+          if (calendar.startDate > dateObj || calendar.endDate < dateObj) {
+            throw new BadRequestException('Ngày đã chọn không nằm trong phạm vi lịch học hiệu lực của năm học này.');
+          }
         }
 
         const weekday = weekdayFor(dateObj);
@@ -398,7 +417,19 @@ export class EffectiveScheduleService {
         });
 
         const isBlocked = resolution.status === 'BLOCKED';
-        const blockedReasons = resolution.findings.map((f) => `${f.code} (${f.severity})`);
+        const blockedReasons: string[] = [];
+        if (isBlocked) {
+          if (resolution.findings.length > 0) {
+            for (const f of resolution.findings) {
+              const reason = formatBlockedReason(f);
+              if (!blockedReasons.includes(reason)) {
+                blockedReasons.push(reason);
+              }
+            }
+          } else {
+            blockedReasons.push('Dữ liệu lịch dạy chưa đủ nhất quán để xác định.');
+          }
+        }
 
         const [slots, teachers, schoolClasses, subjects] = await Promise.all([
           tx.timeSlotDefinition.findMany({
@@ -462,7 +493,6 @@ export class EffectiveScheduleService {
                 className: match.schoolClassId ? classMap.get(match.schoolClassId) ?? null : null,
                 subjectName: match.subjectId ? subjectMap.get(match.subjectId) ?? null : null,
                 activityTitle: match.activityTitle ?? null,
-                notes: match.notes ?? null,
               };
             }
 
@@ -483,7 +513,6 @@ export class EffectiveScheduleService {
               className: null,
               subjectName: null,
               activityTitle: null,
-              notes: isBlocked ? 'Không thể xác định do dữ liệu bị chặn' : null,
             };
           });
 
@@ -525,29 +554,10 @@ export class EffectiveScheduleService {
     return this.prisma.$transaction(
       async (tx) => {
         const [selfUser, peerUser, week] = await Promise.all([
-          tx.user.findUnique({
-            where: { id: currentUserId },
-            select: { id: true, profile: { select: { displayName: true } } },
-          }),
-          tx.user.findUnique({
-            where: { id: query.peerTeacherUserId },
-            select: { id: true, profile: { select: { displayName: true } } },
-          }),
-          tx.academicWeek.findUnique({
-            where: { id: query.academicWeekId },
-            include: {
-              segments: { orderBy: { segmentOrder: 'asc' } },
-              calendarVersion: true,
-            },
-          }),
+          this.requireActiveTeachingStaffUser(tx, currentUserId),
+          this.requireActiveTeachingStaffUser(tx, query.peerTeacherUserId),
+          this.validateWeekAndYearCoherence(tx, query.academicYearId, query.academicWeekId),
         ]);
-
-        if (!selfUser || !peerUser) {
-          throw new NotFoundException('Không tìm thấy thông tin giáo viên.');
-        }
-        if (!week) {
-          throw new NotFoundException('Không tìm thấy tuần học.');
-        }
 
         const weekCivilDates = this.getTeachingDatesForWeek(week.segments, week.calendarVersion?.teachingWeekdays ?? []);
         const [timeSlots, schoolClasses, subjects] = await Promise.all([
@@ -584,10 +594,17 @@ export class EffectiveScheduleService {
           const isDayBlocked = resolution.status === 'BLOCKED';
           if (isDayBlocked) {
             overallBlocked = true;
-            for (const f of resolution.findings) {
-              const reason = `${f.code} (${f.severity})`;
-              if (!allBlockedReasons.includes(reason)) {
-                allBlockedReasons.push(reason);
+            if (resolution.findings.length > 0) {
+              for (const f of resolution.findings) {
+                const reason = formatBlockedReason(f);
+                if (!allBlockedReasons.includes(reason)) {
+                  allBlockedReasons.push(reason);
+                }
+              }
+            } else {
+              const defaultReason = 'Dữ liệu lịch dạy chưa đủ nhất quán để xác định.';
+              if (!allBlockedReasons.includes(defaultReason)) {
+                allBlockedReasons.push(defaultReason);
               }
             }
           }
@@ -633,20 +650,22 @@ export class EffectiveScheduleService {
               comparisonState: compState,
               comparisonLabel: comparisonStateToVietnamese(compState),
               selfOccupancy: {
-                isBusy: Boolean(selfMatch),
-                sourceKind: selfMatch?.sourceKind ?? null,
-                sourceLabel: selfMatch ? sourceKindToVietnamese(selfMatch.sourceKind) : null,
-                className: selfMatch?.schoolClassId ? classMap.get(selfMatch.schoolClassId) ?? null : null,
-                subjectName: selfMatch?.subjectId ? subjectMap.get(selfMatch.subjectId) ?? null : null,
-                activityTitle: selfMatch?.activityTitle ?? null,
+                occupancyState: isDayBlocked ? 'BLOCKED' : (selfMatch ? 'OCCUPIED' : 'FREE'),
+                isBusy: !isDayBlocked && Boolean(selfMatch),
+                sourceKind: !isDayBlocked ? selfMatch?.sourceKind ?? null : null,
+                sourceLabel: !isDayBlocked && selfMatch ? sourceKindToVietnamese(selfMatch.sourceKind) : null,
+                className: !isDayBlocked && selfMatch?.schoolClassId ? classMap.get(selfMatch.schoolClassId) ?? null : null,
+                subjectName: !isDayBlocked && selfMatch?.subjectId ? subjectMap.get(selfMatch.subjectId) ?? null : null,
+                activityTitle: !isDayBlocked ? selfMatch?.activityTitle ?? null : null,
               },
               peerOccupancy: {
-                isBusy: Boolean(peerMatch),
-                sourceKind: peerMatch?.sourceKind ?? null,
-                sourceLabel: peerMatch ? sourceKindToVietnamese(peerMatch.sourceKind) : null,
-                className: peerMatch?.schoolClassId ? classMap.get(peerMatch.schoolClassId) ?? null : null,
-                subjectName: peerMatch?.subjectId ? subjectMap.get(peerMatch.subjectId) ?? null : null,
-                activityTitle: peerMatch?.activityTitle ?? null,
+                occupancyState: isDayBlocked ? 'BLOCKED' : (peerMatch ? 'OCCUPIED' : 'FREE'),
+                isBusy: !isDayBlocked && Boolean(peerMatch),
+                sourceKind: !isDayBlocked ? peerMatch?.sourceKind ?? null : null,
+                sourceLabel: !isDayBlocked && peerMatch ? sourceKindToVietnamese(peerMatch.sourceKind) : null,
+                className: !isDayBlocked && peerMatch?.schoolClassId ? classMap.get(peerMatch.schoolClassId) ?? null : null,
+                subjectName: !isDayBlocked && peerMatch?.subjectId ? subjectMap.get(peerMatch.subjectId) ?? null : null,
+                activityTitle: !isDayBlocked ? peerMatch?.activityTitle ?? null : null,
               },
             });
           }
@@ -658,11 +677,11 @@ export class EffectiveScheduleService {
           academicWeekId: query.academicWeekId,
           selfTeacher: {
             userId: currentUserId,
-            displayName: selfUser.profile?.displayName ?? 'Tôi',
+            displayName: selfUser.displayName,
           },
           peerTeacher: {
             userId: query.peerTeacherUserId,
-            displayName: peerUser.profile?.displayName ?? 'Đồng nghiệp',
+            displayName: peerUser.displayName,
           },
           status: overallBlocked ? 'BLOCKED' : 'PASS',
           blockedReasons: allBlockedReasons.length > 0 ? allBlockedReasons : undefined,
@@ -810,7 +829,6 @@ export class EffectiveScheduleService {
               session: slot.session as 'MORNING' | 'AFTERNOON',
               sourceKind: 'SPECIAL_ACTIVITY',
               activityTitle: act.title,
-              notes: act.note,
             });
           }
         }
@@ -818,6 +836,74 @@ export class EffectiveScheduleService {
     }
 
     return list;
+  }
+
+  /**
+   * Helper: Validates that the requested academic week exists, belongs to the specified academic year,
+   * and is part of an active/current-authoritative calendar version.
+   */
+  private async validateWeekAndYearCoherence(
+    tx: Prisma.TransactionClient,
+    academicYearId: string,
+    academicWeekId: string,
+  ) {
+    const week = await tx.academicWeek.findUnique({
+      where: { id: academicWeekId },
+      include: {
+        segments: { orderBy: { segmentOrder: 'asc' } },
+        calendarVersion: true,
+      },
+    });
+
+    if (!week) {
+      throw new NotFoundException('Không tìm thấy tuần học.');
+    }
+
+    if (week.calendarVersion.academicYearId !== academicYearId) {
+      throw new BadRequestException('Tuần học không thuộc năm học được chỉ định.');
+    }
+
+    if (!week.calendarVersion.isActive) {
+      throw new BadRequestException('Tuần học thuộc phiên bản lịch không còn hiệu lực.');
+    }
+
+    return week;
+  }
+
+  /**
+   * Helper: Validates that a user is an active teaching staff member.
+   * Prevents leaking whether inactive/non-teaching UUIDs exist.
+   */
+  private async requireActiveTeachingStaffUser(
+    tx: Prisma.TransactionClient,
+    userId: string,
+  ): Promise<{ id: string; displayName: string }> {
+    const user = await tx.user.findFirst({
+      where: {
+        id: userId,
+        status: UserStatus.ACTIVE,
+        profile: {
+          isTeachingStaff: true,
+        },
+      },
+      select: {
+        id: true,
+        profile: {
+          select: {
+            displayName: true,
+          },
+        },
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Không tìm thấy thông tin giáo viên hoặc giáo viên không thuộc diện phân công giảng dạy.');
+    }
+
+    return {
+      id: user.id,
+      displayName: user.profile?.displayName ?? 'Giáo viên',
+    };
   }
 
   /**

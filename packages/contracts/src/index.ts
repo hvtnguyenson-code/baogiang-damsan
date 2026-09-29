@@ -2212,7 +2212,6 @@ export interface EffectiveScheduleSlotItem {
   className?: string | null;
   subjectName?: string | null;
   activityTitle?: string | null;
-  notes?: string | null;
 }
 
 export interface IndividualWeeklyScheduleDay {
@@ -2268,6 +2267,7 @@ export interface ScheduleComparisonSlotFact {
   comparisonState: EffectiveScheduleComparisonState;
   comparisonLabel: string;
   selfOccupancy: {
+    occupancyState: EffectiveOccupancyState;
     isBusy: boolean;
     sourceKind?: EffectiveOccupancySourceKind | null;
     sourceLabel?: string | null;
@@ -2276,6 +2276,7 @@ export interface ScheduleComparisonSlotFact {
     activityTitle?: string | null;
   };
   peerOccupancy: {
+    occupancyState: EffectiveOccupancyState;
     isBusy: boolean;
     sourceKind?: EffectiveOccupancySourceKind | null;
     sourceLabel?: string | null;

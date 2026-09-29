@@ -94,3 +94,33 @@ export function occupancyStateToVietnamese(state: EffectiveOccupancyState | stri
       return 'Không xác định';
   }
 }
+
+/**
+ * Maps structural resolution finding codes to bounded Vietnamese safe labels.
+ * Strictly avoids leaking raw technical enums (e.g. PPCT_ASSOCIATION_MISSING, BLOCKER) or internal IDs.
+ */
+export function formatBlockedReason(finding: { code: string; severity?: string }): string {
+  switch (finding.code) {
+    case 'RETAINED_CALENDAR_INVALID':
+      return 'Phiên bản lịch học hoặc ngày học không hợp lệ';
+    case 'TIMETABLE_EFFECTIVE_VERSION_MISSING':
+      return 'Không tìm thấy thời khóa biểu hiệu lực';
+    case 'TIMETABLE_EFFECTIVE_VERSION_AMBIGUOUS':
+      return 'Trùng lặp nhiều phiên bản thời khóa biểu hiệu lực';
+    case 'NORMAL_PROVENANCE_INVALID':
+      return 'Dữ liệu nguồn tiết học không hợp lệ';
+    case 'ACTIVE_SPECIAL_ACTIVITY_COLLISION':
+    case 'ACTIVE_SPECIAL_ACTIVITY_DISPOSITION_CONFLICT':
+    case 'ACTIVE_SPECIAL_ACTIVITY_MAKEUP_COLLISION':
+      return 'Xung đột với hoạt động chuyên biệt';
+    case 'OPERATIONAL_DISPOSITION_AMBIGUOUS':
+      return 'Trùng lặp phương án xử lý tiết học';
+    case 'PPCT_ASSOCIATION_MISSING':
+      return 'Chưa liên kết phân phối chương trình';
+    case 'PPCT_ASSOCIATION_AMBIGUOUS':
+    case 'PPCT_ASSOCIATION_INVALID_TARGET':
+      return 'Dữ liệu phân phối chương trình không nhất quán';
+    default:
+      return 'Dữ liệu lịch dạy chưa đủ nhất quán để xác định.';
+  }
+}

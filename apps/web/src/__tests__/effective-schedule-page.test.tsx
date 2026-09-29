@@ -146,6 +146,7 @@ const mockComparison: EffectiveScheduleComparisonResponse = {
       comparisonState: 'SELF_BUSY_PEER_FREE',
       comparisonLabel: 'Tôi bận / Đồng nghiệp trống',
       selfOccupancy: {
+        occupancyState: 'OCCUPIED',
         isBusy: true,
         sourceKind: 'BASE_TIMETABLE',
         sourceLabel: 'Lịch cơ sở',
@@ -153,6 +154,7 @@ const mockComparison: EffectiveScheduleComparisonResponse = {
         subjectName: 'Toán',
       },
       peerOccupancy: {
+        occupancyState: 'FREE',
         isBusy: false,
       },
     },
@@ -275,7 +277,7 @@ describe('EffectiveSchedulePage (Teacher Workspace UI)', () => {
     const blockedWeekly: IndividualWeeklyScheduleResponse = {
       ...mockMyWeekly,
       status: 'BLOCKED',
-      blockedReasons: ['PPCT_ASSOCIATION_MISSING (loại: BLOCKER)'],
+      blockedReasons: ['Chưa liên kết phân phối chương trình'],
       days: [
         {
           civilDate: '2026-09-07' as CivilDateString,
@@ -294,7 +296,6 @@ describe('EffectiveSchedulePage (Teacher Workspace UI)', () => {
               teacherUserId: 'user-1',
               teacherDisplayName: 'Nguyễn Văn An',
               occupancyState: 'BLOCKED',
-              notes: 'Không thể xác định do dữ liệu bị chặn',
             },
           ],
         },
@@ -304,9 +305,13 @@ describe('EffectiveSchedulePage (Teacher Workspace UI)', () => {
     setupFetchMock({ weekly: blockedWeekly });
     renderApp('/lich-day');
 
-    // Alert rendered
+    // Alert rendered with Vietnamese safe reason
     expect(await screen.findByText(/Lịch dạy đang ở trạng thái bị chặn/i)).toBeInTheDocument();
-    expect(screen.getByText(/PPCT_ASSOCIATION_MISSING/i)).toBeInTheDocument();
+    expect(screen.getByText('Chưa liên kết phân phối chương trình')).toBeInTheDocument();
+
+    // Must NEVER leak raw technical finding code
+    expect(screen.queryByText(/PPCT_ASSOCIATION_MISSING/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/BLOCKER/i)).not.toBeInTheDocument();
 
     // CRITICAL: Must not render "Trống" for blocked date
     expect(screen.queryByText('Trống')).not.toBeInTheDocument();
@@ -314,7 +319,60 @@ describe('EffectiveSchedulePage (Teacher Workspace UI)', () => {
     expect(screen.getByText(/Bị chặn \(Không thể xác định\)/i)).toBeInTheDocument();
   });
 
-  it('20. maps Vietnamese labels and does not leak raw backend enums', async () => {
+  it('Finding 1: comparison view with BLOCKED state renders "Không thể xác định / Bị chặn" and NEVER "Trống"', async () => {
+    const user = userEvent.setup();
+    const blockedComparison: EffectiveScheduleComparisonResponse = {
+      ...mockComparison,
+      status: 'BLOCKED',
+      blockedReasons: ['Xung đột với hoạt động chuyên biệt'],
+      facts: [
+        {
+          civilDate: '2026-09-07' as CivilDateString,
+          weekday: 'MONDAY',
+          startTime: '07:00:00',
+          endTime: '07:45:00',
+          slotLabel: 'Tiết 1',
+          comparisonState: 'BLOCKED',
+          comparisonLabel: 'Dữ liệu bị chặn / Không thể xác định',
+          selfOccupancy: {
+            occupancyState: 'BLOCKED',
+            isBusy: false,
+          },
+          peerOccupancy: {
+            occupancyState: 'BLOCKED',
+            isBusy: false,
+          },
+        },
+      ],
+    };
+
+    setupFetchMock({ compare: blockedComparison });
+    renderApp('/lich-day');
+
+    await screen.findByRole('heading', { level: 1, name: 'Lịch dạy' });
+
+    // Switch mode to peer schedule
+    const modeSelect = screen.getByLabelText(/Phạm vi hiển thị/i);
+    await user.selectOptions(modeSelect, 'peer-schedule');
+
+    // Select peer teacher
+    const teacherSelect = await screen.findByLabelText(/Danh sách giáo viên/i);
+    await user.selectOptions(teacherSelect, 'user-2');
+
+    // Switch to compare view
+    const compareBtn = screen.getByRole('button', { name: /So sánh với lịch của tôi/i });
+    await user.click(compareBtn);
+
+    // Verify comparison table heading
+    expect(await screen.findByRole('heading', { level: 2, name: /So sánh lịch dạy/i })).toBeInTheDocument();
+
+    // Check cells: MUST render "Không thể xác định / Bị chặn" and NEVER "Trống"
+    const blockedLabels = screen.getAllByText('Không thể xác định / Bị chặn');
+    expect(blockedLabels.length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText('Trống')).not.toBeInTheDocument();
+  });
+
+  it('20. maps Vietnamese labels and does not leak raw backend enums or sentinel notes', async () => {
     setupFetchMock();
     renderApp('/lich-day');
 
@@ -327,6 +385,9 @@ describe('EffectiveSchedulePage (Teacher Workspace UI)', () => {
     expect(screen.queryByText('SPECIAL_ACTIVITY')).not.toBeInTheDocument();
     expect(screen.queryByText('SAME_SUBJECT_SUBSTITUTION')).not.toBeInTheDocument();
     expect(screen.queryByText('DIFFERENT_SUBJECT_SUPERVISION')).not.toBeInTheDocument();
+
+    // Assert sentinel note is not leaked
+    expect(document.body.textContent).not.toContain('PRIVATE_ADMIN_NOTE_SENTINEL');
 
     // Assert localized label is present
     expect(screen.getByText('Lịch cơ sở')).toBeInTheDocument();

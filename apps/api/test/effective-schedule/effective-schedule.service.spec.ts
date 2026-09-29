@@ -24,6 +24,9 @@ function createMockPrisma(overrides: Record<string, unknown> = {}) {
       { startDate: new Date('2026-09-07T00:00:00Z'), endDate: new Date('2026-09-12T00:00:00Z'), segmentOrder: 1 },
     ],
     calendarVersion: {
+      id: 'cal-1',
+      academicYearId: 'year-1',
+      isActive: true,
       teachingWeekdays: ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'],
     },
   };
@@ -42,6 +45,11 @@ function createMockPrisma(overrides: Record<string, unknown> = {}) {
   const tx = {
     user: {
       findMany: jest.fn().mockResolvedValue([defaultUser, peerUser]),
+      findFirst: jest.fn().mockImplementation(({ where }: { where: { id: string } }) => {
+        if (where.id === 'user-1') return Promise.resolve(defaultUser);
+        if (where.id === 'user-2') return Promise.resolve(peerUser);
+        return Promise.resolve(null);
+      }),
       findUnique: jest.fn().mockImplementation(({ where }: { where: { id: string } }) => {
         if (where.id === 'user-1') return Promise.resolve(defaultUser);
         if (where.id === 'user-2') return Promise.resolve(peerUser);
@@ -56,8 +64,20 @@ function createMockPrisma(overrides: Record<string, unknown> = {}) {
       findFirst: jest.fn().mockResolvedValue({
         id: 'cal-1',
         academicYearId: 'year-1',
+        isActive: true,
+        startDate: new Date('2026-09-01T00:00:00Z'),
+        endDate: new Date('2027-05-31T00:00:00Z'),
         weeks: [week],
       }),
+      findMany: jest.fn().mockResolvedValue([
+        {
+          id: 'cal-1',
+          academicYearId: 'year-1',
+          isActive: true,
+          startDate: new Date('2026-09-01T00:00:00Z'),
+          endDate: new Date('2027-05-31T00:00:00Z'),
+        },
+      ]),
     },
     academicWeek: {
       findUnique: jest.fn().mockResolvedValue(week),
@@ -644,7 +664,9 @@ describe('EffectiveScheduleService (Unit Regression Coverage)', () => {
       );
 
       expect(res.status).toBe('BLOCKED');
-      expect(res.blockedReasons).toContain('PPCT_ASSOCIATION_MISSING (loại: BLOCKER)');
+      expect(res.blockedReasons).toContain('Chưa liên kết phân phối chương trình');
+      expect(res.blockedReasons?.[0]).not.toContain('PPCT_ASSOCIATION_MISSING');
+      expect(res.blockedReasons?.[0]).not.toContain('BLOCKER');
 
       const monday = res.days.find((d) => d.civilDate === '2026-09-07');
       expect(monday?.isBlocked).toBe(true);
@@ -755,12 +777,334 @@ describe('EffectiveScheduleService (Unit Regression Coverage)', () => {
       expect(fact?.comparisonState).toBe('SELF_BUSY_PEER_FREE');
       expect(fact?.comparisonLabel).toBe('Tôi bận / Đồng nghiệp trống');
       expect(fact?.selfOccupancy.isBusy).toBe(true);
+      expect(fact?.selfOccupancy.occupancyState).toBe('OCCUPIED');
       expect(fact?.peerOccupancy.isBusy).toBe(false);
+      expect(fact?.peerOccupancy.occupancyState).toBe('FREE');
 
       // Verify no swap eligibility conclusion
       expect(fact).not.toHaveProperty('eligibleForSwap');
       expect(fact).not.toHaveProperty('canSwap');
       expect(fact).not.toHaveProperty('isSwapAllowed');
+    });
+  });
+
+  describe('Independent Review Correction 001 Hardening', () => {
+    it('Finding 1: blocked comparison contains zero FREE semantic and self/peer occupancyState are BLOCKED', async () => {
+      resolvedOccurrencesService.resolveInTransaction.mockResolvedValue(
+        mockResolvedResult({
+          status: 'BLOCKED',
+          findings: [
+            {
+              severity: 'BLOCKER',
+              code: 'ACTIVE_SPECIAL_ACTIVITY_COLLISION',
+              occurrenceKey: 'NORMAL:entry-1:2026-09-07',
+              entityIds: ['entry-1'],
+            },
+          ],
+        }),
+      );
+
+      const { prisma } = createMockPrisma();
+      const service = new EffectiveScheduleService(prisma as never, resolvedOccurrencesService);
+
+      const res = await service.compareSchedules(
+        {
+          academicYearId: 'year-1',
+          academicWeekId: 'week-1',
+          peerTeacherUserId: 'user-2',
+        },
+        'user-1',
+      );
+
+      expect(res.status).toBe('BLOCKED');
+      expect(res.blockedReasons).toContain('Xung đột với hoạt động chuyên biệt');
+      expect(res.facts.length).toBeGreaterThan(0);
+
+      for (const fact of res.facts) {
+        expect(fact.comparisonState).toBe('BLOCKED');
+        expect(fact.selfOccupancy.occupancyState).toBe('BLOCKED');
+        expect(fact.selfOccupancy.isBusy).toBe(false);
+        expect(fact.peerOccupancy.occupancyState).toBe('BLOCKED');
+        expect(fact.peerOccupancy.isBusy).toBe(false);
+        // Zero FREE semantics under fail-closed guarantee
+        expect(fact.selfOccupancy.occupancyState).not.toBe('FREE');
+        expect(fact.peerOccupancy.occupancyState).not.toBe('FREE');
+      }
+    });
+
+    it('Finding 2: unknown finding code falls back safely without leaking technical codes', async () => {
+      resolvedOccurrencesService.resolveInTransaction.mockResolvedValue(
+        mockResolvedResult({
+          status: 'BLOCKED',
+          findings: [
+            {
+              severity: 'BLOCKER',
+              code: 'VERY_CUSTOM_UNEXPECTED_FINDING_CODE' as never,
+              occurrenceKey: 'NORMAL:entry-1:2026-09-07',
+              entityIds: ['entry-1'],
+            },
+          ],
+        }),
+      );
+
+      const { prisma } = createMockPrisma();
+      const service = new EffectiveScheduleService(prisma as never, resolvedOccurrencesService);
+
+      const res = await service.getWeeklySchedule(
+        { academicYearId: 'year-1', academicWeekId: 'week-1', teacherUserId: 'user-1' },
+        'user-1',
+      );
+
+      expect(res.status).toBe('BLOCKED');
+      expect(res.blockedReasons).toEqual(['Dữ liệu lịch dạy chưa đủ nhất quán để xác định.']);
+      expect(JSON.stringify(res.blockedReasons)).not.toContain('VERY_CUSTOM_UNEXPECTED_FINDING_CODE');
+      expect(JSON.stringify(res.blockedReasons)).not.toContain('BLOCKER');
+    });
+
+    it('Finding 3: SpecialActivity.note sentinel is not exposed in public DTOs', async () => {
+      resolvedOccurrencesService.resolveInTransaction.mockResolvedValue(
+        mockResolvedResult({
+          specialActivityOccurrences: [
+            {
+              occurrenceKey: 'SPECIAL_ACTIVITY:act-sentinel',
+              family: 'SPECIAL_ACTIVITY',
+              id: 'act-sentinel',
+              academicYearId: 'year-1',
+              academicCalendarVersionId: 'cal-1',
+              civilDate: '2026-09-07',
+              title: 'Hoạt động trải nghiệm Khối 10',
+              note: 'PRIVATE_ADMIN_NOTE_SENTINEL',
+              classTargetIds: ['class-1'],
+              timeSlots: [{ id: 'slot-1', weekday: 'MONDAY', session: 'MORNING', startTime: '07:00:00', endTime: '07:45:00' }],
+              staffing: [{ scheduledTeacherUserId: 'user-1', staffProfileId: 'p1', eligibilityCheckedAt: '2026-09-01Z', eligibilityWasActive: true, eligibilityWasTeachingStaff: true }],
+            },
+          ],
+        }),
+      );
+
+      const { prisma } = createMockPrisma();
+      const service = new EffectiveScheduleService(prisma as never, resolvedOccurrencesService);
+
+      const weekly = await service.getWeeklySchedule(
+        { academicYearId: 'year-1', academicWeekId: 'week-1', teacherUserId: 'user-1' },
+        'user-1',
+      );
+      const schoolWide = await service.getSchoolWideDaySchedule({
+        academicYearId: 'year-1',
+        civilDate: '2026-09-07',
+      });
+
+      expect(JSON.stringify(weekly)).not.toContain('PRIVATE_ADMIN_NOTE_SENTINEL');
+      expect(JSON.stringify(schoolWide)).not.toContain('PRIVATE_ADMIN_NOTE_SENTINEL');
+    });
+
+    it('Finding 4: rejects week belonging to another year or inactive calendar version', async () => {
+      const { prisma, tx } = createMockPrisma();
+      const service = new EffectiveScheduleService(prisma as never, resolvedOccurrencesService);
+
+      // A. Week from year-2 requested with year-1
+      tx.academicWeek.findUnique.mockResolvedValueOnce({
+        id: 'week-diff-year',
+        calendarVersion: { academicYearId: 'year-2', isActive: true },
+        segments: [],
+      });
+      await expect(
+        service.getWeeklySchedule(
+          { academicYearId: 'year-1', academicWeekId: 'week-diff-year', teacherUserId: 'user-1' },
+          'user-1',
+        ),
+      ).rejects.toThrow('Tuần học không thuộc năm học được chỉ định.');
+
+      // B. Week belonging to inactive calendar version
+      tx.academicWeek.findUnique.mockResolvedValueOnce({
+        id: 'week-inactive',
+        calendarVersion: { academicYearId: 'year-1', isActive: false },
+        segments: [],
+      });
+      await expect(
+        service.getWeeklySchedule(
+          { academicYearId: 'year-1', academicWeekId: 'week-inactive', teacherUserId: 'user-1' },
+          'user-1',
+        ),
+      ).rejects.toThrow('Tuần học thuộc phiên bản lịch không còn hiệu lực.');
+    });
+
+    it('Finding 5: context resolution matches today against active calendar and respects segment gaps', async () => {
+      const { prisma, tx } = createMockPrisma();
+      const service = new EffectiveScheduleService(prisma as never, resolvedOccurrencesService);
+
+      // Split segment with a gap between 2026-09-01..2026-09-05 and 2026-09-10..2026-09-15
+      // Today is 2026-09-29 -> not in segment
+      tx.academicCalendarVersion.findFirst.mockResolvedValueOnce({
+        id: 'cal-split',
+        academicYearId: 'year-1',
+        isActive: true,
+        weeks: [
+          {
+            id: 'week-split',
+            displayLabel: 'Tuần gián đoạn',
+            officialWeekNumber: 1,
+            segments: [
+              { startDate: new Date('2026-09-01T00:00:00Z'), endDate: new Date('2026-09-05T00:00:00Z') },
+              { startDate: new Date('2026-09-10T00:00:00Z'), endDate: new Date('2026-09-15T00:00:00Z') },
+            ],
+          },
+        ],
+      });
+
+      const ctx = await service.getContext({ academicYearId: 'year-1' });
+      // Today (2026-09-29) does not lie in either segment, must remain null
+      expect(ctx.currentAcademicWeekId).toBeNull();
+    });
+
+    it('Finding 6: school-wide rejects date outside active calendar', async () => {
+      const { prisma, tx } = createMockPrisma();
+      const service = new EffectiveScheduleService(prisma as never, resolvedOccurrencesService);
+
+      // Date outside calendar bounds: 2026-09-01 to 2027-05-31, querying 2028-01-01
+      tx.academicCalendarVersion.findFirst.mockResolvedValueOnce({
+        id: 'cal-1',
+        academicYearId: 'year-1',
+        isActive: true,
+        startDate: new Date('2026-09-01T00:00:00Z'),
+        endDate: new Date('2027-05-31T00:00:00Z'),
+      });
+
+      await expect(
+        service.getSchoolWideDaySchedule({
+          academicYearId: 'year-1',
+          civilDate: '2028-01-01',
+        }),
+      ).rejects.toThrow('Ngày đã chọn không nằm trong phạm vi lịch học hiệu lực của năm học này.');
+    });
+
+    it('Finding 7: rejects peer target that is inactive or non-teaching staff with generic 404', async () => {
+      const { prisma, tx } = createMockPrisma();
+      const service = new EffectiveScheduleService(prisma as never, resolvedOccurrencesService);
+
+      // findFirst returns null for inactive / non-teaching user
+      tx.user.findFirst.mockResolvedValueOnce(null);
+
+      await expect(
+        service.compareSchedules(
+          { academicYearId: 'year-1', academicWeekId: 'week-1', peerTeacherUserId: 'inactive-or-admin-user' },
+          'user-1',
+        ),
+      ).rejects.toThrow('Không tìm thấy thông tin giáo viên hoặc giáo viên không thuộc diện phân công giảng dạy.');
+    });
+
+    it('Finding 8: distinct slot IDs with overlapping real intervals derive comparison from intervals, not slot IDs', async () => {
+      const slotDef1 = {
+        id: 'slot-early',
+        academicYearId: 'year-1',
+        weekday: 'MONDAY',
+        session: 'MORNING',
+        ordinal: 1,
+        displayLabel: 'Tiết 1 sớm',
+        startTime: new Date('1970-01-01T07:00:00Z'),
+        endTime: new Date('1970-01-01T07:45:00Z'),
+        isActive: true,
+      };
+      const slotDef2 = {
+        id: 'slot-mid-overlap',
+        academicYearId: 'year-1',
+        weekday: 'MONDAY',
+        session: 'MORNING',
+        ordinal: 2,
+        displayLabel: 'Tiết đan xen',
+        startTime: new Date('1970-01-01T07:30:00Z'),
+        endTime: new Date('1970-01-01T08:15:00Z'),
+        isActive: true,
+      };
+      const slotDef3 = {
+        id: 'slot-touching',
+        academicYearId: 'year-1',
+        weekday: 'MONDAY',
+        session: 'MORNING',
+        ordinal: 3,
+        displayLabel: 'Tiết chạm biên',
+        startTime: new Date('1970-01-01T07:45:00Z'),
+        endTime: new Date('1970-01-01T08:30:00Z'),
+        isActive: true,
+      };
+
+      const { prisma } = createMockPrisma({
+        timeSlotDefinition: {
+          findMany: jest.fn().mockResolvedValue([slotDef1, slotDef2, slotDef3]),
+        },
+      });
+
+      // Teacher A has occupancy in slot-early (07:00 - 07:45)
+      // Teacher B has occupancy in slot-mid-overlap (07:30 - 08:15)
+      resolvedOccurrencesService.resolveInTransaction.mockResolvedValue(
+        mockResolvedResult({
+          normalOccurrences: [
+            {
+              occurrenceKey: 'NORMAL:entry-teacher-a:2026-09-07',
+              family: 'NORMAL_TIMETABLE_OPPORTUNITY',
+              civilDate: '2026-09-07',
+              academicYearId: 'year-1',
+              academicCalendarVersionId: 'cal-1',
+              timetableVersionId: 'tb-1',
+              timetableEntryId: 'entry-a',
+              timeSlot: { id: 'slot-early', weekday: 'MONDAY', session: 'MORNING', startTime: '07:00:00', endTime: '07:45:00' },
+              schoolClass: { id: 'class-1', gradeLevel: 10 },
+              subjectId: 'sub-1',
+              teachingAssignmentId: 'assign-a',
+              responsibleTeacherUserId: 'user-1',
+              ppctBinding: null,
+              effectiveKind: 'BASE_TIMETABLE',
+              interruptionIds: [],
+              exceptionIds: [],
+              suppressingSpecialActivityIds: [],
+              disposition: null,
+            },
+            {
+              occurrenceKey: 'NORMAL:entry-teacher-b:2026-09-07',
+              family: 'NORMAL_TIMETABLE_OPPORTUNITY',
+              civilDate: '2026-09-07',
+              academicYearId: 'year-1',
+              academicCalendarVersionId: 'cal-1',
+              timetableVersionId: 'tb-1',
+              timetableEntryId: 'entry-b',
+              timeSlot: { id: 'slot-mid-overlap', weekday: 'MONDAY', session: 'MORNING', startTime: '07:30:00', endTime: '08:15:00' },
+              schoolClass: { id: 'class-1', gradeLevel: 10 },
+              subjectId: 'sub-1',
+              teachingAssignmentId: 'assign-b',
+              responsibleTeacherUserId: 'user-2',
+              ppctBinding: null,
+              effectiveKind: 'BASE_TIMETABLE',
+              interruptionIds: [],
+              exceptionIds: [],
+              suppressingSpecialActivityIds: [],
+              disposition: null,
+            },
+          ],
+        }),
+      );
+
+      const service = new EffectiveScheduleService(prisma as never, resolvedOccurrencesService);
+      const res = await service.compareSchedules(
+        { academicYearId: 'year-1', academicWeekId: 'week-1', peerTeacherUserId: 'user-2' },
+        'user-1',
+      );
+
+      const factEarly = res.facts.find((f) => f.slotLabel === 'Tiết 1 sớm');
+      expect(factEarly?.comparisonState).toBe('BOTH_BUSY');
+      expect(factEarly?.selfOccupancy.isBusy).toBe(true);
+      expect(factEarly?.peerOccupancy.isBusy).toBe(true);
+
+      const factMid = res.facts.find((f) => f.slotLabel === 'Tiết đan xen');
+      expect(factMid?.comparisonState).toBe('BOTH_BUSY');
+      expect(factMid?.selfOccupancy.isBusy).toBe(true);
+      expect(factMid?.peerOccupancy.isBusy).toBe(true);
+
+      // Touching boundary slot: 07:45 - 08:30 does NOT overlap with Teacher A's 07:00 - 07:45
+      // but DOES overlap with Teacher B's 07:30 - 08:15
+      const factTouching = res.facts.find((f) => f.slotLabel === 'Tiết chạm biên');
+      expect(factTouching?.selfOccupancy.isBusy).toBe(false); // Touching boundary 07:45 is NOT busy for Teacher A
+      expect(factTouching?.peerOccupancy.isBusy).toBe(true);  // Overlaps with 07:30 - 08:15 for Teacher B
+      expect(factTouching?.comparisonState).toBe('SELF_FREE_PEER_BUSY');
     });
   });
 });

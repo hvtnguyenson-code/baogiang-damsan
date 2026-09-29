@@ -1,5 +1,6 @@
 import {
   comparisonStateToVietnamese,
+  formatBlockedReason,
   intervalsOverlap,
   normalizeTimeString,
   occupancyStateToVietnamese,
@@ -73,6 +74,24 @@ describe('effective-schedule-policy', () => {
       expect(occupancyStateToVietnamese('FREE')).toBe('Trống');
       expect(occupancyStateToVietnamese('BLOCKED')).toBe('Bị chặn');
       expect(occupancyStateToVietnamese(null)).toBe('Không xác định');
+    });
+  });
+
+  describe('formatBlockedReason (item 2: localized safe blocked reasons)', () => {
+    it('maps known structural findings to friendly Vietnamese safe labels', () => {
+      expect(formatBlockedReason({ code: 'RETAINED_CALENDAR_INVALID', severity: 'BLOCKER' }))
+        .toBe('Phiên bản lịch học hoặc ngày học không hợp lệ');
+      expect(formatBlockedReason({ code: 'ACTIVE_SPECIAL_ACTIVITY_COLLISION', severity: 'BLOCKER' }))
+        .toBe('Xung đột với hoạt động chuyên biệt');
+      expect(formatBlockedReason({ code: 'PPCT_ASSOCIATION_MISSING', severity: 'WARNING' }))
+        .toBe('Chưa liên kết phân phối chương trình');
+    });
+
+    it('falls back safely for unknown codes without leaking raw technical enums or severity', () => {
+      const res = formatBlockedReason({ code: 'RAW_UNEXPECTED_FINDING_CODE', severity: 'BLOCKER' });
+      expect(res).toBe('Dữ liệu lịch dạy chưa đủ nhất quán để xác định.');
+      expect(res).not.toContain('RAW_UNEXPECTED_FINDING_CODE');
+      expect(res).not.toContain('BLOCKER');
     });
   });
 });

@@ -704,7 +704,9 @@ export function EffectiveSchedulePage() {
                       </div>
                     </td>
                     <td style={{ padding: '10px 14px' }}>
-                      {fact.selfOccupancy.isBusy ? (
+                      {fact.selfOccupancy.occupancyState === 'BLOCKED' ? (
+                        <span style={{ color: '#a32929', fontWeight: 600 }}>Không thể xác định / Bị chặn</span>
+                      ) : fact.selfOccupancy.occupancyState === 'OCCUPIED' ? (
                         <div>
                           <strong>{fact.selfOccupancy.className || fact.selfOccupancy.activityTitle || 'Có tiết'}</strong>
                           {fact.selfOccupancy.subjectName && <div>Môn: {fact.selfOccupancy.subjectName}</div>}
@@ -713,11 +715,13 @@ export function EffectiveSchedulePage() {
                           )}
                         </div>
                       ) : (
-                        <span style={{ color: '#78909d', fontStyle: 'italic' }}>Trống</span>
+                        <span style={{ color: '#49616f', fontStyle: 'italic' }}>Trống</span>
                       )}
                     </td>
                     <td style={{ padding: '10px 14px' }}>
-                      {fact.peerOccupancy.isBusy ? (
+                      {fact.peerOccupancy.occupancyState === 'BLOCKED' ? (
+                        <span style={{ color: '#a32929', fontWeight: 600 }}>Không thể xác định / Bị chặn</span>
+                      ) : fact.peerOccupancy.occupancyState === 'OCCUPIED' ? (
                         <div>
                           <strong>{fact.peerOccupancy.className || fact.peerOccupancy.activityTitle || 'Có tiết'}</strong>
                           {fact.peerOccupancy.subjectName && <div>Môn: {fact.peerOccupancy.subjectName}</div>}
@@ -726,7 +730,7 @@ export function EffectiveSchedulePage() {
                           )}
                         </div>
                       ) : (
-                        <span style={{ color: '#78909d', fontStyle: 'italic' }}>Trống</span>
+                        <span style={{ color: '#49616f', fontStyle: 'italic' }}>Trống</span>
                       )}
                     </td>
                     <td style={{ padding: '10px 14px' }}>

@@ -197,6 +197,7 @@ const mockComparison = {
       comparisonState: 'SELF_BUSY_PEER_FREE',
       comparisonLabel: 'Tôi bận / Đồng nghiệp trống',
       selfOccupancy: {
+        occupancyState: 'OCCUPIED',
         isBusy: true,
         sourceKind: 'BASE_TIMETABLE',
         sourceLabel: 'Lịch cơ sở',
@@ -204,6 +205,7 @@ const mockComparison = {
         subjectName: 'Toán học',
       },
       peerOccupancy: {
+        occupancyState: 'FREE',
         isBusy: false,
       },
     },
@@ -280,6 +282,57 @@ test.describe('Teacher Workspace — School-wide Effective Teaching Schedule E2E
       await page.setViewportSize(viewport);
       const fitsWidth = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 2);
       expect(fitsWidth).toBe(true);
+    }
+  });
+
+  test('Surface D fail-closed: blocked comparison renders Không thể xác định / Bị chặn and zero Trống in cells', async ({ page }) => {
+    await page.route('**/api/effective-schedule/compare**', async (route) => {
+      return route.fulfill({
+        json: {
+          profile: 'SCHOOL_EFFECTIVE_TEACHING_SCHEDULE_V1',
+          academicYearId: 'year-1',
+          academicWeekId: 'week-1',
+          selfTeacher: { userId: 'user-1', displayName: 'Nguyễn Văn An' },
+          peerTeacher: { userId: 'user-2', displayName: 'Trần Thị Bình' },
+          status: 'BLOCKED',
+          blockedReasons: ['Dữ liệu lịch dạy chưa đủ nhất quán để xác định.'],
+          facts: [
+            {
+              civilDate: '2026-09-07',
+              weekday: 'MONDAY',
+              startTime: '07:00:00',
+              endTime: '07:45:00',
+              slotLabel: 'Tiết 1',
+              comparisonState: 'BLOCKED',
+              comparisonLabel: 'Bị chặn',
+              selfOccupancy: {
+                occupancyState: 'BLOCKED',
+                isBusy: false,
+              },
+              peerOccupancy: {
+                occupancyState: 'BLOCKED',
+                isBusy: false,
+              },
+            },
+          ],
+        },
+      });
+    });
+
+    await page.goto('/lich-day');
+    await page.getByLabel('Phạm vi hiển thị').selectOption('peer-schedule');
+    await page.getByLabel('Danh sách giáo viên').selectOption('user-2');
+    await page.getByRole('button', { name: 'So sánh với lịch của tôi' }).click();
+
+    await expect(page.getByRole('heading', { name: /So sánh lịch dạy: Tôi/i })).toBeVisible();
+    await expect(page.getByText('Bị chặn', { exact: true })).toBeVisible();
+    await expect(page.getByText('Dữ liệu lịch dạy chưa đủ nhất quán để xác định.')).toBeVisible();
+    await expect(page.getByText('Không thể xác định / Bị chặn').first()).toBeVisible();
+
+    // Verify ZERO "Trống" in table cells
+    const cellTexts = await page.locator('td').allTextContents();
+    for (const text of cellTexts) {
+      expect(text).not.toContain('Trống');
     }
   });
 });
