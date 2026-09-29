@@ -2133,3 +2133,171 @@ export interface ProgrammeWorkspaceDetailResponse {
   occurrences: ProgrammeWorkspaceOccurrence[];
   lifecycleSummary: ProgrammeWorkspaceMasterLifecycleSummary;
 }
+
+// ---------------------------------------------------------------------------
+// SCHOOL_EFFECTIVE_TEACHING_SCHEDULE_V1 (ADR-051 / P2-060 / P2-061 / T47)
+// Derived, non-persisted read model for school-wide effective teaching schedule.
+// ---------------------------------------------------------------------------
+
+export const SCHOOL_EFFECTIVE_TEACHING_SCHEDULE_PROFILE = 'SCHOOL_EFFECTIVE_TEACHING_SCHEDULE_V1' as const;
+
+export type EffectiveOccupancySourceKind =
+  | 'BASE_TIMETABLE'
+  | 'SAME_SUBJECT_SUBSTITUTION'
+  | 'DIFFERENT_SUBJECT_SUPERVISION'
+  | 'MAKEUP_TEACHING'
+  | 'SPECIAL_ACTIVITY';
+
+export type EffectiveOccupancyState = 'OCCUPIED' | 'FREE' | 'BLOCKED';
+
+export type EffectiveScheduleComparisonState =
+  | 'BOTH_BUSY'
+  | 'BOTH_FREE'
+  | 'SELF_BUSY_PEER_FREE'
+  | 'SELF_FREE_PEER_BUSY'
+  | 'BLOCKED';
+
+export interface EffectiveScheduleTeacherOption {
+  userId: string;
+  displayName: string;
+  code?: string | null;
+}
+
+export interface EffectiveScheduleTeacherOptionsResponse {
+  items: EffectiveScheduleTeacherOption[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+export interface EffectiveScheduleAcademicYearOption {
+  id: string;
+  code: string;
+  name: string;
+}
+
+export interface EffectiveScheduleAcademicWeekOption {
+  id: string;
+  academicYearId: string;
+  calendarVersionId: string;
+  weekNumber: number;
+  displayLabel: string;
+  startDate: CivilDateString;
+  endDate: CivilDateString;
+  kind: 'OFFICIAL' | 'RESERVE';
+}
+
+export interface EffectiveScheduleContextOptionsResponse {
+  academicYears: EffectiveScheduleAcademicYearOption[];
+  currentAcademicYearId: string | null;
+  weeks: EffectiveScheduleAcademicWeekOption[];
+  currentAcademicWeekId: string | null;
+  currentCivilDate: CivilDateString;
+}
+
+export interface EffectiveScheduleSlotItem {
+  id: string;
+  civilDate: CivilDateString;
+  weekday: string;
+  session: 'MORNING' | 'AFTERNOON';
+  timeSlotId: string;
+  slotLabel: string;
+  startTime: string;
+  endTime: string;
+  teacherUserId: string;
+  teacherDisplayName: string;
+  occupancyState: EffectiveOccupancyState;
+  sourceKind?: EffectiveOccupancySourceKind | null;
+  sourceLabel?: string | null;
+  className?: string | null;
+  subjectName?: string | null;
+  activityTitle?: string | null;
+  notes?: string | null;
+}
+
+export interface IndividualWeeklyScheduleDay {
+  civilDate: CivilDateString;
+  weekday: string;
+  isBlocked: boolean;
+  slots: EffectiveScheduleSlotItem[];
+}
+
+export interface IndividualWeeklyScheduleResponse {
+  profile: typeof SCHOOL_EFFECTIVE_TEACHING_SCHEDULE_PROFILE;
+  academicYearId: string;
+  academicWeekId: string;
+  weekLabel: string;
+  teacherUserId: string;
+  teacherDisplayName: string;
+  status: 'PASS' | 'BLOCKED';
+  blockedReasons?: string[];
+  days: IndividualWeeklyScheduleDay[];
+}
+
+export interface SchoolWideSlotHeader {
+  id: string;
+  label: string;
+  session: string;
+  startTime: string;
+  endTime: string;
+}
+
+export interface SchoolWideTeacherRow {
+  teacherUserId: string;
+  teacherDisplayName: string;
+  slots: EffectiveScheduleSlotItem[];
+}
+
+export interface SchoolWideDayScheduleResponse {
+  profile: typeof SCHOOL_EFFECTIVE_TEACHING_SCHEDULE_PROFILE;
+  academicYearId: string;
+  civilDate: CivilDateString;
+  weekday: string;
+  status: 'PASS' | 'BLOCKED';
+  blockedReasons?: string[];
+  slots: SchoolWideSlotHeader[];
+  teachers: SchoolWideTeacherRow[];
+}
+
+export interface ScheduleComparisonSlotFact {
+  civilDate: CivilDateString;
+  weekday: string;
+  startTime: string;
+  endTime: string;
+  slotLabel: string;
+  comparisonState: EffectiveScheduleComparisonState;
+  comparisonLabel: string;
+  selfOccupancy: {
+    isBusy: boolean;
+    sourceKind?: EffectiveOccupancySourceKind | null;
+    sourceLabel?: string | null;
+    className?: string | null;
+    subjectName?: string | null;
+    activityTitle?: string | null;
+  };
+  peerOccupancy: {
+    isBusy: boolean;
+    sourceKind?: EffectiveOccupancySourceKind | null;
+    sourceLabel?: string | null;
+    className?: string | null;
+    subjectName?: string | null;
+    activityTitle?: string | null;
+  };
+}
+
+export interface EffectiveScheduleComparisonResponse {
+  profile: typeof SCHOOL_EFFECTIVE_TEACHING_SCHEDULE_PROFILE;
+  academicYearId: string;
+  academicWeekId: string;
+  selfTeacher: {
+    userId: string;
+    displayName: string;
+  };
+  peerTeacher: {
+    userId: string;
+    displayName: string;
+  };
+  status: 'PASS' | 'BLOCKED';
+  blockedReasons?: string[];
+  facts: ScheduleComparisonSlotFact[];
+}
