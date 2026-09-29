@@ -12,8 +12,8 @@ It is **not** a self-referential registry of the latest Git commit. Exact curren
 
 `P4-074` — Special-programme import lifecycle and E2E closure — is **CLOSED** by `SYNC-P4-074`.
 
-Eligible tasks / status:
-- `P2-061` — School-wide effective teaching schedule read model + Teacher Workspace — remains independently **READY** (unlocked by `P2-060` closure; implementation not yet started; must not be described as implemented).
+Active task:
+- `P2-061` — School-wide effective teaching schedule read model + Teacher Workspace — **IN_REVIEW** on dedicated branch `feat/school-wide-effective-teaching-schedule-061` (canonical base `06ef61d5382c76827c674423cd249424053a221a`; unlocked by `P2-060` closure; implementation and local validation complete on branch; pending independent GitHub review + PR CI + merge + post-merge sync; not merged/closed).
 
 Remain:
 - `P2-010` — PPCT real-workbook contract/security audit — **BLOCKED_EVIDENCE** (pending authoritative school PPCT workbook/template).

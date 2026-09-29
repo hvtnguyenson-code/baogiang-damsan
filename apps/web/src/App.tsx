@@ -28,6 +28,7 @@ import { ReportingStatementsPage } from './pages/ReportingStatementsPage';
 import { BusinessConfigurationPage } from './pages/BusinessConfigurationPage';
 import { PpctSpecializedStudyPage } from './pages/PpctSpecializedStudyPage';
 import { SpecialProgrammeWorkspacePage } from './pages/SpecialProgrammeWorkspacePage';
+import { EffectiveSchedulePage } from './pages/EffectiveSchedulePage';
 import type { BusinessPolicyUiAdapter } from './lib/business-policy-ui-registry';
 import {
   canManageDutyAssignments,
@@ -38,6 +39,7 @@ import {
   canReadPersonalReporting,
   canReviewReportingStatements,
   canSubmitPersonalReporting,
+  hasCapability,
   hasSchoolCapability,
 } from './lib/capabilities';
 
@@ -54,6 +56,7 @@ export default function App({ businessPolicyAdapters }: { businessPolicyAdapters
         <Route element={<AppLayout />}>
           <Route path="/" element={<HomePage />} />
           <Route path="/ho-so" element={<ProfilePage />} />
+          <Route element={<CapabilityRoute allow={(c) => hasCapability(c, 'TEACHER_BASE', 'PERSONAL')} />}><Route path="/lich-day" element={<EffectiveSchedulePage />} /></Route>
           <Route element={<CapabilityRoute allow={(c) => canSubmitPersonalReporting(c) || canReadPersonalReporting(c)} />}><Route path="/bao-cao-ke-khai" element={<ReportingStatementsPage />} /></Route>
           <Route element={<CapabilityRoute allow={canReadAccessibleReporting} />}><Route path="/bao-cao-ke-khai/duoc-xem" element={<AccessibleReportingStatementsPage />} /></Route>
           <Route element={<CapabilityRoute allow={canOpenReportingDetail} />}><Route path="/bao-cao-ke-khai/:revisionId" element={<ReportingStatementDetailPage />} /></Route>

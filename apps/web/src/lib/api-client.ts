@@ -38,9 +38,10 @@ interface ApiRequestOptions extends RequestInit {
 export async function apiFetch<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
   const { notifyUnauthorized = false, ...requestOptions } = options;
   const isFormData = typeof FormData !== 'undefined' && requestOptions.body instanceof FormData;
+  const normalizedPath = path.startsWith('/api/') ? path.slice(4) : path === '/api' ? '' : path;
   let response: Response;
   try {
-    response = await fetch(`${API_BASE}${path}`, {
+    response = await fetch(`${API_BASE}${normalizedPath}`, {
       ...requestOptions,
       credentials: 'same-origin',
       headers: {

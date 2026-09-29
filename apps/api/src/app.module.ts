@@ -28,8 +28,10 @@ import { ReportingProjectionModule } from './reporting-projection/reporting-proj
 import { ReportingStatementsModule } from './reporting-statements/reporting-statements.module';
 import { BusinessConfigurationModule } from './business-configuration/business-configuration.module';
 import { ProgrammePlanningModule } from './programme-planning/programme-planning.module';
+import { EffectiveScheduleModule } from './effective-schedule/effective-schedule.module';
 
 @Module({
+
   imports: [
     // ---- Configuration ----
     ConfigModule.forRoot({
@@ -73,6 +75,7 @@ import { ProgrammePlanningModule } from './programme-planning/programme-planning
     ReportingStatementsModule,
     BusinessConfigurationModule,
     ProgrammePlanningModule,
+    EffectiveScheduleModule,
   ],
 })
 export class AppModule {}

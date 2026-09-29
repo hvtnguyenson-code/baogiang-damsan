@@ -8,8 +8,12 @@ export type ManagementRoute = {
 
 export type ProfessionalRoute = ManagementRoute;
 
-function hasCapability(capabilities: ScopedCapability[], key: CapabilityKey, scope: ScopedCapability['scope']): boolean {
+export function hasCapability(capabilities: ScopedCapability[], key: CapabilityKey, scope: ScopedCapability['scope']): boolean {
   return capabilities.some((grant) => grant.key === key && grant.scope === scope);
+}
+
+export function canReadEffectiveSchedule(capabilities: ScopedCapability[]): boolean {
+  return hasCapability(capabilities, 'TEACHER_BASE', 'PERSONAL');
 }
 
 export function canSubmitPersonalReporting(capabilities: ScopedCapability[]): boolean {
@@ -36,6 +40,11 @@ export function canReviewReportingStatements(capabilities: ScopedCapability[]): 
 }
 
 export const professionalRoutes: ProfessionalRoute[] = [
+  {
+    to: '/lich-day',
+    label: 'Lịch dạy',
+    isVisible: (capabilities) => hasCapability(capabilities, 'TEACHER_BASE', 'PERSONAL'),
+  },
   {
     to: '/bao-cao-ke-khai',
     label: 'Báo cáo kê khai',
