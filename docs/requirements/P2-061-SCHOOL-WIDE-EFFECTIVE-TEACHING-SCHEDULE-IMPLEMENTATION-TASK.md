@@ -1,7 +1,7 @@
 # P2-061 — School-wide Effective Teaching Schedule Read Model + Teacher Workspace
 
 - **Task ID:** `P2-061`
-- **Status:** `PLANNED`
+- **Status:** `IN_PROGRESS` (started on branch `feat/school-wide-effective-teaching-schedule-061`, canonical starting base `06ef61d5382c76827c674423cd249424053a221a`)
 - **Depends on:** `P2-060` (`CLOSED` required before start)
 - **Traceability:** `T47`
 - **Architecture authority:** `ADR-051-SCHOOL-WIDE-EFFECTIVE-TEACHING-SCHEDULE-READ-MODEL.md` after P2-060 acceptance
