@@ -775,11 +775,10 @@ describe('EffectiveScheduleService (Unit Regression Coverage)', () => {
       const fact = res.facts.find((f) => f.civilDate === '2026-09-07' && f.slotLabel === 'Tiết 1');
       expect(fact).toBeDefined();
       expect(fact?.comparisonState).toBe('SELF_BUSY_PEER_FREE');
-      expect(fact?.comparisonLabel).toBe('Tôi bận / Đồng nghiệp trống');
-      expect(fact?.selfOccupancy.isBusy).toBe(true);
       expect(fact?.selfOccupancy.occupancyState).toBe('OCCUPIED');
-      expect(fact?.peerOccupancy.isBusy).toBe(false);
+      expect((fact?.selfOccupancy as Record<string, unknown>).isBusy).toBeUndefined();
       expect(fact?.peerOccupancy.occupancyState).toBe('FREE');
+      expect((fact?.peerOccupancy as Record<string, unknown>).isBusy).toBeUndefined();
 
       // Verify no swap eligibility conclusion
       expect(fact).not.toHaveProperty('eligibleForSwap');
@@ -823,9 +822,9 @@ describe('EffectiveScheduleService (Unit Regression Coverage)', () => {
       for (const fact of res.facts) {
         expect(fact.comparisonState).toBe('BLOCKED');
         expect(fact.selfOccupancy.occupancyState).toBe('BLOCKED');
-        expect(fact.selfOccupancy.isBusy).toBe(false);
+        expect('isBusy' in fact.selfOccupancy).toBe(false);
         expect(fact.peerOccupancy.occupancyState).toBe('BLOCKED');
-        expect(fact.peerOccupancy.isBusy).toBe(false);
+        expect('isBusy' in fact.peerOccupancy).toBe(false);
         // Zero FREE semantics under fail-closed guarantee
         expect(fact.selfOccupancy.occupancyState).not.toBe('FREE');
         expect(fact.peerOccupancy.occupancyState).not.toBe('FREE');
@@ -1091,20 +1090,38 @@ describe('EffectiveScheduleService (Unit Regression Coverage)', () => {
 
       const factEarly = res.facts.find((f) => f.slotLabel === 'Tiết 1 sớm');
       expect(factEarly?.comparisonState).toBe('BOTH_BUSY');
-      expect(factEarly?.selfOccupancy.isBusy).toBe(true);
-      expect(factEarly?.peerOccupancy.isBusy).toBe(true);
+      expect(factEarly?.selfOccupancy.occupancyState).toBe('OCCUPIED');
+      expect(factEarly?.peerOccupancy.occupancyState).toBe('OCCUPIED');
 
       const factMid = res.facts.find((f) => f.slotLabel === 'Tiết đan xen');
       expect(factMid?.comparisonState).toBe('BOTH_BUSY');
-      expect(factMid?.selfOccupancy.isBusy).toBe(true);
-      expect(factMid?.peerOccupancy.isBusy).toBe(true);
+      expect(factMid?.selfOccupancy.occupancyState).toBe('OCCUPIED');
+      expect(factMid?.peerOccupancy.occupancyState).toBe('OCCUPIED');
 
       // Touching boundary slot: 07:45 - 08:30 does NOT overlap with Teacher A's 07:00 - 07:45
       // but DOES overlap with Teacher B's 07:30 - 08:15
       const factTouching = res.facts.find((f) => f.slotLabel === 'Tiết chạm biên');
-      expect(factTouching?.selfOccupancy.isBusy).toBe(false); // Touching boundary 07:45 is NOT busy for Teacher A
-      expect(factTouching?.peerOccupancy.isBusy).toBe(true);  // Overlaps with 07:30 - 08:15 for Teacher B
+      expect(factTouching?.selfOccupancy.occupancyState).toBe('FREE'); // Touching boundary 07:45 is NOT occupied for Teacher A
+      expect(factTouching?.peerOccupancy.occupancyState).toBe('OCCUPIED');  // Overlaps with 07:30 - 08:15 for Teacher B
       expect(factTouching?.comparisonState).toBe('SELF_FREE_PEER_BUSY');
+    });
+
+    it('Correction 002 Finding 1: ScheduleComparisonSlotFact selfOccupancy/peerOccupancy have occupancyState as sole authority and no isBusy property', async () => {
+      const { prisma } = createMockPrisma();
+      const service = new EffectiveScheduleService(prisma as never, resolvedOccurrencesService);
+
+      const res = await service.compareSchedules(
+        { academicYearId: 'year-1', academicWeekId: 'week-1', peerTeacherUserId: 'user-2' },
+        'user-1',
+      );
+
+      expect(res.facts.length).toBeGreaterThan(0);
+      for (const fact of res.facts) {
+        expect(['OCCUPIED', 'FREE', 'BLOCKED']).toContain(fact.selfOccupancy.occupancyState);
+        expect(['OCCUPIED', 'FREE', 'BLOCKED']).toContain(fact.peerOccupancy.occupancyState);
+        expect('isBusy' in fact.selfOccupancy).toBe(false);
+        expect('isBusy' in fact.peerOccupancy).toBe(false);
+      }
     });
   });
 });

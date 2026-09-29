@@ -683,8 +683,10 @@ integration('School-wide Effective Teaching Schedule Read Model & API (isolated 
       expect(slot1).toBeDefined();
       expect(slot1.comparisonState).toBe('SELF_BUSY_PEER_FREE');
       expect(slot1.comparisonLabel).toBe('Tôi bận / Đồng nghiệp trống');
-      expect(slot1.selfOccupancy.isBusy).toBe(true);
-      expect(slot1.peerOccupancy.isBusy).toBe(false);
+      expect(slot1.selfOccupancy.occupancyState).toBe('OCCUPIED');
+      expect(slot1.peerOccupancy.occupancyState).toBe('FREE');
+      expect('isBusy' in slot1.selfOccupancy).toBe(false);
+      expect('isBusy' in slot1.peerOccupancy).toBe(false);
     });
 
     it('Item 16: structural BLOCKED resolution returns BLOCKED status and never FREE/Trống', async () => {
@@ -730,9 +732,9 @@ integration('School-wide Effective Teaching Schedule Read Model & API (isolated 
       for (const fact of mondayFacts) {
         expect(fact.comparisonState).toBe('BLOCKED');
         expect(fact.selfOccupancy.occupancyState).toBe('BLOCKED');
-        expect(fact.selfOccupancy.isBusy).toBe(false);
+        expect('isBusy' in fact.selfOccupancy).toBe(false);
         expect(fact.peerOccupancy.occupancyState).toBe('BLOCKED');
-        expect(fact.peerOccupancy.isBusy).toBe(false);
+        expect('isBusy' in fact.peerOccupancy).toBe(false);
         // Fail-closed invariant: zero FREE semantics
         expect(fact.selfOccupancy.occupancyState).not.toBe('FREE');
         expect(fact.peerOccupancy.occupancyState).not.toBe('FREE');
@@ -974,15 +976,19 @@ integration('School-wide Effective Teaching Schedule Read Model & API (isolated 
       // Slot 1 (07:00-07:45): Teacher 1 busy, Teacher 2 free -> SELF_BUSY_PEER_FREE
       const slot1Fact = facts.find((s: { slotLabel: string }) => s.slotLabel === 'Tiết 1');
       expect(slot1Fact.comparisonState).toBe('SELF_BUSY_PEER_FREE');
-      expect(slot1Fact.selfOccupancy.isBusy).toBe(true);
-      expect(slot1Fact.peerOccupancy.isBusy).toBe(false);
+      expect(slot1Fact.selfOccupancy.occupancyState).toBe('OCCUPIED');
+      expect(slot1Fact.peerOccupancy.occupancyState).toBe('FREE');
+      expect('isBusy' in slot1Fact.selfOccupancy).toBe(false);
+      expect('isBusy' in slot1Fact.peerOccupancy).toBe(false);
 
       // Slot 2 (07:45-08:30): Teacher 1 free, Teacher 2 busy -> SELF_FREE_PEER_BUSY
       // Proves that touching boundary at 07:45:00 does NOT cause spurious overlap
       const slot2Fact = facts.find((s: { slotLabel: string }) => s.slotLabel === 'Tiết 2');
       expect(slot2Fact.comparisonState).toBe('SELF_FREE_PEER_BUSY');
-      expect(slot2Fact.selfOccupancy.isBusy).toBe(false);
-      expect(slot2Fact.peerOccupancy.isBusy).toBe(true);
+      expect(slot2Fact.selfOccupancy.occupancyState).toBe('FREE');
+      expect(slot2Fact.peerOccupancy.occupancyState).toBe('OCCUPIED');
+      expect('isBusy' in slot2Fact.selfOccupancy).toBe(false);
+      expect('isBusy' in slot2Fact.peerOccupancy).toBe(false);
     });
   });
 });

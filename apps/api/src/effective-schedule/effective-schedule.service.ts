@@ -651,7 +651,6 @@ export class EffectiveScheduleService {
               comparisonLabel: comparisonStateToVietnamese(compState),
               selfOccupancy: {
                 occupancyState: isDayBlocked ? 'BLOCKED' : (selfMatch ? 'OCCUPIED' : 'FREE'),
-                isBusy: !isDayBlocked && Boolean(selfMatch),
                 sourceKind: !isDayBlocked ? selfMatch?.sourceKind ?? null : null,
                 sourceLabel: !isDayBlocked && selfMatch ? sourceKindToVietnamese(selfMatch.sourceKind) : null,
                 className: !isDayBlocked && selfMatch?.schoolClassId ? classMap.get(selfMatch.schoolClassId) ?? null : null,
@@ -660,7 +659,6 @@ export class EffectiveScheduleService {
               },
               peerOccupancy: {
                 occupancyState: isDayBlocked ? 'BLOCKED' : (peerMatch ? 'OCCUPIED' : 'FREE'),
-                isBusy: !isDayBlocked && Boolean(peerMatch),
                 sourceKind: !isDayBlocked ? peerMatch?.sourceKind ?? null : null,
                 sourceLabel: !isDayBlocked && peerMatch ? sourceKindToVietnamese(peerMatch.sourceKind) : null,
                 className: !isDayBlocked && peerMatch?.schoolClassId ? classMap.get(peerMatch.schoolClassId) ?? null : null,

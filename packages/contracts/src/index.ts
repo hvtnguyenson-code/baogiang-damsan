@@ -2268,7 +2268,6 @@ export interface ScheduleComparisonSlotFact {
   comparisonLabel: string;
   selfOccupancy: {
     occupancyState: EffectiveOccupancyState;
-    isBusy: boolean;
     sourceKind?: EffectiveOccupancySourceKind | null;
     sourceLabel?: string | null;
     className?: string | null;
@@ -2277,7 +2276,6 @@ export interface ScheduleComparisonSlotFact {
   };
   peerOccupancy: {
     occupancyState: EffectiveOccupancyState;
-    isBusy: boolean;
     sourceKind?: EffectiveOccupancySourceKind | null;
     sourceLabel?: string | null;
     className?: string | null;

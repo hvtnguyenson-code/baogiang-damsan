@@ -63,8 +63,14 @@ export function EffectiveSchedulePage() {
       .then((ctx) => {
         if (!active) return;
         setContext(ctx);
-        const yearId = ctx.currentAcademicYearId ?? (ctx.academicYears[0]?.id || '');
-        setSelectedYearId(yearId);
+        if (!ctx.currentAcademicYearId) {
+          setSelectedYearId('');
+          setSelectedWeekId('');
+          setSelectedDayCivilDate(ctx.currentCivilDate || '');
+          setErrorMessage('Chưa xác định được năm học hiện hành từ lịch học hiệu lực.');
+          return;
+        }
+        setSelectedYearId(ctx.currentAcademicYearId);
         const weekId = ctx.currentAcademicWeekId ?? (ctx.weeks[0]?.id || '');
         setSelectedWeekId(weekId);
         setSelectedDayCivilDate(ctx.currentCivilDate || '');
@@ -221,9 +227,10 @@ export function EffectiveSchedulePage() {
               id={weekSelectId}
               className="form-field__input"
               value={selectedWeekId}
-              disabled={loading || !context?.weeks.length}
+              disabled={loading || !context?.weeks.length || !selectedWeekId}
               onChange={(e) => setSelectedWeekId(e.target.value)}
             >
+              {!selectedWeekId && <option value="">-- Chưa chọn tuần học --</option>}
               {context?.weeks.map((w) => (
                 <option key={w.id} value={w.id}>
                   {w.displayLabel} ({w.startDate} đến {w.endDate})
@@ -355,7 +362,7 @@ export function EffectiveSchedulePage() {
 
           {mySchedule.status === 'BLOCKED' && (
             <div className="alert alert--error" role="alert">
-              <strong>Lịch dạy đang ở trạng thái bị chặn (Fail-closed)</strong>
+              <strong>Lịch dạy đang bị chặn để tránh hiển thị dữ liệu chưa xác định</strong>
               <p>Một số dữ liệu thời khóa biểu hoặc phân công bị thiếu / chưa nhất quán:</p>
               <ul>
                 {mySchedule.blockedReasons?.map((r, i) => (
@@ -474,7 +481,7 @@ export function EffectiveSchedulePage() {
 
           {schoolWideSchedule.status === 'BLOCKED' && (
             <div className="alert alert--error" role="alert">
-              <strong>Dữ liệu lịch toàn trường của ngày này bị chặn (Fail-closed)</strong>
+              <strong>Dữ liệu lịch toàn trường của ngày này đang bị chặn để tránh hiển thị dữ liệu chưa xác định</strong>
               <p>Phát hiện xung đột hoặc thiếu dữ liệu thời khóa biểu cơ sở:</p>
               <ul>
                 {schoolWideSchedule.blockedReasons?.map((r, i) => (
@@ -549,7 +556,7 @@ export function EffectiveSchedulePage() {
 
           {peerSchedule.status === 'BLOCKED' && (
             <div className="alert alert--error" role="alert">
-              <strong>Lịch của đồng nghiệp đang ở trạng thái bị chặn (Fail-closed)</strong>
+              <strong>Lịch của đồng nghiệp đang bị chặn để tránh hiển thị dữ liệu chưa xác định</strong>
               <ul>
                 {peerSchedule.blockedReasons?.map((r, i) => (
                   <li key={i}>{r}</li>

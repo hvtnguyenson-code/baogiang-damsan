@@ -198,7 +198,6 @@ const mockComparison = {
       comparisonLabel: 'Tôi bận / Đồng nghiệp trống',
       selfOccupancy: {
         occupancyState: 'OCCUPIED',
-        isBusy: true,
         sourceKind: 'BASE_TIMETABLE',
         sourceLabel: 'Lịch cơ sở',
         className: '10A1',
@@ -206,7 +205,6 @@ const mockComparison = {
       },
       peerOccupancy: {
         occupancyState: 'FREE',
-        isBusy: false,
       },
     },
   ],
@@ -307,11 +305,9 @@ test.describe('Teacher Workspace — School-wide Effective Teaching Schedule E2E
               comparisonLabel: 'Bị chặn',
               selfOccupancy: {
                 occupancyState: 'BLOCKED',
-                isBusy: false,
               },
               peerOccupancy: {
                 occupancyState: 'BLOCKED',
-                isBusy: false,
               },
             },
           ],

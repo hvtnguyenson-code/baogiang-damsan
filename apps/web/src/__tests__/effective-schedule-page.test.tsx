@@ -147,7 +147,6 @@ const mockComparison: EffectiveScheduleComparisonResponse = {
       comparisonLabel: 'Tôi bận / Đồng nghiệp trống',
       selfOccupancy: {
         occupancyState: 'OCCUPIED',
-        isBusy: true,
         sourceKind: 'BASE_TIMETABLE',
         sourceLabel: 'Lịch cơ sở',
         className: '10A1',
@@ -155,7 +154,6 @@ const mockComparison: EffectiveScheduleComparisonResponse = {
       },
       peerOccupancy: {
         occupancyState: 'FREE',
-        isBusy: false,
       },
     },
   ],
@@ -306,7 +304,7 @@ describe('EffectiveSchedulePage (Teacher Workspace UI)', () => {
     renderApp('/lich-day');
 
     // Alert rendered with Vietnamese safe reason
-    expect(await screen.findByText(/Lịch dạy đang ở trạng thái bị chặn/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Lịch dạy đang bị chặn để tránh hiển thị dữ liệu chưa xác định/i)).toBeInTheDocument();
     expect(screen.getByText('Chưa liên kết phân phối chương trình')).toBeInTheDocument();
 
     // Must NEVER leak raw technical finding code
@@ -336,11 +334,9 @@ describe('EffectiveSchedulePage (Teacher Workspace UI)', () => {
           comparisonLabel: 'Dữ liệu bị chặn / Không thể xác định',
           selfOccupancy: {
             occupancyState: 'BLOCKED',
-            isBusy: false,
           },
           peerOccupancy: {
             occupancyState: 'BLOCKED',
-            isBusy: false,
           },
         },
       ],
@@ -370,6 +366,61 @@ describe('EffectiveSchedulePage (Teacher Workspace UI)', () => {
     const blockedLabels = screen.getAllByText('Không thể xác định / Bị chặn');
     expect(blockedLabels.length).toBeGreaterThanOrEqual(2);
     expect(screen.queryByText('Trống')).not.toBeInTheDocument();
+  });
+
+  it('Finding 2: context with null currentAcademicYearId leaves selection empty and renders Vietnamese fail-closed message without firing schedule requests', async () => {
+    const fetchSpy = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/api/auth/me')) {
+        return Promise.resolve(jsonResponse(authWith({ key: 'TEACHER_BASE', scope: 'PERSONAL' })));
+      }
+      if (url.includes('/api/effective-schedule/context')) {
+        return Promise.resolve(jsonResponse({
+          academicYears: [{ id: 'year-legacy', code: '2025-2026', name: 'Năm học 2025–2026' }],
+          currentAcademicYearId: null,
+          weeks: [],
+          currentAcademicWeekId: null,
+          currentCivilDate: '2026-09-07',
+        }));
+      }
+      if (url.includes('/api/effective-schedule/teachers')) {
+        return Promise.resolve(jsonResponse(mockTeachers));
+      }
+      return Promise.resolve(jsonResponse({}));
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+
+    renderApp('/lich-day');
+
+    await screen.findByRole('heading', { level: 1, name: 'Lịch dạy' });
+
+    // Assert fail-closed Vietnamese message is visible
+    expect(await screen.findByText('Chưa xác định được năm học hiện hành từ lịch học hiệu lực.')).toBeInTheDocument();
+
+    // Assert NO schedule request was dispatched
+    const calledUrls = fetchSpy.mock.calls.map((call) => String(call[0]));
+    expect(calledUrls.some((u) => u.includes('/api/effective-schedule/weekly'))).toBe(false);
+    expect(calledUrls.some((u) => u.includes('/api/effective-schedule/school-wide'))).toBe(false);
+    expect(calledUrls.some((u) => u.includes('/api/effective-schedule/compare'))).toBe(false);
+  });
+
+  it('Finding 3: blocked schedule renders Vietnamese safe text without user-facing Fail-closed jargon', async () => {
+    setupFetchMock({
+      weekly: {
+        ...mockMyWeekly,
+        status: 'BLOCKED',
+        blockedReasons: ['Dữ liệu thời khóa biểu cơ sở chưa sẵn sàng'],
+      },
+    });
+    renderApp('/lich-day');
+
+    await screen.findByRole('heading', { level: 1, name: 'Lịch dạy' });
+
+    // Assert Vietnamese wording is visible
+    expect(screen.getByText('Lịch dạy đang bị chặn để tránh hiển thị dữ liệu chưa xác định')).toBeInTheDocument();
+
+    // Assert NO "Fail-closed" or "fail-closed" appears anywhere in document body
+    expect(document.body.textContent).not.toMatch(/fail-closed/i);
   });
 
   it('20. maps Vietnamese labels and does not leak raw backend enums or sentinel notes', async () => {
