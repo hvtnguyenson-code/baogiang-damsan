@@ -52,12 +52,14 @@ export function EffectiveSchedulePage() {
   const [loading, setLoading] = useState<boolean>(true);
   const [loadingSchedule, setLoadingSchedule] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [infoMessage, setInfoMessage] = useState<string | null>(null);
 
   // 1. Initial context load
   useEffect(() => {
     let active = true;
     setLoading(true);
     setErrorMessage(null);
+    setInfoMessage(null);
 
     fetchEffectiveScheduleContext()
       .then((ctx) => {
@@ -71,9 +73,15 @@ export function EffectiveSchedulePage() {
           return;
         }
         setSelectedYearId(ctx.currentAcademicYearId);
-        const weekId = ctx.currentAcademicWeekId ?? (ctx.weeks[0]?.id || '');
-        setSelectedWeekId(weekId);
         setSelectedDayCivilDate(ctx.currentCivilDate || '');
+
+        if (ctx.currentAcademicWeekId) {
+          setSelectedWeekId(ctx.currentAcademicWeekId);
+          setInfoMessage(null);
+        } else {
+          setSelectedWeekId('');
+          setInfoMessage('Ngày hiện tại không thuộc tuần học nào đang có hiệu lực. Vui lòng chọn tuần học để xem lịch.');
+        }
       })
       .catch((err) => {
         if (!active) return;
@@ -211,6 +219,12 @@ export function EffectiveSchedulePage() {
         </div>
       )}
 
+      {infoMessage && (
+        <div className="alert alert--warning" role="status">
+          <p style={{ margin: 0 }}>{infoMessage}</p>
+        </div>
+      )}
+
       {/* Control bar */}
       <section className="ledger-section" aria-labelledby="schedule-controls-heading">
         <h2 id="schedule-controls-heading" className="sr-only">
@@ -227,10 +241,18 @@ export function EffectiveSchedulePage() {
               id={weekSelectId}
               className="form-field__input"
               value={selectedWeekId}
-              disabled={loading || !context?.weeks.length || !selectedWeekId}
-              onChange={(e) => setSelectedWeekId(e.target.value)}
+              disabled={loading || !selectedYearId || !context?.weeks.length}
+              onChange={(e) => {
+                const nextWeekId = e.target.value;
+                setSelectedWeekId(nextWeekId);
+                if (nextWeekId) {
+                  setInfoMessage(null);
+                } else {
+                  setInfoMessage('Ngày hiện tại không thuộc tuần học nào đang có hiệu lực. Vui lòng chọn tuần học để xem lịch.');
+                }
+              }}
             >
-              {!selectedWeekId && <option value="">-- Chưa chọn tuần học --</option>}
+              <option value="">-- Chọn tuần học --</option>
               {context?.weeks.map((w) => (
                 <option key={w.id} value={w.id}>
                   {w.displayLabel} ({w.startDate} đến {w.endDate})

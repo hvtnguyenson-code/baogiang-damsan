@@ -1,4 +1,4 @@
-import { cleanup, screen } from '@testing-library/react';
+import { cleanup, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
@@ -368,7 +368,86 @@ describe('EffectiveSchedulePage (Teacher Workspace UI)', () => {
     expect(screen.queryByText('Trống')).not.toBeInTheDocument();
   });
 
-  it('Finding 2: context with null currentAcademicYearId leaves selection empty and renders Vietnamese fail-closed message without firing schedule requests', async () => {
+  it('Correction 003 Case A: current year exists but current week null leaves selection empty, enables week dropdown with placeholder, and triggers schedule only after manual selection', async () => {
+    const user = userEvent.setup();
+    const fetchSpy = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/api/auth/me')) {
+        return Promise.resolve(jsonResponse(authWith({ key: 'TEACHER_BASE', scope: 'PERSONAL' })));
+      }
+      if (url.includes('/api/effective-schedule/context')) {
+        return Promise.resolve(jsonResponse({
+          academicYears: [{ id: 'year-1', code: '2026-2027', name: 'Năm học 2026–2027' }],
+          currentAcademicYearId: 'year-1',
+          weeks: [
+            {
+              id: 'week-1',
+              academicYearId: 'year-1',
+              calendarVersionId: 'cal-1',
+              weekNumber: 1,
+              displayLabel: 'Tuần 1',
+              startDate: '2026-09-07' as CivilDateString,
+              endDate: '2026-09-12' as CivilDateString,
+              kind: 'OFFICIAL',
+            },
+            {
+              id: 'week-2',
+              academicYearId: 'year-1',
+              calendarVersionId: 'cal-1',
+              weekNumber: 2,
+              displayLabel: 'Tuần 2',
+              startDate: '2026-09-14' as CivilDateString,
+              endDate: '2026-09-19' as CivilDateString,
+              kind: 'OFFICIAL',
+            },
+          ],
+          currentAcademicWeekId: null,
+          currentCivilDate: '2026-09-07',
+        }));
+      }
+      if (url.includes('/api/effective-schedule/teachers')) {
+        return Promise.resolve(jsonResponse(mockTeachers));
+      }
+      if (url.includes('/api/effective-schedule/weekly')) {
+        return Promise.resolve(jsonResponse(mockMyWeekly));
+      }
+      return Promise.resolve(jsonResponse({}));
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+
+    renderApp('/lich-day');
+
+    await screen.findByRole('heading', { level: 1, name: 'Lịch dạy' });
+
+    // Assert Vietnamese informational notice (not an error)
+    expect(screen.getByText('Ngày hiện tại không thuộc tuần học nào đang có hiệu lực. Vui lòng chọn tuần học để xem lịch.')).toBeInTheDocument();
+
+    // Assert week dropdown is ENABLED
+    const weekSelect = screen.getByLabelText('Tuần học');
+    expect(weekSelect).not.toBeDisabled();
+
+    // Assert placeholder "-- Chọn tuần học --" is present and selectedWeekId is empty (no automatic week-1 selection)
+    expect(weekSelect).toHaveValue('');
+    expect(screen.getByRole('option', { name: '-- Chọn tuần học --' })).toBeInTheDocument();
+
+    // Assert NO schedule request was dispatched before manual selection
+    const initialUrls = fetchSpy.mock.calls.map((call) => String(call[0]));
+    expect(initialUrls.some((u) => u.includes('/api/effective-schedule/weekly'))).toBe(false);
+    expect(initialUrls.some((u) => u.includes('/api/effective-schedule/school-wide'))).toBe(false);
+    expect(initialUrls.some((u) => u.includes('/api/effective-schedule/compare'))).toBe(false);
+
+    // Manual week selection: user selects week-2
+    await user.selectOptions(weekSelect, 'week-2');
+    expect(weekSelect).toHaveValue('week-2');
+
+    // Assert weekly request was sent with week-2
+    await waitFor(() => {
+      const subsequentUrls = fetchSpy.mock.calls.map((call) => String(call[0]));
+      expect(subsequentUrls.some((u) => u.includes('/api/effective-schedule/weekly') && u.includes('academicWeekId=week-2'))).toBe(true);
+    });
+  });
+
+  it('Correction 003 Case B: context with null currentAcademicYearId leaves selection empty, disables dropdown, and renders Vietnamese fail-closed message without firing schedule requests', async () => {
     const fetchSpy = vi.fn().mockImplementation((input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes('/api/auth/me')) {
@@ -396,6 +475,10 @@ describe('EffectiveSchedulePage (Teacher Workspace UI)', () => {
 
     // Assert fail-closed Vietnamese message is visible
     expect(await screen.findByText('Chưa xác định được năm học hiện hành từ lịch học hiệu lực.')).toBeInTheDocument();
+
+    // Assert dropdown disabled
+    const weekSelect = screen.getByLabelText('Tuần học');
+    expect(weekSelect).toBeDisabled();
 
     // Assert NO schedule request was dispatched
     const calledUrls = fetchSpy.mock.calls.map((call) => String(call[0]));
