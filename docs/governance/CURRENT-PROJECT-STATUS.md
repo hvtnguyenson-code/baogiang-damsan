@@ -6,14 +6,13 @@ This is the canonical mutable **product/task status** document for Báo giảng.
 
 It is **not** a self-referential registry of the latest Git commit. Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub at the start of every task. SHAs recorded here are evidence for the stated baseline or last closed major task.
 
-**Status snapshot date:** 2026-09-28
+**Status snapshot date:** 2026-09-29
 
 ## Active / next critical path
 
-`P4-074` — Special-programme import lifecycle and E2E closure — is **CLOSED** by `SYNC-P4-074`.
+`P2-061` — School-wide effective teaching schedule read model + Teacher Workspace — is **CLOSED** by `SYNC-P2-061`.
 
-Active task:
-- `P2-061` — School-wide effective teaching schedule read model + Teacher Workspace — **IN_REVIEW** on dedicated branch `feat/school-wide-effective-teaching-schedule-061` (canonical base `06ef61d5382c76827c674423cd249424053a221a`; unlocked by `P2-060` closure; implementation and local validation complete on branch; pending independent GitHub review + PR CI + merge + post-merge sync; not merged/closed).
+There is no active implementation task immediately after this closure.
 
 Remain:
 - `P2-010` — PPCT real-workbook contract/security audit — **BLOCKED_EVIDENCE** (pending authoritative school PPCT workbook/template).
@@ -24,7 +23,48 @@ Production environment remains strictly **PRE-OPERATIONAL**. No production deplo
 
 ## Last closed major task
 
-`P4-074` — Special-programme import lifecycle and E2E closure — **CLOSED** by `SYNC-P4-074`.
+`P2-061` — School-wide effective teaching schedule read model + Teacher Workspace — **CLOSED** by `SYNC-P2-061`.
+
+Closure evidence:
+- dedicated implementation branch: `feat/school-wide-effective-teaching-schedule-061`;
+- canonical starting main base: `06ef61d5382c76827c674423cd249424053a221a`;
+- final independently reviewed parent HEAD: `bc05fd7614c98ee929392ddc0d219ed0c07c329e`;
+- parent PR: #167 (`feat(timetable): implement school-wide effective teaching schedule`);
+- exact-head PR CI: CI #530 (run `36539190183`), SUCCESS;
+- merge/main commit: `7c14bb5f87910c58d4b4e662d332f3189cefc11b`;
+- normal merge: YES;
+- authoritative post-merge main CI: CI #531 (run `36545906439`), SUCCESS (event: `push`, branch: `main`, exact SHA: `7c14bb5f87910c58d4b4e662d332f3189cefc11b`);
+- parent PR statistics: 5 commits, 21 files changed (+5388 / -7);
+- independent review: PASS after three bounded forward correction rounds;
+- review corrections absorbed before merge:
+  - Correction 001: harden effective schedule read invariants;
+  - Correction 002: finalize fail-closed contract;
+  - Correction 003: preserve explicit week selection;
+- no residual correction/re-entry task emerged;
+- delivered scope:
+  - schema-free `SCHOOL_EFFECTIVE_TEACHING_SCHEDULE_V1` read profile;
+  - derived/non-persisted effective schedule projection;
+  - authenticated `TEACHER_BASE` explicit read authority;
+  - read-only public schedule API under `/api/effective-teaching-schedule`;
+  - Vietnamese Teacher Workspace (`/lich-day`):
+    - `Lịch của tôi` (default weekly view);
+    - `Toàn trường` (school-wide selected-day schedule);
+    - selected-teacher schedule (searchable teacher options);
+    - `So sánh với lịch của tôi` (real half-open interval overlap comparison);
+  - effective occupancy composed from date-effective timetable + calendar suppression + operational dispositions + make-up teaching + SpecialActivity;
+  - GDĐP/HĐTN-HN visibility through materialized SpecialActivity;
+  - fail-closed `BLOCKED` semantics (never rendered as empty or `Trống`);
+  - exact half-open interval comparison;
+  - active teaching-staff peer boundary;
+  - minimal public identity payload (data minimization);
+  - centralized mutation authority preserved (read-only; no teacher-side mutation);
+  - zero schema/migration;
+  - zero deploy;
+  - zero production mutation;
+- closed by administrative closure: `SYNC-P2-061`;
+- production remains strictly **PRE-OPERATIONAL**.
+
+Predecessor closed major task: `P4-074` — Special-programme import lifecycle and E2E closure — **CLOSED** by `SYNC-P4-074`.
 
 Closure evidence:
 - dedicated implementation branch: `feat/special-programme-lifecycle-e2e-074`;
@@ -57,7 +97,7 @@ Closure evidence:
 - review/CI forward corrections: absorbed before merge; no residual correction/re-entry task emerged;
 - independent exact-diff review: PASS; review corrections absorbed; no separate correction or re-entry task emerged;
 - closed by administrative closure: `SYNC-P4-074`;
-- downstream: `P2-061` remains independently `READY`;
+- downstream: `P2-061` is CLOSED by `SYNC-P2-061`;
 - production remains strictly **PRE-OPERATIONAL**.
 
 Predecessor closed major task: `P4-073` — GDĐP workbook importer — **CLOSED** by `SYNC-P4-073`.
@@ -96,7 +136,7 @@ Closure evidence:
   - no production deployment; no production migration execution;
 - independent exact-diff review: PASS; review corrections absorbed; no separate correction or re-entry task emerged;
 - closed by administrative closure: `SYNC-P4-073`;
-- downstream: `P4-074` is CLOSED by `SYNC-P4-074`; `P2-061` remains independently `READY`;
+- downstream: `P4-074` is CLOSED by `SYNC-P4-074`; `P2-061` is CLOSED by `SYNC-P2-061`;
 - production remains strictly **PRE-OPERATIONAL**.
 
 Predecessor closed major task: `P4-072` — HĐTN-HN workbook importer — **CLOSED** by `SYNC-P4-072`.
@@ -129,7 +169,7 @@ Closure evidence:
   - no production deployment; no production migration execution;
 - independent exact-diff review: PASS; no separate correction or re-entry task emerged;
 - closed by administrative closure: `SYNC-P4-072`;
-- downstream: `P4-073` is CLOSED by `SYNC-P4-073`; `P4-074` is CLOSED by `SYNC-P4-074`; `P2-061` remains independently `READY`;
+- downstream: `P4-073` is CLOSED by `SYNC-P4-073`; `P4-074` is CLOSED by `SYNC-P4-074`; `P2-061` is CLOSED by `SYNC-P2-061`;
 - production remains strictly **PRE-OPERATIONAL**.
 
 Predecessor closed major task: `P4-071` — Retained TKB special-programme marker bridge — **CLOSED** by `SYNC-P4-071`.
@@ -214,7 +254,7 @@ Closure evidence:
   - strictly docs-only architecture specification (5 docs files, 589 additions, 0 deletions);
   - `ADR-051-SCHOOL-WIDE-EFFECTIVE-TEACHING-SCHEDULE-READ-MODEL.md` (Accepted);
   - `P2-060-SCHOOL-WIDE-EFFECTIVE-TEACHING-SCHEDULE-ARCHITECTURE.md` (CLOSED);
-  - `P2-061-SCHOOL-WIDE-EFFECTIVE-TEACHING-SCHEDULE-IMPLEMENTATION-TASK.md` (READY for implementation);
+  - `P2-061-SCHOOL-WIDE-EFFECTIVE-TEACHING-SCHEDULE-IMPLEMENTATION-TASK.md` (task design, now CLOSED by `SYNC-P2-061`);
   - canonical `SCHOOL_EFFECTIVE_TEACHING_SCHEDULE_V1` read profile;
   - authenticated `TEACHER_BASE` explicit school-wide read authority;
   - effective occupancy composed from timetable + overlays + make-up + SpecialActivity (including materialized GDĐP/HĐTN-HN);
@@ -225,7 +265,7 @@ Closure evidence:
   - zero runtime, schema, migration, API, UI, auth, capability catalog, CI/CD, or deployment mutation;
 - independent exact-diff review: PASS; no correction or re-entry task emerged;
 - closed by administrative closure: `SYNC-P2-060`;
-- downstream: `P2-061` unlocked to `READY`;
+- downstream: `P2-061` is CLOSED by `SYNC-P2-061`;
 - production remains strictly **PRE-OPERATIONAL**.
 
 Predecessor closed major task: `P4-050` — Special-activity workload/reporting projection — **CLOSED** by `SYNC-P4-050`.
@@ -848,9 +888,10 @@ The repository contains reviewed implementation for:
 - Reporting Statement persistence/control plane/UI enablement/product UI work;
 - **retained Business Configuration persistence, control plane and administration workspace** (separate BusinessPolicyStream / BusinessPolicyVersion / BusinessPolicyCommand topology, strict civil-date intervals, DB-level non-overlapping published exclusion, retained replacement and reversal/correction lineage, immutable published payload, exact historical validator-version resolution, dedicated `BUSINESS_CONFIGURATION_MANAGE / SCHOOL_WIDE` capability, capability-gated route `/quan-tri/chinh-sach-nghiep-vu`, typed/version-aware UI adapter architecture with triple identity, lifecycle UI for draft/edit/publish/replace/retire/correct, historical typed rendering, exact-date resolver UI, bounded Serializable mutation retry, idempotency receipts, same-transaction audit, sanitized errors and typed fail-closed resolver);
 - **operational-start backend authority and UI integration**: backend closed by P1-031 (`OPERATIONAL_START / v1 / ACADEMIC_YEAR` production registration, strict validator/calendar/lifecycle rules, typed fail-closed resolver, execution guards, pre-op no-auto-debt projection, retained allocator replay, single-authority reporting integration, and ReportingStatement SNAPSHOT_V2 provenance); P1-031B defines the distinct never-effective scheduled-authority lifecycle, and its P1-031A runtime realization is CLOSED by `SYNC-P1-031A`; `P1-031C` is CLOSED by `SYNC-P1-031C` (providing AcademicYear options read model); and `P1-032` is CLOSED by `SYNC-P1-032` (delivering production Web UI integration for operational-start administration);
-- hardened Windows production deployment control-plane/runbooks through PR #90.
+- hardened Windows production deployment control-plane/runbooks through PR #90;
+- **school-wide effective teaching schedule read model (`SCHOOL_EFFECTIVE_TEACHING_SCHEDULE_V1`) and Teacher Workspace closed by P2-061**, including schema-free derived effective schedule projection, authenticated `TEACHER_BASE` read authority, bounded public API (`/api/effective-teaching-schedule`), searchable teacher options, four Vietnamese workspace views (`Lịch của tôi`, `Toàn trường`, selected-teacher schedule, `So sánh với lịch của tôi`), composition from timetable + calendar suppression + operational dispositions + make-up + SpecialActivity (including materialized GDĐP/HĐTN-HN), fail-closed `BLOCKED` semantics, real half-open interval comparison, minimal teacher identity payload, and preserved centralized mutation authority.
 
-Homeroom architecture, persistence, control plane/capability, historical read model and administration workspace UI are closed for the registered pre-pilot scope. Business Configuration architecture (P1-020), persistence/control plane (P1-021), administration workspace (P1-022), and operational-start backend implementation (P1-031) are closed for their registered pre-pilot scopes. P2-030 native timetable workbook architecture/evidence, P2-040 native adapter runtime implementation, P2-050 selective morning/afternoon update and carry-forward, P2-002 PPCT component persistence/control plane, P2-003 component-aware allocation/projections runtime, P2-004 specialized-study administration workspace, P4-010 special-programme architecture, P4-020 special-programme planning persistence/control plane, P4-030 programme coordinator authorization, P4-040 programme runtime bridge, and P4-050 special-programme workload/reporting projection are closed.
+Homeroom architecture, persistence, control plane/capability, historical read model and administration workspace UI are closed for the registered pre-pilot scope. Business Configuration architecture (P1-020), persistence/control plane (P1-021), administration workspace (P1-022), and operational-start backend implementation (P1-031) are closed for their registered pre-pilot scopes. P2-030 native timetable workbook architecture/evidence, P2-040 native adapter runtime implementation, P2-050 selective morning/afternoon update and carry-forward, P2-002 PPCT component persistence/control plane, P2-003 component-aware allocation/projections runtime, P2-004 specialized-study administration workspace, P4-010 special-programme architecture, P4-020 special-programme planning persistence/control plane, P4-030 programme coordinator authorization, P4-040 programme runtime bridge, P4-050 special-programme workload/reporting projection, P2-060 school-wide effective schedule architecture, and P2-061 school-wide effective teaching schedule read model + Teacher Workspace are closed.
 
 ## Pre-pilot verdict
 
@@ -886,7 +927,7 @@ The final production-host topology is intentionally unresolved and explicitly de
 
 ## Tasks currently active or eligible to start
 
-`P4-074` is CLOSED by `SYNC-P4-074`.
+`P2-061` is CLOSED by `SYNC-P2-061`.
 
 Active in progress:
 - None.
@@ -895,7 +936,7 @@ Active in review:
 - None.
 
 Eligible to start:
-- `P2-061` — School-wide effective teaching schedule read model + Teacher Workspace — **READY** independently (unlocked by `P2-060` closure; implementation not yet started; must not be described as implemented).
+- None. No implementation task is currently READY.
 
 Not eligible to start:
 - `P2-020` — PPCT native importer implementation — **PLANNED**; blocked by `P2-010`.
@@ -926,7 +967,7 @@ Direct P0 inspection found `main` is currently not protected server-side. This i
 
 ## Production state
 
-Production remains **pre-operational**. No production deployment has occurred. P1-020, P1-021, P1-022, P1-031, P1-031B, P1-031A, P1-031C, P1-032, P4-010, P4-020, and P4-030 are CLOSED and canonical. P4-030 authorization and guarded HTTP surface implementation are merged to canonical `main` but have not been deployed or applied to production. P4-020 schema/migrations and planning control-plane implementation are merged to canonical `main` but have not been deployed or applied to production. The backend production policy registry contains only the reviewed `OPERATIONAL_START` family enabled by P1-031, and the Web UI registry includes the corresponding production adapter enabled by P1-032. No production operational-start policy value has been configured or deployed, so the additive P1-031A migration performed zero production data backfill and has not been applied to production. P1-031C introduced zero schema or migration change and zero production data mutation. P1-032 delivered administration Web UI integration with zero backend/contracts/schema/migration mutation. P2-030 architecture/evidence, P2-040 native adapter runtime implementation, P2-050 selective session authoring and carry-forward, P2-002 PPCT component persistence/control plane, P2-003 component-aware allocation/projection runtime, and P2-004 specialized-study administration workspace are merged to canonical `main`, but did NOT deploy or mutate VPS, database, Nginx, TLS, scheduled tasks, or application process state. P2-001 architecture remains accepted authority under ADR-048. P6 remains blocked by the explicit P6-005 topology decision gate.
+Production remains **pre-operational**. No production deployment has occurred. P1-020, P1-021, P1-022, P1-031, P1-031B, P1-031A, P1-031C, P1-032, P4-010, P4-020, and P4-030 are CLOSED and canonical. P4-030 authorization and guarded HTTP surface implementation are merged to canonical `main` but have not been deployed or applied to production. P4-020 schema/migrations and planning control-plane implementation are merged to canonical `main` but have not been deployed or applied to production. The backend production policy registry contains only the reviewed `OPERATIONAL_START` family enabled by P1-031, and the Web UI registry includes the corresponding production adapter enabled by P1-032. No production operational-start policy value has been configured or deployed, so the additive P1-031A migration performed zero production data backfill and has not been applied to production. P1-031C introduced zero schema or migration change and zero production data mutation. P1-032 delivered administration Web UI integration with zero backend/contracts/schema/migration mutation. P2-030 architecture/evidence, P2-040 native adapter runtime implementation, P2-050 selective session authoring and carry-forward, P2-002 PPCT component persistence/control plane, P2-003 component-aware allocation/projection runtime, P2-004 specialized-study administration workspace, and P2-061 school-wide effective teaching schedule read model + Teacher Workspace are merged to canonical `main`, but did NOT deploy or mutate VPS, database, Nginx, TLS, scheduled tasks, or application process state. P2-001 architecture remains accepted authority under ADR-048 and ADR-051 remains accepted authority for school-wide effective schedule. P6 remains blocked by the explicit P6-005 topology decision gate.
 
 ## Protected external system boundary
 
