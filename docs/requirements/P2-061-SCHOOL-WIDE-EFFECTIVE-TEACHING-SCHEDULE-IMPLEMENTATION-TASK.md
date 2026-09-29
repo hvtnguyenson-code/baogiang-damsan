@@ -1,12 +1,12 @@
 # P2-061 — School-wide Effective Teaching Schedule Read Model + Teacher Workspace
 
 - **Task ID:** `P2-061`
-- **Status:** `IN_REVIEW` (implementation and automated regression complete on branch `feat/school-wide-effective-teaching-schedule-061`, canonical starting base `06ef61d5382c76827c674423cd249424053a221a`, pending independent review, PR CI, and merge)
-- **Depends on:** `P2-060` (`CLOSED` required before start)
+- **Status:** `CLOSED` by `SYNC-P2-061` (PR #167 merged to `main@7c14bb5f87910c58d4b4e662d332f3189cefc11b`, post-merge CI #531 SUCCESS)
+- **Depends on:** `P2-060` (`CLOSED`)
 - **Traceability:** `T47`
 - **Architecture authority:** `ADR-051-SCHOOL-WIDE-EFFECTIVE-TEACHING-SCHEDULE-READ-MODEL.md` after P2-060 acceptance
 - **Product criticality:** **MANDATORY BEFORE TEACHER PILOT**. A teacher-pilot/go-live verification must hard-stop if P2-061 is not `CLOSED`.
-- **Mutation/deploy:** neither merge nor deployment is implied by this task design; each remains separately authorized under repository governance.
+- **Mutation/deploy:** deployment was neither authorized nor performed; production remains strictly PRE-OPERATIONAL.
 
 ## 1. Objective
 
@@ -198,11 +198,24 @@ When P2-061 is started, the execution prompt must include:
 
 ## 11. Closure and pilot gate
 
-P2-061 can become `CLOSED` only after:
-
-- exact implementation diff is independently reviewed;
-- required unit/integration/Web/Playwright gates pass;
-- authoritative post-merge main CI passes;
-- `CURRENT-PROJECT-STATUS.md`, `PRE-PILOT-TASK-REGISTER.md`, `PRE-PILOT-TRACEABILITY-MATRIX.md` and other affected canonical docs are synchronized.
+P2-061 is **CLOSED** by administrative closure `SYNC-P2-061`.
 
 **Teacher pilot hard gate:** P5/P6 pilot closure must not represent the Teacher Workspace as pilot-ready while P2-061 is not `CLOSED`. At the latest when `P5-010` freezes the exact pilot dependency set, `P2-061` must be included as a mandatory dependency; `P6-050` real teacher pilot verification must include smoke coverage for `Lịch của tôi`, `Toàn trường`, peer schedule and `So sánh với lịch của tôi`.
+
+## 12. Verified closure evidence
+
+- **Task branch:** `feat/school-wide-effective-teaching-schedule-061`;
+- **Canonical starting main base:** `06ef61d5382c76827c674423cd249424053a221a`;
+- **Final reviewed HEAD:** `bc05fd7614c98ee929392ddc0d219ed0c07c329e`;
+- **Parent PR:** #167 (`feat(timetable): implement school-wide effective teaching schedule`);
+- **PR statistics:** 5 commits, 21 changed files (+5388 / -7);
+- **Exact-head PR CI:** CI #530 (run `36539190183`), SUCCESS;
+- **Normal merge/main commit:** `7c14bb5f87910c58d4b4e662d332f3189cefc11b`;
+- **Authoritative post-merge main CI:** CI #531 (run `36545906439`), SUCCESS (event: `push`, branch: `main`, exact SHA: `7c14bb5f87910c58d4b4e662d332f3189cefc11b`);
+- **Independent review:** PASS after three bounded forward correction rounds:
+  - Correction 001: harden effective schedule read invariants;
+  - Correction 002: finalize fail-closed contract;
+  - Correction 003: preserve explicit week selection;
+- **Residual tasks:** no residual correction or re-entry task emerged;
+- **Safety boundaries:** schema-free; zero schema changes; zero migrations; zero deployment; zero production mutation; production remains strictly PRE-OPERATIONAL;
+- **Closure status:** CLOSED by `SYNC-P2-061`.
