@@ -311,7 +311,7 @@ Bảng `Subject` trong Prisma schema:
 - `id: UUID` (khóa chính)
 - `code: String` (**UNIQUE**)
 - `name: String` (**NOT UNIQUE** - tên hiển thị tiếng Việt)
-- `status: SubjectStatus` (`ACTIVE` | `INACTIVE`)
+- `status: CatalogStatus` (`ACTIVE` | `INACTIVE`)
 
 ### Thẩm quyền của Ô `THONG_TIN.B4`:
 1. Ô `THONG_TIN.B4` mang tiêu đề `"Môn học"`. Workbook chuẩn của trường Đam San **KHÔNG CÓ CỘT HOẶC Ô DÀNH CHO MÃ MÔN HỌC (`Subject.code`)**.
@@ -654,7 +654,7 @@ Pha Preview trả về thông tin các draft hiện có cho từng khối lớp.
    - Sau khi xác thực hợp lệ, máy chủ thực hiện thay thế toàn bộ nội dung của draft đó một cách nguyên tử.
 
 ### C. Ngữ nghĩa Đua tranh Đồng thời khi `CREATE_NEW_DRAFT` (Concurrent Races vs Sequential Replay):
-Hợp đồng phải phân biệt rạch ròi giữa phát lại tuần tự (sequential replay) và các cuộc đua tranh đồng thời (concurrent races):
+Hợp đồng phân biệt rạch ròi giữa phát lại tuần tự (sequential replay) và các cuộc đua tranh đồng thời (concurrent races):
 
 1. **Thực thi bên trong Giao dịch `SERIALIZABLE`:**
    Mỗi thao tác tạo nháp phải được thực hiện trong transaction với mức cô lập `SERIALIZABLE`:
@@ -663,14 +663,34 @@ Hợp đồng phải phân biệt rạch ròi giữa phát lại tuần tự (se
    - **Bước 2 — Xử lý kết quả tìm kiếm:**
      - Nếu tìm thấy **CHÍNH XÁC MỘT** draft có nội dung ngữ nghĩa sau phân rã khớp 100% với nội dung tải lên: hệ thống thực hiện **phát lại idempotent (semantic replay)**, trả về bản ghi DRAFT hiện có này mà không tạo bản ghi mới.
      - Nếu tìm thấy **NHIỀU HƠN MỘT** draft có nội dung trùng khớp: báo lỗi fail-closed `PPCT_IMPORT_REPLAY_AMBIGUOUS` để người dùng chủ động chọn bản ghi mục tiêu.
-     - Nếu có **0** draft trùng khớp: tiến hành tạo mới bản nháp (`PpctVersion`).
-2. **Xử lý Xung đột Tuần tự hóa Đồng thời (Concurrency Conflict Handling):**
-   - Khi hai request `CREATE_NEW_DRAFT` đồng thời cùng gửi lên nội dung cho cùng một plan, cơ sở dữ liệu sẽ phát sinh lỗi xung đột tuần tự hóa (PostgreSQL `40001 serialization_failure`).
-   - Nhiệm vụ `P2-020` bắt buộc phải áp dụng mẫu xử lý xung đột tuần tự hóa có giới hạn đã được chấp nhận của repository (bounded retry pattern với exponential backoff/jitter, tối đa 3 lần thử) HOẶC trả về một mã lỗi xung đột đồng thời ổn định `PPCT_IMPORT_DRAFT_CONFLICT` sau khi transaction bị rollback.
-   - Khi một transaction được retry thành công, vòng lặp tìm kiếm ở Bước 1 sẽ phát hiện ra bản nháp vừa được transaction cạnh tranh tạo ra, và chuyển hướng an toàn sang **phát lại ngữ nghĩa (semantic replay)** thay vì tạo trùng lặp!
-3. **Các Bất biến Bắt buộc:**
-   - **TUYỆT ĐỐI KHÔNG ĐƯỢC COMMIT 2 DRAFT TRÙNG LẶP** chỉ vì một transaction bị thoát một phần ra ngoài.
-   - **TUYỆT ĐỐI KHÔNG TUYÊN BỐ CUNG CẤP CHÍNH XÁC MỘT LẦN BỀN VỮNG (DURABLE EXACTLY-ONCE)** chỉ dựa vào `requestFingerprint`. Dấu vân tay chỉ là kiểm tra tính lỗi thời của preview, tính toàn vẹn được bảo đảm bởi transaction cơ sở dữ liệu.
+     - Nếu có **0** draft trùng khớp: tính toán `versionNumber = max(versionNumber) + 1` và tiến hành tạo mới bản nháp (`PpctVersion`).
+2. **Trừu tượng hóa Xung đột Cấp Kho Lưu trữ và Quy tắc Thử lại có Giới hạn (Bounded Retry):**
+   - **Các lớp xung đột cấp kho lưu trữ (Repository-level Conflict Classes):**
+     - Các xung đột tuần tự hóa `SERIALIZABLE` của PostgreSQL được Prisma Client phản ánh qua mã lỗi `PrismaClientKnownRequestError` **`P2034`** (được nhận diện qua hàm `isSerializationConflict` trong `ppct.service.ts`).
+     - Việc tính toán và chèn `versionNumber = max(versionNumber) + 1` đồng thời giữa hai transaction có thể va chạm với ràng buộc duy nhất `ppct_versions_ppct_plan_id_version_number_key` và được Prisma Client phản ánh qua mã lỗi **`P2002`**.
+     - Bộ nhập `P2-020` **KHÔNG ĐƯỢC PHỤ THUỘC** vào việc bắt trực tiếp mã SQLSTATE thô `40001` của PostgreSQL tại ranh giới service contract, mà phải bắt đúng các lớp lỗi Prisma `P2034` và `P2002`.
+   - **Quy tắc Thử lại có Giới hạn (Bounded Retry Rule):**
+     Đối với thao tác `CREATE_NEW_DRAFT`, P2-020 được phép áp dụng cơ chế thử lại có giới hạn (**tối đa 3 lần thử**) theo mẫu xử lý đồng thời đã được chấp nhận của repository. Trong mỗi lượt thử lại, hệ thống **BẮT BUỘC** phải lặp lại đầy đủ các bước bên trong một transaction `SERIALIZABLE` hoàn toàn mới:
+     1. Phân giải lại trạng thái hiện tại của `PpctPlan`;
+     2. Tìm kiếm lại các bản ghi `DRAFT` tương đương ngữ nghĩa cùng tác giả (`createdByUserId == currentUserId`);
+     3. Nếu hiện tại đã tồn tại chính xác 1 draft tương đương (do transaction cạnh tranh vừa tạo xong): trả về bản ghi này dưới dạng **phát lại ngữ nghĩa (semantic replay)**;
+     4. Nếu tồn tại nhiều hơn 1 draft: báo lỗi fail-closed `PPCT_IMPORT_REPLAY_AMBIGUOUS`;
+     5. Nếu vẫn chưa có draft nào: tính toán lại `max(versionNumber)`;
+     6. Thử tạo mới bản ghi `PpctVersion`.
+   - **Xử lý mã lỗi Prisma khi thử lại:**
+     - `P2034`: Thử lại nếu còn ngân sách retry; nếu hết ngân sách: báo lỗi fail-closed `PPCT_IMPORT_DRAFT_CONFLICT`.
+     - `P2002` do đua tranh cấp phát `versionNumber`: Thử lại từ transaction mới nếu còn ngân sách retry; nếu hết ngân sách: báo lỗi fail-closed `PPCT_IMPORT_DRAFT_CONFLICT`. Tuyệt đối không thử lại mù quáng đối với các lỗi `P2002` không liên quan đến xung đột phiên bản.
+3. **Bất biến Khử trùng lặp theo Phạm vi Tác giả (Actor-Scoped Deduplication Invariant):**
+   - Kiến trúc hiện hành cho phép tồn tại nhiều bản ghi `DRAFT` đồng thời trên cùng một `PpctPlan`.
+   - Cơ chế phát lại ngữ nghĩa chỉ tìm kiếm trong phạm vi bản nháp do chính tác giả đó tạo (`createdByUserId == currentUserId`).
+   - Do đó, **BẤT BIẾN DUY NHẤT ĐƯỢC KHÓA LÀ**: Đối với cùng một bộ ba tọa độ:
+     $$\mathbf{(\text{PpctPlan},\ \text{actorUserId},\ \text{canonical semantic content})}$$
+     một thao tác `CREATE_NEW_DRAFT` đồng thời hoặc phát lại **tuyệt đối không được tạo thêm một bản nháp trùng lặp ngữ nghĩa chỉ vì lý do đua tranh hoặc retry**.
+   - Các bản nháp thuộc về **NHỮNG TÁC GIẢ KHÁC NHAU (DIFFERENT ACTORS) KHÔNG BỊ KHỬ TRÙNG LẶP TOÀN CỤC** trong P2-010. Tuyệt đối không tái sử dụng bản nháp của tác giả khác làm semantic replay cho người dùng hiện tại. (Nếu hệ thống cần khử trùng lặp toàn cục xuyên tác giả, đó là một quyết định kiến trúc/lưu trữ độc lập và không thuộc phạm vi P2-010).
+   - Tuyệt đối không tuyên bố cung cấp chính xác một lần bền vững (durable exactly-once) chỉ dựa vào `requestFingerprint`. Dấu vân tay chỉ là kiểm tra tính lỗi thời của preview, tính toàn vẹn được bảo đảm bởi transaction cơ sở dữ liệu.
+4. **Hợp đồng Lỗi Công khai ra Ngoài Web (Public Error Contract):**
+   - Mã lỗi công khai ổn định duy nhất trả về client khi xảy ra xung đột đồng thời không thể giải quyết là **`PPCT_IMPORT_DRAFT_CONFLICT`** (HTTP 409).
+   - Tuyệt đối **KHÔNG ĐƯỢC ĐỂ LỘ** các mã nội bộ `P2034`, `P2002`, `40001`, raw Prisma exception hay raw PostgreSQL exception ra ngoài Web client. Đây thuần túy là nguyên nhân kỹ thuật ở tầng triển khai nội bộ.
 
 ---
 
@@ -836,7 +856,7 @@ Toàn bộ các trường hợp vi phạm phải trả về mã lỗi ổn đị
 | `PPCT_IMPORT_TARGET_DRAFT_NOT_FOUND` | Không tìm thấy bản ghi draft mục tiêu được chỉ định khi chọn chế độ `UPDATE_EXACT_DRAFT`. | 404 |
 | `PPCT_IMPORT_TARGET_DRAFT_PLAN_MISMATCH` | Bản ghi draft mục tiêu không thuộc đúng kế hoạch môn học của khối lớp đó. | 422 |
 | `PPCT_IMPORT_TARGET_NOT_DRAFT` | Bản ghi mục tiêu được chỉ định không ở trạng thái `DRAFT` (ví dụ đã được xuất bản). | 422 |
-| `PPCT_IMPORT_DRAFT_CONFLICT` | Xung đột đồng thời: CAS token `expectedUpdatedAt` không khớp với CSDL hiện tại, hoặc xung đột transaction tuần tự hóa không thể tự động retry. | 409 |
+| `PPCT_IMPORT_DRAFT_CONFLICT` | Xung đột đồng thời: CAS token `expectedUpdatedAt` không khớp với CSDL hiện tại, hoặc xung đột tuần tự hóa / cấp phát phiên bản (Prisma P2034 / P2002) đã vượt quá số lần retry cho phép. | 409 |
 | `PPCT_IMPORT_FINGERPRINT_MISMATCH` | Khóa `requestFingerprint` gửi lên trong Confirm không khớp với tính toán lại từ tệp hoặc trạng thái preview đã đóng băng. | 409 |
 | `PPCT_IMPORT_REPLAY_AMBIGUOUS` | Tìm thấy nhiều hơn một bản ghi DRAFT trùng khớp nội dung ngữ nghĩa khi phát lại ở chế độ `CREATE_NEW_DRAFT`. | 409 |
 | `PPCT_IMPORT_LINEAGE_AMBIGUOUS` | Cấu trúc bài học xáo trộn phức tạp không thể tự động căn chỉnh phả hệ một cách an toàn, hoặc ánh xạ phả hệ đã preview bị vô hiệu do thay đổi DB. | 422 |
@@ -857,7 +877,7 @@ Khi thực hiện nhiệm vụ `P2-020` (Native PPCT Importer Implementation), k
    - Tạo khóa `requestFingerprint` bao phủ userId, rawDigest, academicYearId, subjectId, semanticDigest và confirm package bằng Canonical JSON.
    - Pha Confirm phải phân tích lại tệp/preview, tính lại toàn bộ gói, đối soát fingerprint trước khi ghi nhận DB.
 6. **Cố định ánh xạ phả hệ (Lineage Preview Binding):** Ánh xạ phả hệ được chọn hoặc tự động xác định trong preview phải được đóng băng trong confirm package; không được tính lại âm thầm.
-7. **Xử lý đua tranh đồng thời `CREATE_NEW_DRAFT`:** Vận hành bên trong transaction `SERIALIZABLE`, tìm kiếm cùng tác giả để phát lại idempotent, áp dụng bounded retry khi gặp lỗi `40001 serialization_failure`, không bao giờ tạo 2 draft trùng lặp.
+7. **Xử lý đua tranh đồng thời `CREATE_NEW_DRAFT`:** Vận hành bên trong transaction `SERIALIZABLE` độc lập cho từng lượt thử (tối đa 3 lượt thử), nhận diện xung đột mức kho lưu trữ qua lỗi Prisma `P2034` (xung đột tuần tự hóa) và `P2002` (đua tranh cấp phát `versionNumber`), lặp lại quy trình đối soát cùng tác giả để phát lại ngữ nghĩa idempotent, khóa chặt bất biến chống tạo thêm bản nháp trùng lặp cho cùng bộ ba `(PpctPlan, actorUserId, canonical semantic content)`, và luôn chuyển đổi lỗi xung đột kiệt sức thành `PPCT_IMPORT_DRAFT_CONFLICT` trước khi trả về Web client.
 8. **Tuân thủ đúng hợp đồng phả hệ runtime:**
    - Bài học giữ nguyên: `identityMode = CARRY_FORWARD`, `predecessors = []` (không sinh lineage).
    - Bài học kế thừa/thay thế mới: `identityMode = NEW`, khai báo `predecessors` hợp lệ (sinh lineage cùng component).
@@ -898,7 +918,7 @@ Nhiệm vụ `P2-010` này tuyệt đối **KHÔNG BAO GỒM**:
 - [x] Đã khóa hợp đồng gói Preview -> Confirm (Canonical Confirm Package cho từng khối lớp sắp xếp theo gradeLevel tăng dần).
 - [x] Đã khóa hợp đồng dấu vân tay `requestFingerprint` chuẩn tắc (stale-preview integrity token, serialized canonical JSON, kiểm tra đối soát toàn diện).
 - [x] Đã khóa ràng buộc phả hệ từ Preview (lineage mapping cố định vào confirm package, không tự ý tính lại).
-- [x] Đã khóa ngữ nghĩa đua tranh đồng thời khi `CREATE_NEW_DRAFT` (SERIALIZABLE transaction, bounded retry, idempotent semantic replay, không bao giờ tạo draft trùng).
+- [x] Đã khóa ngữ nghĩa đua tranh đồng thời khi `CREATE_NEW_DRAFT` (SERIALIZABLE transaction, bounded retry tối đa 3 lần với Prisma P2034/P2002, semantic replay theo actor, bất biến chống trùng lặp theo `(plan, actor, content)`).
 - [x] Đã khóa chính sách dòng/cột ẩn (các sheet thẩm quyền phải visible, cấm dòng/cột ẩn giao cắt vùng nhập liệu nghiệp vụ `PPCT_IMPORT_HIDDEN_INPUT_INTERSECTION`).
 - [x] Đã khóa chính sách ô gộp (Merged Cells) (tái sử dụng giới hạn 256, cấm ô gộp giao cắt vùng nhập liệu nghiệp vụ `PPCT_IMPORT_MERGED_AUTHORITATIVE_CELL`, cho phép ô gộp trang trí ngoài vùng nhập).
 - [x] Đã hoàn thiện bảng giới hạn an toàn toàn diện (phân loại rõ giới hạn tái sử dụng từ timetable parser và 3 giới hạn tăng cường mới riêng cho PPCT: 20:1 ratio, 100 entries, 500 title bound).
