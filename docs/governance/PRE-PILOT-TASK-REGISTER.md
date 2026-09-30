@@ -89,7 +89,7 @@ Dependency cells below contain **task IDs only**. Conditions/evidence triggers b
 
 | Task | Status | Depends on | Deliverable / closure | Trigger / notes |
 |---|---|---|---|---|
-| `P2-010` PPCT real-workbook contract/security audit | `BLOCKED_EVIDENCE` | `P2-001` | Read authoritative school PPCT workbook/template; determine exact physical sheet names, columns, identity, replay, and error contracts mapping physical sheets to logical CORE and SPECIALIZED_STUDY components | Trigger: actual authoritative school workbook supplied; T24, T45 |
+| `P2-010` PPCT real-workbook contract/security audit | `IN_PROGRESS` | `P2-001` | Read authoritative school PPCT workbook/template; determine exact physical sheet names, columns, identity, replay, and error contracts mapping physical sheets to logical CORE and SPECIALIZED_STUDY components. Dedicated branch `docs/ppct-real-workbook-contract-security-audit-010`; canonical start `b8b5f9862c2dc160e124a19b863ac547b44ef94b`; authoritative workbook `Mau_PPCT_Chuan_He_Thong_Dam_San_V1.xlsx` (SHA-256 `9a8cc9b62b02cae5c81163bf7afca12be5f0ee66eb5316fd236294adb1b56692`); primary document `docs/requirements/P2-010-PPCT-REAL-WORKBOOK-CONTRACT-SECURITY-AUDIT.md` | Trigger fired: authoritative workbook supplied; T24, T45; P2-020 remains PLANNED |
 | `P2-020` PPCT native importer implementation | `PLANNED` | `P2-002`, `P2-010` | Import pipeline using approved PPCT contract; no guessed mapping | T24, T45 |
 
 ### Native timetable workbook adapter (CLOSED)

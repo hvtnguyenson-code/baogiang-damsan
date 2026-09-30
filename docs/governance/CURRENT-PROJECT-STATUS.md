@@ -12,10 +12,10 @@ It is **not** a self-referential registry of the latest Git commit. Exact curren
 
 `P2-061` — School-wide effective teaching schedule read model + Teacher Workspace — is **CLOSED** by `SYNC-P2-061`.
 
-There is no active implementation task immediately after this closure.
+Active in progress:
+- `P2-010` — PPCT real-workbook contract/security audit — **IN_PROGRESS** (dedicated branch `docs/ppct-real-workbook-contract-security-audit-010`, canonical start `b8b5f9862c2dc160e124a19b863ac547b44ef94b`, authoritative evidence `Mau_PPCT_Chuan_He_Thong_Dam_San_V1.xlsx` SHA-256 `9a8cc9b62b02cae5c81163bf7afca12be5f0ee66eb5316fd236294adb1b56692`).
 
 Remain:
-- `P2-010` — PPCT real-workbook contract/security audit — **BLOCKED_EVIDENCE** (pending authoritative school PPCT workbook/template).
 - `P2-020` — PPCT native importer implementation — **PLANNED** (pending `P2-010`).
 - `P4-060` and `P4-061` remain **DEFERRED_WITH_TRIGGER**.
 
@@ -930,7 +930,7 @@ The final production-host topology is intentionally unresolved and explicitly de
 `P2-061` is CLOSED by `SYNC-P2-061`.
 
 Active in progress:
-- None.
+- `P2-010` — PPCT real-workbook contract/security audit (`docs/ppct-real-workbook-contract-security-audit-010`).
 
 Active in review:
 - None.
@@ -940,7 +940,6 @@ Eligible to start:
 
 Not eligible to start:
 - `P2-020` — PPCT native importer implementation — **PLANNED**; blocked by `P2-010`.
-- `P2-010` — PPCT real-workbook contract/security audit — remains **BLOCKED_EVIDENCE** pending actual authoritative school PPCT workbook/template evidence.
 
 Eligibility does not imply permission to bypass one-task-per-branch, review, CI or mandatory closure-sync gates. No next major task is inferred by this closure; P6 remains blocked by P6-005.
 
@@ -949,7 +948,6 @@ Eligibility does not imply permission to bypass one-task-per-branch, review, CI 
 - `P0-002` — stale PR #11 closure: Product Owner decision required.
 - `P0-003` — CORE vs FULL BUSINESS pilot scope: Product Owner decision required before P5 freeze.
 - `P0-004` — GitHub main branch protection/ruleset: Product Owner decision required before repository-settings mutation.
-- `P2-010` — authoritative PPCT workbook/template evidence required.
 - `P6-005` — Production VPS topology decision: explicit Product Owner selection of `SHARED_VPS` vs `DEDICATED_VPS` required; HARD STOP blocks `P6-010`.
 
 ## Authoritative source-change gate
