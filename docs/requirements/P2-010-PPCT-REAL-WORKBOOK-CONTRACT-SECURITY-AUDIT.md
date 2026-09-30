@@ -92,6 +92,7 @@ Kiểm kê thứ tự sheet và thuộc tính:
 - **Defined names:** Không có (None).
 - **External relationships:** Không có (None).
 - **Worksheet/Workbook Protection:** Không bật (None).
+- **Tổng số ô gộp (Merged Cells):** 9 vùng trong toàn bộ workbook (nằm sâu dưới ngưỡng giới hạn kỹ thuật `MAX_MERGED_RANGES = 256`).
 
 ---
 
@@ -108,8 +109,8 @@ Kết quả kiểm tra đối với tệp workbook chuẩn tắc đã cung cấp
 | **ActiveX controls** | Không phát hiện | Đạt yêu cầu |
 | **External hyperlinks** | Không phát hiện liên kết ngoài | Đạt yêu cầu |
 | **Mã hóa / Password Protection** | Không có mật khẩu, không mã hóa | Đạt yêu cầu |
-| **ZIP traversal / Malformed paths** | Không có ký tự traversal `..` hay đường dẫn tuyệt đối | Đạt yêu cầu |
-| **Zip bomb / Compression ratio** | Nén 32.8 KB -> giải nén 195 KB (tỷ lệ 6.08) | Đạt yêu cầu |
+| **ZIP traversal / Malformed paths** | Không có ký tự traversal `..`, `\`, hay đường dẫn tuyệt đối | Đạt yêu cầu |
+| **Zip bomb / Compression ratio** | Nén 34.1 KB -> giải nén 195 KB (tỷ lệ 6.08:1) | Đạt yêu cầu |
 | **Công thức nhập liệu** | Các cột nhập liệu nghiệp vụ (A..G ở PPCT, A..F ở CHUYEN_DE) không chứa công thức. | Đạt yêu cầu |
 
 **Kết luận an toàn:** Không phát hiện tính năng bị cấm nào trong workbook được kiểm toán theo các kiểm tra đã thực hiện (No prohibited feature was detected in this exact audited workbook under the checks performed).
@@ -124,7 +125,7 @@ Kết quả kiểm tra đối với tệp workbook chuẩn tắc đã cung cấp
 | `PPCT` | **AUTHORITATIVE_INPUT** | Nguồn dữ liệu bài học cho thành phần cốt lõi (`PpctCurricularComponent.CORE`). Dữ liệu được phân chia theo khối lớp 10, 11, 12 tương ứng vào từng `PpctPlan`. |
 | `CHUYEN_DE` | **AUTHORITATIVE_INPUT** | Nguồn dữ liệu chuyên đề cho thành phần chuyên đề học tập (`PpctCurricularComponent.SPECIALIZED_STUDY`). Nếu sheet trống đối với một khối lớp, plan tương ứng có 0 chuyên đề. |
 | `HUONG_DAN` | **IGNORED** | Chỉ mang tính hướng dẫn cho con người khi biên soạn Excel. Importer bỏ qua hoàn toàn. |
-| `DANH_MUC` | **REFERENCE_ONLY** | Cung cấp danh mục dropdown mẫu trong Excel. **Nội dung sheet DANH_MUC tải lên KHÔNG PHẢI LÀ THẨM QUYỀN MÁY CHỦ.** Máy chủ kiểm tra hợp lệ dựa trên allowlist đóng băng của hợp đồng `PPCT_V1`. |
+| `DANH_MUC` | **REFERENCE_ONLY** | Cung cấp danh mục dropdown mẫu trong Excel. **Nội dung sheet DANH_MUC tải lên KHÔNG PHẢI LÀ THẨM QUYỀN MÁY CHỦ.** Máy chủ kiểm tra hợp lệ dựa trên allowlist đóng băng của hợp đồng `PPCT_V1`. Nội dung ẩn trong sheet tham khảo không được phép trở thành thẩm quyền nghiệp vụ. |
 | `VI_DU` | **IGNORED** | Chỉ chứa các dòng ví dụ minh họa. Importer bỏ qua hoàn toàn. |
 
 **Quy tắc xử lý cấu trúc Sheet:**
@@ -135,14 +136,52 @@ Kết quả kiểm tra đối với tệp workbook chuẩn tắc đã cung cấp
 
 ---
 
-## 7. Hợp đồng Workbook Vật lý (Physical Workbook Contract)
+## 7. Hợp đồng Workbook Vật lý và Gói Tệp Được Chấp nhận (Physical Workbook & Package Contract)
 
+### A. Định dạng Gói Tệp Được Chấp nhận (Accepted Package Contract):
+1. **Phần mở rộng tệp logic:** Bắt buộc là `.xlsx` (không phân biệt hoa thường, e.g. `.xlsx`, `.XLSX`).
+   - Các định dạng khác như `.xls` (BIFF8 nhị phân), `.xlsm` (Macro-enabled), `.xlsb` (Binary workbook), `.ods` (OpenDocument Spreadsheet) bị từ chối dứt khoát.
+2. **Header MIME chỉ là siêu dữ liệu truyền tải (Transport Metadata Only):**
+   - Header MIME (như `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`) **TUYỆT ĐỐI KHÔNG ĐƯỢC TIN TƯỞNG LÀM THẨM QUYỀN GÓI TỆP**.
+   - Máy chủ phải thẩm định trực tiếp chuỗi bytes vật lý (magic bytes `PK\x03\x04`).
+3. **Kiểm tra Preflight ZIP / OpenXML bắt buộc:**
+   - Tệp phải phân tích được dưới dạng gói ZIP hợp lệ.
+   - Bắt buộc phải chứa `[Content_Types].xml` và `xl/workbook.xml`.
+   - Gói tệp chứa macro (`vbaProject.bin`) bị từ chối với lỗi fail-closed `PPCT_IMPORT_MACRO_UNSUPPORTED` bất kể tên tệp hay MIME header.
+   - Gói tệp bị mã hóa hoặc đặt mật khẩu bảo vệ bị từ chối với lỗi fail-closed `PPCT_IMPORT_ENCRYPTED_UNSUPPORTED`.
+   - Gói tệp không đúng cấu trúc OpenXML XLSX bị từ chối với lỗi fail-closed `PPCT_IMPORT_INVALID_FILE_TYPE`.
+
+### B. Chính sách Nội dung Ẩn (Authoritative Hidden Content Policy):
+1. **Trạng thái Sheet Thẩm quyền:**
+   - Các sheet thẩm quyền `THONG_TIN`, `PPCT`, `CHUYEN_DE` bắt buộc phải ở trạng thái hiển thị (`visible`).
+   - Nếu bất kỳ sheet thẩm quyền nào bị ẩn (`hidden` hoặc `veryHidden`), máy chủ báo lỗi fail-closed `PPCT_IMPORT_HIDDEN_AUTHORITATIVE_SHEET`.
+2. **Dòng ẩn và Cột ẩn (Hidden Rows & Columns):**
+   - **Cấm tuyệt đối** dòng ẩn hoặc cột ẩn giao cắt với vùng nhập liệu nghiệp vụ thẩm quyền:
+     - Sheet `THONG_TIN`: Vùng các ô cần thiết cho B4, B5, B6 (cột A:B, dòng 4:6).
+     - Sheet `PPCT`: Toàn bộ vùng bảng nhập liệu nghiệp vụ từ dòng tiêu đề đến hết dòng dữ liệu (cột A:I).
+     - Sheet `CHUYEN_DE`: Toàn bộ vùng bảng nhập liệu nghiệp vụ từ dòng tiêu đề đến hết dòng dữ liệu (cột A:H).
+   - **Nguyên tắc an toàn:** Không có bất kỳ dòng nghiệp vụ ẩn nào được phép âm thầm bỏ qua (no hidden business row may be silently ignored). Nếu phát hiện dòng/cột ẩn giao cắt với vùng nhập liệu thẩm quyền: báo lỗi fail-closed `PPCT_IMPORT_HIDDEN_INPUT_INTERSECTION`.
+3. **Sheet tham khảo:** Nội dung ẩn trong `HUONG_DAN`, `DANH_MUC`, `VI_DU` không mang thẩm quyền nghiệp vụ và không tham gia phân tích.
+
+### C. Chính sách Ô Gộp (Merged-Cell Policy):
+1. **Giới hạn Độ phức tạp Gói Tệp:**
+   - Tái sử dụng giới hạn kỹ thuật `MAX_MERGED_RANGES = 256` trên toàn bộ workbook như một rào chắn chống tấn công độ phức tạp phân tích (complexity bound).
+2. **Cấm Ô Gộp Giao cắt Vùng Nhập liệu Nghiệp vụ:**
+   - **Cấm tuyệt đối** ô gộp (merged cell) giao cắt với vùng nhập liệu thẩm quyền:
+     - Bảng `PPCT`: Vùng dữ liệu cột A..I.
+     - Bảng `CHUYEN_DE`: Vùng dữ liệu cột A..H.
+     - Sheet `THONG_TIN`: Các ô metadata bắt buộc B4, B5, B6.
+   - Nếu phát hiện ô gộp giao cắt vùng nhập liệu thẩm quyền: báo lỗi fail-closed `PPCT_IMPORT_MERGED_AUTHORITATIVE_CELL`.
+3. **Cho phép Ô Gộp Trang trí Ngoài Vùng Nhập liệu:**
+   - Các ô gộp mang tính trang trí tiêu đề bảng bên ngoài vùng nhập liệu (như `A1:D1`, `A8:D8`, `A10:D10` ở `THONG_TIN`, hoặc các ô gộp trong `HUONG_DAN`, `VI_DU`) là hợp lệ như trong workbook chuẩn đã kiểm toán. Hệ thống không từ chối các ô gộp trang trí chuẩn tắc này.
+
+### D. Nguyên tắc Phạm vi Workbook:
 1. **Một workbook = Một Môn học + Một Năm học:**
    - Một tệp workbook duy nhất đại diện cho kế hoạch PPCT của một Môn học trong một Năm học.
    - Có thể chứa đồng thời cả 3 khối lớp: 10, 11, 12 (hoặc tập con các khối lớp nếu môn học chỉ giảng dạy ở một số khối).
 2. **Tên tệp (Filename) KHÔNG có thẩm quyền nghiệp vụ:**
    - Quy ước đặt tên file tại `THONG_TIN` dòng 11 (`PPCT_<MON_HOC>_<NAM_HOC>.xlsx`) chỉ là gợi ý tổ chức tệp cho người dùng.
-   - Tên tệp **KHÔNG ĐƯỢC** sử dụng làm định danh nghiệp vụ. Thẩm quyền duy nhất xác định Môn học và Năm học thuộc về ô `B4` (Môn học) và `B5` (Năm học) tại sheet `THONG_TIN`.
+   - Thẩm quyền duy nhất xác định Môn học và Năm học thuộc về ô `B4` (Môn học) và `B5` (Năm học) tại sheet `THONG_TIN`.
 3. **Phân vùng Bảng Excel (ListObject / Table):**
    - Sheet `PPCT` chứa bảng `PPCT_Table` vùng `A1:I301`.
    - Sheet `CHUYEN_DE` chứa bảng `CHUYEN_DE_Table` vùng `A1:H121`.
@@ -154,7 +193,7 @@ Kết quả kiểm tra đối với tệp workbook chuẩn tắc đã cung cấp
 
 | Ô | Trường Thông tin | Bắt buộc | Kiểu dữ liệu | Quy tắc Kiểm tra & Chuẩn hóa | Xử lý nếu Lỗi / Trống |
 |:---:|---|:---:|:---:|---|---|
-| **B4** | **Môn học** | **CÓ** | Chuỗi (String) | Trim khoảng trắng, chuẩn hóa Unicode NFKC. Khớp với danh mục môn học (`Subject`). | Báo lỗi `PPCT_IMPORT_METADATA_MISSING` hoặc `PPCT_IMPORT_SUBJECT_NOT_FOUND`. |
+| **B4** | **Môn học** | **CÓ** | Chuỗi (String) | Tên hiển thị môn học (Subject Display Name). Áp dụng thuật toán phân giải danh tính môn học tất định duy nhất (§11). | Báo lỗi `PPCT_IMPORT_METADATA_MISSING`, `PPCT_IMPORT_SUBJECT_NOT_FOUND`, `PPCT_IMPORT_SUBJECT_INACTIVE`, hoặc `PPCT_IMPORT_SUBJECT_AMBIGUOUS`. |
 | **B5** | **Năm học** | **CÓ** | Chuỗi (String) | Trim khoảng trắng, chuẩn hóa Unicode NFKC, định dạng `YYYY-YYYY` (ví dụ `2026-2027`). Khớp với `AcademicYear.code`. | Báo lỗi `PPCT_IMPORT_METADATA_MISSING` hoặc `PPCT_IMPORT_ACADEMIC_YEAR_NOT_FOUND`. |
 | **B6** | **Phiên bản mẫu** | **HỆ THỐNG** | Chuỗi (String) | Bắt buộc phải bằng chính xác `PPCT_V1`. | Báo lỗi `PPCT_IMPORT_TEMPLATE_VERSION_MISMATCH`. |
 
@@ -197,7 +236,7 @@ Dòng tiêu đề bắt buộc nằm tại **Dòng 1** (Row 1) của cả hai sh
 
 ---
 
-## 10. Hợp đồng Trường Dữ liệu Chi tiết và Độ Mịn Lưu trữ (Field Contract & Storage Granularity)
+## 10. Hợp đồng Trường Dữ liệu Chi tiết, Độ Mịn Lưu trữ và Kiểu Ô (Field Contract, Storage Granularity & Cell Types)
 
 ### Rà soát Kiến trúc Lưu trữ Thực tế (`PpctItemRevision`):
 Trong cơ sở dữ liệu hiện hành (`schema.prisma` và `PpctService`), bảng `PpctItemRevision` lưu trữ chính xác các trường:
@@ -222,12 +261,28 @@ Theo kiểm toán mã nguồn `PpctOccurrenceAllocationService.resolveInTransact
 - Do đó: **1 bản ghi `PpctItemRevision` = 1 nghĩa vụ phân phối PPCT trực tiếp (Direct Distribution Obligation) = 1 tiết dạy trên thời khóa biểu.**
 - Không thể lưu trữ một bài học có `Số tiết = N` thành 1 bản ghi `PpctItemRevision` mang trường giả định `periodCount = N`.
 
+### Chính sách Kiểu Ô trong Vùng Nhập liệu Thẩm quyền (Cell Type Policy):
+Đối với các ô trong vùng nhập liệu thẩm quyền:
+1. **Kiểu dữ liệu được chấp nhận:**
+   - `TEXT`: Tại các cột văn bản (Môn học, Năm học, Loại nội dung, Bài/Chủ đề, Tên bài, Tên chuyên đề).
+   - `NUMBER`: Tại các cột số nguyên (Khối lớp, Số tiết, Tuần bắt đầu, Tuần kết thúc, Chuyên đề số). Bắt buộc là số nguyên hợp lệ (không chứa phần thập phân).
+   - `BLANK`: Chỉ tại các ô mà hợp đồng cho phép để trống (cột `Loại nội dung`, cột `Bài / Chủ đề`).
+2. **Kiểu dữ liệu bị từ chối (Fail-Closed):**
+   - Các ô chứa mã lỗi Excel (`ERROR` cells: `#N/A`, `#VALUE!`, `#REF!`, `#DIV/0!`, `#NAME?`, `#NUM!`, v.v.).
+   - Các ô chứa hyperlink ngoài (external hyperlink cells).
+   - Các đối tượng nhúng hoặc đối tượng không được hỗ trợ (unsupported object values).
+   - Công thức nằm trong các cột nhập liệu nghiệp vụ (cột A..G ở `PPCT`, cột A..F ở `CHUYEN_DE`).
+   - Kiểu ngày tháng (`Date`) hoặc luận lý (`Boolean`) tại các vị trí kỳ vọng văn bản hoặc số nguyên, trừ khi có quy tắc chuyển đổi tường minh được định nghĩa.
+   - Bất kỳ vi phạm nào về kiểu ô nêu trên đều bị từ chối với mã lỗi `PPCT_IMPORT_UNSUPPORTED_CELL_TYPE`.
+3. **Chuẩn hóa Rich Text:**
+   - Nếu ô chứa văn bản có định dạng rich text (thẻ `<r>` trong OpenXML), chuỗi văn bản được làm phẳng thuần túy (flattened) thông qua hàm chuẩn hóa văn bản có giới hạn, sau đó được kiểm tra độ dài và chuẩn hóa bình thường. Tuyệt đối không tự động ép kiểu (coercion) âm thầm đối với các kiểu dữ liệu không được hỗ trợ.
+
 ### A. Hợp đồng Trường Sheet `PPCT`:
 
 | Trường | Cột | Kiểu | Bắt buộc | Ràng buộc giá trị & Chuẩn hóa | Xử lý Lưu trữ & Phân rã | Mã lỗi nếu vi phạm |
 |---|:---:|:---:|:---:|---|---|---|
 | **Khối lớp** | A | Số nguyên | **Có** | Thuộc tập `{10, 11, 12}`. | Phân nhóm theo `gradeLevel` vào `PpctPlan`. | `PPCT_IMPORT_INVALID_GRADE` |
-| **Loại nội dung** | B | Chuỗi | Không | Thuộc allowlist đóng băng máy chủ `{Bài học, Thực hành, Ôn tập, Kiểm tra, Trả bài, Khác}`. Trống mặc định là `'Bài học'`. | Lưu vào `PpctItemRevision.lessonType`. | `PPCT_IMPORT_INVALID_LESSON_TYPE` |
+| **Loại nội dung** | B | Chuỗi | Không | Thuộc allowlist đóng băng máy chủ. Trống mặc định là `'Bài học'`. Chuẩn hóa thành token chuẩn tắc (§22). | Lưu vào `PpctItemRevision.lessonType`. | `PPCT_IMPORT_INVALID_LESSON_TYPE` |
 | **Bài / Chủ đề** | C | Chuỗi | Không | Tối đa 150 ký tự sau trim. | Tham gia tạo tiền tố tiêu đề bài học chuẩn tắc. | `PPCT_IMPORT_FIELD_OVER_LIMIT` |
 | **Tên bài / Nội dung** | D | Chuỗi | **Có** | Cắt khoảng trắng, chuẩn hóa Unicode NFKC. | Tham gia tạo `PpctItemRevision.title`. | `PPCT_IMPORT_MISSING_TITLE` |
 | **Số tiết** | E | Số nguyên | **Có** | Nguyên dương `1 <= N <= 30`. | **Hệ số phân rã:** Mở rộng thành $N$ nghĩa vụ cấp tiết (`CORE`) liên tục. | `PPCT_IMPORT_INVALID_PERIOD_COUNT` |
@@ -249,24 +304,44 @@ Theo kiểm toán mã nguồn `PpctOccurrenceAllocationService.resolveInTransact
 
 ---
 
-## 11. Hợp đồng Định danh Môn học (Subject Identity Contract)
+## 11. Hợp đồng Định danh Môn học Chuẩn tắc (Exact Subject Identity Contract)
 
-1. Giá trị `THONG_TIN.Môn học` được phân giải phía máy chủ (server-side resolution):
-   - Chuẩn hóa Unicode NFKC và trim khoảng trắng.
-   - Đối soát với bảng `Subject` trong cơ sở dữ liệu: tìm kiếm theo `Subject.name` (hoặc `Subject.code`).
-2. **Quy tắc fail-closed:**
-   - Nếu không tìm thấy môn học: dừng lại và trả về lỗi `PPCT_IMPORT_SUBJECT_NOT_FOUND`.
-   - Nếu môn học tìm thấy có trạng thái `INACTIVE`: dừng lại và trả về `PPCT_IMPORT_SUBJECT_INACTIVE`.
-   - Nếu có nhiều hơn 1 môn học thỏa mãn (trùng tên/mơ hồ): dừng lại và trả về `PPCT_IMPORT_SUBJECT_AMBIGUOUS`.
-3. **Bất biến an toàn:**
-   - Hệ thống **TUYỆT ĐỐI KHÔNG** tự động tạo mới `Subject` từ dữ liệu workbook.
-   - Không được sinh UUID ngẫu nhiên cho Môn học.
+### Hiện trạng Schema Cơ sở Dữ liệu Thực tế:
+Bảng `Subject` trong Prisma schema:
+- `id: UUID` (khóa chính)
+- `code: String` (**UNIQUE**)
+- `name: String` (**NOT UNIQUE** - tên hiển thị tiếng Việt)
+- `status: SubjectStatus` (`ACTIVE` | `INACTIVE`)
+
+### Thẩm quyền của Ô `THONG_TIN.B4`:
+1. Ô `THONG_TIN.B4` mang tiêu đề `"Môn học"`. Workbook chuẩn của trường Đam San **KHÔNG CÓ CỘT HOẶC Ô DÀNH CHO MÃ MÔN HỌC (`Subject.code`)**.
+2. **Khóa thẩm quyền duy nhất:** `THONG_TIN.B4` là **TÊN HIỂN THỊ MÔN HỌC (SUBJECT DISPLAY NAME)**, tuyệt đối **KHÔNG PHẢI LÀ `Subject.code`**.
+3. **Cấm mơ hồ hai chiều:** Hệ thống **TUYỆT ĐỐI KHÔNG ĐƯỢC** sử dụng quy tắc kép `"Subject.name OR Subject.code"`. Không được tự động đoán hoặc fall back âm thầm sang `Subject.code`. Không diễn giải một giá trị ngẫu nhiên trùng với mã môn là mã môn học trừ khi có phiên bản mẫu tương lai bổ sung thẩm quyền mã môn rõ ràng.
+
+### Thuật toán Phân giải Định danh Môn học Tất định (Deterministic Resolution Algorithm):
+Máy chủ phân giải danh tính môn học theo đúng 6 bước tuần tự:
+1. Đọc giá trị ô `THONG_TIN.B4` dưới dạng chuỗi ký tự (`string`).
+2. Trim khoảng trắng ở hai đầu chuỗi.
+3. Chuẩn hóa Unicode theo định dạng chuẩn **NFKC** (`normalize('NFKC')`).
+4. Thu gọn các chuỗi khoảng trắng nội bộ liên tiếp thành đúng một dấu cách đơn (`replace(/\s+/g, ' ')`).
+5. So sánh chuỗi đã chuẩn hóa với trường `Subject.name` (được áp dụng cùng hàm chuẩn hóa trim/NFKC/collapse whitespace).
+6. **Chỉ các môn học có trạng thái `status === ACTIVE` mới được xem xét để phân giải thành công.**
+
+### Kết quả Phân giải và Xử lý Lỗi (Fail-Closed Outcomes):
+- **Khớp chính xác đúng 1 bản ghi `ACTIVE`:** Phân giải thành công về `Subject.id` của bản ghi đó.
+- **Có 0 bản ghi `ACTIVE` nhưng tồn tại bản ghi `INACTIVE` trùng tên chuẩn hóa:** Dừng lại lập tức và trả về mã lỗi fail-closed `PPCT_IMPORT_SUBJECT_INACTIVE`.
+- **Có 0 bản ghi khớp (cả `ACTIVE` lẫn `INACTIVE`):** Dừng lại lập tức và trả về mã lỗi fail-closed `PPCT_IMPORT_SUBJECT_NOT_FOUND`.
+- **Có nhiều hơn 1 bản ghi `ACTIVE` cùng thỏa mãn tên chuẩn hóa:** Dừng lại lập tức và trả về mã lỗi fail-closed `PPCT_IMPORT_SUBJECT_AMBIGUOUS`.
+
+### Bất biến An toàn Bắt buộc:
+- **TUYỆT ĐỐI KHÔNG TỰ ĐỘNG TẠO MÔN HỌC (No auto-create Subject):** Dữ liệu workbook không được phép tự động chèn bản ghi mới vào bảng `Subject`.
+- **TUYỆT ĐỐI KHÔNG SINH UUID GIẢ LẬP:** Không được sinh UUID ngẫu nhiên cho môn học.
 
 ---
 
 ## 12. Hợp đồng Định danh Năm học (AcademicYear Identity Contract)
 
-1. Giá trị `THONG_TIN.Năm học` phải khớp với mã năm học chính thức (`AcademicYear.code`, ví dụ `"2026-2027"`):
+1. Giá trị `THONG_TIN.Năm học` (ô `B5`) phải khớp với mã năm học chính thức (`AcademicYear.code`, ví dụ `"2026-2027"`):
    - Chuẩn hóa chuỗi (trim, uppercase).
    - Truy vấn bản ghi `AcademicYear` có `code == value`.
 2. **Quy tắc fail-closed:**
@@ -321,7 +396,7 @@ Do mô hình lưu trữ PPCT và bộ phân bổ vận hành theo độ mịn t�
 1. **Nguồn dữ liệu:** Các dòng trong sheet `PPCT` có cột `Khối lớp *` khớp với `gradeLevel` của plan.
 2. **Phân rã cấp tiết:** Mỗi dòng có `Số tiết = N` sẽ phân rã thành $N$ nghĩa vụ bài học cấp tiết liên tục.
 3. **Thứ tự sequence:** Dãy số nguyên liên tục `1, 2, ..., TotalCorePeriods` tăng dần theo thứ tự dòng và thứ tự tiết trong dòng.
-4. **Loại bài học (`lessonType`):** Lấy từ cột `Loại nội dung`. Nếu để trống, mặc định là `'Bài học'`. Giá trị phải thuộc allowlist đóng băng của hệ thống.
+4. **Loại bài học (`lessonType`):** Lấy từ cột `Loại nội dung`. Áp dụng chuẩn hóa token chuẩn tắc (§22). Mặc định nếu để trống là `'Bài học'`. Giá trị phải thuộc allowlist đóng băng của hệ thống.
 5. **Bắt buộc có nội dung CORE:** Mỗi kế hoạch phiên bản xuất bản bắt buộc phải có ít nhất 1 bài học `CORE` (theo `ADR-048` §2.3).
 
 ---
@@ -364,14 +439,13 @@ Theo kiểm toán mã nguồn chuẩn tắc tại `apps/api/src/ppct/ppct.servic
 
 ---
 
-## 18. Khóa Quy tắc Phả hệ ở Độ Mịn Tiết học sau Phân rã
+## 18. Khóa Quy tắc Phả hệ ở Độ Mịn Tiết học và Ràng buộc Preview (Lineage Preview Binding)
 
 Khi nhập phiên bản tiếp theo (Version 2+) từ workbook, việc đối soát phả hệ được thực hiện theo 6 trường hợp rõ ràng:
 
 1. **Trường hợp 1 — Dòng bài học giữ nguyên, số tiết không đổi ($N \to N$):**
    - Từng tiết thứ $i$ ($1 \le i \le N$) giữ nguyên định danh UUID của tiết tương ứng ở phiên bản trước.
-   - Sử dụng `identityMode = CARRY_FORWARD`, `predecessors = []`.
-   - Không sinh bản ghi lineage.
+   - Sử dụng `identityMode = CARRY_FORWARD`, `predecessors = []`. Không sinh bản ghi lineage.
 2. **Trường hợp 2 — Số tiết của bài học tăng lên ($N \to N + k$):**
    - $N$ tiết đầu tiên giữ nguyên UUID cũ, dùng `CARRY_FORWARD` (không có predecessor).
    - $k$ tiết bổ sung mới ($N+1 \dots N+k$) được cấp UUID mới với `identityMode = NEW`. Các tiết mới này không cần tạo predecessor giả mạo chỉ vì thuộc cùng bài học.
@@ -385,6 +459,12 @@ Khi nhập phiên bản tiếp theo (Version 2+) từ workbook, việc đối so
 6. **Trường hợp 6 — Cấu trúc xáo trộn mơ hồ (Ambiguous Mapping):**
    - Nếu vị trí hoặc số lượng bài học thay đổi phức tạp không thể tự động căn chỉnh an toàn: hệ thống **FAIL-CLOSED** hoặc yêu cầu người dùng xác nhận bản đồ ánh xạ phả hệ tường minh trong giao diện Preview với mã lỗi `PPCT_IMPORT_LINEAGE_AMBIGUOUS`. Tuyệt đối không tự động đoán phả hệ.
 
+### Ràng buộc Bắt buộc giữa Preview và Confirm (Lineage Preview Binding Contract):
+- **Phả hệ tự động giải quyết trong Preview:** Danh sách ánh xạ phả hệ chính xác (`predecessors: [{ versionId, itemId }]`) phải được đóng băng vào gói xác nhận (`confirm package`).
+- **Phả hệ do người dùng chọn thủ công:** Nếu giao diện Preview cho phép người dùng lựa chọn ánh xạ phả hệ, danh sách được người dùng chỉ định rõ ràng phải nằm trong gói xác nhận.
+- **Cấm tính toán lại âm thầm:** Phía máy chủ khi thực hiện Confirm **TUYỆT ĐỐI KHÔNG ĐƯỢC PHÉP** tự động tính toán lại một bản đồ phả hệ khác rồi âm thầm áp dụng mà không thông qua một chu trình preview/fingerprint mới.
+- **Bảo vệ tính toàn vẹn trạng thái nguồn:** Nếu trạng thái cơ sở dữ liệu nguồn bị thay đổi giữa lúc Preview và Confirm khiến bản đồ phả hệ không còn hợp lệ (ví dụ revision tiền nhiệm bị xóa hoặc bị thay đổi trạng thái), lệnh Confirm phải **FAIL-CLOSED** với lỗi `PPCT_IMPORT_LINEAGE_AMBIGUOUS` hoặc `PPCT_IMPORT_DRAFT_CONFLICT`.
+
 ---
 
 ## 19. Hợp đồng Thứ tự Dòng và Dãy Số thứ tự
@@ -397,17 +477,18 @@ Khi nhập phiên bản tiếp theo (Version 2+) từ workbook, việc đối so
 
 ---
 
-## 20. Hợp đồng Cột Tự động Phái sinh (Auto-Number Derived Columns)
+## 20. Hợp đồng Cột Tự động Phái sinh và Công thức (Derived Formula Columns)
 
 Tại sheet `PPCT`, các cột H, I (`Tiết PPCT bắt đầu / kết thúc`) và sheet `CHUYEN_DE`, các cột G, H (`Tiết chuyên đề bắt đầu / kết thúc`) chứa công thức Excel:
 - PPCT: `=IF(OR(A2="",D2="",E2=""),"",SUMIFS($E$2:E2,$A$2:A2,A2)-E2+1)` và `=IF(H2="","",H2+E2-1)`
 - CHUYEN_DE: `=IF(OR(A2="",B2="",C2="",D2=""),"",SUMIFS($D$2:D2,$A$2:A2,A2)-D2+1)` và `=IF(G2="","",G2+D2-1)`
 
 ### Khóa quy tắc thẩm quyền:
-1. **Cột phái sinh trên Excel KHÔNG mang thẩm quyền nghiệp vụ:** Công thức trong Excel chỉ nhằm mục đích hiển thị trực quan cho giáo viên soạn file.
-2. **Máy chủ tự tính dải tiết mở rộng:** Phía máy chủ tự động tính toán lại dải tiết xuất phát và dải tiết kết thúc từ cột `Số tiết *` và thứ tự phân rã để gán `sequence` liên tục.
-3. **Không lưu trữ giá trị công thức Excel:** Không có cột nào trong cơ sở dữ liệu lưu dải tiết này.
-4. **Kiểm tra sai lệch trong Preview:** Trong pha `preview`, nếu người dùng gõ đè số thủ công vào cột công thức dẫn đến lệch so với dải tiết chuẩn tắc do máy chủ tính toán, hệ thống ghi nhận cảnh báo hiển thị (`ADVISORY`), thông báo rõ hệ thống sẽ áp dụng dải tiết chuẩn tắc của máy chủ.
+1. **Chỉ cho phép công thức tại các cột phái sinh đã biết:** Công thức Excel **CHỈ ĐƯỢC PHÉP XUẤT HIỆN** tại các cột H, I của sheet `PPCT` và cột G, H của sheet `CHUYEN_DE`. Công thức tại bất kỳ cột nào khác đều bị cấm tuyệt đối (`PPCT_IMPORT_PROHIBITED_FORMULA`).
+2. **Cột phái sinh KHÔNG mang thẩm quyền nghiệp vụ:** Công thức trong Excel chỉ phục vụ hiển thị trực quan cho người biên soạn. Máy chủ **KHÔNG BAO GIỜ THỰC THI** các công thức này làm căn cứ nghiệp vụ.
+3. **Máy chủ tự tính toán dải tiết độc lập:** Phía máy chủ tự động tính toán lại toàn bộ dải tiết xuất phát và dải tiết kết thúc từ cột `Số tiết *` và thứ tự phân rã để gán `sequence` liên tục.
+4. **Không lưu trữ và không tính vào Checksum:** Không có cột nào trong CSDL lưu dải tiết này. Cả chuỗi công thức lẫn giá trị cached của công thức **TUYỆT ĐỐI KHÔNG ĐƯỢC THAM GIA** vào `semanticChecksum` hoặc nội dung PPCT được lưu giữ.
+5. **Kiểm tra sai lệch trong Preview:** Trong pha `preview`, trình phân tích có thể đọc các giá trị số do người dùng gõ đè (nếu có) để đối soát cảnh báo (`ADVISORY`), thông báo rõ hệ thống sẽ áp dụng dải tiết chuẩn tắc do máy chủ tính toán.
 
 ---
 
@@ -425,16 +506,39 @@ Tại sheet `PPCT`, các cột H, I (`Tiết PPCT bắt đầu / kết thúc`) v
 
 ---
 
-## 22. Hợp đồng Thẩm quyền Danh mục Loại Nội dung (Lesson Type Authority)
+## 22. Hợp đồng Thẩm quyền Danh mục và Chuẩn hóa Loại Nội dung (Lesson Type Authority & Canonical Normalization)
 
-1. **Thẩm quyền Thuộc về Máy chủ (Server-Owned Frozen Allowlist):**
-   - Bảng `PpctItemRevision` trong CSDL lưu chuỗi tự do `lessonType VARCHAR(100)` và không có bảng danh mục loại bài học động trong CSDL.
-   - Nội dung sheet `DANH_MUC` tải lên chỉ mang tính tham khảo (`REFERENCE_ONLY`). **Người dùng sửa đổi sheet DANH_MUC trong file tải lên KHÔNG ĐƯỢC PHÉP mở rộng danh mục loại bài học hợp lệ của hệ thống.**
-   - Bộ nhập `P2-020` áp dụng danh mục allowlist đóng băng chuẩn tắc của hợp đồng `PPCT_V1`:
-     - Đối với `CORE`: Bắt buộc thuộc `{Bài học, Thực hành, Ôn tập, Kiểm tra, Trả bài, Khác}` (không phân biệt hoa thường, sau trim). Mặc định nếu trống là `'Bài học'`. Giá trị ngoài allowlist bị từ chối với lỗi `PPCT_IMPORT_INVALID_LESSON_TYPE`.
-     - Đối với `SPECIALIZED_STUDY`: Giá trị chuẩn tắc duy nhất là `'Chuyên đề'`.
-2. **Kiểm tra độ lệch mẫu (Template Drift):**
-   - Nếu sheet `DANH_MUC` trong tệp tải lên có các giá trị khác biệt với allowlist đóng băng của máy chủ, hệ thống ghi nhận cảnh báo `ADVISORY` trong bản preview, không cho phép ghi đè thẩm quyền của máy chủ.
+### A. Danh mục Allowlist Đóng băng của Máy chủ (`PPCT_V1`):
+Danh mục loại nội dung hợp lệ được đóng băng cứng trên máy chủ gồm 6 giá trị:
+- `Bài học`
+- `Thực hành`
+- `Ôn tập`
+- `Kiểm tra`
+- `Trả bài`
+- `Khác`
+
+### B. Chuẩn hóa Đầu vào và Bắt buộc Đầu ra Chuẩn tắc (Canonical Normalization):
+1. **Khớp đầu vào linh hoạt:** Quá trình đối soát đầu vào cho phép:
+   - Trim khoảng trắng ở hai đầu;
+   - Chuẩn hóa Unicode NFKC;
+   - Không phân biệt chữ hoa, chữ thường (case-insensitive).
+2. **Bắt buộc đầu ra chuẩn tắc (Canonical Output):**
+   - Cho dù giá trị trong workbook là `"bài học"`, `"BÀI HỌC"`, hay `" Bài học "`, khi phân giải thành công **BẮT BUỘC PHẢI LƯU TRỮ VÀ XUẤT RA TOKEN CHUẨN TẮC**:
+     - `"Bài học"`
+     - `"Thực hành"`
+     - `"Ôn tập"`
+     - `"Kiểm tra"`
+     - `"Trả bài"`
+     - `"Khác"`
+   - Tương tự đối với mọi giá trị trong allowlist.
+3. **Tổng kiểm Ngữ nghĩa dùng Token Chuẩn tắc:**
+   - Giá trị tham gia tính `semanticChecksum` **BẮT BUỘC PHẢI LÀ TOKEN ĐÃ CHUẨN HÓA CHUẨN TẮC**, không dùng cách viết hoa thường thô của workbook.
+4. **Loại nội dung Chuyên đề Học tập (`SPECIALIZED_STUDY`):**
+   - Giá trị chuẩn tắc duy nhất và bắt buộc là: `"Chuyên đề"`.
+5. **Giá trị không hợp lệ:**
+   - Bất kỳ giá trị nào ngoài allowlist đóng băng máy chủ đều bị từ chối với mã lỗi fail-closed `PPCT_IMPORT_INVALID_LESSON_TYPE`.
+6. **Nội dung sheet `DANH_MUC` tải lên không có thẩm quyền:**
+   - Sheet `DANH_MUC` chỉ mang tính tham khảo (`REFERENCE_ONLY`). Người dùng thêm/sửa dòng trong sheet `DANH_MUC` không được phép mở rộng allowlist của máy chủ.
 
 ---
 
@@ -452,16 +556,57 @@ Tại sheet `PPCT`, các cột H, I (`Tiết PPCT bắt đầu / kết thúc`) v
 
 ---
 
-## 24. Dấu vân tay Byte thô và Tổng kiểm Nội dung Ngữ nghĩa (Raw Digest & Semantic Checksum)
+## 24. Khóa Gói Preview -> Confirm, Dấu vân tay Yêu cầu và Tổng kiểm Ngữ nghĩa (Confirm Package, Request Fingerprint & Semantic Checksum)
 
-### A. Raw Digest:
-- Mã băm SHA-256 tính trực tiếp từ toàn bộ bytes của tệp XLSX tải lên.
-- Phục vụ truy vết kiểm toán và tham gia tính toán khóa `requestFingerprint`.
+Chỉ riêng dấu vân tay của workbook thô (`rawDigest`) là không đủ, bởi vì lệnh Confirm còn mang theo các quyết định nghiệp vụ cụ thể cho từng khối lớp (chế độ nhắm mục tiêu, draft ID mục tiêu, và các ánh xạ phả hệ cấp tiết). Do đó, hệ thống khóa toàn diện hợp đồng Gói Xác nhận Chuẩn tắc và Dấu vân tay Yêu cầu.
 
-### B. Semantic Content Checksum:
-Tổng kiểm nội dung ngữ nghĩa đại diện cho **bản chất nội dung sư phạm được phân rã và lưu trữ vào CSDL**, bảo đảm tính tái lập (reproducible) độc lập với định dạng Excel:
+### A. Gói Xác nhận Chuẩn tắc Cấp Khối lớp (Per-Grade Canonical Confirm Package):
+Đối với mỗi khối lớp được tác động trong workbook, gói xác nhận chuẩn tắc bao gồm tối thiểu các trường sau:
+1. `academicYearId: UUID`
+2. `subjectId: UUID`
+3. `gradeLevel: Int` (`10 | 11 | 12`)
+4. `canonicalSemanticDigest: String` (mã băm SHA-256 nội dung ngữ nghĩa cấp khối lớp)
+5. `targetMode: 'CREATE_NEW_DRAFT' | 'UPDATE_EXACT_DRAFT'`
+6. `targetDraftId: UUID | null` (bắt buộc khi `targetMode === 'UPDATE_EXACT_DRAFT'`)
+7. `expectedUpdatedAt: ISO-8601 string | null` (bắt buộc khi `targetMode === 'UPDATE_EXACT_DRAFT'`, dùng làm CAS token)
+8. `items: Array<CanonicalConfirmItem>` sắp xếp liên tục theo `component` rồi `sequence`, trong đó mỗi phần tử chứa:
+   - `sequence: Int`
+   - `component: 'CORE' | 'SPECIALIZED_STUDY'`
+   - `title: String` (tiêu đề chuẩn tắc $\le 500$ ký tự)
+   - `lessonType: String` (token chuẩn tắc thuộc allowlist)
+   - `identityDecision`:
+     - Nếu `CARRY_FORWARD`: `{ mode: 'CARRY_FORWARD', itemId: UUID }`
+     - Nếu `NEW`: `{ mode: 'NEW', itemId: UUID, predecessors: Array<{ versionId: UUID, itemId: UUID }> }`
 
-**Các trường tham gia tính Semantic Checksum:**
+### B. Gói Xác nhận Chuẩn tắc Cấp Workbook (Workbook-Level Canonical Confirm Package):
+- Chứa danh sách gói của tất cả các khối lớp có trong workbook, **được sắp xếp tất định theo thứ tự tăng dần của `gradeLevel` (`10, 11, 12`)**.
+
+### C. Hợp đồng Dấu vân tay Yêu cầu (`requestFingerprint` Contract):
+1. **Bản chất của `requestFingerprint`:**
+   - Là một **token toàn vẹn kiểm tra tính lỗi thời của bản preview (stale-preview integrity token)**.
+   - **KHÔNG PHẢI LÀ TOKEN XÁC THỰC (NOT authentication):** Không thay thế việc kiểm tra quyền hạn `PPCT_MANAGE` trên từng request.
+   - **KHÔNG PHẢI LÀ BIÊN NHẬN IDEMPOTENCY VĨNH VIỄN (NOT a durable idempotency receipt):** Không thay thế cơ chế kiểm tra trạng thái DB và replay transaction.
+2. **Dữ liệu được bao phủ trong `requestFingerprint`:**
+   - `authenticatedUserId`: UUID của người dùng đang thực hiện request;
+   - `workbookRawDigest`: Mã SHA-256 tính từ bytes thô của tệp XLSX tải lên;
+   - `academicYearId`: UUID năm học đã phân giải;
+   - `subjectId`: UUID môn học đã phân giải;
+   - `canonicalSemanticDigest`: Mã SHA-256 của toàn bộ nội dung ngữ nghĩa workbook sau phân rã;
+   - `canonicalConfirmPackage`: Gói xác nhận chuẩn tắc cấp workbook như đã định nghĩa ở phần B.
+3. **Quy tắc Tuần tự hóa Tất định (Deterministic Serialization):**
+   - Sử dụng chuẩn JSON chuẩn tắc (Canonical JSON với các khóa được sắp xếp theo thứ tự bảng chữ cái, không có khoảng trắng thừa) hoặc cơ chế mã hóa độ dài tiền tố (length-prefix serialization).
+   - **CẤM TUYỆT ĐỐI** việc ghép chuỗi ngây thơ (naive concatenation) không có ký tự phân tách hoặc không cố định thứ tự khóa.
+4. **Quy trình Thực thi và Xác minh tại Lệnh Confirm:**
+   Phía máy chủ khi nhận lệnh `POST /api/ppct-import/confirm` bắt buộc phải:
+   1. Phân tích lại tệp workbook đã tải lên (hoặc tiêu thụ bản biểu diễn preview giới hạn do máy chủ kiểm soát);
+   2. Tính toán lại nội dung chuẩn tắc;
+   3. Tính toán lại và kiểm tra tính hợp lệ của toàn bộ gói xác nhận;
+   4. Tính lại `requestFingerprint` và so sánh với giá trị gửi lên trong request payload;
+   5. Tái xác thực CAS token (`expectedUpdatedAt`) và trạng thái DB hiện tại;
+   6. Nếu có bất kỳ sự sai lệch nào về dấu vân tay: từ chối fail-closed với mã lỗi `PPCT_IMPORT_FINGERPRINT_MISMATCH` (hoặc lỗi CAS cụ thể tương ứng).
+
+### D. Tổng kiểm Nội dung Ngữ nghĩa (Semantic Content Checksum):
+Tổng kiểm nội dung ngữ nghĩa đại diện cho bản chất nội dung sư phạm được phân rã và lưu trữ vào CSDL:
 1. Phiên bản hợp đồng mẫu: `"PPCT_V1"`
 2. Định danh chuẩn tắc của Năm học: `AcademicYear.code`
 3. Định danh chuẩn tắc của Môn học: `Subject.code`
@@ -470,8 +615,8 @@ Tổng kiểm nội dung ngữ nghĩa đại diện cho **bản chất nội dun
    - Danh sách bài học **sau khi phân rã cấp tiết**, sắp xếp theo `sequence` tăng dần:
      - `component` (`CORE` hoặc `SPECIALIZED_STUDY`)
      - `sequence` (số nguyên liên tục từ 1)
-     - normalized `title` (chuỗi tiêu đề tiết đã chuẩn hóa NFKC)
-     - normalized `lessonType` (chuỗi loại bài học đã chuẩn hóa NFKC)
+     - canonical `title` (tiêu đề chuẩn tắc sau khi ghép và chuẩn hóa NFKC)
+     - canonical `lessonType` (token chuẩn tắc thuộc allowlist, e.g. `"Bài học"`)
 
 **Các thành phần BỊ LOẠI TRỪ khỏi Semantic Checksum:**
 - Tên tệp và đường dẫn tệp tải lên;
@@ -483,7 +628,7 @@ Tổng kiểm nội dung ngữ nghĩa đại diện cho **bản chất nội dun
 
 ---
 
-## 25. Hợp đồng Nhiều Bản nháp, Cơ chế Nhắm mục tiêu và Phát lại Idempotent (Target-Draft & Replay Contract)
+## 25. Hợp đồng Nhiều Bản nháp, Cơ chế Nhắm mục tiêu và Ngữ nghĩa Đua tranh Đồng thời (Target-Draft & Concurrent Replay Contract)
 
 ### A. Rà soát Số lượng Bản nháp (Draft Cardinality):
 Kiểm toán kiến trúc tại `schema.prisma` và `PpctService.createVersion` xác nhận:
@@ -494,13 +639,8 @@ Kiểm toán kiến trúc tại `schema.prisma` và `PpctService.createVersion` 
 Pha Preview trả về thông tin các draft hiện có cho từng khối lớp. Khi gọi lệnh Confirm, client bắt buộc phải chỉ định rõ một trong hai chế độ cho từng khối lớp:
 
 1. **Chế độ Tạo Bản nháp Mới (`CREATE_NEW_DRAFT`):**
-   - Không ghi đè lên bất kỳ draft nào đang có.
    - Tạo mới một `PpctVersion(status = DRAFT)` với `versionNumber = max(versionNumber) + 1`.
-   - **Xử lý Phát lại Idempotent (Semantic Replay):**
-     - Bên trong transaction `SERIALIZABLE`, máy chủ tìm kiếm các bản ghi `DRAFT` của plan do chính người dùng đó tạo.
-     - Nếu phát hiện **CHÍNH XÁC MỘT** bản ghi `DRAFT` có nội dung ngữ nghĩa sau phân rã trùng khớp 100% với nội dung tải lên: hệ thống trả về bản ghi `DRAFT` hiện có này (idempotent replay), không tạo version mới.
-     - Nếu không có draft nào trùng: tạo draft mới.
-     - Nếu có **NHIỀU HƠN MỘT** draft có nội dung trùng khớp: báo lỗi fail-closed `PPCT_IMPORT_REPLAY_AMBIGUOUS` để người dùng chủ động chọn draft mục tiêu.
+   - Phải xử lý đua tranh đồng thời và phát lại ngữ nghĩa theo mục C dưới đây.
 2. **Chế độ Cập nhật Bản nháp Chỉ định (`UPDATE_EXACT_DRAFT`):**
    - Áp dụng khi người dùng muốn cập nhật nội dung cho một draft cụ thể đang chỉnh sửa.
    - Client bắt buộc phải truyền lên:
@@ -512,6 +652,25 @@ Pha Preview trả về thông tin các draft hiện có cho từng khối lớp.
      - Phải có trạng thái `status === DRAFT`; nếu không: báo lỗi `PPCT_IMPORT_TARGET_NOT_DRAFT`.
      - Khớp chính xác `expectedUpdatedAt` để chống ghi đè đồng thời; nếu lệch: báo lỗi `PPCT_IMPORT_DRAFT_CONFLICT`.
    - Sau khi xác thực hợp lệ, máy chủ thực hiện thay thế toàn bộ nội dung của draft đó một cách nguyên tử.
+
+### C. Ngữ nghĩa Đua tranh Đồng thời khi `CREATE_NEW_DRAFT` (Concurrent Races vs Sequential Replay):
+Hợp đồng phải phân biệt rạch ròi giữa phát lại tuần tự (sequential replay) và các cuộc đua tranh đồng thời (concurrent races):
+
+1. **Thực thi bên trong Giao dịch `SERIALIZABLE`:**
+   Mỗi thao tác tạo nháp phải được thực hiện trong transaction với mức cô lập `SERIALIZABLE`:
+   - **Bước 1 — Tìm kiếm bản nháp tương đương ngữ nghĩa cùng tác giả:**
+     Tìm kiếm các bản ghi `DRAFT` của plan do chính người dùng đó tạo (`createdByUserId == currentUserId`).
+   - **Bước 2 — Xử lý kết quả tìm kiếm:**
+     - Nếu tìm thấy **CHÍNH XÁC MỘT** draft có nội dung ngữ nghĩa sau phân rã khớp 100% với nội dung tải lên: hệ thống thực hiện **phát lại idempotent (semantic replay)**, trả về bản ghi DRAFT hiện có này mà không tạo bản ghi mới.
+     - Nếu tìm thấy **NHIỀU HƠN MỘT** draft có nội dung trùng khớp: báo lỗi fail-closed `PPCT_IMPORT_REPLAY_AMBIGUOUS` để người dùng chủ động chọn bản ghi mục tiêu.
+     - Nếu có **0** draft trùng khớp: tiến hành tạo mới bản nháp (`PpctVersion`).
+2. **Xử lý Xung đột Tuần tự hóa Đồng thời (Concurrency Conflict Handling):**
+   - Khi hai request `CREATE_NEW_DRAFT` đồng thời cùng gửi lên nội dung cho cùng một plan, cơ sở dữ liệu sẽ phát sinh lỗi xung đột tuần tự hóa (PostgreSQL `40001 serialization_failure`).
+   - Nhiệm vụ `P2-020` bắt buộc phải áp dụng mẫu xử lý xung đột tuần tự hóa có giới hạn đã được chấp nhận của repository (bounded retry pattern với exponential backoff/jitter, tối đa 3 lần thử) HOẶC trả về một mã lỗi xung đột đồng thời ổn định `PPCT_IMPORT_DRAFT_CONFLICT` sau khi transaction bị rollback.
+   - Khi một transaction được retry thành công, vòng lặp tìm kiếm ở Bước 1 sẽ phát hiện ra bản nháp vừa được transaction cạnh tranh tạo ra, và chuyển hướng an toàn sang **phát lại ngữ nghĩa (semantic replay)** thay vì tạo trùng lặp!
+3. **Các Bất biến Bắt buộc:**
+   - **TUYỆT ĐỐI KHÔNG ĐƯỢC COMMIT 2 DRAFT TRÙNG LẶP** chỉ vì một transaction bị thoát một phần ra ngoài.
+   - **TUYỆT ĐỐI KHÔNG TUYÊN BỐ CUNG CẤP CHÍNH XÁC MỘT LẦN BỀN VỮNG (DURABLE EXACTLY-ONCE)** chỉ dựa vào `requestFingerprint`. Dấu vân tay chỉ là kiểm tra tính lỗi thời của preview, tính toàn vẹn được bảo đảm bởi transaction cơ sở dữ liệu.
 
 ---
 
@@ -545,9 +704,11 @@ Một workbook có thể chứa đồng thời cả 3 khối lớp 10, 11, 12:
 
 ---
 
-## 28. Hợp đồng An toàn và Bảng Giới hạn Kỹ thuật Triển khai (Security Limits & Parser Profile)
+## 28. Hợp đồng An toàn, Bảng Giới hạn Kỹ thuật Triển khai và Chính sách Gói Tệp (Complete Security Limits, ZIP Path & Cell Type Policy)
 
-### A. Phân định Giới hạn Tái sử dụng và Giới hạn Tăng cường Riêng cho PPCT:
+### A. Bảng Giới hạn An toàn Toàn diện (Complete Security Limits Table):
+
+Hệ thống phân định rạch ròi giữa các giới hạn kỹ thuật được tái sử dụng từ module thời khóa biểu và các giới hạn tăng cường an toàn mới được thiết lập riêng cho PPCT:
 
 | Hạng mục An toàn | Giá trị Khóa | Phân loại Nguồn gốc | Hành vi nếu Vi phạm |
 |---|:---:|---|---|
@@ -557,30 +718,38 @@ Một workbook có thể chứa đồng thời cả 3 khối lớp 10, 11, 12:
 | **Số dòng tối đa trên sheet** | 5,000 dòng | Tái sử dụng `MAX_SHEET_ROWS` từ Timetable | Báo lỗi `PPCT_IMPORT_COMPLEXITY_LIMIT` |
 | **Số cột tối đa trên sheet** | 64 cột | Tái sử dụng `MAX_SHEET_COLUMNS` từ Timetable | Báo lỗi `PPCT_IMPORT_COMPLEXITY_LIMIT` |
 | **Tổng số ô theo dimension** | 250,000 ô | Tái sử dụng `MAX_TOTAL_DIMENSION_CELLS` từ Timetable | Báo lỗi `PPCT_IMPORT_COMPLEXITY_LIMIT` |
+| **Số vùng ô gộp tối đa (Merged Ranges)** | 256 vùng | Tái sử dụng `MAX_MERGED_RANGES` từ Timetable | Báo lỗi `PPCT_IMPORT_COMPLEXITY_LIMIT` |
 | **Thời gian phân tích tối đa** | 8,000 ms | Tái sử dụng `WORKBOOK_PARSE_TIMEOUT_MS` từ Timetable | Báo lỗi `PPCT_IMPORT_TIMEOUT` |
-| **Giới hạn bộ nhớ Worker** | OldGen 128MB, YoungGen 32MB | Tái sử dụng `WORKER_RESOURCE_LIMITS` từ Timetable | Ngăn chặn cạn kiệt tài nguyên |
-| **Tỷ lệ nén tối đa (Expansion)** | 20 : 1 | **Tăng cường riêng cho PPCT (New Hardening)** | Báo lỗi `PPCT_IMPORT_COMPLEXITY_LIMIT` |
+| **Giới hạn bộ nhớ Worker** | OldGen 128MB, YoungGen 32MB | Tái sử dụng `WORKER_RESOURCE_LIMITS` từ Timetable | Ngăn chặn cạn kiệt tài nguyên node |
+| **Tỷ lệ nén tối đa (Expansion Ratio)** | 20 : 1 | **Tăng cường riêng cho PPCT (New Hardening)** | Báo lỗi `PPCT_IMPORT_COMPLEXITY_LIMIT` |
 | **Số lượng ZIP entries tối đa** | 100 entries | **Tăng cường riêng cho PPCT (New Hardening)** | Báo lỗi `PPCT_IMPORT_COMPLEXITY_LIMIT` |
-| **Độ dài chuỗi ô Tên bài học** | 500 ký tự | **Profile riêng cho PPCT (New Parser Profile)** | Báo lỗi `PPCT_IMPORT_TITLE_OVER_LIMIT` |
+| **Độ dài chuỗi ô Tiêu đề bài học** | 500 ký tự | **Profile riêng cho PPCT (New Parser Profile)** | Báo lỗi `PPCT_IMPORT_TITLE_OVER_LIMIT` |
 | **Độ dài chuỗi ô khác** | 100 ký tự (Type), 200 ký tự (Khác) | Khớp giới hạn CSDL VarChar | Báo lỗi `PPCT_IMPORT_FIELD_OVER_LIMIT` |
 
-### B. Giải quyết Độ dài Chuỗi Parser (200 ký tự vs 500 ký tự):
+*(Lưu ý kiểm toán: Ba giới hạn gồm tỷ lệ nén 20:1, giới hạn 100 ZIP entries, và độ dài ô tiêu đề 500 ký tự là các quy định tăng cường mới riêng cho PPCT, không tồn tại trong parser thời khóa biểu trước đây).*
+
+### B. Chính sách Đường dẫn ZIP và Nội dung Ngoài (ZIP Path & External Content Policy):
+Giai đoạn preflight của trình phân tích PPCT bắt buộc phải từ chối fail-closed đối với các tệp chứa:
+1. **Đường dẫn mục ZIP tuyệt đối:** Bắt đầu bằng `/` hoặc `\` hoặc ký tự ổ đĩa (ví dụ `C:\`).
+2. **Ký tự duyệt thư mục (Directory Traversal):** Chứa chuỗi `../` hoặc chuỗi chuẩn hóa dấu gạch chéo ngược `..\`.
+3. **Mối quan hệ gói tệp bất thường:** Tệp quan hệ gói (`.rels`) không đúng chuẩn hoặc trỏ ra ngoài gói tệp.
+4. **Liên kết ngoài (External Relationships / Targets):** Bất kỳ quan hệ nào có `TargetMode="External"`.
+5. **Thư mục liên kết ngoài (`xl/externalLinks/`):** Liên kết workbook ngoài.
+6. **Kết nối dữ liệu ngoài:** Các tệp `xl/connections.xml`, `xl/queryTables/`.
+7. **Đối tượng nhúng:** Các đối tượng OLE (`oleObject`), tệp nhị phân nhúng (`.bin`).
+8. **Điều khiển ActiveX:** Bất kỳ phần tử ActiveX nào.
+9. **Siêu liên kết ngoài (External Hyperlinks):** Các liên kết URL bên ngoài trong ô tính.
+- **Ngoại lệ hợp lệ:** Chỉ các mối quan hệ nội bộ phi thực thi cần thiết cho bảng (`xl/tables/`) và kiểu dáng (`xl/styles.xml`) chuẩn OpenXML mới được chấp nhận.
+- **Không truy xuất mạng:** Máy chủ tuyệt đối không tải về bất kỳ tài nguyên bên ngoài nào khi phân tích tệp.
+- **Xử lý vi phạm:** Bất kỳ vi phạm nào về đường dẫn ZIP độc hại hoặc nội dung ngoài đều bị từ chối fail-closed với mã lỗi `PPCT_IMPORT_INVALID_FILE_TYPE` (nếu hỏng/traversal gói tệp) hoặc `PPCT_IMPORT_EXTERNAL_LINKS_UNSUPPORTED` (nếu chứa liên kết/kết nối/đối tượng ngoài).
+
+### C. Giải quyết Độ dài Chuỗi Parser (200 ký tự vs 500 ký tự):
 - Parser thời khóa biểu hiện hành giới hạn `MAX_PARSER_CELL_TEXT_LENGTH = 200`.
 - Miền nghiệp vụ PPCT cho phép tiêu đề bài học lên tới 500 ký tự (`PpctItemRevision.title VARCHAR(500)`).
 - **Nghĩa vụ triển khai cho `P2-020`:**
   - P2-020 **KHÔNG ĐƯỢC** tái sử dụng nguyên trạng giới hạn 200 ký tự của timetable parser (vì sẽ làm cắt cụt bài học PPCT hợp lệ).
   - P2-020 **KHÔNG ĐƯỢC** nới lỏng giới hạn 200 ký tự của timetable một cách toàn cục (để tránh ảnh hưởng phân hệ thời khóa biểu).
   - P2-020 phải kế thừa kiến trúc worker cách ly luồng và thiết lập **PPCT Parser Profile** riêng, cho phép đọc chuỗi ô tiêu đề lên tới 500 ký tự trước khi kiểm tra độ dài tổng thể.
-
-### C. Chính sách Công thức và Kiểm tra Gói Mở rộng:
-- **Công thức trong ô nhập liệu (A..G ở PPCT, A..F ở CHUYEN_DE):** Cấm tuyệt đối. Nếu phát hiện công thức trong ô nhập liệu: báo lỗi `PPCT_IMPORT_PROHIBITED_FORMULA`.
-- **Công thức trong ô phái sinh (H..I ở PPCT, G..H ở CHUYEN_DE):** Parser thời khóa biểu hiện hành đánh dấu toàn bộ ô công thức là `UNSUPPORTED`. Parser PPCT phải phân biệt theo vị trí cột: chỉ chấp nhận công thức dải tiết mẫu tại các cột phái sinh H, I và G, H, coi chúng là dữ liệu tham khảo hiển thị và không ném lỗi `UNSUPPORTED` đối với workbook mẫu chuẩn.
-- **Kiểm tra Gói Mở rộng:** Worker preflight của P2-020 bắt buộc phải kiểm tra và từ chối fail-closed đối với:
-  - Macro/VBA (`vbaProject.bin`);
-  - External links (`xl/externalLinks/`);
-  - External relationships / connections ra ngoài;
-  - Đối tượng nhúng OLE / ActiveX;
-  - Tệp mã hóa hoặc đặt mật khẩu.
 
 ---
 
@@ -607,52 +776,70 @@ Một workbook có thể chứa đồng thời cả 3 khối lớp 10, 11, 12:
 Toàn bộ các trường hợp vi phạm phải trả về mã lỗi ổn định, không để lộ raw stack trace của trình phân tích Excel:
 
 ### Nhóm 1: Lỗi Gói Tệp & An toàn (Package & Security)
-- `PPCT_IMPORT_INVALID_XLSX`: Tệp tải lên không phải là tệp ZIP/XLSX hợp lệ, hỏng cấu trúc OpenXML hoặc chứa đối tượng nhúng/ActiveX bị cấm.
-- `PPCT_IMPORT_FILE_TOO_LARGE`: Dung lượng tệp nén vượt quá 8MB.
-- `PPCT_IMPORT_COMPLEXITY_LIMIT`: Tệp vượt quá ngưỡng giải nén 64MB, tỷ lệ nén > 20:1, quá 100 entries, quá 32 sheets hoặc quá 5,000 dòng.
-- `PPCT_IMPORT_MACRO_UNSUPPORTED`: Tệp chứa macro hoặc mã thực thi VBA (`vbaProject.bin`).
-- `PPCT_IMPORT_EXTERNAL_LINKS_UNSUPPORTED`: Tệp chứa liên kết hoặc kết nối dữ liệu ra ngoài (`xl/externalLinks/`).
-- `PPCT_IMPORT_ENCRYPTED_UNSUPPORTED`: Tệp bị đặt mật khẩu hoặc mã hóa OpenXML.
-- `PPCT_IMPORT_TIMEOUT`: Quá thời gian phân tích an toàn tệp (8,000 ms).
 
-### Nhóm 2: Lỗi Cấu trúc Sheet & Header (Sheet & Header Structure)
-- `PPCT_IMPORT_MISSING_REQUIRED_SHEET`: Thiếu một trong các sheet bắt buộc (`THONG_TIN`, `PPCT`, `CHUYEN_DE`).
-- `PPCT_IMPORT_UNEXPECTED_SHEET`: Tệp chứa sheet không nằm trong danh mục chuẩn 6 sheet.
-- `PPCT_IMPORT_HIDDEN_AUTHORITATIVE_SHEET`: Một trong các sheet thẩm quyền bị ẩn (`hidden` hoặc `veryHidden`).
-- `PPCT_IMPORT_INVALID_HEADER`: Dòng tiêu đề không khớp chính xác với mẫu chuẩn tắc.
-- `PPCT_IMPORT_MISSING_HEADER`: Thiếu cột tiêu đề bắt buộc.
-- `PPCT_IMPORT_DUPLICATE_HEADER`: Trùng lặp cột tiêu đề.
+| Mã lỗi chuẩn tắc | Ý nghĩa / Điều kiện kích hoạt | HTTP Code |
+|---|---|:---:|
+| `PPCT_IMPORT_INVALID_FILE_TYPE` | Tệp không phải là ZIP/OpenXML XLSX hợp lệ, sai magic bytes, hỏng cấu trúc gói, thiếu `[Content_Types].xml`/`xl/workbook.xml`, hoặc chứa đường dẫn ZIP traversal `..` / đường dẫn tuyệt đối. | 400 |
+| `PPCT_IMPORT_FILE_TOO_LARGE` | Dung lượng tệp nén vượt quá giới hạn 8MB (`MAX_XLSX_BYTES`). | 413 |
+| `PPCT_IMPORT_COMPLEXITY_LIMIT` | Tệp vi phạm các ngưỡng độ phức tạp: giải nén vượt 64MB, tỷ lệ nén > 20:1, quá 100 ZIP entries, quá 32 sheets, quá 5,000 dòng, quá 64 cột, quá 250,000 ô dimension, hoặc quá 256 vùng ô gộp toàn gói. | 400 |
+| `PPCT_IMPORT_MACRO_UNSUPPORTED` | Gói tệp chứa macro hoặc mã thực thi VBA (`xl/vbaProject.bin`). | 400 |
+| `PPCT_IMPORT_EXTERNAL_LINKS_UNSUPPORTED` | Tệp chứa liên kết ra ngoài (`xl/externalLinks/`), external connections, OLE/ActiveX, hoặc external hyperlinks. | 400 |
+| `PPCT_IMPORT_ENCRYPTED_UNSUPPORTED` | Tệp bị đặt mật khẩu hoặc mã hóa OpenXML không thể phân tích trực tiếp. | 400 |
+| `PPCT_IMPORT_TIMEOUT` | Thời gian phân tích an toàn tệp trong worker vượt quá 8,000 ms. | 408 |
 
-### Nhóm 3: Lỗi Metadata & Danh tính (Metadata & Identity)
-- `PPCT_IMPORT_TEMPLATE_VERSION_MISMATCH`: Giá trị `THONG_TIN.Phiên bản mẫu` không phải là `PPCT_V1`.
-- `PPCT_IMPORT_METADATA_MISSING`: Thiếu Môn học hoặc Năm học trong sheet `THONG_TIN`.
-- `PPCT_IMPORT_SUBJECT_NOT_FOUND`: Môn học không tồn tại trong danh mục môn học của hệ thống.
-- `PPCT_IMPORT_SUBJECT_INACTIVE`: Môn học đang ở trạng thái ngừng hoạt động (`INACTIVE`).
-- `PPCT_IMPORT_SUBJECT_AMBIGUOUS`: Tên môn học không định danh được duy nhất môn học trong hệ thống.
-- `PPCT_IMPORT_ACADEMIC_YEAR_NOT_FOUND`: Năm học không tồn tại trong cơ sở dữ liệu.
-- `PPCT_IMPORT_INVALID_ACADEMIC_YEAR_FORMAT`: Định dạng chuỗi năm học sai quy chuẩn (không phải `YYYY-YYYY`).
+### Nhóm 2: Cấu trúc Sheet, Vùng Nhập liệu & Header (Sheet Structure & Input Regions)
 
-### Nhóm 4: Lỗi Dữ liệu Dòng Bài học (Data Row Validation)
-- `PPCT_IMPORT_INVALID_GRADE`: Giá trị khối lớp không thuộc `{10, 11, 12}`.
-- `PPCT_IMPORT_MISSING_TITLE`: Tên bài học / chuyên đề bị để trống.
-- `PPCT_IMPORT_TITLE_OVER_LIMIT`: Tiêu đề bài học chuẩn tắc sau khi ghép tiền tố vượt quá 500 ký tự.
-- `PPCT_IMPORT_FIELD_OVER_LIMIT`: Trường văn bản phụ vượt quá giới hạn ký tự (ví dụ `Bài / Chủ đề` quá 150 ký tự).
-- `PPCT_IMPORT_INVALID_LESSON_TYPE`: Loại nội dung không thuộc allowlist đóng băng của máy chủ.
-- `PPCT_IMPORT_INVALID_PERIOD_COUNT`: Số tiết không phải số nguyên dương hợp lệ hoặc vượt ngưỡng tối đa (1..30 ở PPCT, 1..40 ở CHUYEN_DE).
-- `PPCT_IMPORT_INVALID_WEEK_RANGE`: Tuần bắt đầu / tuần kết thúc không hợp lệ (`weekStart > weekEnd` hoặc ngoài khoảng 1..40).
-- `PPCT_IMPORT_PARTIAL_ROW`: Dòng dữ liệu bị điền dở dang, thiếu các trường bắt buộc.
-- `PPCT_IMPORT_DUPLICATE_ROW`: Dòng bài học bị trùng lặp hoàn toàn.
-- `PPCT_IMPORT_SEQUENCE_DISORDER`: Dãy số chuyên đề (`Chuyên đề số *`) không liên tục bắt đầu từ 1 hoặc bị trùng lặp trong cùng khối lớp.
-- `PPCT_IMPORT_PROHIBITED_FORMULA`: Phát hiện công thức Excel nằm trong các cột dữ liệu nhập liệu nghiệp vụ (A..G ở PPCT, A..F ở CHUYEN_DE).
+| Mã lỗi chuẩn tắc | Ý nghĩa / Điều kiện kích hoạt | HTTP Code |
+|---|---|:---:|
+| `PPCT_IMPORT_MISSING_REQUIRED_SHEET` | Thiếu một trong các sheet thẩm quyền bắt buộc (`THONG_TIN`, `PPCT`, `CHUYEN_DE`). | 400 |
+| `PPCT_IMPORT_UNEXPECTED_SHEET` | Tệp chứa các sheet thừa nằm ngoài danh mục 6 sheet chuẩn tắc. | 400 |
+| `PPCT_IMPORT_HIDDEN_AUTHORITATIVE_SHEET` | Sheet thẩm quyền `THONG_TIN`, `PPCT`, hoặc `CHUYEN_DE` bị đặt ở trạng thái ẩn (`hidden` hoặc `veryHidden`). | 400 |
+| `PPCT_IMPORT_HIDDEN_INPUT_INTERSECTION` | Phát hiện dòng ẩn hoặc cột ẩn giao cắt với vùng nhập liệu nghiệp vụ (B4..B6 ở `THONG_TIN`, A..I ở `PPCT`, A..H ở `CHUYEN_DE`). | 400 |
+| `PPCT_IMPORT_MERGED_AUTHORITATIVE_CELL` | Phát hiện ô gộp (merged cell) giao cắt với vùng nhập liệu nghiệp vụ thẩm quyền (bảng `PPCT`, bảng `CHUYEN_DE`, hoặc metadata B4..B6). | 400 |
+| `PPCT_IMPORT_INVALID_HEADER` | Dòng tiêu đề tại dòng 1 của sheet `PPCT` hoặc `CHUYEN_DE` không khớp chính xác với mẫu chuẩn sau khi trim và chuẩn hóa. | 400 |
+| `PPCT_IMPORT_MISSING_HEADER` | Thiếu một hoặc nhiều cột tiêu đề bắt buộc trong bảng. | 400 |
+| `PPCT_IMPORT_DUPLICATE_HEADER` | Xuất hiện hai hoặc nhiều cột có cùng tên tiêu đề trong bảng. | 400 |
 
-### Nhóm 5: Lỗi Mục tiêu Bản nháp, Đồng thời & Phả hệ (Target, Concurrency & Lineage)
-- `PPCT_IMPORT_TARGET_DRAFT_NOT_FOUND`: Không tìm thấy bản ghi draft mục tiêu được chỉ định khi chọn chế độ `UPDATE_EXACT_DRAFT`.
-- `PPCT_IMPORT_TARGET_DRAFT_PLAN_MISMATCH`: Bản ghi draft mục tiêu không thuộc đúng kế hoạch môn học của khối lớp đó.
-- `PPCT_IMPORT_TARGET_NOT_DRAFT`: Bản ghi mục tiêu được chỉ định không ở trạng thái `DRAFT`.
-- `PPCT_IMPORT_DRAFT_CONFLICT`: Xung đột đồng thời (CAS token `expectedUpdatedAt` không khớp với CSDL hiện tại).
-- `PPCT_IMPORT_FINGERPRINT_MISMATCH`: Khóa `requestFingerprint` gửi lên không khớp với bản preview.
-- `PPCT_IMPORT_REPLAY_AMBIGUOUS`: Tìm thấy nhiều hơn một bản ghi DRAFT trùng khớp nội dung ngữ nghĩa khi phát lại ở chế độ `CREATE_NEW_DRAFT`.
-- `PPCT_IMPORT_LINEAGE_AMBIGUOUS`: Cấu trúc bài học xáo trộn phức tạp không thể tự động căn chỉnh phả hệ một cách an toàn.
+### Nhóm 3: Metadata & Danh tính (Metadata & Identity)
+
+| Mã lỗi chuẩn tắc | Ý nghĩa / Điều kiện kích hoạt | HTTP Code |
+|---|---|:---:|
+| `PPCT_IMPORT_TEMPLATE_VERSION_MISMATCH` | Giá trị tại ô `THONG_TIN.Phiên bản mẫu` (B6) khác chuỗi chuẩn tắc `PPCT_V1`. | 400 |
+| `PPCT_IMPORT_METADATA_MISSING` | Thiếu thông tin Môn học (B4) hoặc Năm học (B5) tại sheet `THONG_TIN`. | 400 |
+| `PPCT_IMPORT_SUBJECT_NOT_FOUND` | Tên môn học chuẩn hóa không khớp với bất kỳ môn học nào trong CSDL. | 404 |
+| `PPCT_IMPORT_SUBJECT_INACTIVE` | Tìm thấy môn học khớp tên chuẩn hóa nhưng đang ở trạng thái ngừng hoạt động (`INACTIVE`). | 422 |
+| `PPCT_IMPORT_SUBJECT_AMBIGUOUS` | Tìm thấy nhiều hơn 1 môn học có trạng thái `ACTIVE` cùng thỏa mãn tên chuẩn hóa. | 422 |
+| `PPCT_IMPORT_ACADEMIC_YEAR_NOT_FOUND` | Năm học tại ô B5 không tồn tại trong bảng `AcademicYear` của hệ thống. | 404 |
+| `PPCT_IMPORT_INVALID_ACADEMIC_YEAR_FORMAT` | Chuỗi năm học không đúng quy chuẩn `YYYY-YYYY` (ví dụ `2026-2027`). | 400 |
+
+### Nhóm 4: Dữ liệu Dòng Bài học & Kiểu Ô (Data Row & Cell Type Validation)
+
+| Mã lỗi chuẩn tắc | Ý nghĩa / Điều kiện kích hoạt | HTTP Code |
+|---|---|:---:|
+| `PPCT_IMPORT_INVALID_GRADE` | Giá trị khối lớp không thuộc tập hợp hợp lệ `{10, 11, 12}`. | 400 |
+| `PPCT_IMPORT_MISSING_TITLE` | Cột tên bài học (cột D ở `PPCT`) hoặc tên chuyên đề (cột C ở `CHUYEN_DE`) bị để trống. | 400 |
+| `PPCT_IMPORT_TITLE_OVER_LIMIT` | Tiêu đề chuẩn tắc sau khi ghép tiền tố vượt quá giới hạn 500 ký tự (`PpctItemRevision.title`). | 400 |
+| `PPCT_IMPORT_FIELD_OVER_LIMIT` | Trường văn bản phụ vượt quá giới hạn (ví dụ `Bài / Chủ đề` vượt 150 ký tự). | 400 |
+| `PPCT_IMPORT_INVALID_LESSON_TYPE` | Loại nội dung không thuộc allowlist đóng băng của máy chủ. | 400 |
+| `PPCT_IMPORT_INVALID_PERIOD_COUNT` | Số tiết không phải số nguyên dương hợp lệ hoặc vượt ngưỡng tối đa (1..30 ở PPCT, 1..40 ở CHUYEN_DE). | 400 |
+| `PPCT_IMPORT_INVALID_WEEK_RANGE` | Tuần bắt đầu / tuần kết thúc không hợp lệ (`weekStart > weekEnd` hoặc ngoài khoảng 1..40). | 400 |
+| `PPCT_IMPORT_PARTIAL_ROW` | Dòng dữ liệu bị điền dở dang, thiếu các trường bắt buộc. | 400 |
+| `PPCT_IMPORT_DUPLICATE_ROW` | Dòng bài học bị trùng lặp toàn bộ nội dung trong cùng khối lớp. | 400 |
+| `PPCT_IMPORT_SEQUENCE_DISORDER` | Dãy số chuyên đề (`Chuyên đề số *`) không liên tục từ 1 hoặc bị trùng trong cùng khối lớp. | 400 |
+| `PPCT_IMPORT_PROHIBITED_FORMULA` | Phát hiện công thức Excel nằm trong các cột nhập liệu nghiệp vụ (A..G ở PPCT, A..F ở CHUYEN_DE). | 400 |
+| `PPCT_IMPORT_UNSUPPORTED_CELL_TYPE` | Ô trong vùng nhập liệu thẩm quyền chứa kiểu không được hỗ trợ: ô lỗi `#VALUE!`, `#REF!`, hyperlink ngoài, hoặc kiểu ngày/boolean không được phép. | 400 |
+
+### Nhóm 5: Mục tiêu Bản nháp, Đồng thời, Fingerprint & Phả hệ (Target, Concurrency & Lineage)
+
+| Mã lỗi chuẩn tắc | Ý nghĩa / Điều kiện kích hoạt | HTTP Code |
+|---|---|:---:|
+| `PPCT_IMPORT_TARGET_DRAFT_NOT_FOUND` | Không tìm thấy bản ghi draft mục tiêu được chỉ định khi chọn chế độ `UPDATE_EXACT_DRAFT`. | 404 |
+| `PPCT_IMPORT_TARGET_DRAFT_PLAN_MISMATCH` | Bản ghi draft mục tiêu không thuộc đúng kế hoạch môn học của khối lớp đó. | 422 |
+| `PPCT_IMPORT_TARGET_NOT_DRAFT` | Bản ghi mục tiêu được chỉ định không ở trạng thái `DRAFT` (ví dụ đã được xuất bản). | 422 |
+| `PPCT_IMPORT_DRAFT_CONFLICT` | Xung đột đồng thời: CAS token `expectedUpdatedAt` không khớp với CSDL hiện tại, hoặc xung đột transaction tuần tự hóa không thể tự động retry. | 409 |
+| `PPCT_IMPORT_FINGERPRINT_MISMATCH` | Khóa `requestFingerprint` gửi lên trong Confirm không khớp với tính toán lại từ tệp hoặc trạng thái preview đã đóng băng. | 409 |
+| `PPCT_IMPORT_REPLAY_AMBIGUOUS` | Tìm thấy nhiều hơn một bản ghi DRAFT trùng khớp nội dung ngữ nghĩa khi phát lại ở chế độ `CREATE_NEW_DRAFT`. | 409 |
+| `PPCT_IMPORT_LINEAGE_AMBIGUOUS` | Cấu trúc bài học xáo trộn phức tạp không thể tự động căn chỉnh phả hệ một cách an toàn, hoặc ánh xạ phả hệ đã preview bị vô hiệu do thay đổi DB. | 422 |
 
 *(Lưu ý: Sự không thống nhất giữa công thức Excel phái sinh ở cột H, I và tính toán của máy chủ, hoặc độ lệch nội dung sheet `DANH_MUC` tải lên, được xếp loại cảnh báo `ADVISORY`, không dùng làm mã lỗi chặn).*
 
@@ -661,15 +848,29 @@ Toàn bộ các trường hợp vi phạm phải trả về mã lỗi ổn đị
 ## 31. Nghĩa vụ Triển khai Cụ thể cho P2-020 (Obligations for P2-020)
 
 Khi thực hiện nhiệm vụ `P2-020` (Native PPCT Importer Implementation), kỹ sư phải tuân thủ nghiêm ngặt các nghĩa vụ sau:
-1. **Triển khai phân rã tiết học tất định:** Mở rộng mỗi dòng bài học có `Số tiết = N` thành $N$ nghĩa vụ bài học cấp tiết (`PpctItem` + `PpctItemRevision`) có `sequence` liên tục và dùng chung tiêu đề chuẩn tắc.
-2. **Khóa tiêu đề chuẩn tắc $\le 500$ ký tự:** Không lưu chuỗi `(Tiết i/N)` vào CSDL; kiểm tra độ dài sau khi ghép tiền tố $\le 500$ ký tự, nếu vượt quá báo lỗi fail-closed `PPCT_IMPORT_TITLE_OVER_LIMIT`.
-3. **Tuân thủ đúng hợp đồng phả hệ runtime:**
+1. **Phân giải định danh môn học tất định duy nhất:** Triển khai thuật toán 6 bước phân giải Môn học từ `THONG_TIN.B4` (Subject display name), so sánh chuỗi chuẩn hóa NFKC và collapse khoảng trắng với các môn học `ACTIVE`. Không tự động tạo môn học, không fallback code, fail-closed rõ ràng.
+2. **Chuẩn hóa token `lessonType` chuẩn tắc:** Đối soát đầu vào linh hoạt (trim, NFKC, case-insensitive), nhưng bắt buộc lưu trữ và tính checksum bằng đúng token chuẩn tắc viết hoa chuẩn (e.g. `"Bài học"`, `"Thực hành"`).
+3. **Triển khai phân rã tiết học tất định:** Mở rộng mỗi dòng bài học có `Số tiết = N` thành $N$ nghĩa vụ bài học cấp tiết (`PpctItem` + `PpctItemRevision`) có `sequence` liên tục và dùng chung tiêu đề chuẩn tắc.
+4. **Khóa tiêu đề chuẩn tắc $\le 500$ ký tự:** Không lưu chuỗi `(Tiết i/N)` vào CSDL; kiểm tra độ dài sau khi ghép tiền tố $\le 500$ ký tự, nếu vượt quá báo lỗi fail-closed `PPCT_IMPORT_TITLE_OVER_LIMIT`.
+5. **Ràng buộc gói Preview -> Confirm và Khóa `requestFingerprint`:**
+   - Xây dựng Gói xác nhận chuẩn tắc (`Canonical Confirm Package`) cho từng khối lớp sắp xếp tăng dần theo `gradeLevel`.
+   - Tạo khóa `requestFingerprint` bao phủ userId, rawDigest, academicYearId, subjectId, semanticDigest và confirm package bằng Canonical JSON.
+   - Pha Confirm phải phân tích lại tệp/preview, tính lại toàn bộ gói, đối soát fingerprint trước khi ghi nhận DB.
+6. **Cố định ánh xạ phả hệ (Lineage Preview Binding):** Ánh xạ phả hệ được chọn hoặc tự động xác định trong preview phải được đóng băng trong confirm package; không được tính lại âm thầm.
+7. **Xử lý đua tranh đồng thời `CREATE_NEW_DRAFT`:** Vận hành bên trong transaction `SERIALIZABLE`, tìm kiếm cùng tác giả để phát lại idempotent, áp dụng bounded retry khi gặp lỗi `40001 serialization_failure`, không bao giờ tạo 2 draft trùng lặp.
+8. **Tuân thủ đúng hợp đồng phả hệ runtime:**
    - Bài học giữ nguyên: `identityMode = CARRY_FORWARD`, `predecessors = []` (không sinh lineage).
    - Bài học kế thừa/thay thế mới: `identityMode = NEW`, khai báo `predecessors` hợp lệ (sinh lineage cùng component).
-4. **Hỗ trợ đầy đủ hai chế độ mục tiêu bản nháp:** `CREATE_NEW_DRAFT` (với semantic replay idempotent) và `UPDATE_EXACT_DRAFT` (với CAS `expectedUpdatedAt` và kiểm tra quyền sở hữu plan).
-5. **Giao dịch nguyên tử cấp workbook:** Toàn bộ các khối lớp có trong tệp phải được lưu trữ trong một database transaction duy nhất (all-or-nothing), sử dụng chung một `Prisma.TransactionClient` nội bộ.
-6. **Xây dựng PPCT Parser Profile:** Bổ sung profile parser riêng cho PPCT cho phép đọc chuỗi ô tiêu đề lên tới 500 ký tự, chấp nhận công thức dải tiết tại cột phái sinh H, I và G, H, áp dụng giới hạn 20:1 expansion và 100 ZIP entries.
-7. **Bảo toàn thẩm quyền allowlist của máy chủ:** Áp dụng allowlist đóng băng của hợp đồng `PPCT_V1` cho `lessonType`, không tin tưởng nội dung sheet `DANH_MUC` tải lên.
+9. **Giao dịch nguyên tử cấp workbook:** Toàn bộ các khối lớp có trong tệp phải được lưu trữ trong một database transaction duy nhất (all-or-nothing), sử dụng chung một `Prisma.TransactionClient` nội bộ.
+10. **Xây dựng PPCT Parser Profile & Kiểm tra Gói Tệp:**
+    - Profile parser riêng cho PPCT cho phép đọc chuỗi ô tiêu đề lên tới 500 ký tự;
+    - Áp dụng các giới hạn an toàn tái sử dụng (8MB, 64MB, 32 sheets, 5000 rows, 64 cols, 250k cells, 256 merged ranges, 8000ms timeout) và các giới hạn tăng cường mới (20:1 ratio, 100 ZIP entries);
+    - Chấp nhận công thức dải tiết tại cột phái sinh H, I và G, H; từ chối công thức ở các cột nhập liệu nghiệp vụ (`PPCT_IMPORT_PROHIBITED_FORMULA`);
+    - Kiểm tra và từ chối dòng/cột ẩn giao cắt vùng nhập liệu nghiệp vụ (`PPCT_IMPORT_HIDDEN_INPUT_INTERSECTION`);
+    - Kiểm tra và từ chối ô gộp giao cắt vùng nhập liệu nghiệp vụ (`PPCT_IMPORT_MERGED_AUTHORITATIVE_CELL`);
+    - Kiểm tra kiểu ô hợp lệ, từ chối ô lỗi, hyperlink ngoài, kiểu không được phép (`PPCT_IMPORT_UNSUPPORTED_CELL_TYPE`);
+    - Kiểm tra an toàn ZIP: từ chối đường dẫn tuyệt đối, traversal `..` / `\`, external links, OLE, ActiveX, macro, encryption.
+11. **Bảo toàn thẩm quyền allowlist của máy chủ:** Áp dụng allowlist đóng băng của hợp đồng `PPCT_V1` cho `lessonType`, không tin tưởng nội dung sheet `DANH_MUC` tải lên.
 
 ---
 
@@ -692,15 +893,22 @@ Nhiệm vụ `P2-010` này tuyệt đối **KHÔNG BAO GỒM**:
 - [x] Đã xác minh mã băm SHA-256 khớp tuyệt đối `9a8cc9b62b02cae5c81163bf7afca12be5f0ee66eb5316fd236294adb1b56692`.
 - [x] Đã xác minh file được Git exclude an toàn qua `.git/info/exclude` và không bị theo dõi bởi Git.
 - [x] Đã kiểm toán an toàn toàn diện gói tệp XLSX với kết luận chuẩn mực.
+- [x] Đã khóa chính xác thuật toán phân giải danh tính Môn học chuẩn tắc duy nhất (Subject display name, NFKC, collapse whitespace, ACTIVE only, fail-closed khi inactive/not found/ambiguous, không fallback code).
+- [x] Đã khóa chuẩn hóa token loại bài học `lessonType` chuẩn tắc (đầu vào case-insensitive, đầu ra lưu trữ và checksum bắt buộc là token chuẩn tắc viết hoa).
+- [x] Đã khóa hợp đồng gói Preview -> Confirm (Canonical Confirm Package cho từng khối lớp sắp xếp theo gradeLevel tăng dần).
+- [x] Đã khóa hợp đồng dấu vân tay `requestFingerprint` chuẩn tắc (stale-preview integrity token, serialized canonical JSON, kiểm tra đối soát toàn diện).
+- [x] Đã khóa ràng buộc phả hệ từ Preview (lineage mapping cố định vào confirm package, không tự ý tính lại).
+- [x] Đã khóa ngữ nghĩa đua tranh đồng thời khi `CREATE_NEW_DRAFT` (SERIALIZABLE transaction, bounded retry, idempotent semantic replay, không bao giờ tạo draft trùng).
+- [x] Đã khóa chính sách dòng/cột ẩn (các sheet thẩm quyền phải visible, cấm dòng/cột ẩn giao cắt vùng nhập liệu nghiệp vụ `PPCT_IMPORT_HIDDEN_INPUT_INTERSECTION`).
+- [x] Đã khóa chính sách ô gộp (Merged Cells) (tái sử dụng giới hạn 256, cấm ô gộp giao cắt vùng nhập liệu nghiệp vụ `PPCT_IMPORT_MERGED_AUTHORITATIVE_CELL`, cho phép ô gộp trang trí ngoài vùng nhập).
+- [x] Đã hoàn thiện bảng giới hạn an toàn toàn diện (phân loại rõ giới hạn tái sử dụng từ timetable parser và 3 giới hạn tăng cường mới riêng cho PPCT: 20:1 ratio, 100 entries, 500 title bound).
 - [x] Đã xác lập cơ chế phân rã tiết học tất định tương thích với độ mịn lưu trữ và bộ phân bổ của hệ thống hiện hành.
 - [x] Đã khóa quy tắc tiêu đề chuẩn tắc (không lưu hậu tố `Tiết i/N` vào CSDL, kiểm tra giới hạn $\le 500$ ký tự).
 - [x] Đã khóa chuẩn tắc ngữ nghĩa `CARRY_FORWARD` (không có predecessor, không tạo lineage) và `NEW` (có predecessor, tạo lineage).
 - [x] Đã loại bỏ giả định đơn draft, thiết lập hợp đồng mục tiêu rõ ràng (`CREATE_NEW_DRAFT` và `UPDATE_EXACT_DRAFT`).
-- [x] Đã định nghĩa cơ chế phát lại ngữ nghĩa idempotent không cần schema biên nhận mới.
 - [x] Đã khóa ranh giới giao dịch nguyên tử cấp workbook sử dụng chung một transaction client cho toàn bộ các khối lớp.
 - [x] Đã khóa thẩm quyền danh mục `Loại nội dung` thuộc về allowlist đóng băng của máy chủ.
-- [x] Đã phân định rạch ròi giữa giới hạn tái sử dụng từ timetable parser và các giới hạn/profile mới riêng cho PPCT.
-- [x] Đã chuẩn hóa danh mục mã lỗi fail-closed thống nhất 100%.
+- [x] Đã chuẩn hóa danh mục mã lỗi fail-closed thống nhất 100% trong toàn bộ tài liệu.
 
 ---
 
@@ -709,7 +917,10 @@ Nhiệm vụ `P2-010` này tuyệt đối **KHÔNG BAO GỒM**:
 Kiểm toán xác nhận workbook chính thức của trường Đam San (`Mau_PPCT_Chuan_He_Thong_Dam_San_V1.xlsx`) hoàn toàn có thể tích hợp an toàn vào kiến trúc PPCT đã được chuẩn hóa tại `ADR-048` thông qua cơ chế phân rã tiết học tất định:
 - Dòng sư phạm có `Số tiết = N` phân rã thành $N$ nghĩa vụ bài học cấp tiết, hoàn toàn tương thích với mô hình phân bổ 1 tiết = 1 `PpctItemRevision` của `P2-003`.
 - `CHUYEN_DE` ánh xạ sang `SPECIALIZED_STUDY` với không gian `sequence` tiết độc lập bắt đầu từ 1.
-- Hợp đồng mục tiêu bản nháp và phả hệ cấp tiết tuân thủ chặt chẽ hành vi runtime hiện tại của `PpctService`.
+- Danh tính Môn học được phân giải tất định duy nhất từ tên hiển thị với các quy tắc fail-closed chặt chẽ.
+- Loại bài học `lessonType` được chuẩn hóa thành các token chuẩn tắc bất biến trong CSDL và semantic checksum.
+- Gói xác nhận `Confirm Package` và dấu vân tay `requestFingerprint` ràng buộc chặt chẽ các quyết định mục tiêu và phả hệ từ pha Preview, ngăn ngừa tình trạng stale preview và đua tranh đồng thời.
+- Chính sách an toàn gói tệp khóa chặt chẽ dòng/cột ẩn, ô gộp, kiểu ô, các mối nguy ZIP và nội dung ngoài.
 - Quá trình nạp bảo đảm tính nguyên tử trên toàn bộ workbook và bảo toàn nguyên vẹn ranh giới cấu hình áp dụng theo lớp của Ban giám hiệu và Tổ trưởng tại `P2-004`.
 
 Nhiệm vụ `P2-010` duy trì trạng thái **`IN_REVIEW`**. Nhiệm vụ `P2-020` tiếp tục ở trạng thái **`PLANNED`** cho đến khi `P2-010` hoàn tất quy trình review, merge và đóng tài liệu `SYNC-P2-010`.
