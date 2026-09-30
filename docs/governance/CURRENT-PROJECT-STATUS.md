@@ -12,8 +12,8 @@ It is **not** a self-referential registry of the latest Git commit. Exact curren
 
 `P2-061` — School-wide effective teaching schedule read model + Teacher Workspace — is **CLOSED** by `SYNC-P2-061`.
 
-Active in progress:
-- `P2-010` — PPCT real-workbook contract/security audit — **IN_PROGRESS** (dedicated branch `docs/ppct-real-workbook-contract-security-audit-010`, canonical start `b8b5f9862c2dc160e124a19b863ac547b44ef94b`, authoritative evidence `Mau_PPCT_Chuan_He_Thong_Dam_San_V1.xlsx` SHA-256 `9a8cc9b62b02cae5c81163bf7afca12be5f0ee66eb5316fd236294adb1b56692`).
+Active in review:
+- `P2-010` — PPCT real-workbook contract/security audit — **IN_REVIEW** (dedicated branch `docs/ppct-real-workbook-contract-security-audit-010`, canonical start `b8b5f9862c2dc160e124a19b863ac547b44ef94b`, authoritative evidence `Mau_PPCT_Chuan_He_Thong_Dam_San_V1.xlsx` SHA-256 `9a8cc9b62b02cae5c81163bf7afca12be5f0ee66eb5316fd236294adb1b56692`).
 
 Remain:
 - `P2-020` — PPCT native importer implementation — **PLANNED** (pending `P2-010`).
@@ -930,10 +930,10 @@ The final production-host topology is intentionally unresolved and explicitly de
 `P2-061` is CLOSED by `SYNC-P2-061`.
 
 Active in progress:
-- `P2-010` — PPCT real-workbook contract/security audit (`docs/ppct-real-workbook-contract-security-audit-010`).
+- None.
 
 Active in review:
-- None.
+- `P2-010` — PPCT real-workbook contract/security audit (`docs/ppct-real-workbook-contract-security-audit-010`).
 
 Eligible to start:
 - None. No implementation task is currently READY.
