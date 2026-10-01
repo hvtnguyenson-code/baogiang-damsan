@@ -17,6 +17,7 @@
     "esModuleInterop": true,
     "paths": {
       "@baogiang/contracts": ["../../packages/contracts/src/index.ts"],
+      "@baogiang/contracts/*": ["../../packages/contracts/src/*"],
       "@baogiang/config": ["../../packages/config/src/index.ts"]
     },
     "noUnusedLocals": false,
