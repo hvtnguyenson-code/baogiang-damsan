@@ -158,7 +158,8 @@ The authoritative school PPCT workbook and contract/security audit is closed und
 - physical sheet `CHUYEN_DE` maps to logical component `SPECIALIZED_STUDY`;
 - physical sheet `THONG_TIN` serves as metadata authority;
 - exact workbook structural, identity, replay, and error contracts are audited and closed under `P2-010` (`docs/requirements/P2-010-PPCT-REAL-WORKBOOK-CONTRACT-SECURITY-AUDIT.md`);
-- native importer runtime has not yet been implemented; downstream implementation belongs to `P2-020` (`READY`).
+- P2-020 native importer implementation is merged by PR #173 (`main@2d6cb02d4bf9bb4529e0e8eaf83e10d6a67ef043`, PR CI #549 SUCCESS, post-merge CI #550 SUCCESS), including dedicated PPCT_V1 parser/security profile, `inspect / preview / confirm`, whole-workbook DRAFT-only atomic import/replay/CAS semantics and Vietnamese import UI;
+- P2-020 remains `MERGED_AWAITING_DOC_SYNC` until the mandatory `SYNC-P2-020` closure synchronization is complete.
 
 ### 4.10 Native Đam San timetable ingestion
 
@@ -200,6 +201,21 @@ On 2026-09-08, the Product Owner established explicit authority realigning PPCT 
 7. **Independent progression:** `CORE` and `SPECIALIZED_STUDY` progress as independent sequential cursors. Consuming a specialized opportunity advances the specialized sequence, not the core sequence.
 8. **Combined reporting:** Ordinary curricular reporting combines totals from both components into canonical class-subject statements.
 
+### 4.14 Production VPS topology (Product Owner authority 2026-10-01)
+
+On 2026-10-01, at decision gate `P6-005`, the Product Owner explicitly selected `SHARED_VPS`.
+
+The intended production host is therefore the existing Windows Server 2022 VPS that currently hosts DamSanV5 / Quản lí nội trú. This decision is supported by a bounded read-only capacity audit retained by the operator and recorded in sanitized form by `ADR-053-PRODUCTION-VPS-TOPOLOGY.md`.
+
+Required invariants:
+
+- `SHARED_VPS` is host sharing only; it is **not** shared application authority;
+- Báo giảng must use a dedicated application root, Node/API port, Scheduled Task/startup authority, environment/secrets boundary, logs, backups, PostgreSQL database, PostgreSQL role, Nginx server-block/include authority, domain/TLS certificate and renewal lifecycle;
+- DamSanV5 / Quản lí nội trú roots, processes, tasks/services, database resources, Nginx/TLS/monitoring state remain protected neighbours;
+- no P6-005 documentation change may create/restart/alter production resources;
+- `P6-010` remains non-startable until `P6-005` is formally `CLOSED` after parent review/merge/post-merge CI and `SYNC-P6-005`;
+- actual production readiness still requires the registered passive evidence and preflight gates; green CI or this capacity decision is not VPS readiness evidence.
+
 ## 5. Deliberately unresolved product decision
 
 The Product Owner must choose, before the pilot freeze, whether the first operational pilot is:
@@ -213,7 +229,8 @@ This decision does not block common P1-P3 foundations, but it blocks the final P
 
 The business realignment does not replace production readiness work. Before first production pilot the project still needs, at minimum:
 
-- Báo giảng first-certificate HTTP-01/Nginx authority closure;
+- formal P6-005 repository closure of the selected `SHARED_VPS` topology;
+- Báo giảng first-certificate HTTP-01/Nginx authority closure under shared-host/protected-neighbour semantics;
 - separate Báo giảng TLS renewal lifecycle;
 - actual VPS Stage 1 passive evidence and reviewed preflight;
 - controlled root/ACL/task/env/Nginx/database bootstrap;

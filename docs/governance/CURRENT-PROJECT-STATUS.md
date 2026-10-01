@@ -2,1011 +2,208 @@
 
 ## Authority
 
-This is the canonical mutable **product/task status** document for Báo giảng. Historical phase reports, `README.md`, `docs/PROJECT_CONTEXT.md` and roadmap text may summarize this status but must not contradict it.
+This is the canonical mutable **current product/task status** document for Báo giảng.
 
-It is **not** a self-referential registry of the latest Git commit. Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub at the start of every task. SHAs recorded here are evidence for the stated baseline or last closed major task.
+Per `MAJOR-TASK-DOCUMENTATION-SYNC-PROTOCOL.md`, this file is intentionally concise. Detailed historical closure evidence belongs in `PRE-PILOT-TASK-REGISTER.md`, requirement/ADR closure records, traceability, PR/CI history and Git history.
 
-**Status snapshot date:** 2026-09-30
+Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub. SHAs here are evidence for already-established task states, never a self-referential claim that this document contains its own current commit.
+
+**Status snapshot date:** 2026-10-01
+
+## Executive status
+
+- Production state: **PRE-OPERATIONAL**.
+- Core build implementation required for the current path is substantially complete.
+- `P2-020` PPCT native importer has been implemented and merged, but remains **`MERGED_AWAITING_DOC_SYNC`** until `SYNC-P2-020` is completed.
+- Product Owner explicitly selected **`SHARED_VPS`** on 2026-10-01 for `P6-005`.
+- Repository formalization of that topology decision is **`IN_REVIEW`** on PR #174; `P6-010` remains non-startable until `P6-005` is formally `CLOSED`.
+- No production deployment, production migration, TLS issuance, Nginx mutation, Scheduled Task mutation, ACL mutation or application restart has been authorized by the current documentation work.
 
 ## Active / next critical path
 
-`P2-010` — PPCT real-workbook contract/security audit — is **CLOSED** by `SYNC-P2-010`.
+### Active in review
 
-Active in progress:
-- None.
+`P6-005` — Production VPS topology decision — **`IN_REVIEW`**.
 
-Active in review:
-- None.
+Product Owner authority:
 
-Eligible to start:
-- `P2-020` — PPCT native importer implementation — **READY** (dependencies `P2-002` and `P2-010` are CLOSED; native importer runtime has NOT been implemented; P2-020 is eligible to implement the native import pipeline according to the approved contract).
+- selected topology: `SHARED_VPS`;
+- selected on: 2026-10-01;
+- production OS remains Windows Server 2022;
+- branch: `docs/p6-005-shared-vps-topology`;
+- parent PR: #174 (`docs(production): select shared VPS topology`);
+- canonical task start: `main@2d6cb02d4bf9bb4529e0e8eaf83e10d6a67ef043`;
+- authority documents: `ADR-053-PRODUCTION-VPS-TOPOLOGY.md` and `P6-005-PRODUCTION-VPS-TOPOLOGY-DECISION-CLOSURE.md`.
 
-Remain:
-- `P4-060` and `P4-061` remain **DEFERRED_WITH_TRIGGER**.
+`P6-005` is not yet `CLOSED`. `P6-010` MUST NOT start until parent review/merge, authoritative post-merge main CI and `SYNC-P6-005` are complete.
 
-Production environment remains strictly **PRE-OPERATIONAL**. Importer runtime has not been implemented. No production deployment or mutation has occurred. Zero production migration or deployment has been authorized.
+### Merged awaiting mandatory closure sync
 
-## Last closed major task
+`P2-020` — PPCT native importer implementation — **`MERGED_AWAITING_DOC_SYNC`**.
 
-`P2-010` — PPCT real-workbook contract/security audit — **CLOSED** by `SYNC-P2-010`.
+Established parent evidence:
 
-Closure evidence:
-- dedicated parent branch: `docs/ppct-real-workbook-contract-security-audit-010`;
-- canonical starting main base: `b8b5f9862c2dc160e124a19b863ac547b44ef94b`;
-- authoritative workbook: `Mau_PPCT_Chuan_He_Thong_Dam_San_V1.xlsx` (SHA-256 `9a8cc9b62b02cae5c81163bf7afca12be5f0ee66eb5316fd236294adb1b56692`);
-- final independently reviewed semantic contract head before main-sync merge: `5a3329780d20d6f2272c7978e1469b81de4d3264`;
-- final PR head after forward merge of canonical main: `611edb2aa62cf053af20cf6bb32429bd210c9a43`;
-- parent PR: #169 (`docs(ppct): define authoritative workbook import contract`);
-- exact-head PR CI: CI #537 (run `36734577185`), SUCCESS;
-- parent merge/main commit: `7c48971d32840764c7274e544438ba1bf7aa983e`;
-- normal merge: YES;
-- authoritative post-merge main CI: CI #538 (run `36739503269`), SUCCESS (event: `push`, branch: `main`, exact SHA: `7c48971d32840764c7274e544438ba1bf7aa983e`);
-- independent review: PASS;
-- review history: Corrections 001, 002, 003, 004 absorbed before merge;
-- no residual correction/re-entry task emerged from review/CI;
-- PR #170 is independent security baseline repair, not business scope of P2-010;
-- delivered scope:
-  - strictly docs/contract only;
-  - workbook package and zip-bomb security audit;
-  - exact physical workbook mapping: physical `PPCT` -> logical `CORE`, physical `CHUYEN_DE` -> logical `SPECIALIZED_STUDY`, physical `THONG_TIN` as metadata authority;
-  - all 34 contract/security sections defined in `docs/requirements/P2-010-PPCT-REAL-WORKBOOK-CONTRACT-SECURITY-AUDIT.md`;
-  - zero contradictions with `ADR-048`;
-  - native importer runtime has NOT been implemented (remains `P2-020`);
-  - zero runtime/schema/migration/deploy/production mutation;
-- closed by administrative closure: `SYNC-P2-010`;
-- downstream: `P2-020` is **READY**;
-- production remains strictly **PRE-OPERATIONAL**.
+- branch: `feat/ppct-native-importer-020`;
+- final reviewed parent head: `dea50a938decf9bc5e4ca1dbd03ef1a451f91fac`;
+- parent PR: #173 (`feat(ppct): implement native workbook importer`);
+- exact-head parent PR CI: #549 — **SUCCESS**;
+- normal merge/main: `2d6cb02d4bf9bb4529e0e8eaf83e10d6a67ef043`;
+- authoritative post-merge main CI: #550 — **SUCCESS**;
+- no schema/migration and no production mutation.
 
-Predecessor closed major task: `P2-061` — School-wide effective teaching schedule read model + Teacher Workspace — **CLOSED** by `SYNC-P2-061`.
+Delivered implementation includes:
 
-Closure evidence:
-- dedicated implementation branch: `feat/school-wide-effective-teaching-schedule-061`;
-- canonical starting main base: `06ef61d5382c76827c674423cd249424053a221a`;
-- final independently reviewed parent HEAD: `bc05fd7614c98ee929392ddc0d219ed0c07c329e`;
-- parent PR: #167 (`feat(timetable): implement school-wide effective teaching schedule`);
-- exact-head PR CI: CI #530 (run `36539190183`), SUCCESS;
-- merge/main commit: `7c14bb5f87910c58d4b4e662d332f3189cefc11b`;
-- normal merge: YES;
-- authoritative post-merge main CI: CI #531 (run `36545906439`), SUCCESS (event: `push`, branch: `main`, exact SHA: `7c14bb5f87910c58d4b4e662d332f3189cefc11b`);
-- parent PR statistics: 5 commits, 21 files changed (+5388 / -7);
-- independent review: PASS after three bounded forward correction rounds;
-- review corrections absorbed before merge:
-  - Correction 001: harden effective schedule read invariants;
-  - Correction 002: finalize fail-closed contract;
-  - Correction 003: preserve explicit week selection;
-- no residual correction/re-entry task emerged;
-- delivered scope:
-  - schema-free `SCHOOL_EFFECTIVE_TEACHING_SCHEDULE_V1` read profile;
-  - derived/non-persisted effective schedule projection;
-  - authenticated `TEACHER_BASE` explicit read authority;
-  - read-only public schedule API under `/api/effective-teaching-schedule`;
-  - Vietnamese Teacher Workspace (`/lich-day`):
-    - `Lịch của tôi` (default weekly view);
-    - `Toàn trường` (school-wide selected-day schedule);
-    - selected-teacher schedule (searchable teacher options);
-    - `So sánh với lịch của tôi` (real half-open interval overlap comparison);
-  - effective occupancy composed from date-effective timetable + calendar suppression + operational dispositions + make-up teaching + SpecialActivity;
-  - GDĐP/HĐTN-HN visibility through materialized SpecialActivity;
-  - fail-closed `BLOCKED` semantics (never rendered as empty or `Trống`);
-  - exact half-open interval comparison;
-  - active teaching-staff peer boundary;
-  - minimal public identity payload (data minimization);
-  - centralized mutation authority preserved (read-only; no teacher-side mutation);
-  - zero schema/migration;
-  - zero deploy;
-  - zero production mutation;
-- closed by administrative closure: `SYNC-P2-061`;
-- production remains strictly **PRE-OPERATIONAL**.
+- dedicated `PPCT_V1` XLSX parser/security profile;
+- `/api/ppct-import/inspect`, `/preview`, `/confirm`;
+- fail-closed workbook/package/security validation;
+- component mapping `PPCT -> CORE` and `CHUYEN_DE -> SPECIALIZED_STUDY` under the closed P2-010 contract;
+- whole-workbook atomic DRAFT import, actor-scoped replay and exact-draft CAS update;
+- Vietnamese administration UI `/quan-tri/ppct/nhap`;
+- integration coverage through XLSX inspect -> preview -> confirm -> database assertions -> identical replay;
+- fingerprint mismatch fail-closed behavior.
 
-Predecessor closed major task: `P4-074` — Special-programme import lifecycle and E2E closure — **CLOSED** by `SYNC-P4-074`.
+Mandatory administrative microtask `SYNC-P2-020` remains pending. Therefore dependent major tasks must not consume `P2-020` as `CLOSED` yet.
 
-Closure evidence:
-- dedicated implementation branch: `feat/special-programme-lifecycle-e2e-074`;
-- canonical starting main base: `056d0603cb78469932af1f04d17232c13fbb0f69`;
-- final independently reviewed parent HEAD: `11b1e1abeb80f18cb35e6ad5e9bdd3cf3de53877`;
-- parent PR: #165 (`feat(programme): complete special programme lifecycle workspace`);
-- exact-head PR CI: CI #526 (run `36370967927`), SUCCESS;
-- merge/main commit: `382a463dfbbf27f3de001afe26aad20f31a1d903`;
-- normal merge: YES;
-- authoritative post-merge main CI: CI #527 (run `36397819195`), SUCCESS (event: `push`, branch: `main`, exact SHA: `382a463dfbbf27f3de001afe26aad20f31a1d903`);
-- parent PR statistics: 12 commits, 23 files changed (+6834 / -16);
-- delivered scope:
-  - Vietnamese special-programme admin/coordinator workspace;
-  - Backend read foundation: `/api/programme-planning/workspace`;
-  - Web UI: `/quan-tri/chuong-trinh-dac-thu`;
-  - HĐTN-HN / GDĐP inspect + preview + explicit DRAFT confirm;
-  - Existing P4 lifecycle reused: publish plan, publish occurrence, materialize;
-  - Không tạo TeachingExecution từ import/publish/materialize;
-  - HĐTN CLASS: exact historical/date-effective GVCN, per-class topology;
-  - HĐTN GRADE: complete grade collapse, multi-teacher, no class fan-out;
-  - HĐTN SCHOOL_WIDE: complete school collapse, no class fan-out;
-  - GDĐP GRADE: five-column PPCT/week/staffCode path, shared exact slot multi-teacher staffing;
-  - P4-050 workload: execution ACTIVE + qualifying attestation ACTIVE, one contribution per exact slot/teacher, no fan-out by class targets/attestations;
-  - Failure evidence: stale fingerprint, calendar/timetable ambiguity defense-in-depth, marker topology changes, teacher identity changes, active published programme history conflict, materialization collision, same commandId/same payload idempotent replay, same commandId/changed payload conflict;
-  - Persisted provenance: `ProgrammePlanningCommand`, `AuditEvent`, preview fingerprint -> exact plan version;
-  - P2-061 boundary preserved: `SCHOOL_EFFECTIVE_TEACHING_SCHEDULE_V1` remains downstream, NOT implemented by P4-074;
-  - zero P4-074 schema/migration expansion;
-  - zero deploy;
-  - zero production mutation;
-- review/CI forward corrections: absorbed before merge; no residual correction/re-entry task emerged;
-- independent exact-diff review: PASS; review corrections absorbed; no separate correction or re-entry task emerged;
-- closed by administrative closure: `SYNC-P4-074`;
-- downstream: `P2-061` is CLOSED by `SYNC-P2-061`;
-- production remains strictly **PRE-OPERATIONAL**.
+### Eligible to start
 
-Predecessor closed major task: `P4-073` — GDĐP workbook importer — **CLOSED** by `SYNC-P4-073`.
+No new major task that depends on `P2-020` or `P6-005` is eligible until the applicable closure sync completes.
 
-Closure evidence:
-- dedicated implementation branch: `feat/gddp-workbook-importer-073`;
-- canonical starting main base: `5fa085b2479d1be5932ad8dd409f54433bdd8db4`;
-- final independently reviewed parent HEAD: `b672c0aaa4a9f82e646ce0c6d68fb0dd6c260567`;
-- review correction forward commit: `b672c0a` absorbed review findings before merge;
-- parent PR: #163 (`feat(programme): add GDĐP workbook draft importer`);
-- exact-head PR CI: CI #518 (run `35957352683`), SUCCESS;
-- merge/main commit: `091d0a3771a642b4508f812359d6845c8579cba3`;
-- normal merge: YES;
-- authoritative post-merge main CI: CI #519 (run `35960845683`), SUCCESS (event: `push`, branch: `main`, exact SHA: `091d0a3771a642b4508f812359d6845c8579cba3`);
-- parent PR statistics: 13 files changed (+3678 / -29);
-- delivered scope:
-  - exact Vietnamese GDĐP workbook contract: 5 business columns (`Khối`, `Tiết PPCT`, `Tuần dạy`, `Nội dung`, `Giáo viên dạy`);
-  - inspect / preview / confirm backend flow under `/api/programme-planning/gddp-import` (`/inspect`, `/preview`, `/confirm`);
-  - grades 10, 11, and 12 supported;
-  - PPCT coordinate validation;
-  - official week declarations được parse bởi `parseWeeksText`; exact official week set được giữ cho resolver; non-contiguous set như 1,3,5 không bị fabricate thành contiguous guideline 1..5; `computeContiguousGuidelineRange` trả null/null cho non-contiguous set;
-  - AcademicWeek -> civil date resolution via official calendar segment mapping;
-  - date-effective TimetableVersion resolution;
-  - retained GDDP markers (`TimetableSpecialProgrammeMarker`);
-  - complete grade coverage validation (all active classes in the grade must have matching retained GDDP markers in that slot);
-  - no class fan-out (single collapsed slot per grade occurrence);
-  - exact candidate count validation;
-  - GDĐP teacher identity resolves exclusively through normalized `StaffProfile.staffCode` (`displayName` chỉ là resolved display/evidence sau khi staffCode đã xác định giáo viên, KHÔNG phải fallback identity authority);
-  - fail-closed semantics for missing, ambiguous, inactive, or ineligible teachers;
-  - zero-mutation preview;
-  - deterministic preview fingerprint;
-  - stale-authority revalidation on confirmation;
-  - SERIALIZABLE atomic and idempotent DRAFT import via `ProgrammePlanningCommand`;
-  - no automatic publish, no SpecialActivity materialization, no workload calculation, no TeachingExecution creation;
-  - no P4-074 implementation;
-  - no production deployment; no production migration execution;
-- independent exact-diff review: PASS; review corrections absorbed; no separate correction or re-entry task emerged;
-- closed by administrative closure: `SYNC-P4-073`;
-- downstream: `P4-074` is CLOSED by `SYNC-P4-074`; `P2-061` is CLOSED by `SYNC-P2-061`;
-- production remains strictly **PRE-OPERATIONAL**.
+### Trigger-gated / decision-blocked
 
-Predecessor closed major task: `P4-072` — HĐTN-HN workbook importer — **CLOSED** by `SYNC-P4-072`.
+- `P4-060` / `P4-061` — workload adjustment architecture/runtime: **`DEFERRED_WITH_TRIGGER`**.
+- `P0-002` — stale PR #11 hosting-portability direction: **`BLOCKED_DECISION`**.
+- `P0-003` — CORE vs FULL BUSINESS pilot scope: **`BLOCKED_DECISION`**; required before P5 pilot freeze.
+- `P0-004` — GitHub main branch protection/ruleset: **`BLOCKED_DECISION`**.
+- `P6-020` — actual Stage 1 passive production evidence: **`DEFERRED_WITH_TRIGGER`** until the exact business/pilot build is an approved production candidate and upstream P6 authority is closed.
 
-Closure evidence:
-- dedicated implementation branch: `feat/hdtn-hn-workbook-importer-072`;
-- canonical starting main base: `fa7fa6a086f47d271d3b5521b2361860bac45c13`;
-- final independently reviewed parent HEAD: `d2ceb63a4672157596bb84e86e956e6d23b9801d`;
-- parent PR: #160 (`feat(programme): add HĐTN-HN workbook draft importer`);
-- exact-head PR CI: CI #510 (run `35813906445`), SUCCESS;
-- merge/main commit: `2979125c47290d467f20c0bbd3e7688fde5f333c`;
-- normal merge: YES;
-- authoritative post-merge main CI: CI #511 (run `35814368948`), SUCCESS (event: `push`, branch: `main`, exact SHA: `2979125c47290d467f20c0bbd3e7688fde5f333c`);
-- parent PR statistics: 18 files changed (+5639 / -41);
-- delivered scope:
-  - exact Vietnamese HĐTN-HN workbook contract: sheet `NHẬP HĐTN-HN`, 7 business columns (`Tuần từ`, `Tuần đến`, `Số tiết`, `Quy mô tổ chức`, `Khối`, `Chủ đề`, `Người thực hiện`);
-  - inspect / preview / confirm backend flow under `/api/programme-planning/hdtn-import` (`/inspect`, `/preview`, `/confirm`);
-  - HĐTN explicit teacher identity: exact normalized `StaffProfile.displayName` human names (no `staffCode` input requirement);
-  - CLASS: exact `GVCN` sentinel, exact historical/date-effective `HomeroomAssignment`, exact per-class slot identity;
-  - GRADE / SCHOOL_WIDE: complete retained-marker coverage, one logical collapsed slot, no class fan-out;
-  - official AcademicWeek + retained calendar segment resolution;
-  - exact date-effective TimetableVersion + retained `HDTN_HN` marker evidence;
-  - exact-count fail-closed semantics;
-  - deterministic preview fingerprint and exact stale-authority revalidation covering calendar/week/segment/classes/timetable/markers/homeroom/teacher identity;
-  - one SERIALIZABLE all-or-nothing DRAFT package mutation using `ProgrammePlanningCommand` actor-scoped idempotency;
-  - retained historical inactive `TimeSlotDefinition` revision may be consumed only as exact retained timetable evidence; normal current authoring semantics remain unchanged;
-  - forward PostgreSQL lifecycle correction exposed by CI: database guard permits only DRAFT occurrence under DRAFT plan for accepted workbook-confirmation topology; blocks non-DRAFT occurrence while plan is DRAFT; keeps retained/PUBLISHED lifecycle protection; trigger surface includes status transitions;
-  - PostgreSQL integration regression for DRAFT/DRAFT guard;
-  - no automatic publish; no SpecialActivity materialization; no workload calculation; no GDĐP implementation; no Web UI;
-  - no production deployment; no production migration execution;
-- independent exact-diff review: PASS; no separate correction or re-entry task emerged;
-- closed by administrative closure: `SYNC-P4-072`;
-- downstream: `P4-073` is CLOSED by `SYNC-P4-073`; `P4-074` is CLOSED by `SYNC-P4-074`; `P2-061` is CLOSED by `SYNC-P2-061`;
-- production remains strictly **PRE-OPERATIONAL**.
+## Last formally closed major task
 
-Predecessor closed major task: `P4-071` — Retained TKB special-programme marker bridge — **CLOSED** by `SYNC-P4-071`.
+`P2-010` — PPCT real-workbook contract/security audit — **`CLOSED`** by `SYNC-P2-010`.
 
-Closure evidence:
-- dedicated implementation branch: `feat/retained-tkb-special-programme-marker-bridge-071`;
-- canonical starting main base: `702da874d0071ba804533a879e4b49a9bdcfc211`;
-- final independently reviewed parent HEAD: `f05488aa75831602bae58be85fe3e4434c505400`;
-- review correction forward commit: `f05488a` absorbed before merge (removed mock receipt fabrication and optional delegate fallback, added harness cleanup for markers);
-- parent PR: #158 (`feat(timetable): retain special programme markers`);
-- exact-head PR CI: CI #500 (run `35615435936`), SUCCESS on attempt 1;
-- merge/main commit: `759839e9a7ff84044084e4b40fbc23d4b358ec52`;
-- normal merge: YES;
-- GitHub verified merge signature: YES;
-- authoritative post-merge main CI: CI #501 (run `35616276491`), SUCCESS on attempt 1 (event: `push`, branch: `main`, exact SHA: `759839e9a7ff84044084e4b40fbc23d4b358ec52`);
-- post-merge CI #501 passed all suites: schema migration foundation tests, full API integration, build, Playwright smoke, and Windows deployment contract;
-- delivered scope:
-  - additive Prisma schema & migration (`TimetableSpecialProgrammeMarker`, `ProgrammeKind` `GDDP` | `HDTN_HN`);
-  - composite unique index `@@unique([timetableVersionId, schoolClassId, timeSlotDefinitionId, kind])`;
-  - composite foreign keys enforcing same academic year for TimetableVersion, SchoolClass, TimeSlotDefinition with `ON DELETE RESTRICT`;
-  - native TKB adapter extraction (`GDĐP` -> `GDDP`, `TN-HN` -> `HDTN_HN`);
-  - `CC` recognized as permitted structural non-peer evidence only, not persisted as managed marker;
-  - `semantic-v2` checksum (`computeSemanticChecksumV2`) and confirmation fingerprinting preserving `semantic-v1` readability;
-  - selective morning/afternoon carry-forward with fail-closed cutover gate (rejecting legacy pre-marker baselines without `semantic-v2` receipt provenance);
-  - atomic confirmation transaction binding TimetableVersion, TimetableEntry, TimetableSpecialProgrammeMarker, TimetableImportReceipt, optional request key, and audit log;
-  - internal retained-marker read seam (`TimetableSpecialProgrammeMarkerService`);
-  - zero marker-to-TimetableEntry or TeachingAssignment fabrication; zero teacher/workload fabrication;
-  - 17 files changed (+1289 / -16);
-  - zero production migration, deployment or runtime mutation outside the tested boundaries;
-- independent exact-diff review: PASS after forward correction `f05488a`; no separate correction or re-entry task emerged;
-- closed by administrative closure: `SYNC-P4-071`;
-- downstream: `P4-072` unlocked to `READY`, `P4-073` unlocked to `READY`;
-- production remains strictly **PRE-OPERATIONAL**.
+Canonical closure evidence is recorded in `PRE-PILOT-TASK-REGISTER.md` and `docs/requirements/P2-010-PPCT-REAL-WORKBOOK-CONTRACT-SECURITY-AUDIT.md`.
 
-Predecessor closed major task: `P4-070` — Special-programme workbook / timetable-slot bridge architecture — **CLOSED** by `SYNC-P4-070`.
+Key parent evidence:
 
-Closure evidence:
-- dedicated architecture branch: `docs/special-programme-workbook-slot-bridge-070`;
-- canonical starting main base: `162ebbaa05d3755dca9c8308ffcaf37fc19d44c3`;
-- final independently reviewed parent HEAD: `9ade8e766f1669f79eedc7bcb58eef783419dc8b`;
-- parent PR: #155 (`docs(programme): define special programme workbook slot bridge`);
-- exact-head PR CI: CI #496 (run `35578527741`), SUCCESS on attempt 1;
-- merge/main commit: `d303942373195d2f48c897f488887601c24e9f4f`;
-- normal merge: YES;
-- GitHub verified merge signature: YES;
-- authoritative post-merge main CI: CI #497 (run `35579219222`), SUCCESS on attempt 1 (event: `push`, branch: `main`, exact SHA: `d303942373195d2f48c897f488887601c24e9f4f`);
-- post-merge CI #497 passed all suites: Windows deployment contract, lint, typecheck, API unit tests, Web unit tests, capability integration, API integration, builds, and Playwright smoke;
-- delivered scope:
-  - strictly docs-only architecture specification (8 docs files, 1134 additions, 0 deletions);
-  - `ADR-052-SPECIAL-PROGRAMME-WORKBOOK-SLOT-BRIDGE.md` (Accepted);
-  - `P4-070-SPECIAL-PROGRAMME-WORKBOOK-SLOT-BRIDGE-ARCHITECTURE.md` (CLOSED);
-  - `P4-070-SOURCE-CONTRACT-SUMMARY.md`;
-  - `P4-071-074-SPECIAL-PROGRAMME-INGESTION-IMPLEMENTATION-PLAN.md`;
-  - retained TimetableVersion-owned `GDDP`/`HDTN_HN` marker evidence model;
-  - official AcademicWeek and date-effective timetable resolution;
-  - HĐTN CLASS (historical date-effective GVCN), GRADE and SCHOOL_WIDE collapse rules;
-  - GDĐP GRADE collapse rules;
-  - fail-closed count, coverage and teacher identity resolution;
-  - import confirmation creating DRAFT programme state only;
-  - reuse of P4-040 materialization and P4-050 workload projection;
-  - frontend contracts fully Vietnamese;
-  - zero runtime, schema, migration, API, UI, auth, capability catalog, CI/CD, or deployment mutation;
-- independent exact-diff review: PASS; no correction or re-entry task emerged;
-- closed by administrative closure: `SYNC-P4-070`;
-- downstream: `P4-071` unlocked to `READY`;
-- production remains strictly **PRE-OPERATIONAL**.
+- parent PR #169;
+- parent merge/main `7c48971d32840764c7274e544438ba1bf7aa983e`;
+- exact-head PR CI #537 — SUCCESS;
+- authoritative post-merge main CI #538 — SUCCESS;
+- authoritative workbook `Mau_PPCT_Chuan_He_Thong_Dam_San_V1.xlsx` SHA-256 `9a8cc9b62b02cae5c81163bf7afca12be5f0ee66eb5316fd236294adb1b56692`;
+- strictly docs/contract scope with zero production mutation.
 
-Predecessor closed major task: `P2-060` — School-wide effective teaching schedule architecture closure — **CLOSED** by `SYNC-P2-060`.
+Later implementation `P2-020` has merged successfully but is not counted as the last **formally CLOSED** task until `SYNC-P2-020` is merged.
 
-Closure evidence:
-- dedicated architecture branch: `docs/school-wide-effective-schedule-authority-060`;
-- canonical starting main base: `162ebbaa05d3755dca9c8308ffcaf37fc19d44c3`;
-- final independently reviewed parent HEAD: `9ada66aad842d029435b9924a1f1f4cfaa63d773`;
-- parent PR: #154 (`docs(timetable): require school-wide effective teacher schedule`);
-- exact-head PR CI: CI #486 (run `35554722752`), SUCCESS on attempt 1;
-- merge/main commit: `fe22ab373536814cfe279d66d58418df0143e44e`;
-- normal merge: YES;
-- GitHub verified merge signature: YES;
-- authoritative post-merge main CI: CI #490 (run `35573948097`), SUCCESS on attempt 1 (event: `push`, branch: `main`, exact SHA: `fe22ab373536814cfe279d66d58418df0143e44e`);
-- post-merge CI #490 passed all suites: Windows deployment contract, lint, typecheck, API unit tests, Web unit tests, capability integration, API integration, builds, and Playwright smoke;
-- delivered scope:
-  - strictly docs-only architecture specification (5 docs files, 589 additions, 0 deletions);
-  - `ADR-051-SCHOOL-WIDE-EFFECTIVE-TEACHING-SCHEDULE-READ-MODEL.md` (Accepted);
-  - `P2-060-SCHOOL-WIDE-EFFECTIVE-TEACHING-SCHEDULE-ARCHITECTURE.md` (CLOSED);
-  - `P2-061-SCHOOL-WIDE-EFFECTIVE-TEACHING-SCHEDULE-IMPLEMENTATION-TASK.md` (task design, now CLOSED by `SYNC-P2-061`);
-  - canonical `SCHOOL_EFFECTIVE_TEACHING_SCHEDULE_V1` read profile;
-  - authenticated `TEACHER_BASE` explicit school-wide read authority;
-  - effective occupancy composed from timetable + overlays + make-up + SpecialActivity (including materialized GDĐP/HĐTN-HN);
-  - fail-closed blocked/ambiguous semantics (never rendered as empty or `Trống`);
-  - real-time interval comparison (`So sánh với lịch của tôi`) providing informational occupancy overlap without claiming mutation eligibility;
-  - centralized mutation authority preserved (read-only; no teacher-side mutation; `SYSTEM_ADMIN` does not imply teacher authority);
-  - Vietnamese Teacher Workspace UX and data minimization rules;
-  - zero runtime, schema, migration, API, UI, auth, capability catalog, CI/CD, or deployment mutation;
-- independent exact-diff review: PASS; no correction or re-entry task emerged;
-- closed by administrative closure: `SYNC-P2-060`;
-- downstream: `P2-061` is CLOSED by `SYNC-P2-061`;
-- production remains strictly **PRE-OPERATIONAL**.
+## Implemented foundation relevant to pilot
 
-Predecessor closed major task: `P4-050` — Special-activity workload/reporting projection — **CLOSED** by `SYNC-P4-050`.
+The canonical repository includes reviewed implementation for:
 
-Closure evidence:
-- dedicated implementation branch: `feat/special-programme-workload-reporting-050`;
-- canonical starting main base: `8709b12253fbbb8ba2e4f65be3e6d5d5f5e5372e`;
-- final feature head: `5a7659a9d242a9b50c487259b348cb1dce082d88`;
-- parent PR: #152 (`feat(reporting): add P4-050 special programme workload projection`);
-- exact-head PR CI: CI #482 (run `35504549933`), SUCCESS on attempt 1;
-- merge/main commit: `8501ea3ce8920b5bccdb3e43273c51b493319496`;
-- normal merge: YES;
-- GitHub verified merge signature: YES;
-- authoritative post-merge main CI: CI #483 (run `35504905999`), SUCCESS on attempt 1 (event: `push`, branch: `main`, exact SHA: `8501ea3ce8920b5bccdb3e43273c51b493319496`);
-- delivered scope:
-  - schema-free on-demand special-programme workload projection;
-  - ACTIVE-at-as-of execution plus existential qualifying programme-attestation dual gate;
-  - exact maximum one contribution per `(plannedOccurrenceSlotId, actualTeacherUserId)`;
-  - no class-target or attestation-count workload fan-out;
-  - reversal/replacement as-of semantics;
-  - fail-closed retained provenance and duplicate/ambiguous identity handling;
-  - strict `SPECIAL_PROGRAMME_WORKLOAD` / `v1` / `ACADEMIC_YEAR` business policy with no default or fallback coefficient;
-  - Reporting Statement `SNAPSHOT_V3` with workload, execution, programme, policy and attestation provenance;
-  - V1/V2 historical readability retained;
-  - generic ad-hoc `SpecialActivity` without programme materialization receives no programme workload;
-  - P4-060/P4-061 adjustment and reduction semantics untouched;
-  - no workload schema or migration added;
-  - no production deployment or mutation;
-- bounded correction story: initial implementation/review line reached `fe63c12d5f26ddbf183964a2fdf05b656996ce85`; independent remote audit hardening `475dffbe94a288dc76464689827e2fe31f86dbd8`; CI fixture alignment `1d66230b1a60b57b01b46bcca418f6cb1e7348d9`; final HTTP V3 and CI artifact guard correction `5a7659a9d242a9b50c487259b348cb1dce082d88`;
-- feature PR legitimately changed `.github/workflows/ci.yml` to avoid a false secondary screenshot-artifact failure when Playwright was skipped while retaining fail-closed upload behavior when Playwright runs;
-- closed by administrative closure: `SYNC-P4-050`;
-- production remains strictly **PRE-OPERATIONAL**.
-
-Predecessor closed major task: `P4-040` — Programme-to-SpecialActivity runtime bridge — **CLOSED** by `SYNC-P4-040`.
-
-Closure evidence:
-- dedicated implementation branch: `feat/programme-runtime-bridge-040`;
-- starting canonical main base: `3564b5a5c2f8659c1bc2b19d779ce83cb621f65e`;
-- final independently reviewed HEAD: `591192fa635fd3a10ec3379a29f8450700c804d4`;
-- independent review + forward-fix story: initial remote audit required explicit retained relational evidence on historical staffing to restore named check constraint `special_activity_staffing_eligibility_shape_check` and complete homeroom assignment provenance verification in `programme_materialized_activity_guard`; all findings absorbed via forward migration `20260920010000_programme_runtime_bridge_staffing_homeroom_evidence` and forward commit `591192fa635fd3a10ec3379a29f8450700c804d4`; final exact-remote audit returned `AUDIT PASS`;
-- parent PR: #150 (`feat(programme): add P4-040 runtime bridge and attestation`);
-- PR details: exact base `3564b5a5c2f8659c1bc2b19d779ce83cb621f65e`, exact head `591192fa635fd3a10ec3379a29f8450700c804d4`, normal merge to main;
-- exact-head PR CI: CI #476 (run id: `35482927399`), SUCCESS on attempt 1;
-- merge/main commit: `107bf295a4c7031062b0b37bf7bd343f1f667066`;
-- normal merge: YES;
-- GitHub verified signature: YES;
-- authoritative post-merge main CI: CI #477 (run id: `35483252074`), SUCCESS on attempt 1 (event: `push`, branch: `main`, exact SHA: `107bf295a4c7031062b0b37bf7bd343f1f667066`);
-- delivered scope:
-  - deterministic materialization of published occurrences into 1..N SpecialActivity roots (v1: 1 root per exact planned slot);
-  - exact Slot -> Set<Teacher> preservation;
-  - collision/eligibility reuse and target class freezing;
-  - HĐTN CLASS homeroom resolution with historical retrospective rule;
-  - explicit retained relational evidence via `SpecialActivityStaffing.historicalHomeroomAssignmentId` backed by restored `special_activity_staffing_eligibility_shape_check` constraint;
-  - dedicated retained `ProgrammeMaterializedActivity` bridge model with enhanced `programme_materialized_activity_guard` validating coherent provenance and complete homeroom assignment provenance;
-  - command idempotency via `ProgrammePlanningCommand`;
-  - post-materialization CAS reversal and replacement root creation (T43);
-  - `ProgrammeOccurrenceAttestation` persistence, qualification seam consumption, retained reversal, actor-scoped idempotency keys, and existential confirmation gate read model (T44);
-  - guarded HTTP surface under `/api/programme-planning`;
-  - zero workload calculation or UI;
-  - production remains strictly PRE-OPERATIONAL;
-  - closed by administrative closure: `SYNC-P4-040`;
-  - downstream: `P4-050` was unlocked to `READY` and is now **CLOSED** by `SYNC-P4-050`.
-
-Predecessor closed major task: `P4-030` — Programme coordinator authorization — **CLOSED** by `SYNC-P4-030`.
-
-Closure evidence:
-- dedicated implementation branch: `feat/programme-coordinator-authorization-030`;
-- starting canonical main base: `ab4324e0094203bcab9fbfef9d4c4e952f46f48f`;
-- final independently reviewed HEAD: `1f49f7f4d3cda83126373bb4df7ac6d31ce54859`;
-- independent review + forward-fix story: initial exact-remote review found (1) stale/mutually inconsistent governance state, (2) stale ADR-050 downstream ownership wording, (3) stale T12/T15/T16/T17 state, (4) wrong ADR filenames in requirement doc, and (5) insufficient persisted PostgreSQL evidence for denial/no-inference cases; all findings were absorbed by forward commits `7ac3afe38cf6919716061b57947f56af632195c5` and `1f49f7f4d3cda83126373bb4df7ac6d31ce54859`; final exact-remote audit before PR returned `AUDIT PASS` with zero remaining implementation/governance findings;
-- parent PR: #148 (`feat(programme): implement P4-030 coordinator authorization`);
-- PR details: exact base `ab4324e0094203bcab9fbfef9d4c4e952f46f48f`, exact head `1f49f7f4d3cda83126373bb4df7ac6d31ce54859`, 16 changed files, 4 commits, no unresolved review submission or thread at merge gate;
-- exact-head PR CI: CI #472 (run id: `35420533601`), SUCCESS on attempt 1;
-- merge/main commit: `08d235ded260e38171f38409e7e2783c9c1f41f2`;
-- normal merge: YES;
-- GitHub verified signature: YES;
-- authoritative post-merge main CI: CI #473 (run id: `35420832787`), SUCCESS on attempt 1 (event: `push`, branch: `main`, exact SHA: `08d235ded260e38171f38409e7e2783c9c1f41f2`);
-- post-merge CI #473 evidence includes:
-  - `Windows deployment contract`: SUCCESS;
-  - `Lint · Typecheck · Test · Build`: SUCCESS;
-  - production dependency security gate: SUCCESS;
-  - Prisma validate/generate: SUCCESS;
-  - schema/static gates: SUCCESS;
-  - secret scan: SUCCESS;
-  - capability catalog synchronization integration: SUCCESS;
-  - full API integration: SUCCESS;
-  - contracts/config/API/Web builds: SUCCESS;
-  - Playwright smoke: SUCCESS;
-  - `Upload Playwright report on failure`: SKIPPED by design because no failure occurred;
-- local/review verification evidence:
-  - local Programme Planning unit suite: `92/92` PASS;
-  - local capabilities integration: `6/6` PASS;
-  - local coordinator authorization PostgreSQL integration: `31/31` PASS;
-  - capability-catalog CI gate: SUCCESS;
-  - git diff --check PASS;
-- delivered scope:
-  - exact coordinator authority: `ACTIVITY + exact ProgrammeMaster.id`;
-  - `GDDP_COORDINATOR` only for GDDP;
-  - `HĐTN_COORDINATOR` only for HDTN_HN;
-  - BGH professional fallback: `APPROVAL_PRINCIPAL / SCHOOL_WIDE` or `APPROVAL_VICE_PRINCIPAL / SCHOOL_WIDE`;
-  - BGH-only ProgrammeMaster bootstrap invariant;
-  - coordinator grant target/kind normalization hardening in `CapabilitiesService`;
-  - deterministic programme planning authorization service (`ProgrammePlanningAuthorizationService`);
-  - authorized façade (`AuthorizedProgrammePlanningService`);
-  - raw P4-020 service encapsulated (internal provider only);
-  - guarded `/api/programme-planning` HTTP surface (`SessionAuthGuard` + `CsrfOriginGuard`);
-  - server-owned child relation resolution;
-  - body/route mismatch rejection before service mutation;
-  - query list isolation ensuring non-BGH coordinators view only authorized masters;
-  - `mustChangePassword` fail-closed;
-  - persisted denial audit (`action: 'AUTHORIZATION_DENIED'`, `result: 'DENIED'`, zero secrets);
-  - P4-040 attestor-qualification seam only (`isQualifyingProgrammeAttestor`);
-- zero schema/migration, zero Web UI, zero SpecialActivity materialization, zero attestation persistence/runtime, zero workload/reporting projection, zero deployment or production mutation;
-- no correction or re-entry task emerged from independent review or CI;
-- production remains strictly PRE-OPERATIONAL;
-- closed by administrative closure: `SYNC-P4-030`;
-- downstream: `P4-040` is unlocked to `READY`; `P4-050` remains dependency-gated by `P4-040`.
-
-Predecessor closed major task: `P4-020` — Special-programme persistence + control plane — **CLOSED** by `SYNC-P4-020`.
-
-Closure evidence:
-- dedicated implementation branch: `feat/programme-persistence-control-plane-020`;
-- starting canonical main base: `969d12d4f2f3e8ea3c66768daa3b35b4ccaa2fc0`;
-- final independently reviewed HEAD: `d8cb42614514f81ae16239a59c69e2da1f8ef246`;
-- independent exact-diff review: `AUDIT PASS`, zero BLOCKER/HIGH/MEDIUM/LOW findings after bounded forward fixes for PostgreSQL verification fixtures, partial occurrence target persistence, and exact plan-successor lineage;
-- parent PR: #146 (`feat(programme): implement P4-020 planning persistence control plane`);
-- exact-head PR CI: CI #468 (run id: `35370624212`), SUCCESS on attempt 1;
-- merge/main commit: `b68064e887f8646515e2820bd26423a5f9483f09`;
-- normal merge: YES;
-- GitHub verified signature: YES;
-- authoritative post-merge main CI: CI #469 (run id: `35409557624`), SUCCESS on attempt 1;
-- post-merge CI #469 evidence includes:
-  - `Lint · Typecheck · Test · Build`: SUCCESS;
-  - `Windows deployment contract`: SUCCESS;
-  - all substantive workflow steps SUCCESS;
-  - `Upload Playwright report on failure`: SKIPPED by design because no failure occurred;
-- delivered scope:
-  - retained `ProgrammeMaster`, `ProgrammePlanVersion`, `ProgrammeTopicItem`, `PlannedProgrammeOccurrence`, `PlannedOccurrenceSlot`, `PlannedSlotStaffing`, and planning-command receipt persistence;
-  - retained `DRAFT -> PUBLISHED -> SUPERSEDED` plan/occurrence lifecycle with forward lineage rather than overwrite;
-  - exact `PlannedOccurrenceSlot -> Set<Teacher>` staffing topology with no Cartesian slot/teacher multiplication;
-  - target-shape and GDDP/HDTN mode invariants, academic-year and civil-date weekday slot integrity, retained-history guards, and immutable published children;
-  - optimistic/CAS revision checks, PostgreSQL `SERIALIZABLE` transactions, bounded retry, deterministic idempotency fingerprint + command type, and same-transaction audit;
-  - successor-plan publication guard requiring exact predecessor/current-published authority match before supersession;
-  - partial occurrence edits persist against resolved target mode so omitted `mode` cannot null a valid GRADE/CLASS target;
-- verification evidence includes 39/39 targeted programme-planning unit tests, PostgreSQL integration, both special-programme SQL verifiers, Prisma validate/generate, lint, typecheck and static gates, followed by authoritative CI #468/#469;
-- no public HTTP controller, coordinator/BGH capability binding, SpecialActivity materialization, attestation persistence/runtime, workload/reporting projection, deployment, or production mutation was introduced;
-- no correction or re-entry task emerged from independent review or CI;
-- production remains strictly PRE-OPERATIONAL;
-- closed by administrative closure: `SYNC-P4-020`;
-- downstream: `P4-030` is unlocked to `READY`; `P4-040` and `P4-050` remain dependency-gated.
-
-Predecessor closed major task: `P4-010` — GDĐP/HĐTN programme architecture closure — **CLOSED** by `SYNC-P4-010`.
-
-Closure evidence:
-- dedicated architecture branch: `docs/gddp-hdtn-programme-architecture-010`;
-- starting canonical main base: `df8fdadc7e57d284e92cd336e234d95e8820cdc4` (PR #143 post-closure CI #463 SUCCESS);
-- final independently reviewed HEAD: `0763d15b428ebfa09ca551493deb0d872fcf1287`;
-- independent GitHub review: PASS after four bounded forward-fix commits following the initial architecture commit; all review findings were absorbed before parent merge;
-- parent PR: #144 (`docs(architecture): define GDĐP HĐTN programme authority`);
-- exact-head PR CI: CI #464 (run id: `35329948987`), SUCCESS on attempt 1;
-- merge/main commit: `10de700723610efb6a79a0f62f8d6fc9f4ce44a3`;
-- normal merge: YES;
-- GitHub verified signature: YES;
-- authoritative post-merge main CI: CI #465 (run id: `35331263693`), SUCCESS on attempt 1;
-- post-merge CI #465 evidence includes:
-  - Windows deployment contract: SUCCESS
-  - Lint · Typecheck · Test · Build: SUCCESS
-  - all substantive steps SUCCESS
-  - `Upload Playwright report on failure`: SKIPPED by design because no failure occurred;
-- local/review verification evidence:
-  - workflow contract PASS (`verify-workflow-contract.cjs`)
-  - git diff --check PASS;
-- delivered scope (strictly docs-only under `docs/**`):
-  - delivered `ADR-050-GDDP-HDTN-PROGRAMME-ARCHITECTURE.md` (Accepted) and `docs/requirements/P4-010-GDDP-HDTN-PROGRAMME-ARCHITECTURE-CLOSURE.md`;
-  - closed upstream programme layer placed upstream of `SpecialActivity`;
-  - GDĐP programme authority bounded by `AcademicYear + Grade` (Grades 10, 11, 12) with versioned content plan independent of weekly rotation;
-  - HĐTN educational programme operating under distinct business modes: `CLASS` (tied to date-effective homeroom responsibility), `GRADE`, and `SCHOOL_WIDE`;
-  - exact per-slot staffing ($\text{Slot} \to \text{Set<Teacher>}$) strictly prohibiting Cartesian $\text{Slots} \times \text{Teachers}$ multiplication;
-  - materialization bridge partitioning: one planned occurrence materializes into $1 \to N$ `SpecialActivity` roots partitioned by identical scheduled staffing sets;
-  - HĐTN `CLASS` deterministically consumes date-effective `HomeroomAssignment` via fail-closed resolver and freezes homeroom provenance upon materialization;
-  - decoupled absence and scheduled staffing: absence does not delete scheduled staffing, rewrite planning truth, or auto-cancel occurrences; absent teacher receives zero execution and zero workload;
-  - replacement representation: substitutes cannot execute on original staffing records; pre-materialization replacement reflects via planning lifecycle; post-materialization replacement uses standard CAS reverse + replacement `SpecialActivity` root;
-  - existential programme confirmation gate: satisfied if and only if $\ge 1$ qualifying current, non-reversed attestation exists from qualifying Programme Coordinator OR qualifying BGH professional authority (no role/title/department inference); dual confirmation satisfies gate exactly once;
-  - official workload eligibility requires BOTH valid individual teacher-slot participation execution AND satisfied programme confirmation gate; at most one contribution source per exact slot before valid policy/coefficients;
-  - anti-double-counting invariants: class cardinality never multiplies teacher workload ($\text{Workload} \ne \text{Slots} \times \text{ClassCount}$); attestation count never multiplies workload ($\text{Workload} \ne \text{Slots} \times \text{AttestationCount}$);
-  - exact authorization binding belongs to `P4-030` (current catalog keys are authorization intent/evidence only);
-  - exact attestation runtime persistence, schema, and status representation belong to `P4-040`;
-  - workload calculation logic and policy coefficients belong to `P4-050`;
-- zero runtime, schema, migration, contracts, API, UI, capability catalog, CI/CD, or deployment mutation;
-- no correction or re-entry task emerged from independent review or CI;
-- production remains strictly PRE-OPERATIONAL;
-- closed by administrative closure: `SYNC-P4-010`.
-
-Predecessor closed major task: `P1-032` — Operational-start admin UI integration — **CLOSED** by `SYNC-P1-032`.
-
-Closure evidence:
-- dedicated implementation branch: `feat/operational-start-admin-ui-integration-032`;
-- starting canonical main base: `95d88867e85e7177ce7ae12adc4ec942f1567656` (PR #141 post-closure CI #459 SUCCESS);
-- final independently reviewed HEAD: `d510982250aa1d54e2aa63594a30ba78af76f971`;
-- independent GitHub review: PASS after one bounded forward correction round (`d510982250aa1d54e2aa63594a30ba78af76f971` `fix(policy): correct P1-032 review evidence and error copy`);
-- parent PR: #142 (`feat(policy): add operational-start administration UI`);
-- exact-head PR CI: CI #460, SUCCESS;
-- merge/main commit: `adfa62e9a92dcfc83cf0ab2e805d206a86a682e6`;
-- normal merge: YES;
-- GitHub verified signature: YES;
-- authoritative post-merge main CI: CI #461 (run id: `35249023817`), SUCCESS on attempt 1;
-- post-merge CI #461 evidence includes:
-  - Production dependency security gate PASS
-  - Prisma validate PASS
-  - Prisma generate PASS
-  - schema/static verification PASS
-  - auth secret scan PASS
-  - deployment static/behavior verification PASS
-  - workflow contract PASS
-  - PowerShell parser verification PASS
-  - UI foundation static verification PASS
-  - migration foundation tests PASS
-  - lint packages/contracts PASS
-  - lint packages/config PASS
-  - lint apps/api PASS
-  - lint apps/web PASS
-  - typecheck packages/contracts PASS
-  - typecheck packages/config PASS
-  - typecheck apps/api PASS
-  - typecheck apps/web PASS
-  - API unit tests PASS
-  - Web unit tests PASS
-  - isolated auth DB preparation PASS
-  - capability catalog synchronization integration PASS
-  - API integration tests PASS
-  - contracts/config/API/Web builds PASS
-  - isolated Playwright DB preparation PASS
-  - Reporting Statement fixture PASS
-  - API/UI technical admin bootstrap PASS
-  - Playwright browser install PASS
-  - API/Web startup + readiness PASS
-  - Playwright smoke PASS
-  - UI screenshot artifact PASS
-  - Windows deployment contract PASS
-  - Windows PowerShell parsing PASS
-  - Windows deployment behavior fixtures PASS
-  (`Upload Playwright report on failure` SKIPPED by design due to no test failures);
-- local/review verification evidence:
-  - targeted Business Configuration workspace: 56/56 PASS
-  - full Web unit: 288/288 PASS across 18/18 suites
-  - Web lint PASS (0 warnings)
-  - Web typecheck PASS (0 errors)
-  - Web build PASS (clean dist)
-  - workflow contract PASS
-  - git diff --check PASS;
-- delivered scope: `OPERATIONAL_START/v1/ACADEMIC_YEAR` production adapter in `apps/web/src/lib/business-policy-ui-registry.ts`, AcademicYear options read picker via P1-031C endpoint (`GET /api/business-configuration/academic-year-options`) and `supersedeScheduledAuthority` client method in `apps/web/src/lib/business-configuration-api.ts`, server-owned `allowedActions` authority (`actionEvaluationCivilDate` displayed without browser-clock inference), dedicated scheduled-authority supersession workflow (`SUPERSEDE_SCHEDULED_AUTHORITY`), open-ended create without `effectiveUntil`, effectivity-preserving correction, `SUPERSEDED_BEFORE_EFFECTIVE` retained audit and lineage rendering;
-- zero backend (`apps/api/**`), contracts (`packages/contracts/**`), schema/migration (`prisma/**`), auth/capability, CI/CD, or deployment mutation;
-- no correction or re-entry task emerged from independent review or CI;
-- production remains strictly PRE-OPERATIONAL;
-- closed by administrative closure: `SYNC-P1-032`.
-
-Predecessor closed major task: `P1-031C` — Operational-start Academic-Year options read-model enablement — **CLOSED** by `SYNC-P1-031C`.
-
-Closure evidence:
-- dedicated implementation branch: `feat/business-configuration-academic-year-options-031c`;
-- starting canonical main base: `2df682f2eb76f813418560673bbdabe4c31e9154`;
-- implementation commit: `01c6f28e1cbdeb3cf4a29f9c3df929111546df9a`;
-- final independently reviewed HEAD: `ee478c5a7e6976a554c738482ba580b23784a2c8`;
-- independent GitHub review: PASS after one bounded docs-only forward correction round;
-- parent PR: #140 (`feat(policy): add AcademicYear options read model`);
-- exact-head PR CI: CI #456 (run id: `35209248425`), SUCCESS;
-- merge/main commit: `1403906282c5ef63d17d1053c72e5ed47b4fa080`;
-- authoritative post-merge main CI: CI #457 (run id: `35229426600`), SUCCESS on attempt 1;
-- post-merge CI #457 evidence includes:
-  - production dependency security gate PASS
-  - Prisma validate/generate PASS
-  - schema/static verification PASS
-  - workflow contract PASS
-  - contracts/config/API/Web lint PASS
-  - contracts/config/API/Web typecheck PASS
-  - API unit tests PASS
-  - Web unit tests PASS
-  - isolated capability synchronization integration PASS
-  - API integration tests PASS
-  - contracts/config/API/Web builds PASS
-  - Playwright preparation/bootstrap PASS
-  - Playwright smoke PASS
-  - Windows deployment contract PASS;
-- local implementation evidence already recorded:
-  - Business Configuration service suite: 72/72 PASS
-  - exactly 5 new focused academicYearOptions unit tests
-  - local PostgreSQL integration was NOT_RUN because no certified isolated `TEST_DATABASE_URL` was available
-  - authoritative integration evidence was supplied by GitHub CI #456 and post-merge CI #457;
-- delivered scope: `GET /api/business-configuration/academic-year-options` under existing `BUSINESS_CONFIGURATION_MANAGE / SCHOOL_WIDE` capability; shared contracts `BusinessPolicyAcademicYearOption` and `BusinessPolicyAcademicYearOptionListResponse`; bounded DTO `ListBusinessPolicyAcademicYearOptionsDto` (`page >= 1`, `1 <= pageSize <= 100`, default page 1, default pageSize 20); deterministic ordering `code ASC` then `id ASC`; payload includes `id`, `code`, `name`;
-- no correction or re-entry task emerged from independent review or CI;
-- zero schema/migration/auth/capability/UI/deploy/production mutation occurred;
-- production remains strictly PRE-OPERATIONAL;
-- closed by administrative closure: `SYNC-P1-031C`;
-- downstream: unlocked `P1-032` (now `CLOSED` by `SYNC-P1-032`).
-
-Predecessor closed major task: `P1-031A` — Operational-start authority continuity correction — **CLOSED** by `SYNC-P1-031A`.
-
-Closure evidence:
-- dedicated implementation branch: `fix/operational-start-authority-continuity-031a-v2`;
-- starting canonical main base: `adeade858c2bc7aeac22ee77f8b2a08faf5c438b`;
-- final independently reviewed HEAD: `38055d4489ea89d764a56b605ef65598c4218013`;
-- independent GitHub review: PASS;
-- parent PR: #137 (`feat(policy): enforce operational-start authority continuity`);
-- exact-head PR CI: CI #450 (run id: `35119301326`), SUCCESS on attempt 1;
-- merge/main commit: `f19ec01d293c1c3da6ff46ebc257c9a43630112e`;
-- authoritative post-merge main CI: CI #451 (run id: `35120681315`), SUCCESS on attempt 1;
-- CI #451 passed: schema migration foundation, all lint, all typecheck, API unit, Web unit, isolated API integration, contracts/config/API/Web builds, Playwright preparation/bootstrap, Playwright smoke, UI screenshot artifact, and Windows deployment contract;
-- review/CI corrections absorbed before parent merge:
-  1. `1c79328134c83c5051711b57c50e1f88714950d9` `fix(policy): split scheduled authority enum migration` (resolved PostgreSQL enum transaction sequencing defect exposed by CI #448);
-  2. `38055d4489ea89d764a56b605ef65598c4218013` `fix(test): verify deferred scheduled authority constraints` (resolved Prisma 5.14 deferred-COMMIT test observability discovered by CI #449; production migration/runtime semantics were not weakened);
-- delivered scope: finite-authority and replacement-continuity corrections, complete P1-031B scheduled-authority lifecycle (`SUPERSEDE_SCHEDULED_AUTHORITY` command / `SUPERSEDED_BEFORE_EFFECTIVE` terminal state), additive zero-backfill migration, database family backstop, exact same-start open successor, dedicated repeated lineage (`supersedesScheduledVersionId`), guarded HTTP/shared contracts, resolver/read serialization, server-owned actions, atomic audit/idempotency/concurrency behavior, and comprehensive regression coverage;
-- no residual runtime correction/re-entry task remains from review/CI;
-- zero production deployment/configuration/data mutation; production remains strictly PRE-OPERATIONAL;
-- closed by administrative closure: `SYNC-P1-031A`;
-- downstream: `P1-031A` is CLOSED; downstream `P1-031C` is CLOSED by `SYNC-P1-031C`; `P1-032` is `CLOSED` by `SYNC-P1-032`.
-
-Predecessor closed major task: `P1-031B` — Operational-start scheduled-authority supersession architecture — **CLOSED** by `SYNC-P1-031B`.
-
-Closure evidence:
-- dedicated architecture branch: `docs/operational-start-scheduled-authority-supersession-031b`;
-- starting canonical main base: `f1b160be25045d0f4c661e154ece24c92a3e0fc9`;
-- architecture commits: `4c6292f93ab2c50d79f415d0291b3f0c84118108`, `b23afcf18dbd69bde8227b4c5b06adb49554bfcc`, `17e36cdfc75906eb4ba5dcf3ad67941caf3c8d43`;
-- final reviewed HEAD: `17e36cdfc75906eb4ba5dcf3ad67941caf3c8d43`;
-- independent GitHub architecture review: PASS after two bounded forward corrections;
-- parent PR: #135 (`docs(policy): define scheduled authority supersession`);
-- exact-head PR CI: CI #444 (run id: `35059422741`), SUCCESS on attempt 1;
-- merge/main commit: `59fef75bfed7e96bb8ca2a396603256f2285402f`;
-- authoritative post-merge main CI: CI #445 (run id: `35059916674`), SUCCESS on attempt 1;
-- accepted architecture: distinct `SUPERSEDE_SCHEDULED_AUTHORITY` / `SUPERSEDED_BEFORE_EFFECTIVE` lifecycle, exact-same-start open successor, dedicated and repeatable retained lineage, exact guarded HTTP/DTO/result/shared-read contracts, server-owned actions, SERIALIZABLE/CAS/idempotency/audit atomicity, and OPERATIONAL_START-only database family-scope backstop without weakening generic GiST overlap protection; `CORRECTION` is not expanded;
-- strictly docs-only architecture/governance scope; zero runtime/schema/migration/API implementation/UI/auth/CI/deploy/production mutation;
-- production remains strictly PRE-OPERATIONAL; no production `OPERATIONAL_START` authority is configured/deployed and production backfill is zero;
-- closed by administrative closure: `SYNC-P1-031B`;
-- unlocks `P1-031A` to `READY` (now `CLOSED` by `SYNC-P1-031A`); `P1-031C` was registered as `READY` (now `CLOSED` by `SYNC-P1-031C`); `P1-032` is `CLOSED` by `SYNC-P1-032`.
-
-Predecessor closed major task: `P1-031` — Operational-start policy implementation — **CLOSED** by `SYNC-P1-031`.
-
-Closure evidence:
-- dedicated implementation branch: `feat/operational-start-policy-implementation-031`;
-- starting canonical main base: `13a87538b38312a2dfb482c358b17ac23f4b2ee8`;
-- final reviewed implementation HEAD: `2bf98156f93db47bb986e8e803a137563eadcf18`;
-- independent GitHub review: PASS after bounded forward corrections;
-- parent PR: #133 (`feat(policy): implement operational-start authority`);
-- exact-head PR CI: CI #440 (run id: `34856758210`), SUCCESS;
-- merge/main commit: `a5ee3190171bd5f617a4f32f029328547a0dd37a`;
-- authoritative post-merge main CI: CI #441 (run id: `34857669684`), SUCCESS on attempt 2;
-- CI #441 attempt 1 failed one existing Web `auth-flow` unit assertion while the merge tree had zero file delta from reviewed PR head; the same tree had already passed complete CI #440 and passed the full post-merge workflow on #441 attempt 2, so that CI incident required no P1-031 semantic correction or re-entry. The later continuity finding was discovered independently and is registered under P1-031A/P1-031B;
-- delivered scope: code-defined `OPERATIONAL_START` production family (`v1`, `ACADEMIC_YEAR`), strict payload validator, active-calendar validation, lifecycle restrictions (no RETIRE, initial-publish guard, prospective REPLACE, retained CORRECTION), typed fail-closed operational-start resolver, ordinary curricular execution guards, retained historical PPCT allocator replay, pre-operational no-auto-debt filtering, one live reporting policy authority per evaluation, ReportingStatement `REPORTING_STATEMENT_SNAPSHOT_V2` with pinned operational-start provenance, and retained V1 read compatibility;
-- no Prisma schema/migration change, no public API contract expansion, no Web UI implementation, no deploy/VPS mutation;
-- production remains strictly PRE-OPERATIONAL;
-- closed by administrative closure: `SYNC-P1-031`;
-- initially unlocked downstream P1-032; P1-031 branches into scheduled supersession (P1-031B -> P1-031A, both CLOSED) and the options read seam P1-031C (now CLOSED by `SYNC-P1-031C`); `P1-032` is `CLOSED` by `SYNC-P1-032`.
-
-Predecessor closed major task: `P1-030` — Delayed go-live / operational-start architecture — **CLOSED** by `SYNC-P1-030`.
-
-Closure evidence:
-- dedicated task branch: `docs/delayed-go-live-operational-start-architecture-030`;
-- starting canonical main base: `fafd104c9af5b83833b8a6f324021cea226ffe63`;
-- final reviewed implementation HEAD: `c807d26a6a53609ac5259384661db52271460053`;
-- independent GitHub architecture review: PASS after bounded forward corrections;
-- parent PR: #131 (`docs(architecture): define operational-start policy`);
-- exact-head PR CI: CI #435 (run id: `34707601649`), SUCCESS;
-- merge/main commit: `c4ce704a67fab8e24e5bae3ac2ce81dbcb36c27d`;
-- authoritative post-merge main CI: CI #436 (run id: `34728703082`), SUCCESS;
-- accepted architecture: `ADR-049-DELAYED-GO-LIVE-OPERATIONAL-START-ARCHITECTURE.md` Accepted;
-- closed by administrative closure: `SYNC-P1-030`;
-- scope delivered: defined canonical `OPERATIONAL_START` policy family (`v1`, `ACADEMIC_YEAR`, payload `{ operationalStartDate: CivilDateString }`), locked Product Owner authorities PO-1..PO-4, expected PPCT progression via timetable replay, no-auto-debt invariants (`PRE_OPERATIONAL_UNCONFIRMED` excluding past unconfirmed periods from debt/late calculations), fail-closed missing policy, single boundary for CORE/SPECIALIZED_STUDY, and explicit boundaries with P1-031, P1-032, P3-010/020, and P4;
-- strictly docs-only scope under `docs/**` (zero runtime, schema, migration, UI, auth, CI, or deployment mutation);
-- no correction or re-entry task emerged from review or CI;
-- production remains strictly PRE-OPERATIONAL;
-- unlocks downstream: `P1-031` (`READY`, now CLOSED by `SYNC-P1-031`).
-
-Predecessor closed major task: `P2-004` — Specialized-study class-subject administration workspace — **CLOSED** by `SYNC-P2-004`.
-
-Closure evidence:
-- dedicated implementation branch: `feat/ppct-specialized-study-admin-workspace-004`;
-- starting canonical main base: `b5ccfb2b563ea0633aae97a03ac62076a102bb98`;
-- final reviewed implementation HEAD: `7847b93de75b16d2a64e0e695705b5cdbd3b1cfb`;
-- implementation evidence commits:
-  - `98b977b0853e10d23da3e8af59088b35e53214ea` docs(ppct): define P2-004 administration workspace contract
-  - `e7e71384ce34c02bcad2e5fd34be9ee5c787962e` docs(ppct): correct P2-004 workspace read model contract
-  - `73cf71156c7e88ecee8fa9754a62450480f59d8c` feat(ppct): add administration workspace options
-  - `521426189876a308cf729759cb05fce1d4a29ed1` test(ppct): correct workspace options integration fixtures
-  - `94c36239c1ee1c5b2561d0d9ea98eaea2ce40fb5` feat(ppct): add specialized-study administration workspace
-  - `5eb1ffcf645e817bff7a2a6d6919eae6ff3f8d7f` fix(ppct): harden workspace error and history semantics
-  - `e40e2116c2e103a5c98ac0f930436ca7232cc9bd` docs(governance): move P2-004 to in review
-  - `7847b93de75b16d2a64e0e695705b5cdbd3b1cfb` fix(ppct): close administration workspace review findings;
-- independent GitHub review: PASS after one forward correction round absorbing review findings;
-- parent PR: #129 (`feat(ppct): add specialized-study administration workspace`);
-- exact-head PR CI: CI #428 (run id: `34695635149`), SUCCESS;
-- merge/main commit: `a7b4a9035f04238d931f3e28f1dbac25f9b329ce`;
-- authoritative post-merge main CI: CI #429 (run id: `34696063973`), SUCCESS;
-- closed by administrative closure: `SYNC-P2-004`;
-- delivered scope includes: `PPCT_MANAGE` capability-gated administration workspace, `SCHOOL_WIDE` and exact `SUBJECT` scoped authority, PPCT-specific academic-year/class/subject options read model (`/ppct-options/academic-years` and `/ppct-options/academic-years/:academicYearId`), route `/quan-tri/ppct/ap-dung-chuyen-de` (navigation "Áp dụng chuyên đề"), `CORE_ONLY` vs `CORE_PLUS_SPECIALIZED_STUDY` administration, target PUBLISHED PPCT version selection, specialized-content preflight query, retained class-subject association history table (latest distinction, open-ended `effectiveUntil=null`), CAS concurrency via `expectedLatestAssociationId`, server-side `PPCT_COMPONENT_APPLICABILITY_WEEK_SPLIT` error preservation with semantic error display;
-- Windows integration caveat: full local Windows integration was not used as authoritative closure evidence due to intermittent PostgreSQL connectivity instability (default pool occasionally triggers P1001 `Can't reach database server at 127.0.0.1:5432`; controlled temporary process-local `connection_limit=1` eliminated P1001 but caused transaction acquisition starvation / timeouts across 4 suites; environment restored; no repo mutation; conclusion: "Evidence is consistent with Windows-local connection-pressure instability. Root transport mechanism is not proven"). Authoritative integration/E2E evidence was provided by canonical Linux CI #428 (PR) and #429 (post-merge main), both SUCCESS;
-- zero schema/migration changes;
-- no production deploy;
-- no correction or re-entry task remains;
-- production remains PRE-OPERATIONAL;
-- unlocks downstream: next critical path `P1-030` (`READY`, now CLOSED by `SYNC-P1-030`).
-
-Predecessor closed major task: `P2-003` — Component-aware PPCT allocation and curricular projections — **CLOSED** by `SYNC-P2-003`.
-
-Closure evidence:
-- dedicated implementation branch: `feat/ppct-component-aware-allocation-projections-003`;
-- final reviewed implementation HEAD: `7348221f38ac2cb9b87fa18d169e0198041a23b7`;
-- independent GitHub review: PASS after one forward correction round absorbing 4 correctness findings (One-opportunity week, Future calendar look-ahead, Future structural blockers/overlap, Forward-only week blockers);
-- parent PR: #127 (`feat(ppct): add component-aware allocation and curricular projections`);
-- exact-head PR CI: CI #423 (run id: `34626664097`), SUCCESS;
-- merge/main commit: `c6c6a294f102f125306fdfc65ac64750d49b91cb`;
-- authoritative post-merge main CI: CI #424 (run id: `34627529544`), SUCCESS;
-- closed by administrative closure: `SYNC-P2-003`;
-- runtime scope: deterministic component-aware weekly routing allocator (`PPCT_OCCURRENCE_ALLOCATION_V2`), independent progression coverage and completed/debt/gap projection (`TEACHING_PROGRESS_DEBT_V2`), timetable component readiness (`NORMAL_BASE_PPCT_COMPONENT_V2`), transaction-aware execution allocator for normal and makeup teaching, and ordinary reporting combining CORE and SPECIALIZED_STUDY totals;
-- no schema/migration added;
-- no production deploy;
-- no correction or re-entry task remains;
-- production remains PRE-OPERATIONAL;
-- unlocks downstream: `P2-004` became `READY` (now `CLOSED` by `SYNC-P2-004`).
-
-Predecessor closed major task: `P2-002` — PPCT component persistence + control-plane realignment — **CLOSED** by `SYNC-P2-002`.
-
-Closure evidence:
-- starting canonical base: `main@0594bbab58bf49a058ab4a744499366f3acbaf78`;
-- baseline CI: CI #408 SUCCESS;
-- dedicated implementation branch: `feat/ppct-component-persistence-control-plane-002`;
-- final independently reviewed implementation head: `3d00ebc2bc5b3600104c3889b41c7e1432ae74d6`;
-- independent GitHub review: PASS, including final referential-action correction (`onUpdate: Restrict`) and bounded scope verification;
-- parent PR: #124 (`feat(ppct): add curricular component persistence control plane`);
-- exact-head PR CI: CI #409 (run id: `34468164396`), SUCCESS;
-- merge/main commit: `a3151b049d02f6cae9677d7b93b7df2086d421b3`;
-- authoritative post-merge main CI: CI #410 (run id: `34468753060`), SUCCESS;
-- merged file set: 24 changed files (1356 additions, 162 deletions), covering schema/migration, PPCT control plane/contracts/tests, CI verifiers/replay and governance docs;
-- legacy PPCT data migration preserves retained UUIDs/business values while mapping existing item/revision/lineage rows to `CORE` and class associations to `CORE_ONLY`;
-- component-bearing provenance FKs are explicitly `ON DELETE RESTRICT ON UPDATE RESTRICT`; stable item component is immutable; sequence uniqueness is component-scoped;
-- `PpctClassCurricularProfile` and server-side `AcademicWeek`/segment-envelope split prevention are implemented;
-- `TeachingAssignment`, `TimetableEntry`, `CurricularTeachingExecution` and `MakeupTeachingSchedule` remain component-free;
-- no P2-003 allocator/progress/readiness runtime or P2-004 UI was smuggled into P2-002;
-- no correction/re-entry task emerged from review or CI; no deployment/production mutation occurred;
-- closed by administrative closure: `SYNC-P2-002`;
-- downstream at P2-002 closure: `P2-003` was unlocked to `READY` (now `CLOSED` by `SYNC-P2-003`); `P2-004` is `CLOSED` by `SYNC-P2-004`; `P2-010` remains `BLOCKED_EVIDENCE` and therefore `P2-020` remains `PLANNED`.
-
-Predecessor closed major task: `P2-001` — PPCT Curricular-Component Architecture Re-Entry — **CLOSED** by `SYNC-P2-001`.
-
-Closure evidence:
-- starting canonical `origin/main` base: `a58ba312913a519ed665d1d7fc701f87a7beccfb`;
-- pre-task main CI: CI #400 (run id: `34250442087`), SUCCESS;
-- dedicated task branch: `docs/ppct-curricular-component-architecture-001`;
-- semantically final independently reviewed architecture head: `562ea83b41d2f6c123df08a01a48a0a0082ff92a`;
-- independent architecture review: PASS;
-- external dependency security-gate incident: CI #401 (run id: `34320711905`) failed at npm audit high gate due to upstream Multer advisory on pinned multer 2.2.0; repaired independently via PR #122 (`540c05d512de83f91598bfb1307baaaa8dbf6651`, CI #402 SUCCESS, merge `ff77a625abc51c89e782282241e5a3633e6391bf`, post-merge main CI #403 SUCCESS) without modifying P2-001 architecture semantics;
-- final PR head after forward-merging security baseline: `b7585272558cfa872168f12e1a7c37357894bea8`;
-- parent PR: PR #121 (`docs(ppct): close curricular-component architecture`);
-- exact-head PR CI: CI #404 (run id: `34338997019`), SUCCESS;
-- merge/main commit: `719bef92e58412da9ebd149663e6890da7626a85`;
-- authoritative post-merge main CI: CI #405 (run id: `34340490592`), SUCCESS;
-- closed by administrative closure: `SYNC-P2-001`;
-- merged file set: 15 changed files (1125 additions, 39 deletions), strictly docs-only under `docs/**` (zero runtime/schema/migration/API/UI/auth/CI/deploy/production mutation);
-- accepted authority: `ADR-048-PPCT-CURRICULAR-COMPONENT-ARCHITECTURE.md` Accepted;
-- all 15 architecture questions from P0-900 Section 15 resolved;
-- downstream delivery stream at P2-001 closure: `P2-002` (now `CLOSED` by `SYNC-P2-002`), `P2-003` (now `CLOSED` by `SYNC-P2-003`), `P2-004` (now `CLOSED` by `SYNC-P2-004`), `P1-030` (`READY`, now CLOSED by `SYNC-P1-030`), `P4-010` (now `CLOSED` by `SYNC-P4-010`), parallel workbook path `P2-010` (`BLOCKED_EVIDENCE`) -> `P2-020`.
-
-Predecessor closed major task: `P0-900` — Authoritative specification rebase audit (PPCT Curricular Component Product-Authority Realignment) — **CLOSED** by `SYNC-P0-900` (merge `eb1fc74686b0070935f8dcf23c13a5623b94ca1a`, PR #119, PR CI #397 SUCCESS, post-merge main CI #398 SUCCESS).
-
-Closure evidence:
-- starting canonical main/base: `bdcfecbc92d9f129247ec40c7128bc6adc6ef8cf`;
-- dedicated task branch: `docs/p0-900-ppct-curricular-component-rebase`;
-- final independently reviewed parent head: `79532ff2ba621ab6d2c43ba7818e04c560d617ce`;
-- independent GitHub review: PASS after two forward correction rounds;
-- parent PR: #119 (`docs(governance): rebase PPCT curricular-component authority`);
-- exact-head PR CI: CI #397 (run id: `34246372215`), SUCCESS;
-- merge/main commit: `eb1fc74686b0070935f8dcf23c13a5623b94ca1a`;
-- authoritative post-merge main CI: CI #398 (run id: `34247079386`), SUCCESS;
-- closed by administrative closure `SYNC-P0-900`;
-- merged file set: 14 changed files (6 forward commits), strictly bounded to `docs/` (zero apps/packages/prisma/.github/deploy/scripts changes, zero runtime/schema/migration/API/UI/auth/CI/deploy/production mutation);
-- authoritative source blobs verified and unchanged: v1.2 (`c2c61a4e8acb9fde0e5fc5232467662048fd3380`), v1.3 (`5876af5920d12ea6fcecf42d1b8a392cc4825f16`); trigger was explicit Product Owner authority on 2026-09-08;
-- no additional correction/re-entry task emerged from review or CI;
-- downstream delivery stream registered at P0-900 closure: `P2-001`–`P2-004` (P2-001, P2-002, P2-003, and P2-004 are now `CLOSED`), parallel workbook path `P2-010` (`BLOCKED_EVIDENCE`) -> `P2-020`.
-
-- Core realignment principles accepted into baseline:
-  1. Normal curricular component taxonomy: `CORE` (phần cốt lõi) vs `SPECIALIZED_STUDY` (chuyên đề học tập). Specialized study is curricular, not an ad-hoc `SpecialActivity`.
-  2. Shared master plan foundation: Both components belong to `AcademicYear + Subject + Grade` within the same curricular Subject domain; exact component lifecycle and version packaging model is defined by accepted ADR-048 and realized at persistence/control-plane layer by closed P2-002.
-  3. Single Teaching Assignment: `TeachingAssignment` covers the class-subject; the assigned teacher teaches both `CORE` and `SPECIALIZED_STUDY`.
-  4. Administrative applicability: Class-subject specialized study applicability is configured explicitly by administration; non-applicable items are `NOT_APPLICABLE` (not debt).
-  5. Component-free TimetableEntry: Timetable assigns periods to subjects; `TimetableEntry` remains component-free.
-  6. Weekly last-opportunity routing: In an `AcademicWeek`, for enabled class-subjects, chronologically LAST normal opportunity is `SPECIALIZED_STUDY`; earlier opportunities are `CORE`. Runtime realization belongs to P2-003. Operational disruptions do not dynamically reclassify planned components.
-  7. Independent progression: `CORE` and `SPECIALIZED_STUDY` maintain independent sequential progression cursors; runtime realization belongs to P2-003.
-  8. Combined reporting: Ordinary curricular statements report combined totals; downstream realization remains governed by P2-003.
-  9. Preferred source direction: One workbook with separate logical content/sheets for ordinary PPCT (logical component CORE) and Chuyên đề học tập (logical component SPECIALIZED_STUDY); exact physical sheet names, spellings, and workbook structure remain unapproved and evidence-bound to P2-010.
-
-Predecessor closed major task: `P2-050` — Morning/afternoon selective update and carry-forward (CLOSED by `SYNC-P2-050`, merge `42a0f058381a5b8faa6eb2d233481e48156523c6`, PR #116, PR CI #390 SUCCESS, post-merge main CI #391 SUCCESS).
-
-## Homeroom chain
-
-The registered pre-pilot Homeroom chain is closed: P1-010 architecture, P1-011 persistence, P1-012 control plane, P1-012A historical identity/business-date read model, and P1-013 capability-gated administration workspace. The implemented foundation includes retained history/filter/pagination; explicit create/end/change/correction workflows; current/future versus bounded-historical candidate authority; and exact retained correction lineage plus historical identity behavior. This does not make the project teacher-pilot ready; production remains pre-operational.
-
-## Accepted product/domain authority
-
-`ADR-045-HOMEROOM-RESPONSIBILITY.md` remains accepted authority for canonical homeroom responsibility:
-
-- separate AcademicYear-owned, SchoolClass/date-effective `HomeroomAssignment` domain;
-- inclusive civil-date history with one effective current-truth GVCN per class/date and fail-closed gaps;
-- current/future operational eligibility is distinct from bounded historical truth;
-- current account/profile state cannot silently invalidate or replace a historically correct GVCN;
-- no TeachingAssignment, AdditionalDuty, timetable-text or SpecialActivity-staffing inference as alternate GVCN authority;
-- dedicated `HOMEROOM_ASSIGNMENT_MANAGE / SCHOOL_WIDE` management capability;
-- HĐTN `CLASS` resolves exact GVCN by occurrence date and downstream materialization freezes source provenance;
-- `HomeroomAssignment` existence alone is not teaching-execution evidence or HĐTN period credit.
-
-P1-010 review also recovered and registered Special Programme boundaries T43/T44. P4-010 architecture, P4-020 planning persistence/control plane, P4-030 coordinator/BGH authorization, P4-040 runtime materialization/attestation, and P4-050 workload projection are now CLOSED.
-
-## Accepted Business Configuration domain
-
-`P1-020` (architecture), `P1-021` (persistence/control plane), `P1-022` (administration workspace), `P1-031` (operational-start backend family/runtime integration), `P1-031B` (scheduled-authority supersession architecture), `P1-031A` (authority continuity correction), `P1-031C` (Academic-Year options read-model enablement), and `P1-032` (Operational-start admin UI integration) are **CLOSED**. ADR-046 remains the generic Business Configuration architecture authority and ADR-049 remains the accepted operational-start authority. The foundation includes:
-
-- separate retained `BusinessPolicyStream` / `BusinessPolicyVersion` / `BusinessPolicyCommand` persistence topology;
-- `SCHOOL_WIDE` / `ACADEMIC_YEAR` exact resource semantics;
-- DRAFT / PUBLISHED / REVERSED retained lifecycle;
-- strict civil-date intervals;
-- DB-backed published overlap prevention;
-- exact historical validator-version resolution;
-- prospective replacement and retirement in the generic platform, with the `OPERATIONAL_START` family applying its stricter no-RETIRE lifecycle;
-- retained correction/reversal lineage;
-- immutable published semantics;
-- dedicated `BUSINESS_CONFIGURATION_MANAGE / SCHOOL_WIDE` authorization;
-- capability-gated route `/quan-tri/chinh-sach-nghiep-vu`;
-- `SYSTEM_ADMIN` alone does not grant access;
-- typed code-defined UI adapters with triple identity (familyKey + validatorVersion + resourceKind);
-- current versus historical validator handling;
-- lifecycle workflows: create draft, edit, publish, prospective replace, retire, correct;
-- exact-date resolver UI for families with implemented adapters;
-- strict civil-date client arithmetic without local timezone drift;
-- retained lifecycle/lineage evidence display;
-- explicit query failures with retry;
-- sanitized unknown server errors;
-- fail-closed unsupported family/version/resource behavior;
-- same-transaction audit;
-- command idempotency receipts;
-- bounded Serializable mutation retry;
-- typed fail-closed resolver;
-- `SystemSetting` exclusion;
-- technical config/secrets exclusion (no raw JSON, no generic key/value editor);
-- code-defined backend production registration of `OPERATIONAL_START / v1 / ACADEMIC_YEAR`, active-calendar validation, family-specific lifecycle restrictions, and typed resolver consumed by execution/progress/reporting paths.
-
-The backend production policy registry contains only the reviewed `OPERATIONAL_START` family enabled by P1-031. P1-031C is CLOSED by `SYNC-P1-031C`, providing the Business Configuration-owned AcademicYear options read model (`GET /api/business-configuration/academic-year-options` under `BUSINESS_CONFIGURATION_MANAGE / SCHOOL_WIDE`). The production Web UI adapter registry includes the reviewed `OPERATIONAL_START / v1 / ACADEMIC_YEAR` adapter delivered and CLOSED by `P1-032` (`SYNC-P1-032`). The generic administration workspace continues to fail closed for any unsupported policy editing UI. No production policy value has been configured or deployed.
-
-## Accepted native timetable workbook architecture
-
-`P2-030` (architecture), `P2-040` (native adapter implementation), and `P2-050` (morning/afternoon selective update and carry-forward) are **CLOSED**. `ADR-047-TKB-NATIVE-WORKBOOK-ARCHITECTURE.md` is accepted architecture authority for the real Đam San four-sheet timetable workbook and selective session workflow.
-
-The authoritative Đam San timetable workbook (`TKB-LAN-1-TUAN-1-03.9.26-in.xlsx`, SHA-256 `3ea242433d1d291912749cf9f2f6b39b700847bfc09384dec9c6849b15597c72`, 38,974 bytes) was audited locally and implemented in `DamSanNativeTimetableAdapter`:
-- dedicated `DamSanNativeTimetableAdapter` positioned upstream of canonical timetable importer;
-- strict recognition of 4 sheets: `TKB THEO LỚP BUỔI SÁNG`, `TKB-GV-SANG`, `TKB THEO LỚP BUỔI CHIỀU`, `TKB-GV-CHIỀU`;
-- strict boundary enforcement: class grid rows 7–36 (cols C..T, 18 classes), teacher grid rows 8–45 (cols B..AE, 38 staff rows), with non-slot headers (1–6) and footers (rows ≥ 37 in class, rows ≥ 46 in teacher) excluded;
-- locked cell parser precedence: normalize -> blank (unscheduled) -> exact special non-peer allowlist (`CC`, `GDĐP`, `TN-HN`) -> teacher-linked token (`<SubjectCode>-<TeacherCode>` split at last hyphen with mandatory peer evidence); `TN-HN` is intercepted before hyphen-split;
-- mandatory bidirectional peer reconciliation between class view and teacher view:
-  - Morning: 402 teacher-linked slots reconcile 1:1 with 0 duplicate and 0 orphan (including 18 `SH` teacher-linked and 384 non-SH teacher-linked); 120 permitted non-peer special activity slots (`CC` = 18, `GDĐP` = 48, `TN-HN` = 54);
-  - Afternoon: 53 teacher-linked slots reconcile 1:1 with 0 duplicate and 0 orphan (all non-SH teacher-linked);
-  - Total across sessions: exactly 455 teacher-linked slots (= 437 non-SH teacher-linked + 18 SH teacher-linked);
-  - Saturday schedule: Period 1 = `SH-<TeacherCode>` (18 slots, teacher-linked, reconciles 1:1; business label not asserted by P2-030 evidence); Periods 2–4 = `TN-HN` (54 slots, permitted non-peer); Period 5 = blank across all 18 classes in this workbook evidence (treated as evidence, not an immutable format invariant);
-- teacher identity derivation contract:
-  - teacher rows modeled structurally as `TeacherSourceRowRef = (sheet, rowNumber)`; Column A display text is untrusted source decoration / audit evidence only, never canonical identity authority;
-  - active teacher rows structurally derive exactly one `TeacherCode` from matched class-view peers (33 morning rows and 4 afternoon rows each derive exactly 1 distinct code; any row with multiple codes fails closed with `TKB_NATIVE_TEACHER_CODE_CONFLICT`);
-  - zero-allocation staff row (Row 25) is inert roster evidence (no derived code, no canonical User resolution, no failure);
-  - canonical User resolution resolves the derived `TeacherCode` through exact `StaffProfile.staffCode` or approved `TimetableImportEntityAlias` (TEACHER) per ADR-024 (no fuzzy matching, no display-name matching, disagreement fails closed);
-- fail-closed mismatch taxonomy (13 structured domain error codes);
-- effective date extraction (`2026-09-07`) and server-side raw XLSX SHA-256 participating in `confirm-request-v1` request fingerprinting without persisting raw bytes or adding new receipt columns;
-- sanitized structural test fixture `apps/api/test/fixtures/tkb/sanitized-dam-san-tkb-fixture.xlsx` generated with zero real teacher names and zero raw teacher codes (using synthetic `Giáo viên 01`..`Giáo viên 38` and `GV01`..`GV38`), preserving 100% of grid topology and reconciliation counts;
-- selective morning/afternoon session authoring and carry-forward (P2-050):
-  - `nativeSessionMode` (`BOTH` / `MORNING` / `AFTERNOON`), defaulting to `BOTH` when omitted; rejected on generic importer with `TIMETABLE_IMPORT_INVALID_SOURCE_FORMAT`;
-  - source authority: `BOTH` requires exact four-sheet source; `MORNING` uses selected morning pair (Sheets 1 & 2); `AFTERNOON` uses selected afternoon pair (Sheets 3 & 4); unselected sheets are non-authoritative in selective mode;
-  - ADR-020 date-effective canonical baseline lookup at `target.effectiveFrom` (`status in ['ACTIVE', 'SUPERSEDED']`, `effectiveFrom <= targetDate`, `effectiveUntil null OR >= targetDate`); fails closed with `TKB_NATIVE_CARRY_FORWARD_BASELINE_MISSING` if no effective baseline exists;
-  - exact carry-forward of unauthored session rows preserving original canonical provenance IDs (`timeSlotDefinitionId`, `schoolClassId`, `subjectId`, `teachingAssignmentId`, `teacherUserId`); missing retained provenance fails closed with `TKB_NATIVE_CARRY_FORWARD_PROVENANCE_INVALID` without fabricated fallback objects;
-  - full composed canonical validation (`evaluateTimetableEntries` mapped into preview issue vocabulary) blocking cross-session class/teacher wall-clock collisions (`CLASS_TIME_OVERLAP`, `TEACHER_TIME_OVERLAP`) and invalid entity states (`SLOT_NOT_ACTIVE`, `SLOT_NOT_REGULAR_TEACHING`, `CLASS_INACTIVE`, `SUBJECT_INACTIVE`, `TEACHER_INACTIVE`, `TEACHER_NOT_TEACHING_STAFF`, `ASSIGNMENT_COVERAGE_GAP`);
-  - explicit selected-session clear/removal semantics (authored=0, carried=53, final=53, canConfirm=true);
-  - full semantic checksum across composed canonical rows;
-  - server-owned sentinels (`ALL_SHEETS`, `MORNING_SHEETS`, `AFTERNOON_SHEETS`) for request replay/idempotency;
-  - bounded preview composition metadata (`mode`, `baselineTimetableVersionId`, `authoredEntryCount`, `carriedForwardEntryCount`, `finalEntryCount`).
-
-`P2-040` and `P2-050` are closed by `SYNC-P2-040` and `SYNC-P2-050` respectively.
-
-## Accepted governance authority
-
-The following remain current governance/product authorities:
-
-- `docs/governance/PRE-PILOT-PRODUCT-BASELINE.md`;
-- `docs/governance/PRE-PILOT-TRACEABILITY-MATRIX.md`;
-- `docs/governance/PRE-PILOT-TASK-REGISTER.md`;
-- `docs/governance/MAJOR-TASK-DOCUMENTATION-SYNC-PROTOCOL.md`;
-- `docs/decisions/ADR-044-PRE-PILOT-PRODUCT-REALIGNMENT-GOVERNANCE.md`;
-- `docs/decisions/ADR-045-HOMEROOM-RESPONSIBILITY.md`;
-- `docs/decisions/ADR-046-BUSINESS-CONFIGURATION-CONTROL-PLANE.md`;
-- `docs/decisions/ADR-047-TKB-NATIVE-WORKBOOK-ARCHITECTURE.md`;
-- `docs/decisions/ADR-048-PPCT-CURRICULAR-COMPONENT-ARCHITECTURE.md`;
-- `docs/decisions/ADR-049-DELAYED-GO-LIVE-OPERATIONAL-START-ARCHITECTURE.md`;
-- `docs/decisions/ADR-050-GDDP-HDTN-PROGRAMME-ARCHITECTURE.md`.
-
-Every major task must be registered before implementation, cite applicable traceability rows, obey dependency gates, and complete post-merge documentation synchronization before dependent major work starts. Untracked plain `DEFERRED`/`later`/`future slice` is prohibited.
-
-## Current implemented foundation
-
-The repository contains reviewed implementation for:
-
-- identity, session/authentication, capability/scope authorization and audit;
-- academic years, versioned retained calendars, business weeks/segments/reserve weeks/interruptions and classes;
-- date-effective TeachingAssignment history;
-- **retained HomeroomAssignment persistence** with inclusive civil DATE intervals, ACTIVE/REVERSED history, same-class/date ACTIVE overlap prevention, exact retained teacher/actor identities and correction lineage;
-- **Homeroom control plane and capability** with dedicated `HOMEROOM_ASSIGNMENT_MANAGE / SCHOOL_WIDE` authority, explicit lifecycle commands, workspace-safe reads/options, bounded historical identity discovery without `USER_MANAGE`, server-owned business date, exact typed historical resolution, calendar compatibility and same-transaction audit;
-- retained exact time-slot revisions and real wall-clock collision semantics;
-- retained timetable versions/entries, validation, lifecycle, historical resolution and XLSX canonical import infrastructure;
-- **native Đam San timetable workbook adapter (`DamSanNativeTimetableAdapter`), bidirectional peer reconciliation runtime, and selective session authoring with explicit carry-forward** on top of canonical import pipeline, four-sheet structural validation, selective morning/afternoon mode (`BOTH` / `MORNING` / `AFTERNOON`), locked parser precedence, `TeacherSourceRowRef` structural identity, exact derived teacher code resolution, fail-closed class/subject code + alias conflict handling, 455 normal curricular teacher-linked rows persisted to `TimetableEntry`, 120 special non-peer slots structurally validated without fabricating teacher assignments, transient raw XLSX SHA-256 participating in confirm request fingerprinting per ADR-021/026, ADR-020 date-effective canonical baseline resolution, exact unauthored-session carry-forward preserving canonical provenance without fallback fabrication, full composed canonical validation (`evaluateTimetableEntries`) and semantic checksum, and privacy-sanitized structural test fixture;
-- component-aware PPCT persistence/control plane closed by P2-002, including stable component identity on `PpctItem`, component-aware revision/lineage provenance, per-component sequence uniqueness, `PpctClassCurricularProfile`, legacy CORE/CORE_ONLY migration and server-side business-week profile split prevention;
-- operational overlays;
-- SpecialActivity minimum-core persistence/runtime with exact slots, frozen classes, staffing and class/teacher/time collision checks;
-- **retained GDĐP/HĐTN programme planning persistence/control plane closed by P4-020 and coordinator/BGH authorization closed by P4-030**, including `ProgrammeMaster`, retained plan versions/topic items, prospective planned occurrences, exact slots and `Slot -> Set<Teacher>` staffing, DRAFT/PUBLISHED/SUPERSEDED lineage, DB hardening, CAS, SERIALIZABLE bounded retry, idempotency receipts and same-transaction audit; exact coordinator authority (`ACTIVITY + exact ProgrammeMaster.id`), `GDDP_COORDINATOR` and `HĐTN_COORDINATOR` strict binding, BGH professional authority (`APPROVAL_PRINCIPAL` / `APPROVAL_VICE_PRINCIPAL`, `SCHOOL_WIDE`), BGH-only bootstrap invariant, coordinator grant target/kind normalization hardening, guarded `/api/programme-planning` HTTP surface, server-owned relation resolution, body/route mismatch rejection, list/query isolation, fail-closed `mustChangePassword`, persisted denial audit, qualification seam for attestation validation, runtime materialization and attestation persistence closed by P4-040, and downstream workload/reporting projection closed by P4-050;
-- PPCT occurrence allocation (P2-003 component-aware weekly routing, independent progression and downstream projection runtime closed by P2-003 and merged to main);
-- specialized-study class-subject administration workspace (P2-004 capability-gated applicability administration, options read model, target version selection, specialized-content preflight, retained association history and CAS concurrency closed by P2-004 and merged to main);
-- curricular TeachingExecution and SpecialActivityParticipationExecution evidence;
+- identity/session/authentication, capability/scope default-deny authorization and audit;
+- retained AcademicYear/calendar/week/segment/interruption/class authority;
+- date-effective TeachingAssignment and retained HomeroomAssignment history/control plane/UI;
+- retained TimeSlotDefinition and timetable history;
+- native Đam San timetable adapter, class/teacher peer reconciliation and selective morning/afternoon carry-forward;
+- PPCT component-aware persistence, applicability, weekly routing, independent CORE/SPECIALIZED_STUDY progression and combined curricular projection;
+- PPCT real-workbook contract and now merged native PPCT_V1 importer/UI (`P2-020`, closure sync pending);
+- operational overlays and make-up foundation;
+- SpecialActivity exact-slot/frozen-class/staffing/collision foundation;
+- GDĐP/HĐTN programme planning, coordinator/BGH authorization, workbook importers, lifecycle workspace, materialization/attestation and workload projection;
+- curricular and special-programme execution evidence;
 - proof-based progress/debt/late projection;
-- reporting projection and public reporting read path;
-- Personal Reporting Projection;
-- Reporting Statement persistence/control plane/UI enablement/product UI work;
-- **retained Business Configuration persistence, control plane and administration workspace** (separate BusinessPolicyStream / BusinessPolicyVersion / BusinessPolicyCommand topology, strict civil-date intervals, DB-level non-overlapping published exclusion, retained replacement and reversal/correction lineage, immutable published payload, exact historical validator-version resolution, dedicated `BUSINESS_CONFIGURATION_MANAGE / SCHOOL_WIDE` capability, capability-gated route `/quan-tri/chinh-sach-nghiep-vu`, typed/version-aware UI adapter architecture with triple identity, lifecycle UI for draft/edit/publish/replace/retire/correct, historical typed rendering, exact-date resolver UI, bounded Serializable mutation retry, idempotency receipts, same-transaction audit, sanitized errors and typed fail-closed resolver);
-- **operational-start backend authority and UI integration**: backend closed by P1-031 (`OPERATIONAL_START / v1 / ACADEMIC_YEAR` production registration, strict validator/calendar/lifecycle rules, typed fail-closed resolver, execution guards, pre-op no-auto-debt projection, retained allocator replay, single-authority reporting integration, and ReportingStatement SNAPSHOT_V2 provenance); P1-031B defines the distinct never-effective scheduled-authority lifecycle, and its P1-031A runtime realization is CLOSED by `SYNC-P1-031A`; `P1-031C` is CLOSED by `SYNC-P1-031C` (providing AcademicYear options read model); and `P1-032` is CLOSED by `SYNC-P1-032` (delivering production Web UI integration for operational-start administration);
-- hardened Windows production deployment control-plane/runbooks through PR #90;
-- **school-wide effective teaching schedule read model (`SCHOOL_EFFECTIVE_TEACHING_SCHEDULE_V1`) and Teacher Workspace closed by P2-061**, including schema-free derived effective schedule projection, authenticated `TEACHER_BASE` read authority, bounded public API (`/api/effective-teaching-schedule`), searchable teacher options, four Vietnamese workspace views (`Lịch của tôi`, `Toàn trường`, selected-teacher schedule, `So sánh với lịch của tôi`), composition from timetable + calendar suppression + operational dispositions + make-up + SpecialActivity (including materialized GDĐP/HĐTN-HN), fail-closed `BLOCKED` semantics, real half-open interval comparison, minimal teacher identity payload, and preserved centralized mutation authority.
+- Reporting Statement retained/frozen projection;
+- Business Configuration control plane and operational-start authority/UI;
+- school-wide effective teaching schedule read model and Vietnamese Teacher Workspace;
+- hardened Windows production deployment control plane/runbooks and evidence tooling.
 
-Homeroom architecture, persistence, control plane/capability, historical read model and administration workspace UI are closed for the registered pre-pilot scope. Business Configuration architecture (P1-020), persistence/control plane (P1-021), administration workspace (P1-022), and operational-start backend implementation (P1-031) are closed for their registered pre-pilot scopes. P2-030 native timetable workbook architecture/evidence, P2-040 native adapter runtime implementation, P2-050 selective morning/afternoon update and carry-forward, P2-002 PPCT component persistence/control plane, P2-003 component-aware allocation/projections runtime, P2-004 specialized-study administration workspace, P4-010 special-programme architecture, P4-020 special-programme planning persistence/control plane, P4-030 programme coordinator authorization, P4-040 programme runtime bridge, P4-050 special-programme workload/reporting projection, P2-060 school-wide effective schedule architecture, and P2-061 school-wide effective teaching schedule read model + Teacher Workspace are closed.
-
-## Pre-pilot verdict
-
-**NOT READY FOR TEACHER PILOT YET.**
-
-The registered implementation, data-evidence, product and production-readiness tasks remain.
-
-## Critical pre-pilot gaps
-
-1. GDĐP/HĐTN programme architecture (P4-010), retained planning persistence/control plane (P4-020), coordinator/BGH authorization (P4-030), runtime materialization + attestation (P4-040), and workload/reporting projection (P4-050) are CLOSED; workload reduction/adjustment semantics remain trigger-gated under P4-060/P4-061.
-2. GDĐP `AcademicYear + Grade` and HĐTN `CLASS/GRADE/SCHOOL_WIDE` planning models and mutation commands are guarded by authorized HTTP surfaces (`/api/programme-planning`) and coordinator/BGH domain authorization (P4-030); Web UI remains downstream.
-3. Exact programme `Slot -> Set<Teacher>` planning persistence, authorization, deterministic materialization and provenance into SpecialActivity are closed by P4-020/P4-030/P4-040; downstream workload/reporting projection is closed by P4-050.
-4. Special-program absence/replacement and programme-level confirmation architecture is closed (T43/T44); prospective planning replacement and qualification seam are closed by P4-030; post-materialization CAS reversal/replacement and attestation persistence/runtime are closed by P4-040.
-5. Coordinator and BGH professional authorization bindings are CLOSED by P4-030 (`ACTIVITY + exact ProgrammeMaster.id`, `APPROVAL_PRINCIPAL` / `APPROVAL_VICE_PRINCIPAL`, `SCHOOL_WIDE`); programme attestation persistence/runtime is closed by P4-040 and workload eligibility/reporting projection by P4-050.
-6. Operational-start backend/runtime authority (P1-031), scheduled-authority supersession architecture (P1-031B), authority continuity correction (P1-031A), options read-model enablement (P1-031C), and administration Web UI integration (P1-032) are CLOSED; while historical evidence workflow remains P3-010/P3-020.
-7. PPCT real-school import is intentionally blocked pending an authoritative workbook contract; preferred direction is one workbook with separate logical content for ordinary PPCT (CORE) and Chuyên đề học tập (SPECIALIZED_STUDY), with exact physical sheet names and structure evidence-bound to P2-010.
-8. Workload reduction, percentage, override and manual adjustment semantics remain trigger-gated/deferred under P4-060/P4-061.
-9. WorkloadAdjustmentRule remains trigger-gated/deferred.
-10. Installable PWA baseline is absent.
-11. Dedicated Báo giảng Telegram bot/linking/notification lifecycle is absent.
-12. First-certificate HTTP-01/Nginx authority for the Báo giảng subdomain is incomplete.
-13. Actual VPS Stage 1 evidence has not yet been collected for first deployment.
-14. Curricular component realignment (`P2-001`–`P2-004`): PPCT architecture (`P2-001`), component persistence/control plane (`P2-002`), weekly routing/allocation/projection runtime (`P2-003`), and admin applicability workspace (`P2-004`) are **CLOSED**.
+Detailed closure evidence for each domain remains in `PRE-PILOT-TASK-REGISTER.md`, ADRs, requirements, PR/CI and Git history.
 
 ## Production VPS topology decision
 
-The final production-host topology is intentionally unresolved and explicitly deferred by the Product Owner:
+### Selected authority
 
-- Supported candidate topologies are `SHARED_VPS` (coexisting with DamSanV5 / Quản lí nội trú on the existing Windows Server 2022 VPS, retaining shared-host isolation, Nginx coexistence, and process/port/database/TLS neighbour protection) and `DEDICATED_VPS` (a separate newly rented Windows Server 2022 VPS dedicated to Báo giảng, with application/domain/business architecture preserved, requiring production runbooks and P6 authority to be audited and realigned for dedicated-host topology before use).
-- Both topologies target Windows Server 2022.
-- The choice between `SHARED_VPS` and `DEDICATED_VPS` is an explicit Product Owner decision, not an agent inference. No agent may infer a topology from existing infrastructure.
-- A mandatory HARD STOP exists immediately before `P6-010`: `P6-010` cannot start until `P6-005` is `CLOSED`.
+The Product Owner explicitly selected **`SHARED_VPS`** on 2026-10-01.
 
-## Tasks currently active or eligible to start
+Target host class:
 
-`P2-010` is CLOSED by `SYNC-P2-010`.
+- existing Windows Server 2022 VPS currently hosting DamSanV5 / Quản lí nội trú;
+- 6 logical processors;
+- 16 GB RAM;
+- system drive approximately 49.9 GB total with 31.07 GB free at the read-only audit time.
 
-Active in progress:
-- None.
+Sanitized capacity evidence is recorded in `ADR-053-PRODUCTION-VPS-TOPOLOGY.md`. The operator-held source audit package is not committed.
 
-Active in review:
-- None.
+The audit also retained Nginx/PostgreSQL evidence for the 2026-09-30 19:00–20:00 high-load window. Historical PerfMon CPU/RAM capture did **not** exist for that hour, so the repository must not claim historical peak CPU/RAM saturation values that were not measured.
 
-Eligible to start:
-- `P2-020` — PPCT native importer implementation — **READY** (dependencies `P2-002` and `P2-010` are CLOSED; ready to implement native importer pipeline using approved contract; native importer runtime is not yet implemented).
+### Shared-host isolation invariants
 
-Not eligible to start:
-- `P4-060` and `P4-061` remain **DEFERRED_WITH_TRIGGER**.
-- `P6-010` remains blocked by `P6-005` production VPS topology decision gate.
+`SHARED_VPS` means host sharing only. Báo giảng must retain separate authority for at least:
 
-Eligibility does not imply permission to bypass one-task-per-branch, review, CI or mandatory closure-sync gates. No next major task is inferred by this closure; P6 remains blocked by P6-005.
+- application root;
+- Node/API runtime port;
+- Scheduled Task/startup authority;
+- environment/secrets boundary;
+- logs and backups;
+- PostgreSQL database;
+- PostgreSQL application role;
+- Nginx managed server-block/include authority;
+- domain, certificate, renewal and reload lifecycle.
 
-## Decisions/evidence still blocking other paths
+DamSanV5 / Quản lí nội trú roots, processes, Scheduled Tasks/services, database resources, Nginx/TLS configuration and monitoring state are protected neighbours and must not be mutated implicitly.
 
-- `P0-002` — stale PR #11 closure: Product Owner decision required.
-- `P0-003` — CORE vs FULL BUSINESS pilot scope: Product Owner decision required before P5 freeze.
-- `P0-004` — GitHub main branch protection/ruleset: Product Owner decision required before repository-settings mutation.
-- `P6-005` — Production VPS topology decision: explicit Product Owner selection of `SHARED_VPS` vs `DEDICATED_VPS` required; HARD STOP blocks `P6-010`.
+### Remaining topology gate
 
-## Authoritative source-change gate
+The Product Owner decision is made, but repository closure is not complete:
 
-Accepted P0 fingerprints:
+1. PR #174 must pass exact-head review/CI and merge normally;
+2. authoritative post-merge main CI must succeed;
+3. `SYNC-P6-005` must record closure evidence;
+4. only then may `P6-010` become `READY` and define/verify the shared-host HTTP-01/TLS authority.
 
-- PA-B v1.2 DOCX blob: `c2c61a4e8acb9fde0e5fc5232467662048fd3380`;
-- PA-B v1.3 addendum blob: `5876af5920d12ea6fcecf42d1b8a392cc4825f16`.
+The capacity audit supporting `SHARED_VPS` is decision evidence, not a substitute for later registered production inventory/preflight evidence.
 
-The contradiction trigger under T42 fired on 2026-09-08 via explicit Product Owner authority on curricular components; task `P0-900` was completed and closed by `SYNC-P0-900`. Future blob changes or contradictory decisions will require another registered rebase audit.
+## Critical pre-pilot gaps
 
-## Repository protection gap
+The project is **NOT READY FOR TEACHER PILOT YET**. Remaining registered gaps include:
 
-Direct P0 inspection found `main` is currently not protected server-side. This is registered as `P0-004`; no repository-setting mutation was performed implicitly.
+1. `SYNC-P2-020` must formally close the already-merged PPCT native importer before dependent major work consumes it.
+2. `P0-003` must select CORE vs FULL BUSINESS pilot scope before P5 pilot freeze.
+3. `P3-010` / `P3-020` pre-operational historical execution architecture/runtime remain registered; they cannot start until their dependencies, including P2-020, are CLOSED.
+4. PWA production baseline (`P5-020`) remains absent.
+5. Dedicated Báo giảng Telegram integration (`P5-030`) remains absent.
+6. `P6-005` selected topology must complete formal repository closure.
+7. `P6-010` shared-host first-certificate HTTP-01/Nginx/TLS authority remains incomplete and blocked by P6-005 closure.
+8. Actual production Stage 1 passive discovery/preflight (`P6-020`) remains trigger-gated and has not been executed as official deployment evidence.
+9. Production bootstrap/first controlled deploy (`P6-030`) has not occurred.
+10. Teacher pilot go-live verification (`P6-050`) has not occurred.
+11. Workload adjustment rules P4-060/P4-061 remain trigger-gated unless official pilot/reporting scope requires them.
 
 ## Production state
 
-Production remains **pre-operational**. No production deployment has occurred. P1-020, P1-021, P1-022, P1-031, P1-031B, P1-031A, P1-031C, P1-032, P4-010, P4-020, and P4-030 are CLOSED and canonical. P4-030 authorization and guarded HTTP surface implementation are merged to canonical `main` but have not been deployed or applied to production. P4-020 schema/migrations and planning control-plane implementation are merged to canonical `main` but have not been deployed or applied to production. The backend production policy registry contains only the reviewed `OPERATIONAL_START` family enabled by P1-031, and the Web UI registry includes the corresponding production adapter enabled by P1-032. No production operational-start policy value has been configured or deployed, so the additive P1-031A migration performed zero production data backfill and has not been applied to production. P1-031C introduced zero schema or migration change and zero production data mutation. P1-032 delivered administration Web UI integration with zero backend/contracts/schema/migration mutation. P2-030 architecture/evidence, P2-040 native adapter runtime implementation, P2-050 selective session authoring and carry-forward, P2-002 PPCT component persistence/control plane, P2-003 component-aware allocation/projection runtime, P2-004 specialized-study administration workspace, and P2-061 school-wide effective teaching schedule read model + Teacher Workspace are merged to canonical `main`, but did NOT deploy or mutate VPS, database, Nginx, TLS, scheduled tasks, or application process state. P2-010 workbook contract audit is merged to canonical `main` (docs-only; zero runtime/schema/migration/deploy/production mutation). P2-001 architecture remains accepted authority under ADR-048 and ADR-051 remains accepted authority for school-wide effective schedule. P6 remains blocked by the explicit P6-005 topology decision gate.
+Production remains strictly **PRE-OPERATIONAL**.
 
-## Protected external system boundary
+The repository has not deployed `main@2d6cb02d4bf9bb4529e0e8eaf83e10d6a67ef043` or the P2-020 importer to production. The current P6-005 branch is documentation/governance only and has performed no VPS mutation.
 
-Pre-pilot work must not modify or infer ownership over:
+No production operational-start policy value has been configured or deployed through this task. No production database migration, TLS issuance, Nginx reload/configuration change, Scheduled Task creation/change, ACL mutation, deployment or application restart is authorized by P6-005.
+
+## Protected external-system boundary
+
+Pre-pilot work must not modify or infer ownership over protected neighbour resources unless a separately authorized exact-scope infrastructure task permits it:
 
 - `D:\Quan_li_noi_tru`;
 - `D:\Edu_DamSan`;
-- DamSanV5/Quản lí nội trú application processes, database, Scheduled Tasks or application configuration;
-- current Nội trú TLS renewal/monitoring state except in a separately authorized and explicitly isolated infrastructure task.
+- DamSanV5 / Quản lí nội trú application processes;
+- their databases/roles;
+- their Scheduled Tasks/services;
+- their application configuration;
+- current Nội trú Nginx/TLS/monitoring state.
+
+## Current governance authority
+
+Current canonical authority surfaces:
+
+1. `PRE-PILOT-TASK-REGISTER.md`;
+2. this `CURRENT-PROJECT-STATUS.md`;
+3. `PRE-PILOT-TRACEABILITY-MATRIX.md`;
+4. `PRE-PILOT-PRODUCT-BASELINE.md`;
+5. `MAJOR-TASK-DOCUMENTATION-SYNC-PROTOCOL.md`.
+
+Applicable accepted architecture/decision authorities include ADR-044 through ADR-053 as registered by their parent tasks. Exact task/closure state always follows the canonical task register and this current-status snapshot; exact Git state always follows Git/GitHub directly.

@@ -13,14 +13,14 @@ This is an executable, staged runbook for the official Windows VPS in pre-operat
 ## Production topology hard gate
 
 > [!CAUTION]
-> **MANDATORY HARD STOP — TOPOLOGY DECISION GATE P6-005**
+> **MANDATORY HARD STOP — P6-005 REPOSITORY CLOSURE + P6-010 SHARED-HOST AUTHORITY**
 >
-> - **DO NOT** execute Stage 0, Stage 1, Stage 2, or any later production action in this runbook until `P6-005` is **CLOSED**.
-> - The production-host topology decision (`SHARED_VPS` vs `DEDICATED_VPS`) has been explicitly deferred by the Product Owner. If topology is unresolved: **STOP** and request an explicit Product Owner decision.
-> - **`SHARED_VPS`**: this runbook may proceed only after the applicable shared-host P6 authority (`P6-010`) is reviewed and accepted.
-> - **`DEDICATED_VPS`**: this current runbook contains shared/protected-neighbour assumptions (such as protected foreign roots, shared Nginx, foreign tasks/processes, and shared PostgreSQL) and **MUST** be independently audited and realigned before execution.
-> - Never treat the absence of DamSanV5 / Quản lí nội trú resources on a dedicated VPS as a failed deployment condition merely because current shared-host runbook expects foreign-neighbour evidence.
-> - **No VPS access, inventory, TLS issuance, Nginx change, PostgreSQL mutation or deployment is authorized by this documentation task.**
+> - On 2026-10-01 the Product Owner explicitly selected **`SHARED_VPS`**. ADR-053 records that authority; the dedicated-host alternative is not the active topology unless a later explicit governance decision reopens it.
+> - **DO NOT** execute Stage 0, Stage 1, Stage 2, or any later production action in this runbook until `P6-005` is formally **CLOSED** through parent review/merge, authoritative post-merge CI and `SYNC-P6-005`.
+> - After `P6-005` is CLOSED, this runbook follows the **shared-host / protected-neighbour** branch only. It may proceed further only after the applicable shared-host P6 authority (`P6-010`) is reviewed and accepted.
+> - DamSanV5 / Quản lí nội trú roots, processes, Scheduled Tasks/services, database resources, Nginx/TLS/monitoring state are protected neighbours. Báo giảng must keep isolated root/port/task/environment/logs/backups/database/role/domain/TLS lifecycle.
+> - The read-only capacity audit supporting the topology choice is decision evidence only; it is **not** Stage 1 verified deployment evidence and does not bypass any inventory/preflight gate below.
+> - **No VPS access, inventory under this runbook, TLS issuance, Nginx change, PostgreSQL mutation or deployment is authorized by the P6-005 documentation task.**
 
 ## Stage 0 — repository and authority
 

@@ -41,11 +41,12 @@ Phương án chính thức là Phương án B:
 
 Hạ tầng và topology production:
 
-- Windows Server 2022 là OS authority chính thức cho môi trường production trong mọi trường hợp.
-- Quyết định topology host cuối cùng được Product Owner chủ động hoãn lại để chốt chính thức tại decision gate `P6-005`: lựa chọn giữa `SHARED_VPS` (dùng chung Windows Server 2022 VPS hiện hữu với DamSanV5 / Quản lí nội trú, duy trì triệt để cách ly láng giềng) và `DEDICATED_VPS` (thuê một Windows Server 2022 VPS riêng biệt dành hoàn toàn cho Báo giảng).
-- Ứng dụng, kiến trúc lưu trữ PostgreSQL và domain chính thức `baogiang.dtnt-damsan.edu.vn` phải luôn sẵn sàng deploy được trên cả hai topology này.
-- Các công việc bảo đảm cách ly shared-host và runbook hiện có không phải là thẩm quyền ép buộc Product Owner phải dùng chung VPS Nội trú hiện hữu.
-- Không có bất kỳ task production/TLS nào được ngầm định trước topology khi `P6-005` chưa được `CLOSED`.
+- Windows Server 2022 là OS authority chính thức cho môi trường production.
+- Ngày 2026-10-01, Product Owner đã explicit chọn `SHARED_VPS` tại decision gate `P6-005`: Báo giảng sẽ dùng chung Windows Server 2022 VPS hiện hữu với DamSanV5 / Quản lí nội trú, nhưng phải duy trì triệt để cách ly láng giềng.
+- Quyết định dựa trên read-only capacity audit của host hiện hữu (6 logical CPU, 16 GB RAM, 31.07 GB free trên ổ C tại thời điểm audit), cùng retained Nginx/PostgreSQL evidence của peak window 2026-09-30 19:00–20:00. Historical PerfMon CPU/RAM của peak window không tồn tại, nên không có claim lịch sử vượt quá evidence.
+- `SHARED_VPS` không đồng nghĩa shared application authority: Báo giảng phải có root, runtime port, Scheduled Task, environment/secrets boundary, logs/backups, PostgreSQL database/role và TLS lifecycle riêng.
+- DamSanV5 / Quản lí nội trú application roots, processes, Scheduled Tasks/services, database resources, Nginx/TLS/monitoring state là protected neighbours và không được mutate implicit.
+- `P6-010` chỉ được bắt đầu sau khi `P6-005` được formal `CLOSED` qua review/merge/post-merge CI/`SYNC-P6-005`; việc Product Owner đã chọn topology không tự cấp quyền deploy hay mutate production.
 
 Authority môi trường/delivery cao nhất vẫn là:
 
