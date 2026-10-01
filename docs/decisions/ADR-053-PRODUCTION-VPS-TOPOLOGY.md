@@ -1,6 +1,6 @@
 # ADR-053 — Production VPS Topology
 
-- **Status:** Accepted by Product Owner; repository closure pending P6-005 review/merge/CI
+- **Status:** Accepted; `P6-005` CLOSED by `SYNC-P6-005`
 - **Date:** 2026-10-01
 - **Task:** `P6-005` Production VPS topology decision
 - **Decision:** `SHARED_VPS`
@@ -48,6 +48,18 @@ Sanitized decision evidence from that audit:
 
 The evidence supports sufficient current host headroom to proceed with a shared-host design, subject to the mandatory shared-host isolation/TLS/port/database preflight gates below. It does not waive any P6 safety gate.
 
+## Repository closure evidence
+
+- final reviewed parent head: `c9a56a7a3fff613f823c3540463d8bcfaa6442ee`;
+- parent PR: #174 (`docs(production): select shared VPS topology`);
+- exact-head PR CI: #557 / run `36877744658` — SUCCESS;
+- normal merge/main: `5de8ba3b862405c7fcc215021bb5d2f3bb0122f7`;
+- authoritative post-merge main CI: #558 / run `36880358944` — SUCCESS;
+- parent scope: 8 changed files, all under `docs/**`;
+- zero runtime/schema/migration/workflow/deploy-script or production-state mutation;
+- no residual correction/re-entry task emerged from review or CI;
+- administrative closure: `SYNC-P6-005`.
+
 ## Consequences
 
 1. `P6-010` must use **shared-host / protected-neighbour semantics**.
@@ -60,6 +72,8 @@ The evidence supports sufficient current host headroom to proceed with a shared-
 
 ## Required next gate
 
-After `P6-005` is formally `CLOSED` through the repository documentation-sync protocol, `P6-010` becomes eligible to start on a dedicated branch.
+`P6-005` is formally CLOSED. `P6-010` is therefore eligible to start on a dedicated branch under the shared-host/protected-neighbour authority above.
+
+`READY` does not itself authorize VPS mutation. P6-010 remains subject to its own branch, review, CI and explicit operational boundaries.
 
 No production mutation is authorized by this ADR.

@@ -2,7 +2,7 @@
 
 ## Status
 
-`IN_REVIEW`
+`CLOSED by SYNC-P6-005`
 
 ## Canonical start
 
@@ -53,9 +53,21 @@ Báo giảng must be isolated by at least:
 
 The existing Nội trú application roots, Node workloads, Scheduled Tasks/services, database resources, Nginx configuration, TLS state and monitoring are protected foreign resources.
 
+## Parent closure evidence
+
+- final reviewed parent head: `c9a56a7a3fff613f823c3540463d8bcfaa6442ee`;
+- parent PR: #174 (`docs(production): select shared VPS topology`);
+- changed files: 8, all under `docs/**`;
+- exact-head PR CI: #557 / run `36877744658` — **SUCCESS**;
+- normal merge/main: `5de8ba3b862405c7fcc215021bb5d2f3bb0122f7`;
+- authoritative post-merge main CI: #558 / run `36880358944` — **SUCCESS**;
+- exact-head review/diff audit: docs-only, no review threads, no runtime/schema/migration/workflow/deploy-script mutation;
+- no correction or re-entry task emerged from parent review or CI;
+- administrative closure recorded by `SYNC-P6-005`.
+
 ## Scope boundary
 
-This task is a topology decision only. It performs no:
+P6-005 and its closure sync performed no:
 
 - VPS mutation;
 - Nginx mutation or reload;
@@ -68,21 +80,13 @@ This task is a topology decision only. It performs no:
 
 ## Downstream effect
 
-After parent merge, authoritative post-merge CI success, independent review and `SYNC-P6-005`:
+With P6-005 formally closed:
 
-- `P6-005` may become `CLOSED`;
-- `P6-010` may move from `PLANNED` to `READY`;
+- `P6-010` moves from `PLANNED` to `READY`;
 - `P6-010` must proceed using the shared-host/protected-neighbour branch of the existing production authority;
-- `P6-020` remains trigger-gated and must not be pulled forward merely because topology is selected.
+- `P6-020` remains trigger-gated and must not be pulled forward merely because topology is selected;
+- `READY` does not authorize production mutation; P6-010 remains subject to its own task branch, review, CI and operational boundaries.
 
-## Closure evidence still required
+## Closure verdict
 
-Before `P6-005` can be recorded as `CLOSED`:
-
-1. this docs-only parent task is independently reviewed;
-2. exact-head PR CI succeeds;
-3. the parent PR is merged normally;
-4. authoritative post-merge main CI succeeds on the exact merge SHA;
-5. `SYNC-P6-005` records those facts in canonical status surfaces.
-
-Until then, `P6-010` remains non-startable.
+All required P6-005 closure evidence is satisfied. `P6-005` is `CLOSED by SYNC-P6-005` and the selected topology is canonical `SHARED_VPS`.
