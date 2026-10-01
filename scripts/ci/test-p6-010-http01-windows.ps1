@@ -39,24 +39,25 @@ try {
   [IO.File]::WriteAllText($nginxMain,"events {}`nhttp {`n    include conf.d/*.conf;`n}`n",[Text.UTF8Encoding]::new($false))
   [IO.File]::WriteAllBytes($httpManaged,(Get-P6010Http01ManagedBytes -Root $productionRoot))
 
-  $stage = 'T03_GRAPH'
-  $graph = Get-NginxEffectiveGraph -NginxPrefix $nginxPrefix -NginxConfig $nginxMain -PlannedManagedPath $httpManaged
-  $port80Claims = @($graph.servers | Where-Object { Test-P6010NginxServerClaimsDomainPort -Server $_ -Port 80 })
-  $port443Claims = @($graph.servers | Where-Object { Test-P6010NginxServerClaimsDomainPort -Server $_ -Port 443 })
-  if ($port80Claims.Count -ne 1 -or $port443Claims.Count -ne 0) { throw 'P6010-T03 domain-port classifier failed' }
+  $stage = 'T03_CLASSIFIER'
+  $httpAst = Read-NginxAst $httpManaged
+  $httpServer = [pscustomobject]@{ file = Get-CanonicalPath $httpManaged; node = $httpAst.nodes[0] }
+  if (-not (Test-P6010NginxServerClaimsDomainPort -Server $httpServer -Port 80) -or (Test-P6010NginxServerClaimsDomainPort -Server $httpServer -Port 443)) { throw 'P6010-T03 domain-port classifier failed' }
 
   $stage = 'T04_PORT80_COLLISION'
   $collision80 = Join-Path $nginxConfD 'neighbor-80.conf'
   [IO.File]::WriteAllText($collision80,"server {`n listen 80;`n server_name baogiang.dtnt-damsan.edu.vn;`n}`n",[Text.UTF8Encoding]::new($false))
-  $collisionGraph = Get-NginxEffectiveGraph -NginxPrefix $nginxPrefix -NginxConfig $nginxMain -PlannedManagedPath $httpManaged
-  if (@($collisionGraph.servers | Where-Object { Test-P6010NginxServerClaimsDomainPort -Server $_ -Port 80 }).Count -ne 2) { throw 'P6010-T04 port 80 collision was not detected' }
+  $collision80Ast = Read-NginxAst $collision80
+  $neighbor80Server = [pscustomobject]@{ file = Get-CanonicalPath $collision80; node = $collision80Ast.nodes[0] }
+  if (@($httpServer,$neighbor80Server | Where-Object { Test-P6010NginxServerClaimsDomainPort -Server $_ -Port 80 }).Count -ne 2) { throw 'P6010-T04 port 80 collision was not detected' }
   Remove-Item -LiteralPath $collision80 -Force
 
   $stage = 'T05_PORT443_COLLISION'
   $collision443 = Join-Path $nginxConfD 'neighbor-443.conf'
   [IO.File]::WriteAllText($collision443,"server {`n listen 443 ssl;`n server_name BAOGIANG.DTNT-DAMSAN.EDU.VN.;`n}`n",[Text.UTF8Encoding]::new($false))
-  $collisionGraph443 = Get-NginxEffectiveGraph -NginxPrefix $nginxPrefix -NginxConfig $nginxMain -PlannedManagedPath $httpManaged
-  if (@($collisionGraph443.servers | Where-Object { Test-P6010NginxServerClaimsDomainPort -Server $_ -Port 443 }).Count -ne 1) { throw 'P6010-T05 normalized port 443 collision was not detected' }
+  $collision443Ast = Read-NginxAst $collision443
+  $neighbor443Server = [pscustomobject]@{ file = Get-CanonicalPath $collision443; node = $collision443Ast.nodes[0] }
+  if (-not (Test-P6010NginxServerClaimsDomainPort -Server $neighbor443Server -Port 443)) { throw 'P6010-T05 normalized port 443 collision was not detected' }
   Remove-Item -LiteralPath $collision443 -Force
 
   $stage = 'T06_WIN_ACME_SETTINGS'
@@ -141,6 +142,7 @@ try {
       if ($readOnlyText -match [regex]::Escape($forbidden)) { throw "P6010-T13 read-only authority contains forbidden execution token: $readOnlyPath / $forbidden" }
     }
     if (-not $readOnlyText.Contains('mutationsPerformed = $false')) { throw "P6010-T13 read-only authority missing mutation declaration: $readOnlyPath" }
+    if (-not $readOnlyText.Contains('Get-NginxEffectiveGraph') -or -not $readOnlyText.Contains('Test-P6010NginxServerClaimsDomainPort')) { throw "P6010-T13 read-only authority no longer consumes shared Nginx graph/collision authority: $readOnlyPath" }
   }
   $verifyText = Get-Content -LiteralPath (Join-Path $repo 'scripts\deploy\windows\production-http01-verify.ps1') -Raw -Encoding UTF8
   if (-not $verifyText.Contains("-CategoryPrefix 'P6010_PLAN'")) { throw 'P6010-T13 plan evidence path uses report-specific ancestor semantics' }
