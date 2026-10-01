@@ -26,6 +26,7 @@ import { PendingReportingStatementsPage } from './pages/PendingReportingStatemen
 import { ReportingStatementDetailPage } from './pages/ReportingStatementDetailPage';
 import { ReportingStatementsPage } from './pages/ReportingStatementsPage';
 import { BusinessConfigurationPage } from './pages/BusinessConfigurationPage';
+import { PpctImportPage } from './pages/PpctImportPage';
 import { PpctSpecializedStudyPage } from './pages/PpctSpecializedStudyPage';
 import { SpecialProgrammeWorkspacePage } from './pages/SpecialProgrammeWorkspacePage';
 import { EffectiveSchedulePage } from './pages/EffectiveSchedulePage';
@@ -86,6 +87,7 @@ export default function App({ businessPolicyAdapters }: { businessPolicyAdapters
             <Route path="/quan-tri/chinh-sach-nghiep-vu" element={<BusinessConfigurationPage adapters={businessPolicyAdapters} />} />
           </Route>
           <Route element={<CapabilityRoute allow={canManagePpct} />}>
+            <Route path="/quan-tri/ppct/nhap" element={<PpctImportPage />} />
             <Route path="/quan-tri/ppct/ap-dung-chuyen-de" element={<PpctSpecializedStudyPage />} />
           </Route>
           <Route element={<CapabilityRoute allow={canManageSpecialProgrammes} />}>

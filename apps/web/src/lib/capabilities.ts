@@ -115,6 +115,7 @@ export const managementRoutes: ManagementRoute[] = [
   { to: '/quan-tri/kiem-nhiem/danh-muc', label: 'Danh mục kiêm nhiệm', isVisible: (c) => hasSchoolCapability(c, 'ADDITIONAL_DUTY_CATALOG_MANAGE') },
   { to: '/quan-tri/kiem-nhiem/phan-cong', label: 'Phân công kiêm nhiệm', isVisible: canManageDutyAssignments },
   { to: '/quan-tri/chinh-sach-nghiep-vu', label: 'Chính sách nghiệp vụ', isVisible: (c) => hasSchoolCapability(c, 'BUSINESS_CONFIGURATION_MANAGE') },
+  { to: '/quan-tri/ppct/nhap', label: 'Nhập PPCT', isVisible: canManagePpct },
   { to: '/quan-tri/ppct/ap-dung-chuyen-de', label: 'Áp dụng chuyên đề', isVisible: canManagePpct },
   { to: '/quan-tri/chuong-trinh-dac-thu', label: 'HĐTN-HN & GDĐP', isVisible: canManageSpecialProgrammes },
 ];
