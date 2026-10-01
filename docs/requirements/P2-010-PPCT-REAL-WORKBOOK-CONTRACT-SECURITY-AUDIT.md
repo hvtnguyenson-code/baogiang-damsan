@@ -1,6 +1,6 @@
 # P2-010 — Kiểm toán Hợp đồng và An toàn Workbook PPCT Thực tế (PPCT Real-Workbook Contract & Security Audit)
 
-- **Trạng thái nhiệm vụ:** `IN_REVIEW`
+- **Trạng thái nhiệm vụ:** `CLOSED` by `SYNC-P2-010`
 - **Nhánh thực thi:** `docs/ppct-real-workbook-contract-security-audit-010`
 - **Canonical starting baseline SHA:** `b8b5f9862c2dc160e124a19b863ac547b44ef94b`
 - **Tên workbook chuẩn tắc:** `Mau_PPCT_Chuan_He_Thong_Dam_San_V1.xlsx`
@@ -9,7 +9,18 @@
 - **Bằng chứng Git exclusion:** Resolve qua `.git/info/exclude:8:.local-evidence/`, không bị track bởi git (`git ls-files` = NO OUTPUT)
 - **Điều kiện tiên quyết:** `P2-001` (CLOSED), `P0-900` (CLOSED), `ADR-048` (Accepted), `P2-002` (CLOSED), `P2-003` (CLOSED), `P2-004` (CLOSED)
 - **Ma trận truy xuất nguồn gốc (Traceability):** `T24`, `T45`
-- **Nhiệm vụ hạ nguồn:** `P2-020` (PPCT native importer implementation) tiếp tục ở trạng thái `PLANNED` (bị khóa cho đến khi P2-010 hoàn tất review, merge, post-merge CI và closure sync).
+- **Bằng chứng đóng nhiệm vụ (Closure evidence):**
+  - PR: #169 (`docs(ppct): define authoritative workbook import contract`)
+  - Final reviewed semantic head: `5a3329780d20d6f2272c7978e1469b81de4d3264`
+  - Final PR head: `611edb2aa62cf053af20cf6bb32429bd210c9a43`
+  - Merge/main commit: `7c48971d32840764c7274e544438ba1bf7aa983e`
+  - Exact-head PR CI: CI #537 (run ID `36734577185`) SUCCESS
+  - Authoritative post-merge main CI: CI #538 (run ID `36739503269`) SUCCESS
+  - Independent review: PASS (hấp thụ đầy đủ Corrections 001–004 trước merge)
+  - Không có task correction hoặc re-entry tồn đọng
+  - Không deploy hoặc thực hiện mutation trên production
+  - Đóng hành chính qua `SYNC-P2-010`
+- **Nhiệm vụ hạ nguồn:** `P2-020` (PPCT native importer implementation) chuyển sang trạng thái `READY`.
 
 ---
 
@@ -24,7 +35,7 @@ Nhiệm vụ này là **kiểm toán kiến trúc và hợp đồng nghiệp v�
 - **KHÔNG** deploy hoặc thực hiện bất kỳ mutation nào trên môi trường production;
 - **KHÔNG** đưa raw workbook vào git repository, fixture hay test code.
 
-Trạng thái nhiệm vụ trên nhánh: **`IN_REVIEW`**.
+Trạng thái nhiệm vụ: **`CLOSED` by `SYNC-P2-010`** (hạ nguồn `P2-020` chuyển sang **`READY`**).
 
 ---
 
@@ -943,4 +954,4 @@ Kiểm toán xác nhận workbook chính thức của trường Đam San (`Mau_P
 - Chính sách an toàn gói tệp khóa chặt chẽ dòng/cột ẩn, ô gộp, kiểu ô, các mối nguy ZIP và nội dung ngoài.
 - Quá trình nạp bảo đảm tính nguyên tử trên toàn bộ workbook và bảo toàn nguyên vẹn ranh giới cấu hình áp dụng theo lớp của Ban giám hiệu và Tổ trưởng tại `P2-004`.
 
-Nhiệm vụ `P2-010` duy trì trạng thái **`IN_REVIEW`**. Nhiệm vụ `P2-020` tiếp tục ở trạng thái **`PLANNED`** cho đến khi `P2-010` hoàn tất quy trình review, merge và đóng tài liệu `SYNC-P2-010`.
+Nhiệm vụ `P2-010` đạt trạng thái **`CLOSED` by `SYNC-P2-010`**. Nhiệm vụ `P2-020` chuyển sang trạng thái **`READY`** để triển khai pipeline nhập liệu chuẩn tắc.

@@ -151,11 +151,14 @@ Product Owner authority recorded by P1-031B adds one exact retained lifecycle ru
 
 ### 4.9 PPCT import
 
-PPCT import remains intentionally deferred until the real authoritative school workbook/template/workflow is available and reviewed. The existing PPCT core must not be polluted with guessed workbook fields.
-
-Under 2026-09-08 Product Owner authority, the expected school source direction is one workbook containing separate logical content/sheets for ordinary PPCT (logical component CORE) and Chuyên đề học tập (logical component SPECIALIZED_STUDY). Exact physical sheet names, spellings, header structures, and mappings remain unapproved and evidence-bound to P2-010.
-
-When the source workbook is available, the sequence is: contract/security audit -> approved import profile/identity rules -> implementation -> regression evidence.
+The authoritative school PPCT workbook and contract/security audit is closed under `P2-010`:
+- authoritative workbook reviewed: `Mau_PPCT_Chuan_He_Thong_Dam_San_V1.xlsx`;
+- authoritative SHA-256: `9a8cc9b62b02cae5c81163bf7afca12be5f0ee66eb5316fd236294adb1b56692`;
+- physical sheet `PPCT` maps to logical component `CORE`;
+- physical sheet `CHUYEN_DE` maps to logical component `SPECIALIZED_STUDY`;
+- physical sheet `THONG_TIN` serves as metadata authority;
+- exact workbook structural, identity, replay, and error contracts are audited and closed under `P2-010` (`docs/requirements/P2-010-PPCT-REAL-WORKBOOK-CONTRACT-SECURITY-AUDIT.md`);
+- native importer runtime has not yet been implemented; downstream implementation belongs to `P2-020` (`READY`).
 
 ### 4.10 Native Đam San timetable ingestion
 

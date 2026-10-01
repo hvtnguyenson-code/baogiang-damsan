@@ -6,24 +6,58 @@ This is the canonical mutable **product/task status** document for Báo giảng.
 
 It is **not** a self-referential registry of the latest Git commit. Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub at the start of every task. SHAs recorded here are evidence for the stated baseline or last closed major task.
 
-**Status snapshot date:** 2026-09-29
+**Status snapshot date:** 2026-09-30
 
 ## Active / next critical path
 
-`P2-061` — School-wide effective teaching schedule read model + Teacher Workspace — is **CLOSED** by `SYNC-P2-061`.
+`P2-010` — PPCT real-workbook contract/security audit — is **CLOSED** by `SYNC-P2-010`.
+
+Active in progress:
+- None.
 
 Active in review:
-- `P2-010` — PPCT real-workbook contract/security audit — **IN_REVIEW** (dedicated branch `docs/ppct-real-workbook-contract-security-audit-010`, canonical start `b8b5f9862c2dc160e124a19b863ac547b44ef94b`, authoritative evidence `Mau_PPCT_Chuan_He_Thong_Dam_San_V1.xlsx` SHA-256 `9a8cc9b62b02cae5c81163bf7afca12be5f0ee66eb5316fd236294adb1b56692`).
+- None.
+
+Eligible to start:
+- `P2-020` — PPCT native importer implementation — **READY** (dependencies `P2-002` and `P2-010` are CLOSED; native importer runtime has NOT been implemented; P2-020 is eligible to implement the native import pipeline according to the approved contract).
 
 Remain:
-- `P2-020` — PPCT native importer implementation — **PLANNED** (pending `P2-010`).
 - `P4-060` and `P4-061` remain **DEFERRED_WITH_TRIGGER**.
 
-Production environment remains strictly **PRE-OPERATIONAL**. No production deployment or mutation has occurred. Zero production migration or deployment has been authorized.
+Production environment remains strictly **PRE-OPERATIONAL**. Importer runtime has not been implemented. No production deployment or mutation has occurred. Zero production migration or deployment has been authorized.
 
 ## Last closed major task
 
-`P2-061` — School-wide effective teaching schedule read model + Teacher Workspace — **CLOSED** by `SYNC-P2-061`.
+`P2-010` — PPCT real-workbook contract/security audit — **CLOSED** by `SYNC-P2-010`.
+
+Closure evidence:
+- dedicated parent branch: `docs/ppct-real-workbook-contract-security-audit-010`;
+- canonical starting main base: `b8b5f9862c2dc160e124a19b863ac547b44ef94b`;
+- authoritative workbook: `Mau_PPCT_Chuan_He_Thong_Dam_San_V1.xlsx` (SHA-256 `9a8cc9b62b02cae5c81163bf7afca12be5f0ee66eb5316fd236294adb1b56692`);
+- final independently reviewed semantic contract head before main-sync merge: `5a3329780d20d6f2272c7978e1469b81de4d3264`;
+- final PR head after forward merge of canonical main: `611edb2aa62cf053af20cf6bb32429bd210c9a43`;
+- parent PR: #169 (`docs(ppct): define authoritative workbook import contract`);
+- exact-head PR CI: CI #537 (run `36734577185`), SUCCESS;
+- parent merge/main commit: `7c48971d32840764c7274e544438ba1bf7aa983e`;
+- normal merge: YES;
+- authoritative post-merge main CI: CI #538 (run `36739503269`), SUCCESS (event: `push`, branch: `main`, exact SHA: `7c48971d32840764c7274e544438ba1bf7aa983e`);
+- independent review: PASS;
+- review history: Corrections 001, 002, 003, 004 absorbed before merge;
+- no residual correction/re-entry task emerged from review/CI;
+- PR #170 is independent security baseline repair, not business scope of P2-010;
+- delivered scope:
+  - strictly docs/contract only;
+  - workbook package and zip-bomb security audit;
+  - exact physical workbook mapping: physical `PPCT` -> logical `CORE`, physical `CHUYEN_DE` -> logical `SPECIALIZED_STUDY`, physical `THONG_TIN` as metadata authority;
+  - all 34 contract/security sections defined in `docs/requirements/P2-010-PPCT-REAL-WORKBOOK-CONTRACT-SECURITY-AUDIT.md`;
+  - zero contradictions with `ADR-048`;
+  - native importer runtime has NOT been implemented (remains `P2-020`);
+  - zero runtime/schema/migration/deploy/production mutation;
+- closed by administrative closure: `SYNC-P2-010`;
+- downstream: `P2-020` is **READY**;
+- production remains strictly **PRE-OPERATIONAL**.
+
+Predecessor closed major task: `P2-061` — School-wide effective teaching schedule read model + Teacher Workspace — **CLOSED** by `SYNC-P2-061`.
 
 Closure evidence:
 - dedicated implementation branch: `feat/school-wide-effective-teaching-schedule-061`;
@@ -927,19 +961,20 @@ The final production-host topology is intentionally unresolved and explicitly de
 
 ## Tasks currently active or eligible to start
 
-`P2-061` is CLOSED by `SYNC-P2-061`.
+`P2-010` is CLOSED by `SYNC-P2-010`.
 
 Active in progress:
 - None.
 
 Active in review:
-- `P2-010` — PPCT real-workbook contract/security audit (`docs/ppct-real-workbook-contract-security-audit-010`).
+- None.
 
 Eligible to start:
-- None. No implementation task is currently READY.
+- `P2-020` — PPCT native importer implementation — **READY** (dependencies `P2-002` and `P2-010` are CLOSED; ready to implement native importer pipeline using approved contract; native importer runtime is not yet implemented).
 
 Not eligible to start:
-- `P2-020` — PPCT native importer implementation — **PLANNED**; blocked by `P2-010`.
+- `P4-060` and `P4-061` remain **DEFERRED_WITH_TRIGGER**.
+- `P6-010` remains blocked by `P6-005` production VPS topology decision gate.
 
 Eligibility does not imply permission to bypass one-task-per-branch, review, CI or mandatory closure-sync gates. No next major task is inferred by this closure; P6 remains blocked by P6-005.
 
@@ -965,7 +1000,7 @@ Direct P0 inspection found `main` is currently not protected server-side. This i
 
 ## Production state
 
-Production remains **pre-operational**. No production deployment has occurred. P1-020, P1-021, P1-022, P1-031, P1-031B, P1-031A, P1-031C, P1-032, P4-010, P4-020, and P4-030 are CLOSED and canonical. P4-030 authorization and guarded HTTP surface implementation are merged to canonical `main` but have not been deployed or applied to production. P4-020 schema/migrations and planning control-plane implementation are merged to canonical `main` but have not been deployed or applied to production. The backend production policy registry contains only the reviewed `OPERATIONAL_START` family enabled by P1-031, and the Web UI registry includes the corresponding production adapter enabled by P1-032. No production operational-start policy value has been configured or deployed, so the additive P1-031A migration performed zero production data backfill and has not been applied to production. P1-031C introduced zero schema or migration change and zero production data mutation. P1-032 delivered administration Web UI integration with zero backend/contracts/schema/migration mutation. P2-030 architecture/evidence, P2-040 native adapter runtime implementation, P2-050 selective session authoring and carry-forward, P2-002 PPCT component persistence/control plane, P2-003 component-aware allocation/projection runtime, P2-004 specialized-study administration workspace, and P2-061 school-wide effective teaching schedule read model + Teacher Workspace are merged to canonical `main`, but did NOT deploy or mutate VPS, database, Nginx, TLS, scheduled tasks, or application process state. P2-001 architecture remains accepted authority under ADR-048 and ADR-051 remains accepted authority for school-wide effective schedule. P6 remains blocked by the explicit P6-005 topology decision gate.
+Production remains **pre-operational**. No production deployment has occurred. P1-020, P1-021, P1-022, P1-031, P1-031B, P1-031A, P1-031C, P1-032, P4-010, P4-020, and P4-030 are CLOSED and canonical. P4-030 authorization and guarded HTTP surface implementation are merged to canonical `main` but have not been deployed or applied to production. P4-020 schema/migrations and planning control-plane implementation are merged to canonical `main` but have not been deployed or applied to production. The backend production policy registry contains only the reviewed `OPERATIONAL_START` family enabled by P1-031, and the Web UI registry includes the corresponding production adapter enabled by P1-032. No production operational-start policy value has been configured or deployed, so the additive P1-031A migration performed zero production data backfill and has not been applied to production. P1-031C introduced zero schema or migration change and zero production data mutation. P1-032 delivered administration Web UI integration with zero backend/contracts/schema/migration mutation. P2-030 architecture/evidence, P2-040 native adapter runtime implementation, P2-050 selective session authoring and carry-forward, P2-002 PPCT component persistence/control plane, P2-003 component-aware allocation/projection runtime, P2-004 specialized-study administration workspace, and P2-061 school-wide effective teaching schedule read model + Teacher Workspace are merged to canonical `main`, but did NOT deploy or mutate VPS, database, Nginx, TLS, scheduled tasks, or application process state. P2-010 workbook contract audit is merged to canonical `main` (docs-only; zero runtime/schema/migration/deploy/production mutation). P2-001 architecture remains accepted authority under ADR-048 and ADR-051 remains accepted authority for school-wide effective schedule. P6 remains blocked by the explicit P6-005 topology decision gate.
 
 ## Protected external system boundary
 
