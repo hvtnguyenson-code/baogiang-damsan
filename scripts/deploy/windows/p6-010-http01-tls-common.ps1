@@ -37,7 +37,7 @@ function Assert-P6010ManagedNginxPath(
   if (-not (Test-PathWithin $canonical $prefix) -or (Normalize-ComparablePath $canonical) -eq (Normalize-ComparablePath $mainConfig)) {
     throw 'P6010_NGINX_MANAGED_BOUNDARY_INVALID'
   }
-  Assert-PathAncestorChainNonReparse -Directory (Split-Path -Parent $canonical) | Out-Null
+  Assert-PathAncestorChainNonReparse -Directory (Split-Path -Parent $canonical) -CategoryPrefix 'P6010_MANAGED_NGINX' | Out-Null
   $classification = Get-PathSecurityClassification -Path $canonical -Kind file
   if ($classification.state -notin @('PASS','MISSING')) { throw 'P6010_NGINX_MANAGED_FILE_INVALID' }
   return $canonical
@@ -84,7 +84,7 @@ function Assert-P6010WinAcmeSettings([Parameter(Mandatory = $true)][string]$Root
   $paths = Get-P6010CanonicalPaths -Root $Root
   $classification = Get-PathSecurityClassification -Path $paths.winAcmeSettings -Kind file
   if ($classification.state -ne 'PASS') { throw 'P6010_WIN_ACME_SETTINGS_MISSING_OR_INVALID' }
-  Assert-PathAncestorChainNonReparse -Directory (Split-Path -Parent $paths.winAcmeSettings) | Out-Null
+  Assert-PathAncestorChainNonReparse -Directory (Split-Path -Parent $paths.winAcmeSettings) -CategoryPrefix 'P6010_WIN_ACME_SETTINGS' | Out-Null
   $settings = Get-Content -LiteralPath $paths.winAcmeSettings -Raw -Encoding UTF8 | ConvertFrom-Json
   if ($null -eq $settings.Client) { throw 'P6010_WIN_ACME_SETTINGS_INVALID' }
   if ([string]$settings.Client.ClientName -cne (Get-P6010WinAcmeClientName)) { throw 'P6010_WIN_ACME_CLIENT_NAME_CONFLICT' }
@@ -110,7 +110,7 @@ function Assert-P6010AuthorityCommonBinding(
   $common = Get-CanonicalPath $AuthorityCommon
   $classification = Get-PathSecurityClassification -Path $common -Kind file
   if ($classification.state -ne 'PASS') { throw 'P6010_AUTHORITY_COMMON_INVALID' }
-  Assert-PathAncestorChainNonReparse -Directory (Split-Path -Parent $common) | Out-Null
+  Assert-PathAncestorChainNonReparse -Directory (Split-Path -Parent $common) -CategoryPrefix 'P6010_AUTHORITY_COMMON' | Out-Null
   if ((Get-FileSha256FromBytes $common) -ine $ExpectedAuthorityCommonSha256) { throw 'P6010_AUTHORITY_COMMON_HASH_CONFLICT' }
   return $common
 }
@@ -132,7 +132,8 @@ function Get-P6010WinAcmeIssueCommandPlan(
   $common = Assert-P6010AuthorityCommonBinding -AuthorityCommon $AuthorityCommon -ExpectedAuthorityCommonSha256 $ExpectedAuthorityCommonSha256
   if ($ClientMaxBodySize -notmatch '^[1-9][0-9]*(?:[kKmMgG])?$') { throw 'NGINX_REQUEST_SIZE_INVALID' }
   $domain = Get-P6010Domain
-  $scriptParameters = '-Root "{0}" -NginxExe "{1}" -NginxPrefix "{2}" -NginxConfig "{3}" -ManagedHttp01Config "{4}" -ManagedTlsConfig "{5}" -ClientMaxBodySize "{6}" -AuthorityCommon "{7}" -ExpectedAuthorityCommonSha256 "{8}"' -f $paths.root,(Get-CanonicalPath $NginxExe),(Get-CanonicalPath $NginxPrefix),(Get-CanonicalPath $NginxConfig),(Get-CanonicalPath $ManagedHttp01Config),(Get-CanonicalPath $ManagedTlsConfig),$ClientMaxBodySize,$common,$ExpectedAuthorityCommonSha256.ToLowerInvariant()
+  $expectedHttp01Sha256 = Get-Sha256FromBytes (Get-P6010Http01ManagedBytes -Root $paths.root)
+  $scriptParameters = '-Root "{0}" -NginxExe "{1}" -NginxPrefix "{2}" -NginxConfig "{3}" -ManagedHttp01Config "{4}" -ManagedTlsConfig "{5}" -ClientMaxBodySize "{6}" -AuthorityCommon "{7}" -ExpectedAuthorityCommonSha256 "{8}" -ExpectedHttp01Sha256 "{9}"' -f $paths.root,(Get-CanonicalPath $NginxExe),(Get-CanonicalPath $NginxPrefix),(Get-CanonicalPath $NginxConfig),(Get-CanonicalPath $ManagedHttp01Config),(Get-CanonicalPath $ManagedTlsConfig),$ClientMaxBodySize,$common,$ExpectedAuthorityCommonSha256.ToLowerInvariant(),$expectedHttp01Sha256
   return [pscustomobject][ordered]@{
     executable = $paths.winAcmeExe
     arguments = @(
@@ -156,6 +157,7 @@ function Get-P6010WinAcmeIssueCommandPlan(
     renewalId = Get-P6010RenewalId
     expectedCertificate = $paths.certificate
     expectedPrivateKey = $paths.privateKey
+    expectedHttp01Sha256 = $expectedHttp01Sha256
     authorityCommon = $common
     authorityCommonSha256 = $ExpectedAuthorityCommonSha256.ToLowerInvariant()
     scheduledTaskMutationAllowed = $false

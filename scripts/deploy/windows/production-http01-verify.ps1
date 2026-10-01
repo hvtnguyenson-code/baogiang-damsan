@@ -29,7 +29,7 @@ $paths = Get-P6010CanonicalPaths -Root $binding.root
 $email = Assert-P6010AcmeEmail -Email $AcmeEmail
 $authorityCommonPath = Assert-P6010AuthorityCommonBinding -AuthorityCommon $AuthorityCommon -ExpectedAuthorityCommonSha256 $ExpectedAuthorityCommonSha256
 $planFile = Get-CanonicalPath $PlanPath
-Assert-PathAncestorChainNonReparse -Directory (Split-Path -Parent $planFile) | Out-Null
+Assert-PathAncestorChainNonReparse -Directory (Split-Path -Parent $planFile) -CategoryPrefix 'P6010_PLAN' | Out-Null
 if ((Get-PathSecurityClassification -Path $planFile -Kind file).state -ne 'PASS' -or (Get-FileSha256FromBytes $planFile) -ine $ExpectedPlanSha256) { throw 'P6010_PLAN_DIGEST_INVALID' }
 $safeReport = Assert-SafeReadOnlyReportPath -ReportPath $ReportPath -ProductionRoot $binding.root -AdditionalProtectedRoot $binding.nginxPrefix -ProtectedLeaf @($planFile,$binding.nginxExe,$binding.nginxConfig,$httpManaged,$tlsManaged,$paths.winAcmeExe,$paths.winAcmeSettings,$paths.renewalHook,$paths.certificate,$paths.privateKey,$authorityCommonPath,$binding.markerPath)
 if (Test-PathWithin $safeReport $repository) { throw 'READ_ONLY_REPORT_PATH_CONFLICT' }

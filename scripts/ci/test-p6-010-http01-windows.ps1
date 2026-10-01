@@ -66,7 +66,11 @@ try {
   $settings.Client.ClientName = 'baogiang-win-acme'
   [IO.File]::WriteAllText($paths.winAcmeSettings,($settings | ConvertTo-Json -Depth 5),[Text.UTF8Encoding]::new($false))
 
-  $authorityCommon = Join-Path $repo 'scripts\deploy\windows\deployment-common.ps1'
+  $authoritySource = Join-Path $repo 'scripts\deploy\windows\deployment-common.ps1'
+  $authorityDirectory = Join-Path $tempRoot 'authority'
+  New-Item -ItemType Directory -Path $authorityDirectory -Force | Out-Null
+  $authorityCommon = Join-Path $authorityDirectory 'deployment-common.ps1'
+  [IO.File]::WriteAllBytes($authorityCommon,[IO.File]::ReadAllBytes($authoritySource))
   $authorityHash = Get-FileSha256FromBytes $authorityCommon
   $fakeNginx = Join-Path $nginxPrefix 'nginx.exe'
   [IO.File]::WriteAllText($fakeNginx,'fixture',[Text.UTF8Encoding]::new($false))
@@ -85,6 +89,8 @@ try {
   }
   if ($issueArgs -notcontains '--notaskscheduler') { throw 'P6010-T08 issue vector may mutate win-acme global scheduler' }
   if (($issueArgs -join ' ') -notmatch 'ExpectedAuthorityCommonSha256' -or ($issueArgs -join ' ') -notmatch [regex]::Escape($authorityHash)) { throw 'P6010-T08 issue vector did not pin renewal hook authority hash' }
+  $expectedHttpHash = Get-Sha256FromBytes (Get-P6010Http01ManagedBytes -Root $productionRoot)
+  if ($issue.expectedHttp01Sha256 -cne $expectedHttpHash -or ($issueArgs -join ' ') -notmatch 'ExpectedHttp01Sha256' -or ($issueArgs -join ' ') -notmatch [regex]::Escape($expectedHttpHash)) { throw 'P6010-T08 issue vector did not pin exact HTTP-01 authority hash' }
 
   $renew = Get-P6010WinAcmeRenewCommandPlan -Root $productionRoot
   if ((@($renew.arguments) -join "`n") -cne (@('--renew','--id','baogiang-damsan','--notaskscheduler') -join "`n")) { throw 'P6010-T09 renew vector drifted' }
@@ -93,27 +99,35 @@ try {
 
   $hookPath = Join-Path $repo 'scripts\deploy\windows\production-tls-renewal-hook.ps1'
   $hookText = Get-Content -LiteralPath $hookPath -Raw -Encoding UTF8
-  foreach ($requiredHookToken in @('P6010_AUTHORITY_COMMON_HASH_CONFLICT','[ScriptBlock]::Create($commonText)','Get-CanonicalNginxManagedBytes','Test-NginxServerClaims443Domain','Invoke-ReviewedNginxSyntaxTest','FIRST_ISSUE_CERT_READY_NO_RELOAD','RENEWED_CERTIFICATE_RELOAD_VERIFIED')) {
+  foreach ($requiredHookToken in @('P6010_AUTHORITY_COMMON_HASH_CONFLICT','[ScriptBlock]::Create($commonText)','ExpectedHttp01Sha256','P6010_HTTP01_CONFIG_BYTES_CONFLICT','Get-CanonicalNginxManagedBytes','Test-NginxServerClaims443Domain','Invoke-ReviewedNginxSyntaxTest','FIRST_ISSUE_CERT_READY_NO_RELOAD','RENEWED_CERTIFICATE_RELOAD_VERIFIED')) {
     if (-not $hookText.Contains($requiredHookToken)) { throw "P6010-T11 renewal hook missing token: $requiredHookToken" }
   }
   $hashCheck = $hookText.IndexOf('P6010_AUTHORITY_COMMON_HASH_CONFLICT')
   $scriptBlockCreate = $hookText.IndexOf('[ScriptBlock]::Create($commonText)')
+  $httpBytesCheck = $hookText.IndexOf('P6010_HTTP01_CONFIG_BYTES_CONFLICT')
   $syntaxCheck = $hookText.IndexOf('Invoke-ReviewedNginxSyntaxTest')
   $reloadExecution = $hookText.IndexOf('& $commands.reload.executable')
   if ($hashCheck -lt 0 -or $scriptBlockCreate -lt 0 -or $hashCheck -gt $scriptBlockCreate) { throw 'P6010-T11 common authority is executed before hash verification' }
-  if ($syntaxCheck -lt 0 -or $reloadExecution -lt 0 -or $syntaxCheck -gt $reloadExecution) { throw 'P6010-T11 reload is reachable before syntax verification' }
+  if ($httpBytesCheck -lt 0 -or $syntaxCheck -lt 0 -or $reloadExecution -lt 0 -or $httpBytesCheck -gt $syntaxCheck -or $syntaxCheck -gt $reloadExecution) { throw 'P6010-T11 reload is reachable before exact HTTP-01 and syntax verification' }
   foreach ($forbidden in @('Set-Content','Copy-Item','Move-Item','New-ScheduledTask','Register-ScheduledTask','Set-ScheduledTask','Enable-ScheduledTask','Disable-ScheduledTask')) {
     if ($hookText -match [regex]::Escape($forbidden)) { throw "P6010-T11 renewal hook contains forbidden mutation: $forbidden" }
   }
   if ($hookText -match '(?i)(ReadAllBytes|Get-Content|Get-FileHash)[^\r\n]*(privateKey|baogiang-key\.pem)') { throw 'P6010-T11 renewal hook reads private-key content' }
 
+  $p6010CommonText = Get-Content -LiteralPath (Join-Path $repo 'scripts\deploy\windows\p6-010-http01-tls-common.ps1') -Raw -Encoding UTF8
+  foreach ($category in @("-CategoryPrefix 'P6010_MANAGED_NGINX'","-CategoryPrefix 'P6010_WIN_ACME_SETTINGS'","-CategoryPrefix 'P6010_AUTHORITY_COMMON'")) {
+    if (-not $p6010CommonText.Contains($category)) { throw "P6010-T12 helper uses report-specific ancestor semantics: $category" }
+  }
+
   foreach ($readOnlyPath in @('production-http01-plan.ps1','production-http01-verify.ps1')) {
     $readOnlyText = Get-Content -LiteralPath (Join-Path $repo "scripts\deploy\windows\$readOnlyPath") -Raw -Encoding UTF8
     foreach ($forbidden in @('Register-ScheduledTask','Set-ScheduledTask','Enable-ScheduledTask','Disable-ScheduledTask','Start-ScheduledTask','Stop-ScheduledTask','-s reload')) {
-      if ($readOnlyText -match [regex]::Escape($forbidden)) { throw "P6010-T12 read-only authority contains forbidden execution token: $readOnlyPath / $forbidden" }
+      if ($readOnlyText -match [regex]::Escape($forbidden)) { throw "P6010-T13 read-only authority contains forbidden execution token: $readOnlyPath / $forbidden" }
     }
-    if (-not $readOnlyText.Contains('mutationsPerformed = $false')) { throw "P6010-T12 read-only authority missing mutation declaration: $readOnlyPath" }
+    if (-not $readOnlyText.Contains('mutationsPerformed = $false')) { throw "P6010-T13 read-only authority missing mutation declaration: $readOnlyPath" }
   }
+  $verifyText = Get-Content -LiteralPath (Join-Path $repo 'scripts\deploy\windows\production-http01-verify.ps1') -Raw -Encoding UTF8
+  if (-not $verifyText.Contains("-CategoryPrefix 'P6010_PLAN'")) { throw 'P6010-T13 plan evidence path uses report-specific ancestor semantics' }
 
   Write-Output 'P6-010 Windows HTTP-01/TLS authority fixtures PASS'
 } finally {

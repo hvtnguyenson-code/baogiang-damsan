@@ -8,7 +8,8 @@ param(
   [Parameter(Mandatory=$true)][string]$ManagedTlsConfig,
   [Parameter(Mandatory=$true)][string]$ClientMaxBodySize,
   [Parameter(Mandatory=$true)][string]$AuthorityCommon,
-  [Parameter(Mandatory=$true)][ValidatePattern('^[0-9A-Fa-f]{64}$')][string]$ExpectedAuthorityCommonSha256
+  [Parameter(Mandatory=$true)][ValidatePattern('^[0-9A-Fa-f]{64}$')][string]$ExpectedAuthorityCommonSha256,
+  [Parameter(Mandatory=$true)][ValidatePattern('^[0-9A-Fa-f]{64}$')][string]$ExpectedHttp01Sha256
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -33,7 +34,7 @@ try { $commonText = [Text.UTF8Encoding]::new($false,$true).GetString($commonByte
 $trustedCommon = [ScriptBlock]::Create($commonText)
 . $trustedCommon
 
-Assert-PathAncestorChainNonReparse -Directory (Split-Path -Parent $commonPath) | Out-Null
+Assert-PathAncestorChainNonReparse -Directory (Split-Path -Parent $commonPath) -CategoryPrefix 'P6010_AUTHORITY_COMMON' | Out-Null
 if ((Get-FileSha256FromBytes $commonPath) -cne $ExpectedAuthorityCommonSha256.ToLowerInvariant()) { throw 'P6010_AUTHORITY_COMMON_POSTLOAD_CONFLICT' }
 
 $rootPath = Assert-DedicatedRoot $Root
@@ -44,10 +45,11 @@ $httpManaged = Get-CanonicalPath $ManagedHttp01Config
 $tlsManaged = Get-CanonicalPath $ManagedTlsConfig
 foreach ($managedPath in @($httpManaged,$tlsManaged)) {
   if (-not (Test-PathWithin $managedPath $binding.nginxPrefix) -or (Normalize-ComparablePath $managedPath) -eq (Normalize-ComparablePath $binding.nginxConfig)) { throw 'P6010_MANAGED_CONFIG_BOUNDARY_CONFLICT' }
-  Assert-PathAncestorChainNonReparse -Directory (Split-Path -Parent $managedPath) | Out-Null
+  Assert-PathAncestorChainNonReparse -Directory (Split-Path -Parent $managedPath) -CategoryPrefix 'P6010_MANAGED_NGINX' | Out-Null
 }
 if ((Normalize-ComparablePath $httpManaged) -eq (Normalize-ComparablePath $tlsManaged)) { throw 'P6010_MANAGED_CONFIG_ALIAS' }
 if ((Get-PathSecurityClassification -Path $httpManaged -Kind file).state -ne 'PASS') { throw 'P6010_HTTP01_CONFIG_MISSING' }
+if ((Get-FileSha256FromBytes $httpManaged) -cne $ExpectedHttp01Sha256.ToLowerInvariant()) { throw 'P6010_HTTP01_CONFIG_BYTES_CONFLICT' }
 
 $certificate = Assert-NginxTlsLeafMetadata (Join-Path $rootPath 'shared\tls\baogiang-chain.pem') 'CERTIFICATE'
 $privateKey = Assert-NginxTlsLeafMetadata (Join-Path $rootPath 'shared\tls\baogiang-key.pem') 'PRIVATE_KEY'
@@ -80,7 +82,8 @@ if ($managedServers.Count -ne 1 -or $claims.Count -ne 1 -or (Normalize-Comparabl
 $syntax = Invoke-ReviewedNginxSyntaxTest $binding.nginxExe $binding.nginxPrefix $binding.nginxConfig
 $commands = Get-NginxCommandPlan $binding.nginxExe $binding.nginxPrefix $binding.nginxConfig
 if ($commands.reload.execution -cne 'MANUAL_ONLY') { throw 'P6010_NGINX_RELOAD_VECTOR_INVALID' }
-& $commands.reload.executable @($commands.reload.arguments) *> $null
+$reloadArgumentList = @($commands.reload.arguments)
+& $commands.reload.executable @reloadArgumentList *> $null
 if ($LASTEXITCODE -ne 0) { throw 'P6010_NGINX_RELOAD_FAILED' }
 
 $result = [pscustomobject][ordered]@{
