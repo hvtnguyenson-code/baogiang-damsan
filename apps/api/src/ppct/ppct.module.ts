@@ -10,9 +10,12 @@ import {
 } from './ppct.controller';
 import { PpctAccessService } from './ppct-access.service';
 import { PpctAssociationReadService } from './ppct-association-read.service';
+import { PpctImportController } from './ppct-import.controller';
+import { PpctImportService } from './ppct-import.service';
 import { PpctOptionsController } from './ppct-options.controller';
 import { PpctOptionsService } from './ppct-options.service';
 import { PpctService } from './ppct.service';
+import { PpctWorkbookParserService } from './ppct-workbook-parser.service';
 
 @Module({
   imports: [AuthModule, AuthorizationModule],
@@ -22,8 +25,17 @@ import { PpctService } from './ppct.service';
     PpctVersionsController,
     PpctClassAssociationsController,
     PpctOptionsController,
+    PpctImportController,
   ],
-  providers: [PpctService, PpctAccessService, PpctAssociationReadService, PpctOptionsService, AuditService],
+  providers: [
+    PpctService,
+    PpctAccessService,
+    PpctAssociationReadService,
+    PpctOptionsService,
+    PpctImportService,
+    PpctWorkbookParserService,
+    AuditService,
+  ],
   exports: [PpctAssociationReadService],
 })
 export class PpctModule {}

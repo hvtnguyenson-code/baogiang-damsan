@@ -9,6 +9,12 @@ import type {
   PpctWorkspaceAcademicYearOptionListResponse,
   PpctWorkspaceOptionsResponse,
 } from '@baogiang/contracts';
+import type {
+  PpctImportConfirmResponse,
+  PpctImportInspectionResponse,
+  PpctImportPreviewResponse,
+  PpctImportTargetSelection,
+} from '@baogiang/contracts/ppct-import';
 import { apiFetch } from './api-client';
 
 type QueryValue = string | number | undefined;
@@ -27,6 +33,15 @@ const json = (body: unknown) => ({
   body: JSON.stringify(body),
   notifyUnauthorized: true,
 });
+
+function workbookForm(file: File, fields: Record<string, string | undefined> = {}): FormData {
+  const body = new FormData();
+  body.append('file', file);
+  Object.entries(fields).forEach(([key, value]) => {
+    if (value !== undefined) body.append(key, value);
+  });
+  return body;
+}
 
 export interface SwitchPpctAssociationInput {
   ppctVersionId: string;
@@ -86,7 +101,37 @@ export const ppctApi = {
     input: SwitchPpctAssociationInput,
   ) =>
     apiFetch<PpctAssociationSwitchResult>(
-       `/academic-years/${academicYearId}/classes/${schoolClassId}/subjects/${subjectId}/ppct-associations/switch`,
-       json(input),
-     ),
+      `/academic-years/${academicYearId}/classes/${schoolClassId}/subjects/${subjectId}/ppct-associations/switch`,
+      json(input),
+    ),
+};
+
+export const ppctImportApi = {
+  inspect: (file: File) =>
+    apiFetch<PpctImportInspectionResponse>('/ppct-import/inspect', {
+      method: 'POST',
+      body: workbookForm(file),
+      notifyUnauthorized: true,
+    }),
+
+  preview: (file: File, targets: PpctImportTargetSelection[]) =>
+    apiFetch<PpctImportPreviewResponse>('/ppct-import/preview', {
+      method: 'POST',
+      body: workbookForm(file, { targets: JSON.stringify(targets) }),
+      notifyUnauthorized: true,
+    }),
+
+  confirm: (
+    file: File,
+    targets: PpctImportTargetSelection[],
+    requestFingerprint: string,
+  ) =>
+    apiFetch<PpctImportConfirmResponse>('/ppct-import/confirm', {
+      method: 'POST',
+      body: workbookForm(file, {
+        targets: JSON.stringify(targets),
+        requestFingerprint,
+      }),
+      notifyUnauthorized: true,
+    }),
 };

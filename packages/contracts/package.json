@@ -11,6 +11,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
       "require": "./dist/index.js"
+    },
+    "./ppct-import": {
+      "types": "./dist/ppct-import.d.ts",
+      "import": "./dist/ppct-import.mjs",
+      "require": "./dist/ppct-import.js"
     }
   },
   "scripts": {
