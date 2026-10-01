@@ -426,6 +426,18 @@ integration('Business Configuration API (isolated PostgreSQL integration)', () =
   // Section 15: Planned Replace
   // =========================================================================
   describe('Planned replace', () => {
+    let service: BusinessConfigurationService;
+    let dateSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      service = h.app.get(BusinessConfigurationService);
+      dateSpy = jest.spyOn(service, 'businessCivilDate').mockReturnValue('2026-09-30');
+    });
+
+    afterEach(() => {
+      dateSpy.mockRestore();
+    });
+
     it('prospectively replaces open-ended published policy and preserves history', async () => {
       const manager = await h.actor({ grants: [{ capabilityKey: 'BUSINESS_CONFIGURATION_MANAGE' }] });
 
@@ -786,6 +798,18 @@ integration('Business Configuration API (isolated PostgreSQL integration)', () =
   // Section 23: Real Concurrent Replace
   // =========================================================================
   describe('Concurrent replace', () => {
+    let service: BusinessConfigurationService;
+    let dateSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      service = h.app.get(BusinessConfigurationService);
+      dateSpy = jest.spyOn(service, 'businessCivilDate').mockReturnValue('2026-09-30');
+    });
+
+    afterEach(() => {
+      dateSpy.mockRestore();
+    });
+
     it('ensures exactly one replacement succeeds and source is closed once', async () => {
       const manager = await h.actor({ grants: [{ capabilityKey: 'BUSINESS_CONFIGURATION_MANAGE' }] });
 
@@ -885,6 +909,18 @@ integration('Business Configuration API (isolated PostgreSQL integration)', () =
   // Section 25: Harness Cleanup Regression Evidence
   // =========================================================================
   describe('Harness cleanup regression (replacement and correction lineage)', () => {
+    let service: BusinessConfigurationService;
+    let dateSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      service = h.app.get(BusinessConfigurationService);
+      dateSpy = jest.spyOn(service, 'businessCivilDate').mockReturnValue('2026-09-30');
+    });
+
+    afterEach(() => {
+      dateSpy.mockRestore();
+    });
+
     it('cleans tables successfully after replacement lineage without violating immutable triggers', async () => {
       const manager = await h.actor({ grants: [{ capabilityKey: 'BUSINESS_CONFIGURATION_MANAGE' }] });
 
