@@ -6,6 +6,7 @@ $repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 . (Join-Path $repo 'scripts\deploy\windows\p6-010-http01-tls-common.ps1')
 
 $tempRoot = Join-Path ([IO.Path]::GetTempPath()) ("baogiang-p6010-" + [guid]::NewGuid().ToString('N'))
+$stage = 'SETUP'
 try {
   New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null
   $productionRoot = Join-Path $tempRoot 'baogiang'
@@ -13,11 +14,13 @@ try {
     New-Item -ItemType Directory -Path (Join-Path $productionRoot $relative) -Force | Out-Null
   }
 
+  $stage = 'T01_CANONICAL_PATHS'
   $paths = Get-P6010CanonicalPaths -Root $productionRoot
   if ($paths.certificate -cne (Get-CanonicalPath (Join-Path $productionRoot 'shared\tls\baogiang-chain.pem'))) { throw 'P6010-T01 certificate path drift' }
   if ($paths.privateKey -cne (Get-CanonicalPath (Join-Path $productionRoot 'shared\tls\baogiang-key.pem'))) { throw 'P6010-T01 private-key path drift' }
   if ($paths.acmeWebRoot -cne (Get-CanonicalPath (Join-Path $productionRoot 'shared\acme-webroot'))) { throw 'P6010-T01 webroot path drift' }
 
+  $stage = 'T02_HTTP01_BYTES'
   $httpText = [Text.UTF8Encoding]::new($false).GetString((Get-P6010Http01ManagedBytes -Root $productionRoot))
   foreach ($required in @('listen 80;','server_name baogiang.dtnt-damsan.edu.vn;','location ^~ /.well-known/acme-challenge/','try_files $uri =404;','return 301 https://$host$request_uri;')) {
     if (-not $httpText.Contains($required)) { throw "P6010-T02 missing HTTP-01 token: $required" }
@@ -36,28 +39,34 @@ try {
   [IO.File]::WriteAllText($nginxMain,"events {}`nhttp {`n    include conf.d/*.conf;`n}`n",[Text.UTF8Encoding]::new($false))
   [IO.File]::WriteAllBytes($httpManaged,(Get-P6010Http01ManagedBytes -Root $productionRoot))
 
+  $stage = 'T03_GRAPH'
   $graph = Get-NginxEffectiveGraph -NginxPrefix $nginxPrefix -NginxConfig $nginxMain -PlannedManagedPath $httpManaged
   $port80Claims = @($graph.servers | Where-Object { Test-P6010NginxServerClaimsDomainPort -Server $_ -Port 80 })
   $port443Claims = @($graph.servers | Where-Object { Test-P6010NginxServerClaimsDomainPort -Server $_ -Port 443 })
   if ($port80Claims.Count -ne 1 -or $port443Claims.Count -ne 0) { throw 'P6010-T03 domain-port classifier failed' }
 
+  $stage = 'T04_PORT80_COLLISION'
   $collision80 = Join-Path $nginxConfD 'neighbor-80.conf'
   [IO.File]::WriteAllText($collision80,"server {`n listen 80;`n server_name baogiang.dtnt-damsan.edu.vn;`n}`n",[Text.UTF8Encoding]::new($false))
   $collisionGraph = Get-NginxEffectiveGraph -NginxPrefix $nginxPrefix -NginxConfig $nginxMain -PlannedManagedPath $httpManaged
   if (@($collisionGraph.servers | Where-Object { Test-P6010NginxServerClaimsDomainPort -Server $_ -Port 80 }).Count -ne 2) { throw 'P6010-T04 port 80 collision was not detected' }
   Remove-Item -LiteralPath $collision80 -Force
 
+  $stage = 'T05_PORT443_COLLISION'
   $collision443 = Join-Path $nginxConfD 'neighbor-443.conf'
   [IO.File]::WriteAllText($collision443,"server {`n listen 443 ssl;`n server_name BAOGIANG.DTNT-DAMSAN.EDU.VN.;`n}`n",[Text.UTF8Encoding]::new($false))
   $collisionGraph443 = Get-NginxEffectiveGraph -NginxPrefix $nginxPrefix -NginxConfig $nginxMain -PlannedManagedPath $httpManaged
   if (@($collisionGraph443.servers | Where-Object { Test-P6010NginxServerClaimsDomainPort -Server $_ -Port 443 }).Count -ne 1) { throw 'P6010-T05 normalized port 443 collision was not detected' }
   Remove-Item -LiteralPath $collision443 -Force
 
+  $stage = 'T06_WIN_ACME_SETTINGS'
   [IO.File]::WriteAllText($paths.winAcmeExe,'fixture',[Text.UTF8Encoding]::new($false))
   $settings = [pscustomobject]@{ Client = [pscustomobject]@{ ClientName='baogiang-win-acme'; ConfigurationPath=$paths.winAcmeConfig; LogPath=$paths.winAcmeLog } }
   [IO.File]::WriteAllText($paths.winAcmeSettings,($settings | ConvertTo-Json -Depth 5),[Text.UTF8Encoding]::new($false))
   $settingsResult = Assert-P6010WinAcmeSettings -Root $productionRoot
   if ($settingsResult.state -cne 'PASS') { throw 'P6010-T06 dedicated win-acme settings were rejected' }
+
+  $stage = 'T07_FOREIGN_SETTINGS'
   $settings.Client.ClientName = 'foreign-win-acme'
   [IO.File]::WriteAllText($paths.winAcmeSettings,($settings | ConvertTo-Json -Depth 5),[Text.UTF8Encoding]::new($false))
   $settingsRejected = $false
@@ -66,6 +75,7 @@ try {
   $settings.Client.ClientName = 'baogiang-win-acme'
   [IO.File]::WriteAllText($paths.winAcmeSettings,($settings | ConvertTo-Json -Depth 5),[Text.UTF8Encoding]::new($false))
 
+  $stage = 'T08_ISSUE_VECTOR'
   $authoritySource = Join-Path $repo 'scripts\deploy\windows\deployment-common.ps1'
   $authorityDirectory = Join-Path $tempRoot 'authority'
   New-Item -ItemType Directory -Path $authorityDirectory -Force | Out-Null
@@ -92,11 +102,15 @@ try {
   $expectedHttpHash = Get-Sha256FromBytes (Get-P6010Http01ManagedBytes -Root $productionRoot)
   if ($issue.expectedHttp01Sha256 -cne $expectedHttpHash -or ($issueArgs -join ' ') -notmatch 'ExpectedHttp01Sha256' -or ($issueArgs -join ' ') -notmatch [regex]::Escape($expectedHttpHash)) { throw 'P6010-T08 issue vector did not pin exact HTTP-01 authority hash' }
 
+  $stage = 'T09_RENEW_VECTOR'
   $renew = Get-P6010WinAcmeRenewCommandPlan -Root $productionRoot
   if ((@($renew.arguments) -join "`n") -cne (@('--renew','--id','baogiang-damsan','--notaskscheduler') -join "`n")) { throw 'P6010-T09 renew vector drifted' }
+
+  $stage = 'T10_TASK_CONTRACT'
   $task = Get-P6010RenewalTaskContract -Root $productionRoot
   if ($task.taskPath -cne '\BaoGiang\' -or $task.taskName -cne 'BaoGiangTlsRenewal' -or $task.createOrChangeAllowedHere -ne $false -or $task.schedule -cne 'REVIEW_AFTER_PROTECTED_NEIGHBOR_DISCOVERY') { throw 'P6010-T10 renewal task isolation contract drifted' }
 
+  $stage = 'T11_RENEWAL_HOOK_STATIC'
   $hookPath = Join-Path $repo 'scripts\deploy\windows\production-tls-renewal-hook.ps1'
   $hookText = Get-Content -LiteralPath $hookPath -Raw -Encoding UTF8
   foreach ($requiredHookToken in @('P6010_AUTHORITY_COMMON_HASH_CONFLICT','[ScriptBlock]::Create($commonText)','ExpectedHttp01Sha256','P6010_HTTP01_CONFIG_BYTES_CONFLICT','Get-CanonicalNginxManagedBytes','Test-NginxServerClaims443Domain','Invoke-ReviewedNginxSyntaxTest','FIRST_ISSUE_CERT_READY_NO_RELOAD','RENEWED_CERTIFICATE_RELOAD_VERIFIED')) {
@@ -114,11 +128,13 @@ try {
   }
   if ($hookText -match '(?i)(ReadAllBytes|Get-Content|Get-FileHash)[^\r\n]*(privateKey|baogiang-key\.pem)') { throw 'P6010-T11 renewal hook reads private-key content' }
 
+  $stage = 'T12_HELPER_STATIC'
   $p6010CommonText = Get-Content -LiteralPath (Join-Path $repo 'scripts\deploy\windows\p6-010-http01-tls-common.ps1') -Raw -Encoding UTF8
   foreach ($category in @("-CategoryPrefix 'P6010_MANAGED_NGINX'","-CategoryPrefix 'P6010_WIN_ACME_SETTINGS'","-CategoryPrefix 'P6010_AUTHORITY_COMMON'")) {
     if (-not $p6010CommonText.Contains($category)) { throw "P6010-T12 helper uses report-specific ancestor semantics: $category" }
   }
 
+  $stage = 'T13_READONLY_STATIC'
   foreach ($readOnlyPath in @('production-http01-plan.ps1','production-http01-verify.ps1')) {
     $readOnlyText = Get-Content -LiteralPath (Join-Path $repo "scripts\deploy\windows\$readOnlyPath") -Raw -Encoding UTF8
     foreach ($forbidden in @('Register-ScheduledTask','Set-ScheduledTask','Enable-ScheduledTask','Disable-ScheduledTask','Start-ScheduledTask','Stop-ScheduledTask','-s reload')) {
@@ -130,6 +146,8 @@ try {
   if (-not $verifyText.Contains("-CategoryPrefix 'P6010_PLAN'")) { throw 'P6010-T13 plan evidence path uses report-specific ancestor semantics' }
 
   Write-Output 'P6-010 Windows HTTP-01/TLS authority fixtures PASS'
+} catch {
+  throw "P6010-FIXTURE-$stage`: $($_.Exception.Message)"
 } finally {
   if (Test-Path -LiteralPath $tempRoot) { Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue }
 }
