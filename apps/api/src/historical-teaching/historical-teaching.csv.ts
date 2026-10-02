@@ -50,7 +50,7 @@ function sha256(value: string): string {
   return createHash('sha256').update(value, 'utf8').digest('hex');
 }
 
-function parseCsvLine(line: string): string[] {
+function parseDelimitedLine(line: string, delimiter: ',' | '\t'): string[] {
   const cells: string[] = [];
   let value = '';
   let quoted = false;
@@ -65,7 +65,7 @@ function parseCsvLine(line: string): string[] {
       }
       continue;
     }
-    if (char === ',' && !quoted) {
+    if (char === delimiter && !quoted) {
       cells.push(value);
       value = '';
       continue;
@@ -124,17 +124,18 @@ export function parseHistoricalTeachingCsv(sourceText: string): ParsedHistorical
   const lines = sourceText.replace(/^\uFEFF/u, '').split(/\r?\n/u);
   while (lines.length && !lines[lines.length - 1]!.trim()) lines.pop();
   if (lines.length < 2) {
-    return { rows: [], issues: [{ severity: 'BLOCKER', code: 'HISTORY_SOURCE_NO_DATA_ROWS', message: 'CSV phải có dòng tiêu đề và ít nhất một dòng dữ liệu.' }] };
+    return { rows: [], issues: [{ severity: 'BLOCKER', code: 'HISTORY_SOURCE_NO_DATA_ROWS', message: 'CSV/TSV phải có dòng tiêu đề và ít nhất một dòng dữ liệu.' }] };
   }
   if (lines.length - 1 > HISTORICAL_TEACHING_MAX_ROWS) {
-    return { rows: [], issues: [{ severity: 'BLOCKER', code: 'HISTORY_SOURCE_TOO_MANY_ROWS', message: 'CSV vượt quá 2.000 dòng dữ liệu.' }] };
+    return { rows: [], issues: [{ severity: 'BLOCKER', code: 'HISTORY_SOURCE_TOO_MANY_ROWS', message: 'CSV/TSV vượt quá 2.000 dòng dữ liệu.' }] };
   }
 
   let headerCells: string[];
   try {
-    headerCells = parseCsvLine(lines[0]!);
+    const delimiter: ',' | '\t' = lines[0]!.includes('\t') ? '\t' : ',';
+    headerCells = parseDelimitedLine(lines[0]!, delimiter);
   } catch {
-    return { rows: [], issues: [{ severity: 'BLOCKER', code: 'HISTORY_HEADER_INVALID_CSV', message: 'Dòng tiêu đề CSV không hợp lệ.' }] };
+    return { rows: [], issues: [{ severity: 'BLOCKER', code: 'HISTORY_HEADER_INVALID_CSV', message: 'Dòng tiêu đề CSV/TSV không hợp lệ.' }] };
   }
   const headers = headerCells.map(normalizedHeader);
   if (headers.length !== EXPECTED_HEADERS.length || headers.some((value, index) => value !== EXPECTED_HEADERS[index])) {
@@ -148,15 +149,16 @@ export function parseHistoricalTeachingCsv(sourceText: string): ParsedHistorical
     };
   }
 
+  const delimiter: ',' | '\t' = lines[0]!.includes('\t') ? '\t' : ',';
   const rows: HistoricalTeachingNormalizedRow[] = [];
   for (let lineIndex = 1; lineIndex < lines.length; lineIndex += 1) {
     const rowNumber = lineIndex + 1;
     if (!lines[lineIndex]!.trim()) continue;
     let cells: string[];
     try {
-      cells = parseCsvLine(lines[lineIndex]!);
+      cells = parseDelimitedLine(lines[lineIndex]!, delimiter);
     } catch {
-      issues.push(issue(rowNumber, 'HISTORY_ROW_INVALID_CSV', 'Dòng CSV có dấu ngoặc kép không cân bằng.'));
+      issues.push(issue(rowNumber, 'HISTORY_ROW_INVALID_CSV', 'Dòng CSV/TSV có dấu ngoặc kép không cân bằng.'));
       continue;
     }
     if (cells.length !== EXPECTED_HEADERS.length) {
@@ -222,7 +224,7 @@ export function parseHistoricalTeachingCsv(sourceText: string): ParsedHistorical
   }
 
   if (rows.length === 0 && issues.length === 0) {
-    issues.push({ severity: 'BLOCKER', code: 'HISTORY_SOURCE_NO_DATA_ROWS', message: 'CSV không có dòng dữ liệu hợp lệ.' });
+    issues.push({ severity: 'BLOCKER', code: 'HISTORY_SOURCE_NO_DATA_ROWS', message: 'CSV/TSV không có dòng dữ liệu hợp lệ.' });
   }
   return { rows, issues };
 }
