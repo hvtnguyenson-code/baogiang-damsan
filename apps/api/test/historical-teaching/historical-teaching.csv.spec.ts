@@ -56,6 +56,16 @@ describe('historical teaching CSV parser', () => {
     expect(result.issues.map((issue) => issue.code)).toContain('HISTORY_MAKEUP_TARGET_REQUIRED');
   });
 
+  it('rejects DAY_BU that points back to the exact original slot', () => {
+    const result = parseHistoricalTeachingCsv([
+      header,
+      '10A1,DIA,2026-09-07,SANG,1,GV001,DAY_BU,2026-09-07,SANG,1,',
+    ].join('\n'));
+
+    expect(result.rows).toEqual([]);
+    expect(result.issues.map((issue) => issue.code)).toContain('HISTORY_MAKEUP_TARGET_SAME_AS_SOURCE');
+  });
+
   it('rejects target drift for BINH_THUONG and DAY_THAY', () => {
     const result = parseHistoricalTeachingCsv([
       header,
