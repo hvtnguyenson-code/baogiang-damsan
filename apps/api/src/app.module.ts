@@ -29,6 +29,7 @@ import { ReportingStatementsModule } from './reporting-statements/reporting-stat
 import { BusinessConfigurationModule } from './business-configuration/business-configuration.module';
 import { ProgrammePlanningModule } from './programme-planning/programme-planning.module';
 import { EffectiveScheduleModule } from './effective-schedule/effective-schedule.module';
+import { HistoricalTeachingModule } from './historical-teaching/historical-teaching.module';
 
 @Module({
 
@@ -76,6 +77,7 @@ import { EffectiveScheduleModule } from './effective-schedule/effective-schedule
     BusinessConfigurationModule,
     ProgrammePlanningModule,
     EffectiveScheduleModule,
+    HistoricalTeachingModule,
   ],
 })
 export class AppModule {}
