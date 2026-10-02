@@ -50,7 +50,7 @@ Closure evidence:
 
 - `P4-060` / `P4-061` — workload adjustment architecture/runtime: **`DEFERRED_WITH_TRIGGER`**.
 - `P0-002` — stale PR #11 hosting-portability direction: **`BLOCKED_DECISION`**.
-- `P0-003` — CORE vs FULL BUSINESS pilot scope: **`BLOCKED_DECISION`**; required before P5 pilot freeze.
+- `P0-003` — pilot scope: **`IN_REVIEW`** with Product Owner decision `FULL BUSINESS PILOT`; parent merge/post-merge CI and `SYNC-P0-003` are still required before CLOSED.
 - `P0-004` — GitHub main branch protection/ruleset: **`BLOCKED_DECISION`**.
 - `P6-020` — actual Stage 1 passive production evidence: **`DEFERRED_WITH_TRIGGER`** until the exact business/pilot build is an approved production candidate and upstream P6 authority is closed.
 
