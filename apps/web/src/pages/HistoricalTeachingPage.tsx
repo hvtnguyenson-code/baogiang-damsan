@@ -120,6 +120,7 @@ export function HistoricalTeachingPage() {
       const result = await historicalTeachingApi.confirm(
         academicYearId,
         sourceText,
+        preview.batchRef,
         preview.requestFingerprint,
         crypto.randomUUID(),
       );
@@ -196,7 +197,7 @@ export function HistoricalTeachingPage() {
         </SelectField>
 
         <div className="form-field">
-          <label className="form-field__label" htmlFor="history-source-text">CSV lịch sử</label>
+          <label className="form-field__label" htmlFor="history-source-text">CSV/TSV lịch sử</label>
           <textarea
             id="history-source-text"
             className="form-field__input"
@@ -210,7 +211,7 @@ export function HistoricalTeachingPage() {
             }}
           />
           <p className="form-field__hint">
-            Loại: BINH_THUONG, DAY_THAY hoặc DAY_BU. Buổi: SANG, CHIEU, TOI. DAY_BU bắt buộc điền NGAY_DAY_THUC_TE, BUOI_THUC_TE và TIET_THUC_TE. Không nhập UUID hay số thứ tự PPCT.
+            Có thể dán trực tiếp từ Excel/Sheets (TSV) hoặc CSV. Loại: BINH_THUONG, DAY_THAY hoặc DAY_BU. Buổi: SANG, CHIEU, TOI. DAY_BU bắt buộc điền NGAY_DAY_THUC_TE, BUOI_THUC_TE và TIET_THUC_TE. Không nhập UUID hay số thứ tự PPCT.
           </p>
         </div>
 
