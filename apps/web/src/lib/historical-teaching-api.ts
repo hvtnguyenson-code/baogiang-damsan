@@ -38,12 +38,13 @@ export const historicalTeachingApi = {
   confirm: (
     academicYearId: string,
     sourceText: string,
+    batchRef: string,
     requestFingerprint: string,
     requestKey: string,
   ) =>
     apiFetch<HistoricalTeachingConfirmResponse>(
       '/historical-teaching/confirm',
-      json({ academicYearId, sourceText, requestFingerprint, requestKey }),
+      json({ academicYearId, sourceText, batchRef, requestFingerprint, requestKey }),
     ),
 
   reconciliation: (academicYearId: string, schoolClassCode: string, subjectCode: string) =>
