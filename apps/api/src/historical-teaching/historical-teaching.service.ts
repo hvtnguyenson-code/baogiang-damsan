@@ -13,7 +13,6 @@ import {
   TeachingExecutionStatus,
   TimeSlotSession,
   TimetableVersionStatus,
-  UserStatus,
 } from '@prisma/client';
 import type {
   HistoricalTeachingConfirmResponse,
@@ -229,8 +228,8 @@ export class HistoricalTeachingService {
       const output: HistoricalTeachingConfirmResponse['rows'] = [];
       for (const preparedRow of prepared.rows) {
         const row = preparedRow.normalized;
-        const dispositionId = await this.materializeDisposition(tx, preparedRow, dto.requestKey, actorUserId, confirmedAt);
-        const makeupId = await this.materializeMakeup(tx, preparedRow, dto.requestKey, actorUserId, confirmedAt);
+        const dispositionId = await this.materializeDisposition(tx, preparedRow, dto.requestKey, actorUserId);
+        const makeupId = await this.materializeMakeup(tx, preparedRow, dto.requestKey, actorUserId);
         const execution = await this.createExecution(tx, preparedRow, dispositionId, makeupId, dto.requestKey, actorUserId);
 
         await tx.historicalTeachingImportRow.create({
@@ -703,23 +702,23 @@ export class HistoricalTeachingService {
             issues.push(blocker(row.rowNumber, 'HISTORY_NORMAL_SOURCE_NOT_BASE', 'BINH_THUONG chỉ hợp lệ với cơ hội TKB gốc không có disposition/suppression.'));
           }
         } else {
-          if (actualProfile.user.status !== UserStatus.ACTIVE || !actualProfile.isTeachingStaff) {
-            issues.push(blocker(row.rowNumber, 'HISTORY_ACTUAL_TEACHER_NOT_ELIGIBLE', 'Giáo viên dạy thay/dạy bù phải là nhân sự giảng dạy ACTIVE hiện hành.'));
+          // P3 reconstructs a past fact. Current User.status / StaffProfile.isTeachingStaff
+          // are not temporal authorities and must not retroactively invalidate retained history.
+          // SCHOOL_WIDE import is the positive historical attestation; exact StaffSubject
+          // coverage remains the server-derived date-effective same-subject proof.
+          const eligibilityDate = row.kind === 'MAKEUP' ? row.executionCivilDate : row.sourceCivilDate;
+          const proof = await tx.staffSubject.findFirst({
+            where: {
+              userId: actualProfile.userId,
+              ...staffSubjectCoverageWhere(subject.id, eligibilityDate, eligibilityDate),
+            },
+            orderBy: [{ validFrom: 'desc' }, { id: 'asc' }],
+            select: { id: true },
+          });
+          if (!proof) {
+            issues.push(blocker(row.rowNumber, 'HISTORY_SAME_SUBJECT_ELIGIBILITY_MISSING', 'Không có StaffSubject bao phủ ngày thực dạy cho giáo viên và môn này.'));
           } else {
-            const eligibilityDate = row.kind === 'MAKEUP' ? row.executionCivilDate : row.sourceCivilDate;
-            const proof = await tx.staffSubject.findFirst({
-              where: {
-                userId: actualProfile.userId,
-                ...staffSubjectCoverageWhere(subject.id, eligibilityDate, eligibilityDate),
-              },
-              orderBy: [{ validFrom: 'desc' }, { id: 'asc' }],
-              select: { id: true },
-            });
-            if (!proof) {
-              issues.push(blocker(row.rowNumber, 'HISTORY_SAME_SUBJECT_ELIGIBILITY_MISSING', 'Không có StaffSubject bao phủ ngày thực dạy cho giáo viên và môn này.'));
-            } else {
-              eligibilityStaffSubjectId = proof.id;
-            }
+            eligibilityStaffSubjectId = proof.id;
           }
         }
       }
@@ -1101,7 +1100,6 @@ export class HistoricalTeachingService {
     prepared: PreparedRow,
     requestKey: string,
     actorUserId: string,
-    checkedAt: Date,
   ): Promise<string | null> {
     if (prepared.disposition.mode === 'NONE') return null;
     if (prepared.disposition.mode === 'REUSE') return prepared.disposition.id;
@@ -1127,7 +1125,7 @@ export class HistoricalTeachingService {
         responsibleTeacherUserId: prepared.occurrence.responsibleTeacherUserId,
         dispositionType: OperationalLessonDispositionType.SAME_SUBJECT_SUBSTITUTION,
         assignedTeacherUserId: prepared.actualTeacherUserId,
-        eligibilityCheckedAt: checkedAt,
+        eligibilityCheckedAt: hcmSlotEnd(parseCivilDate(row.sourceCivilDate), prepared.sourceSlot.endTime),
         eligibilityWasActive: true,
         eligibilityWasTeachingStaff: true,
         eligibilitySameSubject: true,
@@ -1147,7 +1145,6 @@ export class HistoricalTeachingService {
     prepared: PreparedRow,
     requestKey: string,
     actorUserId: string,
-    checkedAt: Date,
   ): Promise<string | null> {
     if (prepared.makeup.mode === 'NONE') return null;
     if (prepared.makeup.mode === 'REUSE') return prepared.makeup.id;
@@ -1182,7 +1179,7 @@ export class HistoricalTeachingService {
         targetAcademicCalendarVersionId: prepared.executionCalendarVersionId,
         targetTimeSlotDefinitionId: prepared.executionSlot.id,
         scheduledTeacherUserId: prepared.actualTeacherUserId,
-        eligibilityCheckedAt: checkedAt,
+        eligibilityCheckedAt: hcmSlotEnd(parseCivilDate(row.executionCivilDate), prepared.executionSlot.endTime),
         eligibilityWasActive: true,
         eligibilityWasTeachingStaff: true,
         eligibilitySameSubject: true,
