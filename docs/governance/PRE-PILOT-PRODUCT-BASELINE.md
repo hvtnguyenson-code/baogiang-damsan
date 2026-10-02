@@ -137,15 +137,19 @@ Technical/security configuration remains outside this business control plane, in
 
 ### 4.8 Delayed go-live / pre-operational history
 
-The system may begin official use after the academic year has already started. The product must therefore support an explicit operational-start policy and a controlled way to establish historical teaching evidence before that start.
+The system may begin official use after the academic year has already started. The operational-start authority is already implemented. P3-010 now defines the controlled retrospective curricular evidence architecture in ADR-055 and is **IN_REVIEW** pending formal closure.
 
 Required invariants:
 
-- historical timetable/PPCT replay may establish the expected sequence;
-- confirmed historical teaching may consume the correct historical PPCT obligation and count toward workload;
-- absence of a historical execution record must **not** automatically become debt merely because time passed;
-- historical evidence/corrections must retain provenance and follow forward-correction rules;
-- no current-state setting may silently reinterpret already frozen official statements.
+- historical timetable/PPCT replay establishes **expected progression only** and is never proof that teaching occurred;
+- confirmed historical teaching must resolve exact retained timetable/calendar/assignment/PPCT provenance and write canonical `CurricularTeachingExecution` evidence;
+- historical same-subject substitution or already-completed make-up may reconstruct exact retained overlay/schedule provenance only as evidence of a past event, never as future scheduling authority;
+- P3 import batch/row records are provenance receipts, not a second completion ledger;
+- historical import/confirmation requires `TEACHING_EXECUTION_MANAGE / SCHOOL_WIDE`;
+- absence of historical evidence remains **UNCONFIRMED**, never automatic debt/late/completion;
+- no manual PPCT cursor, caller-selected PPCT item/revision/component or sequence override is allowed;
+- correction is reverse + replacement with retained lineage, never in-place editing;
+- no current-state setting or later historical import may rewrite already frozen official statements; later live projections may legitimately incorporate newly confirmed history.
 
 Product Owner authority recorded by P1-031B adds one exact retained lifecycle rule for this domain: when an `OPERATIONAL_START` authority is already `PUBLISHED` but the server-owned HCM business date is still before its `effectiveFrom`, a legitimate planned change uses a distinct scheduled-authority supersession operation/state. The source is retained as `SUPERSEDED_BEFORE_EFFECTIVE`, the successor occupies the same scheduled `effectiveFrom`, and dedicated scheduled-supersession lineage preserves the chain. `CORRECTION` is not expanded and continues to mean correction of an erroneous retained assertion/history. Once the first effective civil date begins, this scheduled lifecycle is no longer available.
 
