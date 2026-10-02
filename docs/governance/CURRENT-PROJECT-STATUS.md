@@ -46,7 +46,7 @@ P0-003 closure fixes the pilot claim and dependency graph only; production remai
 
 ### Ready
 
-- `P3-010` — Pre-operational historical execution architecture — **`READY`** after `SYNC-P2-020` closed its last outstanding dependency.
+- `P3-010` — Pre-operational historical execution architecture — **`IN_REVIEW`** on `docs/p3-010-preop-history-architecture`; ADR-055 fixes the historical evidence/reconciliation contract. Parent merge/post-merge CI and `SYNC-P3-010` are still required.
 - `P4-060` — Workload adjustment architecture — **`READY`**; FULL BUSINESS completeness directive fired T23 and `P1-020` is CLOSED.
 
 ### Planned behind open dependencies
@@ -90,7 +90,7 @@ Detailed domain closure evidence remains in `PRE-PILOT-TASK-REGISTER.md`, ADRs, 
 
 The project is **NOT READY FOR TEACHER PILOT YET**. Remaining registered gaps include:
 
-1. `P3-010` and `P4-060` are READY.
+1. `P3-010` is IN_REVIEW; `P4-060` remains READY.
 2. `P3-020`, `P3-031`, and `P4-061` are unresolved direct dependencies of the complete FULL BUSINESS `P5-010` freeze.
 3. Public make-up scheduling T08 and adjusted-workload T23 are mandatory re-entry paths; their triggers fired on 2026-10-02.
 4. PWA production baseline (`P5-020`) remains absent.
