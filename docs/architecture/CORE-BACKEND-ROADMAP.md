@@ -104,7 +104,7 @@ Exact task statuses and prerequisites are maintained authoritatively in `PRE-PIL
    `P2-001` + authoritative school workbook evidence
      -> `P2-010` real-workbook contract/security audit (`CLOSED` by `SYNC-P2-010`; locks physical sheet mapping `PPCT` -> CORE, `CHUYEN_DE` -> SPECIALIZED_STUDY, `THONG_TIN` metadata authority)
    `P2-002` + `P2-010`
-     -> `P2-020` PPCT native importer implementation (`READY`)
+     -> `P2-020` PPCT native importer implementation (`CLOSED` by `SYNC-P2-020`)
 3. **Đam San native TKB workbook adapter (`CLOSED` foundation):**
    - `P2-030` Đam San TKB native-workbook architecture audit (`CLOSED`).
    - `P2-040` Native TKB adapter with class/teacher peer evidence and fail-closed mismatch (`CLOSED`).
@@ -164,8 +164,8 @@ P0-900 (CLOSED)
     │       ├── P1-031 (Operational-start policy, CLOSED by SYNC-P1-031)
     │       └── P3-010 (Pre-operational historical execution)
     └── P2-010 (PPCT real-workbook audit, CLOSED by SYNC-P2-010)
-        └── P2-020 (PPCT native importer, READY; needs P2-002 + P2-010)
-            └── P3-010 (needs closed P1-031 + closed P2-003 + P2-020 + closed P2-050)
+        └── P2-020 (PPCT native importer, CLOSED by SYNC-P2-020)
+            └── P3-010 (READY; P1-031 + P2-003 + P2-020 + P2-050 all CLOSED)
 
 Independent tracks:
 - P4-010 (GDĐP/HĐTN programme architecture; `CLOSED` by `SYNC-P4-010`, ADR-050 Accepted)
