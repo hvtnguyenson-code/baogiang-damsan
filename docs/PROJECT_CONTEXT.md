@@ -90,7 +90,7 @@ Repository hiện có các boundary đã được review/version hóa và không
 
 ## Pilot scope authority — 2026-10-02
 
-Product Owner đã chọn **`FULL BUSINESS PILOT`** cho P0-003 và chốt rõ yêu cầu **đầy đủ tính năng nghiệp vụ thực tế; không được để thiếu rule đã đăng ký nếu sự thiếu hụt có thể làm vận hành hoặc số liệu chính thức sai lệch**. P0-003 đã formal `CLOSED` bởi `SYNC-P0-003` sau PR #179, CI #594, merge/main `7b1b29c668b3615c1188d12cc055cd66d03c47e4` và hậu-merge CI #595. T08 dạy bù và T23 adjusted workload đã FIRE trigger: `P3-030/P3-031` re-enter, `P4-060` READY và `P4-061` re-enter. P5-010 được khóa dependency trực tiếp vào `P0-003`, `P1-032`, `P2-020`, `P2-061`, `P3-020`, `P3-031`, `P4-061`, `P4-074`; hiện các dependency chưa CLOSED là `P3-020`, `P3-031`, `P4-061`.
+Product Owner đã chọn **`FULL BUSINESS PILOT`** cho P0-003 và chốt rõ yêu cầu **đầy đủ tính năng nghiệp vụ thực tế; không được để thiếu rule đã đăng ký nếu sự thiếu hụt có thể làm vận hành hoặc số liệu chính thức sai lệch**. P0-003 đã formal `CLOSED` bởi `SYNC-P0-003` sau PR #179, CI #594, merge/main `7b1b29c668b3615c1188d12cc055cd66d03c47e4` và hậu-merge CI #595. T08 dạy bù và T23 adjusted workload đã FIRE trigger: `P3-030/P3-031` re-enter, `P4-060` READY và `P4-061` re-enter. P5-010 được khóa dependency trực tiếp vào `P0-003`, `P1-032`, `P2-020`, `P2-061`, `P3-020`, `P3-031`, `P4-061`, `P4-074`; `P3-020` đã `CLOSED` bởi `SYNC-P3-020`, nên các dependency trực tiếp chưa CLOSED còn `P3-031`, `P4-061`.
 
 Chi tiết KEEP/REALIGN/RESTORE nằm trong `docs/governance/PRE-PILOT-TRACEABILITY-MATRIX.md`.
 
@@ -103,7 +103,7 @@ Project hiện đang realign vì một số minimum-core/deferred quyết địn
 - HĐTN CLASS/GRADE/SCHOOL programme planning;
 - exact per-slot special-program staffing;
 - coordinator authority;
-- delayed go-live + historical pre-operational execution (`P3-010` CLOSED by `SYNC-P3-010`; `P3-020` IN_REVIEW on `feat/p3-020-preop-history-runtime`: CSV/TSV business input, server-issued preview identity, canonical `CurricularTeachingExecution`, SCHOOL_WIDE authority, retained batch/row provenance, safe owned-vs-reused overlay handling, historical substitution/make-up reconstruction, no-auto-debt, reverse+replace correction and reconciliation UI);
+- delayed go-live + historical pre-operational execution (`P3-010` CLOSED by `SYNC-P3-010`; `P3-020` CLOSED by `SYNC-P3-020`: CSV/TSV business input, server-issued preview identity, canonical `CurricularTeachingExecution`, SCHOOL_WIDE authority, retained batch/row provenance, safe owned-vs-reused overlay handling, historical substitution/make-up reconstruction, no-auto-debt, reverse+replace correction and reconciliation UI);
 - PPCT authoritative workbook import;
 - public make-up scheduling for incomplete obligations (T08 re-entry fired; P3-030/P3-031 required);
 - SpecialActivity workload/reporting;
