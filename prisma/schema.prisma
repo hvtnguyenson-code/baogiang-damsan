@@ -1612,6 +1612,8 @@ model HistoricalTeachingImportRow {
   curricularTeachingExecutionId String                        @unique(map: "historical_teaching_import_rows_execution_id_key") @map("curricular_teaching_execution_id") @db.Uuid
   operationalLessonDispositionId String?                      @map("operational_lesson_disposition_id") @db.Uuid
   makeupTeachingScheduleId      String?                       @map("makeup_teaching_schedule_id") @db.Uuid
+  ownsOperationalLessonDisposition Boolean                    @default(false) @map("owns_operational_lesson_disposition")
+  ownsMakeupTeachingSchedule    Boolean                       @default(false) @map("owns_makeup_teaching_schedule")
   createdAt                     DateTime                      @default(now()) @map("created_at") @db.Timestamptz(3)
 
   batch                 HistoricalTeachingImportBatch  @relation(fields: [batchId], references: [id], onDelete: Restrict)
