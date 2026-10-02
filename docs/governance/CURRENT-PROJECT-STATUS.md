@@ -17,7 +17,7 @@ Exact current `main`, branch HEAD and divergence must always be read directly fr
 - `P2-020` PPCT native importer has been implemented and merged, but remains **`MERGED_AWAITING_DOC_SYNC`** until its separate `SYNC-P2-020` is completed.
 - `P6-005` Production VPS topology decision is **`CLOSED` by `SYNC-P6-005`**.
 - Canonical production topology: **`SHARED_VPS`** on the existing Windows Server 2022 host, with strict protected-neighbour isolation.
-- `P6-010` Pre-deploy TLS/HTTP-01 authority is **`READY`** but has not started.
+- `P6-010` Pre-deploy TLS/HTTP-01 authority is **`IN_REVIEW`** on PR #176; exact-head CI #569 is SUCCESS and no production/VPS mutation has occurred.
 - No production deployment, production migration, TLS issuance, Nginx mutation, Scheduled Task mutation, ACL mutation or application restart has been performed by P6-005 or its closure sync.
 
 ## Last formally closed major task
@@ -43,9 +43,9 @@ Accepted decision authority is recorded in `ADR-053-PRODUCTION-VPS-TOPOLOGY.md` 
 
 ## Active / next critical path
 
-### Ready
+### In review
 
-`P6-010` — Pre-deploy TLS/HTTP-01 authority — **`READY`**.
+`P6-010` — Pre-deploy TLS/HTTP-01 authority — **`IN_REVIEW`**.
 
 Required boundary:
 
@@ -53,7 +53,7 @@ Required boundary:
 - use shared-host/protected-neighbour semantics;
 - preserve separate Báo giảng application root, runtime port, Scheduled Task/startup authority, environment/secrets boundary, logs/backups, PostgreSQL database/role, Nginx managed include/server block, domain, certificate and renewal lifecycle;
 - do not mutate DamSanV5 / Quản lí nội trú neighbour resources implicitly;
-- `READY` does not authorize VPS mutation; P6-010 itself remains a separately reviewed repository task.
+- `IN_REVIEW` does not authorize VPS mutation; P6-010 remains unmerged/unclosed until parent review, merge, authoritative post-merge CI and `SYNC-P6-010` complete.
 
 ### Merged awaiting mandatory closure sync
 
@@ -113,7 +113,7 @@ The project is **NOT READY FOR TEACHER PILOT YET**. Remaining registered gaps in
 3. `P3-010` / `P3-020` pre-operational historical execution architecture/runtime remain registered and depend on P2-020 closure.
 4. PWA production baseline (`P5-020`) remains absent.
 5. Dedicated Báo giảng Telegram integration (`P5-030`) remains absent.
-6. `P6-010` shared-host first-certificate HTTP-01/Nginx/TLS authority is READY but not implemented.
+6. `P6-010` shared-host first-certificate HTTP-01/Nginx/TLS repository authority is implemented and `IN_REVIEW` on PR #176, but is not yet merged/CLOSED and has performed no production mutation.
 7. Official production Stage 1 passive discovery/preflight (`P6-020`) remains trigger-gated and has not been executed.
 8. Production bootstrap/first controlled deploy (`P6-030`) has not occurred.
 9. Teacher pilot go-live verification (`P6-050`) has not occurred.

@@ -213,7 +213,7 @@ Required invariants:
 - Báo giảng must use a dedicated application root, Node/API port, Scheduled Task/startup authority, environment/secrets boundary, logs, backups, PostgreSQL database, PostgreSQL role, Nginx server-block/include authority, domain/TLS certificate and renewal lifecycle;
 - DamSanV5 / Quản lí nội trú roots, processes, tasks/services, database resources, Nginx/TLS/monitoring state remain protected neighbours;
 - no P6-005 documentation change may create/restart/alter production resources;
-- `P6-010` remains non-startable until `P6-005` is formally `CLOSED` after parent review/merge/post-merge CI and `SYNC-P6-005`;
+- `P6-005` is formally `CLOSED`; `P6-010` repository authority is now `IN_REVIEW` on PR #176 with exact-head CI #569 SUCCESS, but no production mutation is authorized until its parent review/merge/post-merge CI and `SYNC-P6-010` complete;
 - actual production readiness still requires the registered passive evidence and preflight gates; green CI or this capacity decision is not VPS readiness evidence.
 
 ## 5. Deliberately unresolved product decision
