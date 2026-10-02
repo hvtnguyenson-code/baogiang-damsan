@@ -44,11 +44,17 @@ Closure evidence:
 
 ### Ready
 
-`P3-010` — Pre-operational historical execution architecture — **`READY`** after `SYNC-P2-020` closed its last outstanding dependency.
+- `P3-010` — Pre-operational historical execution architecture — **`READY`** after `SYNC-P2-020` closed its last outstanding dependency.
+- `P4-060` — Workload adjustment architecture — **`READY`**; FULL BUSINESS completeness directive fired T23 and `P1-020` is CLOSED.
+
+### Planned behind open dependencies
+
+- `P3-020` — pre-operational history ingestion/reconciliation runtime — **`PLANNED`** behind P3-010.
+- `P3-030` — public make-up scheduling architecture — **`PLANNED`**; T08 trigger fired, waits for P3-010 CLOSED.
+- `P3-031` — public make-up scheduling runtime — **`PLANNED`** behind P3-030.
+- `P4-061` — workload adjustment implementation — **`PLANNED`** behind P4-060.
 
 ### Trigger-gated / decision-blocked
-
-- `P4-060` / `P4-061` — workload adjustment architecture/runtime: **`DEFERRED_WITH_TRIGGER`**.
 - `P0-002` — stale PR #11 hosting-portability direction: **`BLOCKED_DECISION`**.
 - `P0-003` — pilot scope: **`IN_REVIEW`** with Product Owner decision `FULL BUSINESS PILOT`; parent merge/post-merge CI and `SYNC-P0-003` are still required before CLOSED.
 - `P0-004` — GitHub main branch protection/ruleset: **`BLOCKED_DECISION`**.
@@ -84,13 +90,14 @@ Detailed domain closure evidence remains in `PRE-PILOT-TASK-REGISTER.md`, ADRs, 
 The project is **NOT READY FOR TEACHER PILOT YET**. Remaining registered gaps include:
 
 1. `P0-003` FULL BUSINESS decision is IN_REVIEW and must complete parent merge/post-merge CI/`SYNC-P0-003` before formal closure.
-2. `P3-010` is READY; `P3-020` remains the only unresolved direct P1-P4 dependency registered for `P5-010` FULL BUSINESS freeze.
-3. PWA production baseline (`P5-020`) remains absent.
-4. Dedicated Báo giảng Telegram integration (`P5-030`) remains absent.
-5. Official production Stage 1 passive discovery/preflight (`P6-020`) remains trigger-gated and has not been executed.
-6. Production bootstrap/first controlled deploy (`P6-030`) has not occurred.
-7. Teacher pilot go-live verification (`P6-050`) has not occurred.
-8. Workload adjustment P4-060/P4-061 remains trigger-gated unless adjusted workload semantics are explicitly required.
+2. `P3-010` and `P4-060` are READY.
+3. `P3-020`, `P3-031`, and `P4-061` are unresolved direct dependencies of the complete FULL BUSINESS `P5-010` freeze.
+4. Public make-up scheduling T08 and adjusted-workload T23 are no longer deferred; their re-entry triggers fired on 2026-10-02.
+5. PWA production baseline (`P5-020`) remains absent.
+6. Dedicated Báo giảng Telegram integration (`P5-030`) remains absent.
+7. Official production Stage 1 passive discovery/preflight (`P6-020`) remains trigger-gated and has not been executed.
+8. Production bootstrap/first controlled deploy (`P6-030`) has not occurred.
+9. Teacher pilot go-live verification (`P6-050`) has not occurred.
 
 ## Production state
 
