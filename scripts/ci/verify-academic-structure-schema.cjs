@@ -32,6 +32,8 @@ const specialActivityMigrationName = '20260815010000_special_activity_persistenc
 const specialActivityMigration = read('prisma', 'migrations', specialActivityMigrationName, 'migration.sql');
 const teachingExecutionMigrationName = '20260816010000_teaching_execution_persistence_foundation';
 const teachingExecutionMigration = read('prisma', 'migrations', teachingExecutionMigrationName, 'migration.sql');
+const historicalTeachingMigrationName = '20261002090000_p3_020_historical_teaching_import';
+const historicalTeachingMigration = read('prisma', 'migrations', historicalTeachingMigrationName, 'migration.sql');
 
 function modelBlock(name) {
   const match = schema.match(new RegExp(`model\\s+${name}\\s+\\{([\\s\\S]*?)\\n\\}`, 'u'));
@@ -95,6 +97,8 @@ for (const model of [
   'SpecialActivityStaffing',
   'CurricularTeachingExecution',
   'SpecialActivityParticipationExecution',
+  'HistoricalTeachingImportBatch',
+  'HistoricalTeachingImportRow',
 ]) {
   modelBlock(model);
 }
@@ -109,6 +113,7 @@ assert.deepEqual(enumValues('PpctVersionStatus'), ['DRAFT', 'PUBLISHED', 'SUPERS
 assert.deepEqual(enumValues('PpctCurricularComponent'), ['CORE', 'SPECIALIZED_STUDY']);
 assert.deepEqual(enumValues('PpctClassCurricularProfile'), ['CORE_ONLY', 'CORE_PLUS_SPECIALIZED_STUDY']);
 assert.deepEqual(enumValues('OperationalOverlayStatus'), ['ACTIVE', 'REVERSED']);
+assert.deepEqual(enumValues('HistoricalTeachingImportKind'), ['NORMAL', 'SUBSTITUTION', 'MAKEUP']);
 assert.deepEqual(enumValues('HomeroomAssignmentStatus'), ['ACTIVE', 'REVERSED']);
 assert.deepEqual(enumValues('CalendarExceptionScope'), ['SCHOOL_WIDE', 'GRADE', 'CLASS']);
 assert.deepEqual(enumValues('CalendarExceptionTimeSelector'), ['WHOLE_DAY', 'SESSION', 'EXACT_SLOTS']);
@@ -1141,6 +1146,45 @@ assert.doesNotMatch(teachingExecutionMigration, /CREATE\s+(OR\s+REPLACE\s+)?TRIG
 assert.doesNotMatch(teachingExecutionMigration, /ON DELETE CASCADE/iu);
 assert.doesNotMatch(executionBlocks, /\b(?:completed|completionStatus|debt|progress|late|report|approval|room|location|attendance|student|enrollment|notification|ai)\b/iu);
 
+const historicalBatch = modelBlock('HistoricalTeachingImportBatch');
+const historicalRow = modelBlock('HistoricalTeachingImportRow');
+assert.match(historicalBatch, /profileVersion\s+String\s+@default\("HISTORICAL_TEACHING_V1"\)[\s\S]*@db\.VarChar\(50\)/u);
+assert.match(historicalBatch, /sourceSha256\s+String[\s\S]*@db\.VarChar\(64\)/u);
+assert.match(historicalBatch, /operationalStartPolicyVersionId\s+String[\s\S]*@db\.Uuid/u);
+assert.match(historicalBatch, /operationalStartDate\s+DateTime[\s\S]*@db\.Date/u);
+assert.match(historicalBatch, /requestKey\s+String\s+@unique[\s\S]*@db\.VarChar\(200\)/u);
+assert.match(historicalBatch, /requestFingerprint\s+String[\s\S]*@db\.VarChar\(64\)/u);
+assert.match(historicalBatch, /confirmedByUserId\s+String[\s\S]*@db\.Uuid/u);
+assert.match(historicalBatch, /operationalStartPolicy\s+BusinessPolicyVersion[\s\S]*onDelete:\s*Restrict/u);
+
+assert.match(historicalRow, /kind\s+HistoricalTeachingImportKind/u);
+assert.match(historicalRow, /rowHash\s+String[\s\S]*@db\.VarChar\(64\)/u);
+assert.match(historicalRow, /curricularTeachingExecutionId\s+String\s+@unique[\s\S]*@db\.Uuid/u);
+assert.match(historicalRow, /execution\s+CurricularTeachingExecution[\s\S]*onDelete:\s*Restrict/u);
+assert.match(historicalRow, /operationalDisposition\s+OperationalLessonDisposition\?[\s\S]*onDelete:\s*Restrict/u);
+assert.match(historicalRow, /makeupSchedule\s+MakeupTeachingSchedule\?[\s\S]*onDelete:\s*Restrict/u);
+assert.doesNotMatch(`${historicalBatch}\n${historicalRow}`, /\b(?:progress|debt|late|completed|completionStatus|manualCursor|rawWorkbook|rawCsv|sourceText|BYTEA)\b/iu);
+
+for (const name of [
+  'historical_teaching_import_batches',
+  'historical_teaching_import_rows',
+  'historical_teaching_import_batches_request_key_key',
+  'historical_teaching_import_rows_execution_id_key',
+  'historical_teaching_import_rows_batch_row_key',
+  'historical_teaching_import_rows_batch_hash_key',
+  'historical_teaching_import_rows_kind_shape_check',
+]) {
+  assert.match(historicalTeachingMigration, new RegExp(`"${name}"`, 'u'), `Historical teaching migration missing ${name}`);
+}
+assert.match(historicalTeachingMigration, /CREATE TYPE "HistoricalTeachingImportKind" AS ENUM \('NORMAL', 'SUBSTITUTION', 'MAKEUP'\)/u);
+assert.match(historicalTeachingMigration, /"historical_teaching_import_batches_source_hash_check"[\s\S]*\^\[0-9a-f\]\{64\}\$/u);
+assert.match(historicalTeachingMigration, /"historical_teaching_import_rows_kind_shape_check"[\s\S]*"kind" = 'NORMAL'[\s\S]*"kind" = 'SUBSTITUTION'[\s\S]*"kind" = 'MAKEUP'/u);
+for (const fk of historicalTeachingMigration.matchAll(/ADD CONSTRAINT "([^"]+_fkey)"([\s\S]*?);/gu)) {
+  assert.match(fk[2], /ON DELETE RESTRICT/u, `${fk[1]} must restrict deletion`);
+}
+assert.doesNotMatch(historicalTeachingMigration, /ON DELETE CASCADE|\bBYTEA\b|raw_workbook|raw_csv|source_text/iu);
+assert.doesNotMatch(historicalTeachingMigration, /CREATE\s+(OR\s+REPLACE\s+)?TRIGGER/iu);
+
 const legacyHashes = new Map([
   ['20260728000000_phase_00_baseline', 'A2185F4F34E90F9B437B3D0DD91B1C473D586849E6B0DFFB766C5AF69546634A'],
   ['20260801000000_phase_01_schema_foundation', '56B7F09859E9851A15D62D17A58066DAFB1798B0E4225858A464B0CD8F47DF9E'],
@@ -1157,4 +1201,4 @@ for (const [name, expected] of legacyHashes) {
   assert.equal(sha256(read('prisma', 'migrations', name, 'migration.sql')), expected, `Historical migration ${name} changed`);
 }
 
-console.log(`Academic, teaching-assignment, homeroom, time-slot, timetable, timetable-marker, timetable-import, PPCT, operational-overlay, Special Activity, and Teaching Execution schema static verification PASS (${academicMigrationName}, ${teachingMigrationName}, ${homeroomMigrationName}, ${timeSlotMigrationName}, ${timetableMigrationName}, ${timetableMarkerMigrationName}, ${timetableImportMigrationName}, ${timetableImportRequestKeyMigrationName}, ${ppctMigrationName}, ${ppctComponentMigrationName}, ${overlayMigrationName}, ${specialActivityMigrationName}, ${teachingExecutionMigrationName}).`);
+console.log(`Academic, teaching-assignment, homeroom, time-slot, timetable, timetable-marker, timetable-import, PPCT, operational-overlay, Special Activity, Teaching Execution, and Historical Teaching schema static verification PASS (${academicMigrationName}, ${teachingMigrationName}, ${homeroomMigrationName}, ${timeSlotMigrationName}, ${timetableMigrationName}, ${timetableMarkerMigrationName}, ${timetableImportMigrationName}, ${timetableImportRequestKeyMigrationName}, ${ppctMigrationName}, ${ppctComponentMigrationName}, ${overlayMigrationName}, ${specialActivityMigrationName}, ${teachingExecutionMigrationName}, ${historicalTeachingMigrationName}).`);
