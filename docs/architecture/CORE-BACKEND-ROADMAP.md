@@ -130,10 +130,12 @@ Exact task statuses and prerequisites are maintained authoritatively in `PRE-PIL
 
 ### P5 — Pilot product closure
 
-1. Product Owner chooses `CORE PILOT` or `FULL BUSINESS PILOT`.
-2. Cross-domain regression/business freeze for the chosen claim.
-3. Installable PWA baseline with safe caching/update behavior.
-4. Dedicated Báo giảng Telegram bot/linking/notification lifecycle.
+1. Product Owner selected `FULL BUSINESS PILOT` under P0-003 (IN_REVIEW pending formal closure).
+2. P5-010 freezes the full cross-domain claim with direct dependencies `P0-003`, `P1-032`, `P2-020`, `P2-061`, `P3-020`, `P4-074`; P3-020 is the remaining unresolved dependency.
+3. Cross-domain regression/business freeze must include normal curricular workflows plus GDĐP/HĐTN-HN, date-effective homeroom resolution, exact multi-teacher workload and official combined reporting.
+4. Installable PWA baseline with safe caching/update behavior.
+5. Dedicated Báo giảng Telegram bot/linking/notification lifecycle.
+6. `P4-060`/`P4-061` stay trigger-gated unless adjusted-workload semantics are explicitly claimed.
 
 ### P6 — Production readiness and controlled pilot
 
