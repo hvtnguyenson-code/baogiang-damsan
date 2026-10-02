@@ -180,9 +180,9 @@ Planned staffing is not execution evidence. Teacher workload credit requires acc
 
 ### 4.12 Workload adjustment policy
 
-The previously deferred `WorkloadAdjustmentRule` concept must be re-entered before the product claims official workload/teaching-load calculations that depend on reductions, percentage adjustments or overrides.
+The previously deferred `WorkloadAdjustmentRule` re-entry trigger **fired on 2026-10-02** under the Product Owner FULL BUSINESS completeness directive. `P4-060` must close reduction/percentage/override semantics, effectivity and frozen-report provenance; `P4-061` must then implement that accepted policy before P5-010 can freeze the pilot.
 
-The exact model is not authorized here.
+The exact adjustment model remains owned by P4-060 and must not be guessed or hard-coded in P0-003.
 
 ### 4.13 Curricular components: CORE vs Chuyên đề học tập (Product Owner authority 2026-09-08)
 
