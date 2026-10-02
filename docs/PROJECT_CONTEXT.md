@@ -46,7 +46,7 @@ Hạ tầng và topology production:
 - Quyết định dựa trên read-only capacity audit của host hiện hữu (6 logical CPU, 16 GB RAM, 31.07 GB free trên ổ C tại thời điểm audit), cùng retained Nginx/PostgreSQL evidence của peak window 2026-09-30 19:00–20:00. Historical PerfMon CPU/RAM của peak window không tồn tại, nên không có claim lịch sử vượt quá evidence.
 - `SHARED_VPS` không đồng nghĩa shared application authority: Báo giảng phải có root, runtime port, Scheduled Task, environment/secrets boundary, logs/backups, PostgreSQL database/role và TLS lifecycle riêng.
 - DamSanV5 / Quản lí nội trú application roots, processes, Scheduled Tasks/services, database resources, Nginx/TLS/monitoring state là protected neighbours và không được mutate implicit.
-- `P6-005` đã formal `CLOSED`; `P6-010` repository authority hiện `IN_REVIEW` trên PR #176, exact-head CI #569 SUCCESS. Trạng thái này vẫn không cấp quyền deploy/mutate production; phải hoàn tất parent merge, authoritative post-merge CI và `SYNC-P6-010` trước khi coi task là CLOSED.
+- `P6-005` và `P6-010` đã formal `CLOSED`. P6-010 repository authority được khóa bởi final head `76eb89ff987b3f61920d12b2d7a56da1136b5378`, PR #176, exact-head CI #577 SUCCESS, merge/main `edc4d2b92f629e989679063246c815c9ad5ce870`, post-merge CI #578 SUCCESS và `SYNC-P6-010`. Closure này không cấp quyền deploy/mutate production; Stage 1 passive evidence vẫn thuộc P6-020 và còn trigger-gated.
 
 Authority môi trường/delivery cao nhất vẫn là:
 

@@ -17,43 +17,31 @@ Exact current `main`, branch HEAD and divergence must always be read directly fr
 - `P2-020` PPCT native importer has been implemented and merged, but remains **`MERGED_AWAITING_DOC_SYNC`** until its separate `SYNC-P2-020` is completed.
 - `P6-005` Production VPS topology decision is **`CLOSED` by `SYNC-P6-005`**.
 - Canonical production topology: **`SHARED_VPS`** on the existing Windows Server 2022 host, with strict protected-neighbour isolation.
-- `P6-010` Pre-deploy TLS/HTTP-01 authority is **`IN_REVIEW`** on PR #176; exact-head CI #569 is SUCCESS and no production/VPS mutation has occurred.
+- `P6-010` Pre-deploy TLS/HTTP-01 authority is **`CLOSED` by `SYNC-P6-010`**; parent PR #176 and authoritative post-merge CI #578 are SUCCESS, with zero production/VPS mutation.
 - No production deployment, production migration, TLS issuance, Nginx mutation, Scheduled Task mutation, ACL mutation or application restart has been performed by P6-005 or its closure sync.
 
 ## Last formally closed major task
 
-`P6-005` — Production VPS topology decision — **`CLOSED`** by `SYNC-P6-005`.
+`P6-010` — Pre-deploy TLS/HTTP-01 authority — **`CLOSED`** by `SYNC-P6-010`.
 
 Closure evidence:
 
-- selected authority: `SHARED_VPS`;
-- selected by Product Owner: 2026-10-01;
-- parent branch: `docs/p6-005-shared-vps-topology`;
-- canonical parent start: `main@2d6cb02d4bf9bb4529e0e8eaf83e10d6a67ef043`;
-- final reviewed parent head: `c9a56a7a3fff613f823c3540463d8bcfaa6442ee`;
-- parent PR: #174 (`docs(production): select shared VPS topology`);
-- exact-head parent PR CI: #557 / run `36877744658` — **SUCCESS**;
-- normal merge/main: `5de8ba3b862405c7fcc215021bb5d2f3bb0122f7`;
-- authoritative post-merge main CI: #558 / run `36880358944` — **SUCCESS**;
-- parent diff: 8 files, all under `docs/**`;
-- zero runtime, schema, migration, workflow, deploy-script or production-state mutation;
-- no residual correction/re-entry task emerged from review or CI.
+- topology authority: `SHARED_VPS` with protected-neighbour isolation;
+- parent branch: `feat/p6-010-shared-http01-tls-authority`;
+- canonical parent start: `main@2c09969ebd338af6574d9466d4f07dff415f37a4`;
+- final reviewed parent head: `76eb89ff987b3f61920d12b2d7a56da1136b5378`;
+- parent PR: #176 (`feat(production): add shared HTTP-01 TLS authority`);
+- exact-head parent PR CI: #577 / run `36945168177` — **SUCCESS**;
+- normal merge/main: `edc4d2b92f629e989679063246c815c9ad5ce870`;
+- authoritative post-merge main CI: #578 / run `36945892796` — **SUCCESS**;
+- parent diff: 13 files, bounded to P6-010 repository authority, tests and governance synchronization;
+- independent GitHub diff audit PASS; zero unresolved review threads;
+- no residual correction/re-entry task emerged from review or CI;
+- zero VPS access, certificate issuance, Nginx production mutation/reload, Scheduled Task mutation, database/ACL/root/app mutation or protected-neighbour mutation.
 
-Accepted decision authority is recorded in `ADR-053-PRODUCTION-VPS-TOPOLOGY.md` and `P6-005-PRODUCTION-VPS-TOPOLOGY-DECISION-CLOSURE.md`.
+P6-010 closes repository-side HTTP-01/TLS authority only. It does not constitute Stage 1 production evidence or permission to bootstrap/deploy.
 
 ## Active / next critical path
-
-### In review
-
-`P6-010` — Pre-deploy TLS/HTTP-01 authority — **`IN_REVIEW`**.
-
-Required boundary:
-
-- topology is `SHARED_VPS`;
-- use shared-host/protected-neighbour semantics;
-- preserve separate Báo giảng application root, runtime port, Scheduled Task/startup authority, environment/secrets boundary, logs/backups, PostgreSQL database/role, Nginx managed include/server block, domain, certificate and renewal lifecycle;
-- do not mutate DamSanV5 / Quản lí nội trú neighbour resources implicitly;
-- `IN_REVIEW` does not authorize VPS mutation; P6-010 remains unmerged/unclosed until parent review, merge, authoritative post-merge CI and `SYNC-P6-010` complete.
 
 ### Merged awaiting mandatory closure sync
 
@@ -113,17 +101,16 @@ The project is **NOT READY FOR TEACHER PILOT YET**. Remaining registered gaps in
 3. `P3-010` / `P3-020` pre-operational historical execution architecture/runtime remain registered and depend on P2-020 closure.
 4. PWA production baseline (`P5-020`) remains absent.
 5. Dedicated Báo giảng Telegram integration (`P5-030`) remains absent.
-6. `P6-010` shared-host first-certificate HTTP-01/Nginx/TLS repository authority is implemented and `IN_REVIEW` on PR #176, but is not yet merged/CLOSED and has performed no production mutation.
-7. Official production Stage 1 passive discovery/preflight (`P6-020`) remains trigger-gated and has not been executed.
-8. Production bootstrap/first controlled deploy (`P6-030`) has not occurred.
-9. Teacher pilot go-live verification (`P6-050`) has not occurred.
-10. Workload adjustment P4-060/P4-061 remains trigger-gated unless the selected official pilot/reporting scope requires it.
+6. Official production Stage 1 passive discovery/preflight (`P6-020`) remains trigger-gated and has not been executed.
+7. Production bootstrap/first controlled deploy (`P6-030`) has not occurred.
+8. Teacher pilot go-live verification (`P6-050`) has not occurred.
+9. Workload adjustment P4-060/P4-061 remains trigger-gated unless the selected official pilot/reporting scope requires it.
 
 ## Production state
 
 Production remains strictly **PRE-OPERATIONAL**.
 
-Neither PR #174 nor `SYNC-P6-005` authorized or performed VPS access/mutation, production database migration, TLS issuance, Nginx reload/configuration change, Scheduled Task creation/change, ACL mutation, deployment or application restart.
+Neither P6-005 nor P6-010 (including PR #176 and their closure syncs) authorized or performed VPS access/mutation, production database migration, TLS issuance, Nginx production reload/configuration change, Scheduled Task creation/change, ACL mutation, deployment or application restart.
 
 ## Protected external-system boundary
 

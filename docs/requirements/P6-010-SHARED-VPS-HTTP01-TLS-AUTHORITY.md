@@ -2,7 +2,7 @@
 
 ## Status
 
-`IN_REVIEW`
+`CLOSED` by `SYNC-P6-010`
 
 ## Canonical start
 
@@ -185,3 +185,16 @@ Before review/merge:
 A green P6-010 repository task establishes **how** shared-host first certificate and renewal are to be performed safely. It is not evidence that the production host currently satisfies those assumptions.
 
 Actual protected-neighbour discovery, exact Nginx/win-acme/port/path inventory and read-only production preflight remain the separately gated P6 production-evidence path. No certificate issuance, Nginx mutation/reload, task mutation or deployment is authorized by merging P6-010.
+
+## Closure evidence
+
+- final reviewed parent head: `76eb89ff987b3f61920d12b2d7a56da1136b5378`;
+- parent PR: #176 (`feat(production): add shared HTTP-01 TLS authority`);
+- exact-head parent PR CI: #577 / run `36945168177` — **SUCCESS**;
+- normal merge/main: `edc4d2b92f629e989679063246c815c9ad5ce870`;
+- authoritative post-merge main CI: #578 / run `36945892796` — **SUCCESS**;
+- independent GitHub diff audit: **PASS**; zero unresolved review threads;
+- residual correction/re-entry tasks: **none**;
+- production mutation performed by P6-010: **none**.
+
+P6-010 closes repository-side shared-host HTTP-01/TLS authority only. Production remains **PRE-OPERATIONAL**. Actual Stage 1 protected-neighbour discovery/preflight remains separately trigger-gated under `P6-020`.
