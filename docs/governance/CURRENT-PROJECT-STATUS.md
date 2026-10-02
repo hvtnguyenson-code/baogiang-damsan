@@ -113,7 +113,7 @@ The project is **NOT READY FOR TEACHER PILOT YET**. Remaining registered gaps in
 3. `P3-010` / `P3-020` pre-operational historical execution architecture/runtime remain registered and depend on P2-020 closure.
 4. PWA production baseline (`P5-020`) remains absent.
 5. Dedicated Báo giảng Telegram integration (`P5-030`) remains absent.
-6. `P6-010` shared-host first-certificate HTTP-01/Nginx/TLS authority is READY but not implemented.
+6. `P6-010` shared-host first-certificate HTTP-01/Nginx/TLS repository authority is implemented and `IN_REVIEW` on PR #176, but is not yet merged/CLOSED and has performed no production mutation.
 7. Official production Stage 1 passive discovery/preflight (`P6-020`) remains trigger-gated and has not been executed.
 8. Production bootstrap/first controlled deploy (`P6-030`) has not occurred.
 9. Teacher pilot go-live verification (`P6-050`) has not occurred.
