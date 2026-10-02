@@ -113,6 +113,15 @@ MAKEUP:
 - target collision checks against TKB, SpecialActivity and active make-up schedules;
 - exact make-up schedule provenance created/replaced or safely reused.
 
+Historical eligibility is evaluated as historical evidence, not by retroactively applying today's account/profile state. `User.status` and `StaffProfile.isTeachingStaff` are current-state fields with no retained effectivity interval, so P3 does not use them to invalidate a past teaching fact. For P3-created substitution/make-up provenance:
+
+- the SCHOOL_WIDE confirmed import is the positive managerial attestation that the named teacher actually taught;
+- exact `StaffSubject` coverage proves same-subject eligibility at the historical teaching date;
+- `eligibilityCheckedAt` pins the historical slot-end instant to which that attestation/proof applies;
+- the retained `HistoricalTeachingImportRow -> HistoricalTeachingImportBatch` chain preserves source hash, actor and confirmation time.
+
+This avoids both failure modes: accepting a caller-selected technical eligibility identity, and rejecting true history merely because the teacher later became DISABLED or ceased being marked as teaching staff.
+
 An AUTHORIZED_CANCELLATION that does not consume PPCT cannot be turned into historical make-up completion.
 
 ### Atomicity / correction
@@ -185,7 +194,8 @@ The branch includes parser and PostgreSQL integration coverage for:
 - spreadsheet TSV paste;
 - reused disposition ownership isolation;
 - reused make-up ownership isolation;
-- substitute occupancy collision.
+- substitute occupancy collision;
+- retrospective eligibility regression: a teacher who is now DISABLED/non-teaching remains importable when exact historical StaffSubject coverage and SCHOOL_WIDE positive evidence prove the past fact.
 
 ## Explicit non-effects
 
