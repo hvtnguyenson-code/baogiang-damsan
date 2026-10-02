@@ -180,6 +180,7 @@ export class HistoricalTeachingService {
           replay.academicYearId !== dto.academicYearId
           || replay.sourceSha256 !== sourceSha256
           || replay.requestFingerprint !== dto.requestFingerprint
+          || dto.batchRef !== replay.requestFingerprint.slice(0, 16)
         ) {
           throw new ConflictException('requestKey lịch sử đã được dùng với nội dung khác.');
         }
