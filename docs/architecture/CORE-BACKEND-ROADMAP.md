@@ -126,14 +126,17 @@ Exact task statuses and prerequisites are maintained authoritatively in `PRE-PIL
 5. Date-effective homeroom resolution/freeze for class activities remains owned by the runtime bridge.
 6. Deterministic bridge into existing SpecialActivity runtime primitive and attestation runtime (`P4-040`, `READY`).
 7. Confirmed activity teacher-slot workload/reporting aggregation (`P4-050`).
-8. WorkloadAdjustmentRule re-entry when official adjusted workload is in pilot scope (`P4-060`/`P4-061`).
+8. WorkloadAdjustmentRule re-entry is REQUIRED for the selected complete FULL BUSINESS pilot: `P4-060` READY, then `P4-061` implementation.
 
 ### P5 — Pilot product closure
 
-1. Product Owner chooses `CORE PILOT` or `FULL BUSINESS PILOT`.
-2. Cross-domain regression/business freeze for the chosen claim.
-3. Installable PWA baseline with safe caching/update behavior.
-4. Dedicated Báo giảng Telegram bot/linking/notification lifecycle.
+1. Product Owner selected `FULL BUSINESS PILOT` under P0-003 (IN_REVIEW pending formal closure).
+2. P5-010 freezes the full cross-domain claim with direct dependencies `P0-003`, `P1-032`, `P2-020`, `P2-061`, `P3-020`, `P3-031`, `P4-061`, `P4-074`.
+3. Cross-domain regression/business freeze must include normal curricular workflows plus historical go-live reconciliation, public make-up scheduling, adjusted workload, GDĐP/HĐTN-HN, date-effective homeroom resolution, exact multi-teacher workload and official combined reporting.
+4. T08 make-up re-entry is required: P3-010 -> P3-030 -> P3-031, with P3-020 also closing historical ingestion/reconciliation.
+5. T23 workload-adjustment re-entry is required: P4-060 -> P4-061.
+6. Installable PWA baseline with safe caching/update behavior.
+7. Dedicated Báo giảng Telegram bot/linking/notification lifecycle.
 
 ### P6 — Production readiness and controlled pilot
 

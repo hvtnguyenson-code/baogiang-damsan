@@ -180,9 +180,9 @@ Planned staffing is not execution evidence. Teacher workload credit requires acc
 
 ### 4.12 Workload adjustment policy
 
-The previously deferred `WorkloadAdjustmentRule` concept must be re-entered before the product claims official workload/teaching-load calculations that depend on reductions, percentage adjustments or overrides.
+The previously deferred `WorkloadAdjustmentRule` re-entry trigger **fired on 2026-10-02** under the Product Owner FULL BUSINESS completeness directive. `P4-060` must close reduction/percentage/override semantics, effectivity and frozen-report provenance; `P4-061` must then implement that accepted policy before P5-010 can freeze the pilot.
 
-The exact model is not authorized here.
+The exact adjustment model remains owned by P4-060 and must not be guessed or hard-coded in P0-003.
 
 ### 4.13 Curricular components: CORE vs Chuyên đề học tập (Product Owner authority 2026-09-08)
 
@@ -215,14 +215,29 @@ Required invariants:
 - `P6-005` and `P6-010` are formally `CLOSED`; P6-010 repository-side shared-host HTTP-01/TLS authority closed through PR #176, exact-head CI #577, merge/main `edc4d2b92f629e989679063246c815c9ad5ce870`, post-merge CI #578 and `SYNC-P6-010`; this does not authorize production mutation, and actual Stage 1 evidence remains separately gated under P6-020;
 - actual production readiness still requires the registered passive evidence and preflight gates; green CI or this capacity decision is not VPS readiness evidence.
 
-## 5. Deliberately unresolved product decision
+## 5. Selected first operational pilot scope
 
-The Product Owner must choose, before the pilot freeze, whether the first operational pilot is:
+On 2026-10-02 the Product Owner selected **FULL BUSINESS PILOT** under P0-003. The decision is recorded by ADR-054 and remains `IN_REVIEW` until parent merge/post-merge CI and `SYNC-P0-003` complete.
 
-- **CORE PILOT:** normal curricular PPCT/TKB/execution/reporting plus go-live/PWA/Telegram, while GDĐP/HĐTN official workload remains outside the first operational claim; or
-- **FULL BUSINESS PILOT:** includes GDĐP, HĐTN-HN, homeroom resolution, multi-teacher workload and official combined reporting before pilot.
+The first operational pilot claim therefore includes:
 
-This decision does not block common P1-P3 foundations, but it blocks the final P5 pilot freeze.
+- normal curricular PPCT/TKB/import/execution/progress/debt/late/reporting;
+- delayed-go-live operational-start administration and controlled historical evidence/reconciliation;
+- the school-wide effective Teacher Workspace;
+- GDĐP;
+- HĐTN-HN CLASS / GRADE / SCHOOL_WIDE;
+- date-effective homeroom resolution;
+- exact multi-teacher staffing/workload and anti-double-counting semantics;
+- official combined reporting across the accepted business domains;
+- public make-up scheduling for real incomplete obligations without consuming a new PPCT item;
+- adjusted-workload rules needed for correct official figures, including reduction / percentage adjustment / override with retained effectivity and frozen-report provenance;
+- PWA/Telegram and production-readiness gates before teacher go-live.
+
+On 2026-10-02 the Product Owner clarified that FULL BUSINESS must be functionally complete wherever omission of a registered rule would make real operation or official figures incorrect. This fires T08 and T23 re-entry.
+
+The direct dependency set registered for `P5-010` is `P0-003`, `P1-032`, `P2-020`, `P2-061`, `P3-020`, `P3-031`, `P4-061`, `P4-074`. Unresolved direct dependencies are `P3-020`, `P3-031`, and `P4-061`, so P5-010 is not yet READY.
+
+`P3-030`/`P3-031` and `P4-060`/`P4-061` are therefore no longer optional deferred tracks for this pilot claim. They are part of the required path.
 
 ## 6. Production-readiness items that remain separate
 

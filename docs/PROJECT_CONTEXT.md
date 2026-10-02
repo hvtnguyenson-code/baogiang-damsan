@@ -88,6 +88,10 @@ Repository hiện có các boundary đã được review/version hóa và không
 - accepted ADR-046 architecture, implemented P1-021 retained Business Configuration persistence/control plane, implemented P1-022 capability-gated administration workspace, và closed P1-031 operational-start backend authority: typed allowlisted families, versioned validator registry, retained version/effectivity history, command idempotency, same-transaction audit, typed/version-aware code-defined UI adapters with triple identity, exact `BUSINESS_CONFIGURATION_MANAGE / SCHOOL_WIDE` capability gate, strict separation from `SystemSetting`, environment/secrets and technical/deployment configuration (no raw JSON, no generic key/value editor), cùng production backend registration `OPERATIONAL_START / v1 / ACADEMIC_YEAR`, active-calendar/lifecycle validation, typed resolver, execution guards, pre-op no-auto-debt projection, retained allocator replay, single-authority reporting integration và ReportingStatement SNAPSHOT_V2 provenance. P1-031B đã `CLOSED` bởi `SYNC-P1-031B` với lifecycle riêng `SUPERSEDE_SCHEDULED_AUTHORITY` / `SUPERSEDED_BEFORE_EFFECTIVE`, repeated dedicated lineage, guarded HTTP/shared contracts, server-owned actions và DB family-scope backstop; CORRECTION không được mở rộng. P1-031A đã `CLOSED` bởi `SYNC-P1-031A` sau PR #137, merge `f19ec01d293c1c3da6ff46ebc257c9a43630112e` và post-merge CI #451 SUCCESS; P1-031C đã `CLOSED` bởi `SYNC-P1-031C` (cung cấp Business Configuration AcademicYear options read model qua `GET /api/business-configuration/academic-year-options` dưới quyền `BUSINESS_CONFIGURATION_MANAGE / SCHOOL_WIDE`); `P1-032` đã `CLOSED` bởi `SYNC-P1-032` sau PR #142, merge `adfa62e9a92dcfc83cf0ab2e805d206a86a682e6` và post-merge CI #461 SUCCESS (cung cấp Web administration UI integration cho operational-start authority dưới quyền `BUSINESS_CONFIGURATION_MANAGE / SCHOOL_WIDE`);
 - Windows production deployment control plane and operator-evidence tooling.
 
+## Pilot scope authority — 2026-10-02
+
+Product Owner đã chọn **`FULL BUSINESS PILOT`** cho P0-003 và sau đó chốt rõ yêu cầu **đầy đủ tính năng nghiệp vụ thực tế; không được để thiếu rule đã đăng ký nếu sự thiếu hụt có thể làm vận hành hoặc số liệu chính thức sai lệch**. Vì vậy T08 dạy bù và T23 adjusted workload đã FIRE trigger: `P3-030/P3-031` re-enter, `P4-060` READY và `P4-061` re-enter. P5-010 được khóa dependency trực tiếp vào `P0-003`, `P1-032`, `P2-020`, `P2-061`, `P3-020`, `P3-031`, `P4-061`, `P4-074`; hiện các dependency chưa CLOSED là `P3-020`, `P3-031`, `P4-061`. Quyết định đang IN_REVIEW cho tới parent merge/post-merge CI/`SYNC-P0-003`.
+
 Chi tiết KEEP/REALIGN/RESTORE nằm trong `docs/governance/PRE-PILOT-TRACEABILITY-MATRIX.md`.
 
 ## Pre-pilot realignment
@@ -101,8 +105,9 @@ Project hiện đang realign vì một số minimum-core/deferred quyết địn
 - coordinator authority;
 - delayed go-live + historical pre-operational execution;
 - PPCT authoritative workbook import;
+- public make-up scheduling for incomplete obligations (T08 re-entry fired; P3-030/P3-031 required);
 - SpecialActivity workload/reporting;
-- deferred WorkloadAdjustmentRule when official adjusted workload is in scope;
+- WorkloadAdjustmentRule for official adjusted workload (T23 re-entry fired; P4-060/P4-061 required);
 - PWA/Telegram pilot integration;
 - first-cert HTTP-01/TLS authority and actual VPS evidence.
 
