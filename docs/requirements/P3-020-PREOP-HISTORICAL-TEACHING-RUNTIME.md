@@ -2,7 +2,7 @@
 
 ## Status
 
-`IN_REVIEW`
+`CLOSED` by `SYNC-P3-020`
 
 ## Canonical execution context
 
@@ -209,14 +209,17 @@ P3-020 does not:
 - rewrite frozen Reporting Statements;
 - deploy or mutate production/VPS.
 
-## Parent closure gate
+## Closure evidence
 
-P3-020 remains `IN_REVIEW` until:
+- canonical parent start: `main@2ffcb9db61017a179c3f26662130f05d341514fa`;
+- final reviewed parent head: `e188a421fb1be6e79e3a1816fef4969eb55e916e`;
+- parent PR: #183 (`feat(history): implement pre-operational teaching ingestion`);
+- exact-head parent PR CI: #612 / run `37025720391` — **SUCCESS**;
+- independent exact-head GitHub diff audit: **PASS** across 26 changed files;
+- unresolved review threads: **0**;
+- normal merge/main: `c20e6950327d79844117c18416b904e23436df1e`;
+- authoritative post-merge main CI: #613 / run `37028176259` — **SUCCESS**;
+- production/VPS/deploy mutation performed by P3-020: **none**;
+- residual correction/re-entry task discovered by P3-020 closure audit: **none**.
 
-1. independent branch diff review passes;
-2. exact-head PR CI succeeds;
-3. parent PR merges normally;
-4. authoritative post-merge main CI succeeds;
-5. `SYNC-P3-020` records final evidence.
-
-Only then does `P3-020` become `CLOSED`.
+P3-020 is formally CLOSED. Public/future make-up scheduling remains separately owned by `P3-030/P3-031`; production remains PRE-OPERATIONAL.
