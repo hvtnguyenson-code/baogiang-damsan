@@ -32,14 +32,16 @@ integration('P3-020 historical teaching runtime (PostgreSQL)', () => {
       { key: 'TEACHING_EXECUTION_MANAGE', scopes: ['SUBJECT', 'SCHOOL_WIDE'] },
     ]);
     const manager = await h.actor({ grants: [{ capabilityKey: 'TEACHING_EXECUTION_MANAGE', scopeType: 'SCHOOL_WIDE' }] });
+    const managerCode = normalizedCode('GVHIST1');
     await h.prisma.staffProfile.update({
       where: { userId: manager.id },
-      data: { staffCode: normalizedCode('GVHIST1'), displayName: 'Giáo viên lịch sử 1', isTeachingStaff: true },
+      data: { staffCode: managerCode, displayName: 'Giáo viên lịch sử 1', isTeachingStaff: true },
     });
     const substitute = await h.actor();
+    const substituteCode = normalizedCode('GVHIST2');
     await h.prisma.staffProfile.update({
       where: { userId: substitute.id },
-      data: { staffCode: normalizedCode('GVHIST2'), displayName: 'Giáo viên lịch sử 2', isTeachingStaff: true },
+      data: { staffCode: substituteCode, displayName: 'Giáo viên lịch sử 2', isTeachingStaff: true },
     });
     const outsider = await h.actor();
 
@@ -213,8 +215,8 @@ integration('P3-020 historical teaching runtime (PostgreSQL)', () => {
     return {
       manager, substitute, outsider, year, calendar, schoolClass, subject, sourceSlot, makeupSlot,
       assignment, timetable, entry, revision, policyVersion,
-      managerCode: normalizedCode('GVHIST1'),
-      substituteCode: normalizedCode('GVHIST2'),
+      managerCode,
+      substituteCode,
     };
   }
 
