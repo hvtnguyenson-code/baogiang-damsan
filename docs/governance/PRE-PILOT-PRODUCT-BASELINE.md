@@ -229,11 +229,15 @@ The first operational pilot claim therefore includes:
 - date-effective homeroom resolution;
 - exact multi-teacher staffing/workload and anti-double-counting semantics;
 - official combined reporting across the accepted business domains;
+- public make-up scheduling for real incomplete obligations without consuming a new PPCT item;
+- adjusted-workload rules needed for correct official figures, including reduction / percentage adjustment / override with retained effectivity and frozen-report provenance;
 - PWA/Telegram and production-readiness gates before teacher go-live.
 
-The direct dependency set registered for `P5-010` is `P0-003`, `P1-032`, `P2-020`, `P2-061`, `P3-020`, `P4-074`. All are CLOSED except `P3-020`, so P5-010 is not yet READY.
+On 2026-10-02 the Product Owner clarified that FULL BUSINESS must be functionally complete wherever omission of a registered rule would make real operation or official figures incorrect. This fires T08 and T23 re-entry.
 
-**Boundary:** FULL BUSINESS does not automatically activate `P4-060`/`P4-061`; those remain trigger-gated unless the official pilot/reporting claim requires adjusted workload semantics such as reduction, percentage adjustment or override.
+The direct dependency set registered for `P5-010` is `P0-003`, `P1-032`, `P2-020`, `P2-061`, `P3-020`, `P3-031`, `P4-061`, `P4-074`. Unresolved direct dependencies are `P3-020`, `P3-031`, and `P4-061`, so P5-010 is not yet READY.
+
+`P3-030`/`P3-031` and `P4-060`/`P4-061` are therefore no longer optional deferred tracks for this pilot claim. They are part of the required path.
 
 ## 6. Production-readiness items that remain separate
 
