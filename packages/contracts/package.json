@@ -16,6 +16,11 @@
       "types": "./dist/ppct-import.d.ts",
       "import": "./dist/ppct-import.mjs",
       "require": "./dist/ppct-import.js"
+    },
+    "./historical-teaching": {
+      "types": "./dist/historical-teaching.d.ts",
+      "import": "./dist/historical-teaching.mjs",
+      "require": "./dist/historical-teaching.js"
     }
   },
   "scripts": {

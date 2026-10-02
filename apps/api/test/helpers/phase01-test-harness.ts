@@ -58,6 +58,8 @@ export class Phase01Harness {
   async clean(): Promise<void> {
     await this.prisma.$executeRawUnsafe(`
       TRUNCATE TABLE
+        "historical_teaching_import_rows",
+        "historical_teaching_import_batches",
         "business_policy_commands",
         "business_policy_versions",
         "business_policy_streams";

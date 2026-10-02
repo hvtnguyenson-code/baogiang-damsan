@@ -143,6 +143,12 @@ enum CurricularTeachingExecutionKind {
   MAKEUP
 }
 
+enum HistoricalTeachingImportKind {
+  NORMAL
+  SUBSTITUTION
+  MAKEUP
+}
+
 enum ReportingStatementLifecycleState {
   SUBMITTED
   APPROVED
@@ -286,6 +292,7 @@ model User {
   curricularExecutionsActual                CurricularTeachingExecution[]           @relation("CurricularExecutionActualTeacher")
   curricularExecutionsCreated               CurricularTeachingExecution[]           @relation("CurricularExecutionCreatedBy")
   curricularExecutionsReversed              CurricularTeachingExecution[]           @relation("CurricularExecutionReversedBy")
+  historicalTeachingImportBatchesConfirmed  HistoricalTeachingImportBatch[]          @relation("HistoricalTeachingImportConfirmedBy")
   activityExecutionsActual                  SpecialActivityParticipationExecution[] @relation("ActivityExecutionActualTeacher")
   activityExecutionsCreated                 SpecialActivityParticipationExecution[] @relation("ActivityExecutionCreatedBy")
   activityExecutionsReversed                SpecialActivityParticipationExecution[] @relation("ActivityExecutionReversedBy")
@@ -541,8 +548,9 @@ model AcademicYear {
   specialActivitySlots   SpecialActivityTimeSlot[]
   specialActivityTargets SpecialActivityClassTarget[]
   specialProgrammeMarkers TimetableSpecialProgrammeMarker[]
-  curricularExecutions   CurricularTeachingExecution[]
-  activityExecutions     SpecialActivityParticipationExecution[]
+  curricularExecutions             CurricularTeachingExecution[]
+  activityExecutions               SpecialActivityParticipationExecution[]
+  historicalTeachingImportBatches HistoricalTeachingImportBatch[]
 
   reportingStatementSeries ReportingStatementSeries[]
 
@@ -971,7 +979,8 @@ model BusinessPolicyVersion {
   correctsVersion             BusinessPolicyVersion?  @relation("BusinessPolicyCorrection", fields: [correctsVersionId], references: [id], onDelete: Restrict)
   correctedVersions           BusinessPolicyVersion[] @relation("BusinessPolicyCorrection")
   supersedesScheduledVersion  BusinessPolicyVersion?  @relation("BusinessPolicyScheduledSupersession", fields: [supersedesScheduledVersionId], references: [id], onDelete: Restrict)
-  scheduledSuccessorVersions  BusinessPolicyVersion[] @relation("BusinessPolicyScheduledSupersession")
+  scheduledSuccessorVersions         BusinessPolicyVersion[]       @relation("BusinessPolicyScheduledSupersession")
+  historicalTeachingImportBatches    HistoricalTeachingImportBatch[] @relation("HistoricalTeachingImportOperationalStartPolicy")
 
   @@unique([streamId, versionNumber])
   @@index([streamId, status, effectiveFrom, effectiveUntil])
@@ -1418,6 +1427,7 @@ model OperationalLessonDisposition {
   replacedBy               OperationalLessonDisposition? @relation("LessonDispositionReplacement")
   sourceForMakeupSchedules MakeupTeachingSchedule[]      @relation("MakeupScheduleSourceDisposition")
   curricularExecutions     CurricularTeachingExecution[] @relation("CurricularExecutionDisposition")
+  historicalImportRows     HistoricalTeachingImportRow[] @relation("HistoricalTeachingImportDisposition")
 
   @@unique([id, academicYearId, timetableVersionId, timetableEntryId, sourceCivilDate, academicCalendarVersionId, timeSlotDefinitionId, schoolClassId, subjectId, teachingAssignmentId, responsibleTeacherUserId, dispositionType], map: "operational_lesson_dispositions_execution_source_key")
   @@index([timetableEntryId, sourceCivilDate, status], map: "operational_lesson_dispositions_source_status_idx")
@@ -1480,6 +1490,7 @@ model MakeupTeachingSchedule {
   replaces                 MakeupTeachingSchedule?       @relation("MakeupScheduleReplacement", fields: [replacesId], references: [id], onDelete: Restrict)
   replacedBy               MakeupTeachingSchedule?       @relation("MakeupScheduleReplacement")
   curricularExecutions     CurricularTeachingExecution[] @relation("CurricularExecutionMakeupSchedule")
+  historicalImportRows     HistoricalTeachingImportRow[] @relation("HistoricalTeachingImportMakeupSchedule")
 
   @@unique([id, academicYearId, originalTimetableVersionId, originalTimetableEntryId, originalCivilDate, originalAcademicCalendarVersionId, originalTimeSlotDefinitionId, schoolClassId, subjectId, originalTeachingAssignmentId, responsibleTeacherUserId, ppctClassAssociationId, ppctPlanId, ppctVersionId, ppctItemId, targetCivilDate, targetAcademicCalendarVersionId, targetTimeSlotDefinitionId, scheduledTeacherUserId], map: "makeup_teaching_schedules_execution_source_key")
   @@index([ppctClassAssociationId, ppctVersionId, ppctItemId, status], map: "makeup_teaching_schedules_obligation_status_idx")
@@ -1552,11 +1563,68 @@ model CurricularTeachingExecution {
   reversedBy               User?                         @relation("CurricularExecutionReversedBy", fields: [reversedByUserId], references: [id], onDelete: Restrict, map: "curricular_exec_reversed_by_fkey")
   replaces                 CurricularTeachingExecution?  @relation("CurricularExecutionReplacement", fields: [replacesId, academicYearId, schoolClassId, subjectId, originalTimetableEntryId, sourceCivilDate, ppctClassAssociationId, ppctPlanId, ppctVersionId, ppctItemId], references: [id, academicYearId, schoolClassId, subjectId, originalTimetableEntryId, sourceCivilDate, ppctClassAssociationId, ppctPlanId, ppctVersionId, ppctItemId], onDelete: Restrict, map: "curricular_exec_replaces_provenance_fkey")
   replacedBy               CurricularTeachingExecution?  @relation("CurricularExecutionReplacement")
+  historicalImportRow       HistoricalTeachingImportRow?   @relation("HistoricalTeachingImportExecution")
 
   @@unique([id, academicYearId, schoolClassId, subjectId, originalTimetableEntryId, sourceCivilDate, ppctClassAssociationId, ppctPlanId, ppctVersionId, ppctItemId], map: "curricular_exec_replacement_provenance_key")
   @@unique([replacesId, academicYearId, schoolClassId, subjectId, originalTimetableEntryId, sourceCivilDate, ppctClassAssociationId, ppctPlanId, ppctVersionId, ppctItemId], map: "curricular_exec_replacement_fk_key")
   @@index([academicYearId, schoolClassId, subjectId, sourceCivilDate], map: "curricular_exec_stream_source_idx")
   @@map("curricular_teaching_executions")
+}
+
+model HistoricalTeachingImportBatch {
+  id                              String   @id @default(uuid()) @db.Uuid
+  academicYearId                  String   @map("academic_year_id") @db.Uuid
+  profileVersion                  String   @default("HISTORICAL_TEACHING_V1") @map("profile_version") @db.VarChar(50)
+  sourceSha256                    String   @map("source_sha256") @db.VarChar(64)
+  operationalStartPolicyVersionId String   @map("operational_start_policy_version_id") @db.Uuid
+  operationalStartDate            DateTime @map("operational_start_date") @db.Date
+  requestKey                      String   @unique(map: "historical_teaching_import_batches_request_key_key") @map("request_key") @db.VarChar(200)
+  requestFingerprint              String   @map("request_fingerprint") @db.VarChar(64)
+  confirmedByUserId               String   @map("confirmed_by_user_id") @db.Uuid
+  confirmedAt                     DateTime @default(now()) @map("confirmed_at") @db.Timestamptz(3)
+  createdAt                       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  academicYear           AcademicYear          @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  operationalStartPolicy BusinessPolicyVersion @relation("HistoricalTeachingImportOperationalStartPolicy", fields: [operationalStartPolicyVersionId], references: [id], onDelete: Restrict)
+  confirmedBy            User                  @relation("HistoricalTeachingImportConfirmedBy", fields: [confirmedByUserId], references: [id], onDelete: Restrict)
+  rows                   HistoricalTeachingImportRow[]
+
+  @@index([academicYearId, confirmedAt], map: "historical_teaching_import_batches_year_confirmed_idx")
+  @@map("historical_teaching_import_batches")
+}
+
+model HistoricalTeachingImportRow {
+  id                            String                        @id @default(uuid()) @db.Uuid
+  batchId                       String                        @map("batch_id") @db.Uuid
+  rowNumber                     Int                           @map("row_number")
+  rowHash                       String                        @map("row_hash") @db.VarChar(64)
+  kind                          HistoricalTeachingImportKind
+  schoolClassCode               String                        @map("school_class_code") @db.VarChar(50)
+  subjectCode                   String                        @map("subject_code") @db.VarChar(50)
+  sourceCivilDate               DateTime                      @map("source_civil_date") @db.Date
+  sourceSession                 TimeSlotSession               @map("source_session")
+  sourceOrdinal                 Int                           @map("source_ordinal")
+  actualTeacherStaffCode        String                        @map("actual_teacher_staff_code") @db.VarChar(50)
+  executionCivilDate            DateTime                      @map("execution_civil_date") @db.Date
+  executionSession              TimeSlotSession               @map("execution_session")
+  executionOrdinal              Int                           @map("execution_ordinal")
+  note                          String?                       @db.VarChar(500)
+  curricularTeachingExecutionId String                        @unique(map: "historical_teaching_import_rows_execution_id_key") @map("curricular_teaching_execution_id") @db.Uuid
+  operationalLessonDispositionId String?                      @map("operational_lesson_disposition_id") @db.Uuid
+  makeupTeachingScheduleId      String?                       @map("makeup_teaching_schedule_id") @db.Uuid
+  ownsOperationalLessonDisposition Boolean                    @default(false) @map("owns_operational_lesson_disposition")
+  ownsMakeupTeachingSchedule    Boolean                       @default(false) @map("owns_makeup_teaching_schedule")
+  createdAt                     DateTime                      @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  batch                 HistoricalTeachingImportBatch  @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  execution             CurricularTeachingExecution    @relation("HistoricalTeachingImportExecution", fields: [curricularTeachingExecutionId], references: [id], onDelete: Restrict)
+  operationalDisposition OperationalLessonDisposition? @relation("HistoricalTeachingImportDisposition", fields: [operationalLessonDispositionId], references: [id], onDelete: Restrict)
+  makeupSchedule         MakeupTeachingSchedule?       @relation("HistoricalTeachingImportMakeupSchedule", fields: [makeupTeachingScheduleId], references: [id], onDelete: Restrict)
+
+  @@unique([batchId, rowNumber], map: "historical_teaching_import_rows_batch_row_key")
+  @@unique([batchId, rowHash], map: "historical_teaching_import_rows_batch_hash_key")
+  @@index([sourceCivilDate, schoolClassCode, subjectCode], map: "historical_teaching_import_rows_source_idx")
+  @@map("historical_teaching_import_rows")
 }
 
 model SpecialActivityParticipationExecution {

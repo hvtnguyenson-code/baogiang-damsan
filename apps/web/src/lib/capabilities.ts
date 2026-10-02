@@ -94,6 +94,10 @@ export function canManagePpct(capabilities: ScopedCapability[]): boolean {
     || ppctSubjectResources(capabilities).length > 0;
 }
 
+export function canManageHistoricalTeaching(capabilities: ScopedCapability[]): boolean {
+  return hasSchoolCapability(capabilities, 'TEACHING_EXECUTION_MANAGE');
+}
+
 export function canManageSpecialProgrammes(capabilities: ScopedCapability[]): boolean {
   return hasCapability(capabilities, 'APPROVAL_PRINCIPAL', 'SCHOOL_WIDE')
     || hasCapability(capabilities, 'APPROVAL_VICE_PRINCIPAL', 'SCHOOL_WIDE')
@@ -118,6 +122,7 @@ export const managementRoutes: ManagementRoute[] = [
   { to: '/quan-tri/ppct/nhap', label: 'Nhập PPCT', isVisible: canManagePpct },
   { to: '/quan-tri/ppct/ap-dung-chuyen-de', label: 'Áp dụng chuyên đề', isVisible: canManagePpct },
   { to: '/quan-tri/chuong-trinh-dac-thu', label: 'HĐTN-HN & GDĐP', isVisible: canManageSpecialProgrammes },
+  { to: '/quan-tri/lich-su-giang-day', label: 'Nạp lịch sử giảng dạy', isVisible: canManageHistoricalTeaching },
 ];
 
 export function accessibleManagementRoutes(auth: AuthMeResponse | null): ManagementRoute[] {
@@ -126,6 +131,7 @@ export function accessibleManagementRoutes(auth: AuthMeResponse | null): Managem
 
 export const capabilityLabels: Partial<Record<CapabilityKey, string>> = {
   PPCT_MANAGE: 'Quản lý PPCT',
+  TEACHING_EXECUTION_MANAGE: 'Quản lý bằng chứng tiết dạy',
   BUSINESS_CONFIGURATION_MANAGE: 'Quản lý chính sách nghiệp vụ',
   HOMEROOM_ASSIGNMENT_MANAGE: 'Quản lý giáo viên chủ nhiệm',
   ACADEMIC_STRUCTURE_MANAGE: 'Quản lý cấu trúc năm học',
