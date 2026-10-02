@@ -1163,6 +1163,8 @@ assert.match(historicalRow, /curricularTeachingExecutionId\s+String\s+@unique[\s
 assert.match(historicalRow, /execution\s+CurricularTeachingExecution[\s\S]*onDelete:\s*Restrict/u);
 assert.match(historicalRow, /operationalDisposition\s+OperationalLessonDisposition\?[\s\S]*onDelete:\s*Restrict/u);
 assert.match(historicalRow, /makeupSchedule\s+MakeupTeachingSchedule\?[\s\S]*onDelete:\s*Restrict/u);
+assert.match(historicalRow, /ownsOperationalLessonDisposition\s+Boolean\s+@default\(false\)\s+@map\("owns_operational_lesson_disposition"\)/u);
+assert.match(historicalRow, /ownsMakeupTeachingSchedule\s+Boolean\s+@default\(false\)\s+@map\("owns_makeup_teaching_schedule"\)/u);
 assert.doesNotMatch(`${historicalBatch}\n${historicalRow}`, /\b(?:progress|debt|late|completed|completionStatus|manualCursor|rawWorkbook|rawCsv|sourceText|BYTEA)\b/iu);
 
 for (const name of [
@@ -1173,12 +1175,15 @@ for (const name of [
   'historical_teaching_import_rows_batch_row_key',
   'historical_teaching_import_rows_batch_hash_key',
   'historical_teaching_import_rows_kind_shape_check',
+  'historical_teaching_import_rows_owned_provenance_check',
 ]) {
   assert.match(historicalTeachingMigration, new RegExp(`"${name}"`, 'u'), `Historical teaching migration missing ${name}`);
 }
 assert.match(historicalTeachingMigration, /CREATE TYPE "HistoricalTeachingImportKind" AS ENUM \('NORMAL', 'SUBSTITUTION', 'MAKEUP'\)/u);
 assert.match(historicalTeachingMigration, /"historical_teaching_import_batches_source_hash_check"[\s\S]*\^\[0-9a-f\]\{64\}\$/u);
 assert.match(historicalTeachingMigration, /"historical_teaching_import_rows_kind_shape_check"[\s\S]*"kind" = 'NORMAL'[\s\S]*"kind" = 'SUBSTITUTION'[\s\S]*"kind" = 'MAKEUP'/u);
+assert.match(historicalTeachingMigration, /"owns_operational_lesson_disposition" BOOLEAN NOT NULL DEFAULT false/u);
+assert.match(historicalTeachingMigration, /"owns_makeup_teaching_schedule" BOOLEAN NOT NULL DEFAULT false/u);
 for (const fk of historicalTeachingMigration.matchAll(/ADD CONSTRAINT "([^"]+_fkey)"([\s\S]*?);/gu)) {
   assert.match(fk[2], /ON DELETE RESTRICT/u, `${fk[1]} must restrict deletion`);
 }
