@@ -17,7 +17,7 @@ Exact current `main`, branch HEAD and divergence must always be read directly fr
 - `P2-020` PPCT native importer has been implemented and merged, but remains **`MERGED_AWAITING_DOC_SYNC`** until its separate `SYNC-P2-020` is completed.
 - `P6-005` Production VPS topology decision is **`CLOSED` by `SYNC-P6-005`**.
 - Canonical production topology: **`SHARED_VPS`** on the existing Windows Server 2022 host, with strict protected-neighbour isolation.
-- `P6-010` Pre-deploy TLS/HTTP-01 authority is **`READY`** but has not started.
+- `P6-010` Pre-deploy TLS/HTTP-01 authority is **`IN_REVIEW`** on PR #176; exact-head CI #569 is SUCCESS and no production/VPS mutation has occurred.
 - No production deployment, production migration, TLS issuance, Nginx mutation, Scheduled Task mutation, ACL mutation or application restart has been performed by P6-005 or its closure sync.
 
 ## Last formally closed major task
