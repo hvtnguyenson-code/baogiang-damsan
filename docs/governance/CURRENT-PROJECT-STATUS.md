@@ -22,40 +22,35 @@ Exact current `main`, branch HEAD and divergence must always be read directly fr
 
 ## Last formally closed major task
 
-`P0-003` — Pilot scope decision — **`CLOSED`** by `SYNC-P0-003`.
+`P3-010` — Pre-operational historical execution architecture — **`CLOSED`** by `SYNC-P3-010`.
 
 Closure evidence:
 
-- decision: complete `FULL BUSINESS PILOT`;
-- Product Owner decision and completeness clarification: 2026-10-02;
-- parent branch: `docs/p0-003-full-business-pilot`;
-- canonical parent start: `main@cd084f2fc18d9df3fc9abdc952342e27678bf035`;
-- final reviewed parent head: `56863cadbbc83f73fc1cff5ac62b970ac36faa8c`;
-- parent PR: #179 (`docs(governance): select full business pilot scope`);
-- exact-head parent PR CI: #594 / run `36960980161` — **SUCCESS**;
-- normal merge/main: `7b1b29c668b3615c1188d12cc055cd66d03c47e4`;
-- authoritative post-merge main CI: #595 / run `36961819309` — **SUCCESS**;
-- parent diff: 8 documentation/governance files only;
+- parent branch: `docs/p3-010-preop-history-architecture`;
+- canonical parent start: `main@73ec2ee0f9acecc3a02881a8091a0b0b4857c4c5`;
+- accepted architecture: ADR-055;
+- final reviewed parent head: `3688f951204c657a2d241ef65de75ea2fe4b829e`;
+- parent PR: #181 (`docs(history): define pre-operational historical evidence architecture`);
+- exact-head parent PR CI: #598 / run `36977893198` — **SUCCESS**;
+- normal merge/main: `9fdb30995523ec2267499bf3fe7a76902abddba7`;
+- authoritative post-merge main CI: #599 / run `36978888675` — **SUCCESS**;
+- parent diff: 8 documentation files only;
 - independent GitHub diff audit PASS; zero unresolved review threads;
-- T08 public make-up and T23 adjusted-workload re-entry triggers are explicitly fired and retained on the FULL BUSINESS critical path;
-- zero runtime/schema/migration/workflow/deploy/VPS mutation.
+- no residual correction/re-entry task emerged;
+- zero runtime/schema/migration/API/UI/auth/workflow/deploy/VPS mutation.
 
-P0-003 closure fixes the pilot claim and dependency graph only; production remains PRE-OPERATIONAL.
+P3-010 closes architecture only. P3-020 and P3-030 are now READY; production remains PRE-OPERATIONAL.
 
 ## Active / next critical path
 
-### In review
-
-- `P3-010` — Pre-operational historical execution architecture — **`IN_REVIEW`** on `docs/p3-010-preop-history-architecture`; ADR-055 fixes the historical evidence/reconciliation contract. Parent merge/post-merge CI and `SYNC-P3-010` are still required.
-
 ### Ready
 
-- `P4-060` — Workload adjustment architecture — **`READY`**; FULL BUSINESS completeness directive fired T23 and `P1-020` is CLOSED.
+- `P3-020` — pre-operational history ingestion/reconciliation runtime — **`READY`** after `P3-010` closed by `SYNC-P3-010`.
+- `P3-030` — public make-up scheduling architecture — **`READY`**; T08 trigger fired and `P3-010` is CLOSED.
+- `P4-060` — workload adjustment architecture — **`READY`**; FULL BUSINESS completeness directive fired T23 and `P1-020` is CLOSED.
 
 ### Planned behind open dependencies
 
-- `P3-020` — pre-operational history ingestion/reconciliation runtime — **`PLANNED`** behind P3-010.
-- `P3-030` — public make-up scheduling architecture — **`PLANNED`**; T08 trigger fired, waits for P3-010 CLOSED.
 - `P3-031` — public make-up scheduling runtime — **`PLANNED`** behind P3-030.
 - `P4-061` — workload adjustment implementation — **`PLANNED`** behind P4-060.
 
@@ -93,8 +88,8 @@ Detailed domain closure evidence remains in `PRE-PILOT-TASK-REGISTER.md`, ADRs, 
 
 The project is **NOT READY FOR TEACHER PILOT YET**. Remaining registered gaps include:
 
-1. `P3-010` is IN_REVIEW; `P4-060` remains READY.
-2. `P3-020`, `P3-031`, and `P4-061` are unresolved direct dependencies of the complete FULL BUSINESS `P5-010` freeze.
+1. `P3-020`, `P3-030`, and `P4-060` are READY.
+2. `P3-020`, `P3-031`, and `P4-061` remain unresolved direct dependencies of the complete FULL BUSINESS `P5-010` freeze.
 3. Public make-up scheduling T08 and adjusted-workload T23 are mandatory re-entry paths; their triggers fired on 2026-10-02.
 4. PWA production baseline (`P5-020`) remains absent.
 5. Dedicated Báo giảng Telegram integration (`P5-030`) remains absent.

@@ -2,7 +2,7 @@
 
 ## Status
 
-`IN_REVIEW`
+`CLOSED` by `SYNC-P3-010`
 
 ## Canonical start
 
@@ -59,14 +59,17 @@ P3-010/P3-020 do not:
 - create manual PPCT cursor/baseline;
 - authorize production/VPS mutation.
 
-## Closure requirements
+## Closure evidence
 
-P3-010 becomes CLOSED only after:
+- canonical parent start: `main@73ec2ee0f9acecc3a02881a8091a0b0b4857c4c5`;
+- final reviewed parent head: `3688f951204c657a2d241ef65de75ea2fe4b829e`;
+- parent PR: #181 (`docs(history): define pre-operational historical evidence architecture`);
+- exact-head parent PR CI: #598 / run `36977893198` — **SUCCESS**;
+- normal merge/main: `9fdb30995523ec2267499bf3fe7a76902abddba7`;
+- authoritative post-merge main CI: #599 / run `36978888675` — **SUCCESS**;
+- independent GitHub diff audit: **PASS** across 8 documentation files;
+- unresolved review threads: **0**;
+- residual correction/re-entry tasks discovered by closure audit: **none**;
+- runtime/schema/migration/API/UI/auth/workflow/deploy/VPS mutation performed by P3-010: **none**.
 
-1. architecture diff review PASS;
-2. exact-head PR CI SUCCESS;
-3. parent PR normal merge;
-4. authoritative post-merge main CI SUCCESS;
-5. `SYNC-P3-010` records final evidence.
-
-Until then P3-020 and P3-030 remain non-startable.
+P3-010 is formally CLOSED. `P3-020` and `P3-030` are READY. `P3-031` remains PLANNED behind P3-030.

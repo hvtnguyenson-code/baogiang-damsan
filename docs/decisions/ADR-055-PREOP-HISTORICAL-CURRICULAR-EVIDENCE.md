@@ -1,6 +1,6 @@
 # ADR-055 — Pre-operational Historical Curricular Evidence and Reconciliation
 
-- **Status:** Accepted; `P3-010` IN_REVIEW pending parent merge/post-merge CI and `SYNC-P3-010`
+- **Status:** Accepted; `P3-010` CLOSED by `SYNC-P3-010`
 - **Date:** 2026-10-02
 - **Task:** `P3-010`
 - **Traceability:** `T28`, `T29`, `T30`
