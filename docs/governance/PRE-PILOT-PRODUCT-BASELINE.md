@@ -137,7 +137,7 @@ Technical/security configuration remains outside this business control plane, in
 
 ### 4.8 Delayed go-live / pre-operational history
 
-The system may begin official use after the academic year has already started. The operational-start authority is already implemented. P3-010 is formally **CLOSED by `SYNC-P3-010`**; ADR-055 is the canonical controlled retrospective curricular evidence architecture. P3-020 is READY to implement the accepted runtime/UI contract.
+The system may begin official use after the academic year has already started. The operational-start authority is already implemented. P3-010 is formally **CLOSED by `SYNC-P3-010`**; ADR-055 is the canonical controlled retrospective curricular evidence architecture. P3-020 is **IN_REVIEW** on `feat/p3-020-preop-history-runtime`, implementing the bounded CSV/TSV preview/confirm, retained provenance, canonical execution, correction and reconciliation UI/runtime contract.
 
 Required invariants:
 
