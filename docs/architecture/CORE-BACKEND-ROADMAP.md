@@ -112,7 +112,7 @@ Exact task statuses and prerequisites are maintained authoritatively in `PRE-PIL
 
 ### P3 — Historical go-live continuity
 
-1. Pre-operational historical execution/reconciliation architecture (`P3-010`, depends on closed `P1-031`, closed `P2-003`, `P2-020`, and closed `P2-050`).
+1. Pre-operational historical execution/reconciliation architecture (`P3-010`, **IN_REVIEW**, ADR-055): canonical `CurricularTeachingExecution` truth, retained import provenance, historical substitution/make-up reconstruction, no manual PPCT cursor, no-auto-debt.
 2. Controlled historical evidence ingestion/confirmation (`P3-020`).
 3. Preserve current invariant: missing execution alone does not prove debt.
 4. Public make-up runtime remains a separate trigger-based re-entry if required.
@@ -168,7 +168,7 @@ P0-900 (CLOSED)
     │       └── P3-010 (Pre-operational historical execution)
     └── P2-010 (PPCT real-workbook audit, CLOSED by SYNC-P2-010)
         └── P2-020 (PPCT native importer, CLOSED by SYNC-P2-020)
-            └── P3-010 (READY; P1-031 + P2-003 + P2-020 + P2-050 all CLOSED)
+            └── P3-010 (IN_REVIEW; dependencies CLOSED; unlocks P3-020 + P3-030 only after SYNC-P3-010)
 
 Independent tracks:
 - P4-010 (GDĐP/HĐTN programme architecture; `CLOSED` by `SYNC-P4-010`, ADR-050 Accepted)
