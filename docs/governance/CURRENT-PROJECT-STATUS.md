@@ -44,9 +44,12 @@ P0-003 closure fixes the pilot claim and dependency graph only; production remai
 
 ## Active / next critical path
 
-### Ready
+### In review
 
 - `P3-010` — Pre-operational historical execution architecture — **`IN_REVIEW`** on `docs/p3-010-preop-history-architecture`; ADR-055 fixes the historical evidence/reconciliation contract. Parent merge/post-merge CI and `SYNC-P3-010` are still required.
+
+### Ready
+
 - `P4-060` — Workload adjustment architecture — **`READY`**; FULL BUSINESS completeness directive fired T23 and `P1-020` is CLOSED.
 
 ### Planned behind open dependencies
