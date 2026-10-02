@@ -29,7 +29,9 @@ Reason recorded by Product Owner: the first operational use must run the full sy
 - exact multi-teacher staffing/workload;
 - official combined reporting;
 - school-wide effective Teacher Workspace;
-- delayed-go-live historical evidence/reconciliation before freeze.
+- delayed-go-live historical evidence/reconciliation before freeze;
+- public make-up scheduling for real incomplete teaching obligations;
+- adjusted-workload rules (reduction / percentage / override) where official workload figures depend on them.
 
 The choice is a pilot-claim decision, not permission to mutate production.
 
@@ -42,16 +44,24 @@ The choice is a pilot-claim decision, not permission to mutate production.
 - `P2-020`;
 - `P2-061`;
 - `P3-020`;
+- `P3-031`;
+- `P4-061`;
 - `P4-074`.
 
-All are CLOSED except `P3-020`; therefore P5-010 does not become READY merely because this decision is selected.
+The Product Owner clarified that omitted registered business rules must not make real operation or official figures incorrect. Therefore the T08 and T23 triggers are fired:
 
-## Deferred boundaries preserved
+- `P3-030 -> PLANNED` behind `P3-010`;
+- `P3-031 -> PLANNED` behind `P3-030`;
+- `P4-060 -> READY` because `P1-020` is CLOSED;
+- `P4-061 -> PLANNED` behind `P4-060` (and `P1-021` is already CLOSED).
 
-- `P4-060` / `P4-061` remain trigger-gated unless adjusted workload semantics are explicitly required.
-- `P3-030` / `P3-031` remain trigger-gated unless public make-up scheduling is explicitly required.
-- P5/P6 production-readiness work remains separate.
-- Production remains `PRE-OPERATIONAL`.
+P5-010 therefore remains non-ready until `P3-020`, `P3-031`, and `P4-061` are all CLOSED, in addition to its already-closed direct dependencies.
+
+## Bounded non-scope
+
+This completeness directive applies to registered school-business semantics required for correctness. It does not automatically activate unrelated optional expansion tracks (room/location booking, student roster/attendance, active AI integration, generic activity-category catalogue, or signed/archive export beyond current reporting authority).
+
+P5/P6 production-readiness work remains separate and production remains `PRE-OPERATIONAL`.
 
 ## Parent closure requirements
 
