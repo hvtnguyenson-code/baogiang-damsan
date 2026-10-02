@@ -353,6 +353,33 @@ integration('P3-020 historical teaching runtime (PostgreSQL)', () => {
     });
   });
 
+  it('uses date-effective historical subject proof instead of current teacher status for DAY_THAY', async () => {
+    const f = await fixture();
+    await h.prisma.user.update({ where: { id: f.substitute.id }, data: { status: 'DISABLED' } });
+    await h.prisma.staffProfile.update({ where: { userId: f.substitute.id }, data: { isTeachingStaff: false } });
+
+    const sourceText = csv(f, 'DAY_THAY');
+    const inspected = await preview(f, sourceText);
+    expect(inspected.status).toBe(200);
+    expect(inspected.body.canConfirm).toBe(true);
+
+    const committed = await confirm(f, sourceText, inspected.body);
+    expect(committed.status).toBe(200);
+    const execution = await h.prisma.curricularTeachingExecution.findUniqueOrThrow({
+      where: { id: committed.body.rows[0].executionId },
+    });
+    const disposition = await h.prisma.operationalLessonDisposition.findUniqueOrThrow({
+      where: { id: execution.operationalLessonDispositionId! },
+    });
+    expect(disposition).toMatchObject({
+      assignedTeacherUserId: f.substitute.id,
+      eligibilityWasActive: true,
+      eligibilityWasTeachingStaff: true,
+      eligibilitySameSubject: true,
+    });
+    expect(disposition.eligibilityCheckedAt.toISOString()).toBe('2026-08-10T00:45:00.000Z');
+  });
+
   it('creates exact historical make-up provenance for DAY_BU', async () => {
     const f = await fixture();
     const sourceText = csv(f, 'DAY_BU');
@@ -377,7 +404,11 @@ integration('P3-020 historical teaching runtime (PostgreSQL)', () => {
       scheduledTeacherUserId: f.substitute.id,
       targetTimeSlotDefinitionId: f.makeupSlot.id,
       status: 'ACTIVE',
+      eligibilityWasActive: true,
+      eligibilityWasTeachingStaff: true,
+      eligibilitySameSubject: true,
     });
+    expect(schedule.eligibilityCheckedAt.toISOString()).toBe('2026-08-11T00:45:00.000Z');
   });
 
   it('reconciles confirmed/unconfirmed state and supports reverse then lineage replacement', async () => {
