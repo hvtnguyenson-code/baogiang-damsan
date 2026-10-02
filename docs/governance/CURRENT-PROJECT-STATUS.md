@@ -22,24 +22,23 @@ Exact current `main`, branch HEAD and divergence must always be read directly fr
 
 ## Last formally closed major task
 
-`P6-010` — Pre-deploy TLS/HTTP-01 authority — **`CLOSED`** by `SYNC-P6-010`.
+`P2-020` — PPCT native importer implementation — **`CLOSED`** by `SYNC-P2-020`.
 
 Closure evidence:
 
-- topology authority: `SHARED_VPS` with protected-neighbour isolation;
-- parent branch: `feat/p6-010-shared-http01-tls-authority`;
-- canonical parent start: `main@2c09969ebd338af6574d9466d4f07dff415f37a4`;
-- final reviewed parent head: `76eb89ff987b3f61920d12b2d7a56da1136b5378`;
-- parent PR: #176 (`feat(production): add shared HTTP-01 TLS authority`);
-- exact-head parent PR CI: #577 / run `36945168177` — **SUCCESS**;
-- normal merge/main: `edc4d2b92f629e989679063246c815c9ad5ce870`;
-- authoritative post-merge main CI: #578 / run `36945892796` — **SUCCESS**;
-- parent diff: 13 files, bounded to P6-010 repository authority, tests and governance synchronization;
+- parent branch: `feat/ppct-native-importer-020`;
+- canonical parent start: `main@c0b8b622391663e647c43e717920bd607ffd4f20`;
+- final reviewed parent head: `dea50a938decf9bc5e4ca1dbd03ef1a451f91fac`;
+- parent PR: #173 (`feat(ppct): implement native workbook importer`);
+- exact-head parent PR CI: #549 / run `36854571959` — **SUCCESS**;
+- normal merge/main: `2d6cb02d4bf9bb4529e0e8eaf83e10d6a67ef043`;
+- authoritative post-merge main CI: #550 / run `36855749351` — **SUCCESS**;
+- parent diff: 19 scoped files implementing PPCT_V1 import contracts/runtime/UI/test infrastructure;
 - independent GitHub diff audit PASS; zero unresolved review threads;
 - no residual correction/re-entry task emerged from review or CI;
-- zero VPS access, certificate issuance, Nginx production mutation/reload, Scheduled Task mutation, database/ACL/root/app mutation or protected-neighbour mutation.
+- zero schema/migration/deploy/production mutation.
 
-P6-010 closes repository-side HTTP-01/TLS authority only. It does not constitute Stage 1 production evidence or permission to bootstrap/deploy.
+`SYNC-P2-020` is an administrative closure only; it changes no importer semantics.
 
 ## Active / next critical path
 
