@@ -2,7 +2,7 @@
 
 ## Status
 
-`IN_REVIEW`
+`CLOSED` by `SYNC-P0-003`
 
 ## Canonical start
 
@@ -63,14 +63,16 @@ This completeness directive applies to registered school-business semantics requ
 
 P5/P6 production-readiness work remains separate and production remains `PRE-OPERATIONAL`.
 
-## Parent closure requirements
+## Closure evidence
 
-P0-003 becomes `CLOSED` only after:
+- final reviewed parent head: `56863cadbbc83f73fc1cff5ac62b970ac36faa8c`;
+- parent PR: #179 (`docs(governance): select full business pilot scope`);
+- exact-head parent PR CI: #594 / run `36960980161` — **SUCCESS**;
+- normal merge/main: `7b1b29c668b3615c1188d12cc055cd66d03c47e4`;
+- authoritative post-merge main CI: #595 / run `36961819309` — **SUCCESS**;
+- independent GitHub diff audit: **PASS**;
+- unresolved review threads: **0**;
+- residual correction/re-entry tasks discovered by closure audit: **none beyond the already registered T08/T23 mandatory re-entry paths**;
+- production mutation performed by P0-003: **none**.
 
-1. this decision branch is reviewed;
-2. exact-head PR CI succeeds;
-3. parent PR merges normally;
-4. authoritative post-merge main CI succeeds;
-5. `SYNC-P0-003` records final closure evidence.
-
-Until then P0-003 remains `IN_REVIEW`.
+P0-003 is formally CLOSED. The complete FULL BUSINESS pilot claim is canonical. P5-010 remains PLANNED until `P3-020`, `P3-031`, and `P4-061` close.
