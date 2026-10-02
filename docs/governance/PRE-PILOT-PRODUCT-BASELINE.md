@@ -137,7 +137,7 @@ Technical/security configuration remains outside this business control plane, in
 
 ### 4.8 Delayed go-live / pre-operational history
 
-The system may begin official use after the academic year has already started. The operational-start authority is already implemented. P3-010 is formally **CLOSED by `SYNC-P3-010`**; ADR-055 is the canonical controlled retrospective curricular evidence architecture. P3-020 is **IN_REVIEW** on `feat/p3-020-preop-history-runtime`, implementing the bounded CSV/TSV preview/confirm, retained provenance, canonical execution, correction and reconciliation UI/runtime contract.
+The system may begin official use after the academic year has already started. The operational-start authority is already implemented. P3-010 is formally **CLOSED by `SYNC-P3-010`**; ADR-055 is the canonical controlled retrospective curricular evidence architecture. P3-020 is formally **CLOSED by `SYNC-P3-020`**, delivering the bounded CSV/TSV preview/confirm, retained provenance, canonical execution, correction and reconciliation UI/runtime contract.
 
 Required invariants:
 
@@ -239,7 +239,7 @@ The first operational pilot claim therefore includes:
 
 On 2026-10-02 the Product Owner clarified that FULL BUSINESS must be functionally complete wherever omission of a registered rule would make real operation or official figures incorrect. This fires T08 and T23 re-entry.
 
-The direct dependency set registered for `P5-010` is `P0-003`, `P1-032`, `P2-020`, `P2-061`, `P3-020`, `P3-031`, `P4-061`, `P4-074`. Unresolved direct dependencies are `P3-020`, `P3-031`, and `P4-061`, so P5-010 is not yet READY.
+The direct dependency set registered for `P5-010` is `P0-003`, `P1-032`, `P2-020`, `P2-061`, `P3-020`, `P3-031`, `P4-061`, `P4-074`. With `P3-020` CLOSED by `SYNC-P3-020`, unresolved direct dependencies are `P3-031` and `P4-061`, so P5-010 is not yet READY.
 
 `P3-030`/`P3-031` and `P4-060`/`P4-061` are therefore no longer optional deferred tracks for this pilot claim. They are part of the required path.
 
