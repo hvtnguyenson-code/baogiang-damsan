@@ -43,7 +43,7 @@ Accepted decision authority is recorded in `ADR-053-PRODUCTION-VPS-TOPOLOGY.md` 
 
 ## Active / next critical path
 
-### Ready
+### In review
 
 `P6-010` — Pre-deploy TLS/HTTP-01 authority — **`IN_REVIEW`**.
 
