@@ -2,7 +2,7 @@
 
 ## Status
 
-`IN_PROGRESS`
+`IN_REVIEW`
 
 ## Canonical start
 
