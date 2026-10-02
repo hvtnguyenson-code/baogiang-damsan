@@ -203,7 +203,10 @@ export class HistoricalTeachingService {
       if (!prepared.response.canConfirm) {
         throw new UnprocessableEntityException('Dữ liệu lịch sử còn lỗi chặn; hãy sửa và xem trước lại.');
       }
-      if (prepared.response.requestFingerprint !== dto.requestFingerprint) {
+      if (
+        prepared.response.batchRef !== dto.batchRef
+        || prepared.response.requestFingerprint !== dto.requestFingerprint
+      ) {
         throw new ConflictException('Bản xem trước lịch sử đã thay đổi; hãy xem trước lại trước khi xác nhận.');
       }
 
