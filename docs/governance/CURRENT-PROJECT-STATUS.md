@@ -83,14 +83,14 @@ Detailed domain closure evidence remains in `PRE-PILOT-TASK-REGISTER.md`, ADRs, 
 
 The project is **NOT READY FOR TEACHER PILOT YET**. Remaining registered gaps include:
 
-1. `P0-003` must select CORE vs FULL BUSINESS pilot scope before P5 pilot freeze.
-2. `P3-010` is now READY; `P3-020` remains planned behind it.
+1. `P0-003` FULL BUSINESS decision is IN_REVIEW and must complete parent merge/post-merge CI/`SYNC-P0-003` before formal closure.
+2. `P3-010` is READY; `P3-020` remains the only unresolved direct P1-P4 dependency registered for `P5-010` FULL BUSINESS freeze.
 3. PWA production baseline (`P5-020`) remains absent.
 4. Dedicated Báo giảng Telegram integration (`P5-030`) remains absent.
 5. Official production Stage 1 passive discovery/preflight (`P6-020`) remains trigger-gated and has not been executed.
 6. Production bootstrap/first controlled deploy (`P6-030`) has not occurred.
 7. Teacher pilot go-live verification (`P6-050`) has not occurred.
-8. Workload adjustment P4-060/P4-061 remains trigger-gated unless the selected official pilot/reporting scope requires it.
+8. Workload adjustment P4-060/P4-061 remains trigger-gated unless adjusted workload semantics are explicitly required.
 
 ## Production state
 
