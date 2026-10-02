@@ -433,6 +433,32 @@ integration('P3-020 historical teaching runtime (PostgreSQL)', () => {
     expect(await h.prisma.curricularTeachingExecution.count()).toBe(2);
   });
 
+  it('fails closed when a DAY_BU coordinate has multiple retained slot revisions', async () => {
+    const f = await fixture();
+    await h.prisma.timeSlotDefinition.create({
+      data: {
+        academicYearId: f.year.id,
+        weekday: 'TUESDAY',
+        session: 'MORNING',
+        ordinal: 1,
+        revision: 2,
+        displayLabel: 'Tiết bù retained revision 2',
+        startTime: new Date('1970-01-01T08:05:00Z'),
+        endTime: new Date('1970-01-01T08:50:00Z'),
+        isActive: false,
+        allowRegularTeaching: false,
+        allowMakeupTeaching: true,
+        allowSelfStudy: false,
+      },
+    });
+
+    const inspected = await preview(f, csv(f, 'DAY_BU'));
+    expect(inspected.status).toBe(200);
+    expect(inspected.body.canConfirm).toBe(false);
+    expect(inspected.body.rows[0].issues.map((issue: { code: string }) => issue.code))
+      .toContain('HISTORY_MAKEUP_TARGET_SLOT_AMBIGUOUS');
+  });
+
   it('does not reverse an existing substitution overlay reused as historical provenance', async () => {
     const f = await fixture();
     const staffSubject = await h.prisma.staffSubject.findFirstOrThrow({
