@@ -47,6 +47,8 @@ CREATE TABLE "historical_teaching_import_rows" (
     "curricular_teaching_execution_id" UUID NOT NULL,
     "operational_lesson_disposition_id" UUID,
     "makeup_teaching_schedule_id" UUID,
+    "owns_operational_lesson_disposition" BOOLEAN NOT NULL DEFAULT false,
+    "owns_makeup_teaching_schedule" BOOLEAN NOT NULL DEFAULT false,
     "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "historical_teaching_import_rows_pkey" PRIMARY KEY ("id"),
@@ -65,19 +67,27 @@ CREATE TABLE "historical_teaching_import_rows" (
         AND "execution_session" = "source_session"
         AND "execution_ordinal" = "source_ordinal"
         AND "operational_lesson_disposition_id" IS NULL
-        AND "makeup_teaching_schedule_id" IS NULL)
+        AND "makeup_teaching_schedule_id" IS NULL
+        AND NOT "owns_operational_lesson_disposition"
+        AND NOT "owns_makeup_teaching_schedule")
       OR
       ("kind" = 'SUBSTITUTION'
         AND "execution_civil_date" = "source_civil_date"
         AND "execution_session" = "source_session"
         AND "execution_ordinal" = "source_ordinal"
         AND "operational_lesson_disposition_id" IS NOT NULL
-        AND "makeup_teaching_schedule_id" IS NULL)
+        AND "makeup_teaching_schedule_id" IS NULL
+        AND NOT "owns_makeup_teaching_schedule")
       OR
       ("kind" = 'MAKEUP'
         AND "execution_civil_date" >= "source_civil_date"
         AND "operational_lesson_disposition_id" IS NULL
-        AND "makeup_teaching_schedule_id" IS NOT NULL)
+        AND "makeup_teaching_schedule_id" IS NOT NULL
+        AND NOT "owns_operational_lesson_disposition")
+    ),
+    CONSTRAINT "historical_teaching_import_rows_owned_provenance_check" CHECK (
+      (NOT "owns_operational_lesson_disposition" OR "operational_lesson_disposition_id" IS NOT NULL)
+      AND (NOT "owns_makeup_teaching_schedule" OR "makeup_teaching_schedule_id" IS NOT NULL)
     )
 );
 
