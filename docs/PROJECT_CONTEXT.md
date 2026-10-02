@@ -103,7 +103,7 @@ Project hiện đang realign vì một số minimum-core/deferred quyết địn
 - HĐTN CLASS/GRADE/SCHOOL programme planning;
 - exact per-slot special-program staffing;
 - coordinator authority;
-- delayed go-live + historical pre-operational execution;
+- delayed go-live + historical pre-operational execution (`P3-010` IN_REVIEW via ADR-055: expected replay != actual proof; canonical `CurricularTeachingExecution`; `TEACHING_EXECUTION_MANAGE / SCHOOL_WIDE`; retained batch/row provenance; historical substitution/make-up reconstruction; no-auto-debt; reverse+replace correction);
 - PPCT authoritative workbook import;
 - public make-up scheduling for incomplete obligations (T08 re-entry fired; P3-030/P3-031 required);
 - SpecialActivity workload/reporting;
