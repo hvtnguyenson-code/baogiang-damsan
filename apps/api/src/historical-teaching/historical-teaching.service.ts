@@ -814,13 +814,8 @@ export class HistoricalTeachingService {
           const targetDate = parseCivilDate(row.executionCivilDate);
           const targetWeekday = weekdayForCivilDate(targetDate);
           const candidates = slotByCoordinate.get(slotKey(targetWeekday, row.executionSession, row.executionOrdinal)) ?? [];
-          const activeCandidates = candidates.filter((candidate) => candidate.isActive && candidate.allowMakeupTeaching);
           const retainedCandidates = candidates.filter((candidate) => candidate.allowMakeupTeaching);
-          const targetSlot = activeCandidates.length === 1
-            ? activeCandidates[0]!
-            : activeCandidates.length === 0 && retainedCandidates.length === 1
-              ? retainedCandidates[0]!
-              : null;
+          const targetSlot = retainedCandidates.length === 1 ? retainedCandidates[0]! : null;
           if (!targetSlot) {
             issues.push(blocker(row.rowNumber, 'HISTORY_MAKEUP_TARGET_SLOT_AMBIGUOUS', 'Không resolve được đúng một slot dạy bù theo ngày/buổi/tiết.'));
           } else {
