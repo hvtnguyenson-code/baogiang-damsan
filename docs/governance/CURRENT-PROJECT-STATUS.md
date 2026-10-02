@@ -45,7 +45,7 @@ Accepted decision authority is recorded in `ADR-053-PRODUCTION-VPS-TOPOLOGY.md` 
 
 ### Ready
 
-`P6-010` — Pre-deploy TLS/HTTP-01 authority — **`READY`**.
+`P6-010` — Pre-deploy TLS/HTTP-01 authority — **`IN_REVIEW`**.
 
 Required boundary:
 
