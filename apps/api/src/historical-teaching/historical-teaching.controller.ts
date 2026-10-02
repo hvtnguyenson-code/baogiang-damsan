@@ -1,9 +1,10 @@
-import { Body, Controller, Get, HttpCode, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Query, Req, UseGuards } from '@nestjs/common';
 import type {
   HistoricalTeachingConfirmResponse,
   HistoricalTeachingOptionsResponse,
   HistoricalTeachingPreviewResponse,
   HistoricalTeachingReconciliationResponse,
+  HistoricalTeachingReverseResponse,
 } from '@baogiang/contracts/historical-teaching';
 import { CsrfOriginGuard } from '../auth/csrf-origin.guard';
 import type { AuthenticatedRequest } from '../auth/auth.types';
@@ -16,6 +17,7 @@ import {
   HistoricalTeachingReconciliationQueryDto,
   PreviewHistoricalTeachingDto,
 } from './dto';
+import { ReverseTeachingExecutionDto } from '../teaching-executions/dto';
 import { HistoricalTeachingService } from './historical-teaching.service';
 
 @Controller('historical-teaching')
@@ -41,6 +43,17 @@ export class HistoricalTeachingController {
   @UseGuards(SessionAuthGuard, CsrfOriginGuard, CapabilityGuard)
   confirm(@Body() dto: ConfirmHistoricalTeachingDto, @Req() request: AuthenticatedRequest): Promise<HistoricalTeachingConfirmResponse> {
     return this.service.confirm(dto, request);
+  }
+
+  @Post('executions/:id/reverse')
+  @HttpCode(200)
+  @UseGuards(SessionAuthGuard, CsrfOriginGuard, CapabilityGuard)
+  reverse(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ReverseTeachingExecutionDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<HistoricalTeachingReverseResponse> {
+    return this.service.reverse(id, dto, request);
   }
 
   @Get('reconciliation')
