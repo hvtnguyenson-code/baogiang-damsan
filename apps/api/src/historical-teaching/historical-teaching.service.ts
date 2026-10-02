@@ -248,6 +248,8 @@ export class HistoricalTeachingService {
             curricularTeachingExecutionId: execution.id,
             operationalLessonDispositionId: dispositionId,
             makeupTeachingScheduleId: makeupId,
+            ownsOperationalLessonDisposition: preparedRow.disposition.mode === 'CREATE' || preparedRow.disposition.mode === 'REPLACE',
+            ownsMakeupTeachingSchedule: preparedRow.makeup.mode === 'CREATE' || preparedRow.makeup.mode === 'REPLACE',
           },
         });
 
@@ -336,7 +338,7 @@ export class HistoricalTeachingService {
       }
 
       const reversedAt = new Date();
-      if (provenance.operationalLessonDispositionId) {
+      if (provenance.ownsOperationalLessonDisposition && provenance.operationalLessonDispositionId) {
         const disposition = await tx.operationalLessonDisposition.findUnique({ where: { id: provenance.operationalLessonDispositionId } });
         if (!disposition || disposition.status !== OperationalOverlayStatus.ACTIVE) {
           throw new ConflictException('Provenance dạy thay lịch sử không còn ACTIVE đồng bộ với execution.');
@@ -356,7 +358,7 @@ export class HistoricalTeachingService {
         });
       }
 
-      if (provenance.makeupTeachingScheduleId) {
+      if (provenance.ownsMakeupTeachingSchedule && provenance.makeupTeachingScheduleId) {
         const makeup = await tx.makeupTeachingSchedule.findUnique({ where: { id: provenance.makeupTeachingScheduleId } });
         if (!makeup || makeup.status !== OperationalOverlayStatus.ACTIVE) {
           throw new ConflictException('Provenance dạy bù lịch sử không còn ACTIVE đồng bộ với execution.');
@@ -779,6 +781,19 @@ export class HistoricalTeachingService {
             };
           } else {
             issues.push(blocker(row.rowNumber, 'HISTORY_SUBSTITUTION_SOURCE_CONFLICT', 'Nguồn DAY_THAY đang có ý nghĩa vận hành không tương thích.'));
+          }
+
+          if (sourceSlot && eligibilityStaffSubjectId) {
+            await this.assertHistoricalSubstitutionTeacherAvailable(
+              tx,
+              academicYearId,
+              row.sourceCivilDate,
+              sourceSlot,
+              selected.occurrence.occurrenceKey,
+              actualProfile.userId,
+              issues,
+              row.rowNumber,
+            );
           }
         }
 
@@ -1245,6 +1260,71 @@ export class HistoricalTeachingService {
         createdByUserId: actorUserId,
       },
     });
+  }
+
+  private async assertHistoricalSubstitutionTeacherAvailable(
+    tx: Db,
+    academicYearId: string,
+    civilDate: string,
+    sourceSlot: Slot,
+    sourceOccurrenceKey: string,
+    actualTeacherUserId: string,
+    issues: HistoricalTeachingIssue[],
+    rowNumber: number,
+  ): Promise<void> {
+    const structural = await this.structural.resolveInTransaction(tx, {
+      academicYearId,
+      civilDate: civilDate as `${number}-${number}-${number}`,
+    });
+
+    for (const occurrence of structural.normalOccurrences) {
+      if (occurrence.occurrenceKey === sourceOccurrenceKey) continue;
+      const slot = await tx.timeSlotDefinition.findUnique({ where: { id: occurrence.timeSlot.id } });
+      if (!slot || !intervalsOverlap(sourceSlot, slot)) continue;
+      const teacherOccupant = occurrence.effectiveKind === 'BASE_TIMETABLE'
+        ? occurrence.responsibleTeacherUserId
+        : occurrence.effectiveKind === 'OPERATIONAL_DISPOSITION'
+          && ['SAME_SUBJECT_SUBSTITUTION', 'DIFFERENT_SUBJECT_SUPERVISION'].includes(occurrence.disposition?.dispositionType ?? '')
+          ? occurrence.disposition?.assignedTeacherUserId
+          : null;
+      if (teacherOccupant === actualTeacherUserId) {
+        issues.push(blocker(
+          rowNumber,
+          'HISTORY_SUBSTITUTION_TEACHER_COLLISION',
+          'Giáo viên DAY_THAY đang có occupancy TKB canonical khác cùng thời gian.',
+        ));
+        return;
+      }
+    }
+
+    for (const activity of structural.specialActivityOccurrences) {
+      const overlaps = activity.timeSlots.some((slot) => {
+        const start = new Date(`1970-01-01T${slot.startTime}Z`);
+        const end = new Date(`1970-01-01T${slot.endTime}Z`);
+        return intervalsOverlap(sourceSlot, { startTime: start, endTime: end });
+      });
+      if (overlaps && activity.staffing.some((staffing) => staffing.scheduledTeacherUserId === actualTeacherUserId)) {
+        issues.push(blocker(
+          rowNumber,
+          'HISTORY_SUBSTITUTION_TEACHER_ACTIVITY_COLLISION',
+          'Giáo viên DAY_THAY đang có SpecialActivity cùng thời gian.',
+        ));
+        return;
+      }
+    }
+
+    for (const makeup of structural.makeupOccurrences) {
+      if (makeup.target.scheduledTeacherUserId !== actualTeacherUserId) continue;
+      const slot = await tx.timeSlotDefinition.findUnique({ where: { id: makeup.target.targetTimeSlotDefinitionId } });
+      if (slot && intervalsOverlap(sourceSlot, slot)) {
+        issues.push(blocker(
+          rowNumber,
+          'HISTORY_SUBSTITUTION_TEACHER_MAKEUP_COLLISION',
+          'Giáo viên DAY_THAY đang có lịch dạy bù ACTIVE cùng thời gian.',
+        ));
+        return;
+      }
+    }
   }
 
   private async assertHistoricalMakeupTargetAvailable(
