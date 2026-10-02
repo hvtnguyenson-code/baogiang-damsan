@@ -137,7 +137,7 @@ Dependency cells below contain **task IDs only**. Conditions/evidence triggers b
 
 | Task | Status | Depends on | Deliverable / closure | Notes |
 |---|---|---|---|---|
-| `P5-010` Pilot business scope + cross-domain freeze | `PLANNED` | `P0-003` | End-to-end regression closure for the exact chosen pilot claim; exact additional P1-P4 dependencies must be registered when P0-003 closes | CORE vs FULL decision controls required domain set; no hidden partial-total claim |
+| `P5-010` Pilot business scope + cross-domain freeze | `PLANNED` | `P0-003`, `P1-032`, `P2-020`, `P2-061`, `P3-020`, `P4-074` | End-to-end regression closure for the selected `FULL BUSINESS PILOT`: normal curricular PPCT/TKB/execution/reporting + operational-start/history + Teacher Workspace + GDĐP/HĐTN-HN + homeroom resolution + exact multi-teacher workload + official combined reporting | P0-003 is IN_REVIEW; all direct dependencies are CLOSED except P3-020, so P5-010 is not READY yet. P4-060/P4-061 remain separate trigger-gated adjusted-workload scope |
 | `P5-020` PWA production baseline | `PLANNED` | `P5-010` | Manifest/icons/service worker/update strategy; no offline caching of sensitive `/api`/auth/reporting data | T32 |
 | `P5-030` Dedicated Báo giảng Telegram integration | `PLANNED` | `P5-010` | Dedicated bot/token/webhook; one-time short-lived linking; idempotent notifications; no DamSanV5 bot reuse | T33 |
 
