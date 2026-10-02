@@ -11,6 +11,7 @@ export class PreviewHistoricalTeachingDto {
 export class ConfirmHistoricalTeachingDto {
   @IsUUID() academicYearId!: string;
   @IsString() @MaxLength(524288) sourceText!: string;
+  @text() @IsString() @Matches(/^[0-9a-f]{16}$/u) batchRef!: string;
   @text() @IsString() @Matches(/^[0-9a-f]{64}$/u) requestFingerprint!: string;
   @text() @IsString() @Matches(/\S/u) @MaxLength(200) requestKey!: string;
 }
