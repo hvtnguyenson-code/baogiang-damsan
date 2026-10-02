@@ -29,7 +29,7 @@ describe('historical teaching CSV parser', () => {
   });
 
   it('accepts tab-separated rows copied directly from a spreadsheet', () => {
-    const tsvHeader = header.replaceAll(',', '\t');
+    const tsvHeader = header.replace(/,/gu, '\t');
     const result = parseHistoricalTeachingCsv([
       tsvHeader,
       ['10A1', 'DIA', '2026-09-07', 'SANG', '1', 'GV001', 'BINH_THUONG', '', '', '', 'Dán từ Excel'].join('\t'),
