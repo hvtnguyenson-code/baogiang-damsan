@@ -81,6 +81,11 @@ CREATE TABLE "historical_teaching_import_rows" (
       OR
       ("kind" = 'MAKEUP'
         AND "execution_civil_date" >= "source_civil_date"
+        AND NOT (
+          "execution_civil_date" = "source_civil_date"
+          AND "execution_session" = "source_session"
+          AND "execution_ordinal" = "source_ordinal"
+        )
         AND "operational_lesson_disposition_id" IS NULL
         AND "makeup_teaching_schedule_id" IS NOT NULL
         AND NOT "owns_operational_lesson_disposition")
