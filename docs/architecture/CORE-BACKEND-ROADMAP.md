@@ -130,7 +130,7 @@ Exact task statuses and prerequisites are maintained authoritatively in `PRE-PIL
 
 ### P5 — Pilot product closure
 
-1. Product Owner selected `FULL BUSINESS PILOT` under P0-003 (IN_REVIEW pending formal closure).
+1. Product Owner selected complete `FULL BUSINESS PILOT`; P0-003 is CLOSED by `SYNC-P0-003`.
 2. P5-010 freezes the full cross-domain claim with direct dependencies `P0-003`, `P1-032`, `P2-020`, `P2-061`, `P3-020`, `P3-031`, `P4-061`, `P4-074`.
 3. Cross-domain regression/business freeze must include normal curricular workflows plus historical go-live reconciliation, public make-up scheduling, adjusted workload, GDĐP/HĐTN-HN, date-effective homeroom resolution, exact multi-teacher workload and official combined reporting.
 4. T08 make-up re-entry is required: P3-010 -> P3-030 -> P3-031, with P3-020 also closing historical ingestion/reconciliation.
