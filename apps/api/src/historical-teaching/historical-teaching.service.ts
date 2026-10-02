@@ -489,7 +489,7 @@ export class HistoricalTeachingService {
         const responsible = await this.displayName(tx, occurrence.responsibleTeacherUserId);
         const candidates = active.filter((execution) => execution.sourceNormalOccurrenceKey === occurrence.occurrenceKey);
         candidates.forEach((execution) => seenExecutionIds.add(execution.id));
-        const findings = allocation.findings
+        const findings: string[] = allocation.findings
           .filter((finding) => finding.occurrenceKey === occurrence.occurrenceKey)
           .map((finding) => finding.code);
 
