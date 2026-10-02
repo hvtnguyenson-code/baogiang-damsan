@@ -53,7 +53,7 @@ Required boundary:
 - use shared-host/protected-neighbour semantics;
 - preserve separate Báo giảng application root, runtime port, Scheduled Task/startup authority, environment/secrets boundary, logs/backups, PostgreSQL database/role, Nginx managed include/server block, domain, certificate and renewal lifecycle;
 - do not mutate DamSanV5 / Quản lí nội trú neighbour resources implicitly;
-- `READY` does not authorize VPS mutation; P6-010 itself remains a separately reviewed repository task.
+- `IN_REVIEW` does not authorize VPS mutation; P6-010 remains unmerged/unclosed until parent review, merge, authoritative post-merge CI and `SYNC-P6-010` complete.
 
 ### Merged awaiting mandatory closure sync
 
