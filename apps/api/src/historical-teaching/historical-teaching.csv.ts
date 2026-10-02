@@ -204,6 +204,15 @@ export function parseHistoricalTeachingCsv(sourceText: string): ParsedHistorical
       issues.push(issue(rowNumber, 'HISTORY_MAKEUP_BEFORE_SOURCE', 'Ngày dạy bù không được trước ngày nghĩa vụ gốc.'));
       continue;
     }
+    if (
+      importKind === 'MAKEUP'
+      && executionDateRaw === values.NGAY_GOC
+      && executionSession === sourceSession
+      && executionOrdinal === sourceOrdinal
+    ) {
+      issues.push(issue(rowNumber, 'HISTORY_MAKEUP_TARGET_SAME_AS_SOURCE', 'DAY_BU phải diễn ra ở một ngày/buổi/tiết khác tiết gốc.'));
+      continue;
+    }
 
     const normalized = {
       rowNumber,
