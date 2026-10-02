@@ -22,30 +22,25 @@ Exact current `main`, branch HEAD and divergence must always be read directly fr
 
 ## Last formally closed major task
 
-`P3-010` — Pre-operational historical execution architecture — **`CLOSED`** by `SYNC-P3-010`.
+`P3-020` — Pre-operational history ingestion/reconciliation runtime — **`CLOSED`** by `SYNC-P3-020`.
 
 Closure evidence:
 
-- parent branch: `docs/p3-010-preop-history-architecture`;
-- canonical parent start: `main@73ec2ee0f9acecc3a02881a8091a0b0b4857c4c5`;
-- accepted architecture: ADR-055;
-- final reviewed parent head: `3688f951204c657a2d241ef65de75ea2fe4b829e`;
-- parent PR: #181 (`docs(history): define pre-operational historical evidence architecture`);
-- exact-head parent PR CI: #598 / run `36977893198` — **SUCCESS**;
-- normal merge/main: `9fdb30995523ec2267499bf3fe7a76902abddba7`;
-- authoritative post-merge main CI: #599 / run `36978888675` — **SUCCESS**;
-- parent diff: 8 documentation files only;
-- independent GitHub diff audit PASS; zero unresolved review threads;
-- no residual correction/re-entry task emerged;
-- zero runtime/schema/migration/API/UI/auth/workflow/deploy/VPS mutation.
+- parent branch: `feat/p3-020-preop-history-runtime`;
+- canonical parent start: `main@2ffcb9db61017a179c3f26662130f05d341514fa`;
+- final reviewed parent head: `e188a421fb1be6e79e3a1816fef4969eb55e916e`;
+- parent PR: #183 (`feat(history): implement pre-operational teaching ingestion`);
+- exact-head parent PR CI: #612 / run `37025720391` — **SUCCESS**;
+- normal merge/main: `c20e6950327d79844117c18416b904e23436df1e`;
+- authoritative post-merge main CI: #613 / run `37028176259` — **SUCCESS**;
+- parent diff: 26 files, +3605 / -16;
+- independent GitHub diff audit: **PASS**; zero unresolved review threads;
+- no residual correction/re-entry task emerged from P3-020 closure audit;
+- no production/VPS/deploy mutation; production remains PRE-OPERATIONAL.
 
-P3-010 closes architecture only. P3-020 and P3-030 are now READY; production remains PRE-OPERATIONAL.
+P3-020 is formally closed. P3-030 and P4-060 remain READY; P3-031 remains PLANNED behind P3-030.
 
 ## Active / next critical path
-
-### In review
-
-- `P3-020` — pre-operational history ingestion/reconciliation runtime — **`IN_REVIEW`** on `feat/p3-020-preop-history-runtime`; implementation follows ADR-055 and includes retained provenance, canonical execution creation, reconciliation and bounded management UI. Parent review/CI/merge/post-merge CI/`SYNC-P3-020` remain required.
 
 ### Ready
 
@@ -91,8 +86,8 @@ Detailed domain closure evidence remains in `PRE-PILOT-TASK-REGISTER.md`, ADRs, 
 
 The project is **NOT READY FOR TEACHER PILOT YET**. Remaining registered gaps include:
 
-1. `P3-020` is IN_REVIEW; `P3-030` and `P4-060` remain READY.
-2. `P3-020`, `P3-031`, and `P4-061` remain unresolved direct dependencies of the complete FULL BUSINESS `P5-010` freeze.
+1. `P3-030` and `P4-060` remain READY; `P3-020` is CLOSED by `SYNC-P3-020`.
+2. `P3-031` and `P4-061` remain unresolved direct dependencies of the complete FULL BUSINESS `P5-010` freeze.
 3. Public make-up scheduling T08 and adjusted-workload T23 are mandatory re-entry paths; their triggers fired on 2026-10-02.
 4. PWA production baseline (`P5-020`) remains absent.
 5. Dedicated Báo giảng Telegram integration (`P5-030`) remains absent.
