@@ -90,7 +90,7 @@ Repository hiện có các boundary đã được review/version hóa và không
 
 ## Pilot scope authority — 2026-10-02
 
-Product Owner đã chọn **`FULL BUSINESS PILOT`** cho P0-003. Pilot đầu tiên phải bao gồm nghiệp vụ thường + GDĐP + HĐTN-HN + GVCN theo hiệu lực + multi-teacher workload + báo cáo kết hợp chính thức. P5-010 được khóa dependency trực tiếp vào `P0-003`, `P1-032`, `P2-020`, `P2-061`, `P3-020`, `P4-074`; hiện P3-020 là dependency duy nhất trong nhóm này chưa CLOSED. `P4-060`/`P4-061` không tự kích hoạt bởi lựa chọn FULL BUSINESS và vẫn chỉ mở nếu cần adjusted workload (giảm trừ/%/override). Quyết định đang IN_REVIEW cho tới parent merge/post-merge CI/`SYNC-P0-003`.
+Product Owner đã chọn **`FULL BUSINESS PILOT`** cho P0-003 và sau đó chốt rõ yêu cầu **đầy đủ tính năng nghiệp vụ thực tế; không được để thiếu rule đã đăng ký nếu sự thiếu hụt có thể làm vận hành hoặc số liệu chính thức sai lệch**. Vì vậy T08 dạy bù và T23 adjusted workload đã FIRE trigger: `P3-030/P3-031` re-enter, `P4-060` READY và `P4-061` re-enter. P5-010 được khóa dependency trực tiếp vào `P0-003`, `P1-032`, `P2-020`, `P2-061`, `P3-020`, `P3-031`, `P4-061`, `P4-074`; hiện các dependency chưa CLOSED là `P3-020`, `P3-031`, `P4-061`. Quyết định đang IN_REVIEW cho tới parent merge/post-merge CI/`SYNC-P0-003`.
 
 Chi tiết KEEP/REALIGN/RESTORE nằm trong `docs/governance/PRE-PILOT-TRACEABILITY-MATRIX.md`.
 
