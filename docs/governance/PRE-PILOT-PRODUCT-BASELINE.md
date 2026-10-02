@@ -217,7 +217,7 @@ Required invariants:
 
 ## 5. Selected first operational pilot scope
 
-On 2026-10-02 the Product Owner selected **FULL BUSINESS PILOT** under P0-003. The decision is recorded by ADR-054 and remains `IN_REVIEW` until parent merge/post-merge CI and `SYNC-P0-003` complete.
+On 2026-10-02 the Product Owner selected **FULL BUSINESS PILOT** under P0-003. The decision is recorded by ADR-054 and is formally **CLOSED by `SYNC-P0-003`** after PR #179, exact-head CI #594, merge/main `7b1b29c668b3615c1188d12cc055cd66d03c47e4` and post-merge CI #595.
 
 The first operational pilot claim therefore includes:
 

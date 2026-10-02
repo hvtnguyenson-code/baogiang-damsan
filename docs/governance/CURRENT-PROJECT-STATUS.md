@@ -22,23 +22,25 @@ Exact current `main`, branch HEAD and divergence must always be read directly fr
 
 ## Last formally closed major task
 
-`P2-020` — PPCT native importer implementation — **`CLOSED`** by `SYNC-P2-020`.
+`P0-003` — Pilot scope decision — **`CLOSED`** by `SYNC-P0-003`.
 
 Closure evidence:
 
-- parent branch: `feat/ppct-native-importer-020`;
-- canonical parent start: `main@c0b8b622391663e647c43e717920bd607ffd4f20`;
-- final reviewed parent head: `dea50a938decf9bc5e4ca1dbd03ef1a451f91fac`;
-- parent PR: #173 (`feat(ppct): implement native workbook importer`);
-- exact-head parent PR CI: #549 / run `36854571959` — **SUCCESS**;
-- normal merge/main: `2d6cb02d4bf9bb4529e0e8eaf83e10d6a67ef043`;
-- authoritative post-merge main CI: #550 / run `36855749351` — **SUCCESS**;
-- parent diff: 19 scoped files implementing PPCT_V1 import contracts/runtime/UI/test infrastructure;
+- decision: complete `FULL BUSINESS PILOT`;
+- Product Owner decision and completeness clarification: 2026-10-02;
+- parent branch: `docs/p0-003-full-business-pilot`;
+- canonical parent start: `main@cd084f2fc18d9df3fc9abdc952342e27678bf035`;
+- final reviewed parent head: `56863cadbbc83f73fc1cff5ac62b970ac36faa8c`;
+- parent PR: #179 (`docs(governance): select full business pilot scope`);
+- exact-head parent PR CI: #594 / run `36960980161` — **SUCCESS**;
+- normal merge/main: `7b1b29c668b3615c1188d12cc055cd66d03c47e4`;
+- authoritative post-merge main CI: #595 / run `36961819309` — **SUCCESS**;
+- parent diff: 8 documentation/governance files only;
 - independent GitHub diff audit PASS; zero unresolved review threads;
-- no residual correction/re-entry task emerged from review or CI;
-- zero schema/migration/deploy/production mutation.
+- T08 public make-up and T23 adjusted-workload re-entry triggers are explicitly fired and retained on the FULL BUSINESS critical path;
+- zero runtime/schema/migration/workflow/deploy/VPS mutation.
 
-`SYNC-P2-020` is an administrative closure only; it changes no importer semantics.
+P0-003 closure fixes the pilot claim and dependency graph only; production remains PRE-OPERATIONAL.
 
 ## Active / next critical path
 
@@ -56,7 +58,6 @@ Closure evidence:
 
 ### Trigger-gated / decision-blocked
 - `P0-002` — stale PR #11 hosting-portability direction: **`BLOCKED_DECISION`**.
-- `P0-003` — pilot scope: **`IN_REVIEW`** with Product Owner decision `FULL BUSINESS PILOT`; parent merge/post-merge CI and `SYNC-P0-003` are still required before CLOSED.
 - `P0-004` — GitHub main branch protection/ruleset: **`BLOCKED_DECISION`**.
 - `P6-020` — actual Stage 1 passive production evidence: **`DEFERRED_WITH_TRIGGER`** until the exact business/pilot build is an approved production candidate and upstream P6 authority is closed.
 
@@ -89,15 +90,14 @@ Detailed domain closure evidence remains in `PRE-PILOT-TASK-REGISTER.md`, ADRs, 
 
 The project is **NOT READY FOR TEACHER PILOT YET**. Remaining registered gaps include:
 
-1. `P0-003` FULL BUSINESS decision is IN_REVIEW and must complete parent merge/post-merge CI/`SYNC-P0-003` before formal closure.
-2. `P3-010` and `P4-060` are READY.
-3. `P3-020`, `P3-031`, and `P4-061` are unresolved direct dependencies of the complete FULL BUSINESS `P5-010` freeze.
-4. Public make-up scheduling T08 and adjusted-workload T23 are no longer deferred; their re-entry triggers fired on 2026-10-02.
-5. PWA production baseline (`P5-020`) remains absent.
-6. Dedicated Báo giảng Telegram integration (`P5-030`) remains absent.
-7. Official production Stage 1 passive discovery/preflight (`P6-020`) remains trigger-gated and has not been executed.
-8. Production bootstrap/first controlled deploy (`P6-030`) has not occurred.
-9. Teacher pilot go-live verification (`P6-050`) has not occurred.
+1. `P3-010` and `P4-060` are READY.
+2. `P3-020`, `P3-031`, and `P4-061` are unresolved direct dependencies of the complete FULL BUSINESS `P5-010` freeze.
+3. Public make-up scheduling T08 and adjusted-workload T23 are mandatory re-entry paths; their triggers fired on 2026-10-02.
+4. PWA production baseline (`P5-020`) remains absent.
+5. Dedicated Báo giảng Telegram integration (`P5-030`) remains absent.
+6. Official production Stage 1 passive discovery/preflight (`P6-020`) remains trigger-gated and has not been executed.
+7. Production bootstrap/first controlled deploy (`P6-030`) has not occurred.
+8. Teacher pilot go-live verification (`P6-050`) has not occurred.
 
 ## Production state
 

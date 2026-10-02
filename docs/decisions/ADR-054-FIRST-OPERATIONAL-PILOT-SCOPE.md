@@ -1,6 +1,6 @@
 # ADR-054 — First Operational Pilot Scope
 
-- **Status:** Accepted; `P0-003` IN_REVIEW pending parent merge/post-merge CI and `SYNC-P0-003`
+- **Status:** Accepted; `P0-003` CLOSED by `SYNC-P0-003`
 - **Date:** 2026-10-02
 - **Task:** `P0-003` Pilot scope decision: CORE vs FULL BUSINESS
 - **Decision:** `FULL BUSINESS PILOT`
