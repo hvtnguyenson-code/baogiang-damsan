@@ -96,6 +96,12 @@ export interface HistoricalTeachingReconciliationRow {
   findings: string[];
 }
 
+export interface HistoricalTeachingReverseResponse {
+  outcome: 'REVERSED' | 'IDEMPOTENT_REPLAY';
+  executionId: string;
+  updatedAt: string;
+}
+
 export interface HistoricalTeachingReconciliationResponse {
   profile: typeof HISTORICAL_TEACHING_PROFILE;
   academicYear: { id: string; code: string; name: string };
