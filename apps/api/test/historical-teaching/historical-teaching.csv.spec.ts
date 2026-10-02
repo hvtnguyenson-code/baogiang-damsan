@@ -28,6 +28,24 @@ describe('historical teaching CSV parser', () => {
     expect(result.rows[0]!.rowRef).toMatch(/^[0-9a-f]{64}$/u);
   });
 
+  it('accepts tab-separated rows copied directly from a spreadsheet', () => {
+    const tsvHeader = header.replaceAll(',', '\t');
+    const result = parseHistoricalTeachingCsv([
+      tsvHeader,
+      ['10A1', 'DIA', '2026-09-07', 'SANG', '1', 'GV001', 'BINH_THUONG', '', '', '', 'Dán từ Excel'].join('\t'),
+    ].join('\n'));
+
+    expect(result.issues).toEqual([]);
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]).toMatchObject({
+      schoolClassCode: '10A1',
+      subjectCode: 'DIA',
+      kind: 'NORMAL',
+      actualTeacherStaffCode: 'GV001',
+      note: 'Dán từ Excel',
+    });
+  });
+
   it('requires an explicit target for DAY_BU', () => {
     const result = parseHistoricalTeachingCsv([
       header,
