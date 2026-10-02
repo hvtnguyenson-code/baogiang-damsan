@@ -43,9 +43,12 @@ P3-010 closes architecture only. P3-020 and P3-030 are now READY; production rem
 
 ## Active / next critical path
 
+### In review
+
+- `P3-020` — pre-operational history ingestion/reconciliation runtime — **`IN_REVIEW`** on `feat/p3-020-preop-history-runtime`; implementation follows ADR-055 and includes retained provenance, canonical execution creation, reconciliation and bounded management UI. Parent review/CI/merge/post-merge CI/`SYNC-P3-020` remain required.
+
 ### Ready
 
-- `P3-020` — pre-operational history ingestion/reconciliation runtime — **`READY`** after `P3-010` closed by `SYNC-P3-010`.
 - `P3-030` — public make-up scheduling architecture — **`READY`**; T08 trigger fired and `P3-010` is CLOSED.
 - `P4-060` — workload adjustment architecture — **`READY`**; FULL BUSINESS completeness directive fired T23 and `P1-020` is CLOSED.
 
@@ -88,7 +91,7 @@ Detailed domain closure evidence remains in `PRE-PILOT-TASK-REGISTER.md`, ADRs, 
 
 The project is **NOT READY FOR TEACHER PILOT YET**. Remaining registered gaps include:
 
-1. `P3-020`, `P3-030`, and `P4-060` are READY.
+1. `P3-020` is IN_REVIEW; `P3-030` and `P4-060` remain READY.
 2. `P3-020`, `P3-031`, and `P4-061` remain unresolved direct dependencies of the complete FULL BUSINESS `P5-010` freeze.
 3. Public make-up scheduling T08 and adjusted-workload T23 are mandatory re-entry paths; their triggers fired on 2026-10-02.
 4. PWA production baseline (`P5-020`) remains absent.
