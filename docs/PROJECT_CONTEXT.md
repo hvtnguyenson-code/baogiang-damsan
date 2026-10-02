@@ -105,8 +105,9 @@ Project hiện đang realign vì một số minimum-core/deferred quyết địn
 - coordinator authority;
 - delayed go-live + historical pre-operational execution;
 - PPCT authoritative workbook import;
+- public make-up scheduling for incomplete obligations (T08 re-entry fired; P3-030/P3-031 required);
 - SpecialActivity workload/reporting;
-- deferred WorkloadAdjustmentRule when official adjusted workload is in scope;
+- WorkloadAdjustmentRule for official adjusted workload (T23 re-entry fired; P4-060/P4-061 required);
 - PWA/Telegram pilot integration;
 - first-cert HTTP-01/TLS authority and actual VPS evidence.
 
