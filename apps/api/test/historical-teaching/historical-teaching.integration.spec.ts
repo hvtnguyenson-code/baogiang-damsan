@@ -377,7 +377,7 @@ integration('P3-020 historical teaching runtime (PostgreSQL)', () => {
       eligibilityWasTeachingStaff: true,
       eligibilitySameSubject: true,
     });
-    expect(disposition.eligibilityCheckedAt.toISOString()).toBe('2026-08-10T00:45:00.000Z');
+    expect(disposition.eligibilityCheckedAt?.toISOString()).toBe('2026-08-10T00:45:00.000Z');
   });
 
   it('creates exact historical make-up provenance for DAY_BU', async () => {
