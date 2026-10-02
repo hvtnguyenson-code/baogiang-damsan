@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   ConflictException,
   HttpException,
   Injectable,
@@ -123,14 +122,6 @@ function internalRequestKey(family: string, requestKey: string, rowRef: string):
 
 function blocker(rowNumber: number, code: string, message: string): HistoricalTeachingIssue {
   return { severity: 'BLOCKER', code, message, rowNumber };
-}
-
-function globalBlocker(code: string, message: string): HistoricalTeachingIssue {
-  return { severity: 'BLOCKER', code, message };
-}
-
-function uniqueById<T extends { id: string }>(items: T[]): T[] {
-  return [...new Map(items.map((item) => [item.id, item])).values()];
 }
 
 @Injectable()
@@ -497,7 +488,7 @@ export class HistoricalTeachingService {
           .map((finding) => finding.code);
 
         let status: HistoricalTeachingReconciliationRow['status'];
-        let execution = candidates[0] ?? null;
+        const execution = candidates[0] ?? null;
         if (
           distributed.allocationStatus !== 'ALLOCATED'
           || !distributed.expectedPpctItem
@@ -1292,8 +1283,6 @@ export class HistoricalTeachingService {
 
     for (const activity of structural.specialActivityOccurrences) {
       const overlaps = activity.timeSlots.some((slot) => {
-        const candidate = slot.id ? null : null;
-        void candidate;
         const start = new Date(`1970-01-01T${slot.startTime}Z`);
         const end = new Date(`1970-01-01T${slot.endTime}Z`);
         return intervalsOverlap(targetSlot, { startTime: start, endTime: end });
