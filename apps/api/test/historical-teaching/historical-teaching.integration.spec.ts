@@ -234,11 +234,22 @@ integration('P3-020 historical teaching runtime (PostgreSQL)', () => {
       .send({ academicYearId: f.year.id, sourceText });
   }
 
-  async function confirm(f: Awaited<ReturnType<typeof fixture>>, sourceText: string, fingerprint: string, requestKey = randomUUID()) {
+  async function confirm(
+    f: Awaited<ReturnType<typeof fixture>>,
+    sourceText: string,
+    previewResult: { batchRef: string; requestFingerprint: string },
+    requestKey = randomUUID(),
+  ) {
     return f.manager.agent
       .post('/api/historical-teaching/confirm')
       .set('Origin', testOrigin)
-      .send({ academicYearId: f.year.id, sourceText, requestFingerprint: fingerprint, requestKey });
+      .send({
+        academicYearId: f.year.id,
+        sourceText,
+        batchRef: previewResult.batchRef,
+        requestFingerprint: previewResult.requestFingerprint,
+        requestKey,
+      });
   }
 
   it('confirms NORMAL pre-operational evidence into canonical execution and retains provenance', async () => {
@@ -254,7 +265,7 @@ integration('P3-020 historical teaching runtime (PostgreSQL)', () => {
     });
 
     const requestKey = randomUUID();
-    const committed = await confirm(f, sourceText, inspected.body.requestFingerprint, requestKey);
+    const committed = await confirm(f, sourceText, inspected.body, requestKey);
     expect(committed.status).toBe(200);
     expect(committed.body.outcome).toBe('CREATED');
 
@@ -275,10 +286,25 @@ integration('P3-020 historical teaching runtime (PostgreSQL)', () => {
     expect(provenance.batch.operationalStartPolicyVersionId).toBe(f.policyVersion.id);
     expect(provenance.batch.sourceSha256).toMatch(/^[0-9a-f]{64}$/u);
 
-    const replay = await confirm(f, sourceText, inspected.body.requestFingerprint, requestKey);
+    const replay = await confirm(f, sourceText, inspected.body, requestKey);
     expect(replay.status).toBe(200);
     expect(replay.body.outcome).toBe('IDEMPOTENT_REPLAY');
     expect(replay.body.rows[0].executionId).toBe(execution.id);
+
+    const wrongBatchRef = inspected.body.batchRef.startsWith('0')
+      ? `1${inspected.body.batchRef.slice(1)}`
+      : `0${inspected.body.batchRef.slice(1)}`;
+    const mismatchedReplay = await f.manager.agent
+      .post('/api/historical-teaching/confirm')
+      .set('Origin', testOrigin)
+      .send({
+        academicYearId: f.year.id,
+        sourceText,
+        batchRef: wrongBatchRef,
+        requestFingerprint: inspected.body.requestFingerprint,
+        requestKey,
+      });
+    expect(mismatchedReplay.status).toBe(409);
     expect(await h.prisma.curricularTeachingExecution.count()).toBe(1);
   });
 
@@ -306,7 +332,7 @@ integration('P3-020 historical teaching runtime (PostgreSQL)', () => {
     expect(inspected.status).toBe(200);
     expect(inspected.body.canConfirm).toBe(true);
 
-    const committed = await confirm(f, sourceText, inspected.body.requestFingerprint);
+    const committed = await confirm(f, sourceText, inspected.body);
     expect(committed.status).toBe(200);
     const execution = await h.prisma.curricularTeachingExecution.findUniqueOrThrow({
       where: { id: committed.body.rows[0].executionId },
@@ -332,7 +358,7 @@ integration('P3-020 historical teaching runtime (PostgreSQL)', () => {
     expect(inspected.status).toBe(200);
     expect(inspected.body.canConfirm).toBe(true);
 
-    const committed = await confirm(f, sourceText, inspected.body.requestFingerprint);
+    const committed = await confirm(f, sourceText, inspected.body);
     expect(committed.status).toBe(200);
     const execution = await h.prisma.curricularTeachingExecution.findUniqueOrThrow({
       where: { id: committed.body.rows[0].executionId },
@@ -366,7 +392,7 @@ integration('P3-020 historical teaching runtime (PostgreSQL)', () => {
     expect(before.body.counts.confirmed).toBe(0);
 
     const inspected = await preview(f, sourceText);
-    const committed = await confirm(f, sourceText, inspected.body.requestFingerprint);
+    const committed = await confirm(f, sourceText, inspected.body);
     const executionId = committed.body.rows[0].executionId;
 
     const confirmed = await f.manager.agent.get('/api/historical-teaching/reconciliation').query({
@@ -398,7 +424,7 @@ integration('P3-020 historical teaching runtime (PostgreSQL)', () => {
 
     const rePreview = await preview(f, sourceText);
     expect(rePreview.body.rows[0].replacementCandidate).toBe(true);
-    const replacement = await confirm(f, sourceText, rePreview.body.requestFingerprint);
+    const replacement = await confirm(f, sourceText, rePreview.body);
     expect(replacement.status).toBe(200);
     const replacementExecution = await h.prisma.curricularTeachingExecution.findUniqueOrThrow({
       where: { id: replacement.body.rows[0].executionId },
@@ -441,7 +467,7 @@ integration('P3-020 historical teaching runtime (PostgreSQL)', () => {
     const inspected = await preview(f, sourceText);
     expect(inspected.status).toBe(200);
     expect(inspected.body.canConfirm).toBe(true);
-    const committed = await confirm(f, sourceText, inspected.body.requestFingerprint);
+    const committed = await confirm(f, sourceText, inspected.body);
     expect(committed.status).toBe(200);
 
     const executionId = committed.body.rows[0].executionId;
@@ -511,7 +537,7 @@ integration('P3-020 historical teaching runtime (PostgreSQL)', () => {
     const inspected = await preview(f, sourceText);
     expect(inspected.status).toBe(200);
     expect(inspected.body.canConfirm).toBe(true);
-    const committed = await confirm(f, sourceText, inspected.body.requestFingerprint);
+    const committed = await confirm(f, sourceText, inspected.body);
     expect(committed.status).toBe(200);
 
     const executionId = committed.body.rows[0].executionId;
