@@ -14,7 +14,7 @@ Exact current `main`, branch HEAD and divergence must always be read directly fr
 
 - Production state: **PRE-OPERATIONAL**.
 - Core build implementation required for the current path is substantially complete.
-- `P2-020` PPCT native importer has been implemented and merged, but remains **`MERGED_AWAITING_DOC_SYNC`** until its separate `SYNC-P2-020` is completed.
+- `P2-020` PPCT native importer is **`CLOSED` by `SYNC-P2-020`**; PR #173, exact-head CI #549, merge `2d6cb02d4bf9bb4529e0e8eaf83e10d6a67ef043` and post-merge CI #550 are the parent evidence.
 - `P6-005` Production VPS topology decision is **`CLOSED` by `SYNC-P6-005`**.
 - Canonical production topology: **`SHARED_VPS`** on the existing Windows Server 2022 host, with strict protected-neighbour isolation.
 - `P6-010` Pre-deploy TLS/HTTP-01 authority is **`CLOSED` by `SYNC-P6-010`**; parent PR #176 and authoritative post-merge CI #578 are SUCCESS, with zero production/VPS mutation.
@@ -22,42 +22,29 @@ Exact current `main`, branch HEAD and divergence must always be read directly fr
 
 ## Last formally closed major task
 
-`P6-010` — Pre-deploy TLS/HTTP-01 authority — **`CLOSED`** by `SYNC-P6-010`.
+`P2-020` — PPCT native importer implementation — **`CLOSED`** by `SYNC-P2-020`.
 
 Closure evidence:
 
-- topology authority: `SHARED_VPS` with protected-neighbour isolation;
-- parent branch: `feat/p6-010-shared-http01-tls-authority`;
-- canonical parent start: `main@2c09969ebd338af6574d9466d4f07dff415f37a4`;
-- final reviewed parent head: `76eb89ff987b3f61920d12b2d7a56da1136b5378`;
-- parent PR: #176 (`feat(production): add shared HTTP-01 TLS authority`);
-- exact-head parent PR CI: #577 / run `36945168177` — **SUCCESS**;
-- normal merge/main: `edc4d2b92f629e989679063246c815c9ad5ce870`;
-- authoritative post-merge main CI: #578 / run `36945892796` — **SUCCESS**;
-- parent diff: 13 files, bounded to P6-010 repository authority, tests and governance synchronization;
+- parent branch: `feat/ppct-native-importer-020`;
+- canonical parent start: `main@c0b8b622391663e647c43e717920bd607ffd4f20`;
+- final reviewed parent head: `dea50a938decf9bc5e4ca1dbd03ef1a451f91fac`;
+- parent PR: #173 (`feat(ppct): implement native workbook importer`);
+- exact-head parent PR CI: #549 / run `36854571959` — **SUCCESS**;
+- normal merge/main: `2d6cb02d4bf9bb4529e0e8eaf83e10d6a67ef043`;
+- authoritative post-merge main CI: #550 / run `36855749351` — **SUCCESS**;
+- parent diff: 19 scoped files implementing PPCT_V1 import contracts/runtime/UI/test infrastructure;
 - independent GitHub diff audit PASS; zero unresolved review threads;
 - no residual correction/re-entry task emerged from review or CI;
-- zero VPS access, certificate issuance, Nginx production mutation/reload, Scheduled Task mutation, database/ACL/root/app mutation or protected-neighbour mutation.
+- zero schema/migration/deploy/production mutation.
 
-P6-010 closes repository-side HTTP-01/TLS authority only. It does not constitute Stage 1 production evidence or permission to bootstrap/deploy.
+`SYNC-P2-020` is an administrative closure only; it changes no importer semantics.
 
 ## Active / next critical path
 
-### Merged awaiting mandatory closure sync
+### Ready
 
-`P2-020` — PPCT native importer implementation — **`MERGED_AWAITING_DOC_SYNC`**.
-
-Established parent evidence:
-
-- branch: `feat/ppct-native-importer-020`;
-- final reviewed parent head: `dea50a938decf9bc5e4ca1dbd03ef1a451f91fac`;
-- parent PR: #173 (`feat(ppct): implement native workbook importer`);
-- exact-head parent PR CI: #549 — **SUCCESS**;
-- normal merge/main: `2d6cb02d4bf9bb4529e0e8eaf83e10d6a67ef043`;
-- authoritative post-merge main CI: #550 — **SUCCESS**;
-- no schema/migration and no production mutation.
-
-Mandatory administrative microtask `SYNC-P2-020` remains pending. Therefore dependent major tasks must not consume `P2-020` as `CLOSED` yet.
+`P3-010` — Pre-operational historical execution architecture — **`READY`** after `SYNC-P2-020` closed its last outstanding dependency.
 
 ### Trigger-gated / decision-blocked
 
@@ -88,7 +75,7 @@ The capacity audit is decision evidence, not production-readiness evidence. Offi
 
 Canonical `main` contains reviewed implementation for identity/auth, authorization/audit, retained calendar and teaching responsibility history, HomeroomAssignment, timetable/native TKB ingestion, component-aware PPCT, operational overlays, SpecialActivity, GDĐP/HĐTN planning/import/lifecycle/workload, execution evidence, progress/debt/late, Reporting Statement, Business Configuration/operational-start, school-wide effective teaching schedule and the hardened Windows production deployment control plane.
 
-`P2-020` additionally delivers the native PPCT_V1 workbook parser/importer and Vietnamese administration UI, but its administrative closure sync remains pending.
+`P2-020` additionally delivers the native PPCT_V1 workbook parser/importer and Vietnamese administration UI and is formally CLOSED by `SYNC-P2-020`.
 
 Detailed domain closure evidence remains in `PRE-PILOT-TASK-REGISTER.md`, ADRs, requirements, PR/CI and Git history.
 
@@ -96,15 +83,14 @@ Detailed domain closure evidence remains in `PRE-PILOT-TASK-REGISTER.md`, ADRs, 
 
 The project is **NOT READY FOR TEACHER PILOT YET**. Remaining registered gaps include:
 
-1. `SYNC-P2-020` must formally close the already-merged PPCT native importer before dependent major work consumes it.
-2. `P0-003` must select CORE vs FULL BUSINESS pilot scope before P5 pilot freeze.
-3. `P3-010` / `P3-020` pre-operational historical execution architecture/runtime remain registered and depend on P2-020 closure.
-4. PWA production baseline (`P5-020`) remains absent.
-5. Dedicated Báo giảng Telegram integration (`P5-030`) remains absent.
-6. Official production Stage 1 passive discovery/preflight (`P6-020`) remains trigger-gated and has not been executed.
-7. Production bootstrap/first controlled deploy (`P6-030`) has not occurred.
-8. Teacher pilot go-live verification (`P6-050`) has not occurred.
-9. Workload adjustment P4-060/P4-061 remains trigger-gated unless the selected official pilot/reporting scope requires it.
+1. `P0-003` must select CORE vs FULL BUSINESS pilot scope before P5 pilot freeze.
+2. `P3-010` is now READY; `P3-020` remains planned behind it.
+3. PWA production baseline (`P5-020`) remains absent.
+4. Dedicated Báo giảng Telegram integration (`P5-030`) remains absent.
+5. Official production Stage 1 passive discovery/preflight (`P6-020`) remains trigger-gated and has not been executed.
+6. Production bootstrap/first controlled deploy (`P6-030`) has not occurred.
+7. Teacher pilot go-live verification (`P6-050`) has not occurred.
+8. Workload adjustment P4-060/P4-061 remains trigger-gated unless the selected official pilot/reporting scope requires it.
 
 ## Production state
 

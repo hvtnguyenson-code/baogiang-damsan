@@ -158,8 +158,7 @@ The authoritative school PPCT workbook and contract/security audit is closed und
 - physical sheet `CHUYEN_DE` maps to logical component `SPECIALIZED_STUDY`;
 - physical sheet `THONG_TIN` serves as metadata authority;
 - exact workbook structural, identity, replay, and error contracts are audited and closed under `P2-010` (`docs/requirements/P2-010-PPCT-REAL-WORKBOOK-CONTRACT-SECURITY-AUDIT.md`);
-- P2-020 native importer implementation is merged by PR #173 (`main@2d6cb02d4bf9bb4529e0e8eaf83e10d6a67ef043`, PR CI #549 SUCCESS, post-merge CI #550 SUCCESS), including dedicated PPCT_V1 parser/security profile, `inspect / preview / confirm`, whole-workbook DRAFT-only atomic import/replay/CAS semantics and Vietnamese import UI;
-- P2-020 remains `MERGED_AWAITING_DOC_SYNC` until the mandatory `SYNC-P2-020` closure synchronization is complete.
+- P2-020 native importer implementation is formally CLOSED by `SYNC-P2-020` after PR #173 (`main@2d6cb02d4bf9bb4529e0e8eaf83e10d6a67ef043`, exact-head CI #549 SUCCESS, post-merge CI #550 SUCCESS), including dedicated PPCT_V1 parser/security profile, `inspect / preview / confirm`, whole-workbook DRAFT-only atomic import/replay/CAS semantics and Vietnamese import UI;
 
 ### 4.10 Native Đam San timetable ingestion
 
