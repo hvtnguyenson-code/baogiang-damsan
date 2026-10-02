@@ -407,6 +407,192 @@ integration('P3-020 historical teaching runtime (PostgreSQL)', () => {
     expect(await h.prisma.curricularTeachingExecution.count()).toBe(2);
   });
 
+  it('does not reverse an existing substitution overlay reused as historical provenance', async () => {
+    const f = await fixture();
+    const staffSubject = await h.prisma.staffSubject.findFirstOrThrow({
+      where: { userId: f.substitute.id, subjectId: f.subject.id },
+    });
+    const disposition = await h.prisma.operationalLessonDisposition.create({
+      data: {
+        academicYearId: f.year.id,
+        timetableVersionId: f.timetable.id,
+        timetableEntryId: f.entry.id,
+        sourceCivilDate: new Date('2026-08-10Z'),
+        academicCalendarVersionId: f.calendar.id,
+        timeSlotDefinitionId: f.sourceSlot.id,
+        schoolClassId: f.schoolClass.id,
+        subjectId: f.subject.id,
+        teachingAssignmentId: f.assignment.id,
+        responsibleTeacherUserId: f.manager.id,
+        dispositionType: 'SAME_SUBJECT_SUBSTITUTION',
+        assignedTeacherUserId: f.substitute.id,
+        eligibilityCheckedAt: new Date('2026-08-10T00:00:00Z'),
+        eligibilityWasActive: true,
+        eligibilityWasTeachingStaff: true,
+        eligibilitySameSubject: true,
+        eligibilityStaffSubjectId: staffSubject.id,
+        createRequestKey: randomUUID(),
+        createRequestFingerprint: randomUUID(),
+        createdByUserId: f.manager.id,
+      },
+    });
+
+    const sourceText = csv(f, 'DAY_THAY');
+    const inspected = await preview(f, sourceText);
+    expect(inspected.status).toBe(200);
+    expect(inspected.body.canConfirm).toBe(true);
+    const committed = await confirm(f, sourceText, inspected.body.requestFingerprint);
+    expect(committed.status).toBe(200);
+
+    const executionId = committed.body.rows[0].executionId;
+    const provenance = await h.prisma.historicalTeachingImportRow.findUniqueOrThrow({
+      where: { curricularTeachingExecutionId: executionId },
+    });
+    expect(provenance.operationalLessonDispositionId).toBe(disposition.id);
+    expect(provenance.ownsOperationalLessonDisposition).toBe(false);
+
+    const execution = await h.prisma.curricularTeachingExecution.findUniqueOrThrow({ where: { id: executionId } });
+    const reversed = await f.manager.agent
+      .post(`/api/historical-teaching/executions/${executionId}/reverse`)
+      .set('Origin', testOrigin)
+      .send({
+        requestKey: randomUUID(),
+        expectedUpdatedAt: execution.updatedAt.toISOString(),
+        reversalReason: 'Sửa minh chứng P3, giữ nguyên disposition có sẵn',
+      });
+    expect(reversed.status).toBe(200);
+    expect((await h.prisma.operationalLessonDisposition.findUniqueOrThrow({ where: { id: disposition.id } })).status).toBe('ACTIVE');
+  });
+
+  it('does not reverse an existing make-up schedule reused as historical provenance', async () => {
+    const f = await fixture();
+    const association = await h.prisma.ppctClassAssociation.findFirstOrThrow({
+      where: {
+        academicYearId: f.year.id,
+        schoolClassId: f.schoolClass.id,
+        subjectId: f.subject.id,
+      },
+    });
+    const staffSubject = await h.prisma.staffSubject.findFirstOrThrow({
+      where: { userId: f.substitute.id, subjectId: f.subject.id },
+    });
+    const schedule = await h.prisma.makeupTeachingSchedule.create({
+      data: {
+        academicYearId: f.year.id,
+        originalTimetableVersionId: f.timetable.id,
+        originalTimetableEntryId: f.entry.id,
+        originalCivilDate: new Date('2026-08-10Z'),
+        originalAcademicCalendarVersionId: f.calendar.id,
+        originalTimeSlotDefinitionId: f.sourceSlot.id,
+        schoolClassId: f.schoolClass.id,
+        subjectId: f.subject.id,
+        originalTeachingAssignmentId: f.assignment.id,
+        responsibleTeacherUserId: f.manager.id,
+        ppctClassAssociationId: association.id,
+        ppctPlanId: f.revision.ppctPlanId,
+        ppctVersionId: f.revision.ppctVersionId,
+        ppctItemId: f.revision.ppctItemId,
+        targetCivilDate: new Date('2026-08-11Z'),
+        targetAcademicCalendarVersionId: f.calendar.id,
+        targetTimeSlotDefinitionId: f.makeupSlot.id,
+        scheduledTeacherUserId: f.substitute.id,
+        eligibilityCheckedAt: new Date('2026-08-11T00:00:00Z'),
+        eligibilityWasActive: true,
+        eligibilityWasTeachingStaff: true,
+        eligibilitySameSubject: true,
+        eligibilityStaffSubjectId: staffSubject.id,
+        createRequestKey: randomUUID(),
+        createRequestFingerprint: randomUUID(),
+        createdByUserId: f.manager.id,
+      },
+    });
+
+    const sourceText = csv(f, 'DAY_BU');
+    const inspected = await preview(f, sourceText);
+    expect(inspected.status).toBe(200);
+    expect(inspected.body.canConfirm).toBe(true);
+    const committed = await confirm(f, sourceText, inspected.body.requestFingerprint);
+    expect(committed.status).toBe(200);
+
+    const executionId = committed.body.rows[0].executionId;
+    const provenance = await h.prisma.historicalTeachingImportRow.findUniqueOrThrow({
+      where: { curricularTeachingExecutionId: executionId },
+    });
+    expect(provenance.makeupTeachingScheduleId).toBe(schedule.id);
+    expect(provenance.ownsMakeupTeachingSchedule).toBe(false);
+
+    const execution = await h.prisma.curricularTeachingExecution.findUniqueOrThrow({ where: { id: executionId } });
+    const reversed = await f.manager.agent
+      .post(`/api/historical-teaching/executions/${executionId}/reverse`)
+      .set('Origin', testOrigin)
+      .send({
+        requestKey: randomUUID(),
+        expectedUpdatedAt: execution.updatedAt.toISOString(),
+        reversalReason: 'Sửa minh chứng P3, giữ nguyên lịch dạy bù có sẵn',
+      });
+    expect(reversed.status).toBe(200);
+    expect((await h.prisma.makeupTeachingSchedule.findUniqueOrThrow({ where: { id: schedule.id } })).status).toBe('ACTIVE');
+  });
+
+  it('blocks DAY_THAY when the substitute already has another canonical lesson at the same time', async () => {
+    const f = await fixture();
+    const otherClass = await h.prisma.schoolClass.create({
+      data: {
+        academicYearId: f.year.id,
+        code: normalizedCode('10A2H'),
+        name: '10A2',
+        gradeLevel: 10,
+      },
+    });
+    const otherAssignment = await h.prisma.teachingAssignment.create({
+      data: {
+        academicYearId: f.year.id,
+        schoolClassId: otherClass.id,
+        subjectId: f.subject.id,
+        teacherUserId: f.substitute.id,
+        validFrom: new Date('2026-08-01Z'),
+      },
+    });
+    await h.prisma.timetableEntry.create({
+      data: {
+        timetableVersionId: f.timetable.id,
+        academicYearId: f.year.id,
+        weekday: 'MONDAY',
+        timeSlotDefinitionId: f.sourceSlot.id,
+        schoolClassId: otherClass.id,
+        subjectId: f.subject.id,
+        teachingAssignmentId: otherAssignment.id,
+        teacherUserId: f.substitute.id,
+      },
+    });
+    const association = await h.prisma.ppctClassAssociation.findFirstOrThrow({
+      where: {
+        academicYearId: f.year.id,
+        schoolClassId: f.schoolClass.id,
+        subjectId: f.subject.id,
+      },
+    });
+    await h.prisma.ppctClassAssociation.create({
+      data: {
+        academicYearId: f.year.id,
+        schoolClassId: otherClass.id,
+        subjectId: f.subject.id,
+        gradeLevel: 10,
+        ppctPlanId: association.ppctPlanId,
+        ppctVersionId: association.ppctVersionId,
+        curricularProfile: 'CORE_ONLY',
+        effectiveFrom: new Date('2026-08-01Z'),
+        createdByUserId: f.manager.id,
+      },
+    });
+
+    const inspected = await preview(f, csv(f, 'DAY_THAY'));
+    expect(inspected.status).toBe(200);
+    expect(inspected.body.canConfirm).toBe(false);
+    expect(inspected.body.rows[0].issues.map((issue: { code: string }) => issue.code))
+      .toContain('HISTORY_SUBSTITUTION_TEACHER_COLLISION');
+  });
+
   it('requires exact SCHOOL_WIDE execution-management authority', async () => {
     const f = await fixture();
     const response = await f.outsider.agent.get('/api/historical-teaching/options');
