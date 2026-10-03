@@ -1,6 +1,6 @@
 # ADR-056 — Public Make-up Scheduling Architecture
 
-- **Status:** Accepted — P3-030 CLOSED by `SYNC-P3-030`
+- **Status:** Accepted — P3-030 CLOSED by `SYNC-P3-030`; P3-031 runtime CLOSED by `SYNC-P3-031`
 - **Date:** 2026-10-03
 - **Task:** P3-030
 - **Trigger:** T08 public make-up re-entry for FULL BUSINESS PILOT
@@ -209,3 +209,7 @@ The FULL BUSINESS pilot gains a real make-up scheduling lifecycle without weaken
 ## Non-scope
 
 P3-030 does not authorize runtime/schema/API/UI mutation itself. It does not authorize production/VPS/deploy mutation. It does not add debt waivers, enrichment teaching, move/swap, teacher request/approval flows, notifications or automated execution confirmation.
+
+## Implementation closure
+
+P3-031 implemented this accepted architecture without schema expansion. Final reviewed head `2fc5c48d445af75961f94609edd1551530504063` passed exact-head PR CI #622 / run `37113263889`, merged normally as `f8612a7e15be3dd8b45079f30860f56c37a943cb`, and passed authoritative post-merge main CI #623 / run `37113742941`. `SYNC-P3-031` closes the runtime task; ADR-056 remains the controlling make-up scheduling architecture.
