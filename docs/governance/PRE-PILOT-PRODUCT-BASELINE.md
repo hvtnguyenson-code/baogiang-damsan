@@ -239,9 +239,9 @@ The first operational pilot claim therefore includes:
 
 On 2026-10-02 the Product Owner clarified that FULL BUSINESS must be functionally complete wherever omission of a registered rule would make real operation or official figures incorrect. This fires T08 and T23 re-entry.
 
-The direct dependency set registered for `P5-010` is `P0-003`, `P1-032`, `P2-020`, `P2-061`, `P3-020`, `P3-031`, `P4-061`, `P4-074`. With `P3-020` CLOSED by `SYNC-P3-020`, unresolved direct dependencies are `P3-031` and `P4-061`, so P5-010 is not yet READY.
+The direct dependency set registered for `P5-010` is `P0-003`, `P1-032`, `P2-020`, `P2-061`, `P3-020`, `P3-031`, `P4-061`, `P4-074`. With `P3-020` CLOSED by `SYNC-P3-020` and `P3-031` CLOSED by `SYNC-P3-031`, the only unresolved direct dependency is `P4-061`, so P5-010 is not yet READY.
 
-`P3-030`/`P3-031` and `P4-060`/`P4-061` are therefore no longer optional deferred tracks for this pilot claim. They are part of the required path. P3-030 is CLOSED by `SYNC-P3-030`; ADR-056 is Accepted and locks public make-up scheduling to exact post-operational `PROVEN_OPEN_DEBT`, prospective target scheduling, existing `MakeupTeachingSchedule`, existing `TEACHING_OPERATION_MANAGE`, canonical collision reuse, and reverse+replacement correction. P3-031 is `IN_REVIEW` on `feat/p3-031-public-makeup-runtime`.
+`P3-030`/`P3-031` and `P4-060`/`P4-061` are therefore no longer optional deferred tracks for this pilot claim. They are part of the required path. P3-030 is CLOSED by `SYNC-P3-030`; ADR-056 is Accepted and locks public make-up scheduling to exact post-operational `PROVEN_OPEN_DEBT`, prospective target scheduling, existing `MakeupTeachingSchedule`, existing `TEACHING_OPERATION_MANAGE`, canonical collision reuse, and reverse+replacement correction. P3-031 is CLOSED by `SYNC-P3-031` after reviewed head `2fc5c48d445af75961f94609edd1551530504063`, PR #187, exact-head CI #622 SUCCESS, merge/main `f8612a7e15be3dd8b45079f30860f56c37a943cb` and post-merge CI #623 SUCCESS.
 
 ## 6. Production-readiness items that remain separate
 

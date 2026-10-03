@@ -8,7 +8,7 @@
 - **Traceability Tag:** `T08`
 - **Canonical Main Base:** `85a147927a8fec03d06852896e77a575a3addd20`
 - **Dedicated Branch:** `feat/p3-031-public-makeup-runtime`
-- **Governance Status:** `IN_REVIEW` (CORRECTION 001)
+- **Governance Status:** `CLOSED` by `SYNC-P3-031`
 
 ---
 
@@ -95,7 +95,20 @@ Added canonical contracts in `packages/contracts/src/index.ts`:
 
 - **API Unit Suite:** 90 test suites passed, 1677 tests passed (including 51 dedicated service tests in `makeup-schedules.service.spec.ts` with comprehensive negative authorization matrix and canonical collision reuse).
 - **Web Unit Suite:** 23 test suites passed, 351 tests passed (including 7 dedicated UI tests in `makeup-scheduling-page.test.tsx` verifying canonical key payload, absence of client PPCT coords, human-readable dropdowns, single/multi SUBJECT and SCHOOL_WIDE authorization).
-- **Integration Suite:** Focused PostgreSQL integration test created at `apps/api/test/operational-overlays/makeup-schedules.integration.spec.ts` using `Phase01Harness` covering all 12 lifecycle/constraint scenarios (reported as `NOT_RUN_LOCALLY` due to lack of local certified `TEST_DATABASE_URL`).
+- **Integration Suite:** Focused PostgreSQL integration coverage at `apps/api/test/operational-overlays/makeup-schedules.integration.spec.ts` passed authoritatively in exact-head PR CI #622 (run `37113263889`) and again in post-merge main CI #623 (run `37113742941`).
 - **Typecheck:** 0 errors across `@baogiang/contracts`, `@baogiang/config`, `@baogiang/api`, and `@baogiang/web`.
 - **Lint:** 0 warnings and 0 errors across all workspaces.
 - **Production Builds:** `@baogiang/api` and `@baogiang/web` build cleanly.
+
+---
+
+## 5. Closure Evidence
+
+- Final independently reviewed implementation HEAD: `2fc5c48d445af75961f94609edd1551530504063`.
+- Parent PR: #187 (`feat(makeup): implement P3-031 public make-up scheduling runtime`).
+- Exact-head PR CI: #622 / run `37113263889` — SUCCESS; Linux full lint/typecheck/unit/integration/build/Playwright and Windows deployment contract both passed.
+- Normal merge/main: `f8612a7e15be3dd8b45079f30860f56c37a943cb`.
+- Authoritative post-merge main CI: #623 / run `37113742941` — SUCCESS; integration, build, Playwright and Windows deployment contract all passed on the merged tree.
+- Review corrections before merge were forward-only and absorbed into the reviewed HEAD: shared Web/API contract alignment and canonical collision reuse, integration fixture/route repair, valid MAKEUP execution persistence shape, and deterministic module-scoped AuditService test binding.
+- Zero schema/migration/deploy/VPS/production mutation was introduced by P3-031.
+- `SYNC-P3-031` is the single non-recursive governance closure. P3-031 is CLOSED. P5-010 remains blocked only by `P4-061` among its direct unresolved dependencies.
