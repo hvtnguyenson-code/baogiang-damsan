@@ -1,4 +1,4 @@
-import { CalendarExceptionRecord, OperationalLessonDispositionRecord } from '@baogiang/contracts';
+import { CalendarExceptionRecord, MakeupTeachingScheduleRecord, OperationalLessonDispositionRecord } from '@baogiang/contracts';
 import { Prisma } from '@prisma/client';
 import { formatCivilDate } from '../common/validation/civil-date';
 
@@ -30,5 +30,45 @@ export function toLessonDispositionRecord(row: Prisma.OperationalLessonDispositi
     note: row.note, status: row.status, replacesId: row.replacesId, createdByUserId: row.createdByUserId,
     reversedByUserId: row.reversedByUserId, reversedAt: row.reversedAt?.toISOString() ?? null,
     reversalReason: row.reversalReason, createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+export function toMakeupScheduleRecord(row: Prisma.MakeupTeachingScheduleGetPayload<Record<string, never>>): MakeupTeachingScheduleRecord {
+  return {
+    id: row.id,
+    academicYearId: row.academicYearId,
+    originalTimetableVersionId: row.originalTimetableVersionId,
+    originalTimetableEntryId: row.originalTimetableEntryId,
+    originalCivilDate: formatCivilDate(row.originalCivilDate),
+    originalAcademicCalendarVersionId: row.originalAcademicCalendarVersionId,
+    originalTimeSlotDefinitionId: row.originalTimeSlotDefinitionId,
+    schoolClassId: row.schoolClassId,
+    subjectId: row.subjectId,
+    originalTeachingAssignmentId: row.originalTeachingAssignmentId,
+    responsibleTeacherUserId: row.responsibleTeacherUserId,
+    ppctClassAssociationId: row.ppctClassAssociationId,
+    ppctPlanId: row.ppctPlanId,
+    ppctVersionId: row.ppctVersionId,
+    ppctItemId: row.ppctItemId,
+    sourceDispositionId: row.sourceDispositionId,
+    targetCivilDate: formatCivilDate(row.targetCivilDate),
+    targetAcademicCalendarVersionId: row.targetAcademicCalendarVersionId,
+    targetTimeSlotDefinitionId: row.targetTimeSlotDefinitionId,
+    scheduledTeacherUserId: row.scheduledTeacherUserId,
+    eligibilityCheckedAt: row.eligibilityCheckedAt.toISOString(),
+    eligibilityWasActive: row.eligibilityWasActive,
+    eligibilityWasTeachingStaff: row.eligibilityWasTeachingStaff,
+    eligibilitySameSubject: row.eligibilitySameSubject,
+    eligibilityStaffSubjectId: row.eligibilityStaffSubjectId,
+    note: row.note,
+    status: row.status,
+    createRequestKey: row.createRequestKey,
+    reversedByUserId: row.reversedByUserId,
+    reversedAt: row.reversedAt?.toISOString() ?? null,
+    reversalReason: row.reversalReason,
+    replacesId: row.replacesId,
+    createdByUserId: row.createdByUserId,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
   };
 }

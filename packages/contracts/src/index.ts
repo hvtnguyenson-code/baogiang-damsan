@@ -1481,6 +1481,134 @@ export interface OperationalLessonDispositionReverseResult { outcome: 'REVERSED'
 export interface CalendarExceptionListResponse { items: CalendarExceptionRecord[]; page: number; pageSize: number; total: number; collisionCoverage: OperationalOverlayCollisionCoverage; }
 export interface OperationalLessonDispositionListResponse { items: OperationalLessonDispositionRecord[]; page: number; pageSize: number; total: number; collisionCoverage: OperationalOverlayCollisionCoverage; }
 
+export interface MakeupTeachingScheduleRecord {
+  id: string;
+  academicYearId: string;
+  originalTimetableVersionId: string;
+  originalTimetableEntryId: string;
+  originalCivilDate: CivilDateString;
+  originalAcademicCalendarVersionId: string;
+  originalTimeSlotDefinitionId: string;
+  schoolClassId: string;
+  subjectId: string;
+  originalTeachingAssignmentId: string;
+  responsibleTeacherUserId: string;
+  ppctClassAssociationId: string;
+  ppctPlanId: string;
+  ppctVersionId: string;
+  ppctItemId: string;
+  sourceDispositionId: string | null;
+  targetCivilDate: CivilDateString;
+  targetAcademicCalendarVersionId: string;
+  targetTimeSlotDefinitionId: string;
+  scheduledTeacherUserId: string;
+  eligibilityCheckedAt: string;
+  eligibilityWasActive: boolean;
+  eligibilityWasTeachingStaff: boolean;
+  eligibilitySameSubject: boolean;
+  eligibilityStaffSubjectId: string;
+  note: string | null;
+  status: OperationalOverlayStatus;
+  createRequestKey: string;
+  reversedByUserId: string | null;
+  reversedAt: string | null;
+  reversalReason: string | null;
+  replacesId: string | null;
+  createdByUserId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MakeupTeachingCandidateRecord {
+  sourceNormalOccurrenceKey: string;
+  originalCivilDate: CivilDateString;
+  originalTimeSlotDefinitionId: string;
+  originalTimeSlotName?: string;
+  originalSession?: string;
+  originalWeekday?: string;
+  schoolClassId: string;
+  schoolClassName?: string;
+  subjectId: string;
+  subjectName?: string;
+  responsibleTeacherUserId: string;
+  responsibleTeacherName?: string;
+  sourceDispositionId: string;
+  dispositionType: OperationalLessonDispositionType;
+  ppctItemId: string;
+  ppctItemName?: string;
+  ppctItemSequence?: number;
+  component?: PpctCurricularComponent;
+  hasActiveMakeupSchedule: boolean;
+  activeMakeupScheduleId: string | null;
+}
+
+export interface MakeupTeachingCandidateListResponse {
+  items: MakeupTeachingCandidateRecord[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+export interface MakeupTeachingScheduleCreateResult {
+  outcome: 'CREATED' | 'IDEMPOTENT_REPLAY';
+  record: MakeupTeachingScheduleRecord;
+  collisionCoverage: OperationalOverlayCollisionCoverage;
+}
+
+export interface MakeupTeachingScheduleReverseResult {
+  outcome: 'REVERSED' | 'IDEMPOTENT_REPLAY';
+  record: MakeupTeachingScheduleRecord;
+  collisionCoverage: OperationalOverlayCollisionCoverage;
+}
+
+export interface MakeupTeachingScheduleListResponse {
+  items: MakeupTeachingScheduleRecord[];
+  page: number;
+  pageSize: number;
+  total: number;
+  collisionCoverage: OperationalOverlayCollisionCoverage;
+}
+
+export interface CreateMakeupScheduleRequest {
+  academicYearId: string;
+  sourceNormalOccurrenceKey: string;
+  targetCivilDate: CivilDateString;
+  targetTimeSlotDefinitionId: string;
+  scheduledTeacherUserId: string;
+  replacesId?: string;
+  note?: string;
+  requestKey: string;
+}
+
+export interface ReverseMakeupScheduleRequest {
+  expectedUpdatedAt: string;
+  reversalReason: string;
+  requestKey: string;
+}
+
+export interface MakeupTargetSlotOption {
+  id: string;
+  displayLabel: string;
+  session: TimeSlotSession;
+  ordinal: number;
+  startTime: WallClockTimeString;
+  endTime: WallClockTimeString;
+}
+
+export interface MakeupTargetTeacherOption {
+  userId: string;
+  displayName: string;
+  staffCode: string | null;
+}
+
+export interface MakeupTargetOptionsResponse {
+  academicYearId: string;
+  targetCivilDate: CivilDateString;
+  targetWeekday: AcademicWeekday;
+  slots: MakeupTargetSlotOption[];
+  teachers: MakeupTargetTeacherOption[];
+}
+
 // ============================================================
 // Notification Contracts (foundation types for Phase 03+)
 // ============================================================

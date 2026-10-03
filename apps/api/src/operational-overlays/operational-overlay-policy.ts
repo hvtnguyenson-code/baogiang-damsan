@@ -64,6 +64,32 @@ export function isTeacherDisposition(type: OperationalLessonDispositionType): bo
     || type === OperationalLessonDispositionType.DIFFERENT_SUBJECT_SUPERVISION;
 }
 
+export function makeupCreateFingerprint(value: {
+  academicYearId: string;
+  sourceNormalOccurrenceKey: string;
+  targetCivilDate: string;
+  targetTimeSlotDefinitionId: string;
+  scheduledTeacherUserId: string;
+  note: string | null;
+  replacesId: string | null;
+}): string {
+  return sha256({
+    version: 'makeup-schedule-create-v1',
+    academicYearId: value.academicYearId,
+    sourceNormalOccurrenceKey: value.sourceNormalOccurrenceKey,
+    targetCivilDate: value.targetCivilDate,
+    targetTimeSlotDefinitionId: value.targetTimeSlotDefinitionId,
+    scheduledTeacherUserId: value.scheduledTeacherUserId,
+    note: value.note,
+    replacesId: value.replacesId,
+  });
+}
+
+export function hcmSlotInstant(civilDate: Date, time: Date): Date {
+  const [hour, minute, second, millisecond] = time.toISOString().slice(11, 23).split(/[:.]/u).map(Number);
+  return new Date(Date.UTC(civilDate.getUTCFullYear(), civilDate.getUTCMonth(), civilDate.getUTCDate(), hour!, minute!, second!, millisecond!) - 7 * 60 * 60 * 1000);
+}
+
 export function intervalsOverlap(left: { startTime: Date; endTime: Date }, right: { startTime: Date; endTime: Date }): boolean {
   return left.startTime < right.endTime && right.startTime < left.endTime;
 }

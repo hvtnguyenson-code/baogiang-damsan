@@ -3,6 +3,7 @@ import { ArrayMaxSize, IsArray, IsEnum, IsIn, IsInt, IsOptional, IsString, IsUUI
 import { CalendarExceptionScope, CalendarExceptionTimeSelector, OperationalLessonDispositionType, OperationalOverlayStatus, TimeSlotSession } from '@prisma/client';
 import { IsAbsoluteInstant } from '../common/validation/is-absolute-instant.decorator';
 import { IsCivilDate } from '../common/validation/civil-date';
+import { CreateMakeupScheduleRequest, CivilDateString } from '@baogiang/contracts';
 
 export class CreateCalendarExceptionDto {
   @IsUUID() academicYearId!: string;
@@ -54,4 +55,37 @@ export class ListLessonDispositionsDto extends PaginationDto {
   @IsOptional() @IsCivilDate() sourceCivilDate?: string;
   @IsOptional() @IsEnum(OperationalOverlayStatus) status?: OperationalOverlayStatus;
   @IsOptional() @IsEnum(OperationalLessonDispositionType) dispositionType?: OperationalLessonDispositionType;
+}
+
+export class CreateMakeupScheduleDto implements CreateMakeupScheduleRequest {
+  @IsUUID() academicYearId!: string;
+  @IsString() @Matches(/^NORMAL:[0-9a-fA-F-]{36}:\d{4}-\d{2}-\d{2}$/u) sourceNormalOccurrenceKey!: string;
+  @IsCivilDate() targetCivilDate!: CivilDateString;
+  @IsUUID() targetTimeSlotDefinitionId!: string;
+  @IsUUID() scheduledTeacherUserId!: string;
+  @IsOptional() @Transform(({ value }) => typeof value === 'string' ? value.trim() : value) @IsString() @Matches(/\S/u) @MaxLength(500) note?: string;
+  @IsOptional() @IsUUID() replacesId?: string;
+  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value) @IsString() @Matches(/\S/u) @MaxLength(200) requestKey!: string;
+}
+
+export class GetMakeupTargetOptionsDto {
+  @IsUUID() academicYearId!: string;
+  @IsString() @Matches(/^NORMAL:[0-9a-fA-F-]{36}:\d{4}-\d{2}-\d{2}$/u) sourceNormalOccurrenceKey!: string;
+  @IsCivilDate() targetCivilDate!: CivilDateString;
+}
+
+export class ListMakeupCandidatesDto extends PaginationDto {
+  @IsUUID() academicYearId!: string;
+  @IsOptional() @IsUUID() schoolClassId?: string;
+  @IsOptional() @IsUUID() subjectId?: string;
+  @IsOptional() @IsCivilDate() fromCivilDate?: string;
+  @IsOptional() @IsCivilDate() toCivilDate?: string;
+}
+
+export class ListMakeupSchedulesDto extends PaginationDto {
+  @IsUUID() academicYearId!: string;
+  @IsOptional() @IsUUID() schoolClassId?: string;
+  @IsOptional() @IsUUID() subjectId?: string;
+  @IsOptional() @IsEnum(OperationalOverlayStatus) status?: OperationalOverlayStatus;
+  @IsOptional() @IsCivilDate() targetCivilDate?: string;
 }
