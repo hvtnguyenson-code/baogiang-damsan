@@ -208,6 +208,13 @@ export class OperationalOverlaysService {
         if (keyed.id !== id || keyed.reverseRequestFingerprint !== fingerprint) throw new ConflictException('requestKey đảo ngược đã được dùng với nội dung khác.');
         return { outcome: 'IDEMPOTENT_REPLAY', record: toLessonDispositionRecord(keyed), collisionCoverage: COLLISION_COVERAGE };
       }
+      const activeMakeup = await tx.makeupTeachingSchedule.findFirst({
+        where: { sourceDispositionId: id, status: OperationalOverlayStatus.ACTIVE },
+        select: { id: true },
+      });
+      if (activeMakeup) {
+        throw new ConflictException('Không thể đảo ngược disposition đang được tham chiếu bởi lịch dạy bù ACTIVE.');
+      }
       const reversedAt = this.clock.now();
       const changed = await tx.operationalLessonDisposition.updateMany({ where: { id, status: OperationalOverlayStatus.ACTIVE, updatedAt: new Date(dto.expectedUpdatedAt) }, data: {
         status: OperationalOverlayStatus.REVERSED, reversedByUserId: request.auth!.user.id, reversedAt,

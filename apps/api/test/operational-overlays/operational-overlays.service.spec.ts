@@ -187,4 +187,79 @@ describe('OperationalOverlaysService bounded command behavior', () => {
     expect(() => internal.normalizeCalendar({ ...calendarDto, gradeLevel: 10 })).toThrow(BadRequestException);
     expect(() => internal.normalizeCalendar({ ...calendarDto, session: 'MORNING' })).toThrow(BadRequestException);
   });
+
+  it('blocks source disposition reversal when referenced by an ACTIVE make-up schedule', async () => {
+    const dispRow = {
+      id: id('d1'),
+      subjectId: id('s1'),
+      dispositionType: OperationalLessonDispositionType.ABSENCE_NO_REPLACEMENT,
+      status: OperationalOverlayStatus.ACTIVE,
+      academicYearId: id('y1'),
+      timetableVersionId: id('v1'),
+      timetableEntryId: id('e1'),
+      schoolClassId: id('c1'),
+      sourceCivilDate: new Date('2026-09-08T00:00:00.000Z'),
+    };
+    const tx = {
+      operationalLessonDisposition: {
+        findUnique: jest.fn().mockImplementation(({ where }) => {
+          if (where.reverseRequestKey) return Promise.resolve(null);
+          return Promise.resolve(dispRow);
+        }),
+      },
+      makeupTeachingSchedule: {
+        findFirst: jest.fn().mockResolvedValue({ id: id('m1'), status: OperationalOverlayStatus.ACTIVE }),
+      },
+    };
+    const { service, access } = makeService(tx);
+    const reverseDto = {
+      expectedUpdatedAt: instant.toISOString(),
+      reversalReason: 'Đảo do ghi nhận nhầm',
+      requestKey: 'rev-disp-key-1',
+    };
+    await expect(service.reverseLessonDisposition(dispRow.id, reverseDto, request)).rejects.toThrow(ConflictException);
+    expect(access.requireTeachingSubject).toHaveBeenCalledWith(request, dispRow.subjectId);
+  });
+
+  it('allows source disposition reversal when make-up schedule is already reversed', async () => {
+    const dispRow = {
+      id: id('d2'),
+      subjectId: id('s1'),
+      dispositionType: OperationalLessonDispositionType.ABSENCE_NO_REPLACEMENT,
+      status: OperationalOverlayStatus.ACTIVE,
+      academicYearId: id('y1'),
+      timetableVersionId: id('v1'),
+      timetableEntryId: id('e1'),
+      schoolClassId: id('c1'),
+      sourceCivilDate: new Date('2026-09-08T00:00:00.000Z'),
+      createdAt: instant,
+      updatedAt: instant,
+    };
+    const tx = {
+      operationalLessonDisposition: {
+        findUnique: jest.fn().mockImplementation(({ where }) => {
+          if (where.reverseRequestKey) return Promise.resolve(null);
+          return Promise.resolve(dispRow);
+        }),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findUniqueOrThrow: jest.fn().mockResolvedValue({ ...dispRow, status: OperationalOverlayStatus.REVERSED }),
+      },
+      makeupTeachingSchedule: {
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+    };
+    const { service, audit } = makeService(tx);
+    const reverseDto = {
+      expectedUpdatedAt: instant.toISOString(),
+      reversalReason: 'Đảo sau khi đã đảo lịch dạy bù',
+      requestKey: 'rev-disp-key-2',
+    };
+    const result = await service.reverseLessonDisposition(dispRow.id, reverseDto, request);
+    expect(result.outcome).toBe('REVERSED');
+    expect(result.record.status).toBe(OperationalOverlayStatus.REVERSED);
+    expect(audit.write).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'OPERATIONAL_LESSON_DISPOSITION_REVERSED' }),
+      expect.anything(),
+    );
+  });
 });

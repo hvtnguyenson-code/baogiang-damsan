@@ -31,12 +31,14 @@ import { PpctSpecializedStudyPage } from './pages/PpctSpecializedStudyPage';
 import { SpecialProgrammeWorkspacePage } from './pages/SpecialProgrammeWorkspacePage';
 import { EffectiveSchedulePage } from './pages/EffectiveSchedulePage';
 import { HistoricalTeachingPage } from './pages/HistoricalTeachingPage';
+import { MakeupSchedulingPage } from './pages/MakeupSchedulingPage';
 import type { BusinessPolicyUiAdapter } from './lib/business-policy-ui-registry';
 import {
   canManageDutyAssignments,
   canManageHistoricalTeaching,
   canManagePpct,
   canManageSpecialProgrammes,
+  canManageTeachingOperation,
   canOpenReportingDetail,
   canReadAccessibleReporting,
   canReadPersonalReporting,
@@ -97,6 +99,9 @@ export default function App({ businessPolicyAdapters }: { businessPolicyAdapters
           </Route>
           <Route element={<CapabilityRoute allow={canManageHistoricalTeaching} />}>
             <Route path="/quan-tri/lich-su-giang-day" element={<HistoricalTeachingPage />} />
+          </Route>
+          <Route element={<CapabilityRoute allow={canManageTeachingOperation} />}>
+            <Route path="/quan-tri/lich-day-bu" element={<MakeupSchedulingPage />} />
           </Route>
         </Route>
       </Route>

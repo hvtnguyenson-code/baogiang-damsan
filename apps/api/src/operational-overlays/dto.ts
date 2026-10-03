@@ -55,3 +55,30 @@ export class ListLessonDispositionsDto extends PaginationDto {
   @IsOptional() @IsEnum(OperationalOverlayStatus) status?: OperationalOverlayStatus;
   @IsOptional() @IsEnum(OperationalLessonDispositionType) dispositionType?: OperationalLessonDispositionType;
 }
+
+export class CreateMakeupScheduleDto {
+  @IsUUID() academicYearId!: string;
+  @IsString() @Matches(/^NORMAL:[0-9a-fA-F-]{36}:\d{4}-\d{2}-\d{2}$/u) sourceNormalOccurrenceKey!: string;
+  @IsCivilDate() targetCivilDate!: string;
+  @IsUUID() targetTimeSlotDefinitionId!: string;
+  @IsUUID() scheduledTeacherUserId!: string;
+  @IsOptional() @Transform(({ value }) => typeof value === 'string' ? value.trim() : value) @IsString() @Matches(/\S/u) @MaxLength(500) note?: string;
+  @IsOptional() @IsUUID() replacesId?: string;
+  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value) @IsString() @Matches(/\S/u) @MaxLength(200) requestKey!: string;
+}
+
+export class ListMakeupCandidatesDto extends PaginationDto {
+  @IsUUID() academicYearId!: string;
+  @IsOptional() @IsUUID() schoolClassId?: string;
+  @IsOptional() @IsUUID() subjectId?: string;
+  @IsOptional() @IsCivilDate() fromCivilDate?: string;
+  @IsOptional() @IsCivilDate() toCivilDate?: string;
+}
+
+export class ListMakeupSchedulesDto extends PaginationDto {
+  @IsUUID() academicYearId!: string;
+  @IsOptional() @IsUUID() schoolClassId?: string;
+  @IsOptional() @IsUUID() subjectId?: string;
+  @IsOptional() @IsEnum(OperationalOverlayStatus) status?: OperationalOverlayStatus;
+  @IsOptional() @IsCivilDate() targetCivilDate?: string;
+}
