@@ -3,6 +3,7 @@ import { UserStatus } from '@prisma/client';
 import { BusinessPolicyAcademicYearOption } from '@baogiang/contracts';
 import request from 'supertest';
 import { AuditService } from '../../src/audit/audit.service';
+import { BusinessConfigurationModule } from '../../src/business-configuration/business-configuration.module';
 import { BusinessConfigurationService } from '../../src/business-configuration/business-configuration.service';
 import {
   BUSINESS_POLICY_REGISTRY,
@@ -620,7 +621,7 @@ integration('Business Configuration API (isolated PostgreSQL integration)', () =
     it('rolls back database mutations when AuditService.write throws inside transaction', async () => {
       const manager = await h.actor({ grants: [{ capabilityKey: 'BUSINESS_CONFIGURATION_MANAGE' }] });
 
-      const auditService = h.app.get(AuditService);
+      const auditService = h.app.select(BusinessConfigurationModule).get(AuditService, { strict: true });
       const auditSpy = jest.spyOn(auditService, 'write').mockImplementationOnce(async () => {
         throw new Error('SIMULATED_AUDIT_FAILURE');
       });
@@ -2118,7 +2119,7 @@ integration('Business Configuration API (isolated PostgreSQL integration)', () =
 
       it('rolls back source, successor, audit, and receipt when the success audit fails', async () => {
         const sourceId = await publishedScheduledSource('scheduled-rollback');
-        const audit = h.app.get(AuditService);
+        const audit = h.app.select(BusinessConfigurationModule).get(AuditService, { strict: true });
         const auditSpy = jest.spyOn(audit, 'write').mockImplementationOnce(async () => {
           throw new Error('SIMULATED_SCHEDULED_SUPERSESSION_AUDIT_FAILURE');
         });

@@ -534,8 +534,6 @@ integration('P3-031 MakeupTeachingSchedule control plane (PostgreSQL)', () => {
         ppctVersionId: f.ppctVersion.id,
         ppctItemId: f.ppctItem.id,
         ppctItemRevisionId: f.ppctItemRevision.id,
-        operationalLessonDispositionId: f.sourceDisposition.id,
-        operationalDispositionType: OperationalLessonDispositionType.ABSENCE_NO_REPLACEMENT,
         makeupTeachingScheduleId: replacementId,
         executionCivilDate: new Date('2026-09-15T00:00:00Z'),
         executionAcademicCalendarVersionId: f.calendar.id,
