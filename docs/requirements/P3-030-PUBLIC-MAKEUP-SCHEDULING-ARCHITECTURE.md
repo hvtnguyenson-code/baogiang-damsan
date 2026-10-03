@@ -2,7 +2,7 @@
 
 ## Status
 
-**IN_REVIEW**
+**CLOSED by `SYNC-P3-030`**
 
 Canonical start: `main@5c0faa7f945bd636abf9a40ecdc1d0cf8bc41cbe`
 
@@ -95,14 +95,18 @@ P3-030/P3-031 do not authorize:
 - automatic execution confirmation;
 - production/VPS/deployment mutation.
 
-## Closure gate
+## Closure evidence
 
-P3-030 remains `IN_REVIEW` until all are true:
+P3-030 completed the required architecture-only lifecycle:
 
-1. independent branch diff review passes;
-2. exact-head PR CI succeeds;
-3. parent PR merges normally;
-4. authoritative post-merge main CI succeeds;
-5. one non-recursive `SYNC-P3-030` records final evidence and marks ADR-056 Accepted / P3-030 CLOSED.
+1. independent branch diff review: **PASS**; exactly 8 documentation files changed, zero runtime/schema/migration/API/UI/auth/CI/deploy/VPS mutation;
+2. final reviewed parent HEAD: `0d24c5b31431808b8d473efcfae40851c6779fcf`;
+3. parent PR #185 (`docs(makeup): define P3-030 public scheduling architecture`);
+4. exact-head PR CI #616 / run `37089173791`: **SUCCESS**;
+5. normal merge/main: `18a0dd03ae4f63b2d735390139a9f7ed6c7f0f4e`;
+6. authoritative post-merge main CI #617 / run `37089815714`: **SUCCESS** (Linux + Windows jobs both SUCCESS);
+7. zero unresolved review threads;
+8. no residual architecture correction/re-entry task emerged;
+9. no production/VPS/deploy mutation.
 
-Only then may P3-031 become READY/startable.
+`SYNC-P3-030` is the single non-recursive governance closure. ADR-056 is Accepted and P3-030 is CLOSED. P3-031 is now READY/startable.
