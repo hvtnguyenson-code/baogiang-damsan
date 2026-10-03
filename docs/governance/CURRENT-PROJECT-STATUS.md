@@ -22,37 +22,32 @@ Exact current `main`, branch HEAD and divergence must always be read directly fr
 
 ## Last formally closed major task
 
-`P3-020` — Pre-operational history ingestion/reconciliation runtime — **`CLOSED`** by `SYNC-P3-020`.
+`P3-030` — Public make-up scheduling re-entry architecture — **`CLOSED`** by `SYNC-P3-030`.
 
 Closure evidence:
 
-- parent branch: `feat/p3-020-preop-history-runtime`;
-- canonical parent start: `main@2ffcb9db61017a179c3f26662130f05d341514fa`;
-- final reviewed parent head: `e188a421fb1be6e79e3a1816fef4969eb55e916e`;
-- parent PR: #183 (`feat(history): implement pre-operational teaching ingestion`);
-- exact-head parent PR CI: #612 / run `37025720391` — **SUCCESS**;
-- normal merge/main: `c20e6950327d79844117c18416b904e23436df1e`;
-- authoritative post-merge main CI: #613 / run `37028176259` — **SUCCESS**;
-- parent diff: 26 files, +3605 / -16;
-- independent GitHub diff audit: **PASS**; zero unresolved review threads;
-- no residual correction/re-entry task emerged from P3-020 closure audit;
+- parent branch: `docs/p3-030-public-makeup-architecture`;
+- canonical parent start: `main@5c0faa7f945bd636abf9a40ecdc1d0cf8bc41cbe`;
+- final reviewed parent head: `0d24c5b31431808b8d473efcfae40851c6779fcf`;
+- parent PR: #185 (`docs(makeup): define P3-030 public scheduling architecture`);
+- exact-head parent PR CI: #616 / run `37089173791` — **SUCCESS**;
+- independent GitHub diff audit: **PASS**; exactly 8 docs-only files; zero unresolved review threads;
+- normal merge/main: `18a0dd03ae4f63b2d735390139a9f7ed6c7f0f4e`;
+- authoritative post-merge main CI: #617 / run `37089815714` — **SUCCESS**;
+- ADR-056 Accepted; no residual architecture correction/re-entry task;
 - no production/VPS/deploy mutation; production remains PRE-OPERATIONAL.
 
-P3-020 is formally closed. P3-030 is now IN_REVIEW on `docs/p3-030-public-makeup-architecture`; P4-060 remains READY; P3-031 remains PLANNED behind P3-030.
+P3-030 is formally closed. P3-031 and P4-060 are READY; P4-061 remains PLANNED behind P4-060.
 
 ## Active / next critical path
 
-### In review
-
-- `P3-030` — public make-up scheduling architecture — **`IN_REVIEW`** on `docs/p3-030-public-makeup-architecture`; canonical start `main@5c0faa7f945bd636abf9a40ecdc1d0cf8bc41cbe`; ADR-056 + P3-030 requirement lock proven-debt-only prospective scheduling, exact authority/collision/correction boundaries.
-
 ### Ready
 
+- `P3-031` — public make-up scheduling runtime — **`READY`**; P3-030 CLOSED by `SYNC-P3-030`. Runtime must follow ADR-056 exactly.
 - `P4-060` — workload adjustment architecture — **`READY`**; FULL BUSINESS completeness directive fired T23 and `P1-020` is CLOSED.
 
 ### Planned behind open dependencies
 
-- `P3-031` — public make-up scheduling runtime — **`PLANNED`** behind P3-030.
 - `P4-061` — workload adjustment implementation — **`PLANNED`** behind P4-060.
 
 ### Trigger-gated / decision-blocked
@@ -89,7 +84,7 @@ Detailed domain closure evidence remains in `PRE-PILOT-TASK-REGISTER.md`, ADRs, 
 
 The project is **NOT READY FOR TEACHER PILOT YET**. Remaining registered gaps include:
 
-1. `P3-030` is IN_REVIEW and `P4-060` remains READY; `P3-020` is CLOSED by `SYNC-P3-020`.
+1. `P3-030` is CLOSED by `SYNC-P3-030`; `P3-031` and `P4-060` are READY.
 2. `P3-031` and `P4-061` remain unresolved direct dependencies of the complete FULL BUSINESS `P5-010` freeze.
 3. Public make-up scheduling T08 and adjusted-workload T23 are mandatory re-entry paths; their triggers fired on 2026-10-02.
 4. PWA production baseline (`P5-020`) remains absent.

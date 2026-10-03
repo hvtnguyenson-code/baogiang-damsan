@@ -105,7 +105,7 @@ Project hiện đang realign vì một số minimum-core/deferred quyết địn
 - coordinator authority;
 - delayed go-live + historical pre-operational execution (`P3-010` CLOSED by `SYNC-P3-010`; `P3-020` CLOSED by `SYNC-P3-020`: CSV/TSV business input, server-issued preview identity, canonical `CurricularTeachingExecution`, SCHOOL_WIDE authority, retained batch/row provenance, safe owned-vs-reused overlay handling, historical substitution/make-up reconstruction, no-auto-debt, reverse+replace correction and reconciliation UI);
 - PPCT authoritative workbook import;
-- public make-up scheduling for incomplete obligations (T08 re-entry fired; P3-030 is IN_REVIEW on `docs/p3-030-public-makeup-architecture`; ADR-056 locks proven-debt-only prospective scheduling; P3-031 remains PLANNED until P3-030 closes);
+- public make-up scheduling for incomplete obligations (T08 re-entry fired; P3-030 is CLOSED by `SYNC-P3-030`; ADR-056 is Accepted and locks proven-debt-only prospective scheduling; P3-031 is READY);
 - SpecialActivity workload/reporting;
 - WorkloadAdjustmentRule for official adjusted workload (T23 re-entry fired; P4-060/P4-061 required);
 - PWA/Telegram pilot integration;

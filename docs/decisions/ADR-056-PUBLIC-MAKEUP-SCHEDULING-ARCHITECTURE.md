@@ -1,6 +1,6 @@
 # ADR-056 — Public Make-up Scheduling Architecture
 
-- **Status:** Proposed — P3-030 IN_REVIEW
+- **Status:** Accepted — P3-030 CLOSED by `SYNC-P3-030`
 - **Date:** 2026-10-03
 - **Task:** P3-030
 - **Trigger:** T08 public make-up re-entry for FULL BUSINESS PILOT

@@ -115,7 +115,7 @@ Exact task statuses and prerequisites are maintained authoritatively in `PRE-PIL
 1. Pre-operational historical execution/reconciliation architecture (`P3-010`, **CLOSED by `SYNC-P3-010`**, ADR-055): canonical `CurricularTeachingExecution` truth, retained import provenance, historical substitution/make-up reconstruction, no manual PPCT cursor, no-auto-debt.
 2. Controlled historical evidence ingestion/confirmation (`P3-020`, **CLOSED by `SYNC-P3-020`**): CSV/TSV preview/confirm, retained provenance, canonical execution, correction and reconciliation UI/runtime.
 3. Preserve current invariant: missing execution alone does not prove debt.
-4. Public make-up re-entry is mandatory for FULL BUSINESS: `P3-030` is **IN_REVIEW** on `docs/p3-030-public-makeup-architecture`; ADR-056 defines proven-debt-only prospective scheduling, then `P3-031` runtime after formal closure.
+4. Public make-up re-entry is mandatory for FULL BUSINESS: `P3-030` is **CLOSED by `SYNC-P3-030`** with ADR-056 Accepted; `P3-031` public runtime is now **READY**.
 
 ### P4 — GDĐP / HĐTN programmes and workload
 
@@ -133,7 +133,7 @@ Exact task statuses and prerequisites are maintained authoritatively in `PRE-PIL
 1. Product Owner selected complete `FULL BUSINESS PILOT`; P0-003 is CLOSED by `SYNC-P0-003`.
 2. P5-010 freezes the full cross-domain claim with direct dependencies `P0-003`, `P1-032`, `P2-020`, `P2-061`, `P3-020`, `P3-031`, `P4-061`, `P4-074`.
 3. Cross-domain regression/business freeze must include normal curricular workflows plus historical go-live reconciliation, public make-up scheduling, adjusted workload, GDĐP/HĐTN-HN, date-effective homeroom resolution, exact multi-teacher workload and official combined reporting.
-4. T08 make-up re-entry is required: P3-010 CLOSED -> P3-030 IN_REVIEW -> P3-031, with P3-020 CLOSED for historical ingestion/reconciliation.
+4. T08 make-up re-entry is required: P3-010 CLOSED -> P3-030 CLOSED by `SYNC-P3-030` -> P3-031 READY, with P3-020 CLOSED for historical ingestion/reconciliation.
 5. T23 workload-adjustment re-entry is required: P4-060 -> P4-061.
 6. Installable PWA baseline with safe caching/update behavior.
 7. Dedicated Báo giảng Telegram bot/linking/notification lifecycle.
@@ -168,7 +168,7 @@ P0-900 (CLOSED)
     │       └── P3-010 (Pre-operational historical execution)
     └── P2-010 (PPCT real-workbook audit, CLOSED by SYNC-P2-010)
         └── P2-020 (PPCT native importer, CLOSED by SYNC-P2-020)
-            └── P3-010 (CLOSED by SYNC-P3-010; P3-020 CLOSED by SYNC-P3-020 + P3-030 IN_REVIEW)
+            └── P3-010 (CLOSED by SYNC-P3-010; P3-020 CLOSED by SYNC-P3-020 + P3-030 CLOSED by SYNC-P3-030; P3-031 READY)
 
 Independent tracks:
 - P4-010 (GDĐP/HĐTN programme architecture; `CLOSED` by `SYNC-P4-010`, ADR-050 Accepted)
