@@ -38,13 +38,16 @@ Closure evidence:
 - no residual correction/re-entry task emerged from P3-020 closure audit;
 - no production/VPS/deploy mutation; production remains PRE-OPERATIONAL.
 
-P3-020 is formally closed. P3-030 and P4-060 remain READY; P3-031 remains PLANNED behind P3-030.
+P3-020 is formally closed. P3-030 is now IN_REVIEW on `docs/p3-030-public-makeup-architecture`; P4-060 remains READY; P3-031 remains PLANNED behind P3-030.
 
 ## Active / next critical path
 
+### In review
+
+- `P3-030` — public make-up scheduling architecture — **`IN_REVIEW`** on `docs/p3-030-public-makeup-architecture`; canonical start `main@5c0faa7f945bd636abf9a40ecdc1d0cf8bc41cbe`; ADR-056 + P3-030 requirement lock proven-debt-only prospective scheduling, exact authority/collision/correction boundaries.
+
 ### Ready
 
-- `P3-030` — public make-up scheduling architecture — **`READY`**; T08 trigger fired and `P3-010` is CLOSED.
 - `P4-060` — workload adjustment architecture — **`READY`**; FULL BUSINESS completeness directive fired T23 and `P1-020` is CLOSED.
 
 ### Planned behind open dependencies
@@ -86,7 +89,7 @@ Detailed domain closure evidence remains in `PRE-PILOT-TASK-REGISTER.md`, ADRs, 
 
 The project is **NOT READY FOR TEACHER PILOT YET**. Remaining registered gaps include:
 
-1. `P3-030` and `P4-060` remain READY; `P3-020` is CLOSED by `SYNC-P3-020`.
+1. `P3-030` is IN_REVIEW and `P4-060` remains READY; `P3-020` is CLOSED by `SYNC-P3-020`.
 2. `P3-031` and `P4-061` remain unresolved direct dependencies of the complete FULL BUSINESS `P5-010` freeze.
 3. Public make-up scheduling T08 and adjusted-workload T23 are mandatory re-entry paths; their triggers fired on 2026-10-02.
 4. PWA production baseline (`P5-020`) remains absent.
