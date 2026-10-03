@@ -1,15 +1,18 @@
 import type {
   AcademicYearRecord,
   CivilDateString,
+  MakeupTargetOptionsResponse,
   MakeupTeachingCandidateRecord,
   MakeupTeachingScheduleRecord,
 } from '@baogiang/contracts';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useAuth } from '../auth/auth-context';
 import { Button } from '../components/ui/button';
 import { InlineAlert } from '../components/ui/feedback';
 import { DataTable, EmptyState, PageHeader, PageLoading, SelectField, StatusText, TextareaField } from '../components/ui/management';
 import { academicYearsApi } from '../lib/academic-structure-api';
 import { ApiError } from '../lib/api-client';
+import { hasSchoolCapability } from '../lib/capabilities';
 import { makeupSchedulesApi } from '../lib/makeup-schedules-api';
 
 function errorText(error: unknown): string {
@@ -26,9 +29,8 @@ function dispositionTypeLabel(type: string): string {
 }
 
 type SelectedCandidateState = {
-  sourceTimetableEntryId: string;
+  sourceNormalOccurrenceKey: string;
   sourceCivilDate: CivilDateString;
-  sourceDispositionId?: string;
   schoolClassName: string;
   subjectName: string;
   responsibleTeacherName: string;
@@ -36,11 +38,31 @@ type SelectedCandidateState = {
 };
 
 export function MakeupSchedulingPage() {
+  const { auth } = useAuth();
+  const rawCapabilities = auth?.capabilities;
+  const capabilities = useMemo(() => rawCapabilities ?? [], [rawCapabilities]);
+
+  const isSchoolWide = hasSchoolCapability(capabilities, 'TEACHING_OPERATION_MANAGE');
+  const subjectGrants = useMemo(
+    () => capabilities.filter((g) => g.key === 'TEACHING_OPERATION_MANAGE' && g.scope === 'SUBJECT' && g.resourceId),
+    [capabilities],
+  );
+  const hasAccess = isSchoolWide || subjectGrants.length > 0;
+
   const [years, setYears] = useState<AcademicYearRecord[]>([]);
   const [academicYearId, setAcademicYearId] = useState('');
+  const [selectedSubjectId, setSelectedSubjectId] = useState<string>(() => {
+    if (!isSchoolWide && subjectGrants.length > 0) {
+      return subjectGrants[0]!.resourceId!;
+    }
+    return '';
+  });
+
   const [candidates, setCandidates] = useState<MakeupTeachingCandidateRecord[]>([]);
   const [schedules, setSchedules] = useState<MakeupTeachingScheduleRecord[]>([]);
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'REVERSED'>('ALL');
+
+  const [knownSubjects, setKnownSubjects] = useState<Array<{ id: string; name: string }>>([]);
 
   const [selectedCandidate, setSelectedCandidate] = useState<SelectedCandidateState | null>(null);
   const [replacesSchedule, setReplacesSchedule] = useState<MakeupTeachingScheduleRecord | null>(null);
@@ -50,6 +72,9 @@ export function MakeupSchedulingPage() {
   const [scheduledTeacherUserId, setScheduledTeacherUserId] = useState('');
   const [note, setNote] = useState('');
 
+  const [targetOptions, setTargetOptions] = useState<MakeupTargetOptionsResponse | null>(null);
+  const [loadingOptions, setLoadingOptions] = useState(false);
+
   const [reversalScheduleId, setReversalScheduleId] = useState<string | null>(null);
   const [reversalReason, setReversalReason] = useState('');
 
@@ -58,6 +83,19 @@ export function MakeupSchedulingPage() {
   const [success, setSuccess] = useState('');
 
   useEffect(() => {
+    if (!isSchoolWide && subjectGrants.length > 0) {
+      if (!selectedSubjectId || !subjectGrants.some((g) => g.resourceId === selectedSubjectId)) {
+        setSelectedSubjectId(subjectGrants[0]!.resourceId!);
+      }
+    }
+  }, [isSchoolWide, subjectGrants, selectedSubjectId]);
+
+  useEffect(() => {
+    if (!hasAccess) {
+      setBusy(null);
+      return;
+    }
+
     let active = true;
     academicYearsApi.list({ page: 1, pageSize: 50 })
       .then((res) => {
@@ -74,23 +112,48 @@ export function MakeupSchedulingPage() {
         if (active) setBusy(null);
       });
     return () => { active = false; };
-  }, []);
+  }, [hasAccess]);
 
   useEffect(() => {
-    if (!academicYearId) return;
-    loadData(academicYearId);
-  }, [academicYearId]);
+    if (!academicYearId || !hasAccess) return;
+    const effectiveSubjectId = !isSchoolWide
+      ? (selectedSubjectId || (subjectGrants[0]?.resourceId ?? ''))
+      : selectedSubjectId;
 
-  async function loadData(yearId: string) {
+    if (!isSchoolWide && !effectiveSubjectId) return;
+
+    loadData(academicYearId, effectiveSubjectId);
+  }, [academicYearId, selectedSubjectId, hasAccess, isSchoolWide, subjectGrants]);
+
+  async function loadData(yearId: string, subjectId?: string) {
     setBusy('loading');
     setError('');
     try {
+      const queryParams: { academicYearId: string; subjectId?: string } = { academicYearId: yearId };
+      if (subjectId) {
+        queryParams.subjectId = subjectId;
+      }
       const [candidateRes, scheduleRes] = await Promise.all([
-        makeupSchedulesApi.listCandidates({ academicYearId: yearId }),
-        makeupSchedulesApi.listSchedules({ academicYearId: yearId }),
+        makeupSchedulesApi.listCandidates(queryParams),
+        makeupSchedulesApi.listSchedules(queryParams),
       ]);
       setCandidates(candidateRes.items);
       setSchedules(scheduleRes.items);
+
+      // Collect subject names
+      const subMap = new Map<string, string>();
+      for (const c of candidateRes.items) {
+        if (c.subjectId && c.subjectName) {
+          subMap.set(c.subjectId, c.subjectName);
+        }
+      }
+      if (subMap.size > 0) {
+        setKnownSubjects((prev) => {
+          const merged = new Map(prev.map((s) => [s.id, s.name]));
+          subMap.forEach((name, id) => merged.set(id, name));
+          return Array.from(merged.entries()).map(([id, name]) => ({ id, name }));
+        });
+      }
     } catch (caught) {
       setError(errorText(caught));
     } finally {
@@ -98,39 +161,80 @@ export function MakeupSchedulingPage() {
     }
   }
 
+  // Load advisory target options when selectedCandidate and targetCivilDate are chosen
+  useEffect(() => {
+    if (!selectedCandidate || !academicYearId || !targetCivilDate || targetCivilDate.length !== 10) {
+      setTargetOptions(null);
+      return;
+    }
+
+    let active = true;
+    setLoadingOptions(true);
+    setTargetTimeSlotDefinitionId('');
+    setScheduledTeacherUserId('');
+
+    makeupSchedulesApi.getTargetOptions({
+      academicYearId,
+      sourceNormalOccurrenceKey: selectedCandidate.sourceNormalOccurrenceKey,
+      targetCivilDate,
+    })
+      .then((res) => {
+        if (!active) return;
+        setTargetOptions(res);
+        if (res.slots.length > 0) {
+          setTargetTimeSlotDefinitionId(res.slots[0].id);
+        }
+        if (res.teachers.length > 0) {
+          setScheduledTeacherUserId(res.teachers[0].userId);
+        }
+      })
+      .catch((err) => {
+        if (!active) return;
+        setTargetOptions(null);
+        setError(errorText(err));
+      })
+      .finally(() => {
+        if (active) setLoadingOptions(false);
+      });
+
+    return () => { active = false; };
+  }, [selectedCandidate, academicYearId, targetCivilDate]);
+
   function handleSelectCandidate(candidate: MakeupTeachingCandidateRecord) {
     setSelectedCandidate({
-      sourceTimetableEntryId: candidate.sourceNormalOccurrenceKey.split(':')[0] || candidate.sourceNormalOccurrenceKey,
+      sourceNormalOccurrenceKey: candidate.sourceNormalOccurrenceKey,
       sourceCivilDate: candidate.originalCivilDate,
-      sourceDispositionId: candidate.sourceDispositionId,
       schoolClassName: candidate.schoolClassName ?? candidate.schoolClassId,
       subjectName: candidate.subjectName ?? candidate.subjectId,
       responsibleTeacherName: candidate.responsibleTeacherName ?? candidate.responsibleTeacherUserId,
       dispositionType: candidate.dispositionType,
     });
     setReplacesSchedule(null);
-    setScheduledTeacherUserId(candidate.responsibleTeacherUserId);
     setTargetCivilDate('');
     setTargetTimeSlotDefinitionId('');
+    setScheduledTeacherUserId('');
+    setTargetOptions(null);
     setNote('');
     setError('');
     setSuccess('');
   }
 
   function handleStartReplacement(schedule: MakeupTeachingScheduleRecord) {
+    const origDate = schedule.originalCivilDate.slice(0, 10) as CivilDateString;
+    const sourceKey = `NORMAL:${schedule.originalTimetableEntryId}:${origDate}`;
     setReplacesSchedule(schedule);
     setSelectedCandidate({
-      sourceTimetableEntryId: schedule.originalTimetableEntryId,
-      sourceCivilDate: schedule.originalCivilDate,
-      sourceDispositionId: schedule.sourceDispositionId ?? undefined,
+      sourceNormalOccurrenceKey: sourceKey,
+      sourceCivilDate: origDate,
       schoolClassName: schedule.schoolClassId,
       subjectName: schedule.subjectId,
       responsibleTeacherName: schedule.responsibleTeacherUserId,
       dispositionType: 'Đảo lịch (Thay thế)',
     });
-    setScheduledTeacherUserId(schedule.scheduledTeacherUserId);
     setTargetCivilDate('');
     setTargetTimeSlotDefinitionId('');
+    setScheduledTeacherUserId('');
+    setTargetOptions(null);
     setNote(`Thay thế lịch dạy bù ${schedule.id}`);
     setError('');
     setSuccess('');
@@ -142,6 +246,7 @@ export function MakeupSchedulingPage() {
     setTargetCivilDate('');
     setTargetTimeSlotDefinitionId('');
     setScheduledTeacherUserId('');
+    setTargetOptions(null);
     setNote('');
   }
 
@@ -154,11 +259,11 @@ export function MakeupSchedulingPage() {
       return;
     }
     if (!targetTimeSlotDefinitionId.trim()) {
-      setError('Vui lòng nhập mã tiết học dự kiến.');
+      setError('Vui lòng chọn tiết học mục tiêu.');
       return;
     }
     if (!scheduledTeacherUserId.trim()) {
-      setError('Vui lòng nhập mã giáo viên dạy bù.');
+      setError('Vui lòng chọn giáo viên thực hiện.');
       return;
     }
 
@@ -169,10 +274,8 @@ export function MakeupSchedulingPage() {
     try {
       const result = await makeupSchedulesApi.createSchedule({
         academicYearId,
-        sourceTimetableEntryId: selectedCandidate.sourceTimetableEntryId,
-        sourceCivilDate: selectedCandidate.sourceCivilDate,
-        sourceDispositionId: selectedCandidate.sourceDispositionId,
-        targetCivilDate,
+        sourceNormalOccurrenceKey: selectedCandidate.sourceNormalOccurrenceKey,
+        targetCivilDate: targetCivilDate as CivilDateString,
         targetTimeSlotDefinitionId: targetTimeSlotDefinitionId.trim(),
         scheduledTeacherUserId: scheduledTeacherUserId.trim(),
         replacesId: replacesSchedule ? replacesSchedule.id : undefined,
@@ -182,7 +285,7 @@ export function MakeupSchedulingPage() {
 
       setSuccess(`Lập lịch dạy bù thành công (${result.outcome === 'IDEMPOTENT_REPLAY' ? 'Ghi nhận lại' : 'Tạo mới'}). Mã lịch: ${result.record.id}`);
       handleCancelSelection();
-      await loadData(academicYearId);
+      await loadData(academicYearId, selectedSubjectId);
     } catch (caught) {
       setError(errorText(caught));
     } finally {
@@ -210,12 +313,25 @@ export function MakeupSchedulingPage() {
       setSuccess(`Đã đảo ngược lịch dạy bù (${result.record.id}).`);
       setReversalScheduleId(null);
       setReversalReason('');
-      await loadData(academicYearId);
+      await loadData(academicYearId, selectedSubjectId);
     } catch (caught) {
       setError(errorText(caught));
     } finally {
       setBusy(null);
     }
+  }
+
+  if (!hasAccess) {
+    return (
+      <div className="workspace-page">
+        <PageHeader eyebrow="Quản lý vận hành" title="Lịch dạy bù">
+          Lập và quản lý lịch dạy bù cho các nghĩa vụ nợ tiết hợp lệ.
+        </PageHeader>
+        <InlineAlert title="Từ chối truy cập">
+          Tài khoản này không có quyền quản lý vận hành giảng dạy (TEACHING_OPERATION_MANAGE).
+        </InlineAlert>
+      </div>
+    );
   }
 
   const filteredSchedules = schedules.filter((s) => {
@@ -233,7 +349,7 @@ export function MakeupSchedulingPage() {
       </PageHeader>
 
       <section className="form-section">
-        <legend>Chọn năm học</legend>
+        <legend>Phạm vi điều hành</legend>
         <div className="form-row">
           <SelectField
             label="Năm học"
@@ -245,12 +361,50 @@ export function MakeupSchedulingPage() {
               <option key={y.id} value={y.id}>{y.name} ({y.code})</option>
             ))}
           </SelectField>
+
+          {isSchoolWide ? (
+            <SelectField
+              label="Lọc theo môn học"
+              id="subject-select"
+              value={selectedSubjectId}
+              onChange={(e) => setSelectedSubjectId(e.target.value)}
+            >
+              <option value="">Tất cả môn học (toàn trường)</option>
+              {knownSubjects.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </SelectField>
+          ) : subjectGrants.length > 1 ? (
+            <SelectField
+              label="Môn học được phân công"
+              id="subject-select"
+              value={selectedSubjectId}
+              onChange={(e) => setSelectedSubjectId(e.target.value)}
+              required
+            >
+              {subjectGrants.map((g) => {
+                const sub = knownSubjects.find((s) => s.id === g.resourceId);
+                const label = sub?.name ?? `Môn học (${g.resourceId?.slice(0, 8)})`;
+                return <option key={g.resourceId} value={g.resourceId}>{label}</option>;
+              })}
+            </SelectField>
+          ) : (
+            <div className="form-field" style={{ minWidth: '200px' }}>
+              <label className="form-field__label" htmlFor="single-subject-display">Môn học phụ trách</label>
+              <div id="single-subject-display" className="form-field__input" style={{ display: 'flex', alignItems: 'center', background: 'var(--mist-50)' }}>
+                <strong>
+                  {knownSubjects.find((s) => s.id === subjectGrants[0]?.resourceId)?.name ?? `Môn học (${subjectGrants[0]?.resourceId?.slice(0, 8)})`}
+                </strong>
+              </div>
+            </div>
+          )}
+
           <div style={{ alignSelf: 'flex-end', marginBottom: '16px' }}>
             <Button
               type="button"
               variant="secondary"
               disabled={!academicYearId || busy !== null}
-              onClick={() => academicYearId && loadData(academicYearId)}
+              onClick={() => academicYearId && loadData(academicYearId, selectedSubjectId)}
             >
               Tải lại danh sách
             </Button>
@@ -275,7 +429,7 @@ export function MakeupSchedulingPage() {
           <form onSubmit={handleCreateSchedule}>
             <div className="form-row">
               <div className="form-field">
-                <label className="form-field__label" htmlFor="target-date">Ngày dạy bù dự kiến (YYYY-MM-DD)</label>
+                <label className="form-field__label" htmlFor="target-date">Ngày dạy bù dự kiến</label>
                 <input
                   id="target-date"
                   type="date"
@@ -286,33 +440,69 @@ export function MakeupSchedulingPage() {
                 />
               </div>
 
-              <div className="form-field">
-                <label className="form-field__label" htmlFor="target-slot">Mã định danh tiết học (TimeSlotDefinition ID)</label>
-                <input
+              {loadingOptions ? (
+                <div className="form-field">
+                  <label className="form-field__label">Tiết học mục tiêu</label>
+                  <div className="form-field__input" style={{ display: 'flex', alignItems: 'center' }}>
+                    <em>Đang tải tiết học hợp lệ...</em>
+                  </div>
+                </div>
+              ) : targetOptions && targetOptions.slots.length > 0 ? (
+                <SelectField
+                  label="Tiết học mục tiêu"
                   id="target-slot"
-                  type="text"
-                  className="form-field__input"
-                  placeholder="UUID của tiết dạy bù"
                   value={targetTimeSlotDefinitionId}
                   onChange={(e) => setTargetTimeSlotDefinitionId(e.target.value)}
                   required
-                />
-              </div>
+                >
+                  <option value="">-- Chọn tiết học --</option>
+                  {targetOptions.slots.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      Tiết {s.ordinal} — {s.displayLabel} ({s.startTime.slice(0, 5)}–{s.endTime.slice(0, 5)})
+                    </option>
+                  ))}
+                </SelectField>
+              ) : (
+                <div className="form-field">
+                  <label className="form-field__label">Tiết học mục tiêu</label>
+                  <div className="form-field__input" style={{ display: 'flex', alignItems: 'center', color: 'var(--text-secondary)' }}>
+                    {targetCivilDate ? 'Không có tiết học cho phép dạy bù vào ngày này' : 'Vui lòng chọn ngày trước'}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="form-row">
-              <div className="form-field">
-                <label className="form-field__label" htmlFor="scheduled-teacher">Mã giáo viên thực hiện (User ID)</label>
-                <input
+              {loadingOptions ? (
+                <div className="form-field">
+                  <label className="form-field__label">Giáo viên thực hiện</label>
+                  <div className="form-field__input" style={{ display: 'flex', alignItems: 'center' }}>
+                    <em>Đang tải danh sách giáo viên đủ điều kiện...</em>
+                  </div>
+                </div>
+              ) : targetOptions && targetOptions.teachers.length > 0 ? (
+                <SelectField
+                  label="Giáo viên thực hiện"
                   id="scheduled-teacher"
-                  type="text"
-                  className="form-field__input"
-                  placeholder="UUID của giáo viên cùng môn dạy bù"
                   value={scheduledTeacherUserId}
                   onChange={(e) => setScheduledTeacherUserId(e.target.value)}
                   required
-                />
-              </div>
+                >
+                  <option value="">-- Chọn giáo viên cùng môn --</option>
+                  {targetOptions.teachers.map((t) => (
+                    <option key={t.userId} value={t.userId}>
+                      {t.displayName}{t.staffCode ? ` (${t.staffCode})` : ''}
+                    </option>
+                  ))}
+                </SelectField>
+              ) : (
+                <div className="form-field">
+                  <label className="form-field__label">Giáo viên thực hiện</label>
+                  <div className="form-field__input" style={{ display: 'flex', alignItems: 'center', color: 'var(--text-secondary)' }}>
+                    {targetCivilDate ? 'Không có giáo viên đủ điều kiện chuyên môn vào ngày này' : 'Vui lòng chọn ngày trước'}
+                  </div>
+                </div>
+              )}
             </div>
 
             <TextareaField
@@ -324,7 +514,7 @@ export function MakeupSchedulingPage() {
             />
 
             <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
-              <Button type="submit" disabled={busy === 'submitting'}>
+              <Button type="submit" disabled={busy === 'submitting' || loadingOptions || !targetTimeSlotDefinitionId || !scheduledTeacherUserId}>
                 {busy === 'submitting' ? 'Đang tạo lịch...' : 'Xác nhận tạo lịch dạy bù'}
               </Button>
               <Button type="button" variant="secondary" onClick={handleCancelSelection}>

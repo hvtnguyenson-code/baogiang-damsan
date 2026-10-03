@@ -11,6 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import {
+  MakeupTargetOptionsResponse,
   MakeupTeachingCandidateListResponse,
   MakeupTeachingScheduleCreateResult,
   MakeupTeachingScheduleListResponse,
@@ -22,6 +23,7 @@ import { CsrfOriginGuard } from '../auth/csrf-origin.guard';
 import { SessionAuthGuard } from '../auth/session-auth.guard';
 import {
   CreateMakeupScheduleDto,
+  GetMakeupTargetOptionsDto,
   ListMakeupCandidatesDto,
   ListMakeupSchedulesDto,
   ReverseOperationalOverlayDto,
@@ -39,6 +41,15 @@ export class MakeupSchedulesController {
     @Req() request: AuthenticatedRequest,
   ): Promise<MakeupTeachingCandidateListResponse> {
     return this.service.listCandidates(query, request);
+  }
+
+  @Get('target-options')
+  @UseGuards(SessionAuthGuard)
+  getTargetOptions(
+    @Query() query: GetMakeupTargetOptionsDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<MakeupTargetOptionsResponse> {
+    return this.service.getTargetOptions(query, request);
   }
 
   @Post()

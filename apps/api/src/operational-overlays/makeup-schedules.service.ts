@@ -10,11 +10,13 @@ import {
   OperationalLessonDispositionType,
   OperationalOverlayStatus,
   Prisma,
-  SpecialActivityStatus,
   TeachingExecutionStatus,
-  TimetableVersionStatus,
+  TimeSlotSession,
 } from '@prisma/client';
 import {
+  MakeupTargetOptionsResponse,
+  MakeupTargetSlotOption,
+  MakeupTargetTeacherOption,
   MakeupTeachingCandidateListResponse,
   MakeupTeachingCandidateRecord,
   MakeupTeachingScheduleCreateResult,
@@ -32,6 +34,7 @@ import { ProgressDebtService } from '../progress-debt/progress-debt.service';
 import { staffSubjectCoverageWhere } from '../teaching-assignments/teaching-assignment-policy';
 import {
   CreateMakeupScheduleDto,
+  GetMakeupTargetOptionsDto,
   ListMakeupCandidatesDto,
   ListMakeupSchedulesDto,
   ReverseOperationalOverlayDto,
@@ -41,7 +44,6 @@ import { OperationalOverlayAccessService } from './operational-overlay-access.se
 import {
   COLLISION_COVERAGE,
   hcmSlotInstant,
-  intervalsOverlap,
   makeupCreateFingerprint,
   OverlayClock,
   OVERLAY_CLOCK,
@@ -49,6 +51,12 @@ import {
   weekdayForCivilDate,
 } from './operational-overlay-policy';
 import { hcmCivilDate } from '../progress-debt/progress-debt.policy';
+import { ResolvedLessonOccurrencesService } from '../resolved-occurrences/resolved-occurrences.service';
+import {
+  extractCanonicalOccupancies,
+  intervalsOverlapTimes,
+} from '../resolved-occurrences/effective-occupancy';
+import { formatBlockedReason } from '../effective-schedule/effective-schedule-policy';
 
 const CREATE_RACE_MESSAGE = 'Lệnh xung đột với một thay đổi đồng thời hoặc dữ liệu nghiệp vụ đang có.';
 const STALE_MESSAGE = 'Bản ghi đã thay đổi; hãy tải lại trước khi đảo ngược.';
@@ -61,6 +69,7 @@ export class MakeupSchedulesService {
     private readonly access: OperationalOverlayAccessService,
     private readonly businessConfiguration: BusinessConfigurationService,
     private readonly progressDebt: ProgressDebtService,
+    private readonly resolvedOccurrences: ResolvedLessonOccurrencesService,
     @Inject(OVERLAY_CLOCK) private readonly clock: OverlayClock,
   ) {}
 
@@ -222,6 +231,90 @@ export class MakeupSchedulesService {
     return { items, page, pageSize, total };
   }
 
+  async getTargetOptions(
+    query: GetMakeupTargetOptionsDto,
+    request: AuthenticatedRequest,
+  ): Promise<MakeupTargetOptionsResponse> {
+    const parts = query.sourceNormalOccurrenceKey.trim().split(':');
+    if (parts.length !== 3 || parts[0] !== 'NORMAL') {
+      throw new BadRequestException('sourceNormalOccurrenceKey không đúng định dạng chuẩn tắc.');
+    }
+    const timetableEntryId = parts[1]!;
+
+    const entry = await this.prisma.timetableEntry.findUnique({
+      where: { id: timetableEntryId },
+      select: { subjectId: true, academicYearId: true },
+    });
+    if (!entry || entry.academicYearId !== query.academicYearId) {
+      throw new NotFoundException('Không tìm thấy cơ hội dạy nguồn hoặc không thuộc năm học.');
+    }
+
+    await this.access.requireTeachingSubject(request, entry.subjectId);
+
+    const targetDate = parseCivilDate(query.targetCivilDate);
+    const targetWeekday = weekdayForCivilDate(targetDate);
+
+    const slots = await this.prisma.timeSlotDefinition.findMany({
+      where: {
+        academicYearId: query.academicYearId,
+        isActive: true,
+        weekday: targetWeekday,
+        allowMakeupTeaching: true,
+      },
+      orderBy: [{ session: 'asc' }, { ordinal: 'asc' }, { startTime: 'asc' }],
+    });
+
+    const targetCivilDateStr = query.targetCivilDate as `${number}-${number}-${number}`;
+    const proofs = await this.prisma.staffSubject.findMany({
+      where: {
+        ...staffSubjectCoverageWhere(entry.subjectId, targetCivilDateStr, targetCivilDateStr),
+        user: {
+          status: 'ACTIVE',
+          profile: { isTeachingStaff: true },
+        },
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            username: true,
+            profile: { select: { displayName: true, staffCode: true } },
+          },
+        },
+      },
+    });
+
+    const teacherMap = new Map<string, MakeupTargetTeacherOption>();
+    for (const proof of proofs) {
+      if (proof.user && !teacherMap.has(proof.user.id)) {
+        teacherMap.set(proof.user.id, {
+          userId: proof.user.id,
+          displayName: proof.user.profile?.displayName ?? proof.user.username,
+          staffCode: proof.user.profile?.staffCode ?? null,
+        });
+      }
+    }
+
+    const teachers = [...teacherMap.values()].sort((a, b) => a.displayName.localeCompare(b.displayName));
+
+    const slotOptions: MakeupTargetSlotOption[] = slots.map((s) => ({
+      id: s.id,
+      displayLabel: s.displayLabel,
+      session: s.session as TimeSlotSession,
+      ordinal: s.ordinal,
+      startTime: s.startTime.toISOString().slice(11, 19) as `${number}:${number}:${number}`,
+      endTime: s.endTime.toISOString().slice(11, 19) as `${number}:${number}:${number}`,
+    }));
+
+    return {
+      academicYearId: query.academicYearId,
+      targetCivilDate: query.targetCivilDate,
+      targetWeekday,
+      slots: slotOptions,
+      teachers,
+    };
+  }
+
   async create(
     dto: CreateMakeupScheduleDto,
     request: AuthenticatedRequest,
@@ -245,6 +338,7 @@ export class MakeupSchedulesService {
             where: { createRequestKey: dto.requestKey.trim() },
           });
           if (replay) {
+            await this.access.requireTeachingSubject(request, replay.subjectId);
             if (replay.createRequestFingerprint !== fingerprint) {
               throw new ConflictException('requestKey đã được dùng với nội dung khác.');
             }
@@ -376,20 +470,23 @@ export class MakeupSchedulesService {
 
           // 10. Target date & calendar validation
           const targetDate = parseCivilDate(normalized.targetCivilDate);
-          const targetCalendar = await tx.academicCalendarVersion.findFirst({
+          const matchingCalendars = await tx.academicCalendarVersion.findMany({
             where: {
               academicYearId: normalized.academicYearId,
+              isActive: true,
               startDate: { lte: targetDate },
               endDate: { gte: targetDate },
             },
-            orderBy: [{ versionNumber: 'desc' }, { id: 'asc' }],
           });
-          if (!targetCalendar) {
-            throw new ConflictException('Ngày mục tiêu nằm ngoài tất cả phiên lịch của năm học.');
+          if (matchingCalendars.length === 0) {
+            throw new ConflictException('Ngày mục tiêu nằm ngoài tất cả phiên lịch đang hoạt động của năm học.');
           }
-          if (!targetCalendar.isActive) {
-            throw new ConflictException('Phiên lịch bao phủ ngày mục tiêu chưa được kích hoạt.');
+          if (matchingCalendars.length > 1) {
+            throw new ConflictException(
+              'Ngày mục tiêu trùng với nhiều hơn một phiên lịch hoạt động trong năm học (mơ hồ).',
+            );
           }
+          const targetCalendar = matchingCalendars[0]!;
 
           // CalendarInterruption check
           const interruption = await tx.calendarInterruption.findFirst({
@@ -487,182 +584,46 @@ export class MakeupSchedulesService {
           }
           const proof = proofs[0]!;
 
-          // 12. Collision checks
-          const targetInterval = { startTime: targetSlot.startTime, endTime: targetSlot.endTime };
-
-          // a. Active make-up collision (class & teacher)
-          const makeups = await tx.makeupTeachingSchedule.findMany({
-            where: {
-              academicYearId: normalized.academicYearId,
-              targetCivilDate: targetDate,
-              status: OperationalOverlayStatus.ACTIVE,
-              OR: [
-                { schoolClassId: entry.schoolClassId },
-                { scheduledTeacherUserId: teacher.id },
-              ],
-            },
-            include: { targetTimeSlotDefinition: true },
+          // 12. Canonical resolution & effective occupancy collision checks
+          const targetCivilDateFormatted = formatCivilDate(targetDate) as `${number}-${number}-${number}`;
+          const resolution = await this.resolvedOccurrences.resolveInTransaction(tx, {
+            academicYearId: normalized.academicYearId,
+            civilDate: targetCivilDateFormatted,
           });
-          for (const m of makeups) {
-            if (intervalsOverlap(targetInterval, m.targetTimeSlotDefinition)) {
-              if (m.schoolClassId === entry.schoolClassId) {
-                throw new ConflictException('Lớp học đã có lịch dạy bù ACTIVE khác trong cùng khoảng thời gian.');
-              }
-              if (m.scheduledTeacherUserId === teacher.id) {
-                throw new ConflictException('Giáo viên đã có lịch dạy bù ACTIVE khác trong cùng khoảng thời gian.');
-              }
-            }
+
+          if (resolution.status === 'BLOCKED') {
+            const firstFinding = resolution.findings[0];
+            const reason = firstFinding
+              ? formatBlockedReason(firstFinding)
+              : 'Lịch dạy ngày mục tiêu bị xung đột hoặc chưa đủ nhất quán.';
+            throw new ConflictException(`Ngày mục tiêu bị chặn giải quyết lịch: ${reason}`);
           }
 
-          // b. Active SpecialActivity collision (class & teacher)
-          const activities = await tx.specialActivity.findMany({
-            where: {
-              academicYearId: normalized.academicYearId,
-              civilDate: targetDate,
-              status: SpecialActivityStatus.ACTIVE,
-              OR: [
-                { classTargets: { some: { schoolClassId: entry.schoolClassId } } },
-                { staffing: { some: { scheduledTeacherUserId: teacher.id } } },
-              ],
-            },
-            include: {
-              timeSlots: { include: { timeSlotDefinition: true } },
-              classTargets: true,
-              staffing: true,
-            },
-          });
-          for (const act of activities) {
-            for (const actSlot of act.timeSlots) {
-              if (intervalsOverlap(targetInterval, actSlot.timeSlotDefinition)) {
-                if (act.classTargets.some((ct) => ct.schoolClassId === entry.schoolClassId)) {
-                  throw new ConflictException(
-                    'Lớp học bị trùng lặp với Hoạt động đặc biệt (SpecialActivity) ACTIVE.',
-                  );
-                }
-                if (act.staffing.some((st) => st.scheduledTeacherUserId === teacher.id)) {
-                  throw new ConflictException(
-                    'Giáo viên bị trùng lặp với Hoạt động đặc biệt (SpecialActivity) ACTIVE.',
-                  );
-                }
+          const occupancies = extractCanonicalOccupancies(resolution);
+
+          const targetStartTimeStr = targetSlot.startTime.toISOString().slice(11, 19);
+          const targetEndTimeStr = targetSlot.endTime.toISOString().slice(11, 19);
+
+          for (const occ of occupancies) {
+            if (intervalsOverlapTimes(targetStartTimeStr, targetEndTimeStr, occ.startTime, occ.endTime)) {
+              if (occ.schoolClassId === entry.schoolClassId) {
+                const sourceLabel =
+                  occ.sourceKind === 'SPECIAL_ACTIVITY'
+                    ? 'Hoạt động đặc biệt (SpecialActivity)'
+                    : occ.sourceKind === 'MAKEUP_TEACHING'
+                    ? 'Lịch dạy bù'
+                    : 'Thời khóa biểu / phân công';
+                throw new ConflictException(`Lớp học đã có ${sourceLabel} ACTIVE trong cùng khoảng thời gian.`);
               }
-            }
-          }
-
-          // c. Active OperationalLessonDispositions assigned to this teacher
-          const dispositions = await tx.operationalLessonDisposition.findMany({
-            where: {
-              academicYearId: normalized.academicYearId,
-              sourceCivilDate: targetDate,
-              status: OperationalOverlayStatus.ACTIVE,
-              assignedTeacherUserId: teacher.id,
-            },
-            include: { timetableEntry: { include: { timeSlotDefinition: true } } },
-          });
-          for (const d of dispositions) {
-            if (intervalsOverlap(targetInterval, d.timetableEntry.timeSlotDefinition)) {
-              throw new ConflictException(
-                'Giáo viên đã có occupancy từ disposition thay thế/quản nhiệm ACTIVE.',
-              );
-            }
-          }
-
-          // d. Normal timetable entries (class & teacher)
-          const normalEntries = await tx.timetableEntry.findMany({
-            where: {
-              weekday: targetWeekday,
-              timetableVersion: {
-                status: { in: [TimetableVersionStatus.ACTIVE, TimetableVersionStatus.SUPERSEDED] },
-                effectiveFrom: { lte: targetDate },
-                OR: [{ effectiveUntil: null }, { effectiveUntil: { gte: targetDate } }],
-              },
-              OR: [
-                { schoolClassId: entry.schoolClassId },
-                { teacherUserId: teacher.id },
-              ],
-            },
-            include: {
-              timetableVersion: true,
-              timeSlotDefinition: true,
-              schoolClass: { select: { gradeLevel: true } },
-            },
-          });
-
-          for (const ne of normalEntries) {
-            if (!intervalsOverlap(targetInterval, ne.timeSlotDefinition)) continue;
-
-            // Check if suppressed by CalendarInterruption
-            if (ne.timetableVersion.calendarVersionId) {
-              const isInterrupted = await tx.calendarInterruption.findFirst({
-                where: {
-                  calendarVersionId: ne.timetableVersion.calendarVersionId,
-                  startDate: { lte: targetDate },
-                  endDate: { gte: targetDate },
-                },
-              });
-              if (isInterrupted) continue;
-
-              // Check CalendarException
-              const excs = await tx.calendarException.findMany({
-                where: {
-                  academicCalendarVersionId: ne.timetableVersion.calendarVersionId,
-                  civilDate: targetDate,
-                  status: OperationalOverlayStatus.ACTIVE,
-                },
-                include: { exactTimeSlots: true },
-              });
-              const isExc = excs.some((exc) => {
-                const scopeMatch =
-                  exc.scope === 'SCHOOL_WIDE' ||
-                  (exc.scope === 'GRADE' && exc.gradeLevel === ne.schoolClass.gradeLevel) ||
-                  (exc.scope === 'CLASS' && exc.schoolClassId === ne.schoolClassId);
-                const timeMatch =
-                  exc.timeSelector === 'WHOLE_DAY' ||
-                  (exc.timeSelector === 'SESSION' && exc.session === ne.timeSlotDefinition.session) ||
-                  (exc.timeSelector === 'EXACT_SLOTS' &&
-                    exc.exactTimeSlots.some((s) => s.timeSlotDefinitionId === ne.timeSlotDefinitionId));
-                return scopeMatch && timeMatch;
-              });
-              if (isExc) continue;
-            }
-
-            // Check OperationalLessonDisposition on this normal entry
-            const disp = await tx.operationalLessonDisposition.findFirst({
-              where: {
-                timetableEntryId: ne.id,
-                sourceCivilDate: targetDate,
-                status: OperationalOverlayStatus.ACTIVE,
-              },
-            });
-            if (disp) {
-              if (disp.dispositionType === OperationalLessonDispositionType.AUTHORIZED_CANCELLATION) {
-                continue;
+              if (occ.teacherUserId === teacher.id) {
+                const sourceLabel =
+                  occ.sourceKind === 'SPECIAL_ACTIVITY'
+                    ? 'Hoạt động đặc biệt (SpecialActivity)'
+                    : occ.sourceKind === 'MAKEUP_TEACHING'
+                    ? 'Lịch dạy bù'
+                    : 'Thời khóa biểu / phân công';
+                throw new ConflictException(`Giáo viên đã có ${sourceLabel} ACTIVE trong cùng khoảng thời gian.`);
               }
-              if (disp.dispositionType === OperationalLessonDispositionType.ABSENCE_NO_REPLACEMENT) {
-                continue;
-              }
-              if (disp.dispositionType === OperationalLessonDispositionType.SAME_SUBJECT_SUBSTITUTION) {
-                if (ne.schoolClassId === entry.schoolClassId) {
-                  throw new ConflictException('Lớp học đã có tiết thay thế từ thời khóa biểu chuẩn tắc.');
-                }
-                if (ne.teacherUserId === teacher.id) {
-                  continue;
-                }
-              }
-              if (disp.dispositionType === OperationalLessonDispositionType.DIFFERENT_SUBJECT_SUPERVISION) {
-                if (ne.schoolClassId === entry.schoolClassId) {
-                  throw new ConflictException('Lớp học đã có tiết quản nhiệm từ thời khóa biểu chuẩn tắc.');
-                }
-                if (ne.teacherUserId === teacher.id) {
-                  continue;
-                }
-              }
-            }
-
-            if (ne.schoolClassId === entry.schoolClassId) {
-              throw new ConflictException('Lớp học đã có lịch học từ thời khóa biểu chuẩn tắc.');
-            }
-            if (ne.teacherUserId === teacher.id) {
-              throw new ConflictException('Giáo viên đã có lịch dạy từ thời khóa biểu chuẩn tắc.');
             }
           }
 

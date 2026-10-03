@@ -25,6 +25,9 @@ import {
   ResolvedLessonOccurrencesResult,
 } from '../resolved-occurrences/resolved-occurrence.types';
 import {
+  extractCanonicalOccupancies,
+} from '../resolved-occurrences/effective-occupancy';
+import {
   GetEffectiveScheduleComparisonDto,
   GetEffectiveScheduleContextDto,
   GetIndividualWeeklyScheduleDto,
@@ -705,135 +708,7 @@ export class EffectiveScheduleService {
    * - SPECIAL_ACTIVITY ACTIVE -> scheduled staffing teachers
    */
   private extractEffectiveOccupancies(resolution: ResolvedLessonOccurrencesResult): InternalDerivedOccupancy[] {
-    const list: InternalDerivedOccupancy[] = [];
-    const seenKeys = new Set<string>();
-
-    // 1. Normal occurrences
-    for (const normal of resolution.normalOccurrences) {
-      if (
-        normal.effectiveKind === 'CALENDAR_INTERRUPTION' ||
-        normal.effectiveKind === 'CALENDAR_EXCEPTION' ||
-        normal.effectiveKind === 'SPECIAL_ACTIVITY_SUPPRESSED'
-      ) {
-        continue;
-      }
-
-      if (normal.effectiveKind === 'OPERATIONAL_DISPOSITION' && normal.disposition) {
-        const dType = normal.disposition.dispositionType;
-        if (dType === 'AUTHORIZED_CANCELLATION' || dType === 'ABSENCE_NO_REPLACEMENT') {
-          continue;
-        }
-
-        if (dType === 'SAME_SUBJECT_SUBSTITUTION' && normal.disposition.assignedTeacherUserId) {
-          const key = `NORMAL_SUB:${normal.disposition.assignedTeacherUserId}:${normal.civilDate}:${normal.timeSlot.id}`;
-          if (!seenKeys.has(key)) {
-            seenKeys.add(key);
-            list.push({
-              id: `sub:${normal.disposition.id}`,
-              teacherUserId: normal.disposition.assignedTeacherUserId,
-              civilDate: normal.civilDate,
-              timeSlotId: normal.timeSlot.id,
-              startTime: normal.timeSlot.startTime,
-              endTime: normal.timeSlot.endTime,
-              weekday: normal.timeSlot.weekday,
-              session: normal.timeSlot.session as 'MORNING' | 'AFTERNOON',
-              sourceKind: 'SAME_SUBJECT_SUBSTITUTION',
-              schoolClassId: normal.schoolClass.id,
-              subjectId: normal.subjectId,
-            });
-          }
-          continue;
-        }
-
-        if (dType === 'DIFFERENT_SUBJECT_SUPERVISION' && normal.disposition.assignedTeacherUserId) {
-          const key = `NORMAL_SUP:${normal.disposition.assignedTeacherUserId}:${normal.civilDate}:${normal.timeSlot.id}`;
-          if (!seenKeys.has(key)) {
-            seenKeys.add(key);
-            list.push({
-              id: `sup:${normal.disposition.id}`,
-              teacherUserId: normal.disposition.assignedTeacherUserId,
-              civilDate: normal.civilDate,
-              timeSlotId: normal.timeSlot.id,
-              startTime: normal.timeSlot.startTime,
-              endTime: normal.timeSlot.endTime,
-              weekday: normal.timeSlot.weekday,
-              session: normal.timeSlot.session as 'MORNING' | 'AFTERNOON',
-              sourceKind: 'DIFFERENT_SUBJECT_SUPERVISION',
-              schoolClassId: normal.schoolClass.id,
-              subjectId: normal.subjectId,
-            });
-          }
-          continue;
-        }
-      }
-
-      if (normal.effectiveKind === 'BASE_TIMETABLE') {
-        const key = `NORMAL_BASE:${normal.responsibleTeacherUserId}:${normal.civilDate}:${normal.timeSlot.id}`;
-        if (!seenKeys.has(key)) {
-          seenKeys.add(key);
-          list.push({
-            id: `base:${normal.timetableEntryId}`,
-            teacherUserId: normal.responsibleTeacherUserId,
-            civilDate: normal.civilDate,
-            timeSlotId: normal.timeSlot.id,
-            startTime: normal.timeSlot.startTime,
-            endTime: normal.timeSlot.endTime,
-            weekday: normal.timeSlot.weekday,
-            session: normal.timeSlot.session as 'MORNING' | 'AFTERNOON',
-            sourceKind: 'BASE_TIMETABLE',
-            schoolClassId: normal.schoolClass.id,
-            subjectId: normal.subjectId,
-          });
-        }
-      }
-    }
-
-    // 2. Make-up teaching
-    for (const makeup of resolution.makeupOccurrences) {
-      const key = `MAKEUP:${makeup.target.scheduledTeacherUserId}:${makeup.target.targetCivilDate}:${makeup.target.targetTimeSlotDefinitionId}`;
-      if (!seenKeys.has(key)) {
-        seenKeys.add(key);
-        list.push({
-          id: `makeup:${makeup.target.id}`,
-          teacherUserId: makeup.target.scheduledTeacherUserId,
-          civilDate: makeup.target.targetCivilDate,
-          timeSlotId: makeup.target.targetTimeSlotDefinitionId,
-          startTime: makeup.target.targetSlot.startTime,
-          endTime: makeup.target.targetSlot.endTime,
-          weekday: makeup.target.targetSlot.weekday,
-          session: makeup.target.targetSlot.session as 'MORNING' | 'AFTERNOON',
-          sourceKind: 'MAKEUP_TEACHING',
-          schoolClassId: makeup.target.schoolClassId,
-          subjectId: makeup.target.subjectId,
-        });
-      }
-    }
-
-    // 3. Special activities (including materialized GDĐP/HĐTN-HN)
-    for (const act of resolution.specialActivityOccurrences) {
-      for (const slot of act.timeSlots) {
-        for (const staff of act.staffing) {
-          const key = `ACTIVITY:${staff.scheduledTeacherUserId}:${act.civilDate}:${slot.id}`;
-          if (!seenKeys.has(key)) {
-            seenKeys.add(key);
-            list.push({
-              id: `act:${act.id}:${slot.id}:${staff.scheduledTeacherUserId}`,
-              teacherUserId: staff.scheduledTeacherUserId,
-              civilDate: act.civilDate,
-              timeSlotId: slot.id,
-              startTime: slot.startTime,
-              endTime: slot.endTime,
-              weekday: slot.weekday,
-              session: slot.session as 'MORNING' | 'AFTERNOON',
-              sourceKind: 'SPECIAL_ACTIVITY',
-              activityTitle: act.title,
-            });
-          }
-        }
-      }
-    }
-
-    return list;
+    return extractCanonicalOccupancies(resolution) as InternalDerivedOccupancy[];
   }
 
   /**

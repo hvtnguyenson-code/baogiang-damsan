@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, ForbiddenException } from '@nestjs/common';
 import {
   AcademicWeekday,
   OperationalLessonDispositionType,
@@ -46,7 +46,7 @@ const staffSubjectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const scheduleId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
 const sourceKey = `NORMAL:${entryId}:2026-09-08`;
-const targetCivilDate = '2026-09-15'; // Future Tuesday
+const targetCivilDate = '2026-09-15' as const; // Future Tuesday
 
 const createDto: CreateMakeupScheduleDto = {
   academicYearId: yearId,
@@ -105,6 +105,7 @@ const validStaffSubject = {
   subjectId,
   validFrom: new Date('2026-09-01T00:00:00.000Z'),
   validUntil: null,
+  user: validTeacher,
 };
 
 const validSourceDisposition = {
@@ -234,6 +235,7 @@ function makeService(prismaOverrides: Record<string, unknown> = {}) {
     },
     academicCalendarVersion: {
       findFirst: jest.fn().mockResolvedValue(validTargetCalendar),
+      findMany: jest.fn().mockResolvedValue([validTargetCalendar]),
       findUnique: jest.fn().mockResolvedValue(validTargetCalendar),
     },
     calendarInterruption: {
@@ -289,16 +291,27 @@ function makeService(prismaOverrides: Record<string, unknown> = {}) {
     ),
   };
 
+  const resolvedOccurrences = {
+    resolveInTransaction: jest.fn().mockResolvedValue({
+      status: 'PASS',
+      normalOccurrences: [],
+      makeupOccurrences: [],
+      specialActivityOccurrences: [],
+      findings: [],
+    }),
+  };
+
   const service = new MakeupSchedulesService(
     database as never,
     audit as never,
     access as never,
     businessConfiguration as never,
     progressDebt as never,
+    resolvedOccurrences as never,
     { now: () => instant },
   );
 
-  return { service, audit, access, businessConfiguration, progressDebt, prisma: defaultPrisma };
+  return { service, audit, access, businessConfiguration, progressDebt, resolvedOccurrences, prisma: defaultPrisma };
 }
 
 describe('MakeupSchedulesService unit test matrix', () => {
@@ -392,7 +405,7 @@ describe('MakeupSchedulesService unit test matrix', () => {
         startTime: new Date('1970-01-01T07:00:00.000Z'),
         endTime: new Date('1970-01-01T07:45:00.000Z'),
       });
-      const backdatedDto = { ...createDto, targetCivilDate: '2026-09-05' };
+      const backdatedDto: CreateMakeupScheduleDto = { ...createDto, targetCivilDate: '2026-09-05' as const };
       await expect(service.create(backdatedDto, request)).rejects.toThrow(ConflictException);
     });
 
@@ -435,7 +448,13 @@ describe('MakeupSchedulesService unit test matrix', () => {
 
     it('13. rejects target outside academic year / inactive calendar', async () => {
       const { service, prisma } = makeService();
-      prisma.academicCalendarVersion.findFirst.mockResolvedValueOnce(null);
+      prisma.academicCalendarVersion.findMany.mockResolvedValueOnce([]);
+      await expect(service.create(createDto, request)).rejects.toThrow(ConflictException);
+    });
+
+    it('13b. rejects ambiguous active calendars (>1 matching active versions)', async () => {
+      const { service, prisma } = makeService();
+      prisma.academicCalendarVersion.findMany.mockResolvedValueOnce([validTargetCalendar, { ...validTargetCalendar, id: id('8') }]);
       await expect(service.create(createDto, request)).rejects.toThrow(ConflictException);
     });
   });
@@ -492,112 +511,177 @@ describe('MakeupSchedulesService unit test matrix', () => {
   });
 
   describe('Collision Checks', () => {
-    it('21. rejects normal timetable class collision', async () => {
-      const { service, prisma } = makeService();
-      prisma.timetableEntry.findMany.mockResolvedValueOnce([
-        {
-          id: id('c1'),
-          schoolClassId: classId,
-          teacherUserId: otherTeacherId,
-          timeSlotDefinition: validTargetSlot,
-          timetableVersion: { calendarVersionId, status: TimetableVersionStatus.ACTIVE },
-          schoolClass: { gradeLevel: 10 },
-        },
-      ]);
+    it('21. rejects normal timetable class collision via canonical occupancy', async () => {
+      const { service, resolvedOccurrences } = makeService();
+      resolvedOccurrences.resolveInTransaction.mockResolvedValueOnce({
+        status: 'PASS',
+        normalOccurrences: [
+          {
+            occurrenceKey: 'NORMAL:occ-1:2026-09-15',
+            effectiveKind: 'BASE_TIMETABLE',
+            timeSlot: { id: targetSlotId, startTime: '14:00:00', endTime: '14:45:00', weekday: 'TUESDAY', session: 'AFTERNOON' },
+            schoolClass: { id: classId, gradeLevel: 10 },
+            responsibleTeacherUserId: otherTeacherId,
+            subjectId,
+          },
+        ],
+        makeupOccurrences: [],
+        specialActivityOccurrences: [],
+        findings: [],
+      });
       await expect(service.create(createDto, request)).rejects.toThrow(ConflictException);
     });
 
-    it('22. rejects normal timetable teacher collision', async () => {
-      const { service, prisma } = makeService();
-      prisma.timetableEntry.findMany.mockResolvedValueOnce([
-        {
-          id: id('c2'),
-          schoolClassId: id('9'),
-          teacherUserId: teacherId,
-          timeSlotDefinition: validTargetSlot,
-          timetableVersion: { calendarVersionId, status: TimetableVersionStatus.ACTIVE },
-          schoolClass: { gradeLevel: 10 },
-        },
-      ]);
+    it('22. rejects normal timetable teacher collision via canonical occupancy', async () => {
+      const { service, resolvedOccurrences } = makeService();
+      resolvedOccurrences.resolveInTransaction.mockResolvedValueOnce({
+        status: 'PASS',
+        normalOccurrences: [
+          {
+            occurrenceKey: 'NORMAL:occ-2:2026-09-15',
+            effectiveKind: 'BASE_TIMETABLE',
+            timeSlot: { id: targetSlotId, startTime: '14:00:00', endTime: '14:45:00', weekday: 'TUESDAY', session: 'AFTERNOON' },
+            schoolClass: { id: id('9'), gradeLevel: 10 },
+            responsibleTeacherUserId: teacherId,
+            subjectId,
+          },
+        ],
+        makeupOccurrences: [],
+        specialActivityOccurrences: [],
+        findings: [],
+      });
       await expect(service.create(createDto, request)).rejects.toThrow(ConflictException);
     });
 
-    it('23. rejects ACTIVE make-up class collision', async () => {
-      const { service, prisma } = makeService();
-      prisma.makeupTeachingSchedule.findMany.mockResolvedValueOnce([
-        {
-          id: id('m1'),
-          schoolClassId: classId,
-          scheduledTeacherUserId: otherTeacherId,
-          targetTimeSlotDefinition: validTargetSlot,
-        },
-      ]);
+    it('23. rejects ACTIVE make-up class collision via canonical occupancy', async () => {
+      const { service, resolvedOccurrences } = makeService();
+      resolvedOccurrences.resolveInTransaction.mockResolvedValueOnce({
+        status: 'PASS',
+        normalOccurrences: [],
+        makeupOccurrences: [
+          {
+            occurrenceKey: 'MAKEUP:m-1',
+            target: {
+              id: id('m1'),
+              scheduledTeacherUserId: otherTeacherId,
+              schoolClassId: classId,
+              targetCivilDate: '2026-09-15',
+              targetTimeSlotDefinitionId: targetSlotId,
+              targetSlot: { startTime: '14:00:00', endTime: '14:45:00', weekday: 'TUESDAY', session: 'AFTERNOON' },
+            },
+          },
+        ],
+        specialActivityOccurrences: [],
+        findings: [],
+      });
       await expect(service.create(createDto, request)).rejects.toThrow(ConflictException);
     });
 
-    it('24. rejects ACTIVE make-up teacher collision', async () => {
-      const { service, prisma } = makeService();
-      prisma.makeupTeachingSchedule.findMany.mockResolvedValueOnce([
-        {
-          id: id('m2'),
-          schoolClassId: id('9'),
-          scheduledTeacherUserId: teacherId,
-          targetTimeSlotDefinition: validTargetSlot,
-        },
-      ]);
+    it('24. rejects ACTIVE make-up teacher collision via canonical occupancy', async () => {
+      const { service, resolvedOccurrences } = makeService();
+      resolvedOccurrences.resolveInTransaction.mockResolvedValueOnce({
+        status: 'PASS',
+        normalOccurrences: [],
+        makeupOccurrences: [
+          {
+            occurrenceKey: 'MAKEUP:m-2',
+            target: {
+              id: id('m2'),
+              scheduledTeacherUserId: teacherId,
+              schoolClassId: id('9'),
+              targetCivilDate: '2026-09-15',
+              targetTimeSlotDefinitionId: targetSlotId,
+              targetSlot: { startTime: '14:00:00', endTime: '14:45:00', weekday: 'TUESDAY', session: 'AFTERNOON' },
+            },
+          },
+        ],
+        specialActivityOccurrences: [],
+        findings: [],
+      });
       await expect(service.create(createDto, request)).rejects.toThrow(ConflictException);
     });
 
-    it('25. rejects SpecialActivity class collision', async () => {
-      const { service, prisma } = makeService();
-      prisma.specialActivity.findMany.mockResolvedValueOnce([
-        {
-          id: id('s1'),
-          classTargets: [{ schoolClassId: classId }],
-          staffing: [],
-          timeSlots: [{ timeSlotDefinition: validTargetSlot }],
-        },
-      ]);
+    it('25. rejects SpecialActivity class collision via canonical occupancy', async () => {
+      const { service, resolvedOccurrences } = makeService();
+      resolvedOccurrences.resolveInTransaction.mockResolvedValueOnce({
+        status: 'PASS',
+        normalOccurrences: [],
+        makeupOccurrences: [],
+        specialActivityOccurrences: [
+          {
+            occurrenceKey: 'SPECIAL_ACTIVITY:sa-1',
+            id: id('sa1'),
+            civilDate: '2026-09-15',
+            classTargetIds: [classId],
+            staffing: [],
+            timeSlots: [{ id: targetSlotId, startTime: '14:00:00', endTime: '14:45:00', weekday: 'TUESDAY', session: 'AFTERNOON' }],
+          },
+        ],
+        findings: [],
+      });
       await expect(service.create(createDto, request)).rejects.toThrow(ConflictException);
     });
 
-    it('26. rejects SpecialActivity teacher collision', async () => {
-      const { service, prisma } = makeService();
-      prisma.specialActivity.findMany.mockResolvedValueOnce([
-        {
-          id: id('s2'),
-          classTargets: [],
-          staffing: [{ scheduledTeacherUserId: teacherId }],
-          timeSlots: [{ timeSlotDefinition: validTargetSlot }],
-        },
-      ]);
+    it('26. rejects SpecialActivity teacher collision via canonical occupancy', async () => {
+      const { service, resolvedOccurrences } = makeService();
+      resolvedOccurrences.resolveInTransaction.mockResolvedValueOnce({
+        status: 'PASS',
+        normalOccurrences: [],
+        makeupOccurrences: [],
+        specialActivityOccurrences: [
+          {
+            occurrenceKey: 'SPECIAL_ACTIVITY:sa-2',
+            id: id('sa2'),
+            civilDate: '2026-09-15',
+            classTargetIds: [],
+            staffing: [{ scheduledTeacherUserId: teacherId }],
+            timeSlots: [{ id: targetSlotId, startTime: '14:00:00', endTime: '14:45:00', weekday: 'TUESDAY', session: 'AFTERNOON' }],
+          },
+        ],
+        findings: [],
+      });
       await expect(service.create(createDto, request)).rejects.toThrow(ConflictException);
     });
 
-    it('27. allows make-up when normal occurrence was released by AUTHORIZED_CANCELLATION', async () => {
-      const { service, prisma } = makeService();
-      prisma.timetableEntry.findMany.mockResolvedValueOnce([
-        {
-          id: id('c3'),
-          schoolClassId: classId,
-          teacherUserId: otherTeacherId,
-          timeSlotDefinition: validTargetSlot,
-          timetableVersion: { calendarVersionId, status: TimetableVersionStatus.ACTIVE },
-          schoolClass: { gradeLevel: 10 },
-        },
-      ]);
-      prisma.operationalLessonDisposition.findFirst.mockResolvedValueOnce({
-        id: id('d1'),
-        dispositionType: OperationalLessonDispositionType.AUTHORIZED_CANCELLATION,
+    it('27. allows make-up when normal occurrence was released by AUTHORIZED_CANCELLATION in resolution', async () => {
+      const { service, resolvedOccurrences } = makeService();
+      resolvedOccurrences.resolveInTransaction.mockResolvedValueOnce({
+        status: 'PASS',
+        normalOccurrences: [
+          {
+            occurrenceKey: 'NORMAL:occ-3:2026-09-15',
+            effectiveKind: 'OPERATIONAL_DISPOSITION',
+            disposition: { dispositionType: 'AUTHORIZED_CANCELLATION' },
+            timeSlot: { id: targetSlotId, startTime: '14:00:00', endTime: '14:45:00', weekday: 'TUESDAY', session: 'AFTERNOON' },
+            schoolClass: { id: classId, gradeLevel: 10 },
+            responsibleTeacherUserId: otherTeacherId,
+            subjectId,
+          },
+        ],
+        makeupOccurrences: [],
+        specialActivityOccurrences: [],
+        findings: [],
       });
       await expect(service.create(createDto, request)).resolves.toMatchObject({ outcome: 'CREATED' });
+    });
+
+    it('28. fails closed with sanitized error when canonical resolution is BLOCKED', async () => {
+      const { service, resolvedOccurrences } = makeService();
+      resolvedOccurrences.resolveInTransaction.mockResolvedValueOnce({
+        status: 'BLOCKED',
+        findings: [{ code: 'PPCT_ASSOCIATION_MISSING', severity: 'BLOCKER', entityIds: [] }],
+        normalOccurrences: [],
+        makeupOccurrences: [],
+        specialActivityOccurrences: [],
+      });
+      await expect(service.create(createDto, request)).rejects.toThrow(ConflictException);
     });
   });
 
   describe('Concurrency & Idempotency', () => {
     it('36. replays identical requestKey and fingerprint', async () => {
       const row = validScheduleRow();
-      const { service, audit } = makeService({
+      const { service, audit, access } = makeService({
         makeupTeachingSchedule: {
           findUnique: jest.fn().mockResolvedValue(row),
         },
@@ -605,7 +689,22 @@ describe('MakeupSchedulesService unit test matrix', () => {
       const result = await service.create(createDto, request);
       expect(result.outcome).toBe('IDEMPOTENT_REPLAY');
       expect(result.record.id).toBe(row.id);
+      expect(access.requireTeachingSubject).toHaveBeenCalledWith(request, row.subjectId);
       expect(audit.write).not.toHaveBeenCalled();
+    });
+
+    it('36b. requires subject authorization on idempotent replay (Finding 5)', async () => {
+      const row = validScheduleRow();
+      const { service, access } = makeService({
+        makeupTeachingSchedule: {
+          findUnique: jest.fn().mockResolvedValue(row),
+        },
+      });
+      access.requireTeachingSubject.mockRejectedValueOnce(
+        new ForbiddenException('Bạn không có quyền thực hiện thao tác này.'),
+      );
+      await expect(service.create(createDto, request)).rejects.toThrow(ForbiddenException);
+      expect(access.requireTeachingSubject).toHaveBeenCalledWith(request, row.subjectId);
     });
 
     it('37. rejects same requestKey with different fingerprint', async () => {
@@ -780,6 +879,127 @@ describe('MakeupSchedulesService unit test matrix', () => {
       expect(result.items[0]!.sourceNormalOccurrenceKey).toBe(sourceKey);
       expect(result.items[0]!.hasActiveMakeupSchedule).toBe(true);
       expect(result.items[0]!.activeMakeupScheduleId).toBe(scheduleId);
+    });
+  });
+
+  describe('Authorization Matrix (P3-031 negative proof)', () => {
+    it('accepts exact TEACHING_OPERATION_MANAGE / SUBJECT grant', async () => {
+      const { service, access } = makeService();
+      access.requireTeachingSubject.mockResolvedValueOnce(undefined);
+      const res = await service.create(createDto, request);
+      expect(res.outcome).toBe('CREATED');
+      expect(access.requireTeachingSubject).toHaveBeenCalledWith(request, subjectId);
+    });
+
+    it('rejects wrong subject grant with ForbiddenException', async () => {
+      const { service, access } = makeService();
+      access.requireTeachingSubject.mockRejectedValueOnce(
+        new ForbiddenException('Bạn không có quyền thực hiện thao tác này.'),
+      );
+      await expect(service.create(createDto, request)).rejects.toThrow(ForbiddenException);
+    });
+
+    it('accepts SCHOOL_WIDE caller for subject operation', async () => {
+      const { service, access } = makeService();
+      access.requireTeachingSubject.mockResolvedValueOnce(undefined);
+      const res = await service.create(createDto, request);
+      expect(res.outcome).toBe('CREATED');
+    });
+
+    it('rejects SYSTEM_ADMIN alone (without TEACHING_OPERATION_MANAGE)', async () => {
+      const { service, access } = makeService();
+      access.requireTeachingSubject.mockRejectedValueOnce(
+        new ForbiddenException('Bạn không có quyền thực hiện thao tác này.'),
+      );
+      await expect(service.create(createDto, request)).rejects.toThrow(ForbiddenException);
+    });
+
+    it('rejects PPCT_MANAGE alone', async () => {
+      const { service, access } = makeService();
+      access.requireTeachingSubject.mockRejectedValueOnce(
+        new ForbiddenException('Bạn không có quyền thực hiện thao tác này.'),
+      );
+      await expect(service.create(createDto, request)).rejects.toThrow(ForbiddenException);
+    });
+
+    it('rejects TEACHING_EXECUTION_MANAGE alone', async () => {
+      const { service, access } = makeService();
+      access.requireTeachingSubject.mockRejectedValueOnce(
+        new ForbiddenException('Bạn không có quyền thực hiện thao tác này.'),
+      );
+      await expect(service.create(createDto, request)).rejects.toThrow(ForbiddenException);
+    });
+
+    it('rejects teaching staff eligibility alone (StaffSubject coverage without capability grant)', async () => {
+      const { service, access } = makeService();
+      access.requireTeachingSubject.mockRejectedValueOnce(
+        new ForbiddenException('Bạn không có quyền thực hiện thao tác này.'),
+      );
+      await expect(service.create(createDto, request)).rejects.toThrow(ForbiddenException);
+    });
+
+    it('requires exact retained subject authorization on idempotent replay (Finding 5)', async () => {
+      const row = validScheduleRow();
+      const { service, access } = makeService({
+        makeupTeachingSchedule: {
+          findUnique: jest.fn().mockResolvedValue(row),
+        },
+      });
+      access.requireTeachingSubject.mockRejectedValueOnce(
+        new ForbiddenException('Bạn không có quyền thực hiện thao tác này.'),
+      );
+      await expect(service.create(createDto, request)).rejects.toThrow(ForbiddenException);
+      expect(access.requireTeachingSubject).toHaveBeenCalledWith(request, row.subjectId);
+    });
+
+    it('rejects cross-subject candidate enumeration when caller lacks SCHOOL_WIDE', async () => {
+      const { service, access } = makeService();
+      access.requireTeachingSchoolWide.mockRejectedValueOnce(
+        new ForbiddenException('Bạn không có quyền thực hiện thao tác này.'),
+      );
+      await expect(
+        service.listCandidates({ academicYearId: yearId, page: 1, pageSize: 20 }, request),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('rejects cross-subject schedule list when caller lacks SCHOOL_WIDE', async () => {
+      const { service, access } = makeService();
+      access.requireTeachingSchoolWide.mockRejectedValueOnce(
+        new ForbiddenException('Bạn không có quyền thực hiện thao tác này.'),
+      );
+      await expect(
+        service.list({ academicYearId: yearId, page: 1, pageSize: 20 }, request),
+      ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe('Advisory Target Options (Finding 7 / 9)', () => {
+    it('returns human-readable slots and teachers', async () => {
+      const { service, access } = makeService();
+      const options = await service.getTargetOptions(
+        { academicYearId: yearId, sourceNormalOccurrenceKey: sourceKey, targetCivilDate },
+        request,
+      );
+      expect(access.requireTeachingSubject).toHaveBeenCalledWith(request, subjectId);
+      expect(options.academicYearId).toBe(yearId);
+      expect(options.targetCivilDate).toBe(targetCivilDate);
+      expect(options.slots.length).toBeGreaterThan(0);
+      expect(options.slots[0]!.displayLabel).toBe('Tiết 1 Chiều');
+      expect(options.teachers.length).toBeGreaterThan(0);
+      expect(options.teachers[0]!.displayName).toBe('Thầy Nguyễn Văn A');
+    });
+
+    it('rejects target options request when caller lacks subject authority', async () => {
+      const { service, access } = makeService();
+      access.requireTeachingSubject.mockRejectedValueOnce(
+        new ForbiddenException('Bạn không có quyền thực hiện thao tác này.'),
+      );
+      await expect(
+        service.getTargetOptions(
+          { academicYearId: yearId, sourceNormalOccurrenceKey: sourceKey, targetCivilDate },
+          request,
+        ),
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 });

@@ -1569,6 +1569,46 @@ export interface MakeupTeachingScheduleListResponse {
   collisionCoverage: OperationalOverlayCollisionCoverage;
 }
 
+export interface CreateMakeupScheduleRequest {
+  academicYearId: string;
+  sourceNormalOccurrenceKey: string;
+  targetCivilDate: CivilDateString;
+  targetTimeSlotDefinitionId: string;
+  scheduledTeacherUserId: string;
+  replacesId?: string;
+  note?: string;
+  requestKey: string;
+}
+
+export interface ReverseMakeupScheduleRequest {
+  expectedUpdatedAt: string;
+  reversalReason: string;
+  requestKey: string;
+}
+
+export interface MakeupTargetSlotOption {
+  id: string;
+  displayLabel: string;
+  session: TimeSlotSession;
+  ordinal: number;
+  startTime: WallClockTimeString;
+  endTime: WallClockTimeString;
+}
+
+export interface MakeupTargetTeacherOption {
+  userId: string;
+  displayName: string;
+  staffCode: string | null;
+}
+
+export interface MakeupTargetOptionsResponse {
+  academicYearId: string;
+  targetCivilDate: CivilDateString;
+  targetWeekday: AcademicWeekday;
+  slots: MakeupTargetSlotOption[];
+  teachers: MakeupTargetTeacherOption[];
+}
+
 // ============================================================
 // Notification Contracts (foundation types for Phase 03+)
 // ============================================================

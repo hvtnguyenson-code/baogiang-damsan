@@ -1,9 +1,12 @@
 import type {
+  CreateMakeupScheduleRequest,
+  MakeupTargetOptionsResponse,
   MakeupTeachingCandidateListResponse,
   MakeupTeachingScheduleCreateResult,
   MakeupTeachingScheduleListResponse,
   MakeupTeachingScheduleRecord,
   MakeupTeachingScheduleReverseResult,
+  ReverseMakeupScheduleRequest,
 } from '@baogiang/contracts';
 import { apiFetch } from './api-client';
 
@@ -23,30 +26,15 @@ const json = (method: string, body?: unknown) => ({
   notifyUnauthorized: true,
 });
 
-export type CreateMakeupScheduleInput = {
-  academicYearId: string;
-  sourceTimetableEntryId: string;
-  sourceCivilDate: string;
-  sourceDispositionId?: string;
-  sourcePpctPlanId?: string;
-  sourcePpctItemId?: string;
-  targetCivilDate: string;
-  targetTimeSlotDefinitionId: string;
-  scheduledTeacherUserId: string;
-  replacesId?: string;
-  note?: string;
-  requestKey: string;
-};
-
-export type ReverseMakeupScheduleInput = {
-  expectedUpdatedAt: string;
-  reversalReason: string;
-  requestKey: string;
-};
+export type CreateMakeupScheduleInput = CreateMakeupScheduleRequest;
+export type ReverseMakeupScheduleInput = ReverseMakeupScheduleRequest;
 
 export const makeupSchedulesApi = {
   listCandidates: (query: { academicYearId: string; schoolClassId?: string; subjectId?: string; page?: number; pageSize?: number }) =>
     apiFetch<MakeupTeachingCandidateListResponse>(`/operational-overlays/makeup-schedules/candidates${queryString(query)}`, { notifyUnauthorized: true }),
+
+  getTargetOptions: (query: { academicYearId: string; sourceNormalOccurrenceKey: string; targetCivilDate: string }) =>
+    apiFetch<MakeupTargetOptionsResponse>(`/operational-overlays/makeup-schedules/target-options${queryString(query)}`, { notifyUnauthorized: true }),
 
   listSchedules: (query: { academicYearId?: string; schoolClassId?: string; subjectId?: string; status?: 'ACTIVE' | 'REVERSED'; page?: number; pageSize?: number }) =>
     apiFetch<MakeupTeachingScheduleListResponse>(`/operational-overlays/makeup-schedules${queryString(query)}`, { notifyUnauthorized: true }),
