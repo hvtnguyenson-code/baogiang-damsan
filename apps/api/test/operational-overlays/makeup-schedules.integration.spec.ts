@@ -114,7 +114,7 @@ integration('P3-031 MakeupTeachingSchedule control plane (PostgreSQL)', () => {
       },
     });
 
-    await h.prisma.academicWeekSegment.create({
+    const segment3 = await h.prisma.academicWeekSegment.create({
       data: {
         academicWeekId: week3.id,
         calendarVersionId: calendar.id,
@@ -430,7 +430,7 @@ integration('P3-031 MakeupTeachingSchedule control plane (PostgreSQL)', () => {
 
     // 8. ACTIVE make-up blocks source disposition reversal
     const dispReverseRes = await manager.agent
-      .post(`/api/operational-overlays/operational-dispositions/${f.sourceDisposition.id}/reverse`)
+      .post(`/api/operational-overlays/lesson-dispositions/${f.sourceDisposition.id}/reverse`)
       .set('Origin', testOrigin)
       .send({
         requestKey: 'disp-rev-req-1',
