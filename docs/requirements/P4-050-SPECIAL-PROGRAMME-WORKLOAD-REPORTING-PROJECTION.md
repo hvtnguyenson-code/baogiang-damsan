@@ -8,7 +8,7 @@
 - Canonical base: `8709b12253fbbb8ba2e4f65be3e6d5d5f5e5372e`
 - Task ID: `P4-050`
 - Predecessor: `P4-040` (CLOSED by `SYNC-P4-040`)
-- Downstream: `P4-060` (DEFERRED_WITH_TRIGGER)
+- Downstream: `P4-060` (IN_REVIEW; trigger fired) -> `P4-061` (PLANNED)
 - Traceability: **T19**, **T20**, **T44**
 
 ## Closure evidence — SYNC-P4-050
@@ -23,7 +23,7 @@
 - Independent audit/correction evidence: `fe63c12d5f26ddbf183964a2fdf05b656996ce85` → `475dffbe94a288dc76464689827e2fe31f86dbd8` → `1d66230b1a60b57b01b46bcca418f6cb1e7348d9` → `5a7659a9d242a9b50c487259b348cb1dce082d88`
 - CLOSED by `SYNC-P4-050`.
 - Production remains **PRE-OPERATIONAL**; no production deployment or mutation occurred.
-- `P4-060` and `P4-061` remain `DEFERRED_WITH_TRIGGER`; no adjustment/reduction semantics were unlocked.
+- The original P4-050 closure did not unlock adjustment/reduction semantics. The trigger later fired on 2026-10-02; P4-060 is now IN_REVIEW under proposed ADR-057 and P4-061 remains PLANNED until P4-060 closes.
 
 ---
 
@@ -114,6 +114,6 @@ P4-050 implements the on-demand, schema-free workload projection and reporting s
 - **Generic Ad-Hoc SpecialActivity Boundary**:
   Generic ad-hoc `SpecialActivity` entities (lacking `ProgrammeMaterializedActivity` provenance) are not credited with special programme workload and do not receive inferred coefficients.
 - **P4-060 Non-Scope**:
-  Workload reductions, percentage deductions, allowances, and manual adjustments remain strictly out of scope and deferred under `P4-060`/`P4-061` (`DEFERRED_WITH_TRIGGER`).
+  Workload reductions, percentage deductions and override semantics remain outside P4-050. Their registered re-entry trigger fired; P4-060 now owns architecture and P4-061 owns implementation after architecture closure. P4-050 itself remains unchanged.
 - **Zero-Subject Rule**:
   Curricular responsibility policy is untouched; teachers without curricular responsibilities cannot submit statements solely due to special programme activities.
