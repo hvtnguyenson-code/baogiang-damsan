@@ -5,6 +5,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useAuth } from '../auth/auth-context';
 import {
   LifecycleStatus,
+  OfficialWorkloadView,
   ReportingCountsView,
   ReportingEvidenceTable,
 } from '../components/reporting-statements/ReportingPresentation';
@@ -140,6 +141,13 @@ export function ReportingStatementDetailPage() {
       {detail.predecessorRevisionId && <p className="limitation-note">Đây là một phiên bản tiếp theo của cùng kỳ báo cáo.</p>}
       {detail.supersedesRevisionId && detail.lifecycleState === 'SUBMITTED' && <p className="limitation-note">Nếu được phê duyệt, phiên bản này sẽ thay thế bản đã được phê duyệt trước.</p>}
     </section>
+
+    {detail.officialWorkload && (
+      <section className="ledger-section" aria-labelledby="workload-heading">
+        <h2 id="workload-heading">Khối lượng công tác và định mức</h2>
+        <OfficialWorkloadView workload={detail.officialWorkload} />
+      </section>
+    )}
 
     <section className="ledger-section" aria-labelledby="counts-heading"><h2 id="counts-heading">Tổng hợp</h2><ReportingCountsView counts={detail.counts} /></section>
 

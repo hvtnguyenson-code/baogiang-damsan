@@ -4,16 +4,18 @@ import {
   PRODUCTION_BUSINESS_POLICY_FAMILIES,
   SPECIAL_PROGRAMME_WORKLOAD_FAMILY_DEFINITION,
   SPECIAL_PROGRAMME_WORKLOAD_VALIDATOR_V1,
+  WORKLOAD_ADJUSTMENT_FAMILY_DEFINITION,
   strictObject,
   validateResource,
 } from './business-policy-registry';
 
 describe('Business policy registry boundary', () => {
   it('enables strictly authorized production policy families', () => {
-    expect(PRODUCTION_BUSINESS_POLICY_FAMILIES).toHaveLength(2);
+    expect(PRODUCTION_BUSINESS_POLICY_FAMILIES).toHaveLength(3);
     expect(PRODUCTION_BUSINESS_POLICY_FAMILIES.map((x) => x.key)).toEqual([
       'OPERATIONAL_START',
       'SPECIAL_PROGRAMME_WORKLOAD',
+      'WORKLOAD_ADJUSTMENT',
     ]);
 
     const opStart = PRODUCTION_BUSINESS_POLICY_FAMILIES[0];
@@ -39,6 +41,18 @@ describe('Business policy registry boundary', () => {
     });
     expect(spWorkload.validators).toHaveLength(1);
     expect(spWorkload.validators[0]?.version).toBe('v1');
+
+    const wlAdjustment = PRODUCTION_BUSINESS_POLICY_FAMILIES[2];
+    expect(wlAdjustment).toBe(WORKLOAD_ADJUSTMENT_FAMILY_DEFINITION);
+    expect(wlAdjustment).toMatchObject({
+      key: 'WORKLOAD_ADJUSTMENT',
+      resourceKind: 'ACADEMIC_YEAR',
+      currentValidatorVersion: 'v1',
+      publicationEnabled: true,
+      downstreamAuthority: 'ADR-057',
+    });
+    expect(wlAdjustment.validators).toHaveLength(1);
+    expect(wlAdjustment.validators[0]?.version).toBe('v1');
   });
 
   it('rejects non-object payloads', () => {

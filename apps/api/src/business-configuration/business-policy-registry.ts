@@ -84,6 +84,121 @@ export const SPECIAL_PROGRAMME_WORKLOAD_VALIDATOR_V1: BusinessPolicyPayloadValid
   },
 };
 
+export const WORKLOAD_ADJUSTMENT_VALIDATOR_V1: BusinessPolicyPayloadValidator = {
+  version: 'v1',
+  validate(payload: unknown): Record<string, unknown> {
+    const root = strictObject(payload);
+    const rootKeys = Object.keys(root);
+    if (rootKeys.length !== 2 || !rootKeys.includes('baseWeeklyNorm') || !rootKeys.includes('rules')) {
+      throw new BadRequestException('INVALID_WORKLOAD_ADJUSTMENT_POLICY_PAYLOAD');
+    }
+
+    const checkDecimal4 = (val: unknown): number => {
+      if (typeof val !== 'number' || !Number.isFinite(val) || Number.isNaN(val) || val < 0) {
+        throw new BadRequestException('INVALID_WORKLOAD_ADJUSTMENT_POLICY_PAYLOAD');
+      }
+      const s = val.toString();
+      if (s.includes('e') || s.includes('E')) {
+        throw new BadRequestException('INVALID_WORKLOAD_ADJUSTMENT_POLICY_PAYLOAD');
+      }
+      const parts = s.split('.');
+      if (parts.length > 1 && parts[1].length > 4) {
+        throw new BadRequestException('INVALID_WORKLOAD_ADJUSTMENT_POLICY_PAYLOAD');
+      }
+      if (Math.round(val * 10000) !== val * 10000) {
+        throw new BadRequestException('INVALID_WORKLOAD_ADJUSTMENT_POLICY_PAYLOAD');
+      }
+      return val;
+    };
+
+    const baseWeeklyNorm = checkDecimal4(root.baseWeeklyNorm);
+    if (!Array.isArray(root.rules) || root.rules.length > 50) {
+      throw new BadRequestException('INVALID_WORKLOAD_ADJUSTMENT_POLICY_PAYLOAD');
+    }
+
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+    const seenRuleIds = new Set<string>();
+    const seenPriorities = new Set<number>();
+    const validatedRules: Array<Record<string, unknown>> = [];
+
+    for (const rawRule of root.rules) {
+      const rule = strictObject(rawRule);
+      const ruleKeys = Object.keys(rule);
+      if (ruleKeys.length !== 5) {
+        throw new BadRequestException('INVALID_WORKLOAD_ADJUSTMENT_POLICY_PAYLOAD');
+      }
+      for (const k of ['ruleId', 'source', 'calculation', 'value', 'priority']) {
+        if (!ruleKeys.includes(k)) {
+          throw new BadRequestException('INVALID_WORKLOAD_ADJUSTMENT_POLICY_PAYLOAD');
+        }
+      }
+
+      if (typeof rule.ruleId !== 'string' || !rule.ruleId.trim() || rule.ruleId.length > 100) {
+        throw new BadRequestException('INVALID_WORKLOAD_ADJUSTMENT_POLICY_PAYLOAD');
+      }
+      const trimmedRuleId = rule.ruleId.trim();
+      if (seenRuleIds.has(trimmedRuleId)) {
+        throw new BadRequestException('INVALID_WORKLOAD_ADJUSTMENT_POLICY_PAYLOAD');
+      }
+      seenRuleIds.add(trimmedRuleId);
+
+      if (typeof rule.priority !== 'number' || !Number.isInteger(rule.priority) || rule.priority < 0) {
+        throw new BadRequestException('INVALID_WORKLOAD_ADJUSTMENT_POLICY_PAYLOAD');
+      }
+      if (seenPriorities.has(rule.priority)) {
+        throw new BadRequestException('INVALID_WORKLOAD_ADJUSTMENT_POLICY_PAYLOAD');
+      }
+      seenPriorities.add(rule.priority);
+
+      if (rule.calculation !== 'TRU_TIET' && rule.calculation !== 'TRU_PHAN_TRAM' && rule.calculation !== 'GHI_DE') {
+        throw new BadRequestException('INVALID_WORKLOAD_ADJUSTMENT_POLICY_PAYLOAD');
+      }
+
+      const value = checkDecimal4(rule.value);
+      if (rule.calculation === 'TRU_PHAN_TRAM' && value > 100) {
+        throw new BadRequestException('INVALID_WORKLOAD_ADJUSTMENT_POLICY_PAYLOAD');
+      }
+
+      const source = strictObject(rule.source);
+      const sourceKeys = Object.keys(source);
+
+      if (source.kind === 'HOMEROOM_RESPONSIBILITY') {
+        if (sourceKeys.length !== 1 || sourceKeys[0] !== 'kind') {
+          throw new BadRequestException('INVALID_WORKLOAD_ADJUSTMENT_POLICY_PAYLOAD');
+        }
+        validatedRules.push({
+          ruleId: trimmedRuleId,
+          source: { kind: 'HOMEROOM_RESPONSIBILITY' },
+          calculation: rule.calculation,
+          value,
+          priority: rule.priority,
+        });
+      } else if (source.kind === 'ADDITIONAL_DUTY') {
+        if (sourceKeys.length !== 2 || !sourceKeys.includes('kind') || !sourceKeys.includes('dutyDefinitionId')) {
+          throw new BadRequestException('INVALID_WORKLOAD_ADJUSTMENT_POLICY_PAYLOAD');
+        }
+        if (typeof source.dutyDefinitionId !== 'string' || !uuidRegex.test(source.dutyDefinitionId)) {
+          throw new BadRequestException('INVALID_WORKLOAD_ADJUSTMENT_POLICY_PAYLOAD');
+        }
+        validatedRules.push({
+          ruleId: trimmedRuleId,
+          source: { kind: 'ADDITIONAL_DUTY', dutyDefinitionId: source.dutyDefinitionId },
+          calculation: rule.calculation,
+          value,
+          priority: rule.priority,
+        });
+      } else {
+        throw new BadRequestException('INVALID_WORKLOAD_ADJUSTMENT_POLICY_PAYLOAD');
+      }
+    }
+
+    return {
+      baseWeeklyNorm,
+      rules: validatedRules,
+    };
+  },
+};
+
 export const OPERATIONAL_START_FAMILY_DEFINITION: BusinessPolicyFamilyDefinition = {
   key: 'OPERATIONAL_START',
   resourceKind: 'ACADEMIC_YEAR',
@@ -102,12 +217,23 @@ export const SPECIAL_PROGRAMME_WORKLOAD_FAMILY_DEFINITION: BusinessPolicyFamilyD
   downstreamAuthority: 'ADR-050',
 };
 
+export const WORKLOAD_ADJUSTMENT_FAMILY_DEFINITION: BusinessPolicyFamilyDefinition = {
+  key: 'WORKLOAD_ADJUSTMENT',
+  resourceKind: 'ACADEMIC_YEAR',
+  currentValidatorVersion: 'v1',
+  validators: [WORKLOAD_ADJUSTMENT_VALIDATOR_V1],
+  publicationEnabled: true,
+  downstreamAuthority: 'ADR-057',
+};
+
 /** Production business policy families. */
 export const PRODUCTION_BUSINESS_POLICY_FAMILIES: readonly BusinessPolicyFamilyDefinition[] = [
   OPERATIONAL_START_FAMILY_DEFINITION,
   SPECIAL_PROGRAMME_WORKLOAD_FAMILY_DEFINITION,
+  WORKLOAD_ADJUSTMENT_FAMILY_DEFINITION,
 ];
 export const BUSINESS_POLICY_REGISTRY: InjectionToken = 'BUSINESS_POLICY_REGISTRY';
+
 
 
 export function strictObject(payload: unknown): Record<string, unknown> {

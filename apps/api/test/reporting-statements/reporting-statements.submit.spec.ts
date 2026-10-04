@@ -2,7 +2,7 @@ import { ConflictException, BadRequestException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { ReportingStatementsService } from '../../src/reporting-statements/reporting-statements.service';
 import {
-  REPORTING_STATEMENT_SNAPSHOT_V3,
+  REPORTING_STATEMENT_SNAPSHOT_V4,
 } from '../../src/reporting-statement-internal/reporting-statement-canonicalizer';
 
 const asOf = new Date('2026-08-25T00:00:00.000Z');
@@ -257,7 +257,7 @@ describe('ReportingStatementsService.submit', () => {
     // F. freeze snapshot persisted with V3 and exact provenance
     expect(x.repository.persistSubmittedRevision).toHaveBeenCalledTimes(1);
     const persistedCall = x.repository.persistSubmittedRevision.mock.calls[0][1];
-    expect(persistedCall.frozen.snapshot.snapshotProfile).toBe(REPORTING_STATEMENT_SNAPSHOT_V3);
+    expect(persistedCall.frozen.snapshot.snapshotProfile).toBe(REPORTING_STATEMENT_SNAPSHOT_V4);
     expect(persistedCall.frozen.snapshot.operationalStartPolicyVersionId).toBe('policy-v1');
     expect(persistedCall.frozen.snapshot.operationalStartDate).toBe('2026-08-15');
     expect(persistedCall.frozen.snapshot.specialProgrammeWorkload).toBeDefined();
@@ -495,7 +495,7 @@ describe('ReportingStatementsService.submit', () => {
     expect(x.repository.persistSubmittedRevision).toHaveBeenCalledTimes(1);
     const persistedCall = x.repository.persistSubmittedRevision.mock.calls[0][1];
     const snapshot = persistedCall.frozen.snapshot;
-    expect(snapshot.snapshotProfile).toBe(REPORTING_STATEMENT_SNAPSHOT_V3);
+    expect(snapshot.snapshotProfile).toBe(REPORTING_STATEMENT_SNAPSHOT_V4);
     expect(snapshot.specialProgrammeWorkload).toBeDefined();
     expect(snapshot.specialProgrammeWorkload.totalCredit).toBe(1.5);
     expect(snapshot.specialProgrammeWorkload.contributionCount).toBe(1);

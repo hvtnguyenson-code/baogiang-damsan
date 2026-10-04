@@ -2121,8 +2121,8 @@ describe('P1-032 Operational-start admin UI integration', () => {
   });
 
   it('A1: registers OPERATIONAL_START/v1/ACADEMIC_YEAR production adapter with exact triple identity', () => {
-    expect(PRODUCTION_BUSINESS_POLICY_UI_ADAPTERS).toHaveLength(1);
-    const adapter = PRODUCTION_BUSINESS_POLICY_UI_ADAPTERS[0];
+    const adapter = PRODUCTION_BUSINESS_POLICY_UI_ADAPTERS.find((a) => a.familyKey === 'OPERATIONAL_START')!;
+    expect(adapter).toBeDefined();
     expect(adapter.familyKey).toBe('OPERATIONAL_START');
     expect(adapter.validatorVersion).toBe('v1');
     expect(adapter.resourceKind).toBe('ACADEMIC_YEAR');

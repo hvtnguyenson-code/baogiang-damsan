@@ -43,11 +43,11 @@ Parent closure evidence:
 
 ### In Review
 
-- None on the immediate P5 dependency path.
+- `P4-061` — workload adjustment + official workload implementation — **`IN_REVIEW`**; implementing accepted ADR-057 policy, actual-curricular earned workload, P4-050 reuse, adjusted required norm, combined projection, Snapshot V4 and typed Vietnamese UI on branch `feat/p4-061-workload-adjustment-runtime`.
 
 ### Ready
 
-- `P4-061` — workload adjustment + official workload implementation — **`READY`**; dependencies `P1-021`, `P4-050` and `P4-060` are CLOSED. It must implement ADR-057 without schema invention or hardcoded fallback.
+- None on the immediate P5 dependency path.
 
 ### Planned behind open dependencies
 

@@ -10,6 +10,7 @@ import {
 export const REPORTING_STATEMENT_SNAPSHOT_V1 = "REPORTING_STATEMENT_SNAPSHOT_V1" as const;
 export const REPORTING_STATEMENT_SNAPSHOT_V2 = "REPORTING_STATEMENT_SNAPSHOT_V2" as const;
 export const REPORTING_STATEMENT_SNAPSHOT_V3 = "REPORTING_STATEMENT_SNAPSHOT_V3" as const;
+export const REPORTING_STATEMENT_SNAPSHOT_V4 = "REPORTING_STATEMENT_SNAPSHOT_V4" as const;
 export const REPORTING_STATEMENT_SERIALIZER_V1 = "REPORTING_STATEMENT_CANONICAL_JSON_V1" as const;
 
 type CanonicalValue =
@@ -120,10 +121,79 @@ export interface ReportingStatementSnapshotV3 extends ReportingStatementSnapshot
   readonly specialProgrammeWorkload: DeepReadonly<SpecialProgrammeWorkloadSnapshot>;
 }
 
+export interface CurricularWorkloadContributionSnapshot {
+  readonly executionId: string;
+  readonly kind: string;
+  readonly executionCivilDate: string;
+  readonly actualTeacherUserId: string;
+  readonly credit: number;
+  readonly schoolClassId: string;
+  readonly subjectId: string;
+  readonly originalTimetableEntryId: string;
+  readonly sourceCivilDate: string;
+  readonly replacesId?: string | null;
+}
+
+export interface WorkloadAdjustmentAppliedRuleSnapshot {
+  readonly ruleId: string;
+  readonly calculation: 'TRU_TIET' | 'TRU_PHAN_TRAM' | 'GHI_DE';
+  readonly value: number;
+  readonly priority: number;
+  readonly sourceKind: 'ADDITIONAL_DUTY' | 'HOMEROOM_RESPONSIBILITY';
+  readonly dutyDefinitionId?: string;
+  readonly dutyDefinitionCodeSnapshot?: string;
+  readonly dutyDefinitionNameSnapshot?: string;
+  readonly qualifyingAssignmentIds?: readonly string[];
+  readonly matchingHomeroomAssignmentIds?: readonly string[];
+  readonly matchingSchoolClassIds?: readonly string[];
+}
+
+export interface WorkloadAdjustmentSegmentSnapshot {
+  readonly fromCivilDate: string;
+  readonly toCivilDate: string;
+  readonly isWorkloadEligible: boolean;
+  readonly calendarVersionId: string;
+  readonly teachingWeekdays: readonly string[];
+  readonly denominatorK: number;
+  readonly hasInterruption: boolean;
+  readonly interruptionIds?: readonly string[];
+  readonly policyVersionId: string | null;
+  readonly policyValidatorVersion: string | null;
+  readonly policyEffectiveFrom?: string | null;
+  readonly policyEffectiveUntil?: string | null;
+  readonly baseWeeklyNorm: number | null;
+  readonly adjustedWeeklyNorm: number | null;
+  readonly dailyRequiredCredit: number;
+  readonly appliedRules: readonly WorkloadAdjustmentAppliedRuleSnapshot[];
+}
+
+export interface OfficialTeacherWorkloadSnapshot {
+  readonly projectionProfile: string;
+  readonly status: 'PASS';
+  readonly curricularCredit: number;
+  readonly specialProgrammeCredit: number;
+  readonly earnedCredit: number;
+  readonly requiredCredit: number;
+  readonly varianceCredit: number;
+  readonly curricularContributions: readonly CurricularWorkloadContributionSnapshot[];
+  readonly specialProgrammeWorkload: DeepReadonly<SpecialProgrammeWorkloadSnapshot>;
+  readonly adjustmentSegments: readonly WorkloadAdjustmentSegmentSnapshot[];
+  readonly evaluatedAt: string;
+}
+
+export interface ReportingStatementSnapshotV4 extends ReportingStatementSnapshotCommon {
+  readonly snapshotProfile: typeof REPORTING_STATEMENT_SNAPSHOT_V4;
+  readonly operationalStartPolicyVersionId: string;
+  readonly operationalStartDate: string;
+  readonly specialProgrammeWorkload: DeepReadonly<SpecialProgrammeWorkloadSnapshot>;
+  readonly officialWorkload: DeepReadonly<OfficialTeacherWorkloadSnapshot>;
+}
+
 export type ReportingStatementSnapshot =
   | ReportingStatementSnapshotV1
   | ReportingStatementSnapshotV2
-  | ReportingStatementSnapshotV3;
+  | ReportingStatementSnapshotV3
+  | ReportingStatementSnapshotV4;
 
 export interface FreezeReportingStatementInputBase {
   statementProfile: string;
@@ -132,6 +202,13 @@ export interface FreezeReportingStatementInputBase {
   submitterStaffCodeSnapshot?: string | null;
   asOfInstant: Date;
   projection: PersonalReportingProjection;
+}
+
+export interface FreezeReportingStatementInputV4 extends FreezeReportingStatementInputBase {
+  operationalStartPolicyVersionId: string;
+  operationalStartDate: string;
+  specialProgrammeWorkload: SpecialProgrammeWorkloadSnapshot;
+  officialWorkload: OfficialTeacherWorkloadSnapshot;
 }
 
 export interface FreezeReportingStatementInputV3 extends FreezeReportingStatementInputBase {
@@ -150,6 +227,7 @@ export interface FreezeReportingStatementInputV1 extends FreezeReportingStatemen
 }
 
 export type FreezeReportingStatementInput =
+  | FreezeReportingStatementInputV4
   | FreezeReportingStatementInputV3
   | FreezeReportingStatementInputV2;
 
@@ -198,9 +276,169 @@ function buildFrozenSnapshotBase(
   return { p, counts: p.counts, subjects };
 }
 
+export function freezeReportingStatementSnapshotV4(
+  input: FreezeReportingStatementInputV4,
+): FrozenReportingStatementSnapshot<ReportingStatementSnapshotV4> {
+  const { p, counts, subjects } = buildFrozenSnapshotBase(input);
+
+  if (
+    typeof input.operationalStartPolicyVersionId !== "string" ||
+    !input.operationalStartPolicyVersionId.trim()
+  ) {
+    throw new BadRequestException("operationalStartPolicyVersionId must be a non-empty string.");
+  }
+  if (
+    typeof input.operationalStartDate !== "string" ||
+    !isCivilDate(input.operationalStartDate)
+  ) {
+    throw new BadRequestException("operationalStartDate must be a valid civil date in YYYY-MM-DD format.");
+  }
+
+  const wl = input.specialProgrammeWorkload;
+  if (!wl || typeof wl !== "object") {
+    throw new BadRequestException("specialProgrammeWorkload must be an object.");
+  }
+  if (wl.status !== "PASS") {
+    throw new BadRequestException("Only a PASS special programme workload projection can create a Statement.");
+  }
+  validateSpecialProgrammeWorkloadSnapshot(
+    wl,
+    input.submitterUserId,
+    (message) => {
+      throw new BadRequestException(message);
+    },
+  );
+
+  const owl = input.officialWorkload;
+  if (!owl || typeof owl !== "object") {
+    throw new BadRequestException("officialWorkload must be an object.");
+  }
+  if (owl.status !== "PASS") {
+    throw new BadRequestException("Only a PASS official workload projection can create a Statement.");
+  }
+  validateOfficialTeacherWorkloadSnapshot(
+    owl,
+    input.submitterUserId,
+    (message) => {
+      throw new BadRequestException(message);
+    },
+  );
+
+  const sortedContributions = wl.contributions
+    .slice()
+    .sort(compareContributionSnapshot)
+    .map((c: SpecialProgrammeWorkloadContributionSnapshot) => ({
+      ...c,
+      attestations: (c.attestations || [])
+        .slice()
+        .sort((a: SpecialProgrammeWorkloadAttestationEvidenceSnapshot, b: SpecialProgrammeWorkloadAttestationEvidenceSnapshot) => compare(a.attestationId, b.attestationId))
+        .map((a: SpecialProgrammeWorkloadAttestationEvidenceSnapshot) => ({ ...a })),
+    }));
+
+  const sortedPending = wl.pendingConfirmation
+    .slice()
+    .sort(comparePendingSnapshot)
+    .map((pc) => ({ ...pc }));
+
+  const specialProgrammeWorkload: DeepReadonly<SpecialProgrammeWorkloadSnapshot> = {
+    projectionProfile: required(wl.projectionProfile),
+    status: "PASS",
+    totalCredit: wl.totalCredit,
+    contributionCount: wl.contributionCount,
+    contributions: sortedContributions,
+    pendingConfirmation: sortedPending,
+    evaluatedAt: required(wl.evaluatedAt),
+  };
+
+  const sortedCurricular = owl.curricularContributions
+    .slice()
+    .sort((a, b) => compare(a.executionCivilDate, b.executionCivilDate) || compare(a.executionId, b.executionId))
+    .map((c) => ({ ...c }));
+
+  const sortedSegments = owl.adjustmentSegments
+    .slice()
+    .sort((a, b) => compare(a.fromCivilDate, b.fromCivilDate) || compare(a.toCivilDate, b.toCivilDate) || compare(a.calendarVersionId, b.calendarVersionId))
+    .map((s) => ({
+      ...s,
+      teachingWeekdays: s.teachingWeekdays.slice().sort(compare),
+      interruptionIds: (s.interruptionIds ?? []).slice().sort(compare),
+      appliedRules: s.appliedRules
+        .slice()
+        .sort((a, b) => a.priority - b.priority || compare(a.ruleId, b.ruleId))
+        .map((r) => ({
+          ...r,
+          qualifyingAssignmentIds: (r.qualifyingAssignmentIds ?? []).slice().sort(compare),
+          matchingHomeroomAssignmentIds: (r.matchingHomeroomAssignmentIds ?? []).slice().sort(compare),
+          matchingSchoolClassIds: (r.matchingSchoolClassIds ?? []).slice().sort(compare),
+        })),
+    }));
+
+  const officialWorkload: DeepReadonly<OfficialTeacherWorkloadSnapshot> = {
+    projectionProfile: required(owl.projectionProfile),
+    status: "PASS",
+    curricularCredit: owl.curricularCredit,
+    specialProgrammeCredit: owl.specialProgrammeCredit,
+    earnedCredit: owl.earnedCredit,
+    requiredCredit: owl.requiredCredit,
+    varianceCredit: owl.varianceCredit,
+    curricularContributions: sortedCurricular,
+    specialProgrammeWorkload,
+    adjustmentSegments: sortedSegments,
+    evaluatedAt: required(owl.evaluatedAt),
+  };
+
+  const snapshot: ReportingStatementSnapshotV4 = {
+    snapshotProfile: REPORTING_STATEMENT_SNAPSHOT_V4,
+    serializerVersion: REPORTING_STATEMENT_SERIALIZER_V1,
+    statementProfile: required(input.statementProfile),
+    submitterUserId: required(input.submitterUserId),
+    submitterDisplayNameSnapshot: input.submitterDisplayNameSnapshot ?? null,
+    submitterStaffCodeSnapshot: input.submitterStaffCodeSnapshot ?? null,
+    academicYearId: required(p.scope.academicYearId),
+    fromCivilDate: civil(p.scope.fromCivilDate),
+    toCivilDate: civil(p.scope.toCivilDate),
+    asOfInstant: instant(input.asOfInstant),
+    personalProjectionProfile: p.profile,
+    responsibilityState: "RESPONSIBILITY_PRESENT",
+    responsibilityManifest: p.responsibilityManifest
+      .slice()
+      .sort(interval)
+      .map((x) => ({ ...x })),
+    sections: p.sections
+      .slice()
+      .sort(section)
+      .map((x) => ({
+        ...x,
+        responsibilityIntervals: x.responsibilityIntervals
+          .slice()
+          .sort(interval)
+          .map((i) => ({ ...i })),
+        details: x.details.slice().sort(detail).map((d) => ({ ...d })),
+        findings: x.findings
+          .slice()
+          .sort(finding)
+          .map((f) => ({ ...f, entityIds: f.entityIds.slice().sort(compare) })),
+      })),
+    counts: { ...counts },
+    operationalStartPolicyVersionId: required(input.operationalStartPolicyVersionId),
+    operationalStartDate: civil(input.operationalStartDate),
+    specialProgrammeWorkload,
+    officialWorkload,
+  };
+
+  const canonicalSnapshotJson = canonicalizeJson(snapshot as unknown as CanonicalValue);
+  return freezeDeep({
+    snapshot,
+    canonicalSnapshotJson,
+    semanticHash: sha256CanonicalJson(canonicalSnapshotJson),
+    frozenSubjectIds: subjects,
+  });
+}
+
 export function freezeReportingStatementSnapshotV3(
   input: FreezeReportingStatementInputV3,
 ): FrozenReportingStatementSnapshot<ReportingStatementSnapshotV3> {
+
   const { p, counts, subjects } = buildFrozenSnapshotBase(input);
 
   if (
@@ -378,19 +616,26 @@ export function freezeReportingStatementSnapshotV2(
 }
 
 export function freezeReportingStatementSnapshot(
+  input: FreezeReportingStatementInputV4,
+): FrozenReportingStatementSnapshot<ReportingStatementSnapshotV4>;
+export function freezeReportingStatementSnapshot(
   input: FreezeReportingStatementInputV3,
 ): FrozenReportingStatementSnapshot<ReportingStatementSnapshotV3>;
 export function freezeReportingStatementSnapshot(
   input: FreezeReportingStatementInputV2,
 ): FrozenReportingStatementSnapshot<ReportingStatementSnapshotV2>;
 export function freezeReportingStatementSnapshot(
-  input: FreezeReportingStatementInputV3 | FreezeReportingStatementInputV2,
-): FrozenReportingStatementSnapshot<ReportingStatementSnapshotV3 | ReportingStatementSnapshotV2> {
+  input: FreezeReportingStatementInput,
+): FrozenReportingStatementSnapshot<ReportingStatementSnapshot> {
+  if ("officialWorkload" in input && input.officialWorkload !== undefined) {
+    return freezeReportingStatementSnapshotV4(input as FreezeReportingStatementInputV4);
+  }
   if ("specialProgrammeWorkload" in input && input.specialProgrammeWorkload !== undefined) {
     return freezeReportingStatementSnapshotV3(input as FreezeReportingStatementInputV3);
   }
   return freezeReportingStatementSnapshotV2(input as FreezeReportingStatementInputV2);
 }
+
 
 export function freezeReportingStatementSnapshotV1(
   input: FreezeReportingStatementInputV1,
@@ -457,58 +702,76 @@ export function assertFrozenReportingStatementIntegrity(
   if (
     frozen.snapshot.snapshotProfile !== REPORTING_STATEMENT_SNAPSHOT_V1 &&
     frozen.snapshot.snapshotProfile !== REPORTING_STATEMENT_SNAPSHOT_V2 &&
-    frozen.snapshot.snapshotProfile !== REPORTING_STATEMENT_SNAPSHOT_V3
+    frozen.snapshot.snapshotProfile !== REPORTING_STATEMENT_SNAPSHOT_V3 &&
+    frozen.snapshot.snapshotProfile !== REPORTING_STATEMENT_SNAPSHOT_V4
   ) {
     throw new Error("Frozen Reporting Statement unknown snapshot profile failed.");
   }
   if (
     frozen.snapshot.snapshotProfile === REPORTING_STATEMENT_SNAPSHOT_V2 ||
-    frozen.snapshot.snapshotProfile === REPORTING_STATEMENT_SNAPSHOT_V3
+    frozen.snapshot.snapshotProfile === REPORTING_STATEMENT_SNAPSHOT_V3 ||
+    frozen.snapshot.snapshotProfile === REPORTING_STATEMENT_SNAPSHOT_V4
   ) {
-    const v2orV3 = frozen.snapshot as ReportingStatementSnapshotV2 | ReportingStatementSnapshotV3;
+    const v2Plus = frozen.snapshot as ReportingStatementSnapshotV2 | ReportingStatementSnapshotV3 | ReportingStatementSnapshotV4;
     if (
-      typeof v2orV3.operationalStartPolicyVersionId !== "string" ||
-      !v2orV3.operationalStartPolicyVersionId.trim()
+      typeof v2Plus.operationalStartPolicyVersionId !== "string" ||
+      !v2Plus.operationalStartPolicyVersionId.trim()
     ) {
       throw new Error("Frozen Reporting Statement V2 policy version integrity failed.");
     }
     if (
-      typeof v2orV3.operationalStartDate !== "string" ||
-      !isCivilDate(v2orV3.operationalStartDate)
+      typeof v2Plus.operationalStartDate !== "string" ||
+      !isCivilDate(v2Plus.operationalStartDate)
     ) {
       throw new Error("Frozen Reporting Statement V2 operational start date integrity failed.");
     }
   }
-  if (frozen.snapshot.snapshotProfile === REPORTING_STATEMENT_SNAPSHOT_V3) {
-    const v3 = frozen.snapshot as ReportingStatementSnapshotV3;
-    if (!v3.specialProgrammeWorkload || typeof v3.specialProgrammeWorkload !== "object") {
+  if (
+    frozen.snapshot.snapshotProfile === REPORTING_STATEMENT_SNAPSHOT_V3 ||
+    frozen.snapshot.snapshotProfile === REPORTING_STATEMENT_SNAPSHOT_V4
+  ) {
+    const v3Plus = frozen.snapshot as ReportingStatementSnapshotV3 | ReportingStatementSnapshotV4;
+    if (!v3Plus.specialProgrammeWorkload || typeof v3Plus.specialProgrammeWorkload !== "object") {
       throw new Error("Frozen Reporting Statement V3 special programme workload integrity failed.");
     }
-    if (v3.specialProgrammeWorkload.status !== "PASS") {
+    if (v3Plus.specialProgrammeWorkload.status !== "PASS") {
       throw new Error("Frozen Reporting Statement V3 status integrity failed.");
     }
     if (
-      typeof v3.specialProgrammeWorkload.totalCredit !== "number" ||
-      !Number.isFinite(v3.specialProgrammeWorkload.totalCredit) ||
-      v3.specialProgrammeWorkload.totalCredit < 0
+      typeof v3Plus.specialProgrammeWorkload.totalCredit !== "number" ||
+      !Number.isFinite(v3Plus.specialProgrammeWorkload.totalCredit) ||
+      v3Plus.specialProgrammeWorkload.totalCredit < 0
     ) {
       throw new Error("Frozen Reporting Statement V3 total credit integrity failed.");
     }
     if (
-      typeof v3.specialProgrammeWorkload.contributionCount !== "number" ||
-      !Number.isInteger(v3.specialProgrammeWorkload.contributionCount) ||
-      v3.specialProgrammeWorkload.contributionCount < 0
+      typeof v3Plus.specialProgrammeWorkload.contributionCount !== "number" ||
+      !Number.isInteger(v3Plus.specialProgrammeWorkload.contributionCount) ||
+      v3Plus.specialProgrammeWorkload.contributionCount < 0
     ) {
       throw new Error("Frozen Reporting Statement V3 contribution count integrity failed.");
     }
-    if (!Array.isArray(v3.specialProgrammeWorkload.contributions) || !Array.isArray(v3.specialProgrammeWorkload.pendingConfirmation)) {
+    if (!Array.isArray(v3Plus.specialProgrammeWorkload.contributions) || !Array.isArray(v3Plus.specialProgrammeWorkload.pendingConfirmation)) {
       throw new Error("Frozen Reporting Statement V3 array integrity failed.");
     }
     validateSpecialProgrammeWorkloadSnapshot(
-      v3.specialProgrammeWorkload,
-      v3.submitterUserId,
+      v3Plus.specialProgrammeWorkload,
+      v3Plus.submitterUserId,
       (message) => {
         throw new Error(`Frozen Reporting Statement V3 ${message}`);
+      },
+    );
+  }
+  if (frozen.snapshot.snapshotProfile === REPORTING_STATEMENT_SNAPSHOT_V4) {
+    const v4 = frozen.snapshot as ReportingStatementSnapshotV4;
+    if (!v4.officialWorkload || typeof v4.officialWorkload !== "object") {
+      throw new Error("Frozen Reporting Statement V4 official workload integrity failed.");
+    }
+    validateOfficialTeacherWorkloadSnapshot(
+      v4.officialWorkload,
+      v4.submitterUserId,
+      (message) => {
+        throw new Error(`Frozen Reporting Statement V4 ${message}`);
       },
     );
   }
@@ -808,6 +1071,125 @@ export function assertSpecialProgrammeWorkloadSnapshotIntegrity(
     throw new Error(message);
   });
 }
+
+function validateOfficialTeacherWorkloadSnapshot(
+  workload: OfficialTeacherWorkloadSnapshot,
+  submitterUserId: string,
+  fail: (message: string) => never,
+): void {
+  if (workload.projectionProfile !== 'OFFICIAL_TEACHER_WORKLOAD_PROJECTION_V1') {
+    fail('official workload projection profile integrity failed.');
+  }
+  if (workload.status !== 'PASS') fail('official workload status integrity failed.');
+  if (!Number.isFinite(workload.curricularCredit) || workload.curricularCredit < 0) {
+    fail('curricularCredit integrity failed.');
+  }
+  if (!Number.isFinite(workload.specialProgrammeCredit) || workload.specialProgrammeCredit < 0) {
+    fail('specialProgrammeCredit integrity failed.');
+  }
+  if (!Number.isFinite(workload.earnedCredit) || workload.earnedCredit < 0) {
+    fail('earnedCredit integrity failed.');
+  }
+  if (!Number.isFinite(workload.requiredCredit) || workload.requiredCredit < 0) {
+    fail('requiredCredit integrity failed.');
+  }
+  if (!Number.isFinite(workload.varianceCredit)) {
+    fail('varianceCredit integrity failed.');
+  }
+  if (!Array.isArray(workload.curricularContributions) || !Array.isArray(workload.adjustmentSegments)) {
+    fail('official workload arrays integrity failed.');
+  }
+  if (workload.curricularCredit !== workload.curricularContributions.length) {
+    fail('curricularCredit count integrity failed.');
+  }
+  const roundedEarned = Math.round((workload.curricularCredit + workload.specialProgrammeCredit) * 10000) / 10000;
+  if (workload.earnedCredit !== roundedEarned) {
+    fail('earnedCredit arithmetic integrity failed.');
+  }
+  const roundedVariance = Math.round((workload.earnedCredit - workload.requiredCredit) * 10000) / 10000;
+  if (workload.varianceCredit !== roundedVariance) {
+    fail('varianceCredit arithmetic integrity failed.');
+  }
+  if (!isValidInstantString(workload.evaluatedAt)) {
+    fail('official workload evaluatedAt integrity failed.');
+  }
+
+  // Validate curricular contributions
+  const curricularIds = new Set<string>();
+  for (const c of workload.curricularContributions) {
+    for (const key of ['executionId', 'kind', 'actualTeacherUserId', 'schoolClassId', 'subjectId', 'originalTimetableEntryId'] as const) {
+      if (typeof c[key] !== 'string' || !c[key].trim()) {
+        fail(`curricular contribution ${key} integrity failed.`);
+      }
+    }
+    if (c.actualTeacherUserId !== submitterUserId) {
+      fail('curricular contribution owner integrity failed.');
+    }
+    if (!isCivilDate(c.executionCivilDate) || !isCivilDate(c.sourceCivilDate)) {
+      fail('curricular contribution dates integrity failed.');
+    }
+    if (c.credit !== 1) {
+      fail('curricular contribution credit must be 1.');
+    }
+    if (curricularIds.has(c.executionId)) {
+      fail('duplicate curricular contribution integrity failed.');
+    }
+    curricularIds.add(c.executionId);
+  }
+
+  // Validate adjustment segments
+  for (const seg of workload.adjustmentSegments) {
+    if (!isCivilDate(seg.fromCivilDate) || !isCivilDate(seg.toCivilDate) || seg.fromCivilDate > seg.toCivilDate) {
+      fail('segment civil dates integrity failed.');
+    }
+    if (typeof seg.calendarVersionId !== 'string' || !seg.calendarVersionId.trim()) {
+      fail('segment calendarVersionId integrity failed.');
+    }
+    if (!Array.isArray(seg.teachingWeekdays) || seg.denominatorK !== seg.teachingWeekdays.length) {
+      fail('segment teachingWeekdays/denominatorK integrity failed.');
+    }
+    if (typeof seg.isWorkloadEligible !== 'boolean') {
+      fail('segment isWorkloadEligible integrity failed.');
+    }
+    if (seg.isWorkloadEligible) {
+      if (typeof seg.policyVersionId !== 'string' || !seg.policyVersionId.trim()) {
+        fail('segment policyVersionId integrity failed.');
+      }
+      if (typeof seg.baseWeeklyNorm !== 'number' || seg.baseWeeklyNorm < 0) {
+        fail('segment baseWeeklyNorm integrity failed.');
+      }
+      if (typeof seg.adjustedWeeklyNorm !== 'number' || seg.adjustedWeeklyNorm < 0) {
+        fail('segment adjustedWeeklyNorm integrity failed.');
+      }
+    }
+    if (!Array.isArray(seg.appliedRules)) {
+      fail('segment appliedRules integrity failed.');
+    }
+    for (const r of seg.appliedRules) {
+      for (const key of ['ruleId', 'calculation', 'sourceKind'] as const) {
+        if (typeof r[key] !== 'string' || !r[key].trim()) {
+          fail(`segment rule ${key} integrity failed.`);
+        }
+      }
+      if (!Number.isFinite(r.value) || r.value < 0 || !Number.isInteger(r.priority)) {
+        fail('segment rule numeric integrity failed.');
+      }
+      if (r.sourceKind === 'ADDITIONAL_DUTY' && (typeof r.dutyDefinitionId !== 'string' || !r.dutyDefinitionId.trim())) {
+        fail('segment rule dutyDefinitionId integrity failed.');
+      }
+    }
+  }
+}
+
+export function assertOfficialTeacherWorkloadSnapshotIntegrity(
+  workload: OfficialTeacherWorkloadSnapshot,
+  submitterUserId: string,
+): void {
+  validateOfficialTeacherWorkloadSnapshot(workload, submitterUserId, (message) => {
+    throw new Error(message);
+  });
+}
+
 
 function isValidInstantString(value: unknown): value is string {
   if (typeof value !== 'string' || !value.trim()) return false;

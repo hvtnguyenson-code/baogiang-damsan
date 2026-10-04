@@ -7,7 +7,9 @@ import {
   BusinessPolicyResolution,
   BusinessPolicyVersionRecord,
   CivilDateString,
+  WorkloadAdjustmentAdditionalDutyOption,
 } from '@baogiang/contracts';
+
 import { createHash } from 'node:crypto';
 import { AuditService } from '../audit/audit.service';
 import { RequestMeta } from '../auth/auth.types';
@@ -58,6 +60,19 @@ export class BusinessConfigurationService {
       pageSize,
       total,
     };
+  }
+
+  async workloadAdjustmentAdditionalDutyOptions(): Promise<WorkloadAdjustmentAdditionalDutyOption[]> {
+    const rows = await this.prisma.additionalDutyDefinition.findMany({
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        isActive: true,
+      },
+      orderBy: [{ sortOrder: 'asc' }, { code: 'asc' }, { id: 'asc' }],
+    });
+    return rows;
   }
 
   async list(page = 1, pageSize = 25) {

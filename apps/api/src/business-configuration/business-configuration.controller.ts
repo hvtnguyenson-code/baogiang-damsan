@@ -19,6 +19,7 @@ import {
 export class BusinessConfigurationController {
   constructor(private readonly service: BusinessConfigurationService) {}
   @Get('academic-year-options') @UseGuards(SessionAuthGuard, CapabilityGuard) academicYearOptions(@Query() query: ListBusinessPolicyAcademicYearOptionsDto) { return this.service.academicYearOptions(query); }
+  @Get('workload-adjustment-options/additional-duties') @UseGuards(SessionAuthGuard, CapabilityGuard) workloadAdjustmentAdditionalDutyOptions() { return this.service.workloadAdjustmentAdditionalDutyOptions(); }
   @Get('families') @UseGuards(SessionAuthGuard, CapabilityGuard) families() { return this.service.familiesList(); }
   @Get('policies') @UseGuards(SessionAuthGuard, CapabilityGuard) list(@Query('page') page?: string, @Query('pageSize') pageSize?: string) { return this.service.list(Math.max(1, Number(page) || 1), Math.min(100, Math.max(1, Number(pageSize) || 25))); }
   @Get('policies/:streamId') @UseGuards(SessionAuthGuard, CapabilityGuard) get(@Param('streamId', ParseUUIDPipe) streamId: string) { return this.service.get(streamId); }

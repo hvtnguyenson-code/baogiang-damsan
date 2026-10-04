@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../auth/auth-context';
-import { ReportingCountsView, ReportingEvidenceTable, StatementListTable } from '../components/reporting-statements/ReportingPresentation';
+import { OfficialWorkloadView, ReportingCountsView, ReportingEvidenceTable, StatementListTable } from '../components/reporting-statements/ReportingPresentation';
 import { Button } from '../components/ui/button';
 import { InlineAlert } from '../components/ui/feedback';
 import { EmptyState, PageHeader, PageLoading, Pagination, QueryFailure, SelectField } from '../components/ui/management';
@@ -143,6 +143,15 @@ export function ReportingStatementsPage() {
       <div className="reporting-section-heading"><div className="margin-rail" aria-hidden="true" /><div><h2 id="reporting-preview-heading">02 · Bằng chứng xem trước</h2><p>Dữ liệu này phục vụ kiểm tra trước khi gửi, chưa phải bản chính thức đã lưu.</p></div></div>
       {currentPreview.responsibilityState === 'ZERO_RESPONSIBILITY' && <InlineAlert title="Không có trách nhiệm trong kỳ" tone="success">Không có trách nhiệm giảng dạy thuộc phạm vi báo cáo trong khoảng thời gian này.</InlineAlert>}
       {currentPreview.status === 'BLOCKED' && <InlineAlert title="Chưa thể lập báo cáo từ dữ liệu hiện tại"><ul>{currentPreview.findings.map((finding, index) => <li key={index}>{finding.message}</li>)}</ul></InlineAlert>}
+      {currentPreview.officialWorkload && (
+        <article className="reporting-evidence-section" style={{ marginBottom: '1.5rem' }}>
+          <header>
+            <h3>Khối lượng công tác và định mức</h3>
+            <p>Khối lượng thực dạy, nhiệm vụ đặc thù và định mức tuần theo chính sách hiện hành.</p>
+          </header>
+          <OfficialWorkloadView workload={currentPreview.officialWorkload} />
+        </article>
+      )}
       {currentPreview.counts && <ReportingCountsView counts={currentPreview.counts} />}
       {currentPreview.sections.map((section) => <article className="reporting-evidence-section" key={`${section.schoolClassId}-${section.subjectId}`}>
         <header><h3>{displayReference(section.schoolClassId, labels.classes, 'class')} · {displayReference(section.subjectId, labels.subjects, 'subject')}</h3><p>Tên lớp và môn lấy từ danh mục hiện tại để hiển thị; khoảng trách nhiệm là kết quả của bản xem trước này.</p></header>

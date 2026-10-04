@@ -8,6 +8,7 @@ import type {
   BusinessPolicyStreamRecord,
   CivilDateString,
   OperationalStartPolicyPayloadV1,
+  WorkloadAdjustmentAdditionalDutyOption,
 } from '@baogiang/contracts';
 import { apiFetch } from './api-client';
 
@@ -66,6 +67,18 @@ export const KNOWN_POLICY_ERROR_MESSAGES: Record<string, string> = {
     'Ngày bắt đầu vận hành mới phải sau ngày nghiệp vụ hiện tại và không được trước ngày hiệu lực đã lên lịch.',
   OPERATIONAL_START_RETIRE_FORBIDDEN:
     'Chính sách bắt đầu vận hành không cho phép kết thúc hiệu lực.',
+  INVALID_WORKLOAD_ADJUSTMENT_POLICY_PAYLOAD:
+    'Dữ liệu chính sách điều chỉnh định mức không hợp lệ.',
+  BASE_WEEKLY_NORM_INVALID:
+    'Định mức tuần cơ bản không hợp lệ (phải là số không âm, tối đa 4 chữ số thập phân).',
+  WORKLOAD_ADJUSTMENT_RULES_INVALID:
+    'Danh sách quy tắc điều chỉnh định mức không hợp lệ.',
+  RULE_ID_DUPLICATE:
+    'Phát hiện mã quy tắc (ruleId) bị trùng lặp.',
+  PRIORITY_DUPLICATE:
+    'Phát hiện thứ tự ưu tiên (priority) bị trùng lặp.',
+  DUTY_DEFINITION_NOT_FOUND:
+    'Nhiệm vụ kiêm nhiệm không tồn tại trong danh mục hệ thống.',
 };
 
 export const GENERIC_UNKNOWN_POLICY_ERROR =
@@ -284,4 +297,10 @@ export const businessConfigurationApi = {
       }),
     );
   },
+
+  getWorkloadAdjustmentAdditionalDuties: () =>
+    apiFetch<{ items: WorkloadAdjustmentAdditionalDutyOption[] }>(
+      '/business-configuration/workload-adjustment-options/additional-duties',
+      { notifyUnauthorized: true },
+    ),
 };

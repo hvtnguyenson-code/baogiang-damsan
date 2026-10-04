@@ -1,6 +1,9 @@
 import type {
   BusinessConfigurationResource,
   BusinessPolicyAcademicYearOption,
+  WorkloadAdjustmentAdditionalDutyOption,
+  WorkloadAdjustmentCalculationType,
+  WorkloadAdjustmentRuleV1,
 } from '@baogiang/contracts';
 import {
   createElement,
@@ -290,11 +293,454 @@ export const OPERATIONAL_START_UI_ADAPTER: BusinessPolicyUiAdapter<OperationalSt
   ResourceEditorComponent: OperationalStartResourceEditor,
 };
 
+export interface WorkloadAdjustmentPayload extends Record<string, unknown> {
+  baseWeeklyNorm: number;
+  rules: WorkloadAdjustmentRuleV1[];
+}
+
+export function initialWorkloadAdjustmentPayload(): WorkloadAdjustmentPayload {
+  return {
+    baseWeeklyNorm: 17,
+    rules: [],
+  };
+}
+
+export function validateWorkloadAdjustmentPayload(
+  value: unknown,
+): { valid: true; payload: WorkloadAdjustmentPayload } | { valid: false; error: string } {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return { valid: false, error: 'Dữ liệu chính sách điều chỉnh định mức phải là đối tượng hợp lệ.' };
+  }
+  const obj = value as Record<string, unknown>;
+  const keys = Object.keys(obj);
+  for (const k of keys) {
+    if (k !== 'baseWeeklyNorm' && k !== 'rules') {
+      return { valid: false, error: `Phát hiện trường không hợp lệ trong dữ liệu chính sách: ${k}.` };
+    }
+  }
+  if (typeof obj.baseWeeklyNorm !== 'number' || !Number.isFinite(obj.baseWeeklyNorm) || obj.baseWeeklyNorm < 0) {
+    return { valid: false, error: 'Định mức tuần cơ bản (baseWeeklyNorm) phải là số không âm.' };
+  }
+  const normStr = String(obj.baseWeeklyNorm);
+  if (normStr.includes('.') && normStr.split('.')[1].length > 4) {
+    return { valid: false, error: 'Định mức tuần cơ bản không được vượt quá 4 chữ số thập phân.' };
+  }
+  if (!Array.isArray(obj.rules)) {
+    return { valid: false, error: 'Danh sách quy tắc (rules) phải là một danh sách hợp lệ.' };
+  }
+  const seenRuleIds = new Set<string>();
+  const seenPriorities = new Set<number>();
+  for (let i = 0; i < obj.rules.length; i++) {
+    const r = obj.rules[i];
+    if (!r || typeof r !== 'object' || Array.isArray(r)) {
+      return { valid: false, error: `Quy tắc thứ ${i + 1} không phải là đối tượng hợp lệ.` };
+    }
+    const rKeys = Object.keys(r);
+    for (const rk of rKeys) {
+      if (!['ruleId', 'source', 'calculation', 'value', 'priority'].includes(rk)) {
+        return { valid: false, error: `Quy tắc thứ ${i + 1} chứa trường không hợp lệ: ${rk}.` };
+      }
+    }
+    if (typeof r.ruleId !== 'string' || !r.ruleId.trim()) {
+      return { valid: false, error: `Quy tắc thứ ${i + 1} thiếu mã quy tắc (ruleId).` };
+    }
+    if (seenRuleIds.has(r.ruleId.trim())) {
+      return { valid: false, error: `Mã quy tắc "${r.ruleId}" bị trùng lặp.` };
+    }
+    seenRuleIds.add(r.ruleId.trim());
+
+    if (typeof r.priority !== 'number' || !Number.isFinite(r.priority) || r.priority < 0) {
+      return { valid: false, error: `Thứ tự ưu tiên của quy tắc thứ ${i + 1} phải là số không âm.` };
+    }
+    if (seenPriorities.has(r.priority)) {
+      return { valid: false, error: `Thứ tự ưu tiên "${r.priority}" bị trùng lặp.` };
+    }
+    seenPriorities.add(r.priority);
+
+    if (!['TRU_TIET', 'TRU_PHAN_TRAM', 'GHI_DE'].includes(r.calculation)) {
+      return { valid: false, error: `Hình thức điều chỉnh của quy tắc thứ ${i + 1} không hợp lệ.` };
+    }
+
+    if (typeof r.value !== 'number' || !Number.isFinite(r.value) || r.value < 0) {
+      return { valid: false, error: `Giá trị điều chỉnh của quy tắc thứ ${i + 1} phải là số không âm.` };
+    }
+    const valStr = String(r.value);
+    if (valStr.includes('.') && valStr.split('.')[1].length > 4) {
+      return { valid: false, error: `Giá trị điều chỉnh của quy tắc thứ ${i + 1} không được vượt quá 4 chữ số thập phân.` };
+    }
+    if (r.calculation === 'TRU_PHAN_TRAM' && r.value > 100) {
+      return { valid: false, error: `Tỷ lệ phần trăm giảm của quy tắc thứ ${i + 1} không được vượt quá 100%.` };
+    }
+
+    if (!r.source || typeof r.source !== 'object' || Array.isArray(r.source)) {
+      return { valid: false, error: `Nguồn áp dụng của quy tắc thứ ${i + 1} không hợp lệ.` };
+    }
+    const s = r.source as Record<string, unknown>;
+    if (s.kind === 'HOMEROOM_RESPONSIBILITY') {
+      const sKeys = Object.keys(s);
+      if (sKeys.length !== 1 || sKeys[0] !== 'kind') {
+        return { valid: false, error: 'Nguồn giáo viên chủ nhiệm không được chứa trường mở rộng.' };
+      }
+    } else if (s.kind === 'ADDITIONAL_DUTY') {
+      if (typeof s.dutyDefinitionId !== 'string' || !s.dutyDefinitionId.trim()) {
+        return { valid: false, error: `Quy tắc thứ ${i + 1} thiếu thông tin nhiệm vụ kiêm nhiệm (dutyDefinitionId).` };
+      }
+      const sKeys = Object.keys(s);
+      if (sKeys.length !== 2 || !sKeys.includes('kind') || !sKeys.includes('dutyDefinitionId')) {
+        return { valid: false, error: 'Nguồn nhiệm vụ kiêm nhiệm chứa trường không hợp lệ.' };
+      }
+    } else {
+      return { valid: false, error: `Nguồn áp dụng của quy tắc thứ ${i + 1} không hợp lệ.` };
+    }
+  }
+
+  return {
+    valid: true,
+    payload: {
+      baseWeeklyNorm: obj.baseWeeklyNorm as number,
+      rules: obj.rules as WorkloadAdjustmentRuleV1[],
+    },
+  };
+}
+
+export function WorkloadAdjustmentEditor({
+  value,
+  onChange,
+  disabled,
+}: BusinessPolicyEditorProps<Record<string, unknown>>) {
+  const typedValue = (value ?? {}) as Partial<WorkloadAdjustmentPayload>;
+  const baseWeeklyNorm = typedValue.baseWeeklyNorm ?? 17;
+  const rules = (typedValue.rules ?? []) as WorkloadAdjustmentRuleV1[];
+
+  const [dutyOptions, setDutyOptions] = useState<WorkloadAdjustmentAdditionalDutyOption[]>([]);
+  const [loadingDuties, setLoadingDuties] = useState(false);
+  const [dutyError, setDutyError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    setLoadingDuties(true);
+    businessConfigurationApi.getWorkloadAdjustmentAdditionalDuties()
+      .then((res) => {
+        if (active) {
+          setDutyOptions(res.items);
+          setDutyError(null);
+        }
+      })
+      .catch((err) => {
+        if (active) {
+          setDutyError(err instanceof Error ? err.message : 'Không thể tải danh mục nhiệm vụ kiêm nhiệm.');
+        }
+      })
+      .finally(() => {
+        if (active) setLoadingDuties(false);
+      });
+    return () => { active = false; };
+  }, []);
+
+  const handleBaseNormChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const val = parseFloat(e.target.value);
+    onChange({
+      ...value,
+      baseWeeklyNorm: Number.isNaN(val) ? 0 : val,
+    });
+  };
+
+  const handleAddRule = () => {
+    const maxPriority = rules.reduce((max, r) => Math.max(max, r.priority), 0);
+    const newRule: WorkloadAdjustmentRuleV1 = {
+      ruleId: `rule_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      source: { kind: 'HOMEROOM_RESPONSIBILITY' },
+      calculation: 'TRU_TIET',
+      value: 0,
+      priority: maxPriority + 10,
+    };
+    onChange({
+      ...value,
+      rules: [...rules, newRule],
+    });
+  };
+
+  const handleRemoveRule = (index: number) => {
+    const updated = rules.filter((_, idx) => idx !== index);
+    onChange({
+      ...value,
+      rules: updated,
+    });
+  };
+
+  const handleUpdateRule = (index: number, patch: Partial<WorkloadAdjustmentRuleV1>) => {
+    const updated = rules.map((r, idx) => (idx === index ? { ...r, ...patch } : r));
+    onChange({
+      ...value,
+      rules: updated,
+    });
+  };
+
+  return createElement(
+    'div',
+    { className: 'workload-adjustment-editor', style: { display: 'flex', flexDirection: 'column', gap: '1.25rem' } },
+    createElement(FormField, {
+      id: 'workload-base-norm',
+      label: 'Định mức cơ bản (tiết/tuần)',
+      type: 'number',
+      step: '0.0001',
+      min: '0',
+      hint: 'Định mức số tiết dạy chuẩn mỗi tuần của giáo viên trước khi điều chỉnh (thường là 17 tiết/tuần đối với THPT).',
+      value: String(baseWeeklyNorm),
+      disabled,
+      onChange: handleBaseNormChange,
+      required: true,
+    }),
+    createElement(
+      'div',
+      { className: 'rules-section', style: { borderTop: '1px solid var(--border-subtle, #e5e7eb)', paddingTop: '1rem' } },
+      createElement(
+        'div',
+        { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' } },
+        createElement(
+          'div',
+          null,
+          createElement('h4', { style: { margin: 0, fontSize: '1rem', fontWeight: 600 } }, 'Quy tắc điều chỉnh định mức'),
+          createElement('p', { className: 'muted-copy', style: { margin: '0.25rem 0 0', fontSize: '0.85rem' } }, 'Các quy tắc được áp dụng theo thứ tự ưu tiên tăng dần (số nhỏ áp dụng trước).'),
+        ),
+        createElement(
+          Button,
+          {
+            type: 'button',
+            variant: 'secondary',
+            disabled,
+            onClick: handleAddRule,
+            children: '+ Thêm quy tắc',
+          },
+        ),
+      ),
+      dutyError
+        ? createElement(InlineAlert, { tone: 'warning', title: 'Lưu ý', children: dutyError })
+        : null,
+      rules.length === 0
+        ? createElement(
+            'p',
+            { className: 'muted-copy', style: { fontStyle: 'italic', fontSize: '0.9rem', padding: '0.75rem 0' } },
+            `Chưa có quy tắc điều chỉnh định mức nào. Giáo viên sẽ áp dụng định mức cơ bản ${baseWeeklyNorm} tiết/tuần.`,
+          )
+        : createElement(
+            'div',
+            { style: { display: 'flex', flexDirection: 'column', gap: '1rem' } },
+            rules.map((rule, index) => {
+              const isHomeroom = rule.source.kind === 'HOMEROOM_RESPONSIBILITY';
+              const dutyDefId = !isHomeroom ? (rule.source as { dutyDefinitionId: string }).dutyDefinitionId : '';
+
+              return createElement(
+                'div',
+                {
+                  key: rule.ruleId || String(index),
+                  style: {
+                    border: '1px solid var(--border-subtle, #e5e7eb)',
+                    borderRadius: '6px',
+                    padding: '1rem',
+                    backgroundColor: 'var(--bg-subtle, #fafafa)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.75rem',
+                  },
+                },
+                createElement(
+                  'div',
+                  { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
+                  createElement('span', { style: { fontWeight: 600, fontSize: '0.9rem' } }, `Quy tắc #${index + 1}`),
+                  createElement(
+                    Button,
+                    {
+                      type: 'button',
+                      variant: 'quiet',
+                      disabled,
+                      onClick: () => handleRemoveRule(index),
+                      style: { fontSize: '0.8rem', padding: '0.25rem 0.5rem', color: 'var(--color-danger, #dc2626)' },
+                      children: 'Xóa quy tắc',
+                    },
+                  ),
+                ),
+                createElement(
+                  'div',
+                  { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem' } },
+                  createElement(
+                    SelectField,
+                    {
+                      id: `rule-source-kind-${index}`,
+                      label: 'Nguồn áp dụng',
+                      disabled,
+                      value: rule.source.kind,
+                      onChange: (e: ChangeEvent<HTMLSelectElement>) => {
+                        const kind = e.target.value as 'HOMEROOM_RESPONSIBILITY' | 'ADDITIONAL_DUTY';
+                        if (kind === 'HOMEROOM_RESPONSIBILITY') {
+                          handleUpdateRule(index, { source: { kind: 'HOMEROOM_RESPONSIBILITY' } });
+                        } else {
+                          const firstDutyId = dutyOptions[0]?.id ?? '';
+                          handleUpdateRule(index, { source: { kind: 'ADDITIONAL_DUTY', dutyDefinitionId: firstDutyId } });
+                        }
+                      },
+                      children: [
+                        createElement('option', { key: 'HOMEROOM', value: 'HOMEROOM_RESPONSIBILITY' }, 'Giáo viên chủ nhiệm'),
+                        createElement('option', { key: 'DUTY', value: 'ADDITIONAL_DUTY' }, 'Nhiệm vụ kiêm nhiệm'),
+                      ],
+                    },
+                  ),
+                  !isHomeroom
+                    ? createElement(
+                        SelectField,
+                        {
+                          id: `rule-duty-def-${index}`,
+                          label: 'Nhiệm vụ kiêm nhiệm',
+                          disabled: disabled || loadingDuties,
+                          value: dutyDefId,
+                          onChange: (e: ChangeEvent<HTMLSelectElement>) => {
+                            handleUpdateRule(index, {
+                              source: { kind: 'ADDITIONAL_DUTY', dutyDefinitionId: e.target.value },
+                            });
+                          },
+                          hint: loadingDuties ? 'Đang tải danh mục nhiệm vụ...' : undefined,
+                          children: [
+                            dutyOptions.length === 0
+                              ? createElement('option', { key: 'none', value: '' }, '-- Không có nhiệm vụ kiêm nhiệm --')
+                              : dutyOptions.map((opt) =>
+                                  createElement(
+                                    'option',
+                                    { key: opt.id, value: opt.id },
+                                    `[${opt.code}] ${opt.name}${!opt.isActive ? ' (Hết hiệu lực)' : ''}`,
+                                  ),
+                                ),
+                          ],
+                        },
+                      )
+                    : null,
+                  createElement(
+                    SelectField,
+                    {
+                      id: `rule-calc-${index}`,
+                      label: 'Hình thức điều chỉnh',
+                      disabled,
+                      value: rule.calculation,
+                      onChange: (e: ChangeEvent<HTMLSelectElement>) => {
+                        handleUpdateRule(index, {
+                          calculation: e.target.value as WorkloadAdjustmentCalculationType,
+                        });
+                      },
+                      children: [
+                        createElement('option', { key: 'TRU_TIET', value: 'TRU_TIET' }, 'Trừ số tiết (TRU_TIET)'),
+                        createElement('option', { key: 'TRU_PHAN_TRAM', value: 'TRU_PHAN_TRAM' }, 'Trừ theo phần trăm (TRU_PHAN_TRAM)'),
+                        createElement('option', { key: 'GHI_DE', value: 'GHI_DE' }, 'Ghi đè định mức (GHI_DE)'),
+                      ],
+                    },
+                  ),
+                  createElement(FormField, {
+                    id: `rule-value-${index}`,
+                    label: `Giá trị điều chỉnh (${rule.calculation === 'TRU_PHAN_TRAM' ? '%' : 'tiết'})`,
+                    type: 'number',
+                    step: '0.0001',
+                    min: '0',
+                    max: rule.calculation === 'TRU_PHAN_TRAM' ? '100' : undefined,
+                    value: String(rule.value),
+                    disabled,
+                    onChange: (e: ChangeEvent<HTMLInputElement>) => {
+                      const val = parseFloat(e.target.value);
+                      handleUpdateRule(index, { value: Number.isNaN(val) ? 0 : val });
+                    },
+                    required: true,
+                  }),
+                  createElement(FormField, {
+                    id: `rule-priority-${index}`,
+                    label: 'Thứ tự ưu tiên',
+                    type: 'number',
+                    step: '1',
+                    min: '0',
+                    hint: 'Ưu tiên thấp hơn chạy trước (ví dụ 10, 20...)',
+                    value: String(rule.priority),
+                    disabled,
+                    onChange: (e: ChangeEvent<HTMLInputElement>) => {
+                      const val = parseInt(e.target.value, 10);
+                      handleUpdateRule(index, { priority: Number.isNaN(val) ? 0 : val });
+                    },
+                    required: true,
+                  }),
+                ),
+              );
+            }),
+          ),
+    ),
+  );
+}
+
+export function WorkloadAdjustmentSummary({
+  payload,
+}: BusinessPolicySummaryProps<Record<string, unknown>>) {
+  const typed = (payload ?? {}) as Partial<WorkloadAdjustmentPayload>;
+  const baseWeeklyNorm = typed.baseWeeklyNorm ?? 0;
+  const rules = (typed.rules ?? []) as WorkloadAdjustmentRuleV1[];
+
+  return createElement(
+    'div',
+    { className: 'workload-adjustment-summary', style: { display: 'flex', flexDirection: 'column', gap: '0.75rem' } },
+    createElement(
+      'p',
+      { style: { margin: 0, fontSize: '0.95rem' } },
+      createElement('strong', null, 'Định mức cơ bản: '),
+      `${baseWeeklyNorm} tiết/tuần`,
+    ),
+    rules.length > 0
+      ? createElement(
+          'div',
+          null,
+          createElement('p', { style: { margin: '0 0 0.5rem', fontWeight: 600, fontSize: '0.9rem' } }, `Quy tắc điều chỉnh (${rules.length}):`),
+          createElement(
+            'ul',
+            { style: { margin: 0, paddingLeft: '1.25rem', fontSize: '0.85rem' } },
+            rules
+              .slice()
+              .sort((a, b) => a.priority - b.priority)
+              .map((r, i) => {
+                const sourceText =
+                  r.source.kind === 'HOMEROOM_RESPONSIBILITY'
+                    ? 'Giáo viên chủ nhiệm'
+                    : `Nhiệm vụ kiêm nhiệm (${r.source.dutyDefinitionId})`;
+                const calcText =
+                  r.calculation === 'TRU_TIET'
+                    ? `Trừ ${r.value} tiết`
+                    : r.calculation === 'TRU_PHAN_TRAM'
+                      ? `Giảm ${r.value}%`
+                      : `Ghi đè thành ${r.value} tiết`;
+                return createElement(
+                  'li',
+                  { key: r.ruleId || String(i), style: { marginBottom: '0.25rem' } },
+                  `[Ưu tiên ${r.priority}] ${sourceText} → `,
+                  createElement('strong', null, calcText),
+                );
+              }),
+          ),
+        )
+      : createElement('p', { className: 'muted-copy', style: { margin: 0, fontSize: '0.85rem', fontStyle: 'italic' } }, 'Không có quy tắc điều chỉnh định mức nào.'),
+  );
+}
+
+export const WORKLOAD_ADJUSTMENT_UI_ADAPTER: BusinessPolicyUiAdapter<WorkloadAdjustmentPayload> = {
+  familyKey: 'WORKLOAD_ADJUSTMENT',
+  validatorVersion: 'v1',
+  displayName: 'Điều chỉnh định mức',
+  description:
+    'Cấu hình định mức tuần cơ bản và các quy tắc điều chỉnh định mức cho giáo viên (chủ nhiệm, kiêm nhiệm).',
+  resourceKind: 'ACADEMIC_YEAR',
+  initialPayload: initialWorkloadAdjustmentPayload,
+  validatePayload: validateWorkloadAdjustmentPayload,
+  EditorComponent: WorkloadAdjustmentEditor,
+  SummaryComponent: WorkloadAdjustmentSummary,
+  ResourceEditorComponent: OperationalStartResourceEditor,
+};
+
 /**
- * Production UI adapter registry contains exclusively OPERATIONAL_START in P1-032.
+ * Production UI adapter registry contains OPERATIONAL_START and WORKLOAD_ADJUSTMENT.
  */
 export const PRODUCTION_BUSINESS_POLICY_UI_ADAPTERS: readonly BusinessPolicyUiAdapter[] = [
   OPERATIONAL_START_UI_ADAPTER as unknown as BusinessPolicyUiAdapter,
+  WORKLOAD_ADJUSTMENT_UI_ADAPTER as unknown as BusinessPolicyUiAdapter,
 ];
 
 export function findUiAdapter(

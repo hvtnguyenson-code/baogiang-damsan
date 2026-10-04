@@ -15,12 +15,16 @@ import {
   REPORTING_STATEMENT_SNAPSHOT_V1,
   REPORTING_STATEMENT_SNAPSHOT_V2,
   REPORTING_STATEMENT_SNAPSHOT_V3,
+  REPORTING_STATEMENT_SNAPSHOT_V4,
   ReportingStatementSnapshot,
   ReportingStatementSnapshotV2,
   ReportingStatementSnapshotV3,
+  ReportingStatementSnapshotV4,
   assertSpecialProgrammeWorkloadSnapshotIntegrity,
+  assertOfficialTeacherWorkloadSnapshotIntegrity,
   sha256CanonicalJson,
 } from '../reporting-statement-internal/reporting-statement-canonicalizer';
+
 
 export function civilDate(value: Date): CivilDateString {
   return value.toISOString().slice(0, 10) as CivilDateString;
@@ -173,7 +177,8 @@ export function parseAndVerifyFrozenSnapshot(row: FrozenRevisionRow): ReportingS
   if (
     (row.snapshotProfile !== REPORTING_STATEMENT_SNAPSHOT_V1 &&
       row.snapshotProfile !== REPORTING_STATEMENT_SNAPSHOT_V2 &&
-      row.snapshotProfile !== REPORTING_STATEMENT_SNAPSHOT_V3) ||
+      row.snapshotProfile !== REPORTING_STATEMENT_SNAPSHOT_V3 &&
+      row.snapshotProfile !== REPORTING_STATEMENT_SNAPSHOT_V4) ||
     row.serializerVersion !== REPORTING_STATEMENT_SERIALIZER_V1
   ) {
     throw new InternalServerErrorException(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
@@ -209,14 +214,18 @@ export function parseAndVerifyFrozenSnapshot(row: FrozenRevisionRow): ReportingS
 
   if (
     snapshot.snapshotProfile === REPORTING_STATEMENT_SNAPSHOT_V2 ||
-    snapshot.snapshotProfile === REPORTING_STATEMENT_SNAPSHOT_V3
+    snapshot.snapshotProfile === REPORTING_STATEMENT_SNAPSHOT_V3 ||
+    snapshot.snapshotProfile === REPORTING_STATEMENT_SNAPSHOT_V4
   ) {
-    const v2orV3 = snapshot as ReportingStatementSnapshotV2 | ReportingStatementSnapshotV3;
+    const v2toV4 = snapshot as
+      | ReportingStatementSnapshotV2
+      | ReportingStatementSnapshotV3
+      | ReportingStatementSnapshotV4;
     if (
-      typeof v2orV3.operationalStartPolicyVersionId !== 'string' ||
-      !v2orV3.operationalStartPolicyVersionId.trim() ||
-      typeof v2orV3.operationalStartDate !== 'string' ||
-      !isCivilDate(v2orV3.operationalStartDate)
+      typeof v2toV4.operationalStartPolicyVersionId !== 'string' ||
+      !v2toV4.operationalStartPolicyVersionId.trim() ||
+      typeof v2toV4.operationalStartDate !== 'string' ||
+      !isCivilDate(v2toV4.operationalStartDate)
     ) {
       throw new InternalServerErrorException(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
     }
@@ -245,6 +254,27 @@ export function parseAndVerifyFrozenSnapshot(row: FrozenRevisionRow): ReportingS
       throw new InternalServerErrorException(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
     }
   }
+
+  if (snapshot.snapshotProfile === REPORTING_STATEMENT_SNAPSHOT_V4) {
+    const v4 = snapshot as ReportingStatementSnapshotV4;
+    if (
+      !v4.specialProgrammeWorkload ||
+      typeof v4.specialProgrammeWorkload !== 'object' ||
+      v4.specialProgrammeWorkload.status !== 'PASS' ||
+      !v4.officialWorkload ||
+      typeof v4.officialWorkload !== 'object' ||
+      v4.officialWorkload.status !== 'PASS'
+    ) {
+      throw new InternalServerErrorException(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
+    }
+    try {
+      assertSpecialProgrammeWorkloadSnapshotIntegrity(v4.specialProgrammeWorkload, snapshot.submitterUserId);
+      assertOfficialTeacherWorkloadSnapshotIntegrity(v4.officialWorkload, snapshot.submitterUserId);
+    } catch {
+      throw new InternalServerErrorException(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
+    }
+  }
+
 
   let recanonical: string;
   try {
@@ -362,35 +392,84 @@ export function presentReportingStatementDetail(
     history: historyEntries,
     allowedActions,
     specialProgrammeWorkload:
-      snapshot.snapshotProfile === REPORTING_STATEMENT_SNAPSHOT_V3
+      snapshot.snapshotProfile === REPORTING_STATEMENT_SNAPSHOT_V3 ||
+      snapshot.snapshotProfile === REPORTING_STATEMENT_SNAPSHOT_V4
         ? {
             projectionProfile:
-              (snapshot as ReportingStatementSnapshotV3).specialProgrammeWorkload
+              (snapshot as ReportingStatementSnapshotV3 | ReportingStatementSnapshotV4).specialProgrammeWorkload
                 .projectionProfile,
             status: 'PASS',
             totalCredit:
-              (snapshot as ReportingStatementSnapshotV3).specialProgrammeWorkload
+              (snapshot as ReportingStatementSnapshotV3 | ReportingStatementSnapshotV4).specialProgrammeWorkload
                 .totalCredit,
             contributionCount:
-              (snapshot as ReportingStatementSnapshotV3).specialProgrammeWorkload
+              (snapshot as ReportingStatementSnapshotV3 | ReportingStatementSnapshotV4).specialProgrammeWorkload
                 .contributionCount,
             contributions: (
-              snapshot as ReportingStatementSnapshotV3
+              snapshot as ReportingStatementSnapshotV3 | ReportingStatementSnapshotV4
             ).specialProgrammeWorkload.contributions.map((c) => ({
               ...c,
               executionCivilDate: c.executionCivilDate as CivilDateString,
               attestations: c.attestations.map((a) => ({ ...a })),
             })),
             pendingConfirmation: (
-              snapshot as ReportingStatementSnapshotV3
+              snapshot as ReportingStatementSnapshotV3 | ReportingStatementSnapshotV4
             ).specialProgrammeWorkload.pendingConfirmation.map((pc) => ({
               ...pc,
               executionCivilDate: pc.executionCivilDate as CivilDateString,
             })),
             evaluatedAt:
-              (snapshot as ReportingStatementSnapshotV3).specialProgrammeWorkload
+              (snapshot as ReportingStatementSnapshotV3 | ReportingStatementSnapshotV4).specialProgrammeWorkload
                 .evaluatedAt,
           }
         : null,
+    officialWorkload:
+      snapshot.snapshotProfile === REPORTING_STATEMENT_SNAPSHOT_V4
+        ? {
+            projectionProfile: (snapshot as ReportingStatementSnapshotV4).officialWorkload.projectionProfile,
+            status: 'PASS',
+            curricularCredit: (snapshot as ReportingStatementSnapshotV4).officialWorkload.curricularCredit,
+            specialProgrammeCredit: (snapshot as ReportingStatementSnapshotV4).officialWorkload.specialProgrammeCredit,
+            earnedCredit: (snapshot as ReportingStatementSnapshotV4).officialWorkload.earnedCredit,
+            requiredCredit: (snapshot as ReportingStatementSnapshotV4).officialWorkload.requiredCredit,
+            varianceCredit: (snapshot as ReportingStatementSnapshotV4).officialWorkload.varianceCredit,
+            curricularContributions: (snapshot as ReportingStatementSnapshotV4).officialWorkload.curricularContributions.map((c) => ({
+              ...c,
+              executionCivilDate: c.executionCivilDate as CivilDateString,
+              sourceCivilDate: c.sourceCivilDate as CivilDateString,
+            })),
+            specialProgrammeWorkload: {
+              projectionProfile: (snapshot as ReportingStatementSnapshotV4).officialWorkload.specialProgrammeWorkload.projectionProfile,
+              status: 'PASS',
+              totalCredit: (snapshot as ReportingStatementSnapshotV4).officialWorkload.specialProgrammeWorkload.totalCredit,
+              contributionCount: (snapshot as ReportingStatementSnapshotV4).officialWorkload.specialProgrammeWorkload.contributionCount,
+              contributions: (snapshot as ReportingStatementSnapshotV4).officialWorkload.specialProgrammeWorkload.contributions.map((c) => ({
+                ...c,
+                executionCivilDate: c.executionCivilDate as CivilDateString,
+                attestations: c.attestations.map((a) => ({ ...a })),
+              })),
+              pendingConfirmation: (snapshot as ReportingStatementSnapshotV4).officialWorkload.specialProgrammeWorkload.pendingConfirmation.map((pc) => ({
+                ...pc,
+                executionCivilDate: pc.executionCivilDate as CivilDateString,
+              })),
+              evaluatedAt: (snapshot as ReportingStatementSnapshotV4).officialWorkload.specialProgrammeWorkload.evaluatedAt,
+            },
+            adjustmentSegments: (snapshot as ReportingStatementSnapshotV4).officialWorkload.adjustmentSegments.map((s) => ({
+              ...s,
+              fromCivilDate: s.fromCivilDate as CivilDateString,
+              toCivilDate: s.toCivilDate as CivilDateString,
+              teachingWeekdays: [...s.teachingWeekdays],
+              interruptionIds: s.interruptionIds ? [...s.interruptionIds] : undefined,
+              appliedRules: s.appliedRules.map((r) => ({
+                ...r,
+                qualifyingAssignmentIds: r.qualifyingAssignmentIds ? [...r.qualifyingAssignmentIds] : undefined,
+                matchingHomeroomAssignmentIds: r.matchingHomeroomAssignmentIds ? [...r.matchingHomeroomAssignmentIds] : undefined,
+                matchingSchoolClassIds: r.matchingSchoolClassIds ? [...r.matchingSchoolClassIds] : undefined,
+              })),
+            })),
+            evaluatedAt: (snapshot as ReportingStatementSnapshotV4).officialWorkload.evaluatedAt,
+          }
+        : null,
   };
+
 }

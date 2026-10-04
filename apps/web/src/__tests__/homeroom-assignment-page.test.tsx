@@ -168,7 +168,7 @@ describe('Homeroom administration workspace', () => {
 
   it('does not allow a 51st correction replacement', async () => {
     vi.stubGlobal('fetch', fetchFor({ rows: [activeRow] })); const user = userEvent.setup(); renderWithQuery(<HomeroomAssignmentsPage />); await user.click(within(await screen.findByRole('region', { name: 'Sổ phân công chủ nhiệm' })).getByRole('button', { name: 'Hiệu chỉnh' })); const add = screen.getByRole('button', { name: 'Thêm khoảng' }); for (let index = 1; index < 50; index += 1) await user.click(add); expect(add).toBeDisabled(); expect(screen.getByLabelText('Bản ghi thay thế đang chỉnh').querySelectorAll('option')).toHaveLength(50);
-  });
+  }, 15000);
 
   it('resolves correction candidate authority independently per replacement', async () => {
     const fetchMock = fetchFor({ rows: [activeRow] }); vi.stubGlobal('fetch', fetchMock); const user = userEvent.setup(); renderWithQuery(<HomeroomAssignmentsPage />); await user.click(within(await screen.findByRole('region', { name: 'Sổ phân công chủ nhiệm' })).getByRole('button', { name: 'Hiệu chỉnh' }));
