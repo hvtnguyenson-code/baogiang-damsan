@@ -22,32 +22,30 @@ Exact current `main`, branch HEAD and divergence must always be read directly fr
 
 ## Last formally closed major task
 
-`P3-030` — Public make-up scheduling re-entry architecture — **`CLOSED`** by `SYNC-P3-030`.
+`P3-031` — Public make-up scheduling runtime — **`CLOSED`** by `SYNC-P3-031`.
 
 Closure evidence:
 
-- parent branch: `docs/p3-030-public-makeup-architecture`;
-- canonical parent start: `main@5c0faa7f945bd636abf9a40ecdc1d0cf8bc41cbe`;
-- final reviewed parent head: `0d24c5b31431808b8d473efcfae40851c6779fcf`;
-- parent PR: #185 (`docs(makeup): define P3-030 public scheduling architecture`);
-- exact-head parent PR CI: #616 / run `37089173791` — **SUCCESS**;
-- independent GitHub diff audit: **PASS**; exactly 8 docs-only files; zero unresolved review threads;
-- normal merge/main: `18a0dd03ae4f63b2d735390139a9f7ed6c7f0f4e`;
-- authoritative post-merge main CI: #617 / run `37089815714` — **SUCCESS**;
-- ADR-056 Accepted; no residual architecture correction/re-entry task;
-- no production/VPS/deploy mutation; production remains PRE-OPERATIONAL.
+- final reviewed runtime head: `2fc5c48d445af75961f94609edd1551530504063`;
+- parent PR: #187; exact-head parent CI #622 / run `37113263889` — **SUCCESS**;
+- normal parent merge/main: `f8612a7e15be3dd8b45079f30860f56c37a943cb`;
+- authoritative parent post-merge CI #623 / run `37113742941` — **SUCCESS**;
+- closure PR #188; exact-head closure CI #624 — **SUCCESS**;
+- closure merge/main: `e1be4a486caf57357c0fcec6f47eceb6b873ec0a`;
+- authoritative post-closure main CI #625 / run `37114789121` — **SUCCESS**;
+- ADR-056 remains Accepted; T08 RESTORE fulfilled; no runtime/schema/deploy/VPS mutation in the closure.
 
-P3-030 and P3-031 are formally closed by `SYNC-P3-030` and `SYNC-P3-031`; P4-060 is READY; P4-061 remains PLANNED behind P4-060.
+P3-030 and P3-031 are formally closed by `SYNC-P3-030` and `SYNC-P3-031`; P4-060 is IN_REVIEW on its dedicated docs branch; P4-061 remains PLANNED behind P4-060.
 
 ## Active / next critical path
 
 ### In Review
 
-- `P3-031` — public make-up scheduling runtime — **`CLOSED` by `SYNC-P3-031`**; reviewed head `2fc5c48d445af75961f94609edd1551530504063`; PR #187; exact-head CI #622 / run `37113263889` SUCCESS; normal merge/main `f8612a7e15be3dd8b45079f30860f56c37a943cb`; authoritative post-merge CI #623 / run `37113742941` SUCCESS. Delivered under ADR-056: bounded candidate/read surface, SERIALIZABLE create/reverse+replacement, canonical PROVEN_OPEN_DEBT revalidation, prospective target authority in Asia/Ho_Chi_Minh, same-subject teacher eligibility provenance, canonical collision reuse, reciprocal disposition guard, exact TEACHING_OPERATION_MANAGE authorization, and Vietnamese management UI at `/quan-tri/lich-day-bu`; zero schema/migration/deploy/VPS mutation.
+- `P4-060` — workload adjustment + official workload architecture — **`IN_REVIEW`** on `docs/p4-060-workload-adjustment-architecture`; proposed ADR-057 closes T23 formula/effectivity/snapshot semantics and registers T49 for the actual-curricular-workload gap required by the FULL BUSINESS exact multi-teacher workload claim. P4-060 is docs-only and authorizes no runtime/schema/deploy mutation.
 
 ### Ready
 
-- `P4-060` — workload adjustment architecture — **`READY`**; FULL BUSINESS completeness directive fired T23 and `P1-020` is CLOSED.
+- None on the immediate P5 dependency path until P4-060 closes.
 
 ### Planned behind open dependencies
 
@@ -87,8 +85,8 @@ Detailed domain closure evidence remains in `PRE-PILOT-TASK-REGISTER.md`, ADRs, 
 
 The project is **NOT READY FOR TEACHER PILOT YET**. Remaining registered gaps include:
 
-1. `P3-030` and `P3-031` are CLOSED by `SYNC-P3-030` and `SYNC-P3-031`; `P4-060` is READY.
-2. `P4-061` is the only remaining unresolved direct dependency of the complete FULL BUSINESS `P5-010` freeze.
+1. `P3-030` and `P3-031` are CLOSED by `SYNC-P3-030` and `SYNC-P3-031`; `P4-060` is `IN_REVIEW`.
+2. `P4-061` remains the only unresolved direct dependency of the complete FULL BUSINESS `P5-010` freeze and cannot start until P4-060 closes.
 3. Public make-up scheduling T08 and adjusted-workload T23 are mandatory re-entry paths; their triggers fired on 2026-10-02.
 4. PWA production baseline (`P5-020`) remains absent.
 5. Dedicated Báo giảng Telegram integration (`P5-030`) remains absent.
