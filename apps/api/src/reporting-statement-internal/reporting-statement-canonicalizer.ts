@@ -386,12 +386,30 @@ export function freezeReportingStatementSnapshotV4(
       appliedRules: s.appliedRules
         .slice()
         .sort((a, b) => a.priority - b.priority || compare(a.ruleId, b.ruleId))
-        .map((r) => ({
-          ...r,
-          qualifyingAssignmentIds: (r.qualifyingAssignmentIds ?? []).slice().sort(compare),
-          matchingHomeroomAssignmentIds: (r.matchingHomeroomAssignmentIds ?? []).slice().sort(compare),
-          matchingSchoolClassIds: (r.matchingSchoolClassIds ?? []).slice().sort(compare),
-        })),
+        .map((r) => {
+          if (r.sourceKind === 'HOMEROOM_RESPONSIBILITY') {
+            return {
+              ruleId: r.ruleId,
+              calculation: r.calculation,
+              value: r.value,
+              priority: r.priority,
+              sourceKind: 'HOMEROOM_RESPONSIBILITY' as const,
+              matchingHomeroomAssignmentIds: (r.matchingHomeroomAssignmentIds ?? []).slice().sort(compare),
+              matchingSchoolClassIds: (r.matchingSchoolClassIds ?? []).slice().sort(compare),
+            };
+          }
+          return {
+            ruleId: r.ruleId,
+            calculation: r.calculation,
+            value: r.value,
+            priority: r.priority,
+            sourceKind: 'ADDITIONAL_DUTY' as const,
+            dutyDefinitionId: r.dutyDefinitionId!,
+            dutyDefinitionCodeSnapshot: r.dutyDefinitionCodeSnapshot!,
+            dutyDefinitionNameSnapshot: r.dutyDefinitionNameSnapshot!,
+            qualifyingAssignmentIds: (r.qualifyingAssignmentIds ?? []).slice().sort(compare),
+          };
+        }),
     }));
 
   const officialWorkload: DeepReadonly<OfficialTeacherWorkloadSnapshot> = {
@@ -1267,13 +1285,21 @@ function validateOfficialTeacherWorkloadSnapshot(
         }
       }
     } else {
-      if (seg.interruptionIds && seg.interruptionIds.length > 0) {
-        fail('uninterrupted segment must not have interruptionIds.');
+      if (seg.interruptionIds !== undefined && seg.interruptionIds !== null) {
+        if (!Array.isArray(seg.interruptionIds) || seg.interruptionIds.length > 0) {
+          fail('uninterrupted segment must not have interruptionIds.');
+        }
       }
     }
     if (typeof seg.isWorkloadEligible !== 'boolean') {
       fail('segment isWorkloadEligible integrity failed.');
     }
+
+    // MAJOR C: Validate array shape before dereferencing it
+    if (!Array.isArray(seg.appliedRules)) {
+      fail('segment appliedRules integrity failed: must be an array.');
+    }
+
     if (seg.isWorkloadEligible) {
       if (seg.hasInterruption) {
         fail('eligible segment must not claim hasInterruption.');
@@ -1293,16 +1319,33 @@ function validateOfficialTeacherWorkloadSnapshot(
       if (typeof seg.policyVersionId !== 'string' || !seg.policyVersionId.trim()) {
         fail('segment policyVersionId integrity failed.');
       }
-      if (typeof seg.baseWeeklyNorm !== 'number' || seg.baseWeeklyNorm < 0) {
+      // D. Provenance completeness check
+      if (typeof seg.policyValidatorVersion !== 'string' || !seg.policyValidatorVersion.trim()) {
+        fail('segment policyValidatorVersion integrity failed.');
+      }
+      if (typeof seg.baseWeeklyNorm !== 'number' || !Number.isFinite(seg.baseWeeklyNorm) || seg.baseWeeklyNorm < 0) {
         fail('segment baseWeeklyNorm integrity failed.');
       }
-      if (typeof seg.adjustedWeeklyNorm !== 'number' || seg.adjustedWeeklyNorm < 0) {
+      if (typeof seg.adjustedWeeklyNorm !== 'number' || !Number.isFinite(seg.adjustedWeeklyNorm) || seg.adjustedWeeklyNorm < 0) {
         fail('segment adjustedWeeklyNorm integrity failed.');
       }
-      if (typeof seg.dailyRequiredCredit !== 'number' || seg.dailyRequiredCredit < 0) {
+      if (typeof seg.dailyRequiredCredit !== 'number' || !Number.isFinite(seg.dailyRequiredCredit) || seg.dailyRequiredCredit < 0) {
         fail('segment dailyRequiredCredit integrity failed.');
       }
     } else {
+      // Ineligible segment
+      if (!seg.hasInterruption) {
+        // BLOCKER A: If hasInterruption === false, every civil date in that segment must be outside teachingWeekdays.
+        let curr = parseCivilDate(seg.fromCivilDate);
+        const end = parseCivilDate(seg.toCivilDate);
+        while (curr.getTime() <= end.getTime()) {
+          const wd = weekdayForCivilDate(curr);
+          if (seg.teachingWeekdays.includes(wd)) {
+            fail(`ineligible uninterrupted segment contains teaching weekday ${wd} on ${formatCivilDate(curr)} without interruption provenance.`);
+          }
+          curr = new Date(curr.getTime() + 86_400_000);
+        }
+      }
       if (seg.dailyRequiredCredit !== 0) {
         fail('ineligible segment must have dailyRequiredCredit = 0.');
       }
@@ -1316,26 +1359,133 @@ function validateOfficialTeacherWorkloadSnapshot(
         fail('ineligible segment must have empty appliedRules.');
       }
     }
-    if (!Array.isArray(seg.appliedRules)) {
-      fail('segment appliedRules integrity failed.');
-    }
+
+    // BLOCKER B: Mirror canonical WORKLOAD_ADJUSTMENT rule invariants inside frozen V4 integrity
+    const seenRuleIds = new Set<string>();
+    const seenPriorities = new Set<number>();
+
     for (const r of seg.appliedRules) {
-      for (const key of ['ruleId', 'calculation', 'sourceKind'] as const) {
-        if (typeof r[key] !== 'string' || !r[key].trim()) {
-          fail(`segment rule ${key} integrity failed.`);
+      if (!r || typeof r !== 'object') {
+        fail('segment rule integrity failed: rule must be an object.');
+      }
+
+      // Identity and uniqueness
+      if (typeof r.ruleId !== 'string' || !r.ruleId.trim()) {
+        fail('segment rule ruleId integrity failed: must be a non-empty string.');
+      }
+      const trimmedRuleId = r.ruleId.trim();
+      if (seenRuleIds.has(trimmedRuleId)) {
+        fail(`segment rule duplicate ruleId: ${trimmedRuleId}.`);
+      }
+      seenRuleIds.add(trimmedRuleId);
+
+      if (typeof r.priority !== 'number' || !Number.isInteger(r.priority) || r.priority < 0) {
+        fail('segment rule priority integrity failed: must be a non-negative integer.');
+      }
+      if (seenPriorities.has(r.priority)) {
+        fail(`segment rule duplicate priority: ${r.priority}.`);
+      }
+      seenPriorities.add(r.priority);
+
+      // Calculation
+      if (r.calculation !== 'TRU_TIET' && r.calculation !== 'TRU_PHAN_TRAM' && r.calculation !== 'GHI_DE') {
+        fail(`segment rule calculation unknown: ${r.calculation}.`);
+      }
+      if (typeof r.value !== 'number' || !Number.isFinite(r.value) || r.value < 0) {
+        fail('segment rule value integrity failed: must be a non-negative finite number.');
+      }
+      if (r.calculation === 'TRU_PHAN_TRAM' && r.value > 100) {
+        fail('segment rule TRU_PHAN_TRAM value must not exceed 100.');
+      }
+
+      // Source kind
+      if (r.sourceKind !== 'ADDITIONAL_DUTY' && r.sourceKind !== 'HOMEROOM_RESPONSIBILITY') {
+        fail(`segment rule sourceKind unknown: ${r.sourceKind}.`);
+      }
+
+      // Source provenance evidence
+      if (r.sourceKind === 'ADDITIONAL_DUTY') {
+        if (typeof r.dutyDefinitionId !== 'string' || !r.dutyDefinitionId.trim()) {
+          fail('segment rule dutyDefinitionId integrity failed: must be a non-empty string.');
         }
-      }
-      if (!Number.isFinite(r.value) || r.value < 0 || !Number.isInteger(r.priority)) {
-        fail('segment rule numeric integrity failed.');
-      }
-      if (r.sourceKind === 'ADDITIONAL_DUTY' && (typeof r.dutyDefinitionId !== 'string' || !r.dutyDefinitionId.trim())) {
-        fail('segment rule dutyDefinitionId integrity failed.');
+        if (typeof r.dutyDefinitionCodeSnapshot !== 'string' || !r.dutyDefinitionCodeSnapshot.trim()) {
+          fail('segment rule dutyDefinitionCodeSnapshot integrity failed: must be a non-empty string.');
+        }
+        if (typeof r.dutyDefinitionNameSnapshot !== 'string' || !r.dutyDefinitionNameSnapshot.trim()) {
+          fail('segment rule dutyDefinitionNameSnapshot integrity failed: must be a non-empty string.');
+        }
+        if (!Array.isArray(r.qualifyingAssignmentIds) || r.qualifyingAssignmentIds.length === 0) {
+          fail('segment rule qualifyingAssignmentIds integrity failed: must be a non-empty array.');
+        }
+        const seenAssignmentIds = new Set<string>();
+        for (const id of r.qualifyingAssignmentIds) {
+          if (typeof id !== 'string' || !id.trim()) {
+            fail('segment rule qualifyingAssignmentIds contains empty string.');
+          }
+          if (seenAssignmentIds.has(id)) {
+            fail(`segment rule qualifyingAssignmentIds contains duplicate id: ${id}.`);
+          }
+          seenAssignmentIds.add(id);
+        }
+        if (r.matchingHomeroomAssignmentIds !== undefined && r.matchingHomeroomAssignmentIds !== null) {
+          fail('segment rule ADDITIONAL_DUTY must not have matchingHomeroomAssignmentIds.');
+        }
+        if (r.matchingSchoolClassIds !== undefined && r.matchingSchoolClassIds !== null) {
+          fail('segment rule ADDITIONAL_DUTY must not have matchingSchoolClassIds.');
+        }
+      } else if (r.sourceKind === 'HOMEROOM_RESPONSIBILITY') {
+        if (!Array.isArray(r.matchingHomeroomAssignmentIds) || r.matchingHomeroomAssignmentIds.length === 0) {
+          fail('segment rule matchingHomeroomAssignmentIds integrity failed: must be a non-empty array.');
+        }
+        const seenHrIds = new Set<string>();
+        for (const id of r.matchingHomeroomAssignmentIds) {
+          if (typeof id !== 'string' || !id.trim()) {
+            fail('segment rule matchingHomeroomAssignmentIds contains empty string.');
+          }
+          if (seenHrIds.has(id)) {
+            fail(`segment rule matchingHomeroomAssignmentIds contains duplicate id: ${id}.`);
+          }
+          seenHrIds.add(id);
+        }
+
+        if (!Array.isArray(r.matchingSchoolClassIds) || r.matchingSchoolClassIds.length === 0) {
+          fail('segment rule matchingSchoolClassIds integrity failed: must be a non-empty array.');
+        }
+        const seenClassIds = new Set<string>();
+        for (const id of r.matchingSchoolClassIds) {
+          if (typeof id !== 'string' || !id.trim()) {
+            fail('segment rule matchingSchoolClassIds contains empty string.');
+          }
+          if (seenClassIds.has(id)) {
+            fail(`segment rule matchingSchoolClassIds contains duplicate id: ${id}.`);
+          }
+          seenClassIds.add(id);
+        }
+
+        if (r.dutyDefinitionId !== undefined && r.dutyDefinitionId !== null) {
+          fail('segment rule HOMEROOM_RESPONSIBILITY must not have dutyDefinitionId.');
+        }
+        if (r.dutyDefinitionCodeSnapshot !== undefined && r.dutyDefinitionCodeSnapshot !== null) {
+          fail('segment rule HOMEROOM_RESPONSIBILITY must not have dutyDefinitionCodeSnapshot.');
+        }
+        if (r.dutyDefinitionNameSnapshot !== undefined && r.dutyDefinitionNameSnapshot !== null) {
+          fail('segment rule HOMEROOM_RESPONSIBILITY must not have dutyDefinitionNameSnapshot.');
+        }
+        if (r.qualifyingAssignmentIds !== undefined && r.qualifyingAssignmentIds !== null) {
+          fail('segment rule HOMEROOM_RESPONSIBILITY must not have qualifyingAssignmentIds.');
+        }
       }
     }
     if (seg.isWorkloadEligible) {
+      const sortedRules = seg.appliedRules
+        .slice()
+        .sort(
+          (a: { priority: number; ruleId: string }, b: { priority: number; ruleId: string }) =>
+            a.priority - b.priority || a.ruleId.localeCompare(b.ruleId),
+        );
       const adjustedRational = calculateAdjustedWeeklyNormRational(
-        seg.baseWeeklyNorm,
-        seg.appliedRules.map((r: { calculation: string; value: number }) => ({ calculation: r.calculation as never, value: r.value })),
+        seg.baseWeeklyNorm!,
+        sortedRules.map((r: { calculation: string; value: number }) => ({ calculation: r.calculation as never, value: r.value })),
       );
       const expectedAdjusted = rationalRound4(adjustedRational);
       if (seg.adjustedWeeklyNorm !== expectedAdjusted) {

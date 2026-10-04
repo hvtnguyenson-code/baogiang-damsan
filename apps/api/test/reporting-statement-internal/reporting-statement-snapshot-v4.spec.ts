@@ -1,5 +1,6 @@
 import {
   assertFrozenReportingStatementIntegrity,
+  canonicalizeJson,
   freezeReportingStatementSnapshot,
   freezeReportingStatementSnapshotV1,
   REPORTING_STATEMENT_SERIALIZER_V1,
@@ -7,6 +8,7 @@ import {
   REPORTING_STATEMENT_SNAPSHOT_V2,
   REPORTING_STATEMENT_SNAPSHOT_V3,
   REPORTING_STATEMENT_SNAPSHOT_V4,
+  sha256CanonicalJson,
 } from '../../src/reporting-statement-internal/reporting-statement-canonicalizer';
 
 describe('Reporting Statement Snapshot V4 (Section 43)', () => {
@@ -679,5 +681,569 @@ describe('Reporting Statement Snapshot V4 (Section 43)', () => {
         officialWorkload: duplicateWeekdays as never,
       }),
     ).toThrow('segment teachingWeekdays contains duplicate weekdays');
+  });
+
+  // BLOCKER A: Do not blindly trust isWorkloadEligible = false
+  it('rejects attack converting eligible teaching-day segment to ineligible without interruption provenance (BLOCKER A)', () => {
+    // 1. Create a valid frozen V4 statement
+    const frozen = freezeReportingStatementSnapshot({
+      statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+      submitterUserId,
+      asOfInstant: asOf,
+      projection: baseProjection as never,
+      operationalStartPolicyVersionId: 'op-start-1',
+      operationalStartDate: '2026-09-01',
+      specialProgrammeWorkload: specialWorkloadSnapshot,
+      officialWorkload: officialWorkloadSnapshot,
+    });
+
+    // 2. Attacker modifies snapshot: converts eligible teaching segment to ineligible,
+    // zeros required workload fields, reconciles requiredCredit and varianceCredit,
+    // recomputes canonical JSON and semanticHash.
+    const tamperedSnapshot = JSON.parse(frozen.canonicalSnapshotJson);
+    tamperedSnapshot.officialWorkload.adjustmentSegments[0] = {
+      fromCivilDate: '2026-09-01',
+      toCivilDate: '2026-09-30',
+      isWorkloadEligible: false,
+      calendarVersionId: 'cal-ver-1',
+      teachingWeekdays: ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'],
+      denominatorK: 7,
+      hasInterruption: false,
+      interruptionIds: [],
+      policyVersionId: null,
+      policyValidatorVersion: null,
+      policyEffectiveFrom: null,
+      policyEffectiveUntil: null,
+      baseWeeklyNorm: null,
+      adjustedWeeklyNorm: null,
+      dailyRequiredCredit: 0,
+      appliedRules: [],
+    };
+    // Reconcile arithmetic: requiredCredit becomes 0, varianceCredit = earnedCredit (3) - 0 = 3
+    tamperedSnapshot.officialWorkload.requiredCredit = 0;
+    tamperedSnapshot.officialWorkload.varianceCredit = 3;
+
+    const tamperedCanonicalJson = canonicalizeJson(tamperedSnapshot as never);
+    const tamperedSemanticHash = sha256CanonicalJson(tamperedCanonicalJson);
+
+    expect(() =>
+      assertFrozenReportingStatementIntegrity({
+        ...frozen,
+        snapshot: tamperedSnapshot,
+        canonicalSnapshotJson: tamperedCanonicalJson,
+        semanticHash: tamperedSemanticHash,
+      }),
+    ).toThrow('ineligible uninterrupted segment contains teaching weekday');
+  });
+
+  // BLOCKER B #1: duplicate ruleId
+  it('rejects applied rule with duplicate ruleId (BLOCKER B #1)', () => {
+    const duplicateRuleId = {
+      ...officialWorkloadSnapshot,
+      adjustmentSegments: [
+        {
+          ...officialWorkloadSnapshot.adjustmentSegments[0],
+          appliedRules: [
+            {
+              ruleId: 'r_gvcn',
+              calculation: 'TRU_TIET' as const,
+              value: 3,
+              priority: 10,
+              sourceKind: 'HOMEROOM_RESPONSIBILITY' as const,
+              matchingHomeroomAssignmentIds: ['hr-1'],
+              matchingSchoolClassIds: ['class-1'],
+            },
+            {
+              ruleId: 'r_gvcn', // DUPLICATE
+              calculation: 'TRU_TIET' as const,
+              value: 4,
+              priority: 20,
+              sourceKind: 'HOMEROOM_RESPONSIBILITY' as const,
+              matchingHomeroomAssignmentIds: ['hr-2'],
+              matchingSchoolClassIds: ['class-2'],
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(() =>
+      freezeReportingStatementSnapshot({
+        statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+        submitterUserId,
+        asOfInstant: asOf,
+        projection: baseProjection as never,
+        operationalStartPolicyVersionId: 'op-start-1',
+        operationalStartDate: '2026-09-01',
+        specialProgrammeWorkload: specialWorkloadSnapshot,
+        officialWorkload: duplicateRuleId as never,
+      }),
+    ).toThrow('segment rule duplicate ruleId: r_gvcn');
+  });
+
+  // BLOCKER B #2: duplicate priority
+  it('rejects applied rule with duplicate priority (BLOCKER B #2)', () => {
+    const duplicatePriority = {
+      ...officialWorkloadSnapshot,
+      adjustmentSegments: [
+        {
+          ...officialWorkloadSnapshot.adjustmentSegments[0],
+          appliedRules: [
+            {
+              ruleId: 'r_gvcn_1',
+              calculation: 'TRU_TIET' as const,
+              value: 3,
+              priority: 10,
+              sourceKind: 'HOMEROOM_RESPONSIBILITY' as const,
+              matchingHomeroomAssignmentIds: ['hr-1'],
+              matchingSchoolClassIds: ['class-1'],
+            },
+            {
+              ruleId: 'r_gvcn_2',
+              calculation: 'TRU_TIET' as const,
+              value: 4,
+              priority: 10, // DUPLICATE PRIORITY
+              sourceKind: 'HOMEROOM_RESPONSIBILITY' as const,
+              matchingHomeroomAssignmentIds: ['hr-2'],
+              matchingSchoolClassIds: ['class-2'],
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(() =>
+      freezeReportingStatementSnapshot({
+        statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+        submitterUserId,
+        asOfInstant: asOf,
+        projection: baseProjection as never,
+        operationalStartPolicyVersionId: 'op-start-1',
+        operationalStartDate: '2026-09-01',
+        specialProgrammeWorkload: specialWorkloadSnapshot,
+        officialWorkload: duplicatePriority as never,
+      }),
+    ).toThrow('segment rule duplicate priority: 10');
+  });
+
+  // BLOCKER B #3: calculation outside canonical enum
+  it('rejects applied rule with calculation outside canonical enum (BLOCKER B #3)', () => {
+    const badCalc = {
+      ...officialWorkloadSnapshot,
+      adjustmentSegments: [
+        {
+          ...officialWorkloadSnapshot.adjustmentSegments[0],
+          appliedRules: [
+            {
+              ruleId: 'r_gvcn',
+              calculation: 'CONG_TIET' as never,
+              value: 7,
+              priority: 10,
+              sourceKind: 'HOMEROOM_RESPONSIBILITY' as const,
+              matchingHomeroomAssignmentIds: ['hr-1'],
+              matchingSchoolClassIds: ['class-1'],
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(() =>
+      freezeReportingStatementSnapshot({
+        statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+        submitterUserId,
+        asOfInstant: asOf,
+        projection: baseProjection as never,
+        operationalStartPolicyVersionId: 'op-start-1',
+        operationalStartDate: '2026-09-01',
+        specialProgrammeWorkload: specialWorkloadSnapshot,
+        officialWorkload: badCalc as never,
+      }),
+    ).toThrow('segment rule calculation unknown: CONG_TIET');
+  });
+
+  // BLOCKER B #4: TRU_PHAN_TRAM > 100
+  it('rejects applied rule with TRU_PHAN_TRAM exceeding 100 (BLOCKER B #4)', () => {
+    const excessivePercent = {
+      ...officialWorkloadSnapshot,
+      adjustmentSegments: [
+        {
+          ...officialWorkloadSnapshot.adjustmentSegments[0],
+          appliedRules: [
+            {
+              ruleId: 'r_gvcn',
+              calculation: 'TRU_PHAN_TRAM' as const,
+              value: 120, // > 100
+              priority: 10,
+              sourceKind: 'HOMEROOM_RESPONSIBILITY' as const,
+              matchingHomeroomAssignmentIds: ['hr-1'],
+              matchingSchoolClassIds: ['class-1'],
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(() =>
+      freezeReportingStatementSnapshot({
+        statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+        submitterUserId,
+        asOfInstant: asOf,
+        projection: baseProjection as never,
+        operationalStartPolicyVersionId: 'op-start-1',
+        operationalStartDate: '2026-09-01',
+        specialProgrammeWorkload: specialWorkloadSnapshot,
+        officialWorkload: excessivePercent as never,
+      }),
+    ).toThrow('segment rule TRU_PHAN_TRAM value must not exceed 100');
+  });
+
+  // BLOCKER B #5: unknown sourceKind
+  it('rejects applied rule with unknown sourceKind (BLOCKER B #5)', () => {
+    const unknownSource = {
+      ...officialWorkloadSnapshot,
+      adjustmentSegments: [
+        {
+          ...officialWorkloadSnapshot.adjustmentSegments[0],
+          appliedRules: [
+            {
+              ruleId: 'r_general',
+              calculation: 'TRU_TIET' as const,
+              value: 7,
+              priority: 10,
+              sourceKind: 'GENERAL' as never,
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(() =>
+      freezeReportingStatementSnapshot({
+        statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+        submitterUserId,
+        asOfInstant: asOf,
+        projection: baseProjection as never,
+        operationalStartPolicyVersionId: 'op-start-1',
+        operationalStartDate: '2026-09-01',
+        specialProgrammeWorkload: specialWorkloadSnapshot,
+        officialWorkload: unknownSource as never,
+      }),
+    ).toThrow('segment rule sourceKind unknown: GENERAL');
+  });
+
+  // BLOCKER B #6: fake HOMEROOM rule without matchingHomeroomAssignmentIds
+  it('rejects fake HOMEROOM rule without matchingHomeroomAssignmentIds (BLOCKER B #6)', () => {
+    const missingHrIds = {
+      ...officialWorkloadSnapshot,
+      adjustmentSegments: [
+        {
+          ...officialWorkloadSnapshot.adjustmentSegments[0],
+          appliedRules: [
+            {
+              ruleId: 'r_gvcn',
+              calculation: 'TRU_TIET' as const,
+              value: 7,
+              priority: 10,
+              sourceKind: 'HOMEROOM_RESPONSIBILITY' as const,
+              matchingSchoolClassIds: ['class-1'],
+              // matchingHomeroomAssignmentIds is missing
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(() =>
+      freezeReportingStatementSnapshot({
+        statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+        submitterUserId,
+        asOfInstant: asOf,
+        projection: baseProjection as never,
+        operationalStartPolicyVersionId: 'op-start-1',
+        operationalStartDate: '2026-09-01',
+        specialProgrammeWorkload: specialWorkloadSnapshot,
+        officialWorkload: missingHrIds as never,
+      }),
+    ).toThrow('segment rule matchingHomeroomAssignmentIds integrity failed: must be a non-empty array');
+  });
+
+  // BLOCKER B #7: fake ADDITIONAL_DUTY rule without qualifyingAssignmentIds
+  it('rejects fake ADDITIONAL_DUTY rule without qualifyingAssignmentIds (BLOCKER B #7)', () => {
+    const missingDutyAssignments = {
+      ...officialWorkloadSnapshot,
+      adjustmentSegments: [
+        {
+          ...officialWorkloadSnapshot.adjustmentSegments[0],
+          appliedRules: [
+            {
+              ruleId: 'r_duty',
+              calculation: 'TRU_TIET' as const,
+              value: 7,
+              priority: 10,
+              sourceKind: 'ADDITIONAL_DUTY' as const,
+              dutyDefinitionId: '33333333-3333-4333-8333-333333333333',
+              dutyDefinitionCodeSnapshot: 'DUTY_01',
+              dutyDefinitionNameSnapshot: 'Nhiem vu 1',
+              // qualifyingAssignmentIds is missing
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(() =>
+      freezeReportingStatementSnapshot({
+        statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+        submitterUserId,
+        asOfInstant: asOf,
+        projection: baseProjection as never,
+        operationalStartPolicyVersionId: 'op-start-1',
+        operationalStartDate: '2026-09-01',
+        specialProgrammeWorkload: specialWorkloadSnapshot,
+        officialWorkload: missingDutyAssignments as never,
+      }),
+    ).toThrow('segment rule qualifyingAssignmentIds integrity failed: must be a non-empty array');
+  });
+
+  // BLOCKER B #8: fake rule that reduces adjustedWeeklyNorm/requiredCredit while arithmetic remains internally consistent
+  it('rejects a fake rule that reduces adjustedWeeklyNorm/requiredCredit while arithmetic remains internally consistent (BLOCKER B #8)', () => {
+    // Attacker adds a forged ADDITIONAL_DUTY rule that subtracts 7 periods (from 14 down to 7),
+    // and recalculates all arithmetic consistently:
+    // baseWeeklyNorm = 21, rule 1 (HOMEROOM, TRU_TIET 7) -> 14, rule 2 (fake DUTY, TRU_TIET 7) -> 7
+    // adjustedWeeklyNorm = 7
+    // dailyRequiredCredit = 7 / 7 = 1
+    // requiredCredit = 30 * 1 = 30
+    // varianceCredit = 3 - 30 = -27
+    const consistentForged = {
+      ...officialWorkloadSnapshot,
+      requiredCredit: 30,
+      varianceCredit: -27,
+      adjustmentSegments: [
+        {
+          ...officialWorkloadSnapshot.adjustmentSegments[0],
+          adjustedWeeklyNorm: 7,
+          dailyRequiredCredit: 1,
+          appliedRules: [
+            {
+              ruleId: 'r_gvcn',
+              calculation: 'TRU_TIET' as const,
+              value: 7,
+              priority: 10,
+              sourceKind: 'HOMEROOM_RESPONSIBILITY' as const,
+              matchingHomeroomAssignmentIds: ['hr-1'],
+              matchingSchoolClassIds: ['class-1'],
+            },
+            {
+              ruleId: 'r_forged_duty',
+              calculation: 'TRU_TIET' as const,
+              value: 7,
+              priority: 20,
+              sourceKind: 'ADDITIONAL_DUTY' as const,
+              dutyDefinitionId: '99999999-9999-4999-8999-999999999999',
+              dutyDefinitionCodeSnapshot: 'FORGED',
+              dutyDefinitionNameSnapshot: 'Forged Duty',
+              qualifyingAssignmentIds: [], // FORGED: no actual qualifying assignments
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(() =>
+      freezeReportingStatementSnapshot({
+        statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+        submitterUserId,
+        asOfInstant: asOf,
+        projection: baseProjection as never,
+        operationalStartPolicyVersionId: 'op-start-1',
+        operationalStartDate: '2026-09-01',
+        specialProgrammeWorkload: specialWorkloadSnapshot,
+        officialWorkload: consistentForged as never,
+      }),
+    ).toThrow('segment rule qualifyingAssignmentIds integrity failed: must be a non-empty array');
+  });
+
+  // MAJOR C: Array shape validation before dereferencing
+  it('rejects malformed array structures before dereferencing (MAJOR C)', () => {
+    // 1. appliedRules is null
+    const nullAppliedRules = {
+      ...officialWorkloadSnapshot,
+      adjustmentSegments: [
+        {
+          ...officialWorkloadSnapshot.adjustmentSegments[0],
+          appliedRules: null as never,
+        },
+      ],
+    };
+    expect(() =>
+      freezeReportingStatementSnapshot({
+        statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+        submitterUserId,
+        asOfInstant: asOf,
+        projection: baseProjection as never,
+        operationalStartPolicyVersionId: 'op-start-1',
+        operationalStartDate: '2026-09-01',
+        specialProgrammeWorkload: specialWorkloadSnapshot,
+        officialWorkload: nullAppliedRules as never,
+      }),
+    ).toThrow('segment appliedRules integrity failed: must be an array');
+
+    // 2. appliedRules is an object
+    const objectAppliedRules = {
+      ...officialWorkloadSnapshot,
+      adjustmentSegments: [
+        {
+          ...officialWorkloadSnapshot.adjustmentSegments[0],
+          appliedRules: { not: 'array' } as never,
+        },
+      ],
+    };
+    expect(() =>
+      freezeReportingStatementSnapshot({
+        statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+        submitterUserId,
+        asOfInstant: asOf,
+        projection: baseProjection as never,
+        operationalStartPolicyVersionId: 'op-start-1',
+        operationalStartDate: '2026-09-01',
+        specialProgrammeWorkload: specialWorkloadSnapshot,
+        officialWorkload: objectAppliedRules as never,
+      }),
+    ).toThrow('segment appliedRules integrity failed: must be an array');
+
+    // 3. matchingHomeroomAssignmentIds is not an array
+    const notArrayHrIds = {
+      ...officialWorkloadSnapshot,
+      adjustmentSegments: [
+        {
+          ...officialWorkloadSnapshot.adjustmentSegments[0],
+          appliedRules: [
+            {
+              ruleId: 'r_gvcn',
+              calculation: 'TRU_TIET' as const,
+              value: 7,
+              priority: 10,
+              sourceKind: 'HOMEROOM_RESPONSIBILITY' as const,
+              matchingHomeroomAssignmentIds: 'not-array' as never,
+              matchingSchoolClassIds: ['class-1'],
+            },
+          ],
+        },
+      ],
+    };
+    expect(() =>
+      freezeReportingStatementSnapshot({
+        statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+        submitterUserId,
+        asOfInstant: asOf,
+        projection: baseProjection as never,
+        operationalStartPolicyVersionId: 'op-start-1',
+        operationalStartDate: '2026-09-01',
+        specialProgrammeWorkload: specialWorkloadSnapshot,
+        officialWorkload: notArrayHrIds as never,
+      }),
+    ).toThrow('segment rule matchingHomeroomAssignmentIds integrity failed: must be a non-empty array');
+  });
+
+  // D. Provenance completeness check
+  it('rejects eligible segment with missing policyValidatorVersion (D. Provenance completeness)', () => {
+    const missingValidatorVer = {
+      ...officialWorkloadSnapshot,
+      adjustmentSegments: [
+        {
+          ...officialWorkloadSnapshot.adjustmentSegments[0],
+          policyValidatorVersion: '' as never,
+        },
+      ],
+    };
+
+    expect(() =>
+      freezeReportingStatementSnapshot({
+        statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+        submitterUserId,
+        asOfInstant: asOf,
+        projection: baseProjection as never,
+        operationalStartPolicyVersionId: 'op-start-1',
+        operationalStartDate: '2026-09-01',
+        specialProgrammeWorkload: specialWorkloadSnapshot,
+        officialWorkload: missingValidatorVer as never,
+      }),
+    ).toThrow('segment policyValidatorVersion integrity failed');
+  });
+
+  // Cross-substitute provenance fields check
+  it('rejects cross-substitute provenance fields between source kinds', () => {
+    // ADDITIONAL_DUTY with homeroom fields
+    const dutyWithHrFields = {
+      ...officialWorkloadSnapshot,
+      adjustmentSegments: [
+        {
+          ...officialWorkloadSnapshot.adjustmentSegments[0],
+          appliedRules: [
+            {
+              ruleId: 'r_duty',
+              calculation: 'TRU_TIET' as const,
+              value: 7,
+              priority: 10,
+              sourceKind: 'ADDITIONAL_DUTY' as const,
+              dutyDefinitionId: '33333333-3333-4333-8333-333333333333',
+              dutyDefinitionCodeSnapshot: 'DUTY_01',
+              dutyDefinitionNameSnapshot: 'Nhiem vu 1',
+              qualifyingAssignmentIds: ['qa-1'],
+              matchingHomeroomAssignmentIds: ['hr-1'] as never,
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(() =>
+      freezeReportingStatementSnapshot({
+        statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+        submitterUserId,
+        asOfInstant: asOf,
+        projection: baseProjection as never,
+        operationalStartPolicyVersionId: 'op-start-1',
+        operationalStartDate: '2026-09-01',
+        specialProgrammeWorkload: specialWorkloadSnapshot,
+        officialWorkload: dutyWithHrFields as never,
+      }),
+    ).toThrow('segment rule ADDITIONAL_DUTY must not have matchingHomeroomAssignmentIds');
+
+    // HOMEROOM_RESPONSIBILITY with dutyDefinitionId
+    const hrWithDutyFields = {
+      ...officialWorkloadSnapshot,
+      adjustmentSegments: [
+        {
+          ...officialWorkloadSnapshot.adjustmentSegments[0],
+          appliedRules: [
+            {
+              ruleId: 'r_gvcn',
+              calculation: 'TRU_TIET' as const,
+              value: 7,
+              priority: 10,
+              sourceKind: 'HOMEROOM_RESPONSIBILITY' as const,
+              matchingHomeroomAssignmentIds: ['hr-1'],
+              matchingSchoolClassIds: ['class-1'],
+              dutyDefinitionId: '33333333-3333-4333-8333-333333333333' as never,
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(() =>
+      freezeReportingStatementSnapshot({
+        statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+        submitterUserId,
+        asOfInstant: asOf,
+        projection: baseProjection as never,
+        operationalStartPolicyVersionId: 'op-start-1',
+        operationalStartDate: '2026-09-01',
+        specialProgrammeWorkload: specialWorkloadSnapshot,
+        officialWorkload: hrWithDutyFields as never,
+      }),
+    ).toThrow('segment rule HOMEROOM_RESPONSIBILITY must not have dutyDefinitionId');
   });
 });
