@@ -105,6 +105,8 @@ One rule applies at most once per teacher/date even if multiple assignments/scop
 
 Additional-duty scope remains organizational assignment provenance; it is not authorization and does not multiply a rule. Current `isActive` catalog state must not erase retained historical assignment meaning.
 
+Because AdditionalDuty definition/assignment validity is persisted as absolute instants while this projection is civil-date based, P4-061 must project those boundaries to `Asia/Ho_Chi_Minh` civil dates: start date is inclusive; the civil date of a non-null `validUntil` is exclusive. Host timezone, UTC date slicing and an arbitrary time-of-day probe are forbidden. HomeroomAssignment keeps its canonical civil-date semantics.
+
 ### D7. Calculation order and formulas
 
 Applicable rules are sorted by ascending unique `priority`. Starting value is `baseWeeklyNorm`.

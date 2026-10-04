@@ -107,6 +107,8 @@ CalendarException/class suppression does not alter the generic teacher norm in V
 
 `ADDITIONAL_DUTY` rule applies once when at least one exact retained matching StaffAdditionalDutyAssignment is effective for the teacher/date. Multiple assignment scopes do not multiply the adjustment.
 
+For AdditionalDutyDefinition/StaffAdditionalDutyAssignment instant windows, effective civil dates are derived in `Asia/Ho_Chi_Minh`: HCM date(validFrom) is inclusive and HCM date(validUntil) is exclusive. No host-timezone or UTC-date shortcut is allowed.
+
 `HOMEROOM_RESPONSIBILITY` rule applies once when at least one canonical HomeroomAssignment is effective for the teacher/date. It must not require a duplicate AdditionalDuty assignment.
 
 ## 9. Rule chain
