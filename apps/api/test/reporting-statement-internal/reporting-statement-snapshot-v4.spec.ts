@@ -1246,4 +1246,384 @@ describe('Reporting Statement Snapshot V4 (Section 43)', () => {
       }),
     ).toThrow('segment rule HOMEROOM_RESPONSIBILITY must not have dutyDefinitionId');
   });
+
+  // CORRECTION 005 A.1: Decimal precision parity
+  it('rejects baseWeeklyNorm with >4 decimal places even if arithmetic is internally self-consistent (CORRECTION 005 A.1)', () => {
+    const frozen = freezeReportingStatementSnapshot({
+      statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+      submitterUserId,
+      asOfInstant: asOf,
+      projection: baseProjection as never,
+      operationalStartPolicyVersionId: 'op-start-1',
+      operationalStartDate: '2026-09-01',
+      specialProgrammeWorkload: specialWorkloadSnapshot,
+      officialWorkload: officialWorkloadSnapshot,
+    });
+
+    const tamperedSnapshot = JSON.parse(frozen.canonicalSnapshotJson);
+    tamperedSnapshot.officialWorkload.adjustmentSegments[0].baseWeeklyNorm = 21.12345;
+    const tamperedCanonicalJson = canonicalizeJson(tamperedSnapshot as never);
+    const tamperedSemanticHash = sha256CanonicalJson(tamperedCanonicalJson);
+
+    expect(() =>
+      assertFrozenReportingStatementIntegrity({
+        ...frozen,
+        snapshot: tamperedSnapshot,
+        canonicalSnapshotJson: tamperedCanonicalJson,
+        semanticHash: tamperedSemanticHash,
+      }),
+    ).toThrow('segment baseWeeklyNorm integrity failed: must be a non-negative finite number with at most 4 decimal places');
+  });
+
+  it('rejects applied rule value with >4 decimal places even if arithmetic is internally self-consistent (CORRECTION 005 A.1)', () => {
+    const frozen = freezeReportingStatementSnapshot({
+      statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+      submitterUserId,
+      asOfInstant: asOf,
+      projection: baseProjection as never,
+      operationalStartPolicyVersionId: 'op-start-1',
+      operationalStartDate: '2026-09-01',
+      specialProgrammeWorkload: specialWorkloadSnapshot,
+      officialWorkload: officialWorkloadSnapshot,
+    });
+
+    const tamperedSnapshot = JSON.parse(frozen.canonicalSnapshotJson);
+    tamperedSnapshot.officialWorkload.adjustmentSegments[0].appliedRules[0].value = 7.12345;
+    const tamperedCanonicalJson = canonicalizeJson(tamperedSnapshot as never);
+    const tamperedSemanticHash = sha256CanonicalJson(tamperedCanonicalJson);
+
+    expect(() =>
+      assertFrozenReportingStatementIntegrity({
+        ...frozen,
+        snapshot: tamperedSnapshot,
+        canonicalSnapshotJson: tamperedCanonicalJson,
+        semanticHash: tamperedSemanticHash,
+      }),
+    ).toThrow('segment rule value integrity failed: must be a non-negative finite number with at most 4 decimal places');
+  });
+
+  it('rejects rule value or baseWeeklyNorm with exponential notation (CORRECTION 005 A.1)', () => {
+    const frozen = freezeReportingStatementSnapshot({
+      statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+      submitterUserId,
+      asOfInstant: asOf,
+      projection: baseProjection as never,
+      operationalStartPolicyVersionId: 'op-start-1',
+      operationalStartDate: '2026-09-01',
+      specialProgrammeWorkload: specialWorkloadSnapshot,
+      officialWorkload: officialWorkloadSnapshot,
+    });
+
+    const tamperedSnapshot = JSON.parse(frozen.canonicalSnapshotJson);
+    tamperedSnapshot.officialWorkload.adjustmentSegments[0].appliedRules[0].value = 1e-5;
+    const tamperedCanonicalJson = canonicalizeJson(tamperedSnapshot as never);
+    const tamperedSemanticHash = sha256CanonicalJson(tamperedCanonicalJson);
+
+    expect(() =>
+      assertFrozenReportingStatementIntegrity({
+        ...frozen,
+        snapshot: tamperedSnapshot,
+        canonicalSnapshotJson: tamperedCanonicalJson,
+        semanticHash: tamperedSemanticHash,
+      }),
+    ).toThrow('segment rule value integrity failed');
+  });
+
+  // CORRECTION 005 A.2: ruleId canonical form
+  it('rejects applied rule with untrimmed ruleId (leading/trailing whitespace) (CORRECTION 005 A.2)', () => {
+    const frozen = freezeReportingStatementSnapshot({
+      statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+      submitterUserId,
+      asOfInstant: asOf,
+      projection: baseProjection as never,
+      operationalStartPolicyVersionId: 'op-start-1',
+      operationalStartDate: '2026-09-01',
+      specialProgrammeWorkload: specialWorkloadSnapshot,
+      officialWorkload: officialWorkloadSnapshot,
+    });
+
+    const tamperedSnapshot = JSON.parse(frozen.canonicalSnapshotJson);
+    tamperedSnapshot.officialWorkload.adjustmentSegments[0].appliedRules[0].ruleId = ' r_gvcn ';
+    const tamperedCanonicalJson = canonicalizeJson(tamperedSnapshot as never);
+    const tamperedSemanticHash = sha256CanonicalJson(tamperedCanonicalJson);
+
+    expect(() =>
+      assertFrozenReportingStatementIntegrity({
+        ...frozen,
+        snapshot: tamperedSnapshot,
+        canonicalSnapshotJson: tamperedCanonicalJson,
+        semanticHash: tamperedSemanticHash,
+      }),
+    ).toThrow('segment rule ruleId integrity failed: must be a non-empty trimmed string of at most 100 characters');
+  });
+
+  it('rejects applied rule with ruleId exceeding 100 characters (CORRECTION 005 A.2)', () => {
+    const frozen = freezeReportingStatementSnapshot({
+      statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+      submitterUserId,
+      asOfInstant: asOf,
+      projection: baseProjection as never,
+      operationalStartPolicyVersionId: 'op-start-1',
+      operationalStartDate: '2026-09-01',
+      specialProgrammeWorkload: specialWorkloadSnapshot,
+      officialWorkload: officialWorkloadSnapshot,
+    });
+
+    const tamperedSnapshot = JSON.parse(frozen.canonicalSnapshotJson);
+    tamperedSnapshot.officialWorkload.adjustmentSegments[0].appliedRules[0].ruleId = 'r'.repeat(101);
+    const tamperedCanonicalJson = canonicalizeJson(tamperedSnapshot as never);
+    const tamperedSemanticHash = sha256CanonicalJson(tamperedCanonicalJson);
+
+    expect(() =>
+      assertFrozenReportingStatementIntegrity({
+        ...frozen,
+        snapshot: tamperedSnapshot,
+        canonicalSnapshotJson: tamperedCanonicalJson,
+        semanticHash: tamperedSemanticHash,
+      }),
+    ).toThrow('segment rule ruleId integrity failed: must be a non-empty trimmed string of at most 100 characters');
+  });
+
+  // CORRECTION 005 A.3: dutyDefinitionId UUID parity
+  it('rejects ADDITIONAL_DUTY applied rule with non-UUID dutyDefinitionId (CORRECTION 005 A.3)', () => {
+    const dutyRuleOfficialWorkload = {
+      ...officialWorkloadSnapshot,
+      adjustmentSegments: [
+        {
+          ...officialWorkloadSnapshot.adjustmentSegments[0],
+          appliedRules: [
+            {
+              ruleId: 'r_duty',
+              calculation: 'TRU_TIET' as const,
+              value: 3,
+              priority: 10,
+              sourceKind: 'ADDITIONAL_DUTY' as const,
+              dutyDefinitionId: 'not-a-uuid',
+              dutyDefinitionCodeSnapshot: 'DUTY_01',
+              dutyDefinitionNameSnapshot: 'Duty Name',
+              qualifyingAssignmentIds: ['qa-1'],
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(() =>
+      freezeReportingStatementSnapshot({
+        statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+        submitterUserId,
+        asOfInstant: asOf,
+        projection: baseProjection as never,
+        operationalStartPolicyVersionId: 'op-start-1',
+        operationalStartDate: '2026-09-01',
+        specialProgrammeWorkload: specialWorkloadSnapshot,
+        officialWorkload: dutyRuleOfficialWorkload as never,
+      }),
+    ).toThrow('segment rule dutyDefinitionId integrity failed: must be a valid UUID');
+  });
+
+  // CORRECTION 005 B: Policy effectivity provenance
+  it('rejects eligible segment with invalid policyEffectiveFrom date string (CORRECTION 005 B.1)', () => {
+    const frozen = freezeReportingStatementSnapshot({
+      statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+      submitterUserId,
+      asOfInstant: asOf,
+      projection: baseProjection as never,
+      operationalStartPolicyVersionId: 'op-start-1',
+      operationalStartDate: '2026-09-01',
+      specialProgrammeWorkload: specialWorkloadSnapshot,
+      officialWorkload: officialWorkloadSnapshot,
+    });
+
+    const tamperedSnapshot = JSON.parse(frozen.canonicalSnapshotJson);
+    tamperedSnapshot.officialWorkload.adjustmentSegments[0].policyEffectiveFrom = 'not-a-date';
+    const tamperedCanonicalJson = canonicalizeJson(tamperedSnapshot as never);
+    const tamperedSemanticHash = sha256CanonicalJson(tamperedCanonicalJson);
+
+    expect(() =>
+      assertFrozenReportingStatementIntegrity({
+        ...frozen,
+        snapshot: tamperedSnapshot,
+        canonicalSnapshotJson: tamperedCanonicalJson,
+        semanticHash: tamperedSemanticHash,
+      }),
+    ).toThrow('eligible segment policyEffectiveFrom integrity failed: must be a valid civil date');
+  });
+
+  it('rejects eligible segment whose policyEffectiveFrom starts after segment fromCivilDate (CORRECTION 005 B.2)', () => {
+    const frozen = freezeReportingStatementSnapshot({
+      statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+      submitterUserId,
+      asOfInstant: asOf,
+      projection: baseProjection as never,
+      operationalStartPolicyVersionId: 'op-start-1',
+      operationalStartDate: '2026-09-01',
+      specialProgrammeWorkload: specialWorkloadSnapshot,
+      officialWorkload: officialWorkloadSnapshot,
+    });
+
+    const tamperedSnapshot = JSON.parse(frozen.canonicalSnapshotJson);
+    tamperedSnapshot.officialWorkload.adjustmentSegments[0].policyEffectiveFrom = '2026-09-02';
+    const tamperedCanonicalJson = canonicalizeJson(tamperedSnapshot as never);
+    const tamperedSemanticHash = sha256CanonicalJson(tamperedCanonicalJson);
+
+    expect(() =>
+      assertFrozenReportingStatementIntegrity({
+        ...frozen,
+        snapshot: tamperedSnapshot,
+        canonicalSnapshotJson: tamperedCanonicalJson,
+        semanticHash: tamperedSemanticHash,
+      }),
+    ).toThrow('eligible segment policy window starts after segment start');
+  });
+
+  it('rejects eligible segment whose policyEffectiveUntil ends before segment toCivilDate (CORRECTION 005 B.3)', () => {
+    const frozen = freezeReportingStatementSnapshot({
+      statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+      submitterUserId,
+      asOfInstant: asOf,
+      projection: baseProjection as never,
+      operationalStartPolicyVersionId: 'op-start-1',
+      operationalStartDate: '2026-09-01',
+      specialProgrammeWorkload: specialWorkloadSnapshot,
+      officialWorkload: officialWorkloadSnapshot,
+    });
+
+    const tamperedSnapshot = JSON.parse(frozen.canonicalSnapshotJson);
+    tamperedSnapshot.officialWorkload.adjustmentSegments[0].policyEffectiveUntil = '2026-09-29';
+    const tamperedCanonicalJson = canonicalizeJson(tamperedSnapshot as never);
+    const tamperedSemanticHash = sha256CanonicalJson(tamperedCanonicalJson);
+
+    expect(() =>
+      assertFrozenReportingStatementIntegrity({
+        ...frozen,
+        snapshot: tamperedSnapshot,
+        canonicalSnapshotJson: tamperedCanonicalJson,
+        semanticHash: tamperedSemanticHash,
+      }),
+    ).toThrow('eligible segment policy window ends before segment end');
+  });
+
+  it('rejects eligible segment where policyEffectiveUntil < policyEffectiveFrom (CORRECTION 005 B.4)', () => {
+    const frozen = freezeReportingStatementSnapshot({
+      statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+      submitterUserId,
+      asOfInstant: asOf,
+      projection: baseProjection as never,
+      operationalStartPolicyVersionId: 'op-start-1',
+      operationalStartDate: '2026-09-01',
+      specialProgrammeWorkload: specialWorkloadSnapshot,
+      officialWorkload: officialWorkloadSnapshot,
+    });
+
+    const tamperedSnapshot = JSON.parse(frozen.canonicalSnapshotJson);
+    tamperedSnapshot.officialWorkload.adjustmentSegments[0].policyEffectiveFrom = '2026-09-01';
+    tamperedSnapshot.officialWorkload.adjustmentSegments[0].policyEffectiveUntil = '2026-08-31';
+    const tamperedCanonicalJson = canonicalizeJson(tamperedSnapshot as never);
+    const tamperedSemanticHash = sha256CanonicalJson(tamperedCanonicalJson);
+
+    expect(() =>
+      assertFrozenReportingStatementIntegrity({
+        ...frozen,
+        snapshot: tamperedSnapshot,
+        canonicalSnapshotJson: tamperedCanonicalJson,
+        semanticHash: tamperedSemanticHash,
+      }),
+    ).toThrow('eligible segment policyEffectiveUntil must be on or after policyEffectiveFrom');
+  });
+
+  it('rejects ineligible segment carrying non-null policy effectivity provenance (CORRECTION 005 B.5)', () => {
+    const frozen = freezeReportingStatementSnapshot({
+      statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+      submitterUserId,
+      asOfInstant: asOf,
+      projection: baseProjection as never,
+      operationalStartPolicyVersionId: 'op-start-1',
+      operationalStartDate: '2026-09-01',
+      specialProgrammeWorkload: specialWorkloadSnapshot,
+      officialWorkload: officialWorkloadSnapshot,
+    });
+
+    const tamperedSnapshot = JSON.parse(frozen.canonicalSnapshotJson);
+    tamperedSnapshot.officialWorkload.adjustmentSegments[0] = {
+      fromCivilDate: '2026-09-01',
+      toCivilDate: '2026-09-30',
+      isWorkloadEligible: false,
+      calendarVersionId: 'cal-ver-1',
+      teachingWeekdays: ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'],
+      denominatorK: 7,
+      hasInterruption: true,
+      interruptionIds: ['interruption-valid-1'],
+      policyVersionId: null,
+      policyValidatorVersion: null,
+      policyEffectiveFrom: '2026-09-01',
+      policyEffectiveUntil: null,
+      baseWeeklyNorm: null,
+      adjustedWeeklyNorm: null,
+      dailyRequiredCredit: 0,
+      appliedRules: [],
+    };
+    tamperedSnapshot.officialWorkload.requiredCredit = 0;
+    tamperedSnapshot.officialWorkload.varianceCredit = 3;
+
+    const tamperedCanonicalJson = canonicalizeJson(tamperedSnapshot as never);
+    const tamperedSemanticHash = sha256CanonicalJson(tamperedCanonicalJson);
+
+    expect(() =>
+      assertFrozenReportingStatementIntegrity({
+        ...frozen,
+        snapshot: tamperedSnapshot,
+        canonicalSnapshotJson: tamperedCanonicalJson,
+        semanticHash: tamperedSemanticHash,
+      }),
+    ).toThrow('ineligible segment must have null policyEffectiveFrom and policyEffectiveUntil');
+  });
+
+  // CORRECTION 005 C: Interruption provenance structural integrity
+  it('rejects interrupted segment with duplicate interruptionIds (CORRECTION 005 C)', () => {
+    const frozen = freezeReportingStatementSnapshot({
+      statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+      submitterUserId,
+      asOfInstant: asOf,
+      projection: baseProjection as never,
+      operationalStartPolicyVersionId: 'op-start-1',
+      operationalStartDate: '2026-09-01',
+      specialProgrammeWorkload: specialWorkloadSnapshot,
+      officialWorkload: officialWorkloadSnapshot,
+    });
+
+    const tamperedSnapshot = JSON.parse(frozen.canonicalSnapshotJson);
+    tamperedSnapshot.officialWorkload.adjustmentSegments[0] = {
+      fromCivilDate: '2026-09-01',
+      toCivilDate: '2026-09-30',
+      isWorkloadEligible: false,
+      calendarVersionId: 'cal-ver-1',
+      teachingWeekdays: ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'],
+      denominatorK: 7,
+      hasInterruption: true,
+      interruptionIds: ['dup-interruption', 'dup-interruption'],
+      policyVersionId: null,
+      policyValidatorVersion: null,
+      policyEffectiveFrom: null,
+      policyEffectiveUntil: null,
+      baseWeeklyNorm: null,
+      adjustedWeeklyNorm: null,
+      dailyRequiredCredit: 0,
+      appliedRules: [],
+    };
+    tamperedSnapshot.officialWorkload.requiredCredit = 0;
+    tamperedSnapshot.officialWorkload.varianceCredit = 3;
+
+    const tamperedCanonicalJson = canonicalizeJson(tamperedSnapshot as never);
+    const tamperedSemanticHash = sha256CanonicalJson(tamperedCanonicalJson);
+
+    expect(() =>
+      assertFrozenReportingStatementIntegrity({
+        ...frozen,
+        snapshot: tamperedSnapshot,
+        canonicalSnapshotJson: tamperedCanonicalJson,
+        semanticHash: tamperedSemanticHash,
+      }),
+    ).toThrow('interrupted segment contains duplicate interruptionId: dup-interruption');
+  });
 });

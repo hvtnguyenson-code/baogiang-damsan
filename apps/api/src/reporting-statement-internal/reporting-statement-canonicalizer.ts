@@ -381,6 +381,10 @@ export function freezeReportingStatementSnapshotV4(
     .sort((a, b) => compare(a.fromCivilDate, b.fromCivilDate) || compare(a.toCivilDate, b.toCivilDate) || compare(a.calendarVersionId, b.calendarVersionId))
     .map((s) => ({
       ...s,
+      policyVersionId: s.isWorkloadEligible ? s.policyVersionId : null,
+      policyValidatorVersion: s.isWorkloadEligible ? s.policyValidatorVersion : null,
+      policyEffectiveFrom: s.isWorkloadEligible ? (s.policyEffectiveFrom ?? null) : null,
+      policyEffectiveUntil: s.isWorkloadEligible ? (s.policyEffectiveUntil ?? null) : null,
       teachingWeekdays: s.teachingWeekdays.slice().sort(compare),
       interruptionIds: (s.interruptionIds ?? []).slice().sort(compare),
       appliedRules: s.appliedRules
@@ -1123,6 +1127,23 @@ function nextCivilDate(civilDate: string): string {
   return formatCivilDate(new Date(nextMs));
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+
+function checkDecimal4(val: unknown): boolean {
+  if (typeof val !== 'number' || !Number.isFinite(val) || Number.isNaN(val) || val < 0) {
+    return false;
+  }
+  const s = val.toString();
+  if (s.includes('e') || s.includes('E')) {
+    return false;
+  }
+  const parts = s.split('.');
+  if (parts.length > 1 && parts[1].length > 4) {
+    return false;
+  }
+  return true;
+}
+
 const VALID_TEACHING_WEEKDAYS = new Set([
   'MONDAY',
   'TUESDAY',
@@ -1279,10 +1300,15 @@ function validateOfficialTeacherWorkloadSnapshot(
       if (!Array.isArray(seg.interruptionIds) || seg.interruptionIds.length === 0) {
         fail('interrupted segment must have non-empty interruptionIds array.');
       }
+      const seenInterruptionIds = new Set<string>();
       for (const id of seg.interruptionIds) {
         if (typeof id !== 'string' || !id.trim()) {
           fail('interrupted segment interruptionId must be a non-empty string.');
         }
+        if (seenInterruptionIds.has(id)) {
+          fail(`interrupted segment contains duplicate interruptionId: ${id}.`);
+        }
+        seenInterruptionIds.add(id);
       }
     } else {
       if (seg.interruptionIds !== undefined && seg.interruptionIds !== null) {
@@ -1323,8 +1349,27 @@ function validateOfficialTeacherWorkloadSnapshot(
       if (typeof seg.policyValidatorVersion !== 'string' || !seg.policyValidatorVersion.trim()) {
         fail('segment policyValidatorVersion integrity failed.');
       }
-      if (typeof seg.baseWeeklyNorm !== 'number' || !Number.isFinite(seg.baseWeeklyNorm) || seg.baseWeeklyNorm < 0) {
-        fail('segment baseWeeklyNorm integrity failed.');
+
+      // BLOCKER B: Policy effectivity provenance
+      if (typeof seg.policyEffectiveFrom !== 'string' || !isCivilDate(seg.policyEffectiveFrom)) {
+        fail('eligible segment policyEffectiveFrom integrity failed: must be a valid civil date.');
+      }
+      if (seg.policyEffectiveUntil !== null && (typeof seg.policyEffectiveUntil !== 'string' || !isCivilDate(seg.policyEffectiveUntil))) {
+        fail('eligible segment policyEffectiveUntil integrity failed: must be null or a valid civil date.');
+      }
+      if (seg.policyEffectiveUntil !== null && seg.policyEffectiveFrom > seg.policyEffectiveUntil) {
+        fail(`eligible segment policyEffectiveUntil must be on or after policyEffectiveFrom: ${seg.policyEffectiveUntil} < ${seg.policyEffectiveFrom}.`);
+      }
+      if (seg.policyEffectiveFrom > seg.fromCivilDate) {
+        fail(`eligible segment policy window starts after segment start: policyEffectiveFrom ${seg.policyEffectiveFrom} > fromCivilDate ${seg.fromCivilDate}.`);
+      }
+      if (seg.policyEffectiveUntil !== null && seg.toCivilDate > seg.policyEffectiveUntil) {
+        fail(`eligible segment policy window ends before segment end: toCivilDate ${seg.toCivilDate} > policyEffectiveUntil ${seg.policyEffectiveUntil}.`);
+      }
+
+      // BLOCKER A #1: baseWeeklyNorm decimal precision parity
+      if (typeof seg.baseWeeklyNorm !== 'number' || !checkDecimal4(seg.baseWeeklyNorm)) {
+        fail('segment baseWeeklyNorm integrity failed: must be a non-negative finite number with at most 4 decimal places without exponential notation.');
       }
       if (typeof seg.adjustedWeeklyNorm !== 'number' || !Number.isFinite(seg.adjustedWeeklyNorm) || seg.adjustedWeeklyNorm < 0) {
         fail('segment adjustedWeeklyNorm integrity failed.');
@@ -1355,6 +1400,10 @@ function validateOfficialTeacherWorkloadSnapshot(
       if (seg.policyVersionId !== null || seg.policyValidatorVersion !== null) {
         fail('ineligible segment must have null policyVersionId and policyValidatorVersion.');
       }
+      // BLOCKER B: Ineligible segment carrying non-null policy effectivity provenance
+      if (seg.policyEffectiveFrom !== null || seg.policyEffectiveUntil !== null) {
+        fail('ineligible segment must have null policyEffectiveFrom and policyEffectiveUntil.');
+      }
       if (seg.appliedRules.length !== 0) {
         fail('ineligible segment must have empty appliedRules.');
       }
@@ -1369,15 +1418,14 @@ function validateOfficialTeacherWorkloadSnapshot(
         fail('segment rule integrity failed: rule must be an object.');
       }
 
-      // Identity and uniqueness
-      if (typeof r.ruleId !== 'string' || !r.ruleId.trim()) {
-        fail('segment rule ruleId integrity failed: must be a non-empty string.');
+      // BLOCKER A #2: ruleId canonical form
+      if (typeof r.ruleId !== 'string' || !r.ruleId || r.ruleId !== r.ruleId.trim() || r.ruleId.length > 100) {
+        fail('segment rule ruleId integrity failed: must be a non-empty trimmed string of at most 100 characters.');
       }
-      const trimmedRuleId = r.ruleId.trim();
-      if (seenRuleIds.has(trimmedRuleId)) {
-        fail(`segment rule duplicate ruleId: ${trimmedRuleId}.`);
+      if (seenRuleIds.has(r.ruleId)) {
+        fail(`segment rule duplicate ruleId: ${r.ruleId}.`);
       }
-      seenRuleIds.add(trimmedRuleId);
+      seenRuleIds.add(r.ruleId);
 
       if (typeof r.priority !== 'number' || !Number.isInteger(r.priority) || r.priority < 0) {
         fail('segment rule priority integrity failed: must be a non-negative integer.');
@@ -1391,8 +1439,9 @@ function validateOfficialTeacherWorkloadSnapshot(
       if (r.calculation !== 'TRU_TIET' && r.calculation !== 'TRU_PHAN_TRAM' && r.calculation !== 'GHI_DE') {
         fail(`segment rule calculation unknown: ${r.calculation}.`);
       }
-      if (typeof r.value !== 'number' || !Number.isFinite(r.value) || r.value < 0) {
-        fail('segment rule value integrity failed: must be a non-negative finite number.');
+      // BLOCKER A #1: value decimal precision parity
+      if (typeof r.value !== 'number' || !checkDecimal4(r.value)) {
+        fail('segment rule value integrity failed: must be a non-negative finite number with at most 4 decimal places without exponential notation.');
       }
       if (r.calculation === 'TRU_PHAN_TRAM' && r.value > 100) {
         fail('segment rule TRU_PHAN_TRAM value must not exceed 100.');
@@ -1405,8 +1454,9 @@ function validateOfficialTeacherWorkloadSnapshot(
 
       // Source provenance evidence
       if (r.sourceKind === 'ADDITIONAL_DUTY') {
-        if (typeof r.dutyDefinitionId !== 'string' || !r.dutyDefinitionId.trim()) {
-          fail('segment rule dutyDefinitionId integrity failed: must be a non-empty string.');
+        // BLOCKER A #3: dutyDefinitionId UUID parity
+        if (typeof r.dutyDefinitionId !== 'string' || !UUID_REGEX.test(r.dutyDefinitionId)) {
+          fail('segment rule dutyDefinitionId integrity failed: must be a valid UUID.');
         }
         if (typeof r.dutyDefinitionCodeSnapshot !== 'string' || !r.dutyDefinitionCodeSnapshot.trim()) {
           fail('segment rule dutyDefinitionCodeSnapshot integrity failed: must be a non-empty string.');
