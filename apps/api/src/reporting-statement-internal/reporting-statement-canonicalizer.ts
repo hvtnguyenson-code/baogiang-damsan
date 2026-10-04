@@ -1,6 +1,8 @@
 import { createHash } from "crypto";
 import { BadRequestException } from "@nestjs/common";
 import { isCivilDate } from "../common/validation/civil-date";
+import { exactAdd, exactSub, rationalDivInt, rationalRound4 } from "../common/decimal/exact-decimal";
+import { calculateAdjustedWeeklyNormRational } from "../official-workload/workload-adjustment-formula";
 import {
   PersonalReportingProjection,
   PersonalReportingSection,
@@ -323,6 +325,14 @@ export function freezeReportingStatementSnapshotV4(
       throw new BadRequestException(message);
     },
   );
+  if (owl.specialProgrammeCredit !== wl.totalCredit) {
+    throw new BadRequestException("specialProgrammeCredit must equal specialProgrammeWorkload.totalCredit.");
+  }
+  const topSpJson = canonicalizeJson(wl as unknown as CanonicalValue);
+  const nestedSpJson = canonicalizeJson(owl.specialProgrammeWorkload as unknown as CanonicalValue);
+  if (topSpJson !== nestedSpJson) {
+    throw new BadRequestException("top-level specialProgrammeWorkload and nested specialProgrammeWorkload must be canonical equivalent.");
+  }
 
   const sortedContributions = wl.contributions
     .slice()
@@ -774,6 +784,11 @@ export function assertFrozenReportingStatementIntegrity(
         throw new Error(`Frozen Reporting Statement V4 ${message}`);
       },
     );
+    const topSpJson = canonicalizeJson(v4.specialProgrammeWorkload as unknown as CanonicalValue);
+    const nestedSpJson = canonicalizeJson(v4.officialWorkload.specialProgrammeWorkload as unknown as CanonicalValue);
+    if (topSpJson !== nestedSpJson) {
+      throw new Error("Frozen Reporting Statement V4 top-level and nested special programme workload drift detected.");
+    }
   }
   const subjects = [...new Set(frozen.snapshot.responsibilityManifest.map((x) => x.subjectId))].sort(compare);
   if (
@@ -1102,16 +1117,29 @@ function validateOfficialTeacherWorkloadSnapshot(
   if (workload.curricularCredit !== workload.curricularContributions.length) {
     fail('curricularCredit count integrity failed.');
   }
-  const roundedEarned = Math.round((workload.curricularCredit + workload.specialProgrammeCredit) * 10000) / 10000;
-  if (workload.earnedCredit !== roundedEarned) {
+  const expectedEarned = exactAdd(workload.curricularCredit, workload.specialProgrammeCredit);
+  if (workload.earnedCredit !== expectedEarned) {
     fail('earnedCredit arithmetic integrity failed.');
   }
-  const roundedVariance = Math.round((workload.earnedCredit - workload.requiredCredit) * 10000) / 10000;
-  if (workload.varianceCredit !== roundedVariance) {
+  const expectedVariance = exactSub(workload.earnedCredit, workload.requiredCredit);
+  if (workload.varianceCredit !== expectedVariance) {
     fail('varianceCredit arithmetic integrity failed.');
   }
   if (!isValidInstantString(workload.evaluatedAt)) {
     fail('official workload evaluatedAt integrity failed.');
+  }
+
+  // Nested special programme workload validation
+  if (!workload.specialProgrammeWorkload || typeof workload.specialProgrammeWorkload !== 'object') {
+    fail('official workload nested specialProgrammeWorkload missing.');
+  }
+  validateSpecialProgrammeWorkloadSnapshot(
+    workload.specialProgrammeWorkload,
+    submitterUserId,
+    (msg) => fail(`nested special programme ${msg}`),
+  );
+  if (workload.specialProgrammeCredit !== workload.specialProgrammeWorkload.totalCredit) {
+    fail('official workload specialProgrammeCredit must equal nested specialProgrammeWorkload.totalCredit.');
   }
 
   // Validate curricular contributions
@@ -1161,6 +1189,9 @@ function validateOfficialTeacherWorkloadSnapshot(
       if (typeof seg.adjustedWeeklyNorm !== 'number' || seg.adjustedWeeklyNorm < 0) {
         fail('segment adjustedWeeklyNorm integrity failed.');
       }
+      if (typeof seg.dailyRequiredCredit !== 'number' || seg.dailyRequiredCredit < 0) {
+        fail('segment dailyRequiredCredit integrity failed.');
+      }
     }
     if (!Array.isArray(seg.appliedRules)) {
       fail('segment appliedRules integrity failed.');
@@ -1178,16 +1209,40 @@ function validateOfficialTeacherWorkloadSnapshot(
         fail('segment rule dutyDefinitionId integrity failed.');
       }
     }
+    if (seg.isWorkloadEligible) {
+      const adjustedRational = calculateAdjustedWeeklyNormRational(
+        seg.baseWeeklyNorm,
+        seg.appliedRules.map((r: { calculation: string; value: number }) => ({ calculation: r.calculation as never, value: r.value })),
+      );
+      const expectedAdjusted = rationalRound4(adjustedRational);
+      if (seg.adjustedWeeklyNorm !== expectedAdjusted) {
+        fail('segment adjustedWeeklyNorm provenance mismatch.');
+      }
+      if (seg.denominatorK > 0) {
+        const expectedDaily = rationalRound4(rationalDivInt(adjustedRational, seg.denominatorK));
+        if (seg.dailyRequiredCredit !== expectedDaily) {
+          fail('segment dailyRequiredCredit provenance mismatch.');
+        }
+      }
+    }
   }
 }
 
 export function assertOfficialTeacherWorkloadSnapshotIntegrity(
   workload: OfficialTeacherWorkloadSnapshot,
   submitterUserId: string,
+  topLevelSpecialProgrammeWorkload?: SpecialProgrammeWorkloadSnapshot,
 ): void {
   validateOfficialTeacherWorkloadSnapshot(workload, submitterUserId, (message) => {
     throw new Error(message);
   });
+  if (topLevelSpecialProgrammeWorkload) {
+    const topSpJson = canonicalizeJson(topLevelSpecialProgrammeWorkload as unknown as CanonicalValue);
+    const nestedSpJson = canonicalizeJson(workload.specialProgrammeWorkload as unknown as CanonicalValue);
+    if (topSpJson !== nestedSpJson) {
+      throw new Error('top-level and nested special programme workload drift detected.');
+    }
+  }
 }
 
 

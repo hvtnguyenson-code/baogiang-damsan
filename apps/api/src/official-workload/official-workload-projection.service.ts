@@ -12,10 +12,18 @@ import { PrismaService } from '../prisma/prisma.service';
 import { SpecialProgrammeWorkloadProjectionService } from '../special-programme-workload/special-programme-workload-projection.service';
 import { weekdayForCivilDate } from '../special-activities/special-activity-policy';
 import {
-  calculateAdjustedWeeklyNorm,
-  round4Decimals,
+  calculateAdjustedWeeklyNormRational,
   sortAdjustmentRules,
 } from './workload-adjustment-formula';
+import {
+  Rational,
+  ZERO_RATIONAL,
+  rationalRound4,
+  rationalDivInt,
+  rationalAdd,
+  exactAdd,
+  exactSub,
+} from '../common/decimal/exact-decimal';
 import {
   CurricularWorkloadContribution,
   OFFICIAL_TEACHER_WORKLOAD_PROJECTION_PROFILE_V1,
@@ -41,6 +49,7 @@ interface DailyWorkloadEvaluation {
   baseWeeklyNorm: number | null;
   adjustedWeeklyNorm: number | null;
   dailyRequiredCredit: number;
+  dailyRequiredRational?: Rational;
   appliedRules: WorkloadAdjustmentAppliedRule[];
 }
 
@@ -131,9 +140,9 @@ export class OfficialWorkloadProjectionService {
 
     const curricularCredit = curricularResult.totalCredit;
     const specialCredit = specialWorkload.totalCredit ?? 0;
-    const earnedCredit = round4Decimals(curricularCredit + specialCredit);
+    const earnedCredit = exactAdd(curricularCredit, specialCredit);
     const requiredCredit = requiredResult.totalRequiredCredit;
-    const varianceCredit = round4Decimals(earnedCredit - requiredCredit);
+    const varianceCredit = exactSub(earnedCredit, requiredCredit);
 
     return {
       profile: OFFICIAL_TEACHER_WORKLOAD_PROJECTION_PROFILE_V1,
@@ -480,12 +489,13 @@ export class OfficialWorkloadProjectionService {
         .slice()
         .sort((a, b) => a.priority - b.priority || a.ruleId.localeCompare(b.ruleId));
 
-      const adjustedWeeklyNorm = calculateAdjustedWeeklyNorm(
+      const adjustedWeeklyNormRational = calculateAdjustedWeeklyNormRational(
         payload.baseWeeklyNorm,
         sortedApplicable,
       );
-
-      const dailyRequiredCredit = adjustedWeeklyNorm / denominatorK;
+      const adjustedWeeklyNorm = rationalRound4(adjustedWeeklyNormRational);
+      const dailyRequiredRational = rationalDivInt(adjustedWeeklyNormRational, denominatorK);
+      const dailyRequiredCredit = rationalRound4(dailyRequiredRational);
 
       dailyEvaluations.push({
         civilDate: d,
@@ -506,6 +516,7 @@ export class OfficialWorkloadProjectionService {
         baseWeeklyNorm: payload.baseWeeklyNorm,
         adjustedWeeklyNorm,
         dailyRequiredCredit,
+        dailyRequiredRational,
         appliedRules: sortedAppliedProvenance,
       });
     }
@@ -528,11 +539,13 @@ export class OfficialWorkloadProjectionService {
       };
     }
 
-    const totalRawRequired = dailyEvaluations.reduce(
-      (sum, evalDay) => sum + evalDay.dailyRequiredCredit,
-      0,
-    );
-    const totalRequiredCredit = round4Decimals(totalRawRequired);
+    let totalRequiredRational = ZERO_RATIONAL;
+    for (const evalDay of dailyEvaluations) {
+      if (evalDay.dailyRequiredRational) {
+        totalRequiredRational = rationalAdd(totalRequiredRational, evalDay.dailyRequiredRational);
+      }
+    }
+    const totalRequiredCredit = rationalRound4(totalRequiredRational);
     const segments = this.compressSegments(dailyEvaluations);
 
     return {
@@ -570,7 +583,7 @@ export class OfficialWorkloadProjectionService {
           policyEffectiveUntil: e.policyEffectiveUntil,
           baseWeeklyNorm: e.baseWeeklyNorm,
           adjustedWeeklyNorm: e.adjustedWeeklyNorm,
-          dailyRequiredCredit: round4Decimals(e.dailyRequiredCredit),
+          dailyRequiredCredit: e.dailyRequiredCredit,
           appliedRules: e.appliedRules,
         };
         segments.push(currentSeg);

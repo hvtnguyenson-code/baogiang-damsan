@@ -105,9 +105,6 @@ export const WORKLOAD_ADJUSTMENT_VALIDATOR_V1: BusinessPolicyPayloadValidator = 
       if (parts.length > 1 && parts[1].length > 4) {
         throw new BadRequestException('INVALID_WORKLOAD_ADJUSTMENT_POLICY_PAYLOAD');
       }
-      if (Math.round(val * 10000) !== val * 10000) {
-        throw new BadRequestException('INVALID_WORKLOAD_ADJUSTMENT_POLICY_PAYLOAD');
-      }
       return val;
     };
 

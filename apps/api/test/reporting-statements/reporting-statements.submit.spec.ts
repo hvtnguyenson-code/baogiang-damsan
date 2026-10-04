@@ -146,6 +146,55 @@ function setup(classifications: unknown[], currentAsOf: Date = asOf) {
     ),
   };
 
+  const defaultSpecialProgrammeWorkload = {
+    profile: 'SPECIAL_PROGRAMME_WORKLOAD_PROJECTION_V1',
+    scope: {
+      academicYearId: 'year',
+      targetUserId: 'actor',
+      fromCivilDate: '2026-08-01',
+      toCivilDate: '2026-08-31',
+      asOfInstant: currentAsOf,
+    },
+    status: 'PASS',
+    totalCredit: 0,
+    contributionCount: 0,
+    contributions: [],
+    pendingConfirmation: [],
+    findings: [],
+    evaluatedAt: currentAsOf.toISOString(),
+  };
+
+  const defaultOfficialWorkload = {
+    profile: 'OFFICIAL_TEACHER_WORKLOAD_PROJECTION_V1',
+    status: 'PASS',
+    scope: {
+      academicYearId: 'year',
+      targetUserId: 'actor',
+      fromCivilDate: '2026-08-01',
+      toCivilDate: '2026-08-31',
+      asOfInstant: currentAsOf,
+    },
+    curricularWorkload: {
+      status: 'PASS',
+      totalCredit: 0,
+      contributionCount: 0,
+      contributions: [],
+      findings: [],
+    },
+    specialProgrammeWorkload: defaultSpecialProgrammeWorkload,
+    earnedCredit: 0,
+    requiredCredit: 0,
+    varianceCredit: 0,
+    adjustmentSegments: [],
+    findings: [],
+    evaluatedAt: currentAsOf.toISOString(),
+  };
+
+  const officialWorkloadProjection = {
+    resolveInTransaction: jest.fn().mockImplementation(() => Promise.resolve(defaultOfficialWorkload)),
+    resolve: jest.fn().mockImplementation(() => Promise.resolve(defaultOfficialWorkload)),
+  };
+
   return {
     sut: new ReportingStatementsService(
       prisma as never,
@@ -155,11 +204,12 @@ function setup(classifications: unknown[], currentAsOf: Date = asOf) {
       { write: jest.fn() } as never,
       businessConfiguration as never,
       clock,
-      specialProgrammeWorkloadProjection as never,
+      officialWorkloadProjection as never,
     ),
     repository,
     resolver,
     specialProgrammeWorkloadProjection,
+    officialWorkloadProjection,
     auth,
     clock,
     prisma,
@@ -412,9 +462,9 @@ describe('ReportingStatementsService.submit', () => {
 
   it('prevents persist and throws BadRequestException when special programme workload is BLOCKED', async () => {
     const x = setup([{ kind: 'MISS' }, { kind: 'MISS' }]);
-    x.specialProgrammeWorkloadProjection.resolveInTransaction.mockResolvedValueOnce({
-      profile: 'SPECIAL_PROGRAMME_WORKLOAD_PROJECTION_V1',
-      status: 'BLOCKED',
+    x.officialWorkloadProjection.resolveInTransaction.mockResolvedValueOnce({
+      profile: 'OFFICIAL_TEACHER_WORKLOAD_PROJECTION_V1',
+      status: 'PASS',
       scope: {
         academicYearId: 'year',
         targetUserId: 'actor',
@@ -422,16 +472,34 @@ describe('ReportingStatementsService.submit', () => {
         toCivilDate: '2026-08-31',
         asOfInstant: asOf,
       },
-      totalCredit: null,
-      contributionCount: null,
-      contributions: [],
-      pendingConfirmation: [],
-      findings: [
-        {
-          code: 'POLICY_NOT_FOUND',
-          message: 'Missing policy',
+      curricularWorkload: { status: 'PASS', totalCredit: 0, contributionCount: 0, contributions: [], findings: [] },
+      specialProgrammeWorkload: {
+        profile: 'SPECIAL_PROGRAMME_WORKLOAD_PROJECTION_V1',
+        status: 'BLOCKED',
+        scope: {
+          academicYearId: 'year',
+          targetUserId: 'actor',
+          fromCivilDate: '2026-08-01',
+          toCivilDate: '2026-08-31',
+          asOfInstant: asOf,
         },
-      ],
+        totalCredit: null,
+        contributionCount: null,
+        contributions: [],
+        pendingConfirmation: [],
+        findings: [
+          {
+            code: 'POLICY_NOT_FOUND',
+            message: 'Missing policy',
+          },
+        ],
+        evaluatedAt: asOf.toISOString(),
+      },
+      earnedCredit: 0,
+      requiredCredit: 0,
+      varianceCredit: 0,
+      adjustmentSegments: [],
+      findings: [],
       evaluatedAt: asOf.toISOString(),
     });
 
@@ -441,7 +509,7 @@ describe('ReportingStatementsService.submit', () => {
     expect(x.repository.persistSubmittedRevision).not.toHaveBeenCalled();
   });
 
-  it('freezes V3 with full workload contributions, attestations, and policy provenance, immune to later source mutations', async () => {
+  it('freezes V4 with full workload contributions, official workload, attestations, and policy provenance, immune to later source mutations', async () => {
     const x = setup([{ kind: 'MISS' }, { kind: 'MISS' }]);
     const mockAttestation = {
       attestationId: 'att-1',
@@ -472,9 +540,39 @@ describe('ReportingStatementsService.submit', () => {
       policyValidatorVersion: 'v1',
       attestations: [mockAttestation],
     };
-    x.specialProgrammeWorkloadProjection.resolveInTransaction.mockResolvedValueOnce({
+    const mockCurricularContribution = {
+      executionId: 'curr-1',
+      kind: 'NORMAL',
+      executionCivilDate: '2026-08-10',
+      actualTeacherUserId: 'actor',
+      credit: 1,
+      schoolClassId: 'class-1',
+      subjectId: 'sub-1',
+      originalTimetableEntryId: 'entry-1',
+      sourceCivilDate: '2026-08-10',
+      replacesId: null,
+    };
+    const mockSegment = {
+      fromCivilDate: '2026-08-01',
+      toCivilDate: '2026-08-31',
+      isWorkloadEligible: true,
+      calendarVersionId: 'cal-v1',
+      teachingWeekdays: [1, 2, 3, 4, 5, 6],
+      denominatorK: 6,
+      hasInterruption: false,
+      interruptionIds: [],
+      policyVersionId: 'policy-adj-v1',
+      policyValidatorVersion: 'v1',
+      policyEffectiveFrom: '2026-08-01',
+      policyEffectiveUntil: null,
+      baseWeeklyNorm: 17,
+      adjustedWeeklyNorm: 17,
+      dailyRequiredCredit: 2.8333,
+      appliedRules: [],
+    };
+    const spWorkload = {
       profile: 'SPECIAL_PROGRAMME_WORKLOAD_PROJECTION_V1',
-      status: 'PASS',
+      status: 'PASS' as const,
       scope: {
         academicYearId: 'year',
         targetUserId: 'actor',
@@ -488,6 +586,31 @@ describe('ReportingStatementsService.submit', () => {
       pendingConfirmation: [],
       findings: [],
       evaluatedAt: asOf.toISOString(),
+    };
+    x.officialWorkloadProjection.resolveInTransaction.mockResolvedValueOnce({
+      profile: 'OFFICIAL_TEACHER_WORKLOAD_PROJECTION_V1',
+      status: 'PASS',
+      scope: {
+        academicYearId: 'year',
+        targetUserId: 'actor',
+        fromCivilDate: '2026-08-01',
+        toCivilDate: '2026-08-31',
+        asOfInstant: asOf,
+      },
+      curricularWorkload: {
+        status: 'PASS',
+        totalCredit: 1,
+        contributionCount: 1,
+        contributions: [mockCurricularContribution],
+        findings: [],
+      },
+      specialProgrammeWorkload: spWorkload,
+      earnedCredit: 2.5,
+      requiredCredit: 17,
+      varianceCredit: -14.5,
+      adjustmentSegments: [mockSegment],
+      findings: [],
+      evaluatedAt: asOf.toISOString(),
     });
 
     await x.sut.submit(dto as never, request);
@@ -496,6 +619,13 @@ describe('ReportingStatementsService.submit', () => {
     const persistedCall = x.repository.persistSubmittedRevision.mock.calls[0][1];
     const snapshot = persistedCall.frozen.snapshot;
     expect(snapshot.snapshotProfile).toBe(REPORTING_STATEMENT_SNAPSHOT_V4);
+    expect(snapshot.officialWorkload).toBeDefined();
+    expect(snapshot.officialWorkload.curricularCredit).toBe(1);
+    expect(snapshot.officialWorkload.specialProgrammeCredit).toBe(1.5);
+    expect(snapshot.officialWorkload.earnedCredit).toBe(2.5);
+    expect(snapshot.officialWorkload.requiredCredit).toBe(17);
+    expect(snapshot.officialWorkload.varianceCredit).toBe(-14.5);
+    expect(snapshot.officialWorkload.adjustmentSegments).toHaveLength(1);
     expect(snapshot.specialProgrammeWorkload).toBeDefined();
     expect(snapshot.specialProgrammeWorkload.totalCredit).toBe(1.5);
     expect(snapshot.specialProgrammeWorkload.contributionCount).toBe(1);
@@ -508,7 +638,23 @@ describe('ReportingStatementsService.submit', () => {
     // Mutating source object after submission does not mutate frozen snapshot
     mockAttestation.attestationId = 'MUTATED';
     mockContribution.credit = 999;
+    mockCurricularContribution.credit = 999;
+    mockSegment.baseWeeklyNorm = 999;
     expect(snapshot.specialProgrammeWorkload.contributions[0].credit).toBe(1.5);
     expect(snapshot.specialProgrammeWorkload.contributions[0].attestations[0].attestationId).toBe('att-1');
+    expect(snapshot.officialWorkload.curricularCredit).toBe(1);
+    expect(snapshot.officialWorkload.adjustmentSegments[0].baseWeeklyNorm).toBe(17);
+  });
+
+  it('fails closed and throws without creating a statement when officialWorkloadProjection fails or returns invalid', async () => {
+    const x = setup([{ kind: 'MISS' }, { kind: 'MISS' }]);
+    x.officialWorkloadProjection.resolveInTransaction.mockRejectedValueOnce(
+      new Error('OFFICIAL_WORKLOAD_SERVICE_UNAVAILABLE'),
+    );
+
+    await expect(x.sut.submit(dto as never, request)).rejects.toThrow(
+      'OFFICIAL_WORKLOAD_SERVICE_UNAVAILABLE',
+    );
+    expect(x.repository.persistSubmittedRevision).not.toHaveBeenCalled();
   });
 });

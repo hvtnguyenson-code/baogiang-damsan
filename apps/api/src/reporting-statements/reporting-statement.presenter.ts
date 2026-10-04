@@ -269,7 +269,7 @@ export function parseAndVerifyFrozenSnapshot(row: FrozenRevisionRow): ReportingS
     }
     try {
       assertSpecialProgrammeWorkloadSnapshotIntegrity(v4.specialProgrammeWorkload, snapshot.submitterUserId);
-      assertOfficialTeacherWorkloadSnapshotIntegrity(v4.officialWorkload, snapshot.submitterUserId);
+      assertOfficialTeacherWorkloadSnapshotIntegrity(v4.officialWorkload, snapshot.submitterUserId, v4.specialProgrammeWorkload);
     } catch {
       throw new InternalServerErrorException(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
     }

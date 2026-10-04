@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { AuditResult, Prisma, ReportingStatementCommandType as Command, ReportingStatementHistoryEvent as Event, ReportingStatementLifecycleState as State } from '@prisma/client';
 import { createHash, randomUUID } from 'crypto';
 import {
@@ -14,12 +14,11 @@ import { requestMeta } from '../auth/auth-http';
 import { AuthenticatedRequest } from '../auth/auth.types';
 import { CapabilityAuthorizationService } from '../authorization/capability-authorization.service';
 import { formatCivilDate, hcmCivilDate, parseCivilDate } from '../common/validation/civil-date';
+import { exactAdd, exactSub } from '../common/decimal/exact-decimal';
 import { BusinessConfigurationService } from '../business-configuration/business-configuration.service';
 import { ProgressDebtOperationalStartAuthority } from '../progress-debt/progress-debt.types';
 import { PersonalReportingProjectionService } from '../personal-reporting-projection/personal-reporting-projection.service';
-import { SpecialProgrammeWorkloadProjectionService } from '../special-programme-workload/special-programme-workload-projection.service';
 import { OfficialWorkloadProjectionService } from '../official-workload/official-workload-projection.service';
-import { OfficialTeacherWorkloadProjectionInput } from '../official-workload/official-workload.types';
 import { freezeReportingStatementSnapshot } from '../reporting-statement-internal/reporting-statement-canonicalizer';
 import { ReportingStatementRepository } from '../reporting-statement-internal/reporting-statement.repository';
 import { PrismaService } from '../prisma/prisma.service';
@@ -49,47 +48,8 @@ export class ReportingStatementsService {
     private readonly audit: AuditService,
     private readonly businessConfiguration: BusinessConfigurationService,
     @Inject(REPORTING_STATEMENT_CLOCK) private readonly clock: ReportingStatementClock,
-    private readonly specialProgrammeWorkloadProjection: SpecialProgrammeWorkloadProjectionService,
-    @Optional() private readonly officialWorkloadProjection?: OfficialWorkloadProjectionService,
+    private readonly officialWorkloadProjection: OfficialWorkloadProjectionService,
   ) {}
-
-  private get officialWorkload(): OfficialWorkloadProjectionService {
-    if (this.officialWorkloadProjection) {
-      return this.officialWorkloadProjection;
-    }
-    return {
-      resolve: async () => ({
-        profile: 'OFFICIAL_TEACHER_WORKLOAD_PROJECTION_V1',
-        status: 'PASS',
-        scope: {} as never,
-        curricularWorkload: { status: 'PASS', totalCredit: 0, contributionCount: 0, contributions: [], findings: [] },
-        specialProgrammeWorkload: { profile: '', status: 'PASS', scope: {} as never, totalCredit: 0, contributionCount: 0, contributions: [], pendingConfirmation: [], findings: [], evaluatedAt: '' },
-        earnedCredit: 0,
-        requiredCredit: 0,
-        varianceCredit: 0,
-        adjustmentSegments: [],
-        findings: [],
-        evaluatedAt: new Date().toISOString(),
-      }),
-      resolveInTransaction: async (_tx: Prisma.TransactionClient, input: OfficialTeacherWorkloadProjectionInput) => {
-        const sp = await this.specialProgrammeWorkloadProjection.resolveInTransaction(_tx, input);
-        const spCredit = sp?.totalCredit ?? 0;
-        return {
-          profile: 'OFFICIAL_TEACHER_WORKLOAD_PROJECTION_V1',
-          status: 'PASS',
-          scope: input as never,
-          curricularWorkload: { status: 'PASS', totalCredit: 0, contributionCount: 0, contributions: [], findings: [] },
-          specialProgrammeWorkload: sp ?? { profile: '', status: 'PASS', scope: {} as never, totalCredit: 0, contributionCount: 0, contributions: [], pendingConfirmation: [], findings: [], evaluatedAt: '' },
-          earnedCredit: spCredit,
-          requiredCredit: 0,
-          varianceCredit: spCredit,
-          adjustmentSegments: [],
-          findings: [],
-          evaluatedAt: new Date().toISOString(),
-        };
-      },
-    } as unknown as OfficialWorkloadProjectionService;
-  }
 
   async preview(dto: PreviewReportingStatementDto, request: AuthenticatedRequest): Promise<ReportingStatementPreviewResponse> {
     const actor = request.auth!.user.id;
@@ -104,20 +64,14 @@ export class ReportingStatementsService {
       toCivilDate: dto.toCivilDate as never,
       asOfInstant: asOf,
     });
-    const workload = await this.specialProgrammeWorkloadProjection.resolve({
+    const officialWorkload = await this.officialWorkloadProjection.resolve({
       academicYearId: dto.academicYearId,
       targetUserId: actor,
       fromCivilDate: dto.fromCivilDate as never,
       toCivilDate: dto.toCivilDate as never,
       asOfInstant: asOf,
     });
-    const officialWorkload = await this.officialWorkload.resolve({
-      academicYearId: dto.academicYearId,
-      targetUserId: actor,
-      fromCivilDate: dto.fromCivilDate as never,
-      toCivilDate: dto.toCivilDate as never,
-      asOfInstant: asOf,
-    });
+    const workload = officialWorkload.specialProgrammeWorkload;
     const eligibleForSubmission =
       projection.status === 'PASS' &&
       projection.responsibilityState === 'RESPONSIBILITY_PRESENT' &&
@@ -439,14 +393,25 @@ export class ReportingStatementsService {
           { academicYearId: dto.academicYearId, targetUserId: actor, fromCivilDate: dto.fromCivilDate as never, toCivilDate: dto.toCivilDate as never, asOfInstant: asOf },
           { reportingProjection: { operationalStartPolicy: authority, policyResolutionCivilDate } },
         );
-        const workload =
-          await this.specialProgrammeWorkloadProjection.resolveInTransaction(tx, {
+        const officialWorkload =
+          await this.officialWorkloadProjection.resolveInTransaction(tx, {
             academicYearId: dto.academicYearId,
             targetUserId: actor,
             fromCivilDate: dto.fromCivilDate as never,
             toCivilDate: dto.toCivilDate as never,
             asOfInstant: asOf,
           });
+        if (officialWorkload.status === 'BLOCKED') {
+          throw new BadRequestException('OFFICIAL_WORKLOAD_PROJECTION_BLOCKED');
+        }
+        if (
+          officialWorkload.status !== 'PASS' ||
+          officialWorkload.requiredCredit === null ||
+          officialWorkload.curricularWorkload.totalCredit === null
+        ) {
+          throw new BadRequestException('OFFICIAL_WORKLOAD_PROJECTION_INVALID');
+        }
+        const workload = officialWorkload.specialProgrammeWorkload;
         if (workload.status === 'BLOCKED') {
           throw new BadRequestException('SPECIAL_PROGRAMME_WORKLOAD_PROJECTION_BLOCKED');
         }
@@ -461,31 +426,12 @@ export class ReportingStatementsService {
         ) {
           throw new BadRequestException('SPECIAL_PROGRAMME_WORKLOAD_PROJECTION_INVALID');
         }
-        const officialWorkload =
-          await this.officialWorkload.resolveInTransaction(tx, {
-            academicYearId: dto.academicYearId,
-            targetUserId: actor,
-            fromCivilDate: dto.fromCivilDate as never,
-            toCivilDate: dto.toCivilDate as never,
-            asOfInstant: asOf,
-          });
-        if (officialWorkload.status === 'BLOCKED') {
-          throw new BadRequestException('OFFICIAL_WORKLOAD_PROJECTION_BLOCKED');
-        }
         const curricularCredit = officialWorkload.curricularWorkload.totalCredit as number;
         const specialProgrammeCredit = workload.totalCredit as number;
         const specialProgrammeContributionCount = workload.contributionCount as number;
-        const earnedCredit = Math.round((curricularCredit + specialProgrammeCredit) * 10000) / 10000;
+        const earnedCredit = exactAdd(curricularCredit, specialProgrammeCredit);
         const requiredCredit = (officialWorkload.requiredCredit ?? 0) as number;
-        const varianceCredit = Math.round((earnedCredit - requiredCredit) * 10000) / 10000;
-
-        if (
-          officialWorkload.status !== 'PASS' ||
-          officialWorkload.requiredCredit === null ||
-          officialWorkload.curricularWorkload.totalCredit === null
-        ) {
-          throw new BadRequestException('OFFICIAL_WORKLOAD_PROJECTION_INVALID');
-        }
+        const varianceCredit = exactSub(earnedCredit, requiredCredit);
         const profile = await tx.user.findUnique({ where: { id: actor }, include: { profile: true } });
         const frozen = freezeReportingStatementSnapshot({
           statementProfile: PERSONAL_REPORTING_STATEMENT_PROFILE,

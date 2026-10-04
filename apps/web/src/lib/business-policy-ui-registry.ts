@@ -677,6 +677,29 @@ export function WorkloadAdjustmentSummary({
   const baseWeeklyNorm = typed.baseWeeklyNorm ?? 0;
   const rules = (typed.rules ?? []) as WorkloadAdjustmentRuleV1[];
 
+  const [dutyMap, setDutyMap] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    let active = true;
+    businessConfigurationApi
+      .getWorkloadAdjustmentAdditionalDuties({ pageSize: 100 })
+      .then((res) => {
+        if (active && res.items) {
+          const map: Record<string, string> = {};
+          for (const item of res.items) {
+            map[item.id] = `[${item.code}] ${item.name}`;
+          }
+          setDutyMap(map);
+        }
+      })
+      .catch(() => {
+        // Safe fallback on network/fetch failure
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   return createElement(
     'div',
     { className: 'workload-adjustment-summary', style: { display: 'flex', flexDirection: 'column', gap: '0.75rem' } },
@@ -698,10 +721,14 @@ export function WorkloadAdjustmentSummary({
               .slice()
               .sort((a, b) => a.priority - b.priority)
               .map((r, i) => {
-                const sourceText =
-                  r.source.kind === 'HOMEROOM_RESPONSIBILITY'
-                    ? 'Giáo viên chủ nhiệm'
-                    : `Nhiệm vụ kiêm nhiệm (${r.source.dutyDefinitionId})`;
+                let sourceText: string;
+                if (r.source.kind === 'HOMEROOM_RESPONSIBILITY') {
+                  sourceText = 'Giáo viên chủ nhiệm';
+                } else {
+                  const dutyId = r.source.dutyDefinitionId;
+                  const label = dutyMap[dutyId];
+                  sourceText = label ? `Nhiệm vụ: ${label}` : 'Nhiệm vụ kiêm nhiệm đã lưu';
+                }
                 const calcText =
                   r.calculation === 'TRU_TIET'
                     ? `Trừ ${r.value} tiết`

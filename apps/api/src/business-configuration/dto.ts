@@ -46,3 +46,23 @@ export class ListBusinessPolicyAcademicYearOptionsDto {
   @Max(100)
   pageSize: number = 20;
 }
+
+export class ListWorkloadAdjustmentAdditionalDutyOptionsDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  q?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page: number = 1;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  pageSize: number = 20;
+}

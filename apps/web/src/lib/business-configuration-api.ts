@@ -8,7 +8,7 @@ import type {
   BusinessPolicyStreamRecord,
   CivilDateString,
   OperationalStartPolicyPayloadV1,
-  WorkloadAdjustmentAdditionalDutyOption,
+  WorkloadAdjustmentAdditionalDutyOptionListResponse,
 } from '@baogiang/contracts';
 import { apiFetch } from './api-client';
 
@@ -298,9 +298,9 @@ export const businessConfigurationApi = {
     );
   },
 
-  getWorkloadAdjustmentAdditionalDuties: () =>
-    apiFetch<{ items: WorkloadAdjustmentAdditionalDutyOption[] }>(
-      '/business-configuration/workload-adjustment-options/additional-duties',
+  getWorkloadAdjustmentAdditionalDuties: (query?: { q?: string; page?: number; pageSize?: number }) =>
+    apiFetch<WorkloadAdjustmentAdditionalDutyOptionListResponse>(
+      `/business-configuration/workload-adjustment-options/additional-duties${queryString(query ?? {})}`,
       { notifyUnauthorized: true },
     ),
 };

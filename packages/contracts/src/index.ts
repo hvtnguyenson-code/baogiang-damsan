@@ -2082,6 +2082,13 @@ export interface WorkloadAdjustmentAdditionalDutyOption {
   isActive: boolean;
 }
 
+export interface WorkloadAdjustmentAdditionalDutyOptionListResponse {
+  items: WorkloadAdjustmentAdditionalDutyOption[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
 export interface BusinessPolicyAcademicYearOption {
   id: string;
   code: string;

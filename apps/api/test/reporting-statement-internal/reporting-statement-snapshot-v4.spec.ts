@@ -1,7 +1,9 @@
 import {
   assertFrozenReportingStatementIntegrity,
   freezeReportingStatementSnapshot,
+  freezeReportingStatementSnapshotV1,
   REPORTING_STATEMENT_SERIALIZER_V1,
+  REPORTING_STATEMENT_SNAPSHOT_V1,
   REPORTING_STATEMENT_SNAPSHOT_V2,
   REPORTING_STATEMENT_SNAPSHOT_V3,
   REPORTING_STATEMENT_SNAPSHOT_V4,
@@ -212,7 +214,17 @@ describe('Reporting Statement Snapshot V4 (Section 43)', () => {
     expect(original.semanticHash).not.toBe(modified.semanticHash);
   });
 
-  it('preserves backwards compatibility: V1, V2, V3 frozen snapshots remain valid and verifiable', () => {
+  it('preserves backwards compatibility: V1, V2, V3, V4 frozen snapshots remain valid and verifiable', () => {
+    // V1 Snapshot
+    const v1 = freezeReportingStatementSnapshotV1({
+      statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+      submitterUserId,
+      asOfInstant: asOf,
+      projection: baseProjection as never,
+    });
+    expect(v1.snapshot.snapshotProfile).toBe(REPORTING_STATEMENT_SNAPSHOT_V1);
+    expect(() => assertFrozenReportingStatementIntegrity(v1)).not.toThrow();
+
     // V2 Snapshot
     const v2 = freezeReportingStatementSnapshot({
       statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
@@ -237,6 +249,20 @@ describe('Reporting Statement Snapshot V4 (Section 43)', () => {
     });
     expect(v3.snapshot.snapshotProfile).toBe(REPORTING_STATEMENT_SNAPSHOT_V3);
     expect(() => assertFrozenReportingStatementIntegrity(v3)).not.toThrow();
+
+    // V4 Snapshot
+    const v4 = freezeReportingStatementSnapshot({
+      statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+      submitterUserId,
+      asOfInstant: asOf,
+      projection: baseProjection as never,
+      operationalStartPolicyVersionId: 'op-start-1',
+      operationalStartDate: '2026-09-01',
+      specialProgrammeWorkload: specialWorkloadSnapshot,
+      officialWorkload: officialWorkloadSnapshot,
+    });
+    expect(v4.snapshot.snapshotProfile).toBe(REPORTING_STATEMENT_SNAPSHOT_V4);
+    expect(() => assertFrozenReportingStatementIntegrity(v4)).not.toThrow();
   });
 
   it('fails integrity check if canonical JSON is tampered', () => {
@@ -257,5 +283,167 @@ describe('Reporting Statement Snapshot V4 (Section 43)', () => {
     };
 
     expect(() => assertFrozenReportingStatementIntegrity(tampered)).toThrow();
+  });
+
+  it('rejects when nested special programme is corrupted', () => {
+    const corruptedNested = {
+      ...officialWorkloadSnapshot,
+      specialProgrammeWorkload: {
+        ...specialWorkloadSnapshot,
+        status: 'BLOCKED' as const,
+      },
+    };
+
+    expect(() =>
+      freezeReportingStatementSnapshot({
+        statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+        submitterUserId,
+        asOfInstant: asOf,
+        projection: baseProjection as never,
+        operationalStartPolicyVersionId: 'op-start-1',
+        operationalStartDate: '2026-09-01',
+        specialProgrammeWorkload: specialWorkloadSnapshot,
+        officialWorkload: corruptedNested as never,
+      }),
+    ).toThrow();
+  });
+
+  it('rejects when specialProgrammeCredit != nested.totalCredit', () => {
+    const mismatchedCredit = {
+      ...officialWorkloadSnapshot,
+      specialProgrammeCredit: 99,
+    };
+
+    expect(() =>
+      freezeReportingStatementSnapshot({
+        statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+        submitterUserId,
+        asOfInstant: asOf,
+        projection: baseProjection as never,
+        operationalStartPolicyVersionId: 'op-start-1',
+        operationalStartDate: '2026-09-01',
+        specialProgrammeWorkload: specialWorkloadSnapshot,
+        officialWorkload: mismatchedCredit as never,
+      }),
+    ).toThrow();
+  });
+
+  it('rejects when top-level special snapshot != nested special snapshot (drift)', () => {
+    const driftedNested = {
+      ...officialWorkloadSnapshot,
+      specialProgrammeWorkload: {
+        ...specialWorkloadSnapshot,
+        contributions: [],
+        totalCredit: 0,
+        contributionCount: 0,
+      },
+      specialProgrammeCredit: 0,
+      earnedCredit: 1,
+      varianceCredit: -2,
+    };
+
+    expect(() =>
+      freezeReportingStatementSnapshot({
+        statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+        submitterUserId,
+        asOfInstant: asOf,
+        projection: baseProjection as never,
+        operationalStartPolicyVersionId: 'op-start-1',
+        operationalStartDate: '2026-09-01',
+        specialProgrammeWorkload: specialWorkloadSnapshot,
+        officialWorkload: driftedNested as never,
+      }),
+    ).toThrow();
+  });
+
+  it('rejects when earnedCredit arithmetic is incorrect', () => {
+    const badEarned = {
+      ...officialWorkloadSnapshot,
+      earnedCredit: 999, // curricularCredit (1) + specialCredit (2) = 3 != 999
+    };
+
+    expect(() =>
+      freezeReportingStatementSnapshot({
+        statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+        submitterUserId,
+        asOfInstant: asOf,
+        projection: baseProjection as never,
+        operationalStartPolicyVersionId: 'op-start-1',
+        operationalStartDate: '2026-09-01',
+        specialProgrammeWorkload: specialWorkloadSnapshot,
+        officialWorkload: badEarned as never,
+      }),
+    ).toThrow();
+  });
+
+  it('rejects when varianceCredit arithmetic is incorrect', () => {
+    const badVariance = {
+      ...officialWorkloadSnapshot,
+      varianceCredit: 999, // earned (3) - required (3) = 0 != 999
+    };
+
+    expect(() =>
+      freezeReportingStatementSnapshot({
+        statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+        submitterUserId,
+        asOfInstant: asOf,
+        projection: baseProjection as never,
+        operationalStartPolicyVersionId: 'op-start-1',
+        operationalStartDate: '2026-09-01',
+        specialProgrammeWorkload: specialWorkloadSnapshot,
+        officialWorkload: badVariance as never,
+      }),
+    ).toThrow();
+  });
+
+  it('rejects duplicate curricular execution id', () => {
+    const duplicateCurricular = {
+      ...officialWorkloadSnapshot,
+      curricularCredit: 2,
+      earnedCredit: 4,
+      varianceCredit: 1,
+      curricularContributions: [
+        officialWorkloadSnapshot.curricularContributions[0],
+        officialWorkloadSnapshot.curricularContributions[0], // duplicate
+      ],
+    };
+
+    expect(() =>
+      freezeReportingStatementSnapshot({
+        statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+        submitterUserId,
+        asOfInstant: asOf,
+        projection: baseProjection as never,
+        operationalStartPolicyVersionId: 'op-start-1',
+        operationalStartDate: '2026-09-01',
+        specialProgrammeWorkload: specialWorkloadSnapshot,
+        officialWorkload: duplicateCurricular as never,
+      }),
+    ).toThrow();
+  });
+
+  it('rejects segment provenance mismatch when adjustedWeeklyNorm does not match rules', () => {
+    const badSegmentNorm = {
+      ...officialWorkloadSnapshot,
+      adjustmentSegments: [
+        {
+          ...officialWorkloadSnapshot.adjustmentSegments[0],
+          adjustedWeeklyNorm: 10, // Base is 18, rule TRU_TIET 4 => should be 14, not 10
+        },
+      ],
+    };
+
+    expect(() =>
+      freezeReportingStatementSnapshot({
+        statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+        submitterUserId,
+        asOfInstant: asOf,
+        projection: baseProjection as never,
+        operationalStartPolicyVersionId: 'op-start-1',
+        operationalStartDate: '2026-09-01',
+        specialProgrammeWorkload: specialWorkloadSnapshot,
+        officialWorkload: badSegmentNorm as never,
+      }),
+    ).toThrow();
   });
 });
