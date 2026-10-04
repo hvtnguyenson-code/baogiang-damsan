@@ -90,7 +90,7 @@ Repository hiện có các boundary đã được review/version hóa và không
 
 ## Pilot scope authority — 2026-10-02
 
-Product Owner đã chọn **`FULL BUSINESS PILOT`** cho P0-003 và chốt rõ yêu cầu **đầy đủ tính năng nghiệp vụ thực tế; không được để thiếu rule đã đăng ký nếu sự thiếu hụt có thể làm vận hành hoặc số liệu chính thức sai lệch**. P0-003 đã formal `CLOSED` bởi `SYNC-P0-003`; T08 đã được hoàn tất qua P3-030/P3-031. T23 adjusted workload đang re-enter: `P4-060` IN_REVIEW trên nhánh kiến trúc và `P4-061` vẫn PLANNED. Audit P4-060 đồng thời đăng ký T49 vì ADR-041 còn defer actual curricular workload aggregation trong khi FULL BUSINESS yêu cầu exact multi-teacher workload. P5-010 được khóa dependency trực tiếp vào `P0-003`, `P1-032`, `P2-020`, `P2-061`, `P3-020`, `P3-031`, `P4-061`, `P4-074`; dependency trực tiếp chưa CLOSED duy nhất còn `P4-061`.
+Product Owner đã chọn **`FULL BUSINESS PILOT`** cho P0-003 và chốt rõ yêu cầu **đầy đủ tính năng nghiệp vụ thực tế; không được để thiếu rule đã đăng ký nếu sự thiếu hụt có thể làm vận hành hoặc số liệu chính thức sai lệch**. P0-003 đã formal `CLOSED` bởi `SYNC-P0-003`; T08 đã hoàn tất qua P3-030/P3-031. T23/T49 workload architecture đã hoàn tất: P4-060 CLOSED by `SYNC-P4-060`, ADR-057 Accepted; P4-061 hiện READY để triển khai adjusted norm + actual-teacher workload + Snapshot V4. P5-010 được khóa dependency trực tiếp vào `P0-003`, `P1-032`, `P2-020`, `P2-061`, `P3-020`, `P3-031`, `P4-061`, `P4-074`; dependency trực tiếp chưa CLOSED duy nhất còn `P4-061`.
 
 Chi tiết KEEP/REALIGN/RESTORE nằm trong `docs/governance/PRE-PILOT-TRACEABILITY-MATRIX.md`.
 
@@ -107,7 +107,7 @@ Project hiện đang realign vì một số minimum-core/deferred quyết địn
 - PPCT authoritative workbook import;
 - public make-up scheduling for incomplete obligations (T08 re-entry fired and fulfilled; P3-030 is CLOSED by `SYNC-P3-030`; ADR-056 is Accepted; P3-031 public runtime is CLOSED by `SYNC-P3-031` after PR #187 and post-merge CI #623 SUCCESS);
 - SpecialActivity workload/reporting;
-- WorkloadAdjustmentRule + official actual-teacher workload (T23 fired; T49 registered by architecture audit; P4-060 IN_REVIEW under proposed ADR-057; P4-061 required);
+- WorkloadAdjustmentRule + official actual-teacher workload (T23/T49 architecture CLOSED by `SYNC-P4-060`; ADR-057 Accepted; P4-061 READY);
 - PWA/Telegram pilot integration;
 - first-cert HTTP-01/TLS authority and actual VPS evidence.
 

@@ -1,9 +1,15 @@
 # ADR-057 — Workload Adjustment and Official Teacher Workload Architecture
 
-- **Status:** Proposed — P4-060 IN_REVIEW
+- **Status:** Accepted — P4-060 CLOSED by `SYNC-P4-060`
 - **Task:** P4-060
 - **Traceability:** T21, T23, T49
 - **Canonical start:** `main@e1be4a486caf57357c0fcec6f47eceb6b873ec0a`
+- **Parent reviewed head:** `7bf3ca2b30b27f257035acf814cdeca10a708da0`
+- **Parent PR:** #189
+- **Exact-head parent CI:** #626 / run `37168759382` — **SUCCESS**
+- **Parent merge/main:** `db5f08912f41606d80c4b7c66fbfea42b3f7d039`
+- **Authoritative parent post-merge CI:** #627 / run `37169147105` — **SUCCESS**
+- **Closure:** `SYNC-P4-060`
 
 ## Context
 

@@ -22,34 +22,36 @@ Exact current `main`, branch HEAD and divergence must always be read directly fr
 
 ## Last formally closed major task
 
-`P3-031` — Public make-up scheduling runtime — **`CLOSED`** by `SYNC-P3-031`.
+`P4-060` — Workload adjustment + official teacher workload architecture — **`CLOSED`** by `SYNC-P4-060`.
 
-Closure evidence:
+Parent closure evidence:
 
-- final reviewed runtime head: `2fc5c48d445af75961f94609edd1551530504063`;
-- parent PR: #187; exact-head parent CI #622 / run `37113263889` — **SUCCESS**;
-- normal parent merge/main: `f8612a7e15be3dd8b45079f30860f56c37a943cb`;
-- authoritative parent post-merge CI #623 / run `37113742941` — **SUCCESS**;
-- closure PR #188; exact-head closure CI #624 — **SUCCESS**;
-- closure merge/main: `e1be4a486caf57357c0fcec6f47eceb6b873ec0a`;
-- authoritative post-closure main CI #625 / run `37114789121` — **SUCCESS**;
-- ADR-056 remains Accepted; T08 RESTORE fulfilled; no runtime/schema/deploy/VPS mutation in the closure.
+- parent branch: `docs/p4-060-workload-adjustment-architecture`;
+- canonical parent start: `main@e1be4a486caf57357c0fcec6f47eceb6b873ec0a`;
+- final reviewed parent head: `7bf3ca2b30b27f257035acf814cdeca10a708da0`;
+- parent PR #189;
+- exact-head parent CI #626 / run `37168759382` — **SUCCESS**;
+- independent exact-diff audit: **PASS**; 9 docs-only files; zero unresolved review threads;
+- normal parent merge/main: `db5f08912f41606d80c4b7c66fbfea42b3f7d039`;
+- authoritative parent post-merge CI #627 / run `37169147105` — **SUCCESS**;
+- ADR-057 Accepted; T21/T23/T49 architecture authority closed;
+- no runtime/schema/migration/API/UI/auth/CI/deploy/VPS mutation; production remains PRE-OPERATIONAL.
 
-P3-030 and P3-031 are formally closed by `SYNC-P3-030` and `SYNC-P3-031`; P4-060 is IN_REVIEW on its dedicated docs branch; P4-061 remains PLANNED behind P4-060.
+`P4-061` is now the only unresolved direct P5-010 business dependency and is **READY**.
 
 ## Active / next critical path
 
 ### In Review
 
-- `P4-060` — workload adjustment + official workload architecture — **`IN_REVIEW`** on `docs/p4-060-workload-adjustment-architecture`; proposed ADR-057 closes T23 formula/effectivity/snapshot semantics and registers T49 for the actual-curricular-workload gap required by the FULL BUSINESS exact multi-teacher workload claim. P4-060 is docs-only and authorizes no runtime/schema/deploy mutation.
+- None on the immediate P5 dependency path.
 
 ### Ready
 
-- None on the immediate P5 dependency path until P4-060 closes.
+- `P4-061` — workload adjustment + official workload implementation — **`READY`**; dependencies `P1-021`, `P4-050` and `P4-060` are CLOSED. It must implement ADR-057 without schema invention or hardcoded fallback.
 
 ### Planned behind open dependencies
 
-- `P4-061` — workload adjustment implementation — **`PLANNED`** behind P4-060.
+- None on the immediate P5 dependency path.
 
 ### Trigger-gated / decision-blocked
 - `P0-002` — stale PR #11 hosting-portability direction: **`BLOCKED_DECISION`**.
@@ -85,8 +87,8 @@ Detailed domain closure evidence remains in `PRE-PILOT-TASK-REGISTER.md`, ADRs, 
 
 The project is **NOT READY FOR TEACHER PILOT YET**. Remaining registered gaps include:
 
-1. `P3-030` and `P3-031` are CLOSED by `SYNC-P3-030` and `SYNC-P3-031`; `P4-060` is `IN_REVIEW`.
-2. `P4-061` remains the only unresolved direct dependency of the complete FULL BUSINESS `P5-010` freeze and cannot start until P4-060 closes.
+1. `P3-030`, `P3-031` and `P4-060` are CLOSED by their non-recursive sync closures; ADR-057 is Accepted.
+2. `P4-061` is READY and remains the only unresolved direct dependency of the complete FULL BUSINESS `P5-010` freeze.
 3. Public make-up scheduling T08 and adjusted-workload T23 are mandatory re-entry paths; their triggers fired on 2026-10-02.
 4. PWA production baseline (`P5-020`) remains absent.
 5. Dedicated Báo giảng Telegram integration (`P5-030`) remains absent.
