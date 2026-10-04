@@ -3,13 +3,27 @@
 ## 1. Task authority
 
 - **Task ID:** `P4-060`
-- **Status:** `IN_REVIEW`
+- **Status:** `CLOSED by SYNC-P4-060`
 - **Canonical start:** `main@e1be4a486caf57357c0fcec6f47eceb6b873ec0a`
 - **Branch:** `docs/p4-060-workload-adjustment-architecture`
 - **Direct predecessor:** `P1-020` (CLOSED)
 - **Runtime successor:** `P4-061`
 - **Traceability:** T21, T23, T49
-- **Decision authority:** proposed ADR-057
+- **Decision authority:** ADR-057 — Accepted
+
+## Closure evidence — SYNC-P4-060
+
+- Parent branch: `docs/p4-060-workload-adjustment-architecture`
+- Canonical parent start: `main@e1be4a486caf57357c0fcec6f47eceb6b873ec0a`
+- Final reviewed parent head: `7bf3ca2b30b27f257035acf814cdeca10a708da0`
+- Parent PR #189: `docs(workload): define P4-060 workload adjustment architecture`
+- Exact-head parent CI #626 / run `37168759382`: **SUCCESS**
+- Independent exact-diff audit: **PASS**; 9 docs-only files; 459 additions / 33 deletions; zero unresolved review threads
+- Normal parent merge/main: `db5f08912f41606d80c4b7c66fbfea42b3f7d039`
+- Authoritative post-merge main CI #627 / run `37169147105`: **SUCCESS**
+- Both Linux `Lint · Typecheck · Test · Build` and `Windows deployment contract`: **SUCCESS**
+- Zero runtime/schema/migration/API/UI/auth/CI/deploy/VPS mutation
+- ADR-057 is Accepted; T21/T23/T49 architecture authority is closed; `P4-061` becomes READY when this sync lands.
 
 ## 2. Problem being closed
 
