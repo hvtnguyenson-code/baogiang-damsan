@@ -1,7 +1,16 @@
 import { createHash } from "crypto";
 import { BadRequestException } from "@nestjs/common";
-import { isCivilDate } from "../common/validation/civil-date";
-import { exactAdd, exactSub, rationalDivInt, rationalRound4 } from "../common/decimal/exact-decimal";
+import { civilDateDayNumber, formatCivilDate, isCivilDate, parseCivilDate } from "../common/validation/civil-date";
+import {
+  exactAdd,
+  exactSub,
+  makeRational,
+  rationalAdd,
+  rationalDivInt,
+  rationalMul,
+  rationalRound4,
+  ZERO_RATIONAL,
+} from "../common/decimal/exact-decimal";
 import { calculateAdjustedWeeklyNormRational } from "../official-workload/workload-adjustment-formula";
 import {
   PersonalReportingProjection,
@@ -324,6 +333,7 @@ export function freezeReportingStatementSnapshotV4(
     (message) => {
       throw new BadRequestException(message);
     },
+    { fromCivilDate: p.scope.fromCivilDate, toCivilDate: p.scope.toCivilDate },
   );
   if (owl.specialProgrammeCredit !== wl.totalCredit) {
     throw new BadRequestException("specialProgrammeCredit must equal specialProgrammeWorkload.totalCredit.");
@@ -783,6 +793,7 @@ export function assertFrozenReportingStatementIntegrity(
       (message) => {
         throw new Error(`Frozen Reporting Statement V4 ${message}`);
       },
+      { fromCivilDate: v4.fromCivilDate, toCivilDate: v4.toCivilDate },
     );
     const topSpJson = canonicalizeJson(v4.specialProgrammeWorkload as unknown as CanonicalValue);
     const nestedSpJson = canonicalizeJson(v4.officialWorkload.specialProgrammeWorkload as unknown as CanonicalValue);
@@ -1087,10 +1098,17 @@ export function assertSpecialProgrammeWorkloadSnapshotIntegrity(
   });
 }
 
+function nextCivilDate(civilDate: string): string {
+  const d = parseCivilDate(civilDate);
+  const nextMs = d.getTime() + 86_400_000;
+  return formatCivilDate(new Date(nextMs));
+}
+
 function validateOfficialTeacherWorkloadSnapshot(
   workload: OfficialTeacherWorkloadSnapshot,
   submitterUserId: string,
   fail: (message: string) => never,
+  statementRange?: { fromCivilDate: string; toCivilDate: string },
 ): void {
   if (workload.projectionProfile !== 'OFFICIAL_TEACHER_WORKLOAD_PROJECTION_V1') {
     fail('official workload projection profile integrity failed.');
@@ -1165,11 +1183,49 @@ function validateOfficialTeacherWorkloadSnapshot(
     curricularIds.add(c.executionId);
   }
 
-  // Validate adjustment segments
-  for (const seg of workload.adjustmentSegments) {
+  // Validate adjustment segments coverage and range
+  if (statementRange) {
+    if (workload.adjustmentSegments.length === 0) {
+      fail('segment coverage integrity failed: segment list is empty.');
+    }
+    const firstSeg = workload.adjustmentSegments[0]!;
+    if (firstSeg.fromCivilDate !== statementRange.fromCivilDate) {
+      fail('segment coverage integrity failed: first segment does not match statement fromCivilDate.');
+    }
+    const lastSeg = workload.adjustmentSegments[workload.adjustmentSegments.length - 1]!;
+    if (lastSeg.toCivilDate !== statementRange.toCivilDate) {
+      fail('segment coverage integrity failed: last segment does not match statement toCivilDate.');
+    }
+  }
+
+  let totalExactRequired = ZERO_RATIONAL;
+
+  for (let i = 0; i < workload.adjustmentSegments.length; i++) {
+    const seg = workload.adjustmentSegments[i]!;
     if (!isCivilDate(seg.fromCivilDate) || !isCivilDate(seg.toCivilDate) || seg.fromCivilDate > seg.toCivilDate) {
       fail('segment civil dates integrity failed.');
     }
+
+    if (statementRange) {
+      if (seg.fromCivilDate < statementRange.fromCivilDate || seg.toCivilDate > statementRange.toCivilDate) {
+        fail('segment coverage integrity failed: segment range outside statement range.');
+      }
+    }
+
+    if (i > 0) {
+      const prevSeg = workload.adjustmentSegments[i - 1]!;
+      const expectedNext = nextCivilDate(prevSeg.toCivilDate);
+      if (seg.fromCivilDate < expectedNext) {
+        fail('segment coverage integrity failed: segment overlap detected.');
+      }
+      if (seg.fromCivilDate > expectedNext) {
+        fail('segment coverage integrity failed: segment gap detected.');
+      }
+      if (seg.fromCivilDate !== expectedNext) {
+        fail('segment coverage integrity failed: segment dates not contiguous.');
+      }
+    }
+
     if (typeof seg.calendarVersionId !== 'string' || !seg.calendarVersionId.trim()) {
       fail('segment calendarVersionId integrity failed.');
     }
@@ -1218,13 +1274,24 @@ function validateOfficialTeacherWorkloadSnapshot(
       if (seg.adjustedWeeklyNorm !== expectedAdjusted) {
         fail('segment adjustedWeeklyNorm provenance mismatch.');
       }
-      if (seg.denominatorK > 0) {
-        const expectedDaily = rationalRound4(rationalDivInt(adjustedRational, seg.denominatorK));
-        if (seg.dailyRequiredCredit !== expectedDaily) {
-          fail('segment dailyRequiredCredit provenance mismatch.');
-        }
+      if (seg.denominatorK <= 0) {
+        fail('segment denominatorK must be positive.');
       }
+      const dailyRational = rationalDivInt(adjustedRational, seg.denominatorK);
+      const expectedDaily = rationalRound4(dailyRational);
+      if (seg.dailyRequiredCredit !== expectedDaily) {
+        fail('segment dailyRequiredCredit provenance mismatch.');
+      }
+
+      const dayCount = civilDateDayNumber(seg.toCivilDate) - civilDateDayNumber(seg.fromCivilDate) + 1;
+      const segmentRequiredRational = rationalMul(dailyRational, makeRational(BigInt(dayCount), 1n));
+      totalExactRequired = rationalAdd(totalExactRequired, segmentRequiredRational);
     }
+  }
+
+  const expectedRequiredCredit = rationalRound4(totalExactRequired);
+  if (workload.requiredCredit !== expectedRequiredCredit) {
+    fail('requiredCredit exact provenance reconciliation failed.');
   }
 }
 
@@ -1232,10 +1299,16 @@ export function assertOfficialTeacherWorkloadSnapshotIntegrity(
   workload: OfficialTeacherWorkloadSnapshot,
   submitterUserId: string,
   topLevelSpecialProgrammeWorkload?: SpecialProgrammeWorkloadSnapshot,
+  statementRange?: { fromCivilDate: string; toCivilDate: string },
 ): void {
-  validateOfficialTeacherWorkloadSnapshot(workload, submitterUserId, (message) => {
-    throw new Error(message);
-  });
+  validateOfficialTeacherWorkloadSnapshot(
+    workload,
+    submitterUserId,
+    (message) => {
+      throw new Error(message);
+    },
+    statementRange,
+  );
   if (topLevelSpecialProgrammeWorkload) {
     const topSpJson = canonicalizeJson(topLevelSpecialProgrammeWorkload as unknown as CanonicalValue);
     const nestedSpJson = canonicalizeJson(workload.specialProgrammeWorkload as unknown as CanonicalValue);

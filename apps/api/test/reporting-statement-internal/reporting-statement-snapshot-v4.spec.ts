@@ -92,8 +92,8 @@ describe('Reporting Statement Snapshot V4 (Section 43)', () => {
     curricularCredit: 1,
     specialProgrammeCredit: 2,
     earnedCredit: 3,
-    requiredCredit: 3,
-    varianceCredit: 0,
+    requiredCredit: 70,
+    varianceCredit: -67,
     curricularContributions: [
       {
         executionId: 'exec-cur-1',
@@ -445,5 +445,159 @@ describe('Reporting Statement Snapshot V4 (Section 43)', () => {
         officialWorkload: badSegmentNorm as never,
       }),
     ).toThrow();
+  });
+
+  it('rejects when requiredCredit is changed even if variance is adjusted consistently', () => {
+    const tamperedRequired = {
+      ...officialWorkloadSnapshot,
+      requiredCredit: 80, // Provenance calculation is 70
+      varianceCredit: -77, // 3 - 80 = -77 (arithmetically consistent with 80, but provenance fails)
+    };
+
+    expect(() =>
+      freezeReportingStatementSnapshot({
+        statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+        submitterUserId,
+        asOfInstant: asOf,
+        projection: baseProjection as never,
+        operationalStartPolicyVersionId: 'op-start-1',
+        operationalStartDate: '2026-09-01',
+        specialProgrammeWorkload: specialWorkloadSnapshot,
+        officialWorkload: tamperedRequired as never,
+      }),
+    ).toThrow('requiredCredit exact provenance reconciliation failed');
+  });
+
+  it('rejects when eligible segment is removed', () => {
+    const emptySegments = {
+      ...officialWorkloadSnapshot,
+      adjustmentSegments: [],
+      requiredCredit: 0,
+      varianceCredit: 3,
+    };
+
+    expect(() =>
+      freezeReportingStatementSnapshot({
+        statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+        submitterUserId,
+        asOfInstant: asOf,
+        projection: baseProjection as never,
+        operationalStartPolicyVersionId: 'op-start-1',
+        operationalStartDate: '2026-09-01',
+        specialProgrammeWorkload: specialWorkloadSnapshot,
+        officialWorkload: emptySegments as never,
+      }),
+    ).toThrow('segment coverage integrity failed: segment list is empty');
+  });
+
+  it('rejects when there is a segment date gap', () => {
+    const gapSegments = {
+      ...officialWorkloadSnapshot,
+      adjustmentSegments: [
+        {
+          ...officialWorkloadSnapshot.adjustmentSegments[0],
+          toCivilDate: '2026-09-10',
+        },
+        {
+          ...officialWorkloadSnapshot.adjustmentSegments[0],
+          fromCivilDate: '2026-09-12', // Gap at 2026-09-11
+          toCivilDate: '2026-09-30',
+        },
+      ],
+    };
+
+    expect(() =>
+      freezeReportingStatementSnapshot({
+        statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+        submitterUserId,
+        asOfInstant: asOf,
+        projection: baseProjection as never,
+        operationalStartPolicyVersionId: 'op-start-1',
+        operationalStartDate: '2026-09-01',
+        specialProgrammeWorkload: specialWorkloadSnapshot,
+        officialWorkload: gapSegments as never,
+      }),
+    ).toThrow('segment coverage integrity failed: segment gap detected');
+  });
+
+  it('rejects when segments overlap', () => {
+    const overlapSegments = {
+      ...officialWorkloadSnapshot,
+      adjustmentSegments: [
+        {
+          ...officialWorkloadSnapshot.adjustmentSegments[0],
+          toCivilDate: '2026-09-15',
+        },
+        {
+          ...officialWorkloadSnapshot.adjustmentSegments[0],
+          fromCivilDate: '2026-09-15', // Overlap at 2026-09-15
+          toCivilDate: '2026-09-30',
+        },
+      ],
+    };
+
+    expect(() =>
+      freezeReportingStatementSnapshot({
+        statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+        submitterUserId,
+        asOfInstant: asOf,
+        projection: baseProjection as never,
+        operationalStartPolicyVersionId: 'op-start-1',
+        operationalStartDate: '2026-09-01',
+        specialProgrammeWorkload: specialWorkloadSnapshot,
+        officialWorkload: overlapSegments as never,
+      }),
+    ).toThrow('segment coverage integrity failed: segment overlap detected');
+  });
+
+  it('rejects when segment range is outside statement range', () => {
+    const outsideRangeSegments = {
+      ...officialWorkloadSnapshot,
+      adjustmentSegments: [
+        {
+          ...officialWorkloadSnapshot.adjustmentSegments[0],
+          fromCivilDate: '2026-08-31', // Statement begins at 2026-09-01
+          toCivilDate: '2026-09-30',
+        },
+      ],
+    };
+
+    expect(() =>
+      freezeReportingStatementSnapshot({
+        statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+        submitterUserId,
+        asOfInstant: asOf,
+        projection: baseProjection as never,
+        operationalStartPolicyVersionId: 'op-start-1',
+        operationalStartDate: '2026-09-01',
+        specialProgrammeWorkload: specialWorkloadSnapshot,
+        officialWorkload: outsideRangeSegments as never,
+      }),
+    ).toThrow('first segment does not match statement fromCivilDate');
+  });
+
+  it('rejects when dailyRequiredCredit does not match adjustedWeeklyNorm / denominatorK', () => {
+    const badDaily = {
+      ...officialWorkloadSnapshot,
+      adjustmentSegments: [
+        {
+          ...officialWorkloadSnapshot.adjustmentSegments[0],
+          dailyRequiredCredit: 9.9999, // Should be 2.3333
+        },
+      ],
+    };
+
+    expect(() =>
+      freezeReportingStatementSnapshot({
+        statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+        submitterUserId,
+        asOfInstant: asOf,
+        projection: baseProjection as never,
+        operationalStartPolicyVersionId: 'op-start-1',
+        operationalStartDate: '2026-09-01',
+        specialProgrammeWorkload: specialWorkloadSnapshot,
+        officialWorkload: badDaily as never,
+      }),
+    ).toThrow('segment dailyRequiredCredit provenance mismatch');
   });
 });

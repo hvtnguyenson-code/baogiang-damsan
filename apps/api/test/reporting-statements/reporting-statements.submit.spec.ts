@@ -185,7 +185,24 @@ function setup(classifications: unknown[], currentAsOf: Date = asOf) {
     earnedCredit: 0,
     requiredCredit: 0,
     varianceCredit: 0,
-    adjustmentSegments: [],
+    adjustmentSegments: [
+      {
+        fromCivilDate: '2026-08-01',
+        toCivilDate: '2026-08-31',
+        isWorkloadEligible: false,
+        calendarVersionId: 'cal-ver-default',
+        teachingWeekdays: ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'],
+        denominatorK: 6,
+        hasInterruption: false,
+        interruptionIds: [],
+        policyVersionId: null,
+        policyValidatorVersion: null,
+        baseWeeklyNorm: null,
+        adjustedWeeklyNorm: null,
+        dailyRequiredCredit: 0,
+        appliedRules: [],
+      },
+    ],
     findings: [],
     evaluatedAt: currentAsOf.toISOString(),
   };
@@ -557,7 +574,7 @@ describe('ReportingStatementsService.submit', () => {
       toCivilDate: '2026-08-31',
       isWorkloadEligible: true,
       calendarVersionId: 'cal-v1',
-      teachingWeekdays: [1, 2, 3, 4, 5, 6],
+      teachingWeekdays: ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'],
       denominatorK: 6,
       hasInterruption: false,
       interruptionIds: [],
@@ -565,9 +582,9 @@ describe('ReportingStatementsService.submit', () => {
       policyValidatorVersion: 'v1',
       policyEffectiveFrom: '2026-08-01',
       policyEffectiveUntil: null,
-      baseWeeklyNorm: 17,
-      adjustedWeeklyNorm: 17,
-      dailyRequiredCredit: 2.8333,
+      baseWeeklyNorm: 18,
+      adjustedWeeklyNorm: 18,
+      dailyRequiredCredit: 3,
       appliedRules: [],
     };
     const spWorkload = {
@@ -606,8 +623,8 @@ describe('ReportingStatementsService.submit', () => {
       },
       specialProgrammeWorkload: spWorkload,
       earnedCredit: 2.5,
-      requiredCredit: 17,
-      varianceCredit: -14.5,
+      requiredCredit: 93,
+      varianceCredit: -90.5,
       adjustmentSegments: [mockSegment],
       findings: [],
       evaluatedAt: asOf.toISOString(),
@@ -623,8 +640,8 @@ describe('ReportingStatementsService.submit', () => {
     expect(snapshot.officialWorkload.curricularCredit).toBe(1);
     expect(snapshot.officialWorkload.specialProgrammeCredit).toBe(1.5);
     expect(snapshot.officialWorkload.earnedCredit).toBe(2.5);
-    expect(snapshot.officialWorkload.requiredCredit).toBe(17);
-    expect(snapshot.officialWorkload.varianceCredit).toBe(-14.5);
+    expect(snapshot.officialWorkload.requiredCredit).toBe(93);
+    expect(snapshot.officialWorkload.varianceCredit).toBe(-90.5);
     expect(snapshot.officialWorkload.adjustmentSegments).toHaveLength(1);
     expect(snapshot.specialProgrammeWorkload).toBeDefined();
     expect(snapshot.specialProgrammeWorkload.totalCredit).toBe(1.5);
@@ -643,7 +660,7 @@ describe('ReportingStatementsService.submit', () => {
     expect(snapshot.specialProgrammeWorkload.contributions[0].credit).toBe(1.5);
     expect(snapshot.specialProgrammeWorkload.contributions[0].attestations[0].attestationId).toBe('att-1');
     expect(snapshot.officialWorkload.curricularCredit).toBe(1);
-    expect(snapshot.officialWorkload.adjustmentSegments[0].baseWeeklyNorm).toBe(17);
+    expect(snapshot.officialWorkload.adjustmentSegments[0].baseWeeklyNorm).toBe(18);
   });
 
   it('fails closed and throws without creating a statement when officialWorkloadProjection fails or returns invalid', async () => {
