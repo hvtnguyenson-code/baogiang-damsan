@@ -5,7 +5,7 @@ import { PERSONAL_REPORTING_STATEMENT_PROFILE } from '../../src/reporting-statem
 import { ReportingStatementRepository } from '../../src/reporting-statement-internal/reporting-statement.repository';
 import {
   REPORTING_STATEMENT_SNAPSHOT_V1,
-  REPORTING_STATEMENT_SNAPSHOT_V3,
+  REPORTING_STATEMENT_SNAPSHOT_V4,
   REPORTING_STATEMENT_SERIALIZER_V1,
   freezeReportingStatementSnapshot,
   freezeReportingStatementSnapshotV1,
@@ -40,6 +40,7 @@ integration('Reporting Statements control-plane PostgreSQL', () => {
   let year = '';
   let service: ReportingStatementsService;
   let businessConfiguration: BusinessConfigurationService;
+  let auditService: AuditService;
   let operationalPolicyVersionId = '';
   let policyStreamId = '';
 
@@ -106,7 +107,7 @@ integration('Reporting Statements control-plane PostgreSQL', () => {
   beforeAll(async () => {
     prisma = new PrismaClient({ datasources: { db: { url: testDatabaseUrl } } });
     const auth = { evaluate: jest.fn().mockResolvedValue({ allowed: true }) };
-    const auditService = new AuditService(prisma as never);
+    auditService = new AuditService(prisma as never);
     businessConfiguration = new BusinessConfigurationService(prisma as never, auditService, PRODUCTION_BUSINESS_POLICY_FAMILIES);
     const workloadProjection = new SpecialProgrammeWorkloadProjectionService(
       prisma as never,
@@ -178,6 +179,29 @@ integration('Reporting Statements control-plane PostgreSQL', () => {
       },
     });
     operationalPolicyVersionId = pv.id;
+
+    // P4-061 authority required by OfficialWorkloadProjectionService.
+    const workloadStream = await prisma.businessPolicyStream.create({
+      data: {
+        familyKey: 'WORKLOAD_ADJUSTMENT',
+        resourceKind: 'ACADEMIC_YEAR',
+        academicYearId: year,
+      },
+    });
+    await prisma.businessPolicyVersion.create({
+      data: {
+        streamId: workloadStream.id,
+        versionNumber: 1,
+        status: 'PUBLISHED',
+        payload: { baseWeeklyNorm: 18, rules: [] },
+        validatorVersion: 'v1',
+        effectiveFrom: new Date('2026-08-01T00:00:00.000Z'),
+        effectiveUntil: null,
+        publishedAt: new Date('2026-08-01T00:00:00.000Z'),
+        publishedByUserId: approver,
+        createdByUserId: approver,
+      },
+    });
   });
 
   afterEach(async () => {
@@ -393,12 +417,12 @@ integration('Reporting Statements control-plane PostgreSQL', () => {
       where: { id: result.revisionId },
     });
 
-    expect(row.snapshotProfile).toBe(REPORTING_STATEMENT_SNAPSHOT_V3);
+    expect(row.snapshotProfile).toBe(REPORTING_STATEMENT_SNAPSHOT_V4);
     expect(row.serializerVersion).toBe(REPORTING_STATEMENT_SERIALIZER_V1);
     expect(row.asOfInstant).toEqual(asOf);
 
     const parsed = JSON.parse(row.canonicalSnapshotJson);
-    expect(parsed.snapshotProfile).toBe(REPORTING_STATEMENT_SNAPSHOT_V3);
+    expect(parsed.snapshotProfile).toBe(REPORTING_STATEMENT_SNAPSHOT_V4);
     expect(parsed.serializerVersion).toBe(REPORTING_STATEMENT_SERIALIZER_V1);
     expect(parsed.operationalStartPolicyVersionId).toBe(operationalPolicyVersionId);
     expect(parsed.operationalStartDate).toBe('2026-08-15');
@@ -475,7 +499,7 @@ integration('Reporting Statements control-plane PostgreSQL', () => {
     );
 
     const before = await repository.readFrozenRevision(prisma, submitted.revisionId);
-    expect(before?.snapshotProfile).toBe(REPORTING_STATEMENT_SNAPSHOT_V3);
+    expect(before?.snapshotProfile).toBe(REPORTING_STATEMENT_SNAPSHOT_V4);
     const beforeParsed = JSON.parse(before!.canonicalSnapshotJson);
     expect(beforeParsed.operationalStartPolicyVersionId).toBe(operationalPolicyVersionId);
     expect(beforeParsed.operationalStartDate).toBe('2026-08-15');

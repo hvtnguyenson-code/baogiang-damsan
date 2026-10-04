@@ -1,7 +1,7 @@
 import { AuditResult, CatalogStatus, PrismaClient, ReportingStatementLifecycleState as State } from '@prisma/client';
 import request, { Agent } from 'supertest';
 import {
-  REPORTING_STATEMENT_SNAPSHOT_V3,
+  REPORTING_STATEMENT_SNAPSHOT_V4,
   freezeReportingStatementSnapshot,
 } from '../../src/reporting-statement-internal/reporting-statement-canonicalizer';
 import { ReportingStatementRepository } from '../../src/reporting-statement-internal/reporting-statement.repository';
@@ -132,6 +132,29 @@ integration('Reporting Statement HTTP security boundary (isolated PostgreSQL)', 
         versionNumber: 1,
         status: 'PUBLISHED',
         payload: { operationalStartDate: '2026-08-15' },
+        validatorVersion: 'v1',
+        effectiveFrom: new Date('2026-08-01T00:00:00.000Z'),
+        effectiveUntil: null,
+        publishedAt: new Date('2026-08-01T00:00:00.000Z'),
+        publishedByUserId: approver.id,
+        createdByUserId: approver.id,
+      },
+    });
+
+    // P4-061 authority required for PASS official workload previews/submissions.
+    const workloadStream = await prisma.businessPolicyStream.create({
+      data: {
+        familyKey: 'WORKLOAD_ADJUSTMENT',
+        resourceKind: 'ACADEMIC_YEAR',
+        academicYearId,
+      },
+    });
+    await prisma.businessPolicyVersion.create({
+      data: {
+        streamId: workloadStream.id,
+        versionNumber: 1,
+        status: 'PUBLISHED',
+        payload: { baseWeeklyNorm: 18, rules: [] },
         validatorVersion: 'v1',
         effectiveFrom: new Date('2026-08-01T00:00:00.000Z'),
         effectiveUntil: null,
@@ -456,7 +479,7 @@ integration('Reporting Statement HTTP security boundary (isolated PostgreSQL)', 
     const submittedRevisionRow = await prisma.reportingStatementRevision.findUniqueOrThrow({
       where: { id: submitReplacementRes.body.revisionId },
     });
-    expect(submittedRevisionRow.snapshotProfile).toBe(REPORTING_STATEMENT_SNAPSHOT_V3);
+    expect(submittedRevisionRow.snapshotProfile).toBe(REPORTING_STATEMENT_SNAPSHOT_V4);
     expect(submittedRevisionRow.serializerVersion).toBe('REPORTING_STATEMENT_CANONICAL_JSON_V1');
     const parsedSnapshot = JSON.parse(submittedRevisionRow.canonicalSnapshotJson);
     expect(parsedSnapshot.operationalStartPolicyVersionId).toBeDefined();
