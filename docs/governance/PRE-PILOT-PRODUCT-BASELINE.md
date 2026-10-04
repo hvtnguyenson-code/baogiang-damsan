@@ -184,7 +184,7 @@ Planned staffing is not execution evidence. Teacher workload credit requires acc
 
 ### 4.12 Workload adjustment policy
 
-The previously deferred `WorkloadAdjustmentRule` re-entry trigger **fired on 2026-10-02** under the Product Owner FULL BUSINESS completeness directive. `P4-060` is now IN_REVIEW and proposed ADR-057 closes reduction/percentage/override semantics, priority, date effectivity, canonical AdditionalDuty/Homeroom sources, arbitrary-range calendar proration and frozen-report provenance. The same architecture audit registered T49 because ADR-041 still deferred actual curricular workload aggregation while P0-003 requires exact multi-teacher workload.
+The previously deferred `WorkloadAdjustmentRule` re-entry trigger **fired on 2026-10-02** under the Product Owner FULL BUSINESS completeness directive. `P4-060` is now CLOSED by `SYNC-P4-060` and ADR-057 is Accepted, locking reduction/percentage/override semantics, priority, date effectivity, canonical AdditionalDuty/Homeroom sources, actual-teacher curricular workload, arbitrary-range calendar proration and frozen-report provenance. T49 is therefore architecturally closed and moves to P4-061 implementation.
 
 P4-061 must therefore implement both sides of official workload: earned credit (actual curricular executions + reused P4-050 special-programme credit) and adjusted required credit under the typed `WORKLOAD_ADJUSTMENT` policy. The model must not be hard-coded from titles, roles or duty names.
 
@@ -241,7 +241,7 @@ On 2026-10-02 the Product Owner clarified that FULL BUSINESS must be functionall
 
 The direct dependency set registered for `P5-010` is `P0-003`, `P1-032`, `P2-020`, `P2-061`, `P3-020`, `P3-031`, `P4-061`, `P4-074`. With `P3-020` CLOSED by `SYNC-P3-020` and `P3-031` CLOSED by `SYNC-P3-031`, the only unresolved direct dependency is `P4-061`, so P5-010 is not yet READY.
 
-`P3-030`/`P3-031` and `P4-060`/`P4-061` are therefore no longer optional deferred tracks for this pilot claim. They are part of the required path. P3-030 and P3-031 are CLOSED by their sync closures. P4-060 is IN_REVIEW on `docs/p4-060-workload-adjustment-architecture`; proposed ADR-057 owns the final workload formula/actual-teacher/frozen-provenance decisions, and P4-061 remains the sole unresolved direct implementation dependency before P5-010.
+`P3-030`/`P3-031` and `P4-060`/`P4-061` are therefore no longer optional deferred tracks for this pilot claim. P3-030, P3-031 and P4-060 are CLOSED by their sync closures; ADR-057 is Accepted. P4-061 is READY and remains the sole unresolved direct implementation dependency before P5-010.
 
 ## 6. Production-readiness items that remain separate
 
