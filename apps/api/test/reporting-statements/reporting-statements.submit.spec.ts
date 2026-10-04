@@ -574,16 +574,16 @@ describe('ReportingStatementsService.submit', () => {
       toCivilDate: '2026-08-31',
       isWorkloadEligible: true,
       calendarVersionId: 'cal-v1',
-      teachingWeekdays: ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'],
-      denominatorK: 6,
+      teachingWeekdays: ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'],
+      denominatorK: 7,
       hasInterruption: false,
       interruptionIds: [],
       policyVersionId: 'policy-adj-v1',
       policyValidatorVersion: 'v1',
       policyEffectiveFrom: '2026-08-01',
       policyEffectiveUntil: null,
-      baseWeeklyNorm: 18,
-      adjustedWeeklyNorm: 18,
+      baseWeeklyNorm: 21,
+      adjustedWeeklyNorm: 21,
       dailyRequiredCredit: 3,
       appliedRules: [],
     };
@@ -660,7 +660,7 @@ describe('ReportingStatementsService.submit', () => {
     expect(snapshot.specialProgrammeWorkload.contributions[0].credit).toBe(1.5);
     expect(snapshot.specialProgrammeWorkload.contributions[0].attestations[0].attestationId).toBe('att-1');
     expect(snapshot.officialWorkload.curricularCredit).toBe(1);
-    expect(snapshot.officialWorkload.adjustmentSegments[0].baseWeeklyNorm).toBe(18);
+    expect(snapshot.officialWorkload.adjustmentSegments[0].baseWeeklyNorm).toBe(21);
   });
 
   it('fails closed and throws without creating a statement when officialWorkloadProjection fails or returns invalid', async () => {

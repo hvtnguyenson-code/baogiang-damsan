@@ -12,6 +12,7 @@ import {
   ZERO_RATIONAL,
 } from "../common/decimal/exact-decimal";
 import { calculateAdjustedWeeklyNormRational } from "../official-workload/workload-adjustment-formula";
+import { weekdayForCivilDate } from "../special-activities/special-activity-policy";
 import {
   PersonalReportingProjection,
   PersonalReportingSection,
@@ -1104,6 +1105,16 @@ function nextCivilDate(civilDate: string): string {
   return formatCivilDate(new Date(nextMs));
 }
 
+const VALID_TEACHING_WEEKDAYS = new Set([
+  'MONDAY',
+  'TUESDAY',
+  'WEDNESDAY',
+  'THURSDAY',
+  'FRIDAY',
+  'SATURDAY',
+  'SUNDAY',
+]);
+
 function validateOfficialTeacherWorkloadSnapshot(
   workload: OfficialTeacherWorkloadSnapshot,
   submitterUserId: string,
@@ -1229,13 +1240,56 @@ function validateOfficialTeacherWorkloadSnapshot(
     if (typeof seg.calendarVersionId !== 'string' || !seg.calendarVersionId.trim()) {
       fail('segment calendarVersionId integrity failed.');
     }
-    if (!Array.isArray(seg.teachingWeekdays) || seg.denominatorK !== seg.teachingWeekdays.length) {
+    if (!Array.isArray(seg.teachingWeekdays) || seg.teachingWeekdays.length === 0) {
+      fail('segment teachingWeekdays integrity failed: must be a non-empty array.');
+    }
+    for (const tw of seg.teachingWeekdays) {
+      if (!VALID_TEACHING_WEEKDAYS.has(tw)) {
+        fail(`segment teachingWeekdays contains invalid weekday: ${tw}`);
+      }
+    }
+    if (new Set(seg.teachingWeekdays).size !== seg.teachingWeekdays.length) {
+      fail('segment teachingWeekdays contains duplicate weekdays.');
+    }
+    if (seg.denominatorK !== seg.teachingWeekdays.length) {
       fail('segment teachingWeekdays/denominatorK integrity failed.');
+    }
+    if (typeof seg.hasInterruption !== 'boolean') {
+      fail('segment hasInterruption must be a boolean.');
+    }
+    if (seg.hasInterruption) {
+      if (!Array.isArray(seg.interruptionIds) || seg.interruptionIds.length === 0) {
+        fail('interrupted segment must have non-empty interruptionIds array.');
+      }
+      for (const id of seg.interruptionIds) {
+        if (typeof id !== 'string' || !id.trim()) {
+          fail('interrupted segment interruptionId must be a non-empty string.');
+        }
+      }
+    } else {
+      if (seg.interruptionIds && seg.interruptionIds.length > 0) {
+        fail('uninterrupted segment must not have interruptionIds.');
+      }
     }
     if (typeof seg.isWorkloadEligible !== 'boolean') {
       fail('segment isWorkloadEligible integrity failed.');
     }
     if (seg.isWorkloadEligible) {
+      if (seg.hasInterruption) {
+        fail('eligible segment must not claim hasInterruption.');
+      }
+      if (seg.denominatorK <= 0) {
+        fail('segment denominatorK must be positive for eligible segments.');
+      }
+      let curr = parseCivilDate(seg.fromCivilDate);
+      const end = parseCivilDate(seg.toCivilDate);
+      while (curr.getTime() <= end.getTime()) {
+        const wd = weekdayForCivilDate(curr);
+        if (!seg.teachingWeekdays.includes(wd)) {
+          fail(`eligible segment spans non-teaching weekday ${wd} on ${formatCivilDate(curr)}.`);
+        }
+        curr = new Date(curr.getTime() + 86_400_000);
+      }
       if (typeof seg.policyVersionId !== 'string' || !seg.policyVersionId.trim()) {
         fail('segment policyVersionId integrity failed.');
       }
@@ -1247,6 +1301,19 @@ function validateOfficialTeacherWorkloadSnapshot(
       }
       if (typeof seg.dailyRequiredCredit !== 'number' || seg.dailyRequiredCredit < 0) {
         fail('segment dailyRequiredCredit integrity failed.');
+      }
+    } else {
+      if (seg.dailyRequiredCredit !== 0) {
+        fail('ineligible segment must have dailyRequiredCredit = 0.');
+      }
+      if (seg.baseWeeklyNorm !== null || seg.adjustedWeeklyNorm !== null) {
+        fail('ineligible segment must have null weekly norms.');
+      }
+      if (seg.policyVersionId !== null || seg.policyValidatorVersion !== null) {
+        fail('ineligible segment must have null policyVersionId and policyValidatorVersion.');
+      }
+      if (seg.appliedRules.length !== 0) {
+        fail('ineligible segment must have empty appliedRules.');
       }
     }
     if (!Array.isArray(seg.appliedRules)) {

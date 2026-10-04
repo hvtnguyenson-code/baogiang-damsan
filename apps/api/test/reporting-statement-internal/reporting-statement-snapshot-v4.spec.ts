@@ -92,8 +92,8 @@ describe('Reporting Statement Snapshot V4 (Section 43)', () => {
     curricularCredit: 1,
     specialProgrammeCredit: 2,
     earnedCredit: 3,
-    requiredCredit: 70,
-    varianceCredit: -67,
+    requiredCredit: 60,
+    varianceCredit: -57,
     curricularContributions: [
       {
         executionId: 'exec-cur-1',
@@ -114,22 +114,22 @@ describe('Reporting Statement Snapshot V4 (Section 43)', () => {
         toCivilDate: '2026-09-30' as const,
         isWorkloadEligible: true,
         calendarVersionId: 'cal-ver-1',
-        teachingWeekdays: ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'],
-        denominatorK: 6,
+        teachingWeekdays: ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'],
+        denominatorK: 7,
         hasInterruption: false,
         interruptionIds: [],
         policyVersionId: 'policy-ver-workload-1',
         policyValidatorVersion: 'v1',
         policyEffectiveFrom: '2026-09-01',
         policyEffectiveUntil: null,
-        baseWeeklyNorm: 18,
+        baseWeeklyNorm: 21,
         adjustedWeeklyNorm: 14,
-        dailyRequiredCredit: 2.3333,
+        dailyRequiredCredit: 2,
         appliedRules: [
           {
             ruleId: 'r_gvcn',
             calculation: 'TRU_TIET' as const,
-            value: 4,
+            value: 7,
             priority: 10,
             sourceKind: 'HOMEROOM_RESPONSIBILITY' as const,
             matchingHomeroomAssignmentIds: ['hr-1'],
@@ -599,5 +599,85 @@ describe('Reporting Statement Snapshot V4 (Section 43)', () => {
         officialWorkload: badDaily as never,
       }),
     ).toThrow('segment dailyRequiredCredit provenance mismatch');
+  });
+
+  it('rejects when eligible segment improperly spans a non-teaching weekday', () => {
+    const nonTeachingSpan = {
+      ...officialWorkloadSnapshot,
+      adjustmentSegments: [
+        {
+          ...officialWorkloadSnapshot.adjustmentSegments[0],
+          // Mon-Sat only (Sunday is non-teaching, but segment covers full month including 2026-09-06)
+          teachingWeekdays: ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'],
+          denominatorK: 6,
+        },
+      ],
+    };
+
+    expect(() =>
+      freezeReportingStatementSnapshot({
+        statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+        submitterUserId,
+        asOfInstant: asOf,
+        projection: baseProjection as never,
+        operationalStartPolicyVersionId: 'op-start-1',
+        operationalStartDate: '2026-09-01',
+        specialProgrammeWorkload: specialWorkloadSnapshot,
+        officialWorkload: nonTeachingSpan as never,
+      }),
+    ).toThrow('eligible segment spans non-teaching weekday SUNDAY on 2026-09-06');
+  });
+
+  it('rejects when segment has contradictory interruption eligibility', () => {
+    const contradictory = {
+      ...officialWorkloadSnapshot,
+      adjustmentSegments: [
+        {
+          ...officialWorkloadSnapshot.adjustmentSegments[0],
+          isWorkloadEligible: true,
+          hasInterruption: true,
+          interruptionIds: ['interruption-1'],
+        },
+      ],
+    };
+
+    expect(() =>
+      freezeReportingStatementSnapshot({
+        statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+        submitterUserId,
+        asOfInstant: asOf,
+        projection: baseProjection as never,
+        operationalStartPolicyVersionId: 'op-start-1',
+        operationalStartDate: '2026-09-01',
+        specialProgrammeWorkload: specialWorkloadSnapshot,
+        officialWorkload: contradictory as never,
+      }),
+    ).toThrow('eligible segment must not claim hasInterruption');
+  });
+
+  it('rejects when teachingWeekdays contains duplicate weekdays', () => {
+    const duplicateWeekdays = {
+      ...officialWorkloadSnapshot,
+      adjustmentSegments: [
+        {
+          ...officialWorkloadSnapshot.adjustmentSegments[0],
+          teachingWeekdays: ['MONDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'],
+          denominatorK: 7,
+        },
+      ],
+    };
+
+    expect(() =>
+      freezeReportingStatementSnapshot({
+        statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
+        submitterUserId,
+        asOfInstant: asOf,
+        projection: baseProjection as never,
+        operationalStartPolicyVersionId: 'op-start-1',
+        operationalStartDate: '2026-09-01',
+        specialProgrammeWorkload: specialWorkloadSnapshot,
+        officialWorkload: duplicateWeekdays as never,
+      }),
+    ).toThrow('segment teachingWeekdays contains duplicate weekdays');
   });
 });

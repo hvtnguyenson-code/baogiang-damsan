@@ -269,7 +269,12 @@ export function parseAndVerifyFrozenSnapshot(row: FrozenRevisionRow): ReportingS
     }
     try {
       assertSpecialProgrammeWorkloadSnapshotIntegrity(v4.specialProgrammeWorkload, snapshot.submitterUserId);
-      assertOfficialTeacherWorkloadSnapshotIntegrity(v4.officialWorkload, snapshot.submitterUserId, v4.specialProgrammeWorkload);
+      assertOfficialTeacherWorkloadSnapshotIntegrity(
+        v4.officialWorkload,
+        snapshot.submitterUserId,
+        v4.specialProgrammeWorkload,
+        { fromCivilDate: v4.fromCivilDate, toCivilDate: v4.toCivilDate },
+      );
     } catch {
       throw new InternalServerErrorException(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
     }

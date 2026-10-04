@@ -1,9 +1,17 @@
 import {
   CurricularTeachingExecutionKind,
+  HomeroomAssignmentStatus,
+  Prisma,
   PrismaClient,
+  SpecialActivityStatus,
   TeachingExecutionStatus,
   UserStatus,
 } from '@prisma/client';
+import {
+  CivilDateString,
+  WorkloadAdjustmentPolicyPayloadV1,
+  WorkloadAdjustmentRuleV1,
+} from '@baogiang/contracts';
 import { integration, normalizedCode, Phase01Harness } from '../helpers/phase01-test-harness';
 import { BusinessConfigurationService } from '../../src/business-configuration/business-configuration.service';
 import { OfficialWorkloadProjectionService } from '../../src/official-workload/official-workload-projection.service';
@@ -13,7 +21,6 @@ import {
   assertFrozenReportingStatementIntegrity,
   REPORTING_STATEMENT_SNAPSHOT_V4,
 } from '../../src/reporting-statement-internal/reporting-statement-canonicalizer';
-import { presentReportingStatementDetail } from '../../src/reporting-statements/reporting-statement.presenter';
 
 integration('P4-061: Official Workload & Workload Adjustment PostgreSQL Integration Suite', () => {
   const harness = new Phase01Harness();
@@ -54,7 +61,15 @@ integration('P4-061: Official Workload & Workload Adjustment PostgreSQL Integrat
   });
 
   async function cleanSuite() {
-    // 1. Reporting Statements
+    // 1. Truncate Programme & Special Activity cascades (bypasses retained check trigger on published plan versions)
+    await harness.prisma.$executeRawUnsafe(`
+      TRUNCATE TABLE
+        "programme_masters",
+        "special_activities"
+      CASCADE;
+    `);
+
+    // 2. Reporting Statements
     await harness.prisma.reportingStatementHistory.deleteMany();
     await harness.prisma.reportingStatementCommand.deleteMany();
     await harness.prisma.reportingStatementRevisionSubject.deleteMany();
@@ -64,15 +79,6 @@ integration('P4-061: Official Workload & Workload Adjustment PostgreSQL Integrat
     });
     await harness.prisma.reportingStatementRevision.deleteMany();
     await harness.prisma.reportingStatementSeries.deleteMany();
-
-    // 2. Special Programme Workload & Materialized Activities & Attestations
-    await harness.prisma.programmeOccurrenceAttestation.deleteMany();
-    await harness.prisma.programmeMaterializedActivity.deleteMany();
-    await harness.prisma.specialActivityParticipationExecution.deleteMany();
-    await harness.prisma.specialActivityStaffing.deleteMany();
-    await harness.prisma.specialActivityClassTarget.deleteMany();
-    await harness.prisma.specialActivityTimeSlot.deleteMany();
-    await harness.prisma.specialActivity.deleteMany();
 
     // 3. Curricular Teaching Executions, Makeups & Dispositions
     await harness.prisma.curricularTeachingExecution.deleteMany();
@@ -90,14 +96,6 @@ integration('P4-061: Official Workload & Workload Adjustment PostgreSQL Integrat
     await harness.prisma.teachingAssignment.deleteMany();
     await harness.prisma.staffSubject.deleteMany();
 
-    // 6. Programme Planning entities
-    await harness.prisma.plannedOccurrenceSlot.deleteMany();
-    await harness.prisma.plannedProgrammeOccurrence.deleteMany();
-    await harness.prisma.programmeTopicItem.deleteMany();
-    await harness.prisma.programmePlanVersion.deleteMany();
-    await harness.prisma.programmeMaster.deleteMany();
-    await harness.prisma.programmePlanningCommand.deleteMany();
-
     // 7. PPCT
     await harness.prisma.ppctItemLineage.deleteMany();
     await harness.prisma.ppctClassAssociation.deleteMany();
@@ -112,6 +110,7 @@ integration('P4-061: Official Workload & Workload Adjustment PostgreSQL Integrat
     await harness.prisma.timeSlotDefinition.deleteMany();
 
     // 9. Calendar
+    await harness.prisma.semester.deleteMany();
     await harness.prisma.academicWeekSegment.deleteMany();
     await harness.prisma.academicWeek.deleteMany();
     await harness.prisma.calendarInterruption.deleteMany();
@@ -234,6 +233,14 @@ integration('P4-061: Official Workload & Workload Adjustment PostgreSQL Integrat
     const staffSubject = await harness.prisma.staffSubject.create({
       data: {
         userId: teacherA.id,
+        subjectId: subject.id,
+        validFrom: new Date('2026-08-01T00:00:00.000Z'),
+      },
+    });
+
+    const staffSubjectB = await harness.prisma.staffSubject.create({
+      data: {
+        userId: teacherB.id,
         subjectId: subject.id,
         validFrom: new Date('2026-08-01T00:00:00.000Z'),
       },
@@ -385,6 +392,7 @@ integration('P4-061: Official Workload & Workload Adjustment PostgreSQL Integrat
       schoolClass,
       subject,
       staffSubject,
+      staffSubjectB,
       slot,
       makeupSlot,
       assignment,
@@ -404,7 +412,7 @@ integration('P4-061: Official Workload & Workload Adjustment PostgreSQL Integrat
     academicYearId: string;
     authorUserId: string;
     baseWeeklyNorm?: number;
-    rules?: unknown[];
+    rules?: WorkloadAdjustmentRuleV1[];
     versionNumber?: number;
     effectiveFrom?: Date;
     effectiveUntil?: Date | null;
@@ -426,15 +434,17 @@ integration('P4-061: Official Workload & Workload Adjustment PostgreSQL Integrat
       });
     }
 
+    const payload: WorkloadAdjustmentPolicyPayloadV1 = {
+      baseWeeklyNorm: input.baseWeeklyNorm ?? 18,
+      rules: input.rules ?? [],
+    };
+
     return harness.prisma.businessPolicyVersion.create({
       data: {
         streamId: stream.id,
         versionNumber: input.versionNumber ?? 1,
         status: 'PUBLISHED',
-        payload: {
-          baseWeeklyNorm: input.baseWeeklyNorm ?? 18,
-          rules: input.rules ?? [],
-        },
+        payload: payload as unknown as Prisma.InputJsonValue,
         validatorVersion: 'v1',
         effectiveFrom: input.effectiveFrom ?? new Date('2026-08-01T00:00:00.000Z'),
         effectiveUntil: input.effectiveUntil ?? null,
@@ -458,13 +468,14 @@ integration('P4-061: Official Workload & Workload Adjustment PostgreSQL Integrat
   }) {
     const { f } = input;
     const execDateStr = input.executionCivilDate ?? '2026-09-07';
-    const srcDateStr = input.sourceCivilDate ?? '2026-09-07';
+    const srcDateStr = input.sourceCivilDate ?? input.executionCivilDate ?? '2026-09-07';
     const execDate = new Date(`${execDateStr}T00:00:00.000Z`);
     const srcDate = new Date(`${srcDateStr}T00:00:00.000Z`);
     const responsibleTeacherId = input.responsibleTeacherUserId ?? f.teacherA.id;
 
     let dispositionId: string | null = null;
     if (input.dispositionType === 'SAME_SUBJECT_SUBSTITUTION') {
+      const staffSub = input.actualTeacherUserId === f.teacherB.id ? f.staffSubjectB : f.staffSubject;
       const disp = await harness.prisma.operationalLessonDisposition.create({
         data: {
           academicYearId: f.year.id,
@@ -483,7 +494,7 @@ integration('P4-061: Official Workload & Workload Adjustment PostgreSQL Integrat
           eligibilityWasActive: true,
           eligibilityWasTeachingStaff: true,
           eligibilitySameSubject: true,
-          eligibilityStaffSubjectId: f.staffSubject.id,
+          eligibilityStaffSubjectId: staffSub.id,
           createRequestKey: crypto.randomUUID(),
           createRequestFingerprint: crypto.randomUUID(),
           createdByUserId: f.teacherA.id,
@@ -491,6 +502,8 @@ integration('P4-061: Official Workload & Workload Adjustment PostgreSQL Integrat
       });
       dispositionId = disp.id;
     }
+
+    const isReversed = input.status === TeachingExecutionStatus.REVERSED;
 
     return harness.prisma.curricularTeachingExecution.create({
       data: {
@@ -530,6 +543,11 @@ integration('P4-061: Official Workload & Workload Adjustment PostgreSQL Integrat
         createRequestKey: crypto.randomUUID(),
         createRequestFingerprint: crypto.randomUUID(),
         createdByUserId: input.actualTeacherUserId,
+        reversedByUserId: isReversed ? input.actualTeacherUserId : null,
+        reversedAt: isReversed ? new Date('2026-09-15T00:00:00.000Z') : null,
+        reversalReason: isReversed ? 'Kiem thu dao nguoc' : null,
+        reverseRequestKey: isReversed ? crypto.randomUUID() : null,
+        reverseRequestFingerprint: isReversed ? crypto.randomUUID() : null,
       },
     });
   }
@@ -541,7 +559,7 @@ integration('P4-061: Official Workload & Workload Adjustment PostgreSQL Integrat
     coefficient?: number;
   }) {
     const { f } = input;
-    const dateStr = input.civilDateStr ?? '2026-09-08';
+    const dateStr = input.civilDateStr ?? '2026-09-14';
     const civilDate = new Date(`${dateStr}T00:00:00.000Z`);
     const coeff = input.coefficient ?? 1.5;
 
@@ -569,8 +587,8 @@ integration('P4-061: Official Workload & Workload Adjustment PostgreSQL Integrat
         status: 'PUBLISHED',
         payload: {
           coefficients: {
-            GDDP: { CLASS: coeff },
-            HDTN_HN: { CLASS: 1.0 },
+            GDDP: { CLASS: coeff, GRADE: 1.0 },
+            HDTN_HN: { CLASS: 1.0, GRADE: 1.0, SCHOOL_WIDE: 1.0 },
           },
         },
         validatorVersion: 'v1',
@@ -587,11 +605,7 @@ integration('P4-061: Official Workload & Workload Adjustment PostgreSQL Integrat
       data: {
         academicYearId: f.year.id,
         kind: 'GDDP',
-        title: 'GDDP Lop 10',
-        description: 'Giao duc dia phuong',
-        status: 'ACTIVE',
-        createRequestKey: crypto.randomUUID(),
-        createRequestFingerprint: crypto.randomUUID(),
+        gradeLevel: 10,
         createdByUserId: f.principal.id,
       },
     });
@@ -599,23 +613,26 @@ integration('P4-061: Official Workload & Workload Adjustment PostgreSQL Integrat
       data: {
         programmeMasterId: master.id,
         versionNumber: 1,
-        status: 'PUBLISHED',
-        academicYearId: f.year.id,
-        createRequestKey: crypto.randomUUID(),
-        createRequestFingerprint: crypto.randomUUID(),
-        publishedByUserId: f.principal.id,
-        publishedAt: new Date('2026-08-01T00:00:00.000Z'),
+        status: 'DRAFT',
         createdByUserId: f.principal.id,
       },
     });
     const topicItem = await harness.prisma.programmeTopicItem.create({
       data: {
         programmePlanVersionId: planVer.id,
-        topicCode: 'TOPIC1',
+        sequence: 1,
         title: 'Topic Dia phuong 1',
-        sortOrder: 1,
-        gradeLevel: 10,
-        durationPeriods: 1,
+        requiredPeriods: 1,
+        guidelineWeekFrom: 1,
+        guidelineWeekTo: 2,
+      },
+    });
+    await harness.prisma.programmePlanVersion.update({
+      where: { id: planVer.id },
+      data: {
+        status: 'PUBLISHED',
+        publishedByUserId: f.principal.id,
+        publishedAt: new Date('2026-08-01T00:00:00.000Z'),
       },
     });
     const occurrence = await harness.prisma.plannedProgrammeOccurrence.create({
@@ -624,13 +641,12 @@ integration('P4-061: Official Workload & Workload Adjustment PostgreSQL Integrat
         programmeMasterId: master.id,
         programmePlanVersionId: planVer.id,
         programmeTopicItemId: topicItem.id,
-        schoolClassId: f.schoolClass.id,
+        civilDate,
         mode: 'CLASS',
-        status: 'PUBLISHED',
-        createRequestKey: crypto.randomUUID(),
-        createRequestFingerprint: crypto.randomUUID(),
-        publishedByUserId: f.principal.id,
-        publishedAt: new Date('2026-08-01T00:00:00.000Z'),
+        gradeLevel: null,
+        schoolClassId: f.schoolClass.id,
+        status: 'DRAFT',
+        draftRevision: 1,
         createdByUserId: f.principal.id,
       },
     });
@@ -638,8 +654,21 @@ integration('P4-061: Official Workload & Workload Adjustment PostgreSQL Integrat
       data: {
         academicYearId: f.year.id,
         plannedProgrammeOccurrenceId: occurrence.id,
-        slotOrder: 1,
         timeSlotDefinitionId: f.slot.id,
+      },
+    });
+    await harness.prisma.plannedSlotStaffing.create({
+      data: {
+        plannedOccurrenceSlotId: occSlot.id,
+        teacherUserId: input.teacherUserId,
+      },
+    });
+    await harness.prisma.plannedProgrammeOccurrence.update({
+      where: { id: occurrence.id },
+      data: {
+        status: 'PUBLISHED',
+        publishedByUserId: f.principal.id,
+        publishedAt: new Date('2026-08-01T00:00:00.000Z'),
       },
     });
 
@@ -654,23 +683,40 @@ integration('P4-061: Official Workload & Workload Adjustment PostgreSQL Integrat
         civilDate,
         status: SpecialActivityStatus.ACTIVE,
         scope: 'CLASS',
+        schoolClassId: f.schoolClass.id,
         title: 'Tiet GDDP',
         createRequestKey: crypto.randomUUID(),
         createRequestFingerprint: crypto.randomUUID(),
         createdByUserId: f.principal.id,
-        timeSlots: { create: { timeSlotDefinitionId: f.slot.id, academicYearId: f.year.id } },
-        staffing: {
-          create: {
-            scheduledTeacherUserId: input.teacherUserId,
-            staffProfileId: staffProfile.id,
-            eligibilityCheckedAt: new Date('2026-08-01Z'),
-            eligibilityWasActive: true,
-            eligibilityWasTeachingStaff: true,
-          },
-        },
-        classTargets: { create: { schoolClassId: f.schoolClass.id, academicYearId: f.year.id } },
+        createdAt: new Date('2026-09-10T00:00:00.000Z'),
       },
-      include: { timeSlots: true, staffing: true },
+    });
+
+    const activitySlot = await harness.prisma.specialActivityTimeSlot.create({
+      data: {
+        specialActivityId: activity.id,
+        academicYearId: f.year.id,
+        timeSlotDefinitionId: f.slot.id,
+      },
+    });
+
+    const activityStaffing = await harness.prisma.specialActivityStaffing.create({
+      data: {
+        specialActivityId: activity.id,
+        scheduledTeacherUserId: input.teacherUserId,
+        staffProfileId: staffProfile.id,
+        eligibilityCheckedAt: new Date('2026-08-01Z'),
+        eligibilityWasActive: true,
+        eligibilityWasTeachingStaff: true,
+      },
+    });
+
+    await harness.prisma.specialActivityClassTarget.create({
+      data: {
+        specialActivityId: activity.id,
+        academicYearId: f.year.id,
+        schoolClassId: f.schoolClass.id,
+      },
     });
 
     // 4. ProgrammeMaterializedActivity
@@ -682,6 +728,7 @@ integration('P4-061: Official Workload & Workload Adjustment PostgreSQL Integrat
         plannedProgrammeOccurrenceId: occurrence.id,
         plannedOccurrenceSlotId: occSlot.id,
         specialActivityId: activity.id,
+        materializedByUserId: f.principal.id,
         materializedAt: new Date('2026-09-01T00:00:00.000Z'),
       },
     });
@@ -691,9 +738,11 @@ integration('P4-061: Official Workload & Workload Adjustment PostgreSQL Integrat
       data: {
         academicYearId: f.year.id,
         specialActivityId: activity.id,
-        specialActivityStaffingId: activity.staffing[0]!.id,
-        specialActivityTimeSlotId: activity.timeSlots[0]!.id,
+        specialActivityStaffingId: activityStaffing.id,
+        specialActivityTimeSlotId: activitySlot.id,
         actualTeacherUserId: input.teacherUserId,
+        activityTitleSnapshot: activity.title,
+        actualTeacherDisplayNameSnapshot: 'Giao vien Thuc Day',
         executionCivilDate: civilDate,
         executionAcademicCalendarVersionId: f.calendar.id,
         executionTimeSlotDefinitionId: f.slot.id,
@@ -703,6 +752,7 @@ integration('P4-061: Official Workload & Workload Adjustment PostgreSQL Integrat
         createRequestKey: crypto.randomUUID(),
         createRequestFingerprint: crypto.randomUUID(),
         createdByUserId: input.teacherUserId,
+        createdAt: new Date('2026-09-10T00:00:00.000Z'),
       },
     });
 
@@ -712,15 +762,14 @@ integration('P4-061: Official Workload & Workload Adjustment PostgreSQL Integrat
         programmeMasterId: master.id,
         plannedProgrammeOccurrenceId: occurrence.id,
         attestedByUserId: f.principal.id,
-        authorityType: 'PRINCIPAL',
-        capabilityKey: 'SPECIAL_PROGRAMME_ATTESTATION',
+        authorityType: 'BGH_PRINCIPAL',
+        capabilityKey: 'APPROVAL_PRINCIPAL',
         scope: 'SCHOOL_WIDE',
         scopeResourceId: null,
         status: 'ACTIVE',
         attestedAt: new Date('2026-09-10T00:00:00.000Z'),
         createRequestKey: crypto.randomUUID(),
         createRequestFingerprint: crypto.randomUUID(),
-        createdByUserId: f.principal.id,
       },
     });
 
@@ -730,42 +779,86 @@ integration('P4-061: Official Workload & Workload Adjustment PostgreSQL Integrat
   // 1. WORKLOAD_ADJUSTMENT create/publish/resolve
   it('1. WORKLOAD_ADJUSTMENT create/publish/resolve', async () => {
     const f = await createBaseAcademicSetup();
-    await createWorkloadAdjustmentPolicy({
-      academicYearId: f.year.id,
-      authorUserId: f.principal.id,
-      baseWeeklyNorm: 18,
-      rules: [
-        {
-          ruleId: 'r_giam',
-          calculation: 'TRU_TIET',
-          value: 2,
-          priority: 10,
-          sourceKind: 'GENERAL',
-        },
-      ],
+
+    // Teacher A has an active homeroom assignment
+    await harness.prisma.homeroomAssignment.create({
+      data: {
+        academicYearId: f.year.id,
+        schoolClassId: f.schoolClass.id,
+        teacherUserId: f.teacherA.id,
+        validFrom: new Date('2026-09-01T00:00:00.000Z'),
+        status: HomeroomAssignmentStatus.ACTIVE,
+        createdByUserId: f.principal.id,
+      },
     });
+
+    // Create draft through production BusinessConfigurationService
+    const draftRes = await businessConfig.createDraft(
+      {
+        commandId: crypto.randomUUID(),
+        family: 'WORKLOAD_ADJUSTMENT',
+        resource: { kind: 'ACADEMIC_YEAR', academicYearId: f.year.id },
+        payload: {
+          baseWeeklyNorm: 18,
+          rules: [
+            {
+              ruleId: 'r_hr_1',
+              calculation: 'TRU_TIET',
+              value: 2,
+              priority: 10,
+              source: { kind: 'HOMEROOM_RESPONSIBILITY' },
+            },
+          ],
+        },
+        effectiveFrom: '2026-08-01',
+      },
+      f.principal.id,
+      { ipAddress: '127.0.0.1', userAgent: 'integration-test' },
+    );
+    expect(draftRes.outcome).toBe('CREATED');
+
+    // Publish through production BusinessConfigurationService
+    const pubRes = await businessConfig.publish(
+      draftRes.versionId,
+      { commandId: crypto.randomUUID() },
+      f.principal.id,
+      { ipAddress: '127.0.0.1', userAgent: 'integration-test' },
+    );
+    expect(pubRes.outcome).toBe('PUBLISHED');
 
     const resolvedPolicy = await businessConfig.resolveEffectiveBusinessPolicy(
       'WORKLOAD_ADJUSTMENT',
       { kind: 'ACADEMIC_YEAR', academicYearId: f.year.id },
-      '2026-09-01',
+      '2026-09-01' as CivilDateString,
       prisma,
     );
     expect(resolvedPolicy.outcome).toBe('RESOLVED');
+    expect(resolvedPolicy.policyVersionId).toBe(draftRes.versionId);
 
-    const res = await officialWorkload.projectOfficialWorkload(prisma, {
+    const res = await officialWorkload.resolve({
       academicYearId: f.year.id,
       targetUserId: f.teacherA.id,
-      fromCivilDate: '2026-09-01',
-      toCivilDate: '2026-09-30',
+      fromCivilDate: '2026-09-01' as CivilDateString,
+      toCivilDate: '2026-09-30' as CivilDateString,
       asOfInstant: asOf,
     });
 
     expect(res.status).toBe('PASS');
-    expect(res.adjustmentSegments).toHaveLength(1);
-    expect(res.adjustmentSegments[0]!.baseWeeklyNorm).toBe(18);
-    expect(res.adjustmentSegments[0]!.adjustedWeeklyNorm).toBe(16);
-    expect(res.adjustmentSegments[0]!.appliedRules).toHaveLength(1);
+    const eligible = res.adjustmentSegments.filter((s) => s.isWorkloadEligible);
+    const ineligible = res.adjustmentSegments.filter((s) => !s.isWorkloadEligible);
+    expect(eligible.length).toBeGreaterThan(0);
+    expect(ineligible.length).toBe(4); // 4 Sundays in Sept 2026
+    for (const seg of eligible) {
+      expect(seg.baseWeeklyNorm).toBe(18);
+      expect(seg.adjustedWeeklyNorm).toBe(16);
+      expect(seg.appliedRules).toHaveLength(1);
+      expect(seg.appliedRules[0]!.ruleId).toBe('r_hr_1');
+      expect(seg.appliedRules[0]!.sourceKind).toBe('HOMEROOM_RESPONSIBILITY');
+    }
+    for (const seg of ineligible) {
+      expect(seg.dailyRequiredCredit).toBe(0);
+      expect(seg.appliedRules).toHaveLength(0);
+    }
   });
 
   // 2. AdditionalDuty effective window
@@ -784,7 +877,8 @@ integration('P4-061: Official Workload & Workload Adjustment PostgreSQL Integrat
       where: { userId: f.teacherA.id },
     });
 
-    // Assignment active from 2026-09-01 to 2026-09-15
+    // Assignment active from 2026-09-01 (inclusive) to 2026-09-15 (exclusive)
+    // First date duty no longer applies is 2026-09-15
     await harness.prisma.staffAdditionalDutyAssignment.create({
       data: {
         staffProfileId: staffProfile.id,
@@ -806,39 +900,50 @@ integration('P4-061: Official Workload & Workload Adjustment PostgreSQL Integrat
           calculation: 'TRU_TIET',
           value: 3,
           priority: 10,
-          sourceKind: 'ADDITIONAL_DUTY',
-          dutyDefinitionId: dutyDef.id,
+          source: {
+            kind: 'ADDITIONAL_DUTY',
+            dutyDefinitionId: dutyDef.id,
+          },
         },
       ],
     });
 
-    const res = await officialWorkload.projectOfficialWorkload(prisma, {
+    const res = await officialWorkload.resolve({
       academicYearId: f.year.id,
       targetUserId: f.teacherA.id,
-      fromCivilDate: '2026-09-01',
-      toCivilDate: '2026-09-30',
+      fromCivilDate: '2026-09-01' as CivilDateString,
+      toCivilDate: '2026-09-30' as CivilDateString,
       asOfInstant: asOf,
     });
 
     expect(res.status).toBe('PASS');
-    expect(res.adjustmentSegments).toHaveLength(2);
-    // Segment 1 (with duty active)
-    expect(res.adjustmentSegments[0]!.fromCivilDate).toBe('2026-09-01');
-    expect(res.adjustmentSegments[0]!.toCivilDate).toBe('2026-09-15');
-    expect(res.adjustmentSegments[0]!.adjustedWeeklyNorm).toBe(15);
-    expect(res.adjustmentSegments[0]!.appliedRules).toHaveLength(1);
-    // Segment 2 (duty expired)
-    expect(res.adjustmentSegments[1]!.fromCivilDate).toBe('2026-09-16');
-    expect(res.adjustmentSegments[1]!.toCivilDate).toBe('2026-09-30');
-    expect(res.adjustmentSegments[1]!.adjustedWeeklyNorm).toBe(18);
-    expect(res.adjustmentSegments[1]!.appliedRules).toHaveLength(0);
+    // Prior to 2026-09-15 (active duty):
+    const eligibleBefore = res.adjustmentSegments.filter(
+      (s) => s.isWorkloadEligible && s.toCivilDate < '2026-09-15',
+    );
+    expect(eligibleBefore.length).toBeGreaterThan(0);
+    for (const s of eligibleBefore) {
+      expect(s.adjustedWeeklyNorm).toBe(15);
+      expect(s.appliedRules).toHaveLength(1);
+      expect(s.appliedRules[0]!.ruleId).toBe('r_tt');
+    }
+    // On and after 2026-09-15 (duty expired on 2026-09-15):
+    const eligibleAfter = res.adjustmentSegments.filter(
+      (s) => s.isWorkloadEligible && s.fromCivilDate >= '2026-09-15',
+    );
+    expect(eligibleAfter.length).toBeGreaterThan(0);
+    expect(eligibleAfter[0]!.fromCivilDate).toBe('2026-09-15');
+    for (const s of eligibleAfter) {
+      expect(s.adjustedWeeklyNorm).toBe(18);
+      expect(s.appliedRules).toHaveLength(0);
+    }
   });
 
   // 3. Homeroom effective window
   it('3. Homeroom effective window', async () => {
     const f = await createBaseAcademicSetup();
 
-    // Homeroom assignment active from 2026-09-01 to 2026-09-10
+    // Homeroom assignment active from 2026-09-01 to 2026-09-10 (inclusive)
     await harness.prisma.homeroomAssignment.create({
       data: {
         academicYearId: f.year.id,
@@ -861,31 +966,40 @@ integration('P4-061: Official Workload & Workload Adjustment PostgreSQL Integrat
           calculation: 'TRU_TIET',
           value: 4,
           priority: 10,
-          sourceKind: 'HOMEROOM_RESPONSIBILITY',
+          source: {
+            kind: 'HOMEROOM_RESPONSIBILITY',
+          },
         },
       ],
     });
 
-    const res = await officialWorkload.projectOfficialWorkload(prisma, {
+    const res = await officialWorkload.resolve({
       academicYearId: f.year.id,
       targetUserId: f.teacherA.id,
-      fromCivilDate: '2026-09-01',
-      toCivilDate: '2026-09-30',
+      fromCivilDate: '2026-09-01' as CivilDateString,
+      toCivilDate: '2026-09-30' as CivilDateString,
       asOfInstant: asOf,
     });
 
     expect(res.status).toBe('PASS');
-    expect(res.adjustmentSegments).toHaveLength(2);
-    // Segment 1 (homeroom active)
-    expect(res.adjustmentSegments[0]!.fromCivilDate).toBe('2026-09-01');
-    expect(res.adjustmentSegments[0]!.toCivilDate).toBe('2026-09-10');
-    expect(res.adjustmentSegments[0]!.adjustedWeeklyNorm).toBe(14);
-    expect(res.adjustmentSegments[0]!.appliedRules).toHaveLength(1);
-    // Segment 2 (homeroom expired)
-    expect(res.adjustmentSegments[1]!.fromCivilDate).toBe('2026-09-11');
-    expect(res.adjustmentSegments[1]!.toCivilDate).toBe('2026-09-30');
-    expect(res.adjustmentSegments[1]!.adjustedWeeklyNorm).toBe(18);
-    expect(res.adjustmentSegments[1]!.appliedRules).toHaveLength(0);
+    const eligibleBefore = res.adjustmentSegments.filter(
+      (s) => s.isWorkloadEligible && s.toCivilDate <= '2026-09-10',
+    );
+    expect(eligibleBefore.length).toBeGreaterThan(0);
+    for (const s of eligibleBefore) {
+      expect(s.adjustedWeeklyNorm).toBe(14);
+      expect(s.appliedRules).toHaveLength(1);
+      expect(s.appliedRules[0]!.ruleId).toBe('r_gvcn');
+    }
+
+    const eligibleAfter = res.adjustmentSegments.filter(
+      (s) => s.isWorkloadEligible && s.fromCivilDate > '2026-09-10',
+    );
+    expect(eligibleAfter.length).toBeGreaterThan(0);
+    for (const s of eligibleAfter) {
+      expect(s.adjustedWeeklyNorm).toBe(18);
+      expect(s.appliedRules).toHaveLength(0);
+    }
   });
 
   // 4. ACTIVE NORMAL actual-teacher credit
@@ -900,17 +1014,17 @@ integration('P4-061: Official Workload & Workload Adjustment PostgreSQL Integrat
     await createCurricularExecution({ f, actualTeacherUserId: f.teacherA.id, executionCivilDate: '2026-09-07' });
     await createCurricularExecution({ f, actualTeacherUserId: f.teacherA.id, executionCivilDate: '2026-09-14' });
 
-    const res = await officialWorkload.projectOfficialWorkload(prisma, {
+    const res = await officialWorkload.resolve({
       academicYearId: f.year.id,
       targetUserId: f.teacherA.id,
-      fromCivilDate: '2026-09-01',
-      toCivilDate: '2026-09-30',
+      fromCivilDate: '2026-09-01' as CivilDateString,
+      toCivilDate: '2026-09-30' as CivilDateString,
       asOfInstant: asOf,
     });
 
     expect(res.status).toBe('PASS');
-    expect(res.curricularCredit).toBe(2);
-    expect(res.curricularContributions).toHaveLength(2);
+    expect(res.curricularWorkload.totalCredit).toBe(2);
+    expect(res.curricularWorkload.contributions).toHaveLength(2);
   });
 
   // 5. SAME_SUBJECT_SUBSTITUTION credits substitute only
@@ -931,24 +1045,24 @@ integration('P4-061: Official Workload & Workload Adjustment PostgreSQL Integrat
     });
 
     // Check teacherB (substitute)
-    const resB = await officialWorkload.projectOfficialWorkload(prisma, {
+    const resB = await officialWorkload.resolve({
       academicYearId: f.year.id,
       targetUserId: f.teacherB.id,
-      fromCivilDate: '2026-09-01',
-      toCivilDate: '2026-09-30',
+      fromCivilDate: '2026-09-01' as CivilDateString,
+      toCivilDate: '2026-09-30' as CivilDateString,
       asOfInstant: asOf,
     });
-    expect(resB.curricularCredit).toBe(1);
+    expect(resB.curricularWorkload.totalCredit).toBe(1);
 
     // Check teacherA (responsible)
-    const resA = await officialWorkload.projectOfficialWorkload(prisma, {
+    const resA = await officialWorkload.resolve({
       academicYearId: f.year.id,
       targetUserId: f.teacherA.id,
-      fromCivilDate: '2026-09-01',
-      toCivilDate: '2026-09-30',
+      fromCivilDate: '2026-09-01' as CivilDateString,
+      toCivilDate: '2026-09-30' as CivilDateString,
       asOfInstant: asOf,
     });
-    expect(resA.curricularCredit).toBe(0);
+    expect(resA.curricularWorkload.totalCredit).toBe(0);
   });
 
   // 6. MAKEUP execution-date ownership
@@ -1000,24 +1114,24 @@ integration('P4-061: Official Workload & Workload Adjustment PostgreSQL Integrat
     });
 
     // Query covering originalCivilDate (2026-09-01..2026-09-10) => credit = 0
-    const earlyRes = await officialWorkload.projectOfficialWorkload(prisma, {
+    const earlyRes = await officialWorkload.resolve({
       academicYearId: f.year.id,
       targetUserId: f.teacherA.id,
-      fromCivilDate: '2026-09-01',
-      toCivilDate: '2026-09-10',
+      fromCivilDate: '2026-09-01' as CivilDateString,
+      toCivilDate: '2026-09-10' as CivilDateString,
       asOfInstant: asOf,
     });
-    expect(earlyRes.curricularCredit).toBe(0);
+    expect(earlyRes.curricularWorkload.totalCredit).toBe(0);
 
     // Query covering executionCivilDate (2026-09-15..2026-09-25) => credit = 1
-    const lateRes = await officialWorkload.projectOfficialWorkload(prisma, {
+    const lateRes = await officialWorkload.resolve({
       academicYearId: f.year.id,
       targetUserId: f.teacherA.id,
-      fromCivilDate: '2026-09-15',
-      toCivilDate: '2026-09-25',
+      fromCivilDate: '2026-09-15' as CivilDateString,
+      toCivilDate: '2026-09-25' as CivilDateString,
       asOfInstant: asOf,
     });
-    expect(lateRes.curricularCredit).toBe(1);
+    expect(lateRes.curricularWorkload.totalCredit).toBe(1);
   });
 
   // 7. REVERSED execution exclusion
@@ -1041,16 +1155,16 @@ integration('P4-061: Official Workload & Workload Adjustment PostgreSQL Integrat
       executionCivilDate: '2026-09-14',
     });
 
-    const res = await officialWorkload.projectOfficialWorkload(prisma, {
+    const res = await officialWorkload.resolve({
       academicYearId: f.year.id,
       targetUserId: f.teacherA.id,
-      fromCivilDate: '2026-09-01',
-      toCivilDate: '2026-09-30',
+      fromCivilDate: '2026-09-01' as CivilDateString,
+      toCivilDate: '2026-09-30' as CivilDateString,
       asOfInstant: asOf,
     });
 
-    expect(res.curricularCredit).toBe(1);
-    expect(res.curricularContributions).toHaveLength(1);
+    expect(res.curricularWorkload.totalCredit).toBe(1);
+    expect(res.curricularWorkload.contributions).toHaveLength(1);
   });
 
   // 8. combined curricular + P4-050 credit (real non-zero P4-050 contribution)
@@ -1072,23 +1186,23 @@ integration('P4-061: Official Workload & Workload Adjustment PostgreSQL Integrat
     await createNonZeroSpecialProgrammeWorkload({
       f,
       teacherUserId: f.teacherA.id,
-      civilDateStr: '2026-09-08',
+      civilDateStr: '2026-09-14',
       coefficient: 1.5,
     });
 
-    const res = await officialWorkload.projectOfficialWorkload(prisma, {
+    const res = await officialWorkload.resolve({
       academicYearId: f.year.id,
       targetUserId: f.teacherA.id,
-      fromCivilDate: '2026-09-01',
-      toCivilDate: '2026-09-30',
+      fromCivilDate: '2026-09-01' as CivilDateString,
+      toCivilDate: '2026-09-30' as CivilDateString,
       asOfInstant: asOf,
     });
 
     expect(res.status).toBe('PASS');
-    expect(res.curricularCredit).toBe(1);
-    expect(res.specialProgrammeCredit).toBe(1.5);
+    expect(res.curricularWorkload.totalCredit).toBe(1);
+    expect(res.specialProgrammeWorkload.totalCredit).toBe(1.5);
     expect(res.earnedCredit).toBe(2.5);
-    expect(res.earnedCredit).toBe(res.curricularCredit + res.specialProgrammeCredit);
+    expect(res.earnedCredit).toBe(res.curricularWorkload.totalCredit! + res.specialProgrammeWorkload.totalCredit!);
     expect(res.specialProgrammeWorkload.contributions).toHaveLength(1);
     expect(res.specialProgrammeWorkload.contributions[0]!.credit).toBe(1.5);
   });
@@ -1103,18 +1217,44 @@ integration('P4-061: Official Workload & Workload Adjustment PostgreSQL Integrat
     });
 
     // Partial range: exactly 10 civil days (2026-09-05 to 2026-09-14)
-    const res = await officialWorkload.projectOfficialWorkload(prisma, {
+    // Mon-Sat teaching weekdays => 8 eligible dates, Sundays (06 and 13) are ineligible
+    const res = await officialWorkload.resolve({
       academicYearId: f.year.id,
       targetUserId: f.teacherA.id,
-      fromCivilDate: '2026-09-05',
-      toCivilDate: '2026-09-14',
+      fromCivilDate: '2026-09-05' as CivilDateString,
+      toCivilDate: '2026-09-14' as CivilDateString,
       asOfInstant: asOf,
     });
 
-    expect(res.adjustmentSegments).toHaveLength(1);
+    expect(res.status).toBe('PASS');
+    expect(res.adjustmentSegments).toHaveLength(5);
+    expect(res.adjustmentSegments[0]!.fromCivilDate).toBe('2026-09-05');
+    expect(res.adjustmentSegments[0]!.toCivilDate).toBe('2026-09-05');
+    expect(res.adjustmentSegments[0]!.isWorkloadEligible).toBe(true);
     expect(res.adjustmentSegments[0]!.dailyRequiredCredit).toBe(3);
-    // 10 days * 3 credit/day = 30 required credit
-    expect(res.requiredCredit).toBe(30);
+
+    expect(res.adjustmentSegments[1]!.fromCivilDate).toBe('2026-09-06');
+    expect(res.adjustmentSegments[1]!.toCivilDate).toBe('2026-09-06');
+    expect(res.adjustmentSegments[1]!.isWorkloadEligible).toBe(false);
+    expect(res.adjustmentSegments[1]!.dailyRequiredCredit).toBe(0);
+
+    expect(res.adjustmentSegments[2]!.fromCivilDate).toBe('2026-09-07');
+    expect(res.adjustmentSegments[2]!.toCivilDate).toBe('2026-09-12');
+    expect(res.adjustmentSegments[2]!.isWorkloadEligible).toBe(true);
+    expect(res.adjustmentSegments[2]!.dailyRequiredCredit).toBe(3);
+
+    expect(res.adjustmentSegments[3]!.fromCivilDate).toBe('2026-09-13');
+    expect(res.adjustmentSegments[3]!.toCivilDate).toBe('2026-09-13');
+    expect(res.adjustmentSegments[3]!.isWorkloadEligible).toBe(false);
+    expect(res.adjustmentSegments[3]!.dailyRequiredCredit).toBe(0);
+
+    expect(res.adjustmentSegments[4]!.fromCivilDate).toBe('2026-09-14');
+    expect(res.adjustmentSegments[4]!.toCivilDate).toBe('2026-09-14');
+    expect(res.adjustmentSegments[4]!.isWorkloadEligible).toBe(true);
+    expect(res.adjustmentSegments[4]!.dailyRequiredCredit).toBe(3);
+
+    // 8 eligible days * 3 credit/day = 24 required credit (NOT 30!)
+    expect(res.requiredCredit).toBe(24);
   });
 
   // 10. policy change inside report range
@@ -1141,22 +1281,26 @@ integration('P4-061: Official Workload & Workload Adjustment PostgreSQL Integrat
       effectiveUntil: null,
     });
 
-    const res = await officialWorkload.projectOfficialWorkload(prisma, {
+    const res = await officialWorkload.resolve({
       academicYearId: f.year.id,
       targetUserId: f.teacherA.id,
-      fromCivilDate: '2026-09-01',
-      toCivilDate: '2026-09-30',
+      fromCivilDate: '2026-09-01' as CivilDateString,
+      toCivilDate: '2026-09-30' as CivilDateString,
       asOfInstant: asOf,
     });
 
-    expect(res.adjustmentSegments).toHaveLength(2);
-    expect(res.adjustmentSegments[0]!.fromCivilDate).toBe('2026-09-01');
-    expect(res.adjustmentSegments[0]!.toCivilDate).toBe('2026-09-14');
-    expect(res.adjustmentSegments[0]!.baseWeeklyNorm).toBe(18);
+    expect(res.status).toBe('PASS');
+    const eligibleP1 = res.adjustmentSegments.filter((s) => s.isWorkloadEligible && s.toCivilDate <= '2026-09-14');
+    expect(eligibleP1.length).toBeGreaterThan(0);
+    for (const s of eligibleP1) {
+      expect(s.baseWeeklyNorm).toBe(18);
+    }
 
-    expect(res.adjustmentSegments[1]!.fromCivilDate).toBe('2026-09-15');
-    expect(res.adjustmentSegments[1]!.toCivilDate).toBe('2026-09-30');
-    expect(res.adjustmentSegments[1]!.baseWeeklyNorm).toBe(12);
+    const eligibleP2 = res.adjustmentSegments.filter((s) => s.isWorkloadEligible && s.fromCivilDate >= '2026-09-15');
+    expect(eligibleP2.length).toBeGreaterThan(0);
+    for (const s of eligibleP2) {
+      expect(s.baseWeeklyNorm).toBe(12);
+    }
   });
 
   // 11. Reporting Statement submit persists SNAPSHOT_V4
@@ -1174,14 +1318,14 @@ integration('P4-061: Official Workload & Workload Adjustment PostgreSQL Integrat
       executionCivilDate: '2026-09-07',
     });
 
-    mockProjectionService.resolveInTransaction.mockResolvedValue({
+    mockProjectionService.resolveInTransaction.mockImplementation(async (_tx: unknown, input: { asOfInstant: Date }) => ({
       profile: 'PERSONAL_TEACHING_REPORTING_PROJECTION_V1',
       scope: {
         academicYearId: f.year.id,
         targetUserId: f.teacherA.id,
         fromCivilDate: '2026-09-01',
         toCivilDate: '2026-09-30',
-        asOfInstant: asOf,
+        asOfInstant: input.asOfInstant,
       },
       status: 'PASS',
       counts: { distributedElapsedCount: 1, completedCount: 1, openDebtCount: 0, lateCount: 0, unconfirmedGapCount: 0 },
@@ -1197,39 +1341,59 @@ integration('P4-061: Official Workload & Workload Adjustment PostgreSQL Integrat
       ],
       sections: [],
       findings: [],
-      evaluatedAt: asOf.toISOString(),
-    });
+      evaluatedAt: input.asOfInstant.toISOString(),
+    }));
 
     // Grant capability so authorization check passes
     await harness.seedCapabilities([
       { key: 'REPORTING_STATEMENT_SUBMIT', scopes: ['PERSONAL'] },
       { key: 'REPORTING_STATEMENT_READ', scopes: ['PERSONAL'] },
     ]);
+    await harness.prisma.capabilityGrant.createMany({
+      data: [
+        {
+          userId: f.teacherA.id,
+          capabilityKey: 'REPORTING_STATEMENT_SUBMIT',
+          scopeType: 'PERSONAL',
+          validFrom: new Date(Date.now() - 60_000),
+        },
+        {
+          userId: f.teacherA.id,
+          capabilityKey: 'REPORTING_STATEMENT_READ',
+          scopeType: 'PERSONAL',
+          validFrom: new Date(Date.now() - 60_000),
+        },
+      ],
+    });
 
     const submitRes = await reportingService.submit(
       {
-        statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
         academicYearId: f.year.id,
         fromCivilDate: '2026-09-01' as CivilDateString,
         toCivilDate: '2026-09-30' as CivilDateString,
         requestKey: crypto.randomUUID(),
       },
-      { auth: { user: { id: f.teacherA.id, mustChangePassword: false } } } as never,
+      {
+        auth: { user: { id: f.teacherA.id, mustChangePassword: false } },
+        headers: { 'user-agent': 'integration-test' },
+        ip: '127.0.0.1',
+      } as never,
     );
 
-    expect(submitRes.outcome).toBe('CREATED');
     expect(submitRes.revisionId).toBeTruthy();
+    expect(submitRes.lifecycleState).toBe('SUBMITTED');
 
     const revision = await harness.prisma.reportingStatementRevision.findUniqueOrThrow({
       where: { id: submitRes.revisionId },
     });
 
     expect(revision.snapshotProfile).toBe(REPORTING_STATEMENT_SNAPSHOT_V4);
-    expect(revision.serializerVersion).toBe('REPORTING_STATEMENT_SERIALIZER_V1');
+    expect(revision.serializerVersion).toBe('REPORTING_STATEMENT_CANONICAL_JSON_V1');
     expect(revision.semanticHash).toBeTruthy();
 
     const parsedSnapshot = JSON.parse(revision.canonicalSnapshotJson);
     expect(parsedSnapshot.snapshotProfile).toBe(REPORTING_STATEMENT_SNAPSHOT_V4);
+    expect(parsedSnapshot.serializerVersion).toBe('REPORTING_STATEMENT_CANONICAL_JSON_V1');
     expect(parsedSnapshot.officialWorkload).toBeDefined();
     expect(parsedSnapshot.officialWorkload.curricularCredit).toBe(1);
 
@@ -1239,7 +1403,7 @@ integration('P4-061: Official Workload & Workload Adjustment PostgreSQL Integrat
         canonicalSnapshotJson: revision.canonicalSnapshotJson,
         semanticHash: revision.semanticHash,
         frozenSubjectIds: [f.subject.id],
-      } as never),
+      }),
     ).not.toThrow();
   });
 
@@ -1258,14 +1422,14 @@ integration('P4-061: Official Workload & Workload Adjustment PostgreSQL Integrat
       executionCivilDate: '2026-09-07',
     });
 
-    mockProjectionService.resolveInTransaction.mockResolvedValue({
+    mockProjectionService.resolveInTransaction.mockImplementation(async (_tx: unknown, input: { asOfInstant: Date }) => ({
       profile: 'PERSONAL_TEACHING_REPORTING_PROJECTION_V1',
       scope: {
         academicYearId: f.year.id,
         targetUserId: f.teacherA.id,
         fromCivilDate: '2026-09-01',
         toCivilDate: '2026-09-30',
-        asOfInstant: asOf,
+        asOfInstant: input.asOfInstant,
       },
       status: 'PASS',
       counts: { distributedElapsedCount: 1, completedCount: 1, openDebtCount: 0, lateCount: 0, unconfirmedGapCount: 0 },
@@ -1281,23 +1445,42 @@ integration('P4-061: Official Workload & Workload Adjustment PostgreSQL Integrat
       ],
       sections: [],
       findings: [],
-      evaluatedAt: asOf.toISOString(),
-    });
+      evaluatedAt: input.asOfInstant.toISOString(),
+    }));
 
     await harness.seedCapabilities([
       { key: 'REPORTING_STATEMENT_SUBMIT', scopes: ['PERSONAL'] },
       { key: 'REPORTING_STATEMENT_READ', scopes: ['PERSONAL'] },
     ]);
+    await harness.prisma.capabilityGrant.createMany({
+      data: [
+        {
+          userId: f.teacherA.id,
+          capabilityKey: 'REPORTING_STATEMENT_SUBMIT',
+          scopeType: 'PERSONAL',
+          validFrom: new Date(Date.now() - 60_000),
+        },
+        {
+          userId: f.teacherA.id,
+          capabilityKey: 'REPORTING_STATEMENT_READ',
+          scopeType: 'PERSONAL',
+          validFrom: new Date(Date.now() - 60_000),
+        },
+      ],
+    });
 
     const submitRes = await reportingService.submit(
       {
-        statementProfile: 'PERSONAL_TEACHING_REPORTING_STATEMENT_V1',
         academicYearId: f.year.id,
         fromCivilDate: '2026-09-01' as CivilDateString,
         toCivilDate: '2026-09-30' as CivilDateString,
         requestKey: crypto.randomUUID(),
       },
-      { auth: { user: { id: f.teacherA.id, mustChangePassword: false } } } as never,
+      {
+        auth: { user: { id: f.teacherA.id, mustChangePassword: false } },
+        headers: { 'user-agent': 'integration-test' },
+        ip: '127.0.0.1',
+      } as never,
     );
 
     const revisionBefore = await harness.prisma.reportingStatementRevision.findUniqueOrThrow({
@@ -1308,11 +1491,24 @@ integration('P4-061: Official Workload & Workload Adjustment PostgreSQL Integrat
 
     // Mutate downstream authorities after submit:
     // 1. Mutate WORKLOAD_ADJUSTMENT policy
+    await harness.prisma.businessPolicyVersion.updateMany({
+      where: {
+        stream: {
+          familyKey: 'WORKLOAD_ADJUSTMENT',
+          academicYearId: f.year.id,
+        },
+      },
+      data: {
+        effectiveUntil: new Date('2026-09-14T00:00:00.000Z'),
+      },
+    });
     await createWorkloadAdjustmentPolicy({
       academicYearId: f.year.id,
       authorUserId: f.principal.id,
       baseWeeklyNorm: 30, // Changed from 18 to 30
       versionNumber: 2,
+      effectiveFrom: new Date('2026-09-15T00:00:00.000Z'),
+      effectiveUntil: null,
     });
 
     // 2. Mutate StaffAdditionalDutyAssignment
@@ -1358,9 +1554,21 @@ integration('P4-061: Official Workload & Workload Adjustment PostgreSQL Integrat
     expect(revisionAfter.canonicalSnapshotJson).toBe(frozenJsonBefore);
     expect(revisionAfter.semanticHash).toBe(semanticHashBefore);
 
-    // Present detail still faithfully represents the frozen snapshot
-    const presented = presentReportingStatementDetail(revisionAfter.canonicalSnapshotJson as never);
+    // Read detail through canonical production service read path (which invokes repository loader & presenter)
+    const presented = await reportingService.read(
+      submitRes.revisionId,
+      {
+        auth: { user: { id: f.teacherA.id, mustChangePassword: false } },
+        headers: { 'user-agent': 'integration-test' },
+        ip: '127.0.0.1',
+      } as never,
+    );
     expect(presented.officialWorkload).toBeDefined();
-    expect(presented.officialWorkload!.adjustmentSegments[0]!.baseWeeklyNorm).toBe(18); // Kept 18, not mutated to 30
+    const eligibleSegments = presented.officialWorkload!.adjustmentSegments.filter((s) => s.isWorkloadEligible);
+    expect(eligibleSegments.length).toBeGreaterThan(0);
+    for (const s of eligibleSegments) {
+      expect(s.baseWeeklyNorm).toBe(18); // Kept 18 from frozen snapshot, not mutated to 30
+      expect(s.appliedRules).toHaveLength(0); // Kept 0 applied rules from frozen snapshot, not mutated
+    }
   });
 });
