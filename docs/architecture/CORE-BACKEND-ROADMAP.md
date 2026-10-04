@@ -124,7 +124,7 @@ Exact task statuses and prerequisites are maintained authoritatively in `PRE-PIL
 3. Programme coordinator/BGH authorization (`P4-030`, `CLOSED` by `SYNC-P4-030`): exact coordinator master binding (`ACTIVITY + exact ProgrammeMaster.id`), BGH professional fallback (`APPROVAL_PRINCIPAL` / `APPROVAL_VICE_PRINCIPAL`, `SCHOOL_WIDE`), and guarded `/api/programme-planning` HTTP surface.
 4. GDĐP `AcademicYear + Grade` and HĐTN `CLASS / GRADE / SCHOOL_WIDE` planning semantics and commands are guarded by coordinator/BGH authorization.
 5. Date-effective homeroom resolution/freeze for class activities remains owned by the runtime bridge.
-6. Deterministic bridge into existing SpecialActivity runtime primitive and attestation runtime (`P4-040`, `READY`).
+6. Deterministic bridge into existing SpecialActivity runtime primitive and attestation runtime (`P4-040`, `CLOSED` by `SYNC-P4-040`).
 7. Confirmed activity teacher-slot workload/reporting aggregation (`P4-050`).
 8. WorkloadAdjustmentRule and official actual-teacher workload re-entry are REQUIRED for the selected complete FULL BUSINESS pilot: `P4-060` is IN_REVIEW under proposed ADR-057; after closure, `P4-061` implements earned curricular + reused P4-050 special-programme workload, adjusted required norm and Snapshot V4.
 
