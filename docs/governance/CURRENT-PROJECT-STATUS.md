@@ -44,11 +44,10 @@ Parent closure evidence:
 
 ### In Review
 
-- None on the immediate P5 path.
+- `P5-020` — PWA production baseline — **`IN_REVIEW`** (`feat/p5-020-pwa-production-baseline`, canonical start `main@7ef20def783f17ef07a5881bf7d61060c3486199`; delivers installable PWA baseline, Workbox GenerateSW service worker with strict `/api` exclusion/NetworkOnly boundary, prompted update UI notice, deterministic verifiers; zero caching of `/api`/auth/reporting data; production remains PRE-OPERATIONAL).
 
 ### Ready
 
-- `P5-020` — PWA production baseline — **`READY`**.
 - `P5-030` — dedicated Báo giảng Telegram integration — **`READY`**.
 
 ### Planned behind open dependencies
@@ -91,7 +90,7 @@ The project is **NOT READY FOR TEACHER PILOT YET**. Remaining registered gaps in
 
 1. `P3-030`, `P3-031`, `P4-060`, `P4-061` and `P5-010` are CLOSED by their non-recursive sync closures; the complete FULL BUSINESS cross-domain freeze is established.
 2. Public make-up scheduling T08 and adjusted-workload T23 re-entry paths are fulfilled by the closed P3-031 and P4-061 chains and were re-verified in P5-010.
-3. PWA production baseline (`P5-020`) remains absent but is now **`READY`**.
+3. PWA production baseline (`P5-020`) is implemented on `feat/p5-020-pwa-production-baseline` and is **`IN_REVIEW`**.
 4. Dedicated Báo giảng Telegram integration (`P5-030`) remains absent but is now **`READY`**.
 5. Official production Stage 1 passive discovery/preflight (`P6-020`) remains trigger-gated and has not been executed; P5-010 closure alone does not authorize production access.
 6. Production bootstrap/first controlled deploy (`P6-030`) has not occurred.
