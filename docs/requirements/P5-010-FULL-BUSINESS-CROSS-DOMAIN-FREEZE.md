@@ -2,7 +2,7 @@
 
 ## Status
 
-`IN_REVIEW` on branch `feat/p5-010-full-business-cross-domain-freeze` (Review Correction 003 applied: final evidence alignment)
+`CLOSED` by `SYNC-P5-010`.
 
 ## Canonical Start
 
@@ -11,6 +11,20 @@
 - **Task branch**: `feat/p5-010-full-business-cross-domain-freeze`
 - **Governing ADR**: `docs/decisions/ADR-054-FIRST-OPERATIONAL-PILOT-SCOPE.md`
 - **Parent Task**: `P5-010` (`Pilot business scope + cross-domain freeze`)
+
+## Closure Evidence
+
+- Parent branch: `feat/p5-010-full-business-cross-domain-freeze`
+- Canonical parent start: `main@c4321d5630b60296279e7a054206a80a093aa97a`
+- Final independently reviewed parent head: `7206b7b446a8a7fb88879a01dfbc9e55fe31f50c`
+- Independent review: **PASS** after bounded forward Corrections 001–003; zero unresolved review threads
+- Parent PR: #193
+- Exact-head parent CI: #636 / run `37323185530` — **SUCCESS**
+- Normal parent merge/main: `85475af124af276f49b990aac844d6ae8d26ba03`
+- Authoritative parent post-merge CI: #637 / run `37328312557` — **SUCCESS**
+- Residual correction/re-entry tasks: **none**
+- Production/runtime/schema/migration/auth/CI/CD/deploy/VPS mutation: **none**
+- Formal closure: `SYNC-P5-010`
 
 ## Direct Dependencies
 

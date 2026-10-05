@@ -22,37 +22,38 @@ Exact current `main`, branch HEAD and divergence must always be read directly fr
 
 ## Last formally closed major task
 
-`P4-061` — Workload adjustment + official workload implementation — **`CLOSED`** by `SYNC-P4-061`.
+`P5-010` — Pilot business scope + cross-domain freeze — **`CLOSED`** by `SYNC-P5-010`.
 
 Parent closure evidence:
 
-- parent branch: `feat/p4-061-workload-adjustment-runtime`;
-- canonical parent start: `main@cb6f0228bc6134f7e937f52bcba93a32239030dd`;
-- final reviewed parent head: `e29d44d1b7fdd004aba967b42559eac55279a726`;
-- parent PR #191;
-- exact-head parent CI #632 / run `37219956349` — **SUCCESS**;
-- independent exact-code/diff review: **PASS**; all review corrections and bounded CI fixture corrections were absorbed forward-only; zero unresolved review threads;
-- normal parent merge/main: `f90971eecf806304bbb6b0f4e9e364802426bbad`;
-- authoritative parent post-merge CI #633 / run `37254808293` — **SUCCESS**;
-- delivered strict `WORKLOAD_ADJUSTMENT / v1 / ACADEMIC_YEAR` policy authority, actual-teacher curricular earned workload, P4-050 special-programme workload reuse, adjusted required-credit proration, combined earned/required/variance projection, Reporting Statement Snapshot V4 frozen provenance/integrity and typed Vietnamese UI;
-- no schema/migration/deploy/VPS or production mutation; production remains PRE-OPERATIONAL.
+- parent branch: `feat/p5-010-full-business-cross-domain-freeze`;
+- canonical parent start: `main@c4321d5630b60296279e7a054206a80a093aa97a`;
+- final reviewed parent head: `7206b7b446a8a7fb88879a01dfbc9e55fe31f50c`;
+- parent PR #193;
+- exact-head parent CI #636 / run `37323185530` — **SUCCESS**;
+- independent exact-code/evidence review: **PASS** after bounded forward Corrections 001–003; zero unresolved review threads;
+- normal parent merge/main: `85475af124af276f49b990aac844d6ae8d26ba03`;
+- authoritative parent post-merge CI #637 / run `37328312557` — **SUCCESS**;
+- delivered the FULL BUSINESS cross-domain regression/evidence freeze across curricular execution/progression, delayed go-live/history, public make-up, GDĐP/HĐTN-HN, date-effective homeroom, multi-teacher anti-double-count, workload adjustment, official workload, Snapshot V4 and Teacher Workspace effective schedule;
+- no production source/schema/migration/auth/CI/CD/deploy/VPS mutation; production remains PRE-OPERATIONAL;
+- no residual correction/re-entry task emerged from review or post-merge CI.
 
-All direct dependencies of `P5-010` are CLOSED. `P5-010` is **`IN_REVIEW`** on branch `feat/p5-010-full-business-cross-domain-freeze`.
+`P5-020` and `P5-030` are now **`READY`** because their sole dependency `P5-010` is CLOSED. `P6-020` remains **`DEFERRED_WITH_TRIGGER`** until the exact pilot build is explicitly approved as a production deployment candidate.
 
 ## Active / next critical path
 
 ### In Review
 
-- `P5-010` — Pilot business scope + cross-domain freeze — **`IN_REVIEW`** on branch `feat/p5-010-full-business-cross-domain-freeze`; canonical start `main@c4321d5630b60296279e7a054206a80a093aa97a`. Correction 002 & 003 executed: P5-010 Traceability Audit Matrix aligned strictly with canonical `PRE-PILOT-TRACEABILITY-MATRIX.md` meanings and evidence; final evidence gaps closed (Scenario 8 asserts required/variance in same projection, Scenario 9 independent required calculation, exact T21 fail-closed provenance wording); all 12 cross-domain scenarios use production service paths (`apps/api/test/pilot-business-freeze/p5-010-full-business-freeze.integration.spec.ts`, 12/12 PASS); targeted authoritative domain integration suites verified without overclaim; zero schema changes, zero migrations, zero production/VPS mutation; ready for independent re-review.
+- None on the immediate P5 path.
 
 ### Ready
 
-- None on the immediate P5 path (`P5-010` is `IN_REVIEW`).
+- `P5-020` — PWA production baseline — **`READY`**.
+- `P5-030` — dedicated Báo giảng Telegram integration — **`READY`**.
 
 ### Planned behind open dependencies
 
-- `P5-020` — PWA production baseline — **`PLANNED`** behind `P5-010`.
-- `P5-030` — dedicated Báo giảng Telegram integration — **`PLANNED`** behind `P5-010`.
+- None on the immediate P5 path.
 
 ### Trigger-gated / decision-blocked
 - `P0-002` — stale PR #11 hosting-portability direction: **`BLOCKED_DECISION`**.
@@ -78,7 +79,7 @@ The capacity audit is decision evidence, not production-readiness evidence. Offi
 
 ## Implemented foundation relevant to pilot
 
-Canonical `main` contains reviewed implementation for identity/auth, authorization/audit, retained calendar and teaching responsibility history, HomeroomAssignment, timetable/native TKB ingestion, component-aware PPCT, operational overlays, SpecialActivity, GDĐP/HĐTN planning/import/lifecycle/workload, execution evidence, progress/debt/late, Reporting Statement, Business Configuration/operational-start, school-wide effective teaching schedule, P4-061 official workload/adjustment runtime and the hardened Windows production deployment control plane.
+Canonical `main` contains reviewed implementation for identity/auth, authorization/audit, retained calendar and teaching responsibility history, HomeroomAssignment, timetable/native TKB ingestion, component-aware PPCT, operational overlays, SpecialActivity, GDĐP/HĐTN planning/import/lifecycle/workload, execution evidence, progress/debt/late, Reporting Statement, Business Configuration/operational-start, school-wide effective teaching schedule, P4-061 official workload/adjustment runtime, the P5-010 FULL BUSINESS cross-domain regression/evidence freeze and the hardened Windows production deployment control plane.
 
 `P2-020` additionally delivers the native PPCT_V1 workbook parser/importer and Vietnamese administration UI and is formally CLOSED by `SYNC-P2-020`.
 
@@ -88,14 +89,13 @@ Detailed domain closure evidence remains in `PRE-PILOT-TASK-REGISTER.md`, ADRs, 
 
 The project is **NOT READY FOR TEACHER PILOT YET**. Remaining registered gaps include:
 
-1. `P3-030`, `P3-031`, `P4-060` and `P4-061` are CLOSED by their non-recursive sync closures; ADR-057 is Accepted.
-2. All direct dependencies of the complete FULL BUSINESS `P5-010` freeze are CLOSED; `P5-010` is **`IN_REVIEW`** on branch `feat/p5-010-full-business-cross-domain-freeze` with all 12 cross-domain scenarios verified in the PostgreSQL integration suite (12/12 PASS).
-3. Public make-up scheduling T08 and adjusted-workload T23 re-entry paths are fulfilled by the closed P3-031 and P4-061 chains.
-4. PWA production baseline (`P5-020`) remains absent.
-5. Dedicated Báo giảng Telegram integration (`P5-030`) remains absent.
-6. Official production Stage 1 passive discovery/preflight (`P6-020`) remains trigger-gated and has not been executed.
-7. Production bootstrap/first controlled deploy (`P6-030`) has not occurred.
-8. Teacher pilot go-live verification (`P6-050`) has not occurred.
+1. `P3-030`, `P3-031`, `P4-060`, `P4-061` and `P5-010` are CLOSED by their non-recursive sync closures; the complete FULL BUSINESS cross-domain freeze is established.
+2. Public make-up scheduling T08 and adjusted-workload T23 re-entry paths are fulfilled by the closed P3-031 and P4-061 chains and were re-verified in P5-010.
+3. PWA production baseline (`P5-020`) remains absent but is now **`READY`**.
+4. Dedicated Báo giảng Telegram integration (`P5-030`) remains absent but is now **`READY`**.
+5. Official production Stage 1 passive discovery/preflight (`P6-020`) remains trigger-gated and has not been executed; P5-010 closure alone does not authorize production access.
+6. Production bootstrap/first controlled deploy (`P6-030`) has not occurred.
+7. Teacher pilot go-live verification (`P6-050`) has not occurred.
 
 ## Production state
 
