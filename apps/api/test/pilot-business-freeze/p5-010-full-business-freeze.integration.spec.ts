@@ -1719,6 +1719,8 @@ integration('P5-010: Full Business Pilot Cross-Domain Freeze PostgreSQL Suite', 
     expect(workloadB.curricularWorkload.totalCredit).toBe(1);
     expect(workloadB.specialProgrammeWorkload.totalCredit).toBe(1);
     expect(workloadB.earnedCredit).toBe(2);
+    expect(workloadB.requiredCredit).toBe(17);
+    expect(workloadB.varianceCredit).toBe(-15);
 
     // Official workload projection for Teacher A (Nominally assigned teacher):
     // Earned curricular credit = 0 (because they did not actually teach)

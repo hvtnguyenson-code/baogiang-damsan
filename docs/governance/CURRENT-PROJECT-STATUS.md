@@ -43,7 +43,7 @@ All direct dependencies of `P5-010` are CLOSED. `P5-010` is **`IN_REVIEW`** on b
 
 ### In Review
 
-- `P5-010` — Pilot business scope + cross-domain freeze — **`IN_REVIEW`** on branch `feat/p5-010-full-business-cross-domain-freeze`; canonical start `main@c4321d5630b60296279e7a054206a80a093aa97a`. Correction 002 executed: P5-010 Traceability Audit Matrix aligned strictly with canonical `PRE-PILOT-TRACEABILITY-MATRIX.md` meanings and evidence; all 12 cross-domain scenarios use production service paths (`apps/api/test/pilot-business-freeze/p5-010-full-business-freeze.integration.spec.ts`, 12/12 PASS); targeted authoritative domain integration suites verified without overclaim; zero schema changes, zero migrations, zero production/VPS mutation; ready for independent re-review.
+- `P5-010` — Pilot business scope + cross-domain freeze — **`IN_REVIEW`** on branch `feat/p5-010-full-business-cross-domain-freeze`; canonical start `main@c4321d5630b60296279e7a054206a80a093aa97a`. Correction 002 & 003 executed: P5-010 Traceability Audit Matrix aligned strictly with canonical `PRE-PILOT-TRACEABILITY-MATRIX.md` meanings and evidence; final evidence gaps closed (Scenario 8 asserts required/variance in same projection, Scenario 9 independent required calculation, exact T21 fail-closed provenance wording); all 12 cross-domain scenarios use production service paths (`apps/api/test/pilot-business-freeze/p5-010-full-business-freeze.integration.spec.ts`, 12/12 PASS); targeted authoritative domain integration suites verified without overclaim; zero schema changes, zero migrations, zero production/VPS mutation; ready for independent re-review.
 
 ### Ready
 
