@@ -340,6 +340,33 @@ export interface SpecialProgrammeWorkloadPolicyPayloadV1 {
     };
   };
 }
+export type WorkloadAdjustmentCalculationType =
+  | 'TRU_TIET'
+  | 'TRU_PHAN_TRAM'
+  | 'GHI_DE';
+
+export type WorkloadAdjustmentRuleSource =
+  | {
+      kind: 'HOMEROOM_RESPONSIBILITY';
+    }
+  | {
+      kind: 'ADDITIONAL_DUTY';
+      dutyDefinitionId: string;
+    };
+
+export interface WorkloadAdjustmentRuleV1 {
+  ruleId: string;
+  source: WorkloadAdjustmentRuleSource;
+  calculation: WorkloadAdjustmentCalculationType;
+  value: number;
+  priority: number;
+}
+
+export interface WorkloadAdjustmentPolicyPayloadV1 {
+  baseWeeklyNorm: number;
+  rules: WorkloadAdjustmentRuleV1[];
+}
+
 export interface SupersedeScheduledAuthorityRequest {
   commandId: string;
   payload: OperationalStartPolicyPayloadV1;
@@ -1845,6 +1872,99 @@ export interface SpecialProgrammeWorkloadSnapshotContract {
   evaluatedAt: string;
 }
 
+export interface CurricularWorkloadContributionContract {
+  executionId: string;
+  kind: string;
+  executionCivilDate: CivilDateString;
+  actualTeacherUserId: string;
+  credit: number;
+  schoolClassId: string;
+  subjectId: string;
+  originalTimetableEntryId: string;
+  sourceCivilDate: CivilDateString;
+  replacesId?: string | null;
+}
+
+export interface WorkloadAdjustmentAppliedRuleContract {
+  ruleId: string;
+  calculation: WorkloadAdjustmentCalculationType;
+  value: number;
+  priority: number;
+  sourceKind: 'ADDITIONAL_DUTY' | 'HOMEROOM_RESPONSIBILITY';
+  dutyDefinitionId?: string;
+  dutyDefinitionCodeSnapshot?: string;
+  dutyDefinitionNameSnapshot?: string;
+  qualifyingAssignmentIds?: string[];
+  matchingHomeroomAssignmentIds?: string[];
+  matchingSchoolClassIds?: string[];
+}
+
+export interface WorkloadAdjustmentSegmentContract {
+  fromCivilDate: CivilDateString;
+  toCivilDate: CivilDateString;
+  isWorkloadEligible: boolean;
+  calendarVersionId: string;
+  teachingWeekdays: string[];
+  denominatorK: number;
+  hasInterruption: boolean;
+  interruptionIds?: string[];
+  policyVersionId: string | null;
+  policyValidatorVersion: string | null;
+  policyEffectiveFrom?: string | null;
+  policyEffectiveUntil?: string | null;
+  baseWeeklyNorm: number | null;
+  adjustedWeeklyNorm: number | null;
+  dailyRequiredCredit: number;
+  appliedRules: WorkloadAdjustmentAppliedRuleContract[];
+}
+
+export interface OfficialWorkloadFindingContract {
+  code: string;
+  message: string;
+  severity: 'BLOCKER' | 'WARNING';
+  entityIds: string[];
+}
+
+export interface OfficialTeacherWorkloadProjectionContract {
+  profile: string;
+  status: 'PASS' | 'BLOCKED';
+  scope: {
+    academicYearId: string;
+    targetUserId: string;
+    fromCivilDate: CivilDateString;
+    toCivilDate: CivilDateString;
+    asOfInstant: string;
+  };
+  curricularWorkload: {
+    status: 'PASS' | 'BLOCKED';
+    totalCredit: number | null;
+    contributionCount: number | null;
+    contributions: CurricularWorkloadContributionContract[];
+    findings: OfficialWorkloadFindingContract[];
+  };
+  specialProgrammeWorkload: SpecialProgrammeWorkloadProjectionContract;
+  earnedCredit: number | null;
+  requiredCredit: number | null;
+  varianceCredit: number | null;
+  adjustmentSegments: WorkloadAdjustmentSegmentContract[];
+  findings: OfficialWorkloadFindingContract[];
+  evaluatedAt: string;
+}
+
+export interface OfficialTeacherWorkloadSnapshotContract {
+  projectionProfile: string;
+  status: 'PASS';
+  curricularCredit: number;
+  specialProgrammeCredit: number;
+  earnedCredit: number;
+  requiredCredit: number;
+  varianceCredit: number;
+  curricularContributions: CurricularWorkloadContributionContract[];
+  specialProgrammeWorkload: SpecialProgrammeWorkloadSnapshotContract;
+  adjustmentSegments: WorkloadAdjustmentSegmentContract[];
+  evaluatedAt: string;
+}
+
 export interface ReportingStatementPreviewResponse {
   previewAsOfInstant: string;
   status: 'PASS' | 'BLOCKED';
@@ -1855,6 +1975,7 @@ export interface ReportingStatementPreviewResponse {
   findings: ReportingStatementPublicFinding[];
   responsibilityManifest: PersonalResponsibilityInterval[];
   specialProgrammeWorkload: SpecialProgrammeWorkloadProjectionContract;
+  officialWorkload: OfficialTeacherWorkloadProjectionContract;
 }
 
 export interface ReportingStatementCommandResult {
@@ -1947,11 +2068,26 @@ export interface ReportingStatementDetailResponse {
   history: ReportingStatementHistoryEntry[];
   allowedActions: ReportingStatementAllowedAction[];
   specialProgrammeWorkload: SpecialProgrammeWorkloadSnapshotContract | null;
+  officialWorkload: OfficialTeacherWorkloadSnapshotContract | null;
 }
 
 // ============================================================
 // Business Configuration Contracts
 // ============================================================
+
+export interface WorkloadAdjustmentAdditionalDutyOption {
+  id: string;
+  code: string;
+  name: string;
+  isActive: boolean;
+}
+
+export interface WorkloadAdjustmentAdditionalDutyOptionListResponse {
+  items: WorkloadAdjustmentAdditionalDutyOption[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
 
 export interface BusinessPolicyAcademicYearOption {
   id: string;

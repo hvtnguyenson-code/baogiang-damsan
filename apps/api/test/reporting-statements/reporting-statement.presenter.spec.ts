@@ -6,6 +6,7 @@ import {
   REPORTING_STATEMENT_SERIALIZER_V1,
   REPORTING_STATEMENT_SNAPSHOT_V1,
   REPORTING_STATEMENT_SNAPSHOT_V2,
+  REPORTING_STATEMENT_SNAPSHOT_V4,
   sha256CanonicalJson,
 } from '../../src/reporting-statement-internal/reporting-statement-canonicalizer';
 import {
@@ -308,6 +309,138 @@ function createValidFrozenFixtureV3(ownerId = 'user-1', subjectIds = ['sub-a', '
   };
 
   return { frozen, row };
+}
+
+function createValidFrozenFixtureV4(ownerId = 'user-1', subjectIds = ['sub-a', 'sub-b']) {
+  const workload = {
+    projectionProfile: 'SPECIAL_PROGRAMME_WORKLOAD_PROJECTION_V1',
+    status: 'PASS' as const,
+    totalCredit: 1.5,
+    contributionCount: 1,
+    contributions: [
+      {
+        executionId: 'exec-1',
+        specialActivityId: 'act-1',
+        specialActivityStaffingId: 'staff-1',
+        specialActivityTimeSlotId: 'slot-1',
+        programmeMasterId: 'prog-1',
+        programmePlanVersionId: 'plan-v1',
+        programmeTopicItemId: 'topic-1',
+        plannedProgrammeOccurrenceId: 'occ-1',
+        plannedOccurrenceSlotId: 'pos-1',
+        programmeKind: 'GDDP' as const,
+        occurrenceMode: 'CLASS' as const,
+        executionCivilDate: '2026-08-10',
+        actualTeacherUserId: ownerId,
+        coefficient: 1.5,
+        credit: 1.5,
+        policyVersionId: 'sp-policy-v1',
+        policyValidatorVersion: 'v1',
+        attestations: [
+          {
+            attestationId: 'att-1',
+            attestedByUserId: 'principal',
+            authorityType: 'CAPABILITY' as const,
+            capabilityKey: 'SPECIAL_ACTIVITY_EXECUTION_ATTEST',
+            scope: 'SCHOOL_WIDE' as const,
+            resourceId: null,
+            attestedAt: '2026-08-11T00:00:00.000Z',
+          },
+        ],
+      },
+    ],
+    pendingConfirmation: [],
+    findings: [],
+    evaluatedAt: asOf.toISOString(),
+  };
+
+  const officialWorkload = {
+    projectionProfile: 'OFFICIAL_TEACHER_WORKLOAD_PROJECTION_V1',
+    status: 'PASS' as const,
+    curricularCredit: 0,
+    specialProgrammeCredit: 1.5,
+    earnedCredit: 1.5,
+    requiredCredit: 62,
+    varianceCredit: -60.5,
+    curricularContributions: [],
+    specialProgrammeWorkload: workload,
+    adjustmentSegments: [
+      {
+        fromCivilDate: '2026-08-01',
+        toCivilDate: '2026-08-31',
+        isWorkloadEligible: true,
+        calendarVersionId: 'cal-ver-1',
+        teachingWeekdays: ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'],
+        denominatorK: 7,
+        hasInterruption: false,
+        interruptionIds: [],
+        policyVersionId: 'pol-adj-1',
+        policyValidatorVersion: 'v1',
+        policyEffectiveFrom: '2026-08-01',
+        policyEffectiveUntil: null,
+        baseWeeklyNorm: 14,
+        adjustedWeeklyNorm: 14,
+        dailyRequiredCredit: 2,
+        appliedRules: [],
+      },
+    ],
+    evaluatedAt: asOf.toISOString(),
+  };
+
+  const frozen = freezeReportingStatementSnapshot({
+    statementProfile: 'PERSONAL_REPORTING_STATEMENT_V1',
+    submitterUserId: ownerId,
+    submitterDisplayNameSnapshot: 'Nguyen Van A',
+    submitterStaffCodeSnapshot: 'GV001',
+    asOfInstant: asOf,
+    projection: createProjection(ownerId, subjectIds) as never,
+    operationalStartPolicyVersionId: 'policy-version-1',
+    operationalStartDate: '2026-08-15',
+    specialProgrammeWorkload: workload as never,
+    officialWorkload: officialWorkload as never,
+  });
+
+  const row: FrozenRevisionRow = {
+    id: 'revision-uuid-v4',
+    seriesId: 'series-uuid-1',
+    snapshotProfile: frozen.snapshot.snapshotProfile,
+    serializerVersion: frozen.snapshot.serializerVersion,
+    canonicalSnapshotJson: frozen.canonicalSnapshotJson,
+    semanticHash: frozen.semanticHash,
+    asOfInstant: asOf,
+    submitterDisplayNameSnapshot: 'Nguyen Van A',
+    submitterStaffCodeSnapshot: 'GV001',
+    submittedAt: new Date('2026-08-25T10:25:00.000Z'),
+    predecessorRevisionId: null,
+    supersedesRevisionId: null,
+    series: {
+      statementProfile: 'PERSONAL_REPORTING_STATEMENT_V1',
+      submitterUserId: ownerId,
+      academicYearId: 'year-1',
+      fromCivilDate: new Date('2026-08-01'),
+      toCivilDate: new Date('2026-08-31'),
+    },
+    state: {
+      lifecycleState: 'SUBMITTED' as const,
+      lifecycleToken: 'token-uuid-v4',
+    },
+    subjects: subjectIds.map((subjectId) => ({ subjectId })),
+    historyEntries: [
+      {
+        id: 'hist-v4',
+        eventType: 'SUBMITTED',
+        stateBefore: null,
+        stateAfter: 'SUBMITTED',
+        actorUserId: ownerId,
+        actorDisplayNameSnapshot: 'Nguyen Van A',
+        actorStaffCodeSnapshot: 'GV001',
+        createdAt: new Date('2026-08-25T10:25:00.000Z'),
+        causedByRevisionId: null,
+      },
+    ],
+  };
+
+  return { frozen, row, workload, officialWorkload };
 }
 
 describe('Reporting Statement Presenter & Integrity', () => {
@@ -656,6 +789,122 @@ describe('Reporting Statement Presenter & Integrity', () => {
 
       for (const corruptSnapshot of corruptSnapshots) {
         const canonicalSnapshotJson = canonicalizeJson(corruptSnapshot as never);
+        expect(() =>
+          parseAndVerifyFrozenSnapshot({
+            ...row,
+            canonicalSnapshotJson,
+            semanticHash: sha256CanonicalJson(canonicalSnapshotJson),
+          }),
+        ).toThrow(PUBLIC_PRESENTATION_INTEGRITY_ERROR);
+      }
+    });
+
+    it('parses valid V4 frozen snapshot successfully', () => {
+      const { row } = createValidFrozenFixtureV4();
+      const parsed = parseAndVerifyFrozenSnapshot(row);
+      expect(parsed.snapshotProfile).toBe(REPORTING_STATEMENT_SNAPSHOT_V4);
+    });
+
+    it('rejects tampered V4 snapshot with invalid segment coverage or provenance even if canonically rehashed', () => {
+      const { row, officialWorkload } = createValidFrozenFixtureV4();
+      const snapshot = JSON.parse(row.canonicalSnapshotJson) as Record<string, unknown>;
+
+      const invalidV4Snapshots = [
+        // 1. First segment does not match statement fromCivilDate (2026-08-01)
+        {
+          ...snapshot,
+          officialWorkload: {
+            ...officialWorkload,
+            adjustmentSegments: [
+              {
+                ...officialWorkload.adjustmentSegments[0],
+                fromCivilDate: '2026-08-05',
+              },
+            ],
+          },
+        },
+        // 2. Last segment does not match statement toCivilDate (2026-08-31)
+        {
+          ...snapshot,
+          officialWorkload: {
+            ...officialWorkload,
+            adjustmentSegments: [
+              {
+                ...officialWorkload.adjustmentSegments[0],
+                toCivilDate: '2026-08-25',
+              },
+            ],
+          },
+        },
+        // 3. Segment gap
+        {
+          ...snapshot,
+          officialWorkload: {
+            ...officialWorkload,
+            adjustmentSegments: [
+              {
+                ...officialWorkload.adjustmentSegments[0],
+                toCivilDate: '2026-08-10',
+              },
+              {
+                ...officialWorkload.adjustmentSegments[0],
+                fromCivilDate: '2026-08-12', // Gap at 2026-08-11
+                toCivilDate: '2026-08-31',
+              },
+            ],
+          },
+        },
+        // 4. Segment overlap
+        {
+          ...snapshot,
+          officialWorkload: {
+            ...officialWorkload,
+            adjustmentSegments: [
+              {
+                ...officialWorkload.adjustmentSegments[0],
+                toCivilDate: '2026-08-15',
+              },
+              {
+                ...officialWorkload.adjustmentSegments[0],
+                fromCivilDate: '2026-08-15', // Overlap at 2026-08-15
+                toCivilDate: '2026-08-31',
+              },
+            ],
+          },
+        },
+        // 5. Eligible segment improperly spans non-teaching weekday
+        {
+          ...snapshot,
+          officialWorkload: {
+            ...officialWorkload,
+            adjustmentSegments: [
+              {
+                ...officialWorkload.adjustmentSegments[0],
+                teachingWeekdays: ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'], // Excludes SUNDAY
+                denominatorK: 6,
+              },
+            ],
+          },
+        },
+        // 6. Contradictory interruption eligibility
+        {
+          ...snapshot,
+          officialWorkload: {
+            ...officialWorkload,
+            adjustmentSegments: [
+              {
+                ...officialWorkload.adjustmentSegments[0],
+                isWorkloadEligible: true,
+                hasInterruption: true,
+                interruptionIds: ['int-1'],
+              },
+            ],
+          },
+        },
+      ];
+
+      for (const invalidSnapshot of invalidV4Snapshots) {
+        const canonicalSnapshotJson = canonicalizeJson(invalidSnapshot as never);
         expect(() =>
           parseAndVerifyFrozenSnapshot({
             ...row,

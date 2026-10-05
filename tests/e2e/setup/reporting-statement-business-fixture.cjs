@@ -47,6 +47,13 @@ async function main() {
       streamId: operationalStartStream.id, versionNumber: 1, status: 'PUBLISHED', payload: { operationalStartDate: '2026-08-01' }, validatorVersion: 'v1',
       effectiveFrom: new Date('2026-08-01T00:00:00.000Z'), effectiveUntil: null, createdByUserId: teacher.id, publishedByUserId: teacher.id, publishedAt: new Date('2026-08-01T00:00:00.000Z'),
     } });
+    const workloadAdjustmentStream = await prisma.businessPolicyStream.create({ data: {
+      familyKey: 'WORKLOAD_ADJUSTMENT', resourceKind: 'ACADEMIC_YEAR', academicYearId: year.id,
+    } });
+    await prisma.businessPolicyVersion.create({ data: {
+      streamId: workloadAdjustmentStream.id, versionNumber: 1, status: 'PUBLISHED', payload: { baseWeeklyNorm: 18, rules: [] }, validatorVersion: 'v1',
+      effectiveFrom: new Date('2026-08-01T00:00:00.000Z'), effectiveUntil: null, createdByUserId: teacher.id, publishedByUserId: teacher.id, publishedAt: new Date('2026-08-01T00:00:00.000Z'),
+    } });
     await prisma.capabilityGrant.createMany({ data: [
       { userId: teacher.id, capabilityKey: 'REPORTING_STATEMENT_SUBMIT', scopeType: 'PERSONAL', grantedByUserId: teacher.id },
       { userId: teacher.id, capabilityKey: 'REPORTING_STATEMENT_READ', scopeType: 'PERSONAL', grantedByUserId: teacher.id },

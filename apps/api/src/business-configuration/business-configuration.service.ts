@@ -7,7 +7,9 @@ import {
   BusinessPolicyResolution,
   BusinessPolicyVersionRecord,
   CivilDateString,
+  WorkloadAdjustmentAdditionalDutyOptionListResponse,
 } from '@baogiang/contracts';
+
 import { createHash } from 'node:crypto';
 import { AuditService } from '../audit/audit.service';
 import { RequestMeta } from '../auth/auth.types';
@@ -27,6 +29,7 @@ import {
   EditBusinessPolicyDraftDto,
   LifecycleBusinessPolicyDto,
   ListBusinessPolicyAcademicYearOptionsDto,
+  ListWorkloadAdjustmentAdditionalDutyOptionsDto,
   SupersedeScheduledAuthorityDto,
 } from './dto';
 
@@ -52,6 +55,46 @@ export class BusinessConfigurationService {
       }),
       this.prisma.academicYear.count(),
     ]);
+    return {
+      items,
+      page,
+      pageSize,
+      total,
+    };
+  }
+
+  async workloadAdjustmentAdditionalDutyOptions(
+    query?: ListWorkloadAdjustmentAdditionalDutyOptionsDto,
+  ): Promise<WorkloadAdjustmentAdditionalDutyOptionListResponse> {
+    const page = query?.page ?? 1;
+    const pageSize = Math.min(100, Math.max(1, query?.pageSize ?? 20));
+    const q = query?.q?.trim();
+
+    const where: Prisma.AdditionalDutyDefinitionWhereInput = q
+      ? {
+          OR: [
+            { code: { contains: q, mode: 'insensitive' } },
+            { name: { contains: q, mode: 'insensitive' } },
+          ],
+        }
+      : {};
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.additionalDutyDefinition.findMany({
+        where,
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          isActive: true,
+        },
+        orderBy: [{ sortOrder: 'asc' }, { code: 'asc' }, { id: 'asc' }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.prisma.additionalDutyDefinition.count({ where }),
+    ]);
+
     return {
       items,
       page,

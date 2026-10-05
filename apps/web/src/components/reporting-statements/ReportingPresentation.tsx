@@ -61,3 +61,105 @@ export function StatementListTable({ items, academicYearLabels }: {
     </tr>)}
   </DataTable>;
 }
+
+export function OfficialWorkloadView({
+  workload,
+}: {
+  workload: {
+    status?: string;
+    earnedCredit: number | null;
+    requiredCredit: number | null;
+    varianceCredit: number | null;
+    curricularCredit?: number | null;
+    specialProgrammeCredit?: number | null;
+    curricularWorkload?: { totalCredit: number | null };
+    specialProgrammeWorkload?: { totalCredit: number | null };
+    adjustmentSegments?: Array<{
+      fromCivilDate: string;
+      toCivilDate: string;
+      baseWeeklyNorm: number | null;
+      adjustedWeeklyNorm: number | null;
+      dailyRequiredCredit: number;
+      appliedRules: Array<{
+        ruleId: string;
+        sourceKind: string;
+        calculation: string;
+        value: number;
+        dutyDefinitionNameSnapshot?: string;
+        dutyDefinitionCodeSnapshot?: string;
+      }>;
+    }>;
+    findings?: Array<{ message: string; severity?: string }>;
+  };
+}) {
+  const earned = workload.earnedCredit ?? 0;
+  const required = workload.requiredCredit ?? 0;
+  const variance = workload.varianceCredit ?? 0;
+  const curricular = workload.curricularCredit ?? workload.curricularWorkload?.totalCredit ?? 0;
+  const special = workload.specialProgrammeCredit ?? workload.specialProgrammeWorkload?.totalCredit ?? 0;
+
+  const varianceFormatted = variance > 0 ? `+${variance}` : String(variance);
+
+  return (
+    <div className="official-workload-view" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+      <dl className="reporting-counts">
+        <div>
+          <dt>Khối lượng đã thực hiện</dt>
+          <dd className="technical-value">{earned} tiết</dd>
+        </div>
+        <div>
+          <dt>Định mức phải thực hiện</dt>
+          <dd className="technical-value">{required} tiết</dd>
+        </div>
+        <div>
+          <dt>Chênh lệch định mức</dt>
+          <dd className="technical-value" style={{ fontWeight: 600 }}>
+            {varianceFormatted} tiết
+          </dd>
+        </div>
+      </dl>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.75rem', fontSize: '0.9rem' }}>
+        <div style={{ border: '1px solid var(--border-subtle, #e5e7eb)', padding: '0.75rem', borderRadius: '4px' }}>
+          <span style={{ color: 'var(--text-muted, #6b7280)' }}>Dạy học chính khóa:</span>{' '}
+          <strong>{curricular} tiết</strong>
+        </div>
+        <div style={{ border: '1px solid var(--border-subtle, #e5e7eb)', padding: '0.75rem', borderRadius: '4px' }}>
+          <span style={{ color: 'var(--text-muted, #6b7280)' }}>GDĐP / HĐTN-HN:</span>{' '}
+          <strong>{special} tiết</strong>
+        </div>
+      </div>
+
+      {workload.adjustmentSegments && workload.adjustmentSegments.length > 0 && (
+        <div style={{ fontSize: '0.85rem' }}>
+          <p style={{ fontWeight: 600, margin: '0.5rem 0 0.25rem' }}>Các giai đoạn áp dụng định mức:</p>
+          <ul style={{ margin: 0, paddingLeft: '1.25rem' }}>
+            {workload.adjustmentSegments.map((seg, idx) => (
+              <li key={idx} style={{ marginBottom: '0.25rem' }}>
+                <span className="technical-value">{seg.fromCivilDate} – {seg.toCivilDate}</span>:{' '}
+                Định mức <strong>{seg.adjustedWeeklyNorm ?? seg.baseWeeklyNorm ?? 0} tiết/tuần</strong>
+                {seg.appliedRules.length > 0 && (
+                  <span>
+                    {' '}(Áp dụng: {seg.appliedRules.map((r) =>
+                      r.sourceKind === 'HOMEROOM_RESPONSIBILITY'
+                        ? 'Chủ nhiệm'
+                        : r.dutyDefinitionNameSnapshot || r.dutyDefinitionCodeSnapshot || 'Kiêm nhiệm'
+                    ).join(', ')})
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {workload.findings && workload.findings.length > 0 && (
+        <ul className="muted-copy" style={{ fontSize: '0.85rem', margin: 0 }}>
+          {workload.findings.map((f, i) => (
+            <li key={i}>{f.message}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}

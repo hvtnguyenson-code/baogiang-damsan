@@ -123,7 +123,7 @@ describe('ReportingStatementsService Discovery, Preview, and Read API', () => {
     classifyAcceptedCommand: jest.Mock;
   };
   let projection: { resolve: jest.Mock; resolveInTransaction: jest.Mock };
-  let workloadProjection: { resolve: jest.Mock };
+  let officialWorkloadProjection: { resolve: jest.Mock };
   let authorization: { evaluate: jest.Mock; listEffectiveCapabilities: jest.Mock };
   let audit: { write: jest.Mock };
   let clock: { now: jest.Mock };
@@ -140,8 +140,20 @@ describe('ReportingStatementsService Discovery, Preview, and Read API', () => {
       resolve: jest.fn().mockResolvedValue(createMockProjection('PASS', 'RESPONSIBILITY_PRESENT')),
       resolveInTransaction: jest.fn(),
     };
-    workloadProjection = {
-      resolve: jest.fn().mockResolvedValue(createMockWorkload()),
+    officialWorkloadProjection = {
+      resolve: jest.fn().mockResolvedValue({
+        profile: 'OFFICIAL_TEACHER_WORKLOAD_PROJECTION_V1',
+        status: 'PASS',
+        scope: {},
+        curricularWorkload: { status: 'PASS', totalCredit: 0, contributionCount: 0, contributions: [], findings: [] },
+        specialProgrammeWorkload: createMockWorkload(),
+        earnedCredit: 0,
+        requiredCredit: 0,
+        varianceCredit: 0,
+        adjustmentSegments: [],
+        findings: [],
+        evaluatedAt: asOf.toISOString(),
+      }),
     };
     authorization = {
       evaluate: jest.fn().mockResolvedValue({ allowed: true }),
@@ -158,7 +170,7 @@ describe('ReportingStatementsService Discovery, Preview, and Read API', () => {
       audit as never,
       {} as never,
       clock,
-      workloadProjection as never,
+      officialWorkloadProjection as never,
     );
   });
 
@@ -208,7 +220,7 @@ describe('ReportingStatementsService Discovery, Preview, and Read API', () => {
         toCivilDate: '2026-08-31',
         asOfInstant: asOf,
       });
-      expect(workloadProjection.resolve).toHaveBeenCalledWith({
+      expect(officialWorkloadProjection.resolve).toHaveBeenCalledWith({
         academicYearId: 'year-1',
         targetUserId: 'user-1',
         fromCivilDate: '2026-08-01',
@@ -220,7 +232,19 @@ describe('ReportingStatementsService Discovery, Preview, and Read API', () => {
     });
 
     it('returns eligibleForSubmission = false when special-programme workload is BLOCKED', async () => {
-      workloadProjection.resolve.mockResolvedValueOnce(createMockWorkload('BLOCKED'));
+      officialWorkloadProjection.resolve.mockResolvedValueOnce({
+        profile: 'OFFICIAL_TEACHER_WORKLOAD_PROJECTION_V1',
+        status: 'PASS',
+        scope: {},
+        curricularWorkload: { status: 'PASS', totalCredit: 0, contributionCount: 0, contributions: [], findings: [] },
+        specialProgrammeWorkload: createMockWorkload('BLOCKED'),
+        earnedCredit: 0,
+        requiredCredit: 0,
+        varianceCredit: 0,
+        adjustmentSegments: [],
+        findings: [],
+        evaluatedAt: asOf.toISOString(),
+      });
 
       const result = await sut.preview(previewDto, req());
 

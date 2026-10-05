@@ -14,10 +14,11 @@ import { requestMeta } from '../auth/auth-http';
 import { AuthenticatedRequest } from '../auth/auth.types';
 import { CapabilityAuthorizationService } from '../authorization/capability-authorization.service';
 import { formatCivilDate, hcmCivilDate, parseCivilDate } from '../common/validation/civil-date';
+import { exactAdd, exactSub } from '../common/decimal/exact-decimal';
 import { BusinessConfigurationService } from '../business-configuration/business-configuration.service';
 import { ProgressDebtOperationalStartAuthority } from '../progress-debt/progress-debt.types';
 import { PersonalReportingProjectionService } from '../personal-reporting-projection/personal-reporting-projection.service';
-import { SpecialProgrammeWorkloadProjectionService } from '../special-programme-workload/special-programme-workload-projection.service';
+import { OfficialWorkloadProjectionService } from '../official-workload/official-workload-projection.service';
 import { freezeReportingStatementSnapshot } from '../reporting-statement-internal/reporting-statement-canonicalizer';
 import { ReportingStatementRepository } from '../reporting-statement-internal/reporting-statement.repository';
 import { PrismaService } from '../prisma/prisma.service';
@@ -47,7 +48,7 @@ export class ReportingStatementsService {
     private readonly audit: AuditService,
     private readonly businessConfiguration: BusinessConfigurationService,
     @Inject(REPORTING_STATEMENT_CLOCK) private readonly clock: ReportingStatementClock,
-    private readonly specialProgrammeWorkloadProjection: SpecialProgrammeWorkloadProjectionService,
+    private readonly officialWorkloadProjection: OfficialWorkloadProjectionService,
   ) {}
 
   async preview(dto: PreviewReportingStatementDto, request: AuthenticatedRequest): Promise<ReportingStatementPreviewResponse> {
@@ -63,17 +64,19 @@ export class ReportingStatementsService {
       toCivilDate: dto.toCivilDate as never,
       asOfInstant: asOf,
     });
-    const workload = await this.specialProgrammeWorkloadProjection.resolve({
+    const officialWorkload = await this.officialWorkloadProjection.resolve({
       academicYearId: dto.academicYearId,
       targetUserId: actor,
       fromCivilDate: dto.fromCivilDate as never,
       toCivilDate: dto.toCivilDate as never,
       asOfInstant: asOf,
     });
+    const workload = officialWorkload.specialProgrammeWorkload;
     const eligibleForSubmission =
       projection.status === 'PASS' &&
       projection.responsibilityState === 'RESPONSIBILITY_PRESENT' &&
-      workload.status === 'PASS';
+      workload.status === 'PASS' &&
+      officialWorkload.status === 'PASS';
     return {
       previewAsOfInstant: asOf.toISOString(),
       status: projection.status,
@@ -110,6 +113,60 @@ export class ReportingStatementsService {
         pendingConfirmation: workload.pendingConfirmation.map((p) => ({ ...p })),
         findings: workload.findings.map((f) => ({ ...f })),
         evaluatedAt: workload.evaluatedAt,
+      },
+      officialWorkload: {
+        profile: officialWorkload.profile,
+        status: officialWorkload.status,
+        scope: {
+          academicYearId: officialWorkload.scope.academicYearId,
+          targetUserId: officialWorkload.scope.targetUserId,
+          fromCivilDate: officialWorkload.scope.fromCivilDate,
+          toCivilDate: officialWorkload.scope.toCivilDate,
+          asOfInstant: officialWorkload.scope.asOfInstant,
+        },
+        curricularWorkload: {
+          status: officialWorkload.curricularWorkload.status,
+          totalCredit: officialWorkload.curricularWorkload.totalCredit,
+          contributionCount: officialWorkload.curricularWorkload.contributionCount,
+          contributions: officialWorkload.curricularWorkload.contributions.map((c) => ({ ...c })),
+          findings: officialWorkload.curricularWorkload.findings.map((f) => ({ ...f })),
+        },
+        specialProgrammeWorkload: {
+          profile: officialWorkload.specialProgrammeWorkload.profile,
+          status: officialWorkload.specialProgrammeWorkload.status,
+          scope: {
+            academicYearId: officialWorkload.specialProgrammeWorkload.scope.academicYearId,
+            targetUserId: officialWorkload.specialProgrammeWorkload.scope.targetUserId,
+            fromCivilDate: officialWorkload.specialProgrammeWorkload.scope.fromCivilDate,
+            toCivilDate: officialWorkload.specialProgrammeWorkload.scope.toCivilDate,
+            asOfInstant: officialWorkload.specialProgrammeWorkload.scope.asOfInstant,
+          },
+          totalCredit: officialWorkload.specialProgrammeWorkload.totalCredit,
+          contributionCount: officialWorkload.specialProgrammeWorkload.contributionCount,
+          contributions: officialWorkload.specialProgrammeWorkload.contributions.map((c) => ({
+            ...c,
+            attestations: c.attestations.map((a) => ({ ...a })),
+          })),
+          pendingConfirmation: officialWorkload.specialProgrammeWorkload.pendingConfirmation.map((p) => ({ ...p })),
+          findings: officialWorkload.specialProgrammeWorkload.findings.map((f) => ({ ...f })),
+          evaluatedAt: officialWorkload.specialProgrammeWorkload.evaluatedAt,
+        },
+        earnedCredit: officialWorkload.earnedCredit,
+        requiredCredit: officialWorkload.requiredCredit,
+        varianceCredit: officialWorkload.varianceCredit,
+        adjustmentSegments: officialWorkload.adjustmentSegments.map((s) => ({
+          ...s,
+          teachingWeekdays: [...s.teachingWeekdays],
+          interruptionIds: s.interruptionIds ? [...s.interruptionIds] : [],
+          appliedRules: s.appliedRules.map((r) => ({
+            ...r,
+            qualifyingAssignmentIds: r.qualifyingAssignmentIds ? [...r.qualifyingAssignmentIds] : [],
+            matchingHomeroomAssignmentIds: r.matchingHomeroomAssignmentIds ? [...r.matchingHomeroomAssignmentIds] : [],
+            matchingSchoolClassIds: r.matchingSchoolClassIds ? [...r.matchingSchoolClassIds] : [],
+          })),
+        })),
+        findings: officialWorkload.findings.map((f) => ({ ...f })),
+        evaluatedAt: officialWorkload.evaluatedAt,
       },
     };
   }
@@ -336,14 +393,25 @@ export class ReportingStatementsService {
           { academicYearId: dto.academicYearId, targetUserId: actor, fromCivilDate: dto.fromCivilDate as never, toCivilDate: dto.toCivilDate as never, asOfInstant: asOf },
           { reportingProjection: { operationalStartPolicy: authority, policyResolutionCivilDate } },
         );
-        const workload =
-          await this.specialProgrammeWorkloadProjection.resolveInTransaction(tx, {
+        const officialWorkload =
+          await this.officialWorkloadProjection.resolveInTransaction(tx, {
             academicYearId: dto.academicYearId,
             targetUserId: actor,
             fromCivilDate: dto.fromCivilDate as never,
             toCivilDate: dto.toCivilDate as never,
             asOfInstant: asOf,
           });
+        if (officialWorkload.status === 'BLOCKED') {
+          throw new BadRequestException('OFFICIAL_WORKLOAD_PROJECTION_BLOCKED');
+        }
+        if (
+          officialWorkload.status !== 'PASS' ||
+          officialWorkload.requiredCredit === null ||
+          officialWorkload.curricularWorkload.totalCredit === null
+        ) {
+          throw new BadRequestException('OFFICIAL_WORKLOAD_PROJECTION_INVALID');
+        }
+        const workload = officialWorkload.specialProgrammeWorkload;
         if (workload.status === 'BLOCKED') {
           throw new BadRequestException('SPECIAL_PROGRAMME_WORKLOAD_PROJECTION_BLOCKED');
         }
@@ -358,6 +426,12 @@ export class ReportingStatementsService {
         ) {
           throw new BadRequestException('SPECIAL_PROGRAMME_WORKLOAD_PROJECTION_INVALID');
         }
+        const curricularCredit = officialWorkload.curricularWorkload.totalCredit as number;
+        const specialProgrammeCredit = workload.totalCredit as number;
+        const specialProgrammeContributionCount = workload.contributionCount as number;
+        const earnedCredit = exactAdd(curricularCredit, specialProgrammeCredit);
+        const requiredCredit = (officialWorkload.requiredCredit ?? 0) as number;
+        const varianceCredit = exactSub(earnedCredit, requiredCredit);
         const profile = await tx.user.findUnique({ where: { id: actor }, include: { profile: true } });
         const frozen = freezeReportingStatementSnapshot({
           statementProfile: PERSONAL_REPORTING_STATEMENT_PROFILE,
@@ -371,14 +445,78 @@ export class ReportingStatementsService {
           specialProgrammeWorkload: {
             projectionProfile: workload.profile,
             status: 'PASS',
-            totalCredit: workload.totalCredit,
-            contributionCount: workload.contributionCount,
+            totalCredit: specialProgrammeCredit,
+            contributionCount: specialProgrammeContributionCount,
             contributions: workload.contributions.map((c) => ({
               ...c,
               attestations: c.attestations.map((a) => ({ ...a })),
             })),
             pendingConfirmation: workload.pendingConfirmation.map((p) => ({ ...p })),
             evaluatedAt: workload.evaluatedAt,
+          },
+          officialWorkload: {
+            projectionProfile: officialWorkload.profile,
+            status: 'PASS',
+            curricularCredit,
+            specialProgrammeCredit,
+            earnedCredit,
+            requiredCredit,
+            varianceCredit,
+            curricularContributions: officialWorkload.curricularWorkload.contributions.map((c) => ({
+              executionId: c.executionId,
+              kind: c.kind,
+              executionCivilDate: c.executionCivilDate,
+              actualTeacherUserId: c.actualTeacherUserId,
+              credit: c.credit,
+              schoolClassId: c.schoolClassId,
+              subjectId: c.subjectId,
+              originalTimetableEntryId: c.originalTimetableEntryId,
+              sourceCivilDate: c.sourceCivilDate,
+              replacesId: c.replacesId ?? null,
+            })),
+            specialProgrammeWorkload: {
+              projectionProfile: workload.profile,
+              status: 'PASS',
+              totalCredit: workload.totalCredit,
+              contributionCount: workload.contributionCount,
+              contributions: workload.contributions.map((c) => ({
+                ...c,
+                attestations: c.attestations.map((a) => ({ ...a })),
+              })),
+              pendingConfirmation: workload.pendingConfirmation.map((p) => ({ ...p })),
+              evaluatedAt: workload.evaluatedAt,
+            },
+            adjustmentSegments: officialWorkload.adjustmentSegments.map((s) => ({
+              fromCivilDate: s.fromCivilDate,
+              toCivilDate: s.toCivilDate,
+              isWorkloadEligible: s.isWorkloadEligible,
+              calendarVersionId: s.calendarVersionId,
+              teachingWeekdays: [...s.teachingWeekdays],
+              denominatorK: s.denominatorK,
+              hasInterruption: s.hasInterruption,
+              interruptionIds: s.interruptionIds ? [...s.interruptionIds] : [],
+              policyVersionId: s.policyVersionId,
+              policyValidatorVersion: s.policyValidatorVersion,
+              policyEffectiveFrom: s.policyEffectiveFrom ?? null,
+              policyEffectiveUntil: s.policyEffectiveUntil ?? null,
+              baseWeeklyNorm: s.baseWeeklyNorm,
+              adjustedWeeklyNorm: s.adjustedWeeklyNorm,
+              dailyRequiredCredit: s.dailyRequiredCredit,
+              appliedRules: s.appliedRules.map((r) => ({
+                ruleId: r.ruleId,
+                calculation: r.calculation,
+                value: r.value,
+                priority: r.priority,
+                sourceKind: r.sourceKind,
+                dutyDefinitionId: r.dutyDefinitionId,
+                dutyDefinitionCodeSnapshot: r.dutyDefinitionCodeSnapshot,
+                dutyDefinitionNameSnapshot: r.dutyDefinitionNameSnapshot,
+                qualifyingAssignmentIds: r.qualifyingAssignmentIds ? [...r.qualifyingAssignmentIds] : [],
+                matchingHomeroomAssignmentIds: r.matchingHomeroomAssignmentIds ? [...r.matchingHomeroomAssignmentIds] : [],
+                matchingSchoolClassIds: r.matchingSchoolClassIds ? [...r.matchingSchoolClassIds] : [],
+              })),
+            })),
+            evaluatedAt: officialWorkload.evaluatedAt,
           },
         });
         const tail = existing ? await this.repository.lineageTail(tx, existing.id) : null;

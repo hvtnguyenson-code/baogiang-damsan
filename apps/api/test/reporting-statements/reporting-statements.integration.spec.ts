@@ -5,7 +5,7 @@ import { PERSONAL_REPORTING_STATEMENT_PROFILE } from '../../src/reporting-statem
 import { ReportingStatementRepository } from '../../src/reporting-statement-internal/reporting-statement.repository';
 import {
   REPORTING_STATEMENT_SNAPSHOT_V1,
-  REPORTING_STATEMENT_SNAPSHOT_V3,
+  REPORTING_STATEMENT_SNAPSHOT_V4,
   REPORTING_STATEMENT_SERIALIZER_V1,
   freezeReportingStatementSnapshot,
   freezeReportingStatementSnapshotV1,
@@ -14,6 +14,7 @@ import { BusinessConfigurationService } from '../../src/business-configuration/b
 import { PRODUCTION_BUSINESS_POLICY_FAMILIES } from '../../src/business-configuration/business-policy-registry';
 import { presentReportingStatementDetail } from '../../src/reporting-statements/reporting-statement.presenter';
 import { SpecialProgrammeWorkloadProjectionService } from '../../src/special-programme-workload/special-programme-workload-projection.service';
+import { OfficialWorkloadProjectionService } from '../../src/official-workload/official-workload-projection.service';
 import { integration, testDatabaseUrl } from '../helpers/phase01-test-harness';
 
 const asOf = new Date('2026-08-24T01:02:03.004Z');
@@ -39,6 +40,7 @@ integration('Reporting Statements control-plane PostgreSQL', () => {
   let year = '';
   let service: ReportingStatementsService;
   let businessConfiguration: BusinessConfigurationService;
+  let auditService: AuditService;
   let operationalPolicyVersionId = '';
   let policyStreamId = '';
 
@@ -105,11 +107,16 @@ integration('Reporting Statements control-plane PostgreSQL', () => {
   beforeAll(async () => {
     prisma = new PrismaClient({ datasources: { db: { url: testDatabaseUrl } } });
     const auth = { evaluate: jest.fn().mockResolvedValue({ allowed: true }) };
-    const auditService = new AuditService(prisma as never);
+    auditService = new AuditService(prisma as never);
     businessConfiguration = new BusinessConfigurationService(prisma as never, auditService, PRODUCTION_BUSINESS_POLICY_FAMILIES);
     const workloadProjection = new SpecialProgrammeWorkloadProjectionService(
       prisma as never,
       businessConfiguration,
+    );
+    const officialWorkloadProjection = new OfficialWorkloadProjectionService(
+      prisma as never,
+      businessConfiguration,
+      workloadProjection,
     );
     service = new ReportingStatementsService(
       prisma as never,
@@ -119,7 +126,7 @@ integration('Reporting Statements control-plane PostgreSQL', () => {
       auditService,
       businessConfiguration,
       { now: jest.fn(() => asOf) },
-      workloadProjection,
+      officialWorkloadProjection,
     );
   });
 
@@ -172,6 +179,29 @@ integration('Reporting Statements control-plane PostgreSQL', () => {
       },
     });
     operationalPolicyVersionId = pv.id;
+
+    // P4-061 authority required by OfficialWorkloadProjectionService.
+    const workloadStream = await prisma.businessPolicyStream.create({
+      data: {
+        familyKey: 'WORKLOAD_ADJUSTMENT',
+        resourceKind: 'ACADEMIC_YEAR',
+        academicYearId: year,
+      },
+    });
+    await prisma.businessPolicyVersion.create({
+      data: {
+        streamId: workloadStream.id,
+        versionNumber: 1,
+        status: 'PUBLISHED',
+        payload: { baseWeeklyNorm: 18, rules: [] },
+        validatorVersion: 'v1',
+        effectiveFrom: new Date('2026-08-01T00:00:00.000Z'),
+        effectiveUntil: null,
+        publishedAt: new Date('2026-08-01T00:00:00.000Z'),
+        publishedByUserId: approver,
+        createdByUserId: approver,
+      },
+    });
   });
 
   afterEach(async () => {
@@ -387,12 +417,12 @@ integration('Reporting Statements control-plane PostgreSQL', () => {
       where: { id: result.revisionId },
     });
 
-    expect(row.snapshotProfile).toBe(REPORTING_STATEMENT_SNAPSHOT_V3);
+    expect(row.snapshotProfile).toBe(REPORTING_STATEMENT_SNAPSHOT_V4);
     expect(row.serializerVersion).toBe(REPORTING_STATEMENT_SERIALIZER_V1);
     expect(row.asOfInstant).toEqual(asOf);
 
     const parsed = JSON.parse(row.canonicalSnapshotJson);
-    expect(parsed.snapshotProfile).toBe(REPORTING_STATEMENT_SNAPSHOT_V3);
+    expect(parsed.snapshotProfile).toBe(REPORTING_STATEMENT_SNAPSHOT_V4);
     expect(parsed.serializerVersion).toBe(REPORTING_STATEMENT_SERIALIZER_V1);
     expect(parsed.operationalStartPolicyVersionId).toBe(operationalPolicyVersionId);
     expect(parsed.operationalStartDate).toBe('2026-08-15');
@@ -424,18 +454,24 @@ integration('Reporting Statements control-plane PostgreSQL', () => {
     });
 
     // Create service instance with boundary clock
+    const boundarySpecialWorkload = new SpecialProgrammeWorkloadProjectionService(
+      prisma as never,
+      businessConfiguration,
+    );
+    const boundaryOfficialWorkload = new OfficialWorkloadProjectionService(
+      prisma as never,
+      businessConfiguration,
+      boundarySpecialWorkload,
+    );
     const boundaryService = new ReportingStatementsService(
       prisma as never,
       repository,
       projection as never,
       { evaluate: jest.fn().mockResolvedValue({ allowed: true }) } as never,
-      new AuditService(prisma as never),
+      auditService,
       businessConfiguration,
       { now: jest.fn(() => boundaryAsOf) },
-      new SpecialProgrammeWorkloadProjectionService(
-        prisma as never,
-        businessConfiguration,
-      ),
+      boundaryOfficialWorkload,
     );
 
     projection.resolveInTransaction.mockResolvedValue(personalProjection(subject, submitter, year, boundaryAsOf));
@@ -463,7 +499,7 @@ integration('Reporting Statements control-plane PostgreSQL', () => {
     );
 
     const before = await repository.readFrozenRevision(prisma, submitted.revisionId);
-    expect(before?.snapshotProfile).toBe(REPORTING_STATEMENT_SNAPSHOT_V3);
+    expect(before?.snapshotProfile).toBe(REPORTING_STATEMENT_SNAPSHOT_V4);
     const beforeParsed = JSON.parse(before!.canonicalSnapshotJson);
     expect(beforeParsed.operationalStartPolicyVersionId).toBe(operationalPolicyVersionId);
     expect(beforeParsed.operationalStartDate).toBe('2026-08-15');
