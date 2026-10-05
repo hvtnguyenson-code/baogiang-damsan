@@ -43,7 +43,7 @@ All direct dependencies of `P5-010` are CLOSED. `P5-010` is **`IN_REVIEW`** on b
 
 ### In Review
 
-- `P5-010` — Pilot business scope + cross-domain freeze — **`IN_REVIEW`** on branch `feat/p5-010-full-business-cross-domain-freeze`; canonical start `main@c4321d5630b60296279e7a054206a80a093aa97a`. Integration suite `apps/api/test/pilot-business-freeze/p5-010-full-business-freeze.integration.spec.ts` proves full cross-domain freeze across all 12 mandatory scenarios. Zero schema changes, zero migrations, zero production/VPS mutation.
+- `P5-010` — Pilot business scope + cross-domain freeze — **`IN_REVIEW`** on branch `feat/p5-010-full-business-cross-domain-freeze`; canonical start `main@c4321d5630b60296279e7a054206a80a093aa97a`. Correction 001 executed: all 12 cross-domain scenarios use production service paths or authoritative domain integration references with zero overclaim (`apps/api/test/pilot-business-freeze/p5-010-full-business-freeze.integration.spec.ts`, 12/12 PASS). Zero schema changes, zero migrations, zero production/VPS mutation; ready for independent re-review.
 
 ### Ready
 

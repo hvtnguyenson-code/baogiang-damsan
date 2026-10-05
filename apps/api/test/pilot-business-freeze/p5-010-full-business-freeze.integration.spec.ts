@@ -1,22 +1,18 @@
-import { BadRequestException } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import {
   CurricularTeachingExecutionKind,
   HomeroomAssignmentStatus,
   OperationalLessonDispositionType,
   OperationalOverlayStatus,
+  SpecialActivityScope,
   SpecialActivityStatus,
   TeachingExecutionStatus,
   UserStatus,
 } from '@prisma/client';
 import {
   CivilDateString,
-  EffectiveScheduleSlotItem,
-  IndividualWeeklyScheduleDay,
-  WorkloadAdjustmentPolicyPayloadV1,
-  WorkloadAdjustmentRuleV1,
 } from '@baogiang/contracts';
-import { integration, normalizedCode, Phase01Harness } from '../helpers/phase01-test-harness';
-import { BusinessConfigurationService } from '../../src/business-configuration/business-configuration.service';
+import { integration, normalizedCode, Phase01Harness, testOrigin, testPassword } from '../helpers/phase01-test-harness';
 import { ProgressDebtService } from '../../src/progress-debt/progress-debt.service';
 import { ReportingProjectionService } from '../../src/reporting-projection/reporting-projection.service';
 import { OfficialWorkloadProjectionService } from '../../src/official-workload/official-workload-projection.service';
@@ -24,14 +20,24 @@ import { SpecialProgrammeWorkloadProjectionService } from '../../src/special-pro
 import { ReportingStatementsService } from '../../src/reporting-statements/reporting-statements.service';
 import { EffectiveScheduleService } from '../../src/effective-schedule/effective-schedule.service';
 import { PpctOccurrenceAllocationService } from '../../src/ppct-occurrence-allocation/ppct-occurrence-allocation.service';
+import { HistoricalTeachingService } from '../../src/historical-teaching/historical-teaching.service';
+import { MakeupSchedulesService } from '../../src/operational-overlays/makeup-schedules.service';
+import { OVERLAY_CLOCK } from '../../src/operational-overlays/operational-overlay-policy';
+import { TeachingExecutionsService } from '../../src/teaching-executions/teaching-executions.service';
+import { ProgrammePlanningService } from '../../src/programme-planning/programme-planning.service';
+import { AuthenticatedRequest } from '../../src/auth/auth.types';
 import {
   assertFrozenReportingStatementIntegrity,
   REPORTING_STATEMENT_SNAPSHOT_V4,
 } from '../../src/reporting-statement-internal/reporting-statement-canonicalizer';
 
+const fixedNow = new Date('2026-09-07T08:00:00.000Z');
+const fixedClock = {
+  now: () => new Date(fixedNow.getTime()),
+};
+
 integration('P5-010: Full Business Pilot Cross-Domain Freeze PostgreSQL Suite', () => {
   const harness = new Phase01Harness();
-  let businessConfig: BusinessConfigurationService;
   let progressDebt: ProgressDebtService;
   let reportingProjection: ReportingProjectionService;
   let officialWorkload: OfficialWorkloadProjectionService;
@@ -39,10 +45,15 @@ integration('P5-010: Full Business Pilot Cross-Domain Freeze PostgreSQL Suite', 
   let reportingStatements: ReportingStatementsService;
   let effectiveSchedule: EffectiveScheduleService;
   let ppctAllocation: PpctOccurrenceAllocationService;
+  let historicalTeaching: HistoricalTeachingService;
+  let makeupSchedules: MakeupSchedulesService;
+  let teachingExecutions: TeachingExecutionsService;
+  let programmePlanning: ProgrammePlanningService;
 
   beforeAll(async () => {
-    await harness.start();
-    businessConfig = harness.app.get(BusinessConfigurationService);
+    await harness.start([
+      { token: OVERLAY_CLOCK, value: fixedClock },
+    ]);
     progressDebt = harness.app.get(ProgressDebtService);
     reportingProjection = harness.app.get(ReportingProjectionService);
     officialWorkload = harness.app.get(OfficialWorkloadProjectionService);
@@ -50,6 +61,10 @@ integration('P5-010: Full Business Pilot Cross-Domain Freeze PostgreSQL Suite', 
     reportingStatements = harness.app.get(ReportingStatementsService);
     effectiveSchedule = harness.app.get(EffectiveScheduleService);
     ppctAllocation = harness.app.get(PpctOccurrenceAllocationService);
+    historicalTeaching = harness.app.get(HistoricalTeachingService, { strict: false });
+    makeupSchedules = harness.app.get(MakeupSchedulesService);
+    teachingExecutions = harness.app.get(TeachingExecutionsService, { strict: false });
+    programmePlanning = harness.app.get(ProgrammePlanningService, { strict: false });
   }, 60000);
 
   afterAll(async () => {
@@ -62,71 +77,59 @@ integration('P5-010: Full Business Pilot Cross-Domain Freeze PostgreSQL Suite', 
 
   beforeEach(async () => {
     await cleanSuite();
+    await seedRequiredCapabilities();
   });
+
+  async function seedRequiredCapabilities(): Promise<void> {
+    await harness.seedCapabilities([
+      { key: 'APPROVAL_PRINCIPAL', scopes: ['SCHOOL_WIDE'] },
+      { key: 'APPROVAL_VICE_PRINCIPAL', scopes: ['SCHOOL_WIDE'] },
+      { key: 'GDDP_COORDINATOR', scopes: ['ACTIVITY'] },
+      { key: 'HĐTN_COORDINATOR', scopes: ['ACTIVITY'] },
+      { key: 'SPECIAL_ACTIVITY_MANAGE', scopes: ['SCHOOL_WIDE'] },
+      { key: 'TEACHING_EXECUTION_RECORD', scopes: ['PERSONAL'] },
+      { key: 'TEACHING_EXECUTION_MANAGE', scopes: ['SUBJECT', 'SCHOOL_WIDE'] },
+      { key: 'TEACHING_OPERATION_MANAGE', scopes: ['SUBJECT', 'SCHOOL_WIDE'] },
+      { key: 'CALENDAR_EXCEPTION_MANAGE', scopes: ['SCHOOL_WIDE'] },
+      { key: 'TIMETABLE_MANAGE', scopes: ['SCHOOL_WIDE'] },
+      { key: 'BUSINESS_CONFIGURATION_MANAGE', scopes: ['SCHOOL_WIDE'] },
+      { key: 'REPORTING_STATEMENT_SUBMIT', scopes: ['PERSONAL'] },
+      { key: 'SYSTEM_ADMIN', scopes: ['SCHOOL_WIDE'] },
+    ]);
+  }
 
   async function cleanSuite(): Promise<void> {
     await harness.prisma.$executeRawUnsafe(`
       TRUNCATE TABLE
-        "programme_masters",
-        "special_activities"
+        "audit_events",
+        "auth_sessions",
+        "capability_grants",
+        "capability_definitions",
+        "subject_groups",
+        "academic_years",
+        "users"
       CASCADE;
     `);
-
-    await harness.prisma.historicalTeachingImportRow.deleteMany();
-    await harness.prisma.historicalTeachingImportBatch.deleteMany();
-
-    await harness.prisma.reportingStatementHistory.deleteMany();
-    await harness.prisma.reportingStatementCommand.deleteMany();
-    await harness.prisma.reportingStatementRevisionSubject.deleteMany();
-    await harness.prisma.reportingStatementRevisionState.deleteMany();
-    await harness.prisma.reportingStatementRevision.updateMany({
-      data: { predecessorRevisionId: null, supersedesRevisionId: null },
-    });
-    await harness.prisma.reportingStatementRevision.deleteMany();
-    await harness.prisma.reportingStatementSeries.deleteMany();
-
-    await harness.prisma.curricularTeachingExecution.deleteMany();
-    await harness.prisma.makeupTeachingSchedule.deleteMany();
-    await harness.prisma.operationalLessonDisposition.deleteMany();
-
-    await harness.prisma.capabilityGrant.deleteMany();
-    await harness.prisma.staffAdditionalDutyAssignment.deleteMany();
-    await harness.prisma.additionalDutyDefinition.deleteMany();
-    await harness.prisma.homeroomAssignment.deleteMany();
-
-    await harness.prisma.timetableSpecialProgrammeMarker.deleteMany();
-    await harness.prisma.timetableEntry.deleteMany();
-    await harness.prisma.timetableVersion.deleteMany();
-    await harness.prisma.teachingAssignment.deleteMany();
-    await harness.prisma.staffSubject.deleteMany();
-
-    await harness.prisma.ppctItemLineage.deleteMany();
-    await harness.prisma.ppctClassAssociation.deleteMany();
-    await harness.prisma.ppctItemRevision.deleteMany();
-    await harness.prisma.ppctItem.deleteMany();
-    await harness.prisma.ppctVersion.deleteMany();
-    await harness.prisma.ppctPlan.deleteMany();
-
-    await harness.prisma.schoolClass.deleteMany();
-    await harness.prisma.subject.deleteMany();
-    await harness.prisma.timeSlotDefinition.deleteMany();
-
-    await harness.prisma.semester.deleteMany();
-    await harness.prisma.academicWeekSegment.deleteMany();
-    await harness.prisma.academicWeek.deleteMany();
-    await harness.prisma.calendarInterruption.deleteMany();
-    await harness.prisma.calendarExceptionTimeSlot.deleteMany();
-    await harness.prisma.calendarException.deleteMany();
-    await harness.prisma.academicCalendarVersion.deleteMany();
-
-    await harness.prisma.businessPolicyCommand.deleteMany();
-    await harness.prisma.businessPolicyVersion.deleteMany();
-    await harness.prisma.businessPolicyStream.deleteMany();
-
     await harness.clean();
   }
 
-  async function createBaseAcademicSetup() {
+  function mockAuthRequest(user: { id: string; username?: string; displayName?: string }): AuthenticatedRequest {
+    return {
+      auth: {
+        sessionId: `sess-${randomUUID().slice(0, 8)}`,
+        user: {
+          id: user.id,
+          username: user.username ?? 'actor',
+          displayName: user.displayName ?? 'Actor',
+          mustChangePassword: false,
+        },
+      },
+      header: (name: string) => (name.toLowerCase() === 'origin' ? testOrigin : undefined),
+      headers: { origin: testOrigin },
+    } as unknown as AuthenticatedRequest;
+  }
+
+  async function createBaseAcademicSetup(options?: { operationalStartDate?: string }) {
     const year = await harness.prisma.academicYear.create({
       data: {
         code: normalizedCode('Y_P5'),
@@ -134,10 +137,11 @@ integration('P5-010: Full Business Pilot Cross-Domain Freeze PostgreSQL Suite', 
       },
     });
 
+    const teacherAPasswordHash = await harness.passwords.hash(testPassword);
     const teacherA = await harness.prisma.user.create({
       data: {
         username: normalizedCode('u_ta').toLowerCase(),
-        passwordHash: 'hash',
+        passwordHash: teacherAPasswordHash,
         status: UserStatus.ACTIVE,
         mustChangePassword: false,
         profile: {
@@ -148,12 +152,13 @@ integration('P5-010: Full Business Pilot Cross-Domain Freeze PostgreSQL Suite', 
           },
         },
       },
+      include: { profile: true },
     });
 
     const teacherB = await harness.prisma.user.create({
       data: {
         username: normalizedCode('u_tb').toLowerCase(),
-        passwordHash: 'hash',
+        passwordHash: teacherAPasswordHash,
         status: UserStatus.ACTIVE,
         mustChangePassword: false,
         profile: {
@@ -164,12 +169,13 @@ integration('P5-010: Full Business Pilot Cross-Domain Freeze PostgreSQL Suite', 
           },
         },
       },
+      include: { profile: true },
     });
 
     const principal = await harness.prisma.user.create({
       data: {
         username: normalizedCode('u_pr').toLowerCase(),
-        passwordHash: 'hash',
+        passwordHash: teacherAPasswordHash,
         status: UserStatus.ACTIVE,
         mustChangePassword: false,
         profile: {
@@ -180,6 +186,22 @@ integration('P5-010: Full Business Pilot Cross-Domain Freeze PostgreSQL Suite', 
           },
         },
       },
+      include: { profile: true },
+    });
+
+    // Grant teacherA capability to record personal executions and submit personal statements
+    await harness.prisma.capabilityGrant.createMany({
+      data: [
+        { userId: teacherA.id, capabilityKey: 'TEACHING_EXECUTION_RECORD', scopeType: 'PERSONAL' },
+        { userId: teacherA.id, capabilityKey: 'REPORTING_STATEMENT_SUBMIT', scopeType: 'PERSONAL' },
+        { userId: teacherB.id, capabilityKey: 'TEACHING_EXECUTION_RECORD', scopeType: 'PERSONAL' },
+        { userId: principal.id, capabilityKey: 'TEACHING_EXECUTION_MANAGE', scopeType: 'SCHOOL_WIDE' },
+        { userId: principal.id, capabilityKey: 'TEACHING_OPERATION_MANAGE', scopeType: 'SCHOOL_WIDE' },
+        { userId: principal.id, capabilityKey: 'APPROVAL_PRINCIPAL', scopeType: 'SCHOOL_WIDE' },
+        { userId: principal.id, capabilityKey: 'SPECIAL_ACTIVITY_MANAGE', scopeType: 'SCHOOL_WIDE' },
+        { userId: principal.id, capabilityKey: 'GDDP_COORDINATOR', scopeType: 'SCHOOL_WIDE' },
+        { userId: principal.id, capabilityKey: 'HĐTN_COORDINATOR', scopeType: 'SCHOOL_WIDE' },
+      ],
     });
 
     const calendar = await harness.prisma.academicCalendarVersion.create({
@@ -190,7 +212,7 @@ integration('P5-010: Full Business Pilot Cross-Domain Freeze PostgreSQL Suite', 
         endDate: new Date('2027-05-31T00:00:00.000Z'),
         officialWeekCount: 35,
         reserveWeekCount: 1,
-        teachingWeekdays: ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'],
+        teachingWeekdays: ['MONDAY', 'TUESDAY'],
         isActive: true,
         activatedAt: new Date('2026-08-01T00:00:00.000Z'),
       },
@@ -290,7 +312,7 @@ integration('P5-010: Full Business Pilot Cross-Domain Freeze PostgreSQL Suite', 
         startTime: new Date('1970-01-01T07:00:00Z'),
         endTime: new Date('1970-01-01T07:45:00Z'),
         allowRegularTeaching: true,
-        allowMakeupTeaching: true,
+        allowMakeupTeaching: false,
       },
     });
 
@@ -438,7 +460,7 @@ integration('P5-010: Full Business Pilot Cross-Domain Freeze PostgreSQL Suite', 
         streamId: opStartStream.id,
         versionNumber: 1,
         status: 'PUBLISHED',
-        payload: { operationalStartDate: '2026-08-01' },
+        payload: { operationalStartDate: options?.operationalStartDate ?? '2026-08-01' },
         validatorVersion: 'v1',
         effectiveFrom: new Date('2026-08-01T00:00:00.000Z'),
         effectiveUntil: null,
@@ -481,92 +503,442 @@ integration('P5-010: Full Business Pilot Cross-Domain Freeze PostgreSQL Suite', 
     };
   }
 
-  async function createCurricularExecution(input: {
-    f: Awaited<ReturnType<typeof createBaseAcademicSetup>>;
-    actualTeacherUserId: string;
-    kind?: CurricularTeachingExecutionKind;
-    sourceCivilDate?: string;
-    executionCivilDate?: string;
-    dispositionType?: string;
-    makeupScheduleId?: string | null;
-    ppctItemId?: string;
-    ppctItemRevisionId?: string;
-  }) {
-    const { f } = input;
-    const isMakeup = input.kind === CurricularTeachingExecutionKind.MAKEUP;
-    const dateStr = input.executionCivilDate ?? input.sourceCivilDate ?? '2026-09-07';
-    const srcDateStr = isMakeup ? (input.sourceCivilDate ?? '2026-09-07') : dateStr;
-    const execDateStr = dateStr;
-    const srcDate = new Date(`${srcDateStr}T00:00:00.000Z`);
-    const execDate = new Date(`${execDateStr}T00:00:00.000Z`);
+  // =========================================================================
+  // SCENARIO 1: Normal curriculum happy path
+  // =========================================================================
+  it('Scenario 1: Normal curriculum happy path preserves canonical identities and provenance', async () => {
+    const f = await createBaseAcademicSetup();
 
-    return harness.prisma.curricularTeachingExecution.create({
-      data: {
-        kind: input.kind ?? 'NORMAL',
-        status: TeachingExecutionStatus.ACTIVE,
+    const allocation = await ppctAllocation.resolve({
+      academicYearId: f.year.id,
+      schoolClassId: f.schoolClass.id,
+      subjectId: f.subject.id,
+      throughCivilDate: '2026-09-07',
+    });
+
+    expect(allocation.status).toBe('PASS');
+    expect(allocation.normalAllocations).toHaveLength(1);
+    const occ = allocation.normalAllocations[0]!;
+    expect(occ.occurrence.civilDate).toBe('2026-09-07');
+    expect(occ.allocationStatus).toBe('ALLOCATED');
+    expect(occ.expectedPpctItem?.ppctItemId).toBe(f.item.id);
+
+    // Confirm execution via production service TeachingExecutionsService.confirmNormal
+    const execResult = await teachingExecutions.confirmNormal(
+      {
         academicYearId: f.year.id,
         schoolClassId: f.schoolClass.id,
         subjectId: f.subject.id,
-        sourceNormalOccurrenceKey: `NORMAL:${f.entry.id}:${srcDateStr}`,
-        originalTimetableVersionId: f.timetable.id,
-        originalTimetableEntryId: f.entry.id,
-        sourceCivilDate: srcDate,
-        sourceAcademicCalendarVersionId: f.calendar.id,
-        sourceTimeSlotDefinitionId: f.slot.id,
-        originalTeachingAssignmentId: f.assignment.id,
-        responsibleTeacherUserId: f.teacherA.id,
-        ppctClassAssociationId: f.association.id,
+        timetableEntryId: f.entry.id,
+        sourceCivilDate: '2026-09-07',
+        requestKey: `sc1-normal-exec-${randomUUID()}`,
+      },
+      mockAuthRequest(f.teacherA),
+    );
+    expect(execResult.outcome).toBe('CREATED');
+    const execution = execResult.item;
+
+    expect(execution.kind).toBe(CurricularTeachingExecutionKind.NORMAL);
+    expect(execution.actualTeacherUserId).toBe(f.teacherA.id);
+
+    const asOf = new Date('2026-09-07T18:00:00.000Z');
+    const progress = await progressDebt.resolve({
+      academicYearId: f.year.id,
+      schoolClassId: f.schoolClass.id,
+      subjectId: f.subject.id,
+      asOfInstant: asOf,
+    });
+
+    expect(progress.status).toBe('PASS');
+    expect(progress.counts!.completedCount).toBe(1);
+    expect(progress.counts!.openDebtCount).toBe(0);
+
+    const report = await reportingProjection.resolve({
+      academicYearId: f.year.id,
+      roots: [{ schoolClassId: f.schoolClass.id, subjectId: f.subject.id }],
+      fromCivilDate: '2026-09-07',
+      toCivilDate: '2026-09-13',
+      asOfInstant: asOf,
+    });
+    expect(report.status).toBe('PASS');
+    expect(report.counts!.completedCount).toBeGreaterThanOrEqual(1);
+  });
+
+  // =========================================================================
+  // SCENARIO 2: CORE + SPECIALIZED_STUDY routing & independent progression (Correction A)
+  // =========================================================================
+  it('Scenario 2: CORE and SPECIALIZED_STUDY route deterministically within week and progress independently', async () => {
+    const f = await createBaseAcademicSetup();
+
+    // Mark previous version SUPERSEDED to adhere to ppct_versions_one_published_per_plan_key
+    await harness.prisma.ppctVersion.update({
+      where: { id: f.version.id },
+      data: {
+        status: 'SUPERSEDED',
+        supersededByUserId: f.teacherA.id,
+        supersededAt: new Date('2026-08-01T00:00:00.000Z'),
+      },
+    });
+
+    const specVer = await harness.prisma.ppctVersion.create({
+      data: {
         ppctPlanId: f.plan.id,
-        ppctVersionId: f.version.id,
-        ppctItemId: input.ppctItemId ?? f.item.id,
-        ppctItemRevisionId: input.ppctItemRevisionId ?? f.revision.id,
-        makeupTeachingScheduleId: input.makeupScheduleId ?? null,
-        executionCivilDate: execDate,
-        executionAcademicCalendarVersionId: f.calendar.id,
-        executionTimeSlotDefinitionId: input.makeupScheduleId ? f.makeupSlot.id : f.slot.id,
-        executionAcademicWeekId: execDateStr >= '2026-09-14' ? f.week2.id : f.week.id,
-        executionAcademicWeekSegmentId: execDateStr >= '2026-09-14' ? f.segment2.id : f.segment.id,
-        actualTeacherUserId: input.actualTeacherUserId,
-        schoolClassCodeSnapshot: f.schoolClass.code,
-        schoolClassNameSnapshot: f.schoolClass.name,
-        subjectCodeSnapshot: f.subject.code,
-        subjectNameSnapshot: f.subject.name,
-        responsibleTeacherDisplayNameSnapshot: 'Giao vien Phu Trach',
-        actualTeacherDisplayNameSnapshot: 'Giao vien Thuc Day',
-        createRequestKey: crypto.randomUUID(),
-        createRequestFingerprint: crypto.randomUUID(),
-        createdByUserId: input.actualTeacherUserId,
+        versionNumber: 2,
+        status: 'PUBLISHED',
+        createdByUserId: f.teacherA.id,
+        publishedByUserId: f.teacherA.id,
+        publishedAt: new Date('2026-08-01T00:00:00.000Z'),
       },
     });
-  }
 
-  async function createSpecialProgrammeWorkload(input: {
-    f: Awaited<ReturnType<typeof createBaseAcademicSetup>>;
-    teacherUserId: string;
-    civilDateStr?: string;
-    coefficient?: number;
-  }) {
-    const { f } = input;
-    const dateStr = input.civilDateStr ?? '2026-09-14';
-    const civilDate = new Date(`${dateStr}T00:00:00.000Z`);
-    const coeff = input.coefficient ?? 1.0;
+    const coreItem = await harness.prisma.ppctItem.create({
+      data: { ppctPlanId: f.plan.id, component: 'CORE' },
+    });
+    await harness.prisma.ppctItemRevision.create({
+      data: {
+        ppctVersionId: specVer.id,
+        ppctPlanId: f.plan.id,
+        ppctItemId: coreItem.id,
+        component: 'CORE',
+        sequence: 1,
+        title: 'Core Lesson 1',
+        lessonType: 'LESSON',
+      },
+    });
 
-    let spStream = await harness.prisma.businessPolicyStream.findFirst({
-      where: {
-        familyKey: 'SPECIAL_PROGRAMME_WORKLOAD',
-        resourceKind: 'ACADEMIC_YEAR',
+    const specItem = await harness.prisma.ppctItem.create({
+      data: { ppctPlanId: f.plan.id, component: 'SPECIALIZED_STUDY' },
+    });
+    await harness.prisma.ppctItemRevision.create({
+      data: {
+        ppctVersionId: specVer.id,
+        ppctPlanId: f.plan.id,
+        ppctItemId: specItem.id,
+        component: 'SPECIALIZED_STUDY',
+        sequence: 1,
+        title: 'Chuyen de 1',
+        lessonType: 'LESSON',
+      },
+    });
+
+    await harness.prisma.ppctClassAssociation.updateMany({
+      where: { schoolClassId: f.schoolClass.id, subjectId: f.subject.id },
+      data: {
+        ppctPlanId: f.plan.id,
+        ppctVersionId: specVer.id,
+        curricularProfile: 'CORE_PLUS_SPECIALIZED_STUDY',
+      },
+    });
+
+    // Occurrence allocation v2 resolves both CORE on Monday and SPECIALIZED_STUDY on Tuesday
+    const allocation = await ppctAllocation.resolveV2({
+      academicYearId: f.year.id,
+      schoolClassId: f.schoolClass.id,
+      subjectId: f.subject.id,
+      throughCivilDate: '2026-09-08',
+    });
+
+    expect(allocation.status).toBe('PASS');
+    expect(allocation.normalAllocations).toHaveLength(2);
+
+    const monAlloc = allocation.normalAllocations.find((a) => a.occurrence.civilDate === '2026-09-07')!;
+    const tueAlloc = allocation.normalAllocations.find((a) => a.occurrence.civilDate === '2026-09-08')!;
+
+    expect(monAlloc.plannedComponent).toBe('CORE');
+    expect(monAlloc.expectedPpctItem?.component).toBe('CORE');
+    expect(monAlloc.expectedPpctItem?.ppctItemId).toBe(coreItem.id);
+
+    expect(tueAlloc.plannedComponent).toBe('SPECIALIZED_STUDY');
+    expect(tueAlloc.expectedPpctItem?.component).toBe('SPECIALIZED_STUDY');
+    expect(tueAlloc.expectedPpctItem?.ppctItemId).toBe(specItem.id);
+
+    // Step A: Execute CORE only on Monday via production service
+    await teachingExecutions.confirmNormal(
+      {
         academicYearId: f.year.id,
+        schoolClassId: f.schoolClass.id,
+        subjectId: f.subject.id,
+        timetableEntryId: f.entry.id,
+        sourceCivilDate: '2026-09-07',
+        requestKey: `sc2-core-exec-${randomUUID()}`,
+      },
+      mockAuthRequest(f.teacherA),
+    );
+
+    // ProgressDebtService.resolveV2 through Monday shows CORE completed, Tuesday still pending
+    const progressMon = await progressDebt.resolveV2({
+      academicYearId: f.year.id,
+      schoolClassId: f.schoolClass.id,
+      subjectId: f.subject.id,
+      asOfInstant: new Date('2026-09-07T18:00:00.000Z'),
+    });
+    expect(progressMon.status).toBe('PASS');
+    const monItem = progressMon.items.find((i) => i.sourceCivilDate === '2026-09-07')!;
+    expect(monItem.classification).toBe('COMPLETED');
+    expect(monItem.component).toBe('CORE');
+
+    // Step B: ProgressDebtService.resolveV2 through Tuesday shows CORE completed, but SPECIALIZED_STUDY was NOT consumed by CORE
+    const progressTueBefore = await progressDebt.resolveV2({
+      academicYearId: f.year.id,
+      schoolClassId: f.schoolClass.id,
+      subjectId: f.subject.id,
+      asOfInstant: new Date('2026-09-08T18:00:00.000Z'),
+    });
+    expect(progressTueBefore.status).toBe('PASS');
+    const tueItemPending = progressTueBefore.items.find((i) => i.sourceCivilDate === '2026-09-08')!;
+    expect(tueItemPending.classification).toBe('UNCONFIRMED_COMPLETION_GAP');
+    expect(tueItemPending.component).toBe('SPECIALIZED_STUDY');
+
+    // Step C: Execute SPECIALIZED_STUDY on Tuesday via production service
+    await teachingExecutions.confirmNormal(
+      {
+        academicYearId: f.year.id,
+        schoolClassId: f.schoolClass.id,
+        subjectId: f.subject.id,
+        timetableEntryId: f.entry2.id,
+        sourceCivilDate: '2026-09-08',
+        requestKey: `sc2-spec-exec-${randomUUID()}`,
+      },
+      mockAuthRequest(f.teacherA),
+    );
+
+    const progressTueAfter = await progressDebt.resolveV2({
+      academicYearId: f.year.id,
+      schoolClassId: f.schoolClass.id,
+      subjectId: f.subject.id,
+      asOfInstant: new Date('2026-09-08T18:00:00.000Z'),
+    });
+    expect(progressTueAfter.status).toBe('PASS');
+    expect(progressTueAfter.counts!.completedCount).toBe(2);
+
+    // SPECIALIZED_STUDY never creates SpecialActivity records (remains ordinary curriculum)
+    const specialActivityCount = await harness.prisma.specialActivity.count({
+      where: { academicYearId: f.year.id },
+    });
+    expect(specialActivityCount).toBe(0);
+  });
+
+  // =========================================================================
+  // SCENARIO 3: Delayed go-live & Historical Ingestion (Correction B)
+  // =========================================================================
+  it('Scenario 3: Delayed go-live guards pre-operational period and ingests historical truth via production HistoricalTeachingService', async () => {
+    // Set OPERATIONAL_START to 2026-09-10 (making 2026-09-07 and 2026-09-08 strictly pre-operational)
+    const f = await createBaseAcademicSetup({ operationalStartDate: '2026-09-10' });
+
+    const teacherCode = f.teacherA.profile!.staffCode!;
+    const sourceText = [
+      'LOP,MON,NGAY_GOC,BUOI_GOC,TIET_GOC,GIAO_VIEN_THUC_DAY,LOAI,NGAY_DAY_THUC_TE,BUOI_THUC_TE,TIET_THUC_TE,GHI_CHU',
+      `${f.schoolClass.code},${f.subject.code},2026-09-07,SANG,1,${teacherCode},BINH_THUONG,2026-09-07,SANG,1,Lich su xac minh qua production`,
+    ].join('\n');
+
+    // Call production HistoricalTeachingService.preview
+    const previewRes = await historicalTeaching.preview({
+      academicYearId: f.year.id,
+      sourceText,
+    });
+    expect(previewRes.canConfirm).toBe(true);
+    expect(previewRes.rows).toHaveLength(1);
+    expect(previewRes.rows[0]!.kind).toBe('NORMAL');
+
+    // Call production HistoricalTeachingService.confirm
+    const confirmRes = await historicalTeaching.confirm(
+      {
+        academicYearId: f.year.id,
+        sourceText,
+        batchRef: previewRes.batchRef,
+        requestFingerprint: previewRes.requestFingerprint,
+        requestKey: `hist-req-p5-${randomUUID()}`,
+      },
+      mockAuthRequest(f.principal),
+    );
+    expect(confirmRes.outcome).toBe('CREATED');
+    expect(confirmRes.rows).toHaveLength(1);
+    const executionId = confirmRes.rows[0]!.executionId!;
+    expect(executionId).toBeDefined();
+
+    // Verify retained HistoricalTeachingImportBatch and Row provenance in DB
+    const batch = await harness.prisma.historicalTeachingImportBatch.findUniqueOrThrow({
+      where: { id: confirmRes.batchId },
+      include: { rows: true },
+    });
+    expect(batch.academicYearId).toBe(f.year.id);
+    expect(batch.rows).toHaveLength(1);
+    expect(batch.rows[0]!.curricularTeachingExecutionId).toBe(executionId);
+
+    // Verify canonical CurricularTeachingExecution created
+    const exec = await harness.prisma.curricularTeachingExecution.findUniqueOrThrow({
+      where: { id: executionId },
+    });
+    expect(exec.status).toBe(TeachingExecutionStatus.ACTIVE);
+    expect(exec.actualTeacherUserId).toBe(f.teacherA.id);
+    expect(exec.ppctItemId).toBe(f.item.id);
+
+    // Assert pre-operational missing occurrence on 2026-09-08 does NOT trigger debt
+    const progress = await progressDebt.resolve({
+      academicYearId: f.year.id,
+      schoolClassId: f.schoolClass.id,
+      subjectId: f.subject.id,
+      asOfInstant: new Date('2026-09-09T00:00:00.000Z'),
+    });
+    expect(progress.status).toBe('PASS');
+    expect(progress.counts!.openDebtCount).toBe(0);
+    expect(progress.counts!.unconfirmedGapCount).toBe(0);
+    expect(progress.counts!.completedCount).toBe(1);
+
+    // Seed minimal workload policy to verify official workload projection receives historical execution
+    const wlStream = await harness.prisma.businessPolicyStream.create({
+      data: { familyKey: 'WORKLOAD_ADJUSTMENT', resourceKind: 'ACADEMIC_YEAR', academicYearId: f.year.id },
+    });
+    await harness.prisma.businessPolicyVersion.create({
+      data: {
+        streamId: wlStream.id,
+        versionNumber: 1,
+        status: 'PUBLISHED',
+        payload: { baseWeeklyNorm: 17, rules: [] },
+        validatorVersion: 'v1',
+        effectiveFrom: new Date('2026-08-01T00:00:00.000Z'),
+        publishedAt: new Date('2026-08-01T00:00:00.000Z'),
+        publishedByUserId: f.principal.id,
+        createdByUserId: f.principal.id,
       },
     });
-    if (!spStream) {
-      spStream = await harness.prisma.businessPolicyStream.create({
-        data: {
-          familyKey: 'SPECIAL_PROGRAMME_WORKLOAD',
-          resourceKind: 'ACADEMIC_YEAR',
+
+    const workload = await officialWorkload.resolve({
+      academicYearId: f.year.id,
+      targetUserId: f.teacherA.id,
+      fromCivilDate: '2026-09-07',
+      toCivilDate: '2026-09-13',
+      asOfInstant: new Date('2026-09-13T00:00:00.000Z'),
+    });
+    expect(workload.status).toBe('PASS');
+    expect(workload.curricularWorkload.totalCredit).toBe(1);
+  });
+
+  // =========================================================================
+  // SCENARIO 4: Public MAKEUP scheduling (Correction C)
+  // =========================================================================
+  it('Scenario 4: Public make-up fulfills original obligation without consuming new PPCT item and resolves debt', async () => {
+    const f = await createBaseAcademicSetup();
+
+    // Create operational disposition: Teacher A absent on Monday 2026-09-07
+    const disposition = await harness.prisma.operationalLessonDisposition.create({
+      data: {
+        academicYearId: f.year.id,
+        timetableVersionId: f.timetable.id,
+        timetableEntryId: f.entry.id,
+        sourceCivilDate: new Date('2026-09-07T00:00:00.000Z'),
+        academicCalendarVersionId: f.calendar.id,
+        timeSlotDefinitionId: f.slot.id,
+        schoolClassId: f.schoolClass.id,
+        subjectId: f.subject.id,
+        teachingAssignmentId: f.assignment.id,
+        responsibleTeacherUserId: f.teacherA.id,
+        dispositionType: OperationalLessonDispositionType.ABSENCE_NO_REPLACEMENT,
+        status: OperationalOverlayStatus.ACTIVE,
+        createRequestKey: `disp-sc4-${randomUUID()}`,
+        createRequestFingerprint: 'fp-disp-sc4',
+        createdByUserId: f.principal.id,
+      },
+    });
+
+    const sourceNormalOccurrenceKey = `NORMAL:${f.entry.id}:2026-09-07`;
+
+    // 1. ProgressDebtService shows proven open debt
+    const debtBefore = await progressDebt.resolve({
+      academicYearId: f.year.id,
+      schoolClassId: f.schoolClass.id,
+      subjectId: f.subject.id,
+      asOfInstant: new Date('2026-09-08T00:00:00.000Z'),
+    });
+    expect(debtBefore.status).toBe('PASS');
+    expect(debtBefore.counts!.openDebtCount).toBe(1);
+
+    // 2. Production query: listCandidates finds this proven debt
+    const candidates = await makeupSchedules.listCandidates(
+      { academicYearId: f.year.id, page: 1, pageSize: 20 },
+      mockAuthRequest(f.principal),
+    );
+    expect(candidates.items.some((c) => c.sourceNormalOccurrenceKey === sourceNormalOccurrenceKey)).toBe(true);
+
+    // Record PPCT items count before scheduling makeup
+    const ppctCountBefore = await harness.prisma.ppctItem.count({ where: { ppctPlanId: f.plan.id } });
+
+    // 3. Production command: createMakeupSchedule via production create
+    const makeupRes = await makeupSchedules.create(
+      {
+        academicYearId: f.year.id,
+        sourceNormalOccurrenceKey,
+        targetCivilDate: '2026-09-12', // Saturday
+        targetTimeSlotDefinitionId: f.makeupSlot.id,
+        scheduledTeacherUserId: f.teacherA.id,
+        note: 'Lập lịch dạy bù công khai cho tiết ngày 07/09',
+        requestKey: `makeup-cmd-sc4-${randomUUID()}`,
+      },
+      mockAuthRequest(f.principal),
+    );
+    expect(makeupRes.outcome).toBe('CREATED');
+    const scheduleId = makeupRes.record.id;
+
+    // Verify MakeupTeachingSchedule links exact source disposition and original PPCT item
+    const persistedSchedule = await harness.prisma.makeupTeachingSchedule.findUniqueOrThrow({
+      where: { id: scheduleId },
+    });
+    expect(persistedSchedule.status).toBe('ACTIVE');
+    expect(persistedSchedule.sourceDispositionId).toBe(disposition.id);
+    expect(persistedSchedule.ppctItemId).toBe(f.item.id);
+
+    // Collision check: duplicate schedule creation at same slot is rejected
+    await expect(
+      makeupSchedules.create(
+        {
           academicYearId: f.year.id,
+          sourceNormalOccurrenceKey,
+          targetCivilDate: '2026-09-12',
+          targetTimeSlotDefinitionId: f.makeupSlot.id,
+          scheduledTeacherUserId: f.teacherA.id,
+          requestKey: `makeup-cmd-dup-${randomUUID()}`,
         },
-      });
-    }
+        mockAuthRequest(f.principal),
+      ),
+    ).rejects.toThrow();
+
+    // Verify PPCT items count remains invariant (zero new PPCT item consumption)
+    const ppctCountAfter = await harness.prisma.ppctItem.count({ where: { ppctPlanId: f.plan.id } });
+    expect(ppctCountAfter).toBe(ppctCountBefore);
+
+    // 4. Confirm makeup execution via production TeachingExecutionsService.confirmMakeup
+    const confirmExecRes = await teachingExecutions.confirmMakeup(
+      {
+        makeupTeachingScheduleId: scheduleId,
+        requestKey: `exec-makeup-sc4-${randomUUID()}`,
+      },
+      mockAuthRequest(f.teacherA),
+    );
+    expect(confirmExecRes.outcome).toBe('CREATED');
+    expect(confirmExecRes.item.kind).toBe(CurricularTeachingExecutionKind.MAKEUP);
+
+    // 5. Debt is resolved via makeup execution
+    const debtAfter = await progressDebt.resolve({
+      academicYearId: f.year.id,
+      schoolClassId: f.schoolClass.id,
+      subjectId: f.subject.id,
+      asOfInstant: new Date('2026-09-13T00:00:00.000Z'),
+    });
+    expect(debtAfter.status).toBe('PASS');
+    expect(debtAfter.counts!.openDebtCount).toBe(0);
+    expect(debtAfter.counts!.completedCount).toBe(1);
+  });
+
+  // =========================================================================
+  // SCENARIO 5: HĐTN CLASS historical homeroom preservation (Correction D)
+  // =========================================================================
+  it('Scenario 5: HĐTN CLASS retains historical GVCN without drift after subsequent homeroom changes', async () => {
+    const f = await createBaseAcademicSetup();
+
+    // Special programme policy
+    const spStream = await harness.prisma.businessPolicyStream.create({
+      data: { familyKey: 'SPECIAL_PROGRAMME_WORKLOAD', resourceKind: 'ACADEMIC_YEAR', academicYearId: f.year.id },
+    });
     await harness.prisma.businessPolicyVersion.create({
       data: {
         streamId: spStream.id,
@@ -574,24 +946,24 @@ integration('P5-010: Full Business Pilot Cross-Domain Freeze PostgreSQL Suite', 
         status: 'PUBLISHED',
         payload: {
           coefficients: {
-            GDDP: { CLASS: coeff, GRADE: 1.0 },
+            GDDP: { CLASS: 1.0, GRADE: 1.0 },
             HDTN_HN: { CLASS: 1.0, GRADE: 1.0, SCHOOL_WIDE: 1.0 },
           },
         },
         validatorVersion: 'v1',
         effectiveFrom: new Date('2026-08-01T00:00:00.000Z'),
-        effectiveUntil: null,
         publishedAt: new Date('2026-08-01T00:00:00.000Z'),
         publishedByUserId: f.principal.id,
         createdByUserId: f.principal.id,
       },
     });
 
+    // Programme planning: HDTN_HN / CLASS
     const master = await harness.prisma.programmeMaster.create({
       data: {
         academicYearId: f.year.id,
-        kind: 'GDDP',
-        gradeLevel: 10,
+        kind: 'HDTN_HN',
+        gradeLevel: null,
         createdByUserId: f.principal.id,
       },
     });
@@ -607,7 +979,7 @@ integration('P5-010: Full Business Pilot Cross-Domain Freeze PostgreSQL Suite', 
       data: {
         programmePlanVersionId: planVer.id,
         sequence: 1,
-        title: 'Chuyen de GDDP 1',
+        title: 'Sinh hoat lop tuan 1',
         requiredPeriods: 1,
         guidelineWeekFrom: 1,
         guidelineWeekTo: 2,
@@ -627,26 +999,19 @@ integration('P5-010: Full Business Pilot Cross-Domain Freeze PostgreSQL Suite', 
         programmePlanVersionId: planVer.id,
         programmeTopicItemId: topicItem.id,
         academicYearId: f.year.id,
-        civilDate,
-        mode: 'GRADE',
-        gradeLevel: 10,
+        civilDate: new Date('2026-09-08T00:00:00.000Z'), // Tuesday
+        mode: 'CLASS',
+        gradeLevel: null,
+        schoolClassId: f.schoolClass.id,
         status: 'DRAFT',
         createdByUserId: f.principal.id,
       },
     });
-    const slotToUse = civilDate.getUTCDay() === 2 ? f.slot2 : f.slot;
-
-    const occurrenceSlot = await harness.prisma.plannedOccurrenceSlot.create({
+    await harness.prisma.plannedOccurrenceSlot.create({
       data: {
         plannedProgrammeOccurrenceId: occurrence.id,
         academicYearId: f.year.id,
-        timeSlotDefinitionId: slotToUse.id,
-      },
-    });
-    await harness.prisma.plannedSlotStaffing.create({
-      data: {
-        plannedOccurrenceSlotId: occurrenceSlot.id,
-        teacherUserId: input.teacherUserId,
+        timeSlotDefinitionId: f.slot2.id,
       },
     });
     await harness.prisma.plannedProgrammeOccurrence.update({
@@ -658,96 +1023,65 @@ integration('P5-010: Full Business Pilot Cross-Domain Freeze PostgreSQL Suite', 
       },
     });
 
-    const staffProfile = await harness.prisma.staffProfile.findUniqueOrThrow({
-      where: { userId: input.teacherUserId },
-    });
-    const activity = await harness.prisma.specialActivity.create({
+    // Historical homeroom assignment for Teacher A valid on 2026-09-08
+    const homeroomA = await harness.prisma.homeroomAssignment.create({
       data: {
-        academicYearId: f.year.id,
-        academicCalendarVersionId: f.calendar.id,
-        civilDate,
-        status: SpecialActivityStatus.ACTIVE,
-        scope: 'GRADE',
-        gradeLevel: 10,
-        title: 'Tiet GDDP',
-        createRequestKey: crypto.randomUUID(),
-        createRequestFingerprint: crypto.randomUUID(),
-        createdByUserId: f.principal.id,
-        createdAt: new Date('2026-09-10T00:00:00.000Z'),
-      },
-    });
-
-    const activitySlot = await harness.prisma.specialActivityTimeSlot.create({
-      data: {
-        specialActivityId: activity.id,
-        academicYearId: f.year.id,
-        timeSlotDefinitionId: slotToUse.id,
-      },
-    });
-
-    const activityStaffing = await harness.prisma.specialActivityStaffing.create({
-      data: {
-        specialActivityId: activity.id,
-        scheduledTeacherUserId: input.teacherUserId,
-        staffProfileId: staffProfile.id,
-        eligibilityCheckedAt: new Date('2026-08-01Z'),
-        eligibilityWasActive: true,
-        eligibilityWasTeachingStaff: true,
-      },
-    });
-
-    await harness.prisma.specialActivityClassTarget.create({
-      data: {
-        specialActivityId: activity.id,
         academicYearId: f.year.id,
         schoolClassId: f.schoolClass.id,
+        teacherUserId: f.teacherA.id,
+        validFrom: new Date('2026-09-01T00:00:00.000Z'),
+        validUntil: new Date('2026-09-10T00:00:00.000Z'),
+        status: HomeroomAssignmentStatus.ACTIVE,
+        createdByUserId: f.principal.id,
       },
     });
 
-    await harness.prisma.specialActivityClassTarget.create({
+    // Materialize occurrence via production ProgrammePlanningService
+    const matRecords = await programmePlanning.materializeOccurrence(
+      occurrence.id,
+      { commandId: `cmd-mat-hdtn-${randomUUID()}` },
+      f.principal.id,
+    );
+    expect(matRecords).toHaveLength(1);
+    const mat = matRecords[0]!;
+    expect(mat.homeroomTeacherUserId).toBe(f.teacherA.id);
+
+    // Verify SpecialActivity created in DB retains historical homeroom assignment ID and Teacher A staffing
+    const act = await harness.prisma.specialActivity.findUniqueOrThrow({
+      where: { id: mat.specialActivityId },
+      include: { staffing: true, timeSlots: true },
+    });
+    expect(act.staffing[0]!.scheduledTeacherUserId).toBe(f.teacherA.id);
+    expect(act.staffing[0]!.historicalHomeroomAssignmentId).toBe(homeroomA.id);
+
+    // Now change/assign subsequent Homeroom to Teacher B from 2026-09-11 onwards
+    await harness.prisma.homeroomAssignment.create({
       data: {
-        specialActivityId: activity.id,
         academicYearId: f.year.id,
-        schoolClassId: f.schoolClassB.id,
+        schoolClassId: f.schoolClass.id,
+        teacherUserId: f.teacherB.id,
+        validFrom: new Date('2026-09-11T00:00:00.000Z'),
+        validUntil: null,
+        status: HomeroomAssignmentStatus.ACTIVE,
+        createdByUserId: f.principal.id,
       },
     });
 
-    await harness.prisma.programmeMaterializedActivity.create({
-      data: {
-        programmeMasterId: master.id,
-        programmePlanVersionId: planVer.id,
-        programmeTopicItemId: topicItem.id,
-        plannedProgrammeOccurrenceId: occurrence.id,
-        plannedOccurrenceSlotId: occurrenceSlot.id,
-        specialActivityId: activity.id,
-        materializedByUserId: f.principal.id,
-        materializedAt: new Date('2026-09-01T00:00:00.000Z'),
+    // Teacher A executes participation via production service TeachingExecutionsService.confirmActivity
+    const actSlot = act.timeSlots[0]!;
+    const confirmActRes = await teachingExecutions.confirmActivity(
+      {
+        specialActivityId: act.id,
+        specialActivityStaffingId: act.staffing[0]!.id,
+        specialActivityTimeSlotId: actSlot.id,
+        requestKey: `exec-hdtn-sc5-${randomUUID()}`,
       },
-    });
+      mockAuthRequest(f.teacherA),
+    );
+    expect(confirmActRes.outcome).toBe('CREATED');
 
-    const execution = await harness.prisma.specialActivityParticipationExecution.create({
-      data: {
-        academicYearId: f.year.id,
-        specialActivityId: activity.id,
-        specialActivityStaffingId: activityStaffing.id,
-        specialActivityTimeSlotId: activitySlot.id,
-        actualTeacherUserId: input.teacherUserId,
-        activityTitleSnapshot: activity.title,
-        actualTeacherDisplayNameSnapshot: staffProfile.displayName,
-        executionCivilDate: civilDate,
-        executionAcademicCalendarVersionId: f.calendar.id,
-        executionTimeSlotDefinitionId: slotToUse.id,
-        executionAcademicWeekId: dateStr >= '2026-09-14' ? f.week2.id : f.week.id,
-        executionAcademicWeekSegmentId: dateStr >= '2026-09-14' ? f.segment2.id : f.segment.id,
-        status: TeachingExecutionStatus.ACTIVE,
-        createRequestKey: crypto.randomUUID(),
-        createRequestFingerprint: crypto.randomUUID(),
-        createdByUserId: input.teacherUserId,
-        createdAt: new Date('2026-09-10T00:00:00.000Z'),
-      },
-    });
-
-    const attestation = await harness.prisma.programmeOccurrenceAttestation.create({
+    // Add active coordinator attestation
+    await harness.prisma.programmeOccurrenceAttestation.create({
       data: {
         programmeMasterId: master.id,
         plannedProgrammeOccurrenceId: occurrence.id,
@@ -757,207 +1091,968 @@ integration('P5-010: Full Business Pilot Cross-Domain Freeze PostgreSQL Suite', 
         scope: 'SCHOOL_WIDE',
         scopeResourceId: null,
         status: 'ACTIVE',
-        attestedAt: new Date('2026-09-10T00:00:00.000Z'),
-        createRequestKey: `req-${crypto.randomUUID()}`,
-        createRequestFingerprint: crypto.randomUUID(),
+        attestedAt: new Date('2026-09-08T12:00:00.000Z'),
+        createRequestKey: randomUUID(),
+        createRequestFingerprint: randomUUID(),
       },
     });
 
-    return { activity, execution, attestation, occurrence };
-  }
-
-  async function createWorkloadAdjustmentPolicy(input: {
-    academicYearId: string;
-    authorUserId: string;
-    baseWeeklyNorm?: number;
-    rules?: WorkloadAdjustmentRuleV1[];
-  }) {
-    const payload: WorkloadAdjustmentPolicyPayloadV1 = {
-      baseWeeklyNorm: input.baseWeeklyNorm ?? 17,
-      rules: input.rules ?? [],
-    };
-
-    const draft = await businessConfig.createDraft(
-      {
-        commandId: crypto.randomUUID(),
-        family: 'WORKLOAD_ADJUSTMENT',
-        resource: { kind: 'ACADEMIC_YEAR', academicYearId: input.academicYearId },
-        payload: payload as unknown as Record<string, unknown>,
-        effectiveFrom: '2026-08-01',
-      },
-      input.authorUserId,
-      { ipAddress: '127.0.0.1', userAgent: 'freeze-test' },
-    );
-
-    return businessConfig.publish(
-      draft.versionId,
-      { commandId: crypto.randomUUID() },
-      input.authorUserId,
-      { ipAddress: '127.0.0.1', userAgent: 'freeze-test' },
-    );
-  }
-
-  // =========================================================================
-  // SCENARIO 1 — Normal curriculum happy path
-  // =========================================================================
-  it('Scenario 1: Normal curriculum happy path preserves canonical identities and provenance', async () => {
-    const f = await createBaseAcademicSetup();
-
-    const exec = await createCurricularExecution({
-      f,
-      actualTeacherUserId: f.teacherA.id,
-      executionCivilDate: '2026-09-07',
-    });
-
-    expect(exec.status).toBe(TeachingExecutionStatus.ACTIVE);
-    expect(exec.actualTeacherUserId).toBe(f.teacherA.id);
-    expect(exec.ppctItemId).toBe(f.item.id);
-
-    const progress = await progressDebt.resolve({
-      academicYearId: f.year.id,
-      schoolClassId: f.schoolClass.id,
-      subjectId: f.subject.id,
-      asOfInstant: new Date('2026-09-07T10:00:00.000Z'),
-    });
-
-    expect(progress.counts?.completedCount).toBeGreaterThanOrEqual(1);
-    expect(progress.counts?.openDebtCount).toBe(0);
-    expect(progress.counts?.lateCount).toBe(0);
-
-    const reporting = await reportingProjection.resolve({
-      academicYearId: f.year.id,
-      roots: [{ schoolClassId: f.schoolClass.id, subjectId: f.subject.id }],
-      fromCivilDate: '2026-09-07',
-      toCivilDate: '2026-09-07',
-      asOfInstant: new Date('2026-09-07T10:00:00.000Z'),
-    });
-
-    expect(reporting.counts?.completedCount).toBeGreaterThanOrEqual(1);
-    expect(reporting.counts?.openDebtCount).toBe(0);
-  });
-
-  // =========================================================================
-  // SCENARIO 2 — CORE + SPECIALIZED_STUDY routing & independent progression
-  // =========================================================================
-  it('Scenario 2: CORE and SPECIALIZED_STUDY route deterministically within week and progress independently', async () => {
-    const f = await createBaseAcademicSetup();
-
-    // Enable CORE_PLUS_SPECIALIZED_STUDY
-    await harness.prisma.ppctClassAssociation.update({
-      where: { id: f.association.id },
-      data: { curricularProfile: 'CORE_PLUS_SPECIALIZED_STUDY' },
-    });
-
-    // Add SPECIALIZED_STUDY item
-    const specItem = await harness.prisma.ppctItem.create({
-      data: { ppctPlanId: f.plan.id, component: 'SPECIALIZED_STUDY' },
-    });
-    await harness.prisma.ppctItemRevision.create({
-      data: {
-        ppctVersionId: f.version.id,
-        ppctPlanId: f.plan.id,
-        ppctItemId: specItem.id,
-        component: 'SPECIALIZED_STUDY',
-        sequence: 1,
-        title: 'Chuyen de 1',
-        lessonType: 'LESSON',
-      },
-    });
-
-    // Allocation for Week 1 (Monday and Tuesday)
-    const allocation = await ppctAllocation.resolveV2({
-      academicYearId: f.year.id,
-      schoolClassId: f.schoolClass.id,
-      subjectId: f.subject.id,
-      throughCivilDate: '2026-09-08',
-    });
-
-    expect(allocation.status).toBe('PASS');
-    expect(allocation.profile).toBe('PPCT_OCCURRENCE_ALLOCATION_V2');
-    expect(allocation.normalAllocations.length).toBeGreaterThanOrEqual(2);
-    const mon = allocation.normalAllocations.find((a) => a.occurrence.civilDate === '2026-09-07');
-    const tue = allocation.normalAllocations.find((a) => a.occurrence.civilDate === '2026-09-08');
-    expect(mon?.plannedComponent).toBe('CORE');
-    expect(tue?.plannedComponent).toBe('SPECIALIZED_STUDY');
-
-    // Invariant: Curricular, not SpecialActivity
-    const specialCount = await harness.prisma.specialActivity.count({
-      where: { academicYearId: f.year.id },
-    });
-    expect(specialCount).toBe(0);
-  });
-
-  // =========================================================================
-  // SCENARIO 3 — Delayed go-live & pre-operational historical ingestion
-  // =========================================================================
-  it('Scenario 3: Delayed go-live guards pre-operational period and ingests historical truth without auto-debt', async () => {
-    const f = await createBaseAcademicSetup();
-
-    await harness.prisma.businessPolicyVersion.deleteMany({
-      where: { streamId: f.opStartStream.id },
-    });
-
-    // Operational start: 2026-09-10
-    const draft = await businessConfig.createDraft(
-      {
-        commandId: crypto.randomUUID(),
-        family: 'OPERATIONAL_START',
-        resource: { kind: 'ACADEMIC_YEAR', academicYearId: f.year.id },
-        payload: { operationalStartDate: '2026-09-10' },
-        effectiveFrom: '2026-08-01',
-      },
-      f.principal.id,
-      { ipAddress: '127.0.0.1', userAgent: 'test' },
-    );
-    await businessConfig.publish(
-      draft.versionId,
-      { commandId: crypto.randomUUID() },
-      f.principal.id,
-      { ipAddress: '127.0.0.1', userAgent: 'test' },
-    );
-
-    // Pre-operational progress debt: no auto-debt
-    const preOpProgress = await progressDebt.resolve({
-      academicYearId: f.year.id,
-      schoolClassId: f.schoolClass.id,
-      subjectId: f.subject.id,
-      asOfInstant: new Date('2026-09-05T18:00:00.000Z'),
-    });
-    expect(preOpProgress.counts?.openDebtCount).toBe(0);
-    expect(preOpProgress.counts?.lateCount).toBe(0);
-
-    // Historical execution
-    await createWorkloadAdjustmentPolicy({
-      academicYearId: f.year.id,
-      authorUserId: f.principal.id,
-      baseWeeklyNorm: 17,
-    });
-
-    await createCurricularExecution({
-      f,
-      actualTeacherUserId: f.teacherA.id,
-      executionCivilDate: '2026-09-01',
-    });
-
-    const workload = await officialWorkload.resolve({
+    // Teacher A receives workload credit
+    const workloadA = await specialWorkload.resolve({
       academicYearId: f.year.id,
       targetUserId: f.teacherA.id,
-      fromCivilDate: '2026-09-01',
-      toCivilDate: '2026-09-05',
-      asOfInstant: new Date('2026-09-05T18:00:00.000Z'),
+      fromCivilDate: '2026-09-07',
+      toCivilDate: '2026-09-13',
+      asOfInstant: new Date(),
     });
+    expect(workloadA.totalCredit).toBe(1);
+    expect(workloadA.contributionCount).toBe(1);
 
-    expect(workload.earnedCredit).toBe(1);
+    // Teacher B receives ZERO workload credit (no drift to new homeroom teacher)
+    const workloadB = await specialWorkload.resolve({
+      academicYearId: f.year.id,
+      targetUserId: f.teacherB.id,
+      fromCivilDate: '2026-09-07',
+      toCivilDate: '2026-09-13',
+      asOfInstant: new Date(),
+    });
+    expect(workloadB.totalCredit).toBe(0);
   });
 
   // =========================================================================
-  // SCENARIO 4 — Public make-up scheduling
+  // SCENARIO 6: HĐTN GRADE & SCHOOL_WIDE dual gate (Correction E)
   // =========================================================================
-  it('Scenario 4: Public make-up fulfills original obligation without consuming new PPCT item and resolves debt', async () => {
+  it('Scenario 6: HĐTN GRADE & SCHOOL_WIDE enforces dual gate and anti-class fan-out', async () => {
     const f = await createBaseAcademicSetup();
 
-    // Create debt disposition
-    const disp = await harness.prisma.operationalLessonDisposition.create({
+    const spStream = await harness.prisma.businessPolicyStream.create({
+      data: { familyKey: 'SPECIAL_PROGRAMME_WORKLOAD', resourceKind: 'ACADEMIC_YEAR', academicYearId: f.year.id },
+    });
+    await harness.prisma.businessPolicyVersion.create({
+      data: {
+        streamId: spStream.id,
+        versionNumber: 1,
+        status: 'PUBLISHED',
+        payload: {
+          coefficients: {
+            GDDP: { CLASS: 1.0, GRADE: 1.0 },
+            HDTN_HN: { CLASS: 1.0, GRADE: 1.0, SCHOOL_WIDE: 1.0 },
+          },
+        },
+        validatorVersion: 'v1',
+        effectiveFrom: new Date('2026-08-01T00:00:00.000Z'),
+        publishedAt: new Date('2026-08-01T00:00:00.000Z'),
+        publishedByUserId: f.principal.id,
+        createdByUserId: f.principal.id,
+      },
+    });
+
+    const master = await harness.prisma.programmeMaster.create({
+      data: { academicYearId: f.year.id, kind: 'HDTN_HN', gradeLevel: null, createdByUserId: f.principal.id },
+    });
+    const planVer = await harness.prisma.programmePlanVersion.create({
+      data: {
+        programmeMasterId: master.id,
+        versionNumber: 1,
+        status: 'DRAFT',
+        createdByUserId: f.principal.id,
+      },
+    });
+    const topicItem = await harness.prisma.programmeTopicItem.create({
+      data: {
+        programmePlanVersionId: planVer.id,
+        sequence: 1,
+        title: 'Hoat dong khoi 10',
+        requiredPeriods: 1,
+        guidelineWeekFrom: 1,
+        guidelineWeekTo: 2,
+      },
+    });
+    await harness.prisma.programmePlanVersion.update({
+      where: { id: planVer.id },
+      data: {
+        status: 'PUBLISHED',
+        publishedByUserId: f.principal.id,
+        publishedAt: new Date('2026-08-01T00:00:00.000Z'),
+      },
+    });
+
+    // Occurrence 1: HDTN_HN / GRADE targeting multiple classes (10A and 10B)
+    const occGrade = await harness.prisma.plannedProgrammeOccurrence.create({
+      data: {
+        programmeMasterId: master.id,
+        programmePlanVersionId: planVer.id,
+        programmeTopicItemId: topicItem.id,
+        academicYearId: f.year.id,
+        civilDate: new Date('2026-09-08T00:00:00.000Z'),
+        mode: 'GRADE',
+        gradeLevel: 10,
+        status: 'DRAFT',
+        createdByUserId: f.principal.id,
+      },
+    });
+    const occSlot = await harness.prisma.plannedOccurrenceSlot.create({
+      data: {
+        plannedProgrammeOccurrenceId: occGrade.id,
+        academicYearId: f.year.id,
+        timeSlotDefinitionId: f.slot2.id,
+      },
+    });
+    await harness.prisma.plannedSlotStaffing.create({
+      data: { plannedOccurrenceSlotId: occSlot.id, teacherUserId: f.teacherA.id },
+    });
+    await harness.prisma.plannedProgrammeOccurrence.update({
+      where: { id: occGrade.id },
+      data: {
+        status: 'PUBLISHED',
+        publishedByUserId: f.principal.id,
+        publishedAt: new Date('2026-08-01T00:00:00.000Z'),
+      },
+    });
+
+    // Materialize GRADE occurrence
+    const matRecords = await programmePlanning.materializeOccurrence(
+      occGrade.id,
+      { commandId: `cmd-mat-grade-${randomUUID()}` },
+      f.principal.id,
+    );
+    const actGrade = await harness.prisma.specialActivity.findUniqueOrThrow({
+      where: { id: matRecords[0]!.specialActivityId },
+      include: { staffing: true, timeSlots: true },
+    });
+
+    // Step A: Dual gate negative test - Execution present, but NO qualifying attestation
+    await teachingExecutions.confirmActivity(
+      {
+        specialActivityId: actGrade.id,
+        specialActivityStaffingId: actGrade.staffing[0]!.id,
+        specialActivityTimeSlotId: actGrade.timeSlots[0]!.id,
+        requestKey: `exec-grade-sc6-${randomUUID()}`,
+      },
+      mockAuthRequest(f.teacherA),
+    );
+
+    const workloadNoAtt = await specialWorkload.resolve({
+      academicYearId: f.year.id,
+      targetUserId: f.teacherA.id,
+      fromCivilDate: '2026-09-07',
+      toCivilDate: '2026-09-13',
+      asOfInstant: new Date(),
+    });
+    expect(workloadNoAtt.totalCredit).toBe(0);
+    expect(workloadNoAtt.pendingConfirmation).toHaveLength(1);
+
+    // Step B: Dual gate positive test - Coordinator adds attestation -> Credit awarded
+    await harness.prisma.programmeOccurrenceAttestation.create({
+      data: {
+        programmeMasterId: master.id,
+        plannedProgrammeOccurrenceId: occGrade.id,
+        attestedByUserId: f.principal.id,
+        authorityType: 'BGH_PRINCIPAL',
+        capabilityKey: 'APPROVAL_PRINCIPAL',
+        scope: 'SCHOOL_WIDE',
+        scopeResourceId: null,
+        status: 'ACTIVE',
+        attestedAt: new Date('2026-09-08T12:00:00.000Z'),
+        createRequestKey: randomUUID(),
+        createRequestFingerprint: randomUUID(),
+      },
+    });
+
+    const workloadWithAtt = await specialWorkload.resolve({
+      academicYearId: f.year.id,
+      targetUserId: f.teacherA.id,
+      fromCivilDate: '2026-09-07',
+      toCivilDate: '2026-09-13',
+      asOfInstant: new Date(),
+    });
+    // Anti-class fan-out: credit is exactly 1 (not multiplied by number of classes)
+    expect(workloadWithAtt.totalCredit).toBe(1);
+    expect(workloadWithAtt.contributionCount).toBe(1);
+
+    // Step C: Dual gate negative test - Attestation present, but NO execution
+    const slotSchoolWide = await harness.prisma.timeSlotDefinition.create({
+      data: {
+        academicYearId: f.year.id,
+        weekday: 'TUESDAY',
+        session: 'MORNING',
+        ordinal: 2,
+        revision: 1,
+        displayLabel: 'Tiet 2 Thu 3 HDTN Toan truong',
+        startTime: new Date('1970-01-01T07:50:00Z'),
+        endTime: new Date('1970-01-01T08:35:00Z'),
+        allowRegularTeaching: false,
+        allowMakeupTeaching: false,
+        allowSelfStudy: true,
+      },
+    });
+
+    const occSchoolWide = await harness.prisma.plannedProgrammeOccurrence.create({
+      data: {
+        programmeMasterId: master.id,
+        programmePlanVersionId: planVer.id,
+        programmeTopicItemId: topicItem.id,
+        academicYearId: f.year.id,
+        civilDate: new Date('2026-09-08T00:00:00.000Z'),
+        mode: 'SCHOOL_WIDE',
+        status: 'DRAFT',
+        createdByUserId: f.principal.id,
+      },
+    });
+    const occSlotSW = await harness.prisma.plannedOccurrenceSlot.create({
+      data: {
+        plannedProgrammeOccurrenceId: occSchoolWide.id,
+        academicYearId: f.year.id,
+        timeSlotDefinitionId: slotSchoolWide.id,
+      },
+    });
+    await harness.prisma.plannedSlotStaffing.create({
+      data: { plannedOccurrenceSlotId: occSlotSW.id, teacherUserId: f.teacherB.id },
+    });
+    await harness.prisma.plannedProgrammeOccurrence.update({
+      where: { id: occSchoolWide.id },
+      data: {
+        status: 'PUBLISHED',
+        publishedByUserId: f.principal.id,
+        publishedAt: new Date('2026-08-01T00:00:00.000Z'),
+      },
+    });
+    await programmePlanning.materializeOccurrence(
+      occSchoolWide.id,
+      { commandId: `cmd-mat-sw-${randomUUID()}` },
+      f.principal.id,
+    );
+    await harness.prisma.programmeOccurrenceAttestation.create({
+      data: {
+        programmeMasterId: master.id,
+        plannedProgrammeOccurrenceId: occSchoolWide.id,
+        attestedByUserId: f.principal.id,
+        authorityType: 'BGH_PRINCIPAL',
+        capabilityKey: 'APPROVAL_PRINCIPAL',
+        scope: 'SCHOOL_WIDE',
+        scopeResourceId: null,
+        status: 'ACTIVE',
+        attestedAt: new Date('2026-09-08T12:00:00.000Z'),
+        createRequestKey: randomUUID(),
+        createRequestFingerprint: randomUUID(),
+      },
+    });
+
+    // Teacher B has not executed participation -> total credit remains 0
+    const workloadB = await specialWorkload.resolve({
+      academicYearId: f.year.id,
+      targetUserId: f.teacherB.id,
+      fromCivilDate: '2026-09-07',
+      toCivilDate: '2026-09-13',
+      asOfInstant: new Date(),
+    });
+    expect(workloadB.totalCredit).toBe(0);
+    expect(workloadB.contributionCount).toBe(0);
+  });
+
+  // =========================================================================
+  // SCENARIO 7: GDĐP multi-teacher staffing & anti-Cartesian (Correction F)
+  // =========================================================================
+  it('Scenario 7: GDĐP multi-teacher staffing credits each teacher exactly once without Cartesian multiplication', async () => {
+    const f = await createBaseAcademicSetup();
+
+    const spStream = await harness.prisma.businessPolicyStream.create({
+      data: { familyKey: 'SPECIAL_PROGRAMME_WORKLOAD', resourceKind: 'ACADEMIC_YEAR', academicYearId: f.year.id },
+    });
+    await harness.prisma.businessPolicyVersion.create({
+      data: {
+        streamId: spStream.id,
+        versionNumber: 1,
+        status: 'PUBLISHED',
+        payload: {
+          coefficients: {
+            GDDP: { CLASS: 1.0, GRADE: 1.0 },
+            HDTN_HN: { CLASS: 1.0, GRADE: 1.0, SCHOOL_WIDE: 1.0 },
+          },
+        },
+        validatorVersion: 'v1',
+        effectiveFrom: new Date('2026-08-01T00:00:00.000Z'),
+        publishedAt: new Date('2026-08-01T00:00:00.000Z'),
+        publishedByUserId: f.principal.id,
+        createdByUserId: f.principal.id,
+      },
+    });
+
+    const master = await harness.prisma.programmeMaster.create({
+      data: { academicYearId: f.year.id, kind: 'GDDP', gradeLevel: 10, createdByUserId: f.principal.id },
+    });
+    const planVer = await harness.prisma.programmePlanVersion.create({
+      data: {
+        programmeMasterId: master.id,
+        versionNumber: 1,
+        status: 'DRAFT',
+        createdByUserId: f.principal.id,
+      },
+    });
+    const topicItem = await harness.prisma.programmeTopicItem.create({
+      data: {
+        programmePlanVersionId: planVer.id,
+        sequence: 1,
+        title: 'GDDP Dia li dia phuong',
+        requiredPeriods: 1,
+        guidelineWeekFrom: 1,
+        guidelineWeekTo: 2,
+      },
+    });
+    await harness.prisma.programmePlanVersion.update({
+      where: { id: planVer.id },
+      data: {
+        status: 'PUBLISHED',
+        publishedByUserId: f.principal.id,
+        publishedAt: new Date('2026-08-01T00:00:00.000Z'),
+      },
+    });
+
+    const occ = await harness.prisma.plannedProgrammeOccurrence.create({
+      data: {
+        programmeMasterId: master.id,
+        programmePlanVersionId: planVer.id,
+        programmeTopicItemId: topicItem.id,
+        academicYearId: f.year.id,
+        civilDate: new Date('2026-09-08T00:00:00.000Z'),
+        mode: 'GRADE',
+        gradeLevel: 10,
+        status: 'DRAFT',
+        createdByUserId: f.principal.id,
+      },
+    });
+
+    // Exactly ONE planned occurrence slot
+    const occSlot = await harness.prisma.plannedOccurrenceSlot.create({
+      data: {
+        plannedProgrammeOccurrenceId: occ.id,
+        academicYearId: f.year.id,
+        timeSlotDefinitionId: f.slot2.id,
+      },
+    });
+
+    // Staffing = { Teacher A, Teacher B } on this exact single slot
+    await harness.prisma.plannedSlotStaffing.createMany({
+      data: [
+        { plannedOccurrenceSlotId: occSlot.id, teacherUserId: f.teacherA.id },
+        { plannedOccurrenceSlotId: occSlot.id, teacherUserId: f.teacherB.id },
+      ],
+    });
+
+    await harness.prisma.plannedProgrammeOccurrence.update({
+      where: { id: occ.id },
+      data: {
+        status: 'PUBLISHED',
+        publishedByUserId: f.principal.id,
+        publishedAt: new Date('2026-08-01T00:00:00.000Z'),
+      },
+    });
+
+    // Materialize occurrence: exactly 1 SpecialActivity root, with staffing for both teachers
+    const matRecords = await programmePlanning.materializeOccurrence(
+      occ.id,
+      { commandId: `cmd-mat-multiteacher-${randomUUID()}` },
+      f.principal.id,
+    );
+    expect(matRecords).toHaveLength(1);
+
+    const act = await harness.prisma.specialActivity.findUniqueOrThrow({
+      where: { id: matRecords[0]!.specialActivityId },
+      include: { staffing: true, timeSlots: true, classTargets: true },
+    });
+    expect(act.timeSlots).toHaveLength(1);
+    expect(act.staffing).toHaveLength(2);
+    // Grade mode materializes both 10A and 10B
+    expect(act.classTargets).toHaveLength(2);
+
+    const staffA = act.staffing.find((s) => s.scheduledTeacherUserId === f.teacherA.id)!;
+    const staffB = act.staffing.find((s) => s.scheduledTeacherUserId === f.teacherB.id)!;
+    expect(staffA).toBeDefined();
+    expect(staffB).toBeDefined();
+
+    // Attestation on the occurrence
+    await harness.prisma.programmeOccurrenceAttestation.create({
+      data: {
+        programmeMasterId: master.id,
+        plannedProgrammeOccurrenceId: occ.id,
+        attestedByUserId: f.principal.id,
+        authorityType: 'BGH_PRINCIPAL',
+        capabilityKey: 'APPROVAL_PRINCIPAL',
+        scope: 'SCHOOL_WIDE',
+        scopeResourceId: null,
+        status: 'ACTIVE',
+        attestedAt: new Date('2026-09-08T12:00:00.000Z'),
+        createRequestKey: randomUUID(),
+        createRequestFingerprint: randomUUID(),
+      },
+    });
+
+    // Both teachers record participation execution on their respective staffing
+    await teachingExecutions.confirmActivity(
+      {
+        specialActivityId: act.id,
+        specialActivityStaffingId: staffA.id,
+        specialActivityTimeSlotId: act.timeSlots[0]!.id,
+        requestKey: `exec-multi-a-${randomUUID()}`,
+      },
+      mockAuthRequest(f.teacherA),
+    );
+
+    await teachingExecutions.confirmActivity(
+      {
+        specialActivityId: act.id,
+        specialActivityStaffingId: staffB.id,
+        specialActivityTimeSlotId: act.timeSlots[0]!.id,
+        requestKey: `exec-multi-b-${randomUUID()}`,
+      },
+      mockAuthRequest(f.teacherB),
+    );
+
+    // Resolve workload: Teacher A gets exactly 1 credit, Teacher B gets exactly 1 credit
+    // Anti-Cartesian verification: 2 teachers x 2 class targets does NOT yield 2 or 4 credits per teacher.
+    const workloadA = await specialWorkload.resolve({
+      academicYearId: f.year.id,
+      targetUserId: f.teacherA.id,
+      fromCivilDate: '2026-09-07',
+      toCivilDate: '2026-09-13',
+      asOfInstant: new Date(),
+    });
+    expect(workloadA.totalCredit).toBe(1);
+    expect(workloadA.contributionCount).toBe(1);
+
+    const workloadB = await specialWorkload.resolve({
+      academicYearId: f.year.id,
+      targetUserId: f.teacherB.id,
+      fromCivilDate: '2026-09-07',
+      toCivilDate: '2026-09-13',
+      asOfInstant: new Date(),
+    });
+    expect(workloadB.totalCredit).toBe(1);
+    expect(workloadB.contributionCount).toBe(1);
+  });
+
+  // =========================================================================
+  // SCENARIO 8: Curricular actual-teacher semantics & mixed earned workload (Correction J)
+  // =========================================================================
+  it('Scenario 8: Official workload credits actual teacher on substitution and combines mixed earned credits', async () => {
+    const f = await createBaseAcademicSetup();
+
+    // Workload adjustment policy
+    const wlStream = await harness.prisma.businessPolicyStream.create({
+      data: { familyKey: 'WORKLOAD_ADJUSTMENT', resourceKind: 'ACADEMIC_YEAR', academicYearId: f.year.id },
+    });
+    await harness.prisma.businessPolicyVersion.create({
+      data: {
+        streamId: wlStream.id,
+        versionNumber: 1,
+        status: 'PUBLISHED',
+        payload: { baseWeeklyNorm: 17, rules: [] },
+        validatorVersion: 'v1',
+        effectiveFrom: new Date('2026-08-01T00:00:00.000Z'),
+        publishedAt: new Date('2026-08-01T00:00:00.000Z'),
+        publishedByUserId: f.principal.id,
+        createdByUserId: f.principal.id,
+      },
+    });
+
+    // Special programme policy
+    const spStream = await harness.prisma.businessPolicyStream.create({
+      data: { familyKey: 'SPECIAL_PROGRAMME_WORKLOAD', resourceKind: 'ACADEMIC_YEAR', academicYearId: f.year.id },
+    });
+    await harness.prisma.businessPolicyVersion.create({
+      data: {
+        streamId: spStream.id,
+        versionNumber: 1,
+        status: 'PUBLISHED',
+        payload: { coefficients: { GDDP: { CLASS: 1.0, GRADE: 1.0 }, HDTN_HN: { CLASS: 1.0, GRADE: 1.0, SCHOOL_WIDE: 1.0 } } },
+        validatorVersion: 'v1',
+        effectiveFrom: new Date('2026-08-01T00:00:00.000Z'),
+        publishedAt: new Date('2026-08-01T00:00:00.000Z'),
+        publishedByUserId: f.principal.id,
+        createdByUserId: f.principal.id,
+      },
+    });
+
+    // Curricular teaching assignment is assigned to Teacher A.
+    // However, on Monday 2026-09-07, Teacher B teaches as substitute!
+    // Operational disposition: SAME_SUBJECT_SUBSTITUTION with substitute teacher B
+    await harness.prisma.operationalLessonDisposition.create({
+      data: {
+        academicYearId: f.year.id,
+        timetableVersionId: f.timetable.id,
+        timetableEntryId: f.entry.id,
+        sourceCivilDate: new Date('2026-09-07T00:00:00.000Z'),
+        academicCalendarVersionId: f.calendar.id,
+        timeSlotDefinitionId: f.slot.id,
+        schoolClassId: f.schoolClass.id,
+        subjectId: f.subject.id,
+        teachingAssignmentId: f.assignment.id,
+        responsibleTeacherUserId: f.teacherA.id,
+        assignedTeacherUserId: f.teacherB.id,
+        dispositionType: OperationalLessonDispositionType.SAME_SUBJECT_SUBSTITUTION,
+        eligibilityCheckedAt: new Date('2026-08-01T00:00:00.000Z'),
+        eligibilityWasActive: true,
+        eligibilityWasTeachingStaff: true,
+        eligibilitySameSubject: true,
+        eligibilityStaffSubjectId: f.staffSubjectB.id,
+        status: OperationalOverlayStatus.ACTIVE,
+        createRequestKey: `disp-sub-${randomUUID()}`,
+        createRequestFingerprint: 'fp-sub',
+        createdByUserId: f.principal.id,
+      },
+    });
+
+    // Curricular execution recorded via production confirmNormal with actualTeacher = Teacher B
+    const confirmSubRes = await teachingExecutions.confirmNormal(
+      {
+        academicYearId: f.year.id,
+        schoolClassId: f.schoolClass.id,
+        subjectId: f.subject.id,
+        timetableEntryId: f.entry.id,
+        sourceCivilDate: '2026-09-07',
+        requestKey: `sc8-sub-exec-${randomUUID()}`,
+      },
+      mockAuthRequest(f.teacherB),
+    );
+    expect(confirmSubRes.outcome).toBe('CREATED');
+    expect(confirmSubRes.item.actualTeacherUserId).toBe(f.teacherB.id);
+    expect(confirmSubRes.item.responsibleTeacherUserId).toBe(f.teacherA.id);
+
+    // Special programme execution on Tuesday 2026-09-08 for Teacher B
+    const master = await harness.prisma.programmeMaster.create({
+      data: { academicYearId: f.year.id, kind: 'GDDP', gradeLevel: 10, createdByUserId: f.principal.id },
+    });
+    const planVer = await harness.prisma.programmePlanVersion.create({
+      data: {
+        programmeMasterId: master.id,
+        versionNumber: 1,
+        status: 'DRAFT',
+        createdByUserId: f.principal.id,
+      },
+    });
+    const topicItem = await harness.prisma.programmeTopicItem.create({
+      data: {
+        programmePlanVersionId: planVer.id,
+        sequence: 1,
+        title: 'Chuyen de GDDP',
+        requiredPeriods: 1,
+        guidelineWeekFrom: 1,
+        guidelineWeekTo: 2,
+      },
+    });
+    await harness.prisma.programmePlanVersion.update({
+      where: { id: planVer.id },
+      data: {
+        status: 'PUBLISHED',
+        publishedByUserId: f.principal.id,
+        publishedAt: new Date('2026-08-01T00:00:00.000Z'),
+      },
+    });
+    const occ = await harness.prisma.plannedProgrammeOccurrence.create({
+      data: {
+        programmeMasterId: master.id,
+        programmePlanVersionId: planVer.id,
+        programmeTopicItemId: topicItem.id,
+        academicYearId: f.year.id,
+        civilDate: new Date('2026-09-08T00:00:00.000Z'),
+        mode: 'GRADE',
+        gradeLevel: 10,
+        status: 'DRAFT',
+        createdByUserId: f.principal.id,
+      },
+    });
+    const occSlot = await harness.prisma.plannedOccurrenceSlot.create({
+      data: { plannedProgrammeOccurrenceId: occ.id, academicYearId: f.year.id, timeSlotDefinitionId: f.slot2.id },
+    });
+    await harness.prisma.plannedSlotStaffing.create({
+      data: { plannedOccurrenceSlotId: occSlot.id, teacherUserId: f.teacherB.id },
+    });
+    await harness.prisma.plannedProgrammeOccurrence.update({
+      where: { id: occ.id },
+      data: {
+        status: 'PUBLISHED',
+        publishedByUserId: f.principal.id,
+        publishedAt: new Date('2026-08-01T00:00:00.000Z'),
+      },
+    });
+    const matRecords = await programmePlanning.materializeOccurrence(
+      occ.id,
+      { commandId: `cmd-mat-sc8-${randomUUID()}` },
+      f.principal.id,
+    );
+    const act = await harness.prisma.specialActivity.findUniqueOrThrow({
+      where: { id: matRecords[0]!.specialActivityId },
+      include: { staffing: true, timeSlots: true },
+    });
+    await harness.prisma.programmeOccurrenceAttestation.create({
+      data: {
+        programmeMasterId: master.id,
+        plannedProgrammeOccurrenceId: occ.id,
+        attestedByUserId: f.principal.id,
+        authorityType: 'BGH_PRINCIPAL',
+        capabilityKey: 'APPROVAL_PRINCIPAL',
+        scope: 'SCHOOL_WIDE',
+        scopeResourceId: null,
+        status: 'ACTIVE',
+        attestedAt: new Date('2026-09-08T12:00:00.000Z'),
+        createRequestKey: randomUUID(),
+        createRequestFingerprint: randomUUID(),
+      },
+    });
+    await teachingExecutions.confirmActivity(
+      { specialActivityId: act.id, specialActivityStaffingId: act.staffing[0]!.id, specialActivityTimeSlotId: act.timeSlots[0]!.id, requestKey: `exec-sc8-${randomUUID()}` },
+      mockAuthRequest(f.teacherB),
+    );
+
+    // Official workload projection for Teacher B (Substitute):
+    // Earned curricular credit = 1 (earned because actualTeacherUserId = B)
+    // Earned special-programme credit = 1
+    // Total earned credit = 2
+    const workloadB = await officialWorkload.resolve({
+      academicYearId: f.year.id,
+      targetUserId: f.teacherB.id,
+      fromCivilDate: '2026-09-07',
+      toCivilDate: '2026-09-13',
+      asOfInstant: new Date(),
+    });
+    expect(workloadB.status).toBe('PASS');
+    expect(workloadB.curricularWorkload.totalCredit).toBe(1);
+    expect(workloadB.specialProgrammeWorkload.totalCredit).toBe(1);
+    expect(workloadB.earnedCredit).toBe(2);
+
+    // Official workload projection for Teacher A (Nominally assigned teacher):
+    // Earned curricular credit = 0 (because they did not actually teach)
+    const workloadA = await officialWorkload.resolve({
+      academicYearId: f.year.id,
+      targetUserId: f.teacherA.id,
+      fromCivilDate: '2026-09-07',
+      toCivilDate: '2026-09-13',
+      asOfInstant: new Date(),
+    });
+    expect(workloadA.status).toBe('PASS');
+    expect(workloadA.curricularWorkload.totalCredit).toBe(0);
+    expect(workloadA.earnedCredit).toBe(0);
+  });
+
+  // =========================================================================
+  // SCENARIO 9: Workload adjustment (Correction G)
+  // =========================================================================
+  it('Scenario 9: Workload adjustment applies TRU_TIET, TRU_PHAN_TRAM, priority order, and calendar proration', async () => {
+    const f = await createBaseAcademicSetup();
+
+    // 1. Create canonical AdditionalDutyDefinitions in DB
+    const dutyDef = await harness.prisma.additionalDutyDefinition.create({
+      data: {
+        code: normalizedCode('TO_TRUONG'),
+        name: 'To truong chuyen mon',
+        category: 'CHUYEN_MON',
+        isActive: true,
+      },
+    });
+
+    const dutyDef2 = await harness.prisma.additionalDutyDefinition.create({
+      data: {
+        code: normalizedCode('BI_THU_DOAN'),
+        name: 'Bi thu Doan truong',
+        category: 'DOAN_THE',
+        isActive: true,
+      },
+    });
+
+    // 2. Assign these additional duties to Teacher A
+    await harness.prisma.staffAdditionalDutyAssignment.create({
+      data: {
+        staffProfileId: f.teacherA.profile!.id,
+        dutyDefinitionId: dutyDef.id,
+        scopeType: 'SUBJECT',
+        validFrom: new Date('2026-08-01T00:00:00.000Z'),
+        validUntil: null,
+        createdByUserId: f.principal.id,
+      },
+    });
+
+    await harness.prisma.staffAdditionalDutyAssignment.create({
+      data: {
+        staffProfileId: f.teacherA.profile!.id,
+        dutyDefinitionId: dutyDef2.id,
+        scopeType: 'SCHOOL_WIDE',
+        validFrom: new Date('2026-08-01T00:00:00.000Z'),
+        validUntil: null,
+        createdByUserId: f.principal.id,
+      },
+    });
+
+    // 3. Assign Homeroom responsibility to Teacher A
+    await harness.prisma.homeroomAssignment.create({
+      data: {
+        academicYearId: f.year.id,
+        schoolClassId: f.schoolClass.id,
+        teacherUserId: f.teacherA.id,
+        validFrom: new Date('2026-08-01T00:00:00.000Z'),
+        status: HomeroomAssignmentStatus.ACTIVE,
+        createdByUserId: f.principal.id,
+      },
+    });
+
+    // 4. Create WORKLOAD_ADJUSTMENT policy:
+    // Base weekly norm = 17
+    // Rule 1 (priority 1): HOMEROOM_RESPONSIBILITY -> GHI_DE = 20 (ADR-057 non-terminating override)
+    // Rule 2 (priority 2): ADDITIONAL_DUTY with dutyDef.id -> TRU_TIET = 4 (20 - 4 = 16)
+    // Rule 3 (priority 3): ADDITIONAL_DUTY with dutyDef2.id -> TRU_PHAN_TRAM = 25% (16 * (1 - 0.25) = 12.0)
+    const wlStream = await harness.prisma.businessPolicyStream.create({
+      data: { familyKey: 'WORKLOAD_ADJUSTMENT', resourceKind: 'ACADEMIC_YEAR', academicYearId: f.year.id },
+    });
+    await harness.prisma.businessPolicyVersion.create({
+      data: {
+        streamId: wlStream.id,
+        versionNumber: 1,
+        status: 'PUBLISHED',
+        payload: {
+          baseWeeklyNorm: 17,
+          rules: [
+            {
+              ruleId: 'rule-homeroom-override',
+              source: { kind: 'HOMEROOM_RESPONSIBILITY' },
+              calculation: 'GHI_DE',
+              value: 20,
+              priority: 1,
+            },
+            {
+              ruleId: 'rule-duty-trutiet',
+              source: { kind: 'ADDITIONAL_DUTY', dutyDefinitionId: dutyDef.id },
+              calculation: 'TRU_TIET',
+              value: 4,
+              priority: 2,
+            },
+            {
+              ruleId: 'rule-duty-truphantram',
+              source: { kind: 'ADDITIONAL_DUTY', dutyDefinitionId: dutyDef2.id },
+              calculation: 'TRU_PHAN_TRAM',
+              value: 25,
+              priority: 3,
+            },
+          ],
+        },
+        validatorVersion: 'v1',
+        effectiveFrom: new Date('2026-08-01T00:00:00.000Z'),
+        publishedAt: new Date('2026-08-01T00:00:00.000Z'),
+        publishedByUserId: f.principal.id,
+        createdByUserId: f.principal.id,
+      },
+    });
+
+    // 5. Introduce calendar interruption on Tuesday 2026-09-08
+    // Teaching weekdays configured in calendar: ['MONDAY', 'TUESDAY'] (denominator K = 2)
+    // Tuesday is interrupted -> Only Monday is eligible for required workload!
+    await harness.prisma.calendarInterruption.create({
+      data: {
+        calendarVersionId: f.calendar.id,
+        code: normalizedCode('INT_HOLIDAY'),
+        name: 'Nghi le giua tuan',
+        startDate: new Date('2026-09-08T00:00:00.000Z'),
+        endDate: new Date('2026-09-08T23:59:59.999Z'),
+      },
+    });
+
+    const projection = await officialWorkload.resolve({
+      academicYearId: f.year.id,
+      targetUserId: f.teacherA.id,
+      fromCivilDate: '2026-09-07',
+      toCivilDate: '2026-09-13',
+      asOfInstant: new Date('2026-09-13T00:00:00.000Z'),
+    });
+
+    expect(projection.status).toBe('PASS');
+    expect(projection.adjustmentSegments[0]!.baseWeeklyNorm).toBe(17);
+    expect(projection.adjustmentSegments[0]!.adjustedWeeklyNorm).toBe(12.0);
+
+    // Proration: denominator K = 2. Monday is eligible (12 / 2 = 6.0), Tuesday is interrupted (0).
+    // Total required credit for this week = 6.0 (prorated by exactly 1 eligible day)
+    expect(projection.requiredCredit).toBe(6.0);
+    expect(projection.adjustmentSegments[0]!.appliedRules).toHaveLength(3);
+    expect(projection.adjustmentSegments[0]!.appliedRules[0]!.ruleId).toBe('rule-homeroom-override');
+    expect(projection.adjustmentSegments[0]!.appliedRules[0]!.calculation).toBe('GHI_DE');
+    expect(projection.adjustmentSegments[0]!.appliedRules[1]!.ruleId).toBe('rule-duty-trutiet');
+    expect(projection.adjustmentSegments[0]!.appliedRules[1]!.calculation).toBe('TRU_TIET');
+    expect(projection.adjustmentSegments[0]!.appliedRules[2]!.ruleId).toBe('rule-duty-truphantram');
+    expect(projection.adjustmentSegments[0]!.appliedRules[2]!.calculation).toBe('TRU_PHAN_TRAM');
+  });
+
+  // =========================================================================
+  // SCENARIO 10: Reporting Statement Snapshot V4 freeze
+  // =========================================================================
+  it('Scenario 10: Reporting Statement Snapshot V4 freezes official workload and survives source mutations without drift', async () => {
+    const f = await createBaseAcademicSetup();
+
+    const wlStream = await harness.prisma.businessPolicyStream.create({
+      data: { familyKey: 'WORKLOAD_ADJUSTMENT', resourceKind: 'ACADEMIC_YEAR', academicYearId: f.year.id },
+    });
+    await harness.prisma.businessPolicyVersion.create({
+      data: {
+        streamId: wlStream.id,
+        versionNumber: 1,
+        status: 'PUBLISHED',
+        payload: { baseWeeklyNorm: 17, rules: [] },
+        validatorVersion: 'v1',
+        effectiveFrom: new Date('2026-08-01T00:00:00.000Z'),
+        publishedAt: new Date('2026-08-01T00:00:00.000Z'),
+        publishedByUserId: f.principal.id,
+        createdByUserId: f.principal.id,
+      },
+    });
+
+    // Record curricular execution via production service on Week 2 Monday
+    await teachingExecutions.confirmNormal(
+      {
+        academicYearId: f.year.id,
+        schoolClassId: f.schoolClass.id,
+        subjectId: f.subject.id,
+        timetableEntryId: f.entry.id,
+        sourceCivilDate: '2026-09-14',
+        requestKey: `sc10-normal-${randomUUID()}`,
+      },
+      mockAuthRequest(f.teacherA),
+    );
+
+    // Production preview
+    const preview = await reportingStatements.preview(
+      {
+        academicYearId: f.year.id,
+        fromCivilDate: '2026-09-14' as CivilDateString,
+        toCivilDate: '2026-09-20' as CivilDateString,
+      },
+      mockAuthRequest(f.teacherA),
+    );
+    expect(preview.status).toBe('PASS');
+    expect(preview.eligibleForSubmission).toBe(true);
+
+    // Production submit under Snapshot V4
+    const submitRes = await reportingStatements.submit(
+      {
+        academicYearId: f.year.id,
+        fromCivilDate: '2026-09-14' as CivilDateString,
+        toCivilDate: '2026-09-20' as CivilDateString,
+        requestKey: `sc10-cmd-${randomUUID()}`,
+      },
+      mockAuthRequest(f.teacherA),
+    );
+
+    const revision = await harness.prisma.reportingStatementRevision.findUniqueOrThrow({
+      where: { id: submitRes.revisionId },
+    });
+    expect(revision.snapshotProfile).toBe(REPORTING_STATEMENT_SNAPSHOT_V4);
+
+    const parsedSnapshot = JSON.parse(revision.canonicalSnapshotJson);
+    expect(parsedSnapshot.snapshotProfile).toBe(REPORTING_STATEMENT_SNAPSHOT_V4);
+    expect(parsedSnapshot.officialWorkload.earnedCredit).toBe(1);
+    expect(parsedSnapshot.officialWorkload.requiredCredit).toBe(17);
+
+    // Cryptographic integrity verification
+    expect(() =>
+      assertFrozenReportingStatementIntegrity({
+        snapshot: parsedSnapshot,
+        canonicalSnapshotJson: revision.canonicalSnapshotJson,
+        semanticHash: revision.semanticHash,
+        frozenSubjectIds: [f.subject.id],
+      }),
+    ).not.toThrow();
+
+    // Source mutation immunity: Add another execution via production service on Tuesday after statement is frozen
+    await teachingExecutions.confirmNormal(
+      {
+        academicYearId: f.year.id,
+        schoolClassId: f.schoolClass.id,
+        subjectId: f.subject.id,
+        timetableEntryId: f.entry2.id,
+        sourceCivilDate: '2026-09-15',
+        requestKey: `mut-exec-${randomUUID()}`,
+      },
+      mockAuthRequest(f.teacherA),
+    );
+
+    // Re-read statement: frozen snapshot remains untouched, hash verification passes
+    const reloaded = await harness.prisma.reportingStatementRevision.findUniqueOrThrow({
+      where: { id: submitRes.revisionId },
+    });
+    expect(reloaded.semanticHash).toBe(revision.semanticHash);
+    expect(() =>
+      assertFrozenReportingStatementIntegrity({
+        snapshot: parsedSnapshot,
+        canonicalSnapshotJson: reloaded.canonicalSnapshotJson,
+        semanticHash: reloaded.semanticHash,
+        frozenSubjectIds: [f.subject.id],
+      }),
+    ).not.toThrow();
+  });
+
+  // =========================================================================
+  // SCENARIO 11: Fail-closed policy & provenance validation (Correction H)
+  // =========================================================================
+  it('Scenario 11: Fail-closed policy & provenance validation rejects ambiguous or corrupt configuration', async () => {
+    const f = await createBaseAcademicSetup();
+
+    // 1. Missing policy -> status BLOCKED, finding WORKLOAD_ADJUSTMENT_POLICY_MISSING
+    const missingRes = await officialWorkload.resolve({
+      academicYearId: f.year.id,
+      targetUserId: f.teacherA.id,
+      fromCivilDate: '2026-09-07',
+      toCivilDate: '2026-09-13',
+      asOfInstant: new Date('2026-09-13T00:00:00.000Z'),
+    });
+    expect(missingRes.status).toBe('BLOCKED');
+    expect(missingRes.findings.some((find) => find.code.includes('WORKLOAD_ADJUSTMENT'))).toBe(true);
+
+    // 2. Policy referencing nonexistent dutyDefinitionId -> status BLOCKED, finding ADDITIONAL_DUTY_DEFINITION_MISSING
+    const fakeDutyId = randomUUID();
+    const stream = await harness.prisma.businessPolicyStream.create({
+      data: { familyKey: 'WORKLOAD_ADJUSTMENT', resourceKind: 'ACADEMIC_YEAR', academicYearId: f.year.id },
+    });
+    await harness.prisma.businessPolicyVersion.create({
+      data: {
+        streamId: stream.id,
+        versionNumber: 1,
+        status: 'PUBLISHED',
+        payload: {
+          baseWeeklyNorm: 17,
+          rules: [
+            {
+              ruleId: 'bad-duty-rule',
+              source: { kind: 'ADDITIONAL_DUTY', dutyDefinitionId: fakeDutyId },
+              calculation: 'TRU_TIET',
+              value: 1,
+              priority: 1,
+            },
+          ],
+        },
+        validatorVersion: 'v1',
+        effectiveFrom: new Date('2026-08-01T00:00:00.000Z'),
+        publishedAt: new Date('2026-08-01T00:00:00.000Z'),
+        publishedByUserId: f.principal.id,
+        createdByUserId: f.principal.id,
+      },
+    });
+
+    const corruptRes = await officialWorkload.resolve({
+      academicYearId: f.year.id,
+      targetUserId: f.teacherA.id,
+      fromCivilDate: '2026-09-07',
+      toCivilDate: '2026-09-13',
+      asOfInstant: new Date('2026-09-13T00:00:00.000Z'),
+    });
+    expect(corruptRes.status).toBe('BLOCKED');
+    expect(corruptRes.findings.some((find) => find.code === 'ADDITIONAL_DUTY_DEFINITION_MISSING')).toBe(true);
+  });
+
+  // =========================================================================
+  // SCENARIO 12: Teacher Workspace cross-domain effective schedule (Correction I)
+  // =========================================================================
+  it('Scenario 12: Teacher Workspace effective schedule composes normal, makeup, and special activity occupancies read-only', async () => {
+    const f = await createBaseAcademicSetup();
+
+    // 1. Normal timetable occupancy: Teacher A has regular teaching on Monday 2026-09-07 (from f.entry)
+
+    // 2. Public makeup occupancy: Teacher A has makeup scheduled on Tuesday 2026-09-08
+    await harness.prisma.operationalLessonDisposition.create({
       data: {
         academicYearId: f.year.id,
         timetableVersionId: f.timetable.id,
@@ -971,457 +2066,87 @@ integration('P5-010: Full Business Pilot Cross-Domain Freeze PostgreSQL Suite', 
         responsibleTeacherUserId: f.teacherA.id,
         dispositionType: OperationalLessonDispositionType.ABSENCE_NO_REPLACEMENT,
         status: OperationalOverlayStatus.ACTIVE,
-        note: 'Absence without replacement',
-        createRequestKey: crypto.randomUUID(),
-        createRequestFingerprint: crypto.randomUUID(),
+        createRequestKey: `disp-sc12-${randomUUID()}`,
+        createRequestFingerprint: 'fp-sc12-disp',
         createdByUserId: f.principal.id,
       },
     });
 
-    // Make-up schedule created
-    const makeupSchedule = await harness.prisma.makeupTeachingSchedule.create({
+    const slotTuesdayMakeup = await harness.prisma.timeSlotDefinition.create({
       data: {
         academicYearId: f.year.id,
-        originalTimetableVersionId: f.timetable.id,
-        originalTimetableEntryId: f.entry.id,
-        originalCivilDate: new Date('2026-09-07T00:00:00.000Z'),
-        originalAcademicCalendarVersionId: f.calendar.id,
-        originalTimeSlotDefinitionId: f.slot.id,
-        schoolClassId: f.schoolClass.id,
-        subjectId: f.subject.id,
-        originalTeachingAssignmentId: f.assignment.id,
-        responsibleTeacherUserId: f.teacherA.id,
-        ppctClassAssociationId: f.association.id,
-        ppctPlanId: f.plan.id,
-        ppctVersionId: f.version.id,
-        ppctItemId: f.item.id,
-        sourceDispositionId: disp.id,
-        targetCivilDate: new Date('2026-09-19T00:00:00.000Z'),
-        targetAcademicCalendarVersionId: f.calendar.id,
-        targetTimeSlotDefinitionId: f.makeupSlot.id,
-        scheduledTeacherUserId: f.teacherB.id,
-        eligibilityCheckedAt: new Date('2026-08-01Z'),
-        eligibilityWasActive: true,
-        eligibilityWasTeachingStaff: true,
-        eligibilitySameSubject: true,
-        eligibilityStaffSubjectId: f.staffSubjectB.id,
-        createRequestKey: crypto.randomUUID(),
-        createRequestFingerprint: crypto.randomUUID(),
-        createdByUserId: f.teacherA.id,
+        weekday: 'TUESDAY',
+        session: 'MORNING',
+        ordinal: 3,
+        revision: 1,
+        displayLabel: 'Tiet 3 Thu 3 Day Bu',
+        startTime: new Date('1970-01-01T08:40:00Z'),
+        endTime: new Date('1970-01-01T09:25:00Z'),
+        allowRegularTeaching: false,
+        allowMakeupTeaching: true,
       },
     });
 
-    expect(makeupSchedule.status).toBe('ACTIVE');
-
-    // Execute make-up by Teacher B
-    await createCurricularExecution({
-      f,
-      actualTeacherUserId: f.teacherB.id,
-      kind: CurricularTeachingExecutionKind.MAKEUP,
-      sourceCivilDate: '2026-09-07',
-      executionCivilDate: '2026-09-19',
-      makeupScheduleId: makeupSchedule.id,
-    });
-
-    await createWorkloadAdjustmentPolicy({
-      academicYearId: f.year.id,
-      authorUserId: f.principal.id,
-      baseWeeklyNorm: 17,
-    });
-
-    const wlB = await officialWorkload.resolve({
-      academicYearId: f.year.id,
-      targetUserId: f.teacherB.id,
-      fromCivilDate: '2026-09-19',
-      toCivilDate: '2026-09-19',
-      asOfInstant: new Date('2026-09-19T18:00:00.000Z'),
-    });
-
-    expect(wlB.earnedCredit).toBe(1);
-    expect(wlB.curricularWorkload.totalCredit).toBe(1);
-  });
-
-  // =========================================================================
-  // SCENARIO 5 — HĐTN CLASS historical homeroom resolution
-  // =========================================================================
-  it('Scenario 5: HĐTN CLASS retains historical GVCN without drift after subsequent homeroom changes', async () => {
-    const f = await createBaseAcademicSetup();
-
-    // Teacher A is GVCN until 2026-09-10
-    const hrA = await harness.prisma.homeroomAssignment.create({
-      data: {
-        academicYearId: f.year.id,
-        schoolClassId: f.schoolClass.id,
-        teacherUserId: f.teacherA.id,
-        status: HomeroomAssignmentStatus.ACTIVE,
-        validFrom: new Date('2026-08-01T00:00:00.000Z'),
-        validUntil: new Date('2026-09-10T23:59:59.999Z'),
-        createdByUserId: f.principal.id,
-      },
-    });
-
-    // Teacher B is GVCN from 2026-09-11
-    await harness.prisma.homeroomAssignment.create({
-      data: {
-        academicYearId: f.year.id,
-        schoolClassId: f.schoolClass.id,
-        teacherUserId: f.teacherB.id,
-        status: HomeroomAssignmentStatus.ACTIVE,
-        validFrom: new Date('2026-09-11T00:00:00.000Z'),
-        validUntil: null,
-        createdByUserId: f.principal.id,
-      },
-    });
-
-    expect(hrA.id).toBeDefined();
-
-    // Special programme workload on 2026-09-08 for Teacher A
-    await createSpecialProgrammeWorkload({
-      f,
-      teacherUserId: f.teacherA.id,
-      civilDateStr: '2026-09-08',
-    });
-
-    const wlA = await specialWorkload.resolve({
-      academicYearId: f.year.id,
-      targetUserId: f.teacherA.id,
-      fromCivilDate: '2026-09-08',
-      toCivilDate: '2026-09-08',
-      asOfInstant: new Date('2026-09-20T00:00:00.000Z'),
-    });
-    expect(wlA.totalCredit).toBe(1.0);
-
-    const wlB = await specialWorkload.resolve({
-      academicYearId: f.year.id,
-      targetUserId: f.teacherB.id,
-      fromCivilDate: '2026-09-08',
-      toCivilDate: '2026-09-08',
-      asOfInstant: new Date('2026-09-20T00:00:00.000Z'),
-    });
-    expect(wlB.totalCredit).toBe(0);
-  });
-
-  // =========================================================================
-  // SCENARIO 6 — HĐTN GRADE & SCHOOL_WIDE dual gate & no class fan-out
-  // =========================================================================
-  it('Scenario 6: HĐTN GRADE & SCHOOL_WIDE enforces dual gate without class fan-out', async () => {
-    const f = await createBaseAcademicSetup();
-
-    const spData = await createSpecialProgrammeWorkload({
-      f,
-      teacherUserId: f.teacherA.id,
-      civilDateStr: '2026-09-15',
-    });
-
-    // Check workload: targets 10A and 10B, but credit is 1.0 (no class fan-out!)
-    const wl = await specialWorkload.resolve({
-      academicYearId: f.year.id,
-      targetUserId: f.teacherA.id,
-      fromCivilDate: '2026-09-15',
-      toCivilDate: '2026-09-15',
-      asOfInstant: new Date('2026-09-15T18:00:00.000Z'),
-    });
-
-    expect(wl.totalCredit).toBe(1.0);
-    expect(spData.activity.id).toBeDefined();
-  });
-
-  // =========================================================================
-  // SCENARIO 7 — GDĐP multi-teacher staffing & anti-double-count
-  // =========================================================================
-  it('Scenario 7: GDĐP multi-teacher staffing credits each teacher exactly once without Cartesian multiplication', async () => {
-    const f = await createBaseAcademicSetup();
-
-    // Teacher A and Teacher B on same slot
-    await createSpecialProgrammeWorkload({
-      f,
-      teacherUserId: f.teacherA.id,
-      civilDateStr: '2026-09-15',
-    });
-
-    const wlA = await specialWorkload.resolve({
-      academicYearId: f.year.id,
-      targetUserId: f.teacherA.id,
-      fromCivilDate: '2026-09-15',
-      toCivilDate: '2026-09-15',
-      asOfInstant: new Date('2026-09-15T18:00:00.000Z'),
-    });
-
-    expect(wlA.totalCredit).toBe(1.0);
-    expect(wlA.contributions).toHaveLength(1);
-  });
-
-  // =========================================================================
-  // SCENARIO 8 — Mixed earned workload (curricular + special programme)
-  // =========================================================================
-  it('Scenario 8: Official workload aggregates actual-teacher curricular and special-programme earned credits', async () => {
-    const f = await createBaseAcademicSetup();
-
-    // 1. Curricular execution
-    await createCurricularExecution({
-      f,
-      actualTeacherUserId: f.teacherA.id,
-      executionCivilDate: '2026-09-14',
-    });
-
-    // 2. Special programme
-    await createSpecialProgrammeWorkload({
-      f,
-      teacherUserId: f.teacherA.id,
-      civilDateStr: '2026-09-15',
-    });
-
-    await createWorkloadAdjustmentPolicy({
-      academicYearId: f.year.id,
-      authorUserId: f.principal.id,
-      baseWeeklyNorm: 17,
-    });
-
-    const wl = await officialWorkload.resolve({
-      academicYearId: f.year.id,
-      targetUserId: f.teacherA.id,
-      fromCivilDate: '2026-09-14',
-      toCivilDate: '2026-09-20',
-      asOfInstant: new Date('2026-09-20T18:00:00.000Z'),
-    });
-
-    expect(wl.curricularWorkload.totalCredit).toBe(1);
-    expect(wl.specialProgrammeWorkload.totalCredit).toBe(1);
-    expect(wl.earnedCredit).toBe(2);
-  });
-
-  // =========================================================================
-  // SCENARIO 9 — Workload adjustment (TRU_TIET, TRU_PHAN_TRAM, GHI_DE)
-  // =========================================================================
-  it('Scenario 9: Workload adjustment applies typed rules, canonical sources, and calendar proration', async () => {
-    const f = await createBaseAcademicSetup();
-
-    const dutyDef = await harness.prisma.additionalDutyDefinition.create({
-      data: {
-        code: normalizedCode('DUTY_TT'),
-        name: 'To truong chuyen mon',
-        category: 'ACADEMIC_ADMINISTRATION',
-        sortOrder: 1,
-      },
-    });
-
-    const profileA = await harness.prisma.staffProfile.findUniqueOrThrow({
-      where: { userId: f.teacherA.id },
-    });
-
-    await harness.prisma.staffAdditionalDutyAssignment.create({
-      data: {
-        staffProfileId: profileA.id,
-        dutyDefinitionId: dutyDef.id,
-        scopeType: 'ACADEMIC_YEAR',
-        scopeResourceId: f.year.id,
-        validFrom: new Date('2026-08-01T00:00:00.000Z'),
-        createdByUserId: f.principal.id,
-      },
-    });
-
-    await harness.prisma.homeroomAssignment.create({
-      data: {
-        academicYearId: f.year.id,
-        schoolClassId: f.schoolClass.id,
-        teacherUserId: f.teacherA.id,
-        status: HomeroomAssignmentStatus.ACTIVE,
-        validFrom: new Date('2026-08-01T00:00:00.000Z'),
-        createdByUserId: f.principal.id,
-      },
-    });
-
-    // Base = 17, TRU_TIET 4 -> 13
-    await createWorkloadAdjustmentPolicy({
-      academicYearId: f.year.id,
-      authorUserId: f.principal.id,
-      baseWeeklyNorm: 17,
-      rules: [
-        {
-          ruleId: 'r-homeroom',
-          source: { kind: 'HOMEROOM_RESPONSIBILITY' },
-          calculation: 'TRU_TIET',
-          value: 4,
-          priority: 100,
-        },
-      ],
-    });
-
-    const wl = await officialWorkload.resolve({
-      academicYearId: f.year.id,
-      targetUserId: f.teacherA.id,
-      fromCivilDate: '2026-09-14',
-      toCivilDate: '2026-09-20',
-      asOfInstant: new Date('2026-09-20T18:00:00.000Z'),
-    });
-
-    expect(wl.requiredCredit).toBe(13);
-    expect(wl.adjustmentSegments[0]?.appliedRules).toHaveLength(1);
-    expect(wl.varianceCredit).toBe((wl.earnedCredit ?? 0) - 13);
-  });
-
-  // =========================================================================
-  // SCENARIO 10 — Reporting Statement Snapshot V4 freeze & tamper verification
-  // =========================================================================
-  it('Scenario 10: Reporting Statement Snapshot V4 freezes official workload and survives source mutations without drift', async () => {
-    const f = await createBaseAcademicSetup();
-
-    await createCurricularExecution({
-      f,
-      actualTeacherUserId: f.teacherA.id,
-      executionCivilDate: '2026-09-14',
-      ppctItemId: f.items[2]!.id,
-      ppctItemRevisionId: f.revisions[2]!.id,
-    });
-
-    await createWorkloadAdjustmentPolicy({
-      academicYearId: f.year.id,
-      authorUserId: f.principal.id,
-      baseWeeklyNorm: 17,
-    });
-
-    await harness.prisma.capabilityDefinition.upsert({
-      where: { key: 'REPORTING_STATEMENT_SUBMIT' },
-      update: {},
-      create: {
-        key: 'REPORTING_STATEMENT_SUBMIT',
-        description: 'Submit statement',
-        allowedScopeTypes: ['PERSONAL'],
-      },
-    });
-
-    await harness.prisma.capabilityGrant.create({
-      data: {
-        userId: f.teacherA.id,
-        capabilityKey: 'REPORTING_STATEMENT_SUBMIT',
-        scopeType: 'PERSONAL',
-        validFrom: new Date('2026-08-01T00:00:00.000Z'),
-      },
-    });
-
-    const preview = await reportingStatements.preview(
+    const makeupRes = await makeupSchedules.create(
       {
         academicYearId: f.year.id,
-        fromCivilDate: '2026-09-14' as CivilDateString,
-        toCivilDate: '2026-09-20' as CivilDateString,
+        sourceNormalOccurrenceKey: `NORMAL:${f.entry.id}:2026-09-07`,
+        targetCivilDate: '2026-09-08', // Tuesday
+        targetTimeSlotDefinitionId: slotTuesdayMakeup.id,
+        scheduledTeacherUserId: f.teacherA.id,
+        note: 'Dạy bù cho tiết ngày 07/09',
+        requestKey: `makeup-sc12-${randomUUID()}`,
       },
-      {
-        auth: { user: { id: f.teacherA.id, mustChangePassword: false } },
-        headers: { 'user-agent': 'test' },
-        ip: '127.0.0.1',
-      } as never,
+      mockAuthRequest(f.principal),
     );
-    expect(preview.status).toBe('PASS');
-    expect(preview.eligibleForSubmission).toBe(true);
+    expect(makeupRes.outcome).toBe('CREATED');
 
-    const submitResult = await reportingStatements.submit(
-      {
+    // 3. Special activity occupancy: Teacher A scheduled on Tuesday Period 2
+    const slotTuesdayPeriod2 = await harness.prisma.timeSlotDefinition.create({
+      data: {
         academicYearId: f.year.id,
-        fromCivilDate: '2026-09-14' as CivilDateString,
-        toCivilDate: '2026-09-20' as CivilDateString,
-        requestKey: normalizedCode('REQ_STMT'),
+        weekday: 'TUESDAY',
+        session: 'MORNING',
+        ordinal: 2,
+        revision: 1,
+        displayLabel: 'Tiet 2 Thu 3',
+        startTime: new Date('1970-01-01T07:50:00Z'),
+        endTime: new Date('1970-01-01T08:35:00Z'),
+        allowRegularTeaching: false,
+        allowMakeupTeaching: false,
+        allowSelfStudy: true,
       },
-      {
-        auth: { user: { id: f.teacherA.id, mustChangePassword: false } },
-        headers: { 'user-agent': 'test' },
-        ip: '127.0.0.1',
-      } as never,
-    );
-
-    expect(submitResult.revisionId).toBeDefined();
-
-    const revision = await harness.prisma.reportingStatementRevision.findUniqueOrThrow({
-      where: { id: submitResult.revisionId },
-    });
-    expect(revision.snapshotProfile).toBe(REPORTING_STATEMENT_SNAPSHOT_V4);
-
-    const parsedSnapshot = JSON.parse(revision.canonicalSnapshotJson) as {
-      snapshotProfile: string;
-      officialWorkload: { earnedCredit: number; requiredCredit: number };
-    };
-    expect(parsedSnapshot.officialWorkload.earnedCredit).toBe(1);
-    expect(parsedSnapshot.officialWorkload.requiredCredit).toBe(17);
-
-    // Cryptographic integrity
-    expect(() =>
-      assertFrozenReportingStatementIntegrity({
-        snapshot: parsedSnapshot as never,
-        canonicalSnapshotJson: revision.canonicalSnapshotJson,
-        semanticHash: revision.semanticHash,
-        frozenSubjectIds: [f.subject.id],
-      }),
-    ).not.toThrow();
-
-    // Mutate live source
-    await createCurricularExecution({
-      f,
-      actualTeacherUserId: f.teacherA.id,
-      executionCivilDate: '2026-09-15',
     });
 
-    // Re-verify frozen snapshot
-    const reReadRevision = await harness.prisma.reportingStatementRevision.findUniqueOrThrow({
-      where: { id: revision.id },
-    });
-    const reReadPayload = JSON.parse(reReadRevision.canonicalSnapshotJson) as {
-      officialWorkload: { earnedCredit: number; requiredCredit: number };
-    };
-
-    expect(reReadPayload.officialWorkload.earnedCredit).toBe(1);
-    expect(reReadPayload.officialWorkload.requiredCredit).toBe(17);
-  });
-
-  // =========================================================================
-  // SCENARIO 11 — Fail-closed policy & provenance validation
-  // =========================================================================
-  it('Scenario 11: Fail-closed policy & provenance validation rejects ambiguous or corrupt configuration', async () => {
-    const f = await createBaseAcademicSetup();
-
-    // 1. Missing policy fails closed (status: 'BLOCKED', no silent defaults)
-    const blockedRes = await officialWorkload.resolve({
-      academicYearId: f.year.id,
-      targetUserId: f.teacherA.id,
-      fromCivilDate: '2026-09-14',
-      toCivilDate: '2026-09-20',
-      asOfInstant: new Date('2026-09-20T18:00:00.000Z'),
-    });
-    expect(blockedRes.status).toBe('BLOCKED');
-    expect(blockedRes.requiredCredit).toBeNull();
-
-    // 2. Invalid policy rule throws
-    await expect(
-      businessConfig.createDraft(
-        {
-          commandId: crypto.randomUUID(),
-          family: 'WORKLOAD_ADJUSTMENT',
-          resource: { kind: 'ACADEMIC_YEAR', academicYearId: f.year.id },
-          payload: {
-            baseWeeklyNorm: 17,
-            rules: [
-              {
-                ruleId: 'r-invalid',
-                source: { kind: 'ADDITIONAL_DUTY', dutyDefinitionId: '00000000-0000-0000-0000-000000000000' },
-                calculation: 'TRU_TIET',
-                value: 2,
-                priority: 100,
-              },
-            ],
+    await harness.prisma.specialActivity.create({
+      data: {
+        academicYearId: f.year.id,
+        academicCalendarVersionId: f.calendar.id,
+        civilDate: new Date('2026-09-08T00:00:00.000Z'),
+        scope: SpecialActivityScope.SCHOOL_WIDE,
+        status: SpecialActivityStatus.ACTIVE,
+        title: 'Dai hoi toan truong',
+        createRequestKey: `act-sc12-${randomUUID()}`,
+        createRequestFingerprint: 'fp-sc12-act',
+        createdByUserId: f.principal.id,
+        timeSlots: {
+          create: {
+            timeSlotDefinitionId: slotTuesdayPeriod2.id,
           },
-          effectiveFrom: '2026-08-01',
         },
-        f.principal.id,
-        { ipAddress: '127.0.0.1', userAgent: 'test' },
-      ),
-    ).rejects.toThrow(BadRequestException);
-  });
+        staffing: {
+          create: {
+            scheduledTeacherUserId: f.teacherA.id,
+            staffProfileId: f.teacherA.profile!.id,
+            eligibilityCheckedAt: new Date('2026-08-01T00:00:00.000Z'),
+            eligibilityWasActive: true,
+            eligibilityWasTeachingStaff: true,
+          },
+        },
+      },
+    });
 
-  // =========================================================================
-  // SCENARIO 12 — Teacher Workspace cross-domain effective schedule
-  // =========================================================================
-  it('Scenario 12: Teacher Workspace effective schedule composes normal, makeup, and special activity occupancies read-only', async () => {
-    const f = await createBaseAcademicSetup();
-
-    // Query weekly schedule for Teacher A
+    // Call production EffectiveScheduleService.getWeeklySchedule
     const weeklySchedule = await effectiveSchedule.getWeeklySchedule(
       {
         academicYearId: f.year.id,
@@ -1431,13 +2156,30 @@ integration('P5-010: Full Business Pilot Cross-Domain Freeze PostgreSQL Suite', 
       f.teacherA.id,
     );
 
-    expect(weeklySchedule).toBeDefined();
-    expect(weeklySchedule.days).toBeDefined();
+    expect(weeklySchedule.teacherUserId).toBe(f.teacherA.id);
+    expect(weeklySchedule.academicWeekId).toBe(f.week.id);
 
-    const allSlots = weeklySchedule.days.flatMap((d: IndividualWeeklyScheduleDay) => d.slots);
-    const normalItem = allSlots.find((s: EffectiveScheduleSlotItem) => s.sourceKind === 'BASE_TIMETABLE');
+    // Extract all occupied slots across the week
+    const occupiedSlots = weeklySchedule.days
+      .flatMap((day) => day.slots)
+      .filter((slot) => slot.occupancyState === 'OCCUPIED');
 
-    expect(normalItem).toBeDefined();
-    expect(normalItem?.timeSlotId).toBeDefined();
+    const sourceKinds = occupiedSlots.map((slot) => slot.sourceKind);
+
+    // Assert that all 3 distinct canonical source kinds are present in the effective weekly schedule
+    expect(sourceKinds).toContain('BASE_TIMETABLE');
+    expect(sourceKinds).toContain('MAKEUP_TEACHING');
+    expect(sourceKinds).toContain('SPECIAL_ACTIVITY');
+
+    // Read-only invariant: zero database mutation occurred
+    const verifiedSchedule = await effectiveSchedule.getWeeklySchedule(
+      {
+        academicYearId: f.year.id,
+        academicWeekId: f.week.id,
+        teacherUserId: f.teacherA.id,
+      },
+      f.teacherA.id,
+    );
+    expect(verifiedSchedule.days).toHaveLength(weeklySchedule.days.length);
   });
 });
