@@ -126,15 +126,15 @@ Exact task statuses and prerequisites are maintained authoritatively in `PRE-PIL
 5. Date-effective homeroom resolution/freeze for class activities remains owned by the runtime bridge.
 6. Deterministic bridge into existing SpecialActivity runtime primitive and attestation runtime (`P4-040`, `CLOSED` by `SYNC-P4-040`).
 7. Confirmed activity teacher-slot workload/reporting aggregation (`P4-050`).
-8. WorkloadAdjustmentRule and official actual-teacher workload architecture is CLOSED by `SYNC-P4-060`; ADR-057 is Accepted. `P4-061` is READY to implement earned curricular + reused P4-050 special-programme workload, adjusted required norm and Snapshot V4.
+8. WorkloadAdjustmentRule and official actual-teacher workload architecture is CLOSED by `SYNC-P4-060`; ADR-057 is Accepted. `P4-061` implementation is CLOSED by `SYNC-P4-061`, delivering earned curricular + reused P4-050 special-programme workload, adjusted required norm and Snapshot V4.
 
 ### P5 — Pilot product closure
 
 1. Product Owner selected complete `FULL BUSINESS PILOT`; P0-003 is CLOSED by `SYNC-P0-003`.
-2. P5-010 freezes the full cross-domain claim with direct dependencies `P0-003`, `P1-032`, `P2-020`, `P2-061`, `P3-020`, `P3-031`, `P4-061`, `P4-074`.
+2. P5-010 freezes the full cross-domain claim with direct dependencies `P0-003`, `P1-032`, `P2-020`, `P2-061`, `P3-020`, `P3-031`, `P4-061`, `P4-074`; all are CLOSED, so `P5-010` is READY.
 3. Cross-domain regression/business freeze must include normal curricular workflows plus historical go-live reconciliation, public make-up scheduling, adjusted workload, GDĐP/HĐTN-HN, date-effective homeroom resolution, exact multi-teacher workload and official combined reporting.
 4. T08 make-up re-entry is fulfilled: P3-010 CLOSED -> P3-030 CLOSED by `SYNC-P3-030` -> P3-031 CLOSED by `SYNC-P3-031`, with P3-020 CLOSED for historical ingestion/reconciliation.
-5. T23/T49 architecture is closed by `SYNC-P4-060`; P4-061 is READY and must close both adjustment rules and actual curricular workload aggregation before P5-010.
+5. T23/T49 architecture is closed by `SYNC-P4-060`; P4-061 runtime is CLOSED by `SYNC-P4-061`, fulfilling adjustment rules and actual curricular workload aggregation and unblocking P5-010.
 6. Installable PWA baseline with safe caching/update behavior.
 7. Dedicated Báo giảng Telegram bot/linking/notification lifecycle.
 
@@ -177,7 +177,7 @@ Independent tracks:
 - P4-040 (Programme-to-SpecialActivity runtime bridge; `CLOSED` by `SYNC-P4-040`)
 - P4-050 (Special-programme workload/reporting; `CLOSED` by `SYNC-P4-050`)
 - P4-060 (Workload adjustment + official workload architecture; `CLOSED` by `SYNC-P4-060`, ADR-057 Accepted)
-- P4-061 (Implementation; `READY`)
+- P4-061 (Implementation; `CLOSED` by `SYNC-P4-061`; unlocks P5-010 `READY`)
 - P6 production readiness & TLS authority (governed independently by canonical gates P6-005 -> P6-010 etc.)
 - Native TKB foundation: P2-030, P2-040, P2-050 are CLOSED.
 
