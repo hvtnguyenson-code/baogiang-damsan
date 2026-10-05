@@ -131,7 +131,7 @@ Exact task statuses and prerequisites are maintained authoritatively in `PRE-PIL
 ### P5 — Pilot product closure
 
 1. Product Owner selected complete `FULL BUSINESS PILOT`; P0-003 is CLOSED by `SYNC-P0-003`.
-2. P5-010 freezes the full cross-domain claim with direct dependencies `P0-003`, `P1-032`, `P2-020`, `P2-061`, `P3-020`, `P3-031`, `P4-061`, `P4-074`; all are CLOSED, so `P5-010` is READY.
+2. P5-010 freezes the full cross-domain claim with direct dependencies `P0-003`, `P1-032`, `P2-020`, `P2-061`, `P3-020`, `P3-031`, `P4-061`, `P4-074`; all are CLOSED, and `P5-010` is `IN_REVIEW` on branch `feat/p5-010-full-business-cross-domain-freeze`.
 3. Cross-domain regression/business freeze must include normal curricular workflows plus historical go-live reconciliation, public make-up scheduling, adjusted workload, GDĐP/HĐTN-HN, date-effective homeroom resolution, exact multi-teacher workload and official combined reporting.
 4. T08 make-up re-entry is fulfilled: P3-010 CLOSED -> P3-030 CLOSED by `SYNC-P3-030` -> P3-031 CLOSED by `SYNC-P3-031`, with P3-020 CLOSED for historical ingestion/reconciliation.
 5. T23/T49 architecture is closed by `SYNC-P4-060`; P4-061 runtime is CLOSED by `SYNC-P4-061`, fulfilling adjustment rules and actual curricular workload aggregation and unblocking P5-010.
