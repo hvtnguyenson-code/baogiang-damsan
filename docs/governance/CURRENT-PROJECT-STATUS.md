@@ -8,7 +8,7 @@ Per `MAJOR-TASK-DOCUMENTATION-SYNC-PROTOCOL.md`, this file is intentionally conc
 
 Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub. SHAs here are evidence for already-established task states, never a self-referential claim that this document contains its own current commit.
 
-**Status snapshot date:** 2026-10-04
+**Status snapshot date:** 2026-10-05
 
 ## Executive status
 
@@ -22,36 +22,37 @@ Exact current `main`, branch HEAD and divergence must always be read directly fr
 
 ## Last formally closed major task
 
-`P4-060` — Workload adjustment + official teacher workload architecture — **`CLOSED`** by `SYNC-P4-060`.
+`P4-061` — Workload adjustment + official workload implementation — **`CLOSED`** by `SYNC-P4-061`.
 
 Parent closure evidence:
 
-- parent branch: `docs/p4-060-workload-adjustment-architecture`;
-- canonical parent start: `main@e1be4a486caf57357c0fcec6f47eceb6b873ec0a`;
-- final reviewed parent head: `7bf3ca2b30b27f257035acf814cdeca10a708da0`;
-- parent PR #189;
-- exact-head parent CI #626 / run `37168759382` — **SUCCESS**;
-- independent exact-diff audit: **PASS**; 9 docs-only files; zero unresolved review threads;
-- normal parent merge/main: `db5f08912f41606d80c4b7c66fbfea42b3f7d039`;
-- authoritative parent post-merge CI #627 / run `37169147105` — **SUCCESS**;
-- ADR-057 Accepted; T21/T23/T49 architecture authority closed;
-- no runtime/schema/migration/API/UI/auth/CI/deploy/VPS mutation; production remains PRE-OPERATIONAL.
+- parent branch: `feat/p4-061-workload-adjustment-runtime`;
+- canonical parent start: `main@cb6f0228bc6134f7e937f52bcba93a32239030dd`;
+- final reviewed parent head: `e29d44d1b7fdd004aba967b42559eac55279a726`;
+- parent PR #191;
+- exact-head parent CI #632 / run `37219956349` — **SUCCESS**;
+- independent exact-code/diff review: **PASS**; all review corrections and bounded CI fixture corrections were absorbed forward-only; zero unresolved review threads;
+- normal parent merge/main: `f90971eecf806304bbb6b0f4e9e364802426bbad`;
+- authoritative parent post-merge CI #633 / run `37254808293` — **SUCCESS**;
+- delivered strict `WORKLOAD_ADJUSTMENT / v1 / ACADEMIC_YEAR` policy authority, actual-teacher curricular earned workload, P4-050 special-programme workload reuse, adjusted required-credit proration, combined earned/required/variance projection, Reporting Statement Snapshot V4 frozen provenance/integrity and typed Vietnamese UI;
+- no schema/migration/deploy/VPS or production mutation; production remains PRE-OPERATIONAL.
 
-`P4-061` is now the only unresolved direct P5-010 business dependency and is **READY**.
+All direct dependencies of `P5-010` are now **CLOSED**. `P5-010` is **READY** for the FULL BUSINESS cross-domain freeze.
 
 ## Active / next critical path
 
 ### In Review
 
-- `P4-061` — workload adjustment + official workload implementation — **`IN_REVIEW`**; implementing accepted ADR-057 policy, actual-curricular earned workload, P4-050 reuse, adjusted required norm, combined projection, Snapshot V4 and typed Vietnamese UI on branch `feat/p4-061-workload-adjustment-runtime`.
+- None on the immediate P5 dependency path.
 
 ### Ready
 
-- None on the immediate P5 dependency path.
+- `P5-010` — Pilot business scope + cross-domain freeze — **`READY`**; all registered direct dependencies are CLOSED.
 
 ### Planned behind open dependencies
 
-- None on the immediate P5 dependency path.
+- `P5-020` — PWA production baseline — **`PLANNED`** behind `P5-010`.
+- `P5-030` — dedicated Báo giảng Telegram integration — **`PLANNED`** behind `P5-010`.
 
 ### Trigger-gated / decision-blocked
 - `P0-002` — stale PR #11 hosting-portability direction: **`BLOCKED_DECISION`**.
@@ -77,7 +78,7 @@ The capacity audit is decision evidence, not production-readiness evidence. Offi
 
 ## Implemented foundation relevant to pilot
 
-Canonical `main` contains reviewed implementation for identity/auth, authorization/audit, retained calendar and teaching responsibility history, HomeroomAssignment, timetable/native TKB ingestion, component-aware PPCT, operational overlays, SpecialActivity, GDĐP/HĐTN planning/import/lifecycle/workload, execution evidence, progress/debt/late, Reporting Statement, Business Configuration/operational-start, school-wide effective teaching schedule and the hardened Windows production deployment control plane.
+Canonical `main` contains reviewed implementation for identity/auth, authorization/audit, retained calendar and teaching responsibility history, HomeroomAssignment, timetable/native TKB ingestion, component-aware PPCT, operational overlays, SpecialActivity, GDĐP/HĐTN planning/import/lifecycle/workload, execution evidence, progress/debt/late, Reporting Statement, Business Configuration/operational-start, school-wide effective teaching schedule, P4-061 official workload/adjustment runtime and the hardened Windows production deployment control plane.
 
 `P2-020` additionally delivers the native PPCT_V1 workbook parser/importer and Vietnamese administration UI and is formally CLOSED by `SYNC-P2-020`.
 
@@ -87,9 +88,9 @@ Detailed domain closure evidence remains in `PRE-PILOT-TASK-REGISTER.md`, ADRs, 
 
 The project is **NOT READY FOR TEACHER PILOT YET**. Remaining registered gaps include:
 
-1. `P3-030`, `P3-031` and `P4-060` are CLOSED by their non-recursive sync closures; ADR-057 is Accepted.
-2. `P4-061` is READY and remains the only unresolved direct dependency of the complete FULL BUSINESS `P5-010` freeze.
-3. Public make-up scheduling T08 and adjusted-workload T23 are mandatory re-entry paths; their triggers fired on 2026-10-02.
+1. `P3-030`, `P3-031`, `P4-060` and `P4-061` are CLOSED by their non-recursive sync closures; ADR-057 is Accepted.
+2. All direct dependencies of the complete FULL BUSINESS `P5-010` freeze are CLOSED; `P5-010` is READY but has not yet been executed.
+3. Public make-up scheduling T08 and adjusted-workload T23 re-entry paths are fulfilled by the closed P3-031 and P4-061 chains.
 4. PWA production baseline (`P5-020`) remains absent.
 5. Dedicated Báo giảng Telegram integration (`P5-030`) remains absent.
 6. Official production Stage 1 passive discovery/preflight (`P6-020`) remains trigger-gated and has not been executed.
