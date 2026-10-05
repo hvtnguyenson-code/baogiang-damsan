@@ -37,13 +37,13 @@ Parent closure evidence:
 - delivered strict `WORKLOAD_ADJUSTMENT / v1 / ACADEMIC_YEAR` policy authority, actual-teacher curricular earned workload, P4-050 special-programme workload reuse, adjusted required-credit proration, combined earned/required/variance projection, Reporting Statement Snapshot V4 frozen provenance/integrity and typed Vietnamese UI;
 - no schema/migration/deploy/VPS or production mutation; production remains PRE-OPERATIONAL.
 
-All direct dependencies of `P5-010` are CLOSED. `P5-010` is **`IN_REVIEW`** on branch `feat/p5-010-full-business-cross-domain-freeze` with all 12 cross-domain scenarios verified in the PostgreSQL integration suite (12/12 PASS).
+All direct dependencies of `P5-010` are CLOSED. `P5-010` is **`IN_REVIEW`** on branch `feat/p5-010-full-business-cross-domain-freeze`.
 
 ## Active / next critical path
 
 ### In Review
 
-- `P5-010` — Pilot business scope + cross-domain freeze — **`IN_REVIEW`** on branch `feat/p5-010-full-business-cross-domain-freeze`; canonical start `main@c4321d5630b60296279e7a054206a80a093aa97a`. Correction 001 executed: all 12 cross-domain scenarios use production service paths or authoritative domain integration references with zero overclaim (`apps/api/test/pilot-business-freeze/p5-010-full-business-freeze.integration.spec.ts`, 12/12 PASS). Zero schema changes, zero migrations, zero production/VPS mutation; ready for independent re-review.
+- `P5-010` — Pilot business scope + cross-domain freeze — **`IN_REVIEW`** on branch `feat/p5-010-full-business-cross-domain-freeze`; canonical start `main@c4321d5630b60296279e7a054206a80a093aa97a`. Correction 002 executed: P5-010 Traceability Audit Matrix aligned strictly with canonical `PRE-PILOT-TRACEABILITY-MATRIX.md` meanings and evidence; all 12 cross-domain scenarios use production service paths (`apps/api/test/pilot-business-freeze/p5-010-full-business-freeze.integration.spec.ts`, 12/12 PASS); targeted authoritative domain integration suites verified without overclaim; zero schema changes, zero migrations, zero production/VPS mutation; ready for independent re-review.
 
 ### Ready
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-`IN_REVIEW` on branch `feat/p5-010-full-business-cross-domain-freeze` (Correction 001 applied)
+`IN_REVIEW` on branch `feat/p5-010-full-business-cross-domain-freeze` (Review Correction 002 applied: traceability & evidence alignment)
 
 ## Canonical Start
 
@@ -26,26 +26,28 @@ All eight direct dependencies confirmed `CLOSED`:
 
 ## Traceability Audit Matrix
 
-| Traceability ID | Domain / Requirement | Governing Authority | Status in P5-010 | Integration Seam Covered |
+The canonical authority for traceability row semantics is `docs/governance/PRE-PILOT-TRACEABILITY-MATRIX.md`. The table below aligns all P5-010 cross-domain freeze evidence to the exact canonical definitions without redefining canonical IDs.
+
+| Traceability ID | Domain / Requirement (Canonical Meaning) | Governing Authority | Status in P5-010 | Integration Seam & Authoritative Evidence |
 | :--- | :--- | :--- | :--- | :--- |
-| **T08** | Operational start & delayed go-live | ADR-054, P1-031 | `VERIFIED` | Production `HistoricalTeachingService` (preview -> confirm) ingests canonical historical execution; pre-op period guards against automatic debt; confirmed executions contribute to earned workload |
-| **T13** | Native PPCT import & versioning | P2-010, P2-020 | `VERIFIED` | Authoritative PPCT plan/version lineage, grade/subject applicability, item revisions |
-| **T14** | Curricular component routing (CORE vs SPECIALIZED_STUDY) | P2-001D, P2-003 | `VERIFIED` | Deterministic weekly occurrence allocation; independent progression via production `TeachingExecutionsService.confirmNormal` and `ProgressDebtService.resolveV2`; zero cross-consumption; zero SpecialActivity creation |
-| **T19** | Native TKB & timetable management | P2-030, P2-060 | `VERIFIED` | Retained timetable versions, time slots, entries, teacher-class assignments |
-| **T20** | School-wide effective teaching schedule | P2-060, P2-061 | `VERIFIED` | Production `EffectiveScheduleService.getWeeklySchedule` verifies union of `BASE_TIMETABLE`, `MAKEUP_TEACHING`, and `SPECIAL_ACTIVITY` |
-| **T21** | Teacher Workspace schedule views | P2-061 | `VERIFIED` | Read-only weekly schedule view with zero database mutation |
-| **T23** | Public make-up scheduling | P3-030, P3-031 | `VERIFIED` | Open debt -> production `MakeupSchedulesService.create` -> `TeachingExecutionsService.confirmMakeup` -> debt resolved via `ProgressDebtService.resolve`; PPCT item count invariant preserved |
-| **T24** | Historical ingestion & reconciliation | P3-010, P3-020 | `VERIFIED` | Production `HistoricalTeachingService` ingestion happy path; retained `HistoricalTeachingImportBatch/Row` linkage; detailed conflict/unconfirmed edge cases verified in `test/historical-teaching/historical-teaching.integration.spec.ts` |
-| **T28** | GDĐP programme lifecycle | P4-010, P4-074 | `VERIFIED` | Master -> plan version -> topic items -> occurrence slots -> staffing -> publish -> materialize via production `ProgrammePlanningService.materializeOccurrence` -> SpecialActivity |
-| **T29** | HĐTN-HN programme lifecycle | P4-010, P4-074 | `VERIFIED` | CLASS, GRADE, SCHOOL_WIDE scopes; dual-gate attestation + execution; anti-class fan-out |
-| **T30** | Date-effective homeroom resolution | P1-010, P1-012A | `VERIFIED` | HĐTN-HN CLASS occurrence resolves historical GVCN A at occurrence civil date; subsequent reassignment to GVCN B preserves historical staffing and credit on Teacher A |
-| **T43** | Multi-teacher staffing & anti-Cartesian double-count | P4-020, P4-050 | `VERIFIED` | Single slot with staffing {Teacher A, Teacher B} across 2 class targets; each teacher receives exactly 1.0 credit; no Cartesian multiplication |
-| **T44** | Special programme workload projection | P4-050 | `VERIFIED` | Production `SpecialProgrammeWorkloadProjectionService.resolve` verifies dual gate positive/negative and attestation validation |
-| **T45** | Workload adjustment policies | P4-060, P4-061 | `VERIFIED` | Production `OfficialWorkloadProjectionService.resolve` proves `GHI_DE`, `TRU_TIET`, `TRU_PHAN_TRAM`, priority order (1, 2, 3), and calendar interruption proration |
-| **T46** | Canonical adjustment source matching | P4-060, P4-061 | `VERIFIED` | Homeroom responsibility and AdditionalDuty definition UUID matching; fail-closed on unassigned or nonexistent duty ID |
-| **T47** | Official combined workload calculation | P4-061, P4-050 | `VERIFIED` | Combined earned credit: Curricular (1) + Special Programme (1) = Total Earned (2); adjusted norm and required credit derived |
-| **T48** | Actual teacher vs nominal teacher attribution | P4-061 | `VERIFIED` | Under `SAME_SUBJECT_SUBSTITUTION`, curricular credit is awarded strictly to substitute teacher B (`actualTeacherUserId`), zero credit to nominal teacher A |
-| **T49** | Reporting Statement Snapshot V4 | LOCAL-FC-05I0D | `VERIFIED` | Production `ReportingStatementsService.preview` and `.submit` freezes official workload, adjustment segments, cryptographic semantic hash; post-freeze source mutation immunity verified; V1/V2/V3 backward readability verified via existing authoritative integration suite `test/reporting-statements/reporting-statements.integration.spec.ts` |
+| **T08** | Make-up fulfills original obligation; consumes no new PPCT item | PA-B v1.2 §§8–9; ADR-031/038; ADR-055/056; P3-030; P3-031 | `VERIFIED` | Scenario 4: Proven open debt -> production `MakeupSchedulesService.create` -> execution via production `TeachingExecutionsService.confirmMakeup` -> debt resolved via `ProgressDebtService.resolve`; original obligation resolved; PPCT item count invariant preserved (before/after count invariant verified). |
+| **T13** | HĐTN class-level activity uses effective homeroom responsibility | LOCAL-FC-05A0; ADR-010/012; ADR-045; P1-010..P1-013; P4-074 | `VERIFIED` | Scenario 5: `HDTN_HN` CLASS mode resolves date-effective homeroom teacher (GVCN) at occurrence civil date via production `ProgrammePlanningService.materializeOccurrence` and awards workload credit to the effective GVCN. Supported by retained authority in `apps/api/test/programme-planning/programme-runtime-bridge.integration.spec.ts` (test 60: "HĐTN CLASS uses resolved effective GVCN for SpecialActivityStaffing without rewriting planned staffing"). |
+| **T14** | Historical homeroom responsibility must not drift after teacher or current account-state change | ADR-010/012/038; ADR-045; P1-011..P1-013; P4-040; P4-074 | `VERIFIED` | Scenario 5: Historical GVCN A valid on occurrence date remains assigned and credited (1.0 credit); subsequent reassignment of the class to GVCN B does not rewrite historical staffing or drift workload credit (Teacher B receives 0 credit). Supported by `apps/api/test/programme-planning/programme-runtime-bridge.integration.spec.ts` (tests 21..24: "Resolves and freezes date-effective GVCN provenance, resilient to later assignment changes"). |
+| **T19** | Confirmed special-activity participation contributes to teacher workload under explicit policy | PA-B v1.2; ADR-038; P4-050; P4-061 | `VERIFIED` | Scenarios 5, 6, 7: Confirmed participation contributes to workload under explicit `SPECIAL_PROGRAMME_WORKLOAD` policy. Dual gate verified in Scenario 6: active teacher execution plus qualifying programme attestation produces official workload credit via production `SpecialProgrammeWorkloadProjectionService.resolve`; execution without attestation or attestation without execution produces 0 credit. |
+| **T20** | Frozen class targets must not multiply teacher workload | ADR-038; P4-050 | `VERIFIED` | Scenarios 5, 6, 7: Anti-class fan-out verified in Scenario 6: single occurrence targeting multiple classes (10A and 10B) does not multiply workload credit (exactly 1.0 credit awarded). Anti-Cartesian verified in Scenario 7: single planned occurrence slot staffed with {Teacher A, Teacher B} across 2 class targets awards exactly 1.0 credit to each teacher without multiplying by class count or teacher count. |
+| **T21** | Business policy/configuration is data-driven where school rules change | PA-B v1.2 Appendix D; ADR-057; P4-050; P4-060; P4-061 | `VERIFIED` | Scenario 9: Typed `WORKLOAD_ADJUSTMENT / v1 / ACADEMIC_YEAR` policy rules are resolved dynamically via production `OfficialWorkloadProjectionService.resolve`. Scenario 11: Missing configuration policy returns `BLOCKED` status without silent fallback; invalid/malformed rules return `BLOCKED` with explicit findings. Supported by existing authoritative suite `apps/api/test/official-workload/official-workload.integration.spec.ts` (tests 1, 10). |
+| **T23** | Workload reduction / percentage / override rules configurable before official workload claims | PHASE-01-IDENTITY-ACCESS-SPEC; ADR-057; P4-060; P4-061 | `VERIFIED` | Scenario 9: Base weekly norm (17) is adjusted via configurable typed rules with strict priority ordering: Priority 1 `HOMEROOM_RESPONSIBILITY` with `GHI_DE = 20`, Priority 2 `ADDITIONAL_DUTY` with `TRU_TIET = 4` (16.0), Priority 3 `ADDITIONAL_DUTY` with `TRU_PHAN_TRAM = 25%` (12.0), and calendar interruption proration (Tuesday holiday, denominator K=2 -> required credit = 6.0). Supported by existing authoritative suite `apps/api/test/official-workload/official-workload.integration.spec.ts` (tests 1, 2, 3, 9). |
+| **T24** | Authoritative school PPCT workbook/import uses template and must not guess timetable-import contracts | ADR-027; P0-900; P2-010; P2-020 | `VERIFIED (Reused Authoritative Evidence)` | Authoritative workbook `Mau_PPCT_Chuan_He_Thong_Dam_San_V1.xlsx` contract and security audit closed under P2-010/P2-020. Proved by existing authoritative integration suite `apps/api/test/ppct/ppct-import.integration.spec.ts`: "imports PPCT_V1 atomically into DRAFT and replays identical create requests without duplicate drafts" (PASS) and "fails closed when the confirm fingerprint does not match the preview package" (PASS). |
+| **T28** | Delayed go-live after school year started (system may go live after school year started) | Product Owner requirement; ADR-049; ADR-055; P1-030..P1-032; P3-010; P3-020 | `VERIFIED` | Scenario 3: Delayed go-live boundary (`OPERATIONAL_START`) is resolved dynamically; historical truth is ingested pre-operational boundary via production `HistoricalTeachingService` (`preview` -> `confirm`); pre-operational period strictly guards against automatic debt generation (`openDebtCount = 0`). |
+| **T29** | Confirmed pre-operational historical teaching consumes correct historical PPCT and counts workload | Product Owner requirement; ADR-055; P3-010; P3-020; P4-061 | `VERIFIED` | Scenario 3: Confirmed historical executions via production `HistoricalTeachingService` (`preview` -> `confirm`) create canonical `CurricularTeachingExecution` rows linked to retained `HistoricalTeachingImportBatch/Row` provenance, consume correct historical PPCT items, and contribute towards official earned workload (`earnedTotalCredit = 1.0`). |
+| **T30** | Unconfirmed pre-operational history must not become debt merely due elapsed time | ADR-038/040; ADR-049; ADR-055; P1-031; P3-010; P3-020 | `VERIFIED` | Scenario 3: Pre-operational period enforces no-auto-debt; missing historical execution proof does not fabricate debt or late flags. Supported by existing authoritative historical teaching integration suite `apps/api/test/historical-teaching/historical-teaching.integration.spec.ts`: reconciliation surfaces CONFIRMED/UNCONFIRMED/CONFLICT without auto-debt ("reconciles confirmed/unconfirmed state and supports reverse then lineage replacement", "confirms NORMAL pre-operational evidence into canonical execution and retains provenance", "keeps ordinary pre-operational confirmation fail-closed"). |
+| **T43** | Special-program absence, replacement, and substitute-teacher semantics explicit rather than inferred from curricular substitution | LOCAL-FC-05A0; ADR-038; ADR-050; P4-010..P4-040 | `VERIFIED (Reused Authoritative Evidence)` | Scheduled staffing and actual execution are distinct; absence does not delete scheduled staffing or auto-cancel occurrences; absent teacher receives no workload credit; replacement reverses affected SpecialActivity root via CAS (ACTIVE -> REVERSED) and creates replacement root with replacesId. Proved by existing authoritative suite `apps/api/test/programme-planning/programme-runtime-bridge.integration.spec.ts`: test line 923 ("28..39: Reverses root via CAS, creates replacement root with replacesId, retains old staffing without in-place mutation"), test line 408 ("7: Rejects materialization when teacher is inactive or non-teaching"), test line 1211 ("58. P4-050 negative boundary: P4-040 materialization, attestation, and reversal never mutate reporting statements or produce workload credit"), and test line 1272 ("59. Authorization Separation: Programme Coordinator cannot call generic SpecialActivity mutation endpoints"). |
+| **T44** | Special-program confirmation authority/topology reconciles coordinator/BGH confirmation with teacher participation and prevents double counting | LOCAL-FC-05A0; ADR-038; ADR-050; P4-010; P4-030; P4-040; P4-050 | `VERIFIED` | Scenario 6: Existential confirmation gate is verified: execution without attestation produces pending confirmation (0 credit); attestation added by qualifying Coordinator or BGH satisfies existential gate and produces official workload credit (1.0 credit); duplicate or multi-actor attestations and class targets never multiply workload contribution units. Supported by `apps/api/test/programme-planning/programme-runtime-bridge.integration.spec.ts` (test line 1057: "40..57: Handles attestation lifecycle, multi-actor coexistence, CAS reversal, and Existential Gate"). |
+| **T45** | Normal curricular CORE/SPECIALIZED_STUDY component model and class-subject applicability (non-applicable items are NOT_APPLICABLE, not debt) | Product Owner requirement; P0-900; ADR-048; P2-001..P2-004; P2-010; P2-020 | `VERIFIED (Scenario 2 + Reused Authoritative Evidence)` | Scenario 2 proves component routing and independent progression behavior (Monday CORE allocated and executed; Tuesday SPECIALIZED_STUDY allocated; zero cross-consumption; specialized study remains curricular). Class applicability and NOT_APPLICABLE semantics are proved by existing authoritative suites: `apps/api/test/ppct/ppct.integration.spec.ts` (retained class applicability, version control plane, mid-week split fail-closed `PPCT_COMPONENT_APPLICABILITY_WEEK_SPLIT`), `apps/api/test/ppct-occurrence-allocation/ppct-occurrence-allocation-v2.integration.spec.ts` (historical retained profile split fail-closed), and `apps/web/src/__tests__/ppct-specialized-study-page.test.tsx` (class-subject specialized-study administration workspace). Scenario 2 alone does not prove all of T45. |
+| **T46** | Weekly specialized routing and independent progression: LAST canonical normal opportunity is SPECIALIZED_STUDY, earlier are CORE; independent cursors | Product Owner requirement; ADR-048; P2-001..P2-004; P2-020 | `VERIFIED` | Scenario 2: Within AcademicWeek, chronologically earlier normal opportunity is classified as `CORE` and chronologically LAST normal opportunity of enabled class-subject is classified as `SPECIALIZED_STUDY`; production `TeachingExecutionsService.confirmNormal` and `ProgressDebtService.resolveV2` advance independent progression cursors without cross-consumption. |
+| **T47** | Teacher Workspace school-wide effective schedule, peer read, compare, read-only | Product Owner / BGH requirement; ADR-051; P2-060; P2-061 | `VERIFIED (Scenario 12 Seam + Reused Authoritative Evidence)` | Scenario 12 proves the composite backend read seam: production `EffectiveScheduleService.getWeeklySchedule` unites `BASE_TIMETABLE`, `MAKEUP_TEACHING`, and `SPECIAL_ACTIVITY` read-only without database mutation. Scenario 12 alone does NOT prove all four Teacher Workspace surfaces; the complete surfaces, peer read, compare, and fail-closed semantics are proved by existing authoritative suites:<br>- Backend API: `apps/api/test/effective-schedule/effective-schedule.integration.spec.ts` (21 tests, Items 1..20, self read, peer read, school-wide matrix, real half-open interval comparison, fail-closed BLOCKED states, mutation prohibition) (PASS);<br>- Web UI: `apps/web/src/__tests__/effective-schedule-page.test.tsx` (10 tests: "Lịch của tôi", "Toàn trường", "So sánh với lịch của tôi", fail-closed alerts, Vietnamese copy) (PASS);<br>- E2E: `tests/e2e/specs/effective-schedule.spec.ts` (authoritative retained E2E: renders all four semantic surfaces, Vietnamese copy, responsive viewports, and fail-closed comparison). |
+| **T48** | HĐTN-HN and GDĐP week-level workbooks deterministically bound to exact retained civil-date/time-slot timetable authority | Product Owner requirement; ADR-052; P4-070..P4-074 | `VERIFIED (Reused Authoritative Evidence)` | Authoritative workbook -> materialization lifecycle and retained exact timetable evidence proved by existing authoritative integration suite `apps/api/test/programme-planning/special-programme-lifecycle-e2e.integration.spec.ts`: executes full pipeline from workbook to materialization and enforces P4-050 attestation gates, collapses marker coverage into 1 logical GRADE occurrence without class fan-out, collapses all active classes into 1 logical SCHOOL_WIDE slot, executes 5-column GDĐP workbook to materialization, enforces failure matrix A..G, and retains complete relational evidence linking workbook package, plan, occurrence, and SpecialActivity. |
+| **T49** | Official exact multi-teacher workload credits curricular teaching to actual teacher and combines with accepted special-programme credit before comparing against adjusted required norm | P0-003; ADR-031; ADR-038; ADR-057; P4-060; P4-061 | `VERIFIED` | Scenario 8: Under `SAME_SUBJECT_SUBSTITUTION`, actual teacher B (`actualTeacherUserId`) earns 1.0 curricular credit while nominal/responsible teacher A earns 0 credit; Teacher B combines curricular credit (1.0) + special programme credit (1.0) = 2.0 total earned credits.<br>Scenario 9: Total earned credit (2.0) is compared against adjusted required norm derived from data-driven adjustment policy chain (Priority 1 `GHI_DE`, Priority 2 `TRU_TIET`, Priority 3 `TRU_PHAN_TRAM`) with Tuesday calendar interruption proration yielding adjusted required credit = 6.0 (variance = -4.0).<br>Scenario 10: Production `ReportingStatementsService.preview` and `.submit` freezes official combined workload, curricular & special programme contributions, adjustment segments, and applied rules into immutable canonical JSON under `REPORTING_STATEMENT_SNAPSHOT_V4` with cryptographic semantic hash verification. Supported by existing authoritative suite `apps/api/test/official-workload/official-workload.integration.spec.ts` (tests 4, 5, 8, 11, 12). |
 
 ## Full Business Pilot Freeze Scope
 
@@ -106,33 +108,101 @@ The cross-domain integration suite is implemented in:
 | **9** | Workload adjustment (GHI_DE, TRU_TIET, TRU_PHAN_TRAM, priority, proration) | `OfficialWorkloadProjectionService.resolve` | Rule 1: `GHI_DE = 20`; Rule 2: `TRU_TIET = 4` (16); Rule 3: `TRU_PHAN_TRAM = 25%` (12.0); Tuesday interruption with denominator K = 2 yields required credit = 6.0 |
 | **10** | Reporting Statement Snapshot V4 freeze | `ReportingStatementsService.preview`, `ReportingStatementsService.submit`, `assertFrozenReportingStatementIntegrity` | Snapshot V4 canonical JSON; cryptographic semantic hash verified; live post-freeze execution addition does not mutate frozen statement |
 | **11** | Fail-closed policy & provenance validation | `OfficialWorkloadProjectionService.resolve` | Missing policy -> `BLOCKED`; missing duty definition ID -> `BLOCKED` with `ADDITIONAL_DUTY_DEFINITION_MISSING` |
-| **12** | Teacher Workspace effective schedule | `EffectiveScheduleService.getWeeklySchedule` | Composite weekly schedule contains `BASE_TIMETABLE`, `MAKEUP_TEACHING`, and `SPECIAL_ACTIVITY` read-only |
+| **12** | Teacher Workspace effective schedule (backend composition seam) | `EffectiveScheduleService.getWeeklySchedule` | Composite weekly schedule contains `BASE_TIMETABLE`, `MAKEUP_TEACHING`, and `SPECIAL_ACTIVITY` read-only; complete 4 Teacher Workspace surfaces substantiated by retained domain suites |
 
 ## Existing Authoritative Test Suites Reused for Supporting Evidence
 
-1. **Snapshot Backward Compatibility (V1, V2, V3)**:
+1. **PPCT Native Workbook Import & CAS Verification (T24)**:
+   - File: `apps/api/test/ppct/ppct-import.integration.spec.ts`
+   - Tests (2/2 PASS):
+     - `imports PPCT_V1 atomically into DRAFT and replays identical create requests without duplicate drafts`
+     - `fails closed when the confirm fingerprint does not match the preview package`
+2. **Historical Teaching Reconciliation & Ingestion Integrity (T30)**:
+   - File: `apps/api/test/historical-teaching/historical-teaching.integration.spec.ts`
+   - Tests (11/11 PASS):
+     - `confirms NORMAL pre-operational evidence into canonical execution and retains provenance`
+     - `keeps ordinary pre-operational confirmation fail-closed`
+     - `creates exact historical substitution provenance for DAY_THAY`
+     - `uses date-effective historical subject proof instead of current teacher status for DAY_THAY`
+     - `creates exact historical make-up provenance for DAY_BU`
+     - `reconciles confirmed/unconfirmed state and supports reverse then lineage replacement`
+     - `fails closed when a DAY_BU coordinate has multiple retained slot revisions`
+     - `does not reverse an existing substitution overlay reused as historical provenance`
+     - `does not reverse an existing make-up schedule reused as historical provenance`
+     - `blocks DAY_THAY when the substitute already has another canonical lesson at the same time`
+     - `requires exact SCHOOL_WIDE execution-management authority`
+3. **Special-Programme Absence, Replacement & Attestation Lifecycle (T13, T14, T43, T44)**:
+   - File: `apps/api/test/programme-planning/programme-runtime-bridge.integration.spec.ts`
+   - Tests (17/17 PASS):
+     - `1, 2, 3, 4: Materializes PUBLISHED occurrence 1 & 2 slots, preserves exact non-Cartesian staffing and persists topic provenance`
+     - `5 & 6: Rejects materialization on DRAFT or SUPERSEDED occurrence`
+     - `7: Rejects materialization when teacher is inactive or non-teaching`
+     - `8 & 9: Collision with existing SpecialActivity rolls back transaction with zero partial roots`
+     - `11: Same commandId with different payload produces conflict`
+     - `13, 14, 15, 16, 17, 18, 19, 20: Authorization boundaries, mustChangePassword and Audit Event`
+     - `21, 22, 23, 24: Resolves and freezes date-effective GVCN provenance, resilient to later assignment changes`
+     - `25, 26, 27: Fails closed when homeroom assignment is missing, ambiguous, or teacher is ineligible`
+     - `28..39: Reverses root via CAS, creates replacement root with replacesId, retains old staffing without in-place mutation`
+     - `40..57: Handles attestation lifecycle, multi-actor coexistence, CAS reversal, and Existential Gate`
+     - `58. P4-050 negative boundary: P4-040 materialization, attestation, and reversal never mutate reporting statements or produce workload credit`
+     - `59. Authorization Separation: Programme Coordinator cannot call generic SpecialActivity mutation endpoints`
+     - `60: HĐTN CLASS uses resolved effective GVCN for SpecialActivityStaffing without rewriting planned staffing`
+     - `61: Retrospective HĐTN CLASS allows historical inactive GVCN but fails closed for current/future`
+     - `62: Attestation request keys are actor-scoped so different actors can reuse same commandId`
+     - `63: Materialization rejects DRAFT and future SUPERSEDED plans, but allows historical retained SUPERSEDED`
+     - `64: DB trigger enforces coherent provenance, homeroom pairing, immutable history, and active root exclusivity`
+4. **Special-Programme Import Lifecycle & Timetable Evidence (T48)**:
+   - File: `apps/api/test/programme-planning/special-programme-lifecycle-e2e.integration.spec.ts`
+   - Tests (12/12 PASS):
+     - `executes full pipeline from workbook to materialization and enforces P4-050 attestation gates`
+     - `collapses marker coverage into 1 logical GRADE occurrence and projects individual teacher credits without class fan-out`
+     - `collapses all active classes into 1 logical SCHOOL_WIDE slot and does not multiply credit by class count`
+     - `executes 5-column GDĐP workbook to materialization and verifies workload projection`
+     - `A. Stale preview: rejects confirm when timetable markers mutate after preview`
+     - `B. Calendar authority ambiguity is prevented by the database invariant`
+     - `C. Marker count changes: fails closed when marker topology changes`
+     - `D. Teacher identity changes: fails closed when GVCN homeroom authority changes`
+     - `E. Existing active programme version conflict: importing new plan when master already has active PUBLISHED version fails closed`
+     - `F. Materialization collision: deterministic conflict when materializing same occurrence twice`
+     - `G. Repeated command: exact same commandId + same payload produces idempotent replay; different payload fails`
+     - `retains complete relational evidence linking workbook package, plan, occurrence, and SpecialActivity`
+5. **Teacher Workspace Effective Schedule Surfaces & Compare (T47)**:
+   - Backend Integration: `apps/api/test/effective-schedule/effective-schedule.integration.spec.ts` (21/21 PASS)
+     - Items 1..20, self read, peer read, school-wide matrix, real half-open interval comparison, fail-closed `BLOCKED` states, mutation prohibition
+   - Web UI Tests: `apps/web/src/__tests__/effective-schedule-page.test.tsx` (10/10 PASS)
+     - 4 Teacher Workspace surfaces ("Lịch của tôi", "Toàn trường", selected-teacher schedule, "So sánh với lịch của tôi"), fail-closed alerts, Vietnamese copy
+   - Retained E2E: `tests/e2e/specs/effective-schedule.spec.ts`
+     - Authoritative retained E2E: renders all four semantic surfaces, Vietnamese copy, responsive viewports, and fail-closed comparison
+6. **Curricular Component Model & Class Applicability (T45)**:
+   - File: `apps/api/test/ppct/ppct.integration.spec.ts` (21/21 PASS)
+     - Component persistence, version control plane, class-subject profile applicability, mid-week split fail-closed `PPCT_COMPONENT_APPLICABILITY_WEEK_SPLIT`
+   - File: `apps/api/test/ppct-occurrence-allocation/ppct-occurrence-allocation-v2.integration.spec.ts` (7/7 PASS)
+     - Historical retained profile split fail-closed
+   - File: `apps/web/src/__tests__/ppct-specialized-study-page.test.tsx`
+     - Class-subject specialized-study administration workspace (`/quan-tri/ppct/ap-dung-chuyen-de`)
+7. **Snapshot Backward Compatibility (V1, V2, V3) (T49)**:
    - File: `apps/api/test/reporting-statements/reporting-statements.integration.spec.ts`
-   - Tests:
-     - `CP5-30 new submit persists SNAPSHOT_V3 with canonical provenance and pinned asOf` (PASS)
-     - `CP5-31 HCM anchor resolves policy effective on 2026-09-13 when asOf is 2026-09-12T17:00:00.000Z` (PASS)
-     - `CP5-32 frozen statement remains byte-stable and retains original provenance after later policy replacement` (PASS)
-     - `CP5-33 historical V1 revision is accepted, readable, and verified without V2 provenance` (PASS)
-     - `CP5-34 idempotent replay succeeds even when current policy is deleted or unavailable` (PASS)
-2. **Workload Tamper and Provenance Integrity**:
+   - Tests (19/19 PASS, including CP5-30..34):
+     - `CP5-30 new submit persists SNAPSHOT_V3 with canonical provenance and pinned asOf`
+     - `CP5-31 HCM anchor resolves policy effective on 2026-09-13 when asOf is 2026-09-12T17:00:00.000Z`
+     - `CP5-32 frozen statement remains byte-stable and retains original provenance after later policy replacement`
+     - `CP5-33 historical V1 revision is accepted, readable, and verified without V2 provenance`
+     - `CP5-34 idempotent replay succeeds even when current policy is deleted or unavailable`
+8. **Workload Tamper and Provenance Integrity (T21, T23, T49)**:
    - File: `apps/api/test/official-workload/official-workload.integration.spec.ts`
-   - Tests:
-     - `1. WORKLOAD_ADJUSTMENT create/publish/resolve` (PASS)
-     - `2. AdditionalDuty effective window` (PASS)
-     - `3. Homeroom effective window` (PASS)
-     - `4. ACTIVE NORMAL actual-teacher credit` (PASS)
-     - `5. SAME_SUBJECT_SUBSTITUTION credits substitute only` (PASS)
-     - `6. MAKEUP execution-date ownership` (PASS)
-     - `7. REVERSED execution exclusion` (PASS)
-     - `8. combined curricular + P4-050 credit` (PASS)
-     - `9. arbitrary partial-range/calendar proration` (PASS)
-     - `10. policy change inside report range` (PASS)
-     - `11. Reporting Statement submit persists SNAPSHOT_V4` (PASS)
-     - `12. later policy/duty/homeroom mutation does not rewrite frozen V4` (PASS)
+   - Tests (12/12 PASS):
+     - `1. WORKLOAD_ADJUSTMENT create/publish/resolve`
+     - `2. AdditionalDuty effective window`
+     - `3. Homeroom effective window`
+     - `4. ACTIVE NORMAL actual-teacher credit`
+     - `5. SAME_SUBJECT_SUBSTITUTION credits substitute only`
+     - `6. MAKEUP execution-date ownership`
+     - `7. REVERSED execution exclusion`
+     - `8. combined curricular + P4-050 credit`
+     - `9. arbitrary partial-range/calendar proration`
+     - `10. policy change inside report range`
+     - `11. Reporting Statement submit persists SNAPSHOT_V4`
+     - `12. later policy/duty/homeroom mutation does not rewrite frozen V4`
 
 ## Review Correction Log
 
@@ -147,6 +217,30 @@ The cross-domain integration suite is implemented in:
   - Consolidated `GHI_DE`, `TRU_TIET`, `TRU_PHAN_TRAM`, priority order, canonical duty definitions, and Tuesday holiday calendar proration in Scenario 9.
   - Aligned Scenario 12 with production `EffectiveScheduleService.getWeeklySchedule` asserting `BASE_TIMETABLE`, `MAKEUP_TEACHING`, and `SPECIAL_ACTIVITY`.
   - Aligned all documentation to eliminate overclaims; verified existing domain suites for Snapshot V1/V2/V3 compatibility and deep tamper checks.
+  - Zero production code edits; zero schema changes; zero migration; zero deployment mutation.
+- **Correction 002 (Traceability & Evidence Alignment)**:
+  - Addressed root cause where `docs/requirements/P5-010-FULL-BUSINESS-CROSS-DOMAIN-FREEZE.md` assigned incorrect requirement definitions to canonical traceability IDs.
+  - Aligned the entire P5-010 Traceability Audit Matrix with canonical definitions in `docs/governance/PRE-PILOT-TRACEABILITY-MATRIX.md`:
+    - T08 -> Make-up fulfills original obligation; no new PPCT item (Scenario 4)
+    - T13 -> HĐTN CLASS uses effective homeroom responsibility (Scenario 5 + `programme-runtime-bridge.integration.spec.ts`)
+    - T14 -> Historical homeroom responsibility must not drift (Scenario 5 + `programme-runtime-bridge.integration.spec.ts`)
+    - T19 -> Confirmed special-activity participation contributes workload under explicit policy (Scenarios 5, 6, 7)
+    - T20 -> Frozen class targets must not multiply teacher workload (Scenarios 5, 6, 7)
+    - T21 -> Business policy/configuration is data-driven where school rules change (Scenario 9 + `official-workload.integration.spec.ts`)
+    - T23 -> Workload reduction / percentage / override rules configurable before official claims (Scenario 9 + `official-workload.integration.spec.ts`)
+    - T24 -> Authoritative school PPCT workbook/import (reused authoritative `ppct-import.integration.spec.ts` suite)
+    - T28 -> Delayed go-live after school year started (Scenario 3)
+    - T29 -> Confirmed pre-operational historical teaching consumes correct PPCT and counts workload (Scenario 3)
+    - T30 -> Unconfirmed pre-operational history must not become debt (Scenario 3 + `historical-teaching.integration.spec.ts`)
+    - T43 -> Special-program absence, replacement, substitute semantics (reused authoritative `programme-runtime-bridge.integration.spec.ts` suite)
+    - T44 -> Special-program confirmation topology / dual gate / anti-double-count (Scenario 6 + `programme-runtime-bridge.integration.spec.ts`)
+    - T45 -> CORE/SPECIALIZED_STUDY component model + class applicability (Scenario 2 routing + P2-002/P2-003/P2-004 integration evidence; Scenario 2 alone does not prove all of T45)
+    - T46 -> Weekly specialized routing + independent progression (Scenario 2)
+    - T47 -> Teacher Workspace school-wide effective schedule, peer read, compare, read-only (Scenario 12 backend seam + `effective-schedule.integration.spec.ts` + `effective-schedule-page.test.tsx` + `effective-schedule.spec.ts`; Scenario 12 alone does not prove all 4 surfaces)
+    - T48 -> HĐTN/GDĐP workbook -> exact retained civil-date/time-slot timetable authority (reused authoritative `special-programme-lifecycle-e2e.integration.spec.ts` suite)
+    - T49 -> Actual-teacher curricular workload + special-program workload vs adjusted required norm (Scenarios 8, 9, 10 + Snapshot V4 supporting evidence)
+  - Eliminated overclaims: accurately separated cross-domain integration scenario coverage from retained domain suites.
+  - Re-executed and verified all targeted authoritative suites locally with 100% pass rate.
   - Zero production code edits; zero schema changes; zero migration; zero deployment mutation.
 
 ## Production Code Changes
