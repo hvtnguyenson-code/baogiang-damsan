@@ -137,4 +137,80 @@ describe('ProfilePage Telegram Integration UI (Case 30 & 31)', () => {
     expect(await screen.findByText(/lỗi gửi tin thử/i)).toBeInTheDocument();
     expect(screen.getByText(/trạng thái: UNKNOWN/i)).toBeInTheDocument();
   });
+
+  it('5. preserves requestKey across network error retries but generates a new key after unlink and relink', async () => {
+    const user = userEvent.setup();
+    let currentLinked = true;
+    const recordedRequestKeys: string[] = [];
+    let shouldFailTest = true;
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) return jsonResponse(normalAuth);
+      if (url.endsWith('/integrations/telegram/me')) {
+        return jsonResponse({
+          enabled: true,
+          linked: currentLinked,
+          linkedAt: currentLinked ? '2026-10-06T12:00:00.000Z' : undefined,
+        });
+      }
+      if (url.endsWith('/integrations/telegram/test') && init?.method === 'POST') {
+        const body = JSON.parse(init.body as string);
+        recordedRequestKeys.push(body.requestKey);
+        if (shouldFailTest) {
+          shouldFailTest = false;
+          return new Response(JSON.stringify({ message: 'Network timeout' }), {
+            status: 500,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+        return jsonResponse({
+          deliveryStatus: 'SENT',
+          sentAt: '2026-10-06T12:00:01.000Z',
+        });
+      }
+      if (url.endsWith('/integrations/telegram/link') && init?.method === 'DELETE') {
+        currentLinked = false;
+        return jsonResponse({ unlinked: true });
+      }
+      return jsonResponse({});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderApp('/ho-so');
+    const testButton = await screen.findByRole('button', { name: /gửi tin thử/i });
+
+    // Step 1: Click 1 fails with network error
+    await user.click(testButton);
+    expect(await screen.findByText(/network timeout/i)).toBeInTheDocument();
+    expect(recordedRequestKeys.length).toBe(1);
+    const keyBeforeRetry = recordedRequestKeys[0];
+
+    // Step 2: Retry same logical click preserves key
+    await user.click(testButton);
+    expect(await screen.findByText(/gửi tin thử thành công/i)).toBeInTheDocument();
+    expect(recordedRequestKeys.length).toBe(2);
+    expect(recordedRequestKeys[1]).toBe(keyBeforeRetry);
+
+    // Step 3: Unlink
+    const unlinkButton = screen.getByRole('button', { name: /hủy liên kết/i });
+    await user.click(unlinkButton);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /liên kết telegram/i })).toBeInTheDocument();
+    });
+
+    // Step 4: Relink (status changes back to linked)
+    currentLinked = true;
+    // Rerender app with linked status
+    renderApp('/ho-so');
+    const newTestButton = await screen.findByRole('button', { name: /gửi tin thử/i });
+
+    // Step 5: Click self-test on new link lifecycle
+    await user.click(newTestButton);
+    expect(await screen.findByText(/gửi tin thử thành công/i)).toBeInTheDocument();
+    expect(recordedRequestKeys.length).toBe(3);
+    const keyAfterRelink = recordedRequestKeys[2];
+    expect(keyAfterRelink).not.toBe(keyBeforeRetry);
+  });
 });

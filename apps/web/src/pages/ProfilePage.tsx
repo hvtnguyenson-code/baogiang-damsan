@@ -60,6 +60,13 @@ export function ProfilePage() {
     return () => clearInterval(interval);
   }, [challengeExpiresAt]);
 
+  const isLinked = Boolean(telegramData?.linked);
+  useEffect(() => {
+    if (!isLinked) {
+      testRequestKeyRef.current = null;
+    }
+  }, [isLinked]);
+
   const createChallengeMutation = useMutation({
     mutationFn: createTelegramLinkChallenge,
     onSuccess: (data) => {
@@ -80,6 +87,7 @@ export function ProfilePage() {
       setActiveDeepLink(null);
       setChallengeExpiresAt(null);
       setTestResult(null);
+      testRequestKeyRef.current = null;
       void queryClient.invalidateQueries({ queryKey: ['telegram-status'] });
     },
     onError: (error: Error) => {

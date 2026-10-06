@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { TelegramService } from './telegram.service';
 
-@Controller('api/integrations/telegram')
+@Controller('integrations/telegram')
 export class TelegramWebhookController {
   constructor(private readonly telegramService: TelegramService) {}
 

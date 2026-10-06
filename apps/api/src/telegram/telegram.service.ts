@@ -38,10 +38,29 @@ export class TelegramService implements OnModuleInit {
 
   async onModuleInit(): Promise<void> {
     if (this.config.telegram.enabled) {
-      await this.reconcileStaleDeliveries().catch((err) => {
-        this.logger.error('Failed to reconcile stale deliveries on startup', err);
+      await this.reconcileAttemptingOnStartup().catch((err) => {
+        this.logger.error('Failed to reconcile pre-existing attempting deliveries on startup', err);
       });
     }
+  }
+
+  /**
+   * Reconciles all pre-existing ATTEMPTING deliveries on module startup.
+   * Any delivery left in ATTEMPTING without terminal evidence when the process restarts
+   * is marked UNKNOWN with ZERO 60-second exemption.
+   * NO AUTO-RETRY.
+   */
+  async reconcileAttemptingOnStartup(): Promise<number> {
+    const result = await this.prisma.telegramNotificationDelivery.updateMany({
+      where: {
+        deliveryStatus: 'ATTEMPTING',
+      },
+      data: {
+        deliveryStatus: 'UNKNOWN',
+        sanitizedErrorCode: 'PROCESS_RESTARTED_DURING_ATTEMPT',
+      },
+    });
+    return result.count;
   }
 
   /**
@@ -215,6 +234,30 @@ export class TelegramService implements OnModuleInit {
       where: { updateId: parsed.updateId },
     });
     if (existingReceipt) {
+      if (
+        existingReceipt.status === 'PROCESSED' &&
+        parsed.isSupportedStart &&
+        parsed.telegramUserId &&
+        parsed.telegramChatId
+      ) {
+        // Recover crash window: DB committed receipt/link/delivery, but process died before provider call.
+        const activeLink = await this.prisma.telegramAccountLink.findFirst({
+          where: {
+            telegramUserId: parsed.telegramUserId,
+            telegramChatId: parsed.telegramChatId,
+            status: 'ACTIVE',
+          },
+        });
+        if (activeLink) {
+          const commandKey = `link-success:${activeLink.id}`;
+          const delivery = await this.prisma.telegramNotificationDelivery.findUnique({
+            where: { commandKey },
+          });
+          if (delivery && delivery.deliveryStatus === 'RESERVED') {
+            await this.executeDelivery(delivery.id, CANONICAL_NOTIFICATION_TEXT);
+          }
+        }
+      }
       return { ok: true };
     }
 
@@ -302,7 +345,6 @@ export class TelegramService implements OnModuleInit {
     // Atomic transaction for linking + welcome reservation
     const payloadDigest = crypto.createHash('sha256').update(CANONICAL_NOTIFICATION_TEXT).digest('hex');
     let deliveryIdToExecute: string | null = null;
-    let targetChatId: string | null = null;
 
     try {
       await this.prisma.$transaction(async (tx) => {
@@ -364,16 +406,86 @@ export class TelegramService implements OnModuleInit {
         });
 
         deliveryIdToExecute = delivery.id;
-        targetChatId = parsed.telegramChatId!;
       });
-    } catch {
-      // If transaction fails, nothing is committed (receipt is rolled back so update can be redelivered)
-      return { ok: true };
+    } catch (txError) {
+      // Distinguish deterministic business race vs unexpected storage/infrastructure failure.
+      // 1. Did another request commit a receipt for this updateId?
+      const racedReceipt = await this.prisma.telegramWebhookReceipt.findUnique({
+        where: { updateId: parsed.updateId },
+      });
+      if (racedReceipt) {
+        if (
+          racedReceipt.status === 'PROCESSED' &&
+          parsed.isSupportedStart &&
+          parsed.telegramUserId &&
+          parsed.telegramChatId
+        ) {
+          const activeLink = await this.prisma.telegramAccountLink.findFirst({
+            where: {
+              telegramUserId: parsed.telegramUserId,
+              telegramChatId: parsed.telegramChatId,
+              status: 'ACTIVE',
+            },
+          });
+          if (activeLink) {
+            const commandKey = `link-success:${activeLink.id}`;
+            const delivery = await this.prisma.telegramNotificationDelivery.findUnique({
+              where: { commandKey },
+            });
+            if (delivery && delivery.deliveryStatus === 'RESERVED') {
+              await this.executeDelivery(delivery.id, CANONICAL_NOTIFICATION_TEXT);
+            }
+          }
+        }
+        return { ok: true };
+      }
+
+      // 2. Did the challenge get consumed or expired by a concurrent race?
+      const ch = await this.prisma.telegramLinkChallenge.findUnique({
+        where: { tokenHash },
+      });
+      if (ch && (ch.status !== 'PENDING' || ch.expiresAt <= now)) {
+        try {
+          await this.prisma.telegramWebhookReceipt.create({
+            data: {
+              updateId: parsed.updateId,
+              status: 'IGNORED',
+            },
+          });
+        } catch {}
+        return { ok: true };
+      }
+
+      // 3. Did a concurrent active link get established?
+      const concurrentActiveLink = await this.prisma.telegramAccountLink.findFirst({
+        where: {
+          status: 'ACTIVE',
+          OR: [
+            { userId: challenge.userId },
+            { telegramUserId: parsed.telegramUserId },
+            { telegramChatId: parsed.telegramChatId },
+          ],
+        },
+      });
+      if (concurrentActiveLink) {
+        try {
+          await this.prisma.telegramWebhookReceipt.create({
+            data: {
+              updateId: parsed.updateId,
+              status: 'IGNORED',
+            },
+          });
+        } catch {}
+        return { ok: true };
+      }
+
+      // Unexpected infrastructure failure: rethrow so HTTP returns 5xx and Telegram can redeliver!
+      throw txError;
     }
 
     // Network send occurs POST-COMMIT outside any DB transaction
-    if (deliveryIdToExecute && targetChatId) {
-      await this.executeDelivery(deliveryIdToExecute, targetChatId, CANONICAL_NOTIFICATION_TEXT);
+    if (deliveryIdToExecute) {
+      await this.executeDelivery(deliveryIdToExecute, CANONICAL_NOTIFICATION_TEXT);
     }
 
     return { ok: true };
@@ -442,7 +554,7 @@ export class TelegramService implements OnModuleInit {
 
     // If delivery is RESERVED, attempt atomic claim & send
     if (deliveryRecord.deliveryStatus === 'RESERVED') {
-      await this.executeDelivery(deliveryRecord.id, activeLink.telegramChatId, CANONICAL_NOTIFICATION_TEXT);
+      await this.executeDelivery(deliveryRecord.id, CANONICAL_NOTIFICATION_TEXT);
     }
 
     const finalDelivery = await this.prisma.telegramNotificationDelivery.findUniqueOrThrow({
@@ -458,11 +570,38 @@ export class TelegramService implements OnModuleInit {
 
   /**
    * Atomic CAS send claim:
-   * UPDATE WHERE id = :id AND deliveryStatus = 'RESERVED'
-   * SET deliveryStatus = 'ATTEMPTING', attemptStartedAt = now
-   * Only affectedRows == 1 calls provider.
+   * 1. Resolves delivery and ensures associated accountLink is still ACTIVE.
+   *    If link was REVOKED before send claim: zero provider call, delivery marked FAILED (LINK_NOT_ACTIVE).
+   * 2. CAS claim: UPDATE WHERE id = :id AND deliveryStatus = 'RESERVED'
+   *    SET deliveryStatus = 'ATTEMPTING', attemptStartedAt = now
+   *    Only affectedRows == 1 calls provider.
+   * 3. Network call uses destination chatId from durable DB record, never from client input.
    */
-  private async executeDelivery(deliveryId: string, chatId: string, text: string): Promise<void> {
+  private async executeDelivery(deliveryId: string, text: string): Promise<void> {
+    const targetDelivery = await this.prisma.telegramNotificationDelivery.findUnique({
+      where: { id: deliveryId },
+      include: { accountLink: true },
+    });
+
+    if (!targetDelivery || targetDelivery.deliveryStatus !== 'RESERVED') {
+      return;
+    }
+
+    // Link must still be ACTIVE before claiming to send
+    if (targetDelivery.accountLink.status !== 'ACTIVE') {
+      await this.prisma.telegramNotificationDelivery.updateMany({
+        where: {
+          id: deliveryId,
+          deliveryStatus: 'RESERVED',
+        },
+        data: {
+          deliveryStatus: 'FAILED',
+          sanitizedErrorCode: 'LINK_NOT_ACTIVE',
+        },
+      });
+      return;
+    }
+
     const claim = await this.prisma.telegramNotificationDelivery.updateMany({
       where: {
         id: deliveryId,
@@ -479,7 +618,8 @@ export class TelegramService implements OnModuleInit {
       return;
     }
 
-    const sendResult = await this.transport.sendMessage(chatId, text);
+    const destinationChatId = targetDelivery.accountLink.telegramChatId;
+    const sendResult = await this.transport.sendMessage(destinationChatId, text);
 
     if (sendResult.success) {
       await this.prisma.telegramNotificationDelivery.update({

@@ -22,7 +22,7 @@ import { AuthenticatedUser } from '../auth/auth.types';
 import { TelegramService } from './telegram.service';
 import { SendTelegramTestNotificationDto } from './telegram.dto';
 
-@Controller('api/integrations/telegram')
+@Controller('integrations/telegram')
 export class TelegramPersonalController {
   constructor(private readonly telegramService: TelegramService) {}
 

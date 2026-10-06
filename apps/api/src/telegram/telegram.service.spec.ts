@@ -47,29 +47,59 @@ describe('TelegramService (ADR-058 Acceptance Cases)', () => {
       } as TelegramSendResult),
     };
 
+    let lastCreatedDelivery: any = null;
+    let lastCreatedAccountLink: any = null;
+
     mockPrisma = {
       $transaction: jest.fn(async (cb: (tx: any) => Promise<any>) => cb(mockPrisma)),
       telegramAccountLink: {
         findFirst: jest.fn(),
-        create: jest.fn(),
+        create: jest.fn(async ({ data }: any) => {
+          lastCreatedAccountLink = { id: data.id ?? 'link-created', ...data };
+          return lastCreatedAccountLink;
+        }),
         update: jest.fn(),
       },
       telegramLinkChallenge: {
         findUnique: jest.fn(),
         findFirst: jest.fn(),
         create: jest.fn(),
-        updateMany: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       telegramWebhookReceipt: {
         findUnique: jest.fn(),
         create: jest.fn(),
       },
       telegramNotificationDelivery: {
-        findUnique: jest.fn(),
-        findUniqueOrThrow: jest.fn(),
-        create: jest.fn(),
+        findUnique: jest.fn(async ({ where }: any) => {
+          if (where?.id) {
+            return {
+              id: where.id,
+              deliveryStatus: lastCreatedDelivery?.deliveryStatus ?? 'RESERVED',
+              accountLink: {
+                id: lastCreatedDelivery?.accountLinkId ?? lastCreatedAccountLink?.id ?? 'link-default',
+                status: lastCreatedAccountLink?.status ?? 'ACTIVE',
+                telegramChatId:
+                  lastCreatedDelivery?.telegramChatId ??
+                  lastCreatedAccountLink?.telegramChatId ??
+                  '123456',
+              },
+            };
+          }
+          return null;
+        }),
+        findUniqueOrThrow: jest.fn(async ({ where }: any) => {
+          return {
+            id: where?.id ?? 'del-default',
+            deliveryStatus: 'SENT',
+          };
+        }),
+        create: jest.fn(async ({ data }: any) => {
+          lastCreatedDelivery = { id: data.id ?? 'del-created', ...data };
+          return lastCreatedDelivery;
+        }),
         update: jest.fn(),
-        updateMany: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
     };
 
@@ -125,6 +155,11 @@ describe('TelegramService (ADR-058 Acceptance Cases)', () => {
     mockPrisma.telegramLinkChallenge.updateMany.mockResolvedValue({ count: 1 });
     mockPrisma.telegramAccountLink.create.mockResolvedValue({ id: 'link-uuid' });
     mockPrisma.telegramNotificationDelivery.create.mockResolvedValue({ id: 'del-uuid' });
+    mockPrisma.telegramNotificationDelivery.findUnique.mockResolvedValue({
+      id: 'del-uuid',
+      deliveryStatus: 'RESERVED',
+      accountLink: { id: 'link-uuid', status: 'ACTIVE', telegramChatId: '123456789' },
+    });
     mockPrisma.telegramNotificationDelivery.updateMany.mockResolvedValue({ count: 1 });
     mockPrisma.telegramNotificationDelivery.update.mockResolvedValue({});
 
@@ -229,9 +264,9 @@ describe('TelegramService (ADR-058 Acceptance Cases)', () => {
   });
 
   // -------------------------------------------------------------
-  // Case 7: Receipt transaction rollback does not lose valid update
+  // Case 7: Unexpected DB failure propagates error (no receipt, no provider call)
   // -------------------------------------------------------------
-  it('7. receipt transaction rollback does not lose valid update', async () => {
+  it('7. unexpected DB failure propagates error without committing receipt or calling provider', async () => {
     const rawToken = 'test_token_rollback_12345678';
     mockPrisma.telegramWebhookReceipt.findUnique.mockResolvedValue(null);
     mockPrisma.telegramLinkChallenge.findUnique.mockResolvedValue({
@@ -242,7 +277,7 @@ describe('TelegramService (ADR-058 Acceptance Cases)', () => {
     });
     mockPrisma.telegramAccountLink.findFirst.mockResolvedValue(null);
 
-    // Make the transaction fail on consuming challenge
+    // Make the transaction fail on infrastructure failure (e.g. database connection lost)
     mockPrisma.$transaction.mockImplementationOnce(async () => {
       throw new Error('DATABASE_CONNECTION_LOST');
     });
@@ -256,22 +291,30 @@ describe('TelegramService (ADR-058 Acceptance Cases)', () => {
       },
     };
 
-    // Fails safe with { ok: true } to Telegram without committing receipt
-    const res = await service.handleWebhook(payload, validSecret);
-    expect(res).toEqual({ ok: true });
+    // Propagates exception, does NOT swallow with { ok: true }
+    await expect(service.handleWebhook(payload, validSecret)).rejects.toThrow('DATABASE_CONNECTION_LOST');
     // Nothing committed, no provider call
     expect(mockTransport.sendMessage).not.toHaveBeenCalled();
   });
 
   // -------------------------------------------------------------
-  // Case 8: Duplicate update_id does not duplicate link / welcome
+  // Case 8A: PROCESSED receipt with non-RESERVED delivery -> zero provider call
   // -------------------------------------------------------------
-  it('8. duplicate update_id does not duplicate link or welcome delivery', async () => {
-    // Already exists in receipt table
+  it('8A. duplicate update_id with terminal or in-flight delivery makes zero provider call', async () => {
     mockPrisma.telegramWebhookReceipt.findUnique.mockResolvedValue({
       id: 'receipt-1',
       updateId: '10005',
       status: 'PROCESSED',
+    });
+    mockPrisma.telegramAccountLink.findFirst.mockResolvedValue({
+      id: 'link-1',
+      status: 'ACTIVE',
+      telegramChatId: '123',
+    });
+    mockPrisma.telegramNotificationDelivery.findUnique.mockResolvedValue({
+      id: 'del-1',
+      deliveryStatus: 'SENT',
+      accountLink: { status: 'ACTIVE', telegramChatId: '123' },
     });
 
     const payload = {
@@ -287,6 +330,43 @@ describe('TelegramService (ADR-058 Acceptance Cases)', () => {
     expect(res).toEqual({ ok: true });
     expect(mockPrisma.telegramAccountLink.create).not.toHaveBeenCalled();
     expect(mockTransport.sendMessage).not.toHaveBeenCalled();
+  });
+
+  // -------------------------------------------------------------
+  // Case 8B: PROCESSED receipt with RESERVED delivery and ACTIVE link -> CAS claim & send
+  // -------------------------------------------------------------
+  it('8B. redelivered update with PROCESSED receipt recovers crashed RESERVED delivery', async () => {
+    mockPrisma.telegramWebhookReceipt.findUnique.mockResolvedValue({
+      id: 'receipt-1',
+      updateId: '10005',
+      status: 'PROCESSED',
+    });
+    mockPrisma.telegramAccountLink.findFirst.mockResolvedValue({
+      id: 'link-1',
+      status: 'ACTIVE',
+      telegramChatId: '123',
+    });
+    // Delivery is still RESERVED because process crashed before provider call
+    mockPrisma.telegramNotificationDelivery.findUnique.mockResolvedValue({
+      id: 'del-1',
+      deliveryStatus: 'RESERVED',
+      accountLink: { status: 'ACTIVE', telegramChatId: '123' },
+    });
+    mockPrisma.telegramNotificationDelivery.updateMany.mockResolvedValue({ count: 1 });
+    mockPrisma.telegramNotificationDelivery.update.mockResolvedValue({});
+
+    const payload = {
+      update_id: 10005,
+      message: {
+        chat: { id: 123, type: 'private' },
+        from: { id: 123 },
+        text: '/start any_token_12345678',
+      },
+    };
+
+    const res = await service.handleWebhook(payload, validSecret);
+    expect(res).toEqual({ ok: true });
+    expect(mockTransport.sendMessage).toHaveBeenCalledWith('123', expect.any(String));
   });
 
   // -------------------------------------------------------------
@@ -502,7 +582,14 @@ describe('TelegramService (ADR-058 Acceptance Cases)', () => {
       id: 'link-1',
       telegramChatId: '123',
     });
-    mockPrisma.telegramNotificationDelivery.findUnique.mockResolvedValue(null);
+    mockPrisma.telegramNotificationDelivery.findUnique.mockImplementation(async ({ where }: any) => {
+      if (where?.commandKey) return null;
+      return {
+        id: where?.id ?? 'del-order',
+        deliveryStatus: 'RESERVED',
+        accountLink: { id: 'link-1', status: 'ACTIVE', telegramChatId: '123' },
+      };
+    });
     mockPrisma.telegramNotificationDelivery.create.mockResolvedValue({
       id: 'del-order',
       deliveryStatus: 'RESERVED',
@@ -634,5 +721,68 @@ describe('TelegramService (ADR-058 Acceptance Cases)', () => {
     expect((status as any).telegramUserId).toBeUndefined();
     expect((status as any).telegramChatId).toBeUndefined();
     expect((status as any).tokenHash).toBeUndefined();
+  });
+
+  // -------------------------------------------------------------
+  // Startup Reconciliation: marks pre-existing ATTEMPTING as UNKNOWN
+  // -------------------------------------------------------------
+  it('startup reconciliation marks any pre-existing ATTEMPTING delivery (even 1s old) as UNKNOWN', async () => {
+    mockPrisma.telegramNotificationDelivery.updateMany.mockResolvedValue({ count: 2 });
+    const count = await service.reconcileAttemptingOnStartup();
+    expect(count).toBe(2);
+    expect(mockPrisma.telegramNotificationDelivery.updateMany).toHaveBeenCalledWith({
+      where: { deliveryStatus: 'ATTEMPTING' },
+      data: {
+        deliveryStatus: 'UNKNOWN',
+        sanitizedErrorCode: 'PROCESS_RESTARTED_DURING_ATTEMPT',
+      },
+    });
+    expect(mockTransport.sendMessage).not.toHaveBeenCalled();
+  });
+
+  // -------------------------------------------------------------
+  // Section H: Link status REVOKED before send claim prevents provider call
+  // -------------------------------------------------------------
+  it('RESERVED delivery is not sent if associated accountLink is REVOKED before send claim', async () => {
+    const requestKey = 'c3d9a182-3580-4824-912a-387b9264fa99';
+    mockPrisma.telegramAccountLink.findFirst.mockResolvedValue({
+      id: 'link-revoked-test',
+      status: 'ACTIVE',
+      telegramChatId: '123',
+    });
+    mockPrisma.telegramNotificationDelivery.findUnique.mockImplementation(async ({ where }: any) => {
+      if (where?.commandKey) return null;
+      if (where?.id === 'del-revoked') {
+        return {
+          id: 'del-revoked',
+          deliveryStatus: 'RESERVED',
+          accountLink: {
+            id: 'link-revoked-test',
+            status: 'REVOKED',
+            telegramChatId: '123',
+          },
+        };
+      }
+      return null;
+    });
+    mockPrisma.telegramNotificationDelivery.create.mockResolvedValue({
+      id: 'del-revoked',
+      deliveryStatus: 'RESERVED',
+    });
+    mockPrisma.telegramNotificationDelivery.findUniqueOrThrow.mockResolvedValue({
+      id: 'del-revoked',
+      deliveryStatus: 'FAILED',
+      sanitizedErrorCode: 'LINK_NOT_ACTIVE',
+    });
+
+    const res = await service.sendTestNotification('user-1', requestKey);
+    expect(res.deliveryStatus).toBe('FAILED');
+    expect(mockTransport.sendMessage).not.toHaveBeenCalled();
+    expect(mockPrisma.telegramNotificationDelivery.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: 'del-revoked', deliveryStatus: 'RESERVED' }),
+        data: expect.objectContaining({ deliveryStatus: 'FAILED', sanitizedErrorCode: 'LINK_NOT_ACTIVE' }),
+      }),
+    );
   });
 });
