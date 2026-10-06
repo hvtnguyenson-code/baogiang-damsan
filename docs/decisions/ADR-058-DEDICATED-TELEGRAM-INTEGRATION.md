@@ -140,13 +140,36 @@ Kiến trúc yêu cầu 4 thực thể lưu trữ bền vững:
 3. `TelegramWebhookReceipt`
 4. `TelegramNotificationDelivery`
 
+**Mô hình trường dữ liệu và ràng buộc của `TelegramNotificationDelivery`:**
+- `id`: UUID (Khóa chính).
+- `commandKey`: STRING, UNIQUE (Định danh lệnh logic nội bộ do máy chủ sở hữu duy nhất trên toàn hệ thống).
+- `actorUserId`: FK User (Người dùng ứng dụng được xác thực bởi phiên máy chủ).
+- `requestKey`: STRING, NULLABLE (Mã yêu cầu giới hạn UUID v4 do client cung cấp cho các lệnh khởi tạo từ giao diện; để trống đối với lệnh do máy chủ khởi tạo).
+- `commandFingerprint`: STRING (Dấu vân tay lệnh gắn kết actor, link, loại thông báo và phiên bản nội dung).
+- `accountLinkId`: FK Link (Tham chiếu đến bản ghi liên kết tài khoản Telegram hợp lệ).
+- `telegramChatId`: STRING (ID cuộc trò chuyện Telegram nhận tin, chuỗi số thập phân).
+- `notificationType`: ENUM (`LINK_SUCCESS`, `SELF_TEST`).
+- `payloadDigest`: STRING (Bản băm nội dung thông báo do máy chủ sở hữu).
+- `deliveryStatus`: ENUM (`RESERVED`, `ATTEMPTING`, `SENT`, `FAILED`, `UNKNOWN`).
+- `attemptStartedAt`: TIMESTAMP, NULLABLE (Thời điểm bắt đầu lần gửi hiện tại, ghi nhận nguyên tử khi claim `ATTEMPTING`).
+- `providerMessageId`: STRING, NULLABLE (Định danh tin nhắn do Telegram trả về sau khi gửi thành công).
+- `sanitizedErrorCode`: STRING, NULLABLE (Mã/lý do lỗi từ provider đã khử khuẩn).
+- `createdAt`: TIMESTAMP.
+- `updatedAt`: TIMESTAMP.
+- `sentAt`: TIMESTAMP, NULLABLE.
+
+**Ràng buộc cơ sở dữ liệu:**
+- `UNIQUE (commandKey)`: Bảo đảm tính duy nhất toàn cục của mỗi lệnh logic.
+- `UNIQUE (actorUserId, requestKey) WHERE requestKey IS NOT NULL`: Bảo đảm tính duy nhất của mã yêu cầu theo từng người dùng.
+- Quyền sở hữu lần gửi nguyên tử (Atomic Send Claim): Thực hiện qua điều kiện cập nhật `WHERE id = :id AND deliveryStatus = 'RESERVED'`.
+
 **Nguyên tắc Hộp thư nguyên tử chống mất bản tin (Atomic Inbox / Receipt Invariant):**
 - Cơ chế khử trùng lặp `update_id` tuyệt đối không được làm thất lạc bản tin linking.
 - Khi nhận lệnh Telegram `/start <token>` hợp lệ, toàn bộ chuỗi xử lý:
   + Ghi nhận/khử trùng lặp biên nhận `TelegramWebhookReceipt`;
   + Xác thực và tiêu thụ thử thách `TelegramLinkChallenge` (`PENDING -> CONSUMED`);
   + Tạo bản ghi liên kết tài khoản `TelegramAccountLink` (`ACTIVE`);
-  + Cấp phát lệnh gửi thông báo chào mừng `TelegramNotificationDelivery` (`RESERVED`) nếu áp dụng;
+  + Cấp phát lệnh gửi thông báo chào mừng `TelegramNotificationDelivery` (`RESERVED`) với `commandKey = link-success:<accountLinkId>`;
   **BẮT BUỘC ĐƯỢC COMMIT TRONG CÙNG MỘT RANH GIỚI TRANSACTION CƠ SỞ DỮ LIỆU NGUYÊN TỬ** (hoặc cỗ máy trạng thái inbox tương đương).
 - Tuyệt đối cấm kịch bản: commit receipt đã xử lý, tiến trình bị crash trước khi tạo link, và khi Telegram gửi lại bản tin thì bị bỏ qua vì `update_id` đã tồn tại.
 - Khi Telegram gửi lại cùng `update_id`: hệ thống nhận diện bản tin đã xử lý thành công, phát lại kết quả cũ, không tạo thêm link thứ hai, không tiêu thụ challenge lần hai và không phát sinh thông báo chào mừng thứ hai.
@@ -157,7 +180,7 @@ Kiến trúc yêu cầu 4 thực thể lưu trữ bền vững:
 - `GET /api/integrations/telegram/me`: Lấy trạng thái liên kết Telegram của tài khoản đang đăng nhập.
 - `POST /api/integrations/telegram/link-challenge`: Tạo thử thách liên kết mới và trả về deep link.
 - `DELETE /api/integrations/telegram/link`: Hủy liên kết Telegram hiện tại của người dùng.
-- `POST /api/integrations/telegram/test`: Gửi tin nhắn thử nghiệm có nội dung cố định tới Telegram của người dùng.
+- `POST /api/integrations/telegram/test`: Gửi tin nhắn thử nghiệm có nội dung cố định tới Telegram của người dùng. Request body nhận vào: `{ "requestKey": "<uuid-v4>" }` với `requestKey` là chuỗi UUID v4 chuẩn.
 
 **Nguyên tắc ủy quyền:**
 - Tái sử dụng phiên làm việc hiện hữu (`baogiang_session`), không tạo capability mới.
@@ -168,22 +191,76 @@ Kiến trúc yêu cầu 4 thực thể lưu trữ bền vững:
 
 - Telegram Bot API không hỗ trợ native idempotency header; hệ thống bảo đảm chuẩn mực:
   **`INTERNAL COMMAND IDEMPOTENCY + NO AUTOMATIC DUPLICATE AMPLIFICATION`**
-- **Hợp đồng idempotency cho Self-Test (`POST /api/integrations/telegram/test`):**
-  - Request body nhận vào: `{ requestKey: string }`.
-  - Client sinh một `requestKey` mờ cho MỘT lần click logic. Khi gặp kết quả chưa rõ (timeout, network error), client thử lại **phải tái sử dụng cùng requestKey**. Người dùng click gửi tin mới sẽ sinh `requestKey` mới.
-  - Tính duy nhất của idempotency được giới hạn theo người dùng: `(actorUserId, requestKey)`. Tuyệt đối không dùng idempotency key tùy ý cấp độ toàn cầu giữa các người dùng khác nhau.
-  - Chuỗi dấu vân tay `commandFingerprint` bắt buộc ràng buộc tối thiểu:
-    + `actorUserId`;
-    + Định danh `TelegramAccountLink` đang hoạt động;
-    + Loại thông báo (`SELF_TEST`);
-    + Phiên bản/nội dung thông báo do máy chủ sở hữu.
-  - Cùng actor + cùng `requestKey` + cùng `commandFingerprint`: Trả về kết quả đã lưu trong DB, **KHÔNG GỌI TELEGRAM BOT API LẦN THỨ HAI**.
-  - Cùng actor + cùng `requestKey` + khác `commandFingerprint`: Trả về lỗi xung đột `409 Conflict`.
-- **Thông báo chào mừng kết nối thành công (Link-success notification):**
-  - Sử dụng định danh lệnh cố định do máy chủ tạo ra gắn liền với định danh liên kết tài khoản (ví dụ: `link-success:<accountLinkId>`), hoàn toàn không phụ thuộc vào `requestKey` từ payload của client.
+
+- **Phân định rõ ràng mô hình định danh lệnh (Command Identity vs Request Key):**
+  1. `commandKey`:
+     - **Do máy chủ sở hữu hoàn toàn (SERVER-OWNED)**;
+     - Duy nhất toàn cầu (`UNIQUE (commandKey)`);
+     - Bất biến (`immutable`);
+     - Đóng vai trò là định danh logic nội bộ duy nhất cho mỗi lệnh gửi tin.
+     - Định dạng chuẩn:
+       + Lệnh gửi thử cá nhân: `self-test:<actorUserId>:<requestKey>`
+       + Lệnh chào mừng liên kết: `link-success:<accountLinkId>`
+  2. `requestKey`:
+     - **Do client cung cấp (CLIENT-SUPPLIED)** chỉ dành riêng cho các lệnh do người dùng kích hoạt qua API xác thực (`POST /api/integrations/telegram/test`);
+     - Phạm vi duy nhất giới hạn theo người dùng (`actor-scoped`), KHÔNG PHẢI khóa duy nhất toàn cục;
+     - Có giá trị `null` hoặc vắng mặt đối với các lệnh do máy chủ khởi tạo (như `LINK_SUCCESS`).
+  3. `actorUserId`:
+     - Được máy chủ xác định độc quyền từ phiên làm việc (`baogiang_session`) hoặc liên kết tài khoản đã commit;
+     - Tuyệt đối không tin tưởng hoặc nhận `actorUserId` từ client payload hay provider update payload.
+
+- **Khóa hợp đồng `requestKey` có giới hạn (Bounded Request Key):**
+  - `requestKey` bắt buộc phải là chuỗi định danh **UUID v4 chuẩn (canonical lowercase string)** (biểu thức chính quy: `^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`).
+  - Tuyệt đối không chấp nhận chuỗi tùy ý hoặc chuỗi không giới hạn độ dài.
+  - **Quy tắc client:** Client sinh một UUID v4 cho một lần click logic. Khi gặp kết quả chưa rõ (timeout, mất kết nối mạng), client thử lại **phải tái sử dụng cùng requestKey (cùng UUID)**. Mỗi lần người dùng click mới sẽ sinh một UUID mới.
+  - **Quy tắc server:** DTO validation kiểm tra nghiêm ngặt định dạng UUID v4; nếu không hợp lệ hoặc vượt kích thước thì từ chối ngay với HTTP `400 Bad Request`. Máy chủ không được tự động cắt gọt (trim) hay chuẩn hóa biến đổi key sau khi tính fingerprint.
+
+- **Quyền sở hữu lượt gửi tin nguyên tử (Delivery Send Ownership Invariant):**
+  - **CHỈ DUY NHẤT execution path nào atomically claim thành công trạng thái `RESERVED -> ATTEMPTING` mới được phép thực hiện cuộc gọi mạng tới Telegram Bot API.**
+  - Thao tác claim phải là một câu lệnh so khớp có điều kiện nguyên tử (compare-and-set):
+    ```sql
+    UPDATE "telegram_notification_deliveries"
+    SET "deliveryStatus" = 'ATTEMPTING',
+        "attemptStartedAt" = NOW(),
+        "updatedAt" = NOW()
+    WHERE "id" = :deliveryId AND "deliveryStatus" = 'RESERVED';
+    ```
+  - Nếu số dòng bị ảnh hưởng (`affected rows`) bằng 0:
+    + Caller **TUYỆT ĐỐI KHÔNG ĐƯỢC PHÉP GỌI TELEGRAM BOT API**;
+    + Caller phải đọc lại/phát lại trạng thái lưu trữ bền vững (`SENT`, `ATTEMPTING`, `FAILED` hoặc `UNKNOWN`).
+  - Hai luồng hoặc worker đồng thời không bao giờ cùng nhận được quyền gửi cùng một bản ghi delivery.
+  - **TUYỆT ĐỐI CẤM** mô hình chạy đua (race condition): `đọc RESERVED -> gọi mạng gửi tin -> cập nhật ATTEMPTING`.
+  - **Thứ tự thực thi bắt buộc:**
+    1. Atomic claim `RESERVED -> ATTEMPTING` (kèm ghi nhận `attemptStartedAt`);
+    2. Commit transaction cơ sở dữ liệu;
+    3. Thực hiện provider network call sang Telegram API;
+    4. Cập nhật kết quả bền vững cuối cùng (`SENT`, `FAILED` hoặc `UNKNOWN`).
+  - Network I/O tuyệt đối nằm ngoài transaction DB.
+
+- **Thời điểm bắt đầu lần gửi và Đối soát (Attempt Ownership Timestamp & Reconciliation):**
+  - Bản ghi `TelegramNotificationDelivery` lưu giữ mốc thời gian `attemptStartedAt` nguyên tử cùng lúc với trạng thái `ATTEMPTING`.
+  - Các trạng thái kết thúc `SENT`, `FAILED`, `UNKNOWN` tiếp tục lưu giữ giá trị `attemptStartedAt` này phục vụ kiểm toán và tính toán độ trễ.
+  - Provider network call không được phép bắt đầu trước khi `ATTEMPTING` kèm `attemptStartedAt` đã được commit vào DB.
+  - **Sau khi tiến trình bị khởi động lại (process restart):** Bất kỳ bản ghi nào còn treo ở `ATTEMPTING` mà không có xác nhận thành công từ Telegram đều được coi là `UNKNOWN` và **TUYỆT ĐỐI KHÔNG TỰ ĐỘNG GỬI LẠI (NO AUTO-RETRY)**.
+  - **Đối soát trong cùng runtime:** Việc xác định một bản ghi `ATTEMPTING` bị quá hạn (stale) bắt buộc phải dựa trên giá trị `attemptStartedAt` bền vững trong DB và quy tắc thời gian chờ có giới hạn (ví dụ: quá 60 giây), không dựa vào in-memory timer. Không yêu cầu worker tự động thử lại trong đợt thí điểm P5-030.
+
+- **Xử lý đồng thời và Phát lại Self-Test (Self-Test Concurrent Replay):**
+  - Hai yêu cầu gửi thử đồng thời có cùng bộ ba `(actorUserId, requestKey, commandFingerprint)`:
+    + Chỉ tạo đúng **MỘT** bản ghi `TelegramNotificationDelivery` trong cơ sở dữ liệu;
+    + Chỉ có đúng **MỘT** caller claim thành công `RESERVED -> ATTEMPTING`;
+    + Tối đa **MỘT** cuộc gọi tới Telegram Bot API;
+    + Caller còn lại nhận thấy affected rows = 0 hoặc bản ghi đã được xử lý sẽ chỉ đọc lại trạng thái bền vững và trả kết quả cho client, không gửi trùng lặp.
+  - Cùng `actorUserId` + cùng `requestKey` nhưng khác `commandFingerprint`: Trả về lỗi `409 Conflict` ngay lập tức trước khi gọi Telegram.
+
+- **Tính đồng thời của Thông báo chào mừng (Link-Success Concurrency):**
+  - Bản ghi `TelegramNotificationDelivery` cho tin nhắn chào mừng được cấp phát (`RESERVED`) ngay trong transaction nguyên tử của inbox webhook.
+  - `commandKey` mang tính tiền định theo định danh liên kết: `link-success:<accountLinkId>`.
+  - Bản tin trùng lặp `update_id` hoặc retry transaction không tạo thêm delivery thứ hai, không tạo `commandKey` thứ hai, và không gửi Telegram hai lần.
+  - Việc gửi tin sau commit hoàn toàn tuân thủ quy tắc atomic claim `RESERVED -> ATTEMPTING`.
+
 - **Ngữ nghĩa trạng thái gửi tin và xử lý bất định/sập nguồn (Crash/Ambiguity Semantics):**
   - `RESERVED`: Đã cấp phát bản ghi gửi tin trong DB trước khi gọi mạng.
-  - `ATTEMPTING`: Đang thực hiện kết nối HTTP sang Telegram API.
+  - `ATTEMPTING`: Đã claim thành công quyền gửi và đang thực hiện kết nối HTTP sang Telegram API.
   - `SENT`: Telegram Bot API xác nhận thành công (HTTP 200 `ok: true`) kèm `message_id`. Trường `providerMessageId` chỉ có giá trị thẩm quyền khi provider đã xác nhận thành công.
   - `FAILED`: Chỉ áp dụng khi hệ thống có bằng chứng xác định request bị từ chối dứt điểm từ provider (ví dụ: HTTP 400 Bad Request, HTTP 403 Bot bị người dùng chặn, HTTP 404 Bot bị xóa).
   - `UNKNOWN`:
@@ -212,9 +289,9 @@ Kiến trúc yêu cầu 4 thực thể lưu trữ bền vững:
 ### 11. Ranh giới Kiểm thử tự động (Testing Boundary)
 
 - CI/local tests: Không gọi Telegram thật, không lưu token thật, sử dụng fake/mock transport.
-- Bộ test bắt buộc cho P5-030 bao gồm tối thiểu 13 ca kiểm thử:
+- Bộ test bắt buộc cho P5-030 bao gồm tối thiểu **20 ca kiểm thử**:
   1. Header webhook secret có độ dài/định dạng sai lệch không gây lỗi HTTP 500;
-  2. Kiểm tra bộ ký tự và độ dài hợp lệ của cấu hình `TELEGRAM_WEBHOOK_SECRET`;
+  2. Kiểm tra bộ ký tự và độ dài hợp lệ của cấu hình `TELEGRAM_WEBHOOK_SECRET` (1..256 ký tự `[A-Za-z0-9_-]`);
   3. Telegram gửi thêm các trường mới không làm hỏng việc xử lý lệnh `/start` hợp lệ;
   4. Bản tin Telegram hợp lệ nhưng không được hỗ trợ (sticker, photo, group) được ghi nhận `IGNORED` và không gây đột biến dữ liệu;
   5. Các yêu cầu tạo challenge đồng thời chỉ sinh tối đa 1 token `PENDING` có hiệu lực;
@@ -225,25 +302,33 @@ Kiến trúc yêu cầu 4 thực thể lưu trữ bền vững:
   10. Gọi "Gửi tin thử" với cùng `requestKey` nhưng khác fingerprint trả về lỗi `409 Conflict`;
   11. Hai người dùng khác nhau gửi cùng chuỗi `requestKey` không bị xung đột khóa (actor-scoped idempotency);
   12. Bản tin bị treo ở trạng thái `ATTEMPTING` được chuyển thành `UNKNOWN` và không tự động gửi lại;
-  13. Thông báo lỗi từ provider được khử khuẩn, không làm lộ bot token hay full provider URL.
+  13. Thông báo lỗi từ provider được khử khuẩn, không làm lộ bot token hay full provider URL;
+  14. Hai request self-test đồng thời với cùng actor và cùng `requestKey`: chỉ tạo đúng 1 bản ghi delivery và tối đa 1 provider call, caller thứ hai phát lại kết quả bền vững;
+  15. Caller thứ hai không thể claim bản ghi đã ở trạng thái `ATTEMPTING`: thao tác atomic conditional update trả về 0 affected rows, ngăn chặn gọi provider;
+  16. `requestKey` không hợp lệ hoặc vượt kích thước (không phải UUID v4 hợp lệ): DTO validation trả về HTTP 400 Bad Request, không tạo delivery và không đột biến DB;
+  17. Hai người dùng khác nhau gửi cùng chuỗi `requestKey`: sinh ra hai `commandKey` độc lập, tạo hai bản ghi delivery độc lập và không xảy ra va chạm khóa;
+  18. Bản tin liên kết trùng lặp hoặc thử lại transaction: chỉ tạo đúng 1 `commandKey` duy nhất (`link-success:<accountLinkId>`), 1 delivery duy nhất và tối đa 1 provider call;
+  19. Chuyển trạng thái `RESERVED -> ATTEMPTING` ghi nhận nguyên tử `attemptStartedAt` trước khi tiến hành provider network call;
+  20. Khởi động lại hoặc đối soát bản ghi `ATTEMPTING` bị treo: chuyển trạng thái sang `UNKNOWN` dựa trên `attemptStartedAt` bền vững, tuyệt đối không tự động gửi lại (no auto-resend).
 
 ### 12. Ranh giới Môi trường Triển khai & Production (Production Boundary)
 
-- P5-030A và P5-030 không tạo bot thật, không gọi BotFather, không chạy setWebhook thật, không can thiệp VPS hay Nginx; production duy trì strictly **`PRE-OPERATIONAL`**.
+- Task `P5-030A` và `P5-030` không tạo bot thật, không gọi BotFather, không chạy setWebhook thật, không can thiệp VPS hay Nginx; production duy trì strictly **`PRE-OPERATIONAL`**.
 
 ---
 
 ## Hệ quả (Consequences)
 
 ### Tích cực
-- Loại bỏ hoàn toàn các lỗi kỹ thuật tiềm ẩn: chống timing attack bằng digest hash, chống sập webhook khi provider thêm trường mới, triệt tiêu nguy cơ duplicate spam thông báo.
-- Bảo vệ nghiêm ngặt tính toàn vẹn đồng thời của thử thách liên kết tài khoản ở cấp độ cơ sở dữ liệu.
-- Định danh idempotency theo người dùng giúp tránh xung đột khóa ngẫu nhiên giữa các giáo viên.
-- Toàn bộ trạng thái quản trị và căn cứ kỹ thuật được chuẩn hóa chính xác, sẵn sàng cho việc nghiệm thu kiến trúc độc lập.
+- Khóa chặt quyền sở hữu lần gửi tin nguyên tử qua compare-and-set, ngăn chặn hoàn toàn race condition gọi provider mạng trùng lặp.
+- Phân định rành mạch giữa `commandKey` toàn cục của hệ thống và `requestKey` giới hạn theo actor từ client.
+- `requestKey` được chuẩn hóa thành UUID v4 giới hạn, triệt tiêu nguy cơ payload tùy tiện hoặc tấn công phình bộ nhớ.
+- Mốc thời gian `attemptStartedAt` bảo đảm cơ sở bền vững cho việc đối soát và chuyển trạng thái `UNKNOWN` mà không suy đoán qua in-memory timer.
+- Tăng cường ma trận kiểm thử lên 20 ca chấp nhận bao phủ toàn bộ các góc cạnh đồng thời và an toàn mạng.
 
 ### Tiêu cực / Chi phí
 - Đòi hỏi transaction nguyên tử bao bọc cả webhook receipt và account link, yêu cầu cấu trúc code cẩn trọng.
-- Cần xây dựng mock transport toàn diện phục vụ đủ 13 kịch bản kiểm thử bắt buộc.
+- Cần xây dựng mock transport toàn diện phục vụ đủ 20 kịch bản kiểm thử bắt buộc.
 
 ### Trung lập
 - P5-030A tiếp tục duy trì trạng thái `IN_REVIEW` (DOCS-ONLY) cho đến khi hoàn tất phê duyệt độc lập.
