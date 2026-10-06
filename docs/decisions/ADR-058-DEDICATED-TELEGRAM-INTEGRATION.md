@@ -6,6 +6,7 @@
 - **Traceability:** `T33` (NEW_PRODUCT_AUTHORITY), `T22` (technical secrets exclusion)
 - **Dependencies:** `P5-010` (CLOSED)
 - **Deliverable:** Kiến trúc tích hợp Telegram chuyên biệt, ranh giới bảo mật, cấu trúc lưu trữ, vòng đời liên kết, xác thực webhook, tính lũy kế thông báo (idempotency) và ranh giới môi trường/triển khai.
+- **Thẩm quyền phê chuẩn:** Quyết định này là **PROPOSED** trong phạm vi task P5-030A và chỉ trở thành **Accepted** sau khi nhánh nhiệm vụ được merge vào `main`, post-merge CI đạt SUCCESS, và hoàn tất thủ tục đồng bộ tài liệu `SYNC-P5-030A`.
 
 ---
 
@@ -47,46 +48,73 @@ Kiến trúc P5-030 bắt buộc sử dụng 4 biến môi trường kỹ thuậ
 - `TELEGRAM_BOT_USERNAME`: kiểu string không bí mật (tên username của bot, ví dụ `BaoGiangDamSanBot`).
 - `TELEGRAM_WEBHOOK_SECRET`: kiểu string bí mật (chuỗi bí mật dùng để xác thực webhook gửi từ Telegram qua header `X-Telegram-Bot-Api-Secret-Token`).
 
-**Quy tắc bất biến:**
-- Khi `TELEGRAM_ENABLED=true`, bắt buộc cả 3 giá trị `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, và `TELEGRAM_WEBHOOK_SECRET` phải hợp lệ và không rỗng; nếu thiếu hoặc sai định dạng, ứng dụng phải fail-closed ngay khi khởi động.
+**Hợp đồng TELEGRAM_WEBHOOK_SECRET và quy tắc bất biến:**
+- `TELEGRAM_WEBHOOK_SECRET` bắt buộc có độ dài từ 1 đến 256 ký tự và chỉ chứa các ký tự hợp lệ theo chuẩn Telegram Bot API: `A-Z`, `a-z`, `0-9`, `_`, `-`.
+- Khi `TELEGRAM_ENABLED=true`: Cả 3 giá trị `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, và `TELEGRAM_WEBHOOK_SECRET` bắt buộc phải có giá trị hợp lệ; `TELEGRAM_WEBHOOK_SECRET` phải thỏa mãn độ dài và bộ ký tự trên. Nếu thiếu hoặc sai định dạng, ứng dụng phải **fail startup ngay lập tức**.
 - `TELEGRAM_BOT_TOKEN` và `TELEGRAM_WEBHOOK_SECRET` là bí mật kỹ thuật nhạy cảm: không bao giờ được log, không ghi vào audit log, không trả về qua API response hay hiển thị trên giao diện người dùng.
 - Không lưu các giá trị bí mật này vào cơ sở dữ liệu PostgreSQL.
 - Không hiển thị hoặc cho phép chỉnh sửa qua API/UI của Business Configuration (tuân thủ triệt để ADR-046 Điều 8).
 - Giai đoạn P5-030 implementation sau này sẽ chịu trách nhiệm đồng bộ các biến này vào `apps/api/src/config/app.config.ts`, `apps/api/.env.example`, `docs/operations/PRODUCTION-ENVIRONMENT-CONFIGURATION.md`, `scripts/deploy/windows/deployment-common.ps1` và bộ test hợp đồng triển khai. P5-030A chỉ xác lập thẩm quyền kiến trúc.
 
-### 3. Ranh giới tin cậy Webhook (Webhook Trust Boundary)
+### 3. Ranh giới tin cậy Webhook và Trình phân tích Provider (Webhook Trust & Parser)
 
 - Đường dẫn webhook chính thức được cố định:
   `POST /api/integrations/telegram/webhook`
-- **Nguyên tắc xác thực và tin cậy:**
+- **Nguyên tắc xác thực và so sánh an toàn (Safe Comparison):**
   - Webhook endpoint là một public HTTP seam kỹ thuật, **KHÔNG** sử dụng cookie phiên duyệt web của người dùng và **KHÔNG** yêu cầu capability phân quyền của giáo viên.
-  - Webhook chỉ tin cậy và xử lý các request có chứa header `X-Telegram-Bot-Api-Secret-Token` khớp chính xác với giá trị `TELEGRAM_WEBHOOK_SECRET` đã cấu hình.
-  - Việc so khớp chuỗi bí mật phải thực hiện qua hàm so sánh an toàn về thời gian (`crypto.timingSafeEqual`) nhằm triệt tiêu nguy cơ timing attack.
-  - Nếu thiếu header, sai secret token, hoặc khi `TELEGRAM_ENABLED=false`: từ chối ngay lập tức và fail-closed (HTTP 401/403), không thực hiện bất kỳ xử lý nghiệp vụ nào.
-  - Phân tích cú pháp DTO (Telegram Update schema) phải nghiêm ngặt (`ValidationPipe` whitelist & forbidNonWhitelisted).
-  - Không lưu toàn bộ raw JSON update body vào cơ sở dữ liệu; không in token, start payload bí mật hoặc thông tin nhạy cảm vào nhật ký máy chủ (server logs).
+  - Webhook chỉ tin cậy và xử lý các request có chứa header `X-Telegram-Bot-Api-Secret-Token`.
+  - **Phương pháp so sánh an toàn mật mã:** Tuyệt đối không gọi `crypto.timingSafeEqual` trực tiếp lên hai buffer có độ dài khác nhau (gây `RangeError`). Hệ thống bắt buộc áp dụng:
+    *Khuyến nghị chuẩn:* Băm cả chuỗi bí mật nhận được và chuỗi cấu hình mong đợi bằng SHA-256 thành các digest có độ dài cố định 32 byte (`crypto.createHash('sha256').update(val).digest()`), sau đó so khớp bằng `crypto.timingSafeEqual(providedDigest, expectedDigest)`. Hoặc kiểm tra độ dài chính xác bằng nhau trước khi thực hiện `timingSafeEqual`.
+  - Nếu thiếu header, sai secret token, hoặc khi `TELEGRAM_ENABLED=false`: từ chối ngay lập tức và trả về mã lỗi đã khử khuẩn HTTP 401/403 (fail closed); không được để phát sinh ngoại lệ không bắt được biến thành HTTP 500; tuyệt đối không log chuỗi secret nhận được hoặc secret mong đợi.
+- **Tiến hóa cấu trúc payload Telegram (Provider Payload Evolution):**
+  - Không sử dụng cơ chế `ValidationPipe` toàn cục với `whitelist: true, forbidNonWhitelisted: true` đối với toàn bộ raw Telegram Update object, nhằm tránh làm sập webhook khi Telegram bổ sung các trường tùy chọn mới.
+  - Sử dụng trình phân tích giới hạn/tối thiểu (bounded/minimal provider parser), chỉ bóc tách các trường tối thiểu cần thiết phục vụ liên kết:
+    `update_id`, `message.text`, `message.chat.id`, `message.chat.type`, `message.from.id`.
+  - Nếu trường bắt buộc bị thiếu hoặc sai kiểu dữ liệu/hình dạng: từ chối hoặc xử lý an toàn (reject / IGNORE fail-safe).
+  - Các trường bổ sung do Telegram phát hành tự do được bỏ qua an toàn.
+  - Các bản tin hợp lệ nhưng không được hỗ trợ xử lý nghiệp vụ (như ảnh, sticker, tin chỉnh sửa, callback query, hoặc tin nhắn group/channel): ghi nhận trạng thái biên nhận là `IGNORED`, trả về HTTP 200 OK thành công cho Telegram để tránh bị retry vô hạn, và cam kết zero business mutation.
+  - Tuyệt đối không lưu raw JSON payload vào cơ sở dữ liệu.
 - **Phạm vi tương tác tin nhắn:**
   - Webhook **chỉ chấp nhận lệnh liên kết tài khoản từ PRIVATE CHAT** (`message.chat.type === 'private'`).
-  - Tuyệt đối không hỗ trợ hoặc liên kết tài khoản cá nhân từ nhóm (`group`), siêu nhóm (`supergroup`) hoặc kênh (`channel`). Nếu nhận được update từ group/channel, bỏ qua một cách an toàn.
-  - Mỗi `update_id` gửi từ Telegram phải được kiểm tra chống trùng lặp bền vững (durable deduplication).
+  - Tuyệt đối không hỗ trợ hoặc liên kết tài khoản cá nhân từ nhóm (`group`), siêu nhóm (`supergroup`) hoặc kênh (`channel`).
+- **An toàn nhật ký vận chuyển (Provider Transport Log Safety):**
+  - Không log full URL của Telegram Bot API (tránh làm lộ token trong path `/bot<token>/`).
+  - Không log request config chứa bot token.
+  - Khi provider trả về lỗi, chỉ lưu trữ mã lỗi và lý do đã khử khuẩn (sanitized code/reason), không lưu toàn bộ raw HTTP response body nếu có nguy cơ lộ chi tiết kỹ thuật.
 
-### 4. Vòng đời liên kết tài khoản dùng một lần (One-Time Account Linking)
+### 4. Vòng đời liên kết tài khoản và Đồng thời thử thách (Challenge Lifecycle & Concurrency)
 
-Quy trình liên kết tài khoản phải diễn ra an toàn, có thời hạn và dùng một lần:
+Quy trình liên kết tài khoản diễn ra an toàn, có thời hạn và dùng một lần:
 1. **Khởi tạo:** Giáo viên đã đăng nhập thành công vào ứng dụng Báo giảng gửi yêu cầu tạo liên kết Telegram (`POST /api/integrations/telegram/link-challenge`).
-2. **Sinh mã bí mật:** Máy chủ sinh ngẫu nhiên mã token có độ dài tối thiểu 256 bit bằng bộ sinh số ngẫu nhiên an toàn mật mã (`crypto.randomBytes(32).toString('base64url')` hoặc hex).
-3. **Phát hành liên kết sâu:** Client nhận raw token đúng một lần duy nhất qua deep link:
+2. **Bất biến duy nhất PENDING (Single Active Pending Challenge Invariant):**
+   - Tại một thời điểm, mỗi tài khoản người dùng Báo giảng chỉ có tối đa **MỘT** thử thách ở trạng thái `PENDING` có hiệu lực.
+   - Cơ sở dữ liệu phải có ràng buộc bảo vệ tương đương partial unique index:
+     `UNIQUE (userId) WHERE status = 'PENDING'`.
+3. **Thao tác tạo thử thách nguyên tử (Atomic Create Challenge Transaction):**
+   - Lệnh tạo challenge phải chạy trong transaction:
+     + Bước 1: Vô hiệu hóa/thu hồi (`REVOKED`) mọi thử thách đang `PENDING` trước đó của người dùng;
+     + Bước 2: Tạo bản ghi thử thách mới ở trạng thái `PENDING`;
+     + Bước 3: Commit nguyên tử.
+   - Yêu cầu đồng thời (concurrent create) không được tạo ra hai token cùng khả dụng; xung đột đồng thời phải được xử lý có giới hạn và an toàn (fail-safe).
+4. **Sinh mã bí mật:** Máy chủ sinh ngẫu nhiên mã token có độ dài tối thiểu 256 bit bằng bộ sinh số ngẫu nhiên an toàn mật mã (`crypto.randomBytes(32).toString('base64url')` hoặc hex).
+5. **Phát hành liên kết sâu:** Client nhận raw token đúng một lần duy nhất qua deep link:
    `https://t.me/<TELEGRAM_BOT_USERNAME>?start=<raw_token>`
-4. **Lưu trữ băm bảo mật:** Cơ sở dữ liệu **CHỈ lưu giá trị băm SHA-256** của token (`crypto.createHash('sha256').update(rawToken).digest('hex')`), tuyệt đối không lưu raw token ở dạng văn bản rõ.
-5. **Thời hạn (TTL):** Thời gian sống chuẩn của challenge là **10 phút**. Quá thời hạn này, challenge tự động hết hiệu lực.
-6. **Dùng một lần (One-time):** Một token chỉ được tiêu thụ đúng một lần. Khi đã tiêu thụ (`CONSUMED`) hoặc bị thu hồi (`REVOKED`/`EXPIRED`), token vĩnh viễn không thể sử dụng lại.
-7. **Hủy thử thách cũ:** Khi người dùng yêu cầu tạo challenge mới, tất cả challenge chưa tiêu thụ trước đó của cùng người dùng phải bị đánh dấu hết hạn/thu hồi ngay lập tức.
-8. **Tiêu thụ nguyên tử:** Khi webhook nhận lệnh `/start <raw_token>` từ private chat, hệ thống tính hash SHA-256 của token, tìm challenge hợp lệ chưa hết hạn và kích hoạt liên kết tài khoản trong cùng một giao dịch cơ sở dữ liệu nguyên tử (atomic transaction).
+6. **Lưu trữ băm bảo mật:** Cơ sở dữ liệu **CHỈ lưu giá trị băm SHA-256** của token, tuyệt đối không lưu raw token ở dạng văn bản rõ.
+7. **Thẩm quyền thời hạn (Expiry Authority):**
+   - `expiresAt` là thẩm quyền duy nhất xác định thời hạn (TTL chuẩn là **10 phút**).
+   - Không yêu cầu tiến trình nền/scheduler định kỳ chỉ để chuyển trạng thái sang `EXPIRED`. Một thử thách có trạng thái `PENDING` nhưng `expiresAt <= now` được xem là đã hết hiệu lực, không thể tiêu thụ, và có thể được chuẩn hóa lười (lazily normalized) sang `EXPIRED`/`REVOKED` trong các transaction lệnh liên quan.
+8. **Dùng một lần (One-time):** Một token chỉ được tiêu thụ đúng một lần. Khi đã `CONSUMED` hoặc `REVOKED`/`EXPIRED`, token vĩnh viễn không thể sử dụng lại.
 9. **Độc lập định danh:** Việc liên kết tuyệt đối không dựa vào tên hiển thị (`displayName`), Telegram username (`@username`), số điện thoại, hay mã cán bộ (`staffCode`). Chỉ có token thử thách do máy chủ cấp mới quyết định định danh người dùng ứng dụng.
 
 ### 5. Lưu trữ định danh Telegram (Telegram Identity Persistence)
 
-- **Định dạng định danh:** Các định danh số của Telegram (`user.id`, `chat.id`) có thể vượt quá giới hạn 53-bit an toàn của JavaScript Number (Telegram ID dùng số nguyên 64-bit). Do đó, hệ thống bắt buộc lưu trữ `telegramUserId` và `telegramChatId` dưới dạng chuỗi thập phân chuẩn (`canonical decimal STRING`), ví dụ `"9876543210"`. Tuyệt đối không dùng JSON Number làm khóa định danh.
+- **Định dạng định danh chuẩn (Factual Identity Accuracy):**
+  - Định danh người dùng và cuộc trò chuyện của Telegram Bot API có thể vượt quá số nguyên 32-bit (int32). Tài liệu chính thức của nhà cung cấp Telegram hiện giới hạn các định danh đối thoại Bot API trong tối đa 52 bit có nghĩa (52 significant bits).
+  - Quyết định lưu trữ `telegramUserId` và `telegramChatId` dưới dạng **chuỗi số thập phân chuẩn (`canonical decimal STRING`)** (ví dụ: `"9876543210"`) tiếp tục được duy trì nghiêm ngặt vì các lý do kiến trúc:
+    + Đảm bảo tính ổn định xuyên suốt các tầng PostgreSQL (`BigInt`/`VARCHAR`), Prisma, JSON serialization và network transport;
+    + Ngăn ngừa rủi ro ép kiểu số thực (float coercion) hoặc sai số làm tròn giữa các client/layer khác nhau;
+    + Giữ nguyên định danh bên ngoài của provider như một giá trị mờ (opaque external identifier).
+  - Tuyệt đối không biến định danh số này thành các phép toán số học nghiệp vụ.
 - **Dữ liệu lưu trữ tối thiểu:**
   - `telegramUserId`: ID người dùng Telegram (chuỗi thập phân).
   - `telegramChatId`: ID cuộc trò chuyện riêng tư (chuỗi thập phân).
@@ -104,146 +132,118 @@ Quy trình liên kết tài khoản phải diễn ra an toàn, có thời hạn 
   - Đổi tài khoản Telegram: bắt buộc phải thực hiện hủy liên kết hiện tại (`DELETE /api/integrations/telegram/link`), sau đó mới tạo liên kết mới.
   - Lịch sử liên kết không bị xóa cứng (hard-delete) khỏi cơ sở dữ liệu để bảo tồn bằng chứng kiểm toán.
 
-### 6. Cấu trúc lưu trữ khuyến nghị (Persistence Topology)
+### 6. Cấu trúc lưu trữ và Hộp thư Webhook nguyên tử (Persistence Topology & Atomic Inbox)
 
-Kiến trúc P5-030 yêu cầu xây dựng 4 thực thể lưu trữ bền vững trong cơ sở dữ liệu PostgreSQL thông qua Prisma schema:
+Kiến trúc yêu cầu 4 thực thể lưu trữ bền vững:
+1. `TelegramLinkChallenge`
+2. `TelegramAccountLink`
+3. `TelegramWebhookReceipt`
+4. `TelegramNotificationDelivery`
 
-1. **`TelegramLinkChallenge`**: Lưu thông tin thử thách liên kết tài khoản.
-   - Các trường: `id` (UUID), `userId` (FK User), `tokenHash` (SHA-256 unique), `expiresAt`, `status` (`PENDING`, `CONSUMED`, `EXPIRED`, `REVOKED`), `consumedAt`, `createdAt`.
-2. **`TelegramAccountLink`**: Lưu thông tin liên kết tài khoản giữa giáo viên Báo giảng và Telegram.
-   - Các trường: `id` (UUID), `userId` (FK User), `telegramUserId` (decimal string), `telegramChatId` (decimal string), `status` (`ACTIVE`, `REVOKED`), `linkedAt`, `revokedAt`, `revokedByUserId` (FK nullable), `challengeId` (FK nullable).
-   - Ràng buộc: Unique constraint ở cấp độ cơ sở dữ liệu cho trạng thái `ACTIVE` (`userId` là duy nhất khi active; `telegramUserId` là duy nhất khi active; `telegramChatId` là duy nhất khi active).
-3. **`TelegramWebhookReceipt`**: Ghi nhận và chống trùng lặp các update nhận từ Telegram Bot API.
-   - Các trường: `id` (UUID), `updateId` (decimal string unique), `receivedAt`, `processedAt`, `status` (`PROCESSED`, `IGNORED`, `FAILED`).
-4. **`TelegramNotificationDelivery`**: Ghi nhận bằng chứng gửi thông báo và lũy kế lệnh gửi.
-   - Các trường: `id` (UUID), `idempotencyKey` (unique string), `commandFingerprint` (string), `accountLinkId` (FK TelegramAccountLink), `telegramChatId` (decimal string), `notificationType` (string), `payloadDigest` (string), `deliveryStatus` (`RESERVED`, `ATTEMPTING`, `SENT`, `FAILED`, `UNKNOWN`), `providerMessageId` (nullable decimal string), `errorMessage` (nullable string), `createdAt`, `updatedAt`, `sentAt`.
-
-**Quy tắc migration:**
-- Migration phải có tính chất bổ sung hoàn toàn (`additive only`), không phá vỡ schema hiện tại.
-- Zero destructive backfill, không sửa đổi dữ liệu lịch sử của bất kỳ phân hệ nghiệp vụ nào khác.
-- Ràng buộc khóa ngoại sử dụng `ON DELETE RESTRICT` fail-safe phù hợp.
+**Nguyên tắc Hộp thư nguyên tử chống mất bản tin (Atomic Inbox / Receipt Invariant):**
+- Cơ chế khử trùng lặp `update_id` tuyệt đối không được làm thất lạc bản tin linking.
+- Khi nhận lệnh Telegram `/start <token>` hợp lệ, toàn bộ chuỗi xử lý:
+  + Ghi nhận/khử trùng lặp biên nhận `TelegramWebhookReceipt`;
+  + Xác thực và tiêu thụ thử thách `TelegramLinkChallenge` (`PENDING -> CONSUMED`);
+  + Tạo bản ghi liên kết tài khoản `TelegramAccountLink` (`ACTIVE`);
+  + Cấp phát lệnh gửi thông báo chào mừng `TelegramNotificationDelivery` (`RESERVED`) nếu áp dụng;
+  **BẮT BUỘC ĐƯỢC COMMIT TRONG CÙNG MỘT RANH GIỚI TRANSACTION CƠ SỞ DỮ LIỆU NGUYÊN TỬ** (hoặc cỗ máy trạng thái inbox tương đương).
+- Tuyệt đối cấm kịch bản: commit receipt đã xử lý, tiến trình bị crash trước khi tạo link, và khi Telegram gửi lại bản tin thì bị bỏ qua vì `update_id` đã tồn tại.
+- Khi Telegram gửi lại cùng `update_id`: hệ thống nhận diện bản tin đã xử lý thành công, phát lại kết quả cũ, không tạo thêm link thứ hai, không tiêu thụ challenge lần hai và không phát sinh thông báo chào mừng thứ hai.
+- **Tuyệt đối không thực hiện network call ra bên ngoài bên trong transaction cơ sở dữ liệu.**
 
 ### 7. Giao diện API người dùng cá nhân (Authenticated Personal API)
 
-P5-030 sẽ hiện thực 4 endpoint phục vụ người dùng cá nhân trong `apps/api`:
 - `GET /api/integrations/telegram/me`: Lấy trạng thái liên kết Telegram của tài khoản đang đăng nhập.
 - `POST /api/integrations/telegram/link-challenge`: Tạo thử thách liên kết mới và trả về deep link.
 - `DELETE /api/integrations/telegram/link`: Hủy liên kết Telegram hiện tại của người dùng.
 - `POST /api/integrations/telegram/test`: Gửi tin nhắn thử nghiệm có nội dung cố định tới Telegram của người dùng.
 
 **Nguyên tắc ủy quyền:**
-- Đây là tính năng cá nhân của tài khoản (`personal identity integration`). Không tạo thêm capability nghiệp vụ mới trong hệ thống phân quyền trường học.
-- Tái sử dụng cơ chế xác thực phiên làm việc (`baogiang_session`) hiện hữu.
-- Fail-closed đối với cờ `mustChangePassword` (chính sách auth hiện hành).
-- Người gọi không được quyền truyền `userId` của người khác. Máy chủ luôn lấy `userId` trực tiếp từ phiên đăng nhập hợp lệ.
+- Tái sử dụng phiên làm việc hiện hữu (`baogiang_session`), không tạo capability mới.
+- Fail-closed đối với cờ `mustChangePassword`.
+- Máy chủ luôn trích xuất `actorUserId` từ session; client tuyệt đối không được truyền `actorUserId` hay `userId` của người khác.
 
-### 8. Vòng đời thông báo và Nguyên tắc Lũy kế (Notification Lifecycle & Idempotency)
+### 8. Vòng đời thông báo và Lũy kế lệnh gửi tin (Notification Lifecycle & Idempotency)
 
-- Telegram Bot API không hỗ trợ native idempotency header (như Stripe/AWS). Do đó, kiến trúc cấm tuyên bố "giao hàng chính xác một lần" (*exactly once delivery*).
-- Bảo đảm chuẩn mực của hệ thống là:
+- Telegram Bot API không hỗ trợ native idempotency header; hệ thống bảo đảm chuẩn mực:
   **`INTERNAL COMMAND IDEMPOTENCY + NO AUTOMATIC DUPLICATE AMPLIFICATION`**
-  (Lũy kế lệnh nội bộ + Không khuếch đại gửi tin nhắn trùng lặp tự động).
-- **Mã định danh nghiệp vụ:** Mỗi lệnh gửi thông báo phải có `idempotencyKey` và chuỗi dấu vân tay `commandFingerprint`.
-  - Cùng `idempotencyKey` và cùng `commandFingerprint`: Trả về kết quả đã lưu trong bản ghi trước đó, tuyệt đối không gọi lại Telegram Bot API để bắn thêm tin nhắn thứ hai.
-  - Cùng `idempotencyKey` nhưng khác `commandFingerprint`: Báo lỗi xung đột (`409 CONFLICT`).
-- **Trạng thái gửi thông báo:**
-  - `RESERVED`: Đã cấp phát bản ghi gửi tin trong cơ sở dữ liệu trước khi gọi mạng.
+- **Hợp đồng idempotency cho Self-Test (`POST /api/integrations/telegram/test`):**
+  - Request body nhận vào: `{ requestKey: string }`.
+  - Client sinh một `requestKey` mờ cho MỘT lần click logic. Khi gặp kết quả chưa rõ (timeout, network error), client thử lại **phải tái sử dụng cùng requestKey**. Người dùng click gửi tin mới sẽ sinh `requestKey` mới.
+  - Tính duy nhất của idempotency được giới hạn theo người dùng: `(actorUserId, requestKey)`. Tuyệt đối không dùng idempotency key tùy ý cấp độ toàn cầu giữa các người dùng khác nhau.
+  - Chuỗi dấu vân tay `commandFingerprint` bắt buộc ràng buộc tối thiểu:
+    + `actorUserId`;
+    + Định danh `TelegramAccountLink` đang hoạt động;
+    + Loại thông báo (`SELF_TEST`);
+    + Phiên bản/nội dung thông báo do máy chủ sở hữu.
+  - Cùng actor + cùng `requestKey` + cùng `commandFingerprint`: Trả về kết quả đã lưu trong DB, **KHÔNG GỌI TELEGRAM BOT API LẦN THỨ HAI**.
+  - Cùng actor + cùng `requestKey` + khác `commandFingerprint`: Trả về lỗi xung đột `409 Conflict`.
+- **Thông báo chào mừng kết nối thành công (Link-success notification):**
+  - Sử dụng định danh lệnh cố định do máy chủ tạo ra gắn liền với định danh liên kết tài khoản (ví dụ: `link-success:<accountLinkId>`), hoàn toàn không phụ thuộc vào `requestKey` từ payload của client.
+- **Ngữ nghĩa trạng thái gửi tin và xử lý bất định/sập nguồn (Crash/Ambiguity Semantics):**
+  - `RESERVED`: Đã cấp phát bản ghi gửi tin trong DB trước khi gọi mạng.
   - `ATTEMPTING`: Đang thực hiện kết nối HTTP sang Telegram API.
-  - `SENT`: Telegram Bot API xác nhận thành công (HTTP 200 `ok: true`) kèm `message_id`.
-  - `FAILED`: Lỗi mạng hoặc lỗi Telegram API xác định không gửi được (ví dụ chat bị chặn bởi user, bot bị xóa).
-  - `UNKNOWN`: Kết quả không xác định (timeout, đứt kết nối socket, 5xx unconfirmed từ Telegram).
-- **Xử lý sự cố không xác định:**
-  - Nếu kết quả không xác định sau khi HTTP request đã rời khỏi máy chủ: Đánh dấu trạng thái là `UNKNOWN`.
-  - **TUYỆT ĐỐI KHÔNG TỰ ĐỘNG GỬI LẠI (NO AUTO-RETRY)** để tránh gửi trùng tin nhắn tới điện thoại giáo viên.
-  - Sự cố sập ứng dụng (crash) giữa thời điểm gọi provider và ghi nhận DB không được phép biến thành auto-retry gây trùng lặp.
+  - `SENT`: Telegram Bot API xác nhận thành công (HTTP 200 `ok: true`) kèm `message_id`. Trường `providerMessageId` chỉ có giá trị thẩm quyền khi provider đã xác nhận thành công.
+  - `FAILED`: Chỉ áp dụng khi hệ thống có bằng chứng xác định request bị từ chối dứt điểm từ provider (ví dụ: HTTP 400 Bad Request, HTTP 403 Bot bị người dùng chặn, HTTP 404 Bot bị xóa).
+  - `UNKNOWN`:
+    + Hết thời gian chờ (timeout);
+    + Đứt kết nối socket / socket hangup;
+    + Phản hồi 5xx từ Telegram sau khi request có thể đã rời khỏi máy chủ;
+    + Tiến trình bị crash sau khi đã chuyển sang `ATTEMPTING` mà chưa có xác nhận `SENT` hoặc `FAILED`.
+  - **Xử lý bản ghi ATTEMPTING bị treo:** Khi hệ thống khởi động lại hoặc chạy đối soát, bất kỳ bản ghi nào còn treo ở trạng thái `ATTEMPTING` phải được chuyển sang `UNKNOWN` và **TUYỆT ĐỐI KHÔNG TỰ ĐỘNG GỬI LẠI (NO AUTO-RETRY)**. Không được âm thầm chuyển `ATTEMPTING` về `RESERVED` để gửi lại.
 
 ### 9. Phạm vi thông báo thí điểm (Pilot Notification Scope)
 
-- Hiện tại hệ thống **CHƯA CÓ THẨM QUYỀN CHÍNH THỨC (AUTHORITY)** cho một danh mục thông báo nghiệp vụ trường học cụ thể.
-- Do đó, task P5-030 **TUYỆT ĐỐI KHÔNG TỰ BỊA ĐẶT CÁC TRIGGER THÔNG BÁO NGHIỆP VỤ**, bao gồm:
-  - Cảnh báo nợ tiết PPCT;
-  - Thông báo phê duyệt báo cáo;
-  - Thông báo thay đổi Thời khóa biểu;
-  - Lịch phân công dạy bù;
-  - Phân công GDĐP / HĐTN;
-  - Hay các thông báo tự động khác.
-- Bảng thông báo trên giao diện mẫu (prototype HTML) chỉ là `REFERENCE-ONLY`.
-- **Phạm vi thông báo cho đợt thí điểm P5-030 chỉ bao gồm:**
-  1. Vòng đời liên kết thành công (tin nhắn thông báo chào mừng / xác nhận liên kết thành công sau khi nhấn `/start`);
-  2. Tính năng "Gửi tin thử" (Self-test notification) do chính giáo viên kích hoạt qua nút bấm có xác thực, với nội dung do máy chủ sở hữu cố định;
-  3. Bằng chứng lưu trữ biên nhận gửi tin và tính lũy kế (delivery receipt & idempotency).
-- Nội dung tin nhắn thử nghiệm được cố định bởi máy chủ, không nhận chuỗi tùy ý từ client:
-  *“Báo giảng Đam San đã kết nối Telegram thành công.”*
+- Chưa có thẩm quyền cho bất kỳ thông báo nghiệp vụ trường học cụ thể nào.
+- Task P5-030 **TUYỆT ĐỐI KHÔNG TỰ BỊA ĐẶT CÁC TRIGGER THÔNG BÁO NGHIỆP VỤ** (nợ PPCT, duyệt báo cáo, thay TKB, lịch dạy bù, GDĐP/HĐTN). Bảng thông báo prototype là `REFERENCE-ONLY`.
+- Phạm vi thí điểm chỉ giới hạn ở:
+  1. Vòng đời liên kết thành công;
+  2. Tính năng "Gửi tin thử" (Self-test) với nội dung cố định: *“Báo giảng Đam San đã kết nối Telegram thành công.”*;
+  3. Bằng chứng lưu trữ biên nhận và tính lũy kế.
 
 ### 10. Thẩm quyền Giao diện người dùng (UI Authority)
 
-- Vị trí giao diện: Tích hợp Telegram được đặt tại trang Hồ sơ cá nhân (`ProfilePage.tsx` tại `/ho-so-ca-nhan` hoặc `/ho-so`).
-- Các trạng thái giao diện hỗ trợ:
-  1. *Chưa liên kết*: Hiển thị nút "Liên kết Telegram".
-  2. *Đang chờ liên kết*: Hiển thị đường dẫn/nút mở bot Telegram kèm đồng hồ đếm ngược thời gian hết hạn (10 phút).
-  3. *Đã liên kết*: Hiển thị thông báo đã kết nối thành công, nút "Gửi tin thử", và nút "Hủy liên kết".
-  4. *Lỗi gửi tin / Trạng thái không xác định*: Hiển thị thông báo lỗi rõ ràng bằng tiếng Việt.
-- Các hành động của người dùng:
-  - "Liên kết Telegram"
-  - "Mở Telegram kết nối" (mở deep link tới dedicated bot)
-  - "Gửi tin thử"
-  - "Hủy liên kết"
-- **Quy tắc hiển thị an toàn:**
-  - Không hiển thị bất kỳ token kỹ thuật nào trên UI.
-  - Không hiển thị các mã số ID nội bộ của Telegram (`telegramUserId`, `telegramChatId`) cho giáo viên thông thường.
-  - Không tạo trang chỉnh sửa cấu hình kỹ thuật generic trên web.
-  - Tuân thủ nghiêm ngặt kỹ năng `damsan-ui` và phong cách thiết kế chuẩn mực trong `DESIGN.md` (Be Vietnam Pro, màu token ngữ nghĩa, layout basalt rail, không dùng hiệu ứng gradient hay glassmorphism).
+- Đặt tại `ProfilePage.tsx` (`/ho-so-ca-nhan` hoặc `/ho-so`).
+- 4 trạng thái: Chưa liên kết, Đang chờ liên kết (kèm đếm ngược 10 phút), Đã liên kết, Lỗi gửi tin/không xác định.
+- 4 hành động: "Liên kết Telegram", "Mở Telegram kết nối", "Gửi tin thử", "Hủy liên kết".
+- Không hiển thị token kỹ thuật hay ID số nội bộ. Tuân thủ `DESIGN.md` và `damsan-ui`.
 
 ### 11. Ranh giới Kiểm thử tự động (Testing Boundary)
 
-- Các bài kiểm thử CI và kiểm thử tự động cục bộ:
-  - **TUYỆT ĐỐI KHÔNG GỌI TELEGRAM THẬT.**
-  - **KHÔNG CẦN BOT TOKEN THẬT.**
-  - **KHÔNG LƯU TOKEN/SECRET THẬT TRONG TEST FIXTURE.**
-  - Sử dụng tầng vận chuyển giả lập (`fake/mock TelegramTransportPort`) được tiêm phụ thuộc (dependency injection).
-- Bộ test của P5-030 bắt buộc bao phủ đầy đủ:
-  - Sinh challenge, băm SHA-256, thời hạn TTL 10 phút, tính chất dùng 1 lần;
-  - Cơ chế hủy bỏ challenge cũ khi tạo challenge mới;
-  - Webhook chỉ chấp nhận private chat, từ chối group/channel;
-  - Webhook secret token: chấp nhận secret đúng, fail-closed khi thiếu hoặc sai;
-  - Deduplication theo `update_id`;
-  - Ràng buộc duy nhất 1-1 cho active link;
-  - Từ chối việc chiếm đoạt tài khoản Telegram chéo giữa hai user;
-  - Hủy liên kết và bảo tồn lịch sử;
-  - Idempotency: gửi lại cùng key -> phát lại kết quả cũ; gửi cùng key khác fingerprint -> lỗi conflict;
-  - Mô phỏng các trạng thái phản hồi provider: thành công, thất bại, timeout/mất kết nối;
-  - Đảm bảo không tự động gửi lại tin nhắn khi gặp trạng thái không xác định;
-  - Cấu hình tắt (`TELEGRAM_ENABLED=false`) -> fail-closed an toàn;
-  - Phân quyền HTTP API phiên người dùng;
-  - Kiểm thử hiển thị giao diện người dùng và độ tương thích di động (responsive).
+- CI/local tests: Không gọi Telegram thật, không lưu token thật, sử dụng fake/mock transport.
+- Bộ test bắt buộc cho P5-030 bao gồm tối thiểu 13 ca kiểm thử:
+  1. Header webhook secret có độ dài/định dạng sai lệch không gây lỗi HTTP 500;
+  2. Kiểm tra bộ ký tự và độ dài hợp lệ của cấu hình `TELEGRAM_WEBHOOK_SECRET`;
+  3. Telegram gửi thêm các trường mới không làm hỏng việc xử lý lệnh `/start` hợp lệ;
+  4. Bản tin Telegram hợp lệ nhưng không được hỗ trợ (sticker, photo, group) được ghi nhận `IGNORED` và không gây đột biến dữ liệu;
+  5. Các yêu cầu tạo challenge đồng thời chỉ sinh tối đa 1 token `PENDING` có hiệu lực;
+  6. Thử thách `PENDING` đã hết thời hạn (`expiresAt <= now`) không thể tiêu thụ;
+  7. Sự cố sập tiến trình/rollback xung quanh biên nhận webhook không làm mất bản tin linking hợp lệ;
+  8. Bản tin trùng lặp `update_id` không tạo liên kết thứ hai hoặc thông báo chào mừng thứ hai;
+  9. Gọi "Gửi tin thử" với cùng `requestKey` và cùng fingerprint không gọi lại Telegram provider lần thứ hai;
+  10. Gọi "Gửi tin thử" với cùng `requestKey` nhưng khác fingerprint trả về lỗi `409 Conflict`;
+  11. Hai người dùng khác nhau gửi cùng chuỗi `requestKey` không bị xung đột khóa (actor-scoped idempotency);
+  12. Bản tin bị treo ở trạng thái `ATTEMPTING` được chuyển thành `UNKNOWN` và không tự động gửi lại;
+  13. Thông báo lỗi từ provider được khử khuẩn, không làm lộ bot token hay full provider URL.
 
 ### 12. Ranh giới Môi trường Triển khai & Production (Production Boundary)
 
-- Task kiến trúc `P5-030A` và task triển khai `P5-030`:
-  - **KHÔNG** tạo bot thật trên Telegram;
-  - **KHÔNG** gọi BotFather;
-  - **KHÔNG** chạy lệnh `setWebhook` trên môi trường thật;
-  - **KHÔNG** truy cập VPS production;
-  - **KHÔNG** sửa đổi cấu hình Nginx;
-  - **KHÔNG** thực hiện deploy;
-  - **KHÔNG** sử dụng cơ sở dữ liệu production.
-- Việc kích hoạt bot Telegram thật, cấp phát token production và thiết lập webhook production thuộc về quy trình triển khai có kiểm soát sau này, cùng thẩm quyền với các task P6.
-- Trạng thái hệ thống production tiếp tục duy trì strictly **`PRE-OPERATIONAL`**.
+- P5-030A và P5-030 không tạo bot thật, không gọi BotFather, không chạy setWebhook thật, không can thiệp VPS hay Nginx; production duy trì strictly **`PRE-OPERATIONAL`**.
 
 ---
 
 ## Hệ quả (Consequences)
 
 ### Tích cực
-- Bảo đảm tính độc lập và an toàn tuyệt đối cho hệ thống Báo giảng khi chạy chung VPS với DamSanV5 và Quản lí nội trú.
-- Bí mật kỹ thuật được bảo vệ nghiêm ngặt ở cấp server runtime, không bị rò rỉ vào cơ sở dữ liệu hay giao diện quản trị nghiệp vụ.
-- Vòng đời liên kết tài khoản an toàn mật mã, ngăn chặn triệt để hành vi giả mạo hoặc chiếm đoạt tài khoản.
-- Cơ chế lũy kế ngăn ngừa tình trạng spam thông báo lặp lại tới giáo viên.
-- Ranh giới phạm vi thí điểm được xác định rõ ràng, không tạo thêm rủi ro nghiệp vụ do tự ý sáng tạo thông báo ngoài thẩm quyền.
+- Loại bỏ hoàn toàn các lỗi kỹ thuật tiềm ẩn: chống timing attack bằng digest hash, chống sập webhook khi provider thêm trường mới, triệt tiêu nguy cơ duplicate spam thông báo.
+- Bảo vệ nghiêm ngặt tính toàn vẹn đồng thời của thử thách liên kết tài khoản ở cấp độ cơ sở dữ liệu.
+- Định danh idempotency theo người dùng giúp tránh xung đột khóa ngẫu nhiên giữa các giáo viên.
+- Toàn bộ trạng thái quản trị và căn cứ kỹ thuật được chuẩn hóa chính xác, sẵn sàng cho việc nghiệm thu kiến trúc độc lập.
 
 ### Tiêu cực / Chi phí
-- Cần xây dựng 4 bảng lưu trữ và các cơ chế xử lý ngoại lệ mạng phức tạp hơn so với cách gọi HTTP trực tiếp đơn giản.
-- Người dùng bắt buộc phải mở deep link và nhấn Start trong Telegram private chat thay vì nhập trực tiếp số điện thoại hay username trên web.
+- Đòi hỏi transaction nguyên tử bao bọc cả webhook receipt và account link, yêu cầu cấu trúc code cẩn trọng.
+- Cần xây dựng mock transport toàn diện phục vụ đủ 13 kịch bản kiểm thử bắt buộc.
 
 ### Trung lập
-- P5-030A đóng vai trò chốt chặn kiến trúc tài liệu (docs-only); việc hiện thực hóa toàn bộ logic trên sẽ được thực hiện tại task P5-030 sau khi P5-030A được phê duyệt và đóng chính thức.
+- P5-030A tiếp tục duy trì trạng thái `IN_REVIEW` (DOCS-ONLY) cho đến khi hoàn tất phê duyệt độc lập.
