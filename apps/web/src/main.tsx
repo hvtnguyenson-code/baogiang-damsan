@@ -11,6 +11,7 @@ import '@fontsource/be-vietnam-pro/vietnamese-700.css';
 import '@fontsource/ibm-plex-mono/latin-400.css';
 import '@fontsource/ibm-plex-mono/latin-500.css';
 import { AuthProvider } from './auth/auth-context';
+import { PwaManager } from './pwa/pwa-manager';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -31,7 +32,10 @@ ReactDOM.createRoot(root).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
       <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-        <AuthProvider><App /></AuthProvider>
+        <AuthProvider>
+          <App />
+          <PwaManager />
+        </AuthProvider>
       </BrowserRouter>
     </QueryClientProvider>
   </React.StrictMode>,
