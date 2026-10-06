@@ -2,7 +2,7 @@
 
 ## Status
 
-`IN_REVIEW` (Review Correction 001 completed)
+`CLOSED` by `SYNC-P5-020`
 
 ## Canonical start
 
@@ -132,3 +132,17 @@ Update behavior must be non-intrusive and user-controlled:
 - No changes to `.github/workflows/ci.yml` or production deployment scripts.
 - No production VPS mutation or deployment access.
 - Production environment remains strictly `PRE-OPERATIONAL`.
+
+## Closure Evidence
+
+- final independently reviewed parent head: `397d2fadfc23b9a9dee5e45a7da9190e6dbf799a`;
+- parent PR: #195;
+- exact-head parent CI: #644 / run `37434113165` — **SUCCESS**;
+- normal parent merge/main: `fa54eaea5c2055517428d18559f652001999d0e4`;
+- authoritative post-merge main CI: #645 / run `37435484376` — **SUCCESS**;
+- independent GitHub review: **PASS** after bounded Review Corrections 001–002;
+- Review Correction 001 added direct runtime evidence for Service Worker registration/activation/client control plus zero `/api` Cache Storage entries and offline API failure without cached fallback;
+- Review Correction 002 changed only the generated-Service-Worker whitespace-sensitive assertion and preserved all runtime/security invariants;
+- external CI-641 security-advisory drift for pre-existing `proxy-addr@2.0.7` was resolved separately through security PR #196 before final P5-020 exact-head CI; it was not a P5-020 regression;
+- no residual P5-020 correction/re-entry task remains;
+- no production deploy/VPS mutation occurred; production remains **PRE-OPERATIONAL**.

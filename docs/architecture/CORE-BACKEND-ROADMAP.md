@@ -135,7 +135,7 @@ Exact task statuses and prerequisites are maintained authoritatively in `PRE-PIL
 3. Cross-domain regression/business freeze must include normal curricular workflows plus historical go-live reconciliation, public make-up scheduling, adjusted workload, GDĐP/HĐTN-HN, date-effective homeroom resolution, exact multi-teacher workload and official combined reporting.
 4. T08 make-up re-entry is fulfilled: P3-010 CLOSED -> P3-030 CLOSED by `SYNC-P3-030` -> P3-031 CLOSED by `SYNC-P3-031`, with P3-020 CLOSED for historical ingestion/reconciliation.
 5. T23/T49 architecture is closed by `SYNC-P4-060`; P4-061 runtime is CLOSED by `SYNC-P4-061`, fulfilling adjustment rules and actual curricular workload aggregation and unblocking P5-010.
-6. `P5-020` installable PWA baseline with safe caching/update behavior is implemented on `feat/p5-020-pwa-production-baseline` and is **`IN_REVIEW`**.
+6. `P5-020` installable PWA baseline with safe caching/update behavior is **`CLOSED` by `SYNC-P5-020`** after PR #195, exact-head CI #644 SUCCESS, merge `fa54eaea5c2055517428d18559f652001999d0e4` and post-merge CI #645 SUCCESS.
 7. `P5-030` dedicated Báo giảng Telegram bot/linking/notification lifecycle is now `READY`.
 
 ### P6 — Production readiness and controlled pilot
@@ -178,7 +178,7 @@ Independent tracks:
 - P4-050 (Special-programme workload/reporting; `CLOSED` by `SYNC-P4-050`)
 - P4-060 (Workload adjustment + official workload architecture; `CLOSED` by `SYNC-P4-060`, ADR-057 Accepted)
 - P4-061 (Implementation; `CLOSED` by `SYNC-P4-061`)
-- P5-010 (FULL BUSINESS cross-domain freeze; `CLOSED` by `SYNC-P5-010`; unlocks P5-020/P5-030 `READY`)
+- P5-010 (FULL BUSINESS cross-domain freeze; `CLOSED` by `SYNC-P5-010`; P5-020 is now `CLOSED` by `SYNC-P5-020`, while P5-030 remains `READY`)
 - P6 production readiness & TLS authority (governed independently by canonical gates P6-005 -> P6-010 etc.)
 - Native TKB foundation: P2-030, P2-040, P2-050 are CLOSED.
 
