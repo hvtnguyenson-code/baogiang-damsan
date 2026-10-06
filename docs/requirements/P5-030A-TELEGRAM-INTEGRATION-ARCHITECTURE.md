@@ -3,14 +3,30 @@
 ## Trạng thái và thẩm quyền
 
 - **Task ID:** `P5-030A` — Dedicated Telegram integration architecture closure
-- **Trạng thái:** `IN_REVIEW`
+- **Trạng thái:** `CLOSED` bởi `SYNC-P5-030A`
 - **Nhánh thực thi:** `docs/p5-030a-telegram-architecture`
 - **Mốc xuất phát chuẩn:** `origin/main@a8f49f7048b879cc8ad01627643c33a2429f4f05`
 - **Phụ thuộc:** `P5-010` (CLOSED)
 - **Truy vết nghiệp vụ:** `T33` (`NEW_PRODUCT_AUTHORITY`)
 - **Phân loại:** **DOCS-ONLY**. Tuyệt đối không thay đổi mã nguồn runtime, Prisma schema, migration, API, giao diện UI, cấu hình deploy hoặc cơ sở dữ liệu.
-- **Quyết định kiến trúc đi kèm:** `docs/decisions/ADR-058-DEDICATED-TELEGRAM-INTEGRATION.md` (Proposed / In Review).
-- **Thẩm quyền phê chuẩn:** Tài liệu kiến trúc này là **PROPOSED** trong phạm vi task P5-030A và chỉ trở thành **Accepted** sau khi nhánh nhiệm vụ được merge vào `main`, post-merge CI đạt SUCCESS, và hoàn tất thủ tục đồng bộ tài liệu `SYNC-P5-030A`.
+- **Quyết định kiến trúc đi kèm:** `docs/decisions/ADR-058-DEDICATED-TELEGRAM-INTEGRATION.md` (Accepted).
+- **Thẩm quyền phê chuẩn:** Tài liệu kiến trúc này đã được phê chuẩn **Accepted** sau khi nhánh nhiệm vụ `docs/p5-030a-telegram-architecture` được merge vào `main` (PR #198, merge commit `9ef04c4e8383b77049d2947bb6999a17505698bd`), post-merge CI #649 đạt SUCCESS, và hoàn tất thủ tục đóng tài liệu `SYNC-P5-030A`.
+
+### Bằng chứng đóng nhiệm vụ (Closure Evidence)
+- **Mốc xuất phát chuẩn nhiệm vụ cha:** `origin/main@a8f49f7048b879cc8ad01627643c33a2429f4f05`
+- **Các commit thực thi trên nhánh:**
+  - `b47670ab3be6b2804a8e569a37db955d6806b061`: `docs(telegram): define P5-030 architecture`
+  - `38310867286fa8b288ee12b1f3a1fc75eb40d8ff`: `docs(telegram): harden P5-030 architecture invariants` (Review Correction 001)
+  - `bbe93c25e7e2090d9b6b5ca97b7bcef53dd90c9b`: `docs(telegram): close delivery concurrency gaps` (Review Correction 002)
+- **HEAD nhiệm vụ cha được duyệt cuối cùng:** `bbe93c25e7e2090d9b6b5ca97b7bcef53dd90c9b`
+- **Pull Request:** #198
+- **Exact-head CI:** CI #648 (run id: `37467652218`, SUCCESS)
+- **Kết quả đánh giá độc lập (Independent Review):** PASS sau Review Corrections 001–002, không còn tồn đọng review nào.
+- **Merge commit vào main:** `9ef04c4e8383b77049d2947bb6999a17505698bd`
+- **Authoritative post-merge main CI:** CI #649 (run id: `37469729094`, event push, attempt 1, SUCCESS)
+- **Không còn task tồn đọng:** Không phát sinh bất kỳ correction hoặc re-entry task nào sau merge.
+- **Tính toàn vẹn mã nguồn:** Zero runtime, schema, migration, API, UI, config, CI, deploy, VPS mutation trong P5-030A; production duy trì strictly `PRE-OPERATIONAL`.
+- **Đóng nhiệm vụ:** Formal `CLOSED` bởi `SYNC-P5-030A`.
 
 ---
 
@@ -385,7 +401,7 @@ Trong P5-030, các endpoint cá nhân sau sẽ được hiện thực:
 
 ## 3. Kế hoạch triển khai cho task P5-030
 
-Sau khi task tài liệu `P5-030A` được phê duyệt độc lập và đóng chính thức, task hiện thực `P5-030` sẽ được kích hoạt trên một nhánh riêng (`feat/p5-030-telegram-integration`) với các bước thực thi:
+Sau khi task tài liệu `P5-030A` được phê duyệt độc lập và đóng chính thức bởi `SYNC-P5-030A`, task hiện thực `P5-030` chuyển sang trạng thái **`READY`** và sẽ được kích hoạt trên một nhánh riêng (`feat/p5-030-telegram-integration`) với các bước thực thi:
 
 1. **Prisma Schema & Migrations:**
    - Thêm 4 model: `TelegramLinkChallenge`, `TelegramAccountLink`, `TelegramWebhookReceipt`, `TelegramNotificationDelivery`.

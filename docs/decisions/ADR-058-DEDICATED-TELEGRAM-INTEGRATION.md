@@ -1,12 +1,28 @@
 # ADR-058 — Dedicated Báo giảng Telegram Integration Architecture
 
-- **Trạng thái:** Proposed / In Review — Task `P5-030A` trên branch `docs/p5-030a-telegram-architecture`
+- **Trạng thái:** Accepted (CLOSED by `SYNC-P5-030A`)
 - **Ngày:** 2026-10-06
 - **Task:** `P5-030A` — Dedicated Telegram integration architecture closure
 - **Traceability:** `T33` (NEW_PRODUCT_AUTHORITY), `T22` (technical secrets exclusion)
 - **Dependencies:** `P5-010` (CLOSED)
 - **Deliverable:** Kiến trúc tích hợp Telegram chuyên biệt, ranh giới bảo mật, cấu trúc lưu trữ, vòng đời liên kết, xác thực webhook, tính lũy kế thông báo (idempotency) và ranh giới môi trường/triển khai.
-- **Thẩm quyền phê chuẩn:** Quyết định này là **PROPOSED** trong phạm vi task P5-030A và chỉ trở thành **Accepted** sau khi nhánh nhiệm vụ được merge vào `main`, post-merge CI đạt SUCCESS, và hoàn tất thủ tục đồng bộ tài liệu `SYNC-P5-030A`.
+- **Thẩm quyền phê chuẩn:** Quyết định này là **Accepted** sau khi nhánh nhiệm vụ `docs/p5-030a-telegram-architecture` được merge vào `main` (PR #198, merge commit `9ef04c4e8383b77049d2947bb6999a17505698bd`), post-merge CI #649 đạt SUCCESS, và hoàn tất thủ tục đồng bộ tài liệu `SYNC-P5-030A`.
+
+### Bằng chứng đóng nhiệm vụ (Closure Evidence)
+- **Nhánh nhiệm vụ cha:** `docs/p5-030a-telegram-architecture`
+- **Mốc xuất phát chuẩn:** `origin/main@a8f49f7048b879cc8ad01627643c33a2429f4f05`
+- **Các commit kiến trúc và hiệu chỉnh:**
+  - `b47670ab3be6b2804a8e569a37db955d6806b061`: `docs(telegram): define P5-030 architecture`
+  - `38310867286fa8b288ee12b1f3a1fc75eb40d8ff`: `docs(telegram): harden P5-030 architecture invariants` (Review Correction 001)
+  - `bbe93c25e7e2090d9b6b5ca97b7bcef53dd90c9b`: `docs(telegram): close delivery concurrency gaps` (Review Correction 002)
+- **HEAD nhiệm vụ cha được duyệt cuối cùng:** `bbe93c25e7e2090d9b6b5ca97b7bcef53dd90c9b`
+- **PR:** #198
+- **Exact-head CI:** CI #648 (run id: `37467652218`, SUCCESS)
+- **Kết quả đánh giá độc lập:** PASS sau Review Corrections 001–002, không còn tồn đọng review nào.
+- **Merge commit vào main:** `9ef04c4e8383b77049d2947bb6999a17505698bd`
+- **Authoritative post-merge main CI:** CI #649 (run id: `37469729094`, push event, attempt 1, SUCCESS)
+- **Phạm vi thay đổi:** DOCS-ONLY; không thay đổi runtime/schema/migration/API/UI/config/CI/deploy/VPS; production duy trì strictly `PRE-OPERATIONAL`.
+- **Đóng nhiệm vụ:** Formal `CLOSED` bởi `SYNC-P5-030A`.
 
 ---
 
@@ -331,4 +347,4 @@ Kiến trúc yêu cầu 4 thực thể lưu trữ bền vững:
 - Cần xây dựng mock transport toàn diện phục vụ đủ 20 kịch bản kiểm thử bắt buộc.
 
 ### Trung lập
-- P5-030A tiếp tục duy trì trạng thái `IN_REVIEW` (DOCS-ONLY) cho đến khi hoàn tất phê duyệt độc lập.
+- P5-030A đã được đóng chính thức bởi `SYNC-P5-030A` sau khi PR #198 merge vào `main` và post-merge CI #649 SUCCESS. Kiến trúc chuyển sang trạng thái Accepted; task hiện thực P5-030 chuyển sang trạng thái READY.
