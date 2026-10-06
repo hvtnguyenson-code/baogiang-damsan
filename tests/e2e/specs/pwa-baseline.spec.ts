@@ -39,11 +39,12 @@ test('PWA production baseline: manifest, icons, service worker script, and app s
   const swRes = await request.get(`${BASE_URL}/sw.js`);
   expect(swRes.ok(), 'sw.js must be reachable').toBeTruthy();
   const swText = await swRes.text();
-  expect(swText).toContain('NetworkOnly');
-  expect(swText).toContain('SKIP_WAITING');
-  expect(swText).toContain('denylist:[/^\\/api/]');
-  expect(swText).not.toMatch(/url:"\/?api/i);
-  expect(swText).not.toMatch(/BackgroundSync|QueuePlugin/i);
+  const compactSwText = swText.replace(/\s+/g, '');
+  expect(compactSwText).toContain('NetworkOnly');
+  expect(compactSwText).toContain('SKIP_WAITING');
+  expect(compactSwText).toContain('denylist:[/^\\/api/]');
+  expect(compactSwText).not.toMatch(/url:"\/?api/i);
+  expect(compactSwText).not.toMatch(/BackgroundSync|QueuePlugin/i);
 
   // 4. App shell loads cleanly with PWA meta tags
   await page.goto('/dang-nhap');
