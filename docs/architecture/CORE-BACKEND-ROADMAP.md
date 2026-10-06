@@ -136,16 +136,18 @@ Exact task statuses and prerequisites are maintained authoritatively in `PRE-PIL
 4. T08 make-up re-entry is fulfilled: P3-010 CLOSED -> P3-030 CLOSED by `SYNC-P3-030` -> P3-031 CLOSED by `SYNC-P3-031`, with P3-020 CLOSED for historical ingestion/reconciliation.
 5. T23/T49 architecture is closed by `SYNC-P4-060`; P4-061 runtime is CLOSED by `SYNC-P4-061`, fulfilling adjustment rules and actual curricular workload aggregation and unblocking P5-010.
 6. `P5-020` installable PWA baseline with safe caching/update behavior is **`CLOSED` by `SYNC-P5-020`** after PR #195, exact-head CI #644 SUCCESS, merge `fa54eaea5c2055517428d18559f652001999d0e4` and post-merge CI #645 SUCCESS.
-7. `P5-030` dedicated Báo giảng Telegram bot/linking/notification lifecycle is now `READY`.
+7. `P5-030A` dedicated Telegram integration architecture closure (ADR-058 Proposed, `T33`) is **`IN_REVIEW`**; implementation `P5-030` is **`PLANNED`** behind `P5-030A` closure.
+8. `P5-040` pre-deploy full-repository consistency audit is **`PLANNED`** across all domains before production deployment.
 
 ### P6 — Production readiness and controlled pilot
 
-1. Repo-side Báo giảng first-cert HTTP-01/Nginx/TLS authority.
-2. Passive VPS neighbour discovery and exact readonly preflight.
-3. Controlled root/ACL/task/env/Nginx/database bootstrap.
-4. Exact reviewed commit deploy + migration/rollback/health evidence.
-5. TLS monitor multi-certificate extension after separate Báo giảng certificate exists.
-6. Real teacher pilot verification.
+1. Repo-side Báo giảng first-cert HTTP-01/Nginx/TLS authority (CLOSED by `SYNC-P6-010`).
+2. Pre-deploy full-repository consistency audit (`P5-040`) must be CLOSED before P6-020.
+3. Passive VPS neighbour discovery and exact readonly preflight (`P6-020`, trigger-gated).
+4. Controlled root/ACL/task/env/Nginx/database bootstrap (`P6-030`).
+5. Exact reviewed commit deploy + migration/rollback/health evidence.
+6. TLS monitor multi-certificate extension after separate Báo giảng certificate exists (`P6-040`).
+7. Real teacher pilot verification (`P6-050`).
 
 ## Dependency principle
 
@@ -178,7 +180,7 @@ Independent tracks:
 - P4-050 (Special-programme workload/reporting; `CLOSED` by `SYNC-P4-050`)
 - P4-060 (Workload adjustment + official workload architecture; `CLOSED` by `SYNC-P4-060`, ADR-057 Accepted)
 - P4-061 (Implementation; `CLOSED` by `SYNC-P4-061`)
-- P5-010 (FULL BUSINESS cross-domain freeze; `CLOSED` by `SYNC-P5-010`; P5-020 is now `CLOSED` by `SYNC-P5-020`, while P5-030 remains `READY`)
+- P5-010 (FULL BUSINESS cross-domain freeze; `CLOSED` by `SYNC-P5-010`; P5-020 is `CLOSED` by `SYNC-P5-020`; P5-030A is `IN_REVIEW`; P5-030 is `PLANNED` behind P5-030A; P5-040 is `PLANNED` before P6-020)
 - P6 production readiness & TLS authority (governed independently by canonical gates P6-005 -> P6-010 etc.)
 - Native TKB foundation: P2-030, P2-040, P2-050 are CLOSED.
 
