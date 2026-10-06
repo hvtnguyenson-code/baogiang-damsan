@@ -241,7 +241,7 @@ On 2026-10-02 the Product Owner clarified that FULL BUSINESS must be functionall
 
 The direct dependency set registered for `P5-010` (`P0-003`, `P1-032`, `P2-020`, `P2-061`, `P3-020`, `P3-031`, `P4-061`, `P4-074`) has been completely fulfilled and `P5-010` is formally `CLOSED` by `SYNC-P5-010`. `P5-020` (PWA production baseline) is `CLOSED` by `SYNC-P5-020`.
 
-Dedicated Telegram integration architecture is governed by `P5-030A` (`IN_REVIEW`, ADR-058, `T33` NEW_PRODUCT_AUTHORITY), establishing dedicated bot isolation, technical configuration boundaries, one-time linking, webhook trust, internal idempotency and bounded self-test scope; implementation (`P5-030`) is `PLANNED` behind `P5-030A`. Pre-deploy full-repository consistency audit (`P5-040`) is registered and `PLANNED` before production deployment.
+Dedicated Telegram integration architecture is governed by `P5-030A` (`CLOSED` by `SYNC-P5-030A`, ADR-058 Accepted, `T33` NEW_PRODUCT_AUTHORITY), establishing dedicated bot isolation, technical configuration boundaries, one-time linking, webhook trust, internal idempotency and bounded self-test scope; implementation (`P5-030`) is `READY` behind P5-030A closure. Pre-deploy full-repository consistency audit (`P5-040`) is registered and `PLANNED` before production deployment.
 
 ## 6. Production-readiness items that remain separate
 
@@ -250,7 +250,7 @@ The business realignment does not replace production readiness work. Before firs
 - formal P6-005 repository closure of the selected `SHARED_VPS` topology (CLOSED by `SYNC-P6-005`);
 - Báo giảng first-certificate HTTP-01/Nginx authority closure under shared-host/protected-neighbour semantics (CLOSED by `SYNC-P6-010`);
 - PWA installability/update policy (CLOSED by `SYNC-P5-020`);
-- dedicated Telegram Báo giảng architecture closure (`P5-030A` IN_REVIEW) and implementation (`P5-030` PLANNED);
+- dedicated Telegram Báo giảng architecture closure (`P5-030A` CLOSED by `SYNC-P5-030A`, ADR-058 Accepted) and implementation (`P5-030` READY);
 - pre-deploy full-repository consistency audit (`P5-040` PLANNED);
 - separate Báo giảng TLS renewal lifecycle (`P6-040`);
 - actual VPS Stage 1 passive evidence and reviewed preflight (`P6-020`, trigger-gated behind `P5-040` closure and explicit Product Owner approval);
