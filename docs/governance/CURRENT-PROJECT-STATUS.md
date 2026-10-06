@@ -38,13 +38,13 @@ Parent closure evidence:
 - no production source/schema/migration/auth/CI/CD/deploy/VPS mutation; production remains PRE-OPERATIONAL;
 - no residual correction/re-entry task emerged from review or post-merge CI.
 
-`P5-020` and `P5-030` are now **`READY`** because their sole dependency `P5-010` is CLOSED. `P6-020` remains **`DEFERRED_WITH_TRIGGER`** until the exact pilot build is explicitly approved as a production deployment candidate.
+`P5-020` is **`IN_REVIEW`** on `feat/p5-020-pwa-production-baseline` (Review Correction 001 completed) and `P5-030` is **`READY`**. `P6-020` remains **`DEFERRED_WITH_TRIGGER`** until the exact pilot build is explicitly approved as a production deployment candidate.
 
 ## Active / next critical path
 
 ### In Review
 
-- `P5-020` — PWA production baseline — **`IN_REVIEW`** (`feat/p5-020-pwa-production-baseline`, canonical start `main@7ef20def783f17ef07a5881bf7d61060c3486199`; delivers installable PWA baseline, Workbox GenerateSW service worker with strict `/api` exclusion/NetworkOnly boundary, prompted update UI notice, deterministic verifiers; zero caching of `/api`/auth/reporting data; production remains PRE-OPERATIONAL).
+- `P5-020` — PWA production baseline — **`IN_REVIEW`** (`feat/p5-020-pwa-production-baseline`, canonical start `main@7ef20def783f17ef07a5881bf7d61060c3486199`; Review Correction 001 closed runtime SW registration/control and negative `/api` Cache Storage evidence gaps; delivers installable PWA baseline, Workbox GenerateSW service worker with strict `/api` exclusion/NetworkOnly boundary, prompted update UI notice, deterministic verifiers; zero caching of `/api`/auth/reporting data; production remains PRE-OPERATIONAL; ready for independent re-review).
 
 ### Ready
 
@@ -90,7 +90,7 @@ The project is **NOT READY FOR TEACHER PILOT YET**. Remaining registered gaps in
 
 1. `P3-030`, `P3-031`, `P4-060`, `P4-061` and `P5-010` are CLOSED by their non-recursive sync closures; the complete FULL BUSINESS cross-domain freeze is established.
 2. Public make-up scheduling T08 and adjusted-workload T23 re-entry paths are fulfilled by the closed P3-031 and P4-061 chains and were re-verified in P5-010.
-3. PWA production baseline (`P5-020`) is implemented on `feat/p5-020-pwa-production-baseline` and is **`IN_REVIEW`**.
+3. PWA production baseline (`P5-020`) is implemented on `feat/p5-020-pwa-production-baseline` and is **`IN_REVIEW`** (Review Correction 001 completed).
 4. Dedicated Báo giảng Telegram integration (`P5-030`) remains absent but is now **`READY`**.
 5. Official production Stage 1 passive discovery/preflight (`P6-020`) remains trigger-gated and has not been executed; P5-010 closure alone does not authorize production access.
 6. Production bootstrap/first controlled deploy (`P6-030`) has not occurred.

@@ -2,7 +2,7 @@
 
 ## Status
 
-`IN_REVIEW`
+`IN_REVIEW` (Review Correction 001 completed)
 
 ## Canonical start
 
@@ -114,6 +114,15 @@ Update behavior must be non-intrusive and user-controlled:
    - Post-build inspection proving `manifest.webmanifest`, `sw.js`, and icon assets are generated in `apps/web/dist`.
 6. **Security & Privacy Negative Audits**:
    - Clean grep across diff and new code for `localStorage`, `sessionStorage`, `indexedDB`, `BackgroundSync`.
+7. **Playwright Production-like Runtime Evidence (Review Correction 001)**:
+   - Automated deterministic E2E suite (`tests/e2e/specs/pwa-baseline.spec.ts`) asserting:
+     - Manifest reachable and conforms to all required identity, color, and icon fields;
+     - `sw.js` reachable, containing `/api` navigation denylist and `NetworkOnly` runtime route, excluding `/api` from precache, with no `BackgroundSync`;
+     - `navigator.serviceWorker.ready` resolves with active registration;
+     - page reload confirms active Service Worker controller (`navigator.serviceWorker.controller !== null`);
+     - live `GET /api/health/live` succeeds over network under service worker control;
+     - runtime Cache Storage audit proves zero `/api` entries exist across all caches;
+     - simulated offline mode confirms `GET /api/health/live` fails/rejects without cached API fallback.
 
 ## Forbidden Scope
 
