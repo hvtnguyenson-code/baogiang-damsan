@@ -8,7 +8,7 @@ Per `MAJOR-TASK-DOCUMENTATION-SYNC-PROTOCOL.md`, this file is intentionally conc
 
 Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub. SHAs here are evidence for already-established task states, never a self-referential claim that this document contains its own current commit.
 
-**Status snapshot date:** 2026-10-05
+**Status snapshot date:** 2026-10-06
 
 ## Executive status
 
@@ -22,29 +22,30 @@ Exact current `main`, branch HEAD and divergence must always be read directly fr
 
 ## Last formally closed major task
 
-`P5-010` — Pilot business scope + cross-domain freeze — **`CLOSED`** by `SYNC-P5-010`.
+`P5-020` — PWA production baseline — **`CLOSED`** by `SYNC-P5-020`.
 
 Parent closure evidence:
 
-- parent branch: `feat/p5-010-full-business-cross-domain-freeze`;
-- canonical parent start: `main@c4321d5630b60296279e7a054206a80a093aa97a`;
-- final reviewed parent head: `7206b7b446a8a7fb88879a01dfbc9e55fe31f50c`;
-- parent PR #193;
-- exact-head parent CI #636 / run `37323185530` — **SUCCESS**;
-- independent exact-code/evidence review: **PASS** after bounded forward Corrections 001–003; zero unresolved review threads;
-- normal parent merge/main: `85475af124af276f49b990aac844d6ae8d26ba03`;
-- authoritative parent post-merge CI #637 / run `37328312557` — **SUCCESS**;
-- delivered the FULL BUSINESS cross-domain regression/evidence freeze across curricular execution/progression, delayed go-live/history, public make-up, GDĐP/HĐTN-HN, date-effective homeroom, multi-teacher anti-double-count, workload adjustment, official workload, Snapshot V4 and Teacher Workspace effective schedule;
-- no production source/schema/migration/auth/CI/CD/deploy/VPS mutation; production remains PRE-OPERATIONAL;
-- no residual correction/re-entry task emerged from review or post-merge CI.
+- parent branch: `feat/p5-020-pwa-production-baseline`;
+- canonical parent start: `main@7ef20def783f17ef07a5881bf7d61060c3486199`;
+- final reviewed parent head: `397d2fadfc23b9a9dee5e45a7da9190e6dbf799a`;
+- parent PR #195;
+- exact-head parent CI #644 / run `37434113165` — **SUCCESS**;
+- independent exact-code/evidence review: **PASS** after bounded Review Corrections 001–002; zero unresolved review threads;
+- normal parent merge/main: `fa54eaea5c2055517428d18559f652001999d0e4`;
+- authoritative parent post-merge CI #645 / run `37435484376` — **SUCCESS**;
+- delivered installable PWA baseline, standalone manifest/icons, Workbox GenerateSW static-shell caching, structural `/api` NetworkOnly/no-cache boundary, prompted Vietnamese update UX, and deterministic unit/static/Playwright evidence including active SW control, zero `/api` Cache Storage entries and offline API failure without cached fallback;
+- external CI-641 `proxy-addr` advisory drift was corrected separately by security PR #196 before final P5-020 CI and was not a P5-020 regression;
+- no backend/schema/migration/auth/API/CI/CD/deploy/VPS mutation; production remains PRE-OPERATIONAL;
+- no residual P5-020 correction/re-entry task emerged from review or post-merge CI.
 
-`P5-020` is **`IN_REVIEW`** on `feat/p5-020-pwa-production-baseline` (Review Correction 001 completed) and `P5-030` is **`READY`**. `P6-020` remains **`DEFERRED_WITH_TRIGGER`** until the exact pilot build is explicitly approved as a production deployment candidate.
+`P5-030` is **`READY`**. `P6-020` remains **`DEFERRED_WITH_TRIGGER`** until the exact pilot build is explicitly approved as a production deployment candidate.
 
 ## Active / next critical path
 
 ### In Review
 
-- `P5-020` — PWA production baseline — **`IN_REVIEW`** (`feat/p5-020-pwa-production-baseline`, canonical start `main@7ef20def783f17ef07a5881bf7d61060c3486199`; Review Correction 001 closed runtime SW registration/control and negative `/api` Cache Storage evidence gaps; delivers installable PWA baseline, Workbox GenerateSW service worker with strict `/api` exclusion/NetworkOnly boundary, prompted update UI notice, deterministic verifiers; zero caching of `/api`/auth/reporting data; production remains PRE-OPERATIONAL; ready for independent re-review).
+- None.
 
 ### Ready
 
@@ -78,7 +79,7 @@ The capacity audit is decision evidence, not production-readiness evidence. Offi
 
 ## Implemented foundation relevant to pilot
 
-Canonical `main` contains reviewed implementation for identity/auth, authorization/audit, retained calendar and teaching responsibility history, HomeroomAssignment, timetable/native TKB ingestion, component-aware PPCT, operational overlays, SpecialActivity, GDĐP/HĐTN planning/import/lifecycle/workload, execution evidence, progress/debt/late, Reporting Statement, Business Configuration/operational-start, school-wide effective teaching schedule, P4-061 official workload/adjustment runtime, the P5-010 FULL BUSINESS cross-domain regression/evidence freeze and the hardened Windows production deployment control plane.
+Canonical `main` contains reviewed implementation for identity/auth, authorization/audit, retained calendar and teaching responsibility history, HomeroomAssignment, timetable/native TKB ingestion, component-aware PPCT, operational overlays, SpecialActivity, GDĐP/HĐTN planning/import/lifecycle/workload, execution evidence, progress/debt/late, Reporting Statement, Business Configuration/operational-start, school-wide effective teaching schedule, P4-061 official workload/adjustment runtime, the P5-010 FULL BUSINESS cross-domain regression/evidence freeze, the P5-020 installable PWA production baseline and the hardened Windows production deployment control plane.
 
 `P2-020` additionally delivers the native PPCT_V1 workbook parser/importer and Vietnamese administration UI and is formally CLOSED by `SYNC-P2-020`.
 
@@ -90,7 +91,7 @@ The project is **NOT READY FOR TEACHER PILOT YET**. Remaining registered gaps in
 
 1. `P3-030`, `P3-031`, `P4-060`, `P4-061` and `P5-010` are CLOSED by their non-recursive sync closures; the complete FULL BUSINESS cross-domain freeze is established.
 2. Public make-up scheduling T08 and adjusted-workload T23 re-entry paths are fulfilled by the closed P3-031 and P4-061 chains and were re-verified in P5-010.
-3. PWA production baseline (`P5-020`) is implemented on `feat/p5-020-pwa-production-baseline` and is **`IN_REVIEW`** (Review Correction 001 completed).
+3. PWA production baseline (`P5-020`) is **`CLOSED` by `SYNC-P5-020`** after PR #195, exact-head CI #644 SUCCESS, merge/main `fa54eaea5c2055517428d18559f652001999d0e4` and authoritative post-merge CI #645 SUCCESS.
 4. Dedicated Báo giảng Telegram integration (`P5-030`) remains absent but is now **`READY`**.
 5. Official production Stage 1 passive discovery/preflight (`P6-020`) remains trigger-gated and has not been executed; P5-010 closure alone does not authorize production access.
 6. Production bootstrap/first controlled deploy (`P6-030`) has not occurred.
