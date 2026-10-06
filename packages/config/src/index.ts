@@ -68,6 +68,12 @@ export const FEATURE_FLAG_KEYS = {
    * Default: false in Phase 00
    */
   WEB_PUSH_ENABLED: 'WEB_PUSH_ENABLED',
+
+  /**
+   * Dedicated Telegram integration channel.
+   * Default: false
+   */
+  TELEGRAM_ENABLED: 'TELEGRAM_ENABLED',
 } as const;
 
 /**

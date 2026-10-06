@@ -236,6 +236,36 @@ enum ProgrammeAttestorAuthorityType {
   BGH_VICE_PRINCIPAL
 }
 
+enum TelegramChallengeStatus {
+  PENDING
+  CONSUMED
+  REVOKED
+  EXPIRED
+}
+
+enum TelegramAccountLinkStatus {
+  ACTIVE
+  REVOKED
+}
+
+enum TelegramWebhookReceiptStatus {
+  PROCESSED
+  IGNORED
+}
+
+enum TelegramNotificationType {
+  LINK_SUCCESS
+  SELF_TEST
+}
+
+enum TelegramDeliveryStatus {
+  RESERVED
+  ATTEMPTING
+  SENT
+  FAILED
+  UNKNOWN
+}
+
 model User {
   id                 String     @id @default(uuid()) @db.Uuid
   username           String     @unique @db.VarChar(100)
@@ -304,6 +334,9 @@ model User {
   businessPolicyVersionsReversed            BusinessPolicyVersion[]                 @relation("BusinessPolicyVersionReversedBy")
   businessPolicyVersionsScheduledSuperseded BusinessPolicyVersion[]                 @relation("BusinessPolicyVersionScheduledSupersededBy")
   businessPolicyCommands                    BusinessPolicyCommand[]                 @relation("BusinessPolicyCommandActor")
+  telegramLinkChallenges                    TelegramLinkChallenge[]                 @relation("UserTelegramLinkChallenges")
+  telegramAccountLinks                      TelegramAccountLink[]                   @relation("UserTelegramAccountLinks")
+  telegramNotificationDeliveries            TelegramNotificationDelivery[]          @relation("UserTelegramNotificationDeliveries")
 
   @@index([status])
   @@map("users")
@@ -1973,4 +2006,80 @@ model ProgrammeOccurrenceAttestation {
   @@index([plannedProgrammeOccurrenceId, status], map: "programme_occurrence_attestations_occurrence_status_idx")
   @@index([programmeMasterId, status], map: "programme_occurrence_attestations_master_status_idx")
   @@map("programme_occurrence_attestations")
+}
+
+model TelegramLinkChallenge {
+  id         String                  @id @default(uuid()) @db.Uuid
+  userId     String                  @map("user_id") @db.Uuid
+  tokenHash  String                  @unique(map: "telegram_link_challenges_token_hash_key") @map("token_hash") @db.VarChar(64)
+  expiresAt  DateTime                @map("expires_at") @db.Timestamptz(3)
+  status     TelegramChallengeStatus @default(PENDING)
+  consumedAt DateTime?               @map("consumed_at") @db.Timestamptz(3)
+  createdAt  DateTime                @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user User @relation("UserTelegramLinkChallenges", fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId, status], map: "telegram_link_challenges_user_status_idx")
+  @@index([expiresAt], map: "telegram_link_challenges_expires_at_idx")
+  @@map("telegram_link_challenges")
+}
+
+model TelegramAccountLink {
+  id             String                    @id @default(uuid()) @db.Uuid
+  userId         String                    @map("user_id") @db.Uuid
+  telegramUserId String                    @map("telegram_user_id") @db.VarChar(64)
+  telegramChatId String                    @map("telegram_chat_id") @db.VarChar(64)
+  status         TelegramAccountLinkStatus @default(ACTIVE)
+  linkedAt       DateTime                  @default(now()) @map("linked_at") @db.Timestamptz(3)
+  revokedAt      DateTime?                 @map("revoked_at") @db.Timestamptz(3)
+  createdAt      DateTime                  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user         User                           @relation("UserTelegramAccountLinks", fields: [userId], references: [id], onDelete: Restrict)
+  deliveries   TelegramNotificationDelivery[]
+
+  @@index([userId, status], map: "telegram_account_links_user_status_idx")
+  @@index([telegramUserId], map: "telegram_account_links_telegram_user_idx")
+  @@index([telegramChatId], map: "telegram_account_links_telegram_chat_idx")
+  @@map("telegram_account_links")
+}
+
+model TelegramWebhookReceipt {
+  id          String                       @id @default(uuid()) @db.Uuid
+  updateId    String                       @unique(map: "telegram_webhook_receipts_update_id_key") @map("update_id") @db.VarChar(64)
+  status      TelegramWebhookReceiptStatus
+  receivedAt  DateTime                     @default(now()) @map("received_at") @db.Timestamptz(3)
+  processedAt DateTime?                    @map("processed_at") @db.Timestamptz(3)
+
+  @@index([status], map: "telegram_webhook_receipts_status_idx")
+  @@index([receivedAt], map: "telegram_webhook_receipts_received_at_idx")
+  @@map("telegram_webhook_receipts")
+}
+
+model TelegramNotificationDelivery {
+  id                 String                   @id @default(uuid()) @db.Uuid
+  commandKey         String                   @unique(map: "telegram_notification_deliveries_command_key_key") @map("command_key") @db.VarChar(200)
+  actorUserId        String                   @map("actor_user_id") @db.Uuid
+  requestKey         String?                  @map("request_key") @db.VarChar(100)
+  commandFingerprint String                   @map("command_fingerprint") @db.VarChar(128)
+  accountLinkId      String                   @map("account_link_id") @db.Uuid
+  telegramChatId     String                   @map("telegram_chat_id") @db.VarChar(64)
+  notificationType   TelegramNotificationType @map("notification_type")
+  payloadDigest      String                   @map("payload_digest") @db.VarChar(128)
+  deliveryStatus     TelegramDeliveryStatus   @default(RESERVED) @map("delivery_status")
+  attemptStartedAt   DateTime?                @map("attempt_started_at") @db.Timestamptz(3)
+  providerMessageId  String?                  @map("provider_message_id") @db.VarChar(100)
+  sanitizedErrorCode String?                  @map("sanitized_error_code") @db.VarChar(100)
+  createdAt          DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime                 @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  sentAt             DateTime?                @map("sent_at") @db.Timestamptz(3)
+
+  actorUser   User                @relation("UserTelegramNotificationDeliveries", fields: [actorUserId], references: [id], onDelete: Restrict)
+  accountLink TelegramAccountLink @relation(fields: [accountLinkId], references: [id], onDelete: Restrict)
+
+  @@index([actorUserId, deliveryStatus], map: "telegram_notification_deliveries_actor_status_idx")
+  @@index([accountLinkId, deliveryStatus], map: "telegram_notification_deliveries_link_status_idx")
+  @@index([deliveryStatus, attemptStartedAt], map: "telegram_notification_deliveries_status_attempt_idx")
+  @@map("telegram_notification_deliveries")
 }

@@ -67,6 +67,8 @@ export interface FeatureFlags {
   AI_PASSIVE_MODE_ENABLED: boolean;
   /** Web Push notifications */
   WEB_PUSH_ENABLED: boolean;
+  /** Dedicated Telegram integration */
+  TELEGRAM_ENABLED: boolean;
 }
 
 /** Default feature flags - all disabled in Phase 00 */
@@ -75,6 +77,7 @@ export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
   AI_ACTIVE_MODE_ENABLED: false,
   AI_PASSIVE_MODE_ENABLED: false,
   WEB_PUSH_ENABLED: false,
+  TELEGRAM_ENABLED: false,
 };
 
 // ============================================================
@@ -2563,4 +2566,39 @@ export interface EffectiveScheduleComparisonResponse {
   status: 'PASS' | 'BLOCKED';
   blockedReasons?: string[];
   facts: ScheduleComparisonSlotFact[];
+}
+
+// ============================================================
+// Telegram Integration Contracts (ADR-058 / P5-030)
+// ============================================================
+
+export type TelegramDeliveryResultStatus = 'RESERVED' | 'ATTEMPTING' | 'SENT' | 'FAILED' | 'UNKNOWN';
+
+export interface TelegramIntegrationStatusResponse {
+  enabled: boolean;
+  linked: boolean;
+  linkedAt?: string;
+  pendingChallenge?: {
+    expiresAt: string;
+  };
+}
+
+export interface TelegramLinkChallengeResponse {
+  deepLink: string;
+  expiresAt: string;
+}
+
+export interface TelegramUnlinkResponse {
+  unlinked: boolean;
+  revokedAt: string;
+}
+
+export interface TelegramTestNotificationRequest {
+  requestKey: string;
+}
+
+export interface TelegramTestNotificationResponse {
+  deliveryStatus: TelegramDeliveryResultStatus;
+  sentAt?: string;
+  error?: string;
 }

@@ -41,17 +41,17 @@ Parent closure evidence:
 - docs-only scope; no runtime/schema/migration/API/UI/config/CI/deploy/VPS mutation; production remains PRE-OPERATIONAL;
 - no residual P5-030A correction/re-entry task emerged from review or post-merge CI.
 
-`P5-030A` is **`CLOSED`** by `SYNC-P5-030A`. `P5-030` is **`READY`**. `P5-040` is **`PLANNED`** (depends on `P5-020` and `P5-030`). `P6-020` remains **`DEFERRED_WITH_TRIGGER`** until `P5-040` is closed and the exact pilot build is explicitly approved by the Product Owner as a production deployment candidate.
+`P5-030A` is **`CLOSED`** by `SYNC-P5-030A`. `P5-030` is **`IN_REVIEW`** on branch `feat/p5-030-telegram-integration`. `P5-040` is **`PLANNED`** (depends on `P5-020` and `P5-030`). `P6-020` remains **`DEFERRED_WITH_TRIGGER`** until `P5-040` is closed and the exact pilot build is explicitly approved by the Product Owner as a production deployment candidate.
 
 ## Active / next critical path
 
 ### In Review
 
-- None on the immediate critical path.
+- `P5-030` — dedicated Báo giảng Telegram integration: **`IN_REVIEW`** on branch `feat/p5-030-telegram-integration` (all registered dependencies `P5-010` and `P5-030A` are CLOSED).
 
 ### Ready
 
-- `P5-030` — dedicated Báo giảng Telegram integration: **`READY`** (all registered dependencies `P5-010` and `P5-030A` are CLOSED).
+- None.
 
 ### Planned behind open dependencies
 
@@ -97,7 +97,7 @@ The project is **NOT READY FOR TEACHER PILOT YET**. Remaining registered gaps in
 1. `P3-030`, `P3-031`, `P4-060`, `P4-061` and `P5-010` are CLOSED by their non-recursive sync closures; the complete FULL BUSINESS cross-domain freeze is established.
 2. Public make-up scheduling T08 and adjusted-workload T23 re-entry paths are fulfilled by the closed P3-031 and P4-061 chains and were re-verified in P5-010.
 3. PWA production baseline (`P5-020`) is **`CLOSED` by `SYNC-P5-020`** after PR #195, exact-head CI #644 SUCCESS, merge/main `fa54eaea5c2055517428d18559f652001999d0e4` and authoritative post-merge CI #645 SUCCESS.
-4. Dedicated Telegram integration architecture closure (`P5-030A`) is **`CLOSED` by `SYNC-P5-030A`** (ADR-058 Accepted); implementation (`P5-030`) is **`READY`** behind P5-030A closure.
+4. Dedicated Telegram integration architecture closure (`P5-030A`) is **`CLOSED` by `SYNC-P5-030A`** (ADR-058 Accepted); implementation (`P5-030`) is **`IN_REVIEW`** on branch `feat/p5-030-telegram-integration`.
 5. Pre-deploy full-repository consistency audit (`P5-040`) is registered and **`PLANNED`** as a mandatory prerequisite before VPS deployment.
 6. Official production Stage 1 passive discovery/preflight (`P6-020`) remains trigger-gated behind `P5-040` closure and explicit Product Owner approval; P5-010 closure alone does not authorize production access.
 7. Production bootstrap/first controlled deploy (`P6-030`) has not occurred.

@@ -1,6 +1,13 @@
 import { registerAs } from '@nestjs/config';
 import { BUSINESS_TIME_ZONE } from '@baogiang/config';
 
+export interface TelegramConfig {
+  enabled: boolean;
+  botToken?: string;
+  botUsername?: string;
+  webhookSecret?: string;
+}
+
 export interface AppConfig {
   nodeEnv: string;
   timeZone: string;
@@ -15,6 +22,7 @@ export interface AppConfig {
   databaseUrl: string;
   httpTrustProxyHops: number;
   auth: AuthConfig;
+  telegram: TelegramConfig;
 }
 
 export interface AuthConfig {
@@ -113,6 +121,35 @@ export const appConfig = registerAs('app', (): AppConfig => {
     throw new Error(`[Config] TZ must be exactly ${BUSINESS_TIME_ZONE}.`);
   }
 
+  const telegramEnabled = booleanValue('TELEGRAM_ENABLED', false);
+  let telegramBotToken: string | undefined;
+  let telegramBotUsername: string | undefined;
+  let telegramWebhookSecret: string | undefined;
+
+  if (telegramEnabled) {
+    const rawBotToken = process.env['TELEGRAM_BOT_TOKEN'];
+    if (!rawBotToken || rawBotToken.trim().length === 0) {
+      throw new Error('[Config] TELEGRAM_BOT_TOKEN is required and cannot be blank when TELEGRAM_ENABLED is true.');
+    }
+    telegramBotToken = rawBotToken.trim();
+
+    const rawBotUsername = process.env['TELEGRAM_BOT_USERNAME'];
+    if (!rawBotUsername || !/^[A-Za-z0-9_]{3,64}$/.test(rawBotUsername.trim())) {
+      throw new Error('[Config] TELEGRAM_BOT_USERNAME is required and must be 3-64 characters [A-Za-z0-9_] when TELEGRAM_ENABLED is true.');
+    }
+    telegramBotUsername = rawBotUsername.trim();
+
+    const rawWebhookSecret = process.env['TELEGRAM_WEBHOOK_SECRET'];
+    if (!rawWebhookSecret || !/^[A-Za-z0-9_-]{1,256}$/.test(rawWebhookSecret)) {
+      throw new Error('[Config] TELEGRAM_WEBHOOK_SECRET is required and must be 1-256 characters [A-Za-z0-9_-] when TELEGRAM_ENABLED is true.');
+    }
+    telegramWebhookSecret = rawWebhookSecret;
+  } else {
+    telegramBotToken = process.env['TELEGRAM_BOT_TOKEN']?.trim() || undefined;
+    telegramBotUsername = process.env['TELEGRAM_BOT_USERNAME']?.trim() || undefined;
+    telegramWebhookSecret = process.env['TELEGRAM_WEBHOOK_SECRET'] || undefined;
+  }
+
   return {
     nodeEnv,
     timeZone: configuredTimeZone ?? BUSINESS_TIME_ZONE,
@@ -140,6 +177,12 @@ export const appConfig = registerAs('app', (): AppConfig => {
       loginRateLimitMax: positiveInteger('AUTH_LOGIN_RATE_LIMIT_MAX', 10),
       loginRateLimitWindowSeconds: positiveInteger('AUTH_LOGIN_RATE_LIMIT_WINDOW_SECONDS', 60),
       loginRateLimitMaxKeys: positiveInteger('AUTH_LOGIN_RATE_LIMIT_MAX_KEYS', 10_000),
+    },
+    telegram: {
+      enabled: telegramEnabled,
+      botToken: telegramBotToken,
+      botUsername: telegramBotUsername,
+      webhookSecret: telegramWebhookSecret,
     },
   };
 });

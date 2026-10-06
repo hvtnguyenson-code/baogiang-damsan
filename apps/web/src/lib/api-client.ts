@@ -6,6 +6,11 @@ import type {
   HealthReadyResponse,
   LoginRequest,
   LoginResponse,
+  TelegramIntegrationStatusResponse,
+  TelegramLinkChallengeResponse,
+  TelegramTestNotificationRequest,
+  TelegramTestNotificationResponse,
+  TelegramUnlinkResponse,
 } from '@baogiang/contracts';
 import { HEALTH_PATHS } from '@baogiang/config';
 
@@ -130,3 +135,24 @@ export const logout = (): Promise<AuthMutationResponse> =>
 
 export const logoutAll = (): Promise<AuthMutationResponse> =>
   apiFetch<AuthMutationResponse>('/auth/logout-all', { method: 'POST', notifyUnauthorized: true });
+
+export const fetchTelegramStatus = (): Promise<TelegramIntegrationStatusResponse> =>
+  apiFetch<TelegramIntegrationStatusResponse>('/integrations/telegram/me');
+
+export const createTelegramLinkChallenge = (): Promise<TelegramLinkChallengeResponse> =>
+  apiFetch<TelegramLinkChallengeResponse>('/integrations/telegram/link-challenge', {
+    method: 'POST',
+  });
+
+export const unlinkTelegram = (): Promise<TelegramUnlinkResponse> =>
+  apiFetch<TelegramUnlinkResponse>('/integrations/telegram/link', {
+    method: 'DELETE',
+  });
+
+export const sendTelegramTestNotification = (
+  input: TelegramTestNotificationRequest,
+): Promise<TelegramTestNotificationResponse> =>
+  apiFetch<TelegramTestNotificationResponse>('/integrations/telegram/test', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });

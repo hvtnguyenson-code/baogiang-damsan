@@ -30,6 +30,7 @@ import { BusinessConfigurationModule } from './business-configuration/business-c
 import { ProgrammePlanningModule } from './programme-planning/programme-planning.module';
 import { EffectiveScheduleModule } from './effective-schedule/effective-schedule.module';
 import { HistoricalTeachingModule } from './historical-teaching/historical-teaching.module';
+import { TelegramModule } from './telegram/telegram.module';
 
 @Module({
 
@@ -78,6 +79,7 @@ import { HistoricalTeachingModule } from './historical-teaching/historical-teach
     ProgrammePlanningModule,
     EffectiveScheduleModule,
     HistoricalTeachingModule,
+    TelegramModule,
   ],
 })
 export class AppModule {}
