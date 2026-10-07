@@ -157,3 +157,55 @@ Consequently:
   - `P5-040`: **`IN_PROGRESS`** (Correction 001 complete on branch; independent review and full re-audit required before closure).
   - `P6-020`: strictly **`DEFERRED_WITH_TRIGGER`**.
   - Production state: strictly **`PRE-OPERATIONAL`**.
+
+---
+
+## 5. Review Correction 002 — Complete Cross-Tab Session Isolation
+
+### 5.1 Independent-Review Finding
+- **Severity:** `HIGH` (Residual finding of `CX-01`).
+- **Description:** Correction 001 hardened same-tab cache and session boundary isolation, but did not handle cross-tab session replacement. The backend issues an origin-wide session cookie (`baogiang_session`). Multiple browser tabs/windows sharing the same origin share this cookie. Because each tab maintained an independent React Query client with `refetchOnWindowFocus: false` and without cross-tab session boundary propagation, logging out and logging in as a different user in Tab 2 left Tab 1 holding User A's identity and cached business data in memory. Returning to Tab 1 risked exposing sensitive business data belonging to User A to User B.
+
+### 5.2 Root Cause
+- Absence of origin-wide, cross-tab session boundary notification.
+- In-memory `QueryClient` state in background tabs was never invalidated when another tab on the same origin executed login, logout, or experienced a session-invalidating 401.
+- In `apiFetch()`, generation validation was executed after network headers were received but prior to body streaming (`readJson()`), leaving a window where a stalled body read resolving after a session transition could leak into the application.
+
+### 5.3 Implementation Architecture
+1. **Credential-Free Session Boundary Channel:**
+   - Established a lightweight `BroadcastChannel` with stable identifier `baogiang_session_channel`.
+   - Message payload is strictly metadata-only (`SESSION_BOUNDARY_CHANGED`, random event ID, and local sender tab ID).
+   - Absolutely zero user IDs, usernames, tokens, cookies, capabilities, or business payloads are transmitted across the channel or persisted to local storage.
+2. **Local Event Semantics:**
+   - **Login:** Only upon successful login response is the session boundary reset, old cache purged, `SESSION_BOUNDARY_CHANGED` broadcast to other tabs, and `/auth/me` queried to establish the new session generation. Failed credential logins do not clear or disrupt valid existing sessions.
+   - **Logout:** Upon successful logout, local session cache is purged and `SESSION_BOUNDARY_CHANGED` is broadcast origin-wide.
+   - **Protected 401:** A 401 on protected business endpoints triggers local cache purging and broadcasts a session boundary event. Credential-checking endpoints (`/auth/login`, `/auth/change-password`) do not broadcast session invalidation.
+3. **Remote Tab Handling:**
+   - Receiving a remote boundary event immediately aborts in-flight network requests of the old generation, clears business query cache and active mutations, resets auth state, and re-validates `/auth/me` from the server.
+   - Remote tabs do not re-broadcast received events, eliminating event loops. Server `/auth/me` remains the sole authority for identity.
+4. **Browser Compatibility & Fallback:**
+   - In environments without `BroadcastChannel` support, a fail-closed focus and `visibilitychange` fallback immediately purges business queries upon foreground return prior to re-validating `/auth/me`.
+5. **Body-Read Generation Race Hardening:**
+   - In `apiFetch()`, generation is verified both before reading the body stream and again immediately after JSON parsing.
+   - If the session generation increments or an abort signal triggers during body reading, the request is rejected with bounded `ApiError` ("Yêu cầu bị hủy do phiên làm việc đã thay đổi"), preventing stale responses from resolving.
+
+### 5.4 Regression Suite & Verification
+- Suite: `apps/web/src/__tests__/session-cache-isolation.test.tsx` (17 tests, 100% PASS):
+  - Cross-tab 1: Tab B login -> broadcast boundary -> Tab A purges cache and re-resolves User B identity.
+  - Cross-tab 2: Tab A fresh business cache -> remote boundary purges it immediately.
+  - Cross-tab 3: Tab A stale business cache -> remote boundary purges it immediately.
+  - Cross-tab 4: In-flight request in Tab A when remote boundary arrives -> late response rejected; does not contaminate new cache.
+  - Cross-tab 5: Remote logout -> Tab A cache purged and transitions to anonymous.
+  - Cross-tab 6: Failed credential login -> no broadcast sent; valid session retained.
+  - Cross-tab 7: Protected 401 -> local purge + exactly one outbound broadcast; receiver does not rebroadcast.
+  - Cross-tab 8: No `BroadcastChannel` support -> focus/visibility fallback immediately purges stale cache and revalidates.
+  - Body race: Generation changes during pending body stream read -> rejected as old-session response.
+  - Tests 1-8: Existing same-tab Correction 001 isolation tests continue to pass.
+
+### 5.5 Commits and Current HEAD
+- Implementation commit: `b91ff0d535f769a9c85efa8ca717f4fe4d48d7ba` (`fix(web): synchronize session boundaries across tabs`)
+- Documentation commit: *(recorded upon docs commit)*
+- Task Governance:
+  - `P5-040`: strictly **`IN_PROGRESS`** (Correction 002 completed on branch; awaiting independent review, merge, and full re-audit).
+  - `P6-020`: strictly **`DEFERRED_WITH_TRIGGER`**.
+  - Production state: strictly **`PRE-OPERATIONAL`**.
