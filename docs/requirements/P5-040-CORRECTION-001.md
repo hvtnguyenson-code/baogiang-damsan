@@ -80,3 +80,80 @@ Consequently:
 - **Deployment / Infrastructure:** 0 changes to `.github/workflows/**`, `scripts/deploy/**`, Nginx, TLS, or Windows Scheduled Tasks.
 - **Environments:** No VPS access, no production DB access, no real Telegram API calls.
 - **Task Gates:** P5-040 remains `IN_PROGRESS`. P6-020 remains `DEFERRED_WITH_TRIGGER`. Production remains `PRE-OPERATIONAL`.
+
+---
+
+## 4. Implementation and Verification Evidence
+
+### 4.1 Canonical Base & Branches
+- **Canonical starting base:** `main@6e6b76f15998c4a7d70b61502bda932571d46ea0`
+- **Correction branch:** `fix/p5-040-consistency-correction-001`
+- **Initial audit branch (historical evidence only, rejected):** `audit/p5-040-predeploy-consistency` at `3c7233fd953b19b943c0185d444aef8ff8e9be14`
+
+### 4.2 Commit Sequence
+1. `edc6ca9` — `docs(governance): register P5-040 correction 001`
+2. `a56b8b7` — `fix(web): isolate query cache across sessions`
+3. `551b70c` — `fix(telegram): harden provider transport outcomes`
+4. `2fa04d2` — `fix(makeup): preserve blocked state and PPCT provenance`
+5. *(current)* — `docs(governance): record P5-040 correction 001 evidence`
+
+### 4.3 Exact Files Changed
+- `docs/requirements/P5-040-CORRECTION-001.md`
+- `docs/governance/PRE-PILOT-TASK-REGISTER.md`
+- `docs/governance/CURRENT-PROJECT-STATUS.md`
+- `apps/web/src/auth/session-cache.ts`
+- `apps/web/src/auth/auth-context.tsx`
+- `apps/web/src/lib/api-client.ts`
+- `apps/web/src/__tests__/session-cache-isolation.test.tsx`
+- `apps/api/src/telegram/telegram-bot-api.adapter.ts`
+- `apps/api/src/telegram/telegram-bot-api.adapter.spec.ts`
+- `packages/contracts/src/index.ts`
+- `apps/api/src/operational-overlays/makeup-schedules.service.ts`
+- `apps/api/test/operational-overlays/makeup-schedules.service.spec.ts`
+- `apps/web/src/pages/MakeupSchedulingPage.tsx`
+- `apps/web/src/__tests__/makeup-scheduling-page.test.tsx`
+
+### 4.4 Targeted Verification Results
+- **CX-01 (Session / React Query Isolation):**
+  - `apps/web/src/__tests__/session-cache-isolation.test.tsx`: 8 passed, 0 failed.
+  - Verifies: User A logout clears cache; fresh cache isolated from User B; stale cache isolated from User B; late in-flight response from User A cannot contaminate User B; protected 401 triggers session boundary; failed login 401 does not clear valid session; Telegram status cache cleared; Reporting statement / detail / workspace cache cleared.
+- **CX-02 / CX-03 / CX-04 (Telegram Transport Hardening):**
+  - `apps/api/src/telegram/telegram-bot-api.adapter.spec.ts`: 14 passed, 0 failed.
+  - `apps/api/src/telegram/telegram.service.spec.ts`: 27 passed, 0 failed.
+  - `apps/api/test/telegram/telegram-routing.spec.ts`: 5 passed, 0 failed.
+  - Verifies: HTTP 200 with ok:true and message_id -> success; HTTP 200 with ok:true but missing message_id -> UNKNOWN (CX-03); HTTP 200 malformed JSON -> UNKNOWN (CX-03); HTTP 400/403/404/429 -> deterministic FAILED codes without raw provider description or token leakage (CX-02); timeout covers full body reading/parsing in finally block (CX-04); body stall aborts to UNKNOWN.
+- **CX-05 / CX-06 (Make-Up Read Model Integrity):**
+  - `apps/api/test/operational-overlays/makeup-schedules.service.spec.ts`: 57 passed, 0 failed.
+  - `apps/web/src/__tests__/makeup-scheduling-page.test.tsx`: 10 passed, 0 failed.
+  - Verifies: PASS projection + zero debt -> true empty PASS; one root BLOCKED -> whole candidate response BLOCKED fail-closed (CX-05); mixed PASS/BLOCKED -> whole response BLOCKED fail-closed (CX-05); UI renders warning alert for BLOCKED without empty-success and disables scheduling; exact candidate retains `ppctItemRevisionId` (CX-06); stable PPCT item with 2 revisions renders exact pinned revision; newest revision cannot override historical pinned revision; missing retained revision -> fail-closed BLOCKED.
+
+### 4.5 Full Repository Verification Results
+- `npm run lint`: PASS (0 warnings, 0 errors across `@baogiang/web`, `@baogiang/api`, `@baogiang/contracts`, `@baogiang/config`).
+- `npm run typecheck`: PASS (0 errors across contracts, config, api, web).
+- `npm run test:unit`: PASS:
+  - `@baogiang/web`: 28 test files, 379 passed, 0 failed.
+  - `@baogiang/api`: 99 test files, 1830 passed, 0 failed.
+  - Total: 127 test files, 2209 passed.
+- `npm run test:schema:static`: PASS (foundation, academic, business-config, telegram).
+- `npm run test:secrets`: PASS (auth secret scan).
+- `npm run test:deploy:static`: PASS (20 scripts and forbidden patterns).
+- `npm run test:deploy:behavior`: PASS.
+- `npm run test:workflow:contract`: PASS.
+- `npm run test:deploy:powershell`: PASS.
+- `npm run test:ui:static`: PASS (UI foundation, PWA baseline).
+- `npm run build`: PASS (all 4 packages built cleanly).
+- `git diff --check`: PASS (0 whitespace / conflict markers).
+
+### 4.6 Environment-Gated Suites (Local Execution Policy)
+- `npm run test:integration`: `NOT LOCALLY REPRODUCED` — Local execution refused by safety guard `resolveSafeTestDatabaseUrl` because no isolated test database is configured. PR CI will serve as the authoritative gate.
+- `npm run test:migrations:ci`: `NOT LOCALLY REPRODUCED` — Requires CI PostgreSQL service container (`POSTGRES_ADMIN_URL`).
+- `npm run test:e2e`: `NOT LOCALLY REPRODUCED` — Requires running local dev web/API instances (`127.0.0.1:5173` and `127.0.0.1:3000`).
+
+### 4.7 Operational Integrity Confirmation
+- Schema/migrations: 0 schema changes, 0 migrations.
+- Workflows/deployment: 0 workflow changes, 0 deployment script changes.
+- Infrastructure: 0 VPS connections, 0 production database connections, 0 real Telegram bot calls.
+- Task Governance:
+  - `P5-040`: **`IN_PROGRESS`** (Correction 001 complete on branch; independent review and full re-audit required before closure).
+  - `P6-020`: strictly **`DEFERRED_WITH_TRIGGER`**.
+  - Production state: strictly **`PRE-OPERATIONAL`**.
