@@ -1,6 +1,6 @@
 import type { AuthMeResponse, ChangePasswordRequest, LoginRequest } from '@baogiang/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ApiError,
   broadcastSessionBoundary,
@@ -34,6 +34,9 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const [logoutError, setLogoutError] = useState<ApiError | null>(null);
+  const [isReconciling, setIsReconciling] = useState(false);
+  const reconciliationSeqRef = useRef(0);
+
   const authQuery = useQuery<AuthMeResponse | null, ApiError>({
     queryKey: AUTH_QUERY_KEY,
     queryFn: () => fetchAuthMe(),
@@ -49,51 +52,73 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearSessionCache(queryClient);
   }), [queryClient]);
 
-  // Remote cross-tab session boundary listener (BroadcastChannel)
-  useEffect(() => onRemoteSessionBoundary(async () => {
-    // Fail-closed: clear all old-generation business cache, abort in-flight requests
-    clearSessionCache(queryClient);
+  // Centralized, fail-closed cross-tab session boundary reconciliation:
+  // 1. When remote boundary arrives or BroadcastChannel is broken: purges old-generation business cache & aborts in-flight queries immediately;
+  // 2. Fails closed (isReconciling = true -> status 'checking', auth null);
+  // 3. Forces server-authoritative network fetchAuthMe() bypassing React Query cache & staleTime;
+  // 4. Guards against burst events via monotonic sequence counter (latest reconciliation always wins).
+  const reconcileSessionBoundary = useCallback(async (options?: { forcePurgeImmediately?: boolean }) => {
+    const seq = ++reconciliationSeqRef.current;
+    const shouldPurge = options?.forcePurgeImmediately ?? true;
+
+    if (shouldPurge) {
+      setIsReconciling(true);
+      setLogoutError(null);
+      clearSessionCache(queryClient);
+    }
+
     try {
-      const refreshed = await queryClient.fetchQuery({
-        queryKey: AUTH_QUERY_KEY,
-        queryFn: () => fetchAuthMe({ notifyUnauthorized: false }),
-      });
+      const refreshed = await fetchAuthMe({ notifyUnauthorized: false });
+      if (reconciliationSeqRef.current !== seq) return;
+
+      if (!shouldPurge && refreshed.user.id !== previousUserIdRef.current) {
+        clearSessionCache(queryClient);
+      }
+
       startSessionScope(refreshed.user.id);
       queryClient.setQueryData(AUTH_QUERY_KEY, refreshed);
+      previousUserIdRef.current = refreshed.user.id;
+      setIsReconciling(false);
     } catch {
+      if (reconciliationSeqRef.current !== seq) return;
+      clearSessionCache(queryClient);
       queryClient.setQueryData(AUTH_QUERY_KEY, null);
+      previousUserIdRef.current = undefined;
+      setIsReconciling(false);
     }
-  }), [queryClient]);
+  }, [queryClient]);
 
-  // Fallback for environments where BroadcastChannel is not supported (foreground/focus revalidation)
+  // Remote cross-tab session boundary listener (BroadcastChannel)
+  useEffect(() => onRemoteSessionBoundary(() => {
+    void reconcileSessionBoundary({ forcePurgeImmediately: true });
+  }), [reconcileSessionBoundary]);
+
+  // Foreground safety net: always active regardless of BroadcastChannel availability (defense-in-depth)
   useEffect(() => {
-    if (isBroadcastChannelSupported()) return;
-
-    const handleForegroundFallback = async () => {
+    const handleForegroundSafety = (event?: Event) => {
+      // Guard: only ignore focus events originating from interactive form controls
+      if (event) {
+        const target = event.target as { tagName?: string } | null;
+        const tagName = target?.tagName?.toUpperCase();
+        if (tagName && ['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON', 'A'].includes(tagName)) {
+          return;
+        }
+      }
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
 
-      // Fail-closed confidentiality: purge old business cache immediately before revalidating identity
-      clearSessionCache(queryClient);
-
-      try {
-        const refreshed = await queryClient.fetchQuery({
-          queryKey: AUTH_QUERY_KEY,
-          queryFn: () => fetchAuthMe({ notifyUnauthorized: false }),
-        });
-        startSessionScope(refreshed.user.id);
-        queryClient.setQueryData(AUTH_QUERY_KEY, refreshed);
-      } catch {
-        queryClient.setQueryData(AUTH_QUERY_KEY, null);
-      }
+      // If BroadcastChannel is unavailable/broken, must fail-closed purge immediately.
+      // If BroadcastChannel is operational, verify server identity without destructively clearing same-user cache.
+      const mustPurgeImmediately = !isBroadcastChannelSupported();
+      void reconcileSessionBoundary({ forcePurgeImmediately: mustPurgeImmediately });
     };
 
-    window.addEventListener('focus', handleForegroundFallback);
-    document.addEventListener('visibilitychange', handleForegroundFallback);
+    window.addEventListener('focus', handleForegroundSafety);
+    document.addEventListener('visibilitychange', handleForegroundSafety);
     return () => {
-      window.removeEventListener('focus', handleForegroundFallback);
-      document.removeEventListener('visibilitychange', handleForegroundFallback);
+      window.removeEventListener('focus', handleForegroundSafety);
+      document.removeEventListener('visibilitychange', handleForegroundSafety);
     };
-  }, [queryClient]);
+  }, [reconcileSessionBoundary]);
 
   // Identity transition: if session user changes (User A -> User B) without explicit logout,
   // purge any leftover query cache from User A before User B observes or shares it.
@@ -111,16 +136,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logoutMutation = useMutation({ mutationFn: logout });
 
   async function refreshAuth(): Promise<AuthMeResponse> {
-    await queryClient.invalidateQueries({ queryKey: AUTH_QUERY_KEY, refetchType: 'none' });
-    const refreshed = await queryClient.fetchQuery({ queryKey: AUTH_QUERY_KEY, queryFn: () => fetchAuthMe() });
+    const refreshed = await fetchAuthMe();
     queryClient.setQueryData(AUTH_QUERY_KEY, refreshed);
     return refreshed;
   }
 
   const value: AuthContextValue = {
-    status: deriveStatus(authQuery),
-    auth: authQuery.data ?? null,
-    error: authQuery.error ?? null,
+    status: deriveStatus(authQuery, isReconciling),
+    auth: isReconciling ? null : (authQuery.data ?? null),
+    error: isReconciling ? null : (authQuery.error ?? null),
     logoutError,
     isMutating: loginMutation.isPending || passwordMutation.isPending || logoutMutation.isPending,
     async login(input) {
@@ -187,12 +211,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-function deriveStatus(query: {
-  isPending: boolean;
-  data: AuthMeResponse | null | undefined;
-  error: ApiError | null;
-}): AuthStatus {
-  if (query.isPending) return 'checking';
+function deriveStatus(
+  query: {
+    isPending: boolean;
+    data: AuthMeResponse | null | undefined;
+    error: ApiError | null;
+  },
+  isReconciling: boolean,
+): AuthStatus {
+  if (isReconciling || query.isPending) return 'checking';
   if (query.error?.statusCode === 401 || query.data === null) return 'anonymous';
   if (query.error) return 'error';
   if (query.data?.user.mustChangePassword) return 'firstLoginRequired';

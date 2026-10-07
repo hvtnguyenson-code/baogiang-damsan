@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthProvider, useAuth } from '../auth/auth-context';
 import {
   AUTH_QUERY_KEY,
+  broadcastSessionBoundary,
+  getBroadcastChannel,
   getSessionChannelName,
   onUnauthorized,
   resetBroadcastChannelForTesting,
@@ -730,6 +732,340 @@ describe('CX-01 session and React Query cache isolation', () => {
     // Request must be rejected because generation changed during body read
     await expect(apiPromise).rejects.toMatchObject({
       message: 'Yêu cầu bị hủy do phiên làm việc đã thay đổi.',
+    });
+  });
+
+  it('18. Test A & F: Production staleTime (30_000ms) with null auth cache -> remote boundary forces network /auth/me call and resolves B', async () => {
+    // Exact production QueryClient configuration as main.tsx
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: 2,
+          staleTime: 30_000,
+          refetchOnWindowFocus: false,
+        },
+      },
+    });
+
+    let authMeCallCount = 0;
+    let originSessionUser: typeof userAAuth | null = userAAuth;
+
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        authMeCallCount += 1;
+        if (!originSessionUser) {
+          return jsonResponse({ statusCode: 401, error: 'Unauthorized', message: 'No session' }, 401);
+        }
+        return jsonResponse(originSessionUser);
+      }
+      return jsonResponse({});
+    }));
+
+    setLocalTabIdForTesting('tab-a');
+    const { result } = renderHook(() => useAuth(), { wrapper: createWrapper(queryClient) });
+    await waitFor(() => expect(result.current.status).toBe('authenticated'));
+    expect(result.current.auth?.user.id).toBe('user-a');
+    expect(authMeCallCount).toBe(1);
+
+    // Business cache populated in Tab A
+    queryClient.setQueryData(['reporting-statements-mine'], { items: ['user-a-data'] });
+
+    // Simulate scenario: auth cache was set to null (e.g. from prior logout or boundary)
+    // with 30s staleTime, a plain fetchQuery might consider fresh null data.
+    queryClient.setQueryData(AUTH_QUERY_KEY, null);
+
+    // Switch origin cookie to User B
+    originSessionUser = userBAuth;
+
+    // Remote boundary from Tab B arrives
+    await act(async () => {
+      const channel = new BroadcastChannel(getSessionChannelName());
+      channel.postMessage({
+        type: 'SESSION_BOUNDARY_CHANGED',
+        eventId: 'evt-prod-staletime',
+        senderId: 'tab-b',
+      });
+      channel.close();
+    });
+
+    // Verify GET /auth/me was actually called via network (call count incremented)
+    await waitFor(() => {
+      expect(authMeCallCount).toBe(2);
+      expect(result.current.status).toBe('authenticated');
+      expect(result.current.auth?.user.id).toBe('user-b');
+      expect(queryClient.getQueryData(['reporting-statements-mine'])).toBeUndefined();
+    });
+  });
+
+  it('19. Test B: BroadcastChannel constructor throws -> foreground return safety net purges cache and resolves identity', async () => {
+    const originalBC = globalThis.BroadcastChannel;
+
+    // Simulate sandbox where BroadcastChannel constructor throws
+    // @ts-expect-error test mock
+    globalThis.BroadcastChannel = class ThrowingBroadcastChannel {
+      constructor() {
+        throw new Error('SecurityError: BroadcastChannel access denied in sandbox');
+      }
+    };
+
+    try {
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      });
+
+      let originUser = userAAuth;
+      vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith('/auth/me')) return jsonResponse(originUser);
+        return jsonResponse({});
+      }));
+
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper(queryClient) });
+      await waitFor(() => expect(result.current.status).toBe('authenticated'));
+      expect(result.current.auth?.user.id).toBe('user-a');
+
+      queryClient.setQueryData(['reporting-statements-mine'], { items: ['secret-a'] });
+      expect(queryClient.getQueryData(['reporting-statements-mine'])).toBeDefined();
+
+      // Outside tab, session cookie switched to User B
+      originUser = userBAuth;
+
+      // Foreground return (window focus)
+      await act(async () => {
+        window.dispatchEvent(new Event('focus'));
+      });
+
+      // Safety net purged old cache immediately and resolved current identity User B
+      await waitFor(() => {
+        expect(result.current.auth?.user.id).toBe('user-b');
+        expect(queryClient.getQueryData(['reporting-statements-mine'])).toBeUndefined();
+      });
+    } finally {
+      globalThis.BroadcastChannel = originalBC;
+    }
+  });
+
+  it('20. Test C: postMessage throws -> sender does not crash and receiver relies on foreground safety net', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+
+    let originUser = userAAuth;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) return jsonResponse(originUser);
+      return jsonResponse({});
+    }));
+
+    setLocalTabIdForTesting('tab-a');
+    const { result } = renderHook(() => useAuth(), { wrapper: createWrapper(queryClient) });
+    await waitFor(() => expect(result.current.status).toBe('authenticated'));
+
+    queryClient.setQueryData(['reporting-statements-mine'], { items: ['secret-a'] });
+
+    // Mock postMessage on channel throwing an error
+    const channel = getBroadcastChannel();
+    expect(channel).not.toBeNull();
+    const postMessageSpy = vi.spyOn(channel!, 'postMessage').mockImplementation(() => {
+      throw new Error('DataCloneError');
+    });
+
+    // Sender calls broadcastSessionBoundary() -> must not throw
+    expect(() => broadcastSessionBoundary()).not.toThrow();
+    postMessageSpy.mockRestore();
+
+    // Origin cookie switched to B
+    originUser = userBAuth;
+
+    // Since broadcast failed to send, Tab A relies on foreground return safety net
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    await waitFor(() => {
+      expect(result.current.auth?.user.id).toBe('user-b');
+      expect(queryClient.getQueryData(['reporting-statements-mine'])).toBeUndefined();
+    });
+  });
+
+  it('21. Test D: Burst boundary events (logout -> login) -> latest login event wins, final state is User B', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+
+    let originUser: typeof userAAuth | null = userAAuth;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        if (!originUser) {
+          return jsonResponse({ statusCode: 401, error: 'Unauthorized', message: 'No session' }, 401);
+        }
+        return jsonResponse(originUser);
+      }
+      return jsonResponse({});
+    }));
+
+    setLocalTabIdForTesting('tab-a');
+    const { result } = renderHook(() => useAuth(), { wrapper: createWrapper(queryClient) });
+    await waitFor(() => expect(result.current.status).toBe('authenticated'));
+
+    queryClient.setQueryData(['reporting-statements-mine'], { items: ['secret-a'] });
+
+    // Burst events from Tab B:
+    // Event 1: Logout
+    originUser = null;
+    const channel = new BroadcastChannel(getSessionChannelName());
+
+    await act(async () => {
+      channel.postMessage({
+        type: 'SESSION_BOUNDARY_CHANGED',
+        eventId: 'evt-burst-1-logout',
+        senderId: 'tab-b',
+      });
+
+      // Immediately Event 2: Login as User B
+      originUser = userBAuth;
+      channel.postMessage({
+        type: 'SESSION_BOUNDARY_CHANGED',
+        eventId: 'evt-burst-2-login',
+        senderId: 'tab-b',
+      });
+    });
+
+    channel.close();
+
+    // Final state must resolve to User B, never stuck in anonymous, with zero User A cache
+    await waitFor(() => {
+      expect(result.current.status).toBe('authenticated');
+      expect(result.current.auth?.user.id).toBe('user-b');
+      expect(queryClient.getQueryData(['reporting-statements-mine'])).toBeUndefined();
+    });
+  });
+
+  it('22. Test E: First reconciliation pending while second boundary arrives -> slow first response cannot overwrite new state', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+
+    let resolveFirstFetch!: (res: Response) => void;
+    const firstFetchPromise = new Promise<Response>((resolve) => {
+      resolveFirstFetch = resolve;
+    });
+
+    let callCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        callCount += 1;
+        if (callCount === 1) {
+          // Initial mount
+          return jsonResponse(userAAuth);
+        }
+        if (callCount === 2) {
+          // Slow first reconciliation
+          return firstFetchPromise;
+        }
+        if (callCount === 3) {
+          // Fast second reconciliation
+          return jsonResponse(userBAuth);
+        }
+      }
+      return jsonResponse({});
+    }));
+
+    setLocalTabIdForTesting('tab-a');
+    const { result } = renderHook(() => useAuth(), { wrapper: createWrapper(queryClient) });
+    await waitFor(() => expect(result.current.status).toBe('authenticated'));
+
+    const channel = new BroadcastChannel(getSessionChannelName());
+
+    // Boundary 1 triggers callCount 2 (pending)
+    await act(async () => {
+      channel.postMessage({
+        type: 'SESSION_BOUNDARY_CHANGED',
+        eventId: 'evt-slow-1',
+        senderId: 'tab-b',
+      });
+    });
+
+    // Boundary 2 arrives and triggers callCount 3 (which resolves immediately with User B)
+    await act(async () => {
+      channel.postMessage({
+        type: 'SESSION_BOUNDARY_CHANGED',
+        eventId: 'evt-fast-2',
+        senderId: 'tab-b',
+      });
+    });
+
+    channel.close();
+
+    // Second reconciliation resolved to User B
+    await waitFor(() => {
+      expect(result.current.auth?.user.id).toBe('user-b');
+    });
+
+    // Now slow first reconciliation finishes (with 401 anonymous)
+    await act(async () => {
+      resolveFirstFetch(jsonResponse({ statusCode: 401, error: 'Unauthorized', message: 'No session' }, 401));
+    });
+
+    // Crucial check: First reconciliation MUST NOT overwrite or demote User B to anonymous
+    await waitFor(() => {
+      expect(result.current.status).toBe('authenticated');
+      expect(result.current.auth?.user.id).toBe('user-b');
+    });
+  });
+
+  it('23. Fail-closed checking state: status is "checking" and auth is null while revalidation is in-flight', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+
+    let resolveRevalidate!: (res: Response) => void;
+    const revalidatePromise = new Promise<Response>((resolve) => {
+      resolveRevalidate = resolve;
+    });
+
+    let callCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        callCount += 1;
+        if (callCount === 1) return jsonResponse(userAAuth);
+        return revalidatePromise;
+      }
+      return jsonResponse({});
+    }));
+
+    setLocalTabIdForTesting('tab-a');
+    const { result } = renderHook(() => useAuth(), { wrapper: createWrapper(queryClient) });
+    await waitFor(() => expect(result.current.status).toBe('authenticated'));
+    expect(result.current.auth?.user.id).toBe('user-a');
+
+    // Remote boundary arrives
+    await act(async () => {
+      const channel = new BroadcastChannel(getSessionChannelName());
+      channel.postMessage({
+        type: 'SESSION_BOUNDARY_CHANGED',
+        eventId: 'evt-check-status',
+        senderId: 'tab-b',
+      });
+      channel.close();
+    });
+
+    // While revalidate is in-flight: fail-closed state
+    expect(result.current.status).toBe('checking');
+    expect(result.current.auth).toBeNull();
+
+    // Complete revalidation with User B
+    await act(async () => {
+      resolveRevalidate(jsonResponse(userBAuth));
+    });
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('authenticated');
+      expect(result.current.auth?.user.id).toBe('user-b');
     });
   });
 });

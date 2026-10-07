@@ -89,7 +89,7 @@ function resolveBroadcastChannelClass(): typeof BroadcastChannel | undefined {
 }
 
 export function isBroadcastChannelSupported(): boolean {
-  return resolveBroadcastChannelClass() !== undefined;
+  return getBroadcastChannel() !== null;
 }
 
 let localTabId: string = typeof crypto !== 'undefined' && crypto.randomUUID
@@ -107,6 +107,17 @@ export function setLocalTabIdForTesting(id: string): void {
 let currentSessionChannelName: string = SESSION_CHANNEL_NAME;
 
 export function getSessionChannelName(): string {
+  if (currentSessionChannelName !== SESSION_CHANNEL_NAME) {
+    return currentSessionChannelName;
+  }
+  if (typeof process !== 'undefined' && process.env?.NODE_ENV === 'test') {
+    const testPath = typeof expect !== 'undefined' && typeof expect.getState === 'function'
+      ? expect.getState()?.testPath
+      : undefined;
+    if (testPath) {
+      return `${SESSION_CHANNEL_NAME}_${testPath}`;
+    }
+  }
   return currentSessionChannelName;
 }
 
@@ -136,8 +147,11 @@ export function getBroadcastChannel(): BroadcastChannel | null {
   if (!BC) return null;
   if (!channelInstance) {
     try {
-      channelInstance = new BC(currentSessionChannelName);
+      channelInstance = new BC(getSessionChannelName());
       channelInstance.onmessage = handleChannelMessage;
+      channelInstance.onmessageerror = () => {
+        // Silently ignore channel errors; foreground fallback preserves safety
+      };
     } catch {
       channelInstance = null;
     }
