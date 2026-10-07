@@ -1,7 +1,17 @@
 import type { AuthMeResponse, ChangePasswordRequest, LoginRequest } from '@baogiang/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import { ApiError, changePassword, fetchAuthMe, login, logout, onUnauthorized } from '../lib/api-client';
+import {
+  ApiError,
+  broadcastSessionBoundary,
+  changePassword,
+  fetchAuthMe,
+  isBroadcastChannelSupported,
+  login,
+  logout,
+  onRemoteSessionBoundary,
+  onUnauthorized,
+} from '../lib/api-client';
 import { AUTH_QUERY_KEY, clearSessionCache, startSessionScope } from './session-cache';
 
 
@@ -26,7 +36,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [logoutError, setLogoutError] = useState<ApiError | null>(null);
   const authQuery = useQuery<AuthMeResponse | null, ApiError>({
     queryKey: AUTH_QUERY_KEY,
-    queryFn: fetchAuthMe,
+    queryFn: () => fetchAuthMe(),
     retry: (failureCount, error) => error.statusCode !== 401 && failureCount < 1,
     staleTime: 30_000,
   });
@@ -38,6 +48,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLogoutError(null);
     clearSessionCache(queryClient);
   }), [queryClient]);
+
+  // Remote cross-tab session boundary listener (BroadcastChannel)
+  useEffect(() => onRemoteSessionBoundary(async () => {
+    // Fail-closed: clear all old-generation business cache, abort in-flight requests
+    clearSessionCache(queryClient);
+    try {
+      const refreshed = await queryClient.fetchQuery({
+        queryKey: AUTH_QUERY_KEY,
+        queryFn: () => fetchAuthMe({ notifyUnauthorized: false }),
+      });
+      startSessionScope(refreshed.user.id);
+      queryClient.setQueryData(AUTH_QUERY_KEY, refreshed);
+    } catch {
+      queryClient.setQueryData(AUTH_QUERY_KEY, null);
+    }
+  }), [queryClient]);
+
+  // Fallback for environments where BroadcastChannel is not supported (foreground/focus revalidation)
+  useEffect(() => {
+    if (isBroadcastChannelSupported()) return;
+
+    const handleForegroundFallback = async () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+
+      // Fail-closed confidentiality: purge old business cache immediately before revalidating identity
+      clearSessionCache(queryClient);
+
+      try {
+        const refreshed = await queryClient.fetchQuery({
+          queryKey: AUTH_QUERY_KEY,
+          queryFn: () => fetchAuthMe({ notifyUnauthorized: false }),
+        });
+        startSessionScope(refreshed.user.id);
+        queryClient.setQueryData(AUTH_QUERY_KEY, refreshed);
+      } catch {
+        queryClient.setQueryData(AUTH_QUERY_KEY, null);
+      }
+    };
+
+    window.addEventListener('focus', handleForegroundFallback);
+    document.addEventListener('visibilitychange', handleForegroundFallback);
+    return () => {
+      window.removeEventListener('focus', handleForegroundFallback);
+      document.removeEventListener('visibilitychange', handleForegroundFallback);
+    };
+  }, [queryClient]);
 
   // Identity transition: if session user changes (User A -> User B) without explicit logout,
   // purge any leftover query cache from User A before User B observes or shares it.
@@ -56,7 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function refreshAuth(): Promise<AuthMeResponse> {
     await queryClient.invalidateQueries({ queryKey: AUTH_QUERY_KEY, refetchType: 'none' });
-    const refreshed = await queryClient.fetchQuery({ queryKey: AUTH_QUERY_KEY, queryFn: fetchAuthMe });
+    const refreshed = await queryClient.fetchQuery({ queryKey: AUTH_QUERY_KEY, queryFn: () => fetchAuthMe() });
     queryClient.setQueryData(AUTH_QUERY_KEY, refreshed);
     return refreshed;
   }
@@ -68,9 +124,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     logoutError,
     isMutating: loginMutation.isPending || passwordMutation.isPending || logoutMutation.isPending,
     async login(input) {
-      // Clear lingering query cache from previous session before authenticating new user
-      clearSessionCache(queryClient);
+      // 1. Authenticate credentials first; if login fails (e.g. wrong password),
+      // it rejects immediately without clearing valid current session or broadcasting.
       await loginMutation.mutateAsync(input);
+
+      // 2. If login succeeds and cookie is replaced:
+      // Immediately establish local session boundary, purge old business cache,
+      // and broadcast SESSION_BOUNDARY_CHANGED to all other open tabs.
+      clearSessionCache(queryClient);
+      broadcastSessionBoundary();
+
+      // 3. Refresh /auth/me and establish new local generation
       const refreshed = await refreshAuth();
       startSessionScope(refreshed.user.id);
       setLogoutError(null);
@@ -85,11 +149,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch (caught) {
         if (caught instanceof ApiError && caught.statusCode === 401) {
           try {
-            const refreshed = await fetchAuthMe();
+            const refreshed = await fetchAuthMe({ notifyUnauthorized: false });
             queryClient.setQueryData(AUTH_QUERY_KEY, refreshed);
           } catch (refreshError) {
             if (refreshError instanceof ApiError && refreshError.statusCode === 401) {
               clearSessionCache(queryClient);
+              broadcastSessionBoundary();
             }
             throw refreshError;
           }
@@ -102,10 +167,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         await logoutMutation.mutateAsync();
         clearSessionCache(queryClient);
+        broadcastSessionBoundary();
       } catch (caught) {
         const apiError = caught instanceof ApiError ? caught : new ApiError(0, 'Không thể đăng xuất.');
         if (apiError.statusCode === 401) {
           clearSessionCache(queryClient);
+          broadcastSessionBoundary();
           return;
         }
         setLogoutError(apiError);

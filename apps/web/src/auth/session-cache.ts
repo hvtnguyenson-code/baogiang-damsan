@@ -1,6 +1,13 @@
 import type { QueryClient } from '@tanstack/react-query';
 
 export const AUTH_QUERY_KEY = ['auth', 'me'] as const;
+export const SESSION_CHANNEL_NAME = 'baogiang_session_channel' as const;
+
+export interface SessionBoundaryMessage {
+  type: 'SESSION_BOUNDARY_CHANGED';
+  eventId: string;
+  senderId: string;
+}
 
 type UnauthorizedListener = () => void;
 const unauthorizedListeners = new Set<UnauthorizedListener>();
@@ -14,6 +21,7 @@ export function onUnauthorized(listener: UnauthorizedListener): () => void {
 
 export function notifyUnauthorized(): void {
   unauthorizedListeners.forEach((listener) => listener());
+  broadcastSessionBoundary();
 }
 
 let currentSessionGeneration = 0;
@@ -66,4 +74,122 @@ export function clearSessionCache(queryClient: QueryClient): void {
   });
   queryClient.getMutationCache().clear();
   queryClient.setQueryData(AUTH_QUERY_KEY, null);
+}
+
+// --- Cross-Tab Session Synchronization ---
+
+function resolveBroadcastChannelClass(): typeof BroadcastChannel | undefined {
+  if (typeof window !== 'undefined' && typeof window.BroadcastChannel !== 'undefined') {
+    return window.BroadcastChannel;
+  }
+  if (typeof globalThis !== 'undefined' && typeof globalThis.BroadcastChannel !== 'undefined') {
+    return globalThis.BroadcastChannel;
+  }
+  return undefined;
+}
+
+export function isBroadcastChannelSupported(): boolean {
+  return resolveBroadcastChannelClass() !== undefined;
+}
+
+let localTabId: string = typeof crypto !== 'undefined' && crypto.randomUUID
+  ? crypto.randomUUID()
+  : `tab-${Date.now()}-${Math.random()}`;
+
+export function getLocalTabId(): string {
+  return localTabId;
+}
+
+export function setLocalTabIdForTesting(id: string): void {
+  localTabId = id;
+}
+
+let currentSessionChannelName: string = SESSION_CHANNEL_NAME;
+
+export function getSessionChannelName(): string {
+  return currentSessionChannelName;
+}
+
+export function setSessionChannelNameForTesting(name: string): void {
+  if (channelInstance) {
+    try {
+      channelInstance.close();
+    } catch {
+      // ignore
+    }
+    channelInstance = null;
+  }
+  currentSessionChannelName = name;
+}
+
+let channelInstance: BroadcastChannel | null = null;
+const remoteBoundaryListeners = new Set<() => void>();
+
+function handleChannelMessage(event: MessageEvent<SessionBoundaryMessage>): void {
+  if (event.data?.type === 'SESSION_BOUNDARY_CHANGED' && event.data.senderId !== localTabId) {
+    remoteBoundaryListeners.forEach((listener) => listener());
+  }
+}
+
+export function getBroadcastChannel(): BroadcastChannel | null {
+  const BC = resolveBroadcastChannelClass();
+  if (!BC) return null;
+  if (!channelInstance) {
+    try {
+      channelInstance = new BC(currentSessionChannelName);
+      channelInstance.onmessage = handleChannelMessage;
+    } catch {
+      channelInstance = null;
+    }
+  }
+  return channelInstance;
+}
+
+export function broadcastSessionBoundary(): void {
+  const channel = getBroadcastChannel();
+  if (!channel) return;
+  const message: SessionBoundaryMessage = {
+    type: 'SESSION_BOUNDARY_CHANGED',
+    eventId: typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `evt-${Date.now()}-${Math.random()}`,
+    senderId: localTabId,
+  };
+  try {
+    channel.postMessage(message);
+  } catch {
+    // Silently ignore browser messaging errors
+  }
+}
+
+export function onRemoteSessionBoundary(listener: () => void): () => void {
+  remoteBoundaryListeners.add(listener);
+  getBroadcastChannel();
+  return () => {
+    remoteBoundaryListeners.delete(listener);
+    if (remoteBoundaryListeners.size === 0 && channelInstance) {
+      try {
+        channelInstance.close();
+      } catch {
+        // ignore
+      }
+      channelInstance = null;
+    }
+  };
+}
+
+export function resetBroadcastChannelForTesting(): void {
+  if (channelInstance) {
+    try {
+      channelInstance.close();
+    } catch {
+      // ignore
+    }
+    channelInstance = null;
+  }
+  remoteBoundaryListeners.clear();
+  currentSessionChannelName = SESSION_CHANNEL_NAME;
+  localTabId = typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `tab-${Date.now()}-${Math.random()}`;
 }

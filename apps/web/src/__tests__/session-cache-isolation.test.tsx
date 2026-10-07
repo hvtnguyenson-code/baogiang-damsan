@@ -1,9 +1,17 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthProvider, useAuth } from '../auth/auth-context';
-import { AUTH_QUERY_KEY, onUnauthorized } from '../auth/session-cache';
+import {
+  AUTH_QUERY_KEY,
+  getSessionChannelName,
+  onUnauthorized,
+  resetBroadcastChannelForTesting,
+  resetSessionScope,
+  setLocalTabIdForTesting,
+  setSessionChannelNameForTesting,
+} from '../auth/session-cache';
 import { ApiError, apiFetch, login } from '../lib/api-client';
 import { jsonResponse } from './test-utils';
 
@@ -28,7 +36,12 @@ function createWrapper(queryClient: QueryClient) {
 }
 
 describe('CX-01 session and React Query cache isolation', () => {
+  beforeEach(() => {
+    setSessionChannelNameForTesting('session_isolation_test_channel');
+  });
+
   afterEach(() => {
+    resetBroadcastChannelForTesting();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
@@ -339,5 +352,384 @@ describe('CX-01 session and React Query cache isolation', () => {
     expect(queryClient.getQueryData(['reporting-statements-accessible'])).toBeUndefined();
     expect(queryClient.getQueryData(['reporting-statements-pending', 1])).toBeUndefined();
     expect(queryClient.getQueryData(['reporting-statement-detail', 'revision-uuid-1'])).toBeUndefined();
+  });
+
+  it('9. Cross-tab 1: Tab A receives boundary event from Tab B login -> clears cache A, resolves B, zero A data', async () => {
+    const queryClientA = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+
+    let originSessionUser = userAAuth;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) return jsonResponse(originSessionUser);
+      return jsonResponse({});
+    }));
+
+    // Mount Tab A
+    setLocalTabIdForTesting('tab-a');
+    const { result: tabA } = renderHook(() => useAuth(), { wrapper: createWrapper(queryClientA) });
+    await waitFor(() => expect(tabA.current.status).toBe('authenticated'));
+    expect(tabA.current.auth?.user.id).toBe('user-a');
+
+    // Populate business cache in Tab A
+    queryClientA.setQueryData(['reporting-statements-mine'], { items: [{ id: 'stmt-a', owner: 'user-a' }] });
+    queryClientA.setQueryData(['telegram-status'], { linked: true });
+    expect(queryClientA.getQueryData(['reporting-statements-mine'])).toBeDefined();
+
+    // Now simulate Tab B: login as User B succeeds, replacing origin cookie
+    originSessionUser = userBAuth;
+
+    // Tab B broadcasts SESSION_BOUNDARY_CHANGED
+    await act(async () => {
+      const channel = new BroadcastChannel(getSessionChannelName());
+      channel.postMessage({
+        type: 'SESSION_BOUNDARY_CHANGED',
+        eventId: 'evt-b-login',
+        senderId: 'tab-b',
+      });
+      channel.close();
+    });
+
+    // Tab A receives boundary event: cache A is immediately cleared, /auth/me resolves B
+    await waitFor(() => {
+      expect(tabA.current.auth?.user.id).toBe('user-b');
+      expect(queryClientA.getQueryData(['reporting-statements-mine'])).toBeUndefined();
+      expect(queryClientA.getQueryData(['telegram-status'])).toBeUndefined();
+    });
+  });
+
+  it('10. Cross-tab 2: Tab A has fresh business cache A -> remote boundary event clears it immediately', async () => {
+    const queryClientA = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) return jsonResponse(userBAuth);
+      return jsonResponse({});
+    }));
+
+    setLocalTabIdForTesting('tab-a');
+    renderHook(() => useAuth(), { wrapper: createWrapper(queryClientA) });
+
+    // Set fresh cache in Tab A
+    queryClientA.setQueryData(['reporting-statements-mine'], { items: [{ id: 'fresh-a' }] });
+    expect(queryClientA.getQueryData(['reporting-statements-mine'])).toBeDefined();
+
+    // Remote boundary from Tab B
+    await act(async () => {
+      const channel = new BroadcastChannel(getSessionChannelName());
+      channel.postMessage({
+        type: 'SESSION_BOUNDARY_CHANGED',
+        eventId: 'evt-fresh',
+        senderId: 'tab-b',
+      });
+      channel.close();
+    });
+
+    await waitFor(() => {
+      expect(queryClientA.getQueryData(['reporting-statements-mine'])).toBeUndefined();
+    });
+  });
+
+  it('11. Cross-tab 3: Tab A has stale business cache A -> remote boundary event clears it', async () => {
+    const queryClientA = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) return jsonResponse(userBAuth);
+      return jsonResponse({});
+    }));
+
+    setLocalTabIdForTesting('tab-a');
+    renderHook(() => useAuth(), { wrapper: createWrapper(queryClientA) });
+
+    queryClientA.setQueryData(['reporting-statements-mine'], { items: [{ id: 'stale-a' }] });
+    await queryClientA.invalidateQueries({ queryKey: ['reporting-statements-mine'], refetchType: 'none' });
+
+    // Remote boundary event
+    await act(async () => {
+      const channel = new BroadcastChannel(getSessionChannelName());
+      channel.postMessage({
+        type: 'SESSION_BOUNDARY_CHANGED',
+        eventId: 'evt-stale',
+        senderId: 'tab-b',
+      });
+      channel.close();
+    });
+
+    await waitFor(() => {
+      expect(queryClientA.getQueryData(['reporting-statements-mine'])).toBeUndefined();
+    });
+  });
+
+  it('12. Cross-tab 4: Tab A request is in-flight when remote boundary arrives -> late response does not repopulate cache', async () => {
+    const queryClientA = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+
+    let resolveInFlightA!: (res: Response) => void;
+    const inFlightAPromise = new Promise<Response>((resolve) => {
+      resolveInFlightA = resolve;
+    });
+
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) return jsonResponse(userBAuth);
+      if (url.endsWith('/reporting-statements/mine')) return inFlightAPromise;
+      return jsonResponse({});
+    }));
+
+    setLocalTabIdForTesting('tab-a');
+    renderHook(() => useAuth(), { wrapper: createWrapper(queryClientA) });
+
+    // Start in-flight request in Tab A
+    const fetchPromiseA = apiFetch('/reporting-statements/mine').catch((err: unknown) => err);
+
+    // Remote boundary arrives while in-flight
+    await act(async () => {
+      const channel = new BroadcastChannel(getSessionChannelName());
+      channel.postMessage({
+        type: 'SESSION_BOUNDARY_CHANGED',
+        eventId: 'evt-in-flight',
+        senderId: 'tab-b',
+      });
+      channel.close();
+    });
+
+    // Set clean Tab B cache in QueryClient
+    queryClientA.setQueryData(['reporting-statements-mine'], { items: [{ id: 'stmt-b-untouched' }] });
+
+    // Now late response of A resolves
+    resolveInFlightA(jsonResponse({ items: [{ id: 'stmt-a-late' }] }));
+    const err = await fetchPromiseA;
+    expect(err).toBeInstanceOf(ApiError);
+
+    // B's cache is NOT contaminated by A's late response
+    expect(queryClientA.getQueryData(['reporting-statements-mine'])).toEqual({
+      items: [{ id: 'stmt-b-untouched' }],
+    });
+  });
+
+  it('13. Cross-tab 5: Remote logout -> Tab A cache cleared and /auth/me -> 401 -> anonymous', async () => {
+    const queryClientA = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+
+    let originSessionUser: typeof userAAuth | null = userAAuth;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        if (!originSessionUser) {
+          return jsonResponse({ statusCode: 401, error: 'Unauthorized', message: 'No session' }, 401);
+        }
+        return jsonResponse(originSessionUser);
+      }
+      return jsonResponse({});
+    }));
+
+    setLocalTabIdForTesting('tab-a');
+    const { result: tabA } = renderHook(() => useAuth(), { wrapper: createWrapper(queryClientA) });
+    await waitFor(() => expect(tabA.current.status).toBe('authenticated'));
+
+    queryClientA.setQueryData(['reporting-statements-mine'], { items: ['some-data'] });
+
+    // Remote logout happens: cookie cleared on origin
+    originSessionUser = null;
+
+    // Tab B broadcasts SESSION_BOUNDARY_CHANGED
+    await act(async () => {
+      const channel = new BroadcastChannel(getSessionChannelName());
+      channel.postMessage({
+        type: 'SESSION_BOUNDARY_CHANGED',
+        eventId: 'evt-logout',
+        senderId: 'tab-b',
+      });
+      channel.close();
+    });
+
+    await waitFor(() => {
+      expect(tabA.current.status).toBe('anonymous');
+      expect(queryClientA.getQueryData(['reporting-statements-mine'])).toBeUndefined();
+      expect(queryClientA.getQueryData(AUTH_QUERY_KEY)).toBeNull();
+    });
+  });
+
+  it('14. Cross-tab 6: Failed credential login -> no boundary broadcast, valid existing session/cache retained', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) return jsonResponse(userAAuth);
+      if (url.endsWith('/auth/login')) {
+        return jsonResponse({ statusCode: 401, error: 'Unauthorized', message: 'Sai mật khẩu' }, 401);
+      }
+      return jsonResponse({});
+    }));
+
+    const broadcastSpy = vi.fn();
+    const testChannel = new BroadcastChannel(getSessionChannelName());
+    testChannel.onmessage = broadcastSpy;
+
+    setLocalTabIdForTesting('tab-test');
+    const { result } = renderHook(() => useAuth(), { wrapper: createWrapper(queryClient) });
+    await waitFor(() => expect(result.current.status).toBe('authenticated'));
+
+    queryClient.setQueryData(['reporting-statements-mine'], { items: ['valid-a-cache'] });
+
+    // Attempt login with wrong password
+    await act(async () => {
+      await expect(result.current.login({ username: 'user_a', password: 'WrongPassword' })).rejects.toThrow();
+    });
+
+    // Session remains authenticated, cache retained, and NO broadcast was sent
+    expect(result.current.status).toBe('authenticated');
+    expect(queryClient.getQueryData(['reporting-statements-mine'])).toEqual({ items: ['valid-a-cache'] });
+    expect(broadcastSpy).not.toHaveBeenCalled();
+
+    testChannel.close();
+  });
+
+  it('15. Cross-tab 7: Protected business 401 -> local clear + exactly one outbound boundary event, receiving tab does not rebroadcast', async () => {
+    const queryClientA = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const queryClientB = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+
+    let isSessionValid = true;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        if (!isSessionValid) {
+          return jsonResponse({ statusCode: 401, error: 'Unauthorized', message: 'Session expired' }, 401);
+        }
+        return jsonResponse(userAAuth);
+      }
+      if (url.endsWith('/reporting-statements/mine')) {
+        isSessionValid = false;
+        return jsonResponse({ statusCode: 401, error: 'Unauthorized', message: 'Session expired' }, 401);
+      }
+      return jsonResponse({});
+    }));
+
+    const broadcastMonitor = vi.fn();
+    const monitorChannel = new BroadcastChannel(getSessionChannelName());
+    monitorChannel.onmessage = broadcastMonitor;
+
+    // Mount Tab B first to listen
+    setLocalTabIdForTesting('tab-b');
+    const { result: tabB } = renderHook(() => useAuth(), { wrapper: createWrapper(queryClientB) });
+    await waitFor(() => expect(tabB.current.status).toBe('authenticated'));
+    queryClientB.setQueryData(['reporting-statements-mine'], { items: ['data-in-b'] });
+
+    // Now switch identity to Tab A and encounter protected 401
+    setLocalTabIdForTesting('tab-a');
+    renderHook(() => useAuth(), { wrapper: createWrapper(queryClientA) });
+    queryClientA.setQueryData(['reporting-statements-mine'], { items: ['data-in-a'] });
+
+    await act(async () => {
+      await expect(apiFetch('/reporting-statements/mine')).rejects.toMatchObject({ statusCode: 401 });
+    });
+
+    // Tab A cleared its cache
+    expect(queryClientA.getQueryData(['reporting-statements-mine'])).toBeUndefined();
+
+    // Exactly one outbound broadcast was sent from Tab A
+    await waitFor(() => {
+      expect(broadcastMonitor).toHaveBeenCalledTimes(1);
+    });
+
+    // Tab B received and cleared its cache without rebroadcasting
+    await waitFor(() => {
+      expect(queryClientB.getQueryData(['reporting-statements-mine'])).toBeUndefined();
+    });
+
+    // Ensure monitorChannel saw NO second broadcast (no infinite loop / rebroadcast)
+    expect(broadcastMonitor).toHaveBeenCalledTimes(1);
+
+    monitorChannel.close();
+  });
+
+  it('16. Cross-tab 8: No BroadcastChannel support -> focus/visibility fallback clears stale cache immediately and revalidates', async () => {
+    // Simulate environment without BroadcastChannel
+    const originalBC = globalThis.BroadcastChannel;
+    // @ts-expect-error test override
+    delete globalThis.BroadcastChannel;
+    delete (window as unknown as { BroadcastChannel?: unknown }).BroadcastChannel;
+
+    try {
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      });
+
+      let originUser = userAAuth;
+      vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith('/auth/me')) return jsonResponse(originUser);
+        return jsonResponse({});
+      }));
+
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper(queryClient) });
+      await waitFor(() => expect(result.current.status).toBe('authenticated'));
+      expect(result.current.auth?.user.id).toBe('user-a');
+
+      queryClient.setQueryData(['reporting-statements-mine'], { items: ['user-a-secret-data'] });
+      expect(queryClient.getQueryData(['reporting-statements-mine'])).toBeDefined();
+
+      // Outside this tab, cookie switched to User B
+      originUser = userBAuth;
+
+      // Tab returns to foreground (focus / visibilitychange)
+      await act(async () => {
+        window.dispatchEvent(new Event('focus'));
+      });
+
+      // Stale User A cache was wiped immediately and revalidated to User B
+      await waitFor(() => {
+        expect(result.current.auth?.user.id).toBe('user-b');
+        expect(queryClient.getQueryData(['reporting-statements-mine'])).toBeUndefined();
+      });
+    } finally {
+      globalThis.BroadcastChannel = originalBC;
+    }
+  });
+
+  it('17. Body race: response body read pending while session generation changes -> rejected as old-session response', async () => {
+    let resolveBody!: (text: string) => void;
+    const pendingBodyPromise = new Promise<string>((resolve) => {
+      resolveBody = resolve;
+    });
+
+    const mockResponse = {
+      ok: true,
+      status: 200,
+      headers: {
+        get: (h: string) => (h.toLowerCase() === 'content-type' ? 'application/json' : null),
+      },
+      text: () => pendingBodyPromise,
+    } as unknown as Response;
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse));
+
+    // Start apiFetch
+    const apiPromise = apiFetch('/reporting-statements/mine');
+
+    // While body read is pending, session scope is reset / generation increments
+    resetSessionScope();
+
+    // Now body resolves
+    resolveBody(JSON.stringify({ items: ['data-from-old-generation'] }));
+
+    // Request must be rejected because generation changed during body read
+    await expect(apiPromise).rejects.toMatchObject({
+      message: 'Yêu cầu bị hủy do phiên làm việc đã thay đổi.',
+    });
   });
 });

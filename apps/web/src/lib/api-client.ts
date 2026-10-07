@@ -14,11 +14,15 @@ import type {
 } from '@baogiang/contracts';
 import { HEALTH_PATHS } from '@baogiang/config';
 import {
+  broadcastSessionBoundary,
   getCurrentSessionGeneration,
   getSessionAbortSignal,
+  isBroadcastChannelSupported,
   isCredentialAuthPath,
   notifyUnauthorized,
+  onRemoteSessionBoundary,
   onUnauthorized,
+  resetBroadcastChannelForTesting,
   resetSessionScope,
   startSessionScope,
 } from '../auth/session-cache';
@@ -29,6 +33,10 @@ export {
   startSessionScope,
   getCurrentSessionGeneration,
   isCredentialAuthPath,
+  broadcastSessionBoundary,
+  onRemoteSessionBoundary,
+  isBroadcastChannelSupported,
+  resetBroadcastChannelForTesting,
 };
 
 const API_BASE = '/api';
@@ -104,12 +112,30 @@ export async function apiFetch<T>(path: string, options: ApiRequestOptions = {})
     throw new ApiError(0, 'Không thể kết nối đến máy chủ.');
   }
 
-  // Prevent late-arriving responses from a dead/previous session from resolving
+  // Generation check 1: before reading body
   if (!isCredentialPath && requestGeneration !== getCurrentSessionGeneration()) {
     throw new ApiError(0, 'Yêu cầu bị hủy do phiên làm việc đã thay đổi.');
   }
 
-  const body = await readJson(response);
+  let body: unknown;
+  try {
+    body = await readJson(response);
+  } catch (readErr: unknown) {
+    if (sessionSignal?.aborted || (!isCredentialPath && requestGeneration !== getCurrentSessionGeneration())) {
+      throw new ApiError(0, 'Yêu cầu bị hủy do phiên làm việc đã thay đổi.');
+    }
+    if (readErr instanceof ApiError) throw readErr;
+    if (readErr instanceof Error && readErr.name === 'AbortError') {
+      throw new ApiError(0, 'Yêu cầu đã bị hủy.');
+    }
+    throw readErr;
+  }
+
+  // Generation check 2: after reading/parsing body (Harden invariant against body read race)
+  if (!isCredentialPath && requestGeneration !== getCurrentSessionGeneration()) {
+    throw new ApiError(0, 'Yêu cầu bị hủy do phiên làm việc đã thay đổi.');
+  }
+
   if (!response.ok) {
     if (response.status === 401 && shouldNotifyUnauthorized) {
       notifyUnauthorized();
@@ -171,8 +197,8 @@ export const fetchHealthReady = (): Promise<HealthReadyResponse> =>
 export const login = (input: LoginRequest): Promise<LoginResponse> =>
   apiFetch<LoginResponse>('/auth/login', { method: 'POST', body: JSON.stringify(input) });
 
-export const fetchAuthMe = (): Promise<AuthMeResponse> =>
-  apiFetch<AuthMeResponse>('/auth/me', { notifyUnauthorized: true });
+export const fetchAuthMe = (options?: { notifyUnauthorized?: boolean }): Promise<AuthMeResponse> =>
+  apiFetch<AuthMeResponse>('/auth/me', { notifyUnauthorized: options?.notifyUnauthorized ?? true });
 
 export const changePassword = (input: ChangePasswordRequest): Promise<AuthMutationResponse> =>
   apiFetch<AuthMutationResponse>('/auth/change-password', {
