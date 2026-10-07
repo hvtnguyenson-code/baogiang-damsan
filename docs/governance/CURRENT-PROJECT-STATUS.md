@@ -8,7 +8,7 @@ Per `MAJOR-TASK-DOCUMENTATION-SYNC-PROTOCOL.md`, this file is intentionally conc
 
 Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub. SHAs here are evidence for already-established task states, never a self-referential claim that this document contains its own current commit.
 
-**Status snapshot date:** 2026-10-06
+**Status snapshot date:** 2026-10-07
 
 ## Executive status
 
@@ -22,40 +22,40 @@ Exact current `main`, branch HEAD and divergence must always be read directly fr
 
 ## Last formally closed major task
 
-`P5-030A` — Dedicated Telegram integration architecture closure — **`CLOSED`** by `SYNC-P5-030A`.
+`P5-030` — Dedicated Báo giảng Telegram integration — **`CLOSED`** by `SYNC-P5-030`.
 
 Parent closure evidence:
 
-- parent branch: `docs/p5-030a-telegram-architecture`;
-- canonical parent start: `main@a8f49f7048b879cc8ad01627643c33a2429f4f05`;
-- architecture commit: `b47670ab3be6b2804a8e569a37db955d6806b061`;
-- Review Correction 001: `38310867286fa8b288ee12b1f3a1fc75eb40d8ff`;
-- Review Correction 002: `bbe93c25e7e2090d9b6b5ca97b7bcef53dd90c9b`;
-- final reviewed parent head: `bbe93c25e7e2090d9b6b5ca97b7bcef53dd90c9b`;
-- parent PR #198;
-- exact-head parent CI #648 / run `37467652218` — **SUCCESS**;
-- independent exact-code/evidence review: **PASS** after bounded Review Corrections 001–002; zero unresolved review threads;
-- normal parent merge/main: `9ef04c4e8383b77049d2947bb6999a17505698bd`;
-- authoritative parent post-merge CI #649 / run `37469729094` (attempt 1) — **SUCCESS**;
-- delivered dedicated Telegram integration architecture closure (ADR-058 Accepted, 12 invariants F1–F12, technical env/config boundary, webhook trust, bounded UUID v4 requestKey, atomic send claim compare-and-set, 20-test acceptance matrix, dedicated bot isolation);
-- docs-only scope; no runtime/schema/migration/API/UI/config/CI/deploy/VPS mutation; production remains PRE-OPERATIONAL;
-- no residual P5-030A correction/re-entry task emerged from review or post-merge CI.
+- parent branch: `feat/p5-030-telegram-integration`;
+- canonical parent start: `main@6cee4babf8779ff12c7cea51be9a8be315ed42cf`;
+- final reviewed parent head: `f1b5dd9790b6b685170f57b59a5c8655e40fe064`;
+- Review Correction 001: đã hấp thụ vào parent branch trước merge;
+- Review Correction 002: đã hấp thụ vào parent branch trước merge;
+- CI Correction 001: commit `f1b5dd9790b6b685170f57b59a5c8655e40fe064` (`test(auth): update AppConfig fixture for Telegram`);
+- parent PR #200 (`feat(telegram): implement dedicated Telegram integration`);
+- final exact-head parent CI #653 / run `37573713270` — **SUCCESS**;
+- independent implementation review: **PASS**; zero unresolved review threads;
+- normal parent merge/main: `3bcd0d7fc1ffd0eedb8f2186271e2596a1581e5a`;
+- authoritative parent post-merge CI #654 / run `37576373644` (attempt 1) — **SUCCESS**;
+- delivered dedicated Telegram integration scope within approved ADR-058 authority (technical config boundary, authenticated personal endpoints, one-time short-lived linking challenge, webhook trust boundary, bounded parser, retained Telegram account-link lifecycle, ACTIVE uniqueness and takeover prevention, atomic webhook receipt/inbox handling, durable notification delivery state machine RESERVED/ATTEMPTING/SENT/FAILED/UNKNOWN, atomic RESERVED -> ATTEMPTING send ownership, ACTIVE-link condition inside atomic send claim, durable DB-owned destination identity, fail-safe IGNORED receipt persistence, crash/startup reconciliation to UNKNOWN without automatic resend, unlink/send race semantics, server-owned self-test notification, ProfilePage integration, PostgreSQL integration/race tests 14/14 PASS);
+- docs and configuration wiring updated with zero real Telegram activation, no real bot token/webhook secret configured, no VPS deployment, no production database mutation, no Nginx/TLS/Scheduled Task/app restart;
+- production remains strictly **PRE-OPERATIONAL**;
+- no residual P5-030 correction/re-entry task emerged from review or post-merge CI.
 
-`P5-030A` is **`CLOSED`** by `SYNC-P5-030A`. `P5-030` is **`IN_REVIEW`** on branch `feat/p5-030-telegram-integration`. `P5-040` is **`PLANNED`** (depends on `P5-020` and `P5-030`). `P6-020` remains **`DEFERRED_WITH_TRIGGER`** until `P5-040` is closed and the exact pilot build is explicitly approved by the Product Owner as a production deployment candidate.
+`P5-030` is **`CLOSED`** by `SYNC-P5-030`. `P5-040` is **`READY`** (dependencies `P5-020` and `P5-030` are CLOSED). `P6-020` remains **`DEFERRED_WITH_TRIGGER`** until `P5-040` is closed and the exact pilot build is explicitly approved by the Product Owner as a production deployment candidate.
 
 ## Active / next critical path
 
 ### In Review
 
-- `P5-030` — dedicated Báo giảng Telegram integration: **`IN_REVIEW`** on branch `feat/p5-030-telegram-integration` (all registered dependencies `P5-010` and `P5-030A` are CLOSED).
+- None.
 
 ### Ready
 
-- None.
+- `P5-040` — pre-deploy full-repository consistency audit: **`READY`** (all registered dependencies `P5-020` and `P5-030` are CLOSED).
 
 ### Planned behind open dependencies
 
-- `P5-040` — pre-deploy full-repository consistency audit: **`PLANNED`** (depends on `P5-020`, `P5-030`).
 - `P6-030` — production bootstrap + first controlled deploy: **`PLANNED`** (depends on `P6-020`).
 - `P6-040` — TLS monitor multi-certificate refactor: **`PLANNED`** (depends on `P6-030`).
 - `P6-050` — teacher pilot go-live verification: **`PLANNED`** (depends on `P5-020`, `P5-030`, `P6-030`).
@@ -97,8 +97,8 @@ The project is **NOT READY FOR TEACHER PILOT YET**. Remaining registered gaps in
 1. `P3-030`, `P3-031`, `P4-060`, `P4-061` and `P5-010` are CLOSED by their non-recursive sync closures; the complete FULL BUSINESS cross-domain freeze is established.
 2. Public make-up scheduling T08 and adjusted-workload T23 re-entry paths are fulfilled by the closed P3-031 and P4-061 chains and were re-verified in P5-010.
 3. PWA production baseline (`P5-020`) is **`CLOSED` by `SYNC-P5-020`** after PR #195, exact-head CI #644 SUCCESS, merge/main `fa54eaea5c2055517428d18559f652001999d0e4` and authoritative post-merge CI #645 SUCCESS.
-4. Dedicated Telegram integration architecture closure (`P5-030A`) is **`CLOSED` by `SYNC-P5-030A`** (ADR-058 Accepted); implementation (`P5-030`) is **`IN_REVIEW`** on branch `feat/p5-030-telegram-integration`.
-5. Pre-deploy full-repository consistency audit (`P5-040`) is registered and **`PLANNED`** as a mandatory prerequisite before VPS deployment.
+4. Dedicated Telegram integration (`P5-030`) is **`CLOSED` by `SYNC-P5-030`** after PR #200, exact-head CI #653 SUCCESS, merge/main `3bcd0d7fc1ffd0eedb8f2186271e2596a1581e5a` và authoritative post-merge CI #654 (run `37576373644`) SUCCESS.
+5. Pre-deploy full-repository consistency audit (`P5-040`) is registered and **`READY`** as a mandatory prerequisite before VPS deployment.
 6. Official production Stage 1 passive discovery/preflight (`P6-020`) remains trigger-gated behind `P5-040` closure and explicit Product Owner approval; P5-010 closure alone does not authorize production access.
 7. Production bootstrap/first controlled deploy (`P6-030`) has not occurred.
 8. Teacher pilot go-live verification (`P6-050`) has not occurred.
