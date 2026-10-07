@@ -260,8 +260,77 @@ Consequently:
 
 ### 6.5 Commits and Current HEAD
 - Implementation commit: `c0fb825b67ea36220be78a69096959c667e9a749` (`fix(web): harden cross-tab session reconciliation`)
-- Documentation commit: *(recorded upon docs commit)*
+- Documentation commit: `b3ee64e087ad78e0b52d8f54e2652c371542f9b9` (`docs(governance): record P5-040 review correction 003`)
 - Task Governance:
   - `P5-040`: strictly **`IN_PROGRESS`** (Correction 003 completed on branch; awaiting independent review, merge, and full re-audit).
+  - `P6-020`: strictly **`DEFERRED_WITH_TRIGGER`**.
+  - Production state: strictly **`PRE-OPERATIONAL`**.
+
+---
+
+## 7. Review Correction 004 — Safe Foreground Session Reconciliation
+
+### 7.1 Independent-Review Findings
+- **RC4-01 (HIGH) — Foreground Verification Not Fail-Closed Pending Network Revalidation:**
+  When `BroadcastChannel` appeared operational, foreground return initiated identity verification without entering a fail-closed presentation state (`forcePurgeImmediately: false` left `isReconciling = false`). Consequently, User A's identity and cached business UI remained rendered and interactive while the network `GET /auth/me` request was in-flight. If a previous `BroadcastChannel` message was dropped, delivery was blocked, or the tab resumed from background/suspension, User B returning to an existing User A tab could observe User A's sensitive business surface until `/auth/me` finished.
+- **RC4-02 (HIGH) — Same-User Foreground Revalidation Unnecessarily Rotates Session Generation:**
+  Reconciliation unconditionally executed `startSessionScope(refreshed.user.id)` upon `/auth/me` response resolution, even when `refreshed.user.id === previousUserIdRef.current`. Because `startSessionScope` aborts the active `AbortController` and increments `currentSessionGeneration`, normal tab/window focus returns aborted legitimate in-flight business queries and mutations ("Yêu cầu bị hủy do phiên làm việc đã thay đổi"). For mutations (POST/PATCH), the server could commit while the browser rejected with an ambiguous write error, risking duplicate submission by the user.
+
+### 7.2 Design Principle: Decoupled Fail-Closed Presentation & Cache Destruction
+1. **Fail-Closed Presentation:**
+   Hide protected business surfaces immediately upon foreground return by entering `isReconciling = true` (`status = 'checking'`, `auth = null`) prior to awaiting server `/auth/me`. ProtectedRoute renders loading/checking state, ensuring complete confidentiality.
+2. **Session Generation & Cache Destruction Gate:**
+   Abort requests and purge business cache ONLY when an authoritative session boundary is confirmed:
+   - Remote `SESSION_BOUNDARY_CHANGED` received across tabs;
+   - Identity transition (`User A -> User B`) confirmed by server network authority;
+   - Session revocation / 401 confirmed by server.
+3. **Same-User Foreground Return:**
+   Preserves existing business cache, retains current session generation, and avoids aborting in-flight queries or mutations.
+
+### 7.3 Reconciliation Architecture & Generation Lifecycle
+1. **Foreground Safety Verification:**
+   - Synchronously sets `isReconciling = true` (fail-closed presentation).
+   - Does NOT purge business cache or abort active requests in advance.
+   - Executes direct server network authority via `fetchAuthMe({ notifyUnauthorized: false })`.
+2. **Same Identity Result (`refreshed.user.id === previousUserId`):**
+   - Keeps business query cache intact.
+   - Retains current session generation without calling `clearSessionCache()`, `resetSessionScope()`, or `startSessionScope()`.
+   - In-flight queries and mutations proceed to completion without interruption.
+   - Updates `AUTH_QUERY_KEY` with refreshed user/capabilities data.
+   - Sets `isReconciling = false`, restoring authenticated UI presentation.
+3. **Identity Changed Result (`refreshed.user.id !== previousUserId`):**
+   - Executes `clearSessionCache(queryClient)` to purge User A business queries and abort User A generation.
+   - `clearSessionCache` establishes a single new usable session generation via `resetSessionScope()`.
+   - Eliminates redundant subsequent `startSessionScope()` calls, preventing double-reset generation.
+   - Sets `previousUserIdRef` to User B, updates auth cache, and sets `isReconciling = false`.
+4. **Anonymous / 401 Result:**
+   - Executes `clearSessionCache(queryClient)` and aborts old generation.
+   - Sets `AUTH_QUERY_KEY = null`, clears `previousUserIdRef`, and sets `isReconciling = false`.
+5. **Remote Broadcast Boundary:**
+   - On `SESSION_BOUNDARY_CHANGED`, immediately executes `clearSessionCache(queryClient)` and enters `isReconciling = true`.
+   - When server `/auth/me` resolves, establishes new identity without double-resetting session generation.
+6. **Burst Ordering:** Monotonic `reconciliationSeqRef` ensures earlier superseded reconciliation attempts cannot overwrite newer state.
+
+### 7.4 Regression Suite & Verification
+- Suite: `apps/web/src/__tests__/session-cache-isolation.test.tsx` (31 tests, 100% PASS):
+  - **Test 24 (RC4-01):** Operational BroadcastChannel + delayed foreground verification -> status `'checking'` and auth `null` while in-flight; resolves User B with cache A completely removed (configured with production `staleTime: 30_000`, `refetchOnWindowFocus: false`).
+  - **Test 25 (RC4-01):** `postMessage` failure + delayed foreground verification -> immediately asserts fail-closed presentation (`'checking'`, `null`) before network resolution.
+  - **Test 26 (RC4-02):** Same-user foreground return leaves `getCurrentSessionGeneration()` exactly unchanged (production query options).
+  - **Test 27 (RC4-02):** Same-user foreground return does not abort in-flight business GET request; succeeds normally without session-change error (production query options).
+  - **Test 28 (RC4-02):** Same-user foreground return does not abort in-flight business mutation (POST), preserving write-result certainty.
+  - **Test 29:** Changed-user foreground verification invalidates session generation, rejects old in-flight requests, removes User A cache, and establishes User B.
+  - **Test 30:** Foreground 401 response transitions to anonymous, purges business cache, and invalidates session generation.
+  - **Test 31:** No BroadcastChannel environment + same-user foreground verification -> fail-closed presentation during verification, preserves cache and generation upon same-user confirmation.
+  - **Tests 1-23:** All prior isolation, remote broadcast, fallback, burst ordering, and body-read race tests continue to pass.
+- Web unit tests: `npm run test:unit -w apps/web`: 28 test files passed (405 tests).
+- Monorepo unit tests: `npm run test:unit`: 127 test suites passed (2235 tests).
+- Lint, typecheck, static UI, build: all PASS with 0 warnings/errors.
+
+### 7.5 Commits and Current HEAD
+- Implementation commit: `ced1fde2ea4f8f9c0143d403ad2deb8f363f2789` (`fix(web): preserve valid requests during session reconciliation`)
+- Documentation commit: *(recorded upon docs commit)*
+- Resulting HEAD: *(recorded upon docs commit)*
+- Task Governance:
+  - `P5-040`: strictly **`IN_PROGRESS`** (Correction 004 completed on branch; awaiting independent review, merge, and full re-audit).
   - `P6-020`: strictly **`DEFERRED_WITH_TRIGGER`**.
   - Production state: strictly **`PRE-OPERATIONAL`**.
