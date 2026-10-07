@@ -64,6 +64,10 @@ export class Phase01Harness {
         "business_policy_versions",
         "business_policy_streams";
     `);
+    await this.prisma.telegramNotificationDelivery.deleteMany();
+    await this.prisma.telegramAccountLink.deleteMany();
+    await this.prisma.telegramLinkChallenge.deleteMany();
+    await this.prisma.telegramWebhookReceipt.deleteMany();
     await this.prisma.auditEvent.deleteMany();
     await this.prisma.authSession.deleteMany();
     await this.prisma.reportingStatementHistory.deleteMany();

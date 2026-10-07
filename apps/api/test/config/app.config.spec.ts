@@ -114,4 +114,73 @@ describe('appConfig (unit)', () => {
     process.env['TZ'] = BUSINESS_TIME_ZONE;
     expect(appConfig().timeZone).toBe(BUSINESS_TIME_ZONE);
   });
+
+  describe('Telegram configuration (Case 25)', () => {
+    beforeEach(() => {
+      process.env['DATABASE_URL'] = 'postgresql://test@localhost:5432/test';
+    });
+
+    it('defaults telegram.enabled to false when not set', () => {
+      delete process.env['TELEGRAM_ENABLED'];
+      const config = appConfig();
+      expect(config.telegram.enabled).toBe(false);
+      expect(config.telegram.botToken).toBeUndefined();
+    });
+
+    it('rejects invalid non-boolean string for TELEGRAM_ENABLED', () => {
+      process.env['TELEGRAM_ENABLED'] = 'invalid_bool';
+      expect(() => appConfig()).toThrow('must be true or false');
+    });
+
+    it('fails closed when TELEGRAM_ENABLED=true but TELEGRAM_BOT_TOKEN is missing or blank', () => {
+      process.env['TELEGRAM_ENABLED'] = 'true';
+      delete process.env['TELEGRAM_BOT_TOKEN'];
+      process.env['TELEGRAM_BOT_USERNAME'] = 'valid_bot';
+      process.env['TELEGRAM_WEBHOOK_SECRET'] = 'secret_123';
+      expect(() => appConfig()).toThrow('TELEGRAM_BOT_TOKEN is required');
+
+      process.env['TELEGRAM_BOT_TOKEN'] = '   ';
+      expect(() => appConfig()).toThrow('TELEGRAM_BOT_TOKEN is required');
+    });
+
+    it('fails closed when TELEGRAM_ENABLED=true but TELEGRAM_BOT_USERNAME is invalid', () => {
+      process.env['TELEGRAM_ENABLED'] = 'true';
+      process.env['TELEGRAM_BOT_TOKEN'] = 'token_123';
+      process.env['TELEGRAM_WEBHOOK_SECRET'] = 'secret_123';
+
+      process.env['TELEGRAM_BOT_USERNAME'] = 'ab'; // too short
+      expect(() => appConfig()).toThrow('TELEGRAM_BOT_USERNAME is required and must be 3-64 characters');
+
+      process.env['TELEGRAM_BOT_USERNAME'] = 'invalid@name';
+      expect(() => appConfig()).toThrow('TELEGRAM_BOT_USERNAME is required and must be 3-64 characters');
+    });
+
+    it('fails closed when TELEGRAM_ENABLED=true but TELEGRAM_WEBHOOK_SECRET is invalid', () => {
+      process.env['TELEGRAM_ENABLED'] = 'true';
+      process.env['TELEGRAM_BOT_TOKEN'] = 'token_123';
+      process.env['TELEGRAM_BOT_USERNAME'] = 'valid_bot';
+
+      delete process.env['TELEGRAM_WEBHOOK_SECRET'];
+      expect(() => appConfig()).toThrow('TELEGRAM_WEBHOOK_SECRET is required and must be 1-256 characters');
+
+      process.env['TELEGRAM_WEBHOOK_SECRET'] = 'has space';
+      expect(() => appConfig()).toThrow('TELEGRAM_WEBHOOK_SECRET is required and must be 1-256 characters');
+
+      process.env['TELEGRAM_WEBHOOK_SECRET'] = 'special@symbol';
+      expect(() => appConfig()).toThrow('TELEGRAM_WEBHOOK_SECRET is required and must be 1-256 characters');
+    });
+
+    it('parses valid Telegram configuration when TELEGRAM_ENABLED=true', () => {
+      process.env['TELEGRAM_ENABLED'] = 'true';
+      process.env['TELEGRAM_BOT_TOKEN'] = '123456:ABC-DEF_ghi';
+      process.env['TELEGRAM_BOT_USERNAME'] = 'baogiang_bot';
+      process.env['TELEGRAM_WEBHOOK_SECRET'] = 'Valid_Secret-123';
+
+      const config = appConfig();
+      expect(config.telegram.enabled).toBe(true);
+      expect(config.telegram.botToken).toBe('123456:ABC-DEF_ghi');
+      expect(config.telegram.botUsername).toBe('baogiang_bot');
+      expect(config.telegram.webhookSecret).toBe('Valid_Secret-123');
+    });
+  });
 });

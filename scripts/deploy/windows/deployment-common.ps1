@@ -1529,7 +1529,7 @@ function Assert-NginxRollbackSnapshotEvidence(
 }
 
 function Get-ManagedProductionEnvironmentNames {
-  return @('NODE_ENV','TZ','API_HOST','API_PORT','HTTP_TRUST_PROXY_HOPS','DATABASE_URL','CORS_ORIGINS','AUTH_SESSION_TTL_SECONDS','AUTH_LAST_SEEN_UPDATE_SECONDS','AUTH_COOKIE_NAME','AUTH_COOKIE_PATH','AUTH_COOKIE_DOMAIN','AUTH_COOKIE_SECURE','AUTH_COOKIE_SAME_SITE','AUTH_LOCKOUT_THRESHOLD','AUTH_LOCKOUT_DURATION_SECONDS','AUTH_PASSWORD_MIN_LENGTH','AUTH_LOGIN_RATE_LIMIT_MAX','AUTH_LOGIN_RATE_LIMIT_WINDOW_SECONDS','AUTH_LOGIN_RATE_LIMIT_MAX_KEYS','AI_ENABLED','AI_ACTIVE_MODE_ENABLED','AI_PASSIVE_MODE_ENABLED','WEB_PUSH_ENABLED','LOG_LEVEL','TEST_DATABASE_URL','BOOTSTRAP_ADMIN_USERNAME','BOOTSTRAP_ADMIN_DISPLAY_NAME','BOOTSTRAP_ADMIN_PASSWORD')
+  return @('NODE_ENV','TZ','API_HOST','API_PORT','HTTP_TRUST_PROXY_HOPS','DATABASE_URL','CORS_ORIGINS','AUTH_SESSION_TTL_SECONDS','AUTH_LAST_SEEN_UPDATE_SECONDS','AUTH_COOKIE_NAME','AUTH_COOKIE_PATH','AUTH_COOKIE_DOMAIN','AUTH_COOKIE_SECURE','AUTH_COOKIE_SAME_SITE','AUTH_LOCKOUT_THRESHOLD','AUTH_LOCKOUT_DURATION_SECONDS','AUTH_PASSWORD_MIN_LENGTH','AUTH_LOGIN_RATE_LIMIT_MAX','AUTH_LOGIN_RATE_LIMIT_WINDOW_SECONDS','AUTH_LOGIN_RATE_LIMIT_MAX_KEYS','AI_ENABLED','AI_ACTIVE_MODE_ENABLED','AI_PASSIVE_MODE_ENABLED','WEB_PUSH_ENABLED','LOG_LEVEL','TELEGRAM_ENABLED','TELEGRAM_BOT_TOKEN','TELEGRAM_BOT_USERNAME','TELEGRAM_WEBHOOK_SECRET','TEST_DATABASE_URL','BOOTSTRAP_ADMIN_USERNAME','BOOTSTRAP_ADMIN_DISPLAY_NAME','BOOTSTRAP_ADMIN_PASSWORD')
 }
 
 function Assert-ProductionPositiveInteger([Parameter(Mandatory = $true)][string]$Value) {
@@ -1543,7 +1543,7 @@ function Read-ValidatedProductionEnvironment([Parameter(Mandatory = $true)][stri
   Assert-ExistingLeaf $EnvFile 'Production environment file' | Out-Null
   $allowed = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
   foreach ($name in @(Get-ManagedProductionEnvironmentNames | Where-Object { $_ -notin @('TEST_DATABASE_URL','BOOTSTRAP_ADMIN_USERNAME','BOOTSTRAP_ADMIN_DISPLAY_NAME','BOOTSTRAP_ADMIN_PASSWORD') })) { [void]$allowed.Add($name) }
-  $required = @('NODE_ENV','TZ','API_HOST','API_PORT','HTTP_TRUST_PROXY_HOPS','DATABASE_URL','CORS_ORIGINS','AUTH_SESSION_TTL_SECONDS','AUTH_LAST_SEEN_UPDATE_SECONDS','AUTH_COOKIE_NAME','AUTH_COOKIE_PATH','AUTH_COOKIE_SECURE','AUTH_COOKIE_SAME_SITE','AUTH_LOCKOUT_THRESHOLD','AUTH_LOCKOUT_DURATION_SECONDS','AUTH_PASSWORD_MIN_LENGTH','AUTH_LOGIN_RATE_LIMIT_MAX','AUTH_LOGIN_RATE_LIMIT_WINDOW_SECONDS','AUTH_LOGIN_RATE_LIMIT_MAX_KEYS','AI_ENABLED','AI_ACTIVE_MODE_ENABLED','AI_PASSIVE_MODE_ENABLED','WEB_PUSH_ENABLED','LOG_LEVEL')
+  $required = @('NODE_ENV','TZ','API_HOST','API_PORT','HTTP_TRUST_PROXY_HOPS','DATABASE_URL','CORS_ORIGINS','AUTH_SESSION_TTL_SECONDS','AUTH_LAST_SEEN_UPDATE_SECONDS','AUTH_COOKIE_NAME','AUTH_COOKIE_PATH','AUTH_COOKIE_SECURE','AUTH_COOKIE_SAME_SITE','AUTH_LOCKOUT_THRESHOLD','AUTH_LOCKOUT_DURATION_SECONDS','AUTH_PASSWORD_MIN_LENGTH','AUTH_LOGIN_RATE_LIMIT_MAX','AUTH_LOGIN_RATE_LIMIT_WINDOW_SECONDS','AUTH_LOGIN_RATE_LIMIT_MAX_KEYS','AI_ENABLED','AI_ACTIVE_MODE_ENABLED','AI_PASSIVE_MODE_ENABLED','WEB_PUSH_ENABLED','LOG_LEVEL','TELEGRAM_ENABLED')
   $forbidden = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
   foreach ($name in @('TEST_DATABASE_URL','BOOTSTRAP_ADMIN_USERNAME','BOOTSTRAP_ADMIN_DISPLAY_NAME','BOOTSTRAP_ADMIN_PASSWORD')) { [void]$forbidden.Add($name) }
   $values = [Collections.Generic.Dictionary[string,string]]::new([StringComparer]::Ordinal)
@@ -1564,6 +1564,26 @@ function Read-ValidatedProductionEnvironment([Parameter(Mandatory = $true)][stri
   if (-not $values['AUTH_COOKIE_PATH'].StartsWith('/')) { throw 'Production runtime environment contains an invalid cookie path.' }
   if ($values['AUTH_COOKIE_SAME_SITE'].ToLowerInvariant() -notin @('lax','strict','none')) { throw 'Production runtime environment contains an invalid cookie SameSite value.' }
   if ($values['NODE_ENV'] -cne 'production' -or $values['TZ'] -cne 'Asia/Ho_Chi_Minh' -or $values['API_HOST'] -cnotin @('127.0.0.1','::1','localhost') -or $values['API_PORT'] -cne '3100' -or $values['HTTP_TRUST_PROXY_HOPS'] -cne '1' -or $values['AUTH_COOKIE_SECURE'] -cne 'true' -or $values['AI_ENABLED'] -cne 'false' -or $values['AI_ACTIVE_MODE_ENABLED'] -cne 'false' -or $values['AI_PASSIVE_MODE_ENABLED'] -cne 'false' -or $values['WEB_PUSH_ENABLED'] -cne 'false') { throw 'Production environment safety validation failed.' }
+  if ($values['TELEGRAM_ENABLED'] -cnotin @('true','false')) { throw 'Production runtime environment contains an invalid TELEGRAM_ENABLED flag.' }
+  if ($values['TELEGRAM_ENABLED'] -ceq 'true') {
+    foreach ($tgName in @('TELEGRAM_BOT_TOKEN','TELEGRAM_BOT_USERNAME','TELEGRAM_WEBHOOK_SECRET')) {
+      if (-not $values.ContainsKey($tgName) -or [string]::IsNullOrWhiteSpace($values[$tgName])) {
+        throw "Production runtime environment is missing required variable $tgName when TELEGRAM_ENABLED is true."
+      }
+    }
+    if ($values['TELEGRAM_BOT_USERNAME'] -notmatch '^[A-Za-z0-9_]{3,64}$') {
+      throw 'Production runtime environment contains an invalid TELEGRAM_BOT_USERNAME.'
+    }
+    if ($values['TELEGRAM_WEBHOOK_SECRET'] -notmatch '^[A-Za-z0-9_-]{1,256}$') {
+      throw 'Production runtime environment contains an invalid TELEGRAM_WEBHOOK_SECRET.'
+    }
+  } else {
+    if ($values.ContainsKey('TELEGRAM_WEBHOOK_SECRET') -and -not [string]::IsNullOrWhiteSpace($values['TELEGRAM_WEBHOOK_SECRET'])) {
+      if ($values['TELEGRAM_WEBHOOK_SECRET'] -notmatch '^[A-Za-z0-9_-]{1,256}$') {
+        throw 'Production runtime environment contains an invalid TELEGRAM_WEBHOOK_SECRET.'
+      }
+    }
+  }
   $origins = @($values['CORS_ORIGINS'] -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
   if ($origins.Count -ne 1 -or $origins[0] -cne $ExpectedBaseUrl) { throw 'Production CORS origin is not the exact approved domain.' }
   return $values
