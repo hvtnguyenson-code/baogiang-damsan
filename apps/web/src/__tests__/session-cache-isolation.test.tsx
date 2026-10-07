@@ -1,8 +1,10 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, renderHook, waitFor } from '@testing-library/react';
-import type { ReactNode } from 'react';
+import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthProvider, useAuth } from '../auth/auth-context';
+import { ProtectedRoute } from '../auth/route-guards';
 import {
   AUTH_QUERY_KEY,
   broadcastSessionBoundary,
@@ -16,6 +18,7 @@ import {
   setSessionChannelNameForTesting,
 } from '../auth/session-cache';
 import { ApiError, apiFetch, login } from '../lib/api-client';
+import { ReportingStatementsPage } from '../pages/ReportingStatementsPage';
 import { jsonResponse } from './test-utils';
 
 const userAAuth = {
@@ -1527,5 +1530,539 @@ describe('CX-01 session and React Query cache isolation', () => {
     } finally {
       globalThis.BroadcastChannel = originalBC;
     }
+  });
+
+  it('32. Test RC5-01: Draft survives same-user foreground verification without component remounting', async () => {
+    const queryClient = createProductionQueryClient();
+
+    let resolveForegroundAuthMe!: (res: Response) => void;
+    const foregroundAuthMePromise = new Promise<Response>((resolve) => {
+      resolveForegroundAuthMe = resolve;
+    });
+
+    let authMeCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        authMeCount += 1;
+        if (authMeCount === 1) return jsonResponse(userAAuth);
+        return foregroundAuthMePromise;
+      }
+      return jsonResponse({});
+    }));
+
+    let mountCount = 0;
+    let unmountCount = 0;
+
+    function DraftFixture() {
+      const [draftText, setDraftText] = useState('');
+      useEffect(() => {
+        mountCount += 1;
+        return () => {
+          unmountCount += 1;
+        };
+      }, []);
+
+      return (
+        <div data-testid="protected-fixture">
+          <input
+            data-testid="draft-field"
+            value={draftText}
+            onChange={(e) => setDraftText(e.target.value)}
+          />
+          <span data-testid="preview-field">{draftText}</span>
+        </div>
+      );
+    }
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <MemoryRouter initialEntries={['/protected']}>
+            <Routes>
+              <Route element={<ProtectedRoute />}>
+                <Route path="/protected" element={<DraftFixture />} />
+              </Route>
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+
+    // Initial mount completes
+    await waitFor(() => {
+      expect(screen.getByTestId('draft-field')).toBeDefined();
+    });
+    expect(mountCount).toBe(1);
+    expect(unmountCount).toBe(0);
+
+    // User types draft text: 'DRAFT-MUST-SURVIVE'
+    const input = screen.getByTestId('draft-field') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'DRAFT-MUST-SURVIVE' } });
+    expect(input.value).toBe('DRAFT-MUST-SURVIVE');
+    expect(screen.getByTestId('preview-field').textContent).toBe('DRAFT-MUST-SURVIVE');
+
+    const initialGen = getCurrentSessionGeneration();
+
+    // Trigger foreground verification (focus event)
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    // While in-flight: session verification shield is visible, protected content is shielded
+    expect(screen.getByText('Đang kiểm tra phiên làm việc')).toBeDefined();
+    const fixtureWrapper = screen.getByTestId('protected-fixture').parentElement;
+    expect(fixtureWrapper?.style.display).toBe('none');
+    expect(fixtureWrapper?.getAttribute('aria-hidden')).toBe('true');
+
+    // Server verifies same User A
+    await act(async () => {
+      resolveForegroundAuthMe(jsonResponse(userAAuth));
+    });
+
+    // Verification completes: shield is removed, protected content is restored
+    await waitFor(() => {
+      expect(screen.queryByText('Đang kiểm tra phiên làm việc')).toBeNull();
+    });
+
+    // Assert: exact draft value is still 'DRAFT-MUST-SURVIVE'
+    expect(input.value).toBe('DRAFT-MUST-SURVIVE');
+    expect(screen.getByTestId('preview-field').textContent).toBe('DRAFT-MUST-SURVIVE');
+
+    // Assert: component was NOT remounted
+    expect(mountCount).toBe(1);
+    expect(unmountCount).toBe(0);
+
+    // Assert: generation unchanged
+    expect(getCurrentSessionGeneration()).toBe(initialGen);
+  });
+
+  it('33. Test RC5-01: Real production page (ReportingStatementsPage) preserves local state across same-user foreground verification', async () => {
+    const queryClient = createProductionQueryClient();
+
+    let resolveForegroundAuthMe!: (res: Response) => void;
+    const foregroundAuthMePromise = new Promise<Response>((resolve) => {
+      resolveForegroundAuthMe = resolve;
+    });
+
+    const userAWithReporting = {
+      user: { id: 'user-a', username: 'teacher_a', displayName: 'Giáo viên A', status: 'ACTIVE' as const, mustChangePassword: false },
+      capabilities: [
+        { key: 'TEACHER_BASE' as const, scope: 'PERSONAL' as const },
+        { key: 'REPORTING_STATEMENT_SUBMIT' as const, scope: 'PERSONAL' as const },
+        { key: 'REPORTING_STATEMENT_READ' as const, scope: 'PERSONAL' as const },
+      ],
+    };
+
+    const mockWorkspaceContext = {
+      academicYears: [
+        { id: 'year-2025', name: 'Năm học 2025-2026', code: '2025-2026' },
+        { id: 'year-2026', name: 'Năm học 2026-2027', code: '2026-2027' },
+      ],
+    };
+
+    let authMeCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        authMeCount += 1;
+        if (authMeCount === 1) return jsonResponse(userAWithReporting);
+        return foregroundAuthMePromise;
+      }
+      if (url.endsWith('/reporting-statements/workspace-context')) {
+        return jsonResponse(mockWorkspaceContext);
+      }
+      if (url.endsWith('/reporting-statements/mine?page=1&pageSize=10')) {
+        return jsonResponse({ items: [], total: 0 });
+      }
+      return jsonResponse({});
+    }));
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <MemoryRouter initialEntries={['/bao-cao-ke-khai']}>
+            <Routes>
+              <Route element={<ProtectedRoute />}>
+                <Route path="/bao-cao-ke-khai" element={<ReportingStatementsPage />} />
+              </Route>
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+
+    // Wait for ReportingStatementsPage to render with academic years
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Năm học/i)).toBeDefined();
+    });
+
+    const yearSelect = screen.getByLabelText(/Năm học/i) as HTMLSelectElement;
+
+    // User interacts with form and populates draft values
+    fireEvent.change(yearSelect, { target: { value: 'year-2026' } });
+    expect(yearSelect.value).toBe('year-2026');
+
+    // Trigger foreground return
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    // In-flight: shield visible
+    expect(screen.getByText('Đang kiểm tra phiên làm việc')).toBeDefined();
+
+    // Resolve same user
+    await act(async () => {
+      resolveForegroundAuthMe(jsonResponse(userAWithReporting));
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText('Đang kiểm tra phiên làm việc')).toBeNull();
+    });
+
+    // After completion: exact user inputs remain intact
+    expect(yearSelect.value).toBe('year-2026');
+  });
+
+  it('34. Test RC5-01: Changed user discards old draft and unmounts old protected subtree', async () => {
+    const queryClient = createProductionQueryClient();
+
+    let resolveForegroundAuthMe!: (res: Response) => void;
+    const foregroundAuthMePromise = new Promise<Response>((resolve) => {
+      resolveForegroundAuthMe = resolve;
+    });
+
+    let authMeCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        authMeCount += 1;
+        if (authMeCount === 1) return jsonResponse(userAAuth);
+        return foregroundAuthMePromise;
+      }
+      return jsonResponse({});
+    }));
+
+    let unmountCount = 0;
+    function UserDraftFixture() {
+      const [text, setText] = useState('');
+      useEffect(() => {
+        return () => {
+          unmountCount += 1;
+        };
+      }, []);
+
+      return (
+        <div>
+          <input data-testid="user-input" value={text} onChange={(e) => setText(e.target.value)} />
+        </div>
+      );
+    }
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <MemoryRouter initialEntries={['/protected']}>
+            <Routes>
+              <Route element={<ProtectedRoute />}>
+                <Route path="/protected" element={<UserDraftFixture />} />
+              </Route>
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('user-input')).toBeDefined();
+    });
+
+    // User A inputs sensitive draft
+    const input = screen.getByTestId('user-input') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'USER-A-SECRET-DRAFT' } });
+    expect(input.value).toBe('USER-A-SECRET-DRAFT');
+
+    queryClient.setQueryData(['reporting-statements-mine'], { items: ['secret-cache-a'] });
+
+    // Foreground verification occurs
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    // Foreground verification confirms User B (changed account)
+    await act(async () => {
+      resolveForegroundAuthMe(jsonResponse(userBAuth));
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText('Đang kiểm tra phiên làm việc')).toBeNull();
+    });
+
+    // Assert: old User-A subtree was unmounted and draft discarded
+    expect(unmountCount).toBeGreaterThan(0);
+    const freshInput = screen.getByTestId('user-input') as HTMLInputElement;
+    expect(freshInput.value).toBe('');
+
+    // Assert: User A cache was completely purged
+    expect(queryClient.getQueryData(['reporting-statements-mine'])).toBeUndefined();
+  });
+
+  it('35. Test RC5-01: 401 discards old draft and transitions to login route', async () => {
+    const queryClient = createProductionQueryClient();
+
+    let resolveForegroundAuthMe!: (res: Response) => void;
+    const foregroundAuthMePromise = new Promise<Response>((resolve) => {
+      resolveForegroundAuthMe = resolve;
+    });
+
+    let authMeCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        authMeCount += 1;
+        if (authMeCount === 1) return jsonResponse(userAAuth);
+        return foregroundAuthMePromise;
+      }
+      return jsonResponse({});
+    }));
+
+    let unmountCount = 0;
+    function UserDraftFixture() {
+      const [text, setText] = useState('');
+      useEffect(() => {
+        return () => {
+          unmountCount += 1;
+        };
+      }, []);
+
+      return (
+        <div>
+          <input data-testid="user-input" value={text} onChange={(e) => setText(e.target.value)} />
+        </div>
+      );
+    }
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <MemoryRouter initialEntries={['/protected']}>
+            <Routes>
+              <Route element={<ProtectedRoute />}>
+                <Route path="/protected" element={<UserDraftFixture />} />
+              </Route>
+              <Route path="/dang-nhap" element={<div data-testid="login-page">Trang đăng nhập</div>} />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('user-input')).toBeDefined();
+    });
+
+    // User A inputs draft
+    fireEvent.change(screen.getByTestId('user-input'), { target: { value: 'USER-A-UNSAVED-DRAFT' } });
+
+    // Trigger foreground
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    // Server returns 401 Unauthorized
+    await act(async () => {
+      resolveForegroundAuthMe(jsonResponse({ statusCode: 401, error: 'Unauthorized', message: 'Hết phiên' }, 401));
+    });
+
+    // Subtree unmounted and redirected to login page
+    await waitFor(() => {
+      expect(screen.getByTestId('login-page')).toBeDefined();
+    });
+    expect(unmountCount).toBeGreaterThan(0);
+    expect(screen.queryByTestId('user-input')).toBeNull();
+  });
+
+  it('36. Test RC5-02: Pending foreground reconciliation superseded by protected 401', async () => {
+    const queryClient = createProductionQueryClient();
+
+    let resolvePendingForeground!: (res: Response) => void;
+    const pendingForegroundPromise = new Promise<Response>((resolve) => {
+      resolvePendingForeground = resolve;
+    });
+
+    let authMeCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        authMeCount += 1;
+        if (authMeCount === 1) return jsonResponse(userAAuth);
+        return pendingForegroundPromise;
+      }
+      if (url.endsWith('/reporting-statements/mine')) {
+        return jsonResponse({ statusCode: 401, error: 'Unauthorized', message: 'Session expired' }, 401);
+      }
+      return jsonResponse({});
+    }));
+
+    setLocalTabIdForTesting('tab-a');
+    const { result } = renderHook(() => useAuth(), { wrapper: createWrapper(queryClient) });
+    await waitFor(() => expect(result.current.status).toBe('authenticated'));
+
+    queryClient.setQueryData(['reporting-statements-mine'], { items: ['user-a-data'] });
+
+    // 1. Foreground reconciliation N starts (/auth/me N pending)
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    expect(result.current.reconciliationMode).toBe('FOREGROUND_VERIFY');
+
+    // 2. While N is in-flight, a protected business request returns 401
+    await act(async () => {
+      await expect(apiFetch('/reporting-statements/mine')).rejects.toMatchObject({ statusCode: 401 });
+    });
+
+    // Local 401 boundary immediately clears session and invalidates pending sequence
+    await waitFor(() => {
+      expect(result.current.status).toBe('anonymous');
+      expect(result.current.auth).toBeNull();
+      expect(queryClient.getQueryData(['reporting-statements-mine'])).toBeUndefined();
+    });
+
+    // 3. Late response of /auth/me N resolves with HTTP 200 User A
+    await act(async () => {
+      resolvePendingForeground(jsonResponse(userAAuth));
+    });
+
+    // Final result MUST remain anonymous; stale reconciliation N performed zero mutation
+    await waitFor(() => {
+      expect(result.current.status).toBe('anonymous');
+      expect(result.current.auth).toBeNull();
+      expect(queryClient.getQueryData(['reporting-statements-mine'])).toBeUndefined();
+    });
+  });
+
+  it('37. Test RC5-02: Pending foreground reconciliation superseded by successful logout', async () => {
+    const queryClient = createProductionQueryClient();
+
+    let resolvePendingForeground!: (res: Response) => void;
+    const pendingForegroundPromise = new Promise<Response>((resolve) => {
+      resolvePendingForeground = resolve;
+    });
+
+    let authMeCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        authMeCount += 1;
+        if (authMeCount === 1) return jsonResponse(userAAuth);
+        return pendingForegroundPromise;
+      }
+      if (url.endsWith('/auth/logout')) {
+        return jsonResponse({ success: true });
+      }
+      return jsonResponse({});
+    }));
+
+    setLocalTabIdForTesting('tab-a');
+    const { result } = renderHook(() => useAuth(), { wrapper: createWrapper(queryClient) });
+    await waitFor(() => expect(result.current.status).toBe('authenticated'));
+
+    // 1. Start foreground reconciliation N
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    expect(result.current.reconciliationMode).toBe('FOREGROUND_VERIFY');
+
+    // 2. User logs out while N is in-flight
+    await act(async () => {
+      await result.current.logout();
+    });
+    expect(result.current.status).toBe('anonymous');
+
+    // 3. Late response of /auth/me N resolves with User A
+    await act(async () => {
+      resolvePendingForeground(jsonResponse(userAAuth));
+    });
+
+    // Must remain anonymous; late N cannot restore authentication
+    await waitFor(() => {
+      expect(result.current.status).toBe('anonymous');
+      expect(result.current.auth).toBeNull();
+    });
+  });
+
+  it('38. Test RC5-01: Same-user foreground does not remount protected component (mount count unchanged, unmount count == 0)', async () => {
+    const queryClient = createProductionQueryClient();
+
+    let resolveForegroundAuthMe!: (res: Response) => void;
+    const foregroundAuthMePromise = new Promise<Response>((resolve) => {
+      resolveForegroundAuthMe = resolve;
+    });
+
+    let authMeCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        authMeCount += 1;
+        if (authMeCount === 1) return jsonResponse(userAAuth);
+        return foregroundAuthMePromise;
+      }
+      return jsonResponse({});
+    }));
+
+    let mountCount = 0;
+    let unmountCount = 0;
+
+    function MonitoredComponent() {
+      useEffect(() => {
+        mountCount += 1;
+        return () => {
+          unmountCount += 1;
+        };
+      }, []);
+
+      return <div data-testid="monitored">Monitored Component</div>;
+    }
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <MemoryRouter initialEntries={['/protected']}>
+            <Routes>
+              <Route element={<ProtectedRoute />}>
+                <Route path="/protected" element={<MonitoredComponent />} />
+              </Route>
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('monitored')).toBeDefined();
+    });
+    expect(mountCount).toBe(1);
+    expect(unmountCount).toBe(0);
+
+    // Trigger foreground
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    // In-flight: shield visible
+    expect(screen.getByText('Đang kiểm tra phiên làm việc')).toBeDefined();
+
+    // Resolve same User A
+    await act(async () => {
+      resolveForegroundAuthMe(jsonResponse(userAAuth));
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText('Đang kiểm tra phiên làm việc')).toBeNull();
+    });
+
+    // Exact invariant: mount count unchanged and unmount count is 0
+    expect(mountCount).toBe(1);
+    expect(unmountCount).toBe(0);
   });
 });

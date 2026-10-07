@@ -15,10 +15,13 @@ import { AUTH_QUERY_KEY, clearSessionCache } from './session-cache';
 
 
 export type AuthStatus = 'checking' | 'anonymous' | 'firstLoginRequired' | 'authenticated' | 'error';
+export type ReconciliationMode = 'NONE' | 'FOREGROUND_VERIFY' | 'BOUNDARY_VERIFY';
 
 interface AuthContextValue {
   status: AuthStatus;
   auth: AuthMeResponse | null;
+  reconciliationMode: ReconciliationMode;
+  sessionIdentityKey: string;
   error: ApiError | null;
   logoutError: ApiError | null;
   isMutating: boolean;
@@ -33,8 +36,13 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const [logoutError, setLogoutError] = useState<ApiError | null>(null);
-  const [isReconciling, setIsReconciling] = useState(false);
+  const [reconciliationMode, setReconciliationMode] = useState<ReconciliationMode>('NONE');
   const reconciliationSeqRef = useRef(0);
+
+  const invalidatePendingReconciliations = useCallback(() => {
+    reconciliationSeqRef.current += 1;
+    setReconciliationMode('NONE');
+  }, []);
 
   const authQuery = useQuery<AuthMeResponse | null, ApiError>({
     queryKey: AUTH_QUERY_KEY,
@@ -50,26 +58,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => onUnauthorized(() => {
+    invalidatePendingReconciliations();
     setLogoutError(null);
     clearSessionCache(queryClient);
     previousUserIdRef.current = undefined;
-  }), [queryClient]);
+  }), [invalidatePendingReconciliations, queryClient]);
 
   // Centralized, fail-closed cross-tab session boundary reconciliation:
   // 1. Remote boundary: immediately purges old-generation business cache & aborts in-flight requests,
-  //    enters fail-closed presentation (isReconciling = true -> status 'checking', auth null),
+  //    enters fail-closed presentation (reconciliationMode = 'BOUNDARY_VERIFY' -> status 'checking', auth null),
   //    and forces direct server network fetchAuthMe().
-  // 2. Foreground return safety net: immediately enters fail-closed presentation (isReconciling = true -> status 'checking', auth null)
-  //    WITHOUT prematurely purging business cache or aborting valid in-flight requests.
-  // 3. Same-user server result: preserves business query cache, session generation, and in-flight requests without abortion.
-  // 4. Changed-user server result: purges old business cache, aborts old generation, establishes single new session generation.
+  // 2. Foreground return safety net: immediately enters fail-closed presentation (reconciliationMode = 'FOREGROUND_VERIFY' -> status 'checking', auth null)
+  //    WITHOUT prematurely purging business cache, aborting valid in-flight requests, or unmounting protected route drafts.
+  // 3. Same-user server result: preserves business query cache, session generation, in-flight requests, and protected draft state.
+  // 4. Changed-user server result: purges old business cache, aborts old generation, establishes single new session generation, and discards old draft state.
   // 5. Anonymous / 401 result: purges session/business cache, aborts old generation, transitions cleanly to anonymous.
-  // 6. Monotonic sequence counter ensures latest reconciliation wins; superseded responses perform no state mutation.
+  // 6. Monotonic sequence counter & invalidatePendingReconciliations ensures latest reconciliation wins; superseded responses perform no state mutation.
   const reconcileSessionBoundary = useCallback(async (options?: { isRemoteBoundary?: boolean }) => {
     const seq = ++reconciliationSeqRef.current;
     const isRemote = options?.isRemoteBoundary ?? false;
 
-    setIsReconciling(true);
+    setReconciliationMode(isRemote ? 'BOUNDARY_VERIFY' : 'FOREGROUND_VERIFY');
     setLogoutError(null);
 
     let alreadyPurged = false;
@@ -90,11 +99,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Same identity confirmed by server:
         // - keep existing business query cache
         // - keep existing session generation
+        // - keep existing page component instance and local draft state
         // - DO NOT call clearSessionCache(), resetSessionScope(), or startSessionScope()
         // - DO NOT abort in-flight query or mutation
         queryClient.setQueryData(AUTH_QUERY_KEY, refreshed);
         previousUserIdRef.current = refreshed.user.id;
-        setIsReconciling(false);
+        setReconciliationMode('NONE');
       } else {
         // Identity changed (or previous session was anonymous):
         // If not already purged by remote boundary, purge old business cache & abort old generation now
@@ -105,7 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // do not call startSessionScope() to prevent double-resetting generation.
         queryClient.setQueryData(AUTH_QUERY_KEY, refreshed);
         previousUserIdRef.current = refreshed.user.id;
-        setIsReconciling(false);
+        setReconciliationMode('NONE');
       }
     } catch {
       if (reconciliationSeqRef.current !== seq) return;
@@ -114,7 +124,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       queryClient.setQueryData(AUTH_QUERY_KEY, null);
       previousUserIdRef.current = undefined;
-      setIsReconciling(false);
+      setReconciliationMode('NONE');
     }
   }, [authQuery.data?.user.id, queryClient]);
 
@@ -167,10 +177,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return refreshed;
   }
 
+  const sessionIdentityKey = previousUserIdRef.current ?? authQuery.data?.user.id ?? 'anonymous';
+
   const value: AuthContextValue = {
-    status: deriveStatus(authQuery, isReconciling),
-    auth: isReconciling ? null : (authQuery.data ?? null),
-    error: isReconciling ? null : (authQuery.error ?? null),
+    status: deriveStatus(authQuery, reconciliationMode),
+    auth: reconciliationMode !== 'NONE' ? null : (authQuery.data ?? null),
+    reconciliationMode,
+    sessionIdentityKey,
+    error: reconciliationMode !== 'NONE' ? null : (authQuery.error ?? null),
     logoutError,
     isMutating: loginMutation.isPending || passwordMutation.isPending || logoutMutation.isPending,
     async login(input) {
@@ -179,8 +193,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await loginMutation.mutateAsync(input);
 
       // 2. If login succeeds and cookie is replaced:
-      // Immediately establish local session boundary, purge old business cache,
-      // and broadcast SESSION_BOUNDARY_CHANGED to all other open tabs.
+      // Authoritative local boundary invalidates any older pending foreground reconciliations,
+      // establishes local session boundary, purges old business cache, and broadcasts.
+      invalidatePendingReconciliations();
       clearSessionCache(queryClient);
       broadcastSessionBoundary();
 
@@ -203,6 +218,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             queryClient.setQueryData(AUTH_QUERY_KEY, refreshed);
           } catch (refreshError) {
             if (refreshError instanceof ApiError && refreshError.statusCode === 401) {
+              invalidatePendingReconciliations();
               clearSessionCache(queryClient);
               previousUserIdRef.current = undefined;
               broadcastSessionBoundary();
@@ -214,6 +230,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     },
     async logout() {
+      invalidatePendingReconciliations();
       setLogoutError(null);
       try {
         await logoutMutation.mutateAsync();
@@ -246,9 +263,9 @@ function deriveStatus(
     data: AuthMeResponse | null | undefined;
     error: ApiError | null;
   },
-  isReconciling: boolean,
+  reconciliationMode: ReconciliationMode,
 ): AuthStatus {
-  if (isReconciling || query.isPending) return 'checking';
+  if (reconciliationMode !== 'NONE' || query.isPending) return 'checking';
   if (query.error?.statusCode === 401 || query.data === null) return 'anonymous';
   if (query.error) return 'error';
   if (query.data?.user.mustChangePassword) return 'firstLoginRequired';
