@@ -1,9 +1,9 @@
 import type { AuthMeResponse, ChangePasswordRequest, LoginRequest } from '@baogiang/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ApiError, changePassword, fetchAuthMe, login, logout, onUnauthorized } from '../lib/api-client';
+import { AUTH_QUERY_KEY, clearSessionCache, startSessionScope } from './session-cache';
 
-export const AUTH_QUERY_KEY = ['auth', 'me'] as const;
 
 export type AuthStatus = 'checking' | 'anonymous' | 'firstLoginRequired' | 'authenticated' | 'error';
 
@@ -31,10 +31,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     staleTime: 30_000,
   });
 
+  const currentUserId = authQuery.data?.user.id;
+  const previousUserIdRef = useRef<string | undefined>(currentUserId);
+
   useEffect(() => onUnauthorized(() => {
     setLogoutError(null);
-    queryClient.setQueryData(AUTH_QUERY_KEY, null);
+    clearSessionCache(queryClient);
   }), [queryClient]);
+
+  // Identity transition: if session user changes (User A -> User B) without explicit logout,
+  // purge any leftover query cache from User A before User B observes or shares it.
+  useEffect(() => {
+    if (previousUserIdRef.current && currentUserId && previousUserIdRef.current !== currentUserId) {
+      clearSessionCache(queryClient);
+      queryClient.setQueryData(AUTH_QUERY_KEY, authQuery.data);
+      startSessionScope(currentUserId);
+    }
+    previousUserIdRef.current = currentUserId;
+  }, [currentUserId, authQuery.data, queryClient]);
 
   const loginMutation = useMutation({ mutationFn: login });
   const passwordMutation = useMutation({ mutationFn: changePassword });
@@ -54,8 +68,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     logoutError,
     isMutating: loginMutation.isPending || passwordMutation.isPending || logoutMutation.isPending,
     async login(input) {
+      // Clear lingering query cache from previous session before authenticating new user
+      clearSessionCache(queryClient);
       await loginMutation.mutateAsync(input);
       const refreshed = await refreshAuth();
+      startSessionScope(refreshed.user.id);
       setLogoutError(null);
       return refreshed;
     },
@@ -72,8 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             queryClient.setQueryData(AUTH_QUERY_KEY, refreshed);
           } catch (refreshError) {
             if (refreshError instanceof ApiError && refreshError.statusCode === 401) {
-              queryClient.removeQueries({ queryKey: AUTH_QUERY_KEY });
-              queryClient.setQueryData(AUTH_QUERY_KEY, null);
+              clearSessionCache(queryClient);
             }
             throw refreshError;
           }
@@ -85,13 +101,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLogoutError(null);
       try {
         await logoutMutation.mutateAsync();
-        queryClient.removeQueries({ queryKey: AUTH_QUERY_KEY });
-        queryClient.setQueryData(AUTH_QUERY_KEY, null);
+        clearSessionCache(queryClient);
       } catch (caught) {
         const apiError = caught instanceof ApiError ? caught : new ApiError(0, 'Không thể đăng xuất.');
         if (apiError.statusCode === 401) {
-          queryClient.removeQueries({ queryKey: AUTH_QUERY_KEY });
-          queryClient.setQueryData(AUTH_QUERY_KEY, null);
+          clearSessionCache(queryClient);
           return;
         }
         setLogoutError(apiError);

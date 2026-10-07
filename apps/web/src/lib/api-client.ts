@@ -13,11 +13,25 @@ import type {
   TelegramUnlinkResponse,
 } from '@baogiang/contracts';
 import { HEALTH_PATHS } from '@baogiang/config';
+import {
+  getCurrentSessionGeneration,
+  getSessionAbortSignal,
+  isCredentialAuthPath,
+  notifyUnauthorized,
+  onUnauthorized,
+  resetSessionScope,
+  startSessionScope,
+} from '../auth/session-cache';
+
+export {
+  onUnauthorized,
+  resetSessionScope,
+  startSessionScope,
+  getCurrentSessionGeneration,
+  isCredentialAuthPath,
+};
 
 const API_BASE = '/api';
-
-type UnauthorizedListener = () => void;
-const unauthorizedListeners = new Set<UnauthorizedListener>();
 
 export class ApiError extends Error {
   constructor(
@@ -31,23 +45,48 @@ export class ApiError extends Error {
   }
 }
 
-export function onUnauthorized(listener: UnauthorizedListener): () => void {
-  unauthorizedListeners.add(listener);
-  return () => unauthorizedListeners.delete(listener);
-}
-
 interface ApiRequestOptions extends RequestInit {
   notifyUnauthorized?: boolean;
 }
 
+function composeSignals(primary: AbortSignal | null, secondary?: AbortSignal | null): AbortSignal | undefined {
+  if (!primary && !secondary) return undefined;
+  if (!primary) return secondary ?? undefined;
+  if (!secondary) return primary;
+
+  if (typeof AbortSignal.any === 'function') {
+    return AbortSignal.any([primary, secondary]);
+  }
+
+  const controller = new AbortController();
+  const onAbort = () => controller.abort();
+  if (primary.aborted || secondary.aborted) {
+    controller.abort();
+    return controller.signal;
+  }
+  primary.addEventListener('abort', onAbort, { once: true });
+  secondary.addEventListener('abort', onAbort, { once: true });
+  return controller.signal;
+}
+
 export async function apiFetch<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
-  const { notifyUnauthorized = false, ...requestOptions } = options;
-  const isFormData = typeof FormData !== 'undefined' && requestOptions.body instanceof FormData;
   const normalizedPath = path.startsWith('/api/') ? path.slice(4) : path === '/api' ? '' : path;
+  const isCredentialPath = isCredentialAuthPath(normalizedPath);
+  const shouldNotifyUnauthorized = options.notifyUnauthorized ?? (!isCredentialPath);
+
+  const requestGeneration = getCurrentSessionGeneration();
+  const sessionSignal = isCredentialPath ? null : getSessionAbortSignal();
+  const combinedSignal = composeSignals(sessionSignal, options.signal);
+
+  const requestOptions: RequestInit = { ...options };
+  delete (requestOptions as { notifyUnauthorized?: boolean }).notifyUnauthorized;
+  const isFormData = typeof FormData !== 'undefined' && requestOptions.body instanceof FormData;
+
   let response: Response;
   try {
     response = await fetch(`${API_BASE}${normalizedPath}`, {
       ...requestOptions,
+      signal: combinedSignal,
       credentials: 'same-origin',
       headers: {
         Accept: 'application/json',
@@ -55,14 +94,25 @@ export async function apiFetch<T>(path: string, options: ApiRequestOptions = {})
         ...requestOptions.headers,
       },
     });
-  } catch {
+  } catch (err: unknown) {
+    if (sessionSignal?.aborted || (!isCredentialPath && requestGeneration !== getCurrentSessionGeneration())) {
+      throw new ApiError(0, 'Yêu cầu bị hủy do phiên làm việc đã thay đổi.');
+    }
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new ApiError(0, 'Yêu cầu đã bị hủy.');
+    }
     throw new ApiError(0, 'Không thể kết nối đến máy chủ.');
+  }
+
+  // Prevent late-arriving responses from a dead/previous session from resolving
+  if (!isCredentialPath && requestGeneration !== getCurrentSessionGeneration()) {
+    throw new ApiError(0, 'Yêu cầu bị hủy do phiên làm việc đã thay đổi.');
   }
 
   const body = await readJson(response);
   if (!response.ok) {
-    if (response.status === 401 && notifyUnauthorized) {
-      unauthorizedListeners.forEach((listener) => listener());
+    if (response.status === 401 && shouldNotifyUnauthorized) {
+      notifyUnauthorized();
     }
     const parsed = parseApiErrorPayload(body);
     throw new ApiError(
