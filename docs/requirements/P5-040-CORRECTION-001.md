@@ -204,8 +204,64 @@ Consequently:
 
 ### 5.5 Commits and Current HEAD
 - Implementation commit: `b91ff0d535f769a9c85efa8ca717f4fe4d48d7ba` (`fix(web): synchronize session boundaries across tabs`)
-- Documentation commit: *(recorded upon docs commit)*
+- Documentation commit: `df00b2a5162f19b6c75fa8d0150b5484415d4b9d` (`docs(governance): record P5-040 review correction 002`)
 - Task Governance:
   - `P5-040`: strictly **`IN_PROGRESS`** (Correction 002 completed on branch; awaiting independent review, merge, and full re-audit).
+  - `P6-020`: strictly **`DEFERRED_WITH_TRIGGER`**.
+  - Production state: strictly **`PRE-OPERATIONAL`**.
+
+---
+
+## 6. Review Correction 003 — Harden Cross-Tab Session Reconciliation
+
+### 6.1 Independent-Review Findings
+- **RC3-01 (HIGH) — BroadcastChannel Usable-State & Fallback Gating:**
+  Correction 002 gated foreground fallback behind `isBroadcastChannelSupported()`, which only tested constructor existence. In environments where the constructor throws (e.g. sandbox permissions), `getBroadcastChannel()` returns `null`, or `postMessage()` throws, the channel was unusable but the fallback was disabled, leaving old-account business cache accessible across tabs.
+- **RC3-02 (MEDIUM) — Stale Time & Cache Reuse on Auth Reconciliation:**
+  Correction 002 used `clearSessionCache() -> setQueryData(AUTH_QUERY_KEY, null) -> fetchQuery(AUTH_QUERY_KEY)`. With production `staleTime: 30_000`, newly set `null` was treated as fresh data, causing `fetchQuery` to return cached `null` without making a server network call to verify origin session identity.
+
+### 6.2 Root Cause
+- Gating foreground fallback on static API existence rather than maintaining an active defense-in-depth safety net.
+- Re-using React Query cache mechanics (`fetchQuery`) for server-authoritative session boundary revalidation instead of direct network execution.
+- Absence of monotonic sequence ordering across burst events (logout immediately followed by login).
+
+### 6.3 Implementation Architecture
+1. **Server-Authoritative Network Revalidation (Bypassing React Query Cache):**
+   - Directly executes `fetchAuthMe({ notifyUnauthorized: false })` via HTTP network call.
+   - Completely bypasses `queryClient.fetchQuery` and `staleTime: 30_000`, ensuring the origin cookie is authoritatively checked against the server.
+2. **Fail-Closed Reconciliation State:**
+   - Introduced `isReconciling` flag in `AuthProvider`.
+   - When a remote boundary or fail-closed fallback is active, `deriveStatus` resolves to `'checking'` and `auth` resolves to `null`.
+   - Ensures no old User A business surface can render while the new session identity is in-flight.
+3. **Monotonic Sequence Ordering (Burst Hardening):**
+   - Maintained `reconciliationSeqRef` counter.
+   - Each reconciliation increments the sequence; out-of-order or superseded responses from earlier events (e.g. slow logout 401 response returning after fast login response) are discarded.
+4. **Defense-in-Depth Foreground Safety Net:**
+   - Foreground safety net is always active.
+   - When BroadcastChannel is unavailable or broken (`!isBroadcastChannelSupported()`), immediately purges cache and fails closed upon window focus / visibility change.
+   - When BroadcastChannel is operational, safely verifies server identity on foreground return without disrupting same-user session cache during normal tab switching.
+   - Focus listener ignores interactive form controls (`INPUT`, `SELECT`, `TEXTAREA`, `BUTTON`, `A`) to prevent focus bubbling from clearing active forms.
+5. **Channel Isolation & Error Hardening:**
+   - Bounded `getBroadcastChannel()` and `broadcastSessionBoundary()` with error handling so constructor/postMessage errors fail safely.
+   - Automatically scopes channel names per test path in test environments to eliminate cross-worker interference during parallel Vitest execution.
+
+### 6.4 Regression Suite & Verification
+- Suite: `apps/web/src/__tests__/session-cache-isolation.test.tsx` (23 tests, 100% PASS):
+  - Test 18 (Test A & F): Production `staleTime: 30_000` with cached null auth -> remote boundary forces network `/auth/me` call and resolves User B.
+  - Test 19 (Test B): BroadcastChannel constructor throws -> foreground safety net purges cache immediately and resolves User B.
+  - Test 20 (Test C): `postMessage` throws -> sender does not crash, receiver revalidates and purges via foreground safety net.
+  - Test 21 (Test D): Logout -> login burst events -> latest event wins, final state User B with zero User A cache.
+  - Test 22 (Test E): Slow first reconciliation superseded by second boundary -> slow response discarded, User B preserved.
+  - Test 23: Fail-closed checking state -> status `'checking'` and auth `null` while revalidation is in-flight.
+  - Tests 1-17: All earlier Correction 001 and Correction 002 session isolation tests continue to pass.
+- Web unit tests: `npm run test:unit -w apps/web`: 28 test files passed (397 tests).
+- Monorepo unit tests: `npm run test:unit`: 127 test suites passed (2227 tests).
+- Lint, typecheck, static UI, build: all PASS with 0 warnings/errors.
+
+### 6.5 Commits and Current HEAD
+- Implementation commit: `c0fb825b67ea36220be78a69096959c667e9a749` (`fix(web): harden cross-tab session reconciliation`)
+- Documentation commit: *(recorded upon docs commit)*
+- Task Governance:
+  - `P5-040`: strictly **`IN_PROGRESS`** (Correction 003 completed on branch; awaiting independent review, merge, and full re-audit).
   - `P6-020`: strictly **`DEFERRED_WITH_TRIGGER`**.
   - Production state: strictly **`PRE-OPERATIONAL`**.
