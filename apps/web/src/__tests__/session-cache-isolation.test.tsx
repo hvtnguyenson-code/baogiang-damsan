@@ -7,6 +7,7 @@ import {
   AUTH_QUERY_KEY,
   broadcastSessionBoundary,
   getBroadcastChannel,
+  getCurrentSessionGeneration,
   getSessionChannelName,
   onUnauthorized,
   resetBroadcastChannelForTesting,
@@ -35,6 +36,21 @@ function createWrapper(queryClient: QueryClient) {
       </QueryClientProvider>
     );
   };
+}
+
+function createProductionQueryClient(): QueryClient {
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: 2,
+        staleTime: 30_000,
+        refetchOnWindowFocus: false,
+      },
+      mutations: {
+        retry: false,
+      },
+    },
+  });
 }
 
 describe('CX-01 session and React Query cache isolation', () => {
@@ -1067,5 +1083,449 @@ describe('CX-01 session and React Query cache isolation', () => {
       expect(result.current.status).toBe('authenticated');
       expect(result.current.auth?.user.id).toBe('user-b');
     });
+  });
+
+  it('24. Test RC4-01: BroadcastChannel operational + delayed foreground verification -> fail-closed checking/null state while in-flight, resolves B', async () => {
+    // Exact production QueryClient options (staleTime: 30_000, refetchOnWindowFocus: false)
+    const queryClient = createProductionQueryClient();
+
+    let resolveAuthMePending!: (res: Response) => void;
+    const authMePendingPromise = new Promise<Response>((resolve) => {
+      resolveAuthMePending = resolve;
+    });
+
+    let callCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        callCount += 1;
+        if (callCount === 1) {
+          // Mount initial User A
+          return jsonResponse(userAAuth);
+        }
+        // Delayed foreground verification response
+        return authMePendingPromise;
+      }
+      return jsonResponse({});
+    }));
+
+    setLocalTabIdForTesting('tab-a');
+    const { result } = renderHook(() => useAuth(), { wrapper: createWrapper(queryClient) });
+    await waitFor(() => expect(result.current.status).toBe('authenticated'));
+    expect(result.current.auth?.user.id).toBe('user-a');
+
+    // Populate User A secret business cache
+    queryClient.setQueryData(['reporting-statements-mine'], { items: [{ id: 'secret-stmt-a' }] });
+    expect(queryClient.getQueryData(['reporting-statements-mine'])).toBeDefined();
+
+    // BroadcastChannel is operational
+    expect(getBroadcastChannel()).not.toBeNull();
+
+    // Outside this tab, origin cookie changed to User B without boundary received (e.g. lost/delayed broadcast)
+    // Foreground event fires
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    // CRITICAL PROOF FOR RC4-01: while /auth/me is in-flight, presentation MUST fail-closed:
+    expect(result.current.status).toBe('checking');
+    expect(result.current.auth).toBeNull();
+    // Cache remains temporarily in memory but is inaccessible to user
+    expect(queryClient.getQueryData(['reporting-statements-mine'])).toBeDefined();
+
+    // Now resolve server network authority with User B
+    await act(async () => {
+      resolveAuthMePending(jsonResponse(userBAuth));
+    });
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('authenticated');
+      expect(result.current.auth?.user.id).toBe('user-b');
+      // Secret cache A removed completely
+      expect(queryClient.getQueryData(['reporting-statements-mine'])).toBeUndefined();
+    });
+  });
+
+  it('25. Test RC4-01: postMessage failure + delayed foreground verification -> immediately assert status checking and auth null', async () => {
+    const queryClient = createProductionQueryClient();
+
+    let resolveForegroundAuthMe!: (res: Response) => void;
+    const pendingAuthMe = new Promise<Response>((resolve) => {
+      resolveForegroundAuthMe = resolve;
+    });
+
+    let callCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        callCount += 1;
+        if (callCount === 1) return jsonResponse(userAAuth);
+        return pendingAuthMe;
+      }
+      return jsonResponse({});
+    }));
+
+    setLocalTabIdForTesting('tab-a');
+    const { result } = renderHook(() => useAuth(), { wrapper: createWrapper(queryClient) });
+    await waitFor(() => expect(result.current.status).toBe('authenticated'));
+
+    queryClient.setQueryData(['reporting-statements-mine'], { items: ['secret-a'] });
+
+    // Mock postMessage on channel throwing an error (delivery failure)
+    const channel = getBroadcastChannel();
+    expect(channel).not.toBeNull();
+    const postMessageSpy = vi.spyOn(channel!, 'postMessage').mockImplementation(() => {
+      throw new Error('DataCloneError');
+    });
+
+    // Sender attempts broadcast -> silently fails without throwing
+    expect(() => broadcastSessionBoundary()).not.toThrow();
+    postMessageSpy.mockRestore();
+
+    // Foreground occurs on Tab A
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    // IMMEDIATELY ASSERT fail-closed presentation while in-flight:
+    expect(result.current.status).toBe('checking');
+    expect(result.current.auth).toBeNull();
+
+    // Resolve eventual User B
+    await act(async () => {
+      resolveForegroundAuthMe(jsonResponse(userBAuth));
+    });
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('authenticated');
+      expect(result.current.auth?.user.id).toBe('user-b');
+      expect(queryClient.getQueryData(['reporting-statements-mine'])).toBeUndefined();
+    });
+  });
+
+  it('26. Test RC4-02: same-user foreground does not rotate session generation', async () => {
+    // Production QueryClient options (staleTime: 30_000, refetchOnWindowFocus: false)
+    const queryClient = createProductionQueryClient();
+
+    let authMeCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        authMeCount += 1;
+        return jsonResponse(userAAuth);
+      }
+      return jsonResponse({});
+    }));
+
+    setLocalTabIdForTesting('tab-a');
+    const { result } = renderHook(() => useAuth(), { wrapper: createWrapper(queryClient) });
+    await waitFor(() => expect(result.current.status).toBe('authenticated'));
+    expect(result.current.auth?.user.id).toBe('user-a');
+    expect(authMeCount).toBe(1);
+
+    // Capture initial session generation
+    const initialGeneration = getCurrentSessionGeneration();
+
+    // Foreground verification occurs and returns same User A
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    await waitFor(() => {
+      expect(authMeCount).toBe(2);
+      expect(result.current.status).toBe('authenticated');
+      expect(result.current.auth?.user.id).toBe('user-a');
+    });
+
+    // MANDATORY PROOF FOR RC4-02: Generation must be exactly unchanged!
+    expect(getCurrentSessionGeneration()).toBe(initialGeneration);
+  });
+
+  it('27. Test RC4-02: same-user foreground does not abort in-flight GET business request', async () => {
+    // Production QueryClient options (staleTime: 30_000, refetchOnWindowFocus: false)
+    const queryClient = createProductionQueryClient();
+
+    let resolveBusinessGet!: (res: Response) => void;
+    const businessGetPromise = new Promise<Response>((resolve) => {
+      resolveBusinessGet = resolve;
+    });
+
+    let resolveForegroundAuthMe!: (res: Response) => void;
+    const foregroundAuthMePromise = new Promise<Response>((resolve) => {
+      resolveForegroundAuthMe = resolve;
+    });
+
+    let authMeCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        authMeCount += 1;
+        if (authMeCount === 1) return jsonResponse(userAAuth);
+        return foregroundAuthMePromise;
+      }
+      if (url.endsWith('/reporting-statements/mine')) {
+        return businessGetPromise;
+      }
+      return jsonResponse({});
+    }));
+
+    setLocalTabIdForTesting('tab-a');
+    const { result } = renderHook(() => useAuth(), { wrapper: createWrapper(queryClient) });
+    await waitFor(() => expect(result.current.status).toBe('authenticated'));
+
+    // 1. Start protected business GET with delayed response
+    const businessGetRequest = apiFetch<{ items: Array<{ id: string }> }>('/reporting-statements/mine');
+
+    // 2. Trigger foreground while GET is in-flight
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    expect(result.current.status).toBe('checking');
+
+    // 3. Resolve /auth/me as same User A
+    await act(async () => {
+      resolveForegroundAuthMe(jsonResponse(userAAuth));
+    });
+    await waitFor(() => expect(result.current.status).toBe('authenticated'));
+
+    // 4. Then resolve business GET
+    resolveBusinessGet(jsonResponse({ items: [{ id: 'stmt-valid-user-a' }] }));
+
+    // Request must succeed normally and NOT receive session changed abort error
+    const getResult = await businessGetRequest;
+    expect(getResult).toEqual({ items: [{ id: 'stmt-valid-user-a' }] });
+  });
+
+  it('28. Test RC4-02: same-user foreground does not abort in-flight mutation (write certainty)', async () => {
+    const queryClient = createProductionQueryClient();
+
+    let resolveMutation!: (res: Response) => void;
+    const mutationPromise = new Promise<Response>((resolve) => {
+      resolveMutation = resolve;
+    });
+
+    let resolveForegroundAuthMe!: (res: Response) => void;
+    const foregroundAuthMePromise = new Promise<Response>((resolve) => {
+      resolveForegroundAuthMe = resolve;
+    });
+
+    let authMeCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        authMeCount += 1;
+        if (authMeCount === 1) return jsonResponse(userAAuth);
+        return foregroundAuthMePromise;
+      }
+      if (url.endsWith('/reporting-statements')) {
+        return mutationPromise;
+      }
+      return jsonResponse({});
+    }));
+
+    setLocalTabIdForTesting('tab-a');
+    const { result } = renderHook(() => useAuth(), { wrapper: createWrapper(queryClient) });
+    await waitFor(() => expect(result.current.status).toBe('authenticated'));
+
+    // 1. Start representative protected POST mutation with delayed response
+    const mutationRequest = apiFetch<{ id: string; title: string }>('/reporting-statements', {
+      method: 'POST',
+      body: JSON.stringify({ title: 'Báo giảng tuần 10' }),
+    });
+
+    // 2. Trigger foreground while mutation is in-flight
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    expect(result.current.status).toBe('checking');
+
+    // 3. Resolve /auth/me as same User A
+    await act(async () => {
+      resolveForegroundAuthMe(jsonResponse(userAAuth));
+    });
+    await waitFor(() => expect(result.current.status).toBe('authenticated'));
+
+    // 4. Then resolve mutation response
+    resolveMutation(jsonResponse({ id: 'created-stmt-10', title: 'Báo giảng tuần 10' }));
+
+    // Mutation must resolve normally, preserving write-result certainty
+    const mutationResult = await mutationRequest;
+    expect(mutationResult).toEqual({ id: 'created-stmt-10', title: 'Báo giảng tuần 10' });
+  });
+
+  it('29. changed-user foreground DOES invalidate generation and abort old requests', async () => {
+    const queryClient = createProductionQueryClient();
+
+    let resolveOldInFlight!: (res: Response) => void;
+    const oldInFlightPromise = new Promise<Response>((resolve) => {
+      resolveOldInFlight = resolve;
+    });
+
+    let resolveForegroundAuthMe!: (res: Response) => void;
+    const foregroundAuthMePromise = new Promise<Response>((resolve) => {
+      resolveForegroundAuthMe = resolve;
+    });
+
+    let authMeCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        authMeCount += 1;
+        if (authMeCount === 1) return jsonResponse(userAAuth);
+        return foregroundAuthMePromise;
+      }
+      if (url.endsWith('/reporting-statements/mine')) {
+        return oldInFlightPromise;
+      }
+      return jsonResponse({});
+    }));
+
+    setLocalTabIdForTesting('tab-a');
+    const { result } = renderHook(() => useAuth(), { wrapper: createWrapper(queryClient) });
+    await waitFor(() => expect(result.current.status).toBe('authenticated'));
+
+    queryClient.setQueryData(['reporting-statements-mine'], { items: ['secret-data-a'] });
+    const initialGeneration = getCurrentSessionGeneration();
+
+    // Start old User-A request
+    const oldRequest = apiFetch('/reporting-statements/mine').catch((err: unknown) => err);
+
+    // Foreground occurs
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    // Foreground resolves User B (session boundary change)
+    await act(async () => {
+      resolveForegroundAuthMe(jsonResponse(userBAuth));
+    });
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('authenticated');
+      expect(result.current.auth?.user.id).toBe('user-b');
+    });
+
+    // Generation was incremented/invalidated
+    expect(getCurrentSessionGeneration()).toBeGreaterThan(initialGeneration);
+
+    // Old cache A is removed
+    expect(queryClient.getQueryData(['reporting-statements-mine'])).toBeUndefined();
+
+    // Resolve late old request: must be rejected due to generation change
+    resolveOldInFlight(jsonResponse({ items: ['polluting-data-a'] }));
+    const oldError = await oldRequest;
+    expect(oldError).toBeInstanceOf(ApiError);
+    expect((oldError as ApiError).message).toBe('Yêu cầu bị hủy do phiên làm việc đã thay đổi.');
+
+    // B cache is not polluted
+    expect(queryClient.getQueryData(['reporting-statements-mine'])).toBeUndefined();
+  });
+
+  it('30. foreground 401 transitions to anonymous and purges cache and generation', async () => {
+    const queryClient = createProductionQueryClient();
+
+    let resolveForegroundAuthMe!: (res: Response) => void;
+    const foregroundAuthMePromise = new Promise<Response>((resolve) => {
+      resolveForegroundAuthMe = resolve;
+    });
+
+    let authMeCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        authMeCount += 1;
+        if (authMeCount === 1) return jsonResponse(userAAuth);
+        return foregroundAuthMePromise;
+      }
+      return jsonResponse({});
+    }));
+
+    setLocalTabIdForTesting('tab-a');
+    const { result } = renderHook(() => useAuth(), { wrapper: createWrapper(queryClient) });
+    await waitFor(() => expect(result.current.status).toBe('authenticated'));
+
+    queryClient.setQueryData(['reporting-statements-mine'], { items: ['secret-a'] });
+    const initialGen = getCurrentSessionGeneration();
+
+    // Trigger foreground
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    // While in-flight: checking and null
+    expect(result.current.status).toBe('checking');
+    expect(result.current.auth).toBeNull();
+
+    // /auth/me returns 401 (session revoked)
+    await act(async () => {
+      resolveForegroundAuthMe(jsonResponse({ statusCode: 401, error: 'Unauthorized', message: 'Hết phiên' }, 401));
+    });
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('anonymous');
+      expect(result.current.auth).toBeNull();
+      expect(queryClient.getQueryData(['reporting-statements-mine'])).toBeUndefined();
+    });
+
+    // Generation was incremented/invalidated
+    expect(getCurrentSessionGeneration()).toBeGreaterThan(initialGen);
+  });
+
+  it('31. no BroadcastChannel same-user foreground retains cache and generation', async () => {
+    const originalBC = globalThis.BroadcastChannel;
+    // @ts-expect-error test override
+    delete globalThis.BroadcastChannel;
+    delete (window as unknown as { BroadcastChannel?: unknown }).BroadcastChannel;
+
+    try {
+      const queryClient = createProductionQueryClient();
+
+      let resolveForegroundAuthMe!: (res: Response) => void;
+      const foregroundAuthMePromise = new Promise<Response>((resolve) => {
+        resolveForegroundAuthMe = resolve;
+      });
+
+      let authMeCount = 0;
+      vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith('/auth/me')) {
+          authMeCount += 1;
+          if (authMeCount === 1) return jsonResponse(userAAuth);
+          return foregroundAuthMePromise;
+        }
+        return jsonResponse({});
+      }));
+
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper(queryClient) });
+      await waitFor(() => expect(result.current.status).toBe('authenticated'));
+
+      queryClient.setQueryData(['reporting-statements-mine'], { items: ['valid-user-a-cache'] });
+      const initialGen = getCurrentSessionGeneration();
+
+      // Trigger foreground
+      await act(async () => {
+        window.dispatchEvent(new Event('focus'));
+      });
+
+      // Presentation fails closed during verification
+      expect(result.current.status).toBe('checking');
+      expect(result.current.auth).toBeNull();
+
+      // Resolve same User A
+      await act(async () => {
+        resolveForegroundAuthMe(jsonResponse(userAAuth));
+      });
+
+      await waitFor(() => {
+        expect(result.current.status).toBe('authenticated');
+        expect(result.current.auth?.user.id).toBe('user-a');
+      });
+
+      // Cache is retained, generation is unchanged!
+      expect(queryClient.getQueryData(['reporting-statements-mine'])).toEqual({ items: ['valid-user-a-cache'] });
+      expect(getCurrentSessionGeneration()).toBe(initialGen);
+    } finally {
+      globalThis.BroadcastChannel = originalBC;
+    }
   });
 });

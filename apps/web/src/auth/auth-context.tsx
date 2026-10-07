@@ -6,13 +6,12 @@ import {
   broadcastSessionBoundary,
   changePassword,
   fetchAuthMe,
-  isBroadcastChannelSupported,
   login,
   logout,
   onRemoteSessionBoundary,
   onUnauthorized,
 } from '../lib/api-client';
-import { AUTH_QUERY_KEY, clearSessionCache, startSessionScope } from './session-cache';
+import { AUTH_QUERY_KEY, clearSessionCache } from './session-cache';
 
 
 export type AuthStatus = 'checking' | 'anonymous' | 'firstLoginRequired' | 'authenticated' | 'error';
@@ -46,51 +45,82 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const currentUserId = authQuery.data?.user.id;
   const previousUserIdRef = useRef<string | undefined>(currentUserId);
+  if (!previousUserIdRef.current && currentUserId) {
+    previousUserIdRef.current = currentUserId;
+  }
 
   useEffect(() => onUnauthorized(() => {
     setLogoutError(null);
     clearSessionCache(queryClient);
+    previousUserIdRef.current = undefined;
   }), [queryClient]);
 
   // Centralized, fail-closed cross-tab session boundary reconciliation:
-  // 1. When remote boundary arrives or BroadcastChannel is broken: purges old-generation business cache & aborts in-flight queries immediately;
-  // 2. Fails closed (isReconciling = true -> status 'checking', auth null);
-  // 3. Forces server-authoritative network fetchAuthMe() bypassing React Query cache & staleTime;
-  // 4. Guards against burst events via monotonic sequence counter (latest reconciliation always wins).
-  const reconcileSessionBoundary = useCallback(async (options?: { forcePurgeImmediately?: boolean }) => {
+  // 1. Remote boundary: immediately purges old-generation business cache & aborts in-flight requests,
+  //    enters fail-closed presentation (isReconciling = true -> status 'checking', auth null),
+  //    and forces direct server network fetchAuthMe().
+  // 2. Foreground return safety net: immediately enters fail-closed presentation (isReconciling = true -> status 'checking', auth null)
+  //    WITHOUT prematurely purging business cache or aborting valid in-flight requests.
+  // 3. Same-user server result: preserves business query cache, session generation, and in-flight requests without abortion.
+  // 4. Changed-user server result: purges old business cache, aborts old generation, establishes single new session generation.
+  // 5. Anonymous / 401 result: purges session/business cache, aborts old generation, transitions cleanly to anonymous.
+  // 6. Monotonic sequence counter ensures latest reconciliation wins; superseded responses perform no state mutation.
+  const reconcileSessionBoundary = useCallback(async (options?: { isRemoteBoundary?: boolean }) => {
     const seq = ++reconciliationSeqRef.current;
-    const shouldPurge = options?.forcePurgeImmediately ?? true;
+    const isRemote = options?.isRemoteBoundary ?? false;
 
-    if (shouldPurge) {
-      setIsReconciling(true);
-      setLogoutError(null);
+    setIsReconciling(true);
+    setLogoutError(null);
+
+    let alreadyPurged = false;
+    if (isRemote) {
+      // Authoritative remote boundary signal: purge old cache & abort old generation immediately
       clearSessionCache(queryClient);
+      alreadyPurged = true;
     }
 
     try {
       const refreshed = await fetchAuthMe({ notifyUnauthorized: false });
       if (reconciliationSeqRef.current !== seq) return;
 
-      if (!shouldPurge && refreshed.user.id !== previousUserIdRef.current) {
-        clearSessionCache(queryClient);
-      }
+      const previousUserId = previousUserIdRef.current ?? authQuery.data?.user.id;
+      const isSameUser = Boolean(previousUserId && refreshed.user.id === previousUserId);
 
-      startSessionScope(refreshed.user.id);
-      queryClient.setQueryData(AUTH_QUERY_KEY, refreshed);
-      previousUserIdRef.current = refreshed.user.id;
-      setIsReconciling(false);
+      if (isSameUser) {
+        // Same identity confirmed by server:
+        // - keep existing business query cache
+        // - keep existing session generation
+        // - DO NOT call clearSessionCache(), resetSessionScope(), or startSessionScope()
+        // - DO NOT abort in-flight query or mutation
+        queryClient.setQueryData(AUTH_QUERY_KEY, refreshed);
+        previousUserIdRef.current = refreshed.user.id;
+        setIsReconciling(false);
+      } else {
+        // Identity changed (or previous session was anonymous):
+        // If not already purged by remote boundary, purge old business cache & abort old generation now
+        if (!alreadyPurged && previousUserId) {
+          clearSessionCache(queryClient);
+        }
+        // clearSessionCache already established a single new usable session generation via resetSessionScope;
+        // do not call startSessionScope() to prevent double-resetting generation.
+        queryClient.setQueryData(AUTH_QUERY_KEY, refreshed);
+        previousUserIdRef.current = refreshed.user.id;
+        setIsReconciling(false);
+      }
     } catch {
       if (reconciliationSeqRef.current !== seq) return;
-      clearSessionCache(queryClient);
+      if (!alreadyPurged) {
+        clearSessionCache(queryClient);
+      }
       queryClient.setQueryData(AUTH_QUERY_KEY, null);
       previousUserIdRef.current = undefined;
       setIsReconciling(false);
     }
-  }, [queryClient]);
+  }, [authQuery.data?.user.id, queryClient]);
 
   // Remote cross-tab session boundary listener (BroadcastChannel)
   useEffect(() => onRemoteSessionBoundary(() => {
-    void reconcileSessionBoundary({ forcePurgeImmediately: true });
+    void reconcileSessionBoundary({ isRemoteBoundary: true });
   }), [reconcileSessionBoundary]);
 
   // Foreground safety net: always active regardless of BroadcastChannel availability (defense-in-depth)
@@ -106,10 +136,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
 
-      // If BroadcastChannel is unavailable/broken, must fail-closed purge immediately.
-      // If BroadcastChannel is operational, verify server identity without destructively clearing same-user cache.
-      const mustPurgeImmediately = !isBroadcastChannelSupported();
-      void reconcileSessionBoundary({ forcePurgeImmediately: mustPurgeImmediately });
+      void reconcileSessionBoundary({ isRemoteBoundary: false });
     };
 
     window.addEventListener('focus', handleForegroundSafety);
@@ -126,7 +153,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (previousUserIdRef.current && currentUserId && previousUserIdRef.current !== currentUserId) {
       clearSessionCache(queryClient);
       queryClient.setQueryData(AUTH_QUERY_KEY, authQuery.data);
-      startSessionScope(currentUserId);
     }
     previousUserIdRef.current = currentUserId;
   }, [currentUserId, authQuery.data, queryClient]);
@@ -160,7 +186,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       // 3. Refresh /auth/me and establish new local generation
       const refreshed = await refreshAuth();
-      startSessionScope(refreshed.user.id);
+      previousUserIdRef.current = refreshed.user.id;
       setLogoutError(null);
       return refreshed;
     },
@@ -178,6 +204,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           } catch (refreshError) {
             if (refreshError instanceof ApiError && refreshError.statusCode === 401) {
               clearSessionCache(queryClient);
+              previousUserIdRef.current = undefined;
               broadcastSessionBoundary();
             }
             throw refreshError;
@@ -191,11 +218,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         await logoutMutation.mutateAsync();
         clearSessionCache(queryClient);
+        previousUserIdRef.current = undefined;
         broadcastSessionBoundary();
       } catch (caught) {
         const apiError = caught instanceof ApiError ? caught : new ApiError(0, 'Không thể đăng xuất.');
         if (apiError.statusCode === 401) {
           clearSessionCache(queryClient);
+          previousUserIdRef.current = undefined;
           broadcastSessionBoundary();
           return;
         }

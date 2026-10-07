@@ -27,6 +27,18 @@ export function notifyUnauthorized(): void {
 let currentSessionGeneration = 0;
 let currentSessionAbortController = new AbortController();
 
+/**
+ * Exact Session Generation Lifecycle:
+ * 1. Monotonic Integer: `currentSessionGeneration` monotonically increments on authoritative session boundaries.
+ * 2. Coupled AbortController: each generation owns an AbortController (`currentSessionAbortController`).
+ * 3. Scope Binding: all business apiFetch calls bind to the current generation and abort signal.
+ * 4. Destruction Gate: generation rotation / request abortion occurs ONLY on actual session boundaries:
+ *    - explicit user logout (`logout()`)
+ *    - authoritative remote cross-tab boundary event (`onRemoteSessionBoundary`)
+ *    - foreground identity change (`User A -> User B` detected by server /auth/me)
+ *    - session revocation / 401 returned from server
+ * 5. Invariant: Same-user foreground verification MUST NOT rotate generation or abort valid in-flight requests.
+ */
 export function getCurrentSessionGeneration(): number {
   return currentSessionGeneration;
 }
