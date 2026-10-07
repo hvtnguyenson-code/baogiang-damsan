@@ -22,6 +22,9 @@ const config: AppConfig = {
     lockoutThreshold: 3, lockoutDurationSeconds: 60, passwordMinLength: 12,
     loginRateLimitMax: 2, loginRateLimitWindowSeconds: 60, loginRateLimitMaxKeys: 2,
   },
+  telegram: {
+    enabled: false,
+  },
 };
 
 describe('auth security foundations', () => {
