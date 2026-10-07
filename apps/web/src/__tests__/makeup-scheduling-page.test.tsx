@@ -43,6 +43,7 @@ const mockCandidate = {
   sourceDispositionId: 'disp-1',
   dispositionType: 'ABSENCE_NO_REPLACEMENT',
   ppctItemId: 'ppct-item-1',
+  ppctItemRevisionId: 'ppct-item-rev-1',
   ppctItemName: 'Khái niệm hàm số',
   ppctItemSequence: 1,
   hasActiveMakeupSchedule: false,
@@ -112,6 +113,8 @@ const mockTargetOptions = {
 
 function createFetchMock(auth: unknown = schoolWideAuth, options: {
   candidates?: typeof mockCandidate[];
+  candidateStatus?: 'PASS' | 'BLOCKED';
+  candidateBlockedFindings?: string[];
   schedules?: typeof mockSchedule[];
 } = {}) {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -124,7 +127,14 @@ function createFetchMock(auth: unknown = schoolWideAuth, options: {
       return jsonResponse(mockTargetOptions);
     }
     if (url.includes('/makeup-schedules/candidates?')) {
-      return jsonResponse({ items: options.candidates ?? [mockCandidate], page: 1, pageSize: 50, total: 1 });
+      return jsonResponse({
+        status: options.candidateStatus ?? 'PASS',
+        items: options.candidates ?? [mockCandidate],
+        page: 1,
+        pageSize: 50,
+        total: (options.candidates ?? [mockCandidate]).length,
+        blockedFindings: options.candidateBlockedFindings,
+      });
     }
     if (url.includes('/makeup-schedules?') && method === 'GET') {
       return jsonResponse({
@@ -309,5 +319,55 @@ describe('MakeupSchedulingPage', () => {
         }),
       );
     });
+  });
+
+  it('displays warning alert when candidates status is BLOCKED and prevents scheduling actions (CX-05)', async () => {
+    const fetchMock = createFetchMock(schoolWideAuth, {
+      candidateStatus: 'BLOCKED',
+      candidates: [],
+      candidateBlockedFindings: ['ROOT_BLOCKED:class-1:sub-math-uuid'],
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    renderApp('/quan-tri/lich-day-bu');
+
+    expect(await screen.findByRole('heading', { name: 'Lịch dạy bù' })).toBeInTheDocument();
+    // Warning banner is displayed
+    expect(await screen.findByText(/Chưa thể xác định đầy đủ nghĩa vụ dạy bù do dữ liệu nguồn đang bị chặn/i)).toBeInTheDocument();
+    expect(screen.getByText(/ROOT_BLOCKED:class-1:sub-math-uuid/)).toBeInTheDocument();
+    // Must NOT display empty-success
+    expect(screen.queryByText(/Không có nghĩa vụ nợ tiết hợp lệ/i)).not.toBeInTheDocument();
+    // Must NOT display "Lập lịch bù" button
+    expect(screen.queryByRole('button', { name: 'Lập lịch bù' })).not.toBeInTheDocument();
+  });
+
+  it('displays true empty state when candidates status is PASS and debt items are empty (CX-05)', async () => {
+    const fetchMock = createFetchMock(schoolWideAuth, {
+      candidateStatus: 'PASS',
+      candidates: [],
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    renderApp('/quan-tri/lich-day-bu');
+
+    expect(await screen.findByRole('heading', { name: 'Lịch dạy bù' })).toBeInTheDocument();
+    expect(await screen.findByText(/Không có nghĩa vụ nợ tiết hợp lệ/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Chưa thể xác định đầy đủ nghĩa vụ dạy bù do dữ liệu nguồn đang bị chặn/i)).not.toBeInTheDocument();
+  });
+
+  it('retains and displays exact PPCT revision title (CX-06)', async () => {
+    const customCandidate = {
+      ...mockCandidate,
+      ppctItemRevisionId: 'rev-historical-uuid',
+      ppctItemName: 'Hình học giải tích — Bài 1 (Bản lưu trữ)',
+      ppctItemSequence: 3,
+    };
+    const fetchMock = createFetchMock(schoolWideAuth, {
+      candidates: [customCandidate],
+      candidateStatus: 'PASS',
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    renderApp('/quan-tri/lich-day-bu');
+
+    expect(await screen.findByText(/Hình học giải tích — Bài 1 \(Bản lưu trữ\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Tiết 3/)).toBeInTheDocument();
   });
 });

@@ -1549,6 +1549,8 @@ export interface MakeupTeachingScheduleRecord {
   updatedAt: string;
 }
 
+export type MakeupTeachingCandidateListStatus = 'PASS' | 'BLOCKED';
+
 export interface MakeupTeachingCandidateRecord {
   sourceNormalOccurrenceKey: string;
   originalCivilDate: CivilDateString;
@@ -1565,6 +1567,7 @@ export interface MakeupTeachingCandidateRecord {
   sourceDispositionId: string;
   dispositionType: OperationalLessonDispositionType;
   ppctItemId: string;
+  ppctItemRevisionId: string;
   ppctItemName?: string;
   ppctItemSequence?: number;
   component?: PpctCurricularComponent;
@@ -1573,10 +1576,12 @@ export interface MakeupTeachingCandidateRecord {
 }
 
 export interface MakeupTeachingCandidateListResponse {
+  status: MakeupTeachingCandidateListStatus;
   items: MakeupTeachingCandidateRecord[];
   page: number;
   pageSize: number;
   total: number;
+  blockedFindings?: string[];
 }
 
 export interface MakeupTeachingScheduleCreateResult {

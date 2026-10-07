@@ -2,6 +2,7 @@ import type {
   AcademicYearRecord,
   CivilDateString,
   MakeupTargetOptionsResponse,
+  MakeupTeachingCandidateListStatus,
   MakeupTeachingCandidateRecord,
   MakeupTeachingScheduleRecord,
 } from '@baogiang/contracts';
@@ -59,6 +60,8 @@ export function MakeupSchedulingPage() {
   });
 
   const [candidates, setCandidates] = useState<MakeupTeachingCandidateRecord[]>([]);
+  const [candidatesStatus, setCandidatesStatus] = useState<MakeupTeachingCandidateListStatus>('PASS');
+  const [candidatesBlockedFindings, setCandidatesBlockedFindings] = useState<string[]>([]);
   const [schedules, setSchedules] = useState<MakeupTeachingScheduleRecord[]>([]);
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'REVERSED'>('ALL');
 
@@ -138,7 +141,14 @@ export function MakeupSchedulingPage() {
         makeupSchedulesApi.listSchedules(queryParams),
       ]);
       setCandidates(candidateRes.items);
+      setCandidatesStatus(candidateRes.status);
+      setCandidatesBlockedFindings(candidateRes.blockedFindings ?? []);
       setSchedules(scheduleRes.items);
+
+      if (candidateRes.status === 'BLOCKED') {
+        setSelectedCandidate(null);
+        setReplacesSchedule(null);
+      }
 
       // Collect subject names
       const subMap = new Map<string, string>();
@@ -201,6 +211,7 @@ export function MakeupSchedulingPage() {
   }, [selectedCandidate, academicYearId, targetCivilDate]);
 
   function handleSelectCandidate(candidate: MakeupTeachingCandidateRecord) {
+    if (candidatesStatus === 'BLOCKED') return;
     setSelectedCandidate({
       sourceNormalOccurrenceKey: candidate.sourceNormalOccurrenceKey,
       sourceCivilDate: candidate.originalCivilDate,
@@ -417,7 +428,7 @@ export function MakeupSchedulingPage() {
       {busy === 'init' && <PageLoading />}
 
       {/* Selected candidate form */}
-      {selectedCandidate && (
+      {selectedCandidate && candidatesStatus !== 'BLOCKED' && (
         <section className="form-section" style={{ marginTop: '24px' }}>
           <legend>{replacesSchedule ? `Tạo lịch thay thế cho lịch đã đảo (${replacesSchedule.id})` : 'Thiết lập lịch dạy bù'}</legend>
           <div style={{ marginBottom: '16px', background: 'var(--mist-50)', padding: '12px', borderRadius: '4px' }}>
@@ -528,10 +539,19 @@ export function MakeupSchedulingPage() {
       {/* Candidates section */}
       <section style={{ marginTop: '32px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-          <h2>Nghĩa vụ đủ điều kiện dạy bù ({candidates.length})</h2>
+          <h2>Nghĩa vụ đủ điều kiện dạy bù ({candidatesStatus === 'BLOCKED' ? 0 : candidates.length})</h2>
         </div>
 
-        {candidates.length === 0 ? (
+        {candidatesStatus === 'BLOCKED' ? (
+          <InlineAlert title="Dữ liệu nguồn bị chặn" tone="warning">
+            Chưa thể xác định đầy đủ nghĩa vụ dạy bù do dữ liệu nguồn đang bị chặn.
+            {candidatesBlockedFindings.length > 0 && (
+              <div style={{ marginTop: '8px', fontSize: '0.85rem' }}>
+                Mã kiểm tra: {candidatesBlockedFindings.join(', ')}
+              </div>
+            )}
+          </InlineAlert>
+        ) : candidates.length === 0 ? (
           <EmptyState
             title="Không có nghĩa vụ nợ tiết hợp lệ"
             message="Hiện tại không có tiết dạy nào thuộc diện nợ tiết đã xác nhận (ABSENCE_NO_REPLACEMENT / DIFFERENT_SUBJECT_SUPERVISION) trong phạm vi quản lý."

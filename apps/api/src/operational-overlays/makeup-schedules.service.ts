@@ -106,6 +106,8 @@ export class MakeupSchedulesService {
     });
 
     const candidateItems: MakeupTeachingCandidateRecord[] = [];
+    let hasBlockedRoot = false;
+    const blockedFindings: string[] = [];
 
     // Evaluate progress/debt for each class-subject pair
     for (const pair of assignments) {
@@ -116,7 +118,11 @@ export class MakeupSchedulesService {
         asOfInstant: commandNow,
       });
 
-      if (projection.status !== 'PASS') continue;
+      if (projection.status !== 'PASS') {
+        hasBlockedRoot = true;
+        blockedFindings.push(`ROOT_BLOCKED:${pair.schoolClassId}:${pair.subjectId}`);
+        continue;
+      }
 
       for (const item of projection.items) {
         if (item.classification !== 'PROVEN_OPEN_DEBT') continue;
@@ -135,6 +141,7 @@ export class MakeupSchedulesService {
           sourceDispositionId: item.operationalLessonDispositionId,
           dispositionType: item.operationalDispositionType as OperationalLessonDispositionType,
           ppctItemId: item.ppctItemId,
+          ppctItemRevisionId: item.ppctItemRevisionId,
           component: item.component,
           hasActiveMakeupSchedule: false,
           activeMakeupScheduleId: null,
@@ -142,8 +149,20 @@ export class MakeupSchedulesService {
       }
     }
 
+    // CX-05: If ANY targeted progress/debt root is BLOCKED, the entire candidate response MUST fail closed as BLOCKED
+    if (hasBlockedRoot) {
+      return {
+        status: 'BLOCKED',
+        items: [],
+        page: query.page,
+        pageSize: query.pageSize,
+        total: 0,
+        blockedFindings: blockedFindings.slice(0, 10),
+      };
+    }
+
     if (candidateItems.length === 0) {
-      return { items: [], page: query.page, pageSize: query.pageSize, total: 0 };
+      return { status: 'PASS', items: [], page: query.page, pageSize: query.pageSize, total: 0 };
     }
 
     // Load active makeup schedules for candidate obligations
@@ -169,30 +188,46 @@ export class MakeupSchedulesService {
       activeMakeupByCoord.set(coord, m.id);
     }
 
-    // Load display names for classes, subjects, users, slots
+    // Load display names for classes, subjects, users, slots, and EXACT retained PPCT revisions
     const classIds = [...new Set(candidateItems.map((c) => c.schoolClassId))];
     const subjectIds = [...new Set(candidateItems.map((c) => c.subjectId))];
     const teacherUserIds = [...new Set(candidateItems.map((c) => c.responsibleTeacherUserId))];
     const slotIds = [...new Set(candidateItems.map((c) => c.originalTimeSlotDefinitionId))];
-    const ppctItemIds = [...new Set(candidateItems.map((c) => c.ppctItemId))];
+    const ppctItemRevisionIds = [...new Set(candidateItems.map((c) => c.ppctItemRevisionId))];
 
     const [classes, subjects, users, slots, ppctRevisions] = await Promise.all([
       this.prisma.schoolClass.findMany({ where: { id: { in: classIds } }, select: { id: true, name: true } }),
       this.prisma.subject.findMany({ where: { id: { in: subjectIds } }, select: { id: true, name: true } }),
       this.prisma.user.findMany({ where: { id: { in: teacherUserIds } }, select: { id: true, profile: { select: { displayName: true } } } }),
       this.prisma.timeSlotDefinition.findMany({ where: { id: { in: slotIds } }, select: { id: true, displayLabel: true, session: true, weekday: true } }),
-      this.prisma.ppctItemRevision.findMany({ where: { ppctItemId: { in: ppctItemIds } }, select: { ppctItemId: true, title: true, sequence: true }, orderBy: [{ createdAt: 'desc' }] }),
+      this.prisma.ppctItemRevision.findMany({
+        where: { id: { in: ppctItemRevisionIds } },
+        select: { id: true, ppctItemId: true, title: true, sequence: true },
+      }),
     ]);
 
     const classMap = new Map(classes.map((c) => [c.id, c.name]));
     const subjectMap = new Map(subjects.map((s) => [s.id, s.name]));
     const teacherMap = new Map(users.map((u) => [u.id, u.profile?.displayName ?? u.id]));
     const slotMap = new Map(slots.map((s) => [s.id, s]));
-    const ppctRevisionMap = new Map(ppctRevisions.map((p) => [p.ppctItemId, p]));
+    const ppctRevisionByIdMap = new Map(ppctRevisions.map((p) => [p.id, p]));
 
     for (const candidate of candidateItems) {
       const slot = slotMap.get(candidate.originalTimeSlotDefinitionId);
-      const ppct = ppctRevisionMap.get(candidate.ppctItemId);
+      const ppct = ppctRevisionByIdMap.get(candidate.ppctItemRevisionId);
+
+      // CX-06: Fail closed if exact retained revision is missing or does not match stable item
+      if (!ppct || ppct.ppctItemId !== candidate.ppctItemId) {
+        return {
+          status: 'BLOCKED',
+          items: [],
+          page: query.page,
+          pageSize: query.pageSize,
+          total: 0,
+          blockedFindings: ['PPCT_RETAINED_REVISION_INTEGRITY_MISMATCH'],
+        };
+      }
+
       candidate.schoolClassName = classMap.get(candidate.schoolClassId);
       candidate.subjectName = subjectMap.get(candidate.subjectId);
       candidate.responsibleTeacherName = teacherMap.get(candidate.responsibleTeacherUserId);
@@ -201,10 +236,9 @@ export class MakeupSchedulesService {
         candidate.originalSession = slot.session;
         candidate.originalWeekday = slot.weekday;
       }
-      if (ppct) {
-        candidate.ppctItemName = ppct.title;
-        candidate.ppctItemSequence = ppct.sequence;
-      }
+      candidate.ppctItemName = ppct.title;
+      candidate.ppctItemSequence = ppct.sequence;
+
       // Check active makeup
       const activeScheduleId = activeMakeups.find(
         (m) =>
@@ -228,7 +262,7 @@ export class MakeupSchedulesService {
     const pageSize = query.pageSize;
     const items = candidateItems.slice((page - 1) * pageSize, page * pageSize);
 
-    return { items, page, pageSize, total };
+    return { status: 'PASS', items, page, pageSize, total };
   }
 
   async getTargetOptions(
