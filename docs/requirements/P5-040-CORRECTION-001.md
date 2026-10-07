@@ -328,9 +328,57 @@ Consequently:
 
 ### 7.5 Commits and Current HEAD
 - Implementation commit: `ced1fde2ea4f8f9c0143d403ad2deb8f363f2789` (`fix(web): preserve valid requests during session reconciliation`)
-- Documentation commit: *(recorded upon docs commit)*
-- Resulting HEAD: *(recorded upon docs commit)*
+- Documentation commit: `63d92750e67b364e854983bd63676759f1106873` (`docs(governance): record P5-040 review correction 004`)
+- Resulting HEAD: `63d92750e67b364e854983bd63676759f1106873`
 - Task Governance:
-  - `P5-040`: strictly **`IN_PROGRESS`** (Correction 004 completed on branch; awaiting independent review, merge, and full re-audit).
+  - `P5-040`: strictly **`IN_PROGRESS`**.
+  - `P6-020`: strictly **`DEFERRED_WITH_TRIGGER`**.
+  - Production state: strictly **`PRE-OPERATIONAL`**.
+
+## 8. Review Correction 005 — Preserve Foreground Work & Supersede Stale Auth Reconciliation
+
+### 8.1 Scope and Objective
+Address independent re-review findings RC5-01 and RC5-02 on branch `fix/p5-040-consistency-correction-001`:
+1. **RC5-01 (MEDIUM): Foreground verification destroys unsaved page state.**
+   Separated visual/interaction shielding from component lifecycle destruction. During foreground verification (`FOREGROUND_VERIFY`), protected page content is non-visible and non-interactive, but the component tree remains mounted to preserve draft state (Reporting Statements, Business Configuration, Special Programme Workspace, etc.). Only an authoritative session boundary discards the subtree.
+2. **RC5-02 (MEDIUM): Authoritative local session boundaries must supersede pending reconciliation.**
+   Protected 401, logout, login, and change-password session invalidation paths immediately advance the monotonic reconciliation sequence (`invalidatePendingReconciliations()`), rendering any in-flight `/auth/me` requests stale with zero state mutation upon late resolution.
+
+### 8.2 Architectural Implementation
+1. **Explicit Reconciliation Mode:**
+   - Defined `ReconciliationMode = 'NONE' | 'FOREGROUND_VERIFY' | 'BOUNDARY_VERIFY'` in `auth-context.tsx`.
+   - `FOREGROUND_VERIFY`: Used for focus/visibility return. Presentation fails closed (`status = 'checking'`, `auth = null`), but business cache and session generation remain intact.
+   - `BOUNDARY_VERIFY`: Used for cross-tab `SESSION_BOUNDARY_CHANGED`. Destructively purges old cache and aborts generation immediately.
+2. **Component Lifecycle & Draft Preservation in `ProtectedRoute`:**
+   - `ProtectedRoute` renders `<Outlet />` inside `<div aria-hidden="true" style={{ display: 'none' }}>` while displaying `<RouteLoading label="Đang kiểm tra phiên làm việc" />` when `reconciliationMode === 'FOREGROUND_VERIFY'`.
+   - The route subtree container is keyed by `sessionIdentityKey = previousUserIdRef.current ?? authQuery.data?.user.id ?? 'anonymous'`. For the same user, the key is invariant, preserving component instances and unsaved form/draft states without remounting.
+   - For an identity change (User A -> User B) or anonymous transition (401), the key changes, cleanly unmounting and discarding old protected subtrees and drafts.
+   - `CapabilityRoute` passes through `<Outlet />` during `FOREGROUND_VERIFY`, preventing unauthorized redirection to `/khong-co-quyen` during verification.
+3. **Sequence Invalidation (`invalidatePendingReconciliations`):**
+   - Implemented `invalidatePendingReconciliations()` helper that increments `reconciliationSeqRef.current`.
+   - Called upon `onUnauthorized` callback (protected 401), `login()` replacement, `logout()` execution, and `changePassword()` 401 error.
+   - Any late-resolving `/auth/me` detects `reconciliationSeqRef.current !== seq` and aborts immediately without mutating state or resurrecting auth.
+
+### 8.3 Regression Suite & Verification
+- Suite: `apps/web/src/__tests__/session-cache-isolation.test.tsx` (38 tests, 100% PASS):
+  - **Test 32 (RC5-01):** Draft survives same-user foreground verification without component remounting (`DRAFT-MUST-SURVIVE` preserved, mount count unchanged, unmount count 0).
+  - **Test 33 (RC5-01):** Real production page (`ReportingStatementsPage`) preserves local state (form select value) across same-user foreground verification.
+  - **Test 34 (RC5-01):** Changed user discards old draft and unmounts old protected subtree.
+  - **Test 35 (RC5-01):** Authoritative 401 discards old draft and transitions to login route.
+  - **Test 36 (RC5-02):** Pending foreground reconciliation superseded by protected 401; late 200 User A performs zero state mutation.
+  - **Test 37 (RC5-02):** Pending foreground reconciliation superseded by successful logout; late 200 does not restore auth.
+  - **Test 38 (RC5-01):** Same-user foreground verification preserves exact mount count (`mountCount` unchanged, `unmountCount === 0`).
+  - **Tests 1-31:** All prior session isolation, BroadcastChannel fallback, generation stability, and race condition tests continue to pass.
+- Web unit tests: `npm run test:unit -w apps/web`: 28 test files passed (412 tests).
+- Monorepo unit tests: `npm run test:unit`: 127 test suites passed (2242 tests).
+- Static UI gate: `npm run test:ui:static`: PASS.
+- Monorepo build: `npm run build`: PASS (contracts, config, api, web).
+- Linter & Typecheck: `npm run lint` (0 warnings), `npm run typecheck` (0 errors).
+
+### 8.4 Commits and Governance
+- Implementation commit: `485a64137f8987c8b2d95217c8e6c67b54324d23` (`fix(web): preserve protected drafts during session verification`)
+- Documentation commit: *(recorded upon docs commit)*
+- Task Governance:
+  - `P5-040`: strictly **`IN_PROGRESS`** (Correction 005 completed on branch; awaiting independent review).
   - `P6-020`: strictly **`DEFERRED_WITH_TRIGGER`**.
   - Production state: strictly **`PRE-OPERATIONAL`**.
