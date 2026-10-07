@@ -8,9 +8,38 @@ import { TelegramService } from './telegram.service';
 import { AppConfig } from '../config/app.config';
 import { TelegramSendResult, TelegramTransportPort } from './telegram-transport.port';
 
+interface MockPrisma {
+  $transaction: jest.Mock;
+  $executeRaw: jest.Mock;
+  telegramAccountLink: {
+    findFirst: jest.Mock;
+    create: jest.Mock;
+    update: jest.Mock;
+    delete?: jest.Mock;
+  };
+  telegramLinkChallenge: {
+    findUnique: jest.Mock;
+    findFirst: jest.Mock;
+    create: jest.Mock;
+    updateMany: jest.Mock;
+  };
+  telegramWebhookReceipt: {
+    findUnique: jest.Mock;
+    create: jest.Mock;
+  };
+  telegramNotificationDelivery: {
+    findUnique: jest.Mock;
+    findUniqueOrThrow: jest.Mock;
+    create: jest.Mock;
+    update: jest.Mock;
+    updateMany: jest.Mock;
+    delete?: jest.Mock;
+  };
+}
+
 describe('TelegramService (ADR-058 Acceptance Cases)', () => {
   let service: TelegramService;
-  let mockPrisma: any;
+  let mockPrisma: MockPrisma;
   let mockTransport: jest.Mocked<TelegramTransportPort>;
   let mockConfig: AppConfig;
 
@@ -25,7 +54,20 @@ describe('TelegramService (ADR-058 Acceptance Cases)', () => {
       port: 3100,
       httpTrustProxyHops: 1,
       corsOrigins: ['http://localhost:5173'],
-      auth: {} as any,
+      auth: {
+        sessionTtlSeconds: 86400,
+        lastSeenUpdateSeconds: 300,
+        cookieName: 'sid',
+        cookiePath: '/',
+        cookieSecure: false,
+        cookieSameSite: 'lax',
+        lockoutThreshold: 5,
+        lockoutDurationSeconds: 900,
+        passwordMinLength: 8,
+        loginRateLimitMax: 10,
+        loginRateLimitWindowSeconds: 60,
+        loginRateLimitMaxKeys: 1000,
+      },
       aiEnabled: false,
       aiActiveModeEnabled: false,
       aiPassiveModeEnabled: false,
@@ -47,15 +89,27 @@ describe('TelegramService (ADR-058 Acceptance Cases)', () => {
       } as TelegramSendResult),
     };
 
-    let lastCreatedDelivery: any = null;
-    let lastCreatedAccountLink: any = null;
+    let lastCreatedDelivery: {
+      id?: string;
+      deliveryStatus?: string;
+      accountLinkId?: string;
+      telegramChatId?: string;
+      [key: string]: unknown;
+    } | null = null;
+    let lastCreatedAccountLink: {
+      id?: string;
+      status?: string;
+      telegramChatId?: string;
+      [key: string]: unknown;
+    } | null = null;
 
     mockPrisma = {
-      $transaction: jest.fn(async (cb: (tx: any) => Promise<any>) => cb(mockPrisma)),
+      $transaction: jest.fn(async (cb: (tx: unknown) => Promise<unknown>) => cb(mockPrisma)),
+      $executeRaw: jest.fn().mockResolvedValue(1),
       telegramAccountLink: {
         findFirst: jest.fn(),
-        create: jest.fn(async ({ data }: any) => {
-          lastCreatedAccountLink = { id: data.id ?? 'link-created', ...data };
+        create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
+          lastCreatedAccountLink = { id: (data['id'] as string) ?? 'link-created', ...data };
           return lastCreatedAccountLink;
         }),
         update: jest.fn(),
@@ -71,7 +125,7 @@ describe('TelegramService (ADR-058 Acceptance Cases)', () => {
         create: jest.fn(),
       },
       telegramNotificationDelivery: {
-        findUnique: jest.fn(async ({ where }: any) => {
+        findUnique: jest.fn(async ({ where }: { where: { id?: string; commandKey?: string } }) => {
           if (where?.id) {
             return {
               id: where.id,
@@ -88,14 +142,22 @@ describe('TelegramService (ADR-058 Acceptance Cases)', () => {
           }
           return null;
         }),
-        findUniqueOrThrow: jest.fn(async ({ where }: any) => {
+        findUniqueOrThrow: jest.fn(async ({ where }: { where: { id?: string } }) => {
           return {
             id: where?.id ?? 'del-default',
             deliveryStatus: 'SENT',
+            accountLink: {
+              id: lastCreatedDelivery?.accountLinkId ?? lastCreatedAccountLink?.id ?? 'link-default',
+              status: lastCreatedAccountLink?.status ?? 'ACTIVE',
+              telegramChatId:
+                lastCreatedDelivery?.telegramChatId ??
+                lastCreatedAccountLink?.telegramChatId ??
+                '123456',
+            },
           };
         }),
-        create: jest.fn(async ({ data }: any) => {
-          lastCreatedDelivery = { id: data.id ?? 'del-created', ...data };
+        create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
+          lastCreatedDelivery = { id: (data['id'] as string) ?? 'del-created', ...data };
           return lastCreatedDelivery;
         }),
         update: jest.fn(),
@@ -103,7 +165,7 @@ describe('TelegramService (ADR-058 Acceptance Cases)', () => {
       },
     };
 
-    service = new TelegramService(mockPrisma, mockConfig, mockTransport);
+    service = new TelegramService(mockPrisma as unknown as never, mockConfig, mockTransport);
   });
 
   // -------------------------------------------------------------
@@ -486,14 +548,23 @@ describe('TelegramService (ADR-058 Acceptance Cases)', () => {
       id: 'link-1',
       telegramChatId: '123',
     });
-    mockPrisma.telegramNotificationDelivery.findUnique.mockResolvedValue(null);
+    mockPrisma.telegramNotificationDelivery.findUnique.mockImplementation(
+      async ({ where }: { where: { id?: string; commandKey?: string } }) => {
+        if (where?.commandKey) return null;
+        return {
+          id: 'del-cas',
+          deliveryStatus: 'ATTEMPTING',
+          accountLink: { status: 'ACTIVE', telegramChatId: '123' },
+        };
+      },
+    );
     mockPrisma.telegramNotificationDelivery.create.mockResolvedValue({
       id: 'del-cas',
       deliveryStatus: 'RESERVED',
     });
 
     // Simulate CAS failure: another thread already claimed it (affectedRows == 0)
-    mockPrisma.telegramNotificationDelivery.updateMany.mockResolvedValue({ count: 0 });
+    mockPrisma.$executeRaw.mockResolvedValue(0);
     mockPrisma.telegramNotificationDelivery.findUniqueOrThrow.mockResolvedValue({
       id: 'del-cas',
       deliveryStatus: 'ATTEMPTING',
@@ -564,9 +635,9 @@ describe('TelegramService (ADR-058 Acceptance Cases)', () => {
   // -------------------------------------------------------------
   it('19. attemptStartedAt is committed before provider call', async () => {
     const callOrder: string[] = [];
-    mockPrisma.telegramNotificationDelivery.updateMany.mockImplementation(async () => {
+    mockPrisma.$executeRaw.mockImplementation(async () => {
       callOrder.push('CAS_RESERVED_TO_ATTEMPTING');
-      return { count: 1 };
+      return 1;
     });
     mockTransport.sendMessage.mockImplementation(async () => {
       callOrder.push('PROVIDER_SEND');
@@ -582,14 +653,16 @@ describe('TelegramService (ADR-058 Acceptance Cases)', () => {
       id: 'link-1',
       telegramChatId: '123',
     });
-    mockPrisma.telegramNotificationDelivery.findUnique.mockImplementation(async ({ where }: any) => {
-      if (where?.commandKey) return null;
-      return {
-        id: where?.id ?? 'del-order',
-        deliveryStatus: 'RESERVED',
-        accountLink: { id: 'link-1', status: 'ACTIVE', telegramChatId: '123' },
-      };
-    });
+    mockPrisma.telegramNotificationDelivery.findUnique.mockImplementation(
+      async ({ where }: { where: { id?: string; commandKey?: string } }) => {
+        if (where?.commandKey) return null;
+        return {
+          id: where?.id ?? 'del-order',
+          deliveryStatus: 'RESERVED',
+          accountLink: { id: 'link-1', status: 'ACTIVE', telegramChatId: '123' },
+        };
+      },
+    );
     mockPrisma.telegramNotificationDelivery.create.mockResolvedValue({
       id: 'del-order',
       deliveryStatus: 'RESERVED',
@@ -597,6 +670,7 @@ describe('TelegramService (ADR-058 Acceptance Cases)', () => {
     mockPrisma.telegramNotificationDelivery.findUniqueOrThrow.mockResolvedValue({
       id: 'del-order',
       deliveryStatus: 'SENT',
+      accountLink: { id: 'link-1', status: 'ACTIVE', telegramChatId: '123' },
     });
 
     await service.sendTestNotification('user-1', requestKey);
@@ -612,7 +686,7 @@ describe('TelegramService (ADR-058 Acceptance Cases)', () => {
   // -------------------------------------------------------------
   it('24. TELEGRAM_ENABLED=false rejects mutations and makes zero provider calls', async () => {
     const disabledService = new TelegramService(
-      mockPrisma,
+      mockPrisma as unknown as never,
       { ...mockConfig, telegram: { enabled: false } },
       mockTransport,
     );
@@ -718,9 +792,9 @@ describe('TelegramService (ADR-058 Acceptance Cases)', () => {
     expect(status.linked).toBe(true);
     expect(status.linkedAt).toBe('2026-10-06T12:00:00.000Z');
     // Numeric IDs and token hashes must NOT be in the response object
-    expect((status as any).telegramUserId).toBeUndefined();
-    expect((status as any).telegramChatId).toBeUndefined();
-    expect((status as any).tokenHash).toBeUndefined();
+    expect((status as unknown as Record<string, unknown>).telegramUserId).toBeUndefined();
+    expect((status as unknown as Record<string, unknown>).telegramChatId).toBeUndefined();
+    expect((status as unknown as Record<string, unknown>).tokenHash).toBeUndefined();
   });
 
   // -------------------------------------------------------------
@@ -745,26 +819,29 @@ describe('TelegramService (ADR-058 Acceptance Cases)', () => {
   // -------------------------------------------------------------
   it('RESERVED delivery is not sent if associated accountLink is REVOKED before send claim', async () => {
     const requestKey = 'c3d9a182-3580-4824-912a-387b9264fa99';
+    mockPrisma.$executeRaw.mockResolvedValueOnce(0);
     mockPrisma.telegramAccountLink.findFirst.mockResolvedValue({
       id: 'link-revoked-test',
       status: 'ACTIVE',
       telegramChatId: '123',
     });
-    mockPrisma.telegramNotificationDelivery.findUnique.mockImplementation(async ({ where }: any) => {
-      if (where?.commandKey) return null;
-      if (where?.id === 'del-revoked') {
-        return {
-          id: 'del-revoked',
-          deliveryStatus: 'RESERVED',
-          accountLink: {
-            id: 'link-revoked-test',
-            status: 'REVOKED',
-            telegramChatId: '123',
-          },
-        };
-      }
-      return null;
-    });
+    mockPrisma.telegramNotificationDelivery.findUnique.mockImplementation(
+      async ({ where }: { where: { id?: string; commandKey?: string } }) => {
+        if (where?.commandKey) return null;
+        if (where?.id === 'del-revoked') {
+          return {
+            id: 'del-revoked',
+            deliveryStatus: 'RESERVED',
+            accountLink: {
+              id: 'link-revoked-test',
+              status: 'REVOKED',
+              telegramChatId: '123',
+            },
+          };
+        }
+        return null;
+      },
+    );
     mockPrisma.telegramNotificationDelivery.create.mockResolvedValue({
       id: 'del-revoked',
       deliveryStatus: 'RESERVED',
@@ -784,5 +861,81 @@ describe('TelegramService (ADR-058 Acceptance Cases)', () => {
         data: expect.objectContaining({ deliveryStatus: 'FAILED', sanitizedErrorCode: 'LINK_NOT_ACTIVE' }),
       }),
     );
+  });
+
+  // -------------------------------------------------------------
+  // Section I1: Unsupported update throws if IGNORED receipt create fails
+  // -------------------------------------------------------------
+  it('unsupported update: IGNORED receipt create throws infra error and durable receipt absent => service throws', async () => {
+    mockPrisma.telegramWebhookReceipt.create.mockRejectedValueOnce(new Error('DB_CONN_FAILURE'));
+    mockPrisma.telegramWebhookReceipt.findUnique.mockResolvedValueOnce(null);
+
+    const payload = {
+      update_id: 99991,
+      message: { text: 'not a start command', chat: { id: 123, type: 'private' } },
+    };
+
+    await expect(service.handleWebhook(payload, validSecret)).rejects.toThrow('DB_CONN_FAILURE');
+    expect(mockTransport.sendMessage).not.toHaveBeenCalled();
+  });
+
+  // -------------------------------------------------------------
+  // Section I2: Invalid/expired challenge throws if IGNORED receipt create fails
+  // -------------------------------------------------------------
+  it('invalid/expired challenge: IGNORED receipt create throws infra error and durable receipt absent => service throws', async () => {
+    const rawToken = 'expired_challenge_token_12345';
+    mockPrisma.telegramLinkChallenge.findUnique.mockResolvedValueOnce({
+      userId: 'user-1',
+      tokenHash: crypto.createHash('sha256').update(rawToken).digest('hex'),
+      status: 'EXPIRED',
+      expiresAt: new Date(Date.now() - 60000),
+    });
+    mockPrisma.telegramWebhookReceipt.create.mockRejectedValueOnce(new Error('STORAGE_TIMEOUT'));
+    mockPrisma.telegramWebhookReceipt.findUnique.mockResolvedValueOnce(null);
+
+    const payload = {
+      update_id: 99992,
+      message: {
+        text: `/start ${rawToken}`,
+        chat: { id: 99992, type: 'private' },
+        from: { id: 99992 },
+      },
+    };
+
+    await expect(service.handleWebhook(payload, validSecret)).rejects.toThrow('STORAGE_TIMEOUT');
+    expect(mockTransport.sendMessage).not.toHaveBeenCalled();
+  });
+
+  // -------------------------------------------------------------
+  // Section I3: Duplicate receipt race: create throws, re-read finds durable receipt => safe {ok: true}
+  // -------------------------------------------------------------
+  it('duplicate receipt race: create throws, re-read finds durable receipt => safe {ok: true}', async () => {
+    mockPrisma.telegramWebhookReceipt.create.mockRejectedValueOnce(new Error('Unique constraint failed'));
+    mockPrisma.telegramWebhookReceipt.findUnique.mockResolvedValueOnce({
+      id: 'receipt-concurrent',
+      updateId: '99993',
+      status: 'IGNORED',
+    });
+
+    const payload = {
+      update_id: 99993,
+      message: { text: 'hello world', chat: { id: 123, type: 'private' } },
+    };
+
+    const res = await service.handleWebhook(payload, validSecret);
+    expect(res).toEqual({ ok: true });
+    expect(mockTransport.sendMessage).not.toHaveBeenCalled();
+  });
+
+  // -------------------------------------------------------------
+  // Section I4: Startup reconcile DB failure: module init rejects
+  // -------------------------------------------------------------
+  it('startup reconcile DB failure: module init rejects without swallowing error', async () => {
+    mockPrisma.telegramNotificationDelivery.updateMany.mockRejectedValueOnce(
+      new Error('STARTUP_RECONCILE_DB_UNAVAILABLE'),
+    );
+
+    await expect(service.onModuleInit()).rejects.toThrow('STARTUP_RECONCILE_DB_UNAVAILABLE');
+    expect(mockTransport.sendMessage).not.toHaveBeenCalled();
   });
 });

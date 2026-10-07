@@ -3,7 +3,6 @@ import {
   ConflictException,
   Inject,
   Injectable,
-  Logger,
   NotFoundException,
   OnModuleInit,
   UnauthorizedException,
@@ -28,8 +27,6 @@ const WEBHOOK_SECRET_CHARSET_REGEX = /^[A-Za-z0-9_-]{1,256}$/;
 
 @Injectable()
 export class TelegramService implements OnModuleInit {
-  private readonly logger = new Logger(TelegramService.name);
-
   constructor(
     private readonly prisma: PrismaService,
     @Inject('APP_CONFIG') private readonly config: AppConfig,
@@ -38,9 +35,31 @@ export class TelegramService implements OnModuleInit {
 
   async onModuleInit(): Promise<void> {
     if (this.config.telegram.enabled) {
-      await this.reconcileAttemptingOnStartup().catch((err) => {
-        this.logger.error('Failed to reconcile pre-existing attempting deliveries on startup', err);
+      await this.reconcileAttemptingOnStartup();
+    }
+  }
+
+  /**
+   * Fail-safe persistent helper for IGNORED receipts.
+   * If create throws due to concurrent duplicate race, verifies durable existence.
+   * If durable record does not exist or storage fails, propagates error (5xx, Telegram redelivers).
+   */
+  private async persistIgnoredReceipt(updateId: string): Promise<void> {
+    try {
+      await this.prisma.telegramWebhookReceipt.create({
+        data: {
+          updateId,
+          status: 'IGNORED',
+        },
       });
+    } catch (createError) {
+      const existing = await this.prisma.telegramWebhookReceipt.findUnique({
+        where: { updateId },
+      });
+      if (existing) {
+        return;
+      }
+      throw createError;
     }
   }
 
@@ -263,16 +282,7 @@ export class TelegramService implements OnModuleInit {
 
     // If update is not a valid /start linking message in private chat, mark receipt IGNORED
     if (!parsed.isSupportedStart || !parsed.rawToken || !parsed.telegramUserId || !parsed.telegramChatId) {
-      try {
-        await this.prisma.telegramWebhookReceipt.create({
-          data: {
-            updateId: parsed.updateId,
-            status: 'IGNORED',
-          },
-        });
-      } catch {
-        // Concurrent duplicate receipt created
-      }
+      await this.persistIgnoredReceipt(parsed.updateId);
       return { ok: true };
     }
 
@@ -288,14 +298,7 @@ export class TelegramService implements OnModuleInit {
       challenge.expiresAt > now;
 
     if (!isChallengeValid) {
-      try {
-        await this.prisma.telegramWebhookReceipt.create({
-          data: {
-            updateId: parsed.updateId,
-            status: 'IGNORED',
-          },
-        });
-      } catch {}
+      await this.persistIgnoredReceipt(parsed.updateId);
       return { ok: true };
     }
 
@@ -311,14 +314,7 @@ export class TelegramService implements OnModuleInit {
     });
 
     if (existingActiveIdentity) {
-      try {
-        await this.prisma.telegramWebhookReceipt.create({
-          data: {
-            updateId: parsed.updateId,
-            status: 'IGNORED',
-          },
-        });
-      } catch {}
+      await this.persistIgnoredReceipt(parsed.updateId);
       return { ok: true };
     }
 
@@ -331,14 +327,7 @@ export class TelegramService implements OnModuleInit {
     });
 
     if (existingUserActiveLink) {
-      try {
-        await this.prisma.telegramWebhookReceipt.create({
-          data: {
-            updateId: parsed.updateId,
-            status: 'IGNORED',
-          },
-        });
-      } catch {}
+      await this.persistIgnoredReceipt(parsed.updateId);
       return { ok: true };
     }
 
@@ -445,14 +434,7 @@ export class TelegramService implements OnModuleInit {
         where: { tokenHash },
       });
       if (ch && (ch.status !== 'PENDING' || ch.expiresAt <= now)) {
-        try {
-          await this.prisma.telegramWebhookReceipt.create({
-            data: {
-              updateId: parsed.updateId,
-              status: 'IGNORED',
-            },
-          });
-        } catch {}
+        await this.persistIgnoredReceipt(parsed.updateId);
         return { ok: true };
       }
 
@@ -468,14 +450,7 @@ export class TelegramService implements OnModuleInit {
         },
       });
       if (concurrentActiveLink) {
-        try {
-          await this.prisma.telegramWebhookReceipt.create({
-            data: {
-              updateId: parsed.updateId,
-              status: 'IGNORED',
-            },
-          });
-        } catch {}
+        await this.persistIgnoredReceipt(parsed.updateId);
         return { ok: true };
       }
 
@@ -570,55 +545,58 @@ export class TelegramService implements OnModuleInit {
 
   /**
    * Atomic CAS send claim:
-   * 1. Resolves delivery and ensures associated accountLink is still ACTIVE.
-   *    If link was REVOKED before send claim: zero provider call, delivery marked FAILED (LINK_NOT_ACTIVE).
-   * 2. CAS claim: UPDATE WHERE id = :id AND deliveryStatus = 'RESERVED'
-   *    SET deliveryStatus = 'ATTEMPTING', attemptStartedAt = now
+   * 1. Atomically claims delivery: UPDATE WHERE id = :id AND delivery_status = 'RESERVED'
+   *    AND EXISTS (SELECT 1 FROM telegram_account_links WHERE id = account_link_id AND status = 'ACTIVE')
+   *    SET delivery_status = 'ATTEMPTING', attempt_started_at = now, updated_at = now.
    *    Only affectedRows == 1 calls provider.
+   * 2. If claim affectedRows == 0: reloads durable state. If link was REVOKED, marks delivery FAILED (LINK_NOT_ACTIVE).
    * 3. Network call uses destination chatId from durable DB record, never from client input.
    */
-  private async executeDelivery(deliveryId: string, text: string): Promise<void> {
-    const targetDelivery = await this.prisma.telegramNotificationDelivery.findUnique({
+  async executeDelivery(deliveryId: string, text: string): Promise<void> {
+    const claimedCount = await this.prisma.$executeRaw`
+      UPDATE "telegram_notification_deliveries" d
+      SET "delivery_status" = 'ATTEMPTING'::"TelegramDeliveryStatus",
+          "attempt_started_at" = NOW(),
+          "updated_at" = NOW()
+      WHERE d."id" = ${deliveryId}::uuid
+        AND d."delivery_status" = 'RESERVED'::"TelegramDeliveryStatus"
+        AND EXISTS (
+          SELECT 1 FROM "telegram_account_links" l
+          WHERE l."id" = d."account_link_id"
+            AND l."status" = 'ACTIVE'::"TelegramAccountLinkStatus"
+        )
+    `;
+
+    const durableDelivery = await this.prisma.telegramNotificationDelivery.findUnique({
       where: { id: deliveryId },
       include: { accountLink: true },
     });
 
-    if (!targetDelivery || targetDelivery.deliveryStatus !== 'RESERVED') {
+    if (!durableDelivery) {
       return;
     }
 
-    // Link must still be ACTIVE before claiming to send
-    if (targetDelivery.accountLink.status !== 'ACTIVE') {
-      await this.prisma.telegramNotificationDelivery.updateMany({
-        where: {
-          id: deliveryId,
-          deliveryStatus: 'RESERVED',
-        },
-        data: {
-          deliveryStatus: 'FAILED',
-          sanitizedErrorCode: 'LINK_NOT_ACTIVE',
-        },
-      });
+    if (claimedCount !== 1) {
+      if (
+        durableDelivery.deliveryStatus === 'RESERVED' &&
+        durableDelivery.accountLink.status === 'REVOKED'
+      ) {
+        await this.prisma.telegramNotificationDelivery.updateMany({
+          where: {
+            id: deliveryId,
+            deliveryStatus: 'RESERVED',
+          },
+          data: {
+            deliveryStatus: 'FAILED',
+            sanitizedErrorCode: 'LINK_NOT_ACTIVE',
+          },
+        });
+      }
+
       return;
     }
 
-    const claim = await this.prisma.telegramNotificationDelivery.updateMany({
-      where: {
-        id: deliveryId,
-        deliveryStatus: 'RESERVED',
-      },
-      data: {
-        deliveryStatus: 'ATTEMPTING',
-        attemptStartedAt: new Date(),
-      },
-    });
-
-    if (claim.count !== 1) {
-      // Not claimed by this worker
-      return;
-    }
-
-    const destinationChatId = targetDelivery.accountLink.telegramChatId;
+    const destinationChatId = durableDelivery.accountLink.telegramChatId;
     const sendResult = await this.transport.sendMessage(destinationChatId, text);
 
     if (sendResult.success) {

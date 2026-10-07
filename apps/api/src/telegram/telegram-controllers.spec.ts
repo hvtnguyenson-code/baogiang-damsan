@@ -30,7 +30,7 @@ describe('Telegram Controllers (Auth, CSRF & MustChangePassword)', () => {
       unlink: jest.fn().mockResolvedValue({ unlinked: true, revokedAt: '...' }),
       sendTestNotification: jest.fn().mockResolvedValue({ deliveryStatus: 'SENT' }),
       handleWebhook: jest.fn().mockResolvedValue({ ok: true }),
-    } as any;
+    } as unknown as jest.Mocked<TelegramService>;
 
     personalController = new TelegramPersonalController(mockTelegramService);
     webhookController = new TelegramWebhookController(mockTelegramService);

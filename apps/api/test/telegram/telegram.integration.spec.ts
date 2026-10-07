@@ -1,4 +1,4 @@
-import { UserStatus } from '@prisma/client';
+import { PrismaClient, UserStatus } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import request from 'supertest';
 import * as crypto from 'node:crypto';
@@ -49,7 +49,7 @@ integration('Telegram PostgreSQL Integration Evidence (Real DB & Migrations)', (
   async function createTestUser(prefix = 'user') {
     return h.prisma.user.create({
       data: {
-        username: `${prefix}-${crypto.randomUUID().slice(0, 8)}`,
+        username: `${prefix.toLowerCase()}-${crypto.randomUUID().slice(0, 8)}`,
         passwordHash: await h.passwords.hash('TestPassword123!'),
         status: UserStatus.ACTIVE,
         profile: { create: { displayName: `Test ${prefix}` } },
@@ -378,7 +378,7 @@ integration('Telegram PostgreSQL Integration Evidence (Real DB & Migrations)', (
   // -------------------------------------------------------------------------
   it('9. concurrent delivery claim: exactly one CAS claimant invokes provider call', async () => {
     const user = await createTestUser('u9');
-    const link = await h.prisma.telegramAccountLink.create({
+    await h.prisma.telegramAccountLink.create({
       data: {
         userId: user.id,
         telegramUserId: '900001',
@@ -457,7 +457,7 @@ integration('Telegram PostgreSQL Integration Evidence (Real DB & Migrations)', (
     const payload = {
       update_id: Number(updateId),
       message: {
-        text: '/start any_token_123',
+        text: '/start any_token_12345678',
         chat: { id: Number(tgChatId), type: 'private' },
         from: { id: Number(tgUserId) },
       },
@@ -507,8 +507,7 @@ integration('Telegram PostgreSQL Integration Evidence (Real DB & Migrations)', (
     };
 
     // Inject a failure into $transaction
-    const originalTransaction = h.prisma.$transaction.bind(h.prisma);
-    jest.spyOn(h.prisma, '$transaction').mockImplementationOnce(async () => {
+    jest.spyOn(PrismaClient.prototype, '$transaction').mockImplementationOnce(async () => {
       throw new Error('DATABASE_CONNECTION_LOST');
     });
 
@@ -523,5 +522,131 @@ integration('Telegram PostgreSQL Integration Evidence (Real DB & Migrations)', (
       where: { updateId: '120001' },
     });
     expect(receipt).toBeNull();
+  });
+
+  // -------------------------------------------------------------------------
+  // 13. (E1) unlink/revoke ACTIVE link COMMIT before atomic delivery claim
+  // -------------------------------------------------------------------------
+  it('13. unlink commit before atomic claim fails claim, sets FAILED/LINK_NOT_ACTIVE, zero provider call', async () => {
+    const user = await createTestUser('u13');
+    const link = await h.prisma.telegramAccountLink.create({
+      data: {
+        userId: user.id,
+        telegramUserId: '130001',
+        telegramChatId: '130001',
+        status: 'ACTIVE',
+      },
+    });
+
+    const commandKey = `test-race-unlink:${user.id}:c3d9a182-3580-4824-912a-387b9264fa13`;
+    const delivery = await h.prisma.telegramNotificationDelivery.create({
+      data: {
+        commandKey,
+        actorUserId: user.id,
+        accountLinkId: link.id,
+        telegramChatId: '130001',
+        notificationType: 'SELF_TEST',
+        commandFingerprint: 'fp-13',
+        payloadDigest: 'dig-13',
+        deliveryStatus: 'RESERVED',
+      },
+    });
+
+    // Unlink commits REVOKED before delivery send claim
+    await service.unlink(user.id);
+
+    // Attempt delivery claim & send
+    await service.executeDelivery(delivery.id, 'Test message');
+
+    // Invariant: zero provider call!
+    expect(mockTransport.sendMessage).not.toHaveBeenCalled();
+
+    // Durable state check: delivery transition to FAILED with LINK_NOT_ACTIVE
+    const updatedDelivery = await h.prisma.telegramNotificationDelivery.findUniqueOrThrow({
+      where: { id: delivery.id },
+    });
+    expect(updatedDelivery.deliveryStatus).toBe('FAILED');
+    expect(updatedDelivery.sanitizedErrorCode).toBe('LINK_NOT_ACTIVE');
+
+    // Link remains REVOKED
+    const updatedLink = await h.prisma.telegramAccountLink.findUniqueOrThrow({
+      where: { id: link.id },
+    });
+    expect(updatedLink.status).toBe('REVOKED');
+  });
+
+  // -------------------------------------------------------------------------
+  // 14. (E2) atomic claim ATTEMPTING succeeds before unlink commit
+  // -------------------------------------------------------------------------
+  it('14. delivery atomic claim ATTEMPTING succeeds before unlink commit (attempt already started, no reset)', async () => {
+    const user = await createTestUser('u14');
+    const link = await h.prisma.telegramAccountLink.create({
+      data: {
+        userId: user.id,
+        telegramUserId: '140001',
+        telegramChatId: '140001',
+        status: 'ACTIVE',
+      },
+    });
+
+    const commandKey = `test-race-attempting:${user.id}:c3d9a182-3580-4824-912a-387b9264fa14`;
+    const delivery = await h.prisma.telegramNotificationDelivery.create({
+      data: {
+        commandKey,
+        actorUserId: user.id,
+        accountLinkId: link.id,
+        telegramChatId: '140001',
+        notificationType: 'SELF_TEST',
+        commandFingerprint: 'fp-14',
+        payloadDigest: 'dig-14',
+        deliveryStatus: 'RESERVED',
+      },
+    });
+
+    // Provider delay so delivery is in ATTEMPTING when unlink commits
+    let notifySendStarted!: () => void;
+    const sendStarted = new Promise<void>((resolve) => {
+      notifySendStarted = resolve;
+    });
+
+    let finishSendPromise: ((res: { success: boolean; providerMessageId?: string }) => void) | undefined;
+    mockTransport.sendMessage.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishSendPromise = resolve;
+          notifySendStarted();
+        }),
+    );
+
+    // Start delivery claim
+    const deliveryPromise = service.executeDelivery(delivery.id, 'Test message');
+
+    // Wait until delivery claim has committed in PostgreSQL and entered provider send
+    await sendStarted;
+
+    const attemptingDelivery = await h.prisma.telegramNotificationDelivery.findUniqueOrThrow({
+      where: { id: delivery.id },
+    });
+    expect(attemptingDelivery.deliveryStatus).toBe('ATTEMPTING');
+
+    // Now unlink commits REVOKED while delivery attempt is in flight
+    await service.unlink(user.id);
+
+    const revokedLink = await h.prisma.telegramAccountLink.findUniqueOrThrow({
+      where: { id: link.id },
+    });
+    expect(revokedLink.status).toBe('REVOKED');
+
+    // Finish the provider send
+    finishSendPromise?.({ success: true, providerMessageId: 'prov-msg-14' });
+    await deliveryPromise;
+
+    // Delivery was NOT retroactively reset by unlink; it committed SENT
+    const finalDelivery = await h.prisma.telegramNotificationDelivery.findUniqueOrThrow({
+      where: { id: delivery.id },
+    });
+    expect(finalDelivery.deliveryStatus).toBe('SENT');
+    expect(finalDelivery.providerMessageId).toBe('prov-msg-14');
+    expect(mockTransport.sendMessage).toHaveBeenCalledTimes(1);
   });
 });
