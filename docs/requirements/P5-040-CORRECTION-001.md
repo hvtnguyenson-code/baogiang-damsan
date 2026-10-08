@@ -515,8 +515,91 @@ A bounded static audit of mounted protected pages calling `useAuth()` confirmed:
 
 ### 10.6 Commits and Current HEAD
 - Implementation commit: `22a27533036fb1cbeae0e95db50b91e9f16cb839` (`fix(web): retain verified auth during foreground checks`)
-- Documentation commit: *(recorded upon docs commit)*
+- Documentation commit: `d99af7699ef6a1347dd590c1c79656ad07600688` (`docs(governance): record P5-040 review correction 007`)
 - Task Governance:
   - `P5-040`: strictly **`IN_PROGRESS`** (Correction 007 completed on branch; awaiting final independent review before Codex).
   - `P6-020`: strictly **`DEFERRED_WITH_TRIGGER`**.
   - Production state: strictly **`PRE-OPERATIONAL`**.
+
+## 11. Review Correction 008 — Close Codex Adversarial Findings AR-01..AR-04
+
+### 11.1 Scope and Objective
+Address confirmed material adversarial findings AR-01 through AR-04 from the Codex independent review on branch `fix/p5-040-consistency-correction-001`:
+1. **AR-01 (HIGH): Protected HTTP 401 Must Invalidate Session Even If Body Is Malformed.**
+   - *Root cause:* `apiFetch()` invoked `readJson(response)` before inspecting `response.status === 401 && shouldNotifyUnauthorized`. If a protected endpoint returned HTTP 401 with malformed JSON (`{bad`), empty body, or rejected stream, `readJson` threw an unhandled `ApiError` prior to `notifyUnauthorized()`. Consequently, authoritative session invalidation was lost, and stale auth/cache/generation persisted.
+   - *Remediation:* For protected non-credential endpoints, HTTP 401 is authoritative by its status code alone. Session invalidation (`notifyUnauthorized()`) is triggered immediately upon header verification of the current generation, before attempting body parsing. Body read/parse failures on 401 are safely caught and normalized into bounded 401 `ApiError`. Credential endpoints (`/auth/login`, `/auth/change-password`) remain exempt from global unauthorized broadcast. Outdated generation 401 responses cannot invalidate newer sessions.
+2. **AR-02 (MEDIUM): BOUNDARY_VERIFY Must Never Be Downgraded By Focus.**
+   - *Root cause:* During a pending remote boundary check (`BOUNDARY_VERIFY`), window focus triggered `handleForegroundSafety()` which invoked `reconcileSessionBoundary({ isRemoteBoundary: false })`. This demoted the reconciliation mode to `FOREGROUND_VERIFY`. Because old auth had already been purged to `null`, `ProtectedRoute` revealed the mounted subtree while `CapabilityRoute` saw `auth === null` and redirected to `/khong-co-quyen`. After User B resolved, the browser remained stuck on the denial route.
+   - *Remediation:* `BOUNDARY_VERIFY` is made strictly dominant until the server returns authoritative 200 or 401. Foreground focus/visibility events while `reconciliationModeRef.current === 'BOUNDARY_VERIFY'` (or in boundary recovery) are strict NO-OPs that do not downgrade mode, repurge generation, or spawn duplicate requests. `reconcileSessionBoundary` defensively preserves `BOUNDARY_VERIFY` against non-remote calls.
+3. **AR-03 (MEDIUM): Telegram message_id Must Be Runtime-Validated.**
+   - *Root cause:* `TelegramBotApiAdapter` asserted provider response typing via TypeScript assertion `(await response.json()) as { ok?: boolean; result?: { message_id?: number } }` and checked `body.ok === true && body.result?.message_id != null`. Strings, objects, arrays, floats, or negative numbers could be treated as valid success, leading to durable `SENT` status.
+   - *Remediation:* Added strict runtime structural validation: `body` must be a non-null object and not array; `body.ok === true`; `result` must be a non-null object and not array; `message_id` must be a finite safe positive integer (`typeof msgId === 'number' && Number.isSafeInteger(msgId) && msgId > 0`). Any structurally invalid acknowledgement returns `sanitizedErrorCode: 'MALFORMED_SUCCESS_ACKNOWLEDGEMENT', uncertainOutcome: true`, ensuring delivery status resolves to durable `UNKNOWN`.
+4. **AR-04 (MEDIUM): Make-Up Candidate BLOCKED State Must Not Be Lost When Schedule Read Fails.**
+   - *Root cause:* `MakeupSchedulingPage` coupled candidates and schedules loading with `Promise.all([listCandidates(...), listSchedules(...)])`. If candidates returned `BLOCKED` but schedules failed with 503, the entire `Promise.all` rejected, preventing candidate `BLOCKED` status from applying. The UI retained old `PASS` candidate state and visible forms.
+   - *Remediation:* Decoupled candidate and schedule queries using separate promises and `Promise.allSettled`. At reload start, candidate state transitions to fail-closed `LOADING`, clearing existing selection, target options, and replacement references. Candidate `BLOCKED` status is applied immediately and independently of schedule query status. Scheduling actions and form display are strictly gated on `candidatesStatus === 'PASS'`. Candidate and schedule errors are rendered in independent alerts. Monotonic sequence token (`loadSeqRef`) prevents stale delayed requests from overwriting newer state.
+
+### 11.2 Invariants Preserved
+- Secret sanitization (CX-02) and no credential leakage.
+- Full-body Telegram timeout (CX-04).
+- Exact historical `ppctItemRevisionId` provenance retention (CX-06).
+- All session semantics, foreground draft survival, and indeterminate network/5xx recovery policies from Corrections 002 through 007.
+- Zero schema changes, zero database migrations, zero workflow/infrastructure changes.
+
+### 11.3 Regression Suites & Test Evidence
+1. **AR-01 Tests (A1..A7) in `apps/web/src/__tests__/session-cache-isolation.test.tsx`:**
+   - **Test 53 (A1):** Protected 401 + valid JSON -> exactly one unauthorized boundary, auth anonymous, cache cleared, generation rotated.
+   - **Test 54 (A2):** Protected 401 + malformed JSON (`{bad`) -> identical session invalidation to A1.
+   - **Test 55 (A3):** Protected 401 + empty JSON -> session invalidated.
+   - **Test 56 (A4):** Protected 401 with body read rejecting after headers -> session invalidated.
+   - **Test 57 (A5):** Credential `/auth/login` 401 -> does NOT trigger global unauthorized boundary.
+   - **Test 58 (A6):** Credential `/auth/change-password` 401 -> preserves deterministic reconciliation policy without global boundary.
+   - **Test 59 (A7):** Old-generation protected 401 arriving after User B session established -> does NOT invalidate User B.
+2. **AR-02 Tests (B1..B6) in `apps/web/src/__tests__/session-cache-isolation.test.tsx`:**
+   - **Test 60 (B1):** Remote boundary pending -> focus -> mode remains `BOUNDARY_VERIFY`.
+   - **Test 61 (B2):** Capability route where User B has required capability -> focus during boundary verify does not redirect to `/khong-co-quyen`; remains on intended route after B resolves.
+   - **Test 62 (B3):** Remote boundary pending -> multiple focus/visibility events -> no duplicate purge or generation churn.
+   - **Test 63 (B4):** Remote boundary recovery after network/503 -> focus -> remains BOUNDARY recovery, not foreground.
+   - **Test 64 (B5):** Explicit retry from BOUNDARY recovery -> remains `BOUNDARY_VERIFY` until 200/401.
+   - **Test 65 (B6):** User B lacks capability -> only AFTER authoritative B resolves may `CapabilityRoute` redirect to `/khong-co-quyen`.
+3. **AR-03 Tests (C1..C8) in `apps/api/src/telegram/`:**
+   - **C1 (Test 15):** Valid positive integer `message_id` -> success (`SENT`).
+   - **C2 (Test 16):** Missing `message_id` -> `MALFORMED_SUCCESS_ACKNOWLEDGEMENT`, `uncertainOutcome: true`.
+   - **C3 (Test 17):** String `message_id` -> `MALFORMED_SUCCESS_ACKNOWLEDGEMENT`, `uncertainOutcome: true`.
+   - **C4 (Test 18):** Object `message_id` -> `MALFORMED_SUCCESS_ACKNOWLEDGEMENT`, `uncertainOutcome: true`.
+   - **C5 (Test 19):** Array `message_id` -> `MALFORMED_SUCCESS_ACKNOWLEDGEMENT`, `uncertainOutcome: true`.
+   - **C6 (Test 20):** Float/invalid numeric `message_id` (`123.45`, `-5`) -> `MALFORMED_SUCCESS_ACKNOWLEDGEMENT`, `uncertainOutcome: true`.
+   - **C7 (Test 21):** Malformed JSON -> `MALFORMED_SUCCESS_ACKNOWLEDGEMENT`, `uncertainOutcome: true`.
+   - **C8 (`telegram.service.spec.ts`):** Service receives malformed acknowledgement -> durable delivery status `UNKNOWN`.
+4. **AR-04 Tests (D1..D6) in `apps/web/src/__tests__/makeup-scheduling-page.test.tsx`:**
+   - **D1 (Test 11):** Initial PASS -> select candidate -> reload: candidates BLOCKED, schedules 503 -> BLOCKED warning visible, schedule error visible, old create form absent, submit impossible.
+   - **D2 (Test 12):** Initial PASS -> selected candidate -> candidate request 503 -> old candidate becomes non-actionable.
+   - **D3 (Test 13):** Candidates BLOCKED -> schedules delayed/fails later -> BLOCKED applied independently before and after schedule failure.
+   - **D4 (Test 14):** Candidates PASS -> schedules 503 -> candidate PASS behavior remains deterministic, schedule error displayed separately.
+   - **D5 (Test 15):** Overlapping reload: request A delayed, request B completes first -> late A cannot overwrite B state.
+   - **D6 (Test 16):** BLOCKED response clears old target options and replacement selection; replacement button disabled.
+
+### 11.4 Verification Summary
+- `session-cache-isolation.test.tsx`: 65 passed, 0 failed.
+- `makeup-scheduling-page.test.tsx`: 16 passed, 0 failed.
+- `telegram-bot-api.adapter.spec.ts`: 21 passed, 0 failed.
+- `telegram.service.spec.ts`: 28 passed, 0 failed.
+- Web unit tests: `npm run test:unit -w apps/web`: 28 test files passed (439 tests).
+- Monorepo unit tests: `npm run test:unit`: 127 test suites passed (2276 tests: 439 web + 1837 api).
+- Lint: `npm run lint`: PASS (0 warnings across all 4 packages).
+- Typecheck: `npm run typecheck`: PASS (0 errors across contracts, config, api, web).
+- Static gates: PASS (`test:schema:static`, `test:secrets`, `test:deploy:static`, `test:deploy:behavior`, `test:workflow:contract`, `test:deploy:powershell`, `test:ui:static`).
+- Monorepo build: `npm run build`: PASS (contracts, config, api, web).
+- Diff check: `git diff --check`: PASS.
+
+### 11.5 Implementation Commits
+1. `5dbb88c` — `fix(web): invalidate malformed protected 401 responses` (AR-01)
+2. `05d7e90` — `fix(web): preserve boundary reconciliation across focus` (AR-02)
+3. `3f37fb7` — `fix(telegram): validate provider success acknowledgement` (AR-03)
+4. `6f5516a` — `fix(makeup): fail closed across candidate reload errors` (AR-04)
+5. *(current)* — `docs(governance): record P5-040 review correction 008`
+
+### 11.6 Governance Status
+- Task `P5-040`: strictly **`IN_PROGRESS`** (awaiting independent adversarial re-review).
+- Task `P6-020`: strictly **`DEFERRED_WITH_TRIGGER`**.
+- Production state: strictly **`PRE-OPERATIONAL`**.
+
