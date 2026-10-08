@@ -75,26 +75,69 @@ export class AuthService {
       throw new UnauthorizedException(INVALID_CREDENTIALS);
     }
 
+    const verifiedPasswordHash = user.passwordHash;
+    const sessionIssuedAt = new Date();
     const rawToken = this.tokens.generate();
     const tokenHash = this.tokens.hash(rawToken);
-    const expiresAt = new Date(now.getTime() + this.config.auth.sessionTtlSeconds * 1000);
-    await this.prisma.$transaction(async (tx) => {
-      await tx.user.update({
-        where: { id: user.id },
-        data: { failedLoginCount: 0, lockedUntil: null, lastLoginAt: now },
-      });
-      await tx.authSession.create({
+    const expiresAt = new Date(sessionIssuedAt.getTime() + this.config.auth.sessionTtlSeconds * 1000);
+
+    const loginCommitted = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.user.updateMany({
+        where: {
+          id: user.id,
+          passwordHash: verifiedPasswordHash,
+          status: UserStatus.ACTIVE,
+          OR: [
+            { lockedUntil: null },
+            { lockedUntil: { lte: sessionIssuedAt } },
+          ],
+        },
         data: {
-          userId: user.id, tokenHash, expiresAt, lastSeenAt: now,
-          ipAddress: meta.ipAddress?.slice(0, 45), userAgent: meta.userAgent?.slice(0, 500),
+          failedLoginCount: 0,
+          lockedUntil: null,
+          lastLoginAt: sessionIssuedAt,
         },
       });
-      await this.audit.write({
-        actorUserId: user.id, action: 'AUTH_LOGIN_SUCCESS', entityType: 'AuthSession',
-        requestId: meta.requestId, result: AuditResult.SUCCESS,
-        metadata: { usernameFingerprint: this.fingerprint(username) },
-      }, tx);
+
+      if (updated.count === 0) {
+        return false;
+      }
+
+      await tx.authSession.create({
+        data: {
+          userId: user.id,
+          tokenHash,
+          expiresAt,
+          lastSeenAt: sessionIssuedAt,
+          ipAddress: meta.ipAddress?.slice(0, 45),
+          userAgent: meta.userAgent?.slice(0, 500),
+        },
+      });
+
+      await this.audit.write(
+        {
+          actorUserId: user.id,
+          action: 'AUTH_LOGIN_SUCCESS',
+          entityType: 'AuthSession',
+          requestId: meta.requestId,
+          result: AuditResult.SUCCESS,
+          metadata: { usernameFingerprint: this.fingerprint(username) },
+        },
+        tx,
+      );
+
+      return true;
     });
+
+    if (!loginCommitted) {
+      const current = await this.prisma.user.findUnique({ where: { id: user.id } });
+      const currentActiveLock = current?.lockedUntil !== null && current?.lockedUntil !== undefined && current.lockedUntil > sessionIssuedAt;
+      const currentStatus = current?.status ?? user.status;
+      const currentPasswordValid = current ? current.passwordHash === verifiedPasswordHash : false;
+      await this.recordFailedLogin(user.id, currentPasswordValid, currentStatus, currentActiveLock, meta, sessionIssuedAt);
+      throw new UnauthorizedException(INVALID_CREDENTIALS);
+    }
+
     return { rawToken, expiresAt, user: this.publicUser(user) };
   }
 
@@ -178,7 +221,8 @@ export class AuthService {
 
   async changePassword(userId: string, sessionId: string, currentPassword: string, newPassword: string, meta: RequestMeta): Promise<void> {
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
-    if (!(await this.passwords.verify(user.passwordHash, currentPassword))) {
+    const verifiedPasswordHash = user.passwordHash;
+    if (!(await this.passwords.verify(verifiedPasswordHash, currentPassword))) {
       throw new UnauthorizedException('Mật khẩu hiện tại không hợp lệ.');
     }
     try {
@@ -186,12 +230,18 @@ export class AuthService {
     } catch (error) {
       throw new BadRequestException(error instanceof Error ? error.message : 'Mật khẩu mới không hợp lệ.');
     }
-    if (await this.passwords.verify(user.passwordHash, newPassword)) {
+    if (await this.passwords.verify(verifiedPasswordHash, newPassword)) {
       throw new BadRequestException('Mật khẩu mới phải khác mật khẩu hiện tại.');
     }
     const passwordHash = await this.passwords.hash(newPassword);
     await this.prisma.$transaction(async (tx) => {
-      await tx.user.update({ where: { id: userId }, data: { passwordHash, mustChangePassword: false, failedLoginCount: 0, lockedUntil: null } });
+      const updated = await tx.user.updateMany({
+        where: { id: userId, passwordHash: verifiedPasswordHash, status: UserStatus.ACTIVE },
+        data: { passwordHash, mustChangePassword: false, failedLoginCount: 0, lockedUntil: null },
+      });
+      if (updated.count === 0) {
+        throw new UnauthorizedException('Mật khẩu hiện tại không hợp lệ.');
+      }
       const revoked = await tx.authSession.updateMany({ where: { userId, id: { not: sessionId }, revokedAt: null }, data: { revokedAt: new Date() } });
       await this.audit.write({ actorUserId: userId, action: 'AUTH_PASSWORD_CHANGED', entityType: 'User', entityId: userId, requestId: meta.requestId, result: AuditResult.SUCCESS, metadata: { otherSessionsRevoked: revoked.count } }, tx);
     });
