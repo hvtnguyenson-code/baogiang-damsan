@@ -3613,4 +3613,400 @@ describe('CX-01 session and React Query cache isolation', () => {
 
     unsubscribe();
   });
+
+  // --- AR-02: BOUNDARY_VERIFY must never be downgraded by focus ---
+
+  it('60. AR-02 B1: remote boundary pending -> focus -> mode remains BOUNDARY_VERIFY', async () => {
+    const queryClient = createProductionQueryClient();
+
+    let resolveRemoteAuthMe!: (res: Response) => void;
+    const remoteAuthMePromise = new Promise<Response>((resolve) => {
+      resolveRemoteAuthMe = resolve;
+    });
+
+    let authMeCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        authMeCount += 1;
+        if (authMeCount === 1) return jsonResponse(userAAuth);
+        return remoteAuthMePromise;
+      }
+      return jsonResponse({});
+    }));
+
+    const { result } = renderHook(() => useAuth(), { wrapper: createWrapper(queryClient) });
+    await waitFor(() => expect(result.current.status).toBe('authenticated'));
+    expect(result.current.auth?.user.id).toBe('user-a');
+
+    // Remote boundary arrives
+    await act(async () => {
+      const channel = getBroadcastChannel();
+      channel?.onmessage?.({
+        data: {
+          type: 'SESSION_BOUNDARY_CHANGED',
+          eventId: 'evt-b1',
+          senderId: 'remote-tab',
+        },
+      } as MessageEvent);
+    });
+
+    expect(result.current.reconciliationMode).toBe('BOUNDARY_VERIFY');
+    expect(result.current.status).toBe('checking');
+    expect(result.current.auth).toBeNull();
+
+    // Window focus occurs while remote boundary verification is in-flight
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    // Invariant: mode MUST NOT be downgraded to FOREGROUND_VERIFY
+    expect(result.current.reconciliationMode).toBe('BOUNDARY_VERIFY');
+    expect(result.current.auth).toBeNull();
+
+    // Authoritative User B resolves
+    await act(async () => {
+      resolveRemoteAuthMe(jsonResponse(userBAuth));
+    });
+
+    await waitFor(() => {
+      expect(result.current.reconciliationMode).toBe('NONE');
+      expect(result.current.status).toBe('authenticated');
+      expect(result.current.auth?.user.id).toBe('user-b');
+    });
+  });
+
+  it('61. AR-02 B2: remote boundary pending -> focus on capability route where User B HAS capability -> no redirect to /khong-co-quyen', async () => {
+    const queryClient = createProductionQueryClient();
+
+    let resolveRemoteAuthMe!: (res: Response) => void;
+    const remoteAuthMePromise = new Promise<Response>((resolve) => {
+      resolveRemoteAuthMe = resolve;
+    });
+
+    const userAWithCap = {
+      user: { id: 'user-a', username: 'teacher_a', displayName: 'Giáo viên A', status: 'ACTIVE' as const, mustChangePassword: false },
+      capabilities: [{ key: 'BUSINESS_CONFIGURATION_MANAGE' as const, scope: 'SCHOOL_WIDE' as const }],
+    };
+
+    const userBWithCap = {
+      user: { id: 'user-b', username: 'teacher_b', displayName: 'Giáo viên B', status: 'ACTIVE' as const, mustChangePassword: false },
+      capabilities: [{ key: 'BUSINESS_CONFIGURATION_MANAGE' as const, scope: 'SCHOOL_WIDE' as const }],
+    };
+
+    let authMeCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        authMeCount += 1;
+        if (authMeCount === 1) return jsonResponse(userAWithCap);
+        return remoteAuthMePromise;
+      }
+      return jsonResponse({});
+    }));
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <MemoryRouter initialEntries={['/quan-tri/chinh-sach-nghiep-vu']}>
+            <Routes>
+              <Route element={<ProtectedRoute />}>
+                <Route
+                  element={<CapabilityRoute allow={(caps) => caps.some((c) => c.key === 'BUSINESS_CONFIGURATION_MANAGE')} />}
+                >
+                  <Route path="/quan-tri/chinh-sach-nghiep-vu" element={<div data-testid="target-route">Chính sách</div>} />
+                </Route>
+              </Route>
+              <Route path="/khong-co-quyen" element={<div data-testid="denial-route">Không có quyền</div>} />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+
+    // Initial render for User A succeeds
+    expect(await screen.findByTestId('target-route')).toBeDefined();
+
+    // Remote boundary arrives
+    await act(async () => {
+      const channel = getBroadcastChannel();
+      channel?.onmessage?.({
+        data: {
+          type: 'SESSION_BOUNDARY_CHANGED',
+          eventId: 'evt-b2',
+          senderId: 'remote-tab',
+        },
+      } as MessageEvent);
+    });
+
+    // ProtectedRoute displays RouteLoading during BOUNDARY_VERIFY
+    expect(screen.queryByTestId('target-route')).toBeNull();
+    expect(screen.queryByTestId('denial-route')).toBeNull();
+
+    // Focus occurs while boundary is pending
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    // Invariant: CapabilityRoute MUST NOT evaluate auth=null and redirect to /khong-co-quyen!
+    expect(screen.queryByTestId('denial-route')).toBeNull();
+
+    // User B resolves (User B also has BUSINESS_CONFIGURATION_MANAGE)
+    await act(async () => {
+      resolveRemoteAuthMe(jsonResponse(userBWithCap));
+    });
+
+    // After User B resolves: stays on intended route!
+    await waitFor(() => {
+      expect(screen.getByTestId('target-route')).toBeDefined();
+    });
+    expect(screen.queryByTestId('denial-route')).toBeNull();
+  });
+
+  it('62. AR-02 B3: remote boundary pending -> multiple focus/visibility events -> no duplicate purge/generation churn', async () => {
+    const queryClient = createProductionQueryClient();
+
+    let resolveRemoteAuthMe!: (res: Response) => void;
+    const remoteAuthMePromise = new Promise<Response>((resolve) => {
+      resolveRemoteAuthMe = resolve;
+    });
+
+    let authMeCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        authMeCount += 1;
+        if (authMeCount === 1) return jsonResponse(userAAuth);
+        return remoteAuthMePromise;
+      }
+      return jsonResponse({});
+    }));
+
+    const { result } = renderHook(() => useAuth(), { wrapper: createWrapper(queryClient) });
+    await waitFor(() => expect(result.current.status).toBe('authenticated'));
+
+    // Remote boundary arrives -> purges old cache, advances generation
+    await act(async () => {
+      const channel = getBroadcastChannel();
+      channel?.onmessage?.({
+        data: {
+          type: 'SESSION_BOUNDARY_CHANGED',
+          eventId: 'evt-b3',
+          senderId: 'remote-tab',
+        },
+      } as MessageEvent);
+    });
+
+    const boundaryGen = getCurrentSessionGeneration();
+    const fetchAuthMeCallsBeforeFocus = authMeCount;
+
+    // Fire multiple focus and visibility events while boundary is pending
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+      document.dispatchEvent(new Event('visibilitychange'));
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    // Invariant: Generation MUST NOT rotate again, no duplicate /auth/me boundary requests
+    expect(getCurrentSessionGeneration()).toBe(boundaryGen);
+    expect(authMeCount).toBe(fetchAuthMeCallsBeforeFocus);
+    expect(result.current.reconciliationMode).toBe('BOUNDARY_VERIFY');
+
+    await act(async () => {
+      resolveRemoteAuthMe(jsonResponse(userBAuth));
+    });
+
+    await waitFor(() => expect(result.current.status).toBe('authenticated'));
+  });
+
+  it('63. AR-02 B4: remote boundary recovery after network/503 -> focus -> remains BOUNDARY recovery, not foreground', async () => {
+    const queryClient = createProductionQueryClient();
+
+    let authMeCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        authMeCount += 1;
+        if (authMeCount === 1) return jsonResponse(userAAuth);
+        return jsonResponse({ statusCode: 503, message: 'Dịch vụ gián đoạn' }, 503);
+      }
+      return jsonResponse({});
+    }));
+
+    const { result } = renderHook(() => useAuth(), { wrapper: createWrapper(queryClient) });
+    await waitFor(() => expect(result.current.status).toBe('authenticated'));
+
+    // Remote boundary arrives -> network fails with 503
+    await act(async () => {
+      const channel = getBroadcastChannel();
+      channel?.onmessage?.({
+        data: {
+          type: 'SESSION_BOUNDARY_CHANGED',
+          eventId: 'evt-b4',
+          senderId: 'remote-tab',
+        },
+      } as MessageEvent);
+    });
+
+    await waitFor(() => {
+      expect(result.current.reconciliationMode).toBe('BOUNDARY_VERIFY');
+      expect(result.current.status).toBe('error');
+      expect(result.current.reconciliationError?.statusCode).toBe(503);
+    });
+
+    // Focus occurs while in boundary recovery
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    // Invariant: Remains BOUNDARY_VERIFY recovery, NOT downgraded to foreground
+    expect(result.current.reconciliationMode).toBe('BOUNDARY_VERIFY');
+    expect(result.current.status).toBe('error');
+    expect(result.current.reconciliationError?.statusCode).toBe(503);
+  });
+
+  it('64. AR-02 B5: explicit retry from BOUNDARY recovery -> remains BOUNDARY_VERIFY until 200/401', async () => {
+    const queryClient = createProductionQueryClient();
+
+    let resolveRetryAuthMe!: (res: Response) => void;
+    const retryAuthMePromise = new Promise<Response>((resolve) => {
+      resolveRetryAuthMe = resolve;
+    });
+
+    let authMeCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        authMeCount += 1;
+        if (authMeCount === 1) return jsonResponse(userAAuth);
+        if (authMeCount === 2) return jsonResponse({ statusCode: 503 }, 503);
+        return retryAuthMePromise;
+      }
+      return jsonResponse({});
+    }));
+
+    const { result } = renderHook(() => useAuth(), { wrapper: createWrapper(queryClient) });
+    await waitFor(() => expect(result.current.status).toBe('authenticated'));
+
+    // Remote boundary fails with 503
+    await act(async () => {
+      const channel = getBroadcastChannel();
+      channel?.onmessage?.({
+        data: {
+          type: 'SESSION_BOUNDARY_CHANGED',
+          eventId: 'evt-b5',
+          senderId: 'remote-tab',
+        },
+      } as MessageEvent);
+    });
+
+    await waitFor(() => expect(result.current.status).toBe('error'));
+    const preRetryGen = getCurrentSessionGeneration();
+
+    // Explicit retry from recovery
+    let retryPromise: Promise<void>;
+    await act(async () => {
+      retryPromise = result.current.retry();
+    });
+
+    // Invariant: Remains BOUNDARY_VERIFY, no redundant purge/generation rotation churn on retry
+    expect(result.current.reconciliationMode).toBe('BOUNDARY_VERIFY');
+    expect(getCurrentSessionGeneration()).toBe(preRetryGen);
+
+    // Resolve retry with User B
+    await act(async () => {
+      resolveRetryAuthMe(jsonResponse(userBAuth));
+      await retryPromise;
+    });
+
+    await waitFor(() => {
+      expect(result.current.reconciliationMode).toBe('NONE');
+      expect(result.current.status).toBe('authenticated');
+      expect(result.current.auth?.user.id).toBe('user-b');
+    });
+  });
+
+  it('65. AR-02 B6: User B lacks required capability -> only AFTER authoritative B is established may CapabilityRoute redirect to /khong-co-quyen', async () => {
+    const queryClient = createProductionQueryClient();
+
+    let resolveRemoteAuthMe!: (res: Response) => void;
+    const remoteAuthMePromise = new Promise<Response>((resolve) => {
+      resolveRemoteAuthMe = resolve;
+    });
+
+    const userAWithCap = {
+      user: { id: 'user-a', username: 'teacher_a', displayName: 'Giáo viên A', status: 'ACTIVE' as const, mustChangePassword: false },
+      capabilities: [{ key: 'BUSINESS_CONFIGURATION_MANAGE' as const, scope: 'SCHOOL_WIDE' as const }],
+    };
+
+    const userBWithoutCap = {
+      user: { id: 'user-b', username: 'teacher_b', displayName: 'Giáo viên B', status: 'ACTIVE' as const, mustChangePassword: false },
+      capabilities: [], // NO capabilities
+    };
+
+    let authMeCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        authMeCount += 1;
+        if (authMeCount === 1) return jsonResponse(userAWithCap);
+        return remoteAuthMePromise;
+      }
+      return jsonResponse({});
+    }));
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <MemoryRouter initialEntries={['/quan-tri/chinh-sach-nghiep-vu']}>
+            <Routes>
+              <Route element={<ProtectedRoute />}>
+                <Route
+                  element={<CapabilityRoute allow={(caps) => caps.some((c) => c.key === 'BUSINESS_CONFIGURATION_MANAGE')} />}
+                >
+                  <Route path="/quan-tri/chinh-sach-nghiep-vu" element={<div data-testid="target-route">Chính sách</div>} />
+                </Route>
+              </Route>
+              <Route path="/khong-co-quyen" element={<div data-testid="denial-route">Không có quyền</div>} />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByTestId('target-route')).toBeDefined();
+
+    // Remote boundary arrives
+    await act(async () => {
+      const channel = getBroadcastChannel();
+      channel?.onmessage?.({
+        data: {
+          type: 'SESSION_BOUNDARY_CHANGED',
+          eventId: 'evt-b6',
+          senderId: 'remote-tab',
+        },
+      } as MessageEvent);
+    });
+
+    // While pending: shielded with RouteLoading; NOT redirected yet!
+    expect(screen.queryByTestId('target-route')).toBeNull();
+    expect(screen.queryByTestId('denial-route')).toBeNull();
+
+    // Focus occurs while pending
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    expect(screen.queryByTestId('denial-route')).toBeNull();
+
+    // Now User B (lacking capability) resolves authoritatively
+    await act(async () => {
+      resolveRemoteAuthMe(jsonResponse(userBWithoutCap));
+    });
+
+    // ONLY now does CapabilityRoute legitimately redirect to /khong-co-quyen!
+    await waitFor(() => {
+      expect(screen.getByTestId('denial-route')).toBeDefined();
+    });
+    expect(screen.queryByTestId('target-route')).toBeNull();
+  });
 });

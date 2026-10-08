@@ -90,7 +90,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // 7. Monotonic sequence counter & invalidatePendingReconciliations ensures latest reconciliation wins; superseded responses perform no state mutation.
   const reconcileSessionBoundary = useCallback(async (options?: { isRemoteBoundary?: boolean }) => {
     const seq = ++reconciliationSeqRef.current;
-    const isRemote = options?.isRemoteBoundary ?? (reconciliationModeRef.current === 'BOUNDARY_VERIFY');
+    // AR-02: BOUNDARY_VERIFY is dominant until authoritative server resolution (200 or 401).
+    // An existing BOUNDARY_VERIFY must never be downgraded to FOREGROUND_VERIFY by an explicit
+    // isRemoteBoundary: false signal from any call site.
+    const isBoundaryDominant = reconciliationModeRef.current === 'BOUNDARY_VERIFY';
+    const isRemote = isBoundaryDominant || (options?.isRemoteBoundary ?? false);
 
     reconciliationModeRef.current = isRemote ? 'BOUNDARY_VERIFY' : 'FOREGROUND_VERIFY';
     setReconciliationMode(reconciliationModeRef.current);
@@ -99,10 +103,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     let alreadyPurged = false;
     if (isRemote) {
-      // Authoritative remote boundary signal: purge old cache & abort old generation immediately
-      clearSessionCache(queryClient);
-      previousUserIdRef.current = undefined;
-      lastVerifiedAuthRef.current = null;
+      // Authoritative remote boundary signal: purge old cache & abort old generation immediately.
+      // If already in BOUNDARY_VERIFY (e.g. recovery retry), old cache was already purged upon entry;
+      // avoid redundant purge and generation rotation churn.
+      if (!isBoundaryDominant) {
+        clearSessionCache(queryClient);
+        previousUserIdRef.current = undefined;
+        lastVerifiedAuthRef.current = null;
+      }
       alreadyPurged = true;
     }
 
@@ -187,6 +195,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+
+      // AR-02: BOUNDARY_VERIFY is dominant until server resolves authoritative (200 or 401).
+      // A foreground focus/visibility event must NEVER downgrade an unresolved boundary verification
+      // to foreground mode, nor start duplicate boundary requests or churn generation.
+      if (reconciliationModeRef.current === 'BOUNDARY_VERIFY') {
+        return;
+      }
 
       void reconcileSessionBoundary({ isRemoteBoundary: false });
     };
