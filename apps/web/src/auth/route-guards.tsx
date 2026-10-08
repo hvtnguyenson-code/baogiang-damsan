@@ -7,10 +7,16 @@ export function ProtectedRoute() {
   const auth = useAuth();
   const location = useLocation();
 
-  if (auth.reconciliationMode === 'BOUNDARY_VERIFY' || (auth.status === 'checking' && auth.reconciliationMode !== 'FOREGROUND_VERIFY')) {
+  if (auth.reconciliationMode === 'BOUNDARY_VERIFY') {
+    if (auth.reconciliationError) return <AuthRecovery />;
     return <RouteLoading />;
   }
-  if (auth.status === 'error') return <AuthRecovery />;
+  if (auth.status === 'checking' && auth.reconciliationMode !== 'FOREGROUND_VERIFY') {
+    return <RouteLoading />;
+  }
+  if (auth.status === 'error' && auth.reconciliationMode !== 'FOREGROUND_VERIFY') {
+    return <AuthRecovery />;
+  }
   if (auth.status === 'anonymous') {
     return <Navigate to="/dang-nhap" replace state={{ from: safeInternalPath(`${location.pathname}${location.search}`) }} />;
   }
@@ -26,7 +32,9 @@ export function ProtectedRoute() {
       >
         <Outlet />
       </div>
-      {isForegroundShielded && <RouteLoading label="Đang kiểm tra phiên làm việc" />}
+      {isForegroundShielded && (
+        auth.reconciliationError ? <AuthRecovery /> : <RouteLoading label="Đang kiểm tra phiên làm việc" />
+      )}
     </div>
   );
 }

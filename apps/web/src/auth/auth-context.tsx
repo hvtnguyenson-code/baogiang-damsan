@@ -21,6 +21,7 @@ interface AuthContextValue {
   status: AuthStatus;
   auth: AuthMeResponse | null;
   reconciliationMode: ReconciliationMode;
+  reconciliationError: ApiError | null;
   sessionIdentityKey: string;
   error: ApiError | null;
   logoutError: ApiError | null;
@@ -37,11 +38,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const [logoutError, setLogoutError] = useState<ApiError | null>(null);
   const [reconciliationMode, setReconciliationMode] = useState<ReconciliationMode>('NONE');
+  const [reconciliationError, setReconciliationError] = useState<ApiError | null>(null);
+  const reconciliationModeRef = useRef<ReconciliationMode>('NONE');
   const reconciliationSeqRef = useRef(0);
 
   const invalidatePendingReconciliations = useCallback(() => {
     reconciliationSeqRef.current += 1;
+    reconciliationModeRef.current = 'NONE';
     setReconciliationMode('NONE');
+    setReconciliationError(null);
   }, []);
 
   const authQuery = useQuery<AuthMeResponse | null, ApiError>({
@@ -73,18 +78,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // 3. Same-user server result: preserves business query cache, session generation, in-flight requests, and protected draft state.
   // 4. Changed-user server result: purges old business cache, aborts old generation, establishes single new session generation, and discards old draft state.
   // 5. Anonymous / 401 result: purges session/business cache, aborts old generation, transitions cleanly to anonymous.
-  // 6. Monotonic sequence counter & invalidatePendingReconciliations ensures latest reconciliation wins; superseded responses perform no state mutation.
+  // 6. Indeterminate verification failure (network / 5xx / malformed response):
+  //    - MUST NOT infer logout.
+  //    - If foreground: retains session, cache, generation, and mounted draft; enters bounded recovery UI.
+  //    - If boundary: remains in fail-closed recovery state without falsely classifying as anonymous.
+  // 7. Monotonic sequence counter & invalidatePendingReconciliations ensures latest reconciliation wins; superseded responses perform no state mutation.
   const reconcileSessionBoundary = useCallback(async (options?: { isRemoteBoundary?: boolean }) => {
     const seq = ++reconciliationSeqRef.current;
-    const isRemote = options?.isRemoteBoundary ?? false;
+    const isRemote = options?.isRemoteBoundary ?? (reconciliationModeRef.current === 'BOUNDARY_VERIFY');
 
-    setReconciliationMode(isRemote ? 'BOUNDARY_VERIFY' : 'FOREGROUND_VERIFY');
+    reconciliationModeRef.current = isRemote ? 'BOUNDARY_VERIFY' : 'FOREGROUND_VERIFY';
+    setReconciliationMode(reconciliationModeRef.current);
+    setReconciliationError(null);
     setLogoutError(null);
 
     let alreadyPurged = false;
     if (isRemote) {
       // Authoritative remote boundary signal: purge old cache & abort old generation immediately
       clearSessionCache(queryClient);
+      previousUserIdRef.current = undefined;
       alreadyPurged = true;
     }
 
@@ -104,6 +116,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // - DO NOT abort in-flight query or mutation
         queryClient.setQueryData(AUTH_QUERY_KEY, refreshed);
         previousUserIdRef.current = refreshed.user.id;
+        setReconciliationError(null);
+        reconciliationModeRef.current = 'NONE';
         setReconciliationMode('NONE');
       } else {
         // Identity changed (or previous session was anonymous):
@@ -115,16 +129,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // do not call startSessionScope() to prevent double-resetting generation.
         queryClient.setQueryData(AUTH_QUERY_KEY, refreshed);
         previousUserIdRef.current = refreshed.user.id;
+        setReconciliationError(null);
+        reconciliationModeRef.current = 'NONE';
         setReconciliationMode('NONE');
       }
-    } catch {
+    } catch (caught: unknown) {
       if (reconciliationSeqRef.current !== seq) return;
-      if (!alreadyPurged) {
-        clearSessionCache(queryClient);
+
+      const apiError = caught instanceof ApiError
+        ? caught
+        : new ApiError(0, 'Không thể kết nối đến máy chủ.');
+
+      if (apiError.statusCode === 401) {
+        // Authoritative anonymous confirmed by server 401:
+        if (!alreadyPurged) {
+          clearSessionCache(queryClient);
+        }
+        queryClient.setQueryData(AUTH_QUERY_KEY, null);
+        previousUserIdRef.current = undefined;
+        setReconciliationError(null);
+        reconciliationModeRef.current = 'NONE';
+        setReconciliationMode('NONE');
+      } else {
+        // Indeterminate verification failure (network / 5xx / malformed response):
+        // MUST NOT infer logout.
+        // If foreground: retains verified auth/session/cache internally, retains generation and draft,
+        // enters bounded verification-recovery state.
+        // If remote boundary: remains fail-closed in boundary recovery state without falsely classifying as anonymous.
+        setReconciliationError(apiError);
       }
-      queryClient.setQueryData(AUTH_QUERY_KEY, null);
-      previousUserIdRef.current = undefined;
-      setReconciliationMode('NONE');
     }
   }, [authQuery.data?.user.id, queryClient]);
 
@@ -180,11 +213,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const sessionIdentityKey = previousUserIdRef.current ?? authQuery.data?.user.id ?? 'anonymous';
 
   const value: AuthContextValue = {
-    status: deriveStatus(authQuery, reconciliationMode),
+    status: deriveStatus(authQuery, reconciliationMode, reconciliationError),
     auth: reconciliationMode !== 'NONE' ? null : (authQuery.data ?? null),
     reconciliationMode,
+    reconciliationError,
     sessionIdentityKey,
-    error: reconciliationMode !== 'NONE' ? null : (authQuery.error ?? null),
+    error: reconciliationError ?? (reconciliationMode !== 'NONE' ? null : (authQuery.error ?? null)),
     logoutError,
     isMutating: loginMutation.isPending || passwordMutation.isPending || logoutMutation.isPending,
     async login(input) {
@@ -250,7 +284,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     },
     async retry() {
-      await authQuery.refetch();
+      if (reconciliationModeRef.current !== 'NONE') {
+        await reconcileSessionBoundary({
+          isRemoteBoundary: reconciliationModeRef.current === 'BOUNDARY_VERIFY',
+        });
+      } else {
+        await authQuery.refetch();
+      }
     },
   };
 
@@ -264,7 +304,9 @@ function deriveStatus(
     error: ApiError | null;
   },
   reconciliationMode: ReconciliationMode,
+  reconciliationError: ApiError | null,
 ): AuthStatus {
+  if (reconciliationError) return 'error';
   if (reconciliationMode !== 'NONE' || query.isPending) return 'checking';
   if (query.error?.statusCode === 401 || query.data === null) return 'anonymous';
   if (query.error) return 'error';

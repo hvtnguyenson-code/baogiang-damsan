@@ -2065,4 +2065,790 @@ describe('CX-01 session and React Query cache isolation', () => {
     expect(mountCount).toBe(1);
     expect(unmountCount).toBe(0);
   });
+
+  it('39. Test RC6-01: foreground network failure does not logout', async () => {
+    const queryClient = createProductionQueryClient();
+
+    let rejectForegroundAuthMe!: (err: Error) => void;
+    const foregroundAuthMePromise = new Promise<Response>((_, reject) => {
+      rejectForegroundAuthMe = reject;
+    });
+
+    let authMeCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        authMeCount += 1;
+        if (authMeCount === 1) return jsonResponse(userAAuth);
+        return foregroundAuthMePromise;
+      }
+      return jsonResponse({});
+    }));
+
+    let mountCount = 0;
+    let unmountCount = 0;
+
+    function DraftFixture() {
+      const [draftText, setDraftText] = useState('');
+      useEffect(() => {
+        mountCount += 1;
+        return () => {
+          unmountCount += 1;
+        };
+      }, []);
+
+      return (
+        <div data-testid="protected-fixture">
+          <input
+            data-testid="draft-field"
+            value={draftText}
+            onChange={(e) => setDraftText(e.target.value)}
+          />
+        </div>
+      );
+    }
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <MemoryRouter initialEntries={['/protected']}>
+            <Routes>
+              <Route element={<ProtectedRoute />}>
+                <Route path="/protected" element={<DraftFixture />} />
+              </Route>
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('draft-field')).toBeDefined();
+    });
+
+    // Populate draft & business cache
+    const input = screen.getByTestId('draft-field') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'DRAFT-IN-PROGRESS' } });
+    expect(input.value).toBe('DRAFT-IN-PROGRESS');
+
+    queryClient.setQueryData(['reporting-statements-mine'], { items: ['statement-user-a'] });
+    const initialGen = getCurrentSessionGeneration();
+
+    // Trigger foreground return
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    // Reject foreground /auth/me with network error
+    await act(async () => {
+      rejectForegroundAuthMe(new TypeError('Failed to fetch'));
+    });
+
+    // Assert: recovery UI visible
+    await waitFor(() => {
+      expect(screen.getByText('Chưa thể kiểm tra phiên đăng nhập')).toBeDefined();
+      expect(screen.getByRole('button', { name: /thử lại/i })).toBeDefined();
+    });
+
+    // Assert: NOT anonymous
+    expect(screen.queryByText(/đăng nhập/i)?.closest('form')).toBeNull();
+
+    // Assert: AUTH_QUERY_KEY still contains verified User A internally
+    expect(queryClient.getQueryData(AUTH_QUERY_KEY)).toEqual(userAAuth);
+
+    // Assert: generation unchanged
+    expect(getCurrentSessionGeneration()).toBe(initialGen);
+
+    // Assert: business cache retained
+    expect(queryClient.getQueryData(['reporting-statements-mine'])).toEqual({ items: ['statement-user-a'] });
+
+    // Assert: protected subtree remains mounted
+    expect(screen.getByTestId('draft-field')).toBeDefined();
+    expect(input.value).toBe('DRAFT-IN-PROGRESS');
+    expect(mountCount).toBe(1);
+    expect(unmountCount).toBe(0);
+
+    // Assert: protected content remains hidden/non-interactive
+    const hiddenWrapper = screen.getByTestId('protected-fixture').parentElement;
+    expect(hiddenWrapper?.style.display).toBe('none');
+    expect(hiddenWrapper?.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('40. Test RC6-01: foreground 503 does not logout', async () => {
+    const queryClient = createProductionQueryClient();
+
+    let resolveForegroundAuthMe!: (res: Response) => void;
+    const foregroundAuthMePromise = new Promise<Response>((resolve) => {
+      resolveForegroundAuthMe = resolve;
+    });
+
+    let authMeCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        authMeCount += 1;
+        if (authMeCount === 1) return jsonResponse(userAAuth);
+        return foregroundAuthMePromise;
+      }
+      return jsonResponse({});
+    }));
+
+    let mountCount = 0;
+    let unmountCount = 0;
+
+    function DraftFixture() {
+      const [draftText, setDraftText] = useState('');
+      useEffect(() => {
+        mountCount += 1;
+        return () => {
+          unmountCount += 1;
+        };
+      }, []);
+
+      return (
+        <div data-testid="protected-fixture">
+          <input
+            data-testid="draft-field"
+            value={draftText}
+            onChange={(e) => setDraftText(e.target.value)}
+          />
+        </div>
+      );
+    }
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <MemoryRouter initialEntries={['/protected']}>
+            <Routes>
+              <Route element={<ProtectedRoute />}>
+                <Route path="/protected" element={<DraftFixture />} />
+              </Route>
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('draft-field')).toBeDefined();
+    });
+
+    const input = screen.getByTestId('draft-field') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'DRAFT-IN-PROGRESS-503' } });
+    expect(input.value).toBe('DRAFT-IN-PROGRESS-503');
+
+    queryClient.setQueryData(['reporting-statements-mine'], { items: ['statement-user-a-503'] });
+    const initialGen = getCurrentSessionGeneration();
+
+    // Trigger foreground return
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    // Resolve foreground /auth/me with HTTP 503 Service Unavailable
+    await act(async () => {
+      resolveForegroundAuthMe(jsonResponse({ statusCode: 503, error: 'Service Unavailable', message: 'Tạm thời quá tải' }, 503));
+    });
+
+    // Assert: recovery UI visible
+    await waitFor(() => {
+      expect(screen.getByText('Chưa thể kiểm tra phiên đăng nhập')).toBeDefined();
+      expect(screen.getByRole('button', { name: /thử lại/i })).toBeDefined();
+    });
+
+    // Assert: NOT anonymous
+    expect(screen.queryByText(/đăng nhập/i)?.closest('form')).toBeNull();
+
+    // Assert: AUTH_QUERY_KEY still contains verified User A internally
+    expect(queryClient.getQueryData(AUTH_QUERY_KEY)).toEqual(userAAuth);
+
+    // Assert: generation unchanged
+    expect(getCurrentSessionGeneration()).toBe(initialGen);
+
+    // Assert: business cache retained
+    expect(queryClient.getQueryData(['reporting-statements-mine'])).toEqual({ items: ['statement-user-a-503'] });
+
+    // Assert: protected subtree remains mounted
+    expect(screen.getByTestId('draft-field')).toBeDefined();
+    expect(input.value).toBe('DRAFT-IN-PROGRESS-503');
+    expect(mountCount).toBe(1);
+    expect(unmountCount).toBe(0);
+
+    // Assert: protected content remains hidden/non-interactive
+    const hiddenWrapper = screen.getByTestId('protected-fixture').parentElement;
+    expect(hiddenWrapper?.style.display).toBe('none');
+    expect(hiddenWrapper?.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('41. Test RC6-01: foreground network failure -> retry -> same User A', async () => {
+    const queryClient = createProductionQueryClient();
+
+    let rejectFirstForeground!: (err: Error) => void;
+    const firstForegroundPromise = new Promise<Response>((_, reject) => {
+      rejectFirstForeground = reject;
+    });
+
+    let resolveRetryForeground!: (res: Response) => void;
+    const retryForegroundPromise = new Promise<Response>((resolve) => {
+      resolveRetryForeground = resolve;
+    });
+
+    let authMeCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        authMeCount += 1;
+        if (authMeCount === 1) return jsonResponse(userAAuth);
+        if (authMeCount === 2) return firstForegroundPromise;
+        return retryForegroundPromise;
+      }
+      return jsonResponse({});
+    }));
+
+    let mountCount = 0;
+    let unmountCount = 0;
+
+    function DraftFixture() {
+      const [draftText, setDraftText] = useState('');
+      useEffect(() => {
+        mountCount += 1;
+        return () => {
+          unmountCount += 1;
+        };
+      }, []);
+
+      return (
+        <div data-testid="protected-fixture">
+          <input
+            data-testid="draft-field"
+            value={draftText}
+            onChange={(e) => setDraftText(e.target.value)}
+          />
+        </div>
+      );
+    }
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <MemoryRouter initialEntries={['/protected']}>
+            <Routes>
+              <Route element={<ProtectedRoute />}>
+                <Route path="/protected" element={<DraftFixture />} />
+              </Route>
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('draft-field')).toBeDefined();
+    });
+
+    // Draft = DRAFT-MUST-SURVIVE
+    const input = screen.getByTestId('draft-field') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'DRAFT-MUST-SURVIVE' } });
+    expect(input.value).toBe('DRAFT-MUST-SURVIVE');
+
+    queryClient.setQueryData(['reporting-statements-mine'], { items: ['valid-user-a-cache'] });
+    const initialGen = getCurrentSessionGeneration();
+
+    // 1. Foreground focus -> first reconciliation starts
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    // 2. First reconciliation fails with network error
+    await act(async () => {
+      rejectFirstForeground(new TypeError('Network disconnected'));
+    });
+
+    // 3. Recovery UI appears
+    await waitFor(() => {
+      expect(screen.getByText('Chưa thể kiểm tra phiên đăng nhập')).toBeDefined();
+    });
+    const retryButton = screen.getByRole('button', { name: /thử lại/i });
+
+    // 4. User clicks Retry
+    await act(async () => {
+      fireEvent.click(retryButton);
+    });
+
+    // 5. In-flight loading shield during retry
+    expect(screen.getByText('Đang kiểm tra phiên làm việc')).toBeDefined();
+
+    // 6. Retry resolves same User A
+    await act(async () => {
+      resolveRetryForeground(jsonResponse(userAAuth));
+    });
+
+    // 7. Normal authenticated UI restored
+    await waitFor(() => {
+      expect(screen.queryByText('Đang kiểm tra phiên làm việc')).toBeNull();
+      expect(screen.queryByText('Chưa thể kiểm tra phiên đăng nhập')).toBeNull();
+    });
+
+    // Assert: draft preserved exactly
+    expect(input.value).toBe('DRAFT-MUST-SURVIVE');
+
+    // Assert: no remount
+    expect(mountCount).toBe(1);
+    expect(unmountCount).toBe(0);
+
+    // Assert: generation unchanged
+    expect(getCurrentSessionGeneration()).toBe(initialGen);
+
+    // Assert: cache retained
+    expect(queryClient.getQueryData(['reporting-statements-mine'])).toEqual({ items: ['valid-user-a-cache'] });
+
+    // Assert: normal display restored
+    const fixtureWrapper = screen.getByTestId('protected-fixture').parentElement;
+    expect(fixtureWrapper?.style.display).toBe('');
+    expect(fixtureWrapper?.getAttribute('aria-hidden')).toBeNull();
+  });
+
+  it('42. Test RC6-01: foreground failure -> retry -> User B', async () => {
+    const queryClient = createProductionQueryClient();
+
+    let rejectFirstForeground!: (err: Error) => void;
+    const firstForegroundPromise = new Promise<Response>((_, reject) => {
+      rejectFirstForeground = reject;
+    });
+
+    let resolveRetryForeground!: (res: Response) => void;
+    const retryForegroundPromise = new Promise<Response>((resolve) => {
+      resolveRetryForeground = resolve;
+    });
+
+    let authMeCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        authMeCount += 1;
+        if (authMeCount === 1) return jsonResponse(userAAuth);
+        if (authMeCount === 2) return firstForegroundPromise;
+        return retryForegroundPromise;
+      }
+      return jsonResponse({});
+    }));
+
+    let unmountCount = 0;
+    function UserDraftFixture() {
+      const [text, setText] = useState('');
+      useEffect(() => {
+        return () => {
+          unmountCount += 1;
+        };
+      }, []);
+
+      return (
+        <div>
+          <input data-testid="user-input" value={text} onChange={(e) => setText(e.target.value)} />
+        </div>
+      );
+    }
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <MemoryRouter initialEntries={['/protected']}>
+            <Routes>
+              <Route element={<ProtectedRoute />}>
+                <Route path="/protected" element={<UserDraftFixture />} />
+              </Route>
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('user-input')).toBeDefined();
+    });
+
+    const input = screen.getByTestId('user-input') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'USER-A-OLD-DRAFT' } });
+    expect(input.value).toBe('USER-A-OLD-DRAFT');
+
+    queryClient.setQueryData(['reporting-statements-mine'], { items: ['user-a-business-cache'] });
+    const initialGen = getCurrentSessionGeneration();
+
+    // 1. Foreground focus -> first verification fails network
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await act(async () => {
+      rejectFirstForeground(new TypeError('Network disconnected'));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Chưa thể kiểm tra phiên đăng nhập')).toBeDefined();
+    });
+
+    // 2. Click Retry -> resolves User B
+    const retryButton = screen.getByRole('button', { name: /thử lại/i });
+    await act(async () => {
+      fireEvent.click(retryButton);
+    });
+    await act(async () => {
+      resolveRetryForeground(jsonResponse(userBAuth));
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText('Chưa thể kiểm tra phiên đăng nhập')).toBeNull();
+    });
+
+    // Assert: old A draft discarded
+    expect(unmountCount).toBeGreaterThan(0);
+    const freshInput = screen.getByTestId('user-input') as HTMLInputElement;
+    expect(freshInput.value).toBe('');
+
+    // Assert: old A cache cleared
+    expect(queryClient.getQueryData(['reporting-statements-mine'])).toBeUndefined();
+
+    // Assert: old generation invalidated
+    expect(getCurrentSessionGeneration()).toBeGreaterThan(initialGen);
+
+    // Assert: B established
+    expect(queryClient.getQueryData(AUTH_QUERY_KEY)).toEqual(userBAuth);
+  });
+
+  it('43. Test RC6-01: foreground failure -> retry -> 401', async () => {
+    const queryClient = createProductionQueryClient();
+
+    let rejectFirstForeground!: (err: Error) => void;
+    const firstForegroundPromise = new Promise<Response>((_, reject) => {
+      rejectFirstForeground = reject;
+    });
+
+    let resolveRetryForeground!: (res: Response) => void;
+    const retryForegroundPromise = new Promise<Response>((resolve) => {
+      resolveRetryForeground = resolve;
+    });
+
+    let authMeCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        authMeCount += 1;
+        if (authMeCount === 1) return jsonResponse(userAAuth);
+        if (authMeCount === 2) return firstForegroundPromise;
+        return retryForegroundPromise;
+      }
+      return jsonResponse({});
+    }));
+
+    let unmountCount = 0;
+    function UserDraftFixture() {
+      const [text, setText] = useState('');
+      useEffect(() => {
+        return () => {
+          unmountCount += 1;
+        };
+      }, []);
+
+      return (
+        <div>
+          <input data-testid="user-input" value={text} onChange={(e) => setText(e.target.value)} />
+        </div>
+      );
+    }
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <MemoryRouter initialEntries={['/protected']}>
+            <Routes>
+              <Route element={<ProtectedRoute />}>
+                <Route path="/protected" element={<UserDraftFixture />} />
+              </Route>
+              <Route path="/dang-nhap" element={<div data-testid="login-page">Trang đăng nhập</div>} />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('user-input')).toBeDefined();
+    });
+
+    const input = screen.getByTestId('user-input') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'USER-A-OLD-DRAFT-401' } });
+    expect(input.value).toBe('USER-A-OLD-DRAFT-401');
+
+    queryClient.setQueryData(['reporting-statements-mine'], { items: ['user-a-cache'] });
+    const initialGen = getCurrentSessionGeneration();
+
+    // 1. First verification fails network
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await act(async () => {
+      rejectFirstForeground(new TypeError('Network disconnected'));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Chưa thể kiểm tra phiên đăng nhập')).toBeDefined();
+    });
+
+    // 2. Retry returns 401
+    const retryButton = screen.getByRole('button', { name: /thử lại/i });
+    await act(async () => {
+      fireEvent.click(retryButton);
+    });
+    await act(async () => {
+      resolveRetryForeground(jsonResponse({ statusCode: 401, error: 'Unauthorized', message: 'Hết phiên' }, 401));
+    });
+
+    // Assert: anonymous/login
+    await waitFor(() => {
+      expect(screen.getByTestId('login-page')).toBeDefined();
+    });
+
+    // Assert: old draft destroyed
+    expect(unmountCount).toBeGreaterThan(0);
+    expect(screen.queryByTestId('user-input')).toBeNull();
+
+    // Assert: old cache removed
+    expect(queryClient.getQueryData(['reporting-statements-mine'])).toBeUndefined();
+
+    // Assert: old generation invalidated
+    expect(getCurrentSessionGeneration()).toBeGreaterThan(initialGen);
+  });
+
+  it('44. Test RC6-01: remote boundary + network failure is NOT anonymous', async () => {
+    const queryClient = createProductionQueryClient();
+
+    let resolveRemoteAuthMe!: (res: Response) => void;
+    const remoteAuthMePromise = new Promise<Response>((resolve) => {
+      resolveRemoteAuthMe = resolve;
+    });
+
+    let authMeCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        authMeCount += 1;
+        if (authMeCount === 1) return jsonResponse(userAAuth);
+        return remoteAuthMePromise;
+      }
+      return jsonResponse({});
+    }));
+
+    let unmountCount = 0;
+    function UserDraftFixture() {
+      const [text, setText] = useState('');
+      useEffect(() => {
+        return () => {
+          unmountCount += 1;
+        };
+      }, []);
+
+      return (
+        <div>
+          <input data-testid="user-input" value={text} onChange={(e) => setText(e.target.value)} />
+        </div>
+      );
+    }
+
+    setLocalTabIdForTesting('tab-a');
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <MemoryRouter initialEntries={['/protected']}>
+            <Routes>
+              <Route element={<ProtectedRoute />}>
+                <Route path="/protected" element={<UserDraftFixture />} />
+              </Route>
+              <Route path="/dang-nhap" element={<div data-testid="login-page">Trang đăng nhập</div>} />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('user-input')).toBeDefined();
+    });
+
+    const input = screen.getByTestId('user-input') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'USER-A-REMOTE-DRAFT' } });
+    expect(input.value).toBe('USER-A-REMOTE-DRAFT');
+
+    queryClient.setQueryData(['reporting-statements-mine'], { items: ['user-a-cache'] });
+
+    // 1. Remote boundary arrives from tab-b
+    await act(async () => {
+      const channel = getBroadcastChannel();
+      channel?.onmessage?.({
+        data: { type: 'SESSION_BOUNDARY_CHANGED', eventId: 'evt-test-44', senderId: 'tab-b' },
+      } as MessageEvent);
+    });
+
+    // 2. /auth/me network/503 fails
+    await act(async () => {
+      resolveRemoteAuthMe(jsonResponse({ statusCode: 503, error: 'Unavailable', message: 'Tạm dừng phục vụ' }, 503));
+    });
+
+    // Assert: boundary recovery UI remains
+    await waitFor(() => {
+      expect(screen.getByText('Chưa thể kiểm tra phiên đăng nhập')).toBeDefined();
+    });
+
+    // Assert: NOT authenticated as old user
+    expect(screen.queryByText('user-a')).toBeNull();
+
+    // Assert: NOT falsely classified anonymous/login
+    expect(screen.queryByTestId('login-page')).toBeNull();
+
+    // Assert: old A business cache remains absent
+    expect(queryClient.getQueryData(['reporting-statements-mine'])).toBeUndefined();
+
+    // Assert: old A draft remains destroyed
+    expect(unmountCount).toBeGreaterThan(0);
+    expect(screen.queryByTestId('user-input')).toBeNull();
+  });
+
+  it('45. Test RC6-01: remote boundary recovery retry -> User B', async () => {
+    const queryClient = createProductionQueryClient();
+
+    let resolveRemoteAuthMe!: (res: Response) => void;
+    const remoteAuthMePromise = new Promise<Response>((resolve) => {
+      resolveRemoteAuthMe = resolve;
+    });
+
+    let resolveRetryAuthMe!: (res: Response) => void;
+    const retryAuthMePromise = new Promise<Response>((resolve) => {
+      resolveRetryAuthMe = resolve;
+    });
+
+    let authMeCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        authMeCount += 1;
+        if (authMeCount === 1) return jsonResponse(userAAuth);
+        if (authMeCount === 2) return remoteAuthMePromise;
+        return retryAuthMePromise;
+      }
+      return jsonResponse({});
+    }));
+
+    setLocalTabIdForTesting('tab-a');
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <MemoryRouter initialEntries={['/protected']}>
+            <Routes>
+              <Route element={<ProtectedRoute />}>
+                <Route path="/protected" element={<div data-testid="protected-content">Nội dung bảo vệ</div>} />
+              </Route>
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('protected-content')).toBeDefined();
+    });
+
+    // 1. Remote boundary arrives
+    await act(async () => {
+      const channel = getBroadcastChannel();
+      channel?.onmessage?.({
+        data: { type: 'SESSION_BOUNDARY_CHANGED', eventId: 'evt-test-45', senderId: 'tab-b' },
+      } as MessageEvent);
+    });
+
+    // 2. /auth/me fails with 503
+    await act(async () => {
+      resolveRemoteAuthMe(jsonResponse({ statusCode: 503, error: 'Unavailable', message: 'Tạm dừng phục vụ' }, 503));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Chưa thể kiểm tra phiên đăng nhập')).toBeDefined();
+    });
+
+    // 3. User clicks Retry
+    const retryButton = screen.getByRole('button', { name: /thử lại/i });
+    await act(async () => {
+      fireEvent.click(retryButton);
+    });
+
+    // 4. Retry resolves User B
+    await act(async () => {
+      resolveRetryAuthMe(jsonResponse(userBAuth));
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText('Chưa thể kiểm tra phiên đăng nhập')).toBeNull();
+      expect(screen.getByTestId('protected-content')).toBeDefined();
+    });
+
+    // Assert: User B established safely
+    expect(queryClient.getQueryData(AUTH_QUERY_KEY)).toEqual(userBAuth);
+  });
+
+  it('46. Test RC6-01: stale reconciliation error cannot overwrite newer success', async () => {
+    const queryClient = createProductionQueryClient();
+
+    let rejectReconciliationN!: (err: Error) => void;
+    const reconciliationNPromise = new Promise<Response>((_, reject) => {
+      rejectReconciliationN = reject;
+    });
+
+    let authMeCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        authMeCount += 1;
+        if (authMeCount === 1) return jsonResponse(userAAuth);
+        if (authMeCount === 2) return reconciliationNPromise; // Reconciliation N
+        return jsonResponse(userBAuth); // Reconciliation N+1
+      }
+      return jsonResponse({});
+    }));
+
+    setLocalTabIdForTesting('tab-a');
+    const { result } = renderHook(() => useAuth(), { wrapper: createWrapper(queryClient) });
+    await waitFor(() => expect(result.current.status).toBe('authenticated'));
+
+    // 1. Start Reconciliation N (e.g. window focus)
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    expect(result.current.reconciliationMode).toBe('FOREGROUND_VERIFY');
+
+    // 2. Start Reconciliation N+1 (e.g. another focus or remote boundary) that succeeds with User B
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await waitFor(() => {
+      expect(result.current.status).toBe('authenticated');
+      expect(result.current.auth?.user.id).toBe('user-b');
+      expect(result.current.reconciliationMode).toBe('NONE');
+      expect(result.current.reconciliationError).toBeNull();
+    });
+
+    // Populate distinct cache for User B
+    queryClient.setQueryData(['reporting-statements-mine'], { items: ['user-b-clean-cache'] });
+
+    // 3. Late Reconciliation N now fails with network error
+    await act(async () => {
+      rejectReconciliationN(new TypeError('Late network error'));
+    });
+
+    // Assert: Zero state mutation!
+    // User B remains authenticated, no reconciliation error, cache intact
+    expect(result.current.status).toBe('authenticated');
+    expect(result.current.auth?.user.id).toBe('user-b');
+    expect(result.current.reconciliationMode).toBe('NONE');
+    expect(result.current.reconciliationError).toBeNull();
+    expect(queryClient.getQueryData(['reporting-statements-mine'])).toEqual({ items: ['user-b-clean-cache'] });
+    expect(queryClient.getQueryData(AUTH_QUERY_KEY)).toEqual(userBAuth);
+  });
 });
