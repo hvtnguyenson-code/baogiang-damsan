@@ -17,7 +17,7 @@ import {
   setLocalTabIdForTesting,
   setSessionChannelNameForTesting,
 } from '../auth/session-cache';
-import { ApiError, apiFetch, login } from '../lib/api-client';
+import { ApiError, apiFetch, fetchAuthMe, login } from '../lib/api-client';
 import { hasSchoolCapability } from '../lib/capabilities';
 import { MakeupSchedulingPage } from '../pages/MakeupSchedulingPage';
 import { ReportingStatementsPage } from '../pages/ReportingStatementsPage';
@@ -3373,7 +3373,6 @@ describe('CX-01 session and React Query cache isolation', () => {
     await act(async () => {
       await expect(apiFetch('/reporting-statements/mine')).rejects.toMatchObject({
         statusCode: 401,
-        message: 'Hết phiên',
       });
     });
 
@@ -4008,5 +4007,322 @@ describe('CX-01 session and React Query cache isolation', () => {
       expect(screen.getByTestId('denial-route')).toBeDefined();
     });
     expect(screen.queryByTestId('target-route')).toBeNull();
+  });
+
+  // --- AR-01-R1: Preserve Authoritative 401 When Global Notification is Suppressed ---
+
+  it('66. AR-01-R1 R1-01: fetchAuthMe({ notifyUnauthorized: false }) + 401 valid JSON -> ApiError 401, listener NOT called', async () => {
+    const listener = vi.fn();
+    const unsubscribe = onUnauthorized(listener);
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      jsonResponse({ statusCode: 401, error: 'Unauthorized', message: 'Hết phiên' }, 401),
+    ));
+
+    const err = await fetchAuthMe({ notifyUnauthorized: false }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).statusCode).toBe(401);
+    expect(listener).not.toHaveBeenCalled();
+
+    unsubscribe();
+  });
+
+  it('67. AR-01-R1 R1-02: fetchAuthMe({ notifyUnauthorized: false }) + 401 malformed JSON -> ApiError 401, listener NOT called', async () => {
+    const listener = vi.fn();
+    const unsubscribe = onUnauthorized(listener);
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      new Response('{bad json', {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    ));
+
+    const err = await fetchAuthMe({ notifyUnauthorized: false }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).statusCode).toBe(401);
+    expect(listener).not.toHaveBeenCalled();
+
+    unsubscribe();
+  });
+
+  it('68. AR-01-R1 R1-03: fetchAuthMe({ notifyUnauthorized: false }) + 401 body stream rejects with TypeError -> ApiError 401, listener NOT called', async () => {
+    const listener = vi.fn();
+    const unsubscribe = onUnauthorized(listener);
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      headers: new Headers({ 'Content-Type': 'application/json' }),
+      text: async () => {
+        throw new TypeError('terminated');
+      },
+    } as unknown as Response));
+
+    const err = await fetchAuthMe({ notifyUnauthorized: false }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).statusCode).toBe(401);
+    expect(listener).not.toHaveBeenCalled();
+
+    unsubscribe();
+  });
+
+  it('69. AR-01-R1 R1-04: fetchAuthMe({ notifyUnauthorized: false }) + 401 body stream never resolves -> ApiError 401 without waiting for body', async () => {
+    const listener = vi.fn();
+    const unsubscribe = onUnauthorized(listener);
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      headers: new Headers({ 'Content-Type': 'application/json' }),
+      text: () => new Promise<string>(() => {}), // Stalled stream
+    } as unknown as Response));
+
+    const stalledPromise = fetchAuthMe({ notifyUnauthorized: false });
+    const timeoutGuard = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('body read stalled')), 500),
+    );
+
+    const err = await Promise.race([stalledPromise.catch((e: unknown) => e), timeoutGuard]);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).statusCode).toBe(401);
+    expect(listener).not.toHaveBeenCalled();
+
+    unsubscribe();
+  });
+
+  it('70. AR-01-R1 R1-05: foreground reconciliation + /auth/me 401 body read rejects -> anonymous, business cache cleared, generation rotated', async () => {
+    const queryClient = createProductionQueryClient();
+    const listener = vi.fn();
+    const unsubscribe = onUnauthorized(listener);
+
+    let authMeCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        authMeCount += 1;
+        if (authMeCount === 1) return jsonResponse(userAAuth);
+        // Foreground reconciliation returns 401 with broken body
+        return {
+          ok: false,
+          status: 401,
+          headers: new Headers({ 'Content-Type': 'application/json' }),
+          text: async () => {
+            throw new Error('connection dropped during body');
+          },
+        } as unknown as Response;
+      }
+      return jsonResponse({});
+    }));
+
+    const { result } = renderHook(() => useAuth(), { wrapper: createWrapper(queryClient) });
+    await waitFor(() => expect(result.current.status).toBe('authenticated'));
+
+    queryClient.setQueryData(['reporting-statements-mine'], { items: ['user-a-cache'] });
+    const initialGen = getCurrentSessionGeneration();
+
+    // Trigger window focus foreground reconciliation
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('anonymous');
+      expect(result.current.reconciliationMode).toBe('NONE');
+    });
+
+    expect(queryClient.getQueryData(['reporting-statements-mine'])).toBeUndefined();
+    expect(getCurrentSessionGeneration()).toBeGreaterThan(initialGen);
+
+    unsubscribe();
+  });
+
+  it('71. AR-01-R1 R1-06: remote BOUNDARY_VERIFY + /auth/me 401 body read rejects -> anonymous, no old cache, NOT recovery/error', async () => {
+    const queryClient = createProductionQueryClient();
+    const listener = vi.fn();
+    const unsubscribe = onUnauthorized(listener);
+
+    let authMeCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        authMeCount += 1;
+        if (authMeCount === 1) return jsonResponse(userAAuth);
+        // Remote boundary verification returns 401 with broken body
+        return {
+          ok: false,
+          status: 401,
+          headers: new Headers({ 'Content-Type': 'application/json' }),
+          text: async () => {
+            throw new Error('broken body stream');
+          },
+        } as unknown as Response;
+      }
+      return jsonResponse({});
+    }));
+
+    const { result } = renderHook(() => useAuth(), { wrapper: createWrapper(queryClient) });
+    await waitFor(() => expect(result.current.status).toBe('authenticated'));
+
+    queryClient.setQueryData(['reporting-statements-mine'], { items: ['user-a-cache'] });
+
+    // Remote boundary event arrives
+    await act(async () => {
+      const channel = getBroadcastChannel();
+      channel?.onmessage?.({
+        data: {
+          type: 'SESSION_BOUNDARY_CHANGED',
+          eventId: 'evt-r1-06',
+          senderId: 'remote-tab',
+        },
+      } as MessageEvent);
+    });
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('anonymous');
+      expect(result.current.reconciliationMode).toBe('NONE');
+    });
+
+    // Authoritative anonymous: must NOT be 'error' or stuck in boundary recovery
+    expect(result.current.status).not.toBe('error');
+    expect(queryClient.getQueryData(['reporting-statements-mine'])).toBeUndefined();
+
+    unsubscribe();
+  });
+
+  it('72. AR-01-R1 R1-07: change-password credential 401 + follow-up /auth/me 401 broken/stalled body -> recognized expired session, old auth cleared', async () => {
+    const queryClient = createProductionQueryClient();
+    const listener = vi.fn();
+    const unsubscribe = onUnauthorized(listener);
+
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        // Follow-up /auth/me after 401 change-password returns 401 with broken body
+        return {
+          ok: false,
+          status: 401,
+          headers: new Headers({ 'Content-Type': 'application/json' }),
+          text: async () => {
+            throw new TypeError('terminated');
+          },
+        } as unknown as Response;
+      }
+      if (url.endsWith('/auth/change-password')) {
+        return jsonResponse({ statusCode: 401, message: 'Current password incorrect' }, 401);
+      }
+      return jsonResponse({});
+    }));
+
+    // Prepopulate authenticated cache
+    queryClient.setQueryData(AUTH_QUERY_KEY, userAAuth);
+    const { result } = renderHook(() => useAuth(), { wrapper: createWrapper(queryClient) });
+    await waitFor(() => expect(result.current.status).toBe('authenticated'));
+
+    await act(async () => {
+      await expect(
+        result.current.changePassword({ currentPassword: 'wrong', newPassword: 'NewPassword123' }),
+      ).rejects.toMatchObject({ statusCode: 401 });
+    });
+
+    // Explicit password reconciliation recognizes confirmed expired session from follow-up 401
+    expect(queryClient.getQueryData(AUTH_QUERY_KEY)).toBeNull();
+
+    unsubscribe();
+  });
+
+  it('73. AR-01-R1 R1-08: login credential 401 with malformed/stalled body -> ApiError 401, no global unauthorized notification', async () => {
+    const listener = vi.fn();
+    const unsubscribe = onUnauthorized(listener);
+
+    // Malformed body
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      new Response('{malformed body', {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    ));
+    await expect(login({ username: 'user', password: 'bad' })).rejects.toMatchObject({ statusCode: 401 });
+    expect(listener).not.toHaveBeenCalled();
+
+    // Stalled body
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      headers: new Headers({ 'Content-Type': 'application/json' }),
+      text: () => new Promise<string>(() => {}),
+    } as unknown as Response));
+    await expect(login({ username: 'user', password: 'bad' })).rejects.toMatchObject({ statusCode: 401 });
+    expect(listener).not.toHaveBeenCalled();
+
+    unsubscribe();
+  });
+
+  it('74. AR-01-R1 R1-09: old-generation protected 401 after User B exists -> remains rejected as session change, User B unaffected', async () => {
+    const queryClient = createProductionQueryClient();
+    const listener = vi.fn();
+    const unsubscribe = onUnauthorized(listener);
+
+    let resolveUserARequest!: (res: Response) => void;
+    const userAPromise = new Promise<Response>((resolve) => {
+      resolveUserARequest = resolve;
+    });
+
+    let authMeCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        authMeCount += 1;
+        if (authMeCount === 1) return jsonResponse(userAAuth);
+        return jsonResponse(userBAuth);
+      }
+      if (url.endsWith('/reporting-statements/mine')) {
+        return userAPromise;
+      }
+      if (url.endsWith('/auth/login')) {
+        return jsonResponse({ token: 'new-cookie' });
+      }
+      return jsonResponse({});
+    }));
+
+    const { result } = renderHook(() => useAuth(), { wrapper: createWrapper(queryClient) });
+    await waitFor(() => expect(result.current.status).toBe('authenticated'));
+    expect(result.current.auth?.user.id).toBe('user-a');
+
+    // 1. User A initiates protected in-flight request
+    const pendingRequest = apiFetch('/reporting-statements/mine').catch((err: unknown) => err);
+
+    // 2. User B logs in, establishing a new session generation
+    await act(async () => {
+      await result.current.login({ username: 'user_b', password: 'ValidPassword1' });
+    });
+    expect(result.current.auth?.user.id).toBe('user-b');
+    queryClient.setQueryData(['reporting-statements-mine'], { items: ['user-b-cache'] });
+
+    listener.mockClear();
+
+    // 3. Old User A request resolves with 401 (even with broken/stalled body)
+    await act(async () => {
+      resolveUserARequest({
+        ok: false,
+        status: 401,
+        headers: new Headers({ 'Content-Type': 'application/json' }),
+        text: async () => {
+          throw new TypeError('terminated');
+        },
+      } as unknown as Response);
+    });
+
+    const rejectedError = (await pendingRequest) as ApiError;
+    expect(rejectedError).toBeInstanceOf(ApiError);
+    expect(rejectedError.statusCode).toBe(0);
+    expect(rejectedError.message).toBe('Yêu cầu bị hủy do phiên làm việc đã thay đổi.');
+
+    // User B MUST remain authenticated and cache untouched
+    expect(listener).not.toHaveBeenCalled();
+    expect(result.current.auth?.user.id).toBe('user-b');
+    expect(queryClient.getQueryData(['reporting-statements-mine'])).toEqual({ items: ['user-b-cache'] });
+
+    unsubscribe();
   });
 });

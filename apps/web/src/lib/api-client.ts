@@ -117,27 +117,17 @@ export async function apiFetch<T>(path: string, options: ApiRequestOptions = {})
     throw new ApiError(0, 'Yêu cầu bị hủy do phiên làm việc đã thay đổi.');
   }
 
-  // Authoritative session boundary handling:
-  // If a protected non-credential request receives HTTP 401, the status code itself is authoritative.
-  // Session invalidation must be notified immediately and deterministically, regardless of whether
-  // the response body is valid JSON, malformed JSON, empty, or fails during stream read.
-  if (response.status === 401 && shouldNotifyUnauthorized) {
-    notifyUnauthorized();
-    let parsed: ParsedApiErrorPayload = {};
-    try {
-      const body = await readJson(response);
-      parsed = parseApiErrorPayload(body);
-    } catch {
-      // Body read/parse failed (malformed JSON, stalled/aborted stream, etc.)
-      // Session invalidation has already executed; reject with bounded 401 error.
-      throw new ApiError(401, 'Máy chủ trả về dữ liệu không hợp lệ.');
+  // AR-01-R1: HTTP 401 status code is authoritative for current-generation session validity.
+  // Separation of concerns:
+  // 1. shouldNotifyUnauthorized === true triggers global unauthorized notification/broadcast.
+  // 2. shouldNotifyUnauthorized === false suppresses only global notification/broadcast;
+  //    it MUST NOT suppress HTTP 401 status code authority or fall through to body parsing.
+  // The response body is non-authoritative for session validity and is not awaited (avoiding stalls/aborts).
+  if (response.status === 401) {
+    if (shouldNotifyUnauthorized) {
+      notifyUnauthorized();
     }
-    throw new ApiError(
-      401,
-      normalizeMessage(parsed.message),
-      parsed.requestId,
-      parsed.serverError,
-    );
+    throw new ApiError(401, 'Phiên làm việc đã hết hạn hoặc không hợp lệ.');
   }
 
   let body: unknown;
