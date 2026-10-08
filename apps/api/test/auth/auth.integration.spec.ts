@@ -10,6 +10,8 @@ const testDatabaseUrl = process.env['TEST_DATABASE_URL'];
 const integration = testDatabaseUrl ? describe : describe.skip;
 
 integration('Auth API (isolated PostgreSQL integration)', () => {
+  jest.setTimeout(30000);
+
   let app: INestApplication;
   let prisma: PrismaClient;
   let passwords: PasswordService;
@@ -58,6 +60,20 @@ integration('Auth API (isolated PostgreSQL integration)', () => {
       },
     });
     return user.id;
+  }
+
+  function createBarrier() {
+    let resolve!: () => void;
+    let reject!: (error: unknown) => void;
+    const promise = new Promise<void>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return {
+      wait: () => promise,
+      signal: () => resolve(),
+      abort: (err: unknown) => reject(err),
+    };
   }
 
   it('uses a generic failure response and applies transaction-safe temporary lockout', async () => {
@@ -163,4 +179,210 @@ integration('Auth API (isolated PostgreSQL integration)', () => {
     await expect(bootstrapAdmin(prisma, passwords, input)).rejects.toThrow('no data was overwritten');
     expect(await prisma.user.count({ where: { username: 'admin' } })).toBe(1);
   });
+
+  it('enforces Invariant A/C/F: stale credential proof delayed past rotation fails closed without issuing session or success audit', async () => {
+    const userId = await createUser('stale-race-user');
+    const agentActive = request.agent(app.getHttpServer());
+    const initialLogin = await agentActive
+      .post('/api/auth/login')
+      .send({ username: 'stale-race-user', password: originalPassword });
+    expect(initialLogin.status).toBe(200);
+
+    const activeSession = await prisma.authSession.findFirstOrThrow({
+      where: { userId, revokedAt: null },
+    });
+
+    const verifyStarted = createBarrier();
+    const rotationCommitted = createBarrier();
+    const realVerify = passwords.verify.bind(passwords);
+
+    let pauseInflightLogin = true;
+    const verifySpy = jest.spyOn(passwords, 'verify').mockImplementation(async (hash, plain) => {
+      const ok = await realVerify(hash, plain);
+      if (pauseInflightLogin && ok && plain === originalPassword) {
+        pauseInflightLogin = false;
+        verifyStarted.signal();
+        await rotationCommitted.wait();
+      }
+      return ok;
+    });
+
+    try {
+      const delayedLoginPromise = request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({ username: 'stale-race-user', password: originalPassword })
+        .then((res) => res);
+
+      await verifyStarted.wait();
+
+      const rotationRes = await agentActive
+        .post('/api/auth/change-password')
+        .set('Origin', origin)
+        .send({ currentPassword: originalPassword, newPassword: 'NewRotatedPassword9' });
+      expect(rotationRes.status).toBe(200);
+
+      const userAfterRotation = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+      expect(await realVerify(userAfterRotation.passwordHash, 'NewRotatedPassword9')).toBe(true);
+      expect(await realVerify(userAfterRotation.passwordHash, originalPassword)).toBe(false);
+
+      rotationCommitted.signal();
+
+      const delayedLoginRes = await delayedLoginPromise;
+      expect(delayedLoginRes.status).toBe(401);
+      expect(delayedLoginRes.body.message).toBe('Tên đăng nhập hoặc mật khẩu không hợp lệ.');
+
+      const sessions = await prisma.authSession.findMany({ where: { userId } });
+      expect(sessions).toHaveLength(1);
+      expect(sessions[0].id).toBe(activeSession.id);
+
+      const successEvents = await prisma.auditEvent.findMany({
+        where: { actorUserId: userId, action: 'AUTH_LOGIN_SUCCESS' },
+      });
+      expect(successEvents).toHaveLength(1);
+
+      const failureEvents = await prisma.auditEvent.findMany({
+        where: { actorUserId: userId, action: 'AUTH_LOGIN_FAILURE' },
+      });
+      expect(failureEvents.length).toBeGreaterThanOrEqual(1);
+
+      const userFinal = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+      expect(userFinal.failedLoginCount).toBe(1);
+
+      const newLoginRes = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({ username: 'stale-race-user', password: 'NewRotatedPassword9' });
+      expect(newLoginRes.status).toBe(200);
+
+      const oldLoginRes = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({ username: 'stale-race-user', password: originalPassword });
+      expect(oldLoginRes.status).toBe(401);
+
+      expect((await agentActive.get('/api/auth/me')).status).toBe(200);
+    } finally {
+      verifySpy.mockRestore();
+    }
+  }, 30000);
+
+  it('enforces Invariant B: login committed before password rotation is revoked upon rotation commit', async () => {
+    const userId = await createUser('prior-login-user');
+    const agentPrior = request.agent(app.getHttpServer());
+    const agentChanger = request.agent(app.getHttpServer());
+
+    const priorLogin = await agentPrior
+      .post('/api/auth/login')
+      .send({ username: 'prior-login-user', password: originalPassword });
+    expect(priorLogin.status).toBe(200);
+
+    const changerLogin = await agentChanger
+      .post('/api/auth/login')
+      .send({ username: 'prior-login-user', password: originalPassword });
+    expect(changerLogin.status).toBe(200);
+
+    expect((await agentPrior.get('/api/auth/me')).status).toBe(200);
+    expect((await agentChanger.get('/api/auth/me')).status).toBe(200);
+
+    const changeRes = await agentChanger
+      .post('/api/auth/change-password')
+      .set('Origin', origin)
+      .send({ currentPassword: originalPassword, newPassword: 'NewRotatedPassword8' });
+    expect(changeRes.status).toBe(200);
+
+    expect((await agentPrior.get('/api/auth/me')).status).toBe(401);
+    expect((await agentChanger.get('/api/auth/me')).status).toBe(200);
+
+    const priorSessions = await prisma.authSession.findMany({
+      where: { userId, revokedAt: { not: null } },
+    });
+    expect(priorSessions.length).toBeGreaterThanOrEqual(1);
+  }, 30000);
+
+  it('enforces Requirement 7: concurrent password change race allows only one authoritative change and rejects stale rotation', async () => {
+    const userId = await createUser('double-change-user');
+    const loginResA = await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .send({ username: 'double-change-user', password: originalPassword });
+    const cookieA = (loginResA.headers['set-cookie'] as unknown as string[])[0].split(';')[0];
+
+    const loginResB = await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .send({ username: 'double-change-user', password: originalPassword });
+    const cookieB = (loginResB.headers['set-cookie'] as unknown as string[])[0].split(';')[0];
+
+    const aVerified = createBarrier();
+    const bVerified = createBarrier();
+    const aCanCommit = createBarrier();
+    const bCanCommit = createBarrier();
+
+    const realVerify = passwords.verify.bind(passwords);
+    let aIntercepted = false;
+    let bIntercepted = false;
+
+    const verifySpy = jest.spyOn(passwords, 'verify').mockImplementation(async (hash, plain) => {
+      const ok = await realVerify(hash, plain);
+      if (ok && plain === originalPassword) {
+        if (!aIntercepted) {
+          aIntercepted = true;
+          aVerified.signal();
+          await aCanCommit.wait();
+        } else if (!bIntercepted) {
+          bIntercepted = true;
+          bVerified.signal();
+          await bCanCommit.wait();
+        }
+      }
+      return ok;
+    });
+
+    try {
+      const promiseA = request(app.getHttpServer())
+        .post('/api/auth/change-password')
+        .set('Origin', origin)
+        .set('Cookie', cookieA)
+        .send({ currentPassword: originalPassword, newPassword: 'FirstReplacementPass8' })
+        .then((res) => res);
+
+      await aVerified.wait();
+
+      const promiseB = request(app.getHttpServer())
+        .post('/api/auth/change-password')
+        .set('Origin', origin)
+        .set('Cookie', cookieB)
+        .send({ currentPassword: originalPassword, newPassword: 'SecondReplacementPass8' })
+        .then((res) => res);
+
+      await bVerified.wait();
+
+      aCanCommit.signal();
+      bCanCommit.signal();
+      const [resA, resB] = await Promise.all([promiseA, promiseB]);
+
+      // Exactly one must succeed (200) and the other must fail (401)
+      const statuses = [resA.status, resB.status].sort();
+      expect(statuses).toEqual([200, 401]);
+
+      const failedRes = resA.status === 401 ? resA : resB;
+      const succeededRes = resA.status === 200 ? resA : resB;
+      expect(failedRes.body.message).toBe('Mật khẩu hiện tại không hợp lệ.');
+
+      const winningPassword = succeededRes === resA ? 'FirstReplacementPass8' : 'SecondReplacementPass8';
+      const losingPassword = winningPassword === 'FirstReplacementPass8' ? 'SecondReplacementPass8' : 'FirstReplacementPass8';
+
+      const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+      expect(await realVerify(user.passwordHash, winningPassword)).toBe(true);
+      expect(await realVerify(user.passwordHash, losingPassword)).toBe(false);
+
+      const loginWinner = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({ username: 'double-change-user', password: winningPassword });
+      expect(loginWinner.status).toBe(200);
+
+      const loginLoser = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({ username: 'double-change-user', password: losingPassword });
+      expect(loginLoser.status).toBe(401);
+    } finally {
+      verifySpy.mockRestore();
+    }
+  }, 30000);
 });
