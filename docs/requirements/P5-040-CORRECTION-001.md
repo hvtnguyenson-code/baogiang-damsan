@@ -603,3 +603,53 @@ Address confirmed material adversarial findings AR-01 through AR-04 from the Cod
 - Task `P6-020`: strictly **`DEFERRED_WITH_TRIGGER`**.
 - Production state: strictly **`PRE-OPERATIONAL`**.
 
+## 12. Review Correction 009 — Preserve Authoritative 401 When Global Notification is Suppressed (AR-01-R1)
+
+### 12.1 Scope and Objective
+Address confirmed adversarial finding AR-01-R1 from the Codex targeted adversarial re-review on branch `fix/p5-040-consistency-correction-001`:
+1. **AR-01-R1 (MEDIUM): HTTP 401 Authority Classification Coupled with Global Side Effect.**
+   - *Root cause:* `apiFetch()` in `apps/web/src/lib/api-client.ts` previously branched on `response.status === 401 && shouldNotifyUnauthorized`. When global notification was suppressed (`shouldNotifyUnauthorized === false`, such as in `fetchAuthMe({ notifyUnauthorized: false })`), HTTP 401 fell through to standard body parsing via `readJson(response)`. If the 401 response body had malformed JSON, a stream read failure, or stalled indefinitely, `readJson` threw a non-ApiError exception. Callers (e.g. `reconcileSessionBoundary`) caught this and normalized it to `ApiError(0, 'Không thể kết nối đến máy chủ.')`, incorrectly treating authoritative HTTP 401 as an indeterminate network error (resulting in error recovery rather than authoritative anonymous).
+   - *Remediation:* Completely decouple HTTP 401 status code authority from global unauthorized notification:
+     - Every current-generation HTTP 401 is surfaced to callers as `ApiError` with `statusCode: 401` unconditionally.
+     - `shouldNotifyUnauthorized === false` suppresses ONLY the global notification/broadcast side effect; it never ignores HTTP 401 status authority or falls through to body parsing.
+     - The 401 response body is non-authoritative for session validity and is not awaited at all, eliminating any risk of stream stalls, connection drops, or malformed syntax masking the authoritative 401 boundary. Safe, bounded local copy (`Phiên làm việc đã hết hạn hoặc không hợp lệ.`) is returned.
+
+### 12.2 Invariants Preserved
+- AR-02 boundary dominance, AR-03 Telegram runtime ack validation, AR-04 Make-up fail-closed reload.
+- Generation safety: generation check remains strictly prior to 401 handling, preventing stale-generation 401 responses from invalidating newer user sessions.
+- Credential endpoints (`/auth/login`, `/auth/change-password`) continue returning `ApiError(401)` without global unauthorized broadcast, preserving existing user-facing form validation and error UX.
+- Zero schema changes, zero database migrations, zero workflow/infrastructure changes.
+
+### 12.3 Regression Suites & Test Evidence
+1. **AR-01-R1 Tests (R1-01..R1-09) in `apps/web/src/__tests__/session-cache-isolation.test.tsx` (Tests 66..74):**
+   - **Test 66 (R1-01):** `fetchAuthMe({ notifyUnauthorized: false })` + 401 valid JSON -> `ApiError.statusCode === 401`, listener NOT called.
+   - **Test 67 (R1-02):** `fetchAuthMe({ notifyUnauthorized: false })` + 401 malformed JSON -> `ApiError.statusCode === 401`, listener NOT called.
+   - **Test 68 (R1-03):** `fetchAuthMe({ notifyUnauthorized: false })` + 401 body stream rejects with `TypeError('terminated')` -> `ApiError.statusCode === 401`, listener NOT called.
+   - **Test 69 (R1-04):** `fetchAuthMe({ notifyUnauthorized: false })` + 401 body stream never resolves -> `ApiError(401)` returned immediately without waiting for body.
+   - **Test 70 (R1-05):** Foreground reconciliation + `/auth/me` 401 with body read rejecting -> final status anonymous, business cache cleared, generation rotated.
+   - **Test 71 (R1-06):** Remote `BOUNDARY_VERIFY` + `/auth/me` 401 with body read rejecting -> final status anonymous, no old cache, NOT recovery/error.
+   - **Test 72 (R1-07):** Credential `/auth/change-password` 401 + follow-up `/auth/me` 401 with broken/stalled body -> recognized confirmed expired session, old auth cleared according to existing policy.
+   - **Test 73 (R1-08):** Credential `/auth/login` 401 with malformed/stalled body -> `ApiError(401)`, no global unauthorized notification, login form UX preserved.
+   - **Test 74 (R1-09):** Old-generation protected 401 after User B exists -> remains rejected as session change (`statusCode: 0`), User B unaffected.
+
+### 12.4 Verification Summary
+- `session-cache-isolation.test.tsx`: 74 passed, 0 failed (all 65 prior tests + 9 R1 tests).
+- `api-client.test.ts`: 13 passed, 0 failed.
+- `auth-flow.test.tsx`: 23 passed, 0 failed.
+- Web unit tests: `npm run test:unit -w apps/web`: 28 test files passed (454 tests).
+- Monorepo unit tests: `npm run test:unit`: 127 test files passed (2292 tests: 454 web + 1838 api).
+- Lint: `npm run lint`: PASS (0 warnings across all 4 packages).
+- Typecheck: `npm run typecheck`: PASS (0 errors across contracts, config, api, web).
+- Static gates: PASS (`test:schema:static`, `test:secrets`, `test:ui:static`).
+- Monorepo build: `npm run build`: PASS (contracts, config, api, web).
+- Diff check: `git diff --check`: PASS.
+
+### 12.5 Implementation Commits
+1. `30ebf3a` — `fix(web): preserve suppressed 401 authority`
+2. *(current)* — `docs(governance): record P5-040 review correction 009`
+
+### 12.6 Governance Status
+- Task `P5-040`: strictly **`IN_PROGRESS`** (awaiting final Codex re-review).
+- Task `P6-020`: strictly **`DEFERRED_WITH_TRIGGER`**.
+- Production state: strictly **`PRE-OPERATIONAL`**.
+
