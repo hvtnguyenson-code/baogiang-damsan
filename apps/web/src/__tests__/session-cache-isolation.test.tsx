@@ -3347,4 +3347,270 @@ describe('CX-01 session and React Query cache isolation', () => {
     const newSelect = screen.getByLabelText('Năm học') as HTMLSelectElement;
     expect(newSelect.value).toBe('year-1');
   });
+
+  // --- AR-01: Protected HTTP 401 must invalidate session even if body is malformed/empty/stalled ---
+
+  it('53. AR-01 A1: protected 401 + valid JSON -> exactly one unauthorized boundary, anonymous, cache cleared, generation invalidated', async () => {
+    const queryClient = createProductionQueryClient();
+    const listener = vi.fn();
+    const unsubscribe = onUnauthorized(listener);
+
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) return jsonResponse(userAAuth);
+      if (url.endsWith('/reporting-statements/mine')) {
+        return jsonResponse({ statusCode: 401, error: 'Unauthorized', message: 'Hết phiên' }, 401);
+      }
+      return jsonResponse({});
+    }));
+
+    const { result } = renderHook(() => useAuth(), { wrapper: createWrapper(queryClient) });
+    await waitFor(() => expect(result.current.status).toBe('authenticated'));
+
+    queryClient.setQueryData(['reporting-statements-mine'], { items: ['user-a-cache'] });
+    const initialGen = getCurrentSessionGeneration();
+
+    await act(async () => {
+      await expect(apiFetch('/reporting-statements/mine')).rejects.toMatchObject({
+        statusCode: 401,
+        message: 'Hết phiên',
+      });
+    });
+
+    expect(listener).toHaveBeenCalledOnce();
+    expect(queryClient.getQueryData(['reporting-statements-mine'])).toBeUndefined();
+    expect(result.current.status).toBe('anonymous');
+    expect(getCurrentSessionGeneration()).toBeGreaterThan(initialGen);
+
+    unsubscribe();
+  });
+
+  it('54. AR-01 A2: protected 401 + malformed JSON body -> same session invalidation as A1', async () => {
+    const queryClient = createProductionQueryClient();
+    const listener = vi.fn();
+    const unsubscribe = onUnauthorized(listener);
+
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) return jsonResponse(userAAuth);
+      if (url.endsWith('/reporting-statements/mine')) {
+        return new Response('{bad json', {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return jsonResponse({});
+    }));
+
+    const { result } = renderHook(() => useAuth(), { wrapper: createWrapper(queryClient) });
+    await waitFor(() => expect(result.current.status).toBe('authenticated'));
+
+    queryClient.setQueryData(['reporting-statements-mine'], { items: ['user-a-cache'] });
+    const initialGen = getCurrentSessionGeneration();
+
+    await act(async () => {
+      await expect(apiFetch('/reporting-statements/mine')).rejects.toMatchObject({
+        statusCode: 401,
+      });
+    });
+
+    expect(listener).toHaveBeenCalledOnce();
+    expect(queryClient.getQueryData(['reporting-statements-mine'])).toBeUndefined();
+    expect(result.current.status).toBe('anonymous');
+    expect(getCurrentSessionGeneration()).toBeGreaterThan(initialGen);
+
+    unsubscribe();
+  });
+
+  it('55. AR-01 A3: protected 401 + empty JSON body -> same session invalidation', async () => {
+    const queryClient = createProductionQueryClient();
+    const listener = vi.fn();
+    const unsubscribe = onUnauthorized(listener);
+
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) return jsonResponse(userAAuth);
+      if (url.endsWith('/reporting-statements/mine')) {
+        return new Response('', {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return jsonResponse({});
+    }));
+
+    const { result } = renderHook(() => useAuth(), { wrapper: createWrapper(queryClient) });
+    await waitFor(() => expect(result.current.status).toBe('authenticated'));
+
+    queryClient.setQueryData(['reporting-statements-mine'], { items: ['user-a-cache'] });
+    const initialGen = getCurrentSessionGeneration();
+
+    await act(async () => {
+      await expect(apiFetch('/reporting-statements/mine')).rejects.toMatchObject({
+        statusCode: 401,
+      });
+    });
+
+    expect(listener).toHaveBeenCalledOnce();
+    expect(queryClient.getQueryData(['reporting-statements-mine'])).toBeUndefined();
+    expect(result.current.status).toBe('anonymous');
+    expect(getCurrentSessionGeneration()).toBeGreaterThan(initialGen);
+
+    unsubscribe();
+  });
+
+  it('56. AR-01 A4: protected 401 where body read rejects after headers -> session still invalidated', async () => {
+    const queryClient = createProductionQueryClient();
+    const listener = vi.fn();
+    const unsubscribe = onUnauthorized(listener);
+
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) return jsonResponse(userAAuth);
+      if (url.endsWith('/reporting-statements/mine')) {
+        return {
+          ok: false,
+          status: 401,
+          headers: new Headers({ 'Content-Type': 'application/json' }),
+          text: async () => {
+            throw new Error('Connection reset by peer after headers');
+          },
+        } as unknown as Response;
+      }
+      return jsonResponse({});
+    }));
+
+    const { result } = renderHook(() => useAuth(), { wrapper: createWrapper(queryClient) });
+    await waitFor(() => expect(result.current.status).toBe('authenticated'));
+
+    queryClient.setQueryData(['reporting-statements-mine'], { items: ['user-a-cache'] });
+    const initialGen = getCurrentSessionGeneration();
+
+    await act(async () => {
+      await expect(apiFetch('/reporting-statements/mine')).rejects.toMatchObject({
+        statusCode: 401,
+      });
+    });
+
+    expect(listener).toHaveBeenCalledOnce();
+    expect(queryClient.getQueryData(['reporting-statements-mine'])).toBeUndefined();
+    expect(result.current.status).toBe('anonymous');
+    expect(getCurrentSessionGeneration()).toBeGreaterThan(initialGen);
+
+    unsubscribe();
+  });
+
+  it('57. AR-01 A5: credential /auth/login 401 malformed/valid does NOT trigger global unauthorized boundary', async () => {
+    const listener = vi.fn();
+    const unsubscribe = onUnauthorized(listener);
+
+    // Malformed body
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      new Response('{bad json', { status: 401, headers: { 'Content-Type': 'application/json' } }),
+    ));
+    await expect(login({ username: 'user', password: 'bad' })).rejects.toMatchObject({ statusCode: 401 });
+    expect(listener).not.toHaveBeenCalled();
+
+    // Valid body
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      jsonResponse({ statusCode: 401, message: 'Sai mật khẩu' }, 401),
+    ));
+    await expect(login({ username: 'user', password: 'bad' })).rejects.toMatchObject({ statusCode: 401 });
+    expect(listener).not.toHaveBeenCalled();
+
+    unsubscribe();
+  });
+
+  it('58. AR-01 A6: credential /auth/change-password 401 preserves existing deterministic reconciliation policy', async () => {
+    const queryClient = createProductionQueryClient();
+    const listener = vi.fn();
+    const unsubscribe = onUnauthorized(listener);
+
+    // When change-password returns 401, auth-context calls fetchAuthMe({ notifyUnauthorized: false })
+    // If /auth/me returns 200, session remains valid and listener is NOT notified
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) return jsonResponse(userAAuth);
+      if (url.endsWith('/auth/change-password')) {
+        return jsonResponse({ statusCode: 401, message: 'Mật khẩu hiện tại không đúng' }, 401);
+      }
+      return jsonResponse({});
+    }));
+
+    const { result } = renderHook(() => useAuth(), { wrapper: createWrapper(queryClient) });
+    await waitFor(() => expect(result.current.status).toBe('authenticated'));
+
+    await act(async () => {
+      await expect(
+        result.current.changePassword({ currentPassword: 'wrong', newPassword: 'NewPassword123' }),
+      ).rejects.toMatchObject({ statusCode: 401 });
+    });
+
+    expect(listener).not.toHaveBeenCalled();
+    expect(result.current.status).toBe('authenticated');
+
+    unsubscribe();
+  });
+
+  it('59. AR-01 A7: old-generation protected 401 arriving after User B session established MUST NOT invalidate User B', async () => {
+    const queryClient = createProductionQueryClient();
+    const listener = vi.fn();
+    const unsubscribe = onUnauthorized(listener);
+
+    let resolveUserARequest!: (res: Response) => void;
+    const userAPromise = new Promise<Response>((resolve) => {
+      resolveUserARequest = resolve;
+    });
+
+    let authMeCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        authMeCount += 1;
+        if (authMeCount === 1) return jsonResponse(userAAuth);
+        return jsonResponse(userBAuth);
+      }
+      if (url.endsWith('/reporting-statements/mine')) {
+        return userAPromise;
+      }
+      if (url.endsWith('/auth/login')) {
+        return jsonResponse({ token: 'new-cookie' });
+      }
+      return jsonResponse({});
+    }));
+
+    const { result } = renderHook(() => useAuth(), { wrapper: createWrapper(queryClient) });
+    await waitFor(() => expect(result.current.status).toBe('authenticated'));
+    expect(result.current.auth?.user.id).toBe('user-a');
+
+    // 1. User A initiates protected in-flight request
+    const pendingRequest = apiFetch('/reporting-statements/mine').catch((err: unknown) => err);
+
+    // 2. User B logs in, establishing a new session generation
+    await act(async () => {
+      await result.current.login({ username: 'user_b', password: 'ValidPassword1' });
+    });
+    expect(result.current.auth?.user.id).toBe('user-b');
+    queryClient.setQueryData(['reporting-statements-mine'], { items: ['user-b-cache'] });
+
+    // Clear listener count from login transition
+    listener.mockClear();
+
+    // 3. Old User A request resolves with 401 now (stale response)
+    await act(async () => {
+      resolveUserARequest(jsonResponse({ statusCode: 401, error: 'Unauthorized', message: 'Hết phiên cũ' }, 401));
+    });
+
+    const rejectedError = (await pendingRequest) as ApiError;
+    expect(rejectedError).toBeInstanceOf(ApiError);
+    expect(rejectedError.statusCode).toBe(0);
+    expect(rejectedError.message).toBe('Yêu cầu bị hủy do phiên làm việc đã thay đổi.');
+
+    // Old 401 MUST NOT trigger listener or invalidate User B session
+    expect(listener).not.toHaveBeenCalled();
+    expect(result.current.auth?.user.id).toBe('user-b');
+    expect(queryClient.getQueryData(['reporting-statements-mine'])).toEqual({ items: ['user-b-cache'] });
+
+    unsubscribe();
+  });
 });

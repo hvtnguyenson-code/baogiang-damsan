@@ -117,6 +117,29 @@ export async function apiFetch<T>(path: string, options: ApiRequestOptions = {})
     throw new ApiError(0, 'Yêu cầu bị hủy do phiên làm việc đã thay đổi.');
   }
 
+  // Authoritative session boundary handling:
+  // If a protected non-credential request receives HTTP 401, the status code itself is authoritative.
+  // Session invalidation must be notified immediately and deterministically, regardless of whether
+  // the response body is valid JSON, malformed JSON, empty, or fails during stream read.
+  if (response.status === 401 && shouldNotifyUnauthorized) {
+    notifyUnauthorized();
+    let parsed: ParsedApiErrorPayload = {};
+    try {
+      const body = await readJson(response);
+      parsed = parseApiErrorPayload(body);
+    } catch {
+      // Body read/parse failed (malformed JSON, stalled/aborted stream, etc.)
+      // Session invalidation has already executed; reject with bounded 401 error.
+      throw new ApiError(401, 'Máy chủ trả về dữ liệu không hợp lệ.');
+    }
+    throw new ApiError(
+      401,
+      normalizeMessage(parsed.message),
+      parsed.requestId,
+      parsed.serverError,
+    );
+  }
+
   let body: unknown;
   try {
     body = await readJson(response);
@@ -137,9 +160,6 @@ export async function apiFetch<T>(path: string, options: ApiRequestOptions = {})
   }
 
   if (!response.ok) {
-    if (response.status === 401 && shouldNotifyUnauthorized) {
-      notifyUnauthorized();
-    }
     const parsed = parseApiErrorPayload(body);
     throw new ApiError(
       response.status,
