@@ -370,4 +370,394 @@ describe('MakeupSchedulingPage', () => {
     expect(await screen.findByText(/Hình học giải tích — Bài 1 \(Bản lưu trữ\)/)).toBeInTheDocument();
     expect(screen.getByText(/Tiết 3/)).toBeInTheDocument();
   });
+
+  describe('AR-04: Candidate/schedule decoupling and fail-closed reload', () => {
+    it('D1: initial PASS -> select candidate -> reload with candidates BLOCKED and schedules 503 => BLOCKED visible, old create form absent, submit impossible', async () => {
+      let isReload = false;
+      const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? 'GET';
+
+        if (url.endsWith('/auth/me')) return jsonResponse(schoolWideAuth);
+        if (url.includes('/academic-years?')) return jsonResponse({ items: years, page: 1, pageSize: 50, total: 1 });
+        if (url.includes('/makeup-schedules/target-options?')) return jsonResponse(mockTargetOptions);
+
+        if (url.includes('/makeup-schedules/candidates?')) {
+          if (isReload) {
+            return jsonResponse({
+              status: 'BLOCKED',
+              items: [],
+              page: 1,
+              pageSize: 50,
+              total: 0,
+              blockedFindings: ['AR04_FINDING_BLOCKED_D1'],
+            });
+          }
+          return jsonResponse({
+            status: 'PASS',
+            items: [mockCandidate],
+            page: 1,
+            pageSize: 50,
+            total: 1,
+          });
+        }
+
+        if (url.includes('/makeup-schedules?') && method === 'GET') {
+          if (isReload) {
+            return jsonResponse({ message: 'Schedule database connection failed' }, 503);
+          }
+          return jsonResponse({
+            items: [mockSchedule],
+            page: 1,
+            pageSize: 50,
+            total: 1,
+            collisionCoverage: { hasInterruptionCollision: false, hasCalendarExceptionCollision: false, hasTimetableCollision: false, hasActiveScheduleCollision: false, hasSpecialActivityCollision: false },
+          });
+        }
+
+        return jsonResponse({});
+      });
+
+      vi.stubGlobal('fetch', fetchMock);
+      renderApp('/quan-tri/lich-day-bu');
+
+      // Select candidate
+      const selectBtn = await screen.findByRole('button', { name: 'Lập lịch bù' });
+      fireEvent.click(selectBtn);
+      expect(screen.getByText('Thiết lập lịch dạy bù')).toBeInTheDocument();
+
+      // Trigger reload with candidates BLOCKED and schedules 503
+      isReload = true;
+      const reloadBtn = screen.getByRole('button', { name: 'Tải lại danh sách' });
+      fireEvent.click(reloadBtn);
+
+      // Verify BLOCKED warning visible
+      expect(await screen.findByText(/Chưa thể xác định đầy đủ nghĩa vụ dạy bù do dữ liệu nguồn đang bị chặn/i)).toBeInTheDocument();
+      expect(screen.getByText(/AR04_FINDING_BLOCKED_D1/)).toBeInTheDocument();
+
+      // Verify schedule error is surfaced separately
+      expect(screen.getByText(/Lỗi tải danh sách lịch dạy bù/i)).toBeInTheDocument();
+
+      // Verify old create form absent and submit impossible
+      expect(screen.queryByText('Thiết lập lịch dạy bù')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Xác nhận tạo lịch dạy bù/i })).not.toBeInTheDocument();
+    });
+
+    it('D2: initial PASS -> selected candidate -> candidate request 503 => old candidate becomes non-actionable', async () => {
+      let isReload = false;
+      const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? 'GET';
+
+        if (url.endsWith('/auth/me')) return jsonResponse(schoolWideAuth);
+        if (url.includes('/academic-years?')) return jsonResponse({ items: years, page: 1, pageSize: 50, total: 1 });
+
+        if (url.includes('/makeup-schedules/candidates?')) {
+          if (isReload) {
+            return jsonResponse({ message: 'Candidate lookup service unavailable' }, 503);
+          }
+          return jsonResponse({
+            status: 'PASS',
+            items: [mockCandidate],
+            page: 1,
+            pageSize: 50,
+            total: 1,
+          });
+        }
+
+        if (url.includes('/makeup-schedules?') && method === 'GET') {
+          return jsonResponse({
+            items: [mockSchedule],
+            page: 1,
+            pageSize: 50,
+            total: 1,
+            collisionCoverage: { hasInterruptionCollision: false, hasCalendarExceptionCollision: false, hasTimetableCollision: false, hasActiveScheduleCollision: false, hasSpecialActivityCollision: false },
+          });
+        }
+
+        return jsonResponse({});
+      });
+
+      vi.stubGlobal('fetch', fetchMock);
+      renderApp('/quan-tri/lich-day-bu');
+
+      // Select candidate
+      const selectBtn = await screen.findByRole('button', { name: 'Lập lịch bù' });
+      fireEvent.click(selectBtn);
+      expect(screen.getByText('Thiết lập lịch dạy bù')).toBeInTheDocument();
+
+      // Trigger reload where candidates fails with 503
+      isReload = true;
+      const reloadBtn = screen.getByRole('button', { name: 'Tải lại danh sách' });
+      fireEvent.click(reloadBtn);
+
+      // Verify candidate error alert is visible
+      expect(await screen.findByText(/Lỗi tải danh sách nghĩa vụ dạy bù/i)).toBeInTheDocument();
+
+      // Old candidate form is cleared and submit button is absent
+      expect(screen.queryByText('Thiết lập lịch dạy bù')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Xác nhận tạo lịch dạy bù/i })).not.toBeInTheDocument();
+    });
+
+    it('D3: candidates BLOCKED -> schedules delayed/fails later => BLOCKED applied independently before/finally despite schedule error', async () => {
+      let resolveSchedules!: (val: Response) => void;
+      const schedulesDeferred = new Promise<Response>((resolve) => {
+        resolveSchedules = resolve;
+      });
+
+      const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? 'GET';
+
+        if (url.endsWith('/auth/me')) return jsonResponse(schoolWideAuth);
+        if (url.includes('/academic-years?')) return jsonResponse({ items: years, page: 1, pageSize: 50, total: 1 });
+
+        if (url.includes('/makeup-schedules/candidates?')) {
+          // Candidates returns BLOCKED immediately
+          return jsonResponse({
+            status: 'BLOCKED',
+            items: [],
+            page: 1,
+            pageSize: 50,
+            total: 0,
+            blockedFindings: ['AR04_FINDING_BLOCKED_D3'],
+          });
+        }
+
+        if (url.includes('/makeup-schedules?') && method === 'GET') {
+          // Schedules is held pending
+          return schedulesDeferred;
+        }
+
+        return jsonResponse({});
+      });
+
+      vi.stubGlobal('fetch', fetchMock);
+      renderApp('/quan-tri/lich-day-bu');
+
+      // BLOCKED is applied independently and immediately before schedules promise settles
+      expect(await screen.findByText(/Chưa thể xác định đầy đủ nghĩa vụ dạy bù do dữ liệu nguồn đang bị chặn/i)).toBeInTheDocument();
+      expect(screen.getByText(/AR04_FINDING_BLOCKED_D3/)).toBeInTheDocument();
+
+      // Schedules fails later with 503
+      resolveSchedules(jsonResponse({ message: 'Schedules timed out' }, 503));
+
+      // Schedule error is displayed separately, and BLOCKED state remains intact
+      expect(await screen.findByText(/Lỗi tải danh sách lịch dạy bù/i)).toBeInTheDocument();
+      expect(screen.getByText(/Chưa thể xác định đầy đủ nghĩa vụ dạy bù do dữ liệu nguồn đang bị chặn/i)).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Lập lịch bù' })).not.toBeInTheDocument();
+    });
+
+    it('D4: candidates PASS -> schedules 503 => candidate PASS behavior remains deterministic and schedule error displayed separately', async () => {
+      const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? 'GET';
+
+        if (url.endsWith('/auth/me')) return jsonResponse(schoolWideAuth);
+        if (url.includes('/academic-years?')) return jsonResponse({ items: years, page: 1, pageSize: 50, total: 1 });
+
+        if (url.includes('/makeup-schedules/candidates?')) {
+          return jsonResponse({
+            status: 'PASS',
+            items: [mockCandidate],
+            page: 1,
+            pageSize: 50,
+            total: 1,
+          });
+        }
+
+        if (url.includes('/makeup-schedules?') && method === 'GET') {
+          return jsonResponse({ message: 'Internal schedule query error' }, 503);
+        }
+
+        return jsonResponse({});
+      });
+
+      vi.stubGlobal('fetch', fetchMock);
+      renderApp('/quan-tri/lich-day-bu');
+
+      // Candidate PASS is rendered deterministically
+      const selectBtn = await screen.findByRole('button', { name: 'Lập lịch bù' });
+      expect(selectBtn).toBeInTheDocument();
+      expect(screen.queryByText(/Chưa thể xác định đầy đủ nghĩa vụ dạy bù do dữ liệu nguồn đang bị chặn/i)).not.toBeInTheDocument();
+
+      // Schedule error is displayed separately
+      expect(await screen.findByText(/Lỗi tải danh sách lịch dạy bù/i)).toBeInTheDocument();
+
+      // Action remains possible on the verified candidate
+      fireEvent.click(selectBtn);
+      expect(screen.getByText('Thiết lập lịch dạy bù')).toBeInTheDocument();
+    });
+
+    it('D5: overlapping reload: request A old context delayed, request B new context completes, then A completes => A cannot overwrite B state', async () => {
+      let resolveCandidateA!: (val: Response) => void;
+      const candidateADeferred = new Promise<Response>((resolve) => {
+        resolveCandidateA = resolve;
+      });
+
+      let candidateCallCount = 0;
+      const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? 'GET';
+
+        if (url.endsWith('/auth/me')) return jsonResponse(schoolWideAuth);
+        if (url.includes('/academic-years?')) return jsonResponse({ items: years, page: 1, pageSize: 50, total: 1 });
+
+        if (url.includes('/makeup-schedules/candidates?')) {
+          candidateCallCount++;
+          if (candidateCallCount === 1) {
+            // Initial load
+            return jsonResponse({
+              status: 'PASS',
+              items: [mockCandidate],
+              page: 1,
+              pageSize: 50,
+              total: 1,
+            });
+          }
+          if (candidateCallCount === 2) {
+            // Request A: delayed
+            return candidateADeferred;
+          }
+          // Request B: completes fast with BLOCKED
+          return jsonResponse({
+            status: 'BLOCKED',
+            items: [],
+            page: 1,
+            pageSize: 50,
+            total: 0,
+            blockedFindings: ['AR04_FINDING_BLOCKED_FROM_REQUEST_B'],
+          });
+        }
+
+        if (url.includes('/makeup-schedules?') && method === 'GET') {
+          return jsonResponse({
+            items: [mockSchedule],
+            page: 1,
+            pageSize: 50,
+            total: 1,
+            collisionCoverage: { hasInterruptionCollision: false, hasCalendarExceptionCollision: false, hasTimetableCollision: false, hasActiveScheduleCollision: false, hasSpecialActivityCollision: false },
+          });
+        }
+
+        return jsonResponse({});
+      });
+
+      vi.stubGlobal('fetch', fetchMock);
+      renderApp('/quan-tri/lich-day-bu');
+
+      // Initial load PASS
+      expect(await screen.findByRole('button', { name: 'Lập lịch bù' })).toBeInTheDocument();
+
+      const subjectSelect = screen.getByLabelText(/Lọc theo môn học/i);
+
+      // Trigger Request A (slow) by switching subject
+      fireEvent.change(subjectSelect, { target: { value: 'sub-math-uuid' } });
+
+      // Trigger Request B immediately while A is pending by switching subject again
+      fireEvent.change(subjectSelect, { target: { value: '' } });
+
+      // Request B completes immediately -> BLOCKED state shown
+      expect(await screen.findByText(/Chưa thể xác định đầy đủ nghĩa vụ dạy bù do dữ liệu nguồn đang bị chặn/i)).toBeInTheDocument();
+      expect(screen.getByText(/AR04_FINDING_BLOCKED_FROM_REQUEST_B/)).toBeInTheDocument();
+
+      // Now Request A completes with old PASS data
+      resolveCandidateA(jsonResponse({
+        status: 'PASS',
+        items: [mockCandidate],
+        page: 1,
+        pageSize: 50,
+        total: 1,
+      }));
+
+      // Wait a moment and verify Request A did NOT overwrite Request B's BLOCKED state
+      await new Promise((r) => setTimeout(r, 50));
+      expect(screen.getByText(/Chưa thể xác định đầy đủ nghĩa vụ dạy bù do dữ liệu nguồn đang bị chặn/i)).toBeInTheDocument();
+      expect(screen.getByText(/AR04_FINDING_BLOCKED_FROM_REQUEST_B/)).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Lập lịch bù' })).not.toBeInTheDocument();
+    });
+
+    it('D6: BLOCKED response clears old target options and replacement selection', async () => {
+      const reversedSchedule = {
+        ...mockSchedule,
+        id: 'schedule-reversed-99',
+        status: 'REVERSED',
+        reversalReason: 'Đổi kế hoạch tuần trước',
+      };
+
+      let isBlocked = false;
+      const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? 'GET';
+
+        if (url.endsWith('/auth/me')) return jsonResponse(schoolWideAuth);
+        if (url.includes('/academic-years?')) return jsonResponse({ items: years, page: 1, pageSize: 50, total: 1 });
+        if (url.includes('/makeup-schedules/target-options?')) return jsonResponse(mockTargetOptions);
+
+        if (url.includes('/makeup-schedules/candidates?')) {
+          if (isBlocked) {
+            return jsonResponse({
+              status: 'BLOCKED',
+              items: [],
+              page: 1,
+              pageSize: 50,
+              total: 0,
+              blockedFindings: ['AR04_BLOCKED_CLEARS_OPTIONS'],
+            });
+          }
+          return jsonResponse({
+            status: 'PASS',
+            items: [mockCandidate],
+            page: 1,
+            pageSize: 50,
+            total: 1,
+          });
+        }
+
+        if (url.includes('/makeup-schedules?') && method === 'GET') {
+          return jsonResponse({
+            items: [reversedSchedule],
+            page: 1,
+            pageSize: 50,
+            total: 1,
+            collisionCoverage: { hasInterruptionCollision: false, hasCalendarExceptionCollision: false, hasTimetableCollision: false, hasActiveScheduleCollision: false, hasSpecialActivityCollision: false },
+          });
+        }
+
+        return jsonResponse({});
+      });
+
+      vi.stubGlobal('fetch', fetchMock);
+      renderApp('/quan-tri/lich-day-bu');
+
+      // Click "Tạo lịch thay thế" on reversed schedule
+      const replaceBtn = await screen.findByRole('button', { name: 'Tạo lịch thay thế' });
+      fireEvent.click(replaceBtn);
+
+      expect(screen.getByText(/Tạo lịch thay thế cho lịch đã đảo \(schedule-reversed-99\)/i)).toBeInTheDocument();
+
+      // Enter target date to trigger target-options load
+      const dateInput = screen.getByLabelText(/ngày dạy bù dự kiến/i);
+      fireEvent.change(dateInput, { target: { value: '2026-09-14' } });
+
+      await waitFor(() => {
+        expect(screen.getByLabelText(/tiết học mục tiêu/i)).toBeInTheDocument();
+      });
+
+      // Now trigger reload with BLOCKED
+      isBlocked = true;
+      const reloadBtn = screen.getByRole('button', { name: 'Tải lại danh sách' });
+      fireEvent.click(reloadBtn);
+
+      // Verify BLOCKED banner is displayed
+      expect(await screen.findByText(/Chưa thể xác định đầy đủ nghĩa vụ dạy bù do dữ liệu nguồn đang bị chặn/i)).toBeInTheDocument();
+
+      // Replacement form is completely removed
+      expect(screen.queryByText(/Tạo lịch thay thế cho lịch đã đảo/i)).not.toBeInTheDocument();
+      expect(screen.queryByLabelText(/tiết học mục tiêu/i)).not.toBeInTheDocument();
+
+      // And "Tạo lịch thay thế" button is disabled while BLOCKED
+      expect(screen.getByRole('button', { name: 'Tạo lịch thay thế' })).toBeDisabled();
+    });
+  });
 });
