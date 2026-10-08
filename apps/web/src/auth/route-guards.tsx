@@ -6,13 +6,37 @@ import { useAuth } from './auth-context';
 export function ProtectedRoute() {
   const auth = useAuth();
   const location = useLocation();
-  if (auth.status === 'checking') return <RouteLoading />;
-  if (auth.status === 'error') return <AuthRecovery />;
+
+  if (auth.reconciliationMode === 'BOUNDARY_VERIFY') {
+    if (auth.reconciliationError) return <AuthRecovery />;
+    return <RouteLoading />;
+  }
+  if (auth.status === 'checking' && auth.reconciliationMode !== 'FOREGROUND_VERIFY') {
+    return <RouteLoading />;
+  }
+  if (auth.status === 'error' && auth.reconciliationMode !== 'FOREGROUND_VERIFY') {
+    return <AuthRecovery />;
+  }
   if (auth.status === 'anonymous') {
     return <Navigate to="/dang-nhap" replace state={{ from: safeInternalPath(`${location.pathname}${location.search}`) }} />;
   }
   if (auth.status === 'firstLoginRequired') return <Navigate to="/doi-mat-khau-lan-dau" replace />;
-  return <Outlet />;
+
+  const isForegroundShielded = auth.reconciliationMode === 'FOREGROUND_VERIFY';
+
+  return (
+    <div key={auth.sessionIdentityKey} style={{ display: 'contents' }}>
+      <div
+        aria-hidden={isForegroundShielded ? 'true' : undefined}
+        style={isForegroundShielded ? { display: 'none' } : undefined}
+      >
+        <Outlet />
+      </div>
+      {isForegroundShielded && (
+        auth.reconciliationError ? <AuthRecovery /> : <RouteLoading label="Đang kiểm tra phiên làm việc" />
+      )}
+    </div>
+  );
 }
 
 export function CapabilityRoute({ allow }: { allow(capabilities: ScopedCapability[]): boolean }) {
@@ -48,10 +72,10 @@ export function safeInternalPath(value: unknown): string {
   return value;
 }
 
-function RouteLoading() {
+function RouteLoading({ label = 'Đang kiểm tra phiên đăng nhập' }: { label?: string } = {}) {
   return (
     <main id="main-content" className="route-state" tabIndex={-1}>
-      <LoadingState label="Đang kiểm tra phiên đăng nhập" />
+      <LoadingState label={label} />
     </main>
   );
 }

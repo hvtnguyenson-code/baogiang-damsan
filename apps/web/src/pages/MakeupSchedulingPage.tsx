@@ -2,10 +2,11 @@ import type {
   AcademicYearRecord,
   CivilDateString,
   MakeupTargetOptionsResponse,
+  MakeupTeachingCandidateListStatus,
   MakeupTeachingCandidateRecord,
   MakeupTeachingScheduleRecord,
 } from '@baogiang/contracts';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../auth/auth-context';
 import { Button } from '../components/ui/button';
 import { InlineAlert } from '../components/ui/feedback';
@@ -59,7 +60,11 @@ export function MakeupSchedulingPage() {
   });
 
   const [candidates, setCandidates] = useState<MakeupTeachingCandidateRecord[]>([]);
+  const [candidatesStatus, setCandidatesStatus] = useState<MakeupTeachingCandidateListStatus | 'UNVERIFIED' | 'LOADING' | 'ERROR'>('UNVERIFIED');
+  const [candidatesBlockedFindings, setCandidatesBlockedFindings] = useState<string[]>([]);
+  const [candidateError, setCandidateError] = useState('');
   const [schedules, setSchedules] = useState<MakeupTeachingScheduleRecord[]>([]);
+  const [scheduleError, setScheduleError] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'REVERSED'>('ALL');
 
   const [knownSubjects, setKnownSubjects] = useState<Array<{ id: string; name: string }>>([]);
@@ -81,6 +86,8 @@ export function MakeupSchedulingPage() {
   const [busy, setBusy] = useState<'init' | 'loading' | 'submitting' | 'reversing' | null>('init');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+
+  const loadSeqRef = useRef(0);
 
   useEffect(() => {
     if (!isSchoolWide && subjectGrants.length > 0) {
@@ -126,38 +133,81 @@ export function MakeupSchedulingPage() {
   }, [academicYearId, selectedSubjectId, hasAccess, isSchoolWide, subjectGrants]);
 
   async function loadData(yearId: string, subjectId?: string) {
+    const currentSeq = ++loadSeqRef.current;
     setBusy('loading');
     setError('');
-    try {
-      const queryParams: { academicYearId: string; subjectId?: string } = { academicYearId: yearId };
-      if (subjectId) {
-        queryParams.subjectId = subjectId;
-      }
-      const [candidateRes, scheduleRes] = await Promise.all([
-        makeupSchedulesApi.listCandidates(queryParams),
-        makeupSchedulesApi.listSchedules(queryParams),
-      ]);
-      setCandidates(candidateRes.items);
-      setSchedules(scheduleRes.items);
+    setCandidateError('');
+    setScheduleError('');
 
-      // Collect subject names
-      const subMap = new Map<string, string>();
-      for (const c of candidateRes.items) {
-        if (c.subjectId && c.subjectName) {
-          subMap.set(c.subjectId, c.subjectName);
+    // AR-04: Clear previous candidate selection immediately at reload start so it is NOT actionable while unverified
+    setSelectedCandidate(null);
+    setReplacesSchedule(null);
+    setTargetCivilDate('');
+    setTargetTimeSlotDefinitionId('');
+    setScheduledTeacherUserId('');
+    setTargetOptions(null);
+    setNote('');
+    setCandidatesStatus('LOADING');
+
+    const queryParams: { academicYearId: string; subjectId?: string } = { academicYearId: yearId };
+    if (subjectId) {
+      queryParams.subjectId = subjectId;
+    }
+
+    const candidatePromise = makeupSchedulesApi.listCandidates(queryParams)
+      .then((candidateRes) => {
+        if (loadSeqRef.current !== currentSeq) return;
+        setCandidates(candidateRes.items);
+        setCandidatesStatus(candidateRes.status);
+        setCandidatesBlockedFindings(candidateRes.blockedFindings ?? []);
+        if (candidateRes.status === 'BLOCKED') {
+          setSelectedCandidate(null);
+          setReplacesSchedule(null);
+          setTargetOptions(null);
         }
-      }
-      if (subMap.size > 0) {
-        setKnownSubjects((prev) => {
-          const merged = new Map(prev.map((s) => [s.id, s.name]));
-          subMap.forEach((name, id) => merged.set(id, name));
-          return Array.from(merged.entries()).map(([id, name]) => ({ id, name }));
-        });
-      }
-    } catch (caught) {
-      setError(errorText(caught));
+
+        // Collect subject names
+        const subMap = new Map<string, string>();
+        for (const c of candidateRes.items) {
+          if (c.subjectId && c.subjectName) {
+            subMap.set(c.subjectId, c.subjectName);
+          }
+        }
+        if (subMap.size > 0) {
+          setKnownSubjects((prev) => {
+            const merged = new Map(prev.map((s) => [s.id, s.name]));
+            subMap.forEach((name, id) => merged.set(id, name));
+            return Array.from(merged.entries()).map(([id, name]) => ({ id, name }));
+          });
+        }
+      })
+      .catch((caught) => {
+        if (loadSeqRef.current !== currentSeq) return;
+        setCandidates([]);
+        setCandidatesStatus('ERROR');
+        setSelectedCandidate(null);
+        setReplacesSchedule(null);
+        setTargetOptions(null);
+        setCandidateError(errorText(caught));
+      });
+
+    const schedulePromise = makeupSchedulesApi.listSchedules(queryParams)
+      .then((scheduleRes) => {
+        if (loadSeqRef.current !== currentSeq) return;
+        setSchedules(scheduleRes.items);
+      })
+      .catch((caught) => {
+        if (loadSeqRef.current !== currentSeq) return;
+        setSchedules([]);
+        setScheduleError(errorText(caught));
+      });
+
+    try {
+      await Promise.allSettled([candidatePromise, schedulePromise]);
     } finally {
-      setBusy(null);
+      if (loadSeqRef.current === currentSeq) {
+        setBusy(null);
+      }
     }
   }
 
@@ -201,6 +251,7 @@ export function MakeupSchedulingPage() {
   }, [selectedCandidate, academicYearId, targetCivilDate]);
 
   function handleSelectCandidate(candidate: MakeupTeachingCandidateRecord) {
+    if (candidatesStatus !== 'PASS') return;
     setSelectedCandidate({
       sourceNormalOccurrenceKey: candidate.sourceNormalOccurrenceKey,
       sourceCivilDate: candidate.originalCivilDate,
@@ -220,6 +271,7 @@ export function MakeupSchedulingPage() {
   }
 
   function handleStartReplacement(schedule: MakeupTeachingScheduleRecord) {
+    if (candidatesStatus !== 'PASS') return;
     const origDate = schedule.originalCivilDate.slice(0, 10) as CivilDateString;
     const sourceKey = `NORMAL:${schedule.originalTimetableEntryId}:${origDate}`;
     setReplacesSchedule(schedule);
@@ -252,7 +304,7 @@ export function MakeupSchedulingPage() {
 
   async function handleCreateSchedule(e: React.FormEvent) {
     e.preventDefault();
-    if (!selectedCandidate || !academicYearId) return;
+    if (!selectedCandidate || candidatesStatus !== 'PASS' || !academicYearId) return;
 
     if (!targetCivilDate.trim()) {
       setError('Vui lòng chọn ngày dạy bù dự kiến.');
@@ -417,7 +469,7 @@ export function MakeupSchedulingPage() {
       {busy === 'init' && <PageLoading />}
 
       {/* Selected candidate form */}
-      {selectedCandidate && (
+      {selectedCandidate && candidatesStatus === 'PASS' && (
         <section className="form-section" style={{ marginTop: '24px' }}>
           <legend>{replacesSchedule ? `Tạo lịch thay thế cho lịch đã đảo (${replacesSchedule.id})` : 'Thiết lập lịch dạy bù'}</legend>
           <div style={{ marginBottom: '16px', background: 'var(--mist-50)', padding: '12px', borderRadius: '4px' }}>
@@ -528,10 +580,25 @@ export function MakeupSchedulingPage() {
       {/* Candidates section */}
       <section style={{ marginTop: '32px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-          <h2>Nghĩa vụ đủ điều kiện dạy bù ({candidates.length})</h2>
+          <h2>Nghĩa vụ đủ điều kiện dạy bù ({candidatesStatus === 'PASS' ? candidates.length : 0})</h2>
         </div>
 
-        {candidates.length === 0 ? (
+        {candidateError ? (
+          <InlineAlert title="Lỗi tải danh sách nghĩa vụ dạy bù">{candidateError}</InlineAlert>
+        ) : candidatesStatus === 'BLOCKED' ? (
+          <InlineAlert title="Dữ liệu nguồn bị chặn" tone="warning">
+            Chưa thể xác định đầy đủ nghĩa vụ dạy bù do dữ liệu nguồn đang bị chặn.
+            {candidatesBlockedFindings.length > 0 && (
+              <div style={{ marginTop: '8px', fontSize: '0.85rem' }}>
+                Mã kiểm tra: {candidatesBlockedFindings.join(', ')}
+              </div>
+            )}
+          </InlineAlert>
+        ) : candidatesStatus === 'LOADING' || candidatesStatus === 'UNVERIFIED' ? (
+          <div style={{ padding: '16px 0', color: 'var(--text-secondary)' }}>
+            Đang tải dữ liệu nghĩa vụ dạy bù...
+          </div>
+        ) : candidates.length === 0 ? (
           <EmptyState
             title="Không có nghĩa vụ nợ tiết hợp lệ"
             message="Hiện tại không có tiết dạy nào thuộc diện nợ tiết đã xác nhận (ABSENCE_NO_REPLACEMENT / DIFFERENT_SUBJECT_SUPERVISION) trong phạm vi quản lý."
@@ -602,6 +669,12 @@ export function MakeupSchedulingPage() {
           </div>
         </div>
 
+        {scheduleError && (
+          <div style={{ marginBottom: '16px' }}>
+            <InlineAlert title="Lỗi tải danh sách lịch dạy bù">{scheduleError}</InlineAlert>
+          </div>
+        )}
+
         {filteredSchedules.length === 0 ? (
           <EmptyState
             title="Chưa có lịch dạy bù nào"
@@ -670,7 +743,7 @@ export function MakeupSchedulingPage() {
                     <Button
                       type="button"
                       variant="secondary"
-                      disabled={busy !== null}
+                      disabled={busy !== null || candidatesStatus !== 'PASS'}
                       onClick={() => handleStartReplacement(s)}
                     >
                       Tạo lịch thay thế

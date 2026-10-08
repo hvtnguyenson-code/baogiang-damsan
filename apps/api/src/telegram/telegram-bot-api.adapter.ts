@@ -33,68 +33,70 @@ export class TelegramBotApiAdapter implements TelegramTransportPort {
         signal: controller.signal,
       });
 
-      clearTimeout(timeoutId);
-
       if (response.ok) {
         try {
-          const body = (await response.json()) as { ok?: boolean; result?: { message_id?: number } };
-          if (body?.ok === true && body.result?.message_id != null) {
-            return {
-              success: true,
-              providerMessageId: String(body.result.message_id),
-            };
+          const body: unknown = await response.json();
+          if (
+            body !== null &&
+            typeof body === 'object' &&
+            !Array.isArray(body) &&
+            (body as Record<string, unknown>).ok === true
+          ) {
+            const result = (body as Record<string, unknown>).result;
+            if (result !== null && typeof result === 'object' && !Array.isArray(result)) {
+              const msgId = (result as Record<string, unknown>).message_id;
+              if (typeof msgId === 'number' && Number.isSafeInteger(msgId) && msgId > 0) {
+                return {
+                  success: true,
+                  providerMessageId: String(msgId),
+                };
+              }
+            }
           }
+          // CX-03 / AR-03: HTTP 200 with missing message_id, malformed body, or non-integer/invalid message_id
+          // without definitive rejection MUST be UNKNOWN
           return {
             success: false,
-            sanitizedErrorCode: 'INVALID_PROVIDER_PAYLOAD',
-            uncertainOutcome: false,
+            sanitizedErrorCode: 'MALFORMED_SUCCESS_ACKNOWLEDGEMENT',
+            uncertainOutcome: true,
           };
-        } catch {
-          // If JSON parse fails on 200 OK, message might have been sent!
+        } catch (parseError: unknown) {
+          const isAbort = (parseError as { name?: string })?.name === 'AbortError';
           return {
             success: false,
-            sanitizedErrorCode: 'PROVIDER_RESPONSE_PARSE_ERROR',
+            sanitizedErrorCode: isAbort ? 'TIMEOUT' : 'PROVIDER_RESPONSE_PARSE_ERROR',
             uncertainOutcome: true,
           };
         }
       }
 
-      // 4xx client errors (e.g. 400 Bad Request, 403 Forbidden, 404 Not Found)
+      // CX-02: 4xx client errors are definitive provider rejections.
+      // Persist ONLY deterministic safe code derived from HTTP status code (e.g. HTTP_400, HTTP_403, HTTP_404, HTTP_429).
+      // NEVER inspect or persist untrusted provider description to prevent secret leakage (bot token, webhook secret, URLs, raw prose).
       if (response.status >= 400 && response.status < 500) {
-        let code = `HTTP_${response.status}`;
-        try {
-          const errBody = (await response.json()) as { error_code?: number; description?: string };
-          if (errBody?.description) {
-            // Sanitize description: take alphanumeric, dash, underscore, space, bounded to 64 chars
-            const sanitizedDesc = errBody.description.replace(/[^A-Za-z0-9_ -]/g, '').slice(0, 64).trim();
-            if (sanitizedDesc) {
-              code = `${code}_${sanitizedDesc.toUpperCase().replace(/\s+/g, '_')}`;
-            }
-          }
-        } catch {
-          // Fall back to HTTP_status
-        }
         return {
           success: false,
-          sanitizedErrorCode: code.slice(0, 64),
+          sanitizedErrorCode: `HTTP_${response.status}`,
           uncertainOutcome: false,
         };
       }
 
-      // 5xx server errors are uncertain because server might have dispatched the message
+      // 5xx server errors are uncertain because provider might have dispatched the message before failing
       return {
         success: false,
         sanitizedErrorCode: `HTTP_${response.status}`,
         uncertainOutcome: true,
       };
     } catch (error: unknown) {
-      clearTimeout(timeoutId);
       const isAbort = (error as { name?: string })?.name === 'AbortError';
       return {
         success: false,
         sanitizedErrorCode: isAbort ? 'TIMEOUT' : 'NETWORK_ERROR',
         uncertainOutcome: true,
       };
+    } finally {
+      // CX-04: Timeout deadline covers the entire network operation including body reading/parsing.
+      clearTimeout(timeoutId);
     }
   }
 }

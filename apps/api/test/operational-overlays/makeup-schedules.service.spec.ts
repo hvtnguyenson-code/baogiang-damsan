@@ -279,7 +279,7 @@ function makeService(prismaOverrides: Record<string, unknown> = {}) {
       findMany: jest.fn().mockResolvedValue([{ id: subjectId, name: 'Toán học' }]),
     },
     ppctItemRevision: {
-      findMany: jest.fn().mockResolvedValue([{ ppctItemId, title: 'Bài 1: Mệnh đề', sequence: 1 }]),
+      findMany: jest.fn().mockResolvedValue([{ id: ppctItemRevisionId, ppctItemId, title: 'Bài 1: Mệnh đề', sequence: 1 }]),
     },
     ...prismaOverrides,
   };
@@ -875,10 +875,167 @@ describe('MakeupSchedulesService unit test matrix', () => {
         { academicYearId: yearId, page: 1, pageSize: 20 },
         request,
       );
+      expect(result.status).toBe('PASS');
       expect(result.items.length).toBe(1);
       expect(result.items[0]!.sourceNormalOccurrenceKey).toBe(sourceKey);
+      expect(result.items[0]!.ppctItemRevisionId).toBe(ppctItemRevisionId);
+      expect(result.items[0]!.ppctItemName).toBe('Bài 1: Mệnh đề');
+      expect(result.items[0]!.ppctItemSequence).toBe(1);
       expect(result.items[0]!.hasActiveMakeupSchedule).toBe(true);
       expect(result.items[0]!.activeMakeupScheduleId).toBe(scheduleId);
+    });
+
+    it('PASS projection + zero debt -> true empty PASS', async () => {
+      const { service, progressDebt } = makeService();
+      progressDebt.resolveInTransactionV2.mockResolvedValueOnce({
+        status: 'PASS',
+        items: [],
+        counts: { distributedElapsedCount: 0, completedCount: 0, openDebtCount: 0, lateCount: 0, unconfirmedGapCount: 0 },
+        findings: [],
+      });
+      const result = await service.listCandidates(
+        { academicYearId: yearId, page: 1, pageSize: 20 },
+        request,
+      );
+      expect(result.status).toBe('PASS');
+      expect(result.items).toEqual([]);
+      expect(result.total).toBe(0);
+    });
+
+    it('one root BLOCKED -> candidate response BLOCKED fail-closed', async () => {
+      const { service, progressDebt } = makeService();
+      progressDebt.resolveInTransactionV2.mockResolvedValueOnce({
+        status: 'BLOCKED',
+        items: [],
+        counts: { distributedElapsedCount: 0, completedCount: 0, openDebtCount: 0, lateCount: 0, unconfirmedGapCount: 0 },
+        findings: ['CIRCULAR_DEPENDENCY_DETECTED'],
+      });
+      const result = await service.listCandidates(
+        { academicYearId: yearId, page: 1, pageSize: 20 },
+        request,
+      );
+      expect(result.status).toBe('BLOCKED');
+      expect(result.items).toEqual([]);
+      expect(result.total).toBe(0);
+      expect(result.blockedFindings).toBeDefined();
+    });
+
+    it('mixed PASS/BLOCKED -> whole response BLOCKED', async () => {
+      const otherClassId = id('8');
+      const { service, progressDebt } = makeService({
+        teachingAssignment: {
+          findMany: jest.fn().mockResolvedValue([
+            { schoolClassId: classId, subjectId },
+            { schoolClassId: otherClassId, subjectId },
+          ]),
+        },
+      });
+      // First class PASS with a debt item, second class BLOCKED
+      progressDebt.resolveInTransactionV2
+        .mockResolvedValueOnce({
+          status: 'PASS',
+          items: [validDebtItem],
+          counts: { distributedElapsedCount: 1, completedCount: 0, openDebtCount: 1, lateCount: 1, unconfirmedGapCount: 0 },
+          findings: [],
+        })
+        .mockResolvedValueOnce({
+          status: 'BLOCKED',
+          items: [],
+          counts: { distributedElapsedCount: 0, completedCount: 0, openDebtCount: 0, lateCount: 0, unconfirmedGapCount: 0 },
+          findings: ['INTEGRITY_VIOLATION'],
+        });
+
+      const result = await service.listCandidates(
+        { academicYearId: yearId, page: 1, pageSize: 20 },
+        request,
+      );
+      expect(result.status).toBe('BLOCKED');
+      expect(result.items).toEqual([]);
+      expect(result.total).toBe(0);
+    });
+
+    it('stable PPCT item has 2 revisions: pinned revision 1 renders revision 1, pinned revision 2 renders revision 2', async () => {
+      const rev1Id = id('1');
+      const rev2Id = id('2');
+      const rev1 = { id: rev1Id, ppctItemId, title: 'Bài 1: Mệnh đề (Bản cũ)', sequence: 1 };
+      const rev2 = { id: rev2Id, ppctItemId, title: 'Bài 1: Mệnh đề và tập hợp (Bản mới)', sequence: 2 };
+
+      // Case A: pinned to rev1
+      {
+        const { service, progressDebt } = makeService({
+          ppctItemRevision: {
+            findMany: jest.fn().mockResolvedValue([rev1, rev2]),
+          },
+        });
+        progressDebt.resolveInTransactionV2.mockResolvedValueOnce({
+          status: 'PASS',
+          items: [{ ...validDebtItem, ppctItemRevisionId: rev1Id }],
+          counts: { distributedElapsedCount: 1, completedCount: 0, openDebtCount: 1, lateCount: 1, unconfirmedGapCount: 0 },
+          findings: [],
+        });
+        const result = await service.listCandidates({ academicYearId: yearId, page: 1, pageSize: 20 }, request);
+        expect(result.status).toBe('PASS');
+        expect(result.items[0]!.ppctItemRevisionId).toBe(rev1Id);
+        expect(result.items[0]!.ppctItemName).toBe('Bài 1: Mệnh đề (Bản cũ)');
+        expect(result.items[0]!.ppctItemSequence).toBe(1);
+      }
+
+      // Case B: pinned to rev2
+      {
+        const { service, progressDebt } = makeService({
+          ppctItemRevision: {
+            findMany: jest.fn().mockResolvedValue([rev1, rev2]),
+          },
+        });
+        progressDebt.resolveInTransactionV2.mockResolvedValueOnce({
+          status: 'PASS',
+          items: [{ ...validDebtItem, ppctItemRevisionId: rev2Id }],
+          counts: { distributedElapsedCount: 1, completedCount: 0, openDebtCount: 1, lateCount: 1, unconfirmedGapCount: 0 },
+          findings: [],
+        });
+        const result = await service.listCandidates({ academicYearId: yearId, page: 1, pageSize: 20 }, request);
+        expect(result.status).toBe('PASS');
+        expect(result.items[0]!.ppctItemRevisionId).toBe(rev2Id);
+        expect(result.items[0]!.ppctItemName).toBe('Bài 1: Mệnh đề và tập hợp (Bản mới)');
+        expect(result.items[0]!.ppctItemSequence).toBe(2);
+      }
+    });
+
+    it('newest revision cannot override retained historical revision', async () => {
+      const historicalRevId = 'rev-historical-1111';
+      const newerRevId = 'rev-newer-2222';
+      const historicalRev = { id: historicalRevId, ppctItemId, title: 'Bài 1 (Lịch sử)', sequence: 10 };
+      const newerRev = { id: newerRevId, ppctItemId, title: 'Bài 1 (Cải cách mới nhất)', sequence: 99 };
+
+      const { service, progressDebt } = makeService({
+        ppctItemRevision: {
+          findMany: jest.fn().mockResolvedValue([historicalRev, newerRev]),
+        },
+      });
+      progressDebt.resolveInTransactionV2.mockResolvedValueOnce({
+        status: 'PASS',
+        items: [{ ...validDebtItem, ppctItemRevisionId: historicalRevId }],
+        counts: { distributedElapsedCount: 1, completedCount: 0, openDebtCount: 1, lateCount: 1, unconfirmedGapCount: 0 },
+        findings: [],
+      });
+      const result = await service.listCandidates({ academicYearId: yearId, page: 1, pageSize: 20 }, request);
+      expect(result.status).toBe('PASS');
+      expect(result.items[0]!.ppctItemRevisionId).toBe(historicalRevId);
+      expect(result.items[0]!.ppctItemName).toBe('Bài 1 (Lịch sử)');
+      expect(result.items[0]!.ppctItemSequence).toBe(10);
+    });
+
+    it('missing retained revision -> fail closed as BLOCKED', async () => {
+      const { service } = makeService({
+        ppctItemRevision: {
+          findMany: jest.fn().mockResolvedValue([]), // Missing revision
+        },
+      });
+      const result = await service.listCandidates({ academicYearId: yearId, page: 1, pageSize: 20 }, request);
+      expect(result.status).toBe('BLOCKED');
+      expect(result.items).toEqual([]);
+      expect(result.total).toBe(0);
+      expect(result.blockedFindings).toContain('PPCT_RETAINED_REVISION_INTEGRITY_MISMATCH');
     });
   });
 

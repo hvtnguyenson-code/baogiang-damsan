@@ -938,4 +938,55 @@ describe('TelegramService (ADR-058 Acceptance Cases)', () => {
     await expect(service.onModuleInit()).rejects.toThrow('STARTUP_RECONCILE_DB_UNAVAILABLE');
     expect(mockTransport.sendMessage).not.toHaveBeenCalled();
   });
+
+  // -------------------------------------------------------------
+  // AR-03 C8: service receives malformed-ack adapter result -> durable status UNKNOWN
+  // -------------------------------------------------------------
+  it('AR-03 C8: service receives malformed-ack adapter result -> durable delivery status UNKNOWN', async () => {
+    const requestKey = 'c3d9a182-3580-4824-912a-387b9264fa99';
+    mockPrisma.telegramAccountLink.findFirst.mockResolvedValue({
+      id: 'link-1',
+      telegramChatId: '123',
+    });
+    mockPrisma.telegramNotificationDelivery.findUnique.mockImplementation(
+      async ({ where }: { where: { id?: string; commandKey?: string } }) => {
+        if (where?.commandKey) return null;
+        return {
+          id: 'del-malformed-ack',
+          deliveryStatus: 'RESERVED',
+          accountLink: { id: 'link-1', status: 'ACTIVE', telegramChatId: '123' },
+        };
+      },
+    );
+    mockPrisma.telegramNotificationDelivery.create.mockResolvedValue({
+      id: 'del-malformed-ack',
+      deliveryStatus: 'RESERVED',
+    });
+    mockPrisma.$executeRaw.mockResolvedValue(1);
+
+    mockTransport.sendMessage.mockResolvedValue({
+      success: false,
+      sanitizedErrorCode: 'MALFORMED_SUCCESS_ACKNOWLEDGEMENT',
+      uncertainOutcome: true,
+    });
+
+    mockPrisma.telegramNotificationDelivery.findUniqueOrThrow.mockResolvedValue({
+      id: 'del-malformed-ack',
+      deliveryStatus: 'UNKNOWN',
+      sanitizedErrorCode: 'MALFORMED_SUCCESS_ACKNOWLEDGEMENT',
+      accountLink: { id: 'link-1', status: 'ACTIVE', telegramChatId: '123' },
+    });
+
+    const res = await service.sendTestNotification('user-1', requestKey);
+    expect(res.deliveryStatus).toBe('UNKNOWN');
+    expect(mockPrisma.telegramNotificationDelivery.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'del-malformed-ack' },
+        data: expect.objectContaining({
+          deliveryStatus: 'UNKNOWN',
+          sanitizedErrorCode: 'MALFORMED_SUCCESS_ACKNOWLEDGEMENT',
+        }),
+      }),
+    );
+  });
 });

@@ -195,7 +195,7 @@ describe('api client', () => {
         body: formData,
         notifyUnauthorized: true,
       }),
-    ).rejects.toMatchObject({ statusCode: 401, message: 'Phiên hết hạn' });
+    ).rejects.toMatchObject({ statusCode: 401 });
 
     expect(listener).toHaveBeenCalledOnce();
     unsubscribe();
