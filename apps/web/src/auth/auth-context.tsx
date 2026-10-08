@@ -61,12 +61,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   if (!previousUserIdRef.current && currentUserId) {
     previousUserIdRef.current = currentUserId;
   }
+  const lastVerifiedAuthRef = useRef<AuthMeResponse | null>(authQuery.data ?? null);
+  if (authQuery.data) {
+    lastVerifiedAuthRef.current = authQuery.data;
+  }
 
   useEffect(() => onUnauthorized(() => {
     invalidatePendingReconciliations();
     setLogoutError(null);
     clearSessionCache(queryClient);
     previousUserIdRef.current = undefined;
+    lastVerifiedAuthRef.current = null;
   }), [invalidatePendingReconciliations, queryClient]);
 
   // Centralized, fail-closed cross-tab session boundary reconciliation:
@@ -97,6 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Authoritative remote boundary signal: purge old cache & abort old generation immediately
       clearSessionCache(queryClient);
       previousUserIdRef.current = undefined;
+      lastVerifiedAuthRef.current = null;
       alreadyPurged = true;
     }
 
@@ -116,6 +122,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // - DO NOT abort in-flight query or mutation
         queryClient.setQueryData(AUTH_QUERY_KEY, refreshed);
         previousUserIdRef.current = refreshed.user.id;
+        lastVerifiedAuthRef.current = refreshed;
         setReconciliationError(null);
         reconciliationModeRef.current = 'NONE';
         setReconciliationMode('NONE');
@@ -129,6 +136,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // do not call startSessionScope() to prevent double-resetting generation.
         queryClient.setQueryData(AUTH_QUERY_KEY, refreshed);
         previousUserIdRef.current = refreshed.user.id;
+        lastVerifiedAuthRef.current = refreshed;
         setReconciliationError(null);
         reconciliationModeRef.current = 'NONE';
         setReconciliationMode('NONE');
@@ -147,6 +155,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         queryClient.setQueryData(AUTH_QUERY_KEY, null);
         previousUserIdRef.current = undefined;
+        lastVerifiedAuthRef.current = null;
         setReconciliationError(null);
         reconciliationModeRef.current = 'NONE';
         setReconciliationMode('NONE');
@@ -198,6 +207,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       queryClient.setQueryData(AUTH_QUERY_KEY, authQuery.data);
     }
     previousUserIdRef.current = currentUserId;
+    if (authQuery.data) {
+      lastVerifiedAuthRef.current = authQuery.data;
+    }
   }, [currentUserId, authQuery.data, queryClient]);
 
   const loginMutation = useMutation({ mutationFn: login });
@@ -207,14 +219,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function refreshAuth(): Promise<AuthMeResponse> {
     const refreshed = await fetchAuthMe();
     queryClient.setQueryData(AUTH_QUERY_KEY, refreshed);
+    lastVerifiedAuthRef.current = refreshed;
     return refreshed;
   }
 
   const sessionIdentityKey = previousUserIdRef.current ?? authQuery.data?.user.id ?? 'anonymous';
 
+  const activeAuth = reconciliationMode === 'BOUNDARY_VERIFY'
+    ? null
+    : (authQuery.data ?? (reconciliationMode === 'FOREGROUND_VERIFY' ? lastVerifiedAuthRef.current : null));
+
   const value: AuthContextValue = {
     status: deriveStatus(authQuery, reconciliationMode, reconciliationError),
-    auth: reconciliationMode !== 'NONE' ? null : (authQuery.data ?? null),
+    auth: activeAuth,
     reconciliationMode,
     reconciliationError,
     sessionIdentityKey,
@@ -236,6 +253,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // 3. Refresh /auth/me and establish new local generation
       const refreshed = await refreshAuth();
       previousUserIdRef.current = refreshed.user.id;
+      lastVerifiedAuthRef.current = refreshed;
       setLogoutError(null);
       return refreshed;
     },
@@ -250,11 +268,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           try {
             const refreshed = await fetchAuthMe({ notifyUnauthorized: false });
             queryClient.setQueryData(AUTH_QUERY_KEY, refreshed);
+            lastVerifiedAuthRef.current = refreshed;
           } catch (refreshError) {
             if (refreshError instanceof ApiError && refreshError.statusCode === 401) {
               invalidatePendingReconciliations();
               clearSessionCache(queryClient);
               previousUserIdRef.current = undefined;
+              lastVerifiedAuthRef.current = null;
               broadcastSessionBoundary();
             }
             throw refreshError;
@@ -270,12 +290,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await logoutMutation.mutateAsync();
         clearSessionCache(queryClient);
         previousUserIdRef.current = undefined;
+        lastVerifiedAuthRef.current = null;
         broadcastSessionBoundary();
       } catch (caught) {
         const apiError = caught instanceof ApiError ? caught : new ApiError(0, 'Không thể đăng xuất.');
         if (apiError.statusCode === 401) {
           clearSessionCache(queryClient);
           previousUserIdRef.current = undefined;
+          lastVerifiedAuthRef.current = null;
           broadcastSessionBoundary();
           return;
         }

@@ -4,7 +4,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthProvider, useAuth } from '../auth/auth-context';
-import { ProtectedRoute } from '../auth/route-guards';
+import { CapabilityRoute, ProtectedRoute } from '../auth/route-guards';
 import {
   AUTH_QUERY_KEY,
   broadcastSessionBoundary,
@@ -18,6 +18,8 @@ import {
   setSessionChannelNameForTesting,
 } from '../auth/session-cache';
 import { ApiError, apiFetch, login } from '../lib/api-client';
+import { hasSchoolCapability } from '../lib/capabilities';
+import { MakeupSchedulingPage } from '../pages/MakeupSchedulingPage';
 import { ReportingStatementsPage } from '../pages/ReportingStatementsPage';
 import { jsonResponse } from './test-utils';
 
@@ -1130,9 +1132,9 @@ describe('CX-01 session and React Query cache isolation', () => {
       window.dispatchEvent(new Event('focus'));
     });
 
-    // CRITICAL PROOF FOR RC4-01: while /auth/me is in-flight, presentation MUST fail-closed:
+    // CRITICAL PROOF FOR RC7-01: while /auth/me is in-flight, status is checking and auth retains verified user:
     expect(result.current.status).toBe('checking');
-    expect(result.current.auth).toBeNull();
+    expect(result.current.auth?.user.id).toBe('user-a');
     // Cache remains temporarily in memory but is inaccessible to user
     expect(queryClient.getQueryData(['reporting-statements-mine'])).toBeDefined();
 
@@ -1190,9 +1192,9 @@ describe('CX-01 session and React Query cache isolation', () => {
       window.dispatchEvent(new Event('focus'));
     });
 
-    // IMMEDIATELY ASSERT fail-closed presentation while in-flight:
+    // IMMEDIATELY ASSERT status checking and retained verified user while in-flight (RC7-01):
     expect(result.current.status).toBe('checking');
-    expect(result.current.auth).toBeNull();
+    expect(result.current.auth?.user.id).toBe('user-a');
 
     // Resolve eventual User B
     await act(async () => {
@@ -1455,9 +1457,9 @@ describe('CX-01 session and React Query cache isolation', () => {
       window.dispatchEvent(new Event('focus'));
     });
 
-    // While in-flight: checking and null
+    // While in-flight: status is checking and retained auth (RC7-01)
     expect(result.current.status).toBe('checking');
-    expect(result.current.auth).toBeNull();
+    expect(result.current.auth?.user.id).toBe('user-a');
 
     // /auth/me returns 401 (session revoked)
     await act(async () => {
@@ -1510,9 +1512,9 @@ describe('CX-01 session and React Query cache isolation', () => {
         window.dispatchEvent(new Event('focus'));
       });
 
-      // Presentation fails closed during verification
+      // Status is checking during verification while verified auth is retained (RC7-01)
       expect(result.current.status).toBe('checking');
-      expect(result.current.auth).toBeNull();
+      expect(result.current.auth?.user.id).toBe('user-a');
 
       // Resolve same User A
       await act(async () => {
@@ -2850,5 +2852,499 @@ describe('CX-01 session and React Query cache isolation', () => {
     expect(result.current.reconciliationError).toBeNull();
     expect(queryClient.getQueryData(['reporting-statements-mine'])).toEqual({ items: ['user-b-clean-cache'] });
     expect(queryClient.getQueryData(AUTH_QUERY_KEY)).toEqual(userBAuth);
+  });
+
+  it('47. Test RC7-01: Foreground shield retains last verified auth internally', async () => {
+    const queryClient = createProductionQueryClient();
+
+    let resolveForegroundAuthMe!: (res: Response) => void;
+    const foregroundAuthMePromise = new Promise<Response>((resolve) => {
+      resolveForegroundAuthMe = resolve;
+    });
+
+    let authMeCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        authMeCount += 1;
+        if (authMeCount === 1) return jsonResponse(userAAuth);
+        return foregroundAuthMePromise;
+      }
+      return jsonResponse({});
+    }));
+
+    function TestConsumer() {
+      const auth = useAuth();
+      return (
+        <div data-testid="protected-content">
+          <span data-testid="consumer-user-id">{auth.auth?.user.id ?? 'none'}</span>
+        </div>
+      );
+    }
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <MemoryRouter initialEntries={['/protected']}>
+            <Routes>
+              <Route element={<ProtectedRoute />}>
+                <Route path="/protected" element={<TestConsumer />} />
+              </Route>
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('consumer-user-id').textContent).toBe('user-a');
+    });
+
+    // Trigger foreground verification
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    // While pending assert:
+    // 1. Shield is visible
+    expect(screen.getByText('Đang kiểm tra phiên làm việc')).toBeDefined();
+    // 2. Protected subtree remains mounted but shielded (display: none, aria-hidden: true)
+    const content = screen.getByTestId('protected-content');
+    expect(content.parentElement?.style.display).toBe('none');
+    expect(content.parentElement?.getAttribute('aria-hidden')).toBe('true');
+    // 3. Descendant continues to receive last verified User A internally!
+    expect(screen.getByTestId('consumer-user-id').textContent).toBe('user-a');
+
+    // Resolve foreground /auth/me
+    await act(async () => {
+      resolveForegroundAuthMe(jsonResponse(userAAuth));
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText('Đang kiểm tra phiên làm việc')).toBeNull();
+    });
+    expect(content.parentElement?.style.display).toBe('');
+    expect(screen.getByTestId('consumer-user-id').textContent).toBe('user-a');
+  });
+
+  it('48. Test RC7-01: Real MakeupSchedulingPage does not reset selected academic year on foreground return', async () => {
+    const queryClient = createProductionQueryClient();
+
+    let resolveForegroundAuthMe!: (res: Response) => void;
+    const foregroundAuthMePromise = new Promise<Response>((resolve) => {
+      resolveForegroundAuthMe = resolve;
+    });
+
+    const userAWithTeachingManage = {
+      user: { id: 'user-a', username: 'teacher_a', displayName: 'Giáo viên A', status: 'ACTIVE' as const, mustChangePassword: false },
+      capabilities: [{ key: 'TEACHING_OPERATION_MANAGE' as const, scope: 'SCHOOL_WIDE' as const }],
+    };
+
+    const mockYears = [
+      { id: 'year-1', code: '2026-2027', name: 'Năm học 2026-2027' },
+      { id: 'year-2', code: '2027-2028', name: 'Năm học 2027-2028' },
+    ];
+
+    let academicYearsListCount = 0;
+    let authMeCount = 0;
+
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        authMeCount += 1;
+        if (authMeCount === 1) return jsonResponse(userAWithTeachingManage);
+        return foregroundAuthMePromise;
+      }
+      if (url.includes('academic-years')) {
+        academicYearsListCount += 1;
+        return jsonResponse({ items: mockYears, total: 2 });
+      }
+      if (url.includes('makeup-schedules/candidates')) {
+        return jsonResponse({ status: 'PASS', items: [] });
+      }
+      if (url.includes('makeup-schedules')) {
+        return jsonResponse({ items: [] });
+      }
+      if (url.includes('catalogs/subjects')) {
+        return jsonResponse({ items: [] });
+      }
+      return jsonResponse({});
+    }));
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <MemoryRouter initialEntries={['/quan-tri/lich-day-bu']}>
+            <Routes>
+              <Route element={<ProtectedRoute />}>
+                <Route path="/quan-tri/lich-day-bu" element={<MakeupSchedulingPage />} />
+              </Route>
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+
+    // Initial load: academic-year-select defaults to first item (year-1)
+    const select = await screen.findByLabelText('Năm học') as HTMLSelectElement;
+    await waitFor(() => {
+      expect(select.value).toBe('year-1');
+    });
+    expect(academicYearsListCount).toBe(1);
+
+    // User explicitly selects year-2
+    fireEvent.change(select, { target: { value: 'year-2' } });
+    expect(select.value).toBe('year-2');
+
+    // Trigger same-user foreground verification
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    // While in-flight: shield visible
+    expect(screen.getByText('Đang kiểm tra phiên làm việc')).toBeDefined();
+
+    // Resolve foreground verification as same User A
+    await act(async () => {
+      resolveForegroundAuthMe(jsonResponse(userAWithTeachingManage));
+    });
+
+    // After verification: shield dismissed
+    await waitFor(() => {
+      expect(screen.queryByText('Đang kiểm tra phiên làm việc')).toBeNull();
+    });
+
+    // CRITICAL PROOFS FOR RC7-01:
+    // 1. academic-year-select MUST still equal year-2
+    expect(select.value).toBe('year-2');
+    // 2. academicYears list was NOT re-fetched merely because foreground occurred
+    expect(academicYearsListCount).toBe(1);
+  });
+
+  it('49. Test RC7-01: Makeup page retains selected context through foreground network failure + retry same user', async () => {
+    const queryClient = createProductionQueryClient();
+
+    let rejectForegroundAuthMe!: (err: unknown) => void;
+    let resolveRetryAuthMe!: (res: Response) => void;
+
+    let authMeCount = 0;
+    const userAWithTeachingManage = {
+      user: { id: 'user-a', username: 'teacher_a', displayName: 'Giáo viên A', status: 'ACTIVE' as const, mustChangePassword: false },
+      capabilities: [{ key: 'TEACHING_OPERATION_MANAGE' as const, scope: 'SCHOOL_WIDE' as const }],
+    };
+
+    const mockYears = [
+      { id: 'year-1', code: '2026-2027', name: 'Năm học 2026-2027' },
+      { id: 'year-2', code: '2027-2028', name: 'Năm học 2027-2028' },
+    ];
+
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        authMeCount += 1;
+        if (authMeCount === 1) return jsonResponse(userAWithTeachingManage);
+        if (authMeCount === 2) {
+          return new Promise<Response>((_, reject) => {
+            rejectForegroundAuthMe = reject;
+          });
+        }
+        return new Promise<Response>((resolve) => {
+          resolveRetryAuthMe = resolve;
+        });
+      }
+      if (url.includes('academic-years')) {
+        return jsonResponse({ items: mockYears, total: 2 });
+      }
+      if (url.includes('makeup-schedules/candidates')) {
+        return jsonResponse({ status: 'PASS', items: [] });
+      }
+      if (url.includes('makeup-schedules')) {
+        return jsonResponse({ items: [] });
+      }
+      if (url.includes('catalogs/subjects')) {
+        return jsonResponse({ items: [] });
+      }
+      return jsonResponse({});
+    }));
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <MemoryRouter initialEntries={['/quan-tri/lich-day-bu']}>
+            <Routes>
+              <Route element={<ProtectedRoute />}>
+                <Route path="/quan-tri/lich-day-bu" element={<MakeupSchedulingPage />} />
+              </Route>
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+
+    const select = await screen.findByLabelText('Năm học') as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe('year-1'));
+
+    // User explicitly selects year-2
+    fireEvent.change(select, { target: { value: 'year-2' } });
+    expect(select.value).toBe('year-2');
+
+    // Trigger foreground
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    // Foreground /auth/me fails network
+    await act(async () => {
+      rejectForegroundAuthMe(new TypeError('Failed to fetch'));
+    });
+
+    // Recovery UI appears
+    await waitFor(() => {
+      expect(screen.getByText('Chưa thể kiểm tra phiên đăng nhập')).toBeDefined();
+    });
+
+    // Click retry
+    const retryBtn = screen.getByRole('button', { name: /thử lại/i });
+    fireEvent.click(retryBtn);
+
+    // Retry resolves same User A
+    await act(async () => {
+      resolveRetryAuthMe(jsonResponse(userAWithTeachingManage));
+    });
+
+    // Recovery shield dismissed
+    await waitFor(() => {
+      expect(screen.queryByText('Chưa thể kiểm tra phiên đăng nhập')).toBeNull();
+    });
+
+    // Selected academic year remains year-2
+    expect(select.value).toBe('year-2');
+  });
+
+  it('50. Test RC7-01: FOREGROUND_VERIFY does not bypass CapabilityRoute', async () => {
+    const queryClient = createProductionQueryClient();
+
+    let resolveForegroundAuthMe!: (res: Response) => void;
+    const foregroundAuthMePromise = new Promise<Response>((resolve) => {
+      resolveForegroundAuthMe = resolve;
+    });
+
+    // User A has only TEACHER_BASE (does NOT have SYSTEM_ADMIN)
+    const userAWithoutAdmin = {
+      user: { id: 'user-a', username: 'teacher_a', displayName: 'Giáo viên A', status: 'ACTIVE' as const, mustChangePassword: false },
+      capabilities: [{ key: 'TEACHER_BASE' as const, scope: 'PERSONAL' as const }],
+    };
+
+    let authMeCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        authMeCount += 1;
+        if (authMeCount === 1) return jsonResponse(userAWithoutAdmin);
+        return foregroundAuthMePromise;
+      }
+      return jsonResponse({});
+    }));
+
+    let unauthorizedMounted = false;
+    function AdminSecretPage() {
+      unauthorizedMounted = true;
+      return <div data-testid="unauthorized-secret">TOP SECRET ADMIN</div>;
+    }
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <MemoryRouter initialEntries={['/admin-secret']}>
+            <Routes>
+              <Route element={<ProtectedRoute />}>
+                <Route element={<CapabilityRoute allow={(caps) => hasSchoolCapability(caps, 'SYSTEM_ADMIN')} />}>
+                  <Route path="/admin-secret" element={<AdminSecretPage />} />
+                </Route>
+                <Route path="/khong-co-quyen" element={<div data-testid="forbidden-page">Không có quyền truy cập</div>} />
+              </Route>
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('forbidden-page')).toBeDefined();
+    });
+    expect(unauthorizedMounted).toBe(false);
+    expect(screen.queryByTestId('unauthorized-secret')).toBeNull();
+
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    // While FOREGROUND_VERIFY is in-flight:
+    // Unauthorized component MUST NOT mount or execute!
+    expect(unauthorizedMounted).toBe(false);
+    expect(screen.queryByTestId('unauthorized-secret')).toBeNull();
+
+    await act(async () => {
+      resolveForegroundAuthMe(jsonResponse(userAWithoutAdmin));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('forbidden-page')).toBeDefined();
+    });
+    expect(unauthorizedMounted).toBe(false);
+    expect(screen.queryByTestId('unauthorized-secret')).toBeNull();
+  });
+
+  it('51. Test RC7-01: BOUNDARY_VERIFY exposes no retained auth', async () => {
+    const queryClient = createProductionQueryClient();
+
+    let resolveBoundaryAuthMe!: (res: Response) => void;
+    const boundaryAuthMePromise = new Promise<Response>((resolve) => {
+      resolveBoundaryAuthMe = resolve;
+    });
+
+    let authMeCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        authMeCount += 1;
+        if (authMeCount === 1) return jsonResponse(userAAuth);
+        return boundaryAuthMePromise;
+      }
+      return jsonResponse({});
+    }));
+
+    setLocalTabIdForTesting('tab-a');
+    const { result } = renderHook(() => useAuth(), { wrapper: createWrapper(queryClient) });
+    await waitFor(() => expect(result.current.status).toBe('authenticated'));
+    expect(result.current.auth?.user.id).toBe('user-a');
+
+    queryClient.setQueryData(['reporting-statements-mine'], { items: ['user-a-secret'] });
+
+    // Receive remote SESSION_BOUNDARY_CHANGED
+    await act(async () => {
+      const channel = new BroadcastChannel(getSessionChannelName());
+      channel.postMessage({
+        type: 'SESSION_BOUNDARY_CHANGED',
+        eventId: 'boundary-evt-1',
+        senderId: 'remote-tab',
+      });
+      channel.close();
+    });
+
+    // In BOUNDARY_VERIFY: auth MUST be null!
+    expect(result.current.reconciliationMode).toBe('BOUNDARY_VERIFY');
+    expect(result.current.status).toBe('checking');
+    expect(result.current.auth).toBeNull();
+
+    // Old User A business cache is destroyed immediately
+    expect(queryClient.getQueryData(['reporting-statements-mine'])).toBeUndefined();
+
+    // Resolve boundary verification with User B
+    await act(async () => {
+      resolveBoundaryAuthMe(jsonResponse(userBAuth));
+    });
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('authenticated');
+      expect(result.current.auth?.user.id).toBe('user-b');
+      expect(result.current.reconciliationMode).toBe('NONE');
+    });
+  });
+
+  it('52. Test RC7-01: Changed user still resets real page context', async () => {
+    const queryClient = createProductionQueryClient();
+
+    let resolveForegroundAuthMe!: (res: Response) => void;
+    const foregroundAuthMePromise = new Promise<Response>((resolve) => {
+      resolveForegroundAuthMe = resolve;
+    });
+
+    const userAWithTeachingManage = {
+      user: { id: 'user-a', username: 'teacher_a', displayName: 'Giáo viên A', status: 'ACTIVE' as const, mustChangePassword: false },
+      capabilities: [{ key: 'TEACHING_OPERATION_MANAGE' as const, scope: 'SCHOOL_WIDE' as const }],
+    };
+
+    const userBWithTeachingManage = {
+      user: { id: 'user-b', username: 'teacher_b', displayName: 'Giáo viên B', status: 'ACTIVE' as const, mustChangePassword: false },
+      capabilities: [{ key: 'TEACHING_OPERATION_MANAGE' as const, scope: 'SCHOOL_WIDE' as const }],
+    };
+
+    const mockYears = [
+      { id: 'year-1', code: '2026-2027', name: 'Năm học 2026-2027' },
+      { id: 'year-2', code: '2027-2028', name: 'Năm học 2027-2028' },
+    ];
+
+    let authMeCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        authMeCount += 1;
+        if (authMeCount === 1) return jsonResponse(userAWithTeachingManage);
+        return foregroundAuthMePromise;
+      }
+      if (url.includes('academic-years')) {
+        return jsonResponse({ items: mockYears, total: 2 });
+      }
+      if (url.includes('makeup-schedules/candidates')) {
+        return jsonResponse({ status: 'PASS', items: [] });
+      }
+      if (url.includes('makeup-schedules')) {
+        return jsonResponse({ items: [] });
+      }
+      if (url.includes('catalogs/subjects')) {
+        return jsonResponse({ items: [] });
+      }
+      return jsonResponse({});
+    }));
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <MemoryRouter initialEntries={['/quan-tri/lich-day-bu']}>
+            <Routes>
+              <Route element={<ProtectedRoute />}>
+                <Route path="/quan-tri/lich-day-bu" element={<MakeupSchedulingPage />} />
+              </Route>
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+
+    const select = await screen.findByLabelText('Năm học') as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe('year-1'));
+
+    // User A selects year-2
+    fireEvent.change(select, { target: { value: 'year-2' } });
+    expect(select.value).toBe('year-2');
+
+    // Populate User A specific business cache
+    queryClient.setQueryData(['reporting-statements-mine'], { items: ['user-a-cache'] });
+
+    // Blur select so window focus is not treated as a form control focus
+    select.blur();
+
+    // Trigger foreground verification
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    // Foreground verification resolves User B
+    await act(async () => {
+      resolveForegroundAuthMe(jsonResponse(userBWithTeachingManage));
+    });
+
+    // After User B resolution:
+    await waitFor(() => {
+      expect(screen.queryByText('Đang kiểm tra phiên làm việc')).toBeNull();
+    });
+
+    // Assert:
+    // 1. Old User A cache removed
+    expect(queryClient.getQueryData(['reporting-statements-mine'])).toBeUndefined();
+    // 2. Fresh page mounted for User B (defaults back to initial year-1)
+    const newSelect = screen.getByLabelText('Năm học') as HTMLSelectElement;
+    expect(newSelect.value).toBe('year-1');
   });
 });

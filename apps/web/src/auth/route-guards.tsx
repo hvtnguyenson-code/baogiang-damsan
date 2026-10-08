@@ -41,9 +41,6 @@ export function ProtectedRoute() {
 
 export function CapabilityRoute({ allow }: { allow(capabilities: ScopedCapability[]): boolean }) {
   const auth = useAuth();
-  if (auth.reconciliationMode === 'FOREGROUND_VERIFY') {
-    return <Outlet />;
-  }
   if (!auth.auth || !allow(auth.auth.capabilities)) return <Navigate to="/khong-co-quyen" replace />;
   return <Outlet />;
 }
