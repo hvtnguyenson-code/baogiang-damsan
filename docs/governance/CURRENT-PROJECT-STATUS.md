@@ -42,13 +42,13 @@ Parent closure evidence:
 - production remains strictly **PRE-OPERATIONAL**;
 - no residual P5-030 correction/re-entry task emerged from review or post-merge CI.
 
-`P5-030` is **`CLOSED`** by `SYNC-P5-030`. `P5-040` is **`IN_PROGRESS`** on correction branch `fix/p5-040-consistency-correction-001` (remediating confirmed findings CX-01..CX-06 under Correction 001; initial audit PASS claim on `3c7233fd953b19b943c0185d444aef8ff8e9be14` was rejected by independent adversarial review; full re-audit remains mandatory). `P6-020` remains strictly **`DEFERRED_WITH_TRIGGER`** until `P5-040` is closed and the exact pilot build is explicitly approved by the Product Owner as a production deployment candidate.
+`P5-030` is **`CLOSED`** by `SYNC-P5-030`. `P5-040` is **`CLOSED`** by `SYNC-P5-040` (PR #202; exact-head CI #657 SUCCESS; merge/main `1282f24a5300da88c155c7dc5523644d14bd53c8`; authoritative post-merge CI #658 SUCCESS; remediating confirmed findings CX-01..CX-06 across Corrections 001..009; independent GitHub review PASS). `P6-020` remains strictly **`DEFERRED_WITH_TRIGGER`** until the exact pilot build is explicitly approved by the Product Owner as a production deployment candidate.
 
 ## Active / next critical path
 
 ### In Progress
 
-- `P5-040` — pre-deploy full-repository consistency audit: **`IN_PROGRESS`** on branch `fix/p5-040-consistency-correction-001` (Correction 001 addressing CX-01 HIGH and CX-02..CX-06 MEDIUM).
+- None.
 
 ### In Review
 
@@ -102,8 +102,8 @@ The project is **NOT READY FOR TEACHER PILOT YET**. Remaining registered gaps in
 2. Public make-up scheduling T08 and adjusted-workload T23 re-entry paths are fulfilled by the closed P3-031 and P4-061 chains and were re-verified in P5-010.
 3. PWA production baseline (`P5-020`) is **`CLOSED` by `SYNC-P5-020`** after PR #195, exact-head CI #644 SUCCESS, merge/main `fa54eaea5c2055517428d18559f652001999d0e4` and authoritative post-merge CI #645 SUCCESS.
 4. Dedicated Telegram integration (`P5-030`) is **`CLOSED` by `SYNC-P5-030`** after PR #200, exact-head CI #653 SUCCESS, merge/main `3bcd0d7fc1ffd0eedb8f2186271e2596a1581e5a` và authoritative post-merge CI #654 (run `37576373644`) SUCCESS.
-5. Pre-deploy full-repository consistency audit (`P5-040`) is **`IN_PROGRESS`** on correction branch `fix/p5-040-consistency-correction-001` (remediating confirmed findings CX-01..CX-06; initial audit PASS claim rejected; full re-audit required) as a mandatory prerequisite before VPS deployment.
-6. Official production Stage 1 passive discovery/preflight (`P6-020`) remains trigger-gated behind `P5-040` closure and explicit Product Owner approval; P5-010 closure alone does not authorize production access.
+5. Pre-deploy full-repository consistency audit (`P5-040`) is **`CLOSED` by `SYNC-P5-040`** (PR #202; exact-head CI #657 SUCCESS; merge/main `1282f24a5300da88c155c7dc5523644d14bd53c8`; authoritative post-merge CI #658 SUCCESS; remediating confirmed findings CX-01..CX-06 across Corrections 001..009; independent GitHub review PASS).
+6. Official production Stage 1 passive discovery/preflight (`P6-020`) remains trigger-gated behind explicit Product Owner approval; P5-040 closure alone does not authorize production access.
 7. Production bootstrap/first controlled deploy (`P6-030`) has not occurred.
 8. Teacher pilot go-live verification (`P6-050`) has not occurred.
 

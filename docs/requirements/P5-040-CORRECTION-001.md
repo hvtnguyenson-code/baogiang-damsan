@@ -2,7 +2,7 @@
 
 ## Status
 
-**IN_PROGRESS — Active correction branch `fix/p5-040-consistency-correction-001`.**
+**CLOSED — Parent PR #202 merged to `main@1282f24a5300da88c155c7dc5523644d14bd53c8`.**
 
 - Task: `P5-040` (Correction 001)
 - Starting canonical base: `main@6e6b76f15998c4a7d70b61502bda932571d46ea0`
@@ -10,9 +10,9 @@
 - Initial audit commit: `3c7233fd953b19b943c0185d444aef8ff8e9be14`
 - Initial audit claim: `PASS — NO BLOCKER/HIGH FINDINGS` (REJECTED by independent adversarial review and final adjudication)
 - Final adjudication outcome: confirmed 6 findings (CX-01 HIGH, CX-02..CX-06 MEDIUM; CX-07 was adjudicated as non-defect and not adopted)
-- Current task status: `IN_PROGRESS` (P5-040 is NOT CLOSED and CANNOT be marked CLOSED before correction, independent review, merge, and a full P5-040 re-audit are complete)
+- Current task status: `CLOSED` (PR #202 merged to `main@1282f24a5300da88c155c7dc5523644d14bd53c8`; PR CI #657 SUCCESS; post-merge CI #658 SUCCESS)
 - Downstream status: `P6-020` remains strictly `DEFERRED_WITH_TRIGGER`
-- Production state: strictly **PRE-OPERATIONAL** (no deployment before correction + re-audit are fully satisfied)
+- Production state: strictly **PRE-OPERATIONAL** (no deployment performed)
 
 ---
 
@@ -649,7 +649,7 @@ Address confirmed adversarial finding AR-01-R1 from the Codex targeted adversari
 2. *(current)* — `docs(governance): record P5-040 review correction 009`
 
 ### 12.6 Governance Status
-- Task `P5-040`: strictly **`IN_PROGRESS`** (awaiting final Codex re-review).
+- Task `P5-040`: strictly **`CLOSED`** (PR #202 merged to `main@1282f24a5300da88c155c7dc5523644d14bd53c8`; PR CI #657 SUCCESS; post-merge CI #658 SUCCESS).
 - Task `P6-020`: strictly **`DEFERRED_WITH_TRIGGER`**.
 - Production state: strictly **`PRE-OPERATIONAL`**.
 

@@ -137,12 +137,12 @@ Exact task statuses and prerequisites are maintained authoritatively in `PRE-PIL
 5. T23/T49 architecture is closed by `SYNC-P4-060`; P4-061 runtime is CLOSED by `SYNC-P4-061`, fulfilling adjustment rules and actual curricular workload aggregation and unblocking P5-010.
 6. `P5-020` installable PWA baseline with safe caching/update behavior is **`CLOSED` by `SYNC-P5-020`** after PR #195, exact-head CI #644 SUCCESS, merge `fa54eaea5c2055517428d18559f652001999d0e4` and post-merge CI #645 SUCCESS.
 7. `P5-030A` dedicated Telegram integration architecture closure (ADR-058 Accepted, `T33`) is **`CLOSED` by `SYNC-P5-030A`**; implementation `P5-030` is **`CLOSED` by `SYNC-P5-030`** after PR #200 and post-merge CI #654 SUCCESS.
-8. `P5-040` pre-deploy full-repository consistency audit is **`READY`** across all domains before production deployment.
+8. `P5-040` pre-deploy full-repository consistency audit is **`CLOSED` by `SYNC-P5-040`** (PR #202, merge/main `1282f24a5300da88c155c7dc5523644d14bd53c8`, post-merge CI #658 SUCCESS) across all domains before production deployment.
 
 ### P6 — Production readiness and controlled pilot
 
 1. Repo-side Báo giảng first-cert HTTP-01/Nginx/TLS authority (CLOSED by `SYNC-P6-010`).
-2. Pre-deploy full-repository consistency audit (`P5-040`) must be CLOSED before P6-020.
+2. Pre-deploy full-repository consistency audit (`P5-040`) is CLOSED by `SYNC-P5-040` before P6-020.
 3. Passive VPS neighbour discovery and exact readonly preflight (`P6-020`, trigger-gated).
 4. Controlled root/ACL/task/env/Nginx/database bootstrap (`P6-030`).
 5. Exact reviewed commit deploy + migration/rollback/health evidence.
@@ -180,7 +180,7 @@ Independent tracks:
 - P4-050 (Special-programme workload/reporting; `CLOSED` by `SYNC-P4-050`)
 - P4-060 (Workload adjustment + official workload architecture; `CLOSED` by `SYNC-P4-060`, ADR-057 Accepted)
 - P4-061 (Implementation; `CLOSED` by `SYNC-P4-061`)
-- P5-010 (FULL BUSINESS cross-domain freeze; `CLOSED` by `SYNC-P5-010`; P5-020 is `CLOSED` by `SYNC-P5-020`; P5-030A is `CLOSED` by `SYNC-P5-030A`; P5-030 is `CLOSED` by `SYNC-P5-030`; P5-040 is `READY` before P6-020)
+- P5-010 (FULL BUSINESS cross-domain freeze; `CLOSED` by `SYNC-P5-010`; P5-020 is `CLOSED` by `SYNC-P5-020`; P5-030A is `CLOSED` by `SYNC-P5-030A`; P5-030 is `CLOSED` by `SYNC-P5-030`; P5-040 is `CLOSED` by `SYNC-P5-040` before P6-020)
 - P6 production readiness & TLS authority (governed independently by canonical gates P6-005 -> P6-010 etc.)
 - Native TKB foundation: P2-030, P2-040, P2-050 are CLOSED.
 
