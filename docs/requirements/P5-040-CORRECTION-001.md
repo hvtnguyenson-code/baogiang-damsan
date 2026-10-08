@@ -377,8 +377,76 @@ Address independent re-review findings RC5-01 and RC5-02 on branch `fix/p5-040-c
 
 ### 8.4 Commits and Governance
 - Implementation commit: `485a64137f8987c8b2d95217c8e6c67b54324d23` (`fix(web): preserve protected drafts during session verification`)
+- Documentation commit: `efed62120f5dd2cfdfcb3c2df12b01109ac351bf` (`docs(governance): record P5-040 review correction 005`)
+- Task Governance:
+  - `P5-040`: strictly **`IN_PROGRESS`**.
+  - `P6-020`: strictly **`DEFERRED_WITH_TRIGGER`**.
+  - Production state: strictly **`PRE-OPERATIONAL`**.
+
+## 9. Review Correction 006 — Preserve Session on Indeterminate Reconciliation Failure
+
+### 9.1 Scope and Objective
+Address independent re-review finding RC6-01 on branch `fix/p5-040-consistency-correction-001`:
+- **RC6-01 (MEDIUM): Indeterminate verification failures falsely collapsed into logout.**
+  `reconcileSessionBoundary()` previously caught all errors from `fetchAuthMe({ notifyUnauthorized: false })` and treated them as anonymous/session invalid. This incorrectly collapsed HTTP 401, network status 0, HTTP 5xx, and malformed responses into destructive logout behavior, violating repository authority and `AuthRecovery` copy ("Phiên của bạn chưa bị coi là đã đăng xuất.").
+
+### 9.2 Required Outcome Classification & Architectural Invariants
+Reconciliation failure is strictly classified into two categories:
+1. **Confirmed Anonymous (`apiError.statusCode === 401`):**
+   - Authoritative session termination confirmed by backend.
+   - Clears session cache via `clearSessionCache(queryClient)`.
+   - Aborts previous session generation.
+   - Resets `AUTH_QUERY_KEY = null` and `previousUserIdRef = undefined`.
+   - Ends reconciliation mode (`reconciliationMode = 'NONE'`, `reconciliationError = null`).
+   - Renders public/login route and destroys old protected subtrees/drafts.
+2. **Indeterminate Verification Failure (`statusCode === 0`, `statusCode >= 500`, malformed response):**
+   - Must **NOT** clear session cache.
+   - Must **NOT** rotate generation or abort valid in-flight queries/mutations.
+   - Must **NOT** set `AUTH_QUERY_KEY` to null or reset `previousUserIdRef`.
+   - Must **NOT** infer logout or transition to anonymous route.
+   - Enters bounded verification recovery state (`reconciliationError = apiError`).
+
+### 9.3 Behavior by Reconciliation Mode
+1. **FOREGROUND_VERIFY Indeterminate Failure:**
+   - Retains verified user auth, session generation, and business cache internally.
+   - Retains mounted protected subtree inside `<div aria-hidden="true" style={{ display: 'none' }}><Outlet /></div>`.
+   - Displays `<AuthRecovery title="Chưa thể kiểm tra phiên đăng nhập" message="Hệ thống tạm thời chưa thể xác thực phiên làm việc hiện tại..." onRetry={retry} />` while keeping protected business surface non-visible and non-interactive.
+   - Retrying calls direct server-authoritative `/auth/me`:
+     - Same user: Clears recovery state (`reconciliationError = null`, `reconciliationMode = 'NONE'`), restoring protected page visibility and interaction with unsaved form draft completely preserved without remounting.
+     - Changed user (User B): Discards old User A draft/cache and establishes User B.
+     - 401: Transitions to anonymous and routes to login.
+2. **BOUNDARY_VERIFY Indeterminate Failure:**
+   - For an authoritative remote `SESSION_BOUNDARY_CHANGED`, old business cache/generation was already purged fail-closed.
+   - On network/5xx failure of `/auth/me`, the user is **NOT** falsely classified as anonymous.
+   - Remains in fail-closed boundary recovery UI (`<AuthRecovery />` rendered without mounted `<Outlet />`) and allows retry.
+   - Retrying direct `/auth/me` resolves identity upon 200 or confirms anonymous upon 401.
+3. **Monotonic Sequence Protection:**
+   - Increments sequence ref on boundary invalidation.
+   - Stale reconciliation N failing late after N+1 succeeds User B performs zero state mutation and cannot overwrite newer success or set `reconciliationError`.
+
+### 9.4 Regression Suite & Verification
+- Suite: `apps/web/src/__tests__/session-cache-isolation.test.tsx` (46 tests, 100% PASS):
+  - **Test 39 (RC6-01):** Foreground network failure does not logout; retains verified User A internally, keeps generation and cache intact, leaves protected subtree mounted but hidden, shows recovery UI.
+  - **Test 40 (RC6-01):** Foreground 503 does not logout; maintains all invariants of Test 39.
+  - **Test 41 (RC6-01):** Foreground network failure -> retry -> same User A restores authenticated UI without remounting or draft loss (`DRAFT-MUST-SURVIVE` preserved, mount count unchanged).
+  - **Test 42 (RC6-01):** Foreground network failure -> retry -> User B discards old draft, clears old cache, invalidates generation, and establishes User B.
+  - **Test 43 (RC6-01):** Foreground network failure -> retry -> 401 transitions to anonymous/login, destroying old draft, cache, and generation.
+  - **Test 44 (RC6-01):** Remote boundary + network failure is NOT anonymous; old User A state destroyed, remains in boundary recovery UI without login redirect.
+  - **Test 45 (RC6-01):** Remote boundary recovery retry -> User B establishes new identity safely.
+  - **Test 46 (RC6-01):** Stale reconciliation error cannot overwrite newer success; late N error performs zero state mutation.
+  - **Tests 1-38:** All prior session isolation, BroadcastChannel fallback, generation stability, and draft preservation tests continue to pass.
+- Web unit tests: `npm run test:unit -w apps/web`: 28 test files passed (420 tests).
+- Monorepo unit tests: `npm run test:unit`: 127 test suites passed (2250 tests: 420 web + 1830 api).
+- Lint: `npm run lint`: PASS (0 warnings across all 4 packages).
+- Typecheck: `npm run typecheck`: PASS (0 errors across contracts, config, api, web).
+- Static UI gate: `npm run test:ui:static`: PASS.
+- Monorepo build: `npm run build`: PASS (contracts, config, api, web).
+- Whitespace / diff check: `git diff --check`: PASS (0 whitespace / newline issues).
+
+### 9.5 Commits and Current HEAD
+- Implementation commit: `cb62555cbe14c0a3f34e740e908cd791fe9ffaa9` (`fix(web): preserve session on reconciliation failure`)
 - Documentation commit: *(recorded upon docs commit)*
 - Task Governance:
-  - `P5-040`: strictly **`IN_PROGRESS`** (Correction 005 completed on branch; awaiting independent review).
+  - `P5-040`: strictly **`IN_PROGRESS`** (Correction 006 completed on branch; awaiting independent review).
   - `P6-020`: strictly **`DEFERRED_WITH_TRIGGER`**.
   - Production state: strictly **`PRE-OPERATIONAL`**.
