@@ -445,8 +445,78 @@ Reconciliation failure is strictly classified into two categories:
 
 ### 9.5 Commits and Current HEAD
 - Implementation commit: `cb62555cbe14c0a3f34e740e908cd791fe9ffaa9` (`fix(web): preserve session on reconciliation failure`)
-- Documentation commit: *(recorded upon docs commit)*
+- Documentation commit: `e5bc3911dcc080599fa650defc86db29bcd64a46` (`docs(governance): record P5-040 review correction 006`)
 - Task Governance:
   - `P5-040`: strictly **`IN_PROGRESS`** (Correction 006 completed on branch; awaiting independent review).
+  - `P6-020`: strictly **`DEFERRED_WITH_TRIGGER`**.
+  - Production state: strictly **`PRE-OPERATIONAL`**.
+
+## 10. Review Correction 007 — Preserve Verified Auth Context During Foreground Shield
+
+### 10.1 Scope and Objective
+Address independent re-review finding RC7-01 on branch `fix/p5-040-consistency-correction-001`:
+- **RC7-01 (MEDIUM): Mounted business pages observed transient `auth = null` during `FOREGROUND_VERIFY`.**
+  Correction 005/006 preserved the mounted protected route subtree during `FOREGROUND_VERIFY` so unsaved drafts survive. However, `AuthContext` exposed `auth: reconciliationMode !== 'NONE' ? null : (authQuery.data ?? null)`. Consequently, every foreground verification caused mounted business pages (such as `MakeupSchedulingPage`, `CapabilitiesPage`, `AppLayout`) to temporarily observe `auth = null` and empty capabilities (`hasAccess: true -> false -> true`). When same-user verification concluded, capability-dependent bootstrap effects re-ran (e.g. `academicYearsApi.list(...) -> setAcademicYearId(res.items[0].id)`), unintentionally resetting user-selected state (such as academic year) merely upon Alt-Tab / foreground focus.
+
+### 10.2 Architectural Separation: Context Stability vs. Visual/Interaction Authority
+Reconciliation semantics require strictly separating internal context stability from visual/interaction authority:
+1. **Context Stability:**
+   - **`NONE`:** `auth = authQuery.data ?? null`.
+   - **`FOREGROUND_VERIFY`:** `auth = last verified authQuery.data / retained verified auth` (never null). Mounted descendants retain access to their provisionally verified identity and capabilities without spurious capability-drop reinitialization.
+   - **`BOUNDARY_VERIFY`:** `auth = null` strictly. A remote authoritative session boundary already destroyed the old session cache/generation, so old identity must not be available.
+   - **Initial Auth Check:** No previously verified auth exists, so `auth = null`.
+2. **Visual & Interaction Authority:**
+   - `ProtectedRoute` remains the confidentiality and interaction boundary.
+   - During `FOREGROUND_VERIFY` and foreground indeterminate error, the protected subtree remains completely shielded (`aria-hidden="true"`, `display: none`, no pointer or keyboard interaction).
+   - Only authoritative confirmation of same-user `/auth/me` removes the shield.
+   - Any identity change (User B) or confirmed 401 unmounts/destroys the old protected subtree.
+
+### 10.3 Capability Route Normalization
+- Previously, `CapabilityRoute` contained a special bypass:
+  ```tsx
+  if (auth.reconciliationMode === 'FOREGROUND_VERIFY') {
+    return <Outlet />;
+  }
+  ```
+- With retained verified auth in `FOREGROUND_VERIFY`, this bypass is removed. `CapabilityRoute` now evaluates retained verified capabilities normally:
+  ```tsx
+  if (!auth.auth || !allow(auth.auth.capabilities)) return <Navigate to="/khong-co-quyen" replace />;
+  return <Outlet />;
+  ```
+- This prevents unauthorized components from mounting merely because foreground verification is active, while parent `ProtectedRoute` continues shielding the subtree.
+
+### 10.4 Static Audit of `useAuth()` Consumers
+A bounded static audit of mounted protected pages calling `useAuth()` confirmed:
+- `AppLayout`: derived user display and navigation capabilities stay stable; no layout flicker.
+- `HomePage`: work index links and capability checks maintain stable rendering.
+- `ProfilePage`: profile display remains intact.
+- `ReportingStatementsPage`, `ReportingStatementDetailPage`: query enablement and filter state remain stable.
+- `CapabilitiesPage`: capability inspector does not flash empty state during verification.
+- `DutyAssignmentsPage`, `TemporalAssignmentsPage`: assignment management scopes remain stable.
+- `MakeupSchedulingPage`: bootstrap effect depending on `hasAccess` does not oscillate, preventing academic year resets.
+
+### 10.5 Regression Suite & Verification
+- Suite: `apps/web/src/__tests__/session-cache-isolation.test.tsx` (52 tests, 100% PASS):
+  - **Test 47 (RC7-01):** Foreground shield retains last verified auth internally (`status === 'checking'`, `reconciliationMode === 'FOREGROUND_VERIFY'`, `auth?.user.id === 'user-a'`), while route wrapper is hidden and shield is visible.
+  - **Test 48 (RC7-01):** Real `MakeupSchedulingPage` retains user-selected academic year (`year-2` remains `year-2`) after foreground verification, and bootstrap list request count remains exactly 1.
+  - **Test 49 (RC7-01):** Real `MakeupSchedulingPage` retains selected `year-2` through foreground network failure + retry for same user; no capability-derived reset.
+  - **Test 50 (RC7-01):** `FOREGROUND_VERIFY` does not bypass `CapabilityRoute`; unauthorized child component is never mounted.
+  - **Test 51 (RC7-01):** `BOUNDARY_VERIFY` exposes no retained auth (`auth === null`, `reconciliationMode === 'BOUNDARY_VERIFY'`), and old cache/subtree remains destroyed.
+  - **Test 52 (RC7-01):** Changed user (User B) still resets real page context, clears User A cache, and mounts fresh state.
+  - **Tests 1–46:** All existing session isolation, boundary reconciliation, BroadcastChannel fallback, and indeterminate failure tests continue to pass.
+- Suite: `apps/web/src/__tests__/makeup-scheduling-page.test.tsx`: 10/10 tests PASS.
+- Web unit tests: `npm run test:unit -w apps/web`: 28 test files passed (426 tests: 420 previous + 6 new).
+- Monorepo unit tests: `npm run test:unit`: 127 test suites passed (2256 tests: 426 web + 1830 api).
+- Lint: `npm run lint`: PASS (0 warnings across all 4 packages).
+- Typecheck: `npm run typecheck`: PASS (0 errors across contracts, config, api, web).
+- Static UI gate: `npm run test:ui:static`: PASS.
+- Monorepo build: `npm run build`: PASS (contracts, config, api, web).
+- Whitespace / diff check: `git diff --check`: PASS (0 whitespace / newline issues).
+
+### 10.6 Commits and Current HEAD
+- Implementation commit: `22a27533036fb1cbeae0e95db50b91e9f16cb839` (`fix(web): retain verified auth during foreground checks`)
+- Documentation commit: *(recorded upon docs commit)*
+- Task Governance:
+  - `P5-040`: strictly **`IN_PROGRESS`** (Correction 007 completed on branch; awaiting final independent review before Codex).
   - `P6-020`: strictly **`DEFERRED_WITH_TRIGGER`**.
   - Production state: strictly **`PRE-OPERATIONAL`**.
