@@ -309,4 +309,141 @@ describe('TelegramBotApiAdapter (CX-02 / CX-03 / CX-04 Transport Hardening)', ()
     expect(result.sanitizedErrorCode).not.toContain('https://');
     expect(result.sanitizedErrorCode).not.toContain('api.telegram.org');
   });
+
+  // --- AR-03: Runtime validation of Telegram success acknowledgement ---
+
+  it('15. AR-03 C1: valid positive integer message_id -> success', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ok: true,
+        result: { message_id: 123456 },
+      }),
+    });
+    const result = await adapter.sendMessage('12345', 'Hello');
+    expect(result.success).toBe(true);
+    expect(result.providerMessageId).toBe('123456');
+    expect(result.uncertainOutcome).toBeUndefined();
+  });
+
+  it('16. AR-03 C2: missing message_id -> UNKNOWN (MALFORMED_SUCCESS_ACKNOWLEDGEMENT)', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ok: true,
+        result: {},
+      }),
+    });
+    const result = await adapter.sendMessage('12345', 'Hello');
+    expect(result.success).toBe(false);
+    expect(result.uncertainOutcome).toBe(true);
+    expect(result.sanitizedErrorCode).toBe('MALFORMED_SUCCESS_ACKNOWLEDGEMENT');
+    expect(result.providerMessageId).toBeUndefined();
+  });
+
+  it('17. AR-03 C3: message_id string -> UNKNOWN (MALFORMED_SUCCESS_ACKNOWLEDGEMENT)', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ok: true,
+        result: { message_id: 'not-a-number' },
+      }),
+    });
+    const result = await adapter.sendMessage('12345', 'Hello');
+    expect(result.success).toBe(false);
+    expect(result.uncertainOutcome).toBe(true);
+    expect(result.sanitizedErrorCode).toBe('MALFORMED_SUCCESS_ACKNOWLEDGEMENT');
+    expect(result.providerMessageId).toBeUndefined();
+  });
+
+  it('18. AR-03 C4: message_id object -> UNKNOWN (MALFORMED_SUCCESS_ACKNOWLEDGEMENT)', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ok: true,
+        result: { message_id: {} },
+      }),
+    });
+    const result = await adapter.sendMessage('12345', 'Hello');
+    expect(result.success).toBe(false);
+    expect(result.uncertainOutcome).toBe(true);
+    expect(result.sanitizedErrorCode).toBe('MALFORMED_SUCCESS_ACKNOWLEDGEMENT');
+  });
+
+  it('19. AR-03 C5: message_id array -> UNKNOWN (MALFORMED_SUCCESS_ACKNOWLEDGEMENT)', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ok: true,
+        result: { message_id: [123] },
+      }),
+    });
+    const result = await adapter.sendMessage('12345', 'Hello');
+    expect(result.success).toBe(false);
+    expect(result.uncertainOutcome).toBe(true);
+    expect(result.sanitizedErrorCode).toBe('MALFORMED_SUCCESS_ACKNOWLEDGEMENT');
+  });
+
+  it('20. AR-03 C6: message_id float / invalid numeric shape -> UNKNOWN (MALFORMED_SUCCESS_ACKNOWLEDGEMENT)', async () => {
+    // Float
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ok: true,
+        result: { message_id: 123.45 },
+      }),
+    });
+    let result = await adapter.sendMessage('12345', 'Hello');
+    expect(result.success).toBe(false);
+    expect(result.uncertainOutcome).toBe(true);
+    expect(result.sanitizedErrorCode).toBe('MALFORMED_SUCCESS_ACKNOWLEDGEMENT');
+
+    // Negative integer
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ok: true,
+        result: { message_id: -5 },
+      }),
+    });
+    result = await adapter.sendMessage('12345', 'Hello');
+    expect(result.success).toBe(false);
+    expect(result.uncertainOutcome).toBe(true);
+    expect(result.sanitizedErrorCode).toBe('MALFORMED_SUCCESS_ACKNOWLEDGEMENT');
+
+    // Zero
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ok: true,
+        result: { message_id: 0 },
+      }),
+    });
+    result = await adapter.sendMessage('12345', 'Hello');
+    expect(result.success).toBe(false);
+    expect(result.uncertainOutcome).toBe(true);
+    expect(result.sanitizedErrorCode).toBe('MALFORMED_SUCCESS_ACKNOWLEDGEMENT');
+  });
+
+  it('21. AR-03 C7: malformed JSON -> UNKNOWN (PROVIDER_RESPONSE_PARSE_ERROR)', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => {
+        throw new SyntaxError('Unexpected token < in JSON at position 0');
+      },
+    });
+    const result = await adapter.sendMessage('12345', 'Hello');
+    expect(result.success).toBe(false);
+    expect(result.uncertainOutcome).toBe(true);
+    expect(result.sanitizedErrorCode).toBe('PROVIDER_RESPONSE_PARSE_ERROR');
+  });
 });

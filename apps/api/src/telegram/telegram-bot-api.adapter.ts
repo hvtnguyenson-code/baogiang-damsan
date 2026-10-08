@@ -35,14 +35,26 @@ export class TelegramBotApiAdapter implements TelegramTransportPort {
 
       if (response.ok) {
         try {
-          const body = (await response.json()) as { ok?: boolean; result?: { message_id?: number } };
-          if (body?.ok === true && body.result?.message_id != null) {
-            return {
-              success: true,
-              providerMessageId: String(body.result.message_id),
-            };
+          const body: unknown = await response.json();
+          if (
+            body !== null &&
+            typeof body === 'object' &&
+            !Array.isArray(body) &&
+            (body as Record<string, unknown>).ok === true
+          ) {
+            const result = (body as Record<string, unknown>).result;
+            if (result !== null && typeof result === 'object' && !Array.isArray(result)) {
+              const msgId = (result as Record<string, unknown>).message_id;
+              if (typeof msgId === 'number' && Number.isSafeInteger(msgId) && msgId > 0) {
+                return {
+                  success: true,
+                  providerMessageId: String(msgId),
+                };
+              }
+            }
           }
-          // CX-03: HTTP 200 with missing message_id or malformed body without definitive rejection MUST be UNKNOWN
+          // CX-03 / AR-03: HTTP 200 with missing message_id, malformed body, or non-integer/invalid message_id
+          // without definitive rejection MUST be UNKNOWN
           return {
             success: false,
             sanitizedErrorCode: 'MALFORMED_SUCCESS_ACKNOWLEDGEMENT',
