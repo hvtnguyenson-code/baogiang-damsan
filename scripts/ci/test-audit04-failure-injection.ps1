@@ -125,7 +125,23 @@ try {
   }
 
   function Write-DeploymentParameters([string]$FilePath, [hashtable]$Params) {
-    [IO.File]::WriteAllText($FilePath, ($Params | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
+    if (-not $Params.ContainsKey('PreMigrationRecoveryApproved')) {
+      $Params['PreMigrationRecoveryApproved'] = $false
+    }
+    if (-not $Params.ContainsKey('MaintenanceWindow')) {
+      if ($Params['MigrationRequested']) {
+        $Params['MaintenanceWindow'] = [ordered]@{
+          ReleaseSha = $Params['ReleaseSha']
+          StartUtc = [DateTime]::UtcNow.AddMinutes(-10).ToString('o')
+          EndUtc = [DateTime]::UtcNow.AddHours(1).ToString('o')
+          AuthorizedBy = 'operator-aud04'
+          Approved = $true
+        }
+      } else {
+        $Params['MaintenanceWindow'] = $null
+      }
+    }
+    [IO.File]::WriteAllText($FilePath, ($Params | ConvertTo-Json -Depth 5), [Text.UTF8Encoding]::new($false))
   }
 
   $global:aud04StopCalls = [Collections.Generic.List[string]]::new()
@@ -1208,10 +1224,835 @@ try {
     Write-Output '  [PASS] Test 18 (R1-6E): Neighbor isolation verified during post-recovery pointer failure (neighbour untouched)'
   }
 
-  Write-Output '=== ALL 18 AUD-04 FAILURE-INJECTION TESTS PASSED ==='
+  # --- TEST 19 (AUD-04-R2): Missing or invalid maintenance approval -> reject before safe-stop or migration ---
+  {
+    $fix = New-AudFixtureEnvironment 'test19'
+    $origReleaseDir = Join-Path $fix.Root "releases\$origSha\apps\api\dist\apps\api\src"
+    New-Item -ItemType Directory -Path $origReleaseDir -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $origReleaseDir 'main.js'), 'console.log("v1");', [Text.UTF8Encoding]::new($false))
+    New-Item -ItemType Junction -Path (Join-Path $fix.Root 'current') -Target (Join-Path $fix.Root "releases\$origSha") | Out-Null
+    $xfer = Prepare-IncomingTransfer $fix.Root $newSha
+
+    $flagFile = Join-Path $fix.Root 'migration-called-19.flag'
+    $stubs = @{
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
+      'run-migrations.ps1' = "New-Item -LiteralPath '$flagFile' -ItemType File | Out-Null; Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
+    }
+    Set-FixtureScriptStubs $stubs
+
+    # 19A: MaintenanceWindow is null
+    $paramFileA = Join-Path $fix.Root 'deploy-params-19a.json'
+    Write-DeploymentParameters $paramFileA @{
+      ReleaseSha = $newSha; Root = $fix.Root; TransferDirectoryName = $xfer.TransferDir; SourceArchiveName = $xfer.ArchiveName
+      ExpectedSha256 = $xfer.Sha256; NodeExe = $fakeToolPath; NpmExe = $fakeToolPath; NpxExe = $fakeToolPath
+      PsqlExe = $fakeToolPath; PgDumpExe = $fakeToolPath; PgRestoreExe = $fakeToolPath
+      EnvFile = $fix.EnvFile; StartupWrapper = $fix.StartupWrapper; NginxExe = $fakeToolPath; NginxConfig = $fix.NginxConfig
+      ExpectedBaseUrl = 'https://baogiang.dtnt-damsan.edu.vn'; ServiceKind = 'scheduled-task'; ServiceName = 'BaoGiangBackend'
+      ExpectedEntryPoint = $fix.EntryPoint; MigrationRequested = $true; ProductionMigrationApproved = $true
+      MaintenanceWindow = $null; ReportFileName = "deploy-report-19a.json"
+    }
+    $thrown = $false
+    try { & (Join-Path $fixtureScriptsDir 'invoke-production-deploy.ps1') -ParameterFile $paramFileA | Out-Null }
+    catch { $thrown = $true; if ($_.Exception.Message -notmatch 'MAINTENANCE_WINDOW_MISSING') { throw "Test 19A unexpected error: $($_.Exception.Message)" } }
+    if (-not $thrown) { throw 'Test 19A did not throw on missing maintenance window' }
+    if (Test-Path -LiteralPath $flagFile) { throw 'Test 19A migration was called despite missing window' }
+
+    # 19B: MaintenanceWindow not approved (Approved = $false)
+    $paramFileB = Join-Path $fix.Root 'deploy-params-19b.json'
+    Write-DeploymentParameters $paramFileB @{
+      ReleaseSha = $newSha; Root = $fix.Root; TransferDirectoryName = $xfer.TransferDir; SourceArchiveName = $xfer.ArchiveName
+      ExpectedSha256 = $xfer.Sha256; NodeExe = $fakeToolPath; NpmExe = $fakeToolPath; NpxExe = $fakeToolPath
+      PsqlExe = $fakeToolPath; PgDumpExe = $fakeToolPath; PgRestoreExe = $fakeToolPath
+      EnvFile = $fix.EnvFile; StartupWrapper = $fix.StartupWrapper; NginxExe = $fakeToolPath; NginxConfig = $fix.NginxConfig
+      ExpectedBaseUrl = 'https://baogiang.dtnt-damsan.edu.vn'; ServiceKind = 'scheduled-task'; ServiceName = 'BaoGiangBackend'
+      ExpectedEntryPoint = $fix.EntryPoint; MigrationRequested = $true; ProductionMigrationApproved = $true
+      MaintenanceWindow = [ordered]@{ ReleaseSha = $newSha; StartUtc = [DateTime]::UtcNow.AddMinutes(-5).ToString('yyyy-MM-ddTHH:mm:ssZ'); EndUtc = [DateTime]::UtcNow.AddHours(1).ToString('yyyy-MM-ddTHH:mm:ssZ'); AuthorizedBy = 'ops'; Approved = $false }
+      ReportFileName = "deploy-report-19b.json"
+    }
+    $thrown = $false
+    try { & (Join-Path $fixtureScriptsDir 'invoke-production-deploy.ps1') -ParameterFile $paramFileB | Out-Null }
+    catch { $thrown = $true; if ($_.Exception.Message -notmatch 'MAINTENANCE_WINDOW_NOT_APPROVED') { throw "Test 19B unexpected error: $($_.Exception.Message)" } }
+    if (-not $thrown) { throw 'Test 19B did not throw on unapproved window' }
+    if (Test-Path -LiteralPath $flagFile) { throw 'Test 19B migration was called despite unapproved window' }
+
+    # 19C: MaintenanceWindow operator invalid
+    $paramFileC = Join-Path $fix.Root 'deploy-params-19c.json'
+    Write-DeploymentParameters $paramFileC @{
+      ReleaseSha = $newSha; Root = $fix.Root; TransferDirectoryName = $xfer.TransferDir; SourceArchiveName = $xfer.ArchiveName
+      ExpectedSha256 = $xfer.Sha256; NodeExe = $fakeToolPath; NpmExe = $fakeToolPath; NpxExe = $fakeToolPath
+      PsqlExe = $fakeToolPath; PgDumpExe = $fakeToolPath; PgRestoreExe = $fakeToolPath
+      EnvFile = $fix.EnvFile; StartupWrapper = $fix.StartupWrapper; NginxExe = $fakeToolPath; NginxConfig = $fix.NginxConfig
+      ExpectedBaseUrl = 'https://baogiang.dtnt-damsan.edu.vn'; ServiceKind = 'scheduled-task'; ServiceName = 'BaoGiangBackend'
+      ExpectedEntryPoint = $fix.EntryPoint; MigrationRequested = $true; ProductionMigrationApproved = $true
+      MaintenanceWindow = [ordered]@{ ReleaseSha = $newSha; StartUtc = [DateTime]::UtcNow.AddMinutes(-5).ToString('yyyy-MM-ddTHH:mm:ssZ'); EndUtc = [DateTime]::UtcNow.AddHours(1).ToString('yyyy-MM-ddTHH:mm:ssZ'); AuthorizedBy = ''; Approved = $true }
+      ReportFileName = "deploy-report-19c.json"
+    }
+    $thrown = $false
+    try { & (Join-Path $fixtureScriptsDir 'invoke-production-deploy.ps1') -ParameterFile $paramFileC | Out-Null }
+    catch { $thrown = $true; if ($_.Exception.Message -notmatch 'MAINTENANCE_WINDOW_OPERATOR_INVALID') { throw "Test 19C unexpected error: $($_.Exception.Message)" } }
+    if (-not $thrown) { throw 'Test 19C did not throw on invalid operator' }
+    if (Test-Path -LiteralPath $flagFile) { throw 'Test 19C migration was called despite invalid operator' }
+
+    # 19D: Target SHA mismatch
+    $paramFileD = Join-Path $fix.Root 'deploy-params-19d.json'
+    Write-DeploymentParameters $paramFileD @{
+      ReleaseSha = $newSha; Root = $fix.Root; TransferDirectoryName = $xfer.TransferDir; SourceArchiveName = $xfer.ArchiveName
+      ExpectedSha256 = $xfer.Sha256; NodeExe = $fakeToolPath; NpmExe = $fakeToolPath; NpxExe = $fakeToolPath
+      PsqlExe = $fakeToolPath; PgDumpExe = $fakeToolPath; PgRestoreExe = $fakeToolPath
+      EnvFile = $fix.EnvFile; StartupWrapper = $fix.StartupWrapper; NginxExe = $fakeToolPath; NginxConfig = $fix.NginxConfig
+      ExpectedBaseUrl = 'https://baogiang.dtnt-damsan.edu.vn'; ServiceKind = 'scheduled-task'; ServiceName = 'BaoGiangBackend'
+      ExpectedEntryPoint = $fix.EntryPoint; MigrationRequested = $true; ProductionMigrationApproved = $true
+      MaintenanceWindow = [ordered]@{ ReleaseSha = ('f' * 40); StartUtc = [DateTime]::UtcNow.AddMinutes(-5).ToString('yyyy-MM-ddTHH:mm:ssZ'); EndUtc = [DateTime]::UtcNow.AddHours(1).ToString('yyyy-MM-ddTHH:mm:ssZ'); AuthorizedBy = 'ops'; Approved = $true }
+      ReportFileName = "deploy-report-19d.json"
+    }
+    $thrown = $false
+    try { & (Join-Path $fixtureScriptsDir 'invoke-production-deploy.ps1') -ParameterFile $paramFileD | Out-Null }
+    catch { $thrown = $true; if ($_.Exception.Message -notmatch 'MAINTENANCE_WINDOW_SHA_MISMATCH') { throw "Test 19D unexpected error: $($_.Exception.Message)" } }
+    if (-not $thrown) { throw 'Test 19D did not throw on SHA mismatch' }
+    if (Test-Path -LiteralPath $flagFile) { throw 'Test 19D migration was called despite SHA mismatch' }
+
+    Write-Output '  [PASS] Test 19 (AUD-04-R2): Missing, unapproved, invalid-operator or SHA-mismatched maintenance window rejected before stop/migration'
+  }
+
+  # --- TEST 20 (AUD-04-R2): Expired, future or invalid-range maintenance window -> rejected before stop/migration ---
+  {
+    $fix = New-AudFixtureEnvironment 'test20'
+    $origReleaseDir = Join-Path $fix.Root "releases\$origSha\apps\api\dist\apps\api\src"
+    New-Item -ItemType Directory -Path $origReleaseDir -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $origReleaseDir 'main.js'), 'console.log("v1");', [Text.UTF8Encoding]::new($false))
+    New-Item -ItemType Junction -Path (Join-Path $fix.Root 'current') -Target (Join-Path $fix.Root "releases\$origSha") | Out-Null
+    $xfer = Prepare-IncomingTransfer $fix.Root $newSha
+
+    $flagFile = Join-Path $fix.Root 'migration-called-20.flag'
+    $stubs = @{
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
+      'run-migrations.ps1' = "New-Item -LiteralPath '$flagFile' -ItemType File | Out-Null; Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
+    }
+    Set-FixtureScriptStubs $stubs
+
+    # 20A: Future window
+    $paramFileA = Join-Path $fix.Root 'deploy-params-20a.json'
+    Write-DeploymentParameters $paramFileA @{
+      ReleaseSha = $newSha; Root = $fix.Root; TransferDirectoryName = $xfer.TransferDir; SourceArchiveName = $xfer.ArchiveName
+      ExpectedSha256 = $xfer.Sha256; NodeExe = $fakeToolPath; NpmExe = $fakeToolPath; NpxExe = $fakeToolPath
+      PsqlExe = $fakeToolPath; PgDumpExe = $fakeToolPath; PgRestoreExe = $fakeToolPath
+      EnvFile = $fix.EnvFile; StartupWrapper = $fix.StartupWrapper; NginxExe = $fakeToolPath; NginxConfig = $fix.NginxConfig
+      ExpectedBaseUrl = 'https://baogiang.dtnt-damsan.edu.vn'; ServiceKind = 'scheduled-task'; ServiceName = 'BaoGiangBackend'
+      ExpectedEntryPoint = $fix.EntryPoint; MigrationRequested = $true; ProductionMigrationApproved = $true
+      MaintenanceWindow = [ordered]@{ ReleaseSha = $newSha; StartUtc = [DateTime]::UtcNow.AddHours(2).ToString('yyyy-MM-ddTHH:mm:ssZ'); EndUtc = [DateTime]::UtcNow.AddHours(3).ToString('yyyy-MM-ddTHH:mm:ssZ'); AuthorizedBy = 'ops'; Approved = $true }
+      ReportFileName = "deploy-report-20a.json"
+    }
+    $thrown = $false
+    try { & (Join-Path $fixtureScriptsDir 'invoke-production-deploy.ps1') -ParameterFile $paramFileA | Out-Null }
+    catch { $thrown = $true; if ($_.Exception.Message -notmatch 'MAINTENANCE_WINDOW_FUTURE') { throw "Test 20A unexpected error: $($_.Exception.Message)" } }
+    if (-not $thrown) { throw 'Test 20A did not throw on future window' }
+    if (Test-Path -LiteralPath $flagFile) { throw 'Test 20A migration called despite future window' }
+
+    # 20B: Expired window
+    $paramFileB = Join-Path $fix.Root 'deploy-params-20b.json'
+    Write-DeploymentParameters $paramFileB @{
+      ReleaseSha = $newSha; Root = $fix.Root; TransferDirectoryName = $xfer.TransferDir; SourceArchiveName = $xfer.ArchiveName
+      ExpectedSha256 = $xfer.Sha256; NodeExe = $fakeToolPath; NpmExe = $fakeToolPath; NpxExe = $fakeToolPath
+      PsqlExe = $fakeToolPath; PgDumpExe = $fakeToolPath; PgRestoreExe = $fakeToolPath
+      EnvFile = $fix.EnvFile; StartupWrapper = $fix.StartupWrapper; NginxExe = $fakeToolPath; NginxConfig = $fix.NginxConfig
+      ExpectedBaseUrl = 'https://baogiang.dtnt-damsan.edu.vn'; ServiceKind = 'scheduled-task'; ServiceName = 'BaoGiangBackend'
+      ExpectedEntryPoint = $fix.EntryPoint; MigrationRequested = $true; ProductionMigrationApproved = $true
+      MaintenanceWindow = [ordered]@{ ReleaseSha = $newSha; StartUtc = [DateTime]::UtcNow.AddHours(-2).ToString('yyyy-MM-ddTHH:mm:ssZ'); EndUtc = [DateTime]::UtcNow.AddHours(-1).ToString('yyyy-MM-ddTHH:mm:ssZ'); AuthorizedBy = 'ops'; Approved = $true }
+      ReportFileName = "deploy-report-20b.json"
+    }
+    $thrown = $false
+    try { & (Join-Path $fixtureScriptsDir 'invoke-production-deploy.ps1') -ParameterFile $paramFileB | Out-Null }
+    catch { $thrown = $true; if ($_.Exception.Message -notmatch 'MAINTENANCE_WINDOW_EXPIRED') { throw "Test 20B unexpected error: $($_.Exception.Message)" } }
+    if (-not $thrown) { throw 'Test 20B did not throw on expired window' }
+    if (Test-Path -LiteralPath $flagFile) { throw 'Test 20B migration called despite expired window' }
+
+    # 20C: Invalid range
+    $paramFileC = Join-Path $fix.Root 'deploy-params-20c.json'
+    Write-DeploymentParameters $paramFileC @{
+      ReleaseSha = $newSha; Root = $fix.Root; TransferDirectoryName = $xfer.TransferDir; SourceArchiveName = $xfer.ArchiveName
+      ExpectedSha256 = $xfer.Sha256; NodeExe = $fakeToolPath; NpmExe = $fakeToolPath; NpxExe = $fakeToolPath
+      PsqlExe = $fakeToolPath; PgDumpExe = $fakeToolPath; PgRestoreExe = $fakeToolPath
+      EnvFile = $fix.EnvFile; StartupWrapper = $fix.StartupWrapper; NginxExe = $fakeToolPath; NginxConfig = $fix.NginxConfig
+      ExpectedBaseUrl = 'https://baogiang.dtnt-damsan.edu.vn'; ServiceKind = 'scheduled-task'; ServiceName = 'BaoGiangBackend'
+      ExpectedEntryPoint = $fix.EntryPoint; MigrationRequested = $true; ProductionMigrationApproved = $true
+      MaintenanceWindow = [ordered]@{ ReleaseSha = $newSha; StartUtc = [DateTime]::UtcNow.AddHours(1).ToString('yyyy-MM-ddTHH:mm:ssZ'); EndUtc = [DateTime]::UtcNow.AddHours(-1).ToString('yyyy-MM-ddTHH:mm:ssZ'); AuthorizedBy = 'ops'; Approved = $true }
+      ReportFileName = "deploy-report-20c.json"
+    }
+    $thrown = $false
+    try { & (Join-Path $fixtureScriptsDir 'invoke-production-deploy.ps1') -ParameterFile $paramFileC | Out-Null }
+    catch { $thrown = $true; if ($_.Exception.Message -notmatch 'MAINTENANCE_WINDOW_INVALID_RANGE') { throw "Test 20C unexpected error: $($_.Exception.Message)" } }
+    if (-not $thrown) { throw 'Test 20C did not throw on invalid range' }
+
+    Write-Output '  [PASS] Test 20 (AUD-04-R2): Expired, future and invalid-range maintenance windows rejected before stop/migration'
+  }
+
+  # --- TEST 21 (AUD-04-R2): Successful pre-migration quiescence -> migration -> sync -> switch -> activation ---
+  {
+    $fix = New-AudFixtureEnvironment 'test21'
+    $origReleaseDir = Join-Path $fix.Root "releases\$origSha\apps\api\dist\apps\api\src"
+    New-Item -ItemType Directory -Path $origReleaseDir -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $origReleaseDir 'main.js'), 'console.log("v1");', [Text.UTF8Encoding]::new($false))
+    New-Item -ItemType Junction -Path (Join-Path $fix.Root 'current') -Target (Join-Path $fix.Root "releases\$origSha") | Out-Null
+
+    $newReleaseDir = Join-Path $fix.Root "releases\$newSha\apps\api\dist\apps\api\src"
+    $xfer = Prepare-IncomingTransfer $fix.Root $newSha
+
+    $stubs = @{
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root) `$dir = Join-Path `$Root `"releases\`$ReleaseSha\apps\api\dist\apps\api\src`"; New-Item -ItemType Directory -Path `$dir -Force | Out-Null; [IO.File]::WriteAllText((Join-Path `$dir 'main.js'), 'console.log(\`"v2\`");'); Write-Output '{`"state`":`"installed`"}'"
+      'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
+      'run-migrations.ps1' = "param([switch]`$QuiescenceVerified) if (-not `$QuiescenceVerified) { throw 'MIGRATION_QUIESCENCE_NOT_ASSERTED' }; Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
+      'sync-capability-catalog.ps1' = "Write-Output '{`"state`":`"synchronized`"}'"
+      'restart-baogiang-api.ps1' = "Write-Output '{`"runtimeKind`":`"scheduled-task`",`"activationState`":`"enabled-running`"}'"
+      'test-production-health.ps1' = "Write-Output '{`"state`":`"healthy`",`"httpStatus`":200}'"
+    }
+    Set-FixtureScriptStubs $stubs
+
+    $paramFile = Join-Path $fix.Root 'deploy-params.json'
+    Write-DeploymentParameters $paramFile @{
+      ReleaseSha = $newSha; Root = $fix.Root; TransferDirectoryName = $xfer.TransferDir; SourceArchiveName = $xfer.ArchiveName
+      ExpectedSha256 = $xfer.Sha256; NodeExe = $fakeToolPath; NpmExe = $fakeToolPath; NpxExe = $fakeToolPath
+      PsqlExe = $fakeToolPath; PgDumpExe = $fakeToolPath; PgRestoreExe = $fakeToolPath
+      EnvFile = $fix.EnvFile; StartupWrapper = $fix.StartupWrapper; NginxExe = $fakeToolPath; NginxConfig = $fix.NginxConfig
+      ExpectedBaseUrl = 'https://baogiang.dtnt-damsan.edu.vn'; ServiceKind = 'scheduled-task'; ServiceName = 'BaoGiangBackend'
+      ExpectedEntryPoint = $fix.EntryPoint; MigrationRequested = $true; ProductionMigrationApproved = $true
+      RollbackCompatibilityApproved = $false; ReportFileName = "deploy-report-$newSha.json"
+    }
+
+    $deployResult = & (Join-Path $fixtureScriptsDir 'invoke-production-deploy.ps1') -ParameterFile $paramFile
+    $rep = Get-Content (Join-Path $fix.Root "logs\deploy-report-$newSha.json") -Raw | ConvertFrom-Json
+    if ($rep.overallState -ne 'succeeded') { throw "Test 21 overallState: $($rep.overallState) (must be succeeded)" }
+    if ($rep.maintenanceWindow.approved -ne $true) { throw "Test 21 maintenanceWindow.approved is not true" }
+    if ($rep.maintenanceWindow.quiescenceVerified -ne $true) { throw "Test 21 quiescenceVerified is not true" }
+    if ([string]::IsNullOrWhiteSpace($rep.maintenanceWindow.quiescedUtc)) { throw "Test 21 quiescedUtc is missing" }
+    if ($rep.rollback.state -ne 'notNeeded') { throw "Test 21 rollback state: $($rep.rollback.state) (must be notNeeded)" }
+
+    $currentTarget = Split-Path (Assert-ReleasePointerTarget -PointerPath (Join-Path $fix.Root 'current') -Root $fix.Root) -Leaf
+    if ($currentTarget -cne $newSha) { throw "Test 21 current pointer is not newSha: $currentTarget" }
+
+    Write-Output '  [PASS] Test 21 (AUD-04-R2): Full successful pre-migration stop, quiescence proof, migration, sync, switch and activation'
+  }
+
+  # --- TEST 22 (AUD-04-R2): Safe-stop failure before migration -> migration never called ---
+  {
+    $fix = New-AudFixtureEnvironment 'test22'
+    $origReleaseDir = Join-Path $fix.Root "releases\$origSha\apps\api\dist\apps\api\src"
+    New-Item -ItemType Directory -Path $origReleaseDir -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $origReleaseDir 'main.js'), 'console.log("v1");', [Text.UTF8Encoding]::new($false))
+    New-Item -ItemType Junction -Path (Join-Path $fix.Root 'current') -Target (Join-Path $fix.Root "releases\$origSha") | Out-Null
+    $xfer = Prepare-IncomingTransfer $fix.Root $newSha
+
+    $flagFile = Join-Path $fix.Root 'migration-executed-22.flag'
+    $stubs = @{
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
+      'run-migrations.ps1' = "New-Item -LiteralPath '$flagFile' -ItemType File | Out-Null; Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
+    }
+    Set-FixtureScriptStubs $stubs
+
+    $paramFile = Join-Path $fix.Root 'deploy-params.json'
+    Write-DeploymentParameters $paramFile @{
+      ReleaseSha = $newSha; Root = $fix.Root; TransferDirectoryName = $xfer.TransferDir; SourceArchiveName = $xfer.ArchiveName
+      ExpectedSha256 = $xfer.Sha256; NodeExe = $fakeToolPath; NpmExe = $fakeToolPath; NpxExe = $fakeToolPath
+      PsqlExe = $fakeToolPath; PgDumpExe = $fakeToolPath; PgRestoreExe = $fakeToolPath
+      EnvFile = $fix.EnvFile; StartupWrapper = $fix.StartupWrapper; NginxExe = $fakeToolPath; NginxConfig = $fix.NginxConfig
+      ExpectedBaseUrl = 'https://baogiang.dtnt-damsan.edu.vn'; ServiceKind = 'scheduled-task'; ServiceName = 'BaoGiangBackend'
+      ExpectedEntryPoint = $fix.EntryPoint; MigrationRequested = $true; ProductionMigrationApproved = $true
+      RollbackCompatibilityApproved = $false; ReportFileName = "deploy-report-$newSha.json"
+    }
+
+    $global:aud04StopShouldFail = $true
+    $thrown = $false
+    try {
+      & (Join-Path $fixtureScriptsDir 'invoke-production-deploy.ps1') -ParameterFile $paramFile | Out-Null
+    } catch {
+      $thrown = $true
+      if ($_.Exception.Message -notmatch 'Simulated safe-stop failure') { throw "Test 22 unexpected exception: $($_.Exception.Message)" }
+    } finally {
+      $global:aud04StopShouldFail = $false
+    }
+    if (-not $thrown) { throw 'Test 22 did not throw on safe-stop failure' }
+    if (Test-Path -LiteralPath $flagFile) { throw 'Test 22 migration was executed despite safe-stop failure' }
+
+    $rep = Get-Content (Join-Path $fix.Root "logs\deploy-report-$newSha.json") -Raw | ConvertFrom-Json
+    if ($rep.overallState -ne 'failed') { throw "Test 22 overallState: $($rep.overallState)" }
+
+    Write-Output '  [PASS] Test 22 (AUD-04-R2): Safe-stop failure before migration -> migration never called, fail-closed'
+  }
+
+  # --- TEST 23 (AUD-04-R2): Quiescence verification failure (task enabled or port occupied) -> migration never called ---
+  {
+    $fix = New-AudFixtureEnvironment 'test23'
+    $origReleaseDir = Join-Path $fix.Root "releases\$origSha\apps\api\dist\apps\api\src"
+    New-Item -ItemType Directory -Path $origReleaseDir -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $origReleaseDir 'main.js'), 'console.log("v1");', [Text.UTF8Encoding]::new($false))
+    New-Item -ItemType Junction -Path (Join-Path $fix.Root 'current') -Target (Join-Path $fix.Root "releases\$origSha") | Out-Null
+    $xfer = Prepare-IncomingTransfer $fix.Root $newSha
+
+    $flagFile = Join-Path $fix.Root 'migration-executed-23.flag'
+    $stubs = @{
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
+      'run-migrations.ps1' = "New-Item -LiteralPath '$flagFile' -ItemType File | Out-Null; Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
+    }
+    Set-FixtureScriptStubs $stubs
+
+    $paramFile = Join-Path $fix.Root 'deploy-params.json'
+    Write-DeploymentParameters $paramFile @{
+      ReleaseSha = $newSha; Root = $fix.Root; TransferDirectoryName = $xfer.TransferDir; SourceArchiveName = $xfer.ArchiveName
+      ExpectedSha256 = $xfer.Sha256; NodeExe = $fakeToolPath; NpmExe = $fakeToolPath; NpxExe = $fakeToolPath
+      PsqlExe = $fakeToolPath; PgDumpExe = $fakeToolPath; PgRestoreExe = $fakeToolPath
+      EnvFile = $fix.EnvFile; StartupWrapper = $fix.StartupWrapper; NginxExe = $fakeToolPath; NginxConfig = $fix.NginxConfig
+      ExpectedBaseUrl = 'https://baogiang.dtnt-damsan.edu.vn'; ServiceKind = 'scheduled-task'; ServiceName = 'BaoGiangBackend'
+      ExpectedEntryPoint = $fix.EntryPoint; MigrationRequested = $true; ProductionMigrationApproved = $true
+      RollbackCompatibilityApproved = $false; ReportFileName = "deploy-report-$newSha.json"
+    }
+
+    # 23A: Scheduled task remains 'Running' (not Disabled)
+    function global:Get-ScheduledTask {
+      param([string]$TaskName)
+      return [pscustomobject]@{
+        TaskName = 'BaoGiangBackend'; TaskPath = '\BaoGiang\'; State = 'Running'
+        Principal = [pscustomobject]@{ UserId = 'fixture-account' }
+        Actions = @([pscustomobject]@{ Execute = $fakeToolPath; Arguments = '-File start-baogiang-api.ps1'; WorkingDirectory = 'C:\dummy' })
+        Triggers = @([pscustomobject]@{ CimClass = [pscustomobject]@{ CimClassName = 'MSFT_TaskBootTrigger' }; Enabled = $true })
+      }
+    }
+    $thrown = $false
+    try {
+      & (Join-Path $fixtureScriptsDir 'invoke-production-deploy.ps1') -ParameterFile $paramFile | Out-Null
+    } catch {
+      $thrown = $true
+      if ($_.Exception.Message -notmatch 'Scheduled Task safe-stop did not leave the exact task disabled') { throw "Test 23A unexpected error: $($_.Exception.Message)" }
+    } finally {
+      function global:Get-ScheduledTask {
+        param([string]$TaskName)
+        return [pscustomobject]@{
+          TaskName = 'BaoGiangBackend'; TaskPath = '\BaoGiang\'; State = 'Disabled'
+          Principal = [pscustomobject]@{ UserId = 'fixture-account' }
+          Actions = @([pscustomobject]@{ Execute = $fakeToolPath; Arguments = '-File start-baogiang-api.ps1'; WorkingDirectory = 'C:\dummy' })
+          Triggers = @([pscustomobject]@{ CimClass = [pscustomobject]@{ CimClassName = 'MSFT_TaskBootTrigger' }; Enabled = $true })
+        }
+      }
+    }
+    if (-not $thrown) { throw 'Test 23A did not throw when task remained Running' }
+    if (Test-Path -LiteralPath $flagFile) { throw 'Test 23A migration called despite enabled task' }
+
+    # 23B: Port 3100 occupied by listener
+    function global:Get-NetTCPConnection {
+      param($State, $LocalPort, $ErrorAction)
+      if ($LocalPort -eq 3100) {
+        return @([pscustomobject]@{ OwningProcess = 1234; LocalPort = 3100; State = 'Listen' })
+      }
+      return @()
+    }
+    $thrown = $false
+    try {
+      & (Join-Path $fixtureScriptsDir 'invoke-production-deploy.ps1') -ParameterFile $paramFile | Out-Null
+    } catch {
+      $thrown = $true
+      if ($_.Exception.Message -notmatch 'Port 3100 is occupied' -and $_.Exception.Message -notmatch 'Safe-stop conflict' -and $_.Exception.Message -notmatch 'QUIESCENCE_VIOLATION') {
+        throw "Test 23B unexpected error: $($_.Exception.Message)"
+      }
+    } finally {
+      Remove-Item Function:\Get-NetTCPConnection -Force -ErrorAction SilentlyContinue
+    }
+    if (-not $thrown) { throw 'Test 23B did not throw when port was occupied' }
+    if (Test-Path -LiteralPath $flagFile) { throw 'Test 23B migration called despite occupied port' }
+
+    Write-Output '  [PASS] Test 23 (AUD-04-R2): Quiescence verification failure (task enabled or port occupied) -> migration never called'
+  }
+
+  # --- TEST 24 (AUD-04-R2): Foreign listener on port 3100 -> safe-stop conflict, no foreign process mutation ---
+  {
+    $fix = New-AudFixtureEnvironment 'test24'
+    $origReleaseDir = Join-Path $fix.Root "releases\$origSha\apps\api\dist\apps\api\src"
+    New-Item -ItemType Directory -Path $origReleaseDir -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $origReleaseDir 'main.js'), 'console.log("v1");', [Text.UTF8Encoding]::new($false))
+    New-Item -ItemType Junction -Path (Join-Path $fix.Root 'current') -Target (Join-Path $fix.Root "releases\$origSha") | Out-Null
+    $xfer = Prepare-IncomingTransfer $fix.Root $newSha
+
+    $flagFile = Join-Path $fix.Root 'migration-executed-24.flag'
+    $stubs = @{
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
+      'run-migrations.ps1' = "New-Item -LiteralPath '$flagFile' -ItemType File | Out-Null; Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
+    }
+    Set-FixtureScriptStubs $stubs
+
+    $foreignPid = 77777
+    $foreignKilled = $false
+
+    function global:Get-NetTCPConnection {
+      param($State, $LocalPort, $ErrorAction)
+      if ($LocalPort -eq 3100) {
+        return @([pscustomobject]@{ OwningProcess = $foreignPid; LocalPort = 3100; State = 'Listen' })
+      }
+      return @()
+    }
+
+    function global:Stop-Process {
+      param($Id, $Force)
+      if ($Id -eq $foreignPid) { $foreignKilled = $true }
+    }
+
+    $paramFile = Join-Path $fix.Root 'deploy-params.json'
+    Write-DeploymentParameters $paramFile @{
+      ReleaseSha = $newSha; Root = $fix.Root; TransferDirectoryName = $xfer.TransferDir; SourceArchiveName = $xfer.ArchiveName
+      ExpectedSha256 = $xfer.Sha256; NodeExe = $fakeToolPath; NpmExe = $fakeToolPath; NpxExe = $fakeToolPath
+      PsqlExe = $fakeToolPath; PgDumpExe = $fakeToolPath; PgRestoreExe = $fakeToolPath
+      EnvFile = $fix.EnvFile; StartupWrapper = $fix.StartupWrapper; NginxExe = $fakeToolPath; NginxConfig = $fix.NginxConfig
+      ExpectedBaseUrl = 'https://baogiang.dtnt-damsan.edu.vn'; ServiceKind = 'scheduled-task'; ServiceName = 'BaoGiangBackend'
+      ExpectedEntryPoint = $fix.EntryPoint; MigrationRequested = $true; ProductionMigrationApproved = $true
+      RollbackCompatibilityApproved = $false; ReportFileName = "deploy-report-$newSha.json"
+    }
+
+    $thrown = $false
+    try {
+      & (Join-Path $fixtureScriptsDir 'invoke-production-deploy.ps1') -ParameterFile $paramFile | Out-Null
+    } catch {
+      $thrown = $true
+      if ($_.Exception.Message -notmatch 'Port 3100 is occupied by a process that does not match' -and $_.Exception.Message -notmatch 'Safe-stop conflict: foreign process owns port 3100') {
+        throw "Test 24 unexpected exception: $($_.Exception.Message)"
+      }
+    } finally {
+      Remove-Item Function:\Get-NetTCPConnection, Function:\Stop-Process -Force -ErrorAction SilentlyContinue
+    }
+    if (-not $thrown) { throw 'Test 24 did not throw on foreign port conflict' }
+    if ($foreignKilled) { throw 'Test 24 foreign process was killed!' }
+    if (Test-Path -LiteralPath $flagFile) { throw 'Test 24 migration executed despite foreign listener conflict' }
+
+    Write-Output '  [PASS] Test 24 (AUD-04-R2): Foreign listener detected -> aborted safely without foreign process mutation'
+  }
+
+  # --- TEST 25 (AUD-04-R2): Failure after quiescence but before migration (25A safe-stopped, 25B approved recovery) ---
+  {
+    # 25A: PreMigrationRecoveryApproved = $false
+    $fixA = New-AudFixtureEnvironment 'test25a'
+    $origReleaseDirA = Join-Path $fixA.Root "releases\$origSha\apps\api\dist\apps\api\src"
+    New-Item -ItemType Directory -Path $origReleaseDirA -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $origReleaseDirA 'main.js'), 'console.log("v1");', [Text.UTF8Encoding]::new($false))
+    New-Item -ItemType Junction -Path (Join-Path $fixA.Root 'current') -Target (Join-Path $fixA.Root "releases\$origSha") | Out-Null
+    $xferA = Prepare-IncomingTransfer $fixA.Root $newSha
+
+    $flagFileA = Join-Path $fixA.Root 'migration-executed-25a.flag'
+    $stubsA = @{
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
+      'run-migrations.ps1' = "New-Item -LiteralPath '$flagFileA' -ItemType File | Out-Null; Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
+      'restart-baogiang-api.ps1' = "throw 'Restart must NOT be called in 25A'"
+    }
+    Set-FixtureScriptStubs $stubsA
+
+    $paramFileA = Join-Path $fixA.Root 'deploy-params.json'
+    Write-DeploymentParameters $paramFileA @{
+      ReleaseSha = $newSha; Root = $fixA.Root; TransferDirectoryName = $xferA.TransferDir; SourceArchiveName = $xferA.ArchiveName
+      ExpectedSha256 = $xferA.Sha256; NodeExe = $fakeToolPath; NpmExe = $fakeToolPath; NpxExe = $fakeToolPath
+      PsqlExe = $fakeToolPath; PgDumpExe = $fakeToolPath; PgRestoreExe = $fakeToolPath
+      EnvFile = $fixA.EnvFile; StartupWrapper = $fixA.StartupWrapper; NginxExe = $fakeToolPath; NginxConfig = $fixA.NginxConfig
+      ExpectedBaseUrl = 'https://baogiang.dtnt-damsan.edu.vn'; ServiceKind = 'scheduled-task'; ServiceName = 'BaoGiangBackend'
+      ExpectedEntryPoint = $fixA.EntryPoint; MigrationRequested = $true; ProductionMigrationApproved = $true
+      PreMigrationRecoveryApproved = $false; RollbackCompatibilityApproved = $false; ReportFileName = "deploy-report-$newSha.json"
+    }
+
+    $global:taskQueryCount = 0
+    function global:Get-ScheduledTask {
+      param([string]$TaskName)
+      $global:taskQueryCount++
+      if ($global:taskQueryCount -ge 3) {
+        throw 'Simulated pre-migration validation failure in Step 9'
+      }
+      return [pscustomobject]@{
+        TaskName = 'BaoGiangBackend'; TaskPath = '\BaoGiang\'; State = 'Disabled'
+        Principal = [pscustomobject]@{ UserId = 'fixture-account' }
+        Actions = @([pscustomobject]@{ Execute = $fakeToolPath; Arguments = '-File start-baogiang-api.ps1'; WorkingDirectory = 'C:\dummy' })
+        Triggers = @([pscustomobject]@{ CimClass = [pscustomobject]@{ CimClassName = 'MSFT_TaskBootTrigger' }; Enabled = $true })
+      }
+    }
+
+    $thrown = $false
+    try { & (Join-Path $fixtureScriptsDir 'invoke-production-deploy.ps1') -ParameterFile $paramFileA | Out-Null }
+    catch { $thrown = $true; if ($_.Exception.Message -notmatch 'Simulated pre-migration validation failure in Step 9') { throw "Test 25A unexpected exception: $($_.Exception.Message)" } }
+    finally {
+      function global:Get-ScheduledTask {
+        param([string]$TaskName)
+        return [pscustomobject]@{
+          TaskName = 'BaoGiangBackend'; TaskPath = '\BaoGiang\'; State = 'Disabled'
+          Principal = [pscustomobject]@{ UserId = 'fixture-account' }
+          Actions = @([pscustomobject]@{ Execute = $fakeToolPath; Arguments = '-File start-baogiang-api.ps1'; WorkingDirectory = 'C:\dummy' })
+          Triggers = @([pscustomobject]@{ CimClass = [pscustomobject]@{ CimClassName = 'MSFT_TaskBootTrigger' }; Enabled = $true })
+        }
+      }
+    }
+    if (-not $thrown) { throw 'Test 25A did not throw' }
+    if (Test-Path -LiteralPath $flagFileA) { throw 'Test 25A migration was executed despite Step 9 failure' }
+
+    $repA = Get-Content (Join-Path $fixA.Root "logs\deploy-report-$newSha.json") -Raw | ConvertFrom-Json
+    if ($repA.rollback.state -ne 'quiescedPreMigrationStopped') { throw "Test 25A rollback state: $($repA.rollback.state) (must be quiescedPreMigrationStopped)" }
+
+    # 25B: PreMigrationRecoveryApproved = $true
+    $fixB = New-AudFixtureEnvironment 'test25b'
+    $origReleaseDirB = Join-Path $fixB.Root "releases\$origSha\apps\api\dist\apps\api\src"
+    New-Item -ItemType Directory -Path $origReleaseDirB -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $origReleaseDirB 'main.js'), 'console.log("v1");', [Text.UTF8Encoding]::new($false))
+    New-Item -ItemType Junction -Path (Join-Path $fixB.Root 'current') -Target (Join-Path $fixB.Root "releases\$origSha") | Out-Null
+    $xferB = Prepare-IncomingTransfer $fixB.Root $newSha
+
+    $flagFileB = Join-Path $fixB.Root 'migration-executed-25b.flag'
+    $stubsB = @{
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
+      'run-migrations.ps1' = "New-Item -LiteralPath '$flagFileB' -ItemType File | Out-Null; Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
+      'restart-baogiang-api.ps1' = "Write-Output '{`"runtimeKind`":`"scheduled-task`",`"activationState`":`"enabled-running`"}'"
+      'test-production-health.ps1' = "Write-Output '{`"state`":`"healthy`",`"httpStatus`":200}'"
+    }
+    Set-FixtureScriptStubs $stubsB
+
+    $paramFileB = Join-Path $fixB.Root 'deploy-params.json'
+    Write-DeploymentParameters $paramFileB @{
+      ReleaseSha = $newSha; Root = $fixB.Root; TransferDirectoryName = $xferB.TransferDir; SourceArchiveName = $xferB.ArchiveName
+      ExpectedSha256 = $xferB.Sha256; NodeExe = $fakeToolPath; NpmExe = $fakeToolPath; NpxExe = $fakeToolPath
+      PsqlExe = $fakeToolPath; PgDumpExe = $fakeToolPath; PgRestoreExe = $fakeToolPath
+      EnvFile = $fixB.EnvFile; StartupWrapper = $fixB.StartupWrapper; NginxExe = $fakeToolPath; NginxConfig = $fixB.NginxConfig
+      ExpectedBaseUrl = 'https://baogiang.dtnt-damsan.edu.vn'; ServiceKind = 'scheduled-task'; ServiceName = 'BaoGiangBackend'
+      ExpectedEntryPoint = $fixB.EntryPoint; MigrationRequested = $true; ProductionMigrationApproved = $true
+      PreMigrationRecoveryApproved = $true; RollbackCompatibilityApproved = $false; ReportFileName = "deploy-report-$newSha.json"
+    }
+
+    $global:taskQueryCount = 0
+    function global:Get-ScheduledTask {
+      param([string]$TaskName)
+      $global:taskQueryCount++
+      if ($global:taskQueryCount -eq 3) {
+        throw 'Simulated pre-migration validation failure in Step 9 for 25B'
+      }
+      return [pscustomobject]@{
+        TaskName = 'BaoGiangBackend'; TaskPath = '\BaoGiang\'; State = 'Disabled'
+        Principal = [pscustomobject]@{ UserId = 'fixture-account' }
+        Actions = @([pscustomobject]@{ Execute = $fakeToolPath; Arguments = '-File start-baogiang-api.ps1'; WorkingDirectory = 'C:\dummy' })
+        Triggers = @([pscustomobject]@{ CimClass = [pscustomobject]@{ CimClassName = 'MSFT_TaskBootTrigger' }; Enabled = $true })
+      }
+    }
+
+    $thrown = $false
+    try { & (Join-Path $fixtureScriptsDir 'invoke-production-deploy.ps1') -ParameterFile $paramFileB | Out-Null }
+    catch { $thrown = $true; if ($_.Exception.Message -notmatch 'Simulated pre-migration validation failure in Step 9 for 25B') { throw "Test 25B unexpected exception: $($_.Exception.Message)" } }
+    finally {
+      function global:Get-ScheduledTask {
+        param([string]$TaskName)
+        return [pscustomobject]@{
+          TaskName = 'BaoGiangBackend'; TaskPath = '\BaoGiang\'; State = 'Disabled'
+          Principal = [pscustomobject]@{ UserId = 'fixture-account' }
+          Actions = @([pscustomobject]@{ Execute = $fakeToolPath; Arguments = '-File start-baogiang-api.ps1'; WorkingDirectory = 'C:\dummy' })
+          Triggers = @([pscustomobject]@{ CimClass = [pscustomobject]@{ CimClassName = 'MSFT_TaskBootTrigger' }; Enabled = $true })
+        }
+      }
+    }
+    if (-not $thrown) { throw 'Test 25B did not throw' }
+    if (Test-Path -LiteralPath $flagFileB) { throw 'Test 25B migration was executed despite Step 9 failure' }
+
+    $repB = Get-Content (Join-Path $fixB.Root "logs\deploy-report-$newSha.json") -Raw | ConvertFrom-Json
+    if ($repB.rollback.state -ne 'completed') { throw "Test 25B rollback state: $($repB.rollback.state) (must be completed)" }
+    if ($repB.rollback.currentTarget -notmatch [regex]::Escape($origSha)) { throw "Test 25B currentTarget was not origSha: $($repB.rollback.currentTarget)" }
+
+    Write-Output '  [PASS] Test 25 (AUD-04-R2): Failure after quiescence but before migration (25A stays safe-stopped, 25B executes approved recovery)'
+  }
+
+  # --- TEST 26 (AUD-04-R2): Migration attempted/unknown, including rollback compatibility approved -> stays stopped ---
+  {
+    $fix = New-AudFixtureEnvironment 'test26'
+    $origReleaseDir = Join-Path $fix.Root "releases\$origSha\apps\api\dist\apps\api\src"
+    New-Item -ItemType Directory -Path $origReleaseDir -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $origReleaseDir 'main.js'), 'console.log("v1");', [Text.UTF8Encoding]::new($false))
+    New-Item -ItemType Junction -Path (Join-Path $fix.Root 'current') -Target (Join-Path $fix.Root "releases\$origSha") | Out-Null
+    $xfer = Prepare-IncomingTransfer $fix.Root $newSha
+
+    $stubs = @{
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
+      'run-migrations.ps1' = "throw 'Simulated migration execution failure in Test 26'"
+      'restart-baogiang-api.ps1' = "throw 'Restart must NOT be called when migration failed/unknown!'"
+    }
+    Set-FixtureScriptStubs $stubs
+
+    $paramFile = Join-Path $fix.Root 'deploy-params.json'
+    Write-DeploymentParameters $paramFile @{
+      ReleaseSha = $newSha; Root = $fix.Root; TransferDirectoryName = $xfer.TransferDir; SourceArchiveName = $xfer.ArchiveName
+      ExpectedSha256 = $xfer.Sha256; NodeExe = $fakeToolPath; NpmExe = $fakeToolPath; NpxExe = $fakeToolPath
+      PsqlExe = $fakeToolPath; PgDumpExe = $fakeToolPath; PgRestoreExe = $fakeToolPath
+      EnvFile = $fix.EnvFile; StartupWrapper = $fix.StartupWrapper; NginxExe = $fakeToolPath; NginxConfig = $fix.NginxConfig
+      ExpectedBaseUrl = 'https://baogiang.dtnt-damsan.edu.vn'; ServiceKind = 'scheduled-task'; ServiceName = 'BaoGiangBackend'
+      ExpectedEntryPoint = $fix.EntryPoint; MigrationRequested = $true; ProductionMigrationApproved = $true
+      RollbackCompatibilityApproved = $true; ReportFileName = "deploy-report-$newSha.json"
+    }
+
+    $thrown = $false
+    try { & (Join-Path $fixtureScriptsDir 'invoke-production-deploy.ps1') -ParameterFile $paramFile | Out-Null }
+    catch { $thrown = $true; if ($_.Exception.Message -notmatch 'Simulated migration execution failure in Test 26') { throw "Test 26 unexpected exception: $($_.Exception.Message)" } }
+    if (-not $thrown) { throw 'Test 26 did not throw on migration failure' }
+
+    $rep = Get-Content (Join-Path $fix.Root "logs\deploy-report-$newSha.json") -Raw | ConvertFrom-Json
+    if ($rep.rollback.state -ne 'stoppedCompatibilityApprovalRequired') { throw "Test 26 rollback state: $($rep.rollback.state) (must be stoppedCompatibilityApprovalRequired)" }
+
+    Write-Output '  [PASS] Test 26 (AUD-04-R2): Migration failed/unknown with rollback compatibility approved -> stays safely stopped'
+  }
+
+  # --- TEST 27 (AUD-04-R2): First-deploy handling (no current link) with migration ---
+  {
+    $fix = New-AudFixtureEnvironment 'test27'
+    $xfer = Prepare-IncomingTransfer $fix.Root $newSha
+
+    $stubs = @{
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root) `$dir = Join-Path `$Root `"releases\`$ReleaseSha\apps\api\dist\apps\api\src`"; New-Item -ItemType Directory -Path `$dir -Force | Out-Null; [IO.File]::WriteAllText((Join-Path `$dir 'main.js'), 'console.log(\`"v1\`");'); Write-Output '{`"state`":`"installed`"}'"
+      'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
+      'run-migrations.ps1' = "param([switch]`$QuiescenceVerified) if (-not `$QuiescenceVerified) { throw 'MIGRATION_QUIESCENCE_NOT_ASSERTED' }; Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
+      'sync-capability-catalog.ps1' = "Write-Output '{`"state`":`"synchronized`"}'"
+      'restart-baogiang-api.ps1' = "Write-Output '{`"runtimeKind`":`"scheduled-task`",`"activationState`":`"enabled-running`"}'"
+      'test-production-health.ps1' = "Write-Output '{`"state`":`"healthy`",`"httpStatus`":200}'"
+    }
+    Set-FixtureScriptStubs $stubs
+
+    $paramFile = Join-Path $fix.Root 'deploy-params.json'
+    Write-DeploymentParameters $paramFile @{
+      ReleaseSha = $newSha; Root = $fix.Root; TransferDirectoryName = $xfer.TransferDir; SourceArchiveName = $xfer.ArchiveName
+      ExpectedSha256 = $xfer.Sha256; NodeExe = $fakeToolPath; NpmExe = $fakeToolPath; NpxExe = $fakeToolPath
+      PsqlExe = $fakeToolPath; PgDumpExe = $fakeToolPath; PgRestoreExe = $fakeToolPath
+      EnvFile = $fix.EnvFile; StartupWrapper = $fix.StartupWrapper; NginxExe = $fakeToolPath; NginxConfig = $fix.NginxConfig
+      ExpectedBaseUrl = 'https://baogiang.dtnt-damsan.edu.vn'; ServiceKind = 'scheduled-task'; ServiceName = 'BaoGiangBackend'
+      ExpectedEntryPoint = $fix.EntryPoint; MigrationRequested = $true; ProductionMigrationApproved = $true
+      RollbackCompatibilityApproved = $false; ReportFileName = "deploy-report-$newSha.json"
+    }
+
+    $deployResult = & (Join-Path $fixtureScriptsDir 'invoke-production-deploy.ps1') -ParameterFile $paramFile
+    $rep = Get-Content (Join-Path $fix.Root "logs\deploy-report-$newSha.json") -Raw | ConvertFrom-Json
+    if ($rep.overallState -ne 'succeeded') { throw "Test 27 overallState: $($rep.overallState) (must be succeeded)" }
+    if ($rep.previousRelease -ne $null) { throw "Test 27 previousRelease should be null on first deploy" }
+    if ($rep.maintenanceWindow.quiescenceVerified -ne $true) { throw "Test 27 quiescenceVerified is not true" }
+
+    Write-Output '  [PASS] Test 27 (AUD-04-R2): First-deploy handling verified with migration and quiescence'
+  }
+
+  # --- TEST 28 (AUD-04-R2): Unexpected or dangling release pointer during pre-migration recovery ---
+  {
+    $fix = New-AudFixtureEnvironment 'test28'
+    $origReleaseDir = Join-Path $fix.Root "releases\$origSha\apps\api\dist\apps\api\src"
+    New-Item -ItemType Directory -Path $origReleaseDir -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $origReleaseDir 'main.js'), 'console.log("v1");', [Text.UTF8Encoding]::new($false))
+    New-Item -ItemType Junction -Path (Join-Path $fix.Root 'current') -Target (Join-Path $fix.Root "releases\$origSha") | Out-Null
+    $xfer = Prepare-IncomingTransfer $fix.Root $newSha
+
+    $stubs = @{
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
+      'run-migrations.ps1' = "throw 'Unreachable'"
+      'restart-baogiang-api.ps1' = "Write-Output '{`"runtimeKind`":`"scheduled-task`",`"activationState`":`"enabled-running`"}'"
+      'test-production-health.ps1' = "Write-Output '{`"state`":`"healthy`",`"httpStatus`":200}'"
+    }
+    Set-FixtureScriptStubs $stubs
+
+    $paramFile = Join-Path $fix.Root 'deploy-params.json'
+    Write-DeploymentParameters $paramFile @{
+      ReleaseSha = $newSha; Root = $fix.Root; TransferDirectoryName = $xfer.TransferDir; SourceArchiveName = $xfer.ArchiveName
+      ExpectedSha256 = $xfer.Sha256; NodeExe = $fakeToolPath; NpmExe = $fakeToolPath; NpxExe = $fakeToolPath
+      PsqlExe = $fakeToolPath; PgDumpExe = $fakeToolPath; PgRestoreExe = $fakeToolPath
+      EnvFile = $fix.EnvFile; StartupWrapper = $fix.StartupWrapper; NginxExe = $fakeToolPath; NginxConfig = $fix.NginxConfig
+      ExpectedBaseUrl = 'https://baogiang.dtnt-damsan.edu.vn'; ServiceKind = 'scheduled-task'; ServiceName = 'BaoGiangBackend'
+      ExpectedEntryPoint = $fix.EntryPoint; MigrationRequested = $true; ProductionMigrationApproved = $true
+      PreMigrationRecoveryApproved = $true; RollbackCompatibilityApproved = $false; ReportFileName = "deploy-report-$newSha.json"
+    }
+
+    $global:taskQueryCount = 0
+    function global:Get-ScheduledTask {
+      param([string]$TaskName)
+      $global:taskQueryCount++
+      if ($global:taskQueryCount -eq 3) {
+        Remove-Item -LiteralPath (Join-Path $fix.Root 'current') -Force
+        New-Item -ItemType Junction -Path (Join-Path $fix.Root 'current') -Target (Join-Path $fix.Root 'releases\dangling-corrupt-target') | Out-Null
+        throw 'Simulated Step 9 abort before dangling recovery check'
+      }
+      return [pscustomobject]@{
+        TaskName = 'BaoGiangBackend'; TaskPath = '\BaoGiang\'; State = 'Disabled'
+        Principal = [pscustomobject]@{ UserId = 'fixture-account' }
+        Actions = @([pscustomobject]@{ Execute = $fakeToolPath; Arguments = '-File start-baogiang-api.ps1'; WorkingDirectory = 'C:\dummy' })
+        Triggers = @([pscustomobject]@{ CimClass = [pscustomobject]@{ CimClassName = 'MSFT_TaskBootTrigger' }; Enabled = $true })
+      }
+    }
+
+    $thrown = $false
+    try { & (Join-Path $fixtureScriptsDir 'invoke-production-deploy.ps1') -ParameterFile $paramFile | Out-Null }
+    catch { $thrown = $true }
+    finally {
+      function global:Get-ScheduledTask {
+        param([string]$TaskName)
+        return [pscustomobject]@{
+          TaskName = 'BaoGiangBackend'; TaskPath = '\BaoGiang\'; State = 'Disabled'
+          Principal = [pscustomobject]@{ UserId = 'fixture-account' }
+          Actions = @([pscustomobject]@{ Execute = $fakeToolPath; Arguments = '-File start-baogiang-api.ps1'; WorkingDirectory = 'C:\dummy' })
+          Triggers = @([pscustomobject]@{ CimClass = [pscustomobject]@{ CimClassName = 'MSFT_TaskBootTrigger' }; Enabled = $true })
+        }
+      }
+    }
+    if (-not $thrown) { throw 'Test 28 did not throw' }
+
+    $rep = Get-Content (Join-Path $fix.Root "logs\deploy-report-$newSha.json") -Raw | ConvertFrom-Json
+    if ($rep.rollback.state -ne 'unverifiedPointerSafeStopped') { throw "Test 28 rollback state: $($rep.rollback.state) (must be unverifiedPointerSafeStopped)" }
+
+    Write-Output '  [PASS] Test 28 (AUD-04-R2): Corrupt or dangling pointer during pre-migration recovery -> safely stopped'
+  }
+
+  # --- TEST 29 (AUD-04-R2): Post-restart health failure and secondary safe-stop failure during pre-migration recovery ---
+  {
+    $fix = New-AudFixtureEnvironment 'test29'
+    $origReleaseDir = Join-Path $fix.Root "releases\$origSha\apps\api\dist\apps\api\src"
+    New-Item -ItemType Directory -Path $origReleaseDir -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $origReleaseDir 'main.js'), 'console.log("v1");', [Text.UTF8Encoding]::new($false))
+    New-Item -ItemType Junction -Path (Join-Path $fix.Root 'current') -Target (Join-Path $fix.Root "releases\$origSha") | Out-Null
+    $xfer = Prepare-IncomingTransfer $fix.Root $newSha
+
+    $thirdSha = '3' * 40
+    $thirdReleaseDir = Join-Path $fix.Root "releases\$thirdSha\apps\api\dist\apps\api\src"
+    New-Item -ItemType Directory -Path $thirdReleaseDir -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $thirdReleaseDir 'main.js'), 'console.log("v3");', [Text.UTF8Encoding]::new($false))
+
+    $stubs = @{
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
+      'run-migrations.ps1' = "throw 'Unreachable'"
+      'restart-baogiang-api.ps1' = "Write-Output '{`"runtimeKind`":`"scheduled-task`",`"activationState`":`"enabled-running`"}'"
+      'test-production-health.ps1' = "Remove-Item -LiteralPath (Join-Path '$($fix.Root)' 'current') -Force; New-Item -ItemType Junction -Path (Join-Path '$($fix.Root)' 'current') -Target (Join-Path '$($fix.Root)' 'releases\$thirdSha') | Out-Null; Write-Output '{`"state`":`"healthy`",`"httpStatus`":200}'"
+    }
+    Set-FixtureScriptStubs $stubs
+
+    $paramFile = Join-Path $fix.Root 'deploy-params.json'
+    Write-DeploymentParameters $paramFile @{
+      ReleaseSha = $newSha; Root = $fix.Root; TransferDirectoryName = $xfer.TransferDir; SourceArchiveName = $xfer.ArchiveName
+      ExpectedSha256 = $xfer.Sha256; NodeExe = $fakeToolPath; NpmExe = $fakeToolPath; NpxExe = $fakeToolPath
+      PsqlExe = $fakeToolPath; PgDumpExe = $fakeToolPath; PgRestoreExe = $fakeToolPath
+      EnvFile = $fix.EnvFile; StartupWrapper = $fix.StartupWrapper; NginxExe = $fakeToolPath; NginxConfig = $fix.NginxConfig
+      ExpectedBaseUrl = 'https://baogiang.dtnt-damsan.edu.vn'; ServiceKind = 'scheduled-task'; ServiceName = 'BaoGiangBackend'
+      ExpectedEntryPoint = $fix.EntryPoint; MigrationRequested = $true; ProductionMigrationApproved = $true
+      PreMigrationRecoveryApproved = $true; RollbackCompatibilityApproved = $false; ReportFileName = "deploy-report-$newSha.json"
+    }
+
+    $global:taskQueryCount = 0
+    function global:Get-ScheduledTask {
+      param([string]$TaskName)
+      $global:taskQueryCount++
+      if ($global:taskQueryCount -eq 3) {
+        throw 'Simulated Step 9 pre-migration failure for 29'
+      }
+      return [pscustomobject]@{
+        TaskName = 'BaoGiangBackend'; TaskPath = '\BaoGiang\'; State = 'Disabled'
+        Principal = [pscustomobject]@{ UserId = 'fixture-account' }
+        Actions = @([pscustomobject]@{ Execute = $fakeToolPath; Arguments = '-File start-baogiang-api.ps1'; WorkingDirectory = 'C:\dummy' })
+        Triggers = @([pscustomobject]@{ CimClass = [pscustomobject]@{ CimClassName = 'MSFT_TaskBootTrigger' }; Enabled = $true })
+      }
+    }
+
+    $global:aud04StopShouldFail = $true
+    $thrown = $false
+    try { & (Join-Path $fixtureScriptsDir 'invoke-production-deploy.ps1') -ParameterFile $paramFile | Out-Null }
+    catch { $thrown = $true }
+    finally {
+      $global:aud04StopShouldFail = $false
+      function global:Get-ScheduledTask {
+        param([string]$TaskName)
+        return [pscustomobject]@{
+          TaskName = 'BaoGiangBackend'; TaskPath = '\BaoGiang\'; State = 'Disabled'
+          Principal = [pscustomobject]@{ UserId = 'fixture-account' }
+          Actions = @([pscustomobject]@{ Execute = $fakeToolPath; Arguments = '-File start-baogiang-api.ps1'; WorkingDirectory = 'C:\dummy' })
+          Triggers = @([pscustomobject]@{ CimClass = [pscustomobject]@{ CimClassName = 'MSFT_TaskBootTrigger' }; Enabled = $true })
+        }
+      }
+    }
+    if (-not $thrown) { throw 'Test 29 did not throw' }
+
+    $rep = Get-Content (Join-Path $fix.Root "logs\deploy-report-$newSha.json") -Raw | ConvertFrom-Json
+    if ($rep.rollback.state -ne 'failed') { throw "Test 29 rollback state: $($rep.rollback.state) (must be failed)" }
+
+    Write-Output '  [PASS] Test 29 (AUD-04-R2): Pointer mutation and secondary safe-stop failure during pre-migration recovery captured'
+  }
+
+  # --- TEST 30 (AUD-04-R2): Reboot-persistence safeguard while quiesced ---
+  {
+    $fix = New-AudFixtureEnvironment 'test30'
+
+    $quiescedTask = [pscustomobject]@{
+      TaskName = 'BaoGiangBackend'; TaskPath = '\BaoGiang\'; State = 'Disabled'
+      Principal = [pscustomobject]@{ UserId = 'fixture-account' }
+      Actions = @([pscustomobject]@{ Execute = $fakeToolPath; Arguments = '-File start-baogiang-api.ps1'; WorkingDirectory = 'C:\dummy' })
+      Triggers = @([pscustomobject]@{ CimClass = [pscustomobject]@{ CimClassName = 'MSFT_TaskBootTrigger' }; Enabled = $true })
+    }
+
+    $disabledConfirmed = Assert-ScheduledTaskDisabledState -Task $quiescedTask
+    if (-not $disabledConfirmed) { throw 'Test 30 Assert-ScheduledTaskDisabledState returned false' }
+
+    $enabledBootTask = [pscustomobject]@{
+      TaskName = 'BaoGiangBackend'; TaskPath = '\BaoGiang\'; State = 'Ready'
+      Principal = [pscustomobject]@{ UserId = 'fixture-account' }
+      Actions = @([pscustomobject]@{ Execute = $fakeToolPath; Arguments = '-File start-baogiang-api.ps1'; WorkingDirectory = 'C:\dummy' })
+      Triggers = @([pscustomobject]@{ CimClass = [pscustomobject]@{ CimClassName = 'MSFT_TaskBootTrigger' }; Enabled = $true })
+    }
+    $enabledRejected = $false
+    try { Assert-ScheduledTaskDisabledState -Task $enabledBootTask | Out-Null } catch { $enabledRejected = $true }
+    if (-not $enabledRejected) { throw 'Test 30 Assert-ScheduledTaskDisabledState did not reject Ready state with Boot trigger' }
+
+    Write-Output '  [PASS] Test 30 (AUD-04-R2): Reboot-persistence safeguard verified while quiesced (task Disabled prevents boot auto-start)'
+  }
+
+  # --- TEST 31 (AUD-04-R2): Neighbor isolation for Quản lí nội trú, PostgreSQL service and shared Nginx ---
+  {
+    $fix = New-AudFixtureEnvironment 'test31'
+    $foreignDir = Join-Path $tempDir 'Quan_li_noi_tru_quiescence'
+    New-Item -ItemType Directory -Path $foreignDir -Force | Out-Null
+    $sentinelFile = Join-Path $foreignDir 'untouched-neighbour-q.txt'
+    [IO.File]::WriteAllText($sentinelFile, 'neighbour content during pre-migration quiescence check', [Text.UTF8Encoding]::new($false))
+    $beforeHash = Get-FileSha256FromBytes $sentinelFile
+
+    $origReleaseDir = Join-Path $fix.Root "releases\$origSha\apps\api\dist\apps\api\src"
+    New-Item -ItemType Directory -Path $origReleaseDir -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $origReleaseDir 'main.js'), 'console.log("v1");', [Text.UTF8Encoding]::new($false))
+    New-Item -ItemType Junction -Path (Join-Path $fix.Root 'current') -Target (Join-Path $fix.Root "releases\$origSha") | Out-Null
+    $xfer = Prepare-IncomingTransfer $fix.Root $newSha
+
+    $stubs = @{
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root) `$dir = Join-Path `$Root `"releases\`$ReleaseSha\apps\api\dist\apps\api\src`"; New-Item -ItemType Directory -Path `$dir -Force | Out-Null; [IO.File]::WriteAllText((Join-Path `$dir 'main.js'), 'console.log(\`"v2\`");'); Write-Output '{`"state`":`"installed`"}'"
+      'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
+      'run-migrations.ps1' = "param([switch]`$QuiescenceVerified) Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
+      'sync-capability-catalog.ps1' = "Write-Output '{`"state`":`"synchronized`"}'"
+      'restart-baogiang-api.ps1' = "Write-Output '{`"runtimeKind`":`"scheduled-task`",`"activationState`":`"enabled-running`"}'"
+      'test-production-health.ps1' = "Write-Output '{`"state`":`"healthy`",`"httpStatus`":200}'"
+    }
+    Set-FixtureScriptStubs $stubs
+
+    $paramFile = Join-Path $fix.Root 'deploy-params.json'
+    Write-DeploymentParameters $paramFile @{
+      ReleaseSha = $newSha; Root = $fix.Root; TransferDirectoryName = $xfer.TransferDir; SourceArchiveName = $xfer.ArchiveName
+      ExpectedSha256 = $xfer.Sha256; NodeExe = $fakeToolPath; NpmExe = $fakeToolPath; NpxExe = $fakeToolPath
+      PsqlExe = $fakeToolPath; PgDumpExe = $fakeToolPath; PgRestoreExe = $fakeToolPath
+      EnvFile = $fix.EnvFile; StartupWrapper = $fix.StartupWrapper; NginxExe = $fakeToolPath; NginxConfig = $fix.NginxConfig
+      ExpectedBaseUrl = 'https://baogiang.dtnt-damsan.edu.vn'; ServiceKind = 'scheduled-task'; ServiceName = 'BaoGiangBackend'
+      ExpectedEntryPoint = $fix.EntryPoint; MigrationRequested = $true; ProductionMigrationApproved = $true
+      RollbackCompatibilityApproved = $false; ReportFileName = "deploy-report-$newSha.json"
+    }
+
+    & (Join-Path $fixtureScriptsDir 'invoke-production-deploy.ps1') -ParameterFile $paramFile | Out-Null
+
+    $afterHash = Get-FileSha256FromBytes $sentinelFile
+    if ($beforeHash -cne $afterHash) { throw 'Test 31 neighbour sentinel was mutated during execution' }
+
+    $conflictRejected = $false
+    try { Assert-DedicatedRoot $foreignDir | Out-Null } catch { $conflictRejected = $true }
+    if (-not $conflictRejected) { throw 'Test 31 Assert-DedicatedRoot accepted neighbour path' }
+
+    Write-Output '  [PASS] Test 31 (AUD-04-R2): Neighbor isolation verified during pre-migration quiescence and deployment (neighbour untouched)'
+  }
+
+  Write-Output '=== ALL 31 AUD-04 FAILURE-INJECTION TESTS PASSED ==='
 } finally {
-  Remove-Item Function:\Stop-ExactBaoGiangRuntime, Function:\Get-ScheduledTask, Function:\Get-FileHash, Function:\Invoke-ReviewedNginxSyntaxTest -Force -ErrorAction SilentlyContinue
-  Remove-Variable aud04StopCalls, aud04StopShouldFail -Scope Global -ErrorAction SilentlyContinue
+  Remove-Item Function:\Stop-ExactBaoGiangRuntime, Function:\Get-ScheduledTask, Function:\Get-FileHash, Function:\Invoke-ReviewedNginxSyntaxTest, Function:\Get-NetTCPConnection, Function:\Stop-Process -Force -ErrorAction SilentlyContinue
+  Remove-Variable aud04StopCalls, aud04StopShouldFail, taskQueryCount -Scope Global -ErrorAction SilentlyContinue
   if (Test-Path -LiteralPath $tempDir) {
     Remove-Item -LiteralPath $tempDir -Recurse -Force -ErrorAction SilentlyContinue
   }

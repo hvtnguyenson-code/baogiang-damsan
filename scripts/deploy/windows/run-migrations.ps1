@@ -12,14 +12,17 @@ param(
   [Parameter(Mandatory = $true)][string]$ExpectedEntryPoint,
   [Parameter(Mandatory = $true)][ValidatePattern('^https://baogiang\.dtnt-damsan\.edu\.vn$')][string]$ExpectedBaseUrl,
   [Parameter(Mandatory = $true)][switch]$AllowProductionMigration,
-  [Parameter(Mandatory = $true)][switch]$BackupVerified
+  [Parameter(Mandatory = $true)][switch]$BackupVerified,
+  [switch]$QuiescenceVerified
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'deployment-common.ps1')
 if (-not $AllowProductionMigration) { throw 'Production migration is disabled unless explicitly authorized.' }
 if (-not $BackupVerified) { throw 'A verified database backup is required before migration.' }
+if (-not $QuiescenceVerified) { throw 'Pre-migration quiescence verification is required before migration.' }
 $identity = Read-DeploymentIdentity -Root $Root -ServiceKind $ServiceKind -ServiceName $ServiceName -EnvFile $EnvFile -StartupWrapper $StartupWrapper -ExpectedEntryPoint $ExpectedEntryPoint
+Assert-BaoGiangQuiescence -Marker $identity.marker -ServiceKind $ServiceKind -ServiceName $ServiceName | Out-Null
 $release = Assert-ExactReleasePath -Root $identity.canonicalRoot -ReleaseSha $ReleaseSha -ReleasePath $ReleasePath
 $schema = Get-CanonicalPath (Join-Path $release 'prisma\schema.prisma')
 if (-not (Test-Path -LiteralPath $schema -PathType Leaf) -or -not (Test-PathWithin $schema $release)) { throw 'Prisma schema is missing from the exact release.' }

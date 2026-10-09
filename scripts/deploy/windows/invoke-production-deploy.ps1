@@ -5,7 +5,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'deployment-common.ps1')
-$propertyNames = @('ReleaseSha','Root','TransferDirectoryName','SourceArchiveName','ExpectedSha256','NodeExe','NpmExe','NpxExe','PsqlExe','PgDumpExe','PgRestoreExe','EnvFile','StartupWrapper','NginxExe','NginxConfig','ExpectedBaseUrl','ServiceKind','ServiceName','ExpectedEntryPoint','MigrationRequested','ProductionMigrationApproved','RollbackCompatibilityApproved','ReportFileName')
+$propertyNames = @('ReleaseSha','Root','TransferDirectoryName','SourceArchiveName','ExpectedSha256','NodeExe','NpmExe','NpxExe','PsqlExe','PgDumpExe','PgRestoreExe','EnvFile','StartupWrapper','NginxExe','NginxConfig','ExpectedBaseUrl','ServiceKind','ServiceName','ExpectedEntryPoint','MigrationRequested','ProductionMigrationApproved','RollbackCompatibilityApproved','PreMigrationRecoveryApproved','MaintenanceWindow','ReportFileName')
 $p = Get-Content -LiteralPath $ParameterFile -Raw -Encoding UTF8 | ConvertFrom-Json
 foreach ($property in $p.PSObject.Properties.Name) { if ($propertyNames -notcontains $property) { throw 'Deployment parameter JSON contains an unknown property.' } }
 foreach ($property in $propertyNames) { if (-not $p.PSObject.Properties.Name.Contains($property)) { throw "Deployment parameter JSON is missing: $property" } }
@@ -27,8 +27,8 @@ $incoming = Assert-ExactChildPath $canonicalRoot "incoming\$($p.SourceArchiveNam
 if (Test-Path -LiteralPath $incoming) { throw 'Incoming release archive already exists; operator must inspect it.' }
 $reportHome = Join-Path $transfer $p.ReportFileName
 $reportLogs = Join-Path $canonicalRoot "logs\$($p.ReportFileName)"
-$report = [ordered]@{ schemaVersion = 1; generatedAtUtc = [DateTime]::UtcNow.ToString('o'); releaseSha = $p.ReleaseSha; previousRelease = $null; backup = $null; migration = [ordered]@{ state = 'notStarted' }; capabilityCatalog = [ordered]@{ state = 'notStarted' }; switch = $null; restart = $null; health = $null; rollback = [ordered]@{ state = 'notNeeded' }; errorCategory = $null }
-$migrationAttempted = $false; $migrationCompleted = $false; $switched = $false; $restartAttempted = $false
+$report = [ordered]@{ schemaVersion = 1; generatedAtUtc = [DateTime]::UtcNow.ToString('o'); releaseSha = $p.ReleaseSha; previousRelease = $null; backup = $null; maintenanceWindow = $null; quiescence = $null; migration = [ordered]@{ state = 'notStarted' }; capabilityCatalog = [ordered]@{ state = 'notStarted' }; switch = $null; restart = $null; health = $null; rollback = [ordered]@{ state = 'notNeeded' }; errorCategory = $null }
+$quiesceAttempted = $false; $quiesced = $false; $quiescenceVerified = $false; $migrationAttempted = $false; $migrationCompleted = $false; $switched = $false; $restartAttempted = $false
 try {
   Read-ValidatedProductionEnvironment -EnvFile $p.EnvFile -ExpectedBaseUrl $p.ExpectedBaseUrl | Out-Null
   Invoke-ReviewedNginxSyntaxTest -NginxExe $p.NginxExe -NginxPrefix $marker.foreignIsolation.reviewedNginxPrefix -NginxConfig $p.NginxConfig | Out-Null
@@ -38,8 +38,20 @@ try {
   $backupJson = & (Join-Path $PSScriptRoot 'backup-database.ps1') -PgDumpExe $p.PgDumpExe -PgRestoreExe $p.PgRestoreExe -Root $canonicalRoot -BackupRoot (Join-Path $canonicalRoot 'backups') -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint | Select-Object -Last 1
   $report.backup = $backupJson | ConvertFrom-Json
   if ($p.MigrationRequested) {
+    $mwAuth = Assert-MaintenanceWindowAuthorization -MaintenanceWindow $p.MaintenanceWindow -ExpectedReleaseSha $p.ReleaseSha
+    $report.maintenanceWindow = $mwAuth
+    Assert-VerifiedRuntimeIdentity -Marker $marker -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName | Out-Null
+    $quiesceAttempted = $true
+    $stopResult = Stop-ExactBaoGiangRuntime -Marker $marker -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName
+    $quiesced = $true
+    $quiescenceCheck = Assert-BaoGiangQuiescence -Marker $marker -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName
+    $report.quiescence = $quiescenceCheck
+    Assert-MaintenanceWindowAuthorization -MaintenanceWindow $p.MaintenanceWindow -ExpectedReleaseSha $p.ReleaseSha | Out-Null
+    Assert-BaoGiangQuiescence -Marker $marker -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName | Out-Null
+    $quiescenceVerified = $true
+
     $migrationAttempted = $true; $report.migration.state = 'attemptedUnknown'
-    $migrationJson = & (Join-Path $PSScriptRoot 'run-migrations.ps1') -ReleaseSha $p.ReleaseSha -ReleasePath (Join-Path $canonicalRoot "releases\$($p.ReleaseSha)") -NpxExe $p.NpxExe -PsqlExe $p.PsqlExe -Root $canonicalRoot -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl -AllowProductionMigration:$p.ProductionMigrationApproved -BackupVerified | Select-Object -Last 1
+    $migrationJson = & (Join-Path $PSScriptRoot 'run-migrations.ps1') -ReleaseSha $p.ReleaseSha -ReleasePath (Join-Path $canonicalRoot "releases\$($p.ReleaseSha)") -NpxExe $p.NpxExe -PsqlExe $p.PsqlExe -Root $canonicalRoot -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl -AllowProductionMigration:$p.ProductionMigrationApproved -BackupVerified -QuiescenceVerified:$quiescenceVerified | Select-Object -Last 1
     $migrationResult = $migrationJson | ConvertFrom-Json
     if (-not $migrationResult.PSObject.Properties.Name.Contains('state') -or $migrationResult.state -ne 'completed') { throw 'Migration completion summary is missing or not completed.' }
     $report.migration = $migrationResult
@@ -83,9 +95,10 @@ try {
   }
 
   $actualSwitched = ($hasCurrent -and $currentTargetSha -eq $p.ReleaseSha)
-  $recoveryNeeded = ($migrationAttempted -or $actualSwitched -or $switched -or $restartAttempted)
+  $quiescedPriorToMigration = (($quiesceAttempted -or $quiesced) -and -not $migrationAttempted)
+  $recoveryNeeded = ($quiesceAttempted -or $quiesced -or $migrationAttempted -or $actualSwitched -or $switched -or $restartAttempted)
   if ($recoveryNeeded) {
-    $recoveryDecision = Get-DeploymentFailureRecoveryDecision -HasPreviousRelease:(-not [string]::IsNullOrWhiteSpace([string]$report.previousRelease)) -MigrationAttempted:$migrationAttempted -RollbackCompatibilityApproved:$p.RollbackCompatibilityApproved -MigrationCompleted:$migrationCompleted
+    $recoveryDecision = Get-DeploymentFailureRecoveryDecision -HasPreviousRelease:(-not [string]::IsNullOrWhiteSpace([string]$report.previousRelease)) -MigrationAttempted:$migrationAttempted -RollbackCompatibilityApproved:$p.RollbackCompatibilityApproved -MigrationCompleted:$migrationCompleted -QuiescedPriorToMigration:$quiescedPriorToMigration -PreMigrationRecoveryApproved:$p.PreMigrationRecoveryApproved
     if ($recoveryDecision -eq 'FIRST_DEPLOY_SAFE_STOP') {
       try {
         Stop-ExactBaoGiangRuntime -Marker $marker -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName | Out-Null
@@ -102,6 +115,55 @@ try {
         Stop-ExactBaoGiangRuntime -Marker $marker -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName | Out-Null
         $report.rollback = [ordered]@{ state = 'stoppedCompatibilityApprovalRequired' }
       } catch { $report.rollback = [ordered]@{ state = 'stopFailedCompatibilityApprovalRequired'; errorCategory = Get-SafeErrorCategory $_ } }
+    }
+    elseif ($recoveryDecision -eq 'PRE_MIGRATION_SAFE_STOP') {
+      try {
+        Stop-ExactBaoGiangRuntime -Marker $marker -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName | Out-Null
+        $report.rollback = [ordered]@{ state = 'quiescedPreMigrationStopped' }
+      } catch { $report.rollback = [ordered]@{ state = 'stopFailedPreMigrationRecoveryRequired'; errorCategory = Get-SafeErrorCategory $_ } }
+    }
+    elseif ($recoveryDecision -eq 'PRE_MIGRATION_RECOVERY') {
+      try {
+        if (-not $hasCurrent -or [string]::IsNullOrWhiteSpace($currentTargetSha) -or ($currentTargetSha -cne $report.previousRelease)) {
+          try {
+            Stop-ExactBaoGiangRuntime -Marker $marker -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName | Out-Null
+            $report.rollback = [ordered]@{ state = 'unverifiedPointerSafeStopped'; expectedTarget = $report.previousRelease; actualTarget = $currentTargetSha }
+          } catch {
+            $report.rollback = [ordered]@{ state = 'stopFailedPointerVerificationRequired'; errorCategory = Get-SafeErrorCategory $_; expectedTarget = $report.previousRelease; actualTarget = $currentTargetSha }
+          }
+        } else {
+          if ($p.ServiceKind -eq 'scheduled-task') {
+            $rollbackContext = [pscustomobject]@{}
+            $lifecycleResult = Invoke-ScheduledTaskRollbackLifecycle -Context $rollbackContext -Restart { param($context) & (Join-Path $PSScriptRoot 'restart-baogiang-api.ps1') -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -NodeExe $p.NodeExe -Root $canonicalRoot -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl -AllowScheduledTaskActivation:($p.ServiceKind -eq 'scheduled-task') } -Health {
+              param($context)
+              $health = & (Join-Path $PSScriptRoot 'test-production-health.ps1') -BaseUrl $p.ExpectedBaseUrl -ExpectedApiPort 3100
+              $postTarget = Assert-ReleasePointerTarget -PointerPath $currentPath -Root $canonicalRoot
+              $postSha = Split-Path $postTarget -Leaf
+              if ($postSha -cne $report.previousRelease) { throw "Current pointer target mutated during recovery: expected $($report.previousRelease), got $postSha" }
+              [pscustomobject]@{ Health = ($health -join ''); Target = $postTarget }
+            } -SafeStop { param($context) Stop-ExactBaoGiangRuntime -Marker $marker -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName | Out-Null }
+            $report.rollback = [ordered]@{ state = 'completed'; currentTarget = $lifecycleResult.Target; health = $lifecycleResult.Health }
+          } else {
+            $restartCompleted = $false
+            try {
+              & (Join-Path $PSScriptRoot 'restart-baogiang-api.ps1') -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -NodeExe $p.NodeExe -Root $canonicalRoot -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl -AllowScheduledTaskActivation:($p.ServiceKind -eq 'scheduled-task') | Out-Null
+              $restartCompleted = $true
+              $health = & (Join-Path $PSScriptRoot 'test-production-health.ps1') -BaseUrl $p.ExpectedBaseUrl -ExpectedApiPort 3100
+              $postTarget = Assert-ReleasePointerTarget -PointerPath $currentPath -Root $canonicalRoot
+              $postSha = Split-Path $postTarget -Leaf
+              if ($postSha -cne $report.previousRelease) { throw "Current pointer target mutated during recovery: expected $($report.previousRelease), got $postSha" }
+              $report.rollback = [ordered]@{ state = 'completed'; currentTarget = $postTarget; health = ($health -join '') }
+            } catch {
+              $serviceRecoveryFailure = $_
+              if ($restartCompleted) {
+                try { Stop-ExactBaoGiangRuntime -Marker $marker -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName | Out-Null }
+                catch { throw "ROLLBACK_HEALTH_FAILED_AND_SAFE_STOP_FAILED: primary=$($serviceRecoveryFailure.Exception.GetType().Name); cleanup=$($_.Exception.GetType().Name)" }
+              }
+              throw $serviceRecoveryFailure
+            }
+          }
+        }
+      } catch { $report.rollback = [ordered]@{ state = 'failed'; errorCategory = Get-SafeErrorCategory $_ } }
     }
     else {
       try {

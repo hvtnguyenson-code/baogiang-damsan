@@ -974,9 +974,16 @@ function Invoke-ScheduledTaskRollbackLifecycle([Parameter(Mandatory = $true)]$Co
   }
 }
 
-function Get-DeploymentFailureRecoveryDecision([bool]$HasPreviousRelease,[bool]$MigrationAttempted,[bool]$RollbackCompatibilityApproved,[bool]$MigrationCompleted = $true) {
+function Get-DeploymentFailureRecoveryDecision([bool]$HasPreviousRelease,[bool]$MigrationAttempted,[bool]$RollbackCompatibilityApproved,[bool]$MigrationCompleted = $true,[bool]$QuiescedPriorToMigration = $false,[bool]$PreMigrationRecoveryApproved = $false) {
   if (-not $HasPreviousRelease) { return 'FIRST_DEPLOY_SAFE_STOP' }
-  if ($MigrationAttempted -and (-not $MigrationCompleted -or -not $RollbackCompatibilityApproved)) { return 'COMPATIBILITY_SAFE_STOP' }
+  if ($MigrationAttempted) {
+    if (-not $MigrationCompleted -or -not $RollbackCompatibilityApproved) { return 'COMPATIBILITY_SAFE_STOP' }
+    return 'ROLLBACK_RELEASE'
+  }
+  if ($QuiescedPriorToMigration) {
+    if ($PreMigrationRecoveryApproved) { return 'PRE_MIGRATION_RECOVERY' }
+    return 'PRE_MIGRATION_SAFE_STOP'
+  }
   return 'ROLLBACK_RELEASE'
 }
 
@@ -1211,6 +1218,117 @@ function Quarantine-FailedFirstRelease([Parameter(Mandatory = $true)][string]$Ro
   Assert-ReleasePointerTarget -PointerPath $failed -Root $canonicalRoot | Out-Null
   if (Test-Path -LiteralPath $current) { throw 'Current pointer remained after first-deploy quarantine.' }
   return [ordered]@{ state = 'quarantined'; failedRelease = $FailedSha; pointer = $failed }
+}
+
+function Assert-MaintenanceWindowAuthorization(
+  [Parameter(Mandatory = $false)]$MaintenanceWindow,
+  [Parameter(Mandatory = $true)][string]$ExpectedReleaseSha,
+  [DateTime]$CurrentUtc = [DateTime]::MinValue
+) {
+  if ($null -eq $MaintenanceWindow) {
+    throw 'MAINTENANCE_WINDOW_MISSING: Maintenance window authorization is required before database migration.'
+  }
+  $requiredProps = @('ReleaseSha', 'StartUtc', 'EndUtc', 'AuthorizedBy', 'Approved')
+  $mwProperties = if ($MaintenanceWindow -is [hashtable]) {
+    @($MaintenanceWindow.Keys)
+  } elseif ($MaintenanceWindow -is [System.Management.Automation.PSCustomObject]) {
+    @($MaintenanceWindow.PSObject.Properties.Name)
+  } else {
+    throw 'MAINTENANCE_WINDOW_MALFORMED: Maintenance window authorization must be an object.'
+  }
+  foreach ($prop in $requiredProps) {
+    if ($mwProperties -notcontains $prop) {
+      throw "MAINTENANCE_WINDOW_MALFORMED: Maintenance window is missing required property: $prop"
+    }
+  }
+
+  $releaseSha = if ($MaintenanceWindow -is [hashtable]) { $MaintenanceWindow['ReleaseSha'] } else { $MaintenanceWindow.ReleaseSha }
+  $startUtcStr = if ($MaintenanceWindow -is [hashtable]) { $MaintenanceWindow['StartUtc'] } else { $MaintenanceWindow.StartUtc }
+  $endUtcStr = if ($MaintenanceWindow -is [hashtable]) { $MaintenanceWindow['EndUtc'] } else { $MaintenanceWindow.EndUtc }
+  $authorizedBy = if ($MaintenanceWindow -is [hashtable]) { $MaintenanceWindow['AuthorizedBy'] } else { $MaintenanceWindow.AuthorizedBy }
+  $approved = if ($MaintenanceWindow -is [hashtable]) { $MaintenanceWindow['Approved'] } else { $MaintenanceWindow.Approved }
+
+  if ($approved -ne $true) {
+    throw 'MAINTENANCE_WINDOW_NOT_APPROVED: Maintenance window has not been approved.'
+  }
+  if ([string]::IsNullOrWhiteSpace($releaseSha) -or ($releaseSha -cne $ExpectedReleaseSha)) {
+    throw "MAINTENANCE_WINDOW_SHA_MISMATCH: Maintenance window release SHA '$releaseSha' does not match expected target release SHA '$ExpectedReleaseSha'."
+  }
+  if ([string]::IsNullOrWhiteSpace($authorizedBy) -or $authorizedBy -notmatch '^[A-Za-z0-9._-]+$') {
+    throw 'MAINTENANCE_WINDOW_OPERATOR_INVALID: Maintenance window operator authorization is invalid or missing.'
+  }
+
+  $isoRegex = '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$'
+  if ($startUtcStr -notmatch $isoRegex -or $endUtcStr -notmatch $isoRegex) {
+    throw 'MAINTENANCE_WINDOW_MALFORMED: Maintenance window start and end timestamps must be valid ISO-8601 UTC strings ending with Z.'
+  }
+
+  $startUtc = [DateTime]::Parse($startUtcStr, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::AdjustToUniversal -bor [Globalization.DateTimeStyles]::AssumeUniversal)
+  $endUtc = [DateTime]::Parse($endUtcStr, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::AdjustToUniversal -bor [Globalization.DateTimeStyles]::AssumeUniversal)
+
+  if ($startUtc -ge $endUtc) {
+    throw 'MAINTENANCE_WINDOW_INVALID_RANGE: Maintenance window start must be strictly before end.'
+  }
+
+  $now = if ($CurrentUtc -ne [DateTime]::MinValue) { $CurrentUtc } else { [DateTime]::UtcNow }
+  if ($now -lt $startUtc) {
+    throw "MAINTENANCE_WINDOW_FUTURE: Maintenance window has not started yet (starts at $startUtcStr, current UTC is $($now.ToString('o')))."
+  }
+  if ($now -gt $endUtc) {
+    throw "MAINTENANCE_WINDOW_EXPIRED: Maintenance window expired at $endUtcStr (current UTC is $($now.ToString('o')))."
+  }
+
+  return [ordered]@{
+    state = 'authorized'
+    releaseSha = $releaseSha
+    startUtc = $startUtcStr
+    endUtc = $endUtcStr
+    authorizedBy = $authorizedBy
+    approved = $true
+  }
+}
+
+function Assert-BaoGiangQuiescence(
+  [Parameter(Mandatory = $true)]$Marker,
+  [Parameter(Mandatory = $true)][ValidateSet('scheduled-task','service')][string]$ServiceKind,
+  [Parameter(Mandatory = $true)][string]$ServiceName
+) {
+  if ($ServiceKind -eq 'scheduled-task') {
+    $task = Assert-VerifiedScheduledTaskContract -Marker $Marker -ServiceName $ServiceName
+    Assert-ScheduledTaskDisabledState -Task $task | Out-Null
+  } else {
+    $services = @(Get-CimInstance Win32_Service -ErrorAction Stop | Where-Object { $_.Name -ceq $ServiceName })
+    if ($services.Count -ne 1) { throw 'Exact Windows Service identity is missing or ambiguous.' }
+    if ($services[0].StartMode -ne 'Disabled' -or $services[0].State -ne 'Stopped') {
+      throw 'QUIESCENCE_VIOLATION: Windows Service is not disabled and stopped.'
+    }
+  }
+
+  $exact = @((Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {
+    (Normalize-ComparablePath $_.ExecutablePath) -eq (Normalize-ComparablePath $Marker.nodeExe) -and (Normalize-ProcessCommandLine $_.CommandLine) -like "*$(Normalize-ProcessCommandLine $Marker.entryPoint)*"
+  }))
+  if ($exact.Count -gt 0) {
+    throw "QUIESCENCE_VIOLATION: Exact Báo giảng API process is still running (count: $($exact.Count))."
+  }
+
+  $listeners = @(Get-NetTCPConnection -State Listen -LocalPort 3100 -ErrorAction SilentlyContinue)
+  if ($listeners.Count -gt 0) {
+    $exactIds = @($exact | Select-Object -ExpandProperty ProcessId)
+    $foreign = @($listeners | Where-Object { $exactIds -notcontains [int]$_.OwningProcess })
+    if ($foreign.Count -gt 0) {
+      throw "Safe-stop conflict: foreign process owns port 3100 (listener count $($listeners.Count))."
+    }
+    throw "QUIESCENCE_VIOLATION: Port 3100 listener is still active."
+  }
+
+  return [ordered]@{
+    state = 'quiesced'
+    serviceKind = $ServiceKind
+    serviceName = $ServiceName
+    taskDisabled = if ($ServiceKind -eq 'scheduled-task') { $true } else { $null }
+    apiProcessCount = 0
+    listenerCount = 0
+  }
 }
 
 function Assert-ExecutableContract([Parameter(Mandatory = $true)][hashtable]$Executables) {
