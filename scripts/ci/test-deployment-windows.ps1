@@ -1699,7 +1699,8 @@ try {
   foreach($pathField in @('wrapperPath','commonPath')){$candidate=Copy-XferMarker;$candidate.startupBundle.$pathField=Join-Path $xferVersion "alternate-$pathField.ps1";Write-XferMarker $candidate;Assert-XferReject {Invoke-XferCommand handshake (Get-XferContract)} "XFER-P26-$pathField"};Write-XferMarker
   $p27Sentinel=Join-Path $temp 'invalid-utf8-common-executed';$p27Prefix=[Text.Encoding]::ASCII.GetBytes("New-Item -ItemType File -Path '$p27Sentinel'|Out-Null`n");$p27Bytes=[byte[]]($p27Prefix+[byte[]](0xC3,0x28));[IO.File]::WriteAllBytes($xferCommon,$p27Bytes);$p27Contract=Get-XferContract;Assert-XferReject {Invoke-XferCommand handshake $p27Contract} 'XFER-P27';if(Test-Path $p27Sentinel){throw 'XFER-P27 invalid UTF-8 common executed'};[IO.File]::WriteAllBytes($xferCommon,$originalCommon);Write-XferMarker
   if(@($opeResults.Keys|Where-Object{$_ -match '^OPE-P\d+$'}).Count-ne36){throw "OPE fixture matrix incomplete (count: $(@($opeResults.Keys|Where-Object{$_ -match '^OPE-P\d+$'}).Count))"}
-  Write-Output '[deployment-windows] PASS (ACL-P1..ACL-P8, PATH-P1..PATH-P3, SB-P1..SB-P14, RPT-P1..RPT-P9, NGX-P1..NGX-P37, XFER-P1..XFER-P27, OPE-P1..OPE-P36, preflight isolation, SSH host-key/firewall, exact psql, privacy, safe-stop, migration and transfer fixtures)'
+  & (Join-Path $PSScriptRoot 'test-audit04-failure-injection.ps1')
+  Write-Output '[deployment-windows] PASS (ACL-P1..ACL-P8, PATH-P1..PATH-P3, SB-P1..SB-P14, RPT-P1..RPT-P9, NGX-P1..NGX-P37, XFER-P1..XFER-P27, OPE-P1..OPE-P36, AUD-04 failure-injection 1..8, preflight isolation, SSH host-key/firewall, exact psql, privacy, safe-stop, migration and transfer fixtures)'
 } finally {
   if ($null -ne (Get-Variable xferRoot -ErrorAction SilentlyContinue) -and (Test-Path -LiteralPath $xferRoot)) { Remove-Item -LiteralPath $xferRoot -Recurse -Force }
   if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Recurse -Force }

@@ -974,9 +974,9 @@ function Invoke-ScheduledTaskRollbackLifecycle([Parameter(Mandatory = $true)]$Co
   }
 }
 
-function Get-DeploymentFailureRecoveryDecision([bool]$HasPreviousRelease,[bool]$MigrationAttempted,[bool]$RollbackCompatibilityApproved) {
+function Get-DeploymentFailureRecoveryDecision([bool]$HasPreviousRelease,[bool]$MigrationAttempted,[bool]$RollbackCompatibilityApproved,[bool]$MigrationCompleted = $true) {
   if (-not $HasPreviousRelease) { return 'FIRST_DEPLOY_SAFE_STOP' }
-  if ($MigrationAttempted -and -not $RollbackCompatibilityApproved) { return 'COMPATIBILITY_SAFE_STOP' }
+  if ($MigrationAttempted -and (-not $MigrationCompleted -or -not $RollbackCompatibilityApproved)) { return 'COMPATIBILITY_SAFE_STOP' }
   return 'ROLLBACK_RELEASE'
 }
 

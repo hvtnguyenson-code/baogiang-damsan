@@ -64,13 +64,37 @@ try {
   $original = $_
   $report.errorCategory = Get-SafeErrorCategory $original
   if ($migrationAttempted -and -not $migrationCompleted) { $report.migration.state = 'attemptedUnknown' }
-  if ($switched -or $restartAttempted) {
-    $recoveryDecision = Get-DeploymentFailureRecoveryDecision -HasPreviousRelease:(-not [string]::IsNullOrWhiteSpace([string]$report.previousRelease)) -MigrationAttempted:$migrationAttempted -RollbackCompatibilityApproved:$p.RollbackCompatibilityApproved
+  $currentPath = Join-Path $canonicalRoot 'current'
+  $previousPath = Join-Path $canonicalRoot 'previous'
+  $incomingPath = Join-Path $canonicalRoot 'current.next'
+  if (Test-Path -LiteralPath $incomingPath) {
+    try { Assert-ReleasePointerTarget -PointerPath $incomingPath -Root $canonicalRoot | Out-Null; Remove-Item -LiteralPath $incomingPath -Force } catch { }
+  }
+  $hasCurrent = Test-Path -LiteralPath $currentPath
+  $currentTargetSha = if ($hasCurrent) { try { Split-Path (Assert-ReleasePointerTarget -PointerPath $currentPath -Root $canonicalRoot) -Leaf } catch { $null } } else { $null }
+  $hasPrevious = Test-Path -LiteralPath $previousPath
+  $previousTargetSha = if ($hasPrevious) { try { Split-Path (Assert-ReleasePointerTarget -PointerPath $previousPath -Root $canonicalRoot) -Leaf } catch { $null } } else { $null }
+
+  if (-not $hasCurrent -and $hasPrevious -and -not [string]::IsNullOrWhiteSpace([string]$report.previousRelease) -and $previousTargetSha -eq $report.previousRelease) {
+    try {
+      Move-Item -LiteralPath $previousPath -Destination $currentPath -ErrorAction Stop
+      $hasCurrent = $true; $currentTargetSha = $report.previousRelease; $hasPrevious = $false; $previousTargetSha = $null
+    } catch { }
+  }
+
+  $actualSwitched = ($hasCurrent -and $currentTargetSha -eq $p.ReleaseSha)
+  $recoveryNeeded = ($migrationAttempted -or $actualSwitched -or $switched -or $restartAttempted)
+  if ($recoveryNeeded) {
+    $recoveryDecision = Get-DeploymentFailureRecoveryDecision -HasPreviousRelease:(-not [string]::IsNullOrWhiteSpace([string]$report.previousRelease)) -MigrationAttempted:$migrationAttempted -RollbackCompatibilityApproved:$p.RollbackCompatibilityApproved -MigrationCompleted:$migrationCompleted
     if ($recoveryDecision -eq 'FIRST_DEPLOY_SAFE_STOP') {
       try {
         Stop-ExactBaoGiangRuntime -Marker $marker -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName | Out-Null
-        $quarantine = Quarantine-FailedFirstRelease -Root $canonicalRoot -FailedSha $p.ReleaseSha
-        $report.rollback = [ordered]@{ state = 'firstDeployFailedStopped'; failedRelease = $p.ReleaseSha; quarantinePointer = $quarantine.pointer }
+        if ($hasCurrent -and $currentTargetSha -eq $p.ReleaseSha) {
+          $quarantine = Quarantine-FailedFirstRelease -Root $canonicalRoot -FailedSha $p.ReleaseSha
+          $report.rollback = [ordered]@{ state = 'firstDeployFailedStopped'; failedRelease = $p.ReleaseSha; quarantinePointer = $quarantine.pointer }
+        } else {
+          $report.rollback = [ordered]@{ state = 'firstDeployFailedStopped'; failedRelease = $p.ReleaseSha }
+        }
       } catch { $report.rollback = [ordered]@{ state = 'firstDeployStopFailed'; errorCategory = Get-SafeErrorCategory $_; failedRelease = $p.ReleaseSha } }
     }
     elseif ($recoveryDecision -eq 'COMPATIBILITY_SAFE_STOP') {
@@ -81,8 +105,20 @@ try {
     }
     else {
       try {
-        $rollbackJson = & (Join-Path $PSScriptRoot 'rollback-release.ps1') -Root $canonicalRoot -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -NodeExe $p.NodeExe -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl -CompatibilityApproved:$p.RollbackCompatibilityApproved -MigrationAttempted:$migrationAttempted -AllowScheduledTaskActivation:($p.ServiceKind -eq 'scheduled-task') | Select-Object -Last 1
-        $report.rollback = $rollbackJson | ConvertFrom-Json
+        if (-not $actualSwitched) {
+          if ($p.ServiceKind -eq 'scheduled-task') {
+            $rollbackContext = [pscustomobject]@{}
+            $health = Invoke-ScheduledTaskRollbackLifecycle -Context $rollbackContext -Restart { param($context) & (Join-Path $PSScriptRoot 'restart-baogiang-api.ps1') -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -NodeExe $p.NodeExe -Root $canonicalRoot -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl -AllowScheduledTaskActivation:($p.ServiceKind -eq 'scheduled-task') } -Health { param($context) & (Join-Path $PSScriptRoot 'test-production-health.ps1') -BaseUrl $p.ExpectedBaseUrl -ExpectedApiPort 3100 } -SafeStop { param($context) Stop-ExactBaoGiangRuntime -Marker $marker -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName | Out-Null }
+            $report.rollback = [ordered]@{ state = 'completed'; currentTarget = (Join-Path $canonicalRoot "releases\$($report.previousRelease)"); health = ($health -join '') }
+          } else {
+            & (Join-Path $PSScriptRoot 'restart-baogiang-api.ps1') -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -NodeExe $p.NodeExe -Root $canonicalRoot -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl -AllowScheduledTaskActivation:($p.ServiceKind -eq 'scheduled-task') | Out-Null
+            $health = & (Join-Path $PSScriptRoot 'test-production-health.ps1') -BaseUrl $p.ExpectedBaseUrl -ExpectedApiPort 3100
+            $report.rollback = [ordered]@{ state = 'completed'; currentTarget = (Join-Path $canonicalRoot "releases\$($report.previousRelease)"); health = ($health -join '') }
+          }
+        } else {
+          $rollbackJson = & (Join-Path $PSScriptRoot 'rollback-release.ps1') -Root $canonicalRoot -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -NodeExe $p.NodeExe -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl -CompatibilityApproved:$p.RollbackCompatibilityApproved -MigrationAttempted:$migrationAttempted -AllowScheduledTaskActivation:($p.ServiceKind -eq 'scheduled-task') | Select-Object -Last 1
+          $report.rollback = $rollbackJson | ConvertFrom-Json
+        }
       } catch { $report.rollback = [ordered]@{ state = 'failed'; errorCategory = Get-SafeErrorCategory $_ } }
     }
   }
