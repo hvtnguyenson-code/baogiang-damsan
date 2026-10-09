@@ -116,18 +116,33 @@ try {
           } else {
             if ($p.ServiceKind -eq 'scheduled-task') {
               $rollbackContext = [pscustomobject]@{}
-              $health = Invoke-ScheduledTaskRollbackLifecycle -Context $rollbackContext -Restart { param($context) & (Join-Path $PSScriptRoot 'restart-baogiang-api.ps1') -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -NodeExe $p.NodeExe -Root $canonicalRoot -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl -AllowScheduledTaskActivation:($p.ServiceKind -eq 'scheduled-task') } -Health { param($context) & (Join-Path $PSScriptRoot 'test-production-health.ps1') -BaseUrl $p.ExpectedBaseUrl -ExpectedApiPort 3100 } -SafeStop { param($context) Stop-ExactBaoGiangRuntime -Marker $marker -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName | Out-Null }
-              $postTarget = Assert-ReleasePointerTarget -PointerPath $currentPath -Root $canonicalRoot
-              $postSha = Split-Path $postTarget -Leaf
-              if ($postSha -cne $report.previousRelease) { throw "Current pointer target mutated during recovery: expected $($report.previousRelease), got $postSha" }
-              $report.rollback = [ordered]@{ state = 'completed'; currentTarget = $postTarget; health = ($health -join '') }
+              $lifecycleResult = Invoke-ScheduledTaskRollbackLifecycle -Context $rollbackContext -Restart { param($context) & (Join-Path $PSScriptRoot 'restart-baogiang-api.ps1') -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -NodeExe $p.NodeExe -Root $canonicalRoot -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl -AllowScheduledTaskActivation:($p.ServiceKind -eq 'scheduled-task') } -Health {
+                param($context)
+                $health = & (Join-Path $PSScriptRoot 'test-production-health.ps1') -BaseUrl $p.ExpectedBaseUrl -ExpectedApiPort 3100
+                $postTarget = Assert-ReleasePointerTarget -PointerPath $currentPath -Root $canonicalRoot
+                $postSha = Split-Path $postTarget -Leaf
+                if ($postSha -cne $report.previousRelease) { throw "Current pointer target mutated during recovery: expected $($report.previousRelease), got $postSha" }
+                [pscustomobject]@{ Health = ($health -join ''); Target = $postTarget }
+              } -SafeStop { param($context) Stop-ExactBaoGiangRuntime -Marker $marker -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName | Out-Null }
+              $report.rollback = [ordered]@{ state = 'completed'; currentTarget = $lifecycleResult.Target; health = $lifecycleResult.Health }
             } else {
-              & (Join-Path $PSScriptRoot 'restart-baogiang-api.ps1') -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -NodeExe $p.NodeExe -Root $canonicalRoot -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl -AllowScheduledTaskActivation:($p.ServiceKind -eq 'scheduled-task') | Out-Null
-              $health = & (Join-Path $PSScriptRoot 'test-production-health.ps1') -BaseUrl $p.ExpectedBaseUrl -ExpectedApiPort 3100
-              $postTarget = Assert-ReleasePointerTarget -PointerPath $currentPath -Root $canonicalRoot
-              $postSha = Split-Path $postTarget -Leaf
-              if ($postSha -cne $report.previousRelease) { throw "Current pointer target mutated during recovery: expected $($report.previousRelease), got $postSha" }
-              $report.rollback = [ordered]@{ state = 'completed'; currentTarget = $postTarget; health = ($health -join '') }
+              $restartCompleted = $false
+              try {
+                & (Join-Path $PSScriptRoot 'restart-baogiang-api.ps1') -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -NodeExe $p.NodeExe -Root $canonicalRoot -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl -AllowScheduledTaskActivation:($p.ServiceKind -eq 'scheduled-task') | Out-Null
+                $restartCompleted = $true
+                $health = & (Join-Path $PSScriptRoot 'test-production-health.ps1') -BaseUrl $p.ExpectedBaseUrl -ExpectedApiPort 3100
+                $postTarget = Assert-ReleasePointerTarget -PointerPath $currentPath -Root $canonicalRoot
+                $postSha = Split-Path $postTarget -Leaf
+                if ($postSha -cne $report.previousRelease) { throw "Current pointer target mutated during recovery: expected $($report.previousRelease), got $postSha" }
+                $report.rollback = [ordered]@{ state = 'completed'; currentTarget = $postTarget; health = ($health -join '') }
+              } catch {
+                $serviceRecoveryFailure = $_
+                if ($restartCompleted) {
+                  try { Stop-ExactBaoGiangRuntime -Marker $marker -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName | Out-Null }
+                  catch { throw "ROLLBACK_HEALTH_FAILED_AND_SAFE_STOP_FAILED: primary=$($serviceRecoveryFailure.Exception.GetType().Name); cleanup=$($_.Exception.GetType().Name)" }
+                }
+                throw $serviceRecoveryFailure
+              }
             }
           }
         } else {
