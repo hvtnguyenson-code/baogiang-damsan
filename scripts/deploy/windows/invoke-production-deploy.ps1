@@ -106,18 +106,42 @@ try {
     else {
       try {
         if (-not $actualSwitched) {
-          if ($p.ServiceKind -eq 'scheduled-task') {
-            $rollbackContext = [pscustomobject]@{}
-            $health = Invoke-ScheduledTaskRollbackLifecycle -Context $rollbackContext -Restart { param($context) & (Join-Path $PSScriptRoot 'restart-baogiang-api.ps1') -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -NodeExe $p.NodeExe -Root $canonicalRoot -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl -AllowScheduledTaskActivation:($p.ServiceKind -eq 'scheduled-task') } -Health { param($context) & (Join-Path $PSScriptRoot 'test-production-health.ps1') -BaseUrl $p.ExpectedBaseUrl -ExpectedApiPort 3100 } -SafeStop { param($context) Stop-ExactBaoGiangRuntime -Marker $marker -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName | Out-Null }
-            $report.rollback = [ordered]@{ state = 'completed'; currentTarget = (Join-Path $canonicalRoot "releases\$($report.previousRelease)"); health = ($health -join '') }
+          if (-not $hasCurrent -or [string]::IsNullOrWhiteSpace($currentTargetSha) -or ($currentTargetSha -cne $report.previousRelease)) {
+            try {
+              Stop-ExactBaoGiangRuntime -Marker $marker -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName | Out-Null
+              $report.rollback = [ordered]@{ state = 'unverifiedPointerSafeStopped'; expectedTarget = $report.previousRelease; actualTarget = $currentTargetSha }
+            } catch {
+              $report.rollback = [ordered]@{ state = 'stopFailedPointerVerificationRequired'; errorCategory = Get-SafeErrorCategory $_; expectedTarget = $report.previousRelease; actualTarget = $currentTargetSha }
+            }
           } else {
-            & (Join-Path $PSScriptRoot 'restart-baogiang-api.ps1') -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -NodeExe $p.NodeExe -Root $canonicalRoot -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl -AllowScheduledTaskActivation:($p.ServiceKind -eq 'scheduled-task') | Out-Null
-            $health = & (Join-Path $PSScriptRoot 'test-production-health.ps1') -BaseUrl $p.ExpectedBaseUrl -ExpectedApiPort 3100
-            $report.rollback = [ordered]@{ state = 'completed'; currentTarget = (Join-Path $canonicalRoot "releases\$($report.previousRelease)"); health = ($health -join '') }
+            if ($p.ServiceKind -eq 'scheduled-task') {
+              $rollbackContext = [pscustomobject]@{}
+              $health = Invoke-ScheduledTaskRollbackLifecycle -Context $rollbackContext -Restart { param($context) & (Join-Path $PSScriptRoot 'restart-baogiang-api.ps1') -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -NodeExe $p.NodeExe -Root $canonicalRoot -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl -AllowScheduledTaskActivation:($p.ServiceKind -eq 'scheduled-task') } -Health { param($context) & (Join-Path $PSScriptRoot 'test-production-health.ps1') -BaseUrl $p.ExpectedBaseUrl -ExpectedApiPort 3100 } -SafeStop { param($context) Stop-ExactBaoGiangRuntime -Marker $marker -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName | Out-Null }
+              $postTarget = Assert-ReleasePointerTarget -PointerPath $currentPath -Root $canonicalRoot
+              $postSha = Split-Path $postTarget -Leaf
+              if ($postSha -cne $report.previousRelease) { throw "Current pointer target mutated during recovery: expected $($report.previousRelease), got $postSha" }
+              $report.rollback = [ordered]@{ state = 'completed'; currentTarget = $postTarget; health = ($health -join '') }
+            } else {
+              & (Join-Path $PSScriptRoot 'restart-baogiang-api.ps1') -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -NodeExe $p.NodeExe -Root $canonicalRoot -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl -AllowScheduledTaskActivation:($p.ServiceKind -eq 'scheduled-task') | Out-Null
+              $health = & (Join-Path $PSScriptRoot 'test-production-health.ps1') -BaseUrl $p.ExpectedBaseUrl -ExpectedApiPort 3100
+              $postTarget = Assert-ReleasePointerTarget -PointerPath $currentPath -Root $canonicalRoot
+              $postSha = Split-Path $postTarget -Leaf
+              if ($postSha -cne $report.previousRelease) { throw "Current pointer target mutated during recovery: expected $($report.previousRelease), got $postSha" }
+              $report.rollback = [ordered]@{ state = 'completed'; currentTarget = $postTarget; health = ($health -join '') }
+            }
           }
         } else {
-          $rollbackJson = & (Join-Path $PSScriptRoot 'rollback-release.ps1') -Root $canonicalRoot -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -NodeExe $p.NodeExe -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl -CompatibilityApproved:$p.RollbackCompatibilityApproved -MigrationAttempted:$migrationAttempted -AllowScheduledTaskActivation:($p.ServiceKind -eq 'scheduled-task') | Select-Object -Last 1
-          $report.rollback = $rollbackJson | ConvertFrom-Json
+          if (-not $hasPrevious -or [string]::IsNullOrWhiteSpace($previousTargetSha) -or ($previousTargetSha -cne $report.previousRelease)) {
+            try {
+              Stop-ExactBaoGiangRuntime -Marker $marker -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName | Out-Null
+              $report.rollback = [ordered]@{ state = 'unverifiedPointerSafeStopped'; expectedTarget = $report.previousRelease; actualTarget = $previousTargetSha }
+            } catch {
+              $report.rollback = [ordered]@{ state = 'stopFailedPointerVerificationRequired'; errorCategory = Get-SafeErrorCategory $_; expectedTarget = $report.previousRelease; actualTarget = $previousTargetSha }
+            }
+          } else {
+            $rollbackJson = & (Join-Path $PSScriptRoot 'rollback-release.ps1') -Root $canonicalRoot -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -NodeExe $p.NodeExe -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl -CompatibilityApproved:$p.RollbackCompatibilityApproved -MigrationAttempted:$migrationAttempted -AllowScheduledTaskActivation:($p.ServiceKind -eq 'scheduled-task') | Select-Object -Last 1
+            $report.rollback = $rollbackJson | ConvertFrom-Json
+          }
         }
       } catch { $report.rollback = [ordered]@{ state = 'failed'; errorCategory = Get-SafeErrorCategory $_ } }
     }

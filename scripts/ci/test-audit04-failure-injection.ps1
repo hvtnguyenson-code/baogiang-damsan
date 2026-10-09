@@ -522,26 +522,409 @@ try {
     Write-Output '  [PASS] Test 7: Runtime safe-stop fails -> original and secondary error both recorded, no false PASS'
   }
 
-  # --- TEST 8: Neighbor isolation -> no changes to Quản lí nội trú, other tasks, unrelated processes, shared database services or Nginx ---
+  # --- TEST 8: Neighbor isolation on actual execution branch -> no changes to Quản lí nội trú, other tasks, unrelated processes, shared database services or Nginx ---
   {
     $fix = New-AudFixtureEnvironment 'test8'
-    $foreignDir = Join-Path $tempDir 'foreign-root'
+    $foreignDir = Join-Path $tempDir 'Quan_li_noi_tru'
     New-Item -ItemType Directory -Path $foreignDir -Force | Out-Null
     $sentinelFile = Join-Path $foreignDir 'untouched-neighbour.txt'
-    [IO.File]::WriteAllText($sentinelFile, 'neighbour content', [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText($sentinelFile, 'neighbour content that must not be altered', [Text.UTF8Encoding]::new($false))
     $beforeHash = Get-FileSha256FromBytes $sentinelFile
 
-    # Confirm Assert-DedicatedRoot rejects neighbour paths
-    $conflictRejected = $false
-    try { Assert-DedicatedRoot 'C:\Quan_li_noi_tru' | Out-Null } catch { $conflictRejected = $true }
-    if (-not $conflictRejected) { throw 'Test 8 Assert-DedicatedRoot accepted neighbour path' }
+    $origReleaseDir = Join-Path $fix.Root "releases\$origSha\apps\api\dist\apps\api\src"
+    New-Item -ItemType Directory -Path $origReleaseDir -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $origReleaseDir 'main.js'), 'console.log("v1");', [Text.UTF8Encoding]::new($false))
+    New-Item -ItemType Junction -Path (Join-Path $fix.Root 'current') -Target (Join-Path $fix.Root "releases\$origSha") | Out-Null
+
+    $xfer = Prepare-IncomingTransfer $fix.Root $newSha
+
+    $stubs = @{
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
+      'run-migrations.ps1' = "Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
+      'sync-capability-catalog.ps1' = "throw 'Simulated pre-switch catalog failure for neighbor isolation test'"
+    }
+    Set-FixtureScriptStubs $stubs
+
+    $paramFile = Join-Path $fix.Root 'deploy-params.json'
+    Write-DeploymentParameters $paramFile @{
+      ReleaseSha = $newSha; Root = $fix.Root; TransferDirectoryName = $xfer.TransferDir; SourceArchiveName = $xfer.ArchiveName
+      ExpectedSha256 = $xfer.Sha256; NodeExe = $fakeToolPath; NpmExe = $fakeToolPath; NpxExe = $fakeToolPath
+      PsqlExe = $fakeToolPath; PgDumpExe = $fakeToolPath; PgRestoreExe = $fakeToolPath
+      EnvFile = $fix.EnvFile; StartupWrapper = $fix.StartupWrapper; NginxExe = $fakeToolPath; NginxConfig = $fix.NginxConfig
+      ExpectedBaseUrl = 'https://baogiang.dtnt-damsan.edu.vn'; ServiceKind = 'scheduled-task'; ServiceName = 'BaoGiangBackend'
+      ExpectedEntryPoint = $fix.EntryPoint; MigrationRequested = $true; ProductionMigrationApproved = $true
+      RollbackCompatibilityApproved = $false; ReportFileName = "deploy-report-$newSha.json"
+    }
+
+    $global:aud04StopCalls.Clear()
+    $thrown = $false
+    try {
+      & (Join-Path $fixtureScriptsDir 'invoke-production-deploy.ps1') -ParameterFile $paramFile | Out-Null
+    } catch {
+      $thrown = $true
+      if ($_.Exception.Message -notmatch 'Simulated pre-switch catalog failure for neighbor isolation test') { throw "Test 8 wrong exception: $($_.Exception.Message)" }
+    }
+    if (-not $thrown) { throw 'Test 8 did not throw' }
+
+    if ($global:aud04StopCalls.Count -eq 0 -or $global:aud04StopCalls[0] -ne 'scheduled-task:BaoGiangBackend') {
+      throw "Test 8 targeted wrong service: $($global:aud04StopCalls -join ',')"
+    }
 
     $afterHash = Get-FileSha256FromBytes $sentinelFile
-    if ($beforeHash -cne $afterHash) { throw 'Test 8 neighbour sentinel was mutated' }
-    Write-Output '  [PASS] Test 8: Neighbor isolation verified (neighbour resources untouched)'
+    if ($beforeHash -cne $afterHash) { throw 'Test 8 neighbour sentinel was mutated during execution' }
+
+    $conflictRejected = $false
+    try { Assert-DedicatedRoot $foreignDir | Out-Null } catch { $conflictRejected = $true }
+    if (-not $conflictRejected) { throw 'Test 8 Assert-DedicatedRoot accepted neighbour path' }
+
+    Write-Output '  [PASS] Test 8: Neighbor isolation on execution branch verified (neighbour resources untouched, exact identity enforced)'
   }
 
-  Write-Output '=== ALL 8 AUD-04 FAILURE-INJECTION TESTS PASSED ==='
+  # --- TEST 9 (R1-1): Current points to unexpected third release C before switch -> fail-closed ---
+  {
+    $fix = New-AudFixtureEnvironment 'test9'
+    $origReleaseDir = Join-Path $fix.Root "releases\$origSha\apps\api\dist\apps\api\src"
+    New-Item -ItemType Directory -Path $origReleaseDir -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $origReleaseDir 'main.js'), 'console.log("v1");', [Text.UTF8Encoding]::new($false))
+    New-Item -ItemType Junction -Path (Join-Path $fix.Root 'current') -Target (Join-Path $fix.Root "releases\$origSha") | Out-Null
+
+    $thirdSha = '3' * 40
+    $thirdReleaseDir = Join-Path $fix.Root "releases\$thirdSha\apps\api\dist\apps\api\src"
+    New-Item -ItemType Directory -Path $thirdReleaseDir -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $thirdReleaseDir 'main.js'), 'console.log("v3");', [Text.UTF8Encoding]::new($false))
+
+    $xfer = Prepare-IncomingTransfer $fix.Root $newSha
+
+    $stubs = @{
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
+      'run-migrations.ps1' = "Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
+      'sync-capability-catalog.ps1' = "param(`$ReleaseSha, `$Root) Remove-Item -LiteralPath (Join-Path `$Root 'current') -Force; New-Item -ItemType Junction -Path (Join-Path `$Root 'current') -Target (Join-Path `$Root 'releases\$thirdSha') | Out-Null; throw 'Simulated catalog failure after unexpected pointer mutation to third release'"
+      'restart-baogiang-api.ps1' = "throw 'CRITICAL DEFECT: restart-baogiang-api was called on unexpected release target!'"
+    }
+    Set-FixtureScriptStubs $stubs
+
+    $paramFile = Join-Path $fix.Root 'deploy-params.json'
+    Write-DeploymentParameters $paramFile @{
+      ReleaseSha = $newSha; Root = $fix.Root; TransferDirectoryName = $xfer.TransferDir; SourceArchiveName = $xfer.ArchiveName
+      ExpectedSha256 = $xfer.Sha256; NodeExe = $fakeToolPath; NpmExe = $fakeToolPath; NpxExe = $fakeToolPath
+      PsqlExe = $fakeToolPath; PgDumpExe = $fakeToolPath; PgRestoreExe = $fakeToolPath
+      EnvFile = $fix.EnvFile; StartupWrapper = $fix.StartupWrapper; NginxExe = $fakeToolPath; NginxConfig = $fix.NginxConfig
+      ExpectedBaseUrl = 'https://baogiang.dtnt-damsan.edu.vn'; ServiceKind = 'scheduled-task'; ServiceName = 'BaoGiangBackend'
+      ExpectedEntryPoint = $fix.EntryPoint; MigrationRequested = $true; ProductionMigrationApproved = $true
+      RollbackCompatibilityApproved = $true; ReportFileName = "deploy-report-$newSha.json"
+    }
+
+    $global:aud04StopCalls.Clear()
+    $thrown = $false
+    try {
+      & (Join-Path $fixtureScriptsDir 'invoke-production-deploy.ps1') -ParameterFile $paramFile | Out-Null
+    } catch {
+      $thrown = $true
+      if ($_.Exception.Message -notmatch 'Simulated catalog failure after unexpected pointer mutation') { throw "Test 9 wrong exception: $($_.Exception.Message)" }
+    }
+    if (-not $thrown) { throw 'Test 9 did not throw' }
+
+    if ($global:aud04StopCalls.Count -eq 0) { throw 'Test 9 exact runtime was not stopped' }
+
+    $reportPath = Join-Path $fix.Root "logs\deploy-report-$newSha.json"
+    $rep = Get-Content $reportPath -Raw | ConvertFrom-Json
+    if ($rep.rollback.state -ne 'unverifiedPointerSafeStopped') { throw "Test 9 rollback state: $($rep.rollback.state)" }
+    if ($rep.rollback.expectedTarget -cne $origSha) { throw "Test 9 expectedTarget mismatch: $($rep.rollback.expectedTarget)" }
+    if ($rep.rollback.actualTarget -cne $thirdSha) { throw "Test 9 actualTarget mismatch: $($rep.rollback.actualTarget)" }
+    Write-Output '  [PASS] Test 9 (R1-1): Current points to unexpected third release -> fail-closed, stopped, unverifiedPointerSafeStopped'
+  }
+
+  # --- TEST 10 (R1-2): Current exists but target cannot be verified (broken junction) -> fail-closed ---
+  {
+    $fix = New-AudFixtureEnvironment 'test10'
+    $origReleaseDir = Join-Path $fix.Root "releases\$origSha\apps\api\dist\apps\api\src"
+    New-Item -ItemType Directory -Path $origReleaseDir -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $origReleaseDir 'main.js'), 'console.log("v1");', [Text.UTF8Encoding]::new($false))
+    New-Item -ItemType Junction -Path (Join-Path $fix.Root 'current') -Target (Join-Path $fix.Root "releases\$origSha") | Out-Null
+
+    $xfer = Prepare-IncomingTransfer $fix.Root $newSha
+
+    $stubs = @{
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
+      'run-migrations.ps1' = "Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
+      'sync-capability-catalog.ps1' = "param(`$ReleaseSha, `$Root) Remove-Item -LiteralPath (Join-Path `$Root 'current') -Force; New-Item -ItemType Junction -Path (Join-Path `$Root 'current') -Target (Join-Path `$Root 'nonexistent-target') | Out-Null; throw 'Simulated catalog failure after breaking current junction'"
+      'restart-baogiang-api.ps1' = "throw 'CRITICAL DEFECT: restart-baogiang-api was called on broken pointer target!'"
+    }
+    Set-FixtureScriptStubs $stubs
+
+    $paramFile = Join-Path $fix.Root 'deploy-params.json'
+    Write-DeploymentParameters $paramFile @{
+      ReleaseSha = $newSha; Root = $fix.Root; TransferDirectoryName = $xfer.TransferDir; SourceArchiveName = $xfer.ArchiveName
+      ExpectedSha256 = $xfer.Sha256; NodeExe = $fakeToolPath; NpmExe = $fakeToolPath; NpxExe = $fakeToolPath
+      PsqlExe = $fakeToolPath; PgDumpExe = $fakeToolPath; PgRestoreExe = $fakeToolPath
+      EnvFile = $fix.EnvFile; StartupWrapper = $fix.StartupWrapper; NginxExe = $fakeToolPath; NginxConfig = $fix.NginxConfig
+      ExpectedBaseUrl = 'https://baogiang.dtnt-damsan.edu.vn'; ServiceKind = 'scheduled-task'; ServiceName = 'BaoGiangBackend'
+      ExpectedEntryPoint = $fix.EntryPoint; MigrationRequested = $true; ProductionMigrationApproved = $true
+      RollbackCompatibilityApproved = $true; ReportFileName = "deploy-report-$newSha.json"
+    }
+
+    $global:aud04StopCalls.Clear()
+    $thrown = $false
+    try {
+      & (Join-Path $fixtureScriptsDir 'invoke-production-deploy.ps1') -ParameterFile $paramFile | Out-Null
+    } catch {
+      $thrown = $true
+      if ($_.Exception.Message -notmatch 'Simulated catalog failure after breaking current junction') { throw "Test 10 wrong exception: $($_.Exception.Message)" }
+    }
+    if (-not $thrown) { throw 'Test 10 did not throw' }
+
+    if ($global:aud04StopCalls.Count -eq 0) { throw 'Test 10 exact runtime was not stopped' }
+
+    $reportPath = Join-Path $fix.Root "logs\deploy-report-$newSha.json"
+    $rep = Get-Content $reportPath -Raw | ConvertFrom-Json
+    if ($rep.rollback.state -ne 'unverifiedPointerSafeStopped') { throw "Test 10 rollback state: $($rep.rollback.state)" }
+    if ($rep.rollback.expectedTarget -cne $origSha) { throw "Test 10 expectedTarget mismatch: $($rep.rollback.expectedTarget)" }
+    if ($null -ne $rep.rollback.actualTarget) { throw "Test 10 actualTarget should be null: $($rep.rollback.actualTarget)" }
+    Write-Output '  [PASS] Test 10 (R1-2): Current exists but unverified target -> fail-closed, stopped, unverifiedPointerSafeStopped'
+  }
+
+  # --- TEST 11 (R1-3): Current is exactly original release -> restarted and verified on current ---
+  {
+    $fix = New-AudFixtureEnvironment 'test11'
+    $origReleaseDir = Join-Path $fix.Root "releases\$origSha\apps\api\dist\apps\api\src"
+    New-Item -ItemType Directory -Path $origReleaseDir -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $origReleaseDir 'main.js'), 'console.log("v1");', [Text.UTF8Encoding]::new($false))
+    New-Item -ItemType Junction -Path (Join-Path $fix.Root 'current') -Target (Join-Path $fix.Root "releases\$origSha") | Out-Null
+
+    $xfer = Prepare-IncomingTransfer $fix.Root $newSha
+
+    $stubs = @{
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
+      'run-migrations.ps1' = "Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
+      'sync-capability-catalog.ps1' = "throw 'Simulated capability catalog sync failure before switch'"
+      'restart-baogiang-api.ps1' = "Write-Output '{`"runtimeKind`":`"scheduled-task`",`"activationState`":`"enabled-running`"}'"
+      'test-production-health.ps1' = "Write-Output '{`"state`":`"healthy`",`"httpStatus`":200}'"
+      'rollback-release.ps1' = "throw 'CRITICAL DEFECT: rollback-release.ps1 invoked before switch!'"
+    }
+    Set-FixtureScriptStubs $stubs
+
+    $paramFile = Join-Path $fix.Root 'deploy-params.json'
+    Write-DeploymentParameters $paramFile @{
+      ReleaseSha = $newSha; Root = $fix.Root; TransferDirectoryName = $xfer.TransferDir; SourceArchiveName = $xfer.ArchiveName
+      ExpectedSha256 = $xfer.Sha256; NodeExe = $fakeToolPath; NpmExe = $fakeToolPath; NpxExe = $fakeToolPath
+      PsqlExe = $fakeToolPath; PgDumpExe = $fakeToolPath; PgRestoreExe = $fakeToolPath
+      EnvFile = $fix.EnvFile; StartupWrapper = $fix.StartupWrapper; NginxExe = $fakeToolPath; NginxConfig = $fix.NginxConfig
+      ExpectedBaseUrl = 'https://baogiang.dtnt-damsan.edu.vn'; ServiceKind = 'scheduled-task'; ServiceName = 'BaoGiangBackend'
+      ExpectedEntryPoint = $fix.EntryPoint; MigrationRequested = $true; ProductionMigrationApproved = $true
+      RollbackCompatibilityApproved = $true; ReportFileName = "deploy-report-$newSha.json"
+    }
+
+    $global:aud04StopCalls.Clear()
+    $thrown = $false
+    try {
+      & (Join-Path $fixtureScriptsDir 'invoke-production-deploy.ps1') -ParameterFile $paramFile | Out-Null
+    } catch {
+      $thrown = $true
+      if ($_.Exception.Message -notmatch 'Simulated capability catalog sync failure before switch') { throw "Test 11 wrong exception: $($_.Exception.Message)" }
+    }
+    if (-not $thrown) { throw 'Test 11 did not throw' }
+
+    $currentTarget = Split-Path (Assert-ReleasePointerTarget -PointerPath (Join-Path $fix.Root 'current') -Root $fix.Root) -Leaf
+    if ($currentTarget -cne $origSha) { throw "Test 11 current pointer was not origSha: $currentTarget" }
+
+    $reportPath = Join-Path $fix.Root "logs\deploy-report-$newSha.json"
+    $rep = Get-Content $reportPath -Raw | ConvertFrom-Json
+    if ($rep.rollback.state -ne 'completed') { throw "Test 11 rollback state: $($rep.rollback.state)" }
+    if ($rep.rollback.currentTarget -notmatch [regex]::Escape($origSha)) { throw "Test 11 currentTarget was not origSha: $($rep.rollback.currentTarget)" }
+    Write-Output '  [PASS] Test 11 (R1-3): Current is exactly original release -> restarted and verified on current, completed'
+  }
+
+  # --- TEST 12 (R1-4): Partial switch current/previous/current.next ---
+  {
+    # 12A: previous is original release -> restored to current, verified, completed
+    $fixA = New-AudFixtureEnvironment 'test12a'
+    $origReleaseDir = Join-Path $fixA.Root "releases\$origSha\apps\api\dist\apps\api\src"
+    New-Item -ItemType Directory -Path $origReleaseDir -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $origReleaseDir 'main.js'), 'console.log("v1");', [Text.UTF8Encoding]::new($false))
+    New-Item -ItemType Junction -Path (Join-Path $fixA.Root 'current') -Target (Join-Path $fixA.Root "releases\$origSha") | Out-Null
+
+    $xferA = Prepare-IncomingTransfer $fixA.Root $newSha
+    $stubsA = @{
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
+      'run-migrations.ps1' = "Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
+      'sync-capability-catalog.ps1' = "Write-Output '{`"state`":`"completed`",`"expectedDefinitionCount`":10,`"verifiedDefinitionCount`":10}'"
+      'switch-current-release.ps1' = "param(`$ReleaseSha, `$Root) Move-Item -LiteralPath (Join-Path `$Root 'current') -Destination (Join-Path `$Root 'previous'); New-Item -ItemType Junction -Path (Join-Path `$Root 'current.next') -Target (Join-Path `$Root `"releases\`$ReleaseSha`") | Out-Null; throw 'Simulated partial switch crash after moving current to previous'"
+      'restart-baogiang-api.ps1' = "Write-Output '{`"runtimeKind`":`"scheduled-task`",`"activationState`":`"enabled-running`"}'"
+      'test-production-health.ps1' = "Write-Output '{`"state`":`"healthy`",`"httpStatus`":200}'"
+    }
+    Set-FixtureScriptStubs $stubsA
+
+    $paramFileA = Join-Path $fixA.Root 'deploy-params.json'
+    Write-DeploymentParameters $paramFileA @{
+      ReleaseSha = $newSha; Root = $fixA.Root; TransferDirectoryName = $xferA.TransferDir; SourceArchiveName = $xferA.ArchiveName
+      ExpectedSha256 = $xferA.Sha256; NodeExe = $fakeToolPath; NpmExe = $fakeToolPath; NpxExe = $fakeToolPath
+      PsqlExe = $fakeToolPath; PgDumpExe = $fakeToolPath; PgRestoreExe = $fakeToolPath
+      EnvFile = $fixA.EnvFile; StartupWrapper = $fixA.StartupWrapper; NginxExe = $fakeToolPath; NginxConfig = $fixA.NginxConfig
+      ExpectedBaseUrl = 'https://baogiang.dtnt-damsan.edu.vn'; ServiceKind = 'scheduled-task'; ServiceName = 'BaoGiangBackend'
+      ExpectedEntryPoint = $fixA.EntryPoint; MigrationRequested = $true; ProductionMigrationApproved = $true
+      RollbackCompatibilityApproved = $true; ReportFileName = "deploy-report-$newSha.json"
+    }
+
+    $global:aud04StopCalls.Clear()
+    $thrown = $false
+    try {
+      & (Join-Path $fixtureScriptsDir 'invoke-production-deploy.ps1') -ParameterFile $paramFileA | Out-Null
+    } catch {
+      $thrown = $true
+      if ($_.Exception.Message -notmatch 'Simulated partial switch crash') { throw "Test 12A wrong exception: $($_.Exception.Message)" }
+    }
+    if (-not $thrown) { throw 'Test 12A did not throw' }
+
+    if (Test-Path -LiteralPath (Join-Path $fixA.Root 'current.next')) { throw 'Test 12A current.next was not cleaned up' }
+    $curA = Split-Path (Assert-ReleasePointerTarget -PointerPath (Join-Path $fixA.Root 'current') -Root $fixA.Root) -Leaf
+    if ($curA -cne $origSha) { throw "Test 12A current pointer not restored: got $curA, expected $origSha" }
+
+    $repA = Get-Content (Join-Path $fixA.Root "logs\deploy-report-$newSha.json") -Raw | ConvertFrom-Json
+    if ($repA.rollback.state -ne 'completed') { throw "Test 12A rollback state: $($repA.rollback.state)" }
+
+    # 12B: previous is corrupted / third release -> not restored, detects missing current, fail-closed
+    $fixB = New-AudFixtureEnvironment 'test12b'
+    $origReleaseDirB = Join-Path $fixB.Root "releases\$origSha\apps\api\dist\apps\api\src"
+    New-Item -ItemType Directory -Path $origReleaseDirB -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $origReleaseDirB 'main.js'), 'console.log("v1");', [Text.UTF8Encoding]::new($false))
+    New-Item -ItemType Junction -Path (Join-Path $fixB.Root 'current') -Target (Join-Path $fixB.Root "releases\$origSha") | Out-Null
+
+    $thirdShaB = '3' * 40
+    $thirdReleaseDirB = Join-Path $fixB.Root "releases\$thirdShaB\apps\api\dist\apps\api\src"
+    New-Item -ItemType Directory -Path $thirdReleaseDirB -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $thirdReleaseDirB 'main.js'), 'console.log("v3");', [Text.UTF8Encoding]::new($false))
+
+    $xferB = Prepare-IncomingTransfer $fixB.Root $newSha
+    $stubsB = @{
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
+      'run-migrations.ps1' = "Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
+      'sync-capability-catalog.ps1' = "Write-Output '{`"state`":`"completed`",`"expectedDefinitionCount`":10,`"verifiedDefinitionCount`":10}'"
+      'switch-current-release.ps1' = "param(`$ReleaseSha, `$Root) Remove-Item -LiteralPath (Join-Path `$Root 'current') -Force; New-Item -ItemType Junction -Path (Join-Path `$Root 'previous') -Target (Join-Path `$Root 'releases\$thirdShaB') | Out-Null; throw 'Simulated partial switch with corrupted previous pointer'"
+      'restart-baogiang-api.ps1' = "throw 'CRITICAL DEFECT: restart called on corrupted partial switch!'"
+    }
+    Set-FixtureScriptStubs $stubsB
+
+    $paramFileB = Join-Path $fixB.Root 'deploy-params.json'
+    Write-DeploymentParameters $paramFileB @{
+      ReleaseSha = $newSha; Root = $fixB.Root; TransferDirectoryName = $xferB.TransferDir; SourceArchiveName = $xferB.ArchiveName
+      ExpectedSha256 = $xferB.Sha256; NodeExe = $fakeToolPath; NpmExe = $fakeToolPath; NpxExe = $fakeToolPath
+      PsqlExe = $fakeToolPath; PgDumpExe = $fakeToolPath; PgRestoreExe = $fakeToolPath
+      EnvFile = $fixB.EnvFile; StartupWrapper = $fixB.StartupWrapper; NginxExe = $fakeToolPath; NginxConfig = $fixB.NginxConfig
+      ExpectedBaseUrl = 'https://baogiang.dtnt-damsan.edu.vn'; ServiceKind = 'scheduled-task'; ServiceName = 'BaoGiangBackend'
+      ExpectedEntryPoint = $fixB.EntryPoint; MigrationRequested = $true; ProductionMigrationApproved = $true
+      RollbackCompatibilityApproved = $true; ReportFileName = "deploy-report-$newSha.json"
+    }
+
+    $global:aud04StopCalls.Clear()
+    $thrown = $false
+    try {
+      & (Join-Path $fixtureScriptsDir 'invoke-production-deploy.ps1') -ParameterFile $paramFileB | Out-Null
+    } catch {
+      $thrown = $true
+      if ($_.Exception.Message -notmatch 'Simulated partial switch with corrupted previous pointer') { throw "Test 12B wrong exception: $($_.Exception.Message)" }
+    }
+    if (-not $thrown) { throw 'Test 12B did not throw' }
+
+    $repB = Get-Content (Join-Path $fixB.Root "logs\deploy-report-$newSha.json") -Raw | ConvertFrom-Json
+    if ($repB.rollback.state -ne 'unverifiedPointerSafeStopped') { throw "Test 12B rollback state: $($repB.rollback.state)" }
+    Write-Output '  [PASS] Test 12 (R1-4): Partial switch transitions (12A restore+completed, 12B corrupted->fail-closed)'
+  }
+
+  # --- TEST 13 (R1-5): Failed restart/health and safe-stop ---
+  {
+    # 13A: Health check fails -> safe-stop invoked, state = failed
+    $fixA = New-AudFixtureEnvironment 'test13a'
+    $origReleaseDir = Join-Path $fixA.Root "releases\$origSha\apps\api\dist\apps\api\src"
+    New-Item -ItemType Directory -Path $origReleaseDir -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $origReleaseDir 'main.js'), 'console.log("v1");', [Text.UTF8Encoding]::new($false))
+    New-Item -ItemType Junction -Path (Join-Path $fixA.Root 'current') -Target (Join-Path $fixA.Root "releases\$origSha") | Out-Null
+
+    $xferA = Prepare-IncomingTransfer $fixA.Root $newSha
+    $stubsA = @{
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
+      'run-migrations.ps1' = "Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
+      'sync-capability-catalog.ps1' = "throw 'Simulated pre-switch catalog failure before health test'"
+      'restart-baogiang-api.ps1' = "Write-Output '{`"runtimeKind`":`"scheduled-task`",`"activationState`":`"enabled-running`"}'"
+      'test-production-health.ps1' = "throw 'Simulated health check timeout during rollback'"
+    }
+    Set-FixtureScriptStubs $stubsA
+
+    $paramFileA = Join-Path $fixA.Root 'deploy-params.json'
+    Write-DeploymentParameters $paramFileA @{
+      ReleaseSha = $newSha; Root = $fixA.Root; TransferDirectoryName = $xferA.TransferDir; SourceArchiveName = $xferA.ArchiveName
+      ExpectedSha256 = $xferA.Sha256; NodeExe = $fakeToolPath; NpmExe = $fakeToolPath; NpxExe = $fakeToolPath
+      PsqlExe = $fakeToolPath; PgDumpExe = $fakeToolPath; PgRestoreExe = $fakeToolPath
+      EnvFile = $fixA.EnvFile; StartupWrapper = $fixA.StartupWrapper; NginxExe = $fakeToolPath; NginxConfig = $fixA.NginxConfig
+      ExpectedBaseUrl = 'https://baogiang.dtnt-damsan.edu.vn'; ServiceKind = 'scheduled-task'; ServiceName = 'BaoGiangBackend'
+      ExpectedEntryPoint = $fixA.EntryPoint; MigrationRequested = $true; ProductionMigrationApproved = $true
+      RollbackCompatibilityApproved = $true; ReportFileName = "deploy-report-$newSha.json"
+    }
+
+    $global:aud04StopCalls.Clear()
+    $thrown = $false
+    try {
+      & (Join-Path $fixtureScriptsDir 'invoke-production-deploy.ps1') -ParameterFile $paramFileA | Out-Null
+    } catch {
+      $thrown = $true
+      if ($_.Exception.Message -notmatch 'Simulated pre-switch catalog failure before health test') { throw "Test 13A wrong exception: $($_.Exception.Message)" }
+    }
+    if (-not $thrown) { throw 'Test 13A did not throw' }
+
+    if ($global:aud04StopCalls.Count -eq 0) { throw 'Test 13A safe-stop was not called after health failure' }
+
+    $repA = Get-Content (Join-Path $fixA.Root "logs\deploy-report-$newSha.json") -Raw | ConvertFrom-Json
+    if ($repA.rollback.state -ne 'failed') { throw "Test 13A rollback state: $($repA.rollback.state)" }
+    if ($repA.rollback.errorCategory -ne 'UNKNOWN') { throw "Test 13A rollback errorCategory: $($repA.rollback.errorCategory)" }
+
+    # 13B: Health check fails AND safe-stop fails -> secondary cleanup failure recorded
+    $fixB = New-AudFixtureEnvironment 'test13b'
+    $origReleaseDirB = Join-Path $fixB.Root "releases\$origSha\apps\api\dist\apps\api\src"
+    New-Item -ItemType Directory -Path $origReleaseDirB -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $origReleaseDirB 'main.js'), 'console.log("v1");', [Text.UTF8Encoding]::new($false))
+    New-Item -ItemType Junction -Path (Join-Path $fixB.Root 'current') -Target (Join-Path $fixB.Root "releases\$origSha") | Out-Null
+
+    $xferB = Prepare-IncomingTransfer $fixB.Root $newSha
+    Set-FixtureScriptStubs $stubsA
+
+    $paramFileB = Join-Path $fixB.Root 'deploy-params.json'
+    Write-DeploymentParameters $paramFileB @{
+      ReleaseSha = $newSha; Root = $fixB.Root; TransferDirectoryName = $xferB.TransferDir; SourceArchiveName = $xferB.ArchiveName
+      ExpectedSha256 = $xferB.Sha256; NodeExe = $fakeToolPath; NpmExe = $fakeToolPath; NpxExe = $fakeToolPath
+      PsqlExe = $fakeToolPath; PgDumpExe = $fakeToolPath; PgRestoreExe = $fakeToolPath
+      EnvFile = $fixB.EnvFile; StartupWrapper = $fixB.StartupWrapper; NginxExe = $fakeToolPath; NginxConfig = $fixB.NginxConfig
+      ExpectedBaseUrl = 'https://baogiang.dtnt-damsan.edu.vn'; ServiceKind = 'scheduled-task'; ServiceName = 'BaoGiangBackend'
+      ExpectedEntryPoint = $fixB.EntryPoint; MigrationRequested = $true; ProductionMigrationApproved = $true
+      RollbackCompatibilityApproved = $true; ReportFileName = "deploy-report-$newSha.json"
+    }
+
+    $global:aud04StopCalls.Clear()
+    $global:aud04StopShouldFail = $true
+    $thrown = $false
+    try {
+      & (Join-Path $fixtureScriptsDir 'invoke-production-deploy.ps1') -ParameterFile $paramFileB | Out-Null
+    } catch {
+      $thrown = $true
+      if ($_.Exception.Message -notmatch 'Simulated pre-switch catalog failure before health test') { throw "Test 13B wrong exception: $($_.Exception.Message)" }
+    } finally {
+      $global:aud04StopShouldFail = $false
+    }
+    if (-not $thrown) { throw 'Test 13B did not throw' }
+
+    $repB = Get-Content (Join-Path $fixB.Root "logs\deploy-report-$newSha.json") -Raw | ConvertFrom-Json
+    if ($repB.rollback.state -ne 'failed') { throw "Test 13B rollback state: $($repB.rollback.state)" }
+    if ($repB.rollback.errorCategory -ne 'UNKNOWN') { throw "Test 13B rollback errorCategory: $($repB.rollback.errorCategory)" }
+
+    Write-Output '  [PASS] Test 13 (R1-5): Failed restart/health and safe-stop (13A safe-stop invoked on health fail, 13B secondary failure captured)'
+  }
+
+  Write-Output '=== ALL 13 AUD-04 FAILURE-INJECTION TESTS PASSED ==='
 } finally {
   Remove-Item Function:\Stop-ExactBaoGiangRuntime, Function:\Get-ScheduledTask, Function:\Get-FileHash, Function:\Invoke-ReviewedNginxSyntaxTest -Force -ErrorAction SilentlyContinue
   Remove-Variable aud04StopCalls, aud04StopShouldFail -Scope Global -ErrorAction SilentlyContinue
