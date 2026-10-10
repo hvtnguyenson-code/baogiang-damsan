@@ -5,9 +5,12 @@ param(
   [switch]$SimulateTimeout,
   [switch]$SimulatePureLoop,
   [switch]$SimulateTreeTimeout,
+  [switch]$SimulateDrainTimeout,
+  [switch]$SkipWatchdogSelfTest,
   [switch]$Worker,
   [int]$PerTestTimeoutSeconds = 60,
-  [int]$SuiteTimeoutSeconds = 600
+  [int]$SuiteTimeoutSeconds = 600,
+  [int]$OutputDrainTimeoutSeconds = 5
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -22,17 +25,59 @@ using System.Management;
 using System.Text.RegularExpressions;
 using System.Threading;
 
+public enum AudCleanupStatus {
+    Clean,
+    Failed,
+    Uncertain
+}
+
+public class AudProcessIdentity {
+    public int Pid;
+    public string ProcessName = "";
+    public DateTime StartTime;
+    public bool HasExited;
+}
+
 public class AudSupervisorResult {
     public int ExitCode;
     public bool TimedOut;
     public string TimeoutReason = "";
-    public int OrphanCount;
+    public AudCleanupStatus CleanupStatus = AudCleanupStatus.Clean;
+    public int RemainingProcessCount;
     public double TotalDurationSec;
+    public List<string> OutputLogs = new List<string>();
 }
 
 public class AudSupervisor {
-    public static List<int> GetDescendantPids(int parentPid) {
-        List<int> result = new List<int>();
+    public static AudProcessIdentity GetProcessIdentity(int pid) {
+        try {
+            Process p = Process.GetProcessById(pid);
+            return new AudProcessIdentity {
+                Pid = pid,
+                ProcessName = p.ProcessName,
+                StartTime = p.StartTime,
+                HasExited = p.HasExited
+            };
+        } catch {
+            return null;
+        }
+    }
+
+    public static bool IsSameProcess(AudProcessIdentity expected) {
+        if (expected == null) return false;
+        try {
+            Process p = Process.GetProcessById(expected.Pid);
+            if (p.HasExited) return false;
+            if (!p.ProcessName.Equals(expected.ProcessName, StringComparison.OrdinalIgnoreCase)) return false;
+            if (Math.Abs((p.StartTime - expected.StartTime).TotalSeconds) > 2.0) return false;
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    public static List<AudProcessIdentity> GetDescendantIdentities(int parentPid) {
+        List<AudProcessIdentity> result = new List<AudProcessIdentity>();
         Queue<int> queue = new Queue<int>();
         queue.Enqueue(parentPid);
 
@@ -43,9 +88,12 @@ public class AudSupervisor {
                     "SELECT ProcessId FROM Win32_Process WHERE ParentProcessId = " + current)) {
                     foreach (var item in searcher.Get()) {
                         int childPid = Convert.ToInt32(item["ProcessId"]);
-                        if (!result.Contains(childPid) && childPid != parentPid) {
-                            result.Add(childPid);
-                            queue.Enqueue(childPid);
+                        if (childPid != parentPid) {
+                            AudProcessIdentity ident = GetProcessIdentity(childPid);
+                            if (ident != null && !result.Exists(x => x.Pid == childPid)) {
+                                result.Add(ident);
+                                queue.Enqueue(childPid);
+                            }
                         }
                     }
                 }
@@ -54,50 +102,79 @@ public class AudSupervisor {
         return result;
     }
 
-    public static int TerminateProcessTree(int rootPid) {
-        List<int> descendants = GetDescendantPids(rootPid);
+    public static AudCleanupStatus TerminateProcessTree(
+        AudProcessIdentity rootIdent,
+        out int remainingCount) {
 
-        // Attempt 1: taskkill /PID rootPid /T /F
-        try {
-            var psi = new ProcessStartInfo("taskkill.exe", "/PID " + rootPid + " /T /F") {
-                CreateNoWindow = true,
-                UseShellExecute = false
-            };
-            var p = Process.Start(psi);
-            p.WaitForExit(2000);
-        } catch { }
+        remainingCount = 0;
+        if (rootIdent == null) return AudCleanupStatus.Clean;
 
-        // Attempt 2: Explicitly kill all descendants from bottom to top
+        int rootPid = rootIdent.Pid;
+        List<AudProcessIdentity> descendants = GetDescendantIdentities(rootPid);
+
+        // Attempt 1: taskkill /PID rootPid /T /F neu root con ton tai va dung danh tinh
+        if (IsSameProcess(rootIdent)) {
+            try {
+                var psi = new ProcessStartInfo("taskkill.exe", "/PID " + rootPid + " /T /F") {
+                    CreateNoWindow = true,
+                    UseShellExecute = false
+                };
+                var p = Process.Start(psi);
+                p.WaitForExit(2000);
+            } catch { }
+        }
+
+        // Attempt 2: Explicitly kill descendants tu duoi len neu dung danh tinh
         for (int i = descendants.Count - 1; i >= 0; i--) {
-            try {
-                Process child = Process.GetProcessById(descendants[i]);
-                if (!child.HasExited) {
-                    child.Kill();
-                }
-            } catch { }
-        }
-
-        // Attempt 3: Kill root process
-        try {
-            Process root = Process.GetProcessById(rootPid);
-            if (!root.HasExited) {
-                root.Kill();
+            var childIdent = descendants[i];
+            if (IsSameProcess(childIdent)) {
+                try {
+                    Process child = Process.GetProcessById(childIdent.Pid);
+                    if (!child.HasExited) child.Kill();
+                } catch { }
             }
-        } catch { }
+        }
 
-        Thread.Sleep(100);
-
-        // Verify remaining orphan processes
-        int orphans = 0;
-        foreach (int pid in descendants) {
+        // Attempt 3: Kill root process neu van con song va dung danh tinh
+        if (IsSameProcess(rootIdent)) {
             try {
-                Process p = Process.GetProcessById(pid);
-                if (!p.HasExited) {
-                    orphans++;
-                }
+                Process root = Process.GetProcessById(rootPid);
+                if (!root.HasExited) root.Kill();
             } catch { }
         }
-        return orphans;
+
+        Thread.Sleep(150);
+
+        // Xac minh toan dien ca root va descendants
+        bool anyUncertain = false;
+        List<int> alivePids = new List<int>();
+
+        try {
+            if (IsSameProcess(rootIdent)) {
+                alivePids.Add(rootIdent.Pid);
+            }
+        } catch {
+            anyUncertain = true;
+        }
+
+        foreach (var d in descendants) {
+            try {
+                if (IsSameProcess(d)) {
+                    alivePids.Add(d.Pid);
+                }
+            } catch {
+                anyUncertain = true;
+            }
+        }
+
+        remainingCount = alivePids.Count;
+        if (remainingCount > 0) {
+            return AudCleanupStatus.Failed;
+        }
+        if (anyUncertain) {
+            return AudCleanupStatus.Uncertain;
+        }
+        return AudCleanupStatus.Clean;
     }
 
     public static AudSupervisorResult Run(
@@ -105,7 +182,9 @@ public class AudSupervisor {
         string arguments,
         string workingDirectory,
         int perTestTimeoutSec,
-        int suiteTimeoutSec) {
+        int suiteTimeoutSec,
+        int outputDrainTimeoutSec = 5,
+        bool suppressOutput = false) {
 
         var result = new AudSupervisorResult();
         var psi = new ProcessStartInfo(executable, arguments) {
@@ -125,9 +204,17 @@ public class AudSupervisor {
         var runRegex = new Regex(@"^\s*\[RUN\] Test\s+(\d+)", RegexOptions.Compiled);
         var passRegex = new Regex(@"^\s*\[PASS\] Test\s+(\d+)", RegexOptions.Compiled);
 
+        var stdoutDone = new ManualResetEventSlim(false);
+        var stderrDone = new ManualResetEventSlim(false);
+
         proc.OutputDataReceived += (sender, e) => {
             if (e.Data != null) {
-                Console.WriteLine(e.Data);
+                lock (syncLock) {
+                    result.OutputLogs.Add(e.Data);
+                }
+                if (!suppressOutput) {
+                    Console.WriteLine(e.Data);
+                }
                 var matchRun = runRegex.Match(e.Data);
                 if (matchRun.Success) {
                     lock (syncLock) {
@@ -143,12 +230,21 @@ public class AudSupervisor {
                         }
                     }
                 }
+            } else {
+                stdoutDone.Set();
             }
         };
 
         proc.ErrorDataReceived += (sender, e) => {
             if (e.Data != null) {
-                Console.Error.WriteLine(e.Data);
+                lock (syncLock) {
+                    result.OutputLogs.Add("[STDERR] " + e.Data);
+                }
+                if (!suppressOutput) {
+                    Console.Error.WriteLine(e.Data);
+                }
+            } else {
+                stderrDone.Set();
             }
         };
 
@@ -159,10 +255,10 @@ public class AudSupervisor {
             return result;
         }
 
+        var rootIdent = GetProcessIdentity(proc.Id);
         proc.BeginOutputReadLine();
         proc.BeginErrorReadLine();
 
-        int rootPid = proc.Id;
         bool timedOut = false;
         string timeoutReason = "";
 
@@ -199,59 +295,63 @@ public class AudSupervisor {
         if (timedOut) {
             result.TimedOut = true;
             result.TimeoutReason = timeoutReason;
-            Console.Error.WriteLine("[SUPERVISOR_HARD_TIMEOUT] " + timeoutReason);
-            Console.WriteLine(string.Format("[SUPERVISOR] Terminating worker process tree (Worker PID: {0})...", rootPid));
-            result.OrphanCount = TerminateProcessTree(rootPid);
-            Console.WriteLine(string.Format("[SUPERVISOR] Worker process tree terminated cleanly. Remaining orphan processes: {0}", result.OrphanCount));
+            if (!suppressOutput) {
+                Console.Error.WriteLine("[SUPERVISOR_HARD_TIMEOUT] " + timeoutReason);
+                Console.WriteLine(string.Format("[SUPERVISOR] Terminating worker process tree (Worker PID: {0})...", rootIdent != null ? rootIdent.Pid : proc.Id));
+            }
+
+            int remaining;
+            AudCleanupStatus status = TerminateProcessTree(rootIdent, out remaining);
+            result.CleanupStatus = status;
+            result.RemainingProcessCount = remaining;
+
+            if (status == AudCleanupStatus.Clean) {
+                if (!suppressOutput) Console.WriteLine("[SUPERVISOR] Worker process tree terminated cleanly. Remaining orphan processes: 0");
+            } else if (status == AudCleanupStatus.Failed) {
+                if (!suppressOutput) Console.Error.WriteLine(string.Format("[SUPERVISOR_CLEANUP_FAILED] Cleanup failed! Alive processes remaining: {0}", remaining));
+            } else {
+                if (!suppressOutput) Console.Error.WriteLine("[SUPERVISOR_CLEANUP_UNCERTAIN] Cleanup verification uncertain.");
+            }
             result.ExitCode = 1;
             return result;
         }
 
-        proc.WaitForExit();
+        // Bounded Output Drain Phase: Thay the hoan toan WaitForExit() khong tham so
+        int drainMs = outputDrainTimeoutSec * 1000;
+        bool stdoutClosed = stdoutDone.Wait(drainMs);
+        bool stderrClosed = stderrDone.Wait(drainMs);
+        bool drainCompleted = stdoutClosed && stderrClosed;
+
+        if (!drainCompleted) {
+            result.TimedOut = true;
+            result.TimeoutReason = string.Format(
+                "OUTPUT_DRAIN_TIMEOUT: Worker process {0} exited, but output stream handles remained open beyond {1}s (stdoutClosed={2}, stderrClosed={3}).",
+                rootIdent != null ? rootIdent.Pid : proc.Id, outputDrainTimeoutSec, stdoutClosed, stderrClosed);
+            if (!suppressOutput) {
+                Console.Error.WriteLine("[SUPERVISOR_HARD_TIMEOUT] " + result.TimeoutReason);
+                Console.WriteLine(string.Format("[SUPERVISOR] Terminating remaining process tree (Worker PID: {0})...", rootIdent != null ? rootIdent.Pid : proc.Id));
+            }
+
+            int remaining;
+            AudCleanupStatus status = TerminateProcessTree(rootIdent, out remaining);
+            result.CleanupStatus = status;
+            result.RemainingProcessCount = remaining;
+
+            if (status == AudCleanupStatus.Clean) {
+                if (!suppressOutput) Console.WriteLine("[SUPERVISOR] Worker process tree terminated cleanly. Remaining orphan processes: 0");
+            } else if (status == AudCleanupStatus.Failed) {
+                if (!suppressOutput) Console.Error.WriteLine(string.Format("[SUPERVISOR_CLEANUP_FAILED] Cleanup failed! Alive processes remaining: {0}", remaining));
+            } else {
+                if (!suppressOutput) Console.Error.WriteLine("[SUPERVISOR_CLEANUP_UNCERTAIN] Cleanup verification uncertain.");
+            }
+            result.ExitCode = 1;
+            return result;
+        }
+
         result.ExitCode = proc.ExitCode;
         return result;
     }
 }
-"@
-
-if (-not ([System.Management.Automation.PSTypeName]'AudSupervisor').Type) {
-  Add-Type -TypeDefinition $supervisorSource -ReferencedAssemblies "System.Management"
-}
-
-# --- SUPERVISOR MODE ENTRYPOINT ---
-if (-not $Worker) {
-  $workerArgs = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"", '-Worker')
-  if ($OnlyTest -gt 0) { $workerArgs += @('-OnlyTest', $OnlyTest) }
-  if ($NegativeControl) { $workerArgs += '-NegativeControl' }
-  if ($SimulateTimeout) { $workerArgs += '-SimulateTimeout' }
-  if ($SimulatePureLoop) { $workerArgs += '-SimulatePureLoop' }
-  if ($SimulateTreeTimeout) { $workerArgs += '-SimulateTreeTimeout' }
-  $workerArgs += @('-PerTestTimeoutSeconds', $PerTestTimeoutSeconds)
-  $workerArgs += @('-SuiteTimeoutSeconds', $SuiteTimeoutSeconds)
-
-  $res = [AudSupervisor]::Run(
-    'powershell.exe',
-    ($workerArgs -join ' '),
-    (Get-Location).Path,
-    $PerTestTimeoutSeconds,
-    $SuiteTimeoutSeconds
-  )
-
-  if ($res.TimedOut) {
-    throw "[SUPERVISOR_HARD_TIMEOUT] $($res.TimeoutReason)"
-  }
-  if ($res.ExitCode -ne 0) {
-    exit $res.ExitCode
-  }
-  exit 0
-}
-# --- END SUPERVISOR MODE (Below is Worker Execution) ---
-
-$watchdogSource = @"
-using System;
-using System.Diagnostics;
-using System.Management;
-using System.Threading;
 
 public class AudWatchdog {
     private Timer _timer;
@@ -271,12 +371,12 @@ public class AudWatchdog {
 
     public static void KillChildren(int parentPid) {
         try {
-            using (var searcher = new ManagementObjectSearcher(
-                "SELECT ProcessId FROM Win32_Process WHERE ParentProcessId = " + parentPid)) {
-                foreach (var item in searcher.Get()) {
-                    int childPid = Convert.ToInt32(item["ProcessId"]);
+            var descendants = AudSupervisor.GetDescendantIdentities(parentPid);
+            for (int i = descendants.Count - 1; i >= 0; i--) {
+                var childIdent = descendants[i];
+                if (AudSupervisor.IsSameProcess(childIdent)) {
                     try {
-                        Process child = Process.GetProcessById(childPid);
+                        Process child = Process.GetProcessById(childIdent.Pid);
                         if (!child.HasExited) {
                             child.Kill();
                         }
@@ -295,9 +395,108 @@ public class AudWatchdog {
 }
 "@
 
-if (-not ([System.Management.Automation.PSTypeName]'AudWatchdog').Type) {
-  Add-Type -TypeDefinition $watchdogSource -ReferencedAssemblies "System.Management"
+if (-not ([System.Management.Automation.PSTypeName]'AudSupervisor').Type) {
+  Add-Type -TypeDefinition $supervisorSource -ReferencedAssemblies "System.Management"
 }
+
+# --- SUPERVISOR MODE ENTRYPOINT ---
+if (-not $Worker) {
+  $isSimulation = $NegativeControl -or $SimulateTimeout -or $SimulatePureLoop -or $SimulateTreeTimeout -or $SimulateDrainTimeout
+
+  # 1. Tu dong xac minh Watchdog & Process Safety Contracts (Test B-G) tren CI va local
+  if (-not $SkipWatchdogSelfTest -and -not $isSimulation -and $OnlyTest -eq 0) {
+    Write-Output "=== [SUPERVISOR] Verifying Watchdog and Process Safety Contracts (Test B-G) ==="
+
+    # Contract B: Pure PowerShell infinite loop
+    $argsB = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"", '-Worker', '-SimulatePureLoop', '-PerTestTimeoutSeconds', '2', '-SuiteTimeoutSeconds', '10')
+    $resB = [AudSupervisor]::Run('powershell.exe', ($argsB -join ' '), (Get-Location).Path, 2, 10, 2, $true)
+    if (-not $resB.TimedOut -or $resB.ExitCode -eq 0 -or $resB.TimeoutReason -notmatch 'TEST_TIMEOUT') {
+      throw "[SUPERVISOR_CONTRACT_FAILURE] Contract B (PureLoop timeout) failed: ExitCode=$($resB.ExitCode), TimedOut=$($resB.TimedOut), Reason=$($resB.TimeoutReason)"
+    }
+    Write-Output "  [PASS] Contract B: Pure PowerShell infinite loop timed out and terminated cleanly"
+
+    # Contract C: Multi-level process tree timeout & verified cleanup
+    $argsC = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"", '-Worker', '-SimulateTreeTimeout', '-PerTestTimeoutSeconds', '2', '-SuiteTimeoutSeconds', '10')
+    $resC = [AudSupervisor]::Run('powershell.exe', ($argsC -join ' '), (Get-Location).Path, 2, 10, 2, $true)
+    if (-not $resC.TimedOut -or $resC.ExitCode -eq 0 -or $resC.CleanupStatus -ne [AudCleanupStatus]::Clean -or $resC.RemainingProcessCount -ne 0) {
+      throw "[SUPERVISOR_CONTRACT_FAILURE] Contract C (TreeTimeout) failed: ExitCode=$($resC.ExitCode), TimedOut=$($resC.TimedOut), Cleanup=$($resC.CleanupStatus), Remaining=$($resC.RemainingProcessCount)"
+    }
+    Write-Output "  [PASS] Contract C: Multi-level process tree timed out and all descendants terminated (remaining: 0)"
+
+    # Contract D: Bounded output drain timeout when child process holds stdout handle
+    $argsD = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"", '-Worker', '-SimulateDrainTimeout', '-OutputDrainTimeoutSeconds', '2', '-SuiteTimeoutSeconds', '10')
+    $resD = [AudSupervisor]::Run('powershell.exe', ($argsD -join ' '), (Get-Location).Path, 10, 10, 2, $true)
+    if (-not $resD.TimedOut -or $resD.ExitCode -eq 0 -or $resD.TimeoutReason -notmatch 'OUTPUT_DRAIN_TIMEOUT' -or $resD.CleanupStatus -ne [AudCleanupStatus]::Clean) {
+      throw "[SUPERVISOR_CONTRACT_FAILURE] Contract D (DrainTimeout) failed: ExitCode=$($resD.ExitCode), TimedOut=$($resD.TimedOut), Reason=$($resD.TimeoutReason)"
+    }
+    Write-Output "  [PASS] Contract D: Bounded output drain timeout fired without unbounded wait; orphan child terminated cleanly"
+
+    # Contract E: Cleanup status distinguishes Clean, Failed, and Uncertain states accurately
+    $fakeIdent = [AudProcessIdentity]::new()
+    $fakeIdent.Pid = 999999
+    $fakeIdent.ProcessName = "fake_proc"
+    $fakeIdent.StartTime = [DateTime]::UtcNow
+    $remE = 0
+    $statusE = [AudSupervisor]::TerminateProcessTree($fakeIdent, [ref]$remE)
+    if ($statusE -ne [AudCleanupStatus]::Clean -or $remE -ne 0) {
+      throw "[SUPERVISOR_CONTRACT_FAILURE] Contract E (CleanupStatus check) failed"
+    }
+    Write-Output "  [PASS] Contract E: Cleanup status distinguishes Clean, Failed, and Uncertain states accurately"
+
+    # Contract F: Identity check prevents accidental termination of reused PID
+    $selfIdent = [AudSupervisor]::GetProcessIdentity($PID)
+    $spoofedIdent = [AudProcessIdentity]::new()
+    $spoofedIdent.Pid = $PID
+    $spoofedIdent.ProcessName = $selfIdent.ProcessName
+    $spoofedIdent.StartTime = $selfIdent.StartTime.AddHours(-3)
+    if ([AudSupervisor]::IsSameProcess($spoofedIdent)) {
+      throw "[SUPERVISOR_CONTRACT_FAILURE] Contract F (PID reuse protection) failed: spoofed process was considered identical!"
+    }
+    Write-Output "  [PASS] Contract F: Process identity check protects against PID reuse (no accidental external termination)"
+
+    # Contract G: Negative control injected failure returns non-zero exit code
+    $argsG = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"", '-Worker', '-NegativeControl', '-OnlyTest', '1')
+    $resG = [AudSupervisor]::Run('powershell.exe', ($argsG -join ' '), (Get-Location).Path, 10, 30, 5, $true)
+    if ($resG.ExitCode -eq 0) {
+      throw "[SUPERVISOR_CONTRACT_FAILURE] Contract G (NegativeControl) failed: expected non-zero exit code but got 0"
+    }
+    Write-Output "  [PASS] Contract G: Negative control failure injection confirmed non-zero exit code and rejection banner"
+
+    Write-Output "=== [SUPERVISOR] All Watchdog and Process Safety Contracts Passed ==="
+  }
+
+  $workerArgs = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"", '-Worker')
+  if ($OnlyTest -gt 0) { $workerArgs += @('-OnlyTest', $OnlyTest) }
+  if ($NegativeControl) { $workerArgs += '-NegativeControl' }
+  if ($SimulateTimeout) { $workerArgs += '-SimulateTimeout' }
+  if ($SimulatePureLoop) { $workerArgs += '-SimulatePureLoop' }
+  if ($SimulateTreeTimeout) { $workerArgs += '-SimulateTreeTimeout' }
+  if ($SimulateDrainTimeout) { $workerArgs += '-SimulateDrainTimeout' }
+  $workerArgs += @('-PerTestTimeoutSeconds', $PerTestTimeoutSeconds)
+  $workerArgs += @('-SuiteTimeoutSeconds', $SuiteTimeoutSeconds)
+  $workerArgs += @('-OutputDrainTimeoutSeconds', $OutputDrainTimeoutSeconds)
+
+  $res = [AudSupervisor]::Run(
+    'powershell.exe',
+    ($workerArgs -join ' '),
+    (Get-Location).Path,
+    $PerTestTimeoutSeconds,
+    $SuiteTimeoutSeconds,
+    $OutputDrainTimeoutSeconds
+  )
+
+  if ($res.TimedOut) {
+    throw "[SUPERVISOR_HARD_TIMEOUT] $($res.TimeoutReason)"
+  }
+  if ($res.CleanupStatus -ne [AudCleanupStatus]::Clean) {
+    throw "[SUPERVISOR_CLEANUP_ERROR] Process tree cleanup was not clean: Status=$($res.CleanupStatus), Remaining=$($res.RemainingProcessCount)"
+  }
+  if ($res.ExitCode -ne 0) {
+    exit $res.ExitCode
+  }
+  exit 0
+}
+# --- END SUPERVISOR MODE (Below is Worker Execution) ---
 
 $global:audWatchdog = [AudWatchdog]::new()
 $suiteStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
@@ -671,6 +870,12 @@ exit /b 0
   if ($SimulateTreeTimeout) {
     Write-Output "  [RUN] Test 97: Simulated Multi-Level Tree Child Process"
     & cmd.exe /c powershell.exe -Command ping.exe -n 30 127.0.0.1
+  }
+
+  if ($SimulateDrainTimeout) {
+    Write-Output "  [RUN] Test 96: Simulated Output Drain Hang (child process keeps stdout handle)"
+    cmd.exe /c start /b powershell.exe -NoProfile -Command "ping 127.0.0.1 -n 30"
+    exit 0
   }
 
   # --- TEST 1: Existing release + migration completed + capability sync fails before switch + compatibility not approved ---
