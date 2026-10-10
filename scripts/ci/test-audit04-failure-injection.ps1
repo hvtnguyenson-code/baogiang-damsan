@@ -2603,10 +2603,10 @@ exit /b 0
   # --- TEST 37 (AUD-04-TO-1): Hard timeout watchdog safeguard: hanging child process terminated and timed out cleanly ---
   Invoke-AudTest 37 'Hard timeout watchdog safeguard: hanging child process terminated cleanly without orphan processes' {
     $hangingTool = Join-Path $tempDir 'hanging-tool.cmd'
-    [IO.File]::WriteAllLines($hangingTool, @('@echo off', 'pause'), [Text.ASCIIEncoding]::new())
+    [IO.File]::WriteAllLines($hangingTool, @('@echo off', 'ping -n 10 127.0.0.1 >nul'), [Text.ASCIIEncoding]::new())
 
     $localWatchdog = [AudWatchdog]::new()
-    $localWatchdog.Start($PID, 1500)
+    $localWatchdog.Start($PID, 1000)
     $sw = [Diagnostics.Stopwatch]::StartNew()
 
     try {
@@ -2630,7 +2630,7 @@ exit /b 0
   if ($SimulateTimeout) {
     Write-Output "  [RUN] Test 99 (Simulated Timeout)"
     $hangingTool99 = Join-Path $tempDir 'hanging-tool-99.cmd'
-    [IO.File]::WriteAllLines($hangingTool99, @('@echo off', 'pause'), [Text.ASCIIEncoding]::new())
+    [IO.File]::WriteAllLines($hangingTool99, @('@echo off', 'ping -n 10 127.0.0.1 >nul'), [Text.ASCIIEncoding]::new())
     $global:audWatchdog.Start($PID, 1000)
     try {
       & $hangingTool99
