@@ -1124,4 +1124,223 @@ describe('EffectiveScheduleService (Unit Regression Coverage)', () => {
       }
     });
   });
+
+  describe('AUD-01: Asia/Ho_Chi_Minh civil date resolution for effective schedule context', () => {
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    describe('A. Vietnam midnight boundary transitions', () => {
+      it.each([
+        { instant: '2026-10-09T16:59:59.999Z', expectedCivilDate: '2026-10-09' },
+        { instant: '2026-10-09T17:00:00.000Z', expectedCivilDate: '2026-10-10' },
+        { instant: '2026-10-09T23:59:59.999Z', expectedCivilDate: '2026-10-10' },
+        { instant: '2026-10-10T00:00:00.000Z', expectedCivilDate: '2026-10-10' },
+      ])('resolves $instant to VN civil date $expectedCivilDate', async ({ instant, expectedCivilDate }) => {
+        jest.useFakeTimers();
+        jest.setSystemTime(new Date(instant));
+
+        const { prisma } = createMockPrisma();
+        const service = new EffectiveScheduleService(prisma as never, resolvedOccurrencesService);
+
+        const ctx = await service.getContext({ academicYearId: 'year-1' });
+        expect(ctx.currentCivilDate).toBe(expectedCivilDate);
+      });
+    });
+
+    describe('B. Year boundary transitions', () => {
+      it.each([
+        { instant: '2026-12-31T16:59:59.000Z', expectedCivilDate: '2026-12-31' },
+        { instant: '2026-12-31T17:00:00.000Z', expectedCivilDate: '2027-01-01' },
+      ])('resolves year boundary $instant to VN civil date $expectedCivilDate', async ({ instant, expectedCivilDate }) => {
+        jest.useFakeTimers();
+        jest.setSystemTime(new Date(instant));
+
+        const { prisma } = createMockPrisma();
+        const service = new EffectiveScheduleService(prisma as never, resolvedOccurrencesService);
+
+        const ctx = await service.getContext({ academicYearId: 'year-1' });
+        expect(ctx.currentCivilDate).toBe(expectedCivilDate);
+      });
+    });
+
+    describe('C. Academic year selection when academicYearId is omitted', () => {
+      it('selects the active academic year covering today (VN civil date)', async () => {
+        // At 2026-10-09T17:00:00.000Z -> Vietnam is 2026-10-10 00:00:00
+        jest.useFakeTimers();
+        jest.setSystemTime(new Date('2026-10-09T17:00:00.000Z'));
+
+        const { prisma, tx } = createMockPrisma();
+        tx.academicCalendarVersion.findMany.mockResolvedValueOnce([
+          { id: 'cal-current', academicYearId: 'year-current' },
+        ]);
+        tx.academicCalendarVersion.findFirst.mockResolvedValueOnce({
+          id: 'cal-current',
+          academicYearId: 'year-current',
+          isActive: true,
+          weeks: [],
+        });
+
+        const service = new EffectiveScheduleService(prisma as never, resolvedOccurrencesService);
+        const ctx = await service.getContext({});
+
+        expect(ctx.currentCivilDate).toBe('2026-10-10');
+        expect(ctx.currentAcademicYearId).toBe('year-current');
+        // Verify findMany was queried with todayDate matching 2026-10-10T00:00:00.000Z (UTC parse of VN civil date)
+        expect(tx.academicCalendarVersion.findMany).toHaveBeenCalledWith({
+          where: {
+            isActive: true,
+            startDate: { lte: new Date('2026-10-10T00:00:00.000Z') },
+            endDate: { gte: new Date('2026-10-10T00:00:00.000Z') },
+          },
+          select: { id: true, academicYearId: true },
+        });
+      });
+
+      it('retains null when no active calendar covers VN civil date', async () => {
+        jest.useFakeTimers();
+        jest.setSystemTime(new Date('2026-10-09T17:00:00.000Z'));
+
+        const { prisma, tx } = createMockPrisma();
+        tx.academicCalendarVersion.findMany.mockResolvedValueOnce([]);
+
+        const service = new EffectiveScheduleService(prisma as never, resolvedOccurrencesService);
+        const ctx = await service.getContext({});
+
+        expect(ctx.currentCivilDate).toBe('2026-10-10');
+        expect(ctx.currentAcademicYearId).toBeNull();
+        expect(ctx.currentAcademicWeekId).toBeNull();
+      });
+
+      it('retains null and does not guess when multiple active calendars match (ambiguity rejection)', async () => {
+        jest.useFakeTimers();
+        jest.setSystemTime(new Date('2026-10-09T17:00:00.000Z'));
+
+        const { prisma, tx } = createMockPrisma();
+        tx.academicCalendarVersion.findMany.mockResolvedValueOnce([
+          { id: 'cal-1', academicYearId: 'year-1' },
+          { id: 'cal-2', academicYearId: 'year-2' },
+        ]);
+
+        const service = new EffectiveScheduleService(prisma as never, resolvedOccurrencesService);
+        const ctx = await service.getContext({});
+
+        expect(ctx.currentCivilDate).toBe('2026-10-10');
+        expect(ctx.currentAcademicYearId).toBeNull();
+        expect(ctx.currentAcademicWeekId).toBeNull();
+      });
+    });
+
+    describe('D. Current academic week selection', () => {
+      const calendarWithWeeks = {
+        id: 'cal-1',
+        academicYearId: 'year-1',
+        isActive: true,
+        weeks: [
+          {
+            id: 'week-1',
+            officialWeekNumber: 1,
+            displayLabel: 'Tuần 1',
+            kind: 'OFFICIAL',
+            sortOrder: 1,
+            segments: [
+              {
+                segmentOrder: 1,
+                startDate: new Date('2026-10-05T00:00:00.000Z'),
+                endDate: new Date('2026-10-10T00:00:00.000Z'),
+              },
+            ],
+          },
+          {
+            id: 'week-2',
+            officialWeekNumber: 2,
+            displayLabel: 'Tuần 2',
+            kind: 'OFFICIAL',
+            sortOrder: 2,
+            segments: [
+              {
+                segmentOrder: 1,
+                startDate: new Date('2026-10-12T00:00:00.000Z'),
+                endDate: new Date('2026-10-17T00:00:00.000Z'),
+              },
+            ],
+          },
+        ],
+      };
+
+      it('selects current week when Vietnam civil date falls within a week segment', async () => {
+        // 2026-10-09T17:00:00.000Z -> Vietnam is 2026-10-10 00:00:00 (Saturday, Week 1)
+        jest.useFakeTimers();
+        jest.setSystemTime(new Date('2026-10-09T17:00:00.000Z'));
+
+        const { prisma, tx } = createMockPrisma();
+        tx.academicCalendarVersion.findFirst.mockResolvedValueOnce(calendarWithWeeks);
+
+        const service = new EffectiveScheduleService(prisma as never, resolvedOccurrencesService);
+        const ctx = await service.getContext({ academicYearId: 'year-1' });
+
+        expect(ctx.currentCivilDate).toBe('2026-10-10');
+        expect(ctx.currentAcademicWeekId).toBe('week-1');
+      });
+
+      it('does not select a week when Vietnam civil date falls in a gap between segments', async () => {
+        // 2026-10-11T03:00:00.000Z -> Vietnam is 2026-10-11 10:00:00 (Sunday, gap between week 1 and week 2)
+        jest.useFakeTimers();
+        jest.setSystemTime(new Date('2026-10-11T03:00:00.000Z'));
+
+        const { prisma, tx } = createMockPrisma();
+        tx.academicCalendarVersion.findFirst.mockResolvedValueOnce(calendarWithWeeks);
+
+        const service = new EffectiveScheduleService(prisma as never, resolvedOccurrencesService);
+        const ctx = await service.getContext({ academicYearId: 'year-1' });
+
+        expect(ctx.currentCivilDate).toBe('2026-10-11');
+        expect(ctx.currentAcademicWeekId).toBeNull();
+      });
+
+      it('selects the new week at midnight transition and does not mistakenly pick previous week', async () => {
+        // At 2026-10-11T17:00:00.000Z:
+        // UTC date is 2026-10-11 (Sunday gap)
+        // But VN date is 2026-10-12 00:00:00 (Monday, start of Week 2)
+        // Under buggy UTC formatCivilDate: currentCivilDate would be 2026-10-11 -> weekId null
+        // Under corrected HCM date: currentCivilDate is 2026-10-12 -> weekId is week-2!
+        jest.useFakeTimers();
+        jest.setSystemTime(new Date('2026-10-11T17:00:00.000Z'));
+
+        const { prisma, tx } = createMockPrisma();
+        tx.academicCalendarVersion.findFirst.mockResolvedValueOnce(calendarWithWeeks);
+
+        const service = new EffectiveScheduleService(prisma as never, resolvedOccurrencesService);
+        const ctx = await service.getContext({ academicYearId: 'year-1' });
+
+        expect(ctx.currentCivilDate).toBe('2026-10-12');
+        expect(ctx.currentAcademicWeekId).toBe('week-2');
+      });
+    });
+
+    describe('E. Explicit academicYearId parameter', () => {
+      it('preserves client-provided academicYearId and does not override it with year covering today', async () => {
+        // Today is 2026-10-10
+        jest.useFakeTimers();
+        jest.setSystemTime(new Date('2026-10-09T17:00:00.000Z'));
+
+        const { prisma, tx } = createMockPrisma();
+        // Client explicitly requests 'year-previous'
+        tx.academicCalendarVersion.findFirst.mockResolvedValueOnce({
+          id: 'cal-previous',
+          academicYearId: 'year-previous',
+          isActive: true,
+          weeks: [],
+        });
+
+        const service = new EffectiveScheduleService(prisma as never, resolvedOccurrencesService);
+        const ctx = await service.getContext({ academicYearId: 'year-previous' });
+
+        expect(ctx.currentCivilDate).toBe('2026-10-10');
+        expect(ctx.currentAcademicYearId).toBe('year-previous');
+        // findMany covering today should NOT even be called
+        expect(tx.academicCalendarVersion.findMany).not.toHaveBeenCalled();
+      });
+    });
+  });
 });

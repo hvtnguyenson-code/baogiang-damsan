@@ -18,7 +18,7 @@ import {
   SchoolWideTeacherRow,
   SCHOOL_EFFECTIVE_TEACHING_SCHEDULE_PROFILE,
 } from '@baogiang/contracts';
-import { formatCivilDate, parseCivilDate } from '../common/validation/civil-date';
+import { formatCivilDate, hcmCivilDate, parseCivilDate } from '../common/validation/civil-date';
 import { PrismaService } from '../prisma/prisma.service';
 import { ResolvedLessonOccurrencesService } from '../resolved-occurrences/resolved-occurrences.service';
 import {
@@ -143,7 +143,7 @@ export class EffectiveScheduleService {
     }));
 
     const now = new Date();
-    const todayStr = formatCivilDate(now);
+    const todayStr = hcmCivilDate(now);
     const todayDate = parseCivilDate(todayStr);
 
     let targetYearId = query.academicYearId;
