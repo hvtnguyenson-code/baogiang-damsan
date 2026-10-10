@@ -42,10 +42,7 @@ export class AuthController {
 
     let isAuthFailure = false;
     try {
-      const isClientAborted = Boolean(
-        (request as unknown as { destroyed?: boolean; closed?: boolean }).destroyed ||
-        (request as unknown as { destroyed?: boolean; closed?: boolean }).closed,
-      );
+      const isClientAborted = Boolean(request.socket && request.socket.destroyed && !response.writableEnded);
       if (isClientAborted) {
         throw new BadRequestException('Yêu cầu đã bị hủy bởi máy khách.');
       }
