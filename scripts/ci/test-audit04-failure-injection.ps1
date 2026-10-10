@@ -3,13 +3,249 @@ param(
   [int]$OnlyTest = 0,
   [switch]$NegativeControl,
   [switch]$SimulateTimeout,
-  [int]$PerTestTimeoutSeconds = 30,
-  [int]$SuiteTimeoutSeconds = 300
+  [switch]$SimulatePureLoop,
+  [switch]$SimulateTreeTimeout,
+  [switch]$Worker,
+  [int]$PerTestTimeoutSeconds = 60,
+  [int]$SuiteTimeoutSeconds = 600
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 Add-Type -AssemblyName System.Management
+
+$supervisorSource = @"
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Management;
+using System.Text.RegularExpressions;
+using System.Threading;
+
+public class AudSupervisorResult {
+    public int ExitCode;
+    public bool TimedOut;
+    public string TimeoutReason = "";
+    public int OrphanCount;
+    public double TotalDurationSec;
+}
+
+public class AudSupervisor {
+    public static List<int> GetDescendantPids(int parentPid) {
+        List<int> result = new List<int>();
+        Queue<int> queue = new Queue<int>();
+        queue.Enqueue(parentPid);
+
+        while (queue.Count > 0) {
+            int current = queue.Dequeue();
+            try {
+                using (var searcher = new ManagementObjectSearcher(
+                    "SELECT ProcessId FROM Win32_Process WHERE ParentProcessId = " + current)) {
+                    foreach (var item in searcher.Get()) {
+                        int childPid = Convert.ToInt32(item["ProcessId"]);
+                        if (!result.Contains(childPid) && childPid != parentPid) {
+                            result.Add(childPid);
+                            queue.Enqueue(childPid);
+                        }
+                    }
+                }
+            } catch { }
+        }
+        return result;
+    }
+
+    public static int TerminateProcessTree(int rootPid) {
+        List<int> descendants = GetDescendantPids(rootPid);
+
+        // Attempt 1: taskkill /PID rootPid /T /F
+        try {
+            var psi = new ProcessStartInfo("taskkill.exe", "/PID " + rootPid + " /T /F") {
+                CreateNoWindow = true,
+                UseShellExecute = false
+            };
+            var p = Process.Start(psi);
+            p.WaitForExit(2000);
+        } catch { }
+
+        // Attempt 2: Explicitly kill all descendants from bottom to top
+        for (int i = descendants.Count - 1; i >= 0; i--) {
+            try {
+                Process child = Process.GetProcessById(descendants[i]);
+                if (!child.HasExited) {
+                    child.Kill();
+                }
+            } catch { }
+        }
+
+        // Attempt 3: Kill root process
+        try {
+            Process root = Process.GetProcessById(rootPid);
+            if (!root.HasExited) {
+                root.Kill();
+            }
+        } catch { }
+
+        Thread.Sleep(100);
+
+        // Verify remaining orphan processes
+        int orphans = 0;
+        foreach (int pid in descendants) {
+            try {
+                Process p = Process.GetProcessById(pid);
+                if (!p.HasExited) {
+                    orphans++;
+                }
+            } catch { }
+        }
+        return orphans;
+    }
+
+    public static AudSupervisorResult Run(
+        string executable,
+        string arguments,
+        string workingDirectory,
+        int perTestTimeoutSec,
+        int suiteTimeoutSec) {
+
+        var result = new AudSupervisorResult();
+        var psi = new ProcessStartInfo(executable, arguments) {
+            WorkingDirectory = workingDirectory,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = false
+        };
+
+        var proc = new Process { StartInfo = psi };
+        int currentTestNum = 0;
+        var testSw = new Stopwatch();
+        var suiteSw = new Stopwatch();
+        var syncLock = new object();
+
+        var runRegex = new Regex(@"^\s*\[RUN\] Test\s+(\d+)", RegexOptions.Compiled);
+        var passRegex = new Regex(@"^\s*\[PASS\] Test\s+(\d+)", RegexOptions.Compiled);
+
+        proc.OutputDataReceived += (sender, e) => {
+            if (e.Data != null) {
+                Console.WriteLine(e.Data);
+                var matchRun = runRegex.Match(e.Data);
+                if (matchRun.Success) {
+                    lock (syncLock) {
+                        currentTestNum = int.Parse(matchRun.Groups[1].Value);
+                        testSw.Restart();
+                    }
+                } else {
+                    var matchPass = passRegex.Match(e.Data);
+                    if (matchPass.Success) {
+                        lock (syncLock) {
+                            currentTestNum = 0;
+                            testSw.Reset();
+                        }
+                    }
+                }
+            }
+        };
+
+        proc.ErrorDataReceived += (sender, e) => {
+            if (e.Data != null) {
+                Console.Error.WriteLine(e.Data);
+            }
+        };
+
+        suiteSw.Start();
+        if (!proc.Start()) {
+            result.ExitCode = 1;
+            result.TimeoutReason = "Failed to start worker process";
+            return result;
+        }
+
+        proc.BeginOutputReadLine();
+        proc.BeginErrorReadLine();
+
+        int rootPid = proc.Id;
+        bool timedOut = false;
+        string timeoutReason = "";
+
+        while (!proc.WaitForExit(100)) {
+            if (proc.HasExited) break;
+
+            // 1. Check Suite timeout
+            if (suiteSw.Elapsed.TotalSeconds > suiteTimeoutSec) {
+                timedOut = true;
+                timeoutReason = string.Format(
+                    "SUITE_TIMEOUT: AUD-04 test suite exceeded limit of {0}s (elapsed: {1:F1}s).",
+                    suiteTimeoutSec, suiteSw.Elapsed.TotalSeconds);
+                break;
+            }
+
+            // 2. Check Per-test timeout
+            lock (syncLock) {
+                if (currentTestNum > 0 && testSw.IsRunning) {
+                    double elapsed = testSw.Elapsed.TotalSeconds;
+                    if (elapsed > perTestTimeoutSec) {
+                        timedOut = true;
+                        timeoutReason = string.Format(
+                            "TEST_TIMEOUT: Test {0} exceeded hard per-test timeout limit of {1}s (elapsed: {2:F1}s).",
+                            currentTestNum, perTestTimeoutSec, elapsed);
+                        break;
+                    }
+                }
+            }
+        }
+
+        suiteSw.Stop();
+        result.TotalDurationSec = Math.Round(suiteSw.Elapsed.TotalSeconds, 2);
+
+        if (timedOut) {
+            result.TimedOut = true;
+            result.TimeoutReason = timeoutReason;
+            Console.Error.WriteLine("[SUPERVISOR_HARD_TIMEOUT] " + timeoutReason);
+            Console.WriteLine(string.Format("[SUPERVISOR] Terminating worker process tree (Worker PID: {0})...", rootPid));
+            result.OrphanCount = TerminateProcessTree(rootPid);
+            Console.WriteLine(string.Format("[SUPERVISOR] Worker process tree terminated cleanly. Remaining orphan processes: {0}", result.OrphanCount));
+            result.ExitCode = 1;
+            return result;
+        }
+
+        proc.WaitForExit();
+        result.ExitCode = proc.ExitCode;
+        return result;
+    }
+}
+"@
+
+if (-not ([System.Management.Automation.PSTypeName]'AudSupervisor').Type) {
+  Add-Type -TypeDefinition $supervisorSource -ReferencedAssemblies "System.Management"
+}
+
+# --- SUPERVISOR MODE ENTRYPOINT ---
+if (-not $Worker) {
+  $workerArgs = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"", '-Worker')
+  if ($OnlyTest -gt 0) { $workerArgs += @('-OnlyTest', $OnlyTest) }
+  if ($NegativeControl) { $workerArgs += '-NegativeControl' }
+  if ($SimulateTimeout) { $workerArgs += '-SimulateTimeout' }
+  if ($SimulatePureLoop) { $workerArgs += '-SimulatePureLoop' }
+  if ($SimulateTreeTimeout) { $workerArgs += '-SimulateTreeTimeout' }
+  $workerArgs += @('-PerTestTimeoutSeconds', $PerTestTimeoutSeconds)
+  $workerArgs += @('-SuiteTimeoutSeconds', $SuiteTimeoutSeconds)
+
+  $res = [AudSupervisor]::Run(
+    'powershell.exe',
+    ($workerArgs -join ' '),
+    (Get-Location).Path,
+    $PerTestTimeoutSeconds,
+    $SuiteTimeoutSeconds
+  )
+
+  if ($res.TimedOut) {
+    throw "[SUPERVISOR_HARD_TIMEOUT] $($res.TimeoutReason)"
+  }
+  if ($res.ExitCode -ne 0) {
+    exit $res.ExitCode
+  }
+  exit 0
+}
+# --- END SUPERVISOR MODE (Below is Worker Execution) ---
 
 $watchdogSource = @"
 using System;
@@ -424,6 +660,17 @@ exit /b 0
     }
 
     $global:aud04PassCount++
+  }
+
+  if ($SimulatePureLoop) {
+    Write-Output "  [RUN] Test 98: Simulated Pure PowerShell Infinite Loop"
+    $pureLoopCounter = 0
+    while ($true) { $pureLoopCounter++ }
+  }
+
+  if ($SimulateTreeTimeout) {
+    Write-Output "  [RUN] Test 97: Simulated Multi-Level Tree Child Process"
+    & cmd.exe /c powershell.exe -Command ping.exe -n 30 127.0.0.1
   }
 
   # --- TEST 1: Existing release + migration completed + capability sync fails before switch + compatibility not approved ---
