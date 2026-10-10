@@ -107,6 +107,14 @@ const compatibilityBranch = invoke.slice(compatibilityStart, approvedRollbackSta
 assert.match(compatibilityBranch, /Stop-ExactBaoGiangRuntime/); assert.ok(compatibilityBranch.indexOf('Stop-ExactBaoGiangRuntime') < compatibilityBranch.indexOf('stoppedCompatibilityApprovalRequired'));
 assert.match(compatibilityBranch, /stopFailedCompatibilityApprovalRequired/); assert.match(compatibilityBranch, /Get-SafeErrorCategory/); assert.doesNotMatch(compatibilityBranch, /rollback-release\.ps1/);
 assert.match(invoke, /firstDeployFailedStopped/); assert.match(invoke, /firstDeployStopFailed/); assert.match(invoke, /rollback-release\.ps1/);
+assert.match(invoke, /actualSwitched/); assert.match(invoke, /recoveryNeeded\s*=\s*\(\$quiesceAttempted\s+-or\s+\$quiesced\s+-or\s+\$migrationAttempted\s+-or\s+\$actualSwitched\s+-or\s+\$switched\s+-or\s+\$restartAttempted\)/);
+assert.match(invoke, /Assert-MaintenanceWindowAuthorization/); assert.match(invoke, /Assert-BaoGiangQuiescence/); assert.match(invoke, /quiescedPreMigrationStopped/);
+assert.ok(invoke.indexOf('Assert-MaintenanceWindowAuthorization') < invoke.indexOf('run-migrations.ps1'));
+assert.ok(invoke.indexOf('Stop-ExactBaoGiangRuntime') < invoke.indexOf('run-migrations.ps1'));
+assert.ok(invoke.indexOf('Assert-BaoGiangQuiescence') < invoke.indexOf('run-migrations.ps1'));
+assert.match(migration, /QuiescenceVerified/); assert.match(migration, /Assert-BaoGiangQuiescence/);
+assert.match(common, /MigrationCompleted\s*=\s*\$true/);
+assert.ok(invoke.indexOf('if (-not $actualSwitched)') < invoke.indexOf('& (Join-Path $PSScriptRoot \'rollback-release.ps1\')'));
 assert.match(catalog, /ReleaseSha/); assert.match(catalog, /Assert-ExactReleasePath/); assert.match(catalog, /BackupVerified/); assert.match(catalog, /sync-capability-catalog\.cjs/); assert.match(invoke, /capabilityCatalog/); assert.ok(invoke.indexOf('backup-database.ps1') < invoke.indexOf('run-migrations.ps1')); assert.ok(invoke.indexOf('run-migrations.ps1') < invoke.indexOf('sync-capability-catalog.ps1')); assert.ok(invoke.indexOf('sync-capability-catalog.ps1') < invoke.indexOf('switch-current-release.ps1')); assert.doesNotMatch(invoke, /prisma:seed/);
 assert.match(workflow, /rev-list --first-parent origin\/main/); assert.doesNotMatch(workflow, /merge-base --is-ancestor/); assert.match(workflow, /\.event == "push"/); assert.match(workflow, /\.head_branch == "main"/);
 assert.match(workflow, /Read-only marker handshake before transfer/); assert.match(workflow, /-EncodedCommand/); assert.doesNotMatch(workflow, /powershell\.exe -NoProfile -NonInteractive -Command/); assert.match(workflow, /Retrieve redacted deploy report/); assert.match(workflow, /if-no-files-found: error/); assert.match(workflow, /upload-artifact@v4/); assert.match(workflow, /if: always\(\)/);

@@ -21,6 +21,18 @@ on:
         required: true
         default: false
         type: boolean
+      maintenance_window_start_utc:
+        description: Explicit ISO-8601 UTC start time (YYYY-MM-DDTHH:MM:SSZ) for pre-migration quiescence
+        required: false
+        type: string
+      maintenance_window_end_utc:
+        description: Explicit ISO-8601 UTC end time (YYYY-MM-DDTHH:MM:SSZ) for pre-migration quiescence
+        required: false
+        type: string
+      maintenance_operator:
+        description: Explicit operator identity authorizing the maintenance window and quiescence
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -51,6 +63,9 @@ jobs:
         env:
           CONFIRMATION: ${{ inputs.confirmation }}
           RUN_MIGRATIONS: ${{ inputs.run_migrations }}
+          MAINTENANCE_START_UTC: ${{ inputs.maintenance_window_start_utc }}
+          MAINTENANCE_END_UTC: ${{ inputs.maintenance_window_end_utc }}
+          MAINTENANCE_OPERATOR: ${{ inputs.maintenance_operator }}
           PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
           PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT }}
           PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
@@ -74,6 +89,14 @@ jobs:
           set -euo pipefail
           [[ "$CONFIRMATION" == "DEPLOY-BAOGIANG-PRODUCTION" ]]
           [[ "$RUN_MIGRATIONS" == "true" ]]
+          if [[ "$RUN_MIGRATIONS" == "true" ]]; then
+            [[ -n "${MAINTENANCE_START_UTC:-}" ]] || { echo "Maintenance window start UTC is required when run_migrations is true." >&2; exit 1; }
+            [[ -n "${MAINTENANCE_END_UTC:-}" ]] || { echo "Maintenance window end UTC is required when run_migrations is true." >&2; exit 1; }
+            [[ -n "${MAINTENANCE_OPERATOR:-}" ]] || { echo "Maintenance operator authorization is required when run_migrations is true." >&2; exit 1; }
+            [[ "$MAINTENANCE_START_UTC" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?Z$ ]] || { echo "Invalid maintenance start UTC format." >&2; exit 1; }
+            [[ "$MAINTENANCE_END_UTC" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?Z$ ]] || { echo "Invalid maintenance end UTC format." >&2; exit 1; }
+            [[ "$MAINTENANCE_OPERATOR" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "Invalid maintenance operator format." >&2; exit 1; }
+          fi
           [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]
           git -C control-plane fetch --no-tags origin main "$TARGET_SHA"
           git -C control-plane cat-file -e "$TARGET_SHA^{commit}"
@@ -150,9 +173,13 @@ jobs:
           PROD_PG_RESTORE_EXE: ${{ vars.PROD_PG_RESTORE_EXE }}
           PROD_BASE_URL: ${{ vars.PROD_BASE_URL }}
           ROLLBACK_COMPATIBILITY: ${{ inputs.allow_code_rollback_after_migration }}
+          RUN_MIGRATIONS: ${{ inputs.run_migrations }}
+          MAINTENANCE_START_UTC: ${{ inputs.maintenance_window_start_utc }}
+          MAINTENANCE_END_UTC: ${{ inputs.maintenance_window_end_utc }}
+          MAINTENANCE_OPERATOR: ${{ inputs.maintenance_operator }}
         run: |
           set -euo pipefail
-          node -e 'const fs=require("node:fs"); const e=process.env; const root=e.PROD_BAOGIANG_ROOT; const run=`${e.GITHUB_RUN_ID}-${e.GITHUB_RUN_ATTEMPT}`; const p={ReleaseSha:e.TARGET_SHA,Root:root,TransferDirectoryName:`control-${run}-${e.TARGET_SHA}`,SourceArchiveName:`release-${e.TARGET_SHA}.zip`,ExpectedSha256:e.RELEASE_SHA256,NodeExe:e.PROD_NODE_EXE,NpmExe:e.PROD_NPM_EXE,NpxExe:e.PROD_NPX_EXE,PsqlExe:e.PROD_PSQL_EXE,PgDumpExe:e.PROD_PG_DUMP_EXE,PgRestoreExe:e.PROD_PG_RESTORE_EXE,EnvFile:e.PROD_ENV_FILE,StartupWrapper:e.PROD_STARTUP_WRAPPER,NginxExe:e.PROD_NGINX_EXE,NginxConfig:e.PROD_NGINX_CONFIG,ExpectedBaseUrl:e.PROD_BASE_URL,ServiceKind:e.PROD_SERVICE_KIND,ServiceName:e.PROD_SERVICE_NAME,ExpectedEntryPoint:e.PROD_API_ENTRYPOINT,MigrationRequested:true,ProductionMigrationApproved:true,RollbackCompatibilityApproved:e.ROLLBACK_COMPATIBILITY==="true",ReportFileName:`deploy-report-${e.TARGET_SHA}.json`}; fs.writeFileSync("deploy-parameters.json",JSON.stringify(p,null,2),{encoding:"utf8",mode:0o600});'
+          node -e 'const fs=require("node:fs"); const e=process.env; const root=e.PROD_BAOGIANG_ROOT; const run=`${e.GITHUB_RUN_ID}-${e.GITHUB_RUN_ATTEMPT}`; const mw=(e.RUN_MIGRATIONS==="true" && e.MAINTENANCE_START_UTC && e.MAINTENANCE_END_UTC && e.MAINTENANCE_OPERATOR)?{ReleaseSha:e.TARGET_SHA,StartUtc:e.MAINTENANCE_START_UTC,EndUtc:e.MAINTENANCE_END_UTC,AuthorizedBy:e.MAINTENANCE_OPERATOR,Approved:true}:null; const p={ReleaseSha:e.TARGET_SHA,Root:root,TransferDirectoryName:`control-${run}-${e.TARGET_SHA}`,SourceArchiveName:`release-${e.TARGET_SHA}.zip`,ExpectedSha256:e.RELEASE_SHA256,NodeExe:e.PROD_NODE_EXE,NpmExe:e.PROD_NPM_EXE,NpxExe:e.PROD_NPX_EXE,PsqlExe:e.PROD_PSQL_EXE,PgDumpExe:e.PROD_PG_DUMP_EXE,PgRestoreExe:e.PROD_PG_RESTORE_EXE,EnvFile:e.PROD_ENV_FILE,StartupWrapper:e.PROD_STARTUP_WRAPPER,NginxExe:e.PROD_NGINX_EXE,NginxConfig:e.PROD_NGINX_CONFIG,ExpectedBaseUrl:e.PROD_BASE_URL,ServiceKind:e.PROD_SERVICE_KIND,ServiceName:e.PROD_SERVICE_NAME,ExpectedEntryPoint:e.PROD_API_ENTRYPOINT,MigrationRequested:e.RUN_MIGRATIONS==="true",ProductionMigrationApproved:e.RUN_MIGRATIONS==="true",RollbackCompatibilityApproved:e.ROLLBACK_COMPATIBILITY==="true",PreMigrationRecoveryApproved:false,MaintenanceWindow:mw,ReportFileName:`deploy-report-${e.TARGET_SHA}.json`}; fs.writeFileSync("deploy-parameters.json",JSON.stringify(p,null,2),{encoding:"utf8",mode:0o600});'
 
       - name: Derive active startup-bundle Git evidence
         shell: bash
