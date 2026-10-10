@@ -45,6 +45,10 @@ public class AudProcessIdentity {
     public bool HasExited;
     public bool SimulateUnkillable = false;
     public bool SimulateAccessDenied = false;
+
+    public bool IsSimulated {
+        get { return SimulateUnkillable || SimulateAccessDenied; }
+    }
 }
 
 public class AudSupervisorResult {
@@ -58,6 +62,8 @@ public class AudSupervisorResult {
 }
 
 public class AudSupervisor {
+    public static int RealKillCallCount = 0;
+
     public static AudProcessIdentity GetProcessIdentity(int pid) {
         try {
             Process p = Process.GetProcessById(pid);
@@ -72,10 +78,8 @@ public class AudSupervisor {
         }
     }
 
-    public static AudProcessState CheckProcessState(AudProcessIdentity expected) {
+    public static AudProcessState CheckRealProcessState(AudProcessIdentity expected) {
         if (expected == null) return AudProcessState.Unverifiable;
-        if (expected.SimulateAccessDenied) return AudProcessState.Unverifiable;
-        if (expected.SimulateUnkillable) return AudProcessState.RunningMatched;
 
         Process p = null;
         try {
@@ -108,8 +112,21 @@ public class AudSupervisor {
         }
     }
 
+    public static AudProcessState CheckProcessState(AudProcessIdentity expected) {
+        if (expected == null) return AudProcessState.Unverifiable;
+        if (expected.SimulateAccessDenied) return AudProcessState.Unverifiable;
+        if (expected.SimulateUnkillable) return AudProcessState.RunningMatched;
+        return CheckRealProcessState(expected);
+    }
+
+    public static bool CanKillRealProcess(AudProcessIdentity expected) {
+        if (expected == null || expected.IsSimulated) return false;
+        return CheckRealProcessState(expected) == AudProcessState.RunningMatched;
+    }
+
     public static bool IsSameProcess(AudProcessIdentity expected) {
-        return CheckProcessState(expected) == AudProcessState.RunningMatched;
+        if (expected == null || expected.IsSimulated) return false;
+        return CheckRealProcessState(expected) == AudProcessState.RunningMatched;
     }
 
     public static List<AudProcessIdentity> GetDescendantIdentities(int parentPid, out bool queryFailed) {
@@ -148,6 +165,55 @@ public class AudSupervisor {
         return GetDescendantIdentities(parentPid, out dummy);
     }
 
+    public static AudCleanupStatus EvaluateCleanupStatus(
+        AudProcessState rootState,
+        AudProcessState[] descendantStates,
+        bool queryFailed,
+        out int remainingCount) {
+
+        remainingCount = 0;
+        bool anyUncertain = queryFailed;
+        int aliveCount = 0;
+
+        if (rootState == AudProcessState.RunningMatched) {
+            aliveCount++;
+        } else if (rootState == AudProcessState.Unverifiable) {
+            anyUncertain = true;
+        }
+
+        if (descendantStates != null) {
+            foreach (var state in descendantStates) {
+                if (state == AudProcessState.RunningMatched) {
+                    aliveCount++;
+                } else if (state == AudProcessState.Unverifiable) {
+                    anyUncertain = true;
+                }
+            }
+        }
+
+        remainingCount = aliveCount;
+        if (remainingCount > 0) {
+            return AudCleanupStatus.Failed;
+        }
+        if (anyUncertain) {
+            return AudCleanupStatus.Uncertain;
+        }
+        return AudCleanupStatus.Clean;
+    }
+
+    public static AudCleanupStatus EvaluateCleanupStatus(
+        AudProcessState rootState,
+        List<AudProcessState> descendantStates,
+        bool queryFailed,
+        out int remainingCount) {
+
+        return EvaluateCleanupStatus(
+            rootState,
+            descendantStates != null ? descendantStates.ToArray() : null,
+            queryFailed,
+            out remainingCount);
+    }
+
     public static AudCleanupStatus TerminateProcessTree(
         AudProcessIdentity rootIdent,
         out int remainingCount) {
@@ -160,11 +226,18 @@ public class AudSupervisor {
 
         bool queryFailed = false;
         int rootPid = rootIdent.Pid;
-        List<AudProcessIdentity> descendants = GetDescendantIdentities(rootPid, out queryFailed);
+        List<AudProcessIdentity> descendants = null;
 
-        // Attempt 1: taskkill /PID rootPid /T /F neu root con ton tai va dung danh tinh
-        if (IsSameProcess(rootIdent)) {
+        if (!rootIdent.IsSimulated) {
+            descendants = GetDescendantIdentities(rootPid, out queryFailed);
+        } else {
+            descendants = new List<AudProcessIdentity>();
+        }
+
+        // Attempt 1: taskkill /PID rootPid /T /F chi neu root la real process khop danh tinh
+        if (CanKillRealProcess(rootIdent)) {
             try {
+                RealKillCallCount++;
                 var psi = new ProcessStartInfo("taskkill.exe", "/PID " + rootPid + " /T /F") {
                     CreateNoWindow = true,
                     UseShellExecute = false
@@ -174,55 +247,39 @@ public class AudSupervisor {
             } catch { }
         }
 
-        // Attempt 2: Explicitly kill descendants tu duoi len neu dung danh tinh
+        // Attempt 2: Explicitly kill descendants tu duoi len neu la real process khop danh tinh
         for (int i = descendants.Count - 1; i >= 0; i--) {
             var childIdent = descendants[i];
-            if (IsSameProcess(childIdent)) {
+            if (CanKillRealProcess(childIdent)) {
                 try {
+                    RealKillCallCount++;
                     Process child = Process.GetProcessById(childIdent.Pid);
                     if (!child.HasExited) child.Kill();
                 } catch { }
             }
         }
 
-        // Attempt 3: Kill root process neu van con song va dung danh tinh
-        if (IsSameProcess(rootIdent)) {
+        // Attempt 3: Kill root process neu van con song va la real process khop danh tinh
+        if (CanKillRealProcess(rootIdent)) {
             try {
+                RealKillCallCount++;
                 Process root = Process.GetProcessById(rootPid);
                 if (!root.HasExited) root.Kill();
             } catch { }
         }
 
-        Thread.Sleep(150);
+        if (!rootIdent.IsSimulated) {
+            Thread.Sleep(150);
+        }
 
-        // Xac minh toan dien ca root va descendants
-        bool anyUncertain = queryFailed;
-        List<int> alivePids = new List<int>();
-
+        // Xac minh toan dien ca root va descendants qua pure logic EvaluateCleanupStatus
         AudProcessState rootState = CheckProcessState(rootIdent);
-        if (rootState == AudProcessState.RunningMatched) {
-            alivePids.Add(rootIdent.Pid);
-        } else if (rootState == AudProcessState.Unverifiable) {
-            anyUncertain = true;
-        }
-
+        List<AudProcessState> descendantStates = new List<AudProcessState>();
         foreach (var d in descendants) {
-            AudProcessState childState = CheckProcessState(d);
-            if (childState == AudProcessState.RunningMatched) {
-                alivePids.Add(d.Pid);
-            } else if (childState == AudProcessState.Unverifiable) {
-                anyUncertain = true;
-            }
+            descendantStates.Add(CheckProcessState(d));
         }
 
-        remainingCount = alivePids.Count;
-        if (remainingCount > 0) {
-            return AudCleanupStatus.Failed;
-        }
-        if (anyUncertain) {
-            return AudCleanupStatus.Uncertain;
-        }
-        return AudCleanupStatus.Clean;
+        return EvaluateCleanupStatus(rootState, descendantStates, queryFailed, out remainingCount);
     }
 
     public static AudSupervisorResult Run(
@@ -422,8 +479,9 @@ public class AudWatchdog {
             var descendants = AudSupervisor.GetDescendantIdentities(parentPid);
             for (int i = descendants.Count - 1; i >= 0; i--) {
                 var childIdent = descendants[i];
-                if (AudSupervisor.IsSameProcess(childIdent)) {
+                if (AudSupervisor.CanKillRealProcess(childIdent)) {
                     try {
+                        AudSupervisor.RealKillCallCount++;
                         Process child = Process.GetProcessById(childIdent.Pid);
                         if (!child.HasExited) {
                             child.Kill();
@@ -490,18 +548,72 @@ if (-not $Worker) {
     }
     Write-Output "  [PASS] Contract E1: Verified Clean state on active test child process"
 
-    # E2: Failed state - Unkillable process remains alive after termination attempt
+    # E2: Failed state - Unkillable process remains alive after termination attempt (ZERO real kill calls)
     $unkillableIdent = [AudProcessIdentity]::new()
     $unkillableIdent.Pid = 999991
     $unkillableIdent.ProcessName = "simulated_unkillable"
     $unkillableIdent.StartTime = [DateTime]::UtcNow
     $unkillableIdent.SimulateUnkillable = $true
     $remFailed = 0
+    $killCallsBeforeE2 = [AudSupervisor]::RealKillCallCount
     $statusFailed = [AudSupervisor]::TerminateProcessTree($unkillableIdent, [ref]$remFailed)
     if ($statusFailed -ne [AudCleanupStatus]::Failed -or $remFailed -le 0) {
       throw "[SUPERVISOR_CONTRACT_FAILURE] Contract E2 (Failed state) failed: status=$statusFailed, remaining=$remFailed"
     }
-    Write-Output "  [PASS] Contract E2: Verified Failed state when process remains alive"
+    if ([AudSupervisor]::RealKillCallCount -ne $killCallsBeforeE2) {
+      throw "[SUPERVISOR_CONTRACT_FAILURE] Contract E2 (Safety violation): Real kill was invoked for simulated unkillable process!"
+    }
+    Write-Output "  [PASS] Contract E2: Verified Failed state when process remains alive (zero real kill calls invoked)"
+
+    # E2.1: Safety verification - Colliding PID with live fixture process must not trigger kill
+    $fixtureProc = Start-Process powershell.exe -ArgumentList '-NoProfile', '-NonInteractive', '-Command', 'Start-Sleep -Seconds 30' -PassThru
+    try {
+      $collidingIdent = [AudProcessIdentity]::new()
+      $collidingIdent.Pid = $fixtureProc.Id
+      $collidingIdent.ProcessName = "powershell"
+      $collidingIdent.StartTime = [DateTime]::UtcNow
+      $collidingIdent.SimulateUnkillable = $true
+
+      $killCallsBeforeCol = [AudSupervisor]::RealKillCallCount
+      $remCol = 0
+      $statusCol = [AudSupervisor]::TerminateProcessTree($collidingIdent, [ref]$remCol)
+
+      if ([AudSupervisor]::RealKillCallCount -ne $killCallsBeforeCol) {
+        throw "[SUPERVISOR_CONTRACT_FAILURE] Contract E2.1 (Safety violation): Real kill was called on simulated process with colliding PID!"
+      }
+      $fixtureProc.Refresh()
+      if ($fixtureProc.HasExited) {
+        throw "[SUPERVISOR_CONTRACT_FAILURE] Contract E2.1 (Safety violation): Live fixture process was killed by simulated identity with matching PID!"
+      }
+      if ($statusCol -ne [AudCleanupStatus]::Failed -or $remCol -le 0) {
+        throw "[SUPERVISOR_CONTRACT_FAILURE] Contract E2.1: Expected Failed status for simulated unkillable collision identity"
+      }
+      Write-Output "  [PASS] Contract E2.1: Live fixture process with matching PID was safely preserved (not killed)"
+    } finally {
+      try {
+        if (-not $fixtureProc.HasExited) {
+          $realFixIdent = [AudSupervisor]::GetProcessIdentity($fixtureProc.Id)
+          $null = [AudSupervisor]::TerminateProcessTree($realFixIdent, [ref]$remNull)
+        }
+        $fixtureProc.Dispose()
+      } catch { }
+    }
+
+    # E2.2: Pure logic verification for cleanup evaluation
+    $remPure = 0
+    $statusPureClean = [AudSupervisor]::EvaluateCleanupStatus([AudProcessState]::Exited, [AudProcessState[]]@([AudProcessState]::Exited), $false, [ref]$remPure)
+    if ($statusPureClean -ne [AudCleanupStatus]::Clean -or $remPure -ne 0) {
+      throw "[SUPERVISOR_CONTRACT_FAILURE] Contract E2.2: Pure logic Clean evaluation failed"
+    }
+    $statusPureFailed = [AudSupervisor]::EvaluateCleanupStatus([AudProcessState]::RunningMatched, [AudProcessState[]]@([AudProcessState]::Exited), $false, [ref]$remPure)
+    if ($statusPureFailed -ne [AudCleanupStatus]::Failed -or $remPure -ne 1) {
+      throw "[SUPERVISOR_CONTRACT_FAILURE] Contract E2.2: Pure logic Failed evaluation failed"
+    }
+    $statusPureUncertain = [AudSupervisor]::EvaluateCleanupStatus([AudProcessState]::Unverifiable, [AudProcessState[]]@([AudProcessState]::Exited), $false, [ref]$remPure)
+    if ($statusPureUncertain -ne [AudCleanupStatus]::Uncertain) {
+      throw "[SUPERVISOR_CONTRACT_FAILURE] Contract E2.2: Pure logic Uncertain evaluation failed"
+    }
+    Write-Output "  [PASS] Contract E2.2: Pure logic cleanup status evaluation verified for Clean, Failed, and Uncertain states"
 
     # E3: Uncertain state - Null process identity cannot be resolved
     $remNull = 0
@@ -554,7 +666,15 @@ if (-not $Worker) {
     if ($stateDenied -ne [AudProcessState]::Unverifiable) {
       throw "[SUPERVISOR_CONTRACT_FAILURE] Contract F3 CheckProcessState for access denied expected Unverifiable but got $stateDenied"
     }
-    Write-Output "  [PASS] Contract F: Process identity check protects against PID reuse and safely flags unidentifiable processes"
+
+    # F4: Simulated identity is never considered a matching live process for real OS operations
+    if ([AudSupervisor]::IsSameProcess($unkillableIdent)) {
+      throw "[SUPERVISOR_CONTRACT_FAILURE] Contract F4: Simulated unkillable identity was incorrectly considered identical to live process!"
+    }
+    if ([AudSupervisor]::CanKillRealProcess($unkillableIdent)) {
+      throw "[SUPERVISOR_CONTRACT_FAILURE] Contract F4: Simulated unkillable identity was allowed for real kill!"
+    }
+    Write-Output "  [PASS] Contract F: Process identity check protects against PID reuse, simulated identities, and safely flags unidentifiable processes"
 
     # Contract G: Negative control injected failure returns non-zero exit code
     $argsG = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"", '-Worker', '-NegativeControl', '-OnlyTest', '1')
