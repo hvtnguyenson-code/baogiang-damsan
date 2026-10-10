@@ -13,7 +13,8 @@ param(
   [Parameter(Mandatory = $true)][ValidatePattern('^https://baogiang\.dtnt-damsan\.edu\.vn$')][string]$ExpectedBaseUrl,
   [Parameter(Mandatory = $true)][switch]$AllowProductionMigration,
   [Parameter(Mandatory = $true)][switch]$BackupVerified,
-  [switch]$QuiescenceVerified
+  [switch]$QuiescenceVerified,
+  [Parameter(Mandatory = $false)]$MaintenanceWindow
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -21,6 +22,8 @@ $ErrorActionPreference = 'Stop'
 if (-not $AllowProductionMigration) { throw 'Production migration is disabled unless explicitly authorized.' }
 if (-not $BackupVerified) { throw 'A verified database backup is required before migration.' }
 if (-not $QuiescenceVerified) { throw 'Pre-migration quiescence verification is required before migration.' }
+if ($null -eq $MaintenanceWindow) { throw 'MAINTENANCE_WINDOW_MISSING: Maintenance window authorization is required before database migration.' }
+Assert-MaintenanceWindowAuthorization -MaintenanceWindow $MaintenanceWindow -ExpectedReleaseSha $ReleaseSha | Out-Null
 $identity = Read-DeploymentIdentity -Root $Root -ServiceKind $ServiceKind -ServiceName $ServiceName -EnvFile $EnvFile -StartupWrapper $StartupWrapper -ExpectedEntryPoint $ExpectedEntryPoint
 Assert-BaoGiangQuiescence -Marker $identity.marker -ServiceKind $ServiceKind -ServiceName $ServiceName | Out-Null
 $release = Assert-ExactReleasePath -Root $identity.canonicalRoot -ReleaseSha $ReleaseSha -ReleasePath $ReleasePath
@@ -53,6 +56,12 @@ function Get-MigrationState([string]$Phase) {
     if ($joinedStatus -match '(?i)not yet applied|pending|not in sync|following migration') { $statusClass = 'pending' } else { throw 'Prisma migrate status failed for a reason other than expected pending migrations.' }
   }
   Write-Output ([ordered]@{ precheck = $statusClass; migrationState = $before } | ConvertTo-Json -Compress)
+  if (-not $AllowProductionMigration) { throw 'Production migration is disabled unless explicitly authorized.' }
+  if (-not $BackupVerified) { throw 'A verified database backup is required before migration.' }
+  if (-not $QuiescenceVerified) { throw 'Pre-migration quiescence verification is required before migration.' }
+  if ($null -eq $MaintenanceWindow) { throw 'MAINTENANCE_WINDOW_MISSING: Maintenance window authorization is required before database migration.' }
+  Assert-MaintenanceWindowAuthorization -MaintenanceWindow $MaintenanceWindow -ExpectedReleaseSha $ReleaseSha | Out-Null
+  Assert-BaoGiangQuiescence -Marker $identity.marker -ServiceKind $ServiceKind -ServiceName $ServiceName | Out-Null
   Invoke-NativeChecked $NpxExe @('prisma','migrate','deploy','--schema',$schema) 'prisma migrate deploy' | Out-Null
   $after = Get-MigrationState 'after-deploy'
   Invoke-NativeChecked $NpxExe @('prisma','migrate','status','--schema',$schema) 'prisma migrate status after deploy' | Out-Null

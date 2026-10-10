@@ -27,7 +27,7 @@ $incoming = Assert-ExactChildPath $canonicalRoot "incoming\$($p.SourceArchiveNam
 if (Test-Path -LiteralPath $incoming) { throw 'Incoming release archive already exists; operator must inspect it.' }
 $reportHome = Join-Path $transfer $p.ReportFileName
 $reportLogs = Join-Path $canonicalRoot "logs\$($p.ReportFileName)"
-$report = [ordered]@{ schemaVersion = 1; generatedAtUtc = [DateTime]::UtcNow.ToString('o'); releaseSha = $p.ReleaseSha; previousRelease = $null; backup = $null; maintenanceWindow = $null; quiescence = $null; migration = [ordered]@{ state = 'notStarted' }; capabilityCatalog = [ordered]@{ state = 'notStarted' }; switch = $null; restart = $null; health = $null; rollback = [ordered]@{ state = 'notNeeded' }; errorCategory = $null }
+$report = [ordered]@{ schemaVersion = 1; generatedAtUtc = [DateTime]::UtcNow.ToString('o'); releaseSha = $p.ReleaseSha; overallState = 'inProgress'; previousRelease = $null; backup = $null; maintenanceWindow = $null; quiescence = $null; migration = [ordered]@{ state = 'notStarted' }; capabilityCatalog = [ordered]@{ state = 'notStarted' }; switch = $null; restart = $null; health = $null; rollback = [ordered]@{ state = 'notNeeded' }; errorCategory = $null }
 $quiesceAttempted = $false; $quiesced = $false; $quiescenceVerified = $false; $migrationAttempted = $false; $migrationCompleted = $false; $switched = $false; $restartAttempted = $false
 try {
   Read-ValidatedProductionEnvironment -EnvFile $p.EnvFile -ExpectedBaseUrl $p.ExpectedBaseUrl | Out-Null
@@ -49,9 +49,16 @@ try {
     Assert-MaintenanceWindowAuthorization -MaintenanceWindow $p.MaintenanceWindow -ExpectedReleaseSha $p.ReleaseSha | Out-Null
     Assert-BaoGiangQuiescence -Marker $marker -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName | Out-Null
     $quiescenceVerified = $true
+    if ($report.maintenanceWindow -is [System.Collections.IDictionary]) {
+      $report.maintenanceWindow['quiescenceVerified'] = $true
+      $report.maintenanceWindow['quiescedUtc'] = [DateTime]::UtcNow.ToString('o')
+    } elseif ($null -ne $report.maintenanceWindow) {
+      $report.maintenanceWindow | Add-Member -NotePropertyName quiescenceVerified -NotePropertyValue $true -Force
+      $report.maintenanceWindow | Add-Member -NotePropertyName quiescedUtc -NotePropertyValue ([DateTime]::UtcNow.ToString('o')) -Force
+    }
 
     $migrationAttempted = $true; $report.migration.state = 'attemptedUnknown'
-    $migrationJson = & (Join-Path $PSScriptRoot 'run-migrations.ps1') -ReleaseSha $p.ReleaseSha -ReleasePath (Join-Path $canonicalRoot "releases\$($p.ReleaseSha)") -NpxExe $p.NpxExe -PsqlExe $p.PsqlExe -Root $canonicalRoot -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl -AllowProductionMigration:$p.ProductionMigrationApproved -BackupVerified -QuiescenceVerified:$quiescenceVerified | Select-Object -Last 1
+    $migrationJson = & (Join-Path $PSScriptRoot 'run-migrations.ps1') -ReleaseSha $p.ReleaseSha -ReleasePath (Join-Path $canonicalRoot "releases\$($p.ReleaseSha)") -NpxExe $p.NpxExe -PsqlExe $p.PsqlExe -Root $canonicalRoot -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl -AllowProductionMigration:$p.ProductionMigrationApproved -BackupVerified -QuiescenceVerified:$quiescenceVerified -MaintenanceWindow $p.MaintenanceWindow | Select-Object -Last 1
     $migrationResult = $migrationJson | ConvertFrom-Json
     if (-not $migrationResult.PSObject.Properties.Name.Contains('state') -or $migrationResult.state -ne 'completed') { throw 'Migration completion summary is missing or not completed.' }
     $report.migration = $migrationResult
@@ -69,11 +76,13 @@ try {
   $report.restart = $restartJson | ConvertFrom-Json
   $healthJson = & (Join-Path $PSScriptRoot 'test-production-health.ps1') -BaseUrl $p.ExpectedBaseUrl -ExpectedApiPort 3100 | Select-Object -Last 1
   $report.health = $healthJson | ConvertFrom-Json
+  $report.overallState = 'succeeded'
   Write-RedactedReport -Path $reportLogs -Data $report
   Copy-Item -LiteralPath $reportLogs -Destination $reportHome
   Write-Output ($report | ConvertTo-Json -Depth 12)
 } catch {
   $original = $_
+  $report.overallState = 'failed'
   $report.errorCategory = Get-SafeErrorCategory $original
   if ($migrationAttempted -and -not $migrationCompleted) { $report.migration.state = 'attemptedUnknown' }
   $currentPath = Join-Path $canonicalRoot 'current'
