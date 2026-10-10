@@ -31,11 +31,20 @@ public enum AudCleanupStatus {
     Uncertain
 }
 
+public enum AudProcessState {
+    Exited,
+    RunningMatched,
+    IdentityMismatch,
+    Unverifiable
+}
+
 public class AudProcessIdentity {
     public int Pid;
     public string ProcessName = "";
     public DateTime StartTime;
     public bool HasExited;
+    public bool SimulateUnkillable = false;
+    public bool SimulateAccessDenied = false;
 }
 
 public class AudSupervisorResult {
@@ -63,20 +72,48 @@ public class AudSupervisor {
         }
     }
 
-    public static bool IsSameProcess(AudProcessIdentity expected) {
-        if (expected == null) return false;
+    public static AudProcessState CheckProcessState(AudProcessIdentity expected) {
+        if (expected == null) return AudProcessState.Unverifiable;
+        if (expected.SimulateAccessDenied) return AudProcessState.Unverifiable;
+        if (expected.SimulateUnkillable) return AudProcessState.RunningMatched;
+
+        Process p = null;
         try {
-            Process p = Process.GetProcessById(expected.Pid);
-            if (p.HasExited) return false;
-            if (!p.ProcessName.Equals(expected.ProcessName, StringComparison.OrdinalIgnoreCase)) return false;
-            if (Math.Abs((p.StartTime - expected.StartTime).TotalSeconds) > 2.0) return false;
-            return true;
+            p = Process.GetProcessById(expected.Pid);
+        } catch (ArgumentException) {
+            return AudProcessState.Exited;
         } catch {
-            return false;
+            return AudProcessState.Unverifiable;
+        }
+
+        try {
+            if (p.HasExited) {
+                return AudProcessState.Exited;
+            }
+            if (!p.ProcessName.Equals(expected.ProcessName, StringComparison.OrdinalIgnoreCase)) {
+                return AudProcessState.IdentityMismatch;
+            }
+            if (Math.Abs((p.StartTime - expected.StartTime).TotalSeconds) > 2.0) {
+                return AudProcessState.IdentityMismatch;
+            }
+            return AudProcessState.RunningMatched;
+        } catch (InvalidOperationException) {
+            return AudProcessState.Exited;
+        } catch (System.ComponentModel.Win32Exception) {
+            return AudProcessState.Unverifiable;
+        } catch {
+            return AudProcessState.Unverifiable;
+        } finally {
+            if (p != null) p.Dispose();
         }
     }
 
-    public static List<AudProcessIdentity> GetDescendantIdentities(int parentPid) {
+    public static bool IsSameProcess(AudProcessIdentity expected) {
+        return CheckProcessState(expected) == AudProcessState.RunningMatched;
+    }
+
+    public static List<AudProcessIdentity> GetDescendantIdentities(int parentPid, out bool queryFailed) {
+        queryFailed = false;
         List<AudProcessIdentity> result = new List<AudProcessIdentity>();
         Queue<int> queue = new Queue<int>();
         queue.Enqueue(parentPid);
@@ -93,13 +130,22 @@ public class AudSupervisor {
                             if (ident != null && !result.Exists(x => x.Pid == childPid)) {
                                 result.Add(ident);
                                 queue.Enqueue(childPid);
+                            } else if (ident == null) {
+                                queryFailed = true;
                             }
                         }
                     }
                 }
-            } catch { }
+            } catch {
+                queryFailed = true;
+            }
         }
         return result;
+    }
+
+    public static List<AudProcessIdentity> GetDescendantIdentities(int parentPid) {
+        bool dummy;
+        return GetDescendantIdentities(parentPid, out dummy);
     }
 
     public static AudCleanupStatus TerminateProcessTree(
@@ -107,10 +153,14 @@ public class AudSupervisor {
         out int remainingCount) {
 
         remainingCount = 0;
-        if (rootIdent == null) return AudCleanupStatus.Clean;
+        if (rootIdent == null) {
+            remainingCount = 1;
+            return AudCleanupStatus.Uncertain;
+        }
 
+        bool queryFailed = false;
         int rootPid = rootIdent.Pid;
-        List<AudProcessIdentity> descendants = GetDescendantIdentities(rootPid);
+        List<AudProcessIdentity> descendants = GetDescendantIdentities(rootPid, out queryFailed);
 
         // Attempt 1: taskkill /PID rootPid /T /F neu root con ton tai va dung danh tinh
         if (IsSameProcess(rootIdent)) {
@@ -146,23 +196,21 @@ public class AudSupervisor {
         Thread.Sleep(150);
 
         // Xac minh toan dien ca root va descendants
-        bool anyUncertain = false;
+        bool anyUncertain = queryFailed;
         List<int> alivePids = new List<int>();
 
-        try {
-            if (IsSameProcess(rootIdent)) {
-                alivePids.Add(rootIdent.Pid);
-            }
-        } catch {
+        AudProcessState rootState = CheckProcessState(rootIdent);
+        if (rootState == AudProcessState.RunningMatched) {
+            alivePids.Add(rootIdent.Pid);
+        } else if (rootState == AudProcessState.Unverifiable) {
             anyUncertain = true;
         }
 
         foreach (var d in descendants) {
-            try {
-                if (IsSameProcess(d)) {
-                    alivePids.Add(d.Pid);
-                }
-            } catch {
+            AudProcessState childState = CheckProcessState(d);
+            if (childState == AudProcessState.RunningMatched) {
+                alivePids.Add(d.Pid);
+            } else if (childState == AudProcessState.Unverifiable) {
                 anyUncertain = true;
             }
         }
@@ -432,27 +480,81 @@ if (-not $Worker) {
     Write-Output "  [PASS] Contract D: Bounded output drain timeout fired without unbounded wait; orphan child terminated cleanly"
 
     # Contract E: Cleanup status distinguishes Clean, Failed, and Uncertain states accurately
-    $fakeIdent = [AudProcessIdentity]::new()
-    $fakeIdent.Pid = 999999
-    $fakeIdent.ProcessName = "fake_proc"
-    $fakeIdent.StartTime = [DateTime]::UtcNow
-    $remE = 0
-    $statusE = [AudSupervisor]::TerminateProcessTree($fakeIdent, [ref]$remE)
-    if ($statusE -ne [AudCleanupStatus]::Clean -or $remE -ne 0) {
-      throw "[SUPERVISOR_CONTRACT_FAILURE] Contract E (CleanupStatus check) failed"
+    # E1: Clean state - Active test child process successfully terminated and cleaned
+    $childProcE = Start-Process powershell.exe -ArgumentList '-NoProfile', '-NonInteractive', '-Command', 'Start-Sleep -Seconds 10' -PassThru
+    $childIdentE = [AudSupervisor]::GetProcessIdentity($childProcE.Id)
+    $remClean = 0
+    $statusClean = [AudSupervisor]::TerminateProcessTree($childIdentE, [ref]$remClean)
+    if ($statusClean -ne [AudCleanupStatus]::Clean -or $remClean -ne 0) {
+      throw "[SUPERVISOR_CONTRACT_FAILURE] Contract E1 (Clean state) failed: status=$statusClean, remaining=$remClean"
     }
-    Write-Output "  [PASS] Contract E: Cleanup status distinguishes Clean, Failed, and Uncertain states accurately"
+    Write-Output "  [PASS] Contract E1: Verified Clean state on active test child process"
 
-    # Contract F: Identity check prevents accidental termination of reused PID
+    # E2: Failed state - Unkillable process remains alive after termination attempt
+    $unkillableIdent = [AudProcessIdentity]::new()
+    $unkillableIdent.Pid = 999991
+    $unkillableIdent.ProcessName = "simulated_unkillable"
+    $unkillableIdent.StartTime = [DateTime]::UtcNow
+    $unkillableIdent.SimulateUnkillable = $true
+    $remFailed = 0
+    $statusFailed = [AudSupervisor]::TerminateProcessTree($unkillableIdent, [ref]$remFailed)
+    if ($statusFailed -ne [AudCleanupStatus]::Failed -or $remFailed -le 0) {
+      throw "[SUPERVISOR_CONTRACT_FAILURE] Contract E2 (Failed state) failed: status=$statusFailed, remaining=$remFailed"
+    }
+    Write-Output "  [PASS] Contract E2: Verified Failed state when process remains alive"
+
+    # E3: Uncertain state - Null process identity cannot be resolved
+    $remNull = 0
+    $statusNull = [AudSupervisor]::TerminateProcessTree($null, [ref]$remNull)
+    if ($statusNull -ne [AudCleanupStatus]::Uncertain -or $remNull -le 0) {
+      throw "[SUPERVISOR_CONTRACT_FAILURE] Contract E3 (Uncertain state - null identity) failed: status=$statusNull, remaining=$remNull"
+    }
+    Write-Output "  [PASS] Contract E3: Verified Uncertain state when process identity is null"
+
+    # E4: Uncertain state - Unverifiable / access error during identity inspection
+    $unverifiableIdent = [AudProcessIdentity]::new()
+    $unverifiableIdent.Pid = 999992
+    $unverifiableIdent.ProcessName = "simulated_access_denied"
+    $unverifiableIdent.StartTime = [DateTime]::UtcNow
+    $unverifiableIdent.SimulateAccessDenied = $true
+    $remUncertain = 0
+    $statusUncertain = [AudSupervisor]::TerminateProcessTree($unverifiableIdent, [ref]$remUncertain)
+    if ($statusUncertain -ne [AudCleanupStatus]::Uncertain) {
+      throw "[SUPERVISOR_CONTRACT_FAILURE] Contract E4 (Uncertain state - access error) failed: status=$statusUncertain, remaining=$remUncertain"
+    }
+    Write-Output "  [PASS] Contract E4: Verified Uncertain state on unreadable/unverifiable identity"
+
+    # Contract F: Identity check protects against PID reuse and handles unidentifiable processes
     $selfIdent = [AudSupervisor]::GetProcessIdentity($PID)
     $spoofedIdent = [AudProcessIdentity]::new()
     $spoofedIdent.Pid = $PID
     $spoofedIdent.ProcessName = $selfIdent.ProcessName
     $spoofedIdent.StartTime = $selfIdent.StartTime.AddHours(-3)
     if ([AudSupervisor]::IsSameProcess($spoofedIdent)) {
-      throw "[SUPERVISOR_CONTRACT_FAILURE] Contract F (PID reuse protection) failed: spoofed process was considered identical!"
+      throw "[SUPERVISOR_CONTRACT_FAILURE] Contract F1 (PID reuse protection - StartTime) failed: spoofed process was considered identical!"
     }
-    Write-Output "  [PASS] Contract F: Process identity check protects against PID reuse (no accidental external termination)"
+
+    $wrongNameIdent = [AudProcessIdentity]::new()
+    $wrongNameIdent.Pid = $PID
+    $wrongNameIdent.ProcessName = "unrelated_system_service"
+    $wrongNameIdent.StartTime = $selfIdent.StartTime
+    if ([AudSupervisor]::IsSameProcess($wrongNameIdent)) {
+      throw "[SUPERVISOR_CONTRACT_FAILURE] Contract F2 (PID reuse protection - ProcessName) failed!"
+    }
+
+    if ([AudSupervisor]::IsSameProcess($null)) {
+      throw "[SUPERVISOR_CONTRACT_FAILURE] Contract F3 (Null identity protection) failed!"
+    }
+    $stateNull = [AudSupervisor]::CheckProcessState($null)
+    if ($stateNull -ne [AudProcessState]::Unverifiable) {
+      throw "[SUPERVISOR_CONTRACT_FAILURE] Contract F3 CheckProcessState for null expected Unverifiable but got $stateNull"
+    }
+
+    $stateDenied = [AudSupervisor]::CheckProcessState($unverifiableIdent)
+    if ($stateDenied -ne [AudProcessState]::Unverifiable) {
+      throw "[SUPERVISOR_CONTRACT_FAILURE] Contract F3 CheckProcessState for access denied expected Unverifiable but got $stateDenied"
+    }
+    Write-Output "  [PASS] Contract F: Process identity check protects against PID reuse and safely flags unidentifiable processes"
 
     # Contract G: Negative control injected failure returns non-zero exit code
     $argsG = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"", '-Worker', '-NegativeControl', '-OnlyTest', '1')
