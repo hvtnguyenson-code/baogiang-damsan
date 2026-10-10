@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, HttpCode, Post, Req, Res, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { AuthMeResponse, AuthMutationResponse, LoginResponse } from '@baogiang/contracts';
 import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
@@ -24,10 +24,42 @@ export class AuthController {
   @Post('login')
   @HttpCode(200)
   async login(@Body() dto: LoginDto, @Req() request: Request, @Res({ passthrough: true }) response: Response): Promise<LoginResponse> {
-    this.rateLimit.consume(requestMeta(request).ipAddress ?? 'unknown');
-    const result = await this.auth.login(dto.username, dto.password, requestMeta(request));
-    response.cookie(this.config.auth.cookieName, result.rawToken, cookieOptions(this.config, result.expiresAt));
-    return { user: { ...result.user, status: 'ACTIVE' }, expiresAt: result.expiresAt.toISOString() };
+    const meta = requestMeta(request);
+    const ipAddress = meta.ipAddress;
+    if (!ipAddress) {
+      throw new BadRequestException('Địa chỉ IP máy khách không hợp lệ.');
+    }
+    const normalizedUsername = dto.username?.trim().toLowerCase() ?? '';
+    if (!normalizedUsername) {
+      throw new BadRequestException('Tên đăng nhập không được để trống.');
+    }
+
+    const lease = await this.rateLimit.acquireSlot({
+      ipAddress,
+      username: normalizedUsername,
+      request,
+    });
+
+    let isAuthFailure = false;
+    try {
+      const isClientAborted = Boolean(
+        (request as unknown as { destroyed?: boolean; closed?: boolean }).destroyed ||
+        (request as unknown as { destroyed?: boolean; closed?: boolean }).closed,
+      );
+      if (isClientAborted) {
+        throw new BadRequestException('Yêu cầu đã bị hủy bởi máy khách.');
+      }
+      const result = await this.auth.login(normalizedUsername, dto.password, meta);
+      response.cookie(this.config.auth.cookieName, result.rawToken, cookieOptions(this.config, result.expiresAt));
+      return { user: { ...result.user, status: 'ACTIVE' }, expiresAt: result.expiresAt.toISOString() };
+    } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        isAuthFailure = true;
+      }
+      throw error;
+    } finally {
+      lease.release({ isFailure: isAuthFailure });
+    }
   }
 
   @Get('me')

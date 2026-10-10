@@ -43,7 +43,8 @@ describe('auth HTTP boundary', () => {
         user: { id: 'user-id', username: 'user', displayName: 'User', mustChangePassword: false },
       }),
     };
-    const rateLimit = { consume: jest.fn() };
+    const leaseRelease = jest.fn();
+    const rateLimit = { acquireSlot: jest.fn().mockResolvedValue({ release: leaseRelease }) };
     const controller = new AuthController(auth as never, rateLimit as never, { listEffectiveCapabilities: jest.fn() } as never, config);
     const httpRequest = {
       ip: '::ffff:127.0.0.1',
@@ -51,12 +52,31 @@ describe('auth HTTP boundary', () => {
     } as unknown as AuthenticatedRequest;
     const response = { cookie: jest.fn() } as unknown as Response;
     await controller.login({ username: 'user', password: 'Password9' }, httpRequest, response);
-    expect(rateLimit.consume).toHaveBeenCalledWith('127.0.0.1');
+    expect(rateLimit.acquireSlot).toHaveBeenCalledWith(
+      expect.objectContaining({ ipAddress: '127.0.0.1', username: 'user' }),
+    );
+    expect(leaseRelease).toHaveBeenCalledWith({ isFailure: false });
     expect(auth.login).toHaveBeenCalledWith(
       'user',
       'Password9',
       expect.objectContaining({ ipAddress: '127.0.0.1' }),
     );
+  });
+
+  it('rejects login with 400 Bad Request when client IP cannot be resolved', async () => {
+    const auth = { login: jest.fn() };
+    const rateLimit = { acquireSlot: jest.fn() };
+    const controller = new AuthController(auth as never, rateLimit as never, { listEffectiveCapabilities: jest.fn() } as never, config);
+    const httpRequest = {
+      ip: 'invalid-ip-string',
+      headers: {},
+    } as unknown as AuthenticatedRequest;
+    const response = { cookie: jest.fn() } as unknown as Response;
+    await expect(controller.login({ username: 'user', password: 'Password9' }, httpRequest, response)).rejects.toThrow(
+      'Địa chỉ IP máy khách không hợp lệ.',
+    );
+    expect(rateLimit.acquireSlot).not.toHaveBeenCalled();
+    expect(auth.login).not.toHaveBeenCalled();
   });
 
   it('treats malformed percent-encoding as a missing cookie', () => {
