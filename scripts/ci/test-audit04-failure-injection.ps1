@@ -1,10 +1,70 @@
 [CmdletBinding()]
 param(
   [int]$OnlyTest = 0,
-  [switch]$NegativeControl
+  [switch]$NegativeControl,
+  [switch]$SimulateTimeout,
+  [int]$PerTestTimeoutSeconds = 30,
+  [int]$SuiteTimeoutSeconds = 300
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+
+Add-Type -AssemblyName System.Management
+
+$watchdogSource = @"
+using System;
+using System.Diagnostics;
+using System.Management;
+using System.Threading;
+
+public class AudWatchdog {
+    private Timer _timer;
+    private int _parentPid;
+    public bool TimedOut = false;
+
+    public void Start(int parentPid, int timeoutMs) {
+        _parentPid = parentPid;
+        TimedOut = false;
+        _timer = new Timer(OnTimeout, null, timeoutMs, Timeout.Infinite);
+    }
+
+    private void OnTimeout(object state) {
+        TimedOut = true;
+        KillChildren(_parentPid);
+    }
+
+    public static void KillChildren(int parentPid) {
+        try {
+            using (var searcher = new ManagementObjectSearcher(
+                "SELECT ProcessId FROM Win32_Process WHERE ParentProcessId = " + parentPid)) {
+                foreach (var item in searcher.Get()) {
+                    int childPid = Convert.ToInt32(item["ProcessId"]);
+                    try {
+                        Process child = Process.GetProcessById(childPid);
+                        if (!child.HasExited) {
+                            child.Kill();
+                        }
+                    } catch { }
+                }
+            }
+        } catch { }
+    }
+
+    public void Stop() {
+        if (_timer != null) {
+            _timer.Dispose();
+            _timer = null;
+        }
+    }
+}
+"@
+
+if (-not ([System.Management.Automation.PSTypeName]'AudWatchdog').Type) {
+  Add-Type -TypeDefinition $watchdogSource -ReferencedAssemblies "System.Management"
+}
+
+$global:audWatchdog = [AudWatchdog]::new()
+$suiteStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 . (Join-Path $repoRoot 'scripts\deploy\windows\deployment-common.ps1')
@@ -245,8 +305,81 @@ try {
     }
   }
 
+  function New-AudMigrationTestEnvironment([string]$TestName, [string]$TargetSha) {
+    $fix = New-AudFixtureEnvironment $TestName
+    $releaseDir = Join-Path $fix.Root "releases\$TargetSha"
+    $prismaDir = Join-Path $releaseDir 'prisma'
+    New-Item -ItemType Directory -Path $prismaDir -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $prismaDir 'schema.prisma'), 'datasource db { provider = "postgresql" url = env("DATABASE_URL") }', [Text.UTF8Encoding]::new($false))
+
+    $entryPoint = Join-Path $releaseDir 'apps\api\dist\apps\api\src\main.js'
+    New-Item -ItemType Directory -Path (Split-Path -Parent $entryPoint) -Force | Out-Null
+    [IO.File]::WriteAllText($entryPoint, 'console.log("api");', [Text.UTF8Encoding]::new($false))
+
+    New-Item -ItemType Junction -Path (Join-Path $fix.Root 'current') -Target $releaseDir | Out-Null
+
+    $resolvedEntry = Get-CanonicalPath (Join-Path $fix.Root 'current\apps\api\dist\apps\api\src\main.js')
+    $markerPath = Join-Path $fix.Root 'shared\deployment-identity.json'
+    $marker = Get-Content $markerPath -Raw | ConvertFrom-Json
+    $marker.entryPoint = $resolvedEntry
+    [IO.File]::WriteAllText($markerPath, ($marker | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))
+
+    $sentinelLog = Join-Path $fix.Root 'npx-mutation-sentinel.log'
+    $expireFlag = Join-Path $fix.Root 'trigger-expire.flag'
+    $taskFlag = Join-Path $fix.Root 'trigger-task.flag'
+    $portFlag = Join-Path $fix.Root 'trigger-port.flag'
+
+    $rootPath = $fix.Root
+    $mwExpiredFlag = Join-Path $rootPath 'mw-expired.flag'
+    $taskActiveFlag = Join-Path $rootPath 'task-running-active.flag'
+    $portActiveFlag = Join-Path $rootPath 'port-occupied-active.flag'
+
+    $npxCmd = Join-Path $rootPath 'fixture-npx.cmd'
+    $npxContent = @"
+@echo off
+if "%1"=="prisma" if "%2"=="migrate" if "%3"=="deploy" (
+  echo DEPLOY_INVOKED >> "$sentinelLog"
+  exit /b 0
+)
+if "%1"=="prisma" if "%2"=="migrate" if "%3"=="status" (
+  if exist "$expireFlag" (
+    echo EXPIRED > "$mwExpiredFlag"
+  )
+  if exist "$taskFlag" (
+    echo RUNNING > "$taskActiveFlag"
+  )
+  if exist "$portFlag" (
+    echo OCCUPIED > "$portActiveFlag"
+  )
+  echo Database schema is up to date!
+  exit /b 0
+)
+exit /b 0
+"@
+    [IO.File]::WriteAllText($npxCmd, $npxContent, [Text.ASCIIEncoding]::new())
+
+    $psqlCmd = Join-Path $fix.Root 'fixture-psql.cmd'
+    $psqlContent = "@echo off`necho NOT_PRESENT`nexit /b 0`n"
+    [IO.File]::WriteAllText($psqlCmd, $psqlContent, [Text.ASCIIEncoding]::new())
+
+    return [pscustomobject]@{
+      Fix = $fix
+      ReleaseDir = $releaseDir
+      EntryPoint = $resolvedEntry
+      NpxCmd = $npxCmd
+      PsqlCmd = $psqlCmd
+      SentinelLog = $sentinelLog
+      ExpireFlag = $expireFlag
+      TaskFlag = $taskFlag
+      PortFlag = $portFlag
+    }
+  }
+
   function Invoke-AudTest([int]$TestNum, [string]$TestTitle, [scriptblock]$TestBlock) {
     if ($OnlyTest -gt 0 -and $OnlyTest -ne $TestNum) { return }
+    if ($suiteStopwatch.Elapsed.TotalSeconds -gt $SuiteTimeoutSeconds) {
+      throw "SUITE_TIMEOUT: AUD-04 test suite exceeded limit of ${SuiteTimeoutSeconds}s (elapsed: $([Math]::Round($suiteStopwatch.Elapsed.TotalSeconds, 1))s)."
+    }
     Write-Output "  [RUN] Test ${TestNum}: $TestTitle"
     Copy-Item -Path (Join-Path $cleanFixtureScriptsDir '*') -Destination $fixtureScriptsDir -Recurse -Force
     $global:aud04StopCalls.Clear()
@@ -276,7 +409,20 @@ try {
       throw "NEGATIVE_CONTROL_INJECTED_FAILURE: deliberate failure for Test 1"
     }
 
-    & $TestBlock
+    $global:audWatchdog.Start($PID, ($PerTestTimeoutSeconds * 1000))
+    $testSw = [System.Diagnostics.Stopwatch]::StartNew()
+    try {
+      & $TestBlock
+    } finally {
+      $global:audWatchdog.Stop()
+      $testSw.Stop()
+      [AudWatchdog]::KillChildren($PID)
+    }
+
+    if ($global:audWatchdog.TimedOut -or $testSw.Elapsed.TotalSeconds -gt $PerTestTimeoutSeconds) {
+      throw "TEST_TIMEOUT: Test $TestNum ('$TestTitle') exceeded timeout limit of ${PerTestTimeoutSeconds}s (elapsed: $([Math]::Round($testSw.Elapsed.TotalSeconds, 1))s)."
+    }
+
     $global:aud04PassCount++
   }
 
@@ -2204,7 +2350,300 @@ try {
     Write-Output '  [PASS] Test 31 (AUD-04-R2): Neighbor isolation verified during pre-migration quiescence and deployment (neighbour untouched)'
   }
 
-    $expectedCount = if ($OnlyTest -gt 0) { 1 } else { 31 }
+  # --- TEST 32 (AUD-04-G1-1): Real run-migrations.ps1: Maintenance window expired after precheck rejected before mutation ---
+  Invoke-AudTest 32 'Real run-migrations.ps1: Maintenance window expired after precheck rejected before mutation' {
+    $env32 = New-AudMigrationTestEnvironment 'test32' $newSha
+    [IO.File]::WriteAllText($env32.ExpireFlag, 'expire', [Text.ASCIIEncoding]::new())
+
+    $mw32 = [pscustomobject]@{
+      ReleaseSha = $newSha
+      StartUtc = [DateTime]::UtcNow.AddMinutes(-5).ToString('o')
+      AuthorizedBy = 'operator-aud04'
+      Approved = $true
+    }
+    $mw32 | Add-Member -MemberType ScriptProperty -Name 'EndUtc' -Value {
+      if (Test-Path "$($env32.Fix.Root)\mw-expired.flag") {
+        return [DateTime]::UtcNow.AddMinutes(-1).ToString('o')
+      } else {
+        return [DateTime]::UtcNow.AddHours(1).ToString('o')
+      }
+    }
+
+    $caught = $null
+    try {
+      & (Join-Path $fixtureScriptsDir 'run-migrations.ps1') `
+        -ReleaseSha $newSha `
+        -ReleasePath $env32.ReleaseDir `
+        -NpxExe $env32.NpxCmd `
+        -PsqlExe $env32.PsqlCmd `
+        -Root $env32.Fix.Root `
+        -ServiceKind 'scheduled-task' `
+        -ServiceName 'BaoGiangBackend' `
+        -EnvFile $env32.Fix.EnvFile `
+        -StartupWrapper $env32.Fix.StartupWrapper `
+        -ExpectedEntryPoint $env32.EntryPoint `
+        -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn' `
+        -AllowProductionMigration `
+        -BackupVerified `
+        -QuiescenceVerified `
+        -MaintenanceWindow $mw32 | Out-Null
+    } catch { $caught = $_ }
+
+    if ($null -eq $caught -or $caught.Exception.Message -notmatch 'MAINTENANCE_WINDOW_EXPIRED') {
+      throw "Test 32 expected MAINTENANCE_WINDOW_EXPIRED but got: $($caught.Exception.Message) at $($caught.ScriptStackTrace)"
+    }
+    if (Test-Path $env32.SentinelLog) {
+      throw 'Test 32 violated safety boundary: prisma migrate deploy was invoked despite expired maintenance window'
+    }
+
+    Write-Output '  [PASS] Test 32 (AUD-04-G1-1): Real run-migrations.ps1 - Maintenance window expired after precheck rejected before mutation; migration deploy never invoked'
+  }
+
+  # --- TEST 33 (AUD-04-G1-2): Real run-migrations.ps1: Scheduled task re-enabled after precheck rejected before mutation ---
+  Invoke-AudTest 33 'Real run-migrations.ps1: Scheduled task re-enabled after precheck rejected before mutation' {
+    $env33 = New-AudMigrationTestEnvironment 'test33' $newSha
+    [IO.File]::WriteAllText($env33.TaskFlag, 'task-run', [Text.ASCIIEncoding]::new())
+
+    function global:Get-ScheduledTask {
+      param([string]$TaskName)
+      $state = if (Test-Path "$($env33.Fix.Root)\task-running-active.flag") { 'Running' } else { 'Disabled' }
+      return [pscustomobject]@{
+        TaskName = 'BaoGiangBackend'; TaskPath = '\BaoGiang\'; State = $state
+        Principal = [pscustomobject]@{ UserId = 'fixture-account' }
+        Actions = @([pscustomobject]@{ Execute = $fakeToolPath; Arguments = '-File start-baogiang-api.ps1'; WorkingDirectory = (Join-Path $env33.Fix.Root 'shared') })
+        Triggers = @([pscustomobject]@{ CimClass = [pscustomobject]@{ CimClassName = 'MSFT_TaskBootTrigger' }; Enabled = $true })
+      }
+    }
+
+    $mw33 = [pscustomobject]@{
+      ReleaseSha = $newSha
+      StartUtc = [DateTime]::UtcNow.AddMinutes(-5).ToString('o')
+      EndUtc = [DateTime]::UtcNow.AddHours(1).ToString('o')
+      AuthorizedBy = 'operator-aud04'
+      Approved = $true
+    }
+
+    $caught = $null
+    try {
+      & (Join-Path $fixtureScriptsDir 'run-migrations.ps1') `
+        -ReleaseSha $newSha `
+        -ReleasePath $env33.ReleaseDir `
+        -NpxExe $env33.NpxCmd `
+        -PsqlExe $env33.PsqlCmd `
+        -Root $env33.Fix.Root `
+        -ServiceKind 'scheduled-task' `
+        -ServiceName 'BaoGiangBackend' `
+        -EnvFile $env33.Fix.EnvFile `
+        -StartupWrapper $env33.Fix.StartupWrapper `
+        -ExpectedEntryPoint $env33.EntryPoint `
+        -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn' `
+        -AllowProductionMigration `
+        -BackupVerified `
+        -QuiescenceVerified `
+        -MaintenanceWindow $mw33 | Out-Null
+    } catch { $caught = $_ }
+
+    if ($null -eq $caught -or $caught.Exception.Message -notmatch '(?i)not.*disabled|SCHEDULED_TASK_NOT_DISABLED') {
+      throw "Test 33 expected task disabled failure but got: $($caught.Exception.Message)"
+    }
+    if (Test-Path $env33.SentinelLog) {
+      throw 'Test 33 violated safety boundary: prisma migrate deploy was invoked despite re-enabled scheduled task'
+    }
+
+    Write-Output '  [PASS] Test 33 (AUD-04-G1-2): Real run-migrations.ps1 - Scheduled task re-enabled after precheck rejected before mutation; migration deploy never invoked'
+  }
+
+  # --- TEST 34 (AUD-04-G1-3): Real run-migrations.ps1: Port 3100 occupied after precheck rejected before mutation ---
+  Invoke-AudTest 34 'Real run-migrations.ps1: Port 3100 occupied after precheck rejected before mutation' {
+    $env34 = New-AudMigrationTestEnvironment 'test34' $newSha
+    [IO.File]::WriteAllText($env34.PortFlag, 'port-occ', [Text.ASCIIEncoding]::new())
+
+    function global:Get-NetTCPConnection {
+      param([string]$State, [int]$LocalPort)
+      if (Test-Path "$($env34.Fix.Root)\port-occupied-active.flag") {
+        return @([pscustomobject]@{ LocalPort = 3100; State = 'Listen'; OwningProcess = 99999 })
+      }
+      return @()
+    }
+
+    $mw34 = [pscustomobject]@{
+      ReleaseSha = $newSha
+      StartUtc = [DateTime]::UtcNow.AddMinutes(-5).ToString('o')
+      EndUtc = [DateTime]::UtcNow.AddHours(1).ToString('o')
+      AuthorizedBy = 'operator-aud04'
+      Approved = $true
+    }
+
+    $caught = $null
+    try {
+      & (Join-Path $fixtureScriptsDir 'run-migrations.ps1') `
+        -ReleaseSha $newSha `
+        -ReleasePath $env34.ReleaseDir `
+        -NpxExe $env34.NpxCmd `
+        -PsqlExe $env34.PsqlCmd `
+        -Root $env34.Fix.Root `
+        -ServiceKind 'scheduled-task' `
+        -ServiceName 'BaoGiangBackend' `
+        -EnvFile $env34.Fix.EnvFile `
+        -StartupWrapper $env34.Fix.StartupWrapper `
+        -ExpectedEntryPoint $env34.EntryPoint `
+        -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn' `
+        -AllowProductionMigration `
+        -BackupVerified `
+        -QuiescenceVerified `
+        -MaintenanceWindow $mw34 | Out-Null
+    } catch { $caught = $_ }
+
+    if ($null -eq $caught -or $caught.Exception.Message -notmatch '(?i)port 3100|PORT_3100_LISTENER_ACTIVE|Safe-stop conflict') {
+      throw "Test 34 expected port 3100 conflict but got: $($caught.Exception.Message)"
+    }
+    if (Test-Path $env34.SentinelLog) {
+      throw 'Test 34 violated safety boundary: prisma migrate deploy was invoked despite port 3100 occupied'
+    }
+
+    Write-Output '  [PASS] Test 34 (AUD-04-G1-3): Real run-migrations.ps1 - Port 3100 occupied after precheck rejected before mutation; migration deploy never invoked'
+  }
+
+  # --- TEST 35 (AUD-04-G1-4): Real run-migrations.ps1: Invalid, unapproved or missing maintenance window rejected before mutation ---
+  Invoke-AudTest 35 'Real run-migrations.ps1: Invalid, unapproved or missing maintenance window rejected before mutation' {
+    $env35 = New-AudMigrationTestEnvironment 'test35' $newSha
+
+    # 35A: SHA mismatch
+    $mw35A = [pscustomobject]@{ ReleaseSha = ('9'*40); StartUtc = [DateTime]::UtcNow.AddMinutes(-5).ToString('o'); EndUtc = [DateTime]::UtcNow.AddHours(1).ToString('o'); AuthorizedBy = 'operator-aud04'; Approved = $true }
+    $caughtA = $null
+    try {
+      & (Join-Path $fixtureScriptsDir 'run-migrations.ps1') `
+        -ReleaseSha $newSha -ReleasePath $env35.ReleaseDir -NpxExe $env35.NpxCmd -PsqlExe $env35.PsqlCmd -Root $env35.Fix.Root `
+        -ServiceKind 'scheduled-task' -ServiceName 'BaoGiangBackend' -EnvFile $env35.Fix.EnvFile -StartupWrapper $env35.Fix.StartupWrapper `
+        -ExpectedEntryPoint $env35.EntryPoint -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn' -AllowProductionMigration -BackupVerified -QuiescenceVerified -MaintenanceWindow $mw35A | Out-Null
+    } catch { $caughtA = $_ }
+    if ($null -eq $caughtA -or $caughtA.Exception.Message -notmatch 'MAINTENANCE_WINDOW_SHA_MISMATCH') {
+      throw "Test 35A expected MAINTENANCE_WINDOW_SHA_MISMATCH but got: $($caughtA.Exception.Message)"
+    }
+
+    # 35B: Not approved
+    $mw35B = [pscustomobject]@{ ReleaseSha = $newSha; StartUtc = [DateTime]::UtcNow.AddMinutes(-5).ToString('o'); EndUtc = [DateTime]::UtcNow.AddHours(1).ToString('o'); AuthorizedBy = 'operator-aud04'; Approved = $false }
+    $caughtB = $null
+    try {
+      & (Join-Path $fixtureScriptsDir 'run-migrations.ps1') `
+        -ReleaseSha $newSha -ReleasePath $env35.ReleaseDir -NpxExe $env35.NpxCmd -PsqlExe $env35.PsqlCmd -Root $env35.Fix.Root `
+        -ServiceKind 'scheduled-task' -ServiceName 'BaoGiangBackend' -EnvFile $env35.Fix.EnvFile -StartupWrapper $env35.Fix.StartupWrapper `
+        -ExpectedEntryPoint $env35.EntryPoint -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn' -AllowProductionMigration -BackupVerified -QuiescenceVerified -MaintenanceWindow $mw35B | Out-Null
+    } catch { $caughtB = $_ }
+    if ($null -eq $caughtB -or $caughtB.Exception.Message -notmatch 'MAINTENANCE_WINDOW_NOT_APPROVED') {
+      throw "Test 35B expected MAINTENANCE_WINDOW_NOT_APPROVED but got: $($caughtB.Exception.Message)"
+    }
+
+    # 35C: Missing
+    $caughtC = $null
+    try {
+      & (Join-Path $fixtureScriptsDir 'run-migrations.ps1') `
+        -ReleaseSha $newSha -ReleasePath $env35.ReleaseDir -NpxExe $env35.NpxCmd -PsqlExe $env35.PsqlCmd -Root $env35.Fix.Root `
+        -ServiceKind 'scheduled-task' -ServiceName 'BaoGiangBackend' -EnvFile $env35.Fix.EnvFile -StartupWrapper $env35.Fix.StartupWrapper `
+        -ExpectedEntryPoint $env35.EntryPoint -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn' -AllowProductionMigration -BackupVerified -QuiescenceVerified | Out-Null
+    } catch { $caughtC = $_ }
+    if ($null -eq $caughtC -or $caughtC.Exception.Message -notmatch 'MAINTENANCE_WINDOW_MISSING') {
+      throw "Test 35C expected MAINTENANCE_WINDOW_MISSING but got: $($caughtC.Exception.Message)"
+    }
+
+    if (Test-Path $env35.SentinelLog) {
+      throw 'Test 35 violated safety boundary: prisma migrate deploy was invoked despite invalid maintenance authorization'
+    }
+
+    Write-Output '  [PASS] Test 35 (AUD-04-G1-4): Real run-migrations.ps1 - Invalid/unapproved/missing maintenance window rejected before mutation; migration deploy never invoked'
+  }
+
+  # --- TEST 36 (AUD-04-G1-5): Real run-migrations.ps1: All pre-migration safety checks passed; exactly one migration deploy invoked ---
+  Invoke-AudTest 36 'Real run-migrations.ps1: All pre-migration safety checks passed; exactly one migration deploy invoked' {
+    $env36 = New-AudMigrationTestEnvironment 'test36' $newSha
+    $mw36 = [pscustomobject]@{
+      ReleaseSha = $newSha
+      StartUtc = [DateTime]::UtcNow.AddMinutes(-5).ToString('o')
+      EndUtc = [DateTime]::UtcNow.AddHours(1).ToString('o')
+      AuthorizedBy = 'operator-aud04'
+      Approved = $true
+    }
+
+    $resJson = & (Join-Path $fixtureScriptsDir 'run-migrations.ps1') `
+      -ReleaseSha $newSha `
+      -ReleasePath $env36.ReleaseDir `
+      -NpxExe $env36.NpxCmd `
+      -PsqlExe $env36.PsqlCmd `
+      -Root $env36.Fix.Root `
+      -ServiceKind 'scheduled-task' `
+      -ServiceName 'BaoGiangBackend' `
+      -EnvFile $env36.Fix.EnvFile `
+      -StartupWrapper $env36.Fix.StartupWrapper `
+      -ExpectedEntryPoint $env36.EntryPoint `
+      -ExpectedBaseUrl 'https://baogiang.dtnt-damsan.edu.vn' `
+      -AllowProductionMigration `
+      -BackupVerified `
+      -QuiescenceVerified `
+      -MaintenanceWindow $mw36 | Select-Object -Last 1
+
+    $result = $resJson | ConvertFrom-Json
+    if ($result.state -ne 'completed') {
+      throw "Test 36 expected completed migration state but got: $($result.state)"
+    }
+    if ($result.before.phase -ne 'before' -or $result.after.phase -ne 'after-deploy') {
+      throw 'Test 36 migration state phases missing or invalid'
+    }
+
+    if (-not (Test-Path $env36.SentinelLog)) {
+      throw 'Test 36 failed: prisma migrate deploy was never invoked despite all safety conditions met'
+    }
+    $invocations = @(Get-Content $env36.SentinelLog | Where-Object { $_ -match 'DEPLOY_INVOKED' })
+    if ($invocations.Count -ne 1) {
+      throw "Test 36 expected exactly 1 deploy invocation, but found $($invocations.Count)"
+    }
+
+    Write-Output '  [PASS] Test 36 (AUD-04-G1-5): Real run-migrations.ps1 - All pre-migration safety checks passed; exactly one migration deploy invoked'
+  }
+
+  # --- TEST 37 (AUD-04-TO-1): Hard timeout watchdog safeguard: hanging child process terminated and timed out cleanly ---
+  Invoke-AudTest 37 'Hard timeout watchdog safeguard: hanging child process terminated cleanly without orphan processes' {
+    $hangingTool = Join-Path $tempDir 'hanging-tool.cmd'
+    [IO.File]::WriteAllLines($hangingTool, @('@echo off', 'pause'), [Text.ASCIIEncoding]::new())
+
+    $localWatchdog = [AudWatchdog]::new()
+    $localWatchdog.Start($PID, 1500)
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+
+    try {
+      & $hangingTool
+    } finally {
+      $localWatchdog.Stop()
+      $sw.Stop()
+      [AudWatchdog]::KillChildren($PID)
+    }
+
+    if (-not $localWatchdog.TimedOut) {
+      throw 'Test 37 failed: Watchdog TimedOut flag was not set'
+    }
+    if ($sw.Elapsed.TotalSeconds -gt 4) {
+      throw "Test 37 failed: Hanging process was not killed in timely manner (took $([Math]::Round($sw.Elapsed.TotalSeconds, 1))s)"
+    }
+
+    Write-Output '  [PASS] Test 37 (AUD-04-TO-1): Hard timeout watchdog verified; hanging child processes terminated cleanly without orphan processes'
+  }
+
+  if ($SimulateTimeout) {
+    Write-Output "  [RUN] Test 99 (Simulated Timeout)"
+    $hangingTool99 = Join-Path $tempDir 'hanging-tool-99.cmd'
+    [IO.File]::WriteAllLines($hangingTool99, @('@echo off', 'pause'), [Text.ASCIIEncoding]::new())
+    $global:audWatchdog.Start($PID, 1000)
+    try {
+      & $hangingTool99
+    } finally {
+      $global:audWatchdog.Stop()
+      [AudWatchdog]::KillChildren($PID)
+    }
+    if ($global:audWatchdog.TimedOut) {
+      throw "TEST_TIMEOUT: Simulated timeout test timed out as expected."
+    }
+  }
+
+  $expectedCount = if ($OnlyTest -gt 0) { 1 } else { 37 }
   if ($global:aud04PassCount -ne $expectedCount) {
     throw "AUD-04 test verification failed: expected $expectedCount passed tests, but $global:aud04PassCount passed."
   }
