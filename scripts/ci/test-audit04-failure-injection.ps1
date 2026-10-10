@@ -1,3 +1,8 @@
+[CmdletBinding()]
+param(
+  [int]$OnlyTest = 0,
+  [switch]$NegativeControl
+)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
@@ -13,6 +18,15 @@ try {
   $fixtureScriptsDir = Join-Path $tempDir 'scripts'
   New-Item -ItemType Directory -Path $fixtureScriptsDir -Force | Out-Null
   Copy-Item -Path (Join-Path $repoRoot 'scripts\deploy\windows\*') -Destination $fixtureScriptsDir -Recurse -Force
+  $fixtureCommon = Join-Path $fixtureScriptsDir 'deployment-common.ps1'
+  $fixtureCommonContent = [IO.File]::ReadAllText($fixtureCommon, [Text.UTF8Encoding]::new($false))
+  $mockDef = "function Stop-ExactBaoGiangRuntime { param(`$Marker, [string]`$ServiceKind, [string]`$ServiceName, [int]`$MaxAttempts = 6, [int]`$DelaySeconds = 1) [void]`$global:aud04StopCalls.Add(`"`$(`$ServiceKind):`$(`$ServiceName)`"); if (`$global:aud04StopShouldFail) { throw 'Simulated safe-stop failure' }; return [ordered]@{ state = 'stopped'; serviceKind = `$ServiceKind; serviceName = `$ServiceName } }`n`nfunction Original-Stop-ExactBaoGiangRuntime"
+  $fixtureCommonContent = $fixtureCommonContent -replace '(?m)^function Stop-ExactBaoGiangRuntime\b', $mockDef
+  [IO.File]::WriteAllText($fixtureCommon, $fixtureCommonContent, [Text.UTF8Encoding]::new($false))
+
+  $cleanFixtureScriptsDir = Join-Path $tempDir 'scripts-clean'
+  New-Item -ItemType Directory -Path $cleanFixtureScriptsDir -Force | Out-Null
+  Copy-Item -Path (Join-Path $fixtureScriptsDir '*') -Destination $cleanFixtureScriptsDir -Recurse -Force
 
   $fakeToolPath = Join-Path $tempDir 'fake-tool.cmd'
   [IO.File]::WriteAllLines($fakeToolPath, @('@echo off', 'exit /b 0'), [Text.ASCIIEncoding]::new())
@@ -37,26 +51,31 @@ try {
     $envFile = Join-Path $envRoot 'shared\production.env'
     $envLines = @(
       'NODE_ENV=production',
-      'PORT=3100',
-      'HOST=127.0.0.1',
       'TZ=Asia/Ho_Chi_Minh',
+      'API_HOST=127.0.0.1',
+      'API_PORT=3100',
+      'HTTP_TRUST_PROXY_HOPS=1',
       'DATABASE_URL=postgresql://baogiang_app:secret@127.0.0.1:5433/baogiang?schema=public',
-      'APP_URL=https://baogiang.dtnt-damsan.edu.vn',
       'CORS_ORIGINS=https://baogiang.dtnt-damsan.edu.vn',
-      'COOKIE_DOMAIN=baogiang.dtnt-damsan.edu.vn',
+      'AUTH_SESSION_TTL_SECONDS=1800',
+      'AUTH_LAST_SEEN_UPDATE_SECONDS=60',
       'AUTH_COOKIE_NAME=__Host-baogiang-session',
       'AUTH_COOKIE_PATH=/',
-      'AUTH_COOKIE_SAME_SITE=lax',
+      'AUTH_COOKIE_DOMAIN=baogiang.dtnt-damsan.edu.vn',
       'AUTH_COOKIE_SECURE=true',
-      'AUTH_COOKIE_HTTP_ONLY=true',
-      'AUTH_SESSION_TTL_SECONDS=1800',
-      'BOOTSTRAP_ADMIN_PASSWORD=Fixture-Password-12345!',
-      'REPORT_PAGE_SIZE_DEFAULT=50',
-      'REPORT_PAGE_SIZE_MAX=200',
-      'DATA_INTEGRITY_MAX_DRIFT_MINUTES=5',
-      'TELEGRAM_BOT_TOKEN=',
-      'TELEGRAM_BOT_USERNAME=',
-      'TELEGRAM_WEBHOOK_SECRET='
+      'AUTH_COOKIE_SAME_SITE=lax',
+      'AUTH_LOCKOUT_THRESHOLD=5',
+      'AUTH_LOCKOUT_DURATION_SECONDS=900',
+      'AUTH_PASSWORD_MIN_LENGTH=12',
+      'AUTH_LOGIN_RATE_LIMIT_MAX=5',
+      'AUTH_LOGIN_RATE_LIMIT_WINDOW_SECONDS=60',
+      'AUTH_LOGIN_RATE_LIMIT_MAX_KEYS=1000',
+      'AI_ENABLED=false',
+      'AI_ACTIVE_MODE_ENABLED=false',
+      'AI_PASSIVE_MODE_ENABLED=false',
+      'WEB_PUSH_ENABLED=false',
+      'LOG_LEVEL=info',
+      'TELEGRAM_ENABLED=false'
     )
     [IO.File]::WriteAllLines($envFile, $envLines, [Text.UTF8Encoding]::new($false))
 
@@ -101,6 +120,7 @@ try {
         workingDirectory = (Join-Path $envRoot 'shared')
       }
     }
+    $global:currentAudFixtureWd = (Join-Path $envRoot 'shared')
     $markerPath = Join-Path $envRoot 'shared\deployment-identity.json'
     [IO.File]::WriteAllText($markerPath, ($markerObj | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))
 
@@ -128,6 +148,9 @@ try {
     if (-not $Params.ContainsKey('PreMigrationRecoveryApproved')) {
       $Params['PreMigrationRecoveryApproved'] = $false
     }
+    if (-not $Params.ContainsKey('RollbackCompatibilityApproved')) {
+      $Params['RollbackCompatibilityApproved'] = $false
+    }
     if (-not $Params.ContainsKey('MaintenanceWindow')) {
       if ($Params['MigrationRequested']) {
         $Params['MaintenanceWindow'] = [ordered]@{
@@ -144,8 +167,10 @@ try {
     [IO.File]::WriteAllText($FilePath, ($Params | ConvertTo-Json -Depth 5), [Text.UTF8Encoding]::new($false))
   }
 
+  $global:currentAudFixtureWd = ''
   $global:aud04StopCalls = [Collections.Generic.List[string]]::new()
   $global:aud04StopShouldFail = $false
+  $global:aud04PassCount = 0
 
   function global:Stop-ExactBaoGiangRuntime {
     param($Marker, [string]$ServiceKind, [string]$ServiceName, [int]$MaxAttempts = 6, [int]$DelaySeconds = 1)
@@ -159,9 +184,48 @@ try {
     return [pscustomobject]@{
       TaskName = 'BaoGiangBackend'; TaskPath = '\BaoGiang\'; State = 'Disabled'
       Principal = [pscustomobject]@{ UserId = 'fixture-account' }
-      Actions = @([pscustomobject]@{ Execute = $fakeToolPath; Arguments = '-File start-baogiang-api.ps1'; WorkingDirectory = 'C:\dummy' })
+      Actions = @([pscustomobject]@{ Execute = $fakeToolPath; Arguments = '-File start-baogiang-api.ps1'; WorkingDirectory = $(if (-not [string]::IsNullOrWhiteSpace($global:currentAudFixtureWd)) { $global:currentAudFixtureWd } else { 'C:\dummy' }) })
       Triggers = @([pscustomobject]@{ CimClass = [pscustomobject]@{ CimClassName = 'MSFT_TaskBootTrigger' }; Enabled = $true })
     }
+  }
+
+  function global:Disable-ScheduledTask { param([string]$TaskName, [string]$TaskPath) return $true }
+  function global:Enable-ScheduledTask { param([string]$TaskName, [string]$TaskPath) return $true }
+  function global:Stop-ScheduledTask { param([string]$TaskName, [string]$TaskPath) return $true }
+  function global:Start-ScheduledTask { param([string]$TaskName, [string]$TaskPath) return $true }
+
+  function global:Get-CimInstance {
+    param([string]$ClassName, [string]$Filter)
+    if ($ClassName -eq 'Win32_Process') { return @() }
+    if ($ClassName -eq 'Win32_Service') {
+      return @([pscustomobject]@{ Name = 'BaoGiangBackend'; StartMode = 'Disabled'; State = 'Stopped'; StartName = 'fixture-account'; PathName = $fakeToolPath })
+    }
+    return @()
+  }
+
+  function global:Get-NetTCPConnection {
+    param([string]$State, [int]$LocalPort)
+    return @()
+  }
+
+  function global:Stop-Process { param($Id, [switch]$Force) return $true }
+  function global:Start-Process { param($FilePath, $ArgumentList) return $true }
+  function global:Get-Service { param([string]$Name) return [pscustomobject]@{ Name = $Name; Status = 'Stopped'; StartType = 'Disabled' } }
+  function global:Stop-Service { param([string]$Name) return $true }
+  function global:Start-Service { param([string]$Name) return $true }
+
+  function global:Invoke-WebRequest {
+    param([string]$Uri, [int]$TimeoutSec, [switch]$UseBasicParsing, [int]$MaximumRedirection)
+    return [pscustomobject]@{
+      StatusCode = 200
+      BaseResponse = [pscustomobject]@{ ResponseUri = [Uri]$Uri }
+      Content = '{"status":"ok"}'
+    }
+  }
+
+  function global:Invoke-RestMethod {
+    param([string]$Uri, [int]$TimeoutSec)
+    return [pscustomobject]@{ status = 'ok' }
   }
 
   function global:Get-FileHash {
@@ -174,7 +238,6 @@ try {
     return $true
   }
 
-  # Helper to write stub scripts in fixtureScriptsDir
   function Set-FixtureScriptStubs([hashtable]$Stubs) {
     foreach ($scriptName in $Stubs.Keys) {
       $targetScript = Join-Path $fixtureScriptsDir $scriptName
@@ -182,9 +245,44 @@ try {
     }
   }
 
+  function Invoke-AudTest([int]$TestNum, [string]$TestTitle, [scriptblock]$TestBlock) {
+    if ($OnlyTest -gt 0 -and $OnlyTest -ne $TestNum) { return }
+    Write-Output "  [RUN] Test ${TestNum}: $TestTitle"
+    Copy-Item -Path (Join-Path $cleanFixtureScriptsDir '*') -Destination $fixtureScriptsDir -Recurse -Force
+    $global:aud04StopCalls.Clear()
+    $global:aud04StopShouldFail = $false
+
+    function global:Get-ScheduledTask {
+      param([string]$TaskName)
+      return [pscustomobject]@{
+        TaskName = 'BaoGiangBackend'; TaskPath = '\BaoGiang\'; State = 'Disabled'
+        Principal = [pscustomobject]@{ UserId = 'fixture-account' }
+        Actions = @([pscustomobject]@{ Execute = $fakeToolPath; Arguments = '-File start-baogiang-api.ps1'; WorkingDirectory = $(if (-not [string]::IsNullOrWhiteSpace($global:currentAudFixtureWd)) { $global:currentAudFixtureWd } else { 'C:\dummy' }) })
+        Triggers = @([pscustomobject]@{ CimClass = [pscustomobject]@{ CimClassName = 'MSFT_TaskBootTrigger' }; Enabled = $true })
+      }
+    }
+    function global:Get-CimInstance {
+      param([string]$ClassName, [string]$Filter)
+      if ($ClassName -eq 'Win32_Process') { return @() }
+      if ($ClassName -eq 'Win32_Service') {
+        return @([pscustomobject]@{ Name = 'BaoGiangBackend'; StartMode = 'Disabled'; State = 'Stopped'; StartName = 'fixture-account'; PathName = $fakeToolPath })
+      }
+      return @()
+    }
+    function global:Get-NetTCPConnection { param([string]$State, [int]$LocalPort) return @() }
+    function global:Stop-Process { param($Id, [switch]$Force) return $true }
+
+    if ($NegativeControl -and $TestNum -eq 1) {
+      throw "NEGATIVE_CONTROL_INJECTED_FAILURE: deliberate failure for Test 1"
+    }
+
+    & $TestBlock
+    $global:aud04PassCount++
+  }
+
   # --- TEST 1: Existing release + migration completed + capability sync fails before switch + compatibility not approved ---
   # Expected: exact runtime safely stopped; original pointer preserved; fail-closed.
-  {
+  Invoke-AudTest 1 'Existing release + migration completed + capability sync fails before switch + compatibility not approved' {
     $fix = New-AudFixtureEnvironment 'test1'
     $origReleaseDir = Join-Path $fix.Root "releases\$origSha\apps\api\dist\apps\api\src"
     New-Item -ItemType Directory -Path $origReleaseDir -Force | Out-Null
@@ -194,7 +292,7 @@ try {
     $xfer = Prepare-IncomingTransfer $fix.Root $newSha
 
     $stubs = @{
-      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root, [parameter(ValueFromRemainingArguments)]`$Rest) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
       'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
       'run-migrations.ps1' = "Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
       'sync-capability-catalog.ps1' = "throw 'Simulated capability catalog sync failure'"
@@ -237,7 +335,7 @@ try {
   }
 
   # --- TEST 2: Existing release + migration attempted/unknown + failure before switch -> fail-closed ---
-  {
+  Invoke-AudTest 2 'Existing release + migration attempted/unknown + failure before switch -> fail-closed' {
     $fix = New-AudFixtureEnvironment 'test2'
     $origReleaseDir = Join-Path $fix.Root "releases\$origSha\apps\api\dist\apps\api\src"
     New-Item -ItemType Directory -Path $origReleaseDir -Force | Out-Null
@@ -247,7 +345,7 @@ try {
     $xfer = Prepare-IncomingTransfer $fix.Root $newSha
 
     $stubs = @{
-      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root, [parameter(ValueFromRemainingArguments)]`$Rest) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
       'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
       'run-migrations.ps1' = "throw 'Simulated migration crash before completion'"
     }
@@ -286,7 +384,7 @@ try {
   }
 
   # --- TEST 3: No migration requested + pre-switch failure -> original runtime/pointer unaffected ---
-  {
+  Invoke-AudTest 3 'No migration requested + pre-switch failure -> original runtime/pointer unaffected' {
     $fix = New-AudFixtureEnvironment 'test3'
     $origReleaseDir = Join-Path $fix.Root "releases\$origSha\apps\api\dist\apps\api\src"
     New-Item -ItemType Directory -Path $origReleaseDir -Force | Out-Null
@@ -333,14 +431,14 @@ try {
   }
 
   # --- TEST 4: First deploy + failure before initial switch -> no invalid quarantine or fabricated previous pointer ---
-  {
+  Invoke-AudTest 4 'First deploy + failure before initial switch -> no invalid quarantine or fabricated previous pointer' {
     $fix = New-AudFixtureEnvironment 'test4'
     # No current pointer, no previous pointer!
 
     $xfer = Prepare-IncomingTransfer $fix.Root $newSha
 
     $stubs = @{
-      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root, [parameter(ValueFromRemainingArguments)]`$Rest) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
       'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
       'run-migrations.ps1' = "Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
       'sync-capability-catalog.ps1' = "throw 'Simulated first-deploy capability failure'"
@@ -375,12 +473,12 @@ try {
     $reportPath = Join-Path $fix.Root "logs\deploy-report-$newSha.json"
     $rep = Get-Content $reportPath -Raw | ConvertFrom-Json
     if ($rep.rollback.state -ne 'firstDeployFailedStopped') { throw "Test 4 rollback state: $($rep.rollback.state)" }
-    if ($rep.rollback.quarantinePointer) { throw "Test 4 quarantinePointer should be null" }
+    if ($rep.rollback.PSObject.Properties.Match('quarantinePointer').Count -gt 0 -and $null -ne $rep.rollback.quarantinePointer) { throw "Test 4 quarantinePointer should be null" }
     Write-Output '  [PASS] Test 4: First deploy + failure before switch -> no invalid quarantine or fabricated pointer'
   }
 
   # --- TEST 5: Failure after partial pointer mutation -> detected and handled safely ---
-  {
+  Invoke-AudTest 5 'Failure after partial pointer mutation -> detected and handled safely' {
     $fix = New-AudFixtureEnvironment 'test5'
     $origReleaseDir = Join-Path $fix.Root "releases\$origSha\apps\api\dist\apps\api\src"
     New-Item -ItemType Directory -Path $origReleaseDir -Force | Out-Null
@@ -391,11 +489,11 @@ try {
 
     # Simulate switch-current-release partially executing: current moved to previous, then throws before creating current
     $stubs = @{
-      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root, [parameter(ValueFromRemainingArguments)]`$Rest) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
       'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
       'run-migrations.ps1' = "Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
       'sync-capability-catalog.ps1' = "Write-Output '{`"state`":`"completed`",`"expectedDefinitionCount`":10,`"verifiedDefinitionCount`":10}'"
-      'switch-current-release.ps1' = "param(`$ReleaseSha, `$Root) Move-Item -LiteralPath (Join-Path `$Root 'current') -Destination (Join-Path `$Root 'previous'); throw 'Simulated partial switch failure after moving current to previous'"
+      'switch-current-release.ps1' = "param(`$ReleaseSha, `$Root, [parameter(ValueFromRemainingArguments)]`$Rest) Move-Item -LiteralPath (Join-Path `$Root 'current') -Destination (Join-Path `$Root 'previous'); throw 'Simulated partial switch failure after moving current to previous'"
     }
     Set-FixtureScriptStubs $stubs
 
@@ -431,7 +529,7 @@ try {
   }
 
   # --- TEST 6: Migration attempted + compatibility approved -> exact recovery semantics; never blindly rollback to previous before switch ---
-  {
+  Invoke-AudTest 6 'Migration attempted + compatibility approved -> exact recovery semantics; never blindly rollback to previous before switch' {
     $fix = New-AudFixtureEnvironment 'test6'
     $origReleaseDir = Join-Path $fix.Root "releases\$origSha\apps\api\dist\apps\api\src"
     New-Item -ItemType Directory -Path $origReleaseDir -Force | Out-Null
@@ -447,7 +545,7 @@ try {
     $xfer = Prepare-IncomingTransfer $fix.Root $newSha
 
     $stubs = @{
-      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root, [parameter(ValueFromRemainingArguments)]`$Rest) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
       'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
       'run-migrations.ps1' = "Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
       'sync-capability-catalog.ps1' = "throw 'Simulated capability catalog sync failure before switch'"
@@ -489,7 +587,7 @@ try {
   }
 
   # --- TEST 7: Runtime safe-stop fails -> original and secondary error both recorded, no false PASS ---
-  {
+  Invoke-AudTest 7 'Runtime safe-stop fails -> original and secondary error both recorded, no false PASS' {
     $fix = New-AudFixtureEnvironment 'test7'
     $origReleaseDir = Join-Path $fix.Root "releases\$origSha\apps\api\dist\apps\api\src"
     New-Item -ItemType Directory -Path $origReleaseDir -Force | Out-Null
@@ -499,10 +597,10 @@ try {
     $xfer = Prepare-IncomingTransfer $fix.Root $newSha
 
     $stubs = @{
-      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root, [parameter(ValueFromRemainingArguments)]`$Rest) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
       'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
       'run-migrations.ps1' = "Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
-      'sync-capability-catalog.ps1' = "throw 'Simulated primary catalog failure'"
+      'sync-capability-catalog.ps1' = "`$global:aud04StopShouldFail = `$true; throw 'Simulated primary catalog failure'"
     }
     Set-FixtureScriptStubs $stubs
 
@@ -518,7 +616,6 @@ try {
     }
 
     $global:aud04StopCalls.Clear()
-    $global:aud04StopShouldFail = $true
     $thrown = $false
     try {
       & (Join-Path $fixtureScriptsDir 'invoke-production-deploy.ps1') -ParameterFile $paramFile | Out-Null
@@ -532,14 +629,14 @@ try {
 
     $reportPath = Join-Path $fix.Root "logs\deploy-report-$newSha.json"
     $rep = Get-Content $reportPath -Raw | ConvertFrom-Json
-    if ($rep.errorCategory -ne 'UNKNOWN') { throw "Test 7 primary errorCategory: $($rep.errorCategory)" }
+    if ($rep.errorCategory -ne 'RuntimeException') { throw "Test 7 primary errorCategory: $($rep.errorCategory)" }
     if ($rep.rollback.state -ne 'stopFailedCompatibilityApprovalRequired') { throw "Test 7 rollback state: $($rep.rollback.state)" }
-    if ($rep.rollback.errorCategory -ne 'UNKNOWN') { throw "Test 7 secondary errorCategory: $($rep.rollback.errorCategory)" }
+    if ($rep.rollback.errorCategory -ne 'RuntimeException') { throw "Test 7 secondary errorCategory: $($rep.rollback.errorCategory)" }
     Write-Output '  [PASS] Test 7: Runtime safe-stop fails -> original and secondary error both recorded, no false PASS'
   }
 
   # --- TEST 8: Neighbor isolation on actual execution branch -> no changes to Quản lí nội trú, other tasks, unrelated processes, shared database services or Nginx ---
-  {
+  Invoke-AudTest 8 'Neighbor isolation on actual execution branch -> no changes to Quản lí nội trú, other tasks, unrelated processes, shared database services or Nginx' {
     $fix = New-AudFixtureEnvironment 'test8'
     $foreignDir = Join-Path $tempDir 'Quan_li_noi_tru'
     New-Item -ItemType Directory -Path $foreignDir -Force | Out-Null
@@ -555,7 +652,7 @@ try {
     $xfer = Prepare-IncomingTransfer $fix.Root $newSha
 
     $stubs = @{
-      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root, [parameter(ValueFromRemainingArguments)]`$Rest) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
       'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
       'run-migrations.ps1' = "Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
       'sync-capability-catalog.ps1' = "throw 'Simulated pre-switch catalog failure for neighbor isolation test'"
@@ -598,7 +695,7 @@ try {
   }
 
   # --- TEST 9 (R1-1): Current points to unexpected third release C before switch -> fail-closed ---
-  {
+  Invoke-AudTest 9 'Current points to unexpected third release C before switch -> fail-closed' {
     $fix = New-AudFixtureEnvironment 'test9'
     $origReleaseDir = Join-Path $fix.Root "releases\$origSha\apps\api\dist\apps\api\src"
     New-Item -ItemType Directory -Path $origReleaseDir -Force | Out-Null
@@ -613,10 +710,10 @@ try {
     $xfer = Prepare-IncomingTransfer $fix.Root $newSha
 
     $stubs = @{
-      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root, [parameter(ValueFromRemainingArguments)]`$Rest) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
       'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
       'run-migrations.ps1' = "Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
-      'sync-capability-catalog.ps1' = "param(`$ReleaseSha, `$Root) Remove-Item -LiteralPath (Join-Path `$Root 'current') -Force; New-Item -ItemType Junction -Path (Join-Path `$Root 'current') -Target (Join-Path `$Root 'releases\$thirdSha') | Out-Null; throw 'Simulated catalog failure after unexpected pointer mutation to third release'"
+      'sync-capability-catalog.ps1' = "param(`$ReleaseSha, `$ReleasePath, `$NodeExe, `$Root, [parameter(ValueFromRemainingArguments)]`$Rest) [IO.Directory]::Delete((Join-Path `$Root 'current')); New-Item -ItemType Junction -Path (Join-Path `$Root 'current') -Target (Join-Path `$Root 'releases\$thirdSha') | Out-Null; throw 'Simulated catalog failure after unexpected pointer mutation to third release'"
       'restart-baogiang-api.ps1' = "throw 'CRITICAL DEFECT: restart-baogiang-api was called on unexpected release target!'"
     }
     Set-FixtureScriptStubs $stubs
@@ -653,7 +750,7 @@ try {
   }
 
   # --- TEST 10 (R1-2): Current exists but target cannot be verified (broken junction) -> fail-closed ---
-  {
+  Invoke-AudTest 10 'Current exists but target cannot be verified (broken junction) -> fail-closed' {
     $fix = New-AudFixtureEnvironment 'test10'
     $origReleaseDir = Join-Path $fix.Root "releases\$origSha\apps\api\dist\apps\api\src"
     New-Item -ItemType Directory -Path $origReleaseDir -Force | Out-Null
@@ -663,10 +760,10 @@ try {
     $xfer = Prepare-IncomingTransfer $fix.Root $newSha
 
     $stubs = @{
-      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root, [parameter(ValueFromRemainingArguments)]`$Rest) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
       'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
       'run-migrations.ps1' = "Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
-      'sync-capability-catalog.ps1' = "param(`$ReleaseSha, `$Root) Remove-Item -LiteralPath (Join-Path `$Root 'current') -Force; New-Item -ItemType Junction -Path (Join-Path `$Root 'current') -Target (Join-Path `$Root 'nonexistent-target') | Out-Null; throw 'Simulated catalog failure after breaking current junction'"
+      'sync-capability-catalog.ps1' = "param(`$ReleaseSha, `$ReleasePath, `$NodeExe, `$Root, [parameter(ValueFromRemainingArguments)]`$Rest) `$bad = Join-Path `$Root 'bad-target'; New-Item -ItemType Directory -Path `$bad -Force | Out-Null; [IO.Directory]::Delete((Join-Path `$Root 'current')); New-Item -ItemType Junction -Path (Join-Path `$Root 'current') -Target `$bad | Out-Null; [IO.Directory]::Delete(`$bad); throw 'Simulated catalog failure after breaking current junction'"
       'restart-baogiang-api.ps1' = "throw 'CRITICAL DEFECT: restart-baogiang-api was called on broken pointer target!'"
     }
     Set-FixtureScriptStubs $stubs
@@ -703,7 +800,7 @@ try {
   }
 
   # --- TEST 11 (R1-3): Current is exactly original release -> restarted and verified on current ---
-  {
+  Invoke-AudTest 11 'Current is exactly original release -> restarted and verified on current' {
     $fix = New-AudFixtureEnvironment 'test11'
     $origReleaseDir = Join-Path $fix.Root "releases\$origSha\apps\api\dist\apps\api\src"
     New-Item -ItemType Directory -Path $origReleaseDir -Force | Out-Null
@@ -713,7 +810,7 @@ try {
     $xfer = Prepare-IncomingTransfer $fix.Root $newSha
 
     $stubs = @{
-      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root, [parameter(ValueFromRemainingArguments)]`$Rest) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
       'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
       'run-migrations.ps1' = "Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
       'sync-capability-catalog.ps1' = "throw 'Simulated capability catalog sync failure before switch'"
@@ -755,7 +852,7 @@ try {
   }
 
   # --- TEST 12 (R1-4): Partial switch current/previous/current.next ---
-  {
+  Invoke-AudTest 12 'Partial switch current/previous/current.next' {
     # 12A: previous is original release -> restored to current, verified, completed
     $fixA = New-AudFixtureEnvironment 'test12a'
     $origReleaseDir = Join-Path $fixA.Root "releases\$origSha\apps\api\dist\apps\api\src"
@@ -765,11 +862,11 @@ try {
 
     $xferA = Prepare-IncomingTransfer $fixA.Root $newSha
     $stubsA = @{
-      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root, [parameter(ValueFromRemainingArguments)]`$Rest) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
       'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
       'run-migrations.ps1' = "Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
       'sync-capability-catalog.ps1' = "Write-Output '{`"state`":`"completed`",`"expectedDefinitionCount`":10,`"verifiedDefinitionCount`":10}'"
-      'switch-current-release.ps1' = "param(`$ReleaseSha, `$Root) Move-Item -LiteralPath (Join-Path `$Root 'current') -Destination (Join-Path `$Root 'previous'); New-Item -ItemType Junction -Path (Join-Path `$Root 'current.next') -Target (Join-Path `$Root `"releases\`$ReleaseSha`") | Out-Null; throw 'Simulated partial switch crash after moving current to previous'"
+      'switch-current-release.ps1' = "param(`$ReleaseSha, `$Root, [parameter(ValueFromRemainingArguments)]`$Rest) Move-Item -LiteralPath (Join-Path `$Root 'current') -Destination (Join-Path `$Root 'previous'); New-Item -ItemType Junction -Path (Join-Path `$Root 'current.next') -Target (Join-Path `$Root `"releases\`$ReleaseSha`") | Out-Null; throw 'Simulated partial switch crash after moving current to previous'"
       'restart-baogiang-api.ps1' = "Write-Output '{`"runtimeKind`":`"scheduled-task`",`"activationState`":`"enabled-running`"}'"
       'test-production-health.ps1' = "Write-Output '{`"state`":`"healthy`",`"httpStatus`":200}'"
     }
@@ -817,11 +914,11 @@ try {
 
     $xferB = Prepare-IncomingTransfer $fixB.Root $newSha
     $stubsB = @{
-      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root, [parameter(ValueFromRemainingArguments)]`$Rest) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
       'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
       'run-migrations.ps1' = "Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
       'sync-capability-catalog.ps1' = "Write-Output '{`"state`":`"completed`",`"expectedDefinitionCount`":10,`"verifiedDefinitionCount`":10}'"
-      'switch-current-release.ps1' = "param(`$ReleaseSha, `$Root) Remove-Item -LiteralPath (Join-Path `$Root 'current') -Force; New-Item -ItemType Junction -Path (Join-Path `$Root 'previous') -Target (Join-Path `$Root 'releases\$thirdShaB') | Out-Null; throw 'Simulated partial switch with corrupted previous pointer'"
+      'switch-current-release.ps1' = "param(`$ReleaseSha, `$ReleasePath, `$NodeExe, `$Root, [parameter(ValueFromRemainingArguments)]`$Rest) [IO.Directory]::Delete((Join-Path `$Root 'current')); New-Item -ItemType Junction -Path (Join-Path `$Root 'previous') -Target (Join-Path `$Root 'releases\$thirdShaB') | Out-Null; throw 'Simulated partial switch with corrupted previous pointer'"
       'restart-baogiang-api.ps1' = "throw 'CRITICAL DEFECT: restart called on corrupted partial switch!'"
     }
     Set-FixtureScriptStubs $stubsB
@@ -853,7 +950,7 @@ try {
   }
 
   # --- TEST 13 (R1-5): Failed restart/health and safe-stop ---
-  {
+  Invoke-AudTest 13 'Failed restart/health and safe-stop' {
     # 13A: Health check fails -> safe-stop invoked, state = failed
     $fixA = New-AudFixtureEnvironment 'test13a'
     $origReleaseDir = Join-Path $fixA.Root "releases\$origSha\apps\api\dist\apps\api\src"
@@ -863,7 +960,7 @@ try {
 
     $xferA = Prepare-IncomingTransfer $fixA.Root $newSha
     $stubsA = @{
-      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root, [parameter(ValueFromRemainingArguments)]`$Rest) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
       'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
       'run-migrations.ps1' = "Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
       'sync-capability-catalog.ps1' = "throw 'Simulated pre-switch catalog failure before health test'"
@@ -897,7 +994,7 @@ try {
 
     $repA = Get-Content (Join-Path $fixA.Root "logs\deploy-report-$newSha.json") -Raw | ConvertFrom-Json
     if ($repA.rollback.state -ne 'failed') { throw "Test 13A rollback state: $($repA.rollback.state)" }
-    if ($repA.rollback.errorCategory -ne 'UNKNOWN') { throw "Test 13A rollback errorCategory: $($repA.rollback.errorCategory)" }
+    if ($repA.rollback.errorCategory -ne 'RuntimeException') { throw "Test 13A rollback errorCategory: $($repA.rollback.errorCategory)" }
 
     # 13B: Health check fails AND safe-stop fails -> secondary cleanup failure recorded
     $fixB = New-AudFixtureEnvironment 'test13b'
@@ -907,7 +1004,15 @@ try {
     New-Item -ItemType Junction -Path (Join-Path $fixB.Root 'current') -Target (Join-Path $fixB.Root "releases\$origSha") | Out-Null
 
     $xferB = Prepare-IncomingTransfer $fixB.Root $newSha
-    Set-FixtureScriptStubs $stubsA
+    $stubsB = @{
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root, [parameter(ValueFromRemainingArguments)]`$Rest) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
+      'run-migrations.ps1' = "Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
+      'sync-capability-catalog.ps1' = "throw 'Simulated pre-switch catalog failure before health test'"
+      'restart-baogiang-api.ps1' = "Write-Output '{`"runtimeKind`":`"scheduled-task`",`"activationState`":`"enabled-running`"}'"
+      'test-production-health.ps1' = "`$global:aud04StopShouldFail = `$true; throw 'Simulated health check timeout during rollback'"
+    }
+    Set-FixtureScriptStubs $stubsB
 
     $paramFileB = Join-Path $fixB.Root 'deploy-params.json'
     Write-DeploymentParameters $paramFileB @{
@@ -921,7 +1026,7 @@ try {
     }
 
     $global:aud04StopCalls.Clear()
-    $global:aud04StopShouldFail = $true
+    $global:aud04StopShouldFail = $false
     $thrown = $false
     try {
       & (Join-Path $fixtureScriptsDir 'invoke-production-deploy.ps1') -ParameterFile $paramFileB | Out-Null
@@ -935,13 +1040,13 @@ try {
 
     $repB = Get-Content (Join-Path $fixB.Root "logs\deploy-report-$newSha.json") -Raw | ConvertFrom-Json
     if ($repB.rollback.state -ne 'failed') { throw "Test 13B rollback state: $($repB.rollback.state)" }
-    if ($repB.rollback.errorCategory -ne 'UNKNOWN') { throw "Test 13B rollback errorCategory: $($repB.rollback.errorCategory)" }
+    if ($repB.rollback.errorCategory -ne 'RuntimeException') { throw "Test 13B rollback errorCategory: $($repB.rollback.errorCategory)" }
 
     Write-Output '  [PASS] Test 13 (R1-5): Failed restart/health and safe-stop (13A safe-stop invoked on health fail, 13B secondary failure captured)'
   }
 
   # --- TEST 14 (R1-6A): Original pointer remains A throughout recovery -> completed, no unnecessary stop ---
-  {
+  Invoke-AudTest 14 'Original pointer remains A throughout recovery -> completed, no unnecessary stop' {
     $fix = New-AudFixtureEnvironment 'test14'
     $origReleaseDir = Join-Path $fix.Root "releases\$origSha\apps\api\dist\apps\api\src"
     New-Item -ItemType Directory -Path $origReleaseDir -Force | Out-Null
@@ -951,10 +1056,10 @@ try {
     $xfer = Prepare-IncomingTransfer $fix.Root $newSha
 
     $stubs = @{
-      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root, [parameter(ValueFromRemainingArguments)]`$Rest) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
       'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
       'run-migrations.ps1' = "Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
-      'sync-capability-catalog.ps1' = "throw 'Simulated pre-switch catalog failure before recovery test'"
+      'sync-capability-catalog.ps1' = "`$global:aud04StopCalls.Clear(); throw 'Simulated pre-switch catalog failure before recovery test'"
       'restart-baogiang-api.ps1' = "Write-Output '{`"runtimeKind`":`"scheduled-task`",`"activationState`":`"enabled-running`"}'"
       'test-production-health.ps1' = "Write-Output '{`"state`":`"healthy`",`"httpStatus`":200}'"
     }
@@ -994,7 +1099,7 @@ try {
   }
 
   # --- TEST 15 (R1-6B): Pointer changes A -> C after restart/health -> exact runtime safely stopped, recovery failed ---
-  {
+  Invoke-AudTest 15 'Pointer changes A -> C after restart/health -> exact runtime safely stopped, recovery failed' {
     $fix = New-AudFixtureEnvironment 'test15'
     $origReleaseDir = Join-Path $fix.Root "releases\$origSha\apps\api\dist\apps\api\src"
     New-Item -ItemType Directory -Path $origReleaseDir -Force | Out-Null
@@ -1009,12 +1114,12 @@ try {
     $xfer = Prepare-IncomingTransfer $fix.Root $newSha
 
     $stubs = @{
-      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root, [parameter(ValueFromRemainingArguments)]`$Rest) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
       'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
       'run-migrations.ps1' = "Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
       'sync-capability-catalog.ps1' = "throw 'Simulated pre-switch catalog failure before recovery mutation test'"
       'restart-baogiang-api.ps1' = "Write-Output '{`"runtimeKind`":`"scheduled-task`",`"activationState`":`"enabled-running`"}'"
-      'test-production-health.ps1' = "Remove-Item -LiteralPath (Join-Path '$($fix.Root)' 'current') -Force; New-Item -ItemType Junction -Path (Join-Path '$($fix.Root)' 'current') -Target (Join-Path '$($fix.Root)' 'releases\$thirdSha') | Out-Null; Write-Output '{`"state`":`"healthy`",`"httpStatus`":200}'"
+      'test-production-health.ps1' = "[IO.Directory]::Delete((Join-Path '$($fix.Root)' 'current')); New-Item -ItemType Junction -Path (Join-Path '$($fix.Root)' 'current') -Target (Join-Path '$($fix.Root)' 'releases\$thirdSha') | Out-Null; Write-Output '{`"state`":`"healthy`",`"httpStatus`":200}'"
     }
     Set-FixtureScriptStubs $stubs
 
@@ -1046,12 +1151,12 @@ try {
     $reportPath = Join-Path $fix.Root "logs\deploy-report-$newSha.json"
     $rep = Get-Content $reportPath -Raw | ConvertFrom-Json
     if ($rep.rollback.state -ne 'failed') { throw "Test 15 rollback state: $($rep.rollback.state) (must be failed)" }
-    if ($rep.rollback.errorCategory -ne 'UNKNOWN') { throw "Test 15 rollback errorCategory: $($rep.rollback.errorCategory)" }
+    if ($rep.rollback.errorCategory -ne 'RuntimeException') { throw "Test 15 rollback errorCategory: $($rep.rollback.errorCategory)" }
     Write-Output '  [PASS] Test 15 (R1-6B): Pointer mutated A -> C during recovery -> exact runtime safely stopped, recovery not completed'
   }
 
   # --- TEST 16 (R1-6C): Pointer becomes unreadable/dangling during recovery -> fail-closed and safe-stop ---
-  {
+  Invoke-AudTest 16 'Pointer becomes unreadable/dangling during recovery -> fail-closed and safe-stop' {
     $fix = New-AudFixtureEnvironment 'test16'
     $origReleaseDir = Join-Path $fix.Root "releases\$origSha\apps\api\dist\apps\api\src"
     New-Item -ItemType Directory -Path $origReleaseDir -Force | Out-Null
@@ -1061,12 +1166,12 @@ try {
     $xfer = Prepare-IncomingTransfer $fix.Root $newSha
 
     $stubs = @{
-      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root, [parameter(ValueFromRemainingArguments)]`$Rest) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
       'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
       'run-migrations.ps1' = "Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
       'sync-capability-catalog.ps1' = "throw 'Simulated pre-switch catalog failure before dangling test'"
       'restart-baogiang-api.ps1' = "Write-Output '{`"runtimeKind`":`"scheduled-task`",`"activationState`":`"enabled-running`"}'"
-      'test-production-health.ps1' = "Remove-Item -LiteralPath (Join-Path '$($fix.Root)' 'current') -Force; New-Item -ItemType Junction -Path (Join-Path '$($fix.Root)' 'current') -Target (Join-Path '$($fix.Root)' 'nonexistent-dangling-recovery') | Out-Null; Write-Output '{`"state`":`"healthy`",`"httpStatus`":200}'"
+      'test-production-health.ps1' = "`$bad = Join-Path '$($fix.Root)' 'dangling-target'; New-Item -ItemType Directory -Path `$bad -Force | Out-Null; [IO.Directory]::Delete((Join-Path '$($fix.Root)' 'current')); New-Item -ItemType Junction -Path (Join-Path '$($fix.Root)' 'current') -Target `$bad | Out-Null; [IO.Directory]::Delete(`$bad); Write-Output '{`"state`":`"healthy`",`"httpStatus`":200}'"
     }
     Set-FixtureScriptStubs $stubs
 
@@ -1098,12 +1203,12 @@ try {
     $reportPath = Join-Path $fix.Root "logs\deploy-report-$newSha.json"
     $rep = Get-Content $reportPath -Raw | ConvertFrom-Json
     if ($rep.rollback.state -ne 'failed') { throw "Test 16 rollback state: $($rep.rollback.state) (must be failed)" }
-    if ($rep.rollback.errorCategory -ne 'UNKNOWN') { throw "Test 16 rollback errorCategory: $($rep.rollback.errorCategory)" }
+    if ($rep.rollback.errorCategory -ne 'RuntimeException') { throw "Test 16 rollback errorCategory: $($rep.rollback.errorCategory)" }
     Write-Output '  [PASS] Test 16 (R1-6C): Pointer becomes unreadable/dangling during recovery -> fail-closed and safe-stop'
   }
 
   # --- TEST 17 (R1-6D): Pointer verification fails AND safe-stop fails -> both failures recorded, no false PASS ---
-  {
+  Invoke-AudTest 17 'Pointer verification fails AND safe-stop fails -> both failures recorded, no false PASS' {
     $fix = New-AudFixtureEnvironment 'test17'
     $origReleaseDir = Join-Path $fix.Root "releases\$origSha\apps\api\dist\apps\api\src"
     New-Item -ItemType Directory -Path $origReleaseDir -Force | Out-Null
@@ -1118,12 +1223,12 @@ try {
     $xfer = Prepare-IncomingTransfer $fix.Root $newSha
 
     $stubs = @{
-      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root, [parameter(ValueFromRemainingArguments)]`$Rest) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
       'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
       'run-migrations.ps1' = "Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
       'sync-capability-catalog.ps1' = "throw 'Simulated pre-switch catalog failure before cleanup failure test'"
       'restart-baogiang-api.ps1' = "Write-Output '{`"runtimeKind`":`"scheduled-task`",`"activationState`":`"enabled-running`"}'"
-      'test-production-health.ps1' = "Remove-Item -LiteralPath (Join-Path '$($fix.Root)' 'current') -Force; New-Item -ItemType Junction -Path (Join-Path '$($fix.Root)' 'current') -Target (Join-Path '$($fix.Root)' 'releases\$thirdSha') | Out-Null; Write-Output '{`"state`":`"healthy`",`"httpStatus`":200}'"
+      'test-production-health.ps1' = "`$global:aud04StopShouldFail = `$true; [IO.Directory]::Delete((Join-Path '$($fix.Root)' 'current')); New-Item -ItemType Junction -Path (Join-Path '$($fix.Root)' 'current') -Target (Join-Path '$($fix.Root)' 'releases\$thirdSha') | Out-Null; Write-Output '{`"state`":`"healthy`",`"httpStatus`":200}'"
     }
     Set-FixtureScriptStubs $stubs
 
@@ -1139,7 +1244,7 @@ try {
     }
 
     $global:aud04StopCalls.Clear()
-    $global:aud04StopShouldFail = $true
+    $global:aud04StopShouldFail = $false
     $thrown = $false
     try {
       & (Join-Path $fixtureScriptsDir 'invoke-production-deploy.ps1') -ParameterFile $paramFile | Out-Null
@@ -1154,12 +1259,12 @@ try {
     $reportPath = Join-Path $fix.Root "logs\deploy-report-$newSha.json"
     $rep = Get-Content $reportPath -Raw | ConvertFrom-Json
     if ($rep.rollback.state -ne 'failed') { throw "Test 17 rollback state: $($rep.rollback.state) (must be failed)" }
-    if ($rep.rollback.errorCategory -ne 'UNKNOWN') { throw "Test 17 rollback errorCategory: $($rep.rollback.errorCategory)" }
+    if ($rep.rollback.errorCategory -ne 'RuntimeException') { throw "Test 17 rollback errorCategory: $($rep.rollback.errorCategory)" }
     Write-Output '  [PASS] Test 17 (R1-6D): Pointer verification fails and safe-stop fails -> both failures recorded, no false PASS'
   }
 
   # --- TEST 18 (R1-6E): Neighbor isolation verified during post-recovery pointer failure -> neighbor untouched ---
-  {
+  Invoke-AudTest 18 'Neighbor isolation verified during post-recovery pointer failure -> neighbor untouched' {
     $fix = New-AudFixtureEnvironment 'test18'
     $foreignDir = Join-Path $tempDir 'Quan_li_noi_tru_post'
     New-Item -ItemType Directory -Path $foreignDir -Force | Out-Null
@@ -1180,12 +1285,12 @@ try {
     $xfer = Prepare-IncomingTransfer $fix.Root $newSha
 
     $stubs = @{
-      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root, [parameter(ValueFromRemainingArguments)]`$Rest) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
       'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
       'run-migrations.ps1' = "Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
       'sync-capability-catalog.ps1' = "throw 'Simulated pre-switch catalog failure for neighbor post-recovery test'"
       'restart-baogiang-api.ps1' = "Write-Output '{`"runtimeKind`":`"scheduled-task`",`"activationState`":`"enabled-running`"}'"
-      'test-production-health.ps1' = "Remove-Item -LiteralPath (Join-Path '$($fix.Root)' 'current') -Force; New-Item -ItemType Junction -Path (Join-Path '$($fix.Root)' 'current') -Target (Join-Path '$($fix.Root)' 'releases\$thirdSha') | Out-Null; Write-Output '{`"state`":`"healthy`",`"httpStatus`":200}'"
+      'test-production-health.ps1' = "[IO.Directory]::Delete((Join-Path '$($fix.Root)' 'current')); New-Item -ItemType Junction -Path (Join-Path '$($fix.Root)' 'current') -Target (Join-Path '$($fix.Root)' 'releases\$thirdSha') | Out-Null; Write-Output '{`"state`":`"healthy`",`"httpStatus`":200}'"
     }
     Set-FixtureScriptStubs $stubs
 
@@ -1225,7 +1330,7 @@ try {
   }
 
   # --- TEST 19 (AUD-04-R2): Missing or invalid maintenance approval -> reject before safe-stop or migration ---
-  {
+  Invoke-AudTest 19 'Missing or invalid maintenance approval -> reject before safe-stop or migration' {
     $fix = New-AudFixtureEnvironment 'test19'
     $origReleaseDir = Join-Path $fix.Root "releases\$origSha\apps\api\dist\apps\api\src"
     New-Item -ItemType Directory -Path $origReleaseDir -Force | Out-Null
@@ -1235,7 +1340,7 @@ try {
 
     $flagFile = Join-Path $fix.Root 'migration-called-19.flag'
     $stubs = @{
-      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root, [parameter(ValueFromRemainingArguments)]`$Rest) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
       'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
       'run-migrations.ps1' = "New-Item -LiteralPath '$flagFile' -ItemType File | Out-Null; Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
     }
@@ -1250,7 +1355,7 @@ try {
       EnvFile = $fix.EnvFile; StartupWrapper = $fix.StartupWrapper; NginxExe = $fakeToolPath; NginxConfig = $fix.NginxConfig
       ExpectedBaseUrl = 'https://baogiang.dtnt-damsan.edu.vn'; ServiceKind = 'scheduled-task'; ServiceName = 'BaoGiangBackend'
       ExpectedEntryPoint = $fix.EntryPoint; MigrationRequested = $true; ProductionMigrationApproved = $true
-      MaintenanceWindow = $null; ReportFileName = "deploy-report-19a.json"
+      MaintenanceWindow = $null; ReportFileName = "deploy-report-$newSha.json"
     }
     $thrown = $false
     try { & (Join-Path $fixtureScriptsDir 'invoke-production-deploy.ps1') -ParameterFile $paramFileA | Out-Null }
@@ -1259,6 +1364,8 @@ try {
     if (Test-Path -LiteralPath $flagFile) { throw 'Test 19A migration was called despite missing window' }
 
     # 19B: MaintenanceWindow not approved (Approved = $false)
+    Remove-Item -LiteralPath (Join-Path $fix.Root "incoming\release-$newSha.zip") -Force -ErrorAction SilentlyContinue
+    $xfer = Prepare-IncomingTransfer $fix.Root $newSha
     $paramFileB = Join-Path $fix.Root 'deploy-params-19b.json'
     Write-DeploymentParameters $paramFileB @{
       ReleaseSha = $newSha; Root = $fix.Root; TransferDirectoryName = $xfer.TransferDir; SourceArchiveName = $xfer.ArchiveName
@@ -1268,7 +1375,7 @@ try {
       ExpectedBaseUrl = 'https://baogiang.dtnt-damsan.edu.vn'; ServiceKind = 'scheduled-task'; ServiceName = 'BaoGiangBackend'
       ExpectedEntryPoint = $fix.EntryPoint; MigrationRequested = $true; ProductionMigrationApproved = $true
       MaintenanceWindow = [ordered]@{ ReleaseSha = $newSha; StartUtc = [DateTime]::UtcNow.AddMinutes(-5).ToString('yyyy-MM-ddTHH:mm:ssZ'); EndUtc = [DateTime]::UtcNow.AddHours(1).ToString('yyyy-MM-ddTHH:mm:ssZ'); AuthorizedBy = 'ops'; Approved = $false }
-      ReportFileName = "deploy-report-19b.json"
+      ReportFileName = "deploy-report-$newSha.json"
     }
     $thrown = $false
     try { & (Join-Path $fixtureScriptsDir 'invoke-production-deploy.ps1') -ParameterFile $paramFileB | Out-Null }
@@ -1277,6 +1384,8 @@ try {
     if (Test-Path -LiteralPath $flagFile) { throw 'Test 19B migration was called despite unapproved window' }
 
     # 19C: MaintenanceWindow operator invalid
+    Remove-Item -LiteralPath (Join-Path $fix.Root "incoming\release-$newSha.zip") -Force -ErrorAction SilentlyContinue
+    $xfer = Prepare-IncomingTransfer $fix.Root $newSha
     $paramFileC = Join-Path $fix.Root 'deploy-params-19c.json'
     Write-DeploymentParameters $paramFileC @{
       ReleaseSha = $newSha; Root = $fix.Root; TransferDirectoryName = $xfer.TransferDir; SourceArchiveName = $xfer.ArchiveName
@@ -1286,7 +1395,7 @@ try {
       ExpectedBaseUrl = 'https://baogiang.dtnt-damsan.edu.vn'; ServiceKind = 'scheduled-task'; ServiceName = 'BaoGiangBackend'
       ExpectedEntryPoint = $fix.EntryPoint; MigrationRequested = $true; ProductionMigrationApproved = $true
       MaintenanceWindow = [ordered]@{ ReleaseSha = $newSha; StartUtc = [DateTime]::UtcNow.AddMinutes(-5).ToString('yyyy-MM-ddTHH:mm:ssZ'); EndUtc = [DateTime]::UtcNow.AddHours(1).ToString('yyyy-MM-ddTHH:mm:ssZ'); AuthorizedBy = ''; Approved = $true }
-      ReportFileName = "deploy-report-19c.json"
+      ReportFileName = "deploy-report-$newSha.json"
     }
     $thrown = $false
     try { & (Join-Path $fixtureScriptsDir 'invoke-production-deploy.ps1') -ParameterFile $paramFileC | Out-Null }
@@ -1295,6 +1404,8 @@ try {
     if (Test-Path -LiteralPath $flagFile) { throw 'Test 19C migration was called despite invalid operator' }
 
     # 19D: Target SHA mismatch
+    Remove-Item -LiteralPath (Join-Path $fix.Root "incoming\release-$newSha.zip") -Force -ErrorAction SilentlyContinue
+    $xfer = Prepare-IncomingTransfer $fix.Root $newSha
     $paramFileD = Join-Path $fix.Root 'deploy-params-19d.json'
     Write-DeploymentParameters $paramFileD @{
       ReleaseSha = $newSha; Root = $fix.Root; TransferDirectoryName = $xfer.TransferDir; SourceArchiveName = $xfer.ArchiveName
@@ -1304,7 +1415,7 @@ try {
       ExpectedBaseUrl = 'https://baogiang.dtnt-damsan.edu.vn'; ServiceKind = 'scheduled-task'; ServiceName = 'BaoGiangBackend'
       ExpectedEntryPoint = $fix.EntryPoint; MigrationRequested = $true; ProductionMigrationApproved = $true
       MaintenanceWindow = [ordered]@{ ReleaseSha = ('f' * 40); StartUtc = [DateTime]::UtcNow.AddMinutes(-5).ToString('yyyy-MM-ddTHH:mm:ssZ'); EndUtc = [DateTime]::UtcNow.AddHours(1).ToString('yyyy-MM-ddTHH:mm:ssZ'); AuthorizedBy = 'ops'; Approved = $true }
-      ReportFileName = "deploy-report-19d.json"
+      ReportFileName = "deploy-report-$newSha.json"
     }
     $thrown = $false
     try { & (Join-Path $fixtureScriptsDir 'invoke-production-deploy.ps1') -ParameterFile $paramFileD | Out-Null }
@@ -1316,7 +1427,7 @@ try {
   }
 
   # --- TEST 20 (AUD-04-R2): Expired, future or invalid-range maintenance window -> rejected before stop/migration ---
-  {
+  Invoke-AudTest 20 'Expired, future or invalid-range maintenance window -> rejected before stop/migration' {
     $fix = New-AudFixtureEnvironment 'test20'
     $origReleaseDir = Join-Path $fix.Root "releases\$origSha\apps\api\dist\apps\api\src"
     New-Item -ItemType Directory -Path $origReleaseDir -Force | Out-Null
@@ -1326,7 +1437,7 @@ try {
 
     $flagFile = Join-Path $fix.Root 'migration-called-20.flag'
     $stubs = @{
-      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root, [parameter(ValueFromRemainingArguments)]`$Rest) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
       'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
       'run-migrations.ps1' = "New-Item -LiteralPath '$flagFile' -ItemType File | Out-Null; Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
     }
@@ -1342,7 +1453,7 @@ try {
       ExpectedBaseUrl = 'https://baogiang.dtnt-damsan.edu.vn'; ServiceKind = 'scheduled-task'; ServiceName = 'BaoGiangBackend'
       ExpectedEntryPoint = $fix.EntryPoint; MigrationRequested = $true; ProductionMigrationApproved = $true
       MaintenanceWindow = [ordered]@{ ReleaseSha = $newSha; StartUtc = [DateTime]::UtcNow.AddHours(2).ToString('yyyy-MM-ddTHH:mm:ssZ'); EndUtc = [DateTime]::UtcNow.AddHours(3).ToString('yyyy-MM-ddTHH:mm:ssZ'); AuthorizedBy = 'ops'; Approved = $true }
-      ReportFileName = "deploy-report-20a.json"
+      ReportFileName = "deploy-report-$newSha.json"
     }
     $thrown = $false
     try { & (Join-Path $fixtureScriptsDir 'invoke-production-deploy.ps1') -ParameterFile $paramFileA | Out-Null }
@@ -1351,6 +1462,8 @@ try {
     if (Test-Path -LiteralPath $flagFile) { throw 'Test 20A migration called despite future window' }
 
     # 20B: Expired window
+    Remove-Item -LiteralPath (Join-Path $fix.Root "incoming\release-$newSha.zip") -Force -ErrorAction SilentlyContinue
+    $xfer = Prepare-IncomingTransfer $fix.Root $newSha
     $paramFileB = Join-Path $fix.Root 'deploy-params-20b.json'
     Write-DeploymentParameters $paramFileB @{
       ReleaseSha = $newSha; Root = $fix.Root; TransferDirectoryName = $xfer.TransferDir; SourceArchiveName = $xfer.ArchiveName
@@ -1360,7 +1473,7 @@ try {
       ExpectedBaseUrl = 'https://baogiang.dtnt-damsan.edu.vn'; ServiceKind = 'scheduled-task'; ServiceName = 'BaoGiangBackend'
       ExpectedEntryPoint = $fix.EntryPoint; MigrationRequested = $true; ProductionMigrationApproved = $true
       MaintenanceWindow = [ordered]@{ ReleaseSha = $newSha; StartUtc = [DateTime]::UtcNow.AddHours(-2).ToString('yyyy-MM-ddTHH:mm:ssZ'); EndUtc = [DateTime]::UtcNow.AddHours(-1).ToString('yyyy-MM-ddTHH:mm:ssZ'); AuthorizedBy = 'ops'; Approved = $true }
-      ReportFileName = "deploy-report-20b.json"
+      ReportFileName = "deploy-report-$newSha.json"
     }
     $thrown = $false
     try { & (Join-Path $fixtureScriptsDir 'invoke-production-deploy.ps1') -ParameterFile $paramFileB | Out-Null }
@@ -1369,6 +1482,8 @@ try {
     if (Test-Path -LiteralPath $flagFile) { throw 'Test 20B migration called despite expired window' }
 
     # 20C: Invalid range
+    Remove-Item -LiteralPath (Join-Path $fix.Root "incoming\release-$newSha.zip") -Force -ErrorAction SilentlyContinue
+    $xfer = Prepare-IncomingTransfer $fix.Root $newSha
     $paramFileC = Join-Path $fix.Root 'deploy-params-20c.json'
     Write-DeploymentParameters $paramFileC @{
       ReleaseSha = $newSha; Root = $fix.Root; TransferDirectoryName = $xfer.TransferDir; SourceArchiveName = $xfer.ArchiveName
@@ -1378,7 +1493,7 @@ try {
       ExpectedBaseUrl = 'https://baogiang.dtnt-damsan.edu.vn'; ServiceKind = 'scheduled-task'; ServiceName = 'BaoGiangBackend'
       ExpectedEntryPoint = $fix.EntryPoint; MigrationRequested = $true; ProductionMigrationApproved = $true
       MaintenanceWindow = [ordered]@{ ReleaseSha = $newSha; StartUtc = [DateTime]::UtcNow.AddHours(1).ToString('yyyy-MM-ddTHH:mm:ssZ'); EndUtc = [DateTime]::UtcNow.AddHours(-1).ToString('yyyy-MM-ddTHH:mm:ssZ'); AuthorizedBy = 'ops'; Approved = $true }
-      ReportFileName = "deploy-report-20c.json"
+      ReportFileName = "deploy-report-$newSha.json"
     }
     $thrown = $false
     try { & (Join-Path $fixtureScriptsDir 'invoke-production-deploy.ps1') -ParameterFile $paramFileC | Out-Null }
@@ -1389,7 +1504,7 @@ try {
   }
 
   # --- TEST 21 (AUD-04-R2): Successful pre-migration quiescence -> migration -> sync -> switch -> activation ---
-  {
+  Invoke-AudTest 21 'Successful pre-migration quiescence -> migration -> sync -> switch -> activation' {
     $fix = New-AudFixtureEnvironment 'test21'
     $origReleaseDir = Join-Path $fix.Root "releases\$origSha\apps\api\dist\apps\api\src"
     New-Item -ItemType Directory -Path $origReleaseDir -Force | Out-Null
@@ -1400,7 +1515,7 @@ try {
     $xfer = Prepare-IncomingTransfer $fix.Root $newSha
 
     $stubs = @{
-      'install-release.ps1' = "param(`$ReleaseSha, `$Root) `$dir = Join-Path `$Root `"releases\`$ReleaseSha\apps\api\dist\apps\api\src`"; New-Item -ItemType Directory -Path `$dir -Force | Out-Null; [IO.File]::WriteAllText((Join-Path `$dir 'main.js'), 'console.log(\`"v2\`");'); Write-Output '{`"state`":`"installed`"}'"
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root, [parameter(ValueFromRemainingArguments)]`$Rest) `$dir = Join-Path `$Root `"releases\`$ReleaseSha\apps\api\dist\apps\api\src`"; New-Item -ItemType Directory -Path `$dir -Force | Out-Null; [IO.File]::WriteAllText((Join-Path `$dir 'main.js'), 'console.log(\`"v2\`");'); Write-Output '{`"state`":`"installed`"}'"
       'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
       'run-migrations.ps1' = "param([switch]`$QuiescenceVerified) if (-not `$QuiescenceVerified) { throw 'MIGRATION_QUIESCENCE_NOT_ASSERTED' }; Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
       'sync-capability-catalog.ps1' = "Write-Output '{`"state`":`"synchronized`"}'"
@@ -1435,7 +1550,7 @@ try {
   }
 
   # --- TEST 22 (AUD-04-R2): Safe-stop failure before migration -> migration never called ---
-  {
+  Invoke-AudTest 22 'Safe-stop failure before migration -> migration never called' {
     $fix = New-AudFixtureEnvironment 'test22'
     $origReleaseDir = Join-Path $fix.Root "releases\$origSha\apps\api\dist\apps\api\src"
     New-Item -ItemType Directory -Path $origReleaseDir -Force | Out-Null
@@ -1445,7 +1560,7 @@ try {
 
     $flagFile = Join-Path $fix.Root 'migration-executed-22.flag'
     $stubs = @{
-      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root, [parameter(ValueFromRemainingArguments)]`$Rest) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
       'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
       'run-migrations.ps1' = "New-Item -LiteralPath '$flagFile' -ItemType File | Out-Null; Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
     }
@@ -1482,7 +1597,7 @@ try {
   }
 
   # --- TEST 23 (AUD-04-R2): Quiescence verification failure (task enabled or port occupied) -> migration never called ---
-  {
+  Invoke-AudTest 23 'Quiescence verification failure (task enabled or port occupied) -> migration never called' {
     $fix = New-AudFixtureEnvironment 'test23'
     $origReleaseDir = Join-Path $fix.Root "releases\$origSha\apps\api\dist\apps\api\src"
     New-Item -ItemType Directory -Path $origReleaseDir -Force | Out-Null
@@ -1492,7 +1607,7 @@ try {
 
     $flagFile = Join-Path $fix.Root 'migration-executed-23.flag'
     $stubs = @{
-      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root, [parameter(ValueFromRemainingArguments)]`$Rest) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
       'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
       'run-migrations.ps1' = "New-Item -LiteralPath '$flagFile' -ItemType File | Out-Null; Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
     }
@@ -1515,7 +1630,7 @@ try {
       return [pscustomobject]@{
         TaskName = 'BaoGiangBackend'; TaskPath = '\BaoGiang\'; State = 'Running'
         Principal = [pscustomobject]@{ UserId = 'fixture-account' }
-        Actions = @([pscustomobject]@{ Execute = $fakeToolPath; Arguments = '-File start-baogiang-api.ps1'; WorkingDirectory = 'C:\dummy' })
+        Actions = @([pscustomobject]@{ Execute = $fakeToolPath; Arguments = '-File start-baogiang-api.ps1'; WorkingDirectory = $(if (-not [string]::IsNullOrWhiteSpace($global:currentAudFixtureWd)) { $global:currentAudFixtureWd } else { 'C:\dummy' }) })
         Triggers = @([pscustomobject]@{ CimClass = [pscustomobject]@{ CimClassName = 'MSFT_TaskBootTrigger' }; Enabled = $true })
       }
     }
@@ -1531,7 +1646,7 @@ try {
         return [pscustomobject]@{
           TaskName = 'BaoGiangBackend'; TaskPath = '\BaoGiang\'; State = 'Disabled'
           Principal = [pscustomobject]@{ UserId = 'fixture-account' }
-          Actions = @([pscustomobject]@{ Execute = $fakeToolPath; Arguments = '-File start-baogiang-api.ps1'; WorkingDirectory = 'C:\dummy' })
+          Actions = @([pscustomobject]@{ Execute = $fakeToolPath; Arguments = '-File start-baogiang-api.ps1'; WorkingDirectory = $(if (-not [string]::IsNullOrWhiteSpace($global:currentAudFixtureWd)) { $global:currentAudFixtureWd } else { 'C:\dummy' }) })
           Triggers = @([pscustomobject]@{ CimClass = [pscustomobject]@{ CimClassName = 'MSFT_TaskBootTrigger' }; Enabled = $true })
         }
       }
@@ -1540,10 +1655,22 @@ try {
     if (Test-Path -LiteralPath $flagFile) { throw 'Test 23A migration called despite enabled task' }
 
     # 23B: Port 3100 occupied by listener
+    Remove-Item -LiteralPath (Join-Path $fix.Root "incoming\release-$newSha.zip") -Force -ErrorAction SilentlyContinue
+    $xfer = Prepare-IncomingTransfer $fix.Root $newSha
     function global:Get-NetTCPConnection {
       param($State, $LocalPort, $ErrorAction)
       if ($LocalPort -eq 3100) {
         return @([pscustomobject]@{ OwningProcess = 1234; LocalPort = 3100; State = 'Listen' })
+      }
+      return @()
+    }
+    function global:Get-CimInstance {
+      param([string]$ClassName, [string]$Filter)
+      if ($ClassName -eq 'Win32_Process') {
+        return @([pscustomobject]@{ ProcessId = 1234; ExecutablePath = 'C:\foreign\app.exe'; CommandLine = 'foreign app' })
+      }
+      if ($ClassName -eq 'Win32_Service') {
+        return @([pscustomobject]@{ Name = 'BaoGiangBackend'; StartMode = 'Disabled'; State = 'Stopped'; StartName = 'fixture-account'; PathName = $fakeToolPath })
       }
       return @()
     }
@@ -1557,6 +1684,14 @@ try {
       }
     } finally {
       Remove-Item Function:\Get-NetTCPConnection -Force -ErrorAction SilentlyContinue
+      function global:Get-CimInstance {
+        param([string]$ClassName, [string]$Filter)
+        if ($ClassName -eq 'Win32_Process') { return @() }
+        if ($ClassName -eq 'Win32_Service') {
+          return @([pscustomobject]@{ Name = 'BaoGiangBackend'; StartMode = 'Disabled'; State = 'Stopped'; StartName = 'fixture-account'; PathName = $fakeToolPath })
+        }
+        return @()
+      }
     }
     if (-not $thrown) { throw 'Test 23B did not throw when port was occupied' }
     if (Test-Path -LiteralPath $flagFile) { throw 'Test 23B migration called despite occupied port' }
@@ -1565,7 +1700,7 @@ try {
   }
 
   # --- TEST 24 (AUD-04-R2): Foreign listener on port 3100 -> safe-stop conflict, no foreign process mutation ---
-  {
+  Invoke-AudTest 24 'Foreign listener on port 3100 -> safe-stop conflict, no foreign process mutation' {
     $fix = New-AudFixtureEnvironment 'test24'
     $origReleaseDir = Join-Path $fix.Root "releases\$origSha\apps\api\dist\apps\api\src"
     New-Item -ItemType Directory -Path $origReleaseDir -Force | Out-Null
@@ -1575,7 +1710,7 @@ try {
 
     $flagFile = Join-Path $fix.Root 'migration-executed-24.flag'
     $stubs = @{
-      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root, [parameter(ValueFromRemainingArguments)]`$Rest) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
       'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
       'run-migrations.ps1' = "New-Item -LiteralPath '$flagFile' -ItemType File | Out-Null; Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
     }
@@ -1595,6 +1730,17 @@ try {
     function global:Stop-Process {
       param($Id, $Force)
       if ($Id -eq $foreignPid) { $foreignKilled = $true }
+    }
+
+    function global:Get-CimInstance {
+      param([string]$ClassName, [string]$Filter)
+      if ($ClassName -eq 'Win32_Process') {
+        return @([pscustomobject]@{ ProcessId = $foreignPid; ExecutablePath = 'C:\foreign\process.exe'; CommandLine = 'foreign-process' })
+      }
+      if ($ClassName -eq 'Win32_Service') {
+        return @([pscustomobject]@{ Name = 'BaoGiangBackend'; StartMode = 'Disabled'; State = 'Stopped'; StartName = 'fixture-account'; PathName = $fakeToolPath })
+      }
+      return @()
     }
 
     $paramFile = Join-Path $fix.Root 'deploy-params.json'
@@ -1617,7 +1763,16 @@ try {
         throw "Test 24 unexpected exception: $($_.Exception.Message)"
       }
     } finally {
-      Remove-Item Function:\Get-NetTCPConnection, Function:\Stop-Process -Force -ErrorAction SilentlyContinue
+      Remove-Item Function:\Get-NetTCPConnection -Force -ErrorAction SilentlyContinue
+      function global:Stop-Process { param($Id, [switch]$Force) return $true }
+      function global:Get-CimInstance {
+        param([string]$ClassName, [string]$Filter)
+        if ($ClassName -eq 'Win32_Process') { return @() }
+        if ($ClassName -eq 'Win32_Service') {
+          return @([pscustomobject]@{ Name = 'BaoGiangBackend'; StartMode = 'Disabled'; State = 'Stopped'; StartName = 'fixture-account'; PathName = $fakeToolPath })
+        }
+        return @()
+      }
     }
     if (-not $thrown) { throw 'Test 24 did not throw on foreign port conflict' }
     if ($foreignKilled) { throw 'Test 24 foreign process was killed!' }
@@ -1627,7 +1782,7 @@ try {
   }
 
   # --- TEST 25 (AUD-04-R2): Failure after quiescence but before migration (25A safe-stopped, 25B approved recovery) ---
-  {
+  Invoke-AudTest 25 'Failure after quiescence but before migration (25A safe-stopped, 25B approved recovery)' {
     # 25A: PreMigrationRecoveryApproved = $false
     $fixA = New-AudFixtureEnvironment 'test25a'
     $origReleaseDirA = Join-Path $fixA.Root "releases\$origSha\apps\api\dist\apps\api\src"
@@ -1638,7 +1793,7 @@ try {
 
     $flagFileA = Join-Path $fixA.Root 'migration-executed-25a.flag'
     $stubsA = @{
-      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root, [parameter(ValueFromRemainingArguments)]`$Rest) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
       'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
       'run-migrations.ps1' = "New-Item -LiteralPath '$flagFileA' -ItemType File | Out-Null; Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
       'restart-baogiang-api.ps1' = "throw 'Restart must NOT be called in 25A'"
@@ -1666,7 +1821,7 @@ try {
       return [pscustomobject]@{
         TaskName = 'BaoGiangBackend'; TaskPath = '\BaoGiang\'; State = 'Disabled'
         Principal = [pscustomobject]@{ UserId = 'fixture-account' }
-        Actions = @([pscustomobject]@{ Execute = $fakeToolPath; Arguments = '-File start-baogiang-api.ps1'; WorkingDirectory = 'C:\dummy' })
+        Actions = @([pscustomobject]@{ Execute = $fakeToolPath; Arguments = '-File start-baogiang-api.ps1'; WorkingDirectory = $(if (-not [string]::IsNullOrWhiteSpace($global:currentAudFixtureWd)) { $global:currentAudFixtureWd } else { 'C:\dummy' }) })
         Triggers = @([pscustomobject]@{ CimClass = [pscustomobject]@{ CimClassName = 'MSFT_TaskBootTrigger' }; Enabled = $true })
       }
     }
@@ -1680,7 +1835,7 @@ try {
         return [pscustomobject]@{
           TaskName = 'BaoGiangBackend'; TaskPath = '\BaoGiang\'; State = 'Disabled'
           Principal = [pscustomobject]@{ UserId = 'fixture-account' }
-          Actions = @([pscustomobject]@{ Execute = $fakeToolPath; Arguments = '-File start-baogiang-api.ps1'; WorkingDirectory = 'C:\dummy' })
+          Actions = @([pscustomobject]@{ Execute = $fakeToolPath; Arguments = '-File start-baogiang-api.ps1'; WorkingDirectory = $(if (-not [string]::IsNullOrWhiteSpace($global:currentAudFixtureWd)) { $global:currentAudFixtureWd } else { 'C:\dummy' }) })
           Triggers = @([pscustomobject]@{ CimClass = [pscustomobject]@{ CimClassName = 'MSFT_TaskBootTrigger' }; Enabled = $true })
         }
       }
@@ -1701,7 +1856,7 @@ try {
 
     $flagFileB = Join-Path $fixB.Root 'migration-executed-25b.flag'
     $stubsB = @{
-      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root, [parameter(ValueFromRemainingArguments)]`$Rest) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
       'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
       'run-migrations.ps1' = "New-Item -LiteralPath '$flagFileB' -ItemType File | Out-Null; Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
       'restart-baogiang-api.ps1' = "Write-Output '{`"runtimeKind`":`"scheduled-task`",`"activationState`":`"enabled-running`"}'"
@@ -1730,7 +1885,7 @@ try {
       return [pscustomobject]@{
         TaskName = 'BaoGiangBackend'; TaskPath = '\BaoGiang\'; State = 'Disabled'
         Principal = [pscustomobject]@{ UserId = 'fixture-account' }
-        Actions = @([pscustomobject]@{ Execute = $fakeToolPath; Arguments = '-File start-baogiang-api.ps1'; WorkingDirectory = 'C:\dummy' })
+        Actions = @([pscustomobject]@{ Execute = $fakeToolPath; Arguments = '-File start-baogiang-api.ps1'; WorkingDirectory = $(if (-not [string]::IsNullOrWhiteSpace($global:currentAudFixtureWd)) { $global:currentAudFixtureWd } else { 'C:\dummy' }) })
         Triggers = @([pscustomobject]@{ CimClass = [pscustomobject]@{ CimClassName = 'MSFT_TaskBootTrigger' }; Enabled = $true })
       }
     }
@@ -1744,7 +1899,7 @@ try {
         return [pscustomobject]@{
           TaskName = 'BaoGiangBackend'; TaskPath = '\BaoGiang\'; State = 'Disabled'
           Principal = [pscustomobject]@{ UserId = 'fixture-account' }
-          Actions = @([pscustomobject]@{ Execute = $fakeToolPath; Arguments = '-File start-baogiang-api.ps1'; WorkingDirectory = 'C:\dummy' })
+          Actions = @([pscustomobject]@{ Execute = $fakeToolPath; Arguments = '-File start-baogiang-api.ps1'; WorkingDirectory = $(if (-not [string]::IsNullOrWhiteSpace($global:currentAudFixtureWd)) { $global:currentAudFixtureWd } else { 'C:\dummy' }) })
           Triggers = @([pscustomobject]@{ CimClass = [pscustomobject]@{ CimClassName = 'MSFT_TaskBootTrigger' }; Enabled = $true })
         }
       }
@@ -1760,7 +1915,7 @@ try {
   }
 
   # --- TEST 26 (AUD-04-R2): Migration attempted/unknown, including rollback compatibility approved -> stays stopped ---
-  {
+  Invoke-AudTest 26 'Migration attempted/unknown, including rollback compatibility approved -> stays stopped' {
     $fix = New-AudFixtureEnvironment 'test26'
     $origReleaseDir = Join-Path $fix.Root "releases\$origSha\apps\api\dist\apps\api\src"
     New-Item -ItemType Directory -Path $origReleaseDir -Force | Out-Null
@@ -1769,7 +1924,7 @@ try {
     $xfer = Prepare-IncomingTransfer $fix.Root $newSha
 
     $stubs = @{
-      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root, [parameter(ValueFromRemainingArguments)]`$Rest) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
       'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
       'run-migrations.ps1' = "throw 'Simulated migration execution failure in Test 26'"
       'restart-baogiang-api.ps1' = "throw 'Restart must NOT be called when migration failed/unknown!'"
@@ -1799,12 +1954,12 @@ try {
   }
 
   # --- TEST 27 (AUD-04-R2): First-deploy handling (no current link) with migration ---
-  {
+  Invoke-AudTest 27 'First-deploy handling (no current link) with migration' {
     $fix = New-AudFixtureEnvironment 'test27'
     $xfer = Prepare-IncomingTransfer $fix.Root $newSha
 
     $stubs = @{
-      'install-release.ps1' = "param(`$ReleaseSha, `$Root) `$dir = Join-Path `$Root `"releases\`$ReleaseSha\apps\api\dist\apps\api\src`"; New-Item -ItemType Directory -Path `$dir -Force | Out-Null; [IO.File]::WriteAllText((Join-Path `$dir 'main.js'), 'console.log(\`"v1\`");'); Write-Output '{`"state`":`"installed`"}'"
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root, [parameter(ValueFromRemainingArguments)]`$Rest) `$dir = Join-Path `$Root `"releases\`$ReleaseSha\apps\api\dist\apps\api\src`"; New-Item -ItemType Directory -Path `$dir -Force | Out-Null; [IO.File]::WriteAllText((Join-Path `$dir 'main.js'), 'console.log(\`"v1\`");'); Write-Output '{`"state`":`"installed`"}'"
       'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
       'run-migrations.ps1' = "param([switch]`$QuiescenceVerified) if (-not `$QuiescenceVerified) { throw 'MIGRATION_QUIESCENCE_NOT_ASSERTED' }; Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
       'sync-capability-catalog.ps1' = "Write-Output '{`"state`":`"synchronized`"}'"
@@ -1834,7 +1989,7 @@ try {
   }
 
   # --- TEST 28 (AUD-04-R2): Unexpected or dangling release pointer during pre-migration recovery ---
-  {
+  Invoke-AudTest 28 'Unexpected or dangling release pointer during pre-migration recovery' {
     $fix = New-AudFixtureEnvironment 'test28'
     $origReleaseDir = Join-Path $fix.Root "releases\$origSha\apps\api\dist\apps\api\src"
     New-Item -ItemType Directory -Path $origReleaseDir -Force | Out-Null
@@ -1843,7 +1998,7 @@ try {
     $xfer = Prepare-IncomingTransfer $fix.Root $newSha
 
     $stubs = @{
-      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root, [parameter(ValueFromRemainingArguments)]`$Rest) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
       'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
       'run-migrations.ps1' = "throw 'Unreachable'"
       'restart-baogiang-api.ps1' = "Write-Output '{`"runtimeKind`":`"scheduled-task`",`"activationState`":`"enabled-running`"}'"
@@ -1867,14 +2022,14 @@ try {
       param([string]$TaskName)
       $global:taskQueryCount++
       if ($global:taskQueryCount -eq 3) {
-        Remove-Item -LiteralPath (Join-Path $fix.Root 'current') -Force
+        [IO.Directory]::Delete((Join-Path $fix.Root 'current'))
         New-Item -ItemType Junction -Path (Join-Path $fix.Root 'current') -Target (Join-Path $fix.Root 'releases\dangling-corrupt-target') | Out-Null
         throw 'Simulated Step 9 abort before dangling recovery check'
       }
       return [pscustomobject]@{
         TaskName = 'BaoGiangBackend'; TaskPath = '\BaoGiang\'; State = 'Disabled'
         Principal = [pscustomobject]@{ UserId = 'fixture-account' }
-        Actions = @([pscustomobject]@{ Execute = $fakeToolPath; Arguments = '-File start-baogiang-api.ps1'; WorkingDirectory = 'C:\dummy' })
+        Actions = @([pscustomobject]@{ Execute = $fakeToolPath; Arguments = '-File start-baogiang-api.ps1'; WorkingDirectory = $(if (-not [string]::IsNullOrWhiteSpace($global:currentAudFixtureWd)) { $global:currentAudFixtureWd } else { 'C:\dummy' }) })
         Triggers = @([pscustomobject]@{ CimClass = [pscustomobject]@{ CimClassName = 'MSFT_TaskBootTrigger' }; Enabled = $true })
       }
     }
@@ -1888,7 +2043,7 @@ try {
         return [pscustomobject]@{
           TaskName = 'BaoGiangBackend'; TaskPath = '\BaoGiang\'; State = 'Disabled'
           Principal = [pscustomobject]@{ UserId = 'fixture-account' }
-          Actions = @([pscustomobject]@{ Execute = $fakeToolPath; Arguments = '-File start-baogiang-api.ps1'; WorkingDirectory = 'C:\dummy' })
+          Actions = @([pscustomobject]@{ Execute = $fakeToolPath; Arguments = '-File start-baogiang-api.ps1'; WorkingDirectory = $(if (-not [string]::IsNullOrWhiteSpace($global:currentAudFixtureWd)) { $global:currentAudFixtureWd } else { 'C:\dummy' }) })
           Triggers = @([pscustomobject]@{ CimClass = [pscustomobject]@{ CimClassName = 'MSFT_TaskBootTrigger' }; Enabled = $true })
         }
       }
@@ -1902,7 +2057,7 @@ try {
   }
 
   # --- TEST 29 (AUD-04-R2): Post-restart health failure and secondary safe-stop failure during pre-migration recovery ---
-  {
+  Invoke-AudTest 29 'Post-restart health failure and secondary safe-stop failure during pre-migration recovery' {
     $fix = New-AudFixtureEnvironment 'test29'
     $origReleaseDir = Join-Path $fix.Root "releases\$origSha\apps\api\dist\apps\api\src"
     New-Item -ItemType Directory -Path $origReleaseDir -Force | Out-Null
@@ -1916,11 +2071,11 @@ try {
     [IO.File]::WriteAllText((Join-Path $thirdReleaseDir 'main.js'), 'console.log("v3");', [Text.UTF8Encoding]::new($false))
 
     $stubs = @{
-      'install-release.ps1' = "param(`$ReleaseSha, `$Root) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root, [parameter(ValueFromRemainingArguments)]`$Rest) New-Item -ItemType Directory -Path (Join-Path `$Root `"releases\`$ReleaseSha`") -Force | Out-Null; Write-Output '{`"state`":`"installed`"}'"
       'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
       'run-migrations.ps1' = "throw 'Unreachable'"
       'restart-baogiang-api.ps1' = "Write-Output '{`"runtimeKind`":`"scheduled-task`",`"activationState`":`"enabled-running`"}'"
-      'test-production-health.ps1' = "Remove-Item -LiteralPath (Join-Path '$($fix.Root)' 'current') -Force; New-Item -ItemType Junction -Path (Join-Path '$($fix.Root)' 'current') -Target (Join-Path '$($fix.Root)' 'releases\$thirdSha') | Out-Null; Write-Output '{`"state`":`"healthy`",`"httpStatus`":200}'"
+      'test-production-health.ps1' = "[IO.Directory]::Delete((Join-Path '$($fix.Root)' 'current')); New-Item -ItemType Junction -Path (Join-Path '$($fix.Root)' 'current') -Target (Join-Path '$($fix.Root)' 'releases\$thirdSha') | Out-Null; Write-Output '{`"state`":`"healthy`",`"httpStatus`":200}'"
     }
     Set-FixtureScriptStubs $stubs
 
@@ -1945,7 +2100,7 @@ try {
       return [pscustomobject]@{
         TaskName = 'BaoGiangBackend'; TaskPath = '\BaoGiang\'; State = 'Disabled'
         Principal = [pscustomobject]@{ UserId = 'fixture-account' }
-        Actions = @([pscustomobject]@{ Execute = $fakeToolPath; Arguments = '-File start-baogiang-api.ps1'; WorkingDirectory = 'C:\dummy' })
+        Actions = @([pscustomobject]@{ Execute = $fakeToolPath; Arguments = '-File start-baogiang-api.ps1'; WorkingDirectory = $(if (-not [string]::IsNullOrWhiteSpace($global:currentAudFixtureWd)) { $global:currentAudFixtureWd } else { 'C:\dummy' }) })
         Triggers = @([pscustomobject]@{ CimClass = [pscustomobject]@{ CimClassName = 'MSFT_TaskBootTrigger' }; Enabled = $true })
       }
     }
@@ -1961,7 +2116,7 @@ try {
         return [pscustomobject]@{
           TaskName = 'BaoGiangBackend'; TaskPath = '\BaoGiang\'; State = 'Disabled'
           Principal = [pscustomobject]@{ UserId = 'fixture-account' }
-          Actions = @([pscustomobject]@{ Execute = $fakeToolPath; Arguments = '-File start-baogiang-api.ps1'; WorkingDirectory = 'C:\dummy' })
+          Actions = @([pscustomobject]@{ Execute = $fakeToolPath; Arguments = '-File start-baogiang-api.ps1'; WorkingDirectory = $(if (-not [string]::IsNullOrWhiteSpace($global:currentAudFixtureWd)) { $global:currentAudFixtureWd } else { 'C:\dummy' }) })
           Triggers = @([pscustomobject]@{ CimClass = [pscustomobject]@{ CimClassName = 'MSFT_TaskBootTrigger' }; Enabled = $true })
         }
       }
@@ -1975,13 +2130,13 @@ try {
   }
 
   # --- TEST 30 (AUD-04-R2): Reboot-persistence safeguard while quiesced ---
-  {
+  Invoke-AudTest 30 'Reboot-persistence safeguard while quiesced' {
     $fix = New-AudFixtureEnvironment 'test30'
 
     $quiescedTask = [pscustomobject]@{
       TaskName = 'BaoGiangBackend'; TaskPath = '\BaoGiang\'; State = 'Disabled'
       Principal = [pscustomobject]@{ UserId = 'fixture-account' }
-      Actions = @([pscustomobject]@{ Execute = $fakeToolPath; Arguments = '-File start-baogiang-api.ps1'; WorkingDirectory = 'C:\dummy' })
+      Actions = @([pscustomobject]@{ Execute = $fakeToolPath; Arguments = '-File start-baogiang-api.ps1'; WorkingDirectory = $(if (-not [string]::IsNullOrWhiteSpace($global:currentAudFixtureWd)) { $global:currentAudFixtureWd } else { 'C:\dummy' }) })
       Triggers = @([pscustomobject]@{ CimClass = [pscustomobject]@{ CimClassName = 'MSFT_TaskBootTrigger' }; Enabled = $true })
     }
 
@@ -1991,7 +2146,7 @@ try {
     $enabledBootTask = [pscustomobject]@{
       TaskName = 'BaoGiangBackend'; TaskPath = '\BaoGiang\'; State = 'Ready'
       Principal = [pscustomobject]@{ UserId = 'fixture-account' }
-      Actions = @([pscustomobject]@{ Execute = $fakeToolPath; Arguments = '-File start-baogiang-api.ps1'; WorkingDirectory = 'C:\dummy' })
+      Actions = @([pscustomobject]@{ Execute = $fakeToolPath; Arguments = '-File start-baogiang-api.ps1'; WorkingDirectory = $(if (-not [string]::IsNullOrWhiteSpace($global:currentAudFixtureWd)) { $global:currentAudFixtureWd } else { 'C:\dummy' }) })
       Triggers = @([pscustomobject]@{ CimClass = [pscustomobject]@{ CimClassName = 'MSFT_TaskBootTrigger' }; Enabled = $true })
     }
     $enabledRejected = $false
@@ -2002,7 +2157,7 @@ try {
   }
 
   # --- TEST 31 (AUD-04-R2): Neighbor isolation for Quản lí nội trú, PostgreSQL service and shared Nginx ---
-  {
+  Invoke-AudTest 31 'Neighbor isolation for Quản lí nội trú, PostgreSQL service and shared Nginx' {
     $fix = New-AudFixtureEnvironment 'test31'
     $foreignDir = Join-Path $tempDir 'Quan_li_noi_tru_quiescence'
     New-Item -ItemType Directory -Path $foreignDir -Force | Out-Null
@@ -2017,7 +2172,7 @@ try {
     $xfer = Prepare-IncomingTransfer $fix.Root $newSha
 
     $stubs = @{
-      'install-release.ps1' = "param(`$ReleaseSha, `$Root) `$dir = Join-Path `$Root `"releases\`$ReleaseSha\apps\api\dist\apps\api\src`"; New-Item -ItemType Directory -Path `$dir -Force | Out-Null; [IO.File]::WriteAllText((Join-Path `$dir 'main.js'), 'console.log(\`"v2\`");'); Write-Output '{`"state`":`"installed`"}'"
+      'install-release.ps1' = "param(`$ReleaseSha, `$Root, [parameter(ValueFromRemainingArguments)]`$Rest) `$dir = Join-Path `$Root `"releases\`$ReleaseSha\apps\api\dist\apps\api\src`"; New-Item -ItemType Directory -Path `$dir -Force | Out-Null; [IO.File]::WriteAllText((Join-Path `$dir 'main.js'), 'console.log(\`"v2\`");'); Write-Output '{`"state`":`"installed`"}'"
       'backup-database.ps1' = "Write-Output '{`"state`":`"verified`",`"backupFile`":`"b.dump`"}'"
       'run-migrations.ps1' = "param([switch]`$QuiescenceVerified) Write-Output '{`"state`":`"completed`",`"before`":{`"state`":`"clean`"},`"after`":{`"state`":`"clean`"}}'"
       'sync-capability-catalog.ps1' = "Write-Output '{`"state`":`"synchronized`"}'"
@@ -2049,7 +2204,11 @@ try {
     Write-Output '  [PASS] Test 31 (AUD-04-R2): Neighbor isolation verified during pre-migration quiescence and deployment (neighbour untouched)'
   }
 
-  Write-Output '=== ALL 31 AUD-04 FAILURE-INJECTION TESTS PASSED ==='
+    $expectedCount = if ($OnlyTest -gt 0) { 1 } else { 31 }
+  if ($global:aud04PassCount -ne $expectedCount) {
+    throw "AUD-04 test verification failed: expected $expectedCount passed tests, but $global:aud04PassCount passed."
+  }
+  Write-Output "=== ALL $expectedCount AUD-04 FAILURE-INJECTION TESTS PASSED ==="
 } finally {
   Remove-Item Function:\Stop-ExactBaoGiangRuntime, Function:\Get-ScheduledTask, Function:\Get-FileHash, Function:\Invoke-ReviewedNginxSyntaxTest, Function:\Get-NetTCPConnection, Function:\Stop-Process -Force -ErrorAction SilentlyContinue
   Remove-Variable aud04StopCalls, aud04StopShouldFail, taskQueryCount -Scope Global -ErrorAction SilentlyContinue
