@@ -34,7 +34,7 @@ function FieldPagination({
   unit: string;
   onPageChange(page: number): void;
 }) {
-  if (pages <= 1 && total === 0) return null;
+  if (pages <= 1) return null;
   return (
     <nav className="field-pagination" aria-label={label}>
       <span className="field-pagination__label">
@@ -311,7 +311,7 @@ export function CapabilitiesPage() {
                   </SelectField>
                   {canUsers && users.data && (
                     <FieldPagination
-                      label="Phân trang người nhận"
+                      label="Chuyển trang người dùng"
                       page={users.data.page}
                       pages={userPages}
                       total={users.data.total}
@@ -338,7 +338,7 @@ export function CapabilitiesPage() {
                   </SelectField>
                   {definitions.data && (
                     <FieldPagination
-                      label="Phân trang danh sách quyền"
+                      label="Chuyển trang danh mục định nghĩa"
                       page={definitions.data.page}
                       pages={definitionPages}
                       total={definitions.data.total}
@@ -386,7 +386,7 @@ export function CapabilitiesPage() {
                       </SelectField>
                       {draft.scopeType === 'SUBJECT_GROUP' && groups.data && (
                         <FieldPagination
-                          label="Phân trang tổ chuyên môn"
+                          label="Chuyển trang tổ bộ môn"
                           page={groups.data.page}
                           pages={groupPages}
                           total={groups.data.total}
@@ -396,7 +396,7 @@ export function CapabilitiesPage() {
                       )}
                       {draft.scopeType === 'SUBJECT' && subjects.data && (
                         <FieldPagination
-                          label="Phân trang môn học"
+                          label="Chuyển trang danh mục học phần"
                           page={subjects.data.page}
                           pages={subjectPages}
                           total={subjects.data.total}

@@ -83,15 +83,15 @@ describe('AUD-05 CapabilitiesPage pagination completeness', () => {
 
     // Wait for initial load
     expect(await screen.findByRole('heading', { name: 'Cấp quyền mới' })).toBeInTheDocument();
-    expect(screen.getByRole('navigation', { name: 'Phân trang người nhận' })).toHaveTextContent(/105 người dùng/);
+    expect(screen.getByRole('navigation', { name: 'Chuyển trang người dùng' })).toHaveTextContent(/105 người dùng/);
 
     // Navigate to page 2
-    const nextBtn = () => within(screen.getByRole('navigation', { name: 'Phân trang người nhận' })).getByRole('button', { name: 'Trang sau' });
-    const prevBtn = () => within(screen.getByRole('navigation', { name: 'Phân trang người nhận' })).getByRole('button', { name: 'Trang trước' });
+    const nextBtn = () => within(screen.getByRole('navigation', { name: 'Chuyển trang người dùng' })).getByRole('button', { name: 'Trang sau' });
+    const prevBtn = () => within(screen.getByRole('navigation', { name: 'Chuyển trang người dùng' })).getByRole('button', { name: 'Trang trước' });
 
     await user.click(nextBtn());
     await waitFor(() => {
-      expect(screen.getByRole('navigation', { name: 'Phân trang người nhận' })).toHaveTextContent(/Trang 2 \/ 6/);
+      expect(screen.getByRole('navigation', { name: 'Chuyển trang người dùng' })).toHaveTextContent(/Trang 2 \/ 6/);
     });
 
     // Navigate up to page 6
@@ -101,7 +101,7 @@ describe('AUD-05 CapabilitiesPage pagination completeness', () => {
     await user.click(nextBtn()); // page 6
 
     await waitFor(() => {
-      expect(screen.getByRole('navigation', { name: 'Phân trang người nhận' })).toHaveTextContent(/Trang 6 \/ 6/);
+      expect(screen.getByRole('navigation', { name: 'Chuyển trang người dùng' })).toHaveTextContent(/Trang 6 \/ 6/);
     });
 
     // Option for user 105 is now in dropdown
@@ -123,7 +123,7 @@ describe('AUD-05 CapabilitiesPage pagination completeness', () => {
     await user.click(prevBtn()); // page 1
 
     await waitFor(() => {
-      expect(screen.getByRole('navigation', { name: 'Phân trang người nhận' })).toHaveTextContent(/Trang 1 \/ 6/);
+      expect(screen.getByRole('navigation', { name: 'Chuyển trang người dùng' })).toHaveTextContent(/Trang 1 \/ 6/);
     });
 
     // Crucial check: user selection is NOT lost or reset!
@@ -194,15 +194,15 @@ describe('AUD-05 CapabilitiesPage pagination completeness', () => {
     await user.selectOptions(screen.getByLabelText('Phạm vi'), 'SUBJECT_GROUP');
 
     // Subject group pagination is rendered
-    expect(await screen.findByRole('navigation', { name: 'Phân trang tổ chuyên môn' })).toHaveTextContent(/25 tổ/);
+    expect(await screen.findByRole('navigation', { name: 'Chuyển trang tổ bộ môn' })).toHaveTextContent(/25 tổ/);
 
-    const groupNextBtn = () => within(screen.getByRole('navigation', { name: 'Phân trang tổ chuyên môn' })).getByRole('button', { name: 'Trang sau' });
-    const groupPrevBtn = () => within(screen.getByRole('navigation', { name: 'Phân trang tổ chuyên môn' })).getByRole('button', { name: 'Trang trước' });
+    const groupNextBtn = () => within(screen.getByRole('navigation', { name: 'Chuyển trang tổ bộ môn' })).getByRole('button', { name: 'Trang sau' });
+    const groupPrevBtn = () => within(screen.getByRole('navigation', { name: 'Chuyển trang tổ bộ môn' })).getByRole('button', { name: 'Trang trước' });
 
     // Navigate to page 2
     await user.click(groupNextBtn());
     await waitFor(() => {
-      expect(screen.getByRole('navigation', { name: 'Phân trang tổ chuyên môn' })).toHaveTextContent(/Trang 2 \/ 2/);
+      expect(screen.getByRole('navigation', { name: 'Chuyển trang tổ bộ môn' })).toHaveTextContent(/Trang 2 \/ 2/);
     });
 
     const resourceSelect = screen.getByLabelText('Tổ chuyên môn');
@@ -215,7 +215,7 @@ describe('AUD-05 CapabilitiesPage pagination completeness', () => {
     // Navigate back to page 1
     await user.click(groupPrevBtn());
     await waitFor(() => {
-      expect(screen.getByRole('navigation', { name: 'Phân trang tổ chuyên môn' })).toHaveTextContent(/Trang 1 \/ 2/);
+      expect(screen.getByRole('navigation', { name: 'Chuyển trang tổ bộ môn' })).toHaveTextContent(/Trang 1 \/ 2/);
     });
 
     // Selection is preserved!
@@ -425,7 +425,7 @@ describe('AUD-05 CapabilitiesPage pagination completeness', () => {
     renderApp('/quan-tri/quyen');
 
     // Go to page 2 of users
-    const getUserNav = () => screen.getByRole('navigation', { name: 'Phân trang người nhận' });
+    const getUserNav = () => screen.getByRole('navigation', { name: 'Chuyển trang người dùng' });
     await waitFor(() => expect(getUserNav()).toBeInTheDocument());
     await user.click(within(getUserNav()).getByRole('button', { name: 'Trang sau' }));
 
@@ -481,6 +481,6 @@ describe('AUD-05 CapabilitiesPage pagination completeness', () => {
     expect(await screen.findByRole('heading', { name: 'Cấp quyền mới' })).toBeInTheDocument();
     expect(screen.getByText(/chưa thể chọn người nhận quyền/i)).toBeInTheDocument();
     expect(screen.getByLabelText('Người nhận')).toBeDisabled();
-    expect(screen.queryByRole('navigation', { name: 'Phân trang người nhận' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: 'Chuyển trang người dùng' })).not.toBeInTheDocument();
   });
 });
