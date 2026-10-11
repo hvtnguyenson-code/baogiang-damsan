@@ -21,21 +21,14 @@ describe('AUD-05 CapabilitiesPage pagination completeness', () => {
   );
 
   it('allows selecting a user from record 101+ across pages and preserves selection when navigating pages', async () => {
-    const page1Users = Array.from({ length: 20 }, (_, i) => ({
+    const page1Users = Array.from({ length: 100 }, (_, i) => ({
       id: `u-${i + 1}`,
       username: `gv${i + 1}`,
       status: 'ACTIVE',
       profile: { displayName: `Giáo viên ${i + 1}` },
     }));
 
-    const page2Users = Array.from({ length: 20 }, (_, i) => ({
-      id: `u-${i + 21}`,
-      username: `gv${i + 21}`,
-      status: 'ACTIVE',
-      profile: { displayName: `Giáo viên ${i + 21}` },
-    }));
-
-    const page6Users = [
+    const page2Users = [
       {
         id: 'u-105',
         username: 'gv105',
@@ -55,7 +48,7 @@ describe('AUD-05 CapabilitiesPage pagination completeness', () => {
         },
       ],
       page: 1,
-      pageSize: 20,
+      pageSize: 100,
       total: 1,
     };
 
@@ -66,15 +59,14 @@ describe('AUD-05 CapabilitiesPage pagination completeness', () => {
       if (url.includes('/users') && !url.includes('capability-grants')) {
         const parsed = new URL(url, 'http://localhost');
         const page = Number(parsed.searchParams.get('page') || 1);
-        if (page === 1) return jsonResponse({ items: page1Users, page: 1, pageSize: 20, total: 105 });
-        if (page === 2) return jsonResponse({ items: page2Users, page: 2, pageSize: 20, total: 105 });
-        if (page === 6) return jsonResponse({ items: page6Users, page: 6, pageSize: 20, total: 105 });
-        return jsonResponse({ items: [], page, pageSize: 20, total: 105 });
+        if (page === 1) return jsonResponse({ items: page1Users, page: 1, pageSize: 100, total: 105 });
+        if (page === 2) return jsonResponse({ items: page2Users, page: 2, pageSize: 100, total: 105 });
+        return jsonResponse({ items: [], page, pageSize: 100, total: 105 });
       }
       if (url.includes('/capability-grants')) {
-        return jsonResponse({ items: [], page: 1, pageSize: 20, total: 0 });
+        return jsonResponse({ items: [], page: 1, pageSize: 100, total: 0 });
       }
-      return jsonResponse({ items: [], page: 1, pageSize: 20, total: 0 });
+      return jsonResponse({ items: [], page: 1, pageSize: 100, total: 0 });
     });
 
     vi.stubGlobal('fetch', fetchMock);
@@ -85,23 +77,13 @@ describe('AUD-05 CapabilitiesPage pagination completeness', () => {
     expect(await screen.findByRole('heading', { name: 'Cấp quyền mới' })).toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: 'Chuyển trang người dùng' })).toHaveTextContent(/105 người dùng/);
 
-    // Navigate to page 2
+    // Navigate to page 2 (records 101+)
     const nextBtn = () => within(screen.getByRole('navigation', { name: 'Chuyển trang người dùng' })).getByRole('button', { name: 'Trang sau' });
     const prevBtn = () => within(screen.getByRole('navigation', { name: 'Chuyển trang người dùng' })).getByRole('button', { name: 'Trang trước' });
 
     await user.click(nextBtn());
     await waitFor(() => {
-      expect(screen.getByRole('navigation', { name: 'Chuyển trang người dùng' })).toHaveTextContent(/Trang 2 \/ 6/);
-    });
-
-    // Navigate up to page 6
-    await user.click(nextBtn()); // page 3
-    await user.click(nextBtn()); // page 4
-    await user.click(nextBtn()); // page 5
-    await user.click(nextBtn()); // page 6
-
-    await waitFor(() => {
-      expect(screen.getByRole('navigation', { name: 'Chuyển trang người dùng' })).toHaveTextContent(/Trang 6 \/ 6/);
+      expect(screen.getByRole('navigation', { name: 'Chuyển trang người dùng' })).toHaveTextContent(/Trang 2 \/ 2/);
     });
 
     // Option for user 105 is now in dropdown
@@ -116,14 +98,10 @@ describe('AUD-05 CapabilitiesPage pagination completeness', () => {
     expect(await screen.findByRole('heading', { name: 'Lịch sử quyền của Thầy Một Lẻ Năm' })).toBeInTheDocument();
 
     // Now navigate back to page 1
-    await user.click(prevBtn()); // page 5
-    await user.click(prevBtn()); // page 4
-    await user.click(prevBtn()); // page 3
-    await user.click(prevBtn()); // page 2
-    await user.click(prevBtn()); // page 1
+    await user.click(prevBtn());
 
     await waitFor(() => {
-      expect(screen.getByRole('navigation', { name: 'Chuyển trang người dùng' })).toHaveTextContent(/Trang 1 \/ 6/);
+      expect(screen.getByRole('navigation', { name: 'Chuyển trang người dùng' })).toHaveTextContent(/Trang 1 \/ 2/);
     });
 
     // Crucial check: user selection is NOT lost or reset!
@@ -133,7 +111,7 @@ describe('AUD-05 CapabilitiesPage pagination completeness', () => {
   });
 
   it('allows selecting subject groups beyond page 1 and preserves selected group across page changes', async () => {
-    const page1Groups = Array.from({ length: 20 }, (_, i) => ({
+    const page1Groups = Array.from({ length: 100 }, (_, i) => ({
       id: `g-${i + 1}`,
       code: `TO_${i + 1}`,
       name: `Tổ chuyên môn ${i + 1}`,
@@ -142,7 +120,7 @@ describe('AUD-05 CapabilitiesPage pagination completeness', () => {
 
     const page2Groups = [
       {
-        id: 'g-25',
+        id: 'g-105',
         code: 'GDTC',
         name: 'Tổ Giáo dục thể chất',
         status: 'ACTIVE',
@@ -160,7 +138,7 @@ describe('AUD-05 CapabilitiesPage pagination completeness', () => {
         },
       ],
       page: 1,
-      pageSize: 20,
+      pageSize: 100,
       total: 1,
     };
 
@@ -172,17 +150,17 @@ describe('AUD-05 CapabilitiesPage pagination completeness', () => {
         return jsonResponse({
           items: [{ id: 'u-1', username: 'gv01', status: 'ACTIVE', profile: { displayName: 'Giáo viên 1' } }],
           page: 1,
-          pageSize: 20,
+          pageSize: 100,
           total: 1,
         });
       }
       if (url.includes('/subject-groups')) {
         const parsed = new URL(url, 'http://localhost');
         const page = Number(parsed.searchParams.get('page') || 1);
-        if (page === 1) return jsonResponse({ items: page1Groups, page: 1, pageSize: 20, total: 25 });
-        if (page === 2) return jsonResponse({ items: page2Groups, page: 2, pageSize: 20, total: 25 });
+        if (page === 1) return jsonResponse({ items: page1Groups, page: 1, pageSize: 100, total: 105 });
+        if (page === 2) return jsonResponse({ items: page2Groups, page: 2, pageSize: 100, total: 105 });
       }
-      return jsonResponse({ items: [], page: 1, pageSize: 20, total: 0 });
+      return jsonResponse({ items: [], page: 1, pageSize: 100, total: 0 });
     });
 
     vi.stubGlobal('fetch', fetchMock);
@@ -194,12 +172,12 @@ describe('AUD-05 CapabilitiesPage pagination completeness', () => {
     await user.selectOptions(screen.getByLabelText('Phạm vi'), 'SUBJECT_GROUP');
 
     // Subject group pagination is rendered
-    expect(await screen.findByRole('navigation', { name: 'Chuyển trang tổ bộ môn' })).toHaveTextContent(/25 tổ/);
+    expect(await screen.findByRole('navigation', { name: 'Chuyển trang tổ bộ môn' })).toHaveTextContent(/105 tổ/);
 
     const groupNextBtn = () => within(screen.getByRole('navigation', { name: 'Chuyển trang tổ bộ môn' })).getByRole('button', { name: 'Trang sau' });
     const groupPrevBtn = () => within(screen.getByRole('navigation', { name: 'Chuyển trang tổ bộ môn' })).getByRole('button', { name: 'Trang trước' });
 
-    // Navigate to page 2
+    // Navigate to page 2 (records 101+)
     await user.click(groupNextBtn());
     await waitFor(() => {
       expect(screen.getByRole('navigation', { name: 'Chuyển trang tổ bộ môn' })).toHaveTextContent(/Trang 2 \/ 2/);
@@ -209,8 +187,8 @@ describe('AUD-05 CapabilitiesPage pagination completeness', () => {
     expect(within(resourceSelect).getByRole('option', { name: /GDTC — Tổ Giáo dục thể chất/i })).toBeInTheDocument();
 
     // Select group on page 2
-    await user.selectOptions(resourceSelect, 'g-25');
-    expect(resourceSelect).toHaveValue('g-25');
+    await user.selectOptions(resourceSelect, 'g-105');
+    expect(resourceSelect).toHaveValue('g-105');
 
     // Navigate back to page 1
     await user.click(groupPrevBtn());
@@ -219,12 +197,12 @@ describe('AUD-05 CapabilitiesPage pagination completeness', () => {
     });
 
     // Selection is preserved!
-    expect(resourceSelect).toHaveValue('g-25');
+    expect(resourceSelect).toHaveValue('g-105');
     expect(within(resourceSelect).getByRole('option', { name: /GDTC — Tổ Giáo dục thể chất/i })).toBeInTheDocument();
   });
 
   it('paginates active capability definitions table without cutting off records', async () => {
-    const page1Defs = Array.from({ length: 20 }, (_, i) => ({
+    const page1Defs = Array.from({ length: 100 }, (_, i) => ({
       key: `CAP_${i + 1}`,
       description: `Mô tả quyền ${i + 1}`,
       allowedScopeTypes: ['SCHOOL_WIDE'],
@@ -234,7 +212,7 @@ describe('AUD-05 CapabilitiesPage pagination completeness', () => {
 
     const page2Defs = [
       {
-        key: 'SPECIAL_CAP_25',
+        key: 'SPECIAL_CAP_101',
         description: 'Quyền đặc biệt trang hai',
         allowedScopeTypes: ['SCHOOL_WIDE'],
         isSystem: true,
@@ -248,10 +226,10 @@ describe('AUD-05 CapabilitiesPage pagination completeness', () => {
       if (url.includes('/capabilities')) {
         const parsed = new URL(url, 'http://localhost');
         const page = Number(parsed.searchParams.get('page') || 1);
-        if (page === 1) return jsonResponse({ items: page1Defs, page: 1, pageSize: 20, total: 21 });
-        if (page === 2) return jsonResponse({ items: page2Defs, page: 2, pageSize: 20, total: 21 });
+        if (page === 1) return jsonResponse({ items: page1Defs, page: 1, pageSize: 100, total: 101 });
+        if (page === 2) return jsonResponse({ items: page2Defs, page: 2, pageSize: 100, total: 101 });
       }
-      return jsonResponse({ items: [], page: 1, pageSize: 20, total: 0 });
+      return jsonResponse({ items: [], page: 1, pageSize: 100, total: 0 });
     });
 
     vi.stubGlobal('fetch', fetchMock);
@@ -266,12 +244,12 @@ describe('AUD-05 CapabilitiesPage pagination completeness', () => {
     expect(within(getTableRegion()).queryByText('Quyền đặc biệt trang hai')).not.toBeInTheDocument();
 
     const defNav = () => screen.getByRole('navigation', { name: 'Phân trang danh mục quyền' });
-    expect(defNav()).toHaveTextContent(/21 bản ghi/);
+    expect(defNav()).toHaveTextContent(/101 bản ghi/);
 
     // Click next page on definitions table pagination
     await user.click(within(defNav()).getByRole('button', { name: 'Trang sau' }));
 
-    // Page 2 renders the 21st definition in the table
+    // Page 2 renders the 101st definition in the table
     await waitFor(() => {
       expect(within(getTableRegion()).getByText('Quyền đặc biệt trang hai')).toBeInTheDocument();
       expect(within(getTableRegion()).queryByText('Mô tả quyền 1')).not.toBeInTheDocument();
@@ -280,7 +258,7 @@ describe('AUD-05 CapabilitiesPage pagination completeness', () => {
   });
 
   it('paginates user grant history across pages, displaying active and revoked grants, and supports revoke mutation', async () => {
-    const page1Grants = Array.from({ length: 20 }, (_, i) => ({
+    const page1Grants = Array.from({ length: 100 }, (_, i) => ({
       id: `grant-${i + 1}`,
       userId: 'u-1',
       capabilityKey: 'TEACHER_BASE',
@@ -292,7 +270,7 @@ describe('AUD-05 CapabilitiesPage pagination completeness', () => {
 
     const page2Grants = [
       {
-        id: 'grant-21-revoked',
+        id: 'grant-101-revoked',
         userId: 'u-1',
         capabilityKey: 'TIMETABLE_MANAGE',
         scopeType: 'SCHOOL_WIDE',
@@ -301,7 +279,7 @@ describe('AUD-05 CapabilitiesPage pagination completeness', () => {
         revokedAt: '2026-03-01T00:00:00.000Z',
       },
       {
-        id: 'grant-22-active',
+        id: 'grant-102-active',
         userId: 'u-1',
         capabilityKey: 'PPCT_MANAGE',
         scopeType: 'SCHOOL_WIDE',
@@ -320,7 +298,7 @@ describe('AUD-05 CapabilitiesPage pagination completeness', () => {
         return jsonResponse({
           items: [{ key: 'TEACHER_BASE', description: 'GV', allowedScopeTypes: ['PERSONAL'], isSystem: false, isActive: true }],
           page: 1,
-          pageSize: 20,
+          pageSize: 100,
           total: 1,
         });
       }
@@ -328,21 +306,21 @@ describe('AUD-05 CapabilitiesPage pagination completeness', () => {
         return jsonResponse({
           items: [{ id: 'u-1', username: 'gv01', status: 'ACTIVE', profile: { displayName: 'Nguyễn Văn Một' } }],
           page: 1,
-          pageSize: 20,
+          pageSize: 100,
           total: 1,
         });
       }
-      if (url.includes('/capability-grants/grant-22-active/revoke') && init?.method === 'POST') {
+      if (url.includes('/capability-grants/grant-102-active/revoke') && init?.method === 'POST') {
         revokedCalled = true;
-        return jsonResponse({ id: 'grant-22-active', revokedAt: '2026-10-11T00:00:00.000Z' });
+        return jsonResponse({ id: 'grant-102-active', revokedAt: '2026-10-11T00:00:00.000Z' });
       }
       if (url.includes('/users/u-1/capability-grants')) {
         const parsed = new URL(url, 'http://localhost');
         const page = Number(parsed.searchParams.get('page') || 1);
-        if (page === 1) return jsonResponse({ items: page1Grants, page: 1, pageSize: 20, total: 22 });
-        if (page === 2) return jsonResponse({ items: page2Grants, page: 2, pageSize: 20, total: 22 });
+        if (page === 1) return jsonResponse({ items: page1Grants, page: 1, pageSize: 100, total: 102 });
+        if (page === 2) return jsonResponse({ items: page2Grants, page: 2, pageSize: 100, total: 102 });
       }
-      return jsonResponse({ items: [], page: 1, pageSize: 20, total: 0 });
+      return jsonResponse({ items: [], page: 1, pageSize: 100, total: 0 });
     });
 
     vi.stubGlobal('fetch', fetchMock);
@@ -355,9 +333,9 @@ describe('AUD-05 CapabilitiesPage pagination completeness', () => {
     // History table appears
     expect(await screen.findByRole('heading', { name: 'Lịch sử quyền của Nguyễn Văn Một' })).toBeInTheDocument();
     const getGrantsNav = () => screen.getByRole('navigation', { name: 'Phân trang lịch sử cấp quyền' });
-    expect(getGrantsNav()).toHaveTextContent(/22 bản ghi/);
+    expect(getGrantsNav()).toHaveTextContent(/102 bản ghi/);
 
-    // Navigate to page 2 of grants history
+    // Navigate to page 2 of grants history (records 101+)
     await user.click(within(getGrantsNav()).getByRole('button', { name: 'Trang sau' }));
 
     // Verifies revoked grant has "Đã thu hồi" status badge
@@ -389,7 +367,7 @@ describe('AUD-05 CapabilitiesPage pagination completeness', () => {
         return jsonResponse({
           items: [{ key: 'TEACHER_BASE', description: 'GV', allowedScopeTypes: ['PERSONAL'], isSystem: false, isActive: true }],
           page: 1,
-          pageSize: 20,
+          pageSize: 100,
           total: 1,
         });
       }
@@ -400,38 +378,38 @@ describe('AUD-05 CapabilitiesPage pagination completeness', () => {
           return jsonResponse({
             items: [{ id: 'u-1', username: 'gv01', status: 'ACTIVE', profile: { displayName: 'GV 1' } }],
             page: 1,
-            pageSize: 20,
-            total: 25,
+            pageSize: 100,
+            total: 105,
           });
         }
         if (page === 2) {
           return jsonResponse({
-            items: [{ id: 'u-25', username: 'gv25', status: 'ACTIVE', profile: { displayName: 'GV 25' } }],
+            items: [{ id: 'u-105', username: 'gv105', status: 'ACTIVE', profile: { displayName: 'GV 105' } }],
             page: 2,
-            pageSize: 20,
-            total: 25,
+            pageSize: 100,
+            total: 105,
           });
         }
       }
-      if (url.includes('/users/u-25/capability-grants') && init?.method === 'POST') {
+      if (url.includes('/users/u-105/capability-grants') && init?.method === 'POST') {
         createdPayload = JSON.parse(init.body as string);
-        return jsonResponse({ id: 'new-grant', userId: 'u-25', capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL' }, 201);
+        return jsonResponse({ id: 'new-grant', userId: 'u-105', capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL' }, 201);
       }
-      return jsonResponse({ items: [], page: 1, pageSize: 20, total: 0 });
+      return jsonResponse({ items: [], page: 1, pageSize: 100, total: 0 });
     });
 
     vi.stubGlobal('fetch', fetchMock);
     const user = userEvent.setup();
     renderApp('/quan-tri/quyen');
 
-    // Go to page 2 of users
+    // Go to page 2 of users (records 101+)
     const getUserNav = () => screen.getByRole('navigation', { name: 'Chuyển trang người dùng' });
     await waitFor(() => expect(getUserNav()).toBeInTheDocument());
     await user.click(within(getUserNav()).getByRole('button', { name: 'Trang sau' }));
 
     // Select user on page 2
     const userSelect = screen.getByLabelText('Người nhận');
-    await user.selectOptions(userSelect, 'u-25');
+    await user.selectOptions(userSelect, 'u-105');
 
     // Navigate back to page 1
     await user.click(within(getUserNav()).getByRole('button', { name: 'Trang trước' }));
@@ -451,9 +429,9 @@ describe('AUD-05 CapabilitiesPage pagination completeness', () => {
       expect(screen.getByText('Đã cấp quyền.')).toBeInTheDocument();
     });
 
-    // Verifies the target URL was /api/users/u-25/capability-grants (NOT u-1)
+    // Verifies the target URL was /api/users/u-105/capability-grants (NOT u-1)
     expect(fetchMock.mock.calls.some(([req, init]) =>
-      String(req).includes('/users/u-25/capability-grants') && init?.method === 'POST',
+      String(req).includes('/users/u-105/capability-grants') && init?.method === 'POST',
     )).toBe(true);
   });
 
@@ -468,11 +446,11 @@ describe('AUD-05 CapabilitiesPage pagination completeness', () => {
         return jsonResponse({
           items: [{ key: 'TEACHER_BASE', description: 'GV', allowedScopeTypes: ['PERSONAL'], isSystem: false, isActive: true }],
           page: 1,
-          pageSize: 20,
+          pageSize: 100,
           total: 1,
         });
       }
-      return jsonResponse({ items: [], page: 1, pageSize: 20, total: 0 });
+      return jsonResponse({ items: [], page: 1, pageSize: 100, total: 0 });
     });
 
     vi.stubGlobal('fetch', fetchMock);

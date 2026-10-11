@@ -9,7 +9,7 @@ import { capabilityLabels, hasSchoolCapability, scopeLabels } from '../lib/capab
 import { formatDateTime, isActiveWindow } from '../lib/display';
 import { capabilitiesApi, catalogApi, toIso, usersApi } from '../lib/management-api';
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 100;
 
 type Draft = {
   capabilityKey: string;
