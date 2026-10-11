@@ -340,7 +340,7 @@ describe('auth security foundations', () => {
       testService.onModuleDestroy();
     });
 
-    it('TC-08: removes aborted request from queue when client closes connection', async () => {
+    it('TC-08: removes aborted request from queue and rejects wait promise when client closes connection', async () => {
       const customConfig: AppConfig = {
         ...config,
         auth: { ...config.auth, loginRateLimitInFlightIp: 1 },
@@ -360,12 +360,13 @@ describe('auth security foundations', () => {
       };
 
       // Queue request 2
-      void testService.acquireSlot({ ipAddress: ip, username: 'u2', request: mockReq });
+      const waitPromise = testService.acquireSlot({ ipAddress: ip, username: 'u2', request: mockReq });
       expect(testService.getQueueLengthForIp(ip)).toBe(1);
 
       // Client closes connection while in queue
       closeListener?.();
       expect(testService.getQueueLengthForIp(ip)).toBe(0);
+      await expect(waitPromise).rejects.toThrow('Yêu cầu đã bị hủy bởi máy khách.');
 
       lease1.release();
       testService.onModuleDestroy();
@@ -403,6 +404,143 @@ describe('auth security foundations', () => {
       ).rejects.toThrow('Quá nhiều yêu cầu đăng nhập.');
 
       expect(testService.trackedUserKeyCount).toBe(2);
+      testService.onModuleDestroy();
+    });
+
+    it('TC-10: IP admission rejection does not consume victim account username quota (Finding 3)', async () => {
+      const customConfig: AppConfig = {
+        ...config,
+        auth: {
+          ...config.auth,
+          loginRateLimitIpTotalMax: 3,
+          loginRateLimitUserMax: 5,
+        },
+      };
+      const testService = new LoginRateLimitService(customConfig);
+      const blockedIp = '203.0.113.88';
+      const cleanIp = '198.51.100.99';
+      const victimUser = 'victim_teacher';
+
+      // 1. IP reaches its total request ceiling (3 requests)
+      for (let i = 1; i <= 3; i += 1) {
+        const lease = await testService.acquireSlot({
+          ipAddress: blockedIp,
+          username: `filler_${i}`,
+        });
+        lease.release();
+      }
+
+      // 2. Blocked IP attempts 10 requests targeting victimUser - ALL must be rejected by IP ceiling gate
+      for (let i = 1; i <= 10; i += 1) {
+        await expect(
+          testService.acquireSlot({
+            ipAddress: blockedIp,
+            username: victimUser,
+          }),
+        ).rejects.toThrow('Quá nhiều lần đăng nhập từ địa chỉ mạng này.');
+      }
+
+      // 3. Legitimate user logs in as victimUser from a clean IP - MUST SUCCEED (0/5 consumed)
+      const legitimateLease = await testService.acquireSlot({
+        ipAddress: cleanIp,
+        username: victimUser,
+      });
+      expect(legitimateLease).toBeDefined();
+      expect(typeof legitimateLease.release).toBe('function');
+      legitimateLease.release();
+
+      testService.onModuleDestroy();
+    });
+
+    it('TC-11: service shutdown settles all pending queued promises with 503 (Finding 1)', async () => {
+      const customConfig: AppConfig = {
+        ...config,
+        auth: { ...config.auth, loginRateLimitInFlightIp: 1 },
+      };
+      const testService = new LoginRateLimitService(customConfig);
+      const ip = '192.0.2.10';
+
+      // Slot 1 occupied
+      const lease1 = await testService.acquireSlot({ ipAddress: ip, username: 'u1' });
+
+      // Requests 2 and 3 enter queue
+      const p2 = testService.acquireSlot({ ipAddress: ip, username: 'u2' });
+      const p3 = testService.acquireSlot({ ipAddress: ip, username: 'u3' });
+      expect(testService.activeQueueLength).toBe(2);
+
+      // Service shutdown triggered
+      testService.onModuleDestroy();
+
+      // Both queued promises must reject promptly, not hang indefinitely
+      await expect(p2).rejects.toThrow('Dịch vụ đăng nhập đang khởi động lại hoặc tắt.');
+      await expect(p3).rejects.toThrow('Dịch vụ đăng nhập đang khởi động lại hoặc tắt.');
+      expect(testService.activeQueueLength).toBe(0);
+
+      lease1.release();
+    });
+
+    it('TC-12: near-simultaneous contention between client abort and timeout settles exactly once without leaks', async () => {
+      const customConfig: AppConfig = {
+        ...config,
+        auth: { ...config.auth, loginRateLimitInFlightIp: 1, loginRateLimitQueueTimeoutMs: 50 },
+      };
+      const testService = new LoginRateLimitService(customConfig);
+      const ip = '192.0.2.20';
+
+      const lease1 = await testService.acquireSlot({ ipAddress: ip, username: 'u1' });
+
+      let closeListener: (() => void) | undefined;
+      const mockReq = {
+        on: (event: string, fn: () => void) => {
+          if (event === 'close') closeListener = fn;
+        },
+        removeListener: jest.fn(),
+      };
+
+      const p2Promise = expect(
+        testService.acquireSlot({ ipAddress: ip, username: 'u2', request: mockReq }),
+      ).rejects.toThrow('Yêu cầu đã bị hủy bởi máy khách.');
+
+      // Trigger abort immediately
+      closeListener?.();
+
+      // Wait past timeout duration
+      await new Promise((r) => setTimeout(r, 80));
+
+      // Promise was rejected once with abort error (not timeout error)
+      await p2Promise;
+      expect(testService.activeQueueLength).toBe(0);
+      expect(testService.getInFlightCountForIp(ip)).toBe(1);
+
+      lease1.release();
+      expect(testService.getInFlightCountForIp(ip)).toBe(0);
+      testService.onModuleDestroy();
+    });
+
+    it('TC-13: client abort via AbortSignal rejects waiter and removes from queue cleanly', async () => {
+      const customConfig: AppConfig = {
+        ...config,
+        auth: { ...config.auth, loginRateLimitInFlightIp: 1 },
+      };
+      const testService = new LoginRateLimitService(customConfig);
+      const ip = '192.0.2.30';
+
+      const lease1 = await testService.acquireSlot({ ipAddress: ip, username: 'u1' });
+
+      const controller = new AbortController();
+      const p2 = testService.acquireSlot({
+        ipAddress: ip,
+        username: 'u2',
+        signal: controller.signal,
+      });
+      expect(testService.activeQueueLength).toBe(1);
+
+      controller.abort();
+
+      await expect(p2).rejects.toThrow('Yêu cầu đã bị hủy bởi máy khách.');
+      expect(testService.activeQueueLength).toBe(0);
+
+      lease1.release();
       testService.onModuleDestroy();
     });
   });

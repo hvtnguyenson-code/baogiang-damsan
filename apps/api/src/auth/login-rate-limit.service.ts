@@ -13,7 +13,30 @@ import { AppConfig } from '../config/app.config';
 export interface AcquireSlotOptions {
   ipAddress: string;
   username: string;
-  request?: { destroyed?: boolean; closed?: boolean; on?: (event: string, listener: () => void) => unknown };
+  request?: {
+    destroyed?: boolean;
+    closed?: boolean;
+    on?: (event: string, listener: () => void) => unknown;
+    removeListener?: (event: string, listener: () => void) => unknown;
+    off?: (event: string, listener: () => void) => unknown;
+    socket?: {
+      destroyed?: boolean;
+      on?: (event: string, listener: () => void) => unknown;
+      removeListener?: (event: string, listener: () => void) => unknown;
+      off?: (event: string, listener: () => void) => unknown;
+    } | null;
+  };
+  response?: {
+    writableEnded?: boolean;
+    finished?: boolean;
+    closed?: boolean;
+    destroyed?: boolean;
+    on?: (event: string, listener: () => void) => unknown;
+    removeListener?: (event: string, listener: () => void) => unknown;
+    off?: (event: string, listener: () => void) => unknown;
+    socket?: { destroyed?: boolean } | null;
+  };
+  signal?: AbortSignal;
   now?: number;
 }
 
@@ -29,7 +52,8 @@ interface QueuedLoginRequest {
   resolve: (lease: SlotLease) => void;
   reject: (error: unknown) => void;
   timeoutTimer?: NodeJS.Timeout;
-  aborted?: boolean;
+  settled: boolean;
+  cleanup?: () => void;
 }
 
 interface IpBucketState {
@@ -59,26 +83,43 @@ export class LoginRateLimitService implements OnModuleDestroy {
   constructor(@Inject('APP_CONFIG') private readonly config: AppConfig) {}
 
   onModuleDestroy(): void {
-    this.resetForTest();
+    this.shutdown();
   }
 
   resetForTest(): void {
-    if (this.pacingTimer) {
-      clearTimeout(this.pacingTimer);
-      this.pacingTimer = undefined;
-    }
-    for (const item of this.queue) {
-      if (item.timeoutTimer) {
-        clearTimeout(item.timeoutTimer);
-      }
-    }
-    this.queue.length = 0;
+    this.shutdown();
     this.ipBuckets.clear();
     this.userBuckets.clear();
     this.legacyAttempts.clear();
     this.ipInFlight.clear();
     this.ipQueueCounts.clear();
     this.globalInFlight = 0;
+  }
+
+  private shutdown(): void {
+    if (this.pacingTimer) {
+      clearTimeout(this.pacingTimer);
+      this.pacingTimer = undefined;
+    }
+    const shutdownError = new HttpException(
+      'Dịch vụ đăng nhập đang khởi động lại hoặc tắt. Vui lòng thử lại.',
+      HttpStatus.SERVICE_UNAVAILABLE,
+    );
+    while (this.queue.length > 0) {
+      const item = this.queue.shift();
+      if (!item || item.settled) continue;
+      item.settled = true;
+      if (item.timeoutTimer) {
+        clearTimeout(item.timeoutTimer);
+        item.timeoutTimer = undefined;
+      }
+      if (item.cleanup) {
+        item.cleanup();
+        item.cleanup = undefined;
+      }
+      item.reject(shutdownError);
+    }
+    this.ipQueueCounts.clear();
   }
 
   get trackedKeyCount(): number {
@@ -177,39 +218,16 @@ export class LoginRateLimitService implements OnModuleDestroy {
     }
 
     const windowMs = (this.config.auth.loginRateLimitWindowSeconds ?? 60) * 1000;
-
     const maxUserKeys = this.config.auth.loginRateLimitMaxUserKeys ?? 10_000;
     const maxIpKeys = this.config.auth.loginRateLimitMaxIpKeys ?? 10_000;
 
-    // 1. Account-level rate limit pre-admission check & increment
-    let userBucket = this.userBuckets.get(username);
-    if (userBucket && userBucket.resetAt <= now) {
-      this.userBuckets.delete(username);
-      userBucket = undefined;
-    }
-    if (!userBucket) {
-      if (this.userBuckets.size >= maxUserKeys) {
-        this.pruneExpired(now);
-      }
-      if (this.userBuckets.size >= maxUserKeys) {
-        this.reject('Quá nhiều yêu cầu đăng nhập. Vui lòng thử lại sau.');
-      }
-      userBucket = { count: 1, resetAt: now + windowMs };
-      this.userBuckets.set(username, userBucket);
-    } else {
-      userBucket.count += 1;
-      const userMax = this.config.auth.loginRateLimitUserMax ?? 10;
-      if (userBucket.count > userMax) {
-        this.reject('Quá nhiều lần đăng nhập cho tài khoản này. Vui lòng thử lại sau.');
-      }
-    }
-
-    // 2. IP-level total request ceiling pre-admission check & increment
+    // 1. IP admission gate: ceiling and capacity checks (checked BEFORE user quota)
     let ipBucket = this.ipBuckets.get(ipAddress);
     if (ipBucket && ipBucket.resetAt <= now) {
       this.ipBuckets.delete(ipAddress);
       ipBucket = undefined;
     }
+
     if (!ipBucket) {
       if (this.ipBuckets.size >= maxIpKeys) {
         this.pruneExpired(now);
@@ -217,18 +235,45 @@ export class LoginRateLimitService implements OnModuleDestroy {
       if (this.ipBuckets.size >= maxIpKeys) {
         this.reject('Quá nhiều yêu cầu đăng nhập từ mạng này. Vui lòng thử lại sau.');
       }
-      ipBucket = { totalCount: 1, failedCount: 0, resetAt: now + windowMs, lastAdmittedAt: 0 };
-      this.ipBuckets.set(ipAddress, ipBucket);
+    }
+
+    const ipTotalMax = this.config.auth.loginRateLimitIpTotalMax ?? 150;
+    if (ipBucket && ipBucket.totalCount >= ipTotalMax) {
+      this.reject('Quá nhiều lần đăng nhập từ địa chỉ mạng này. Vui lòng thử lại sau.');
+    }
+
+    // 2. Account-level rate limit check
+    let userBucket = this.userBuckets.get(username);
+    if (userBucket && userBucket.resetAt <= now) {
+      this.userBuckets.delete(username);
+      userBucket = undefined;
+    }
+
+    if (!userBucket) {
+      if (this.userBuckets.size >= maxUserKeys) {
+        this.pruneExpired(now);
+      }
+      if (this.userBuckets.size >= maxUserKeys) {
+        this.reject('Quá nhiều yêu cầu đăng nhập. Vui lòng thử lại sau.');
+      }
     } else {
-      ipBucket.totalCount += 1;
-      const ipTotalMax = this.config.auth.loginRateLimitIpTotalMax ?? 150;
-      if (ipBucket.totalCount > ipTotalMax) {
-        this.reject('Quá nhiều lần đăng nhập từ địa chỉ mạng này. Vui lòng thử lại sau.');
+      const userMax = this.config.auth.loginRateLimitUserMax ?? 10;
+      if (userBucket.count >= userMax) {
+        this.reject('Quá nhiều lần đăng nhập cho tài khoản này. Vui lòng thử lại sau.');
       }
     }
 
+    const isClientAlreadyAborted =
+      Boolean(options.signal?.aborted) ||
+      Boolean(options.response?.destroyed && !options.response?.writableEnded) ||
+      Boolean(options.request?.socket?.destroyed && !options.response?.writableEnded);
+
+    if (isClientAlreadyAborted) {
+      throw new BadRequestException('Yêu cầu đã bị hủy bởi máy khách.');
+    }
+
     // 3. Concurrency check: Can we admit immediately?
-    const isDegraded = ipBucket.failedCount >= (this.config.auth.loginRateLimitIpFailedDegradedThreshold ?? 25);
+    const isDegraded = (ipBucket?.failedCount ?? 0) >= (this.config.auth.loginRateLimitIpFailedDegradedThreshold ?? 25);
     const maxInFlightForIp = isDegraded
       ? (this.config.auth.loginRateLimitInFlightIpDegraded ?? 1)
       : (this.config.auth.loginRateLimitInFlightIp ?? 3);
@@ -238,28 +283,45 @@ export class LoginRateLimitService implements OnModuleDestroy {
     const globalQueueSize = this.queue.length;
 
     const degradedPaceMs = this.config.auth.loginRateLimitDegradedPaceMs ?? 1_000;
-    const paceSatisfied = !isDegraded || (now - ipBucket.lastAdmittedAt >= degradedPaceMs);
+    const paceSatisfied = !isDegraded || (now - (ipBucket?.lastAdmittedAt ?? 0) >= degradedPaceMs);
 
-    if (
+    const canAdmitImmediately =
       globalQueueSize === 0 &&
       ipQueueSize === 0 &&
       this.globalInFlight < globalMaxInFlight &&
       currentIpInFlight < maxInFlightForIp &&
-      paceSatisfied
-    ) {
+      paceSatisfied;
+
+    if (!canAdmitImmediately) {
+      const maxQueueGlobal = this.config.auth.loginRateLimitMaxQueueGlobal ?? 120;
+      const maxQueuePerIp = this.config.auth.loginRateLimitMaxQueuePerIp ?? 60;
+
+      if (globalQueueSize >= maxQueueGlobal) {
+        this.reject('Hàng đợi đăng nhập đã đầy. Vui lòng thử lại sau.');
+      }
+      if (ipQueueSize >= maxQueuePerIp) {
+        this.reject('Quá nhiều yêu cầu đang chờ từ mạng này. Vui lòng thử lại sau.');
+      }
+    }
+
+    // Commit counters after admission gate checks succeed
+    if (!ipBucket) {
+      ipBucket = { totalCount: 1, failedCount: 0, resetAt: now + windowMs, lastAdmittedAt: 0 };
+      this.ipBuckets.set(ipAddress, ipBucket);
+    } else {
+      ipBucket.totalCount += 1;
+    }
+
+    if (!userBucket) {
+      userBucket = { count: 1, resetAt: now + windowMs };
+      this.userBuckets.set(username, userBucket);
+    } else {
+      userBucket.count += 1;
+    }
+
+    if (canAdmitImmediately) {
       this.admit(ipAddress, now);
       return this.createSlotLease(ipAddress);
-    }
-
-    // 4. Must queue request: check queue limits
-    const maxQueueGlobal = this.config.auth.loginRateLimitMaxQueueGlobal ?? 120;
-    const maxQueuePerIp = this.config.auth.loginRateLimitMaxQueuePerIp ?? 60;
-
-    if (globalQueueSize >= maxQueueGlobal) {
-      this.reject('Hàng đợi đăng nhập đã đầy. Vui lòng thử lại sau.');
-    }
-    if (ipQueueSize >= maxQueuePerIp) {
-      this.reject('Quá nhiều yêu cầu đang chờ từ mạng này. Vui lòng thử lại sau.');
     }
 
     // Enqueue
@@ -274,21 +336,62 @@ export class LoginRateLimitService implements OnModuleDestroy {
         queuedAt: now,
         resolve,
         reject,
+        settled: false,
       };
 
       const timeoutMs = this.config.auth.loginRateLimitQueueTimeoutMs ?? 10_000;
       queuedItem.timeoutTimer = setTimeout(() => {
-        this.removeFromQueue(reqId);
-        reject(new HttpException('Quá thời gian chờ đăng nhập. Vui lòng thử lại sau.', HttpStatus.TOO_MANY_REQUESTS));
+        this.abortItem(
+          reqId,
+          new HttpException('Quá thời gian chờ đăng nhập. Vui lòng thử lại sau.', HttpStatus.TOO_MANY_REQUESTS),
+        );
       }, timeoutMs);
 
-      if (options.request && typeof options.request.on === 'function') {
-        options.request.on('close', () => {
-          if (!queuedItem.aborted) {
-            this.removeFromQueue(reqId);
-          }
-        });
+      let onSignalAbort: (() => void) | undefined;
+      let onResponseClose: (() => void) | undefined;
+      let onRequestClose: (() => void) | undefined;
+
+      if (options.signal) {
+        onSignalAbort = () => {
+          this.abortItem(reqId, new BadRequestException('Yêu cầu đã bị hủy bởi máy khách.'));
+        };
+        options.signal.addEventListener('abort', onSignalAbort, { once: true });
       }
+
+      if (options.response && typeof options.response.on === 'function') {
+        onResponseClose = () => {
+          if (!options.response?.writableEnded && !options.response?.finished) {
+            this.abortItem(reqId, new BadRequestException('Yêu cầu đã bị hủy bởi máy khách.'));
+          }
+        };
+        options.response.on('close', onResponseClose);
+      } else if (!options.signal && options.request && typeof options.request.on === 'function') {
+        // Fallback for mock request in unit tests when no response or signal is provided
+        onRequestClose = () => {
+          this.abortItem(reqId, new BadRequestException('Yêu cầu đã bị hủy bởi máy khách.'));
+        };
+        options.request.on('close', onRequestClose);
+      }
+
+      queuedItem.cleanup = () => {
+        if (options.signal && onSignalAbort && typeof options.signal.removeEventListener === 'function') {
+          options.signal.removeEventListener('abort', onSignalAbort);
+        }
+        if (options.response && onResponseClose) {
+          if (typeof options.response.removeListener === 'function') {
+            options.response.removeListener('close', onResponseClose);
+          } else if (typeof options.response.off === 'function') {
+            options.response.off('close', onResponseClose);
+          }
+        }
+        if (options.request && onRequestClose) {
+          if (typeof options.request.removeListener === 'function') {
+            options.request.removeListener('close', onRequestClose);
+          } else if (typeof options.request.off === 'function') {
+            options.request.off('close', onRequestClose);
+          }
+        }
+      };
 
       this.queue.push(queuedItem);
       this.pumpQueue(now);
@@ -325,24 +428,30 @@ export class LoginRateLimitService implements OnModuleDestroy {
     };
   }
 
-  private removeFromQueue(reqId: string): void {
+  private abortItem(
+    reqId: string,
+    error: unknown = new BadRequestException('Yêu cầu đã bị hủy bởi máy khách.'),
+  ): void {
     const idx = this.queue.findIndex((item) => item.id === reqId);
-    if (idx >= 0) {
-      const [item] = this.queue.splice(idx, 1);
-      if (item) {
-        item.aborted = true;
-        if (item.timeoutTimer) {
-          clearTimeout(item.timeoutTimer);
-          item.timeoutTimer = undefined;
-        }
-        const currentQ = (this.ipQueueCounts.get(item.ip) ?? 1) - 1;
-        if (currentQ <= 0) {
-          this.ipQueueCounts.delete(item.ip);
-        } else {
-          this.ipQueueCounts.set(item.ip, currentQ);
-        }
-      }
+    if (idx < 0) return;
+    const [item] = this.queue.splice(idx, 1);
+    if (!item || item.settled) return;
+    item.settled = true;
+    if (item.timeoutTimer) {
+      clearTimeout(item.timeoutTimer);
+      item.timeoutTimer = undefined;
     }
+    if (item.cleanup) {
+      item.cleanup();
+      item.cleanup = undefined;
+    }
+    const currentQ = (this.ipQueueCounts.get(item.ip) ?? 1) - 1;
+    if (currentQ <= 0) {
+      this.ipQueueCounts.delete(item.ip);
+    } else {
+      this.ipQueueCounts.set(item.ip, currentQ);
+    }
+    item.reject(error);
   }
 
   private schedulePacingPump(delayMs: number): void {
@@ -363,7 +472,7 @@ export class LoginRateLimitService implements OnModuleDestroy {
     let i = 0;
     while (i < this.queue.length && this.globalInFlight < globalMaxInFlight) {
       const item = this.queue[i]!;
-      if (item.aborted) {
+      if (item.settled) {
         this.queue.splice(i, 1);
         continue;
       }
@@ -389,15 +498,20 @@ export class LoginRateLimitService implements OnModuleDestroy {
 
       // Admitted from queue
       this.queue.splice(i, 1);
+      item.settled = true;
+      if (item.timeoutTimer) {
+        clearTimeout(item.timeoutTimer);
+        item.timeoutTimer = undefined;
+      }
+      if (item.cleanup) {
+        item.cleanup();
+        item.cleanup = undefined;
+      }
       const currentQ = (this.ipQueueCounts.get(item.ip) ?? 1) - 1;
       if (currentQ <= 0) {
         this.ipQueueCounts.delete(item.ip);
       } else {
         this.ipQueueCounts.set(item.ip, currentQ);
-      }
-      if (item.timeoutTimer) {
-        clearTimeout(item.timeoutTimer);
-        item.timeoutTimer = undefined;
       }
 
       this.admit(item.ip, now);

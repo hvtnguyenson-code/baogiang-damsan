@@ -38,11 +38,15 @@ export class AuthController {
       ipAddress,
       username: normalizedUsername,
       request,
+      response,
     });
 
     let isAuthFailure = false;
     try {
-      const isClientAborted = Boolean(request.socket && request.socket.destroyed && !response.writableEnded);
+      const isClientAborted = Boolean(
+        (request.socket && request.socket.destroyed && !response.writableEnded) ||
+        (response.destroyed && !response.writableEnded)
+      );
       if (isClientAborted) {
         throw new BadRequestException('Yêu cầu đã bị hủy bởi máy khách.');
       }
