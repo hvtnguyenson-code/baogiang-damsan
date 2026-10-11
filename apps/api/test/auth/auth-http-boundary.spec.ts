@@ -183,8 +183,12 @@ describe('auth HTTP boundary', () => {
       rateLimitConfig: { loginRateLimitInFlightIp: 1 },
     });
 
+    let onFirstLoginStarted!: () => void;
+    const firstLoginStarted = new Promise<void>((r) => { onFirstLoginStarted = r; });
+
     try {
       (authService.login as jest.Mock).mockImplementationOnce(async (username: string) => {
+        onFirstLoginStarted();
         await firstLoginBlocked;
         return {
           rawToken: 'mock_token_' + username,
@@ -193,22 +197,43 @@ describe('auth HTTP boundary', () => {
         };
       });
 
-      // Request 1 takes slot
-      const req1Promise = request(app)
-        .post('/api/auth/login')
-        .send({ username: 'user1', password: 'Password9' });
+      // 1. Request 1 eagerly dispatched to take in-flight slot
+      const req1Promise = (async () => {
+        return await request(app)
+          .post('/api/auth/login')
+          .send({ username: 'user1', password: 'Password9' });
+      })();
+      req1Promise.catch(() => {});
 
-      await new Promise((r) => setTimeout(r, 20));
+      // Synchronize deterministically: Wait until request 1 is actively inside authService.login
+      let req1TimeoutTimer: NodeJS.Timeout | undefined;
+      await Promise.race([
+        firstLoginStarted,
+        new Promise((_, reject) => {
+          req1TimeoutTimer = setTimeout(() => reject(new Error('firstLoginStarted timed out')), 2500);
+        }),
+      ]);
+      if (req1TimeoutTimer) clearTimeout(req1TimeoutTimer);
+      expect(rateLimitService.getInFlightCountForIp('127.0.0.1')).toBe(1);
+      expect(rateLimitService.getQueueLengthForIp('127.0.0.1')).toBe(0);
 
-      // Request 2 sends full POST body and is queued behind req1
-      const req2Promise = request(app)
-        .post('/api/auth/login')
-        .send({ username: 'user2', password: 'Password9' });
+      // 2. Request 2 eagerly dispatched: body-parser consumes its body and it enters queue behind req1
+      const req2Promise = (async () => {
+        return await request(app)
+          .post('/api/auth/login')
+          .send({ username: 'user2', password: 'Password9' });
+      })();
+      req2Promise.catch(() => {});
 
-      // Ensure req2's JSON body has been read by body-parser (req 'close' fired) while waiting in queue
-      await new Promise((r) => setTimeout(r, 50));
+      // Synchronize deterministically: Confirm request 2 has reached the rate limit queue before unblocking req1
+      for (let i = 0; i < 50; i += 1) {
+        if (rateLimitService.getQueueLengthForIp('127.0.0.1') === 1) break;
+        await new Promise((r) => setTimeout(r, 10));
+      }
+      expect(rateLimitService.getQueueLengthForIp('127.0.0.1')).toBe(1);
+      expect(rateLimitService.activeQueueLength).toBe(1);
 
-      // Unblock request 1
+      // 3. Unblock request 1
       unblockFirstLogin();
 
       const [res1, res2] = await Promise.all([req1Promise, req2Promise]);
@@ -216,6 +241,12 @@ describe('auth HTTP boundary', () => {
       expect(res1.status).toBe(200);
       expect(res2.status).toBe(200);
       expect(res2.body.user.username).toBe('user2');
+
+      // 4. Assert queue and in-flight slots are completely released
+      expect(rateLimitService.getQueueLengthForIp('127.0.0.1')).toBe(0);
+      expect(rateLimitService.activeQueueLength).toBe(0);
+      expect(rateLimitService.getInFlightCountForIp('127.0.0.1')).toBe(0);
+      expect(rateLimitService.globalInFlightCount).toBe(0);
     } finally {
       if (typeof unblockFirstLogin === 'function') {
         unblockFirstLogin();
@@ -248,6 +279,17 @@ describe('auth HTTP boundary', () => {
       };
     });
 
+    // Observe the admission Promise returned by rateLimitService.acquireSlot for user2
+    let client2AdmissionPromise: Promise<unknown> | null = null;
+    const originalAcquireSlot = rateLimitService.acquireSlot.bind(rateLimitService);
+    jest.spyOn(rateLimitService, 'acquireSlot').mockImplementation((options) => {
+      const promise = originalAcquireSlot(options);
+      if (options.username === 'user2') {
+        client2AdmissionPromise = promise;
+      }
+      return promise;
+    });
+
     const server = http.createServer(app);
     const sockets = new Set<import('net').Socket>();
     server.on('connection', (socket) => {
@@ -266,10 +308,14 @@ describe('auth HTTP boundary', () => {
       })();
       req1Promise.catch(() => {});
 
+      let req1TimeoutTimer: NodeJS.Timeout | undefined;
       await Promise.race([
         firstLoginStarted,
-        new Promise((_, reject) => setTimeout(() => reject(new Error('firstLoginStarted timed out')), 2500)),
+        new Promise((_, reject) => {
+          req1TimeoutTimer = setTimeout(() => reject(new Error('firstLoginStarted timed out')), 2500);
+        }),
       ]);
+      if (req1TimeoutTimer) clearTimeout(req1TimeoutTimer);
       expect(rateLimitService.globalInFlightCount).toBe(1);
 
       // 2. Client 2 connects via raw http.request and enters queue
@@ -292,6 +338,7 @@ describe('auth HTTP boundary', () => {
         await new Promise((r) => setTimeout(r, 10));
       }
       expect(rateLimitService.activeQueueLength).toBe(1);
+      expect(client2AdmissionPromise).not.toBeNull();
 
       // Client 2 destroys socket prematurely
       client2Req.destroy();
@@ -302,6 +349,9 @@ describe('auth HTTP boundary', () => {
         await new Promise((r) => setTimeout(r, 10));
       }
       expect(rateLimitService.activeQueueLength).toBe(0);
+
+      // Directly observe that the admission Promise of the disconnected request actually rejects
+      await expect(client2AdmissionPromise!).rejects.toThrow('Yêu cầu đã bị hủy bởi máy khách.');
 
       // Release request 1
       unblockFirstLogin();
