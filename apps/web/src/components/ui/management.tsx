@@ -11,9 +11,9 @@ export function DataTable({ label, headings, children }: { label: string; headin
   return <div className="table-region" role="region" aria-label={label} tabIndex={0}><table><thead><tr>{headings.map((heading) => <th key={heading} scope="col">{heading}</th>)}</tr></thead><tbody>{children}</tbody></table></div>;
 }
 
-export function Pagination({ page, pageSize, total, onPage }: { page: number; pageSize: number; total: number; onPage(page: number): void }) {
+export function Pagination({ page, pageSize, total, onPage, ariaLabel }: { page: number; pageSize: number; total: number; onPage(page: number): void; ariaLabel?: string }) {
   const pages = Math.max(1, Math.ceil(total / pageSize));
-  return <nav className="pagination" aria-label="Phân trang"><p>Trang <strong>{page}</strong> / {pages} · {total} bản ghi</p><div><Button type="button" variant="secondary" disabled={page <= 1} onClick={() => onPage(page - 1)}>Trang trước</Button><Button type="button" variant="secondary" disabled={page >= pages} onClick={() => onPage(page + 1)}>Trang sau</Button></div></nav>;
+  return <nav className="pagination" aria-label={ariaLabel ?? 'Phân trang'}><p>Trang <strong>{page}</strong> / {pages} · {total} bản ghi</p><div><Button type="button" variant="secondary" disabled={page <= 1} onClick={() => onPage(page - 1)}>Trang trước</Button><Button type="button" variant="secondary" disabled={page >= pages} onClick={() => onPage(page + 1)}>Trang sau</Button></div></nav>;
 }
 
 export function StatusText({ active, activeLabel = 'Đang hoạt động', inactiveLabel = 'Đã kết thúc', inactiveTone = 'warning' }: { active: boolean; activeLabel?: string; inactiveLabel?: string; inactiveTone?: 'warning' | 'error' }) {
