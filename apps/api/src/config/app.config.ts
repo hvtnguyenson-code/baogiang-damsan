@@ -39,6 +39,18 @@ export interface AuthConfig {
   loginRateLimitMax: number;
   loginRateLimitWindowSeconds: number;
   loginRateLimitMaxKeys: number;
+  loginRateLimitUserMax?: number;
+  loginRateLimitIpTotalMax?: number;
+  loginRateLimitIpFailedDegradedThreshold?: number;
+  loginRateLimitMaxIpKeys?: number;
+  loginRateLimitMaxUserKeys?: number;
+  loginRateLimitInFlightIp?: number;
+  loginRateLimitInFlightIpDegraded?: number;
+  loginRateLimitInFlightGlobal?: number;
+  loginRateLimitQueueTimeoutMs?: number;
+  loginRateLimitMaxQueuePerIp?: number;
+  loginRateLimitMaxQueueGlobal?: number;
+  loginRateLimitDegradedPaceMs?: number;
 }
 
 function positiveInteger(name: string, fallback: number): number {
@@ -177,6 +189,18 @@ export const appConfig = registerAs('app', (): AppConfig => {
       loginRateLimitMax: positiveInteger('AUTH_LOGIN_RATE_LIMIT_MAX', 10),
       loginRateLimitWindowSeconds: positiveInteger('AUTH_LOGIN_RATE_LIMIT_WINDOW_SECONDS', 60),
       loginRateLimitMaxKeys: positiveInteger('AUTH_LOGIN_RATE_LIMIT_MAX_KEYS', 10_000),
+      loginRateLimitUserMax: positiveInteger('AUTH_LOGIN_RATE_LIMIT_USER_MAX', 10),
+      loginRateLimitIpTotalMax: positiveInteger('AUTH_LOGIN_RATE_LIMIT_IP_TOTAL_MAX', 150),
+      loginRateLimitIpFailedDegradedThreshold: positiveInteger('AUTH_LOGIN_RATE_LIMIT_IP_FAILED_DEGRADED_THRESHOLD', 25),
+      loginRateLimitMaxIpKeys: positiveInteger('AUTH_LOGIN_RATE_LIMIT_MAX_IP_KEYS', 10_000),
+      loginRateLimitMaxUserKeys: positiveInteger('AUTH_LOGIN_RATE_LIMIT_MAX_USER_KEYS', 10_000),
+      loginRateLimitInFlightIp: positiveInteger('AUTH_LOGIN_RATE_LIMIT_IN_FLIGHT_IP', 3),
+      loginRateLimitInFlightIpDegraded: positiveInteger('AUTH_LOGIN_RATE_LIMIT_IN_FLIGHT_IP_DEGRADED', 1),
+      loginRateLimitInFlightGlobal: positiveInteger('AUTH_LOGIN_RATE_LIMIT_IN_FLIGHT_GLOBAL', 8),
+      loginRateLimitQueueTimeoutMs: positiveInteger('AUTH_LOGIN_RATE_LIMIT_QUEUE_TIMEOUT_MS', 10_000),
+      loginRateLimitMaxQueuePerIp: positiveInteger('AUTH_LOGIN_RATE_LIMIT_MAX_QUEUE_PER_IP', 60),
+      loginRateLimitMaxQueueGlobal: positiveInteger('AUTH_LOGIN_RATE_LIMIT_MAX_QUEUE_GLOBAL', 120),
+      loginRateLimitDegradedPaceMs: positiveInteger('AUTH_LOGIN_RATE_LIMIT_DEGRADED_PACE_MS', 1_000),
     },
     telegram: {
       enabled: telegramEnabled,
