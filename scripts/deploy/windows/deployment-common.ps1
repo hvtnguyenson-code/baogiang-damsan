@@ -540,6 +540,37 @@ function Assert-SafeDiscoveryReadPath(
   return $canonical
 }
 
+function Assert-BaoGiangNode22Version([Parameter(Mandatory = $true)][string]$VersionText) {
+  if ($VersionText -cnotmatch '^v22\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$') { throw 'BAOGIANG_NODE22_VERSION_REQUIRED' }
+  return $VersionText
+}
+
+function Assert-BaoGiangIsolatedNode22Path(
+  [Parameter(Mandatory = $true)][string]$Root,
+  [Parameter(Mandatory = $true)][string]$NodeExe
+) {
+  $canonicalRoot = Assert-DedicatedRoot $Root
+  $canonicalNode = Get-CanonicalPath $NodeExe
+  $dedicatedRuntime = Get-CanonicalPath (Join-Path $canonicalRoot 'shared\runtimes')
+  if (-not (Test-PathWithin $canonicalNode $dedicatedRuntime) -or (Split-Path -Leaf $canonicalNode) -ine 'node.exe') { throw 'BAOGIANG_NODE_RUNTIME_NOT_ISOLATED' }
+  Assert-PathAncestorChainNonReparse -Directory (Split-Path -Parent $canonicalNode) -CategoryPrefix 'BAOGIANG_NODE_RUNTIME' | Out-Null
+  if ((Get-PathSecurityClassification -Path $canonicalNode -Kind file).state -ne 'PASS') { throw 'BAOGIANG_NODE_RUNTIME_INVALID' }
+  return $canonicalNode
+}
+
+function Assert-BaoGiangIsolatedNode22Runtime(
+  [Parameter(Mandatory = $true)][string]$Root,
+  [Parameter(Mandatory = $true)][string]$NodeExe
+) {
+  $canonicalNode = Assert-BaoGiangIsolatedNode22Path -Root $Root -NodeExe $NodeExe
+  try {
+    $versionOutput = @(& $canonicalNode --version 2>&1)
+    if ($LASTEXITCODE -ne 0 -or $versionOutput.Count -ne 1) { throw 'BAOGIANG_NODE22_VERSION_NOT_VERIFIED' }
+    Assert-BaoGiangNode22Version -VersionText ([string]$versionOutput[0]) | Out-Null
+  } catch { throw 'BAOGIANG_NODE22_VERSION_NOT_VERIFIED' }
+  return $canonicalNode
+}
+
 function Get-ReviewedExecutableSnapshot(
   [Parameter(Mandatory = $true)][ValidateSet('node','npm','npx','psql','pg_dump','pg_restore','nginx')][string]$Role,
   [AllowNull()][string]$Path,

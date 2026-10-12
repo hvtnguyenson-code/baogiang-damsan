@@ -16,6 +16,8 @@ $wrapper = Get-CanonicalPath $PSCommandPath
 $identity = Read-DeploymentIdentity -Root $canonicalRoot -ServiceKind $ServiceKind -ServiceName $ServiceName -EnvFile $EnvFile -StartupWrapper $wrapper -ExpectedEntryPoint $ExpectedEntryPoint -NodeExe $NodeExe
 $canonicalRoot = $identity.canonicalRoot
 $marker = $identity.marker
+# Verify the dedicated Node 22 binary before loading secrets or starting the API.
+Assert-BaoGiangIsolatedNode22Runtime -Root $canonicalRoot -NodeExe $NodeExe | Out-Null
 $nodeState = [pscustomobject]@{ exitCode = 1 }
 try {
   Invoke-WithServerEnvironment -EnvFile $EnvFile -ExpectedBaseUrl $ExpectedBaseUrl -ScriptBlock {

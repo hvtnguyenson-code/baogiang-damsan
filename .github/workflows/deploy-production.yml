@@ -113,6 +113,14 @@ jobs:
             [[ "${!path_value}" =~ ^[A-Za-z]:\\ ]] || { echo "Non-absolute Windows path: $path_value" >&2; exit 1; }
           done
           [[ "$PROD_BAOGIANG_ROOT" =~ ^[A-Za-z]:\\[A-Za-z0-9._-]+(\\[A-Za-z0-9._-]+)*$ ]] || { echo "Production root must use safe ASCII path segments." >&2; exit 1; }
+          # Node, npm, and npx must belong to one private Báo giảng runtime, never the shared Node installation.
+          runtime_prefix="${PROD_BAOGIANG_ROOT}"'\shared\runtimes\'
+          node_lc="${PROD_NODE_EXE,,}"
+          runtime_prefix_lc="${runtime_prefix,,}"
+          [[ "$node_lc" == "$runtime_prefix_lc"* && "$node_lc" == *'\node.exe' ]] || { echo "PROD_NODE_EXE must be the dedicated Báo giảng runtime." >&2; exit 1; }
+          node_dir="${node_lc%node.exe}"
+          [[ "${PROD_NPM_EXE,,}" == "${node_dir}npm.cmd" || "${PROD_NPM_EXE,,}" == "${node_dir}npm.exe" ]] || { echo "PROD_NPM_EXE must accompany dedicated node.exe." >&2; exit 1; }
+          [[ "${PROD_NPX_EXE,,}" == "${node_dir}npx.cmd" || "${PROD_NPX_EXE,,}" == "${node_dir}npx.exe" ]] || { echo "PROD_NPX_EXE must accompany dedicated node.exe." >&2; exit 1; }
           [[ "$PROD_BASE_URL" == "https://baogiang.dtnt-damsan.edu.vn" ]]
           [[ "$PROD_SSH_HOST_KEY" != *$'\n'* && "$PROD_SSH_HOST_KEY" != *$'\r'* ]]
           [[ "$PROD_SSH_HOST_KEY" != *'*'* && "$PROD_SSH_HOST_KEY" != *'?'* && "$PROD_SSH_HOST_KEY" != *'@cert-authority'* && "$PROD_SSH_HOST_KEY" != \|* ]]

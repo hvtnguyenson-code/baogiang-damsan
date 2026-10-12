@@ -13,6 +13,8 @@ assert.match(text, /^      commit_sha:\s*$/m); assert.match(text, /^      confir
 assert.match(text, /^  deploy:\s*$/m); assert.match(text, /^    environment: production$/m); assert.match(text, /^    timeout-minutes: 30$/m);
 assert.match(text, /^  cancel-in-progress: false$/m); assert.match(text, /contents: read/); assert.match(text, /actions: read/);
 for (const required of ['PROD_NODE_EXE','PROD_NPM_EXE','PROD_NPX_EXE','PROD_PSQL_EXE','PROD_PG_DUMP_EXE','PROD_PG_RESTORE_EXE','PROD_STARTUP_WRAPPER','PROD_API_ENTRYPOINT']) assert.match(text, new RegExp(required));
+const runtimeContract = text.slice(text.indexOf('- name: Validate target, pinned SSH identity and environment contract'), text.indexOf('- name: Verify exact target CI success'));
+for (const required of ['runtime_prefix=', 'shared\\runtimes', 'PROD_NODE_EXE must be the dedicated Báo giảng runtime', 'PROD_NPM_EXE must accompany dedicated node.exe', 'PROD_NPX_EXE must accompany dedicated node.exe', 'node_dir=']) assert.ok(runtimeContract.includes(required), `Isolated Node22 production-path check missing: ${required}`);
 assert.match(text, /StrictHostKeyChecking=yes/g); assert.doesNotMatch(text, /StrictHostKeyChecking=no/i); assert.doesNotMatch(text, /:.*\\\\incoming/);
 const knownHostKeyTypes = 'ssh-ed25519|ecdsa-sha2-nistp256|ecdsa-sha2-nistp384|ecdsa-sha2-nistp521|ssh-rsa';
 assert.ok(text.includes(`case "$known_type" in ${knownHostKeyTypes})`), 'known_hosts public-key type allowlist drifted');

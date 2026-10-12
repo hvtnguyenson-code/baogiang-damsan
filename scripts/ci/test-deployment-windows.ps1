@@ -17,6 +17,14 @@ $preflightServiceRejected = $false
 try { Assert-PreflightRuntimeKindSupported -RequireReviewedIsolation:$true -ServiceKind 'service' } catch { if ($_.Exception.Message -match 'SERVICE_FIRST_DEPLOY_UNSUPPORTED') { $preflightServiceRejected = $true } }
 if (-not $preflightServiceRejected) { throw 'Verified first-deploy Service was not rejected categorically by the preflight guard.' }
 
+# BAOGIANG-N22: accept only stable Node 22 output; never inherit Node 20/24 from Nội trú or PATH.
+if ((Assert-BaoGiangNode22Version -VersionText 'v22.17.0') -cne 'v22.17.0') { throw 'N22: stable Node 22 was rejected.' }
+foreach ($wrongNodeVersion in @('v20.18.0','v24.0.0','v22.0.0-rc.1','v22.01.0','node v22.17.0','')) {
+  $rejected = $false
+  try { Assert-BaoGiangNode22Version -VersionText $wrongNodeVersion | Out-Null } catch { $rejected = $true }
+  if (-not $rejected) { throw "N22: incorrect Node runtime version accepted: $wrongNodeVersion" }
+}
+
 $reservedVariableNames = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 Get-Variable | Where-Object {
   (($_.Options -band [System.Management.Automation.ScopedItemOptions]::ReadOnly) -ne 0) -or
@@ -263,6 +271,24 @@ if ($safeTaskEvidence -match 'arbitrary-secret-value|another-secret|--token|--pa
 $temp = Join-Path ([IO.Path]::GetTempPath()) ("baogiang-deploy-test-" + [guid]::NewGuid().ToString('N'))
 try {
   New-Item -ItemType Directory -Path $temp -Force | Out-Null
+  $node22Root = Join-Path $temp 'isolated-node-runtime'
+  $node22Directory = Join-Path $node22Root 'shared\runtimes\node-v22'
+  New-Item -ItemType Directory -Path $node22Directory -Force | Out-Null
+  $node22Leaf = Join-Path $node22Directory 'node.exe'
+  [IO.File]::WriteAllText($node22Leaf, 'non-executable path fixture')
+  if ((Assert-BaoGiangIsolatedNode22Path -Root $node22Root -NodeExe $node22Leaf) -ne (Get-CanonicalPath $node22Leaf)) { throw 'N22: isolated Node path was rejected.' }
+  $foreignNodeRoot = Join-Path $temp 'foreign-node-runtime'
+  New-Item -ItemType Directory -Path $foreignNodeRoot -Force | Out-Null
+  $foreignNode = Join-Path $foreignNodeRoot 'node.exe'
+  [IO.File]::WriteAllText($foreignNode, 'must not execute')
+  $rejectedForeignNode = $false
+  try { Assert-BaoGiangIsolatedNode22Path -Root $node22Root -NodeExe $foreignNode | Out-Null } catch { $rejectedForeignNode = $true }
+  if (-not $rejectedForeignNode) { throw 'N22: shared/foreign Node path was accepted.' }
+  $wrongNodeName = Join-Path $node22Directory 'node20.exe'
+  [IO.File]::WriteAllText($wrongNodeName, 'must not execute')
+  $rejectedNodeName = $false
+  try { Assert-BaoGiangIsolatedNode22Path -Root $node22Root -NodeExe $wrongNodeName | Out-Null } catch { $rejectedNodeName = $true }
+  if (-not $rejectedNodeName) { throw 'N22: wrong Node executable role was accepted.' }
   $aclRoot = Join-Path $temp 'acl-authority-root'
   $aclShared = Join-Path $aclRoot 'shared'
   foreach ($directory in @(Get-ProductionRequiredDirectoryNames)) { New-Item -ItemType Directory -Path (Join-Path $aclRoot $directory) -Force | Out-Null }
