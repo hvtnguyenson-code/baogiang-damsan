@@ -38,8 +38,18 @@ const common = read(path.join(scriptDir, 'deployment-common.ps1'));
 const isolatedStartup = read(path.join(scriptDir, 'start-baogiang-api.ps1'));
 if (!isolatedStartup.includes('Assert-BaoGiangIsolatedNode22Runtime -Root $canonicalRoot -NodeExe $NodeExe') || !common.includes('function Assert-BaoGiangIsolatedNode22Runtime') || !common.includes('function Assert-BaoGiangIsolatedNode22Path') || !common.includes('function Assert-BaoGiangNode22Version')) fail('Isolated Node22 runtime/startup guards missing');
 
+const operatorNotifier = read(path.join(scriptDir, 'notify-operator-telegram.ps1'));
+for (const token of ['Assert-VerifiedDeploySuccess','RESERVED_BEFORE_SEND','FileMode]::CreateNew','TELEGRAM_BOT_TOKEN','ALREADY_RESERVED','deliveryAttempted']) {
+  if (token === 'deliveryAttempted') continue;
+  if (!operatorNotifier.includes(token)) fail(`operator Telegram notifier missing gate: ${token}`);
+}
 const rollback = read(path.join(scriptDir, 'rollback-release.ps1'));
 const invoke = read(path.join(scriptDir, 'invoke-production-deploy.ps1'));
+const operatorInvoke = invoke.indexOf("'notify-operator-telegram.ps1'");
+const deploySuccess = invoke.indexOf("$report.overallState = 'succeeded'");
+const reportStored = invoke.indexOf('Copy-Item -LiteralPath $reportLogs -Destination $reportHome');
+if (operatorInvoke < 0 || !(deploySuccess < reportStored && reportStored < operatorInvoke)) fail('Operator Telegram notifier must run after persisted deploy success, never before readiness checks');
+
 const preflight = read(path.join(scriptDir, 'production-preflight-readonly.ps1'));
 const discovery = read(path.join(scriptDir, 'production-protected-neighbor-discovery.ps1'));
 const aclPlan = read(path.join(scriptDir, 'production-root-acl-plan.ps1'));
