@@ -339,6 +339,20 @@ try {
   try { & $tgScript @tgArgs | Out-Null } catch { $tgRejected = $true }
   if (-not $tgRejected) { throw 'OP-TG-04: extra recipient field accepted.' }
   if (Test-Path -LiteralPath (Join-Path $tgRoot "logs\operator-telegram-$tgEvent.json")) { throw 'OP-TG-04: unauthorized notification created journal.' }
+  # OP-TG-05: a reserved event is never sent a second time, regardless of bot settings.
+  [IO.File]::WriteAllText($tgRecipientPath,'{"schemaVersion":1,"enabled":true,"chatId":"12345678"}')
+  $tgJournalPath = Join-Path $tgRoot "logs\operator-telegram-$tgEvent.json"
+  [IO.File]::WriteAllText($tgJournalPath,'{"state":"PENDING","code":"RESERVED_BEFORE_SEND"}')
+  $tgDuplicate = & $tgScript @tgArgs | Select-Object -Last 1 | ConvertFrom-Json
+  if ($tgDuplicate.state -cne 'ALREADY_RESERVED' -or $tgDuplicate.attempted -cne $false) { throw 'OP-TG-05: already-reserved event was replayed.' }
+  if ((Get-Content -LiteralPath $tgJournalPath -Raw) -cnotmatch 'RESERVED_BEFORE_SEND') { throw 'OP-TG-05: prior event journal was mutated.' }
+  Remove-Item -LiteralPath $tgJournalPath -Force
+  # OP-TG-06: missing env cannot send; durable reservation prevents subsequent replay.
+  $tgUnknown = & $tgScript @tgArgs | Select-Object -Last 1 | ConvertFrom-Json
+  if ($tgUnknown.state -cne 'UNKNOWN' -or $tgUnknown.code -cne 'ENV_OR_TRANSPORT_FAILURE') { throw 'OP-TG-06: missing validated env did not remain UNKNOWN.' }
+  if (-not (Test-Path -LiteralPath $tgJournalPath -PathType Leaf)) { throw 'OP-TG-06: durable journal is missing.' }
+  $tgRepeat = & $tgScript @tgArgs | Select-Object -Last 1 | ConvertFrom-Json
+  if ($tgRepeat.state -cne 'ALREADY_RESERVED' -or $tgRepeat.attempted -cne $false) { throw 'OP-TG-06: uncertain event was retried.' }
   $aclRoot = Join-Path $temp 'acl-authority-root'
   $aclShared = Join-Path $aclRoot 'shared'
   foreach ($directory in @(Get-ProductionRequiredDirectoryNames)) { New-Item -ItemType Directory -Path (Join-Path $aclRoot $directory) -Force | Out-Null }
