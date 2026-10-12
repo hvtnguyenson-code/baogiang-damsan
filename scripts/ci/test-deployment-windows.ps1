@@ -446,6 +446,34 @@ try {
   if ((Compare-AclSnapshotToPolicy $aclPolicyPath $equivalentSnapshot).state -ne 'PASS') { throw 'ACL-P7 numeric equivalent rights representation did not pass.' }
   if ((Compare-AclSnapshotToPolicy $aclPolicyPath $exactAclSnapshot).state -ne 'PASS') { throw 'ACL-P8 exact desired DACL snapshot did not pass.' }
 
+  # ACL-P9: shared Nginx actually runs as SYSTEM; model WebRuntimeIdentity with SID S-1-5-18.
+  # Policy and verifier must merge duplicate SID authority without granting broad rights.
+  $systemWebInputs = @{} + $aclInputs
+  $systemWebInputs.WebRuntimeIdentity = 'S-1-5-18'
+  $systemWebPolicy = Get-ProductionAclPolicy @systemWebInputs
+  if ($systemWebPolicy.identities.WebRuntimeIdentity -cne 'S-1-5-18') { throw 'ACL-P9 web SID authority mismatch.' }
+  foreach ($path in @($aclRoot,(Join-Path $aclRoot 'releases'))) {
+    $policyPath = @($systemWebPolicy.protectedPaths | Where-Object { (Normalize-ComparablePath $_.path) -eq (Normalize-ComparablePath $path) })
+    if ($policyPath.Count -ne 1) { throw 'ACL-P9 root/release policy path missing.' }
+    $aces = @($policyPath[0].desiredAces)
+    $systemAce = @($aces | Where-Object { $_.sid -ceq 'S-1-5-18' })
+    if ($aces.Count -ne 4 -or $systemAce.Count -ne 1 -or $systemAce[0].role -cne 'SYSTEM+WebRuntimeIdentity' -or
+      [int64]$systemAce[0].rightsValue -ne [int64][Security.AccessControl.FileSystemRights]::FullControl) {
+      throw 'ACL-P9 SYSTEM + shared Nginx role was not merged safely.'
+    }
+    if (@($aces | Where-Object { $_.sid -in @('S-1-1-0','S-1-5-11','S-1-5-32-545') }).Count -gt 0) {
+      throw 'ACL-P9 broad principal accepted in private app ACL.'
+    }
+    $exactSnapshot = [pscustomobject]@{ inheritanceProtected = $true; access = @($aces | ForEach-Object { Normalize-AclRule $_ }) }
+    if ((Compare-AclSnapshotToPolicy $policyPath[0] $exactSnapshot).state -ne 'PASS') {
+      throw 'ACL-P9 canonical ACL verifier rejected merged SYSTEM+web SID.'
+    }
+  }
+  foreach ($foreignRoot in @('C:\damsan','C:\nginx','C:\baogiang-pg','C:\baogiang-data')) {
+    if (@($systemWebPolicy.protectedPaths | Where-Object { Test-PathWithin -Path $_.path -Parent $foreignRoot }).Count -ne 0) {
+      throw 'ACL-P9 app policy crossed into a foreign root.'
+    }
+  }
   $pathTarget = Join-Path $temp 'path-target'
   New-Item -ItemType Directory -Path $pathTarget -Force | Out-Null
   $pathRootJunction = Join-Path $temp 'path-root-junction'
