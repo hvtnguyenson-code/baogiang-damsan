@@ -211,6 +211,10 @@ h2 { font-size: clamp(1.25rem, 2vw, 1.55rem); }
 .pagination { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding-block: 16px; border-bottom: 1px solid #c9d4da; }
 .pagination p { margin: 0; color: #49616f; }
 .pagination > div { display: flex; gap: 8px; }
+.field-pagination { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 6px; }
+.field-pagination__label { color: #49616f; font-size: 0.82rem; }
+.field-pagination__actions { display: flex; gap: 4px; }
+.field-pagination__actions .button { min-height: 36px; padding: 4px 10px; font-size: 0.82rem; }
 .empty-state { border-block: 1px solid #c9d4da; padding: 32px 0 32px 28px; position: relative; }
 .empty-state::before { content: ''; position: absolute; inset: 24px auto 24px 0; width: 4px; background: #a7462f; border-radius: 2px; }
 .empty-state h2 { font-size: 1.12rem; }
@@ -391,6 +395,8 @@ details summary { min-height: 44px; display: inline-flex; align-items: center; c
   .inline-work-form, .long-form { padding: 20px 14px 20px 20px; }
   .pagination { align-items: stretch; flex-direction: column; }
   .pagination > div { display: grid; grid-template-columns: 1fr 1fr; }
+  .field-pagination { align-items: stretch; flex-direction: column; }
+  .field-pagination__actions { display: grid; grid-template-columns: 1fr 1fr; }
   .detail-ledger > div, .rights-list li { grid-template-columns: 1fr; gap: 0; }
   .detail-ledger dt { padding-bottom: 4px; }
   .detail-ledger dd { padding-top: 4px; }
