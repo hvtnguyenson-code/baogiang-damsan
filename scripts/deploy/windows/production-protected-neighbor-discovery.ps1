@@ -228,8 +228,8 @@ function Get-PostgresDiscovery($Processes, $Ports, [int]$Port) {
         $settings = [ordered]@{ state = 'DISCOVERED'; configFile = $config; port = $null; listenAddresses = @(); hbaFile = $null }
         foreach ($line in Get-Content -LiteralPath $config) {
           if ($line -match '^\s*port\s*=\s*(\d+)') { $settings.port = [int]$Matches[1] }
-          if ($line -match "^\\s*listen_addresses\\s*=\\s*'?([^'#]+)") { $settings.listenAddresses = @($Matches[1].Trim() -split '\s*,\s*') }
-          if ($line -match "^\\s*hba_file\\s*=\\s*'?([^'#]+)") {
+          if ($line -match "^\s*listen_addresses\s*=\s*'?([^'#]+)") { $settings.listenAddresses = @($Matches[1].Trim() -split '\s*,\s*') }
+          if ($line -match "^\s*hba_file\s*=\s*'?([^'#]+)") {
             $hba = $Matches[1].Trim()
             $settings.hbaFile = if ([IO.Path]::IsPathRooted($hba)) { Get-CanonicalPath $hba } else { Get-CanonicalPath (Join-Path $safeData $hba) }
           }
