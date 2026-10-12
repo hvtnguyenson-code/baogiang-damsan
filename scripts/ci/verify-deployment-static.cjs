@@ -39,6 +39,7 @@ const isolatedStartup = read(path.join(scriptDir, 'start-baogiang-api.ps1'));
 if (!isolatedStartup.includes('Assert-BaoGiangIsolatedNode22Runtime -Root $canonicalRoot -NodeExe $NodeExe') || !common.includes('function Assert-BaoGiangIsolatedNode22Runtime') || !common.includes('function Assert-BaoGiangIsolatedNode22Path') || !common.includes('function Assert-BaoGiangNode22Version')) fail('Isolated Node22 runtime/startup guards missing');
 
 const operatorNotifier = read(path.join(scriptDir, 'notify-operator-telegram.ps1'));
+if (operatorNotifier.charCodeAt(0) !== 0xFEFF) fail('Vietnamese PowerShell 5.1 operator notifier requires UTF-8 BOM');
 for (const token of ['Assert-VerifiedDeploySuccess','RESERVED_BEFORE_SEND','FileMode]::CreateNew','TELEGRAM_BOT_TOKEN','ALREADY_RESERVED','deliveryAttempted']) {
   if (token === 'deliveryAttempted') continue;
   if (!operatorNotifier.includes(token)) fail(`operator Telegram notifier missing gate: ${token}`);
