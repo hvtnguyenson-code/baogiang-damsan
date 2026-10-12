@@ -25,7 +25,7 @@
 
 **Do not create bg_web.** The real shared Nginx worker is SYSTEM. The truthful candidate mapping for the ACL planner parameter **WebRuntimeIdentity = S-1-5-18**, not a fictitious unused account. This deliberately acknowledges that Nginx is a shared privileged ingress and that SYSTEM cannot be isolated by ordinary application directory ACLs. It does NOT grant SYSTEM rights to bg_api/bg_deploy.
 
-**Required validation before ACL apply:** Add/run a targeted Windows fixture to verify canonical policy when WebRuntimeIdentity equals SYSTEM SID, the merged SYSTEM + WebRuntimeIdentity ACE, strict ACL snapshot verifier behavior, no broad Everyone/Users/Authenticated Users ACEs and no leak into protected roots. A green general CI that did not test the SID overlap is not this evidence. If the test fails, STOP and submit a separately reviewed policy correction before provisioning.
+**Required validation before ACL apply:** This PR adds **ACL-P9 Windows fixture** to verify canonical policy when WebRuntimeIdentity equals SYSTEM SID, merged SYSTEM + WebRuntimeIdentity ACE, strict ACL snapshot verifier, no broad Everyone/Users/Authenticated Users ACE and no crossing protected roots. **Only green Windows CI on this PR head can count as evidence of the fixture PASS**; this is not verification of actual future filesystem ACLs. If the test fails, STOP and submit a separately reviewed policy correction before provisioning.
 
 Only after approval create real accounts and record actual SIDs. Do not supply fabricated SIDs, passwords in command arguments, GitHub files/logs, grant the deploy account local Administrators, or grant it broad Task Scheduler management. A minimum-permission security descriptor for starting/stopping exactly BaoGiangBackend is a separately reviewed requirement. If impossible, STOP rather than elevate broadly.
 
@@ -86,7 +86,7 @@ Only ~29.6 GiB is free on the 49.9 GiB shared C: snapshot. A new binary/cluster,
 
 **Capacity proposal for approval:** maintain a conservative **15 GiB minimum free** after modeled Stage2 binaries, app releases, PostgreSQL growth, backup retention and Windows update buffer. This threshold is a REVIEW PROPOSAL, not a proven production guarantee. Take measured sizes and disk trend; if reserve cannot be met, STOP, design separate storage or reduce Báo giảng retention safely — **never delete or compact protected Nội trú files**. Also review CPU, sustained IO and RAM at busy periods. An empty port alone is not capacity evidence.
 
-**Gate A — review only (this task):** evidence baseline, no new users/dirs; freeze identities, ACL matrix, Node22 and PG17 artifact provenance, disk model and approved change set. Add dedicated ACL SID-merge fixture before applying permissions.
+**Gate A — review only (this task):** evidence baseline, no new users/dirs; freeze identities, ACL matrix, Node22 and PG17 artifact provenance, disk model and approved change set. Verify the new ACL-P9 SID-merge fixture is green before applying permissions.
 
 **Gate B — first explicitly authorized change:** create only three reviewed local accounts and three new roots (app, PG binaries, PG data) with independently reviewed ACL plans. No Nginx, Nội trú, shared Node, Task Scheduler changes, database initialization or application activation. Verify exact new SIDs, paths and ACLs; separate approval required for installing executables.
 
@@ -98,6 +98,6 @@ Only ~29.6 GiB is free on the 49.9 GiB shared C: snapshot. A new binary/cluster,
 
 ## 7. Status and next approvals
 
-**P6-020B design delivered for independent review; accounts, SID verification, ACL application, runtime, cluster and PASS2 have NOT been executed.** Pass/fail verification remains open until dedicated Windows SID overlap fixture and live bootstrap approvals. PR is docs-only; no runtime or VPS mutation. P6-030 remains NO-GO.
+**P6-020B design delivered for independent review; accounts, SID verification, ACL application, runtime, cluster and PASS2 have NOT been executed.** Live SID/ACL verification still requires separate bootstrap approval even if the new ACL-P9 simulation fixture passes CI. PR is docs-only; no runtime or VPS mutation. P6-030 remains NO-GO.
 
 Following this PR, the next decision is a written **first mutation authorization limited to accounts and roots** with exact commands, before/after snapshots and rollback. Nginx/DNS/HTTPS changes are NOT part of that authorization.
