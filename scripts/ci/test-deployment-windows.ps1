@@ -1013,13 +1013,19 @@ try {
   $pgData = Join-Path $temp 'postgres-data'
   New-Item -ItemType Directory -Path $pgData -Force | Out-Null
   [IO.File]::WriteAllText((Join-Path $pgData 'postgresql.conf'), "port = 5433`nlisten_addresses = 'localhost'`nhba_file = 'pg_hba.conf'", [Text.UTF8Encoding]::new($false))
+  $pgData16 = Join-Path $temp 'postgres-data-16'
+  New-Item -ItemType Directory -Path $pgData16 -Force | Out-Null
+  [IO.File]::WriteAllText((Join-Path $pgData16 'postgresql.conf'), "port = 5432`nlisten_addresses = 'localhost'", [Text.UTF8Encoding]::new($false))
   $nginxProcessMode = 'simple'
+  $postgresProcessMode = 'dual'
+  $pgListenerMode = 'both'
   function Get-CimInstance([string]$ClassName,[string]$Filter) {
     if ($ClassName -eq 'Win32_Process') { $fixtureProcesses = @(
       [pscustomobject]@{ ProcessId = 100; ParentProcessId = 1; Name = 'svchost.exe'; ExecutablePath = 'C:\Windows\System32\svchost.exe'; CommandLine = 'svchost.exe' },
       [pscustomobject]@{ ProcessId = 200; ParentProcessId = 1; Name = 'node.exe'; ExecutablePath = 'C:\tools\node.exe'; CommandLine = 'C:\tools\node.exe C:\app\server.js' },
       [pscustomobject]@{ ProcessId = 300; ParentProcessId = 1; Name = 'nginx.exe'; ExecutablePath = (Join-Path $nginxRoot 'nginx.exe'); CommandLine = ('nginx.exe -p "' + $nginxRoot + '"') },
       [pscustomobject]@{ ProcessId = 400; ParentProcessId = 1; Name = 'postgres.exe'; ExecutablePath = 'C:\Program Files\PostgreSQL\17\bin\postgres.exe'; CommandLine = ('postgres.exe -D "' + $pgData + '"') }
+      if ($postgresProcessMode -eq 'dual') { [pscustomobject]@{ ProcessId = 401; ParentProcessId = 1; Name = 'postgres.exe'; ExecutablePath = 'C:\Program Files\PostgreSQL\16\bin\postgres.exe'; CommandLine = ('postgres.exe -D "' + $pgData16 + '"') } }
       if ($nginxProcessMode -eq 'ambiguous') { [pscustomobject]@{ ProcessId = 301; ParentProcessId = 1; Name = 'nginx.exe'; ExecutablePath = (Join-Path $outsideNginx 'nginx.exe'); CommandLine = ('nginx.exe -p "' + $outsideNginx + '" -c conf\nginx.conf') } }
     ); if($Filter -match 'ProcessId\s*=\s*(\d+)'){return @($fixtureProcesses|Where-Object{$_.ProcessId-eq[int]$Matches[1]})};return $fixtureProcesses }
     if ($ClassName -eq 'Win32_Service') { return @(
@@ -1028,7 +1034,14 @@ try {
     ) }
     [pscustomobject]@{ Caption = 'Fixture Windows' }
   }
-  function Get-NetTCPConnection { @([pscustomobject]@{ OwningProcess = 300; LocalPort = 80; LocalAddress = '0.0.0.0' }, [pscustomobject]@{ OwningProcess = 300; LocalPort = 443; LocalAddress = '0.0.0.0' }) }
+  function Get-NetTCPConnection {
+    @(
+      [pscustomobject]@{ OwningProcess = 300; LocalPort = 80; LocalAddress = '0.0.0.0' }
+      [pscustomobject]@{ OwningProcess = 300; LocalPort = 443; LocalAddress = '0.0.0.0' }
+      if ($pgListenerMode -in @('both','pg17')) { [pscustomobject]@{ OwningProcess = 400; LocalPort = 5433; LocalAddress = '127.0.0.1' } }
+      if ($pgListenerMode -in @('both','pg16')) { [pscustomobject]@{ OwningProcess = 401; LocalPort = 5432; LocalAddress = '127.0.0.1' } }
+    )
+  }
   function Get-ScheduledTask { @() }
   $fixtureReport = Join-Path $temp 'protected-neighbor-fixture.json'
   & $neighborDiscoveryPath -ReportPath $fixtureReport -NginxRoot $nginxRoot | Out-Null
@@ -1040,6 +1053,20 @@ try {
   if (-not $server -or $server.listens -notcontains '443 ssl' -or $server.rootsAliases -notcontains 'C:\app' -or $server.proxyUpstreams[0].host -ne '127.0.0.1' -or $server.proxyUpstreams[0].port -ne 3000) { throw 'Nginx safe server-block fixture failed.' }
   if (@($fixtureJson.nginx.configFiles | Where-Object { $_.state -eq 'INVALID_NOT_READ' }).Count -ne 1 -or (Get-Content -LiteralPath $fixtureReport -Raw) -match 'evil\.test') { throw 'Nginx containment fixture failed.' }
   if ($fixtureJson.postgres.configMetadata.config.port -ne 5433 -or $fixtureJson.postgres.configMetadata.config.listenAddresses -notcontains 'localhost' -or $fixtureJson.postgres.configMetadata.config.configFile -ne (Join-Path $pgData 'postgresql.conf') -or $fixtureJson.postgres.configMetadata.config.hbaFile -ne (Join-Path $pgData 'pg_hba.conf')) { throw 'PostgreSQL safe metadata fixture failed.' }
+
+  # A dual-PostgreSQL host must bind the selected server PID to the requested listener.
+  if ($fixtureJson.candidateBaoGiang.portState -cne 'FREE') { throw 'PASS 1 did not report a genuinely free candidate port' }
+  if ($fixtureJson.postgres.configMetadata.state -cne 'DISCOVERED' -or $fixtureJson.postgres.executablePath -notmatch 'PostgreSQL\\17' -or $fixtureJson.postgres.configMetadata.config.port -ne 5433) { throw 'Dual cluster fixture did not select PostgreSQL 17 by its listener' }
+  $p16Report = Join-Path $temp 'protected-neighbor-pg16.json'
+  & $neighborDiscoveryPath -ReportPath $p16Report -NginxRoot $nginxRoot -ExpectedPostgresPort 5432 | Out-Null
+  $p16Json = Get-Content -LiteralPath $p16Report -Raw -Encoding UTF8 | ConvertFrom-Json
+  if ($p16Json.postgres.configMetadata.state -cne 'DISCOVERED' -or $p16Json.postgres.configMetadata.config.port -ne 5432 -or $p16Json.postgres.executablePath -notmatch 'PostgreSQL\\16') { throw 'Dual cluster fixture did not select PostgreSQL 16 by its listener' }
+  $pgListenerMode = 'none'
+  $noPgReport = Join-Path $temp 'protected-neighbor-pg-no-listener.json'
+  & $neighborDiscoveryPath -ReportPath $noPgReport -NginxRoot $nginxRoot -ExpectedPostgresPort 5433 | Out-Null
+  $noPg = Get-Content -LiteralPath $noPgReport -Raw -Encoding UTF8 | ConvertFrom-Json
+  if ($noPg.postgres.configMetadata.state -cne 'NOT_VERIFIED' -or $noPg.postgres.executablePath -or @($noPg.postgres.tools | Where-Object { $_.state -ne 'NOT_VERIFIED' }).Count) { throw 'Missing PostgreSQL listener fell back to an unrelated cluster' }
+  $pgListenerMode = 'both'
 
   # OPE-P1..OPE-P28: production operator-evidence authority fixtures.
   $opeResults = [ordered]@{}; function Set-OpePass([string]$Id) { $opeResults[$Id] = 'PASS' }; function Assert-OpeReject([scriptblock]$Action,[string]$Id) { $didReject=$false;try{&$Action|Out-Null}catch{$didReject=$true};if(-not$didReject){throw "$Id expected fail-closed rejection"};Set-OpePass $Id }
