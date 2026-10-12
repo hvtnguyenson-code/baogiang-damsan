@@ -79,6 +79,11 @@ try {
   $report.overallState = 'succeeded'
   Write-RedactedReport -Path $reportLogs -Data $report
   Copy-Item -LiteralPath $reportLogs -Destination $reportHome
+  # This is a separate best-effort channel: never convert a healthy deployment into rollback
+  # because Telegram is disabled, unavailable, or its delivery acknowledgement is unknown.
+  try {
+    & (Join-Path $PSScriptRoot 'notify-operator-telegram.ps1') -Root $canonicalRoot -EnvFile $p.EnvFile -ExpectedBaseUrl $p.ExpectedBaseUrl -EventId $p.TransferDirectoryName -ReleaseSha $p.ReleaseSha | Out-Null
+  } catch { } # A durable successful deploy report remains the authority; notifier has its own journal.
   Write-Output ($report | ConvertTo-Json -Depth 12)
 } catch {
   $original = $_

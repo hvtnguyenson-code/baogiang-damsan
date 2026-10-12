@@ -24,6 +24,7 @@ assert.match(text, /\[\[ "\$PROD_SERVICE_KIND" == "scheduled-task" \]\] \|\| \{ 
 const validationBlock = text.slice(text.indexOf('- name: Validate target, pinned SSH identity and environment contract'), text.indexOf('- name: Verify exact target CI success')); assert.doesNotMatch(validationBlock, /\bservice\b/);
 for (const remoteStep of ['Derive active startup-bundle Git evidence','Prepare pinned SSH files','Read-only marker handshake before transfer','Revalidate authority and prepare unique transfer directory','Upload reviewed transfer bundle through SFTP']) assert.ok(text.indexOf('[[ "$PROD_SERVICE_KIND" == "scheduled-task" ]]') < text.indexOf(remoteStep), `scheduled-task-only gate must precede ${remoteStep}`);
 assert.match(text, /sync-capability-catalog\.ps1/);
+assert.match(text, /notify-operator-telegram\.ps1/, 'Production transfer must include verified operator notifier');
 assert.match(text, /git -C control-plane rev-list --first-parent origin\/main/); assert.doesNotMatch(text, /merge-base --is-ancestor/);
 for (const ciProvenance of ['.name == "CI"','.head_sha ==','.status == "completed"','.event == "push"','.head_branch == "main"']) assert.ok(text.includes(ciProvenance), `exact CI provenance gate is missing: ${ciProvenance}`);
 function isCanonicalSuccessfulCiRun(run, targetSha) { return run.name === 'CI' && run.head_sha === targetSha && run.status === 'completed' && run.conclusion === 'success' && run.event === 'push' && run.head_branch === 'main'; }

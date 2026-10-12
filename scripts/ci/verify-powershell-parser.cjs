@@ -9,7 +9,7 @@ $errors = @()
 Get-ChildItem -LiteralPath (Join-Path $root 'scripts/deploy/windows') -Filter '*.ps1' | ForEach-Object {
   $tokens = $null; $parseErrors = $null
   [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$parseErrors) | Out-Null
-  if ($parseErrors.Count -gt 0) { $errors += $_.Name }
+  foreach ($parseError in @($parseErrors)) { $errors += ('{0}:{1}:{2} {3}' -f $_.Name, $parseError.Extent.StartLineNumber, $parseError.Extent.StartColumnNumber, $parseError.Message) }
 }
 if ($errors.Count -gt 0) { Write-Error ($errors -join ', '); exit 1 }
 Write-Output 'PowerShell parser PASS'
