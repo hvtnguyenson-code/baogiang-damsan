@@ -1035,7 +1035,8 @@ try {
     [pscustomobject]@{ Caption = 'Fixture Windows' }
   }
   function Get-NetTCPConnection {
-    @([pscustomobject]@{ OwningProcess = 300; LocalPort = 80; LocalAddress = '0.0.0.0' },
+    @(
+      [pscustomobject]@{ OwningProcess = 300; LocalPort = 80; LocalAddress = '0.0.0.0' }
       [pscustomobject]@{ OwningProcess = 300; LocalPort = 443; LocalAddress = '0.0.0.0' }
       if ($pgListenerMode -in @('both','pg17')) { [pscustomobject]@{ OwningProcess = 400; LocalPort = 5433; LocalAddress = '127.0.0.1' } }
       if ($pgListenerMode -in @('both','pg16')) { [pscustomobject]@{ OwningProcess = 401; LocalPort = 5432; LocalAddress = '127.0.0.1' } }
