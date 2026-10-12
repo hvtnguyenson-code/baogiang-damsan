@@ -44,6 +44,14 @@ Every executable and file path must come from PASS 2 exact-path evidence and be 
 
 PASS 1 tool paths and PASS 2 `discoveryTools` are discovery candidates only. PASS 2 `tools` binds reviewed `NodeExe`, `NpmExe`, `NpxExe`, `PsqlExe`, `PgDumpExe`, `PgRestoreExe`, and `NginxExe`; role-specific leaves are enforced and version commands run only through those exact paths. Authenticated database evidence uses that exact `PsqlExe` and never resolves through PATH. Every corresponding `PROD_*` value is configured from reviewed exact-path evidence only.
 
+## Independent Node.js runtime for Báo giảng (P6-020 isolation guard)
+
+The shared VPS already runs Nội trú with Node 20 at `C:\\Program Files\\nodejs\\node.exe`; this executable and its npm/npx wrappers MUST NOT be upgraded, replaced, or selected as Báo giảng runtime. Báo giảng requires the **stable Node 22 major** (`.nvmrc`/package engines). This requirement is separate from repository CI's Node version.
+
+Before the first authorized production deployment, install a reviewed and integrity-verified portable Node 22 distribution **inside** the dedicated root under `<PROD_BAOGIANG_ROOT>\\shared\\runtimes\\<version>\\`; `node.exe`, `npm.cmd` (or `npm.exe`), and `npx.cmd` (or `npx.exe`) MUST be in that same versioned directory. Production GitHub workflow rejects a Node/npm/npx path outside this exact topology before SSH transfer. Runtime startup verifies path ancestor security (no reparse routing) and requires `node.exe --version` to return a single stable `v22.x.y` version; it fails closed before reading the application env file or starting the API. The Node executable origin, signature/SHA-256, and exact version remain independent Stage 2 provisioning evidence; these guards **do not themselves install Node** or authorize P6-030.
+
+A Node 22 runtime located under `C:\\Program Files\\nodejs`, an ambient PATH-based `node`, or npm/npx wrappers mixed with another Node version are explicitly forbidden. Existing Nội trú files/services are untouched.
+
 ## Dedicated identity marker
 
 Bootstrap must create `<PROD_BAOGIANG_ROOT>\shared\deployment-identity.json` before any workflow mutation. It contains no secret and must conform to this exact versioned schema: no unknown top-level or nested properties are accepted, every displayed field is required, and strings must be non-empty. `schemaVersion` is exactly integer `1`.
