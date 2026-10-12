@@ -289,6 +289,56 @@ try {
   $rejectedNodeName = $false
   try { Assert-BaoGiangIsolatedNode22Path -Root $node22Root -NodeExe $wrongNodeName | Out-Null } catch { $rejectedNodeName = $true }
   if (-not $rejectedNodeName) { throw 'N22: wrong Node executable role was accepted.' }
+  # OP-TG-01: successful deploy proof is necessary; no recipient means no outgoing request.
+  $tgRoot = Join-Path $temp 'operator-telegram-root'
+  New-Item -ItemType Directory -Path (Join-Path $tgRoot 'shared'),(Join-Path $tgRoot 'logs') -Force | Out-Null
+  $tgSha = 'a' * 40
+  $tgEvent = "control-123-1-$tgSha"
+  $tgScript = Join-Path $repo 'scripts\deploy\windows\notify-operator-telegram.ps1'
+  $tgTargets = @(
+    'http://127.0.0.1:3100/api/health/live',
+    'http://127.0.0.1:3100/api/health/ready',
+    'https://baogiang.dtnt-damsan.edu.vn/api/health/live',
+    'https://baogiang.dtnt-damsan.edu.vn/api/health/ready',
+    'https://baogiang.dtnt-damsan.edu.vn/',
+    'https://baogiang.dtnt-damsan.edu.vn/trang-thai-he-thong'
+  )
+  $tgReport = [ordered]@{
+    overallState = 'succeeded'; releaseSha = $tgSha
+    restart = [ordered]@{ runtimeKind='scheduled-task'; activationState='enabled-running'; runtimeRunning=$true; process=[ordered]@{port=3100} }
+    health = [ordered]@{ health=@($tgTargets | ForEach-Object { [ordered]@{ uri=$_; passed=$true } }) }
+  }
+  $tgReportPath = Join-Path $tgRoot "logs\deploy-report-$tgSha.json"
+  $tgReport | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $tgReportPath -Encoding UTF8
+  $tgArgs = @{ Root=$tgRoot; EnvFile=(Join-Path $tgRoot 'env-do-not-read'); ExpectedBaseUrl='https://baogiang.dtnt-damsan.edu.vn'; EventId=$tgEvent; ReleaseSha=$tgSha }
+  $tgNoConfig = & $tgScript @tgArgs | Select-Object -Last 1 | ConvertFrom-Json
+  if ($tgNoConfig.state -cne 'NOT_CONFIGURED' -or $tgNoConfig.attempted -cne $false) { throw 'OP-TG-01: missing recipient did not fail closed.' }
+  if (Test-Path -LiteralPath (Join-Path $tgRoot "logs\operator-telegram-$tgEvent.json")) { throw 'OP-TG-01: journal created without recipient.' }
+  # OP-TG-02: disabled operator recipient cannot send or load application secrets.
+  $tgRecipientPath = Join-Path $tgRoot 'shared\operator-telegram-recipient.json'
+  [IO.File]::WriteAllText($tgRecipientPath,'{"schemaVersion":1,"enabled":false,"chatId":"12345678"}')
+  $tgDisabled = & $tgScript @tgArgs | Select-Object -Last 1 | ConvertFrom-Json
+  if ($tgDisabled.state -cne 'DISABLED' -or $tgDisabled.attempted -cne $false) { throw 'OP-TG-02: disabled recipient did not suppress sending.' }
+  # OP-TG-03: malformed or failed health evidence must reject before touching recipient.
+  $tgReport.overallState = 'failed'
+  $tgReport | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $tgReportPath -Encoding UTF8
+  $tgRejected = $false
+  try { & $tgScript @tgArgs | Out-Null } catch { $tgRejected = $true }
+  if (-not $tgRejected) { throw 'OP-TG-03: failed deployment was accepted.' }
+  $tgReport.overallState = 'succeeded'
+  $tgReport.health.health[1].passed = $false
+  $tgReport | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $tgReportPath -Encoding UTF8
+  $tgRejected = $false
+  try { & $tgScript @tgArgs | Out-Null } catch { $tgRejected = $true }
+  if (-not $tgRejected) { throw 'OP-TG-03: incomplete health was accepted.' }
+  $tgReport.health.health[1].passed = $true
+  $tgReport | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $tgReportPath -Encoding UTF8
+  # OP-TG-04: reject unauthorized recipient schema with extra properties.
+  [IO.File]::WriteAllText($tgRecipientPath,'{"schemaVersion":1,"enabled":true,"chatId":"12345678","extra":true}')
+  $tgRejected = $false
+  try { & $tgScript @tgArgs | Out-Null } catch { $tgRejected = $true }
+  if (-not $tgRejected) { throw 'OP-TG-04: extra recipient field accepted.' }
+  if (Test-Path -LiteralPath (Join-Path $tgRoot "logs\operator-telegram-$tgEvent.json")) { throw 'OP-TG-04: unauthorized notification created journal.' }
   $aclRoot = Join-Path $temp 'acl-authority-root'
   $aclShared = Join-Path $aclRoot 'shared'
   foreach ($directory in @(Get-ProductionRequiredDirectoryNames)) { New-Item -ItemType Directory -Path (Join-Path $aclRoot $directory) -Force | Out-Null }
