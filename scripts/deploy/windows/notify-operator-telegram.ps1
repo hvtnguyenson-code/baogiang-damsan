@@ -41,6 +41,7 @@ function Read-OperatorRecipient([Parameter(Mandatory = $true)][string]$Path) {
 }
 function Send-OperatorTelegramOnce([Parameter(Mandatory = $true)][string]$Token,[Parameter(Mandatory = $true)][string]$ChatId,[Parameter(Mandatory = $true)][string]$Text) {
   if ($Token -cnotmatch '^[0-9]{5,20}:[A-Za-z0-9_-]{25,100}$') { return @{ state='REJECTED'; code='BOT_TOKEN_INVALID' } }
+  try { Add-Type -AssemblyName System.Net.Http -ErrorAction Stop } catch { return @{ state='UNKNOWN'; code='HTTP_CLIENT_UNAVAILABLE' } }
   $http = [Net.Http.HttpClient]::new()
   $http.Timeout = [TimeSpan]::FromSeconds(10)
   try {
