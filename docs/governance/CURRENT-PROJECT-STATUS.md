@@ -8,7 +8,7 @@ Per `MAJOR-TASK-DOCUMENTATION-SYNC-PROTOCOL.md`, this file is intentionally conc
 
 Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub. SHAs here are evidence for already-established task states, never a self-referential claim that this document contains its own current commit.
 
-**Status snapshot date:** 2026-10-07
+**Status snapshot date:** 2026-10-12
 
 ## Executive status
 
@@ -20,35 +20,23 @@ Exact current `main`, branch HEAD and divergence must always be read directly fr
 - `P6-010` Pre-deploy TLS/HTTP-01 authority is **`CLOSED` by `SYNC-P6-010`**; parent PR #176 and authoritative post-merge CI #578 are SUCCESS, with zero production/VPS mutation.
 - No production deployment, production migration, TLS issuance, Nginx mutation, Scheduled Task mutation, ACL mutation or application restart has been performed by P6-005 or its closure sync.
 
-## Last formally closed major task
+## 2026-10-12 final audit and P6-020 exact candidate decision
 
-`P5-030` — Dedicated Báo giảng Telegram integration — **`CLOSED`** by `SYNC-P5-030`.
+Last formally CLOSED major task: `P5-040` (PR #202, exact parent merge `1282f24a5300da88c155c7dc5523644d14bd53c8`, post-merge CI #658 SUCCESS, closed by `SYNC-P5-040`). `P5-030` Telegram and `P5-020` PWA also remain formally CLOSED. Historical evidence is retained in the canonical register.
 
-Parent closure evidence:
+Subsequent audit results: AUD-02B PR #207 merged at `8e32d392cebe378f39b232c396408026c3bf7525`; AUD-05 PR #208 merged at `6cea05ab1b952994ceed3dbb5e3b6f320593a7d6` with independently verified post-merge main CI run `38203229334` SUCCESS (both jobs); HAR-01 test-harness suspicion **REFUTED / NO ACTION** after read-only independent review; AUD-03 workload suspicion REFUTED under ADR-057. These follow-up audit labels are not substitutes for registered P0-P6 major-task closure protocol.
 
-- parent branch: `feat/p5-030-telegram-integration`;
-- canonical parent start: `main@6cee4babf8779ff12c7cea51be9a8be315ed42cf`;
-- final reviewed parent head: `f1b5dd9790b6b685170f57b59a5c8655e40fe064`;
-- Review Correction 001: đã hấp thụ vào parent branch trước merge;
-- Review Correction 002: đã hấp thụ vào parent branch trước merge;
-- CI Correction 001: commit `f1b5dd9790b6b685170f57b59a5c8655e40fe064` (`test(auth): update AppConfig fixture for Telegram`);
-- parent PR #200 (`feat(telegram): implement dedicated Telegram integration`);
-- final exact-head parent CI #653 / run `37573713270` — **SUCCESS**;
-- independent implementation review: **PASS**; zero unresolved review threads;
-- normal parent merge/main: `3bcd0d7fc1ffd0eedb8f2186271e2596a1581e5a`;
-- authoritative parent post-merge CI #654 / run `37576373644` (attempt 1) — **SUCCESS**;
-- delivered dedicated Telegram integration scope within approved ADR-058 authority (technical config boundary, authenticated personal endpoints, one-time short-lived linking challenge, webhook trust boundary, bounded parser, retained Telegram account-link lifecycle, ACTIVE uniqueness and takeover prevention, atomic webhook receipt/inbox handling, durable notification delivery state machine RESERVED/ATTEMPTING/SENT/FAILED/UNKNOWN, atomic RESERVED -> ATTEMPTING send ownership, ACTIVE-link condition inside atomic send claim, durable DB-owned destination identity, fail-safe IGNORED receipt persistence, crash/startup reconciliation to UNKNOWN without automatic resend, unlink/send race semantics, server-owned self-test notification, ProfilePage integration, PostgreSQL integration/race tests 14/14 PASS);
-- docs and configuration wiring updated with zero real Telegram activation, no real bot token/webhook secret configured, no VPS deployment, no production database mutation, no Nginx/TLS/Scheduled Task/app restart;
-- production remains strictly **PRE-OPERATIONAL**;
-- no residual P5-030 correction/re-entry task emerged from review or post-merge CI.
+Final Pre-Pilot Readiness Audit (2026-10-12): **CONDITIONAL GO** for preparation and passive production preflight; **NO-GO** for actual deployment or teacher pilot until P6 gates and live acceptance evidence are complete.
 
-`P5-030` is **`CLOSED`** by `SYNC-P5-030`. `P5-040` is **`CLOSED`** by `SYNC-P5-040` (PR #202; exact-head CI #657 SUCCESS; merge/main `1282f24a5300da88c155c7dc5523644d14bd53c8`; authoritative post-merge CI #658 SUCCESS; remediating confirmed findings CX-01..CX-06 across Corrections 001..009; independent GitHub review PASS). `P6-020` remains strictly **`DEFERRED_WITH_TRIGGER`** until the exact pilot build is explicitly approved by the Product Owner as a production deployment candidate.
+Product Owner explicitly approved `main@6cea05ab1b952994ceed3dbb5e3b6f320593a7d6` as the **exact P6-020 readonly discovery candidate** on 2026-10-12. Authorized scope: PASS 1 passive neighbour discovery followed only after review by PASS 2 exact readonly preflight. This is not authorization to change VPS resources, install, deploy, migrate database, mutate/reload Nginx, issue TLS, edit Scheduled Tasks, or change the protected Nội trú application.
+
+Preliminary Desktop Commander read-only metadata: Windows Server 2022, 6 logical CPUs, 16 GiB RAM; DamSanV5 protected Scheduled Task running on Node port 3000, Nginx port 80/443, PostgreSQL 16 loopback port 5432, PostgreSQL 17 loopback port 5433, no observed port-3100 listener. **Effective Nginx -p prefix and -c configuration NOT_VERIFIED** from running process arguments. This reconnaissance is not a formal PASS 1/PASS 2 result. Evidence record: `docs/operations/P6-020-PRELIMINARY-READONLY-EVIDENCE-2026-10-12.md`.
 
 ## Active / next critical path
 
 ### In Progress
 
-- None.
+- `P6-020` — **IN_PROGRESS: preliminary passive host reconnaissance only**; formal PASS 1/PASS 2 NOT EXECUTED. Exact deployment candidate approved for read-only scope above.
 
 ### In Review
 
@@ -67,7 +55,7 @@ Parent closure evidence:
 ### Trigger-gated / decision-blocked
 - `P0-002` — stale PR #11 hosting-portability direction: **`BLOCKED_DECISION`**.
 - `P0-004` — GitHub main branch protection/ruleset: **`BLOCKED_DECISION`**.
-- `P6-020` — actual Stage 1 passive production evidence: **`DEFERRED_WITH_TRIGGER`** until `P5-040` is closed and the exact business/pilot build is explicitly approved by the Product Owner as a production candidate.
+- `P6-020` — trigger fired 2026-10-12; now IN_PROGRESS for read-only evidence only. Formal PASS 1/PASS 2 outstanding.
 
 ## Production VPS topology
 
@@ -103,7 +91,7 @@ The project is **NOT READY FOR TEACHER PILOT YET**. Remaining registered gaps in
 3. PWA production baseline (`P5-020`) is **`CLOSED` by `SYNC-P5-020`** after PR #195, exact-head CI #644 SUCCESS, merge/main `fa54eaea5c2055517428d18559f652001999d0e4` and authoritative post-merge CI #645 SUCCESS.
 4. Dedicated Telegram integration (`P5-030`) is **`CLOSED` by `SYNC-P5-030`** after PR #200, exact-head CI #653 SUCCESS, merge/main `3bcd0d7fc1ffd0eedb8f2186271e2596a1581e5a` và authoritative post-merge CI #654 (run `37576373644`) SUCCESS.
 5. Pre-deploy full-repository consistency audit (`P5-040`) is **`CLOSED` by `SYNC-P5-040`** (PR #202; exact-head CI #657 SUCCESS; merge/main `1282f24a5300da88c155c7dc5523644d14bd53c8`; authoritative post-merge CI #658 SUCCESS; remediating confirmed findings CX-01..CX-06 across Corrections 001..009; independent GitHub review PASS).
-6. Official production Stage 1 passive discovery/preflight (`P6-020`) remains trigger-gated behind explicit Product Owner approval; P5-040 closure alone does not authorize production access.
+6. P6-020 exact-candidate readonly approval is recorded, but formal PASS 1/PASS 2, reviewer acceptance, and Nginx prefix/config resolution are still mandatory. No deploy or production mutation approval.
 7. Production bootstrap/first controlled deploy (`P6-030`) has not occurred.
 8. Teacher pilot go-live verification (`P6-050`) has not occurred.
 
