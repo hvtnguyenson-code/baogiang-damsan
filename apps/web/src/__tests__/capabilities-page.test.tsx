@@ -461,4 +461,380 @@ describe('AUD-05 CapabilitiesPage pagination completeness', () => {
     expect(screen.getByLabelText('Người nhận')).toBeDisabled();
     expect(screen.queryByRole('navigation', { name: 'Chuyển trang người dùng' })).not.toBeInTheDocument();
   });
+
+  it('allows selecting subjects beyond page 1 (records 101+) and preserves selected subject across page changes', async () => {
+    const page1Subjects = Array.from({ length: 100 }, (_, i) => ({
+      id: `s-${i + 1}`,
+      code: `MON_${i + 1}`,
+      name: `Môn học ${i + 1}`,
+      status: 'ACTIVE',
+    }));
+
+    const page2Subjects = [
+      {
+        id: 's-105',
+        code: 'TOAN10',
+        name: 'Môn Toán 10',
+        status: 'ACTIVE',
+      },
+    ];
+
+    const definitions = {
+      items: [
+        {
+          key: 'REPORTING_STATEMENT_READ',
+          description: 'Xem báo cáo kê khai',
+          allowedScopeTypes: ['SUBJECT', 'SCHOOL_WIDE'],
+          isSystem: false,
+          isActive: true,
+        },
+      ],
+      page: 1,
+      pageSize: 100,
+      total: 1,
+    };
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) return jsonResponse(fullAdminAuth);
+      if (url.includes('/capabilities')) return jsonResponse(definitions);
+      if (url.includes('/users') && !url.includes('capability-grants')) {
+        return jsonResponse({
+          items: [{ id: 'u-1', username: 'gv01', status: 'ACTIVE', profile: { displayName: 'Giáo viên 1' } }],
+          page: 1,
+          pageSize: 100,
+          total: 1,
+        });
+      }
+      if (url.includes('/subjects')) {
+        const parsed = new URL(url, 'http://localhost');
+        const page = Number(parsed.searchParams.get('page') || 1);
+        if (page === 1) return jsonResponse({ items: page1Subjects, page: 1, pageSize: 100, total: 105 });
+        if (page === 2) return jsonResponse({ items: page2Subjects, page: 2, pageSize: 100, total: 105 });
+      }
+      return jsonResponse({ items: [], page: 1, pageSize: 100, total: 0 });
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    renderApp('/quan-tri/quyen');
+
+    await user.selectOptions(await screen.findByLabelText('Người nhận'), 'u-1');
+    await user.selectOptions(screen.getByLabelText('Quyền'), 'REPORTING_STATEMENT_READ');
+    await user.selectOptions(screen.getByLabelText('Phạm vi'), 'SUBJECT');
+
+    // Subject pagination is rendered
+    expect(await screen.findByRole('navigation', { name: 'Chuyển trang danh mục học phần' })).toHaveTextContent(/105 môn/);
+
+    const subjectNextBtn = () => within(screen.getByRole('navigation', { name: 'Chuyển trang danh mục học phần' })).getByRole('button', { name: 'Trang sau' });
+    const subjectPrevBtn = () => within(screen.getByRole('navigation', { name: 'Chuyển trang danh mục học phần' })).getByRole('button', { name: 'Trang trước' });
+
+    // Navigate to page 2 (records 101+)
+    await user.click(subjectNextBtn());
+    await waitFor(() => {
+      expect(screen.getByRole('navigation', { name: 'Chuyển trang danh mục học phần' })).toHaveTextContent(/Trang 2 \/ 2/);
+    });
+
+    const resourceSelect = screen.getByLabelText('Môn học');
+    expect(within(resourceSelect).getByRole('option', { name: /TOAN10 — Môn Toán 10/i })).toBeInTheDocument();
+
+    // Select subject on page 2
+    await user.selectOptions(resourceSelect, 's-105');
+    expect(resourceSelect).toHaveValue('s-105');
+
+    // Navigate back to page 1
+    await user.click(subjectPrevBtn());
+    await waitFor(() => {
+      expect(screen.getByRole('navigation', { name: 'Chuyển trang danh mục học phần' })).toHaveTextContent(/Trang 1 \/ 2/);
+    });
+
+    // Selection is preserved!
+    expect(resourceSelect).toHaveValue('s-105');
+    expect(within(resourceSelect).getByRole('option', { name: /TOAN10 — Môn Toán 10/i })).toBeInTheDocument();
+  });
+
+  it('displays error recovery on user page 2 failure and allows successful retry without losing state', async () => {
+    let page2Attempts = 0;
+    const page1Users = Array.from({ length: 100 }, (_, i) => ({
+      id: `u-${i + 1}`,
+      username: `gv${i + 1}`,
+      status: 'ACTIVE',
+      profile: { displayName: `Giáo viên ${i + 1}` },
+    }));
+    const page2Users = [
+      {
+        id: 'u-105',
+        username: 'gv105',
+        status: 'ACTIVE',
+        profile: { displayName: 'Thầy Một Lẻ Năm' },
+      },
+    ];
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) return jsonResponse(fullAdminAuth);
+      if (url.includes('/capabilities')) {
+        return jsonResponse({
+          items: [{ key: 'TEACHER_BASE', description: 'GV', allowedScopeTypes: ['PERSONAL'], isSystem: false, isActive: true }],
+          page: 1,
+          pageSize: 100,
+          total: 1,
+        });
+      }
+      if (url.includes('/users') && !url.includes('capability-grants')) {
+        const parsed = new URL(url, 'http://localhost');
+        const page = Number(parsed.searchParams.get('page') || 1);
+        if (page === 1) return jsonResponse({ items: page1Users, page: 1, pageSize: 100, total: 105 });
+        if (page === 2) {
+          page2Attempts++;
+          if (page2Attempts === 1) {
+            // First attempt fails with 500
+            return new Response(JSON.stringify({ message: 'Internal Server Error' }), {
+              status: 500,
+              headers: { 'Content-Type': 'application/json' },
+            });
+          }
+          // Second attempt succeeds
+          return jsonResponse({ items: page2Users, page: 2, pageSize: 100, total: 105 });
+        }
+      }
+      return jsonResponse({ items: [], page: 1, pageSize: 100, total: 0 });
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    renderApp('/quan-tri/quyen');
+
+    // Wait for initial load
+    expect(await screen.findByRole('heading', { name: 'Cấp quyền mới' })).toBeInTheDocument();
+    const userNav = () => screen.getByRole('navigation', { name: 'Chuyển trang người dùng' });
+    expect(userNav()).toHaveTextContent(/105 người dùng/);
+
+    // Navigate to page 2 (which fails on first attempt)
+    await user.click(within(userNav()).getByRole('button', { name: 'Trang sau' }));
+
+    // Error recovery is shown (QueryFailure)
+    expect(await screen.findByText('Chưa tải được dữ liệu')).toBeInTheDocument();
+    expect(screen.getByText('Không thể tải dữ liệu. Dữ liệu hiện có chưa bị thay đổi.')).toBeInTheDocument();
+
+    // FieldPagination remains visible on page 2 and is not hidden
+    expect(userNav()).toHaveTextContent(/Trang 2 \/ 2/);
+
+    // Crucially: page 1 data is NOT rendered as page 2 data
+    const userSelect = screen.getByLabelText('Người nhận');
+    expect(within(userSelect).queryByText(/Giáo viên 1 — gv1/i)).not.toBeInTheDocument();
+
+    // Retry button is available and works
+    const retryBtn = screen.getByRole('button', { name: 'Thử lại' });
+    await user.click(retryBtn);
+
+    // After retry succeeds, error alert disappears and page 2 user is present
+    await waitFor(() => {
+      expect(screen.queryByText('Chưa tải được dữ liệu')).not.toBeInTheDocument();
+    });
+    expect(within(userSelect).getByRole('option', { name: /Thầy Một Lẻ Năm — gv105/i })).toBeInTheDocument();
+
+    // Select user from page 2
+    await user.selectOptions(userSelect, 'u-105');
+    expect(userSelect).toHaveValue('u-105');
+  });
+
+  it('retains selected resource when resource page fails and provides recovery back to page 1', async () => {
+    const page1Groups = Array.from({ length: 100 }, (_, i) => ({
+      id: `g-${i + 1}`,
+      code: `TO_${i + 1}`,
+      name: `Tổ chuyên môn ${i + 1}`,
+      status: 'ACTIVE',
+    }));
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) return jsonResponse(fullAdminAuth);
+      if (url.includes('/capabilities')) {
+        return jsonResponse({
+          items: [{ key: 'SUBJECT_GROUP_LEAD', description: 'Tổ trưởng', allowedScopeTypes: ['SUBJECT_GROUP'], isSystem: false, isActive: true }],
+          page: 1,
+          pageSize: 100,
+          total: 1,
+        });
+      }
+      if (url.includes('/users') && !url.includes('capability-grants')) {
+        return jsonResponse({
+          items: [{ id: 'u-1', username: 'gv01', status: 'ACTIVE', profile: { displayName: 'Giáo viên 1' } }],
+          page: 1,
+          pageSize: 100,
+          total: 1,
+        });
+      }
+      if (url.includes('/subject-groups')) {
+        const parsed = new URL(url, 'http://localhost');
+        const page = Number(parsed.searchParams.get('page') || 1);
+        if (page === 1) return jsonResponse({ items: page1Groups, page: 1, pageSize: 100, total: 105 });
+        if (page === 2) {
+          // Page 2 fails
+          return new Response(JSON.stringify({ message: 'Internal Server Error' }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+      }
+      return jsonResponse({ items: [], page: 1, pageSize: 100, total: 0 });
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    renderApp('/quan-tri/quyen');
+
+    await user.selectOptions(await screen.findByLabelText('Người nhận'), 'u-1');
+    await user.selectOptions(screen.getByLabelText('Quyền'), 'SUBJECT_GROUP_LEAD');
+    await user.selectOptions(screen.getByLabelText('Phạm vi'), 'SUBJECT_GROUP');
+
+    const resourceSelect = await screen.findByLabelText('Tổ chuyên môn');
+    // Select group 1 from page 1
+    await user.selectOptions(resourceSelect, 'g-1');
+    expect(resourceSelect).toHaveValue('g-1');
+
+    const groupNav = () => screen.getByRole('navigation', { name: 'Chuyển trang tổ bộ môn' });
+    expect(groupNav()).toHaveTextContent(/105 tổ/);
+
+    // Navigate to page 2 (which fails)
+    await user.click(within(groupNav()).getByRole('button', { name: 'Trang sau' }));
+
+    // Error recovery is displayed
+    expect(await screen.findByText('Chưa tải được dữ liệu')).toBeInTheDocument();
+
+    // Critical check: selected resource g-1 is preserved and still has value g-1!
+    expect(resourceSelect).toHaveValue('g-1');
+    expect(within(resourceSelect).getByRole('option', { name: /TO_1 — Tổ chuyên môn 1/i })).toBeInTheDocument();
+
+    // FieldPagination is still present and allows navigating back to page 1
+    expect(groupNav()).toHaveTextContent(/Trang 2 \/ 2/);
+    const prevBtn = within(groupNav()).getByRole('button', { name: 'Trang trước' });
+    expect(prevBtn).not.toBeDisabled();
+
+    // Navigate back to page 1
+    await user.click(prevBtn);
+
+    // Error alert disappears, page 1 is restored, and g-1 remains selected
+    await waitFor(() => {
+      expect(screen.queryByText('Chưa tải được dữ liệu')).not.toBeInTheDocument();
+      expect(groupNav()).toHaveTextContent(/Trang 1 \/ 2/);
+    });
+    expect(resourceSelect).toHaveValue('g-1');
+  });
+
+  it('does not get stuck when a user page fails to load and allows returning to previous page without app reload', async () => {
+    const page1Users = Array.from({ length: 100 }, (_, i) => ({
+      id: `u-${i + 1}`,
+      username: `gv${i + 1}`,
+      status: 'ACTIVE',
+      profile: { displayName: `Giáo viên ${i + 1}` },
+    }));
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) return jsonResponse(fullAdminAuth);
+      if (url.includes('/capabilities')) {
+        return jsonResponse({
+          items: [{ key: 'TEACHER_BASE', description: 'GV', allowedScopeTypes: ['PERSONAL'], isSystem: false, isActive: true }],
+          page: 1,
+          pageSize: 100,
+          total: 1,
+        });
+      }
+      if (url.includes('/users') && !url.includes('capability-grants')) {
+        const parsed = new URL(url, 'http://localhost');
+        const page = Number(parsed.searchParams.get('page') || 1);
+        if (page === 1) return jsonResponse({ items: page1Users, page: 1, pageSize: 100, total: 105 });
+        if (page === 2) {
+          return new Response(JSON.stringify({ message: 'Gateway Timeout' }), {
+            status: 504,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+      }
+      return jsonResponse({ items: [], page: 1, pageSize: 100, total: 0 });
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    renderApp('/quan-tri/quyen');
+
+    expect(await screen.findByRole('heading', { name: 'Cấp quyền mới' })).toBeInTheDocument();
+    const userNav = () => screen.getByRole('navigation', { name: 'Chuyển trang người dùng' });
+
+    // Navigate to page 2 (fails)
+    await user.click(within(userNav()).getByRole('button', { name: 'Trang sau' }));
+    expect(await screen.findByText('Chưa tải được dữ liệu')).toBeInTheDocument();
+
+    // User is NOT stuck: "Trang trước" button is operational
+    const prevBtn = within(userNav()).getByRole('button', { name: 'Trang trước' });
+    expect(prevBtn).not.toBeDisabled();
+    await user.click(prevBtn);
+
+    // Returns to page 1 successfully
+    await waitFor(() => {
+      expect(screen.queryByText('Chưa tải được dữ liệu')).not.toBeInTheDocument();
+      expect(userNav()).toHaveTextContent(/Trang 1 \/ 2/);
+    });
+
+    // Can select a user from page 1 and continue working
+    const userSelect = screen.getByLabelText('Người nhận');
+    await user.selectOptions(userSelect, 'u-1');
+    expect(userSelect).toHaveValue('u-1');
+  });
+
+  it('automatically clamps current page when total records decrease causing current page to exceed valid range', async () => {
+    const page1Users = Array.from({ length: 100 }, (_, i) => ({
+      id: `u-${i + 1}`,
+      username: `gv${i + 1}`,
+      status: 'ACTIVE',
+      profile: { displayName: `Giáo viên ${i + 1}` },
+    }));
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) return jsonResponse(fullAdminAuth);
+      if (url.includes('/capabilities')) {
+        return jsonResponse({
+          items: [{ key: 'TEACHER_BASE', description: 'GV', allowedScopeTypes: ['PERSONAL'], isSystem: false, isActive: true }],
+          page: 1,
+          pageSize: 100,
+          total: 1,
+        });
+      }
+      if (url.includes('/users') && !url.includes('capability-grants')) {
+        const parsed = new URL(url, 'http://localhost');
+        const page = Number(parsed.searchParams.get('page') || 1);
+        // Page 1 reported total: 105 (2 pages)
+        if (page === 1) return jsonResponse({ items: page1Users, page: 1, pageSize: 100, total: 105 });
+        // By the time page 2 is fetched, server data decreased to 50 items (1 page)
+        if (page === 2) return jsonResponse({ items: [], page: 2, pageSize: 100, total: 50 });
+      }
+      return jsonResponse({ items: [], page: 1, pageSize: 100, total: 0 });
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    renderApp('/quan-tri/quyen');
+
+    const userNav = () => screen.getByRole('navigation', { name: 'Chuyển trang người dùng' });
+    expect(await screen.findByRole('heading', { name: 'Cấp quyền mới' })).toBeInTheDocument();
+    expect(userNav()).toHaveTextContent(/Trang 1 \/ 2/);
+
+    // Move to page 2: server reports total 50 on page 2
+    await user.click(within(userNav()).getByRole('button', { name: 'Trang sau' }));
+
+    // Clamping effect detects userPages (1) < userPage (2) and automatically sets userPage to 1
+    await waitFor(() => {
+      // Pagination nav is removed because pages <= 1
+      expect(screen.queryByRole('navigation', { name: 'Chuyển trang người dùng' })).not.toBeInTheDocument();
+    });
+
+    // Select dropdown still works and displays page 1 user
+    const userSelect = screen.getByLabelText('Người nhận');
+    await waitFor(() => {
+      expect(within(userSelect).getByRole('option', { name: /Giáo viên 1 — gv1/i })).toBeInTheDocument();
+    });
+  });
 });

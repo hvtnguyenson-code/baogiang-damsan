@@ -88,6 +88,17 @@ export function CapabilitiesPage() {
   const [knownSubjects, setKnownSubjects] = useState<Map<string, CatalogEntry>>(() => new Map());
   const [knownDefinitions, setKnownDefinitions] = useState<Map<string, CapabilityDefinitionRecord>>(() => new Map());
 
+  // Known totals & page sizes to maintain pagination navigation even on query failure
+  const [knownUserTotal, setKnownUserTotal] = useState<number | undefined>();
+  const [knownGroupTotal, setKnownGroupTotal] = useState<number | undefined>();
+  const [knownSubjectTotal, setKnownSubjectTotal] = useState<number | undefined>();
+  const [knownDefinitionTotal, setKnownDefinitionTotal] = useState<number | undefined>();
+
+  const [knownUserPageSize, setKnownUserPageSize] = useState<number>(PAGE_SIZE);
+  const [knownGroupPageSize, setKnownGroupPageSize] = useState<number>(PAGE_SIZE);
+  const [knownSubjectPageSize, setKnownSubjectPageSize] = useState<number>(PAGE_SIZE);
+  const [knownDefinitionPageSize, setKnownDefinitionPageSize] = useState<number>(PAGE_SIZE);
+
   // 5 queries with pagination parameters and reflective queryKeys
   const definitions = useQuery({
     queryKey: ['capabilities', 'definitions', { page: definitionsPage }],
@@ -118,52 +129,112 @@ export function CapabilitiesPage() {
     enabled: Boolean(userId),
   });
 
-  // Accumulate fetched records in cache maps
+  // Accumulate fetched records in cache maps and record known totals / page sizes
   useEffect(() => {
-    if (users.data?.items) {
-      setKnownUsers((prev) => {
-        const next = new Map(prev);
-        users.data.items.forEach((u) => next.set(u.id, u));
-        return next;
-      });
+    if (users.data) {
+      if (users.data.total !== undefined) setKnownUserTotal(users.data.total);
+      if (users.data.pageSize) setKnownUserPageSize(users.data.pageSize);
+      if (users.data.items) {
+        setKnownUsers((prev) => {
+          const next = new Map(prev);
+          users.data.items.forEach((u) => next.set(u.id, u));
+          return next;
+        });
+      }
     }
-  }, [users.data?.items]);
+  }, [users.data]);
 
   useEffect(() => {
-    if (groups.data?.items) {
-      setKnownGroups((prev) => {
-        const next = new Map(prev);
-        groups.data.items.forEach((g) => next.set(g.id, g));
-        return next;
-      });
+    if (groups.data) {
+      if (groups.data.total !== undefined) setKnownGroupTotal(groups.data.total);
+      if (groups.data.pageSize) setKnownGroupPageSize(groups.data.pageSize);
+      if (groups.data.items) {
+        setKnownGroups((prev) => {
+          const next = new Map(prev);
+          groups.data.items.forEach((g) => next.set(g.id, g));
+          return next;
+        });
+      }
     }
-  }, [groups.data?.items]);
+  }, [groups.data]);
 
   useEffect(() => {
-    if (subjects.data?.items) {
-      setKnownSubjects((prev) => {
-        const next = new Map(prev);
-        subjects.data.items.forEach((s) => next.set(s.id, s));
-        return next;
-      });
+    if (subjects.data) {
+      if (subjects.data.total !== undefined) setKnownSubjectTotal(subjects.data.total);
+      if (subjects.data.pageSize) setKnownSubjectPageSize(subjects.data.pageSize);
+      if (subjects.data.items) {
+        setKnownSubjects((prev) => {
+          const next = new Map(prev);
+          subjects.data.items.forEach((s) => next.set(s.id, s));
+          return next;
+        });
+      }
     }
-  }, [subjects.data?.items]);
+  }, [subjects.data]);
 
   useEffect(() => {
-    if (definitions.data?.items) {
-      setKnownDefinitions((prev) => {
-        const next = new Map(prev);
-        definitions.data.items.forEach((d) => next.set(d.key, d));
-        return next;
-      });
+    if (definitions.data) {
+      if (definitions.data.total !== undefined) setKnownDefinitionTotal(definitions.data.total);
+      if (definitions.data.pageSize) setKnownDefinitionPageSize(definitions.data.pageSize);
+      if (definitions.data.items) {
+        setKnownDefinitions((prev) => {
+          const next = new Map(prev);
+          definitions.data.items.forEach((d) => next.set(d.key, d));
+          return next;
+        });
+      }
     }
-  }, [definitions.data?.items]);
+  }, [definitions.data]);
 
-  // Total pages
-  const userPages = Math.max(1, Math.ceil((users.data?.total ?? 0) / (users.data?.pageSize || PAGE_SIZE)));
-  const definitionPages = Math.max(1, Math.ceil((definitions.data?.total ?? 0) / (definitions.data?.pageSize || PAGE_SIZE)));
-  const groupPages = Math.max(1, Math.ceil((groups.data?.total ?? 0) / (groups.data?.pageSize || PAGE_SIZE)));
-  const subjectPages = Math.max(1, Math.ceil((subjects.data?.total ?? 0) / (subjects.data?.pageSize || PAGE_SIZE)));
+  // Total pages with fallback to known totals when query has error
+  const effectiveUserTotal = users.data?.total ?? knownUserTotal ?? 0;
+  const userPageSize = users.data?.pageSize || knownUserPageSize;
+  const userPages = Math.max(1, Math.ceil(effectiveUserTotal / userPageSize));
+
+  const effectiveDefinitionTotal = definitions.data?.total ?? knownDefinitionTotal ?? 0;
+  const definitionPageSize = definitions.data?.pageSize || knownDefinitionPageSize;
+  const definitionPages = Math.max(1, Math.ceil(effectiveDefinitionTotal / definitionPageSize));
+
+  const effectiveGroupTotal = groups.data?.total ?? knownGroupTotal ?? 0;
+  const groupPageSize = groups.data?.pageSize || knownGroupPageSize;
+  const groupPages = Math.max(1, Math.ceil(effectiveGroupTotal / groupPageSize));
+
+  const effectiveSubjectTotal = subjects.data?.total ?? knownSubjectTotal ?? 0;
+  const subjectPageSize = subjects.data?.pageSize || knownSubjectPageSize;
+  const subjectPages = Math.max(1, Math.ceil(effectiveSubjectTotal / subjectPageSize));
+
+  const grantsPages = Math.max(1, Math.ceil((grants.data?.total ?? 0) / (grants.data?.pageSize || PAGE_SIZE)));
+
+  // Clamp current page when total pages decrease in loaded data
+  useEffect(() => {
+    if (users.data && userPage > userPages) {
+      setUserPage(userPages);
+    }
+  }, [users.data, userPage, userPages]);
+
+  useEffect(() => {
+    if (groups.data && groupPage > groupPages) {
+      setGroupPage(groupPages);
+    }
+  }, [groups.data, groupPage, groupPages]);
+
+  useEffect(() => {
+    if (subjects.data && subjectPage > subjectPages) {
+      setSubjectPage(subjectPages);
+    }
+  }, [subjects.data, subjectPage, subjectPages]);
+
+  useEffect(() => {
+    if (definitions.data && definitionsPage > definitionPages) {
+      setDefinitionsPage(definitionPages);
+    }
+  }, [definitions.data, definitionsPage, definitionPages]);
+
+  useEffect(() => {
+    if (grants.data && grantsPage > grantsPages) {
+      setGrantsPage(grantsPages);
+    }
+  }, [grants.data, grantsPage, grantsPages]);
 
   // Options with retention across page changes
   const userOptions = useMemo(() => {
@@ -309,12 +380,15 @@ export function CapabilitiesPage() {
                       </option>
                     ))}
                   </SelectField>
-                  {canUsers && users.data && (
+                  {canUsers && users.isError && (
+                    <QueryFailure error={users.error} retry={() => void users.refetch()} />
+                  )}
+                  {canUsers && userPages > 1 && (
                     <FieldPagination
                       label="Chuyển trang người dùng"
-                      page={users.data.page}
+                      page={users.data?.page ?? userPage}
                       pages={userPages}
-                      total={users.data.total}
+                      total={effectiveUserTotal}
                       unit="người dùng"
                       onPageChange={setUserPage}
                     />
@@ -336,12 +410,12 @@ export function CapabilitiesPage() {
                       </option>
                     ))}
                   </SelectField>
-                  {definitions.data && (
+                  {definitionPages > 1 && (
                     <FieldPagination
                       label="Chuyển trang danh mục định nghĩa"
-                      page={definitions.data.page}
+                      page={definitions.data?.page ?? definitionsPage}
                       pages={definitionPages}
-                      total={definitions.data.total}
+                      total={effectiveDefinitionTotal}
                       unit="quyền"
                       onPageChange={setDefinitionsPage}
                     />
@@ -353,7 +427,11 @@ export function CapabilitiesPage() {
                     label="Phạm vi"
                     id="grant-scope"
                     value={draft.scopeType}
-                    onChange={(e) => setDraft({ ...draft, scopeType: e.target.value as CapabilityScope, scopeResourceId: '' })}
+                    onChange={(e) => {
+                      setDraft({ ...draft, scopeType: e.target.value as CapabilityScope, scopeResourceId: '' });
+                      setGroupPage(1);
+                      setSubjectPage(1);
+                    }}
                     required
                   >
                     <option value="">Chọn phạm vi</option>
@@ -384,22 +462,28 @@ export function CapabilitiesPage() {
                           <option key={item.id} value={item.id}>{item.code} — {item.name}</option>
                         ))}
                       </SelectField>
-                      {draft.scopeType === 'SUBJECT_GROUP' && groups.data && (
+                      {draft.scopeType === 'SUBJECT_GROUP' && groups.isError && (
+                        <QueryFailure error={groups.error} retry={() => void groups.refetch()} />
+                      )}
+                      {draft.scopeType === 'SUBJECT_GROUP' && groupPages > 1 && (
                         <FieldPagination
                           label="Chuyển trang tổ bộ môn"
-                          page={groups.data.page}
+                          page={groups.data?.page ?? groupPage}
                           pages={groupPages}
-                          total={groups.data.total}
+                          total={effectiveGroupTotal}
                           unit="tổ"
                           onPageChange={setGroupPage}
                         />
                       )}
-                      {draft.scopeType === 'SUBJECT' && subjects.data && (
+                      {draft.scopeType === 'SUBJECT' && subjects.isError && (
+                        <QueryFailure error={subjects.error} retry={() => void subjects.refetch()} />
+                      )}
+                      {draft.scopeType === 'SUBJECT' && subjectPages > 1 && (
                         <FieldPagination
                           label="Chuyển trang danh mục học phần"
-                          page={subjects.data.page}
+                          page={subjects.data?.page ?? subjectPage}
                           pages={subjectPages}
-                          total={subjects.data.total}
+                          total={effectiveSubjectTotal}
                           unit="môn"
                           onPageChange={setSubjectPage}
                         />
