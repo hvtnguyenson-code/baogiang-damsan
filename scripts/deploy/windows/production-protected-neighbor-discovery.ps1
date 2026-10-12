@@ -11,11 +11,18 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'deployment-common.ps1')
 
 function Get-Sha256([string]$Text) { ([BitConverter]::ToString(([Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($Text)))).Replace('-','')).ToLowerInvariant() }
-function Get-SafePathHints([string]$Text) { if ([string]::IsNullOrWhiteSpace($Text)) { return @() }; @([regex]::Matches($Text, '(?i)(?:[A-Z]:\\[^"''\r\n<>|?*]+?\.(?:js|cjs|mjs|ps1|cmd|bat|exe))') | ForEach-Object { $_.Value.Trim('"') } | Select-Object -Unique) }
+function Get-SafePathHints([string]$Text) {
+  if ([string]::IsNullOrWhiteSpace($Text)) { return @() }
+  # Allow spaces inside legitimate Windows paths, but never swallow a second drive-qualified path.
+  $pattern = '(?i)[A-Z]:\\(?:(?![A-Z]:\\)[^"''\r\n<>|?*])+?\.(?:js|cjs|mjs|ps1|cmd|bat|exe)(?=$|[\s"''])'
+  @([regex]::Matches($Text, $pattern) | ForEach-Object { $_.Value.Trim('"') } | Select-Object -Unique)
+}
 function Test-ApplicationPath([string]$Path) { [IO.Path]::IsPathRooted($Path) -and $Path -notmatch '(?i)^C:\\Windows(?:\\|$)' }
 function Get-ProcessRecord($Process, $Ports) { [ordered]@{ pid=[int]$Process.ProcessId; parentPid=[int]$Process.ParentProcessId; executablePath=$Process.ExecutablePath; executableName=if($Process.ExecutablePath){[IO.Path]::GetFileName($Process.ExecutablePath)}else{$Process.Name}; commandLineSha256=Get-Sha256 ([string]$Process.CommandLine); listeningPorts=@($Ports | Where-Object { $_.OwningProcess -eq $Process.ProcessId } | Select-Object -ExpandProperty LocalPort -Unique); safePathHints=@(Get-SafePathHints ([string]$Process.CommandLine)) } }
 function Get-ListenersForPort([int]$Port, $Processes) {
-  try { $rows=@(Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction Stop) } catch { return [ordered]@{state='NOT_VERIFIED';listeners=@()} }
+  # Filtering -LocalPort on Windows can throw ObjectNotFound for a legitimately free port.
+  # Enumerate listeners first; enumeration errors remain NOT_VERIFIED, zero matches mean FREE.
+  try { $rows=@(Get-NetTCPConnection -State Listen -ErrorAction Stop | Where-Object { $_.LocalPort -eq $Port }) } catch { return [ordered]@{state='NOT_VERIFIED';listeners=@()} }
   $items=@($rows | ForEach-Object { $listener=$_; $process=$Processes | Where-Object { $_.ProcessId -eq $listener.OwningProcess } | Select-Object -First 1; if($process){$record=Get-ProcessRecord $process $rows;$record.localAddress=$listener.LocalAddress;$record}else{[ordered]@{pid=[int]$listener.OwningProcess;localAddress=$listener.LocalAddress;state='PROCESS_NOT_READABLE'}} })
   [ordered]@{state=if($items.Count){'OCCUPIED'}else{'FREE'};listeners=$items}
 }
@@ -188,38 +195,67 @@ function Get-NginxDiscovery($Processes, $Ports, [string]$RootHint) {
 }
 function Get-PostgresDiscovery($Processes, $Ports, [int]$Port) {
   $postgres = @($Processes | Where-Object { $_.Name -ieq 'postgres.exe' })
-  $exe = @($postgres | ForEach-Object { $_.ExecutablePath } | Where-Object { $_ } | Select-Object -First 1)
-  $executable = if ($exe.Count) { $exe[0] } else { 'C:\Program Files\PostgreSQL\17\bin\postgres.exe' }
-  $directories = @($postgres | ForEach-Object {
-    $match = [regex]::Match([string]$_.CommandLine, '(?i)(?:^|\s)-D\s+"?([^"\s]+)')
-    if ($match.Success -and [IO.Path]::IsPathRooted($match.Groups[1].Value)) { [IO.Path]::GetFullPath($match.Groups[1].Value) }
-  } | Select-Object -Unique)
-  $dataDirectory = if ($directories.Count -eq 1) { $directories[0] } else { $null }
-  $metadata = [ordered]@{ state = if ($directories.Count -gt 1) { 'CONFLICT' } elseif ($dataDirectory) { 'DISCOVERED' } else { 'NOT_VERIFIED' }; dataDirectory = $dataDirectory }
-  if ($dataDirectory) {
-    try {
-      $safeData = Assert-SafeDiscoveryReadPath -Path $dataDirectory -Kind directory -AllowedRoot @($dataDirectory)
-      $config = Assert-SafeDiscoveryReadPath -Path (Join-Path $safeData 'postgresql.conf') -Kind file -AllowedRoot @($safeData)
-      $settings = [ordered]@{ state = 'DISCOVERED'; configFile = $config; port = $null; listenAddresses = @(); hbaFile = $null }
-      foreach ($line in Get-Content -LiteralPath $config) {
-        if ($line -match '^\s*port\s*=\s*(\d+)') { $settings.port = [int]$Matches[1] }
-        if ($line -match "^\s*listen_addresses\s*=\s*'?([^'#]+)") { $settings.listenAddresses = @($Matches[1].Trim() -split '\s*,\s*') }
-        if ($line -match "^\s*hba_file\s*=\s*'?([^'#]+)") {
-          $hba = $Matches[1].Trim()
-          $settings.hbaFile = if ([IO.Path]::IsPathRooted($hba)) { Get-CanonicalPath $hba } else { Get-CanonicalPath (Join-Path $safeData $hba) }
+  $targetListeners = @($Ports | Where-Object { $_.LocalPort -eq $Port })
+  $owners = @($targetListeners | Select-Object -ExpandProperty OwningProcess -Unique)
+  # Only a unique listener owner that is itself a PostgreSQL server process identifies an instance.
+  # Never select the first postgres.exe from an unrelated cluster.
+  $matchingServers = @($postgres | Where-Object { $owners -contains [int]$_.ProcessId })
+  $uniqueTarget = $owners.Count -eq 1 -and $matchingServers.Count -eq 1
+  $executable = if ($uniqueTarget) { [string]$matchingServers[0].ExecutablePath } else { $null }
+  $metadata = [ordered]@{
+    state = if ($owners.Count -gt 1 -or $matchingServers.Count -gt 1) { 'CONFLICT' } else { 'NOT_VERIFIED' }
+    dataDirectory = $null
+  }
+  if ($uniqueTarget -and -not [string]::IsNullOrWhiteSpace($executable)) {
+    $commandLine = [string]$matchingServers[0].CommandLine
+    # Quoted paths may contain spaces, e.g. C:\Program Files\PostgreSQL\17\data.
+    $directoryArgument = [regex]::Match($commandLine, '(?i)(?:^|\s)-D(?:\s+|=)(?:"([^"]+)"|''([^'']+)''|([^\s]+))')
+    $dataDirectory = $null
+    if ($directoryArgument.Success) {
+      foreach ($index in 1..3) {
+        if ($directoryArgument.Groups[$index].Success) {
+          $value = $directoryArgument.Groups[$index].Value
+          if ([IO.Path]::IsPathRooted($value)) { $dataDirectory = Get-CanonicalPath $value }
+          break
         }
       }
-      $metadata.config = $settings
-    } catch {
-      $metadata.state = if ($_.Exception.Message -match 'REPARSE') { 'REPARSE_NOT_READ' } else { 'NOT_VERIFIED' }
-      $metadata.config = [ordered]@{ state = $metadata.state }
+    }
+    if ($dataDirectory) {
+      $metadata.dataDirectory = $dataDirectory
+      try {
+        $safeData = Assert-SafeDiscoveryReadPath -Path $dataDirectory -Kind directory -AllowedRoot @($dataDirectory)
+        $config = Assert-SafeDiscoveryReadPath -Path (Join-Path $safeData 'postgresql.conf') -Kind file -AllowedRoot @($safeData)
+        $settings = [ordered]@{ state = 'DISCOVERED'; configFile = $config; port = $null; listenAddresses = @(); hbaFile = $null }
+        foreach ($line in Get-Content -LiteralPath $config) {
+          if ($line -match '^\s*port\s*=\s*(\d+)') { $settings.port = [int]$Matches[1] }
+          if ($line -match "^\\s*listen_addresses\\s*=\\s*'?([^'#]+)") { $settings.listenAddresses = @($Matches[1].Trim() -split '\s*,\s*') }
+          if ($line -match "^\\s*hba_file\\s*=\\s*'?([^'#]+)") {
+            $hba = $Matches[1].Trim()
+            $settings.hbaFile = if ([IO.Path]::IsPathRooted($hba)) { Get-CanonicalPath $hba } else { Get-CanonicalPath (Join-Path $safeData $hba) }
+          }
+        }
+        if ($settings.port -ne $Port) {
+          $metadata.state = 'CONFLICT'
+          $settings.state = 'CONFLICT'
+        } else {
+          $metadata.state = 'DISCOVERED'
+        }
+        $metadata.config = $settings
+      } catch {
+        $metadata.state = if ($_.Exception.Message -match 'REPARSE') { 'REPARSE_NOT_READ' } else { 'NOT_VERIFIED' }
+        $metadata.config = [ordered]@{ state = $metadata.state }
+      }
     }
   }
   $tools = @('psql.exe','pg_dump.exe','pg_restore.exe' | ForEach-Object {
-    $tool = Join-Path (Split-Path $executable -Parent) $_
-    [ordered]@{ name = $_; path = $tool; state = if (Test-Path -LiteralPath $tool -PathType Leaf) { 'DISCOVERED' } else { 'MISSING' }; version = 'NOT_EXECUTED' }
+    if (-not $executable) {
+      [ordered]@{ name = $_; path = $null; state = 'NOT_VERIFIED'; version = 'NOT_EXECUTED' }
+    } else {
+      $tool = Join-Path (Split-Path $executable -Parent) $_
+      [ordered]@{ name = $_; path = $tool; state = if (Test-Path -LiteralPath $tool -PathType Leaf) { 'DISCOVERED' } else { 'MISSING' }; version = 'NOT_EXECUTED' }
+    }
   })
-  [ordered]@{ expectedPort = $Port; executablePath = $executable; processes = @($postgres | ForEach-Object { Get-ProcessRecord $_ $Ports }); portListeners = @($Ports | Where-Object { $_.LocalPort -eq $Port } | ForEach-Object { [ordered]@{ pid = [int]$_.OwningProcess; localAddress = $_.LocalAddress } }); tools = $tools; configMetadata = $metadata; databaseAuthenticationAttempted = $false }
+  [ordered]@{ expectedPort = $Port; executablePath = $executable; processes = @($postgres | ForEach-Object { Get-ProcessRecord $_ $Ports }); portListeners = @($targetListeners | ForEach-Object { [ordered]@{ pid = [int]$_.OwningProcess; localAddress = $_.LocalAddress } }); tools = $tools; configMetadata = $metadata; databaseAuthenticationAttempted = $false }
 }
 $repositoryRoot = Get-CanonicalPath (Join-Path $PSScriptRoot '..\..\..')
 $canonicalCandidateRoot = Get-CanonicalPath $CandidateBaoGiangRoot
