@@ -33,10 +33,11 @@ const forbidden = [
 for (const pattern of forbidden) if (pattern.test(scripts)) fail(`forbidden deployment construct: ${pattern}`);
 for (const token of ['Set-StrictMode -Version Latest','$ErrorActionPreference = \'Stop\'','ValidatePattern','ValidateScript','Expand-Archive','migrate status','migrate deploy','PGPASSWORD','pg_restore','Read-DeploymentIdentity','commandLineSha256','Get-ExactApiProcesses','MigrationAttempted','CompatibilityApproved','start-baogiang-api.ps1']) if (!scripts.includes(token)) fail(`fail-closed control missing: ${token}`);
 for (const token of ['Assert-VerifiedScheduledTaskContract','MSFT_TaskBootTrigger','Test-ScheduledTaskTriggerEnabled','Assert-ScheduledTaskActivationAuthorized','Get-ScheduledTaskActivationFailureDisposition','AllowScheduledTaskActivation','Enable-ScheduledTask','Disable-ScheduledTask']) if (!scripts.includes(token)) fail(`Scheduled Task lifecycle control missing: ${token}`);
-const isolatedStartup = read(path.join(scriptDir, 'start-baogiang-api.ps1'));
-if (!isolatedStartup.includes('Assert-BaoGiangIsolatedNode22Runtime -Root $canonicalRoot -NodeExe $NodeExe') || !common.includes('function Assert-BaoGiangIsolatedNode22Runtime') || !common.includes('function Assert-BaoGiangIsolatedNode22Path') || !common.includes('function Assert-BaoGiangNode22Version')) fail('Isolated Node22 runtime/startup guards missing');
 const restart = read(path.join(scriptDir, 'restart-baogiang-api.ps1'));
 const common = read(path.join(scriptDir, 'deployment-common.ps1'));
+const isolatedStartup = read(path.join(scriptDir, 'start-baogiang-api.ps1'));
+if (!isolatedStartup.includes('Assert-BaoGiangIsolatedNode22Runtime -Root $canonicalRoot -NodeExe $NodeExe') || !common.includes('function Assert-BaoGiangIsolatedNode22Runtime') || !common.includes('function Assert-BaoGiangIsolatedNode22Path') || !common.includes('function Assert-BaoGiangNode22Version')) fail('Isolated Node22 runtime/startup guards missing');
+
 const rollback = read(path.join(scriptDir, 'rollback-release.ps1'));
 const invoke = read(path.join(scriptDir, 'invoke-production-deploy.ps1'));
 const preflight = read(path.join(scriptDir, 'production-preflight-readonly.ps1'));
