@@ -1,0 +1,101 @@
+name: P6-021 off-host compatibility
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  postgres16-compatibility:
+    name: PostgreSQL 16 migrations and API integration (ephemeral)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci_pg16_password_only
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      CI: 'true'
+      NODE_ENV: test
+      # No production variables, SSH or remote deployment access.
+      POSTGRES_ADMIN_URL: postgresql://postgres:ci_pg16_password_only@127.0.0.1:5432/postgres
+      MIGRATION_DB_USER: baogiang_pg16_ci
+      MIGRATION_DB_PASSWORD: ci_pg16_app_only
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Assert exact PostgreSQL 16 container and create CI-only role
+        env:
+          PGPASSWORD: ci_pg16_password_only
+        run: |
+          set -euo pipefail
+          version="$(psql -X -h 127.0.0.1 -p 5432 -U postgres -d postgres -v ON_ERROR_STOP=1 -Atqc 'SHOW server_version_num')"
+          if [[ ! "$version" =~ ^16[0-9]{4}$ ]]; then
+            echo "FAIL: expected PostgreSQL 16, got $version" >&2
+            exit 1
+          fi
+          psql -X -h 127.0.0.1 -p 5432 -U postgres -d postgres -v ON_ERROR_STOP=1 \
+            -c "CREATE ROLE baogiang_pg16_ci LOGIN PASSWORD 'ci_pg16_app_only' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION;"
+          echo "PG16 isolated runner verified"
+      - name: Generate Prisma client
+        env:
+          DATABASE_URL: postgresql://baogiang_pg16_ci:ci_pg16_app_only@127.0.0.1:5432/postgres?schema=public
+        run: npx prisma generate --schema prisma/schema.prisma
+      - name: Exercise complete production migration chain and schema invariants on PG16
+        run: npm run test:migrations:ci
+      - name: Prepare independent PG16 API integration database
+        env:
+          PGPASSWORD: ci_pg16_password_only
+        run: |
+          set -euo pipefail
+          psql -X -h 127.0.0.1 -p 5432 -U postgres -d postgres -v ON_ERROR_STOP=1 \
+            -c "CREATE DATABASE baogiang_test OWNER baogiang_pg16_ci;"
+      - name: Deploy Prisma migrations to isolated PG16 API database
+        env:
+          DATABASE_URL: postgresql://baogiang_pg16_ci:ci_pg16_app_only@127.0.0.1:5432/baogiang_test?schema=public
+        run: npx prisma migrate deploy --schema prisma/schema.prisma
+      - name: Verify capability catalog on PG16
+        env:
+          DATABASE_URL: postgresql://baogiang_pg16_ci:ci_pg16_app_only@127.0.0.1:5432/baogiang_test?schema=public
+        run: npm run test:capability-catalog:integration
+      - name: Run API integration tests on PG16
+        working-directory: apps/api
+        env:
+          DATABASE_URL: postgresql://baogiang_pg16_ci:ci_pg16_app_only@127.0.0.1:5432/baogiang_test?schema=public
+          TEST_DATABASE_URL: postgresql://baogiang_pg16_ci:ci_pg16_app_only@127.0.0.1:5432/baogiang_test?schema=public
+          AI_ENABLED: 'false'
+          CORS_ORIGINS: http://127.0.0.1:5173
+        run: npm run test:integration
+
+  nginx-first-include-offline:
+    name: Nginx first include safety fixtures (Windows ephemeral)
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Verify on-fixture Nginx include behavior without an Nginx process
+        shell: powershell
+        run: ./scripts/ci/test-p6-021-first-include-win.ps1
