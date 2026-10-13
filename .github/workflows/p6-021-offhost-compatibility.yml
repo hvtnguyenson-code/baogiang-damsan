@@ -71,20 +71,20 @@ jobs:
         run: |
           set -euo pipefail
           psql -X -h 127.0.0.1 -p 5432 -U postgres -d postgres -v ON_ERROR_STOP=1 \
-            -c "CREATE DATABASE baogiang_pg16_integration OWNER baogiang_pg16_ci;"
+            -c "CREATE DATABASE baogiang_test OWNER baogiang_pg16_ci;"
       - name: Deploy Prisma migrations to isolated PG16 API database
         env:
-          DATABASE_URL: postgresql://baogiang_pg16_ci:ci_pg16_app_only@127.0.0.1:5432/baogiang_pg16_integration?schema=public
+          DATABASE_URL: postgresql://baogiang_pg16_ci:ci_pg16_app_only@127.0.0.1:5432/baogiang_test?schema=public
         run: npx prisma migrate deploy --schema prisma/schema.prisma
       - name: Verify capability catalog on PG16
         env:
-          DATABASE_URL: postgresql://baogiang_pg16_ci:ci_pg16_app_only@127.0.0.1:5432/baogiang_pg16_integration?schema=public
+          DATABASE_URL: postgresql://baogiang_pg16_ci:ci_pg16_app_only@127.0.0.1:5432/baogiang_test?schema=public
         run: npm run test:capability-catalog:integration
       - name: Run API integration tests on PG16
         working-directory: apps/api
         env:
-          DATABASE_URL: postgresql://baogiang_pg16_ci:ci_pg16_app_only@127.0.0.1:5432/baogiang_pg16_integration?schema=public
-          TEST_DATABASE_URL: postgresql://baogiang_pg16_ci:ci_pg16_app_only@127.0.0.1:5432/baogiang_pg16_integration?schema=public
+          DATABASE_URL: postgresql://baogiang_pg16_ci:ci_pg16_app_only@127.0.0.1:5432/baogiang_test?schema=public
+          TEST_DATABASE_URL: postgresql://baogiang_pg16_ci:ci_pg16_app_only@127.0.0.1:5432/baogiang_test?schema=public
           AI_ENABLED: 'false'
           CORS_ORIGINS: http://127.0.0.1:5173
         run: npm run test:integration
