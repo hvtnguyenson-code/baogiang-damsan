@@ -13,6 +13,7 @@ const invoke = read('scripts/deploy/windows/invoke-production-deploy.ps1');
 const restart = read('scripts/deploy/windows/restart-baogiang-api.ps1');
 const rollback = read('scripts/deploy/windows/rollback-release.ps1');
 const migration = read('scripts/deploy/windows/run-migrations.ps1');
+const codeOnlyDrift = read('scripts/deploy/windows/assert-no-pending-migrations.ps1');
 const catalog = read('scripts/deploy/windows/sync-capability-catalog.ps1');
 const discovery = read('scripts/deploy/windows/production-protected-neighbor-discovery.ps1');
 const preflight = read('scripts/deploy/windows/production-preflight-readonly.ps1');
@@ -102,6 +103,21 @@ for (const dbScript of [backup, migration]) {
   assert.match(dbScript, /Set-PostgresProcessEnvironment -DatabaseUrl \$databaseUrl -ExpectedPort 5434/);
   assert.doesNotMatch(dbScript, /Set-PostgresProcessEnvironment -DatabaseUrl \$databaseUrl -ExpectedPort 5433/);
 }
+// A code-only release must prove Prisma schema parity before any catalog mutation or pointer switch.
+assert.match(workflow, /\[\[ "\$RUN_MIGRATIONS" == "true" \|\| "\$RUN_MIGRATIONS" == "false" \]\]/);
+assert.doesNotMatch(workflow, /\[\[ "\$RUN_MIGRATIONS" == "true" \]\]/);
+assert.match(codeOnlyDrift, /Assert-ExactReleasePath/);
+assert.match(codeOnlyDrift, /Test-PathWithin \$schema \$release/);
+assert.match(codeOnlyDrift, /Set-PostgresProcessEnvironment -DatabaseUrl \$databaseUrl -ExpectedPort 5434/);
+assert.match(codeOnlyDrift, /'prisma','migrate','status'/);
+assert.match(codeOnlyDrift, /\$LASTEXITCODE -ne 0/);
+assert.match(codeOnlyDrift, /database schema is up to date/);
+assert.doesNotMatch(codeOnlyDrift, /'prisma','migrate','deploy'|prisma migrate deploy|db push|migrate reset/i);
+assert.match(invoke, /assert-no-pending-migrations\.ps1/);
+assert.match(invoke, /verifiedNoPending/);
+assert.ok(invoke.indexOf('backup-database.ps1') < invoke.indexOf('assert-no-pending-migrations.ps1'));
+assert.ok(invoke.indexOf('assert-no-pending-migrations.ps1') < invoke.indexOf('sync-capability-catalog.ps1'));
+assert.ok(invoke.indexOf('assert-no-pending-migrations.ps1') < invoke.indexOf('switch-current-release.ps1'));
 assert.match(migration, /Get-MigrationState/); assert.match(invoke, /migrationAttempted = \$true/); assert.match(invoke, /\$migrationCompleted = \$false/); assert.match(invoke, /\$migrationAttempted -and -not \$migrationCompleted/); assert.match(invoke, /Migration completion summary is missing or not completed/); assert.match(invoke, /migrationResult\.state -ne 'completed'/); assert.match(rollback, /test-production-health/); assert.match(rollback, /CompatibilityApproved/);
 assert.match(migration, /ReleaseSha/); assert.match(migration, /Assert-ExactReleasePath/); assert.match(migration, /Test-PathWithin \$schema \$release/); assert.match(invoke, /-ReleaseSha \$p\.ReleaseSha/);
 assert.ok(migration.indexOf('Assert-ExactReleasePath') < migration.indexOf('Invoke-WithServerEnvironment')); assert.ok(migration.indexOf("Test-Path -LiteralPath $schema -PathType Leaf") < migration.indexOf('Invoke-WithServerEnvironment'));
