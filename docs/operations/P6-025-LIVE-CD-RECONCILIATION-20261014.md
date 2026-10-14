@@ -98,7 +98,7 @@ No changes to identity/capabilities, users, production business data, Nội trú
 
 | Remaining branch (20) | Ahead of main | Behind main | Disposition |
 | --- | ---: | ---: | --- |
-| `docs/p6-025-live-cd-reconciliation` | 3 | 0 | **Current task; PR #219 DRAFT; wait independent review and full gate** |
+| `docs/p6-025-live-cd-reconciliation` | 4 | 0 | **Current task; PR #219 DRAFT; wait independent review and full gate** |
 | `docs/p6-020d-vps-provenance-nginx-include-bootstrap` | 2 | 5 | **Historical 2026-10-13 inventory; PR #217 closed, superseded by live P6-025** |
 | `docs/hosting-portability-consolidation-plan` | 7 | 1062 | **Old Linux migration direction; PR #11 closed as superseded by P6-005 SHARED_VPS** |
 | `audit/p5-040-predeploy-consistency` | 1 | 105 | Rejected/older audit baseline; retain historical evidence, no blind merge |
