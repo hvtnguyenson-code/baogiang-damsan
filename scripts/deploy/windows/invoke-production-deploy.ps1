@@ -64,7 +64,12 @@ try {
     $report.migration = $migrationResult
     $migrationCompleted = $true
   } else {
-    $report.migration.state = 'notRequested'
+    # Code-only deployment is allowed only when exact-release Prisma history matches
+    # the dedicated production database. This check performs no migration writes.
+    $driftJson = & (Join-Path $PSScriptRoot 'assert-no-pending-migrations.ps1') -ReleaseSha $p.ReleaseSha -ReleasePath (Join-Path $canonicalRoot "releases\$($p.ReleaseSha)") -NpxExe $p.NpxExe -Root $canonicalRoot -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl | Select-Object -Last 1
+    $driftResult = $driftJson | ConvertFrom-Json
+    if ($null -eq $driftResult -or $driftResult.state -ne 'verifiedNoPending' -or $driftResult.releaseSha -cne $p.ReleaseSha -or [int]$driftResult.databasePort -ne 5434) { throw 'Code-only deployment blocked: migration drift evidence is missing or invalid.' }
+    $report.migration = $driftResult
   }
   $report.capabilityCatalog.state = 'attemptedUnknown'
   $catalogJson = & (Join-Path $PSScriptRoot 'sync-capability-catalog.ps1') -ReleaseSha $p.ReleaseSha -ReleasePath (Join-Path $canonicalRoot "releases\$($p.ReleaseSha)") -NodeExe $p.NodeExe -Root $canonicalRoot -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl -BackupVerified | Select-Object -Last 1
