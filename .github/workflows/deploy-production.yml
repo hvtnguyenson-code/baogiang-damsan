@@ -88,7 +88,7 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$CONFIRMATION" == "DEPLOY-BAOGIANG-PRODUCTION" ]]
-          [[ "$RUN_MIGRATIONS" == "true" ]]
+          [[ "$RUN_MIGRATIONS" == "true" || "$RUN_MIGRATIONS" == "false" ]] || { echo "Invalid run_migrations value." >&2; exit 1; }
           if [[ "$RUN_MIGRATIONS" == "true" ]]; then
             [[ -n "${MAINTENANCE_START_UTC:-}" ]] || { echo "Maintenance window start UTC is required when run_migrations is true." >&2; exit 1; }
             [[ -n "${MAINTENANCE_END_UTC:-}" ]] || { echo "Maintenance window end UTC is required when run_migrations is true." >&2; exit 1; }
