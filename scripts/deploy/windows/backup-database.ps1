@@ -20,7 +20,7 @@ Invoke-WithServerEnvironment -EnvFile $EnvFile -ExpectedBaseUrl 'https://baogian
 try {
   $databaseUrl = [Environment]::GetEnvironmentVariable('DATABASE_URL','Process')
   if ([string]::IsNullOrWhiteSpace($databaseUrl)) { throw 'Server-side database environment is missing.' }
-  $parts = Set-PostgresProcessEnvironment -DatabaseUrl $databaseUrl -ExpectedPort 5433
+  $parts = Set-PostgresProcessEnvironment -DatabaseUrl $databaseUrl -ExpectedPort 5434
   $stamp = [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssZ')
   $backupPath = Join-Path (Get-CanonicalPath $BackupRoot) "baogiang-$stamp.dump"
   Invoke-NativeChecked $PgDumpExe @('--format=custom','--file',$backupPath,'--host',$parts.host,'--port',[string]$parts.port,'--username',$parts.user,'--dbname',$parts.database) 'pg_dump' | Out-Null
