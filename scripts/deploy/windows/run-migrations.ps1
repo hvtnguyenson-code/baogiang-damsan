@@ -33,7 +33,7 @@ Invoke-WithServerEnvironment -EnvFile $EnvFile -ExpectedBaseUrl $ExpectedBaseUrl
 try {
 Assert-ExecutableContract @{ NpxExe = $NpxExe; PsqlExe = $PsqlExe }
 $databaseUrl = [Environment]::GetEnvironmentVariable('DATABASE_URL','Process')
-$parts = Set-PostgresProcessEnvironment -DatabaseUrl $databaseUrl -ExpectedPort 5433
+$parts = Set-PostgresProcessEnvironment -DatabaseUrl $databaseUrl -ExpectedPort 5434
 function Get-MigrationState([string]$Phase) {
   $existsQuery = "SELECT CASE WHEN to_regclass('public._prisma_migrations') IS NULL THEN 'NOT_PRESENT' ELSE 'PRESENT' END;"
   try {
