@@ -20,6 +20,29 @@ if (!/^on:\s*$/m.test(workflow) || !/^\s{2}workflow_dispatch:\s*$/m.test(workflo
 if (/^\s{2}(push|pull_request):\s*$/m.test(workflow)) fail('deployment workflow must not have push/pull_request triggers');
 for (const token of ['environment: production','cancel-in-progress: false','confirmation:','commit_sha:','StrictHostKeyChecking=yes','rev-list --first-parent origin/main','workflow_runs','.event == "push"','.head_branch == "main"','git -C control-plane archive --format=zip','upload-artifact@v4','if: always()','-EncodedCommand','Read-only marker handshake before transfer','control-$run_id-$TARGET_SHA']) if (!workflow.includes(token)) fail(`workflow gate missing: ${token}`);
 const scripts = required.map((file) => read(path.join(scriptDir, file))).join('\n');
+
+// The remote deploy controller executes sibling PowerShell scripts from its transfer
+// directory, not from the application release archive. Verify the actual SFTP
+// upload manifest covers the full direct dependency closure before any deployment.
+const uploadMatch = workflow.match(/^\s*for script in ([^\r\n;]+); do\s*$/m);
+if (!uploadMatch) fail('explicit production SFTP PowerShell upload manifest is missing');
+const uploadedScripts = new Set(uploadMatch[1].trim().split(/\s+/));
+if (uploadedScripts.size !== uploadMatch[1].trim().split(/\s+/).length) fail('duplicate script in SFTP upload manifest');
+for (const script of uploadedScripts) {
+  if (!/^[A-Za-z0-9-]+\.ps1$/.test(script) || !fs.existsSync(path.join(scriptDir, script))) fail(`SFTP script entry is unsafe or missing locally: ${script}`);
+}
+for (const controllerScript of ['invoke-production-deploy.ps1', 'rollback-release.ps1']) {
+  if (!uploadedScripts.has(controllerScript)) fail(`required remote controller not transferred: ${controllerScript}`);
+}
+for (const script of uploadedScripts) {
+  const scriptText = read(path.join(scriptDir, script));
+  const dependencies = [...scriptText.matchAll(/Join-Path\s+\$PSScriptRoot\s+['"]([A-Za-z0-9-]+\.ps1)['"]/g)].map((match) => match[1]);
+  for (const dependency of dependencies) {
+    if (!uploadedScripts.has(dependency)) fail(`SFTP transfer missing ${dependency}, required by ${script}`);
+  }
+}
+if (!uploadedScripts.has('assert-no-pending-migrations.ps1')) fail('code-only Prisma drift verifier not transferred');
+
 if (!workflow.includes('[[ "$RUN_MIGRATIONS" == "true" || "$RUN_MIGRATIONS" == "false" ]]')) fail('code-only workflow input gate is missing');
 if (/^\s*\[\[ "\$RUN_MIGRATIONS" == "true" \]\]\s*$/m.test(workflow)) fail('unconditional migration requirement blocks code-only deployment');
 if (!workflow.includes('sync-capability-catalog.ps1') || !scripts.includes('sync-capability-catalog.cjs')) fail('capability catalog synchronization contract is missing');
