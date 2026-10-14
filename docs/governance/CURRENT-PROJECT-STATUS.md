@@ -10,15 +10,21 @@ Exact current `main`, branch HEAD and divergence must always be read directly fr
 
 **Status snapshot date:** 2026-10-12
 
+## 2026-10-14 follow-up — main updated; CD still NO-GO
+
+The latest GitHub compare identifies `main@c2d7be8db7a5f85486f333fa187c694707dceb5a`, after merged PR #220 (dedicated PostgreSQL port 5434 in production backup/migration wrappers) and PR #221 (code-only `run_migrations=false` plus read-only Prisma drift gate). PR #221 exact-head CI #721 and P6-021 compatibility #9 were SUCCESS. This is repository-only progress, not a deployment or a post-merge main CI certification. PR #219 remains DRAFT, 5 ahead / 12 behind main at this audit. The earlier main/CI evidence below is an explicitly dated snapshot.
+
+Read-only VPS recheck: Báo giảng API and Nội trú HTTP 200; both Scheduled Tasks running; ports 3100/5434 (Báo giảng) and 3000/5433 (Nội trú) remain separate; canonical `current`, `previous`, deployment identity, startup bundles, and task `BaoGiangBackend` are still missing. Shared Nginx config hash unchanged. **P6-025 repository corrections are in progress; host adoption, CD dispatch, migration and pilot remain NO-GO** until independent review and explicit scope-limited authorization. Full evidence: `docs/operations/P6-025-LIVE-CD-RECONCILIATION-20261014.md`.
+
 ## 2026-10-14 live-production evidence and CD reconciliation proposal
 
-**Latest direct GitHub evidence:** canonical main `b9d0d68fb4affa74545272e18525f8950c2ec4f6`; CI #713 (run 38344476487) SUCCESS. GitHub branch `main` reports `protected=false`, and the repository rulesets endpoint returns an empty list. GitHub `production` Environment/secret names and SSH authentication have **not** been verified.
+**Initial 2026-10-14 GitHub snapshot:** canonical main `b9d0d68fb4affa74545272e18525f8950c2ec4f6`; CI #713 (run 38344476487) SUCCESS. GitHub branch `main` reports `protected=false`, and the repository rulesets endpoint returns an empty list. GitHub `production` Environment/secret names and SSH authentication have **not** been verified.
 
 **New VPS observation:** the official Báo giảng website at `https://baogiang.dtnt-damsan.edu.vn/`, its ready API and the protected Nội trú site all returned HTTP 200. Báo giảng runs as a separate `BaoGiangBackendPreDomain` Scheduled Task on `127.0.0.1:3100` with release directory named after the canonical main commit and dedicated PostgreSQL 5434; its Nginx vhost and valid HTTPS certificate are already live. This is an out-of-band activation, **not** evidence that GitHub CD was executed.
 
 **CD readiness is still NO-GO:** `current`, `previous`, deployment marker, startup bundles and expected `BaoGiangBackend` task are absent. Current `nginx.conf` carries inline shared-host vhosts; the repository's managed-include assumptions need explicit reconciliation. The manual live deployment must not be treated as formally completing P6-020 PASS 1/PASS 2, P6-030, P6-050 or authorizing teacher pilot.
 
-**Next governance task:** P6-025 Live production CD contract reconciliation is **PLANNED**, dependent on P6-020. Read-only evidence and detailed acceptance gates are in `docs/operations/P6-025-LIVE-CD-RECONCILIATION-20261014.md`. P6-030 remains blocked until P6-020 and P6-025 are formally accepted; all production mutations need separate explicit approval. Current official sites remain in service.
+**Next governance task:** P6-025 Live production CD contract reconciliation is **IN_PROGRESS (repository-only; host NO-GO)**, dependent on P6-020. Read-only evidence and detailed acceptance gates are in `docs/operations/P6-025-LIVE-CD-RECONCILIATION-20261014.md`. P6-030 remains blocked until P6-020 and P6-025 are formally accepted; all production mutations need separate explicit approval. Current official sites remain in service.
 
 This newer live-evidence section supersedes only the *point-in-time host assertions* made before 2026-10-14 below. It does not silently alter historical Git/CI closure facts or task status.
 
