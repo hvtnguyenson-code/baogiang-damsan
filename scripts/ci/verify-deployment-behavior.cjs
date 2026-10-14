@@ -97,6 +97,11 @@ assert.ok(common.indexOf('Disable-ScheduledTask') < common.indexOf('Stop-Schedul
 assert.match(rollback, /AllowScheduledTaskActivation/); assert.match(invoke, /AllowScheduledTaskActivation:\(\$p\.ServiceKind -eq 'scheduled-task'\)/);
 assert.match(rollback, /Invoke-ScheduledTaskRollbackLifecycle/); assert.match(common, /ROLLBACK_HEALTH_FAILED_AND_SAFE_STOP_FAILED/); assert.match(common, /function Get-DeploymentFailureRecoveryDecision/); assert.match(invoke, /COMPATIBILITY_SAFE_STOP/);
 assert.match(restart, /Count -ne 1/); assert.match(restart, /LocalPort 3100/); assert.match(restart, /Get-ExactApiProcesses/);
+// Báo giảng owns PostgreSQL 17 on port 5434; port 5433 belongs to protected Nội trú.
+for (const dbScript of [backup, migration]) {
+  assert.match(dbScript, /Set-PostgresProcessEnvironment -DatabaseUrl \$databaseUrl -ExpectedPort 5434/);
+  assert.doesNotMatch(dbScript, /Set-PostgresProcessEnvironment -DatabaseUrl \$databaseUrl -ExpectedPort 5433/);
+}
 assert.match(migration, /Get-MigrationState/); assert.match(invoke, /migrationAttempted = \$true/); assert.match(invoke, /\$migrationCompleted = \$false/); assert.match(invoke, /\$migrationAttempted -and -not \$migrationCompleted/); assert.match(invoke, /Migration completion summary is missing or not completed/); assert.match(invoke, /migrationResult\.state -ne 'completed'/); assert.match(rollback, /test-production-health/); assert.match(rollback, /CompatibilityApproved/);
 assert.match(migration, /ReleaseSha/); assert.match(migration, /Assert-ExactReleasePath/); assert.match(migration, /Test-PathWithin \$schema \$release/); assert.match(invoke, /-ReleaseSha \$p\.ReleaseSha/);
 assert.ok(migration.indexOf('Assert-ExactReleasePath') < migration.indexOf('Invoke-WithServerEnvironment')); assert.ok(migration.indexOf("Test-Path -LiteralPath $schema -PathType Leaf") < migration.indexOf('Invoke-WithServerEnvironment'));
