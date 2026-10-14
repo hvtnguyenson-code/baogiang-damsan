@@ -10,9 +10,22 @@ Exact current `main`, branch HEAD and divergence must always be read directly fr
 
 **Status snapshot date:** 2026-10-12
 
+## 2026-10-14 live-production evidence and CD reconciliation proposal
+
+**Latest direct GitHub evidence:** canonical main `b9d0d68fb4affa74545272e18525f8950c2ec4f6`; CI #713 (run 38344476487) SUCCESS. GitHub branch `main` reports `protected=false`, and the repository rulesets endpoint returns an empty list. GitHub `production` Environment/secret names and SSH authentication have **not** been verified.
+
+**New VPS observation:** the official Báo giảng website at `https://baogiang.dtnt-damsan.edu.vn/`, its ready API and the protected Nội trú site all returned HTTP 200. Báo giảng runs as a separate `BaoGiangBackendPreDomain` Scheduled Task on `127.0.0.1:3100` with release directory named after the canonical main commit and dedicated PostgreSQL 5434; its Nginx vhost and valid HTTPS certificate are already live. This is an out-of-band activation, **not** evidence that GitHub CD was executed.
+
+**CD readiness is still NO-GO:** `current`, `previous`, deployment marker, startup bundles and expected `BaoGiangBackend` task are absent. Current `nginx.conf` carries inline shared-host vhosts; the repository's managed-include assumptions need explicit reconciliation. The manual live deployment must not be treated as formally completing P6-020 PASS 1/PASS 2, P6-030, P6-050 or authorizing teacher pilot.
+
+**Next governance task:** P6-025 Live production CD contract reconciliation is **PLANNED**, dependent on P6-020. Read-only evidence and detailed acceptance gates are in `docs/operations/P6-025-LIVE-CD-RECONCILIATION-20261014.md`. P6-030 remains blocked until P6-020 and P6-025 are formally accepted; all production mutations need separate explicit approval. Current official sites remain in service.
+
+This newer live-evidence section supersedes only the *point-in-time host assertions* made before 2026-10-14 below. It does not silently alter historical Git/CI closure facts or task status.
+
+
 ## Executive status
 
-- Production state: **PRE-OPERATIONAL**.
+- Pilot authorization: **PRE-OPERATIONAL (no teacher go-live approval)**. The official site is online for controlled administrator setup as observed on 2026-10-14; GitHub CD transition is still **NO-GO**.
 - Core build implementation required for the current path is substantially complete.
 - `P2-020` PPCT native importer is **`CLOSED` by `SYNC-P2-020`**; PR #173, exact-head CI #549, merge `2d6cb02d4bf9bb4529e0e8eaf83e10d6a67ef043` and post-merge CI #550 are the parent evidence.
 - `P6-005` Production VPS topology decision is **`CLOSED` by `SYNC-P6-005`**.
