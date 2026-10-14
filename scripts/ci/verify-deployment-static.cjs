@@ -21,7 +21,7 @@ if (/^\s{2}(push|pull_request):\s*$/m.test(workflow)) fail('deployment workflow 
 for (const token of ['environment: production','cancel-in-progress: false','confirmation:','commit_sha:','StrictHostKeyChecking=yes','rev-list --first-parent origin/main','workflow_runs','.event == "push"','.head_branch == "main"','git -C control-plane archive --format=zip','upload-artifact@v4','if: always()','-EncodedCommand','Read-only marker handshake before transfer','control-$run_id-$TARGET_SHA']) if (!workflow.includes(token)) fail(`workflow gate missing: ${token}`);
 const scripts = required.map((file) => read(path.join(scriptDir, file))).join('\n');
 if (!workflow.includes('[[ "$RUN_MIGRATIONS" == "true" || "$RUN_MIGRATIONS" == "false" ]]')) fail('code-only workflow input gate is missing');
-if (workflow.includes('[[ "$RUN_MIGRATIONS" == "true" ]]')) fail('unconditional migration requirement blocks code-only deployment');
+if (/^\s*\[\[ "\$RUN_MIGRATIONS" == "true" \]\]\s*$/m.test(workflow)) fail('unconditional migration requirement blocks code-only deployment');
 if (!workflow.includes('sync-capability-catalog.ps1') || !scripts.includes('sync-capability-catalog.cjs')) fail('capability catalog synchronization contract is missing');
 if (/npm\s+run\s+prisma:seed/i.test(scripts)) fail('deployment must not invoke generic Prisma seed');
 const forbidden = [
