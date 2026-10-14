@@ -92,3 +92,33 @@
 No changes to identity/capabilities, users, production business data, Nội trú, live Nginx, secrets or app typography under P6-025. The later **position-based capability templates with manual per-user exceptions** and **Vietnamese UI / typography design decision** require separately registered AUTH-POS/UI tasks after CD readiness.
 
 **Current decision: CD is NO-GO until gates above are fulfilled.** Existing official website continues serving users.
+## 6. Whole-repository branch/PR reconciliation (2026-10-14)
+
+**Method:** Enumerated every repository branch through the GitHub branch API and compared each branch tip against `main@b9d0d68fb4affa74545272e18525f8950c2ec4f6` via commit-ancestry comparisons. Comparison is about commit graph membership, not the semantic value of an old diff. The repository has **234 branches including main**: **213 branches have zero unmerged commits**; **20 branches have commits outside main**. Do not confuse an existing branch with unmerged work, and do not merge old commits to clear a count.
+
+| Remaining branch (20) | Ahead of main | Behind main | Disposition |
+| --- | ---: | ---: | --- |
+| `docs/p6-025-live-cd-reconciliation` | 3 | 0 | **Current task; PR #219 DRAFT; wait independent review and full gate** |
+| `docs/p6-020d-vps-provenance-nginx-include-bootstrap` | 2 | 5 | **Historical 2026-10-13 inventory; PR #217 closed, superseded by live P6-025** |
+| `docs/hosting-portability-consolidation-plan` | 7 | 1062 | **Old Linux migration direction; PR #11 closed as superseded by P6-005 SHARED_VPS** |
+| `audit/p5-040-predeploy-consistency` | 1 | 105 | Rejected/older audit baseline; retain historical evidence, no blind merge |
+| `archive/ops-production-protected-neighbor-discovery-local-20260809` | 2 | 1063 | Archived legacy operations implementation; no merge |
+| `docs/reporting-statement-release-readiness` | 1 | 789 | Older release-readiness text; assess only if re-entry needs evidence |
+| `docs/tkb-native-workbook-architecture-030-clean-v2` | 1 | 631 | Old parallel TKB architecture; P2-030/P2-040 have current accepted closures |
+| `docs/tkb-native-workbook-architecture-030` | 4 | 631 | Old parallel TKB architecture; do not supersede accepted TKB model |
+| `fix/operational-start-authority-continuity-031a` | 2 | 513 | Superseded by `fix/operational-start-authority-continuity-031a-v2` and P1-031A closure |
+| `fix/production-preflight-powershell-automatic-vars-gh` | 2 | 1064 | Historic alternate fix; verify against current hardened verifier before any selective port |
+| `ops/phase-01-cd-first-deploy` | 14 | 1066 | Historic CD implementation; main has later hardened production workflow |
+| `ops/production-protected-neighbor-discovery` | 3 | 1063 | Historic alternate discovery implementation |
+| `ops/production-security-gate` | 5 | 1065 | Historic security gate, main contains newer controls |
+| `phase/00-foundation` | 11 | 1072 | Original phase branch; merged functionally through subsequent commits, no reintroduction |
+| `phase/01-auth-session-runtime` | 6 | 1069 | Original phase branch; newer auth and security authority on main |
+| `phase/01-capability-authorization-runtime` | 3 | 1068 | Original phase branch; newer authorization authority on main |
+| `phase/01-identity-access` | 4 | 1071 | Original phase branch; newer identity authority on main |
+| `phase/01-schema-migration-foundation` | 4 | 1070 | Original phase branch; newer migration chain on main |
+| `phase/01-ui-design-system-foundation` | 11 | 1067 | Original phase branch; `DESIGN.md` is current UI authority |
+| `rescue/ppct-component-aware-allocation-projections-003` | 19 | 563 | Historical rescue branch; current P2-003 official closure and regression required for selective inspection |
+
+**PR dispositions actually performed:** #11 and #217 were closed **without merging** and have top-level comments explaining supersession. Their branches, commits and PR discussion remain recoverable. #219 remains open/draft; green CI alone does not authorize merge because its change requires independent architecture/governance review. At this point no branch was force-updated or deleted, and `main` was not changed.
+
+**Local workstation synchronization:** canonical user laptop repository is separate from the VPS (`D:\baogiang-damsan` vs `C:\baogiang`). Only the VPS was connected to remote desktop during audit. Do not run `git pull` in the VPS release directory, do not reset the laptop repository remotely or assume it has been synchronized. An operator-verified local fetch/status/fast-forward of `main` is a separate step with a clean-tracked-tree guard, while preserving local-only untracked files and prior task branches.
