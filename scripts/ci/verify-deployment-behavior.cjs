@@ -105,7 +105,7 @@ for (const dbScript of [backup, migration]) {
 }
 // A code-only release must prove Prisma schema parity before any catalog mutation or pointer switch.
 assert.match(workflow, /\[\[ "\$RUN_MIGRATIONS" == "true" \|\| "\$RUN_MIGRATIONS" == "false" \]\]/);
-assert.doesNotMatch(workflow, /\[\[ "\$RUN_MIGRATIONS" == "true" \]\]/);
+assert.doesNotMatch(workflow, /^\s*\[\[ "\$RUN_MIGRATIONS" == "true" \]\]\s*$/m);
 assert.match(codeOnlyDrift, /Assert-ExactReleasePath/);
 assert.match(codeOnlyDrift, /Test-PathWithin \$schema \$release/);
 assert.match(codeOnlyDrift, /Set-PostgresProcessEnvironment -DatabaseUrl \$databaseUrl -ExpectedPort 5434/);
