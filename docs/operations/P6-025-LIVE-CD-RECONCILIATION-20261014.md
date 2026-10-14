@@ -7,6 +7,16 @@
 **Repository:** `hvtnguyenson-code/baogiang-damsan`.  
 **Evidence boundary:** direct GitHub REST/connector reads and passive Windows VPS observation through authorized remote desktop; not formal P6-020 PASS 1/PASS 2. Never treat old pre-activation documentation as current host evidence.
 
+## 2026-10-14 follow-up — GitHub main advanced; host remains unadopted
+
+**Fresh GitHub evidence:** `main@c2d7be8db7a5f85486f333fa187c694707dceb5a` after PR #220 and #221. PR #220 fixed the production PostgreSQL 5433/5434 mismatch (PR CI #717 and compatibility #6 SUCCESS). PR #221 introduced a read-only Prisma drift gate for `run_migrations=false` (exact-head CI #721 and compatibility #9 SUCCESS) and was merged. These are **repository corrections only**; there is no evidence of production deployment or post-merge push CI from the PR-only workflow lookup. The original `b9d0d68...` main and #713 references below remain historical audit-time evidence, not current main.
+
+**Fresh VPS evidence (read-only):** both public services HTTP 200; `BaoGiangBackendPreDomain` running as `bg_api`, `DamSanV5` running as SYSTEM; dedicated loopback ports 3100/5434 and protected 3000/5433 remain separate. `C:\baogiang\current`, `previous`, `shared\deployment-identity.json`, `shared\startup-bundles`, and the expected `BaoGiangBackend` Scheduled Task are still absent. Shared `C:\nginx\conf\nginx.conf` SHA-256 is unchanged (`ADF9F9FDFCE8E0F36B409421F62C3E7093C7981F264B2E11E98315813322CD07`); no `managed-baogiang` include is present. C: free ~22.62 GiB. No secrets, DB payloads, production configuration, or host state were modified by this follow-up.
+
+**Unresolved blockers:** production Environment/SSH presence and handshake, immutable release provenance, Nginx inline-vhost compatibility, marker/startup-bundle/ACL/task adoption, verified backup and rollback rehearsal, formal P6-020 PASS1/PASS2, and reviewed P6-025 acceptance. **CD stays NO-GO.** PR #219 is 12 commits behind main and 5 commits ahead as of this check; mergeability alone is not a substitute for a new base review and independent acceptance.
+
+**Code-only gate review note:** PR #221 validates `prisma migrate status` with a nonzero-exit check and explicit up-to-date output. CI/Windows fixtures passing do **not** prove its exact production runtime semantics, because the canonical marker and task do not exist yet. A later isolated production-compatible rehearsal must verify fail-closed outcomes (pending migrations, DB unavailable, wrong port, and malformed status output) without touching live data.
+
 ## 1. Operational facts observed live (no production mutations)
 
 | Area | 2026-10-14 actual evidence |
@@ -35,7 +45,7 @@
 - `.github/workflows/deploy-production.yml` is **manual `workflow_dispatch` only**, requires an exact first-parent main commit and successful `main` push CI, `production` environment, reviewed SSH identity and value-free `PROD_*` variable contract. Not automatically triggered by PR merge.
 - GitHub `branches/main` reports `protected=false` and GET `rulesets` returned `[]` as of the audit. P0-004 is `BLOCKED_DECISION`. Server-side merge/CI gates are not enforced yet; request explicit authorization for any settings mutation.
 - The GitHub connector cannot read the repository's Environment/secret metadata via its supported read endpoints. Actual presence/adequacy of `production` Environment, secrets and vars is **NOT VERIFIED**, not automatically considered missing.
-- Workflow currently checks `[[ "$RUN_MIGRATIONS" == "true" ]]` even though the input is a boolean. This rejects **code-only deploy with `run_migrations=false`**. `invoke-production-deploy.ps1` already has a conditional migration branch, so reconcile workflow validation and test contracts rather than silently forcing an unnecessary DB migration.
+- At the **initial audit** the workflow unconditionally checked `[[ "$RUN_MIGRATIONS" == "true" ]]` and rejected code-only deployment. **Subsequently corrected on main by merged PR #221** with explicit `true/false` validation and a fail-closed Prisma drift gate. This removes one code-level blocker, but does not establish production CD readiness.
 - `Read-DeploymentIdentity`/startup bundle verifier and the exact Scheduled Task runtime identity are strict prerequisites. Production lacks the required marker, immutable startup pair, current/previous pointers and expected task binding; attempting CD now is a predictable **fail-closed** outcome before transfer.
 - `production-nginx-plan.ps1` expects the dedicated managed file/include boundary and fails on domain collision with a foreign inline server block. The live official Báo giảng vhost resides directly in the shared main config. **Never add a second 443 vhost for the same domain or overwrite the shared main config automatically.**
 - Earlier `CURRENT-PROJECT-STATUS.md`, P6-020 runbook and open PR #217 describe pre-activation state. They must be updated through reviewed governance, preserving historic dates; do not merge stale instructions that assume DNS/TLS/service are missing.
