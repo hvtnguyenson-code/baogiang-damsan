@@ -239,7 +239,8 @@ jobs:
           set -euo pipefail
           contract="$(node -e 'const fs=require("node:fs");const e=process.env;const evidence=JSON.parse(fs.readFileSync("startup-bundle-handshake-evidence.json","utf8"));process.stdout.write(JSON.stringify({...evidence,root:e.PROD_BAOGIANG_ROOT,serviceKind:e.PROD_SERVICE_KIND,serviceName:e.PROD_SERVICE_NAME,envFile:e.PROD_ENV_FILE,startupWrapper:e.PROD_STARTUP_WRAPPER,expectedEntryPoint:e.PROD_API_ENTRYPOINT,nodeExe:e.PROD_NODE_EXE,nginxExe:e.PROD_NGINX_EXE,nginxConfig:e.PROD_NGINX_CONFIG}))')"
           payload="$(node control-plane/scripts/ci/build-windows-remote-command.cjs handshake "$contract")"
-          ssh -i "$SSH_KEY" -p "$PROD_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "$PROD_SSH_USER@$PROD_SSH_HOST" powershell.exe -NoProfile -NonInteractive -EncodedCommand "$payload" | grep -Fx BAOGIANG_HANDSHAKE_PASS
+          bootstrap="$(node control-plane/scripts/ci/build-windows-remote-command.cjs stdin-bootstrap)"
+          printf '%s' "$payload" | ssh -i "$SSH_KEY" -p "$PROD_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "$PROD_SSH_USER@$PROD_SSH_HOST" powershell.exe -NoProfile -NonInteractive -EncodedCommand "$bootstrap" | grep -Fx BAOGIANG_HANDSHAKE_PASS
           run_id="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           [[ "$run_id" =~ ^[0-9-]+$ ]]
           echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
@@ -267,7 +268,8 @@ jobs:
           transfer='${{ steps.handshake.outputs.transfer_name }}'
           contract="$(TRANSFER_NAME="$transfer" node -e 'const fs=require("node:fs");const e=process.env;const evidence=JSON.parse(fs.readFileSync("startup-bundle-handshake-evidence.json","utf8"));process.stdout.write(JSON.stringify({...evidence,root:e.PROD_BAOGIANG_ROOT,serviceKind:e.PROD_SERVICE_KIND,serviceName:e.PROD_SERVICE_NAME,envFile:e.PROD_ENV_FILE,startupWrapper:e.PROD_STARTUP_WRAPPER,expectedEntryPoint:e.PROD_API_ENTRYPOINT,nodeExe:e.PROD_NODE_EXE,nginxExe:e.PROD_NGINX_EXE,nginxConfig:e.PROD_NGINX_CONFIG,transferName:e.TRANSFER_NAME}))')"
           payload="$(node control-plane/scripts/ci/build-windows-remote-command.cjs prepare-transfer "$contract")"
-          ssh -i "$SSH_KEY" -p "$PROD_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "$PROD_SSH_USER@$PROD_SSH_HOST" powershell.exe -NoProfile -NonInteractive -EncodedCommand "$payload" | grep -Fx BAOGIANG_PREPARE_TRANSFER_PASS
+          bootstrap="$(node control-plane/scripts/ci/build-windows-remote-command.cjs stdin-bootstrap)"
+          printf '%s' "$payload" | ssh -i "$SSH_KEY" -p "$PROD_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "$PROD_SSH_USER@$PROD_SSH_HOST" powershell.exe -NoProfile -NonInteractive -EncodedCommand "$bootstrap" | grep -Fx BAOGIANG_PREPARE_TRANSFER_PASS
 
       - name: Upload reviewed transfer bundle through SFTP
         shell: bash
@@ -350,6 +352,7 @@ jobs:
             root='${PROD_BAOGIANG_ROOT}'; transfer='${{ steps.handshake.outputs.transfer_name }}'
             [[ "$transfer" =~ ^control-[0-9]+-[0-9]+-[0-9a-f]{40}$ ]] || { echo 'Skipping remote cleanup: no verified transfer directory.'; exit 0; }
             encoded="$(node control-plane/scripts/ci/build-windows-remote-command.cjs cleanup "$root" "$transfer")"
-            ssh -i "$SSH_KEY" -p "$PROD_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "$PROD_SSH_USER@$PROD_SSH_HOST" powershell.exe -NoProfile -NonInteractive -EncodedCommand "$encoded"
+            bootstrap="$(node control-plane/scripts/ci/build-windows-remote-command.cjs stdin-bootstrap)"
+            printf '%s' "$encoded" | ssh -i "$SSH_KEY" -p "$PROD_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "$PROD_SSH_USER@$PROD_SSH_HOST" powershell.exe -NoProfile -NonInteractive -EncodedCommand "$bootstrap"
           fi
           rm -f "$SSH_KEY" "$KNOWN_HOSTS" deploy-parameters.json startup-bundle-handshake-evidence.json

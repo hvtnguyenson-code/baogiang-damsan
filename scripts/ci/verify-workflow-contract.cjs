@@ -41,4 +41,18 @@ function assertStepEnvSources(block) {
 for (const block of stepBlocks) { const envCount = (block.match(/^        env:\s*$/gm) || []).length; assert.ok(envCount <= 1, 'a workflow step has duplicate env mappings'); assertStepEnvSources(block); }
 assert.throws(() => assertStepEnvSources('        run: |\n          echo "$PROD_BAOGIANG_ROOT"'), /without a step env source/);
 assert.match(text, /if: always\(\)/); assert.match(text, /deploy-report-\$\{\{ inputs\.commit_sha \}\}\.json/);
+
+const remoteCommand = require('./build-windows-remote-command.cjs');
+const bootstrap = remoteCommand.stdinBootstrap();
+assert.ok(bootstrap.length + 'powershell.exe -NoProfile -NonInteractive -EncodedCommand '.length < 2000, 'stdin bootstrap must remain short on Windows');
+const bootstrapSource = Buffer.from(bootstrap, 'base64').toString('utf16le');
+assert.match(bootstrapSource, /\[Console\]::In\.ReadToEnd\(\)/);
+assert.match(bootstrapSource, /FromBase64String\(\$data\)/);
+assert.match(bootstrapSource, /ScriptBlock\]::Create\(\$script\)/);
+for (const token of ['BAOGIANG_HANDSHAKE_PASS', 'BAOGIANG_PREPARE_TRANSFER_PASS']) {
+  assert.ok(text.includes('printf ' + "'%s'" + ' "$payload" | ssh '), 'large handshake payload must use stdin');
+  assert.ok(text.includes('grep -Fx ' + token), token + ' verification is missing');
+}
+assert.match(text, /printf '%s' "\$encoded" \| ssh .* -EncodedCommand "\$bootstrap"/);
+assert.doesNotMatch(text, /-EncodedCommand "\$payload"/);
 console.log('[workflow-contract] PASS (parsed trigger/job/permissions/concurrency/inputs/environment/transfer/report structure)');
