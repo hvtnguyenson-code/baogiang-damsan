@@ -71,7 +71,13 @@ function Replace-FromStaged([string]$Destination,[string]$Text) {
   $staged = Join-Path $shared ([IO.Path]::GetFileName($Destination) + '.' + [guid]::NewGuid().ToString('N') + '.pending')
   try {
     [IO.File]::WriteAllText($staged,$Text,[Text.UTF8Encoding]::new($false))
-    [IO.File]::Replace($staged,$Destination,$null)
+    # Windows PowerShell 5.1/.NET Framework requires a concrete backup path.
+    $replaceBackup = Join-Path $shared ([IO.Path]::GetFileName($Destination) + '.' + [guid]::NewGuid().ToString('N') + '.replaced-backup')
+    try {
+      [IO.File]::Replace($staged,$Destination,$replaceBackup)
+    } finally {
+      if (Test-Path -LiteralPath $replaceBackup) {Remove-Item -LiteralPath $replaceBackup -Force}
+    }
   } finally {
     if (Test-Path -LiteralPath $staged) {Remove-Item -LiteralPath $staged -Force}
   }

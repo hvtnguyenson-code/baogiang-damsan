@@ -37,4 +37,22 @@ $shim=$source.IndexOf('Replace-FromStaged -Destination $launcher')
 $check=$source.IndexOf('Assert-VerifiedScheduledTaskContract -Marker $marker -ServiceName $TaskName')
 $stop=$source.IndexOf('Stop-ScheduledTask -TaskPath $taskPath -TaskName $TaskName')
 if (!($marker -gt 0 -and $marker -lt $shim -and $shim -lt $check -and $check -lt $stop)){throw 'CUTOVER_PHASE_ORDER_UNSAFE'}
+# Execute the exact atomic replacement helper in an isolated Windows TEMP fixture.
+$fn=$ast.FindAll({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Replace-FromStaged'},$true) | Select-Object -First 1
+if ($null -eq $fn) {throw 'ATOMIC_REPLACE_HELPER_MISSING'}
+$shared=Join-Path ([IO.Path]::GetTempPath()) ('p6026-replace-'+[guid]::NewGuid().ToString('N'))
+New-Item -Path $shared -ItemType Directory -ErrorAction Stop | Out-Null
+try {
+  $destination=Join-Path $shared 'sample.json'
+  [IO.File]::WriteAllText($destination,'before')
+  $leafFn=$ast.FindAll({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Assert-RegularLeaf'},$true) | Select-Object -First 1
+  if ($null -eq $leafFn) {throw 'REGULAR_LEAF_HELPER_MISSING'}
+  . ([scriptblock]::Create($leafFn.Extent.Text))
+  . ([scriptblock]::Create($fn.Extent.Text))
+  Replace-FromStaged -Destination $destination -Text 'after'
+  if ([IO.File]::ReadAllText($destination) -cne 'after') {throw 'ATOMIC_REPLACE_CONTENT_MISMATCH'}
+  if (@(Get-ChildItem -LiteralPath $shared -File).Count -ne 1) {throw 'ATOMIC_REPLACE_LEFTOVER_TEMP'}
+} finally {
+  Remove-Item -LiteralPath $shared -Recurse -Force -ErrorAction SilentlyContinue
+}
 Write-Output 'P6-026 STATIC SAFETY CONTRACT PASS (TASK UNTOUCHED)'
