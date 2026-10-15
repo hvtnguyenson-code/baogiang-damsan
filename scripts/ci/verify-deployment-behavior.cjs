@@ -109,8 +109,8 @@ assert.doesNotMatch(workflow, /^\s*\[\[ "\$RUN_MIGRATIONS" == "true" \]\]\s*$/m)
 assert.match(codeOnlyDrift, /Assert-ExactReleasePath/);
 assert.match(codeOnlyDrift, /Test-PathWithin \$schema \$release/);
 assert.match(codeOnlyDrift, /Set-PostgresProcessEnvironment -DatabaseUrl \$databaseUrl -ExpectedPort 5434/);
-assert.match(codeOnlyDrift, /'prisma','migrate','status'/);
-assert.match(codeOnlyDrift, /\$LASTEXITCODE -ne 0/);
+assert.match(codeOnlyDrift, /--no-install prisma migrate status --schema/); assert.ok(codeOnlyDrift.includes('Push-Location -LiteralPath $release'));
+assert.match(codeOnlyDrift, /\$prismaExitCode -ne 0/);
 assert.match(codeOnlyDrift, /database schema is up to date/);
 assert.doesNotMatch(codeOnlyDrift, /'prisma','migrate','deploy'|prisma migrate deploy|db push|migrate reset/i);
 assert.match(invoke, /assert-no-pending-migrations\.ps1/);
@@ -182,4 +182,26 @@ assert.match(nginxVerify, /ValidateSet\('Desired','Restored'\)/); assert.match(n
 for (const nginxTool of [nginxPlan, nginxVerify]) { assert.match(nginxTool, /Assert-NginxPlanSchema/); assert.match(nginxTool, /Assert-NginxRollbackSnapshotEvidence/); }
 assert.ok(common.indexOf('NGINX_ROLLBACK_SNAPSHOT_PROTECTED_LEAF') < common.indexOf('Get-FileSha256FromBytes $snapshot')); assert.ok(nginxVerify.indexOf('Assert-NginxRollbackSnapshotEvidence') < nginxVerify.indexOf('Invoke-ReviewedNginxSyntaxTest')); assert.match(nginxVerify, /RequireExact/);
 assert.ok(invoke.indexOf('Invoke-ReviewedNginxSyntaxTest') < invoke.indexOf('Move-Item -LiteralPath $source')); assert.match(invoke, /reviewedNginxPrefix/); assert.doesNotMatch(invoke, /-s['"\s,]+reload/);
+const fsIsolated = require('node:fs');
+const isolatedDir = require('node:path').resolve(__dirname, '..', 'deploy', 'windows');
+const getIsolated = (file) => fsIsolated.readFileSync(require('node:path').join(isolatedDir, file), 'utf8');
+const installIsolated = getIsolated('install-release.ps1');
+const rollbackIsolated = getIsolated('rollback-release.ps1');
+const isolatedRequest = getIsolated('request-deploy.ps1');
+const isolatedWorker = getIsolated('deploy-worker.ps1');
+const isolatedVps = fsIsolated.readFileSync(require('node:path').resolve(__dirname,'..','..','.github','workflows','deploy-vps.yml'),'utf8');
+assert.ok(installIsolated.indexOf('Move-Item -LiteralPath $staging -Destination $release') <
+    installIsolated.indexOf('New-Item -ItemType Junction -Path $link -Target $newTarget'),
+    'workspace junctions must be relocated after staging move');
+for (const workspace of ["api = 'apps\\api'","config = 'packages\\config'","contracts = 'packages\\contracts'","e2e = 'tests\\e2e'","web = 'apps\\web'"]) {
+  assert.ok(installIsolated.includes(workspace), 'missing workspace relocation: '+workspace);
+}
+for (const guard of ['expectedStagingTarget','item.LinkType','[IO.Directory]::Delete($link, $false)','require.resolve(name)']) {
+  assert.ok(installIsolated.includes(guard), 'missing workspace relocation guard: '+guard);
+}
+assert.ok(rollbackIsolated.includes('[IO.Directory]::Delete($temp,$false)'), 'rollback must not prompt for junction deletion');
+assert.ok(isolatedRequest.includes('schtasks.exe'), 'SSH must invoke bounded Task Scheduler worker');
+assert.ok(isolatedRequest.includes('WORKER_RESULT_TIMEOUT') && isolatedRequest.includes('status.nonce'), 'SSH must verify matching request result');
+assert.ok(isolatedWorker.includes('request.preflightOnly') && isolatedWorker.includes('REQUEST_EXPIRED'), 'privileged worker must validate submitted request');
+assert.ok(isolatedVps.includes('request-deploy.ps1') && !isolatedVps.includes('-File \'C:\\baogiang\\shared\\auto-deploy-code-only.ps1\''), 'SSH cannot directly execute privileged deployment controller');
 console.log('[deployment-behavior] PASS (redaction, identity, preflight evidence, artifact, migration, rollback and transfer fixtures)');

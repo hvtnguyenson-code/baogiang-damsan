@@ -99,4 +99,4 @@ jobs:
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$knownfile" \
             "$VPS_USER@$VPS_HOST" \
             powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass \
-            -File 'C:\baogiang\shared\auto-deploy-code-only.ps1' -ExpectedSha "$TARGET_SHA"
+            -File 'C:\baogiang\shared\request-deploy.ps1' -ExpectedSha "$TARGET_SHA"

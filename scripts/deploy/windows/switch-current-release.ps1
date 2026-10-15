@@ -18,14 +18,14 @@ if (-not (Test-Path -LiteralPath $release -PathType Container)) { throw 'Target 
 $previousTarget = $null
 if (Test-Path -LiteralPath $current) { $previousTarget = Assert-ReleasePointerTarget -PointerPath $current -Root $canonicalRoot }
 if (Test-Path -LiteralPath $previous) { Assert-ReleasePointerTarget -PointerPath $previous -Root $canonicalRoot | Out-Null }
-if (Test-Path -LiteralPath $incoming) { Assert-ReleasePointerTarget -PointerPath $incoming -Root $canonicalRoot | Out-Null; Remove-Item -LiteralPath $incoming -Force }
+if (Test-Path -LiteralPath $incoming) { Assert-ReleasePointerTarget -PointerPath $incoming -Root $canonicalRoot | Out-Null; [IO.Directory]::Delete($incoming,$false) }
 New-Item -ItemType Junction -Path $incoming -Target $release | Out-Null
 try {
-  if (Test-Path -LiteralPath $previous) { Remove-Item -LiteralPath $previous -Force }
+  if (Test-Path -LiteralPath $previous) { [IO.Directory]::Delete($previous,$false) }
   if (Test-Path -LiteralPath $current) { Move-Item -LiteralPath $current -Destination $previous }
   Move-Item -LiteralPath $incoming -Destination $current
 } catch {
-  if (Test-Path -LiteralPath $incoming) { Remove-Item -LiteralPath $incoming -Force -ErrorAction SilentlyContinue }
+  if (Test-Path -LiteralPath $incoming) { try { [IO.Directory]::Delete($incoming,$false) } catch { } }
   throw
 }
 [ordered]@{ currentRelease = $ReleaseSha; previousRelease = if ($previousTarget) { Split-Path $previousTarget -Leaf } else { $null } } | ConvertTo-Json -Compress

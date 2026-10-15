@@ -7,13 +7,13 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $root = 'C:\baogiang'
-$repo = Join-Path $root 'deploy-source'
+$repo = 'C:\ProgramData\BaoGiangDeploy\source'
 $markerPath = Join-Path $root 'shared\deployment-identity.json'
 $healthUrl = 'http://127.0.0.1:3100/api/health/ready'
 $neighborHealthUrl = 'http://127.0.0.1:3000/health'
 $taskName = 'BaoGiangBackendPreDomain'
 $nodeDir = 'C:\baogiang\shared\runtimes\node-v22.23.3-win-x64'
-$pgDir = 'C:\Program Files\PostgreSQL\16\bin'
+$pgDir = 'C:\Program Files\PostgreSQL\17\bin'
 
 function Assert-Http200([string]$Url) {
   $result = Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 12

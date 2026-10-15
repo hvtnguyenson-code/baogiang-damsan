@@ -43,3 +43,37 @@ try {
   if (-not (Test-Path (Join-Path $staging 'apps\web\dist') -PathType Container)) { throw 'Frontend static root is missing after build.' }
 } finally { if ($pushed) { Pop-Location } }
 Move-Item -LiteralPath $staging -Destination $release
+# npm workspaces creates absolute Windows junctions pointing at the staging tree.
+# After the atomic move, rebind only reviewed in-release workspace targets.
+$workspaces = [ordered]@{
+  api = 'apps\api'
+  config = 'packages\config'
+  contracts = 'packages\contracts'
+  e2e = 'tests\e2e'
+  web = 'apps\web'
+}
+foreach ($workspace in $workspaces.Keys) {
+  $link = Join-Path $release "node_modules\@baogiang\$workspace"
+  $item = Get-Item -LiteralPath $link -Force -ErrorAction Stop
+  $expectedStagingTarget = Join-Path $staging $workspaces[$workspace]
+  $newTarget = Join-Path $release $workspaces[$workspace]
+  if ($item.LinkType -cne 'Junction' -or [string]$item.Target -cne $expectedStagingTarget) {
+    throw "Workspace junction mismatch after release move: $workspace"
+  }
+  if (-not (Test-Path -LiteralPath $newTarget -PathType Container)) {
+    throw "Workspace release target missing: $workspace"
+  }
+  [IO.Directory]::Delete($link, $false)
+  New-Item -ItemType Junction -Path $link -Target $newTarget -ErrorAction Stop | Out-Null
+  $rebound = Get-Item -LiteralPath $link -Force -ErrorAction Stop
+  if ($rebound.LinkType -cne 'Junction' -or [string]$rebound.Target -cne $newTarget) {
+    throw "Workspace junction relink verification failed: $workspace"
+  }
+}
+Push-Location $release
+try {
+  $workspaceSmoke = "for(const name of ['@baogiang/config','@baogiang/contracts']) require.resolve(name);"
+  Invoke-NativeChecked $NodeExe @('-e', $workspaceSmoke) 'release workspace module resolution'
+} finally {
+  Pop-Location
+}

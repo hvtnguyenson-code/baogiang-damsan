@@ -29,8 +29,16 @@ Invoke-WithServerEnvironment -EnvFile $EnvFile -ExpectedBaseUrl $ExpectedBaseUrl
     # Port 5434 belongs to Báo giảng; port 5433 belongs to protected Nội trú.
     $parts = Set-PostgresProcessEnvironment -DatabaseUrl $databaseUrl -ExpectedPort 5434
     if ($parts.host -notin @('127.0.0.1','localhost','::1')) { throw 'Code-only migration status must use the isolated loopback PostgreSQL host.' }
-    $statusOutput = @(& $NpxExe 'prisma','migrate','status','--schema',$schema 2>&1)
-    if ($LASTEXITCODE -ne 0) { throw 'Code-only deployment blocked: Prisma migration status is not clean.' }
+    Push-Location -LiteralPath $release
+    try {
+      $previousNativePreference = $ErrorActionPreference
+      try {
+        $ErrorActionPreference = 'Continue'
+        $statusOutput = @(& $NpxExe --no-install prisma migrate status --schema $schema 2>&1)
+        $prismaExitCode = $LASTEXITCODE
+      } finally { $ErrorActionPreference = $previousNativePreference }
+    } finally { Pop-Location }
+    if ($prismaExitCode -ne 0) { throw 'Code-only deployment blocked: Prisma migration status is not clean.' }
     $statusText = ($statusOutput -join ' ')
     if ($statusText -notmatch '(?i)database schema is up to date') { throw 'Code-only deployment blocked: Prisma did not confirm an up-to-date schema.' }
     [ordered]@{ state = 'verifiedNoPending'; releaseSha = $ReleaseSha; databasePort = 5434 } | ConvertTo-Json -Compress
