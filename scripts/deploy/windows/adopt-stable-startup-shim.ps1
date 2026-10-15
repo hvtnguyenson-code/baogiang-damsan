@@ -119,16 +119,22 @@ $marker = Get-Content -LiteralPath $markerPath -Raw -Encoding UTF8 | ConvertFrom
 if ($marker.systemId -cne 'baogiang-damsan' -or $marker.canonicalRoot -cne $Root -or
     $marker.service.kind -cne 'scheduled-task' -or $marker.service.name -cne $TaskName -or
     $marker.service.account -cne 'bg_api' -or $marker.apiPort -ne 3100) {throw 'MARKER_IDENTITY_CONFLICT'}
-if ($marker.service.arguments -cne [string]$marker.service.arguments -or
-    $marker.service.execute -ine 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' -or
-    $marker.service.workingDirectory -ine $Root) {throw 'MARKER_SERVICE_CONFLICT'}
-if ($marker.service.arguments -cne $oldArguments -and
-    $marker.service.arguments -notmatch [regex]::Escape([string]$marker.startupBundle.wrapperPath)) {throw 'MARKER_EXPECTED_BUNDLE_CONFLICT'}
+$expectedBundleArguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + $marker.startupBundle.wrapperPath +
+  '" -NodeExe "' + $marker.nodeExe + '" -EnvFile "' + $marker.envFile +
+  '" -Root "' + $Root + '" -ExpectedEntryPoint "' + $marker.entryPoint +
+  '" -ExpectedBaseUrl "' + $marker.domain + '" -ServiceKind scheduled-task -ServiceName ' + $TaskName
+if ($marker.service.execute -ine 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' -or
+    $marker.service.workingDirectory -ine $Root -or $marker.service.taskPath -cne $taskPath -or
+    $marker.startupWrapper -cne $marker.startupBundle.wrapperPath) {throw 'MARKER_SERVICE_CONFLICT'}
+if ($marker.service.arguments -cne $expectedBundleArguments -and
+    $marker.service.arguments -cne $oldArguments) {throw 'MARKER_EXPECTED_BUNDLE_CONFLICT'}
 foreach ($p in @($marker.startupBundle.wrapperPath,$marker.startupBundle.commonPath)) {Assert-RegularLeaf $p}
 if ((Split-Path -Parent $marker.startupBundle.wrapperPath) -ine (Split-Path -Parent $marker.startupBundle.commonPath)) {throw 'BUNDLE_DIRECTORY_MISMATCH'}
 if (-not $marker.startupBundle.wrapperPath.StartsWith($bundleDir + '\',[StringComparison]::OrdinalIgnoreCase)) {throw 'BUNDLE_OUTSIDE_APPROVED_ROOT'}
 if ((Get-FileHash -LiteralPath $marker.startupBundle.wrapperPath -Algorithm SHA256).Hash -ine [string]$marker.startupBundle.wrapperSha256 -or
     (Get-FileHash -LiteralPath $marker.startupBundle.commonPath -Algorithm SHA256).Hash -ine [string]$marker.startupBundle.commonSha256) {throw 'BUNDLE_HASH_CONFLICT'}
+. ([string]$marker.startupBundle.commonPath)
+Assert-DeploymentMarkerSchema -Marker $marker -CanonicalRoot $Root | Out-Null
 $preOwner = Get-VerifiedListener
 if ($null -eq $preOwner) {throw 'BAOGIANG_NOT_LISTENING'}
 Assert-Health
