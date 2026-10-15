@@ -1,27 +1,18 @@
 const assert = require('node:assert/strict');
-const zlib = require('node:zlib');
 
 const TRANSFER_NAME = /^control-[0-9]+-[0-9]+-[0-9a-f]{40}$/;
 const WINDOWS_ROOT = /^[A-Za-z]:\\[A-Za-z0-9._-]+(?:\\[A-Za-z0-9._-]+)*$/;
 const SHA256 = /^[0-9a-f]{64}$/;
 
 function psLiteral(value) { return `'${String(value).replace(/'/g, "''")}'`; }
-// Windows OpenSSH commonly launches remote commands through cmd.exe (8191-char limit).
-// Compress the verified script before wrapping it in a short UTF-16LE EncodedCommand.
-function encodedPowerShell(script) {
-  const compressed = zlib.deflateRawSync(Buffer.from(script, 'utf8'), { level: 9 }).toString('base64');
-  const bootstrap = [
-    "$ErrorActionPreference='Stop'",
-    `$mem=[IO.MemoryStream]::new([Convert]::FromBase64String('${compressed}'))`,
-    "$zip=[IO.Compression.DeflateStream]::new($mem,[IO.Compression.CompressionMode]::Decompress)",
-    "$reader=[IO.StreamReader]::new($zip,[Text.UTF8Encoding]::new($false,$true))",
-    "try{$script=$reader.ReadToEnd(); & ([ScriptBlock]::Create($script))}finally{$reader.Dispose();$zip.Dispose();$mem.Dispose()}",
-  ].join(';');
-  const encoded = Buffer.from(bootstrap, 'utf16le').toString('base64');
-  if (encoded.length + 'powershell.exe -NoProfile -NonInteractive -EncodedCommand '.length >= 7000)
-    throw new Error('Remote PowerShell command exceeds bounded Windows transport length.');
-  return encoded;
+// Keep the full payload on stdin: Windows OpenSSH may launch remote commands
+// through cmd.exe, which has a much smaller command-line limit than SSH input.
+function encodedPowerShell(script) { return Buffer.from(script, 'utf16le').toString('base64'); }
+function stdinBootstrap() {
+  const bootstrap = "$ErrorActionPreference='Stop';$data=[Console]::In.ReadToEnd().Trim();$script=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($data));& ([ScriptBlock]::Create($script))";
+  return encodedPowerShell(bootstrap);
 }
+
 function assertTransferName(name) { if (!TRANSFER_NAME.test(name || '')) throw new Error('Unsafe or missing transfer name.'); return name; }
 
 function assertHandshakeContract(contract) {
@@ -120,9 +111,10 @@ if (require.main === module) {
   else if (mode === 'prepare-transfer') console.log(buildPrepareTransfer(JSON.parse(args[0])));
   else if (mode === 'prepare-transfer-base64') console.log(buildPrepareTransfer(JSON.parse(Buffer.from(args[0], 'base64').toString('utf8'))));
   else if (mode === 'invoke') console.log(buildFileInvocation(args[0], args[1]));
+  else if (mode === 'stdin-bootstrap') console.log(stdinBootstrap());
   else if (mode === 'sftp-root') console.log(windowsRootToSftp(args[0]));
   else if (mode === 'cleanup') console.log(buildCleanup(args[0], args[1]));
   else throw new Error('Expected handshake, prepare-transfer, invoke, sftp-root or cleanup mode.');
 }
 
-module.exports = { psLiteral, encodedPowerShell, buildHandshake, buildPrepareTransfer, buildFileInvocation, windowsRootToSftp, assertTransferName, quoteSftp, buildCleanup };
+module.exports = { psLiteral, encodedPowerShell, buildHandshake, buildPrepareTransfer, buildFileInvocation, windowsRootToSftp, assertTransferName, quoteSftp, buildCleanup, stdinBootstrap };
