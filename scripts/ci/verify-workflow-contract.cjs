@@ -65,7 +65,10 @@ assert.match(active, /environment: production/);
 assert.ok(active.includes('ssh -n -i'));
 assert.match(active, /StrictHostKeyChecking=yes/);
 assert.match(active, /PROD_SSH_PRIVATE_KEY/);
-assert.ok(active.includes('auto-deploy-code-only.ps1'));
+assert.ok(active.includes('request-deploy.ps1'));
+const requestScript = fs.readFileSync(path.join(__dirname, '..', 'deploy', 'windows', 'request-deploy.ps1'), 'utf8');
+assert.ok(requestScript.includes('BaoGiangDeploymentWorker') && requestScript.includes('schtasks.exe'));
+assert.ok(requestScript.includes('BAOGIANG_WORKER_RESULT_TIMEOUT'));
 assert.match(active, /RUN_MIGRATIONS.*== 'false'/);
 assert.doesNotMatch(active, /git clone|npm install|npm ci|migrate deploy|restart-service|Stop-Service/i);
 for (const required of ['Assert-Http200 $neighborHealthUrl', 'MigrationRequested = $false', 'RollbackCompatibilityApproved = $false', 'invoke-production-deploy.ps1', 'PROTECTED_NEIGHBOR_PROCESS_CHANGED', 'BAOGIANG_DEPLOY_VERIFIED']) {

@@ -23,7 +23,7 @@ $current = Join-Path $canonicalRoot 'current'; $previous = Join-Path $canonicalR
 if (-not (Test-Path -LiteralPath $previous)) { throw 'No previous release pointer exists; first deploy has no automatic rollback target.' }
 $previousTarget = Assert-ReleasePointerTarget -PointerPath $previous -Root $canonicalRoot
 if (Test-Path -LiteralPath $failed) { throw 'A failed-release pointer already exists; operator must inspect it before retrying rollback.' }
-if (Test-Path -LiteralPath $temp) { Assert-ReleasePointerTarget -PointerPath $temp -Root $canonicalRoot | Out-Null; Remove-Item -LiteralPath $temp -Force }
+if (Test-Path -LiteralPath $temp) { Assert-ReleasePointerTarget -PointerPath $temp -Root $canonicalRoot | Out-Null; [IO.Directory]::Delete($temp,$false) }
 New-Item -ItemType Junction -Path $temp -Target $previousTarget | Out-Null
 if (Test-Path -LiteralPath $current) { Assert-ReleasePointerTarget -PointerPath $current -Root $canonicalRoot | Out-Null; Move-Item -LiteralPath $current -Destination $failed }
 Move-Item -LiteralPath $temp -Destination $current

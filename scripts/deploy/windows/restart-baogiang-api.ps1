@@ -9,8 +9,8 @@ param(
   [Parameter(Mandatory = $true)][string]$ExpectedEntryPoint,
   [Parameter(Mandatory = $true)][ValidatePattern('^https://baogiang\.dtnt-damsan\.edu\.vn$')][string]$ExpectedBaseUrl,
   [switch]$AllowScheduledTaskActivation,
-  [ValidateRange(1,10)][int]$MaxAttempts = 6,
-  [ValidateRange(1,60)][int]$DelaySeconds = 2
+  [ValidateRange(1,10)][int]$MaxAttempts = 10,
+  [ValidateRange(1,60)][int]$DelaySeconds = 8
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'

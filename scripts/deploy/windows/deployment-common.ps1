@@ -1415,8 +1415,13 @@ function Get-NginxCommandPlan([string]$NginxExe,[string]$NginxPrefix,[string]$Ng
 
 function Invoke-ReviewedNginxSyntaxTest([string]$NginxExe,[string]$NginxPrefix,[string]$NginxConfig) {
   $arguments = @('-p',(Get-CanonicalPath $NginxPrefix),'-t','-c',(Get-CanonicalPath $NginxConfig))
-  & (Get-CanonicalPath $NginxExe) @arguments *> $null
-  if ($LASTEXITCODE -ne 0) { throw 'NGINX_SYNTAX_TEST_FAILED' }
+  $beforeNginxPreference = $ErrorActionPreference
+  try {
+    $ErrorActionPreference = 'Continue'
+    & (Get-CanonicalPath $NginxExe) @arguments *> $null
+    $nginxExitCode = $LASTEXITCODE
+  } finally { $ErrorActionPreference = $beforeNginxPreference }
+  if ($nginxExitCode -ne 0) { throw 'NGINX_SYNTAX_TEST_FAILED' }
   return [pscustomobject][ordered]@{ executable = Get-CanonicalPath $NginxExe; arguments = $arguments; exitCode = 0 }
 }
 
