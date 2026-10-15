@@ -1,11 +1,27 @@
 const assert = require('node:assert/strict');
+const zlib = require('node:zlib');
 
 const TRANSFER_NAME = /^control-[0-9]+-[0-9]+-[0-9a-f]{40}$/;
 const WINDOWS_ROOT = /^[A-Za-z]:\\[A-Za-z0-9._-]+(?:\\[A-Za-z0-9._-]+)*$/;
 const SHA256 = /^[0-9a-f]{64}$/;
 
 function psLiteral(value) { return `'${String(value).replace(/'/g, "''")}'`; }
-function encodedPowerShell(script) { return Buffer.from(script, 'utf16le').toString('base64'); }
+// Windows OpenSSH commonly launches remote commands through cmd.exe (8191-char limit).
+// Compress the verified script before wrapping it in a short UTF-16LE EncodedCommand.
+function encodedPowerShell(script) {
+  const compressed = zlib.deflateRawSync(Buffer.from(script, 'utf8'), { level: 9 }).toString('base64');
+  const bootstrap = [
+    "$ErrorActionPreference='Stop'",
+    `$mem=[IO.MemoryStream]::new([Convert]::FromBase64String('${compressed}'))`,
+    "$zip=[IO.Compression.DeflateStream]::new($mem,[IO.Compression.CompressionMode]::Decompress)",
+    "$reader=[IO.StreamReader]::new($zip,[Text.UTF8Encoding]::new($false,$true))",
+    "try{$script=$reader.ReadToEnd(); & ([ScriptBlock]::Create($script))}finally{$reader.Dispose();$zip.Dispose();$mem.Dispose()}",
+  ].join(';');
+  const encoded = Buffer.from(bootstrap, 'utf16le').toString('base64');
+  if (encoded.length + 'powershell.exe -NoProfile -NonInteractive -EncodedCommand '.length >= 7000)
+    throw new Error('Remote PowerShell command exceeds bounded Windows transport length.');
+  return encoded;
+}
 function assertTransferName(name) { if (!TRANSFER_NAME.test(name || '')) throw new Error('Unsafe or missing transfer name.'); return name; }
 
 function assertHandshakeContract(contract) {
