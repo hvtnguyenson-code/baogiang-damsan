@@ -99,4 +99,6 @@ jobs:
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$knownfile" \
             "$VPS_USER@$VPS_HOST" \
             powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass \
-            -File 'C:\baogiang\shared\request-deploy.ps1' -ExpectedSha "$TARGET_SHA"
+            -File 'C:\ProgramData\BaoGiangDeploy\request-deploy.ps1' -ExpectedSha "$TARGET_SHA" |
+            tee "$RUNNER_TEMP/baogiang-deploy-result.txt"
+          grep -Eq "^(BAOGIANG_DEPLOY_VERIFIED sha=${TARGET_SHA} neighbor_pid=[0-9]+|BAOGIANG_DEPLOY_ALREADY_CURRENT sha=${TARGET_SHA})$" "$RUNNER_TEMP/baogiang-deploy-result.txt"
