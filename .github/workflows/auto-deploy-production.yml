@@ -1,0 +1,68 @@
+name: Auto deploy production after green CI
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: auto-deploy-baogiang
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    name: Dispatch isolated Bao Giang code-only release
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify canonical main HEAD and CI provenance
+        id: gate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]]
+          current_sha="$(gh api "repos/$REPO/git/ref/heads/main" --jq '.object.sha')"
+          if [[ "$current_sha" != "$TARGET_SHA" ]]; then
+            echo "Skipping superseded CI result; newer main commit exists."
+            echo "dispatch=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          run="$(gh api "repos/$REPO/actions/runs/$RUN_ID")"
+          jq -e --arg sha "$TARGET_SHA" '
+            .name == "CI" and .event == "push" and
+            .head_branch == "main" and .head_sha == $sha and
+            .status == "completed" and .conclusion == "success"
+          ' <<< "$run" >/dev/null
+          echo "dispatch=true" >> "$GITHUB_OUTPUT"
+
+      - name: Invoke existing code-only production workflow
+        if: steps.gate.outputs.dispatch == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          gh workflow run deploy-production.yml --repo "$REPO" --ref main \
+            -f "commit_sha=$TARGET_SHA" \
+            -f "confirmation=DEPLOY-BAOGIANG-PRODUCTION" \
+            -f "run_migrations=false" \
+            -f "allow_code_rollback_after_migration=false"
+          echo "Code-only production deployment submitted for $TARGET_SHA"

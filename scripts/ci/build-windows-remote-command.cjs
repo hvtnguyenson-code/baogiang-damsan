@@ -9,7 +9,7 @@ function psLiteral(value) { return `'${String(value).replace(/'/g, "''")}'`; }
 // through cmd.exe, which has a much smaller command-line limit than SSH input.
 function encodedPowerShell(script) { return Buffer.from(script, 'utf16le').toString('base64'); }
 function stdinBootstrap() {
-  const bootstrap = "$ErrorActionPreference='Stop';$data=[Console]::In.ReadToEnd().Trim();$script=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($data));& ([ScriptBlock]::Create($script))";
+  const bootstrap = "$ErrorActionPreference='Stop';$data=[Console]::In.ReadLine();$script=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($data));& ([ScriptBlock]::Create($script))";
   return encodedPowerShell(bootstrap);
 }
 
