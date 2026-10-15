@@ -57,34 +57,46 @@ jobs:
           [[ "$ci" -gt 0 ]] || { echo 'No successful main CI'; exit 1; }
           echo "Admitted isolated code-only SHA: $TARGET_SHA"
 
-      - name: Verify pinned VPS host key
-        id: host
+      - name: Prepare pinned OpenSSH identity
         shell: bash
         env:
           HOST: ${{ secrets.PROD_SSH_HOST }}
           PORT: ${{ secrets.PROD_SSH_PORT }}
           HOST_KEY: ${{ secrets.PROD_SSH_HOST_KEY }}
+          PRIVATE_KEY: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
         run: |
           set -euo pipefail
           [[ "$HOST" =~ ^[A-Za-z0-9.-]+$ ]]
           [[ "$PORT" =~ ^[0-9]+$ ]]
+          (( PORT >= 1 && PORT <= 65535 ))
           expected="$HOST"
           if [[ "$PORT" != 22 ]]; then expected="[$HOST]:$PORT"; fi
           read -r host type key extra <<< "$HOST_KEY"
           [[ "$host" == "$expected" && -z "${extra:-}" && "$type" == ssh-ed25519 ]]
-          printf '%s\n' "$HOST_KEY" > "$RUNNER_TEMP/baogiang-host-key"
-          fingerprint="$(ssh-keygen -l -E sha256 -f "$RUNNER_TEMP/baogiang-host-key" | awk '{print $2}')"
-          [[ "$fingerprint" == SHA256:* ]]
-          echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
+          umask 077
+          printf '%s\n' "$HOST_KEY" > "$RUNNER_TEMP/baogiang-known-hosts"
+          printf '%s\n' "$PRIVATE_KEY" > "$RUNNER_TEMP/baogiang-ssh-key"
+          chmod 600 "$RUNNER_TEMP/baogiang-known-hosts" "$RUNNER_TEMP/baogiang-ssh-key"
+          ssh-keygen -l -E sha256 -f "$RUNNER_TEMP/baogiang-known-hosts" >/dev/null
+          ssh-keygen -y -f "$RUNNER_TEMP/baogiang-ssh-key" >/dev/null
 
-      - name: Deploy exact main commit on isolated VPS
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.PROD_SSH_HOST }}
-          port: ${{ secrets.PROD_SSH_PORT }}
-          username: ${{ secrets.PROD_SSH_USER }}
-          key: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
-          fingerprint: ${{ steps.host.outputs.fingerprint }}
-          command_timeout: 40m
-          script: |
-            powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "C:\baogiang\shared\auto-deploy-code-only.ps1" -ExpectedSha "${{ inputs.commit_sha }}"
+      - name: Deploy exact main commit using pinned OpenSSH
+        shell: bash
+        env:
+          TARGET_SHA: ${{ inputs.commit_sha }}
+          VPS_HOST: ${{ secrets.PROD_SSH_HOST }}
+          VPS_PORT: ${{ secrets.PROD_SSH_PORT }}
+          VPS_USER: ${{ secrets.PROD_SSH_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$VPS_USER" == bg_deploy ]]
+          keyfile="$RUNNER_TEMP/baogiang-ssh-key"
+          knownfile="$RUNNER_TEMP/baogiang-known-hosts"
+          trap 'rm -f "$keyfile" "$knownfile"' EXIT
+          ssh -n -i "$keyfile" -p "$VPS_PORT" \
+            -o BatchMode=yes -o ConnectTimeout=20 \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$knownfile" \
+            "$VPS_USER@$VPS_HOST" \
+            powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass \
+            -File 'C:\baogiang\shared\auto-deploy-code-only.ps1' -ExpectedSha "$TARGET_SHA"

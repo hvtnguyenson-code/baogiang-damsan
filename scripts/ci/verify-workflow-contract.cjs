@@ -62,8 +62,8 @@ const stable = fs.readFileSync(path.join(__dirname, '..', 'deploy', 'windows', '
 assert.ok(automatic.includes('gh workflow run deploy-vps.yml'));
 assert.match(active, /workflow_dispatch:/);
 assert.match(active, /environment: production/);
-assert.ok(active.includes('appleboy/ssh-action@v1.0.3'));
-assert.match(active, /fingerprint:/);
+assert.ok(active.includes('ssh -n -i'));
+assert.match(active, /StrictHostKeyChecking=yes/);
 assert.match(active, /PROD_SSH_PRIVATE_KEY/);
 assert.ok(active.includes('auto-deploy-code-only.ps1'));
 assert.match(active, /RUN_MIGRATIONS.*== 'false'/);
