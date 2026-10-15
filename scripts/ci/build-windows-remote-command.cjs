@@ -8,11 +8,6 @@ function psLiteral(value) { return `'${String(value).replace(/'/g, "''")}'`; }
 // Keep the full payload on stdin: Windows OpenSSH may launch remote commands
 // through cmd.exe, which has a much smaller command-line limit than SSH input.
 function encodedPowerShell(script) { return Buffer.from(script, 'utf16le').toString('base64'); }
-function stdinBootstrap() {
-  const bootstrap = "$ErrorActionPreference='Stop';$data=[Console]::In.ReadLine();$script=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($data));& ([ScriptBlock]::Create($script))";
-  return encodedPowerShell(bootstrap);
-}
-
 function assertTransferName(name) { if (!TRANSFER_NAME.test(name || '')) throw new Error('Unsafe or missing transfer name.'); return name; }
 
 function assertHandshakeContract(contract) {
@@ -104,6 +99,24 @@ function buildCleanup(root, transfer) {
   ].join('; '));
 }
 
+
+const STAGED_COMMAND_FILE = /^bg-command-(?:handshake|prepare)-[0-9]+-[0-9]+-[0-9a-f]{40}\.ps1$/;
+function buildStagedInvocation(root, name, digest) {
+  if (!WINDOWS_ROOT.test(root)) throw new Error('Unsafe deployment root for staged command.');
+  if (!STAGED_COMMAND_FILE.test(name)) throw new Error('Unsafe staged command filename.');
+  if (!SHA256.test(digest)) throw new Error('Invalid staged command SHA256.');
+  const path = root.replace(/[\\/]+$/, '') + '\\incoming\\' + name;
+  return encodedPowerShell([
+    "$ErrorActionPreference='Stop'",
+    `$path=${psLiteral(path)}`,
+    "$file=Get-Item -LiteralPath $path -Force -ErrorAction Stop",
+    "if($file.PSIsContainer -or ($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw 'STAGED_COMMAND_UNSAFE'}",
+    `if((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -cne ${psLiteral(digest.toUpperCase())}){throw 'STAGED_COMMAND_HASH_MISMATCH'}`,
+    "& powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $path",
+    "if($LASTEXITCODE -ne 0){throw 'STAGED_COMMAND_FAILED'}"
+  ].join(';'));
+}
+
 if (require.main === module) {
   const [mode, ...args] = process.argv.slice(2);
   if (mode === 'handshake') console.log(buildHandshake(JSON.parse(args[0])));
@@ -111,10 +124,10 @@ if (require.main === module) {
   else if (mode === 'prepare-transfer') console.log(buildPrepareTransfer(JSON.parse(args[0])));
   else if (mode === 'prepare-transfer-base64') console.log(buildPrepareTransfer(JSON.parse(Buffer.from(args[0], 'base64').toString('utf8'))));
   else if (mode === 'invoke') console.log(buildFileInvocation(args[0], args[1]));
-  else if (mode === 'stdin-bootstrap') console.log(stdinBootstrap());
+  else if (mode === 'staged-invoke') console.log(buildStagedInvocation(args[0], args[1], args[2]));
   else if (mode === 'sftp-root') console.log(windowsRootToSftp(args[0]));
   else if (mode === 'cleanup') console.log(buildCleanup(args[0], args[1]));
   else throw new Error('Expected handshake, prepare-transfer, invoke, sftp-root or cleanup mode.');
 }
 
-module.exports = { psLiteral, encodedPowerShell, buildHandshake, buildPrepareTransfer, buildFileInvocation, windowsRootToSftp, assertTransferName, quoteSftp, buildCleanup, stdinBootstrap };
+module.exports = { psLiteral, encodedPowerShell, buildHandshake, buildPrepareTransfer, buildFileInvocation, windowsRootToSftp, assertTransferName, quoteSftp, buildCleanup, buildStagedInvocation };

@@ -239,8 +239,21 @@ jobs:
           set -euo pipefail
           contract="$(node -e 'const fs=require("node:fs");const e=process.env;const evidence=JSON.parse(fs.readFileSync("startup-bundle-handshake-evidence.json","utf8"));process.stdout.write(JSON.stringify({...evidence,root:e.PROD_BAOGIANG_ROOT,serviceKind:e.PROD_SERVICE_KIND,serviceName:e.PROD_SERVICE_NAME,envFile:e.PROD_ENV_FILE,startupWrapper:e.PROD_STARTUP_WRAPPER,expectedEntryPoint:e.PROD_API_ENTRYPOINT,nodeExe:e.PROD_NODE_EXE,nginxExe:e.PROD_NGINX_EXE,nginxConfig:e.PROD_NGINX_CONFIG}))')"
           payload="$(node control-plane/scripts/ci/build-windows-remote-command.cjs handshake "$contract")"
-          bootstrap="$(node control-plane/scripts/ci/build-windows-remote-command.cjs stdin-bootstrap)"
-          printf '%s\n' "$payload" | ssh -i "$SSH_KEY" -p "$PROD_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "$PROD_SSH_USER@$PROD_SSH_HOST" powershell.exe -NoProfile -NonInteractive -EncodedCommand "$bootstrap" | grep -Fx BAOGIANG_HANDSHAKE_PASS
+          script_name="bg-command-handshake-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${TARGET_SHA}.ps1"
+          [[ "$script_name" =~ ^bg-command-handshake-[0-9]+-[0-9]+-[0-9a-f]{40}\.ps1$ ]]
+          node -e 'const fs=require("node:fs");fs.writeFileSync(process.argv[2],"\uFEFF"+Buffer.from(process.argv[1],"base64").toString("utf16le"),{encoding:"utf8",mode:0o600})' "$payload" "$RUNNER_TEMP/$script_name"
+          digest="$(sha256sum "$RUNNER_TEMP/$script_name" | cut -d' ' -f1)"
+          root_sftp="$(node control-plane/scripts/ci/build-windows-remote-command.cjs sftp-root "$PROD_BAOGIANG_ROOT")"
+          remote="$root_sftp/incoming/$script_name"
+          sftp_args=(-i "$SSH_KEY" -P "$PROD_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "${PROD_SSH_USER}@${PROD_SSH_HOST}")
+          cleanup_staged() {
+            printf 'rm "%s"\n' "$remote" | sftp "${sftp_args[@]}" >/dev/null 2>&1 || true
+            rm -f "$RUNNER_TEMP/$script_name"
+          }
+          trap cleanup_staged EXIT
+          printf 'put "%s" "%s"\n' "$RUNNER_TEMP/$script_name" "$remote" | sftp "${sftp_args[@]}"
+          invoke="$(node control-plane/scripts/ci/build-windows-remote-command.cjs staged-invoke "$PROD_BAOGIANG_ROOT" "$script_name" "$digest")"
+          timeout 120 ssh -i "$SSH_KEY" -p "$PROD_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "$PROD_SSH_USER@$PROD_SSH_HOST" powershell.exe -NoProfile -NonInteractive -EncodedCommand "$invoke" | grep -Fx BAOGIANG_HANDSHAKE_PASS
           run_id="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           [[ "$run_id" =~ ^[0-9-]+$ ]]
           echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
@@ -268,8 +281,21 @@ jobs:
           transfer='${{ steps.handshake.outputs.transfer_name }}'
           contract="$(TRANSFER_NAME="$transfer" node -e 'const fs=require("node:fs");const e=process.env;const evidence=JSON.parse(fs.readFileSync("startup-bundle-handshake-evidence.json","utf8"));process.stdout.write(JSON.stringify({...evidence,root:e.PROD_BAOGIANG_ROOT,serviceKind:e.PROD_SERVICE_KIND,serviceName:e.PROD_SERVICE_NAME,envFile:e.PROD_ENV_FILE,startupWrapper:e.PROD_STARTUP_WRAPPER,expectedEntryPoint:e.PROD_API_ENTRYPOINT,nodeExe:e.PROD_NODE_EXE,nginxExe:e.PROD_NGINX_EXE,nginxConfig:e.PROD_NGINX_CONFIG,transferName:e.TRANSFER_NAME}))')"
           payload="$(node control-plane/scripts/ci/build-windows-remote-command.cjs prepare-transfer "$contract")"
-          bootstrap="$(node control-plane/scripts/ci/build-windows-remote-command.cjs stdin-bootstrap)"
-          printf '%s\n' "$payload" | ssh -i "$SSH_KEY" -p "$PROD_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "$PROD_SSH_USER@$PROD_SSH_HOST" powershell.exe -NoProfile -NonInteractive -EncodedCommand "$bootstrap" | grep -Fx BAOGIANG_PREPARE_TRANSFER_PASS
+          script_name="bg-command-prepare-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${TARGET_SHA}.ps1"
+          [[ "$script_name" =~ ^bg-command-prepare-[0-9]+-[0-9]+-[0-9a-f]{40}\.ps1$ ]]
+          node -e 'const fs=require("node:fs");fs.writeFileSync(process.argv[2],"\uFEFF"+Buffer.from(process.argv[1],"base64").toString("utf16le"),{encoding:"utf8",mode:0o600})' "$payload" "$RUNNER_TEMP/$script_name"
+          digest="$(sha256sum "$RUNNER_TEMP/$script_name" | cut -d' ' -f1)"
+          root_sftp="$(node control-plane/scripts/ci/build-windows-remote-command.cjs sftp-root "$PROD_BAOGIANG_ROOT")"
+          remote="$root_sftp/incoming/$script_name"
+          sftp_args=(-i "$SSH_KEY" -P "$PROD_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "${PROD_SSH_USER}@${PROD_SSH_HOST}")
+          cleanup_staged() {
+            printf 'rm "%s"\n' "$remote" | sftp "${sftp_args[@]}" >/dev/null 2>&1 || true
+            rm -f "$RUNNER_TEMP/$script_name"
+          }
+          trap cleanup_staged EXIT
+          printf 'put "%s" "%s"\n' "$RUNNER_TEMP/$script_name" "$remote" | sftp "${sftp_args[@]}"
+          invoke="$(node control-plane/scripts/ci/build-windows-remote-command.cjs staged-invoke "$PROD_BAOGIANG_ROOT" "$script_name" "$digest")"
+          timeout 120 ssh -i "$SSH_KEY" -p "$PROD_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "$PROD_SSH_USER@$PROD_SSH_HOST" powershell.exe -NoProfile -NonInteractive -EncodedCommand "$invoke" | grep -Fx BAOGIANG_PREPARE_TRANSFER_PASS
 
       - name: Upload reviewed transfer bundle through SFTP
         shell: bash
@@ -352,7 +378,6 @@ jobs:
             root='${PROD_BAOGIANG_ROOT}'; transfer='${{ steps.handshake.outputs.transfer_name }}'
             [[ "$transfer" =~ ^control-[0-9]+-[0-9]+-[0-9a-f]{40}$ ]] || { echo 'Skipping remote cleanup: no verified transfer directory.'; exit 0; }
             encoded="$(node control-plane/scripts/ci/build-windows-remote-command.cjs cleanup "$root" "$transfer")"
-            bootstrap="$(node control-plane/scripts/ci/build-windows-remote-command.cjs stdin-bootstrap)"
-            printf '%s\n' "$encoded" | ssh -i "$SSH_KEY" -p "$PROD_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "$PROD_SSH_USER@$PROD_SSH_HOST" powershell.exe -NoProfile -NonInteractive -EncodedCommand "$bootstrap"
+            timeout 120 ssh -i "$SSH_KEY" -p "$PROD_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "$PROD_SSH_USER@$PROD_SSH_HOST" powershell.exe -NoProfile -NonInteractive -EncodedCommand "$encoded"
           fi
           rm -f "$SSH_KEY" "$KNOWN_HOSTS" deploy-parameters.json startup-bundle-handshake-evidence.json

@@ -43,16 +43,16 @@ assert.throws(() => assertStepEnvSources('        run: |\n          echo "$PROD_
 assert.match(text, /if: always\(\)/); assert.match(text, /deploy-report-\$\{\{ inputs\.commit_sha \}\}\.json/);
 
 const remoteCommand = require('./build-windows-remote-command.cjs');
-const bootstrap = remoteCommand.stdinBootstrap();
-assert.ok(bootstrap.length + 'powershell.exe -NoProfile -NonInteractive -EncodedCommand '.length < 2000, 'stdin bootstrap must remain short on Windows');
-const bootstrapSource = Buffer.from(bootstrap, 'base64').toString('utf16le');
-assert.match(bootstrapSource, /\[Console\]::In\.ReadLine\(\)/);
-assert.match(bootstrapSource, /FromBase64String\(\$data\)/);
-assert.match(bootstrapSource, /ScriptBlock\]::Create\(\$script\)/);
-for (const token of ['BAOGIANG_HANDSHAKE_PASS', 'BAOGIANG_PREPARE_TRANSFER_PASS']) {
-  assert.ok(text.includes('printf ' + "'%s\\n'" + ' "$payload" | ssh '), 'large handshake payload must use stdin');
-  assert.ok(text.includes('grep -Fx ' + token), token + ' verification is missing');
-}
-assert.match(text, /printf '%s\\n' "\$encoded" \| ssh .* -EncodedCommand "\$bootstrap"/);
-assert.doesNotMatch(text, /-EncodedCommand "\$payload"/);
+const stageName = 'bg-command-handshake-38724422199-1-' + 'a'.repeat(40) + '.ps1';
+const staged = remoteCommand.buildStagedInvocation('C:\\baogiang',stageName,'b'.repeat(64));
+assert.ok(staged.length < 7000, 'staged invocation must fit Windows command-line limits');
+const stagedSource = Buffer.from(staged,'base64').toString('utf16le');
+for (const required of ['Get-FileHash','STAGED_COMMAND_HASH_MISMATCH','STAGED_COMMAND_UNSAFE','-ExecutionPolicy Bypass','C:\\baogiang']) assert.ok(stagedSource.includes(required), 'missing staged execution guard: ' + required);
+assert.throws(() => remoteCommand.buildStagedInvocation('C:\\baogiang','../unsafe.ps1','b'.repeat(64)),/Unsafe staged/);
+assert.throws(() => remoteCommand.buildStagedInvocation('C:\\baogiang',stageName,'not-a-hash'),/Invalid staged/);
+for (const required of ["staged-invoke", "sha256sum", "bg-command-handshake-", "bg-command-prepare-", "Read-only marker handshake before transfer", "Revalidate authority and prepare unique transfer directory", "printf 'put", "printf 'rm"]) assert.ok(text.includes(required), 'missing staged SSH workflow control: ' + required);
+assert.doesNotMatch(text,/stdin-bootstrap|ReadToEnd|ReadLine/);
+assert.match(text,/timeout 120 ssh .* -EncodedCommand "\$invoke"/);
+assert.match(text,/timeout 120 ssh .* -EncodedCommand "\$encoded"/);
+
 console.log('[workflow-contract] PASS (parsed trigger/job/permissions/concurrency/inputs/environment/transfer/report structure)');
