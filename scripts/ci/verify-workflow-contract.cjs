@@ -55,4 +55,25 @@ assert.doesNotMatch(text,/stdin-bootstrap|ReadToEnd|ReadLine/);
 assert.match(text,/timeout 120 ssh .* -EncodedCommand "\$invoke"/);
 assert.match(text,/timeout 120 ssh .* -EncodedCommand "\$encoded"/);
 
+
+const active = fs.readFileSync(path.join(__dirname, '..', '..', '.github', 'workflows', 'deploy-vps.yml'), 'utf8');
+const automatic = fs.readFileSync(path.join(__dirname, '..', '..', '.github', 'workflows', 'auto-deploy-production.yml'), 'utf8');
+const stable = fs.readFileSync(path.join(__dirname, '..', 'deploy', 'windows', 'auto-deploy-code-only.ps1'), 'utf8');
+assert.ok(automatic.includes('gh workflow run deploy-vps.yml'));
+assert.match(active, /workflow_dispatch:/);
+assert.match(active, /environment: production/);
+assert.ok(active.includes('appleboy/ssh-action@v1.0.3'));
+assert.match(active, /fingerprint:/);
+assert.match(active, /PROD_SSH_PRIVATE_KEY/);
+assert.ok(active.includes('auto-deploy-code-only.ps1'));
+assert.match(active, /RUN_MIGRATIONS.*== 'false'/);
+assert.doesNotMatch(active, /git clone|npm install|npm ci|migrate deploy|restart-service|Stop-Service/i);
+for (const required of ['Assert-Http200 $neighborHealthUrl', 'MigrationRequested = $false', 'RollbackCompatibilityApproved = $false', 'invoke-production-deploy.ps1', 'PROTECTED_NEIGHBOR_PROCESS_CHANGED', 'BAOGIANG_DEPLOY_VERIFIED']) {
+  assert.ok(stable.includes(required), 'missing isolated VPS guard: ' + required);
+}
+assert.ok(!stable.includes('DamSanV5') && !stable.includes('C:'+'\\\\'+'damsan'));
+assert.ok(stable.includes('main -cne '));
+assert.match(stable, /Get-FileHash.*SHA256/);
+assert.match(stable, /SourceArchiveName/);
+
 console.log('[workflow-contract] PASS (parsed trigger/job/permissions/concurrency/inputs/environment/transfer/report structure)');
