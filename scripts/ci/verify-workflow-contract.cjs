@@ -42,41 +42,17 @@ for (const block of stepBlocks) { const envCount = (block.match(/^        env:\s
 assert.throws(() => assertStepEnvSources('        run: |\n          echo "$PROD_BAOGIANG_ROOT"'), /without a step env source/);
 assert.match(text, /if: always\(\)/); assert.match(text, /deploy-report-\$\{\{ inputs\.commit_sha \}\}\.json/);
 
-const zlib = require('node:zlib');
 const remoteCommand = require('./build-windows-remote-command.cjs');
-const handshakeFixture = {
-  root: 'C:\\baogiang',
-  serviceKind: 'scheduled-task',
-  serviceName: 'BaoGiangBackendPreDomain',
-  envFile: 'C:\\baogiang\\shared\\baogiang-production.env',
-  startupWrapper: 'C:\\baogiang\\shared\\startup-bundles\\' + 'a'.repeat(40) + '\\start-baogiang-api.ps1',
-  expectedEntryPoint: 'C:\\baogiang\\current\\apps\\api\\dist\\apps\\api\\src\\main.js',
-  nodeExe: 'C:\\baogiang\\shared\\runtimes\\node-v22.23.3-win-x64\\node.exe',
-  nginxExe: 'C:\\nginx\\nginx.exe',
-  nginxConfig: 'C:\\nginx\\conf\\nginx.conf',
-  reviewedCommitSha: 'a'.repeat(40),
-  wrapperPath: 'C:\\baogiang\\shared\\startup-bundles\\' + 'a'.repeat(40) + '\\start-baogiang-api.ps1',
-  commonPath: 'C:\\baogiang\\shared\\startup-bundles\\' + 'a'.repeat(40) + '\\deployment-common.ps1',
-  wrapperSha256: 'b'.repeat(64),
-  commonSha256: 'c'.repeat(64),
-  markerAuthorityContractVersion: 1
-};
-for (const [name, payload] of [
-  ['handshake', remoteCommand.buildHandshake(handshakeFixture)],
-  ['prepare-transfer', remoteCommand.buildPrepareTransfer({
-    ...handshakeFixture,
-    transferName: 'control-38710488765-1-' + 'd'.repeat(40)
-  })],
-  ['cleanup', remoteCommand.buildCleanup('C:\\baogiang', 'control-38710488765-1-' + 'd'.repeat(40))]
-]) {
-  assert.ok(payload.length + 'powershell.exe -NoProfile -NonInteractive -EncodedCommand '.length < 7000, name + ' exceeds Windows cmd.exe limit');
-  const bootstrap = Buffer.from(payload, 'base64').toString('utf16le');
-  const blob = bootstrap.match(/FromBase64String\('([A-Za-z0-9+/=]+)'\)/);
-  assert.ok(blob, name + ' must transport a compressed payload');
-  const source = zlib.inflateRawSync(Buffer.from(blob[1], 'base64')).toString('utf8');
-  assert.match(source, /ErrorActionPreference='Stop'/);
-  if (name === 'handshake') assert.match(source, /BAOGIANG_HANDSHAKE_PASS/);
-  if (name === 'prepare-transfer') assert.match(source, /BAOGIANG_PREPARE_TRANSFER_PASS/);
+const bootstrap = remoteCommand.stdinBootstrap();
+assert.ok(bootstrap.length + 'powershell.exe -NoProfile -NonInteractive -EncodedCommand '.length < 2000, 'stdin bootstrap must remain short on Windows');
+const bootstrapSource = Buffer.from(bootstrap, 'base64').toString('utf16le');
+assert.match(bootstrapSource, /\[Console\]::In\.ReadToEnd\(\)/);
+assert.match(bootstrapSource, /FromBase64String\(\$data\)/);
+assert.match(bootstrapSource, /ScriptBlock\]::Create\(\$script\)/);
+for (const token of ['BAOGIANG_HANDSHAKE_PASS', 'BAOGIANG_PREPARE_TRANSFER_PASS']) {
+  assert.ok(text.includes('printf ' + "'%s'" + ' "$payload" | ssh '), 'large handshake payload must use stdin');
+  assert.ok(text.includes('grep -Fx ' + token), token + ' verification is missing');
 }
-
+assert.match(text, /printf '%s' "\$encoded" \| ssh .* -EncodedCommand "\$bootstrap"/);
+assert.doesNotMatch(text, /-EncodedCommand "\$payload"/);
 console.log('[workflow-contract] PASS (parsed trigger/job/permissions/concurrency/inputs/environment/transfer/report structure)');
