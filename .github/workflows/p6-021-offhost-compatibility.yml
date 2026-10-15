@@ -99,3 +99,6 @@ jobs:
       - name: Verify on-fixture Nginx include behavior without an Nginx process
         shell: powershell
         run: ./scripts/ci/test-p6-021-first-include-win.ps1
+      - name: Verify P6-026 credential-preserving shim cutover static contract
+        shell: powershell
+        run: ./scripts/ci/test-p6-026-shim-static.ps1
