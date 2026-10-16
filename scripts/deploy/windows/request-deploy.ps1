@@ -72,14 +72,9 @@ try{
     }
     throw 'DEPLOY_BUSY_DIFFERENT_OR_STALE_REQUEST'
   }
-  if($null -ne $status -and [string]$status.sha -ceq $ExpectedSha -and
-     [string]$status.status -ceq 'success' -and
-     [string]$status.message -cmatch "^BAOGIANG_DEPLOY_(VERIFIED|ALREADY_CURRENT) sha=$ExpectedSha" -and
-     (Test-Path -LiteralPath (Join-Path $root 'current')) -and
-     ([string](Get-Item -LiteralPath (Join-Path $root 'current') -Force).Target).EndsWith($ExpectedSha)){
-    Write-Output "BAOGIANG_DEPLOY_ALREADY_CURRENT sha=$ExpectedSha"
-    return
-  }
+  # Never trust a historical success marker as proof of current production state.
+  # Always let the detached worker reconcile the requested SHA; its runner performs
+  # current-pointer, API and exact public-frontend verification before returning ALREADY_CURRENT.
   $newNonce=[Guid]::NewGuid().ToString('N')
   $request=[ordered]@{
     sha=$ExpectedSha
