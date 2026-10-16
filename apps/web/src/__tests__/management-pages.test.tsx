@@ -40,7 +40,7 @@ describe('Phase 01 management pages', () => {
       if (url.endsWith('/users/target-1/reset-password') && init?.method === 'POST') {
         return jsonResponse({ ...target, mustChangePassword: true });
       }
-      if (url.endsWith('/users')) return jsonResponse(page([target]));
+      if (url.startsWith('/api/users')) return jsonResponse(page([target]));
       return jsonResponse({});
     });
     vi.stubGlobal('fetch', fetchMock);
