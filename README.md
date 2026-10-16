@@ -2,7 +2,7 @@
 
 **Đơn vị sử dụng:** Trường PTDTNT THPT Đam San
 
-> **Trạng thái hiện hành:** repository đã có chuỗi backend từ identity/access, lịch học, phân công, TKB, PPCT, operational overlays, Teaching Execution, progress/debt/late, reporting đến Reporting Statement. Tuy nhiên hệ thống **chưa sẵn sàng cho teacher pilot** vì đang thực hiện Pre-Pilot Product/Spec Realignment để khôi phục các yêu cầu programme GDĐP/HĐTN, delayed go-live, import dữ liệu thật, workload và các gate PWA/Telegram/TLS/production. Không suy ra pilot-readiness chỉ từ việc core backend đã tồn tại.
+> **Trạng thái hiện hành (2026-10-16):** backend/domain foundation và GitHub→VPS code-only CD đã hoạt động trên domain chính thức, nhưng hệ thống **chưa sẵn sàng cho teacher pilot** vì live PHT review xác nhận khoảng trống product-operability/UX. `P5-050` đã CLOSED và đăng ký chuỗi `P5-051..P5-057`: quyền nền + responsibility templates + safe user lifecycle, workspace/navigation theo công việc, UI TKB/khung tiết, điều hành chuyên môn, data-readiness/import center, notification/Web Push và persona E2E freeze. Không suy ra pilot-readiness chỉ từ backend/CI/deploy xanh.
 
 **Current-state authority:** `docs/governance/CURRENT-PROJECT-STATUS.md`  
 **Canonical work register:** `docs/governance/PRE-PILOT-TASK-REGISTER.md`
@@ -147,7 +147,8 @@ Current `main` đã có các foundation chính:
 - curricular TeachingExecution và SpecialActivityParticipationExecution;
 - progress/debt/late projection;
 - reporting projection, Personal Reporting Projection và Reporting Statement lifecycle/UI work;
-- hardened Windows production deployment control plane.
+- hardened Windows production deployment control plane;
+- P5-050 product-operability governance: Antigravity là implementer mặc định, ChatGPT điều phối/review độc lập, Codex được escalation cho phần khó/rủi ro cao.
 
 Các foundation này **không đồng nghĩa** mọi yêu cầu sản phẩm đã khép kín. Danh sách gap/re-entry hiện hành nằm trong:
 
@@ -175,10 +176,11 @@ Quy tắc đầy đủ: `AGENTS.md` và `docs/governance/MAJOR-TASK-DOCUMENTATIO
 
 ## Production
 
-- Domain dự kiến/chính thức: `baogiang.dtnt-damsan.edu.vn`
+- Domain chính thức: `baogiang.dtnt-damsan.edu.vn`
 - Backend loopback: `127.0.0.1:3100`
-- Reverse proxy: Nginx
-- PostgreSQL: PostgreSQL 17
-- Trạng thái: **pre-operational; chưa teacher pilot**
+- Reverse proxy: Nginx, frontend dùng stable `C:/baogiang/current/apps/web/dist`
+- PostgreSQL Báo giảng: PostgreSQL 17 riêng trên port `5434`
+- GitHub→VPS code-only CD: **đã vận hành và kiểm chứng**; production release phải đi từ exact green `main` SHA
+- Trạng thái sản phẩm: **pre-operational; chưa teacher pilot** cho đến khi P5-057 và các gate P6 liên quan hoàn tất
 
-Green CI không chứng minh VPS ready. First deploy vẫn phải đi qua task register P6, passive evidence/preflight, TLS/HTTP-01 authority, bootstrap và explicit production authorization.
+Green CI vẫn không tự chứng minh một deployment cụ thể thành công. Sau mỗi runtime deploy phải kiểm tra exact release identity, API/public health và protected-neighbour isolation; không sửa code trực tiếp trên VPS.

@@ -1,6 +1,6 @@
 # P5-050 — Product Operability & UX Realignment Architecture
 
-**Status:** IN_REVIEW  
+**Status:** CLOSED by `SYNC-P5-050`  
 **Type:** docs-only architecture / product-governance registration  
 **Canonical start:** `main@c61103d08a1324def8a9949e6a74b00e4d6cb905`  
 **Trigger:** Product Owner live operability review on 2026-10-16 after creating, activating and granting permissions to a Vice Principal account.  

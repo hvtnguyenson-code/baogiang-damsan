@@ -14,7 +14,7 @@ Exact current `main`, branch HEAD and divergence must always be read directly fr
 
 Live administrator testing with a newly created/activated Vice Principal account exposed a product-level gap that was not represented by backend/domain closure evidence. The repository contains deep backend foundations, but several required workflows are absent from Web UI, difficult to discover, or require low-level capability knowledge that a school administrator should not need.
 
-On branch `docs/p5-050-operability-ux-realignment`, task `P5-050` is **IN_REVIEW** as a docs-only product-operability architecture/registration task. It registers T50–T56 and planned tasks P5-051..P5-057, including: professional baseline access/responsibility templates; task-oriented workspace/navigation; TKB/time-slot administration UI; teaching-operations UI closure; unified data-readiness/import center; restored in-app notification/Web Push architecture+runtime; and a persona-level E2E operability freeze.
+`P5-050` is **CLOSED by `SYNC-P5-050`**. Parent PR #238 final reviewed head `ce583b123a8aba98a6e221df89346339030f00eb` passed exact-head CI #777, merged as `e393cbd3ba1167e19c5e4bfb67efd7f6233f4c29`, and authoritative post-merge CI #778 succeeded. It registers T50–T56 and tasks P5-051..P5-057, including safe clean-slate user deletion, professional baseline/responsibility templates, task-oriented workspace/navigation, TKB/time-slot UI, teaching-operations UI, unified data-readiness/import center, in-app notification/Web Push, and persona-level E2E operability freeze.
 
 Diagnostic audit estimate on the starting main: domain/backend approximately 85–90%, reachable end-to-end product workflows approximately 55–60%, overall functional product conformance approximately 61%, and new PHT self-operability approximately 35–45%. These are planning estimates only; P5-057 must replace them with binary persona/workflow evidence.
 
@@ -22,6 +22,19 @@ Infrastructure/CD reconciliation remains a separate P6 concern and may proceed o
 
 A separate governance anomaly was also observed: P4-040 cites traceability row T31 while the canonical matrix omits T31. This branch does not redefine T31; `P0-005` is registered for a docs-only historical reconciliation.
 
+
+## 2026-10-16 live CD/runtime evidence — supersedes older CD NO-GO host assertions
+
+The GitHub→VPS code-only deployment path is now operational in live evidence, while **teacher pilot remains PRE-OPERATIONAL**. The following facts supersede only older host/CD observations that said canonical pointers/identity/dispatch were absent:
+
+- PR #236 merged as `24e6e9b6d0fd8c4756838fd48c893cbaa8adb63e`; exact-head PR CI #771 and P6-021 compatibility #44 SUCCESS; main CI #772, auto-deploy #10 and Deploy VPS #8 SUCCESS.
+- PR #237 merged as `c61103d08a1324def8a9949e6a74b00e4d6cb905`; exact-head PR CI #774 and P6-021 compatibility #46 SUCCESS; main CI #775, auto-deploy #11 and Deploy VPS #9 SUCCESS.
+- P5-050 docs merge `e393cbd3ba1167e19c5e4bfb67efd7f6233f4c29` passed main CI #778; auto-deploy #12 and Deploy VPS #10 SUCCESS. VPS `C:\\baogiang\\current` and deploy source both resolved to that exact SHA; deployment status returned `BAOGIANG_DEPLOY_VERIFIED`.
+- Báo giảng remained healthy on port 3100 and public HTTPS; protected Nội trú remained healthy on port 3000 with PID 5888 unchanged during the verified deploy.
+- Báo giảng production PostgreSQL authority is the dedicated database on port 5434; protected Nội trú database/runtime remain separate.
+- Nginx serves the Báo giảng frontend from the stable `C:/baogiang/current/apps/web/dist` authority established during the reviewed cutover.
+
+**Governance note:** P6-020/P6-025/P6-030 task-register lifecycle/evidence has not yet been formally reconciled to these later authorized production actions. Do not repeat the obsolete claim that no controlled deployment occurred, but also do not infer that those P6 parent tasks are canonically CLOSED or that teacher pilot is authorized. Their formal reconciliation remains separate governance work.
 
 ## 2026-10-14 follow-up — main updated; CD still NO-GO
 
@@ -44,13 +57,12 @@ This newer live-evidence section supersedes only the *point-in-time host asserti
 
 ## Executive status
 
-- Pilot authorization: **PRE-OPERATIONAL (no teacher go-live approval)**. The official site is online for controlled administrator setup as observed on 2026-10-14; GitHub CD transition is still **NO-GO**.
+- Pilot authorization: **PRE-OPERATIONAL (no teacher go-live approval)**. The official site is online and canonical GitHub→VPS code-only CD is operational as verified on 2026-10-16; this does not establish product-operability or teacher-pilot readiness.
 - Core domain/backend implementation is substantially complete, but product operability is reopened by P5-050; backend closure alone is not sufficient for teacher-pilot readiness.
 - `P2-020` PPCT native importer is **`CLOSED` by `SYNC-P2-020`**; PR #173, exact-head CI #549, merge `2d6cb02d4bf9bb4529e0e8eaf83e10d6a67ef043` and post-merge CI #550 are the parent evidence.
 - `P6-005` Production VPS topology decision is **`CLOSED` by `SYNC-P6-005`**.
 - Canonical production topology: **`SHARED_VPS`** on the existing Windows Server 2022 host, with strict protected-neighbour isolation.
-- `P6-010` Pre-deploy TLS/HTTP-01 authority is **`CLOSED` by `SYNC-P6-010`**; parent PR #176 and authoritative post-merge CI #578 are SUCCESS, with zero production/VPS mutation.
-- No production deployment, production migration, TLS issuance, Nginx mutation, Scheduled Task mutation, ACL mutation or application restart has been performed by P6-005 or its closure sync.
+- `P6-010` Pre-deploy TLS/HTTP-01 authority is **`CLOSED` by `SYNC-P6-010`**; parent PR #176 and authoritative post-merge CI #578 are SUCCESS. Later separately authorized production adoption/deployment evidence is recorded in the 2026-10-16 section above and must not be attributed retroactively to P6-005/P6-010.
 
 ## 2026-10-12 final audit and P6-020 exact candidate decision
 
@@ -72,18 +84,19 @@ Preliminary Desktop Commander read-only metadata: Windows Server 2022, 6 logical
 
 ### In Review
 
-- `P5-050` — product operability & UX realignment architecture/registration on a docs-only branch; independent review/CI pending.
+- None for the P5-050 product-operability programme.
 
 ### Ready
 
+- `P5-051` — **next execution priority**: professional baseline access, responsibility templates and safe user lifecycle.
+- `P5-053` — timetable + time-slot administration workspace; eligible by dependency but held behind the sequential orchestration priority.
+- `P5-054` — teaching-operations workspace closure; eligible by dependency but held behind the sequential orchestration priority.
+- `P5-056A` — notification/Web Push architecture; eligible by dependency but held behind the sequential orchestration priority.
 - `P0-005` — docs-only historical T31 traceability reconciliation; independent of the product-operability implementation path.
 
 ### Planned behind open dependencies
 
-- `P5-051` — professional access baseline + responsibility templates.
-- `P5-052` — task-oriented workspace + information architecture.
-- `P5-053` — timetable + time-slot administration workspace.
-- `P5-054` — teaching-operations workspace closure.
+- `P5-052` — task-oriented workspace + information architecture; waits for P5-051.
 - `P5-055` — data readiness & import center.
 - `P5-056A` -> `P5-056` — in-app notification center + Web Push architecture then implementation.
 - `P5-057` — persona operability E2E freeze; mandatory product predecessor of teacher pilot.
@@ -131,15 +144,13 @@ The project is **NOT READY FOR TEACHER PILOT YET**. Remaining registered gaps in
 3. PWA production baseline (`P5-020`) is **`CLOSED` by `SYNC-P5-020`** after PR #195, exact-head CI #644 SUCCESS, merge/main `fa54eaea5c2055517428d18559f652001999d0e4` and authoritative post-merge CI #645 SUCCESS.
 4. Dedicated Telegram integration (`P5-030`) is **`CLOSED` by `SYNC-P5-030`** after PR #200, exact-head CI #653 SUCCESS, merge/main `3bcd0d7fc1ffd0eedb8f2186271e2596a1581e5a` và authoritative post-merge CI #654 (run `37576373644`) SUCCESS.
 5. Pre-deploy full-repository consistency audit (`P5-040`) is **`CLOSED` by `SYNC-P5-040`** (PR #202; exact-head CI #657 SUCCESS; merge/main `1282f24a5300da88c155c7dc5523644d14bd53c8`; authoritative post-merge CI #658 SUCCESS; remediating confirmed findings CX-01..CX-06 across Corrections 001..009; independent GitHub review PASS).
-6. P6-020 exact-candidate readonly approval is recorded, but formal PASS 1/PASS 2, reviewer acceptance, and Nginx prefix/config resolution are still mandatory. No deploy or production mutation approval.
-7. Production bootstrap/first controlled deploy (`P6-030`) has not occurred.
+6. P6 governance reconciliation remains outstanding: later authorized production work established canonical pointers/identity, Nginx stable-root authority and successful code-only GitHub CD, but P6-020/P6-025/P6-030 lifecycle rows have not yet been formally closure-synchronized to that evidence.
+7. Controlled production deploys **have occurred successfully** (#8, #9, #10); this corrects the older pre-cutover status text and does not by itself authorize teacher pilot.
 8. Teacher pilot go-live verification (`P6-050`) has not occurred.
 
 ## Production state
 
-Production remains strictly **PRE-OPERATIONAL**.
-
-Neither P6-005 nor P6-010 (including PR #176 and their closure syncs) authorized or performed VPS access/mutation, production database migration, TLS issuance, Nginx production reload/configuration change, Scheduled Task creation/change, ACL mutation, deployment or application restart.
+Production remains **PRE-OPERATIONAL with respect to teacher/pilot authorization**, but the official site and isolated code-only CD path are live. The current runtime is GitHub-release controlled; the latest verified release at this sync baseline is `e393cbd3ba1167e19c5e4bfb67efd7f6233f4c29`. P6-005/P6-010 themselves remain historical design/authority tasks and must not be misdescribed as having performed the later production mutations.
 
 ## Protected external-system boundary
 

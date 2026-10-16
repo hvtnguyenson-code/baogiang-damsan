@@ -219,6 +219,21 @@ Required invariants:
 - `P6-005` and `P6-010` are formally `CLOSED`; P6-010 repository-side shared-host HTTP-01/TLS authority closed through PR #176, exact-head CI #577, merge/main `edc4d2b92f629e989679063246c815c9ad5ce870`, post-merge CI #578 and `SYNC-P6-010`; this does not authorize production mutation, and actual Stage 1 evidence remains separately gated under P6-020;
 - actual production readiness still requires the registered passive evidence and preflight gates; green CI or this capacity decision is not VPS readiness evidence.
 
+## 4A. Product operability authority — 2026-10-16
+
+Live production UI testing with a newly created Vice Principal account established that backend/domain completion, green CI and successful deployment are not sufficient evidence of a usable school product. P5-050 is CLOSED by `SYNC-P5-050` and adds these binding pre-pilot requirements without rebuilding accepted domain logic:
+
+- every activated school professional must receive a usable baseline professional workspace through server-owned grants; titles remain profile data and never authorize by themselves;
+- administration requires responsibility templates that materialize explicit, auditable capability grants;
+- physical user deletion is only a clean-slate path for accidental/test accounts; accounts with operational history are disabled and retained;
+- a required backend workflow is not product-complete until the required reachable UI/navigation/states and persona evidence exist;
+- primary information architecture follows school work rather than exposing a flat capability catalog;
+- existing TKB/PPCT/history/special-programme import authorities must be reused, not duplicated in the client;
+- durable in-app notification + Web Push is a required product surface separate from optional Telegram delivery;
+- P5-057 persona operability freeze is mandatory before P6-050 teacher-pilot verification.
+
+Execution authority for this programme is recorded in `AGENTS.md` and `docs/governance/P5-050-EXECUTION-PROTOCOL-ANTIGRAVITY-CODEX.md`: Antigravity IDE is the default implementer; ChatGPT is the task orchestrator/independent reviewer; Codex is an explicit escalation path for complex or high-risk work.
+
 ## 5. Selected first operational pilot scope
 
 On 2026-10-02 the Product Owner selected **FULL BUSINESS PILOT** under P0-003. The decision is recorded by ADR-054 and is formally **CLOSED by `SYNC-P0-003`** after PR #179, exact-head CI #594, merge/main `7b1b29c668b3615c1188d12cc055cd66d03c47e4` and post-merge CI #595.

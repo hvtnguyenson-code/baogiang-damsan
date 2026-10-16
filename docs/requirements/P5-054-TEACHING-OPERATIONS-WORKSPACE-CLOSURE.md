@@ -1,6 +1,6 @@
 # P5-054 — Teaching Operations Workspace Closure
 
-**Status:** PLANNED  
+**Status:** READY  
 **Depends on:** P5-050, P2-050, P3-031  
 **Traceability:** T53
 

@@ -1,6 +1,6 @@
 # P5-056A — In-App Notification Center & Web Push Architecture
 
-**Status:** PLANNED  
+**Status:** READY  
 **Depends on:** P5-050  
 **Traceability:** T55  
 **Type:** architecture closure before implementation

@@ -1,6 +1,6 @@
 # P5-053 — Timetable & Time-Slot Administration Workspace
 
-**Status:** PLANNED  
+**Status:** READY  
 **Depends on:** P5-050, P2-050  
 **Traceability:** T52
 
