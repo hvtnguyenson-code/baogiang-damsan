@@ -1,6 +1,6 @@
 import { Transform, Type } from 'class-transformer';
 import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, IsUUID, Length, Max, Min, ValidateIf } from 'class-validator';
-import { CapabilityScope } from '@baogiang/contracts';
+import { CapabilityScope, ResponsibilityTemplateKey } from '@baogiang/contracts';
 import { IsAbsoluteInstant } from '../common/validation/is-absolute-instant.decorator';
 
 const scopes: CapabilityScope[] = ['PERSONAL', 'SUBJECT_GROUP', 'SUBJECT', 'ACTIVITY', 'SCHOOL_WIDE'];
@@ -38,4 +38,40 @@ export class CreateGrantDto {
 
 export class RevokeGrantDto {
   @ValidateIf(optionalValue) @Transform(trim) @IsString() revokeReason?: string;
+}
+
+export const TEMPLATE_KEYS: ResponsibilityTemplateKey[] = [
+  'TEACHER',
+  'SUBJECT_LEADER',
+  'VICE_PRINCIPAL_ACADEMIC',
+  'PRINCIPAL',
+  'GDDP_COORDINATOR',
+  'HDTN_COORDINATOR',
+  'TECHNICAL_ACCOUNT_ADMIN',
+];
+
+export class ResponsibilityTemplateResourceDto {
+  @IsOptional() @IsUUID() subjectGroupId?: string;
+  @IsOptional() @IsUUID('4', { each: true }) subjectIds?: string[];
+  @IsOptional() @IsUUID() programmeMasterId?: string;
+}
+
+export class ResponsibilityTemplatePreviewDto {
+  @IsEnum(TEMPLATE_KEYS) templateKey!: ResponsibilityTemplateKey;
+  @IsOptional() @Type(() => ResponsibilityTemplateResourceDto) resources?: ResponsibilityTemplateResourceDto;
+  @IsOptional() @IsUUID() subjectGroupId?: string;
+  @IsOptional() @IsUUID('4', { each: true }) subjectIds?: string[];
+  @IsOptional() @IsUUID() programmeMasterId?: string;
+}
+
+export class ResponsibilityTemplateApplyDto {
+  @IsEnum(TEMPLATE_KEYS) templateKey!: ResponsibilityTemplateKey;
+  @IsOptional() @Type(() => ResponsibilityTemplateResourceDto) resources?: ResponsibilityTemplateResourceDto;
+  @IsOptional() @IsUUID() subjectGroupId?: string;
+  @IsOptional() @IsUUID('4', { each: true }) subjectIds?: string[];
+  @IsOptional() @IsUUID() programmeMasterId?: string;
+}
+
+export class BaselineReconciliationApplyDto {
+  @IsOptional() @IsUUID('4', { each: true }) targetUserIds?: string[];
 }

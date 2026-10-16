@@ -42,6 +42,7 @@ integration('Users API (isolated PostgreSQL integration)', () => {
     await prisma.capabilityDefinition.createMany({ data: [
       { key: 'USER_MANAGE', description: 'manage', allowedScopeTypes: ['SCHOOL_WIDE'] },
       { key: 'SYSTEM_ADMIN', description: 'technical', allowedScopeTypes: ['SCHOOL_WIDE'] },
+      { key: 'TEACHER_BASE', description: 'teacher base', allowedScopeTypes: ['PERSONAL'] },
     ] });
   });
 
@@ -107,7 +108,7 @@ integration('Users API (isolated PostgreSQL integration)', () => {
   });
 
   it('rolls back User, StaffProfile and audit when the in-transaction audit fails', async () => {
-    const service = new UsersService(prisma as never, passwords, { write: jest.fn().mockRejectedValue(new Error('audit unavailable')) } as never);
+    const service = new UsersService(prisma as never, passwords, { write: jest.fn().mockRejectedValue(new Error('audit unavailable')) } as never, {} as never);
     await expect(service.create(createPayload('audit-fail') as never, 'actor', {})).rejects.toThrow('audit unavailable');
     expect(await prisma.user.count({ where: { username: 'user-audit-fail' } })).toBe(0);
     expect(await prisma.staffProfile.count({ where: { staffCode: 'ST-AUDIT-FAIL' } })).toBe(0);
@@ -158,7 +159,7 @@ integration('Users API (isolated PostgreSQL integration)', () => {
 
   it('manages state, revokes sessions and preserves authorization data', async () => {
     const manager = await actor({ capability: 'USER_MANAGE' });
-    const target = await prisma.user.create({ data: { username: 'state-target', passwordHash: await passwords.hash(password), status: UserStatus.PENDING, mustChangePassword: true, profile: { create: { displayName: 'State target' } } } });
+    const target = await prisma.user.create({ data: { username: 'state-target', passwordHash: await passwords.hash(password), status: UserStatus.PENDING, mustChangePassword: true, profile: { create: { displayName: 'State target', isTeachingStaff: false } } } });
     expect((await manager.agent.post(`/api/users/${target.id}/activate`).set('Origin', origin).set('X-Request-Id', 'users-activate-1')).status).toBe(200);
     expect((await prisma.user.findUniqueOrThrow({ where: { id: target.id } })).status).toBe(UserStatus.ACTIVE);
     expect((await manager.agent.post(`/api/users/${target.id}/activate`).set('Origin', origin)).status).toBe(200);
@@ -294,7 +295,7 @@ integration('Users API (isolated PostgreSQL integration)', () => {
     const userAgent = request.agent(app.getHttpServer());
     expect((await userAgent.post('/api/auth/login').send({ username: target.username, password })).status).toBe(200);
     const original = await prisma.user.findUniqueOrThrow({ where: { id: target.id } });
-    const service = new UsersService(prisma as never, passwords, { write: jest.fn().mockRejectedValue(new Error('audit unavailable')) } as never);
+    const service = new UsersService(prisma as never, passwords, { write: jest.fn().mockRejectedValue(new Error('audit unavailable')) } as never, {} as never);
     await expect(service.resetPassword(target.id, { newPassword: 'NewTemporaryPassword92' }, authorized.user.id, {}))
       .rejects.toThrow('audit unavailable');
     const after = await prisma.user.findUniqueOrThrow({ where: { id: target.id } });
