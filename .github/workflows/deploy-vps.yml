@@ -84,10 +84,10 @@ jobs:
         shell: bash
         timeout-minutes: 40
         env:
-          TARGET_SHA: \${{ inputs.commit_sha }}
-          VPS_HOST: \${{ secrets.PROD_SSH_HOST }}
-          VPS_PORT: \${{ secrets.PROD_SSH_PORT }}
-          VPS_USER: \${{ secrets.PROD_SSH_USER }}
+          TARGET_SHA: ${{ inputs.commit_sha }}
+          VPS_HOST: ${{ secrets.PROD_SSH_HOST }}
+          VPS_PORT: ${{ secrets.PROD_SSH_PORT }}
+          VPS_USER: ${{ secrets.PROD_SSH_USER }}
         run: |
           set -euo pipefail
           [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]
@@ -115,12 +115,12 @@ jobs:
             rc=$?
             set -e
             clean="$(printf '%s\n' "$response" | sed 's/\r$//')"
-            if [[ "$rc" -eq 0 ]] && printf '%s\n' "$clean" | grep -Eq "^BAOGIANG_DEPLOY_ALREADY_CURRENT sha=\${TARGET_SHA}$"; then
+            if [[ "$rc" -eq 0 ]] && printf '%s\n' "$clean" | grep -Eq "^BAOGIANG_DEPLOY_ALREADY_CURRENT sha=${TARGET_SHA}$"; then
               echo "BAOGIANG_DEPLOY_ALREADY_CURRENT sha=$TARGET_SHA"
               exit 0
             fi
             if [[ "$rc" -eq 0 ]]; then
-              accepted="$(printf '%s\n' "$clean" | grep -E "^BAOGIANG_DEPLOY_ACCEPTED sha=\${TARGET_SHA} nonce=[0-9a-f]{32}$" | tail -n 1 || true)"
+              accepted="$(printf '%s\n' "$clean" | grep -E "^BAOGIANG_DEPLOY_ACCEPTED sha=${TARGET_SHA} nonce=[0-9a-f]{32}$" | tail -n 1 || true)"
               [[ -n "$accepted" ]] || { echo 'DEPLOY_ENQUEUE_EVIDENCE_INVALID' >&2; exit 1; }
               break
             fi
@@ -133,7 +133,7 @@ jobs:
             sleep 8
           done
           [[ -n "$accepted" ]] || { echo 'DEPLOY_ENQUEUE_TRANSPORT_EXHAUSTED' >&2; exit 1; }
-          nonce="\${accepted##*nonce=}"
+          nonce="${accepted##*nonce=}"
           echo "BAOGIANG_DEPLOY_ENQUEUED sha=$TARGET_SHA"
           # Reconnect for each observation. A dead SSH session does not kill
           # the detached SYSTEM worker. Timeout is independent of worker state.
@@ -144,19 +144,19 @@ jobs:
             set -e
             clean="$(printf '%s\n' "$response" | sed 's/\r$//')"
             if [[ "$rc" -eq 0 ]]; then
-              if printf '%s\n' "$clean" | grep -Eq "^BAOGIANG_DEPLOY_RESULT_VERIFIED sha=\${TARGET_SHA} nonce=\${nonce} neighbor_pid=[0-9]+$"; then
+              if printf '%s\n' "$clean" | grep -Eq "^BAOGIANG_DEPLOY_RESULT_VERIFIED sha=${TARGET_SHA} nonce=${nonce} neighbor_pid=[0-9]+$"; then
                 echo "BAOGIANG_DEPLOY_VERIFIED sha=$TARGET_SHA"
                 exit 0
               fi
-              if printf '%s\n' "$clean" | grep -Eq "^BAOGIANG_DEPLOY_RESULT_ALREADY_CURRENT sha=\${TARGET_SHA} nonce=\${nonce}$"; then
+              if printf '%s\n' "$clean" | grep -Eq "^BAOGIANG_DEPLOY_RESULT_ALREADY_CURRENT sha=${TARGET_SHA} nonce=${nonce}$"; then
                 echo "BAOGIANG_DEPLOY_ALREADY_CURRENT sha=$TARGET_SHA"
                 exit 0
               fi
-              if printf '%s\n' "$clean" | grep -Eq "^BAOGIANG_DEPLOY_RESULT_FAILED sha=\${TARGET_SHA} nonce=\${nonce}$"; then
+              if printf '%s\n' "$clean" | grep -Eq "^BAOGIANG_DEPLOY_RESULT_FAILED sha=${TARGET_SHA} nonce=${nonce}$"; then
                 echo "BAOGIANG_WORKER_FAILED sha=$TARGET_SHA" >&2
                 exit 1
               fi
-              if ! printf '%s\n' "$clean" | grep -Eq "^BAOGIANG_DEPLOY_(PENDING|RUNNING) sha=\${TARGET_SHA} nonce=\${nonce}$"; then
+              if ! printf '%s\n' "$clean" | grep -Eq "^BAOGIANG_DEPLOY_(PENDING|RUNNING) sha=${TARGET_SHA} nonce=${nonce}$"; then
                 echo 'DEPLOY_POLL_EVIDENCE_INVALID' >&2
                 exit 1
               fi
