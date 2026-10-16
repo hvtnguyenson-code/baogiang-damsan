@@ -211,6 +211,7 @@ integration('Users API (isolated PostgreSQL integration)', () => {
       username: 'reset-target',
       passwordHash: await passwords.hash(password),
       status: UserStatus.ACTIVE,
+      mustChangePassword: false,
       profile: { create: { displayName: 'Reset target' } },
     } });
     const endpoint = `/api/users/${target.id}/reset-password`;
