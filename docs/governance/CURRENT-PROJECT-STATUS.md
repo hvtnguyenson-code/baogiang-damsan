@@ -8,7 +8,20 @@ Per `MAJOR-TASK-DOCUMENTATION-SYNC-PROTOCOL.md`, this file is intentionally conc
 
 Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub. SHAs here are evidence for already-established task states, never a self-referential claim that this document contains its own current commit.
 
-**Status snapshot date:** 2026-10-12
+**Status snapshot date:** 2026-10-16
+
+## 2026-10-16 product operability audit — product path reopened
+
+Live administrator testing with a newly created/activated Vice Principal account exposed a product-level gap that was not represented by backend/domain closure evidence. The repository contains deep backend foundations, but several required workflows are absent from Web UI, difficult to discover, or require low-level capability knowledge that a school administrator should not need.
+
+On branch `docs/p5-050-operability-ux-realignment`, task `P5-050` is **IN_REVIEW** as a docs-only product-operability architecture/registration task. It registers T50–T56 and planned tasks P5-051..P5-057, including: professional baseline access/responsibility templates; task-oriented workspace/navigation; TKB/time-slot administration UI; teaching-operations UI closure; unified data-readiness/import center; restored in-app notification/Web Push architecture+runtime; and a persona-level E2E operability freeze.
+
+Diagnostic audit estimate on the starting main: domain/backend approximately 85–90%, reachable end-to-end product workflows approximately 55–60%, overall functional product conformance approximately 61%, and new PHT self-operability approximately 35–45%. These are planning estimates only; P5-057 must replace them with binary persona/workflow evidence.
+
+Infrastructure/CD reconciliation remains a separate P6 concern and may proceed only under its existing gates. **Teacher pilot P6-050 must not close until P5-057 is CLOSED.**
+
+A separate governance anomaly was also observed: P4-040 cites traceability row T31 while the canonical matrix omits T31. This branch does not redefine T31; `P0-005` is registered for a docs-only historical reconciliation.
+
 
 ## 2026-10-14 follow-up — main updated; CD still NO-GO
 
@@ -32,7 +45,7 @@ This newer live-evidence section supersedes only the *point-in-time host asserti
 ## Executive status
 
 - Pilot authorization: **PRE-OPERATIONAL (no teacher go-live approval)**. The official site is online for controlled administrator setup as observed on 2026-10-14; GitHub CD transition is still **NO-GO**.
-- Core build implementation required for the current path is substantially complete.
+- Core domain/backend implementation is substantially complete, but product operability is reopened by P5-050; backend closure alone is not sufficient for teacher-pilot readiness.
 - `P2-020` PPCT native importer is **`CLOSED` by `SYNC-P2-020`**; PR #173, exact-head CI #549, merge `2d6cb02d4bf9bb4529e0e8eaf83e10d6a67ef043` and post-merge CI #550 are the parent evidence.
 - `P6-005` Production VPS topology decision is **`CLOSED` by `SYNC-P6-005`**.
 - Canonical production topology: **`SHARED_VPS`** on the existing Windows Server 2022 host, with strict protected-neighbour isolation.
@@ -59,17 +72,24 @@ Preliminary Desktop Commander read-only metadata: Windows Server 2022, 6 logical
 
 ### In Review
 
-- None.
+- `P5-050` — product operability & UX realignment architecture/registration on a docs-only branch; independent review/CI pending.
 
 ### Ready
 
-- None.
+- `P0-005` — docs-only historical T31 traceability reconciliation; independent of the product-operability implementation path.
 
 ### Planned behind open dependencies
 
-- `P6-030` — production bootstrap + first controlled deploy: **`PLANNED`** (depends on `P6-020`).
+- `P5-051` — professional access baseline + responsibility templates.
+- `P5-052` — task-oriented workspace + information architecture.
+- `P5-053` — timetable + time-slot administration workspace.
+- `P5-054` — teaching-operations workspace closure.
+- `P5-055` — data readiness & import center.
+- `P5-056A` -> `P5-056` — in-app notification center + Web Push architecture then implementation.
+- `P5-057` — persona operability E2E freeze; mandatory product predecessor of teacher pilot.
+- `P6-030` — production bootstrap + first controlled deploy: **`PLANNED`** (depends on `P6-020` and P6-025 acceptance).
 - `P6-040` — TLS monitor multi-certificate refactor: **`PLANNED`** (depends on `P6-030`).
-- `P6-050` — teacher pilot go-live verification: **`PLANNED`** (depends on `P5-020`, `P5-030`, `P6-030`).
+- `P6-050` — teacher pilot go-live verification: **`PLANNED`** (depends on `P5-020`, `P5-030`, `P5-057`, `P6-030`).
 
 ### Trigger-gated / decision-blocked
 - `P0-002` — stale PR #11 hosting-portability direction: **`BLOCKED_DECISION`**.
@@ -104,6 +124,7 @@ Detailed domain closure evidence remains in `PRE-PILOT-TASK-REGISTER.md`, ADRs, 
 ## Critical pre-pilot gaps
 
 The project is **NOT READY FOR TEACHER PILOT YET**. Remaining registered gaps include:
+0. Product operability has been reopened under `P5-050`: missing/reachable UI and persona-workflow gaps must close through `P5-051`..`P5-057`; in particular the native TKB backend lacks a complete Web administration surface, navigation is overly capability-shaped, and the original in-app notification/Web Push requirement is not yet closed.
 
 1. `P3-030`, `P3-031`, `P4-060`, `P4-061` and `P5-010` are CLOSED by their non-recursive sync closures; the complete FULL BUSINESS cross-domain freeze is established.
 2. Public make-up scheduling T08 and adjusted-workload T23 re-entry paths are fulfilled by the closed P3-031 and P4-061 chains and were re-verified in P5-010.
