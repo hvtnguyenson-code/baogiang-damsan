@@ -79,7 +79,7 @@ try {
   $restartAttempted = $true
   $restartJson = & (Join-Path $PSScriptRoot 'restart-baogiang-api.ps1') -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -NodeExe $p.NodeExe -Root $canonicalRoot -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl -AllowScheduledTaskActivation:($p.ServiceKind -eq 'scheduled-task') | Select-Object -Last 1
   $report.restart = $restartJson | ConvertFrom-Json
-  $healthJson = & (Join-Path $PSScriptRoot 'test-production-health.ps1') -BaseUrl $p.ExpectedBaseUrl -ExpectedApiPort 3100 | Select-Object -Last 1
+  $healthJson = & (Join-Path $PSScriptRoot 'test-production-health.ps1') -BaseUrl $p.ExpectedBaseUrl -ExpectedApiPort 3100 -VerifyFrontend | Select-Object -Last 1
   $report.health = $healthJson | ConvertFrom-Json
   $report.overallState = 'succeeded'
   Write-RedactedReport -Path $reportLogs -Data $report
@@ -155,7 +155,7 @@ try {
             $rollbackContext = [pscustomobject]@{}
             $lifecycleResult = Invoke-ScheduledTaskRollbackLifecycle -Context $rollbackContext -Restart { param($context) & (Join-Path $PSScriptRoot 'restart-baogiang-api.ps1') -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -NodeExe $p.NodeExe -Root $canonicalRoot -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl -AllowScheduledTaskActivation:($p.ServiceKind -eq 'scheduled-task') } -Health {
               param($context)
-              $health = & (Join-Path $PSScriptRoot 'test-production-health.ps1') -BaseUrl $p.ExpectedBaseUrl -ExpectedApiPort 3100
+              $health = & (Join-Path $PSScriptRoot 'test-production-health.ps1') -BaseUrl $p.ExpectedBaseUrl -ExpectedApiPort 3100 -VerifyFrontend
               $postTarget = Assert-ReleasePointerTarget -PointerPath $currentPath -Root $canonicalRoot
               $postSha = Split-Path $postTarget -Leaf
               if ($postSha -cne $report.previousRelease) { throw "Current pointer target mutated during recovery: expected $($report.previousRelease), got $postSha" }
@@ -167,7 +167,7 @@ try {
             try {
               & (Join-Path $PSScriptRoot 'restart-baogiang-api.ps1') -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -NodeExe $p.NodeExe -Root $canonicalRoot -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl -AllowScheduledTaskActivation:($p.ServiceKind -eq 'scheduled-task') | Out-Null
               $restartCompleted = $true
-              $health = & (Join-Path $PSScriptRoot 'test-production-health.ps1') -BaseUrl $p.ExpectedBaseUrl -ExpectedApiPort 3100
+              $health = & (Join-Path $PSScriptRoot 'test-production-health.ps1') -BaseUrl $p.ExpectedBaseUrl -ExpectedApiPort 3100 -VerifyFrontend
               $postTarget = Assert-ReleasePointerTarget -PointerPath $currentPath -Root $canonicalRoot
               $postSha = Split-Path $postTarget -Leaf
               if ($postSha -cne $report.previousRelease) { throw "Current pointer target mutated during recovery: expected $($report.previousRelease), got $postSha" }
@@ -199,7 +199,7 @@ try {
               $rollbackContext = [pscustomobject]@{}
               $lifecycleResult = Invoke-ScheduledTaskRollbackLifecycle -Context $rollbackContext -Restart { param($context) & (Join-Path $PSScriptRoot 'restart-baogiang-api.ps1') -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -NodeExe $p.NodeExe -Root $canonicalRoot -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl -AllowScheduledTaskActivation:($p.ServiceKind -eq 'scheduled-task') } -Health {
                 param($context)
-                $health = & (Join-Path $PSScriptRoot 'test-production-health.ps1') -BaseUrl $p.ExpectedBaseUrl -ExpectedApiPort 3100
+                $health = & (Join-Path $PSScriptRoot 'test-production-health.ps1') -BaseUrl $p.ExpectedBaseUrl -ExpectedApiPort 3100 -VerifyFrontend
                 $postTarget = Assert-ReleasePointerTarget -PointerPath $currentPath -Root $canonicalRoot
                 $postSha = Split-Path $postTarget -Leaf
                 if ($postSha -cne $report.previousRelease) { throw "Current pointer target mutated during recovery: expected $($report.previousRelease), got $postSha" }
@@ -211,7 +211,7 @@ try {
               try {
                 & (Join-Path $PSScriptRoot 'restart-baogiang-api.ps1') -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -NodeExe $p.NodeExe -Root $canonicalRoot -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl -AllowScheduledTaskActivation:($p.ServiceKind -eq 'scheduled-task') | Out-Null
                 $restartCompleted = $true
-                $health = & (Join-Path $PSScriptRoot 'test-production-health.ps1') -BaseUrl $p.ExpectedBaseUrl -ExpectedApiPort 3100
+                $health = & (Join-Path $PSScriptRoot 'test-production-health.ps1') -BaseUrl $p.ExpectedBaseUrl -ExpectedApiPort 3100 -VerifyFrontend
                 $postTarget = Assert-ReleasePointerTarget -PointerPath $currentPath -Root $canonicalRoot
                 $postSha = Split-Path $postTarget -Leaf
                 if ($postSha -cne $report.previousRelease) { throw "Current pointer target mutated during recovery: expected $($report.previousRelease), got $postSha" }
