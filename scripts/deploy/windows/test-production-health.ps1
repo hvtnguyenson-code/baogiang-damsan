@@ -31,7 +31,7 @@ foreach ($target in $targets) {
     if ($attempt -lt $MaxAttempts) { Start-Sleep -Seconds $DelaySeconds }
   }
   $results += [ordered]@{ uri = $target; passed = $passed; status = $status; attempts = $attemptUsed; durationMs = [int](([DateTime]::UtcNow - $started).TotalMilliseconds); category = $category }
-  if (-not $passed) { throw () }
+  if (-not $passed) { throw ([ordered]@{ health = $results } | ConvertTo-Json -Compress) }
 }
 [ordered]@{ health = $results } | ConvertTo-Json -Compress
 
