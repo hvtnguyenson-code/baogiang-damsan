@@ -43,6 +43,17 @@ Current implementation proves what exists; it does not, by itself, prove that th
 - Do not reset, clean, stash, rebase, amend, squash, or force-push.
 - Do not merge, deploy, or run a production migration without a separate explicit authorization.
 
+## Branch and CI hygiene
+
+- A task gets **one active branch**. Keep review corrections, CI fixes, and documentation adjustments for that unmerged task on the same branch; never create a new branch merely because CI failed or review found a defect.
+- Create a follow-up branch only after the previous task branch has been merged/closed and the follow-up is a genuinely separate registered task or production defect. Do not create throwaway, experiment, retry, or "correction-N" branches when the existing task branch can be repaired safely.
+- Batch related edits into the smallest reviewable set before pushing. Run applicable local/static checks first; do not use GitHub Actions as an interactive debugger for one-line trial-and-error commits.
+- A failed CI run must be diagnosed from its complete logs before the next push. Consolidate all identified fixes into one push whenever practical instead of serial single-file pushes.
+- Do not create no-op commits, empty commits, force reruns, or branch churn merely to trigger CI. Re-run an unchanged SHA only when there is evidence of runner/infrastructure/transient failure, and record that reason in the task/PR.
+- Expected PR automation is one `CI` run per pushed review checkpoint, plus `P6-021 off-host compatibility` only when compatibility-sensitive paths change. Newer pushes may cancel stale in-progress PR runs. A merge to `main` may legitimately produce the authoritative main CI followed by auto-CD and the deployment workflow; those are the only normal post-merge production runs.
+- Before creating a branch, search existing open branches/PRs for the same task or scope. Reuse the existing branch when ownership is clear. After merge, delete the remote task branch unless it is an explicitly documented archive branch.
+- Do not create a separate `SYNC-*` branch unless the mandatory governance closure protocol actually requires that distinct post-merge authority; minor evidence/copy corrections that belong to an open task stay on its existing branch.
+
 ## UI authority
 
 - Before every UI task, read `.codex/skills/damsan-ui/SKILL.md` and root `DESIGN.md` completely.

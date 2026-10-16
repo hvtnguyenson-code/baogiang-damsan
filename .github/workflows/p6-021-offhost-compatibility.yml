@@ -4,7 +4,22 @@ on:
   pull_request:
     branches:
       - main
+    paths:
+      - 'apps/api/**'
+      - 'packages/**'
+      - 'prisma/**'
+      - 'scripts/deploy/windows/**'
+      - 'scripts/ci/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.nvmrc'
+      - '.github/workflows/ci.yml'
+      - '.github/workflows/p6-021-offhost-compatibility.yml'
   workflow_dispatch:
+
+concurrency:
+  group: p6-021-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
