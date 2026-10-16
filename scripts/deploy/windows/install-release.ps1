@@ -43,6 +43,40 @@ try {
   if (-not (Test-Path (Join-Path $staging 'apps\web\dist') -PathType Container)) { throw 'Frontend static root is missing after build.' }
 } finally { if ($pushed) { Pop-Location } }
 Move-Item -LiteralPath $staging -Destination $release
+# Windows moves preserve the staging ACL instead of inheriting the releases ACL.
+# The privileged deploy worker can read the moved files, but the dedicated
+# bg_api task account cannot start Node until Read & Execute is propagated.
+if ($identity.marker.service.kind -cne 'scheduled-task' -or
+    $identity.marker.service.account -cne 'bg_api') {
+  throw 'RELEASE_RUNTIME_ACL_ACCOUNT_MISMATCH'
+}
+$runtimeAccount = "$env:COMPUTERNAME\bg_api"
+$runtimeAcl = Get-Acl -LiteralPath $release -ErrorAction Stop
+if ($runtimeAcl.AreAccessRulesProtected) {
+  throw 'RELEASE_RUNTIME_ACL_INHERITANCE_BLOCKED'
+}
+$inheritFlags = [Security.AccessControl.InheritanceFlags]::ContainerInherit -bor
+                [Security.AccessControl.InheritanceFlags]::ObjectInherit
+$rxRule = New-Object Security.AccessControl.FileSystemAccessRule(
+  $runtimeAccount, 'ReadAndExecute', $inheritFlags,
+  [Security.AccessControl.PropagationFlags]::None, 'Allow'
+)
+$runtimeAcl.AddAccessRule($rxRule)
+Set-Acl -LiteralPath $release -AclObject $runtimeAcl -ErrorAction Stop
+# Verify inheritance on both executable application code and an internal package.
+foreach ($required in @(
+  'apps\api\dist\apps\api\src\main.js',
+  'packages\config\dist\index.js'
+)) {
+  $runtimeFileAcl = Get-Acl -LiteralPath (Join-Path $release $required) -ErrorAction Stop
+  $rx = @($runtimeFileAcl.Access | Where-Object {
+    $_.IdentityReference -eq $runtimeAccount -and
+    $_.AccessControlType -eq 'Allow' -and
+    ($_.FileSystemRights -band [Security.AccessControl.FileSystemRights]::ReadAndExecute) -eq
+      [Security.AccessControl.FileSystemRights]::ReadAndExecute
+  })
+  if ($rx.Count -lt 1) { throw "RELEASE_RUNTIME_ACL_NOT_PROPAGATED: $required" }
+}
 # npm workspaces creates absolute Windows junctions pointing at the staging tree.
 # After the atomic move, rebind only reviewed in-release workspace targets.
 $workspaces = [ordered]@{
