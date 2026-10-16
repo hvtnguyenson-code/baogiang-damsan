@@ -186,6 +186,16 @@ const fsIsolated = require('node:fs');
 const isolatedDir = require('node:path').resolve(__dirname, '..', 'deploy', 'windows');
 const getIsolated = (file) => fsIsolated.readFileSync(require('node:path').join(isolatedDir, file), 'utf8');
 const installIsolated = getIsolated('install-release.ps1');
+const releaseMovePoint = installIsolated.indexOf('Move-Item -LiteralPath $staging -Destination $release');
+const runtimeAclPoint = installIsolated.indexOf('Set-Acl -LiteralPath $release -AclObject $runtimeAcl');
+const workspaceRelinkPoint = installIsolated.indexOf('New-Item -ItemType Junction -Path $link -Target $newTarget');
+assert.ok(releaseMovePoint >= 0 && runtimeAclPoint > releaseMovePoint && workspaceRelinkPoint > runtimeAclPoint,
+  'the moved release must receive the dedicated bg_api ACL before runtime validation');
+for (const aclGuard of ["service.account -cne 'bg_api'","$runtimeAcl.AreAccessRulesProtected",
+                       "AddAccessRule($rxRule)","RELEASE_RUNTIME_ACL_NOT_PROPAGATED",
+                       "packages\\config\\dist\\index.js","apps\\api\\dist\\apps\\api\\src\\main.js"]) {
+  assert.ok(installIsolated.includes(aclGuard), 'missing release runtime ACL guard: ' + aclGuard);
+}
 const rollbackIsolated = getIsolated('rollback-release.ps1');
 const isolatedRequest = getIsolated('request-deploy.ps1');
 const isolatedWorker = getIsolated('deploy-worker.ps1');
