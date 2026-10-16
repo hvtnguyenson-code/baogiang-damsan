@@ -24,6 +24,7 @@ export const usersApi = {
   create: (input: UserInput) => apiFetch<UserManagementRecord>('/users', json('POST', input)),
   update: (id: string, input: Omit<UserInput, 'password'>) => apiFetch<UserManagementRecord>(`/users/${id}`, json('PATCH', input)),
   action: (id: string, action: 'activate' | 'disable' | 'unlock') => apiFetch<UserManagementRecord>(`/users/${id}/${action}`, json('POST')),
+  resetPassword: (id: string, newPassword: string) => apiFetch<UserManagementRecord>(`/users/${id}/reset-password`, json('POST', { newPassword })),
 };
 
 export type CatalogInput = { code: string; name: string };

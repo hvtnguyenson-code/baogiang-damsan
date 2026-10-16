@@ -26,6 +26,55 @@ describe('Phase 01 management pages', () => {
     expect(await screen.findByText(/mật khẩu khởi tạo không được hiển thị lại/i)).toBeInTheDocument();
   });
 
+  it('shows password reset only for dual-capability administrators and validates confirmation', async () => {
+    const target = { id: 'target-1', username: 'nguyendinhdiep', status: 'ACTIVE', profile: { displayName: 'Phó Hiệu trưởng' } };
+    const capabilityList = [
+      { key: 'USER_MANAGE', scope: 'SCHOOL_WIDE' },
+      { key: 'SYSTEM_ADMIN', scope: 'SCHOOL_WIDE' },
+    ];
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      calls.push({ url, init });
+      if (url.endsWith('/auth/me')) return jsonResponse(auth(...capabilityList));
+      if (url.endsWith('/users/target-1/reset-password') && init?.method === 'POST') {
+        return jsonResponse({ ...target, mustChangePassword: true });
+      }
+      if (url.startsWith('/api/users')) return jsonResponse(page([target]));
+      return jsonResponse({});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    renderApp('/quan-tri/nguoi-dung');
+    const row = (await screen.findByText('nguyendinhdiep')).closest('tr')!;
+    await user.click(within(row).getByRole('button', { name: 'Đặt lại mật khẩu' }));
+    await user.type(within(row).getByLabelText('Mật khẩu khởi tạo mới'), 'NewTemporaryPassword92');
+    await user.type(within(row).getByLabelText('Nhập lại mật khẩu mới'), 'NonmatchingPassword92');
+    await user.click(within(row).getByRole('button', { name: 'Xác nhận đặt lại' }));
+    expect(await screen.findByText(/hai lần nhập mật khẩu chưa khớp/i)).toBeInTheDocument();
+    expect(calls.filter((x) => x.url.endsWith('/users/target-1/reset-password'))).toHaveLength(0);
+    await user.clear(within(row).getByLabelText('Nhập lại mật khẩu mới'));
+    await user.type(within(row).getByLabelText('Nhập lại mật khẩu mới'), 'NewTemporaryPassword92');
+    await user.click(within(row).getByRole('button', { name: 'Xác nhận đặt lại' }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      '/api/users/target-1/reset-password',
+      expect.objectContaining({ method: 'POST', body: JSON.stringify({ newPassword: 'NewTemporaryPassword92' }) }),
+    ));
+    expect(await screen.findByText(/các phiên đăng nhập cũ đã bị thu hồi/i)).toBeInTheDocument();
+    expect(screen.queryByDisplayValue('NewTemporaryPassword92')).not.toBeInTheDocument();
+  });
+
+  it('hides password reset from user managers without technical administrator capability', async () => {
+    const target = { id: 'target-1', username: 'nguyendinhdiep', status: 'ACTIVE', profile: { displayName: 'Phó Hiệu trưởng' } };
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) =>
+      String(input).endsWith('/auth/me')
+        ? jsonResponse(auth({ key: 'USER_MANAGE', scope: 'SCHOOL_WIDE' }))
+        : jsonResponse(page([target]))));
+    renderApp('/quan-tri/nguoi-dung');
+    expect(await screen.findByText('nguyendinhdiep')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Đặt lại mật khẩu' })).not.toBeInTheDocument();
+  });
+
   it('creates a compact subject-group catalog entry', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input); if (url.endsWith('/auth/me')) return jsonResponse(auth({ key: 'SUBJECT_GROUP_MANAGE', scope: 'SCHOOL_WIDE' })); if (url.includes('/subject-groups') && init?.method === 'POST') return jsonResponse({ id: 'g1', code: 'TOAN', name: 'Tổ Toán', status: 'ACTIVE' }); if (url.includes('/subject-groups')) return jsonResponse(page()); return jsonResponse({});

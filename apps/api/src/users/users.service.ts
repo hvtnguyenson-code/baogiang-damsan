@@ -9,6 +9,7 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { ListUsersDto } from './dto/list-users.dto';
 import { StaffProfileDto } from './dto/staff-profile.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { ResetUserPasswordDto } from './dto/reset-user-password.dto';
 
 const userWithProfile = Prisma.validator<Prisma.UserDefaultArgs>()({ include: { profile: true } });
 type UserWithProfile = Prisma.UserGetPayload<typeof userWithProfile>;
@@ -149,6 +150,57 @@ export class UsersService {
     } catch (error) {
       this.rethrowKnownConflict(error);
     }
+  }
+
+  async resetPassword(id: string, dto: ResetUserPasswordDto, actorUserId: string, meta: RequestMeta): Promise<UserManagementRecord> {
+    if (id === actorUserId) {
+      throw new ConflictException('Không thể tự đặt lại mật khẩu tại trang quản trị; hãy dùng chức năng đổi mật khẩu.');
+    }
+    try {
+      this.passwords.validatePolicy(dto.newPassword);
+    } catch (error) {
+      throw new BadRequestException(error instanceof Error ? error.message : 'Mật khẩu mới không hợp lệ.');
+    }
+
+    const target = await this.prisma.user.findUnique({
+      where: { id }, select: { status: true, passwordHash: true },
+    });
+    if (!target) throw new NotFoundException('Không tìm thấy người dùng.');
+    if (target.status !== UserStatus.ACTIVE) {
+      throw new ConflictException('Chỉ đặt lại mật khẩu cho tài khoản đang hoạt động.');
+    }
+    if (await this.passwords.verify(target.passwordHash, dto.newPassword)) {
+      throw new BadRequestException('Mật khẩu khởi tạo mới phải khác mật khẩu đang sử dụng.');
+    }
+    const passwordHash = await this.passwords.hash(dto.newPassword);
+
+    return this.prisma.$transaction(async (tx) => {
+      // Compare-and-swap prevents a concurrent password change/reset from
+      // being silently overwritten. Updating the user row serializes with login.
+      const updated = await tx.user.updateMany({
+        where: { id, status: UserStatus.ACTIVE, passwordHash: target.passwordHash },
+        data: {
+          passwordHash,
+          mustChangePassword: true,
+          failedLoginCount: 0,
+          lockedUntil: null,
+        },
+      });
+      if (updated.count !== 1) {
+        throw new ConflictException('Tài khoản đã thay đổi trong lúc xử lý. Hãy tải lại và thử lại.');
+      }
+      const now = new Date();
+      const revoked = await tx.authSession.updateMany({
+        where: { userId: id, revokedAt: null },
+        data: { revokedAt: now },
+      });
+      await this.writeAudit('USER_PASSWORD_RESET', id, actorUserId, meta, {
+        revokedSessionCount: revoked.count,
+      }, tx);
+      return toUserManagementRecord(await tx.user.findUniqueOrThrow({
+        where: { id }, include: { profile: true },
+      }));
+    });
   }
 
   async activate(id: string, actorUserId: string, meta: RequestMeta): Promise<UserManagementRecord> {

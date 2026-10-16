@@ -47,16 +47,18 @@ integration('Users API (isolated PostgreSQL integration)', () => {
 
   afterAll(async () => { await prisma?.$disconnect(); await app?.close(); });
 
-  async function actor(options: { capability?: 'USER_MANAGE' | 'SYSTEM_ADMIN'; mustChangePassword?: boolean } = {}): Promise<{ agent: Agent; user: { id: string } }> {
+  async function actor(options: { capability?: 'USER_MANAGE' | 'SYSTEM_ADMIN'; capabilities?: Array<'USER_MANAGE' | 'SYSTEM_ADMIN'>; mustChangePassword?: boolean } = {}): Promise<{ agent: Agent; user: { id: string } }> {
     const user = await prisma.user.create({ data: {
       username: `manager-${crypto.randomUUID().slice(0, 8)}`,
       passwordHash: await passwords.hash(password), status: UserStatus.ACTIVE,
       mustChangePassword: options.mustChangePassword ?? false,
       profile: { create: { displayName: 'Manager' } },
     } });
-    if (options.capability) await prisma.capabilityGrant.create({ data: {
-      userId: user.id, capabilityKey: options.capability, scopeType: 'SCHOOL_WIDE', validFrom: new Date(Date.now() - 1_000),
-    } });
+    for (const capabilityKey of options.capabilities ?? (options.capability ? [options.capability] : [])) {
+      await prisma.capabilityGrant.create({ data: {
+        userId: user.id, capabilityKey, scopeType: 'SCHOOL_WIDE', validFrom: new Date(Date.now() - 1_000),
+      } });
+    }
     const agent = request.agent(app.getHttpServer());
     expect((await agent.post('/api/auth/login').send({ username: user.username, password })).status).toBe(200);
     return { agent, user };
@@ -204,4 +206,102 @@ integration('Users API (isolated PostgreSQL integration)', () => {
     await prisma.user.update({ where: { id: target.id }, data: { status: UserStatus.LOCKED } });
     expect((await manager.agent.post(`/api/users/${target.id}/activate`).set('Origin', origin)).status).toBe(409);
   });
+  it('requires dual administrator capabilities, CSRF, and never resets a user silently', async () => {
+    const target = await prisma.user.create({ data: {
+      username: 'reset-target',
+      passwordHash: await passwords.hash(password),
+      status: UserStatus.ACTIVE,
+      mustChangePassword: false,
+      profile: { create: { displayName: 'Reset target' } },
+    } });
+    const endpoint = `/api/users/${target.id}/reset-password`;
+    const payload = { newPassword: 'NewTemporaryPassword92' };
+
+    expect((await request(app.getHttpServer()).post(endpoint).send(payload)).status).toBe(401);
+    const manager = await actor({ capability: 'USER_MANAGE' });
+    expect((await manager.agent.post(endpoint).set('Origin', origin).send(payload)).status).toBe(403);
+    const technician = await actor({ capability: 'SYSTEM_ADMIN' });
+    expect((await technician.agent.post(endpoint).set('Origin', origin).send(payload)).status).toBe(403);
+    const authorized = await actor({ capabilities: ['USER_MANAGE', 'SYSTEM_ADMIN'] });
+    expect((await authorized.agent.post(endpoint).send(payload)).status).toBe(403);
+    expect((await authorized.agent.post(`/api/users/${authorized.user.id}/reset-password`).set('Origin', origin).send(payload)).status).toBe(409);
+    expect((await authorized.agent.post(endpoint).set('Origin', origin).send({ newPassword: 'short' })).status).toBe(400);
+    expect((await authorized.agent.post(endpoint).set('Origin', origin).send({ newPassword: 123 })).status).toBe(400);
+    expect((await authorized.agent.post(endpoint).set('Origin', origin).send({ password: payload.newPassword })).status).toBe(400);
+    expect((await authorized.agent.post(endpoint).set('Origin', origin).send({ newPassword: password })).status).toBe(400);
+    expect((await authorized.agent.post('/api/users/00000000-0000-4000-8000-000000000000/reset-password').set('Origin', origin).send(payload)).status).toBe(404);
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: target.id } })).mustChangePassword).toBe(false);
+    expect(await prisma.auditEvent.count({ where: { action: 'USER_PASSWORD_RESET' } })).toBe(0);
+  });
+
+  it('resets an active account, revokes sessions, clears lock and requires first-login password change', async () => {
+    const authorized = await actor({ capabilities: ['USER_MANAGE', 'SYSTEM_ADMIN'] });
+    const target = await prisma.user.create({ data: {
+      username: 'reset-active',
+      passwordHash: await passwords.hash(password),
+      status: UserStatus.ACTIVE,
+      mustChangePassword: false,
+      profile: { create: { displayName: 'Active reset target' } },
+    } });
+    const targetAgent = request.agent(app.getHttpServer());
+    expect((await targetAgent.post('/api/auth/login').send({ username: target.username, password })).status).toBe(200);
+    await prisma.user.update({ where: { id: target.id }, data: {
+      lockedUntil: new Date(Date.now() + 600_000), failedLoginCount: 5,
+    } });
+    const newPassword = 'NewTemporaryPassword92';
+    const response = await authorized.agent.post(`/api/users/${target.id}/reset-password`)
+      .set('Origin', origin).set('X-Request-Id', 'user-reset-1')
+      .send({ newPassword });
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      id: target.id, username: target.username, status: 'ACTIVE', mustChangePassword: true,
+    });
+    expect(JSON.stringify(response.body)).not.toContain(newPassword);
+    expect(response.body).not.toHaveProperty('passwordHash');
+    const stored = await prisma.user.findUniqueOrThrow({ where: { id: target.id } });
+    expect(stored.passwordHash).toContain('$argon2id$');
+    expect(await passwords.verify(stored.passwordHash, newPassword)).toBe(true);
+    expect(stored).toMatchObject({ failedLoginCount: 0, lockedUntil: null, mustChangePassword: true });
+    expect(await prisma.authSession.count({ where: { userId: target.id, revokedAt: { not: null } } })).toBe(1);
+    expect((await targetAgent.get('/api/auth/me')).status).toBe(401);
+    expect((await request(app.getHttpServer()).post('/api/auth/login').send({ username: target.username, password })).status).toBe(401);
+    const freshAgent = request.agent(app.getHttpServer());
+    const firstLogin = await freshAgent.post('/api/auth/login').send({ username: target.username, password: newPassword });
+    expect(firstLogin.status).toBe(200);
+    expect(firstLogin.body.user.mustChangePassword).toBe(true);
+    const finalPassword = 'PermanentUpdatedPassword92';
+    expect((await freshAgent.post('/api/auth/change-password').set('Origin', origin)
+      .send({ currentPassword: newPassword, newPassword: finalPassword })).status).toBe(200);
+    const finalLogin = await request(app.getHttpServer()).post('/api/auth/login')
+      .send({ username: target.username, password: finalPassword });
+    expect(finalLogin.status).toBe(200);
+    expect(finalLogin.body.user.mustChangePassword).toBe(false);
+    const audit = await prisma.auditEvent.findFirstOrThrow({ where: { action: 'USER_PASSWORD_RESET', entityId: target.id } });
+    expect(audit).toMatchObject({ actorUserId: authorized.user.id, result: 'SUCCESS',
+      requestId: 'user-reset-1', metadata: { revokedSessionCount: 1 },
+    });
+    expect(JSON.stringify(audit.metadata)).not.toMatch(/password|secret|hash|token|credential/i);
+    expect(JSON.stringify(audit.metadata)).not.toContain(newPassword);
+  });
+
+  it('rolls back password change and session revocation when audit fails', async () => {
+    const authorized = await actor({ capabilities: ['USER_MANAGE', 'SYSTEM_ADMIN'] });
+    const target = await prisma.user.create({ data: {
+      username: 'reset-audit-failure',
+      passwordHash: await passwords.hash(password),
+      status: UserStatus.ACTIVE,
+    } });
+    const userAgent = request.agent(app.getHttpServer());
+    expect((await userAgent.post('/api/auth/login').send({ username: target.username, password })).status).toBe(200);
+    const original = await prisma.user.findUniqueOrThrow({ where: { id: target.id } });
+    const service = new UsersService(prisma as never, passwords, { write: jest.fn().mockRejectedValue(new Error('audit unavailable')) } as never);
+    await expect(service.resetPassword(target.id, { newPassword: 'NewTemporaryPassword92' }, authorized.user.id, {}))
+      .rejects.toThrow('audit unavailable');
+    const after = await prisma.user.findUniqueOrThrow({ where: { id: target.id } });
+    expect(after.passwordHash).toBe(original.passwordHash);
+    expect(await prisma.authSession.count({ where: { userId: target.id, revokedAt: null } })).toBe(1);
+    expect((await userAgent.get('/api/auth/me')).status).toBe(200);
+    expect(await prisma.auditEvent.count({ where: { action: 'USER_PASSWORD_RESET' } })).toBe(0);
+  });
+
 });
