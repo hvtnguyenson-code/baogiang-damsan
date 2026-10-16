@@ -9,10 +9,11 @@ CÔNG CỤ THỰC THI: CODEX
 CÔNG CỤ THỰC THI: ANTIGRAVITY IDE
 ```
 
-- ChatGPT audits the repository, designs the task/prompt, and performs an independent GitHub review. It must not accept an agent's PASS claim without direct evidence.
-- Codex owns repository recovery, scaffolding, architecture, schema/migration, authentication/session/authorization, capability/scope, audit, CI/CD, broad refactors, security, integration/E2E work, and complex defects.
-- Antigravity IDE may handle only narrow, simple, independently reviewable work: isolated UI components, CSS within an approved design system, Vietnamese copy, loading/empty/error states, mechanical fixtures/tests, and small documentation changes.
-- Antigravity must not change schema, migrations, authentication, authorization, deployment, CI/CD, or perform broad refactors unless a prompt grants that exact scope explicitly.
+- ChatGPT is the task orchestrator and independent reviewer: it audits the exact current repository state, chooses the next registered task, writes the execution prompt, reviews the resulting GitHub diff/CI evidence, and decides whether correction or merge is justified. It must never accept an implementation agent's PASS claim without direct evidence.
+- **Antigravity IDE is the default implementation tool for the P5-050 operability programme and subsequent registered product tasks.** It may change backend, Web UI, tests and documentation only inside the exact scope granted by the task prompt. It must not broaden scope from titles, issue labels or nearby code.
+- Codex is an optional escalation tool chosen by ChatGPT for unusually complex/high-risk work, especially schema/migration, authentication/session/authorization, capability/scope, security, CI/CD, broad cross-domain refactors, concurrency, recovery, or difficult integration/E2E defects.
+- Schema/migration, authentication/authorization, capability, security, deployment or CI/CD work always requires an execution prompt that explicitly names the allowed surface, invariants, tests, rollback/compatibility requirements and forbidden changes, regardless of whether Antigravity or Codex executes it.
+- The implementation agent never merges or deploys on its own. ChatGPT reviews first; merge/deploy follow the repository gates and explicit production authority.
 
 ## Current product authority and task registration
 
@@ -58,7 +59,7 @@ Current implementation proves what exists; it does not, by itself, prove that th
 
 - Before every UI task, read `.codex/skills/damsan-ui/SKILL.md` and root `DESIGN.md` completely.
 - `DESIGN.md` is the project visual authority. Do not choose a different theme, token palette, font, or primitive system without an explicitly approved design decision.
-- Antigravity IDE may implement only narrow UI work inside the approved system; it must not redefine the system or introduce another primitive library.
+- Antigravity IDE may implement registered UI tasks inside the approved system, including multi-page/product-integration work when the execution prompt explicitly grants that scope. It must not redefine the design system or introduce another primitive library without an approved design decision.
 
 ## Required workflow
 
@@ -69,7 +70,7 @@ Current implementation proves what exists; it does not, by itself, prove that th
 5. Make only task-scoped changes. Use Prisma Migrate for schema changes and commit migrations; never use `prisma db push` as the official migration path.
 6. Run the checks required by the task, plus proportionate lint/type/test checks. Inspect `git diff --check`, the final diff, and the staged file list.
 7. Before review, synchronize the task branch's intended current state: task register -> `IN_REVIEW`, current project status, traceability and all other applicable summary/authority documents.
-8. Commit only files belonging to the task and push the task branch. A push is an input to CI; deployment occurs only through an authorized CD path.
+8. Commit only files belonging to the task. Before the first remote push, run the prompt-required local checks and inspect the complete diff. Push only a meaningful review checkpoint; batch all known corrections before the next push so GitHub Actions is not used as an interactive debugger. A push is an input to CI; deployment occurs only through an authorized CD path.
 9. Obtain an independent GitHub review before merge. Agent self-review is supporting evidence, not approval.
 10. After merge, the task is `MERGED_AWAITING_DOC_SYNC`, not `CLOSED`. Record the major-task merge SHA and authoritative post-merge CI through the non-recursive `SYNC-<task-id>` closure procedure before any dependent major task starts.
 
@@ -102,3 +103,17 @@ A failed/corrected task must remain visible in the task register; do not mark it
 - A Báo giảng deployment may restart only the process whose command line/entry point belongs to Báo giảng. Never reboot the VPS, restart PostgreSQL, stop DamSanV5, kill all `node.exe` processes, or restart all of Nginx without a separately justified need.
 - Production schema changes use `prisma migrate deploy` after backup/review gates. Never run `prisma migrate reset` against the official database.
 - Green repository CI does not prove VPS readiness. Actual production tasks remain gated by reviewed passive/preflight evidence and explicit mutation authorization.
+
+
+## P5-050 implementation orchestration
+
+For the product-operability programme, follow `docs/governance/P5-050-EXECUTION-PROTOCOL-ANTIGRAVITY-CODEX.md` in addition to this file.
+
+The normal operating model is:
+
+1. ChatGPT audits and issues one exact task prompt.
+2. Antigravity implements the task on the one registered branch and runs local checks.
+3. Antigravity reports exact branch/HEAD, changed files, tests, risks and unresolved items.
+4. ChatGPT independently reviews GitHub and CI; it may issue one consolidated correction prompt.
+5. Codex is used only when ChatGPT explicitly escalates a complex/high-risk slice.
+6. No dependent task starts until the predecessor reaches canonical `CLOSED` state.
