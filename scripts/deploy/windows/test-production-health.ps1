@@ -36,23 +36,42 @@ foreach ($target in $targets) {
 [ordered]@{ health = $results } | ConvertTo-Json -Compress
 
 if ($VerifyFrontend) {
-  # Network requests bypass browser SW caches. The origin HTML must correspond
-  # exactly to the current versioned release, not merely respond HTTP 200.
+  # Prove the public origin serves the exact bytes from the current release.
+  # Force identity encoding so compression/content decoding cannot create a false mismatch.
   $current='C:\baogiang\current'
   $pointer=Get-Item -LiteralPath $current -Force -ErrorAction Stop
   if(($pointer.Attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0 -or
      [string]$pointer.Target -cnotmatch '(?i)\\releases\\[0-9a-f]{40}$'){
     throw 'FRONTEND_RELEASE_POINTER_UNTRUSTED'
   }
+  function Get-OriginBytes([string]$Uri,[int]$TimeoutSeconds){
+    $handler=[Net.Http.HttpClientHandler]::new()
+    $client=[Net.Http.HttpClient]::new($handler)
+    try {
+      $client.Timeout=[TimeSpan]::FromSeconds($TimeoutSeconds)
+      $client.DefaultRequestHeaders.CacheControl=[Net.Http.Headers.CacheControlHeaderValue]::Parse('no-cache')
+      $client.DefaultRequestHeaders.AcceptEncoding.Clear()
+      $client.DefaultRequestHeaders.AcceptEncoding.ParseAdd('identity')
+      $response=$client.GetAsync($Uri).GetAwaiter().GetResult()
+      if(-not $response.IsSuccessStatusCode){throw ('ORIGIN_HTTP_STATUS_'+[int]$response.StatusCode)}
+      return [byte[]]$response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult()
+    } finally {
+      $client.Dispose()
+      $handler.Dispose()
+    }
+  }
+  function Test-ExactBytes([byte[]]$Left,[byte[]]$Right){
+    if($Left.Length -ne $Right.Length){return $false}
+    return [Linq.Enumerable]::SequenceEqual([byte[]]$Left,[byte[]]$Right)
+  }
   $indexPath=Join-Path $current 'apps\web\dist\index.html'
   if(-not (Test-Path -LiteralPath $indexPath -PathType Leaf)){throw 'FRONTEND_INDEX_MISSING'}
-  $expected=[IO.File]::ReadAllText($indexPath,[Text.UTF8Encoding]::new($false,$true))
-  $probe= $BaseUrl.TrimEnd('/') + '/?deploy_verify=' + ([Guid]::NewGuid().ToString('N'))
-  $response=Invoke-WebRequest -Uri $probe -UseBasicParsing -TimeoutSec 12 -Headers @{ 'Cache-Control'='no-cache' }
-  if([int]$response.StatusCode -ne 200 -or [string]$response.Content -cne $expected){
-    throw 'FRONTEND_PUBLIC_INDEX_RELEASE_MISMATCH'
-  }
-  # The hashed Vite entry asset must also resolve to the current release.
+  $expectedBytes=[IO.File]::ReadAllBytes($indexPath)
+  $expected=[Text.Encoding]::UTF8.GetString($expectedBytes)
+  $probe=$BaseUrl.TrimEnd('/')+'/?deploy_verify='+([Guid]::NewGuid().ToString('N'))
+  $publicBytes=Get-OriginBytes $probe 12
+  if(-not (Test-ExactBytes $publicBytes $expectedBytes)){throw 'FRONTEND_PUBLIC_INDEX_RELEASE_MISMATCH'}
+
   $entries=[regex]::Matches($expected,'/assets/([A-Za-z0-9_-]+\.js)')
   if($entries.Count -lt 1){throw 'FRONTEND_BUNDLE_REFERENCE_MISSING'}
   foreach($entry in $entries){
@@ -60,8 +79,8 @@ if ($VerifyFrontend) {
     $local=Join-Path (Join-Path $current 'apps\web\dist\assets') $name
     if(-not (Test-Path -LiteralPath $local -PathType Leaf)){throw 'FRONTEND_BUNDLE_MISSING'}
     $assetUrl=$BaseUrl.TrimEnd('/')+'/assets/'+$name+'?deploy_verify='+([Guid]::NewGuid().ToString('N'))
-    $asset=Invoke-WebRequest -Uri $assetUrl -UseBasicParsing -TimeoutSec 20 -Headers @{'Cache-Control'='no-cache'}
-    if([int]$asset.StatusCode -ne 200 -or [string]$asset.Content -cne [IO.File]::ReadAllText($local,[Text.UTF8Encoding]::new($false,$true))){
+    $assetBytes=Get-OriginBytes $assetUrl 20
+    if(-not (Test-ExactBytes $assetBytes ([IO.File]::ReadAllBytes($local)))){
       throw 'FRONTEND_PUBLIC_ASSET_RELEASE_MISMATCH'
     }
   }
