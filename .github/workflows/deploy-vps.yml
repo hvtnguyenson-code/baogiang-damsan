@@ -126,6 +126,7 @@ jobs:
             fi
             # Error 255 (transport) or 124 (local SSH timeout) may be retried.
             if [[ "$rc" -ne 255 && "$rc" -ne 124 ]]; then
+              printf '%s\n' "$clean" >&2
               echo "DEPLOY_ENQUEUE_REJECTED code=$rc" >&2
               exit 1
             fi
@@ -163,6 +164,7 @@ jobs:
             elif [[ "$rc" -eq 255 || "$rc" -eq 124 ]]; then
               echo "DEPLOY_POLL_TRANSPORT_RETRY attempt=$attempt code=$rc"
             else
+              printf '%s\n' "$clean" >&2
               echo "DEPLOY_POLL_REJECTED code=$rc" >&2
               exit 1
             fi
