@@ -36,6 +36,7 @@ foreach ($target in $targets) {
 [ordered]@{ health = $results } | ConvertTo-Json -Compress
 
 if ($VerifyFrontend) {
+  Add-Type -AssemblyName System.Net.Http
   # Prove the public origin serves the exact bytes from the current release.
   # Force identity encoding so compression/content decoding cannot create a false mismatch.
   $current='C:\baogiang\current'
