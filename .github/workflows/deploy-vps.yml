@@ -94,6 +94,9 @@ jobs:
           keyfile="$RUNNER_TEMP/baogiang-ssh-key"
           knownfile="$RUNNER_TEMP/baogiang-known-hosts"
           trap 'rm -f "$keyfile" "$knownfile"' EXIT
+          # Windows PowerShell writes CRLF. Preserve the SSH and tee exit codes
+          # independently; a success marker never overrides transport failure.
+          set +e
           ssh -n -i "$keyfile" -p "$VPS_PORT" \
             -o BatchMode=yes -o ConnectTimeout=20 \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$knownfile" \
@@ -101,4 +104,17 @@ jobs:
             powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass \
             -File 'C:\ProgramData\BaoGiangDeploy\request-deploy.ps1' -ExpectedSha "$TARGET_SHA" |
             tee "$RUNNER_TEMP/baogiang-deploy-result.txt"
-          grep -Eq "^(BAOGIANG_DEPLOY_VERIFIED sha=${TARGET_SHA} neighbor_pid=[0-9]+|BAOGIANG_DEPLOY_ALREADY_CURRENT sha=${TARGET_SHA})$" "$RUNNER_TEMP/baogiang-deploy-result.txt"
+          transport_status=( "${PIPESTATUS[@]}" )
+          set -e
+          if [[ "${transport_status[0]}" -ne 0 || "${transport_status[1]}" -ne 0 ]]; then
+            echo "DEPLOY_TRANSPORT_FAILED ssh=${transport_status[0]} tee=${transport_status[1]}" >&2
+            exit 1
+          fi
+          # Strip only a terminal CR on each line. Do not relax the SHA-bound
+          # full-line match or interpret arbitrary worker text as success.
+          sed 's/\r$//' "$RUNNER_TEMP/baogiang-deploy-result.txt" > "$RUNNER_TEMP/baogiang-deploy-normalized.txt"
+          if ! grep -Eq "^(BAOGIANG_DEPLOY_VERIFIED sha=${TARGET_SHA} neighbor_pid=[0-9]+|BAOGIANG_DEPLOY_ALREADY_CURRENT sha=${TARGET_SHA})$" "$RUNNER_TEMP/baogiang-deploy-normalized.txt"; then
+            echo "DEPLOY_EVIDENCE_INVALID: SSH succeeded without exact verified SHA evidence" >&2
+            exit 1
+          fi
+          echo "DEPLOY_EVIDENCE_ACCEPTED sha=$TARGET_SHA"
