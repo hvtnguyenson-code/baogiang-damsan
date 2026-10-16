@@ -53,21 +53,28 @@ if($Mode -ceq 'Poll'){
   return
 }
 if($Nonce){throw 'NONCE_ONLY_VALID_FOR_POLL'}
-$mutex=[Threading.Mutex]::new($false,'Global\BaoGiangDeployRequestLock')
-$hasLock=$false
+$lockPath=Join-Path $root 'incoming\deploy-request.lock'
+$lockStream=$null
+$deadline=[DateTimeOffset]::UtcNow.AddSeconds(15)
+while($null -eq $lockStream -and [DateTimeOffset]::UtcNow -lt $deadline){
+  try {
+    $lockStream=[IO.File]::Open($lockPath,[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+  } catch [IO.IOException] {
+    Start-Sleep -Milliseconds 250
+  }
+}
+if($null -eq $lockStream){throw 'DEPLOY_REQUEST_LOCK_TIMEOUT'}
 try{
-  $hasLock=$mutex.WaitOne([TimeSpan]::FromSeconds(15))
-  if(-not $hasLock){throw 'DEPLOY_REQUEST_LOCK_TIMEOUT'}
   $existing=Read-JsonFile $requestPath
   $status=Read-JsonFile $statusPath
-  $task=Get-ScheduledTask -TaskName $workerName -ErrorAction Stop
-  $busy=([string]$task.State -ceq 'Running')
-  # If the first SSH session dies after schtasks accepted the request but before
-  # Task Scheduler exposes Running, an immediate Enqueue retry must recover the
-  # same nonce instead of overwriting the request that the worker is about to read.
+  $busy=($null -ne $status -and [string]$status.status -ceq 'running')
+
+  # Recover an ambiguous enqueue acknowledgement during the small window after
+  # request publication but before the worker has published RUNNING.
   if($Mode -ceq 'Enqueue' -and $null -ne $existing -and
      [string]$existing.sha -ceq $ExpectedSha -and
-     [string]$existing.nonce -cmatch '^[0-9a-f]{32}$'){
+     [string]$existing.nonce -cmatch '^[0-9a-f]{32}$' -and
+     [bool]$existing.preflightOnly -eq [bool]$PreflightOnly){
     $existingIssued=[DateTimeOffset]::Parse([string]$existing.issuedUtc)
     $existingAge=([DateTimeOffset]::UtcNow-$existingIssued).TotalMinutes
     $statusOwnsExisting=($null -ne $status -and [string]$status.nonce -ceq [string]$existing.nonce)
@@ -76,16 +83,23 @@ try{
       return
     }
   }
+
   if($busy){
     if($null -ne $existing -and [string]$existing.sha -ceq $ExpectedSha -and
        [string]$existing.nonce -cmatch '^[0-9a-f]{32}$' -and
-       ([DateTimeOffset]::UtcNow-[DateTimeOffset]::Parse([string]$existing.issuedUtc)).TotalMinutes -le 45){
-      if($Mode -ceq 'Wait'){throw 'DEPLOY_ALREADY_RUNNING_USE_ENQUEUE'}
-      Write-Output "BAOGIANG_DEPLOY_ACCEPTED sha=$ExpectedSha nonce=$($existing.nonce)"
-      return
+       [bool]$existing.preflightOnly -eq [bool]$PreflightOnly -and
+       [string]$status.nonce -ceq [string]$existing.nonce){
+      $busyIssued=[DateTimeOffset]::Parse([string]$existing.issuedUtc)
+      $busyAge=([DateTimeOffset]::UtcNow-$busyIssued).TotalMinutes
+      if($busyAge -ge -1 -and $busyAge -le 45){
+        if($Mode -ceq 'Wait'){throw 'DEPLOY_ALREADY_RUNNING_USE_ENQUEUE'}
+        Write-Output "BAOGIANG_DEPLOY_ACCEPTED sha=$ExpectedSha nonce=$($existing.nonce)"
+        return
+      }
     }
     throw 'DEPLOY_BUSY_DIFFERENT_OR_STALE_REQUEST'
   }
+
   # Never trust a historical success marker as proof of current production state.
   # Always let the detached worker reconcile the requested SHA; its runner performs
   # current-pointer, API and exact public-frontend verification before returning ALREADY_CURRENT.
@@ -106,8 +120,7 @@ try{
   $null=& "$env:WINDIR\System32\schtasks.exe" /Run /TN ('\'+$workerName) 2>&1
   if($LASTEXITCODE -ne 0){throw 'BAOGIANG_WORKER_START_DENIED_OR_FAILED'}
 }finally{
-  if($hasLock){$mutex.ReleaseMutex()}
-  $mutex.Dispose()
+  $lockStream.Dispose()
 }
 if($Mode -ceq 'Enqueue'){
   Write-Output "BAOGIANG_DEPLOY_ACCEPTED sha=$ExpectedSha nonce=$newNonce"
