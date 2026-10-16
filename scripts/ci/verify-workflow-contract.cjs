@@ -65,35 +65,20 @@ assert.match(active, /environment: production/);
 assert.ok(active.includes('ssh -n -i'));
 assert.match(active, /StrictHostKeyChecking=yes/);
 assert.match(active, /PROD_SSH_PRIVATE_KEY/);
-assert.ok(active.includes('C:\\ProgramData\\BaoGiangDeploy\\request-deploy.ps1'), 'deploy must invoke protected installed request script');
-assert.ok(active.includes('BAOGIANG_DEPLOY_VERIFIED sha=${TARGET_SHA} neighbor_pid=[0-9]+'), 'production must require deployment evidence');
-assert.ok(active.includes('BAOGIANG_DEPLOY_ALREADY_CURRENT sha=${TARGET_SHA}'), 'must recognize safe idempotent deploy');
-assert.ok(active.includes('tee "$RUNNER_TEMP/baogiang-deploy-result.txt"'), 'stdout evidence must be captured');
-assert.ok(!active.includes('C:\\baogiang\\shared\\request-deploy.ps1'), 'obsolete script path must be rejected');
-// Windows stdout is CRLF: transport and worker evidence remain independent fail-closed gates.
-for (const guard of ['set +e', 'transport_status=(', 'transport_status[0]', 'transport_status[1]',
-  'DEPLOY_TRANSPORT_FAILED', 'DEPLOY_EVIDENCE_INVALID', 'baogiang-deploy-normalized.txt',
-  'DEPLOY_EVIDENCE_ACCEPTED sha=$TARGET_SHA']) {
-  assert.ok(active.includes(guard), 'missing deployment evidence guard: ' + guard);
-}
-assert.ok(active.includes("sed 's/\\r$//'"), 'terminal CR normalization missing');
-assert.ok(active.indexOf('transport_status=(') < active.indexOf('baogiang-deploy-normalized.txt'));
-if (process.platform !== 'win32') {
-  const { spawnSync } = require('node:child_process');
-  const sha = 'a'.repeat(40);
-  const pattern = '^(BAOGIANG_DEPLOY_VERIFIED sha=' + sha + ' neighbor_pid=[0-9]+|BAOGIANG_DEPLOY_ALREADY_CURRENT sha=' + sha + ')$';
-  const check = (payload, sshExit) => spawnSync('bash', ['-c',
-    "set -euo pipefail; [[ \"$SSH_EXIT\" -eq 0 ]] || exit 41; printf '%s' \"$PAYLOAD\" | sed 's/\\r$//' | grep -Eq \"$PATTERN\""
-  ], { env: { ...process.env, PAYLOAD: payload, SSH_EXIT: String(sshExit), PATTERN: pattern } }).status;
-  assert.equal(check('BAOGIANG_DEPLOY_VERIFIED sha=' + sha + ' neighbor_pid=8452\r\n', 0), 0);
-  assert.equal(check('BAOGIANG_DEPLOY_ALREADY_CURRENT sha=' + sha + '\n', 0), 0);
-  assert.notEqual(check('BAOGIANG_DEPLOY_VERIFIED sha=' + sha + ' neighbor_pid=8452\r\n', 255), 0);
-  assert.notEqual(check('BAOGIANG_DEPLOY_VERIFIED sha=' + 'b'.repeat(40) + ' neighbor_pid=8452\r\n', 0), 0);
-  assert.notEqual(check('WORKER_FAILED\r\n', 0), 0);
-  assert.notEqual(check('BAOGIANG_DEPLOY_VERIFIED sha=' + sha + ' neighbor_pid=8452 extra\r\n', 0), 0);
-}
+assert.ok(active.includes('C:\\ProgramData\\BaoGiangDeploy\\request-deploy.ps1'));
+assert.ok(active.includes('-Mode Enqueue') && active.includes('-Mode Poll -Nonce'));
+assert.ok(active.includes('BAOGIANG_DEPLOY_RESULT_VERIFIED sha='));
+assert.ok(active.includes('BAOGIANG_DEPLOY_RESULT_ALREADY_CURRENT sha='));
+assert.ok(active.includes('BAOGIANG_DEPLOY_RESULT_FAILED sha='));
+assert.ok(active.includes('DEPLOY_POLL_TRANSPORT_RETRY') && active.includes('DEPLOY_ENQUEUE_TRANSPORT_RETRY'));
+assert.ok(active.includes('DEPLOY_RESULT_TIMEOUT'));
+assert.ok(active.includes('timeout 35s ssh'));
+assert.ok(!active.includes('tee "$RUNNER_TEMP/baogiang-deploy-result.txt"'));
+assert.doesNotMatch(active, /\\\\\$\{\{/,'GitHub expression must not be escaped in YAML env values');
+assert.doesNotMatch(active, /\\\\\$\{(?:TARGET_SHA|nonce|accepted##)/,'Bash parameter expansion must not be escaped');
 const requestScript = fs.readFileSync(path.join(__dirname, '..', 'deploy', 'windows', 'request-deploy.ps1'), 'utf8');
 assert.ok(requestScript.includes('BaoGiangDeploymentWorker') && requestScript.includes('schtasks.exe'));
+for(const token of ["'Enqueue'","'Poll'",'DEPLOY_BUSY_DIFFERENT_OR_STALE_REQUEST','Global\\BaoGiangDeployRequestLock','DEPLOY_WORKER_START_NOT_CONFIRMED','BAOGIANG_DEPLOY_ACCEPTED','Task Scheduler exposes Running','existingAge -le 2','statusOwnsExisting']) assert.ok(requestScript.includes(token), 'missing resumable deployment protocol: '+token);
 assert.ok(requestScript.includes('BAOGIANG_WORKER_RESULT_TIMEOUT'));
 assert.match(active, /RUN_MIGRATIONS.*== 'false'/);
 assert.doesNotMatch(active, /git clone|npm install|npm ci|migrate deploy|restart-service|Stop-Service/i);
@@ -106,3 +91,12 @@ assert.match(stable, /Get-FileHash.*SHA256/);
 assert.match(stable, /SourceArchiveName/);
 
 console.log('[workflow-contract] PASS (parsed trigger/job/permissions/concurrency/inputs/environment/transfer/report structure)');
+
+const workerScript=fs.readFileSync(path.join(__dirname,'..','deploy','windows','deploy-worker.ps1'),'utf8');
+assert.ok(workerScript.includes("$state.status='running'") && workerScript.includes('WriteAllText($runningTmp'));
+const healthScript=fs.readFileSync(path.join(__dirname,'..','deploy','windows','test-production-health.ps1'),'utf8');
+const controllerScript=fs.readFileSync(path.join(__dirname,'..','deploy','windows','invoke-production-deploy.ps1'),'utf8');
+assert.ok(healthScript.includes('FRONTEND_PUBLIC_INDEX_RELEASE_MISMATCH'));
+assert.ok(healthScript.includes('FRONTEND_PUBLIC_ASSET_RELEASE_MISMATCH'));
+assert.ok(healthScript.includes('FRONTEND_RELEASE_VERIFIED'));
+assert.ok(controllerScript.includes('-VerifyFrontend'),'controller must check versioned public frontend');

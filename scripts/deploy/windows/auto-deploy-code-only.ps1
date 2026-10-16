@@ -60,6 +60,7 @@ if ($PreflightOnly) {
 $oldTarget = [string](Get-Item -LiteralPath (Join-Path $root 'current') -Force).Target
 if ($oldTarget -match [regex]::Escape($ExpectedSha) + '$') {
   Assert-Http200 $healthUrl
+  & (Join-Path $repo 'scripts\deploy\windows\test-production-health.ps1') -BaseUrl 'https://baogiang.dtnt-damsan.edu.vn' -VerifyFrontend | Out-Null
   Write-Output "BAOGIANG_DEPLOY_ALREADY_CURRENT sha=$ExpectedSha"
   return
 }
@@ -115,6 +116,7 @@ try {
   if ($report.overallState -cne 'succeeded' -or $report.releaseSha -cne $ExpectedSha) {
     throw 'DEPLOY_REPORT_NOT_SUCCESSFUL'
   }
+  & (Join-Path $source 'test-production-health.ps1') -BaseUrl 'https://baogiang.dtnt-damsan.edu.vn' -VerifyFrontend | Out-Null
   Assert-Http200 $healthUrl
   Assert-Http200 $neighborHealthUrl
   $actualNeighborPid = (Get-NetTCPConnection -State Listen -LocalPort 3000 -ErrorAction Stop | Select-Object -First 1).OwningProcess

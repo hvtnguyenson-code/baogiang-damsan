@@ -80,8 +80,9 @@ jobs:
           ssh-keygen -l -E sha256 -f "$RUNNER_TEMP/baogiang-known-hosts" >/dev/null
           ssh-keygen -y -f "$RUNNER_TEMP/baogiang-ssh-key" >/dev/null
 
-      - name: Deploy exact main commit using pinned OpenSSH
+      - name: Enqueue exact SHA and reconcile short SSH sessions
         shell: bash
+        timeout-minutes: 40
         env:
           TARGET_SHA: ${{ inputs.commit_sha }}
           VPS_HOST: ${{ secrets.PROD_SSH_HOST }}
@@ -94,27 +95,78 @@ jobs:
           keyfile="$RUNNER_TEMP/baogiang-ssh-key"
           knownfile="$RUNNER_TEMP/baogiang-known-hosts"
           trap 'rm -f "$keyfile" "$knownfile"' EXIT
-          # Windows PowerShell writes CRLF. Preserve the SSH and tee exit codes
-          # independently; a success marker never overrides transport failure.
-          set +e
-          ssh -n -i "$keyfile" -p "$VPS_PORT" \
-            -o BatchMode=yes -o ConnectTimeout=20 \
-            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$knownfile" \
-            "$VPS_USER@$VPS_HOST" \
-            powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass \
-            -File 'C:\ProgramData\BaoGiangDeploy\request-deploy.ps1' -ExpectedSha "$TARGET_SHA" |
-            tee "$RUNNER_TEMP/baogiang-deploy-result.txt"
-          transport_status=( "${PIPESTATUS[@]}" )
-          set -e
-          if [[ "${transport_status[0]}" -ne 0 || "${transport_status[1]}" -ne 0 ]]; then
-            echo "DEPLOY_TRANSPORT_FAILED ssh=${transport_status[0]} tee=${transport_status[1]}" >&2
-            exit 1
-          fi
-          # Strip only a terminal CR on each line. Do not relax the SHA-bound
-          # full-line match or interpret arbitrary worker text as success.
-          sed 's/\r$//' "$RUNNER_TEMP/baogiang-deploy-result.txt" > "$RUNNER_TEMP/baogiang-deploy-normalized.txt"
-          if ! grep -Eq "^(BAOGIANG_DEPLOY_VERIFIED sha=${TARGET_SHA} neighbor_pid=[0-9]+|BAOGIANG_DEPLOY_ALREADY_CURRENT sha=${TARGET_SHA})$" "$RUNNER_TEMP/baogiang-deploy-normalized.txt"; then
-            echo "DEPLOY_EVIDENCE_INVALID: SSH succeeded without exact verified SHA evidence" >&2
-            exit 1
-          fi
-          echo "DEPLOY_EVIDENCE_ACCEPTED sha=$TARGET_SHA"
+          # Never keep an SSH session attached to the multi-minute Windows build.
+          remote() {
+            timeout 35s ssh -n -i "$keyfile" -p "$VPS_PORT" \
+              -o BatchMode=yes -o ConnectTimeout=15 \
+              -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+              -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$knownfile" \
+              "$VPS_USER@$VPS_HOST" \
+              powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass \
+              -File 'C:\ProgramData\BaoGiangDeploy\request-deploy.ps1' \
+              -ExpectedSha "$TARGET_SHA" "$@"
+          }
+          # An ambiguous transport failure MUST be retried idempotently,
+          # not treated as permission to launch another worker.
+          accepted=''
+          for attempt in {1..8}; do
+            set +e
+            response="$(remote -Mode Enqueue 2>&1)"
+            rc=$?
+            set -e
+            clean="$(printf '%s\n' "$response" | sed 's/\r$//')"
+            if [[ "$rc" -eq 0 ]] && printf '%s\n' "$clean" | grep -Eq "^BAOGIANG_DEPLOY_ALREADY_CURRENT sha=${TARGET_SHA}$"; then
+              echo "BAOGIANG_DEPLOY_ALREADY_CURRENT sha=$TARGET_SHA"
+              exit 0
+            fi
+            if [[ "$rc" -eq 0 ]]; then
+              accepted="$(printf '%s\n' "$clean" | grep -E "^BAOGIANG_DEPLOY_ACCEPTED sha=${TARGET_SHA} nonce=[0-9a-f]{32}$" | tail -n 1 || true)"
+              [[ -n "$accepted" ]] || { echo 'DEPLOY_ENQUEUE_EVIDENCE_INVALID' >&2; exit 1; }
+              break
+            fi
+            # Error 255 (transport) or 124 (local SSH timeout) may be retried.
+            if [[ "$rc" -ne 255 && "$rc" -ne 124 ]]; then
+              echo "DEPLOY_ENQUEUE_REJECTED code=$rc" >&2
+              exit 1
+            fi
+            echo "DEPLOY_ENQUEUE_TRANSPORT_RETRY attempt=$attempt code=$rc"
+            sleep 8
+          done
+          [[ -n "$accepted" ]] || { echo 'DEPLOY_ENQUEUE_TRANSPORT_EXHAUSTED' >&2; exit 1; }
+          nonce="${accepted##*nonce=}"
+          echo "BAOGIANG_DEPLOY_ENQUEUED sha=$TARGET_SHA"
+          # Reconnect for each observation. A dead SSH session does not kill
+          # the detached SYSTEM worker. Timeout is independent of worker state.
+          for attempt in {1..180}; do
+            set +e
+            response="$(remote -Mode Poll -Nonce "$nonce" 2>&1)"
+            rc=$?
+            set -e
+            clean="$(printf '%s\n' "$response" | sed 's/\r$//')"
+            if [[ "$rc" -eq 0 ]]; then
+              if printf '%s\n' "$clean" | grep -Eq "^BAOGIANG_DEPLOY_RESULT_VERIFIED sha=${TARGET_SHA} nonce=${nonce} neighbor_pid=[0-9]+$"; then
+                echo "BAOGIANG_DEPLOY_VERIFIED sha=$TARGET_SHA"
+                exit 0
+              fi
+              if printf '%s\n' "$clean" | grep -Eq "^BAOGIANG_DEPLOY_RESULT_ALREADY_CURRENT sha=${TARGET_SHA} nonce=${nonce}$"; then
+                echo "BAOGIANG_DEPLOY_ALREADY_CURRENT sha=$TARGET_SHA"
+                exit 0
+              fi
+              if printf '%s\n' "$clean" | grep -Eq "^BAOGIANG_DEPLOY_RESULT_FAILED sha=${TARGET_SHA} nonce=${nonce}$"; then
+                echo "BAOGIANG_WORKER_FAILED sha=$TARGET_SHA" >&2
+                exit 1
+              fi
+              if ! printf '%s\n' "$clean" | grep -Eq "^BAOGIANG_DEPLOY_(PENDING|RUNNING) sha=${TARGET_SHA} nonce=${nonce}$"; then
+                echo 'DEPLOY_POLL_EVIDENCE_INVALID' >&2
+                exit 1
+              fi
+            elif [[ "$rc" -eq 255 || "$rc" -eq 124 ]]; then
+              echo "DEPLOY_POLL_TRANSPORT_RETRY attempt=$attempt code=$rc"
+            else
+              echo "DEPLOY_POLL_REJECTED code=$rc" >&2
+              exit 1
+            fi
+            sleep 12
+          done
+          echo "DEPLOY_RESULT_TIMEOUT sha=$TARGET_SHA" >&2
+          exit 1

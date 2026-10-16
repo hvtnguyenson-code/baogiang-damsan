@@ -23,6 +23,15 @@ try {
   $state.nonce=[string]$request.nonce
   $state.preflightOnly=[bool]$request.preflightOnly
   $state.status='running'
+  # Publish RUNNING before any long build so a short-lived observer can
+  # distinguish a pending task from active work after SSH disconnects.
+  $runningTmp=$statusPath+'.running-'+$state.nonce+'.tmp'
+  try {
+    [IO.File]::WriteAllText($runningTmp,($state|ConvertTo-Json -Depth 4),[Text.UTF8Encoding]::new($false))
+    Move-Item -LiteralPath $runningTmp -Destination $statusPath -Force -ErrorAction Stop
+  } finally {
+    if(Test-Path -LiteralPath $runningTmp){Remove-Item -LiteralPath $runningTmp -Force -ErrorAction SilentlyContinue}
+  }
   $output=@(& $runner -ExpectedSha $state.sha -PreflightOnly:$state.preflightOnly)
   if($LASTEXITCODE -and $LASTEXITCODE -ne 0){throw 'RUNNER_FAILED'}
   $evidence=($output|Where-Object{$_ -is [string] -and $_ -match '^BAOGIANG_(PREFLIGHT_PASS|DEPLOY_VERIFIED|DEPLOY_ALREADY_CURRENT)' }|Select-Object -Last 1)
