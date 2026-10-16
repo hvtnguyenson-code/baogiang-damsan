@@ -74,6 +74,8 @@ assert.ok(active.includes('DEPLOY_POLL_TRANSPORT_RETRY') && active.includes('DEP
 assert.ok(active.includes('DEPLOY_RESULT_TIMEOUT'));
 assert.ok(active.includes('timeout 35s ssh'));
 assert.ok(!active.includes('tee "$RUNNER_TEMP/baogiang-deploy-result.txt"'));
+assert.doesNotMatch(active, /\\\\\$\{\{/,'GitHub expression must not be escaped in YAML env values');
+assert.doesNotMatch(active, /\\\\\$\{(?:TARGET_SHA|nonce|accepted##)/,'Bash parameter expansion must not be escaped');
 const requestScript = fs.readFileSync(path.join(__dirname, '..', 'deploy', 'windows', 'request-deploy.ps1'), 'utf8');
 assert.ok(requestScript.includes('BaoGiangDeploymentWorker') && requestScript.includes('schtasks.exe'));
 for(const token of ["'Enqueue'","'Poll'",'DEPLOY_BUSY_DIFFERENT_OR_STALE_REQUEST','Global\\BaoGiangDeployRequestLock','DEPLOY_WORKER_START_NOT_CONFIRMED','BAOGIANG_DEPLOY_ACCEPTED']) assert.ok(requestScript.includes(token), 'missing resumable deployment protocol: '+token);
