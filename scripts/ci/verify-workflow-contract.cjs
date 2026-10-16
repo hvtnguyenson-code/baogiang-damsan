@@ -78,7 +78,7 @@ assert.doesNotMatch(active, /\\\\\$\{\{/,'GitHub expression must not be escaped 
 assert.doesNotMatch(active, /\\\\\$\{(?:TARGET_SHA|nonce|accepted##)/,'Bash parameter expansion must not be escaped');
 const requestScript = fs.readFileSync(path.join(__dirname, '..', 'deploy', 'windows', 'request-deploy.ps1'), 'utf8');
 assert.ok(requestScript.includes('BaoGiangDeploymentWorker') && requestScript.includes('schtasks.exe'));
-for(const token of ["'Enqueue'","'Poll'",'DEPLOY_BUSY_DIFFERENT_OR_STALE_REQUEST','Global\\BaoGiangDeployRequestLock','DEPLOY_WORKER_START_NOT_CONFIRMED','BAOGIANG_DEPLOY_ACCEPTED']) assert.ok(requestScript.includes(token), 'missing resumable deployment protocol: '+token);
+for(const token of ["'Enqueue'","'Poll'",'DEPLOY_BUSY_DIFFERENT_OR_STALE_REQUEST','Global\\BaoGiangDeployRequestLock','DEPLOY_WORKER_START_NOT_CONFIRMED','BAOGIANG_DEPLOY_ACCEPTED','Task Scheduler exposes Running','existingAge -le 2','statusOwnsExisting']) assert.ok(requestScript.includes(token), 'missing resumable deployment protocol: '+token);
 assert.ok(requestScript.includes('BAOGIANG_WORKER_RESULT_TIMEOUT'));
 assert.match(active, /RUN_MIGRATIONS.*== 'false'/);
 assert.doesNotMatch(active, /git clone|npm install|npm ci|migrate deploy|restart-service|Stop-Service/i);
