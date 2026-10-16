@@ -70,6 +70,28 @@ assert.ok(active.includes('BAOGIANG_DEPLOY_VERIFIED sha=${TARGET_SHA} neighbor_p
 assert.ok(active.includes('BAOGIANG_DEPLOY_ALREADY_CURRENT sha=${TARGET_SHA}'), 'must recognize safe idempotent deploy');
 assert.ok(active.includes('tee "$RUNNER_TEMP/baogiang-deploy-result.txt"'), 'stdout evidence must be captured');
 assert.ok(!active.includes('C:\\baogiang\\shared\\request-deploy.ps1'), 'obsolete script path must be rejected');
+// Windows stdout is CRLF: transport and worker evidence remain independent fail-closed gates.
+for (const guard of ['set +e', 'transport_status=(', 'transport_status[0]', 'transport_status[1]',
+  'DEPLOY_TRANSPORT_FAILED', 'DEPLOY_EVIDENCE_INVALID', 'baogiang-deploy-normalized.txt',
+  'DEPLOY_EVIDENCE_ACCEPTED sha=$TARGET_SHA']) {
+  assert.ok(active.includes(guard), 'missing deployment evidence guard: ' + guard);
+}
+assert.ok(active.includes("sed 's/\\r$//'"), 'terminal CR normalization missing');
+assert.ok(active.indexOf('transport_status=(') < active.indexOf('baogiang-deploy-normalized.txt'));
+if (process.platform !== 'win32') {
+  const { spawnSync } = require('node:child_process');
+  const sha = 'a'.repeat(40);
+  const pattern = '^(BAOGIANG_DEPLOY_VERIFIED sha=' + sha + ' neighbor_pid=[0-9]+|BAOGIANG_DEPLOY_ALREADY_CURRENT sha=' + sha + ')$';
+  const check = (payload, sshExit) => spawnSync('bash', ['-c',
+    "set -euo pipefail; [[ \"$SSH_EXIT\" -eq 0 ]] || exit 41; printf '%s' \"$PAYLOAD\" | sed 's/\\r$//' | grep -Eq \"$PATTERN\""
+  ], { env: { ...process.env, PAYLOAD: payload, SSH_EXIT: String(sshExit), PATTERN: pattern } }).status;
+  assert.equal(check('BAOGIANG_DEPLOY_VERIFIED sha=' + sha + ' neighbor_pid=8452\r\n', 0), 0);
+  assert.equal(check('BAOGIANG_DEPLOY_ALREADY_CURRENT sha=' + sha + '\n', 0), 0);
+  assert.notEqual(check('BAOGIANG_DEPLOY_VERIFIED sha=' + sha + ' neighbor_pid=8452\r\n', 255), 0);
+  assert.notEqual(check('BAOGIANG_DEPLOY_VERIFIED sha=' + 'b'.repeat(40) + ' neighbor_pid=8452\r\n', 0), 0);
+  assert.notEqual(check('WORKER_FAILED\r\n', 0), 0);
+  assert.notEqual(check('BAOGIANG_DEPLOY_VERIFIED sha=' + sha + ' neighbor_pid=8452 extra\r\n', 0), 0);
+}
 const requestScript = fs.readFileSync(path.join(__dirname, '..', 'deploy', 'windows', 'request-deploy.ps1'), 'utf8');
 assert.ok(requestScript.includes('BaoGiangDeploymentWorker') && requestScript.includes('schtasks.exe'));
 assert.ok(requestScript.includes('BAOGIANG_WORKER_RESULT_TIMEOUT'));
