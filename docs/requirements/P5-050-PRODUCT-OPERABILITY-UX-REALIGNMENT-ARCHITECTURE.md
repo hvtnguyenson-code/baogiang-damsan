@@ -34,13 +34,14 @@ The following are evidence of current-state gaps, not implementation prescriptio
 1. `UsersService.create/activate` does not materialize the baseline `TEACHER_BASE / PERSONAL` grant for an activated school professional.
 2. `positionTitle` is profile text only; it does not create a coherent work responsibility bundle.
 3. `CapabilitiesPage` requires an administrator to reason directly about low-level capability/scope/resource combinations.
-4. Native timetable ingestion is implemented in `apps/api/src/timetable-import`, `timetables`, and `time-slots`, but `apps/web` has no timetable-import administration page or route and does not consume `TIMETABLE_MANAGE`.
-5. PPCT native import has a UI, but discoverability is entirely dependent on exact low-level grants.
-6. `CALENDAR_EXCEPTION_MANAGE`, `TIMETABLE_MANAGE`, `TEACHING_EXECUTION_RECORD`, and `REPORTING_READ` do not currently have coherent Web navigation surfaces matching their backend authority.
-7. `AppLayout` renders a flat capability-filtered navigation. Current route catalogs allow up to 18 management links plus 4 professional links, in addition to fixed links.
-8. `HomePage` is primarily a route index; it is not an action/readiness workspace.
-9. The v1.2 mandatory per-account notification center and Web Push business channel are not implemented as an end-user product surface. Telegram is a separate channel and is not authority to remove the original in-app notification requirement.
-10. P4-040 documentation references traceability row T31 while the canonical traceability matrix does not currently contain T31. P5-050 MUST NOT reuse or redefine T31. Historical T31 reconciliation is registered separately under P0-005.
+4. `UsersPage` supports create/edit/activate/disable/unlock/password reset but has no safe account-deletion workflow; physical deletion must be restricted to clean-slate accidental/test accounts rather than exposed as unrestricted CRUD.
+5. Native timetable ingestion is implemented in `apps/api/src/timetable-import`, `timetables`, and `time-slots`, but `apps/web` has no timetable-import administration page or route and does not consume `TIMETABLE_MANAGE`.
+6. PPCT native import has a UI, but discoverability is entirely dependent on exact low-level grants.
+7. `CALENDAR_EXCEPTION_MANAGE`, `TIMETABLE_MANAGE`, `TEACHING_EXECUTION_RECORD`, and `REPORTING_READ` do not currently have coherent Web navigation surfaces matching their backend authority.
+8. `AppLayout` renders a flat capability-filtered navigation. Current route catalogs allow up to 18 management links plus 4 professional links, in addition to fixed links.
+9. `HomePage` is primarily a route index; it is not an action/readiness workspace.
+10. The v1.2 mandatory per-account notification center and Web Push business channel are not implemented as an end-user product surface. Telegram is a separate channel and is not authority to remove the original in-app notification requirement.
+11. P4-040 documentation references traceability row T31 while the canonical traceability matrix does not currently contain T31. P5-050 MUST NOT reuse or redefine T31. Historical T31 reconciliation is registered separately under P0-005.
 
 ## 4. Audit baseline
 
@@ -87,7 +88,7 @@ Telegram remains an optional dedicated integration. P5-056A/P5-056 restore the i
 
 | Task | Scope | Depends on |
 |---|---|---|
-| P5-051 | Professional baseline access + responsibility templates | P5-050 |
+| P5-051 | Professional baseline access + responsibility templates + safe user lifecycle | P5-050 |
 | P5-052 | Task-oriented information architecture + role-aware workspace | P5-050, P5-051 |
 | P5-053 | Timetable + time-slot administration workspace | P5-050, P2-050 |
 | P5-054 | Teaching-operations workspace closure | P5-050, P2-050, P3-031 |
@@ -110,7 +111,7 @@ P5-050 is CLOSED only when:
 
 1. this architecture is independently reviewed;
 2. T50–T56 are registered in the canonical traceability matrix;
-3. P5-051..P5-057 and P5-056A are registered in the canonical task register;
+3. P5-051..P5-057 and P5-056A are registered in the canonical task register, with P5-051 covering safe clean-slate user deletion;
 4. P6-050 dependency includes P5-057;
 5. current project status reflects the reopened product-operability path;
 6. no runtime/schema/API/UI/deployment/VPS mutation is present in the P5-050 PR;
