@@ -67,7 +67,16 @@ try{
   # same nonce instead of overwriting the request that the worker is about to read.
   if($Mode -ceq 'Enqueue' -and $null -ne $existing -and
      [string]$existing.sha -ceq $ExpectedSha -and
-     [string]$existing.nonce -cmatch '^[0-9a-f]{32}  if($busy){
+     [string]$existing.nonce -cmatch '^[0-9a-f]{32}$'){
+    $existingIssued=[DateTimeOffset]::Parse([string]$existing.issuedUtc)
+    $existingAge=([DateTimeOffset]::UtcNow-$existingIssued).TotalMinutes
+    $statusOwnsExisting=($null -ne $status -and [string]$status.nonce -ceq [string]$existing.nonce)
+    if(-not $busy -and -not $statusOwnsExisting -and $existingAge -ge -1 -and $existingAge -le 2){
+      Write-Output "BAOGIANG_DEPLOY_ACCEPTED sha=$ExpectedSha nonce=$($existing.nonce)"
+      return
+    }
+  }
+  if($busy){
     if($null -ne $existing -and [string]$existing.sha -ceq $ExpectedSha -and
        [string]$existing.nonce -cmatch '^[0-9a-f]{32}$' -and
        ([DateTimeOffset]::UtcNow-[DateTimeOffset]::Parse([string]$existing.issuedUtc)).TotalMinutes -le 45){
