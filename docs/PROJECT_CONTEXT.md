@@ -34,10 +34,10 @@ Phương án chính thức là Phương án B:
 
 - Windows VPS + PostgreSQL + Nginx;
 - domain chính thức `baogiang.dtnt-damsan.edu.vn`;
-- source lên VPS phải đi từ exact GitHub commit đã review;
-- database production ở trạng thái pre-operational cho tới quyết định pilot/go-live;
+- source lên VPS phải đi từ exact GitHub commit đã review và green main CI; canonical code-only CD hiện đã hoạt động;
+- database/business product vẫn ở trạng thái pre-operational cho tới quyết định pilot/go-live;
 - local không dùng database VPS làm automated test database;
-- deployment/migration cần task và phê duyệt riêng.
+- migration và thay đổi hạ tầng production vẫn cần task/phê duyệt riêng; không sửa source trực tiếp trên VPS.
 
 Hạ tầng và topology production:
 
@@ -47,12 +47,28 @@ Hạ tầng và topology production:
 - `SHARED_VPS` không đồng nghĩa shared application authority: Báo giảng phải có root, runtime port, Scheduled Task, environment/secrets boundary, logs/backups, PostgreSQL database/role và TLS lifecycle riêng.
 - DamSanV5 / Quản lí nội trú application roots, processes, Scheduled Tasks/services, database resources, Nginx/TLS/monitoring state là protected neighbours và không được mutate implicit.
 - `P6-005` và `P6-010` đã formal `CLOSED`. P6-010 repository authority được khóa bởi final head `76eb89ff987b3f61920d12b2d7a56da1136b5378`, PR #176, exact-head CI #577 SUCCESS, merge/main `edc4d2b92f629e989679063246c815c9ad5ce870`, post-merge CI #578 SUCCESS và `SYNC-P6-010`. Closure này không cấp quyền deploy/mutate production; Stage 1 passive evidence vẫn thuộc P6-020 và còn trigger-gated.
+- Sau các authorization riêng ngày 2026-10-16, canonical GitHub→VPS code-only CD đã được vận hành thực tế: PR #236/#237 hợp nhất resumable/verified deploy + permission-safe enqueue; main CI #775 và deploy #9 SUCCESS cho `c61103d...`; sau P5-050 merge, main CI #778, auto-deploy #12 và Deploy VPS #10 SUCCESS cho `e393cbd...`. `C:\baogiang\current` và deploy source cùng exact SHA; port 3100/public health 200; Nội trú port 3000 vẫn healthy và không bị restart. Formal P6-020/P6-025/P6-030 task lifecycle vẫn phải reconciliation riêng, nên không suy từ runtime evidence thành teacher-pilot authority.
 
 Authority môi trường/delivery cao nhất vẫn là:
 
 - `docs/specifications/PA-B-VPS-PostgreSQL-v1.3-IMPLEMENTATION-ADDENDUM.md`;
 - `docs/decisions/ADR-005-OFFICIAL-VPS-CI-CD.md`;
 - production runbooks/authority hiện hành.
+
+## Product operability programme — 2026-10-16
+
+Live PHT testing xác nhận backend completion chưa đồng nghĩa usable product. P5-050 đã formal CLOSED sau PR #238 / merge `e393cbd3ba1167e19c5e4bfb67efd7f6233f4c29` / post-merge CI #778 SUCCESS. Canonical next programme là P5-051..P5-057 với traceability T50–T56.
+
+Quy trình thực thi đã khóa:
+
+- Antigravity IDE là implementer mặc định;
+- ChatGPT audit exact state, viết prompt, review GitHub/CI độc lập và chỉ huy correction/merge;
+- Codex được dùng khi ChatGPT escalation phần khó/rủi ro cao như schema/migration, auth/capability, concurrency, security, CI/CD hoặc complex E2E;
+- một task = một active branch; local checks trước push; batch correction; GitHub Actions không dùng như debugger;
+- implementation agent dừng trước merge/deploy;
+- P5-057 là gate product-operability bắt buộc trước P6-050 teacher pilot.
+
+P5-051 bao gồm safe user lifecycle: tài khoản test/nhầm chỉ được physical delete khi server chứng minh clean-slate; tài khoản đã có login/business/audit history phải disable và giữ lịch sử.
 
 ## Công nghệ
 
