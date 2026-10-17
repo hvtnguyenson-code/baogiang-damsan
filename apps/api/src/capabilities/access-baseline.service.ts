@@ -19,6 +19,7 @@ import {
   BaselineReconciliationPreviewResponse,
   BaselineReconciliationUserResult,
   CapabilityGrantRecord,
+  CapabilityScope,
   GrantDeltaItem,
   ResponsibilityTemplateApplyRequest,
   ResponsibilityTemplateApplyResponse,
@@ -53,13 +54,65 @@ export class AccessBaselineService {
 
   /**
    * Single server-owned eligibility rule for professional baseline:
-   * Profile exists AND profile.isTeachingStaff === true.
+   * Status === ACTIVE AND profile exists AND profile.isTeachingStaff === true.
    * Never inferred from positionTitle, duty, membership, assignment, or username.
    */
   isEligibleForProfessionalBaseline(user: {
+    status?: UserStatus;
     profile?: { isTeachingStaff: boolean } | null;
   }): boolean {
-    return !!user.profile && user.profile.isTeachingStaff === true;
+    return (
+      (user.status === undefined || user.status === UserStatus.ACTIVE) &&
+      !!user.profile &&
+      user.profile.isTeachingStaff === true
+    );
+  }
+
+  /**
+   * Server-owned validation helper enforcing CapabilityDefinition semantics
+   * for every grant spec before insertion:
+   * 1. CapabilityDefinition exists
+   * 2. definition.isActive === true
+   * 3. definition.allowedScopeTypes includes spec.scopeType
+   *
+   * Fails closed with Vietnamese error if any spec is invalid.
+   */
+  async validateCapabilityGrantSpecs(
+    specs: Array<{ capabilityKey: string; scopeType: CapabilityScope }>,
+    client: Prisma.TransactionClient | PrismaService,
+  ): Promise<void> {
+    if (specs.length === 0) return;
+
+    const keys = [...new Set(specs.map((s) => s.capabilityKey))];
+    const definitions = await client.capabilityDefinition.findMany({
+      where: { key: { in: keys } },
+      select: {
+        key: true,
+        isActive: true,
+        allowedScopeTypes: true,
+      },
+    });
+
+    const defMap = new Map(definitions.map((d) => [d.key, d]));
+
+    for (const spec of specs) {
+      const def = defMap.get(spec.capabilityKey);
+      if (!def) {
+        throw new NotFoundException(
+          `Không tìm thấy định nghĩa quyền: ${spec.capabilityKey}.`,
+        );
+      }
+      if (!def.isActive) {
+        throw new ConflictException(
+          `Quyền ${spec.capabilityKey} đang bị vô hiệu hóa hoặc không khả dụng.`,
+        );
+      }
+      if (!def.allowedScopeTypes.includes(spec.scopeType)) {
+        throw new ConflictException(
+          `Phạm vi ${spec.scopeType} không được phép cho quyền ${spec.capabilityKey}.`,
+        );
+      }
+    }
   }
 
   /**
@@ -131,7 +184,13 @@ export class AccessBaselineService {
         );
       }
 
-      // 4. Insert missing TEACHER_BASE grant
+      // 4. Validate capability definition before insert
+      await this.validateCapabilityGrantSpecs(
+        [{ capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL' }],
+        tx,
+      );
+
+      // 5. Insert missing TEACHER_BASE grant
       const grant = await tx.capabilityGrant.create({
         data: {
           userId,
@@ -368,6 +427,9 @@ export class AccessBaselineService {
         programmeMasterId: resolved.programmeMasterId,
       });
 
+      // Validate all grant specs before checking or inserting grants
+      await this.validateCapabilityGrantSpecs(grantSpecs, tx);
+
       // 5. Re-read non-revoked grants
       const existingGrants = await tx.capabilityGrant.findMany({
         where: { userId, revokedAt: null },
@@ -601,6 +663,10 @@ export class AccessBaselineService {
   ): Promise<BaselineReconciliationApplyResponse> {
     return this.prisma.$transaction(async (tx) => {
       // 1. Determine target users
+      if (dto.targetUserIds !== undefined && dto.targetUserIds.length === 0) {
+        throw new BadRequestException('targetUserIds không được là mảng rỗng.');
+      }
+
       let candidateIds: string[];
       if (dto.targetUserIds && dto.targetUserIds.length > 0) {
         candidateIds = [...new Set(dto.targetUserIds)];
@@ -615,6 +681,12 @@ export class AccessBaselineService {
 
       // Deterministic sort order
       candidateIds.sort();
+
+      // Enforce capability definition validation before evaluating or inserting
+      await this.validateCapabilityGrantSpecs(
+        [{ capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL' }],
+        tx,
+      );
 
       // 2. Lock target user rows deterministically
       for (const id of candidateIds) {
@@ -652,6 +724,17 @@ export class AccessBaselineService {
       const results: BaselineReconciliationUserResult[] = [];
 
       for (const user of users) {
+        if (user.status !== UserStatus.ACTIVE) {
+          skippedExcluded++;
+          results.push({
+            userId: user.id,
+            username: user.username,
+            status: 'EXCLUDED',
+            reason: `Người dùng không ở trạng thái hoạt động (${user.status}).`,
+          });
+          continue;
+        }
+
         if (!user.profile || user.profile.isTeachingStaff !== true) {
           skippedExcluded++;
           results.push({
@@ -733,6 +816,20 @@ export class AccessBaselineService {
         );
       }
 
+      // Check for any candidate IDs that were not found in database
+      const userMap = new Map(users.map((u) => [u.id, u]));
+      for (const id of candidateIds) {
+        if (!userMap.has(id)) {
+          skippedExcluded++;
+          results.push({
+            userId: id,
+            username: '',
+            status: 'EXCLUDED',
+            reason: 'Không tìm thấy người dùng.',
+          });
+        }
+      }
+
       // Summary audit
       await this.audit.write(
         {
@@ -743,7 +840,7 @@ export class AccessBaselineService {
           requestId: meta.requestId,
           result: AuditResult.SUCCESS,
           metadata: {
-            processedCount: users.length,
+            processedCount: candidateIds.length,
             grantsCreated,
             skippedAlreadyCompliant,
             skippedConflict,
@@ -754,7 +851,7 @@ export class AccessBaselineService {
       );
 
       return {
-        processedCount: users.length,
+        processedCount: candidateIds.length,
         grantsCreated,
         skippedAlreadyCompliant,
         skippedConflict,
@@ -835,47 +932,28 @@ export class AccessBaselineService {
       let resolvedSubjectIds: string[] = [];
 
       if (input.subjectIds && input.subjectIds.length > 0) {
-        // Validate explicitly provided subjects
+        const uniqueSubjectIds = [...new Set(input.subjectIds)].sort();
         const subjects = await prisma.subject.findMany({
-          where: { id: { in: input.subjectIds }, status: CatalogStatus.ACTIVE },
-          select: { id: true },
+          where: { id: { in: uniqueSubjectIds } },
+          select: { id: true, code: true, name: true, status: true },
         });
-        if (subjects.length !== input.subjectIds.length) {
-          throw new ConflictException('Một số môn học được chỉ định không tồn tại hoặc không hoạt động.');
+        if (subjects.length !== uniqueSubjectIds.length) {
+          throw new NotFoundException('Một hoặc nhiều môn học không tồn tại.');
         }
-        resolvedSubjectIds = [...new Set(input.subjectIds)].sort();
-      } else {
-        // Resolve active subjects from active group members
-        const now = new Date();
-        const activeMembers = await prisma.subjectGroupMembership.findMany({
-          where: {
-            subjectGroupId: group.id,
-            validFrom: { lte: now },
-            OR: [{ validUntil: null }, { validUntil: { gt: now } }],
-          },
-          select: { userId: true },
-        });
-        const memberUserIds = activeMembers.map((m) => m.userId);
-        if (memberUserIds.length > 0) {
-          const staffSubjects = await prisma.staffSubject.findMany({
-            where: {
-              userId: { in: memberUserIds },
-              validFrom: { lte: now },
-              OR: [{ validUntil: null }, { validUntil: { gt: now } }],
-              subject: { status: CatalogStatus.ACTIVE },
-            },
-            select: { subjectId: true },
-            distinct: ['subjectId'],
-          });
-          resolvedSubjectIds = staffSubjects.map((s) => s.subjectId).sort();
+        const inactive = subjects.find((s) => s.status !== CatalogStatus.ACTIVE);
+        if (inactive) {
+          throw new ConflictException(
+            `Môn học ${inactive.name} (${inactive.code}) không ở trạng thái hoạt động.`,
+          );
         }
+        resolvedSubjectIds = uniqueSubjectIds;
       }
 
       return {
         provided: true,
         subjectGroupId: group.id,
         subjectIds: resolvedSubjectIds,
-        details: `Tổ: ${group.name} (${group.code}) - ${resolvedSubjectIds.length} môn học trực thuộc`,
+        details: `Tổ: ${group.name} (${group.code})${resolvedSubjectIds.length > 0 ? ` - ${resolvedSubjectIds.length} môn chuyên môn được giao cho tổ trưởng` : ''}`,
       };
     }
 

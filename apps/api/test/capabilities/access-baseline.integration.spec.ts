@@ -403,7 +403,7 @@ integration('P5-051 Professional Baseline & Responsibility Templates (Isolated P
     expect(grants[0].scopeResourceId).toBe(gddpMaster.id);
   });
 
-  it('18. Subject Leader template resolves subject group and member subjects', async () => {
+  it('18. Subject Leader template requires subjectGroupId and materializes SubjectGroup + explicitly selected Subject grants', async () => {
     const admin = await h.actor({ grants: [{ capabilityKey: 'CAPABILITY_GRANT' }] });
     const userId = await createTestUser({ status: UserStatus.ACTIVE, isTeachingStaff: true });
 
@@ -417,6 +417,7 @@ integration('P5-051 Professional Baseline & Responsibility Templates (Isolated P
       data: { code: 'TIN', name: 'Tin học', status: CatalogStatus.ACTIVE },
     });
 
+    // 18A: selected valid subjectIds -> exact Subject grants + SubjectGroup grants
     const res = await admin.agent
       .post(`/api/users/${userId}/responsibility-templates/apply`)
       .set('Origin', testOrigin)
@@ -427,7 +428,6 @@ integration('P5-051 Professional Baseline & Responsibility Templates (Isolated P
       where: { userId, revokedAt: null },
     });
 
-    // Subject group grants
     const groupGrants = grants.filter((g) => g.scopeType === 'SUBJECT_GROUP');
     expect(groupGrants.map((g) => g.capabilityKey)).toEqual(
       expect.arrayContaining(['SUBJECT_GROUP_LEAD', 'ADDITIONAL_DUTY_ASSIGNMENT_MANAGE'])
@@ -436,9 +436,75 @@ integration('P5-051 Professional Baseline & Responsibility Templates (Isolated P
       expect(g.scopeResourceId).toBe(group.id);
     }
 
-    // Subject level grants for both subjects
     const subjectGrants = grants.filter((g) => g.scopeType === 'SUBJECT');
     expect(subjectGrants.length).toBe(10); // 5 keys * 2 subjects
+
+    // 18B: no subjectIds -> zero SUBJECT grants, but subjectGroup grants materialize
+    const user2 = await createTestUser({ status: UserStatus.ACTIVE, isTeachingStaff: true });
+    const resNoSubjects = await admin.agent
+      .post(`/api/users/${user2}/responsibility-templates/apply`)
+      .set('Origin', testOrigin)
+      .send({ templateKey: 'SUBJECT_LEADER', subjectGroupId: group.id });
+    expect(resNoSubjects.status).toBe(200);
+
+    const user2Grants = await h.prisma.capabilityGrant.findMany({
+      where: { userId: user2, revokedAt: null },
+    });
+    expect(user2Grants.filter((g) => g.scopeType === 'SUBJECT')).toHaveLength(0);
+    expect(user2Grants.filter((g) => g.scopeType === 'SUBJECT_GROUP')).toHaveLength(2);
+
+    // 18C: does NOT auto-infer subjects from group members + StaffSubject
+    await h.prisma.subjectGroupMembership.create({
+      data: {
+        userId,
+        subjectGroupId: group.id,
+        isPrimary: true,
+        validFrom: new Date('2026-01-01'),
+      },
+    });
+    await h.prisma.staffSubject.create({
+      data: {
+        userId,
+        subjectId: subject1.id,
+        validFrom: new Date('2026-01-01'),
+      },
+    });
+
+    const user3 = await createTestUser({ status: UserStatus.ACTIVE, isTeachingStaff: true });
+    const resNoInfer = await admin.agent
+      .post(`/api/users/${user3}/responsibility-templates/apply`)
+      .set('Origin', testOrigin)
+      .send({ templateKey: 'SUBJECT_LEADER', subjectGroupId: group.id });
+    expect(resNoInfer.status).toBe(200);
+
+    const user3Grants = await h.prisma.capabilityGrant.findMany({
+      where: { userId: user3, revokedAt: null },
+    });
+    expect(user3Grants.filter((g) => g.scopeType === 'SUBJECT')).toHaveLength(0);
+
+    // 18D: inactive subject -> fails closed (409 Conflict)
+    const inactiveSubj = await h.prisma.subject.create({
+      data: { code: 'INACT', name: 'Môn vô hiệu', status: CatalogStatus.INACTIVE },
+    });
+    const resInactive = await admin.agent
+      .post(`/api/users/${user3}/responsibility-templates/apply`)
+      .set('Origin', testOrigin)
+      .send({ templateKey: 'SUBJECT_LEADER', subjectGroupId: group.id, subjectIds: [inactiveSubj.id] });
+    expect(resInactive.status).toBe(409);
+
+    // 18E: nonexistent subject -> fails closed (404 Not Found)
+    const resNotFound = await admin.agent
+      .post(`/api/users/${user3}/responsibility-templates/apply`)
+      .set('Origin', testOrigin)
+      .send({ templateKey: 'SUBJECT_LEADER', subjectGroupId: group.id, subjectIds: [crypto.randomUUID()] });
+    expect(resNotFound.status).toBe(404);
+
+    // 18F: duplicate subject IDs -> rejected with 400 Bad Request by DTO @ArrayUnique
+    const resDuplicate = await admin.agent
+      .post(`/api/users/${user3}/responsibility-templates/apply`)
+      .set('Origin', testOrigin)
+      .send({ templateKey: 'SUBJECT_LEADER', subjectGroupId: group.id, subjectIds: [subject1.id, subject1.id] });
+    expect(resDuplicate.status).toBe(400);
   });
 
   // =========================================================================
@@ -617,5 +683,153 @@ integration('P5-051 Professional Baseline & Responsibility Templates (Isolated P
     });
     const metadata = event.metadata as Record<string, unknown>;
     expect(metadata['grantsAddedCount']).toBe(4);
+  });
+
+  // =========================================================================
+  // 26 & 27. Reconciliation Active-Only Invariant & DTO Safety
+  // =========================================================================
+  it('26. reconciliation enforces active-only invariant and excludes PENDING/DISABLED users', async () => {
+    const admin = await h.actor({ grants: [{ capabilityKey: 'CAPABILITY_GRANT' }] });
+
+    const userPending = await createTestUser({ status: UserStatus.PENDING, isTeachingStaff: true, usernamePrefix: 'rec-pend' });
+    const userDisabled = await createTestUser({ status: UserStatus.DISABLED, isTeachingStaff: true, usernamePrefix: 'rec-dis' });
+    const userActive = await createTestUser({ status: UserStatus.ACTIVE, isTeachingStaff: true, usernamePrefix: 'rec-act' });
+
+    // Explicitly targeting PENDING, DISABLED, and ACTIVE users
+    const res = await admin.agent
+      .post('/api/responsibility-templates/baseline-reconciliation/apply')
+      .set('Origin', testOrigin)
+      .send({ targetUserIds: [userPending, userDisabled, userActive] });
+    expect(res.status).toBe(200);
+
+    const pendResult = res.body.results.find((r: { userId: string }) => r.userId === userPending);
+    expect(pendResult?.status).toBe('EXCLUDED');
+    expect(pendResult?.reason).toMatch(/không ở trạng thái hoạt động/i);
+
+    const disResult = res.body.results.find((r: { userId: string }) => r.userId === userDisabled);
+    expect(disResult?.status).toBe('EXCLUDED');
+    expect(disResult?.reason).toMatch(/không ở trạng thái hoạt động/i);
+
+    const actResult = res.body.results.find((r: { userId: string }) => r.userId === userActive);
+    expect(actResult?.status).toBe('SUCCESS');
+
+    // Verify database grants: 0 grants for PENDING and DISABLED, 1 grant for ACTIVE
+    const pendGrants = await h.prisma.capabilityGrant.findMany({ where: { userId: userPending } });
+    expect(pendGrants).toHaveLength(0);
+
+    const disGrants = await h.prisma.capabilityGrant.findMany({ where: { userId: userDisabled } });
+    expect(disGrants).toHaveLength(0);
+
+    const actGrants = await h.prisma.capabilityGrant.findMany({ where: { userId: userActive, capabilityKey: 'TEACHER_BASE' } });
+    expect(actGrants).toHaveLength(1);
+  });
+
+  it('27. reconciliation DTO rejects empty array [] and duplicate targetUserIds with 400', async () => {
+    const admin = await h.actor({ grants: [{ capabilityKey: 'CAPABILITY_GRANT' }] });
+    const user = await createTestUser({ status: UserStatus.ACTIVE, isTeachingStaff: true });
+
+    // Empty array -> 400 Bad Request
+    const resEmpty = await admin.agent
+      .post('/api/responsibility-templates/baseline-reconciliation/apply')
+      .set('Origin', testOrigin)
+      .send({ targetUserIds: [] });
+    expect(resEmpty.status).toBe(400);
+
+    // Duplicate targetUserIds -> 400 Bad Request
+    const resDup = await admin.agent
+      .post('/api/responsibility-templates/baseline-reconciliation/apply')
+      .set('Origin', testOrigin)
+      .send({ targetUserIds: [user, user] });
+    expect(resDup.status).toBe(400);
+  });
+
+  // =========================================================================
+  // 28, 29, 30. CapabilityDefinition Validation & Atomic Rollback
+  // =========================================================================
+  it('28. CapabilityDefinition validation: inactive TEACHER_BASE rolls back user activation atomically', async () => {
+    const admin = await h.actor({ grants: [{ capabilityKey: 'USER_MANAGE' }, { capabilityKey: 'CAPABILITY_GRANT' }] });
+    const user = await createTestUser({ status: UserStatus.PENDING, isTeachingStaff: true });
+
+    // Temporarily deactivate TEACHER_BASE definition in DB
+    await h.prisma.capabilityDefinition.update({
+      where: { key: 'TEACHER_BASE' },
+      data: { isActive: false },
+    });
+
+    try {
+      const res = await admin.agent
+        .post(`/api/users/${user}/activate`)
+        .set('Origin', testOrigin)
+        .send({});
+      expect(res.status).toBe(409);
+
+      // Verify user remains in prior PENDING state and 0 grants created
+      const dbUser = await h.prisma.user.findUniqueOrThrow({ where: { id: user } });
+      expect(dbUser.status).toBe(UserStatus.PENDING);
+
+      const dbGrants = await h.prisma.capabilityGrant.findMany({ where: { userId: user } });
+      expect(dbGrants).toHaveLength(0);
+    } finally {
+      // Restore TEACHER_BASE definition
+      await h.prisma.capabilityDefinition.update({
+        where: { key: 'TEACHER_BASE' },
+        data: { isActive: true },
+      });
+    }
+  });
+
+  it('29. CapabilityDefinition validation: template with inactive capability fails closed with 0 partial grants', async () => {
+    const admin = await h.actor({ grants: [{ capabilityKey: 'CAPABILITY_GRANT' }] });
+    const user = await createTestUser({ status: UserStatus.ACTIVE, isTeachingStaff: true });
+
+    // Temporarily deactivate REPORTING_STATEMENT_SUBMIT
+    await h.prisma.capabilityDefinition.update({
+      where: { key: 'REPORTING_STATEMENT_SUBMIT' },
+      data: { isActive: false },
+    });
+
+    try {
+      const res = await admin.agent
+        .post(`/api/users/${user}/responsibility-templates/apply`)
+        .set('Origin', testOrigin)
+        .send({ templateKey: 'TEACHER' });
+      expect(res.status).toBe(409);
+
+      // No partial grants should exist for this user!
+      const dbGrants = await h.prisma.capabilityGrant.findMany({ where: { userId: user } });
+      expect(dbGrants).toHaveLength(0);
+    } finally {
+      await h.prisma.capabilityDefinition.update({
+        where: { key: 'REPORTING_STATEMENT_SUBMIT' },
+        data: { isActive: true },
+      });
+    }
+  });
+
+  it('30. CapabilityDefinition validation: template scope not in allowedScopeTypes fails closed', async () => {
+    const admin = await h.actor({ grants: [{ capabilityKey: 'CAPABILITY_GRANT' }] });
+    const user = await createTestUser({ status: UserStatus.ACTIVE, isTeachingStaff: true });
+
+    // Temporarily change allowedScopeTypes of REPORTING_STATEMENT_SUBMIT to only SCHOOL_WIDE
+    await h.prisma.capabilityDefinition.update({
+      where: { key: 'REPORTING_STATEMENT_SUBMIT' },
+      data: { allowedScopeTypes: ['SCHOOL_WIDE'] },
+    });
+
+    try {
+      const res = await admin.agent
+        .post(`/api/users/${user}/responsibility-templates/apply`)
+        .set('Origin', testOrigin)
+        .send({ templateKey: 'TEACHER' });
+      expect(res.status).toBe(409);
+
+      const dbGrants = await h.prisma.capabilityGrant.findMany({ where: { userId: user } });
+      expect(dbGrants).toHaveLength(0);
+    } finally {
+      await h.prisma.capabilityDefinition.update({
+        where: { key: 'REPORTING_STATEMENT_SUBMIT' },
+        data: { allowedScopeTypes: ['PERSONAL'] },
+      });
+    }
   });
 });

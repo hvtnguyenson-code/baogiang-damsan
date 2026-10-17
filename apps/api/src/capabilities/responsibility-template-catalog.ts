@@ -191,7 +191,7 @@ export const RESPONSIBILITY_TEMPLATE_DEFINITIONS: Record<ResponsibilityTemplateK
   SUBJECT_LEADER: {
     key: 'SUBJECT_LEADER',
     name: 'Tổ trưởng chuyên môn',
-    description: 'Quyền giáo viên cộng quyền điều phối tổ chuyên môn, phân công kiêm nhiệm tổ và quản lý chuyên môn theo các môn học thuộc tổ.',
+    description: 'Quyền giáo viên cộng quyền điều phối tổ chuyên môn, phân công kiêm nhiệm tổ và quản lý các môn chuyên môn được giao cho tổ trưởng.',
     version: TEMPLATE_VERSION,
     requiresTeachingStaff: true,
     requiredResourceKind: 'SUBJECT_GROUP',
@@ -219,8 +219,8 @@ export const RESPONSIBILITY_TEMPLATE_DEFINITIONS: Record<ResponsibilityTemplateK
     ],
     forbiddenDefaults: ['SYSTEM_ADMIN', 'USER_MANAGE', 'CAPABILITY_GRANT', 'APPROVAL_PRINCIPAL', 'APPROVAL_VICE_PRINCIPAL'],
     notes: [
-      'Chỉ áp dụng trong phạm vi tổ chuyên môn và môn học thuộc tổ; không có quyền quản trị toàn trường.',
-      'Các quyền theo môn học (PPCT, điều hành, thực hiện giảng dạy, báo cáo) chỉ materialize khi xác định rõ môn học hợp lệ thuộc tổ.',
+      'Chỉ áp dụng trong phạm vi tổ chuyên môn và môn chuyên môn được giao cho tổ trưởng; không có quyền quản trị toàn trường.',
+      'Các quyền theo môn học (PPCT, điều hành, thực hiện giảng dạy, báo cáo) chỉ materialize khi Admin chỉ định môn chuyên môn được giao cho tổ trưởng.',
     ],
   },
   VICE_PRINCIPAL_ACADEMIC: {
@@ -284,17 +284,17 @@ export const RESPONSIBILITY_TEMPLATE_DEFINITIONS: Record<ResponsibilityTemplateK
         category: 'SOURCE_AUTHORITY',
         description: 'Xem báo cáo kê khai toàn trường.',
       },
-      {
-        capabilityKey: 'AUDIT_VIEW',
-        scopeType: 'SCHOOL_WIDE',
-        scopeResourceId: null,
-        category: 'SOURCE_AUTHORITY',
-        description: 'Xem audit log toàn trường.',
-      },
     ],
     productOperabilityGrants: [
       ...TEACHER_OPERABILITY_GRANTS,
       ...PHT_OPERABILITY_GRANTS,
+      {
+        capabilityKey: 'AUDIT_VIEW',
+        scopeType: 'SCHOOL_WIDE',
+        scopeResourceId: null,
+        category: 'PRODUCT_OPERABILITY',
+        description: 'Xem audit log toàn trường.',
+      },
     ],
     forbiddenDefaults: [
       'SYSTEM_ADMIN',
@@ -466,35 +466,35 @@ export function materializeTemplateGrants(
             scopeType: 'SUBJECT',
             scopeResourceId: subjectId,
             category: 'PRODUCT_OPERABILITY',
-            description: 'Quản trị PPCT môn học thuộc tổ.',
+            description: 'Quản trị PPCT môn chuyên môn được giao cho tổ trưởng.',
           });
           grants.push({
             capabilityKey: 'TEACHING_OPERATION_MANAGE',
             scopeType: 'SUBJECT',
             scopeResourceId: subjectId,
             category: 'PRODUCT_OPERABILITY',
-            description: 'Quản lý điều hành tiết dạy môn học thuộc tổ.',
+            description: 'Quản lý điều hành tiết dạy môn chuyên môn được giao cho tổ trưởng.',
           });
           grants.push({
             capabilityKey: 'TEACHING_EXECUTION_MANAGE',
             scopeType: 'SUBJECT',
             scopeResourceId: subjectId,
             category: 'PRODUCT_OPERABILITY',
-            description: 'Quản lý bằng chứng thực hiện giảng dạy môn học thuộc tổ.',
+            description: 'Quản lý bằng chứng thực hiện giảng dạy môn chuyên môn được giao cho tổ trưởng.',
           });
           grants.push({
             capabilityKey: 'REPORTING_READ',
             scopeType: 'SUBJECT',
             scopeResourceId: subjectId,
             category: 'PRODUCT_OPERABILITY',
-            description: 'Xem báo cáo giảng dạy môn học thuộc tổ.',
+            description: 'Xem báo cáo giảng dạy môn chuyên môn được giao cho tổ trưởng.',
           });
           grants.push({
             capabilityKey: 'REPORTING_STATEMENT_READ',
             scopeType: 'SUBJECT',
             scopeResourceId: subjectId,
             category: 'PRODUCT_OPERABILITY',
-            description: 'Xem báo cáo kê khai môn học thuộc tổ.',
+            description: 'Xem báo cáo kê khai môn chuyên môn được giao cho tổ trưởng.',
           });
         }
       }

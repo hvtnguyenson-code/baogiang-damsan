@@ -422,15 +422,18 @@ test('real Phase 01 management flow preserves history and capability boundaries'
   await page.goto('/quan-tri/quyen');
   const capabilityForm = page.locator('section.inline-work-form form');
   await selectOptionMatching(capabilityForm.getByLabel('Người nhận'), /Giáo viên E2E Phase 01/);
-  await capabilityForm.getByLabel('Quyền').selectOption('TEACHER_BASE');
+  const capabilityHistory = page.locator('section[aria-labelledby="history-heading"]');
+  await expect(capabilityHistory.getByRole('heading', { name: /Lịch sử quyền của Giáo viên E2E Phase 01/ })).toBeVisible();
+  const baselineRow = capabilityHistory.locator('tbody tr', { hasText: 'Công việc giáo viên cơ bản' });
+  await expect(baselineRow).toBeVisible();
+  await expect(baselineRow.getByText('Công việc giáo viên cơ bản', { exact: true })).toBeVisible();
+
+  await capabilityForm.getByLabel('Quyền').selectOption('AI_RECEIVE_SUGGESTION');
   await capabilityForm.getByLabel('Phạm vi').selectOption('PERSONAL');
   await capabilityForm.getByRole('button', { name: 'Cấp quyền' }).click();
   await expect(page.getByRole('status').getByText('Đã cấp quyền.', { exact: true })).toBeVisible();
-  const capabilityHistory = page.locator('section[aria-labelledby="history-heading"]');
-  await expect(capabilityHistory.getByRole('heading', { name: /Lịch sử quyền của Giáo viên E2E Phase 01/ })).toBeVisible();
-  const capabilityRow = capabilityHistory.locator('tbody tr', { hasText: 'Công việc giáo viên cơ bản' });
-  await expect(capabilityRow).toBeVisible();
-  await expect(capabilityRow.getByText('Công việc giáo viên cơ bản', { exact: true })).toBeVisible();
+  const manualCapabilityRow = capabilityHistory.locator('tbody tr', { hasText: 'AI_RECEIVE_SUGGESTION' });
+  await expect(manualCapabilityRow).toBeVisible();
   await prepareScreenshot(page);
   await page.screenshot({ path: `${screenshots}/management-capabilities-1366x768.png`, fullPage: true });
 

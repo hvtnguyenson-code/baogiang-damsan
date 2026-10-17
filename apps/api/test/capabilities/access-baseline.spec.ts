@@ -204,13 +204,19 @@ describe('P5-051 Access Baseline & Responsibility Template Unit Tests', () => {
       expect(keys).not.toContain('APPROVAL_PRINCIPAL');
     });
 
-    it('12. Principal template includes APPROVAL_PRINCIPAL and AUDIT_VIEW, forbids admin powers', () => {
+    it('12. Principal template includes APPROVAL_PRINCIPAL and AUDIT_VIEW (PRODUCT_OPERABILITY), forbids admin powers', () => {
       const def = getTemplateDefinition('PRINCIPAL');
       expect(def.requiresTeachingStaff).toBe(true);
       expect(def.forbiddenDefaults).toContain('SYSTEM_ADMIN');
       expect(def.forbiddenDefaults).toContain('USER_MANAGE');
       expect(def.forbiddenDefaults).toContain('CAPABILITY_GRANT');
       expect(def.forbiddenDefaults).toContain('APPROVAL_VICE_PRINCIPAL');
+
+      // AUDIT_VIEW must be categorized as PRODUCT_OPERABILITY, not SOURCE_AUTHORITY
+      const auditGrantDef = def.productOperabilityGrants.find((g) => g.capabilityKey === 'AUDIT_VIEW');
+      expect(auditGrantDef).toBeDefined();
+      expect(auditGrantDef?.category).toBe('PRODUCT_OPERABILITY');
+      expect(def.sourceAuthorityGrants.some((g) => g.capabilityKey === 'AUDIT_VIEW')).toBe(false);
 
       const materialized = materializeTemplateGrants({ templateKey: 'PRINCIPAL' });
       const keys = materialized.map((g) => g.capabilityKey);
@@ -221,6 +227,9 @@ describe('P5-051 Access Baseline & Responsibility Template Unit Tests', () => {
       expect(keys).not.toContain('USER_MANAGE');
       expect(keys).not.toContain('CAPABILITY_GRANT');
       expect(keys).not.toContain('APPROVAL_VICE_PRINCIPAL');
+
+      const auditGrant = materialized.find((g) => g.capabilityKey === 'AUDIT_VIEW');
+      expect(auditGrant?.category).toBe('PRODUCT_OPERABILITY');
     });
 
     it('13. Technical Account Admin template includes technical grants, forbids SYSTEM_ADMIN and approval powers', () => {
@@ -281,6 +290,27 @@ describe('P5-051 Access Baseline & Responsibility Template Unit Tests', () => {
         (g) => g.scopeResourceId === 'subj-math-2'
       );
       expect(math2Grants).toHaveLength(5);
+
+      // Verify exact wording for subject-scoped grants
+      expect(math1Grants[0].description).toBe(
+        'Quản trị PPCT môn chuyên môn được giao cho tổ trưởng.'
+      );
+
+      // When no subjectIds provided -> zero SUBJECT grants
+      const noSubjectGrants = materializeTemplateGrants({
+        templateKey: 'SUBJECT_LEADER',
+        subjectGroupId,
+      });
+      expect(noSubjectGrants.filter((g) => g.scopeType === 'SUBJECT')).toHaveLength(0);
+      expect(noSubjectGrants.filter((g) => g.scopeType === 'SUBJECT_GROUP')).toHaveLength(2);
+
+      // Duplicate subjectIds are deterministically deduplicated
+      const dedupeGrants = materializeTemplateGrants({
+        templateKey: 'SUBJECT_LEADER',
+        subjectGroupId,
+        resolvedSubjectIds: ['subj-math-1', 'subj-math-1'],
+      });
+      expect(dedupeGrants.filter((g) => g.scopeType === 'SUBJECT')).toHaveLength(5);
     });
 
     it('15. Coordinator templates require ProgrammeMaster resource and correct kind', () => {
@@ -416,6 +446,76 @@ describe('P5-051 Access Baseline & Responsibility Template Unit Tests', () => {
       ).rejects.toThrow(
         'Template SUBJECT_LEADER yêu cầu resource SUBJECT_GROUP nhưng chưa được cung cấp.'
       );
+    });
+
+    it('19. validateCapabilityGrantSpecs throws NotFoundException when definition does not exist', async () => {
+      const mockPrisma = {
+        capabilityDefinition: {
+          findMany: jest.fn().mockResolvedValue([]),
+        },
+      };
+      const service = new AccessBaselineService(mockPrisma as never, {} as never);
+
+      await expect(
+        service.validateCapabilityGrantSpecs(
+          [{ capabilityKey: 'NON_EXISTENT_CAP', scopeType: 'PERSONAL' }],
+          mockPrisma as never
+        )
+      ).rejects.toThrow('Không tìm thấy định nghĩa quyền: NON_EXISTENT_CAP.');
+    });
+
+    it('20. validateCapabilityGrantSpecs throws ConflictException when definition is inactive', async () => {
+      const mockPrisma = {
+        capabilityDefinition: {
+          findMany: jest.fn().mockResolvedValue([
+            { key: 'TEACHER_BASE', isActive: false, allowedScopeTypes: ['PERSONAL'] },
+          ]),
+        },
+      };
+      const service = new AccessBaselineService(mockPrisma as never, {} as never);
+
+      await expect(
+        service.validateCapabilityGrantSpecs(
+          [{ capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL' }],
+          mockPrisma as never
+        )
+      ).rejects.toThrow('Quyền TEACHER_BASE đang bị vô hiệu hóa hoặc không khả dụng.');
+    });
+
+    it('21. validateCapabilityGrantSpecs throws ConflictException when scopeType is not allowed', async () => {
+      const mockPrisma = {
+        capabilityDefinition: {
+          findMany: jest.fn().mockResolvedValue([
+            { key: 'TEACHER_BASE', isActive: true, allowedScopeTypes: ['PERSONAL'] },
+          ]),
+        },
+      };
+      const service = new AccessBaselineService(mockPrisma as never, {} as never);
+
+      await expect(
+        service.validateCapabilityGrantSpecs(
+          [{ capabilityKey: 'TEACHER_BASE', scopeType: 'SCHOOL_WIDE' }],
+          mockPrisma as never
+        )
+      ).rejects.toThrow('Phạm vi SCHOOL_WIDE không được phép cho quyền TEACHER_BASE.');
+    });
+
+    it('22. validateCapabilityGrantSpecs passes when all specs are valid and active', async () => {
+      const mockPrisma = {
+        capabilityDefinition: {
+          findMany: jest.fn().mockResolvedValue([
+            { key: 'TEACHER_BASE', isActive: true, allowedScopeTypes: ['PERSONAL'] },
+          ]),
+        },
+      };
+      const service = new AccessBaselineService(mockPrisma as never, {} as never);
+
+      await expect(
+        service.validateCapabilityGrantSpecs(
+          [{ capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL' }],
+          mockPrisma as never
+        )
+      ).resolves.toBeUndefined();
     });
   });
 });
