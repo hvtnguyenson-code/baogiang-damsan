@@ -377,7 +377,7 @@ export function EffectiveSchedulePage() {
             <h2 id="my-schedule-heading">
               Lịch của tôi — {mySchedule.teacherDisplayName} ({mySchedule.weekLabel})
             </h2>
-            <span style={{ fontSize: '0.85rem', color: '#49616f' }}>
+            <span style={{ fontSize: '0.85rem', color: '#334155' }}>
               Trạng thái: <strong>{mySchedule.status === 'PASS' ? 'Hợp lệ' : 'Bị chặn / Cần kiểm tra'}</strong>
             </span>
           </div>
@@ -434,7 +434,7 @@ export function EffectiveSchedulePage() {
                           borderTop: slot.occupancyState === 'OCCUPIED' ? '3px solid #1f4358' : '1px solid #c9d4da',
                         }}
                       >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', color: '#49616f', marginBottom: '4px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', color: '#334155', marginBottom: '4px' }}>
                           <span>{slot.slotLabel}</span>
                           <span>{slot.startTime}–{slot.endTime}</span>
                         </div>
@@ -473,7 +473,7 @@ export function EffectiveSchedulePage() {
                             )}
                           </div>
                         ) : (
-                          <div style={{ color: '#49616f', fontStyle: 'italic', fontSize: '0.9rem', paddingTop: '6px' }}>
+                          <div style={{ color: '#334155', fontStyle: 'italic', fontSize: '0.9rem', paddingTop: '6px' }}>
                             Trống
                           </div>
                         )}
@@ -496,7 +496,7 @@ export function EffectiveSchedulePage() {
             <h2 id="school-wide-heading">
               Lịch toàn trường — {formatWeekdayVi(schoolWideSchedule.weekday)} ({schoolWideSchedule.civilDate})
             </h2>
-            <span style={{ fontSize: '0.85rem', color: '#49616f' }}>
+            <span style={{ fontSize: '0.85rem', color: '#334155' }}>
               Tổng số giáo viên: <strong>{schoolWideSchedule.teachers.length}</strong>
             </span>
           </div>
@@ -545,12 +545,12 @@ export function EffectiveSchedulePage() {
                             <div style={{ fontWeight: 700, color: '#1f4358' }}>{slot.className || 'Có tiết'}</div>
                             {slot.subjectName && <div style={{ fontSize: '0.78rem' }}>{slot.subjectName}</div>}
                             {slot.activityTitle && <div style={{ fontSize: '0.75rem', fontWeight: 600 }}>{slot.activityTitle}</div>}
-                            {slot.sourceLabel && <div style={{ fontSize: '0.7rem', color: '#49616f' }}>{slot.sourceLabel}</div>}
+                            {slot.sourceLabel && <div style={{ fontSize: '0.7rem', color: '#334155' }}>{slot.sourceLabel}</div>}
                           </div>
                         ) : slot.occupancyState === 'BLOCKED' ? (
                           <span style={{ color: '#a32929', fontSize: '0.75rem', fontWeight: 600 }}>Bị chặn</span>
                         ) : (
-                          <span style={{ color: '#49616f', fontSize: '0.8rem' }}>—</span>
+                          <span style={{ color: '#334155', fontSize: '0.8rem' }}>—</span>
                         )}
                       </td>
                     ))}
@@ -571,7 +571,7 @@ export function EffectiveSchedulePage() {
             <h2 id="peer-schedule-heading">
               Lịch của đồng nghiệp: {peerSchedule.teacherDisplayName} ({peerSchedule.weekLabel})
             </h2>
-            <span style={{ fontSize: '0.85rem', color: '#49616f' }}>
+            <span style={{ fontSize: '0.85rem', color: '#334155' }}>
               Trạng thái: <strong>{peerSchedule.status === 'PASS' ? 'Hợp lệ' : 'Bị chặn / Cần kiểm tra'}</strong>
             </span>
           </div>
@@ -627,7 +627,7 @@ export function EffectiveSchedulePage() {
                           borderTop: slot.occupancyState === 'OCCUPIED' ? '3px solid #1f4358' : '1px solid #c9d4da',
                         }}
                       >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', color: '#49616f', marginBottom: '4px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', color: '#334155', marginBottom: '4px' }}>
                           <span>{slot.slotLabel}</span>
                           <span>{slot.startTime}–{slot.endTime}</span>
                         </div>
@@ -666,7 +666,7 @@ export function EffectiveSchedulePage() {
                             )}
                           </div>
                         ) : (
-                          <div style={{ color: '#49616f', fontStyle: 'italic', fontSize: '0.9rem', paddingTop: '6px' }}>
+                          <div style={{ color: '#334155', fontStyle: 'italic', fontSize: '0.9rem', paddingTop: '6px' }}>
                             Trống
                           </div>
                         )}
@@ -728,7 +728,7 @@ export function EffectiveSchedulePage() {
                   >
                     <td style={{ padding: '10px 14px', fontWeight: 600 }}>
                       <div>{formatWeekdayVi(fact.weekday)} — {fact.civilDate}</div>
-                      <div style={{ fontSize: '0.8rem', color: '#49616f' }}>
+                      <div style={{ fontSize: '0.8rem', color: '#334155' }}>
                         {fact.slotLabel} ({fact.startTime}–{fact.endTime})
                       </div>
                     </td>
@@ -740,11 +740,11 @@ export function EffectiveSchedulePage() {
                           <strong>{fact.selfOccupancy.className || fact.selfOccupancy.activityTitle || 'Có tiết'}</strong>
                           {fact.selfOccupancy.subjectName && <div>Môn: {fact.selfOccupancy.subjectName}</div>}
                           {fact.selfOccupancy.sourceLabel && (
-                            <div style={{ fontSize: '0.75rem', color: '#49616f' }}>{fact.selfOccupancy.sourceLabel}</div>
+                            <div style={{ fontSize: '0.75rem', color: '#334155' }}>{fact.selfOccupancy.sourceLabel}</div>
                           )}
                         </div>
                       ) : (
-                        <span style={{ color: '#49616f', fontStyle: 'italic' }}>Trống</span>
+                        <span style={{ color: '#334155', fontStyle: 'italic' }}>Trống</span>
                       )}
                     </td>
                     <td style={{ padding: '10px 14px' }}>
@@ -755,11 +755,11 @@ export function EffectiveSchedulePage() {
                           <strong>{fact.peerOccupancy.className || fact.peerOccupancy.activityTitle || 'Có tiết'}</strong>
                           {fact.peerOccupancy.subjectName && <div>Môn: {fact.peerOccupancy.subjectName}</div>}
                           {fact.peerOccupancy.sourceLabel && (
-                            <div style={{ fontSize: '0.75rem', color: '#49616f' }}>{fact.peerOccupancy.sourceLabel}</div>
+                            <div style={{ fontSize: '0.75rem', color: '#334155' }}>{fact.peerOccupancy.sourceLabel}</div>
                           )}
                         </div>
                       ) : (
-                        <span style={{ color: '#49616f', fontStyle: 'italic' }}>Trống</span>
+                        <span style={{ color: '#334155', fontStyle: 'italic' }}>Trống</span>
                       )}
                     </td>
                     <td style={{ padding: '10px 14px' }}>

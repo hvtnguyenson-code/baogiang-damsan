@@ -193,7 +193,7 @@ export function OperationalStartResourceEditor({
       'div',
       {
         className: 'academic-year-picker-loading',
-        style: { padding: '8px 0', fontSize: '0.9rem', color: '#49616f' },
+        style: { padding: '8px 0', fontSize: '0.9rem', color: '#334155' },
       },
       'Đang tải danh sách năm học...',
     );

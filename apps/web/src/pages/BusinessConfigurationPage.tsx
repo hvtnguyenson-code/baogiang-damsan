@@ -1468,7 +1468,7 @@ export function BusinessConfigurationPage({
                             />
                             <span
                               className="technical-value"
-                              style={{ marginLeft: '12px', fontSize: '0.8rem', color: '#49616f' }}
+                              style={{ marginLeft: '12px', fontSize: '0.8rem', color: '#334155' }}
                             >
                               Bộ xác thực: {ver.validatorVersion}
                             </span>
@@ -1709,7 +1709,7 @@ export function BusinessConfigurationPage({
 
                         {/* Typed payload display with exact version adapter */}
                         <div style={{ marginTop: '12px' }}>
-                          <h4 style={{ fontSize: '0.9rem', color: '#49616f', marginBottom: '6px' }}>
+                          <h4 style={{ fontSize: '0.9rem', color: '#334155', marginBottom: '6px' }}>
                             Nội dung chính sách:
                           </h4>
                           {versionAdapter ? (
@@ -1880,7 +1880,7 @@ export function BusinessConfigurationPage({
                     const Summary = resolvedAdapter.SummaryComponent;
                     return (
                       <div style={{ padding: '12px', background: '#f8fafb', border: '1px solid #c9d4da' }}>
-                        <h4 style={{ fontSize: '0.9rem', marginBottom: '8px', color: '#49616f' }}>
+                        <h4 style={{ fontSize: '0.9rem', marginBottom: '8px', color: '#334155' }}>
                           Nội dung áp dụng:
                         </h4>
                         <Summary payload={resolutionResult.payload} />

@@ -345,7 +345,7 @@ test('real Phase 01 management flow preserves history and capability boundaries'
   await page.getByLabel('Mật khẩu').fill(NEW_PASSWORD);
   await page.getByRole('button', { name: 'Đăng nhập' }).click();
   await expect(page).toHaveURL(/\/quan-tri\/nguoi-dung$/);
-  await expect(page.getByRole('heading', { name: 'Người dùng' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Người dùng', exact: true })).toBeVisible();
   await assertNoSeriousAxeViolations(page);
 
   await page.getByRole('button', { name: 'Tạo người dùng' }).click();

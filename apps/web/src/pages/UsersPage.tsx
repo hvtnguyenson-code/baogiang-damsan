@@ -652,13 +652,13 @@ export function UsersPage() {
                     <div className="stat-card__label">Đã đạt chuẩn</div>
                   </div>
                   <div className="stat-card stat-card--warning">
-                    <div className="stat-card__number" style={{ color: '#b45309' }}>
+                    <div className="stat-card__number" style={{ color: 'var(--section-amber)' }}>
                       {reconciliationPreviewQuery.data.missing.length}
                     </div>
                     <div className="stat-card__label">Cần bổ sung</div>
                   </div>
                   <div className="stat-card stat-card--danger">
-                    <div className="stat-card__number" style={{ color: '#be123c' }}>
+                    <div className="stat-card__number" style={{ color: 'var(--danger)' }}>
                       {reconciliationPreviewQuery.data.conflicts.length}
                     </div>
                     <div className="stat-card__label">Xung đột</div>

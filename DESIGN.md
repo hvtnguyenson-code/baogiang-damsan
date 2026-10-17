@@ -17,8 +17,8 @@ Key visual elements:
   - **BLUE** (`#2563eb`, `#1e3a8a`): primary actions, selected navigation, account lifecycle.
   - **TEAL** (`#0f766e`): professional responsibilities, approved state.
   - **INDIGO** (`#4338ca`): capability/template preview and grant grouping.
-  - **AMBER** (`#b45309`): warnings, conflicts, requires-attention content.
-  - **RED** (`#be123c`): irreversible deletion or actual error only (never used for ordinary navigation).
+  - **AMBER** (`#78350f`): warnings, conflicts, requires-attention content (>= 4.5:1 on slate canvas).
+  - **RED** (`#9f1239`): irreversible deletion or actual error only (never used for ordinary navigation).
 
 Do not use unapproved ethnic patterns, cultural symbols, or Êđê motifs. Do not use gradients, glass, glow, blobs, marketing heroes, bento grids, equal decorative card grids, nested cards, permanent generic sidebars, icon tiles, role selectors, fake metrics, fake notifications, fake people, or invented business data.
 
@@ -40,14 +40,15 @@ Do not use unapproved ethnic patterns, cultural symbols, or Êđê motifs. Do no
 | `--ink-brand` | `#1e40af` | accessible brand foreground for text/links/labels on slate canvas (5.91:1) and white (8.76:1) |
 | `--ink-brand-hover` | `#1e3a8a` | hover state for accessible brand links (8.02:1 on slate) |
 | `--ink-muted-on-canvas` | `#334155` | muted secondary copy readable on canvas (8.1:1 on slate) |
+| `--ink-accent-terracotta` | `#872e15` | accessible terracotta accent for work indices / badges (5.83:1 on slate) |
 | `--section-blue` | `#1e3a8a` | account management section header |
 | `--section-teal` | `#0f766e` | professional responsibility section header |
 | `--section-indigo` | `#4338ca` | template preview & capability grant grouping |
-| `--section-amber` | `#b45309` | evaluation, warning & conflict header |
+| `--section-amber` | `#78350f` | evaluation, warning & conflict header / status badge (6.08:1 on slate) |
 | `--border-input` | `#64748b` | input and select borders |
 | `--border-card` | `#94a3b8` | card and panel borders |
-| `--success` | `#047857` | success text, status cues, confirmed badges |
-| `--danger` | `#be123c` | irreversible deletion, danger buttons, fatal error |
+| `--success` | `#065f46` | success text, status cues, confirmed badges (5.11:1 on slate) |
+| `--danger` | `#9f1239` | irreversible deletion, danger buttons, fatal error (5.59:1 on slate) |
 
 Status must always include text or an icon cue, never color alone. Do not add arbitrary palettes when a semantic token fits. Contrast requirements: normal text >= 4.5:1, large text >= 3:1, focus indicators clearly visible. Touch targets: all interactive controls (buttons, navigation links, tabs, compact row actions) must have min-height >= 44px and min-width >= 44px for WCAG AA mobile touch target compliance.
 
