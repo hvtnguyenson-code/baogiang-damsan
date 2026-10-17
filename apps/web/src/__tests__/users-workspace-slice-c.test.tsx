@@ -52,7 +52,58 @@ describe('P5-051 Slice C: Users Administration Workspace', () => {
     },
   ];
 
-  it('renders split workspace, allows user selection and tab switching', async () => {
+  const mockTemplates = [
+    {
+      key: 'TEACHER',
+      name: 'Giáo viên',
+      description: 'Chuẩn chuyên môn giảng dạy',
+      version: 'v1',
+      requiresTeachingStaff: true,
+      requiredResourceKind: 'NONE',
+      sourceAuthorityGrants: [],
+      productOperabilityGrants: [],
+      forbiddenDefaults: [],
+      notes: ['Mẫu chuẩn chuyên môn áp dụng cho tất cả giáo viên.'],
+    },
+    {
+      key: 'SUBJECT_LEADER',
+      name: 'Tổ trưởng chuyên môn',
+      description: 'Quản lý tổ chuyên môn',
+      version: 'v1',
+      requiresTeachingStaff: true,
+      requiredResourceKind: 'SUBJECT_GROUP',
+      sourceAuthorityGrants: [],
+      productOperabilityGrants: [],
+      forbiddenDefaults: [],
+      notes: [],
+    },
+    {
+      key: 'GDDP_COORDINATOR',
+      name: 'Điều phối Giáo dục địa phương (GDĐP)',
+      description: 'Điều phối chương trình GDĐP',
+      version: 'v1',
+      requiresTeachingStaff: true,
+      requiredResourceKind: 'ACTIVITY',
+      sourceAuthorityGrants: [],
+      productOperabilityGrants: [],
+      forbiddenDefaults: [],
+      notes: [],
+    },
+    {
+      key: 'HDTN_COORDINATOR',
+      name: 'Điều phối HĐTN-HN',
+      description: 'Điều phối hoạt động trải nghiệm',
+      version: 'v1',
+      requiresTeachingStaff: true,
+      requiredResourceKind: 'ACTIVITY',
+      sourceAuthorityGrants: [],
+      productOperabilityGrants: [],
+      forbiddenDefaults: [],
+      notes: [],
+    },
+  ];
+
+  it('renders split workspace, truthful search label Tìm trong trang hiện tại, allows user selection and tab switching', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith('/auth/me')) {
@@ -62,6 +113,9 @@ describe('P5-051 Slice C: Users Administration Workspace', () => {
             { key: 'CAPABILITY_GRANT', scope: 'SCHOOL_WIDE' },
           ),
         );
+      }
+      if (url.includes('/api/capabilities/responsibility-templates')) {
+        return jsonResponse({ items: mockTemplates });
       }
       if (url.includes('/api/users')) return jsonResponse(page(mockUsers));
       return jsonResponse({});
@@ -73,6 +127,10 @@ describe('P5-051 Slice C: Users Administration Workspace', () => {
 
     expect(await screen.findByText('Nguyễn Văn Bình')).toBeInTheDocument();
     expect(screen.getByText('Trần Thị Thu')).toBeInTheDocument();
+
+    // Verify search truthful labeling
+    expect(screen.getByLabelText('Tìm trong trang hiện tại')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/Tìm trong trang hiện tại/i)).toBeInTheDocument();
 
     // Initially shows empty right pane
     expect(screen.getByText('Chưa chọn người dùng')).toBeInTheDocument();
@@ -94,7 +152,7 @@ describe('P5-051 Slice C: Users Administration Workspace', () => {
     expect(screen.getByText('binh@damsan.edu.vn')).toBeInTheDocument();
   });
 
-  it('runs responsibility template preview and apply flow for TEACHER template', async () => {
+  it('runs responsibility template preview and apply flow for TEACHER template with server-owned catalog', async () => {
     let previewCalled = false;
     let applyCalled = false;
 
@@ -107,6 +165,9 @@ describe('P5-051 Slice C: Users Administration Workspace', () => {
             { key: 'CAPABILITY_GRANT', scope: 'SCHOOL_WIDE' },
           ),
         );
+      }
+      if (url.includes('/api/capabilities/responsibility-templates')) {
+        return jsonResponse({ items: mockTemplates });
       }
       if (url.includes('/api/users/u-teacher-1/responsibility-templates/preview') && init?.method === 'POST') {
         previewCalled = true;
@@ -147,8 +208,9 @@ describe('P5-051 Slice C: Users Administration Workspace', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Chọn gv_nguyenvanb' }));
 
-    // Default tab is templates
-    expect(screen.getByLabelText(/Chọn Mẫu trách nhiệm/i)).toBeInTheDocument();
+    // Wait for server-owned template catalog to load
+    expect(await screen.findByLabelText(/Chọn Mẫu trách nhiệm/i)).toBeInTheDocument();
+    expect(screen.getByText(/Chuẩn chuyên môn giảng dạy/i)).toBeInTheDocument();
 
     // Click Preview button
     const previewBtn = screen.getByRole('button', { name: /Xem trước thay đổi quyền/i });
@@ -184,6 +246,9 @@ describe('P5-051 Slice C: Users Administration Workspace', () => {
           ),
         );
       }
+      if (url.includes('/api/capabilities/responsibility-templates')) {
+        return jsonResponse({ items: mockTemplates });
+      }
       if (url.includes('/api/subject-groups')) {
         return jsonResponse(
           page([
@@ -210,7 +275,7 @@ describe('P5-051 Slice C: Users Administration Workspace', () => {
     await user.click(await screen.findByRole('button', { name: 'Chọn gv_nguyenvanb' }));
 
     // Select SUBJECT_LEADER
-    const templateSelect = screen.getByLabelText(/Chọn Mẫu trách nhiệm/i);
+    const templateSelect = await screen.findByLabelText(/Chọn Mẫu trách nhiệm/i);
     await user.selectOptions(templateSelect, 'SUBJECT_LEADER');
 
     // Verify required subjectGroupId selector and exact label for subjectIds
@@ -222,7 +287,242 @@ describe('P5-051 Slice C: Users Administration Workspace', () => {
     expect(screen.getByText('Môn Tin học (TIN)')).toBeInTheDocument();
   });
 
-  it('disables apply and displays safe guard when coordinator lookup is inaccessible', async () => {
+  it('snapshot integrity: preview -> change subject -> Apply button is unavailable', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        return jsonResponse(
+          auth(
+            { key: 'USER_MANAGE', scope: 'SCHOOL_WIDE' },
+            { key: 'CAPABILITY_GRANT', scope: 'SCHOOL_WIDE' },
+          ),
+        );
+      }
+      if (url.includes('/api/capabilities/responsibility-templates')) {
+        return jsonResponse({ items: mockTemplates });
+      }
+      if (url.includes('/api/subject-groups')) {
+        return jsonResponse(page([{ id: 'sg-math', code: 'TOAN_TIN', name: 'Tổ Toán - Tin', status: 'ACTIVE' }]));
+      }
+      if (url.includes('/api/subjects')) {
+        return jsonResponse(page([
+          { id: 's-math', code: 'TOAN', name: 'Môn Toán', status: 'ACTIVE' },
+          { id: 's-cs', code: 'TIN', name: 'Môn Tin học', status: 'ACTIVE' },
+        ]));
+      }
+      if (url.includes('/api/users/u-teacher-1/responsibility-templates/preview') && init?.method === 'POST') {
+        return jsonResponse({
+          templateKey: 'SUBJECT_LEADER',
+          version: '1.0.0',
+          eligibility: { isEligible: true },
+          requiredResources: { kind: 'SUBJECT_GROUP', provided: true },
+          grantsToAdd: [{ capabilityKey: 'SUBJECT_GROUP_LEAD', scopeType: 'SUBJECT_GROUP', description: 'Tổ trưởng chuyên môn' }],
+          alreadyPresent: [],
+          conflicts: [],
+          forbiddenDefaults: [],
+          notes: [],
+        });
+      }
+      if (url.includes('/api/users')) return jsonResponse(page(mockUsers));
+      return jsonResponse({});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+
+    renderApp('/quan-tri/nguoi-dung');
+
+    await user.click(await screen.findByRole('button', { name: 'Chọn gv_nguyenvanb' }));
+
+    const templateSelect = await screen.findByLabelText(/Chọn Mẫu trách nhiệm/i);
+    await user.selectOptions(templateSelect, 'SUBJECT_LEADER');
+
+    // Select subject group
+    const groupSelect = await screen.findByLabelText(/Tổ chuyên môn phụ trách/i);
+    await user.selectOptions(groupSelect, 'sg-math');
+
+    // Preview
+    const previewBtn = screen.getByRole('button', { name: /Xem trước thay đổi quyền/i });
+    await user.click(previewBtn);
+
+    // Apply button appears
+    expect(await screen.findByRole('button', { name: /Áp dụng Mẫu trách nhiệm/i })).toBeInTheDocument();
+
+    // Now change subject selection: check 'Môn Toán'
+    const mathCheckbox = screen.getByRole('checkbox', { name: /Môn Toán/i });
+    await user.click(mathCheckbox);
+
+    // Apply button MUST disappear because selection diverged from preview snapshot
+    expect(screen.queryByRole('button', { name: /Áp dụng Mẫu trách nhiệm/i })).not.toBeInTheDocument();
+  });
+
+  it('snapshot integrity: preview -> change subject group -> Apply button is unavailable', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        return jsonResponse(
+          auth(
+            { key: 'USER_MANAGE', scope: 'SCHOOL_WIDE' },
+            { key: 'CAPABILITY_GRANT', scope: 'SCHOOL_WIDE' },
+          ),
+        );
+      }
+      if (url.includes('/api/capabilities/responsibility-templates')) {
+        return jsonResponse({ items: mockTemplates });
+      }
+      if (url.includes('/api/subject-groups')) {
+        return jsonResponse(page([
+          { id: 'sg-math', code: 'TOAN_TIN', name: 'Tổ Toán - Tin', status: 'ACTIVE' },
+          { id: 'sg-lit', code: 'VAN', name: 'Tổ Ngữ Văn', status: 'ACTIVE' },
+        ]));
+      }
+      if (url.includes('/api/subjects')) return jsonResponse(page([]));
+      if (url.includes('/api/users/u-teacher-1/responsibility-templates/preview') && init?.method === 'POST') {
+        return jsonResponse({
+          templateKey: 'SUBJECT_LEADER',
+          version: '1.0.0',
+          eligibility: { isEligible: true },
+          requiredResources: { kind: 'SUBJECT_GROUP', provided: true },
+          grantsToAdd: [{ capabilityKey: 'SUBJECT_GROUP_LEAD', scopeType: 'SUBJECT_GROUP', description: 'Tổ trưởng' }],
+          alreadyPresent: [],
+          conflicts: [],
+          forbiddenDefaults: [],
+          notes: [],
+        });
+      }
+      if (url.includes('/api/users')) return jsonResponse(page(mockUsers));
+      return jsonResponse({});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+
+    renderApp('/quan-tri/nguoi-dung');
+
+    await user.click(await screen.findByRole('button', { name: 'Chọn gv_nguyenvanb' }));
+
+    const templateSelect = await screen.findByLabelText(/Chọn Mẫu trách nhiệm/i);
+    await user.selectOptions(templateSelect, 'SUBJECT_LEADER');
+
+    const groupSelect = await screen.findByLabelText(/Tổ chuyên môn phụ trách/i);
+    await user.selectOptions(groupSelect, 'sg-math');
+
+    const previewBtn = screen.getByRole('button', { name: /Xem trước thay đổi quyền/i });
+    await user.click(previewBtn);
+
+    expect(await screen.findByRole('button', { name: /Áp dụng Mẫu trách nhiệm/i })).toBeInTheDocument();
+
+    // Change subject group to another one
+    await user.selectOptions(groupSelect, 'sg-lit');
+
+    // Apply button MUST disappear
+    expect(screen.queryByRole('button', { name: /Áp dụng Mẫu trách nhiệm/i })).not.toBeInTheDocument();
+  });
+
+  it('snapshot integrity: preview -> switch user -> stale preview is cleared and ignored', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        return jsonResponse(
+          auth(
+            { key: 'USER_MANAGE', scope: 'SCHOOL_WIDE' },
+            { key: 'CAPABILITY_GRANT', scope: 'SCHOOL_WIDE' },
+          ),
+        );
+      }
+      if (url.includes('/api/capabilities/responsibility-templates')) {
+        return jsonResponse({ items: mockTemplates });
+      }
+      if (url.includes('/api/users/u-teacher-1/responsibility-templates/preview') && init?.method === 'POST') {
+        return jsonResponse({
+          templateKey: 'TEACHER',
+          version: '1.0.0',
+          eligibility: { isEligible: true },
+          requiredResources: { kind: 'NONE', provided: true },
+          grantsToAdd: [{ capabilityKey: 'TEACHER_BASE', scopeType: 'SCHOOL_WIDE', description: 'Quyền cơ sở' }],
+          alreadyPresent: [],
+          conflicts: [],
+          forbiddenDefaults: [],
+          notes: [],
+        });
+      }
+      if (url.includes('/api/users')) return jsonResponse(page(mockUsers));
+      return jsonResponse({});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+
+    renderApp('/quan-tri/nguoi-dung');
+
+    await user.click(await screen.findByRole('button', { name: 'Chọn gv_nguyenvanb' }));
+    await screen.findByLabelText(/Chọn Mẫu trách nhiệm/i);
+
+    const previewBtn = screen.getByRole('button', { name: /Xem trước thay đổi quyền/i });
+    await user.click(previewBtn);
+
+    expect(await screen.findByRole('button', { name: /Áp dụng Mẫu trách nhiệm/i })).toBeInTheDocument();
+
+    // Switch to another user: Trần Thị Thu
+    await user.click(screen.getByRole('button', { name: 'Chọn gv_clean_slate' }));
+
+    // The old preview and Apply button MUST NOT be present for the newly selected user
+    expect(screen.queryByRole('button', { name: /Áp dụng Mẫu trách nhiệm/i })).not.toBeInTheDocument();
+    expect(screen.queryByText('Quyền cơ sở')).not.toBeInTheDocument();
+  });
+
+  it('snapshot integrity: server 409 conflict on apply -> shows conflict notice and does NOT claim success', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        return jsonResponse(
+          auth(
+            { key: 'USER_MANAGE', scope: 'SCHOOL_WIDE' },
+            { key: 'CAPABILITY_GRANT', scope: 'SCHOOL_WIDE' },
+          ),
+        );
+      }
+      if (url.includes('/api/capabilities/responsibility-templates')) {
+        return jsonResponse({ items: mockTemplates });
+      }
+      if (url.includes('/api/users/u-teacher-1/responsibility-templates/preview') && init?.method === 'POST') {
+        return jsonResponse({
+          templateKey: 'TEACHER',
+          version: '1.0.0',
+          eligibility: { isEligible: true },
+          requiredResources: { kind: 'NONE', provided: true },
+          grantsToAdd: [{ capabilityKey: 'TEACHER_BASE', scopeType: 'SCHOOL_WIDE', description: 'Quyền cơ sở' }],
+          alreadyPresent: [],
+          conflicts: [],
+          forbiddenDefaults: [],
+          notes: [],
+        });
+      }
+      if (url.includes('/api/users/u-teacher-1/responsibility-templates/apply') && init?.method === 'POST') {
+        // Return 409 Conflict
+        return jsonResponse({ statusCode: 409, message: 'Conflict: user grants changed concurrently.' }, 409);
+      }
+      if (url.includes('/api/users')) return jsonResponse(page(mockUsers));
+      return jsonResponse({});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+
+    renderApp('/quan-tri/nguoi-dung');
+
+    await user.click(await screen.findByRole('button', { name: 'Chọn gv_nguyenvanb' }));
+    await screen.findByLabelText(/Chọn Mẫu trách nhiệm/i);
+
+    const previewBtn = screen.getByRole('button', { name: /Xem trước thay đổi quyền/i });
+    await user.click(previewBtn);
+
+    const applyBtn = await screen.findByRole('button', { name: /Áp dụng Mẫu trách nhiệm/i });
+    await user.click(applyBtn);
+
+    // Verify 409 error message is displayed
+    expect(await screen.findByText(/Xung đột \(409\)/i)).toBeInTheDocument();
+    // Verify NO fake success message
+    expect(screen.queryByText(/Đã áp dụng thành công/i)).not.toBeInTheDocument();
+  });
+
+  it('disables apply and displays truthful blocker when coordinator lookup lacks administrative read-model', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith('/auth/me')) {
@@ -233,9 +533,12 @@ describe('P5-051 Slice C: Users Administration Workspace', () => {
           ),
         );
       }
+      if (url.includes('/api/capabilities/responsibility-templates')) {
+        return jsonResponse({ items: mockTemplates });
+      }
       if (url.includes('/programme-planning/masters')) {
-        // Backend returns 403 or empty array when user lacks coordinator master lookup
-        return jsonResponse([], 403);
+        // Backend returns 403 when user lacks coordinator master lookup
+        return jsonResponse({ statusCode: 403, message: 'Forbidden: missing read authority.' }, 403);
       }
       if (url.includes('/api/users')) return jsonResponse(page(mockUsers));
       return jsonResponse({});
@@ -248,15 +551,20 @@ describe('P5-051 Slice C: Users Administration Workspace', () => {
     await user.click(await screen.findByRole('button', { name: 'Chọn gv_nguyenvanb' }));
 
     // Select GDDP_COORDINATOR
-    const templateSelect = screen.getByLabelText(/Chọn Mẫu trách nhiệm/i);
+    const templateSelect = await screen.findByLabelText(/Chọn Mẫu trách nhiệm/i);
     await user.selectOptions(templateSelect, 'GDDP_COORDINATOR');
 
-    // Warning is rendered and preview button is disabled
+    // Truthful blocker banner is rendered
     expect(
-      await screen.findByText(/Chưa có danh mục chương trình khả dụng/i),
+      await screen.findByText(/Yêu cầu mô hình đọc tài nguyên quản trị/i),
     ).toBeInTheDocument();
+    expect(screen.getByText(/403 \(Không có quyền\)/i)).toBeInTheDocument();
+
+    // Preview button is disabled
     const previewBtn = screen.getByRole('button', { name: /Xem trước thay đổi quyền/i });
     expect(previewBtn).toBeDisabled();
+    // Apply button is NOT rendered
+    expect(screen.queryByRole('button', { name: /Áp dụng Mẫu trách nhiệm/i })).not.toBeInTheDocument();
   });
 
   it('displays Baseline Reconciliation statistics and sends only missing user IDs on apply', async () => {
@@ -271,6 +579,9 @@ describe('P5-051 Slice C: Users Administration Workspace', () => {
             { key: 'CAPABILITY_GRANT', scope: 'SCHOOL_WIDE' },
           ),
         );
+      }
+      if (url.includes('/api/capabilities/responsibility-templates')) {
+        return jsonResponse({ items: mockTemplates });
       }
       if (url.includes('/api/baseline-reconciliation/preview')) {
         return jsonResponse({
@@ -337,6 +648,9 @@ describe('P5-051 Slice C: Users Administration Workspace', () => {
           ),
         );
       }
+      if (url.includes('/api/capabilities/responsibility-templates')) {
+        return jsonResponse({ items: mockTemplates });
+      }
       if (url.includes('/api/users/u-blocked-3/delete-preflight')) {
         return jsonResponse({
           targetUserId: 'u-blocked-3',
@@ -387,6 +701,9 @@ describe('P5-051 Slice C: Users Administration Workspace', () => {
             { key: 'SYSTEM_ADMIN', scope: 'SCHOOL_WIDE' },
           ),
         );
+      }
+      if (url.includes('/api/capabilities/responsibility-templates')) {
+        return jsonResponse({ items: mockTemplates });
       }
       if (url.includes('/api/users/u-clean-2/delete-preflight')) {
         return jsonResponse({
@@ -449,6 +766,9 @@ describe('P5-051 Slice C: Users Administration Workspace', () => {
       if (url.endsWith('/auth/me')) {
         // Has USER_MANAGE but lacks SYSTEM_ADMIN
         return jsonResponse(auth({ key: 'USER_MANAGE', scope: 'SCHOOL_WIDE' }));
+      }
+      if (url.includes('/api/capabilities/responsibility-templates')) {
+        return jsonResponse({ items: mockTemplates });
       }
       if (url.includes('/api/users/u-clean-2/delete-preflight')) {
         return jsonResponse({

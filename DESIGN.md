@@ -37,6 +37,9 @@ Do not use unapproved ethnic patterns, cultural symbols, or Êđê motifs. Do no
 | `--section-header-bg` | `#1e293b` | standard form card header |
 | `--primary` | `#2563eb` | primary action buttons, active tab indicators |
 | `--primary-hover` | `#1d4ed8` | primary button hover / active |
+| `--ink-brand` | `#1e40af` | accessible brand foreground for text/links/labels on slate canvas (5.91:1) and white (8.76:1) |
+| `--ink-brand-hover` | `#1e3a8a` | hover state for accessible brand links (8.02:1 on slate) |
+| `--ink-muted-on-canvas` | `#334155` | muted secondary copy readable on canvas (8.1:1 on slate) |
 | `--section-blue` | `#1e3a8a` | account management section header |
 | `--section-teal` | `#0f766e` | professional responsibility section header |
 | `--section-indigo` | `#4338ca` | template preview & capability grant grouping |
@@ -46,7 +49,7 @@ Do not use unapproved ethnic patterns, cultural symbols, or Êđê motifs. Do no
 | `--success` | `#047857` | success text, status cues, confirmed badges |
 | `--danger` | `#be123c` | irreversible deletion, danger buttons, fatal error |
 
-Status must always include text or an icon cue, never color alone. Do not add arbitrary palettes when a semantic token fits. Contrast requirements: normal text >= 4.5:1, large text >= 3:1, focus indicators clearly visible.
+Status must always include text or an icon cue, never color alone. Do not add arbitrary palettes when a semantic token fits. Contrast requirements: normal text >= 4.5:1, large text >= 3:1, focus indicators clearly visible. Touch targets: all interactive controls (buttons, navigation links, tabs, compact row actions) must have min-height >= 44px and min-width >= 44px for WCAG AA mobile touch target compliance.
 
 ## Typography
 

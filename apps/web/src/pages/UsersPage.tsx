@@ -5,13 +5,15 @@ import type {
   BaselineReconciliationPreviewResponse,
   CatalogListResponse,
   ResponsibilityTemplateApplyResponse,
+  ResponsibilityTemplateDefinition,
   ResponsibilityTemplateKey,
+  ResponsibilityTemplateListResponse,
   ResponsibilityTemplatePreviewResponse,
   UserDeletePreflightResponse,
   UserManagementRecord,
 } from '@baogiang/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState, type FormEvent } from 'react';
+import { useMemo, useRef, useState, type FormEvent } from 'react';
 import { useAuth } from '../auth/auth-context';
 import { Button } from '../components/ui/button';
 import { FormField } from '../components/ui/form-field';
@@ -102,7 +104,7 @@ export function UsersPage() {
   const [resetDraft, setResetDraft] = useState<PasswordResetDraft | null>(null);
   const [resetError, setResetError] = useState('');
 
-  // Responsibility template state
+  // Responsibility template state & snapshot integrity
   const [selectedTemplateKey, setSelectedTemplateKey] = useState<ResponsibilityTemplateKey>('TEACHER');
   const [subjectGroupId, setSubjectGroupId] = useState('');
   const [subjectIds, setSubjectIds] = useState<string[]>([]);
@@ -111,9 +113,39 @@ export function UsersPage() {
   const [templatePreviewError, setTemplatePreviewError] = useState('');
   const [templateApplyResult, setTemplateApplyResult] = useState<ResponsibilityTemplateApplyResponse | null>(null);
 
+  type PreviewSnapshot = {
+    targetUserId: string;
+    templateKey: ResponsibilityTemplateKey;
+    subjectGroupId: string;
+    subjectIds: string[];
+    programmeMasterId: string;
+    templateVersion?: string;
+    previewData: ResponsibilityTemplatePreviewResponse;
+  };
+  const [previewSnapshot, setPreviewSnapshot] = useState<PreviewSnapshot | null>(null);
+  const previewRequestIdRef = useRef<number>(0);
+
+  function invalidatePreview() {
+    setTemplatePreview(null);
+    setPreviewSnapshot(null);
+    setTemplateApplyResult(null);
+    setTemplatePreviewError('');
+  }
+
   // Safe delete state
   const [deleteConfirmUsername, setDeleteConfirmUsername] = useState('');
   const [deleteError, setDeleteError] = useState('');
+
+  // Server-owned responsibility template catalog
+  const templatesQuery = useQuery<ResponsibilityTemplateListResponse>({
+    queryKey: ['responsibility-templates-catalog'],
+    queryFn: () => responsibilityTemplatesApi.list(),
+    enabled: canGrant,
+  });
+
+  const selectedTemplateDef: ResponsibilityTemplateDefinition | null = useMemo(() => {
+    return templatesQuery.data?.items?.find((t) => t.key === selectedTemplateKey) ?? null;
+  }, [templatesQuery.data?.items, selectedTemplateKey]);
 
   // Main user query
   const query = useQuery({
@@ -145,22 +177,47 @@ export function UsersPage() {
     selectedTemplateKey === 'GDDP_COORDINATOR' || selectedTemplateKey === 'HDTN_COORDINATOR';
   const programmeKind = selectedTemplateKey === 'GDDP_COORDINATOR' ? 'GDDP' : 'HDTN_HN';
 
+  const [coordinatorLookupError, setCoordinatorLookupError] = useState<string>('');
   const programmeMastersQuery = useQuery<{ id: string; code?: string; name?: string; kind: string }[]>({
     queryKey: ['programme-masters', programmeKind],
     queryFn: async () => {
+      setCoordinatorLookupError('');
       try {
         const res = await apiFetch<Array<{ id: string; code?: string; name?: string; kind: string }>>(
           `/programme-planning/masters?kind=${programmeKind}`,
           { notifyUnauthorized: false },
         );
         return Array.isArray(res) ? res : [];
-      } catch {
+      } catch (err) {
+        if (err instanceof ApiError) {
+          if (err.statusCode === 400) {
+            setCoordinatorLookupError('400 (Yêu cầu không hợp lệ): Thiếu tham số bắt buộc academicYearId theo đặc tả hợp đồng ListProgrammeMastersDto.');
+          } else if (err.statusCode === 403) {
+            setCoordinatorLookupError('403 (Không có quyền): Quản trị viên cấp quyền (CAPABILITY_GRANT) không có thẩm quyền chuyên môn Ban Giám hiệu (APPROVAL_PRINCIPAL) hoặc quyền điều phối trước đó.');
+          } else {
+            setCoordinatorLookupError(`${err.statusCode}: ${err.message || 'Lỗi tra cứu chương trình đặc thù.'}`);
+          }
+        } else {
+          setCoordinatorLookupError('Lỗi mạng hoặc không thể kết nối tới máy chủ khi tra cứu chương trình đặc thù.');
+        }
         return [];
       }
     },
     enabled: isCoordinatorTemplate,
     retry: false,
   });
+
+  const isCurrentSelectionMatchingPreview = useMemo(() => {
+    if (!previewSnapshot || !selectedUserId) return false;
+    if (previewSnapshot.targetUserId !== selectedUserId) return false;
+    if (previewSnapshot.templateKey !== selectedTemplateKey) return false;
+    if (previewSnapshot.subjectGroupId !== (subjectGroupId || '')) return false;
+    if (previewSnapshot.programmeMasterId !== (programmeMasterId || '')) return false;
+    const currentSubjects = [...subjectIds].sort();
+    if (previewSnapshot.subjectIds.length !== currentSubjects.length) return false;
+    if (!previewSnapshot.subjectIds.every((id, idx) => id === currentSubjects[idx])) return false;
+    return true;
+  }, [previewSnapshot, selectedUserId, selectedTemplateKey, subjectGroupId, subjectIds, programmeMasterId]);
 
   // Delete Preflight Query
   const preflightQuery = useQuery<UserDeletePreflightResponse>({
@@ -251,30 +308,76 @@ export function UsersPage() {
     gcTime: 0,
   });
 
-  // Template Preview Mutation
+  // Template Preview Mutation with snapshot integrity & stale response rejection
   const templatePreviewMutation = useMutation({
     mutationFn: async () => {
       if (!selectedUserId) return null;
       setTemplatePreviewError('');
+      const requestId = ++previewRequestIdRef.current;
+      const snapshotUserId = selectedUserId;
+      const snapshotTemplateKey = selectedTemplateKey;
+      const snapshotGroupId = subjectGroupId;
+      const snapshotSubjects = [...subjectIds].sort();
+      const snapshotProgrammeMasterId = programmeMasterId;
+
       const resources = {
         ...(subjectGroupId ? { subjectGroupId } : {}),
         ...(subjectIds.length > 0 ? { subjectIds } : {}),
         ...(programmeMasterId ? { programmeMasterId } : {}),
       };
-      return responsibilityTemplatesApi.preview(selectedUserId, {
+
+      const data = await responsibilityTemplatesApi.preview(selectedUserId, {
         templateKey: selectedTemplateKey,
         resources: Object.keys(resources).length > 0 ? resources : undefined,
         subjectGroupId: subjectGroupId || undefined,
         subjectIds: subjectIds.length > 0 ? subjectIds : undefined,
         programmeMasterId: programmeMasterId || undefined,
       });
+
+      return {
+        data,
+        requestId,
+        snapshotUserId,
+        snapshotTemplateKey,
+        snapshotGroupId,
+        snapshotSubjects,
+        snapshotProgrammeMasterId,
+      };
     },
-    onSuccess: (data) => {
-      setTemplatePreview(data);
+    onSuccess: (result) => {
+      if (!result) return;
+      // Stale async response rejection: if a newer preview was initiated, discard this one
+      if (result.requestId !== previewRequestIdRef.current) {
+        return;
+      }
+      // If the user diverged inputs while preview was in-flight, discard this response
+      const currentSubjects = [...subjectIds].sort();
+      if (
+        result.snapshotUserId !== selectedUserId ||
+        result.snapshotTemplateKey !== selectedTemplateKey ||
+        result.snapshotGroupId !== subjectGroupId ||
+        result.snapshotProgrammeMasterId !== programmeMasterId ||
+        result.snapshotSubjects.length !== currentSubjects.length ||
+        !result.snapshotSubjects.every((id, idx) => id === currentSubjects[idx])
+      ) {
+        return;
+      }
+
+      setTemplatePreview(result.data);
+      setPreviewSnapshot({
+        targetUserId: result.snapshotUserId,
+        templateKey: result.snapshotTemplateKey,
+        subjectGroupId: result.snapshotGroupId,
+        subjectIds: result.snapshotSubjects,
+        programmeMasterId: result.snapshotProgrammeMasterId,
+        templateVersion: result.data.version,
+        previewData: result.data,
+      });
       setTemplateApplyResult(null);
     },
     onError: (err) => {
       setTemplatePreview(null);
+      setPreviewSnapshot(null);
       if (err instanceof ApiError) {
         setTemplatePreviewError(err.message || 'Lỗi kiểm tra trước quyền.');
       } else {
@@ -283,32 +386,47 @@ export function UsersPage() {
     },
   });
 
-  // Template Apply Mutation
+  // Template Apply Mutation - strictly bound to matching preview snapshot
   const templateApplyMutation = useMutation({
     mutationFn: async () => {
-      if (!selectedUserId) return null;
+      if (!selectedUserId || !previewSnapshot || !isCurrentSelectionMatchingPreview) {
+        throw new Error('Dữ liệu lựa chọn đã thay đổi hoặc chưa có bản xem trước hợp lệ.');
+      }
       const resources = {
-        ...(subjectGroupId ? { subjectGroupId } : {}),
-        ...(subjectIds.length > 0 ? { subjectIds } : {}),
-        ...(programmeMasterId ? { programmeMasterId } : {}),
+        ...(previewSnapshot.subjectGroupId ? { subjectGroupId: previewSnapshot.subjectGroupId } : {}),
+        ...(previewSnapshot.subjectIds.length > 0 ? { subjectIds: previewSnapshot.subjectIds } : {}),
+        ...(previewSnapshot.programmeMasterId ? { programmeMasterId: previewSnapshot.programmeMasterId } : {}),
       };
-      return responsibilityTemplatesApi.apply(selectedUserId, {
-        templateKey: selectedTemplateKey,
+      return responsibilityTemplatesApi.apply(previewSnapshot.targetUserId, {
+        templateKey: previewSnapshot.templateKey,
         resources: Object.keys(resources).length > 0 ? resources : undefined,
-        subjectGroupId: subjectGroupId || undefined,
-        subjectIds: subjectIds.length > 0 ? subjectIds : undefined,
-        programmeMasterId: programmeMasterId || undefined,
+        subjectGroupId: previewSnapshot.subjectGroupId || undefined,
+        subjectIds: previewSnapshot.subjectIds.length > 0 ? previewSnapshot.subjectIds : undefined,
+        programmeMasterId: previewSnapshot.programmeMasterId || undefined,
       });
     },
     onSuccess: async (data) => {
       if (data) {
         setTemplateApplyResult(data);
+        const templateName = selectedTemplateDef?.name || TEMPLATE_NAMES[data.templateKey] || data.templateKey;
         setSuccess(
-          `Đã áp dụng Mẫu trách nhiệm (${TEMPLATE_NAMES[data.templateKey]}): đã cấp mới ${data.grantsAdded.length} quyền.`,
+          `Đã áp dụng thành công Mẫu trách nhiệm (${templateName}): đã cấp mới ${data.grantsAdded.length} quyền.`,
         );
-        setTemplatePreview(null);
+        invalidatePreview();
         await queryClient.invalidateQueries({ queryKey: ['users'] });
         await queryClient.invalidateQueries({ queryKey: ['delete-preflight', selectedUserId] });
+      }
+    },
+    onError: (err) => {
+      setTemplateApplyResult(null);
+      if (err instanceof ApiError && err.statusCode === 409) {
+        setTemplatePreviewError('Xung đột (409): Dữ liệu phân công hoặc quyền hạn của tài khoản đã thay đổi trên máy chủ. Vui lòng xem trước lại.');
+      } else if (err instanceof ApiError) {
+        setTemplatePreviewError(err.message || 'Lỗi khi áp dụng Mẫu trách nhiệm.');
+      } else if (err instanceof Error) {
+        setTemplatePreviewError(err.message);
+      } else {
+        setTemplatePreviewError('Không thể hoàn tất thao tác áp dụng.');
       }
     },
   });
@@ -345,9 +463,7 @@ export function UsersPage() {
     setSuccess('');
     setDraft(null);
     setSelectedUserId(user.id);
-    setTemplatePreview(null);
-    setTemplateApplyResult(null);
-    setTemplatePreviewError('');
+    invalidatePreview();
     setDeleteError('');
     setDeleteConfirmUsername('');
   }
@@ -675,18 +791,21 @@ export function UsersPage() {
             <div className="p-3 bg-slate-100 border-b border-slate-300 space-y-2">
               <input
                 type="text"
-                placeholder="🔍 Tìm theo tên, tài khoản, mã..."
-                aria-label="Tìm kiếm người dùng"
+                placeholder="🔍 Tìm trong trang hiện tại (tên, tài khoản, mã)..."
+                aria-label="Tìm trong trang hiện tại"
                 className="form-field__input"
-                style={{ minHeight: '38px', fontSize: '14px', background: '#fff' }}
+                style={{ minHeight: '44px', fontSize: '14px', background: '#fff' }}
                 value={searchKeyword}
                 onChange={(e) => setSearchKeyword(e.target.value)}
               />
+              <div className="text-[11px] text-slate-600 px-1 font-medium">
+                Lọc trong 20 bản ghi của trang hiện tại. Dùng thanh phân trang bên dưới để xem thêm.
+              </div>
               <div className="flex items-center justify-between gap-2">
                 <select
                   aria-label="Lọc theo trạng thái"
                   className="form-field__input"
-                  style={{ minHeight: '36px', fontSize: '13px', background: '#fff' }}
+                  style={{ minHeight: '44px', fontSize: '13px', background: '#fff' }}
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
                 >
@@ -1056,150 +1175,206 @@ export function UsersPage() {
                       tính hợp lệ, xung đột và thời hạn trước khi áp dụng.
                     </div>
 
-                    {/* Template Selection */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <div>
-                        <label className="form-field__label" htmlFor="template-select">
-                          Chọn Mẫu trách nhiệm:
-                        </label>
-                        <select
-                          id="template-select"
-                          className="form-field__input font-bold"
-                          value={selectedTemplateKey}
-                          onChange={(e) => {
-                            setSelectedTemplateKey(e.target.value as ResponsibilityTemplateKey);
-                            setTemplatePreview(null);
-                            setTemplateApplyResult(null);
-                            setTemplatePreviewError('');
-                          }}
-                        >
-                          <option value="TEACHER">Giáo viên (TEACHER)</option>
-                          <option value="SUBJECT_LEADER">Tổ trưởng chuyên môn (SUBJECT_LEADER)</option>
-                          <option value="VICE_PRINCIPAL_ACADEMIC">Phó Hiệu trưởng (VICE_PRINCIPAL_ACADEMIC)</option>
-                          <option value="PRINCIPAL">Hiệu trưởng (PRINCIPAL)</option>
-                          <option value="GDDP_COORDINATOR">Điều phối Giáo dục địa phương (GDDP_COORDINATOR)</option>
-                          <option value="HDTN_COORDINATOR">Điều phối HĐTN-HN (HDTN_COORDINATOR)</option>
-                          <option value="TECHNICAL_ACCOUNT_ADMIN">
-                            Quản trị tài khoản & kỹ thuật (TECHNICAL_ACCOUNT_ADMIN)
-                          </option>
-                        </select>
+                    {/* Server-Owned Template Catalog & Selection */}
+                    {templatesQuery.isPending ? (
+                      <PageLoading />
+                    ) : templatesQuery.isError ? (
+                      <QueryFailure
+                        error={templatesQuery.error}
+                        retry={() => void templatesQuery.refetch()}
+                      />
+                    ) : !templatesQuery.data?.items || templatesQuery.data.items.length === 0 ? (
+                      <div className="p-4 bg-slate-100 border border-slate-300 rounded text-xs text-slate-700">
+                        Chưa có Mẫu trách nhiệm nào được cấu hình trên máy chủ.
                       </div>
-
-                      {/* Subject Leader Resources */}
-                      {selectedTemplateKey === 'SUBJECT_LEADER' && (
-                        <div className="space-y-3 md:col-span-2 p-3 bg-indigo-50 border border-indigo-200 rounded">
+                    ) : (
+                      <>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                           <div>
-                            <label className="form-field__label" htmlFor="subject-group-select">
-                              Tổ chuyên môn phụ trách (Bắt buộc):
+                            <label className="form-field__label" htmlFor="template-select">
+                              Chọn Mẫu trách nhiệm:
                             </label>
                             <select
-                              id="subject-group-select"
-                              className="form-field__input"
-                              value={subjectGroupId}
-                              onChange={(e) => setSubjectGroupId(e.target.value)}
+                              id="template-select"
+                              className="form-field__input font-bold"
+                              value={selectedTemplateKey}
+                              onChange={(e) => {
+                                setSelectedTemplateKey(e.target.value as ResponsibilityTemplateKey);
+                                setSubjectGroupId('');
+                                setSubjectIds([]);
+                                setProgrammeMasterId('');
+                                invalidatePreview();
+                              }}
                             >
-                              <option value="">-- Chọn tổ chuyên môn --</option>
-                              {subjectGroupsQuery.data?.items?.map((g) => (
-                                <option key={g.id} value={g.id}>
-                                  {g.name} ({g.code})
+                              {templatesQuery.data.items.map((t) => (
+                                <option key={t.key} value={t.key}>
+                                  {t.name} ({t.key})
                                 </option>
                               ))}
                             </select>
                           </div>
 
-                          <div>
-                            <label className="form-field__label">
-                              Môn chuyên môn được giao cho tổ trưởng (Tùy chọn):
-                            </label>
-                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-1">
-                              {subjectsQuery.data?.items?.map((s) => {
-                                const isChecked = subjectIds.includes(s.id);
-                                return (
-                                  <label key={s.id} className="check-field text-xs">
-                                    <input
-                                      type="checkbox"
-                                      checked={isChecked}
-                                      onChange={(e) => {
-                                        if (e.target.checked) {
-                                          setSubjectIds([...subjectIds, s.id]);
-                                        } else {
-                                          setSubjectIds(subjectIds.filter((id) => id !== s.id));
-                                        }
-                                      }}
-                                    />
-                                    <span>
-                                      {s.name} ({s.code})
-                                    </span>
-                                  </label>
-                                );
-                              })}
+                          {/* Server-owned Template Metadata */}
+                          {selectedTemplateDef && (
+                            <div className="p-3 bg-slate-100 border border-slate-300 rounded text-xs space-y-1.5">
+                              <div className="font-bold text-slate-900 flex items-center justify-between">
+                                <span>{selectedTemplateDef.name}</span>
+                                <span className="technical-value text-[11px] bg-slate-200 text-slate-800 px-1.5 py-0.5 rounded">
+                                  {selectedTemplateDef.version}
+                                </span>
+                              </div>
+                              <p className="text-slate-700 m-0 leading-relaxed">
+                                {selectedTemplateDef.description}
+                              </p>
+                              <div className="flex flex-wrap gap-1.5 pt-1 text-[11px]">
+                                <span className="px-2 py-0.5 bg-blue-100 text-blue-900 rounded font-semibold">
+                                  Tài nguyên:{' '}
+                                  {selectedTemplateDef.requiredResourceKind === 'NONE'
+                                    ? 'Không yêu cầu'
+                                    : selectedTemplateDef.requiredResourceKind === 'SUBJECT_GROUP'
+                                    ? 'Tổ chuyên môn & môn học'
+                                    : 'Chương trình đặc thù'}
+                                </span>
+                                <span
+                                  className={`px-2 py-0.5 rounded font-semibold ${
+                                    selectedTemplateDef.requiresTeachingStaff
+                                      ? 'bg-emerald-100 text-emerald-900'
+                                      : 'bg-slate-200 text-slate-800'
+                                  }`}
+                                >
+                                  {selectedTemplateDef.requiresTeachingStaff
+                                    ? 'Bắt buộc nhân sự giảng dạy'
+                                    : 'Không ràng buộc giảng dạy'}
+                                </span>
+                              </div>
                             </div>
-                          </div>
-                        </div>
-                      )}
+                          )}
 
-                      {/* Coordinator Resources */}
-                      {isCoordinatorTemplate && (
-                        <div className="md:col-span-2 p-3 bg-amber-50 border border-amber-300 rounded space-y-2">
-                          <label className="form-field__label" htmlFor="programme-master-select">
-                            Chương trình {programmeKind === 'GDDP' ? 'GDĐP' : 'HĐTN-HN'} chỉ định:
-                          </label>
-                          {coordinatorSelectorMissing ? (
-                            <div className="p-3 bg-amber-100 border border-amber-400 rounded text-xs text-amber-900">
-                              ⚠️ <strong>Chưa có danh mục chương trình khả dụng:</strong> Tài khoản quản trị hiện tại
-                              không có thẩm quyền tra cứu danh mục chương trình (ProgrammeMaster). Theo quy định an toàn
-                              hệ thống, quy trình gán template điều phối này tạm thời bị khóa cho đến khi có endpoint tra
-                              cứu phù hợp. Nút áp dụng bị khóa.
+                          {/* Subject Leader Resources */}
+                          {selectedTemplateKey === 'SUBJECT_LEADER' && (
+                            <div className="space-y-3 md:col-span-2 p-3 bg-indigo-50 border border-indigo-200 rounded">
+                              <div>
+                                <label className="form-field__label" htmlFor="subject-group-select">
+                                  Tổ chuyên môn phụ trách (Bắt buộc):
+                                </label>
+                                <div className="text-[11px] text-slate-500 mb-1">
+                                  Hiển thị tối đa 100 tổ bộ môn đang hoạt động.
+                                </div>
+                                <select
+                                  id="subject-group-select"
+                                  className="form-field__input"
+                                  value={subjectGroupId}
+                                  onChange={(e) => {
+                                    setSubjectGroupId(e.target.value);
+                                    invalidatePreview();
+                                  }}
+                                >
+                                  <option value="">-- Chọn tổ chuyên môn --</option>
+                                  {subjectGroupsQuery.data?.items?.map((g) => (
+                                    <option key={g.id} value={g.id}>
+                                      {g.name} ({g.code})
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              <div>
+                                <label className="form-field__label">
+                                  Môn chuyên môn được giao cho tổ trưởng (Tùy chọn):
+                                </label>
+                                <div className="text-[11px] text-slate-500 mb-1">
+                                  Hiển thị tối đa 100 môn học đang hoạt động.
+                                </div>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-1">
+                                  {subjectsQuery.data?.items?.map((s) => {
+                                    const isChecked = subjectIds.includes(s.id);
+                                    return (
+                                      <label key={s.id} className="check-field text-xs">
+                                        <input
+                                          type="checkbox"
+                                          checked={isChecked}
+                                          onChange={(e) => {
+                                            if (e.target.checked) {
+                                              setSubjectIds([...subjectIds, s.id]);
+                                            } else {
+                                              setSubjectIds(subjectIds.filter((id) => id !== s.id));
+                                            }
+                                            invalidatePreview();
+                                          }}
+                                        />
+                                        <span>
+                                          {s.name} ({s.code})
+                                        </span>
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                              </div>
                             </div>
-                          ) : (
-                            <select
-                              id="programme-master-select"
-                              className="form-field__input"
-                              value={programmeMasterId}
-                              onChange={(e) => setProgrammeMasterId(e.target.value)}
-                            >
-                              <option value="">-- Chọn chương trình --</option>
-                              {programmeMastersQuery.data?.map((m) => (
-                                <option key={m.id} value={m.id}>
-                                  {m.name || m.code || m.id} ({m.kind})
-                                </option>
-                              ))}
-                            </select>
+                          )}
+
+                          {/* Coordinator Resources */}
+                          {isCoordinatorTemplate && (
+                            <div className="md:col-span-2 p-4 bg-amber-50 border border-amber-300 rounded space-y-3">
+                              <div className="flex items-center gap-2 text-amber-950 font-bold text-sm">
+                                <span>⚠️ Yêu cầu mô hình đọc tài nguyên quản trị (Administrative Read-Model)</span>
+                              </div>
+                              <p className="text-xs text-amber-900 leading-relaxed m-0">
+                                Mẫu trách nhiệm <strong>{selectedTemplateDef?.name || TEMPLATE_NAMES[selectedTemplateKey]}</strong> yêu cầu gán phạm vi theo chương trình đặc thù (<code>programmeMasterId</code>).
+                              </p>
+                              <p className="text-xs text-amber-900 leading-relaxed m-0">
+                                Hiện tại hệ thống chưa có API tra cứu danh mục chương trình dành riêng cho vai trò quản trị cấp quyền (<code>CAPABILITY_GRANT</code>). API <code>/api/programme-planning/masters</code> yêu cầu tham số <code>academicYearId</code> và quyền Ban Giám hiệu (<code>APPROVAL_PRINCIPAL</code> / <code>APPROVAL_VICE_PRINCIPAL</code>).
+                              </p>
+                              {coordinatorLookupError && (
+                                <div className="p-2.5 bg-rose-100 border border-rose-300 rounded text-xs text-rose-900 font-mono">
+                                  Chi tiết phản hồi máy chủ: {coordinatorLookupError}
+                                </div>
+                              )}
+                              <div className="p-2.5 bg-amber-100 border border-amber-400 rounded text-xs font-semibold text-amber-950">
+                                🔒 Thao tác Xem trước và Áp dụng tạm thời bị khóa đối với mẫu này để bảo đảm tính toàn vẹn dữ liệu. Cần bổ sung read-model quản trị trước khi có thể sử dụng mẫu này.
+                              </div>
+                            </div>
                           )}
                         </div>
-                      )}
-                    </div>
 
-                    {/* Preview Button */}
-                    <div className="flex flex-wrap items-center gap-3 pt-2">
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        disabled={coordinatorSelectorMissing || templatePreviewMutation.isPending}
-                        loading={templatePreviewMutation.isPending}
-                        onClick={() => templatePreviewMutation.mutate()}
-                      >
-                        👁️ Xem trước thay đổi quyền (Preview)
-                      </Button>
+                        {/* Preview & Apply Buttons */}
+                        <div className="flex flex-wrap items-center gap-3 pt-2">
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            disabled={
+                              coordinatorSelectorMissing ||
+                              (selectedTemplateKey === 'SUBJECT_LEADER' && !subjectGroupId) ||
+                              templatePreviewMutation.isPending
+                            }
+                            loading={templatePreviewMutation.isPending}
+                            onClick={() => templatePreviewMutation.mutate()}
+                          >
+                            👁️ Xem trước thay đổi quyền (Preview)
+                          </Button>
 
-                      {templatePreview && canGrant && (
-                        <Button
-                          type="button"
-                          variant="primary"
-                          disabled={
-                            !templatePreview.eligibility.isEligible ||
-                            !templatePreview.requiredResources.provided ||
-                            templatePreview.conflicts.length > 0 ||
-                            coordinatorSelectorMissing ||
-                            templateApplyMutation.isPending
-                          }
-                          loading={templateApplyMutation.isPending}
-                          onClick={() => templateApplyMutation.mutate()}
-                        >
-                          ✅ Áp dụng Mẫu trách nhiệm ({TEMPLATE_NAMES[selectedTemplateKey]})
-                        </Button>
-                      )}
-                    </div>
+                          {templatePreview && canGrant && isCurrentSelectionMatchingPreview && (
+                            <Button
+                              type="button"
+                              variant="primary"
+                              disabled={
+                                !templatePreview.eligibility.isEligible ||
+                                !templatePreview.requiredResources.provided ||
+                                templatePreview.conflicts.length > 0 ||
+                                coordinatorSelectorMissing ||
+                                !isCurrentSelectionMatchingPreview ||
+                                templateApplyMutation.isPending ||
+                                templatePreviewMutation.isPending
+                              }
+                              loading={templateApplyMutation.isPending}
+                              onClick={() => templateApplyMutation.mutate()}
+                            >
+                              ✅ Áp dụng Mẫu trách nhiệm ({selectedTemplateDef?.name || TEMPLATE_NAMES[selectedTemplateKey]})
+                            </Button>
+                          )}
+                        </div>
+                      </>
+                    )}
 
                     {templatePreviewError && (
                       <div className="p-3 bg-rose-50 border border-rose-300 rounded text-xs text-rose-800">
@@ -1409,7 +1584,7 @@ export function UsersPage() {
                       <Button
                         type="button"
                         variant="quiet"
-                        style={{ minHeight: '32px', padding: '2px 8px' }}
+                        style={{ minHeight: '44px', padding: '6px 12px' }}
                         onClick={() => void preflightQuery.refetch()}
                       >
                         🔄 Kiểm tra lại
