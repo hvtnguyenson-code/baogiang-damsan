@@ -4,32 +4,49 @@
 
 Báo giảng Đam San is an operational service for Vietnamese teachers and school managers. Its interface must help people complete dense weekly, daily, period, approval, and long-form work accurately on Windows laptops and Android phones, including on slow or unreliable networks. It is not a marketing site or a generic SaaS dashboard.
 
-## Direction: Sổ công tác Đam San
+## Direction: High-Contrast Professional Workspace (Approved Visual Refresh)
 
-The visual language takes structure from a teacher's weekly work ledger and administrative forms without imitating aged paper. It is clear, firm, moderately dense, and factual.
+The visual language follows the approved administrative design direction inspired by KTNB_Auto V3: high contrast, crisp structural hierarchy, clear boundaries, and purposeful color coding for administrative operations.
 
-The signature element is a **basalt margin rail**: a narrow `basalt-600` rule that aligns and labels a real section, week, form sequence, or workflow state. It must clarify scanning and hierarchy; never scatter it as decoration.
+Key visual elements:
+- **Header**: Deep slate (`#0f172a`) with high-contrast text (`#f8fafc`), compact horizontal controls, and clear hierarchical product branding.
+- **Canvas & Surfaces**: Cool slate canvas (`#cbd5e1`) contrasting with crisp white work surfaces (`#ffffff`).
+- **Form Cards**: White surfaces, solid borders (`#94a3b8`), small radius (6–10px), restrained shadow (`0 3px 8px rgba(15, 23, 42, 0.08)`), and dark or color-coded section headers (`#1e293b`, `#1e3a8a`, `#0f766e`, `#4338ca`, `#b45309`).
+- **Input Controls**: Slate-tinted input surfaces (`#f1f5f9`), medium-strong slate border (`#64748b`), thick left accent rail (`border-left: 4px solid #2563eb` or section role color), and distinct hover/focus states.
+- **Color Roles**:
+  - **BLUE** (`#2563eb`, `#1e3a8a`): primary actions, selected navigation, account lifecycle.
+  - **TEAL** (`#0f766e`): professional responsibilities, approved state.
+  - **INDIGO** (`#4338ca`): capability/template preview and grant grouping.
+  - **AMBER** (`#b45309`): warnings, conflicts, requires-attention content.
+  - **RED** (`#be123c`): irreversible deletion or actual error only (never used for ordinary navigation).
 
 Do not use unapproved ethnic patterns, cultural symbols, or Êđê motifs. Do not use gradients, glass, glow, blobs, marketing heroes, bento grids, equal decorative card grids, nested cards, permanent generic sidebars, icon tiles, role selectors, fake metrics, fake notifications, fake people, or invented business data.
 
 ## Semantic tokens
 
-| Token | Value | Use |
+| Token | Value | Role / Use |
 | --- | --- | --- |
-| `ink-950` | `#15242E` | primary text |
-| `school-800` | `#1F4358` | identity and primary interaction |
-| `basalt-600` | `#A7462F` | sole structural accent and margin rail |
-| `mist-50` | `#F3F6F7` | application background |
-| `paper-0` | `#FFFFFF` | input and content surfaces |
-| `line-300` | `#C9D4DA` | borders and dividers |
-| `success-700` | `#246B45` | success text/icon |
-| `success-50` | `#EDF7F1` | success background |
-| `warning-800` | `#7A4B00` | warning text/icon |
-| `warning-50` | `#FFF7E6` | warning background |
-| `error-700` | `#A32929` | error text/icon; never basalt |
-| `error-50` | `#FFF1F1` | error background |
+| `--surface-canvas` | `#cbd5e1` | global application background canvas |
+| `--surface-content` | `#ffffff` | task cards, forms, tables and modal surfaces |
+| `--surface-input` | `#f1f5f9` | form input, select and textarea background |
+| `--surface-input-hover` | `#e2e8f0` | input hover state |
+| `--ink-primary` | `#0f172a` | primary text, table body copy |
+| `--ink-heading` | `#1e293b` | section headings, field labels |
+| `--ink-inverse` | `#f8fafc` | text on dark headers and badges |
+| `--header-bg` | `#0f172a` | application masthead background |
+| `--section-header-bg` | `#1e293b` | standard form card header |
+| `--primary` | `#2563eb` | primary action buttons, active tab indicators |
+| `--primary-hover` | `#1d4ed8` | primary button hover / active |
+| `--section-blue` | `#1e3a8a` | account management section header |
+| `--section-teal` | `#0f766e` | professional responsibility section header |
+| `--section-indigo` | `#4338ca` | template preview & capability grant grouping |
+| `--section-amber` | `#b45309` | evaluation, warning & conflict header |
+| `--border-input` | `#64748b` | input and select borders |
+| `--border-card` | `#94a3b8` | card and panel borders |
+| `--success` | `#047857` | success text, status cues, confirmed badges |
+| `--danger` | `#be123c` | irreversible deletion, danger buttons, fatal error |
 
-Status must always include text or an icon cue, never color alone. Do not add arbitrary palettes when a semantic token fits.
+Status must always include text or an icon cue, never color alone. Do not add arbitrary palettes when a semantic token fits. Contrast requirements: normal text >= 4.5:1, large text >= 3:1, focus indicators clearly visible.
 
 ## Typography
 
@@ -55,7 +72,14 @@ Asymmetric two-column composition at laptop width: a concise identity/context le
 
 ### Workspace
 
-Compact masthead, link navigation, and a bounded reading/work column. Show only real routes. Use the margin rail to identify the current work section. No permanent sidebar in this foundation.
+Compact masthead, link navigation, and bounded reading/work surfaces. Show only real routes. Use accent rails and card headers to identify the current work section. No permanent sidebar in this foundation.
+
+### Administration split workspace
+
+Desktop composition inspired by the KTNB_Auto V3 high-contrast operational layout:
+- **Left management area**: user list/selection, compact search/filters, status indicators, and account lifecycle actions.
+- **Right detailed workspace**: selected record details, profile editing, responsibility templates, capability preview, and safe-deletion preflight.
+- Ratio approximately 5/7 on wide desktop, collapsing to a clear single-column workflow on tablet and mobile viewports without horizontal page overflow.
 
 ### Data table
 
@@ -63,11 +87,11 @@ Use a real table with sticky/contextual headings only when data exists. Preserve
 
 ### Long form
 
-Group fields by task sequence with headings and basalt rails. Keep labels above fields, errors adjacent, and actions predictable. Never split a simple form into cards.
+Group fields by task sequence with crisp section headings, structured form cards, and accent rails. Keep labels above fields, errors adjacent, and actions predictable.
 
 ### Weekly ledger
 
-Orient by week/day/period with the margin rail and strong table semantics. Dense does not mean cramped; keep touch targets and row scanning intact.
+Orient by week/day/period with accent rails and strong table semantics. Dense does not mean cramped; keep touch targets and row scanning intact.
 
 ### Approval
 
