@@ -125,11 +125,8 @@ export function UsersPage() {
   const [previewSnapshot, setPreviewSnapshot] = useState<PreviewSnapshot | null>(null);
   const previewRequestIdRef = useRef<number>(0);
 
-  function invalidatePreview() {
-    setTemplatePreview(null);
-    setPreviewSnapshot(null);
+  function clearApplyResult() {
     setTemplateApplyResult(null);
-    setTemplatePreviewError('');
   }
 
   // Safe delete state
@@ -310,10 +307,14 @@ export function UsersPage() {
 
   // Template Preview Mutation with snapshot integrity & stale response rejection
   const templatePreviewMutation = useMutation({
-    mutationFn: async () => {
-      if (!selectedUserId) return null;
+    onMutate: () => {
+      clearApplyResult();
       setTemplatePreviewError('');
       const requestId = ++previewRequestIdRef.current;
+      return { requestId };
+    },
+    mutationFn: async () => {
+      if (!selectedUserId) return null;
       const snapshotUserId = selectedUserId;
       const snapshotTemplateKey = selectedTemplateKey;
       const snapshotGroupId = subjectGroupId;
@@ -336,7 +337,6 @@ export function UsersPage() {
 
       return {
         data,
-        requestId,
         snapshotUserId,
         snapshotTemplateKey,
         snapshotGroupId,
@@ -344,10 +344,10 @@ export function UsersPage() {
         snapshotProgrammeMasterId,
       };
     },
-    onSuccess: (result) => {
+    onSuccess: (result, _variables, context) => {
       if (!result) return;
-      // Stale async response rejection: if a newer preview was initiated, discard this one
-      if (result.requestId !== previewRequestIdRef.current) {
+      // Stale async response rejection: if a newer preview was initiated or generation invalidated, discard this one
+      if (!context || context.requestId !== previewRequestIdRef.current) {
         return;
       }
       // If the user diverged inputs while preview was in-flight, discard this response
@@ -373,9 +373,13 @@ export function UsersPage() {
         templateVersion: result.data.version,
         previewData: result.data,
       });
-      setTemplateApplyResult(null);
+      clearApplyResult();
     },
-    onError: (err) => {
+    onError: (err, _variables, context) => {
+      // Discard stale error if this request is no longer the active generation
+      if (!context || context.requestId !== previewRequestIdRef.current) {
+        return;
+      }
       setTemplatePreview(null);
       setPreviewSnapshot(null);
       if (err instanceof ApiError) {
@@ -385,6 +389,16 @@ export function UsersPage() {
       }
     },
   });
+
+  function invalidatePreview(options?: { clearError?: boolean }) {
+    previewRequestIdRef.current++;
+    templatePreviewMutation.reset();
+    setTemplatePreview(null);
+    setPreviewSnapshot(null);
+    if (options?.clearError ?? true) {
+      setTemplatePreviewError('');
+    }
+  }
 
   // Template Apply Mutation - strictly bound to matching preview snapshot
   const templateApplyMutation = useMutation({
@@ -412,15 +426,19 @@ export function UsersPage() {
         setSuccess(
           `Đã áp dụng thành công Mẫu trách nhiệm (${templateName}): đã cấp mới ${data.grantsAdded.length} quyền.`,
         );
-        invalidatePreview();
+        invalidatePreview({ clearError: true });
         await queryClient.invalidateQueries({ queryKey: ['users'] });
         await queryClient.invalidateQueries({ queryKey: ['delete-preflight', selectedUserId] });
       }
     },
     onError: (err) => {
-      setTemplateApplyResult(null);
+      setSuccess('');
+      clearApplyResult();
+      invalidatePreview({ clearError: false });
       if (err instanceof ApiError && err.statusCode === 409) {
-        setTemplatePreviewError('Xung đột (409): Dữ liệu phân công hoặc quyền hạn của tài khoản đã thay đổi trên máy chủ. Vui lòng xem trước lại.');
+        setTemplatePreviewError(
+          'Xung đột (409): Dữ liệu phân công hoặc quyền hạn của tài khoản đã thay đổi trên máy chủ. Vui lòng xem trước lại.',
+        );
       } else if (err instanceof ApiError) {
         setTemplatePreviewError(err.message || 'Lỗi khi áp dụng Mẫu trách nhiệm.');
       } else if (err instanceof Error) {
@@ -464,6 +482,7 @@ export function UsersPage() {
     setDraft(null);
     setSelectedUserId(user.id);
     invalidatePreview();
+    clearApplyResult();
     setDeleteError('');
     setDeleteConfirmUsername('');
   }
@@ -581,6 +600,8 @@ export function UsersPage() {
                 setSuccess('');
                 setSelectedUserId(null);
                 setDraft({ ...emptyDraft });
+                invalidatePreview();
+                clearApplyResult();
               }}
             >
               Tạo người dùng
@@ -1204,6 +1225,7 @@ export function UsersPage() {
                                 setSubjectIds([]);
                                 setProgrammeMasterId('');
                                 invalidatePreview();
+                                clearApplyResult();
                               }}
                             >
                               {templatesQuery.data.items.map((t) => (
@@ -1267,6 +1289,7 @@ export function UsersPage() {
                                   onChange={(e) => {
                                     setSubjectGroupId(e.target.value);
                                     invalidatePreview();
+                                    clearApplyResult();
                                   }}
                                 >
                                   <option value="">-- Chọn tổ chuyên môn --</option>
@@ -1300,6 +1323,7 @@ export function UsersPage() {
                                               setSubjectIds(subjectIds.filter((id) => id !== s.id));
                                             }
                                             invalidatePreview();
+                                            clearApplyResult();
                                           }}
                                         />
                                         <span>
@@ -1498,13 +1522,38 @@ export function UsersPage() {
 
                     {/* Apply Result Feedback */}
                     {templateApplyResult && (
-                      <div className="p-3 bg-emerald-50 border border-emerald-300 rounded text-xs text-emerald-900 space-y-1">
-                        <div className="font-bold text-sm">
-                          ✅ Đã áp dụng thành công ({TEMPLATE_NAMES[templateApplyResult.templateKey]} v{templateApplyResult.version}):
+                      <div className="p-3 bg-emerald-50 border border-emerald-300 rounded text-xs text-emerald-900 space-y-1.5">
+                        <div className="font-bold text-sm flex items-center justify-between">
+                          <span>
+                            ✅ Đã áp dụng thành công ({selectedTemplateDef?.name || TEMPLATE_NAMES[templateApplyResult.templateKey]} {templateApplyResult.version.startsWith('v') ? templateApplyResult.version : 'v' + templateApplyResult.version}):
+                          </span>
+                          <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-200 text-emerald-950">
+                            {templateApplyResult.applied !== false ? 'HOÀN THÀNH' : 'CHƯA HOÀN THÀNH'}
+                          </span>
                         </div>
-                        <div>Số quyền đã cấp mới: {templateApplyResult.grantsAdded.length}</div>
-                        {templateApplyResult.alreadyPresent.length > 0 && (
-                          <div>Số quyền đã có sẵn: {templateApplyResult.alreadyPresent.length}</div>
+                        <div>
+                          Số quyền đã cấp mới: <strong>{templateApplyResult.grantsAdded.length}</strong>
+                        </div>
+                        <div>
+                          Số quyền đã có sẵn: <strong>{templateApplyResult.alreadyPresent.length}</strong>
+                        </div>
+                        {templateApplyResult.grantsAdded.length > 0 && (
+                          <div className="pt-1 border-t border-emerald-200/80">
+                            <div className="text-[11px] font-semibold text-emerald-950 mb-1">Chi tiết quyền cấp mới:</div>
+                            <div className="delta-list">
+                              {templateApplyResult.grantsAdded.map((g) => (
+                                <div key={g.id || g.capabilityKey} className="delta-item delta-item--covered">
+                                  <div>
+                                    <div className="delta-item__key font-mono text-[11px]">
+                                      {g.capabilityKey} · {g.scopeType}
+                                      {g.scopeResourceId ? ` (${g.scopeResourceId})` : ''}
+                                    </div>
+                                  </div>
+                                  <span className="delta-badge delta-badge--covered">Đã cấp</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
                         )}
                       </div>
                     )}

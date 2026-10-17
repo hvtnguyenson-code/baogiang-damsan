@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { jsonResponse, normalAuth, renderApp } from './test-utils';
@@ -8,6 +8,16 @@ const auth = (...capabilities: Array<{ key: string; scope: string; resourceId?: 
   ...normalAuth,
   capabilities,
 });
+
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
 
 describe('P5-051 Slice C: Users Administration Workspace', () => {
   afterEach(() => {
@@ -189,6 +199,7 @@ describe('P5-051 Slice C: Users Administration Workspace', () => {
       if (url.includes('/api/users/u-teacher-1/responsibility-templates/apply') && init?.method === 'POST') {
         applyCalled = true;
         return jsonResponse({
+          applied: true,
           templateKey: 'TEACHER',
           version: '1.0.0',
           grantsAdded: [
@@ -231,8 +242,14 @@ describe('P5-051 Slice C: Users Administration Workspace', () => {
     await user.click(applyBtn);
     await waitFor(() => expect(applyCalled).toBe(true));
 
-    // Result feedback is shown
-    expect(await screen.findByText(/Đã áp dụng thành công/i)).toBeInTheDocument();
+    // Result feedback is shown with detailed retained result
+    expect(
+      await screen.findByText(/Đã áp dụng thành công Mẫu trách nhiệm \(Giáo viên\): đã cấp mới 2 quyền/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Số quyền đã cấp mới:/i)).toBeInTheDocument();
+    expect(screen.getByText('HOÀN THÀNH')).toBeInTheDocument();
+    // Old preview is invalidated and Apply button is unrendered
+    expect(screen.queryByRole('button', { name: /Áp dụng Mẫu trách nhiệm/i })).not.toBeInTheDocument();
   });
 
   it('renders Subject Leader catalog selectors with required subjectGroupId and explicit subjectIds label', async () => {
@@ -468,7 +485,98 @@ describe('P5-051 Slice C: Users Administration Workspace', () => {
     expect(screen.queryByText('Quyền cơ sở')).not.toBeInTheDocument();
   });
 
-  it('snapshot integrity: server 409 conflict on apply -> shows conflict notice and does NOT claim success', async () => {
+  it('C3-01: server 409 on apply -> wipes preview snapshot, disables Apply, and requires fresh preview before retry', async () => {
+    let applyAttempts = 0;
+    let previewAttempts = 0;
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        return jsonResponse(
+          auth(
+            { key: 'USER_MANAGE', scope: 'SCHOOL_WIDE' },
+            { key: 'CAPABILITY_GRANT', scope: 'SCHOOL_WIDE' },
+          ),
+        );
+      }
+      if (url.includes('/api/capabilities/responsibility-templates')) {
+        return jsonResponse({ items: mockTemplates });
+      }
+      if (url.includes('/api/users/u-teacher-1/responsibility-templates/preview') && init?.method === 'POST') {
+        previewAttempts++;
+        return jsonResponse({
+          templateKey: 'TEACHER',
+          version: '1.0.0',
+          eligibility: { isEligible: true },
+          requiredResources: { kind: 'NONE', provided: true },
+          grantsToAdd: [{ capabilityKey: 'TEACHER_BASE', scopeType: 'SCHOOL_WIDE', description: 'Quyền cơ sở' }],
+          alreadyPresent: [],
+          conflicts: [],
+          forbiddenDefaults: [],
+          notes: [],
+        });
+      }
+      if (url.includes('/api/users/u-teacher-1/responsibility-templates/apply') && init?.method === 'POST') {
+        applyAttempts++;
+        if (applyAttempts === 1) {
+          // First attempt returns 409 Conflict
+          return jsonResponse({ statusCode: 409, message: 'Conflict: user grants changed concurrently.' }, 409);
+        }
+        // Second attempt succeeds
+        return jsonResponse({
+          applied: true,
+          templateKey: 'TEACHER',
+          version: '1.0.0',
+          grantsAdded: [{ id: 'g-1', capabilityKey: 'TEACHER_BASE', scopeType: 'SCHOOL_WIDE' }],
+          alreadyPresent: [],
+        });
+      }
+      if (url.includes('/api/users')) return jsonResponse(page(mockUsers));
+      return jsonResponse({});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+
+    renderApp('/quan-tri/nguoi-dung');
+
+    await user.click(await screen.findByRole('button', { name: 'Chọn gv_nguyenvanb' }));
+    await screen.findByLabelText(/Chọn Mẫu trách nhiệm/i);
+
+    const previewBtn = screen.getByRole('button', { name: /Xem trước thay đổi quyền/i });
+    await user.click(previewBtn);
+
+    const applyBtn = await screen.findByRole('button', { name: /Áp dụng Mẫu trách nhiệm/i });
+    await user.click(applyBtn);
+
+    // 1. Verify 409 error message is displayed
+    expect(await screen.findByText(/Xung đột \(409\)/i)).toBeInTheDocument();
+    // 2. Verify NO fake success message
+    expect(screen.queryByText(/Đã áp dụng thành công/i)).not.toBeInTheDocument();
+    // 3. Verify Apply button is unavailable from rejected preview
+    expect(screen.queryByRole('button', { name: /Áp dụng Mẫu trách nhiệm/i })).not.toBeInTheDocument();
+    // 4. Verify stale preview result is wiped
+    expect(screen.queryByText(/Kết quả kiểm tra trước:/i)).not.toBeInTheDocument();
+
+    // 5. User clicks Preview again to re-evaluate truth
+    await user.click(previewBtn);
+    await waitFor(() => expect(previewAttempts).toBe(2));
+
+    // 6. Apply button is available only after fresh valid preview
+    const secondApplyBtn = await screen.findByRole('button', { name: /Áp dụng Mẫu trách nhiệm/i });
+    expect(secondApplyBtn).not.toBeDisabled();
+
+    // 7. Click Apply on new preview -> succeeds and shows detailed apply result
+    await user.click(secondApplyBtn);
+    await waitFor(() => expect(applyAttempts).toBe(2));
+    expect(
+      await screen.findByText(/Đã áp dụng thành công Mẫu trách nhiệm \(Giáo viên\): đã cấp mới 1 quyền/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Số quyền đã cấp mới:/i)).toBeInTheDocument();
+    expect(screen.getByText('HOÀN THÀNH')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Áp dụng Mẫu trách nhiệm/i })).not.toBeInTheDocument();
+  });
+
+  it('C3-02: apply result is retained with all required fields and cleared when switching user', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.endsWith('/auth/me')) {
@@ -489,15 +597,20 @@ describe('P5-051 Slice C: Users Administration Workspace', () => {
           eligibility: { isEligible: true },
           requiredResources: { kind: 'NONE', provided: true },
           grantsToAdd: [{ capabilityKey: 'TEACHER_BASE', scopeType: 'SCHOOL_WIDE', description: 'Quyền cơ sở' }],
-          alreadyPresent: [],
+          alreadyPresent: [{ capabilityKey: 'EXISTING_ONE', scopeType: 'SCHOOL_WIDE', description: 'Quyền có sẵn' }],
           conflicts: [],
           forbiddenDefaults: [],
           notes: [],
         });
       }
       if (url.includes('/api/users/u-teacher-1/responsibility-templates/apply') && init?.method === 'POST') {
-        // Return 409 Conflict
-        return jsonResponse({ statusCode: 409, message: 'Conflict: user grants changed concurrently.' }, 409);
+        return jsonResponse({
+          applied: true,
+          templateKey: 'TEACHER',
+          version: '1.0.0',
+          grantsAdded: [{ id: 'g-1', capabilityKey: 'TEACHER_BASE', scopeType: 'SCHOOL_WIDE' }],
+          alreadyPresent: [{ capabilityKey: 'EXISTING_ONE', scopeType: 'SCHOOL_WIDE', description: 'Quyền có sẵn' }],
+        });
       }
       if (url.includes('/api/users')) return jsonResponse(page(mockUsers));
       return jsonResponse({});
@@ -516,10 +629,377 @@ describe('P5-051 Slice C: Users Administration Workspace', () => {
     const applyBtn = await screen.findByRole('button', { name: /Áp dụng Mẫu trách nhiệm/i });
     await user.click(applyBtn);
 
-    // Verify 409 error message is displayed
-    expect(await screen.findByText(/Xung đột \(409\)/i)).toBeInTheDocument();
-    // Verify NO fake success message
-    expect(screen.queryByText(/Đã áp dụng thành công/i)).not.toBeInTheDocument();
+    // Verify all required fields of apply result are retained
+    expect(await screen.findByText(/Số quyền đã cấp mới:/i)).toBeInTheDocument();
+    expect(screen.getByText(/Số quyền đã có sẵn:/i)).toBeInTheDocument();
+    expect(screen.getByText('HOÀN THÀNH')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Áp dụng Mẫu trách nhiệm/i })).not.toBeInTheDocument();
+
+    // Switch to another user -> apply result is cleared and does not linger
+    await user.click(screen.getByRole('button', { name: 'Chọn gv_clean_slate' }));
+    expect(screen.queryByText(/Số quyền đã cấp mới:/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('HOÀN THÀNH')).not.toBeInTheDocument();
+  });
+
+  it('async snapshot regression: preview A in-flight -> switch user to B -> response A arrives -> discarded, Apply unavailable', async () => {
+    const deferredA = createDeferred<Response>();
+    let previewACalled = false;
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        return jsonResponse(
+          auth(
+            { key: 'USER_MANAGE', scope: 'SCHOOL_WIDE' },
+            { key: 'CAPABILITY_GRANT', scope: 'SCHOOL_WIDE' },
+          ),
+        );
+      }
+      if (url.includes('/api/capabilities/responsibility-templates')) {
+        return jsonResponse({ items: mockTemplates });
+      }
+      if (url.includes('/api/users/u-teacher-1/responsibility-templates/preview') && init?.method === 'POST') {
+        previewACalled = true;
+        return deferredA.promise;
+      }
+      if (url.includes('/api/users')) return jsonResponse(page(mockUsers));
+      return jsonResponse({});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+
+    renderApp('/quan-tri/nguoi-dung');
+
+    await user.click(await screen.findByRole('button', { name: 'Chọn gv_nguyenvanb' }));
+    await screen.findByLabelText(/Chọn Mẫu trách nhiệm/i);
+
+    const previewBtn = screen.getByRole('button', { name: /Xem trước thay đổi quyền/i });
+    await user.click(previewBtn);
+    await waitFor(() => expect(previewACalled).toBe(true));
+
+    // While preview A is in-flight, switch user to gv_clean_slate
+    await user.click(screen.getByRole('button', { name: 'Chọn gv_clean_slate' }));
+
+    // Now resolve preview A
+    await act(async () => {
+      deferredA.resolve(
+        jsonResponse({
+          templateKey: 'TEACHER',
+          version: '1.0.0',
+          eligibility: { isEligible: true },
+          requiredResources: { kind: 'NONE', provided: true },
+          grantsToAdd: [{ capabilityKey: 'TEACHER_BASE', scopeType: 'SCHOOL_WIDE', description: 'Quyền cơ sở' }],
+          alreadyPresent: [],
+          conflicts: [],
+          forbiddenDefaults: [],
+          notes: [],
+        }),
+      );
+      await new Promise((r) => setTimeout(r, 60));
+    });
+
+    // Stale response A must be discarded for user B
+    expect(screen.queryByRole('button', { name: /Áp dụng Mẫu trách nhiệm/i })).not.toBeInTheDocument();
+    expect(screen.queryByText('Quyền cơ sở')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Kết quả kiểm tra trước:/i)).not.toBeInTheDocument();
+  });
+
+  it('async snapshot regression: preview A in-flight -> change template -> response A arrives late -> discarded, Apply unavailable', async () => {
+    const deferredA = createDeferred<Response>();
+    let previewACalled = false;
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        return jsonResponse(
+          auth(
+            { key: 'USER_MANAGE', scope: 'SCHOOL_WIDE' },
+            { key: 'CAPABILITY_GRANT', scope: 'SCHOOL_WIDE' },
+          ),
+        );
+      }
+      if (url.includes('/api/capabilities/responsibility-templates')) {
+        return jsonResponse({ items: mockTemplates });
+      }
+      if (url.includes('/api/catalogs/subject-groups')) {
+        return jsonResponse({ items: [{ id: 'sg-1', code: 'TOAN', name: 'Tổ Toán' }] });
+      }
+      if (url.includes('/api/catalogs/subjects')) {
+        return jsonResponse({ items: [{ id: 'sub-1', code: 'TOAN10', name: 'Toán 10' }] });
+      }
+      if (url.includes('/api/users/u-teacher-1/responsibility-templates/preview') && init?.method === 'POST') {
+        previewACalled = true;
+        return deferredA.promise;
+      }
+      if (url.includes('/api/users')) return jsonResponse(page(mockUsers));
+      return jsonResponse({});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+
+    renderApp('/quan-tri/nguoi-dung');
+
+    await user.click(await screen.findByRole('button', { name: 'Chọn gv_nguyenvanb' }));
+    const templateSelect = await screen.findByLabelText(/Chọn Mẫu trách nhiệm/i);
+
+    const previewBtn = screen.getByRole('button', { name: /Xem trước thay đổi quyền/i });
+    await user.click(previewBtn);
+    await waitFor(() => expect(previewACalled).toBe(true));
+
+    // While preview A is in-flight, change template dropdown to SUBJECT_LEADER
+    await user.selectOptions(templateSelect, 'SUBJECT_LEADER');
+
+    // Now resolve preview A (for TEACHER)
+    await act(async () => {
+      deferredA.resolve(
+        jsonResponse({
+          templateKey: 'TEACHER',
+          version: '1.0.0',
+          eligibility: { isEligible: true },
+          requiredResources: { kind: 'NONE', provided: true },
+          grantsToAdd: [{ capabilityKey: 'TEACHER_BASE', scopeType: 'SCHOOL_WIDE', description: 'Quyền cơ sở' }],
+          alreadyPresent: [],
+          conflicts: [],
+          forbiddenDefaults: [],
+          notes: [],
+        }),
+      );
+      await new Promise((r) => setTimeout(r, 60));
+    });
+
+    // Stale response A must not enable Apply or render preview delta
+    expect(screen.queryByRole('button', { name: /Áp dụng Mẫu trách nhiệm/i })).not.toBeInTheDocument();
+    expect(screen.queryByText('Quyền cơ sở')).not.toBeInTheDocument();
+  });
+
+  it('async snapshot regression: ABA scenario - preview A in-flight -> switch to B -> switch back to A -> old response A arrives -> discarded, Apply unavailable', async () => {
+    const deferredA = createDeferred<Response>();
+    let previewACalled = false;
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        return jsonResponse(
+          auth(
+            { key: 'USER_MANAGE', scope: 'SCHOOL_WIDE' },
+            { key: 'CAPABILITY_GRANT', scope: 'SCHOOL_WIDE' },
+          ),
+        );
+      }
+      if (url.includes('/api/capabilities/responsibility-templates')) {
+        return jsonResponse({ items: mockTemplates });
+      }
+      if (url.includes('/api/users/u-teacher-1/responsibility-templates/preview') && init?.method === 'POST') {
+        previewACalled = true;
+        return deferredA.promise;
+      }
+      if (url.includes('/api/users')) return jsonResponse(page(mockUsers));
+      return jsonResponse({});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+
+    renderApp('/quan-tri/nguoi-dung');
+
+    // Step A: Select u-teacher-1 and start preview
+    await user.click(await screen.findByRole('button', { name: 'Chọn gv_nguyenvanb' }));
+    await screen.findByLabelText(/Chọn Mẫu trách nhiệm/i);
+    const previewBtn = screen.getByRole('button', { name: /Xem trước thay đổi quyền/i });
+    await user.click(previewBtn);
+    await waitFor(() => expect(previewACalled).toBe(true));
+
+    // Step B: Switch to u-clean-2
+    await user.click(screen.getByRole('button', { name: 'Chọn gv_clean_slate' }));
+
+    // Step A again: Switch back to u-teacher-1 BEFORE response A returns
+    await user.click(screen.getByRole('button', { name: 'Chọn gv_nguyenvanb' }));
+
+    // Now resolve the old deferred response A from the first interaction
+    await act(async () => {
+      deferredA.resolve(
+        jsonResponse({
+          templateKey: 'TEACHER',
+          version: '1.0.0',
+          eligibility: { isEligible: true },
+          requiredResources: { kind: 'NONE', provided: true },
+          grantsToAdd: [{ capabilityKey: 'TEACHER_BASE', scopeType: 'SCHOOL_WIDE', description: 'Quyền cơ sở ABA' }],
+          alreadyPresent: [],
+          conflicts: [],
+          forbiddenDefaults: [],
+          notes: [],
+        }),
+      );
+      await new Promise((r) => setTimeout(r, 60));
+    });
+
+    // Must be rejected because generation/request ID changed on selection reset
+    expect(screen.queryByRole('button', { name: /Áp dụng Mẫu trách nhiệm/i })).not.toBeInTheDocument();
+    expect(screen.queryByText('Quyền cơ sở ABA')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Kết quả kiểm tra trước:/i)).not.toBeInTheDocument();
+  });
+
+  it('async snapshot regression: out-of-order responses - preview 1 slow, preview 2 fast -> only preview 2 result is preserved', async () => {
+    const deferred1 = createDeferred<Response>();
+    const deferred2 = createDeferred<Response>();
+    let previewCalls = 0;
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        return jsonResponse(
+          auth(
+            { key: 'USER_MANAGE', scope: 'SCHOOL_WIDE' },
+            { key: 'CAPABILITY_GRANT', scope: 'SCHOOL_WIDE' },
+          ),
+        );
+      }
+      if (url.includes('/api/capabilities/responsibility-templates')) {
+        return jsonResponse({ items: mockTemplates });
+      }
+      if (url.includes('/responsibility-templates/preview') && init?.method === 'POST') {
+        previewCalls++;
+        return previewCalls === 1 ? deferred1.promise : deferred2.promise;
+      }
+      if (url.includes('/api/users')) return jsonResponse(page(mockUsers));
+      return jsonResponse({});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+
+    renderApp('/quan-tri/nguoi-dung');
+
+    await user.click(await screen.findByRole('button', { name: 'Chọn gv_nguyenvanb' }));
+    await screen.findByLabelText(/Chọn Mẫu trách nhiệm/i);
+
+    const previewBtn = screen.getByRole('button', { name: /Xem trước thay đổi quyền/i });
+
+    // Trigger Preview 1 on gv_nguyenvanb
+    await user.click(previewBtn);
+    await waitFor(() => expect(previewCalls).toBe(1));
+
+    // While Preview 1 is in-flight, user selects gv_clean_slate and triggers Preview 2
+    await user.click(screen.getByRole('button', { name: 'Chọn gv_clean_slate' }));
+    const previewBtn2 = screen.getByRole('button', { name: /Xem trước thay đổi quyền/i });
+    await user.click(previewBtn2);
+    await waitFor(() => expect(previewCalls).toBe(2));
+
+    // Preview 2 resolves first
+    await act(async () => {
+      deferred2.resolve(
+        jsonResponse({
+          templateKey: 'TEACHER',
+          version: '1.0.0',
+          eligibility: { isEligible: true },
+          requiredResources: { kind: 'NONE', provided: true },
+          grantsToAdd: [{ capabilityKey: 'NEW_GRANTS_2', scopeType: 'SCHOOL_WIDE', description: 'Kết quả xem trước mới' }],
+          alreadyPresent: [],
+          conflicts: [],
+          forbiddenDefaults: [],
+          notes: [],
+        }),
+      );
+    });
+
+    expect(await screen.findByText('Kết quả xem trước mới')).toBeInTheDocument();
+
+    // Now Preview 1 resolves later (out-of-order)
+    await act(async () => {
+      deferred1.resolve(
+        jsonResponse({
+          templateKey: 'TEACHER',
+          version: '1.0.0',
+          eligibility: { isEligible: true },
+          requiredResources: { kind: 'NONE', provided: true },
+          grantsToAdd: [{ capabilityKey: 'STALE_GRANTS_1', scopeType: 'SCHOOL_WIDE', description: 'Kết quả xem trước cũ' }],
+          alreadyPresent: [],
+          conflicts: [],
+          forbiddenDefaults: [],
+          notes: [],
+        }),
+      );
+      await new Promise((r) => setTimeout(r, 60));
+    });
+
+    // Only Preview 2 result must remain; Preview 1 must not overwrite it
+    expect(screen.getByText('Kết quả xem trước mới')).toBeInTheDocument();
+    expect(screen.queryByText('Kết quả xem trước cũ')).not.toBeInTheDocument();
+  });
+
+  it('async snapshot regression: old preview request fails after new preview succeeds -> stale error does NOT wipe new preview', async () => {
+    const deferred1 = createDeferred<Response>();
+    const deferred2 = createDeferred<Response>();
+    let previewCalls = 0;
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        return jsonResponse(
+          auth(
+            { key: 'USER_MANAGE', scope: 'SCHOOL_WIDE' },
+            { key: 'CAPABILITY_GRANT', scope: 'SCHOOL_WIDE' },
+          ),
+        );
+      }
+      if (url.includes('/api/capabilities/responsibility-templates')) {
+        return jsonResponse({ items: mockTemplates });
+      }
+      if (url.includes('/responsibility-templates/preview') && init?.method === 'POST') {
+        previewCalls++;
+        return previewCalls === 1 ? deferred1.promise : deferred2.promise;
+      }
+      if (url.includes('/api/users')) return jsonResponse(page(mockUsers));
+      return jsonResponse({});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+
+    renderApp('/quan-tri/nguoi-dung');
+
+    await user.click(await screen.findByRole('button', { name: 'Chọn gv_nguyenvanb' }));
+    await screen.findByLabelText(/Chọn Mẫu trách nhiệm/i);
+
+    const previewBtn = screen.getByRole('button', { name: /Xem trước thay đổi quyền/i });
+
+    // Trigger Preview 1 on gv_nguyenvanb
+    await user.click(previewBtn);
+    await waitFor(() => expect(previewCalls).toBe(1));
+
+    // While Preview 1 is in-flight, user selects gv_clean_slate and triggers Preview 2
+    await user.click(screen.getByRole('button', { name: 'Chọn gv_clean_slate' }));
+    const previewBtn2 = screen.getByRole('button', { name: /Xem trước thay đổi quyền/i });
+    await user.click(previewBtn2);
+    await waitFor(() => expect(previewCalls).toBe(2));
+
+    // Preview 2 succeeds
+    await act(async () => {
+      deferred2.resolve(
+        jsonResponse({
+          templateKey: 'TEACHER',
+          version: '1.0.0',
+          eligibility: { isEligible: true },
+          requiredResources: { kind: 'NONE', provided: true },
+          grantsToAdd: [{ capabilityKey: 'SUCCESS_GRANT', scopeType: 'SCHOOL_WIDE', description: 'Quyền thành công số 2' }],
+          alreadyPresent: [],
+          conflicts: [],
+          forbiddenDefaults: [],
+          notes: [],
+        }),
+      );
+    });
+
+    expect(await screen.findByText('Quyền thành công số 2')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Áp dụng Mẫu trách nhiệm/i })).toBeInTheDocument();
+
+    // Now Preview 1 rejects with an error
+    await act(async () => {
+      deferred1.reject(new Error('Stale connection reset error'));
+      await new Promise((r) => setTimeout(r, 60));
+    });
+
+    // Preview 2 result and Apply button must NOT be wiped by the stale error
+    expect(screen.getByText('Quyền thành công số 2')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Áp dụng Mẫu trách nhiệm/i })).toBeInTheDocument();
+    expect(screen.queryByText(/Stale connection reset error/i)).not.toBeInTheDocument();
   });
 
   it('disables apply and displays truthful blocker when coordinator lookup lacks administrative read-model', async () => {
