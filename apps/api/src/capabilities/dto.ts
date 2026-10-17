@@ -13,6 +13,7 @@ import {
   Max,
   Min,
   ValidateIf,
+  ValidateNested,
 } from 'class-validator';
 import { CapabilityScope, ResponsibilityTemplateKey } from '@baogiang/contracts';
 import { IsAbsoluteInstant } from '../common/validation/is-absolute-instant.decorator';
@@ -76,7 +77,10 @@ export class ResponsibilityTemplateResourceDto {
 
 export class ResponsibilityTemplatePreviewDto {
   @IsEnum(TEMPLATE_KEYS) templateKey!: ResponsibilityTemplateKey;
-  @IsOptional() @Type(() => ResponsibilityTemplateResourceDto) resources?: ResponsibilityTemplateResourceDto;
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ResponsibilityTemplateResourceDto)
+  resources?: ResponsibilityTemplateResourceDto;
   @IsOptional() @IsUUID() subjectGroupId?: string;
   @IsOptional()
   @IsArray()
@@ -88,7 +92,10 @@ export class ResponsibilityTemplatePreviewDto {
 
 export class ResponsibilityTemplateApplyDto {
   @IsEnum(TEMPLATE_KEYS) templateKey!: ResponsibilityTemplateKey;
-  @IsOptional() @Type(() => ResponsibilityTemplateResourceDto) resources?: ResponsibilityTemplateResourceDto;
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ResponsibilityTemplateResourceDto)
+  resources?: ResponsibilityTemplateResourceDto;
   @IsOptional() @IsUUID() subjectGroupId?: string;
   @IsOptional()
   @IsArray()

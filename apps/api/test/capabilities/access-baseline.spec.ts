@@ -1,4 +1,5 @@
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
+import { UserStatus } from '@prisma/client';
 import {
   evaluateCoordinateEffectivity,
 } from '../../src/capabilities/effectivity-evaluator';
@@ -516,6 +517,184 @@ describe('P5-051 Access Baseline & Responsibility Template Unit Tests', () => {
           mockPrisma as never
         )
       ).resolves.toBeUndefined();
+    });
+  });
+
+  describe('Strict Baseline Eligibility Invariant', () => {
+    const service = new AccessBaselineService({} as never, {} as never);
+
+    it('23. ACTIVE + teaching=true -> true', () => {
+      expect(
+        service.isEligibleForProfessionalBaseline({
+          status: UserStatus.ACTIVE,
+          profile: { isTeachingStaff: true },
+        })
+      ).toBe(true);
+    });
+
+    it('24. PENDING + teaching=true -> false', () => {
+      expect(
+        service.isEligibleForProfessionalBaseline({
+          status: UserStatus.PENDING,
+          profile: { isTeachingStaff: true },
+        })
+      ).toBe(false);
+    });
+
+    it('25. DISABLED + teaching=true -> false', () => {
+      expect(
+        service.isEligibleForProfessionalBaseline({
+          status: UserStatus.DISABLED,
+          profile: { isTeachingStaff: true },
+        })
+      ).toBe(false);
+    });
+
+    it('26. LOCKED + teaching=true -> false', () => {
+      expect(
+        service.isEligibleForProfessionalBaseline({
+          status: UserStatus.LOCKED,
+          profile: { isTeachingStaff: true },
+        })
+      ).toBe(false);
+    });
+
+    it('27. ACTIVE + teaching=false -> false', () => {
+      expect(
+        service.isEligibleForProfessionalBaseline({
+          status: UserStatus.ACTIVE,
+          profile: { isTeachingStaff: false },
+        })
+      ).toBe(false);
+    });
+
+    it('28. ACTIVE + profile=null -> false', () => {
+      expect(
+        service.isEligibleForProfessionalBaseline({
+          status: UserStatus.ACTIVE,
+          profile: null,
+        })
+      ).toBe(false);
+    });
+  });
+
+  describe('Preview CapabilityDefinition Validation (fail closed)', () => {
+    it('29. previewTemplate throws ConflictException (409) when template capability is inactive', async () => {
+      const mockPrisma = {
+        user: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'user-1',
+            username: 'teacher1',
+            status: UserStatus.ACTIVE,
+            profile: { isTeachingStaff: true, displayName: 'Teacher 1' },
+          }),
+        },
+        capabilityDefinition: {
+          findMany: jest.fn().mockResolvedValue([
+            { key: 'TEACHER_BASE', isActive: true, allowedScopeTypes: ['PERSONAL'] },
+            { key: 'REPORTING_STATEMENT_SUBMIT', isActive: false, allowedScopeTypes: ['PERSONAL'] },
+            { key: 'REPORTING_STATEMENT_READ', isActive: true, allowedScopeTypes: ['PERSONAL'] },
+            { key: 'TEACHING_EXECUTION_RECORD', isActive: true, allowedScopeTypes: ['PERSONAL'] },
+          ]),
+        },
+      };
+      const service = new AccessBaselineService(mockPrisma as never, {} as never);
+
+      await expect(
+        service.previewTemplate('user-1', { templateKey: 'TEACHER' })
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('30. previewTemplate throws NotFoundException (404) when template capability is missing', async () => {
+      const mockPrisma = {
+        user: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'user-1',
+            username: 'teacher1',
+            status: UserStatus.ACTIVE,
+            profile: { isTeachingStaff: true, displayName: 'Teacher 1' },
+          }),
+        },
+        capabilityDefinition: {
+          findMany: jest.fn().mockResolvedValue([
+            { key: 'TEACHER_BASE', isActive: true, allowedScopeTypes: ['PERSONAL'] },
+            // REPORTING_STATEMENT_SUBMIT definition missing
+          ]),
+        },
+      };
+      const service = new AccessBaselineService(mockPrisma as never, {} as never);
+
+      await expect(
+        service.previewTemplate('user-1', { templateKey: 'TEACHER' })
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('31. previewTemplate throws ConflictException (409) when allowedScope does not include template scope', async () => {
+      const mockPrisma = {
+        user: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'user-1',
+            username: 'teacher1',
+            status: UserStatus.ACTIVE,
+            profile: { isTeachingStaff: true, displayName: 'Teacher 1' },
+          }),
+        },
+        capabilityDefinition: {
+          findMany: jest.fn().mockResolvedValue([
+            { key: 'TEACHER_BASE', isActive: true, allowedScopeTypes: ['PERSONAL'] },
+            { key: 'REPORTING_STATEMENT_SUBMIT', isActive: true, allowedScopeTypes: ['SCHOOL_WIDE'] },
+            { key: 'REPORTING_STATEMENT_READ', isActive: true, allowedScopeTypes: ['PERSONAL'] },
+            { key: 'TEACHING_EXECUTION_RECORD', isActive: true, allowedScopeTypes: ['PERSONAL'] },
+          ]),
+        },
+      };
+      const service = new AccessBaselineService(mockPrisma as never, {} as never);
+
+      await expect(
+        service.previewTemplate('user-1', { templateKey: 'TEACHER' })
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('32. previewReconciliation throws ConflictException (409) when TEACHER_BASE is inactive', async () => {
+      const mockPrisma = {
+        capabilityDefinition: {
+          findMany: jest.fn().mockResolvedValue([
+            { key: 'TEACHER_BASE', isActive: false, allowedScopeTypes: ['PERSONAL'] },
+          ]),
+        },
+      };
+      const service = new AccessBaselineService(mockPrisma as never, {} as never);
+
+      await expect(service.previewReconciliation()).rejects.toThrow(ConflictException);
+    });
+
+    it('33. previewTemplate succeeds and returns preview when all definitions are active and allowed', async () => {
+      const mockPrisma = {
+        user: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'user-1',
+            username: 'teacher1',
+            status: UserStatus.ACTIVE,
+            profile: { isTeachingStaff: true, displayName: 'Teacher 1' },
+          }),
+        },
+        capabilityDefinition: {
+          findMany: jest.fn().mockResolvedValue([
+            { key: 'TEACHER_BASE', isActive: true, allowedScopeTypes: ['PERSONAL'] },
+            { key: 'REPORTING_STATEMENT_SUBMIT', isActive: true, allowedScopeTypes: ['PERSONAL'] },
+            { key: 'REPORTING_STATEMENT_READ', isActive: true, allowedScopeTypes: ['PERSONAL'] },
+            { key: 'TEACHING_EXECUTION_RECORD', isActive: true, allowedScopeTypes: ['PERSONAL'] },
+          ]),
+        },
+        capabilityGrant: {
+          findMany: jest.fn().mockResolvedValue([]),
+        },
+      };
+      const service = new AccessBaselineService(mockPrisma as never, {} as never);
+
+      const preview = await service.previewTemplate('user-1', { templateKey: 'TEACHER' });
+      expect(preview.templateKey).toBe('TEACHER');
+      expect(preview.grantsToAdd).toHaveLength(4);
     });
   });
 });

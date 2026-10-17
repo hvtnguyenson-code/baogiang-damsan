@@ -58,11 +58,11 @@ export class AccessBaselineService {
    * Never inferred from positionTitle, duty, membership, assignment, or username.
    */
   isEligibleForProfessionalBaseline(user: {
-    status?: UserStatus;
+    status: UserStatus;
     profile?: { isTeachingStaff: boolean } | null;
   }): boolean {
     return (
-      (user.status === undefined || user.status === UserStatus.ACTIVE) &&
+      user.status === UserStatus.ACTIVE &&
       !!user.profile &&
       user.profile.isTeachingStaff === true
     );
@@ -279,6 +279,9 @@ export class AccessBaselineService {
       resolvedSubjectIds: resolved.subjectIds,
       programmeMasterId: resolved.programmeMasterId,
     });
+
+    // Enforce CapabilityDefinition semantics before evaluating or returning preview
+    await this.validateCapabilityGrantSpecs(grantSpecs, this.prisma);
 
     // Read all non-revoked grants for target user
     const existingGrants = await this.prisma.capabilityGrant.findMany({
@@ -555,6 +558,12 @@ export class AccessBaselineService {
    * Preview baseline reconciliation across active users.
    */
   async previewReconciliation(): Promise<BaselineReconciliationPreviewResponse> {
+    // Enforce capability definition validation before evaluating active users
+    await this.validateCapabilityGrantSpecs(
+      [{ capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL' }],
+      this.prisma,
+    );
+
     const activeUsers = await this.prisma.user.findMany({
       where: { status: UserStatus.ACTIVE },
       include: {

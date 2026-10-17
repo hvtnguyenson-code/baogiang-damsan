@@ -1,6 +1,7 @@
 import { CatalogStatus, UserStatus } from '@prisma/client';
 import { AccessBaselineService } from '../../src/capabilities/access-baseline.service';
-import { Phase01Harness, integration, testOrigin } from '../helpers/phase01-test-harness';
+import { CapabilityAuthorizationService } from '../../src/authorization/capability-authorization.service';
+import { Phase01Harness, integration, normalizedCode, testOrigin } from '../helpers/phase01-test-harness';
 
 integration('P5-051 Professional Baseline & Responsibility Templates (Isolated PostgreSQL Integration)', () => {
   const h = new Phase01Harness();
@@ -61,6 +62,7 @@ integration('P5-051 Professional Baseline & Responsibility Templates (Isolated P
     status?: UserStatus;
     isTeachingStaff?: boolean;
     usernamePrefix?: string;
+    positionTitle?: string;
   } = {}): Promise<string> {
     const user = await h.prisma.user.create({
       data: {
@@ -71,6 +73,7 @@ integration('P5-051 Professional Baseline & Responsibility Templates (Isolated P
         profile: {
           create: {
             displayName: 'Test User',
+            positionTitle: options.positionTitle,
             isTeachingStaff: options.isTeachingStaff ?? true,
           },
         },
@@ -295,8 +298,46 @@ integration('P5-051 Professional Baseline & Responsibility Templates (Isolated P
   });
 
   // =========================================================================
-  // 11, 12, 13, 14. Template Apply: PHT & Principal Invariants
+  // 11, 12, 13, 14. Template Preview & Apply: PHT & Principal Invariants
   // =========================================================================
+  it('11a. PHT template preview: asserts exact grants, forbidden defaults, and zero DB mutation', async () => {
+    const admin = await h.actor({ grants: [{ capabilityKey: 'CAPABILITY_GRANT' }] });
+    const userId = await createTestUser({ status: UserStatus.ACTIVE, isTeachingStaff: true });
+
+    const countBefore = await h.prisma.capabilityGrant.count();
+
+    const previewRes = await admin.agent
+      .post(`/api/users/${userId}/responsibility-templates/preview`)
+      .set('Origin', testOrigin)
+      .send({ templateKey: 'VICE_PRINCIPAL_ACADEMIC' });
+
+    expect(previewRes.status).toBe(200);
+    expect(previewRes.body.eligibility.isEligible).toBe(true);
+    expect(previewRes.body.templateKey).toBe('VICE_PRINCIPAL_ACADEMIC');
+    expect(previewRes.body.version).toBe('v1');
+
+    const grantsToAdd = previewRes.body.grantsToAdd as Array<{ capabilityKey: string; scopeType: string }>;
+    expect(grantsToAdd).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ capabilityKey: 'APPROVAL_VICE_PRINCIPAL', scopeType: 'SCHOOL_WIDE' }),
+        expect.objectContaining({ capabilityKey: 'REPORTING_STATEMENT_READ', scopeType: 'SCHOOL_WIDE' }),
+        expect.objectContaining({ capabilityKey: 'TIMETABLE_MANAGE', scopeType: 'SCHOOL_WIDE' }),
+      ]),
+    );
+
+    expect(previewRes.body.forbiddenDefaults).toEqual(
+      expect.arrayContaining([
+        'SYSTEM_ADMIN',
+        'USER_MANAGE',
+        'CAPABILITY_GRANT',
+        'APPROVAL_PRINCIPAL',
+      ]),
+    );
+
+    const countAfter = await h.prisma.capabilityGrant.count();
+    expect(countAfter).toBe(countBefore);
+  });
+
   it('11 & 12. PHT template apply materializes exact grants, includes APPROVAL_VICE_PRINCIPAL', async () => {
     const admin = await h.actor({ grants: [{ capabilityKey: 'CAPABILITY_GRANT' }] });
     const userId = await createTestUser({ status: UserStatus.ACTIVE, isTeachingStaff: true });
@@ -831,5 +872,280 @@ integration('P5-051 Professional Baseline & Responsibility Templates (Isolated P
         data: { allowedScopeTypes: ['PERSONAL'] },
       });
     }
+  });
+
+  // =========================================================================
+  // 31, 32, 33, 34. Nested DTO Validation for Resources
+  // =========================================================================
+  it('31. nested DTO validation: rejects invalid subjectGroupId UUID in resources with 400', async () => {
+    const admin = await h.actor({ grants: [{ capabilityKey: 'CAPABILITY_GRANT' }] });
+    const userId = await createTestUser({ status: UserStatus.ACTIVE, isTeachingStaff: true });
+
+    const previewRes = await admin.agent
+      .post(`/api/users/${userId}/responsibility-templates/preview`)
+      .set('Origin', testOrigin)
+      .send({
+        templateKey: 'SUBJECT_LEADER',
+        resources: { subjectGroupId: 'invalid-not-uuid' },
+      });
+    expect(previewRes.status).toBe(400);
+
+    const applyRes = await admin.agent
+      .post(`/api/users/${userId}/responsibility-templates/apply`)
+      .set('Origin', testOrigin)
+      .send({
+        templateKey: 'SUBJECT_LEADER',
+        resources: { subjectGroupId: 'invalid-not-uuid' },
+      });
+    expect(applyRes.status).toBe(400);
+  });
+
+  it('32. nested DTO validation: rejects non-UUID elements in resources.subjectIds with 400', async () => {
+    const admin = await h.actor({ grants: [{ capabilityKey: 'CAPABILITY_GRANT' }] });
+    const userId = await createTestUser({ status: UserStatus.ACTIVE, isTeachingStaff: true });
+
+    const previewRes = await admin.agent
+      .post(`/api/users/${userId}/responsibility-templates/preview`)
+      .set('Origin', testOrigin)
+      .send({
+        templateKey: 'SUBJECT_LEADER',
+        resources: {
+          subjectGroupId: crypto.randomUUID(),
+          subjectIds: ['invalid-uuid'],
+        },
+      });
+    expect(previewRes.status).toBe(400);
+
+    const applyRes = await admin.agent
+      .post(`/api/users/${userId}/responsibility-templates/apply`)
+      .set('Origin', testOrigin)
+      .send({
+        templateKey: 'SUBJECT_LEADER',
+        resources: {
+          subjectGroupId: crypto.randomUUID(),
+          subjectIds: ['invalid-uuid'],
+        },
+      });
+    expect(applyRes.status).toBe(400);
+  });
+
+  it('33. nested DTO validation: rejects duplicate subjectIds in resources with 400', async () => {
+    const admin = await h.actor({ grants: [{ capabilityKey: 'CAPABILITY_GRANT' }] });
+    const userId = await createTestUser({ status: UserStatus.ACTIVE, isTeachingStaff: true });
+    const sameUuid = crypto.randomUUID();
+
+    const previewRes = await admin.agent
+      .post(`/api/users/${userId}/responsibility-templates/preview`)
+      .set('Origin', testOrigin)
+      .send({
+        templateKey: 'SUBJECT_LEADER',
+        resources: {
+          subjectGroupId: crypto.randomUUID(),
+          subjectIds: [sameUuid, sameUuid],
+        },
+      });
+    expect(previewRes.status).toBe(400);
+
+    const applyRes = await admin.agent
+      .post(`/api/users/${userId}/responsibility-templates/apply`)
+      .set('Origin', testOrigin)
+      .send({
+        templateKey: 'SUBJECT_LEADER',
+        resources: {
+          subjectGroupId: crypto.randomUUID(),
+          subjectIds: [sameUuid, sameUuid],
+        },
+      });
+    expect(applyRes.status).toBe(400);
+  });
+
+  it('34. nested DTO validation: valid nested resources pass validation and execute normally', async () => {
+    const admin = await h.actor({ grants: [{ capabilityKey: 'CAPABILITY_GRANT' }] });
+    const userId = await createTestUser({ status: UserStatus.ACTIVE, isTeachingStaff: true });
+
+    const group = await h.prisma.subjectGroup.create({
+      data: { code: normalizedCode('SG', 6), name: 'Tổ Toán', status: CatalogStatus.ACTIVE },
+    });
+    const subject = await h.prisma.subject.create({
+      data: { code: normalizedCode('SUB', 6), name: 'Toán 10', status: CatalogStatus.ACTIVE },
+    });
+
+    const previewRes = await admin.agent
+      .post(`/api/users/${userId}/responsibility-templates/preview`)
+      .set('Origin', testOrigin)
+      .send({
+        templateKey: 'SUBJECT_LEADER',
+        resources: {
+          subjectGroupId: group.id,
+          subjectIds: [subject.id],
+        },
+      });
+    expect(previewRes.status).toBe(200);
+    expect(previewRes.body.requiredResources.resolvedSubjectGroupId).toBe(group.id);
+
+    const applyRes = await admin.agent
+      .post(`/api/users/${userId}/responsibility-templates/apply`)
+      .set('Origin', testOrigin)
+      .send({
+        templateKey: 'SUBJECT_LEADER',
+        resources: {
+          subjectGroupId: group.id,
+          subjectIds: [subject.id],
+        },
+      });
+    expect(applyRes.status).toBe(200);
+  });
+
+  // =========================================================================
+  // 35, 36, 37, 38, 39. Preview CapabilityDefinition Validation Fail-Closed
+  // =========================================================================
+  it('35. previewTemplate fail-closed: inactive template capability returns 409', async () => {
+    const admin = await h.actor({ grants: [{ capabilityKey: 'CAPABILITY_GRANT' }] });
+    const user = await createTestUser({ status: UserStatus.ACTIVE, isTeachingStaff: true });
+
+    await h.prisma.capabilityDefinition.update({
+      where: { key: 'REPORTING_STATEMENT_SUBMIT' },
+      data: { isActive: false },
+    });
+
+    try {
+      const res = await admin.agent
+        .post(`/api/users/${user}/responsibility-templates/preview`)
+        .set('Origin', testOrigin)
+        .send({ templateKey: 'TEACHER' });
+      expect(res.status).toBe(409);
+    } finally {
+      await h.prisma.capabilityDefinition.update({
+        where: { key: 'REPORTING_STATEMENT_SUBMIT' },
+        data: { isActive: true },
+      });
+    }
+  });
+
+  it('36. previewTemplate fail-closed: missing template capability definition returns 404', async () => {
+    const admin = await h.actor({ grants: [{ capabilityKey: 'CAPABILITY_GRANT' }] });
+    const user = await createTestUser({ status: UserStatus.ACTIVE, isTeachingStaff: true });
+
+    const def = await h.prisma.capabilityDefinition.findUniqueOrThrow({
+      where: { key: 'TEACHING_EXECUTION_RECORD' },
+    });
+    await h.prisma.capabilityDefinition.delete({
+      where: { key: 'TEACHING_EXECUTION_RECORD' },
+    });
+
+    try {
+      const res = await admin.agent
+        .post(`/api/users/${user}/responsibility-templates/preview`)
+        .set('Origin', testOrigin)
+        .send({ templateKey: 'TEACHER' });
+      expect(res.status).toBe(404);
+    } finally {
+      await h.prisma.capabilityDefinition.create({
+        data: def,
+      });
+    }
+  });
+
+  it('37. previewTemplate fail-closed: invalid allowedScope returns 409', async () => {
+    const admin = await h.actor({ grants: [{ capabilityKey: 'CAPABILITY_GRANT' }] });
+    const user = await createTestUser({ status: UserStatus.ACTIVE, isTeachingStaff: true });
+
+    await h.prisma.capabilityDefinition.update({
+      where: { key: 'REPORTING_STATEMENT_SUBMIT' },
+      data: { allowedScopeTypes: ['SCHOOL_WIDE'] },
+    });
+
+    try {
+      const res = await admin.agent
+        .post(`/api/users/${user}/responsibility-templates/preview`)
+        .set('Origin', testOrigin)
+        .send({ templateKey: 'TEACHER' });
+      expect(res.status).toBe(409);
+    } finally {
+      await h.prisma.capabilityDefinition.update({
+        where: { key: 'REPORTING_STATEMENT_SUBMIT' },
+        data: { allowedScopeTypes: ['PERSONAL'] },
+      });
+    }
+  });
+
+  it('38. previewReconciliation fail-closed: inactive TEACHER_BASE returns 409', async () => {
+    const admin = await h.actor({ grants: [{ capabilityKey: 'CAPABILITY_GRANT' }] });
+
+    await h.prisma.capabilityDefinition.update({
+      where: { key: 'TEACHER_BASE' },
+      data: { isActive: false },
+    });
+
+    try {
+      const res = await admin.agent
+        .get('/api/responsibility-templates/baseline-reconciliation/preview')
+        .set('Origin', testOrigin);
+      expect(res.status).toBe(409);
+    } finally {
+      await h.prisma.capabilityDefinition.update({
+        where: { key: 'TEACHER_BASE' },
+        data: { isActive: true },
+      });
+    }
+  });
+
+  it('39. previewReconciliation passes and returns preview when catalog is normal', async () => {
+    const admin = await h.actor({ grants: [{ capabilityKey: 'CAPABILITY_GRANT' }] });
+
+    const res = await admin.agent
+      .get('/api/responsibility-templates/baseline-reconciliation/preview')
+      .set('Origin', testOrigin);
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('totalActiveUsers');
+    expect(res.body).toHaveProperty('eligibleProfessionals');
+  });
+
+  // =========================================================================
+  // 40. Title-Only Non-Authorization Invariant
+  // =========================================================================
+  it('40. title-only does NOT authorize: positionTitle alone creates zero authority', async () => {
+    const admin = await h.actor({ grants: [{ capabilityKey: 'USER_MANAGE' }, { capabilityKey: 'CAPABILITY_GRANT' }] });
+    const authService = h.app.get(CapabilityAuthorizationService);
+
+    // Create user with positionTitle = "Phó Hiệu trưởng", isTeachingStaff = false, status = PENDING
+    const userId = await createTestUser({
+      status: UserStatus.PENDING,
+      isTeachingStaff: false,
+      positionTitle: 'Phó Hiệu trưởng',
+    });
+
+    // Activate user
+    const actRes = await admin.agent
+      .post(`/api/users/${userId}/activate`)
+      .set('Origin', testOrigin)
+      .send({});
+    expect(actRes.status).toBe(200);
+
+    const activatedUser = await h.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      include: { profile: true },
+    });
+    expect(activatedUser.status).toBe(UserStatus.ACTIVE);
+    expect(activatedUser.profile?.positionTitle).toBe('Phó Hiệu trưởng');
+    expect(activatedUser.profile?.isTeachingStaff).toBe(false);
+
+    // Assert: activate does NOT auto-grant TEACHER_BASE
+    const grants = await h.prisma.capabilityGrant.findMany({
+      where: { userId },
+    });
+    expect(grants).toHaveLength(0);
+
+    // Assert: effective capabilities has zero grants and does NOT contain any PHT capabilities
+    const effective = await authService.listEffectiveCapabilities(userId);
+    const effectiveKeys = effective.map((c) => c.key);
+
+    expect(effectiveKeys).not.toContain('TEACHER_BASE');
+    expect(effectiveKeys).not.toContain('APPROVAL_VICE_PRINCIPAL');
+    expect(effectiveKeys).not.toContain('TIMETABLE_MANAGE');
+    expect(effectiveKeys).not.toContain('PPCT_MANAGE');
+    expect(effectiveKeys).not.toContain('REPORTING_READ');
+    expect(effectiveKeys).not.toContain('REPORTING_STATEMENT_READ');
+    expect(effective).toHaveLength(0);
   });
 });
