@@ -1,9 +1,13 @@
 import type {
   AdditionalDutyDefinitionListResponse, AdditionalDutyDefinitionOptionsResponse, AdditionalDutyDefinitionRecord,
-  AuditEventListResponse, CapabilityDefinitionListResponse, CapabilityGrantListResponse, CapabilityGrantRecord,
-  CapabilityScope, CatalogEntry, CatalogListResponse, StaffAdditionalDutyAssignmentListResponse,
+  AuditEventListResponse, BaselineReconciliationApplyRequest, BaselineReconciliationApplyResponse,
+  BaselineReconciliationPreviewResponse, CapabilityDefinitionListResponse, CapabilityGrantListResponse, CapabilityGrantRecord,
+  CapabilityScope, CatalogEntry, CatalogListResponse, ResponsibilityTemplateApplyRequest,
+  ResponsibilityTemplateApplyResponse, ResponsibilityTemplateListResponse, ResponsibilityTemplatePreviewRequest,
+  ResponsibilityTemplatePreviewResponse, StaffAdditionalDutyAssignmentListResponse,
   StaffAdditionalDutyAssignmentRecord, StaffSubjectListResponse, StaffSubjectRecord,
-  SubjectGroupMembershipListResponse, SubjectGroupMembershipRecord, UserManagementListResponse, UserManagementRecord,
+  SubjectGroupMembershipListResponse, SubjectGroupMembershipRecord, UserDeletePreflightResponse,
+  UserDeleteResponse, UserManagementListResponse, UserManagementRecord,
 } from '@baogiang/contracts';
 import { BUSINESS_UTC_OFFSET } from '@baogiang/config';
 import { apiFetch } from './api-client';
@@ -25,6 +29,22 @@ export const usersApi = {
   update: (id: string, input: Omit<UserInput, 'password'>) => apiFetch<UserManagementRecord>(`/users/${id}`, json('PATCH', input)),
   action: (id: string, action: 'activate' | 'disable' | 'unlock') => apiFetch<UserManagementRecord>(`/users/${id}/${action}`, json('POST')),
   resetPassword: (id: string, newPassword: string) => apiFetch<UserManagementRecord>(`/users/${id}/reset-password`, json('POST', { newPassword })),
+  deletePreflight: (id: string) => apiFetch<UserDeletePreflightResponse>(`/users/${id}/delete-preflight`, { notifyUnauthorized: true }),
+  delete: (id: string, input: { confirmUsername: string }) => apiFetch<UserDeleteResponse>(`/users/${id}`, json('DELETE', input)),
+};
+
+export const responsibilityTemplatesApi = {
+  list: () => apiFetch<ResponsibilityTemplateListResponse>('/capabilities/responsibility-templates', { notifyUnauthorized: true }),
+  preview: (userId: string, input: ResponsibilityTemplatePreviewRequest) =>
+    apiFetch<ResponsibilityTemplatePreviewResponse>(`/users/${userId}/responsibility-templates/preview`, json('POST', input)),
+  apply: (userId: string, input: ResponsibilityTemplateApplyRequest) =>
+    apiFetch<ResponsibilityTemplateApplyResponse>(`/users/${userId}/responsibility-templates/apply`, json('POST', input)),
+};
+
+export const baselineReconciliationApi = {
+  preview: () => apiFetch<BaselineReconciliationPreviewResponse>('/baseline-reconciliation/preview', { notifyUnauthorized: true }),
+  apply: (input: BaselineReconciliationApplyRequest) =>
+    apiFetch<BaselineReconciliationApplyResponse>('/baseline-reconciliation/apply', json('POST', input)),
 };
 
 export type CatalogInput = { code: string; name: string };

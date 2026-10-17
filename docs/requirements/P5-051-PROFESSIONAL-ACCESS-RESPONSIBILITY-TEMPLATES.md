@@ -1,6 +1,7 @@
 # P5-051 — Professional Access Baseline, Responsibility Templates & Safe User Lifecycle
 
-**Status:** READY  
+**Status:** IN_PROGRESS — Slice A reviewed; Slice B backend pending independent review; Slice C administration UI required
+
 **Depends on:** P5-050  
 **Traceability:** T50
 

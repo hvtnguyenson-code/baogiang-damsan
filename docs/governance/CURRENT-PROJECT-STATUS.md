@@ -8,7 +8,11 @@ Per `MAJOR-TASK-DOCUMENTATION-SYNC-PROTOCOL.md`, this file is intentionally conc
 
 Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub. SHAs here are evidence for already-established task states, never a self-referential claim that this document contains its own current commit.
 
-**Status snapshot date:** 2026-10-16
+**Status snapshot date:** 2026-10-17
+
+## P5-051 active branch — Slice B backend review checkpoint
+
+P5-051 remains **IN_PROGRESS** on `feat/p5-051-professional-baseline-responsibility-templates`, PR #240. Slice A was reviewed at `d0c9f0d3ea9b032962ad258606d2b8809e742542`; Slice B adds safe clean-slate physical deletion and the bounded baseline-definition correctness fix, with independent ChatGPT review still required. Slice C administration UI remains part of P5-051. No merge, deployment or production database change is claimed. Details and local evidence: `docs/phase-reports/P5-051-SLICE-B-REPORT.md`.
 
 ## 2026-10-16 product operability audit — product path reopened
 
@@ -80,6 +84,7 @@ Preliminary Desktop Commander read-only metadata: Windows Server 2022, 6 logical
 
 ### In Progress
 
+- `P5-051` — Slice A reviewed; Slice B backend pending independent review on PR #240; Slice C administration UI required before parent review/closure.
 - `P6-020` — **IN_PROGRESS: preliminary passive host reconnaissance only**; formal PASS 1/PASS 2 NOT EXECUTED. Exact deployment candidate approved for read-only scope above.
 
 ### In Review
@@ -88,7 +93,6 @@ Preliminary Desktop Commander read-only metadata: Windows Server 2022, 6 logical
 
 ### Ready
 
-- `P5-051` — **next execution priority**: professional baseline access, responsibility templates and safe user lifecycle.
 - `P5-053` — timetable + time-slot administration workspace; eligible by dependency but held behind the sequential orchestration priority.
 - `P5-054` — teaching-operations workspace closure; eligible by dependency but held behind the sequential orchestration priority.
 - `P5-056A` — notification/Web Push architecture; eligible by dependency but held behind the sequential orchestration priority.

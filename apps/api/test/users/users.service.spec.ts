@@ -19,7 +19,7 @@ describe('UsersService foundations', () => {
 
   it('rejects an empty patch before any database operation', async () => {
     const prisma = { $transaction: jest.fn() };
-    const service = new UsersService(prisma as never, {} as never, {} as never);
+    const service = new UsersService(prisma as never, {} as never, {} as never, {} as never);
     await expect(service.update('11111111-1111-4111-8111-111111111111', {}, 'actor', {})).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });

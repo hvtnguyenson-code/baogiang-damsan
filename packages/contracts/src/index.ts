@@ -302,6 +302,200 @@ export interface CapabilityGrantRecord extends ValidityWindow {
 export interface CapabilityDefinitionListResponse { items: CapabilityDefinitionRecord[]; page: number; pageSize: number; total: number; }
 export interface CapabilityGrantListResponse { items: CapabilityGrantRecord[]; page: number; pageSize: number; total: number; }
 
+// ============================================================
+// Responsibility Templates & Baseline Access (P5-051)
+// ============================================================
+
+export type ResponsibilityTemplateKey =
+  | 'TEACHER'
+  | 'SUBJECT_LEADER'
+  | 'VICE_PRINCIPAL_ACADEMIC'
+  | 'PRINCIPAL'
+  | 'GDDP_COORDINATOR'
+  | 'HDTN_COORDINATOR'
+  | 'TECHNICAL_ACCOUNT_ADMIN';
+
+export type TemplateGrantCategory =
+  | 'SOURCE_AUTHORITY'
+  | 'PRODUCT_OPERABILITY'
+  | 'TECHNICAL';
+
+export interface ResponsibilityTemplateGrantSpec {
+  capabilityKey: CapabilityKey;
+  scopeType: CapabilityScope;
+  scopeResourceId?: string | null;
+  category: TemplateGrantCategory;
+  description: string;
+}
+
+export interface ResponsibilityTemplateDefinition {
+  key: ResponsibilityTemplateKey;
+  name: string;
+  description: string;
+  version: 'v1';
+  requiresTeachingStaff: boolean;
+  requiredResourceKind: 'NONE' | 'SUBJECT_GROUP' | 'ACTIVITY';
+  sourceAuthorityGrants: ResponsibilityTemplateGrantSpec[];
+  productOperabilityGrants: ResponsibilityTemplateGrantSpec[];
+  forbiddenDefaults: string[];
+  notes: string[];
+}
+
+export interface ResponsibilityTemplateListResponse {
+  items: ResponsibilityTemplateDefinition[];
+}
+
+export type EffectivityStatus =
+  | 'ALREADY_COVERED'
+  | 'MISSING'
+  | 'FUTURE_CONFLICT'
+  | 'FINITE_COVERAGE'
+  | 'OVERLAP_CONFLICT';
+
+export interface GrantDeltaItem {
+  capabilityKey: CapabilityKey;
+  scopeType: CapabilityScope;
+  scopeResourceId?: string | null;
+  status: EffectivityStatus;
+  reason?: string;
+  existingGrantId?: string;
+  category: TemplateGrantCategory;
+  description: string;
+}
+
+export interface ResponsibilityTemplateConflictItem {
+  capabilityKey: CapabilityKey;
+  scopeType: CapabilityScope;
+  scopeResourceId?: string | null;
+  status: EffectivityStatus;
+  reason: string;
+  conflictingGrantId?: string;
+  validFrom?: string;
+  validUntil?: string | null;
+}
+
+export interface ResponsibilityTemplateResourceInput {
+  subjectGroupId?: string;
+  subjectIds?: string[];
+  programmeMasterId?: string;
+}
+
+export interface ResponsibilityTemplatePreviewRequest {
+  templateKey: ResponsibilityTemplateKey;
+  resources?: ResponsibilityTemplateResourceInput;
+  subjectGroupId?: string;
+  subjectIds?: string[];
+  programmeMasterId?: string;
+}
+
+export interface ResponsibilityTemplatePreviewResponse {
+  templateKey: ResponsibilityTemplateKey;
+  version: string;
+  targetUser: {
+    id: string;
+    username: string;
+    displayName: string;
+    isTeachingStaff: boolean;
+    status: UserStatus;
+  };
+  eligibility: {
+    isEligible: boolean;
+    reason?: string;
+  };
+  requiredResources: {
+    kind: 'NONE' | 'SUBJECT_GROUP' | 'ACTIVITY';
+    provided: boolean;
+    resolvedSubjectGroupId?: string;
+    resolvedSubjectIds?: string[];
+    resolvedProgrammeMasterId?: string;
+    details?: string;
+  };
+  grantsToAdd: GrantDeltaItem[];
+  alreadyPresent: GrantDeltaItem[];
+  conflicts: ResponsibilityTemplateConflictItem[];
+  forbiddenDefaults: string[];
+  notes: string[];
+}
+
+export interface ResponsibilityTemplateApplyRequest {
+  templateKey: ResponsibilityTemplateKey;
+  resources?: ResponsibilityTemplateResourceInput;
+  subjectGroupId?: string;
+  subjectIds?: string[];
+  programmeMasterId?: string;
+}
+
+export interface ResponsibilityTemplateApplyResponse {
+  applied: boolean;
+  templateKey: ResponsibilityTemplateKey;
+  version: string;
+  targetUserId: string;
+  grantsAdded: CapabilityGrantRecord[];
+  alreadyPresent: GrantDeltaItem[];
+  auditEventId?: string;
+}
+
+export interface BaselineReconciliationMissingUser {
+  userId: string;
+  username: string;
+  displayName?: string;
+  status: UserStatus;
+}
+
+export interface BaselineReconciliationExcludedUser {
+  userId: string;
+  username: string;
+  displayName?: string;
+  status: UserStatus;
+  reason: string;
+}
+
+export interface BaselineReconciliationConflictUser {
+  userId: string;
+  username: string;
+  displayName?: string;
+  status: UserStatus;
+  statusConflict: EffectivityStatus;
+  reason: string;
+  conflictingGrant?: {
+    id: string;
+    validFrom: string;
+    validUntil?: string | null;
+  };
+}
+
+export interface BaselineReconciliationPreviewResponse {
+  totalActiveUsers: number;
+  eligibleProfessionals: number;
+  alreadyCompliant: number;
+  missing: BaselineReconciliationMissingUser[];
+  excluded: BaselineReconciliationExcludedUser[];
+  conflicts: BaselineReconciliationConflictUser[];
+}
+
+export interface BaselineReconciliationApplyRequest {
+  targetUserIds?: string[];
+}
+
+export interface BaselineReconciliationUserResult {
+  userId: string;
+  username: string;
+  status: 'SUCCESS' | 'ALREADY_COMPLIANT' | 'CONFLICT' | 'EXCLUDED';
+  grantId?: string;
+  reason?: string;
+}
+
+export interface BaselineReconciliationApplyResponse {
+  processedCount: number;
+  grantsCreated: number;
+  skippedAlreadyCompliant: number;
+  skippedConflict: number;
+  skippedExcluded: number;
+  results: BaselineReconciliationUserResult[];
+  auditEventId?: string;
+}
+
+
 export interface AuditEventRecord {
   id: string;
   actorUserId?: string;
@@ -2607,3 +2801,18 @@ export interface TelegramTestNotificationResponse {
   sentAt?: string;
   error?: string;
 }
+// Physical deletion is restricted to proven clean-slate accounts.
+export interface UserDeleteRequest { confirmUsername: string }
+export type UserDeleteBlockerCode = 'SELF' | 'PROTECTED' | 'LOGIN_HISTORY' | 'SECURITY_HISTORY' | 'BUSINESS_HISTORY' | 'INDIRECT_HISTORY' | 'UNVERIFIED_REFERENCE';
+export interface UserDeleteBlocker { code: UserDeleteBlockerCode; reason: string }
+export interface UserDeleteCleanupCounts { staffProfiles: number; subjectGroupMemberships: number; staffSubjects: number }
+export interface UserDeletePreflightResponse {
+  targetUserId: string;
+  username: string;
+  displayName: string;
+  eligibility: 'ELIGIBLE' | 'BLOCKED';
+  blockers: UserDeleteBlocker[];
+  cleanupCounts: UserDeleteCleanupCounts | null;
+  disableRecommended: boolean;
+}
+export interface UserDeleteResponse { deletedUserId: string; cleanupCounts: UserDeleteCleanupCounts }

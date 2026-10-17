@@ -5,6 +5,7 @@ import { AuditService } from '../audit/audit.service';
 import { RequestMeta } from '../auth/auth.types';
 import { PasswordService } from '../auth/password.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { AccessBaselineService } from '../capabilities/access-baseline.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { ListUsersDto } from './dto/list-users.dto';
 import { StaffProfileDto } from './dto/staff-profile.dto';
@@ -53,6 +54,7 @@ export class UsersService {
     private readonly prisma: PrismaService,
     private readonly passwords: PasswordService,
     private readonly audit: AuditService,
+    private readonly accessBaseline: AccessBaselineService,
   ) {}
 
   async create(dto: CreateUserDto, actorUserId: string, meta: RequestMeta): Promise<UserManagementRecord> {
@@ -145,6 +147,11 @@ export class UsersService {
           ],
           profileCreated,
         }, tx);
+        const wasTeachingStaff = existing.profile?.isTeachingStaff ?? false;
+        const willBeTeachingStaff = user.profile?.isTeachingStaff ?? false;
+        if (user.status === UserStatus.ACTIVE && !wasTeachingStaff && willBeTeachingStaff) {
+          await this.accessBaseline.ensureProfessionalBaseline(id, actorUserId, meta, tx, 'PROFILE_UPDATE');
+        }
         return toUserManagementRecord(user);
       });
     } catch (error) {
@@ -206,10 +213,14 @@ export class UsersService {
   async activate(id: string, actorUserId: string, meta: RequestMeta): Promise<UserManagementRecord> {
     return this.changeState(id, actorUserId, meta, 'USER_ACTIVATED', async (tx, user) => {
       if (user.status === UserStatus.LOCKED) throw new ConflictException('Không thể kích hoạt tài khoản đang ở trạng thái LOCKED.');
+      let activeUser = user;
       if (user.status === UserStatus.PENDING || user.status === UserStatus.DISABLED) {
-        return tx.user.update({ where: { id }, data: { status: UserStatus.ACTIVE }, include: { profile: true } });
+        activeUser = await tx.user.update({ where: { id }, data: { status: UserStatus.ACTIVE }, include: { profile: true } });
       }
-      return user;
+      if (activeUser.profile && activeUser.profile.isTeachingStaff === true) {
+        await this.accessBaseline.ensureProfessionalBaseline(id, actorUserId, meta, tx, 'USER_ACTIVATION');
+      }
+      return activeUser;
     });
   }
 
@@ -238,6 +249,9 @@ export class UsersService {
     auditWritten = false,
   ): Promise<UserManagementRecord> {
     return this.prisma.$transaction(async (tx) => {
+      // Serialize lifecycle transitions with clean-slate deletion before reading
+      // eligibility; an activation must not operate on a stale user snapshot.
+      await tx.$queryRaw`SELECT id FROM users WHERE id = ${id}::uuid FOR UPDATE`;
       const existing = await tx.user.findUnique({ where: { id }, include: { profile: true } });
       if (!existing) throw new NotFoundException('Không tìm thấy người dùng.');
       const user = await mutate(tx, existing);
