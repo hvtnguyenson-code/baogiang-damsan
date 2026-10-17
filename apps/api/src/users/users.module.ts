@@ -5,11 +5,12 @@ import { AuthorizationModule } from '../authorization/authorization.module';
 import { CapabilitiesModule } from '../capabilities/capabilities.module';
 import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
+import { UserDeleteService } from './user-delete.service';
 
 @Module({
   imports: [AuthModule, AuthorizationModule, CapabilitiesModule],
   controllers: [UsersController],
-  providers: [UsersService, AuditService],
+  providers: [UsersService, UserDeleteService, AuditService],
   exports: [UsersService],
 })
 export class UsersModule {}

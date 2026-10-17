@@ -53,7 +53,8 @@ integration('School-wide Effective Teaching Schedule Read Model & API (isolated 
     await h.prisma.subject.deleteMany();
     await h.prisma.academicWeekSegment.deleteMany();
     await h.prisma.academicWeek.deleteMany();
-    await h.prisma.academicCalendarVersion.deleteMany();
+    // The shared harness removes Semester/CalendarInterruption children before
+    // their calendar parent, including fixtures left by preceding suites.
     await h.clean();
   }
 

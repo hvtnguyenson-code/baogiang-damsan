@@ -2801,3 +2801,18 @@ export interface TelegramTestNotificationResponse {
   sentAt?: string;
   error?: string;
 }
+// Physical deletion is restricted to proven clean-slate accounts.
+export interface UserDeleteRequest { confirmUsername: string }
+export type UserDeleteBlockerCode = 'SELF' | 'PROTECTED' | 'LOGIN_HISTORY' | 'SECURITY_HISTORY' | 'BUSINESS_HISTORY' | 'INDIRECT_HISTORY' | 'UNVERIFIED_REFERENCE';
+export interface UserDeleteBlocker { code: UserDeleteBlockerCode; reason: string }
+export interface UserDeleteCleanupCounts { staffProfiles: number; subjectGroupMemberships: number; staffSubjects: number }
+export interface UserDeletePreflightResponse {
+  targetUserId: string;
+  username: string;
+  displayName: string;
+  eligibility: 'ELIGIBLE' | 'BLOCKED';
+  blockers: UserDeleteBlocker[];
+  cleanupCounts: UserDeleteCleanupCounts | null;
+  disableRecommended: boolean;
+}
+export interface UserDeleteResponse { deletedUserId: string; cleanupCounts: UserDeleteCleanupCounts }

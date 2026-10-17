@@ -82,6 +82,24 @@ integration('P5-051 Professional Baseline & Responsibility Templates (Isolated P
     return user.id;
   }
 
+  it.each(['inactive', 'invalid-scope', 'valid'] as const)('existing baseline grant still validates its definition (%s)', async (kind) => {
+    const userId = await createTestUser();
+    await h.prisma.capabilityGrant.create({ data: {
+      userId, capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL',
+      validFrom: new Date(Date.now() - 10000), grantedByUserId: defaultAdminId,
+    } });
+    const admin = await h.actor({ grants: [{ capabilityKey: 'USER_MANAGE' }] });
+    await h.prisma.capabilityDefinition.update({ where: { key: 'TEACHER_BASE' }, data: {
+      isActive: kind !== 'inactive', allowedScopeTypes: kind === 'invalid-scope' ? ['SCHOOL_WIDE'] : ['PERSONAL'],
+    } });
+    const result = await admin.agent.post(`/api/users/${userId}/activate`).set('Origin', testOrigin).send({});
+    expect(result.status).toBe(kind === 'valid' ? 200 : 409);
+    if (kind === 'valid') expect((await baselineService.ensureProfessionalBaseline(userId, defaultAdminId, {})).status).toBe('ALREADY_COMPLIANT');
+    else await expect(baselineService.ensureProfessionalBaseline(userId, defaultAdminId, {})).rejects.toThrow();
+    expect(await h.prisma.capabilityGrant.count({ where: { userId } })).toBe(1);
+    expect(await h.prisma.auditEvent.count({ where: { action: 'PROFESSIONAL_BASELINE_GRANTED', metadata: { path: ['targetUserId'], equals: userId } } })).toBe(0);
+  });
+
   // =========================================================================
   // 1 & 2. Activation Baseline Enforcement
   // =========================================================================

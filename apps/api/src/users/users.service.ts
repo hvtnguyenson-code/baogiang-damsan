@@ -249,6 +249,9 @@ export class UsersService {
     auditWritten = false,
   ): Promise<UserManagementRecord> {
     return this.prisma.$transaction(async (tx) => {
+      // Serialize lifecycle transitions with clean-slate deletion before reading
+      // eligibility; an activation must not operate on a stale user snapshot.
+      await tx.$queryRaw`SELECT id FROM users WHERE id = ${id}::uuid FOR UPDATE`;
       const existing = await tx.user.findUnique({ where: { id }, include: { profile: true } });
       if (!existing) throw new NotFoundException('Không tìm thấy người dùng.');
       const user = await mutate(tx, existing);

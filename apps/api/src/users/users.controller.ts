@@ -1,5 +1,5 @@
-import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
-import { UserManagementListResponse, UserManagementRecord } from '@baogiang/contracts';
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { UserDeletePreflightResponse, UserDeleteResponse, UserManagementListResponse, UserManagementRecord } from '@baogiang/contracts';
 import { CsrfOriginGuard } from '../auth/csrf-origin.guard';
 import { SessionAuthGuard } from '../auth/session-auth.guard';
 import { AuthenticatedRequest } from '../auth/auth.types';
@@ -11,11 +11,29 @@ import { ListUsersDto } from './dto/list-users.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { ResetUserPasswordDto } from './dto/reset-user-password.dto';
 import { UsersService } from './users.service';
+import { UserDeleteService } from './user-delete.service';
+import { DeleteUserDto } from './dto/delete-user.dto';
 
 @Controller('users')
 @RequireCapability('USER_MANAGE', { scope: 'SCHOOL_WIDE' })
 export class UsersController {
-  constructor(private readonly users: UsersService) {}
+  constructor(private readonly users: UsersService, private readonly userDelete: UserDeleteService) {}
+
+  @Get(':id/delete-preflight')
+  @UseGuards(SessionAuthGuard, CapabilityGuard)
+  deletePreflight(@Param('id', ParseUUIDPipe) id: string, @Req() request: AuthenticatedRequest): Promise<UserDeletePreflightResponse> {
+    return this.userDelete.preflight(id, request.auth!.user.id);
+  }
+
+  @Delete(':id')
+  @RequireCapabilities(
+    { capabilityKey: 'USER_MANAGE', scope: 'SCHOOL_WIDE' },
+    { capabilityKey: 'SYSTEM_ADMIN', scope: 'SCHOOL_WIDE' },
+  )
+  @UseGuards(SessionAuthGuard, CsrfOriginGuard, CapabilityGuard)
+  delete(@Param('id', ParseUUIDPipe) id: string, @Body() dto: DeleteUserDto, @Req() request: AuthenticatedRequest): Promise<UserDeleteResponse> {
+    return this.userDelete.delete(id, dto.confirmUsername, request.auth!.user.id, requestMeta(request));
+  }
 
   @Get()
   @UseGuards(SessionAuthGuard, CapabilityGuard)

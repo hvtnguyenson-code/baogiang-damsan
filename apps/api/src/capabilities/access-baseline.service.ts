@@ -151,6 +151,13 @@ export class AccessBaselineService {
         };
       }
 
+      // Validate even an already-covered coordinate: authorization ignores an
+      // inactive definition or a definition that no longer permits PERSONAL.
+      await this.validateCapabilityGrantSpecs(
+        [{ capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL' }],
+        tx,
+      );
+
       // 3. Re-read non-revoked grants for coordinate (userId, 'TEACHER_BASE', 'PERSONAL', null)
       const existingGrants = await tx.capabilityGrant.findMany({
         where: {
@@ -183,12 +190,6 @@ export class AccessBaselineService {
           `Xung đột hiệu lực TEACHER_BASE: ${effectivity.reason}`,
         );
       }
-
-      // 4. Validate capability definition before insert
-      await this.validateCapabilityGrantSpecs(
-        [{ capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL' }],
-        tx,
-      );
 
       // 5. Insert missing TEACHER_BASE grant
       const grant = await tx.capabilityGrant.create({
