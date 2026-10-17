@@ -2,6 +2,7 @@ import request from 'supertest';
 import { UserStatus } from '@prisma/client';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { USER_DELETE_FK_INVENTORY } from '../../src/users/user-delete-fk-inventory';
+import { UserDeleteService } from '../../src/users/user-delete.service';
 import { Phase01Harness, integration, normalizedCode, testOrigin, testPassword } from '../helpers/phase01-test-harness';
 
 jest.setTimeout(20000);
@@ -15,7 +16,7 @@ function latch() {
 integration('P5-051 clean-slate deletion (real isolated PostgreSQL)', () => {
   const h = new Phase01Harness();
   let admin: Awaited<ReturnType<Phase01Harness['actor']>>;
-  let pause: { id: string; entered: ReturnType<typeof latch>; resume: ReturnType<typeof latch>; used: boolean } | undefined;
+  let pause: { id: string; entered: ReturnType<typeof latch>; resume: ReturnType<typeof latch>; used: boolean; count: number; targetCount: number } | undefined;
   let faultAfterFirstCleanup = false;
 
   beforeAll(async () => {
@@ -23,9 +24,12 @@ integration('P5-051 clean-slate deletion (real isolated PostgreSQL)', () => {
     h.app.get(PrismaService).$use(async (params, next) => {
       if (pause && !pause.used && params.model === 'User' && params.action === 'findUnique'
         && params.args?.where?.id === pause.id && params.args?.select?.lastLoginAt) {
-        pause.used = true;
-        pause.entered.release();
-        await pause.resume.promise;
+        pause.count++;
+        if (pause.count === pause.targetCount) {
+          pause.used = true;
+          pause.entered.release();
+          await pause.resume.promise;
+        }
       }
       const result: unknown = await next(params);
       if (faultAfterFirstCleanup && params.model === 'SubjectGroupMembership' && params.action === 'deleteMany') {
@@ -50,7 +54,7 @@ integration('P5-051 clean-slate deletion (real isolated PostgreSQL)', () => {
     ]);
     admin = await h.actor({ grants: [{ capabilityKey: 'USER_MANAGE' }, { capabilityKey: 'SYSTEM_ADMIN' }, { capabilityKey: 'CAPABILITY_GRANT' }, { capabilityKey: 'SUBJECT_GROUP_MANAGE' }, { capabilityKey: 'SUBJECT_MANAGE' }] });
   });
-  afterEach(() => { pause?.resume.release(); pause = undefined; faultAfterFirstCleanup = false; });
+  afterEach(() => { pause?.resume.release(); pause = undefined; faultAfterFirstCleanup = false; UserDeleteService.testHook = undefined; });
   afterAll(async () => { await h.clean(); await h.stop(); });
 
   async function target(status: UserStatus = UserStatus.PENDING) {
@@ -81,8 +85,8 @@ integration('P5-051 clean-slate deletion (real isolated PostgreSQL)', () => {
     }
     return { group, subject, setupIds: [membership.body.id as string, staffSubject.body.id as string] };
   }
-  function pauseDelete(id: string) {
-    pause = { id, entered: latch(), resume: latch(), used: false };
+  function pauseDelete(id: string, occurrence = 1) {
+    pause = { id, entered: latch(), resume: latch(), used: false, count: 0, targetCount: occurrence };
     return pause;
   }
   async function waitForLock(pid?: number) {
@@ -385,7 +389,7 @@ integration('P5-051 clean-slate deletion (real isolated PostgreSQL)', () => {
   it('indirect A: locked StaffProfile prevents a concurrent retained duty insert from surviving deletion', async () => {
     const u = await target();
     const duty = await h.prisma.additionalDutyDefinition.create({ data: { code: normalizedCode('DUTY'), name: 'Nhiệm vụ', category: 'TEST' } });
-    const gate = pauseDelete(u.id);
+    const gate = pauseDelete(u.id, 2);
     const deletion = remove(u).then((r) => r); await gate.entered.promise;
     const insertion = h.prisma.staffAdditionalDutyAssignment.create({ data: {
       staffProfileId: u.profile!.id, dutyDefinitionId: duty.id, scopeType: 'SCHOOL_WIDE', createdByUserId: admin.id,
@@ -447,5 +451,285 @@ integration('P5-051 clean-slate deletion (real isolated PostgreSQL)', () => {
     expect(result.status).toBe(200);
     await blocked(u, 'SECURITY_HISTORY');
     expect(await h.prisma.capabilityGrant.count({ where: { userId: u.id } })).toBeGreaterThan(0);
+  });
+
+  it('contention 1: BLOCKED by session does not acquire eight-table locks in Stage 1 and does not block unrelated audit writes', async () => {
+    const u = await target();
+    await h.prisma.authSession.create({
+      data: { userId: u.id, tokenHash: crypto.randomUUID(), expiresAt: new Date(Date.now() + 60000) },
+    });
+    const gate = pauseDelete(u.id);
+    const deletion = remove(u).then((r) => r);
+    await gate.entered.promise;
+
+    let auditInsert: { id: string } | undefined;
+    try {
+      // While DELETE is paused in Stage 1 holding User FOR UPDATE (without eight-table locks),
+      // verify no table lock on audit_events exists in pg_locks
+      const locks = await h.prisma.$queryRaw<Array<{ mode: string }>>`
+        SELECT l.mode FROM pg_locks l
+        JOIN pg_class c ON c.oid = l.relation
+        JOIN pg_stat_activity a ON a.pid = l.pid
+        WHERE c.relname = 'audit_events' AND a.datname = current_database()
+          AND l.mode = 'ShareRowExclusiveLock'
+      `;
+      expect(locks).toHaveLength(0);
+
+      // Unrelated actor inserts an audit event during Stage 1 without contention
+      auditInsert = await h.prisma.auditEvent.create({
+        data: { actorUserId: admin.id, action: 'UNRELATED_STAGE1_WRITE', entityType: 'User' },
+      });
+      expect(auditInsert.id).toBeDefined();
+    } finally {
+      gate.resume.release();
+    }
+
+    const result = await deletion;
+    expect(result.status).toBe(409);
+    expect(result.body.eligibility).toBe('BLOCKED');
+    expect(result.body.blockers).toContainEqual(expect.objectContaining({ code: 'SECURITY_HISTORY' }));
+
+    // Target, profile, and unrelated audit event are preserved; zero cleanup
+    expect(await h.prisma.user.count({ where: { id: u.id } })).toBe(1);
+    expect(await h.prisma.staffProfile.count({ where: { userId: u.id } })).toBe(1);
+    expect(await h.prisma.auditEvent.count({ where: { id: auditInsert?.id } })).toBe(1);
+  });
+
+  it('contention 2: BLOCKED by business history does not serialize unrelated business/audit writes', async () => {
+    const u = await target();
+    const year = await h.prisma.academicYear.create({ data: { code: normalizedCode('YR'), name: 'Năm học' } });
+    const schoolClass = await h.prisma.schoolClass.create({ data: { academicYearId: year.id, code: normalizedCode('CL'), name: 'Lớp', gradeLevel: 10 } });
+    const subject = await h.prisma.subject.create({ data: { code: normalizedCode('SU'), name: 'Môn' } });
+    await h.prisma.teachingAssignment.create({
+      data: { academicYearId: year.id, schoolClassId: schoolClass.id, subjectId: subject.id, teacherUserId: u.id, validFrom: new Date('2026-09-01') },
+    });
+
+    const gate = pauseDelete(u.id);
+    const deletion = remove(u).then((r) => r);
+    await gate.entered.promise;
+
+    let unrelatedCommand: { id: string } | undefined;
+    let unrelatedAudit: { id: string } | undefined;
+    try {
+      // During Stage 1, an unrelated business command and audit event are written concurrently
+      const commandId = crypto.randomUUID();
+      unrelatedCommand = await h.prisma.businessPolicyCommand.create({
+        data: { actorUserId: admin.id, commandId, fingerprint: 'a'.repeat(32), result: { ok: true } },
+      });
+      unrelatedAudit = await h.prisma.auditEvent.create({
+        data: { actorUserId: admin.id, action: 'UNRELATED_BUSINESS_AUDIT', entityType: 'BusinessPolicyCommand', entityId: commandId },
+      });
+      expect(unrelatedCommand.id).toBeDefined();
+      expect(unrelatedAudit.id).toBeDefined();
+    } finally {
+      gate.resume.release();
+    }
+
+    const result = await deletion;
+    expect(result.status).toBe(409);
+    expect(result.body.eligibility).toBe('BLOCKED');
+    expect(result.body.blockers).toContainEqual(expect.objectContaining({ code: 'BUSINESS_HISTORY' }));
+
+    // Data preservation check
+    expect(await h.prisma.user.count({ where: { id: u.id } })).toBe(1);
+    expect(await h.prisma.teachingAssignment.count({ where: { teacherUserId: u.id } })).toBe(1);
+    expect(await h.prisma.businessPolicyCommand.count({ where: { id: unrelatedCommand?.id } })).toBe(1);
+    expect(await h.prisma.auditEvent.count({ where: { id: unrelatedAudit?.id } })).toBe(1);
+  });
+
+  it('contention 3: clean Stage 1 followed by concurrent protected FK child insert blocks in Stage 2', async () => {
+    const u = await target();
+    const duty = await h.prisma.additionalDutyDefinition.create({ data: { code: normalizedCode('DUTY'), name: 'Nhiệm vụ', category: 'TEST' } });
+
+    // Use UserDeleteService.testHook to pause right after Stage 1 inspect passes (Stage 1 ELIGIBLE)
+    const stage1Completed = latch();
+    const proceedToStage2 = latch();
+    UserDeleteService.testHook = async (stage, userId) => {
+      if (userId === u.id && stage === 'stage1_after_inspect') {
+        stage1Completed.release();
+        await proceedToStage2.promise;
+      }
+    };
+
+    const deletion = remove(u).then((r) => r);
+    await stage1Completed.promise;
+
+    let assignedDuty: { id: string } | undefined;
+    try {
+      // Target was provisionally ELIGIBLE in Stage 1.
+      // Now a concurrent transaction inserts a protected FK child (StaffAdditionalDutyAssignment) and commits:
+      assignedDuty = await h.prisma.staffAdditionalDutyAssignment.create({
+        data: { staffProfileId: u.profile!.id, dutyDefinitionId: duty.id, scopeType: 'SCHOOL_WIDE', createdByUserId: admin.id },
+      });
+      expect(assignedDuty.id).toBeDefined();
+    } finally {
+      // Resume to enter Stage 2: acquires table locks, child locks, re-inspects
+      proceedToStage2.release();
+    }
+
+    const result = await deletion;
+    expect(result.status).toBe(409);
+    expect(result.body.eligibility).toBe('BLOCKED');
+    expect(result.body.blockers).toContainEqual(expect.objectContaining({ code: 'INDIRECT_HISTORY' }));
+
+    // Retained child and user still exist
+    expect(await h.prisma.user.count({ where: { id: u.id } })).toBe(1);
+    expect(await h.prisma.staffProfile.count({ where: { userId: u.id } })).toBe(1);
+    expect(await h.prisma.staffAdditionalDutyAssignment.count({ where: { id: assignedDuty?.id } })).toBe(1);
+    expect(await h.prisma.auditEvent.count({ where: { action: 'USER_CLEAN_SLATE_DELETED', entityId: u.id } })).toBe(0);
+  });
+
+  it('contention 4: clean Stage 1 followed by concurrent non-FK identity write blocks in Stage 2', async () => {
+    const u = await target();
+
+    const stage1Completed = latch();
+    const proceedToStage2 = latch();
+    UserDeleteService.testHook = async (stage, userId) => {
+      if (userId === u.id && stage === 'stage1_after_inspect') {
+        stage1Completed.release();
+        await proceedToStage2.promise;
+      }
+    };
+
+    const deletion = remove(u).then((r) => r);
+    await stage1Completed.promise;
+
+    let command: { id: string } | undefined;
+    try {
+      // Concurrent transaction commits an identity reference in a non-FK container (programme_planning_commands.result)
+      command = await h.prisma.programmePlanningCommand.create({
+        data: {
+          actorUserId: admin.id,
+          commandId: crypto.randomUUID(),
+          commandType: 'LATE_BINDING_COMMAND',
+          fingerprint: 'fp_late_contention_test_fp_late',
+          result: { assignedTeacherUserId: u.id },
+        },
+      });
+      expect(command.id).toBeDefined();
+    } finally {
+      proceedToStage2.release();
+    }
+
+    const result = await deletion;
+    expect(result.status).toBe(409);
+    expect(result.body.eligibility).toBe('BLOCKED');
+    expect(result.body.blockers).toContainEqual(expect.objectContaining({ code: 'UNVERIFIED_REFERENCE' }));
+
+    // Zero orphaned reference: command exists, target user exists, zero cleanup
+    expect(await h.prisma.user.count({ where: { id: u.id } })).toBe(1);
+    expect(await h.prisma.staffProfile.count({ where: { userId: u.id } })).toBe(1);
+    expect(await h.prisma.programmePlanningCommand.count({ where: { id: command?.id } })).toBe(1);
+    expect(await h.prisma.auditEvent.count({ where: { action: 'USER_CLEAN_SLATE_DELETED', entityId: u.id } })).toBe(0);
+  });
+
+  it('contention 5: clean-slate DELETE waits for final table lock and fails closed on lock timeout budget', async () => {
+    const u = await target();
+    const lockAcquired = latch();
+    const releaseHolder = latch();
+
+    // Transaction 2: Holds ROW EXCLUSIVE lock on public.audit_events
+    const lockHolder = h.prisma.$transaction(async (tx) => {
+      await tx.auditEvent.create({
+        data: { actorUserId: admin.id, action: 'ROW_EXCLUSIVE_LOCK_HOLDER', entityType: 'User' },
+      });
+      lockAcquired.release();
+      await releaseHolder.promise;
+    });
+
+    await lockAcquired.promise;
+
+    const deleteStart = Date.now();
+    const deletion = remove(u).then((r) => r);
+
+    // Wait for DELETE to attempt Stage 2 and block on audit_events ShareRowExclusiveLock
+    await waitForLock();
+
+    // Verify lock contention in pg_locks: ShareRowExclusiveLock waiting
+    const waitingLocks = await h.prisma.$queryRaw<Array<{ waiting_mode: string; relname: string }>>`
+      SELECT l.mode AS waiting_mode, c.relname
+      FROM pg_locks l
+      JOIN pg_class c ON c.oid = l.relation
+      WHERE NOT l.granted AND c.relname = 'audit_events'
+    `;
+    expect(waitingLocks.length).toBeGreaterThan(0);
+    expect(waitingLocks[0].waiting_mode).toBe('ShareRowExclusiveLock');
+
+    // DELETE transaction will time out after 3 seconds (lock_timeout = '3s')
+    let result: request.Response | undefined;
+    try {
+      result = await deletion;
+    } finally {
+      // Release the lock holder transaction
+      releaseHolder.release();
+      await lockHolder;
+    }
+
+    const deleteDuration = Date.now() - deleteStart;
+
+    // Verify lock timeout behavior
+    expect(deleteDuration).toBeGreaterThanOrEqual(2800);
+    expect(result?.status).toBe(409);
+    expect(result?.body.message).toContain('Không thể xác minh và xóa an toàn do dữ liệu hoặc giao dịch đồng thời đã thay đổi.');
+
+    // Fail closed: target user, profile, and unrelated data are completely preserved
+    expect(await h.prisma.user.count({ where: { id: u.id } })).toBe(1);
+    expect(await h.prisma.staffProfile.count({ where: { userId: u.id } })).toBe(1);
+    expect(await h.prisma.auditEvent.count({ where: { action: 'USER_CLEAN_SLATE_DELETED', entityId: u.id } })).toBe(0);
+    expect(await h.prisma.auditEvent.count({ where: { action: 'ROW_EXCLUSIVE_LOCK_HOLDER' } })).toBe(1);
+  });
+
+  it('contention 6: clean-slate delete serializes unrelated audit write during Stage 2 critical section and completes cleanly', async () => {
+    const u = await target();
+    const enteredStage2Locks = latch();
+    const proceedWithDeletion = latch();
+
+    UserDeleteService.testHook = async (stage, userId) => {
+      if (userId === u.id && stage === 'stage2_after_table_lock') {
+        enteredStage2Locks.release();
+        await proceedWithDeletion.promise;
+      }
+    };
+
+    const deletion = remove(u).then((r) => r);
+    await enteredStage2Locks.promise;
+
+    let unrelatedWrite: Promise<{ res: { id: string }; durationMs: number }> | undefined;
+    try {
+      // At this point, DELETE holds SHARE ROW EXCLUSIVE on audit_events
+      // An unrelated audit write begins now:
+      const writeStart = Date.now();
+      unrelatedWrite = h.prisma.auditEvent.create({
+        data: { actorUserId: admin.id, action: 'UNRELATED_WRITE_DURING_STAGE2', entityType: 'User' },
+      }).then((res) => ({ res, durationMs: Date.now() - writeStart }));
+
+      // Verify that the unrelated audit write is waiting on the table lock
+      await waitForLock();
+
+      const waitingLocks = await h.prisma.$queryRaw<Array<{ waiting_mode: string; relname: string }>>`
+        SELECT l.mode AS waiting_mode, c.relname
+        FROM pg_locks l
+        JOIN pg_class c ON c.oid = l.relation
+        WHERE NOT l.granted AND c.relname = 'audit_events'
+      `;
+      expect(waitingLocks.length).toBeGreaterThan(0);
+      expect(waitingLocks[0].waiting_mode).toBe('RowExclusiveLock');
+    } finally {
+      // Resume DELETE: completes cleanup and commits
+      proceedWithDeletion.release();
+    }
+
+    const deleteResult = await deletion;
+    const writeResult = await unrelatedWrite;
+
+    expect(deleteResult.status).toBe(200);
+    expect(deleteResult.body.deletedUserId).toBe(u.id);
+    expect(writeResult?.res.id).toBeDefined();
+    expect(writeResult?.durationMs).toBeGreaterThan(0);
+
+    // Target is deleted; unrelated audit write and deletion audit are both preserved
+    expect(await h.prisma.user.findUnique({ where: { id: u.id } })).toBeNull();
+    expect(await h.prisma.auditEvent.count({ where: { action: 'USER_CLEAN_SLATE_DELETED', entityId: u.id } })).toBe(1);
+    expect(await h.prisma.auditEvent.count({ where: { action: 'UNRELATED_WRITE_DURING_STAGE2' } })).toBe(1);
   });
 });

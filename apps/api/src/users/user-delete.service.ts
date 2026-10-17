@@ -40,8 +40,24 @@ function ident(value: string): Prisma.Sql {
   return Prisma.raw(`"${value}"`);
 }
 
+export type UserDeleteTestHookStage =
+  | 'stage1_after_user_lock'
+  | 'stage1_after_inspect'
+  | 'stage2_after_table_lock'
+  | 'stage2_after_child_locks'
+  | 'stage2_after_inspect';
+
+export type UserDeleteTestHook = (
+  stage: UserDeleteTestHookStage,
+  userId: string,
+  tx: Db,
+) => Promise<void> | void;
+
 @Injectable()
 export class UserDeleteService {
+  // Test-only synchronization hook for concurrency and lock contention tests.
+  public static testHook?: UserDeleteTestHook;
+
   constructor(private readonly prisma: PrismaService, private readonly audit: AuditService) {}
 
   async preflight(id: string, actorUserId: string): Promise<UserDeletePreflightResponse> {
@@ -62,36 +78,73 @@ export class UserDeleteService {
         if (locked.length !== 1) throw new NotFoundException('Không tìm thấy người dùng.');
         id = locked[0].id; // Canonical DB UUID for comparisons and retained snapshots.
 
-        // Non-FK writes cannot participate in the User FK lock protocol. Briefly
-        // serialize their writers, including bootstrap provenance, until commit.
-        // Fixed order; lock timeout/deadlock aborts the entire transaction.
+        if (UserDeleteService.testHook) {
+          await UserDeleteService.testHook('stage1_after_user_lock', id, tx);
+        }
+
+        // STAGE 1 — PRELIMINARY ELIGIBILITY
+        // Run preliminary inspection WITHOUT holding SHARE ROW EXCLUSIVE table locks.
+        // If target is blocked, fail closed early without contending on global table locks.
+        const stage1Preview = await this.inspect(tx, id, actorUserId);
+        if (confirmUsername !== stage1Preview.username) {
+          throw new BadRequestException('Tên đăng nhập xác nhận không khớp chính xác.');
+        }
+        if (stage1Preview.eligibility !== 'ELIGIBLE') {
+          throw new ConflictException(stage1Preview);
+        }
+
+        if (UserDeleteService.testHook) {
+          await UserDeleteService.testHook('stage1_after_inspect', id, tx);
+        }
+
+        // STAGE 2 — FINAL CONCURRENCY BARRIER
+        // Target is provisionally eligible. Non-FK writes cannot participate in the
+        // User FK lock protocol. Briefly serialize their writers, including bootstrap
+        // provenance, until commit. Fixed order; lock timeout/deadlock aborts transaction.
         await tx.$executeRaw`LOCK TABLE public.audit_events, public.business_policy_commands,
           public.business_policy_versions, public.historical_teaching_import_rows,
           public.programme_planning_commands, public.reporting_statement_histories,
           public.reporting_statement_revisions, public.timetable_import_entity_aliases
           IN SHARE ROW EXCLUSIVE MODE`;
 
+        if (UserDeleteService.testHook) {
+          await UserDeleteService.testHook('stage2_after_table_lock', id, tx);
+        }
+
         // Protect all allowlisted children from concurrent indirect FK inserts.
         await tx.$queryRaw`SELECT id FROM public.staff_profiles WHERE user_id = ${id}::uuid FOR UPDATE`;
         await tx.$queryRaw`SELECT id FROM public.staff_subjects WHERE user_id = ${id}::uuid ORDER BY id FOR UPDATE`;
         await tx.$queryRaw`SELECT id FROM public.subject_group_memberships WHERE user_id = ${id}::uuid ORDER BY id FOR UPDATE`;
 
-        const preview = await this.inspect(tx, id, actorUserId);
-        if (confirmUsername !== preview.username) throw new BadRequestException('Tên đăng nhập xác nhận không khớp chính xác.');
-        if (preview.eligibility !== 'ELIGIBLE') throw new ConflictException(preview);
+        if (UserDeleteService.testHook) {
+          await UserDeleteService.testHook('stage2_after_child_locks', id, tx);
+        }
+
+        // Re-run COMPLETE inspect() as the authoritative final safety barrier.
+        const finalPreview = await this.inspect(tx, id, actorUserId);
+        if (confirmUsername !== finalPreview.username) {
+          throw new BadRequestException('Tên đăng nhập xác nhận không khớp chính xác.');
+        }
+        if (finalPreview.eligibility !== 'ELIGIBLE') {
+          throw new ConflictException(finalPreview);
+        }
+
+        if (UserDeleteService.testHook) {
+          await UserDeleteService.testHook('stage2_after_inspect', id, tx);
+        }
 
         const subjectGroups = await tx.subjectGroupMembership.deleteMany({ where: { userId: id } });
         const subjects = await tx.staffSubject.deleteMany({ where: { userId: id } });
         const profiles = await tx.staffProfile.deleteMany({ where: { userId: id } });
         const cleanupCounts = { staffProfiles: profiles.count, subjectGroupMemberships: subjectGroups.count, staffSubjects: subjects.count };
-        if (JSON.stringify(cleanupCounts) !== JSON.stringify(preview.cleanupCounts)) {
+        if (JSON.stringify(cleanupCounts) !== JSON.stringify(finalPreview.cleanupCounts)) {
           throw new ConflictException('Dữ liệu thiết lập đã thay đổi; hãy kiểm tra lại.');
         }
         await tx.user.delete({ where: { id } });
         await this.audit.write({
           actorUserId, entityType: 'User', entityId: id, action: 'USER_CLEAN_SLATE_DELETED',
           result: AuditResult.SUCCESS, requestId: meta.requestId,
-          metadata: { deletedUserId: id, username: preview.username, displayName: preview.displayName, cleanupCounts },
+          metadata: { deletedUserId: id, username: finalPreview.username, displayName: finalPreview.displayName, cleanupCounts },
         }, tx);
         return { deletedUserId: id, cleanupCounts };
       }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 10000 });
