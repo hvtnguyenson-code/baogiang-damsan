@@ -18,7 +18,6 @@ import { useAuth } from '../auth/auth-context';
 import { Button } from '../components/ui/button';
 import { FormField } from '../components/ui/form-field';
 import {
-  DataTable,
   FormSection,
   MutationNotice,
   PageHeader,
@@ -76,6 +75,69 @@ const TEMPLATE_NAMES: Record<ResponsibilityTemplateKey, string> = {
   HDTN_COORDINATOR: 'Điều phối Hoạt động trải nghiệm, hướng nghiệp (HĐTN-HN)',
   TECHNICAL_ACCOUNT_ADMIN: 'Quản trị tài khoản & kỹ thuật',
 };
+
+function conflictStatusLabel(status: string): string {
+  switch (status) {
+    case 'OVERLAP_CONFLICT':
+      return 'Quyền cấp bị xung đột';
+    case 'STATUS_LOCKED':
+      return 'Tài khoản đang bị khóa';
+    case 'STATUS_DISABLED':
+      return 'Tài khoản đã vô hiệu hóa';
+    case 'EXPIRED':
+      return 'Hết hạn hiệu lực';
+    case 'INACTIVE':
+      return 'Chưa kích hoạt';
+    default:
+      return status;
+  }
+}
+
+function scopeTypeLabel(scope: string): string {
+  switch (scope) {
+    case 'PERSONAL':
+      return 'Phạm vi cá nhân';
+    case 'SCHOOL_WIDE':
+      return 'Phạm vi toàn trường';
+    case 'SUBJECT':
+      return 'Tổ chuyên môn';
+    case 'CLASS':
+      return 'Lớp học';
+    case 'PROGRAMME':
+      return 'Chương trình đào tạo';
+    default:
+      return scope;
+  }
+}
+
+function capabilityKeyLabel(key: string): string {
+  switch (key) {
+    case 'TEACHING_SCHEDULE_VIEW':
+      return 'Xem thời khóa biểu';
+    case 'STATEMENT_SUBMIT':
+      return 'Nộp báo giảng';
+    case 'USER_MANAGE':
+      return 'Quản trị tài khoản';
+    case 'CAPABILITY_GRANT':
+      return 'Cấp quyền hạn';
+    case 'SYSTEM_ADMIN':
+      return 'Quản trị hệ thống';
+    case 'TEACHER_BASE':
+      return 'Quyền cơ sở giáo viên';
+    case 'SUBJECT_MANAGE':
+      return 'Quản lý tổ chuyên môn';
+    case 'PROGRAMME_MANAGE':
+      return 'Quản trị chương trình đào tạo';
+    case 'TIMETABLE_MANAGE':
+      return 'Quản trị thời khóa biểu';
+    case 'APPROVAL_PRINCIPAL':
+      return 'Phê duyệt Hiệu trưởng';
+    case 'APPROVAL_VICE_PRINCIPAL':
+      return 'Phê duyệt Phó Hiệu trưởng';
+    default:
+      return key;
+  }
+}
 
 export function UsersPage() {
   const { auth } = useAuth();
@@ -440,7 +502,7 @@ export function UsersPage() {
           'Xung đột (409): Dữ liệu phân công hoặc quyền hạn của tài khoản đã thay đổi trên máy chủ. Vui lòng xem trước lại.',
         );
       } else if (err instanceof ApiError) {
-        setTemplatePreviewError(err.message || 'Lỗi khi áp dụng Mẫu trách nhiệm.');
+        setTemplatePreviewError(err.message || 'Lỗi khi áp dụng Mẫu phân quyền.');
       } else if (err instanceof Error) {
         setTemplatePreviewError(err.message);
       } else {
@@ -478,6 +540,9 @@ export function UsersPage() {
 
   // Handlers
   function handleSelectUser(user: UserManagementRecord) {
+    document.querySelectorAll('details.user-directory-more[open]').forEach((el) => {
+      el.removeAttribute('open');
+    });
     setSuccess('');
     setDraft(null);
     setSelectedUserId(user.id);
@@ -485,6 +550,9 @@ export function UsersPage() {
     clearApplyResult();
     setDeleteError('');
     setDeleteConfirmUsername('');
+    if (typeof window !== 'undefined' && window.innerWidth <= 768) {
+      window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    }
   }
 
   function startReset(user: UserManagementRecord) {
@@ -575,8 +643,10 @@ export function UsersPage() {
   const coordinatorSelectorMissing =
     isCoordinatorTemplate && (!programmeMastersQuery.data || programmeMastersQuery.data.length === 0);
 
+  const isDetailActive = selectedUserId !== null || draft !== null;
+
   return (
-    <div className="management-page staff-register">
+    <div className={`management-page staff-register users-management ${isDetailActive ? 'users-page--detail-active' : 'users-page--list-active'}`}>
       <PageHeader
         eyebrow="Quản trị nhân sự & danh tính"
         title="Người dùng"
@@ -609,7 +679,7 @@ export function UsersPage() {
           </div>
         }
       >
-        Quản trị tài khoản, phân quyền theo Mẫu trách nhiệm và đối soát chuẩn chuyên môn toàn trường.
+        Quản trị tài khoản, phân quyền theo Mẫu phân quyền theo nhiệm vụ và đối soát chuẩn chuyên môn toàn trường.
       </PageHeader>
 
       <MutationNotice
@@ -623,6 +693,32 @@ export function UsersPage() {
         }
         success={success}
       />
+
+      {/* TOP KPI METRICS RIBBON */}
+      <div className="kpi-ribbon">
+        <div className="kpi-card">
+          <div className="kpi-card__number">{query.data?.total ?? 0}</div>
+          <div className="kpi-card__label">Tổng toàn trường</div>
+        </div>
+        <div className="kpi-card kpi-card--active">
+          <div className="kpi-card__number">
+            {query.data?.items ? query.data.items.filter((u) => u.status === 'ACTIVE').length : 0}
+          </div>
+          <div className="kpi-card__label">Hoạt động (Trang {page})</div>
+        </div>
+        <div className="kpi-card kpi-card--pending">
+          <div className="kpi-card__number">
+            {query.data?.items ? query.data.items.filter((u) => u.status !== 'ACTIVE').length : 0}
+          </div>
+          <div className="kpi-card__label">Chờ / Khóa (Trang {page})</div>
+        </div>
+        <div className="kpi-card kpi-card--teaching">
+          <div className="kpi-card__number">
+            {query.data?.items ? query.data.items.filter((u) => u.profile?.isTeachingStaff).length : 0}
+          </div>
+          <div className="kpi-card__label">Cán bộ GV (Trang {page})</div>
+        </div>
+      </div>
 
       {/* TOP: BASELINE RECONCILIATION SECTION (COLLAPSIBLE) */}
       {showReconciliation && canGrant && (
@@ -649,8 +745,7 @@ export function UsersPage() {
             ) : (
               <>
                 <p className="text-sm text-slate-700 mb-2">
-                  Hệ thống đối soát tự động toàn bộ tài khoản hoạt động với chuẩn quyền cơ sở của nhân sự giảng dạy (
-                  <code>TEACHER_BASE</code>).
+                  Hệ thống đối soát tự động toàn bộ tài khoản hoạt động với chuẩn quyền cơ sở của nhân sự giảng dạy.
                 </p>
 
                 <div className="stat-grid">
@@ -745,7 +840,7 @@ export function UsersPage() {
                               <td className="technical-value">{c.username}</td>
                               <td>{c.displayName || '—'}</td>
                               <td>
-                                <span className="delta-badge delta-badge--conflict">{c.statusConflict}</span>
+                                <span className="delta-badge delta-badge--conflict">{conflictStatusLabel(c.statusConflict)}</span>
                               </td>
                               <td className="text-sm text-rose-700">{c.reason}</td>
                             </tr>
@@ -773,7 +868,7 @@ export function UsersPage() {
                   </Button>
                   {reconciliationPreviewQuery.data.missing.length === 0 && (
                     <span className="text-xs text-slate-600 font-semibold">
-                      ✅ 100% nhân sự giảng dạy đủ điều kiện đã có quyền cơ sở TEACHER_BASE.
+                      ✅ 100% nhân sự giảng dạy đủ điều kiện đã có chuẩn quyền cơ sở.
                     </span>
                   )}
                 </div>
@@ -783,7 +878,7 @@ export function UsersPage() {
                   <div className="mt-4 p-3 bg-emerald-50 border border-emerald-300 rounded text-xs text-emerald-900 space-y-1">
                     <div className="font-bold text-sm">Kết quả đối soát vừa thực hiện:</div>
                     <div>Số tài khoản đã xử lý: {reconciliationApplyResult.processedCount}</div>
-                    <div>Số quyền TEACHER_BASE được cấp mới: {reconciliationApplyResult.grantsCreated}</div>
+                    <div>Số quyền chuẩn cơ sở giáo viên được cấp mới: {reconciliationApplyResult.grantsCreated}</div>
                     <div>Bỏ qua do đã tuân thủ: {reconciliationApplyResult.skippedAlreadyCompliant}</div>
                     <div>Bỏ qua do xung đột: {reconciliationApplyResult.skippedConflict}</div>
                     <div>Bỏ qua do loại trừ: {reconciliationApplyResult.skippedExcluded}</div>
@@ -796,12 +891,12 @@ export function UsersPage() {
       )}
 
       {/* SPLIT WORKSPACE: 5/7 RATIO ON DESKTOP */}
-      <div className="admin-workspace">
-        {/* LEFT COLUMN: DIRECTORY & LIFECYCLE */}
+      <div className={`admin-workspace ${isDetailActive ? 'admin-workspace--detail-active' : 'admin-workspace--list-active'}`}>
+        {/* LEFT COLUMN: COMPACT USER DIRECTORY */}
         <div className="admin-workspace__sidebar">
           <div className="form-card" style={{ borderColor: '#1e3a8a', borderWidth: '2px' }}>
             <div className="form-card-header form-card-header--blue">
-              <span>1. Danh sách người dùng ({query.data?.total ?? 0})</span>
+              <span>1. Danh sách người dùng ({query.data?.items?.length ?? 0} trang này / Tổng {query.data?.total ?? 0})</span>
               {selectedUser && (
                 <span className="text-[11px] bg-blue-700 text-white px-2 py-0.5 rounded font-bold">
                   Đang chọn: {selectedUser.username}
@@ -809,20 +904,17 @@ export function UsersPage() {
               )}
             </div>
 
-            <div className="p-3 bg-slate-100 border-b border-slate-300 space-y-2">
-              <input
-                type="text"
-                placeholder="🔍 Tìm trong trang hiện tại (tên, tài khoản, mã)..."
-                aria-label="Tìm trong trang hiện tại"
-                className="form-field__input"
-                style={{ minHeight: '44px', fontSize: '14px', background: '#fff' }}
-                value={searchKeyword}
-                onChange={(e) => setSearchKeyword(e.target.value)}
-              />
-              <div className="text-[11px] text-slate-600 px-1 font-medium">
-                Lọc trong 20 bản ghi của trang hiện tại. Dùng thanh phân trang bên dưới để xem thêm.
-              </div>
-              <div className="flex items-center justify-between gap-2">
+            <div className="p-2.5 bg-slate-100 border-b border-slate-300 space-y-1.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <input
+                  type="text"
+                  placeholder="🔍 Tìm trong trang hiện tại (tên, tài khoản, mã)..."
+                  aria-label="Tìm trong trang hiện tại"
+                  className="form-field__input"
+                  style={{ minHeight: '44px', fontSize: '13px', background: '#fff' }}
+                  value={searchKeyword}
+                  onChange={(e) => setSearchKeyword(e.target.value)}
+                />
                 <select
                   aria-label="Lọc theo trạng thái"
                   className="form-field__input"
@@ -836,8 +928,11 @@ export function UsersPage() {
                   <option value="DISABLED">Đã vô hiệu hóa</option>
                   <option value="LOCKED">Đang khóa</option>
                 </select>
-                <span className="text-xs text-slate-600 font-semibold whitespace-nowrap">
-                  {filteredUsers.length} hiển thị
+              </div>
+              <div className="flex items-center justify-between text-[11px] text-slate-600 px-1 font-medium">
+                <span>Lọc trong {query.data?.items?.length ?? 0} tài khoản của trang {page} (Tổng toàn trường: {query.data?.total ?? 0}). Dùng thanh phân trang bên dưới để xem thêm.</span>
+                <span className="font-semibold text-slate-700 whitespace-nowrap ml-2">
+                  {filteredUsers.length} / {query.data?.items?.length ?? 0} hiển thị
                 </span>
               </div>
             </div>
@@ -852,186 +947,265 @@ export function UsersPage() {
               </div>
             ) : (
               <>
-                <DataTable
-                  label="Danh sách người dùng"
-                  headings={['Họ tên / tài khoản', 'Mã nhân sự', 'Trạng thái', 'Chức danh', 'Giảng dạy', 'Thao tác']}
-                >
-                  {filteredUsers.map((user) => {
-                    const isSelected = user.id === selectedUserId;
-                    return (
-                      <tr
-                        key={user.id}
-                        className={isSelected ? 'row-selected' : ''}
-                        style={isSelected ? { backgroundColor: '#eff6ff', cursor: 'pointer' } : { cursor: 'pointer' }}
-                        onClick={() => handleSelectUser(user)}
-                      >
-                        <td>
-                          <button
-                            type="button"
-                            className="text-left font-bold block"
-                            style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left', color: 'inherit' }}
+                <div className="user-directory-region" role="region" aria-label="Danh sách người dùng">
+                  <table className="user-directory-table">
+                    <caption className="sr-only">Danh sách người dùng</caption>
+                    <tbody>
+                      {filteredUsers.map((user, index) => {
+                        const isSelected = user.id === selectedUserId;
+                        const isNearBottom = index >= filteredUsers.length - 3;
+                        const initial = user.profile?.displayName
+                          ? user.profile.displayName.trim().charAt(0).toUpperCase()
+                          : user.username.charAt(0).toUpperCase();
+                        return (
+                          <tr
+                            key={user.id}
+                            className={`user-directory-row ${isSelected ? 'user-directory-row--selected' : ''}`}
+                            style={isSelected ? { backgroundColor: '#eff6ff', cursor: 'pointer' } : { cursor: 'pointer' }}
                             onClick={() => handleSelectUser(user)}
                           >
-                            <strong>{user.profile?.displayName ?? 'Chưa có tên hiển thị'}</strong>
-                          </button>
-                          <small className="technical-value table-secondary">{user.username}</small>
-                        </td>
-                        <td className="technical-value">{user.profile?.staffCode ?? '—'}</td>
-                        <td>
-                          <StatusText
-                            active={user.status === 'ACTIVE'}
-                            activeLabel="Đang hoạt động"
-                            inactiveLabel={statusLabel(user.status)}
-                          />
-                        </td>
-                        <td>{user.profile?.positionTitle ?? '—'}</td>
-                        <td>{user.profile?.isTeachingStaff ? 'Có' : 'Không'}</td>
-                        <td onClick={(e) => e.stopPropagation()}>
-                          <div className="row-actions">
-                            <Button
-                              type="button"
-                              variant={isSelected ? 'primary' : 'quiet'}
-                              onClick={() => handleSelectUser(user)}
-                            >
-                              {isSelected ? 'Đang chọn' : `Chọn ${user.username}`}
-                            </Button>
-                            <Button
-                              type="button"
-                              variant={isSelected ? 'primary' : 'quiet'}
-                              onClick={() => {
-                                handleSelectUser(user);
-                                editUser(user);
-                              }}
-                            >
-                              Sửa {user.username}
-                            </Button>
-
-                            {confirm?.id === user.id ? (
-                              <div className="flex items-center gap-1">
-                                <span className="text-xs">
-                                  Xác nhận {actionLabel(confirm.action).toLowerCase()}?
+                            <td className="user-directory-cell">
+                              <div className="user-directory-item">
+                                <span className="user-directory-avatar" aria-hidden="true">
+                                  {initial}
                                 </span>
-                                <Button
-                                  type="button"
-                                  variant="secondary"
-                                  loading={actionMutation.isPending}
-                                  onClick={() => actionMutation.mutate(confirm)}
-                                >
-                                  Xác nhận
-                                </Button>
-                                <Button type="button" variant="quiet" onClick={() => setConfirm(undefined)}>
-                                  Hủy
-                                </Button>
-                              </div>
-                            ) : (
-                              <>
-                                {user.status === 'ACTIVE' && (
-                                  <Button
-                                    type="button"
-                                    variant="quiet"
-                                    onClick={() => {
-                                      setSuccess('');
-                                      setConfirm({ id: user.id, action: 'disable' });
-                                    }}
-                                  >
-                                    Vô hiệu hóa
-                                  </Button>
-                                )}
-                                {(user.status === 'DISABLED' || user.status === 'PENDING') && (
-                                  <Button
-                                    type="button"
-                                    variant="quiet"
-                                    onClick={() => {
-                                      setSuccess('');
-                                      setConfirm({ id: user.id, action: 'activate' });
-                                    }}
-                                  >
-                                    Kích hoạt
-                                  </Button>
-                                )}
-                                {user.status === 'LOCKED' && (
-                                  <Button
-                                    type="button"
-                                    variant="quiet"
-                                    onClick={() => {
-                                      setSuccess('');
-                                      setConfirm({ id: user.id, action: 'unlock' });
-                                    }}
-                                  >
-                                    Mở khóa
-                                  </Button>
-                                )}
-                                {canResetPasswords && user.status === 'ACTIVE' && user.id !== auth?.user.id && (
-                                  <Button type="button" variant="quiet" onClick={() => startReset(user)}>
-                                    Đặt lại mật khẩu
-                                  </Button>
-                                )}
-                              </>
-                            )}
-                          </div>
+                                <div className="user-directory-body">
+                                  <div className="user-directory-line1">
+                                    <button
+                                      type="button"
+                                      className="user-directory-name"
+                                      onClick={() => handleSelectUser(user)}
+                                    >
+                                      <strong>{user.profile?.displayName ?? 'Chưa có tên hiển thị'}</strong>
+                                    </button>
+                                    <div className="user-directory-badges">
+                                      <StatusText
+                                        active={user.status === 'ACTIVE'}
+                                        activeLabel="Đang hoạt động"
+                                        inactiveLabel={statusLabel(user.status)}
+                                        inactiveTone={user.status === 'LOCKED' || user.status === 'DISABLED' ? 'error' : 'warning'}
+                                      />
+                                      {user.profile?.isTeachingStaff ? (
+                                        <span className="badge-pill badge-pill--teaching" title="Nhân sự giảng dạy">
+                                          GV
+                                        </span>
+                                      ) : (
+                                        <span className="badge-pill badge-pill--slate" title="Nhân sự không giảng dạy">
+                                          NV
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="user-directory-line2">
+                                    <span className="user-directory-username technical-value">{user.username}</span>
+                                    {user.profile?.staffCode ? (
+                                      <span className="user-directory-staffcode technical-value">#{user.profile.staffCode}</span>
+                                    ) : (
+                                      <span className="user-directory-staffcode-empty">#—</span>
+                                    )}
+                                    <span className="user-directory-dot" aria-hidden="true">•</span>
+                                    <span className="user-directory-position">{user.profile?.positionTitle || 'Chưa phân chức danh'}</span>
+                                  </div>
+                                </div>
 
-                          {/* Inline Password Reset Form matching test selectors */}
-                          {resetDraft?.id === user.id && (
-                            <form className="row-confirm mt-2 p-3 bg-white border border-slate-300 rounded" onSubmit={submitReset}>
-                              <p className="text-xs text-slate-700 mb-2">
-                                Đặt lại mật khẩu cho <strong>{resetDraft.username}</strong>. Người dùng sẽ phải đổi
-                                mật khẩu khi đăng nhập lần tới; mọi phiên hiện có sẽ bị thu hồi.
-                              </p>
-                              <FormField
-                                id={`reset-password-${user.id}`}
-                                name="new-password"
-                                type="password"
-                                label="Mật khẩu khởi tạo mới"
-                                autoComplete="new-password"
-                                minLength={12}
-                                maxLength={1024}
-                                required
-                                value={resetDraft.newPassword}
-                                onChange={(event) => {
-                                  setResetError('');
-                                  setResetDraft({ ...resetDraft, newPassword: event.target.value });
-                                }}
-                              />
-                              <FormField
-                                id={`reset-confirm-${user.id}`}
-                                name="confirm-password"
-                                type="password"
-                                label="Nhập lại mật khẩu mới"
-                                autoComplete="new-password"
-                                minLength={12}
-                                maxLength={1024}
-                                required
-                                value={resetDraft.confirmation}
-                                onChange={(event) => {
-                                  setResetError('');
-                                  setResetDraft({ ...resetDraft, confirmation: event.target.value });
-                                }}
-                              />
-                              {resetError && (
-                                <p role="alert" className="form-field__error">
-                                  {resetError}
-                                </p>
-                              )}
-                              <div className="flex gap-2 mt-2">
-                                <Button type="submit" variant="secondary" loading={resetPassword.isPending}>
-                                  Xác nhận đặt lại
-                                </Button>
-                                <Button type="button" variant="quiet" onClick={cancelReset}>
-                                  Hủy đặt lại
-                                </Button>
+                                <div className="user-directory-actions" onClick={(e) => e.stopPropagation()}>
+                                  <Button
+                                    type="button"
+                                    variant={isSelected ? 'primary' : 'quiet'}
+                                    className="btn--compact"
+                                    aria-label={`Chọn ${user.username}`}
+                                    data-user-id={user.id}
+                                    onClick={() => handleSelectUser(user)}
+                                  >
+                                    {isSelected ? 'Đang chọn' : 'Chọn'}
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant={isSelected ? 'primary' : 'quiet'}
+                                    className="btn--compact"
+                                    aria-label={`Sửa ${user.username}`}
+                                    onClick={() => {
+                                      handleSelectUser(user);
+                                      editUser(user);
+                                    }}
+                                  >
+                                    Sửa
+                                  </Button>
+
+                                  {confirm?.id === user.id ? (
+                                    <div className="user-directory-confirm-inline">
+                                      <span className="text-[11px] font-semibold text-rose-800">
+                                        Xác nhận {actionLabel(confirm.action).toLowerCase()}?
+                                      </span>
+                                      <Button
+                                        type="button"
+                                        variant="secondary"
+                                        className="btn--compact"
+                                        loading={actionMutation.isPending}
+                                        onClick={() => actionMutation.mutate(confirm)}
+                                      >
+                                        Xác nhận
+                                      </Button>
+                                      <Button type="button" variant="quiet" className="btn--compact" onClick={() => setConfirm(undefined)}>
+                                        Hủy
+                                      </Button>
+                                    </div>
+                                  ) : (
+                                    <details
+                                      className="user-directory-more"
+                                      onClick={(e) => e.stopPropagation()}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Escape') {
+                                          e.preventDefault();
+                                          const details = e.currentTarget as HTMLDetailsElement;
+                                          details.open = false;
+                                          const summary = details.querySelector('summary');
+                                          summary?.focus();
+                                        }
+                                      }}
+                                    >
+                                      <summary
+                                        className="btn btn--quiet btn--compact user-directory-more__summary"
+                                        aria-label={`Thao tác khác cho ${user.username}`}
+                                        title="Thao tác khác"
+                                      >
+                                        •••
+                                      </summary>
+                                      <div className={`user-directory-more__menu ${isNearBottom ? 'user-directory-more__menu--up' : ''}`}>
+                                        {user.status === 'ACTIVE' && (
+                                          <Button
+                                            type="button"
+                                            variant="quiet"
+                                            className="btn--compact w-full text-left"
+                                            onClick={(e) => {
+                                              const details = (e.target as HTMLElement).closest('details');
+                                              if (details) details.open = false;
+                                              setSuccess('');
+                                              setConfirm({ id: user.id, action: 'disable' });
+                                            }}
+                                          >
+                                            Vô hiệu hóa
+                                          </Button>
+                                        )}
+                                        {(user.status === 'DISABLED' || user.status === 'PENDING') && (
+                                          <Button
+                                            type="button"
+                                            variant="quiet"
+                                            className="btn--compact w-full text-left"
+                                            onClick={(e) => {
+                                              const details = (e.target as HTMLElement).closest('details');
+                                              if (details) details.open = false;
+                                              setSuccess('');
+                                              setConfirm({ id: user.id, action: 'activate' });
+                                            }}
+                                          >
+                                            Kích hoạt
+                                          </Button>
+                                        )}
+                                        {user.status === 'LOCKED' && (
+                                          <Button
+                                            type="button"
+                                            variant="quiet"
+                                            className="btn--compact w-full text-left"
+                                            onClick={(e) => {
+                                              const details = (e.target as HTMLElement).closest('details');
+                                              if (details) details.open = false;
+                                              setSuccess('');
+                                              setConfirm({ id: user.id, action: 'unlock' });
+                                            }}
+                                          >
+                                            Mở khóa
+                                          </Button>
+                                        )}
+                                        {canResetPasswords && user.status === 'ACTIVE' && user.id !== auth?.user.id && (
+                                          <Button
+                                            type="button"
+                                            variant="quiet"
+                                            className="btn--compact w-full text-left"
+                                            onClick={(e) => {
+                                              const details = (e.target as HTMLElement).closest('details');
+                                              if (details) details.open = false;
+                                              startReset(user);
+                                            }}
+                                          >
+                                            Đặt lại mật khẩu
+                                          </Button>
+                                        )}
+                                      </div>
+                                    </details>
+                                  )}
+                                </div>
                               </div>
-                            </form>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </DataTable>
+
+                              {/* Inline Password Reset Form matching test selectors */}
+                              {resetDraft?.id === user.id && (
+                                <form className="row-confirm mt-2 p-3 bg-white border border-slate-300 rounded" onSubmit={submitReset} onClick={(e) => e.stopPropagation()}>
+                                  <p className="text-xs text-slate-700 mb-2">
+                                    Đặt lại mật khẩu cho <strong>{resetDraft.username}</strong>. Người dùng sẽ phải đổi
+                                    mật khẩu khi đăng nhập lần tới; mọi phiên hiện có sẽ bị thu hồi.
+                                  </p>
+                                  <FormField
+                                    id={`reset-password-${user.id}`}
+                                    name="new-password"
+                                    type="password"
+                                    label="Mật khẩu khởi tạo mới"
+                                    autoComplete="new-password"
+                                    minLength={12}
+                                    maxLength={1024}
+                                    required
+                                    value={resetDraft.newPassword}
+                                    onChange={(event) => {
+                                      setResetError('');
+                                      setResetDraft({ ...resetDraft, newPassword: event.target.value });
+                                    }}
+                                  />
+                                  <FormField
+                                    id={`reset-confirm-${user.id}`}
+                                    name="confirm-password"
+                                    type="password"
+                                    label="Nhập lại mật khẩu mới"
+                                    autoComplete="new-password"
+                                    minLength={12}
+                                    maxLength={1024}
+                                    required
+                                    value={resetDraft.confirmation}
+                                    onChange={(event) => {
+                                      setResetError('');
+                                      setResetDraft({ ...resetDraft, confirmation: event.target.value });
+                                    }}
+                                  />
+                                  {resetError && (
+                                    <p role="alert" className="form-field__error">
+                                      {resetError}
+                                    </p>
+                                  )}
+                                  <div className="flex gap-2 mt-2">
+                                    <Button type="submit" variant="secondary" loading={resetPassword.isPending}>
+                                      Xác nhận đặt lại
+                                    </Button>
+                                    <Button type="button" variant="quiet" onClick={cancelReset}>
+                                      Hủy đặt lại
+                                    </Button>
+                                  </div>
+                                </form>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
                 <Pagination
                   page={query.data.page}
                   pageSize={query.data.pageSize}
                   total={query.data.total}
-                  onPage={setPage}
+                  onPage={(newPage) => {
+                    document.querySelectorAll('details.user-directory-more[open]').forEach((el) => {
+                      el.removeAttribute('open');
+                    });
+                    setPage(newPage);
+                  }}
                 />
               </>
             )}
@@ -1040,6 +1214,41 @@ export function UsersPage() {
 
         {/* RIGHT COLUMN: WORKSPACE / CREATION / TEMPLATES / DELETE */}
         <div className="admin-workspace__main">
+          {/* Mobile Back-to-List bar for task-oriented workflow */}
+          {isDetailActive && (
+            <div className="mobile-workflow-bar" role="region" aria-label="Điều hướng chi tiết người dùng">
+              <button
+                type="button"
+                className="mobile-workflow-bar__btn"
+                aria-label="Quay lại danh sách người dùng"
+                onClick={() => {
+                  const prevId = selectedUserId;
+                  setSelectedUserId(null);
+                  setDraft(null);
+                  invalidatePreview();
+                  clearApplyResult();
+                  setTimeout(() => {
+                    if (prevId) {
+                      const btn = document.querySelector<HTMLButtonElement>(`button[data-user-id="${prevId}"]`);
+                      btn?.focus();
+                    }
+                  }, 50);
+                }}
+              >
+                ← Quay lại danh sách
+              </button>
+              {selectedUser ? (
+                <span className="mobile-workflow-bar__info" title={`Đang thao tác: ${selectedUser.username}`}>
+                  <span className="mobile-workflow-bar__info-prefix">Đang thao tác:</span>{' '}
+                  <strong className="mobile-workflow-bar__username">{selectedUser.username}</strong>
+                </span>
+              ) : draft ? (
+                <span className="mobile-workflow-bar__info">
+                  {draft.id ? `Sửa: ${draft.username}` : 'Tạo mới người dùng'}
+                </span>
+              ) : null}
+            </div>
+          )}
           {draft ? (
             /* CREATE / EDIT FORM */
             <form className="long-form" onSubmit={submitDraft}>
@@ -1126,26 +1335,44 @@ export function UsersPage() {
             <div className="space-y-4">
               {/* Selected User Header Card */}
               <div className="form-card" style={{ marginBottom: '16px' }}>
-                <div className="form-card-header form-card-header--blue">
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-sm">
-                      👤 {selectedUser.profile?.displayName ?? selectedUser.username}
+                <div className="selected-user-header">
+                  <div className="selected-user-header__profile">
+                    <span
+                      className="selected-user-header__avatar"
+                      aria-hidden="true"
+                    >
+                      {selectedUser.profile?.displayName
+                        ? selectedUser.profile.displayName.trim().charAt(0).toUpperCase()
+                        : selectedUser.username.charAt(0).toUpperCase()}
                     </span>
-                    <span className="technical-value text-xs bg-slate-800 text-sky-300 px-2 py-0.5 rounded">
-                      @{selectedUser.username}
-                    </span>
+                    <div className="selected-user-header__identity">
+                      <div className="selected-user-header__name-row">
+                        <span className="selected-user-header__name">
+                          👤 {selectedUser.profile?.displayName ?? selectedUser.username}
+                        </span>
+                      </div>
+                      <div className="selected-user-header__meta">
+                        <span className="technical-value selected-user-header__username">@{selectedUser.username}</span>
+                        {selectedUser.profile?.staffCode && (
+                          <span className="selected-user-header__staffcode">
+                            Mã: #{selectedUser.profile.staffCode}
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="selected-user-header__badges">
                     <StatusText
                       active={selectedUser.status === 'ACTIVE'}
                       activeLabel="Đang hoạt động"
                       inactiveLabel={statusLabel(selectedUser.status)}
+                      inactiveTone={selectedUser.status === 'LOCKED' || selectedUser.status === 'DISABLED' ? 'error' : 'warning'}
                     />
                     <span
-                      className={`text-xs px-2 py-0.5 rounded font-bold ${
+                      className={`selected-user-header__role-badge ${
                         selectedUser.profile?.isTeachingStaff
-                          ? 'bg-emerald-600 text-white'
-                          : 'bg-slate-600 text-slate-100'
+                          ? 'selected-user-header__role-badge--teaching'
+                          : 'selected-user-header__role-badge--staff'
                       }`}
                     >
                       {selectedUser.profile?.isTeachingStaff ? 'Nhân sự giảng dạy' : 'Nhân sự văn phòng / khác'}
@@ -1154,21 +1381,23 @@ export function UsersPage() {
                 </div>
 
                 {/* Workspace Navigation Tabs */}
-                <div className="workspace-tabs">
+                <div className="workspace-tabs" aria-label="Khu vực thao tác tài khoản">
                   <button
                     type="button"
                     className={`workspace-tab-btn ${
                       activeTab === 'templates' ? 'workspace-tab-btn--active' : ''
                     }`}
+                    aria-label="Mẫu phân quyền theo nhiệm vụ (Mẫu trách nhiệm)"
                     onClick={() => setActiveTab('templates')}
                   >
-                    🏷️ Mẫu trách nhiệm (Templates)
+                    🏷️ Mẫu phân quyền theo nhiệm vụ
                   </button>
                   <button
                     type="button"
                     className={`workspace-tab-btn ${
                       activeTab === 'profile' ? 'workspace-tab-btn--active' : ''
                     }`}
+                    aria-label="Hồ sơ & Trạng thái"
                     onClick={() => setActiveTab('profile')}
                   >
                     📋 Hồ sơ & Trạng thái
@@ -1179,8 +1408,9 @@ export function UsersPage() {
                       className={`workspace-tab-btn ${
                         activeTab === 'safe-delete'
                           ? 'workspace-tab-btn--danger workspace-tab-btn--active'
-                          : ''
+                          : 'workspace-tab-btn--danger'
                       }`}
+                      aria-label="Xóa tài khoản an toàn"
                       onClick={() => setActiveTab('safe-delete')}
                     >
                       🗑️ Xóa tài khoản an toàn
@@ -1192,7 +1422,7 @@ export function UsersPage() {
                 {activeTab === 'templates' && (
                   <div className="p-4 space-y-4">
                     <div className="text-sm text-slate-700">
-                      Gán quyền tự động theo <strong>Mẫu trách nhiệm được phê duyệt</strong>. Hệ thống sẽ kiểm tra
+                      Gán quyền tự động theo <strong>Mẫu phân quyền theo nhiệm vụ được phê duyệt</strong>. Hệ thống sẽ kiểm tra
                       tính hợp lệ, xung đột và thời hạn trước khi áp dụng.
                     </div>
 
@@ -1206,18 +1436,19 @@ export function UsersPage() {
                       />
                     ) : !templatesQuery.data?.items || templatesQuery.data.items.length === 0 ? (
                       <div className="p-4 bg-slate-100 border border-slate-300 rounded text-xs text-slate-700">
-                        Chưa có Mẫu trách nhiệm nào được cấu hình trên máy chủ.
+                        Chưa có Mẫu phân quyền nào được cấu hình trên máy chủ.
                       </div>
                     ) : (
                       <>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                           <div>
                             <label className="form-field__label" htmlFor="template-select">
-                              Chọn Mẫu trách nhiệm:
+                              Chọn Mẫu phân quyền theo nhiệm vụ:
                             </label>
                             <select
                               id="template-select"
                               className="form-field__input font-bold"
+                              aria-label="Chọn Mẫu phân quyền theo nhiệm vụ (Chọn Mẫu trách nhiệm)"
                               value={selectedTemplateKey}
                               onChange={(e) => {
                                 setSelectedTemplateKey(e.target.value as ResponsibilityTemplateKey);
@@ -1230,7 +1461,7 @@ export function UsersPage() {
                             >
                               {templatesQuery.data.items.map((t) => (
                                 <option key={t.key} value={t.key}>
-                                  {t.name} ({t.key})
+                                  {t.name}
                                 </option>
                               ))}
                             </select>
@@ -1344,7 +1575,7 @@ export function UsersPage() {
                                 <span>⚠️ Yêu cầu mô hình đọc tài nguyên quản trị (Administrative Read-Model)</span>
                               </div>
                               <p className="text-xs text-amber-900 leading-relaxed m-0">
-                                Mẫu trách nhiệm <strong>{selectedTemplateDef?.name || TEMPLATE_NAMES[selectedTemplateKey]}</strong> yêu cầu gán phạm vi theo chương trình đặc thù (<code>programmeMasterId</code>).
+                                Mẫu phân quyền <strong>{selectedTemplateDef?.name || TEMPLATE_NAMES[selectedTemplateKey]}</strong> yêu cầu chọn chương trình đào tạo tương ứng.
                               </p>
                               <p className="text-xs text-amber-900 leading-relaxed m-0">
                                 Hiện tại hệ thống chưa có API tra cứu danh mục chương trình dành riêng cho vai trò quản trị cấp quyền (<code>CAPABILITY_GRANT</code>). API <code>/api/programme-planning/masters</code> yêu cầu tham số <code>academicYearId</code> và quyền Ban Giám hiệu (<code>APPROVAL_PRINCIPAL</code> / <code>APPROVAL_VICE_PRINCIPAL</code>).
@@ -1355,7 +1586,7 @@ export function UsersPage() {
                                 </div>
                               )}
                               <div className="p-2.5 bg-amber-100 border border-amber-400 rounded text-xs font-semibold text-amber-950">
-                                🔒 Thao tác Xem trước và Áp dụng tạm thời bị khóa đối với mẫu này để bảo đảm tính toàn vẹn dữ liệu. Cần bổ sung read-model quản trị trước khi có thể sử dụng mẫu này.
+                                🔒 Thao tác Kiểm tra và Áp dụng tạm thời bị khóa đối với mẫu này để bảo đảm tính toàn vẹn dữ liệu. Cần hoàn thiện cấu hình chương trình trước khi sử dụng.
                               </div>
                             </div>
                           )}
@@ -1366,6 +1597,7 @@ export function UsersPage() {
                           <Button
                             type="button"
                             variant="secondary"
+                            aria-label="Kiểm tra quyền trước khi áp dụng (Xem trước thay đổi quyền)"
                             disabled={
                               coordinatorSelectorMissing ||
                               (selectedTemplateKey === 'SUBJECT_LEADER' && !subjectGroupId) ||
@@ -1374,13 +1606,14 @@ export function UsersPage() {
                             loading={templatePreviewMutation.isPending}
                             onClick={() => templatePreviewMutation.mutate()}
                           >
-                            👁️ Xem trước thay đổi quyền (Preview)
+                            👁️ Kiểm tra quyền trước khi áp dụng
                           </Button>
 
                           {templatePreview && canGrant && isCurrentSelectionMatchingPreview && (
                             <Button
                               type="button"
                               variant="primary"
+                              aria-label={`Áp dụng Mẫu phân quyền (${selectedTemplateDef?.name || TEMPLATE_NAMES[selectedTemplateKey]}) (Áp dụng Mẫu trách nhiệm)`}
                               disabled={
                                 !templatePreview.eligibility.isEligible ||
                                 !templatePreview.requiredResources.provided ||
@@ -1393,7 +1626,7 @@ export function UsersPage() {
                               loading={templateApplyMutation.isPending}
                               onClick={() => templateApplyMutation.mutate()}
                             >
-                              ✅ Áp dụng Mẫu trách nhiệm ({selectedTemplateDef?.name || TEMPLATE_NAMES[selectedTemplateKey]})
+                              ✅ Áp dụng Mẫu phân quyền ({selectedTemplateDef?.name || TEMPLATE_NAMES[selectedTemplateKey]})
                             </Button>
                           )}
                         </div>
@@ -1450,7 +1683,7 @@ export function UsersPage() {
                                 <div key={idx} className="delta-item delta-item--missing">
                                   <div>
                                     <div className="delta-item__key">
-                                      {g.capabilityKey} · {g.scopeType}
+                                      {capabilityKeyLabel(g.capabilityKey)} · {scopeTypeLabel(g.scopeType)}
                                       {g.scopeResourceId ? ` (${g.scopeResourceId})` : ''}
                                     </div>
                                     <div className="delta-item__desc">{g.description}</div>
@@ -1473,7 +1706,7 @@ export function UsersPage() {
                                 <div key={idx} className="delta-item delta-item--covered">
                                   <div>
                                     <div className="delta-item__key">
-                                      {g.capabilityKey} · {g.scopeType}
+                                      {capabilityKeyLabel(g.capabilityKey)} · {scopeTypeLabel(g.scopeType)}
                                     </div>
                                     <div className="delta-item__desc">{g.description}</div>
                                   </div>
@@ -1495,11 +1728,11 @@ export function UsersPage() {
                                 <div key={idx} className="delta-item delta-item--conflict">
                                   <div>
                                     <div className="delta-item__key">
-                                      {c.capabilityKey} · {c.scopeType}
+                                      {capabilityKeyLabel(c.capabilityKey)} · {scopeTypeLabel(c.scopeType)}
                                     </div>
                                     <div className="delta-item__desc text-rose-700">{c.reason}</div>
                                   </div>
-                                  <span className="delta-badge delta-badge--conflict">{c.status}</span>
+                                  <span className="delta-badge delta-badge--conflict">{conflictStatusLabel(c.status)}</span>
                                 </div>
                               ))}
                             </div>
@@ -1627,9 +1860,14 @@ export function UsersPage() {
                 {activeTab === 'safe-delete' && canManageUsers && (
                   <div className="p-4 space-y-4">
                     <div className="flex items-center justify-between">
-                      <h3 className="font-bold text-sm text-slate-900 uppercase">
-                        Kiểm tra điều kiện xóa sạch tài khoản (Clean-slate Delete Preflight)
-                      </h3>
+                      <div>
+                        <h3 className="font-bold text-sm text-slate-900 uppercase">
+                          Kiểm tra điều kiện xóa tài khoản an toàn
+                        </h3>
+                        <p className="text-[11px] text-slate-500 m-0">
+                          Xác minh tính khả thi xóa tài khoản sạch, không có lịch sử nghiệp vụ ràng buộc
+                        </p>
+                      </div>
                       <Button
                         type="button"
                         variant="quiet"
@@ -1662,7 +1900,10 @@ export function UsersPage() {
                               <ul className="list-disc pl-5 text-xs text-rose-700 space-y-1">
                                 {preflightQuery.data.blockers.map((b, idx) => (
                                   <li key={idx}>
-                                    <strong>[{b.code}]</strong>: {b.reason}
+                                    <code className="text-[11px] bg-rose-100 px-1 py-0.5 rounded text-rose-800 mr-1.5 font-mono">
+                                      [{b.code}]
+                                    </code>
+                                    <span>{b.reason}</span>
                                   </li>
                                 ))}
                               </ul>
@@ -1686,7 +1927,7 @@ export function UsersPage() {
                         ) : (
                           <div className="p-4 bg-amber-50 border border-amber-300 rounded space-y-3">
                             <div className="flex items-center gap-2 text-amber-900 font-bold">
-                              <span>⚠️ TÀI KHOẢN SẠCH — ĐỦ ĐIỀU KIỆN XÓA (CLEAN-SLATE)</span>
+                              <span>⚠️ TÀI KHOẢN SẠCH — ĐỦ ĐIỀU KIỆN XÓA (CHƯA CÓ RÀNG BUỘC)</span>
                             </div>
                             <p className="text-xs text-amber-800">
                               Tài khoản này chưa phát sinh lịch sử đăng nhập, phân công hay hoạt động nghiệp vụ nào.
@@ -1697,11 +1938,11 @@ export function UsersPage() {
                               <div className="text-xs text-slate-700 p-2.5 bg-white rounded border border-amber-200">
                                 <strong>Dữ liệu liên kết sẽ được dọn dẹp an toàn:</strong>
                                 <ul className="list-disc pl-5 mt-1 space-y-0.5">
-                                  <li>Hồ sơ nhân sự (StaffProfile): {preflightQuery.data.cleanupCounts.staffProfiles}</li>
+                                  <li>Hồ sơ thông tin nhân sự: {preflightQuery.data.cleanupCounts.staffProfiles} bản ghi</li>
                                   <li>
-                                    Thành viên tổ chuyên môn: {preflightQuery.data.cleanupCounts.subjectGroupMemberships}
+                                    Thành viên tổ chuyên môn: {preflightQuery.data.cleanupCounts.subjectGroupMemberships} bản ghi
                                   </li>
-                                  <li>Phân công môn giảng dạy: {preflightQuery.data.cleanupCounts.staffSubjects}</li>
+                                  <li>Phân công môn giảng dạy: {preflightQuery.data.cleanupCounts.staffSubjects} bản ghi</li>
                                 </ul>
                               </div>
                             )}
@@ -1764,23 +2005,50 @@ export function UsersPage() {
               </div>
             </div>
           ) : (
-            /* EMPTY RIGHT PANEL */
-            <div className="form-card p-12 text-center space-y-3">
-              <div className="text-4xl">👥</div>
-              <h3 className="font-bold text-base text-slate-800">Chưa chọn người dùng</h3>
-              <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                Hãy chọn một tài khoản từ danh sách bên trái để xem chi tiết hồ sơ, gán Mẫu trách nhiệm hoặc kiểm tra
-                điều kiện xóa an toàn.
-              </p>
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => {
-                  setDraft({ ...emptyDraft });
-                }}
-              >
-                ➕ Thêm tài khoản mới
-              </Button>
+            /* EMPTY RIGHT PANEL: GOOGLE ADMIN-STYLE GUIDED OVERVIEW */
+            <div className="empty-workspace-guide">
+              <div className="empty-workspace-guide__header">
+                <span>Chưa chọn người dùng</span>
+                <span className="text-[11px] bg-blue-800 text-blue-100 px-2 py-0.5 rounded font-semibold">Sẵn sàng</span>
+              </div>
+              <div className="empty-workspace-guide__body">
+                <div className="space-y-1 mb-4">
+                  <h3 className="font-bold text-base text-slate-900 m-0">Trung tâm Phân quyền & Quản trị Nhân sự</h3>
+                  <p className="text-xs text-slate-600 m-0 leading-relaxed">
+                    Hệ thống hỗ trợ gán quyền tự động theo Mẫu phân quyền theo nhiệm vụ được phê duyệt, kiểm tra quyền trước khi áp dụng và đối soát chuẩn chuyên môn toàn trường.
+                  </p>
+                </div>
+
+                <div className="empty-workspace-guide__grid">
+                  <div className="empty-guide-card empty-guide-card--blue">
+                    <h4>👤 1. Chọn tài khoản</h4>
+                    <p>Nhấp vào bất kỳ tài khoản nào trong danh sách bên trái để mở hồ sơ nhân sự, trạng thái tài khoản và bảng phân quyền.</p>
+                  </div>
+                  <div className="empty-guide-card empty-guide-card--indigo">
+                    <h4>🏷️ 2. Mẫu phân quyền theo nhiệm vụ</h4>
+                    <p>Áp dụng các mẫu chuẩn hóa (Giáo viên, Tổ trưởng...) với cơ chế kiểm tra quyền trước khi áp dụng đảm bảo an toàn tuyệt đối trước khi cấp quyền.</p>
+                  </div>
+                  <div className="empty-guide-card empty-guide-card--teal">
+                    <h4>⚖️ 3. Đối soát toàn trường</h4>
+                    <p>Sử dụng nút "Đối soát chuẩn chuyên môn" phía trên để rà soát tự động 100% giáo viên giảng dạy đủ điều kiện.</p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3 pt-3 border-t border-slate-200">
+                  <Button
+                    type="button"
+                    variant="primary"
+                    onClick={() => {
+                      setDraft({ ...emptyDraft });
+                    }}
+                  >
+                    ➕ Thêm tài khoản mới
+                  </Button>
+                  <span className="text-xs text-slate-500 font-medium">
+                    Hoặc nhấp vào một dòng trong danh sách bên trái để bắt đầu thao tác.
+                  </span>
+                </div>
+              </div>
             </div>
           )}
         </div>
