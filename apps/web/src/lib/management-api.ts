@@ -1,8 +1,9 @@
 import type {
+  AcademicYearOptionListResponse,
   AdditionalDutyDefinitionListResponse, AdditionalDutyDefinitionOptionsResponse, AdditionalDutyDefinitionRecord,
   AuditEventListResponse, BaselineReconciliationApplyRequest, BaselineReconciliationApplyResponse,
   BaselineReconciliationPreviewResponse, CapabilityDefinitionListResponse, CapabilityGrantListResponse, CapabilityGrantRecord,
-  CapabilityScope, CatalogEntry, CatalogListResponse, ResponsibilityTemplateApplyRequest,
+  CapabilityScope, CatalogEntry, CatalogListResponse, ProgrammeMasterOptionListResponse, ResponsibilityTemplateApplyRequest,
   ResponsibilityTemplateApplyResponse, ResponsibilityTemplateListResponse, ResponsibilityTemplatePreviewRequest,
   ResponsibilityTemplatePreviewResponse, StaffAdditionalDutyAssignmentListResponse,
   StaffAdditionalDutyAssignmentRecord, StaffSubjectListResponse, StaffSubjectRecord,
@@ -35,6 +36,10 @@ export const usersApi = {
 
 export const responsibilityTemplatesApi = {
   list: () => apiFetch<ResponsibilityTemplateListResponse>('/capabilities/responsibility-templates', { notifyUnauthorized: true }),
+  academicYearOptions: (q?: { page?: number; pageSize?: number }) =>
+    apiFetch<AcademicYearOptionListResponse>(`/capabilities/responsibility-templates/academic-year-options${q ? queryString(q) : ''}`, { notifyUnauthorized: true }),
+  programmeMasterOptions: (q: { academicYearId: string; kind: 'GDDP' | 'HDTN_HN'; page?: number; pageSize?: number }) =>
+    apiFetch<ProgrammeMasterOptionListResponse>(`/capabilities/responsibility-templates/programme-master-options${queryString(q)}`, { notifyUnauthorized: true }),
   preview: (userId: string, input: ResponsibilityTemplatePreviewRequest) =>
     apiFetch<ResponsibilityTemplatePreviewResponse>(`/users/${userId}/responsibility-templates/preview`, json('POST', input)),
   apply: (userId: string, input: ResponsibilityTemplateApplyRequest) =>

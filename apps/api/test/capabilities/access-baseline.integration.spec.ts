@@ -1,3 +1,4 @@
+import request from 'supertest';
 import { CatalogStatus, UserStatus } from '@prisma/client';
 import { AccessBaselineService } from '../../src/capabilities/access-baseline.service';
 import { CapabilityAuthorizationService } from '../../src/authorization/capability-authorization.service';
@@ -1165,5 +1166,195 @@ integration('P5-051 Professional Baseline & Responsibility Templates (Isolated P
     expect(effectiveKeys).not.toContain('REPORTING_READ');
     expect(effectiveKeys).not.toContain('REPORTING_STATEMENT_READ');
     expect(effective).toHaveLength(0);
+  });
+
+  // =========================================================================
+  // 41. Administrative Read-Model Options Authentication & Authorization boundaries
+  // =========================================================================
+  it('41. Administrative Read-Model Options enforces authentication and CAPABILITY_GRANT guard', async () => {
+    const unauthenticated = request(h.app.getHttpServer());
+    const noGrantActor = await h.actor();
+    const userManageActor = await h.actor({ grants: [{ capabilityKey: 'USER_MANAGE' }] });
+    const systemAdminActor = await h.actor({ grants: [{ capabilityKey: 'SYSTEM_ADMIN' }] });
+    const principalActor = await h.actor({ grants: [{ capabilityKey: 'APPROVAL_PRINCIPAL' }] });
+    const academicStructureActor = await h.actor({ grants: [{ capabilityKey: 'ACADEMIC_STRUCTURE_MANAGE' }] });
+    const manager = await h.actor({ grants: [{ capabilityKey: 'CAPABILITY_GRANT' }] });
+
+    const fakeUuid = '00000000-0000-4000-8000-000000000000';
+
+    // 401 unauthenticated
+    expect((await unauthenticated.get('/api/capabilities/responsibility-templates/academic-year-options')).status).toBe(401);
+    expect((await unauthenticated.get(`/api/capabilities/responsibility-templates/programme-master-options?academicYearId=${fakeUuid}&kind=GDDP`)).status).toBe(401);
+
+    // 403 when lacking CAPABILITY_GRANT (no role substitution allowed)
+    for (const actor of [noGrantActor, userManageActor, systemAdminActor, principalActor, academicStructureActor]) {
+      expect((await actor.agent.get('/api/capabilities/responsibility-templates/academic-year-options')).status).toBe(403);
+      expect((await actor.agent.get(`/api/capabilities/responsibility-templates/programme-master-options?academicYearId=${fakeUuid}&kind=GDDP`)).status).toBe(403);
+    }
+
+    // 200 with CAPABILITY_GRANT
+    expect((await manager.agent.get('/api/capabilities/responsibility-templates/academic-year-options')).status).toBe(200);
+    expect((await manager.agent.get(`/api/capabilities/responsibility-templates/programme-master-options?academicYearId=${fakeUuid}&kind=GDDP`)).status).toBe(200);
+  });
+
+  // =========================================================================
+  // 42. Administrative Read-Model Options Validation and Data Isolation
+  // =========================================================================
+  it('42. Administrative Read-Model Options validates inputs, isolates datasets, and enforces minimal projection', async () => {
+    const manager = await h.actor({ grants: [{ capabilityKey: 'CAPABILITY_GRANT' }] });
+
+    // Validation errors: 400 for invalid UUID or invalid kind
+    expect((await manager.agent.get('/api/capabilities/responsibility-templates/programme-master-options?academicYearId=not-a-uuid&kind=GDDP')).status).toBe(400);
+    expect((await manager.agent.get('/api/capabilities/responsibility-templates/programme-master-options?academicYearId=00000000-0000-4000-8000-000000000000&kind=INVALID')).status).toBe(400);
+    expect((await manager.agent.get('/api/capabilities/responsibility-templates/programme-master-options?kind=GDDP')).status).toBe(400);
+
+    // Seed test data across 2 academic years
+    const yearA = await h.prisma.academicYear.create({ data: { code: '2026_2027', name: 'Năm học 2026-2027' } });
+    const yearB = await h.prisma.academicYear.create({ data: { code: '2025_2026', name: 'Năm học 2025-2026' } });
+
+    const masterA_GDDP = await h.prisma.programmeMaster.create({
+      data: { academicYearId: yearA.id, kind: 'GDDP', gradeLevel: 10, createdByUserId: manager.id },
+    });
+    const masterA_HDTN = await h.prisma.programmeMaster.create({
+      data: { academicYearId: yearA.id, kind: 'HDTN_HN', gradeLevel: null, createdByUserId: manager.id },
+    });
+    const masterB_GDDP = await h.prisma.programmeMaster.create({
+      data: { academicYearId: yearB.id, kind: 'GDDP', gradeLevel: 11, createdByUserId: manager.id },
+    });
+
+    // 1. Academic years options: strictly { id, code, name }, ordered code desc
+    const yearRes = await manager.agent.get('/api/capabilities/responsibility-templates/academic-year-options');
+    expect(yearRes.status).toBe(200);
+    expect(yearRes.body.total).toBe(2);
+    expect(yearRes.body.items[0]).toEqual({ id: yearA.id, code: '2026_2027', name: 'Năm học 2026-2027' });
+    expect(yearRes.body.items[1]).toEqual({ id: yearB.id, code: '2025_2026', name: 'Năm học 2025-2026' });
+    expect(yearRes.body.items[0]).not.toHaveProperty('createdAt');
+    expect(yearRes.body.items[0]).not.toHaveProperty('updatedAt');
+
+    // 2. Programme master options for yearA + GDDP: only masterA_GDDP
+    const masterResA = await manager.agent.get(
+      `/api/capabilities/responsibility-templates/programme-master-options?academicYearId=${yearA.id}&kind=GDDP`,
+    );
+    expect(masterResA.status).toBe(200);
+    expect(masterResA.body.total).toBe(1);
+    expect(masterResA.body.items[0]).toEqual({
+      id: masterA_GDDP.id,
+      academicYearId: yearA.id,
+      kind: 'GDDP',
+      gradeLevel: 10,
+    });
+    expect(masterResA.body.items[0]).not.toHaveProperty('createdByUserId');
+    expect(masterResA.body.items[0]).not.toHaveProperty('createdAt');
+
+    // 3. Programme master options for yearA + HDTN_HN: only masterA_HDTN
+    const masterResHDTN = await manager.agent.get(
+      `/api/capabilities/responsibility-templates/programme-master-options?academicYearId=${yearA.id}&kind=HDTN_HN`,
+    );
+    expect(masterResHDTN.status).toBe(200);
+    expect(masterResHDTN.body.total).toBe(1);
+    expect(masterResHDTN.body.items[0].id).toBe(masterA_HDTN.id);
+
+    // 4. Programme master options for yearB + GDDP: only masterB_GDDP
+    const masterResB = await manager.agent.get(
+      `/api/capabilities/responsibility-templates/programme-master-options?academicYearId=${yearB.id}&kind=GDDP`,
+    );
+    expect(masterResB.status).toBe(200);
+    expect(masterResB.body.total).toBe(1);
+    expect(masterResB.body.items[0].id).toBe(masterB_GDDP.id);
+
+    // 5. Programme master options for yearB + HDTN_HN: empty list
+    const masterResEmpty = await manager.agent.get(
+      `/api/capabilities/responsibility-templates/programme-master-options?academicYearId=${yearB.id}&kind=HDTN_HN`,
+    );
+    expect(masterResEmpty.status).toBe(200);
+    expect(masterResEmpty.body.total).toBe(0);
+    expect(masterResEmpty.body.items).toEqual([]);
+  });
+
+  // =========================================================================
+  // 43. Coordinator Template Preview and Apply Flow with Canonical Keys
+  // =========================================================================
+  it('43. Coordinator responsibility templates preview and apply with read-model master id and canonical capability keys', async () => {
+    const manager = await h.actor({ grants: [{ capabilityKey: 'CAPABILITY_GRANT' }] });
+    const targetUserId = await createTestUser({ status: UserStatus.ACTIVE, isTeachingStaff: true });
+
+    const year = await h.prisma.academicYear.create({ data: { code: '2026_2027_COORD', name: 'Năm học Điều phối' } });
+    const masterGDDP = await h.prisma.programmeMaster.create({
+      data: { academicYearId: year.id, kind: 'GDDP', gradeLevel: 10, createdByUserId: manager.id },
+    });
+    const masterHDTN = await h.prisma.programmeMaster.create({
+      data: { academicYearId: year.id, kind: 'HDTN_HN', gradeLevel: null, createdByUserId: manager.id },
+    });
+
+    // 1. Preview GDDP_COORDINATOR with matching master
+    const previewGDDP = await manager.agent
+      .post(`/api/users/${targetUserId}/responsibility-templates/preview`)
+      .set('Origin', testOrigin)
+      .send({
+        templateKey: 'GDDP_COORDINATOR',
+        programmeMasterId: masterGDDP.id,
+      });
+    expect(previewGDDP.status).toBe(200);
+    expect(previewGDDP.body.eligibility.isEligible).toBe(true);
+    expect(previewGDDP.body.requiredResources.provided).toBe(true);
+    expect(previewGDDP.body.requiredResources.resolvedProgrammeMasterId).toBe(masterGDDP.id);
+
+    // Apply GDDP_COORDINATOR
+    const applyGDDP = await manager.agent
+      .post(`/api/users/${targetUserId}/responsibility-templates/apply`)
+      .set('Origin', testOrigin)
+      .send({
+        templateKey: 'GDDP_COORDINATOR',
+        programmeMasterId: masterGDDP.id,
+      });
+    expect(applyGDDP.status).toBe(200);
+    expect(applyGDDP.body.applied).toBe(true);
+    expect(applyGDDP.body.grantsAdded[0].capabilityKey).toBe('GDDP_COORDINATOR');
+    expect(applyGDDP.body.grantsAdded[0].scopeResourceId).toBe(masterGDDP.id);
+
+    // 2. Preview HDTN_COORDINATOR with matching master -> grants canonical HĐTN_COORDINATOR
+    const previewHDTN = await manager.agent
+      .post(`/api/users/${targetUserId}/responsibility-templates/preview`)
+      .set('Origin', testOrigin)
+      .send({
+        templateKey: 'HDTN_COORDINATOR',
+        programmeMasterId: masterHDTN.id,
+      });
+    expect(previewHDTN.status).toBe(200);
+    expect(previewHDTN.body.eligibility.isEligible).toBe(true);
+    expect(previewHDTN.body.requiredResources.resolvedProgrammeMasterId).toBe(masterHDTN.id);
+
+    const applyHDTN = await manager.agent
+      .post(`/api/users/${targetUserId}/responsibility-templates/apply`)
+      .set('Origin', testOrigin)
+      .send({
+        templateKey: 'HDTN_COORDINATOR',
+        programmeMasterId: masterHDTN.id,
+      });
+    expect(applyHDTN.status).toBe(200);
+    expect(applyHDTN.body.applied).toBe(true);
+    // Canonical capability key has 'Đ'
+    expect(applyHDTN.body.grantsAdded[0].capabilityKey).toBe('HĐTN_COORDINATOR');
+    expect(applyHDTN.body.grantsAdded[0].scopeResourceId).toBe(masterHDTN.id);
+
+    // 3. Conflict when previewing GDDP_COORDINATOR with HDTN master
+    const conflictRes = await manager.agent
+      .post(`/api/users/${targetUserId}/responsibility-templates/preview`)
+      .set('Origin', testOrigin)
+      .send({
+        templateKey: 'GDDP_COORDINATOR',
+        programmeMasterId: masterHDTN.id,
+      });
+    expect(conflictRes.status).toBe(409);
+
+    // 4. NotFound when programmeMasterId does not exist
+    const notFoundRes = await manager.agent
+      .post(`/api/users/${targetUserId}/responsibility-templates/preview`)
+      .set('Origin', testOrigin)
+      .send({
+        templateKey: 'GDDP_COORDINATOR',
+        programmeMasterId: '00000000-0000-4000-8000-000000000000',
+      });
+    expect(notFoundRes.status).toBe(404);
   });
 });

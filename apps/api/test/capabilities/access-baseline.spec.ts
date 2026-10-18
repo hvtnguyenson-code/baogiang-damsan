@@ -697,4 +697,67 @@ describe('P5-051 Access Baseline & Responsibility Template Unit Tests', () => {
       expect(preview.grantsToAdd).toHaveLength(4);
     });
   });
+
+  describe('Administrative Read-Model Options Unit Tests', () => {
+    it('34. listAcademicYearOptions returns paginated academic years ordered by code desc', async () => {
+      const mockPrisma = {
+        academicYear: {
+          count: jest.fn().mockResolvedValue(2),
+          findMany: jest.fn().mockResolvedValue([
+            { id: 'year-2', code: '2026_2027', name: 'Năm học 2026-2027' },
+            { id: 'year-1', code: '2025_2026', name: 'Năm học 2025-2026' },
+          ]),
+        },
+      };
+      const service = new AccessBaselineService(mockPrisma as never, {} as never);
+
+      const result = await service.listAcademicYearOptions({ page: 1, pageSize: 20 });
+      expect(result.total).toBe(2);
+      expect(result.totalPages).toBe(1);
+      expect(result.items).toHaveLength(2);
+      expect(result.items[0].code).toBe('2026_2027');
+      expect(mockPrisma.academicYear.findMany).toHaveBeenCalledWith({
+        select: { id: true, code: true, name: true },
+        orderBy: { code: 'desc' },
+        skip: 0,
+        take: 20,
+      });
+    });
+
+    it('35. listProgrammeMasterOptions returns paginated programme masters filtered by academicYearId and kind', async () => {
+      const mockPrisma = {
+        programmeMaster: {
+          count: jest.fn().mockResolvedValue(1),
+          findMany: jest.fn().mockResolvedValue([
+            { id: 'master-1', academicYearId: 'year-1', kind: 'GDDP', gradeLevel: 10 },
+          ]),
+        },
+      };
+      const service = new AccessBaselineService(mockPrisma as never, {} as never);
+
+      const result = await service.listProgrammeMasterOptions({
+        academicYearId: 'year-1',
+        kind: 'GDDP',
+        page: 1,
+        pageSize: 10,
+      });
+
+      expect(result.total).toBe(1);
+      expect(result.totalPages).toBe(1);
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]).toEqual({
+        id: 'master-1',
+        academicYearId: 'year-1',
+        kind: 'GDDP',
+        gradeLevel: 10,
+      });
+      expect(mockPrisma.programmeMaster.findMany).toHaveBeenCalledWith({
+        where: { academicYearId: 'year-1', kind: 'GDDP' },
+        select: { id: true, academicYearId: true, kind: true, gradeLevel: true },
+        orderBy: [{ gradeLevel: 'asc' }, { id: 'asc' }],
+        skip: 0,
+        take: 10,
+      });
+    });
+  });
 });

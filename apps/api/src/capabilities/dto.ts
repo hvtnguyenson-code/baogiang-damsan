@@ -113,3 +113,16 @@ export class BaselineReconciliationApplyDto {
   @IsUUID('4', { each: true })
   targetUserIds?: string[];
 }
+
+export class ListAcademicYearOptionsDto extends CapabilityPageDto {}
+
+export const PROGRAMME_MASTER_OPTION_KINDS = ['GDDP', 'HDTN_HN'] as const;
+export type ProgrammeMasterOptionKind = (typeof PROGRAMME_MASTER_OPTION_KINDS)[number];
+
+export class ListProgrammeMasterOptionsDto extends CapabilityPageDto {
+  @IsUUID('4')
+  academicYearId!: string;
+
+  @IsEnum(PROGRAMME_MASTER_OPTION_KINDS)
+  kind!: ProgrammeMasterOptionKind;
+}

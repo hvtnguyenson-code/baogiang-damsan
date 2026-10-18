@@ -1,9 +1,11 @@
 import type {
+  AcademicYearOptionListResponse,
   BaselineReconciliationApplyResponse,
   BaselineReconciliationConflictUser,
   BaselineReconciliationMissingUser,
   BaselineReconciliationPreviewResponse,
   CatalogListResponse,
+  ProgrammeMasterOptionListResponse,
   ResponsibilityTemplateApplyResponse,
   ResponsibilityTemplateDefinition,
   ResponsibilityTemplateKey,
@@ -13,7 +15,7 @@ import type {
   UserManagementRecord,
 } from '@baogiang/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useAuth } from '../auth/auth-context';
 import { Button } from '../components/ui/button';
 import { FormField } from '../components/ui/form-field';
@@ -34,7 +36,7 @@ import {
   type UserInput,
 } from '../lib/management-api';
 import { hasSchoolCapability } from '../lib/capabilities';
-import { ApiError, apiFetch } from '../lib/api-client';
+import { ApiError } from '../lib/api-client';
 
 type UserDraft = {
   id?: string;
@@ -170,6 +172,7 @@ export function UsersPage() {
   const [selectedTemplateKey, setSelectedTemplateKey] = useState<ResponsibilityTemplateKey>('TEACHER');
   const [subjectGroupId, setSubjectGroupId] = useState('');
   const [subjectIds, setSubjectIds] = useState<string[]>([]);
+  const [academicYearId, setAcademicYearId] = useState('');
   const [programmeMasterId, setProgrammeMasterId] = useState('');
   const [templatePreview, setTemplatePreview] = useState<ResponsibilityTemplatePreviewResponse | null>(null);
   const [templatePreviewError, setTemplatePreviewError] = useState('');
@@ -231,38 +234,36 @@ export function UsersPage() {
     enabled: selectedTemplateKey === 'SUBJECT_LEADER',
   });
 
-  // Programme master lookup attempt for coordinators
+  // Administrative read-model queries for coordinators
   const isCoordinatorTemplate =
     selectedTemplateKey === 'GDDP_COORDINATOR' || selectedTemplateKey === 'HDTN_COORDINATOR';
-  const programmeKind = selectedTemplateKey === 'GDDP_COORDINATOR' ? 'GDDP' : 'HDTN_HN';
+  const programmeKind: 'GDDP' | 'HDTN_HN' =
+    selectedTemplateKey === 'GDDP_COORDINATOR' ? 'GDDP' : 'HDTN_HN';
 
-  const [coordinatorLookupError, setCoordinatorLookupError] = useState<string>('');
-  const programmeMastersQuery = useQuery<{ id: string; code?: string; name?: string; kind: string }[]>({
-    queryKey: ['programme-masters', programmeKind],
-    queryFn: async () => {
-      setCoordinatorLookupError('');
-      try {
-        const res = await apiFetch<Array<{ id: string; code?: string; name?: string; kind: string }>>(
-          `/programme-planning/masters?kind=${programmeKind}`,
-          { notifyUnauthorized: false },
-        );
-        return Array.isArray(res) ? res : [];
-      } catch (err) {
-        if (err instanceof ApiError) {
-          if (err.statusCode === 400) {
-            setCoordinatorLookupError('400 (Yêu cầu không hợp lệ): Thiếu tham số bắt buộc academicYearId theo đặc tả hợp đồng ListProgrammeMastersDto.');
-          } else if (err.statusCode === 403) {
-            setCoordinatorLookupError('403 (Không có quyền): Quản trị viên cấp quyền (CAPABILITY_GRANT) không có thẩm quyền chuyên môn Ban Giám hiệu (APPROVAL_PRINCIPAL) hoặc quyền điều phối trước đó.');
-          } else {
-            setCoordinatorLookupError(`${err.statusCode}: ${err.message || 'Lỗi tra cứu chương trình đặc thù.'}`);
-          }
-        } else {
-          setCoordinatorLookupError('Lỗi mạng hoặc không thể kết nối tới máy chủ khi tra cứu chương trình đặc thù.');
-        }
-        return [];
-      }
-    },
-    enabled: isCoordinatorTemplate,
+  const academicYearsQuery = useQuery<AcademicYearOptionListResponse>({
+    queryKey: ['academic-year-options'],
+    queryFn: () => responsibilityTemplatesApi.academicYearOptions({ page: 1, pageSize: 100 }),
+    enabled: canGrant && isCoordinatorTemplate,
+    retry: false,
+  });
+
+  // Auto-select academic year only when exactly one option exists in the catalog and not yet selected
+  useEffect(() => {
+    if (isCoordinatorTemplate && academicYearsQuery.data?.items?.length === 1 && !academicYearId) {
+      setAcademicYearId(academicYearsQuery.data.items[0].id);
+    }
+  }, [isCoordinatorTemplate, academicYearsQuery.data?.items, academicYearId]);
+
+  const programmeMastersQuery = useQuery<ProgrammeMasterOptionListResponse>({
+    queryKey: ['programme-master-options', academicYearId, programmeKind],
+    queryFn: () =>
+      responsibilityTemplatesApi.programmeMasterOptions({
+        academicYearId,
+        kind: programmeKind,
+        page: 1,
+        pageSize: 100,
+      }),
+    enabled: canGrant && isCoordinatorTemplate && Boolean(academicYearId),
     retry: false,
   });
 
@@ -546,6 +547,8 @@ export function UsersPage() {
     setSuccess('');
     setDraft(null);
     setSelectedUserId(user.id);
+    setAcademicYearId('');
+    setProgrammeMasterId('');
     invalidatePreview();
     clearApplyResult();
     setDeleteError('');
@@ -641,7 +644,7 @@ export function UsersPage() {
 
   // Check if coordinator selector is missing
   const coordinatorSelectorMissing =
-    isCoordinatorTemplate && (!programmeMastersQuery.data || programmeMastersQuery.data.length === 0);
+    isCoordinatorTemplate && (!academicYearId || !programmeMasterId);
 
   const isDetailActive = selectedUserId !== null || draft !== null;
 
@@ -1448,6 +1451,7 @@ export function UsersPage() {
                                 setSelectedTemplateKey(e.target.value as ResponsibilityTemplateKey);
                                 setSubjectGroupId('');
                                 setSubjectIds([]);
+                                setAcademicYearId('');
                                 setProgrammeMasterId('');
                                 invalidatePreview();
                                 clearApplyResult();
@@ -1564,24 +1568,102 @@ export function UsersPage() {
 
                           {/* Coordinator Resources */}
                           {isCoordinatorTemplate && (
-                            <div className="md:col-span-2 p-4 bg-amber-50 border border-amber-300 rounded space-y-3">
-                              <div className="flex items-center gap-2 text-amber-950 font-bold text-sm">
-                                <span>⚠️ Yêu cầu mô hình đọc tài nguyên quản trị (Administrative Read-Model)</span>
+                            <div className="md:col-span-2 p-4 bg-blue-50/50 border border-blue-200 rounded-lg space-y-4">
+                              <div>
+                                <div className="flex items-center gap-2 text-blue-950 font-bold text-sm">
+                                  <span>📋 Tài nguyên phụ trách: Chương trình {programmeKind === 'GDDP' ? 'Giáo dục địa phương (GDĐP)' : 'Hoạt động trải nghiệm, hướng nghiệp (HĐTN-HN)'}</span>
+                                </div>
+                                <p className="text-xs text-blue-900 mt-1 mb-0">
+                                  Chọn năm học và chương trình đào tạo tương ứng để cấp quyền điều phối cho người dùng.
+                                </p>
                               </div>
-                              <p className="text-xs text-amber-900 leading-relaxed m-0">
-                                Mẫu phân quyền <strong>{selectedTemplateDef?.name || TEMPLATE_NAMES[selectedTemplateKey]}</strong> yêu cầu chọn chương trình đào tạo tương ứng.
-                              </p>
-                              <p className="text-xs text-amber-900 leading-relaxed m-0">
-                                Hiện tại hệ thống chưa có API tra cứu danh mục chương trình dành riêng cho vai trò quản trị cấp quyền (<code>CAPABILITY_GRANT</code>). API <code>/api/programme-planning/masters</code> yêu cầu tham số <code>academicYearId</code> và quyền Ban Giám hiệu (<code>APPROVAL_PRINCIPAL</code> / <code>APPROVAL_VICE_PRINCIPAL</code>).
-                              </p>
-                              {coordinatorLookupError && (
-                                <div className="p-2.5 bg-rose-100 border border-rose-300 rounded text-xs text-rose-900 font-mono">
-                                  Chi tiết phản hồi máy chủ: {coordinatorLookupError}
+
+                              {/* Academic Year Selection */}
+                              <div className="space-y-1.5">
+                                <label htmlFor="coordinator-academic-year-select" className="block text-xs font-semibold text-slate-800">
+                                  1. Chọn năm học <span className="text-rose-600">*</span>
+                                </label>
+                                {academicYearsQuery.isPending ? (
+                                  <div className="text-xs text-slate-600 italic py-1">⏳ Đang tải danh mục năm học...</div>
+                                ) : academicYearsQuery.isError ? (
+                                  <div className="p-2.5 bg-rose-50 border border-rose-200 rounded text-xs text-rose-800">
+                                    ❌ Không thể tải danh mục năm học: {academicYearsQuery.error instanceof Error ? academicYearsQuery.error.message : 'Lỗi kết nối hoặc không có quyền truy cập.'}
+                                  </div>
+                                ) : academicYearsQuery.data?.items?.length === 0 ? (
+                                  <div className="p-2.5 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800">
+                                    ⚠️ Hệ thống chưa có năm học nào được thiết lập.
+                                  </div>
+                                ) : (
+                                  <select
+                                    id="coordinator-academic-year-select"
+                                    aria-label="Chọn năm học cho mẫu điều phối"
+                                    className="form-field__input w-full"
+                                    value={academicYearId}
+                                    onChange={(e) => {
+                                      const newYearId = e.target.value;
+                                      setAcademicYearId(newYearId);
+                                      setProgrammeMasterId('');
+                                      invalidatePreview();
+                                      clearApplyResult();
+                                    }}
+                                  >
+                                    <option value="">-- Chọn năm học --</option>
+                                    {academicYearsQuery.data.items.map((y) => (
+                                      <option key={y.id} value={y.id}>
+                                        {y.name} ({y.code})
+                                      </option>
+                                    ))}
+                                  </select>
+                                )}
+                              </div>
+
+                              {/* Programme Master Selection */}
+                              <div className="space-y-1.5">
+                                <label htmlFor="coordinator-programme-master-select" className="block text-xs font-semibold text-slate-800">
+                                  2. Chọn chương trình {programmeKind === 'GDDP' ? 'Giáo dục địa phương (GDĐP)' : 'Hoạt động trải nghiệm, hướng nghiệp (HĐTN-HN)'} <span className="text-rose-600">*</span>
+                                </label>
+                                {!academicYearId ? (
+                                  <div className="text-xs text-slate-500 italic py-1">
+                                    ℹ️ Vui lòng chọn năm học ở bước 1 trước khi chọn chương trình.
+                                  </div>
+                                ) : programmeMastersQuery.isPending ? (
+                                  <div className="text-xs text-slate-600 italic py-1">⏳ Đang tải danh sách chương trình đào tạo...</div>
+                                ) : programmeMastersQuery.isError ? (
+                                  <div className="p-2.5 bg-rose-50 border border-rose-200 rounded text-xs text-rose-800">
+                                    ❌ Không thể tải danh sách chương trình: {programmeMastersQuery.error instanceof Error ? programmeMastersQuery.error.message : 'Lỗi kết nối hoặc không có quyền.'}
+                                  </div>
+                                ) : programmeMastersQuery.data?.items?.length === 0 ? (
+                                  <div className="p-2.5 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800">
+                                    ⚠️ Năm học này chưa có chương trình đào tạo nào thuộc loại {programmeKind === 'GDDP' ? 'Giáo dục địa phương (GDĐP)' : 'Hoạt động trải nghiệm, hướng nghiệp (HĐTN-HN)'}.
+                                  </div>
+                                ) : (
+                                  <select
+                                    id="coordinator-programme-master-select"
+                                    aria-label="Chọn chương trình đào tạo cho mẫu điều phối"
+                                    className="form-field__input w-full"
+                                    value={programmeMasterId}
+                                    onChange={(e) => {
+                                      const newMasterId = e.target.value;
+                                      setProgrammeMasterId(newMasterId);
+                                      invalidatePreview();
+                                      clearApplyResult();
+                                    }}
+                                  >
+                                    <option value="">-- Chọn chương trình đào tạo --</option>
+                                    {programmeMastersQuery.data.items.map((m) => (
+                                      <option key={m.id} value={m.id}>
+                                        Chương trình {m.kind === 'GDDP' ? 'Giáo dục địa phương' : 'Hoạt động trải nghiệm, hướng nghiệp'} - {m.gradeLevel ? `Khối ${m.gradeLevel}` : 'Toàn trường'} ({m.id.slice(0, 8)})
+                                      </option>
+                                    ))}
+                                  </select>
+                                )}
+                              </div>
+
+                              {programmeMasterId && (
+                                <div className="p-2 bg-emerald-50 border border-emerald-300 rounded text-xs text-emerald-900 flex items-center gap-1.5 font-medium">
+                                  <span>✅ Đã chọn tài nguyên chương trình hợp lệ. Bạn có thể bấm "Kiểm tra quyền trước khi áp dụng" bên dưới.</span>
                                 </div>
                               )}
-                              <div className="p-2.5 bg-amber-100 border border-amber-400 rounded text-xs font-semibold text-amber-950">
-                                🔒 Thao tác Kiểm tra và Áp dụng tạm thời bị khóa đối với mẫu này để bảo đảm tính toàn vẹn dữ liệu. Cần hoàn thiện cấu hình chương trình trước khi sử dụng.
-                              </div>
                             </div>
                           )}
                         </div>

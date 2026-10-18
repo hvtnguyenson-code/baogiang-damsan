@@ -6,12 +6,15 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
 import {
+  AcademicYearOptionListResponse,
   BaselineReconciliationApplyResponse,
   BaselineReconciliationPreviewResponse,
+  ProgrammeMasterOptionListResponse,
   ResponsibilityTemplateApplyResponse,
   ResponsibilityTemplateListResponse,
   ResponsibilityTemplatePreviewResponse,
@@ -25,6 +28,8 @@ import { RequireCapability } from '../authorization/require-capability.decorator
 import { AccessBaselineService } from './access-baseline.service';
 import {
   BaselineReconciliationApplyDto,
+  ListAcademicYearOptionsDto,
+  ListProgrammeMasterOptionsDto,
   ResponsibilityTemplateApplyDto,
   ResponsibilityTemplatePreviewDto,
 } from './dto';
@@ -39,6 +44,28 @@ export class ResponsibilityTemplatesController {
   @UseGuards(SessionAuthGuard, CapabilityGuard)
   listTemplates(): ResponsibilityTemplateListResponse {
     return { items: listTemplateDefinitions() };
+  }
+
+  @Get([
+    'capabilities/responsibility-templates/academic-year-options',
+    'responsibility-templates/academic-year-options',
+  ])
+  @UseGuards(SessionAuthGuard, CapabilityGuard)
+  listAcademicYearOptions(
+    @Query() query: ListAcademicYearOptionsDto,
+  ): Promise<AcademicYearOptionListResponse> {
+    return this.service.listAcademicYearOptions(query);
+  }
+
+  @Get([
+    'capabilities/responsibility-templates/programme-master-options',
+    'responsibility-templates/programme-master-options',
+  ])
+  @UseGuards(SessionAuthGuard, CapabilityGuard)
+  listProgrammeMasterOptions(
+    @Query() query: ListProgrammeMasterOptionsDto,
+  ): Promise<ProgrammeMasterOptionListResponse> {
+    return this.service.listProgrammeMasterOptions(query);
   }
 
   @Post('users/:id/responsibility-templates/preview')

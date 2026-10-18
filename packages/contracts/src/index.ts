@@ -435,6 +435,35 @@ export interface ResponsibilityTemplateApplyResponse {
   auditEventId?: string;
 }
 
+export interface AcademicYearOptionRecord {
+  id: string;
+  code: string;
+  name: string;
+}
+
+export interface AcademicYearOptionListResponse {
+  items: AcademicYearOptionRecord[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+export interface ProgrammeMasterOptionRecord {
+  id: string;
+  academicYearId: string;
+  kind: 'GDDP' | 'HDTN_HN';
+  gradeLevel: number | null;
+}
+
+export interface ProgrammeMasterOptionListResponse {
+  items: ProgrammeMasterOptionRecord[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
 export interface BaselineReconciliationMissingUser {
   userId: string;
   username: string;

@@ -11,6 +11,7 @@ import {
   UserStatus,
 } from '@prisma/client';
 import {
+  AcademicYearOptionListResponse,
   BaselineReconciliationApplyRequest,
   BaselineReconciliationApplyResponse,
   BaselineReconciliationConflictUser,
@@ -21,6 +22,7 @@ import {
   CapabilityGrantRecord,
   CapabilityScope,
   GrantDeltaItem,
+  ProgrammeMasterOptionListResponse,
   ResponsibilityTemplateApplyRequest,
   ResponsibilityTemplateApplyResponse,
   ResponsibilityTemplateConflictItem,
@@ -29,6 +31,10 @@ import {
   ResponsibilityTemplatePreviewRequest,
   ResponsibilityTemplatePreviewResponse,
 } from '@baogiang/contracts';
+import {
+  ListAcademicYearOptionsDto,
+  ListProgrammeMasterOptionsDto,
+} from './dto';
 import { AuditService } from '../audit/audit.service';
 import { RequestMeta } from '../auth/auth.types';
 import { PrismaService } from '../prisma/prisma.service';
@@ -968,5 +974,89 @@ export class AccessBaselineService {
     }
 
     return { provided: true };
+  }
+
+  /**
+   * Administrative read-model: list academic years options.
+   * Projection strictly limited to { id, code, name } with pagination metadata.
+   * Guarded by CAPABILITY_GRANT / SCHOOL_WIDE at controller level.
+   */
+  async listAcademicYearOptions(
+    query: ListAcademicYearOptionsDto,
+  ): Promise<AcademicYearOptionListResponse> {
+    const page = Math.max(1, query.page ?? 1);
+    const pageSize = Math.min(100, Math.max(1, query.pageSize ?? 20));
+    const skip = (page - 1) * pageSize;
+
+    const [total, items] = await Promise.all([
+      this.prisma.academicYear.count(),
+      this.prisma.academicYear.findMany({
+        select: {
+          id: true,
+          code: true,
+          name: true,
+        },
+        orderBy: { code: 'desc' },
+        skip,
+        take: pageSize,
+      }),
+    ]);
+
+    const totalPages = Math.ceil(total / pageSize);
+
+    return {
+      items,
+      total,
+      page,
+      pageSize,
+      totalPages,
+    };
+  }
+
+  /**
+   * Administrative read-model: list programme masters options filtered by academicYearId and kind.
+   * Projection strictly limited to { id, academicYearId, kind, gradeLevel } with pagination metadata.
+   * Guarded by CAPABILITY_GRANT / SCHOOL_WIDE at controller level.
+   */
+  async listProgrammeMasterOptions(
+    query: ListProgrammeMasterOptionsDto,
+  ): Promise<ProgrammeMasterOptionListResponse> {
+    const page = Math.max(1, query.page ?? 1);
+    const pageSize = Math.min(100, Math.max(1, query.pageSize ?? 20));
+    const skip = (page - 1) * pageSize;
+
+    const where: Prisma.ProgrammeMasterWhereInput = {
+      academicYearId: query.academicYearId,
+      kind: query.kind,
+    };
+
+    const [total, items] = await Promise.all([
+      this.prisma.programmeMaster.count({ where }),
+      this.prisma.programmeMaster.findMany({
+        where,
+        select: {
+          id: true,
+          academicYearId: true,
+          kind: true,
+          gradeLevel: true,
+        },
+        orderBy: [
+          { gradeLevel: 'asc' },
+          { id: 'asc' },
+        ],
+        skip,
+        take: pageSize,
+      }),
+    ]);
+
+    const totalPages = Math.ceil(total / pageSize);
+
+    return {
+      items,
+      total,
+      page,
+      pageSize,
+      totalPages,
+    };
   }
 }
