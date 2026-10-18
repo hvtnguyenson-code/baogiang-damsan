@@ -1,11 +1,13 @@
 import type {
   AcademicYearOptionListResponse,
+  AcademicYearOptionRecord,
   BaselineReconciliationApplyResponse,
   BaselineReconciliationConflictUser,
   BaselineReconciliationMissingUser,
   BaselineReconciliationPreviewResponse,
   CatalogListResponse,
   ProgrammeMasterOptionListResponse,
+  ProgrammeMasterOptionRecord,
   ResponsibilityTemplateApplyResponse,
   ResponsibilityTemplateDefinition,
   ResponsibilityTemplateKey,
@@ -14,8 +16,8 @@ import type {
   UserDeletePreflightResponse,
   UserManagementRecord,
 } from '@baogiang/contracts';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useAuth } from '../auth/auth-context';
 import { Button } from '../components/ui/button';
 import { FormField } from '../components/ui/form-field';
@@ -174,6 +176,10 @@ export function UsersPage() {
   const [subjectIds, setSubjectIds] = useState<string[]>([]);
   const [academicYearId, setAcademicYearId] = useState('');
   const [programmeMasterId, setProgrammeMasterId] = useState('');
+  const [academicYearPage, setAcademicYearPage] = useState(1);
+  const [programmeMasterPage, setProgrammeMasterPage] = useState(1);
+  const [knownAcademicYears, setKnownAcademicYears] = useState<AcademicYearOptionRecord[]>([]);
+  const [knownMastersByScope, setKnownMastersByScope] = useState<Record<string, ProgrammeMasterOptionRecord[]>>({});
   const [templatePreview, setTemplatePreview] = useState<ResponsibilityTemplatePreviewResponse | null>(null);
   const [templatePreviewError, setTemplatePreviewError] = useState('');
   const [templateApplyResult, setTemplateApplyResult] = useState<ResponsibilityTemplateApplyResponse | null>(null);
@@ -190,9 +196,9 @@ export function UsersPage() {
   const [previewSnapshot, setPreviewSnapshot] = useState<PreviewSnapshot | null>(null);
   const previewRequestIdRef = useRef<number>(0);
 
-  function clearApplyResult() {
+  const clearApplyResult = useCallback(() => {
     setTemplateApplyResult(null);
-  }
+  }, []);
 
   // Safe delete state
   const [deleteConfirmUsername, setDeleteConfirmUsername] = useState('');
@@ -241,34 +247,112 @@ export function UsersPage() {
     selectedTemplateKey === 'GDDP_COORDINATOR' ? 'GDDP' : 'HDTN_HN';
 
   const academicYearsQuery = useQuery<AcademicYearOptionListResponse>({
-    queryKey: ['academic-year-options'],
-    queryFn: () => responsibilityTemplatesApi.academicYearOptions({ page: 1, pageSize: 100 }),
+    queryKey: ['academic-year-options', academicYearPage],
+    queryFn: () => responsibilityTemplatesApi.academicYearOptions({ page: academicYearPage, pageSize: 50 }),
     enabled: canGrant && isCoordinatorTemplate,
     retry: false,
+    placeholderData: keepPreviousData,
   });
 
-  // Auto-select academic year only when exactly one option exists in the catalog and not yet selected
+  // Track known academic years across pages to prevent losing selection on page change
   useEffect(() => {
-    if (isCoordinatorTemplate && academicYearsQuery.data?.items?.length === 1 && !academicYearId) {
+    if (academicYearsQuery.data?.items) {
+      setKnownAcademicYears((prev) => {
+        const map = new Map(prev.map((y) => [y.id, y]));
+        academicYearsQuery.data.items.forEach((y) => map.set(y.id, y));
+        return Array.from(map.values());
+      });
+    }
+  }, [academicYearsQuery.data?.items]);
+
+  // Auto-select academic year ONLY when the entire catalog has exactly one option (total === 1) and query succeeded
+  useEffect(() => {
+    if (
+      isCoordinatorTemplate &&
+      academicYearsQuery.isSuccess &&
+      academicYearsQuery.data?.total === 1 &&
+      academicYearsQuery.data?.items?.length === 1 &&
+      !academicYearId
+    ) {
       setAcademicYearId(academicYearsQuery.data.items[0].id);
     }
-  }, [isCoordinatorTemplate, academicYearsQuery.data?.items, academicYearId]);
+  }, [isCoordinatorTemplate, academicYearsQuery.isSuccess, academicYearsQuery.data?.total, academicYearsQuery.data?.items, academicYearId]);
 
   const programmeMastersQuery = useQuery<ProgrammeMasterOptionListResponse>({
-    queryKey: ['programme-master-options', academicYearId, programmeKind],
+    queryKey: ['programme-master-options', academicYearId, programmeKind, programmeMasterPage],
     queryFn: () =>
       responsibilityTemplatesApi.programmeMasterOptions({
         academicYearId,
         kind: programmeKind,
-        page: 1,
-        pageSize: 100,
+        page: programmeMasterPage,
+        pageSize: 50,
       }),
     enabled: canGrant && isCoordinatorTemplate && Boolean(academicYearId),
     retry: false,
+    placeholderData: keepPreviousData,
   });
+
+  // Track known masters for the current scope to maintain selection across pages
+  useEffect(() => {
+    if (programmeMastersQuery.data?.items && academicYearId) {
+      const scopeKey = `${academicYearId}:${programmeKind}`;
+      setKnownMastersByScope((prev) => {
+        const existing = prev[scopeKey] || [];
+        const map = new Map(existing.map((m) => [m.id, m]));
+        programmeMastersQuery.data.items.forEach((m) => map.set(m.id, m));
+        return {
+          ...prev,
+          [scopeKey]: Array.from(map.values()),
+        };
+      });
+    }
+  }, [programmeMastersQuery.data?.items, academicYearId, programmeKind]);
+
+  // Current scope masters
+  const currentScopeKey = `${academicYearId}:${programmeKind}`;
+  const currentScopeMasters = useMemo(() => {
+    const cached = knownMastersByScope[currentScopeKey];
+    if (cached && cached.length > 0) return cached;
+    return programmeMastersQuery.data?.items || [];
+  }, [knownMastersByScope, currentScopeKey, programmeMastersQuery.data?.items]);
+
+  // Fail-closed membership check: selected master must belong to current scope's confirmed list
+  const isSelectedMasterValidMember = useMemo(() => {
+    if (!isCoordinatorTemplate) return true;
+    if (!academicYearId || !programmeMasterId) return false;
+    if (academicYearsQuery.isError || programmeMastersQuery.isError) return false;
+    if (!academicYearsQuery.isSuccess || !programmeMastersQuery.isSuccess) return false;
+    const match = currentScopeMasters.find((m) => m.id === programmeMasterId);
+    if (!match) return false;
+    if (match.academicYearId !== academicYearId || match.kind !== programmeKind) return false;
+    return true;
+  }, [
+    isCoordinatorTemplate,
+    academicYearId,
+    programmeMasterId,
+    academicYearsQuery.isError,
+    academicYearsQuery.isSuccess,
+    programmeMastersQuery.isError,
+    programmeMastersQuery.isSuccess,
+    currentScopeMasters,
+    programmeKind,
+  ]);
+
+  // Fail-closed coordinator validation: invalid if missing, error, pending, or not a verified member
+  const coordinatorSelectorMissing =
+    isCoordinatorTemplate &&
+    (!academicYearId ||
+      !programmeMasterId ||
+      !isSelectedMasterValidMember ||
+      academicYearsQuery.isError ||
+      programmeMastersQuery.isError ||
+      academicYearsQuery.isPending ||
+      programmeMastersQuery.isPending);
+
 
   const isCurrentSelectionMatchingPreview = useMemo(() => {
     if (!previewSnapshot || !selectedUserId) return false;
+    if (isCoordinatorTemplate && (coordinatorSelectorMissing || !isSelectedMasterValidMember)) return false;
     if (previewSnapshot.targetUserId !== selectedUserId) return false;
     if (previewSnapshot.templateKey !== selectedTemplateKey) return false;
     if (previewSnapshot.subjectGroupId !== (subjectGroupId || '')) return false;
@@ -277,7 +361,17 @@ export function UsersPage() {
     if (previewSnapshot.subjectIds.length !== currentSubjects.length) return false;
     if (!previewSnapshot.subjectIds.every((id, idx) => id === currentSubjects[idx])) return false;
     return true;
-  }, [previewSnapshot, selectedUserId, selectedTemplateKey, subjectGroupId, subjectIds, programmeMasterId]);
+  }, [
+    previewSnapshot,
+    selectedUserId,
+    selectedTemplateKey,
+    subjectGroupId,
+    subjectIds,
+    programmeMasterId,
+    isCoordinatorTemplate,
+    coordinatorSelectorMissing,
+    isSelectedMasterValidMember,
+  ]);
 
   // Delete Preflight Query
   const preflightQuery = useQuery<UserDeletePreflightResponse>({
@@ -453,15 +547,28 @@ export function UsersPage() {
     },
   });
 
-  function invalidatePreview(options?: { clearError?: boolean }) {
-    previewRequestIdRef.current++;
-    templatePreviewMutation.reset();
-    setTemplatePreview(null);
-    setPreviewSnapshot(null);
-    if (options?.clearError ?? true) {
-      setTemplatePreviewError('');
+  const invalidatePreview = useCallback(
+    (options?: { clearError?: boolean }) => {
+      previewRequestIdRef.current++;
+      templatePreviewMutation.reset();
+      setTemplatePreview(null);
+      setPreviewSnapshot(null);
+      if (options?.clearError ?? true) {
+        setTemplatePreviewError('');
+      }
+    },
+    [templatePreviewMutation],
+  );
+
+  // Invalidate stale preview snapshot if queries transition to error state (e.g. 403, 500, network error)
+  useEffect(() => {
+    if (isCoordinatorTemplate) {
+      if (academicYearsQuery.isError || programmeMastersQuery.isError) {
+        invalidatePreview({ clearError: false });
+        clearApplyResult();
+      }
     }
-  }
+  }, [isCoordinatorTemplate, academicYearsQuery.isError, programmeMastersQuery.isError, invalidatePreview, clearApplyResult]);
 
   // Template Apply Mutation - strictly bound to matching preview snapshot
   const templateApplyMutation = useMutation({
@@ -549,6 +656,8 @@ export function UsersPage() {
     setSelectedUserId(user.id);
     setAcademicYearId('');
     setProgrammeMasterId('');
+    setAcademicYearPage(1);
+    setProgrammeMasterPage(1);
     invalidatePreview();
     clearApplyResult();
     setDeleteError('');
@@ -641,10 +750,6 @@ export function UsersPage() {
       return matchName || matchUser || matchCode;
     });
   }, [query.data?.items, statusFilter, searchKeyword]);
-
-  // Check if coordinator selector is missing
-  const coordinatorSelectorMissing =
-    isCoordinatorTemplate && (!academicYearId || !programmeMasterId);
 
   const isDetailActive = selectedUserId !== null || draft !== null;
 
@@ -1453,6 +1558,8 @@ export function UsersPage() {
                                 setSubjectIds([]);
                                 setAcademicYearId('');
                                 setProgrammeMasterId('');
+                                setAcademicYearPage(1);
+                                setProgrammeMasterPage(1);
                                 invalidatePreview();
                                 clearApplyResult();
                               }}
@@ -1580,48 +1687,100 @@ export function UsersPage() {
 
                               {/* Academic Year Selection */}
                               <div className="space-y-1.5">
-                                <label htmlFor="coordinator-academic-year-select" className="block text-xs font-semibold text-slate-800">
-                                  1. Chọn năm học <span className="text-rose-600">*</span>
-                                </label>
+                                <div className="flex items-center justify-between">
+                                  <label htmlFor="coordinator-academic-year-select" className="block text-xs font-semibold text-slate-800">
+                                    1. Chọn năm học <span className="text-rose-600">*</span>
+                                  </label>
+                                  {academicYearsQuery.data && (
+                                    <span className="text-[11px] text-slate-500 font-mono">
+                                      (Tổng: {academicYearsQuery.data.total} năm học)
+                                    </span>
+                                  )}
+                                </div>
                                 {academicYearsQuery.isPending ? (
                                   <div className="text-xs text-slate-600 italic py-1">⏳ Đang tải danh mục năm học...</div>
                                 ) : academicYearsQuery.isError ? (
                                   <div className="p-2.5 bg-rose-50 border border-rose-200 rounded text-xs text-rose-800">
                                     ❌ Không thể tải danh mục năm học: {academicYearsQuery.error instanceof Error ? academicYearsQuery.error.message : 'Lỗi kết nối hoặc không có quyền truy cập.'}
                                   </div>
-                                ) : academicYearsQuery.data?.items?.length === 0 ? (
+                                ) : academicYearsQuery.data?.total === 0 ? (
                                   <div className="p-2.5 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800">
                                     ⚠️ Hệ thống chưa có năm học nào được thiết lập.
                                   </div>
                                 ) : (
-                                  <select
-                                    id="coordinator-academic-year-select"
-                                    aria-label="Chọn năm học cho mẫu điều phối"
-                                    className="form-field__input w-full"
-                                    value={academicYearId}
-                                    onChange={(e) => {
-                                      const newYearId = e.target.value;
-                                      setAcademicYearId(newYearId);
-                                      setProgrammeMasterId('');
-                                      invalidatePreview();
-                                      clearApplyResult();
-                                    }}
-                                  >
-                                    <option value="">-- Chọn năm học --</option>
-                                    {academicYearsQuery.data.items.map((y) => (
-                                      <option key={y.id} value={y.id}>
-                                        {y.name} ({y.code})
-                                      </option>
-                                    ))}
-                                  </select>
+                                  <>
+                                    <select
+                                      id="coordinator-academic-year-select"
+                                      aria-label="Chọn năm học cho mẫu điều phối"
+                                      className="form-field__input w-full"
+                                      value={academicYearId}
+                                      onChange={(e) => {
+                                        const newYearId = e.target.value;
+                                        setAcademicYearId(newYearId);
+                                        setProgrammeMasterId('');
+                                        setProgrammeMasterPage(1);
+                                        invalidatePreview();
+                                        clearApplyResult();
+                                      }}
+                                    >
+                                      <option value="">-- Chọn năm học --</option>
+                                      {academicYearId &&
+                                        !academicYearsQuery.data?.items?.some((y) => y.id === academicYearId) &&
+                                        knownAcademicYears.some((y) => y.id === academicYearId) && (
+                                          <option value={academicYearId}>
+                                            {knownAcademicYears.find((y) => y.id === academicYearId)?.name} (
+                                            {knownAcademicYears.find((y) => y.id === academicYearId)?.code}) (Đã chọn)
+                                          </option>
+                                        )}
+                                      {academicYearsQuery.data?.items.map((y) => (
+                                        <option key={y.id} value={y.id}>
+                                          {y.name} ({y.code})
+                                        </option>
+                                      ))}
+                                    </select>
+                                    {academicYearsQuery.data && academicYearsQuery.data.totalPages > 1 && (
+                                      <nav className="flex items-center justify-between text-xs text-slate-600 pt-1" aria-label="Phân trang năm học">
+                                        <span>
+                                          Trang <strong>{academicYearPage}</strong> / {academicYearsQuery.data.totalPages}
+                                        </span>
+                                        <div className="flex gap-1">
+                                          <button
+                                            type="button"
+                                            aria-label="Trang trước (năm học)"
+                                            className="px-2 py-0.5 border border-slate-300 rounded bg-white hover:bg-slate-50 disabled:opacity-50 text-[11px]"
+                                            disabled={academicYearPage <= 1 || academicYearsQuery.isPending}
+                                            onClick={() => setAcademicYearPage((p) => Math.max(1, p - 1))}
+                                          >
+                                            Trang trước
+                                          </button>
+                                          <button
+                                            type="button"
+                                            aria-label="Trang sau (năm học)"
+                                            className="px-2 py-0.5 border border-slate-300 rounded bg-white hover:bg-slate-50 disabled:opacity-50 text-[11px]"
+                                            disabled={academicYearPage >= academicYearsQuery.data.totalPages || academicYearsQuery.isPending}
+                                            onClick={() => setAcademicYearPage((p) => p + 1)}
+                                          >
+                                            Trang sau
+                                          </button>
+                                        </div>
+                                      </nav>
+                                    )}
+                                  </>
                                 )}
                               </div>
 
                               {/* Programme Master Selection */}
                               <div className="space-y-1.5">
-                                <label htmlFor="coordinator-programme-master-select" className="block text-xs font-semibold text-slate-800">
-                                  2. Chọn chương trình {programmeKind === 'GDDP' ? 'Giáo dục địa phương (GDĐP)' : 'Hoạt động trải nghiệm, hướng nghiệp (HĐTN-HN)'} <span className="text-rose-600">*</span>
-                                </label>
+                                <div className="flex items-center justify-between">
+                                  <label htmlFor="coordinator-programme-master-select" className="block text-xs font-semibold text-slate-800">
+                                    2. Chọn chương trình {programmeKind === 'GDDP' ? 'Giáo dục địa phương (GDĐP)' : 'Hoạt động trải nghiệm, hướng nghiệp (HĐTN-HN)'} <span className="text-rose-600">*</span>
+                                  </label>
+                                  {programmeMastersQuery.data && (
+                                    <span className="text-[11px] text-slate-500 font-mono">
+                                      (Tổng: {programmeMastersQuery.data.total} chương trình)
+                                    </span>
+                                  )}
+                                </div>
                                 {!academicYearId ? (
                                   <div className="text-xs text-slate-500 italic py-1">
                                     ℹ️ Vui lòng chọn năm học ở bước 1 trước khi chọn chương trình.
@@ -1632,34 +1791,73 @@ export function UsersPage() {
                                   <div className="p-2.5 bg-rose-50 border border-rose-200 rounded text-xs text-rose-800">
                                     ❌ Không thể tải danh sách chương trình: {programmeMastersQuery.error instanceof Error ? programmeMastersQuery.error.message : 'Lỗi kết nối hoặc không có quyền.'}
                                   </div>
-                                ) : programmeMastersQuery.data?.items?.length === 0 ? (
+                                ) : programmeMastersQuery.data?.total === 0 ? (
                                   <div className="p-2.5 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800">
                                     ⚠️ Năm học này chưa có chương trình đào tạo nào thuộc loại {programmeKind === 'GDDP' ? 'Giáo dục địa phương (GDĐP)' : 'Hoạt động trải nghiệm, hướng nghiệp (HĐTN-HN)'}.
                                   </div>
                                 ) : (
-                                  <select
-                                    id="coordinator-programme-master-select"
-                                    aria-label="Chọn chương trình đào tạo cho mẫu điều phối"
-                                    className="form-field__input w-full"
-                                    value={programmeMasterId}
-                                    onChange={(e) => {
-                                      const newMasterId = e.target.value;
-                                      setProgrammeMasterId(newMasterId);
-                                      invalidatePreview();
-                                      clearApplyResult();
-                                    }}
-                                  >
-                                    <option value="">-- Chọn chương trình đào tạo --</option>
-                                    {programmeMastersQuery.data.items.map((m) => (
-                                      <option key={m.id} value={m.id}>
-                                        Chương trình {m.kind === 'GDDP' ? 'Giáo dục địa phương' : 'Hoạt động trải nghiệm, hướng nghiệp'} - {m.gradeLevel ? `Khối ${m.gradeLevel}` : 'Toàn trường'} ({m.id.slice(0, 8)})
-                                      </option>
-                                    ))}
-                                  </select>
+                                  <>
+                                    <select
+                                      id="coordinator-programme-master-select"
+                                      aria-label="Chọn chương trình đào tạo cho mẫu điều phối"
+                                      className="form-field__input w-full"
+                                      value={programmeMasterId}
+                                      onChange={(e) => {
+                                        const newMasterId = e.target.value;
+                                        setProgrammeMasterId(newMasterId);
+                                        invalidatePreview();
+                                        clearApplyResult();
+                                      }}
+                                    >
+                                      <option value="">-- Chọn chương trình đào tạo --</option>
+                                      {programmeMasterId &&
+                                        !programmeMastersQuery.data?.items?.some((m) => m.id === programmeMasterId) &&
+                                        currentScopeMasters.some((m) => m.id === programmeMasterId) && (
+                                          <option value={programmeMasterId}>
+                                            {(() => {
+                                              const sm = currentScopeMasters.find((m) => m.id === programmeMasterId);
+                                              return `Chương trình ${sm?.kind === 'GDDP' ? 'Giáo dục địa phương' : 'Hoạt động trải nghiệm, hướng nghiệp'} - ${sm?.gradeLevel ? `Khối ${sm.gradeLevel}` : 'Toàn trường'} (${sm?.id.slice(0, 8)}) (Đã chọn)`;
+                                            })()}
+                                          </option>
+                                        )}
+                                      {programmeMastersQuery.data?.items.map((m) => (
+                                        <option key={m.id} value={m.id}>
+                                          Chương trình {m.kind === 'GDDP' ? 'Giáo dục địa phương' : 'Hoạt động trải nghiệm, hướng nghiệp'} - {m.gradeLevel ? `Khối ${m.gradeLevel}` : 'Toàn trường'} ({m.id.slice(0, 8)})
+                                        </option>
+                                      ))}
+                                    </select>
+                                    {programmeMastersQuery.data && programmeMastersQuery.data.totalPages > 1 && (
+                                      <nav className="flex items-center justify-between text-xs text-slate-600 pt-1" aria-label="Phân trang chương trình">
+                                        <span>
+                                          Trang <strong>{programmeMasterPage}</strong> / {programmeMastersQuery.data.totalPages}
+                                        </span>
+                                        <div className="flex gap-1">
+                                          <button
+                                            type="button"
+                                            aria-label="Trang trước (chương trình)"
+                                            className="px-2 py-0.5 border border-slate-300 rounded bg-white hover:bg-slate-50 disabled:opacity-50 text-[11px]"
+                                            disabled={programmeMasterPage <= 1 || programmeMastersQuery.isPending}
+                                            onClick={() => setProgrammeMasterPage((p) => Math.max(1, p - 1))}
+                                          >
+                                            Trang trước
+                                          </button>
+                                          <button
+                                            type="button"
+                                            aria-label="Trang sau (chương trình)"
+                                            className="px-2 py-0.5 border border-slate-300 rounded bg-white hover:bg-slate-50 disabled:opacity-50 text-[11px]"
+                                            disabled={programmeMasterPage >= programmeMastersQuery.data.totalPages || programmeMastersQuery.isPending}
+                                            onClick={() => setProgrammeMasterPage((p) => p + 1)}
+                                          >
+                                            Trang sau
+                                          </button>
+                                        </div>
+                                      </nav>
+                                    )}
+                                  </>
                                 )}
                               </div>
 
-                              {programmeMasterId && (
+                              {programmeMasterId && isSelectedMasterValidMember && !coordinatorSelectorMissing && (
                                 <div className="p-2 bg-emerald-50 border border-emerald-300 rounded text-xs text-emerald-900 flex items-center gap-1.5 font-medium">
                                   <span>✅ Đã chọn tài nguyên chương trình hợp lệ. Bạn có thể bấm "Kiểm tra quyền trước khi áp dụng" bên dưới.</span>
                                 </div>
