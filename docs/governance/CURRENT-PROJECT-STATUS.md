@@ -10,9 +10,9 @@ Exact current `main`, branch HEAD and divergence must always be read directly fr
 
 **Status snapshot date:** 2026-10-18
 
-## P5-051 active branch — Pre-merge governance documentation sync checkpoint
+## P5-051 — CLOSED by SYNC-P5-051
 
-P5-051 is **IN_PROGRESS** (Ready for parent merge approval) on `feat/p5-051-professional-baseline-responsibility-templates`, PR #240 (DRAFT). All functional and operability slices are complete: Slice A baseline access & responsibility templates, Slice B safe clean-slate user deletion with business-history protection, and Slice C administration workspace with DESIGN.md visual redesign, Administrative Read-Model for GDDP/HĐTN coordinator options, plus Correction 001 and Correction 002 (strict in-flight refetch fail-closed, placeholder/scope-cache isolation, and same-key 403 prevention). Baseline exact HEAD `854bdb5d6f0a2818b5e5deec7f1b0ef2dacf1722` passed independent review and both CI runs (CI run 39137629512 and P6-021 run 39137629459 SUCCESS; 493 Web tests, 680 API integration tests, 15 smoke tests). Zero database migrations. PR #240 remains an open draft; no merge, deployment, or production database mutation has occurred or is claimed. Parent review summary: `docs/phase-reports/P5-051-PARENT-PRE-MERGE-REVIEW.md`.
+P5-051 (T50) is **CLOSED by SYNC-P5-051**. Parent PR #240 merged to `main` at `cd0e67d342276f1e3e1baa2bb1de9078f4b2e5c7`; authoritative post-merge CI #799 (run `39143647086`) SUCCESS, auto-deploy #14 (run `39144276217`) SUCCESS, and Deploy VPS #12 (run `39144282062`) SUCCESS. Independent review of Slice A/B/C and Corrections 001/002 passed; 493 Web unit tests, 680 API integration tests and 15 smoke tests passed on the reviewed PR head. Scope: professional baseline, audited responsibility templates, safe clean-slate deletion, Users Administration UI and coordinator read-model. Zero DB migrations. VPS verified `current` pointed to the merge SHA, Báo giảng and protected Nội trú health endpoints returned HTTP 200; no teacher pilot authorization follows from this deployment. P5-052 is now READY by dependency; P5-057 and P6-050 remain blocked by their other prerequisites. See `docs/phase-reports/P5-051-PARENT-PRE-MERGE-REVIEW.md` for parent implementation evidence.
 
 ## 2026-10-16 product operability audit — product path reopened
 
@@ -84,15 +84,16 @@ Preliminary Desktop Commander read-only metadata: Windows Server 2022, 6 logical
 
 ### In Progress
 
-- `P5-051` — **READY FOR PARENT MERGE APPROVAL**: Slice A, Slice B, Slice C, Correction 001, and Correction 002 implemented and independently reviewed on PR #240; baseline exact HEAD `854bdb5d6f0a2818b5e5deec7f1b0ef2dacf1722` verified green on CI and P6-021; docs pre-merge sync in progress; deliberately unmerged awaiting Product Owner approval.
+- `P5-051` — **CLOSED by `SYNC-P5-051`**: PR #240 merged at `cd0e67d342276f1e3e1baa2bb1de9078f4b2e5c7`, main CI #799 SUCCESS, auto-deploy #14 and Deploy VPS #12 SUCCESS; parent implementation and review evidence retained.
 - `P6-020` — **IN_PROGRESS: preliminary passive host reconnaissance only**; formal PASS 1/PASS 2 NOT EXECUTED. Exact deployment candidate approved for read-only scope above.
 
 ### In Review
 
-- None for the P5-050 product-operability programme (P5-051 parent PR #240 is staged for merge review).
+- None for the P5-050 product-operability programme.
 
 ### Ready
 
+- `P5-052` — task-oriented workspace and information architecture; unblocked by P5-051 closure, next sequential implementation task.
 - `P5-053` — timetable + time-slot administration workspace; eligible by dependency but held behind the sequential orchestration priority.
 - `P5-054` — teaching-operations workspace closure; eligible by dependency but held behind the sequential orchestration priority.
 - `P5-056A` — notification/Web Push architecture; eligible by dependency but held behind the sequential orchestration priority.
@@ -100,7 +101,6 @@ Preliminary Desktop Commander read-only metadata: Windows Server 2022, 6 logical
 
 ### Planned behind open dependencies
 
-- `P5-052` — task-oriented workspace + information architecture; waits for P5-051.
 - `P5-055` — data readiness & import center.
 - `P5-056A` -> `P5-056` — in-app notification center + Web Push architecture then implementation.
 - `P5-057` — persona operability E2E freeze; mandatory product predecessor of teacher pilot.
