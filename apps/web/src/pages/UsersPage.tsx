@@ -1050,6 +1050,30 @@ export function UsersPage() {
                                         Hủy
                                       </Button>
                                     </div>
+                                  ) : (user.status === 'DISABLED' || user.status === 'PENDING') ? (
+                                    <Button
+                                      type="button"
+                                      variant="quiet"
+                                      className="btn--compact"
+                                      onClick={() => {
+                                        setSuccess('');
+                                        setConfirm({ id: user.id, action: 'activate' });
+                                      }}
+                                    >
+                                      Kích hoạt
+                                    </Button>
+                                  ) : user.status === 'LOCKED' ? (
+                                    <Button
+                                      type="button"
+                                      variant="quiet"
+                                      className="btn--compact"
+                                      onClick={() => {
+                                        setSuccess('');
+                                        setConfirm({ id: user.id, action: 'unlock' });
+                                      }}
+                                    >
+                                      Mở khóa
+                                    </Button>
                                   ) : (
                                     <details
                                       className="user-directory-more"
@@ -1085,36 +1109,6 @@ export function UsersPage() {
                                             }}
                                           >
                                             Vô hiệu hóa
-                                          </Button>
-                                        )}
-                                        {(user.status === 'DISABLED' || user.status === 'PENDING') && (
-                                          <Button
-                                            type="button"
-                                            variant="quiet"
-                                            className="btn--compact w-full text-left"
-                                            onClick={(e) => {
-                                              const details = (e.target as HTMLElement).closest('details');
-                                              if (details) details.open = false;
-                                              setSuccess('');
-                                              setConfirm({ id: user.id, action: 'activate' });
-                                            }}
-                                          >
-                                            Kích hoạt
-                                          </Button>
-                                        )}
-                                        {user.status === 'LOCKED' && (
-                                          <Button
-                                            type="button"
-                                            variant="quiet"
-                                            className="btn--compact w-full text-left"
-                                            onClick={(e) => {
-                                              const details = (e.target as HTMLElement).closest('details');
-                                              if (details) details.open = false;
-                                              setSuccess('');
-                                              setConfirm({ id: user.id, action: 'unlock' });
-                                            }}
-                                          >
-                                            Mở khóa
                                           </Button>
                                         )}
                                         {canResetPasswords && user.status === 'ACTIVE' && user.id !== auth?.user.id && (
