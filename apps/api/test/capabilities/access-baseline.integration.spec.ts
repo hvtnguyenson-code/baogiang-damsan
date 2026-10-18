@@ -1309,8 +1309,9 @@ integration('P5-051 Professional Baseline & Responsibility Templates (Isolated P
       });
     expect(applyGDDP.status).toBe(200);
     expect(applyGDDP.body.applied).toBe(true);
-    expect(applyGDDP.body.grantsAdded[0].capabilityKey).toBe('GDDP_COORDINATOR');
-    expect(applyGDDP.body.grantsAdded[0].scopeResourceId).toBe(masterGDDP.id);
+    const gddpGrant = applyGDDP.body.grantsAdded.find((g: { capabilityKey: string }) => g.capabilityKey === 'GDDP_COORDINATOR');
+    expect(gddpGrant).toBeDefined();
+    expect(gddpGrant.scopeResourceId).toBe(masterGDDP.id);
 
     // 2. Preview HDTN_COORDINATOR with matching master -> grants canonical HĐTN_COORDINATOR
     const previewHDTN = await manager.agent
@@ -1334,8 +1335,9 @@ integration('P5-051 Professional Baseline & Responsibility Templates (Isolated P
     expect(applyHDTN.status).toBe(200);
     expect(applyHDTN.body.applied).toBe(true);
     // Canonical capability key has 'Đ'
-    expect(applyHDTN.body.grantsAdded[0].capabilityKey).toBe('HĐTN_COORDINATOR');
-    expect(applyHDTN.body.grantsAdded[0].scopeResourceId).toBe(masterHDTN.id);
+    const hdtnGrant = applyHDTN.body.grantsAdded.find((g: { capabilityKey: string }) => g.capabilityKey === 'HĐTN_COORDINATOR');
+    expect(hdtnGrant).toBeDefined();
+    expect(hdtnGrant.scopeResourceId).toBe(masterHDTN.id);
 
     // 3. Conflict when previewing GDDP_COORDINATOR with HDTN master
     const conflictRes = await manager.agent
