@@ -22,13 +22,13 @@
 - **Delivered Scope:**
   - Implemented server-owned baseline access invariant (`TEACHER_BASE / PERSONAL`) applied idempotently upon activation.
   - Built approved Responsibility Templates catalog:
-    - Giáo viên (`TEACHER_BASE / PERSONAL`);
-    - Tổ trưởng chuyên môn (`SUBJECT_HEAD / SUBJECT`);
-    - Phó Hiệu trưởng phụ trách chuyên môn (`VICE_PRINCIPAL / SCHOOL_WIDE` with reporting & operational view);
-    - Hiệu trưởng (`PRINCIPAL / SCHOOL_WIDE`);
-    - Điều phối viên GDĐP (`GDDP_COORDINATOR / ACTIVITY`);
-    - Điều phối viên HĐTN-HN (`HDTN_COORDINATOR / ACTIVITY`);
-    - Quản trị viên (`SYSTEM_ADMIN / SCHOOL_WIDE`).
+    - Giáo viên: template `TEACHER`, grant nền `TEACHER_BASE / PERSONAL` và các quyền nghiệp vụ được khai báo;
+    - Tổ trưởng chuyên môn: template `SUBJECT_LEADER`, grant `SUBJECT_GROUP_LEAD / SUBJECT_GROUP` cùng các quyền được giới hạn theo tổ/môn;
+    - Phó Hiệu trưởng phụ trách chuyên môn: template `VICE_PRINCIPAL_ACADEMIC`, grant phê duyệt `APPROVAL_VICE_PRINCIPAL / SCHOOL_WIDE` và quyền nghiệp vụ được khai báo;
+    - Hiệu trưởng: template `PRINCIPAL`, grant phê duyệt `APPROVAL_PRINCIPAL / SCHOOL_WIDE` và quyền nghiệp vụ được khai báo;
+    - Điều phối viên GDĐP: template `GDDP_COORDINATOR`, grant `GDDP_COORDINATOR / ACTIVITY` theo ProgrammeMaster được chỉ định;
+    - Điều phối viên HĐTN-HN: template `HDTN_COORDINATOR`, grant `HĐTN_COORDINATOR / ACTIVITY` theo ProgrammeMaster được chỉ định;
+    - Quản trị tài khoản/kỹ thuật: template `TECHNICAL_ACCOUNT_ADMIN`, grant `USER_MANAGE / SCHOOL_WIDE`, `CAPABILITY_GRANT / SCHOOL_WIDE` và các quyền kỹ thuật trong catalog; **không tự cấp `SYSTEM_ADMIN`**.
   - Idempotent reconciliation API endpoint for backfilling baseline grants across existing active users.
 - **Review Checkpoint:** Reviewed at commit `d0c9f0d3ea9b032962ad258606d2b8809e742542` (PR CI #783 / compatibility #49 SUCCESS).
 
@@ -56,12 +56,12 @@
   - Explicit two-step modal confirmation for safe physical deletion requiring exact username confirmation.
 
 ### Corrections 001 & 002 — Coordinator Fail-Closed & Cache Hardening
-- **Correction 001:** Scope/capability boundaries tightened; query option filtering guarded; raw ID leakage prevented.
+- **Correction 001:** Bổ sung phân trang đầy đủ cho danh mục năm học/chương trình, sửa quy tắc tự chọn năm học theo tổng số bản ghi và kiểm tra membership/fail-closed cho coordinator.
 - **Correction 002:**
   - Strict fail-closed on in-flight refetch: Apply button disabled while queries are pending, resolving, or in error.
   - Isolation of placeholder/cached data to prevent applying stale or unverified template configurations.
   - Per-programme-type cache isolation (`gddp` vs `hdtn`) to eliminate cross-scope contamination.
-  - Same-key 403 error suppression when a user lacks permission for one coordinator family while administering another.
+  - Same-key refetch trả lỗi 403: ngay khi refetch bắt đầu, Preview/Apply bị khóa và snapshot cũ bị hủy; nếu lỗi xảy ra, hành động tiếp tục bị chặn và thông báo lỗi được hiển thị.
 - **Review Checkpoint:** Verified on commit `854bdb5d6f0a2818b5e5deec7f1b0ef2dacf1722`.
 
 ---
@@ -69,9 +69,9 @@
 ## 3. Mock Screenshots vs. Real PostgreSQL CI Evidence
 
 - **Aesthetic & UI/UX Validation (Mock Harness):**
-  - Web persona journeys, responsive layouts, and visual redesign components were validated using Vite/Playwright mock test fixtures to confirm pixel-perfect visual styling, keyboard focus, and accessibility.
+  - Các trạng thái UI, bố cục responsive và một số tình huống điều hướng/tương tác được kiểm tra bằng mock fixtures trong Vite/Playwright; ảnh mock không chứng minh pixel-perfect trên mọi thiết bị hoặc hành vi với dữ liệu production.
 - **Backend Invariant & Transaction Validation (Real PostgreSQL):**
-  - All foreign key constraints, deletion block invariants, concurrency compare-and-set (CAS), and transaction isolation were validated against real ephemeral PostgreSQL instances across 680 integration tests on GitHub Actions CI.
+  - Bộ 680 bài kiểm thử tích hợp trên PostgreSQL cô lập của CI kiểm tra các ràng buộc FK, điều kiện chặn xóa, khóa/giao dịch cạnh tranh và các nghiệp vụ khác; không suy diễn rằng mọi tình huống production đã được kiểm chứng.
   - No database mocks were used for authorization, transactional audit, or deletion preflight verification.
 
 ---
@@ -95,7 +95,7 @@
 - **Repository Diff:** 40 changed files (+11,627 / -281 lines).
 - **Database Schema & Migrations:**
   - **Zero database migrations** (`prisma/migrations` untouched).
-  - Full schema compatibility maintained with PostgreSQL 16/17 production databases.
+  - Không thay đổi schema/migration. CI xác nhận PostgreSQL 16 cô lập; kiểm thử PostgreSQL 17 cục bộ được ghi nhận ở Slice B. Đây không phải chứng nhận tương thích trên cơ sở dữ liệu production.
 - **Automated Test Results (Exact Baseline SHA):**
   - Web Unit & Component Tests: **493 / 493 PASS**.
   - API Integration Tests: **680 / 680 PASS** (PostgreSQL ephemeral suite).

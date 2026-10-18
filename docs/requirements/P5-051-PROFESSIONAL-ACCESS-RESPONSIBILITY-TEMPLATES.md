@@ -112,6 +112,6 @@ In addition to the access/template tests above:
   - **Slice A:** Server-owned baseline access invariant (`TEACHER_BASE / PERSONAL`), responsibility templates (Giáo viên, Tổ trưởng chuyên môn, Phó Hiệu trưởng, Hiệu trưởng, Điều phối GDĐP, Điều phối HĐTN-HN, Quản trị viên), idempotent reconciliation and backfill.
   - **Slice B:** Safe clean-slate user deletion preflight and confirmation, allowlist-only setup row cleanup (`StaffProfile`, `SubjectGroupMembership`, `StaffSubject`), strict denial when operational history exists, atomic deletion transaction and retained audit.
   - **Slice C:** Full-featured user administration workspace in Vietnamese, `DESIGN.md` visual redesign, and Administrative Read-Model for GDDP and HĐTN coordinator options.
-  - **Correction 001 & Correction 002:** Strict coordinator fail-closed on in-flight refetch, isolation of placeholder and cross-scope cached data, same-key 403 error suppression, and fail-closed Apply button disabling.
+  - **Correction 001:** Phân trang đầy đủ, auto-select theo total và kiểm tra membership của coordinator. **Correction 002:** Fail-closed khi same-key refetch đang chạy hoặc trả 403, cách ly placeholder/cache theo scope, hủy snapshot cũ và khóa Preview/Apply.
 - **Verification evidence:** 493 Web tests, 680 API integration tests, 15 smoke tests. Zero database migrations.
 - **Parent merge status:** Unmerged DRAFT; awaiting independent Product Owner authorization. Mandatory post-merge documentation synchronization will occur via `SYNC-P5-051` before dependent `P5-052` can begin.
