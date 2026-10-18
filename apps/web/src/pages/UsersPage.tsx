@@ -179,7 +179,9 @@ export function UsersPage() {
   const [academicYearPage, setAcademicYearPage] = useState(1);
   const [programmeMasterPage, setProgrammeMasterPage] = useState(1);
   const [knownAcademicYears, setKnownAcademicYears] = useState<AcademicYearOptionRecord[]>([]);
-  const [knownMastersByScope, setKnownMastersByScope] = useState<Record<string, ProgrammeMasterOptionRecord[]>>({});
+  const [knownMastersByScopeAndPage, setKnownMastersByScopeAndPage] = useState<
+    Record<string, Record<number, ProgrammeMasterOptionRecord[]>>
+  >({});
   const [templatePreview, setTemplatePreview] = useState<ResponsibilityTemplatePreviewResponse | null>(null);
   const [templatePreviewError, setTemplatePreviewError] = useState('');
   const [templateApplyResult, setTemplateApplyResult] = useState<ResponsibilityTemplateApplyResponse | null>(null);
@@ -195,6 +197,15 @@ export function UsersPage() {
   };
   const [previewSnapshot, setPreviewSnapshot] = useState<PreviewSnapshot | null>(null);
   const previewRequestIdRef = useRef<number>(0);
+
+  const previewSnapshotRef = useRef<PreviewSnapshot | null>(null);
+  previewSnapshotRef.current = previewSnapshot;
+
+  const templatePreviewRef = useRef<ResponsibilityTemplatePreviewResponse | null>(null);
+  templatePreviewRef.current = templatePreview;
+
+  const templateApplyResultRef = useRef<ResponsibilityTemplateApplyResponse | null>(null);
+  templateApplyResultRef.current = templateApplyResult;
 
   const clearApplyResult = useCallback(() => {
     setTemplateApplyResult(null);
@@ -255,28 +266,49 @@ export function UsersPage() {
   });
 
   // Track known academic years across pages to prevent losing selection on page change
+  // Strictly only cache authoritative responses (never placeholderData or in-flight fetching)
   useEffect(() => {
-    if (academicYearsQuery.data?.items) {
+    if (
+      academicYearsQuery.isSuccess &&
+      !academicYearsQuery.isPlaceholderData &&
+      !academicYearsQuery.isFetching &&
+      academicYearsQuery.data?.items
+    ) {
       setKnownAcademicYears((prev) => {
         const map = new Map(prev.map((y) => [y.id, y]));
         academicYearsQuery.data.items.forEach((y) => map.set(y.id, y));
         return Array.from(map.values());
       });
     }
-  }, [academicYearsQuery.data?.items]);
+  }, [
+    academicYearsQuery.isSuccess,
+    academicYearsQuery.isPlaceholderData,
+    academicYearsQuery.isFetching,
+    academicYearsQuery.data?.items,
+  ]);
 
   // Auto-select academic year ONLY when the entire catalog has exactly one option (total === 1) and query succeeded
   useEffect(() => {
     if (
       isCoordinatorTemplate &&
       academicYearsQuery.isSuccess &&
+      !academicYearsQuery.isPlaceholderData &&
+      !academicYearsQuery.isFetching &&
       academicYearsQuery.data?.total === 1 &&
       academicYearsQuery.data?.items?.length === 1 &&
       !academicYearId
     ) {
       setAcademicYearId(academicYearsQuery.data.items[0].id);
     }
-  }, [isCoordinatorTemplate, academicYearsQuery.isSuccess, academicYearsQuery.data?.total, academicYearsQuery.data?.items, academicYearId]);
+  }, [
+    isCoordinatorTemplate,
+    academicYearsQuery.isSuccess,
+    academicYearsQuery.isPlaceholderData,
+    academicYearsQuery.isFetching,
+    academicYearsQuery.data?.total,
+    academicYearsQuery.data?.items,
+    academicYearId,
+  ]);
 
   const programmeMastersQuery = useQuery<ProgrammeMasterOptionListResponse>({
     queryKey: ['programme-master-options', academicYearId, programmeKind, programmeMasterPage],
@@ -293,66 +325,153 @@ export function UsersPage() {
   });
 
   // Track known masters for the current scope to maintain selection across pages
+  // strictly verifying that items match academicYearId & programmeKind, and never caching placeholder data
   useEffect(() => {
-    if (programmeMastersQuery.data?.items && academicYearId) {
+    if (
+      isCoordinatorTemplate &&
+      academicYearId &&
+      programmeMastersQuery.isSuccess &&
+      !programmeMastersQuery.isPlaceholderData &&
+      !programmeMastersQuery.isFetching &&
+      programmeMastersQuery.data?.items
+    ) {
       const scopeKey = `${academicYearId}:${programmeKind}`;
-      setKnownMastersByScope((prev) => {
-        const existing = prev[scopeKey] || [];
-        const map = new Map(existing.map((m) => [m.id, m]));
-        programmeMastersQuery.data.items.forEach((m) => map.set(m.id, m));
+      const validItems = programmeMastersQuery.data.items.filter(
+        (m) => m.academicYearId === academicYearId && m.kind === programmeKind,
+      );
+      setKnownMastersByScopeAndPage((prev) => {
+        const scopePages = prev[scopeKey] ? { ...prev[scopeKey] } : {};
+        scopePages[programmeMasterPage] = validItems;
         return {
           ...prev,
-          [scopeKey]: Array.from(map.values()),
+          [scopeKey]: scopePages,
         };
       });
     }
-  }, [programmeMastersQuery.data?.items, academicYearId, programmeKind]);
+  }, [
+    isCoordinatorTemplate,
+    academicYearId,
+    programmeKind,
+    programmeMasterPage,
+    programmeMastersQuery.isSuccess,
+    programmeMastersQuery.isPlaceholderData,
+    programmeMastersQuery.isFetching,
+    programmeMastersQuery.data?.items,
+  ]);
 
-  // Current scope masters
+  // Current scope masters: combine known pages but always prioritize latest authoritative response for current page
   const currentScopeKey = `${academicYearId}:${programmeKind}`;
   const currentScopeMasters = useMemo(() => {
-    const cached = knownMastersByScope[currentScopeKey];
-    if (cached && cached.length > 0) return cached;
-    return programmeMastersQuery.data?.items || [];
-  }, [knownMastersByScope, currentScopeKey, programmeMastersQuery.data?.items]);
+    const scopePages: Record<number, ProgrammeMasterOptionRecord[]> = knownMastersByScopeAndPage[currentScopeKey]
+      ? { ...knownMastersByScopeAndPage[currentScopeKey] }
+      : {};
 
-  // Fail-closed membership check: selected master must belong to current scope's confirmed list
-  const isSelectedMasterValidMember = useMemo(() => {
+    // Always overwrite current page with latest authoritative data from server
+    if (
+      isCoordinatorTemplate &&
+      academicYearId &&
+      programmeMastersQuery.isSuccess &&
+      !programmeMastersQuery.isPlaceholderData &&
+      !programmeMastersQuery.isFetching &&
+      programmeMastersQuery.data?.items
+    ) {
+      scopePages[programmeMasterPage] = programmeMastersQuery.data.items.filter(
+        (m) => m.academicYearId === academicYearId && m.kind === programmeKind,
+      );
+    }
+
+    const allKnown = Object.values(scopePages).flat();
+    if (allKnown.length > 0) return allKnown;
+
+    if (
+      programmeMastersQuery.data?.items &&
+      !programmeMastersQuery.isPlaceholderData &&
+      academicYearId
+    ) {
+      return programmeMastersQuery.data.items.filter(
+        (m) => m.academicYearId === academicYearId && m.kind === programmeKind,
+      );
+    }
+    return [];
+  }, [
+    knownMastersByScopeAndPage,
+    currentScopeKey,
+    isCoordinatorTemplate,
+    academicYearId,
+    programmeKind,
+    programmeMasterPage,
+    programmeMastersQuery.isSuccess,
+    programmeMastersQuery.isPlaceholderData,
+    programmeMastersQuery.isFetching,
+    programmeMastersQuery.data?.items,
+  ]);
+
+  // Fail-closed coordinator query status: query must be fully completed without errors, refetches, or placeholders
+  const isCoordinatorQueryAuthoritative = useMemo(() => {
     if (!isCoordinatorTemplate) return true;
     if (!academicYearId || !programmeMasterId) return false;
-    if (academicYearsQuery.isError || programmeMastersQuery.isError) return false;
-    if (!academicYearsQuery.isSuccess || !programmeMastersQuery.isSuccess) return false;
-    const match = currentScopeMasters.find((m) => m.id === programmeMasterId);
-    if (!match) return false;
-    if (match.academicYearId !== academicYearId || match.kind !== programmeKind) return false;
+    if (
+      academicYearsQuery.isError ||
+      programmeMastersQuery.isError ||
+      academicYearsQuery.isPending ||
+      programmeMastersQuery.isPending ||
+      academicYearsQuery.isFetching ||
+      programmeMastersQuery.isFetching ||
+      academicYearsQuery.isPlaceholderData ||
+      programmeMastersQuery.isPlaceholderData
+    ) {
+      return false;
+    }
+    if (!academicYearsQuery.isSuccess || !programmeMastersQuery.isSuccess) {
+      return false;
+    }
     return true;
   }, [
     isCoordinatorTemplate,
     academicYearId,
     programmeMasterId,
     academicYearsQuery.isError,
-    academicYearsQuery.isSuccess,
     programmeMastersQuery.isError,
+    academicYearsQuery.isPending,
+    programmeMastersQuery.isPending,
+    academicYearsQuery.isFetching,
+    programmeMastersQuery.isFetching,
+    academicYearsQuery.isPlaceholderData,
+    programmeMastersQuery.isPlaceholderData,
+    academicYearsQuery.isSuccess,
     programmeMastersQuery.isSuccess,
+  ]);
+
+  // Fail-closed membership check: selected master must belong to current scope's confirmed list
+  const isSelectedMasterValidMember = useMemo(() => {
+    if (!isCoordinatorTemplate) return true;
+    if (!isCoordinatorQueryAuthoritative) return false;
+    const match = currentScopeMasters.find((m) => m.id === programmeMasterId);
+    if (!match) return false;
+    if (match.academicYearId !== academicYearId || match.kind !== programmeKind) return false;
+    return true;
+  }, [
+    isCoordinatorTemplate,
+    isCoordinatorQueryAuthoritative,
     currentScopeMasters,
+    programmeMasterId,
+    academicYearId,
     programmeKind,
   ]);
 
-  // Fail-closed coordinator validation: invalid if missing, error, pending, or not a verified member
+  // Fail-closed coordinator validation: invalid if missing, error, pending, fetching, placeholder, or not a verified member
   const coordinatorSelectorMissing =
-    isCoordinatorTemplate &&
-    (!academicYearId ||
-      !programmeMasterId ||
-      !isSelectedMasterValidMember ||
-      academicYearsQuery.isError ||
-      programmeMastersQuery.isError ||
-      academicYearsQuery.isPending ||
-      programmeMastersQuery.isPending);
+    isCoordinatorTemplate && (!isCoordinatorQueryAuthoritative || !isSelectedMasterValidMember);
 
 
   const isCurrentSelectionMatchingPreview = useMemo(() => {
     if (!previewSnapshot || !selectedUserId) return false;
-    if (isCoordinatorTemplate && (coordinatorSelectorMissing || !isSelectedMasterValidMember)) return false;
+    if (
+      isCoordinatorTemplate &&
+      (coordinatorSelectorMissing || !isSelectedMasterValidMember || !isCoordinatorQueryAuthoritative)
+    ) {
+      return false;
+    }
     if (previewSnapshot.targetUserId !== selectedUserId) return false;
     if (previewSnapshot.templateKey !== selectedTemplateKey) return false;
     if (previewSnapshot.subjectGroupId !== (subjectGroupId || '')) return false;
@@ -371,6 +490,7 @@ export function UsersPage() {
     isCoordinatorTemplate,
     coordinatorSelectorMissing,
     isSelectedMasterValidMember,
+    isCoordinatorQueryAuthoritative,
   ]);
 
   // Delete Preflight Query
@@ -547,28 +667,77 @@ export function UsersPage() {
     },
   });
 
+  const templatePreviewMutationResetRef = useRef(templatePreviewMutation.reset);
+  templatePreviewMutationResetRef.current = templatePreviewMutation.reset;
+
   const invalidatePreview = useCallback(
     (options?: { clearError?: boolean }) => {
       previewRequestIdRef.current++;
-      templatePreviewMutation.reset();
+      templatePreviewMutationResetRef.current();
       setTemplatePreview(null);
       setPreviewSnapshot(null);
       if (options?.clearError ?? true) {
         setTemplatePreviewError('');
       }
     },
-    [templatePreviewMutation],
+    [],
   );
 
-  // Invalidate stale preview snapshot if queries transition to error state (e.g. 403, 500, network error)
+  // Invalidate stale preview snapshot if queries are in-flight refetching, in error, or no longer authoritative
   useEffect(() => {
     if (isCoordinatorTemplate) {
-      if (academicYearsQuery.isError || programmeMastersQuery.isError) {
+      const isUnsafeOrError =
+        academicYearsQuery.isFetching ||
+        academicYearsQuery.isError ||
+        programmeMastersQuery.isFetching ||
+        programmeMastersQuery.isError;
+
+      if (isUnsafeOrError) {
+        if (
+          templatePreviewRef.current !== null ||
+          previewSnapshotRef.current !== null ||
+          templateApplyResultRef.current !== null
+        ) {
+          invalidatePreview({ clearError: false });
+          clearApplyResult();
+        }
+      }
+    }
+  }, [
+    isCoordinatorTemplate,
+    academicYearsQuery.isFetching,
+    academicYearsQuery.isError,
+    programmeMastersQuery.isFetching,
+    programmeMastersQuery.isError,
+    invalidatePreview,
+    clearApplyResult,
+  ]);
+
+  // Invalidate stale preview snapshot if selected master is no longer a valid member in current scope
+  useEffect(() => {
+    if (
+      isCoordinatorTemplate &&
+      programmeMasterId &&
+      isCoordinatorQueryAuthoritative &&
+      !isSelectedMasterValidMember
+    ) {
+      if (
+        templatePreviewRef.current !== null ||
+        previewSnapshotRef.current !== null ||
+        templateApplyResultRef.current !== null
+      ) {
         invalidatePreview({ clearError: false });
         clearApplyResult();
       }
     }
-  }, [isCoordinatorTemplate, academicYearsQuery.isError, programmeMastersQuery.isError, invalidatePreview, clearApplyResult]);
+  }, [
+    isCoordinatorTemplate,
+    programmeMasterId,
+    isCoordinatorQueryAuthoritative,
+    isSelectedMasterValidMember,
+    invalidatePreview,
+    clearApplyResult,
+  ]);
 
   // Template Apply Mutation - strictly bound to matching preview snapshot
   const templateApplyMutation = useMutation({
@@ -658,6 +827,8 @@ export function UsersPage() {
     setProgrammeMasterId('');
     setAcademicYearPage(1);
     setProgrammeMasterPage(1);
+    setKnownAcademicYears([]);
+    setKnownMastersByScopeAndPage({});
     invalidatePreview();
     clearApplyResult();
     setDeleteError('');
@@ -1560,6 +1731,8 @@ export function UsersPage() {
                                 setProgrammeMasterId('');
                                 setAcademicYearPage(1);
                                 setProgrammeMasterPage(1);
+                                setKnownAcademicYears([]);
+                                setKnownMastersByScopeAndPage({});
                                 invalidatePreview();
                                 clearApplyResult();
                               }}
@@ -1810,21 +1983,30 @@ export function UsersPage() {
                                       }}
                                     >
                                       <option value="">-- Chọn chương trình đào tạo --</option>
-                                      {programmeMasterId &&
-                                        !programmeMastersQuery.data?.items?.some((m) => m.id === programmeMasterId) &&
-                                        currentScopeMasters.some((m) => m.id === programmeMasterId) && (
-                                          <option value={programmeMasterId}>
-                                            {(() => {
-                                              const sm = currentScopeMasters.find((m) => m.id === programmeMasterId);
-                                              return `Chương trình ${sm?.kind === 'GDDP' ? 'Giáo dục địa phương' : 'Hoạt động trải nghiệm, hướng nghiệp'} - ${sm?.gradeLevel ? `Khối ${sm.gradeLevel}` : 'Toàn trường'} (${sm?.id.slice(0, 8)}) (Đã chọn)`;
-                                            })()}
-                                          </option>
-                                        )}
-                                      {programmeMastersQuery.data?.items.map((m) => (
-                                        <option key={m.id} value={m.id}>
-                                          Chương trình {m.kind === 'GDDP' ? 'Giáo dục địa phương' : 'Hoạt động trải nghiệm, hướng nghiệp'} - {m.gradeLevel ? `Khối ${m.gradeLevel}` : 'Toàn trường'} ({m.id.slice(0, 8)})
-                                        </option>
-                                      ))}
+                                      {(() => {
+                                        const currentItems = (programmeMastersQuery.data?.items || []).filter(
+                                          (m) => m.academicYearId === academicYearId && m.kind === programmeKind,
+                                        );
+                                        return (
+                                          <>
+                                            {programmeMasterId &&
+                                              !currentItems.some((m) => m.id === programmeMasterId) &&
+                                              currentScopeMasters.some((m) => m.id === programmeMasterId) && (
+                                                <option value={programmeMasterId}>
+                                                  {(() => {
+                                                    const sm = currentScopeMasters.find((m) => m.id === programmeMasterId);
+                                                    return `Chương trình ${sm?.kind === 'GDDP' ? 'Giáo dục địa phương' : 'Hoạt động trải nghiệm, hướng nghiệp'} - ${sm?.gradeLevel ? `Khối ${sm.gradeLevel}` : 'Toàn trường'} (${sm?.id.slice(0, 8)}) (Đã chọn)`;
+                                                  })()}
+                                                </option>
+                                              )}
+                                            {currentItems.map((m) => (
+                                              <option key={m.id} value={m.id}>
+                                                Chương trình {m.kind === 'GDDP' ? 'Giáo dục địa phương' : 'Hoạt động trải nghiệm, hướng nghiệp'} - {m.gradeLevel ? `Khối ${m.gradeLevel}` : 'Toàn trường'} ({m.id.slice(0, 8)})
+                                              </option>
+                                            ))}
+                                          </>
+                                        );
+                                      })()}
                                     </select>
                                     {programmeMastersQuery.data && programmeMastersQuery.data.totalPages > 1 && (
                                       <nav className="flex items-center justify-between text-xs text-slate-600 pt-1" aria-label="Phân trang chương trình">

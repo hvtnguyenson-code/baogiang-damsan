@@ -1,5 +1,6 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { QueryClient } from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { jsonResponse, normalAuth, renderApp } from './test-utils';
 
@@ -1629,8 +1630,13 @@ describe('P5-051 Slice C: Users Administration Workspace', () => {
     expect(screen.getByRole('button', { name: /Xem trước thay đổi quyền/i })).toBeDisabled();
   });
 
-  it('coordinator UX C2-FAIL-CLOSED: invalidates preview snapshot and disables apply when queries transition to error or 403', async () => {
-    let shouldFail = false;
+  it('coordinator UX C2-FAIL-CLOSED: same-key refetch pending invalidates preview & hides Apply, and 403 keeps it blocked', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
+    });
+    let refetchResolver: ((val: Response) => void) | null = null;
+    let masterRequestCount = 0;
+
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.endsWith('/auth/me')) {
@@ -1651,14 +1657,139 @@ describe('P5-051 Slice C: Users Administration Workspace', () => {
         });
       }
       if (url.includes('/api/capabilities/responsibility-templates/programme-master-options')) {
-        if (shouldFail) {
-          return new Response(JSON.stringify({ statusCode: 403, message: 'Forbidden' }), {
-            status: 403,
-            headers: { 'Content-Type': 'application/json' },
+        masterRequestCount++;
+        if (masterRequestCount === 1) {
+          return jsonResponse({
+            items: [{ id: 'm-gddp-10', academicYearId: 'year-2026', kind: 'GDDP', gradeLevel: 10 }],
+            total: 1,
+            page: 1,
+            pageSize: 50,
+            totalPages: 1,
           });
         }
+        // Second request is in-flight pending refetch on SAME queryKey
+        return new Promise<Response>((resolve) => {
+          refetchResolver = resolve;
+        });
+      }
+      if (url.includes('/api/capabilities/responsibility-templates')) {
+        return jsonResponse({ items: mockTemplates });
+      }
+      if (url.includes('/api/users/u-teacher-1/responsibility-templates/preview') && init?.method === 'POST') {
         return jsonResponse({
-          items: [{ id: 'm-gddp-10', academicYearId: 'year-2026', kind: 'GDDP', gradeLevel: 10 }],
+          templateKey: 'GDDP_COORDINATOR',
+          version: 'v1',
+          targetUser: { id: 'u-teacher-1', username: 'gv_nguyenvanb', displayName: 'Nguyễn Văn Bình', isTeachingStaff: true, status: 'ACTIVE' },
+          eligibility: { isEligible: true },
+          requiredResources: { kind: 'ACTIVITY', provided: true, resolvedProgrammeMasterId: 'm-gddp-10', details: 'GDĐP (Khối 10)' },
+          grantsToAdd: [{ capabilityKey: 'GDDP_COORDINATOR', scopeType: 'ACTIVITY', scopeResourceId: 'm-gddp-10', description: 'Điều phối GDĐP Khối 10' }],
+          alreadyPresent: [],
+          conflicts: [],
+          forbiddenDefaults: [],
+          notes: [],
+        });
+      }
+      if (url.includes('/api/users')) return jsonResponse(page(mockUsers));
+      return jsonResponse({});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+
+    renderApp('/quan-tri/nguoi-dung', queryClient);
+    await user.click(await screen.findByRole('button', { name: 'Chọn gv_nguyenvanb' }));
+
+    const templateSelect = await screen.findByLabelText(/Chọn Mẫu trách nhiệm/i);
+    await user.selectOptions(templateSelect, 'GDDP_COORDINATOR');
+
+    // Auto-selected year-2026 because total === 1
+    const masterSelect = await screen.findByLabelText(/Chọn chương trình đào tạo cho mẫu điều phối/i);
+    await user.selectOptions(masterSelect, 'm-gddp-10');
+
+    expect(await screen.findByText(/Đã chọn tài nguyên chương trình hợp lệ/i)).toBeInTheDocument();
+
+    const previewBtn = screen.getByRole('button', { name: /Xem trước thay đổi quyền/i });
+    expect(previewBtn).not.toBeDisabled();
+    await user.click(previewBtn);
+
+    // Apply button appears
+    const applyBtn = await screen.findByRole('button', { name: /Áp dụng Mẫu trách nhiệm/i });
+    expect(applyBtn).toBeInTheDocument();
+
+    // Trigger refetch on SAME queryKey WITHOUT switching template, user, year or master
+    act(() => {
+      queryClient.refetchQueries({ queryKey: ['programme-master-options'] });
+    });
+
+    // IMMEDIATELY while refetch is pending (isFetching === true):
+    // 1. Apply button must be absent/removed
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /Áp dụng Mẫu trách nhiệm/i })).not.toBeInTheDocument();
+    });
+    // 2. Preview button must be disabled
+    expect(screen.getByRole('button', { name: /Xem trước thay đổi quyền/i })).toBeDisabled();
+    // 3. Selection valid notice must be absent
+    expect(screen.queryByText(/Đã chọn tài nguyên chương trình hợp lệ/i)).not.toBeInTheDocument();
+
+    // NOW: Resolve refetch with 403 Forbidden
+    act(() => {
+      if (refetchResolver) {
+        refetchResolver(
+          new Response(JSON.stringify({ statusCode: 403, message: 'Forbidden: access revoked' }), {
+            status: 403,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        );
+      }
+    });
+
+    // After 403 resolution:
+    // 1. Error message must appear
+    expect(await screen.findByText(/Không thể tải danh sách chương trình: Forbidden: access revoked/i)).toBeInTheDocument();
+    // 2. Apply button remains absent
+    expect(screen.queryByRole('button', { name: /Áp dụng Mẫu trách nhiệm/i })).not.toBeInTheDocument();
+    // 3. Preview button remains disabled
+    expect(screen.getByRole('button', { name: /Xem trước thay đổi quyền/i })).toBeDisabled();
+  });
+
+  it('coordinator UX C2-MEMBERSHIP: same-key refetch succeeds without selected master -> invalidates preview and prevents apply', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
+    });
+    let masterRequestCount = 0;
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        return jsonResponse(
+          auth(
+            { key: 'USER_MANAGE', scope: 'SCHOOL_WIDE' },
+            { key: 'CAPABILITY_GRANT', scope: 'SCHOOL_WIDE' },
+          ),
+        );
+      }
+      if (url.includes('/api/capabilities/responsibility-templates/academic-year-options')) {
+        return jsonResponse({
+          items: [{ id: 'year-2026', code: '2026_2027', name: 'Năm học 2026-2027' }],
+          total: 1,
+          page: 1,
+          pageSize: 50,
+          totalPages: 1,
+        });
+      }
+      if (url.includes('/api/capabilities/responsibility-templates/programme-master-options')) {
+        masterRequestCount++;
+        if (masterRequestCount === 1) {
+          return jsonResponse({
+            items: [{ id: 'm-gddp-10', academicYearId: 'year-2026', kind: 'GDDP', gradeLevel: 10 }],
+            total: 1,
+            page: 1,
+            pageSize: 50,
+            totalPages: 1,
+          });
+        }
+        // Second request (refetch): m-gddp-10 has been removed on server, only m-gddp-11 exists now
+        return jsonResponse({
+          items: [{ id: 'm-gddp-11', academicYearId: 'year-2026', kind: 'GDDP', gradeLevel: 11 }],
           total: 1,
           page: 1,
           pageSize: 50,
@@ -1688,43 +1819,124 @@ describe('P5-051 Slice C: Users Administration Workspace', () => {
     vi.stubGlobal('fetch', fetchMock);
     const user = userEvent.setup();
 
+    renderApp('/quan-tri/nguoi-dung', queryClient);
+    await user.click(await screen.findByRole('button', { name: 'Chọn gv_nguyenvanb' }));
+
+    const templateSelect = await screen.findByLabelText(/Chọn Mẫu trách nhiệm/i);
+    await user.selectOptions(templateSelect, 'GDDP_COORDINATOR');
+
+    const masterSelect = await screen.findByLabelText(/Chọn chương trình đào tạo cho mẫu điều phối/i);
+    await user.selectOptions(masterSelect, 'm-gddp-10');
+
+    const previewBtn = screen.getByRole('button', { name: /Xem trước thay đổi quyền/i });
+    await user.click(previewBtn);
+
+    // Apply button appears
+    expect(await screen.findByRole('button', { name: /Áp dụng Mẫu trách nhiệm/i })).toBeInTheDocument();
+
+    // Refetch same queryKey - server no longer returns m-gddp-10
+    await act(async () => {
+      await queryClient.refetchQueries({ queryKey: ['programme-master-options'] });
+    });
+
+    // 1. Apply button must be gone immediately
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /Áp dụng Mẫu trách nhiệm/i })).not.toBeInTheDocument();
+    });
+    // 2. Selection valid notice must NOT appear
+    expect(screen.queryByText(/Đã chọn tài nguyên chương trình hợp lệ/i)).not.toBeInTheDocument();
+    // 3. Preview button must be disabled because m-gddp-10 is not a valid member
+    expect(screen.getByRole('button', { name: /Xem trước thay đổi quyền/i })).toBeDisabled();
+  });
+
+  it('coordinator UX C2-ANTI-POLLUTION: switching academic year does not leak old year options into new scope', async () => {
+    let year2025Resolver: ((val: Response) => void) | null = null;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        return jsonResponse(
+          auth(
+            { key: 'USER_MANAGE', scope: 'SCHOOL_WIDE' },
+            { key: 'CAPABILITY_GRANT', scope: 'SCHOOL_WIDE' },
+          ),
+        );
+      }
+      if (url.includes('/api/capabilities/responsibility-templates/academic-year-options')) {
+        return jsonResponse({
+          items: [
+            { id: 'year-2026', code: '2026_2027', name: 'Năm học 2026-2027' },
+            { id: 'year-2025', code: '2025_2026', name: 'Năm học 2025-2026' },
+          ],
+          total: 2,
+          page: 1,
+          pageSize: 50,
+          totalPages: 1,
+        });
+      }
+      if (url.includes('/api/capabilities/responsibility-templates/programme-master-options')) {
+        const urlObj = new URL(url, 'http://localhost');
+        const yearId = urlObj.searchParams.get('academicYearId');
+        if (yearId === 'year-2026') {
+          return jsonResponse({
+            items: [{ id: 'm-2026-10', academicYearId: 'year-2026', kind: 'GDDP', gradeLevel: 10 }],
+            total: 1,
+            page: 1,
+            pageSize: 50,
+            totalPages: 1,
+          });
+        }
+        if (yearId === 'year-2025') {
+          return new Promise<Response>((resolve) => {
+            year2025Resolver = resolve;
+          });
+        }
+      }
+      if (url.includes('/api/capabilities/responsibility-templates')) {
+        return jsonResponse({ items: mockTemplates });
+      }
+      if (url.includes('/api/users')) return jsonResponse(page(mockUsers));
+      return jsonResponse({});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+
     renderApp('/quan-tri/nguoi-dung');
     await user.click(await screen.findByRole('button', { name: 'Chọn gv_nguyenvanb' }));
 
     const templateSelect = await screen.findByLabelText(/Chọn Mẫu trách nhiệm/i);
     await user.selectOptions(templateSelect, 'GDDP_COORDINATOR');
 
-    // Auto-selected year-2026 because total === 1
-    const masterSelect = await screen.findByLabelText(/Chọn chương trình đào tạo cho mẫu điều phối/i);
-    await user.selectOptions(masterSelect, 'm-gddp-10');
+    const yearSelect = await screen.findByLabelText(/Chọn năm học cho mẫu điều phối/i);
+    await user.selectOptions(yearSelect, 'year-2026');
 
-    expect(await screen.findByText(/Đã chọn tài nguyên chương trình hợp lệ/i)).toBeInTheDocument();
+    // Master of year-2026 loads
+    await screen.findByLabelText(/Chọn chương trình đào tạo cho mẫu điều phối/i);
+    expect(await screen.findByRole('option', { name: /Khối 10/i })).toBeInTheDocument();
 
-    const previewBtn = screen.getByRole('button', { name: /Xem trước thay đổi quyền/i });
-    expect(previewBtn).not.toBeDisabled();
-    await user.click(previewBtn);
+    // Now switch to year-2025
+    await user.selectOptions(yearSelect, 'year-2025');
 
-    // Apply button appears
-    const applyBtn = await screen.findByRole('button', { name: /Áp dụng Mẫu trách nhiệm/i });
-    expect(applyBtn).toBeInTheDocument();
+    // While year-2025 query is pending, old master m-2026-10 must NOT appear under year-2025
+    expect(screen.queryByRole('option', { name: /Khối 10/i })).not.toBeInTheDocument();
 
-    // Now simulate subsequent query failure (e.g. 403 on refetch or template toggle)
-    shouldFail = true;
-    // Switch to another template and back to GDDP_COORDINATOR to trigger refetch that fails
-    await user.selectOptions(templateSelect, 'TEACHER');
-    await user.selectOptions(templateSelect, 'GDDP_COORDINATOR');
+    // Resolve year-2025 with its own master
+    act(() => {
+      if (year2025Resolver) {
+        year2025Resolver(
+          jsonResponse({
+            items: [{ id: 'm-2025-12', academicYearId: 'year-2025', kind: 'GDDP', gradeLevel: 12 }],
+            total: 1,
+            page: 1,
+            pageSize: 50,
+            totalPages: 1,
+          }),
+        );
+      }
+    });
 
-    // Wait for error notice to appear
-    expect(await screen.findByText(/Không thể tải danh sách chương trình/i)).toBeInTheDocument();
-
-    // Valid selection notice must NOT be present
-    expect(screen.queryByText(/Đã chọn tài nguyên chương trình hợp lệ/i)).not.toBeInTheDocument();
-
-    // Preview button must be disabled
-    expect(screen.getByRole('button', { name: /Xem trước thay đổi quyền/i })).toBeDisabled();
-
-    // Apply button must NOT be present
-    expect(screen.queryByRole('button', { name: /Áp dụng Mẫu trách nhiệm/i })).not.toBeInTheDocument();
+    // Now only year-2025 master appears
+    expect(await screen.findByRole('option', { name: /Khối 12/i })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /Khối 10/i })).not.toBeInTheDocument();
   });
 
   it('coordinator UX C2-ANTI-STALE: switching academic year or template key clears old preview snapshot and disables Apply', async () => {

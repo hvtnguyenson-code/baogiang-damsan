@@ -5,8 +5,8 @@ import type { ReactElement } from 'react';
 import App from '../App';
 import { AuthProvider } from '../auth/auth-context';
 
-export function renderApp(route = '/') {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } } });
+export function renderApp(route = '/', customQueryClient?: QueryClient) {
+  const queryClient = customQueryClient ?? new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[route]} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
