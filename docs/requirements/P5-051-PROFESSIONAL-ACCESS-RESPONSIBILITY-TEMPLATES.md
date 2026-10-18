@@ -1,6 +1,6 @@
 # P5-051 — Professional Access Baseline, Responsibility Templates & Safe User Lifecycle
 
-**Status:** IN_PROGRESS — Slice A reviewed; Slice B backend pending independent review; Slice C administration UI required
+**Status:** IN_PROGRESS (READY FOR PARENT MERGE APPROVAL) — All slices (Slice A, B, C) and corrections (001, 002) completed and independently reviewed; baseline exact HEAD `854bdb5d6f0a2818b5e5deec7f1b0ef2dacf1722` verified green on CI #798 (`39137629512`) and P6-021 #52 (`39137629459`); PR #240 DRAFT; awaiting parent merge approval.
 
 **Depends on:** P5-050  
 **Traceability:** T50
@@ -103,3 +103,15 @@ In addition to the access/template tests above:
 - preview-to-confirm stale race -> denied with zero partial cleanup;
 - blocked account can still be disabled through the existing lifecycle;
 - successful delete leaves zero orphaned allowlisted rows and preserves unrelated users/data.
+
+## Implementation and verification status
+
+- **Branch / PR:** `feat/p5-051-professional-baseline-responsibility-templates`, PR #240 (DRAFT).
+- **Baseline reviewed commit:** `854bdb5d6f0a2818b5e5deec7f1b0ef2dacf1722`.
+- **Delivered scope:**
+  - **Slice A:** Server-owned baseline access invariant (`TEACHER_BASE / PERSONAL`), responsibility templates (Giáo viên, Tổ trưởng chuyên môn, Phó Hiệu trưởng, Hiệu trưởng, Điều phối GDĐP, Điều phối HĐTN-HN, Quản trị viên), idempotent reconciliation and backfill.
+  - **Slice B:** Safe clean-slate user deletion preflight and confirmation, allowlist-only setup row cleanup (`StaffProfile`, `SubjectGroupMembership`, `StaffSubject`), strict denial when operational history exists, atomic deletion transaction and retained audit.
+  - **Slice C:** Full-featured user administration workspace in Vietnamese, `DESIGN.md` visual redesign, and Administrative Read-Model for GDDP and HĐTN coordinator options.
+  - **Correction 001 & Correction 002:** Strict coordinator fail-closed on in-flight refetch, isolation of placeholder and cross-scope cached data, same-key 403 error suppression, and fail-closed Apply button disabling.
+- **Verification evidence:** 493 Web tests, 680 API integration tests, 15 smoke tests. Zero database migrations.
+- **Parent merge status:** Unmerged DRAFT; awaiting independent Product Owner authorization. Mandatory post-merge documentation synchronization will occur via `SYNC-P5-051` before dependent `P5-052` can begin.
