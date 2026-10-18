@@ -1372,7 +1372,7 @@ tr:nth-last-child(-n+3) .user-directory-more__menu {
 }
 .badge-pill--teaching {
   background: #dcfce7;
-  color: #15803d;
+  color: #166534;
   font-weight: 800;
   padding: 1px 6px;
   font-size: 0.68rem;
@@ -1380,10 +1380,12 @@ tr:nth-last-child(-n+3) .user-directory-more__menu {
   border-radius: 9999px;
 }
 .badge-pill--slate {
-  background: #f1f5f9;
-  color: #64748b;
-  padding: 1px 5px;
+  background: #e2e8f0;
+  color: #1e293b;
+  font-weight: 700;
+  padding: 1px 6px;
   font-size: 0.68rem;
+  border: 1px solid #cbd5e1;
   border-radius: 9999px;
 }
 .user-directory-confirm-inline {
