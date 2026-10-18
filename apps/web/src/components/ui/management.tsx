@@ -7,8 +7,8 @@ export function PageHeader({ eyebrow, title, children, action }: { eyebrow: stri
   return <header className="page-heading page-heading--rail management-heading"><div className="margin-rail" aria-hidden="true" /><div><p className="utility-label">{eyebrow}</p><div className="management-heading__row"><div><h1>{title}</h1><p>{children}</p></div>{action}</div></div></header>;
 }
 
-export function DataTable({ label, headings, children }: { label: string; headings: string[]; children: ReactNode }) {
-  return <div className="table-region" role="region" aria-label={label} tabIndex={0}><table><thead><tr>{headings.map((heading) => <th key={heading} scope="col">{heading}</th>)}</tr></thead><tbody>{children}</tbody></table></div>;
+export function DataTable({ label, headings, children, className }: { label: string; headings: string[]; children: ReactNode; className?: string }) {
+  return <div className={`table-region ${className ?? ''}`} role="region" aria-label={label} tabIndex={0}><table><thead><tr>{headings.map((heading) => <th key={heading} scope="col">{heading}</th>)}</tr></thead><tbody>{children}</tbody></table></div>;
 }
 
 export function Pagination({ page, pageSize, total, onPage, ariaLabel }: { page: number; pageSize: number; total: number; onPage(page: number): void; ariaLabel?: string }) {

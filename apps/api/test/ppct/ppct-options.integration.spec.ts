@@ -12,14 +12,8 @@ integration('PPCT administration workspace options (PostgreSQL integration)', ()
     await h.prisma.ppctItem.deleteMany();
     await h.prisma.ppctVersion.deleteMany();
     await h.prisma.ppctPlan.deleteMany();
-    await h.prisma.calendarInterruption.deleteMany();
-    await h.prisma.semester.deleteMany();
-    await h.prisma.academicWeekSegment.deleteMany();
-    await h.prisma.academicWeek.deleteMany();
-    await h.prisma.academicCalendarVersion.deleteMany();
-    await h.prisma.schoolClass.deleteMany();
-    await h.prisma.academicYear.deleteMany();
-    await h.prisma.subject.deleteMany();
+    // Keep calendar/catalog cleanup in the shared child-before-parent order;
+    // a preceding suite may leave TimeSlotDefinition or calendar children.
     await h.clean();
   }
 

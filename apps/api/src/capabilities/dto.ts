@@ -1,6 +1,21 @@
 import { Transform, Type } from 'class-transformer';
-import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, IsUUID, Length, Max, Min, ValidateIf } from 'class-validator';
-import { CapabilityScope } from '@baogiang/contracts';
+import {
+  ArrayMinSize,
+  ArrayUnique,
+  IsArray,
+  IsBoolean,
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Length,
+  Max,
+  Min,
+  ValidateIf,
+  ValidateNested,
+} from 'class-validator';
+import { CapabilityScope, ResponsibilityTemplateKey } from '@baogiang/contracts';
 import { IsAbsoluteInstant } from '../common/validation/is-absolute-instant.decorator';
 
 const scopes: CapabilityScope[] = ['PERSONAL', 'SUBJECT_GROUP', 'SUBJECT', 'ACTIVITY', 'SCHOOL_WIDE'];
@@ -38,4 +53,76 @@ export class CreateGrantDto {
 
 export class RevokeGrantDto {
   @ValidateIf(optionalValue) @Transform(trim) @IsString() revokeReason?: string;
+}
+
+export const TEMPLATE_KEYS: ResponsibilityTemplateKey[] = [
+  'TEACHER',
+  'SUBJECT_LEADER',
+  'VICE_PRINCIPAL_ACADEMIC',
+  'PRINCIPAL',
+  'GDDP_COORDINATOR',
+  'HDTN_COORDINATOR',
+  'TECHNICAL_ACCOUNT_ADMIN',
+];
+
+export class ResponsibilityTemplateResourceDto {
+  @IsOptional() @IsUUID() subjectGroupId?: string;
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsUUID('4', { each: true })
+  subjectIds?: string[];
+  @IsOptional() @IsUUID() programmeMasterId?: string;
+}
+
+export class ResponsibilityTemplatePreviewDto {
+  @IsEnum(TEMPLATE_KEYS) templateKey!: ResponsibilityTemplateKey;
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ResponsibilityTemplateResourceDto)
+  resources?: ResponsibilityTemplateResourceDto;
+  @IsOptional() @IsUUID() subjectGroupId?: string;
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsUUID('4', { each: true })
+  subjectIds?: string[];
+  @IsOptional() @IsUUID() programmeMasterId?: string;
+}
+
+export class ResponsibilityTemplateApplyDto {
+  @IsEnum(TEMPLATE_KEYS) templateKey!: ResponsibilityTemplateKey;
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ResponsibilityTemplateResourceDto)
+  resources?: ResponsibilityTemplateResourceDto;
+  @IsOptional() @IsUUID() subjectGroupId?: string;
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsUUID('4', { each: true })
+  subjectIds?: string[];
+  @IsOptional() @IsUUID() programmeMasterId?: string;
+}
+
+export class BaselineReconciliationApplyDto {
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayUnique()
+  @IsUUID('4', { each: true })
+  targetUserIds?: string[];
+}
+
+export class ListAcademicYearOptionsDto extends CapabilityPageDto {}
+
+export const PROGRAMME_MASTER_OPTION_KINDS = ['GDDP', 'HDTN_HN'] as const;
+export type ProgrammeMasterOptionKind = (typeof PROGRAMME_MASTER_OPTION_KINDS)[number];
+
+export class ListProgrammeMasterOptionsDto extends CapabilityPageDto {
+  @IsUUID('4')
+  academicYearId!: string;
+
+  @IsEnum(PROGRAMME_MASTER_OPTION_KINDS)
+  kind!: ProgrammeMasterOptionKind;
 }

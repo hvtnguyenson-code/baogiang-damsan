@@ -8,7 +8,11 @@ Per `MAJOR-TASK-DOCUMENTATION-SYNC-PROTOCOL.md`, this file is intentionally conc
 
 Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub. SHAs here are evidence for already-established task states, never a self-referential claim that this document contains its own current commit.
 
-**Status snapshot date:** 2026-10-16
+**Status snapshot date:** 2026-10-18
+
+## P5-051 active branch — Pre-merge governance documentation sync checkpoint
+
+P5-051 is **IN_PROGRESS** (Ready for parent merge approval) on `feat/p5-051-professional-baseline-responsibility-templates`, PR #240 (DRAFT). All functional and operability slices are complete: Slice A baseline access & responsibility templates, Slice B safe clean-slate user deletion with business-history protection, and Slice C administration workspace with DESIGN.md visual redesign, Administrative Read-Model for GDDP/HĐTN coordinator options, plus Correction 001 and Correction 002 (strict in-flight refetch fail-closed, placeholder/scope-cache isolation, and same-key 403 prevention). Baseline exact HEAD `854bdb5d6f0a2818b5e5deec7f1b0ef2dacf1722` passed independent review and both CI runs (CI run 39137629512 and P6-021 run 39137629459 SUCCESS; 493 Web tests, 680 API integration tests, 15 smoke tests). Zero database migrations. PR #240 remains an open draft; no merge, deployment, or production database mutation has occurred or is claimed. Parent review summary: `docs/phase-reports/P5-051-PARENT-PRE-MERGE-REVIEW.md`.
 
 ## 2026-10-16 product operability audit — product path reopened
 
@@ -80,15 +84,15 @@ Preliminary Desktop Commander read-only metadata: Windows Server 2022, 6 logical
 
 ### In Progress
 
+- `P5-051` — **READY FOR PARENT MERGE APPROVAL**: Slice A, Slice B, Slice C, Correction 001, and Correction 002 implemented and independently reviewed on PR #240; baseline exact HEAD `854bdb5d6f0a2818b5e5deec7f1b0ef2dacf1722` verified green on CI and P6-021; docs pre-merge sync in progress; deliberately unmerged awaiting Product Owner approval.
 - `P6-020` — **IN_PROGRESS: preliminary passive host reconnaissance only**; formal PASS 1/PASS 2 NOT EXECUTED. Exact deployment candidate approved for read-only scope above.
 
 ### In Review
 
-- None for the P5-050 product-operability programme.
+- None for the P5-050 product-operability programme (P5-051 parent PR #240 is staged for merge review).
 
 ### Ready
 
-- `P5-051` — **next execution priority**: professional baseline access, responsibility templates and safe user lifecycle.
 - `P5-053` — timetable + time-slot administration workspace; eligible by dependency but held behind the sequential orchestration priority.
 - `P5-054` — teaching-operations workspace closure; eligible by dependency but held behind the sequential orchestration priority.
 - `P5-056A` — notification/Web Push architecture; eligible by dependency but held behind the sequential orchestration priority.
