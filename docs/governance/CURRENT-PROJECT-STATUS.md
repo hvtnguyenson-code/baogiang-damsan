@@ -8,22 +8,21 @@ Per `MAJOR-TASK-DOCUMENTATION-SYNC-PROTOCOL.md`, this file is intentionally conc
 
 Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub. SHAs here are evidence for already-established task states, never a self-referential claim that this document contains its own current commit.
 
-**Status snapshot date:** 2026-10-18
+**Status snapshot date:** 2026-10-19
 
 ## P5-051 — CLOSED by SYNC-P5-051
 
 P5-051 (T50) is **CLOSED by SYNC-P5-051**. Parent PR #240 merged to `main` at `cd0e67d342276f1e3e1baa2bb1de9078f4b2e5c7`; authoritative post-merge CI #799 (run `39143647086`) SUCCESS, auto-deploy #14 (run `39144276217`) SUCCESS, and Deploy VPS #12 (run `39144282062`) SUCCESS. Independent review of Slice A/B/C and Corrections 001/002 passed; 493 Web unit tests, 680 API integration tests and 15 smoke tests passed on the reviewed PR head. Scope: professional baseline, audited responsibility templates, safe clean-slate deletion, Users Administration UI and coordinator read-model. Zero DB migrations. VPS verified `current` pointed to the merge SHA, Báo giảng and protected Nội trú health endpoints returned HTTP 200; no teacher pilot authorization follows from this deployment. P5-052 is now READY by dependency; P5-057 and P6-050 remain blocked by their other prerequisites. See `docs/phase-reports/P5-051-PARENT-PRE-MERGE-REVIEW.md` for parent implementation evidence.
 
-## P5-052 — IN_REVIEW (Task-Oriented Workspace & Information Architecture)
+## P5-052 — CLOSED by SYNC-P5-052 (Task-Oriented Workspace & Information Architecture)
 
-P5-052 (T51) is **IN_REVIEW**. Implementation is complete on dedicated branch `feat/p5-052-task-oriented-workspace-ia` starting from canonical `main@209651a838e2f73b85540e3805a38eb5da5bba4e`.
+P5-052 (T51) is **CLOSED by SYNC-P5-052**. Parent PR #242 merged as `0711bd8e6edaca38c7e3840ff66de20f353bdcd8` after independent review and Corrections 001/002. Authoritative post-merge main CI run `39238435454`, auto-deploy run `39239589746`, and VPS deployment run `39239601301` all SUCCESS. VPS `current` points to this exact merge SHA; Báo giảng local/public readiness and protected Nội trú returned HTTP 200. No backend, migration, or CI/CD changes; no teacher pilot authorization. P5-053 is the next sequential implementation task.
 - Delivered task-oriented information architecture with 5 coherent work families (`my-work`, `academic-data`, `teaching-operations`, `reporting-approval`, `administration`) mapping 22/22 canonical routes with exact capabilities predicates.
 - Replaced flat navigation links with responsive desktop dropdowns and accessible mobile drawer with keyboard support (Escape dismiss, auto-close on navigate, WCAG AA contrast and touch target).
 - Transformed HomePage into an actionable workspace with real bounded pending approval queue for PHT/BGH and teaching queue for teachers; honest zero and error handling without fake numbers.
 - Respectful, helpful Access Denied UX without leaking technical keys.
-- Verification: 508/508 Web unit tests pass (+15 new comprehensive tests); typecheck, lint, UI static checks, build pass; 14 Playwright screenshots captured across 5 viewports.
-- Zero backend, database, migration, CI/CD, deploy or VPS mutation.
-- PR DRAFT opened for independent ChatGPT review. Merge and deploy remain strictly forbidden.
+- Verification: final reviewed PR-head CI `39231694123` passed 511 Web unit tests, 680 API integration tests, and 19 Playwright E2E tests; 16 MOCK screenshots captured across 5 viewports; post-merge CI/deploy succeeded.
+- Zero backend, database, migration or CI/CD code changes in parent PR. Authorized code-only production deployment completed successfully after merge; no production database migration.
 
 
 ## 2026-10-16 product operability audit — product path reopened
@@ -101,11 +100,11 @@ Preliminary Desktop Commander read-only metadata: Windows Server 2022, 6 logical
 
 ### In Review
 
-- `P5-052` — task-oriented workspace and information architecture; implementation complete on dedicated branch `feat/p5-052-task-oriented-workspace-ia`, 508 Web unit tests pass, PR DRAFT opened for independent ChatGPT review.
+- None for the P5-050 product-operability programme; P5-052 is CLOSED by SYNC-P5-052.
 
 ### Ready
 
-- `P5-053` — timetable + time-slot administration workspace; eligible by dependency but held behind the sequential orchestration priority.
+- `P5-053` — timetable + time-slot administration workspace; next sequential implementation task after P5-052 closure.
 - `P5-054` — teaching-operations workspace closure; eligible by dependency but held behind the sequential orchestration priority.
 - `P5-056A` — notification/Web Push architecture; eligible by dependency but held behind the sequential orchestration priority.
 - `P0-005` — docs-only historical T31 traceability reconciliation; independent of the product-operability implementation path.

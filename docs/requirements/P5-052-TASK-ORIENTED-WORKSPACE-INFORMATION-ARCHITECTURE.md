@@ -1,6 +1,6 @@
 # P5-052 — Task-Oriented Workspace & Information Architecture
 
-**Status:** IN_REVIEW<br>
+**Status:** CLOSED by SYNC-P5-052 — PR #242 merged at `0711bd8e6edaca38c7e3840ff66de20f353bdcd8`; main CI `39238435454`, auto-deploy `39239589746`, Deploy VPS `39239601301` SUCCESS. Product pilot remains gated.<br>
 **Depends on:** P5-050, P5-051<br>
 **Traceability:** T51
 
