@@ -473,6 +473,69 @@ describe('P5-052: Task-Oriented Workspace & Information Architecture', () => {
       // Bàn phím: focus được trả về mobile toggle
       expect(document.activeElement).toBe(mobileToggle);
     });
+
+    it('auto-expands active family upon opening mobile drawer and allows collapsing/re-expanding without infinite loop or forced re-open', async () => {
+      const auth = authWithCapabilities([
+        { key: 'AUDIT_VIEW', scope: 'SCHOOL_WIDE' },
+        { key: 'USER_MANAGE', scope: 'SCHOOL_WIDE' },
+      ]);
+
+      vi.stubGlobal('fetch', vi.fn().mockImplementation((req: RequestInfo | URL) => {
+        const url = typeof req === 'string' ? req : req instanceof Request ? req.url : req.toString();
+        if (url.includes('/api/auth/me')) {
+          return Promise.resolve(jsonResponse(auth));
+        }
+        if (url.includes('/api/audit')) {
+          return Promise.resolve(jsonResponse({ items: [], page: 1, pageSize: 20, total: 0 }));
+        }
+        return Promise.resolve(jsonResponse({}));
+      }));
+
+      const consoleErrorSpy = vi.spyOn(console, 'error');
+
+      renderApp('/quan-tri/nhat-ky');
+      await screen.findByRole('heading', { name: /nhật ký/i });
+
+      const mobileToggle = await screen.findByRole('button', { name: /thực đơn/i });
+      expect(mobileToggle).toHaveAttribute('aria-expanded', 'false');
+
+      // Mở thực đơn mobile: Quản trị là active family vì route đang là /quan-tri/nhat-ky
+      fireEvent.click(mobileToggle);
+      expect(mobileToggle).toHaveAttribute('aria-expanded', 'true');
+      const mobileDrawer = screen.getByLabelText(/thực đơn di động/i);
+      expect(mobileDrawer).toBeInTheDocument();
+
+      // Accordion Quản trị phải TỰ ĐỘNG MỞ vì route đang active thuộc nhóm này
+      const adminAccordion = within(mobileDrawer).getByRole('button', { name: /quản trị/i });
+      expect(adminAccordion).toHaveAttribute('aria-expanded', 'true');
+      expect(within(mobileDrawer).getByRole('link', { name: 'Nhật ký' })).toBeInTheDocument();
+
+      // Người dùng THU GỌN nhóm active trong cùng drawer
+      fireEvent.click(adminAccordion);
+      expect(adminAccordion).toHaveAttribute('aria-expanded', 'false');
+      expect(within(mobileDrawer).queryByRole('link', { name: 'Nhật ký' })).not.toBeInTheDocument();
+
+      // Người dùng MỞ LẠI nhóm active trong cùng drawer
+      fireEvent.click(adminAccordion);
+      expect(adminAccordion).toHaveAttribute('aria-expanded', 'true');
+      expect(within(mobileDrawer).getByRole('link', { name: 'Nhật ký' })).toBeInTheDocument();
+
+      // Đóng drawer bằng Escape
+      fireEvent.keyDown(document, { key: 'Escape', code: 'Escape' });
+      expect(mobileToggle).toHaveAttribute('aria-expanded', 'false');
+      expect(screen.queryByLabelText(/thực đơn di động/i)).not.toBeInTheDocument();
+
+      // Mở lại drawer: nhóm active được tự động mở lại lần nữa một cách ổn định
+      fireEvent.click(mobileToggle);
+      const reopenedDrawer = screen.getByLabelText(/thực đơn di động/i);
+      const reopenedAdminAccordion = within(reopenedDrawer).getByRole('button', { name: /quản trị/i });
+      expect(reopenedAdminAccordion).toHaveAttribute('aria-expanded', 'true');
+      expect(within(reopenedDrawer).getByRole('link', { name: 'Nhật ký' })).toBeInTheDocument();
+
+      // Đảm bảo không phát sinh bất kỳ lỗi console.error hoặc update-depth warning
+      expect(consoleErrorSpy).not.toHaveBeenCalled();
+      consoleErrorSpy.mockRestore();
+    });
   });
 
   describe('Access Denied Page UX', () => {

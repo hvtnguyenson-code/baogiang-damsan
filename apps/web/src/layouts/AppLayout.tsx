@@ -1,5 +1,5 @@
 import { APP_NAME_SHORT, SCHOOL_NAME } from '@baogiang/config';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth/auth-context';
 import { LogoutNotice } from '../auth/logout-notice';
@@ -17,12 +17,14 @@ export function AppLayout() {
   const dropdownToggleRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const openDropdownIdRef = useRef<string | null>(null);
   const mobileMenuOpenRef = useRef(false);
+  const prevMobileMenuOpenRef = useRef(false);
 
   openDropdownIdRef.current = openDropdownId;
   mobileMenuOpenRef.current = mobileMenuOpen;
 
-  const capabilities = auth.auth?.capabilities ?? [];
-  const accessibleFamilies = getAccessibleNavigationFamilies(capabilities);
+  const accessibleFamilies = useMemo(() => {
+    return getAccessibleNavigationFamilies(auth.auth?.capabilities ?? []);
+  }, [auth.auth?.capabilities]);
 
   const userInitials = auth.auth?.user.displayName
     ? auth.auth.user.displayName.trim().charAt(0).toUpperCase()
@@ -73,12 +75,20 @@ export function AppLayout() {
     });
   }, [location.pathname]);
 
-  // Tự động mở accordion của nhóm đang active khi mở drawer
+  // Tự động mở accordion của nhóm đang active chỉ khi drawer vừa chuyển từ đóng sang mở
   useEffect(() => {
-    if (mobileMenuOpen) {
+    const wasOpen = prevMobileMenuOpenRef.current;
+    prevMobileMenuOpenRef.current = mobileMenuOpen;
+
+    if (!wasOpen && mobileMenuOpen) {
       const activeFamily = accessibleFamilies.find(isFamilyActive);
       if (activeFamily) {
-        setExpandedMobileFamilies((prev) => ({ ...prev, [activeFamily.id]: true }));
+        setExpandedMobileFamilies((prev) => {
+          if (prev[activeFamily.id]) {
+            return prev;
+          }
+          return { ...prev, [activeFamily.id]: true };
+        });
       }
     }
   }, [mobileMenuOpen, accessibleFamilies, isFamilyActive]);
