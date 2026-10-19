@@ -14,7 +14,7 @@ import type {
   TimetableVersionStatus,
 } from '@baogiang/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '../components/ui/button';
 import { InlineAlert } from '../components/ui/feedback';
 import { FormField } from '../components/ui/form-field';
@@ -184,6 +184,7 @@ export function TimetableAdminPage() {
 
           {activeTab === 'versions' && (
             <TimetableVersionsTab
+              key={`versions-${currentYearId}`}
               academicYearId={currentYearId}
               onNavigateToImport={() => setActiveTab('import')}
             />
@@ -191,6 +192,7 @@ export function TimetableAdminPage() {
 
           {activeTab === 'import' && (
             <TimetableImportTab
+              key={`import-${currentYearId}`}
               academicYearId={currentYearId}
               profiles={profilesQuery.data?.items ?? []}
               onImportSuccess={(_createdVersion) => {
@@ -200,7 +202,10 @@ export function TimetableAdminPage() {
           )}
 
           {activeTab === 'time-slots' && (
-            <TimeSlotsTab academicYearId={currentYearId} />
+            <TimeSlotsTab
+              key={`time-slots-${currentYearId}`}
+              academicYearId={currentYearId}
+            />
           )}
         </>
       )}
@@ -422,6 +427,7 @@ function TimetableVersionsTab({
       {/* Selected Version Detail Drawer / Panel */}
       {selectedVersion && (
         <VersionDetailPanel
+          key={selectedVersion.id}
           academicYearId={academicYearId}
           versionId={selectedVersion.id}
           onClose={() => setSelectedVersionId(null)}
@@ -450,12 +456,13 @@ function VersionDetailPanel({
   onVersionUpdated(): void;
 }) {
   const queryClient = useQueryClient();
-  const [errorNotice, setErrorNotice] = useState<string | null>(null);
+  const [errorNotice, setErrorNotice] = useState<unknown>(null);
   const [successNotice, setSuccessNotice] = useState<string | null>(null);
   const [lastValidationReport, setLastValidationReport] = useState<TimetableValidationReport | null>(null);
   const [readinessData, setReadinessData] = useState<TimetableReadinessResponse | null>(null);
-  const [readinessFrom, setReadinessFrom] = useState('2024-09-05');
-  const [readinessTo, setReadinessTo] = useState('2025-01-15');
+  const [userFrom, setUserFrom] = useState<string | null>(null);
+  const [userTo, setUserTo] = useState<string | null>(null);
+  const [activateConfirmOpen, setActivateConfirmOpen] = useState(false);
   const [targetOpen, setTargetOpen] = useState(false);
   const [targetCalendarId, setTargetCalendarId] = useState('');
   const [targetWeekId, setTargetWeekId] = useState('');
@@ -470,16 +477,15 @@ function VersionDetailPanel({
 
   const version = versionQuery.data;
 
+  const defaultFrom = version?.effectiveFrom ?? '';
+  const defaultTo = version?.effectiveUntil || version?.effectiveFrom || '';
+  const readinessFrom = userFrom !== null ? userFrom : defaultFrom;
+  const readinessTo = userTo !== null ? userTo : defaultTo;
+
   useEffect(() => {
-    if (version?.effectiveFrom && !readinessFrom) {
-      setReadinessFrom(version.effectiveFrom);
-    }
-    if (version?.effectiveUntil && !readinessTo) {
-      setReadinessTo(version.effectiveUntil);
-    } else if (version?.effectiveFrom && !readinessTo) {
-      setReadinessTo(version.effectiveFrom);
-    }
-  }, [version, readinessFrom, readinessTo]);
+    setReadinessData(null);
+    setActivateConfirmOpen(false);
+  }, [version?.id]);
 
   // 2. Fetch calendars if target dialog is open
   const calendarsQuery = useQuery({
@@ -518,12 +524,12 @@ function VersionDetailPanel({
       if (report.valid) {
         setSuccessNotice('Kiểm tra hoàn tất: Thời khóa biểu hợp lệ và đã chuyển sang trạng thái ĐÃ KIỂM TRA (VALIDATED).');
       } else {
-        setErrorNotice(`Kiểm tra phát hiện ${report.issues.length} vấn đề cần khắc phục trước khi phê duyệt.`);
+        setErrorNotice(new Error(`Kiểm tra phát hiện ${report.issues.length} vấn đề cần khắc phục trước khi phê duyệt.`));
       }
       void queryClient.invalidateQueries({ queryKey: ['timetable-version-detail', versionId] });
       onVersionUpdated();
     },
-    onError: (err) => setErrorNotice(errorText(err)),
+    onError: (err) => setErrorNotice(err),
   });
 
   const approveMutation = useMutation({
@@ -538,26 +544,33 @@ function VersionDetailPanel({
       void queryClient.invalidateQueries({ queryKey: ['timetable-version-detail', versionId] });
       onVersionUpdated();
     },
-    onError: (err) => setErrorNotice(errorText(err)),
+    onError: (err) => setErrorNotice(err),
   });
 
   const activateMutation = useMutation({
     mutationFn: () => {
       if (!version) throw new Error('Không có phiên bản');
+      if (version.academicYearId && version.academicYearId !== academicYearId) {
+        throw new Error('Phiên bản không thuộc niên khóa đang chọn. Thao tác đã bị hủy.');
+      }
       return timetableVersionsApi.activate(version.id, {
         expectedUpdatedAt: version.updatedAt,
       });
     },
     onSuccess: (result: TimetableActivationResult) => {
+      setActivateConfirmOpen(false);
       if (result.activated) {
         setSuccessNotice(`Phiên ${result.version.versionNumber} đã được kích hoạt áp dụng chính thức toàn trường (ACTIVE).`);
       } else {
-        setErrorNotice(`Không thể kích hoạt phiên bản: phát hiện ${result.issues.length} lỗi va chạm.`);
+        setErrorNotice(new Error(`Không thể kích hoạt phiên bản: phát hiện ${result.issues.length} lỗi va chạm.`));
       }
       void queryClient.invalidateQueries({ queryKey: ['timetable-version-detail', versionId] });
       onVersionUpdated();
     },
-    onError: (err) => setErrorNotice(errorText(err)),
+    onError: (err) => {
+      setActivateConfirmOpen(false);
+      setErrorNotice(err);
+    },
   });
 
   const setTargetMutation = useMutation({
@@ -575,7 +588,7 @@ function VersionDetailPanel({
       void queryClient.invalidateQueries({ queryKey: ['timetable-version-detail', versionId] });
       onVersionUpdated();
     },
-    onError: (err) => setErrorNotice(errorText(err)),
+    onError: (err) => setErrorNotice(err),
   });
 
   const readinessMutation = useMutation({
@@ -592,12 +605,27 @@ function VersionDetailPanel({
       setReadinessData(res);
       setSuccessNotice('Đánh giá mức sẵn sàng hoàn tất.');
     },
-    onError: (err) => setErrorNotice(errorText(err)),
+    onError: (err) => setErrorNotice(err),
   });
 
   if (versionQuery.isPending) return <PageLoading />;
   if (versionQuery.isError) return <QueryFailure error={versionQuery.error} retry={() => void versionQuery.refetch()} />;
   if (!version) return null;
+
+  if (version.academicYearId && version.academicYearId !== academicYearId) {
+    return (
+      <article className="calendar-detail" style={{ borderTop: '3px solid var(--danger)', marginTop: '1.5rem', paddingTop: '1.5rem' }}>
+        <InlineAlert title="Phiên bản không thuộc năm học đang chọn" tone="error">
+          <p>Phiên bản thời khóa biểu này thuộc năm học khác. Để bảo đảm toàn vẹn dữ liệu, không thể thao tác chéo năm học.</p>
+          <div style={{ marginTop: '0.75rem' }}>
+            <Button type="button" variant="quiet" onClick={onClose}>
+              Đóng chi tiết
+            </Button>
+          </div>
+        </InlineAlert>
+      </article>
+    );
+  }
 
   const statusMeta = VERSION_STATUS_LABELS[version.status] ?? { label: version.status, tone: 'inactive' };
   const isDraft = version.status === 'DRAFT';
@@ -626,7 +654,7 @@ function VersionDetailPanel({
         </div>
       </div>
 
-      <MutationNotice error={errorNotice ? new Error(errorNotice) : undefined} success={successNotice ?? undefined} />
+      <MutationNotice error={errorNotice} success={successNotice ?? undefined} />
 
       {/* Lifecycle Command Toolbar */}
       <div style={{ background: '#f8fafc', padding: '1rem', borderRadius: '6px', border: '1.5px solid var(--border-card)', display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -678,11 +706,11 @@ function VersionDetailPanel({
           <Button
             type="button"
             variant="primary"
-            loading={activateMutation.isPending}
+            disabled={activateMutation.isPending}
             onClick={() => {
               setErrorNotice(null);
               setSuccessNotice(null);
-              activateMutation.mutate();
+              setActivateConfirmOpen(true);
             }}
           >
             Kích hoạt áp dụng chính thức (Activate)
@@ -701,6 +729,72 @@ function VersionDetailPanel({
           </span>
         )}
       </div>
+
+      {/* Irreversible Activation Confirmation Box (R4) */}
+      {activateConfirmOpen && (
+        <div
+          style={{
+            background: '#fffbeb',
+            border: '2px solid #d97706',
+            borderRadius: '6px',
+            padding: '1.25rem',
+            marginBlock: '1rem',
+          }}
+          role="region"
+          aria-labelledby="activate-confirm-heading"
+        >
+          <h4 id="activate-confirm-heading" style={{ color: '#92400e', margin: '0 0 0.5rem 0' }}>
+            Xác nhận kích hoạt áp dụng thời khóa biểu toàn trường
+          </h4>
+          <p style={{ color: '#78350f', marginBottom: '0.75rem' }}>
+            Bạn đang yêu cầu kích hoạt chính thức <strong>Phiên bản {version.versionNumber}</strong> cho toàn trường.
+          </p>
+          <div
+            style={{
+              background: '#ffffff',
+              padding: '0.75rem',
+              borderRadius: '4px',
+              border: '1px solid #fde68a',
+              marginBottom: '0.75rem',
+              fontSize: '0.9rem',
+            }}
+          >
+            <div><strong>Phiên bản:</strong> Phiên {version.versionNumber} ({statusMeta.label})</div>
+            <div>
+              <strong>Thời gian áp dụng:</strong>{' '}
+              {version.effectiveFrom ? formatCivilDate(version.effectiveFrom) : 'Chưa có ngày bắt đầu'}{' '}
+              đến {version.effectiveUntil ? formatCivilDate(version.effectiveUntil) : 'nay'}
+            </div>
+            <div><strong>Quy mô dữ liệu:</strong> {version.entryCount} tiết dạy chính khóa</div>
+          </div>
+          <p style={{ color: '#b45309', fontWeight: 600, fontSize: '0.88rem', marginBottom: '1rem' }}>
+            Cảnh báo tác động: Khi kích hoạt, phiên bản này sẽ thay thế (supersede) phiên bản đang áp dụng hiện hành và điều chỉnh lịch học toàn trường. Thao tác này không thể hoàn tác trực tiếp.
+          </p>
+          <div className="row-actions">
+            <Button
+              type="button"
+              variant="primary"
+              loading={activateMutation.isPending}
+              disabled={activateMutation.isPending}
+              onClick={() => {
+                setErrorNotice(null);
+                setSuccessNotice(null);
+                activateMutation.mutate();
+              }}
+            >
+              Xác nhận kích hoạt toàn trường
+            </Button>
+            <Button
+              type="button"
+              variant="quiet"
+              disabled={activateMutation.isPending}
+              onClick={() => setActivateConfirmOpen(false)}
+            >
+              Hủy
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Target Setting Form for manual drafts */}
       {targetOpen && (
@@ -768,9 +862,20 @@ function VersionDetailPanel({
       {/* Metadata Overview */}
       <dl className="register-summary">
         <div>
-          <dt>Mã kiểm tra nội dung (Checksum SHA-256)</dt>
+          <dt>Mã kiểm chứng toàn vẹn (Checksum)</dt>
           <dd>
-            <code className="technical-value">{version.contentChecksum || '— (Chưa có)'}</code>
+            {version.contentChecksum ? (
+              <details style={{ display: 'inline-block' }}>
+                <summary style={{ cursor: 'pointer' }}>
+                  <code className="technical-value">{version.contentChecksum.substring(0, 12)}…</code>
+                </summary>
+                <code className="technical-value" style={{ display: 'block', marginTop: '0.25rem', wordBreak: 'break-all' }}>
+                  {version.contentChecksum}
+                </code>
+              </details>
+            ) : (
+              '— (Chưa có)'
+            )}
           </dd>
         </div>
         <div>
@@ -832,7 +937,10 @@ function VersionDetailPanel({
                 name="readiness-from"
                 type="date"
                 value={readinessFrom}
-                onChange={(e) => setReadinessFrom(e.target.value)}
+                onChange={(e) => {
+                  setUserFrom(e.target.value);
+                  setReadinessData(null);
+                }}
                 required
               />
             </div>
@@ -842,12 +950,15 @@ function VersionDetailPanel({
                 name="readiness-to"
                 type="date"
                 value={readinessTo}
-                onChange={(e) => setReadinessTo(e.target.value)}
+                onChange={(e) => {
+                  setUserTo(e.target.value);
+                  setReadinessData(null);
+                }}
                 required
               />
             </div>
             <div>
-              <Button type="submit" loading={readinessMutation.isPending}>
+              <Button type="submit" loading={readinessMutation.isPending} disabled={!readinessFrom || !readinessTo}>
                 Chạy đánh giá sẵn sàng
               </Button>
             </div>
@@ -867,9 +978,34 @@ function VersionDetailPanel({
                 </div>
               </div>
 
-              <p style={{ fontSize: '0.88rem', color: '#64748b', marginBottom: '0.75rem' }}>
-                Hồ sơ <code className="technical-value">{readinessData.profile}</code> chỉ đánh giá 3 chiều cơ bản về nền tảng và ràng buộc PPCT. 6 chiều điều hành còn lại là <code className="technical-value">NOT_ASSESSED</code> và không được tự động suy diễn thành hoàn thành toàn diện.
-              </p>
+              {(() => {
+                const assessedCount = readinessData.dimensions.filter((d) => d.state !== 'NOT_ASSESSED').length;
+                const notAssessedCount = readinessData.dimensions.filter((d) => d.state === 'NOT_ASSESSED').length;
+                return (
+                  <>
+                    <p style={{ fontSize: '0.88rem', color: '#64748b', marginBottom: '0.5rem' }}>
+                      Hồ sơ <strong>{readinessData.productLabel || readinessData.profile}</strong> đánh giá <strong>{assessedCount}</strong> chiều bắt buộc về nền tảng và liên kết PPCT. <strong>{notAssessedCount}</strong> chiều điều hành còn lại ở trạng thái <code className="technical-value">NOT_ASSESSED</code> (không đánh giá) và không được tính là đạt hay tự động suy diễn thành hoàn thành toàn diện.
+                    </p>
+                    <div style={{ background: '#ffffff', padding: '0.6rem 0.75rem', borderRadius: '4px', border: '1px solid var(--border-card)', marginBottom: '0.75rem', fontSize: '0.88rem', color: '#334155' }}>
+                      <div>
+                        <strong>Phạm vi đánh giá:</strong> Từ ngày {formatCivilDate(readinessFrom)} đến {formatCivilDate(readinessTo)}
+                        {readinessData.scope?.affectedStreams?.length ? ` (${readinessData.scope.affectedStreams.length} luồng lớp-môn)` : ''}
+                      </div>
+                      {readinessData.provenance && (
+                        <div style={{ marginTop: '0.25rem', color: '#475569' }}>
+                          <strong>Căn cứ:</strong> Phiên TKB: <code className="technical-value">{readinessData.provenance.timetableVersionId}</code>
+                          {readinessData.provenance.academicCalendarVersionId && (
+                            <> · Phiên lịch: <code className="technical-value">{readinessData.provenance.academicCalendarVersionId}</code></>
+                          )}
+                          {readinessData.provenance.ppctClassAssociationIds && readinessData.provenance.ppctClassAssociationIds.length > 0 && (
+                            <> · Gán PPCT: {readinessData.provenance.ppctClassAssociationIds.length} lớp</>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                );
+              })()}
 
               <DataTable
                 label="Bảng các chiều đánh giá mức sẵn sàng"
@@ -1002,6 +1138,23 @@ function VersionDetailPanel({
 // TAB 2: NHẬP TKB NATIVE ĐAM SAN (WORKBOOK UPLOAD & RECONCILIATION)
 // =========================================================================
 
+interface PreviewContextSnapshot {
+  fileName: string;
+  fileSize: number;
+  profileRevisionId: string;
+  nativeSessionMode: TimetableImportNativeSessionMode;
+  academicYearId: string;
+  calendarVersionId: string;
+  effectiveAcademicWeekId: string;
+}
+
+function createClientRequestIdempotencyKey(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `req-${crypto.randomUUID()}`;
+  }
+  return `req-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+}
+
 function TimetableImportTab({
   academicYearId,
   profiles,
@@ -1017,14 +1170,18 @@ function TimetableImportTab({
   const [nativeSessionMode, setNativeSessionMode] = useState<TimetableImportNativeSessionMode>('BOTH');
   const [calendarVersionId, setCalendarVersionId] = useState<string>('');
   const [effectiveAcademicWeekId, setEffectiveAcademicWeekId] = useState<string>('');
-  const [idempotencyKey, setIdempotencyKey] = useState<string>('');
+  const [idempotencyKey, setIdempotencyKey] = useState<string>(() => createClientRequestIdempotencyKey());
 
   const [inspectResult, setInspectResult] = useState<TimetableImportWorkbookInspectionResponse | null>(null);
   const [previewResult, setPreviewResult] = useState<TimetableImportWorkbookPreviewResponse | null>(null);
+  const [previewSnapshot, setPreviewSnapshot] = useState<PreviewContextSnapshot | null>(null);
   const [confirmResult, setConfirmResult] = useState<TimetableImportWorkbookConfirmResponse | null>(null);
 
   const [errorNotice, setErrorNotice] = useState<string | null>(null);
   const [successNotice, setSuccessNotice] = useState<string | null>(null);
+
+  const inspectGenRef = useRef(0);
+  const previewGenRef = useRef(0);
 
   // Active profile default
   const defaultProfile = useMemo(() => {
@@ -1052,32 +1209,68 @@ function TimetableImportTab({
   const weeks = calendarDetailQuery.data?.weeks ?? [];
   const currentWeekId = effectiveAcademicWeekId || (weeks[0]?.id ?? '');
 
+  const isPreviewMatching = Boolean(
+    previewResult &&
+    previewSnapshot &&
+    file &&
+    previewSnapshot.fileName === file.name &&
+    previewSnapshot.fileSize === file.size &&
+    previewSnapshot.profileRevisionId === profileRevisionId &&
+    previewSnapshot.nativeSessionMode === nativeSessionMode &&
+    previewSnapshot.academicYearId === academicYearId &&
+    previewSnapshot.calendarVersionId === currentCalendarId &&
+    previewSnapshot.effectiveAcademicWeekId === currentWeekId
+  );
+
+  const invalidatePreview = () => {
+    previewGenRef.current++;
+    setPreviewResult(null);
+    setPreviewSnapshot(null);
+    setErrorNotice(null);
+    setSuccessNotice(null);
+    setIdempotencyKey(createClientRequestIdempotencyKey());
+  };
+
   // Mutations
   const inspectMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       if (!file) throw new Error('Vui lòng chọn tệp .xlsx');
       if (!profileRevisionId) throw new Error('Vui lòng chọn cấu hình nhập');
-      return timetableImportApi.inspect(file, {
+      const gen = ++inspectGenRef.current;
+      const data = await timetableImportApi.inspect(file, {
         profileRevisionId,
         sourceFormat: 'DAMSAN_NATIVE',
         nativeSessionMode,
       });
+      return { data, gen };
     },
-    onSuccess: (data) => {
+    onSuccess: ({ data, gen }) => {
+      if (gen !== inspectGenRef.current) return;
       setInspectResult(data);
       setPreviewResult(null);
+      setPreviewSnapshot(null);
       setSuccessNotice('Kiểm tra tệp thành công: Các trang tính khớp định dạng chuẩn Đam San.');
     },
     onError: (err) => setErrorNotice(errorText(err)),
   });
 
   const previewMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       if (!file) throw new Error('Vui lòng chọn tệp .xlsx');
       if (!profileRevisionId) throw new Error('Vui lòng chọn cấu hình nhập');
       if (!currentCalendarId) throw new Error('Vui lòng chọn phiên lịch học thuật');
       if (!currentWeekId) throw new Error('Vui lòng chọn tuần học bắt đầu hiệu lực');
-      return timetableImportApi.preview(file, {
+      const gen = ++previewGenRef.current;
+      const snapshot: PreviewContextSnapshot = {
+        fileName: file.name,
+        fileSize: file.size,
+        profileRevisionId,
+        nativeSessionMode,
+        academicYearId,
+        calendarVersionId: currentCalendarId,
+        effectiveAcademicWeekId: currentWeekId,
+      };
+      const data = await timetableImportApi.preview(file, {
         profileRevisionId,
         sourceFormat: 'DAMSAN_NATIVE',
         nativeSessionMode,
@@ -1085,9 +1278,12 @@ function TimetableImportTab({
         calendarVersionId: currentCalendarId,
         effectiveAcademicWeekId: currentWeekId,
       });
+      return { data, gen, snapshot };
     },
-    onSuccess: (data) => {
+    onSuccess: ({ data, gen, snapshot }) => {
+      if (gen !== previewGenRef.current) return;
       setPreviewResult(data);
+      setPreviewSnapshot(snapshot);
       if (data.canConfirm && data.blockingIssueCount === 0) {
         setSuccessNotice('Xem trước đối soát hoàn tất: Chứng cứ Class-view và Teacher-view khớp; tệp đủ điều kiện để nạp vào bản nháp.');
       } else {
@@ -1100,7 +1296,12 @@ function TimetableImportTab({
   const confirmMutation = useMutation({
     mutationFn: () => {
       if (!file) throw new Error('Vui lòng chọn tệp .xlsx');
-      if (!previewResult) throw new Error('Cần thực hiện xem trước đối soát trước');
+      if (!previewResult || !isPreviewMatching) {
+        throw new Error('Dữ liệu xem trước không khớp cấu hình hiện tại. Vui lòng bấm Xem trước đối soát lại.');
+      }
+      if (!previewResult.canConfirm || previewResult.blockingIssueCount > 0) {
+        throw new Error('Tệp có lỗi chặn đối soát, không đủ điều kiện nạp.');
+      }
       return timetableImportApi.confirm(file, {
         profileRevisionId,
         sourceFormat: 'DAMSAN_NATIVE',
@@ -1113,7 +1314,7 @@ function TimetableImportTab({
     },
     onSuccess: (res) => {
       setConfirmResult(res);
-      setSuccessNotice(`Xác nhận nạp TKB thành công: Phiên ${res.version.versionNumber} ở trạng thái Bản nháp (DRAFT). Mã biên nhận: ${res.receipt.id}`);
+      setSuccessNotice(`Xác nhận nạp TKB thành công: Phiên ${res.version.versionNumber} ở trạng thái Bản nháp (DRAFT).`);
       void queryClient.invalidateQueries({ queryKey: ['timetable-versions', academicYearId] });
       onImportSuccess(res.version);
     },
@@ -1138,11 +1339,20 @@ function TimetableImportTab({
       {confirmResult && (
         <InlineAlert title="Đã nạp thời khóa biểu thành công" tone="success">
           <p>
-            Đã tạo/cập nhật phiên bản thời khóa biểu <strong>Phiên {confirmResult.version.versionNumber}</strong> (Trạng thái: <strong>Bản nháp - DRAFT</strong>).
+            Đã tạo/cập nhật phiên bản thời khóa biểu <strong>Phiên {confirmResult.version.versionNumber}</strong> (Trạng thái: <strong>Bản nháp - DRAFT</strong>) với <strong>{confirmResult.receipt.normalizedEntryCount}</strong> tiết dạy hợp lệ.
           </p>
-          <p>
-            Mã biên nhận (Receipt ID): <code className="technical-value">{confirmResult.receipt.id}</code> · Thuật toán: {confirmResult.receipt.checksumAlgorithm} · Số tiết nạp: {confirmResult.receipt.normalizedEntryCount} tiết.
-          </p>
+          <details style={{ marginTop: '0.5rem', fontSize: '0.88rem', color: '#475569' }}>
+            <summary style={{ cursor: 'pointer', fontWeight: 500 }}>Thông tin kỹ thuật biên nhận (dành cho quản trị viên)</summary>
+            <div style={{ marginTop: '0.35rem', padding: '0.5rem', background: '#ffffff', borderRadius: '4px', border: '1px solid var(--border-card)' }}>
+              <div>Mã biên nhận: <code className="technical-value">{confirmResult.receipt.id}</code></div>
+              {confirmResult.version?.contentChecksum && (
+                <div>Mã kiểm tra nội dung (SHA-256): <code className="technical-value">{confirmResult.version.contentChecksum}</code></div>
+              )}
+              {confirmResult.receipt.requestFingerprint && (
+                <div>Dấu vết yêu cầu: <code className="technical-value">{confirmResult.receipt.requestFingerprint}</code></div>
+              )}
+            </div>
+          </details>
         </InlineAlert>
       )}
 
@@ -1168,11 +1378,10 @@ function TimetableImportTab({
                 onChange={(e) => {
                   const selected = e.target.files?.[0] ?? null;
                   setFile(selected);
+                  inspectGenRef.current++;
                   setInspectResult(null);
-                  setPreviewResult(null);
                   setConfirmResult(null);
-                  setErrorNotice(null);
-                  setSuccessNotice(null);
+                  invalidatePreview();
                 }}
               />
             </div>
@@ -1183,7 +1392,7 @@ function TimetableImportTab({
               value={nativeSessionMode}
               onChange={(e) => {
                 setNativeSessionMode(e.target.value as TimetableImportNativeSessionMode);
-                setPreviewResult(null);
+                invalidatePreview();
               }}
               hint="Chọn phiên buổi muốn cập nhật; giữ nguyên buổi còn lại từ TKB baseline."
             >
@@ -1197,7 +1406,12 @@ function TimetableImportTab({
                 id="import-profile-select"
                 label="Cấu hình nhập"
                 value={selectedProfileRevisionId || (defaultProfile?.activeRevision?.id ?? '')}
-                onChange={(e) => setSelectedProfileRevisionId(e.target.value)}
+                onChange={(e) => {
+                  setSelectedProfileRevisionId(e.target.value);
+                  inspectGenRef.current++;
+                  setInspectResult(null);
+                  invalidatePreview();
+                }}
               >
                 {profiles.map((p) => (
                   <option key={p.id} value={p.activeRevision?.id ?? ''}>
@@ -1218,7 +1432,7 @@ function TimetableImportTab({
               onChange={(e) => {
                 setCalendarVersionId(e.target.value);
                 setEffectiveAcademicWeekId('');
-                setPreviewResult(null);
+                invalidatePreview();
               }}
               required
             >
@@ -1236,7 +1450,7 @@ function TimetableImportTab({
               value={currentWeekId}
               onChange={(e) => {
                 setEffectiveAcademicWeekId(e.target.value);
-                setPreviewResult(null);
+                invalidatePreview();
               }}
               disabled={!currentCalendarId || calendarDetailQuery.isPending}
               required
@@ -1398,20 +1612,21 @@ function TimetableImportTab({
             <p>
               Thao tác này sẽ tạo hoặc cập nhật một bản ghi thời khóa biểu ở trạng thái <strong>Bản nháp (DRAFT)</strong>. Hệ thống <strong>không tự ý kích hoạt</strong> phiên bản này vào thực tế giảng dạy.
             </p>
-            <div style={{ maxWidth: '350px', marginBottom: '1rem' }}>
+            <div style={{ maxWidth: '420px', marginBottom: '1rem' }}>
               <FormField
-                label="Mã khóa thao tác (Tùy chọn - Idempotency Key)"
+                id="idempotency-key"
                 name="idempotency-key"
+                label="Khóa thao tác chống trùng lặp (Idempotency Key)"
                 value={idempotencyKey}
                 onChange={(e) => setIdempotencyKey(e.target.value)}
-                placeholder="Để trống để tự sinh..."
+                hint="Khóa duy nhất tự sinh cho phiên đối soát này để bảo vệ chống gửi trùng lặp."
               />
             </div>
             <Button
               type="button"
               variant="primary"
               loading={confirmMutation.isPending}
-              disabled={!previewResult.canConfirm || previewResult.blockingIssueCount > 0}
+              disabled={!isPreviewMatching || !previewResult.canConfirm || previewResult.blockingIssueCount > 0}
               onClick={() => {
                 setErrorNotice(null);
                 confirmMutation.mutate();
@@ -1481,8 +1696,12 @@ function TimeSlotsTab({ academicYearId }: { academicYearId: string }) {
 
   // Revise Slot Mutation
   const reviseMutation = useMutation({
-    mutationFn: ({ id, input }: { id: string; input: ReviseTimeSlotInput }) =>
-      timeSlotsApi.revise(id, input),
+    mutationFn: ({ id, input }: { id: string; input: ReviseTimeSlotInput }) => {
+      if (reviseSlot && reviseSlot.academicYearId && reviseSlot.academicYearId !== academicYearId) {
+        throw new Error('Khung tiết không thuộc niên khóa đang chọn. Thao tác đã bị hủy để tránh sai lệch dữ liệu.');
+      }
+      return timeSlotsApi.revise(id, input);
+    },
     onSuccess: (result) => {
       setSuccessNotice(`Đã cập nhật khung tiết thành phiên bản revision ${result.replacement.revision}. Phiên bản cũ đã được lưu trữ lịch sử.`);
       setReviseSlot(null);
@@ -1493,7 +1712,12 @@ function TimeSlotsTab({ academicYearId }: { academicYearId: string }) {
 
   // Retire Slot Mutation
   const retireMutation = useMutation({
-    mutationFn: (id: string) => timeSlotsApi.retire(id),
+    mutationFn: (id: string) => {
+      if (retireSlot && retireSlot.academicYearId && retireSlot.academicYearId !== academicYearId) {
+        throw new Error('Khung tiết không thuộc niên khóa đang chọn. Thao tác đã bị hủy để tránh sai lệch dữ liệu.');
+      }
+      return timeSlotsApi.retire(id);
+    },
     onSuccess: (retired) => {
       setSuccessNotice(`Đã ngưng sử dụng tiết ${retired.displayLabel}. Toàn bộ lịch sử các phiên trước vẫn được giữ nguyên.`);
       setRetireSlot(null);

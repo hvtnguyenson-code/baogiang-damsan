@@ -840,4 +840,421 @@ describe('P5-053: Timetable & Time-slot Administration Workspace', () => {
       });
     });
   });
+
+  describe('P5-053 Review Correction 001: R1–R5 Specific Test Verifications', () => {
+    it('R1: switches academic year after preview -> preview is reset and confirm cannot be submitted for wrong year', async () => {
+      const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (
+          url.includes('/academic-years') &&
+          !url.includes('/time-slots') &&
+          !url.includes('/timetable-versions') &&
+          !url.includes('/calendar-versions')
+        ) {
+          return jsonResponse({ items: mockAcademicYears, total: 2 });
+        }
+        if (url.includes('/calendar-versions') && !url.includes('/academic-calendar-versions/')) {
+          return jsonResponse({ items: mockCalendars, total: 1 });
+        }
+        if (url.includes('/academic-calendar-versions/cal-v1')) {
+          return jsonResponse(mockCalendarDetail);
+        }
+        if (url.includes('/timetable-import/profiles')) {
+          return jsonResponse({ items: mockProfiles, total: 1 });
+        }
+        if (url.includes('/timetable-import/workbooks/preview')) {
+          return jsonResponse(mockPreviewResult);
+        }
+        if (url.includes('/timetable-import/workbooks/confirm')) {
+          return jsonResponse(mockConfirmResult);
+        }
+        return jsonResponse({ items: [], total: 0 });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      renderWithQuery(<TimetableAdminPage />);
+
+      fireEvent.click(await screen.findByRole('button', { name: /nhập tkb đam san/i }));
+
+      const fileInput = screen.getByLabelText(/tệp excel thời khóa biểu/i);
+      const testFile = new File(['fake xlsx content'], 'tkb-hk1.xlsx', {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      fireEvent.change(fileInput, { target: { files: [testFile] } });
+
+      await screen.findByRole('option', { name: /tuần 1/i });
+
+      const previewBtn = screen.getByRole('button', { name: /xem trước đối soát \(preview\)/i });
+      fireEvent.click(previewBtn);
+
+      expect(await screen.findByRole('button', { name: /xác nhận nạp vào bản nháp/i })).toBeInTheDocument();
+
+      // Switch year to year-2025
+      const yearSelect = screen.getByRole('combobox', { name: /chuyển năm học/i });
+      fireEvent.change(yearSelect, { target: { value: 'year-2025' } });
+
+      // After switching year, confirm button must NOT be present
+      await waitFor(() => {
+        expect(screen.queryByRole('button', { name: /xác nhận nạp vào bản nháp/i })).not.toBeInTheDocument();
+      });
+
+      // No confirm API call was made
+      expect(fetchMock).not.toHaveBeenCalledWith(
+        expect.stringContaining('/api/timetable-import/workbooks/confirm'),
+        expect.anything(),
+      );
+    });
+
+    it('R1: late out-of-order preview response from previous file is discarded when file changes', async () => {
+      let resolveFirstPreview: ((val: unknown) => void) | null = null;
+      const firstPreviewPromise = new Promise((resolve) => {
+        resolveFirstPreview = resolve;
+      });
+
+      const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (
+          url.includes('/academic-years') &&
+          !url.includes('/time-slots') &&
+          !url.includes('/timetable-versions') &&
+          !url.includes('/calendar-versions')
+        ) {
+          return jsonResponse({ items: mockAcademicYears, total: 2 });
+        }
+        if (url.includes('/calendar-versions') && !url.includes('/academic-calendar-versions/')) {
+          return jsonResponse({ items: mockCalendars, total: 1 });
+        }
+        if (url.includes('/academic-calendar-versions/cal-v1')) {
+          return jsonResponse(mockCalendarDetail);
+        }
+        if (url.includes('/timetable-import/profiles')) {
+          return jsonResponse({ items: mockProfiles, total: 1 });
+        }
+        if (url.includes('/timetable-import/workbooks/preview')) {
+          await firstPreviewPromise;
+          return jsonResponse(mockPreviewResult);
+        }
+        return jsonResponse({ items: [], total: 0 });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      renderWithQuery(<TimetableAdminPage />);
+
+      fireEvent.click(await screen.findByRole('button', { name: /nhập tkb đam san/i }));
+
+      const fileInput = screen.getByLabelText(/tệp excel thời khóa biểu/i);
+      const testFile1 = new File(['content 1'], 'file1.xlsx', {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      fireEvent.change(fileInput, { target: { files: [testFile1] } });
+
+      await screen.findByRole('option', { name: /tuần 1/i });
+
+      const previewBtn = screen.getByRole('button', { name: /xem trước đối soát \(preview\)/i });
+      fireEvent.click(previewBtn);
+
+      // Now change file to file2 before the first preview resolves
+      const testFile2 = new File(['content 2'], 'file2.xlsx', {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      fireEvent.change(fileInput, { target: { files: [testFile2] } });
+
+      // Now resolve the late first preview
+      resolveFirstPreview!(mockPreviewResult);
+
+      // Confirm button from file1 should NOT appear
+      await waitFor(() => {
+        expect(screen.queryByRole('button', { name: /xác nhận nạp vào bản nháp/i })).not.toBeInTheDocument();
+      });
+    });
+
+    it('R1 & R5: changing session mode after preview invalidates preview, disables confirm, and regenerates idempotency key', async () => {
+      renderWithQuery(<TimetableAdminPage />);
+
+      fireEvent.click(await screen.findByRole('button', { name: /nhập tkb đam san/i }));
+
+      const fileInput = screen.getByLabelText(/tệp excel thời khóa biểu/i);
+      const testFile = new File(['fake xlsx content'], 'tkb-hk1.xlsx', {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      fireEvent.change(fileInput, { target: { files: [testFile] } });
+
+      await screen.findByRole('option', { name: /tuần 1/i });
+
+      const previewBtn = screen.getByRole('button', { name: /xem trước đối soát \(preview\)/i });
+      fireEvent.click(previewBtn);
+
+      expect(await screen.findByRole('button', { name: /xác nhận nạp vào bản nháp/i })).toBeInTheDocument();
+
+      // Check R5: Idempotency field has generated key and does not have misleading placeholder
+      const idempInput = screen.getByLabelText(/khóa thao tác chống trùng lặp/i) as HTMLInputElement;
+      expect(idempInput.value).toMatch(/^req-/);
+      expect(screen.queryByText(/để trống để tự sinh/i)).not.toBeInTheDocument();
+
+      // Change session mode to MORNING
+      const sessionSelect = screen.getByLabelText(/chế độ buổi áp dụng/i);
+      fireEvent.change(sessionSelect, { target: { value: 'MORNING' } });
+
+      // Preview is reset and confirm button is hidden
+      expect(screen.queryByRole('button', { name: /xác nhận nạp vào bản nháp/i })).not.toBeInTheDocument();
+      expect(screen.queryByText(/kết quả đối soát chứng cứ chéo/i)).not.toBeInTheDocument();
+    });
+
+    it('R2: switching academic year dismisses active time-slot retire confirmation modal', async () => {
+      renderWithQuery(<TimetableAdminPage />);
+
+      fireEvent.click(await screen.findByRole('button', { name: /khung tiết học/i }));
+
+      const retireBtns = await screen.findAllByRole('button', { name: /ngưng dùng/i });
+      fireEvent.click(retireBtns[0]);
+
+      expect(await screen.findByRole('button', { name: /xác nhận ngưng sử dụng/i })).toBeInTheDocument();
+
+      // Switch year in selector
+      const yearSelect = screen.getByRole('combobox', { name: /chuyển năm học/i });
+      fireEvent.change(yearSelect, { target: { value: 'year-2025' } });
+
+      // Retire confirmation banner is closed
+      await waitFor(() => {
+        expect(screen.queryByRole('button', { name: /xác nhận ngưng sử dụng/i })).not.toBeInTheDocument();
+      });
+    });
+
+    it('R2: switching academic year dismisses open timetable version detail drawer', async () => {
+      renderWithQuery(<TimetableAdminPage />);
+
+      const viewDetailBtns = await screen.findAllByRole('button', { name: /xem chi tiết/i });
+      fireEvent.click(viewDetailBtns[0]);
+
+      expect(await screen.findByText(/chi tiết phiên bản/i)).toBeInTheDocument();
+
+      // Switch year in selector
+      const yearSelect = screen.getByRole('combobox', { name: /chuyển năm học/i });
+      fireEvent.change(yearSelect, { target: { value: 'year-2025' } });
+
+      // Version detail is closed
+      await waitFor(() => {
+        expect(screen.queryByText(/chi tiết phiên bản/i)).not.toBeInTheDocument();
+      });
+    });
+
+    it('R3: derives dynamic dimension claims (2 required, 7 NOT_ASSESSED) for V1 and clears report when dates are edited', async () => {
+      const v1ReadinessReport = {
+        profile: 'NORMAL_BASE_PPCT_V1',
+        productLabel: 'ĐÁNH GIÁ TKB NỀN TẢNG V1',
+        scope: 'ACADEMIC_YEAR',
+        result: 'PASS' as const,
+        evaluatedAt: '2026-10-19T10:00:00Z',
+        provenance: {
+          timetableVersionId: 'ttv-active-1',
+          academicCalendarVersionId: 'cal-v1',
+          ppctClassAssociationIds: ['pca-1'],
+          ppctVersionIds: ['pv-1'],
+        },
+        findings: [],
+        dimensions: [
+          { key: 'NORMAL_BASE_TIMETABLE_FOUNDATION', state: 'PASS' as const, required: true },
+          { key: 'PPCT_ASSOCIATION_BINDING', state: 'PASS' as const, required: true },
+          { key: 'PPCT_CAPACITY', state: 'NOT_ASSESSED' as const, required: false },
+          { key: 'OPERATIONAL_OVERLAYS', state: 'NOT_ASSESSED' as const, required: false },
+          { key: 'SUBSTITUTION_CANCELLATION_MAKEUP', state: 'NOT_ASSESSED' as const, required: false },
+          { key: 'LOCAL_OPERATIONAL_EXCEPTIONS', state: 'NOT_ASSESSED' as const, required: false },
+          { key: 'SPECIAL_ACTIVITY_COLLISIONS', state: 'NOT_ASSESSED' as const, required: false },
+          { key: 'RESOLVED_OCCURRENCE_EXECUTION', state: 'NOT_ASSESSED' as const, required: false },
+          { key: 'PROGRESS_DEBT_REPORTING', state: 'NOT_ASSESSED' as const, required: false },
+        ],
+      };
+
+      const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (
+          url.includes('/academic-years') &&
+          !url.includes('/time-slots') &&
+          !url.includes('/timetable-versions') &&
+          !url.includes('/calendar-versions')
+        ) {
+          return jsonResponse({ items: mockAcademicYears, total: 2 });
+        }
+        if (url.includes('/timetable-versions/ttv-active-1/readiness')) {
+          return jsonResponse(v1ReadinessReport);
+        }
+        if (url.endsWith('/timetable-versions/ttv-active-1')) {
+          return jsonResponse(mockTimetableVersions[0]);
+        }
+        if (url.includes('/timetable-versions')) {
+          return jsonResponse({ items: mockTimetableVersions, total: 2, page: 1, pageSize: 10 });
+        }
+        return jsonResponse({ items: [], total: 0 });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      renderWithQuery(<TimetableAdminPage />);
+
+      const viewDetailBtns = await screen.findAllByRole('button', { name: /xem chi tiết/i });
+      fireEvent.click(viewDetailBtns[0]);
+
+      // Check dates initialized from version (2024-09-05 to 2025-01-15)
+      const fromInput = (await screen.findByLabelText(/từ ngày/i)) as HTMLInputElement;
+      const toInput = screen.getByLabelText(/đến ngày/i) as HTMLInputElement;
+      expect(fromInput.value).toBe('2024-09-05');
+      expect(toInput.value).toBe('2025-01-15');
+
+      const assessBtn = screen.getByRole('button', { name: /chạy đánh giá sẵn sàng/i });
+      fireEvent.click(assessBtn);
+
+      // Verify dynamic prose: exactly 2 required and 7 NOT_ASSESSED
+      expect(await screen.findByText(/kết quả đánh giá gốc/i)).toBeInTheDocument();
+      const proseElement = screen.getByText(/chiều bắt buộc về nền tảng và liên kết ppct/i).closest('p')!;
+      expect(proseElement).toHaveTextContent('2');
+      expect(proseElement).toHaveTextContent('7');
+      expect(proseElement).not.toHaveTextContent('3 chiều cơ bản');
+      expect(proseElement).not.toHaveTextContent('6 chiều còn lại');
+
+      // Editing date clears old report
+      fireEvent.change(fromInput, { target: { value: '2024-10-01' } });
+      await waitFor(() => {
+        expect(screen.queryByText(/kết quả đánh giá gốc/i)).not.toBeInTheDocument();
+      });
+    });
+
+    it('R4: requires explicit informed confirmation before activating timetable version with cancel option', async () => {
+      const mockApproved = {
+        ...mockTimetableVersions[0],
+        id: 'ttv-approved-1',
+        versionNumber: 2,
+        status: 'APPROVED' as const,
+        entryCount: 420,
+        effectiveFrom: '2024-09-05',
+        effectiveUntil: '2025-01-15',
+        updatedAt: '2024-09-04T10:00:00Z',
+      };
+
+      const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (
+          url.includes('/academic-years') &&
+          !url.includes('/time-slots') &&
+          !url.includes('/timetable-versions') &&
+          !url.includes('/calendar-versions')
+        ) {
+          return jsonResponse({ items: mockAcademicYears, total: 2 });
+        }
+        if (url.includes('/timetable-versions/ttv-approved-1/activate')) {
+          return jsonResponse({
+            activated: true,
+            version: { ...mockApproved, status: 'ACTIVE' },
+            issues: [],
+          });
+        }
+        if (url.endsWith('/timetable-versions/ttv-approved-1')) {
+          return jsonResponse(mockApproved);
+        }
+        if (url.includes('/timetable-versions')) {
+          return jsonResponse({ items: [mockApproved], total: 1, page: 1, pageSize: 10 });
+        }
+        return jsonResponse({ items: [], total: 0 });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      renderWithQuery(<TimetableAdminPage />);
+
+      const viewDetailBtns = await screen.findAllByRole('button', { name: /xem chi tiết/i });
+      fireEvent.click(viewDetailBtns[0]);
+
+      const activateBtn = await screen.findByRole('button', { name: /kích hoạt áp dụng chính thức/i });
+      fireEvent.click(activateBtn);
+
+      // Verify explicit confirmation banner appears and API is NOT yet called
+      expect(await screen.findByText(/xác nhận kích hoạt áp dụng thời khóa biểu toàn trường/i)).toBeInTheDocument();
+      expect(screen.getByText(/cảnh báo tác động: khi kích hoạt, phiên bản này sẽ thay thế/i)).toBeInTheDocument();
+      expect(fetchMock).not.toHaveBeenCalledWith(
+        expect.stringContaining('/activate'),
+        expect.anything(),
+      );
+
+      // Test Cancel button dismisses without activating
+      const cancelBtn = screen.getByRole('button', { name: /^hủy$/i });
+      fireEvent.click(cancelBtn);
+
+      await waitFor(() => {
+        expect(screen.queryByText(/xác nhận kích hoạt áp dụng thời khóa biểu toàn trường/i)).not.toBeInTheDocument();
+      });
+      expect(fetchMock).not.toHaveBeenCalledWith(
+        expect.stringContaining('/activate'),
+        expect.anything(),
+      );
+
+      // Click activate again, then click Confirm
+      const activateBtn2 = screen.getByRole('button', { name: /kích hoạt áp dụng chính thức/i });
+      fireEvent.click(activateBtn2);
+
+      const confirmActivateBtn = await screen.findByRole('button', { name: /xác nhận kích hoạt toàn trường/i });
+      fireEvent.click(confirmActivateBtn);
+
+      await waitFor(() => {
+        expect(fetchMock).toHaveBeenCalledWith(
+          expect.stringContaining('/api/timetable-versions/ttv-approved-1/activate'),
+          expect.objectContaining({
+            method: 'POST',
+            body: JSON.stringify({ expectedUpdatedAt: '2024-09-04T10:00:00Z' }),
+          }),
+        );
+      });
+    });
+
+    it('R4: activation handles 409 conflict error cleanly and fails closed', async () => {
+      const mockApproved = {
+        ...mockTimetableVersions[0],
+        id: 'ttv-approved-1',
+        versionNumber: 2,
+        status: 'APPROVED' as const,
+        entryCount: 420,
+        updatedAt: '2024-09-04T10:00:00Z',
+      };
+
+      const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (
+          url.includes('/academic-years') &&
+          !url.includes('/time-slots') &&
+          !url.includes('/timetable-versions') &&
+          !url.includes('/calendar-versions')
+        ) {
+          return jsonResponse({ items: mockAcademicYears, total: 2 });
+        }
+        if (url.includes('/timetable-versions/ttv-approved-1/activate')) {
+          return new Response(
+            JSON.stringify({
+              statusCode: 409,
+              message: 'Dữ liệu phiên bản đã bị thay đổi bởi phiên làm việc khác.',
+              error: 'Conflict',
+            }),
+            { status: 409, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        if (url.endsWith('/timetable-versions/ttv-approved-1')) {
+          return jsonResponse(mockApproved);
+        }
+        if (url.includes('/timetable-versions')) {
+          return jsonResponse({ items: [mockApproved], total: 1, page: 1, pageSize: 10 });
+        }
+        return jsonResponse({ items: [], total: 0 });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      renderWithQuery(<TimetableAdminPage />);
+
+      const viewDetailBtns = await screen.findAllByRole('button', { name: /xem chi tiết/i });
+      fireEvent.click(viewDetailBtns[0]);
+
+      const activateBtn = await screen.findByRole('button', { name: /kích hoạt áp dụng chính thức/i });
+      fireEvent.click(activateBtn);
+
+      const confirmActivateBtn = await screen.findByRole('button', { name: /xác nhận kích hoạt toàn trường/i });
+      fireEvent.click(confirmActivateBtn);
+
+      expect(await screen.findByText(/chưa thể lưu thay đổi/i)).toBeInTheDocument();
+      expect(screen.getByText(/dữ liệu xung đột với bản ghi hiện có/i)).toBeInTheDocument();
+    });
+  });
 });
