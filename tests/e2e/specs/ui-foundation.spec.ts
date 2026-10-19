@@ -185,6 +185,8 @@ test('real academic structure flow creates and activates a calendar and class', 
   await page.getByLabel('Mật khẩu').fill(NEW_PASSWORD);
   await page.getByRole('button', { name: 'Đăng nhập' }).click();
   await expect(page).toHaveURL(/\/quan-tri\/cau-truc-nam-hoc$/);
+  await expect(page.getByRole('heading', { name: 'Cấu trúc năm học' })).toBeVisible();
+  await page.getByRole('button', { name: /Dữ liệu năm học/ }).click();
   await expect(page.getByRole('link', { name: 'Cấu trúc năm học' })).toBeVisible();
 
   await page.getByRole('button', { name: 'Tạo năm học' }).click();

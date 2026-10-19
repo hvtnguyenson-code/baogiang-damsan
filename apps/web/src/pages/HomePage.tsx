@@ -37,7 +37,9 @@ export function HomePage() {
   const userId = auth.auth?.user.id;
 
   const canReview = canReviewReportingStatements(capabilities);
-  const canReport = canSubmitPersonalReporting(capabilities) || canReadPersonalReporting(capabilities);
+  const canSubmitPersonal = canSubmitPersonalReporting(capabilities);
+  const canReadPersonal = canReadPersonalReporting(capabilities);
+  const canReport = canSubmitPersonal || canReadPersonal;
   const canSchedule = canReadEffectiveSchedule(capabilities);
   const canReadAccessible = canReadAccessibleReporting(capabilities);
   const canManageDuty = canManageDutyAssignments(capabilities);
@@ -51,11 +53,11 @@ export function HomePage() {
     refetchOnWindowFocus: false,
   });
 
-  // Truy vấn tổng số báo cáo cá nhân (chỉ khi có quyền nộp/xem cá nhân)
+  // Truy vấn tổng số báo cáo cá nhân (chỉ khi có thẩm quyền đọc báo cáo cá nhân REPORTING_STATEMENT_READ/PERSONAL)
   const mineQuery = useQuery({
     queryKey: ['home-mine-reports-count', userId],
     queryFn: () => reportingStatementsApi.listMine({ page: 1, pageSize: 1 }),
-    enabled: Boolean(userId && canReport),
+    enabled: Boolean(userId && canReadPersonal),
     staleTime: 30_000,
     refetchOnWindowFocus: false,
   });
@@ -153,17 +155,25 @@ export function HomePage() {
                   <div className="work-queue-item__content">
                     <span className="technical-badge technical-badge--teal">Báo giảng</span>
                     <h3 className="work-queue-item__title">Báo cáo kê khai tiết dạy</h3>
-                    {mineQuery.isLoading && (
-                      <p className="work-queue-item__status text-slate-500">Đang kiểm tra số liệu báo cáo cá nhân...</p>
-                    )}
-                    {mineQuery.isError && (
-                      <p className="work-queue-item__status text-amber-800">
-                        Chưa thể tải số lượng báo cáo cá nhân. Mở để kiểm tra chi tiết.
-                      </p>
-                    )}
-                    {mineQuery.isSuccess && (
+                    {canReadPersonal ? (
+                      <>
+                        {mineQuery.isLoading && (
+                          <p className="work-queue-item__status text-slate-500">Đang kiểm tra số liệu báo cáo cá nhân...</p>
+                        )}
+                        {mineQuery.isError && (
+                          <p className="work-queue-item__status text-amber-800 font-semibold">
+                            Chưa thể tải số lượng báo cáo cá nhân. Bạn vẫn có thể mở để kiểm tra chi tiết.
+                          </p>
+                        )}
+                        {mineQuery.isSuccess && (
+                          <p className="work-queue-item__status text-slate-700">
+                            Số báo cáo của tôi: <strong>{mineQuery.data.total} bản ghi</strong> đã nộp hoặc đang quản lý.
+                          </p>
+                        )}
+                      </>
+                    ) : (
                       <p className="work-queue-item__status text-slate-700">
-                        Số báo cáo của tôi: <strong>{mineQuery.data.total} bản ghi</strong> đã nộp hoặc đang quản lý.
+                        Lập và gửi báo cáo kê khai tiết dạy mới theo phân công chuyên môn.
                       </p>
                     )}
                   </div>

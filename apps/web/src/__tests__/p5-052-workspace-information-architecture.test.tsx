@@ -341,10 +341,69 @@ describe('P5-052: Task-Oriented Workspace & Information Architecture', () => {
       expect(screen.getByRole('link', { name: /xem hồ sơ cá nhân/i })).toBeInTheDocument();
       expect(screen.getByRole('link', { name: /kiểm tra trạng thái hệ thống/i })).toBeInTheDocument();
     });
+    it('1B. Submit-only user: has REPORTING_STATEMENT_SUBMIT without READ, does NOT call listMine and shows submit CTA', async () => {
+      const submitOnlyAuth = authWithCapabilities(
+        [
+          { key: 'TEACHER_BASE', scope: 'PERSONAL' },
+          { key: 'REPORTING_STATEMENT_SUBMIT', scope: 'PERSONAL' },
+        ],
+        'Thầy Nộp Báo Cáo',
+        'Giáo viên tập sự',
+      );
+      const fetchSpy = vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith('/auth/me')) return jsonResponse(submitOnlyAuth);
+        return jsonResponse({ items: [], page: 1, pageSize: 20, total: 0 });
+      });
+      vi.stubGlobal('fetch', fetchSpy);
+
+      renderApp('/');
+      await screen.findByRole('heading', { name: /chào thầy nộp báo cáo/i });
+
+      // Có queue item reporting
+      expect(screen.getByTestId('queue-item-reporting')).toBeInTheDocument();
+      // Hiển thị CTA nộp báo cáo, KHÔNG hiển thị "0 bản ghi" hay lỗi
+      expect(screen.getByText(/lập và gửi báo cáo kê khai tiết dạy mới/i)).toBeInTheDocument();
+      expect(screen.queryByText(/0 bản ghi/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/chưa thể tải/i)).not.toBeInTheDocument();
+
+      // Kiểm chứng KHÔNG hề gọi GET /reporting-statements/mine
+      const calledUrls = fetchSpy.mock.calls.map((call) => String(call[0]));
+      expect(calledUrls.some((u) => u.includes('/reporting-statements/mine'))).toBe(false);
+
+      // Nút liên kết tới /bao-cao-ke-khai
+      const openBtn = screen.getByRole('link', { name: /mở báo cáo kê khai/i });
+      expect(openBtn).toHaveAttribute('href', '/bao-cao-ke-khai');
+    });
+
+    it('1C. TEACHER_BASE-only user: does NOT infer reporting submit or read, listMine never called', async () => {
+      const teacherBaseOnlyAuth = authWithCapabilities(
+        [{ key: 'TEACHER_BASE', scope: 'PERSONAL' }],
+        'Cô Giảng Dạy',
+        'Giáo viên hợp đồng',
+      );
+      const fetchSpy = vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith('/auth/me')) return jsonResponse(teacherBaseOnlyAuth);
+        return jsonResponse({ items: [], page: 1, pageSize: 20, total: 0 });
+      });
+      vi.stubGlobal('fetch', fetchSpy);
+
+      renderApp('/');
+      await screen.findByRole('heading', { name: /chào cô giảng dạy/i });
+
+      // Lịch dạy có mặt, nhưng reporting queue KHÔNG có mặt
+      expect(screen.getByTestId('queue-item-schedule')).toBeInTheDocument();
+      expect(screen.queryByTestId('queue-item-reporting')).not.toBeInTheDocument();
+
+      // listMine KHÔNG được gọi
+      const calledUrls = fetchSpy.mock.calls.map((call) => String(call[0]));
+      expect(calledUrls.some((u) => u.includes('/reporting-statements/mine'))).toBe(false);
+    });
   });
 
   describe('Keyboard, Focus & Accessibility', () => {
-    it('closes open dropdown when Escape key is pressed', async () => {
+    it('closes open dropdown when Escape key is pressed and restores focus to toggle button', async () => {
       const auth = authWithCapabilities([
         { key: 'USER_MANAGE', scope: 'SCHOOL_WIDE' },
       ]);
@@ -360,17 +419,22 @@ describe('P5-052: Task-Oriented Workspace & Information Architecture', () => {
       // Click để mở
       fireEvent.click(adminToggle);
       expect(adminToggle).toHaveAttribute('aria-expanded', 'true');
-      expect(within(nav).getByRole('link', { name: 'Người dùng' })).toBeInTheDocument();
+      const userLink = within(nav).getByRole('link', { name: 'Người dùng' });
+      expect(userLink).toBeInTheDocument();
+      userLink.focus();
 
       // Nhấn phím Escape để đóng
       fireEvent.keyDown(document, { key: 'Escape', code: 'Escape' });
       expect(adminToggle).toHaveAttribute('aria-expanded', 'false');
       expect(within(nav).queryByRole('link', { name: 'Người dùng' })).not.toBeInTheDocument();
+      // Bàn phím: focus được trả về đúng toggle button
+      expect(document.activeElement).toBe(adminToggle);
     });
 
-    it('closes mobile drawer when clicking a navigation link', async () => {
+    it('manages mobile drawer with accordion and restores focus on Escape', async () => {
       const auth = authWithCapabilities([
         { key: 'USER_MANAGE', scope: 'SCHOOL_WIDE' },
+        { key: 'TEACHER_BASE', scope: 'PERSONAL' },
       ]);
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(auth)));
 
@@ -385,10 +449,29 @@ describe('P5-052: Task-Oriented Workspace & Information Architecture', () => {
       const mobileDrawer = screen.getByLabelText(/thực đơn di động/i);
       expect(mobileDrawer).toBeInTheDocument();
 
-      // Click vào nút đóng
-      fireEvent.click(mobileToggle);
+      // Accordion trigger cho Quản trị
+      const adminAccordion = within(mobileDrawer).getByRole('button', { name: /quản trị/i });
+      expect(adminAccordion).toBeInTheDocument();
+      // Mặc định ban đầu chưa mở (hoặc mở nếu là active)
+      expect(adminAccordion).toHaveAttribute('aria-expanded', 'false');
+      expect(within(mobileDrawer).queryByRole('link', { name: 'Người dùng' })).not.toBeInTheDocument();
+
+      // Click để mở accordion
+      fireEvent.click(adminAccordion);
+      expect(adminAccordion).toHaveAttribute('aria-expanded', 'true');
+      expect(within(mobileDrawer).getByRole('link', { name: 'Người dùng' })).toBeInTheDocument();
+
+      // Click lại để thu gọn accordion
+      fireEvent.click(adminAccordion);
+      expect(adminAccordion).toHaveAttribute('aria-expanded', 'false');
+      expect(within(mobileDrawer).queryByRole('link', { name: 'Người dùng' })).not.toBeInTheDocument();
+
+      // Nhấn Escape từ trong mobile drawer
+      fireEvent.keyDown(document, { key: 'Escape', code: 'Escape' });
       expect(mobileToggle).toHaveAttribute('aria-expanded', 'false');
       expect(screen.queryByLabelText(/thực đơn di động/i)).not.toBeInTheDocument();
+      // Bàn phím: focus được trả về mobile toggle
+      expect(document.activeElement).toBe(mobileToggle);
     });
   });
 

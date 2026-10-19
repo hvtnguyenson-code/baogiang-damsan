@@ -188,13 +188,25 @@ test.describe('P5-052: Task-Oriented Workspace & Information Architecture Screen
       });
     }
 
-    // Mobile drawer open at 375x812
+    // Mobile drawer open at 375x812 (collapsed accordions)
     await page.setViewportSize({ width: 375, height: 812 });
     await page.getByRole('button', { name: /thực đơn/i }).click();
     await expect(page.getByLabel('Thực đơn di động')).toBeVisible();
     await prepareScreenshot(page);
     await page.screenshot({
       path: path.join(screenshotsDir, 'mock-multi-admin-mobile-drawer-375x812.png'),
+    });
+    await page.screenshot({
+      path: path.join(screenshotsDir, 'mock-multi-admin-mobile-drawer-collapsed-375x812.png'),
+    });
+
+    // Expand "Quản trị" accordion
+    const mobileDrawer = page.getByLabel('Thực đơn di động');
+    await mobileDrawer.getByRole('button', { name: /quản trị/i }).click();
+    await expect(mobileDrawer.getByRole('link', { name: 'Người dùng' })).toBeVisible();
+    await prepareScreenshot(page);
+    await page.screenshot({
+      path: path.join(screenshotsDir, 'mock-multi-admin-mobile-drawer-accordion-open-375x812.png'),
     });
   });
 

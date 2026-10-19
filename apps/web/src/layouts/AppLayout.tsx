@@ -1,5 +1,5 @@
 import { APP_NAME_SHORT, SCHOOL_NAME } from '@baogiang/config';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth/auth-context';
 import { LogoutNotice } from '../auth/logout-notice';
@@ -11,7 +11,15 @@ export function AppLayout() {
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
+  const [expandedMobileFamilies, setExpandedMobileFamilies] = useState<Record<string, boolean>>({});
   const navRef = useRef<HTMLElement>(null);
+  const mobileMenuToggleRef = useRef<HTMLButtonElement>(null);
+  const dropdownToggleRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const openDropdownIdRef = useRef<string | null>(null);
+  const mobileMenuOpenRef = useRef(false);
+
+  openDropdownIdRef.current = openDropdownId;
+  mobileMenuOpenRef.current = mobileMenuOpen;
 
   const capabilities = auth.auth?.capabilities ?? [];
   const accessibleFamilies = getAccessibleNavigationFamilies(capabilities);
@@ -26,7 +34,7 @@ export function AppLayout() {
     setMobileMenuOpen(false);
   }, [location.pathname]);
 
-  // Đóng dropdown khi click outside hoặc ấn Escape
+  // Đóng dropdown khi click outside hoặc ấn Escape (trả focus về nút kích hoạt)
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (navRef.current && !navRef.current.contains(event.target as Node)) {
@@ -35,8 +43,14 @@ export function AppLayout() {
     }
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
-        setOpenDropdownId(null);
-        setMobileMenuOpen(false);
+        if (mobileMenuOpenRef.current) {
+          setMobileMenuOpen(false);
+          mobileMenuToggleRef.current?.focus();
+        } else if (openDropdownIdRef.current) {
+          const currentId = openDropdownIdRef.current;
+          setOpenDropdownId(null);
+          dropdownToggleRefs.current[currentId]?.focus();
+        }
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
@@ -47,7 +61,7 @@ export function AppLayout() {
     };
   }, []);
 
-  const isFamilyActive = (family: AccessibleFamily): boolean => {
+  const isFamilyActive = useCallback((family: AccessibleFamily): boolean => {
     return family.items.some((item) => {
       if (item.exactEnd) {
         return location.pathname === item.to;
@@ -57,6 +71,23 @@ export function AppLayout() {
       }
       return location.pathname === item.to || location.pathname.startsWith(`${item.to}/`);
     });
+  }, [location.pathname]);
+
+  // Tự động mở accordion của nhóm đang active khi mở drawer
+  useEffect(() => {
+    if (mobileMenuOpen) {
+      const activeFamily = accessibleFamilies.find(isFamilyActive);
+      if (activeFamily) {
+        setExpandedMobileFamilies((prev) => ({ ...prev, [activeFamily.id]: true }));
+      }
+    }
+  }, [mobileMenuOpen, accessibleFamilies, isFamilyActive]);
+
+  const toggleMobileFamily = (familyId: string) => {
+    setExpandedMobileFamilies((prev) => ({
+      ...prev,
+      [familyId]: !prev[familyId],
+    }));
   };
 
   return (
@@ -107,6 +138,9 @@ export function AppLayout() {
               return (
                 <div key={family.id} className="primary-nav__group-container">
                   <button
+                    ref={(el) => {
+                      dropdownToggleRefs.current[family.id] = el;
+                    }}
                     type="button"
                     className={`primary-nav__group-toggle ${active ? 'primary-nav__group-toggle--active' : ''}`}
                     aria-expanded={isOpen}
@@ -158,6 +192,7 @@ export function AppLayout() {
           </div>
 
           <button
+            ref={mobileMenuToggleRef}
             type="button"
             className="primary-nav__mobile-toggle"
             aria-expanded={mobileMenuOpen}
@@ -183,27 +218,43 @@ export function AppLayout() {
                 </div>
               </div>
 
-              {accessibleFamilies.map((family) => (
-                <div key={family.id} className="mobile-nav-section">
-                  <span className="mobile-nav-section__title">{family.title}</span>
-                  <div className="mobile-nav-section__links">
-                    {family.items.map((item) => (
-                      <NavLink
-                        key={item.to}
-                        to={item.to}
-                        end={item.exactEnd}
-                        onClick={() => setMobileMenuOpen(false)}
-                        className="mobile-nav-link"
-                      >
-                        <span className="mobile-nav-link__label">{item.label}</span>
-                        {item.actionHint && (
-                          <span className="mobile-nav-link__hint" aria-hidden="true">{item.actionHint}</span>
-                        )}
-                      </NavLink>
-                    ))}
+              {accessibleFamilies.map((family) => {
+                const isExpanded = Boolean(expandedMobileFamilies[family.id]);
+                return (
+                  <div key={family.id} className="mobile-nav-section">
+                    <button
+                      type="button"
+                      className="mobile-nav-accordion__trigger"
+                      aria-expanded={isExpanded}
+                      aria-controls={`mobile-family-items-${family.id}`}
+                      onClick={() => toggleMobileFamily(family.id)}
+                    >
+                      <span className="mobile-nav-accordion__title">{family.title}</span>
+                      <span className="mobile-nav-accordion__caret" aria-hidden="true">
+                        {isExpanded ? '▴' : '▾'}
+                      </span>
+                    </button>
+                    {isExpanded && (
+                      <div id={`mobile-family-items-${family.id}`} className="mobile-nav-section__links">
+                        {family.items.map((item) => (
+                          <NavLink
+                            key={item.to}
+                            to={item.to}
+                            end={item.exactEnd}
+                            onClick={() => setMobileMenuOpen(false)}
+                            className="mobile-nav-link"
+                          >
+                            <span className="mobile-nav-link__label">{item.label}</span>
+                            {item.actionHint && (
+                              <span className="mobile-nav-link__hint" aria-hidden="true">{item.actionHint}</span>
+                            )}
+                          </NavLink>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
 
               <div className="mobile-nav-section">
                 <NavLink
