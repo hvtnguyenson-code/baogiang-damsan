@@ -32,6 +32,7 @@ import { SpecialProgrammeWorkspacePage } from './pages/SpecialProgrammeWorkspace
 import { EffectiveSchedulePage } from './pages/EffectiveSchedulePage';
 import { HistoricalTeachingPage } from './pages/HistoricalTeachingPage';
 import { MakeupSchedulingPage } from './pages/MakeupSchedulingPage';
+import { TimetableAdminPage } from './pages/TimetableAdminPage';
 import type { BusinessPolicyUiAdapter } from './lib/business-policy-ui-registry';
 import {
   canManageDutyAssignments,
@@ -39,6 +40,7 @@ import {
   canManagePpct,
   canManageSpecialProgrammes,
   canManageTeachingOperation,
+  canManageTimetable,
   canOpenReportingDetail,
   canReadAccessibleReporting,
   canReadPersonalReporting,
@@ -86,6 +88,9 @@ export default function App({ businessPolicyAdapters }: { businessPolicyAdapters
             <Route path="/quan-tri/cau-truc-nam-hoc/:academicYearId" element={<Navigate to="lich" replace />} />
             <Route path="/quan-tri/cau-truc-nam-hoc/:academicYearId/lich" element={<AcademicCalendarPage />} />
             <Route path="/quan-tri/cau-truc-nam-hoc/:academicYearId/lop" element={<SchoolClassesPage />} />
+          </Route>
+          <Route element={<CapabilityRoute allow={canManageTimetable} />}>
+            <Route path="/quan-tri/thoi-khoa-bieu" element={<TimetableAdminPage />} />
           </Route>
           <Route element={<CapabilityRoute allow={(c) => hasSchoolCapability(c, 'BUSINESS_CONFIGURATION_MANAGE')} />}>
             <Route path="/quan-tri/chinh-sach-nghiep-vu" element={<BusinessConfigurationPage adapters={businessPolicyAdapters} />} />
