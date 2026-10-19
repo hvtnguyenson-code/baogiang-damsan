@@ -1,19 +1,104 @@
 import { APP_NAME_SHORT, SCHOOL_NAME } from '@baogiang/config';
-import { useState } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth/auth-context';
 import { LogoutNotice } from '../auth/logout-notice';
 import { Button } from '../components/ui/button';
-import { accessibleManagementRoutes, accessibleProfessionalRoutes } from '../lib/capabilities';
+import { getAccessibleNavigationFamilies, type AccessibleFamily } from '../lib/navigation-registry';
 
 export function AppLayout() {
   const auth = useAuth();
+  const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const management = accessibleManagementRoutes(auth.auth);
-  const professional = accessibleProfessionalRoutes(auth.auth);
+  const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
+  const [expandedMobileFamilies, setExpandedMobileFamilies] = useState<Record<string, boolean>>({});
+  const navRef = useRef<HTMLElement>(null);
+  const mobileMenuToggleRef = useRef<HTMLButtonElement>(null);
+  const dropdownToggleRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const openDropdownIdRef = useRef<string | null>(null);
+  const mobileMenuOpenRef = useRef(false);
+  const prevMobileMenuOpenRef = useRef(false);
+
+  openDropdownIdRef.current = openDropdownId;
+  mobileMenuOpenRef.current = mobileMenuOpen;
+
+  const accessibleFamilies = useMemo(() => {
+    return getAccessibleNavigationFamilies(auth.auth?.capabilities ?? []);
+  }, [auth.auth?.capabilities]);
+
   const userInitials = auth.auth?.user.displayName
     ? auth.auth.user.displayName.trim().charAt(0).toUpperCase()
     : 'U';
+
+  // Đóng mọi dropdown và mobile menu khi chuyển route
+  useEffect(() => {
+    setOpenDropdownId(null);
+    setMobileMenuOpen(false);
+  }, [location.pathname]);
+
+  // Đóng dropdown khi click outside hoặc ấn Escape (trả focus về nút kích hoạt)
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (navRef.current && !navRef.current.contains(event.target as Node)) {
+        setOpenDropdownId(null);
+      }
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        if (mobileMenuOpenRef.current) {
+          setMobileMenuOpen(false);
+          mobileMenuToggleRef.current?.focus();
+        } else if (openDropdownIdRef.current) {
+          const currentId = openDropdownIdRef.current;
+          setOpenDropdownId(null);
+          dropdownToggleRefs.current[currentId]?.focus();
+        }
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
+  const isFamilyActive = useCallback((family: AccessibleFamily): boolean => {
+    return family.items.some((item) => {
+      if (item.exactEnd) {
+        return location.pathname === item.to;
+      }
+      if (item.isMatchActive) {
+        return item.isMatchActive(location.pathname);
+      }
+      return location.pathname === item.to || location.pathname.startsWith(`${item.to}/`);
+    });
+  }, [location.pathname]);
+
+  // Tự động mở accordion của nhóm đang active chỉ khi drawer vừa chuyển từ đóng sang mở
+  useEffect(() => {
+    const wasOpen = prevMobileMenuOpenRef.current;
+    prevMobileMenuOpenRef.current = mobileMenuOpen;
+
+    if (!wasOpen && mobileMenuOpen) {
+      const activeFamily = accessibleFamilies.find(isFamilyActive);
+      if (activeFamily) {
+        setExpandedMobileFamilies((prev) => {
+          if (prev[activeFamily.id]) {
+            return prev;
+          }
+          return { ...prev, [activeFamily.id]: true };
+        });
+      }
+    }
+  }, [mobileMenuOpen, accessibleFamilies, isFamilyActive]);
+
+  const toggleMobileFamily = (familyId: string) => {
+    setExpandedMobileFamilies((prev) => ({
+      ...prev,
+      [familyId]: !prev[familyId],
+    }));
+  };
 
   return (
     <div className="app-frame">
@@ -35,25 +120,89 @@ export function AppLayout() {
             </div>
             <div className="session-context__details">
               <span className="session-context__name">{auth.auth?.user.displayName}</span>
-              <span className="session-context__role">Không gian quản trị</span>
+              <span className="session-context__role">Tài khoản làm việc</span>
             </div>
-            <Button aria-label="Đăng xuất khỏi không gian làm việc" type="button" variant="quiet" loading={auth.isMutating} onClick={() => void auth.logout().catch(() => undefined)}>
+            <Button
+              aria-label="Đăng xuất khỏi không gian làm việc"
+              type="button"
+              variant="quiet"
+              loading={auth.isMutating}
+              onClick={() => void auth.logout().catch(() => undefined)}
+            >
               Đăng xuất
             </Button>
           </div>
         </div>
       </header>
       <div className="page-width"><LogoutNotice /></div>
-      <nav className="primary-nav" aria-label="Điều hướng chính">
+      <nav ref={navRef} className="primary-nav" aria-label="Điều hướng chính">
         <div className="page-width primary-nav__inner">
           <div className="primary-nav__links">
-            <NavLink to="/" end>Không gian làm việc</NavLink>
-            <NavLink to="/ho-so">Hồ sơ</NavLink>
-            {professional.map((route) => <NavLink key={route.to} to={route.to} end={route.to === '/bao-cao-ke-khai'}>{route.label}</NavLink>)}
-            {management.map((route) => <NavLink key={route.to} to={route.to}>{route.label}</NavLink>)}
-            <NavLink to="/trang-thai-he-thong">Trạng thái hệ thống</NavLink>
+            <NavLink to="/" end className="primary-nav__root-link">
+              Không gian làm việc
+            </NavLink>
+
+            {accessibleFamilies.map((family) => {
+              const isOpen = openDropdownId === family.id;
+              const active = isFamilyActive(family);
+              return (
+                <div key={family.id} className="primary-nav__group-container">
+                  <button
+                    ref={(el) => {
+                      dropdownToggleRefs.current[family.id] = el;
+                    }}
+                    type="button"
+                    className={`primary-nav__group-toggle ${active ? 'primary-nav__group-toggle--active' : ''}`}
+                    aria-expanded={isOpen}
+                    aria-haspopup="true"
+                    aria-controls={`nav-dropdown-${family.id}`}
+                    onClick={() => setOpenDropdownId((prev) => (prev === family.id ? null : family.id))}
+                  >
+                    <span>{family.title}</span>
+                    <span className="primary-nav__caret" aria-hidden="true">{isOpen ? '▴' : '▾'}</span>
+                  </button>
+                  {isOpen && (
+                    <div
+                      id={`nav-dropdown-${family.id}`}
+                      className="primary-nav__dropdown"
+                      aria-label={family.title}
+                    >
+                      <div className="primary-nav__dropdown-header">
+                        <p className="primary-nav__dropdown-title">{family.title}</p>
+                        <p className="primary-nav__dropdown-desc">{family.description}</p>
+                      </div>
+                      <div className="primary-nav__dropdown-items">
+                        {family.items.map((item) => (
+                          <NavLink
+                            key={item.to}
+                            to={item.to}
+                            end={item.exactEnd}
+                            className="primary-nav__dropdown-item"
+                            onClick={() => setOpenDropdownId(null)}
+                          >
+                            <span className="primary-nav__item-label">{item.label}</span>
+                            {item.actionHint && (
+                              <span className="primary-nav__item-hint" aria-hidden="true">{item.actionHint}</span>
+                            )}
+                          </NavLink>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            <NavLink to="/ho-so" className="primary-nav__root-link">
+              Hồ sơ
+            </NavLink>
+            <NavLink to="/trang-thai-he-thong" className="primary-nav__root-link">
+              Trạng thái hệ thống
+            </NavLink>
           </div>
+
           <button
+            ref={mobileMenuToggleRef}
             type="button"
             className="primary-nav__mobile-toggle"
             aria-expanded={mobileMenuOpen}
@@ -63,42 +212,66 @@ export function AppLayout() {
             {mobileMenuOpen ? '✕ Đóng' : '☰ Thực đơn'}
           </button>
         </div>
+
         {mobileMenuOpen && (
-          <div className="primary-nav__mobile-menu">
-            <div className="page-width py-3 space-y-3">
-              <div>
-                <span className="text-[11px] font-bold text-sky-400 uppercase tracking-wider block mb-1">Không gian cá nhân</span>
-                <div className="grid grid-cols-2 gap-1.5">
-                  <NavLink to="/" end onClick={() => setMobileMenuOpen(false)} className="mobile-nav-link">Không gian làm việc</NavLink>
-                  <NavLink to="/ho-so" onClick={() => setMobileMenuOpen(false)} className="mobile-nav-link">Hồ sơ</NavLink>
+          <div className="primary-nav__mobile-menu" aria-label="Thực đơn di động">
+            <div className="page-width py-3 space-y-4">
+              <div className="mobile-nav-section">
+                <span className="mobile-nav-section__title">Không gian chung</span>
+                <div className="mobile-nav-section__links">
+                  <NavLink to="/" end onClick={() => setMobileMenuOpen(false)} className="mobile-nav-link">
+                    Không gian làm việc
+                  </NavLink>
+                  <NavLink to="/ho-so" onClick={() => setMobileMenuOpen(false)} className="mobile-nav-link">
+                    Hồ sơ cá nhân
+                  </NavLink>
                 </div>
               </div>
-              {professional.length > 0 && (
-                <div>
-                  <span className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider block mb-1">Chuyên môn & Báo cáo</span>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                    {professional.map((route) => (
-                      <NavLink key={route.to} to={route.to} end={route.to === '/bao-cao-ke-khai'} onClick={() => setMobileMenuOpen(false)} className="mobile-nav-link">
-                        {route.label}
-                      </NavLink>
-                    ))}
+
+              {accessibleFamilies.map((family) => {
+                const isExpanded = Boolean(expandedMobileFamilies[family.id]);
+                return (
+                  <div key={family.id} className="mobile-nav-section">
+                    <button
+                      type="button"
+                      className="mobile-nav-accordion__trigger"
+                      aria-expanded={isExpanded}
+                      aria-controls={`mobile-family-items-${family.id}`}
+                      onClick={() => toggleMobileFamily(family.id)}
+                    >
+                      <span className="mobile-nav-accordion__title">{family.title}</span>
+                      <span className="mobile-nav-accordion__caret" aria-hidden="true">
+                        {isExpanded ? '▴' : '▾'}
+                      </span>
+                    </button>
+                    {isExpanded && (
+                      <div id={`mobile-family-items-${family.id}`} className="mobile-nav-section__links">
+                        {family.items.map((item) => (
+                          <NavLink
+                            key={item.to}
+                            to={item.to}
+                            end={item.exactEnd}
+                            onClick={() => setMobileMenuOpen(false)}
+                            className="mobile-nav-link"
+                          >
+                            <span className="mobile-nav-link__label">{item.label}</span>
+                            {item.actionHint && (
+                              <span className="mobile-nav-link__hint" aria-hidden="true">{item.actionHint}</span>
+                            )}
+                          </NavLink>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                </div>
-              )}
-              {management.length > 0 && (
-                <div>
-                  <span className="text-[11px] font-bold text-indigo-400 uppercase tracking-wider block mb-1">Quản trị & Phân công</span>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                    {management.map((route) => (
-                      <NavLink key={route.to} to={route.to} onClick={() => setMobileMenuOpen(false)} className="mobile-nav-link">
-                        {route.label}
-                      </NavLink>
-                    ))}
-                  </div>
-                </div>
-              )}
-              <div>
-                <NavLink to="/trang-thai-he-thong" onClick={() => setMobileMenuOpen(false)} className="mobile-nav-link text-slate-300">
+                );
+              })}
+
+              <div className="mobile-nav-section">
+                <NavLink
+                  to="/trang-thai-he-thong"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="mobile-nav-link mobile-nav-link--system"
+                >
                   Trạng thái hệ thống
                 </NavLink>
               </div>
@@ -109,7 +282,11 @@ export function AppLayout() {
       <main id="main-content" className="page-width main-content" tabIndex={-1}>
         <Outlet />
       </main>
-      <footer className="site-footer"><div className="page-width">{SCHOOL_NAME} • Hệ thống Quản lý Báo giảng & Chuẩn hóa Chuyên môn</div></footer>
+      <footer className="site-footer">
+        <div className="page-width">
+          {SCHOOL_NAME} • Hệ thống Quản lý Báo giảng & Chuẩn hóa Chuyên môn
+        </div>
+      </footer>
     </div>
   );
 }

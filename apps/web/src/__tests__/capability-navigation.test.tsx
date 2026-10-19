@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CapabilityKey, CapabilityScope } from '@baogiang/contracts';
 import { jsonResponse, normalAuth, renderApp } from './test-utils';
@@ -42,6 +42,7 @@ describe('capability-aware navigation', () => {
     vi.stubGlobal('fetch', fetchMock);
     renderApp('/quan-tri/phan-cong-giang-day');
     expect(await screen.findByRole('heading', { name: 'Phân công giảng dạy' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /dữ liệu năm học/i }));
     expect(screen.getByRole('link', { name: 'Phân công môn' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Phân công giảng dạy' })).toBeInTheDocument();
   });
@@ -73,6 +74,7 @@ describe('capability-aware navigation', () => {
     vi.stubGlobal('fetch', fetchMock);
     renderApp('/quan-tri/phan-cong-chu-nhiem');
     expect(await screen.findByRole('heading', { name: 'Phân công chủ nhiệm' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /dữ liệu năm học/i }));
     expect(screen.getByRole('link', { name: 'Phân công chủ nhiệm' })).toBeInTheDocument();
   });
 
@@ -90,6 +92,7 @@ describe('capability-aware navigation', () => {
     vi.stubGlobal('fetch', fetchMock);
     renderApp('/quan-tri/cau-truc-nam-hoc');
     expect(await screen.findByRole('heading', { name: 'Cấu trúc năm học' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /dữ liệu năm học/i }));
     expect(screen.getByRole('link', { name: 'Cấu trúc năm học' })).toBeInTheDocument();
   });
 
@@ -112,8 +115,9 @@ describe('capability-aware navigation', () => {
       : jsonResponse({ items: [], page: 1, pageSize: 20, total: 0 }));
     vi.stubGlobal('fetch', fetchMock);
     renderApp('/quan-tri/kiem-nhiem/phan-cong');
-    expect((await screen.findAllByRole('link', { name: 'Phân công kiêm nhiệm' })).length).toBeGreaterThanOrEqual(1);
     expect(await screen.findByRole('heading', { name: 'Kiêm nhiệm nhân sự' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /dữ liệu năm học/i }));
+    expect((await screen.findAllByRole('link', { name: 'Phân công kiêm nhiệm' })).length).toBeGreaterThanOrEqual(1);
   });
 
   it('blocks a direct management route before rendering its page', async () => {
@@ -167,6 +171,7 @@ describe('capability-aware navigation', () => {
     vi.stubGlobal('fetch', fetchMock);
     renderApp('/quan-tri/ppct/ap-dung-chuyen-de');
     expect(await screen.findByRole('heading', { name: 'Áp dụng chuyên đề' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /dữ liệu năm học/i }));
     expect(screen.getByRole('link', { name: 'Áp dụng chuyên đề' })).toBeInTheDocument();
   });
 });

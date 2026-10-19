@@ -1,7 +1,7 @@
 # P5-052 — Task-Oriented Workspace & Information Architecture
 
-**Status:** PLANNED  
-**Depends on:** P5-050, P5-051  
+**Status:** IN_REVIEW<br>
+**Depends on:** P5-050, P5-051<br>
 **Traceability:** T51
 
 ## Objective
