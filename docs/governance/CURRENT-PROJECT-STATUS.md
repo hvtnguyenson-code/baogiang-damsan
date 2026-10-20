@@ -8,7 +8,11 @@ Per `MAJOR-TASK-DOCUMENTATION-SYNC-PROTOCOL.md`, this file is intentionally conc
 
 Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub. SHAs here are evidence for already-established task states, never a self-referential claim that this document contains its own current commit.
 
-**Status snapshot date:** 2026-10-19
+**Status snapshot date:** 2026-10-20
+
+## P5-053 — CLOSED by SYNC-P5-053 (Timetable & Time-Slot Administration Workspace)
+
+P5-053 (T52) is **CLOSED by SYNC-P5-053** after independent review of parent PR #244, Correction 001, and the final targeted fix. Reviewed PR-head `8f957217926c55362df036daf5b8cdd8437c6767` passed PR CI run `39383450017` (554 Web unit tests, 680 API integration, 19 Playwright E2E tests). Parent PR #244 merged at `481003357c6261368dcb9566b1388617563c61bb`; authoritative main CI `39398772244`, auto-deploy `39399972160` and VPS deploy `39399986101` all SUCCESS. VPS `current` pointed to the merge SHA; local/public Báo giảng readiness and protected Nội trú health returned HTTP 200. Scope delivered: capability-guarded Vietnamese time-slot and native Đam San timetable administration, server-owned class/teacher reconciliation, BOTH/MORNING/AFTERNOON selective session import, draft/version lifecycle and bounded readiness. No backend/schema/migration/CI/CD code changes. VPS housekeeping completed: three stale releases/ZIPs, unused staging, and historical quarantine cleaned, while `current`, `previous`, `failed-release`, backups, deploy logs, database and protected Nội trú remained intact. **No teacher-pilot authorization. P5-054 is the next sequential major task.**
 
 ## P5-051 — CLOSED by SYNC-P5-051
 
@@ -16,7 +20,7 @@ P5-051 (T50) is **CLOSED by SYNC-P5-051**. Parent PR #240 merged to `main` at `c
 
 ## P5-052 — CLOSED by SYNC-P5-052 (Task-Oriented Workspace & Information Architecture)
 
-P5-052 (T51) is **CLOSED by SYNC-P5-052**. Parent PR #242 merged as `0711bd8e6edaca38c7e3840ff66de20f353bdcd8` after independent review and Corrections 001/002. Authoritative post-merge main CI run `39238435454`, auto-deploy run `39239589746`, and VPS deployment run `39239601301` all SUCCESS. VPS `current` points to this exact merge SHA; Báo giảng local/public readiness and protected Nội trú returned HTTP 200. No backend, migration, or CI/CD changes; no teacher pilot authorization. P5-053 is the next sequential implementation task.
+P5-052 (T51) is **CLOSED by SYNC-P5-052**. Parent PR #242 merged as `0711bd8e6edaca38c7e3840ff66de20f353bdcd8` after independent review and Corrections 001/002. Authoritative post-merge main CI run `39238435454`, auto-deploy run `39239589746`, and VPS deployment run `39239601301` all SUCCESS. VPS `current` points to this exact merge SHA; Báo giảng local/public readiness and protected Nội trú returned HTTP 200. No backend, migration, or CI/CD changes; no teacher pilot authorization. P5-053 subsequently merged and closed (see newer section above).
 - Delivered task-oriented information architecture with 5 coherent work families (`my-work`, `academic-data`, `teaching-operations`, `reporting-approval`, `administration`) mapping 22/22 canonical routes with exact capabilities predicates.
 - Replaced flat navigation links with responsive desktop dropdowns and accessible mobile drawer with keyboard support (Escape dismiss, auto-close on navigate, WCAG AA contrast and touch target).
 - Transformed HomePage into an actionable workspace with real bounded pending approval queue for PHT/BGH and teaching queue for teachers; honest zero and error handling without fake numbers.
@@ -100,12 +104,11 @@ Preliminary Desktop Commander read-only metadata: Windows Server 2022, 6 logical
 
 ### In Review
 
-- None for the P5-050 product-operability programme; P5-052 is CLOSED by SYNC-P5-052.
+- None for the P5-050 product-operability programme; P5-053 is CLOSED by SYNC-P5-053.
 
 ### Ready
 
-- `P5-053` — timetable + time-slot administration workspace; next sequential implementation task after P5-052 closure.
-- `P5-054` — teaching-operations workspace closure; eligible by dependency but held behind the sequential orchestration priority.
+- `P5-054` — teaching-operations workspace closure; **next sequential implementation task** after P5-053.
 - `P5-056A` — notification/Web Push architecture; eligible by dependency but held behind the sequential orchestration priority.
 - `P0-005` — docs-only historical T31 traceability reconciliation; independent of the product-operability implementation path.
 

@@ -1,6 +1,6 @@
 # P5-053 — Timetable & Time-Slot Administration Workspace
 
-**Status:** READY  
+**Status:** CLOSED by `SYNC-P5-053` — parent PR #244 merged as `481003357c6261368dcb9566b1388617563c61bb`; authoritative post-merge main CI `39398772244`, auto-deploy `39399972160`, VPS deploy `39399986101` SUCCESS. Corrections 001 and final targeted fix independently reviewed; no backend/schema/CI/CD changes; no teacher pilot authorization.
 **Depends on:** P5-050, P2-050  
 **Traceability:** T52
 
