@@ -1256,5 +1256,266 @@ describe('P5-053: Timetable & Time-slot Administration Workspace', () => {
       expect(await screen.findByText(/chưa thể lưu thay đổi/i)).toBeInTheDocument();
       expect(screen.getByText(/dữ liệu xung đột với bản ghi hiện có/i)).toBeInTheDocument();
     });
+
+    it('R3: readiness async race — late response from old date range is discarded after user modifies dates', async () => {
+      let resolveFirstReadiness: ((value: unknown) => void) | null = null;
+      const firstReadinessPromise = new Promise((resolve) => {
+        resolveFirstReadiness = resolve;
+      });
+
+      const reportA = {
+        profile: 'NORMAL_BASE_PPCT_V1',
+        productLabel: 'ĐÁNH GIÁ TKB NỀN TẢNG V1',
+        scope: {
+          timetableVersionId: 'ttv-active-1',
+          academicYearId: 'year-2024',
+          from: '2024-09-05',
+          to: '2025-01-15',
+          affectedStreams: [],
+        },
+        result: 'PASS' as const,
+        evaluatedAt: '2026-10-19T10:00:00Z',
+        provenance: {
+          timetableVersionId: 'ttv-active-1',
+          academicCalendarVersionId: 'cal-v1',
+          ppctClassAssociationIds: [],
+          ppctVersionIds: [],
+        },
+        findings: [],
+        dimensions: [
+          { key: 'NORMAL_BASE_TIMETABLE_FOUNDATION', state: 'PASS' as const, required: true },
+          { key: 'PPCT_ASSOCIATION_BINDING', state: 'PASS' as const, required: true },
+        ],
+      };
+
+      const reportB = {
+        ...reportA,
+        scope: {
+          ...reportA.scope,
+          from: '2024-10-01',
+          to: '2025-01-15',
+        },
+      };
+
+      let readinessCallCount = 0;
+      const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (
+          url.includes('/academic-years') &&
+          !url.includes('/time-slots') &&
+          !url.includes('/timetable-versions') &&
+          !url.includes('/calendar-versions')
+        ) {
+          return jsonResponse({ items: mockAcademicYears, total: 2 });
+        }
+        if (url.includes('/timetable-versions/ttv-active-1/readiness')) {
+          readinessCallCount++;
+          if (readinessCallCount === 1) {
+            await firstReadinessPromise;
+            return jsonResponse(reportA);
+          }
+          return jsonResponse(reportB);
+        }
+        if (url.endsWith('/timetable-versions/ttv-active-1')) {
+          return jsonResponse(mockTimetableVersions[0]);
+        }
+        if (url.includes('/timetable-versions')) {
+          return jsonResponse({ items: mockTimetableVersions, total: 2, page: 1, pageSize: 10 });
+        }
+        return jsonResponse({ items: [], total: 0 });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      renderWithQuery(<TimetableAdminPage />);
+
+      const viewDetailBtns = await screen.findAllByRole('button', { name: /xem chi tiết/i });
+      fireEvent.click(viewDetailBtns[0]);
+
+      const fromInput = (await screen.findByLabelText(/từ ngày/i)) as HTMLInputElement;
+      const assessBtn = screen.getByRole('button', { name: /chạy đánh giá sẵn sàng/i });
+
+      // Click assess for initial range [2024-09-05, 2025-01-15]
+      fireEvent.click(assessBtn);
+
+      // While request 1 is in-flight, user edits from date to 2024-10-01
+      fireEvent.change(fromInput, { target: { value: '2024-10-01' } });
+
+      // Now resolve late response 1 (for old date range)
+      resolveFirstReadiness!(reportA);
+
+      // Verify report A is NOT rendered
+      await waitFor(() => {
+        expect(screen.queryByText(/kết quả đánh giá gốc/i)).not.toBeInTheDocument();
+      });
+
+      // Now run assess for new date range
+      fireEvent.click(assessBtn);
+
+      // Report B is rendered and displays scope from 01/10/2024 đến 15/01/2025
+      expect(await screen.findByText(/kết quả đánh giá gốc/i)).toBeInTheDocument();
+      expect(screen.getByText(/từ ngày 01\/10\/2024 đến 15\/01\/2025/i)).toBeInTheDocument();
+    });
+
+    it('R5: idempotency key is readonly, copyable, preserved across 5xx retry, and reset after successful confirm', async () => {
+      let confirmCallCount = 0;
+      const sentBodies: FormData[] = [];
+
+      const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (
+          url.includes('/academic-years') &&
+          !url.includes('/time-slots') &&
+          !url.includes('/timetable-versions') &&
+          !url.includes('/calendar-versions')
+        ) {
+          return jsonResponse({ items: mockAcademicYears, total: 2 });
+        }
+        if (url.includes('/calendar-versions') && !url.includes('/academic-calendar-versions/')) {
+          return jsonResponse({ items: mockCalendars, total: 1 });
+        }
+        if (url.includes('/academic-calendar-versions/cal-v1')) {
+          return jsonResponse(mockCalendarDetail);
+        }
+        if (url.includes('/timetable-import/profiles')) {
+          return jsonResponse({ items: mockProfiles, total: 1 });
+        }
+        if (url.includes('/timetable-import/workbooks/preview')) {
+          return jsonResponse(mockPreviewResult);
+        }
+        if (url.includes('/timetable-import/workbooks/confirm')) {
+          confirmCallCount++;
+          if (init?.body instanceof FormData) {
+            sentBodies.push(init.body);
+          }
+          if (confirmCallCount === 1) {
+            // First attempt fails with 500 error
+            return new Response(
+              JSON.stringify({ statusCode: 500, message: 'Internal server error on confirm' }),
+              { status: 500, headers: { 'Content-Type': 'application/json' } },
+            );
+          }
+          return jsonResponse(mockConfirmResult);
+        }
+        if (url.includes('/timetable-versions')) {
+          return jsonResponse({ items: mockTimetableVersions, total: 2 });
+        }
+        return jsonResponse({ items: [], total: 0 });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      renderWithQuery(<TimetableAdminPage />);
+
+      fireEvent.click(await screen.findByRole('button', { name: /nhập tkb đam san/i }));
+
+      const fileInput = screen.getByLabelText(/tệp excel thời khóa biểu/i);
+      const testFile = new File(['fake xlsx content'], 'tkb-hk1.xlsx', {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      fireEvent.change(fileInput, { target: { files: [testFile] } });
+
+      await screen.findByRole('option', { name: /tuần 1/i });
+
+      const previewBtn = screen.getByRole('button', { name: /xem trước đối soát \(preview\)/i });
+      await waitFor(() => expect(previewBtn).toBeEnabled());
+      fireEvent.click(previewBtn);
+
+      // Verify idempotency key is readonly and copy button is present
+      const idempInput = (await screen.findByLabelText(/khóa thao tác chống trùng lặp/i)) as HTMLInputElement;
+      expect(idempInput).toHaveAttribute('readonly');
+      expect(screen.getByRole('button', { name: /sao chép/i })).toBeInTheDocument();
+
+      const initialKey = idempInput.value;
+      expect(initialKey).toMatch(/^req-/);
+
+      // First confirm attempt (fails with 500)
+      const confirmBtn = screen.getByRole('button', { name: /xác nhận nạp vào bản nháp/i });
+      fireEvent.click(confirmBtn);
+
+      expect(await screen.findByText(/không thể hoàn tất yêu cầu/i)).toBeInTheDocument();
+      expect(sentBodies.length).toBe(1);
+      expect(sentBodies[0].get('requestIdempotencyKey')).toBe(initialKey);
+
+      // Key in UI is still identical (retained across 5xx failure)
+      expect(idempInput.value).toBe(initialKey);
+
+      // Retry confirm
+      fireEvent.click(confirmBtn);
+
+      // Successfully confirmed and navigated to versions tab
+      expect(await screen.findByRole('heading', { name: /danh sách phiên bản thời khóa biểu/i })).toBeInTheDocument();
+      expect(sentBodies.length).toBe(2);
+      // Key sent on retry is identical to initialKey
+      expect(sentBodies[1].get('requestIdempotencyKey')).toBe(initialKey);
+
+      // When returning to import tab, idempotency key has been reset to a new key
+      fireEvent.click(screen.getByRole('button', { name: /nhập tkb đam san/i }));
+      const newFileInput = screen.getByLabelText(/tệp excel thời khóa biểu/i);
+      fireEvent.change(newFileInput, { target: { files: [testFile] } });
+      await waitFor(() => expect(screen.getByRole('button', { name: /xem trước đối soát \(preview\)/i })).toBeEnabled());
+      fireEvent.click(screen.getByRole('button', { name: /xem trước đối soát \(preview\)/i }));
+
+      const newIdempInput = (await screen.findByLabelText(/khóa thao tác chống trùng lặp/i)) as HTMLInputElement;
+      expect(newIdempInput.value).toMatch(/^req-/);
+      expect(newIdempInput.value).not.toBe(initialKey);
+    });
+
+    it('Item 3: inspect async race — stale inspect response is discarded when nativeSessionMode changes', async () => {
+      let resolveFirstInspect: ((value: unknown) => void) | null = null;
+      const firstInspectPromise = new Promise((resolve) => {
+        resolveFirstInspect = resolve;
+      });
+
+      const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (
+          url.includes('/academic-years') &&
+          !url.includes('/time-slots') &&
+          !url.includes('/timetable-versions') &&
+          !url.includes('/calendar-versions')
+        ) {
+          return jsonResponse({ items: mockAcademicYears, total: 2 });
+        }
+        if (url.includes('/calendar-versions') && !url.includes('/academic-calendar-versions/')) {
+          return jsonResponse({ items: mockCalendars, total: 1 });
+        }
+        if (url.includes('/academic-calendar-versions/cal-v1')) {
+          return jsonResponse(mockCalendarDetail);
+        }
+        if (url.includes('/timetable-import/profiles')) {
+          return jsonResponse({ items: mockProfiles, total: 1 });
+        }
+        if (url.includes('/timetable-import/workbooks/inspect')) {
+          await firstInspectPromise;
+          return jsonResponse(mockInspectionResult);
+        }
+        return jsonResponse({ items: [], total: 0 });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      renderWithQuery(<TimetableAdminPage />);
+
+      fireEvent.click(await screen.findByRole('button', { name: /nhập tkb đam san/i }));
+
+      const fileInput = screen.getByLabelText(/tệp excel thời khóa biểu/i);
+      const testFile = new File(['fake xlsx content'], 'tkb-hk1.xlsx', {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      fireEvent.change(fileInput, { target: { files: [testFile] } });
+
+      const inspectBtn = await screen.findByRole('button', { name: /kiểm tra tệp \(inspect\)/i });
+      fireEvent.click(inspectBtn);
+
+      // While inspect is in flight, user changes session mode
+      const sessionSelect = screen.getByLabelText(/chế độ buổi áp dụng/i);
+      fireEvent.change(sessionSelect, { target: { value: 'MORNING' } });
+
+      // Resolve stale inspect response
+      resolveFirstInspect!(mockInspectionResult);
+
+      // Verify stale inspect response is NOT rendered
+      await waitFor(() => {
+        expect(screen.queryByText(/kết quả kiểm tra tệp \(inspect\)/i)).not.toBeInTheDocument();
+      });
+    });
   });
 });

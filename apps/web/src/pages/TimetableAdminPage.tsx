@@ -469,6 +469,8 @@ function VersionDetailPanel({
   const [entriesPage, setEntriesPage] = useState(1);
   const [weekdayFilter, setWeekdayFilter] = useState<AcademicWeekday | ''>('');
 
+  const readinessGenRef = useRef(0);
+
   // 1. Fetch version record
   const versionQuery = useQuery({
     queryKey: ['timetable-version-detail', versionId],
@@ -483,6 +485,7 @@ function VersionDetailPanel({
   const readinessTo = userTo !== null ? userTo : defaultTo;
 
   useEffect(() => {
+    readinessGenRef.current++;
     setReadinessData(null);
     setActivateConfirmOpen(false);
   }, [version?.id]);
@@ -592,16 +595,29 @@ function VersionDetailPanel({
   });
 
   const readinessMutation = useMutation({
-    mutationFn: () => {
-      if (!version) throw new Error('Không có phiên bản');
-      if (!readinessFrom || !readinessTo) throw new Error('Vui lòng nhập khoảng ngày from và to');
-      return timetableVersionsApi.readiness(version.id, {
-        from: readinessFrom,
-        to: readinessTo,
+    mutationFn: async (vars?: { versionId?: string; from?: string; to?: string; gen?: number }) => {
+      const targetVersionId = vars?.versionId ?? version?.id;
+      const targetFrom = vars?.from ?? readinessFrom;
+      const targetTo = vars?.to ?? readinessTo;
+      if (!targetVersionId) throw new Error('Không có phiên bản');
+      if (!targetFrom || !targetTo) throw new Error('Vui lòng nhập khoảng ngày from và to');
+      const gen = vars?.gen ?? readinessGenRef.current;
+      const res = await timetableVersionsApi.readiness(targetVersionId, {
+        from: targetFrom,
+        to: targetTo,
         profile: 'NORMAL_BASE_PPCT_V1',
       });
+      return { res, gen, targetVersionId, targetFrom, targetTo };
     },
-    onSuccess: (res) => {
+    onSuccess: ({ res, gen, targetVersionId, targetFrom, targetTo }) => {
+      if (
+        gen !== readinessGenRef.current ||
+        targetVersionId !== version?.id ||
+        targetFrom !== readinessFrom ||
+        targetTo !== readinessTo
+      ) {
+        return;
+      }
       setReadinessData(res);
       setSuccessNotice('Đánh giá mức sẵn sàng hoàn tất.');
     },
@@ -927,7 +943,14 @@ function VersionDetailPanel({
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              readinessMutation.mutate();
+              if (!version) return;
+              const nextGen = ++readinessGenRef.current;
+              readinessMutation.mutate({
+                versionId: version.id,
+                from: readinessFrom,
+                to: readinessTo,
+                gen: nextGen,
+              });
             }}
             style={{ display: 'flex', gap: '1rem', alignItems: 'flex-end', flexWrap: 'wrap', marginBlock: '0.75rem' }}
           >
@@ -939,6 +962,7 @@ function VersionDetailPanel({
                 value={readinessFrom}
                 onChange={(e) => {
                   setUserFrom(e.target.value);
+                  readinessGenRef.current++;
                   setReadinessData(null);
                 }}
                 required
@@ -952,6 +976,7 @@ function VersionDetailPanel({
                 value={readinessTo}
                 onChange={(e) => {
                   setUserTo(e.target.value);
+                  readinessGenRef.current++;
                   setReadinessData(null);
                 }}
                 required
@@ -981,6 +1006,8 @@ function VersionDetailPanel({
               {(() => {
                 const assessedCount = readinessData.dimensions.filter((d) => d.state !== 'NOT_ASSESSED').length;
                 const notAssessedCount = readinessData.dimensions.filter((d) => d.state === 'NOT_ASSESSED').length;
+                const scopeFrom = (typeof readinessData.scope === 'object' && readinessData.scope?.from) ? readinessData.scope.from : readinessFrom;
+                const scopeTo = (typeof readinessData.scope === 'object' && readinessData.scope?.to) ? readinessData.scope.to : readinessTo;
                 return (
                   <>
                     <p style={{ fontSize: '0.88rem', color: '#64748b', marginBottom: '0.5rem' }}>
@@ -988,7 +1015,7 @@ function VersionDetailPanel({
                     </p>
                     <div style={{ background: '#ffffff', padding: '0.6rem 0.75rem', borderRadius: '4px', border: '1px solid var(--border-card)', marginBottom: '0.75rem', fontSize: '0.88rem', color: '#334155' }}>
                       <div>
-                        <strong>Phạm vi đánh giá:</strong> Từ ngày {formatCivilDate(readinessFrom)} đến {formatCivilDate(readinessTo)}
+                        <strong>Phạm vi đánh giá:</strong> Từ ngày {formatCivilDate(scopeFrom)} đến {formatCivilDate(scopeTo)}
                         {readinessData.scope?.affectedStreams?.length ? ` (${readinessData.scope.affectedStreams.length} luồng lớp-môn)` : ''}
                       </div>
                       {readinessData.provenance && (
@@ -1302,6 +1329,11 @@ function TimetableImportTab({
       if (!previewResult.canConfirm || previewResult.blockingIssueCount > 0) {
         throw new Error('Tệp có lỗi chặn đối soát, không đủ điều kiện nạp.');
       }
+      let activeKey = idempotencyKey.trim();
+      if (!activeKey) {
+        activeKey = createClientRequestIdempotencyKey();
+        setIdempotencyKey(activeKey);
+      }
       return timetableImportApi.confirm(file, {
         profileRevisionId,
         sourceFormat: 'DAMSAN_NATIVE',
@@ -1309,12 +1341,13 @@ function TimetableImportTab({
         academicYearId,
         calendarVersionId: currentCalendarId,
         effectiveAcademicWeekId: currentWeekId,
-        requestIdempotencyKey: idempotencyKey.trim() || undefined,
+        requestIdempotencyKey: activeKey,
       });
     },
     onSuccess: (res) => {
       setConfirmResult(res);
       setSuccessNotice(`Xác nhận nạp TKB thành công: Phiên ${res.version.versionNumber} ở trạng thái Bản nháp (DRAFT).`);
+      setIdempotencyKey(createClientRequestIdempotencyKey());
       void queryClient.invalidateQueries({ queryKey: ['timetable-versions', academicYearId] });
       onImportSuccess(res.version);
     },
@@ -1392,6 +1425,8 @@ function TimetableImportTab({
               value={nativeSessionMode}
               onChange={(e) => {
                 setNativeSessionMode(e.target.value as TimetableImportNativeSessionMode);
+                inspectGenRef.current++;
+                setInspectResult(null);
                 invalidatePreview();
               }}
               hint="Chọn phiên buổi muốn cập nhật; giữ nguyên buổi còn lại từ TKB baseline."
@@ -1612,15 +1647,30 @@ function TimetableImportTab({
             <p>
               Thao tác này sẽ tạo hoặc cập nhật một bản ghi thời khóa biểu ở trạng thái <strong>Bản nháp (DRAFT)</strong>. Hệ thống <strong>không tự ý kích hoạt</strong> phiên bản này vào thực tế giảng dạy.
             </p>
-            <div style={{ maxWidth: '420px', marginBottom: '1rem' }}>
-              <FormField
-                id="idempotency-key"
-                name="idempotency-key"
-                label="Khóa thao tác chống trùng lặp (Idempotency Key)"
-                value={idempotencyKey}
-                onChange={(e) => setIdempotencyKey(e.target.value)}
-                hint="Khóa duy nhất tự sinh cho phiên đối soát này để bảo vệ chống gửi trùng lặp."
-              />
+            <div style={{ maxWidth: '480px', marginBottom: '1rem' }}>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end' }}>
+                <div style={{ flex: 1 }}>
+                  <FormField
+                    id="idempotency-key"
+                    name="idempotency-key"
+                    label="Khóa thao tác chống trùng lặp (Idempotency Key)"
+                    value={idempotencyKey}
+                    readOnly
+                    hint="Khóa duy nhất tự sinh cho phiên đối soát này để bảo vệ chống gửi trùng lặp."
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="quiet"
+                  onClick={() => {
+                    void navigator.clipboard?.writeText(idempotencyKey);
+                  }}
+                  title="Sao chép khóa"
+                  style={{ marginBottom: '1.25rem' }}
+                >
+                  Sao chép
+                </Button>
+              </div>
             </div>
             <Button
               type="button"
