@@ -343,3 +343,6 @@ jobs:
         run: npm run test:deploy:powershell
       - name: Execute Windows deployment behavior fixtures
         run: npm run test:deploy:windows
+      - name: Verify automatic release retention safety
+        shell: powershell
+        run: .\scripts\ci\test-release-retention.ps1
