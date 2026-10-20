@@ -66,6 +66,14 @@ export const NAVIGATION_REGISTRY: readonly NavigationItem[] = [
     isMatchActive: (pathname) => pathname.startsWith('/quan-tri/cau-truc-nam-hoc'),
   },
   {
+    to: '/quan-tri/thoi-khoa-bieu',
+    label: 'Thời khóa biểu & Khung tiết',
+    familyId: 'academic-data',
+    actionHint: 'Quản lý khung tiết, nhập thời khóa biểu Đam San và phê duyệt phiên bản',
+    isVisible: (c) => hasSchoolCapability(c, 'TIMETABLE_MANAGE'),
+    isMatchActive: (pathname) => pathname.startsWith('/quan-tri/thoi-khoa-bieu'),
+  },
+  {
     to: '/quan-tri/to-chuyen-mon',
     label: 'Tổ chuyên môn',
     familyId: 'academic-data',

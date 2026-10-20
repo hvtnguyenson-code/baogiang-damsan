@@ -110,8 +110,13 @@ export function canManageSpecialProgrammes(capabilities: ScopedCapability[]): bo
     || capabilities.some((grant) => grant.key === 'HĐTN_COORDINATOR' && grant.scope === 'ACTIVITY');
 }
 
+export function canManageTimetable(capabilities: ScopedCapability[]): boolean {
+  return hasSchoolCapability(capabilities, 'TIMETABLE_MANAGE');
+}
+
 export const managementRoutes: ManagementRoute[] = [
   { to: '/quan-tri/cau-truc-nam-hoc', label: 'Cấu trúc năm học', isVisible: (c) => hasSchoolCapability(c, 'ACADEMIC_STRUCTURE_MANAGE') },
+  { to: '/quan-tri/thoi-khoa-bieu', label: 'Thời khóa biểu & Khung tiết', isVisible: canManageTimetable },
   { to: '/quan-tri/nguoi-dung', label: 'Người dùng', isVisible: (c) => hasSchoolCapability(c, 'USER_MANAGE') },
   { to: '/quan-tri/to-chuyen-mon', label: 'Tổ chuyên môn', isVisible: (c) => hasSchoolCapability(c, 'SUBJECT_GROUP_MANAGE') },
   { to: '/quan-tri/mon-hoc', label: 'Môn học', isVisible: (c) => hasSchoolCapability(c, 'SUBJECT_MANAGE') },
@@ -136,6 +141,7 @@ export function accessibleManagementRoutes(auth: AuthMeResponse | null): Managem
 }
 
 export const capabilityLabels: Partial<Record<CapabilityKey, string>> = {
+  TIMETABLE_MANAGE: 'Quản trị thời khóa biểu & khung tiết',
   PPCT_MANAGE: 'Quản lý PPCT',
   TEACHING_EXECUTION_MANAGE: 'Quản lý bằng chứng tiết dạy',
   TEACHING_OPERATION_MANAGE: 'Quản lý vận hành giảng dạy',

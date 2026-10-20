@@ -40,12 +40,12 @@ describe('P5-052: Task-Oriented Workspace & Information Architecture', () => {
       ]);
     });
 
-    it('maps exactly 22 distinct existing routes without omission or phantom route', () => {
-      expect(NAVIGATION_REGISTRY.length).toBe(22);
+    it('maps exactly 23 distinct existing routes without omission or phantom route', () => {
+      expect(NAVIGATION_REGISTRY.length).toBe(23);
       const allRoutes = new Set(NAVIGATION_REGISTRY.map((r) => r.to));
-      expect(allRoutes.size).toBe(22);
+      expect(allRoutes.size).toBe(23);
 
-      // Đối soát 22/22 với các route cũ trong accessibleProfessionalRoutes và accessibleManagementRoutes
+      // Đối soát 23/23 với các route cũ trong accessibleProfessionalRoutes và accessibleManagementRoutes
       const dummyAllCaps: ScopedCapability[] = [
         { key: 'TEACHER_BASE', scope: 'PERSONAL' },
         { key: 'REPORTING_STATEMENT_SUBMIT', scope: 'PERSONAL' },
@@ -67,13 +67,14 @@ describe('P5-052: Task-Oriented Workspace & Information Architecture', () => {
         { key: 'GDDP_COORDINATOR', scope: 'ACTIVITY' },
         { key: 'TEACHING_EXECUTION_MANAGE', scope: 'SCHOOL_WIDE' },
         { key: 'TEACHING_OPERATION_MANAGE', scope: 'SCHOOL_WIDE' },
+        { key: 'TIMETABLE_MANAGE', scope: 'SCHOOL_WIDE' },
       ];
       const dummyAuth = { ...normalAuth, capabilities: dummyAllCaps };
       const legacyProfessional = accessibleProfessionalRoutes(dummyAuth);
       const legacyManagement = accessibleManagementRoutes(dummyAuth);
       const legacyAll = [...legacyProfessional, ...legacyManagement];
 
-      expect(legacyAll.length).toBe(22);
+      expect(legacyAll.length).toBe(23);
       for (const legacy of legacyAll) {
         expect(allRoutes.has(legacy.to)).toBe(true);
       }
@@ -85,7 +86,7 @@ describe('P5-052: Task-Oriented Workspace & Information Architecture', () => {
         familyCounts[item.familyId] = (familyCounts[item.familyId] ?? 0) + 1;
       }
       expect(familyCounts['my-work']).toBe(2);
-      expect(familyCounts['academic-data']).toBe(11);
+      expect(familyCounts['academic-data']).toBe(12);
       expect(familyCounts['teaching-operations']).toBe(3);
       expect(familyCounts['reporting-approval']).toBe(2);
       expect(familyCounts['administration']).toBe(4);
