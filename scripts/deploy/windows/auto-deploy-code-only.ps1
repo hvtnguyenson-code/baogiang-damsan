@@ -80,7 +80,7 @@ try {
     'run-migrations.ps1','assert-no-pending-migrations.ps1','sync-capability-catalog.ps1',
     'switch-current-release.ps1','restart-baogiang-api.ps1','start-baogiang-api.ps1',
     'test-production-health.ps1','rollback-release.ps1','notify-operator-telegram.ps1',
-    'invoke-production-deploy.ps1')
+    'invoke-production-deploy.ps1','prune-releases.ps1')
   foreach ($name in $scripts) {
     Copy-Item -LiteralPath (Join-Path $source $name) -Destination (Join-Path $transfer $name) -ErrorAction Stop
   }
@@ -124,6 +124,13 @@ try {
   $actualTarget = [string](Get-Item -LiteralPath (Join-Path $root 'current') -Force).Target
   if ($actualTarget -notmatch ([regex]::Escape($ExpectedSha) + '$')) { throw 'RELEASE_POINTER_NOT_UPDATED' }
   Write-Output "BAOGIANG_DEPLOY_VERIFIED sha=$ExpectedSha neighbor_pid=$neighborPid"
+  # Post-verification housekeeping is strictly best-effort: never roll back a healthy release.
+  try {
+    & (Join-Path $transfer 'prune-releases.ps1') -Root $root -ExpectedSha $ExpectedSha -Execute | Out-Null
+    Write-Output "BAOGIANG_RELEASE_PRUNE_OK sha=$ExpectedSha"
+  } catch {
+    Write-Warning ('BAOGIANG_RELEASE_PRUNE_SKIPPED: ' + $_.Exception.Message)
+  }
 } finally {
   # Keep the durable redacted report under C:\baogiang\logs; remove only exact staging.
   if (Test-Path -LiteralPath $transfer) {
