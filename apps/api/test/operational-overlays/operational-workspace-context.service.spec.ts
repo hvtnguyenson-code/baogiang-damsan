@@ -6,10 +6,15 @@ const yearFindMany = jest.fn(async () => [{ id: 'year-1', code: '2026-2027', nam
 const subjectFindMany = jest.fn(async () => [{ id: 'subject-1', code: 'TOAN', name: 'Toán' }]);
 const listEffectiveCapabilities = jest.fn();
 const resolve = jest.fn();
+const resolveInTransaction = jest.fn();
+const validateCalendarPreviewCandidate = jest.fn();
+const calendarPreviewCoversOccurrence = jest.fn();
+const transaction = jest.fn(async (fn: (tx: unknown) => unknown) => fn({}));
 const service = new OperationalWorkspaceContextService(
-  { academicYear: { findMany: yearFindMany }, subject: { findMany: subjectFindMany }, schoolClass: { findMany: jest.fn(async () => [{ id: 'class-1', name: '10A1' }]) }, user: { findMany: jest.fn(async () => [{ id: 'teacher', profile: { displayName: 'Giáo viên A' } }]) } } as never,
+  { $transaction: transaction, academicYear: { findMany: yearFindMany }, subject: { findMany: subjectFindMany }, schoolClass: { findMany: jest.fn(async () => [{ id: 'class-1', name: '10A1' }]) }, user: { findMany: jest.fn(async () => [{ id: 'teacher', profile: { displayName: 'Giáo viên A' } }]) } } as never,
   { listEffectiveCapabilities } as never,
-  { resolve } as never,
+  { resolve, resolveInTransaction } as never,
+  { validateCalendarPreviewCandidate, calendarPreviewCoversOccurrence } as never,
 );
 
 beforeEach(() => {
@@ -77,6 +82,61 @@ describe('P5-054 operational workspace context', () => {
     expect(result.items[0]?.schoolClassName).toBe('10A1');
     expect(JSON.stringify(result)).not.toContain('subject-2');
   });
+
+  const previewInput = {
+    academicYearId: 'year-1', academicCalendarVersionId: 'calendar-1',
+    civilDate: '2026-10-22', scope: 'SCHOOL_WIDE', timeSelector: 'WHOLE_DAY',
+  };
+
+  it('denies calendar preview to subject-only users before touching the database', async () => {
+    listEffectiveCapabilities.mockResolvedValue([
+      { key: 'TEACHING_OPERATION_MANAGE', scope: 'SUBJECT', resourceId: 'subject-1' },
+    ]);
+    await expect(service.previewCalendarException(request as never, previewInput as never))
+      .rejects.toBeInstanceOf(ForbiddenException);
+    expect(transaction).not.toHaveBeenCalled();
+    expect(validateCalendarPreviewCandidate).not.toHaveBeenCalled();
+  });
+
+  it('previews only matching base opportunities without claiming unassessed consequences', async () => {
+    listEffectiveCapabilities.mockResolvedValue([{ key: 'CALENDAR_EXCEPTION_MANAGE', scope: 'SCHOOL_WIDE' }]);
+    validateCalendarPreviewCandidate.mockResolvedValue(previewInput);
+    const make = (id: string, effectiveKind = 'BASE_TIMETABLE') => ({
+      occurrenceKey: 'NORMAL:' + id + ':2026-10-22', timetableEntryId: id,
+      academicCalendarVersionId: 'calendar-1', schoolClass: { id: 'class-1', gradeLevel: 10 },
+      subjectId: 'subject-1', responsibleTeacherUserId: 'teacher-1',
+      timeSlot: { id: 'slot-1', weekday: 'THURSDAY', session: 'MORNING', startTime: '07:00', endTime: '07:45' },
+      effectiveKind,
+    });
+    resolveInTransaction.mockResolvedValue({
+      status: 'PASS', normalOccurrences: [make('first'), make('second', 'CALENDAR_EXCEPTION'), make('third')],
+    });
+    calendarPreviewCoversOccurrence.mockImplementation((_, row: { timetableEntryId: string }) => row.timetableEntryId === 'first');
+    const result = await service.previewCalendarException(request as never, previewInput as never);
+    expect(result.status).toBe('PASS');
+    expect(result.affected).toHaveLength(1);
+    expect(result.affected[0]?.timetableEntryId).toBe('first');
+    expect(result.coverage).toEqual({
+      ppctItemAllocation: 'NOT_ASSESSED', workload: 'NOT_ASSESSED', debt: 'NOT_ASSESSED',
+    });
+    expect(transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails closed when canonical occurrences are blocked or validation rejects the candidate', async () => {
+    listEffectiveCapabilities.mockResolvedValue([{ key: 'CALENDAR_EXCEPTION_MANAGE', scope: 'SCHOOL_WIDE' }]);
+    validateCalendarPreviewCandidate.mockResolvedValue(previewInput);
+    resolveInTransaction.mockResolvedValue({ status: 'BLOCKED', normalOccurrences: [], findings: [{ entityIds: ['secret'] }] });
+    const blocked = await service.previewCalendarException(request as never, previewInput as never);
+    expect(blocked.status).toBe('BLOCKED');
+    expect(blocked.affected).toEqual([]);
+    expect(JSON.stringify(blocked)).not.toContain('secret');
+    validateCalendarPreviewCandidate.mockRejectedValue(new Error('collision secret'));
+    const rejected = await service.previewCalendarException(request as never, previewInput as never);
+    expect(rejected.status).toBe('BLOCKED');
+    expect(rejected.affected).toEqual([]);
+    expect(JSON.stringify(rejected)).not.toContain('collision secret');
+  });
+
   it('permits school-wide teaching administrators to discover active subjects', async () => {
     listEffectiveCapabilities.mockResolvedValue([
       { key: 'TEACHING_OPERATION_MANAGE', scope: 'SCHOOL_WIDE' },

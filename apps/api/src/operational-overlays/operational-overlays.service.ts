@@ -22,11 +22,12 @@ import {
   OperationalLessonDispositionReverseResult,
 } from '@baogiang/contracts';
 import { AuditService } from '../audit/audit.service';
+import { NormalStructuralOccurrence } from '../resolved-occurrences/resolved-occurrence.types';
 import { requestMeta } from '../auth/auth-http';
 import { AuthenticatedRequest } from '../auth/auth.types';
 import { formatCivilDate, parseCivilDate } from '../common/validation/civil-date';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateCalendarExceptionDto, CreateLessonDispositionDto, ListCalendarExceptionsDto, ListLessonDispositionsDto, ReverseOperationalOverlayDto } from './dto';
+import { CreateCalendarExceptionDto, CreateLessonDispositionDto, ListCalendarExceptionsDto, ListLessonDispositionsDto, PreviewCalendarExceptionDto, ReverseOperationalOverlayDto } from './dto';
 import { calendarExceptionInclude, toCalendarExceptionRecord, toLessonDispositionRecord } from './mapper';
 import { OperationalOverlayAccessService } from './operational-overlay-access.service';
 import { COLLISION_COVERAGE, calendarCreateFingerprint, dispositionCreateFingerprint, intervalsOverlap, isTeacherDisposition, OverlayClock, OVERLAY_CLOCK, reverseFingerprint, weekdayForCivilDate } from './operational-overlay-policy';
@@ -42,6 +43,20 @@ export class OperationalOverlaysService {
     private readonly access: OperationalOverlayAccessService,
     @Inject(OVERLAY_CLOCK) private readonly clock: OverlayClock,
   ) {}
+
+  /** Uses the exact commit-time calendar validation inside the caller's read-only preview transaction. */
+  async validateCalendarPreviewCandidate(tx: Prisma.TransactionClient, candidate: PreviewCalendarExceptionDto) {
+    const normalized = this.normalizeCalendar({ ...candidate, requestKey: 'preview-only' });
+    await this.validateCalendarCreate(tx, normalized);
+    return normalized;
+  }
+
+  /** Reuses the commit command's scope and slot coverage predicates; does not infer PPCT/debt. */
+  calendarPreviewCoversOccurrence(candidate: Awaited<ReturnType<OperationalOverlaysService['validateCalendarPreviewCandidate']>>, entry: NormalStructuralOccurrence): boolean {
+    const slots = candidate.exactTimeSlotDefinitionIds.map((id) => ({ id, session: entry.timeSlot.session as TimeSlotSession }));
+    return this.scopeCovers(candidate, null, entry.schoolClass.id, entry.schoolClass.gradeLevel)
+      && this.timeCovers(candidate, slots, entry.timeSlot.id, entry.timeSlot.session as TimeSlotSession);
+  }
 
   async createCalendarException(dto: CreateCalendarExceptionDto, request: AuthenticatedRequest): Promise<CalendarExceptionCreateResult> {
     await this.access.requireCalendar(request);

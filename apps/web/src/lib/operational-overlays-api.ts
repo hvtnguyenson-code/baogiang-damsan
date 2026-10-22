@@ -84,6 +84,7 @@ export interface OverlayReverseInput {
 
 export interface OperationalSourceOccurrence {
   occurrenceKey: string;
+  academicCalendarVersionId: string;
   timetableEntryId: string;
   civilDate: CivilDateString;
   schoolClassId: string;
@@ -100,6 +101,32 @@ export interface OperationalSourceOccurrence {
 export type OperationalSourceOccurrencesResponse =
   | { status: 'PASS'; items: OperationalSourceOccurrence[]; coverage: { ppctItemAllocation: 'NOT_ASSESSED' } }
   | { status: 'BLOCKED'; items: []; reason: string; coverage: { ppctItemAllocation: 'NOT_ASSESSED' } };
+export interface CalendarExceptionPreviewInput {
+  academicYearId: string;
+  academicCalendarVersionId: string;
+  civilDate: CivilDateString;
+  scope: CalendarExceptionScope;
+  gradeLevel?: 10 | 11 | 12;
+  schoolClassId?: string;
+  timeSelector: CalendarExceptionTimeSelector;
+  session?: 'MORNING' | 'AFTERNOON';
+  exactTimeSlotDefinitionIds?: string[];
+  note?: string;
+}
+export interface CalendarExceptionPreviewResult {
+  status: 'PASS' | 'BLOCKED';
+  affected: Array<{
+    occurrenceKey: string;
+    timetableEntryId: string;
+    schoolClassId: string;
+    subjectId: string;
+    teacherUserId: string;
+    slot: { id: string; weekday: string; session: string; startTime: string; endTime: string };
+  }>;
+  reason?: string;
+  coverage: { ppctItemAllocation: 'NOT_ASSESSED'; workload: 'NOT_ASSESSED'; debt: 'NOT_ASSESSED' };
+}
+
 export interface OperationalWorkspaceContext {
   years: Array<{ id: string; code: string; name: string }>;
   subjects: Array<{ id: string; code: string; name: string }>;
@@ -111,6 +138,8 @@ export interface OperationalWorkspaceContext {
 }
 /** Exact existing API only; validation and authorization remain server-side. */
 export const operationalOverlaysApi = {
+  previewCalendarException: (input: CalendarExceptionPreviewInput) =>
+    apiFetch<CalendarExceptionPreviewResult>('/operational-overlays/workspace/calendar-preview', json(input)),
   listSourceOccurrences: (query: { academicYearId: string; civilDate: CivilDateString; subjectId?: string }) =>
     apiFetch<OperationalSourceOccurrencesResponse>(
       `/operational-overlays/workspace/source-occurrences${queryString(query)}`,

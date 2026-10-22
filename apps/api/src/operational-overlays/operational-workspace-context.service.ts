@@ -1,4 +1,7 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+import { PreviewCalendarExceptionDto } from './dto';
+import { OperationalOverlaysService } from './operational-overlays.service';
 import { CivilDateString } from '@baogiang/contracts';
 import { ResolvedLessonOccurrencesService } from '../resolved-occurrences/resolved-occurrences.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -11,7 +14,30 @@ export class OperationalWorkspaceContextService {
     private readonly prisma: PrismaService,
     private readonly authorization: CapabilityAuthorizationService,
     private readonly occurrences: ResolvedLessonOccurrencesService,
+    private readonly overlays: OperationalOverlaysService,
   ) {}
+
+  async previewCalendarException(request: AuthenticatedRequest, input: PreviewCalendarExceptionDto) {
+    if (!request.auth || request.auth.user.mustChangePassword) throw new ForbiddenException('Không có quyền xem trước ngoại lệ lịch.');
+    const grants = await this.authorization.listEffectiveCapabilities(request.auth.user.id);
+    if (!grants.some((grant) => grant.key === 'CALENDAR_EXCEPTION_MANAGE' && grant.scope === 'SCHOOL_WIDE')) {
+      throw new ForbiddenException('Không có quyền xem trước ngoại lệ lịch.');
+    }
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const candidate = await this.overlays.validateCalendarPreviewCandidate(tx, input);
+        const source = await this.occurrences.resolveInTransaction(tx, { academicYearId: input.academicYearId, civilDate: input.civilDate as CivilDateString });
+        if (source.status !== 'PASS') return { status: 'BLOCKED' as const, affected: [], reason: 'Nguồn lịch hoặc PPCT chưa xác minh.', coverage: { ppctItemAllocation: 'NOT_ASSESSED' as const, workload: 'NOT_ASSESSED' as const, debt: 'NOT_ASSESSED' as const } };
+        const affected = source.normalOccurrences.filter((entry) => entry.academicCalendarVersionId === input.academicCalendarVersionId
+          && entry.effectiveKind === 'BASE_TIMETABLE' && this.overlays.calendarPreviewCoversOccurrence(candidate, entry))
+          .map((entry) => ({ occurrenceKey: entry.occurrenceKey, timetableEntryId: entry.timetableEntryId,
+            schoolClassId: entry.schoolClass.id, subjectId: entry.subjectId, teacherUserId: entry.responsibleTeacherUserId, slot: entry.timeSlot }));
+        return { status: 'PASS' as const, affected, coverage: { ppctItemAllocation: 'NOT_ASSESSED' as const, workload: 'NOT_ASSESSED' as const, debt: 'NOT_ASSESSED' as const } };
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+    } catch {
+      return { status: 'BLOCKED' as const, affected: [], reason: 'Ứng viên không đủ điều kiện hoặc xảy ra xung đột; cần xác minh lại trước khi lưu.', coverage: { ppctItemAllocation: 'NOT_ASSESSED' as const, workload: 'NOT_ASSESSED' as const, debt: 'NOT_ASSESSED' as const } };
+    }
+  }
 
   async getSourceOccurrences(request: AuthenticatedRequest, query: { academicYearId: string; civilDate: CivilDateString; subjectId?: string }) {
     if (!request.auth || request.auth.user.mustChangePassword) {
@@ -46,6 +72,7 @@ export class OperationalWorkspaceContextService {
       subjectName: subjectNames.get(item.subjectId) ?? null,
       responsibleTeacherName: teacherNames.get(item.responsibleTeacherUserId) || null,
       occurrenceKey: item.occurrenceKey,
+      academicCalendarVersionId: item.academicCalendarVersionId,
       timetableEntryId: item.timetableEntryId,
       civilDate: item.civilDate,
       schoolClassId: item.schoolClass.id,
