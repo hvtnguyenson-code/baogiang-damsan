@@ -1,6 +1,8 @@
 import type { CivilDateString } from '@baogiang/contracts';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { OperationalHistoryPanel } from './OperationalHistoryPanel';
+import { DispositionPreviewPanel } from './DispositionPreviewPanel';
 import { Button } from '../components/ui/button';
 import { InlineAlert } from '../components/ui/feedback';
 import { DataTable, EmptyState, PageHeader, SelectField } from '../components/ui/management';
@@ -96,6 +98,11 @@ export function TeachingOperationsPage() {
   const classes = [...new Map(items.map((item) => [item.schoolClassId, item.schoolClassName ?? 'Lớp chưa có tên'])).entries()];
   const slots = [...new Map(items.map((item) => [item.slot.id, item.slot])).values()];
   const calendarVersions = [...new Set(items.map((item) => item.academicCalendarVersionId))].filter(Boolean);
+  function clearCalendarPreview() {
+    previewRequestId.current += 1;
+    setPreviewResult(null);
+    setPreviewLoading(false);
+  }
   const canPreviewCalendar = Boolean(context?.permissions.calendarSchoolWide && status === 'PASS'
     && calendarVersions.length === 1 && items.length > 0);
   async function loadCalendarPreview() {
@@ -183,38 +190,38 @@ export function TeachingOperationsPage() {
               <p>Đây là bản kiểm tra chỉ đọc. Chưa tạo hoặc thay đổi ngoại lệ lịch.</p>
               <div className="form-grid">
                 <SelectField id="preview-scope" label="Phạm vi ngoại lệ" value={previewScope}
-                  onChange={(event) => { setPreviewScope(event.target.value as typeof previewScope); setPreviewResult(null); }}>
+                  onChange={(event) => { setPreviewScope(event.target.value as typeof previewScope); clearCalendarPreview(); }}>
                   <option value="SCHOOL_WIDE">Toàn trường</option>
                   <option value="GRADE">Một khối lớp</option>
                   <option value="CLASS">Một lớp</option>
                 </SelectField>
                 {previewScope === 'GRADE' && (
                   <SelectField id="preview-grade" label="Khối lớp" value={previewGrade}
-                    onChange={(event) => { setPreviewGrade(Number(event.target.value) as 10 | 11 | 12); setPreviewResult(null); }}>
+                    onChange={(event) => { setPreviewGrade(Number(event.target.value) as 10 | 11 | 12); clearCalendarPreview(); }}>
                     <option value={10}>Khối 10</option><option value={11}>Khối 11</option><option value={12}>Khối 12</option>
                   </SelectField>
                 )}
                 {previewScope === 'CLASS' && (
                   <SelectField id="preview-class" label="Lớp áp dụng" value={previewClass || classes[0]?.[0] || ''}
-                    onChange={(event) => { setPreviewClass(event.target.value); setPreviewResult(null); }}>
+                    onChange={(event) => { setPreviewClass(event.target.value); clearCalendarPreview(); }}>
                     {classes.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
                   </SelectField>
                 )}
                 <SelectField id="preview-time" label="Thời gian áp dụng" value={previewTime}
-                  onChange={(event) => { setPreviewTime(event.target.value as typeof previewTime); setPreviewResult(null); }}>
+                  onChange={(event) => { setPreviewTime(event.target.value as typeof previewTime); clearCalendarPreview(); }}>
                   <option value="WHOLE_DAY">Cả ngày</option>
                   <option value="SESSION">Một buổi</option>
                   <option value="EXACT_SLOTS">Một tiết cụ thể</option>
                 </SelectField>
                 {previewTime === 'SESSION' && (
                   <SelectField id="preview-session" label="Buổi áp dụng" value={previewSession}
-                    onChange={(event) => { setPreviewSession(event.target.value as typeof previewSession); setPreviewResult(null); }}>
+                    onChange={(event) => { setPreviewSession(event.target.value as typeof previewSession); clearCalendarPreview(); }}>
                     <option value="MORNING">Buổi sáng</option><option value="AFTERNOON">Buổi chiều</option>
                   </SelectField>
                 )}
                 {previewTime === 'EXACT_SLOTS' && (
                   <SelectField id="preview-slot" label="Tiết áp dụng" value={previewSlot || slots[0]?.id || ''}
-                    onChange={(event) => { setPreviewSlot(event.target.value); setPreviewResult(null); }}>
+                    onChange={(event) => { setPreviewSlot(event.target.value); clearCalendarPreview(); }}>
                     {slots.map((slot) => <option key={slot.id} value={slot.id}>{slot.session === 'MORNING' ? 'Sáng' : 'Chiều'} · {slot.startTime}–{slot.endTime}</option>)}
                   </SelectField>
                 )}
@@ -244,6 +251,8 @@ export function TeachingOperationsPage() {
               )}
             </section>
           )}
+          {status === 'PASS' && civilDate && <DispositionPreviewPanel context={context} yearId={yearId} civilDate={civilDate as CivilDateString} items={items} />}
+          <OperationalHistoryPanel context={context} yearId={yearId} subjectId={subjectId} />
           <p><Link to="/quan-tri/lich-day-bu">Đi đến lịch dạy bù đã có</Link></p>
         </>
       )}

@@ -1,6 +1,6 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
-import { PreviewCalendarExceptionDto } from './dto';
+import { OperationalLessonDispositionType, Prisma } from '@prisma/client';
+import { PreviewCalendarExceptionDto, PreviewLessonDispositionDto, TeacherOptionsQueryDto } from './dto';
 import { OperationalOverlaysService } from './operational-overlays.service';
 import { CivilDateString } from '@baogiang/contracts';
 import { ResolvedLessonOccurrencesService } from '../resolved-occurrences/resolved-occurrences.service';
@@ -36,6 +36,66 @@ export class OperationalWorkspaceContextService {
       }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
     } catch {
       return { status: 'BLOCKED' as const, affected: [], reason: 'Ứng viên không đủ điều kiện hoặc xảy ra xung đột; cần xác minh lại trước khi lưu.', coverage: { ppctItemAllocation: 'NOT_ASSESSED' as const, workload: 'NOT_ASSESSED' as const, debt: 'NOT_ASSESSED' as const } };
+    }
+  }
+
+  private async requireTeachingPreviewAccess(request: AuthenticatedRequest, subjectId: string, type: OperationalLessonDispositionType) {
+    if (!request.auth || request.auth.user.mustChangePassword) throw new ForbiddenException('Không có quyền xem trước điều hành tiết dạy.');
+    const grants = await this.authorization.listEffectiveCapabilities(request.auth.user.id);
+    const schoolWide = grants.some((grant) => grant.key === 'TEACHING_OPERATION_MANAGE' && grant.scope === 'SCHOOL_WIDE');
+    const subject = grants.some((grant) => grant.key === 'TEACHING_OPERATION_MANAGE' && grant.scope === 'SUBJECT' && grant.resourceId === subjectId);
+    if (type === OperationalLessonDispositionType.AUTHORIZED_CANCELLATION ? !schoolWide : !schoolWide && !subject) {
+      throw new ForbiddenException('Không có quyền xem trước điều hành tiết dạy.');
+    }
+  }
+
+  async getTeacherOptions(request: AuthenticatedRequest, query: TeacherOptionsQueryDto) {
+    await this.requireTeachingPreviewAccess(request, query.subjectId, query.dispositionType);
+    if (query.dispositionType !== OperationalLessonDispositionType.SAME_SUBJECT_SUBSTITUTION
+      && query.dispositionType !== OperationalLessonDispositionType.DIFFERENT_SUBJECT_SUPERVISION) {
+      return { status: 'NOT_APPLICABLE' as const, items: [] };
+    }
+    const now = new Date();
+    const staff = await this.prisma.user.findMany({
+      where: {
+        status: 'ACTIVE',
+        profile: { isTeachingStaff: true },
+        ...(query.dispositionType === OperationalLessonDispositionType.SAME_SUBJECT_SUBSTITUTION
+          ? { staffSubjects: { some: { subjectId: query.subjectId, validFrom: { lte: now },
+              OR: [{ validUntil: null }, { validUntil: { gt: now } }] } } } : {}),
+      },
+      select: { id: true, profile: { select: { displayName: true } } },
+      orderBy: [{ id: 'asc' }],
+      take: 101,
+    });
+    if (staff.length > 100) {
+      return { status: 'BLOCKED' as const, items: [], reason: 'Quá nhiều giáo viên; cần giới hạn bộ lọc trước khi liệt kê.' };
+    }
+    return { status: 'OPTIONS_NOT_COLLISION_CHECKED' as const,
+      items: staff.map((person) => ({ userId: person.id, name: person.profile?.displayName ?? 'Chưa có tên' })) };
+  }
+
+  async previewLessonDisposition(request: AuthenticatedRequest, input: PreviewLessonDispositionDto) {
+    await this.requireTeachingPreviewAccess(request, input.subjectId, input.dispositionType);
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const source = await this.occurrences.resolveInTransaction(tx, {
+          academicYearId: input.academicYearId, civilDate: input.sourceCivilDate as CivilDateString,
+        });
+        if (source.status !== 'PASS') return { status: 'BLOCKED' as const, reason: 'Nguồn lịch chưa đủ điều kiện.',
+          coverage: { ppctItemAllocation: 'NOT_ASSESSED' as const, workload: 'NOT_ASSESSED' as const, debt: 'NOT_ASSESSED' as const } };
+        const selected = source.normalOccurrences.find((item) => item.timetableEntryId === input.timetableEntryId
+          && item.subjectId === input.subjectId && item.effectiveKind === 'BASE_TIMETABLE');
+        if (!selected) return { status: 'BLOCKED' as const, reason: 'Tiết học gốc không còn hợp lệ.',
+          coverage: { ppctItemAllocation: 'NOT_ASSESSED' as const, workload: 'NOT_ASSESSED' as const, debt: 'NOT_ASSESSED' as const } };
+        const check = await this.overlays.validateDispositionPreviewCandidate(tx, input);
+        return { status: 'PASS' as const, sourceTimetableEntryId: check.sourceTimetableEntryId,
+          candidateTeacherUserId: check.candidateTeacherUserId, eligibilitySameSubject: check.eligibilitySameSubject,
+          coverage: { ppctItemAllocation: 'NOT_ASSESSED' as const, workload: 'NOT_ASSESSED' as const, debt: 'NOT_ASSESSED' as const } };
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+    } catch {
+      return { status: 'BLOCKED' as const, reason: 'Giáo viên hoặc cơ hội nguồn xung đột với lịch hiện tại.',
+        coverage: { ppctItemAllocation: 'NOT_ASSESSED' as const, workload: 'NOT_ASSESSED' as const, debt: 'NOT_ASSESSED' as const } };
     }
   }
 

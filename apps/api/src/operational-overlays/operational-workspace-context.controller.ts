@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { CsrfOriginGuard } from '../auth/csrf-origin.guard';
-import { PreviewCalendarExceptionDto } from './dto';
+import { PreviewCalendarExceptionDto, PreviewLessonDispositionDto, TeacherOptionsQueryDto } from './dto';
 import { IsOptional, IsUUID } from 'class-validator';
 import { CivilDateString } from '@baogiang/contracts';
 import { IsCivilDate } from '../common/validation/civil-date';
@@ -24,6 +24,17 @@ export class OperationalWorkspaceContextController {
   @UseGuards(CsrfOriginGuard)
   previewCalendar(@Req() request: AuthenticatedRequest, @Body() input: PreviewCalendarExceptionDto) {
     return this.context.previewCalendarException(request, input);
+  }
+
+  @Get('teacher-options')
+  getTeacherOptions(@Req() request: AuthenticatedRequest, @Query() query: TeacherOptionsQueryDto) {
+    return this.context.getTeacherOptions(request, query);
+  }
+
+  @Post('disposition-preview')
+  @UseGuards(CsrfOriginGuard)
+  previewDisposition(@Req() request: AuthenticatedRequest, @Body() input: PreviewLessonDispositionDto) {
+    return this.context.previewLessonDisposition(request, input);
   }
 
   @Get('source-occurrences')

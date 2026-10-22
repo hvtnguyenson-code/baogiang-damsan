@@ -127,6 +127,30 @@ export interface CalendarExceptionPreviewResult {
   coverage: { ppctItemAllocation: 'NOT_ASSESSED'; workload: 'NOT_ASSESSED'; debt: 'NOT_ASSESSED' };
 }
 
+export interface TeacherOptionsQuery {
+  academicYearId: string;
+  subjectId: string;
+  dispositionType: OperationalLessonDispositionType;
+}
+export type TeacherOptionsResult =
+  | { status: 'NOT_APPLICABLE'; items: [] }
+  | { status: 'BLOCKED'; items: []; reason: string }
+  | { status: 'OPTIONS_NOT_COLLISION_CHECKED'; items: Array<{ userId: string; name: string }> };
+
+export interface DispositionPreviewInput {
+  academicYearId: string;
+  subjectId: string;
+  timetableEntryId: string;
+  sourceCivilDate: CivilDateString;
+  dispositionType: OperationalLessonDispositionType;
+  assignedTeacherUserId?: string;
+  note?: string;
+}
+export type DispositionPreviewResult =
+  | { status: 'BLOCKED'; reason: string; coverage: { ppctItemAllocation: 'NOT_ASSESSED'; workload: 'NOT_ASSESSED'; debt: 'NOT_ASSESSED' } }
+  | { status: 'PASS'; sourceTimetableEntryId: string; candidateTeacherUserId: string | null;
+      eligibilitySameSubject: boolean | null; coverage: { ppctItemAllocation: 'NOT_ASSESSED'; workload: 'NOT_ASSESSED'; debt: 'NOT_ASSESSED' } };
+
 export interface OperationalWorkspaceContext {
   years: Array<{ id: string; code: string; name: string }>;
   subjects: Array<{ id: string; code: string; name: string }>;
@@ -138,6 +162,13 @@ export interface OperationalWorkspaceContext {
 }
 /** Exact existing API only; validation and authorization remain server-side. */
 export const operationalOverlaysApi = {
+  getTeacherOptions: (query: TeacherOptionsQuery) =>
+    apiFetch<TeacherOptionsResult>(
+      `/operational-overlays/workspace/teacher-options${queryString({ ...query })}`,
+      { notifyUnauthorized: true },
+    ),
+  previewDisposition: (input: DispositionPreviewInput) =>
+    apiFetch<DispositionPreviewResult>('/operational-overlays/workspace/disposition-preview', json(input)),
   previewCalendarException: (input: CalendarExceptionPreviewInput) =>
     apiFetch<CalendarExceptionPreviewResult>('/operational-overlays/workspace/calendar-preview', json(input)),
   listSourceOccurrences: (query: { academicYearId: string; civilDate: CivilDateString; subjectId?: string }) =>

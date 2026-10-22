@@ -9,12 +9,13 @@ const resolve = jest.fn();
 const resolveInTransaction = jest.fn();
 const validateCalendarPreviewCandidate = jest.fn();
 const calendarPreviewCoversOccurrence = jest.fn();
+const validateDispositionPreviewCandidate = jest.fn();
 const transaction = jest.fn(async (fn: (tx: unknown) => unknown) => fn({}));
 const service = new OperationalWorkspaceContextService(
   { $transaction: transaction, academicYear: { findMany: yearFindMany }, subject: { findMany: subjectFindMany }, schoolClass: { findMany: jest.fn(async () => [{ id: 'class-1', name: '10A1' }]) }, user: { findMany: jest.fn(async () => [{ id: 'teacher', profile: { displayName: 'Giáo viên A' } }]) } } as never,
   { listEffectiveCapabilities } as never,
   { resolve, resolveInTransaction } as never,
-  { validateCalendarPreviewCandidate, calendarPreviewCoversOccurrence } as never,
+  { validateCalendarPreviewCandidate, calendarPreviewCoversOccurrence, validateDispositionPreviewCandidate } as never,
 );
 
 beforeEach(() => {
@@ -135,6 +136,86 @@ describe('P5-054 operational workspace context', () => {
     expect(rejected.status).toBe('BLOCKED');
     expect(rejected.affected).toEqual([]);
     expect(JSON.stringify(rejected)).not.toContain('collision secret');
+  });
+
+
+  const dispositionInput = {
+    academicYearId: 'year-1', subjectId: 'subject-1', timetableEntryId: 'entry-1',
+    sourceCivilDate: '2026-10-22', dispositionType: 'SAME_SUBJECT_SUBSTITUTION',
+    assignedTeacherUserId: 'teacher-2',
+  };
+
+  it('rejects out-of-scope disposition candidate checks without source or teacher lookup', async () => {
+    listEffectiveCapabilities.mockResolvedValue([
+      { key: 'TEACHING_OPERATION_MANAGE', scope: 'SUBJECT', resourceId: 'subject-2' },
+    ]);
+    await expect(service.previewLessonDisposition(request as never, dispositionInput as never))
+      .rejects.toBeInstanceOf(ForbiddenException);
+    expect(resolveInTransaction).not.toHaveBeenCalled();
+    expect(validateDispositionPreviewCandidate).not.toHaveBeenCalled();
+  });
+
+  it('returns PASS only after canonical source and exact retained collision checks', async () => {
+    listEffectiveCapabilities.mockResolvedValue([
+      { key: 'TEACHING_OPERATION_MANAGE', scope: 'SUBJECT', resourceId: 'subject-1' },
+    ]);
+    resolveInTransaction.mockResolvedValue({
+      status: 'PASS', normalOccurrences: [{
+        timetableEntryId: 'entry-1', subjectId: 'subject-1', effectiveKind: 'BASE_TIMETABLE',
+      }],
+    });
+    validateDispositionPreviewCandidate.mockResolvedValue({
+      sourceTimetableEntryId: 'entry-1', candidateTeacherUserId: 'teacher-2', eligibilitySameSubject: true,
+    });
+    const result = await service.previewLessonDisposition(request as never, dispositionInput as never);
+    expect(result.status).toBe('PASS');
+    expect(result.coverage).toEqual({
+      ppctItemAllocation: 'NOT_ASSESSED', workload: 'NOT_ASSESSED', debt: 'NOT_ASSESSED',
+    });
+    expect(validateDispositionPreviewCandidate).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks when canonical opportunity is not base timetable or teacher collides', async () => {
+    listEffectiveCapabilities.mockResolvedValue([
+      { key: 'TEACHING_OPERATION_MANAGE', scope: 'SCHOOL_WIDE' },
+    ]);
+    resolveInTransaction.mockResolvedValue({
+      status: 'PASS', normalOccurrences: [{
+        timetableEntryId: 'entry-1', subjectId: 'subject-1', effectiveKind: 'CALENDAR_EXCEPTION',
+      }],
+    });
+    const blocked = await service.previewLessonDisposition(request as never, dispositionInput as never);
+    expect(blocked.status).toBe('BLOCKED');
+    expect(validateDispositionPreviewCandidate).not.toHaveBeenCalled();
+    resolveInTransaction.mockResolvedValue({
+      status: 'PASS', normalOccurrences: [{
+        timetableEntryId: 'entry-1', subjectId: 'subject-1', effectiveKind: 'BASE_TIMETABLE',
+      }],
+    });
+    validateDispositionPreviewCandidate.mockRejectedValue(new Error('private collision id'));
+    const collision = await service.previewLessonDisposition(request as never, dispositionInput as never);
+    expect(collision.status).toBe('BLOCKED');
+    expect(JSON.stringify(collision)).not.toContain('private collision id');
+  });
+
+  it('denies school cancellation preview to a subject-only user', async () => {
+    listEffectiveCapabilities.mockResolvedValue([
+      { key: 'TEACHING_OPERATION_MANAGE', scope: 'SUBJECT', resourceId: 'subject-1' },
+    ]);
+    await expect(service.previewLessonDisposition(request as never,
+      { ...dispositionInput, dispositionType: 'AUTHORIZED_CANCELLATION', assignedTeacherUserId: undefined } as never))
+      .rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('only offers same-subject teachers to a subject-scoped user, pending collision check', async () => {
+    listEffectiveCapabilities.mockResolvedValue([
+      { key: 'TEACHING_OPERATION_MANAGE', scope: 'SUBJECT', resourceId: 'subject-1' },
+    ]);
+    const response = await service.getTeacherOptions(request as never, {
+      academicYearId: 'year-1', subjectId: 'subject-1', dispositionType: 'SAME_SUBJECT_SUBSTITUTION',
+    } as never);
+    expect(response.status).toBe('OPTIONS_NOT_COLLISION_CHECKED');
+    expect(response.items).toHaveLength(1);
   });
 
   it('permits school-wide teaching administrators to discover active subjects', async () => {

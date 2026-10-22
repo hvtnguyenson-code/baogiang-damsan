@@ -104,3 +104,20 @@ export class PreviewCalendarExceptionDto {
   @IsOptional() @IsString() @MaxLength(500) note?: string;
   @IsOptional() @IsUUID() replacesId?: string;
 }
+
+/** Read-only teacher candidate preview; never creates an operational disposition. */
+export class PreviewLessonDispositionDto {
+  @IsUUID() academicYearId!: string;
+  @IsUUID() subjectId!: string;
+  @IsUUID() timetableEntryId!: string;
+  @IsCivilDate() sourceCivilDate!: string;
+  @IsEnum(OperationalLessonDispositionType) dispositionType!: OperationalLessonDispositionType;
+  @IsOptional() @IsUUID() assignedTeacherUserId?: string;
+  @IsOptional() @IsString() @MaxLength(500) note?: string;
+}
+
+export class TeacherOptionsQueryDto {
+  @IsUUID() academicYearId!: string;
+  @IsUUID() subjectId!: string;
+  @IsEnum(OperationalLessonDispositionType) dispositionType!: OperationalLessonDispositionType;
+}
