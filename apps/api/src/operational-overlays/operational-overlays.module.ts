@@ -6,6 +6,8 @@ import { BusinessConfigurationModule } from '../business-configuration/business-
 import { ProgressDebtModule } from '../progress-debt/progress-debt.module';
 import { ResolvedOccurrencesModule } from '../resolved-occurrences/resolved-occurrences.module';
 import { MakeupSchedulesController } from './makeup-schedules.controller';
+import { OperationalWorkspaceContextController } from './operational-workspace-context.controller';
+import { OperationalWorkspaceContextService } from './operational-workspace-context.service';
 import { MakeupSchedulesService } from './makeup-schedules.service';
 import { OperationalOverlayAccessService } from './operational-overlay-access.service';
 import { OVERLAY_CLOCK, SystemOverlayClock } from './operational-overlay-policy';
@@ -20,10 +22,11 @@ import { OperationalOverlaysService } from './operational-overlays.service';
     ProgressDebtModule,
     ResolvedOccurrencesModule,
   ],
-  controllers: [OperationalOverlaysController, MakeupSchedulesController],
+  controllers: [OperationalOverlaysController, MakeupSchedulesController, OperationalWorkspaceContextController],
   providers: [
     OperationalOverlaysService,
     MakeupSchedulesService,
+    OperationalWorkspaceContextService,
     OperationalOverlayAccessService,
     AuditService,
     { provide: OVERLAY_CLOCK, useClass: SystemOverlayClock },

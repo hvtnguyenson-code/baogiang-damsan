@@ -22,11 +22,12 @@ import {
   OperationalLessonDispositionReverseResult,
 } from '@baogiang/contracts';
 import { AuditService } from '../audit/audit.service';
+import { NormalStructuralOccurrence } from '../resolved-occurrences/resolved-occurrence.types';
 import { requestMeta } from '../auth/auth-http';
 import { AuthenticatedRequest } from '../auth/auth.types';
 import { formatCivilDate, parseCivilDate } from '../common/validation/civil-date';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateCalendarExceptionDto, CreateLessonDispositionDto, ListCalendarExceptionsDto, ListLessonDispositionsDto, ReverseOperationalOverlayDto } from './dto';
+import { CreateCalendarExceptionDto, CreateLessonDispositionDto, ListCalendarExceptionsDto, ListLessonDispositionsDto, PreviewCalendarExceptionDto, PreviewLessonDispositionDto, ReverseOperationalOverlayDto } from './dto';
 import { calendarExceptionInclude, toCalendarExceptionRecord, toLessonDispositionRecord } from './mapper';
 import { OperationalOverlayAccessService } from './operational-overlay-access.service';
 import { COLLISION_COVERAGE, calendarCreateFingerprint, dispositionCreateFingerprint, intervalsOverlap, isTeacherDisposition, OverlayClock, OVERLAY_CLOCK, reverseFingerprint, weekdayForCivilDate } from './operational-overlay-policy';
@@ -42,6 +43,20 @@ export class OperationalOverlaysService {
     private readonly access: OperationalOverlayAccessService,
     @Inject(OVERLAY_CLOCK) private readonly clock: OverlayClock,
   ) {}
+
+  /** Uses the exact commit-time calendar validation inside the caller's read-only preview transaction. */
+  async validateCalendarPreviewCandidate(tx: Prisma.TransactionClient, candidate: PreviewCalendarExceptionDto) {
+    const normalized = this.normalizeCalendar({ ...candidate, requestKey: 'preview-only' });
+    await this.validateCalendarCreate(tx, normalized);
+    return normalized;
+  }
+
+  /** Reuses the commit command's scope and slot coverage predicates; does not infer PPCT/debt. */
+  calendarPreviewCoversOccurrence(candidate: Awaited<ReturnType<OperationalOverlaysService['validateCalendarPreviewCandidate']>>, entry: NormalStructuralOccurrence): boolean {
+    const slots = candidate.exactTimeSlotDefinitionIds.map((id) => ({ id, session: entry.timeSlot.session as TimeSlotSession }));
+    return this.scopeCovers(candidate, null, entry.schoolClass.id, entry.schoolClass.gradeLevel)
+      && this.timeCovers(candidate, slots, entry.timeSlot.id, entry.timeSlot.session as TimeSlotSession);
+  }
 
   async createCalendarException(dto: CreateCalendarExceptionDto, request: AuthenticatedRequest): Promise<CalendarExceptionCreateResult> {
     await this.access.requireCalendar(request);
@@ -125,6 +140,29 @@ export class OperationalOverlaysService {
       });
       return { outcome: 'REVERSED', record: toCalendarExceptionRecord(row), collisionCoverage: COLLISION_COVERAGE };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
+  }
+
+  /** Read-only validation of the exact business preconditions used by the disposition commit command. */
+  async validateDispositionPreviewCandidate(tx: Prisma.TransactionClient, input: PreviewLessonDispositionDto) {
+    const source = await this.requireSourceEntry(tx, input.timetableEntryId);
+    if (source.academicYearId !== input.academicYearId || source.subjectId !== input.subjectId) {
+      throw new ConflictException('Nguồn tiết học không thuộc năm học hoặc môn yêu cầu.');
+    }
+    const date = parseCivilDate(input.sourceCivilDate);
+    await this.validateDispositionSource(tx, source, date, input.note?.trim() || null);
+    this.validateDispositionShape(input);
+    const existing = await tx.operationalLessonDisposition.findFirst({
+      where: { timetableEntryId: source.id, sourceCivilDate: date, status: OperationalOverlayStatus.ACTIVE },
+      select: { id: true },
+    });
+    if (existing) throw new ConflictException('Tiết học đã có điều hành ACTIVE.');
+    const eligibility = await this.resolveEligibility(tx, input, source.subjectId);
+    if (input.assignedTeacherUserId) {
+      await this.assertTeacherAvailable(tx, input.assignedTeacherUserId, date, source.weekday, source.timeSlotDefinitionId);
+    }
+    return { sourceTimetableEntryId: source.id, sourceSubjectId: source.subjectId,
+      candidateTeacherUserId: input.assignedTeacherUserId ?? null,
+      eligibilitySameSubject: eligibility.eligibilitySameSubject ?? null };
   }
 
   async createLessonDisposition(dto: CreateLessonDispositionDto, request: AuthenticatedRequest): Promise<OperationalLessonDispositionCreateResult> {
@@ -341,11 +379,11 @@ export class OperationalOverlaysService {
     }
   }
 
-  private validateDispositionShape(dto: CreateLessonDispositionDto): void {
+  private validateDispositionShape(dto: Pick<CreateLessonDispositionDto, 'dispositionType' | 'assignedTeacherUserId'>): void {
     if (isTeacherDisposition(dto.dispositionType) !== Boolean(dto.assignedTeacherUserId)) throw new BadRequestException('assignedTeacherUserId không phù hợp loại disposition.');
   }
 
-  private async resolveEligibility(tx: Prisma.TransactionClient, dto: CreateLessonDispositionDto, subjectId: string): Promise<Record<string, unknown>> {
+  private async resolveEligibility(tx: Prisma.TransactionClient, dto: Pick<CreateLessonDispositionDto, 'dispositionType' | 'assignedTeacherUserId'>, subjectId: string): Promise<Record<string, unknown>> {
     if (!dto.assignedTeacherUserId) return {};
     const user = await tx.user.findUnique({ where: { id: dto.assignedTeacherUserId }, include: { profile: true } });
     if (!user || user.status !== 'ACTIVE' || !user.profile || !user.profile.isTeachingStaff) throw new ConflictException('Giáo viên được gán không phải nhân sự giảng dạy ACTIVE hợp lệ.');

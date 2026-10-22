@@ -32,6 +32,7 @@ import { SpecialProgrammeWorkspacePage } from './pages/SpecialProgrammeWorkspace
 import { EffectiveSchedulePage } from './pages/EffectiveSchedulePage';
 import { HistoricalTeachingPage } from './pages/HistoricalTeachingPage';
 import { MakeupSchedulingPage } from './pages/MakeupSchedulingPage';
+import { TeachingOperationsPage } from './pages/TeachingOperationsPage';
 import { TimetableAdminPage } from './pages/TimetableAdminPage';
 import type { BusinessPolicyUiAdapter } from './lib/business-policy-ui-registry';
 import {
@@ -105,6 +106,7 @@ export default function App({ businessPolicyAdapters }: { businessPolicyAdapters
           <Route element={<CapabilityRoute allow={canManageHistoricalTeaching} />}>
             <Route path="/quan-tri/lich-su-giang-day" element={<HistoricalTeachingPage />} />
           </Route>
+          <Route element={<CapabilityRoute allow={(c) => canManageTeachingOperation(c) || hasSchoolCapability(c, 'CALENDAR_EXCEPTION_MANAGE')} />}><Route path="/quan-tri/dieu-hanh-chuyen-mon" element={<TeachingOperationsPage />} /></Route>
           <Route element={<CapabilityRoute allow={canManageTeachingOperation} />}>
             <Route path="/quan-tri/lich-day-bu" element={<MakeupSchedulingPage />} />
           </Route>

@@ -89,3 +89,35 @@ export class ListMakeupSchedulesDto extends PaginationDto {
   @IsOptional() @IsEnum(OperationalOverlayStatus) status?: OperationalOverlayStatus;
   @IsOptional() @IsCivilDate() targetCivilDate?: string;
 }
+
+/** Read-only preview; no idempotency key or persisted command. */
+export class PreviewCalendarExceptionDto {
+  @IsUUID() academicYearId!: string;
+  @IsUUID() academicCalendarVersionId!: string;
+  @IsCivilDate() civilDate!: string;
+  @IsEnum(CalendarExceptionScope) scope!: CalendarExceptionScope;
+  @ValidateIf((value) => value.scope === CalendarExceptionScope.GRADE) @Type(() => Number) @IsInt() @IsIn([10, 11, 12]) gradeLevel?: number;
+  @ValidateIf((value) => value.scope === CalendarExceptionScope.CLASS) @IsUUID() schoolClassId?: string;
+  @IsEnum(CalendarExceptionTimeSelector) timeSelector!: CalendarExceptionTimeSelector;
+  @ValidateIf((value) => value.timeSelector === CalendarExceptionTimeSelector.SESSION) @IsEnum(TimeSlotSession) session?: TimeSlotSession;
+  @ValidateIf((value) => value.timeSelector === CalendarExceptionTimeSelector.EXACT_SLOTS) @IsArray() @ArrayMaxSize(50) @IsUUID('4', { each: true }) exactTimeSlotDefinitionIds?: string[];
+  @IsOptional() @IsString() @MaxLength(500) note?: string;
+  @IsOptional() @IsUUID() replacesId?: string;
+}
+
+/** Read-only teacher candidate preview; never creates an operational disposition. */
+export class PreviewLessonDispositionDto {
+  @IsUUID() academicYearId!: string;
+  @IsUUID() subjectId!: string;
+  @IsUUID() timetableEntryId!: string;
+  @IsCivilDate() sourceCivilDate!: string;
+  @IsEnum(OperationalLessonDispositionType) dispositionType!: OperationalLessonDispositionType;
+  @IsOptional() @IsUUID() assignedTeacherUserId?: string;
+  @IsOptional() @IsString() @MaxLength(500) note?: string;
+}
+
+export class TeacherOptionsQueryDto {
+  @IsUUID() academicYearId!: string;
+  @IsUUID() subjectId!: string;
+  @IsEnum(OperationalLessonDispositionType) dispositionType!: OperationalLessonDispositionType;
+}
