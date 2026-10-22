@@ -146,7 +146,13 @@ export const NAVIGATION_REGISTRY: readonly NavigationItem[] = [
 
   // 3. Điều hành chuyên môn
   {
-    to: '/quan-tri/lich-day-bu',
+    to: '/quan-tri/dieu-hanh-chuyen-mon',
+    label: 'Điều hành chuyên môn',
+    familyId: 'teaching-operations',
+    actionHint: 'Tra cứu và xác minh tiết học trước khi xử lý ngoại lệ, dạy thay, giám sát',
+    isVisible: (c) => canManageTeachingOperation(c) || hasSchoolCapability(c, 'CALENDAR_EXCEPTION_MANAGE'),
+  },
+  {    to: '/quan-tri/lich-day-bu',
     label: 'Lịch dạy bù',
     familyId: 'teaching-operations',
     actionHint: 'Thiết lập và theo dõi kế hoạch dạy bù, thay đổi lịch dạy',

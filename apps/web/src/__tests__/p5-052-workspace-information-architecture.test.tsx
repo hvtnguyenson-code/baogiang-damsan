@@ -40,10 +40,11 @@ describe('P5-052: Task-Oriented Workspace & Information Architecture', () => {
       ]);
     });
 
-    it('maps exactly 23 distinct existing routes without omission or phantom route', () => {
-      expect(NAVIGATION_REGISTRY.length).toBe(23);
+    it('preserves all 23 legacy routes and adds one verified P5-054 operation route', () => {
+      expect(NAVIGATION_REGISTRY.length).toBe(24);
       const allRoutes = new Set(NAVIGATION_REGISTRY.map((r) => r.to));
-      expect(allRoutes.size).toBe(23);
+      expect(allRoutes.size).toBe(24);
+      expect(allRoutes.has('/quan-tri/dieu-hanh-chuyen-mon')).toBe(true);
 
       // Đối soát 23/23 với các route cũ trong accessibleProfessionalRoutes và accessibleManagementRoutes
       const dummyAllCaps: ScopedCapability[] = [
@@ -87,7 +88,7 @@ describe('P5-052: Task-Oriented Workspace & Information Architecture', () => {
       }
       expect(familyCounts['my-work']).toBe(2);
       expect(familyCounts['academic-data']).toBe(12);
-      expect(familyCounts['teaching-operations']).toBe(3);
+      expect(familyCounts['teaching-operations']).toBe(4);
       expect(familyCounts['reporting-approval']).toBe(2);
       expect(familyCounts['administration']).toBe(4);
     });
