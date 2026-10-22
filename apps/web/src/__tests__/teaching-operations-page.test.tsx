@@ -9,7 +9,7 @@ const allowed = {
   capabilities: [{ key: 'TEACHING_OPERATION_MANAGE' as const, scope: 'SUBJECT' as const, resourceId: 'subject-1' }],
 };
 
-function fetchMock(auth: unknown = allowed, status: 'PASS' | 'BLOCKED' = 'PASS') {
+function fetchMock(auth: unknown = allowed, status: 'PASS' | 'BLOCKED' = 'PASS', blockedPreview = false) {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.endsWith('/auth/me')) return jsonResponse(auth);
@@ -37,6 +37,7 @@ function fetchMock(auth: unknown = allowed, status: 'PASS' | 'BLOCKED' = 'PASS')
         items: [{ userId: 'teacher-2', name: 'Giáo viên B' }] });
     }
     if (url.endsWith('/operational-overlays/workspace/disposition-preview') && init?.method === 'POST') {
+      if (blockedPreview) return jsonResponse({ status: 'BLOCKED', reason: 'Giáo viên đã có lịch trùng.', coverage: { ppctItemAllocation: 'NOT_ASSESSED', workload: 'NOT_ASSESSED', debt: 'NOT_ASSESSED' } });
       return jsonResponse({
         status: 'PASS', sourceTimetableEntryId: 'entry-1', candidateTeacherUserId: 'teacher-2',
         eligibilitySameSubject: true,
@@ -143,6 +144,30 @@ describe('P5-054 source selection workspace', () => {
     expect(JSON.parse(String(preview?.[1]?.body))).toMatchObject({
       academicYearId: 'year-1', subjectId: 'subject-1', timetableEntryId: 'entry-1',
       sourceCivilDate: '2026-10-22', dispositionType: 'SAME_SUBJECT_SUBSTITUTION',
+      assignedTeacherUserId: 'teacher-2',
+    });
+    expect(calls.some(([url]) => String(url).endsWith('/operational-overlays/lesson-dispositions'))).toBe(false);
+  });
+
+
+  it('blocks different-subject supervision on conflict without creating a disposition', async () => {
+    const fetcher = fetchMock(allowed, 'PASS', true);
+    vi.stubGlobal('fetch', fetcher);
+    renderApp(route);
+    await screen.findByText('Năm học 2026-2027');
+    fireEvent.change(screen.getByLabelText('Ngày dạy'), { target: { value: '2026-10-22' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Xem tiết dạy gốc' }));
+    await screen.findByText('Xem trước điều hành tiết dạy');
+    fireEvent.change(screen.getByLabelText('Phương án xử lý'), { target: { value: 'DIFFERENT_SUBJECT_SUPERVISION' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Tìm giáo viên có thể lựa chọn' }));
+    await screen.findByText(/Danh sách này chỉ xác minh tư cách giảng dạy/);
+    fireEvent.click(screen.getByRole('button', { name: 'Xem trước phân công xử lý' }));
+    expect(await screen.findByText('Giáo viên đã có lịch trùng.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Xác nhận điều hành/ })).toBeNull();
+    const calls = fetcher.mock.calls as Array<[RequestInfo | URL, RequestInit?]>;
+    const preview = calls.find(([url]) => String(url).endsWith('/workspace/disposition-preview'));
+    expect(JSON.parse(String(preview?.[1]?.body))).toMatchObject({
+      dispositionType: 'DIFFERENT_SUBJECT_SUPERVISION',
       assignedTeacherUserId: 'teacher-2',
     });
     expect(calls.some(([url]) => String(url).endsWith('/operational-overlays/lesson-dispositions'))).toBe(false);
