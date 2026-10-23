@@ -99,6 +99,8 @@ Preliminary Desktop Commander read-only metadata: Windows Server 2022, 6 logical
 
 ### In Progress
 
+- `P5-055` — data readiness & import center; **`IN_PROGRESS`** for PR #248 READY correction (PostgreSQL verification and Git write access remain blocked; see `docs/phase-reports/P5-055-READY-CORRECTION-REPORT.md`) on branch `feat/p5-055-data-readiness-import-center`.
+
 - `P5-051` — **CLOSED by `SYNC-P5-051`**: PR #240 merged at `cd0e67d342276f1e3e1baa2bb1de9078f4b2e5c7`, main CI #799 SUCCESS, auto-deploy #14 and Deploy VPS #12 SUCCESS; parent implementation and review evidence retained.
 - `P6-020` — **IN_PROGRESS: preliminary passive host reconnaissance only**; formal PASS 1/PASS 2 NOT EXECUTED. Exact deployment candidate approved for read-only scope above.
 
@@ -109,7 +111,6 @@ Preliminary Desktop Commander read-only metadata: Windows Server 2022, 6 logical
 ### Ready
 
 - `P5-054` — teaching-operations workspace closure; **next sequential implementation task** after P5-053.
-- `P5-055` — data readiness & import center; **`IN_REVIEW`** on branch `feat/p5-055-data-readiness-import-center`.
 - `P5-056A` — notification/Web Push architecture; eligible by dependency but held behind the sequential orchestration priority.
 - `P0-005` — docs-only historical T31 traceability reconciliation; independent of the product-operability implementation path.
 

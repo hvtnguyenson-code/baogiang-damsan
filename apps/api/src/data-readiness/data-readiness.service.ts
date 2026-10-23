@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   DataReadinessDomainItem,
   DataReadinessFinding,
@@ -9,12 +9,15 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { CapabilityAuthorizationService } from '../authorization/capability-authorization.service';
 import { AuthenticatedRequest } from '../auth/auth.types';
+import { BusinessConfigurationService } from '../business-configuration/business-configuration.service';
+import { formatCivilDate, hcmCivilDate, parseCivilDate } from '../common/validation/civil-date';
 
 @Injectable()
 export class DataReadinessService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly authorization: CapabilityAuthorizationService,
+    private readonly businessConfiguration: BusinessConfigurationService,
   ) {}
 
   async requireAccess(request: AuthenticatedRequest): Promise<void> {
@@ -57,6 +60,10 @@ export class DataReadinessService {
       select: { id: true, code: true, name: true },
     });
 
+    if (academicYearId !== undefined && !academicYears.some((y) => y.id === academicYearId)) {
+      throw new NotFoundException('Không tìm thấy năm học được yêu cầu.');
+    }
+
     if (academicYears.length === 0) {
       return {
         academicYear: null,
@@ -69,7 +76,7 @@ export class DataReadinessService {
     }
 
     const selectedYear = academicYearId
-      ? academicYears.find((y) => y.id === academicYearId) ?? academicYears[0]
+      ? academicYears.find((y) => y.id === academicYearId)!
       : academicYears[0];
 
     const yearId = selectedYear.id;
@@ -286,9 +293,14 @@ export class DataReadinessService {
         });
         nextAction = 'Kiểm tra và kích hoạt lịch năm học chính thức.';
       } else {
-        status = 'READY';
-        statusLabel = 'Đang áp dụng';
-        nextAction = 'Thời khóa biểu đã sẵn sàng vận hành. Cập nhật theo buổi khi có điều chỉnh.';
+        status = 'NOT_ASSESSED';
+        statusLabel = 'Cần đánh giá theo khoảng ngày';
+        findings.push({
+          code: 'TKB_READINESS_NOT_ASSESSED',
+          severity: 'WARNING',
+          message: 'Phiên bản đang áp dụng chưa chứng minh liên kết PPCT, sức chứa và các điều kiện vận hành trong khoảng ngày cần dùng.',
+        });
+        nextAction = 'Mở Thời khóa biểu & Khung tiết, chọn phiên bản và khoảng ngày để đánh giá bằng bộ kiểm tra sẵn sàng hiện có.';
       }
     } else if (isApprovedOrValidated) {
       status = 'ATTENTION_REQUIRED';
@@ -356,10 +368,10 @@ export class DataReadinessService {
   }
 
   private async evaluatePpct(yearId: string): Promise<DataReadinessDomainItem> {
-    const [activeSubjects, plans, associationCount] = await Promise.all([
-      this.prisma.subject.findMany({
-        where: { status: 'ACTIVE' },
-        select: { id: true, code: true, name: true },
+    const [assignments, plans, associations] = await Promise.all([
+      this.prisma.teachingAssignment.findMany({
+        where: { academicYearId: yearId },
+        select: { schoolClassId: true, subjectId: true, validFrom: true, validUntil: true, schoolClass: { select: { gradeLevel: true } } },
       }),
       this.prisma.ppctPlan.findMany({
         where: { academicYearId: yearId },
@@ -371,10 +383,12 @@ export class DataReadinessService {
           },
         },
       }),
-      this.prisma.ppctClassAssociation.count({
+      this.prisma.ppctClassAssociation.findMany({
         where: { academicYearId: yearId },
+        include: { ppctVersion: true, ppctPlan: true },
       }),
     ]);
+    const associationCount = associations.length;
 
     const findings: DataReadinessFinding[] = [];
 
@@ -403,12 +417,14 @@ export class DataReadinessService {
 
     const publishedCount = plans.filter((p) => p.versions[0]?.status === 'PUBLISHED').length;
     const draftCount = plans.filter((p) => p.versions[0]?.status === 'DRAFT').length;
-    const planSubjectIds = new Set(plans.map((p) => p.subjectId));
-    const missingSubjects = activeSubjects.filter((s) => !planSubjectIds.has(s.id));
+    const unissuedCount = plans.length - publishedCount - draftCount;
+    const planKeys = new Set(plans.map((p) => `${p.subjectId}:${p.gradeLevel}`));
+    const requiredKeys = new Set(assignments.map((a) => `${a.subjectId}:${a.schoolClass.gradeLevel}`));
+    const missingKeys = [...requiredKeys].filter((key) => !planKeys.has(key));
 
     let status: DataReadinessStatus = 'READY';
     let statusLabel = 'Đã ban hành';
-    let nextAction = 'Phân phối chương trình đã sẵn sàng. Thiết lập áp dụng chuyên đề cho các lớp nếu có.';
+    let nextAction = 'Đã ban hành kế hoạch PPCT cho các môn–khối có phân công. Kiểm tra liên kết phiên bản theo lớp và khoảng ngày tại Thời khóa biểu & Khung tiết.';
 
     if (draftCount > 0) {
       status = 'ATTENTION_REQUIRED';
@@ -419,23 +435,55 @@ export class DataReadinessService {
         message: `Có ${draftCount} kế hoạch PPCT đang ở trạng thái Bản nháp, cần ban hành để giáo viên thực hiện.`,
       });
       nextAction = 'Kiểm tra và ban hành các bản nháp PPCT còn tồn đọng.';
-    } else if (missingSubjects.length > 0 && plans.length < activeSubjects.length) {
+    }
+    if (unissuedCount > 0 || missingKeys.length > 0) {
       status = 'NOT_READY';
-      statusLabel = 'Thiếu môn học';
+      statusLabel = 'Thiếu kế hoạch đã ban hành';
       findings.push({
-        code: 'PPCT_SUBJECTS_INCOMPLETE',
+        code: 'PPCT_COVERAGE_INCOMPLETE',
         severity: 'BLOCKER',
-        message: `Còn ${missingSubjects.length} môn học chưa có kế hoạch PPCT (${missingSubjects.slice(0, 3).map((s) => s.name).join(', ')}${missingSubjects.length > 3 ? '...' : ''}).`,
+        message: `Có ${unissuedCount} kế hoạch chưa có phiên bản ban hành và ${missingKeys.length} môn–khối có phân công chưa có kế hoạch PPCT.`,
       });
-      nextAction = 'Tải lên tệp PPCT cho các môn học còn thiếu.';
+      nextAction = 'Nhập bổ sung và ban hành PPCT đúng môn học, khối lớp theo phân công giảng dạy.';
+    } else if (assignments.length === 0 && status === 'READY') {
+      status = 'NOT_ASSESSED';
+      statusLabel = 'Chưa xác minh phạm vi môn–khối';
+      findings.push({ code: 'PPCT_COVERAGE_NOT_ASSESSED', severity: 'WARNING', message: 'Chưa có phân công giảng dạy để xác minh phạm vi môn–khối cần PPCT.' });
+      nextAction = 'Thiết lập phân công giảng dạy, sau đó kiểm tra phạm vi PPCT cần ban hành.';
     }
 
     if (associationCount === 0 && plans.length > 0) {
+      if (status === 'READY') {
+        status = 'ATTENTION_REQUIRED';
+        statusLabel = 'Chưa liên kết lớp–môn';
+        nextAction = 'Thiết lập liên kết lớp–môn với đúng phiên bản PPCT trước khi vận hành.';
+      }
       findings.push({
         code: 'PPCT_NO_ASSOCIATIONS',
-        severity: 'INFO',
-        message: 'Chưa có phân công lớp áp dụng chuyên đề riêng; hệ thống mặc định áp dụng cốt lõi.',
+        severity: 'WARNING',
+        message: 'Chưa có liên kết lớp–môn với phiên bản PPCT. Cần thiết lập liên kết trước khi vận hành; không tự suy ra chương trình cốt lõi.',
       });
+    }
+
+    // A count is not binding evidence. Complex switches remain owned by the
+    // date-bounded timetable readiness evaluator; accept only unambiguous coverage here.
+    if (status === 'READY' && assignments.some((assignment) => {
+      const matches = associations.filter((a) => a.schoolClassId === assignment.schoolClassId
+        && a.subjectId === assignment.subjectId
+        && (assignment.validUntil === null || a.effectiveFrom <= assignment.validUntil)
+        && (a.effectiveUntil === null || a.effectiveUntil >= assignment.validFrom));
+      if (matches.length !== 1) return true;
+      const association = matches[0];
+      return association.effectiveFrom > assignment.validFrom
+        || (association.effectiveUntil !== null && (assignment.validUntil === null || association.effectiveUntil < assignment.validUntil))
+        || !['PUBLISHED', 'SUPERSEDED'].includes(association.ppctVersion.status)
+        || association.ppctPlan.subjectId !== assignment.subjectId
+        || association.ppctPlan.gradeLevel !== assignment.schoolClass.gradeLevel;
+    })) {
+      status = 'NOT_ASSESSED';
+      statusLabel = 'Cần kiểm tra liên kết theo ngày';
+      findings.push({ code: 'PPCT_BINDING_NOT_ASSESSED', severity: 'WARNING', message: 'Chưa chứng minh liên kết phiên bản PPCT hợp lệ, duy nhất, phủ các phân công. Dùng bộ đánh giá TKB theo khoảng ngày để kiểm tra.' });
+      nextAction = 'Kiểm tra liên kết PPCT tại Thời khóa biểu & Khung tiết theo phiên bản và khoảng ngày cần vận hành.';
     }
 
     const latestPlanWithVersion = plans
@@ -454,7 +502,7 @@ export class DataReadinessService {
         ? {
             number: latestVer.versionNumber,
             status: latestVer.status,
-            statusLabel: latestVer.status === 'PUBLISHED' ? 'Đã ban hành' : 'Bản nháp',
+            statusLabel: latestVer.status === 'PUBLISHED' ? 'Đã ban hành' : latestVer.status === 'DRAFT' ? 'Bản nháp' : 'Đã thay thế',
             effectiveRange: null,
             updatedAt: latestVer.updatedAt.toISOString(),
           }
@@ -470,12 +518,13 @@ export class DataReadinessService {
       nextAction,
       primaryAction: { label: 'Nhập PPCT', to: '/quan-tri/ppct/nhap' },
       secondaryAction: { label: 'Áp dụng chuyên đề', to: '/quan-tri/ppct/ap-dung-chuyen-de' },
-      workflowSteps: this.defaultWorkflowSteps('PPCT', true, true, true, true, true, publishedCount > 0),
+      workflowSteps: this.defaultWorkflowSteps('PPCT', true, true, true, true, true, publishedCount === plans.length),
       stats: {
         totalPlans: plans.length,
         publishedCount,
         draftCount,
-        missingSubjectCount: missingSubjects.length,
+        missingSubjectCount: missingKeys.length,
+        unissuedCount,
         associationCount,
       },
     };
@@ -483,16 +532,9 @@ export class DataReadinessService {
 
   private async evaluateHistory(yearId: string): Promise<DataReadinessDomainItem> {
     const [opStartPolicy, calendar, batches, historicalExecutionCount] = await Promise.all([
-      this.prisma.businessPolicyVersion.findFirst({
-        where: {
-          status: 'PUBLISHED',
-          stream: {
-            familyKey: 'OPERATIONAL_START',
-            academicYearId: yearId,
-          },
-        },
-        orderBy: { versionNumber: 'desc' },
-      }),
+      this.businessConfiguration.resolveEffectiveBusinessPolicy(
+        'OPERATIONAL_START', { kind: 'ACADEMIC_YEAR', academicYearId: yearId }, hcmCivilDate(new Date()),
+      ),
       this.prisma.academicCalendarVersion.findFirst({
         where: { academicYearId: yearId, isActive: true },
       }),
@@ -511,12 +553,34 @@ export class DataReadinessService {
     ]);
 
     const findings: DataReadinessFinding[] = [];
-    const opStartDate = opStartPolicy?.payload && typeof opStartPolicy.payload === 'object'
-      ? (opStartPolicy.payload as Record<string, unknown>).operationalStartDate as string | undefined
+    const opStartDate = opStartPolicy.outcome === 'RESOLVED'
+      ? (opStartPolicy.payload as { operationalStartDate: string }).operationalStartDate
       : undefined;
 
+    if (!opStartDate || !calendar || parseCivilDate(opStartDate) < calendar.startDate || parseCivilDate(opStartDate) > calendar.endDate) {
+      return {
+        key: 'HISTORICAL_TEACHING',
+        label: 'Lịch sử giảng dạy',
+        description: 'Dữ liệu giảng dạy trước thời điểm đưa hệ thống vào vận hành thực tế.',
+        status: 'NOT_READY',
+        statusLabel: 'Thiếu căn cứ vận hành hợp lệ',
+        latestVersion: null,
+        latestImport: null,
+        findings: [{
+          code: opStartPolicy.outcome !== 'RESOLVED' ? opStartPolicy.outcome : 'HISTORY_CALENDAR_INVALID',
+          severity: 'BLOCKER',
+          message: 'Cần chính sách ngày bắt đầu vận hành có hiệu lực và lịch năm học hợp lệ để xác định yêu cầu lịch sử.',
+        }],
+        nextAction: 'Kiểm tra chính sách Bắt đầu vận hành và kích hoạt lịch năm học có chứa ngày vận hành.',
+        primaryAction: { label: 'Cấu hình ngày vận hành', to: '/quan-tri/chinh-sach-nghiep-vu' },
+        secondaryAction: { label: 'Kiểm tra lịch năm học', to: '/quan-tri/cau-truc-nam-hoc' },
+        workflowSteps: this.defaultWorkflowSteps('HISTORICAL_TEACHING', false, false, false, false, false, false),
+        stats: { delayedGoLiveApplies: null, batchCount: batches.length, historicalExecutionCount },
+      };
+    }
+
     const delayedGoLiveApplies = Boolean(
-      opStartDate && calendar?.startDate && new Date(opStartDate) > new Date(calendar.startDate),
+      opStartDate > formatCivilDate(calendar.startDate),
     );
 
     const latestBatch = batches[0];
@@ -584,8 +648,8 @@ export class DataReadinessService {
       key: 'HISTORICAL_TEACHING',
       label: 'Lịch sử giảng dạy',
       description: 'Dữ liệu giảng dạy trước thời điểm đưa hệ thống vào vận hành thực tế.',
-      status: 'READY',
-      statusLabel: 'Đã nạp minh chứng',
+      status: 'ATTENTION_REQUIRED',
+      statusLabel: 'Đã nạp, cần đối soát',
       latestVersion: null,
       latestImport: {
         batchRef: latestBatch.id,
@@ -594,8 +658,8 @@ export class DataReadinessService {
         rowCount,
         importedBy: latestBatch.confirmedBy?.profile?.displayName ?? null,
       },
-      findings: [],
-      nextAction: `Đã nạp ${rowCount} tiết giảng dạy lịch sử. Kiểm tra đối chiếu khi cần.`,
+      findings: [{ code: 'HISTORY_RECONCILIATION_REQUIRED', severity: 'WARNING', message: 'Biên nhận nhập không chứng minh đủ lịch sử. Cần đối soát minh chứng còn hiệu lực với các tiết kỳ vọng tại phân hệ lịch sử.' }],
+      nextAction: `Tệp gần nhất có ${rowCount} dòng. Mở đối soát lịch sử để kiểm tra các tiết chưa xác nhận hoặc xung đột.`,
       primaryAction: { label: 'Xem và đối chiếu lịch sử', to: '/quan-tri/lich-su-giang-day' },
       secondaryAction: null,
       workflowSteps: this.defaultWorkflowSteps('HISTORICAL_TEACHING', true, true, true, true, true, false),
@@ -671,6 +735,11 @@ export class DataReadinessService {
       if (plan?.status === 'DRAFT') draftCount++;
     }
     const missingGrades = [10, 11, 12].filter((g) => !presentGrades.has(g));
+    const unissuedMasters = gddpMasters.filter((master) => {
+      const plan = latestPlanByMaster.get(master.id);
+      return !plan || (plan.status !== 'PUBLISHED' && plan.status !== 'DRAFT');
+    });
+    const unissuedCount = unissuedMasters.length;
 
     let status: DataReadinessStatus = 'READY';
     let statusLabel = publishedCount === 3 && missingGrades.length === 0 ? 'Đã ban hành đầy đủ' : 'Đã ban hành';
@@ -685,15 +754,17 @@ export class DataReadinessService {
         message: `Có ${draftCount} khối lớp GDĐP đang ở bản nháp, cần ban hành kế hoạch.`,
       });
       nextAction = 'Ban hành các kế hoạch GDĐP đang ở trạng thái bản nháp.';
-    } else if (missingGrades.length > 0) {
+    }
+    if (missingGrades.length > 0 || unissuedCount > 0) {
       status = 'NOT_READY';
-      statusLabel = 'Thiếu khối lớp';
-      findings.push({
-        code: 'GDDP_MISSING_GRADES',
-        severity: 'BLOCKER',
-        message: `Chưa có kế hoạch GDĐP cho khối ${missingGrades.join(', ')}.`,
-      });
-      nextAction = 'Nhập bổ sung kế hoạch GDĐP cho các khối còn thiếu.';
+      statusLabel = 'Thiếu kế hoạch đã ban hành';
+      if (missingGrades.length > 0) {
+        findings.push({ code: 'GDDP_MISSING_GRADES', severity: 'BLOCKER', message: `Chưa có chương trình GDĐP cho khối ${missingGrades.join(', ')}.` });
+      }
+      if (unissuedCount > 0) {
+        findings.push({ code: 'GDDP_PLAN_NOT_PUBLISHED', severity: 'BLOCKER', message: `Chương trình GDĐP khối ${unissuedMasters.map((m) => m.gradeLevel).join(', ')} chưa có kế hoạch ban hành.` });
+      }
+      nextAction = 'Nhập bổ sung và ban hành kế hoạch GDĐP cho các khối còn thiếu.';
     }
 
     const latestPlanVer = planVersions[0];
@@ -708,7 +779,7 @@ export class DataReadinessService {
         ? {
             number: latestPlanVer.versionNumber,
             status: latestPlanVer.status,
-            statusLabel: latestPlanVer.status === 'PUBLISHED' ? 'Đã ban hành' : 'Bản nháp',
+            statusLabel: latestPlanVer.status === 'PUBLISHED' ? 'Đã ban hành' : latestPlanVer.status === 'DRAFT' ? 'Bản nháp' : 'Đã thay thế',
             effectiveRange: null,
             updatedAt: latestPlanVer.updatedAt.toISOString(),
           }
@@ -724,12 +795,13 @@ export class DataReadinessService {
       nextAction,
       primaryAction: { label: 'Đến HĐTN-HN & GDĐP', to: '/quan-tri/chuong-trinh-dac-thu' },
       secondaryAction: null,
-      workflowSteps: this.defaultWorkflowSteps('GDDP', true, true, true, true, true, publishedCount === 3),
+      workflowSteps: this.defaultWorkflowSteps('GDDP', true, true, true, true, true, status === 'READY'),
       stats: {
         totalMasters: gddpMasters.length,
         publishedCount,
         draftCount,
         missingGradesCount: missingGrades.length,
+        unissuedCount,
       },
     };
   }
@@ -808,13 +880,14 @@ export class DataReadinessService {
         message: 'Kế hoạch HĐTN-HN đang ở trạng thái bản nháp, cần ban hành để đưa vào lịch dạy.',
       });
       nextAction = 'Kiểm tra và ban hành kế hoạch HĐTN-HN.';
-    } else if (publishedPlansCount === 0) {
+    }
+    if (hdtnMasters.length - publishedPlansCount - draftPlansCount > 0) {
       status = 'NOT_READY';
       statusLabel = 'Chưa ban hành';
       findings.push({
         code: 'HDTN_NOT_PUBLISHED',
         severity: 'BLOCKER',
-        message: 'Kế hoạch HĐTN-HN chưa được ban hành chính thức.',
+        message: 'Có chương trình HĐTN-HN chưa có kế hoạch ban hành chính thức.',
       });
       nextAction = 'Ban hành kế hoạch HĐTN-HN.';
     }
@@ -831,7 +904,7 @@ export class DataReadinessService {
         ? {
             number: latestPlanVer.versionNumber,
             status: latestPlanVer.status,
-            statusLabel: latestPlanVer.status === 'PUBLISHED' ? 'Đã ban hành' : 'Bản nháp',
+            statusLabel: latestPlanVer.status === 'PUBLISHED' ? 'Đã ban hành' : latestPlanVer.status === 'DRAFT' ? 'Bản nháp' : 'Đã thay thế',
             effectiveRange: null,
             updatedAt: latestPlanVer.updatedAt.toISOString(),
           }
@@ -847,7 +920,7 @@ export class DataReadinessService {
       nextAction,
       primaryAction: { label: 'Đến HĐTN-HN & GDĐP', to: '/quan-tri/chuong-trinh-dac-thu' },
       secondaryAction: null,
-      workflowSteps: this.defaultWorkflowSteps('HDTN_HN', true, true, true, true, true, publishedPlansCount > 0),
+      workflowSteps: this.defaultWorkflowSteps('HDTN_HN', true, true, true, true, true, status === 'READY'),
       stats: {
         totalMasters: hdtnMasters.length,
         publishedCount: publishedPlansCount,
