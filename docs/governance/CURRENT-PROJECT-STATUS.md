@@ -99,6 +99,8 @@ Preliminary Desktop Commander read-only metadata: Windows Server 2022, 6 logical
 
 ### In Progress
 
+- `P5-055` — data readiness & import center; **`IN_PROGRESS`** for PR #248 READY correction (PostgreSQL verification and Git write access remain blocked; see `docs/phase-reports/P5-055-READY-CORRECTION-REPORT.md`) on branch `feat/p5-055-data-readiness-import-center`.
+
 - `P5-051` — **CLOSED by `SYNC-P5-051`**: PR #240 merged at `cd0e67d342276f1e3e1baa2bb1de9078f4b2e5c7`, main CI #799 SUCCESS, auto-deploy #14 and Deploy VPS #12 SUCCESS; parent implementation and review evidence retained.
 - `P6-020` — **IN_PROGRESS: preliminary passive host reconnaissance only**; formal PASS 1/PASS 2 NOT EXECUTED. Exact deployment candidate approved for read-only scope above.
 
@@ -114,7 +116,6 @@ Preliminary Desktop Commander read-only metadata: Windows Server 2022, 6 logical
 
 ### Planned behind open dependencies
 
-- `P5-055` — data readiness & import center.
 - `P5-056A` -> `P5-056` — in-app notification center + Web Push architecture then implementation.
 - `P5-057` — persona operability E2E freeze; mandatory product predecessor of teacher pilot.
 - `P6-030` — production bootstrap + first controlled deploy: **`PLANNED`** (depends on `P6-020` and P6-025 acceptance).

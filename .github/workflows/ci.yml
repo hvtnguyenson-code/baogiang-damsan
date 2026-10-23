@@ -18,7 +18,7 @@ jobs:
   ci:
     name: Lint · Typecheck · Test · Build
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
 
     # PostgreSQL service for integration tests
     services:

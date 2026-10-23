@@ -1,6 +1,6 @@
 # P5-055 — Data Readiness & Import Center
 
-**Status:** PLANNED  
+**Status:** IN_PROGRESS
 **Depends on:** P5-052, P5-053, P2-020, P3-020, P4-074  
 **Traceability:** T54
 
@@ -48,3 +48,13 @@ Not every domain must implement all six steps; the UI must not invent lifecycle 
 ## Acceptance evidence
 
 A PHT/Admin can determine from one workspace what is missing before school operation and navigate into TKB, PPCT, history, GDĐP and HĐTN-HN without knowing internal route paths.
+
+## PR #248 READY correction — 2026-10-23
+
+Correction remains on `feat/p5-055-data-readiness-import-center`, from HEAD `5d00da1e2cebd8e99dab46d3278fd61bca12de52`; audited canonical main is `d13e1f98b063c9ee902ed8940372a2bbac224a55`. Dependencies P5-052, P5-053, P2-020, P3-020 and P4-074 are CLOSED; traceability T54 remains unchanged.
+
+Readiness must fail closed when required evidence is absent. The center reuses the effective OPERATIONAL_START policy resolver and retained models. PPCT coverage follows actual year/subject/grade teaching assignments and exact retained bindings, rather than a catalog-subject count or an assumed CORE default. Every GDĐP/HĐTN-HN master must have a published plan; missing or superseded-only versions cannot produce READY.
+
+TKB activation alone is not date-bounded readiness. The center reports NOT_ASSESSED and directs users to the existing timetable readiness evaluator. Historical import receipts alone require reconciliation in the existing history workspace. These are explicit current response semantics within P5-055, not a new readiness ledger or an unregistered implementation deferral. Valid day-one history, fully issued programme plans and PPCT with proven coverage retain READY. An explicit unknown year returns HTTP 404; default year selection applies only when the ID is omitted.
+
+Evidence and remaining PostgreSQL verification/Git write blockers: [READY correction report](../phase-reports/P5-055-READY-CORRECTION-REPORT.md). No schema/migration, auth, CI/CD, production, parser or ledger change is authorized by this correction.

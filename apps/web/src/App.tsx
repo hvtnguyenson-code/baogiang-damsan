@@ -34,8 +34,10 @@ import { HistoricalTeachingPage } from './pages/HistoricalTeachingPage';
 import { MakeupSchedulingPage } from './pages/MakeupSchedulingPage';
 import { TeachingOperationsPage } from './pages/TeachingOperationsPage';
 import { TimetableAdminPage } from './pages/TimetableAdminPage';
+import { DataReadinessPage } from './pages/DataReadinessPage';
 import type { BusinessPolicyUiAdapter } from './lib/business-policy-ui-registry';
 import {
+  canAccessDataReadinessCenter,
   canManageDutyAssignments,
   canManageHistoricalTeaching,
   canManagePpct,
@@ -84,6 +86,9 @@ export default function App({ businessPolicyAdapters }: { businessPolicyAdapters
           <Route element={<CapabilityRoute allow={(c) => hasSchoolCapability(c, 'AUDIT_VIEW')} />}><Route path="/quan-tri/nhat-ky" element={<AuditPage />} /></Route>
           <Route element={<CapabilityRoute allow={(c) => hasSchoolCapability(c, 'ADDITIONAL_DUTY_CATALOG_MANAGE')} />}><Route path="/quan-tri/kiem-nhiem/danh-muc" element={<DutyCatalogPage />} /></Route>
           <Route element={<CapabilityRoute allow={canManageDutyAssignments} />}><Route path="/quan-tri/kiem-nhiem/phan-cong" element={<DutyAssignmentsPage />} /></Route>
+          <Route element={<CapabilityRoute allow={canAccessDataReadinessCenter} />}>
+            <Route path="/quan-tri/san-sang-du-lieu" element={<DataReadinessPage />} />
+          </Route>
           <Route element={<CapabilityRoute allow={(c) => hasSchoolCapability(c, 'ACADEMIC_STRUCTURE_MANAGE')} />}>
             <Route path="/quan-tri/cau-truc-nam-hoc" element={<AcademicYearsPage />} />
             <Route path="/quan-tri/cau-truc-nam-hoc/:academicYearId" element={<Navigate to="lich" replace />} />

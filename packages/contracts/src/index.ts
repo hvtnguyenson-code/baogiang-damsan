@@ -2845,3 +2845,87 @@ export interface UserDeletePreflightResponse {
   disableRecommended: boolean;
 }
 export interface UserDeleteResponse { deletedUserId: string; cleanupCounts: UserDeleteCleanupCounts }
+
+// ============================================================
+// Data Readiness & Import Center Contracts (P5-055 / T54)
+// ============================================================
+
+export type DataReadinessDomainKey =
+  | 'TKB'
+  | 'PPCT'
+  | 'HISTORICAL_TEACHING'
+  | 'GDDP'
+  | 'HDTN_HN';
+
+export type DataReadinessStatus =
+  | 'READY'               // Đã sẵn sàng
+  | 'ATTENTION_REQUIRED'  // Cần xử lý / có cảnh báo
+  | 'NOT_READY'           // Chưa sẵn sàng / bị chặn
+  | 'NOT_ASSESSED'        // Chưa đủ thông tin xác minh
+  | 'NO_DATA';            // Chưa có dữ liệu
+
+export interface DataReadinessFinding {
+  code: string;
+  severity: 'BLOCKER' | 'WARNING' | 'INFO';
+  message: string;
+}
+
+export interface DataReadinessImportWorkflowStep {
+  stepNumber: number;
+  label: string;
+  isCompleted: boolean;
+  isCurrent: boolean;
+  isApplicable: boolean;
+  description?: string;
+}
+
+export interface DataReadinessDomainItem {
+  key: DataReadinessDomainKey;
+  label: string;
+  description: string;
+  status: DataReadinessStatus;
+  statusLabel: string;
+  latestVersion: {
+    number?: number | string | null;
+    status?: string | null;
+    statusLabel?: string | null;
+    effectiveRange?: string | null;
+    updatedAt?: string | null;
+  } | null;
+  latestImport: {
+    batchRef?: string | null;
+    sourceFileName?: string | null;
+    importedAt?: string | null;
+    rowCount?: number | null;
+    importedBy?: string | null;
+  } | null;
+  findings: DataReadinessFinding[];
+  nextAction: string;
+  primaryAction: {
+    label: string;
+    to: string;
+  };
+  secondaryAction?: {
+    label: string;
+    to: string;
+  } | null;
+  workflowSteps: DataReadinessImportWorkflowStep[];
+  stats: Record<string, number | string | boolean | null>;
+}
+
+export interface DataReadinessSummaryResponse {
+  academicYear: {
+    id: string;
+    code: string;
+    name: string;
+  } | null;
+  academicYears: {
+    id: string;
+    code: string;
+    name: string;
+  }[];
+  overallStatus: DataReadinessStatus;
+  overallStatusLabel: string;
+  domains: DataReadinessDomainItem[];
+  evaluatedAt: string;
+}
