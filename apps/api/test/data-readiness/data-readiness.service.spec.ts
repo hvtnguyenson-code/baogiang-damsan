@@ -66,7 +66,7 @@ describe('DataReadinessService (Unit)', () => {
       ]),
     };
 
-    service = new DataReadinessService(prismaMock, authMock);
+    service = new DataReadinessService(prismaMock as unknown as ConstructorParameters<typeof DataReadinessService>[0], authMock as unknown as ConstructorParameters<typeof DataReadinessService>[1]);
   });
 
   describe('Authorization & Fail-closed guards', () => {
