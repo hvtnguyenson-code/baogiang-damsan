@@ -1,5 +1,6 @@
 import type { AuthMeResponse, ScopedCapability } from '@baogiang/contracts';
 import {
+  canAccessDataReadinessCenter,
   canManageDutyAssignments,
   canManageHistoricalTeaching,
   canManagePpct,
@@ -57,6 +58,14 @@ export const NAVIGATION_REGISTRY: readonly NavigationItem[] = [
   },
 
   // 2. Dữ liệu năm học
+  {
+    to: '/quan-tri/san-sang-du-lieu',
+    label: 'Trung tâm sẵn sàng dữ liệu',
+    familyId: 'academic-data',
+    actionHint: 'Kiểm tra mức độ sẵn sàng và hướng dẫn nhập dữ liệu tập trung (TKB, PPCT, Lịch sử, GDĐP, HĐTN-HN)',
+    isVisible: canAccessDataReadinessCenter,
+    isMatchActive: (pathname) => pathname.startsWith('/quan-tri/san-sang-du-lieu'),
+  },
   {
     to: '/quan-tri/cau-truc-nam-hoc',
     label: 'Cấu trúc năm học',

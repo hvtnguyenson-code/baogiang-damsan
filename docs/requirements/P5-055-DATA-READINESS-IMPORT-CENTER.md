@@ -1,6 +1,6 @@
 # P5-055 — Data Readiness & Import Center
 
-**Status:** PLANNED  
+**Status:** IN_REVIEW
 **Depends on:** P5-052, P5-053, P2-020, P3-020, P4-074  
 **Traceability:** T54
 

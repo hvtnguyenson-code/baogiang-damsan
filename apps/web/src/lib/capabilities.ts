@@ -114,6 +114,16 @@ export function canManageTimetable(capabilities: ScopedCapability[]): boolean {
   return hasSchoolCapability(capabilities, 'TIMETABLE_MANAGE');
 }
 
+export function canAccessDataReadinessCenter(capabilities: ScopedCapability[]): boolean {
+  return hasCapability(capabilities, 'APPROVAL_PRINCIPAL', 'SCHOOL_WIDE')
+    || hasCapability(capabilities, 'APPROVAL_VICE_PRINCIPAL', 'SCHOOL_WIDE')
+    || hasSchoolCapability(capabilities, 'TIMETABLE_MANAGE')
+    || hasSchoolCapability(capabilities, 'PPCT_MANAGE')
+    || hasSchoolCapability(capabilities, 'USER_MANAGE')
+    || hasSchoolCapability(capabilities, 'ACADEMIC_STRUCTURE_MANAGE')
+    || hasSchoolCapability(capabilities, 'TEACHING_EXECUTION_MANAGE');
+}
+
 export const managementRoutes: ManagementRoute[] = [
   { to: '/quan-tri/cau-truc-nam-hoc', label: 'Cấu trúc năm học', isVisible: (c) => hasSchoolCapability(c, 'ACADEMIC_STRUCTURE_MANAGE') },
   { to: '/quan-tri/thoi-khoa-bieu', label: 'Thời khóa biểu & Khung tiết', isVisible: canManageTimetable },

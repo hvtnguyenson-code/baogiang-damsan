@@ -109,12 +109,12 @@ Preliminary Desktop Commander read-only metadata: Windows Server 2022, 6 logical
 ### Ready
 
 - `P5-054` — teaching-operations workspace closure; **next sequential implementation task** after P5-053.
+- `P5-055` — data readiness & import center; **`IN_REVIEW`** on branch `feat/p5-055-data-readiness-import-center`.
 - `P5-056A` — notification/Web Push architecture; eligible by dependency but held behind the sequential orchestration priority.
 - `P0-005` — docs-only historical T31 traceability reconciliation; independent of the product-operability implementation path.
 
 ### Planned behind open dependencies
 
-- `P5-055` — data readiness & import center.
 - `P5-056A` -> `P5-056` — in-app notification center + Web Push architecture then implementation.
 - `P5-057` — persona operability E2E freeze; mandatory product predecessor of teacher pilot.
 - `P6-030` — production bootstrap + first controlled deploy: **`PLANNED`** (depends on `P6-020` and P6-025 acceptance).
