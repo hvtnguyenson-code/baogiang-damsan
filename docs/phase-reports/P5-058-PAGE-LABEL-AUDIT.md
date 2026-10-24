@@ -1,4 +1,4 @@
-# P5-058 — Kiểm kê trang và nhãn, lát cắt 3–4
+# P5-058 — Kiểm kê trang và nhãn, lát cắt 3–5
 
 Ngày 24/10/2026. Lập trước sửa mã; baseline nhánh `8968d50909cc03ca677fe5416dce96bdc517dd0d`, main xác minh remote `ea80f078c8a1297c562c8f4319540e3417d6e651`. T57, dependencies P5-050/P5-052/P5-053 CLOSED. Chỉ copy/presentation/test/docs; không API, route, quyền, trạng thái backend, phép tính, workflow, dependencies, DESIGN.md hoặc VPS. P5-058 vẫn IN_PROGRESS.
 
@@ -19,8 +19,8 @@ Ngày 24/10/2026. Lập trước sửa mã; baseline nhánh `8968d50909cc03ca677
 | TimetableAdminPage | Bằng chứng lát cắt 2 | Không review lại toàn trang |
 | PpctImportPage | Bằng chứng lát cắt 2 | Không review lại toàn trang |
 | DataReadinessPage | Bằng chứng lát cắt 2 | Không review lại toàn trang |
-| AcademicCalendarPage | Chỉ xác nhận có file | Chưa audit nhãn |
-| AcademicYearsPage | Chỉ xác nhận có file | Chưa audit nhãn |
+| AcademicCalendarPage | Lát cắt 5: đã đọc toàn file | Danh sách/chi tiết/sao chép/tạo/kích hoạt lịch; form học kỳ/tuần/khoảng/gián đoạn và lỗi 400; giới hạn nghiệm thu bên dưới |
+| AcademicYearsPage | Lát cắt 5: đã đọc toàn file | Danh sách/tạo/sửa năm học, sparse patch, chuẩn hóa mã, tải/rỗng/lỗi và mở lịch; giới hạn nghiệm thu bên dưới |
 | AccessDeniedPage | Chỉ xác nhận có file | Chưa audit nhãn |
 | AuditPage | Chỉ xác nhận có file | Chưa audit nhãn |
 | BusinessConfigurationPage | Chỉ xác nhận có file | Chưa audit nhãn |
@@ -30,17 +30,17 @@ Ngày 24/10/2026. Lập trước sửa mã; baseline nhánh `8968d50909cc03ca677
 | DutyCatalogPage | Chỉ xác nhận có file | Chưa audit nhãn |
 | FirstPasswordChangePage | Chỉ xác nhận có file | Chưa audit nhãn |
 | HistoricalTeachingPage | Lát cắt 4: đã đọc toàn file | Đã sửa các đường hiển thị rủi ro; phạm vi đã kiểm chứng/chưa nghiệm thu bên dưới |
-| HomeroomAssignmentsPage | Chỉ xác nhận có file | Chưa audit nhãn |
+| HomeroomAssignmentsPage | Lát cắt 5: đã đọc toàn file | Tạo/kết thúc/đổi/hiệu chỉnh, danh tính lịch sử, trạng thái hiện tại và truy vết; HTTP/tải/rỗng; giới hạn nghiệm thu bên dưới |
 | LoginPage | Chỉ xác nhận có file | Chưa audit nhãn |
 | MakeupSchedulingPage | Lát cắt 4: đã đọc toàn file | Đã sửa các đường hiển thị rủi ro; phạm vi đã kiểm chứng/chưa nghiệm thu bên dưới |
 | NotFoundPage | Chỉ xác nhận có file | Chưa audit nhãn |
 | OperationalHistoryPanel | Chỉ xác nhận có file | Chưa audit nhãn |
 | PpctSpecializedStudyPage | Chỉ xác nhận có file | Chưa audit nhãn |
 | ProfilePage | Lát cắt 4: đã đọc toàn file | Đã sửa các đường hiển thị rủi ro; phạm vi đã kiểm chứng/chưa nghiệm thu bên dưới |
-| SchoolClassesPage | Chỉ xác nhận có file | Chưa audit nhãn |
+| SchoolClassesPage | Lát cắt 5: đã đọc toàn file | Danh sách/tạo/sửa lớp, lọc khối/trạng thái, xác nhận kích hoạt/vô hiệu hóa; giới hạn nghiệm thu bên dưới |
 | SpecialProgrammeWorkspacePage | Chỉ xác nhận có file | Chưa audit nhãn |
 | SystemStatusPage | Chỉ xác nhận có file | Chưa audit nhãn |
-| TeachingAssignmentsPage | Chỉ xác nhận có file | Chưa audit nhãn |
+| TeachingAssignmentsPage | Lát cắt 5: đã đọc toàn file | Chọn năm, lọc, tạo/kết thúc/đổi giáo viên, điều kiện chọn ứng viên, HTTP và ngày hiệu lực; giới hạn nghiệm thu bên dưới |
 | TeachingOperationsPage | Lát cắt 4: đã đọc toàn file | Đã sửa các đường hiển thị rủi ro; phạm vi đã kiểm chứng/chưa nghiệm thu bên dưới |
 | UsersPage | Chỉ xác nhận có file | Chưa audit nhãn |
 
@@ -122,3 +122,25 @@ Helper dùng có chọn lọc: `components/ui/workflow-error.tsx` chỉ nhận l
 Ảnh mock nằm trong `tests/e2e/test-results/p5-058-slice4` (không commit artifact sinh). Đã kiểm tra trực quan lịch 320, dạy bù 1366, lịch sử 375, hồ sơ 1440: chữ Việt rõ và không tràn trang; tiêu đề/trạng thái lịch ở 320 còn sít khi tên dài, chưa coi là nghiệm thu mật độ lịch thật. Axe kiểm tra cả năm trang ở 1440 không có serious/critical; chưa phải bằng chứng axe cho mọi trạng thái hoặc Android thật. Reduced motion được bật, test Tab/focus tại bộ chọn đồng nghiệp.
 
 Sau lát cắt này: **15/35 module có bằng chứng đọc/audit theo các lát cắt**, **20 module còn cần audit nhãn toàn file**; năm module mới vẫn có các đường động cần nghiệm thu như bảng trên. Không suy ra tỷ lệ hoàn thành sản phẩm. Danh mục 25 mục điều hướng đã được đối chiếu ở lát cắt 3, không có route/registry/auth/API/schema/backend/CI/CD/VPS/nội trú thay đổi.
+
+
+## Lát cắt 5 — dữ liệu năm học và phân công (24/10/2026)
+
+Baseline `0a96ed07941d1f0cd5ca2d7dd841b4571e8e889b`; main remote `ea80f078c8a1297c562c8f4319540e3417d6e651`; cùng nhánh/PR #249 draft. GitHub xác minh CI #833 / run `40082860054` SUCCESS chỉ cho baseline. Sau lát cắt này: **20/35 module đã audit toàn file, 15 module vẫn cần audit toàn file**. Không coi việc đọc mã là nghiệm thu dữ liệu thật/persona.
+
+| File / đường hiển thị | Phát hiện trước sửa | Xử lý / kiểm chứng |
+| --- | --- | --- |
+| AcademicYears / header, form, empty | “phiên lịch bất biến”, thiếu ví dụ mã/tên | Giải thích lịch/học kỳ/tuần/lớp, ví dụ định danh nghiệp vụ; mã uppercase/trim và sparse patch không đổi; unit exact payload và 409 giữ nháp |
+| AcademicCalendar / create error 400 | In trực tiếp ApiError.message | Chỉ lời hướng dẫn kiểm tra cấu trúc lịch cố định; giữ bản nháp; test phản hồi cố ý có SQL/host/UUID không xuất hiện, tạo thất bại rồi kích hoạt thành công |
+| AcademicCalendar / header, builder, list/detail | “bất biến”, “ngày dân sự YYYY-MM-DD”, inactive “Chưa kích hoạt” có thể sai với lịch từng kích hoạt | Giải thích mỗi lần lưu là phiên mới không sửa phiên cũ; ngày giữ nguyên theo thiết bị; inactive “Không áp dụng”; hướng dẫn khung tuần và ghi chú rỗng rõ ràng |
+| SchoolClasses / code, confirmation | Thiếu ví dụ mã; xác nhận không nêu tên lớp/hệ quả | Ví dụ mã; xác nhận nêu lớp và giữ lịch sử; giữ cả activate/deactivate và generic confirmation button, không thêm delete |
+| TeachingAssignments / create/change candidate prompt | Select bị khóa nhưng không nói bước trước; nhãn dài bị cắt trên mobile | Nhãn ngắn và lời hướng dẫn ngoài select khi chưa đủ môn/ngày; ngày kết thúc có thể trống; toàn bộ candidateRequest/payload/reset/invalidation/bounds giữ nguyên |
+| Homeroom / account status | In ACTIVE/DISABLED/LOCKED/PENDING; có thể nhầm trạng thái tài khoản với lịch sử | Từ điển tiếng Việt có fallback an toàn kể cả constructor; trạng thái hiện tại không thay lịch sử. ACTIVE của bản ghi hiện “Phân công chưa bị đảo”, không khẳng định đang hiệu lực tại ngày xem |
+| Homeroom / trace | UUID người đảo/bản ghi thay thế và timestamp ISO trong bảng chính | Giữ nguyên thông tin, chuyển vào details “Thông tin kỹ thuật để tra cứu”, đóng mặc định; format giờ vi-VN theo business timezone hiện hữu; lý do đảo/ghi chú/nguồn vẫn đọc trực tiếp |
+| Homeroom / candidate pending | Hiện “Đang tìm” khi query chưa đủ điều kiện chạy | Ưu tiên nhắc chọn khoảng ngày hoặc nhập từ khóa lịch sử trước; không đổi enabled/disabled, khoảng hiệu lực hoặc truy vấn |
+
+Điều hướng đã đối chiếu registry, App và AcademicYearWorkspace: cấu trúc năm học/lịch/lớp dùng ACADEMIC_STRUCTURE_MANAGE/SCHOOL_WIDE; phân công giảng dạy dùng SUBJECT_MANAGE/SCHOOL_WIDE; chủ nhiệm dùng HOMEROOM_ASSIGNMENT_MANAGE/SCHOOL_WIDE. Giữ mọi predicate/route/link và không suy quyền từ chức danh. Năm route đều có smoke thiếu grant → trang không có quyền; bộ unit navigation hiện hữu kiểm tra grant/scopes và SYSTEM_ADMIN không tự có quyền nghiệp vụ.
+
+Wireframe giữ nguyên: desktop tiêu đề → chọn năm/phạm vi → thông báo → form → bộ lọc → bảng và phân trang; lịch/lớp có hai link con hiện hữu. Mobile một cột, bảng cuộn ngang trong vùng bảng, nút/form xuống dòng; không đổi CSS/theme/tokens/primitives. Ảnh/mock, kiểm tra bàn phím/reduced motion/axe và số test chính xác nằm trong `P5-058-SLICE-5-REPORT.md`.
+
+Phạm vi nghiệm thu còn mở trong A/C/D của P5-058: dữ liệu lịch dày nhiều học kỳ/tuần/gián đoạn và clone chi tiết có dữ liệu thật; tên/mã rất dài; thao tác phân công qua API thật, race/409 với dữ liệu cạnh tranh, persona thực tế và Android thật. Bằng chứng local mock không chứng minh toàn backend hoặc quyền production. Không tạo deferral ngoài task; không đóng P5-058.
