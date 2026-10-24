@@ -1,6 +1,6 @@
 # P5-058 — Báo cáo lát cắt frontend đầu tiên
 
-> Phần đầu ghi lịch sử lát cắt 1. Phần “Lát cắt 2” cuối tài liệu là audit và bằng chứng mới nhất cho ba màn hình dữ liệu/nhập liệu; không dùng trạng thái working tree/HEAD lịch sử bên dưới làm SHA hiện tại.
+> Phần đầu ghi lịch sử lát cắt 1–2. Phần “Lát cắt 3” cuối tài liệu là bằng chứng phiên mới nhất; inventory tại `P5-058-PAGE-LABEL-AUDIT.md`. Không dùng trạng thái working tree/HEAD hoặc CI blocker lịch sử bên dưới làm trạng thái hiện tại.
 
 Ngày thực thi: 24/10/2026. Trạng thái task: **IN_PROGRESS**, theo chỉ thị người dùng; chưa đề nghị đóng task hoặc nghiệm thu toàn bộ frontend.
 
@@ -109,3 +109,44 @@ Mức ưu tiên: P1 = gây nhầm bước hoặc trạng thái; P2 = thuật ng�
 Lượt cuối chạy nối tiếp `typecheck -w apps/web` → `lint -w apps/web` → `test:ui:static` → hai spec P5-058 đều PASS, exit 0 (E2E 2/2, 22.1s). Unit mục tiêu cuối 72/72 PASS. Không dùng CI làm vòng thử lỗi.
 
 Sau khi kiểm tra diff và danh sách đúng 12 file, `git add -- <12 explicit task paths>` bị chặn: `fatal: Unable to create 'D:/baogiang-damsan/.git/index.lock': Permission denied`. Staged list vẫn rỗng. Không commit/push, không sửa quyền hoặc tìm cách ghi vòng qua `.git`; mọi thay đổi lát cắt 2 đang ở working tree (10 modified + 2 untracked test files). Local HEAD và remote task branch xác minh lại bằng Git vẫn `cb3018b743d54e276134fd80afa8f9b09146720a`; main vẫn `6f1e83a8f021db1ab23f9902981a6b32f36d65ab`. PR #249 giữ DRAFT, P5-058 giữ IN_PROGRESS. Khi môi trường cho phép ghi Git, kiểm tra diff/staged list rồi commit và push cùng nhánh, không tạo nhánh/PR khác. Chưa có CI cho phần chưa push hoặc independent review; không merge/deploy.
+
+## Lát cắt 3 — Báo cáo, bàn làm việc, tổ/môn và điều hướng
+
+### Git và authority đầu phiên
+
+- Ngày 24/10/2026, đúng workspace `D:\baogiang-damsan`; nhánh `feat/p5-058-frontend-vietnamese-ux`, local HEAD/remote task HEAD `8968d50909cc03ca677fe5416dce96bdc517dd0d`. Working tree ban đầu sạch, không untracked; main trực tiếp `ea80f078c8a1297c562c8f4319540e3417d6e651`, divergence 4/0. GitHub PR #249 OPEN/DRAFT, không merge. `git fetch origin` bị chặn ghi FETCH_HEAD; `git ls-remote` và connector PR xác minh SHA độc lập.
+- Git log cho thấy security PR #250/main đã được tích hợp vào nhánh bằng commit `5d12cc2`; vì vậy blocker dependency của lát cắt 2 là lịch sử. Đọc trực tiếp GitHub workflow cho HEAD đầu phiên: [CI #831 / 40068828206 SUCCESS](https://github.com/hvtnguyenson-code/baogiang-damsan/actions/runs/40068828206). Đây không phải CI của thay đổi lát cắt 3.
+- Đọc AGENTS.md, DESIGN.md, damsan-ui skill, yêu cầu/report/register/T57 và năm authority governance, execution protocol P5-050; đối chiếu contract/presenter báo cáo, ADR-041/ADR-057 và addendum v1.3. P5-050/P5-052/P5-053 CLOSED. Không thay authority workload, snapshot hay phép tính.
+- Inventory được lập trước sửa: [P5-058-PAGE-LABEL-AUDIT.md](P5-058-PAGE-LABEL-AUDIT.md). Có đầy đủ 35 module và mức review. Đã đọc thêm 7 module: 4 trang báo cáo, Home, Catalog, TemporalAssignments; chỉ 5 cần sửa trực tiếp, 2 giữ nguyên và dùng component chung. Navigation thực tế **25 mục**, đã ghi từng route/nhãn; con số 26 trong baseline cũ không khớp mã hiện tại. Không nhận đã nghiệm thu 35 trang.
+
+### Kết quả triển khai
+
+1. Preview/gửi/duyệt báo cáo dùng nội dung lỗi Việt an toàn; không in ApiError.message, serverError hoặc mã yêu cầu. 401/403 có lối điều hướng; 409 vẫn phải tải lại/xem trước. Thông báo submit đặt ngoài phần preview nên vẫn thấy sau khi 409 xóa preview cũ. Không đổi hook, request body, lifecycle, capability, token hay điều kiện allowedActions; không tự retry mutation.
+2. Bảng mapping riêng cho 9 finding code public, đối chiếu union trong contracts và backend presenter. Workload mapping các code đã xác minh (lịch thiếu/trùng, thiếu ngày dạy, thiếu nhiệm vụ, tổng hợp đặc thù bị chặn); mã khác có cảnh báo Việt trung tính và hướng liên hệ chuyên môn. Không phân tích/hiển thị raw message, không suy thành công từ cảnh báo. Lifecycle/phân loại/cách thực hiện lạ có fallback Việt; lookup không nhận prototype properties.
+3. Null workload/định mức hiện **Chưa xác định**, không ngầm đổi thành 0 hoặc dùng định mức gốc thay kết quả điều chỉnh chưa xác định. Zero thật, dấu chênh lệch, mọi số liệu backend và phân biệt live projection/snapshot được giữ. Không tính lại định mức, không sửa nguồn báo cáo hoặc dữ liệu đóng băng. Tên nhiệm vụ thiếu không hiển thị mã kỹ thuật thay tên.
+4. Nhãn số liệu dùng “Tiết còn phải hoàn thành”, “Tiết chưa đủ bằng chứng xác nhận”. Giải thích GDĐP/HĐTN-HN bằng tên đầy đủ. Home/navigation không còn hứa tiến độ giảng dạy trên route lịch hiệu lực. Phân công tổ/môn có fallback tên rõ ràng, không dùng UUID thay tên; quyền tra cứu, tạo/sửa/kết thúc và dữ liệu submit giữ nguyên.
+5. Navigation chỉ đổi label/actionHint và tiêu đề family: phân công tổ chuyên môn/môn học, phân phối chương trình, chương trình đặc thù; hint cấp quyền/nhật ký dễ hiểu hơn. Mọi `to`, `familyId`, `exactEnd`, predicate và matcher giữ nguyên; vẫn có test exact scope và không suy quyền từ SYSTEM_ADMIN/chức vụ.
+6. Axe phát hiện hai nhãn workload cũ dùng fallback `#6b7280` chỉ đạt 4,41:1. Chuyển đúng hai nhãn sang `--ink-muted-on-canvas`, viền dùng `--border-card`, đều token đã có. Chữ “Chưa xác định” dùng font sản phẩm. Không sửa DESIGN.md/token/palette hay layout/primitive.
+
+### Bằng chứng local
+
+- `npm.cmd run typecheck -w apps/web`, `npm.cmd run lint -w apps/web`, `npm.cmd run test:ui:static`: PASS, exit 0; chạy lại nối tiếp sau sửa token cũng PASS.
+- Nhóm reporting/navigation/management đầu: **7 file, 113/113 PASS**, exit 0. Bao gồm preview 401/403/409 không lộ message và không submit; submit409 còn thông báo sau xóa preview; 500 quyết định chỉ retry cùng token/key khi chủ động; lifecycle/finding lạ; null khác zero; các persona, scope, keyboard và routing cũ. Ca preview401 inject ApiError ở client boundary để kiểm tra copy; hết phiên thật vẫn do auth hiện hữu xử lý, được kiểm tra trong full unit/session-cache-isolation.
+- Toàn bộ Web: `npm.cmd run test:unit -w apps/web -- --maxWorkers=2 --minWorkers=1`: **41 file, 638/638 PASS**, exit 0, 143,17s. Sau đó thêm đúng 2 regression cho fallback thiếu tên ở cả phân công tổ và phân công môn: `management-pages` **15/15 PASS**, exit 0; xác minh không fetch users khi thiếu grant, không in UUID ở bảng hoặc biểu mẫu sửa. Không gộp hai lượt thành tuyên bố full suite 640.
+- Playwright mock lần đầu 4 ca: 3 PASS, 1 FAIL do axe contrast trên hai nhãn workload; đã đọc toàn bộ lỗi/nodes rồi sửa token, không tắt rule. Lượt kiểm tra lại spec báo cáo: **2/2 PASS**, exit 0, 17,3s. Hai spec P5-058 nhập liệu/feedback cũ đã PASS trong lượt 4 ca đầu; không dùng CI làm vòng thử lỗi.
+- Lượt cuối chạy lại cả 3 spec P5-058 trên nội dung đã sửa: **4/4 PASS**, exit 0, 23,8s (reporting 2 ca, import 1, feedback 1). Không có thay đổi runtime sau lượt này. `git diff --check` PASS; danh sách xuất bản đúng 21 path frontend/test/tài liệu P5-058, không có path cấm.
+- Spec mới kiểm tra giáo viên nhập ngày/xem trước bằng keyboard, finding có message cố ý chứa internals không bị lộ, workload null, submit409 chỉ một POST/payload đúng và không báo thành công; BGH loading/list/detail, xác nhận trước quyết định, 409 refetch ra trạng thái backend mới không báo quyết định thành công, 403 an toàn, empty có giới hạn phạm vi, admin links/keyboard Escape và trả focus. Reduced-motion bật; axe không serious/critical trên hai trạng thái đã kiểm tra sau sửa.
+- 10 ảnh mock `tests/e2e/test-results/p5-058/reporting-{preview,detail}-{320,375,414,1366,1440}.png`, artifacts ignore. Kiểm tra overflow tự động cả 5 width. Đã xem trực tiếp preview/detail ở 320 và 1366: nhãn dài xuống dòng, một cột trên điện thoại, không cắt chữ hoặc tràn trang; nút quyết định tách biệt. Chi tiết fixture ít dòng/chưa có section và history nên ảnh không chứng minh bố cục báo cáo dày dữ liệu. Control ngày theo locale trình duyệt (ảnh có MM/DD/YYYY) không phải thay đổi hợp đồng ngày.
+- Không chạy database/integration/backend thật; không dùng VPS hoặc dữ liệu thật. Không sửa dependencies, backend, schema, auth, route guard, CI/CD hoặc importer/worksheet/protocol identifiers.
+
+### Documentation sync và phần còn mở
+
+Đồng bộ requirement, register, status, T57 và inventory/report. Giữ **IN_PROGRESS/DRAFT**, chưa đề nghị IN_REVIEW toàn task vì còn 25 module cần audit nhãn đầy đủ và nghiệm thu persona toàn sản phẩm. Baseline sản phẩm/ADR/README/roadmap không đổi: không thay quyền, semantics hay claim sản phẩm hoàn tất.
+
+EffectiveSchedule mới đọc khảo sát: còn `err.message`, blockedReasons/sourceLabel/comparisonLabel động; cần audit toàn file và fail-closed presentation riêng trong P5-058. Các trang quản trị đích ngoài Catalog/Temporal chưa được audit vì đọc navigation không chứng minh trang đích hoàn tất. Cần kiểm tra bảng báo cáo nhiều dòng, zoom200%, Android thật, toàn bộ state/per-role, unknown finding cụ thể còn fallback trung tính và importer/server-owned label trong lát cắt 2. Tất cả vẫn là A/C/D đang hoạt động của P5-058, không phải hạng mục deferred chưa đăng ký. Không sửa P5-055 READY correction hoặc state/race ngoài phạm vi copy.
+
+### Phương thức bàn giao checkpoint
+
+Local `.git` chỉ đọc nên không thể fetch/index/commit theo CLI. Đã chuẩn bị đúng 21 nội dung tệp được review, chuẩn hóa LF theo `.gitattributes`, dự kiến dùng connector GitHub với base tree `ad5d6f4bca58ce88be8610bbe436bc4c1b8c2b9a` / parent HEAD đầu phiên và fast-forward cùng nhánh có expected SHA. **Chưa xuất bản:** lời gọi `github_create_tree` bị từ chối ngay với thông báo **“MCP tool call requires approval, but approval policy is never”**. Không có tree/commit/ref mới được xác nhận; không tiếp tục thử cơ chế ghi khác hoặc sửa quyền.
+
+Local và remote task HEAD vẫn `8968d50909cc03ca677fe5416dce96bdc517dd0d`; cả 21 thay đổi giữ nguyên trong working tree, không có commit/push của lát cắt 3. PR #249 giữ DRAFT. Cần môi trường cho phép ghi Git/GitHub để commit/push bộ thay đổi này sau đối chiếu lại remote và diff; không tạo nhánh/PR khác. Chưa có CI cho nội dung mới hoặc independent coordinator review; CI baseline #831 không thay thế các gate này. Không merge/deploy.

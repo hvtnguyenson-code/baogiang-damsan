@@ -1,6 +1,6 @@
 # P5-058 — Việt hóa toàn diện và đơn giản hóa trải nghiệm frontend
 
-**Trạng thái:** IN_PROGRESS — PR #249 draft; tiếp tục lát cắt dữ liệu/nhập liệu trên cùng nhánh; chưa merge/deploy.
+**Trạng thái:** IN_PROGRESS — PR #249 draft; lát cắt 3 báo cáo/điều hướng trên cùng nhánh; chưa nghiệm thu toàn task, chưa merge/deploy.
 **Authority:** Yêu cầu người dùng 24/10/2026; T57; P5-050; P5-052; P5-053; `DESIGN.md`.
 **Baseline:** `main@6f1e83a8f021db1ab23f9902981a6b32f36d65ab`.
 **Nhánh duy nhất:** `feat/p5-058-frontend-vietnamese-ux`.
@@ -84,4 +84,16 @@ Nghiệm thu còn phải có đầy đủ bằng chứng desktop/Android, tích 
 
 Audit chi tiết và các nhãn đã sửa của TimetableAdmin/PpctImport/DataReadiness nằm trong phần Lát cắt 2 của báo cáo P5-058. Dùng “tệp Excel”, “trang tính”, “bản nháp”, “chương trình chính khóa”, “chế độ buổi áp dụng”, “tuần học bắt đầu áp dụng”, “kiểm tra tệp”, “xem trước đối soát”, “mã chống nhập trùng”; giải thích bản xem trước thay cho fingerprint trong hướng dẫn. Giữ nguyên tên mẫu PPCT_V1/trang THONG_TIN và mọi mã/payload. Readiness không khẳng định mọi importer kiểm tra phòng học hay findings rỗng đồng nghĩa sẵn sàng. Scope này không xử lý state/hook hoặc correction P5-055.
 
-Giữ IN_PROGRESS, PR draft; chưa nghiệm thu 32 module còn lại, navigation và mọi persona. CI #40052855139 bị chặn tại audit dependency production body-parser/multer (2 high); đề xuất đăng ký task bảo mật riêng theo báo cáo, không thay manifest/lockfile/backend/CI gate trong P5-058.
+Tại lát cắt 2: giữ IN_PROGRESS, PR draft; chưa nghiệm thu 32 module còn lại, navigation và mọi persona. CI #40052855139 từng bị chặn tại audit dependency production body-parser/multer (2 high); đây là bằng chứng lịch sử, được cập nhật bên dưới.
+
+### Cập nhật lát cắt 3 — Báo cáo, bàn làm việc và điều hướng
+
+Canonical main đọc trực tiếp remote là `ea80f078c8a1297c562c8f4319540e3417d6e651`; HEAD bắt đầu `8968d50909cc03ca677fe5416dce96bdc517dd0d`, PR #249 draft. CI cho HEAD này `40068828206` SUCCESS; security PR #250 đã tích hợp qua main trước phiên này. Không sửa dependencies hoặc gate trong P5-058; CI baseline xanh không phải CI cho working tree mới.
+
+Inventory trước sửa tại `docs/phase-reports/P5-058-PAGE-LABEL-AUDIT.md` ghi 35 module, từng mức review, từng nhãn cần sửa và ranh giới. Đã đọc thêm 7 module: ReportingStatements, ReportingStatementDetail, PendingReportingStatements, AccessibleReportingStatements, Home, Catalog, TemporalAssignments. Chỉ 5 module cần sửa trực tiếp; Catalog/Accessible không sửa để tăng số lượng. Registry thực tế có **25 mục** thay vì mô tả baseline 26; đã đối chiếu từng route/nhãn/predicate từ mã, giữ nguyên mọi quyền/route.
+
+Reporting dùng feedback HTTP an toàn cho preview/submit/decision; mapping finding từ code public đã xác minh, không in message/code máy chủ. 409 submit vẫn phải xem trước lại; thông báo nằm ngoài preview để không mất khi preview bị xóa. Retry chưa rõ kết quả giữ nguyên requestKey/token và chỉ chạy khi người dùng chọn. Khối lượng/định mức null hiện “Chưa xác định”, zero thật vẫn là 0, không tính lại số liệu hoặc thay trạng thái backend. Hai nhãn khối lượng dùng token tương phản hiện hữu sau khi axe phát hiện màu cũ không đạt. Phân công tổ/môn không dùng UUID thay tên thiếu; hint điều hướng mô tả đúng chức năng đang có.
+
+Còn 25 module cần audit nhãn đầy đủ (EffectiveSchedule mới đọc khảo sát), cộng kiểm chứng nội dung động/biểu mẫu/ảnh và persona toàn sản phẩm. Chưa có nghiệm thu Android thật, dữ liệu báo cáo thật hoặc CI cho thay đổi mới; giữ A/C/D đang mở trong P5-058, không đóng task. Kết quả kiểm tra và giới hạn commit/push ghi trong phần Lát cắt 3 của báo cáo.
+
+Checkpoint lát cắt 3 chưa commit/push: local `.git` chỉ đọc; connector GitHub từ chối create_tree vì yêu cầu approval trong môi trường policy `never`. Nội dung đã kiểm tra vẫn ở working tree, remote PR HEAD không thay đổi; không được gọi là đã xuất bản hoặc đã được CI/review độc lập.

@@ -87,7 +87,7 @@ describe('Special Programme Capability & Routing (P4-074B Section 20)', () => {
         vi.stubGlobal('fetch', fetchMock);
 
         renderApp('/');
-        expect((await screen.findAllByRole('link', { name: 'HĐTN-HN & GDĐP' })).length).toBeGreaterThanOrEqual(1);
+        expect((await screen.findAllByRole('link', { name: 'Hoạt động trải nghiệm và giáo dục địa phương' })).length).toBeGreaterThanOrEqual(1);
       },
     );
 
@@ -103,7 +103,7 @@ describe('Special Programme Capability & Routing (P4-074B Section 20)', () => {
 
       renderApp('/');
       await screen.findByRole('heading', { name: /chào/i });
-      expect(screen.queryByRole('link', { name: 'HĐTN-HN & GDĐP' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'Hoạt động trải nghiệm và giáo dục địa phương' })).not.toBeInTheDocument();
     });
 
     it('blocks /quan-tri/chuong-trinh-dac-thu for TEACHER_BASE-only via CapabilityRoute', async () => {

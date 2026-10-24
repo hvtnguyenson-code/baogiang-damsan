@@ -45,7 +45,7 @@ export const NAVIGATION_REGISTRY: readonly NavigationItem[] = [
     to: '/lich-day',
     label: 'Lịch dạy',
     familyId: 'my-work',
-    actionHint: 'Xem thời khóa biểu và tiến độ giảng dạy tuần hiện tại',
+    actionHint: 'Xem lịch dạy cá nhân, toàn trường và so sánh với đồng nghiệp',
     isVisible: canReadEffectiveSchedule,
   },
   {
@@ -53,7 +53,7 @@ export const NAVIGATION_REGISTRY: readonly NavigationItem[] = [
     label: 'Báo cáo kê khai',
     familyId: 'my-work',
     exactEnd: true,
-    actionHint: 'Lập, nộp và theo dõi báo cáo tiết dạy thực tế cá nhân',
+    actionHint: 'Xem trước, gửi và theo dõi báo cáo kê khai cá nhân',
     isVisible: (c) => canSubmitPersonalReporting(c) || canReadPersonalReporting(c),
   },
 
@@ -76,7 +76,7 @@ export const NAVIGATION_REGISTRY: readonly NavigationItem[] = [
   },
   {
     to: '/quan-tri/thoi-khoa-bieu',
-    label: 'Thời khóa biểu & Khung tiết',
+    label: 'Thời khóa biểu và khung tiết',
     familyId: 'academic-data',
     actionHint: 'Quản lý khung tiết, nhập thời khóa biểu Đam San và phê duyệt phiên bản',
     isVisible: (c) => hasSchoolCapability(c, 'TIMETABLE_MANAGE'),
@@ -98,14 +98,14 @@ export const NAVIGATION_REGISTRY: readonly NavigationItem[] = [
   },
   {
     to: '/quan-tri/phan-cong-to',
-    label: 'Phân công tổ',
+    label: 'Phân công tổ chuyên môn',
     familyId: 'academic-data',
     actionHint: 'Phân công nhân sự giáo viên vào từng tổ chuyên môn',
     isVisible: (c) => hasSchoolCapability(c, 'SUBJECT_GROUP_MANAGE'),
   },
   {
     to: '/quan-tri/phan-cong-mon',
-    label: 'Phân công môn',
+    label: 'Phân công môn học',
     familyId: 'academic-data',
     actionHint: 'Phân công nhân sự giảng dạy các môn học',
     isVisible: (c) => hasSchoolCapability(c, 'SUBJECT_MANAGE'),
@@ -140,7 +140,7 @@ export const NAVIGATION_REGISTRY: readonly NavigationItem[] = [
   },
   {
     to: '/quan-tri/ppct/nhap',
-    label: 'Nhập PPCT',
+    label: 'Nhập phân phối chương trình (PPCT)',
     familyId: 'academic-data',
     actionHint: 'Nhập và quản lý phân phối chương trình môn học',
     isVisible: canManagePpct,
@@ -176,9 +176,9 @@ export const NAVIGATION_REGISTRY: readonly NavigationItem[] = [
   },
   {
     to: '/quan-tri/chuong-trinh-dac-thu',
-    label: 'HĐTN-HN & GDĐP',
+    label: 'Hoạt động trải nghiệm và giáo dục địa phương',
     familyId: 'teaching-operations',
-    actionHint: 'Quản lý kế hoạch hoạt động trải nghiệm và giáo dục địa phương',
+    actionHint: 'Quản lý hoạt động trải nghiệm, hướng nghiệp (HĐTN-HN) và giáo dục địa phương (GDĐP)',
     isVisible: canManageSpecialProgrammes,
   },
 
@@ -210,7 +210,7 @@ export const NAVIGATION_REGISTRY: readonly NavigationItem[] = [
     to: '/quan-tri/quyen',
     label: 'Cấp quyền',
     familyId: 'administration',
-    actionHint: 'Cấp phát và thu hồi quyền hạn trực tiếp cho người dùng',
+    actionHint: 'Cấp và thu hồi quyền theo phạm vi công việc của từng người',
     isVisible: (c) => hasSchoolCapability(c, 'CAPABILITY_GRANT'),
   },
   {
@@ -224,7 +224,7 @@ export const NAVIGATION_REGISTRY: readonly NavigationItem[] = [
     to: '/quan-tri/nhat-ky',
     label: 'Nhật ký',
     familyId: 'administration',
-    actionHint: 'Xem nhật ký kiểm toán các thao tác trên hệ thống',
+    actionHint: 'Tra cứu lịch sử thao tác và người thực hiện trên hệ thống',
     isVisible: (c) => hasSchoolCapability(c, 'AUDIT_VIEW'),
   },
 ];
@@ -255,8 +255,8 @@ export const NAVIGATION_FAMILIES: readonly {
   },
   {
     id: 'reporting-approval',
-    title: 'Báo cáo & phê duyệt',
-    shortTitle: 'Báo cáo & Duyệt',
+    title: 'Báo cáo và phê duyệt',
+    shortTitle: 'Báo cáo và duyệt',
     description: 'Báo cáo được phép xem và hàng đợi phê duyệt chuyên môn',
   },
   {

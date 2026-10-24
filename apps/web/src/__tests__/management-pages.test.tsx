@@ -90,6 +90,28 @@ describe('Phase 01 management pages', () => {
     expect(await screen.findByText(/không có quyền đọc danh sách người dùng/i)).toBeInTheDocument(); expect(screen.getByRole('button', { name: /tạo phân công/i })).toBeDisabled();
   });
 
+  it.each([
+    ['/quan-tri/phan-cong-to', 'SUBJECT_GROUP_MANAGE', 'subject-group-memberships', 'subjectGroupId', 'tổ chuyên môn'],
+    ['/quan-tri/phan-cong-mon', 'SUBJECT_MANAGE', 'staff-subjects', 'subjectId', 'môn học'],
+  ])('uses missing-name copy instead of UUIDs in %s', async (route, capability, endpoint, resourceKey, resourceLabel) => {
+    const assignment = { id: 'hidden-assignment-uuid', userId: 'hidden-user-uuid', [resourceKey]: 'hidden-resource-uuid', validFrom: '2026-01-01T00:00:00.000Z', validUntil: null, isPrimary: true };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) return jsonResponse(auth({ key: capability, scope: 'SCHOOL_WIDE' }));
+      return jsonResponse(page(url.includes(`/${endpoint}`) ? [assignment] : []));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    const { container } = renderApp(route);
+    expect(await screen.findByText('Chưa tra cứu được tên người được phân công')).toBeInTheDocument();
+    expect(screen.getByText(`Chưa tra cứu được tên ${resourceLabel}`)).toBeInTheDocument();
+    expect(container).not.toHaveTextContent(/hidden-user-uuid|hidden-resource-uuid/);
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/api/users'))).toBe(false);
+    await user.click(screen.getByRole('button', { name: 'Sửa hiệu lực' }));
+    expect(screen.getAllByText('Chưa tra cứu được tên người được phân công')).toHaveLength(2);
+    expect(container).not.toHaveTextContent(/hidden-user-uuid|hidden-resource-uuid/);
+  });
+
   it('marks ACTIVITY scope unavailable instead of showing a raw resource field', async () => {
     const definitions = page([{ key: 'GDDP_COORDINATOR', description: 'Điều phối', allowedScopeTypes: ['ACTIVITY'], isSystem: false, isActive: true }]);
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => { const url = String(input); if (url.endsWith('/auth/me')) return jsonResponse(auth({ key: 'CAPABILITY_GRANT', scope: 'SCHOOL_WIDE' }, { key: 'USER_MANAGE', scope: 'SCHOOL_WIDE' })); if (url.includes('/capabilities')) return jsonResponse(definitions); if (url.includes('/users')) return jsonResponse(page([{ id: 'u1', username: 'gv01', status: 'ACTIVE', profile: { displayName: 'Nguyễn Bình' } }])); return jsonResponse(page()); });

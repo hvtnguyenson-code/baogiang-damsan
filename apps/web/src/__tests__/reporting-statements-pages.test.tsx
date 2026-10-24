@@ -2,6 +2,8 @@ import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { jsonResponse, normalAuth, renderApp } from './test-utils';
+import { ApiError } from '../lib/api-client';
+import { reportingStatementsApi } from '../lib/reporting-statements-api';
 
 const YEAR_ID = '11111111-1111-4111-8111-111111111111';
 const CLASS_ID = '22222222-2222-4222-8222-222222222222';
@@ -82,6 +84,60 @@ async function fillAndPreview(user: ReturnType<typeof userEvent.setup>) {
 describe('Reporting Statement product UI', () => {
   afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
+  it.each([
+    [401, 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.', 'Đăng nhập lại'],
+    [403, 'Tài khoản chưa được cấp quyền thực hiện thao tác này.', 'Về trang công việc'],
+    [409, 'Dữ liệu xung đột với bản ghi hiện có hoặc đã thay đổi. Hãy tải lại dữ liệu và kiểm tra trước khi lưu.', 'Tải lại dữ liệu'],
+  ])('localizes preview HTTP %s without exposing server text or submitting', async (status, message, action) => {
+    vi.stubGlobal('fetch', standardWorkspaceFetch(passPreview));
+    const preview = vi.spyOn(reportingStatementsApi, 'preview').mockRejectedValue(new ApiError(Number(status), 'SQL_INTERNAL Forbidden READY', 'hidden-request', 'SERVER_CODE'));
+    const submit = vi.spyOn(reportingStatementsApi, 'submit');
+    const user = userEvent.setup();
+    const { container } = renderApp('/bao-cao-ke-khai');
+    await fillAndPreview(user);
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(screen.getByRole(Number(status) === 409 ? 'button' : 'link', { name: action })).toBeInTheDocument();
+    expect(container).not.toHaveTextContent(/SQL_INTERNAL|Forbidden|READY|SERVER_CODE|hidden-request/);
+    expect(screen.getByLabelText('Từ ngày')).toHaveValue('2026-08-01');
+    expect(preview).toHaveBeenCalledTimes(1);
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  it('keeps submit conflict feedback visible after the stale preview is cleared', async () => {
+    vi.stubGlobal('fetch', standardWorkspaceFetch(passPreview));
+    const submit = vi.spyOn(reportingStatementsApi, 'submit').mockRejectedValue(new ApiError(409, 'CAS_MISMATCH hidden-token'));
+    const user = userEvent.setup();
+    const { container } = renderApp('/bao-cao-ke-khai');
+    await fillAndPreview(user);
+    await user.click(await screen.findByRole('button', { name: 'Gửi báo cáo' }));
+    expect(await screen.findByText('Hãy xem trước lại báo cáo trước khi tạo yêu cầu mới.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Tải lại dữ liệu' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Gửi báo cáo' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Thử gửi lại' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Từ ngày')).toHaveValue('2026-08-01');
+    expect(submit).toHaveBeenCalledTimes(1);
+    expect(container).not.toHaveTextContent(/CAS_MISMATCH|hidden-token/);
+  });
+
+  it('keeps an uncertain 500 decision safe and retries the identical command only on request', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => String(input).endsWith('/auth/me')
+      ? jsonResponse(authWith({ key: 'REPORTING_STATEMENT_READ', scope: 'SCHOOL_WIDE' }))
+      : String(input).includes('workspace-context') ? jsonResponse(workspaceSelected) : jsonResponse(pendingDetail)));
+    const approve = vi.spyOn(reportingStatementsApi, 'approve').mockRejectedValue(new ApiError(500, 'SQL_INTERNAL SERVER_CODE'));
+    const user = userEvent.setup();
+    const { container } = renderApp(`/bao-cao-ke-khai/${REVISION_ID}`);
+    await user.click(await screen.findByRole('button', { name: 'Phê duyệt báo cáo' }));
+    await user.click(screen.getByRole('button', { name: 'Xác nhận phê duyệt' }));
+    const retry = await screen.findByRole('button', { name: 'Thử lại cùng yêu cầu' });
+    expect(approve).toHaveBeenCalledTimes(1);
+    expect(container).not.toHaveTextContent(/SQL_INTERNAL|SERVER_CODE/);
+    expect(screen.queryByRole('button', { name: 'Phê duyệt báo cáo' })).not.toBeInTheDocument();
+    await user.click(retry);
+    await waitFor(() => expect(approve).toHaveBeenCalledTimes(2));
+    expect(approve.mock.calls[1]).toEqual(approve.mock.calls[0]);
+    expect(screen.queryByText('Đã ghi nhận quyết định')).not.toBeInTheDocument();
+  });
+
   it('shows required date errors beside native date fields before preview', async () => {
     vi.stubGlobal('fetch', standardWorkspaceFetch(passPreview));
     const user = userEvent.setup();
@@ -122,7 +178,7 @@ describe('Reporting Statement product UI', () => {
     const user = userEvent.setup();
     const { container } = renderApp('/bao-cao-ke-khai');
     await fillAndPreview(user);
-    expect(await screen.findByText('Dữ liệu phân phối cần được kiểm tra.')).toBeInTheDocument();
+    expect(await screen.findByText('Chưa thể phân bổ phân phối chương trình. Hãy liên hệ người phụ trách chuyên môn để kiểm tra dữ liệu.')).toBeInTheDocument();
     expect(container).not.toHaveTextContent('UPSTREAM_ALLOCATION_BLOCKED');
     expect(container).not.toHaveTextContent(CLASS_ID);
     expect(screen.getByRole('button', { name: 'Gửi báo cáo' })).toBeDisabled();
@@ -296,7 +352,7 @@ describe('Reporting Statement product UI', () => {
     const { container } = renderApp(`/bao-cao-ke-khai/${REVISION_ID}`);
     await user.click(await screen.findByRole('button', { name: 'Phê duyệt báo cáo' }));
     await user.click(screen.getByRole('button', { name: 'Xác nhận phê duyệt' }));
-    expect(await screen.findByText('Bạn không còn quyền thực hiện quyết định này.')).toBeInTheDocument();
+    expect(await screen.findByText('Tài khoản chưa được cấp quyền thực hiện thao tác này.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Thử lại cùng yêu cầu' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Xác nhận phê duyệt' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Phê duyệt báo cáo' })).toBeInTheDocument();

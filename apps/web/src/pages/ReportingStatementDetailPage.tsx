@@ -10,12 +10,12 @@ import {
   ReportingEvidenceTable,
 } from '../components/reporting-statements/ReportingPresentation';
 import { Button } from '../components/ui/button';
-import { InlineAlert } from '../components/ui/feedback';
+import { ErrorFeedback, InlineAlert } from '../components/ui/feedback';
 import { PageHeader, PageLoading, QueryFailure } from '../components/ui/management';
 import { ApiError } from '../lib/api-client';
 import { canReadAccessibleReporting, canReadPersonalReporting, canReviewReportingStatements } from '../lib/capabilities';
 import { createReportingStatementRequestKey, reportingStatementsApi } from '../lib/reporting-statements-api';
-import { displayReference, formatCivilDate, formatInstant, lifecycleLabels, makeReportingLabels } from '../lib/reporting-statement-presentation';
+import { displayReference, formatCivilDate, formatInstant, lifecycleLabel, makeReportingLabels, reportingFindingLabel } from '../lib/reporting-statement-presentation';
 
 type DecisionCommand = {
   revisionId: string;
@@ -26,15 +26,6 @@ type DecisionCommand = {
 type DetailRefreshState = 'idle' | 'success-loading' | 'conflict-loading' | 'conflict-ready';
 
 const actionLabels = { APPROVE: 'Phê duyệt', REJECT: 'Từ chối' } as const;
-
-function deterministicDecisionError(error: unknown): string | null {
-  if (!(error instanceof ApiError) || error.statusCode === 0 || error.statusCode === 409 || error.statusCode >= 500) return null;
-  if (error.statusCode === 400) return 'Yêu cầu quyết định không còn hợp lệ. Hãy kiểm tra trạng thái báo cáo.';
-  if (error.statusCode === 401) return 'Phiên đăng nhập không còn hiệu lực. Hãy đăng nhập lại.';
-  if (error.statusCode === 403) return 'Bạn không còn quyền thực hiện quyết định này.';
-  if (error.statusCode === 404) return 'Báo cáo không còn khả dụng.';
-  return 'Không thể thực hiện quyết định này. Hãy kiểm tra lại trạng thái báo cáo.';
-}
 
 export function ReportingStatementDetailPage() {
   const { revisionId = '' } = useParams();
@@ -115,7 +106,7 @@ export function ReportingStatementDetailPage() {
     : Boolean(decisionMutation.error);
   const yearLabel = context ? `${context.name} (${context.code})` : 'Không còn nhãn năm học trong danh mục hiện tại';
   const commandUncertain = uncertainDecision && pendingCommand !== null;
-  const deterministicError = deterministicDecisionError(decisionMutation.error);
+  const deterministicError = decisionMutation.error instanceof ApiError && decisionMutation.error.statusCode > 0 && decisionMutation.error.statusCode < 500 && decisionMutation.error.statusCode !== 409;
   const interactionLocked = refreshState === 'success-loading' || refreshState === 'conflict-loading' || pendingCommand !== null || decisionMutation.isPending || commandUncertain;
   const showFreshActions = !interactionLocked;
   const capabilities = auth.auth?.capabilities ?? [];
@@ -166,7 +157,7 @@ export function ReportingStatementDetailPage() {
       {detail.sections.map((section) => <article className="reporting-evidence-section" key={`${section.schoolClassId}-${section.subjectId}`}>
         <header><h3>{displayReference(section.schoolClassId, labels.classes, 'class')} · {displayReference(section.subjectId, labels.subjects, 'subject')}</h3><p>Bản đã lưu tại thời điểm gửi; nhãn danh mục chỉ hỗ trợ hiển thị hiện tại.</p></header>
         {section.counts && <ReportingCountsView counts={section.counts} />}
-        {section.findings.length > 0 && <InlineAlert title="Bằng chứng cần lưu ý"><ul>{section.findings.map((finding, index) => <li key={index}>{finding.message}</li>)}</ul></InlineAlert>}
+        {section.findings.length > 0 && <InlineAlert title="Bằng chứng cần lưu ý"><ul>{section.findings.map((finding, index) => <li key={index}>{reportingFindingLabel(finding.code)}</li>)}</ul></InlineAlert>}
         <ReportingEvidenceTable details={section.details} />
       </article>)}
     </section>
@@ -174,7 +165,7 @@ export function ReportingStatementDetailPage() {
     <section className="ledger-section" aria-labelledby="history-heading">
       <h2 id="history-heading">Lịch sử báo cáo</h2>
       <ol className="reporting-history">{detail.history.map((event) => <li key={event.id}>
-        <div><strong>{lifecycleLabels[event.eventType]}</strong><span className="technical-value">{formatInstant(event.createdAt)}</span></div>
+        <div><strong>{lifecycleLabel(event.eventType)}</strong><span className="technical-value">{formatInstant(event.createdAt)}</span></div>
         <p>{event.actorDisplayNameSnapshot ?? 'Tác nhân hệ thống không còn tên hiển thị'}{event.actorStaffCodeSnapshot ? ` · ${event.actorStaffCodeSnapshot}` : ''}</p>
       </li>)}</ol>
     </section>
@@ -182,12 +173,12 @@ export function ReportingStatementDetailPage() {
     {refreshState === 'conflict-loading' && <InlineAlert title="Báo cáo đang được cập nhật" tone="warning">Đang tải trạng thái mới của báo cáo. Trong lúc này chưa thể thực hiện thêm quyết định.</InlineAlert>}
     {refreshState === 'conflict-ready' && <InlineAlert title="Báo cáo đã có trạng thái mới" tone="warning">Nội dung vừa được tải lại. Hãy đọc trạng thái hiện tại trước khi thực hiện một quyết định mới.</InlineAlert>}
     {decisionSuccess && <InlineAlert title="Đã ghi nhận quyết định" tone="success">{decisionSuccess}</InlineAlert>}
-    {deterministicError && <InlineAlert title="Không thể ghi nhận quyết định">{deterministicError}</InlineAlert>}
+    {deterministicError && <ErrorFeedback title="Không thể ghi nhận quyết định" error={decisionMutation.error} />}
 
     {(detail.allowedActions.length > 0 || commandUncertain || refreshState === 'conflict-loading') && <section className="reporting-decision" aria-labelledby="decision-heading">
       <div className="reporting-section-heading"><div className="margin-rail" aria-hidden="true" /><div><h2 id="decision-heading">Quyết định sau khi đọc bằng chứng</h2><p>Quyết định dùng trạng thái hiện tại của báo cáo. Nếu có thay đổi đồng thời, hệ thống sẽ yêu cầu bạn xem lại.</p></div></div>
       {commandUncertain && <InlineAlert title="Chưa xác định được kết quả quyết định">
-        <p>{decisionMutation.error instanceof ApiError ? decisionMutation.error.message : 'Kết nối đang gián đoạn.'}</p>
+        <p>Kết nối bị gián đoạn hoặc hệ thống chưa trả về kết quả. Bạn có thể thử lại cùng yêu cầu để kiểm tra, tránh gửi một quyết định mới.</p>
         {uncertainDecision && pendingCommand && <Button type="button" variant="secondary" loading={decisionMutation.isPending} onClick={() => decisionMutation.mutate(pendingCommand)}>Thử lại cùng yêu cầu</Button>}
       </InlineAlert>}
       {showFreshActions && !confirmAction && <div className="form-actions">
