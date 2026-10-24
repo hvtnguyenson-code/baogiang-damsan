@@ -1,3 +1,5 @@
+import { WorkflowError } from '../components/ui/workflow-error';
+import { transportError } from '../lib/teaching-workflow-presentation';
 import type { CivilDateString } from '@baogiang/contracts';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -24,7 +26,7 @@ export function TeachingOperationsPage() {
   const [civilDate, setCivilDate] = useState('');
   const [items, setItems] = useState<OperationalSourceOccurrence[]>([]);
   const [status, setStatus] = useState<'UNVERIFIED' | 'LOADING' | 'PASS' | 'BLOCKED'>('UNVERIFIED');
-  const [error, setError] = useState('');
+  const [error, setError] = useState<Error | string>('');
   const [reason, setReason] = useState('');
   const [loadingContext, setLoadingContext] = useState(true);
   const [previewScope, setPreviewScope] = useState<'SCHOOL_WIDE' | 'GRADE' | 'CLASS'>('SCHOOL_WIDE');
@@ -47,8 +49,8 @@ export function TeachingOperationsPage() {
       if (!data.permissions.teachingSchoolWide && !data.permissions.calendarSchoolWide) {
         setSubjectId(data.permissions.teachingSubjectIds[0] ?? '');
       }
-    }).catch(() => {
-      if (active) setError('Không thể tải phạm vi điều hành. Kiểm tra lại quyền hoặc kết nối.');
+    }).catch((caught) => {
+      if (active) setError(transportError(caught));
     }).finally(() => {
       if (active) setLoadingContext(false);
     });
@@ -87,10 +89,10 @@ export function TeachingOperationsPage() {
       setStatus(response.status);
       if (response.status === 'PASS') setItems(response.items);
       else setReason(response.reason);
-    } catch {
+    } catch (caught) {
       if (current !== requestId.current) return;
       setStatus('UNVERIFIED');
-      setError('Không thể xác minh nguồn tiết học. Chưa có dữ liệu nào đủ điều kiện thao tác.');
+      setError(transportError(caught));
     }
   }
 
@@ -140,7 +142,7 @@ export function TeachingOperationsPage() {
         Xác minh tiết học từ nguồn thời khóa biểu và lịch năm học có hiệu lực. Mọi thay đổi chỉ được thực hiện sau khi kiểm tra tác động.
       </PageHeader>
       {loadingContext && <p role="status">Đang tải phạm vi được phân quyền…</p>}
-      {error && <InlineAlert title="Chưa thể tiếp tục">{error}</InlineAlert>}
+      <WorkflowError error={error} />
       {context && (
         <>
           <section className="management-panel">
@@ -176,11 +178,11 @@ export function TeachingOperationsPage() {
                     <td>{item.subjectName ?? 'Chưa có tên môn'}</td>
                     <td>{item.responsibleTeacherName ?? 'Chưa có tên giáo viên'}</td>
                     <td>{item.slot.session === 'MORNING' ? 'Buổi sáng' : 'Buổi chiều'} · {item.slot.startTime}–{item.slot.endTime}</td>
-                    <td>{kindLabel[item.effectiveKind]}{!item.selectable && ' · Không thể chọn'}</td>
+                    <td>{kindLabel[item.effectiveKind] ?? 'Chưa xác định trạng thái tiết học'}{!item.selectable && ' · Không thể chọn'}</td>
                   </tr>
                 ))}
               </DataTable>
-              <p>Đây chỉ là kết quả xác minh nguồn, chưa phải bản xem trước xung đột, PPCT, định mức hoặc nợ tiết. Chức năng xác nhận thay đổi chưa mở.</p>
+              <p>Đây chỉ là kết quả xác minh nguồn, chưa phải bản xem trước xung đột, phân phối chương trình (PPCT), định mức hoặc nợ tiết. Chức năng xác nhận thay đổi chưa mở.</p>
             </section>
           )}
 
@@ -253,7 +255,7 @@ export function TeachingOperationsPage() {
           )}
           {status === 'PASS' && civilDate && <DispositionPreviewPanel context={context} yearId={yearId} civilDate={civilDate as CivilDateString} items={items} />}
           <OperationalHistoryPanel context={context} yearId={yearId} subjectId={subjectId} />
-          <p><Link to="/quan-tri/lich-day-bu">Đi đến lịch dạy bù đã có</Link></p>
+          <p><Link to="/quan-tri/lich-day-bu">Quản lý lịch dạy bù</Link></p>
         </>
       )}
     </div>

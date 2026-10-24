@@ -12,7 +12,7 @@ Exact current `main`, branch HEAD and divergence must always be read directly fr
 
 ## P5-058 — IN_PROGRESS, bounded Vietnamese frontend checkpoints
 
-User-prioritized P5-058 (T57) remains IN_PROGRESS on `feat/p5-058-frontend-vietnamese-ux`, PR #249 DRAFT. Direct remote audit on 2026-10-24: canonical main `ea80f078c8a1297c562c8f4319540e3417d6e651`, session starting HEAD `8968d50909cc03ca677fe5416dce96bdc517dd0d` (4 ahead / 0 behind main). Dependencies P5-050/P5-052/P5-053 are CLOSED. Slices 1–2 cover shared HTTP feedback, timetable import deeplink and three import/readiness screens. Slice 3 inventories all 35 page modules with explicit review depth; seven additional modules and the actual 25-entry navigation registry were read, with scoped reporting/Home/temporal-assignment copy, safe finding mappings, visible submit-conflict feedback and null workload presentation. Other 25 modules still require full label audit; all-product persona acceptance remains open. Baseline HEAD CI run `40068828206` SUCCESS, independently read from GitHub; the old dependency-gate failure is historical after security PR #250/main integration, not evidence for these uncommitted changes. Local slice evidence and Git write limitations: `docs/phase-reports/P5-058-FIRST-SLICE-REPORT.md`, inventory `docs/phase-reports/P5-058-PAGE-LABEL-AUDIT.md`. No full localization, independent review, closure, merge or deploy claim.
+P5-058 (T57) tiếp tục IN_PROGRESS trên `feat/p5-058-frontend-vietnamese-ux`, PR #249 DRAFT. Main xác minh trực tiếp Git/GitHub ngày 24/10/2026: `ea80f078c8a1297c562c8f4319540e3417d6e651`; HEAD bắt đầu lát cắt 4 `8ae0e9ebed0c1a880a0023d804008b2f36f7d6d0`, CI #832 (`40079434301`) SUCCESS. Dependencies P5-050/P5-052/P5-053 CLOSED. Lát cắt 1–3 đã có trên HEAD baseline: feedback HTTP/deeplink, ba trang nhập/readiness, báo cáo/Home/phân công và kiểm kê 35 module cùng 25 mục điều hướng thực tế. Lát cắt 4 đọc thêm năm trang giáo viên và chuẩn hóa các đường lỗi/enum/finding/thiếu tên cùng trạng thái tải/rỗng. Còn 20 module cần audit nhãn toàn file, các đường động/persona vẫn phải nghiệm thu theo `docs/phase-reports/P5-058-PAGE-LABEL-AUDIT.md`. Chứng cứ local và giới hạn commit/push: `docs/phase-reports/P5-058-SLICE-4-REPORT.md`. CI baseline không chứng minh working tree mới; chưa có independent review hoặc nghiệm thu toàn task, chưa merge/deploy/đóng task.
 
 ## P5-053 — CLOSED by SYNC-P5-053 (Timetable & Time-Slot Administration Workspace)
 
@@ -197,3 +197,12 @@ Current canonical authority surfaces:
 5. `MAJOR-TASK-DOCUMENTATION-SYNC-PROTOCOL.md`.
 
 Applicable accepted architecture/decision authorities include ADR-044 through ADR-058 as registered by their parent tasks. Exact task/closure state follows the canonical task register and this current-status snapshot; exact Git state follows Git/GitHub directly.
+
+
+### P5-058 — Cập nhật lát cắt 4 (24/10/2026)
+
+Tiếp tục trên `feat/p5-058-frontend-vietnamese-ux`, PR #249 DRAFT, HEAD bắt đầu `8ae0e9ebed0c1a880a0023d804008b2f36f7d6d0`; main xác minh trực tiếp `ea80f078c8a1297c562c8f4319540e3417d6e651`; GitHub CI baseline #832 (`40079434301`) SUCCESS. Lát cắt 3 đã có trên baseline này; đoạn ghi “chưa commit/push” trước đây chỉ là lịch sử phiên trước.
+
+Lát cắt 4 đã đọc toàn file EffectiveSchedule, TeachingOperations, MakeupScheduling, HistoricalTeaching và Profile; xử lý lỗi HTTP, nhãn enum/finding lịch sử, UUID thay tên, Telegram UNKNOWN/FAILED, và phân biệt tải/lỗi/rỗng của lịch dạy bù. Không đổi route/API/payload/auth/RBAC/read model hoặc trạng thái nghiệp vụ. Bổ sung unit và Playwright; phạm vi từng đường đã review và còn mở ghi tại `docs/phase-reports/P5-058-PAGE-LABEL-AUDIT.md`, kết quả kiểm tra/trạng thái xuất bản tại `docs/phase-reports/P5-058-SLICE-4-REPORT.md`.
+
+Giữ P5-058 IN_PROGRESS: 20 module còn cần audit toàn file, năm trang mới vẫn cần nghiệm thu dữ liệu động/persona đã liệt kê. Không chuyển task sang IN_REVIEW vì đây là checkpoint một phần trên PR draft; chưa đủ A/C/D, CI cho thay đổi mới hoặc independent review. Chưa merge/deploy/đóng task; không thay authority baseline/ADR hoặc claim nghiệp vụ của T51/T52.

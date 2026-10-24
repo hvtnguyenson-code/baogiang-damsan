@@ -12,21 +12,17 @@ import { Button } from '../components/ui/button';
 import { InlineAlert } from '../components/ui/feedback';
 import { DataTable, EmptyState, PageHeader, PageLoading, SelectField, StatusText, TextareaField } from '../components/ui/management';
 import { academicYearsApi } from '../lib/academic-structure-api';
-import { ApiError } from '../lib/api-client';
+import { WorkflowError } from '../components/ui/workflow-error';
+import { transportError } from '../lib/teaching-workflow-presentation';
 import { hasSchoolCapability } from '../lib/capabilities';
 import { makeupSchedulesApi } from '../lib/makeup-schedules-api';
 
-function errorText(error: unknown): string {
-  if (error instanceof ApiError) {
-    return error.serverError ? `${error.serverError}: ${error.message}` : error.message;
-  }
-  return error instanceof Error ? error.message : 'Yêu cầu không thực hiện được.';
-}
 
 function dispositionTypeLabel(type: string): string {
   if (type === 'ABSENCE_NO_REPLACEMENT') return 'Vắng không người dạy thay';
   if (type === 'DIFFERENT_SUBJECT_SUPERVISION') return 'Quản lớp môn khác';
-  return type;
+  if (type === 'Đảo lịch (Thay thế)') return 'Thay thế lịch đã hoàn tác';
+  return 'Chưa xác định nguyên nhân';
 }
 
 type SelectedCandidateState = {
@@ -62,9 +58,10 @@ export function MakeupSchedulingPage() {
   const [candidates, setCandidates] = useState<MakeupTeachingCandidateRecord[]>([]);
   const [candidatesStatus, setCandidatesStatus] = useState<MakeupTeachingCandidateListStatus | 'UNVERIFIED' | 'LOADING' | 'ERROR'>('UNVERIFIED');
   const [candidatesBlockedFindings, setCandidatesBlockedFindings] = useState<string[]>([]);
-  const [candidateError, setCandidateError] = useState('');
+  const [candidateError, setCandidateError] = useState<Error | string>('');
   const [schedules, setSchedules] = useState<MakeupTeachingScheduleRecord[]>([]);
-  const [scheduleError, setScheduleError] = useState('');
+  const [loadingSchedules, setLoadingSchedules] = useState(false);
+  const [scheduleError, setScheduleError] = useState<Error | string>('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'REVERSED'>('ALL');
 
   const [knownSubjects, setKnownSubjects] = useState<Array<{ id: string; name: string }>>([]);
@@ -84,7 +81,7 @@ export function MakeupSchedulingPage() {
   const [reversalReason, setReversalReason] = useState('');
 
   const [busy, setBusy] = useState<'init' | 'loading' | 'submitting' | 'reversing' | null>('init');
-  const [error, setError] = useState('');
+  const [error, setError] = useState<Error | string>('');
   const [success, setSuccess] = useState('');
 
   const loadSeqRef = useRef(0);
@@ -113,7 +110,7 @@ export function MakeupSchedulingPage() {
         }
       })
       .catch((caught) => {
-        if (active) setError(errorText(caught));
+        if (active) setError(transportError(caught));
       })
       .finally(() => {
         if (active) setBusy(null);
@@ -135,6 +132,7 @@ export function MakeupSchedulingPage() {
   async function loadData(yearId: string, subjectId?: string) {
     const currentSeq = ++loadSeqRef.current;
     setBusy('loading');
+    setLoadingSchedules(true);
     setError('');
     setCandidateError('');
     setScheduleError('');
@@ -188,7 +186,7 @@ export function MakeupSchedulingPage() {
         setSelectedCandidate(null);
         setReplacesSchedule(null);
         setTargetOptions(null);
-        setCandidateError(errorText(caught));
+        setCandidateError(transportError(caught));
       });
 
     const schedulePromise = makeupSchedulesApi.listSchedules(queryParams)
@@ -199,13 +197,14 @@ export function MakeupSchedulingPage() {
       .catch((caught) => {
         if (loadSeqRef.current !== currentSeq) return;
         setSchedules([]);
-        setScheduleError(errorText(caught));
+        setScheduleError(transportError(caught));
       });
 
     try {
       await Promise.allSettled([candidatePromise, schedulePromise]);
     } finally {
       if (loadSeqRef.current === currentSeq) {
+        setLoadingSchedules(false);
         setBusy(null);
       }
     }
@@ -241,7 +240,7 @@ export function MakeupSchedulingPage() {
       .catch((err) => {
         if (!active) return;
         setTargetOptions(null);
-        setError(errorText(err));
+        setError(transportError(err));
       })
       .finally(() => {
         if (active) setLoadingOptions(false);
@@ -255,9 +254,9 @@ export function MakeupSchedulingPage() {
     setSelectedCandidate({
       sourceNormalOccurrenceKey: candidate.sourceNormalOccurrenceKey,
       sourceCivilDate: candidate.originalCivilDate,
-      schoolClassName: candidate.schoolClassName ?? candidate.schoolClassId,
-      subjectName: candidate.subjectName ?? candidate.subjectId,
-      responsibleTeacherName: candidate.responsibleTeacherName ?? candidate.responsibleTeacherUserId,
+      schoolClassName: candidate.schoolClassName ?? 'Chưa có tên lớp',
+      subjectName: candidate.subjectName ?? 'Chưa có tên môn',
+      responsibleTeacherName: candidate.responsibleTeacherName ?? 'Chưa có tên giáo viên',
       dispositionType: candidate.dispositionType,
     });
     setReplacesSchedule(null);
@@ -278,9 +277,9 @@ export function MakeupSchedulingPage() {
     setSelectedCandidate({
       sourceNormalOccurrenceKey: sourceKey,
       sourceCivilDate: origDate,
-      schoolClassName: schedule.schoolClassId,
-      subjectName: schedule.subjectId,
-      responsibleTeacherName: schedule.responsibleTeacherUserId,
+      schoolClassName: candidates.find((c) => c.schoolClassId === schedule.schoolClassId)?.schoolClassName ?? 'Chưa có tên lớp',
+      subjectName: knownSubjects.find((subject) => subject.id === schedule.subjectId)?.name ?? 'Chưa có tên môn',
+      responsibleTeacherName: candidates.find((c) => c.responsibleTeacherUserId === schedule.responsibleTeacherUserId)?.responsibleTeacherName ?? 'Chưa có tên giáo viên',
       dispositionType: 'Đảo lịch (Thay thế)',
     });
     setTargetCivilDate('');
@@ -335,11 +334,11 @@ export function MakeupSchedulingPage() {
         requestKey: `mkp-${crypto.randomUUID()}`,
       });
 
-      setSuccess(`Lập lịch dạy bù thành công (${result.outcome === 'IDEMPOTENT_REPLAY' ? 'Ghi nhận lại' : 'Tạo mới'}). Mã lịch: ${result.record.id}`);
+      setSuccess(`Lập lịch dạy bù thành công (${result.outcome === 'IDEMPOTENT_REPLAY' ? 'Ghi nhận lại' : 'Tạo mới'}). Hãy kiểm tra lịch vừa lập trong danh sách bên dưới.`);
       handleCancelSelection();
       await loadData(academicYearId, selectedSubjectId);
     } catch (caught) {
-      setError(errorText(caught));
+      setError(transportError(caught));
     } finally {
       setBusy(null);
     }
@@ -356,18 +355,18 @@ export function MakeupSchedulingPage() {
     setSuccess('');
 
     try {
-      const result = await makeupSchedulesApi.reverseSchedule(schedule.id, {
+      await makeupSchedulesApi.reverseSchedule(schedule.id, {
         expectedUpdatedAt: schedule.updatedAt,
         reversalReason: reversalReason.trim(),
         requestKey: `rev-${crypto.randomUUID()}`,
       });
 
-      setSuccess(`Đã đảo ngược lịch dạy bù (${result.record.id}).`);
+      setSuccess('Đã hoàn tác lịch dạy bù.');
       setReversalScheduleId(null);
       setReversalReason('');
       await loadData(academicYearId, selectedSubjectId);
     } catch (caught) {
-      setError(errorText(caught));
+      setError(transportError(caught));
     } finally {
       setBusy(null);
     }
@@ -380,7 +379,7 @@ export function MakeupSchedulingPage() {
           Lập và quản lý lịch dạy bù cho các nghĩa vụ nợ tiết hợp lệ.
         </PageHeader>
         <InlineAlert title="Từ chối truy cập">
-          Tài khoản này không có quyền quản lý vận hành giảng dạy (TEACHING_OPERATION_MANAGE).
+          Tài khoản này không có quyền quản lý vận hành giảng dạy.
         </InlineAlert>
       </div>
     );
@@ -436,7 +435,7 @@ export function MakeupSchedulingPage() {
             >
               {subjectGrants.map((g) => {
                 const sub = knownSubjects.find((s) => s.id === g.resourceId);
-                const label = sub?.name ?? `Môn học (${g.resourceId?.slice(0, 8)})`;
+                const label = sub?.name ?? `Môn được phân công ${subjectGrants.indexOf(g) + 1} (chưa có tên)`;
                 return <option key={g.resourceId} value={g.resourceId}>{label}</option>;
               })}
             </SelectField>
@@ -445,7 +444,7 @@ export function MakeupSchedulingPage() {
               <label className="form-field__label" htmlFor="single-subject-display">Môn học phụ trách</label>
               <div id="single-subject-display" className="form-field__input" style={{ display: 'flex', alignItems: 'center', background: 'var(--mist-50)' }}>
                 <strong>
-                  {knownSubjects.find((s) => s.id === subjectGrants[0]?.resourceId)?.name ?? `Môn học (${subjectGrants[0]?.resourceId?.slice(0, 8)})`}
+                  {knownSubjects.find((s) => s.id === subjectGrants[0]?.resourceId)?.name ?? 'Môn được phân công (chưa có tên)'}
                 </strong>
               </div>
             </div>
@@ -464,14 +463,14 @@ export function MakeupSchedulingPage() {
         </div>
       </section>
 
-      {error && <InlineAlert title="Lỗi thao tác">{error}</InlineAlert>}
+      <WorkflowError error={error} title="Chưa thể hoàn tất thao tác" />
       {success && <InlineAlert title="Thành công" tone="success">{success}</InlineAlert>}
       {busy === 'init' && <PageLoading />}
 
       {/* Selected candidate form */}
       {selectedCandidate && candidatesStatus === 'PASS' && (
         <section className="form-section" style={{ marginTop: '24px' }}>
-          <legend>{replacesSchedule ? `Tạo lịch thay thế cho lịch đã đảo (${replacesSchedule.id})` : 'Thiết lập lịch dạy bù'}</legend>
+          <legend>{replacesSchedule ? 'Tạo lịch thay thế cho lịch đã hoàn tác' : 'Thiết lập lịch dạy bù'}</legend>
           <div style={{ marginBottom: '16px', background: 'var(--mist-50)', padding: '12px', borderRadius: '4px' }}>
             <p><strong>Lớp:</strong> {selectedCandidate.schoolClassName} | <strong>Môn:</strong> {selectedCandidate.subjectName}</p>
             <p><strong>Ngày gốc:</strong> {selectedCandidate.sourceCivilDate} | <strong>Giáo viên chịu trách nhiệm:</strong> {selectedCandidate.responsibleTeacherName}</p>
@@ -494,14 +493,14 @@ export function MakeupSchedulingPage() {
 
               {loadingOptions ? (
                 <div className="form-field">
-                  <label className="form-field__label">Tiết học mục tiêu</label>
+                  <label className="form-field__label">Tiết dạy bù dự kiến</label>
                   <div className="form-field__input" style={{ display: 'flex', alignItems: 'center' }}>
                     <em>Đang tải tiết học hợp lệ...</em>
                   </div>
                 </div>
               ) : targetOptions && targetOptions.slots.length > 0 ? (
                 <SelectField
-                  label="Tiết học mục tiêu"
+                  label="Tiết dạy bù dự kiến"
                   id="target-slot"
                   value={targetTimeSlotDefinitionId}
                   onChange={(e) => setTargetTimeSlotDefinitionId(e.target.value)}
@@ -516,7 +515,7 @@ export function MakeupSchedulingPage() {
                 </SelectField>
               ) : (
                 <div className="form-field">
-                  <label className="form-field__label">Tiết học mục tiêu</label>
+                  <label className="form-field__label">Tiết dạy bù dự kiến</label>
                   <div className="form-field__input" style={{ display: 'flex', alignItems: 'center', color: 'var(--text-secondary)' }}>
                     {targetCivilDate ? 'Không có tiết học cho phép dạy bù vào ngày này' : 'Vui lòng chọn ngày trước'}
                   </div>
@@ -565,7 +564,7 @@ export function MakeupSchedulingPage() {
               onChange={(e) => setNote(e.target.value)}
             />
 
-            <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '16px' }}>
               <Button type="submit" disabled={busy === 'submitting' || loadingOptions || !targetTimeSlotDefinitionId || !scheduledTeacherUserId}>
                 {busy === 'submitting' ? 'Đang tạo lịch...' : 'Xác nhận tạo lịch dạy bù'}
               </Button>
@@ -584,24 +583,24 @@ export function MakeupSchedulingPage() {
         </div>
 
         {candidateError ? (
-          <InlineAlert title="Lỗi tải danh sách nghĩa vụ dạy bù">{candidateError}</InlineAlert>
+          <WorkflowError error={candidateError} title="Chưa tải được các tiết cần dạy bù" />
         ) : candidatesStatus === 'BLOCKED' ? (
           <InlineAlert title="Dữ liệu nguồn bị chặn" tone="warning">
             Chưa thể xác định đầy đủ nghĩa vụ dạy bù do dữ liệu nguồn đang bị chặn.
             {candidatesBlockedFindings.length > 0 && (
               <div style={{ marginTop: '8px', fontSize: '0.85rem' }}>
-                Mã kiểm tra: {candidatesBlockedFindings.join(', ')}
+                Có {candidatesBlockedFindings.length} vấn đề cần người phụ trách kiểm tra dữ liệu nguồn trước khi lập lịch.
               </div>
             )}
           </InlineAlert>
         ) : candidatesStatus === 'LOADING' || candidatesStatus === 'UNVERIFIED' ? (
-          <div style={{ padding: '16px 0', color: 'var(--text-secondary)' }}>
+          <div role="status" style={{ padding: '16px 0', color: 'var(--text-secondary)' }}>
             Đang tải dữ liệu nghĩa vụ dạy bù...
           </div>
         ) : candidates.length === 0 ? (
           <EmptyState
             title="Không có nghĩa vụ nợ tiết hợp lệ"
-            message="Hiện tại không có tiết dạy nào thuộc diện nợ tiết đã xác nhận (ABSENCE_NO_REPLACEMENT / DIFFERENT_SUBJECT_SUPERVISION) trong phạm vi quản lý."
+            message="Trong phạm vi quản lý đang chọn, chưa có tiết đủ điều kiện dạy bù do giáo viên vắng không người thay hoặc chỉ có người giám sát khác môn."
           />
         ) : (
           <DataTable
@@ -611,9 +610,9 @@ export function MakeupSchedulingPage() {
             {candidates.map((c) => (
               <tr key={c.sourceNormalOccurrenceKey}>
                 <td>{c.originalCivilDate}</td>
-                <td>{c.schoolClassName ?? c.schoolClassId}</td>
-                <td>{c.subjectName ?? c.subjectId}</td>
-                <td>{c.responsibleTeacherName ?? c.responsibleTeacherUserId}</td>
+                <td>{c.schoolClassName ?? 'Chưa có tên lớp'}</td>
+                <td>{c.subjectName ?? 'Chưa có tên môn'}</td>
+                <td>{c.responsibleTeacherName ?? 'Chưa có tên giáo viên'}</td>
                 <td>{dispositionTypeLabel(c.dispositionType)}</td>
                 <td>{c.ppctItemName ? `Tiết ${c.ppctItemSequence ?? ''} (${c.ppctItemName})` : '—'}</td>
                 <td>
@@ -644,7 +643,7 @@ export function MakeupSchedulingPage() {
       <section style={{ marginTop: '48px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
           <h2>Lịch dạy bù đã thiết lập ({filteredSchedules.length})</h2>
-          <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
             <Button
               type="button"
               variant={statusFilter === 'ALL' ? 'primary' : 'secondary'}
@@ -671,11 +670,11 @@ export function MakeupSchedulingPage() {
 
         {scheduleError && (
           <div style={{ marginBottom: '16px' }}>
-            <InlineAlert title="Lỗi tải danh sách lịch dạy bù">{scheduleError}</InlineAlert>
+            <WorkflowError error={scheduleError} title="Chưa tải được lịch dạy bù" />
           </div>
         )}
 
-        {filteredSchedules.length === 0 ? (
+        {busy === 'init' || loadingSchedules ? <p role="status">Đang tải lịch dạy bù…</p> : scheduleError ? null : filteredSchedules.length === 0 ? (
           <EmptyState
             title="Chưa có lịch dạy bù nào"
             message="Các lịch dạy bù được thiết lập sẽ xuất hiện tại bảng này."
@@ -683,11 +682,11 @@ export function MakeupSchedulingPage() {
         ) : (
           <DataTable
             label="Danh sách lịch dạy bù"
-            headings={['Mã lịch', 'Trạng thái', 'Ngày gốc', 'Ngày dạy bù', 'Giáo viên dạy bù', 'Ghi chú', 'Lý do đảo', 'Thao tác']}
+            headings={['Lịch', 'Trạng thái', 'Ngày gốc', 'Ngày dạy bù', 'Giáo viên dạy bù', 'Ghi chú', 'Lý do đảo', 'Thao tác']}
           >
-            {filteredSchedules.map((s) => (
+            {filteredSchedules.map((s, index) => (
               <tr key={s.id}>
-                <td style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: '0.85rem' }}>{s.id.slice(0, 8)}...</td>
+                <td style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: '0.85rem' }}>Lịch {index + 1}</td>
                 <td>
                   <StatusText
                     active={s.status === 'ACTIVE'}
@@ -698,7 +697,7 @@ export function MakeupSchedulingPage() {
                 </td>
                 <td>{s.originalCivilDate}</td>
                 <td>{s.targetCivilDate}</td>
-                <td style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: '0.85rem' }}>{s.scheduledTeacherUserId.slice(0, 8)}...</td>
+                <td style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: '0.85rem' }}>{targetOptions?.teachers.find((teacher) => teacher.userId === s.scheduledTeacherUserId)?.displayName ?? candidates.find((candidate) => candidate.responsibleTeacherUserId === s.scheduledTeacherUserId)?.responsibleTeacherName ?? 'Chưa có tên giáo viên'}</td>
                 <td>{s.note ?? '—'}</td>
                 <td>{s.reversalReason ?? '—'}</td>
                 <td>

@@ -1,3 +1,7 @@
+import { WorkflowError } from '../components/ui/workflow-error';
+import { transportError } from '../lib/teaching-workflow-presentation';
+import { LoadingState } from '../components/ui/feedback';
+import { scheduleBlockedReason } from '../lib/teaching-workflow-presentation';
 import { useEffect, useId, useState } from 'react';
 import type {
   CivilDateString,
@@ -39,6 +43,8 @@ export function EffectiveSchedulePage() {
 
   // Teacher dropdown & search state
   const [teacherSearch, setTeacherSearch] = useState<string>('');
+  const [teacherError, setTeacherError] = useState<Error | null>(null);
+  const [loadingTeachers, setLoadingTeachers] = useState(false);
   const [teachers, setTeachers] = useState<EffectiveScheduleTeacherOption[]>([]);
   const [selectedTeacherId, setSelectedTeacherId] = useState<string>('');
 
@@ -51,7 +57,7 @@ export function EffectiveSchedulePage() {
   // Loading & error states
   const [loading, setLoading] = useState<boolean>(true);
   const [loadingSchedule, setLoadingSchedule] = useState<boolean>(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<Error | string | null>(null);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
 
   // 1. Initial context load
@@ -85,7 +91,7 @@ export function EffectiveSchedulePage() {
       })
       .catch((err) => {
         if (!active) return;
-        setErrorMessage(err instanceof Error ? err.message : 'Không thể tải thông tin năm học và tuần học.');
+        setErrorMessage(transportError(err));
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -99,15 +105,18 @@ export function EffectiveSchedulePage() {
   // 2. Load teacher options (searchable)
   useEffect(() => {
     let active = true;
+    setLoadingTeachers(true);
+    setTeacherError(null);
     fetchEffectiveScheduleTeachers(teacherSearch, 1, 50)
       .then((res) => {
         if (!active) return;
         setTeachers(res.items);
       })
-      .catch(() => {
+      .catch((caught) => {
         if (!active) return;
         setTeachers([]);
-      });
+        setTeacherError(transportError(caught));
+      }).finally(() => { if (active) setLoadingTeachers(false); });
 
     return () => {
       active = false;
@@ -130,7 +139,7 @@ export function EffectiveSchedulePage() {
         })
         .catch((err) => {
           if (!active) return;
-          setErrorMessage(err instanceof Error ? err.message : 'Không thể tải lịch dạy cá nhân.');
+          setErrorMessage(transportError(err));
         })
         .finally(() => {
           if (active) setLoadingSchedule(false);
@@ -145,7 +154,7 @@ export function EffectiveSchedulePage() {
           })
           .catch((err) => {
             if (!active) return;
-            setErrorMessage(err instanceof Error ? err.message : 'Không thể tải lịch toàn trường.');
+            setErrorMessage(transportError(err));
           })
           .finally(() => {
             if (active) setLoadingSchedule(false);
@@ -169,7 +178,7 @@ export function EffectiveSchedulePage() {
           })
           .catch((err) => {
             if (!active) return;
-            setErrorMessage(err instanceof Error ? err.message : 'Không thể tải lịch của giáo viên được chọn.');
+            setErrorMessage(transportError(err));
           })
           .finally(() => {
             if (active) setLoadingSchedule(false);
@@ -182,7 +191,7 @@ export function EffectiveSchedulePage() {
           })
           .catch((err) => {
             if (!active) return;
-            setErrorMessage(err instanceof Error ? err.message : 'Không thể thực hiện so sánh lịch.');
+            setErrorMessage(transportError(err));
           })
           .finally(() => {
             if (active) setLoadingSchedule(false);
@@ -212,12 +221,8 @@ export function EffectiveSchedulePage() {
         </div>
       </header>
 
-      {errorMessage && (
-        <div className="alert alert--error" role="alert">
-          <strong>Lỗi nạp dữ liệu lịch dạy</strong>
-          <p>{errorMessage}</p>
-        </div>
-      )}
+      <WorkflowError error={errorMessage} title="Chưa tải được lịch dạy" />
+      {loading && <LoadingState label="Đang tải năm học và tuần học…" />}
 
       {infoMessage && (
         <div className="alert alert--warning" role="status">
@@ -231,7 +236,7 @@ export function EffectiveSchedulePage() {
           Bộ chọn lịch dạy
         </h2>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px', marginBottom: '20px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(240px, 100%), 1fr))', gap: '16px', marginBottom: '20px' }}>
           {/* Tuần học */}
           <div className="form-field">
             <label className="form-field__label" htmlFor={weekSelectId}>
@@ -301,7 +306,7 @@ export function EffectiveSchedulePage() {
         {mode === 'peer-schedule' && (
           <div style={{ background: '#fff', border: '1px solid #c9d4da', borderRadius: '4px', padding: '16px', marginBottom: '20px' }}>
             <h3 style={{ fontSize: '1.1rem', marginBottom: '12px' }}>Chọn đồng nghiệp</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px', marginBottom: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(240px, 100%), 1fr))', gap: '16px', marginBottom: '16px' }}>
               <div className="form-field" style={{ marginBottom: 0 }}>
                 <label className="form-field__label" htmlFor={teacherSearchId}>
                   Tìm theo tên hoặc mã
@@ -336,8 +341,11 @@ export function EffectiveSchedulePage() {
               </div>
             </div>
 
+            {loadingTeachers ? <p role="status">Đang tìm giáo viên…</p> : teacherError
+              ? <WorkflowError error={teacherError} title="Chưa tải được danh sách giáo viên" />
+              : teachers.length === 0 ? <p role="status">Không tìm thấy giáo viên phù hợp. Hãy thử tên hoặc mã khác.</p> : null}
             {selectedTeacherId && (
-              <div style={{ display: 'flex', gap: '8px', borderTop: '1px solid #c9d4da', paddingTop: '12px' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', borderTop: '1px solid #c9d4da', paddingTop: '12px' }}>
                 <Button
                   type="button"
                   variant={peerViewMode === 'peer-weekly' ? 'primary' : 'secondary'}
@@ -360,11 +368,14 @@ export function EffectiveSchedulePage() {
         )}
       </section>
 
+      {!loading && context && context.weeks.length === 0 && <p role="status">Chưa có tuần học để xem lịch. Hãy liên hệ người phụ trách lịch năm học.</p>}
+      {!loadingSchedule && mode === 'my-schedule' && mySchedule?.status === 'PASS' && mySchedule.days.length === 0 && <p role="status">Chưa có dữ liệu lịch dạy trong tuần đã chọn.</p>}
+      {!loadingSchedule && mode === 'school-wide' && schoolWideSchedule?.status === 'PASS' && schoolWideSchedule.teachers.length === 0 && <p role="status">Chưa có dữ liệu giáo viên cho ngày đã chọn.</p>}
       {/* Loading state indicator */}
       {loadingSchedule && (
-        <div style={{ padding: '24px', textAlign: 'center', background: '#fff', border: '1px solid #c9d4da', borderRadius: '4px', marginBlock: '16px' }}>
+        <div role="status" style={{ padding: '24px', textAlign: 'center', background: '#fff', border: '1px solid #c9d4da', borderRadius: '4px', marginBlock: '16px' }}>
           <span className="button__spinner" style={{ display: 'inline-block', marginRight: '8px' }} aria-hidden="true" />
-          <span>Đang nạp dữ liệu lịch dạy hiệu lực...</span>
+          <span>Đang tải lịch dạy…</span>
         </div>
       )}
 
@@ -388,7 +399,7 @@ export function EffectiveSchedulePage() {
               <p>Một số dữ liệu thời khóa biểu hoặc phân công bị thiếu / chưa nhất quán:</p>
               <ul>
                 {mySchedule.blockedReasons?.map((r, i) => (
-                  <li key={i}>{r}</li>
+                  <li key={i}>{scheduleBlockedReason(r)}</li>
                 ))}
               </ul>
             </div>
@@ -422,7 +433,7 @@ export function EffectiveSchedulePage() {
                     Ngày học này không thể xác định lịch hiệu lực một cách nhất quán. Không hiển thị là trống.
                   </div>
                 ) : (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '12px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(200px, 100%), 1fr))', gap: '12px' }}>
                     {day.slots.map((slot) => (
                       <div
                         key={slot.id}
@@ -474,7 +485,7 @@ export function EffectiveSchedulePage() {
                           </div>
                         ) : (
                           <div style={{ color: '#334155', fontStyle: 'italic', fontSize: '0.9rem', paddingTop: '6px' }}>
-                            Trống
+                            {slot.occupancyState === 'FREE' ? 'Trống' : 'Chưa xác định lịch'}
                           </div>
                         )}
                       </div>
@@ -507,7 +518,7 @@ export function EffectiveSchedulePage() {
               <p>Phát hiện xung đột hoặc thiếu dữ liệu thời khóa biểu cơ sở:</p>
               <ul>
                 {schoolWideSchedule.blockedReasons?.map((r, i) => (
-                  <li key={i}>{r}</li>
+                  <li key={i}>{scheduleBlockedReason(r)}</li>
                 ))}
               </ul>
             </div>
@@ -581,7 +592,7 @@ export function EffectiveSchedulePage() {
               <strong>Lịch của đồng nghiệp đang bị chặn để tránh hiển thị dữ liệu chưa xác định</strong>
               <ul>
                 {peerSchedule.blockedReasons?.map((r, i) => (
-                  <li key={i}>{r}</li>
+                  <li key={i}>{scheduleBlockedReason(r)}</li>
                 ))}
               </ul>
             </div>
@@ -615,7 +626,7 @@ export function EffectiveSchedulePage() {
                     Không thể xác định lịch hiệu lực của đồng nghiệp vào ngày này. Không hiển thị là trống.
                   </div>
                 ) : (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '12px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(200px, 100%), 1fr))', gap: '12px' }}>
                     {day.slots.map((slot) => (
                       <div
                         key={slot.id}
@@ -667,7 +678,7 @@ export function EffectiveSchedulePage() {
                           </div>
                         ) : (
                           <div style={{ color: '#334155', fontStyle: 'italic', fontSize: '0.9rem', paddingTop: '6px' }}>
-                            Trống
+                            {slot.occupancyState === 'FREE' ? 'Trống' : 'Chưa xác định lịch'}
                           </div>
                         )}
                       </div>
@@ -704,7 +715,7 @@ export function EffectiveSchedulePage() {
               <strong>Có ngày bị chặn không thể so sánh đầy đủ</strong>
               <ul>
                 {comparisonSchedule.blockedReasons?.map((r, i) => (
-                  <li key={i}>{r}</li>
+                  <li key={i}>{scheduleBlockedReason(r)}</li>
                 ))}
               </ul>
             </div>
@@ -819,6 +830,6 @@ function formatWeekdayVi(weekday: string): string {
     case 'SUNDAY':
       return 'Chủ Nhật';
     default:
-      return weekday;
+      return 'Chưa xác định thứ';
   }
 }

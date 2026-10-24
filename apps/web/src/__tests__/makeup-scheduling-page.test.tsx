@@ -261,7 +261,7 @@ describe('MakeupSchedulingPage', () => {
     });
 
     // Select options should now be present (not manual UUID text inputs)
-    const slotSelect = await screen.findByLabelText(/tiết học mục tiêu/i);
+    const slotSelect = await screen.findByLabelText(/tiết dạy bù dự kiến/i);
     expect(slotSelect.tagName).toBe('SELECT');
 
     const teacherSelect = await screen.findByLabelText(/giáo viên thực hiện/i);
@@ -333,7 +333,8 @@ describe('MakeupSchedulingPage', () => {
     expect(await screen.findByRole('heading', { name: 'Lịch dạy bù' })).toBeInTheDocument();
     // Warning banner is displayed
     expect(await screen.findByText(/Chưa thể xác định đầy đủ nghĩa vụ dạy bù do dữ liệu nguồn đang bị chặn/i)).toBeInTheDocument();
-    expect(screen.getByText(/ROOT_BLOCKED:class-1:sub-math-uuid/)).toBeInTheDocument();
+    expect(screen.queryByText(/ROOT_BLOCKED:class-1:sub-math-uuid/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Có 1 vấn đề cần người phụ trách/)).toBeInTheDocument();
     // Must NOT display empty-success
     expect(screen.queryByText(/Không có nghĩa vụ nợ tiết hợp lệ/i)).not.toBeInTheDocument();
     // Must NOT display "Lập lịch bù" button
@@ -433,10 +434,10 @@ describe('MakeupSchedulingPage', () => {
 
       // Verify BLOCKED warning visible
       expect(await screen.findByText(/Chưa thể xác định đầy đủ nghĩa vụ dạy bù do dữ liệu nguồn đang bị chặn/i)).toBeInTheDocument();
-      expect(screen.getByText(/AR04_FINDING_BLOCKED_D1/)).toBeInTheDocument();
+      expect(screen.queryByText(/AR04_FINDING_BLOCKED_D1/)).not.toBeInTheDocument();
 
       // Verify schedule error is surfaced separately
-      expect(screen.getByText(/Lỗi tải danh sách lịch dạy bù/i)).toBeInTheDocument();
+      expect(screen.getByText(/Chưa tải được lịch dạy bù/i)).toBeInTheDocument();
 
       // Verify old create form absent and submit impossible
       expect(screen.queryByText('Thiết lập lịch dạy bù')).not.toBeInTheDocument();
@@ -492,7 +493,7 @@ describe('MakeupSchedulingPage', () => {
       fireEvent.click(reloadBtn);
 
       // Verify candidate error alert is visible
-      expect(await screen.findByText(/Lỗi tải danh sách nghĩa vụ dạy bù/i)).toBeInTheDocument();
+      expect(await screen.findByText(/Chưa tải được các tiết cần dạy bù/i)).toBeInTheDocument();
 
       // Old candidate form is cleared and submit button is absent
       expect(screen.queryByText('Thiết lập lịch dạy bù')).not.toBeInTheDocument();
@@ -537,13 +538,13 @@ describe('MakeupSchedulingPage', () => {
 
       // BLOCKED is applied independently and immediately before schedules promise settles
       expect(await screen.findByText(/Chưa thể xác định đầy đủ nghĩa vụ dạy bù do dữ liệu nguồn đang bị chặn/i)).toBeInTheDocument();
-      expect(screen.getByText(/AR04_FINDING_BLOCKED_D3/)).toBeInTheDocument();
+      expect(screen.queryByText(/AR04_FINDING_BLOCKED_D3/)).not.toBeInTheDocument();
 
       // Schedules fails later with 503
       resolveSchedules(jsonResponse({ message: 'Schedules timed out' }, 503));
 
       // Schedule error is displayed separately, and BLOCKED state remains intact
-      expect(await screen.findByText(/Lỗi tải danh sách lịch dạy bù/i)).toBeInTheDocument();
+      expect(await screen.findByText(/Chưa tải được lịch dạy bù/i)).toBeInTheDocument();
       expect(screen.getByText(/Chưa thể xác định đầy đủ nghĩa vụ dạy bù do dữ liệu nguồn đang bị chặn/i)).toBeInTheDocument();
       expect(screen.queryByRole('button', { name: 'Lập lịch bù' })).not.toBeInTheDocument();
     });
@@ -582,7 +583,7 @@ describe('MakeupSchedulingPage', () => {
       expect(screen.queryByText(/Chưa thể xác định đầy đủ nghĩa vụ dạy bù do dữ liệu nguồn đang bị chặn/i)).not.toBeInTheDocument();
 
       // Schedule error is displayed separately
-      expect(await screen.findByText(/Lỗi tải danh sách lịch dạy bù/i)).toBeInTheDocument();
+      expect(await screen.findByText(/Chưa tải được lịch dạy bù/i)).toBeInTheDocument();
 
       // Action remains possible on the verified candidate
       fireEvent.click(selectBtn);
@@ -659,7 +660,7 @@ describe('MakeupSchedulingPage', () => {
 
       // Request B completes immediately -> BLOCKED state shown
       expect(await screen.findByText(/Chưa thể xác định đầy đủ nghĩa vụ dạy bù do dữ liệu nguồn đang bị chặn/i)).toBeInTheDocument();
-      expect(screen.getByText(/AR04_FINDING_BLOCKED_FROM_REQUEST_B/)).toBeInTheDocument();
+      expect(screen.queryByText(/AR04_FINDING_BLOCKED_FROM_REQUEST_B/)).not.toBeInTheDocument();
 
       // Now Request A completes with old PASS data
       resolveCandidateA(jsonResponse({
@@ -673,7 +674,7 @@ describe('MakeupSchedulingPage', () => {
       // Wait a moment and verify Request A did NOT overwrite Request B's BLOCKED state
       await new Promise((r) => setTimeout(r, 50));
       expect(screen.getByText(/Chưa thể xác định đầy đủ nghĩa vụ dạy bù do dữ liệu nguồn đang bị chặn/i)).toBeInTheDocument();
-      expect(screen.getByText(/AR04_FINDING_BLOCKED_FROM_REQUEST_B/)).toBeInTheDocument();
+      expect(screen.queryByText(/AR04_FINDING_BLOCKED_FROM_REQUEST_B/)).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: 'Lập lịch bù' })).not.toBeInTheDocument();
     });
 
@@ -734,14 +735,14 @@ describe('MakeupSchedulingPage', () => {
       const replaceBtn = await screen.findByRole('button', { name: 'Tạo lịch thay thế' });
       fireEvent.click(replaceBtn);
 
-      expect(screen.getByText(/Tạo lịch thay thế cho lịch đã đảo \(schedule-reversed-99\)/i)).toBeInTheDocument();
+      expect(screen.getByText(/Tạo lịch thay thế cho lịch đã hoàn tác/i)).toBeInTheDocument();
 
       // Enter target date to trigger target-options load
       const dateInput = screen.getByLabelText(/ngày dạy bù dự kiến/i);
       fireEvent.change(dateInput, { target: { value: '2026-09-14' } });
 
       await waitFor(() => {
-        expect(screen.getByLabelText(/tiết học mục tiêu/i)).toBeInTheDocument();
+        expect(screen.getByLabelText(/tiết dạy bù dự kiến/i)).toBeInTheDocument();
       });
 
       // Now trigger reload with BLOCKED
@@ -753,8 +754,8 @@ describe('MakeupSchedulingPage', () => {
       expect(await screen.findByText(/Chưa thể xác định đầy đủ nghĩa vụ dạy bù do dữ liệu nguồn đang bị chặn/i)).toBeInTheDocument();
 
       // Replacement form is completely removed
-      expect(screen.queryByText(/Tạo lịch thay thế cho lịch đã đảo/i)).not.toBeInTheDocument();
-      expect(screen.queryByLabelText(/tiết học mục tiêu/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Tạo lịch thay thế cho lịch đã hoàn tác/i)).not.toBeInTheDocument();
+      expect(screen.queryByLabelText(/tiết dạy bù dự kiến/i)).not.toBeInTheDocument();
 
       // And "Tạo lịch thay thế" button is disabled while BLOCKED
       expect(screen.getByRole('button', { name: 'Tạo lịch thay thế' })).toBeDisabled();
