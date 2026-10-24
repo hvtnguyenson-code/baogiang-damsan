@@ -1,6 +1,6 @@
 # P5-058 — Việt hóa toàn diện và đơn giản hóa trải nghiệm frontend
 
-**Trạng thái:** IN_PROGRESS — PR #249 draft; lát cắt 5 dữ liệu năm học và phân công trên cùng nhánh; chưa nghiệm thu toàn task, chưa merge/deploy.
+**Trạng thái:** IN_PROGRESS — PR #249 draft; lát cắt 6 quản trị và người dùng trên cùng nhánh; chưa nghiệm thu toàn task, chưa merge/deploy.
 **Authority:** Yêu cầu người dùng 24/10/2026; T57; P5-050; P5-052; P5-053; `DESIGN.md`.
 **Baseline:** `main@6f1e83a8f021db1ab23f9902981a6b32f36d65ab`.
 **Nhánh duy nhất:** `feat/p5-058-frontend-vietnamese-ux`.
@@ -113,3 +113,10 @@ Giữ P5-058 IN_PROGRESS: 20 module còn cần audit toàn file, năm trang mớ
 Lát cắt 5 đọc/audit toàn file AcademicYears, AcademicCalendar, SchoolClasses, TeachingAssignments, HomeroomAssignments; sửa lỗi 400 thô, nhãn lịch/form/xác nhận, trạng thái tài khoản và truy vết chủ nhiệm; giữ route/API/quyền/payload/invariants. Đã audit toàn file 20/35 module; 15 module và nghiệm thu động/persona vẫn thuộc A/C/D của P5-058. Baseline `0a96ed07941d1f0cd5ca2d7dd841b4571e8e889b`, main xác minh Git/GitHub `ea80f078c8a1297c562c8f4319540e3417d6e651`, CI baseline #833 (`40082860054`) SUCCESS. Bằng chứng local, giới hạn và bàn giao chưa commit/push: `docs/phase-reports/P5-058-SLICE-5-REPORT.md`. Giữ IN_PROGRESS, PR #249 DRAFT; chưa nghiệm thu toàn task, chưa merge/deploy.
 
 Inventory từng trang/đường hiển thị trong P5-058-PAGE-LABEL-AUDIT; không thay T51/T52, authority baseline, ADR hoặc phạm vi API/backend. Các bằng chứng “20 module còn” ở lát cắt 4 là lịch sử; số hiện tại còn 15 module cần audit toàn file.
+
+
+### P5-058 — Cập nhật lát cắt 6 (24/10/2026)
+
+Lát cắt 6 đọc/audit toàn file Users, Capabilities, BusinessConfiguration, Audit, SystemStatus; chuẩn hóa lỗi HTTP, nhãn quyền/phạm vi/kết quả tra cứu, trạng thái tải/rỗng và hướng dẫn xóa an toàn. Trang trạng thái công khai giữ thông báo 401 trong state trình bày khi cache phiên bị xóa; auth/session boundary không đổi. Giữ API/payload/quyền/xác nhận/audit/backend và DESIGN.md. Đã audit toàn file 25/35 module; 10 module và nghiệm thu động/persona còn thuộc A/C/D của P5-058. Baseline `f7f01906821b12db8d95d14bad557937b6bd5165`, main xác minh trực tiếp Git remote `ea80f078c8a1297c562c8f4319540e3417d6e651`; CI baseline #834 SUCCESS theo bàn giao người dùng, không phải CI working tree. Bằng chứng/giới hạn: `docs/phase-reports/P5-058-SLICE-6-REPORT.md`. Giữ IN_PROGRESS, cùng nhánh/PR #249 draft; chưa commit/push/merge/deploy hoặc nghiệm thu toàn task.
+
+Các số 15 module còn ở lát cắt 5 là bằng chứng lịch sử. Bảng kiểm kê thật đã cập nhật năm dòng module và các đường hiển thị; đọc mã không đồng nghĩa nghiệm thu toàn persona/runtime. Không thay T51/T52, baseline sản phẩm hoặc ADR.

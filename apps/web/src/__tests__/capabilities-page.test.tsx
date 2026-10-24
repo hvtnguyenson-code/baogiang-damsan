@@ -172,15 +172,15 @@ describe('AUD-05 CapabilitiesPage pagination completeness', () => {
     await user.selectOptions(screen.getByLabelText('Phạm vi'), 'SUBJECT_GROUP');
 
     // Subject group pagination is rendered
-    expect(await screen.findByRole('navigation', { name: 'Chuyển trang tổ bộ môn' })).toHaveTextContent(/105 tổ/);
+    expect(await screen.findByRole('navigation', { name: 'Chuyển trang tổ chuyên môn' })).toHaveTextContent(/105 tổ/);
 
-    const groupNextBtn = () => within(screen.getByRole('navigation', { name: 'Chuyển trang tổ bộ môn' })).getByRole('button', { name: 'Trang sau' });
-    const groupPrevBtn = () => within(screen.getByRole('navigation', { name: 'Chuyển trang tổ bộ môn' })).getByRole('button', { name: 'Trang trước' });
+    const groupNextBtn = () => within(screen.getByRole('navigation', { name: 'Chuyển trang tổ chuyên môn' })).getByRole('button', { name: 'Trang sau' });
+    const groupPrevBtn = () => within(screen.getByRole('navigation', { name: 'Chuyển trang tổ chuyên môn' })).getByRole('button', { name: 'Trang trước' });
 
     // Navigate to page 2 (records 101+)
     await user.click(groupNextBtn());
     await waitFor(() => {
-      expect(screen.getByRole('navigation', { name: 'Chuyển trang tổ bộ môn' })).toHaveTextContent(/Trang 2 \/ 2/);
+      expect(screen.getByRole('navigation', { name: 'Chuyển trang tổ chuyên môn' })).toHaveTextContent(/Trang 2 \/ 2/);
     });
 
     const resourceSelect = screen.getByLabelText('Tổ chuyên môn');
@@ -193,7 +193,7 @@ describe('AUD-05 CapabilitiesPage pagination completeness', () => {
     // Navigate back to page 1
     await user.click(groupPrevBtn());
     await waitFor(() => {
-      expect(screen.getByRole('navigation', { name: 'Chuyển trang tổ bộ môn' })).toHaveTextContent(/Trang 1 \/ 2/);
+      expect(screen.getByRole('navigation', { name: 'Chuyển trang tổ chuyên môn' })).toHaveTextContent(/Trang 1 \/ 2/);
     });
 
     // Selection is preserved!
@@ -524,15 +524,15 @@ describe('AUD-05 CapabilitiesPage pagination completeness', () => {
     await user.selectOptions(screen.getByLabelText('Phạm vi'), 'SUBJECT');
 
     // Subject pagination is rendered
-    expect(await screen.findByRole('navigation', { name: 'Chuyển trang danh mục học phần' })).toHaveTextContent(/105 môn/);
+    expect(await screen.findByRole('navigation', { name: 'Chuyển trang danh mục môn học' })).toHaveTextContent(/105 môn/);
 
-    const subjectNextBtn = () => within(screen.getByRole('navigation', { name: 'Chuyển trang danh mục học phần' })).getByRole('button', { name: 'Trang sau' });
-    const subjectPrevBtn = () => within(screen.getByRole('navigation', { name: 'Chuyển trang danh mục học phần' })).getByRole('button', { name: 'Trang trước' });
+    const subjectNextBtn = () => within(screen.getByRole('navigation', { name: 'Chuyển trang danh mục môn học' })).getByRole('button', { name: 'Trang sau' });
+    const subjectPrevBtn = () => within(screen.getByRole('navigation', { name: 'Chuyển trang danh mục môn học' })).getByRole('button', { name: 'Trang trước' });
 
     // Navigate to page 2 (records 101+)
     await user.click(subjectNextBtn());
     await waitFor(() => {
-      expect(screen.getByRole('navigation', { name: 'Chuyển trang danh mục học phần' })).toHaveTextContent(/Trang 2 \/ 2/);
+      expect(screen.getByRole('navigation', { name: 'Chuyển trang danh mục môn học' })).toHaveTextContent(/Trang 2 \/ 2/);
     });
 
     const resourceSelect = screen.getByLabelText('Môn học');
@@ -545,7 +545,7 @@ describe('AUD-05 CapabilitiesPage pagination completeness', () => {
     // Navigate back to page 1
     await user.click(subjectPrevBtn());
     await waitFor(() => {
-      expect(screen.getByRole('navigation', { name: 'Chuyển trang danh mục học phần' })).toHaveTextContent(/Trang 1 \/ 2/);
+      expect(screen.getByRole('navigation', { name: 'Chuyển trang danh mục môn học' })).toHaveTextContent(/Trang 1 \/ 2/);
     });
 
     // Selection is preserved!
@@ -694,7 +694,7 @@ describe('AUD-05 CapabilitiesPage pagination completeness', () => {
     await user.selectOptions(resourceSelect, 'g-1');
     expect(resourceSelect).toHaveValue('g-1');
 
-    const groupNav = () => screen.getByRole('navigation', { name: 'Chuyển trang tổ bộ môn' });
+    const groupNav = () => screen.getByRole('navigation', { name: 'Chuyển trang tổ chuyên môn' });
     expect(groupNav()).toHaveTextContent(/105 tổ/);
 
     // Navigate to page 2 (which fails)

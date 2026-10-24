@@ -1,4 +1,4 @@
-# P5-058 — Kiểm kê trang và nhãn, lát cắt 3–5
+# P5-058 — Kiểm kê trang và nhãn, lát cắt 3–6
 
 Ngày 24/10/2026. Lập trước sửa mã; baseline nhánh `8968d50909cc03ca677fe5416dce96bdc517dd0d`, main xác minh remote `ea80f078c8a1297c562c8f4319540e3417d6e651`. T57, dependencies P5-050/P5-052/P5-053 CLOSED. Chỉ copy/presentation/test/docs; không API, route, quyền, trạng thái backend, phép tính, workflow, dependencies, DESIGN.md hoặc VPS. P5-058 vẫn IN_PROGRESS.
 
@@ -22,9 +22,9 @@ Ngày 24/10/2026. Lập trước sửa mã; baseline nhánh `8968d50909cc03ca677
 | AcademicCalendarPage | Lát cắt 5: đã đọc toàn file | Danh sách/chi tiết/sao chép/tạo/kích hoạt lịch; form học kỳ/tuần/khoảng/gián đoạn và lỗi 400; giới hạn nghiệm thu bên dưới |
 | AcademicYearsPage | Lát cắt 5: đã đọc toàn file | Danh sách/tạo/sửa năm học, sparse patch, chuẩn hóa mã, tải/rỗng/lỗi và mở lịch; giới hạn nghiệm thu bên dưới |
 | AccessDeniedPage | Chỉ xác nhận có file | Chưa audit nhãn |
-| AuditPage | Chỉ xác nhận có file | Chưa audit nhãn |
-| BusinessConfigurationPage | Chỉ xác nhận có file | Chưa audit nhãn |
-| CapabilitiesPage | Chỉ xác nhận có file | Chưa audit nhãn |
+| AuditPage | Lát cắt 6: đã đọc toàn file | Bộ lọc/thời gian/phân trang, tải/rỗng/lỗi, kết quả/action và metadata được máy chủ lọc; giữ nguyên mã/filter và bằng chứng nhật ký |
+| BusinessConfigurationPage | Lát cắt 6: đã đọc toàn file | Bảy luồng mutation, adapter/version/allowedActions, danh sách/chi tiết/truy vết, tra cứu và mọi outcome; HTTP an toàn, nhãn tiếng Việt; không thay hợp đồng hoặc lifecycle |
+| CapabilitiesPage | Lát cắt 6: đã đọc toàn file | Năm truy vấn phân trang, retention danh mục, cấp/thu hồi và lịch sử; nhãn phạm vi, chưa tới hiệu lực/hết hạn/thu hồi, tải/rỗng/lỗi; giữ payload/predicate/xác nhận |
 | DispositionPreviewPanel | Chỉ xác nhận có file | Chưa audit nhãn |
 | DutyAssignmentsPage | Chỉ xác nhận có file | Chưa audit nhãn |
 | DutyCatalogPage | Chỉ xác nhận có file | Chưa audit nhãn |
@@ -39,10 +39,10 @@ Ngày 24/10/2026. Lập trước sửa mã; baseline nhánh `8968d50909cc03ca677
 | ProfilePage | Lát cắt 4: đã đọc toàn file | Đã sửa các đường hiển thị rủi ro; phạm vi đã kiểm chứng/chưa nghiệm thu bên dưới |
 | SchoolClassesPage | Lát cắt 5: đã đọc toàn file | Danh sách/tạo/sửa lớp, lọc khối/trạng thái, xác nhận kích hoạt/vô hiệu hóa; giới hạn nghiệm thu bên dưới |
 | SpecialProgrammeWorkspacePage | Chỉ xác nhận có file | Chưa audit nhãn |
-| SystemStatusPage | Chỉ xác nhận có file | Chưa audit nhãn |
+| SystemStatusPage | Lát cắt 6: đã đọc toàn file | Public live/ready, tải/retry/suy giảm/lỗi; lưu thông báo 401 qua cache purge, không hiện lỗi hoặc chi tiết cache cũ khi kiểm tra thất bại; không đổi auth/API/interval |
 | TeachingAssignmentsPage | Lát cắt 5: đã đọc toàn file | Chọn năm, lọc, tạo/kết thúc/đổi giáo viên, điều kiện chọn ứng viên, HTTP và ngày hiệu lực; giới hạn nghiệm thu bên dưới |
 | TeachingOperationsPage | Lát cắt 4: đã đọc toàn file | Đã sửa các đường hiển thị rủi ro; phạm vi đã kiểm chứng/chưa nghiệm thu bên dưới |
-| UsersPage | Chỉ xác nhận có file | Chưa audit nhãn |
+| UsersPage | Lát cắt 6: đã đọc toàn file | Danh sách/tìm trong trang/tạo/sửa/kích hoạt/khóa/đặt lại mật khẩu, đối soát, mẫu trách nhiệm và snapshot, bộ chọn điều phối, preflight/xác nhận xóa; lỗi HTTP/copy/trạng thái và quyền giữ nguyên; giới hạn nghiệm thu bên dưới |
 
 ## Nhãn và đường hiển thị đã đọc trước sửa
 
@@ -144,3 +144,23 @@ Baseline `0a96ed07941d1f0cd5ca2d7dd841b4571e8e889b`; main remote `ea80f078c8a129
 Wireframe giữ nguyên: desktop tiêu đề → chọn năm/phạm vi → thông báo → form → bộ lọc → bảng và phân trang; lịch/lớp có hai link con hiện hữu. Mobile một cột, bảng cuộn ngang trong vùng bảng, nút/form xuống dòng; không đổi CSS/theme/tokens/primitives. Ảnh/mock, kiểm tra bàn phím/reduced motion/axe và số test chính xác nằm trong `P5-058-SLICE-5-REPORT.md`.
 
 Phạm vi nghiệm thu còn mở trong A/C/D của P5-058: dữ liệu lịch dày nhiều học kỳ/tuần/gián đoạn và clone chi tiết có dữ liệu thật; tên/mã rất dài; thao tác phân công qua API thật, race/409 với dữ liệu cạnh tranh, persona thực tế và Android thật. Bằng chứng local mock không chứng minh toàn backend hoặc quyền production. Không tạo deferral ngoài task; không đóng P5-058.
+
+
+## Lát cắt 6 — Quản trị và người dùng (25/35 module đã audit toàn file)
+
+T57, cùng nhánh P5-058, baseline `f7f01906821b12db8d95d14bad557937b6bd5165`. Mỗi module ở năm dòng thật bên trên đã được đọc toàn file trước sửa; không dùng danh sách riêng thay cho bảng kiểm kê. Còn 10 module cần audit toàn file; tất cả phần chưa nghiệm thu vẫn thuộc A/C/D P5-058 IN_PROGRESS.
+
+| Trang / đường hiển thị | Trước sửa | Đã xử lý và ranh giới |
+| --- | --- | --- |
+| Users / preview, apply, bộ chọn điều phối, delete | Một số lỗi dùng err.message; apply còn in 409 kỹ thuật; lỗi danh mục có thể lộ SQL/host | Giữ Error/ApiError cho feedback HTTP; 401/403/409/500 phân biệt, không render raw response kể cả trong details; 409 mẫu nhắc kiểm tra lại; giữ stale-response/snapshot/cache và toàn bộ mutation/payload |
+| Users / counter, empty, template permission | Chưa tải hoặc lỗi hiện 0; pending ở truy vấn mẫu bị disabled vì thiếu quyền; danh sách thật rỗng lẫn filtered | Chưa xác định khác zero; thông báo chưa được cấp quyền khác loading; empty khác không khớp lọc trong trang; không đổi quyền hoặc truy vấn |
+| Users / scope, quyền và nội dung mẫu | SUBJECT gọi nhầm tổ; vài quyền/notes/description in key, scope hoặc jargon Anh | Mapping nhãn chính xác SUBJECT=môn, SUBJECT_GROUP=tổ, ACTIVITY=hoạt động; mapping exact catalog copy đã đối chiếu source backend, không dịch payload/constant hoặc suy quyền; unknown không in mã trạng thái |
+| Users / đối soát, xóa | “100%” dù có conflict/excluded; “tài khoản sạch”, “xóa vật lý”, “an toàn tuyệt đối”; blocker code/reason thô | Wording theo danh sách thiếu thực tế và snapshot preflight; blocker mapping từ enum đã xác minh, unknown an toàn; giữ username confirmation, dual capability, preflight/invalidate và mọi thao tác nhạy cảm; applied=false không báo thành công |
+| Capabilities / lịch sử quyền và lookup | UUID thay tên phạm vi thiếu quyền đọc; quyền future gắn nhãn hết hiệu lực; Phase 01/học phần | Nhãn thiếu tên/quyền xem; future/expired/revoked riêng; môn học/tổ chuyên môn; không đổi isActiveWindow, điều kiện revoke hay DTO |
+| BusinessConfiguration / mutation và lookup | Chuyển Error thành chuỗi làm mất 401/403; outcome in raw enum; jargon ngày dân sự và scope raw | Giữ Error cho feedback status, outcome mapping hữu hạn với fallback an toàn; ngày cần tra cứu/phạm vi tiếng Việt; giữ draft/revision/command IDs, allowedActions, adapter triple identity và audit lineage |
+| Audit / filter, result, detail | Metadata tiếng Anh, mốc cuối khó hiểu; unknown bị gắn thất bại | Hướng dẫn lọc exact code và mốc cuối exclusive; nhãn metadata tiếng Việt, action quản trị biết tên có nhãn; unknown kết quả không giả thất bại; mã action/entity/request và metadata đã lọc vẫn là bằng chứng hợp lệ cho AUDIT_VIEW |
+| SystemStatus / HTTP và stale data | Error generic không phân biệt status; cache purge do 401 làm mất lỗi và trở lại loading; cache cũ có thể còn chi tiết | Feedback HTTP; state trình bày giữ 401 tới người dùng tải lại; không thay session boundary; không hiện cached details lỗi; service/db chưa xác nhận khác ready, giữ endpoint/interval |
+
+Wireframe giữ bố cục có sẵn: Users desktop danh sách trái và chi tiết phải, mobile chuyển danh sách/chi tiết; quyền và cấu hình dùng form → bảng/lịch sử; nhật ký bộ lọc → bảng → phân trang; trạng thái tóm tắt → hai thành phần. Không CSS/token/font/primitive mới. Số kiểm thử và QA ảnh: `P5-058-SLICE-6-REPORT.md`.
+
+Giới hạn A/C/D còn mở: mọi mutation nhạy cảm qua backend thật, cạnh tranh/xóa/refetch thực tế, catalog notes mới ngoài exact mapping, metadata nghiệp vụ toàn bộ domain, persona đầy đủ, Android thật và zoom 200%. Mã audit, UUID truy vết và payload chính sách có mục đích quản trị được giữ theo contract, không bị coi là lỗi thô để xóa chứng cứ. Không có nghiệm thu toàn task hoặc production.

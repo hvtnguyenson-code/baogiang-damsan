@@ -123,7 +123,7 @@ describe('Phase 01 management pages', () => {
   it('renders the backend-sanitized audit metadata without removing safe token-shaped labels', async () => {
     const events = page([{ id: 'e1', action: 'USER_UPDATED', entityType: 'User', result: 'SUCCESS', createdAt: '2026-08-09T08:00:00.000Z', metadata: { changed: 'displayName', tokenizedLabel: 'Nhóm mã hóa', nested: { safe: true } } }]);
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => String(input).endsWith('/auth/me') ? jsonResponse(auth({ key: 'AUDIT_VIEW', scope: 'SCHOOL_WIDE' })) : jsonResponse(events)); vi.stubGlobal('fetch', fetchMock); const user = userEvent.setup(); renderApp('/quan-tri/nhat-ky');
-    await user.click(await screen.findByText(/xem metadata an toàn/i)); expect(screen.getByText(/"changed": "displayName"/i)).toBeInTheDocument(); expect(screen.getByText(/"tokenizedLabel": "Nhóm mã hóa"/i)).toBeInTheDocument();
+    await user.click(await screen.findByText(/thông tin bổ sung của sự kiện/i)); expect(screen.getByText(/"changed": "displayName"/i)).toBeInTheDocument(); expect(screen.getByText(/"tokenizedLabel": "Nhóm mã hóa"/i)).toBeInTheDocument();
   });
 
   it('shows exact subject-group duty history but blocks raw staff and group filter workflows without lookup grants', async () => {

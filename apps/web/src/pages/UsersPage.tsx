@@ -37,7 +37,8 @@ import {
   usersApi,
   type UserInput,
 } from '../lib/management-api';
-import { hasSchoolCapability } from '../lib/capabilities';
+import { ErrorFeedback } from '../components/ui/feedback';
+import { capabilityLabels, scopeLabels, hasSchoolCapability } from '../lib/capabilities';
 import { ApiError } from '../lib/api-client';
 
 type UserDraft = {
@@ -93,7 +94,7 @@ function conflictStatusLabel(status: string): string {
     case 'INACTIVE':
       return 'Chưa kích hoạt';
     default:
-      return status;
+      return 'Cần kiểm tra trạng thái quyền';
   }
 }
 
@@ -103,43 +104,70 @@ function scopeTypeLabel(scope: string): string {
       return 'Phạm vi cá nhân';
     case 'SCHOOL_WIDE':
       return 'Phạm vi toàn trường';
-    case 'SUBJECT':
+    case 'SUBJECT_GROUP':
       return 'Tổ chuyên môn';
+    case 'SUBJECT':
+      return scopeLabels.SUBJECT;
+    case 'ACTIVITY':
+      return scopeLabels.ACTIVITY;
     case 'CLASS':
       return 'Lớp học';
     case 'PROGRAMME':
       return 'Chương trình đào tạo';
     default:
-      return scope;
+      return 'Phạm vi chưa được hỗ trợ';
   }
 }
 
 function capabilityKeyLabel(key: string): string {
-  switch (key) {
-    case 'TEACHING_SCHEDULE_VIEW':
-      return 'Xem thời khóa biểu';
-    case 'STATEMENT_SUBMIT':
-      return 'Nộp báo giảng';
-    case 'USER_MANAGE':
-      return 'Quản trị tài khoản';
-    case 'CAPABILITY_GRANT':
-      return 'Cấp quyền hạn';
-    case 'SYSTEM_ADMIN':
-      return 'Quản trị hệ thống';
-    case 'TEACHER_BASE':
-      return 'Quyền cơ sở giáo viên';
-    case 'SUBJECT_MANAGE':
-      return 'Quản lý tổ chuyên môn';
-    case 'PROGRAMME_MANAGE':
-      return 'Quản trị chương trình đào tạo';
-    case 'TIMETABLE_MANAGE':
-      return 'Quản trị thời khóa biểu';
-    case 'APPROVAL_PRINCIPAL':
-      return 'Phê duyệt Hiệu trưởng';
-    case 'APPROVAL_VICE_PRINCIPAL':
-      return 'Phê duyệt Phó Hiệu trưởng';
-    default:
-      return key;
+  if (key === 'APPROVAL_PRINCIPAL') return 'Phê duyệt của hiệu trưởng';
+  if (key === 'APPROVAL_VICE_PRINCIPAL') return 'Phê duyệt của phó hiệu trưởng';
+  if (key === 'REPORTING_STATEMENT_SUBMIT') return 'Gửi báo cáo kê khai';
+  if (key === 'REPORTING_STATEMENT_READ') return 'Xem báo cáo kê khai';
+  if (key === 'REPORTING_READ') return 'Xem báo cáo giảng dạy';
+  if (key === 'TEACHING_EXECUTION_RECORD') return 'Ghi nhận thực hiện giảng dạy';
+  if (key === 'CALENDAR_EXCEPTION_MANAGE') return 'Quản lý ngoại lệ lịch học';
+  if (key === 'SPECIAL_ACTIVITY_MANAGE') return 'Quản lý hoạt động đặc thù';
+  return Object.prototype.hasOwnProperty.call(capabilityLabels, key)
+    ? capabilityLabels[key as keyof typeof capabilityLabels] ?? 'Quyền chưa có tên hiển thị'
+    : 'Quyền chưa có tên hiển thị';
+}
+
+// Exact, reviewed catalog copy only. Never use this mapping to interpret an error or a privilege.
+function templateCopy(text?: string): string | undefined {
+  switch (text) {
+    case 'Quản trị Business Configuration toàn trường theo policy được duyệt.': return 'Quản trị chính sách nghiệp vụ toàn trường theo nội dung được duyệt.';
+    case 'Quản trị danh mục tổ chuyên môn và membership.': return 'Quản trị danh mục tổ chuyên môn và thành viên tổ.';
+    case 'Xem audit log toàn trường.': return 'Xem nhật ký hệ thống toàn trường.';
+    case 'Quản lý hoạt động đặc thù (Special Activity) toàn trường.': return 'Quản lý hoạt động đặc thù toàn trường.';
+    case 'Quyền giáo viên cộng thẩm quyền phê duyệt chuyên môn Hiệu trưởng, xem audit log và điều hành học thuật toàn trường.': return 'Quyền giáo viên cùng thẩm quyền phê duyệt chuyên môn của hiệu trưởng, xem nhật ký hệ thống và điều hành học thuật toàn trường.';
+    case 'Các quyền theo môn học (PPCT, điều hành, thực hiện giảng dạy, báo cáo) chỉ materialize khi Admin chỉ định môn chuyên môn được giao cho tổ trưởng.': return 'Quyền theo môn học chỉ được cấp khi quản trị viên chỉ định môn chuyên môn giao cho tổ trưởng: phân phối chương trình, điều hành, thực hiện giảng dạy và báo cáo.';
+    case 'Tuyệt đối không cấp SYSTEM_ADMIN, USER_MANAGE, CAPABILITY_GRANT hoặc APPROVAL_PRINCIPAL mặc định.': return 'Không mặc định cấp quyền quản trị kỹ thuật, quản lý người dùng, cấp và thu hồi quyền hoặc phê duyệt của hiệu trưởng.';
+    case 'Không mặc định cấp quyền quản trị kỹ thuật (SYSTEM_ADMIN, USER_MANAGE, CAPABILITY_GRANT).': return 'Không mặc định cấp quyền quản trị kỹ thuật, quản lý người dùng hoặc cấp và thu hồi quyền.';
+    case 'Không cấp APPROVAL_VICE_PRINCIPAL mặc định.': return 'Không mặc định cấp quyền phê duyệt của phó hiệu trưởng.';
+    case 'Chỉ áp dụng cho chương trình có kind = GDDP; không áp dụng cho hoạt động trải nghiệm hay quản trị chung.': return 'Chỉ áp dụng cho chương trình Giáo dục địa phương; không áp dụng cho hoạt động trải nghiệm hoặc quản trị chung.';
+    case 'Chỉ áp dụng cho chương trình có kind = HDTN_HN; không áp dụng cho GDĐP hay quản trị chung.': return 'Chỉ áp dụng cho chương trình Hoạt động trải nghiệm, hướng nghiệp; không áp dụng cho Giáo dục địa phương hoặc quản trị chung.';
+    case 'Tuyệt đối không cấp SYSTEM_ADMIN mặc định.': return 'Không mặc định cấp quyền quản trị kỹ thuật hệ thống.';
+    case 'Không cấp quyền phê duyệt chuyên môn (APPROVAL_PRINCIPAL, APPROVAL_VICE_PRINCIPAL).': return 'Không cấp quyền phê duyệt chuyên môn của hiệu trưởng hoặc phó hiệu trưởng.';
+    case 'Không cấp TEACHER_BASE nếu tài khoản không phải nhân sự giảng dạy (isTeachingStaff=false).': return 'Không cấp quyền cơ sở giáo viên nếu tài khoản không phải nhân sự giảng dạy.';
+    case 'Tài khoản không phải nhân sự giảng dạy (isTeachingStaff=false); không thể áp dụng template chuyên môn này.': return 'Tài khoản không phải nhân sự giảng dạy nên không thể áp dụng mẫu phân quyền chuyên môn này.';
+    case 'Chưa cung cấp programmeMasterId cho GDĐP.': return 'Chưa chọn chương trình Giáo dục địa phương.';
+    case 'Chưa cung cấp programmeMasterId cho HĐTN-HN.': return 'Chưa chọn chương trình Hoạt động trải nghiệm, hướng nghiệp.';
+    case 'Chưa cung cấp subjectGroupId cho Tổ trưởng.': return 'Chưa chọn tổ chuyên môn do tổ trưởng phụ trách.';
+    default: return text;
+  }
+}
+
+function deleteBlockerLabel(code: string): string {
+  switch (code) {
+    case 'SELF': return 'Không thể tự xóa tài khoản đang đăng nhập.';
+    case 'PROTECTED': return 'Tài khoản khởi tạo được bảo vệ; hãy vô hiệu hóa khi cần ngừng truy cập.';
+    case 'LOGIN_HISTORY': return 'Tài khoản đã có lịch sử đăng nhập.';
+    case 'SECURITY_HISTORY': return 'Lịch sử phiên đăng nhập, phân quyền hoặc nhật ký hoạt động cần được lưu giữ.';
+    case 'BUSINESS_HISTORY': return 'Dữ liệu nghiệp vụ hoặc nguồn gốc xử lý cần được lưu giữ.';
+    case 'INDIRECT_HISTORY': return 'Hồ sơ hoặc môn phụ trách đã được sử dụng trong dữ liệu nghiệp vụ.';
+    case 'UNVERIFIED_REFERENCE': return 'Chưa xác minh đầy đủ dữ liệu liên quan; không được phép xóa tài khoản.';
+    default: return 'Có ràng buộc ngăn xóa tài khoản. Hãy liên hệ người quản trị để kiểm tra.';
   }
 }
 
@@ -183,7 +211,7 @@ export function UsersPage() {
     Record<string, Record<number, ProgrammeMasterOptionRecord[]>>
   >({});
   const [templatePreview, setTemplatePreview] = useState<ResponsibilityTemplatePreviewResponse | null>(null);
-  const [templatePreviewError, setTemplatePreviewError] = useState('');
+  const [templatePreviewError, setTemplatePreviewError] = useState<Error | null>(null);
   const [templateApplyResult, setTemplateApplyResult] = useState<ResponsibilityTemplateApplyResponse | null>(null);
 
   type PreviewSnapshot = {
@@ -586,7 +614,7 @@ export function UsersPage() {
   const templatePreviewMutation = useMutation({
     onMutate: () => {
       clearApplyResult();
-      setTemplatePreviewError('');
+      setTemplatePreviewError(null);
       const requestId = ++previewRequestIdRef.current;
       return { requestId };
     },
@@ -659,11 +687,7 @@ export function UsersPage() {
       }
       setTemplatePreview(null);
       setPreviewSnapshot(null);
-      if (err instanceof ApiError) {
-        setTemplatePreviewError(err.message || 'Lỗi kiểm tra trước quyền.');
-      } else {
-        setTemplatePreviewError('Không thể hoàn tất kiểm tra trước.');
-      }
+      setTemplatePreviewError(err instanceof Error ? err : new Error());
     },
   });
 
@@ -677,7 +701,7 @@ export function UsersPage() {
       setTemplatePreview(null);
       setPreviewSnapshot(null);
       if (options?.clearError ?? true) {
-        setTemplatePreviewError('');
+        setTemplatePreviewError(null);
       }
     },
     [],
@@ -763,7 +787,7 @@ export function UsersPage() {
         setTemplateApplyResult(data);
         const templateName = selectedTemplateDef?.name || TEMPLATE_NAMES[data.templateKey] || data.templateKey;
         setSuccess(
-          `Đã áp dụng thành công Mẫu trách nhiệm (${templateName}): đã cấp mới ${data.grantsAdded.length} quyền.`,
+          data.applied === false ? '' : `Đã áp dụng thành công Mẫu trách nhiệm (${templateName}): đã cấp mới ${data.grantsAdded.length} quyền.`,
         );
         invalidatePreview({ clearError: true });
         await queryClient.invalidateQueries({ queryKey: ['users'] });
@@ -774,17 +798,7 @@ export function UsersPage() {
       setSuccess('');
       clearApplyResult();
       invalidatePreview({ clearError: false });
-      if (err instanceof ApiError && err.statusCode === 409) {
-        setTemplatePreviewError(
-          'Xung đột (409): Dữ liệu phân công hoặc quyền hạn của tài khoản đã thay đổi trên máy chủ. Vui lòng xem trước lại.',
-        );
-      } else if (err instanceof ApiError) {
-        setTemplatePreviewError(err.message || 'Lỗi khi áp dụng Mẫu phân quyền.');
-      } else if (err instanceof Error) {
-        setTemplatePreviewError(err.message);
-      } else {
-        setTemplatePreviewError('Không thể hoàn tất thao tác áp dụng.');
-      }
+      setTemplatePreviewError(err instanceof Error ? err : new Error());
     },
   });
 
@@ -808,7 +822,7 @@ export function UsersPage() {
         setDeleteError('Xung đột: Tài khoản vừa phát sinh dữ liệu hoặc lịch sử mới. Đang làm mới kiểm tra...');
         await queryClient.invalidateQueries({ queryKey: ['delete-preflight', selectedUserId] });
       } else if (err instanceof ApiError) {
-        setDeleteError(err.message || 'Lỗi khi xóa tài khoản.');
+        setDeleteError('Không thể xóa tài khoản. Hãy kiểm tra thông báo lỗi và quyền thực hiện bên trên.');
       } else {
         setDeleteError('Không thể thực hiện xóa do lỗi kết nối.');
       }
@@ -976,26 +990,26 @@ export function UsersPage() {
       {/* TOP KPI METRICS RIBBON */}
       <div className="kpi-ribbon">
         <div className="kpi-card">
-          <div className="kpi-card__number">{query.data?.total ?? 0}</div>
+          <div className="kpi-card__number">{query.isPending || query.isError ? 'Chưa xác định' : query.data.total}</div>
           <div className="kpi-card__label">Tổng toàn trường</div>
         </div>
         <div className="kpi-card kpi-card--active">
           <div className="kpi-card__number">
-            {query.data?.items ? query.data.items.filter((u) => u.status === 'ACTIVE').length : 0}
+            {query.isPending || query.isError ? 'Chưa xác định' : query.data.items.filter((u) => u.status === 'ACTIVE').length}
           </div>
           <div className="kpi-card__label">Hoạt động (Trang {page})</div>
         </div>
         <div className="kpi-card kpi-card--pending">
           <div className="kpi-card__number">
-            {query.data?.items ? query.data.items.filter((u) => u.status !== 'ACTIVE').length : 0}
+            {query.isPending || query.isError ? 'Chưa xác định' : query.data.items.filter((u) => u.status !== 'ACTIVE').length}
           </div>
-          <div className="kpi-card__label">Chờ / Khóa (Trang {page})</div>
+          <div className="kpi-card__label">Chưa hoạt động (Trang {page})</div>
         </div>
         <div className="kpi-card kpi-card--teaching">
           <div className="kpi-card__number">
-            {query.data?.items ? query.data.items.filter((u) => u.profile?.isTeachingStaff).length : 0}
+            {query.isPending || query.isError ? 'Chưa xác định' : query.data.items.filter((u) => u.profile?.isTeachingStaff).length}
           </div>
-          <div className="kpi-card__label">Cán bộ GV (Trang {page})</div>
+          <div className="kpi-card__label">Nhân sự giảng dạy (Trang {page})</div>
         </div>
       </div>
 
@@ -1003,7 +1017,7 @@ export function UsersPage() {
       {showReconciliation && canGrant && (
         <div className="form-card" style={{ borderColor: '#0f766e', borderWidth: '2px', marginBottom: '24px' }}>
           <div className="form-card-header form-card-header--teal">
-            <span>Đối soát chuẩn tiếp cận chuyên môn (Baseline Reconciliation)</span>
+            <span>Đối soát quyền cơ sở của nhân sự giảng dạy</span>
             <Button
               type="button"
               variant="quiet"
@@ -1143,11 +1157,11 @@ export function UsersPage() {
                   >
                     {reconciliationPreviewQuery.data.missing.length > 0
                       ? `Áp dụng chuẩn cho ${reconciliationPreviewQuery.data.missing.length} nhân sự còn thiếu`
-                      : 'Đã chuẩn hóa toàn bộ (Không có tài khoản thiếu)'}
+                      : 'Không có tài khoản thiếu quyền cần bổ sung'}
                   </Button>
                   {reconciliationPreviewQuery.data.missing.length === 0 && (
                     <span className="text-xs text-slate-600 font-semibold">
-                      ✅ 100% nhân sự giảng dạy đủ điều kiện đã có chuẩn quyền cơ sở.
+                      Không có tài khoản trong danh sách cần bổ sung. Hãy kiểm tra riêng các trường hợp xung đột và loại trừ.
                     </span>
                   )}
                 </div>
@@ -1175,7 +1189,7 @@ export function UsersPage() {
         <div className="admin-workspace__sidebar">
           <div className="form-card" style={{ borderColor: '#1e3a8a', borderWidth: '2px' }}>
             <div className="form-card-header form-card-header--blue">
-              <span>1. Danh sách người dùng ({query.data?.items?.length ?? 0} trang này / Tổng {query.data?.total ?? 0})</span>
+              <span>1. Danh sách người dùng ({query.data?.items?.length ?? 0} trang này / Tổng {query.isPending || query.isError ? 'Chưa xác định' : query.data.total})</span>
               {selectedUser && (
                 <span className="text-[11px] bg-blue-700 text-white px-2 py-0.5 rounded font-bold">
                   Đang chọn: {selectedUser.username}
@@ -1209,7 +1223,7 @@ export function UsersPage() {
                 </select>
               </div>
               <div className="flex items-center justify-between text-[11px] text-slate-600 px-1 font-medium">
-                <span>Lọc trong {query.data?.items?.length ?? 0} tài khoản của trang {page} (Tổng toàn trường: {query.data?.total ?? 0}). Dùng thanh phân trang bên dưới để xem thêm.</span>
+                <span>Lọc trong {query.data?.items?.length ?? 0} tài khoản của trang {page} (Tổng toàn trường: {query.isPending || query.isError ? 'Chưa xác định' : query.data.total}). Dùng thanh phân trang bên dưới để xem thêm.</span>
                 <span className="font-semibold text-slate-700 whitespace-nowrap ml-2">
                   {filteredUsers.length} / {query.data?.items?.length ?? 0} hiển thị
                 </span>
@@ -1222,7 +1236,7 @@ export function UsersPage() {
               <QueryFailure error={query.error} retry={() => void query.refetch()} />
             ) : filteredUsers.length === 0 ? (
               <div className="p-6 text-center text-sm text-slate-600">
-                Không tìm thấy tài khoản phù hợp với điều kiện lọc.
+                {query.data.total === 0 ? 'Chưa có tài khoản người dùng.' : 'Không tìm thấy tài khoản phù hợp trong trang này. Hãy điều chỉnh bộ lọc hoặc chuyển trang.'}
               </div>
             ) : (
               <>
@@ -1700,7 +1714,9 @@ export function UsersPage() {
                     </div>
 
                     {/* Server-Owned Template Catalog & Selection */}
-                    {templatesQuery.isPending ? (
+                    {!canGrant ? (
+                      <p>Tài khoản chưa được cấp quyền cấp và thu hồi quyền. Bạn có thể xem hồ sơ và trạng thái tài khoản.</p>
+                    ) : templatesQuery.isPending ? (
                       <PageLoading />
                     ) : templatesQuery.isError ? (
                       <QueryFailure
@@ -1755,7 +1771,7 @@ export function UsersPage() {
                                 </span>
                               </div>
                               <p className="text-slate-700 m-0 leading-relaxed">
-                                {selectedTemplateDef.description}
+                                {selectedTemplateDef.key === 'TECHNICAL_ACCOUNT_ADMIN' ? 'Quản trị tài khoản người dùng, cấp quyền, xem nhật ký hệ thống và quản trị danh mục kiêm nhiệm.' : templateCopy(selectedTemplateDef.description)}
                               </p>
                               <div className="flex flex-wrap gap-1.5 pt-1 text-[11px]">
                                 <span className="px-2 py-0.5 bg-blue-100 text-blue-900 rounded font-semibold">
@@ -1874,7 +1890,7 @@ export function UsersPage() {
                                   <div className="text-xs text-slate-600 italic py-1">⏳ Đang tải danh mục năm học...</div>
                                 ) : academicYearsQuery.isError ? (
                                   <div className="p-2.5 bg-rose-50 border border-rose-200 rounded text-xs text-rose-800">
-                                    ❌ Không thể tải danh mục năm học: {academicYearsQuery.error instanceof Error ? academicYearsQuery.error.message : 'Lỗi kết nối hoặc không có quyền truy cập.'}
+                                    ❌ Không thể tải danh mục năm học: <QueryFailure error={academicYearsQuery.error} retry={() => void academicYearsQuery.refetch()} />
                                   </div>
                                 ) : academicYearsQuery.data?.total === 0 ? (
                                   <div className="p-2.5 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800">
@@ -1962,7 +1978,7 @@ export function UsersPage() {
                                   <div className="text-xs text-slate-600 italic py-1">⏳ Đang tải danh sách chương trình đào tạo...</div>
                                 ) : programmeMastersQuery.isError ? (
                                   <div className="p-2.5 bg-rose-50 border border-rose-200 rounded text-xs text-rose-800">
-                                    ❌ Không thể tải danh sách chương trình: {programmeMastersQuery.error instanceof Error ? programmeMastersQuery.error.message : 'Lỗi kết nối hoặc không có quyền.'}
+                                    ❌ Không thể tải danh sách chương trình: <QueryFailure error={programmeMastersQuery.error} retry={() => void programmeMastersQuery.refetch()} />
                                   </div>
                                 ) : programmeMastersQuery.data?.total === 0 ? (
                                   <div className="p-2.5 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800">
@@ -2091,7 +2107,8 @@ export function UsersPage() {
 
                     {templatePreviewError && (
                       <div className="p-3 bg-rose-50 border border-rose-300 rounded text-xs text-rose-800">
-                        {templatePreviewError}
+                        <ErrorFeedback error={templatePreviewError} title="Chưa hoàn tất kiểm tra hoặc áp dụng quyền" />
+                        {templatePreviewError instanceof ApiError && templatePreviewError.statusCode === 409 && <p>Hãy kiểm tra quyền trước khi áp dụng lại mẫu.</p>}
                       </div>
                     )}
 
@@ -2116,13 +2133,13 @@ export function UsersPage() {
 
                         {!templatePreview.eligibility.isEligible && (
                           <div className="p-2 bg-rose-100 border border-rose-300 rounded text-xs text-rose-900">
-                            {templatePreview.eligibility.reason}
+                            {templateCopy(templatePreview.eligibility.reason)}
                           </div>
                         )}
 
                         {templatePreview.requiredResources.details && (
                           <div className="text-xs text-slate-700">
-                            <strong>Phạm vi tài nguyên:</strong> {templatePreview.requiredResources.details}
+                            <strong>Phạm vi tài nguyên:</strong> {templateCopy(templatePreview.requiredResources.details)}
                           </div>
                         )}
 
@@ -2142,7 +2159,7 @@ export function UsersPage() {
                                       {capabilityKeyLabel(g.capabilityKey)} · {scopeTypeLabel(g.scopeType)}
                                       {g.scopeResourceId ? ` (${g.scopeResourceId})` : ''}
                                     </div>
-                                    <div className="delta-item__desc">{g.description}</div>
+                                    <div className="delta-item__desc">{g.capabilityKey === 'CAPABILITY_GRANT' ? 'Cấp và thu hồi quyền theo phạm vi.' : templateCopy(g.description)}</div>
                                   </div>
                                   <span className="delta-badge delta-badge--missing">Cần cấp</span>
                                 </div>
@@ -2164,7 +2181,7 @@ export function UsersPage() {
                                     <div className="delta-item__key">
                                       {capabilityKeyLabel(g.capabilityKey)} · {scopeTypeLabel(g.scopeType)}
                                     </div>
-                                    <div className="delta-item__desc">{g.description}</div>
+                                    <div className="delta-item__desc">{g.capabilityKey === 'CAPABILITY_GRANT' ? 'Cấp và thu hồi quyền theo phạm vi.' : templateCopy(g.description)}</div>
                                   </div>
                                   <span className="delta-badge delta-badge--covered">Đã có</span>
                                 </div>
@@ -2201,7 +2218,7 @@ export function UsersPage() {
                             <strong>Ghi chú an toàn:</strong>
                             <ul className="list-disc pl-4 mt-1 space-y-0.5">
                               {templatePreview.notes.map((n, idx) => (
-                                <li key={idx}>{n}</li>
+                                <li key={idx}>{templateCopy(n)}</li>
                               ))}
                             </ul>
                           </div>
@@ -2211,10 +2228,10 @@ export function UsersPage() {
 
                     {/* Apply Result Feedback */}
                     {templateApplyResult && (
-                      <div className="p-3 bg-emerald-50 border border-emerald-300 rounded text-xs text-emerald-900 space-y-1.5">
+                      <div className={templateApplyResult.applied === false ? 'alert alert--warning' : 'p-3 bg-emerald-50 border border-emerald-300 rounded text-xs text-emerald-900 space-y-1.5'}>
                         <div className="font-bold text-sm flex items-center justify-between">
                           <span>
-                            ✅ Đã áp dụng thành công ({selectedTemplateDef?.name || TEMPLATE_NAMES[templateApplyResult.templateKey]} {templateApplyResult.version.startsWith('v') ? templateApplyResult.version : 'v' + templateApplyResult.version}):
+                            {templateApplyResult.applied === false ? 'Chưa áp dụng mẫu. Hãy kiểm tra quyền trước khi thử lại.' : 'Đã áp dụng thành công'} ({selectedTemplateDef?.name || TEMPLATE_NAMES[templateApplyResult.templateKey]} {templateApplyResult.version.startsWith('v') ? templateApplyResult.version : 'v' + templateApplyResult.version}):
                           </span>
                           <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-200 text-emerald-950">
                             {templateApplyResult.applied !== false ? 'HOÀN THÀNH' : 'CHƯA HOÀN THÀNH'}
@@ -2234,7 +2251,7 @@ export function UsersPage() {
                                 <div key={g.id || g.capabilityKey} className="delta-item delta-item--covered">
                                   <div>
                                     <div className="delta-item__key font-mono text-[11px]">
-                                      {g.capabilityKey} · {g.scopeType}
+                                      {capabilityKeyLabel(g.capabilityKey)} · {scopeTypeLabel(g.scopeType)}
                                       {g.scopeResourceId ? ` (${g.scopeResourceId})` : ''}
                                     </div>
                                   </div>
@@ -2321,7 +2338,7 @@ export function UsersPage() {
                           Kiểm tra điều kiện xóa tài khoản an toàn
                         </h3>
                         <p className="text-[11px] text-slate-500 m-0">
-                          Xác minh tính khả thi xóa tài khoản sạch, không có lịch sử nghiệp vụ ràng buộc
+                          Kiểm tra lịch sử và dữ liệu liên quan trước khi xóa vĩnh viễn tài khoản
                         </p>
                       </div>
                       <Button
@@ -2343,12 +2360,11 @@ export function UsersPage() {
                         {preflightQuery.data.eligibility === 'BLOCKED' ? (
                           <div className="p-4 bg-rose-50 border border-rose-300 rounded space-y-3">
                             <div className="flex items-center gap-2 text-rose-900 font-bold">
-                              <span>⛔ TÀI KHOẢN KHÔNG ĐỦ ĐIỀU KIỆN XÓA VẬT LÝ</span>
+                              <span>⛔ Tài khoản không đủ điều kiện xóa vĩnh viễn</span>
                             </div>
                             <p className="text-xs text-rose-800">
-                              Tài khoản đã phát sinh dữ liệu nghiệp vụ hoặc lịch sử đăng nhập/kiểm toán trong hệ thống.
-                              Theo quy tắc an toàn dữ liệu, tài khoản này được bảo lưu để phục vụ kiểm toán và không thể
-                              bị xóa vật lý.
+                              Máy chủ phát hiện ràng buộc hoặc chưa thể xác minh đầy đủ điều kiện xóa.
+                              Tài khoản được giữ lại. Hãy xem lý do bên dưới trước khi chọn cách xử lý.
                             </p>
 
                             <div className="space-y-1">
@@ -2356,10 +2372,7 @@ export function UsersPage() {
                               <ul className="list-disc pl-5 text-xs text-rose-700 space-y-1">
                                 {preflightQuery.data.blockers.map((b, idx) => (
                                   <li key={idx}>
-                                    <code className="text-[11px] bg-rose-100 px-1 py-0.5 rounded text-rose-800 mr-1.5 font-mono">
-                                      [{b.code}]
-                                    </code>
-                                    <span>{b.reason}</span>
+                                    <span>{deleteBlockerLabel(b.code)}</span>
                                   </li>
                                 ))}
                               </ul>
@@ -2383,10 +2396,10 @@ export function UsersPage() {
                         ) : (
                           <div className="p-4 bg-amber-50 border border-amber-300 rounded space-y-3">
                             <div className="flex items-center gap-2 text-amber-900 font-bold">
-                              <span>⚠️ TÀI KHOẢN SẠCH — ĐỦ ĐIỀU KIỆN XÓA (CHƯA CÓ RÀNG BUỘC)</span>
+                              <span>⚠️ Đủ điều kiện xóa theo lần kiểm tra này</span>
                             </div>
                             <p className="text-xs text-amber-800">
-                              Tài khoản này chưa phát sinh lịch sử đăng nhập, phân công hay hoạt động nghiệp vụ nào.
+                              Máy chủ chưa phát hiện ràng buộc ngăn xóa tại thời điểm kiểm tra. Điều kiện sẽ được kiểm tra lại khi xác nhận xóa.
                               Thao tác xóa sẽ làm sạch các bản ghi cấu hình ban đầu và xóa vĩnh viễn tài khoản.
                             </p>
 
@@ -2406,8 +2419,8 @@ export function UsersPage() {
                             {!canDeletePhysically ? (
                               <div className="p-3 bg-slate-100 border border-slate-300 rounded text-xs text-slate-700">
                                 🔒 <strong>Thẩm quyền không đủ:</strong> Thao tác xóa vĩnh viễn tài khoản yêu cầu đồng
-                                thời cả quyền Quản lý người dùng (<code>USER_MANAGE</code>) và Quản trị hệ thống (
-                                <code>SYSTEM_ADMIN</code>). Tài khoản hiện tại của bạn không đủ điều kiện để thực hiện
+                                thời cả quyền Quản lý người dùng và Quản trị kỹ thuật hệ thống.
+                                Tài khoản hiện tại của bạn không đủ điều kiện để thực hiện
                                 xóa.
                               </div>
                             ) : (
@@ -2482,7 +2495,7 @@ export function UsersPage() {
                   </div>
                   <div className="empty-guide-card empty-guide-card--indigo">
                     <h4>🏷️ 2. Mẫu phân quyền theo nhiệm vụ</h4>
-                    <p>Áp dụng các mẫu chuẩn hóa (Giáo viên, Tổ trưởng...) với cơ chế kiểm tra quyền trước khi áp dụng đảm bảo an toàn tuyệt đối trước khi cấp quyền.</p>
+                    <p>Áp dụng các mẫu chuẩn hóa (Giáo viên, Tổ trưởng...) với cơ chế kiểm tra quyền trước khi áp dụng để đối chiếu phạm vi và điều kiện trước khi cấp quyền.</p>
                   </div>
                   <div className="empty-guide-card empty-guide-card--teal">
                     <h4>⚖️ 3. Đối soát toàn trường</h4>
@@ -2514,6 +2527,7 @@ export function UsersPage() {
 }
 
 function statusLabel(status: UserManagementRecord['status']) {
+  if (!['PENDING', 'LOCKED', 'DISABLED', 'ACTIVE'].includes(status)) return 'Chưa xác định trạng thái tài khoản';
   return {
     PENDING: 'Chờ kích hoạt',
     LOCKED: 'Đang khóa',
