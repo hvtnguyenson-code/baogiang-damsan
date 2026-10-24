@@ -12,7 +12,7 @@ import {
   PageHeader,
   SelectField,
 } from '../components/ui/management';
-import { ApiError } from '../lib/api-client';
+import { ErrorFeedback } from '../components/ui/feedback';
 import { ppctImportApi } from '../lib/ppct-api';
 
 function defaultTargets(inspection: PpctImportInspectionResponse): PpctImportTargetSelection[] {
@@ -24,13 +24,6 @@ function defaultTargets(inspection: PpctImportInspectionResponse): PpctImportTar
   }));
 }
 
-function errorText(error: unknown): string {
-  if (error instanceof ApiError) {
-    return error.serverError ? `${error.serverError}: ${error.message}` : error.message;
-  }
-  return error instanceof Error ? error.message : 'Yêu cầu không thực hiện được.';
-}
-
 export function PpctImportPage() {
   const [file, setFile] = useState<File | null>(null);
   const [inspection, setInspection] = useState<PpctImportInspectionResponse | null>(null);
@@ -38,7 +31,7 @@ export function PpctImportPage() {
   const [targets, setTargets] = useState<PpctImportTargetSelection[]>([]);
   const [previewDirty, setPreviewDirty] = useState(false);
   const [busy, setBusy] = useState<'inspect' | 'preview' | 'confirm' | null>(null);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<unknown>(null);
   const [success, setSuccess] = useState('');
 
   const blockers = inspection?.issues.filter((issue) => issue.severity === 'BLOCKER') ?? [];
@@ -49,7 +42,7 @@ export function PpctImportPage() {
     setPreview(null);
     setTargets([]);
     setPreviewDirty(false);
-    setError('');
+    setError(null);
     setSuccess('');
   }
 
@@ -59,7 +52,7 @@ export function PpctImportPage() {
       return;
     }
     setBusy('inspect');
-    setError('');
+    setError(null);
     setSuccess('');
     try {
       const result = await ppctImportApi.inspect(file);
@@ -68,10 +61,10 @@ export function PpctImportPage() {
       setTargets(defaultTargets(result));
       setPreviewDirty(false);
       if (result.issues.some((issue) => issue.severity === 'BLOCKER')) {
-        setError('Tệp có lỗi chặn. Hãy sửa workbook trước khi xem trước.');
+        setError('Tệp có lỗi chặn. Hãy sửa tệp Excel rồi kiểm tra lại trước khi xem trước.');
       }
     } catch (caught) {
-      setError(errorText(caught));
+      setError(caught);
     } finally {
       setBusy(null);
     }
@@ -80,7 +73,7 @@ export function PpctImportPage() {
   async function previewFile() {
     if (!file || !inspection || blockers.length > 0) return;
     setBusy('preview');
-    setError('');
+    setError(null);
     setSuccess('');
     try {
       const result = await ppctImportApi.preview(file, targets);
@@ -88,7 +81,7 @@ export function PpctImportPage() {
       setTargets(result.grades.map((grade) => grade.target));
       setPreviewDirty(false);
     } catch (caught) {
-      setError(errorText(caught));
+      setError(caught);
     } finally {
       setBusy(null);
     }
@@ -115,18 +108,18 @@ export function PpctImportPage() {
   async function confirmImport() {
     if (!file || !preview || previewDirty) return;
     setBusy('confirm');
-    setError('');
+    setError(null);
     setSuccess('');
     try {
       const result = await ppctImportApi.confirm(file, targets, preview.requestFingerprint);
       const summary = result.results
-        .map((item) => `Khối ${item.gradeLevel}: ${item.outcome === 'CREATED' ? 'tạo draft' : item.outcome === 'UPDATED' ? 'cập nhật draft' : 'dùng lại draft trùng nội dung'} v${item.version.versionNumber}`)
+        .map((item) => `Khối ${item.gradeLevel}: ${item.outcome === 'CREATED' ? 'tạo bản nháp' : item.outcome === 'UPDATED' ? 'cập nhật bản nháp' : 'dùng lại bản nháp trùng nội dung'} số ${item.version.versionNumber}`)
         .join(' · ');
-      setSuccess(`Đã nhập PPCT ở trạng thái DRAFT. ${summary}. Chưa có phiên bản nào được tự động công bố.`);
+      setSuccess(`Đã nhập PPCT ở trạng thái bản nháp. ${summary}. Chưa có phiên bản nào được tự động công bố.`);
       setPreview(null);
       setPreviewDirty(false);
     } catch (caught) {
-      setError(errorText(caught));
+      setError(caught);
     } finally {
       setBusy(null);
     }
@@ -134,8 +127,8 @@ export function PpctImportPage() {
 
   return (
     <div className="management-page ppct-import-page">
-      <PageHeader eyebrow="Phân phối chương trình" title="Nhập PPCT từ Excel">
-        Nạp workbook PPCT_V1 theo quy trình kiểm tra → xem trước → xác nhận. Hệ thống chỉ tạo hoặc cập nhật bản nháp, không tự công bố.
+      <PageHeader eyebrow="Phân phối chương trình" title="Nhập phân phối chương trình (PPCT) từ Excel">
+        Nhập tệp Excel theo mẫu PPCT_V1, qua các bước kiểm tra → xem trước → xác nhận. Hệ thống chỉ tạo hoặc cập nhật bản nháp, không tự công bố.
       </PageHeader>
 
       <section className="inline-work-form" aria-labelledby="ppct-import-file-heading">
@@ -149,14 +142,14 @@ export function PpctImportPage() {
             accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             onChange={(event) => resetForFile(event.target.files?.[0] ?? null)}
           />
-          <p className="form-field__hint">Tối đa 8 MiB. Môn học và năm học được đọc từ sheet THONG_TIN, không suy diễn từ tên tệp.</p>
+          <p className="form-field__hint">Tối đa 8 MiB. Môn học và năm học được đọc từ trang tính THONG_TIN, không suy diễn từ tên tệp.</p>
         </div>
         <Button type="button" onClick={() => void inspectFile()} loading={busy === 'inspect'} disabled={!file || busy !== null}>
           Kiểm tra tệp
         </Button>
       </section>
 
-      {error && <InlineAlert title="Chưa thể tiếp tục"><p>{error}</p></InlineAlert>}
+      {error != null && (typeof error === 'string' ? <InlineAlert title="Chưa thể tiếp tục"><p>{error}</p></InlineAlert> : <ErrorFeedback title="Chưa thể tiếp tục" error={error} />)}
       {success && <InlineAlert title="Đã hoàn tất" tone="success"><p>{success}</p></InlineAlert>}
 
       {inspection && (
@@ -194,9 +187,9 @@ export function PpctImportPage() {
       {preview && (
         <section className="inline-work-form" aria-labelledby="ppct-import-preview-heading">
           <h2 id="ppct-import-preview-heading">3. Xem trước và chọn bản nháp đích</h2>
-          <p><strong>{preview.subject.name}</strong> · {preview.academicYear.code}. Fingerprint khóa theo tệp, người dùng, nội dung và lựa chọn draft đích.</p>
+          <p><strong>{preview.subject.name}</strong> · {preview.academicYear.code}. Bản xem trước gắn với tệp, người nhập và bản nháp đã chọn. Nếu thay đổi lựa chọn, hãy xem trước lại trước khi xác nhận.</p>
 
-          <DataTable label="Bản xem trước PPCT theo khối" headings={['Khối', 'CORE', 'Chuyên đề', 'Cách nhập', 'Bản nháp đích']}>
+          <DataTable label="Bản xem trước PPCT theo khối" headings={['Khối', 'Chương trình chính khóa', 'Chuyên đề', 'Cách nhập', 'Bản nháp đích']}>
             {preview.grades.map((grade) => {
               const target = targets.find((candidate) => candidate.gradeLevel === grade.gradeLevel) ?? grade.target;
               return (
@@ -228,7 +221,7 @@ export function PpctImportPage() {
                         ))}
                       </SelectField>
                     ) : (
-                      <span>Tạo phiên bản DRAFT kế tiếp</span>
+                      <span>Tạo bản nháp kế tiếp</span>
                     )}
                   </td>
                 </tr>
@@ -244,7 +237,7 @@ export function PpctImportPage() {
 
           {previewDirty && (
             <InlineAlert title="Lựa chọn bản nháp đã thay đổi">
-              Hãy tạo lại bản xem trước để hệ thống phát hành fingerprint mới trước khi xác nhận.
+              Hãy xem trước lại để kiểm tra đúng bản nháp vừa chọn trước khi xác nhận.
             </InlineAlert>
           )}
 
@@ -253,7 +246,7 @@ export function PpctImportPage() {
               {previewDirty ? 'Xem trước lại' : 'Làm mới bản xem trước'}
             </Button>
             <Button type="button" onClick={() => void confirmImport()} loading={busy === 'confirm'} disabled={previewDirty || busy !== null}>
-              Xác nhận nhập vào DRAFT
+              Xác nhận nhập vào bản nháp
             </Button>
           </div>
         </section>
@@ -262,7 +255,7 @@ export function PpctImportPage() {
       {!inspection && !busy && (
         <EmptyState
           title="Chưa có tệp được kiểm tra"
-          message="Chọn workbook PPCT_V1 và bấm “Kiểm tra tệp”. Dữ liệu chỉ được ghi sau bước xác nhận cuối cùng."
+          message="Chọn tệp Excel theo mẫu PPCT_V1 và bấm “Kiểm tra tệp”. Dữ liệu chỉ được ghi sau bước xác nhận cuối cùng."
         />
       )}
     </div>

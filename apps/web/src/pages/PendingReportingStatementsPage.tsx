@@ -18,7 +18,7 @@ export function PendingReportingStatementsPage() {
     {(contextQuery.isLoading || listQuery.isLoading) && <PageLoading />}
     {contextQuery.isError && <QueryFailure error={contextQuery.error} retry={() => void contextQuery.refetch()} />}
     {listQuery.isError && <QueryFailure error={listQuery.error} retry={() => void listQuery.refetch()} />}
-    {listQuery.data?.items.length === 0 && <EmptyState title="Không có báo cáo đang chờ" message="Hàng đợi hiện không có báo cáo phù hợp để tài khoản này quyết định." />}
+    {listQuery.data?.items.length === 0 && <EmptyState title="Không có báo cáo đang chờ" message="Hiện không có báo cáo chờ duyệt trong phạm vi bạn được phép phê duyệt." />}
     {listQuery.data && listQuery.data.items.length > 0 && <><StatementListTable items={listQuery.data.items} academicYearLabels={yearLabels} /><Pagination page={page} pageSize={PAGE_SIZE} total={listQuery.data.total} onPage={setPage} /></>}
   </div>;
 }

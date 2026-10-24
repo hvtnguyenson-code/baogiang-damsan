@@ -1,3 +1,6 @@
+import { WorkflowError } from '../components/ui/workflow-error';
+import { transportError } from '../lib/teaching-workflow-presentation';
+import { ErrorFeedback } from '../components/ui/feedback';
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../auth/auth-context';
@@ -21,7 +24,7 @@ export function ProfilePage() {
   const [challengeExpiresAt, setChallengeExpiresAt] = useState<string | null>(null);
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
   const [testResult, setTestResult] = useState<TelegramTestNotificationResponse | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<Error | string | null>(null);
   const testRequestKeyRef = useRef<string | null>(null);
 
   const telegramQuery = useQuery({
@@ -76,7 +79,7 @@ export function ProfilePage() {
       void queryClient.invalidateQueries({ queryKey: ['telegram-status'] });
     },
     onError: (error: Error) => {
-      setActionError(error.message || 'Không thể tạo yêu cầu liên kết Telegram.');
+      setActionError(transportError(error));
     },
   });
 
@@ -91,7 +94,7 @@ export function ProfilePage() {
       void queryClient.invalidateQueries({ queryKey: ['telegram-status'] });
     },
     onError: (error: Error) => {
-      setActionError(error.message || 'Không thể hủy liên kết Telegram.');
+      setActionError(transportError(error));
     },
   });
 
@@ -104,7 +107,7 @@ export function ProfilePage() {
       void queryClient.invalidateQueries({ queryKey: ['telegram-status'] });
     },
     onError: (error: Error) => {
-      setActionError(error.message || 'Không thể gửi tin nhắn thử nghiệm.');
+      setActionError(transportError(error));
     },
   });
 
@@ -133,7 +136,7 @@ export function ProfilePage() {
   return (
     <div className="management-page">
       <PageHeader eyebrow="Hồ sơ cá nhân" title={auth.user.displayName}>
-        Thông tin xác thực do hệ thống hiện có cung cấp. Trang này không thay đổi hồ sơ.
+        Xem thông tin tài khoản, phạm vi công việc được giao và quản lý liên kết Telegram.
       </PageHeader>
 
       <section className="ledger-section" aria-labelledby="identity-heading">
@@ -157,21 +160,12 @@ export function ProfilePage() {
       <section className="ledger-section" aria-labelledby="telegram-heading">
         <h2 id="telegram-heading">Tích hợp Telegram</h2>
 
-        {actionError && (
-          <InlineAlert title="Lỗi thao tác" tone="error">
-            <p>{actionError}</p>
-          </InlineAlert>
-        )}
+        <WorkflowError error={actionError} title="Chưa thể hoàn tất thao tác Telegram" />
 
         {telegramQuery.isLoading ? (
           <LoadingState label="Đang kiểm tra trạng thái liên kết Telegram..." />
         ) : telegramQuery.isError ? (
-          <InlineAlert title="Chưa tải được trạng thái Telegram" tone="error">
-            <p>Không thể kết nối đến máy chủ để lấy trạng thái Telegram.</p>
-            <Button type="button" variant="secondary" onClick={() => void telegramQuery.refetch()}>
-              Thử lại
-            </Button>
-          </InlineAlert>
+          <ErrorFeedback error={telegramQuery.error} title="Chưa tải được trạng thái Telegram" retry={() => void telegramQuery.refetch()} />
         ) : !telegramData?.enabled ? (
           <p className="muted-copy">Tính năng liên kết Telegram hiện đang tắt trên hệ thống.</p>
         ) : telegramData.linked ? (
@@ -202,8 +196,7 @@ export function ProfilePage() {
                 ) : (
                   <InlineAlert title="Lỗi gửi tin thử" tone="error">
                     <p>
-                      Không thể gửi tin nhắn thử nghiệm (trạng thái: {testResult.deliveryStatus}).
-                      {testResult.error ? ` Chi tiết: ${testResult.error}` : ''}
+                      Chưa gửi được tin nhắn thử nghiệm. Hãy kiểm tra liên kết Telegram và thử gửi lại.
                     </p>
                   </InlineAlert>
                 )}
@@ -311,11 +304,11 @@ export function ProfilePage() {
           <ul className="rights-list">
             {auth.capabilities.map((grant, index) => (
               <li key={`${grant.key}-${grant.scope}-${grant.resourceId ?? index}`}>
-                <strong>{capabilityLabels[grant.key] ?? grant.key}</strong>
+                <strong>{capabilityLabels[grant.key] ?? 'Quyền công việc chưa có tên hiển thị'}</strong>
                 <span>
-                  {scopeLabels[grant.scope]}
+                  {scopeLabels[grant.scope] ?? 'Chưa có tên phạm vi'}
                   {grant.resourceId ? (
-                    <small className="technical-value"> · mã tài nguyên {grant.resourceId}</small>
+                    <small> · Trong phạm vi được phân công</small>
                   ) : null}
                 </span>
               </li>

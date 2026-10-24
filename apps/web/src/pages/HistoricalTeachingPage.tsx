@@ -1,3 +1,4 @@
+import { curricularComponentLabel, historicalIssueLabel, sessionLabel } from '../lib/teaching-workflow-presentation';
 import type {
   HistoricalTeachingOptionsResponse,
   HistoricalTeachingPreviewResponse,
@@ -7,28 +8,25 @@ import { useEffect, useMemo, useState } from 'react';
 import { Button } from '../components/ui/button';
 import { InlineAlert } from '../components/ui/feedback';
 import { DataTable, EmptyState, PageHeader, SelectField } from '../components/ui/management';
-import { ApiError } from '../lib/api-client';
+import { WorkflowError } from '../components/ui/workflow-error';
+import { transportError } from '../lib/teaching-workflow-presentation';
 import { historicalTeachingApi } from '../lib/historical-teaching-api';
 
 const CSV_HEADER = 'LOP,MON,NGAY_GOC,BUOI_GOC,TIET_GOC,GIAO_VIEN_THUC_DAY,LOAI,NGAY_DAY_THUC_TE,BUOI_THUC_TE,TIET_THUC_TE,GHI_CHU';
 
-function errorText(error: unknown): string {
-  if (error instanceof ApiError) {
-    return error.serverError ? `${error.serverError}: ${error.message}` : error.message;
-  }
-  return error instanceof Error ? error.message : 'Yêu cầu không thực hiện được.';
-}
 
 function kindLabel(kind: 'NORMAL' | 'SUBSTITUTION' | 'MAKEUP'): string {
   if (kind === 'NORMAL') return 'Bình thường';
   if (kind === 'SUBSTITUTION') return 'Dạy thay';
-  return 'Dạy bù';
+  if (kind === 'MAKEUP') return 'Dạy bù';
+  return 'Chưa xác định loại tiết dạy';
 }
 
 function statusLabel(status: 'CONFIRMED' | 'UNCONFIRMED' | 'CONFLICT'): string {
   if (status === 'CONFIRMED') return 'Đã xác nhận';
   if (status === 'UNCONFIRMED') return 'Chưa có minh chứng';
-  return 'Xung đột';
+  if (status === 'CONFLICT') return 'Xung đột';
+  return 'Chưa xác định trạng thái';
 }
 
 export function HistoricalTeachingPage() {
@@ -41,7 +39,7 @@ export function HistoricalTeachingPage() {
   const [subjectCode, setSubjectCode] = useState('');
   const [reversalReason, setReversalReason] = useState('Điều chỉnh minh chứng lịch sử');
   const [busy, setBusy] = useState<'options' | 'preview' | 'confirm' | 'reconcile' | 'reverse' | null>(null);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<Error | string>('');
   const [success, setSuccess] = useState('');
 
   const blockerCount = useMemo(() => {
@@ -63,7 +61,7 @@ export function HistoricalTeachingPage() {
         setSubjectCode(result.subjects[0]?.code ?? '');
       })
       .catch((caught) => {
-        if (active) setError(errorText(caught));
+        if (active) setError(transportError(caught));
       })
       .finally(() => {
         if (active) setBusy(null);
@@ -84,7 +82,7 @@ export function HistoricalTeachingPage() {
       setClassCode(result.classes[0]?.code ?? '');
       setSubjectCode(result.subjects[0]?.code ?? '');
     } catch (caught) {
-      setError(errorText(caught));
+      setError(transportError(caught));
     } finally {
       setBusy(null);
     }
@@ -105,7 +103,7 @@ export function HistoricalTeachingPage() {
         setError('Bản xem trước còn lỗi chặn. Sửa dữ liệu theo các dòng được đánh dấu rồi xem trước lại.');
       }
     } catch (caught) {
-      setError(errorText(caught));
+      setError(transportError(caught));
     } finally {
       setBusy(null);
     }
@@ -128,7 +126,7 @@ export function HistoricalTeachingPage() {
       setPreview(null);
       if (classCode && subjectCode) await loadReconciliation();
     } catch (caught) {
-      setError(errorText(caught));
+      setError(transportError(caught));
     } finally {
       setBusy(null);
     }
@@ -142,7 +140,7 @@ export function HistoricalTeachingPage() {
       const result = await historicalTeachingApi.reconciliation(academicYearId, classCode, subjectCode);
       setReconciliation(result);
     } catch (caught) {
-      setError(errorText(caught));
+      setError(transportError(caught));
     } finally {
       setBusy(null);
     }
@@ -151,7 +149,7 @@ export function HistoricalTeachingPage() {
   async function reverseExecution(executionId: string, expectedUpdatedAt: string | null) {
     if (!expectedUpdatedAt) return;
     if (!reversalReason.trim()) {
-      setError('Phải nhập lý do điều chỉnh trước khi đảo bằng chứng.');
+      setError('Hãy nhập lý do điều chỉnh trước khi hoàn tác minh chứng.');
       return;
     }
     setBusy('reverse');
@@ -163,10 +161,10 @@ export function HistoricalTeachingPage() {
         expectedUpdatedAt,
         reversalReason: reversalReason.trim(),
       });
-      setSuccess('Đã đảo bằng chứng lịch sử. Sửa dòng CSV tương ứng và nạp lại; hệ thống sẽ nối lineage thay thế.');
+      setSuccess('Đã hoàn tác minh chứng lịch sử. Sửa dòng dữ liệu tương ứng rồi nhập lại để ghi nhận minh chứng thay thế.');
       await loadReconciliation();
     } catch (caught) {
-      setError(errorText(caught));
+      setError(transportError(caught));
     } finally {
       setBusy(null);
     }
@@ -178,9 +176,10 @@ export function HistoricalTeachingPage() {
         Dùng khi hệ thống bắt đầu vận hành sau ngày khai giảng. Dữ liệu ở đây là minh chứng tiết đã dạy thực tế trước mốc vận hành; dòng không có minh chứng không tự biến thành nợ hoặc trễ.
       </PageHeader>
 
-      {error && <InlineAlert title="Chưa thể tiếp tục"><p>{error}</p></InlineAlert>}
+      <WorkflowError error={error} />
       {success && <InlineAlert title="Đã hoàn tất" tone="success"><p>{success}</p></InlineAlert>}
 
+      {busy === 'options' && <p role="status">Đang tải thông tin năm học, lớp và môn…</p>}
       <section className="inline-work-form" aria-labelledby="history-source-heading">
         <h2 id="history-source-heading">1. Dán dữ liệu lịch sử</h2>
         <SelectField
@@ -197,7 +196,7 @@ export function HistoricalTeachingPage() {
         </SelectField>
 
         <div className="form-field">
-          <label className="form-field__label" htmlFor="history-source-text">CSV/TSV lịch sử</label>
+          <label className="form-field__label" htmlFor="history-source-text">Dữ liệu lịch sử (CSV hoặc dán từ bảng tính)</label>
           <textarea
             id="history-source-text"
             className="form-field__input"
@@ -211,7 +210,7 @@ export function HistoricalTeachingPage() {
             }}
           />
           <p className="form-field__hint">
-            Có thể dán trực tiếp từ Excel/Sheets (TSV) hoặc CSV. Loại: BINH_THUONG, DAY_THAY hoặc DAY_BU. Buổi: SANG, CHIEU, TOI. DAY_BU bắt buộc điền NGAY_DAY_THUC_TE, BUOI_THUC_TE và TIET_THUC_TE. Không nhập UUID hay số thứ tự PPCT.
+            Dán các cột từ Excel hoặc Google Sheets, hoặc dùng dữ liệu phân cách bằng dấu phẩy (CSV). Loại: BINH_THUONG, DAY_THAY hoặc DAY_BU. Buổi: SANG, CHIEU, TOI. DAY_BU bắt buộc điền NGAY_DAY_THUC_TE, BUOI_THUC_TE và TIET_THUC_TE. Không nhập mã định danh nội bộ hoặc số thứ tự phân phối chương trình (PPCT).
           </p>
         </div>
 
@@ -231,24 +230,24 @@ export function HistoricalTeachingPage() {
 
           {preview.issues.length > 0 && (
             <InlineAlert title="Lỗi toàn bộ nguồn">
-              <ul>{preview.issues.map((issue, index) => <li key={`${issue.code}-${index}`}>{issue.message}</li>)}</ul>
+              <ul>{preview.issues.map((issue, index) => <li key={`${issue.code}-${index}`}>{historicalIssueLabel(issue.code)}</li>)}</ul>
             </InlineAlert>
           )}
 
-          <DataTable label="Bản xem trước lịch sử" headings={['Dòng', 'Loại', 'Lớp · Môn', 'Tiết gốc', 'GV thực dạy', 'PPCT', 'Kết quả']}>
+          <DataTable label="Bản xem trước lịch sử" headings={['Dòng', 'Loại', 'Lớp · Môn', 'Tiết gốc', 'Giáo viên thực dạy', 'PPCT', 'Kết quả']}>
             {preview.rows.map((row) => (
               <tr key={row.rowRef}>
                 <td>{row.rowNumber}</td>
                 <td>{kindLabel(row.kind)}</td>
                 <td><strong>{row.schoolClassCode}</strong> · {row.subjectCode}</td>
-                <td>{row.sourceCivilDate} · {row.sourceSession} · tiết {row.sourceOrdinal}</td>
+                <td>{row.sourceCivilDate} · {sessionLabel(row.sourceSession)} · tiết {row.sourceOrdinal}</td>
                 <td>{row.actualTeacherDisplayName ?? row.actualTeacherStaffCode}</td>
-                <td>{row.ppct ? `${row.ppct.component} · tiết ${row.ppct.sequence} · ${row.ppct.title}` : '—'}</td>
+                <td>{row.ppct ? `${curricularComponentLabel(row.ppct.component)} · tiết ${row.ppct.sequence} · ${row.ppct.title}` : '—'}</td>
                 <td>
                   {row.status === 'READY' ? (
-                    <span>Sẵn sàng{row.replacementCandidate ? ' · thay thế bản đã đảo' : ''}</span>
+                    <span>Sẵn sàng{row.replacementCandidate ? ' · thay thế minh chứng đã hoàn tác' : ''}</span>
                   ) : (
-                    <ul>{row.issues.map((issue, index) => <li key={`${issue.code}-${index}`}>{issue.message}</li>)}</ul>
+                    <ul>{row.issues.map((issue, index) => <li key={`${issue.code}-${index}`}>{historicalIssueLabel(issue.code)}</li>)}</ul>
                   )}
                 </td>
               </tr>
@@ -291,7 +290,7 @@ export function HistoricalTeachingPage() {
             </p>
             {reconciliation.findings.length > 0 && (
               <InlineAlert title="Phát hiện cần rà soát">
-                <ul>{reconciliation.findings.map((finding) => <li key={finding}>{finding}</li>)}</ul>
+                <ul>{reconciliation.findings.map((finding) => <li key={finding}>{historicalIssueLabel(finding)}</li>)}</ul>
               </InlineAlert>
             )}
             <div className="form-field">
@@ -309,8 +308,8 @@ export function HistoricalTeachingPage() {
                 <tr key={row.occurrenceKey}>
                   <td>{row.sourceCivilDate} · {row.sourceSlotLabel}</td>
                   <td>{row.actualTeacherDisplayName ?? row.responsibleTeacherDisplayName}</td>
-                  <td>{row.ppct ? `${row.ppct.component} · tiết ${row.ppct.sequence} · ${row.ppct.title}` : '—'}</td>
-                  <td>{statusLabel(row.status)}{row.findings.length ? ` · ${row.findings.join(', ')}` : ''}</td>
+                  <td>{row.ppct ? `${curricularComponentLabel(row.ppct.component)} · tiết ${row.ppct.sequence} · ${row.ppct.title}` : '—'}</td>
+                  <td>{statusLabel(row.status)}{row.findings.length ? ` · ${row.findings.map(historicalIssueLabel).join(' · ')}` : ''}</td>
                   <td>
                     {row.status === 'CONFIRMED' && row.executionId && row.executionUpdatedAt ? (
                       <Button
@@ -320,7 +319,7 @@ export function HistoricalTeachingPage() {
                         loading={busy === 'reverse'}
                         disabled={busy !== null}
                       >
-                        Đảo để sửa
+                        Hoàn tác để sửa
                       </Button>
                     ) : '—'}
                   </td>
@@ -334,7 +333,7 @@ export function HistoricalTeachingPage() {
       {!preview && !reconciliation && busy === null && (
         <EmptyState
           title="Chưa có dữ liệu đang đối soát"
-          message="Dán CSV lịch sử để xem trước hoặc chọn lớp và môn để xem toàn bộ nghĩa vụ trước mốc vận hành."
+          message="Dán dữ liệu lịch sử để xem trước hoặc chọn lớp và môn để xem toàn bộ nghĩa vụ trước mốc vận hành."
         />
       )}
     </div>

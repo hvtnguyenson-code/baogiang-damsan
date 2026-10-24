@@ -129,7 +129,7 @@ describe('P5-052: Task-Oriented Workspace & Information Architecture', () => {
       expect(screen.getByRole('button', { name: /công việc của tôi/i })).toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /quản trị/i })).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /dữ liệu năm học/i })).not.toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: /báo cáo & phê duyệt/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /báo cáo và phê duyệt/i })).not.toBeInTheDocument();
 
       // Home Work Queue có lịch dạy và báo cáo cá nhân
       expect(screen.getByTestId('queue-item-schedule')).toBeInTheDocument();
@@ -172,14 +172,14 @@ describe('P5-052: Task-Oriented Workspace & Information Architecture', () => {
       expect(within(nav).getByRole('button', { name: /dữ liệu năm học/i })).toBeInTheDocument();
       fireEvent.click(within(nav).getByRole('button', { name: /dữ liệu năm học/i }));
       expect(within(nav).getByRole('link', { name: 'Phân công kiêm nhiệm' })).toBeInTheDocument();
-      expect(within(nav).getByRole('link', { name: 'Nhập PPCT' })).toBeInTheDocument();
+      expect(within(nav).getByRole('link', { name: 'Nhập phân phối chương trình (PPCT)' })).toBeInTheDocument();
       expect(within(nav).getByRole('link', { name: 'Áp dụng chuyên đề' })).toBeInTheDocument();
       expect(within(nav).queryByRole('link', { name: 'Cấu trúc năm học' })).not.toBeInTheDocument();
       expect(within(nav).queryByRole('link', { name: 'Người dùng' })).not.toBeInTheDocument();
 
       // Báo cáo được xem có mặt
-      expect(within(nav).getByRole('button', { name: /báo cáo & phê duyệt/i })).toBeInTheDocument();
-      fireEvent.click(within(nav).getByRole('button', { name: /báo cáo & phê duyệt/i }));
+      expect(within(nav).getByRole('button', { name: /báo cáo và phê duyệt/i })).toBeInTheDocument();
+      fireEvent.click(within(nav).getByRole('button', { name: /báo cáo và phê duyệt/i }));
       expect(within(nav).getByRole('link', { name: 'Báo cáo được phép xem' })).toBeInTheDocument();
       expect(within(nav).queryByRole('link', { name: 'Phê duyệt báo cáo' })).not.toBeInTheDocument();
     });
@@ -284,7 +284,7 @@ describe('P5-052: Task-Oriented Workspace & Information Architecture', () => {
       expect(screen.queryByRole('button', { name: /công việc của tôi/i })).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /dữ liệu năm học/i })).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /điều hành chuyên môn/i })).not.toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: /báo cáo & phê duyệt/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /báo cáo và phê duyệt/i })).not.toBeInTheDocument();
 
       // Home hiển thị hướng dẫn an toàn
       expect(screen.getByText(/tài khoản của bạn hiện chưa được phân công/i)).toBeInTheDocument();
@@ -302,7 +302,7 @@ describe('P5-052: Task-Oriented Workspace & Information Architecture', () => {
       const nav = screen.getByRole('navigation', { name: /điều hướng chính/i });
       expect(within(nav).getByRole('button', { name: /điều hành chuyên môn/i })).toBeInTheDocument();
       fireEvent.click(within(nav).getByRole('button', { name: /điều hành chuyên môn/i }));
-      expect(within(nav).getByRole('link', { name: 'HĐTN-HN & GDĐP' })).toBeInTheDocument();
+      expect(within(nav).getByRole('link', { name: 'Hoạt động trải nghiệm và giáo dục địa phương' })).toBeInTheDocument();
       expect(within(nav).queryByRole('link', { name: 'Lịch dạy bù' })).not.toBeInTheDocument();
     });
 
@@ -329,7 +329,7 @@ describe('P5-052: Task-Oriented Workspace & Information Architecture', () => {
       // Cả 3 nhóm được cấp đều có mặt đầy đủ
       const nav = screen.getByRole('navigation', { name: /điều hướng chính/i });
       expect(within(nav).getByRole('button', { name: /công việc của tôi/i })).toBeInTheDocument();
-      expect(within(nav).getByRole('button', { name: /báo cáo & phê duyệt/i })).toBeInTheDocument();
+      expect(within(nav).getByRole('button', { name: /báo cáo và phê duyệt/i })).toBeInTheDocument();
       expect(within(nav).getByRole('button', { name: /quản trị/i })).toBeInTheDocument();
     });
 

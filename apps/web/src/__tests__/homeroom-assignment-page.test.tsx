@@ -66,9 +66,14 @@ describe('Homeroom administration workspace', () => {
   it('renders retained ACTIVE and REVERSED evidence with diagnostic current state', async () => {
     vi.stubGlobal('fetch', fetchFor()); renderWithQuery(<HomeroomAssignmentsPage />);
     expect(await screen.findByText('Đã đảo / hiệu chỉnh')).toBeInTheDocument();
-    expect(screen.getAllByText(/trạng thái hiện tại.*chỉ chẩn đoán/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/tài khoản hiện tại.*không thay đổi lịch sử phân công/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/sai nguồn/i)).toBeInTheDocument();
-    expect(screen.getByText(/người đảo: actor-2/i)).toBeInTheDocument();
+    expect(screen.queryByText(/DISABLED|REVERSED/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Đã vô hiệu hóa/)).toBeInTheDocument();
+    const trace = screen.getAllByText('Thông tin kỹ thuật để tra cứu', { selector: 'summary' })[1]!;
+    expect(trace.closest('details')).not.toHaveAttribute('open');
+    await userEvent.click(trace);
+    expect(screen.getByText(/người đảo: actor-2/i)).toBeVisible();
   });
 
   it('serializes filters and pagination to retained history', async () => {
@@ -77,6 +82,20 @@ describe('Homeroom administration workspace', () => {
     await user.selectOptions(screen.getByLabelText('Lớp'), 'class-1'); await user.selectOptions(screen.getByLabelText('Giáo viên trong lịch sử'), 'teacher-1');
     fireEvent.change(screen.getByLabelText('Hiệu lực tại'), { target: { value: '2026-09-04' } });
     await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes('schoolClassId=class-1') && String(url).includes('teacherUserId=teacher-1') && String(url).includes('activeOn=2026-09-04'))).toBe(true));
+  });
+
+  it.each([
+    ['PENDING', 'Chờ kích hoạt'], ['ACTIVE', 'Đang hoạt động'],
+    ['LOCKED', 'Đang bị khóa'], ['DISABLED', 'Đã vô hiệu hóa'],
+    ['FUTURE_INTERNAL_STATUS', 'Chưa xác định'], ['constructor', 'Chưa xác định'],
+  ])('presents current account status %s without changing retained assignment semantics', async (userStatus, label) => {
+    vi.stubGlobal('fetch', fetchFor({ rows: [{ ...activeRow, teacher: { ...teacher, userStatus } }] }));
+    renderWithQuery(<HomeroomAssignmentsPage />);
+    expect(await screen.findByText(`Tài khoản hiện tại (không thay đổi lịch sử phân công): ${label} · không còn là giáo viên`)).toBeInTheDocument();
+    expect(screen.getByText('Phân công chưa bị đảo')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Kết thúc' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Hiệu chỉnh' })).toBeEnabled();
+    expect(screen.queryByText(/FUTURE_INTERNAL_STATUS|constructor/)).not.toBeInTheDocument();
   });
 
   it('offers only ACTIVE classes and eligible teachers for current create', async () => {

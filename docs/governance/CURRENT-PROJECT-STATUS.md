@@ -8,7 +8,11 @@ Per `MAJOR-TASK-DOCUMENTATION-SYNC-PROTOCOL.md`, this file is intentionally conc
 
 Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub. SHAs here are evidence for already-established task states, never a self-referential claim that this document contains its own current commit.
 
-**Status snapshot date:** 2026-10-20
+**Status snapshot date:** 2026-10-24
+
+## P5-058 — IN_PROGRESS, bounded Vietnamese frontend checkpoints
+
+P5-058 (T57), dependencies P5-050/P5-052/P5-053 CLOSED; một nhánh `feat/p5-058-frontend-vietnamese-ux`. Lát cắt 6 đọc/audit toàn file Users, Capabilities, BusinessConfiguration, Audit, SystemStatus; chuẩn hóa lỗi HTTP, nhãn quyền/phạm vi/kết quả tra cứu, trạng thái tải/rỗng và hướng dẫn xóa an toàn. Trang trạng thái công khai giữ thông báo 401 trong state trình bày khi cache phiên bị xóa; auth/session boundary không đổi. Giữ API/payload/quyền/xác nhận/audit/backend và DESIGN.md. Đã audit toàn file 25/35 module; 10 module và nghiệm thu động/persona còn thuộc A/C/D của P5-058. Baseline `f7f01906821b12db8d95d14bad557937b6bd5165`, main xác minh trực tiếp Git remote `ea80f078c8a1297c562c8f4319540e3417d6e651`; CI baseline #834 SUCCESS theo bàn giao người dùng, không phải CI working tree. Bằng chứng/giới hạn: `docs/phase-reports/P5-058-SLICE-6-REPORT.md`. Giữ IN_PROGRESS, cùng nhánh/PR #249 draft; chưa commit/push/merge/deploy hoặc nghiệm thu toàn task.
 
 ## P5-053 — CLOSED by SYNC-P5-053 (Timetable & Time-Slot Administration Workspace)
 
@@ -193,3 +197,12 @@ Current canonical authority surfaces:
 5. `MAJOR-TASK-DOCUMENTATION-SYNC-PROTOCOL.md`.
 
 Applicable accepted architecture/decision authorities include ADR-044 through ADR-058 as registered by their parent tasks. Exact task/closure state follows the canonical task register and this current-status snapshot; exact Git state follows Git/GitHub directly.
+
+
+### P5-058 — Cập nhật lát cắt 4 (24/10/2026)
+
+Tiếp tục trên `feat/p5-058-frontend-vietnamese-ux`, PR #249 DRAFT, HEAD bắt đầu `8ae0e9ebed0c1a880a0023d804008b2f36f7d6d0`; main xác minh trực tiếp `ea80f078c8a1297c562c8f4319540e3417d6e651`; GitHub CI baseline #832 (`40079434301`) SUCCESS. Lát cắt 3 đã có trên baseline này; đoạn ghi “chưa commit/push” trước đây chỉ là lịch sử phiên trước.
+
+Lát cắt 4 đã đọc toàn file EffectiveSchedule, TeachingOperations, MakeupScheduling, HistoricalTeaching và Profile; xử lý lỗi HTTP, nhãn enum/finding lịch sử, UUID thay tên, Telegram UNKNOWN/FAILED, và phân biệt tải/lỗi/rỗng của lịch dạy bù. Không đổi route/API/payload/auth/RBAC/read model hoặc trạng thái nghiệp vụ. Bổ sung unit và Playwright; phạm vi từng đường đã review và còn mở ghi tại `docs/phase-reports/P5-058-PAGE-LABEL-AUDIT.md`, kết quả kiểm tra/trạng thái xuất bản tại `docs/phase-reports/P5-058-SLICE-4-REPORT.md`.
+
+Giữ P5-058 IN_PROGRESS: 20 module còn cần audit toàn file, năm trang mới vẫn cần nghiệm thu dữ liệu động/persona đã liệt kê. Không chuyển task sang IN_REVIEW vì đây là checkpoint một phần trên PR draft; chưa đủ A/C/D, CI cho thay đổi mới hoặc independent review. Chưa merge/deploy/đóng task; không thay authority baseline/ADR hoặc claim nghiệp vụ của T51/T52.

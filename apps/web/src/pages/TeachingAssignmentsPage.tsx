@@ -184,7 +184,7 @@ export function TeachingAssignmentsPage() {
   if (years.data.items.length === 0) {
     return <div className="management-page teaching-assignment-ledger">
       <PageHeader eyebrow="Sổ phân công giảng dạy" title="Phân công giảng dạy">
-        Theo dõi giáo viên phụ trách từng môn học trong lớp theo ngày dân sự của năm học.
+        Theo dõi giáo viên phụ trách từng môn học trong lớp theo ngày hiệu lực trong năm học.
       </PageHeader>
       <EmptyState title="Chưa có năm học để xem phân công" message="Khi năm học được thiết lập, lịch sử phân công giảng dạy sẽ xuất hiện tại đây." />
     </div>;
@@ -204,7 +204,7 @@ export function TeachingAssignmentsPage() {
     <section className="teaching-assignment-ledger__context" aria-labelledby="year-context-heading">
       <div className="margin-rail" aria-hidden="true" />
       <div>
-        <h2 id="year-context-heading">Ngữ cảnh năm học</h2>
+        <h2 id="year-context-heading">Năm học đang xem</h2>
         <SelectField label="Năm học" id="teaching-assignment-year" value={selectedYearId} onChange={(event) => changeYear(event.target.value)}>
           {years.data.items.map((year) => <option key={year.id} value={year.id}>{year.code} — {year.name}</option>)}
         </SelectField>
@@ -345,12 +345,13 @@ function CreateWorkflow(props: {
   const candidateReady = Boolean(candidateRequestFor(draft, props.calendar));
   return <form className="inline-work-form teaching-assignment-workflow" onSubmit={props.onSubmit} noValidate>
     <h2>Tạo phân công giảng dạy</h2>
+    {!candidateReady && <p className="muted-copy">Chọn môn học và khoảng hiệu lực hợp lệ để xem giáo viên đủ điều kiện.</p>}
     <div className="form-grid">
       <SelectField label="Lớp" id="teaching-create-class" value={draft.schoolClassId} onChange={(event) => props.onChange({ ...draft, schoolClassId: event.target.value })} required><option value="">Chọn lớp</option>{props.classes.map((item) => <option key={item.id} value={item.id}>{item.code} — {item.name}</option>)}</SelectField>
       <SelectField label="Môn học" id="teaching-create-subject" value={draft.subjectId} onChange={(event) => resetTeacher({ subjectId: event.target.value })} required><option value="">Chọn môn học</option>{props.subjects.map((item) => <option key={item.id} value={item.id}>{item.code} — {item.name}</option>)}</SelectField>
       <FormField label="Có hiệu lực từ" name="teaching-create-from" type="date" min={props.calendar.startDate} max={props.calendar.endDate} value={draft.validFrom} onChange={(event) => resetTeacher({ validFrom: event.target.value })} required />
-      <FormField label="Có hiệu lực đến" name="teaching-create-until" type="date" min={draft.validFrom || props.calendar.startDate} max={props.calendar.endDate} value={draft.validUntil} onChange={(event) => resetTeacher({ validUntil: event.target.value })} />
-      <SelectField label="Giáo viên" id="teaching-create-teacher" value={draft.teacherUserId} onChange={(event) => props.onChange({ ...draft, teacherUserId: event.target.value })} disabled={!candidateReady || props.candidatesPending || Boolean(props.candidatesError)} required><option value="">{props.candidatesPending ? 'Đang tìm giáo viên…' : 'Chọn giáo viên'}</option>{props.candidates.map((item) => <option key={item.userId} value={item.userId}>{teacherLabel(item)}</option>)}</SelectField>
+      <FormField label="Có hiệu lực đến" name="teaching-create-until" hint="Có thể để trống nếu chưa ấn định ngày kết thúc." type="date" min={draft.validFrom || props.calendar.startDate} max={props.calendar.endDate} value={draft.validUntil} onChange={(event) => resetTeacher({ validUntil: event.target.value })} />
+      <SelectField label="Giáo viên" id="teaching-create-teacher" value={draft.teacherUserId} onChange={(event) => props.onChange({ ...draft, teacherUserId: event.target.value })} disabled={!candidateReady || props.candidatesPending || Boolean(props.candidatesError)} required><option value="">{!candidateReady ? 'Chọn môn và ngày trước' : props.candidatesPending ? 'Đang tìm giáo viên…' : 'Chọn giáo viên'}</option>{props.candidates.map((item) => <option key={item.userId} value={item.userId}>{teacherLabel(item)}</option>)}</SelectField>
       <TextareaField label="Ghi chú" id="teaching-create-note" maxLength={2000} value={draft.note} onChange={(event) => props.onChange({ ...draft, note: event.target.value })} />
     </div>
     {Boolean(props.candidatesError) && <QueryFailure error={props.candidatesError} retry={props.onRetry} />}
@@ -402,7 +403,7 @@ function ChangeWorkflow(props: {
     </dl>
     <div className="form-grid">
       <FormField label="Có hiệu lực từ" name="teaching-change-from" type="date" min={min} max={max} value={props.draft.effectiveFrom} onChange={(event) => props.onChange({ ...props.draft, effectiveFrom: event.target.value, newTeacherUserId: '' })} required />
-      <SelectField label="Giáo viên mới" id="teaching-change-teacher" value={props.draft.newTeacherUserId} onChange={(event) => props.onChange({ ...props.draft, newTeacherUserId: event.target.value })} disabled={!candidateReady || props.candidatesPending || Boolean(props.candidatesError)} required><option value="">{props.candidatesPending ? 'Đang tìm giáo viên…' : 'Chọn giáo viên mới'}</option>{props.candidates.map((item) => <option key={item.userId} value={item.userId}>{teacherLabel(item)}</option>)}</SelectField>
+      <SelectField label="Giáo viên mới" id="teaching-change-teacher" value={props.draft.newTeacherUserId} onChange={(event) => props.onChange({ ...props.draft, newTeacherUserId: event.target.value })} disabled={!candidateReady || props.candidatesPending || Boolean(props.candidatesError)} required><option value="">{!candidateReady ? 'Chọn ngày hiệu lực hợp lệ trước' : props.candidatesPending ? 'Đang tìm giáo viên…' : 'Chọn giáo viên mới'}</option>{props.candidates.map((item) => <option key={item.userId} value={item.userId}>{teacherLabel(item)}</option>)}</SelectField>
       <TextareaField label="Ghi chú cho phân công mới" id="teaching-change-note" maxLength={2000} value={props.draft.note} onChange={(event) => props.onChange({ ...props.draft, note: event.target.value })} />
     </div>
     {Boolean(props.candidatesError) && <QueryFailure error={props.candidatesError} retry={props.onRetry} />}
