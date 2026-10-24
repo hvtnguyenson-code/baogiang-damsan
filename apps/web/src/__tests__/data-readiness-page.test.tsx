@@ -261,7 +261,8 @@ describe('P5-055 Data Readiness & Import Center Page', () => {
     // Check TKB details
     expect(screen.getByTestId('domain-status-tkb')).toHaveTextContent(/Đã ban hành & sẵn sàng/i);
     expect(screen.getByText('Phiên bản #1 (Đã ban hành)')).toBeInTheDocument();
-    expect(screen.getByTestId('action-tkb')).toHaveAttribute('href', '/quan-tri/thoi-khoa-bieu');
+    expect(screen.getByTestId('action-tkb')).toHaveAttribute('href', '/quan-tri/thoi-khoa-bieu?tab=import');
+    expect(screen.getByTestId('action-tkb')).toHaveTextContent('Nhập TKB Đam San');
     expect(screen.getByText(/Không có cảnh báo hoặc rào cản ngăn cản vận hành/i)).toBeInTheDocument();
 
     // Check PPCT details
@@ -349,5 +350,25 @@ describe('P5-055 Data Readiness & Import Center Page', () => {
       expect(screen.getByText('Không thể tải dữ liệu sẵn sàng')).toBeInTheDocument();
       expect(screen.getByText('Thử lại')).toBeInTheDocument();
     });
+  });
+
+  it('P5-058: following TKB import from readiness does not grant the principal timetable access', async () => {
+    const fetchMock = setupFetch(principalAuth);
+    global.fetch = fetchMock;
+    renderApp(route);
+    fireEvent.click(await screen.findByTestId('action-tkb'));
+    expect(await screen.findByRole('heading', { name: /không có quyền/i })).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([input]) => /timetable-import|timetable-versions/.test(String(input)))).toBe(false);
+  });
+
+  it('P5-058: a failed response cannot claim readiness or expose technical content', async () => {
+    global.fetch = vi.fn(async (input: RequestInfo | URL) => String(input).endsWith('/auth/me')
+      ? jsonResponse(principalAuth)
+      : jsonResponse({ message: 'READY SQL_TECHNICAL_DETAIL', error: 'Forbidden' }, 500));
+    renderApp(route);
+    const alert = await screen.findByRole('alert');
+    expect(alert).not.toHaveTextContent(/READY|SQL_TECHNICAL_DETAIL|Forbidden/);
+    expect(screen.queryByTestId('readiness-overall-card')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Thử lại' })).toBeInTheDocument();
   });
 });

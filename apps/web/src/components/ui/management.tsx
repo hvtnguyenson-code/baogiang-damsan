@@ -1,7 +1,6 @@
 import type { ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from 'react';
 import { Button } from './button';
-import { InlineAlert, LoadingState } from './feedback';
-import { ApiError } from '../../lib/api-client';
+import { ErrorFeedback, InlineAlert, LoadingState } from './feedback';
 
 export function PageHeader({ eyebrow, title, children, action }: { eyebrow: string; title: string; children: ReactNode; action?: ReactNode }) {
   return <header className="page-heading page-heading--rail management-heading"><div className="margin-rail" aria-hidden="true" /><div><p className="utility-label">{eyebrow}</p><div className="management-heading__row"><div><h1>{title}</h1><p>{children}</p></div>{action}</div></div></header>;
@@ -20,20 +19,17 @@ export function StatusText({ active, activeLabel = 'Đang hoạt động', inact
   return <span className={`status-badge ${active ? 'status-badge--active' : `status-badge--${inactiveTone === 'error' ? 'error' : 'inactive'}`}`}>{active ? activeLabel : inactiveLabel}</span>;
 }
 
-export function EmptyState({ filtered = false, title, message }: { filtered?: boolean; title?: string; message?: string }) {
-  return <div className="empty-state"><h2>{title ?? (filtered ? 'Không có kết quả phù hợp' : 'Chưa có dữ liệu')}</h2><p>{message ?? (filtered ? 'Hãy điều chỉnh điều kiện lọc rồi thử lại.' : 'Dữ liệu sẽ xuất hiện tại đây sau khi được tạo.')}</p></div>;
+export function EmptyState({ filtered = false, title, message, action }: { filtered?: boolean; title?: string; message?: string; action?: ReactNode }) {
+  return <div className="empty-state"><h2>{title ?? (filtered ? 'Không có kết quả phù hợp' : 'Chưa có dữ liệu')}</h2><p>{message ?? (filtered ? 'Hãy điều chỉnh điều kiện lọc rồi thử lại.' : 'Chưa có bản ghi để hiển thị.')}</p>{action}</div>;
 }
 
 export function QueryFailure({ error, retry }: { error: unknown; retry(): void }) {
-  const message = error instanceof ApiError && error.statusCode === 403 ? 'Bạn không còn quyền truy cập khu vực này.' : 'Không thể tải dữ liệu. Dữ liệu hiện có chưa bị thay đổi.';
-  return <InlineAlert title="Chưa tải được dữ liệu"><p>{message}</p><Button type="button" variant="secondary" onClick={retry}>Thử lại</Button></InlineAlert>;
+  return <ErrorFeedback error={error} retry={retry} />;
 }
 
 export function MutationNotice({ error, success }: { error?: unknown; success?: string }) {
   if (error) {
-    const status = error instanceof ApiError ? error.statusCode : 0;
-    const message = status === 409 ? 'Dữ liệu xung đột với bản ghi hiện có. Hãy giữ nguyên biểu mẫu, kiểm tra lại rồi thử lại.' : status === 403 ? 'Bạn không có quyền thực hiện thao tác này.' : status === 404 ? 'Bản ghi không còn tồn tại. Hãy tải lại danh sách.' : status === 400 || status === 422 ? 'Một số giá trị chưa hợp lệ. Hãy kiểm tra lại biểu mẫu.' : 'Không thể hoàn tất yêu cầu. Hãy thử lại khi kết nối ổn định.';
-    return <InlineAlert title="Chưa thể lưu thay đổi">{message}</InlineAlert>;
+    return <ErrorFeedback error={error} title="Chưa thể lưu thay đổi" />;
   }
   if (success) return <InlineAlert title="Đã hoàn tất" tone="success">{success}</InlineAlert>;
   return null;

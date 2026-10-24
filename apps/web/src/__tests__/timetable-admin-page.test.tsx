@@ -1,5 +1,6 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CapabilityKey, CapabilityScope } from '@baogiang/contracts';
 import { TimetableAdminPage } from '../pages/TimetableAdminPage';
@@ -35,6 +36,12 @@ const mockAcademicYears = [
     isCurrent: false,
   },
 ];
+
+function TabHistoryControls() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  return <><button onClick={() => navigate(-1)}>Quay lại kiểm thử</button><output aria-label="Đường dẫn kiểm thử">{location.search}</output></>;
+}
 
 const mockTimeSlots = [
   {
@@ -490,6 +497,42 @@ describe('P5-053: Timetable & Time-slot Administration Workspace', () => {
   });
 
   describe('Workspace Navigation & Academic Year Selector', () => {
+    it('P5-058: opens import directly, preserves it after remount and supports back without losing other query parameters', async () => {
+      const route = '/quan-tri/thoi-khoa-bieu?tab=import&context=readiness';
+      const first = renderWithQuery(<TimetableAdminPage />, route);
+      expect(await screen.findByLabelText(/Tệp Excel Thời khóa biểu/)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Nhập TKB Đam San' })).toHaveAttribute('aria-current', 'page');
+      expect(fetch).not.toHaveBeenCalledWith(expect.stringContaining('/workbooks/confirm'), expect.anything());
+      first.unmount();
+      renderWithQuery(<><TabHistoryControls /><TimetableAdminPage /></>, route);
+      expect(await screen.findByLabelText(/Tệp Excel Thời khóa biểu/)).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Khung tiết học' }));
+      expect(screen.getByRole('button', { name: 'Khung tiết học' })).toHaveAttribute('aria-current', 'page');
+      expect(screen.getByLabelText('Đường dẫn kiểm thử')).toHaveTextContent('tab=time-slots&context=readiness');
+      fireEvent.click(screen.getByRole('button', { name: 'Quay lại kiểm thử' }));
+      expect(await screen.findByLabelText(/Tệp Excel Thời khóa biểu/)).toBeInTheDocument();
+    });
+
+    it.each(['', '?tab=unknown'])('P5-058: defaults to versions for query %s', async (query) => {
+      renderWithQuery(<TimetableAdminPage />, `/quan-tri/thoi-khoa-bieu${query}`);
+      expect(await screen.findByRole('heading', { name: 'Danh sách phiên bản thời khóa biểu' })).toBeInTheDocument();
+      expect(screen.queryByLabelText(/Tệp Excel Thời khóa biểu/)).not.toBeInTheDocument();
+    });
+
+    it.each([
+      { caps: [{ key: 'APPROVAL_PRINCIPAL' as const, scope: 'SCHOOL_WIDE' as const }] },
+      { caps: [{ key: 'TIMETABLE_MANAGE' as const, scope: 'PERSONAL' as const }] },
+    ])('P5-058: import deeplink grants no additional access for %j', async ({ caps }) => {
+      const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input).endsWith('/auth/me')) return jsonResponse(authWithCaps(caps));
+        throw new Error('Unauthorized timetable request');
+      });
+      vi.stubGlobal('fetch', fetchMock);
+      renderApp('/quan-tri/thoi-khoa-bieu?tab=import');
+      expect(await screen.findByRole('heading', { name: /không có quyền/i })).toBeInTheDocument();
+      expect(fetchMock.mock.calls.every(([input]) => String(input).endsWith('/auth/me'))).toBe(true);
+      expect(screen.queryByLabelText(/Tệp Excel Thời khóa biểu/)).not.toBeInTheDocument();
+    });
     it('displays 3 tabs and switches active tab properly', async () => {
       renderWithQuery(<TimetableAdminPage />);
 
@@ -521,6 +564,25 @@ describe('P5-053: Timetable & Time-slot Administration Workspace', () => {
   });
 
   describe('Tab 1: Timetable Versions & Lifecycle', () => {
+    it.each([403, 409])('P5-058: preserves HTTP %s when a draft mutation fails without automatic resubmission', async (status) => {
+      const baseFetch = global.fetch;
+      const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input).endsWith('/timetable-versions') && init?.method === 'POST') {
+          return jsonResponse({ message: 'RAW_CAS_INTERNAL', error: 'TECH_CODE' }, status);
+        }
+        return baseFetch(input, init);
+      });
+      vi.stubGlobal('fetch', fetchMock);
+      renderWithQuery(<TimetableAdminPage />);
+      fireEvent.click(await screen.findByRole('button', { name: /tạo bản nháp thủ công/i }));
+      fireEvent.change(screen.getByLabelText(/ghi chú phiên bản/i), { target: { value: 'Ghi chú chưa lưu' } });
+      fireEvent.click(screen.getByRole('button', { name: /xác nhận tạo bản nháp/i }));
+      const alert = await screen.findByRole('alert');
+      expect(alert).toHaveTextContent(status === 403 ? 'Tài khoản chưa được cấp quyền' : 'Hãy tải lại dữ liệu');
+      expect(alert).not.toHaveTextContent(/RAW_CAS_INTERNAL|TECH_CODE/);
+      expect(screen.getByLabelText(/ghi chú phiên bản/i)).toHaveValue('Ghi chú chưa lưu');
+      expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
+    });
     it('renders timetable versions list with correct status badges', async () => {
       renderWithQuery(<TimetableAdminPage />);
 

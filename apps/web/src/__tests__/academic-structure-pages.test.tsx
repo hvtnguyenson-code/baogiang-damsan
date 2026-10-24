@@ -248,9 +248,9 @@ describe('academic structure pages', () => {
     }));
     renderApp('/quan-tri/cau-truc-nam-hoc/year-1/lich');
     await userEvent.click(await screen.findByRole('button', { name: 'Dùng Phiên 1 làm mẫu' }));
-    expect(await screen.findByText('Không thể hoàn tất yêu cầu. Hãy thử lại khi kết nối ổn định.')).toBeInTheDocument();
+    expect(await screen.findByText('Không thể hoàn tất yêu cầu. Hãy kiểm tra kết nối và thử lại.')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Tạo phiên lịch' }));
-    expect(screen.queryByText('Không thể hoàn tất yêu cầu. Hãy thử lại khi kết nối ổn định.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Không thể hoàn tất yêu cầu. Hãy kiểm tra kết nối và thử lại.')).not.toBeInTheDocument();
     await fillMinimalCalendar(); await userEvent.click(screen.getAllByRole('button', { name: 'Tạo phiên lịch' }).at(-1)!);
     expect(await screen.findByText('Đã tạo phiên lịch mới. Phiên này được giữ bất biến.')).toBeInTheDocument();
   }, 10_000);

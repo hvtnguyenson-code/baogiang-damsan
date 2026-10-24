@@ -615,7 +615,7 @@ describe('AUD-05 CapabilitiesPage pagination completeness', () => {
 
     // Error recovery is shown (QueryFailure)
     expect(await screen.findByText('Chưa tải được dữ liệu')).toBeInTheDocument();
-    expect(screen.getByText('Không thể tải dữ liệu. Dữ liệu hiện có chưa bị thay đổi.')).toBeInTheDocument();
+    expect(screen.getByText('Không thể hoàn tất yêu cầu. Hãy kiểm tra kết nối và thử lại.')).toBeInTheDocument();
 
     // FieldPagination remains visible on page 2 and is not hidden
     expect(userNav()).toHaveTextContent(/Trang 2 \/ 2/);

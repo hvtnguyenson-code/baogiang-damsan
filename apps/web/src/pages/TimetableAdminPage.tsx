@@ -15,6 +15,7 @@ import type {
 } from '@baogiang/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 import { InlineAlert } from '../components/ui/feedback';
 import { FormField } from '../components/ui/form-field';
@@ -32,7 +33,6 @@ import {
   TextareaField,
 } from '../components/ui/management';
 import { academicYearsApi, calendarVersionsApi, formatCivilDate } from '../lib/academic-structure-api';
-import { ApiError } from '../lib/api-client';
 import { formatDateTime } from '../lib/display';
 import {
   timeSlotsApi,
@@ -80,15 +80,18 @@ const READINESS_DIMENSION_LABELS: Record<string, string> = {
   PROGRESS_DEBT_REPORTING: 'Tiến độ và nợ tiết báo cáo',
 };
 
-function errorText(error: unknown): string {
-  if (error instanceof ApiError) {
-    return error.serverError ? `${error.serverError}: ${error.message}` : error.message;
-  }
-  return error instanceof Error ? error.message : 'Yêu cầu không thực hiện được.';
-}
-
 export function TimetableAdminPage() {
-  const [activeTab, setActiveTab] = useState<Tab>('versions');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedTab = searchParams.get('tab');
+  const activeTab: Tab = requestedTab === 'import' || requestedTab === 'time-slots' ? requestedTab : 'versions';
+  const setActiveTab = (tab: Tab) => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      if (tab === 'versions') next.delete('tab');
+      else next.set('tab', tab);
+      return next;
+    });
+  };
   const [selectedYearId, setSelectedYearId] = useState<string>('');
 
   // 1. Load Academic Years
@@ -230,7 +233,7 @@ function TimetableVersionsTab({
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [createNote, setCreateNote] = useState('');
-  const [errorNotice, setErrorNotice] = useState<string | null>(null);
+  const [errorNotice, setErrorNotice] = useState<unknown>(null);
   const [successNotice, setSuccessNotice] = useState<string | null>(null);
 
   // List versions query
@@ -254,7 +257,7 @@ function TimetableVersionsTab({
       setSelectedVersionId(created.id);
       void queryClient.invalidateQueries({ queryKey: ['timetable-versions', academicYearId] });
     },
-    onError: (err) => setErrorNotice(errorText(err)),
+    onError: (err) => setErrorNotice(err),
   });
 
   const versions = versionsQuery.data?.items ?? [];
@@ -291,7 +294,7 @@ function TimetableVersionsTab({
         </div>
       </div>
 
-      <MutationNotice error={errorNotice ? new Error(errorNotice) : undefined} success={successNotice ?? undefined} />
+      <MutationNotice error={errorNotice} success={successNotice ?? undefined} />
 
       {/* Create Manual Draft Dialog */}
       {createOpen && (
@@ -360,6 +363,7 @@ function TimetableVersionsTab({
         <EmptyState
           title="Chưa có phiên bản thời khóa biểu nào"
           message="Bạn có thể nạp tệp thời khóa biểu chuẩn Đam San hoặc tạo bản nháp thủ công để bắt đầu."
+          action={<Button type="button" onClick={onNavigateToImport}>Nhập TKB Đam San</Button>}
         />
       ) : (
         <>
@@ -1204,7 +1208,7 @@ function TimetableImportTab({
   const [previewSnapshot, setPreviewSnapshot] = useState<PreviewContextSnapshot | null>(null);
   const [confirmResult, setConfirmResult] = useState<TimetableImportWorkbookConfirmResponse | null>(null);
 
-  const [errorNotice, setErrorNotice] = useState<string | null>(null);
+  const [errorNotice, setErrorNotice] = useState<unknown>(null);
   const [successNotice, setSuccessNotice] = useState<string | null>(null);
 
   const inspectGenRef = useRef(0);
@@ -1278,7 +1282,7 @@ function TimetableImportTab({
       setPreviewSnapshot(null);
       setSuccessNotice('Kiểm tra tệp thành công: Các trang tính khớp định dạng chuẩn Đam San.');
     },
-    onError: (err) => setErrorNotice(errorText(err)),
+    onError: (err) => setErrorNotice(err),
   });
 
   const previewMutation = useMutation({
@@ -1317,7 +1321,7 @@ function TimetableImportTab({
         setErrorNotice(`Xem trước đối soát phát hiện ${data.blockingIssueCount} lỗi chặn và ${data.warningCount} cảnh báo.`);
       }
     },
-    onError: (err) => setErrorNotice(errorText(err)),
+    onError: (err) => setErrorNotice(err),
   });
 
   const confirmMutation = useMutation({
@@ -1351,7 +1355,7 @@ function TimetableImportTab({
       void queryClient.invalidateQueries({ queryKey: ['timetable-versions', academicYearId] });
       onImportSuccess(res.version);
     },
-    onError: (err) => setErrorNotice(errorText(err)),
+    onError: (err) => setErrorNotice(err),
   });
 
   return (
@@ -1366,7 +1370,7 @@ function TimetableImportTab({
         </div>
       </div>
 
-      <MutationNotice error={errorNotice ? new Error(errorNotice) : undefined} success={successNotice ?? undefined} />
+      <MutationNotice error={errorNotice} success={successNotice ?? undefined} />
 
       {/* Confirmation Success Callout */}
       {confirmResult && (
@@ -1706,7 +1710,7 @@ function TimeSlotsTab({ academicYearId }: { academicYearId: string }) {
   const [reviseSlot, setReviseSlot] = useState<TimeSlotDefinitionRecord | null>(null);
   const [retireSlot, setRetireSlot] = useState<TimeSlotDefinitionRecord | null>(null);
 
-  const [errorNotice, setErrorNotice] = useState<string | null>(null);
+  const [errorNotice, setErrorNotice] = useState<unknown>(null);
   const [successNotice, setSuccessNotice] = useState<string | null>(null);
 
   // Time slot form state
@@ -1741,7 +1745,7 @@ function TimeSlotsTab({ academicYearId }: { academicYearId: string }) {
       setCreateOpen(false);
       void queryClient.invalidateQueries({ queryKey: ['time-slots', academicYearId] });
     },
-    onError: (err) => setErrorNotice(errorText(err)),
+    onError: (err) => setErrorNotice(err),
   });
 
   // Revise Slot Mutation
@@ -1757,7 +1761,7 @@ function TimeSlotsTab({ academicYearId }: { academicYearId: string }) {
       setReviseSlot(null);
       void queryClient.invalidateQueries({ queryKey: ['time-slots', academicYearId] });
     },
-    onError: (err) => setErrorNotice(errorText(err)),
+    onError: (err) => setErrorNotice(err),
   });
 
   // Retire Slot Mutation
@@ -1773,7 +1777,7 @@ function TimeSlotsTab({ academicYearId }: { academicYearId: string }) {
       setRetireSlot(null);
       void queryClient.invalidateQueries({ queryKey: ['time-slots', academicYearId] });
     },
-    onError: (err) => setErrorNotice(errorText(err)),
+    onError: (err) => setErrorNotice(err),
   });
 
   const slots = slotsQuery.data?.items ?? [];
@@ -1804,7 +1808,7 @@ function TimeSlotsTab({ academicYearId }: { academicYearId: string }) {
         </div>
       </div>
 
-      <MutationNotice error={errorNotice ? new Error(errorNotice) : undefined} success={successNotice ?? undefined} />
+      <MutationNotice error={errorNotice} success={successNotice ?? undefined} />
 
       {/* Filter toolbar */}
       <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-end', flexWrap: 'wrap', marginBlock: '0.5rem 1rem' }}>

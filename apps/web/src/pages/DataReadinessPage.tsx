@@ -9,20 +9,9 @@ import type {
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '../components/ui/button';
-import { InlineAlert, LoadingState } from '../components/ui/feedback';
+import { ErrorFeedback, LoadingState } from '../components/ui/feedback';
 import { PageHeader } from '../components/ui/management';
-import { ApiError } from '../lib/api-client';
 import { dataReadinessApi } from '../lib/data-readiness-api';
-
-function errorText(error: unknown): string {
-  if (error instanceof ApiError) {
-    if (error.statusCode === 403) {
-      return 'Bạn không có quyền truy cập Trung tâm sẵn sàng dữ liệu. Chức năng chỉ dành cho Ban giám hiệu và Quản trị viên.';
-    }
-    return error.serverError ? `${error.serverError}: ${error.message}` : error.message;
-  }
-  return error instanceof Error ? error.message : 'Yêu cầu không thực hiện được.';
-}
 
 function formatDate(iso?: string | null): string {
   if (!iso) return '—';
@@ -129,7 +118,7 @@ export function DataReadinessPage() {
   const [selectedAcademicYearId, setSelectedAcademicYearId] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
-  const [error, setError] = useState<string>('');
+  const [error, setError] = useState<unknown>(null);
 
   const loadData = useCallback(async (yearId?: string, isRefresh = false) => {
     if (isRefresh) {
@@ -137,7 +126,7 @@ export function DataReadinessPage() {
     } else {
       setLoading(true);
     }
-    setError('');
+    setError(null);
 
     try {
       const data = await dataReadinessApi.getSummary(yearId || undefined);
@@ -146,7 +135,7 @@ export function DataReadinessPage() {
         setSelectedAcademicYearId((prev) => prev || data.academicYear!.id);
       }
     } catch (err) {
-      setError(errorText(err));
+      setError(err);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -220,16 +209,13 @@ export function DataReadinessPage() {
         và hướng dẫn các bước nhập liệu chuẩn hóa dành cho Ban giám hiệu và Quản trị viên.
       </PageHeader>
 
-      {error && (
+      {error != null && (
         <div style={{ marginBlock: '1.5rem' }}>
-          <InlineAlert title="Không thể tải dữ liệu sẵn sàng" tone="error">
-            <p>{error}</p>
-            <div style={{ marginTop: '0.75rem' }}>
-              <Button type="button" variant="secondary" onClick={() => void loadData(selectedAcademicYearId)}>
-                Thử lại
-              </Button>
-            </div>
-          </InlineAlert>
+          <ErrorFeedback
+            title="Không thể tải dữ liệu sẵn sàng"
+            error={error}
+            retry={() => void loadData(selectedAcademicYearId)}
+          />
         </div>
       )}
 
@@ -446,11 +432,11 @@ export function DataReadinessPage() {
                   {/* Card Actions Footer */}
                   <footer className="domain-card-footer">
                     <Link
-                      to={domain.primaryAction.to}
+                      to={domain.key === 'TKB' ? '/quan-tri/thoi-khoa-bieu?tab=import' : domain.primaryAction.to}
                       className="button button--primary domain-action-btn"
                       data-testid={`action-${domain.key.toLowerCase()}`}
                     >
-                      {domain.primaryAction.label}
+                      {domain.key === 'TKB' ? 'Nhập TKB Đam San' : domain.primaryAction.label}
                     </Link>
                     {domain.secondaryAction && (
                       <Link
