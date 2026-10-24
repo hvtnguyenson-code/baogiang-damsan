@@ -10,9 +10,9 @@ Exact current `main`, branch HEAD and divergence must always be read directly fr
 
 **Status snapshot date:** 2026-10-24
 
-## P5-058 — IN_PROGRESS, first bounded frontend slice
+## P5-058 — IN_PROGRESS, bounded Vietnamese frontend checkpoints
 
-User-prioritized P5-058 (T57) is IN_PROGRESS on `feat/p5-058-frontend-vietnamese-ux`, based on directly verified GitHub main `6f1e83a8f021db1ab23f9902981a6b32f36d65ab`. Dependencies P5-050/P5-052/P5-053 are CLOSED. The working tree adds reusable Vietnamese error/empty feedback and a Data Readiness link to the existing timetable import tab via `?tab=import`, preserving school-wide TIMETABLE_MANAGE access. No backend/API/auth/database/CI/CD/production changes. This is a partial implementation checkpoint, not whole-product localization or review/closure evidence. Remaining audit, terminology and persona acceptance stay within the active P5-058 task; see its requirement and `docs/phase-reports/P5-058-FIRST-SLICE-REPORT.md`. Keep IN_PROGRESS as explicitly requested; no merge or deploy authority.
+User-prioritized P5-058 (T57) remains IN_PROGRESS on `feat/p5-058-frontend-vietnamese-ux`, PR #249 DRAFT. Direct remote audit on 2026-10-24: canonical main `6f1e83a8f021db1ab23f9902981a6b32f36d65ab`, starting task HEAD `cb3018b743d54e276134fd80afa8f9b09146720a`. Dependencies P5-050/P5-052/P5-053 are CLOSED. Slice 1 delivered shared Vietnamese error feedback and the existing timetable import deeplink. Slice 2 updates copy/presentation in TimetableAdmin, PpctImport and DataReadiness, with a detailed screen inventory, unchanged import contracts/lifecycle and targeted negative-flow tests. Remaining 32 page modules, navigation and full persona acceptance stay open within P5-058. PR CI run `40052855139` failed at the production dependency audit (body-parser/multer high); later Linux checks were skipped. Security remediation requires a separately registered task; no package/lock/backend/CI/CD change is authorized here. Current local evidence, residuals and Git write limitations: `docs/phase-reports/P5-058-FIRST-SLICE-REPORT.md`. No full localization, independent review, closure, merge or deploy claim.
 
 ## P5-053 — CLOSED by SYNC-P5-053 (Timetable & Time-Slot Administration Workspace)
 

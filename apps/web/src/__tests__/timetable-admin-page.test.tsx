@@ -551,7 +551,7 @@ describe('P5-053: Timetable & Time-slot Administration Workspace', () => {
       // Chuyển sang tab Nhập TKB Đam San
       fireEvent.click(screen.getByRole('button', { name: /nhập tkb đam san/i }));
       expect(screen.getByRole('button', { name: /nhập tkb đam san/i })).toHaveClass('active');
-      expect(await screen.findByText(/nhập thời khóa biểu chuẩn đam san/i)).toBeInTheDocument();
+      expect(await screen.findByText(/nhập thời khóa biểu từ tệp excel đam san/i)).toBeInTheDocument();
     });
 
     it('loads and lists academic years in the selector', async () => {
@@ -592,8 +592,8 @@ describe('P5-053: Timetable & Time-slot Administration Workspace', () => {
       expect(screen.getByText('Bản nháp nhập từ file Đam San')).toBeInTheDocument();
 
       // Status badges
-      expect(screen.getByText('Đang áp dụng')).toBeInTheDocument();
-      expect(screen.getByText('Bản nháp')).toBeInTheDocument();
+      expect(screen.getAllByText('Đang áp dụng').some((el) => el.classList.contains('status-badge'))).toBe(true);
+      expect(screen.getAllByText('Bản nháp').some((el) => el.classList.contains('status-badge'))).toBe(true);
     });
 
     it('opens version details drawer when clicking on a version row button', async () => {
@@ -622,7 +622,7 @@ describe('P5-053: Timetable & Time-slot Administration Workspace', () => {
       expect(screen.getByText(/ràng buộc phân phối chương trình/i)).toBeInTheDocument();
       expect(screen.getByText(/dung lượng và định mức ppct/i)).toBeInTheDocument();
       expect(screen.getByText(/lớp phủ vận hành điều hành/i)).toBeInTheDocument();
-      expect(screen.getByText(/chưa đánh giá \(not_assessed\)/i)).toBeInTheDocument();
+      expect(screen.getAllByText('Chưa được đánh giá').length).toBeGreaterThan(0);
     });
 
     it('creates a manual draft version', async () => {
@@ -673,6 +673,33 @@ describe('P5-053: Timetable & Time-slot Administration Workspace', () => {
   });
 
   describe('Tab 2: Đam San Native Workbook Import', () => {
+    it.each([401, 403, 409])('P5-058: import confirmation %s stays unsuccessful without replay', async (status) => {
+      const fallback = global.fetch;
+      let confirms = 0;
+      vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input).endsWith('/workbooks/confirm')) {
+          confirms++;
+          return jsonResponse({ message: 'DRAFT SQL_INTERNAL', error: 'Forbidden' }, status);
+        }
+        return fallback(input, init);
+      }));
+      renderWithQuery(<TimetableAdminPage />, '/quan-tri/thoi-khoa-bieu?tab=import');
+      const fileInput = await screen.findByLabelText(/Tệp Excel Thời khóa biểu/);
+      expect(screen.getByRole('heading', { name: 'Nhập thời khóa biểu từ tệp Excel Đam San' })).toBeInTheDocument();
+      expect(screen.getByLabelText('Chế độ buổi áp dụng')).toHaveValue('BOTH');
+      fireEvent.change(fileInput, { target: { files: [new File(['mock'], 'tkb.xlsx')] } });
+      await screen.findByRole('option', { name: /tuần 1/i });
+      fireEvent.click(screen.getByRole('button', { name: 'Xem trước đối soát' }));
+      const confirm = await screen.findByRole('button', { name: 'Xác nhận nạp vào bản nháp' });
+      fireEvent.click(confirm);
+      const alert = await screen.findByRole('alert');
+      expect(alert).toHaveTextContent(status === 401 ? 'Phiên đăng nhập đã hết hạn' : status === 403 ? 'Tài khoản chưa được cấp quyền' : 'Dữ liệu xung đột');
+      expect(alert).not.toHaveTextContent(/DRAFT|SQL_INTERNAL|Forbidden/);
+      expect(screen.queryByText(/Xác nhận nạp TKB thành công/)).not.toBeInTheDocument();
+      expect(confirms).toBe(1);
+      expect(fileInput).toBeInTheDocument();
+    });
+
     it('renders session mode selector with carry-forward explanation note', async () => {
       renderWithQuery(<TimetableAdminPage />);
 
@@ -696,10 +723,10 @@ describe('P5-053: Timetable & Time-slot Administration Workspace', () => {
       });
       fireEvent.change(fileInput, { target: { files: [testFile] } });
 
-      const inspectBtn = await screen.findByRole('button', { name: /kiểm tra tệp \(inspect\)/i });
+      const inspectBtn = await screen.findByRole('button', { name: /kiểm tra tệp/i });
       fireEvent.click(inspectBtn);
 
-      expect(await screen.findByText(/kết quả kiểm tra tệp \(inspect\)/i)).toBeInTheDocument();
+      expect(await screen.findByText(/kết quả kiểm tra tệp/i)).toBeInTheDocument();
       expect(screen.getByText('Lớp sáng')).toBeInTheDocument();
       expect(screen.getByText('Lớp chiều')).toBeInTheDocument();
       expect(screen.getByText('GV sáng')).toBeInTheDocument();
@@ -719,11 +746,11 @@ describe('P5-053: Timetable & Time-slot Administration Workspace', () => {
 
       await screen.findByRole('option', { name: /tuần 1/i });
 
-      const previewBtn = screen.getByRole('button', { name: /xem trước đối soát \(preview\)/i });
+      const previewBtn = screen.getByRole('button', { name: /xem trước đối soát/i });
       await waitFor(() => expect(previewBtn).toBeEnabled());
       fireEvent.click(previewBtn);
 
-      expect(await screen.findByText(/kết quả đối soát chứng cứ chéo/i)).toBeInTheDocument();
+      expect(await screen.findByText(/kết quả đối chiếu lịch theo lớp và giáo viên/i)).toBeInTheDocument();
       expect(screen.getByText(/số tiết mới soạn trong tệp/i)).toBeInTheDocument();
       expect(screen.getByText(/tổng số tiết sau hợp nhất/i)).toBeInTheDocument();
     });
@@ -773,7 +800,7 @@ describe('P5-053: Timetable & Time-slot Administration Workspace', () => {
 
       await screen.findByRole('option', { name: /tuần 1/i });
 
-      const previewBtn = screen.getByRole('button', { name: /xem trước đối soát \(preview\)/i });
+      const previewBtn = screen.getByRole('button', { name: /xem trước đối soát/i });
       await waitFor(() => expect(previewBtn).toBeEnabled());
       fireEvent.click(previewBtn);
 
@@ -946,7 +973,7 @@ describe('P5-053: Timetable & Time-slot Administration Workspace', () => {
 
       await screen.findByRole('option', { name: /tuần 1/i });
 
-      const previewBtn = screen.getByRole('button', { name: /xem trước đối soát \(preview\)/i });
+      const previewBtn = screen.getByRole('button', { name: /xem trước đối soát/i });
       fireEvent.click(previewBtn);
 
       expect(await screen.findByRole('button', { name: /xác nhận nạp vào bản nháp/i })).toBeInTheDocument();
@@ -1012,7 +1039,7 @@ describe('P5-053: Timetable & Time-slot Administration Workspace', () => {
 
       await screen.findByRole('option', { name: /tuần 1/i });
 
-      const previewBtn = screen.getByRole('button', { name: /xem trước đối soát \(preview\)/i });
+      const previewBtn = screen.getByRole('button', { name: /xem trước đối soát/i });
       fireEvent.click(previewBtn);
 
       // Now change file to file2 before the first preview resolves
@@ -1043,13 +1070,13 @@ describe('P5-053: Timetable & Time-slot Administration Workspace', () => {
 
       await screen.findByRole('option', { name: /tuần 1/i });
 
-      const previewBtn = screen.getByRole('button', { name: /xem trước đối soát \(preview\)/i });
+      const previewBtn = screen.getByRole('button', { name: /xem trước đối soát/i });
       fireEvent.click(previewBtn);
 
       expect(await screen.findByRole('button', { name: /xác nhận nạp vào bản nháp/i })).toBeInTheDocument();
 
       // Check R5: Idempotency field has generated key and does not have misleading placeholder
-      const idempInput = screen.getByLabelText(/khóa thao tác chống trùng lặp/i) as HTMLInputElement;
+      const idempInput = screen.getByLabelText(/mã chống nhập trùng/i) as HTMLInputElement;
       expect(idempInput.value).toMatch(/^req-/);
       expect(screen.queryByText(/để trống để tự sinh/i)).not.toBeInTheDocument();
 
@@ -1059,7 +1086,7 @@ describe('P5-053: Timetable & Time-slot Administration Workspace', () => {
 
       // Preview is reset and confirm button is hidden
       expect(screen.queryByRole('button', { name: /xác nhận nạp vào bản nháp/i })).not.toBeInTheDocument();
-      expect(screen.queryByText(/kết quả đối soát chứng cứ chéo/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/kết quả đối chiếu lịch theo lớp và giáo viên/i)).not.toBeInTheDocument();
     });
 
     it('R2: switching academic year dismisses active time-slot retire confirmation modal', async () => {
@@ -1477,12 +1504,12 @@ describe('P5-053: Timetable & Time-slot Administration Workspace', () => {
 
       await screen.findByRole('option', { name: /tuần 1/i });
 
-      const previewBtn = screen.getByRole('button', { name: /xem trước đối soát \(preview\)/i });
+      const previewBtn = screen.getByRole('button', { name: /xem trước đối soát/i });
       await waitFor(() => expect(previewBtn).toBeEnabled());
       fireEvent.click(previewBtn);
 
       // Verify idempotency key is readonly and copy button is present
-      const idempInput = (await screen.findByLabelText(/khóa thao tác chống trùng lặp/i)) as HTMLInputElement;
+      const idempInput = (await screen.findByLabelText(/mã chống nhập trùng/i)) as HTMLInputElement;
       expect(idempInput).toHaveAttribute('readonly');
       expect(screen.getByRole('button', { name: /sao chép/i })).toBeInTheDocument();
 
@@ -1513,10 +1540,10 @@ describe('P5-053: Timetable & Time-slot Administration Workspace', () => {
       fireEvent.click(screen.getByRole('button', { name: /nhập tkb đam san/i }));
       const newFileInput = screen.getByLabelText(/tệp excel thời khóa biểu/i);
       fireEvent.change(newFileInput, { target: { files: [testFile] } });
-      await waitFor(() => expect(screen.getByRole('button', { name: /xem trước đối soát \(preview\)/i })).toBeEnabled());
-      fireEvent.click(screen.getByRole('button', { name: /xem trước đối soát \(preview\)/i }));
+      await waitFor(() => expect(screen.getByRole('button', { name: /xem trước đối soát/i })).toBeEnabled());
+      fireEvent.click(screen.getByRole('button', { name: /xem trước đối soát/i }));
 
-      const newIdempInput = (await screen.findByLabelText(/khóa thao tác chống trùng lặp/i)) as HTMLInputElement;
+      const newIdempInput = (await screen.findByLabelText(/mã chống nhập trùng/i)) as HTMLInputElement;
       expect(newIdempInput.value).toMatch(/^req-/);
       expect(newIdempInput.value).not.toBe(initialKey);
     });
@@ -1564,7 +1591,7 @@ describe('P5-053: Timetable & Time-slot Administration Workspace', () => {
       });
       fireEvent.change(fileInput, { target: { files: [testFile] } });
 
-      const inspectBtn = await screen.findByRole('button', { name: /kiểm tra tệp \(inspect\)/i });
+      const inspectBtn = await screen.findByRole('button', { name: /kiểm tra tệp/i });
       fireEvent.click(inspectBtn);
 
       // While inspect is in flight, user changes session mode
@@ -1576,7 +1603,7 @@ describe('P5-053: Timetable & Time-slot Administration Workspace', () => {
 
       // Verify stale inspect response is NOT rendered
       await waitFor(() => {
-        expect(screen.queryByText(/kết quả kiểm tra tệp \(inspect\)/i)).not.toBeInTheDocument();
+        expect(screen.queryByText(/kết quả kiểm tra tệp/i)).not.toBeInTheDocument();
       });
     });
   });

@@ -306,7 +306,7 @@ function TimetableVersionsTab({
           }}
         >
           <h3>Tạo bản nháp thời khóa biểu thủ công</h3>
-          <p>Bản nháp mới sẽ bắt đầu với 0 tiết dạy và trạng thái Bản nháp (DRAFT). Bạn có thể thiết lập tuần áp dụng sau đó.</p>
+          <p>Bản nháp mới sẽ bắt đầu với 0 tiết dạy và trạng thái Bản nháp. Bạn có thể thiết lập tuần áp dụng sau đó.</p>
           <TextareaField
             id="draft-note-input"
             label="Ghi chú phiên bản"
@@ -346,11 +346,11 @@ function TimetableVersionsTab({
             }}
           >
             <option value="">Tất cả trạng thái</option>
-            <option value="DRAFT">Bản nháp (DRAFT)</option>
-            <option value="VALIDATED">Đã kiểm tra hợp lệ (VALIDATED)</option>
-            <option value="APPROVED">Đã phê duyệt (APPROVED)</option>
-            <option value="ACTIVE">Đang áp dụng (ACTIVE)</option>
-            <option value="SUPERSEDED">Đã thay thế (SUPERSEDED)</option>
+            <option value="DRAFT">Bản nháp</option>
+            <option value="VALIDATED">Đã kiểm tra hợp lệ</option>
+            <option value="APPROVED">Đã phê duyệt</option>
+            <option value="ACTIVE">Đang áp dụng</option>
+            <option value="SUPERSEDED">Đã thay thế</option>
           </SelectField>
         </div>
       </div>
@@ -372,7 +372,7 @@ function TimetableVersionsTab({
             headings={['Phiên số', 'Trạng thái', 'Ngày hiệu lực', 'Số tiết', 'Cập nhật', 'Thao tác']}
           >
             {versions.map((ver) => {
-              const statusMeta = VERSION_STATUS_LABELS[ver.status] ?? { label: ver.status, tone: 'inactive' };
+              const statusMeta = VERSION_STATUS_LABELS[ver.status] ?? { label: 'Trạng thái chưa xác định', tone: 'inactive' };
               const isSelected = ver.id === selectedVersionId;
               return (
                 <tr key={ver.id} style={isSelected ? { background: '#f8fafc' } : undefined}>
@@ -529,7 +529,7 @@ function VersionDetailPanel({
     onSuccess: (report) => {
       setLastValidationReport(report);
       if (report.valid) {
-        setSuccessNotice('Kiểm tra hoàn tất: Thời khóa biểu hợp lệ và đã chuyển sang trạng thái ĐÃ KIỂM TRA (VALIDATED).');
+        setSuccessNotice('Kiểm tra hoàn tất: Thời khóa biểu hợp lệ và đã chuyển sang trạng thái Đã kiểm tra hợp lệ.');
       } else {
         setErrorNotice(new Error(`Kiểm tra phát hiện ${report.issues.length} vấn đề cần khắc phục trước khi phê duyệt.`));
       }
@@ -547,7 +547,7 @@ function VersionDetailPanel({
       });
     },
     onSuccess: (appr) => {
-      setSuccessNotice(`Phiên ${appr.versionNumber} đã được phê duyệt thành công (APPROVED).`);
+      setSuccessNotice(`Phiên ${appr.versionNumber} đã được phê duyệt thành công.`);
       void queryClient.invalidateQueries({ queryKey: ['timetable-version-detail', versionId] });
       onVersionUpdated();
     },
@@ -567,7 +567,7 @@ function VersionDetailPanel({
     onSuccess: (result: TimetableActivationResult) => {
       setActivateConfirmOpen(false);
       if (result.activated) {
-        setSuccessNotice(`Phiên ${result.version.versionNumber} đã được kích hoạt áp dụng chính thức toàn trường (ACTIVE).`);
+        setSuccessNotice(`Phiên ${result.version.versionNumber} đã được kích hoạt áp dụng chính thức toàn trường.`);
       } else {
         setErrorNotice(new Error(`Không thể kích hoạt phiên bản: phát hiện ${result.issues.length} lỗi va chạm.`));
       }
@@ -647,7 +647,7 @@ function VersionDetailPanel({
     );
   }
 
-  const statusMeta = VERSION_STATUS_LABELS[version.status] ?? { label: version.status, tone: 'inactive' };
+  const statusMeta = VERSION_STATUS_LABELS[version.status] ?? { label: 'Trạng thái chưa xác định', tone: 'inactive' };
   const isDraft = version.status === 'DRAFT';
   const isValidated = version.status === 'VALIDATED';
   const isApproved = version.status === 'APPROVED';
@@ -692,7 +692,7 @@ function VersionDetailPanel({
                 validateMutation.mutate();
               }}
             >
-              Kiểm tra hợp lệ (Validate)
+              Kiểm tra hợp lệ
             </Button>
             <Button
               type="button"
@@ -718,7 +718,7 @@ function VersionDetailPanel({
               approveMutation.mutate();
             }}
           >
-            Phê duyệt phiên bản (Approve)
+            Phê duyệt phiên bản
           </Button>
         )}
 
@@ -733,7 +733,7 @@ function VersionDetailPanel({
               setActivateConfirmOpen(true);
             }}
           >
-            Kích hoạt áp dụng chính thức (Activate)
+            Kích hoạt áp dụng chính thức
           </Button>
         )}
 
@@ -882,7 +882,7 @@ function VersionDetailPanel({
       {/* Metadata Overview */}
       <dl className="register-summary">
         <div>
-          <dt>Mã kiểm chứng toàn vẹn (Checksum)</dt>
+          <dt>Mã kiểm chứng toàn vẹn</dt>
           <dd>
             {version.contentChecksum ? (
               <details style={{ display: 'inline-block' }}>
@@ -939,7 +939,7 @@ function VersionDetailPanel({
       {/* Readiness Assessment Section (Only for assessable statuses) */}
       {isAssessable && (
         <section style={{ borderTop: '2px solid var(--border-card)', paddingTop: '1.25rem', marginTop: '1.25rem' }}>
-          <h4>Đánh giá mức sẵn sàng (Readiness Assessment)</h4>
+          <h4>Đánh giá mức sẵn sàng</h4>
           <p style={{ color: '#475569', fontSize: '0.92rem' }}>
             Đánh giá tính sẵn sàng của phiên bản thời khóa biểu kết nối với kế hoạch phân phối chương trình (PPCT) theo hồ sơ <code className="technical-value">NORMAL_BASE_PPCT_V1</code>.
           </p>
@@ -960,7 +960,7 @@ function VersionDetailPanel({
           >
             <div style={{ minWidth: '160px' }}>
               <FormField
-                label="Từ ngày (from)"
+                label="Từ ngày"
                 name="readiness-from"
                 type="date"
                 value={readinessFrom}
@@ -974,7 +974,7 @@ function VersionDetailPanel({
             </div>
             <div style={{ minWidth: '160px' }}>
               <FormField
-                label="Đến ngày (to)"
+                label="Đến ngày"
                 name="readiness-to"
                 type="date"
                 value={readinessTo}
@@ -999,7 +999,7 @@ function VersionDetailPanel({
                 <div>
                   <strong>Kết quả đánh giá gốc: </strong>
                   <span className={`status-badge ${readinessData.result === 'PASS' ? 'status-badge--active' : 'status-badge--error'}`}>
-                    {readinessData.result === 'PASS' ? 'ĐẠT (PASS)' : 'CHƯA ĐẠT (FAIL)'}
+                    {readinessData.result === 'PASS' ? 'Đạt trong phạm vi đánh giá' : 'Chưa đạt trong phạm vi đánh giá'}
                   </span>
                   <small style={{ marginLeft: '1rem', color: '#64748b' }}>
                     Thời gian: {formatDateTime(readinessData.evaluatedAt)}
@@ -1015,7 +1015,7 @@ function VersionDetailPanel({
                 return (
                   <>
                     <p style={{ fontSize: '0.88rem', color: '#64748b', marginBottom: '0.5rem' }}>
-                      Hồ sơ <strong>{readinessData.productLabel || readinessData.profile}</strong> đánh giá <strong>{assessedCount}</strong> chiều bắt buộc về nền tảng và liên kết PPCT. <strong>{notAssessedCount}</strong> chiều điều hành còn lại ở trạng thái <code className="technical-value">NOT_ASSESSED</code> (không đánh giá) và không được tính là đạt hay tự động suy diễn thành hoàn thành toàn diện.
+                      Hồ sơ <strong>{readinessData.productLabel || readinessData.profile}</strong> đánh giá <strong>{assessedCount}</strong> chiều bắt buộc về nền tảng và liên kết PPCT. <strong>{notAssessedCount}</strong> chiều điều hành còn lại ở trạng thái <strong>chưa được đánh giá</strong> và không được tính là đạt hay tự động suy diễn thành hoàn thành toàn diện.
                     </p>
                     <div style={{ background: '#ffffff', padding: '0.6rem 0.75rem', borderRadius: '4px', border: '1px solid var(--border-card)', marginBottom: '0.75rem', fontSize: '0.88rem', color: '#334155' }}>
                       <div>
@@ -1052,11 +1052,11 @@ function VersionDetailPanel({
                       </td>
                       <td>
                         {dim.state === 'PASS' ? (
-                          <span className="status-badge status-badge--active">ĐẠT (PASS)</span>
+                          <span className="status-badge status-badge--active">Đạt</span>
                         ) : dim.state === 'FAIL' ? (
-                          <span className="status-badge status-badge--error">CHƯA ĐẠT (FAIL)</span>
+                          <span className="status-badge status-badge--error">Chưa đạt</span>
                         ) : (
-                          <span className="status-badge status-badge--inactive">CHƯA ĐÁNH GIÁ (NOT_ASSESSED)</span>
+                          <span className="status-badge status-badge--inactive">Chưa được đánh giá</span>
                         )}
                       </td>
                       <td>{dim.required ? 'Có' : 'Không'}</td>
@@ -1072,7 +1072,7 @@ function VersionDetailPanel({
                     {readinessData.findings.map((finding, idx) => (
                       <li key={idx}>
                         <span className={`status-badge status-badge--${finding.severity === 'BLOCKER' ? 'error' : 'warning'}`}>
-                          {finding.severity}
+                          {finding.severity === 'BLOCKER' ? 'Lỗi chặn' : 'Cảnh báo'}
                         </span>{' '}
                         <strong>[{finding.code}]</strong>: {finding.message}
                       </li>
@@ -1316,7 +1316,7 @@ function TimetableImportTab({
       setPreviewResult(data);
       setPreviewSnapshot(snapshot);
       if (data.canConfirm && data.blockingIssueCount === 0) {
-        setSuccessNotice('Xem trước đối soát hoàn tất: Chứng cứ Class-view và Teacher-view khớp; tệp đủ điều kiện để nạp vào bản nháp.');
+        setSuccessNotice('Xem trước đối soát hoàn tất: Lịch theo lớp và lịch theo giáo viên khớp; tệp đủ điều kiện để nạp vào bản nháp.');
       } else {
         setErrorNotice(`Xem trước đối soát phát hiện ${data.blockingIssueCount} lỗi chặn và ${data.warningCount} cảnh báo.`);
       }
@@ -1350,7 +1350,7 @@ function TimetableImportTab({
     },
     onSuccess: (res) => {
       setConfirmResult(res);
-      setSuccessNotice(`Xác nhận nạp TKB thành công: Phiên ${res.version.versionNumber} ở trạng thái Bản nháp (DRAFT).`);
+      setSuccessNotice(`Xác nhận nạp TKB thành công: Phiên ${res.version.versionNumber} ở trạng thái Bản nháp.`);
       setIdempotencyKey(createClientRequestIdempotencyKey());
       void queryClient.invalidateQueries({ queryKey: ['timetable-versions', academicYearId] });
       onImportSuccess(res.version);
@@ -1363,9 +1363,9 @@ function TimetableImportTab({
       <div className="section-heading">
         <div>
           <p className="utility-label">Nạp dữ liệu thời khóa biểu</p>
-          <h2 id="import-heading">Nhập Thời khóa biểu chuẩn Đam San (Native Workbook)</h2>
+          <h2 id="import-heading">Nhập thời khóa biểu từ tệp Excel Đam San</h2>
           <p>
-            Quy trình nhập tự động đọc và đối soát chéo 2 chiều giữa <strong>Lịch theo Lớp</strong> (Class-view) và <strong>Lịch theo Giáo viên</strong> (Teacher-view) trên 4 sheet chuẩn. Mọi xung đột hoặc lệch tiết đều được báo cáo trung thực.
+            Quy trình nhập tự động đọc và đối soát chéo 2 chiều giữa <strong>lịch theo lớp</strong> và <strong>lịch theo giáo viên</strong> trên 4 trang tính chuẩn. Mọi xung đột hoặc lệch tiết đều được báo cáo trung thực.
           </p>
         </div>
       </div>
@@ -1376,7 +1376,7 @@ function TimetableImportTab({
       {confirmResult && (
         <InlineAlert title="Đã nạp thời khóa biểu thành công" tone="success">
           <p>
-            Đã tạo/cập nhật phiên bản thời khóa biểu <strong>Phiên {confirmResult.version.versionNumber}</strong> (Trạng thái: <strong>Bản nháp - DRAFT</strong>) với <strong>{confirmResult.receipt.normalizedEntryCount}</strong> tiết dạy hợp lệ.
+            Đã tạo/cập nhật phiên bản thời khóa biểu <strong>Phiên {confirmResult.version.versionNumber}</strong> (Trạng thái: <strong>Bản nháp</strong>) với <strong>{confirmResult.receipt.normalizedEntryCount}</strong> tiết dạy hợp lệ.
           </p>
           <details style={{ marginTop: '0.5rem', fontSize: '0.88rem', color: '#475569' }}>
             <summary style={{ cursor: 'pointer', fontWeight: 500 }}>Thông tin kỹ thuật biên nhận (dành cho quản trị viên)</summary>
@@ -1425,7 +1425,7 @@ function TimetableImportTab({
 
             <SelectField
               id="import-session-mode"
-              label="Chế độ buổi áp dụng (Session Mode)"
+              label="Chế độ buổi áp dụng"
               value={nativeSessionMode}
               onChange={(e) => {
                 setNativeSessionMode(e.target.value as TimetableImportNativeSessionMode);
@@ -1433,11 +1433,11 @@ function TimetableImportTab({
                 setInspectResult(null);
                 invalidatePreview();
               }}
-              hint="Chọn phiên buổi muốn cập nhật; giữ nguyên buổi còn lại từ TKB baseline."
+              hint="Chọn cả hai buổi để nhập toàn bộ; nếu chỉ nhập một buổi, buổi còn lại được giữ từ thời khóa biểu gốc."
             >
-              <option value="BOTH">Cả hai buổi (Sáng & Chiều - Toàn bộ)</option>
-              <option value="MORNING">Chỉ buổi Sáng (Giữ nguyên buổi Chiều từ baseline)</option>
-              <option value="AFTERNOON">Chỉ buổi Chiều (Giữ nguyên buổi Sáng từ baseline)</option>
+              <option value="BOTH">Cả hai buổi (sáng và chiều)</option>
+              <option value="MORNING">Chỉ buổi sáng (giữ buổi chiều từ bản gốc)</option>
+              <option value="AFTERNOON">Chỉ buổi chiều (giữ buổi sáng từ bản gốc)</option>
             </SelectField>
 
             {profiles.length > 1 && (
@@ -1462,7 +1462,7 @@ function TimetableImportTab({
           </div>
         </FormSection>
 
-        <FormSection title="2. Chọn mục tiêu áp dụng học thuật">
+        <FormSection title="2. Chọn lịch và tuần bắt đầu áp dụng">
           <div className="form-grid">
             <SelectField
               id="import-calendar-version"
@@ -1485,7 +1485,7 @@ function TimetableImportTab({
 
             <SelectField
               id="import-effective-week"
-              label="Tuần học bắt đầu áp dụng (Effective Week)"
+              label="Tuần học bắt đầu áp dụng"
               value={currentWeekId}
               onChange={(e) => {
                 setEffectiveAcademicWeekId(e.target.value);
@@ -1518,7 +1518,7 @@ function TimetableImportTab({
               inspectMutation.mutate();
             }}
           >
-            Kiểm tra tệp (Inspect)
+            Kiểm tra tệp
           </Button>
 
           <Button
@@ -1531,7 +1531,7 @@ function TimetableImportTab({
               previewMutation.mutate();
             }}
           >
-            Xem trước đối soát (Preview)
+            Xem trước đối soát
           </Button>
         </div>
       </form>
@@ -1539,13 +1539,13 @@ function TimetableImportTab({
       {/* Inspect Results Section */}
       {inspectResult && (
         <section style={{ marginTop: '1.5rem', background: '#f8fafc', padding: '1rem', borderRadius: '6px', border: '1.5px solid var(--border-card)' }}>
-          <h4>Kết quả kiểm tra tệp (Inspect)</h4>
+          <h4>Kết quả kiểm tra tệp</h4>
           <p>
             Tệp: <strong>{inspectResult.sourceFileName}</strong> · Số trang tính phát hiện: <strong>{inspectResult.sheets.length}</strong>
           </p>
           <DataTable
             label="Các trang tính trong tệp thời khóa biểu"
-            headings={['Tên trang tính (Sheet)', 'Số dòng', 'Số cột', 'Trạng thái']}
+            headings={['Tên trang tính', 'Số dòng', 'Số cột', 'Trạng thái']}
           >
             {inspectResult.sheets.map((sh) => (
               <tr key={sh.name}>
@@ -1566,9 +1566,9 @@ function TimetableImportTab({
         <section style={{ marginTop: '1.5rem', borderTop: '2px solid var(--primary)', paddingTop: '1.5rem' }}>
           <div className="section-heading">
             <div>
-              <h3>Kết quả đối soát chứng cứ chéo (Peer Reconciliation Report)</h3>
+              <h3>Kết quả đối chiếu lịch theo lớp và giáo viên</h3>
               <p>
-                Đối soát chéo dữ liệu Lớp (Class-view) và Giáo viên (Teacher-view). Cả hai góc nhìn đều là chứng cứ ngang hàng; nếu có sự sai lệch về môn, lớp, giáo viên hoặc thời gian, hệ thống sẽ phát hiện ngay tại đây.
+                Đối chiếu dữ liệu lịch theo lớp và lịch theo giáo viên. Cả hai góc nhìn đều là chứng cứ ngang hàng; nếu có sự sai lệch về môn, lớp, giáo viên hoặc thời gian, hệ thống sẽ phát hiện ngay tại đây.
               </p>
             </div>
           </div>
@@ -1593,9 +1593,9 @@ function TimetableImportTab({
           {/* Composition summary (if selective carry-forward) */}
           {previewResult.composition && (
             <div style={{ background: '#ffffff', padding: '1rem', border: '1.5px solid var(--border-card)', borderRadius: '6px', marginBottom: '1rem' }}>
-              <h5>Tổng hợp thành phần phiên (Composition):</h5>
+              <h5>Số tiết nhập mới và giữ từ bản gốc:</h5>
               <p>
-                Chế độ: <strong>{previewResult.composition.mode}</strong> · Phiên bản gốc kế thừa (Baseline):{' '}
+                Chế độ: <strong>{({ BOTH: 'Cả hai buổi', MORNING: 'Chỉ buổi sáng', AFTERNOON: 'Chỉ buổi chiều' } as Record<string, string>)[previewResult.composition.mode] ?? 'Chế độ chưa xác định'}</strong> · Phiên bản gốc để giữ lại dữ liệu:{' '}
                 {previewResult.baseline.timetableVersion ? `Phiên ${previewResult.baseline.timetableVersion.versionNumber}` : 'Không có'}
               </p>
               <div style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap' }}>
@@ -1609,7 +1609,7 @@ function TimetableImportTab({
           {/* Diff Summary */}
           {previewResult.diff && (
             <div style={{ background: '#ffffff', padding: '1rem', border: '1.5px solid var(--border-card)', borderRadius: '6px', marginBottom: '1rem' }}>
-              <h5>Biến động so với phiên bản áp dụng hiện hành (Diff):</h5>
+              <h5>Biến động so với phiên bản áp dụng hiện hành:</h5>
               <div style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap' }}>
                 <span style={{ color: 'var(--success)', fontWeight: 600 }}>Thêm mới: +{previewResult.diff.counts.added}</span>
                 <span style={{ color: '#2563eb', fontWeight: 600 }}>Thay đổi: ~{previewResult.diff.counts.changed}</span>
@@ -1631,7 +1631,7 @@ function TimetableImportTab({
                   <tr key={idx}>
                     <td>
                       <span className={`status-badge status-badge--${iss.severity === 'ERROR' ? 'error' : iss.severity === 'WARNING' ? 'warning' : 'inactive'}`}>
-                        {iss.severity}
+                        {iss.severity === 'ERROR' ? 'Lỗi' : iss.severity === 'WARNING' ? 'Cảnh báo' : 'Thông tin'}
                       </span>
                     </td>
                     <td><code className="technical-value">{iss.code}</code></td>
@@ -1649,7 +1649,7 @@ function TimetableImportTab({
           <div style={{ background: '#f8fafc', padding: '1.25rem', borderRadius: '6px', border: '1.5px solid var(--border-card)' }}>
             <h4>Xác nhận nạp thời khóa biểu vào hệ thống</h4>
             <p>
-              Thao tác này sẽ tạo hoặc cập nhật một bản ghi thời khóa biểu ở trạng thái <strong>Bản nháp (DRAFT)</strong>. Hệ thống <strong>không tự ý kích hoạt</strong> phiên bản này vào thực tế giảng dạy.
+              Thao tác này sẽ tạo hoặc cập nhật một bản ghi thời khóa biểu ở trạng thái <strong>Bản nháp</strong>. Hệ thống <strong>không tự ý kích hoạt</strong> phiên bản này vào thực tế giảng dạy.
             </p>
             <div style={{ maxWidth: '480px', marginBottom: '1rem' }}>
               <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end' }}>
@@ -1657,7 +1657,7 @@ function TimetableImportTab({
                   <FormField
                     id="idempotency-key"
                     name="idempotency-key"
-                    label="Khóa thao tác chống trùng lặp (Idempotency Key)"
+                    label="Mã chống nhập trùng"
                     value={idempotencyKey}
                     readOnly
                     hint="Khóa duy nhất tự sinh cho phiên đối soát này để bảo vệ chống gửi trùng lặp."
@@ -1686,7 +1686,7 @@ function TimetableImportTab({
                 confirmMutation.mutate();
               }}
             >
-              Xác nhận nạp vào bản nháp (Confirm Import)
+              Xác nhận nạp vào bản nháp
             </Button>
           </div>
         </section>
@@ -2017,7 +2017,7 @@ function TimeSlotsTab({ academicYearId }: { academicYearId: string }) {
         >
           <h3>Chỉnh sửa khung tiết (Tạo revision mới)</h3>
           <p>
-            Thao tác này sẽ lưu trữ phiên bản hiện tại (Revision {reviseSlot.revision}) vào lịch sử và tạo Revision {reviseSlot.revision + 1} mới có hiệu lực.
+            Thao tác này sẽ lưu trữ phiên bản hiện tại (lần sửa {reviseSlot.revision}) vào lịch sử và tạo lần sửa {reviseSlot.revision + 1} mới có hiệu lực.
           </p>
           <div className="form-grid">
             <div className="readonly-field">
@@ -2187,7 +2187,7 @@ function TimeSlotsTab({ academicYearId }: { academicYearId: string }) {
                               setCreateOpen(false);
                             }}
                           >
-                            Sửa (Revise)
+                            Sửa khung tiết
                           </Button>
                           <Button
                             type="button"

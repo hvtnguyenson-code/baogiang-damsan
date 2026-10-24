@@ -1,6 +1,6 @@
 # P5-058 — Việt hóa toàn diện và đơn giản hóa trải nghiệm frontend
 
-**Trạng thái:** IN_PROGRESS — đã triển khai lát cắt frontend đầu tiên trong working tree; chưa merge/deploy.
+**Trạng thái:** IN_PROGRESS — PR #249 draft; tiếp tục lát cắt dữ liệu/nhập liệu trên cùng nhánh; chưa merge/deploy.
 **Authority:** Yêu cầu người dùng 24/10/2026; T57; P5-050; P5-052; P5-053; `DESIGN.md`.
 **Baseline:** `main@6f1e83a8f021db1ab23f9902981a6b32f36d65ab`.
 **Nhánh duy nhất:** `feat/p5-058-frontend-vietnamese-ux`.
@@ -78,3 +78,10 @@ P5-058 giữ nguyên `IN_PROGRESS` trên nhánh duy nhất đã đăng ký theo 
 Tiếp tục phân kỳ A/C/D trên cùng nhánh trước nghiệm thu toàn bộ: lập bảng audit từng trang và điều hướng; áp dụng từ điển theo nghiệp vụ; kiểm tra mọi persona và trạng thái tải/rỗng/lỗi. Không coi thành phần dùng chung là bằng chứng đã Việt hóa 35 trang. Ảnh mock của lát cắt này cho thấy tab TKB hiện hữu còn sít nhau, nhãn biểu mẫu còn thuật ngữ Anh (Native Workbook, Session Mode, Effective Week, Inspect/Preview); đây là đầu vào audit C, chưa phải nghiệm thu tiếng Việt toàn bộ. Không thay thiết kế, parser hoặc quyền để giải quyết các nhãn này.
 
 Nghiệm thu còn phải có đầy đủ bằng chứng desktop/Android, tích hợp/E2E liên quan, CI exact-head và independent review. Không được tự nhận hoàn thành P5-058; trạng thái `CLOSED` chỉ được chốt sau merge, main CI, nghiệm thu triển khai và `SYNC-P5-058` theo quy định. Báo cáo lát cắt: `docs/phase-reports/P5-058-FIRST-SLICE-REPORT.md`.
+
+
+### Cập nhật lát cắt dữ liệu/nhập liệu — 24/10/2026
+
+Audit chi tiết và các nhãn đã sửa của TimetableAdmin/PpctImport/DataReadiness nằm trong phần Lát cắt 2 của báo cáo P5-058. Dùng “tệp Excel”, “trang tính”, “bản nháp”, “chương trình chính khóa”, “chế độ buổi áp dụng”, “tuần học bắt đầu áp dụng”, “kiểm tra tệp”, “xem trước đối soát”, “mã chống nhập trùng”; giải thích bản xem trước thay cho fingerprint trong hướng dẫn. Giữ nguyên tên mẫu PPCT_V1/trang THONG_TIN và mọi mã/payload. Readiness không khẳng định mọi importer kiểm tra phòng học hay findings rỗng đồng nghĩa sẵn sàng. Scope này không xử lý state/hook hoặc correction P5-055.
+
+Giữ IN_PROGRESS, PR draft; chưa nghiệm thu 32 module còn lại, navigation và mọi persona. CI #40052855139 bị chặn tại audit dependency production body-parser/multer (2 high); đề xuất đăng ký task bảo mật riêng theo báo cáo, không thay manifest/lockfile/backend/CI gate trong P5-058.

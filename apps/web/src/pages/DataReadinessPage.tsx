@@ -104,13 +104,22 @@ function domainAccentClass(domainKey: DataReadinessDomainKey): string {
   }
 }
 
+// Display only: an unfamiliar status must never imply approval or readiness.
+function versionStatusLabel(status?: string | null): string {
+  const labels: Record<string, string> = {
+    DRAFT: 'Bản nháp', VALIDATED: 'Đã kiểm tra hợp lệ', APPROVED: 'Đã phê duyệt',
+    PUBLISHED: 'Đã ban hành', ACTIVE: 'Đang áp dụng', SUPERSEDED: 'Đã được thay thế',
+  };
+  return status ? labels[status] ?? 'Trạng thái chưa xác định' : 'Chưa có thông tin trạng thái';
+}
+
 const WORKFLOW_CONTRACT_STEPS = [
   { step: 1, title: 'Chọn tệp', desc: 'Chọn tệp Excel / CSV theo định dạng chuẩn' },
   { step: 2, title: 'Kiểm tra cấu trúc', desc: 'Xác minh dòng tiêu đề, kiểu cột và tính toàn vẹn' },
   { step: 3, title: 'Xử lý chưa nhận diện', desc: 'Đối chiếu mã giáo viên, mã môn, mã lớp mới' },
-  { step: 4, title: 'Xem trước & đối chiếu', desc: 'Phát hiện xung đột phòng học, trùng tiết, vượt định mức' },
-  { step: 5, title: 'Xác nhận', desc: 'Ghi nhận dữ liệu vào sổ cái với kiểm soát phiên bản' },
-  { step: 6, title: 'Kích hoạt / Công bố', desc: 'Ban hành thời khóa biểu hoặc phê duyệt kế hoạch' },
+  { step: 4, title: 'Xem trước & đối chiếu', desc: 'Xem kết quả đối chiếu và các lỗi, cảnh báo mà từng luồng nhập hỗ trợ' },
+  { step: 5, title: 'Xác nhận', desc: 'Chỉ ghi dữ liệu sau khi người có quyền xác nhận' },
+  { step: 6, title: 'Áp dụng / Phê duyệt', desc: 'Thực hiện bước áp dụng hoặc phê duyệt nếu luồng nhập có hỗ trợ' },
 ];
 
 export function DataReadinessPage() {
@@ -280,8 +289,8 @@ export function DataReadinessPage() {
               Quy trình 6 bước chuẩn hóa khi nạp dữ liệu nhà trường
             </h3>
             <p className="readiness-guide-desc">
-              Mọi luồng nhập dữ liệu (TKB, PPCT, Lịch sử giảng dạy, GDĐP, HĐTN-HN) đều tuân theo trình tự nghiệp vụ
-              chặt chẽ để bảo đảm an toàn dữ liệu và tính giải trình:
+              Các bước dưới đây giúp định hướng khi nhập dữ liệu. Mỗi nhóm có quy trình riêng;
+              chỉ thực hiện các bước được hỗ trợ và theo quyền đã được cấp:
             </p>
             <div className="readiness-guide-steps">
               {WORKFLOW_CONTRACT_STEPS.map((st) => (
@@ -337,7 +346,7 @@ export function DataReadinessPage() {
                         <span className="domain-version-label">Phiên bản / Lượt nhập gần nhất:</span>
                         <span className="domain-version-value">
                           {domain.latestVersion
-                            ? `Phiên bản #${domain.latestVersion.number ?? 1} (${domain.latestVersion.statusLabel ?? domain.latestVersion.status ?? 'Đang lưu'})`
+                            ? `Phiên bản #${domain.latestVersion.number ?? 1} (${domain.latestVersion.statusLabel ?? versionStatusLabel(domain.latestVersion.status)})`
                             : domain.latestImport
                             ? `Lượt nhập ${domain.latestImport.batchRef ?? domain.latestImport.sourceFileName ?? 'Mới nhất'} (${domain.latestImport.rowCount ?? 0} dòng)`
                             : 'Chưa có phiên bản hoặc lượt nhập'}
@@ -381,7 +390,7 @@ export function DataReadinessPage() {
                       {domain.findings.length === 0 ? (
                         <div className="domain-finding-item domain-finding-item--clean">
                           <span className="finding-clean-icon" aria-hidden="true">✓</span>
-                          <span>Không có cảnh báo hoặc rào cản ngăn cản vận hành.</span>
+                          <span>Không ghi nhận cảnh báo trong kết quả này. Hãy đối chiếu trạng thái và hướng dẫn của nhóm dữ liệu.</span>
                         </div>
                       ) : (
                         <ul className="domain-findings-list">

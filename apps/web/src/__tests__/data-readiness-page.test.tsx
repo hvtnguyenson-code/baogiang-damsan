@@ -227,6 +227,22 @@ function setupFetch(auth: unknown = principalAuth, summaryData: DataReadinessSum
 }
 
 describe('P5-055 Data Readiness & Import Center Page', () => {
+  it.each([
+    ['DRAFT', 'Bản nháp'], ['VALIDATED', 'Đã kiểm tra hợp lệ'], ['APPROVED', 'Đã phê duyệt'],
+    ['PUBLISHED', 'Đã ban hành'], ['ACTIVE', 'Đang áp dụng'], ['SUPERSEDED', 'Đã được thay thế'],
+    ['UNRECOGNIZED_STATE', 'Trạng thái chưa xác định'],
+  ])('P5-058: displays version %s in Vietnamese without implying readiness', async (status, label) => {
+    const summary = structuredClone(mockSummary);
+    summary.domains[0].latestVersion = { ...summary.domains[0].latestVersion!, status, statusLabel: null };
+    summary.domains[0].status = 'NOT_READY';
+    summary.domains[0].statusLabel = 'Chưa sẵn sàng';
+    global.fetch = setupFetch(principalAuth, summary);
+    renderApp(route);
+    expect(await screen.findByText(`Phiên bản #1 (${label})`)).toBeInTheDocument();
+    expect(screen.getByTestId('domain-status-tkb')).toHaveTextContent('Chưa sẵn sàng');
+    expect(screen.getByText(/Mỗi nhóm có quy trình riêng/)).toBeInTheDocument();
+    expect(screen.queryByText(/Phát hiện xung đột phòng học/)).not.toBeInTheDocument();
+  });
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -263,7 +279,7 @@ describe('P5-055 Data Readiness & Import Center Page', () => {
     expect(screen.getByText('Phiên bản #1 (Đã ban hành)')).toBeInTheDocument();
     expect(screen.getByTestId('action-tkb')).toHaveAttribute('href', '/quan-tri/thoi-khoa-bieu?tab=import');
     expect(screen.getByTestId('action-tkb')).toHaveTextContent('Nhập TKB Đam San');
-    expect(screen.getByText(/Không có cảnh báo hoặc rào cản ngăn cản vận hành/i)).toBeInTheDocument();
+    expect(screen.getByText(/Không ghi nhận cảnh báo trong kết quả này/i)).toBeInTheDocument();
 
     // Check PPCT details
     expect(screen.getByTestId('domain-status-ppct')).toHaveTextContent(/Cần nạp phân phối chương trình/i);

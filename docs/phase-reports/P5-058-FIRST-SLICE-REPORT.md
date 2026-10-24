@@ -1,5 +1,7 @@
 # P5-058 — Báo cáo lát cắt frontend đầu tiên
 
+> Phần đầu ghi lịch sử lát cắt 1. Phần “Lát cắt 2” cuối tài liệu là audit và bằng chứng mới nhất cho ba màn hình dữ liệu/nhập liệu; không dùng trạng thái working tree/HEAD lịch sử bên dưới làm SHA hiện tại.
+
 Ngày thực thi: 24/10/2026. Trạng thái task: **IN_PROGRESS**, theo chỉ thị người dùng; chưa đề nghị đóng task hoặc nghiệm thu toàn bộ frontend.
 
 ## Baseline và phạm vi
@@ -38,3 +40,72 @@ Trước review toàn task, hoàn thành phân kỳ A/C/D của yêu cầu trên
 - Nhóm mục tiêu cuối chạy trực tiếp, không redirect và không chồng Vitest: **7 file, 106/106 PASS, exit code 0** (`academic-structure-pages`, `capabilities-page`, `vietnamese-feedback`, `timetable-admin-page`, `data-readiness-page`, `data-readiness-navigation`, `api-client`, `--maxWorkers=2 --minWorkers=1`). Bao gồm kỳ vọng xóa thông báo lỗi mới khi mở biểu mẫu khác, không chỉ kỳ vọng xuất hiện thông báo.
 - `git diff --check`: PASS. Kiểm tra complete diff và tập file chỉ thuộc task. Mọi thay đổi vẫn được giữ trong working tree trên nhánh được giao; chưa merge/deploy hoặc chứng nhận CI/independent review.
 - Sau các kiểm tra, thử stage đúng 15 file thuộc task bằng `git add -- <explicit paths>` bị chặn: `Unable to create 'D:/baogiang-damsan/.git/index.lock': Permission denied`. Không commit/push, không đổi nhánh hoặc tìm cách vượt giới hạn ghi `.git`. HEAD vẫn `6f1e83a8f021db1ab23f9902981a6b32f36d65ab`; trạng thái P5-058 vẫn IN_PROGRESS. Chỉ tiếp tục commit/push checkpoint này khi môi trường cho phép ghi Git và sau kiểm tra diff/staged list; independent review/CI vẫn chưa có.
+
+
+## Lát cắt 2 — Dữ liệu năm học và nhập liệu, 24/10/2026
+
+### Baseline và hợp đồng thực thi
+
+- Task P5-058 / T57, giữ **IN_PROGRESS**; dependencies P5-050/P5-052/P5-053 đều CLOSED. T51/T52 không đổi authority. Không phụ thuộc việc hoàn tất P5-055 để sửa nhãn của màn hình hiện có; lỗi nghiệp vụ P5-055 vẫn thuộc PR #248.
+- Local bắt đầu sạch tại `cb3018b743d54e276134fd80afa8f9b09146720a`, nhánh `feat/p5-058-frontend-vietnamese-ux`; remote branch cùng SHA (0/0), canonical main xác minh trực tiếp `6f1e83a8f021db1ab23f9902981a6b32f36d65ab` bằng `git ls-remote`, PR #249 API xác nhận OPEN/DRAFT, base/head đúng. `git fetch origin` bị từ chối ghi `.git/FETCH_HEAD`; không lấy SHA tài liệu thay bằng chứng remote.
+- Allowed: ba page `TimetableAdminPage.tsx`, `PpctImportPage.tsx`, `DataReadinessPage.tsx`, test liên quan và đồng bộ authority/report P5-058. Chỉ copy/presentation, gồm giữ nguyên đối tượng lỗi PPCT để thành phần lỗi dùng chung đọc HTTP status. Không sửa API/hook/parser/validation/RBAC/route/backend, điều kiện xác nhận, vòng đời nhập, token DESIGN.md, manifest/lockfile hay CI/CD. Không merge/deploy.
+- Công việc người dùng: nhận biết dữ liệu nào cần chuẩn bị, chọn đúng tệp/buổi/lịch/tuần, kiểm tra và đối chiếu trước khi ghi bản nháp. Wireframe giữ nguyên ở desktop: tiêu đề → năm học → tab → cấu hình tệp và lịch → kết quả → xác nhận; mobile xếp một cột, bảng có vùng cuộn. Không thay hệ primitive/layout/token.
+
+### Inventory hiện tại của đúng ba màn hình
+
+Mức ưu tiên: P1 = gây nhầm bước hoặc trạng thái; P2 = thuật ngữ/khả năng đọc. Mỗi hàng dưới đây được đối chiếu mã trực tiếp; không phải bằng chứng đã nghiệm thu toàn frontend.
+
+| Màn hình / vị trí mã | Audit trước lát cắt | Xử lý hiện tại và ranh giới | Mức / bằng chứng |
+| --- | --- | --- | --- |
+| TKB / `TimetableVersionsTab`, bộ lọc trạng thái | DRAFT/VALIDATED/APPROVED/ACTIVE/SUPERSEDED lặp sau nhãn | Chỉ hiện Bản nháp/Đã kiểm tra hợp lệ/Đã phê duyệt/Đang áp dụng/Đã thay thế; option value và điều kiện lifecycle giữ nguyên; trạng thái lạ hiện chưa xác định | P1; timetable-admin unit |
+| TKB / `VersionDetailPanel`, thao tác kiểm tra/duyệt/áp dụng | Validate/Approve/Activate lẫn trong nút và thông báo | Nút tiếng Việt; tiếp tục tách kiểm tra, phê duyệt và áp dụng; không bỏ hộp xác nhận, không đổi trạng thái backend | P1; activation confirmation, cancel, 409 unit |
+| TKB / đánh giá sẵn sàng | PASS/FAIL/NOT_ASSESSED dễ hiểu thành nghiệm thu toàn bộ | Kết quả đạt/chưa đạt ghi rõ trong phạm vi đánh giá; chưa được đánh giá vẫn không tính đạt; giữ số chiều, ngày, provenance và mã hồ sơ | P1; dynamic dimension/date race unit |
+| TKB / `TimetableImportTab`, tiêu đề và hướng dẫn | Native Workbook, Class-view, Teacher-view, sheet | Tệp Excel Đam San, lịch theo lớp/giáo viên, trang tính; tên trang tính thực tế không đổi | P2; import screenshot và inspection unit |
+| TKB / chọn buổi và tuần | Session Mode, Effective Week, baseline | Chế độ buổi áp dụng, Tuần học bắt đầu áp dụng; chỉ nhập một buổi thì giữ buổi kia từ bản gốc; BOTH/MORNING/AFTERNOON và payload không đổi | P1; đổi session/year/file và stale response unit |
+| TKB / kiểm tra, xem trước, xác nhận | Inspect, Preview, Confirm Import | Kiểm tra tệp, Xem trước đối soát, Xác nhận nạp vào bản nháp; không thêm bắt buộc inspect trước preview vì luồng hiện tại cho preview trực tiếp | P1; import success, wrong-state và 401/403/409 unit |
+| TKB / kết quả đối chiếu và thành phần | Peer Reconciliation Report, Composition, raw mode, Diff | Kết quả đối chiếu lịch theo lớp và giáo viên; số tiết nhập mới/giữ từ bản gốc; mode được ánh xạ tiếng Việt, số liệu giữ nguyên | P1; composition/diff unit |
+| TKB / xác nhận và biên nhận | Idempotency Key, DRAFT | Mã chống nhập trùng, Bản nháp; readonly/copy/retry key không đổi; biên nhận kỹ thuật vẫn nằm trong details | P1; key across 5xx + successful confirm unit |
+| TKB / `TimeSlotsTab` | Sửa (Revise), Revision | Sửa khung tiết, lần sửa; tọa độ, giờ, quyền mục đích, retire confirmation không đổi | P2; create/filter/retire unit |
+| PPCT / tiêu đề, chọn tệp, rỗng | workbook, sheet; PPCT chưa viết đầy đủ trong h1 | Nhập phân phối chương trình (PPCT) từ Excel; tệp Excel/trang tính; giữ PPCT_V1, THONG_TIN vì là tên mẫu/trang tính phải đối chiếu chính xác | P2; PPCT unit/E2E |
+| PPCT / bảng preview, đích nhập | CORE, draft, fingerprint | Chương trình chính khóa, bản nháp, giải thích bản xem trước gắn với tệp/người nhập/lựa chọn; thay đích phải xem trước lại | P1; dirty preview disabled và refresh unit/E2E |
+| PPCT / xác nhận, kết quả | nhập vào DRAFT, tạo/cập nhật/dùng lại draft | Nhập vào bản nháp; kết quả khối/số phiên bản và chưa tự công bố rõ; requestFingerprint, targetMode, expectedUpdatedAt không đổi | P1; FormData assertion và single confirm unit |
+| PPCT / lỗi API | raw serverError/message | Dùng ErrorFeedback theo HTTP status; giữ lỗi cấu trúc tệp tại chỗ và bảng issue nghiệp vụ; không suy thành công, không tự gửi lại mutation | P1; 401/403/409, failed preview, blocker unit |
+| Readiness / hướng dẫn 6 bước | Khẳng định mọi importer giống nhau, có kiểm tra phòng học | Hướng dẫn định hướng tùy luồng/quyền; chỉ nhắc lỗi/cảnh báo mà luồng đó hỗ trợ; không hứa kiểm tra phòng học | P1; unit và readiness screenshots |
+| Readiness / phiên bản gần nhất | Khi thiếu statusLabel có thể hiện raw enum hoặc Đang lưu | Ánh xạ 6 trạng thái phổ biến; trạng thái lạ/thiếu có nhãn trung tính, không suy ready; nhãn chuyên biệt server vẫn được ưu tiên | P1; 7 trường hợp status unit |
+| Readiness / findings rỗng và CTA | Không có finding bị diễn đạt thành không có rào cản vận hành | Chỉ khẳng định không ghi nhận cảnh báo trong kết quả; yêu cầu xem trạng thái/hướng dẫn; CTA/route/gate không đổi | P1; NOT_READY + no findings, unauthorized navigation unit |
+
+### Những điểm còn tồn tại, vẫn thuộc P5-058 đang IN_PROGRESS
+
+- Ba màn hình: thông điệp issue nghiệp vụ, tên profile/template, tên trang tính, mã lỗi, UUID/provenance và nhãn server-owned vẫn được giữ để đối chiếu chính xác; chưa có mapping đã duyệt cho mọi mã/hồ sơ có thể trả về. Không dịch mã giao thức hay viết lại validation server trong lát cắt copy. Cần audit khả năng hiểu của nội dung động cùng persona thật trước nghiệm thu toàn task.
+- TKB: secondary-nav hiện có còn sát nhau, chưa chứng minh toàn bộ touch target/focus/200% zoom của cả page; thiếu lịch/tuần trong fixture ảnh import là chủ ý mock rỗng, không phải readiness thực tế. PPCT: bảng nhiều cột cuộn ngang ở 320px; cần nghiệm thu thao tác đích nhập trên Android thực tế. Native file input hiển thị Choose File theo locale của trình duyệt thử nghiệm; không thay lifecycle/control để ép nhãn hệ điều hành trong lát cắt này.
+- Data Readiness: vẫn dùng backend summary/status/stepper/counters hiện hữu; không chứng nhận thuật toán READY, xử lý dữ liệu cũ khi refresh lỗi hay race khi đổi năm. Correction PR #248/P5-055 là authority riêng; không âm thầm sửa state/hook trong P5-058.
+- Còn 32/35 module chưa có inventory chi tiết theo từng nhãn trong lát cắt này (đã liệt kê từ cây thực tế): AcademicCalendarPage, AcademicYearsPage, AccessDeniedPage, AccessibleReportingStatementsPage, AuditPage, BusinessConfigurationPage, CapabilitiesPage, CatalogPage, DispositionPreviewPanel, DutyAssignmentsPage, DutyCatalogPage, EffectiveSchedulePage, FirstPasswordChangePage, HistoricalTeachingPage, HomePage, HomeroomAssignmentsPage, LoginPage, MakeupSchedulingPage, NotFoundPage, OperationalHistoryPanel, PendingReportingStatementsPage, PpctSpecializedStudyPage, ProfilePage, ReportingStatementDetailPage, ReportingStatementsPage, SchoolClassesPage, SpecialProgrammeWorkspacePage, SystemStatusPage, TeachingAssignmentsPage, TeachingOperationsPage, TemporalAssignmentsPage, UsersPage. Một số đã hưởng feedback từ lát cắt 1; không đồng nghĩa đã audit/Việt hóa toàn trang.
+- 26 mục điều hướng, toàn bộ persona (giáo viên/tổ trưởng/BGH/admin/điều phối), tích hợp backend/importer thật, zoom/keyboard/a11y toàn diện, CI exact-head và independent review vẫn là tiêu chí đang mở trong A/C/D của P5-058. Không tạo hạng mục deferred ngoài đăng ký; chưa đề nghị IN_REVIEW/CLOSED.
+
+### Blocker CI bảo mật — tách khỏi thay đổi copy
+
+Đã đọc trực tiếp danh sách job/step và toàn bộ log job `120749129443` của [CI run 40052855139](https://github.com/hvtnguyenson-code/baogiang-damsan/actions/runs/40052855139), gắn PR #249 checkpoint `cb3018b743d54e276134fd80afa8f9b09146720a` (PR API xác minh HEAD).
+
+- Step 6 **Production dependency security gate** chạy `npm audit --omit=dev --audit-level=high`, exit 1 lúc 2026-10-24 02:08:24 UTC. Báo cáo production: **12 vulnerabilities (10 moderate, 2 high)**. Số 42 vulnerabilities trong bước npm install gồm dev, không phải kết quả gate production.
+- `body-parser <=1.20.8`, **high**, tại `node_modules/body-parser`: GHSA-v422-hmwv-36x6 (invalid limit vô hiệu giới hạn kích thước), GHSA-27r3-jxmh-p828 (trailing bytes sau compressed body).
+- `multer 2.0.0 - 2.4.0`, **high**, tại `node_modules/multer`: GHSA-3pph-fpjx-jg34 (orphaned disk writes khi upload bị ngắt), GHSA-q7qp-rjg7-q26m (pending asynchronous fileFilter sau request teardown).
+- Chuỗi phụ thuộc log nêu `@nestjs/core` / `@nestjs/platform-express` / `@nestjs/terminus`; platform-express phụ thuộc body-parser và multer. Các mục moderate khác trong report: file-type/@nestjs/common, qs, react-router/react-router-dom, uuid/exceljs. Đây không phải chứng cứ frontend copy gây lỗi.
+- Lint/typecheck/unit/integration/build/Playwright của job Linux **SKIPPED** sau gate, không được gọi PASS. Job Windows deployment contract **SUCCESS**. Không rerun SHA cũ, không bỏ gate.
+- **Khuyến nghị task bảo mật riêng, chưa đăng ký/chưa thực thi:** đăng ký và audit dependency production trước remediation; xác minh version thực tế/đường phụ thuộc/advisory; đề xuất bản vá tương thích Nest/Express, multipart, giới hạn body và upload teardown; prompt riêng phải chỉ rõ allowed manifest/lock/backend surface, invariants, regression HTTP/upload/auth/import, migration/rollback/compatibility. Gate audit production phải xanh cùng CI đầy đủ trước merge. Không dùng npm audit fix/force hoặc mặc nhiên nhận nâng Nest major mà report gợi ý. P5-058 không sửa package.json/package-lock.json/backend/CI/CD để giải blocker.
+
+
+### Bằng chứng kiểm tra local của lát cắt 2
+
+- `npm.cmd run test:unit -w apps/web -- timetable-admin-page data-readiness-page data-readiness-navigation ppct-import-page --maxWorkers=2 --minWorkers=1`: **4 file, 72/72 PASS**, exit 0; log `tmp/p5-058-academic-unit.log`. Có kiểm tra nhãn, payload FormData không đổi, lỗi 401/403/409 cả TKB và PPCT, không tự lặp confirm/không báo thành công, blocking inspection, previewDirty, đổi tệp/buổi/năm, phản hồi cũ, activation 409 và readonly/idempotency retry. Các failure ban đầu do selector copy cũ/nhãn trùng option và badge đã sửa kỳ vọng vào đúng nội dung; không sửa auth hoặc importer để làm xanh.
+- Typecheck Web, ESLint Web và `npm.cmd run test:ui:static`: PASS. Không chạy backend integration/migration vì không có thay đổi backend và đây là bằng chứng frontend/mock có giới hạn.
+- `npm.cmd run test:e2e -w tests/e2e -- p5-058-vietnamese-feedback.spec.ts p5-058-academic-import.spec.ts`: **2/2 PASS** trên Chromium với API mock. Luồng PPCT inspect → preview → đổi đích (confirm bị khóa) → xem trước lại bằng keyboard → confirm đúng một lần → xóa preview; Data Readiness vẫn NOT_READY dù phiên bản là bản nháp. Test cũ kiểm tra F5/Back/deeplink/retry, keyboard/focus, reduced-motion và axe serious/critical ở trạng thái lỗi tiếp tục qua.
+- E2E mới lần đầu hết giới hạn 30s sau khi hoàn tất PPCT và chuyển sang readiness; error-context cho thấy đang kiểm tra phiên đăng nhập, không có kết luận lỗi runtime từ lần đó. Đặt timeout riêng 90s cho test chụp 10 ảnh và đi qua 2 trang; không sửa CI/cấu hình timeout chung. Lượt sau PASS 2/2; không force rerun CI.
+- 20 ảnh mock được tạo tại `tests/e2e/test-results/p5-058/{import,error,ppct-preview,readiness}-{320,375,414,1366,1440}.png`, artifact ignore. Đã xem trực tiếp PPCT preview và TKB import ở 320/1366, readiness 320. Chữ Việt đọc được và cấu trúc tác vụ giữ nguyên; bảng PPCT cuộn ngang, tab TKB còn sát nhau, native file input theo locale trình duyệt. Không tuyên bố PASS mọi viewport/a11y/toàn persona chỉ từ ảnh này.
+- Đã đọc diff mã, test mới, tài liệu và danh sách file; `git diff --check` PASS. Tập file cấm (package.json/package-lock.json/apps/api/.github/DESIGN.md) không có diff. Baseline sản phẩm/ADR/README/roadmap không đổi vì không đổi authority hay tuyên bố sản phẩm hoàn tất; register/status/T57/requirement/report được đồng bộ và giữ IN_PROGRESS.
+
+
+### Trạng thái bàn giao cuối lát cắt 2
+
+Lượt cuối chạy nối tiếp `typecheck -w apps/web` → `lint -w apps/web` → `test:ui:static` → hai spec P5-058 đều PASS, exit 0 (E2E 2/2, 22.1s). Unit mục tiêu cuối 72/72 PASS. Không dùng CI làm vòng thử lỗi.
+
+Sau khi kiểm tra diff và danh sách đúng 12 file, `git add -- <12 explicit task paths>` bị chặn: `fatal: Unable to create 'D:/baogiang-damsan/.git/index.lock': Permission denied`. Staged list vẫn rỗng. Không commit/push, không sửa quyền hoặc tìm cách ghi vòng qua `.git`; mọi thay đổi lát cắt 2 đang ở working tree (10 modified + 2 untracked test files). Local HEAD và remote task branch xác minh lại bằng Git vẫn `cb3018b743d54e276134fd80afa8f9b09146720a`; main vẫn `6f1e83a8f021db1ab23f9902981a6b32f36d65ab`. PR #249 giữ DRAFT, P5-058 giữ IN_PROGRESS. Khi môi trường cho phép ghi Git, kiểm tra diff/staged list rồi commit và push cùng nhánh, không tạo nhánh/PR khác. Chưa có CI cho phần chưa push hoặc independent review; không merge/deploy.
