@@ -83,8 +83,8 @@ test.describe('Reporting Statement live cross-role workflow', () => {
     await readerBPage.goto(`/bao-cao-ke-khai/${revisionId}`);
     const deniedAlert = readerBPage.getByRole('alert');
     await expect(deniedAlert).toContainText('Chưa tải được dữ liệu');
-    await expect(deniedAlert).toContainText('Bạn không còn quyền truy cập khu vực này.');
-    await expect(deniedAlert.getByRole('button', { name: 'Thử lại' })).toBeVisible();
+    await expect(deniedAlert).toContainText('Tài khoản chưa được cấp quyền thực hiện thao tác này.');
+    await expect(deniedAlert.getByRole('link', { name: 'Về trang công việc' })).toBeVisible();
     await expect(readerBPage.locator('body')).not.toContainText('Giáo viên kiểm thử');
 
     const approver = await loggedInContext(browser, users.approver);
