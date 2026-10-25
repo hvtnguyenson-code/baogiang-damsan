@@ -95,6 +95,8 @@ export function FirstPasswordChangePage() {
       if (apiError.statusCode === 401) setCurrentPassword('');
       const message = apiError.statusCode === 401
         ? 'Mật khẩu hiện tại không đúng.'
+        : apiError.statusCode === 403
+          ? 'Tài khoản chưa được phép đổi mật khẩu trong phiên này. Vui lòng liên hệ cán bộ quản trị nhà trường.'
         : apiError.statusCode === 400 || apiError.statusCode === 422
           ? 'Thông tin đổi mật khẩu chưa hợp lệ. Kiểm tra lại yêu cầu.'
           : apiError.statusCode === 0

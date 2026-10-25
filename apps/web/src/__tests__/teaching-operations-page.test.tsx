@@ -162,7 +162,7 @@ describe('P5-054 source selection workspace', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Tìm giáo viên có thể lựa chọn' }));
     await screen.findByText(/Danh sách này chỉ xác minh tư cách giảng dạy/);
     fireEvent.click(screen.getByRole('button', { name: 'Xem trước phân công xử lý' }));
-    expect(await screen.findByText('Giáo viên đã có lịch trùng.')).toBeTruthy();
+    expect(await screen.findByText('Tiết học gốc hoặc giáo viên chưa đủ điều kiện, hoặc có xung đột lịch. Kiểm tra lại lựa chọn trước khi xem trước lần nữa.')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Xác nhận điều hành/ })).toBeNull();
     const calls = fetcher.mock.calls as Array<[RequestInfo | URL, RequestInit?]>;
     const preview = calls.find(([url]) => String(url).endsWith('/workspace/disposition-preview'));

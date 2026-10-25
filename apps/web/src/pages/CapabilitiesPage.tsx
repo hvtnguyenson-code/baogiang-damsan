@@ -443,7 +443,7 @@ export function CapabilitiesPage() {
 
                 {draft.scopeType === 'ACTIVITY' && (
                   <div className="limitation-note">
-                    <strong>Chưa thể cấp theo hoạt động.</strong> Phase 01 chưa có danh mục hoạt động để chọn tài nguyên hợp lệ.
+                    <strong>Chưa thể cấp theo hoạt động.</strong> Chưa có danh mục hoạt động để chọn phạm vi hợp lệ.
                   </div>
                 )}
 
@@ -457,7 +457,7 @@ export function CapabilitiesPage() {
                         onChange={(e) => setDraft({ ...draft, scopeResourceId: e.target.value })}
                         required
                       >
-                        <option value="">Chọn tài nguyên</option>
+                        <option value="">Chọn tổ hoặc môn học</option>
                         {resourceOptions?.map((item) => (
                           <option key={item.id} value={item.id}>{item.code} — {item.name}</option>
                         ))}
@@ -467,7 +467,7 @@ export function CapabilitiesPage() {
                       )}
                       {draft.scopeType === 'SUBJECT_GROUP' && groupPages > 1 && (
                         <FieldPagination
-                          label="Chuyển trang tổ bộ môn"
+                          label="Chuyển trang tổ chuyên môn"
                           page={groups.data?.page ?? groupPage}
                           pages={groupPages}
                           total={effectiveGroupTotal}
@@ -480,7 +480,7 @@ export function CapabilitiesPage() {
                       )}
                       {draft.scopeType === 'SUBJECT' && subjectPages > 1 && (
                         <FieldPagination
-                          label="Chuyển trang danh mục học phần"
+                          label="Chuyển trang danh mục môn học"
                           page={subjects.data?.page ?? subjectPage}
                           pages={subjectPages}
                           total={effectiveSubjectTotal}
@@ -574,7 +574,7 @@ export function CapabilitiesPage() {
                         {scopeLabels[grant.scopeType]}
                         {grant.scopeResourceId && (
                           <small className={readableResource ? 'table-secondary' : 'technical-value table-secondary'}>
-                            {readableResource ?? grant.scopeResourceId}
+                            {readableResource ?? 'Chưa có tên phạm vi hoặc chưa được cấp quyền xem'}
                           </small>
                         )}
                       </td>
@@ -583,7 +583,7 @@ export function CapabilitiesPage() {
                         <small className="table-secondary">đến {formatDateTime(grant.validUntil)}</small>
                       </td>
                       <td>
-                        <StatusText active={active} activeLabel="Đang hiệu lực" inactiveLabel={grant.revokedAt ? 'Đã thu hồi' : 'Hết hiệu lực'} />
+                        <StatusText active={active} activeLabel="Đang hiệu lực" inactiveLabel={grant.revokedAt ? 'Đã thu hồi' : grant.validFrom && new Date(grant.validFrom).getTime() > Date.now() ? 'Chưa đến thời điểm hiệu lực' : 'Hết hiệu lực'} />
                       </td>
                       <td>
                         {!grant.revokedAt && (

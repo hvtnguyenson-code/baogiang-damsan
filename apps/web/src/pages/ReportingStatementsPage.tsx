@@ -5,13 +5,13 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../auth/auth-context';
 import { OfficialWorkloadView, ReportingCountsView, ReportingEvidenceTable, StatementListTable } from '../components/reporting-statements/ReportingPresentation';
 import { Button } from '../components/ui/button';
-import { InlineAlert } from '../components/ui/feedback';
+import { ErrorFeedback, InlineAlert } from '../components/ui/feedback';
 import { EmptyState, PageHeader, PageLoading, Pagination, QueryFailure, SelectField } from '../components/ui/management';
 import { FormField } from '../components/ui/form-field';
 import { ApiError } from '../lib/api-client';
 import { canReadPersonalReporting, canSubmitPersonalReporting } from '../lib/capabilities';
 import { createReportingStatementRequestKey, reportingStatementsApi } from '../lib/reporting-statements-api';
-import { displayReference, makeReportingLabels } from '../lib/reporting-statement-presentation';
+import { displayReference, makeReportingLabels, reportingFindingLabel } from '../lib/reporting-statement-presentation';
 
 type PreviewState = { fingerprint: string; data: ReportingStatementPreviewResponse };
 type PendingSubmitCommand = ReportingStatementSubmitRequest;
@@ -119,7 +119,7 @@ export function ReportingStatementsPage() {
     : Boolean(submitMutation.error);
 
   return <div className="reporting-page">
-    <PageHeader eyebrow="Sổ công tác" title="Báo cáo kê khai cá nhân">Xem trước sự thật báo cáo, kiểm tra bằng chứng rồi gửi một bản chính thức.</PageHeader>
+    <PageHeader eyebrow="Sổ công tác" title="Báo cáo kê khai cá nhân">Xem trước số liệu và bằng chứng giảng dạy, kiểm tra rồi gửi báo cáo chính thức.</PageHeader>
 
     {canSubmit && <section className="reporting-form" aria-labelledby="reporting-range-heading">
       <div className="reporting-section-heading"><div className="margin-rail" aria-hidden="true" /><div><h2 id="reporting-range-heading">01 · Chọn phạm vi báo cáo</h2><p>Bản xem trước chỉ được lập khi bạn yêu cầu và không tự cập nhật theo từng lần đổi ngày.</p></div></div>
@@ -136,13 +136,13 @@ export function ReportingStatementsPage() {
       {selected && !calendar && <InlineAlert title="Chưa có lịch đang hoạt động" tone="warning">Năm học này chưa có lịch đang hoạt động nên chưa thể xem trước báo cáo.</InlineAlert>}
       {calendar && <p className="calendar-envelope">Khoảng ngày của lịch đang hoạt động: <span className="technical-value">{calendar.startDate} – {calendar.endDate}</span></p>}
       <Button type="button" disabled={!academicYearId || !calendar} loading={previewMutation.isPending} onClick={() => { setAttemptedPreview(true); if (formValid) previewMutation.mutate(); }}>Xem trước báo cáo</Button>
-      {previewMutation.isError && <InlineAlert title="Chưa thể xem trước báo cáo">{previewMutation.error instanceof ApiError ? previewMutation.error.message : 'Kết nối đang gián đoạn. Hãy thử lại.'}</InlineAlert>}
+      {previewMutation.isError && <ErrorFeedback title="Chưa thể xem trước báo cáo" error={previewMutation.error} retry={() => { if (formValid) previewMutation.mutate(); }} />}
     </section>}
 
     {currentPreview && <section className="reporting-preview" aria-labelledby="reporting-preview-heading">
       <div className="reporting-section-heading"><div className="margin-rail" aria-hidden="true" /><div><h2 id="reporting-preview-heading">02 · Bằng chứng xem trước</h2><p>Dữ liệu này phục vụ kiểm tra trước khi gửi, chưa phải bản chính thức đã lưu.</p></div></div>
       {currentPreview.responsibilityState === 'ZERO_RESPONSIBILITY' && <InlineAlert title="Không có trách nhiệm trong kỳ" tone="success">Không có trách nhiệm giảng dạy thuộc phạm vi báo cáo trong khoảng thời gian này.</InlineAlert>}
-      {currentPreview.status === 'BLOCKED' && <InlineAlert title="Chưa thể lập báo cáo từ dữ liệu hiện tại"><ul>{currentPreview.findings.map((finding, index) => <li key={index}>{finding.message}</li>)}</ul></InlineAlert>}
+      {currentPreview.status === 'BLOCKED' && <InlineAlert title="Chưa thể lập báo cáo từ dữ liệu hiện tại"><ul>{currentPreview.findings.map((finding, index) => <li key={index}>{reportingFindingLabel(finding.code)}</li>)}</ul></InlineAlert>}
       {currentPreview.officialWorkload && (
         <article className="reporting-evidence-section" style={{ marginBottom: '1.5rem' }}>
           <header>
@@ -157,20 +157,21 @@ export function ReportingStatementsPage() {
         <header><h3>{displayReference(section.schoolClassId, labels.classes, 'class')} · {displayReference(section.subjectId, labels.subjects, 'subject')}</h3><p>Tên lớp và môn lấy từ danh mục hiện tại để hiển thị; khoảng trách nhiệm là kết quả của bản xem trước này.</p></header>
         {section.counts && <ReportingCountsView counts={section.counts} />}
         <dl className="responsibility-ledger">{section.responsibilityIntervals.map((interval, index) => <div key={index}><dt>Thời gian chịu trách nhiệm</dt><dd className="technical-value">{interval.validFrom} – {interval.validUntil ?? 'đến nay'}</dd></div>)}</dl>
-        {section.findings.length > 0 && <ul>{section.findings.map((finding, index) => <li key={index}>{finding.message}</li>)}</ul>}
+        {section.findings.length > 0 && <ul>{section.findings.map((finding, index) => <li key={index}>{reportingFindingLabel(finding.code)}</li>)}</ul>}
         <ReportingEvidenceTable details={section.details} />
       </article>)}
       <div className="reporting-submit">
         <p>Hệ thống sẽ kiểm tra lại dữ liệu tại thời điểm gửi chính thức.</p>
         {!pendingSubmit && !submitSuccess && <Button type="button" disabled={!currentPreview.eligibleForSubmission || submitMutation.isPending} loading={submitMutation.isPending} onClick={startSubmit}>Gửi báo cáo</Button>}
-        {submitMutation.isError && <InlineAlert title={submitMutation.error instanceof ApiError && submitMutation.error.statusCode === 409 ? 'Dữ liệu đã thay đổi' : 'Chưa xác định được kết quả gửi'}>
-          <p>{submitMutation.error instanceof ApiError ? submitMutation.error.message : 'Kết nối đang gián đoạn.'}</p>
-          {submitMutation.error instanceof ApiError && submitMutation.error.statusCode === 409 && <p>Hãy xem trước lại báo cáo trước khi tạo yêu cầu mới.</p>}
-          {uncertainSubmit && pendingSubmit && <Button type="button" variant="secondary" loading={submitMutation.isPending} onClick={() => submitMutation.mutate(pendingSubmit)}>Thử gửi lại</Button>}
-        </InlineAlert>}
         {submitSuccess && <InlineAlert title="Đã gửi báo cáo" tone="success"><p>{submitSuccess.replay ? 'Yêu cầu trước đó đã được hệ thống xác nhận.' : 'Báo cáo chính thức đã được lưu.'}</p>{canReadMine && <Link className="text-link" to={`/bao-cao-ke-khai/${submitSuccess.revisionId}`}>Mở báo cáo vừa gửi</Link>}</InlineAlert>}
       </div>
     </section>}
+
+    {submitMutation.isError && <>
+      <ErrorFeedback error={submitMutation.error} title={uncertainSubmit ? 'Chưa xác định được kết quả gửi' : 'Chưa thể gửi báo cáo'} />
+      {submitMutation.error instanceof ApiError && submitMutation.error.statusCode === 409 && <p>Hãy xem trước lại báo cáo trước khi tạo yêu cầu mới.</p>}
+      {uncertainSubmit && pendingSubmit && <Button type="button" variant="secondary" loading={submitMutation.isPending} onClick={() => submitMutation.mutate(pendingSubmit)}>Thử gửi lại</Button>}
+    </>}
 
     {canReadMine && <section className="ledger-section" aria-labelledby="mine-heading">
       <h2 id="mine-heading">Báo cáo của tôi</h2>

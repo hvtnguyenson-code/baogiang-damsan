@@ -550,7 +550,7 @@ describe('P5-051 Slice C: Users Administration Workspace', () => {
     await user.click(applyBtn);
 
     // 1. Verify 409 error message is displayed
-    expect(await screen.findByText(/Xung đột \(409\)/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Hãy kiểm tra quyền trước khi áp dụng lại mẫu/i)).toBeInTheDocument();
     // 2. Verify NO fake success message
     expect(screen.queryByText(/Đã áp dụng thành công/i)).not.toBeInTheDocument();
     // 3. Verify Apply button is unavailable from rejected preview
@@ -1159,7 +1159,7 @@ describe('P5-051 Slice C: Users Administration Workspace', () => {
     await user.click(deleteTab);
 
     // Verify BLOCKED banner and reasons
-    expect(await screen.findByText(/TÀI KHOẢN KHÔNG ĐỦ ĐIỀU KIỆN XÓA VẬT LÝ/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Tài khoản không đủ điều kiện xóa vĩnh viễn/i)).toBeInTheDocument();
     expect(screen.getByText(/Tài khoản đã có lịch sử đăng nhập/i)).toBeInTheDocument();
     expect(screen.getByText(/Vô hiệu hóa tài khoản/i)).toBeInTheDocument();
 
@@ -1214,7 +1214,7 @@ describe('P5-051 Slice C: Users Administration Workspace', () => {
     await user.click(deleteTab);
 
     // Verify ELIGIBLE banner
-    expect(await screen.findByText(/TÀI KHOẢN SẠCH — ĐỦ ĐIỀU KIỆN XÓA/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Đủ điều kiện xóa theo lần kiểm tra này/i)).toBeInTheDocument();
 
     const confirmBtn = screen.getByRole('button', { name: /Xác nhận xóa vĩnh viễn/i });
     // Button is disabled before typing username
@@ -1744,7 +1744,7 @@ describe('P5-051 Slice C: Users Administration Workspace', () => {
 
     // After 403 resolution:
     // 1. Error message must appear
-    expect(await screen.findByText(/Không thể tải danh sách chương trình: Forbidden: access revoked/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Tài khoản chưa được cấp quyền thực hiện thao tác này/i)).toBeInTheDocument();
     // 2. Apply button remains absent
     expect(screen.queryByRole('button', { name: /Áp dụng Mẫu trách nhiệm/i })).not.toBeInTheDocument();
     // 3. Preview button remains disabled

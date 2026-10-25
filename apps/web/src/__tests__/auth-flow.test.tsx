@@ -88,11 +88,16 @@ describe('auth routing and forms', () => {
 
   it('refreshes /me after login and routes first-login users to password change', async () => {
     let meCalls = 0;
+    let loggedIn = false;
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.endsWith('/auth/login')) return jsonResponse({ user: firstLoginAuth.user, expiresAt: '2026-08-05T00:00:00Z' });
+      if (url.endsWith('/auth/login')) {
+        loggedIn = true;
+        return jsonResponse({ user: firstLoginAuth.user, expiresAt: '2026-08-05T00:00:00Z' });
+      }
+      expect(url).toMatch(/\/auth\/me$/);
       meCalls += 1;
-      return meCalls === 1
+      return !loggedIn
         ? jsonResponse({ statusCode: 401, error: 'Unauthorized', message: 'No session', timestamp: 'now' }, 401)
         : jsonResponse(firstLoginAuth);
     }));
@@ -101,7 +106,13 @@ describe('auth routing and forms', () => {
     await user.type(await screen.findByLabelText('Tên đăng nhập'), 'teacher');
     await user.type(screen.getByLabelText('Mật khẩu'), 'BootstrapPassword9');
     await user.click(screen.getByRole('button', { name: /đăng nhập/i }));
-    expect(await screen.findByRole('heading', { name: /đổi mật khẩu để tiếp tục/i })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /đổi mật khẩu để tiếp tục/i })).toBeInTheDocument();
+      expect(screen.getByLabelText('Mật khẩu hiện tại')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /^đăng nhập$/i })).not.toBeInTheDocument();
+    });
+    expect(loggedIn).toBe(true);
+    expect(meCalls).toBeGreaterThanOrEqual(2);
   });
 
   it('validates exact backend password policy and confirmation before mutation', async () => {

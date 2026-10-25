@@ -1,18 +1,28 @@
 import type { HealthCheckDetail, HealthLiveResponse, HealthReadyResponse } from '@baogiang/contracts';
 import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '../components/ui/button';
-import { InlineAlert, LoadingState } from '../components/ui/feedback';
+import { ErrorFeedback, InlineAlert, LoadingState } from '../components/ui/feedback';
 import { PublicFrame } from '../layouts/AppLayout';
-import { fetchHealthLive, fetchHealthReady } from '../lib/api-client';
+import { ApiError, fetchHealthLive, fetchHealthReady } from '../lib/api-client';
 
 export function SystemStatusPage() {
-  const liveQuery = useQuery<HealthLiveResponse, Error>({ queryKey: ['health', 'live'], queryFn: fetchHealthLive, refetchInterval: 30_000 });
-  const readyQuery = useQuery<HealthReadyResponse, Error>({ queryKey: ['health', 'ready'], queryFn: fetchHealthReady, refetchInterval: 30_000 });
-  const isLoading = liveQuery.isLoading || readyQuery.isLoading;
-  const hasError = liveQuery.isError || readyQuery.isError;
+  // A 401 purges session query caches. Preserve its presentation on this public page.
+  const [sessionError, setSessionError] = useState<ApiError | null>(null);
+  async function check<T,>(fetcher: () => Promise<T>): Promise<T> {
+    try { return await fetcher(); }
+    catch (error) {
+      if (error instanceof ApiError && error.statusCode === 401) setSessionError(error);
+      throw error;
+    }
+  }
+  const liveQuery = useQuery<HealthLiveResponse, Error>({ queryKey: ['health', 'live'], queryFn: () => check(fetchHealthLive), refetchInterval: 30_000 });
+  const readyQuery = useQuery<HealthReadyResponse, Error>({ queryKey: ['health', 'ready'], queryFn: () => check(fetchHealthReady), refetchInterval: 30_000 });
+  const isLoading = !sessionError && (liveQuery.isLoading || readyQuery.isLoading);
+  const hasError = Boolean(sessionError) || liveQuery.isError || readyQuery.isError;
   const allReady = liveQuery.data?.status === 'ok' && readyQuery.data?.status === 'ok';
-  const retry = () => { void liveQuery.refetch(); void readyQuery.refetch(); };
+  const retry = () => { setSessionError(null); void liveQuery.refetch(); void readyQuery.refetch(); };
 
   return (
     <PublicFrame>
@@ -22,24 +32,25 @@ export function SystemStatusPage() {
           <div>
             <p className="utility-label">Chẩn đoán công khai</p>
             <h1>Trạng thái hệ thống</h1>
-            <p>Kiểm tra khả năng phục vụ của API và kết nối dữ liệu, không hiển thị thông tin cấu hình nội bộ.</p>
+            <p>Kiểm tra khả năng phục vụ của dịch vụ và kết nối dữ liệu, không hiển thị thông tin cấu hình nội bộ.</p>
           </div>
         </header>
 
         <div className="status-toolbar">
           <StatusSummary loading={isLoading} error={hasError} ready={allReady} />
+          {hasError && <ErrorFeedback error={sessionError ?? liveQuery.error ?? readyQuery.error} retry={retry} title="Chưa lấy được trạng thái mới nhất" />}
           <Button id="btn-retry-status" type="button" variant="secondary" loading={isLoading} onClick={retry}>Tải lại trạng thái</Button>
         </div>
 
         {isLoading && <LoadingState label="Đang kiểm tra trạng thái" />}
         {!isLoading && (
           <section className="status-ledger" aria-label="Các thành phần hệ thống">
-            <StatusRow title="API" description="Tiến trình phục vụ yêu cầu" status={liveQuery.data?.status} error={liveQuery.isError} details={liveQuery.data ? [
+            <StatusRow title="Dịch vụ ứng dụng" description="Khả năng tiếp nhận yêu cầu" status={liveQuery.data?.status} error={Boolean(sessionError) || liveQuery.isError} details={!sessionError && !liveQuery.isError && liveQuery.data ? [
               ['Phiên bản', liveQuery.data.version],
               ['Thời gian hoạt động', formatUptime(liveQuery.data.uptime)],
               ['Kiểm tra lúc', formatTimestamp(liveQuery.data.timestamp)],
             ] : []} />
-            <StatusRow title="Cơ sở dữ liệu" description="Khả năng kết nối dữ liệu" status={readyQuery.data?.checks.database.status} error={readyQuery.isError} details={buildDbDetails(readyQuery.data?.checks.database)} />
+            <StatusRow title="Cơ sở dữ liệu" description="Khả năng kết nối dữ liệu" status={readyQuery.data?.checks.database.status} error={Boolean(sessionError) || readyQuery.isError} details={buildDbDetails(sessionError || readyQuery.isError ? undefined : readyQuery.data?.checks.database)} />
           </section>
         )}
 
@@ -51,8 +62,8 @@ export function SystemStatusPage() {
 
 function StatusSummary({ loading, error, ready }: { loading: boolean; error: boolean; ready: boolean }) {
   if (loading) return <p className="status-summary">Đang lấy trạng thái mới nhất…</p>;
-  if (error) return <InlineAlert title="Không thể kết nối" tone="error">Hệ thống chưa trả lời. Bạn có thể tải lại sau ít phút.</InlineAlert>;
-  if (ready) return <InlineAlert title="Hệ thống hoạt động bình thường" tone="success">API và cơ sở dữ liệu đều sẵn sàng.</InlineAlert>;
+  if (error) return <p className="status-summary">Chưa xác nhận được khả năng phục vụ. Hãy xem thông báo lỗi và thử tải lại.</p>;
+  if (ready) return <InlineAlert title="Hệ thống hoạt động bình thường" tone="success">Dịch vụ ứng dụng và cơ sở dữ liệu đều sẵn sàng.</InlineAlert>;
   return <InlineAlert title="Hệ thống chưa sẵn sàng hoàn toàn" tone="warning">Một hoặc nhiều thành phần đang ở trạng thái suy giảm.</InlineAlert>;
 }
 
@@ -63,7 +74,7 @@ function StatusRow({ title, description, status, error, details }: {
   error: boolean;
   details: Array<[string, string]>;
 }) {
-  const label = error ? 'Không kết nối' : status === 'ok' ? 'Sẵn sàng' : 'Chưa sẵn sàng';
+  const label = error ? 'Chưa xác nhận' : status === 'ok' ? 'Sẵn sàng' : 'Chưa sẵn sàng';
   const tone = error ? 'error' : status === 'ok' ? 'ok' : 'warning';
   return (
     <article className="status-row">

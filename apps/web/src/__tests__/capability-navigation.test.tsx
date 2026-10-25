@@ -43,7 +43,7 @@ describe('capability-aware navigation', () => {
     renderApp('/quan-tri/phan-cong-giang-day');
     expect(await screen.findByRole('heading', { name: 'Phân công giảng dạy' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /dữ liệu năm học/i }));
-    expect(screen.getByRole('link', { name: 'Phân công môn' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Phân công môn học' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Phân công giảng dạy' })).toBeInTheDocument();
   });
 

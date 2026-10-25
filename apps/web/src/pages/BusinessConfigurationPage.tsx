@@ -8,7 +8,7 @@ import type {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
 import { Button } from '../components/ui/button';
-import { InlineAlert } from '../components/ui/feedback';
+import { ErrorFeedback, InlineAlert } from '../components/ui/feedback';
 import { FormField } from '../components/ui/form-field';
 import {
   DataTable,
@@ -26,7 +26,6 @@ import {
   formatAuditTimestamp,
   isValidCivilDate,
   normalizeCivilDate,
-  translatePolicyError,
   type CorrectInput,
   type CreateDraftInput,
   type EditDraftInput,
@@ -132,7 +131,7 @@ export function BusinessConfigurationPage({
   const pageSize = 20;
   const [selectedStreamId, setSelectedStreamId] = useState<string | null>(null);
   const [workflow, setWorkflow] = useState<Workflow | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | Error | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Resolution tool state
@@ -142,7 +141,7 @@ export function BusinessConfigurationPage({
     kind: 'SCHOOL_WIDE',
   });
   const [resolutionResult, setResolutionResult] = useState<BusinessPolicyResolution | null>(null);
-  const [resolutionError, setResolutionError] = useState<string | null>(null);
+  const [resolutionError, setResolutionError] = useState<string | Error | null>(null);
   const [isResolving, setIsResolving] = useState(false);
 
   const familiesQuery = useQuery({
@@ -186,8 +185,7 @@ export function BusinessConfigurationPage({
       await invalidateData();
     },
     onError: (err: unknown) => {
-      const msg = err instanceof Error ? err.message : String(err);
-      setFormError(translatePolicyError(msg));
+      setFormError(err instanceof Error ? err : new Error());
     },
   });
 
@@ -201,8 +199,7 @@ export function BusinessConfigurationPage({
       await invalidateData();
     },
     onError: async (err: unknown) => {
-      const msg = err instanceof Error ? err.message : String(err);
-      setFormError(translatePolicyError(msg));
+      setFormError(err instanceof Error ? err : new Error());
       await invalidateData();
     },
   });
@@ -216,8 +213,7 @@ export function BusinessConfigurationPage({
       await invalidateData();
     },
     onError: async (err: unknown) => {
-      const msg = err instanceof Error ? err.message : String(err);
-      setFormError(translatePolicyError(msg));
+      setFormError(err instanceof Error ? err : new Error());
       await invalidateData();
     },
   });
@@ -232,8 +228,7 @@ export function BusinessConfigurationPage({
       await invalidateData();
     },
     onError: async (err: unknown) => {
-      const msg = err instanceof Error ? err.message : String(err);
-      setFormError(translatePolicyError(msg));
+      setFormError(err instanceof Error ? err : new Error());
       await invalidateData();
     },
   });
@@ -248,8 +243,7 @@ export function BusinessConfigurationPage({
       await invalidateData();
     },
     onError: async (err: unknown) => {
-      const msg = err instanceof Error ? err.message : String(err);
-      setFormError(translatePolicyError(msg));
+      setFormError(err instanceof Error ? err : new Error());
       await invalidateData();
     },
   });
@@ -266,8 +260,7 @@ export function BusinessConfigurationPage({
       await invalidateData();
     },
     onError: async (err: unknown) => {
-      const msg = err instanceof Error ? err.message : String(err);
-      setFormError(translatePolicyError(msg));
+      setFormError(err instanceof Error ? err : new Error());
       await invalidateData();
     },
   });
@@ -293,8 +286,7 @@ export function BusinessConfigurationPage({
       await invalidateData();
     },
     onError: async (err: unknown) => {
-      const msg = err instanceof Error ? err.message : String(err);
-      setFormError(translatePolicyError(msg));
+      setFormError(err instanceof Error ? err : new Error());
       await invalidateData();
     },
   });
@@ -502,12 +494,12 @@ export function BusinessConfigurationPage({
     }
 
     if (!isValidCivilDate(workflow.effectiveFrom)) {
-      setFormError('Ngày bắt đầu hiệu lực phải là ngày dân sự hợp lệ (YYYY-MM-DD).');
+      setFormError('Ngày bắt đầu hiệu lực phải là ngày hợp lệ.');
       return;
     }
     const isOperationalStart = workflow.family.key === 'OPERATIONAL_START';
     if (!isOperationalStart && workflow.effectiveUntil && !isValidCivilDate(workflow.effectiveUntil)) {
-      setFormError('Ngày kết thúc hiệu lực phải là ngày dân sự hợp lệ (YYYY-MM-DD).');
+      setFormError('Ngày kết thúc hiệu lực phải là ngày hợp lệ.');
       return;
     }
 
@@ -558,7 +550,7 @@ export function BusinessConfigurationPage({
     const adapter = workflow.adapter;
 
     if (!isValidCivilDate(workflow.effectiveFrom)) {
-      setFormError('Ngày bắt đầu hiệu lực mới phải là ngày dân sự hợp lệ (YYYY-MM-DD).');
+      setFormError('Ngày bắt đầu hiệu lực mới phải là ngày hợp lệ.');
       return;
     }
 
@@ -581,7 +573,7 @@ export function BusinessConfigurationPage({
     e.preventDefault();
     if (workflow?.kind !== 'retire') return;
     if (!isValidCivilDate(workflow.effectiveUntil)) {
-      setFormError('Ngày kết thúc hiệu lực phải là ngày dân sự hợp lệ (YYYY-MM-DD).');
+      setFormError('Ngày kết thúc hiệu lực phải là ngày hợp lệ.');
       return;
     }
 
@@ -606,11 +598,11 @@ export function BusinessConfigurationPage({
     const isOperationalStart = workflow.family.key === 'OPERATIONAL_START';
 
     if (!isOperationalStart && workflow.effectiveFrom && !isValidCivilDate(workflow.effectiveFrom)) {
-      setFormError('Ngày bắt đầu hiệu lực phải là ngày dân sự hợp lệ (YYYY-MM-DD).');
+      setFormError('Ngày bắt đầu hiệu lực phải là ngày hợp lệ.');
       return;
     }
     if (!isOperationalStart && workflow.effectiveUntil && !isValidCivilDate(workflow.effectiveUntil)) {
-      setFormError('Ngày kết thúc hiệu lực phải là ngày dân sự hợp lệ (YYYY-MM-DD).');
+      setFormError('Ngày kết thúc hiệu lực phải là ngày hợp lệ.');
       return;
     }
 
@@ -673,7 +665,7 @@ export function BusinessConfigurationPage({
       return;
     }
     if (!isValidCivilDate(resolveCivilDate)) {
-      setResolutionError('Vui lòng nhập ngày dân sự hợp lệ (YYYY-MM-DD).');
+      setResolutionError('Vui lòng nhập ngày hợp lệ.');
       return;
     }
 
@@ -708,8 +700,7 @@ export function BusinessConfigurationPage({
       });
       setResolutionResult(res);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setResolutionError(translatePolicyError(msg));
+      setResolutionError(err instanceof Error ? err : new Error());
     } finally {
       setIsResolving(false);
     }
@@ -739,7 +730,7 @@ export function BusinessConfigurationPage({
   return (
     <div className="management-page business-configuration-workspace">
       <PageHeader eyebrow="Quản trị cấu hình" title="Chính sách nghiệp vụ">
-        Quản lý và theo dõi các luồng chính sách nghiệp vụ đã được phê duyệt và công bố theo ngày dân sự.
+        Quản lý và theo dõi các luồng chính sách nghiệp vụ đã được phê duyệt và công bố theo ngày nghiệp vụ.
       </PageHeader>
 
       {successMessage && (
@@ -748,10 +739,8 @@ export function BusinessConfigurationPage({
         </InlineAlert>
       )}
 
-      {formError && (
-        <InlineAlert title="Thông báo lỗi" tone="error">
-          {formError}
-        </InlineAlert>
+      {formError instanceof Error ? <ErrorFeedback error={formError} title="Chưa hoàn tất thao tác chính sách" /> : formError && (
+        <InlineAlert title="Thông báo lỗi" tone="error">{formError}</InlineAlert>
       )}
 
       {/* SECTION A: APPROVED POLICY FAMILIES */}
@@ -855,8 +844,8 @@ export function BusinessConfigurationPage({
                   label="Phạm vi tài nguyên"
                   value={
                     workflow.family.resourceKind === 'SCHOOL_WIDE'
-                      ? 'Toàn trường (SCHOOL_WIDE)'
-                      : 'Năm học (ACADEMIC_YEAR)'
+                      ? 'Toàn trường'
+                      : 'Năm học'
                   }
                   readOnly
                   disabled
@@ -1059,7 +1048,7 @@ export function BusinessConfigurationPage({
                 Sửa sai lịch sử chính sách nghiệp vụ
               </h2>
               <div className="alert alert--error" style={{ marginBlock: '12px' }}>
-                <strong>Cảnh báo:</strong> Thao tác này sẽ đảo ngược (REVERSED) phiên bản{' '}
+                <strong>Cảnh báo:</strong> Thao tác này sẽ đảo ngược để sửa sai phiên bản{' '}
                 <strong>v{workflow.version.versionNumber}</strong> và tạo một phiên bản hiệu chỉnh mới theo bộ xác thực hiện hành (v{workflow.adapter.validatorVersion}).
                 {workflow.version.validatorVersion !== workflow.adapter.validatorVersion && (
                   <p style={{ marginTop: '6px', fontWeight: 600 }}>
@@ -1746,7 +1735,7 @@ export function BusinessConfigurationPage({
           Kiểm tra chính sách theo ngày
         </h2>
         <p className="muted-copy" style={{ marginBottom: '20px' }}>
-          Tra cứu chính sách có hiệu lực chính xác cho một ngày dân sự cụ thể. Không sử dụng giờ cục bộ của trình duyệt làm căn cứ hiệu lực.
+          Tra cứu chính sách có hiệu lực chính xác cho một ngày cụ thể. Không sử dụng giờ cục bộ của trình duyệt làm căn cứ hiệu lực.
         </p>
 
         <form onSubmit={handleResolve} style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '24px' }}>
@@ -1785,7 +1774,7 @@ export function BusinessConfigurationPage({
 
             <FormField
               id="resolve-civil-date"
-              label="Ngày dân sự cần tra cứu (YYYY-MM-DD)"
+              label="Ngày cần tra cứu"
               type="date"
               required
               value={resolveCivilDate}
@@ -1828,10 +1817,8 @@ export function BusinessConfigurationPage({
           })()}
         </form>
 
-        {resolutionError && (
-          <InlineAlert title="Lỗi tra cứu" tone="error">
-            {resolutionError}
-          </InlineAlert>
+        {resolutionError instanceof Error ? <ErrorFeedback error={resolutionError} title="Chưa tra cứu được chính sách" /> : resolutionError && (
+          <InlineAlert title="Lỗi tra cứu" tone="error">{resolutionError}</InlineAlert>
         )}
 
         {resolutionResult && (
@@ -1851,7 +1838,7 @@ export function BusinessConfigurationPage({
             }}
           >
             <h3 style={{ fontSize: '1.05rem', marginBottom: '8px' }}>
-              Kết quả tra cứu: {resolutionResult.outcome}
+              Kết quả tra cứu: {resolutionOutcomeLabel(resolutionResult.outcome)}
             </h3>
 
             {resolutionResult.outcome === 'RESOLVED' && (
@@ -1898,37 +1885,37 @@ export function BusinessConfigurationPage({
 
             {resolutionResult.outcome === 'POLICY_NOT_CONFIGURED' && (
               <p style={{ color: '#7a4b00', margin: 0 }}>
-                Chưa có chính sách nào được cấu hình cho phạm vi và ngày dân sự này (POLICY_NOT_CONFIGURED).
+                Chưa có chính sách nào được cấu hình cho phạm vi và ngày dân sự này.
               </p>
             )}
 
             {resolutionResult.outcome === 'POLICY_AMBIGUOUS' && (
               <p style={{ color: '#a32929', margin: 0 }}>
-                Sự cố tính toàn vẹn: Tồn tại nhiều hơn một chính sách cùng có hiệu lực cho ngày này (POLICY_AMBIGUOUS).
+                Sự cố tính toàn vẹn: Tồn tại nhiều hơn một chính sách cùng có hiệu lực cho ngày này.
               </p>
             )}
 
             {resolutionResult.outcome === 'POLICY_CORRUPT' && (
               <p style={{ color: '#a32929', margin: 0 }}>
-                Dữ liệu chính sách bị lỗi hoặc không thể kiểm tra hợp lệ bằng bộ xác thực đã lưu (POLICY_CORRUPT).
+                Dữ liệu chính sách bị lỗi hoặc không thể kiểm tra hợp lệ bằng bộ xác thực đã lưu.
               </p>
             )}
 
             {resolutionResult.outcome === 'UNKNOWN_POLICY_FAMILY' && (
               <p style={{ color: '#a32929', margin: 0 }}>
-                Nhóm chính sách không tồn tại trên hệ thống (UNKNOWN_POLICY_FAMILY).
+                Nhóm chính sách không tồn tại trên hệ thống.
               </p>
             )}
 
             {resolutionResult.outcome === 'INVALID_POLICY_RESOURCE' && (
               <p style={{ color: '#a32929', margin: 0 }}>
-                Phạm vi tài nguyên chính sách không hợp lệ (INVALID_POLICY_RESOURCE).
+                Phạm vi tài nguyên chính sách không hợp lệ.
               </p>
             )}
 
             {resolutionResult.outcome === 'INVALID_EFFECTIVE_DATE' && (
               <p style={{ color: '#a32929', margin: 0 }}>
-                Ngày hiệu lực tra cứu không đúng định dạng ngày dân sự (INVALID_EFFECTIVE_DATE).
+                Ngày hiệu lực tra cứu không đúng định dạng ngày dân sự.
               </p>
             )}
           </div>
@@ -1936,4 +1923,17 @@ export function BusinessConfigurationPage({
       </section>
     </div>
   );
+}
+
+function resolutionOutcomeLabel(outcome: string): string {
+  switch (outcome) {
+    case 'RESOLVED': return 'Đã tìm thấy chính sách có hiệu lực';
+    case 'POLICY_NOT_CONFIGURED': return 'Chưa cấu hình chính sách';
+    case 'POLICY_AMBIGUOUS': return 'Có nhiều chính sách trùng hiệu lực';
+    case 'POLICY_CORRUPT': return 'Dữ liệu chính sách không toàn vẹn';
+    case 'UNKNOWN_POLICY_FAMILY': return 'Không tìm thấy nhóm chính sách';
+    case 'INVALID_POLICY_RESOURCE': return 'Phạm vi chính sách không hợp lệ';
+    case 'INVALID_EFFECTIVE_DATE': return 'Ngày tra cứu không hợp lệ';
+    default: return 'Chưa xác định được kết quả. Hãy liên hệ người quản trị để kiểm tra.';
+  }
 }

@@ -540,7 +540,7 @@ describe('P1-022 Business Configuration administration workspace', () => {
     });
     expect(typeof (editBody as CapturedCommandBody | null)?.commandId).toBe('string');
 
-    expect(await screen.findByText(/xung đột dữ liệu hoặc trạng thái chính sách không cho phép/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Dữ liệu xung đột/i)).toBeInTheDocument();
   });
 
   // 15. Publish action confirms and publishes
@@ -918,7 +918,7 @@ describe('P1-022 Business Configuration administration workspace', () => {
     fireEvent.change(screen.getByRole('combobox', { name: 'Nhóm chính sách' }), {
       target: { value: 'TEST_BOOLEAN_THRESHOLD' },
     });
-    fireEvent.change(screen.getByLabelText(/ngày dân sự cần tra cứu/i), {
+    fireEvent.change(screen.getByLabelText(/ngày cần tra cứu/i), {
       target: { value: '2026-09-15' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Tra cứu' }));
@@ -927,8 +927,8 @@ describe('P1-022 Business Configuration administration workspace', () => {
     expect(requestedUrl).toContain('family=TEST_BOOLEAN_THRESHOLD');
     expect(requestedUrl).toContain('kind=SCHOOL_WIDE');
 
-    expect(await screen.findByText(/kết quả tra cứu: RESOLVED/i)).toBeInTheDocument();
-    expect(screen.getByText(/tìm thấy chính sách có hiệu lực/i)).toBeInTheDocument();
+    expect(await screen.findByText(/kết quả tra cứu: Đã tìm thấy chính sách có hiệu lực/i)).toBeInTheDocument();
+    expect(screen.getByText(/Tìm thấy chính sách có hiệu lực: Phiên bản/i)).toBeInTheDocument();
     expect(screen.getByTestId('test-adapter-summary')).toBeInTheDocument();
     expect(screen.getByText('Ngưỡng: 15')).toBeInTheDocument();
   });
@@ -1035,7 +1035,7 @@ describe('P1-022 Business Configuration administration workspace', () => {
     fireEvent.change(screen.getByLabelText(/ngày bắt đầu hiệu lực/i), { target: { value: '2026-09-05' } });
     fireEvent.click(screen.getByRole('button', { name: 'Lưu bản nháp' }));
 
-    expect(await screen.findByText('Yêu cầu không thực hiện được. Vui lòng tải lại dữ liệu và thử lại.')).toBeInTheDocument();
+    expect(await screen.findByText('Không thể hoàn tất yêu cầu. Hãy kiểm tra kết nối và thử lại.')).toBeInTheDocument();
     expect(screen.queryByText(/PrismaClientKnownRequestError/)).not.toBeInTheDocument();
     expect(screen.queryByText(/SQLSTATE/)).not.toBeInTheDocument();
     expect(screen.queryByText(/stream_id/)).not.toBeInTheDocument();
@@ -1249,7 +1249,7 @@ describe('P1-022 Business Configuration administration workspace', () => {
     fireEvent.change(screen.getByRole('combobox', { name: 'Chọn năm học áp dụng' }), {
       target: { value: EXACT_TEST_ACADEMIC_YEAR_ID },
     });
-    fireEvent.change(screen.getByLabelText(/ngày dân sự cần tra cứu/i), {
+    fireEvent.change(screen.getByLabelText(/ngày cần tra cứu/i), {
       target: { value: '2026-09-15' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Tra cứu' }));
@@ -1585,7 +1585,7 @@ describe('P1-022 Business Configuration administration workspace', () => {
     fireEvent.change(await screen.findByRole('combobox', { name: 'Nhóm chính sách' }), {
       target: { value: 'TEST_BOOLEAN_THRESHOLD' },
     });
-    fireEvent.change(screen.getByLabelText(/ngày dân sự cần tra cứu/i), {
+    fireEvent.change(screen.getByLabelText(/ngày cần tra cứu/i), {
       target: { value: '2026-09-01' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Tra cứu' }));
@@ -1954,7 +1954,7 @@ describe('P1-022 Business Configuration administration workspace', () => {
     fireEvent.change(screen.getByRole('combobox', { name: 'Nhóm chính sách' }), {
       target: { value: 'TEST_BOOLEAN_THRESHOLD' },
     });
-    fireEvent.change(screen.getByLabelText(/ngày dân sự cần tra cứu/i), {
+    fireEvent.change(screen.getByLabelText(/ngày cần tra cứu/i), {
       target: { value: '2026-09-01' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Tra cứu' }));
@@ -2084,7 +2084,7 @@ describe('P1-022 Business Configuration administration workspace', () => {
     fireEvent.change(screen.getByRole('combobox', { name: 'Nhóm chính sách' }), {
       target: { value: 'TEST_BOOLEAN_THRESHOLD' },
     });
-    fireEvent.change(screen.getByLabelText(/ngày dân sự cần tra cứu/i), {
+    fireEvent.change(screen.getByLabelText(/ngày cần tra cứu/i), {
       target: { value: '2026-09-01' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Tra cứu' }));

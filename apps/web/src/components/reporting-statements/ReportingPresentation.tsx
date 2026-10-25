@@ -5,7 +5,7 @@ import type {
   ReportingStatementSummary,
 } from '@baogiang/contracts';
 import { Link } from 'react-router-dom';
-import { formatCivilDate, formatInstant, lifecycleLabels } from '../../lib/reporting-statement-presentation';
+import { formatCivilDate, formatInstant, lifecycleLabel, reportingLabel, workloadFindingLabel } from '../../lib/reporting-statement-presentation';
 import { DataTable } from '../ui/management';
 
 const classificationLabels = {
@@ -19,16 +19,16 @@ const fulfillmentLabels = { NORMAL: 'Thực hiện theo lịch', MAKEUP: 'Dạy 
 
 export function LifecycleStatus({ state }: { state: ReportingStatementLifecycleState }) {
   const tone = state === 'APPROVED' ? 'active' : state === 'REJECTED' ? 'error' : 'inactive';
-  return <span className={`status-badge status-badge--${tone}`}>{lifecycleLabels[state]}</span>;
+  return <span className={`status-badge status-badge--${tone}`}>{lifecycleLabel(state)}</span>;
 }
 
 export function ReportingCountsView({ counts }: { counts: ReportingCounts }) {
   const rows = [
     ['Tiết đã phân phối đến hạn', counts.distributedElapsedCount],
     ['Tiết đã hoàn thành', counts.completedCount],
-    ['Nghĩa vụ còn mở', counts.openDebtCount],
+    ['Tiết còn phải hoàn thành', counts.openDebtCount],
     ['Hoàn thành muộn', counts.lateCount],
-    ['Khoảng trống chưa xác nhận', counts.unconfirmedGapCount],
+    ['Tiết chưa đủ bằng chứng xác nhận', counts.unconfirmedGapCount],
   ] as const;
   return <dl className="reporting-counts">{rows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd className="technical-value">{value}</dd></div>)}</dl>;
 }
@@ -39,8 +39,8 @@ export function ReportingEvidenceTable({ details }: { details: ReportingDetail[]
     {details.map((detail) => <tr key={detail.sourceNormalOccurrenceKey}>
       <td className="technical-value">{formatCivilDate(detail.sourceCivilDate)}</td>
       <td className="technical-value">{detail.sourceSlotStart}–{detail.sourceSlotEnd}</td>
-      <td>{classificationLabels[detail.classification]}</td>
-      <td>{detail.fulfillmentKind ? fulfillmentLabels[detail.fulfillmentKind] : 'Chưa có bằng chứng thực hiện'}</td>
+      <td>{reportingLabel(classificationLabels, detail.classification, 'Chưa xác định tình trạng tiết dạy')}</td>
+      <td>{detail.fulfillmentKind ? reportingLabel(fulfillmentLabels, detail.fulfillmentKind, 'Chưa xác định cách thực hiện') : 'Chưa có bằng chứng thực hiện'}</td>
       <td className="technical-value">{detail.executionCivilDate ? formatCivilDate(detail.executionCivilDate) : '—'}</td>
     </tr>)}
   </DataTable>;
@@ -89,44 +89,43 @@ export function OfficialWorkloadView({
         dutyDefinitionCodeSnapshot?: string;
       }>;
     }>;
-    findings?: Array<{ message: string; severity?: string }>;
+    findings?: Array<{ code?: string; message: string; severity?: string }>;
   };
 }) {
-  const earned = workload.earnedCredit ?? 0;
-  const required = workload.requiredCredit ?? 0;
-  const variance = workload.varianceCredit ?? 0;
-  const curricular = workload.curricularCredit ?? workload.curricularWorkload?.totalCredit ?? 0;
-  const special = workload.specialProgrammeCredit ?? workload.specialProgrammeWorkload?.totalCredit ?? 0;
-
-  const varianceFormatted = variance > 0 ? `+${variance}` : String(variance);
+  const creditLabel = (value: number | null | undefined, signed = false) => value == null
+    ? 'Chưa xác định'
+    : `${signed && value > 0 ? '+' : ''}${value} tiết`;
+  // A live projection and a frozen snapshot have different shapes. Null is not zero.
+  const curricular = workload.curricularCredit !== undefined ? workload.curricularCredit : workload.curricularWorkload?.totalCredit;
+  const special = workload.specialProgrammeCredit !== undefined ? workload.specialProgrammeCredit : workload.specialProgrammeWorkload?.totalCredit;
 
   return (
     <div className="official-workload-view" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
       <dl className="reporting-counts">
         <div>
           <dt>Khối lượng đã thực hiện</dt>
-          <dd className="technical-value">{earned} tiết</dd>
+          <dd>{creditLabel(workload.earnedCredit)}</dd>
         </div>
         <div>
           <dt>Định mức phải thực hiện</dt>
-          <dd className="technical-value">{required} tiết</dd>
+          <dd>{creditLabel(workload.requiredCredit)}</dd>
         </div>
         <div>
           <dt>Chênh lệch định mức</dt>
-          <dd className="technical-value" style={{ fontWeight: 600 }}>
-            {varianceFormatted} tiết
+          <dd style={{ fontWeight: 600 }}>
+            {creditLabel(workload.varianceCredit, true)}
           </dd>
         </div>
       </dl>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.75rem', fontSize: '0.9rem' }}>
-        <div style={{ border: '1px solid var(--border-subtle, #e5e7eb)', padding: '0.75rem', borderRadius: '4px' }}>
-          <span style={{ color: 'var(--text-muted, #6b7280)' }}>Dạy học chính khóa:</span>{' '}
-          <strong>{curricular} tiết</strong>
+        <div style={{ border: '1px solid var(--border-card)', padding: '0.75rem', borderRadius: '4px' }}>
+          <span style={{ color: 'var(--ink-muted-on-canvas)' }}>Dạy học chính khóa:</span>{' '}
+          <strong>{creditLabel(curricular)}</strong>
         </div>
-        <div style={{ border: '1px solid var(--border-subtle, #e5e7eb)', padding: '0.75rem', borderRadius: '4px' }}>
-          <span style={{ color: 'var(--text-muted, #6b7280)' }}>GDĐP / HĐTN-HN:</span>{' '}
-          <strong>{special} tiết</strong>
+        <div style={{ border: '1px solid var(--border-card)', padding: '0.75rem', borderRadius: '4px' }}>
+          <span style={{ color: 'var(--ink-muted-on-canvas)' }}>Giáo dục địa phương (GDĐP) / Hoạt động trải nghiệm, hướng nghiệp (HĐTN-HN):</span>{' '}
+          <strong>{creditLabel(special)}</strong>
         </div>
       </div>
 
@@ -137,13 +136,13 @@ export function OfficialWorkloadView({
             {workload.adjustmentSegments.map((seg, idx) => (
               <li key={idx} style={{ marginBottom: '0.25rem' }}>
                 <span className="technical-value">{seg.fromCivilDate} – {seg.toCivilDate}</span>:{' '}
-                Định mức <strong>{seg.adjustedWeeklyNorm ?? seg.baseWeeklyNorm ?? 0} tiết/tuần</strong>
+                Định mức <strong>{seg.adjustedWeeklyNorm == null ? 'Chưa xác định' : `${seg.adjustedWeeklyNorm} tiết/tuần`}</strong>
                 {seg.appliedRules.length > 0 && (
                   <span>
                     {' '}(Áp dụng: {seg.appliedRules.map((r) =>
                       r.sourceKind === 'HOMEROOM_RESPONSIBILITY'
                         ? 'Chủ nhiệm'
-                        : r.dutyDefinitionNameSnapshot || r.dutyDefinitionCodeSnapshot || 'Kiêm nhiệm'
+                        : r.dutyDefinitionNameSnapshot || 'Nhiệm vụ kiêm nhiệm chưa có tên'
                     ).join(', ')})
                   </span>
                 )}
@@ -156,7 +155,7 @@ export function OfficialWorkloadView({
       {workload.findings && workload.findings.length > 0 && (
         <ul className="muted-copy" style={{ fontSize: '0.85rem', margin: 0 }}>
           {workload.findings.map((f, i) => (
-            <li key={i}>{f.message}</li>
+            <li key={i}>{workloadFindingLabel(f.code)}</li>
           ))}
         </ul>
       )}

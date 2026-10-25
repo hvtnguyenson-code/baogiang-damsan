@@ -42,6 +42,8 @@ export function LoginPage() {
       setPassword('');
       const message = apiError.statusCode === 401
         ? 'Tên đăng nhập hoặc mật khẩu không hợp lệ.'
+        : apiError.statusCode === 403
+          ? 'Tài khoản chưa được phép đăng nhập. Vui lòng liên hệ cán bộ quản trị nhà trường để được kiểm tra.'
         : apiError.statusCode === 400 || apiError.statusCode === 422
           ? 'Thông tin đăng nhập chưa hợp lệ. Kiểm tra lại rồi thử lại.'
           : apiError.statusCode === 0

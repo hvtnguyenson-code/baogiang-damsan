@@ -1,7 +1,7 @@
 import type { CalendarExceptionRecord, OperationalLessonDispositionRecord } from '@baogiang/contracts';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '../components/ui/button';
-import { InlineAlert } from '../components/ui/feedback';
+import { ErrorFeedback, InlineAlert } from '../components/ui/feedback';
 import { DataTable, EmptyState, TextareaField } from '../components/ui/management';
 import { operationalOverlaysApi } from '../lib/operational-overlays-api';
 import type { OperationalWorkspaceContext } from '../lib/operational-overlays-api';
@@ -13,7 +13,7 @@ const dispositionLabel: Record<string, string> = {
   DIFFERENT_SUBJECT_SUPERVISION: 'Giám sát khác môn',
   AUTHORIZED_CANCELLATION: 'Hủy tiết có thẩm quyền',
 };
-function statusLabel(status: string) { return status === 'ACTIVE' ? 'Đang có hiệu lực' : 'Đã hoàn tác'; }
+function statusLabel(status: string) { return status === 'ACTIVE' ? 'Đang có hiệu lực' : status === 'REVERSED' ? 'Đã hoàn tác' : 'Chưa xác định trạng thái'; }
 
 export function OperationalHistoryPanel({ context, yearId, subjectId }: {
   context: OperationalWorkspaceContext;
@@ -24,7 +24,7 @@ export function OperationalHistoryPanel({ context, yearId, subjectId }: {
   const [dispositions, setDispositions] = useState<OperationalLessonDispositionRecord[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<unknown>(null);
   const [notice, setNotice] = useState('');
   const [reverseTarget, setReverseTarget] = useState<ReverseTarget | null>(null);
   const [reason, setReason] = useState('');
@@ -63,10 +63,10 @@ export function OperationalHistoryPanel({ context, yearId, subjectId }: {
       setDispositions(dispositionResponse?.items ?? []);
       setTotals({ calendars: calendarResponse?.total ?? 0, dispositions: dispositionResponse?.total ?? 0 });
       setLoaded(true);
-    } catch {
+    } catch (caught) {
       if (marker === version.current) {
         setLoaded(false);
-        setError('Không thể tải lịch sử. Dữ liệu hiện có chưa bị thay đổi.');
+        setError(caught);
       }
     } finally {
       if (marker === version.current) setBusy(false);
@@ -98,8 +98,8 @@ export function OperationalHistoryPanel({ context, yearId, subjectId }: {
       setReason('');
       setNotice('Đã ghi nhận hoàn tác. Lịch sử được giữ nguyên.');
       await loadHistory();
-    } catch {
-      setError('Chưa thể hoàn tác: dữ liệu có thể đã thay đổi hoặc còn ràng buộc nghiệp vụ. Giữ nguyên lý do; kiểm tra lại lịch sử trước khi thử tiếp.');
+    } catch (caught) {
+      setError(caught);
     } finally {
       setBusy(false);
     }
@@ -109,12 +109,14 @@ export function OperationalHistoryPanel({ context, yearId, subjectId }: {
     <section className="management-panel">
       <h2>Lịch sử điều hành và hoàn tác</h2>
       <p>Giữ nguyên các bản ghi lịch sử. Hoàn tác chỉ áp dụng cho bản ghi đang có hiệu lực, theo quyền được cấp.</p>
-      <Button type="button" variant="secondary" disabled={busy || !yearId} onClick={() => { void loadHistory(); }}>
-        {busy ? 'Đang xử lý…' : 'Tải lịch sử điều hành'}
+      <Button type="button" variant="secondary" disabled={busy || !yearId || (!canCalendar && !canTeaching)} onClick={() => { void loadHistory(); }}>
+        {busy ? 'Tải lịch sử điều hành · Đang xử lý…' : 'Tải lịch sử điều hành'}
       </Button>
-      {error && <InlineAlert title="Chưa hoàn thành thao tác">{error}</InlineAlert>}
+      {Boolean(error) && <><ErrorFeedback title="Chưa hoàn thành thao tác" error={error} /><p>Giữ lại lý do đã nhập. Tải lại lịch sử và kiểm tra trước khi xác nhận hoàn tác lần nữa.</p></>}
+      {!loaded && !busy && !error && <p>Chọn tải lịch sử để xem các bản ghi trong phạm vi được giao.</p>}
       {notice && <InlineAlert title="Đã cập nhật" tone="success">{notice}</InlineAlert>}
-      {loaded && calendars.length === 0 && dispositions.length === 0 && <EmptyState title="Chưa có bản ghi điều hành" />}
+      {!canCalendar && !canTeaching && <p>Chọn môn học trong phạm vi được giao để tải lịch sử; tài khoản cần quyền điều hành tương ứng.</p>}
+      {loaded && !busy && !error && calendars.length === 0 && dispositions.length === 0 && <EmptyState title="Chưa có bản ghi điều hành" />}
       {loaded && calendars.length > 0 && (
         <>
           <h3>Ngoại lệ lịch học</h3>
@@ -138,7 +140,7 @@ export function OperationalHistoryPanel({ context, yearId, subjectId }: {
           <DataTable label="Lịch sử xử lý tiết dạy" headings={['Ngày', 'Loại xử lý', 'Trạng thái', 'Thao tác']}>
             {dispositions.map((row) => <tr key={row.id}>
               <td>{row.sourceCivilDate}</td>
-              <td>{dispositionLabel[row.dispositionType] ?? 'Điều hành tiết dạy'}</td>
+              <td>{(Object.prototype.hasOwnProperty.call(dispositionLabel, row.dispositionType) ? dispositionLabel[row.dispositionType] : undefined) ?? 'Điều hành tiết dạy'}</td>
               <td>{statusLabel(row.status)}</td>
               <td>{row.status === 'ACTIVE'
                 && (context.permissions.teachingSchoolWide || row.dispositionType !== 'AUTHORIZED_CANCELLATION')
@@ -153,7 +155,7 @@ export function OperationalHistoryPanel({ context, yearId, subjectId }: {
         <section className="form-section" aria-label="Xác nhận hoàn tác">
           <h3>Xác nhận hoàn tác: {reverseTarget.label}</h3>
           <p>Hoàn tác sẽ tạo sự kiện lịch sử, không xóa bản ghi cũ. Nếu dữ liệu thay đổi hoặc có lịch dạy bù đang phụ thuộc, máy chủ sẽ từ chối.</p>
-          <TextareaField label="Lý do hoàn tác" id="operations-reversal-reason" value={reason}
+          <TextareaField label="Lý do hoàn tác (ít nhất 5 ký tự)" id="operations-reversal-reason" value={reason}
             onChange={(event) => setReason(event.target.value)} maxLength={500} rows={3} />
           <div className="management-actions">
             <Button type="button" disabled={busy || reason.trim().length < 5} onClick={() => { void reverse(); }}>Xác nhận hoàn tác</Button>

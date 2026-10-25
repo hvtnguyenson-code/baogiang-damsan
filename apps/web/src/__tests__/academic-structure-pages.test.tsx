@@ -174,7 +174,7 @@ describe('academic structure pages', () => {
     const table = await screen.findByRole('region', { name: 'Sổ lớp học' }); expect(within(table).getByText('Lớp 10A1')).toBeInTheDocument();
     expect(fetchMock.mock.calls.some((call) => String(call[0]).includes('/academic-years/year-1/classes'))).toBe(true);
     await userEvent.click(within(table).getByRole('button', { name: 'Vô hiệu hóa' }));
-    expect(within(table).getByText('Xác nhận vô hiệu hóa?')).toBeInTheDocument();
+    expect(within(table).getByText('Vô hiệu hóa “Lớp 10A1”? Lớp vẫn được giữ trong lịch sử.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /xóa/i })).not.toBeInTheDocument();
   });
 
@@ -217,7 +217,7 @@ describe('academic structure pages', () => {
       if (url.endsWith('/auth/me')) return jsonResponse(academicAuth);
       if (url.endsWith('/academic-years/year-1')) return jsonResponse(year);
       if (url.includes('/academic-years/year-1/calendar-versions') && method === 'GET') return jsonResponse({ items: [{ ...versionSummary, isActive: activated }], page: 1, pageSize: 20, total: 1 });
-      if (url.includes('/academic-years/year-1/calendar-versions') && method === 'POST') return jsonResponse({ statusCode: 400, message: 'Lịch chưa phủ đủ ngày dạy.' }, 400);
+      if (url.includes('/academic-years/year-1/calendar-versions') && method === 'POST') return jsonResponse({ statusCode: 400, message: 'SQL_INTERNAL secret-host hidden-uuid' }, 400);
       if (url.endsWith('/academic-calendar-versions/version-1/activate')) { activated = true; return jsonResponse({ ...versionDetail, isActive: true, activatedAt: '2026-08-01T00:00:00Z' }); }
       if (url.endsWith('/academic-calendar-versions/version-1')) return jsonResponse({ ...versionDetail, isActive: activated });
       return jsonResponse({ statusCode: 404, message: 'missing' }, 404);
@@ -225,14 +225,35 @@ describe('academic structure pages', () => {
     renderApp('/quan-tri/cau-truc-nam-hoc/year-1/lich');
     await userEvent.click(await screen.findByRole('button', { name: 'Tạo phiên lịch' })); await fillMinimalCalendar();
     await userEvent.click(screen.getAllByRole('button', { name: 'Tạo phiên lịch' }).at(-1)!);
-    expect(await screen.findByText('Lịch chưa phủ đủ ngày dạy.')).toBeInTheDocument();
+    expect(await screen.findByText('Máy chủ chưa chấp nhận cấu trúc lịch')).toBeInTheDocument();
+    expect(screen.queryByText(/SQL_INTERNAL|secret-host|hidden-uuid/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Bản nháp vẫn được giữ/)).toBeInTheDocument();
     expect(screen.getByLabelText('Ngày bắt đầu', { selector: 'input[name="calendar-start"]' })).toHaveValue('2026-08-31');
     await userEvent.click(screen.getByRole('button', { name: 'Hủy bản nháp' }));
     await userEvent.click(await screen.findByRole('button', { name: 'Kích hoạt Phiên 1' }));
     await userEvent.click(screen.getByRole('button', { name: 'Xác nhận kích hoạt Phiên 1' }));
     expect(await screen.findByText('Đã kích hoạt phiên 1.')).toBeInTheDocument();
-    expect(screen.queryByText('Lịch chưa phủ đủ ngày dạy.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Máy chủ chưa chấp nhận cấu trúc lịch')).not.toBeInTheDocument();
   }, 10_000);
+
+  it.each(['template', 'activate'])('does not claim a retained draft after %s HTTP 400 when no draft exists', async (operation) => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) return jsonResponse(academicAuth);
+      if (url.endsWith('/academic-years/year-1')) return jsonResponse(year);
+      if (url.includes('/academic-years/year-1/calendar-versions')) return jsonResponse({ items: [versionSummary], page: 1, pageSize: 20, total: 1 });
+      return jsonResponse({ message: 'SQL_INTERNAL hidden-uuid' }, 400);
+    }));
+    renderApp('/quan-tri/cau-truc-nam-hoc/year-1/lich');
+    if (operation === 'template') await userEvent.click(await screen.findByRole('button', { name: 'Dùng Phiên 1 làm mẫu' }));
+    else {
+      await userEvent.click(await screen.findByRole('button', { name: 'Kích hoạt Phiên 1' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Xác nhận kích hoạt Phiên 1' }));
+    }
+    expect(await screen.findByText('Một số giá trị chưa hợp lệ. Hãy kiểm tra lại biểu mẫu.')).toBeInTheDocument();
+    expect(screen.queryByText(/Bản nháp vẫn được giữ|SQL_INTERNAL|hidden-uuid/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Bản nháp phiên lịch mới' })).not.toBeInTheDocument();
+  });
 
   it('clears a failed template request before creating a new calendar', async () => {
     let templateFailed = false;
@@ -248,11 +269,11 @@ describe('academic structure pages', () => {
     }));
     renderApp('/quan-tri/cau-truc-nam-hoc/year-1/lich');
     await userEvent.click(await screen.findByRole('button', { name: 'Dùng Phiên 1 làm mẫu' }));
-    expect(await screen.findByText('Không thể hoàn tất yêu cầu. Hãy thử lại khi kết nối ổn định.')).toBeInTheDocument();
+    expect(await screen.findByText('Không thể hoàn tất yêu cầu. Hãy kiểm tra kết nối và thử lại.')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Tạo phiên lịch' }));
-    expect(screen.queryByText('Không thể hoàn tất yêu cầu. Hãy thử lại khi kết nối ổn định.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Không thể hoàn tất yêu cầu. Hãy kiểm tra kết nối và thử lại.')).not.toBeInTheDocument();
     await fillMinimalCalendar(); await userEvent.click(screen.getAllByRole('button', { name: 'Tạo phiên lịch' }).at(-1)!);
-    expect(await screen.findByText('Đã tạo phiên lịch mới. Phiên này được giữ bất biến.')).toBeInTheDocument();
+    expect(await screen.findByText('Đã tạo phiên lịch mới. Nội dung phiên đã lưu không thể sửa trực tiếp.')).toBeInTheDocument();
   }, 10_000);
 
   it('clears competing class mutation errors after later successful operations', async () => {

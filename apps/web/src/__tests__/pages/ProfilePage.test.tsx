@@ -135,7 +135,8 @@ describe('ProfilePage Telegram Integration UI (Case 30 & 31)', () => {
     await user.click(testButton);
 
     expect(await screen.findByText(/lỗi gửi tin thử/i)).toBeInTheDocument();
-    expect(screen.getByText(/trạng thái: UNKNOWN/i)).toBeInTheDocument();
+    expect(screen.queryByText(/UNKNOWN|NETWORK_TIMEOUT/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Hãy kiểm tra liên kết Telegram và thử gửi lại/)).toBeInTheDocument();
   });
 
   it('5. preserves requestKey across network error retries but generates a new key after unlink and relink', async () => {
@@ -182,7 +183,8 @@ describe('ProfilePage Telegram Integration UI (Case 30 & 31)', () => {
 
     // Step 1: Click 1 fails with network error
     await user.click(testButton);
-    expect(await screen.findByText(/network timeout/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Không thể hoàn tất yêu cầu/)).toBeInTheDocument();
+    expect(screen.queryByText(/network timeout/i)).not.toBeInTheDocument();
     expect(recordedRequestKeys.length).toBe(1);
     const keyBeforeRetry = recordedRequestKeys[0];
 

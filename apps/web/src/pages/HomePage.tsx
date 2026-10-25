@@ -138,7 +138,7 @@ export function HomePage() {
                     <span className="technical-badge technical-badge--teal">Giảng dạy</span>
                     <h3 className="work-queue-item__title">Lịch dạy cá nhân</h3>
                     <p className="work-queue-item__status text-slate-600">
-                      Xem thời khóa biểu, khung tiết và tiến độ giảng dạy tuần hiện tại.
+                      Xem lịch dạy cá nhân, lịch toàn trường và đối chiếu lịch đồng nghiệp.
                     </p>
                   </div>
                   <div className="work-queue-item__action">

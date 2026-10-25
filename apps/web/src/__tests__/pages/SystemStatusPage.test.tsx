@@ -33,7 +33,7 @@ describe('SystemStatusPage', () => {
     vi.spyOn(apiClient, 'fetchHealthLive').mockRejectedValue(new Error('socket 127.0.0.1 internal detail'));
     vi.spyOn(apiClient, 'fetchHealthReady').mockRejectedValue(new Error('database secret detail'));
     renderWithQuery(<SystemStatusPage />, '/trang-thai-he-thong');
-    expect(await screen.findByText('Không thể kết nối')).toBeInTheDocument();
+    expect(await screen.findByText('Chưa lấy được trạng thái mới nhất')).toBeInTheDocument();
     expect(screen.queryByText(/socket|database secret|127\.0\.0\.1/i)).not.toBeInTheDocument();
   });
 

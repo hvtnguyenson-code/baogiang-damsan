@@ -9,20 +9,9 @@ import type {
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '../components/ui/button';
-import { InlineAlert, LoadingState } from '../components/ui/feedback';
+import { ErrorFeedback, LoadingState } from '../components/ui/feedback';
 import { PageHeader } from '../components/ui/management';
-import { ApiError } from '../lib/api-client';
 import { dataReadinessApi } from '../lib/data-readiness-api';
-
-function errorText(error: unknown): string {
-  if (error instanceof ApiError) {
-    if (error.statusCode === 403) {
-      return 'Bạn không có quyền truy cập Trung tâm sẵn sàng dữ liệu. Chức năng chỉ dành cho Ban giám hiệu và Quản trị viên.';
-    }
-    return error.serverError ? `${error.serverError}: ${error.message}` : error.message;
-  }
-  return error instanceof Error ? error.message : 'Yêu cầu không thực hiện được.';
-}
 
 function formatDate(iso?: string | null): string {
   if (!iso) return '—';
@@ -115,13 +104,22 @@ function domainAccentClass(domainKey: DataReadinessDomainKey): string {
   }
 }
 
+// Display only: an unfamiliar status must never imply approval or readiness.
+function versionStatusLabel(status?: string | null): string {
+  const labels: Record<string, string> = {
+    DRAFT: 'Bản nháp', VALIDATED: 'Đã kiểm tra hợp lệ', APPROVED: 'Đã phê duyệt',
+    PUBLISHED: 'Đã ban hành', ACTIVE: 'Đang áp dụng', SUPERSEDED: 'Đã được thay thế',
+  };
+  return status ? labels[status] ?? 'Trạng thái chưa xác định' : 'Chưa có thông tin trạng thái';
+}
+
 const WORKFLOW_CONTRACT_STEPS = [
   { step: 1, title: 'Chọn tệp', desc: 'Chọn tệp Excel / CSV theo định dạng chuẩn' },
   { step: 2, title: 'Kiểm tra cấu trúc', desc: 'Xác minh dòng tiêu đề, kiểu cột và tính toàn vẹn' },
   { step: 3, title: 'Xử lý chưa nhận diện', desc: 'Đối chiếu mã giáo viên, mã môn, mã lớp mới' },
-  { step: 4, title: 'Xem trước & đối chiếu', desc: 'Phát hiện xung đột phòng học, trùng tiết, vượt định mức' },
-  { step: 5, title: 'Xác nhận', desc: 'Ghi nhận dữ liệu vào sổ cái với kiểm soát phiên bản' },
-  { step: 6, title: 'Kích hoạt / Công bố', desc: 'Ban hành thời khóa biểu hoặc phê duyệt kế hoạch' },
+  { step: 4, title: 'Xem trước & đối chiếu', desc: 'Xem kết quả đối chiếu và các lỗi, cảnh báo mà từng luồng nhập hỗ trợ' },
+  { step: 5, title: 'Xác nhận', desc: 'Chỉ ghi dữ liệu sau khi người có quyền xác nhận' },
+  { step: 6, title: 'Áp dụng / Phê duyệt', desc: 'Thực hiện bước áp dụng hoặc phê duyệt nếu luồng nhập có hỗ trợ' },
 ];
 
 export function DataReadinessPage() {
@@ -129,7 +127,7 @@ export function DataReadinessPage() {
   const [selectedAcademicYearId, setSelectedAcademicYearId] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
-  const [error, setError] = useState<string>('');
+  const [error, setError] = useState<unknown>(null);
 
   const loadData = useCallback(async (yearId?: string, isRefresh = false) => {
     if (isRefresh) {
@@ -137,7 +135,7 @@ export function DataReadinessPage() {
     } else {
       setLoading(true);
     }
-    setError('');
+    setError(null);
 
     try {
       const data = await dataReadinessApi.getSummary(yearId || undefined);
@@ -146,7 +144,7 @@ export function DataReadinessPage() {
         setSelectedAcademicYearId((prev) => prev || data.academicYear!.id);
       }
     } catch (err) {
-      setError(errorText(err));
+      setError(err);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -220,16 +218,13 @@ export function DataReadinessPage() {
         và hướng dẫn các bước nhập liệu chuẩn hóa dành cho Ban giám hiệu và Quản trị viên.
       </PageHeader>
 
-      {error && (
+      {error != null && (
         <div style={{ marginBlock: '1.5rem' }}>
-          <InlineAlert title="Không thể tải dữ liệu sẵn sàng" tone="error">
-            <p>{error}</p>
-            <div style={{ marginTop: '0.75rem' }}>
-              <Button type="button" variant="secondary" onClick={() => void loadData(selectedAcademicYearId)}>
-                Thử lại
-              </Button>
-            </div>
-          </InlineAlert>
+          <ErrorFeedback
+            title="Không thể tải dữ liệu sẵn sàng"
+            error={error}
+            retry={() => void loadData(selectedAcademicYearId)}
+          />
         </div>
       )}
 
@@ -294,8 +289,8 @@ export function DataReadinessPage() {
               Quy trình 6 bước chuẩn hóa khi nạp dữ liệu nhà trường
             </h3>
             <p className="readiness-guide-desc">
-              Mọi luồng nhập dữ liệu (TKB, PPCT, Lịch sử giảng dạy, GDĐP, HĐTN-HN) đều tuân theo trình tự nghiệp vụ
-              chặt chẽ để bảo đảm an toàn dữ liệu và tính giải trình:
+              Các bước dưới đây giúp định hướng khi nhập dữ liệu. Mỗi nhóm có quy trình riêng;
+              chỉ thực hiện các bước được hỗ trợ và theo quyền đã được cấp:
             </p>
             <div className="readiness-guide-steps">
               {WORKFLOW_CONTRACT_STEPS.map((st) => (
@@ -351,7 +346,7 @@ export function DataReadinessPage() {
                         <span className="domain-version-label">Phiên bản / Lượt nhập gần nhất:</span>
                         <span className="domain-version-value">
                           {domain.latestVersion
-                            ? `Phiên bản #${domain.latestVersion.number ?? 1} (${domain.latestVersion.statusLabel ?? domain.latestVersion.status ?? 'Đang lưu'})`
+                            ? `Phiên bản #${domain.latestVersion.number ?? 1} (${domain.latestVersion.statusLabel ?? versionStatusLabel(domain.latestVersion.status)})`
                             : domain.latestImport
                             ? `Lượt nhập ${domain.latestImport.batchRef ?? domain.latestImport.sourceFileName ?? 'Mới nhất'} (${domain.latestImport.rowCount ?? 0} dòng)`
                             : 'Chưa có phiên bản hoặc lượt nhập'}
@@ -395,7 +390,7 @@ export function DataReadinessPage() {
                       {domain.findings.length === 0 ? (
                         <div className="domain-finding-item domain-finding-item--clean">
                           <span className="finding-clean-icon" aria-hidden="true">✓</span>
-                          <span>Không có cảnh báo hoặc rào cản ngăn cản vận hành.</span>
+                          <span>Không ghi nhận cảnh báo trong kết quả này. Hãy đối chiếu trạng thái và hướng dẫn của nhóm dữ liệu.</span>
                         </div>
                       ) : (
                         <ul className="domain-findings-list">
@@ -446,11 +441,11 @@ export function DataReadinessPage() {
                   {/* Card Actions Footer */}
                   <footer className="domain-card-footer">
                     <Link
-                      to={domain.primaryAction.to}
+                      to={domain.key === 'TKB' ? '/quan-tri/thoi-khoa-bieu?tab=import' : domain.primaryAction.to}
                       className="button button--primary domain-action-btn"
                       data-testid={`action-${domain.key.toLowerCase()}`}
                     >
-                      {domain.primaryAction.label}
+                      {domain.key === 'TKB' ? 'Nhập TKB Đam San' : domain.primaryAction.label}
                     </Link>
                     {domain.secondaryAction && (
                       <Link
