@@ -10,9 +10,11 @@ Exact current `main`, branch HEAD and divergence must always be read directly fr
 
 **Status snapshot date:** 2026-10-25
 
-## P5-058 — IN_PROGRESS, bounded Vietnamese frontend checkpoints
+## P5-058 — CLOSED by SYNC-P5-058 (frontend Vietnamese UX technical release)
 
-P5-058 (T57), dependencies P5-050/P5-052/P5-053 CLOSED; một nhánh `feat/p5-058-frontend-vietnamese-ux`. Lát cắt 7 tiếp tục baseline `96d5c0e13f1153f57240fbd49d85f28f296b6e63`, audit toàn file mười module cuối: AccessDenied, DispositionPreview, DutyAssignments, DutyCatalog, FirstPasswordChange, Login, NotFound, OperationalHistory, PpctSpecializedStudy và SpecialProgrammeWorkspace. Tổng **35/35 module đã audit mã qua các lát cắt**, 25 mục navigation đã đối chiếu; không phải nghiệm thu toàn persona/runtime. Chuẩn hóa HTTP/reason/finding/unknown/status/lookup; giữ payload/quyền/route/CAS/command ID/workflow. Sửa smoke nhãn API cũ của CI #835; baseline run `40094916238` FAILURE (41/42 Playwright, chỉ public status fail), không phải CI working tree. Main xác minh trực tiếp `ea80f078c8a1297c562c8f4319540e3417d6e651`; PR #249 vẫn DRAFT. Bằng chứng/giới hạn: `docs/phase-reports/P5-058-SLICE-7-REPORT.md`. Giữ IN_PROGRESS; còn nghiệm thu A/C/D, commit/CI exact-head và review độc lập; chưa merge/deploy.
+P5-058/T57 parent PR #249 completed code audit for all **35/35 page modules** and checked **25 actual navigation registry items** (the requirement's original 26 was reconciled against the live registry). Exact-head `40f41046abeaea137a84231b6d235d6e52d4bf1d` passed PR CI #836 (`40157839224`), focused P5-058 Playwright **34/34 PASS**, and independent source-diff review found no new blocking regression. Merged to `main` at `13b3b6f23a12615d2f72f3457b512fac851dc586`; authoritative post-merge main CI `40168988159` had both jobs SUCCESS. On 2026-10-25 VPS `C:\baogiang\current` pointed to that exact release, `/api/health/live` and `/api/health/ready` returned HTTP 200, PostgreSQL ready check OK (53 ms). No backend/API/DB/auth/RBAC/deployment or Nội trú code mutation in P5-058.
+
+**Closure boundary:** P5-058 is CLOSED for frontend scope and deployed technical smoke only. Mock-browser coverage does not prove real Android device, 200% zoom, dense live tables, all authentic role accounts, or real backend command/CAS/race semantics. These outstanding user-workflow/field UAT requirements stay explicitly in `P5-057` (T56), mandatory before P6-050 teacher pilot. No blanket product/persona acceptance is claimed. Full evidence: `docs/phase-reports/SYNC-P5-058-CLOSURE.md`.
 
 ## P5-053 — CLOSED by SYNC-P5-053 (Timetable & Time-Slot Administration Workspace)
 
