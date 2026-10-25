@@ -55,7 +55,7 @@ describe('P5-054 retained operational history and guarded reversal', () => {
     expect(await screen.findByText('Đang có hiệu lực')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Hoàn tác' }));
     expect(screen.getByRole('button', { name: 'Xác nhận hoàn tác' }).hasAttribute('disabled')).toBe(true);
-    fireEvent.change(screen.getByLabelText('Lý do hoàn tác'), { target: { value: 'Quyết định điều chỉnh lịch học' } });
+    fireEvent.change(screen.getByLabelText('Lý do hoàn tác (ít nhất 5 ký tự)'), { target: { value: 'Quyết định điều chỉnh lịch học' } });
     fireEvent.click(screen.getByRole('button', { name: 'Xác nhận hoàn tác' }));
     await waitFor(() => expect(fetcher.mock.calls.some(([url]) => String(url).endsWith('/calendar-row/reverse'))).toBe(true));
     const calls = fetcher.mock.calls as Array<[RequestInfo | URL, RequestInit?]>;

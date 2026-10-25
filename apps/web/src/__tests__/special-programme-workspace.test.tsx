@@ -297,7 +297,7 @@ describe('SpecialProgrammeWorkspacePage (P4-074B Section 21 & 22)', () => {
       renderWithQuery(<SpecialProgrammeWorkspacePage />);
 
       // Verify Page Header
-      expect(await screen.findByRole('heading', { name: 'Kế hoạch HĐTN-HN & GDĐP' })).toBeInTheDocument();
+      expect(await screen.findByRole('heading', { name: 'Kế hoạch HĐTN-HN và GDĐP' })).toBeInTheDocument();
       expect(screen.getByLabelText('Năm học')).toHaveValue('year-2024');
 
       // Select file
@@ -367,7 +367,7 @@ describe('SpecialProgrammeWorkspacePage (P4-074B Section 21 & 22)', () => {
         issues: [
           {
             severity: 'BLOCKER',
-            code: 'MISSING_TEACHER',
+            code: 'TEACHER_NOT_FOUND',
             message: 'Không tìm thấy giáo viên phân công trong hệ thống nhân sự.',
             sourceRowNumber: 5,
           },
@@ -389,7 +389,7 @@ describe('SpecialProgrammeWorkspacePage (P4-074B Section 21 & 22)', () => {
       await user.click(screen.getByRole('button', { name: 'Xem trước kế hoạch' }));
 
       expect(await screen.findByText(/Lỗi cần xử lý \(Dòng 5\):/)).toBeInTheDocument();
-      expect(screen.getByText('Không tìm thấy giáo viên phân công trong hệ thống nhân sự.')).toBeInTheDocument();
+      expect(screen.getByText(/Chưa tìm thấy giáo viên. Kiểm tra lại thông tin nhân sự./)).toBeInTheDocument();
 
       // Confirm button is disabled
       const confirmBtn = screen.getByRole('button', { name: 'Xác nhận tạo bản nháp' });
@@ -491,7 +491,7 @@ describe('SpecialProgrammeWorkspacePage (P4-074B Section 21 & 22)', () => {
       renderWithQuery(<SpecialProgrammeWorkspacePage />);
 
       // Switch to Review tab
-      await user.click(await screen.findByRole('button', { name: /Rà soát & Vận hành/ }));
+      await user.click(await screen.findByRole('button', { name: /Rà soát và vận hành/ }));
 
       // Select existing master
       await user.click(await screen.findByRole('button', { name: 'Chọn xem chi tiết' }));
@@ -619,7 +619,7 @@ describe('SpecialProgrammeWorkspacePage (P4-074B Section 21 & 22)', () => {
       renderWithQuery(<SpecialProgrammeWorkspacePage />);
 
       // Switch to Review tab
-      await user.click(await screen.findByRole('button', { name: /Rà soát & Vận hành/ }));
+      await user.click(await screen.findByRole('button', { name: /Rà soát và vận hành/ }));
 
       // Dropdown initially defaults to year-A
       expect(screen.getByLabelText('Năm học')).toHaveValue('year-A');
@@ -730,7 +730,7 @@ describe('SpecialProgrammeWorkspacePage (P4-074B Section 21 & 22)', () => {
       renderWithQuery(<SpecialProgrammeWorkspacePage />);
 
       // Switch to Review tab and open master
-      await user.click(await screen.findByRole('button', { name: /Rà soát & Vận hành/ }));
+      await user.click(await screen.findByRole('button', { name: /Rà soát và vận hành/ }));
       await user.click(await screen.findByRole('button', { name: 'Chọn xem chi tiết' }));
 
       // Wait for master detail to render
@@ -770,7 +770,7 @@ describe('SpecialProgrammeWorkspacePage (P4-074B Section 21 & 22)', () => {
       renderWithQuery(<SpecialProgrammeWorkspacePage />);
 
       // Open review tab and select master
-      await user.click(await screen.findByRole('button', { name: /Rà soát & Vận hành/ }));
+      await user.click(await screen.findByRole('button', { name: /Rà soát và vận hành/ }));
       await user.click(await screen.findByRole('button', { name: 'Chọn xem chi tiết' }));
 
       // Click "Ban hành kế hoạch" to open confirm dialog
@@ -779,7 +779,7 @@ describe('SpecialProgrammeWorkspacePage (P4-074B Section 21 & 22)', () => {
 
       // 1st click: network failure
       await user.click(confirmPublishBtn);
-      expect(await screen.findByText(/Không thể kết nối đến máy chủ/)).toBeInTheDocument();
+      expect(await screen.findByText(/Không thể hoàn tất yêu cầu/)).toBeInTheDocument();
 
       // 2nd click: retry exact action
       await user.click(confirmPublishBtn);
@@ -825,7 +825,7 @@ describe('SpecialProgrammeWorkspacePage (P4-074B Section 21 & 22)', () => {
 
       renderWithQuery(<SpecialProgrammeWorkspacePage />);
 
-      await user.click(await screen.findByRole('button', { name: /Rà soát & Vận hành/ }));
+      await user.click(await screen.findByRole('button', { name: /Rà soát và vận hành/ }));
       await user.click(await screen.findByRole('button', { name: 'Chọn xem chi tiết' }));
 
       // Occurrence is DRAFT in PUBLISHED plan -> click "Ban hành hoạt động"
@@ -833,7 +833,7 @@ describe('SpecialProgrammeWorkspacePage (P4-074B Section 21 & 22)', () => {
 
       // 1st click: network failure
       await user.click(publishOccBtn);
-      expect(await screen.findByText(/Không thể kết nối đến máy chủ/)).toBeInTheDocument();
+      expect(await screen.findByText(/Không thể hoàn tất yêu cầu/)).toBeInTheDocument();
 
       // 2nd click: retry exact occurrence publish
       await user.click(publishOccBtn);
@@ -888,7 +888,7 @@ describe('SpecialProgrammeWorkspacePage (P4-074B Section 21 & 22)', () => {
 
       renderWithQuery(<SpecialProgrammeWorkspacePage />);
 
-      await user.click(await screen.findByRole('button', { name: /Rà soát & Vận hành/ }));
+      await user.click(await screen.findByRole('button', { name: /Rà soát và vận hành/ }));
       await user.click(await screen.findByRole('button', { name: 'Chọn xem chi tiết' }));
 
       // Occurrence is PUBLISHED and not materialized -> open materialize modal
@@ -899,7 +899,7 @@ describe('SpecialProgrammeWorkspacePage (P4-074B Section 21 & 22)', () => {
 
       // 1st click: network failure
       await user.click(confirmMatBtn);
-      expect(await screen.findByText(/Không thể kết nối đến máy chủ/)).toBeInTheDocument();
+      expect(await screen.findByText(/Không thể hoàn tất yêu cầu/)).toBeInTheDocument();
 
       // 2nd click: retry exact materialize
       await user.click(confirmMatBtn);
@@ -937,7 +937,7 @@ describe('SpecialProgrammeWorkspacePage (P4-074B Section 21 & 22)', () => {
 
       renderWithQuery(<SpecialProgrammeWorkspacePage />);
 
-      await user.click(await screen.findByRole('button', { name: /Rà soát & Vận hành/ }));
+      await user.click(await screen.findByRole('button', { name: /Rà soát và vận hành/ }));
       await user.click(await screen.findByRole('button', { name: 'Chọn xem chi tiết' }));
 
       await user.click(await screen.findByRole('button', { name: 'Ban hành kế hoạch' }));
@@ -996,7 +996,7 @@ describe('SpecialProgrammeWorkspacePage (P4-074B Section 21 & 22)', () => {
 
       // 1st click: network failure
       await user.click(saveDraftBtn);
-      expect(await screen.findByText(/Không thể kết nối đến máy chủ/)).toBeInTheDocument();
+      expect(await screen.findByText(/Không thể hoàn tất yêu cầu/)).toBeInTheDocument();
 
       // 2nd click: retry exact confirm action
       await user.click(saveDraftBtn);
@@ -1045,7 +1045,7 @@ describe('SpecialProgrammeWorkspacePage (P4-074B Section 21 & 22)', () => {
       await user.click(await screen.findByRole('button', { name: 'Xác nhận tạo bản nháp' }));
       await user.click(screen.getByRole('button', { name: 'Xác nhận lưu bản nháp' }));
 
-      expect(await screen.findByText(/Không thể kết nối đến máy chủ/)).toBeInTheDocument();
+      expect(await screen.findByText(/Không thể hoàn tất yêu cầu/)).toBeInTheDocument();
 
       const hdtnCalls = fetchMock.mock.calls.filter(([u]) => String(u).includes('/hdtn-import/confirm'));
       expect(hdtnCalls).toHaveLength(1);

@@ -1,10 +1,22 @@
 import type { CivilDateString, OperationalLessonDispositionType } from '@baogiang/contracts';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '../components/ui/button';
-import { InlineAlert } from '../components/ui/feedback';
-import { SelectField, TextareaField } from '../components/ui/management';
+import { ErrorFeedback, InlineAlert } from '../components/ui/feedback';
+import { EmptyState, SelectField, TextareaField } from '../components/ui/management';
 import { operationalOverlaysApi } from '../lib/operational-overlays-api';
 import type { DispositionPreviewResult, OperationalSourceOccurrence, OperationalWorkspaceContext, TeacherOptionsResult } from '../lib/operational-overlays-api';
+
+function blockedReason(reason: string, kind: 'options' | 'preview'): string {
+  switch (reason) {
+    case 'Quá nhiều giáo viên; cần giới hạn bộ lọc trước khi liệt kê.': return 'Danh sách quá nhiều giáo viên. Chọn môn học cụ thể hơn trước khi tìm lại.';
+    case 'Nguồn lịch chưa đủ điều kiện.': return 'Lịch dạy gốc chưa đủ điều kiện. Kiểm tra thời khóa biểu và lịch năm học.';
+    case 'Tiết học gốc không còn hợp lệ.': return 'Tiết học gốc không còn hợp lệ. Tải lại tiết dạy trước khi tiếp tục.';
+    case 'Giáo viên hoặc cơ hội nguồn xung đột với lịch hiện tại.': return 'Giáo viên hoặc tiết học gốc xung đột với lịch hiện tại. Kiểm tra lại lựa chọn.';
+    default: return kind === 'options'
+      ? 'Danh sách giáo viên chưa đủ điều kiện để lựa chọn. Hãy kiểm tra môn học và phạm vi được giao hoặc liên hệ cán bộ quản trị.'
+      : 'Tiết học gốc hoặc giáo viên chưa đủ điều kiện, hoặc có xung đột lịch. Kiểm tra lại lựa chọn trước khi xem trước lần nữa.';
+  }
+}
 
 function requiresTeacher(type: OperationalLessonDispositionType) {
   return type === 'SAME_SUBJECT_SUBSTITUTION' || type === 'DIFFERENT_SUBJECT_SUPERVISION';
@@ -25,7 +37,7 @@ export function DispositionPreviewPanel({ context, yearId, civilDate, items }: {
   const [preview, setPreview] = useState<DispositionPreviewResult | null>(null);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<unknown>(null);
   const request = useRef(0);
 
   useEffect(() => {
@@ -65,8 +77,8 @@ export function DispositionPreviewPanel({ context, yearId, civilDate, items }: {
         academicYearId: yearId, subjectId: source.subjectId, dispositionType: type,
       });
       if (marker === request.current) setOptions(result);
-    } catch {
-      if (marker === request.current) setError('Không thể lấy danh sách giáo viên; chưa thể xác minh.');
+    } catch (caught) {
+      if (marker === request.current) setError(caught);
     } finally {
       if (marker === request.current) setBusy(false);
     }
@@ -89,8 +101,8 @@ export function DispositionPreviewPanel({ context, yearId, civilDate, items }: {
         ...(note.trim() ? { note: note.trim() } : {}),
       });
       if (marker === request.current) setPreview(result);
-    } catch {
-      if (marker === request.current) setError('Không thể xác minh giáo viên/tiết học. Không được thực hiện thay đổi.');
+    } catch (caught) {
+      if (marker === request.current) setError(caught);
     } finally {
       if (marker === request.current) setBusy(false);
     }
@@ -119,10 +131,11 @@ export function DispositionPreviewPanel({ context, yearId, civilDate, items }: {
         {requiresTeacher(type) && (
           <>
             <Button type="button" variant="secondary" disabled={busy} onClick={() => { void loadOptions(); }}>
-              {busy ? 'Đang tải…' : 'Tìm giáo viên có thể lựa chọn'}
+              {busy ? 'Tìm giáo viên có thể lựa chọn · Đang xử lý…' : 'Tìm giáo viên có thể lựa chọn'}
             </Button>
-            {options?.status === 'BLOCKED' && <InlineAlert title="Danh sách bị chặn">{options.reason}</InlineAlert>}
-            {options?.status === 'OPTIONS_NOT_COLLISION_CHECKED' && (
+            {options?.status === 'BLOCKED' && <InlineAlert title="Danh sách bị chặn">{blockedReason(options.reason, 'options')}</InlineAlert>}
+            {options?.status === 'OPTIONS_NOT_COLLISION_CHECKED' && list.length === 0 && <EmptyState title="Chưa có giáo viên phù hợp" message="Chọn phương án khác hoặc kiểm tra lại phân công môn học." />}
+            {options?.status === 'OPTIONS_NOT_COLLISION_CHECKED' && list.length > 0 && (
               <SelectField id="ops-teacher" label="Giáo viên dự kiến" value={teacherId || list[0]?.userId || ''}
                 onChange={(event) => { setTeacherId(event.target.value); clearPreview(); }}>
                 {list.map((teacher) => <option key={teacher.userId} value={teacher.userId}>{teacher.name}</option>)}
@@ -136,14 +149,14 @@ export function DispositionPreviewPanel({ context, yearId, civilDate, items }: {
         maxLength={500} rows={2} onChange={(event) => { setNote(event.target.value); clearPreview(); }} />
       <Button type="button" disabled={busy || (requiresTeacher(type) && (!list.length || options?.status !== 'OPTIONS_NOT_COLLISION_CHECKED'))}
         onClick={() => { void previewDisposition(); }}>
-        {busy ? 'Đang kiểm tra…' : 'Xem trước phân công xử lý'}
+        {busy ? 'Xem trước phân công xử lý · Đang kiểm tra…' : 'Xem trước phân công xử lý'}
       </Button>
-      {error && <InlineAlert title="Chưa thể xác minh">{error}</InlineAlert>}
-      {preview?.status === 'BLOCKED' && <InlineAlert title="Không đủ điều kiện điều hành">{preview.reason}</InlineAlert>}
+      {Boolean(error) && <ErrorFeedback title="Chưa thể xác minh" error={error} />}
+      {preview?.status === 'BLOCKED' && <InlineAlert title="Không đủ điều kiện điều hành">{blockedReason(preview.reason, 'preview')}</InlineAlert>}
       {preview?.status === 'PASS' && (
         <div aria-live="polite">
           <p><strong>Đã xác minh nguồn, quyền, tư cách giáo viên và xung đột hiện tại.</strong></p>
-          <p>Chưa đánh giá đầy đủ hệ quả PPCT, định mức hoặc nợ tiết. Chưa cho phép ghi thay đổi.</p>
+          <p>Chưa đánh giá đầy đủ hệ quả phân phối chương trình (PPCT), định mức hoặc nợ tiết. Chưa cho phép ghi thay đổi.</p>
         </div>
       )}
     </section>

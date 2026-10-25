@@ -9,7 +9,7 @@ import type {
   ProgrammeWorkspaceOccurrence,
 } from '@baogiang/contracts';
 import { Button } from '../components/ui/button';
-import { InlineAlert } from '../components/ui/feedback';
+import { ErrorFeedback, InlineAlert } from '../components/ui/feedback';
 import {
   DataTable,
   EmptyState,
@@ -99,7 +99,7 @@ export function SpecialProgrammeWorkspacePage() {
   const [materializeTarget, setMaterializeTarget] = useState<ProgrammeWorkspaceOccurrence | null>(null);
 
   // Notice states
-  const [workflowError, setWorkflowError] = useState<string | null>(null);
+  const [workflowError, setWorkflowError] = useState<Error | string | null>(null);
   const [workflowSuccess, setWorkflowSuccess] = useState<string | null>(null);
 
   // Idempotency command state (in-memory per page session)
@@ -159,7 +159,7 @@ export function SpecialProgrammeWorkspacePage() {
       }
     },
     onError: (err) => {
-      const msg = err instanceof ApiError ? err.message : 'Lỗi khi kiểm tra tệp.';
+      const msg = err instanceof Error ? err : new Error('Lỗi khi kiểm tra tệp.');
       setWorkflowError(msg);
     },
   });
@@ -181,7 +181,7 @@ export function SpecialProgrammeWorkspacePage() {
       }
     },
     onError: (err) => {
-      const msg = err instanceof ApiError ? err.message : 'Lỗi khi xem trước kế hoạch.';
+      const msg = err instanceof Error ? err : new Error('Lỗi khi xem trước kế hoạch.');
       setWorkflowError(msg);
     },
   });
@@ -258,7 +258,7 @@ export function SpecialProgrammeWorkspacePage() {
           'Dữ liệu kế hoạch đã thay đổi hoặc phiên bản xem trước không còn hợp lệ. Hãy kiểm tra hoặc xem trước lại.',
         );
       } else {
-        const msg = err instanceof ApiError ? err.message : 'Không thể xác nhận tạo bản nháp.';
+        const msg = err instanceof Error ? err : new Error('Không thể xác nhận tạo bản nháp.');
         setWorkflowError(msg);
       }
     },
@@ -295,7 +295,7 @@ export function SpecialProgrammeWorkspacePage() {
         setWorkflowError('Phiên bản kế hoạch đã thay đổi trước khi ban hành. Đang tải lại dữ liệu mới nhất.');
         void queryClient.invalidateQueries({ queryKey: ['programme-workspace-detail', selectedMasterId] });
       } else {
-        const msg = err instanceof ApiError ? err.message : 'Không thể ban hành kế hoạch.';
+        const msg = err instanceof Error ? err : new Error('Không thể ban hành kế hoạch.');
         setWorkflowError(msg);
       }
     },
@@ -330,7 +330,7 @@ export function SpecialProgrammeWorkspacePage() {
         setWorkflowError('Hoạt động đã được cập nhật trước đó. Đang làm mới dữ liệu.');
         void queryClient.invalidateQueries({ queryKey: ['programme-workspace-detail', selectedMasterId] });
       } else {
-        const msg = err instanceof ApiError ? err.message : 'Không thể ban hành hoạt động.';
+        const msg = err instanceof Error ? err : new Error('Không thể ban hành hoạt động.');
         setWorkflowError(msg);
       }
     },
@@ -361,7 +361,7 @@ export function SpecialProgrammeWorkspacePage() {
       void queryClient.invalidateQueries({ queryKey: ['programme-workspace-detail', selectedMasterId] });
     },
     onError: (err) => {
-      const msg = err instanceof ApiError ? err.message : 'Không thể đưa hoạt động vào lịch vận hành.';
+      const msg = err instanceof Error ? err : new Error('Không thể đưa hoạt động vào lịch vận hành.');
       setWorkflowError(msg);
     },
   });
@@ -401,16 +401,17 @@ export function SpecialProgrammeWorkspacePage() {
     <div className="management-page special-programme-workspace">
       <PageHeader
         eyebrow="QUẢN TRỊ KẾ HOẠCH ĐẶC THÙ"
-        title="Kế hoạch HĐTN-HN & GDĐP"
+        title="Kế hoạch HĐTN-HN và GDĐP"
       >
-        Nhập tệp kế hoạch, rà soát bản nháp, ban hành kế hoạch và đưa hoạt động vào lịch vận hành.
+        Quản lý Hoạt động trải nghiệm, hướng nghiệp (HĐTN-HN) và Giáo dục địa phương (GDĐP): nhập tệp, rà soát bản nháp, ban hành kế hoạch và đưa hoạt động vào lịch vận hành.
       </PageHeader>
 
       {/* Thông báo toàn cục */}
       {workflowError && (
-        <InlineAlert title="Lỗi thao tác" tone="error">
-          <p>{workflowError}</p>
-        </InlineAlert>
+        <>
+          {typeof workflowError === 'string' ? <InlineAlert title="Chưa hoàn thành thao tác">{workflowError}</InlineAlert> : <ErrorFeedback title="Chưa hoàn thành thao tác" error={workflowError} />}
+          <p>Chưa xác nhận được kết quả thao tác. Kiểm tra lại dữ liệu trước khi tiếp tục.</p>
+        </>
       )}
       {workflowSuccess && (
         <InlineAlert title="Thành công" tone="success">
@@ -418,6 +419,7 @@ export function SpecialProgrammeWorkspacePage() {
         </InlineAlert>
       )}
 
+      {academicYears.length === 0 && <EmptyState title="Chưa có năm học trong phạm vi được giao" message="Liên hệ cán bộ quản trị để kiểm tra dữ liệu năm học và phân quyền." />}
       {/* A. Chọn năm học */}
       <section className="form-field" style={{ maxWidth: '420px', marginBottom: '24px' }}>
         <SelectField
@@ -481,7 +483,7 @@ export function SpecialProgrammeWorkspacePage() {
             setWorkflowError(null);
           }}
         >
-          Rà soát & Vận hành kế hoạch {selectedMasterId ? '★' : ''}
+          Rà soát và vận hành kế hoạch {selectedMasterId ? '★' : ''}
         </button>
       </nav>
 
@@ -633,7 +635,7 @@ export function SpecialProgrammeWorkspacePage() {
                     <td>
                       {row.slots.map((s, sIdx) => (
                         <div key={sIdx}>
-                          Tiết {s.periodNumber ?? s.timeSlotDefinitionId}
+                          {s.periodNumber == null ? 'Chưa xác định số tiết' : `Tiết ${s.periodNumber}`}
                           {s.startTime && s.endTime && ` (${s.startTime} - ${s.endTime})`}
                         </div>
                       ))}
@@ -714,7 +716,7 @@ export function SpecialProgrammeWorkspacePage() {
           </p>
 
           <div className="form-section">
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(240px, 1fr) minmax(200px, 1fr)', gap: '16px', alignItems: 'start' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))', gap: '16px', alignItems: 'start' }}>
               <div className="form-field">
                 <label className="form-field__label" htmlFor="gddp-file-input">
                   Chọn tệp Excel (.xlsx)
@@ -853,7 +855,7 @@ export function SpecialProgrammeWorkspacePage() {
               <h4>Chi tiết các hoạt động xem trước:</h4>
               <DataTable
                 label="Bảng xem trước hoạt động GDĐP"
-                headings={['Khối / Tuần / Tiết PPCT', 'Ngày & Tiết thời khóa biểu', 'Lớp áp dụng', 'Chủ đề', 'Giáo viên phân công']}
+                headings={['Khối / Tuần / Tiết PPCT', 'Ngày và tiết thời khóa biểu', 'Lớp áp dụng', 'Chủ đề', 'Giáo viên phân công']}
               >
                 {gddpPreviewResult.rows.map((row, idx) => (
                   <tr key={idx}>
@@ -945,10 +947,10 @@ export function SpecialProgrammeWorkspacePage() {
         </div>
       )}
 
-      {/* TAB 3: Rà soát & Vận hành kế hoạch (Durable Review Flow) */}
+      {/* TAB 3: Rà soát và vận hành kế hoạch (Durable Review Flow) */}
       {activeTab === 'review' && (
         <div className="workspace-section">
-          <h2>Rà soát & Vận hành kế hoạch</h2>
+          <h2>Rà soát và vận hành kế hoạch</h2>
           <p className="muted-copy">
             Xem xét chi tiết kế hoạch đã lưu trong hệ thống, thực hiện ban hành kế hoạch và đưa các hoạt động vào lịch vận hành.
           </p>
@@ -962,7 +964,7 @@ export function SpecialProgrammeWorkspacePage() {
                 message="Hãy chuyển sang tab HĐTN-HN hoặc GDĐP để nhập kế hoạch mới từ tệp Excel."
               />
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 280px), 1fr))', gap: '12px' }}>
                 {visibleMasters.map((m) => {
                   const isSelected = m.id === selectedMasterId;
                   return (
@@ -984,7 +986,7 @@ export function SpecialProgrammeWorkspacePage() {
                       </p>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px' }}>
                         <span className="status-badge status-badge--active">
-                          {m.latestVersionNumber ? `Phiên bản v${m.latestVersionNumber}` : 'Chưa có phiên bản'}
+                          {m.latestVersionNumber ? `Phiên bản ${m.latestVersionNumber}` : 'Chưa có phiên bản'}
                         </span>
                         {m.latestVersionStatus && (
                           <small style={{ fontWeight: 600 }}>{planStatusLabel(m.latestVersionStatus)}</small>
@@ -993,7 +995,7 @@ export function SpecialProgrammeWorkspacePage() {
                       <Button
                         type="button"
                         variant={isSelected ? 'primary' : 'quiet'}
-                        style={{ marginTop: '8px', minHeight: '36px', padding: '4px 10px' }}
+                        style={{ marginTop: '8px', minHeight: '44px', padding: '4px 10px' }}
                         onClick={(e) => {
                           e.stopPropagation();
                           setSelectedMasterId(m.id);
@@ -1044,7 +1046,59 @@ export function SpecialProgrammeWorkspacePage() {
   );
 }
 
-function renderIssues(issues: Array<{ severity: 'BLOCKER' | 'WARNING'; message: string; sourceRowNumber?: number }>) {
+const programmeIssueLabels: Record<string, string> = {
+  DATA_SHEET_NOT_FOUND: 'Chưa tìm thấy trang dữ liệu theo mẫu. Kiểm tra tên trang tính.',
+  HEADER_MISMATCH: 'Tiêu đề cột chưa đúng mẫu. Kiểm tra hàng tiêu đề trong tệp.',
+  EXTRA_COLUMNS_DETECTED: 'Tệp có cột ngoài mẫu. Kiểm tra dữ liệu tại các cột bổ sung.',
+  TOPIC_TITLE_REQUIRED: 'Bổ sung tên chủ đề.',
+  TEACHER_TEXT_REQUIRED: 'Bổ sung thông tin giáo viên phân công.',
+  TEACHER_NAME_REQUIRED: 'Bổ sung tên giáo viên.',
+  TEACHER_STAFF_CODE_REQUIRED: 'Bổ sung mã nhân sự của giáo viên.',
+  TEACHER_NOT_FOUND: 'Chưa tìm thấy giáo viên. Kiểm tra lại thông tin nhân sự.',
+  TEACHER_STAFF_CODE_NOT_FOUND: 'Chưa tìm thấy mã nhân sự. Kiểm tra lại danh sách nhân sự.',
+  TEACHER_NAME_AMBIGUOUS: 'Tên giáo viên trùng nhiều người. Kiểm tra lại phân công.',
+  TEACHER_STAFF_CODE_AMBIGUOUS: 'Mã nhân sự trùng nhiều người. Liên hệ cán bộ quản trị.',
+  TEACHER_INACTIVE_OR_INELIGIBLE: 'Giáo viên chưa đủ điều kiện nhận phân công. Kiểm tra trạng thái và tư cách giảng dạy.',
+  HOMEROOM_TEACHER_INELIGIBLE: 'Giáo viên chủ nhiệm chưa đủ điều kiện nhận phân công.',
+  DUPLICATE_TEACHER_STAFF_CODE: 'Mã nhân sự giáo viên bị lặp trong phân công.',
+  DUPLICATE_TEACHER_TOKEN: 'Thông tin giáo viên bị lặp trong phân công.',
+  DUPLICATE_RESOLVED_TEACHER: 'Một giáo viên được nhận diện nhiều lần. Kiểm tra lại phân công.',
+  CLASS_GVCN_SENTINEL_REQUIRED: 'Phân công theo lớp cần dùng ký hiệu giáo viên chủ nhiệm đúng mẫu.',
+  SUPPORTING_CLASS_NOT_FOUND: 'Chưa tìm thấy lớp hỗ trợ. Kiểm tra mã lớp trong tệp.',
+  UNSUPPORTED_GRADE_LEVEL: 'Khối lớp chưa được hỗ trợ. Kiểm tra khối 10, 11 hoặc 12.',
+  INVALID_GRADE_LEVEL: 'Khối lớp không hợp lệ. Kiểm tra lại tệp.',
+  INVALID_ORGANIZING_SCOPE: 'Phạm vi tổ chức chưa hợp lệ. Kiểm tra lớp, khối hoặc toàn trường.',
+  INVALID_REQUIRED_PERIODS: 'Số tiết yêu cầu chưa hợp lệ. Kiểm tra lại chủ đề.',
+  INVALID_WEEK_RANGE: 'Khoảng tuần chưa hợp lệ. Kiểm tra tuần bắt đầu và kết thúc.',
+  INVALID_WEEKS: 'Danh sách tuần chưa hợp lệ. Kiểm tra lại tuần học.',
+  WEEKS_REQUIRED: 'Bổ sung tuần học cho hoạt động.',
+  WEEK_NOT_IN_CALENDAR: 'Tuần học chưa có trong lịch năm học đang áp dụng.',
+  WEEK_SEGMENTS_EMPTY: 'Tuần học chưa có khoảng ngày để bố trí hoạt động.',
+  OFFICIAL_WEEK_AMBIGUOUS: 'Có nhiều tuần học phù hợp. Kiểm tra lại lịch năm học.',
+  ACTIVE_CALENDAR_NOT_FOUND: 'Chưa có lịch năm học đang áp dụng.',
+  ACTIVE_CALENDAR_AMBIGUOUS: 'Có nhiều lịch năm học đang áp dụng. Liên hệ cán bộ quản trị.',
+  NO_TEACHING_CIVIL_DATES: 'Không có ngày dạy phù hợp trong khoảng tuần đã chọn.',
+  TIMETABLE_VERSION_NOT_FOUND: 'Chưa có thời khóa biểu phù hợp với ngày hoạt động.',
+  TIMETABLE_VERSION_AMBIGUOUS: 'Có nhiều thời khóa biểu phù hợp. Kiểm tra lại phiên bản áp dụng.',
+  NO_ACTIVE_CLASSES_IN_GRADE: 'Khối chưa có lớp đang hoạt động.',
+  NO_ACTIVE_CLASSES_IN_SCHOOL: 'Trường chưa có lớp đang hoạt động.',
+  MULTIPLE_GRADES_IN_WORKBOOK: 'Tệp có nhiều khối lớp. Tách hoặc chọn đúng khối trước khi nhập.',
+  PPCT_TEXT_REQUIRED: 'Bổ sung tiết phân phối chương trình.',
+  MALFORMED_PPCT: 'Thông tin tiết phân phối chương trình chưa đúng mẫu.',
+  DUPLICATE_PPCT_COORDINATES: 'Tiết phân phối chương trình bị lặp.',
+  OVERLAPPING_PPCT_COORDINATES: 'Các khoảng tiết phân phối chương trình bị chồng lấn.',
+  PPCT_NOT_ORDERED: 'Tiết phân phối chương trình chưa đúng thứ tự.',
+  CLASS_PERIOD_COUNT_MISMATCH: 'Số tiết của lớp chưa khớp yêu cầu chủ đề.',
+  GRADE_PERIOD_COUNT_MISMATCH: 'Số tiết của khối chưa khớp yêu cầu chủ đề.',
+  SCHOOL_WIDE_PERIOD_COUNT_MISMATCH: 'Số tiết toàn trường chưa khớp yêu cầu chủ đề.',
+  GRADE_COVERAGE_INCOMPLETE: 'Chưa bố trí đủ các lớp trong khối.',
+  SCHOOL_WIDE_COVERAGE_INCOMPLETE: 'Chưa bố trí đủ các lớp toàn trường.',
+};
+function programmeIssueLabel(code?: string): string {
+  return code && Object.prototype.hasOwnProperty.call(programmeIssueLabels, code) ? programmeIssueLabels[code] : 'Có vấn đề chưa được nhận diện. Kiểm tra dòng dữ liệu theo mẫu hoặc liên hệ cán bộ quản trị.';
+}
+
+function renderIssues(issues: Array<{ code?: string; severity: 'BLOCKER' | 'WARNING'; message: string; sourceRowNumber?: number }>) {
   const blockers = issues.filter((i) => i.severity === 'BLOCKER');
   const warnings = issues.filter((i) => i.severity === 'WARNING');
 
@@ -1052,12 +1106,12 @@ function renderIssues(issues: Array<{ severity: 'BLOCKER' | 'WARNING'; message: 
     <div style={{ display: 'grid', gap: '8px' }}>
       {blockers.map((b, idx) => (
         <div key={`b-${idx}`} className="alert alert--error" style={{ margin: 0 }}>
-          <strong>Lỗi cần xử lý{b.sourceRowNumber ? ` (Dòng ${b.sourceRowNumber})` : ''}:</strong> {b.message}
+          <strong>Lỗi cần xử lý{b.sourceRowNumber ? ` (Dòng ${b.sourceRowNumber})` : ''}:</strong> {programmeIssueLabel(b.code)}
         </div>
       ))}
       {warnings.map((w, idx) => (
         <div key={`w-${idx}`} className="alert alert--warning" style={{ margin: 0 }}>
-          <strong>Cảnh báo{w.sourceRowNumber ? ` (Dòng ${w.sourceRowNumber})` : ''}:</strong> {w.message}
+          <strong>Cảnh báo{w.sourceRowNumber ? ` (Dòng ${w.sourceRowNumber})` : ''}:</strong> {programmeIssueLabel(w.code)}
         </div>
       ))}
     </div>
@@ -1111,7 +1165,7 @@ function DurableMasterDetail({
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
             <div>
               <h4 style={{ margin: 0 }}>
-                Phiên bản kế hoạch: v{plan.versionNumber} ({planStatusLabel(plan.status)})
+                Phiên bản kế hoạch: {plan.versionNumber} ({planStatusLabel(plan.status)})
               </h4>
               {plan.changeReason && (
                 <p className="muted-copy" style={{ margin: '4px 0 0' }}>Lý do: {plan.changeReason}</p>
@@ -1130,7 +1184,7 @@ function DurableMasterDetail({
                   </Button>
                 ) : (
                   <div className="decision-confirm" role="region" aria-label="Xác nhận ban hành kế hoạch">
-                    <p style={{ fontWeight: 600 }}>Xác nhận ban hành kế hoạch v{plan.versionNumber}:</p>
+                    <p style={{ fontWeight: 600 }}>Xác nhận ban hành kế hoạch {plan.versionNumber}:</p>
                     <ul style={{ paddingLeft: '20px', marginBlock: '6px 12px' }}>
                       <li>Sau khi ban hành, kế hoạch này không thể chỉnh sửa trực tiếp.</li>
                       <li>Mọi điều chỉnh sau khi ban hành phải thực hiện thông qua phiên bản kế tiếp hoặc hoạt động thay thế.</li>
@@ -1227,8 +1281,8 @@ function DurableMasterDetail({
             <ul style={{ paddingLeft: '20px', marginBlock: '6px 12px' }}>
               <li>Đây là bước tạo hoạt động vận hành từ kế hoạch đã ban hành;</li>
               <li><strong>KHÔNG</strong> đồng nghĩa hoạt động đã được thực hiện;</li>
-              <li><strong>KHÔNG</strong> tự tạo biên bản thực hiện giảng dạy (TeachingExecution);</li>
-              <li><strong>KHÔNG</strong> tự tạo chứng thực / xác nhận nghiệp vụ (Attestation);</li>
+              <li><strong>KHÔNG</strong> tự tạo biên bản thực hiện giảng dạy;</li>
+              <li><strong>KHÔNG</strong> tự tạo chứng thực / xác nhận nghiệp vụ;</li>
               <li><strong>KHÔNG</strong> tự sinh định mức hay khối lượng công việc.</li>
             </ul>
             <div className="form-actions">
@@ -1301,14 +1355,14 @@ function DurableMasterDetail({
 
                   {/* Tiết học & giáo viên */}
                   <div style={{ marginBlock: '8px' }}>
-                    <strong>Tiết học & phân công:</strong>
+                    <strong>Tiết học và phân công:</strong>
                     {occ.slots.length === 0 ? (
                       <p className="muted-copy" style={{ margin: 0 }}>Chưa phân công tiết học</p>
                     ) : (
                       <ul style={{ paddingLeft: '20px', margin: '4px 0' }}>
                         {occ.slots.map((slot, sIdx) => (
                           <li key={sIdx}>
-                            Tiết: <strong>{slot.periodNumber ? `Tiết ${slot.periodNumber}` : `Tiết ${sIdx + 1}`}</strong>
+                            Tiết: <strong>{slot.periodNumber ? `Tiết ${slot.periodNumber}` : 'Chưa xác định số tiết'}</strong>
                             {slot.startTime && slot.endTime && ` (${slot.startTime} – ${slot.endTime})`}
                             {' — Giáo viên: '}
                             {slot.staffing.length > 0 ? (

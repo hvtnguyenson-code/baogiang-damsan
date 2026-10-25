@@ -66,15 +66,21 @@ test('public system status is usable and exposes only safe recovery details', as
   await page.goto('/trang-thai-he-thong');
   await expect(page.getByRole('heading', { name: 'Trạng thái hệ thống' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Tải lại trạng thái' })).toBeVisible();
-  await expect(page.getByText('API', { exact: true })).toBeVisible();
-  await expect(page.getByText('Cơ sở dữ liệu', { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Dịch vụ ứng dụng', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Cơ sở dữ liệu', exact: true })).toBeVisible();
   await prepareScreenshot(page);
   await page.setViewportSize({ width: 1366, height: 768 });
   await page.screenshot({ path: `${screenshots}/system-status-ready-1366x768.png` });
 
   await page.route('**/api/health/**', (route) => route.abort('failed'));
   await page.reload();
-  await expect(page.getByText('Không thể kết nối', { exact: true })).toBeVisible();
+  const recovery = page.getByRole('alert');
+  await expect(recovery).toContainText('Chưa lấy được trạng thái mới nhất');
+  await expect(recovery).toContainText('Không thể hoàn tất yêu cầu. Hãy kiểm tra kết nối và thử lại.');
+  await expect(recovery.getByRole('button', { name: 'Thử lại', exact: true })).toBeVisible();
+  const components = page.getByRole('region', { name: 'Các thành phần hệ thống' });
+  await expect(components.locator('.status-cue')).toHaveText([/Chưa xác nhận$/, /Chưa xác nhận$/]);
+  await expect(components).not.toContainText('Sẵn sàng');
   await expect(page.getByText(/stack|postgresql:\/\//i)).toHaveCount(0);
   await prepareScreenshot(page);
   await page.screenshot({ path: `${screenshots}/system-status-error-safe-1366x768.png` });

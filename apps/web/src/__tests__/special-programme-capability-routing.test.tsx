@@ -118,7 +118,7 @@ describe('Special Programme Capability & Routing (P4-074B Section 20)', () => {
 
       renderApp('/quan-tri/chuong-trinh-dac-thu');
       expect(await screen.findByRole('heading', { name: /không có quyền thực hiện thao tác này/i })).toBeInTheDocument();
-      expect(screen.queryByRole('heading', { name: 'Kế hoạch HĐTN-HN & GDĐP' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'Kế hoạch HĐTN-HN và GDĐP' })).not.toBeInTheDocument();
     });
 
     it('allows /quan-tri/chuong-trinh-dac-thu for authorized coordinator', async () => {
@@ -138,7 +138,7 @@ describe('Special Programme Capability & Routing (P4-074B Section 20)', () => {
       vi.stubGlobal('fetch', fetchMock);
 
       renderApp('/quan-tri/chuong-trinh-dac-thu');
-      expect(await screen.findByRole('heading', { name: 'Kế hoạch HĐTN-HN & GDĐP' })).toBeInTheDocument();
+      expect(await screen.findByRole('heading', { name: 'Kế hoạch HĐTN-HN và GDĐP' })).toBeInTheDocument();
     });
   });
 });

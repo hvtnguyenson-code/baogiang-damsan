@@ -6,7 +6,7 @@ import type {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Button } from '../components/ui/button';
-import { InlineAlert } from '../components/ui/feedback';
+import { ErrorFeedback, InlineAlert } from '../components/ui/feedback';
 import { FormField } from '../components/ui/form-field';
 import {
   DataTable,
@@ -38,6 +38,7 @@ export function PpctSpecializedStudyPage() {
 
   const [successMessage, setSuccessMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const [requestError, setRequestError] = useState<unknown>(null);
 
   // 1. Academic years
   const years = useQuery({
@@ -129,10 +130,12 @@ export function PpctSpecializedStudyPage() {
     onMutate: () => {
       setSuccessMessage('');
       setErrorMessage('');
+      setRequestError(null);
     },
     onSuccess: async () => {
       setSuccessMessage('Đã cập nhật hồ sơ áp dụng PPCT và giữ lại lịch sử trước đó.');
       setErrorMessage('');
+      setRequestError(null);
       await queryClient.invalidateQueries({
         queryKey: ['ppct-associations', selectedYearId, selectedClassId, selectedSubjectId],
       });
@@ -161,7 +164,7 @@ export function PpctSpecializedStudyPage() {
         });
         return;
       }
-      setErrorMessage(error instanceof Error ? error.message : 'Yêu cầu không thực hiện được.');
+      setRequestError(error);
     },
   });
 
@@ -175,6 +178,7 @@ export function PpctSpecializedStudyPage() {
     setEffectiveFrom('');
     setSuccessMessage('');
     setErrorMessage('');
+    setRequestError(null);
   }
 
   function handleClassChange(classId: string) {
@@ -185,6 +189,7 @@ export function PpctSpecializedStudyPage() {
     setEffectiveFrom('');
     setSuccessMessage('');
     setErrorMessage('');
+    setRequestError(null);
   }
 
   function handleSubjectChange(subjectId: string) {
@@ -194,6 +199,7 @@ export function PpctSpecializedStudyPage() {
     setEffectiveFrom('');
     setSuccessMessage('');
     setErrorMessage('');
+    setRequestError(null);
   }
 
   function handleSubmit(event: FormEvent) {
@@ -203,11 +209,11 @@ export function PpctSpecializedStudyPage() {
       return;
     }
     if (!targetVersionId) {
-      setErrorMessage('Vui lòng chọn phiên bản PPCT công bố.');
+      setErrorMessage('Vui lòng chọn phiên bản PPCT ban hành.');
       return;
     }
     if (!effectiveFrom || !isCivilDate(effectiveFrom)) {
-      setErrorMessage('Vui lòng chọn ngày hiệu lực hợp lệ (YYYY-MM-DD).');
+      setErrorMessage('Vui lòng chọn ngày hiệu lực hợp lệ bằng ô chọn ngày.');
       return;
     }
     if (curricularProfile === 'CORE_PLUS_SPECIALIZED_STUDY' && !hasSpecializedItems) {
@@ -264,7 +270,7 @@ export function PpctSpecializedStudyPage() {
     return (
       <div className="management-page">
         <PageHeader eyebrow="Phân phối chương trình" title="Áp dụng chuyên đề">
-          Quản trị hồ sơ áp dụng PPCT (cốt lõi / chuyên đề) theo từng cặp Lớp - Môn học.
+          Chọn nội dung chính khóa hoặc chính khóa và chuyên đề học tập trong phân phối chương trình (PPCT) cho từng lớp, môn học.
         </PageHeader>
         <EmptyState
           title="Chưa có năm học"
@@ -280,12 +286,12 @@ export function PpctSpecializedStudyPage() {
   return (
     <div className="management-page ppct-specialized-study-page">
       <PageHeader eyebrow="Phân phối chương trình" title="Áp dụng chuyên đề">
-        Quản trị hồ sơ áp dụng PPCT (cốt lõi / chuyên đề) theo từng cặp Lớp - Môn học.
+        Chọn nội dung chính khóa hoặc chính khóa và chuyên đề học tập trong phân phối chương trình (PPCT) cho từng lớp, môn học.
       </PageHeader>
 
       {/* Context filters: Year, Class, Subject */}
       <section className="management-page__context" aria-labelledby="ppct-context-heading">
-        <h2 id="ppct-context-heading">Ngữ cảnh quản trị</h2>
+        <h2 id="ppct-context-heading">Chọn năm học, lớp và môn học</h2>
         <div className="filter-bar">
           <SelectField
             label="Năm học"
@@ -342,7 +348,7 @@ export function PpctSpecializedStudyPage() {
       {workspace.data && authorizedSubjects.length === 0 && (
         <EmptyState
           title="Chưa có môn học được cấp quyền"
-          message="Bạn chưa được phân quyền PPCT_MANAGE cho môn học nào trong năm học này."
+          message="Chưa có môn học trong phạm vi bạn được phép quản lý phân phối chương trình ở năm học này. Liên hệ cán bộ quản trị để kiểm tra phân quyền."
         />
       )}
 
@@ -375,6 +381,7 @@ export function PpctSpecializedStudyPage() {
           ) : (
             <>
               {/* Feedback notices */}
+              {Boolean(requestError) && <ErrorFeedback title="Chưa lưu được hồ sơ áp dụng" error={requestError} />}
               {successMessage && <MutationNotice success={successMessage} />}
               {errorMessage && (
                 <p className="form-field__error" role="alert">
@@ -393,28 +400,29 @@ export function PpctSpecializedStudyPage() {
                 <div className="form-grid">
                   {versions.isPending ? (
                     <div className="form-field">
-                      <label className="form-field__label" htmlFor="ppct-target-version">Phiên bản PPCT công bố</label>
+                      <label className="form-field__label" htmlFor="ppct-target-version">Phiên bản PPCT ban hành</label>
                       <p className="form-field__hint">Đang tải danh sách phiên bản PPCT...</p>
                     </div>
                   ) : versions.isError ? (
                     <div className="form-field">
-                      <label className="form-field__label" htmlFor="ppct-target-version">Phiên bản PPCT công bố</label>
+                      <label className="form-field__label" htmlFor="ppct-target-version">Phiên bản PPCT ban hành</label>
                       <QueryFailure error={versions.error} retry={() => void versions.refetch()} />
                     </div>
                   ) : (
                     <SelectField
-                      label="Phiên bản PPCT công bố"
+                      label="Phiên bản PPCT ban hành"
                       id="ppct-target-version"
                       value={targetVersionId}
                       onChange={(e) => {
                         setTargetVersionId(e.target.value);
                         setSuccessMessage('');
                         setErrorMessage('');
+                        setRequestError(null);
                       }}
                       required
                     >
                       {publishedVersions.length === 0 ? (
-                        <option value="">Chưa có phiên bản nào được công bố (PUBLISHED)</option>
+                        <option value="">Chưa có phiên bản nào được ban hành</option>
                       ) : (
                         publishedVersions.map((v) => (
                           <option key={v.id} value={v.id}>
@@ -433,11 +441,12 @@ export function PpctSpecializedStudyPage() {
                       setCurricularProfile(e.target.value as PpctClassCurricularProfile);
                       setSuccessMessage('');
                       setErrorMessage('');
+                      setRequestError(null);
                     }}
                     required
                   >
-                    <option value="CORE_ONLY">Chỉ nội dung cốt lõi</option>
-                    <option value="CORE_PLUS_SPECIALIZED_STUDY">Cốt lõi + Chuyên đề</option>
+                    <option value="CORE_ONLY">Chỉ nội dung chính khóa</option>
+                    <option value="CORE_PLUS_SPECIALIZED_STUDY">Chính khóa và chuyên đề học tập</option>
                   </SelectField>
 
                   <div className="form-field">
@@ -450,6 +459,7 @@ export function PpctSpecializedStudyPage() {
                         setEffectiveFrom(e.target.value);
                         setSuccessMessage('');
                         setErrorMessage('');
+                        setRequestError(null);
                       }}
                       required
                     />
@@ -477,7 +487,7 @@ export function PpctSpecializedStudyPage() {
                     )}
                     {versionContent.isSuccess && !hasSpecializedItems && (
                       <InlineAlert title="Phiên bản không có chuyên đề" tone="warning">
-                        Phiên bản PPCT được chọn không chứa bài chuyên đề nào (SPECIALIZED_STUDY). Không thể áp dụng hồ sơ chuyên đề.
+                        Phiên bản PPCT được chọn không chứa bài chuyên đề nào. Không thể áp dụng hồ sơ chuyên đề.
                       </InlineAlert>
                     )}
                   </>
@@ -485,7 +495,7 @@ export function PpctSpecializedStudyPage() {
 
                 {versions.isSuccess && publishedVersions.length === 0 && (
                   <p className="limitation-note">
-                    Kế hoạch PPCT chưa có phiên bản nào được công bố (PUBLISHED). Không thể chuyển đổi liên kết.
+                    Kế hoạch PPCT chưa có phiên bản nào được ban hành. Không thể chuyển đổi liên kết.
                   </p>
                 )}
 
@@ -519,7 +529,7 @@ export function PpctSpecializedStudyPage() {
                       'Hiệu lực từ',
                       'Hiệu lực đến',
                       'Hồ sơ áp dụng',
-                      'ID phiên bản PPCT',
+                      'Phiên bản PPCT',
                       'Trạng thái phiên bản',
                       'Nhãn / Trạng thái',
                     ]}
@@ -529,6 +539,7 @@ export function PpctSpecializedStudyPage() {
                         key={row.id}
                         row={row}
                         isLatest={row.id === latestAssociation?.id}
+                        versionNumber={versions.data?.items.find((version) => version.id === row.ppctVersionId)?.versionNumber}
                       />
                     ))}
                   </DataTable>
@@ -545,14 +556,14 @@ export function PpctSpecializedStudyPage() {
 function HistoryRow({
   row,
   isLatest,
+  versionNumber,
 }: {
   row: PpctClassAssociationRecord;
   isLatest: boolean;
+  versionNumber?: number;
 }) {
-  const profileLabel =
-    row.curricularProfile === 'CORE_ONLY'
-      ? 'Chỉ nội dung cốt lõi'
-      : 'Cốt lõi + Chuyên đề';
+  const profileLabel = row.curricularProfile === 'CORE_ONLY' ? 'Chỉ nội dung chính khóa'
+    : row.curricularProfile === 'CORE_PLUS_SPECIALIZED_STUDY' ? 'Chính khóa và chuyên đề học tập' : 'Chưa xác định hồ sơ';
 
   return (
     <tr>
@@ -570,10 +581,10 @@ function HistoryRow({
         <strong>{profileLabel}</strong>
       </td>
       <td>
-        <span className="technical-value">{row.ppctVersionId}</span>
+        <span>{versionNumber === undefined ? 'Chưa tra cứu được số phiên bản' : `Bản ${versionNumber}`}</span>
       </td>
       <td>
-        <span className="status-badge status-badge--active">{row.ppctVersionStatus}</span>
+        <span className={`status-badge ${row.ppctVersionStatus === 'PUBLISHED' ? 'status-badge--active' : 'status-badge--inactive'}`}>{row.ppctVersionStatus === 'PUBLISHED' ? 'Đã ban hành' : row.ppctVersionStatus === 'DRAFT' ? 'Bản nháp' : row.ppctVersionStatus === 'SUPERSEDED' ? 'Đã được thay thế' : 'Chưa xác định trạng thái'}</span>
       </td>
       <td>
         <div className="row-badges">

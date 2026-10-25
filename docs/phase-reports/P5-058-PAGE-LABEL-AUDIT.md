@@ -1,4 +1,4 @@
-# P5-058 — Kiểm kê trang và nhãn, lát cắt 3–6
+# P5-058 — Kiểm kê trang và nhãn, lát cắt 3–7
 
 Ngày 24/10/2026. Lập trước sửa mã; baseline nhánh `8968d50909cc03ca677fe5416dce96bdc517dd0d`, main xác minh remote `ea80f078c8a1297c562c8f4319540e3417d6e651`. T57, dependencies P5-050/P5-052/P5-053 CLOSED. Chỉ copy/presentation/test/docs; không API, route, quyền, trạng thái backend, phép tính, workflow, dependencies, DESIGN.md hoặc VPS. P5-058 vẫn IN_PROGRESS.
 
@@ -21,24 +21,24 @@ Ngày 24/10/2026. Lập trước sửa mã; baseline nhánh `8968d50909cc03ca677
 | DataReadinessPage | Bằng chứng lát cắt 2 | Không review lại toàn trang |
 | AcademicCalendarPage | Lát cắt 5: đã đọc toàn file | Danh sách/chi tiết/sao chép/tạo/kích hoạt lịch; form học kỳ/tuần/khoảng/gián đoạn và lỗi 400; giới hạn nghiệm thu bên dưới |
 | AcademicYearsPage | Lát cắt 5: đã đọc toàn file | Danh sách/tạo/sửa năm học, sparse patch, chuẩn hóa mã, tải/rỗng/lỗi và mở lịch; giới hạn nghiệm thu bên dưới |
-| AccessDeniedPage | Chỉ xác nhận có file | Chưa audit nhãn |
+| AccessDeniedPage | Lát cắt 7: đã đọc toàn file | Hướng dẫn từ chối quyền và hai liên kết phục hồi; bỏ khẳng định phiên còn hiệu lực khi chưa có chứng cứ |
 | AuditPage | Lát cắt 6: đã đọc toàn file | Bộ lọc/thời gian/phân trang, tải/rỗng/lỗi, kết quả/action và metadata được máy chủ lọc; giữ nguyên mã/filter và bằng chứng nhật ký |
 | BusinessConfigurationPage | Lát cắt 6: đã đọc toàn file | Bảy luồng mutation, adapter/version/allowedActions, danh sách/chi tiết/truy vết, tra cứu và mọi outcome; HTTP an toàn, nhãn tiếng Việt; không thay hợp đồng hoặc lifecycle |
 | CapabilitiesPage | Lát cắt 6: đã đọc toàn file | Năm truy vấn phân trang, retention danh mục, cấp/thu hồi và lịch sử; nhãn phạm vi, chưa tới hiệu lực/hết hạn/thu hồi, tải/rỗng/lỗi; giữ payload/predicate/xác nhận |
-| DispositionPreviewPanel | Chỉ xác nhận có file | Chưa audit nhãn |
-| DutyAssignmentsPage | Chỉ xác nhận có file | Chưa audit nhãn |
-| DutyCatalogPage | Chỉ xác nhận có file | Chưa audit nhãn |
-| FirstPasswordChangePage | Chỉ xác nhận có file | Chưa audit nhãn |
+| DispositionPreviewPanel | Lát cắt 7: đã đọc toàn file | Nguồn/phương án/giáo viên, preview PASS/BLOCKED; HTTP, reason hữu hạn, loading/rỗng; giữ request/payload |
+| DutyAssignmentsPage | Lát cắt 7: đã đọc toàn file | Lọc/tạo/sửa/kết thúc, lookup tải/lỗi/thiếu tên, future khác hết hiệu lực; giữ quyền/DTO |
+| DutyCatalogPage | Lát cắt 7: đã đọc toàn file | Danh mục/lọc/tạo/sửa/vô hiệu hóa, nhãn trạng thái; giữ sparse patch/xác nhận/lịch sử |
+| FirstPasswordChangePage | Lát cắt 7: đã đọc toàn file | Validation, HTTP, recovery và logout; bổ sung hướng dẫn 403, giữ auth/policy |
 | HistoricalTeachingPage | Lát cắt 4: đã đọc toàn file | Đã sửa các đường hiển thị rủi ro; phạm vi đã kiểm chứng/chưa nghiệm thu bên dưới |
 | HomeroomAssignmentsPage | Lát cắt 5: đã đọc toàn file | Tạo/kết thúc/đổi/hiệu chỉnh, danh tính lịch sử, trạng thái hiện tại và truy vết; HTTP/tải/rỗng; giới hạn nghiệm thu bên dưới |
-| LoginPage | Chỉ xác nhận có file | Chưa audit nhãn |
+| LoginPage | Lát cắt 7: đã đọc toàn file | Validation, intended path, HTTP và recovery; bổ sung hướng dẫn 403, giữ auth/session |
 | MakeupSchedulingPage | Lát cắt 4: đã đọc toàn file | Đã sửa các đường hiển thị rủi ro; phạm vi đã kiểm chứng/chưa nghiệm thu bên dưới |
-| NotFoundPage | Chỉ xác nhận có file | Chưa audit nhãn |
-| OperationalHistoryPanel | Chỉ xác nhận có file | Chưa audit nhãn |
-| PpctSpecializedStudyPage | Chỉ xác nhận có file | Chưa audit nhãn |
+| NotFoundPage | Lát cắt 7: đã đọc toàn file | Hướng dẫn trang không tồn tại và liên kết thật; không đổi route |
+| OperationalHistoryPanel | Lát cắt 7: đã đọc toàn file | Tải lịch sử/giới hạn 50/hoàn tác, HTTP và unknown; giữ scope/CAS/requestKey/reason |
+| PpctSpecializedStudyPage | Lát cắt 7: đã đọc toàn file | Năm/lớp/môn/phiên bản/hồ sơ/ngày, preflight/lịch sử/conflict; HTTP, nhãn chính khóa/ban hành, unknown |
 | ProfilePage | Lát cắt 4: đã đọc toàn file | Đã sửa các đường hiển thị rủi ro; phạm vi đã kiểm chứng/chưa nghiệm thu bên dưới |
 | SchoolClassesPage | Lát cắt 5: đã đọc toàn file | Danh sách/tạo/sửa lớp, lọc khối/trạng thái, xác nhận kích hoạt/vô hiệu hóa; giới hạn nghiệm thu bên dưới |
-| SpecialProgrammeWorkspacePage | Chỉ xác nhận có file | Chưa audit nhãn |
+| SpecialProgrammeWorkspacePage | Lát cắt 7: đã đọc toàn file | Inspect/preview/confirm HĐTN-HN/GDĐP, durable review/publish/materialize; 46 finding, severity/dòng, HTTP; giữ command/revision/lifecycle |
 | SystemStatusPage | Lát cắt 6: đã đọc toàn file | Public live/ready, tải/retry/suy giảm/lỗi; lưu thông báo 401 qua cache purge, không hiện lỗi hoặc chi tiết cache cũ khi kiểm tra thất bại; không đổi auth/API/interval |
 | TeachingAssignmentsPage | Lát cắt 5: đã đọc toàn file | Chọn năm, lọc, tạo/kết thúc/đổi giáo viên, điều kiện chọn ứng viên, HTTP và ngày hiệu lực; giới hạn nghiệm thu bên dưới |
 | TeachingOperationsPage | Lát cắt 4: đã đọc toàn file | Đã sửa các đường hiển thị rủi ro; phạm vi đã kiểm chứng/chưa nghiệm thu bên dưới |
@@ -164,3 +164,22 @@ T57, cùng nhánh P5-058, baseline `f7f01906821b12db8d95d14bad557937b6bd5165`. M
 Wireframe giữ bố cục có sẵn: Users desktop danh sách trái và chi tiết phải, mobile chuyển danh sách/chi tiết; quyền và cấu hình dùng form → bảng/lịch sử; nhật ký bộ lọc → bảng → phân trang; trạng thái tóm tắt → hai thành phần. Không CSS/token/font/primitive mới. Số kiểm thử và QA ảnh: `P5-058-SLICE-6-REPORT.md`.
 
 Giới hạn A/C/D còn mở: mọi mutation nhạy cảm qua backend thật, cạnh tranh/xóa/refetch thực tế, catalog notes mới ngoài exact mapping, metadata nghiệp vụ toàn bộ domain, persona đầy đủ, Android thật và zoom 200%. Mã audit, UUID truy vết và payload chính sách có mục đích quản trị được giữ theo contract, không bị coi là lỗi thô để xóa chứng cứ. Không có nghiệm thu toàn task hoặc production.
+
+
+## Lát cắt 7 — mười module cuối (25/10/2026)
+
+Tiếp tục working tree phiên mất kết nối trên baseline `96d5c0e13f1153f57240fbd49d85f28f296b6e63`; đã đọc toàn file mười module ở các dòng thật bên trên và đối chiếu diff trước sửa tiếp. Tổng **35/35 module có bằng chứng audit mã qua các lát cắt**, 25 mục navigation đã đối chiếu; không đồng nghĩa nghiệm thu mọi persona/runtime. Ba module lát cắt 2 dùng bằng chứng đã ghi, không tuyên bố đọc lại trong lát cắt 7.
+
+| Đường hiển thị | Xử lý / bằng chứng / giới hạn |
+| --- | --- |
+| Login / FirstPasswordChange / AccessDenied / NotFound | Hướng dẫn 403; từ chối quyền không tự khẳng định phiên hợp lệ; 404 có bước tiếp theo. Hồi quy exact password policy, refresh, expired session, intended path/logout; không thay auth/route |
+| DispositionPreview | Giữ ApiError, reason hữu hạn đối chiếu workspace service, unknown trung tính; empty giáo viên riêng. Unit năm HTTP status giữ note/payload/số call; giữ preview-only, không command ghi |
+| OperationalHistory | Tải lỗi không hiện empty, unknown không giả REVERSED; own-property lookup loại xử lý; nhãn lý do 5 ký tự. Giữ scope, CAS/requestKey, giới hạn 50 và thông báo chưa đủ lịch sử. Browser hoàn tác backend thật còn cần nghiệm thu |
+| DutyCatalog / DutyAssignments | Nhãn isActive khác cửa sổ hiệu lực; future khác hết hạn; lookup có tải/lỗi và thiếu tên thay UUID. Giữ sparse patch/no-op/null note, filter, scope, create/edit/end/disable; lookup giới hạn 100 hiện hữu, không thêm API hoặc thay quyền |
+| PpctSpecializedStudy | HTTP an toàn, giữ xử lý week-split/stale và form; chính khóa/ban hành; số phiên bản từ danh sách hiện hữu, thiếu số nói chưa tra cứu được; unknown không giả chuyên đề/ban hành. Unit exact DTO/date/CAS/refetch/preflight. Phiên bản ngoài danh sách 100 dùng fallback, không suy số |
+| SpecialProgrammeWorkspace | Mapping 46 code đối chiếu hai workbook importer, không in finding.message; giữ severity/dòng/canConfirm. Lỗi HTTP giữ object, diễn giải viết tắt; không dùng UUID hoặc chỉ số hàng thay số tiết. Form GDĐP và danh sách chương trình co đúng mobile; nút chọn chi tiết >=44px. Giữ command IDs/revision, exact grade/preview invalidation/lifecycle, không đổi parser/workflow |
+| Public health smoke | CI #835 fail nhãn API cũ. Assert heading Dịch vụ ứng dụng, cảnh báo Việt, hai Chưa xác nhận, không Sẵn sàng và nút Thử lại; không tăng timeout hoặc bỏ assertion lỗi. Local dùng health-only fixture, không phải production readiness |
+
+Wireframe giữ hiện hữu: desktop tiêu đề → phạm vi → dữ liệu/bằng chứng → hành động/xác nhận → lịch sử; auth hướng dẫn bên trái, form bên phải; mobile một cột, bảng cuộn nội bộ. Giữ token/font/primitive. Kết quả kiểm thử và ảnh thực tế: `P5-058-SLICE-7-REPORT.md`.
+
+Các giới hạn ở lát cắt 3–6 vẫn thuộc nghiệm thu A/C/D của P5-058: toàn persona/dữ liệu thật, backend E2E command nhạy cảm, lịch/bảng dày, finding mới ngoài mapping, Android thật và zoom 200%. Không tạo deferral ngoài task. Giữ IN_PROGRESS, cần commit checkpoint/CI exact-head/review độc lập; chưa merge/deploy.

@@ -1,6 +1,6 @@
 # P5-058 — Việt hóa toàn diện và đơn giản hóa trải nghiệm frontend
 
-**Trạng thái:** IN_PROGRESS — PR #249 draft; lát cắt 6 quản trị và người dùng trên cùng nhánh; chưa nghiệm thu toàn task, chưa merge/deploy.
+**Trạng thái:** IN_PROGRESS — PR #249 draft; lát cắt 7 mười module cuối trên cùng nhánh; chưa nghiệm thu toàn task, chưa merge/deploy.
 **Authority:** Yêu cầu người dùng 24/10/2026; T57; P5-050; P5-052; P5-053; `DESIGN.md`.
 **Baseline:** `main@6f1e83a8f021db1ab23f9902981a6b32f36d65ab`.
 **Nhánh duy nhất:** `feat/p5-058-frontend-vietnamese-ux`.
@@ -120,3 +120,10 @@ Inventory từng trang/đường hiển thị trong P5-058-PAGE-LABEL-AUDIT; kh�
 Lát cắt 6 đọc/audit toàn file Users, Capabilities, BusinessConfiguration, Audit, SystemStatus; chuẩn hóa lỗi HTTP, nhãn quyền/phạm vi/kết quả tra cứu, trạng thái tải/rỗng và hướng dẫn xóa an toàn. Trang trạng thái công khai giữ thông báo 401 trong state trình bày khi cache phiên bị xóa; auth/session boundary không đổi. Giữ API/payload/quyền/xác nhận/audit/backend và DESIGN.md. Đã audit toàn file 25/35 module; 10 module và nghiệm thu động/persona còn thuộc A/C/D của P5-058. Baseline `f7f01906821b12db8d95d14bad557937b6bd5165`, main xác minh trực tiếp Git remote `ea80f078c8a1297c562c8f4319540e3417d6e651`; CI baseline #834 SUCCESS theo bàn giao người dùng, không phải CI working tree. Bằng chứng/giới hạn: `docs/phase-reports/P5-058-SLICE-6-REPORT.md`. Giữ IN_PROGRESS, cùng nhánh/PR #249 draft; chưa commit/push/merge/deploy hoặc nghiệm thu toàn task.
 
 Các số 15 module còn ở lát cắt 5 là bằng chứng lịch sử. Bảng kiểm kê thật đã cập nhật năm dòng module và các đường hiển thị; đọc mã không đồng nghĩa nghiệm thu toàn persona/runtime. Không thay T51/T52, baseline sản phẩm hoặc ADR.
+
+
+### P5-058 — Cập nhật lát cắt 7 (25/10/2026)
+
+Lát cắt 7 tiếp tục baseline `96d5c0e13f1153f57240fbd49d85f28f296b6e63`, audit toàn file mười module cuối: AccessDenied, DispositionPreview, DutyAssignments, DutyCatalog, FirstPasswordChange, Login, NotFound, OperationalHistory, PpctSpecializedStudy và SpecialProgrammeWorkspace. Tổng **35/35 module đã audit mã qua các lát cắt**, 25 mục navigation đã đối chiếu; không phải nghiệm thu toàn persona/runtime. Chuẩn hóa HTTP/reason/finding/unknown/status/lookup; giữ payload/quyền/route/CAS/command ID/workflow. Sửa smoke nhãn API cũ của CI #835; baseline run `40094916238` FAILURE (41/42 Playwright, chỉ public status fail), không phải CI working tree. Main xác minh trực tiếp `ea80f078c8a1297c562c8f4319540e3417d6e651`; PR #249 vẫn DRAFT. Bằng chứng/giới hạn: `docs/phase-reports/P5-058-SLICE-7-REPORT.md`. Giữ IN_PROGRESS; còn nghiệm thu A/C/D, commit/CI exact-head và review độc lập; chưa merge/deploy.
+
+Các số module còn ở lát cắt trước là lịch sử. Bảng audit từng module đã cập nhật; không dùng helper chung làm bằng chứng 35/35. Không thay T51/T52, product baseline hoặc ADR. Nghiệm thu động đã ghi vẫn thuộc A/C/D của P5-058.

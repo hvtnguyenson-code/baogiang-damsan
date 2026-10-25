@@ -11,7 +11,7 @@ export function AccessDeniedPage() {
             <p className="utility-label">Quyền truy cập</p>
             <h1 id="denied-title">Bạn không có quyền thực hiện thao tác này</h1>
             <p>
-              Phiên đăng nhập của bạn vẫn còn hiệu lực, nhưng tài khoản chưa được cấp quyền để truy cập vào
+              Tài khoản chưa được cấp quyền để truy cập vào
               địa chỉ này hoặc chức năng yêu cầu thẩm quyền bổ sung.
             </p>
             <p className="text-sm text-slate-600 mb-6">

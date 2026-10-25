@@ -370,8 +370,8 @@ describe('PpctSpecializedStudyPage', () => {
     fireEvent.change(await screen.findByLabelText('Môn học'), { target: { value: 'subject-math' } });
 
     expect(await screen.findByText('Đang tải danh sách phiên bản PPCT...')).toBeInTheDocument();
-    expect(screen.queryByText(/Chưa có phiên bản nào được công bố/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/Kế hoạch PPCT chưa có phiên bản nào được công bố/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Chưa có phiên bản nào được ban hành/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Kế hoạch PPCT chưa có phiên bản nào được ban hành/i)).not.toBeInTheDocument();
 
     const submitBtn = screen.getByRole('button', { name: 'Lưu thay đổi hồ sơ' });
     expect(submitBtn).toBeDisabled();
@@ -388,7 +388,7 @@ describe('PpctSpecializedStudyPage', () => {
     fireEvent.change(await screen.findByLabelText('Môn học'), { target: { value: 'subject-math' } });
 
     expect(await screen.findByText('Chưa tải được dữ liệu')).toBeInTheDocument();
-    expect(screen.queryByText(/Chưa có phiên bản nào được công bố/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Chưa có phiên bản nào được ban hành/i)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Thử lại' })).toBeInTheDocument();
 
     const submitBtn = screen.getByRole('button', { name: 'Lưu thay đổi hồ sơ' });
@@ -407,7 +407,7 @@ describe('PpctSpecializedStudyPage', () => {
     fireEvent.change(await screen.findByLabelText('Lớp học'), { target: { value: 'class-10a1' } });
     fireEvent.change(await screen.findByLabelText('Môn học'), { target: { value: 'subject-math' } });
 
-    const versionSelect = await screen.findByLabelText('Phiên bản PPCT công bố');
+    const versionSelect = await screen.findByLabelText('Phiên bản PPCT ban hành');
     await waitFor(() => {
       expect(within(versionSelect).getByRole('option', { name: /Bản 1/ })).toBeInTheDocument();
     });
@@ -425,16 +425,16 @@ describe('PpctSpecializedStudyPage', () => {
     fireEvent.change(await screen.findByLabelText('Lớp học'), { target: { value: 'class-10a1' } });
     fireEvent.change(await screen.findByLabelText('Môn học'), { target: { value: 'subject-math' } });
 
-    expect(await screen.findByText(/Kế hoạch PPCT chưa có phiên bản nào được công bố \(PUBLISHED\)/i)).toBeInTheDocument();
-    const versionSelect = await screen.findByLabelText('Phiên bản PPCT công bố');
-    expect(within(versionSelect).getByRole('option', { name: /Chưa có phiên bản nào được công bố/i })).toBeInTheDocument();
+    expect(await screen.findByText(/Kế hoạch PPCT chưa có phiên bản nào được ban hành/i)).toBeInTheDocument();
+    const versionSelect = await screen.findByLabelText('Phiên bản PPCT ban hành');
+    expect(within(versionSelect).getByRole('option', { name: /Chưa có phiên bản nào được ban hành/i })).toBeInTheDocument();
 
     const submitBtn = screen.getByRole('button', { name: 'Lưu thay đổi hồ sơ' });
     expect(submitBtn).toBeDisabled();
   });
 
   // 15-16: Retained history rendering & column headers
-  it('renders retained association history table with ID phiên bản PPCT and badges', async () => {
+  it('renders retained association history table with Phiên bản PPCT and badges', async () => {
     setupMockFetch({ history: [existingAssociation] });
     renderApp('/quan-tri/ppct/ap-dung-chuyen-de');
 
@@ -442,11 +442,12 @@ describe('PpctSpecializedStudyPage', () => {
     fireEvent.change(await screen.findByLabelText('Môn học'), { target: { value: 'subject-math' } });
 
     expect(await screen.findByRole('heading', { name: 'Lịch sử áp dụng hồ sơ PPCT' })).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: 'ID phiên bản PPCT' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Phiên bản PPCT' })).toBeInTheDocument();
     expect(screen.getByText('01/09/2026')).toBeInTheDocument();
     expect(screen.getByText('Không giới hạn')).toBeInTheDocument();
-    expect(screen.getByRole('table')).toHaveTextContent('Chỉ nội dung cốt lõi');
-    expect(screen.getByText('ver-pub-spec')).toBeInTheDocument();
+    expect(screen.getByRole('table')).toHaveTextContent('Chỉ nội dung chính khóa');
+    await waitFor(() => expect(screen.getByRole('table')).toHaveTextContent('Bản 1'));
+    expect(screen.queryByText('ver-pub-spec')).not.toBeInTheDocument();
     expect(screen.getByText('Mới nhất')).toBeInTheDocument();
     expect(screen.queryByText('Đang áp dụng')).not.toBeInTheDocument();
     expect(screen.queryByText(/Hiện hành/i)).not.toBeInTheDocument();
@@ -466,7 +467,7 @@ describe('PpctSpecializedStudyPage', () => {
     fireEvent.change(await screen.findByLabelText('Môn học'), { target: { value: 'subject-math' } });
 
     expect(await screen.findByRole('heading', { name: 'Lịch sử áp dụng hồ sơ PPCT' })).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: 'ID phiên bản PPCT' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Phiên bản PPCT' })).toBeInTheDocument();
     expect(screen.getByText('01/09/2028')).toBeInTheDocument();
     expect(screen.getByText('Không giới hạn')).toBeInTheDocument();
     expect(screen.getByText('Mới nhất')).toBeInTheDocument();
@@ -619,7 +620,7 @@ describe('PpctSpecializedStudyPage', () => {
     fireEvent.change(dateInput, { target: { value: '2026-09-15' } });
 
     expect(await screen.findByText(/Phiên bản không có chuyên đề/i)).toBeInTheDocument();
-    expect(screen.getByText(/không chứa bài chuyên đề nào \(SPECIALIZED_STUDY\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/không chứa bài chuyên đề nào/i)).toBeInTheDocument();
     const submitBtn = screen.getByRole('button', { name: 'Lưu thay đổi hồ sơ' });
     expect(submitBtn).toBeDisabled();
   });
@@ -699,7 +700,7 @@ describe('PpctSpecializedStudyPage', () => {
     const profileSelect = screen.getByLabelText('Hồ sơ áp dụng') as HTMLSelectElement;
     fireEvent.change(profileSelect, { target: { value: 'CORE_PLUS_SPECIALIZED_STUDY' } });
 
-    const targetVersionSelect = screen.getByLabelText('Phiên bản PPCT công bố') as HTMLSelectElement;
+    const targetVersionSelect = screen.getByLabelText('Phiên bản PPCT ban hành') as HTMLSelectElement;
     const originalVersionValue = targetVersionSelect.value;
 
     const submitBtn = screen.getByRole('button', { name: 'Lưu thay đổi hồ sơ' });
@@ -717,7 +718,7 @@ describe('PpctSpecializedStudyPage', () => {
     // Form values retained
     expect((screen.getByLabelText(/Hiệu lực từ/i) as HTMLInputElement).value).toBe('2026-09-03');
     expect((screen.getByLabelText('Hồ sơ áp dụng') as HTMLSelectElement).value).toBe('CORE_PLUS_SPECIALIZED_STUDY');
-    expect((screen.getByLabelText('Phiên bản PPCT công bố') as HTMLSelectElement).value).toBe(originalVersionValue);
+    expect((screen.getByLabelText('Phiên bản PPCT ban hành') as HTMLSelectElement).value).toBe(originalVersionValue);
 
     // History is NOT refetched for week-split
     const historyReqs = capturedRequests.filter((r) => r.url.includes('/ppct-associations') && r.method === 'GET');
@@ -815,5 +816,33 @@ describe('PpctSpecializedStudyPage', () => {
     renderApp('/quan-tri/ppct/ap-dung-chuyen-de');
 
     expect(await screen.findByText('Chưa tải được dữ liệu')).toBeInTheDocument();
+  });
+});
+
+
+describe('P5-058 PPCT safe mutation feedback', () => {
+  afterEach(() => { vi.unstubAllGlobals(); });
+  for (const status of [403, 404, 409, 500]) it(`switch HTTP ${status} keeps form and never renders raw server text`, async () => {
+    const { capturedRequests } = setupMockFetch({ switchHandler: () => jsonResponse({ message: 'SQL_INTERNAL secret-host', error: 'RAW_ENUM' }, status) });
+    const { container } = renderApp('/quan-tri/ppct/ap-dung-chuyen-de');
+    fireEvent.change(await screen.findByLabelText('Lớp học'), { target: { value: 'class-10a1' } });
+    fireEvent.change(await screen.findByLabelText('Môn học'), { target: { value: 'subject-math' } });
+    fireEvent.change(await screen.findByLabelText('Hiệu lực từ'), { target: { value: '2026-09-07' } });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Lưu thay đổi hồ sơ' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu thay đổi hồ sơ' }));
+    expect(await screen.findByText('Chưa lưu được hồ sơ áp dụng')).toBeInTheDocument();
+    expect(screen.getByLabelText('Hiệu lực từ')).toHaveValue('2026-09-07');
+    expect(capturedRequests.filter((r) => r.method === 'POST')).toHaveLength(1);
+    expect(capturedRequests.find((r) => r.method === 'POST')?.body).toEqual({ ppctVersionId: 'ver-pub-spec', curricularProfile: 'CORE_ONLY', effectiveFrom: '2026-09-07', expectedLatestAssociationId: existingAssociation.id });
+    expect(container.textContent).not.toMatch(/SQL_INTERNAL|secret-host|RAW_ENUM/);
+  });
+  it('unknown profile and version status never imply specialized content or publication', async () => {
+    setupMockFetch({ history: [{ ...existingAssociation, curricularProfile: 'UNKNOWN_PROFILE', ppctVersionStatus: 'UNKNOWN_STATUS' } as unknown as PpctClassAssociationRecord] });
+    const { container } = renderApp('/quan-tri/ppct/ap-dung-chuyen-de');
+    fireEvent.change(await screen.findByLabelText('Lớp học'), { target: { value: 'class-10a1' } });
+    fireEvent.change(await screen.findByLabelText('Môn học'), { target: { value: 'subject-math' } });
+    expect(await screen.findByText('Chưa xác định hồ sơ')).toBeInTheDocument();
+    expect(screen.getByText('Chưa xác định trạng thái')).toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/UNKNOWN_PROFILE|UNKNOWN_STATUS/);
   });
 });
