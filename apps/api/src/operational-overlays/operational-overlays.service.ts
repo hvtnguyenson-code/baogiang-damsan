@@ -23,6 +23,7 @@ import {
 } from '@baogiang/contracts';
 import { AuditService } from '../audit/audit.service';
 import { NormalStructuralOccurrence } from '../resolved-occurrences/resolved-occurrence.types';
+import { CalendarExceptionReplay } from '../resolved-occurrences/calendar-exception-replay';
 import { requestMeta } from '../auth/auth-http';
 import { AuthenticatedRequest } from '../auth/auth.types';
 import { formatCivilDate, parseCivilDate } from '../common/validation/civil-date';
@@ -49,6 +50,21 @@ export class OperationalOverlaysService {
     const normalized = this.normalizeCalendar({ ...candidate, requestKey: 'preview-only' });
     await this.validateCalendarCreate(tx, normalized);
     return normalized;
+  }
+
+  /**
+   * Internal seam only: one read snapshot for validation and BOTH replay sides.
+   * Caller owns authorization. No route or command consumes this partial evidence.
+   */
+  async withCalendarPreviewReplay<T>(input: PreviewCalendarExceptionDto,
+    evaluate: (replay: CalendarExceptionReplay, tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    return this.prisma.$transaction(async (tx) => {
+      const value = await this.validateCalendarPreviewCandidate(tx, input);
+      const candidate = Object.freeze({ ...value, exactTimeSlotDefinitionIds: [...value.exactTimeSlotDefinitionIds] });
+      return CalendarExceptionReplay.withValidatedCandidate(tx, {
+        ...candidate, civilDate: formatCivilDate(parseCivilDate(candidate.civilDate)),
+      }, (entry) => this.calendarPreviewCoversOccurrence(candidate, entry), (replay) => evaluate(replay, tx));
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
   }
 
   /** Reuses the commit command's scope and slot coverage predicates; does not infer PPCT/debt. */

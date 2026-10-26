@@ -5,6 +5,7 @@ import { BusinessConfigurationService } from '../business-configuration/business
 import { PpctOccurrenceAllocationService } from '../ppct-occurrence-allocation/ppct-occurrence-allocation.service';
 import { ExpectedPpctItem, NormalPpctAllocation } from '../ppct-occurrence-allocation/ppct-occurrence-allocation.types';
 import { PrismaService } from '../prisma/prisma.service';
+import { CalendarExceptionReplay } from '../resolved-occurrences/calendar-exception-replay';
 import { TEACHING_EXECUTION_CLOCK, TeachingExecutionClock } from '../teaching-executions/teaching-execution-policy';
 import { hasEndedAt, hcmCivilDate } from './progress-debt.policy';
 import {
@@ -143,16 +144,36 @@ export class ProgressDebtService {
     input: ResolveProgressDebtInput,
     authority?: ProgressDebtOperationalStartAuthority,
   ): Promise<ProgressDebtProjectionV2> {
+    return this.resolveV2Source(tx, input, authority);
+  }
+
+  /** Same as-of/operational-start authority, with the candidate in EVERY V2 source read. */
+  async replayCalendarCandidateInTransactionV2(tx: Prisma.TransactionClient, input: ResolveProgressDebtInput,
+    replay: CalendarExceptionReplay, authority?: ProgressDebtOperationalStartAuthority) {
+    this.assertAsOf(input.asOfInstant);
+    await replay.assertStream(tx, input);
+    const resolvedAuthority = authority ?? (await this.resolveLiveOperationalStartAuthority(input.academicYearId, tx));
+    const before = await this.resolveV2Source(tx, input, resolvedAuthority);
+    const after = await this.resolveV2Source(tx, input, resolvedAuthority, replay);
+    return replay.evidence(tx, { status: before.status === 'BLOCKED' || after.status === 'BLOCKED' ? 'BLOCKED' as const : 'PASS' as const,
+      scope: input, operationalStartAuthority: resolvedAuthority, before, after });
+  }
+
+  private async resolveV2Source(tx: Prisma.TransactionClient, input: ResolveProgressDebtInput,
+    authority?: ProgressDebtOperationalStartAuthority, replay?: CalendarExceptionReplay): Promise<ProgressDebtProjectionV2> {
     this.assertAsOf(input.asOfInstant);
     const resolvedAuthority = authority ?? (await this.resolveLiveOperationalStartAuthority(input.academicYearId, tx));
     const operationalStartDate = resolvedAuthority.operationalStartDate;
     const throughCivilDate = hcmCivilDate(input.asOfInstant);
-    const allocated = await this.allocation.resolveInTransactionV2(tx, {
+    const allocationInput = {
       academicYearId: input.academicYearId,
       schoolClassId: input.schoolClassId,
       subjectId: input.subjectId,
       throughCivilDate,
-    });
+    };
+    const allocated = replay
+      ? (await this.allocation.replayCalendarCandidateInTransactionV2(tx, allocationInput, replay)).projection.after
+      : await this.allocation.resolveInTransactionV2(tx, allocationInput);
     if (allocated.status === 'BLOCKED') {
       return this.blockedV2(input, [{
         severity: 'BLOCKER',
