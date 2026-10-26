@@ -814,11 +814,33 @@ integration('P5-010: Full Business Pilot Cross-Domain Freeze PostgreSQL Suite', 
     expect(workload.curricularWorkload.totalCredit).toBe(1);
   });
 
+  // P5-054: These legacy public make-up scenarios must publish the authoritative
+  // official workload policy, just as Scenario 3 does. Never bypass the command guard.
+  async function seedMakeupWorkloadPolicy(f: { year: { id: string }; principal: { id: string } }) {
+    const stream = await harness.prisma.businessPolicyStream.create({
+      data: { familyKey: 'WORKLOAD_ADJUSTMENT', resourceKind: 'ACADEMIC_YEAR', academicYearId: f.year.id },
+    });
+    await harness.prisma.businessPolicyVersion.create({
+      data: {
+        streamId: stream.id,
+        versionNumber: 1,
+        status: 'PUBLISHED',
+        payload: { baseWeeklyNorm: 17, rules: [] },
+        validatorVersion: 'v1',
+        effectiveFrom: new Date('2026-08-01T00:00:00.000Z'),
+        publishedAt: new Date('2026-08-01T00:00:00.000Z'),
+        publishedByUserId: f.principal.id,
+        createdByUserId: f.principal.id,
+      },
+    });
+  }
+
   // =========================================================================
   // SCENARIO 4: Public MAKEUP scheduling (Correction C)
   // =========================================================================
   it('Scenario 4: Public make-up fulfills original obligation without consuming new PPCT item and resolves debt', async () => {
     const f = await createBaseAcademicSetup();
+    await seedMakeupWorkloadPolicy(f);
 
     // Create operational disposition: Teacher A absent on Monday 2026-09-07
     const disposition = await harness.prisma.operationalLessonDisposition.create({
@@ -2050,6 +2072,7 @@ integration('P5-010: Full Business Pilot Cross-Domain Freeze PostgreSQL Suite', 
   // =========================================================================
   it('Scenario 12: Teacher Workspace effective schedule composes normal, makeup, and special activity occupancies read-only', async () => {
     const f = await createBaseAcademicSetup();
+    await seedMakeupWorkloadPolicy(f);
 
     // 1. Normal timetable occupancy: Teacher A has regular teaching on Monday 2026-09-07 (from f.entry)
 
