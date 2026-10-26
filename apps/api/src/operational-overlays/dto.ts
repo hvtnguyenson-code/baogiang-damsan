@@ -6,6 +6,7 @@ import { IsCivilDate } from '../common/validation/civil-date';
 import { CreateMakeupScheduleRequest, CivilDateString } from '@baogiang/contracts';
 
 export class CreateCalendarExceptionDto {
+  @IsOptional() @IsString() @Matches(/^[0-9a-f]{64}$/u) expectedConsequenceFingerprint?: string;
   @IsUUID() academicYearId!: string;
   @IsUUID() academicCalendarVersionId!: string;
   @IsCivilDate() civilDate!: string;
@@ -21,6 +22,7 @@ export class CreateCalendarExceptionDto {
 }
 
 export class CreateLessonDispositionDto {
+  @IsOptional() @IsString() @Matches(/^[0-9a-f]{64}$/u) expectedConsequenceFingerprint?: string;
   @IsUUID() timetableEntryId!: string;
   @IsCivilDate() sourceCivilDate!: string;
   @IsEnum(OperationalLessonDispositionType) dispositionType!: OperationalLessonDispositionType;
@@ -58,6 +60,7 @@ export class ListLessonDispositionsDto extends PaginationDto {
 }
 
 export class CreateMakeupScheduleDto implements CreateMakeupScheduleRequest {
+  @IsOptional() @IsString() @Matches(/^[0-9a-f]{64}$/u) expectedConsequenceFingerprint?: string;
   @IsUUID() academicYearId!: string;
   @IsString() @Matches(/^NORMAL:[0-9a-fA-F-]{36}:\d{4}-\d{2}-\d{2}$/u) sourceNormalOccurrenceKey!: string;
   @IsCivilDate() targetCivilDate!: CivilDateString;

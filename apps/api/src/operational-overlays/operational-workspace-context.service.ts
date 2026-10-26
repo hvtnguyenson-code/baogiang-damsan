@@ -1,5 +1,5 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
-import { OperationalLessonDispositionType, Prisma } from '@prisma/client';
+import { ForbiddenException, HttpException, Injectable } from '@nestjs/common';
+import { OperationalLessonDispositionType } from '@prisma/client';
 import { PreviewCalendarExceptionDto, PreviewLessonDispositionDto, TeacherOptionsQueryDto } from './dto';
 import { OperationalOverlaysService } from './operational-overlays.service';
 import { CivilDateString } from '@baogiang/contracts';
@@ -7,6 +7,7 @@ import { ResolvedLessonOccurrencesService } from '../resolved-occurrences/resolv
 import { PrismaService } from '../prisma/prisma.service';
 import { CapabilityAuthorizationService } from '../authorization/capability-authorization.service';
 import { AuthenticatedRequest } from '../auth/auth.types';
+import { CalendarCandidateConsequenceService } from './calendar-candidate-consequence.service';
 
 @Injectable()
 export class OperationalWorkspaceContextService {
@@ -15,6 +16,7 @@ export class OperationalWorkspaceContextService {
     private readonly authorization: CapabilityAuthorizationService,
     private readonly occurrences: ResolvedLessonOccurrencesService,
     private readonly overlays: OperationalOverlaysService,
+    private readonly consequences?: CalendarCandidateConsequenceService,
   ) {}
 
   async previewCalendarException(request: AuthenticatedRequest, input: PreviewCalendarExceptionDto) {
@@ -24,18 +26,49 @@ export class OperationalWorkspaceContextService {
       throw new ForbiddenException('Không có quyền xem trước ngoại lệ lịch.');
     }
     try {
-      return await this.prisma.$transaction(async (tx) => {
-        const candidate = await this.overlays.validateCalendarPreviewCandidate(tx, input);
-        const source = await this.occurrences.resolveInTransaction(tx, { academicYearId: input.academicYearId, civilDate: input.civilDate as CivilDateString });
-        if (source.status !== 'PASS') return { status: 'BLOCKED' as const, affected: [], reason: 'Nguồn lịch hoặc PPCT chưa xác minh.', coverage: { ppctItemAllocation: 'NOT_ASSESSED' as const, workload: 'NOT_ASSESSED' as const, debt: 'NOT_ASSESSED' as const } };
-        const affected = source.normalOccurrences.filter((entry) => entry.academicCalendarVersionId === input.academicCalendarVersionId
-          && entry.effectiveKind === 'BASE_TIMETABLE' && this.overlays.calendarPreviewCoversOccurrence(candidate, entry))
-          .map((entry) => ({ occurrenceKey: entry.occurrenceKey, timetableEntryId: entry.timetableEntryId,
-            schoolClassId: entry.schoolClass.id, subjectId: entry.subjectId, teacherUserId: entry.responsibleTeacherUserId, slot: entry.timeSlot }));
-        return { status: 'PASS' as const, affected, coverage: { ppctItemAllocation: 'NOT_ASSESSED' as const, workload: 'NOT_ASSESSED' as const, debt: 'NOT_ASSESSED' as const } };
-      }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
-    } catch {
-      return { status: 'BLOCKED' as const, affected: [], reason: 'Ứng viên không đủ điều kiện hoặc xảy ra xung đột; cần xác minh lại trước khi lưu.', coverage: { ppctItemAllocation: 'NOT_ASSESSED' as const, workload: 'NOT_ASSESSED' as const, debt: 'NOT_ASSESSED' as const } };
+      if (!this.consequences) throw new Error('CONSEQUENCE_AUTHORITY_UNAVAILABLE');
+      const evidence = await this.consequences.resolveNow(input);
+      const affectedKeys = new Set(evidence.affectedOccurrenceKeys);
+      const affected = evidence.streams.flatMap((stream) => stream.ppct.before.normalAllocations)
+        .filter((row) => affectedKeys.has(row.occurrence.occurrenceKey)).map(({ occurrence: entry }) => ({
+          occurrenceKey: entry.occurrenceKey, timetableEntryId: entry.timetableEntryId,
+          schoolClassId: entry.schoolClass.id, subjectId: entry.subjectId,
+          teacherUserId: entry.responsibleTeacherUserId, slot: entry.timeSlot,
+        })).sort((a, b) => a.occurrenceKey.localeCompare(b.occurrenceKey));
+      const [classes, subjects, people] = await Promise.all([
+        this.prisma.schoolClass.findMany({ where: { id: { in: evidence.classIds } }, select: { id: true, name: true } }),
+        this.prisma.subject.findMany({ where: { id: { in: evidence.streams.map((s) => s.scope.subjectId) } }, select: { id: true, name: true } }),
+        this.prisma.user.findMany({ where: { id: { in: evidence.teachers.map((t) => t.targetUserId) } }, select: { id: true, profile: { select: { displayName: true } } } }),
+      ]);
+      const consequences = { ...evidence,
+        // Public UI needs the changed items and elapsed counts, not duplicate
+        // full-year allocation trees for every stream on both sides.
+        streams: evidence.streams.map((s) => ({ scope: s.scope, retained: s.retained, ppctChanges: s.ppctChanges,
+          progress: { before: { counts: s.progress.before.counts }, after: { counts: s.progress.after.counts } },
+          schoolClassName: classes.find((c) => c.id === s.scope.schoolClassId)?.name ?? null,
+          subjectName: subjects.find((v) => v.id === s.scope.subjectId)?.name ?? null })),
+        teachers: evidence.teachers.map((t) => {
+          const before = { scope: t.before.scope, status: t.before.status, earnedCredit: t.before.earnedCredit,
+            requiredCredit: t.before.requiredCredit, varianceCredit: t.before.varianceCredit };
+          return { targetUserId: t.targetUserId, status: t.status, before, after: t.after ? before : null,
+            delta: t.delta, reconciliation: t.reconciliation,
+            normPolicyVersionIds: [...new Set(t.before.adjustmentSegments.map((s) => s.policyVersionId).filter((id) => id !== null))].sort(),
+            teacherName: people.find((u) => u.id === t.targetUserId)?.profile?.displayName ?? null };
+        }),
+      };
+      return { status: evidence.status, affected, coverage: evidence.coverage,
+        reason: evidence.status === 'BLOCKED' ? 'Chưa đối soát được đầy đủ nghĩa vụ, nợ tiết hoặc khối lượng. Hãy kiểm tra dữ liệu liên quan.' : undefined,
+        consequenceFingerprint: evidence.status === 'PASS' ? evidence.consequenceFingerprint : undefined,
+        consequences };
+
+    } catch (error) {
+      const conflict = error instanceof HttpException ? error.getResponse() : null;
+      const retainedFindings = conflict && typeof conflict === 'object' && 'code' in conflict && 'retainedEntityId' in conflict
+        && typeof conflict.code === 'string' && typeof conflict.retainedEntityId === 'string'
+        && ['CALENDAR_REPLAY_DISPOSITION_SOURCE_CONFLICT', 'CALENDAR_REPLAY_MAKEUP_TARGET_SUPPRESSED'].includes(conflict.code)
+        ? [{ code: conflict.code, retainedEntityId: conflict.retainedEntityId }] : [];
+      return { status: 'BLOCKED' as const, affected: [], retainedFindings,
+        reason: 'Ứng viên không đủ điều kiện hoặc xảy ra xung đột; cần xác minh lại trước khi lưu.', coverage: { ppctItemAllocation: 'NOT_ASSESSED' as const, workload: 'NOT_ASSESSED' as const, debt: 'NOT_ASSESSED' as const } };
     }
   }
 
@@ -78,21 +111,15 @@ export class OperationalWorkspaceContextService {
   async previewLessonDisposition(request: AuthenticatedRequest, input: PreviewLessonDispositionDto) {
     await this.requireTeachingPreviewAccess(request, input.subjectId, input.dispositionType);
     try {
-      return await this.prisma.$transaction(async (tx) => {
-        const source = await this.occurrences.resolveInTransaction(tx, {
-          academicYearId: input.academicYearId, civilDate: input.sourceCivilDate as CivilDateString,
-        });
-        if (source.status !== 'PASS') return { status: 'BLOCKED' as const, reason: 'Nguồn lịch chưa đủ điều kiện.',
-          coverage: { ppctItemAllocation: 'NOT_ASSESSED' as const, workload: 'NOT_ASSESSED' as const, debt: 'NOT_ASSESSED' as const } };
-        const selected = source.normalOccurrences.find((item) => item.timetableEntryId === input.timetableEntryId
-          && item.subjectId === input.subjectId && item.effectiveKind === 'BASE_TIMETABLE');
-        if (!selected) return { status: 'BLOCKED' as const, reason: 'Tiết học gốc không còn hợp lệ.',
-          coverage: { ppctItemAllocation: 'NOT_ASSESSED' as const, workload: 'NOT_ASSESSED' as const, debt: 'NOT_ASSESSED' as const } };
-        const check = await this.overlays.validateDispositionPreviewCandidate(tx, input);
-        return { status: 'PASS' as const, sourceTimetableEntryId: check.sourceTimetableEntryId,
-          candidateTeacherUserId: check.candidateTeacherUserId, eligibilitySameSubject: check.eligibilitySameSubject,
-          coverage: { ppctItemAllocation: 'NOT_ASSESSED' as const, workload: 'NOT_ASSESSED' as const, debt: 'NOT_ASSESSED' as const } };
-      }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+      const evidence = await this.overlays.previewDispositionConsequences(input);
+      const summary = this.overlays.dispositionConsequenceSummary(evidence, input.subjectId);
+      return { status: summary.status, sourceTimetableEntryId: input.timetableEntryId,
+        candidateTeacherUserId: input.assignedTeacherUserId ?? null,
+        eligibilitySameSubject: input.dispositionType === 'SAME_SUBJECT_SUBSTITUTION' ? true
+          : input.dispositionType === 'DIFFERENT_SUBJECT_SUPERVISION' ? false : null,
+        coverage: summary.coverage, consequenceFingerprint: summary.consequenceFingerprint, consequences: summary,
+        reason: summary.status === 'BLOCKED' ? 'Hệ quả phân phối, nghĩa vụ hoặc khối lượng chưa đủ điều kiện.' : undefined };
+
     } catch {
       return { status: 'BLOCKED' as const, reason: 'Giáo viên hoặc cơ hội nguồn xung đột với lịch hiện tại.',
         coverage: { ppctItemAllocation: 'NOT_ASSESSED' as const, workload: 'NOT_ASSESSED' as const, debt: 'NOT_ASSESSED' as const } };

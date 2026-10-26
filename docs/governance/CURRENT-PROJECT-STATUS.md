@@ -8,7 +8,7 @@ Per `MAJOR-TASK-DOCUMENTATION-SYNC-PROTOCOL.md`, this file is intentionally conc
 
 Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub. SHAs here are evidence for already-established task states, never a self-referential claim that this document contains its own current commit.
 
-**Status snapshot date:** 2026-10-25
+**Status snapshot date:** 2026-10-26
 
 ## P5-058 — CLOSED by SYNC-P5-058 (frontend Vietnamese UX technical release)
 
@@ -105,6 +105,8 @@ Preliminary Desktop Commander read-only metadata: Windows Server 2022, 6 logical
 
 ### In Progress
 
+- `P5-054` / T53 — **IN_REVIEW trên PR #252**. Nhánh feat/p5-054-consequence-closure. Hai workflow CI #841 và P6-021 off-host compatibility #74 đều SUCCESS tại checkpoint fcf9a1dc1d71164bd219dc2865353e5e76b65d58 (sau bản sửa fixture P5-010); commit đồng bộ tài liệu phải có CI riêng trước merge. Đã triển khai UI tiếng Việt cho ngoại lệ lịch, dạy thay cùng môn, giám sát khác môn, dạy bù và hoàn tác; preview PPCT V2, Progress/Debt V2 và khối lượng dạy theo dữ liệu/định mức chính thức; kiểm tra lại trong SERIALIZABLE, stale/race trả 409, thiếu bằng chứng vẫn BLOCKED/NOT_ASSESSED. Bằng chứng: API unit 2.069/2.069 PASS, Web unit 744/744 PASS, PostgreSQL 13 suites: 184 PASS + 1 SKIP, Playwright thật chạy riêng 1/1 PASS; P5-010 sau bổ sung chính sách test 12/12 PASS. Chi tiết tại docs/phase-reports/P5-054-T53-C-D-LOCAL-ACCEPTANCE.md. Chưa merge, chưa deploy production, chưa SYNC-P5-054; chưa CLOSED hoặc mở pilot/task phụ thuộc.
+
 - `P5-055` — data readiness & import center; **`IN_PROGRESS`** for PR #248 READY correction (PostgreSQL verification and Git write access remain blocked; see `docs/phase-reports/P5-055-READY-CORRECTION-REPORT.md`) on branch `feat/p5-055-data-readiness-import-center`.
 
 - `P5-051` — **CLOSED by `SYNC-P5-051`**: PR #240 merged at `cd0e67d342276f1e3e1baa2bb1de9078f4b2e5c7`, main CI #799 SUCCESS, auto-deploy #14 and Deploy VPS #12 SUCCESS; parent implementation and review evidence retained.
@@ -116,7 +118,6 @@ Preliminary Desktop Commander read-only metadata: Windows Server 2022, 6 logical
 
 ### Ready
 
-- `P5-054` — teaching-operations workspace closure; **next sequential implementation task** after P5-053.
 - `P5-056A` — notification/Web Push architecture; eligible by dependency but held behind the sequential orchestration priority.
 - `P0-005` — docs-only historical T31 traceability reconciliation; independent of the product-operability implementation path.
 

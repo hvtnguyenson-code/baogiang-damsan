@@ -15,10 +15,11 @@ const dispositionLabel: Record<string, string> = {
 };
 function statusLabel(status: string) { return status === 'ACTIVE' ? 'Đang có hiệu lực' : status === 'REVERSED' ? 'Đã hoàn tác' : 'Chưa xác định trạng thái'; }
 
-export function OperationalHistoryPanel({ context, yearId, subjectId }: {
+export function OperationalHistoryPanel({ context, yearId, subjectId, refreshToken = 0 }: {
   context: OperationalWorkspaceContext;
   yearId: string;
   subjectId: string;
+  refreshToken?: number;
 }) {
   const [calendars, setCalendars] = useState<CalendarExceptionRecord[]>([]);
   const [dispositions, setDispositions] = useState<OperationalLessonDispositionRecord[]>([]);
@@ -40,7 +41,7 @@ export function OperationalHistoryPanel({ context, yearId, subjectId }: {
     setNotice('');
     setReverseTarget(null);
     setReason('');
-  }, [yearId, subjectId]);
+  }, [yearId, subjectId, refreshToken]);
 
   const canCalendar = context.permissions.calendarSchoolWide;
   const canTeaching = context.permissions.teachingSchoolWide || Boolean(subjectId
@@ -106,7 +107,7 @@ export function OperationalHistoryPanel({ context, yearId, subjectId }: {
   }
 
   return (
-    <section className="management-panel">
+    <section className="management-panel form-section">
       <h2>Lịch sử điều hành và hoàn tác</h2>
       <p>Giữ nguyên các bản ghi lịch sử. Hoàn tác chỉ áp dụng cho bản ghi đang có hiệu lực, theo quyền được cấp.</p>
       <Button type="button" variant="secondary" disabled={busy || !yearId || (!canCalendar && !canTeaching)} onClick={() => { void loadHistory(); }}>

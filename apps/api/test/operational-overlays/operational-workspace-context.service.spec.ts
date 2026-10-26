@@ -10,16 +10,21 @@ const resolveInTransaction = jest.fn();
 const validateCalendarPreviewCandidate = jest.fn();
 const calendarPreviewCoversOccurrence = jest.fn();
 const validateDispositionPreviewCandidate = jest.fn();
+const previewDispositionConsequences = jest.fn();
+const resolveNow = jest.fn();
 const transaction = jest.fn(async (fn: (tx: unknown) => unknown) => fn({}));
 const service = new OperationalWorkspaceContextService(
   { $transaction: transaction, academicYear: { findMany: yearFindMany }, subject: { findMany: subjectFindMany }, schoolClass: { findMany: jest.fn(async () => [{ id: 'class-1', name: '10A1' }]) }, user: { findMany: jest.fn(async () => [{ id: 'teacher', profile: { displayName: 'Giáo viên A' } }]) } } as never,
   { listEffectiveCapabilities } as never,
   { resolve, resolveInTransaction } as never,
-  { validateCalendarPreviewCandidate, calendarPreviewCoversOccurrence, validateDispositionPreviewCandidate } as never,
+  { validateCalendarPreviewCandidate, calendarPreviewCoversOccurrence, validateDispositionPreviewCandidate, previewDispositionConsequences, dispositionConsequenceSummary: (e: unknown) => e } as never,
+  { resolveNow } as never,
 );
 
 beforeEach(() => {
   jest.clearAllMocks();
+  previewDispositionConsequences.mockRejectedValue(new Error('consequence-authority-unavailable'));
+  resolveNow.mockRejectedValue(new Error('consequence-authority-unavailable'));
 });
 
 describe('P5-054 operational workspace context', () => {
@@ -99,7 +104,7 @@ describe('P5-054 operational workspace context', () => {
     expect(validateCalendarPreviewCandidate).not.toHaveBeenCalled();
   });
 
-  it('previews only matching base opportunities without claiming unassessed consequences', async () => {
+  it('publishes only authoritative all-consequence evidence and its optimistic fingerprint', async () => {
     listEffectiveCapabilities.mockResolvedValue([{ key: 'CALENDAR_EXCEPTION_MANAGE', scope: 'SCHOOL_WIDE' }]);
     validateCalendarPreviewCandidate.mockResolvedValue(previewInput);
     const make = (id: string, effectiveKind = 'BASE_TIMETABLE') => ({
@@ -113,14 +118,19 @@ describe('P5-054 operational workspace context', () => {
       status: 'PASS', normalOccurrences: [make('first'), make('second', 'CALENDAR_EXCEPTION'), make('third')],
     });
     calendarPreviewCoversOccurrence.mockImplementation((_, row: { timetableEntryId: string }) => row.timetableEntryId === 'first');
+    resolveNow.mockResolvedValue({ status: 'PASS', coverage: { ppctItemAllocation: 'ASSESSED', workload: 'ASSESSED', debt: 'ASSESSED' },
+      affectedOccurrenceKeys: ['NORMAL:first:2026-10-22'], classIds: ['class-1'], teachers: [], consequenceFingerprint: 'a'.repeat(64),
+      streams: [{ scope: { schoolClassId: 'class-1', subjectId: 'subject-1' }, progress: { before: { counts: null }, after: { counts: null } }, ppct: { before: { normalAllocations: [{ occurrence: make('first') }] } } }] });
     const result = await service.previewCalendarException(request as never, previewInput as never);
     expect(result.status).toBe('PASS');
     expect(result.affected).toHaveLength(1);
     expect(result.affected[0]?.timetableEntryId).toBe('first');
     expect(result.coverage).toEqual({
-      ppctItemAllocation: 'NOT_ASSESSED', workload: 'NOT_ASSESSED', debt: 'NOT_ASSESSED',
+      ppctItemAllocation: 'ASSESSED', workload: 'ASSESSED', debt: 'ASSESSED',
     });
-    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(resolveNow).toHaveBeenCalledWith(previewInput);
+    expect(result).toMatchObject({ consequenceFingerprint: 'a'.repeat(64) });
+    expect(transaction).not.toHaveBeenCalled();
   });
 
   it('fails closed when canonical occurrences are blocked or validation rejects the candidate', async () => {
@@ -155,7 +165,7 @@ describe('P5-054 operational workspace context', () => {
     expect(validateDispositionPreviewCandidate).not.toHaveBeenCalled();
   });
 
-  it('returns PASS only after canonical source and exact retained collision checks', async () => {
+  it('delegates disposition evidence to the complete snapshot authority without upgrading partial coverage', async () => {
     listEffectiveCapabilities.mockResolvedValue([
       { key: 'TEACHING_OPERATION_MANAGE', scope: 'SUBJECT', resourceId: 'subject-1' },
     ]);
@@ -167,12 +177,13 @@ describe('P5-054 operational workspace context', () => {
     validateDispositionPreviewCandidate.mockResolvedValue({
       sourceTimetableEntryId: 'entry-1', candidateTeacherUserId: 'teacher-2', eligibilitySameSubject: true,
     });
+    previewDispositionConsequences.mockResolvedValue({ status: 'PASS', coverage: { ppctItemAllocation: 'NOT_ASSESSED', workload: 'NOT_ASSESSED', debt: 'NOT_ASSESSED' } });
     const result = await service.previewLessonDisposition(request as never, dispositionInput as never);
     expect(result.status).toBe('PASS');
     expect(result.coverage).toEqual({
       ppctItemAllocation: 'NOT_ASSESSED', workload: 'NOT_ASSESSED', debt: 'NOT_ASSESSED',
     });
-    expect(validateDispositionPreviewCandidate).toHaveBeenCalledTimes(1);
+    expect(previewDispositionConsequences).toHaveBeenCalledWith(dispositionInput);
   });
 
   it('blocks when canonical opportunity is not base timetable or teacher collides', async () => {

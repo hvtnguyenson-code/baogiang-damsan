@@ -61,6 +61,12 @@ export class MakeupSchedulesController {
     return this.service.create(dto, request);
   }
 
+  @Post('preview')
+  @UseGuards(SessionAuthGuard, CsrfOriginGuard)
+  preview(@Body() dto: CreateMakeupScheduleDto, @Req() request: AuthenticatedRequest) {
+    return this.service.preview(dto, request);
+  }
+
   @Get()
   @UseGuards(SessionAuthGuard)
   list(

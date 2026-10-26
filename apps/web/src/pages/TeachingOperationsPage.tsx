@@ -1,13 +1,15 @@
 import { WorkflowError } from '../components/ui/workflow-error';
+import { ApiError } from '../lib/api-client';
 import { transportError } from '../lib/teaching-workflow-presentation';
 import type { CivilDateString } from '@baogiang/contracts';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { OperationalHistoryPanel } from './OperationalHistoryPanel';
 import { DispositionPreviewPanel } from './DispositionPreviewPanel';
+import { OperationalPpctChanges } from './OperationalPpctChanges';
 import { Button } from '../components/ui/button';
 import { InlineAlert } from '../components/ui/feedback';
-import { DataTable, EmptyState, PageHeader, SelectField } from '../components/ui/management';
+import { DataTable, EmptyState, PageHeader, SelectField, TextareaField } from '../components/ui/management';
 import { operationalOverlaysApi } from '../lib/operational-overlays-api';
 import type { CalendarExceptionPreviewResult, OperationalSourceOccurrence, OperationalWorkspaceContext } from '../lib/operational-overlays-api';
 
@@ -18,6 +20,15 @@ const kindLabel: Record<OperationalSourceOccurrence['effectiveKind'], string> = 
   SPECIAL_ACTIVITY_SUPPRESSED: 'Đã chuyển sang hoạt động khác',
   OPERATIONAL_DISPOSITION: 'Đã được xử lý điều hành',
 };
+
+function hasCalendarClearance(result: CalendarExceptionPreviewResult | null): boolean {
+  return Boolean(result?.status === 'PASS' && /^[0-9a-f]{64}$/.test(result.consequenceFingerprint ?? '')
+    && result.coverage.ppctItemAllocation === 'ASSESSED' && result.coverage.workload === 'ASSESSED' && result.coverage.debt === 'ASSESSED'
+    && result.consequences?.teachers.length && result.consequences.streams.length
+    && result.consequences.teachers.every((t) => t.status === 'PASS' && t.after
+      && t.before.earnedCredit !== null && t.before.requiredCredit !== null && t.after.earnedCredit !== null && t.after.requiredCredit !== null)
+    && result.consequences.streams.every((s) => s.progress.before.counts && s.progress.after.counts));
+}
 
 export function TeachingOperationsPage() {
   const [context, setContext] = useState<OperationalWorkspaceContext | null>(null);
@@ -37,6 +48,11 @@ export function TeachingOperationsPage() {
   const [previewSlot, setPreviewSlot] = useState('');
   const [previewResult, setPreviewResult] = useState<CalendarExceptionPreviewResult | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [calendarNote, setCalendarNote] = useState('');
+  const [calendarSaving, setCalendarSaving] = useState(false);
+  const [calendarNotice, setCalendarNotice] = useState('');
+  const [historyRevision, setHistoryRevision] = useState(0);
+  const calendarCommand = useRef<Parameters<typeof operationalOverlaysApi.createCalendarException>[0] | null>(null);
   const requestId = useRef(0);
   const previewRequestId = useRef(0);
 
@@ -58,6 +74,8 @@ export function TeachingOperationsPage() {
   }, []);
 
   function resetSource() {
+    calendarCommand.current = null;
+    setCalendarNotice('');
     previewRequestId.current += 1;
     requestId.current += 1;
     setItems([]);
@@ -67,7 +85,9 @@ export function TeachingOperationsPage() {
     setPreviewResult(null);
   }
 
-  async function loadSources() {
+  async function loadSources(preserveNotice = false) {
+    calendarCommand.current = null;
+    if (!preserveNotice) setCalendarNotice('');
     if (!yearId || !/^\d{4}-\d{2}-\d{2}$/.test(civilDate)) {
       setError('Chọn năm học và ngày hợp lệ để xem tiết dạy gốc.');
       return;
@@ -101,6 +121,7 @@ export function TeachingOperationsPage() {
   const slots = [...new Map(items.map((item) => [item.slot.id, item.slot])).values()];
   const calendarVersions = [...new Set(items.map((item) => item.academicCalendarVersionId))].filter(Boolean);
   function clearCalendarPreview() {
+    calendarCommand.current = null;
     previewRequestId.current += 1;
     setPreviewResult(null);
     setPreviewLoading(false);
@@ -112,21 +133,33 @@ export function TeachingOperationsPage() {
     const current = ++previewRequestId.current;
     setPreviewLoading(true);
     setPreviewResult(null);
+    calendarCommand.current = null;
+    setCalendarNotice('');
+    setError('');
     try {
-      const result = await operationalOverlaysApi.previewCalendarException({
+      const input = {
         academicYearId: yearId,
         academicCalendarVersionId: calendarVersions[0],
         civilDate: civilDate as CivilDateString,
+        ...(calendarNote.trim() ? { note: calendarNote.trim() } : {}),
         scope: previewScope,
         ...(previewScope === 'GRADE' ? { gradeLevel: previewGrade } : {}),
         ...(previewScope === 'CLASS' ? { schoolClassId: previewClass || classes[0]?.[0] } : {}),
         timeSelector: previewTime,
         ...(previewTime === 'SESSION' ? { session: previewSession } : {}),
         ...(previewTime === 'EXACT_SLOTS' ? { exactTimeSlotDefinitionIds: [previewSlot || slots[0]!.id] } : {}),
-      });
-      if (current === previewRequestId.current) setPreviewResult(result);
-    } catch {
+      };
+      const result = await operationalOverlaysApi.previewCalendarException(input);
       if (current === previewRequestId.current) {
+        setPreviewResult(result);
+        if (hasCalendarClearance(result)) {
+          calendarCommand.current = { ...input, expectedConsequenceFingerprint: result.consequenceFingerprint,
+            requestKey: `calendar-${crypto.randomUUID()}` };
+        }
+      }
+    } catch (caught) {
+      if (current === previewRequestId.current) {
+        setError(transportError(caught));
         setPreviewResult({
           status: 'BLOCKED', affected: [], reason: 'Không xác minh được ngoại lệ lịch. Không được thực hiện thay đổi.',
           coverage: { ppctItemAllocation: 'NOT_ASSESSED', workload: 'NOT_ASSESSED', debt: 'NOT_ASSESSED' },
@@ -136,6 +169,27 @@ export function TeachingOperationsPage() {
       if (current === previewRequestId.current) setPreviewLoading(false);
     }
   }
+  async function confirmCalendar() {
+    const command = calendarCommand.current;
+    if (!command || calendarSaving || previewLoading || !hasCalendarClearance(previewResult)) return;
+    const current = previewRequestId.current;
+    setCalendarSaving(true);
+    setError('');
+    setCalendarNotice('');
+    try {
+      await operationalOverlaysApi.createCalendarException(command);
+      if (current === previewRequestId.current) {
+        resetSource();
+        setHistoryRevision((value) => value + 1);
+        setCalendarNotice('Đã tạo ngoại lệ lịch. Minh chứng và khối lượng giảng dạy được giữ nguyên. Tải lại tiết dạy và lịch sử để kiểm tra.');
+      }
+    } catch (caught) {
+      if (current === previewRequestId.current) {
+        setError(transportError(caught));
+        if (caught instanceof ApiError && [401, 403, 409].includes(caught.statusCode)) clearCalendarPreview();
+      }
+    } finally { setCalendarSaving(false); }
+  }
   return (
     <div className="workspace-page">
       <PageHeader eyebrow="Điều hành chuyên môn" title="Điều chỉnh hoạt động dạy học">
@@ -143,9 +197,10 @@ export function TeachingOperationsPage() {
       </PageHeader>
       {loadingContext && <p role="status">Đang tải phạm vi được phân quyền…</p>}
       <WorkflowError error={error} />
+      {calendarNotice && <InlineAlert title="Đã cập nhật" tone="success">{calendarNotice}</InlineAlert>}
       {context && (
         <>
-          <section className="management-panel">
+          <section className="management-panel form-section">
             <h2>Chọn tiết dạy gốc</h2>
             <div className="form-grid">
               <SelectField label="Năm học" id="operation-year" value={yearId} onChange={(event) => { setYearId(event.target.value); resetSource(); }}>
@@ -169,7 +224,7 @@ export function TeachingOperationsPage() {
           {status === 'BLOCKED' && <InlineAlert title="Nguồn chưa đủ điều kiện">{reason}</InlineAlert>}
           {status === 'PASS' && items.length === 0 && <EmptyState title="Không có tiết dạy phù hợp" message="Không tìm thấy tiết học theo ngày và phạm vi đã chọn." />}
           {status === 'PASS' && items.length > 0 && (
-            <section className="management-panel">
+            <section className="management-panel form-section">
               <h2>Tiết học đã xác minh</h2>
               <DataTable label="Tiết dạy gốc" headings={['Lớp', 'Môn', 'Giáo viên', 'Thời điểm', 'Trạng thái']}>
                 {items.map((item) => (
@@ -182,12 +237,12 @@ export function TeachingOperationsPage() {
                   </tr>
                 ))}
               </DataTable>
-              <p>Đây chỉ là kết quả xác minh nguồn, chưa phải bản xem trước xung đột, phân phối chương trình (PPCT), định mức hoặc nợ tiết. Chức năng xác nhận thay đổi chưa mở.</p>
+              <p>Đây chỉ là kết quả xác minh nguồn. Ngoại lệ lịch cần được đối soát PPCT, định mức và nợ tiết trước khi xác nhận.</p>
             </section>
           )}
 
           {canPreviewCalendar && (
-            <section className="management-panel">
+            <section className="management-panel form-section">
               <h2>Xem trước ngoại lệ lịch học</h2>
               <p>Đây là bản kiểm tra chỉ đọc. Chưa tạo hoặc thay đổi ngoại lệ lịch.</p>
               <div className="form-grid">
@@ -228,7 +283,9 @@ export function TeachingOperationsPage() {
                   </SelectField>
                 )}
               </div>
-              <Button type="button" disabled={previewLoading} onClick={() => { void loadCalendarPreview(); }}>
+              <TextareaField id="calendar-note" label="Lý do ngoại lệ (bắt buộc với ngày đã qua)" value={calendarNote}
+                onChange={(event) => { setCalendarNote(event.target.value); clearCalendarPreview(); }} maxLength={500} rows={2} />
+              <Button type="button" disabled={previewLoading || calendarSaving} onClick={() => { void loadCalendarPreview(); }}>
                 {previewLoading ? 'Đang xác minh…' : 'Xem trước số tiết bị ảnh hưởng'}
               </Button>
               {previewResult?.status === 'BLOCKED' && <InlineAlert title="Ngoại lệ không đủ điều kiện">{previewResult.reason}</InlineAlert>}
@@ -248,13 +305,45 @@ export function TeachingOperationsPage() {
                       })}
                     </DataTable>
                   )}
-                  <p>Chưa đánh giá đầy đủ tác động PPCT, định mức và nợ tiết. Không được suy ra nợ tiết từ số tiết bị ngừng. Chưa mở thao tác xác nhận.</p>
+                  {hasCalendarClearance(previewResult) && previewResult.consequences ? (
+                    <>
+                      <h3>Hệ quả đã đối soát</h3>
+                      {previewResult.consequences.boundary && <p>PPCT được đối soát từ {previewResult.consequences.boundary.fromCivilDate} đến {previewResult.consequences.boundary.throughCivilDate}.
+                        {' '}Nợ tiết và hoàn thành tính đến {new Intl.DateTimeFormat('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', dateStyle: 'short', timeStyle: 'short' }).format(new Date(previewResult.consequences.boundary.progressAsOfInstant))} (giờ Việt Nam).</p>}
+                      <OperationalPpctChanges groups={previewResult.consequences.streams.map((s) => ({
+                        label: `${s.schoolClassName ?? 'Lớp liên quan'} · ${s.subjectName ?? 'Môn liên quan'}`, changes: s.ppctChanges ?? [],
+                      }))} />
+                      <DataTable label="Phân phối và nợ tiết trước và sau" headings={['Lớp – môn', 'Phân phối đã kết thúc trước → sau', 'Hoàn thành trước → sau', 'Nợ tiết trước → sau']}>
+                        {previewResult.consequences.streams.map((stream) => <tr key={`${stream.scope.schoolClassId}:${stream.scope.subjectId}`}>
+                          <td>{stream.schoolClassName ?? 'Lớp liên quan'} · {stream.subjectName ?? 'Môn liên quan'}</td>
+                          <td>{stream.progress.before.counts?.distributedElapsedCount ?? 'Chưa xác minh'} → {stream.progress.after.counts?.distributedElapsedCount ?? 'Chưa xác minh'}</td>
+                          <td>{stream.progress.before.counts?.completedCount ?? 'Chưa xác minh'} → {stream.progress.after.counts?.completedCount ?? 'Chưa xác minh'}</td>
+                          <td>{stream.progress.before.counts?.openDebtCount ?? 'Chưa xác minh'} → {stream.progress.after.counts?.openDebtCount ?? 'Chưa xác minh'}</td>
+                        </tr>)}
+                      </DataTable>
+                      <DataTable label="Khối lượng chính thức trước và sau" headings={['Giáo viên', 'Đã thực hiện trước → sau', 'Định mức trước → sau']}>
+                        {previewResult.consequences.teachers.map((teacher) => <tr key={teacher.targetUserId}>
+                          <td>{teacher.teacherName ?? 'Giáo viên liên quan'}</td>
+                          <td>{teacher.before.earnedCredit ?? 'Chưa xác minh'} → {teacher.after?.earnedCredit ?? 'Chưa xác minh'}</td>
+                          <td>{teacher.before.requiredCredit ?? 'Chưa xác minh'} → {teacher.after?.requiredCredit ?? 'Chưa xác minh'}</td>
+                        </tr>)}
+                      </DataTable>
+                      <p>Ngoại lệ không tạo minh chứng hoàn thành hay tự sinh nợ tiết. Khối lượng đã ghi nhận và định mức không giảm. Máy chủ kiểm tra lại toàn bộ hệ quả trong giao dịch lưu.</p>
+                      <Button type="button" disabled={calendarSaving || previewLoading || !calendarCommand.current} onClick={() => { void confirmCalendar(); }}>
+                        {calendarSaving ? 'Đang lưu ngoại lệ…' : 'Xác nhận ngoại lệ lịch'}
+                      </Button>
+                    </>
+                  ) : <p>Chưa đánh giá đầy đủ tác động PPCT, định mức và nợ tiết. Không được suy ra nợ tiết từ số tiết bị ngừng. Chưa mở thao tác xác nhận.</p>}
                 </div>
               )}
             </section>
           )}
-          {status === 'PASS' && civilDate && <DispositionPreviewPanel context={context} yearId={yearId} civilDate={civilDate as CivilDateString} items={items} />}
-          <OperationalHistoryPanel context={context} yearId={yearId} subjectId={subjectId} />
+          {status === 'PASS' && civilDate && <DispositionPreviewPanel context={context} yearId={yearId} civilDate={civilDate as CivilDateString} items={items} onCommitted={() => {
+            setCalendarNotice('Đã ghi nhận phân công xử lý. Tải lịch sử để kiểm tra bản ghi vừa tạo.');
+            setHistoryRevision((value) => value + 1);
+            void loadSources(true);
+          }} />}
+          <OperationalHistoryPanel context={context} yearId={yearId} subjectId={subjectId} refreshToken={historyRevision} />
           <p><Link to="/quan-tri/lich-day-bu">Quản lý lịch dạy bù</Link></p>
         </>
       )}

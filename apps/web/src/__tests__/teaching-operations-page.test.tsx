@@ -61,6 +61,49 @@ function fetchMock(auth: unknown = allowed, status: 'PASS' | 'BLOCKED' = 'PASS',
 afterEach(() => { vi.unstubAllGlobals(); });
 
 describe('P5-054 source selection workspace', () => {
+  it.each([409, 500])('uses assessed backend evidence and one stable request identity on HTTP %s; no automatic retry', async (httpStatus) => {
+    const base = fetchMock(calendarAuth);
+    const commands: unknown[] = [];
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/workspace/calendar-preview')) return jsonResponse({
+        status: 'PASS', affected: [], consequenceFingerprint: 'a'.repeat(64),
+        coverage: { ppctItemAllocation: 'ASSESSED', workload: 'ASSESSED', debt: 'ASSESSED' },
+        consequences: {
+          teachers: [{ targetUserId: 'teacher-1', teacherName: 'Nguyễn Thị A', status: 'PASS',
+            before: { earnedCredit: 1, requiredCredit: 18 }, after: { earnedCredit: 1, requiredCredit: 18 } }],
+          streams: [{ scope: { schoolClassId: 'class-1', subjectId: 'subject-1' }, schoolClassName: '10A1', subjectName: 'Toán',
+            progress: { before: { counts: { completedCount: 1, openDebtCount: 0, distributedElapsedCount: 2 } },
+              after: { counts: { completedCount: 1, openDebtCount: 0, distributedElapsedCount: 1 } } } }],
+        },
+      });
+      if (url.endsWith('/calendar-exceptions') && init?.method === 'POST') {
+        commands.push(JSON.parse(String(init.body)));
+        return jsonResponse({ message: 'SQL_INTERNAL hidden-uuid' }, httpStatus);
+      }
+      return base(input, init);
+    });
+    vi.stubGlobal('fetch', fetcher);
+    renderApp(route);
+    await screen.findByText('Năm học 2026-2027');
+    fireEvent.change(screen.getByLabelText('Ngày dạy'), { target: { value: '2026-10-22' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Xem tiết dạy gốc' }));
+    await screen.findByText('Xem trước ngoại lệ lịch học');
+    fireEvent.click(screen.getByRole('button', { name: 'Xem trước số tiết bị ảnh hưởng' }));
+    await screen.findByText('Hệ quả đã đối soát');
+    fireEvent.click(screen.getByRole('button', { name: 'Xác nhận ngoại lệ lịch' }));
+    await waitFor(() => expect(commands).toHaveLength(1));
+    expect(commands[0]).toMatchObject({ expectedConsequenceFingerprint: 'a'.repeat(64), requestKey: expect.any(String), academicYearId: 'year-1' });
+    await waitFor(() => expect(screen.queryByText('SQL_INTERNAL hidden-uuid')).toBeNull());
+    if (httpStatus === 409) await waitFor(() => expect(screen.queryByRole('button', { name: 'Xác nhận ngoại lệ lịch' })).toBeNull());
+    else {
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Xác nhận ngoại lệ lịch' })).not.toBeDisabled());
+      fireEvent.click(screen.getByRole('button', { name: 'Xác nhận ngoại lệ lịch' }));
+      await waitFor(() => expect(commands).toHaveLength(2));
+      expect(commands[1]).toEqual(commands[0]);
+    }
+  });
+
   it('renders human-readable authoritative source with no mutation action', async () => {
     const fetcher = fetchMock();
     vi.stubGlobal('fetch', fetcher);
@@ -71,7 +114,7 @@ describe('P5-054 source selection workspace', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Xem tiết dạy gốc' }));
     expect(await screen.findByText('Nguyễn Thị A')).toBeTruthy();
     expect(screen.getByText('10A1')).toBeTruthy();
-    expect(screen.getByText(/Chức năng xác nhận thay đổi chưa mở/)).toBeTruthy();
+    expect(screen.getByText(/Ngoại lệ lịch cần được đối soát PPCT/)).toBeTruthy();
     expect(fetcher.mock.calls.some(([url]) => String(url).includes('subjectId=subject-1'))).toBe(true);
     expect(fetcher.mock.calls.every(([url]) => !String(url).includes('/operational-overlays/calendar-exceptions/') && !String(url).includes('/operational-overlays/lesson-dispositions/'))).toBe(true);
   });

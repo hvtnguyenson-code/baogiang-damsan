@@ -3,8 +3,9 @@ import { OperationalOverlayStatus, Prisma, TeachingExecutionStatus } from '@pris
 import { formatCivilDate } from '../common/validation/civil-date';
 import { BusinessConfigurationService } from '../business-configuration/business-configuration.service';
 import { PpctOccurrenceAllocationService } from '../ppct-occurrence-allocation/ppct-occurrence-allocation.service';
-import { ExpectedPpctItem, NormalPpctAllocation } from '../ppct-occurrence-allocation/ppct-occurrence-allocation.types';
+import { ExpectedPpctItem, NormalPpctAllocation, PpctOccurrenceAllocationResult } from '../ppct-occurrence-allocation/ppct-occurrence-allocation.types';
 import { PrismaService } from '../prisma/prisma.service';
+import { CalendarExceptionReplay } from '../resolved-occurrences/calendar-exception-replay';
 import { TEACHING_EXECUTION_CLOCK, TeachingExecutionClock } from '../teaching-executions/teaching-execution-policy';
 import { hasEndedAt, hcmCivilDate } from './progress-debt.policy';
 import {
@@ -143,16 +144,36 @@ export class ProgressDebtService {
     input: ResolveProgressDebtInput,
     authority?: ProgressDebtOperationalStartAuthority,
   ): Promise<ProgressDebtProjectionV2> {
+    return this.resolveV2Source(tx, input, authority);
+  }
+
+  /** Same as-of/operational-start authority, with the candidate in EVERY V2 source read. */
+  async replayCalendarCandidateInTransactionV2(tx: Prisma.TransactionClient, input: ResolveProgressDebtInput,
+    replay: CalendarExceptionReplay, authority?: ProgressDebtOperationalStartAuthority) {
+    this.assertAsOf(input.asOfInstant);
+    await replay.assertStream(tx, input);
+    const resolvedAuthority = authority ?? (await this.resolveLiveOperationalStartAuthority(input.academicYearId, tx));
+    const before = await this.resolveV2Source(tx, input, resolvedAuthority, replay, false);
+    const after = await this.resolveV2Source(tx, input, resolvedAuthority, replay);
+    return replay.evidence(tx, { status: before.status === 'BLOCKED' || after.status === 'BLOCKED' ? 'BLOCKED' as const : 'PASS' as const,
+      scope: input, operationalStartAuthority: resolvedAuthority, before, after });
+  }
+
+  private async resolveV2Source(tx: Prisma.TransactionClient, input: ResolveProgressDebtInput,
+    authority?: ProgressDebtOperationalStartAuthority, replay?: CalendarExceptionReplay, applyCandidate = true): Promise<ProgressDebtProjectionV2> {
     this.assertAsOf(input.asOfInstant);
     const resolvedAuthority = authority ?? (await this.resolveLiveOperationalStartAuthority(input.academicYearId, tx));
     const operationalStartDate = resolvedAuthority.operationalStartDate;
     const throughCivilDate = hcmCivilDate(input.asOfInstant);
-    const allocated = await this.allocation.resolveInTransactionV2(tx, {
+    const allocationInput = {
       academicYearId: input.academicYearId,
       schoolClassId: input.schoolClassId,
       subjectId: input.subjectId,
       throughCivilDate,
-    });
+    };
+    const allocated = replay
+      ? (await this.allocation.replayCalendarCandidateInTransactionV2(tx, allocationInput, replay)).projection[applyCandidate ? 'after' : 'before']
+      : await this.allocation.resolveInTransactionV2(tx, allocationInput);
     if (allocated.status === 'BLOCKED') {
       return this.blockedV2(input, [{
         severity: 'BLOCKER',
@@ -193,11 +214,17 @@ export class ProgressDebtService {
       orderBy: { id: 'asc' },
     }) as Execution[];
 
+    const reconciliationFindings: ProgressDebtFinding[] = [];
     const candidates = new Map<string, Execution[]>();
     for (const execution of executions) {
+      if (execution.status !== TeachingExecutionStatus.ACTIVE) continue;
+      if (!execution.executionTimeSlot) {
+        reconciliationFindings.push(this.finding('RECONCILIATION_REQUIRED',
+          'ACTIVE execution has no retained execution slot; elapsed fulfillment cannot be established.',
+          execution.sourceNormalOccurrenceKey, [execution.id]));
+        continue;
+      }
       if (
-        execution.status !== TeachingExecutionStatus.ACTIVE ||
-        !execution.executionTimeSlot ||
         !hasEndedAt(
           formatCivilDate(execution.executionCivilDate),
           execution.executionTimeSlot.endTime.toISOString().slice(11, 19),
@@ -224,7 +251,19 @@ export class ProgressDebtService {
     const schedulesById = new Map(schedules.map((schedule) => [schedule.id, schedule]));
 
     const items: ProgressDebtItemV2[] = [];
-    const findings: ProgressDebtFinding[] = [];
+    const findings: ProgressDebtFinding[] = reconciliationFindings;
+    // ADR-040: retained fulfillment cannot disappear just because replay removed
+    // its source (suppression, cancellation, exhaustion or changed history).
+    // Only ended ACTIVE evidence participates in this elapsed projection. The
+    // calendar replay guard separately rejects ALL ACTIVE evidence in the stream.
+    const directKeys = new Set(direct.map((row) => row.occurrence.occurrenceKey));
+    for (const [sourceKey, eligible] of candidates) {
+      if (!directKeys.has(sourceKey)) {
+        findings.push(this.finding('RECONCILIATION_REQUIRED',
+          'Ended ACTIVE execution has no current authoritative elapsed direct obligation. Retained evidence must be reconciled, never discarded or rebound.',
+          sourceKey, eligible.map((execution) => execution.id)));
+      }
+    }
 
     for (const allocation of direct) {
       const sourceKey = allocation.occurrence.occurrenceKey;
@@ -312,6 +351,44 @@ export class ProgressDebtService {
     if (asOfInstant > this.clock.now()) throw new BadRequestException('asOfInstant cannot be in the future.');
   }
 
+  /** Reuse the fulfillment authority for every ACTIVE fact, including unelapsed
+   * and future facts excluded from elapsed progress. No credit is removed here. */
+  async reconcileRetainedCalendarExecutionsInTransactionV2(tx: Prisma.TransactionClient,
+    before: Omit<PpctOccurrenceAllocationResult, 'evaluatedAt'>,
+    after: Omit<PpctOccurrenceAllocationResult, 'evaluatedAt'>) {
+    const { academicYearId, schoolClassId, subjectId } = before.scope;
+    const executions = await tx.curricularTeachingExecution.findMany({
+      where: { academicYearId, schoolClassId, subjectId, status: 'ACTIVE' },
+      include: executionInclude, orderBy: { id: 'asc' }, take: 10001,
+    });
+    const findings: ProgressDebtFinding[] = [];
+    if (executions.length > 10000) throw new Error('CALENDAR_REPLAY_EXECUTION_LIMIT_EXCEEDED');
+    const schedules = await tx.makeupTeachingSchedule.findMany({
+      where: { id: { in: executions.flatMap((e) => e.makeupTeachingScheduleId ? [e.makeupTeachingScheduleId] : []) } },
+      orderBy: { id: 'asc' }, take: 10001,
+    });
+    if (schedules.length > 10000) throw new Error('CALENDAR_REPLAY_MAKEUP_LIMIT_EXCEEDED');
+    const claims = new Set<string>();
+    const allocations = [before, after].map((side) => new Map(side.normalAllocations.map((r) => [r.occurrence.occurrenceKey, r])));
+    const schedulesById = new Map(schedules.map((s) => [s.id, s]));
+    for (const execution of executions) {
+      if (claims.has(execution.sourceNormalOccurrenceKey)) {
+        findings.push(this.finding('ACTIVE_FULFILLMENT_AMBIGUOUS', 'ACTIVE fulfillment is ambiguous.', execution.sourceNormalOccurrenceKey, [execution.id]));
+      }
+      claims.add(execution.sourceNormalOccurrenceKey);
+      for (const [index, [side, allocated]] of ([['BEFORE', before], ['AFTER', after]] as const).entries()) {
+        const row = allocations[index]!.get(execution.sourceNormalOccurrenceKey);
+        const issue = !row || row.allocationStatus !== 'ALLOCATED' || !row.expectedPpctItem || !row.plannedComponent
+          ? 'ACTIVE execution has no exact allocated obligation.'
+          : row.plannedComponent !== row.expectedPpctItem.component ? 'PPCT component does not match planned component.'
+          : this.reconcileExecutionV2(row as DirectAllocationV2, execution,
+            schedulesById.get(execution.makeupTeachingScheduleId ?? '') ?? null, allocated.makeupSourceMatches);
+        if (issue) findings.push(this.finding('RECONCILIATION_REQUIRED', `${side}: ${issue}`, execution.sourceNormalOccurrenceKey, [execution.id]));
+      }
+    }
+    return { status: findings.length ? 'BLOCKED' as const : 'PASS' as const, executionIds: executions.map((e) => e.id), findings };
+  }
+
   private reconcileExecution(allocation: DirectAllocation, execution: Execution, schedule: { [key: string]: unknown } | null, matches: Array<{ makeupTeachingScheduleId: string; sourceNormalOccurrenceKey: string; status: string; expectedPpctItem: ExpectedPpctItem | null }>): string | null {
     const occurrence = allocation.occurrence; const expected = allocation.expectedPpctItem;
     const common: Array<[string, unknown, unknown]> = [
@@ -361,6 +438,17 @@ export class ProgressDebtService {
   ): string | null {
     const issueV1 = this.reconcileExecution(allocation, execution, schedule, matches);
     if (issueV1) return issueV1;
+    if (execution.kind === 'NORMAL') {
+      const occurrence = allocation.occurrence;
+      const targetChecks: Array<[string, unknown, unknown]> = [
+        ['executionCivilDate', formatCivilDate(execution.executionCivilDate), occurrence.civilDate],
+        ['executionAcademicCalendarVersionId', execution.executionAcademicCalendarVersionId, occurrence.academicCalendarVersionId],
+        ['executionTimeSlotDefinitionId', execution.executionTimeSlotDefinitionId, occurrence.timeSlot.id],
+        ['makeupTeachingScheduleId', execution.makeupTeachingScheduleId, null],
+      ];
+      const mismatch = targetChecks.find((entry) => entry[1] !== entry[2]);
+      if (mismatch) return `NORMAL retained execution ${mismatch[0]} does not match the exact original occurrence.`;
+    }
     if (execution.kind === 'MAKEUP') {
       const match = matches.find((item) => item.makeupTeachingScheduleId === execution.makeupTeachingScheduleId);
       if (match?.expectedPpctItem && match.expectedPpctItem.component !== allocation.plannedComponent) {

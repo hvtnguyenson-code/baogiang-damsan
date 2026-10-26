@@ -4,6 +4,7 @@ import { CivilDateString, PpctCurricularComponent } from '@baogiang/contracts';
 import { formatCivilDate, parseCivilDate } from '../common/validation/civil-date';
 import { PrismaService } from '../prisma/prisma.service';
 import { ResolvedLessonOccurrencesService } from '../resolved-occurrences/resolved-occurrences.service';
+import { CalendarExceptionReplay } from '../resolved-occurrences/calendar-exception-replay';
 import { NormalStructuralOccurrence, StructuralOccurrenceFinding } from '../resolved-occurrences/resolved-occurrence.types';
 import {
   applyVersionTransition,
@@ -265,12 +266,32 @@ export class PpctOccurrenceAllocationService {
     tx: Prisma.TransactionClient,
     input: ResolvePpctOccurrenceAllocationInput,
   ): Promise<Omit<PpctOccurrenceAllocationResult, 'evaluatedAt'>> {
+    return this.resolveV2Source(tx, input);
+  }
+
+  /** Bounded internal candidate evidence; never returns a candidate-level PASS. */
+  async replayCalendarCandidateInTransactionV2(tx: Prisma.TransactionClient, input: ResolvePpctOccurrenceAllocationInput,
+    replay: CalendarExceptionReplay) {
+    await replay.assertStream(tx, input);
+    const before = await this.resolveV2Source(tx, input, replay, false);
+    const after = await this.resolveV2Source(tx, input, replay);
+    return replay.evidence(tx, { status: before.status === 'BLOCKED' || after.status === 'BLOCKED' ? 'BLOCKED' as const : 'PASS' as const,
+      scope: input, before, after });
+  }
+
+  private async resolveV2Source(tx: Prisma.TransactionClient, input: ResolvePpctOccurrenceAllocationInput,
+    replay?: CalendarExceptionReplay, applyCandidate = true): Promise<Omit<PpctOccurrenceAllocationResult, 'evaluatedAt'>> {
+    const resolveSource = async (civilDate: CivilDateString) => {
+      const read = () => this.structural.resolveInTransaction(tx, { academicYearId: input.academicYearId, civilDate });
+      const source = replay ? await replay.readSource(tx, civilDate, read) : await read();
+      return replay && applyCandidate ? replay.apply(tx, source) : source;
+    };
     const throughDate = parseCivilDate(input.throughCivilDate);
     const candidateDates = await this.discoverCandidateDates(tx, input, throughDate);
     const normals: NormalStructuralOccurrence[] = [];
     const structuralFindings: DatedFinding[] = [];
     for (const civilDate of candidateDates) {
-      const result = await this.structural.resolveInTransaction(tx, { academicYearId: input.academicYearId, civilDate });
+      const result = await resolveSource(civilDate);
       const targetNormals = result.normalOccurrences.filter(
         (occurrence) => occurrence.schoolClass.id === input.schoolClassId && occurrence.subjectId === input.subjectId,
       );
@@ -401,10 +422,7 @@ export class PpctOccurrenceAllocationService {
           const fDate = parseCivilDate(fDateStr);
           if (fDate < envelopeStart || fDate > envelopeEnd) continue;
 
-          const fResult = await this.structural.resolveInTransaction(tx, {
-            academicYearId: input.academicYearId,
-            civilDate: fDateStr,
-          });
+          const fResult = await resolveSource(fDateStr);
           const fNormals = fResult.normalOccurrences.filter(
             (o) => o.schoolClass.id === input.schoolClassId && o.subjectId === input.subjectId,
           );

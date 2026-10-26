@@ -288,13 +288,81 @@ describe('ProgressDebtService V2 Unit Tests', () => {
     expect(result.counts?.completedCount).toBe(1);
   });
 
-  it('10. Execution without corresponding direct obligation does not create obligation', async () => {
-    // Allocation list is empty (e.g. slot not ended or no direct obligation)
+  it('10. Ended ACTIVE execution without direct obligation requires reconciliation, never silent zero', async () => {
     const h = harness([], [executionCore()]);
     const result = await h.service.resolveInTransactionV2(h.tx as never, input());
-    expect(result.status).toBe('PASS');
+    expect(result.status).toBe('BLOCKED');
     expect(result.items).toHaveLength(0);
-    expect(result.counts?.distributedElapsedCount).toBe(0);
+    expect(result.counts).toBeNull();
+    expect(result.findings).toEqual([expect.objectContaining({ code: 'RECONCILIATION_REQUIRED',
+      occurrenceKey: 'NORMAL:entry1:2026-08-10', entityIds: ['exec-core'] })]);
+  });
+
+  it.each(['CALENDAR_EXCEPTION', 'CALENDAR_INTERRUPTION', 'SPECIAL_ACTIVITY_SUPPRESSED', 'OPERATIONAL_DISPOSITION'])(
+    'blocks retained execution when %s removes the original obligation', async (effectiveKind) => {
+      const suppressed = { ...allocationCore({ effectiveKind }), allocationEffect: 'DOES_NOT_CONSUME',
+        allocationStatus: 'NOT_CONSUMED', expectedPpctItem: null };
+      const h = harness([suppressed, allocationSpec()], [executionCore(), executionSpec()]);
+      const result = await h.service.resolveInTransactionV2(h.tx as never, input());
+      expect(result).toMatchObject({ status: 'BLOCKED', counts: null, items: [],
+        findings: [expect.objectContaining({ code: 'RECONCILIATION_REQUIRED', entityIds: ['exec-core'] })] });
+    },
+  );
+
+  it.each(['ppctClassAssociationId', 'ppctPlanId', 'ppctVersionId', 'ppctItemId', 'ppctItemRevisionId'])(
+    'does not rebind retained execution after replay changes %s', async (coordinate) => {
+      const moved = { ...allocationCore(), expectedPpctItem: { ...expectedCore, [coordinate]: 'replayed-other' } };
+      const h = harness([moved], [executionCore()]);
+      const result = await h.service.resolveInTransactionV2(h.tx as never, input());
+      expect(result).toMatchObject({ status: 'BLOCKED', counts: null, items: [] });
+      expect(result.findings[0]!.reason).toContain(coordinate);
+    },
+  );
+
+  it.each([
+    { executionCivilDate: new Date('2026-08-11T00:00:00.000Z') },
+    { executionAcademicCalendarVersionId: 'other-calendar' },
+    { executionTimeSlotDefinitionId: 'other-slot' },
+    { makeupTeachingScheduleId: 'unexpected-makeup' },
+  ])('blocks NORMAL target provenance drift %j', async (drift) => {
+    const h = harness([allocationCore()], [executionCore(drift)]);
+    const result = await h.service.resolveInTransactionV2(h.tx as never, input());
+    expect(result).toMatchObject({ status: 'BLOCKED', counts: null, items: [] });
+    expect(result.findings[0]!.reason).toContain(Object.keys(drift)[0]);
+  });
+
+  it('blocks ACTIVE evidence with missing execution slot instead of silently ignoring it', async () => {
+    const h = harness([allocationCore()], [executionCore({ executionTimeSlot: null })]);
+    const result = await h.service.resolveInTransactionV2(h.tx as never, input());
+    expect(result).toMatchObject({ status: 'BLOCKED', counts: null, items: [],
+      findings: [expect.objectContaining({ code: 'RECONCILIATION_REQUIRED', entityIds: ['exec-core'] })] });
+  });
+
+  it('ignores reversed orphan history and credits only its exact ACTIVE replacement once', async () => {
+    const h = harness([allocationCore()], [executionSpec({ status: 'REVERSED' }),
+      executionCore({ id: 'replacement', replacesId: 'reversed-predecessor' }), executionCore({ id: 'reversed-predecessor', status: 'REVERSED' })]);
+    const result = await h.service.resolveInTransactionV2(h.tx as never, input());
+    expect(result).toMatchObject({ status: 'PASS', counts: { completedCount: 1, distributedElapsedCount: 1 } });
+    expect(result.items[0]!.fulfillmentExecutionId).toBe('replacement');
+  });
+
+  it('does not turn an unended actual execution into completion or elapsed orphan credit', async () => {
+    const h = harness([], [executionCore({ kind: 'MAKEUP', executionCivilDate: new Date('2026-08-13T00:00:00.000Z') })]);
+    const result = await h.service.resolveInTransactionV2(h.tx as never, input());
+    expect(result).toMatchObject({ status: 'PASS', counts: { completedCount: 0, distributedElapsedCount: 0 }, items: [] });
+  });
+
+  it('reconciles orphan MAKEUP at the original source even when the actual target date differs', async () => {
+    const h = harness([], [executionCore({ kind: 'MAKEUP', makeupTeachingScheduleId: 'schedule',
+      executionCivilDate: new Date('2026-08-11T00:00:00.000Z') })], [{ id: 'schedule', status: 'ACTIVE' }]);
+    const result = await h.service.resolveInTransactionV2(h.tx as never, input());
+    expect(result).toMatchObject({ status: 'BLOCKED', counts: null,
+      findings: [expect.objectContaining({ occurrenceKey: 'NORMAL:entry1:2026-08-10', entityIds: ['exec-core'] })] });
+  });
+
+  it('does not hide pre-operational ACTIVE orphan evidence behind operational-start exclusion', async () => {
+    const h = harness([], [executionCore()], [], [], [], 'PASS', '2026-08-15');
+    expect(await h.service.resolveInTransactionV2(h.tx as never, input())).toMatchObject({ status: 'BLOCKED', counts: null });
   });
 
   it('11. MAKEUP fulfills exact original obligation', async () => {

@@ -341,6 +341,9 @@ integration('P3-031 MakeupTeachingSchedule control plane (PostgreSQL)', () => {
 
     const sourceNormalOccurrenceKey = `NORMAL:${timetableEntry.id}:2026-09-07`;
 
+    const workloadStream = await h.prisma.businessPolicyStream.create({ data: { familyKey: 'WORKLOAD_ADJUSTMENT', resourceKind: 'ACADEMIC_YEAR', academicYearId: year.id } });
+    await h.prisma.businessPolicyVersion.create({ data: { streamId: workloadStream.id, versionNumber: 1, status: 'PUBLISHED', payload: { baseWeeklyNorm: 18, rules: [] },
+      validatorVersion: 'v1', effectiveFrom: new Date('2026-09-01Z'), publishedAt: new Date('2026-09-01Z'), publishedByUserId: creatorUserId, createdByUserId: creatorUserId } });
     return {
       year,
       calendar,

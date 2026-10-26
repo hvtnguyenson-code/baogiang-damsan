@@ -41,6 +41,7 @@ export interface CalendarExceptionListQuery {
 }
 
 export interface CalendarExceptionCreateInput {
+  expectedConsequenceFingerprint?: string;
   academicYearId: string;
   academicCalendarVersionId: string;
   civilDate: CivilDateString;
@@ -67,6 +68,7 @@ export interface LessonDispositionListQuery {
 }
 
 export interface LessonDispositionCreateInput {
+  expectedConsequenceFingerprint?: string;
   timetableEntryId: string;
   sourceCivilDate: CivilDateString;
   dispositionType: OperationalLessonDispositionType;
@@ -124,7 +126,24 @@ export interface CalendarExceptionPreviewResult {
     slot: { id: string; weekday: string; session: string; startTime: string; endTime: string };
   }>;
   reason?: string;
-  coverage: { ppctItemAllocation: 'NOT_ASSESSED'; workload: 'NOT_ASSESSED'; debt: 'NOT_ASSESSED' };
+  consequenceFingerprint?: string;
+  coverage: { ppctItemAllocation: 'ASSESSED' | 'NOT_ASSESSED'; workload: 'ASSESSED' | 'NOT_ASSESSED'; debt: 'ASSESSED' | 'NOT_ASSESSED' };
+  consequences?: {
+    boundary?: { fromCivilDate: string; throughCivilDate: string; progressAsOfInstant: string };
+    teachers: Array<{ targetUserId: string; teacherName: string | null; status: 'PASS' | 'BLOCKED';
+      before: { earnedCredit: number | null; requiredCredit: number | null }; after: { earnedCredit: number | null; requiredCredit: number | null } | null }>;
+    streams: Array<{ scope: { schoolClassId: string; subjectId: string }; schoolClassName: string | null; subjectName: string | null; ppctChanges?: PpctConsequenceChange[];
+      progress: { before: { counts: { completedCount: number; openDebtCount: number; distributedElapsedCount: number } | null };
+        after: { counts: { completedCount: number; openDebtCount: number; distributedElapsedCount: number } | null } } }>;
+  };
+}
+
+export interface PpctConsequenceChange {
+  occurrenceKey: string;
+  civilDate: string;
+  slotStartTime: string;
+  before: { sequence: number; title: string; component?: string } | null;
+  after: { sequence: number; title: string; component?: string } | null;
 }
 
 export interface TeacherOptionsQuery {
@@ -149,7 +168,13 @@ export interface DispositionPreviewInput {
 export type DispositionPreviewResult =
   | { status: 'BLOCKED'; reason: string; coverage: { ppctItemAllocation: 'NOT_ASSESSED'; workload: 'NOT_ASSESSED'; debt: 'NOT_ASSESSED' } }
   | { status: 'PASS'; sourceTimetableEntryId: string; candidateTeacherUserId: string | null;
-      eligibilitySameSubject: boolean | null; coverage: { ppctItemAllocation: 'NOT_ASSESSED'; workload: 'NOT_ASSESSED'; debt: 'NOT_ASSESSED' } };
+      eligibilitySameSubject: boolean | null;
+      consequenceFingerprint?: string;
+      consequences?: { streams: Array<{ scope: { schoolClassId: string; subjectId: string };
+        before: { completedCount: number; openDebtCount: number; distributedElapsedCount: number } | null;
+        after: { completedCount: number; openDebtCount: number; distributedElapsedCount: number } | null; ppctChanges?: PpctConsequenceChange[] }>;
+        teachers: Array<{ status: 'PASS' | 'BLOCKED'; earnedCreditUnchanged: boolean; requiredCreditUnchanged: boolean; createsExecution: boolean }> };
+      coverage: { ppctItemAllocation: 'ASSESSED' | 'NOT_ASSESSED'; workload: 'ASSESSED' | 'NOT_ASSESSED'; debt: 'ASSESSED' | 'NOT_ASSESSED' } };
 
 export interface OperationalWorkspaceContext {
   years: Array<{ id: string; code: string; name: string }>;

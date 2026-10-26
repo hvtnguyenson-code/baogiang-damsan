@@ -16,6 +16,9 @@ integration('operational overlay control plane (PostgreSQL)', () => {
     await h.prisma.operationalLessonDisposition.deleteMany();
     await h.prisma.calendarExceptionTimeSlot.deleteMany();
     await h.prisma.calendarException.deleteMany();
+    await h.prisma.ppctClassAssociation.deleteMany();
+    await h.prisma.ppctItemRevision.deleteMany(); await h.prisma.ppctItem.deleteMany();
+    await h.prisma.ppctVersion.deleteMany(); await h.prisma.ppctPlan.deleteMany();
     await h.clean();
   }
 
@@ -38,7 +41,7 @@ integration('operational overlay control plane (PostgreSQL)', () => {
   async function fixture(createdByUserId: string) {
     const year = await h.prisma.academicYear.create({ data: { code: normalizedCode('Y'), name: '2026-2027' } });
     const calendar = await h.prisma.academicCalendarVersion.create({ data: {
-      academicYearId: year.id, versionNumber: 1, startDate: new Date('2026-09-01Z'), endDate: new Date('2027-05-31Z'),
+      academicYearId: year.id, versionNumber: 1, startDate: new Date('2026-09-01Z'), endDate: new Date('2026-09-30Z'),
       officialWeekCount: 35, reserveWeekCount: 1, teachingWeekdays: ['MONDAY'], isActive: true, activatedAt: new Date(),
     } });
     const week = await h.prisma.academicWeek.create({ data: {
@@ -84,6 +87,28 @@ integration('operational overlay control plane (PostgreSQL)', () => {
       timetableVersionId: version.id, academicYearId: year.id, weekday: 'MONDAY', timeSlotDefinitionId: slot.id,
       schoolClassId: schoolClass.id, subjectId: subject.id, teachingAssignmentId: assignment.id, teacherUserId: teacher.id,
     } });
+    const plan = await h.prisma.ppctPlan.create({ data: { academicYearId: year.id, subjectId: subject.id, gradeLevel: 10 } });
+    const ppct = await h.prisma.ppctVersion.create({ data: { ppctPlanId: plan.id, versionNumber: 1, status: 'PUBLISHED',
+      createdByUserId, publishedByUserId: createdByUserId, publishedAt: lifecycleAt } });
+    for (let n = 1; n <= 4; n++) {
+      if (n > 1) {
+        const startDate = new Date(Date.UTC(2026, 8, 7 + 7 * (n - 1)));
+        const nextWeek = await h.prisma.academicWeek.create({ data: { calendarVersionId: calendar.id, kind: 'OFFICIAL',
+          officialWeekNumber: n, displayLabel: `Tuần ${n}`, sortOrder: n } });
+        await h.prisma.academicWeekSegment.create({ data: { academicWeekId: nextWeek.id, calendarVersionId: calendar.id,
+          label: `W${n}`, segmentOrder: 1, startDate, endDate: new Date(Math.min(startDate.getTime() + 6 * 86400000, Date.UTC(2026, 8, 30))) } });
+      }
+      const item = await h.prisma.ppctItem.create({ data: { ppctPlanId: plan.id, component: 'CORE' } });
+      await h.prisma.ppctItemRevision.create({ data: { ppctPlanId: plan.id, ppctVersionId: ppct.id, ppctItemId: item.id,
+        component: 'CORE', sequence: n, title: `Bài ${n}`, lessonType: 'LESSON' } });
+    }
+    await h.prisma.ppctClassAssociation.create({ data: { academicYearId: year.id, schoolClassId: schoolClass.id, subjectId: subject.id,
+      gradeLevel: 10, ppctPlanId: plan.id, ppctVersionId: ppct.id, curricularProfile: 'CORE_ONLY', effectiveFrom: new Date('2026-09-01Z'), createdByUserId } });
+    for (const [familyKey, payload] of [['WORKLOAD_ADJUSTMENT', { baseWeeklyNorm: 18, rules: [] }], ['OPERATIONAL_START', { operationalStartDate: '2026-09-01' }]] as const) {
+      const stream = await h.prisma.businessPolicyStream.create({ data: { familyKey, resourceKind: 'ACADEMIC_YEAR', academicYearId: year.id } });
+      await h.prisma.businessPolicyVersion.create({ data: { streamId: stream.id, versionNumber: 1, status: 'PUBLISHED', payload,
+        validatorVersion: 'v1', effectiveFrom: new Date('2026-09-01Z'), publishedAt: lifecycleAt, publishedByUserId: createdByUserId, createdByUserId } });
+    }
     return { year, calendar, schoolClass, subject, otherSubject, substitute, staffSubject, slot, version, entry, assignment, teacher };
   }
 
