@@ -26,10 +26,22 @@ const json = (method: string, body?: unknown) => ({
   notifyUnauthorized: true,
 });
 
-export type CreateMakeupScheduleInput = CreateMakeupScheduleRequest;
+export type CreateMakeupScheduleInput = CreateMakeupScheduleRequest & { expectedConsequenceFingerprint?: string };
+export interface MakeupConsequencePreview {
+  status: 'PASS';
+  consequenceFingerprint: string;
+  coverage: { ppctItemAllocation: 'ASSESSED'; workload: 'ASSESSED'; debt: 'ASSESSED' };
+  before: { completedCount: number; openDebtCount: number };
+  after: { completedCount: number; openDebtCount: number };
+  consumesNewPpctItem: boolean;
+  createsExecution: boolean;
+  teachers: Array<{ earnedCreditUnchanged: boolean; requiredCreditUnchanged: boolean }>;
+}
 export type ReverseMakeupScheduleInput = ReverseMakeupScheduleRequest;
 
 export const makeupSchedulesApi = {
+  previewSchedule: (input: CreateMakeupScheduleInput) =>
+    apiFetch<MakeupConsequencePreview>('/operational-overlays/makeup-schedules/preview', json('POST', input)),
   listCandidates: (query: { academicYearId: string; schoolClassId?: string; subjectId?: string; page?: number; pageSize?: number }) =>
     apiFetch<MakeupTeachingCandidateListResponse>(`/operational-overlays/makeup-schedules/candidates${queryString(query)}`, { notifyUnauthorized: true }),
 

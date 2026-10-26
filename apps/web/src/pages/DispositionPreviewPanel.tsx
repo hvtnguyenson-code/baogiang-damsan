@@ -1,6 +1,8 @@
 import type { CivilDateString, OperationalLessonDispositionType } from '@baogiang/contracts';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '../components/ui/button';
+import { ApiError } from '../lib/api-client';
+import { OperationalPpctChanges } from './OperationalPpctChanges';
 import { ErrorFeedback, InlineAlert } from '../components/ui/feedback';
 import { EmptyState, SelectField, TextareaField } from '../components/ui/management';
 import { operationalOverlaysApi } from '../lib/operational-overlays-api';
@@ -22,11 +24,12 @@ function requiresTeacher(type: OperationalLessonDispositionType) {
   return type === 'SAME_SUBJECT_SUBSTITUTION' || type === 'DIFFERENT_SUBJECT_SUPERVISION';
 }
 
-export function DispositionPreviewPanel({ context, yearId, civilDate, items }: {
+export function DispositionPreviewPanel({ context, yearId, civilDate, items, onCommitted }: {
   context: OperationalWorkspaceContext;
   yearId: string;
   civilDate: CivilDateString;
   items: OperationalSourceOccurrence[];
+  onCommitted?: () => void;
 }) {
   const allowed = items.filter((item) => item.selectable && (context.permissions.teachingSchoolWide
     || context.permissions.teachingSubjectIds.includes(item.subjectId)));
@@ -39,9 +42,16 @@ export function DispositionPreviewPanel({ context, yearId, civilDate, items }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const request = useRef(0);
+  const command = useRef<Parameters<typeof operationalOverlaysApi.createLessonDisposition>[0] | null>(null);
+  const [notice, setNotice] = useState('');
+  const eligible = preview?.status === 'PASS' && /^[0-9a-f]{64}$/.test(preview.consequenceFingerprint ?? '')
+    && Object.values(preview.coverage).every((v) => v === 'ASSESSED') && Boolean(preview.consequences?.streams.length)
+    && Boolean(preview.consequences?.teachers.length) && preview.consequences?.teachers.every((t) => t.status === 'PASS'
+      && t.earnedCreditUnchanged && t.requiredCreditUnchanged && !t.createsExecution);
 
   useEffect(() => {
     request.current += 1;
+    command.current = null;
     setSourceId('');
     setOptions(null);
     setPreview(null);
@@ -51,11 +61,13 @@ export function DispositionPreviewPanel({ context, yearId, civilDate, items }: {
 
   const source = allowed.find((entry) => entry.timetableEntryId === sourceId) ?? allowed[0];
   function clearPreview() {
+    command.current = null;
     request.current += 1;
     setPreview(null);
     setBusy(false);
   }
   function resetSelection() {
+    command.current = null;
     request.current += 1;
     setOptions(null);
     setTeacherId('');
@@ -91,7 +103,8 @@ export function DispositionPreviewPanel({ context, yearId, civilDate, items }: {
     setPreview(null);
     setError('');
     try {
-      const result = await operationalOverlaysApi.previewDisposition({
+      command.current = null;
+      const input = {
         academicYearId: yearId,
         subjectId: source.subjectId,
         timetableEntryId: source.timetableEntryId,
@@ -99,8 +112,17 @@ export function DispositionPreviewPanel({ context, yearId, civilDate, items }: {
         dispositionType: type,
         ...(requiresTeacher(type) ? { assignedTeacherUserId: teacherId || (options?.status === 'OPTIONS_NOT_COLLISION_CHECKED' ? options.items[0]?.userId : undefined) } : {}),
         ...(note.trim() ? { note: note.trim() } : {}),
-      });
-      if (marker === request.current) setPreview(result);
+      };
+      const result = await operationalOverlaysApi.previewDisposition(input);
+      if (marker === request.current) {
+        setPreview(result);
+        if (result.status === 'PASS' && result.consequenceFingerprint && Object.values(result.coverage).every((v) => v === 'ASSESSED')) {
+          const selection = { timetableEntryId: input.timetableEntryId, sourceCivilDate: input.sourceCivilDate,
+            dispositionType: input.dispositionType, assignedTeacherUserId: input.assignedTeacherUserId, note: input.note };
+          command.current = { ...selection, expectedConsequenceFingerprint: result.consequenceFingerprint,
+            requestKey: `disposition-${crypto.randomUUID()}` };
+        }
+      }
     } catch (caught) {
       if (marker === request.current) setError(caught);
     } finally {
@@ -108,11 +130,34 @@ export function DispositionPreviewPanel({ context, yearId, civilDate, items }: {
     }
   }
 
+  async function confirmDisposition() {
+    if (!eligible || !command.current || busy) return;
+    const selected = command.current;
+    const marker = request.current;
+    setBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      await operationalOverlaysApi.createLessonDisposition(selected);
+      if (marker === request.current) {
+        clearPreview();
+        setNotice('Đã ghi nhận phân công xử lý. Chưa tạo minh chứng hoàn thành tiết dạy.');
+        onCommitted?.();
+      }
+    } catch (caught) {
+      if (marker === request.current) {
+        setError(caught);
+        if (caught instanceof ApiError && [401, 403, 409].includes(caught.statusCode)) clearPreview();
+      }
+    } finally { if (marker === request.current) setBusy(false); }
+  }
+
   if (!allowed.length) return null;
   const list = options?.status === 'OPTIONS_NOT_COLLISION_CHECKED' ? options.items : [];
   return (
-    <section className="management-panel">
+    <section className="management-panel form-section">
       <h2>Xem trước điều hành tiết dạy</h2>
+      {notice && <InlineAlert title="Đã cập nhật" tone="success">{notice}</InlineAlert>}
       <p>Chọn tiết dạy bằng tên lớp, môn và giáo viên; hệ thống kiểm tra nguồn, quyền và xung đột trước khi đưa ra kết luận.</p>
       <div className="form-grid">
         <SelectField label="Tiết học gốc" id="ops-source" value={source?.timetableEntryId ?? ''}
@@ -145,6 +190,8 @@ export function DispositionPreviewPanel({ context, yearId, civilDate, items }: {
           </>
         )}
       </div>
+      {type === 'SAME_SUBJECT_SUBSTITUTION' && <p>Dạy thay cùng môn giữ phân phối chương trình. Chỉ giáo viên thực dạy được ghi khối lượng khi có minh chứng hợp lệ.</p>}
+      {type === 'DIFFERENT_SUBJECT_SUPERVISION' && <p>Giám sát khác môn không hoàn thành môn nguồn và không ghi khối lượng giảng dạy môn nguồn. Nợ tiết chỉ được xác định sau khi tiết gốc kết thúc và chưa được hoàn thành.</p>}
       <TextareaField id="ops-note" label="Ghi chú, lý do (bắt buộc với thay đổi hồi tố)" value={note}
         maxLength={500} rows={2} onChange={(event) => { setNote(event.target.value); clearPreview(); }} />
       <Button type="button" disabled={busy || (requiresTeacher(type) && (!list.length || options?.status !== 'OPTIONS_NOT_COLLISION_CHECKED'))}
@@ -156,7 +203,18 @@ export function DispositionPreviewPanel({ context, yearId, civilDate, items }: {
       {preview?.status === 'PASS' && (
         <div aria-live="polite">
           <p><strong>Đã xác minh nguồn, quyền, tư cách giáo viên và xung đột hiện tại.</strong></p>
-          <p>Chưa đánh giá đầy đủ hệ quả phân phối chương trình (PPCT), định mức hoặc nợ tiết. Chưa cho phép ghi thay đổi.</p>
+          {eligible && preview.consequences ? <>
+            <OperationalPpctChanges groups={preview.consequences.streams.map((s) => ({
+              label: `${source?.schoolClassName ?? 'Lớp liên quan'} · ${source?.subjectName ?? 'Môn liên quan'}`, changes: s.ppctChanges ?? [],
+            }))} />
+            {preview.consequences.streams.map((s) => <p key={`${s.scope.schoolClassId}:${s.scope.subjectId}`}>
+              Phân phối: {s.before?.distributedElapsedCount ?? 'Chưa xác minh'} → {s.after?.distributedElapsedCount ?? 'Chưa xác minh'};
+              {' '}hoàn thành: {s.before?.completedCount ?? 'Chưa xác minh'} → {s.after?.completedCount ?? 'Chưa xác minh'};
+              {' '}nợ tiết: {s.before?.openDebtCount ?? 'Chưa xác minh'} → {s.after?.openDebtCount ?? 'Chưa xác minh'}.
+            </p>)}
+            <p>Khối lượng đã ghi nhận và định mức giữ nguyên. Máy chủ đối soát lại trong giao dịch xác nhận.</p>
+            <Button type="button" disabled={busy || !command.current} onClick={() => { void confirmDisposition(); }}>Xác nhận điều hành tiết dạy</Button>
+          </> : <p>Chưa đánh giá đầy đủ hệ quả phân phối chương trình (PPCT), định mức hoặc nợ tiết. Chưa cho phép ghi thay đổi.</p>}
         </div>
       )}
     </section>

@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { PreviewCalendarExceptionDto } from '../../src/operational-overlays/dto';
 import { OperationalOverlaysService } from '../../src/operational-overlays/operational-overlays.service';
+import { CalendarCandidateConsequenceService } from '../../src/operational-overlays/calendar-candidate-consequence.service';
 import { OperationalWorkspaceContextService } from '../../src/operational-overlays/operational-workspace-context.service';
 import { AuthenticatedRequest } from '../../src/auth/auth.types';
 import { PpctOccurrenceAllocationService } from '../../src/ppct-occurrence-allocation/ppct-occurrence-allocation.service';
@@ -49,7 +50,7 @@ function harness(twoComponents = false) {
   const tx = {
     academicYear: { findUnique: jest.fn().mockResolvedValue({ id: 'year' }), ...mutations },
     academicCalendarVersion: { findUnique: jest.fn().mockResolvedValue(calendar), ...mutations },
-    schoolClass: { findUnique: jest.fn().mockResolvedValue(entries[0]!.schoolClass), findUniqueOrThrow: jest.fn().mockResolvedValue(entries[0]!.schoolClass), ...mutations },
+    schoolClass: { findUnique: jest.fn().mockResolvedValue(entries[0]!.schoolClass), findUniqueOrThrow: jest.fn().mockResolvedValue(entries[0]!.schoolClass), findMany: jest.fn().mockImplementation(async ({ where }) => [{ id: where.id ?? 'class' }]), ...mutations },
     timeSlotDefinition: { findMany: jest.fn().mockResolvedValue(slots), ...mutations },
     timetableVersion: { findMany: jest.fn().mockResolvedValue([version]), ...mutations },
     timetableEntry: { findMany: jest.fn().mockResolvedValue(entries), ...mutations },
@@ -63,7 +64,10 @@ function harness(twoComponents = false) {
     ppctClassAssociation: { findMany: jest.fn().mockResolvedValue([association]), ...mutations },
     ppctVersion: { findMany: jest.fn().mockResolvedValue([{ id: 'version', ppctPlanId: 'plan', versionNumber: 1, status: 'PUBLISHED', itemRevisions: revisions }]), ...mutations },
     ppctItemLineage: { findMany: jest.fn().mockResolvedValue([]), ...mutations },
-    $executeRaw: write, $queryRaw: write,
+    $executeRaw: jest.fn(async (sql: TemplateStringsArray) => {
+      if (sql.length !== 1 || sql[0] !== 'SET TRANSACTION READ ONLY') return write();
+      return 0;
+    }), $queryRaw: write,
   };
   const prisma = { $transaction: jest.fn(async <T>(work: (client: Prisma.TransactionClient) => Promise<T>, _options: object) => work(tx as never)) };
   const audit = { write: jest.fn() };
@@ -76,8 +80,175 @@ function harness(twoComponents = false) {
   const progress = new ProgressDebtService(prisma as never, allocation, { now: () => now }, config as never);
   const run = <T>(work: (replay: CalendarExceptionReplay, client: Prisma.TransactionClient) => Promise<T>, input = candidate) =>
     overlays.withCalendarPreviewReplay(input, work);
-  return { tx, prisma, audit, write, allocation, progress, structural, sourceReads, config, entries, run, overlays };
+  return { tx, prisma, audit, write, allocation, progress, structural, sourceReads, config, entries, run, overlays, calendar, version, association, associations };
 }
+
+function scopeHarness() {
+  const h = harness();
+  const entries = [h.entries[0]!,
+    { ...h.entries[0]!, id: 'entry-b', subjectId: 'subject-b' },
+    { ...h.entries[0]!, id: 'entry-c', schoolClassId: 'class-2', teacherUserId: 'teacher-2',
+      schoolClass: { ...h.entries[0]!.schoolClass, id: 'class-2', gradeLevel: 11 } },
+  ].map((entry) => ({ ...entry, teachingAssignment: { ...entry.teachingAssignment,
+    schoolClassId: entry.schoolClassId, subjectId: entry.subjectId, teacherUserId: entry.teacherUserId } }));
+  const associations = entries.map((entry) => ({ ...h.association, schoolClassId: entry.schoolClassId, subjectId: entry.subjectId }));
+  h.associations.findOverlappingRange.mockResolvedValue(associations);
+  h.tx.ppctClassAssociation.findMany.mockImplementation(async ({ where }) => associations.filter((row) =>
+    row.schoolClassId === where.schoolClassId && row.subjectId === where.subjectId));
+  h.tx.timetableEntry.findMany.mockImplementation(async ({ where }) => entries.filter((row) =>
+    (!where.schoolClassId || row.schoolClassId === where.schoolClassId)
+    && (!where.subjectId || row.subjectId === where.subjectId)
+    && (!where.OR || where.OR.some((root: { schoolClassId: string; subjectId: string }) =>
+      root.schoolClassId === row.schoolClassId && root.subjectId === row.subjectId))));
+  const classes = [...new Map(entries.map((row) => [row.schoolClass.id, row.schoolClass])).values()];
+  h.tx.schoolClass.findMany.mockImplementation(async ({ where }) => classes.filter((row) =>
+    (!where.id || where.id === row.id) && (where.gradeLevel === undefined || where.gradeLevel === row.gradeLevel)));
+  h.tx.timetableVersion.findMany.mockResolvedValue([{ ...h.version, calendarVersion: h.calendar }]);
+  const workload = { resolveManyInTransaction: jest.fn(), resolveInTransaction: jest.fn().mockImplementation(async (_tx, input) => ({
+    status: 'PASS', scope: input, earnedCredit: 0, requiredCredit: 3, curricularWorkload: { contributions: [] },
+  })) };
+  workload.resolveManyInTransaction.mockImplementation(async (tx, inputs: unknown[]) =>
+    Promise.all(inputs.map((input) => workload.resolveInTransaction(tx, input))));
+  const service = new CalendarCandidateConsequenceService(h.overlays, h.structural, h.allocation, h.progress, workload as never, { now: () => now });
+  return { ...h, service, workload, allEntries: entries };
+}
+
+describe('T53-B candidate scope orchestration with real structural/PPCT/Progress V2', () => {
+  it('deduplicates all-stream structural reads within one snapshot and never reuses them in another preview', async () => {
+    const h = scopeHarness();
+    expect((await h.service.resolve(candidate, now)).status).toBe('PASS');
+    expect(h.sourceReads).toHaveBeenCalledTimes(dates.length);
+    expect((await h.service.resolve(candidate, now)).status).toBe('PASS');
+    expect(h.sourceReads).toHaveBeenCalledTimes(dates.length * 2);
+  });
+  it.each([
+    [{ scope: 'SCHOOL_WIDE' as const }, ['class:subject', 'class:subject-b', 'class-2:subject']],
+    [{ scope: 'GRADE' as const, gradeLevel: 10 }, ['class:subject', 'class:subject-b']],
+    [{ scope: 'CLASS' as const, schoolClassId: 'class-2' }, ['class-2:subject']],
+  ])('discovers every affected stream for %j and replays later items without credit/debt', async (selector, expectedRoots) => {
+    const h = scopeHarness();
+    const saved = JSON.stringify(h.allEntries);
+    const result = await h.service.resolve({ ...candidate, ...selector }, now);
+    expect(result.status).toBe('PASS');
+    expect(result.streams.map((s) => `${s.scope.schoolClassId}:${s.scope.subjectId}`).sort()).toEqual([...expectedRoots].sort());
+    for (const stream of result.streams) {
+      expect(stream.ppct.status).toBe('PASS');
+      expect(stream.ppct.before.normalAllocations.map((r) => r.expectedPpctItem?.ppctItemId)).toEqual(['CORE-item-1', 'CORE-item-2', 'CORE-item-3']);
+      expect(stream.ppct.after.normalAllocations.map((r) => r.expectedPpctItem?.ppctItemId ?? null)).toEqual([null, 'CORE-item-1', 'CORE-item-2']);
+      expect(stream.progress.before.counts).toMatchObject({ distributedElapsedCount: 3, openDebtCount: 0, completedCount: 0 });
+      expect(stream.progress.after.counts).toMatchObject({ distributedElapsedCount: 2, openDebtCount: 0, completedCount: 0 });
+    }
+    expect(result.boundary).toMatchObject({ fromCivilDate: dates[0], throughCivilDate: '2026-08-31' });
+    expect(result.teachers.every((t) => t.after === t.before && t.delta?.earnedCredit === 0 && t.status === 'PASS')).toBe(true);
+    expect(result.coverage).toEqual({ ppctItemAllocation: 'ASSESSED', debt: 'ASSESSED', workload: 'ASSESSED' });
+    expect(h.prisma.$transaction).toHaveBeenCalledTimes(1);
+    for (const [tx] of h.sourceReads.mock.calls) expect(tx).toBe(h.tx);
+    for (const [tx] of h.workload.resolveInTransaction.mock.calls) expect(tx).toBe(h.tx);
+    expect(JSON.stringify(h.allEntries)).toBe(saved);
+    expect(h.write).not.toHaveBeenCalled();
+    expect(h.audit.write).not.toHaveBeenCalled();
+  });
+
+  it('includes downstream assignment, substitute and independent special-programme teachers once and reads official authority once each', async () => {
+    const h = scopeHarness();
+    h.tx.operationalLessonDisposition.findMany.mockImplementation(async (args) => args.select
+      ? [{ responsibleTeacherUserId: 'teacher', assignedTeacherUserId: 'substitute' }] : []);
+    h.tx.specialActivity.findMany.mockImplementation(async (args) => args.select
+      ? [{ staffing: [{ scheduledTeacherUserId: 'programme-teacher' }, { scheduledTeacherUserId: 'teacher' }] }] : []);
+    const result = await h.service.resolve(candidate, now);
+    expect(result.teachers.map((t) => t.targetUserId)).toEqual(['programme-teacher', 'substitute', 'teacher', 'teacher-2']);
+    expect(h.workload.resolveInTransaction).toHaveBeenCalledTimes(4);
+    expect(h.workload.resolveInTransaction).toHaveBeenCalledWith(h.tx, {
+      academicYearId: 'year', targetUserId: 'substitute', fromCivilDate: dates[0], toCivilDate: '2026-08-31', asOfInstant: now,
+    });
+    expect(result.teachers[0]).toMatchObject({ before: { earnedCredit: 0, requiredCredit: 3 }, after: { status: 'PASS' }, delta: { earnedCredit: 0, requiredCredit: 0 } });
+  });
+
+  it('uses date-effective SUPERSEDED and successor timetables across every impacted stream, including downstream teacher changes', async () => {
+    const h = scopeHarness();
+    const history = { ...h.version, effectiveUntil: date('2026-08-09'), status: 'SUPERSEDED', calendarVersion: h.calendar };
+    const successor = { ...h.version, id: 'successor', effectiveFrom: date(dates[1]), calendarVersion: h.calendar };
+    const allEntries = h.allEntries.flatMap((entry) => [
+      { ...entry, timetableVersion: history },
+      { ...entry, id: `${entry.id}-successor`, timetableVersionId: successor.id, timetableVersion: successor,
+        teacherUserId: 'new-teacher', teachingAssignment: { ...entry.teachingAssignment, teacherUserId: 'new-teacher' } },
+    ]);
+    h.tx.timetableVersion.findMany.mockImplementation(async ({ where }) => [history, successor].filter((v) =>
+      !where.effectiveFrom || (v.effectiveFrom <= where.effectiveFrom.lte && (!v.effectiveUntil || v.effectiveUntil >= where.effectiveFrom.lte))));
+    h.tx.timetableEntry.findMany.mockImplementation(async ({ where }) => allEntries.filter((row) =>
+      (!where.timetableVersionId || typeof where.timetableVersionId !== 'string' || row.timetableVersionId === where.timetableVersionId)
+      && (!where.schoolClassId || row.schoolClassId === where.schoolClassId)
+      && (!where.subjectId || row.subjectId === where.subjectId)));
+    const result = await h.service.resolve(candidate, now);
+    expect(result.boundary.timetableVersionIds).toEqual(['timetable', 'successor']);
+    expect(result.streams).toHaveLength(3);
+    for (const stream of result.streams) {
+      expect(stream.ppct.status).toBe('PASS');
+      expect(stream.ppct.after.normalAllocations.map((r) => r.expectedPpctItem?.sequence ?? null)).toEqual([null, 1, 2]);
+      expect(stream.ppct.after.normalAllocations.map((r) => r.occurrence.timetableVersionId)).toEqual(['timetable', 'successor', 'successor']);
+    }
+    expect(result.teachers.map((t) => t.targetUserId)).toEqual(['new-teacher', 'teacher', 'teacher-2']);
+  });
+
+  it('keeps a blocked stream and official workload blocked without losing the other streams', async () => {
+    const h = scopeHarness();
+    h.tx.ppctVersion.findMany.mockResolvedValue([]);
+    h.workload.resolveInTransaction.mockResolvedValue({ status: 'BLOCKED', earnedCredit: null, requiredCredit: null });
+    const result = await h.service.resolve(candidate, now);
+    expect(result.status).toBe('BLOCKED');
+    expect(result.streams).toHaveLength(3);
+    expect(result.streams.every((s) => s.ppct.status === 'BLOCKED' && s.progress.status === 'BLOCKED')).toBe(true);
+    expect(result.teachers.every((t) => t.status === 'BLOCKED' && t.after === null && t.delta === null)).toBe(true);
+    expect(result.coverage).toEqual(coverage);
+  });
+
+  it('does not turn an empty selector into whole-scope approval or fabricated teacher projections', async () => {
+    const h = scopeHarness();
+    const result = await h.service.resolve({ ...candidate, timeSelector: 'SESSION', session: 'AFTERNOON' }, now);
+    expect(result).toMatchObject({ status: 'BLOCKED', streams: [], teachers: [], affectedOccurrenceKeys: [] });
+    expect(result.limitations).toContain('NO_AFFECTED_BASE_OPPORTUNITIES');
+    expect(h.workload.resolveInTransaction).not.toHaveBeenCalled();
+  });
+
+  it.each(['missing-history', 'long-horizon', 'wrong-calendar', 'blocked-source'])("fails closed for %s without a workload delta", async (problem) => {
+    const h = scopeHarness();
+    if (problem === 'missing-history') h.tx.timetableVersion.findMany.mockResolvedValue([]);
+    if (problem === 'long-horizon') h.tx.timetableVersion.findMany.mockResolvedValue([
+      { ...h.version, calendarVersion: { ...h.calendar, endDate: date('2030-08-31') } },
+    ]);
+    if (problem === 'wrong-calendar') h.tx.timetableVersion.findMany.mockResolvedValue([
+      { ...h.version, calendarVersionId: 'wrong-calendar', calendarVersion: h.calendar },
+    ]);
+    if (problem === 'blocked-source') h.associations.findOverlappingRange.mockResolvedValue([]);
+    await expect(h.service.resolve(candidate, now)).rejects.toThrow('CALENDAR_REPLAY_');
+    expect(h.workload.resolveInTransaction).not.toHaveBeenCalled();
+    expect(h.write).not.toHaveBeenCalled();
+  });
+
+  it('does not use the legacy blanket gate for the reconciled candidate path', async () => {
+    const h = scopeHarness();
+    h.tx.makeupTeachingSchedule.findFirst.mockResolvedValue({ id: 'unrelated-legacy-probe' });
+    const result = await h.service.resolve(candidate, now);
+    expect(result.status).toBe('PASS');
+    expect(result.retainedFindings).toEqual([]);
+    expect(result.teachers.every((t) => t.reconciliation?.createsExecution === false)).toBe(true);
+    expect(h.tx.makeupTeachingSchedule.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('bounds class discovery without silently truncating candidate coverage', async () => {
+    const h = scopeHarness();
+    h.tx.schoolClass.findMany.mockResolvedValue(Array.from({ length: 513 }, (_, i) => ({ id: `class-${i}` })));
+    await expect(h.service.resolve(candidate, now)).rejects.toThrow('CLASS_LIMIT_EXCEEDED');
+    expect(h.sourceReads).not.toHaveBeenCalled();
+  });
+
+  it('rejects future as-of even when the selector has no affected opportunities', async () => {
+    const h = scopeHarness();
+    await expect(h.service.resolve({ ...candidate, timeSelector: 'SESSION', session: 'AFTERNOON' },
+      new Date(now.getTime() + 1))).rejects.toThrow('AS_OF_INVALID');
+    expect(h.prisma.$transaction).not.toHaveBeenCalled();
+  });
+});
 
 describe('P5-054 T53-B bounded internal calendar candidate replay', () => {
   it.each([dates[0], dates[1]])('retained calendar replay cannot discard or rebind execution sourced on %s', async (sourceDate) => {
@@ -142,7 +313,7 @@ describe('P5-054 T53-B bounded internal calendar candidate replay', () => {
       ppctClassAssociationId: 'association', ppctPlanId: 'plan', ppctVersionId: 'version', ppctItemRevisionId: 'CORE-revision-1', component: 'CORE',
     } });
     expect(h.prisma.$transaction).toHaveBeenCalledTimes(1);
-    expect(h.prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: 'RepeatableRead' });
+    expect(h.prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: 'RepeatableRead', timeout: 60000 });
     for (const [tx] of h.sourceReads.mock.calls) expect(tx).toBe(h.tx);
     expect(JSON.stringify(h.entries)).toBe(original);
     const retained = await h.structural.resolveInTransaction(h.tx as never, { academicYearId: 'year', civilDate: dates[0] });
@@ -225,13 +396,13 @@ describe('P5-054 T53-B bounded internal calendar candidate replay', () => {
     const workspace = new OperationalWorkspaceContextService(h.prisma as never, authorization as never, h.structural, h.overlays);
     const request = { auth: { user: { id: 'operator', mustChangePassword: false } } } as AuthenticatedRequest;
     const result = await workspace.previewCalendarException(request, candidate);
-    expect(result).toMatchObject({ status: 'PASS', coverage }); // validation only
+    expect(result).toMatchObject({ status: 'BLOCKED', coverage }); // no consequence authority, no validation-only PASS
     expect(result).not.toHaveProperty('projection');
     expect(result).not.toHaveProperty('candidate');
-    expect(result.affected).toHaveLength(1);
+    expect(result.affected).toHaveLength(0);
     authorization.listEffectiveCapabilities.mockResolvedValue([]);
     await expect(workspace.previewCalendarException(request, candidate)).rejects.toThrow('Không có quyền');
-    expect(h.prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(h.prisma.$transaction).not.toHaveBeenCalled();
     expect(h.write).not.toHaveBeenCalled();
     expect(h.audit.write).not.toHaveBeenCalled();
   });
@@ -241,7 +412,7 @@ describe('P5-054 T53-B bounded internal calendar candidate replay', () => {
     h.tx[delegate].findFirst.mockResolvedValue({ id: 'retained-outside-horizon' });
     await expect(h.run((replay, tx) => h.allocation.replayCalendarCandidateInTransactionV2(tx, { ...scope, throughCivilDate: dates[0] }, replay)))
       .rejects.toThrow('RECONCILIATION_REQUIRED');
-    expect(h.tx[delegate].findFirst).toHaveBeenCalledWith({ where: { ...scope, status: 'ACTIVE' }, select: { id: true }, orderBy: { id: 'asc' } });
+    expect(h.tx[delegate].findFirst).toHaveBeenCalledWith({ where: { academicYearId: scope.academicYearId, schoolClassId: { in: [scope.schoolClassId] }, status: 'ACTIVE' }, select: { id: true }, orderBy: { id: 'asc' } });
     expect(h.sourceReads).not.toHaveBeenCalled();
     expect(h.write).not.toHaveBeenCalled();
     expect(h.audit.write).not.toHaveBeenCalled();
@@ -258,7 +429,7 @@ describe('P5-054 T53-B bounded internal calendar candidate replay', () => {
       sourceCivilDate: date(retainedDate), executionCivilDate: date(retainedDate), targetCivilDate: date(retainedDate) };
     h.tx[delegate].findFirst.mockImplementation(async ({ where }) => {
       // A date-restricted guard would miss future/out-of-horizon evidence.
-      expect(where).toEqual({ ...scope, status: 'ACTIVE' });
+      expect(where).toEqual({ academicYearId: scope.academicYearId, schoolClassId: { in: [scope.schoolClassId] }, status: 'ACTIVE' });
       return retained;
     });
     const saved = JSON.stringify(retained);
@@ -338,9 +509,13 @@ describe('P5-054 T53-B bounded internal calendar candidate replay', () => {
     await h.run(async (replay, tx) => {
       const source = await h.structural.resolveInTransaction(tx, { academicYearId: 'year', civilDate: dates[0] });
       expect(() => replay.apply(tx, { ...source, status: 'BLOCKED' })).toThrow('SOURCE_BLOCKED');
-      for (const effectiveKind of ['CALENDAR_INTERRUPTION', 'CALENDAR_EXCEPTION', 'SPECIAL_ACTIVITY_SUPPRESSED', 'OPERATIONAL_DISPOSITION'] as const) {
+      for (const effectiveKind of ['CALENDAR_INTERRUPTION', 'CALENDAR_EXCEPTION', 'OPERATIONAL_DISPOSITION'] as const) {
         expect(() => replay.apply(tx, { ...source, normalOccurrences: [{ ...source.normalOccurrences[0]!, effectiveKind }] })).toThrow('NON_BASE_SOURCE');
       }
+      const activitySuppressed = { ...source, normalOccurrences: [{ ...source.normalOccurrences[0]!, effectiveKind: 'SPECIAL_ACTIVITY_SUPPRESSED' as const }] };
+      const changed = replay.apply(tx, activitySuppressed);
+      expect(changed.normalOccurrences[0]?.effectiveKind).toBe('CALENDAR_EXCEPTION');
+      expect(changed.specialActivityOccurrences).toBe(activitySuppressed.specialActivityOccurrences);
       const differentCalendar = { ...source, normalOccurrences: [{ ...source.normalOccurrences[0]!, academicCalendarVersionId: 'historical-calendar' }] };
       expect(replay.apply(tx, differentCalendar)).toEqual(differentCalendar);
     });

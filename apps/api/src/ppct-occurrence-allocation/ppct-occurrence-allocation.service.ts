@@ -273,17 +273,18 @@ export class PpctOccurrenceAllocationService {
   async replayCalendarCandidateInTransactionV2(tx: Prisma.TransactionClient, input: ResolvePpctOccurrenceAllocationInput,
     replay: CalendarExceptionReplay) {
     await replay.assertStream(tx, input);
-    const before = await this.resolveV2Source(tx, input);
+    const before = await this.resolveV2Source(tx, input, replay, false);
     const after = await this.resolveV2Source(tx, input, replay);
     return replay.evidence(tx, { status: before.status === 'BLOCKED' || after.status === 'BLOCKED' ? 'BLOCKED' as const : 'PASS' as const,
       scope: input, before, after });
   }
 
   private async resolveV2Source(tx: Prisma.TransactionClient, input: ResolvePpctOccurrenceAllocationInput,
-    replay?: CalendarExceptionReplay): Promise<Omit<PpctOccurrenceAllocationResult, 'evaluatedAt'>> {
+    replay?: CalendarExceptionReplay, applyCandidate = true): Promise<Omit<PpctOccurrenceAllocationResult, 'evaluatedAt'>> {
     const resolveSource = async (civilDate: CivilDateString) => {
-      const source = await this.structural.resolveInTransaction(tx, { academicYearId: input.academicYearId, civilDate });
-      return replay ? replay.apply(tx, source) : source;
+      const read = () => this.structural.resolveInTransaction(tx, { academicYearId: input.academicYearId, civilDate });
+      const source = replay ? await replay.readSource(tx, civilDate, read) : await read();
+      return replay && applyCandidate ? replay.apply(tx, source) : source;
     };
     const throughDate = parseCivilDate(input.throughCivilDate);
     const candidateDates = await this.discoverCandidateDates(tx, input, throughDate);

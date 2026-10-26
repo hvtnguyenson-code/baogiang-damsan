@@ -57,6 +57,8 @@ import {
   intervalsOverlapTimes,
 } from '../resolved-occurrences/effective-occupancy';
 import { formatBlockedReason } from '../effective-schedule/effective-schedule-policy';
+import { OfficialWorkloadProjectionService } from '../official-workload/official-workload-projection.service';
+import { createHash } from 'node:crypto';
 
 const CREATE_RACE_MESSAGE = 'Lệnh xung đột với một thay đổi đồng thời hoặc dữ liệu nghiệp vụ đang có.';
 const STALE_MESSAGE = 'Bản ghi đã thay đổi; hãy tải lại trước khi đảo ngược.';
@@ -71,6 +73,7 @@ export class MakeupSchedulesService {
     private readonly progressDebt: ProgressDebtService,
     private readonly resolvedOccurrences: ResolvedLessonOccurrencesService,
     @Inject(OVERLAY_CLOCK) private readonly clock: OverlayClock,
+    private readonly workload?: OfficialWorkloadProjectionService,
   ) {}
 
   async listCandidates(
@@ -349,11 +352,8 @@ export class MakeupSchedulesService {
     };
   }
 
-  async create(
-    dto: CreateMakeupScheduleDto,
-    request: AuthenticatedRequest,
-  ): Promise<MakeupTeachingScheduleCreateResult> {
-    const normalized = {
+  private normalizeCreate(dto: CreateMakeupScheduleDto) {
+    return {
       academicYearId: dto.academicYearId,
       sourceNormalOccurrenceKey: dto.sourceNormalOccurrenceKey.trim(),
       targetCivilDate: dto.targetCivilDate,
@@ -362,6 +362,369 @@ export class MakeupSchedulesService {
       note: dto.note?.trim() ?? null,
       replacesId: dto.replacesId ?? null,
     };
+  }
+
+  private async prepareCreate(tx: Prisma.TransactionClient, normalized: ReturnType<MakeupSchedulesService['normalizeCreate']>, request: AuthenticatedRequest) {
+    // 2. Parse sourceNormalOccurrenceKey
+    const parts = normalized.sourceNormalOccurrenceKey.split(':');
+    if (parts.length !== 3 || parts[0] !== 'NORMAL') {
+      throw new BadRequestException('sourceNormalOccurrenceKey không đúng định dạng chuẩn tắc.');
+    }
+    const timetableEntryId = parts[1]!;
+    const sourceCivilDateStr = parts[2]!;
+
+    // 3. Look up timetableEntry
+    const entry = await tx.timetableEntry.findUnique({
+      where: { id: timetableEntryId },
+      include: {
+        timetableVersion: true,
+        timeSlotDefinition: true,
+        schoolClass: { select: { id: true, gradeLevel: true } },
+      },
+    });
+    if (!entry || entry.academicYearId !== normalized.academicYearId) {
+      throw new NotFoundException('Không tìm thấy cơ hội dạy nguồn hoặc không thuộc năm học.');
+    }
+    if (!entry.timetableVersion.calendarVersionId) {
+      throw new ConflictException('Phiên thời khóa biểu gốc không gắn với phiên lịch.');
+    }
+
+    // 4. Authorization check for exact persisted subject
+    await this.access.requireTeachingSubject(request, entry.subjectId);
+
+    // 5. Operational start check
+    const commandNow = this.clock.now();
+    const policyResolutionCivilDate = hcmCivilDate(commandNow);
+    const operationalStart = await this.businessConfiguration.resolveOperationalStartPolicy(
+      normalized.academicYearId,
+      policyResolutionCivilDate,
+      tx,
+    );
+    if (sourceCivilDateStr < operationalStart.operationalStartDate) {
+      throw new ConflictException(
+        'Cơ hội dạy thuộc giai đoạn trước vận hành; không thể lập lịch dạy bù công khai.',
+      );
+    }
+
+    // 6. Canonical progress/debt revalidation
+    const progressDebt = await this.progressDebt.resolveInTransactionV2(tx, {
+      academicYearId: normalized.academicYearId,
+      schoolClassId: entry.schoolClassId,
+      subjectId: entry.subjectId,
+      asOfInstant: commandNow,
+    });
+
+    if (progressDebt.status !== 'PASS') {
+      throw new ConflictException('Tiến độ/nợ tiết bị chặn hoặc không thể tính toán.');
+    }
+
+    const debtItem = progressDebt.items.find(
+      (item) => item.sourceNormalOccurrenceKey === normalized.sourceNormalOccurrenceKey,
+    );
+    if (!debtItem) {
+      throw new ConflictException('Không tìm thấy nghĩa vụ giảng dạy tương ứng.');
+    }
+
+    if (debtItem.classification !== 'PROVEN_OPEN_DEBT') {
+      if (debtItem.classification === 'UNCONFIRMED_COMPLETION_GAP') {
+        throw new ConflictException('Khoảng trống chưa xác nhận không phải nợ tiết được chứng minh.');
+      }
+      if (debtItem.classification === 'COMPLETED') {
+        throw new ConflictException('Nghĩa vụ đã hoàn thành; không thể lập lịch dạy bù.');
+      }
+      throw new ConflictException(
+        `Nghĩa vụ không ở trạng thái PROVEN_OPEN_DEBT (hiện tại: ${debtItem.classification}).`,
+      );
+    }
+
+    // 7. Check no ACTIVE fulfilling execution exists
+    const existingExec = await tx.curricularTeachingExecution.findFirst({
+      where: {
+        academicYearId: normalized.academicYearId,
+        schoolClassId: entry.schoolClassId,
+        subjectId: entry.subjectId,
+        sourceNormalOccurrenceKey: normalized.sourceNormalOccurrenceKey,
+        status: TeachingExecutionStatus.ACTIVE,
+      },
+    });
+    if (existingExec) {
+      throw new ConflictException(
+        'Nghĩa vụ đã có bằng chứng thực hiện (CurricularTeachingExecution) ACTIVE.',
+      );
+    }
+
+    // 8. Check no ACTIVE makeup exists for this obligation
+    const existingActiveMakeup = await tx.makeupTeachingSchedule.findFirst({
+      where: {
+        ppctClassAssociationId: debtItem.ppctClassAssociationId,
+        ppctPlanId: debtItem.ppctPlanId,
+        ppctVersionId: debtItem.ppctVersionId,
+        ppctItemId: debtItem.ppctItemId,
+        status: OperationalOverlayStatus.ACTIVE,
+      },
+    });
+    if (existingActiveMakeup) {
+      throw new ConflictException('Đã tồn tại lịch dạy bù ACTIVE cho nghĩa vụ PPCT này.');
+    }
+
+    // 9. Check source disposition
+    if (!debtItem.operationalLessonDispositionId) {
+      throw new ConflictException('Nghĩa vụ nợ không có disposition nguồn hợp lệ.');
+    }
+    const sourceDisposition = await tx.operationalLessonDisposition.findUnique({
+      where: { id: debtItem.operationalLessonDispositionId },
+    });
+    if (!sourceDisposition || sourceDisposition.status !== OperationalOverlayStatus.ACTIVE) {
+      throw new ConflictException('Disposition nguồn không còn ACTIVE.');
+    }
+    if (
+      sourceDisposition.dispositionType !== OperationalLessonDispositionType.ABSENCE_NO_REPLACEMENT &&
+      sourceDisposition.dispositionType !== OperationalLessonDispositionType.DIFFERENT_SUBJECT_SUPERVISION
+    ) {
+      throw new ConflictException('Disposition nguồn không thuộc loại phát sinh nợ hợp lệ.');
+    }
+
+    // 10. Target date & calendar validation
+    const targetDate = parseCivilDate(normalized.targetCivilDate);
+    const matchingCalendars = await tx.academicCalendarVersion.findMany({
+      where: {
+        academicYearId: normalized.academicYearId,
+        isActive: true,
+        startDate: { lte: targetDate },
+        endDate: { gte: targetDate },
+      },
+    });
+    if (matchingCalendars.length === 0) {
+      throw new ConflictException('Ngày mục tiêu nằm ngoài tất cả phiên lịch đang hoạt động của năm học.');
+    }
+    if (matchingCalendars.length > 1) {
+      throw new ConflictException(
+        'Ngày mục tiêu trùng với nhiều hơn một phiên lịch hoạt động trong năm học (mơ hồ).',
+      );
+    }
+    const targetCalendar = matchingCalendars[0]!;
+
+    // CalendarInterruption check
+    const interruption = await tx.calendarInterruption.findFirst({
+      where: {
+        calendarVersionId: targetCalendar.id,
+        startDate: { lte: targetDate },
+        endDate: { gte: targetDate },
+      },
+    });
+    if (interruption) {
+      throw new ConflictException(
+        'Ngày mục tiêu nằm trong khoảng gián đoạn lịch học (CalendarInterruption).',
+      );
+    }
+
+    // Target slot definition validation
+    const targetSlot = await tx.timeSlotDefinition.findUnique({
+      where: { id: normalized.targetTimeSlotDefinitionId },
+    });
+    if (!targetSlot || targetSlot.academicYearId !== normalized.academicYearId) {
+      throw new NotFoundException('Không tìm thấy tiết học mục tiêu hoặc không thuộc năm học.');
+    }
+    if (!targetSlot.isActive) {
+      throw new ConflictException('Tiết học mục tiêu không còn hoạt động.');
+    }
+
+    const targetWeekday = weekdayForCivilDate(targetDate);
+    if (targetSlot.weekday !== targetWeekday) {
+      throw new ConflictException('Tiết học mục tiêu không khớp thứ trong tuần của ngày mục tiêu.');
+    }
+    if (!targetSlot.allowMakeupTeaching) {
+      throw new ConflictException(
+        'Tiết học mục tiêu không cho phép dạy bù (allowMakeupTeaching = false).',
+      );
+    }
+
+    // Prospective check: target slot must not have started yet at command time
+    const targetStartTime = hcmSlotInstant(targetDate, targetSlot.startTime);
+    if (targetStartTime <= commandNow) {
+      throw new ConflictException(
+        'Tiết học mục tiêu phải bắt đầu sau thời điểm tạo lịch theo giờ Việt Nam.',
+      );
+    }
+
+    // CalendarException check for target class & time
+    const exceptions = await tx.calendarException.findMany({
+      where: {
+        academicCalendarVersionId: targetCalendar.id,
+        civilDate: targetDate,
+        status: OperationalOverlayStatus.ACTIVE,
+      },
+      include: { exactTimeSlots: true },
+    });
+    const suppresses = exceptions.some((exception) => {
+      const scopeMatch =
+        exception.scope === 'SCHOOL_WIDE' ||
+        (exception.scope === 'GRADE' && exception.gradeLevel === entry.schoolClass.gradeLevel) ||
+        (exception.scope === 'CLASS' && exception.schoolClassId === entry.schoolClassId);
+      const timeMatch =
+        exception.timeSelector === 'WHOLE_DAY' ||
+        (exception.timeSelector === 'SESSION' && exception.session === targetSlot.session) ||
+        (exception.timeSelector === 'EXACT_SLOTS' &&
+          exception.exactTimeSlots.some((s) => s.timeSlotDefinitionId === targetSlot.id));
+      return scopeMatch && timeMatch;
+    });
+    if (suppresses) {
+      throw new ConflictException(
+        'Tiết học mục tiêu của lớp bị triệt tiêu bởi ngoại lệ lịch học (CalendarException) ACTIVE.',
+      );
+    }
+
+    // 11. Teacher eligibility
+    const teacher = await tx.user.findUnique({
+      where: { id: normalized.scheduledTeacherUserId },
+      include: { profile: true },
+    });
+    if (!teacher || teacher.status !== 'ACTIVE' || !teacher.profile || !teacher.profile.isTeachingStaff) {
+      throw new ConflictException('Giáo viên được xếp lịch không phải nhân sự giảng dạy ACTIVE hợp lệ.');
+    }
+
+    const targetCivilDateStr = normalized.targetCivilDate as `${number}-${number}-${number}`;
+    const proofs = await tx.staffSubject.findMany({
+      where: {
+        userId: teacher.id,
+        ...staffSubjectCoverageWhere(entry.subjectId, targetCivilDateStr, targetCivilDateStr),
+      },
+    });
+    if (proofs.length === 0) {
+      throw new ConflictException('Giáo viên không có StaffSubject bao phủ ngày dạy bù cho môn học này.');
+    }
+    if (proofs.length > 1) {
+      throw new ConflictException(
+        'Giáo viên có nhiều hơn một StaffSubject hợp lệ cho môn học này trên ngày mục tiêu (mơ hồ).',
+      );
+    }
+    const proof = proofs[0]!;
+
+    // 12. Canonical resolution & effective occupancy collision checks
+    const targetCivilDateFormatted = formatCivilDate(targetDate) as `${number}-${number}-${number}`;
+    const resolution = await this.resolvedOccurrences.resolveInTransaction(tx, {
+      academicYearId: normalized.academicYearId,
+      civilDate: targetCivilDateFormatted,
+    });
+
+    if (resolution.status === 'BLOCKED') {
+      const firstFinding = resolution.findings[0];
+      const reason = firstFinding
+        ? formatBlockedReason(firstFinding)
+        : 'Lịch dạy ngày mục tiêu bị xung đột hoặc chưa đủ nhất quán.';
+      throw new ConflictException(`Ngày mục tiêu bị chặn giải quyết lịch: ${reason}`);
+    }
+
+    const occupancies = extractCanonicalOccupancies(resolution);
+
+    const targetStartTimeStr = targetSlot.startTime.toISOString().slice(11, 19);
+    const targetEndTimeStr = targetSlot.endTime.toISOString().slice(11, 19);
+
+    for (const occ of occupancies) {
+      if (intervalsOverlapTimes(targetStartTimeStr, targetEndTimeStr, occ.startTime, occ.endTime)) {
+        if (occ.schoolClassId === entry.schoolClassId) {
+          const sourceLabel =
+            occ.sourceKind === 'SPECIAL_ACTIVITY'
+              ? 'Hoạt động đặc biệt (SpecialActivity)'
+              : occ.sourceKind === 'MAKEUP_TEACHING'
+              ? 'Lịch dạy bù'
+              : 'Thời khóa biểu / phân công';
+          throw new ConflictException(`Lớp học đã có ${sourceLabel} ACTIVE trong cùng khoảng thời gian.`);
+        }
+        if (occ.teacherUserId === teacher.id) {
+          const sourceLabel =
+            occ.sourceKind === 'SPECIAL_ACTIVITY'
+              ? 'Hoạt động đặc biệt (SpecialActivity)'
+              : occ.sourceKind === 'MAKEUP_TEACHING'
+              ? 'Lịch dạy bù'
+              : 'Thời khóa biểu / phân công';
+          throw new ConflictException(`Giáo viên đã có ${sourceLabel} ACTIVE trong cùng khoảng thời gian.`);
+        }
+      }
+    }
+
+    // 13. Replacement validation
+    if (normalized.replacesId) {
+      const predecessor = await tx.makeupTeachingSchedule.findUnique({
+        where: { id: normalized.replacesId },
+      });
+      if (!predecessor) {
+        throw new NotFoundException('Không tìm thấy lịch dạy bù tiền nhiệm cần thay thế.');
+      }
+      if (predecessor.status !== OperationalOverlayStatus.REVERSED) {
+        throw new ConflictException('Lịch dạy bù tiền nhiệm phải ở trạng thái REVERSED.');
+      }
+      if (
+        predecessor.academicYearId !== normalized.academicYearId ||
+        predecessor.schoolClassId !== entry.schoolClassId ||
+        predecessor.subjectId !== entry.subjectId ||
+        predecessor.originalTimetableVersionId !== entry.timetableVersionId ||
+        predecessor.originalTimetableEntryId !== entry.id ||
+        formatCivilDate(predecessor.originalCivilDate) !== sourceCivilDateStr ||
+        predecessor.originalAcademicCalendarVersionId !== entry.timetableVersion.calendarVersionId ||
+        predecessor.originalTimeSlotDefinitionId !== entry.timeSlotDefinitionId ||
+        predecessor.originalTeachingAssignmentId !== entry.teachingAssignmentId ||
+        predecessor.responsibleTeacherUserId !== entry.teacherUserId ||
+        predecessor.ppctClassAssociationId !== debtItem.ppctClassAssociationId ||
+        predecessor.ppctPlanId !== debtItem.ppctPlanId ||
+        predecessor.ppctVersionId !== debtItem.ppctVersionId ||
+        predecessor.ppctItemId !== debtItem.ppctItemId
+      ) {
+        throw new ConflictException(
+          'Lịch dạy bù thay thế phải bảo toàn đúng nghĩa vụ giảng dạy gốc của lịch tiền nhiệm.',
+        );
+      }
+      const alreadyReplaced = await tx.makeupTeachingSchedule.findFirst({
+        where: { replacesId: predecessor.id },
+      });
+      if (alreadyReplaced) {
+        throw new ConflictException('Lịch dạy bù tiền nhiệm đã được thay thế trước đó.');
+      }
+    }
+
+    return { entry, sourceCivilDateStr, debtItem, sourceDisposition, targetDate, targetCalendar, targetSlot, teacher, proof, commandNow, progressDebt };
+  }
+
+  private async assessPrepared(tx: Prisma.TransactionClient, normalized: ReturnType<MakeupSchedulesService['normalizeCreate']>, prepared: Awaited<ReturnType<MakeupSchedulesService['prepareCreate']>>) {
+    if (!this.workload) throw new ConflictException('Chưa có nguồn kiểm chứng khối lượng dạy bù.');
+    const teachers = [];
+    for (const targetUserId of [...new Set([prepared.entry.teacherUserId, prepared.teacher.id,
+      ...(prepared.sourceDisposition.assignedTeacherUserId ? [prepared.sourceDisposition.assignedTeacherUserId] : [])])].sort()) {
+      const projection = await this.workload.resolveInTransaction(tx, { academicYearId: normalized.academicYearId, targetUserId,
+        fromCivilDate: formatCivilDate(prepared.targetCalendar.startDate), toCivilDate: formatCivilDate(prepared.targetCalendar.endDate), asOfInstant: prepared.commandNow });
+      if (projection.status !== 'PASS') throw new ConflictException('Khối lượng hoặc định mức chưa đủ nguồn kiểm chứng.');
+      // A schedule creates no execution or participation, modifies no policy,
+      // and consumes no PPCT. Return a proof of identical official input identities,
+      // without disclosing other subjects/classes or employment policy payloads.
+      teachers.push({ targetUserId, earnedCreditUnchanged: true, requiredCreditUnchanged: true,
+        executionIds: projection.curricularWorkload.contributions.map((c) => c.executionId),
+        sourceFingerprint: createHash('sha256').update(JSON.stringify(projection, (key, value: unknown) =>
+          ['evaluatedAt', 'asOfInstant'].includes(key) ? undefined : value)).digest('hex') });
+    }
+    const evidence = { status: 'PASS' as const, coverage: { ppctItemAllocation: 'ASSESSED' as const, debt: 'ASSESSED' as const, workload: 'ASSESSED' as const },
+      source: prepared.debtItem, target: { civilDate: normalized.targetCivilDate, calendarVersionId: prepared.targetCalendar.id,
+        timeSlotDefinitionId: prepared.targetSlot.id, teacherUserId: prepared.teacher.id, eligibilityStaffSubjectId: prepared.proof.id },
+      before: prepared.progressDebt.counts, after: prepared.progressDebt.counts, createsExecution: false,
+      consumesNewPpctItem: false, teachers };
+    return { ...evidence, consequenceFingerprint: createHash('sha256').update(JSON.stringify(evidence)).digest('hex') };
+  }
+
+  async preview(dto: CreateMakeupScheduleDto, request: AuthenticatedRequest) {
+    const normalized = this.normalizeCreate(dto);
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SET TRANSACTION READ ONLY`;
+      const prepared = await this.prepareCreate(tx, normalized, request);
+      const evidence = await this.assessPrepared(tx, normalized, prepared);
+      return { ...evidence, teachers: evidence.teachers.map(({ targetUserId, earnedCreditUnchanged, requiredCreditUnchanged }) =>
+        ({ targetUserId, earnedCreditUnchanged, requiredCreditUnchanged })) };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: 60000 });
+  }
+
+  async create(
+    dto: CreateMakeupScheduleDto,
+    request: AuthenticatedRequest,
+  ): Promise<MakeupTeachingScheduleCreateResult> {
+    const normalized = this.normalizeCreate(dto);
     const fingerprint = makeupCreateFingerprint(normalized);
 
     return this.withMutationRetry(async () =>
@@ -383,321 +746,11 @@ export class MakeupSchedulesService {
             };
           }
 
-          // 2. Parse sourceNormalOccurrenceKey
-          const parts = normalized.sourceNormalOccurrenceKey.split(':');
-          if (parts.length !== 3 || parts[0] !== 'NORMAL') {
-            throw new BadRequestException('sourceNormalOccurrenceKey không đúng định dạng chuẩn tắc.');
-          }
-          const timetableEntryId = parts[1]!;
-          const sourceCivilDateStr = parts[2]!;
-
-          // 3. Look up timetableEntry
-          const entry = await tx.timetableEntry.findUnique({
-            where: { id: timetableEntryId },
-            include: {
-              timetableVersion: true,
-              timeSlotDefinition: true,
-              schoolClass: { select: { id: true, gradeLevel: true } },
-            },
-          });
-          if (!entry || entry.academicYearId !== normalized.academicYearId) {
-            throw new NotFoundException('Không tìm thấy cơ hội dạy nguồn hoặc không thuộc năm học.');
-          }
-          if (!entry.timetableVersion.calendarVersionId) {
-            throw new ConflictException('Phiên thời khóa biểu gốc không gắn với phiên lịch.');
-          }
-
-          // 4. Authorization check for exact persisted subject
-          await this.access.requireTeachingSubject(request, entry.subjectId);
-
-          // 5. Operational start check
-          const commandNow = this.clock.now();
-          const policyResolutionCivilDate = hcmCivilDate(commandNow);
-          const operationalStart = await this.businessConfiguration.resolveOperationalStartPolicy(
-            normalized.academicYearId,
-            policyResolutionCivilDate,
-            tx,
-          );
-          if (sourceCivilDateStr < operationalStart.operationalStartDate) {
-            throw new ConflictException(
-              'Cơ hội dạy thuộc giai đoạn trước vận hành; không thể lập lịch dạy bù công khai.',
-            );
-          }
-
-          // 6. Canonical progress/debt revalidation
-          const progressDebt = await this.progressDebt.resolveInTransactionV2(tx, {
-            academicYearId: normalized.academicYearId,
-            schoolClassId: entry.schoolClassId,
-            subjectId: entry.subjectId,
-            asOfInstant: commandNow,
-          });
-
-          if (progressDebt.status !== 'PASS') {
-            throw new ConflictException('Tiến độ/nợ tiết bị chặn hoặc không thể tính toán.');
-          }
-
-          const debtItem = progressDebt.items.find(
-            (item) => item.sourceNormalOccurrenceKey === normalized.sourceNormalOccurrenceKey,
-          );
-          if (!debtItem) {
-            throw new ConflictException('Không tìm thấy nghĩa vụ giảng dạy tương ứng.');
-          }
-
-          if (debtItem.classification !== 'PROVEN_OPEN_DEBT') {
-            if (debtItem.classification === 'UNCONFIRMED_COMPLETION_GAP') {
-              throw new ConflictException('Khoảng trống chưa xác nhận không phải nợ tiết được chứng minh.');
-            }
-            if (debtItem.classification === 'COMPLETED') {
-              throw new ConflictException('Nghĩa vụ đã hoàn thành; không thể lập lịch dạy bù.');
-            }
-            throw new ConflictException(
-              `Nghĩa vụ không ở trạng thái PROVEN_OPEN_DEBT (hiện tại: ${debtItem.classification}).`,
-            );
-          }
-
-          // 7. Check no ACTIVE fulfilling execution exists
-          const existingExec = await tx.curricularTeachingExecution.findFirst({
-            where: {
-              academicYearId: normalized.academicYearId,
-              schoolClassId: entry.schoolClassId,
-              subjectId: entry.subjectId,
-              sourceNormalOccurrenceKey: normalized.sourceNormalOccurrenceKey,
-              status: TeachingExecutionStatus.ACTIVE,
-            },
-          });
-          if (existingExec) {
-            throw new ConflictException(
-              'Nghĩa vụ đã có bằng chứng thực hiện (CurricularTeachingExecution) ACTIVE.',
-            );
-          }
-
-          // 8. Check no ACTIVE makeup exists for this obligation
-          const existingActiveMakeup = await tx.makeupTeachingSchedule.findFirst({
-            where: {
-              ppctClassAssociationId: debtItem.ppctClassAssociationId,
-              ppctPlanId: debtItem.ppctPlanId,
-              ppctVersionId: debtItem.ppctVersionId,
-              ppctItemId: debtItem.ppctItemId,
-              status: OperationalOverlayStatus.ACTIVE,
-            },
-          });
-          if (existingActiveMakeup) {
-            throw new ConflictException('Đã tồn tại lịch dạy bù ACTIVE cho nghĩa vụ PPCT này.');
-          }
-
-          // 9. Check source disposition
-          if (!debtItem.operationalLessonDispositionId) {
-            throw new ConflictException('Nghĩa vụ nợ không có disposition nguồn hợp lệ.');
-          }
-          const sourceDisposition = await tx.operationalLessonDisposition.findUnique({
-            where: { id: debtItem.operationalLessonDispositionId },
-          });
-          if (!sourceDisposition || sourceDisposition.status !== OperationalOverlayStatus.ACTIVE) {
-            throw new ConflictException('Disposition nguồn không còn ACTIVE.');
-          }
-          if (
-            sourceDisposition.dispositionType !== OperationalLessonDispositionType.ABSENCE_NO_REPLACEMENT &&
-            sourceDisposition.dispositionType !== OperationalLessonDispositionType.DIFFERENT_SUBJECT_SUPERVISION
-          ) {
-            throw new ConflictException('Disposition nguồn không thuộc loại phát sinh nợ hợp lệ.');
-          }
-
-          // 10. Target date & calendar validation
-          const targetDate = parseCivilDate(normalized.targetCivilDate);
-          const matchingCalendars = await tx.academicCalendarVersion.findMany({
-            where: {
-              academicYearId: normalized.academicYearId,
-              isActive: true,
-              startDate: { lte: targetDate },
-              endDate: { gte: targetDate },
-            },
-          });
-          if (matchingCalendars.length === 0) {
-            throw new ConflictException('Ngày mục tiêu nằm ngoài tất cả phiên lịch đang hoạt động của năm học.');
-          }
-          if (matchingCalendars.length > 1) {
-            throw new ConflictException(
-              'Ngày mục tiêu trùng với nhiều hơn một phiên lịch hoạt động trong năm học (mơ hồ).',
-            );
-          }
-          const targetCalendar = matchingCalendars[0]!;
-
-          // CalendarInterruption check
-          const interruption = await tx.calendarInterruption.findFirst({
-            where: {
-              calendarVersionId: targetCalendar.id,
-              startDate: { lte: targetDate },
-              endDate: { gte: targetDate },
-            },
-          });
-          if (interruption) {
-            throw new ConflictException(
-              'Ngày mục tiêu nằm trong khoảng gián đoạn lịch học (CalendarInterruption).',
-            );
-          }
-
-          // Target slot definition validation
-          const targetSlot = await tx.timeSlotDefinition.findUnique({
-            where: { id: normalized.targetTimeSlotDefinitionId },
-          });
-          if (!targetSlot || targetSlot.academicYearId !== normalized.academicYearId) {
-            throw new NotFoundException('Không tìm thấy tiết học mục tiêu hoặc không thuộc năm học.');
-          }
-          if (!targetSlot.isActive) {
-            throw new ConflictException('Tiết học mục tiêu không còn hoạt động.');
-          }
-
-          const targetWeekday = weekdayForCivilDate(targetDate);
-          if (targetSlot.weekday !== targetWeekday) {
-            throw new ConflictException('Tiết học mục tiêu không khớp thứ trong tuần của ngày mục tiêu.');
-          }
-          if (!targetSlot.allowMakeupTeaching) {
-            throw new ConflictException(
-              'Tiết học mục tiêu không cho phép dạy bù (allowMakeupTeaching = false).',
-            );
-          }
-
-          // Prospective check: target slot must not have started yet at command time
-          const targetStartTime = hcmSlotInstant(targetDate, targetSlot.startTime);
-          if (targetStartTime <= commandNow) {
-            throw new ConflictException(
-              'Tiết học mục tiêu phải bắt đầu sau thời điểm tạo lịch theo giờ Việt Nam.',
-            );
-          }
-
-          // CalendarException check for target class & time
-          const exceptions = await tx.calendarException.findMany({
-            where: {
-              academicCalendarVersionId: targetCalendar.id,
-              civilDate: targetDate,
-              status: OperationalOverlayStatus.ACTIVE,
-            },
-            include: { exactTimeSlots: true },
-          });
-          const suppresses = exceptions.some((exception) => {
-            const scopeMatch =
-              exception.scope === 'SCHOOL_WIDE' ||
-              (exception.scope === 'GRADE' && exception.gradeLevel === entry.schoolClass.gradeLevel) ||
-              (exception.scope === 'CLASS' && exception.schoolClassId === entry.schoolClassId);
-            const timeMatch =
-              exception.timeSelector === 'WHOLE_DAY' ||
-              (exception.timeSelector === 'SESSION' && exception.session === targetSlot.session) ||
-              (exception.timeSelector === 'EXACT_SLOTS' &&
-                exception.exactTimeSlots.some((s) => s.timeSlotDefinitionId === targetSlot.id));
-            return scopeMatch && timeMatch;
-          });
-          if (suppresses) {
-            throw new ConflictException(
-              'Tiết học mục tiêu của lớp bị triệt tiêu bởi ngoại lệ lịch học (CalendarException) ACTIVE.',
-            );
-          }
-
-          // 11. Teacher eligibility
-          const teacher = await tx.user.findUnique({
-            where: { id: normalized.scheduledTeacherUserId },
-            include: { profile: true },
-          });
-          if (!teacher || teacher.status !== 'ACTIVE' || !teacher.profile || !teacher.profile.isTeachingStaff) {
-            throw new ConflictException('Giáo viên được xếp lịch không phải nhân sự giảng dạy ACTIVE hợp lệ.');
-          }
-
-          const targetCivilDateStr = normalized.targetCivilDate as `${number}-${number}-${number}`;
-          const proofs = await tx.staffSubject.findMany({
-            where: {
-              userId: teacher.id,
-              ...staffSubjectCoverageWhere(entry.subjectId, targetCivilDateStr, targetCivilDateStr),
-            },
-          });
-          if (proofs.length === 0) {
-            throw new ConflictException('Giáo viên không có StaffSubject bao phủ ngày dạy bù cho môn học này.');
-          }
-          if (proofs.length > 1) {
-            throw new ConflictException(
-              'Giáo viên có nhiều hơn một StaffSubject hợp lệ cho môn học này trên ngày mục tiêu (mơ hồ).',
-            );
-          }
-          const proof = proofs[0]!;
-
-          // 12. Canonical resolution & effective occupancy collision checks
-          const targetCivilDateFormatted = formatCivilDate(targetDate) as `${number}-${number}-${number}`;
-          const resolution = await this.resolvedOccurrences.resolveInTransaction(tx, {
-            academicYearId: normalized.academicYearId,
-            civilDate: targetCivilDateFormatted,
-          });
-
-          if (resolution.status === 'BLOCKED') {
-            const firstFinding = resolution.findings[0];
-            const reason = firstFinding
-              ? formatBlockedReason(firstFinding)
-              : 'Lịch dạy ngày mục tiêu bị xung đột hoặc chưa đủ nhất quán.';
-            throw new ConflictException(`Ngày mục tiêu bị chặn giải quyết lịch: ${reason}`);
-          }
-
-          const occupancies = extractCanonicalOccupancies(resolution);
-
-          const targetStartTimeStr = targetSlot.startTime.toISOString().slice(11, 19);
-          const targetEndTimeStr = targetSlot.endTime.toISOString().slice(11, 19);
-
-          for (const occ of occupancies) {
-            if (intervalsOverlapTimes(targetStartTimeStr, targetEndTimeStr, occ.startTime, occ.endTime)) {
-              if (occ.schoolClassId === entry.schoolClassId) {
-                const sourceLabel =
-                  occ.sourceKind === 'SPECIAL_ACTIVITY'
-                    ? 'Hoạt động đặc biệt (SpecialActivity)'
-                    : occ.sourceKind === 'MAKEUP_TEACHING'
-                    ? 'Lịch dạy bù'
-                    : 'Thời khóa biểu / phân công';
-                throw new ConflictException(`Lớp học đã có ${sourceLabel} ACTIVE trong cùng khoảng thời gian.`);
-              }
-              if (occ.teacherUserId === teacher.id) {
-                const sourceLabel =
-                  occ.sourceKind === 'SPECIAL_ACTIVITY'
-                    ? 'Hoạt động đặc biệt (SpecialActivity)'
-                    : occ.sourceKind === 'MAKEUP_TEACHING'
-                    ? 'Lịch dạy bù'
-                    : 'Thời khóa biểu / phân công';
-                throw new ConflictException(`Giáo viên đã có ${sourceLabel} ACTIVE trong cùng khoảng thời gian.`);
-              }
-            }
-          }
-
-          // 13. Replacement validation
-          if (normalized.replacesId) {
-            const predecessor = await tx.makeupTeachingSchedule.findUnique({
-              where: { id: normalized.replacesId },
-            });
-            if (!predecessor) {
-              throw new NotFoundException('Không tìm thấy lịch dạy bù tiền nhiệm cần thay thế.');
-            }
-            if (predecessor.status !== OperationalOverlayStatus.REVERSED) {
-              throw new ConflictException('Lịch dạy bù tiền nhiệm phải ở trạng thái REVERSED.');
-            }
-            if (
-              predecessor.academicYearId !== normalized.academicYearId ||
-              predecessor.schoolClassId !== entry.schoolClassId ||
-              predecessor.subjectId !== entry.subjectId ||
-              predecessor.originalTimetableVersionId !== entry.timetableVersionId ||
-              predecessor.originalTimetableEntryId !== entry.id ||
-              formatCivilDate(predecessor.originalCivilDate) !== sourceCivilDateStr ||
-              predecessor.originalAcademicCalendarVersionId !== entry.timetableVersion.calendarVersionId ||
-              predecessor.originalTimeSlotDefinitionId !== entry.timeSlotDefinitionId ||
-              predecessor.originalTeachingAssignmentId !== entry.teachingAssignmentId ||
-              predecessor.responsibleTeacherUserId !== entry.teacherUserId ||
-              predecessor.ppctClassAssociationId !== debtItem.ppctClassAssociationId ||
-              predecessor.ppctPlanId !== debtItem.ppctPlanId ||
-              predecessor.ppctVersionId !== debtItem.ppctVersionId ||
-              predecessor.ppctItemId !== debtItem.ppctItemId
-            ) {
-              throw new ConflictException(
-                'Lịch dạy bù thay thế phải bảo toàn đúng nghĩa vụ giảng dạy gốc của lịch tiền nhiệm.',
-              );
-            }
-            const alreadyReplaced = await tx.makeupTeachingSchedule.findFirst({
-              where: { replacesId: predecessor.id },
-            });
-            if (alreadyReplaced) {
-              throw new ConflictException('Lịch dạy bù tiền nhiệm đã được thay thế trước đó.');
-            }
+          const prepared = await this.prepareCreate(tx, normalized, request);
+          const { entry, sourceCivilDateStr, debtItem, sourceDisposition, targetDate, targetCalendar, targetSlot, teacher, proof, commandNow } = prepared;
+          const consequence = await this.assessPrepared(tx, normalized, prepared);
+          if (dto.expectedConsequenceFingerprint && dto.expectedConsequenceFingerprint !== consequence.consequenceFingerprint) {
+            throw new ConflictException('Dữ liệu đã thay đổi sau khi xem trước dạy bù. Hãy kiểm tra lại.');
           }
 
           // 14. Persist schedule
@@ -707,7 +760,7 @@ export class MakeupSchedulesService {
               originalTimetableVersionId: entry.timetableVersionId,
               originalTimetableEntryId: entry.id,
               originalCivilDate: parseCivilDate(sourceCivilDateStr),
-              originalAcademicCalendarVersionId: entry.timetableVersion.calendarVersionId,
+              originalAcademicCalendarVersionId: entry.timetableVersion.calendarVersionId!,
               originalTimeSlotDefinitionId: entry.timeSlotDefinitionId,
               schoolClassId: entry.schoolClassId,
               subjectId: entry.subjectId,
@@ -763,7 +816,7 @@ export class MakeupSchedulesService {
             collisionCoverage: COLLISION_COVERAGE,
           };
         },
-        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 60000 },
       ),
     );
   }
@@ -900,7 +953,7 @@ export class MakeupSchedulesService {
             collisionCoverage: COLLISION_COVERAGE,
           };
         },
-        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 60000 },
       ),
     );
   }

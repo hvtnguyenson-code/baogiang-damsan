@@ -27,7 +27,7 @@ function makeService(prisma: Record<string, unknown> = {}) {
   const audit = { write: jest.fn() };
   const access = { requireCalendar: jest.fn(), requireTeachingSchoolWide: jest.fn(), requireTeachingSubject: jest.fn() };
   const database = { ...prisma, $transaction: jest.fn((operation: ((tx: unknown) => unknown) | Promise<unknown>[]) => typeof operation === 'function' ? operation(prisma) : Promise.all(operation)) };
-  const service = new OperationalOverlaysService(database as never, audit as never, access as never, { now: () => instant });
+  const service = new OperationalOverlaysService(database as never, audit as never, access as never, { now: () => instant }, { evaluate: jest.fn().mockResolvedValue({ status: 'PASS', coverage: { ppctItemAllocation: 'ASSESSED', debt: 'ASSESSED', workload: 'ASSESSED' }, consequenceFingerprint: 'a'.repeat(64), retainedFindings: [] }) } as never);
   return { service, audit, access, database };
 }
 
@@ -120,7 +120,7 @@ describe('OperationalOverlaysService bounded command behavior', () => {
     const database = { $transaction: jest.fn().mockRejectedValue(error) };
     const audit = { write: jest.fn() };
     const access = { requireCalendar: jest.fn() };
-    const service = new OperationalOverlaysService(database as never, audit as never, access as never, { now: () => instant });
+    const service = new OperationalOverlaysService(database as never, audit as never, access as never, { now: () => instant }, { evaluate: jest.fn().mockResolvedValue({ status: 'PASS', coverage: { ppctItemAllocation: 'ASSESSED', debt: 'ASSESSED', workload: 'ASSESSED' }, consequenceFingerprint: 'a'.repeat(64), retainedFindings: [] }) } as never);
     await expect(service.createCalendarException(calendarDto, request)).rejects.toBeInstanceOf(ConflictException);
     expect(database.$transaction).toHaveBeenCalledTimes(3);
     expect(audit.write).not.toHaveBeenCalled();
@@ -128,7 +128,7 @@ describe('OperationalOverlaysService bounded command behavior', () => {
 
   it('does not retry an unknown database failure', async () => {
     const database = { $transaction: jest.fn().mockRejectedValue(new Error('unexpected')) };
-    const service = new OperationalOverlaysService(database as never, { write: jest.fn() } as never, { requireCalendar: jest.fn() } as never, { now: () => instant });
+    const service = new OperationalOverlaysService(database as never, { write: jest.fn() } as never, { requireCalendar: jest.fn() } as never, { now: () => instant }, { evaluate: jest.fn().mockResolvedValue({ status: 'PASS', coverage: { ppctItemAllocation: 'ASSESSED', debt: 'ASSESSED', workload: 'ASSESSED' }, consequenceFingerprint: 'a'.repeat(64), retainedFindings: [] }) } as never);
     await expect(service.createCalendarException(calendarDto, request)).rejects.toThrow('unexpected');
     expect(database.$transaction).toHaveBeenCalledTimes(1);
   });
@@ -249,6 +249,7 @@ describe('OperationalOverlaysService bounded command behavior', () => {
       },
     };
     const { service, audit } = makeService(tx);
+    Object.assign(service, { dispositionConsequencesInTransaction: jest.fn().mockResolvedValue({ status: 'PASS' }) });
     const reverseDto = {
       expectedUpdatedAt: instant.toISOString(),
       reversalReason: 'Đảo sau khi đã đảo lịch dạy bù',

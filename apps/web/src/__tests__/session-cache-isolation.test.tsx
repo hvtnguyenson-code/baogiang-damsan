@@ -2955,9 +2955,9 @@ describe('CX-01 session and React Query cache isolation', () => {
         if (authMeCount === 1) return jsonResponse(userAWithTeachingManage);
         return foregroundAuthMePromise;
       }
-      if (url.includes('academic-years')) {
+      if (url.endsWith('/operational-overlays/workspace/context')) {
         academicYearsListCount += 1;
-        return jsonResponse({ items: mockYears, total: 2 });
+        return jsonResponse({ years: mockYears, subjects: [], permissions: { teachingSchoolWide: true, teachingSubjectIds: [], calendarSchoolWide: false } });
       }
       if (url.includes('makeup-schedules/candidates')) {
         return jsonResponse({ status: 'PASS', items: [] });
@@ -3052,8 +3052,8 @@ describe('CX-01 session and React Query cache isolation', () => {
           resolveRetryAuthMe = resolve;
         });
       }
-      if (url.includes('academic-years')) {
-        return jsonResponse({ items: mockYears, total: 2 });
+      if (url.endsWith('/operational-overlays/workspace/context')) {
+        return jsonResponse({ years: mockYears, subjects: [], permissions: { teachingSchoolWide: true, teachingSubjectIds: [], calendarSchoolWide: false } });
       }
       if (url.includes('makeup-schedules/candidates')) {
         return jsonResponse({ status: 'PASS', items: [] });
@@ -3283,8 +3283,8 @@ describe('CX-01 session and React Query cache isolation', () => {
         if (authMeCount === 1) return jsonResponse(userAWithTeachingManage);
         return foregroundAuthMePromise;
       }
-      if (url.includes('academic-years')) {
-        return jsonResponse({ items: mockYears, total: 2 });
+      if (url.endsWith('/operational-overlays/workspace/context')) {
+        return jsonResponse({ years: mockYears, subjects: [], permissions: { teachingSchoolWide: true, teachingSubjectIds: [], calendarSchoolWide: false } });
       }
       if (url.includes('makeup-schedules/candidates')) {
         return jsonResponse({ status: 'PASS', items: [] });

@@ -53,6 +53,11 @@ interface DailyWorkloadEvaluation {
   appliedRules: WorkloadAdjustmentAppliedRule[];
 }
 
+interface WorkloadAuthoritySnapshot {
+  calendars: Map<string, Promise<Prisma.AcademicCalendarVersionGetPayload<{ include: { interruptions: true } }>[]>>;
+  policies: Map<string, Promise<BusinessPolicyResolution>>;
+}
+
 @Injectable()
 export class OfficialWorkloadProjectionService {
   constructor(
@@ -74,6 +79,20 @@ export class OfficialWorkloadProjectionService {
     tx: Prisma.TransactionClient,
     input: OfficialTeacherWorkloadProjectionInput,
   ): Promise<OfficialTeacherWorkloadProjection> {
+    return this.projectInTransaction(tx, input);
+  }
+
+  /** Deduplicates teacher-independent authority reads in one caller-owned
+   * transaction. Every teacher still uses the same official projection/formula. */
+  async resolveManyInTransaction(tx: Prisma.TransactionClient, inputs: OfficialTeacherWorkloadProjectionInput[]) {
+    const authority: WorkloadAuthoritySnapshot = { calendars: new Map(), policies: new Map() };
+    const projections: OfficialTeacherWorkloadProjection[] = [];
+    for (const input of inputs) projections.push(await this.projectInTransaction(tx, input, authority));
+    return projections;
+  }
+
+  private async projectInTransaction(tx: Prisma.TransactionClient, input: OfficialTeacherWorkloadProjectionInput,
+    authority?: WorkloadAuthoritySnapshot): Promise<OfficialTeacherWorkloadProjection> {
     this.validateInput(input);
     const evaluatedAt = new Date().toISOString();
     const findings: OfficialWorkloadFinding[] = [];
@@ -102,7 +121,7 @@ export class OfficialWorkloadProjectionService {
     }
 
     // 3. Required Workload & Adjustment Segments
-    const requiredResult = await this.resolveRequiredWorkload(tx, input);
+    const requiredResult = await this.resolveRequiredWorkload(tx, input, authority);
     findings.push(...requiredResult.findings);
 
     const hasBlockers = findings.some((f) => f.severity === 'BLOCKER') ||
@@ -241,6 +260,7 @@ export class OfficialWorkloadProjectionService {
   private async resolveRequiredWorkload(
     tx: Prisma.TransactionClient,
     input: OfficialTeacherWorkloadProjectionInput,
+    authority?: WorkloadAuthoritySnapshot,
   ): Promise<{
     status: 'PASS' | 'BLOCKED';
     totalRequiredCredit: number;
@@ -251,7 +271,8 @@ export class OfficialWorkloadProjectionService {
     const dates = this.enumerateCivilDates(input.fromCivilDate, input.toCivilDate);
 
     // Prefetch active calendar versions covering the academic year
-    const calendarVersions = await tx.academicCalendarVersion.findMany({
+    let calendarRead = authority?.calendars.get(input.academicYearId);
+    if (!calendarRead) calendarRead = tx.academicCalendarVersion.findMany({
       where: {
         academicYearId: input.academicYearId,
         isActive: true,
@@ -263,6 +284,8 @@ export class OfficialWorkloadProjectionService {
       },
       orderBy: [{ versionNumber: 'desc' }, { id: 'asc' }],
     });
+    authority?.calendars.set(input.academicYearId, calendarRead);
+    const calendarVersions = await calendarRead;
 
     // Prefetch target teacher's active homeroom assignments
     const homeroomAssignments = await tx.homeroomAssignment.findMany({
@@ -377,12 +400,16 @@ export class OfficialWorkloadProjectionService {
       // Policy resolution for date d
       let policyRes = policyCache.get(d);
       if (!policyRes) {
-        policyRes = await this.businessConfiguration.resolveEffectiveBusinessPolicy(
+        const key = `${input.academicYearId}:${d}`;
+        let policyRead = authority?.policies.get(key);
+        if (!policyRead) policyRead = this.businessConfiguration.resolveEffectiveBusinessPolicy(
           'WORKLOAD_ADJUSTMENT',
           { kind: 'ACADEMIC_YEAR', academicYearId: input.academicYearId },
           d,
           tx,
         );
+        authority?.policies.set(key, policyRead);
+        policyRes = await policyRead;
         policyCache.set(d, policyRes);
       }
 

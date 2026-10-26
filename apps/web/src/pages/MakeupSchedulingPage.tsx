@@ -11,11 +11,13 @@ import { useAuth } from '../auth/auth-context';
 import { Button } from '../components/ui/button';
 import { InlineAlert } from '../components/ui/feedback';
 import { DataTable, EmptyState, PageHeader, PageLoading, SelectField, StatusText, TextareaField } from '../components/ui/management';
-import { academicYearsApi } from '../lib/academic-structure-api';
+import { operationalOverlaysApi } from '../lib/operational-overlays-api';
 import { WorkflowError } from '../components/ui/workflow-error';
 import { transportError } from '../lib/teaching-workflow-presentation';
 import { hasSchoolCapability } from '../lib/capabilities';
 import { makeupSchedulesApi } from '../lib/makeup-schedules-api';
+import type { CreateMakeupScheduleInput, MakeupConsequencePreview } from '../lib/makeup-schedules-api';
+import { ApiError } from '../lib/api-client';
 
 
 function dispositionTypeLabel(type: string): string {
@@ -46,7 +48,7 @@ export function MakeupSchedulingPage() {
   );
   const hasAccess = isSchoolWide || subjectGrants.length > 0;
 
-  const [years, setYears] = useState<AcademicYearRecord[]>([]);
+  const [years, setYears] = useState<Array<Pick<AcademicYearRecord, 'id' | 'code' | 'name'>>>([]);
   const [academicYearId, setAcademicYearId] = useState('');
   const [selectedSubjectId, setSelectedSubjectId] = useState<string>(() => {
     if (!isSchoolWide && subjectGrants.length > 0) {
@@ -85,6 +87,23 @@ export function MakeupSchedulingPage() {
   const [success, setSuccess] = useState('');
 
   const loadSeqRef = useRef(0);
+  const [previewing, setPreviewing] = useState(false);
+  const [consequence, setConsequence] = useState<{ key: string; evidence: MakeupConsequencePreview } | null>(null);
+  const command = useRef<{ key: string; input: CreateMakeupScheduleInput } | null>(null);
+  const previewSequence = useRef(0);
+  const selectionKey = JSON.stringify([academicYearId, selectedCandidate?.sourceNormalOccurrenceKey, targetCivilDate,
+    targetTimeSlotDefinitionId, scheduledTeacherUserId, replacesSchedule?.id, note, candidatesStatus]);
+  const eligible = consequence?.key === selectionKey && consequence.evidence.status === 'PASS'
+    && /^[0-9a-f]{64}$/.test(consequence.evidence.consequenceFingerprint)
+    && Object.values(consequence.evidence.coverage).every((v) => v === 'ASSESSED')
+    && !consequence.evidence.createsExecution && !consequence.evidence.consumesNewPpctItem
+    && consequence.evidence.teachers.length > 0 && consequence.evidence.teachers.every((t) => t.earnedCreditUnchanged && t.requiredCreditUnchanged);
+  useEffect(() => {
+    previewSequence.current += 1;
+    command.current = null;
+    setConsequence(null);
+    setPreviewing(false);
+  }, [selectionKey]);
 
   useEffect(() => {
     if (!isSchoolWide && subjectGrants.length > 0) {
@@ -101,12 +120,13 @@ export function MakeupSchedulingPage() {
     }
 
     let active = true;
-    academicYearsApi.list({ page: 1, pageSize: 50 })
+    operationalOverlaysApi.getWorkspaceContext()
       .then((res) => {
         if (!active) return;
-        setYears(res.items);
-        if (res.items.length > 0) {
-          setAcademicYearId(res.items[0].id);
+        if (!Array.isArray(res.years)) throw new Error('Không xác minh được danh sách năm học trong phạm vi điều hành.');
+        setYears(res.years);
+        if (res.years.length > 0) {
+          setAcademicYearId(res.years[0].id);
         }
       })
       .catch((caught) => {
@@ -286,7 +306,7 @@ export function MakeupSchedulingPage() {
     setTargetTimeSlotDefinitionId('');
     setScheduledTeacherUserId('');
     setTargetOptions(null);
-    setNote(`Thay thế lịch dạy bù ${schedule.id}`);
+    setNote(`Thay thế lịch dạy bù ngày ${schedule.targetCivilDate}`);
     setError('');
     setSuccess('');
   }
@@ -303,7 +323,7 @@ export function MakeupSchedulingPage() {
 
   async function handleCreateSchedule(e: React.FormEvent) {
     e.preventDefault();
-    if (!selectedCandidate || candidatesStatus !== 'PASS' || !academicYearId) return;
+    if (!selectedCandidate || candidatesStatus !== 'PASS' || !academicYearId || !eligible || command.current?.key !== selectionKey) return;
 
     if (!targetCivilDate.trim()) {
       setError('Vui lòng chọn ngày dạy bù dự kiến.');
@@ -323,25 +343,41 @@ export function MakeupSchedulingPage() {
     setSuccess('');
 
     try {
-      const result = await makeupSchedulesApi.createSchedule({
-        academicYearId,
-        sourceNormalOccurrenceKey: selectedCandidate.sourceNormalOccurrenceKey,
-        targetCivilDate: targetCivilDate as CivilDateString,
-        targetTimeSlotDefinitionId: targetTimeSlotDefinitionId.trim(),
-        scheduledTeacherUserId: scheduledTeacherUserId.trim(),
-        replacesId: replacesSchedule ? replacesSchedule.id : undefined,
-        note: note.trim() || undefined,
-        requestKey: `mkp-${crypto.randomUUID()}`,
-      });
+      const result = await makeupSchedulesApi.createSchedule(command.current.input);
 
       setSuccess(`Lập lịch dạy bù thành công (${result.outcome === 'IDEMPOTENT_REPLAY' ? 'Ghi nhận lại' : 'Tạo mới'}). Hãy kiểm tra lịch vừa lập trong danh sách bên dưới.`);
       handleCancelSelection();
       await loadData(academicYearId, selectedSubjectId);
     } catch (caught) {
       setError(transportError(caught));
+      if (caught instanceof ApiError && [401, 403, 409].includes(caught.statusCode)) {
+        setConsequence(null);
+        command.current = null;
+      }
     } finally {
       setBusy(null);
     }
+  }
+
+  async function previewSchedule() {
+    if (!selectedCandidate || candidatesStatus !== 'PASS' || !targetCivilDate || !targetTimeSlotDefinitionId || !scheduledTeacherUserId) return;
+    const marker = ++previewSequence.current;
+    const key = selectionKey;
+    const input: CreateMakeupScheduleInput = { academicYearId, sourceNormalOccurrenceKey: selectedCandidate.sourceNormalOccurrenceKey,
+      targetCivilDate: targetCivilDate as CivilDateString, targetTimeSlotDefinitionId, scheduledTeacherUserId,
+      replacesId: replacesSchedule?.id, note: note.trim() || undefined, requestKey: `mkp-${crypto.randomUUID()}` };
+    setPreviewing(true);
+    setConsequence(null);
+    command.current = null;
+    setError('');
+    try {
+      const evidence = await makeupSchedulesApi.previewSchedule(input);
+      if (marker === previewSequence.current) {
+        setConsequence({ key, evidence });
+        command.current = { key, input: { ...input, expectedConsequenceFingerprint: evidence.consequenceFingerprint } };
+      }
+    } catch (caught) { if (marker === previewSequence.current) setError(transportError(caught)); }
+    finally { if (marker === previewSequence.current) setPreviewing(false); }
   }
 
   async function handleReverseSchedule(schedule: MakeupTeachingScheduleRecord) {
@@ -565,13 +601,18 @@ export function MakeupSchedulingPage() {
             />
 
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '16px' }}>
-              <Button type="submit" disabled={busy === 'submitting' || loadingOptions || !targetTimeSlotDefinitionId || !scheduledTeacherUserId}>
+              <Button type="button" disabled={previewing || busy === 'submitting' || loadingOptions || !targetTimeSlotDefinitionId || !scheduledTeacherUserId}
+                onClick={() => { void previewSchedule(); }}>{previewing ? 'Đang kiểm tra hệ quả…' : 'Xem trước hệ quả dạy bù'}</Button>
+              <Button type="submit" disabled={busy === 'submitting' || previewing || loadingOptions || !eligible}>
                 {busy === 'submitting' ? 'Đang tạo lịch...' : 'Xác nhận tạo lịch dạy bù'}
               </Button>
               <Button type="button" variant="secondary" onClick={handleCancelSelection}>
                 Hủy bỏ
               </Button>
             </div>
+            {eligible && consequence && <p role="status">Đã đối soát đúng nghĩa vụ và tiết dạy bù đã chọn. Không tiêu thụ PPCT mới;
+              {' '}nợ tiết: {consequence.evidence.before.openDebtCount} → {consequence.evidence.after.openDebtCount}.
+              {' '}Khối lượng đã thực hiện và định mức giữ nguyên. Lập lịch chưa phải hoàn thành tiết dạy.</p>}
           </form>
         </section>
       )}
@@ -706,6 +747,7 @@ export function MakeupSchedulingPage() {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         <input
                           type="text"
+                          aria-label="Lý do đảo lịch dạy bù"
                           placeholder="Lý do đảo lịch..."
                           className="form-field__input"
                           value={reversalReason}

@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, HttpException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, HttpException, Inject, Injectable, NotFoundException, forwardRef } from '@nestjs/common';
 import {
   AcademicWeekday,
   AuditResult,
@@ -24,6 +24,7 @@ import {
 import { AuditService } from '../audit/audit.service';
 import { NormalStructuralOccurrence } from '../resolved-occurrences/resolved-occurrence.types';
 import { CalendarExceptionReplay } from '../resolved-occurrences/calendar-exception-replay';
+import { CalendarCandidateConsequenceService } from './calendar-candidate-consequence.service';
 import { requestMeta } from '../auth/auth-http';
 import { AuthenticatedRequest } from '../auth/auth.types';
 import { formatCivilDate, parseCivilDate } from '../common/validation/civil-date';
@@ -43,6 +44,7 @@ export class OperationalOverlaysService {
     private readonly audit: AuditService,
     private readonly access: OperationalOverlayAccessService,
     @Inject(OVERLAY_CLOCK) private readonly clock: OverlayClock,
+    @Inject(forwardRef(() => CalendarCandidateConsequenceService)) private readonly consequences?: CalendarCandidateConsequenceService,
   ) {}
 
   /** Uses the exact commit-time calendar validation inside the caller's read-only preview transaction. */
@@ -58,13 +60,40 @@ export class OperationalOverlaysService {
    */
   async withCalendarPreviewReplay<T>(input: PreviewCalendarExceptionDto,
     evaluate: (replay: CalendarExceptionReplay, tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    const submitted = { ...input, exactTimeSlotDefinitionIds: input.exactTimeSlotDefinitionIds
+      ? [...input.exactTimeSlotDefinitionIds] : undefined };
     return this.prisma.$transaction(async (tx) => {
-      const value = await this.validateCalendarPreviewCandidate(tx, input);
+      // Enforce the internal preview boundary in PostgreSQL as well as in code.
+      // This must be the first statement, before validation establishes a snapshot.
+      await tx.$executeRaw`SET TRANSACTION READ ONLY`;
+      const value = await this.validateCalendarPreviewCandidate(tx, submitted);
       const candidate = Object.freeze({ ...value, exactTimeSlotDefinitionIds: [...value.exactTimeSlotDefinitionIds] });
       return CalendarExceptionReplay.withValidatedCandidate(tx, {
         ...candidate, civilDate: formatCivilDate(parseCivilDate(candidate.civilDate)),
-      }, (entry) => this.calendarPreviewCoversOccurrence(candidate, entry), (replay) => evaluate(replay, tx));
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+      }, (entry) => this.calendarPreviewCoversOccurrence(candidate, entry), async (replay) => {
+        await replay.assertCandidateRetainedScope(tx);
+        return evaluate(replay, tx);
+      });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: 60000 });
+  }
+
+  /** Candidate-wide authority; read-only and never an authorization to commit. */
+  async withCalendarConsequenceReplay<T>(input: PreviewCalendarExceptionDto,
+    evaluate: (replay: CalendarExceptionReplay, tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    const submitted = { ...input, exactTimeSlotDefinitionIds: input.exactTimeSlotDefinitionIds
+      ? [...input.exactTimeSlotDefinitionIds] : undefined };
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SET TRANSACTION READ ONLY`;
+      return this.withValidatedCalendarConsequence(tx, submitted, evaluate);
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: 60000 });
+  }
+
+  async withValidatedCalendarConsequence<T>(tx: Prisma.TransactionClient, input: PreviewCalendarExceptionDto,
+    evaluate: (replay: CalendarExceptionReplay, tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    const candidate = await this.validateCalendarPreviewCandidate(tx, input);
+    return CalendarExceptionReplay.withValidatedCandidate(tx, {
+      ...candidate, civilDate: formatCivilDate(parseCivilDate(candidate.civilDate)),
+    }, (entry) => this.calendarPreviewCoversOccurrence(candidate, entry), (replay) => evaluate(replay, tx), true);
   }
 
   /** Reuses the commit command's scope and slot coverage predicates; does not infer PPCT/debt. */
@@ -85,6 +114,7 @@ export class OperationalOverlaysService {
         return { outcome: 'IDEMPOTENT_REPLAY', record: toCalendarExceptionRecord(replay), collisionCoverage: COLLISION_COVERAGE };
       }
       await this.validateCalendarCreate(tx, normalized);
+      await this.requireCalendarConsequences(tx, dto);
       const parent = await tx.calendarException.create({
         data: {
           academicYearId: normalized.academicYearId,
@@ -108,7 +138,25 @@ export class OperationalOverlaysService {
         civilDate: normalized.civilDate, replacesId: row.replacesId, retrospective: this.isPast(normalized.civilDate), ...COLLISION_COVERAGE,
       });
       return { outcome: 'CREATED', record: toCalendarExceptionRecord(row), collisionCoverage: COLLISION_COVERAGE };
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 60000 }));
+  }
+
+  private async requireCalendarConsequences(tx: Prisma.TransactionClient, dto: CreateCalendarExceptionDto): Promise<void> {
+    if (!this.consequences) throw new ConflictException('Chưa có nguồn kiểm chứng hệ quả ngoại lệ lịch.');
+    try {
+      const evidence = await this.withValidatedCalendarConsequence(tx, dto,
+        (replay) => this.consequences!.evaluate(tx, replay, this.clock.now()));
+      if (evidence.status !== 'PASS' || Object.values(evidence.coverage).some((v) => v !== 'ASSESSED')) {
+        throw new ConflictException({ message: 'Hệ quả PPCT, nợ tiết hoặc khối lượng chưa đủ điều kiện. Hãy kiểm tra các bản ghi liên quan.',
+          retainedFindings: evidence.retainedFindings });
+      }
+      if (dto.expectedConsequenceFingerprint && dto.expectedConsequenceFingerprint !== evidence.consequenceFingerprint) {
+        throw new ConflictException('Dữ liệu đã thay đổi sau khi xem trước. Hãy tải lại và xác minh hệ quả.');
+      }
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      throw new ConflictException('Không thể đối soát đầy đủ nguồn và hệ quả ngoại lệ lịch. Hãy kiểm tra lại dữ liệu.');
+    }
   }
 
   async listCalendarExceptions(query: ListCalendarExceptionsDto, request: AuthenticatedRequest): Promise<CalendarExceptionListResponse> {
@@ -142,6 +190,24 @@ export class OperationalOverlaysService {
       }
       const existing = await tx.calendarException.findUnique({ where: { id }, include: calendarExceptionInclude });
       if (!existing) throw new NotFoundException('Không tìm thấy ngoại lệ lịch học.');
+      if (existing.status !== 'ACTIVE' || existing.updatedAt.toISOString() !== dto.expectedUpdatedAt) throw new ConflictException(STALE_MESSAGE);
+      if (!this.consequences) throw new ConflictException('Chưa có nguồn kiểm chứng hệ quả đảo ngược lịch.');
+      const candidate = {
+        academicYearId: existing.academicYearId, academicCalendarVersionId: existing.academicCalendarVersionId,
+        civilDate: formatCivilDate(existing.civilDate), scope: existing.scope, gradeLevel: existing.gradeLevel,
+        schoolClassId: existing.schoolClassId, timeSelector: existing.timeSelector, session: existing.session,
+        exactTimeSlotDefinitionIds: existing.exactTimeSlots.map((s) => s.timeSlotDefinitionId),
+        note: existing.note, replacesId: existing.replacesId,
+      };
+      try {
+        const evidence = await CalendarExceptionReplay.withValidatedCandidate(tx, candidate,
+          (entry) => this.calendarPreviewCoversOccurrence(candidate, entry),
+          (replay) => this.consequences!.evaluate(tx, replay, this.clock.now()), true, existing.id);
+        if (evidence.status !== 'PASS') throw new ConflictException({ message: 'Đảo ngược làm thay đổi nghĩa vụ hoặc khối lượng đã giữ. Hãy kiểm tra dữ liệu liên quan.', retainedFindings: evidence.retainedFindings });
+      } catch (error) {
+        if (error instanceof HttpException) throw error;
+        throw new ConflictException('Chưa đối soát được đầy đủ hệ quả đảo ngược lịch.');
+      }
       const reversedAt = this.clock.now();
       const changed = await tx.calendarException.updateMany({ where: { id, status: OperationalOverlayStatus.ACTIVE, updatedAt: new Date(dto.expectedUpdatedAt) }, data: {
         status: OperationalOverlayStatus.REVERSED, reversedByUserId: request.auth!.user.id, reversedAt,
@@ -155,7 +221,7 @@ export class OperationalOverlaysService {
         civilDate: formatCivilDate(row.civilDate), retrospective: this.isPast(formatCivilDate(row.civilDate)), ...COLLISION_COVERAGE,
       });
       return { outcome: 'REVERSED', record: toCalendarExceptionRecord(row), collisionCoverage: COLLISION_COVERAGE };
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 60000 }));
   }
 
   /** Read-only validation of the exact business preconditions used by the disposition commit command. */
@@ -178,7 +244,51 @@ export class OperationalOverlaysService {
     }
     return { sourceTimetableEntryId: source.id, sourceSubjectId: source.subjectId,
       candidateTeacherUserId: input.assignedTeacherUserId ?? null,
-      eligibilitySameSubject: eligibility.eligibilitySameSubject ?? null };
+      eligibilitySameSubject: eligibility.eligibilitySameSubject ?? null, source, eligibility };
+  }
+
+  async previewDispositionConsequences(input: PreviewLessonDispositionDto) {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SET TRANSACTION READ ONLY`;
+      return this.dispositionConsequencesInTransaction(tx, input);
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: 60000 });
+  }
+
+  private async dispositionConsequencesInTransaction(tx: Prisma.TransactionClient, input: PreviewLessonDispositionDto,
+    reversed?: Prisma.OperationalLessonDispositionGetPayload<object>) {
+    if (!this.consequences) throw new ConflictException('Chưa có nguồn đối soát hệ quả điều hành tiết dạy.');
+    const check = reversed ? null : await this.validateDispositionPreviewCandidate(tx, input);
+    const source = check?.source ?? await this.requireSourceEntry(tx, input.timetableEntryId);
+    if (!source.timetableVersion.calendarVersionId) throw new ConflictException('Nguồn thiếu lịch retained.');
+    const eligibility = check?.eligibility ?? reversed!;
+    return CalendarExceptionReplay.withValidatedCandidate(tx, {
+      academicYearId: source.academicYearId, academicCalendarVersionId: source.timetableVersion.calendarVersionId,
+      civilDate: formatCivilDate(parseCivilDate(input.sourceCivilDate)), scope: 'CLASS', gradeLevel: null,
+      schoolClassId: source.schoolClassId, timeSelector: 'EXACT_SLOTS', session: null,
+      exactTimeSlotDefinitionIds: [source.timeSlotDefinitionId],
+    }, (entry) => entry.timetableEntryId === source.id, (replay) => this.consequences!.evaluate(tx, replay, this.clock.now()), true, null, {
+      subjectId: source.subjectId, timetableEntryId: source.id, reversesId: reversed?.id ?? null,
+      eligibilityStaffSubjectId: typeof eligibility.eligibilityStaffSubjectId === 'string' ? eligibility.eligibilityStaffSubjectId : null,
+      disposition: { id: reversed?.id ?? 'PREVIEW:DISPOSITION', dispositionType: input.dispositionType,
+        responsibleTeacherUserId: source.teacherUserId, assignedTeacherUserId: input.assignedTeacherUserId ?? null,
+        eligibilityCheckedAt: eligibility.eligibilityCheckedAt ? 'PREVIEW:ELIGIBILITY_CHECKED' : null,
+        eligibilityWasActive: eligibility.eligibilityWasActive === true ? true : null,
+        eligibilityWasTeachingStaff: eligibility.eligibilityWasTeachingStaff === true ? true : null },
+    });
+  }
+
+  /** Subject managers receive only the selected stream and equality proof. The
+   * full teacher workload (other subjects/classes and employment rules) stays internal. */
+  dispositionConsequenceSummary(evidence: Awaited<ReturnType<CalendarCandidateConsequenceService['evaluate']>>, subjectId: string) {
+    const teacherIds = new Set(evidence.streams.filter((s) => s.scope.subjectId === subjectId).flatMap((s) =>
+      [...s.ppct.before.normalAllocations, ...s.ppct.after.normalAllocations].flatMap(({ occurrence: o }) =>
+        [o.responsibleTeacherUserId, ...(o.disposition?.assignedTeacherUserId ? [o.disposition.assignedTeacherUserId] : [])])));
+    return { status: evidence.status, coverage: evidence.coverage, consequenceFingerprint: evidence.status === 'PASS' ? evidence.consequenceFingerprint : undefined,
+      streams: evidence.streams.filter((s) => s.scope.subjectId === subjectId).map((s) => ({ scope: s.scope,
+        before: s.progress.before.counts, after: s.progress.after.counts, ppctChanges: s.ppctChanges })),
+      teachers: evidence.teachers.filter((t) => teacherIds.has(t.targetUserId)).map((t) => ({ targetUserId: t.targetUserId, status: t.status,
+        earnedCreditUnchanged: t.status === 'PASS', requiredCreditUnchanged: t.status === 'PASS', createsExecution: false })),
+    };
   }
 
   async createLessonDisposition(dto: CreateLessonDispositionDto, request: AuthenticatedRequest): Promise<OperationalLessonDispositionCreateResult> {
@@ -206,6 +316,15 @@ export class OperationalOverlaysService {
       await this.requireReplacement(tx, 'disposition', normalized.replacesId);
       const eligibility = await this.resolveEligibility(tx, dto, exact.subjectId);
       if (dto.assignedTeacherUserId) await this.assertTeacherAvailable(tx, dto.assignedTeacherUserId, sourceDate, exact.weekday, exact.timeSlotDefinitionId);
+      try {
+        const evidence = await this.dispositionConsequencesInTransaction(tx, { ...dto, academicYearId: exact.academicYearId, subjectId: exact.subjectId });
+        if (evidence.status !== 'PASS' || dto.expectedConsequenceFingerprint && evidence.consequenceFingerprint !== dto.expectedConsequenceFingerprint) {
+          throw new ConflictException('Hệ quả đã thay đổi hoặc chưa đủ điều kiện. Hãy xem trước lại phân công xử lý.');
+        }
+      } catch (error) {
+        if (error instanceof HttpException) throw error;
+        throw new ConflictException('Chưa đối soát được đầy đủ hệ quả phân công xử lý.');
+      }
       const row = await tx.operationalLessonDisposition.create({ data: {
         academicYearId: exact.academicYearId, timetableVersionId: exact.timetableVersionId, timetableEntryId: exact.id,
         sourceCivilDate: sourceDate, academicCalendarVersionId: exact.timetableVersion.calendarVersionId!,
@@ -224,7 +343,7 @@ export class OperationalOverlaysService {
         civilDate: dto.sourceCivilDate, retrospective: this.isPast(dto.sourceCivilDate), ...COLLISION_COVERAGE,
       });
       return { outcome: 'CREATED', record: toLessonDispositionRecord(row), collisionCoverage: COLLISION_COVERAGE };
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 60000 }));
   }
 
   async listLessonDispositions(query: ListLessonDispositionsDto, request: AuthenticatedRequest): Promise<OperationalLessonDispositionListResponse> {
@@ -269,6 +388,17 @@ export class OperationalOverlaysService {
       if (activeMakeup) {
         throw new ConflictException('Không thể đảo ngược disposition đang được tham chiếu bởi lịch dạy bù ACTIVE.');
       }
+      const current = await tx.operationalLessonDisposition.findUnique({ where: { id } });
+      if (!current || current.status !== 'ACTIVE' || current.updatedAt.toISOString() !== dto.expectedUpdatedAt) throw new ConflictException(STALE_MESSAGE);
+      try {
+        const evidence = await this.dispositionConsequencesInTransaction(tx, { academicYearId: current.academicYearId, subjectId: current.subjectId,
+          timetableEntryId: current.timetableEntryId, sourceCivilDate: formatCivilDate(current.sourceCivilDate),
+          dispositionType: current.dispositionType, assignedTeacherUserId: current.assignedTeacherUserId ?? undefined }, current);
+        if (evidence.status !== 'PASS') throw new ConflictException('Hoàn tác làm thay đổi minh chứng, nghĩa vụ hoặc khối lượng đã ghi nhận.');
+      } catch (error) {
+        if (error instanceof HttpException) throw error;
+        throw new ConflictException('Chưa đối soát được đầy đủ hệ quả hoàn tác tiết dạy.');
+      }
       const reversedAt = this.clock.now();
       const changed = await tx.operationalLessonDisposition.updateMany({ where: { id, status: OperationalOverlayStatus.ACTIVE, updatedAt: new Date(dto.expectedUpdatedAt) }, data: {
         status: OperationalOverlayStatus.REVERSED, reversedByUserId: request.auth!.user.id, reversedAt,
@@ -285,7 +415,7 @@ export class OperationalOverlaysService {
         civilDate: formatCivilDate(row.sourceCivilDate), retrospective: this.isPast(formatCivilDate(row.sourceCivilDate)), ...COLLISION_COVERAGE,
       });
       return { outcome: 'REVERSED', record: toLessonDispositionRecord(row), collisionCoverage: COLLISION_COVERAGE };
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 60000 }));
   }
 
   private normalizeCalendar(dto: CreateCalendarExceptionDto) {
@@ -344,7 +474,7 @@ export class OperationalOverlaysService {
     const dispositions = await tx.operationalLessonDisposition.findMany({ where: { academicCalendarVersionId: value.academicCalendarVersionId, sourceCivilDate: date, status: OperationalOverlayStatus.ACTIVE }, include: { timetableEntry: { include: { schoolClass: { select: { gradeLevel: true } }, timeSlotDefinition: { select: { session: true } } } } } });
     for (const row of dispositions) {
       if (this.scopeCovers(value, targetGrade, row.schoolClassId, row.timetableEntry.schoolClass.gradeLevel)
-        && this.timeCovers(value, slots, row.timeSlotDefinitionId, row.timetableEntry.timeSlotDefinition.session)) throw new ConflictException('Ngoại lệ sẽ triệt tiêu một disposition ACTIVE.');
+        && this.timeCovers(value, slots, row.timeSlotDefinitionId, row.timetableEntry.timeSlotDefinition.session)) throw new ConflictException({ message: 'Ngoại lệ sẽ triệt tiêu một disposition ACTIVE.', code: 'CALENDAR_REPLAY_DISPOSITION_SOURCE_CONFLICT', retainedEntityId: row.id });
     }
     const makeups = await tx.makeupTeachingSchedule.findMany({ where: { targetAcademicCalendarVersionId: value.academicCalendarVersionId, targetCivilDate: date, status: OperationalOverlayStatus.ACTIVE }, include: { targetTimeSlotDefinition: { select: { session: true } } } });
     const classIds = [...new Set(makeups.map((row) => row.schoolClassId))];
@@ -352,7 +482,7 @@ export class OperationalOverlaysService {
     const grades = new Map(classes.map((row) => [row.id, row.gradeLevel]));
     for (const row of makeups) {
       if (this.scopeCovers(value, targetGrade, row.schoolClassId, grades.get(row.schoolClassId) ?? -1)
-        && this.timeCovers(value, slots, row.targetTimeSlotDefinitionId, row.targetTimeSlotDefinition.session)) throw new ConflictException('Ngoại lệ sẽ triệt tiêu một lịch dạy bù ACTIVE.');
+        && this.timeCovers(value, slots, row.targetTimeSlotDefinitionId, row.targetTimeSlotDefinition.session)) throw new ConflictException({ message: 'Ngoại lệ sẽ triệt tiêu một lịch dạy bù ACTIVE.', code: 'CALENDAR_REPLAY_MAKEUP_TARGET_SUPPRESSED', retainedEntityId: row.id });
     }
   }
 

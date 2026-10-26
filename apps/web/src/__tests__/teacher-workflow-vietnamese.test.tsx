@@ -67,7 +67,7 @@ describe('P5-058 slice 4: teacher workflow Vietnamese', () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith('/auth/me')) return jsonResponse({ ...normalAuth, capabilities: [{ key: 'TEACHING_OPERATION_MANAGE', scope: 'SCHOOL_WIDE' }] });
-      if (url.includes('/academic-years')) return jsonResponse({ items: [{ id: 'year', name: 'Năm học thử' }] });
+      if (url.endsWith('/operational-overlays/workspace/context')) return jsonResponse({ years: [{ id: 'year', name: 'Năm học thử' }], subjects: [], permissions: { teachingSchoolWide: true, teachingSubjectIds: [], calendarSchoolWide: false } });
       if (url.includes('/candidates')) return jsonResponse({ status: 'PASS', items: [] });
       if (url.includes('/makeup-schedules')) return new Promise<Response>((resolve) => { resolveSchedules = resolve; });
       return jsonResponse({});

@@ -199,6 +199,29 @@ describe('OfficialWorkloadProjectionService (ADR-057, Sections 39-42)', () => {
   }
 
   describe('Curricular Workload Ownership (Section 40)', () => {
+    it('P5-054 bulk snapshot shares only calendar/policy reads; teacher credit/norm stay distinct and later calls read fresh authority', async () => {
+      const h = setupHarness({ curricularExecutions: [{ id: 'sub-execution', status: 'ACTIVE', kind: 'NORMAL', academicYearId,
+        actualTeacherUserId: targetTeacherId, responsibleTeacherUserId: otherTeacherId, executionCivilDate: new Date('2026-09-07Z'),
+        sourceCivilDate: new Date('2026-09-07Z'), schoolClassId: 'class', subjectId: 'subject', originalTimetableEntryId: 'entry', replacesId: null }] });
+      h.mockPrisma.homeroomAssignment.findMany.mockImplementation((args) => Promise.resolve(args.where.teacherUserId === targetTeacherId
+        ? [{ id: 'homeroom', schoolClassId: 'class', validFrom: new Date('2026-09-01Z'), validUntil: null }] : []));
+      const inputs = [targetTeacherId, otherTeacherId].map((targetUserId) => ({ academicYearId, targetUserId,
+        fromCivilDate: '2026-09-07' as CivilDateString, toCivilDate: '2026-09-12' as CivilDateString, asOfInstant }));
+      const independent = await Promise.all(inputs.map((input) => h.service.resolveInTransaction(h.mockPrisma as never, input)));
+      h.mockBusinessConfig.resolveEffectiveBusinessPolicy.mockClear();
+      h.mockPrisma.academicCalendarVersion.findMany.mockClear();
+      const bulk = await h.service.resolveManyInTransaction(h.mockPrisma as never, inputs);
+      const semantics = (value: unknown) => JSON.parse(JSON.stringify(value, (key, entry: unknown) => key === 'evaluatedAt' ? undefined : entry));
+      expect(semantics(bulk)).toEqual(semantics(independent));
+      expect(bulk.map((p) => [p.earnedCredit, p.requiredCredit])).toEqual([[4, 14], [3, 18]]);
+      expect(h.mockPrisma.academicCalendarVersion.findMany).toHaveBeenCalledTimes(1);
+      expect(h.mockBusinessConfig.resolveEffectiveBusinessPolicy).toHaveBeenCalledTimes(6);
+      h.mockBusinessConfig.resolveEffectiveBusinessPolicy.mockResolvedValue({ outcome: 'RESOLVED', policyVersionId: 'changed-policy',
+        payload: { baseWeeklyNorm: 28, rules: [] }, validatorVersion: 'v1', effectiveFrom: '2026-09-01', effectiveUntil: null });
+      const later = await h.service.resolveManyInTransaction(h.mockPrisma as never, inputs);
+      expect(later.map((p) => p.requiredCredit)).toEqual([28, 28]);
+      expect(h.mockPrisma.academicCalendarVersion.findMany).toHaveBeenCalledTimes(2);
+    });
     it.each(['NORMAL', 'MAKEUP'])('P5-054: retained %s workload cannot certify a candidate that removed its source obligation', async (kind) => {
       const executionDate = kind === 'MAKEUP' ? '2026-09-08' : '2026-09-07';
       const retainedExecution = {

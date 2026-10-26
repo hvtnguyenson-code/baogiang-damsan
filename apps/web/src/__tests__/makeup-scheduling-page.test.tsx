@@ -122,7 +122,11 @@ function createFetchMock(auth: unknown = schoolWideAuth, options: {
     const method = init?.method ?? 'GET';
 
     if (url.endsWith('/auth/me')) return jsonResponse(auth);
-    if (url.includes('/academic-years?')) return jsonResponse({ items: years, page: 1, pageSize: 50, total: 1 });
+    if (url.endsWith('/operational-overlays/workspace/context')) return jsonResponse({ years, subjects: [], permissions: { calendarSchoolWide: false, teachingSchoolWide: true, teachingSubjectIds: [] } });
+    if (url.endsWith('/makeup-schedules/preview')) return jsonResponse({ status: 'PASS', consequenceFingerprint: 'a'.repeat(64),
+      coverage: { ppctItemAllocation: 'ASSESSED', debt: 'ASSESSED', workload: 'ASSESSED' }, before: { completedCount: 0, openDebtCount: 1 },
+      after: { completedCount: 0, openDebtCount: 1 }, createsExecution: false, consumesNewPpctItem: false,
+      teachers: [{ earnedCreditUnchanged: true, requiredCreditUnchanged: true }] });
     if (url.includes('/makeup-schedules/target-options?')) {
       return jsonResponse(mockTargetOptions);
     }
@@ -268,6 +272,9 @@ describe('MakeupSchedulingPage', () => {
     expect(teacherSelect.tagName).toBe('SELECT');
 
     const submitBtn = screen.getByRole('button', { name: 'Xác nhận tạo lịch dạy bù' });
+    expect(submitBtn).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Xem trước hệ quả dạy bù' }));
+    await waitFor(() => expect(submitBtn).not.toBeDisabled());
     fireEvent.click(submitBtn);
 
     await waitFor(() => {
@@ -380,7 +387,7 @@ describe('MakeupSchedulingPage', () => {
         const method = init?.method ?? 'GET';
 
         if (url.endsWith('/auth/me')) return jsonResponse(schoolWideAuth);
-        if (url.includes('/academic-years?')) return jsonResponse({ items: years, page: 1, pageSize: 50, total: 1 });
+        if (url.endsWith('/operational-overlays/workspace/context')) return jsonResponse({ years, subjects: [], permissions: { calendarSchoolWide: false, teachingSchoolWide: true, teachingSubjectIds: [] } });
         if (url.includes('/makeup-schedules/target-options?')) return jsonResponse(mockTargetOptions);
 
         if (url.includes('/makeup-schedules/candidates?')) {
@@ -451,7 +458,7 @@ describe('MakeupSchedulingPage', () => {
         const method = init?.method ?? 'GET';
 
         if (url.endsWith('/auth/me')) return jsonResponse(schoolWideAuth);
-        if (url.includes('/academic-years?')) return jsonResponse({ items: years, page: 1, pageSize: 50, total: 1 });
+        if (url.endsWith('/operational-overlays/workspace/context')) return jsonResponse({ years, subjects: [], permissions: { calendarSchoolWide: false, teachingSchoolWide: true, teachingSubjectIds: [] } });
 
         if (url.includes('/makeup-schedules/candidates?')) {
           if (isReload) {
@@ -511,7 +518,7 @@ describe('MakeupSchedulingPage', () => {
         const method = init?.method ?? 'GET';
 
         if (url.endsWith('/auth/me')) return jsonResponse(schoolWideAuth);
-        if (url.includes('/academic-years?')) return jsonResponse({ items: years, page: 1, pageSize: 50, total: 1 });
+        if (url.endsWith('/operational-overlays/workspace/context')) return jsonResponse({ years, subjects: [], permissions: { calendarSchoolWide: false, teachingSchoolWide: true, teachingSubjectIds: [] } });
 
         if (url.includes('/makeup-schedules/candidates?')) {
           // Candidates returns BLOCKED immediately
@@ -555,7 +562,7 @@ describe('MakeupSchedulingPage', () => {
         const method = init?.method ?? 'GET';
 
         if (url.endsWith('/auth/me')) return jsonResponse(schoolWideAuth);
-        if (url.includes('/academic-years?')) return jsonResponse({ items: years, page: 1, pageSize: 50, total: 1 });
+        if (url.endsWith('/operational-overlays/workspace/context')) return jsonResponse({ years, subjects: [], permissions: { calendarSchoolWide: false, teachingSchoolWide: true, teachingSubjectIds: [] } });
 
         if (url.includes('/makeup-schedules/candidates?')) {
           return jsonResponse({
@@ -602,7 +609,7 @@ describe('MakeupSchedulingPage', () => {
         const method = init?.method ?? 'GET';
 
         if (url.endsWith('/auth/me')) return jsonResponse(schoolWideAuth);
-        if (url.includes('/academic-years?')) return jsonResponse({ items: years, page: 1, pageSize: 50, total: 1 });
+        if (url.endsWith('/operational-overlays/workspace/context')) return jsonResponse({ years, subjects: [], permissions: { calendarSchoolWide: false, teachingSchoolWide: true, teachingSubjectIds: [] } });
 
         if (url.includes('/makeup-schedules/candidates?')) {
           candidateCallCount++;
@@ -692,7 +699,7 @@ describe('MakeupSchedulingPage', () => {
         const method = init?.method ?? 'GET';
 
         if (url.endsWith('/auth/me')) return jsonResponse(schoolWideAuth);
-        if (url.includes('/academic-years?')) return jsonResponse({ items: years, page: 1, pageSize: 50, total: 1 });
+        if (url.endsWith('/operational-overlays/workspace/context')) return jsonResponse({ years, subjects: [], permissions: { calendarSchoolWide: false, teachingSchoolWide: true, teachingSubjectIds: [] } });
         if (url.includes('/makeup-schedules/target-options?')) return jsonResponse(mockTargetOptions);
 
         if (url.includes('/makeup-schedules/candidates?')) {

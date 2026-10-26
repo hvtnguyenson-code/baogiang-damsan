@@ -3,6 +3,8 @@ Ngày: 2026-10-26
 Cơ sở: main `a15ddb194c2aac8f6e9d3c7ec35461702532fff8`; nhánh tiếp tục `feat/p5-054-consequence-closure`.
 Trạng thái: AUDIT / CHƯA THỰC THI SỬA MÃ. Bản nền P5-054 đã merge qua PR #247; KHÔNG coi T53 đã hoàn tất.
 
+**Cập nhật 26/10/2026:** đây là kiểm kê lịch sử trước triển khai. Kết quả runtime/UI/PostgreSQL/Playwright sau đối soát nằm trong [báo cáo nghiệm thu cục bộ T53-B–D](P5-054-T53-C-D-LOCAL-ACCEPTANCE.md); không dùng trạng thái thiếu bằng chứng dưới đây thay cho trạng thái mới nhất. Nghiệm thu cục bộ không thay independent review, merge và SYNC.
+
 ## Nguồn kiểm chứng
 - Yêu cầu: `docs/requirements/P5-054-TEACHING-OPERATIONS-WORKSPACE-CLOSURE.md`.
 - API: `apps/api/src/operational-overlays/operational-workspace-context.service.ts`, `operational-overlays.service.ts`, `makeup-schedules.service.ts`, ba controller tương ứng.

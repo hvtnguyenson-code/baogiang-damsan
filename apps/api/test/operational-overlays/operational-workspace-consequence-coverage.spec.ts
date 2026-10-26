@@ -59,6 +59,7 @@ function harness() {
   const write = jest.fn(() => { throw new Error('Preview attempted a write'); });
   const mutations = { create: write, createMany: write, update: write, updateMany: write, delete: write, deleteMany: write };
   const tx = {
+    $executeRaw: jest.fn().mockResolvedValue(0),
     academicYear: { findUnique: jest.fn().mockResolvedValue({ id: 'year' }) },
     academicCalendarVersion: { findUnique: jest.fn().mockResolvedValue(calendar) },
     schoolClass: {
@@ -82,10 +83,17 @@ function harness() {
   };
   const prisma = { ...tx, $transaction: jest.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)) };
   const audit = { write: jest.fn() };
-  const overlays = new OperationalOverlaysService(prisma as never, audit as never, {} as never, { now: () => now });
   const occurrences = {
-    resolveInTransaction: jest.fn().mockResolvedValue({ status: 'PASS', coverage: { ppctItemAllocation: 'NOT_ASSESSED' }, normalOccurrences: [occurrence], findings: [] }),
+    resolveInTransaction: jest.fn<Promise<{ status: string; coverage: { ppctItemAllocation: string }; normalOccurrences: NormalStructuralOccurrence[]; findings: unknown[] }>, [unknown, unknown]>().mockResolvedValue({ status: 'PASS', coverage: { ppctItemAllocation: 'NOT_ASSESSED' }, normalOccurrences: [occurrence], findings: [] }),
   };
+  // This fixture intentionally supplies only structural coverage. It is never
+  // evidence of assessed PPCT/workload; PostgreSQL tests exercise the real V2 orchestrator.
+  const consequences = { evaluate: jest.fn(async (client: unknown) => {
+    const source = await occurrences.resolveInTransaction(client, { academicYearId: 'year', civilDate });
+    if (source.status !== 'PASS') throw new Error('UPSTREAM_BLOCKED');
+    return { status: 'PASS', coverage: unassessed, streams: [], teachers: [], consequenceFingerprint: 'a'.repeat(64) };
+  }) };
+  const overlays = new OperationalOverlaysService(prisma as never, audit as never, {} as never, { now: () => now }, consequences as never);
   const authorization = { listEffectiveCapabilities: jest.fn().mockResolvedValue([
     { key: 'CALENDAR_EXCEPTION_MANAGE', scope: 'SCHOOL_WIDE' },
     { key: 'TEACHING_OPERATION_MANAGE', scope: 'SCHOOL_WIDE' },
@@ -100,12 +108,12 @@ describe('P5-054 T53-A/B preview consequence coverage boundary', () => {
   ] as const)('calendar $scope uses real coverage predicates without certifying consequences', async (scope) => {
     const h = harness();
     const result = await h.service.previewCalendarException(request, { ...calendarInput, ...scope });
-    expect(result.status).toBe('PASS'); // source/selector validity only
-    expect(result.affected).toEqual([expect.objectContaining({ occurrenceKey: occurrence.occurrenceKey })]);
+    expect(result.status).toBe('BLOCKED'); // source/selector validity only
+    expect(result.affected).toEqual([]);
     expect(result.coverage).toEqual(unassessed);
-    expect(h.prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
-    expect(h.occurrences.resolveInTransaction).toHaveBeenCalledWith(h.tx, { academicYearId: 'year', civilDate });
-    expect(h.tx.academicCalendarVersion.findUnique).toHaveBeenCalled();
+    expect(h.prisma.$transaction).not.toHaveBeenCalled();
+    expect(h.occurrences.resolveInTransaction).not.toHaveBeenCalled();
+    expect(h.tx.academicCalendarVersion.findUnique).not.toHaveBeenCalled();
     expect(h.write).not.toHaveBeenCalled();
     expect(h.audit.write).not.toHaveBeenCalled();
   });
@@ -116,8 +124,8 @@ describe('P5-054 T53-A/B preview consequence coverage boundary', () => {
   ] as const)('calendar $timeSelector retains unassessed coverage after a valid exact selection', async (selector) => {
     const h = harness();
     const result = await h.service.previewCalendarException(request, { ...calendarInput, ...selector } as PreviewCalendarExceptionDto);
-    expect(result.status).toBe('PASS');
-    expect(result.affected).toHaveLength(1);
+    expect(result.status).toBe('BLOCKED');
+    expect(result.affected).toHaveLength(0);
     expect(result.coverage).toEqual(unassessed);
     expect(h.write).not.toHaveBeenCalled();
   });
@@ -130,7 +138,7 @@ describe('P5-054 T53-A/B preview consequence coverage boundary', () => {
     expect(h.tx.user.findUnique).toHaveBeenCalledTimes(teacherTypes.includes(type) ? 1 : 0);
     expect(h.tx.staffSubject.findFirst).toHaveBeenCalledTimes(type === 'SAME_SUBJECT_SUBSTITUTION' ? 1 : 0);
     expect(h.tx.timeSlotDefinition.findUnique).toHaveBeenCalledTimes(teacherTypes.includes(type) ? 1 : 0);
-    expect(h.prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+    expect(h.prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: 60000 });
     expect(h.occurrences.resolveInTransaction).toHaveBeenCalledWith(h.tx, { academicYearId: 'year', civilDate });
     expect(h.write).not.toHaveBeenCalled();
     expect(h.audit.write).not.toHaveBeenCalled();
@@ -142,7 +150,7 @@ describe('P5-054 T53-A/B preview consequence coverage boundary', () => {
   ] as const)('does not certify consequences when a valid calendar selection has no affected occurrence (%j)', async (selection) => {
     const h = harness();
     const result = await h.service.previewCalendarException(request, { ...calendarInput, ...selection });
-    expect(result.status).toBe('PASS');
+    expect(result.status).toBe('BLOCKED');
     expect(result.affected).toEqual([]);
     expect(result.coverage).toEqual(unassessed);
     expect(h.write).not.toHaveBeenCalled();
@@ -234,7 +242,7 @@ describe('P5-054 T53-A/B preview consequence coverage boundary', () => {
     expect(result.status).toBe('BLOCKED');
     expect(result.coverage).toEqual(unassessed);
     expect(JSON.stringify(result)).not.toContain('private-snapshot-failure');
-    expect(h.prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(h.prisma.$transaction).toHaveBeenCalledTimes(type === 'calendar' ? 0 : 1);
     expect(h.write).not.toHaveBeenCalled();
     expect(h.audit.write).not.toHaveBeenCalled();
   });

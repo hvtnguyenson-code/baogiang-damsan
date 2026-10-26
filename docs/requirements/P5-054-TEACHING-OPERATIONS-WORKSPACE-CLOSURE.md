@@ -1,6 +1,6 @@
 # P5-054 — Teaching Operations Workspace Closure
 
-**Status:** IN_PROGRESS — T53-B local continuation; public consequences remain NOT_ASSESSED
+**Status:** IN_REVIEW — T53-B/C/D đã triển khai và kiểm chứng cục bộ; chờ review độc lập, CI exact-head, merge và SYNC. Bằng chứng: [nghiệm thu T53-B–D](../phase-reports/P5-054-T53-C-D-LOCAL-ACCEPTANCE.md).
 **Depends on:** P5-050, P2-050, P3-031  
 **Traceability:** T53
 

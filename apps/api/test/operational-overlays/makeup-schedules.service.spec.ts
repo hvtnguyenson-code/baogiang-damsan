@@ -309,6 +309,7 @@ function makeService(prismaOverrides: Record<string, unknown> = {}) {
     progressDebt as never,
     resolvedOccurrences as never,
     { now: () => instant },
+    { resolveInTransaction: jest.fn().mockResolvedValue({ status: 'PASS', curricularWorkload: { contributions: [] } }) } as never,
   );
 
   return { service, audit, access, businessConfiguration, progressDebt, resolvedOccurrences, prisma: defaultPrisma };
