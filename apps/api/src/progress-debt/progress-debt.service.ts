@@ -214,11 +214,17 @@ export class ProgressDebtService {
       orderBy: { id: 'asc' },
     }) as Execution[];
 
+    const reconciliationFindings: ProgressDebtFinding[] = [];
     const candidates = new Map<string, Execution[]>();
     for (const execution of executions) {
+      if (execution.status !== TeachingExecutionStatus.ACTIVE) continue;
+      if (!execution.executionTimeSlot) {
+        reconciliationFindings.push(this.finding('RECONCILIATION_REQUIRED',
+          'ACTIVE execution has no retained execution slot; elapsed fulfillment cannot be established.',
+          execution.sourceNormalOccurrenceKey, [execution.id]));
+        continue;
+      }
       if (
-        execution.status !== TeachingExecutionStatus.ACTIVE ||
-        !execution.executionTimeSlot ||
         !hasEndedAt(
           formatCivilDate(execution.executionCivilDate),
           execution.executionTimeSlot.endTime.toISOString().slice(11, 19),
@@ -245,7 +251,19 @@ export class ProgressDebtService {
     const schedulesById = new Map(schedules.map((schedule) => [schedule.id, schedule]));
 
     const items: ProgressDebtItemV2[] = [];
-    const findings: ProgressDebtFinding[] = [];
+    const findings: ProgressDebtFinding[] = reconciliationFindings;
+    // ADR-040: retained fulfillment cannot disappear just because replay removed
+    // its source (suppression, cancellation, exhaustion or changed history).
+    // Only ended ACTIVE evidence participates in this elapsed projection. The
+    // calendar replay guard separately rejects ALL ACTIVE evidence in the stream.
+    const directKeys = new Set(direct.map((row) => row.occurrence.occurrenceKey));
+    for (const [sourceKey, eligible] of candidates) {
+      if (!directKeys.has(sourceKey)) {
+        findings.push(this.finding('RECONCILIATION_REQUIRED',
+          'Ended ACTIVE execution has no current authoritative elapsed direct obligation. Retained evidence must be reconciled, never discarded or rebound.',
+          sourceKey, eligible.map((execution) => execution.id)));
+      }
+    }
 
     for (const allocation of direct) {
       const sourceKey = allocation.occurrence.occurrenceKey;
@@ -382,6 +400,17 @@ export class ProgressDebtService {
   ): string | null {
     const issueV1 = this.reconcileExecution(allocation, execution, schedule, matches);
     if (issueV1) return issueV1;
+    if (execution.kind === 'NORMAL') {
+      const occurrence = allocation.occurrence;
+      const targetChecks: Array<[string, unknown, unknown]> = [
+        ['executionCivilDate', formatCivilDate(execution.executionCivilDate), occurrence.civilDate],
+        ['executionAcademicCalendarVersionId', execution.executionAcademicCalendarVersionId, occurrence.academicCalendarVersionId],
+        ['executionTimeSlotDefinitionId', execution.executionTimeSlotDefinitionId, occurrence.timeSlot.id],
+        ['makeupTeachingScheduleId', execution.makeupTeachingScheduleId, null],
+      ];
+      const mismatch = targetChecks.find((entry) => entry[1] !== entry[2]);
+      if (mismatch) return `NORMAL retained execution ${mismatch[0]} does not match the exact original occurrence.`;
+    }
     if (execution.kind === 'MAKEUP') {
       const match = matches.find((item) => item.makeupTeachingScheduleId === execution.makeupTeachingScheduleId);
       if (match?.expectedPpctItem && match.expectedPpctItem.component !== allocation.plannedComponent) {

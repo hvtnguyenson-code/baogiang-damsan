@@ -80,6 +80,51 @@ function harness(twoComponents = false) {
 }
 
 describe('P5-054 T53-B bounded internal calendar candidate replay', () => {
+  it.each([dates[0], dates[1]])('retained calendar replay cannot discard or rebind execution sourced on %s', async (sourceDate) => {
+    const baseline = harness();
+    const allocated = await baseline.allocation.resolveInTransactionV2(baseline.tx as never, { ...scope, throughCivilDate: dates[2] });
+    expect(allocated.status).toBe('PASS');
+    const row = allocated.normalAllocations.find((item) => item.occurrence.civilDate === sourceDate)!;
+    const source = row.occurrence;
+    const expected = row.expectedPpctItem!;
+    const execution = {
+      id: 'retained-execution', ...scope, status: 'ACTIVE', kind: 'NORMAL',
+      sourceNormalOccurrenceKey: source.occurrenceKey, originalTimetableVersionId: source.timetableVersionId,
+      originalTimetableEntryId: source.timetableEntryId, sourceCivilDate: date(sourceDate),
+      sourceAcademicCalendarVersionId: source.academicCalendarVersionId, sourceTimeSlotDefinitionId: source.timeSlot.id,
+      originalTeachingAssignmentId: source.teachingAssignmentId, responsibleTeacherUserId: source.responsibleTeacherUserId,
+      ppctClassAssociationId: expected.ppctClassAssociationId, ppctPlanId: expected.ppctPlanId,
+      ppctVersionId: expected.ppctVersionId, ppctItemId: expected.ppctItemId, ppctItemRevisionId: expected.ppctItemRevisionId,
+      operationalLessonDispositionId: null, operationalDispositionType: null, makeupTeachingScheduleId: null,
+      executionCivilDate: date(sourceDate), executionAcademicCalendarVersionId: source.academicCalendarVersionId,
+      executionTimeSlotDefinitionId: source.timeSlot.id, actualTeacherUserId: source.responsibleTeacherUserId,
+      executionTimeSlot: { endTime: new Date(`1970-01-01T${source.timeSlot.endTime}.000Z`) },
+    };
+    baseline.tx.curricularTeachingExecution.findMany.mockResolvedValue([execution]);
+    expect(await baseline.progress.resolveInTransactionV2(baseline.tx as never, { ...scope, asOfInstant: now }, authority))
+      .toMatchObject({ status: 'PASS', counts: { completedCount: 1, distributedElapsedCount: 3 } });
+
+    // Separate retained-state fixture, not a simulated write in a read snapshot:
+    // real structural + allocator V2 suppress date 1 and move later PPCT items.
+    const changed = harness();
+    changed.tx.curricularTeachingExecution.findMany.mockResolvedValue([execution]);
+    changed.tx.calendarException.findMany.mockImplementation(async ({ where }) => where.civilDate.getTime() === date(dates[0]).getTime()
+      ? [{ id: 'retained-exception', scope: 'SCHOOL_WIDE', timeSelector: 'WHOLE_DAY', exactTimeSlots: [] }] : []);
+    const saved = JSON.stringify(execution);
+    const result = await changed.prisma.$transaction((tx) => changed.progress.resolveInTransactionV2(tx,
+      { ...scope, asOfInstant: now }, authority), { isolationLevel: 'RepeatableRead' });
+    expect(result).toMatchObject({ status: 'BLOCKED', counts: null, items: [], findings: [
+      expect.objectContaining({ code: 'RECONCILIATION_REQUIRED', occurrenceKey: source.occurrenceKey, entityIds: ['retained-execution'] }),
+    ] });
+    expect(result).toMatchObject({ findings: [expect.objectContaining({
+      reason: expect.stringContaining(sourceDate === dates[0] ? 'no current authoritative elapsed direct obligation' : 'ppctItemId'),
+    })] });
+    for (const [tx] of changed.sourceReads.mock.calls) expect(tx).toBe(changed.tx);
+    expect(JSON.stringify(execution)).toBe(saved);
+    expect(changed.write).not.toHaveBeenCalled();
+    expect(changed.audit.write).not.toHaveBeenCalled();
+  });
+
   it('replays BEFORE/AFTER through subsequent opportunities in one snapshot, without persisting or changing retained reads', async () => {
     const h = harness();
     const original = JSON.stringify(h.entries);
@@ -196,7 +241,44 @@ describe('P5-054 T53-B bounded internal calendar candidate replay', () => {
     h.tx[delegate].findFirst.mockResolvedValue({ id: 'retained-outside-horizon' });
     await expect(h.run((replay, tx) => h.allocation.replayCalendarCandidateInTransactionV2(tx, { ...scope, throughCivilDate: dates[0] }, replay)))
       .rejects.toThrow('RECONCILIATION_REQUIRED');
-    expect(h.tx[delegate].findFirst).toHaveBeenCalledWith({ where: { ...scope, status: 'ACTIVE' }, select: { id: true } });
+    expect(h.tx[delegate].findFirst).toHaveBeenCalledWith({ where: { ...scope, status: 'ACTIVE' }, select: { id: true }, orderBy: { id: 'asc' } });
+    expect(h.sourceReads).not.toHaveBeenCalled();
+    expect(h.write).not.toHaveBeenCalled();
+    expect(h.audit.write).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['curricularTeachingExecution', '2026-08-03', 'NORMAL'],
+    ['curricularTeachingExecution', '2026-08-17', 'MAKEUP'],
+    ['curricularTeachingExecution', '2026-08-31', 'NORMAL'],
+    ['makeupTeachingSchedule', '2026-08-31', 'MAKEUP'],
+  ] as const)('fails closed on %s %s %s with exact retained identity and missing authority', async (delegate, retainedDate, kind) => {
+    const h = harness();
+    const retained = { id: 'retained-evidence', ...scope, status: 'ACTIVE', kind,
+      sourceCivilDate: date(retainedDate), executionCivilDate: date(retainedDate), targetCivilDate: date(retainedDate) };
+    h.tx[delegate].findFirst.mockImplementation(async ({ where }) => {
+      // A date-restricted guard would miss future/out-of-horizon evidence.
+      expect(where).toEqual({ ...scope, status: 'ACTIVE' });
+      return retained;
+    });
+    const saved = JSON.stringify(retained);
+    await expect(h.run((replay, tx) => h.progress.replayCalendarCandidateInTransactionV2(tx,
+      { ...scope, asOfInstant: now }, replay))).rejects.toMatchObject({
+      name: 'CalendarReplayReconciliationRequired', retainedEntityId: retained.id,
+      missingAuthority: 'CANDIDATE_RETAINED_EXECUTION_AND_OFFICIAL_WORKLOAD_RECONCILIATION',
+    });
+    expect(JSON.stringify(retained)).toBe(saved);
+    expect(h.sourceReads).not.toHaveBeenCalled();
+    expect(h.config.resolveOperationalStartPolicy).not.toHaveBeenCalled();
+    expect(h.write).not.toHaveBeenCalled();
+    expect(h.audit.write).not.toHaveBeenCalled();
+  });
+
+  it('propagates failed retained evidence reads without producing a projection or success audit', async () => {
+    const h = harness();
+    h.tx.curricularTeachingExecution.findFirst.mockRejectedValue(new Error('snapshot evidence read failed'));
+    await expect(h.run((replay, tx) => h.progress.replayCalendarCandidateInTransactionV2(tx,
+      { ...scope, asOfInstant: now }, replay))).rejects.toThrow('snapshot evidence read failed');
     expect(h.sourceReads).not.toHaveBeenCalled();
     expect(h.write).not.toHaveBeenCalled();
     expect(h.audit.write).not.toHaveBeenCalled();

@@ -1,6 +1,6 @@
 # P5-054 — Teaching Operations Workspace Closure
 
-**Status:** READY  
+**Status:** IN_PROGRESS — T53-B local continuation; public consequences remain NOT_ASSESSED
 **Depends on:** P5-050, P2-050, P3-031  
 **Traceability:** T53
 

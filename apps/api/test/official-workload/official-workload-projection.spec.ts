@@ -4,6 +4,7 @@ import { SpecialProgrammeWorkloadProjectionService } from '../../src/special-pro
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { CivilDateString } from '@baogiang/contracts';
 import { TeachingExecutionStatus } from '@prisma/client';
+import { ProgressDebtService } from '../../src/progress-debt/progress-debt.service';
 
 interface MockExecutionWhere {
   status?: string;
@@ -198,6 +199,55 @@ describe('OfficialWorkloadProjectionService (ADR-057, Sections 39-42)', () => {
   }
 
   describe('Curricular Workload Ownership (Section 40)', () => {
+    it.each(['NORMAL', 'MAKEUP'])('P5-054: retained %s workload cannot certify a candidate that removed its source obligation', async (kind) => {
+      const executionDate = kind === 'MAKEUP' ? '2026-09-08' : '2026-09-07';
+      const retainedExecution = {
+        id: 'retained-execution', kind, status: 'ACTIVE', academicYearId,
+        schoolClassId: 'class-1', subjectId: 'subject-1', actualTeacherUserId: targetTeacherId,
+        responsibleTeacherUserId: otherTeacherId, originalTimetableEntryId: 'entry-1',
+        sourceNormalOccurrenceKey: 'NORMAL:entry-1:2026-09-07',
+        sourceCivilDate: new Date('2026-09-07T00:00:00.000Z'),
+        executionCivilDate: new Date(`${executionDate}T00:00:00.000Z`),
+        executionTimeSlot: { endTime: new Date('1970-01-01T07:45:00.000Z') },
+        makeupTeachingScheduleId: kind === 'MAKEUP' ? 'retained-schedule' : null,
+        replacesId: null,
+      };
+      const saved = JSON.stringify(retainedExecution);
+      const h = setupHarness({ curricularExecutions: [retainedExecution] });
+      const write = jest.fn(() => { throw new Error('Projection attempted persistence'); });
+      Object.assign(h.mockPrisma.curricularTeachingExecution, { create: write, updateMany: write, delete: write });
+      Object.assign(h.mockPrisma, { makeupTeachingSchedule: { findMany: jest.fn().mockResolvedValue([]), create: write } });
+      h.mockSpecialWorkload.resolveInTransaction.mockResolvedValue({ status: 'PASS', totalCredit: 0, contributions: [], findings: [] });
+      // Fixture supplies the authoritative allocator result after source removal;
+      // real progress V2 must detect the retained orphan, not fabricate zero debt.
+      const allocation = { resolveInTransactionV2: jest.fn().mockResolvedValue({
+        status: 'PASS', normalAllocations: [], makeupSourceMatches: [], findings: [],
+      }) };
+      const progress = new ProgressDebtService(h.mockPrisma as never, allocation as never,
+        { now: () => asOfInstant }, {} as never);
+      await h.mockPrisma.$transaction(async (tx: never) => {
+        const debt = await progress.resolveInTransactionV2(tx, {
+          academicYearId, schoolClassId: 'class-1', subjectId: 'subject-1', asOfInstant,
+        }, { operationalStartDate: '2026-09-01', policyVersionId: 'start-policy', validatorVersion: 'v1', effectiveFrom: '2026-09-01', effectiveUntil: null });
+        expect(debt).toMatchObject({ status: 'BLOCKED', counts: null, items: [], findings: [
+          expect.objectContaining({ code: 'RECONCILIATION_REQUIRED', entityIds: ['retained-execution'] }),
+        ] });
+        const retainedWorkload = await h.service.resolveInTransaction(tx, {
+          academicYearId, targetUserId: targetTeacherId, fromCivilDate: executionDate, toCivilDate: executionDate, asOfInstant,
+        });
+        expect(retainedWorkload).toMatchObject({ status: 'PASS', earnedCredit: 1, requiredCredit: 3,
+          curricularWorkload: { totalCredit: 1, contributions: [expect.objectContaining({
+            executionId: 'retained-execution', actualTeacherUserId: targetTeacherId, executionCivilDate: executionDate, credit: 1,
+          })] } });
+        expect(allocation.resolveInTransactionV2).toHaveBeenCalledWith(tx, expect.any(Object));
+        expect(h.mockSpecialWorkload.resolveInTransaction).toHaveBeenCalledWith(tx, expect.any(Object));
+        for (const call of h.mockBusinessConfig.resolveEffectiveBusinessPolicy.mock.calls) expect(call[3]).toBe(tx);
+      });
+      expect(h.mockPrisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(JSON.stringify(retainedExecution)).toBe(saved);
+      expect(write).not.toHaveBeenCalled();
+    });
+
     it('P5-054 T53-A does not convert planned overlays or make-up into earned credit or reduce the required norm', async () => {
       const h = setupHarness({ curricularExecutions: [] });
       const plannedFacts = {

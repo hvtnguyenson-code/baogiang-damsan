@@ -24,6 +24,19 @@ export interface CalendarReplayCandidate {
   readonly exactTimeSlotDefinitionIds: readonly string[];
 }
 
+/** Internal diagnostics only; never a public preview or mutation authorization. */
+export class CalendarReplayReconciliationRequired extends Error {
+  readonly missingAuthority = 'CANDIDATE_RETAINED_EXECUTION_AND_OFFICIAL_WORKLOAD_RECONCILIATION' as const;
+
+  constructor(
+    readonly code: 'CALENDAR_REPLAY_EXECUTION_RECONCILIATION_REQUIRED' | 'CALENDAR_REPLAY_MAKEUP_RECONCILIATION_REQUIRED',
+    readonly retainedEntityId: string,
+  ) {
+    super(code);
+    this.name = 'CalendarReplayReconciliationRequired';
+  }
+}
+
 /**
  * Transaction-local source adapter, after commit-command validation. No retained row
  * is fabricated: the marker below identifies a hypothetical exception only.
@@ -61,16 +74,18 @@ export class CalendarExceptionReplay {
   async assertStream(tx: Prisma.TransactionClient, scope: { academicYearId: string; schoolClassId: string; subjectId: string }): Promise<void> {
     this.assertTransaction(tx);
     if (scope.academicYearId !== this.candidate.academicYearId) throw new Error('CALENDAR_REPLAY_YEAR_MISMATCH');
-    // Progress currently reconciles executions only against surviving direct
-    // obligations. Suppression could remove that obligation entirely. Until an
-    // orphan-aware reconciliation exists, reject ALL ACTIVE executions/schedules
-    // in the stream, including future/unended ones and those beyond the horizon.
+    // Progress V2 now detects orphaned ended fulfillment, but cannot certify
+    // future/unended retained evidence or candidate-aware official workload.
+    // Reject ALL ACTIVE executions/schedules, even beyond the horizon; a safe
+    // elapsed progress result alone cannot prove retained workload consequences.
     const where = { academicYearId: scope.academicYearId, schoolClassId: scope.schoolClassId, subjectId: scope.subjectId, status: 'ACTIVE' as const };
-    if (await tx.curricularTeachingExecution.findFirst({ where, select: { id: true } })) {
-      throw new Error('CALENDAR_REPLAY_EXECUTION_RECONCILIATION_REQUIRED');
+    const execution = await tx.curricularTeachingExecution.findFirst({ where, select: { id: true }, orderBy: { id: 'asc' } });
+    if (execution) {
+      throw new CalendarReplayReconciliationRequired('CALENDAR_REPLAY_EXECUTION_RECONCILIATION_REQUIRED', execution.id);
     }
-    if (await tx.makeupTeachingSchedule.findFirst({ where, select: { id: true } })) {
-      throw new Error('CALENDAR_REPLAY_MAKEUP_RECONCILIATION_REQUIRED');
+    const makeup = await tx.makeupTeachingSchedule.findFirst({ where, select: { id: true }, orderBy: { id: 'asc' } });
+    if (makeup) {
+      throw new CalendarReplayReconciliationRequired('CALENDAR_REPLAY_MAKEUP_RECONCILIATION_REQUIRED', makeup.id);
     }
   }
 
