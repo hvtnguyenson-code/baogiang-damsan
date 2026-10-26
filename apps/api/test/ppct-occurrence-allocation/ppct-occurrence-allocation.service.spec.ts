@@ -1,5 +1,6 @@
 import { PpctOccurrenceAllocationService } from '../../src/ppct-occurrence-allocation/ppct-occurrence-allocation.service';
 import { NormalStructuralOccurrence } from '../../src/resolved-occurrences/resolved-occurrence.types';
+import { ProgressDebtService } from '../../src/progress-debt/progress-debt.service';
 
 const date = (value: string) => new Date(`${value}T00:00:00.000Z`);
 function normal(civilDate: `${number}-${number}-${number}`, effectiveKind: NormalStructuralOccurrence['effectiveKind'] = 'BASE_TIMETABLE'): NormalStructuralOccurrence {
@@ -63,6 +64,57 @@ function harness(structuralResults?: Record<string, object>) {
 }
 
 describe('PpctOccurrenceAllocationService', () => {
+  describe('P5-054 T53-A retained operation consequence matrix (V2)', () => {
+    const cases: Array<{
+      name: string;
+      source: NormalStructuralOccurrence;
+      consumes: boolean;
+      classification: 'PROVEN_OPEN_DEBT' | 'UNCONFIRMED_COMPLETION_GAP' | null;
+    }> = [
+      { name: 'calendar exception', source: normal('2026-08-03', 'CALENDAR_EXCEPTION'), consumes: false, classification: null },
+      { name: 'calendar interruption', source: normal('2026-08-03', 'CALENDAR_INTERRUPTION'), consumes: false, classification: null },
+      { name: 'activity suppression', source: normal('2026-08-03', 'SPECIAL_ACTIVITY_SUPPRESSED'), consumes: false, classification: null },
+      { name: 'authorized cancellation', source: disposition('2026-08-03', 'AUTHORIZED_CANCELLATION'), consumes: false, classification: null },
+      { name: 'same-subject substitution', source: disposition('2026-08-03', 'SAME_SUBJECT_SUBSTITUTION'), consumes: true, classification: 'UNCONFIRMED_COMPLETION_GAP' },
+      { name: 'different-subject supervision', source: disposition('2026-08-03', 'DIFFERENT_SUBJECT_SUPERVISION'), consumes: true, classification: 'PROVEN_OPEN_DEBT' },
+      { name: 'absence without replacement', source: disposition('2026-08-03', 'ABSENCE_NO_REPLACEMENT'), consumes: true, classification: 'PROVEN_OPEN_DEBT' },
+      { name: 'base after overlay reversal', source: normal('2026-08-03'), consumes: true, classification: 'UNCONFIRMED_COMPLETION_GAP' },
+    ];
+
+    it.each(cases)('$name derives PPCT and debt from the same retained source without execution', async ({ source, consumes, classification }) => {
+      const h = harness({ '2026-08-03': { normalOccurrences: [source], findings: [] } });
+      h.tx.ppctClassAssociation.findMany.mockResolvedValue([{
+        id: 'association', academicYearId: 'year', schoolClassId: 'class', subjectId: 'subject',
+        curricularProfile: 'CORE_ONLY', effectiveFrom: date('2026-08-01'), effectiveUntil: null,
+      }]);
+      const allocation = await h.service.resolveInTransactionV2(h.tx as never, {
+        academicYearId: 'year', schoolClassId: 'class', subjectId: 'subject', throughCivilDate: '2026-08-03',
+      });
+      expect(allocation.status).toBe('PASS');
+      expect(allocation.normalAllocations).toHaveLength(1);
+      expect(allocation.normalAllocations[0]).toMatchObject({
+        allocationStatus: consumes ? 'ALLOCATED' : 'NOT_CONSUMED',
+        expectedPpctItem: consumes ? expect.objectContaining({ ppctItemId: 'item-1', ppctItemRevisionId: 'revision-1', component: 'CORE' }) : null,
+      });
+
+      const tx = { ...h.tx, curricularTeachingExecution: { findMany: jest.fn().mockResolvedValue([]) } };
+      const asOfInstant = new Date('2026-08-03T12:00:00.000Z');
+      const progress = new ProgressDebtService({} as never, h.service, { now: () => asOfInstant }, {} as never);
+      const projection = await progress.resolveInTransactionV2(tx as never, {
+        academicYearId: 'year', schoolClassId: 'class', subjectId: 'subject', asOfInstant,
+      }, { operationalStartDate: '2026-08-01', policyVersionId: 'start-policy', validatorVersion: 'v1', effectiveFrom: '2026-08-01', effectiveUntil: null });
+      expect(projection.status).toBe('PASS');
+      expect(projection.counts).toMatchObject({
+        distributedElapsedCount: consumes ? 1 : 0, completedCount: 0,
+        openDebtCount: classification === 'PROVEN_OPEN_DEBT' ? 1 : 0,
+        unconfirmedGapCount: classification === 'UNCONFIRMED_COMPLETION_GAP' ? 1 : 0,
+      });
+      expect(projection.items.map((item) => item.classification)).toEqual(classification ? [classification] : []);
+      expect(h.prisma.$transaction).not.toHaveBeenCalled();
+      expect(h.structural.resolve).not.toHaveBeenCalled();
+    });
+  });
+
   it('uses one RepeatableRead snapshot, the same tx for every inclusive candidate, and no nested structural resolve', async () => {
     const h = harness(); const result = await h.service.resolve({ academicYearId: 'year', schoolClassId: 'class', subjectId: 'subject', throughCivilDate: '2026-08-17' });
     expect(h.prisma.$transaction).toHaveBeenCalledTimes(1); expect(h.prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: 'RepeatableRead' });

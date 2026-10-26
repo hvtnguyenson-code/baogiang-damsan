@@ -316,6 +316,31 @@ function makeService(prismaOverrides: Record<string, unknown> = {}) {
 
 describe('MakeupSchedulesService unit test matrix', () => {
   describe('Source / Debt Validation', () => {
+    it.each(['BLOCKED', 'NOT_ASSESSED'])('P5-054 T53-B rejects %s debt coverage even with a plausible debt item and writes nothing', async (status) => {
+      const { service, progressDebt, prisma, audit } = makeService();
+      progressDebt.resolveInTransactionV2.mockResolvedValueOnce({
+        status, items: [validDebtItem], counts: { openDebtCount: 1 }, findings: [],
+      });
+      await expect(service.create(createDto, request)).rejects.toThrow(ConflictException);
+      expect(prisma.makeupTeachingSchedule.create).not.toHaveBeenCalled();
+      expect(prisma.makeupTeachingSchedule.updateMany).not.toHaveBeenCalled();
+      expect(audit.write).not.toHaveBeenCalled();
+    });
+
+    it.each(['COMPLETED', 'UNCONFIRMED_COMPLETION_GAP'])('P5-054 T53-B rechecks %s source at create instead of trusting a previous candidate', async (classification) => {
+      const { service, progressDebt, prisma, audit } = makeService();
+      const candidates = await service.listCandidates({ academicYearId: yearId, subjectId, page: 1, pageSize: 20 }, request);
+      expect(candidates.status).toBe('PASS');
+      expect(candidates.items).toHaveLength(1);
+      progressDebt.resolveInTransactionV2.mockResolvedValueOnce({
+        status: 'PASS', items: [{ ...validDebtItem, classification }], counts: {}, findings: [],
+      });
+      await expect(service.create(createDto, request)).rejects.toThrow(ConflictException);
+      expect(progressDebt.resolveInTransactionV2).toHaveBeenCalledTimes(2);
+      expect(prisma.makeupTeachingSchedule.create).not.toHaveBeenCalled();
+      expect(audit.write).not.toHaveBeenCalled();
+    });
+
     it('1. accepts valid PROVEN_OPEN_DEBT source', async () => {
       const { service, access, audit } = makeService();
       const result = await service.create(createDto, request);

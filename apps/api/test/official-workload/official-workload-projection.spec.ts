@@ -198,6 +198,31 @@ describe('OfficialWorkloadProjectionService (ADR-057, Sections 39-42)', () => {
   }
 
   describe('Curricular Workload Ownership (Section 40)', () => {
+    it('P5-054 T53-A does not convert planned overlays or make-up into earned credit or reduce the required norm', async () => {
+      const h = setupHarness({ curricularExecutions: [] });
+      const plannedFacts = {
+        calendarException: { findMany: jest.fn().mockResolvedValue([{ id: 'exception', status: 'ACTIVE', scope: 'SCHOOL_WIDE' }]) },
+        operationalLessonDisposition: { findMany: jest.fn().mockResolvedValue([
+          { id: 'substitution', status: 'ACTIVE', dispositionType: 'SAME_SUBJECT_SUBSTITUTION', assignedTeacherUserId: targetTeacherId },
+          { id: 'supervision', status: 'ACTIVE', dispositionType: 'DIFFERENT_SUBJECT_SUPERVISION', assignedTeacherUserId: targetTeacherId },
+        ]) },
+        makeupTeachingSchedule: { findMany: jest.fn().mockResolvedValue([{ id: 'makeup', status: 'ACTIVE', scheduledTeacherUserId: targetTeacherId }]) },
+      };
+      Object.assign(h.mockPrisma, plannedFacts);
+      h.mockSpecialWorkload.resolveInTransaction.mockResolvedValue({
+        status: 'PASS', totalCredit: 0, contributionCount: 0, contributions: [], findings: [],
+      });
+      const result = await h.service.resolve({
+        academicYearId, targetUserId: targetTeacherId,
+        fromCivilDate: '2026-09-07', toCivilDate: '2026-09-07', asOfInstant,
+      });
+      expect(result.status).toBe('PASS');
+      expect(result.curricularWorkload).toMatchObject({ totalCredit: 0, contributionCount: 0, contributions: [] });
+      expect(result.earnedCredit).toBe(0);
+      expect(result.requiredCredit).toBe(3); // retained policy 18 / six teaching weekdays
+      for (const source of Object.values(plannedFacts)) expect(source.findMany).not.toHaveBeenCalled();
+    });
+
     it('credits 1 to actualTeacherUserId for ACTIVE NORMAL execution', async () => {
       const { service } = setupHarness({
         curricularExecutions: [
