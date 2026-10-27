@@ -61,3 +61,11 @@ CI cũ của HEAD `5d00da1…`: [CI #822](https://github.com/hvtnguyenson-code/b
 - Exact PostgreSQL integration: one suite PASS; 11 tests PASS; zero FAIL, zero SKIP.
 - Test-only Prisma connection_limit=1 and connect_timeout=20 avoided intermittent Windows client disconnect. No production pool changes.
 - Shared PostgreSQL port 5432, production database and VPS were not used.
+
+## Phụ lục hậu merge — SYNC-P5-055 (27/10/2026)
+
+Các dòng **IN_PROGRESS**, chặn `.git/index.lock` và pending PostgreSQL trong phần trước phản ánh **thời điểm chạy kiểm thử ngày 23/10**, không còn là trạng thái Git hiện tại. Bản correction `006d1e23a06e0a5764bc7087f6e13aa4465ce3e7` sau đó đã được push lên nhánh, ghép cùng final PR HEAD `a5efc02735cdf9101ad14e007c448493bac75bc8`, PR #248 merge tại `6f1e83a8f021db1ab23f9902981a6b32f36d65ab` (23/10/2026). CI #824, P6-021 #71, main CI #825, auto-deploy #23 và VPS deploy #20 đều SUCCESS; Deploy VPS #20 ghi `BAOGIANG_DEPLOY_VERIFIED` đúng merge SHA. Kiểm thử PG17 cô lập 11/11 PASS đã được ghi ở phần trước.
+
+Review hồi cứu của ChatGPT được ghi trên PR #248 dạng **COMMENT** `5661587622` ngày 27/10; không giả định có formal reviewer độc lập `APPROVE`. Parent PR có chỉnh job timeout của `.github/workflows/ci.yml` từ 20 lên 35 phút, cần phân biệt với các giới hạn correction không sửa CI/CD đã ghi trong phần trước. Các giới hạn TKB theo ngày, lịch sử nhập liệu và phạm vi UAT P5-057 vẫn còn nguyên.
+
+**Tình trạng thực tế:** P5-055 được đóng bằng `SYNC-P5-055` riêng theo protocol; xem [hồ sơ closure](SYNC-P5-055-CLOSURE.md). Phụ lục này bổ sung sự kiện sau checkpoint, không sửa lại lịch sử kiểm thử hay mở rộng tính năng.
