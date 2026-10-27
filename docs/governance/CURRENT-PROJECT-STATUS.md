@@ -8,7 +8,13 @@ Per `MAJOR-TASK-DOCUMENTATION-SYNC-PROTOCOL.md`, this file is intentionally conc
 
 Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub. SHAs here are evidence for already-established task states, never a self-referential claim that this document contains its own current commit.
 
-**Status snapshot date:** 2026-10-26
+**Status snapshot date:** 2026-10-27
+
+## P5-055 — CLOSED by SYNC-P5-055 (Data Readiness & Import Center)
+
+Parent PR #248 final HEAD `a5efc02735cdf9101ad14e007c448493bac75bc8` includes READY fail-closed correction `006d1e23a06e0a5764bc7087f6e13aa4465ce3e7`; exact-head CI #824 (`39969087899`) and P6-021 off-host #71 (`39969087920`) SUCCESS. Parent merged 23/10/2026 at `6f1e83a8f021db1ab23f9902981a6b32f36d65ab` with main CI #825 (`39971195093`), auto-deploy #23 (`39972403934`) and VPS deploy #20 (`39972416299`) SUCCESS, exact deploy SHA verified in log. A retrospective independent ChatGPT GitHub-diff technical review (24 parent PR files) found no new HIGH/CRITICAL blocker and is recorded as COMMENT `5661587622` on #248; it is **not** a formal third-party `APPROVE`. Prior task register `IN_PROGRESS` was stale after the 23/10 merge and is corrected by `SYNC-P5-055`. The correction report's original pre-merge status remains historical evidence, not the current task state.
+
+T54 delivers one BGH/Admin readiness/import workspace for **TKB, PPCT, historical teaching, GDĐP, HĐTN-HN**, with authority-preserving navigation, version/import findings, and fail-closed status. TKB ACTIVE alone remains **NOT_ASSESSED** until the date-scoped evaluator proves readiness; a history import receipt alone does not prove fulfillment; missing policies, PPCT assignments/versions or published special-programme plans cannot be advertised READY. Local correction tests include API 1,968 PASS, Web 588 PASS and isolated PostgreSQL 11/11 PASS. No database schema/migrations, second parser, new ledger or production DB-write operation; the parent did adjust CI job timeout 20→35 minutes for Playwright install. P5-055 is **CLOSED for bounded technical scope**, not a blanket school readiness or persona UAT certificate. P5-056A/T55 is the next architecture task; P5-057 user/device UAT and P6-050 pilot remain gated. Full evidence: `docs/phase-reports/SYNC-P5-055-CLOSURE.md`.
 
 ## P5-054 — CLOSED by SYNC-P5-054 (Teaching Operations Workspace)
 
