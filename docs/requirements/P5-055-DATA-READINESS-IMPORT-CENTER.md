@@ -1,6 +1,6 @@
 # P5-055 — Data Readiness & Import Center
 
-**Status:** IN_PROGRESS
+**Status:** CLOSED by `SYNC-P5-055` (bounded technical scope; real-persona UAT under P5-057)
 **Depends on:** P5-052, P5-053, P2-020, P3-020, P4-074  
 **Traceability:** T54
 
@@ -58,3 +58,9 @@ Readiness must fail closed when required evidence is absent. The center reuses t
 TKB activation alone is not date-bounded readiness. The center reports NOT_ASSESSED and directs users to the existing timetable readiness evaluator. Historical import receipts alone require reconciliation in the existing history workspace. These are explicit current response semantics within P5-055, not a new readiness ledger or an unregistered implementation deferral. Valid day-one history, fully issued programme plans and PPCT with proven coverage retain READY. An explicit unknown year returns HTTP 404; default year selection applies only when the ID is omitted.
 
 Evidence and remaining PostgreSQL verification/Git write blockers: [READY correction report](../phase-reports/P5-055-READY-CORRECTION-REPORT.md). No schema/migration, auth, CI/CD, production, parser or ledger change is authorized by this correction.
+
+## Closure: SYNC-P5-055 (27/10/2026)
+
+The 23/10/2026 correction status above is a **historical checkpoint**, not the current state. Its actual fail-closed correction `006d1e23a06e0a5764bc7087f6e13aa4465ce3e7` was committed, tested and merged in PR #248 final head `a5efc02735cdf9101ad14e007c448493bac75bc8`, merge SHA `6f1e83a8f021db1ab23f9902981a6b32f36d65ab`. PR CI #824 and P6-021 off-host compatibility #71, authoritative post-merge main CI #825, auto-deploy #23 and Deploy VPS #20 all SUCCESS. Exact deploy SHA verification appears in Deploy VPS #20. Retrospective independent ChatGPT technical GitHub review posted as PR #248 COMMENT `5661587622` (not formal third-party `APPROVED`).
+
+Readiness continues to **fail closed**: ACTIVE timetable is not enough for date-bounded readiness, so TKB remains `NOT_ASSESSED` without authoritative evaluator; imported historical receipts do not prove historical fulfillment; PPCT requires actual assignment subject–grade and valid retained associations; missing/superseded programme plans are not READY. This is **not** universal school readiness acceptance. Persona/Android and live workflow verification remain in P5-057/T56, before teacher pilot P6-050. No new parser, ledger or schema/migration was introduced. Parent PR did modify CI job timeout from 20 to 35 minutes, solely to accommodate Playwright installation; no production deploy workflow change. Complete closure evidence: [SYNC-P5-055](../phase-reports/SYNC-P5-055-CLOSURE.md).
