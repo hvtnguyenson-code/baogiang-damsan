@@ -17,7 +17,8 @@ PA-B v1.2 requires an enduring account-owned inbox and Web Push. P5-020 supplies
 4. Implement durable enqueue/idempotent outbox. Lease workers and bounded retries/dead-letter, while acknowledging ambiguous transport errors may deliver duplicates. Expired subscriptions are revoked without losing notifications.
 5. Resolve actions by server-controlled same-origin route allowlist. Push payload is generic without sensitive business data; API uses authenticated same-origin session, CSRF/origin protection and no-store. Service worker must keep /api network-only and P5-020 update semantics.
 6. VAPID, endpoint-encryption keys and configuration are **technical runtime secrets**, excluded from Business Configuration. Startup must fail safely on invalid enabled config; feature disabled must not disable inbox. No shared VPS/Telegram/Nội trú keys or services.
-7. Retention, audit and deletion follow the bounded P5-056A requirement contract; authoritative historical/approval records remain in their original business domains, not in the notification ledger. Fail-closed authorization applies when source evidence is missing.
+7. Retention, audit and deletion follow the bounded P5-056A requirement contract; **unresolved ACTION_REQUIRED notifications must not disappear via fixed TTL** without source-confirmed resolution/cancellation or audited disposition. Authoritative historical/approval records remain in their original business domains, not in the notification ledger. Fail-closed authorization applies when source evidence is missing.
+8. Browser notification permission/support is client-owned state, never asserted by a server configuration endpoint. Shared-device logout/account-switch must revoke the old account's subscription server-side for that installation, independent of browser unsubscribe success, without affecting other devices.
 
 ## Rejected alternatives
 
