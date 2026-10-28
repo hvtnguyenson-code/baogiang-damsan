@@ -1,15 +1,15 @@
 # ADR-059 — Durable per-account in-app notifications and independent Web Push
 
-**Status:** PROPOSED / P5-056A IN_REVIEW; not Accepted until reviewed, merged, main CI and SYNC-P5-056A closure.  
+**Status:** ACCEPTED for architecture only — effective when SYNC-P5-056A merges, not a runtime implementation.  
 **Task:** P5-056A; **Traceability:** T55; **Depends on:** P5-050 CLOSED.  
 **Baseline:** main@1a90f05b08b2ae189628e2a501dc4e5dc30c1af5.  
-**Detailed normative contract if accepted:** docs/requirements/P5-056A-NOTIFICATION-CENTER-WEB-PUSH-ARCHITECTURE.md.
+**Accepted architecture contract for P5-056 after SYNC merge:** docs/requirements/P5-056A-NOTIFICATION-CENTER-WEB-PUSH-ARCHITECTURE.md.
 
 ## Context
 
 PA-B v1.2 requires an enduring account-owned inbox and Web Push. P5-020 supplies installable PWA/service worker but explicitly not Push. P5-030/ADR-058 supplies separate Telegram integration; its TelegramNotificationDelivery is channel-specific, not the inbox. P5-050/T55 reopens the requirement. Existing service-side NotificationPublisherPort and PushGatewayPort are inert contracts, not an implemented product.
 
-## Proposed decision
+## Accepted architecture decision (after SYNC merge)
 
 1. Introduce one **PostgreSQL-persisted InAppNotification per recipient and canonical domain event** as the sole business notification record. Add a database unique recipient+dedupe key; retain source identity, category, safely templated text, readAt and source-confirmed resolvedAt.
 2. Keep WebPushSubscription (encrypted endpoint/keys; one per browser installation) and WebPushDelivery outbox/attempt state separate. Web Push/Telegram only deliver reminders; failure, opt-out or inability to install PWA cannot remove/corrupt inbox data.
@@ -35,4 +35,4 @@ P5-056 will add Prisma migration and audited backend/worker/frontend pieces, req
 
 ## Governance
 
-One P5-056A docs-only PR, exact-head CI, independent technical review, explicit merge authorization, post-merge CI, SYNC-P5-056A only once. Changes requiring new business semantics outside T55 must be registered as their own task, never hidden in the closure sync.
+Parent PR #255 merged at `da6b4f42ac091d4d707ca6eb3e7fbed5f8136835`; exact-head CI #849 and authoritative main CI #850 SUCCESS, reviewer COMMENT `5676503379` by the same document author (not a third-party review). This ADR is accepted as an architecture decision via the one non-recursive SYNC-P5-056A, not as deployed notification functionality. New semantics beyond T55 need separate task registration.

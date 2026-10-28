@@ -8,12 +8,15 @@ Per `MAJOR-TASK-DOCUMENTATION-SYNC-PROTOCOL.md`, this file is intentionally conc
 
 Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub. SHAs here are evidence for already-established task states, never a self-referential claim that this document contains its own current commit.
 
-**Status snapshot date:** 2026-10-27
+**Status snapshot date:** 2026-10-28
 
-## P5-056A / T55 — IN_REVIEW, architecture proposal (docs-only)
+## P5-056A / T55 — CLOSED by SYNC-P5-056A (architecture only)
 
-On the existing branch docs/p5-056a-inapp-notification-webpush-architecture based on canonical main@1a90f05b08b2ae189628e2a501dc4e5dc30c1af5, proposed ADR-059 and the expanded P5-056A requirement specify one durable per-account notification record with authoritative source, two-boundary capability checks, read vs source-confirmed resolved, allowlisted internal action routes, deterministic dedupe, safe Web Push subscriptions/outbox/retries, data minimization and independent Telegram/PWA boundaries. **Architecture is not yet approved and no runtime code has changed.** GitHub diff review, exact-head CI, authorized merge, authoritative post-merge CI, and one SYNC-P5-056A closure remain required. P5-056 implementation remains PLANNED and blocked; P5-057/P6-050 pilot stay gated. This branch must not trigger manual deployment.
+Parent docs-only PR #255 final reviewed HEAD `dd124c2beb7f693ac8c5c6945b65951d94b87bf8` and exact-head CI #849 (`40612229821`) SUCCESS. Three MEDIUM architecture issues (unresolved retention, client-owned Push permission and shared-device subscription revocation) were corrected on the same branch before merge. ChatGPT GitHub-diff review COMMENT `5676503379` found no remaining HIGH/CRITICAL in the docs-only scope; it was written by the document author, **not a formal independent third-party APPROVE**. The Product Owner authorized merge.
 
+Parent merged at `da6b4f42ac091d4d707ca6eb3e7fbed5f8136835`. Authoritative main CI #850 (`40615251280`) SUCCESS 2/2; auto-deploy #30 (`40616529475`) SUCCESS; isolated Báo giảng VPS deployment #27 (`40616539175`) SUCCESS, with job log `BAOGIANG_DEPLOY_VERIFIED sha=da6b4f42ac091d4d707ca6eb3e7fbed5f8136835` on 28/10/2026 08:50:49 +07. This proves GitHub release provenance, **not direct operator VPS health/PID evidence**. Parent changed exactly six Markdown files: no application code, Prisma schema, migrations, UI, auth semantics or CI/CD changes.
+
+After this SYNC PR merges, ADR-059 is ACCEPTED for architecture, P5-056A is CLOSED and P5-056 becomes READY for implementation with MCP; T55 runtime remains RESTORE, not implemented. P5-057 device/persona UAT and P6-050 teacher pilot remain gated. Closure report: `docs/phase-reports/SYNC-P5-056A-CLOSURE.md`. No recursive SYNC.
 ## P5-055 — CLOSED by SYNC-P5-055 (Data Readiness & Import Center)
 
 Parent PR #248 final HEAD `a5efc02735cdf9101ad14e007c448493bac75bc8` includes READY fail-closed correction `006d1e23a06e0a5764bc7087f6e13aa4465ce3e7`; exact-head CI #824 (`39969087899`) and P6-021 off-host #71 (`39969087920`) SUCCESS. Parent merged 23/10/2026 at `6f1e83a8f021db1ab23f9902981a6b32f36d65ab` with main CI #825 (`39971195093`), auto-deploy #23 (`39972403934`) and VPS deploy #20 (`39972416299`) SUCCESS, exact deploy SHA verified in log. A retrospective independent ChatGPT GitHub-diff technical review (24 parent PR files) found no new HIGH/CRITICAL blocker and is recorded as COMMENT `5661587622` on #248; it is **not** a formal third-party `APPROVE`. Prior task register `IN_PROGRESS` was stale after the 23/10 merge and is corrected by `SYNC-P5-055`. The correction report's original pre-merge status remains historical evidence, not the current task state.
@@ -132,12 +135,12 @@ Preliminary Desktop Commander read-only metadata: Windows Server 2022, 6 logical
 
 ### Ready
 
-- `P5-056A` — IN_REVIEW docs-only architecture on existing GitHub branch; no approval/merge or runtime yet.
+- `P5-056A` — CLOSED by SYNC-P5-056A, architecture only; runtime T55 still pending.
 - `P0-005` — docs-only historical T31 traceability reconciliation; independent of the product-operability implementation path.
 
 ### Planned behind open dependencies
 
-- `P5-056A` -> `P5-056` — in-app notification center + Web Push architecture then implementation.
+- `P5-056` — READY after SYNC-P5-056A merge; MCP-backed implementation not yet started.
 - `P5-057` — persona operability E2E freeze; mandatory product predecessor of teacher pilot.
 - `P6-030` — production bootstrap + first controlled deploy: **`PLANNED`** (depends on `P6-020` and P6-025 acceptance).
 - `P6-040` — TLS monitor multi-certificate refactor: **`PLANNED`** (depends on `P6-030`).
