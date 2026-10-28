@@ -10,6 +10,10 @@ Exact current `main`, branch HEAD and divergence must always be read directly fr
 
 **Status snapshot date:** 2026-10-27
 
+## P5-056A / T55 — IN_REVIEW, architecture proposal (docs-only)
+
+On the existing branch docs/p5-056a-inapp-notification-webpush-architecture based on canonical main@1a90f05b08b2ae189628e2a501dc4e5dc30c1af5, proposed ADR-059 and the expanded P5-056A requirement specify one durable per-account notification record with authoritative source, two-boundary capability checks, read vs source-confirmed resolved, allowlisted internal action routes, deterministic dedupe, safe Web Push subscriptions/outbox/retries, data minimization and independent Telegram/PWA boundaries. **Architecture is not yet approved and no runtime code has changed.** GitHub diff review, exact-head CI, authorized merge, authoritative post-merge CI, and one SYNC-P5-056A closure remain required. P5-056 implementation remains PLANNED and blocked; P5-057/P6-050 pilot stay gated. This branch must not trigger manual deployment.
+
 ## P5-055 — CLOSED by SYNC-P5-055 (Data Readiness & Import Center)
 
 Parent PR #248 final HEAD `a5efc02735cdf9101ad14e007c448493bac75bc8` includes READY fail-closed correction `006d1e23a06e0a5764bc7087f6e13aa4465ce3e7`; exact-head CI #824 (`39969087899`) and P6-021 off-host #71 (`39969087920`) SUCCESS. Parent merged 23/10/2026 at `6f1e83a8f021db1ab23f9902981a6b32f36d65ab` with main CI #825 (`39971195093`), auto-deploy #23 (`39972403934`) and VPS deploy #20 (`39972416299`) SUCCESS, exact deploy SHA verified in log. A retrospective independent ChatGPT GitHub-diff technical review (24 parent PR files) found no new HIGH/CRITICAL blocker and is recorded as COMMENT `5661587622` on #248; it is **not** a formal third-party `APPROVE`. Prior task register `IN_PROGRESS` was stale after the 23/10 merge and is corrected by `SYNC-P5-055`. The correction report's original pre-merge status remains historical evidence, not the current task state.
@@ -128,7 +132,7 @@ Preliminary Desktop Commander read-only metadata: Windows Server 2022, 6 logical
 
 ### Ready
 
-- `P5-056A` — notification/Web Push architecture; eligible by dependency but held behind the sequential orchestration priority.
+- `P5-056A` — IN_REVIEW docs-only architecture on existing GitHub branch; no approval/merge or runtime yet.
 - `P0-005` — docs-only historical T31 traceability reconciliation; independent of the product-operability implementation path.
 
 ### Planned behind open dependencies
