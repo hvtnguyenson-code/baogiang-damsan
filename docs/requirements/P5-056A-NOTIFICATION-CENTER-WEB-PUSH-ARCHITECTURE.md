@@ -1,12 +1,12 @@
 # P5-056A — Kiến trúc Trung tâm thông báo trong ứng dụng và Web Push
 
-**Trạng thái nhiệm vụ:** IN_REVIEW (đề xuất trong nhánh; chưa được phê duyệt/merge)  
+**Trạng thái nhiệm vụ:** CLOSED by SYNC-P5-056A (hiệu lực khi SYNC merge; chỉ là kiến trúc, chưa có runtime)  
 **Loại:** kiến trúc DOCS-ONLY; chưa triển khai runtime  
 **Phụ thuộc:** P5-050 — CLOSED; **Truy vết:** T55  
 **Canonical baseline:** main@1a90f05b08b2ae189628e2a501dc4e5dc30c1af5 (27/10/2026)  
 **Nhánh duy nhất:** docs/p5-056a-inapp-notification-webpush-architecture  
-**Quyết định đề xuất:** docs/decisions/ADR-059-INAPP-NOTIFICATION-WEB-PUSH.md  
-**Implementation successor:** P5-056 (PLANNED, BLOCKED cho đến khi P5-056A CLOSED).
+**Quyết định kiến trúc được chấp nhận sau SYNC:** docs/decisions/ADR-059-INAPP-NOTIFICATION-WEB-PUSH.md  
+**Implementation successor:** P5-056 (READY sau SYNC merge; chưa bắt đầu).
 
 ## 1. Thẩm quyền và hiện trạng được kiểm chứng
 
@@ -131,3 +131,11 @@ P5-056 triển khai theo đúng ADR sau khi P5-056A CLOSED; chia gói làm việ
 ## 13. Cổng review kiến trúc P5-056A
 
 Review phải xác nhận đủ 11 hạng mục requirement gốc: durable per-account record/retention; type/source; read; handled; route; dedupe; multi-device; retry/dead-letter; privacy; dual-boundary capability; independence Telegram. Kiểm tra trực tiếp GitHub diff cho mọi thay đổi, exact-head CI, không có runtime/schema/config/CI/VPS changes; bảo đảm không gán danh hiệu READY cho P5-056 trước SYNC. Đến trước merge, mọi quyết định ở đây là **proposed**.
+
+## 14. Closure evidence (SYNC-P5-056A)
+
+- Parent PR #255 final HEAD `dd124c2beb7f693ac8c5c6945b65951d94b87bf8`, CI #849 (`40612229821`) SUCCESS; merged SHA `da6b4f42ac091d4d707ca6eb3e7fbed5f8136835`.
+- Main CI #850 (`40615251280`) SUCCESS; auto deploy #30 (`40616529475`) and isolated VPS deploy #27 (`40616539175`) SUCCESS, with `BAOGIANG_DEPLOY_VERIFIED` for exact parent SHA.
+- Review COMMENT `5676503379` (author self-review, not formal third-party approval), 3 MEDIUM findings corrected; no remaining HIGH/CRITICAL identified for architecture-only scope.
+- Parent changed six Markdown files only, no implementation. P5-056 must supply schema/API/worker/UI/PWA; P5-057 real-device UAT and P6-050 pilot are still gated.
+- See `docs/phase-reports/SYNC-P5-056A-CLOSURE.md`; no new business architecture in this administrative closure.
