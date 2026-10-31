@@ -43,6 +43,10 @@ require correction; original CI #855 and compatibility #78 failed.
   live-browser skip. Lint/typecheck/production build, Prisma/migration, UI/PWA,
   secret scan and Windows deployment gates passed. Exact-head GitHub CI and
   compatibility checks plus independent source review remain required.
+  First correction checkpoint `59bc4e6` passed off-host #79 and CI Windows, but CI
+  #856 exposed one P2002 inbox-publication race. Follow-up uses PostgreSQL-native
+  conflict arbitration for inbox/outbox and strengthens the concurrency regression;
+  see the validation report for separate checkpoint/run provenance.
   No production schema/deploy action or independent approval is asserted.
 
 Execution scope: `docs/tasks/P5-056-CODEX-CORRECTION.md`.

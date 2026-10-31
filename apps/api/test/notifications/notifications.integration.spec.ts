@@ -116,11 +116,15 @@ integration('P5-056 notifications security and concurrency (isolated PostgreSQL)
   });
 
   it('concurrent publication is idempotent for both inbox and outbox', async () => {
-    await subscribe(); const params = notification();
-    const rows = await Promise.all(Array.from({ length: 3 }, () => h.prisma.$transaction(tx => service.publishInAppNotification(tx, params))));
-    expect(new Set(rows.map(n => n!.id)).size).toBe(1);
-    expect(await h.prisma.inAppNotification.count()).toBe(1);
-    expect(await h.prisma.webPushDelivery.count()).toBe(1);
+    await subscribe();
+    for (let round = 1; round <= 3; round++) {
+      const params = notification();
+      const rows = await Promise.all(Array.from({ length: 8 }, () => h.prisma.$transaction(tx => service.publishInAppNotification(tx, params))));
+      expect(rows.every(row => row !== null)).toBe(true);
+      expect(new Set(rows.map(n => n!.id)).size).toBe(1);
+      expect(await h.prisma.inAppNotification.count()).toBe(round);
+      expect(await h.prisma.webPushDelivery.count()).toBe(round);
+    }
   });
 
   it('rejects malformed/oversized subscription fields without storing credentials', async () => {

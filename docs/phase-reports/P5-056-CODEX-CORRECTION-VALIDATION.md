@@ -43,7 +43,7 @@ release verifier; no runtime learning, CASCADE deletion or eligibility bypass.
   Reuse the existing capability evaluator inside the source transaction at
   publication, and recheck resource authority for list/count/read/action/send.
   A continuation survives an all-hidden 200-row scan; unread checks include the
-  action/source binding. Concurrent publication uses database upserts.
+  action/source binding. Inbox/outbox conflict arbitration runs inside PostgreSQL.
 - Code-only migration status and actual schema verification precede release
   activation; both controller transfer manifests include the new gate. Existing
   recovery fixtures assume admitted schema only in their command stubs; dedicated
@@ -64,8 +64,8 @@ release verifier; no runtime learning, CASCADE deletion or eligibility bypass.
 | Lint / typecheck / production build | PASS |
 | Prisma validate, schema static, notification migration verifier | PASS |
 | PG16 fresh / legacy / replay migration contract, non-superuser role | PASS |
-| Full PG16.15 API integration, frozen code | 54 suites, 754 PASS / one existing SKIP; exit 0 (824.944 s) |
-| Full PG17.10 API integration, frozen code | 54 suites, 754 PASS / one existing SKIP; exit 0 (1146.699 s) |
+| Full local PG16.15 API integration at checkpoint `59bc4e6` | 54 suites, 754 PASS / one existing SKIP; exit 0 (824.944 s) |
+| Full local PG17.10 API integration at checkpoint `59bc4e6` | 54 suites, 754 PASS / one existing SKIP; exit 0 (1146.699 s) |
 | Windows deployment / HTTP-01 / release gate | PASS; all 37 AUD-04 cases and five release-admission scenarios |
 | Real HTTPS Push receiver | PASS: ES256 VAPID verification, independent RFC8291 decryption, no redirect following |
 | Service worker / UI / Workbox static and privacy checks | PASS |
@@ -111,3 +111,29 @@ After the consolidated push, exact-head CI and P6-021 compatibility must be read
 directly from GitHub. Independent source-diff review is still required. The agent
 must stop before merge/deploy; P5-056 is not CLOSED until its separate authorized
 merge, authoritative post-merge CI and non-recursive documentation closure.
+
+## CI #856 correction — retained failure evidence
+
+Checkpoint `59bc4e6a92431bfea849070d9248a21656a9c711` passed off-host #79
+(`41213658254`), including the full PG16 suite (754 PASS / one existing SKIP),
+and the Windows job of CI #856 (`41213658255`). The main CI job failed exactly
+one concurrency regression with P2002 on the inbox compound unique key; 53 other
+integration suites and API/Web unit gates passed. Local success was insufficient
+to prove this race absent. Complete job logs were retrieved and diagnosed before
+the follow-up; no unchanged-SHA rerun or infrastructure excuse was used.
+
+Prisma empty-update `upsert` can issue a client-side read followed by insert.
+Both inbox and outbox now use `createMany(skipDuplicates)` to issue database
+conflict arbitration, followed by a canonical inbox read in the same transaction.
+No transaction error is swallowed and uniqueness/content/rollback remain intact.
+The regression now runs three bursts of eight publishers and requires exactly
+one inbox/outbox per burst, with every publisher returning the canonical row.
+See Prisma's [CRUD reference](https://www.prisma.io/docs/orm/v6/prisma-client/queries/crud).
+
+Post-correction local notification/security suites pass **20/20 on PG16 and
+20/20 on PG17**, including three eight-publisher bursts per run. Full API unit
+again passes **114 suites / 2,143 tests**, with lint/typecheck/production build
+PASS. Exact-head remote evidence is reported on PR #257. Full local
+integration rows above identify their actual pre-follow-up checkpoint; they are
+not misrepresented as runs of the corrected publisher. Final exact-head CI must
+run full PG17 and Playwright; off-host must run full PG16 before handover.

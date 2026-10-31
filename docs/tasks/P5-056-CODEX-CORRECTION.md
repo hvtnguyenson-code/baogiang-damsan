@@ -47,3 +47,23 @@ Before review synchronize task register/current status/T55 and report actual
 gates and exact new HEAD. Commit/push one consolidated checkpoint to PR #257.
 Stop for independent GitHub/CI review. No new branch/PR, merge, deploy, production
 migration, VPS/Nginx/PostgreSQL service change or Nội trú mutation is authorized.
+
+## Consolidated correction after CI #856
+
+Full CI #856 logs at checkpoint `59bc4e6a92431bfea849070d9248a21656a9c711`
+show one real P2002 race in concurrent inbox publication; all other 53 integration
+suites passed. Off-host #79 succeeded. Empty-update Prisma upsert did not ensure
+native atomic conflict handling. Correct both inbox and outbox insertion through
+PostgreSQL conflict arbitration (`createMany` with `skipDuplicates`), then read
+the canonical inbox row in the same transaction. Preserve first-write content,
+source authorization, database uniqueness and rollback semantics. Strengthen the
+existing regression to three bursts of eight concurrent publishers; do not catch
+or ignore transaction failures or change expected canonical counts.
+
+Allowed correction: publisher, its concurrency regression and evidence/status
+documents only. No further schema/auth/worker/deploy behavior change. Run the full
+notification/security integration on both isolated PG versions, full API unit,
+lint/typecheck/build, diff/secret checks, then one consolidated follow-up push on
+this same branch. Exact-head CI must exercise full PG17 plus Playwright and
+off-host must exercise full PG16. Keep the prior failed checkpoint visible;
+independent review/merge/production boundaries above remain unchanged.

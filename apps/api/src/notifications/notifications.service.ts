@@ -460,12 +460,16 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
 
     if (!await this.actionRegistry.isNotificationVisible(recipientUserId, params, tx)) return null;
 
-    const notification = await tx.inAppNotification.upsert({
-      where: { recipientUserId_dedupeKey: { recipientUserId, dedupeKey } },
-      create: { recipientUserId, eventType, category, priority, sourceKind, sourceId, sourceVersion,
+    // Empty-update Prisma upsert can execute SELECT then INSERT and race.
+    // createMany(skipDuplicates) delegates conflict arbitration to PostgreSQL.
+    await tx.inAppNotification.createMany({
+      data: { recipientUserId, eventType, category, priority, sourceKind, sourceId, sourceVersion,
         sourceEventId, dedupeKey, title, bodySafe, actionKey,
         actionParamsJson: actionParamsJson ? actionParamsJson as Prisma.InputJsonValue : Prisma.JsonNull },
-      update: {},
+      skipDuplicates: true,
+    });
+    const notification = await tx.inAppNotification.findUniqueOrThrow({
+      where: { recipientUserId_dedupeKey: { recipientUserId, dedupeKey } },
     });
 
     if (this.config.webPush.enabled) {
@@ -479,15 +483,8 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
 
       for (const sub of activeSubscriptions) {
         const deliveryDedupeKey = `${notification.id}_${sub.id}_1`;
-        await tx.webPushDelivery.upsert({
-          where: {
-            notificationId_subscriptionId_payloadVersion: {
-              notificationId: notification.id,
-              subscriptionId: sub.id,
-              payloadVersion: 1,
-            },
-          },
-          create: {
+        await tx.webPushDelivery.createMany({
+          data: {
             notificationId: notification.id,
             subscriptionId: sub.id,
             subscriptionGeneration: sub.generation,
@@ -495,7 +492,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
             payloadVersion: 1,
             status: WebPushDeliveryStatus.PENDING,
           },
-          update: {},
+          skipDuplicates: true,
         });
       }
     }
