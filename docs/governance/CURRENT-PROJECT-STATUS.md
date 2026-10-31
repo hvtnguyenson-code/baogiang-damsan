@@ -8,8 +8,11 @@ Per `MAJOR-TASK-DOCUMENTATION-SYNC-PROTOCOL.md`, this file is intentionally conc
 
 Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub. SHAs here are evidence for already-established task states, never a self-referential claim that this document contains its own current commit.
 
-**Status snapshot date:** 2026-10-28
+**Status snapshot date:** 2026-10-31
 
+## P5-056 / T55 — IN_PROGRESS in task branch; runtime not delivered
+
+At canonical GitHub main `088041952796e9628ae7aeed1026393525e35705`, P5-056A/SYNC-P5-056A are closed, parent CI #852 and code-only deploy #28 PASS. Work is now assigned to one GitHub branch `feat/p5-056-notification-center-webpush` and the single task handoff `docs/tasks/P5-056-ANTIGRAVITY-EXECUTION.md`. **Only task preparation and status docs have been committed**; Antigravity is not yet confirmed running or pushing. No implementation evidence, migration, production rollout, or pilot acceptance is claimed. Agent is blocked from merge/deploy; ChatGPT reviews code and exact-head CI before any change to main.
 ## P5-056A / T55 — CLOSED by SYNC-P5-056A (architecture only)
 
 Parent docs-only PR #255 final reviewed HEAD `dd124c2beb7f693ac8c5c6945b65951d94b87bf8` and exact-head CI #849 (`40612229821`) SUCCESS. Three MEDIUM architecture issues (unresolved retention, client-owned Push permission and shared-device subscription revocation) were corrected on the same branch before merge. ChatGPT GitHub-diff review COMMENT `5676503379` found no remaining HIGH/CRITICAL in the docs-only scope; it was written by the document author, **not a formal independent third-party APPROVE**. The Product Owner authorized merge.
@@ -140,7 +143,7 @@ Preliminary Desktop Commander read-only metadata: Windows Server 2022, 6 logical
 
 ### Planned behind open dependencies
 
-- `P5-056` — READY after SYNC-P5-056A merge; MCP-backed implementation not yet started.
+- `P5-056` — IN_PROGRESS on GitHub task branch `feat/p5-056-notification-center-webpush`; Antigravity implementation instructions committed, no source implementation/push/CI proof yet. Source of truth is accepted ADR-059/T55; not merge/deploy-authorized.
 - `P5-057` — persona operability E2E freeze; mandatory product predecessor of teacher pilot.
 - `P6-030` — production bootstrap + first controlled deploy: **`PLANNED`** (depends on `P6-020` and P6-025 acceptance).
 - `P6-040` — TLS monitor multi-certificate refactor: **`PLANNED`** (depends on `P6-030`).
