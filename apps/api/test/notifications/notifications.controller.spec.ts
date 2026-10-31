@@ -78,5 +78,14 @@ describe('NotificationsController (unit)', () => {
   it('rejects invalid UUID on revokeSubscription', async () => {
     await expect(controller.revokeSubscription(req, 'bad-id')).rejects.toThrow(BadRequestException);
   });
+
+  it('calls revokeSubscriptionByEndpoint with dto endpoint', async () => {
+    service.revokeByEndpoint = jest.fn().mockResolvedValue({ success: true });
+    await controller.revokeSubscriptionByEndpoint(req, { endpoint: 'http://127.0.0.1:8080/push/test' });
+    expect(service.revokeByEndpoint).toHaveBeenCalledWith(
+      '11111111-1111-1111-1111-111111111111',
+      'http://127.0.0.1:8080/push/test',
+    );
+  });
 });
 

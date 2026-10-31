@@ -297,3 +297,11 @@ export const revokeWebPushSubscription = (
   apiFetch<{ success: boolean }>(`/notifications/subscriptions/${encodeURIComponent(id)}`, {
     method: 'DELETE',
   });
+
+export const revokeWebPushEndpoint = (
+  endpoint: string,
+): Promise<{ success: boolean }> =>
+  apiFetch<{ success: boolean }>('/notifications/subscriptions/revoke-endpoint', {
+    method: 'POST',
+    body: JSON.stringify({ endpoint }),
+  });

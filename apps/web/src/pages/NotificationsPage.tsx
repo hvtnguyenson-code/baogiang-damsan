@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   CreateWebPushSubscriptionDto,
   InAppNotificationItem,
@@ -67,9 +67,11 @@ export function NotificationsPage() {
     typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'default',
   );
 
-  const notificationsQuery = useQuery({
+  const notificationsQuery = useInfiniteQuery({
     queryKey: ['notifications-list'],
-    queryFn: () => fetchNotifications(undefined, 50),
+    queryFn: ({ pageParam }) => fetchNotifications(pageParam, 20),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
   });
 
   const unreadCountQuery = useQuery({
@@ -181,19 +183,22 @@ export function NotificationsPage() {
     }
   }, [isPushSupported, pushConfigQuery.data?.vapidPublicKey, queryClient]);
 
+  const allNotifications = useMemo(() => {
+    return notificationsQuery.data?.pages.flatMap((page) => page.items) ?? [];
+  }, [notificationsQuery.data]);
+
   const items = useMemo(() => {
-    const all = notificationsQuery.data?.items ?? [];
     if (activeTab === 'UNREAD') {
-      return all.filter((i) => !i.readAt);
+      return allNotifications.filter((i) => !i.readAt);
     }
     if (activeTab === 'ACTION_REQUIRED') {
-      return all.filter((i) => i.category === 'ACTION_REQUIRED');
+      return allNotifications.filter((i) => i.category === 'ACTION_REQUIRED');
     }
-    return all;
-  }, [notificationsQuery.data?.items, activeTab]);
+    return allNotifications;
+  }, [allNotifications, activeTab]);
 
   const unreadCount = unreadCountQuery.data?.count ?? 0;
-  const actionRequiredCount = (notificationsQuery.data?.items ?? []).filter(
+  const actionRequiredCount = allNotifications.filter(
     (i) => i.category === 'ACTION_REQUIRED' && !i.resolvedAt,
   ).length;
 
@@ -212,12 +217,11 @@ export function NotificationsPage() {
         </div>
       )}
 
-      {/* Tabs / Filter bar */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-slate-300 pb-2" role="tablist" aria-label="Bộ lọc thông báo">
+      {/* Filter bar */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-300 pb-2" aria-label="Bộ lọc thông báo">
         <button
           type="button"
-          role="tab"
-          aria-selected={activeTab === 'ALL'}
+          aria-pressed={activeTab === 'ALL'}
           className={`min-h-[44px] px-4 py-2 text-sm font-medium rounded transition-colors ${
             activeTab === 'ALL'
               ? 'bg-slate-900 text-white'
@@ -225,12 +229,11 @@ export function NotificationsPage() {
           }`}
           onClick={() => setActiveTab('ALL')}
         >
-          Tất cả ({(notificationsQuery.data?.items ?? []).length})
+          Tất cả ({allNotifications.length})
         </button>
         <button
           type="button"
-          role="tab"
-          aria-selected={activeTab === 'UNREAD'}
+          aria-pressed={activeTab === 'UNREAD'}
           className={`min-h-[44px] px-4 py-2 text-sm font-medium rounded transition-colors flex items-center gap-1.5 ${
             activeTab === 'UNREAD'
               ? 'bg-blue-600 text-white'
@@ -247,8 +250,7 @@ export function NotificationsPage() {
         </button>
         <button
           type="button"
-          role="tab"
-          aria-selected={activeTab === 'ACTION_REQUIRED'}
+          aria-pressed={activeTab === 'ACTION_REQUIRED'}
           className={`min-h-[44px] px-4 py-2 text-sm font-medium rounded transition-colors flex items-center gap-1.5 ${
             activeTab === 'ACTION_REQUIRED'
               ? 'bg-amber-700 text-white'
@@ -299,6 +301,7 @@ export function NotificationsPage() {
         {notificationsQuery.isSuccess &&
           items.map((item) => {
             const isUnread = !item.readAt;
+            const isActionPending = item.category === 'ACTION_REQUIRED' && !item.resolvedAt;
             return (
               <article
                 key={item.id}
@@ -314,9 +317,14 @@ export function NotificationsPage() {
                       <span className="font-semibold text-slate-900 text-base">
                         {item.title}
                       </span>
-                      {item.category === 'ACTION_REQUIRED' && (
+                      {isActionPending && (
                         <span className="px-2 py-0.5 text-xs font-semibold rounded bg-amber-100 text-amber-800 border border-amber-300">
                           Cần xử lý
+                        </span>
+                      )}
+                      {item.category === 'ACTION_REQUIRED' && item.resolvedAt && (
+                        <span className="px-2 py-0.5 text-xs font-medium rounded bg-slate-100 text-slate-700 border border-slate-300">
+                          Đã xử lý
                         </span>
                       )}
                       {item.category === 'INFORMATION' && (
@@ -329,7 +337,7 @@ export function NotificationsPage() {
                           Hệ thống
                         </span>
                       )}
-                      {item.resolvedAt && (
+                      {item.resolvedAt && item.category !== 'ACTION_REQUIRED' && (
                         <span className="px-2 py-0.5 text-xs font-medium rounded bg-teal-50 text-teal-800 border border-teal-300">
                           ✓ Đã giải quyết
                         </span>
@@ -350,7 +358,7 @@ export function NotificationsPage() {
 
                   {/* Actions */}
                   <div className="flex items-center gap-2 pt-2 sm:pt-0 self-end sm:self-start">
-                    {item.actionKey && (
+                    {item.actionKey && !item.resolvedAt && (
                       <Button
                         type="button"
                         variant="primary"
@@ -358,6 +366,16 @@ export function NotificationsPage() {
                         onClick={() => void handleOpenAction(item)}
                       >
                         Mở công việc
+                      </Button>
+                    )}
+                    {item.actionKey && item.resolvedAt && (
+                      <Button
+                        type="button"
+                        variant="quiet"
+                        className="min-h-[44px]"
+                        onClick={() => void handleOpenAction(item)}
+                      >
+                        Xem lại
                       </Button>
                     )}
                     {isUnread && (
@@ -376,6 +394,20 @@ export function NotificationsPage() {
               </article>
             );
           })}
+
+        {notificationsQuery.hasNextPage && (
+          <div className="pt-3 text-center">
+            <Button
+              type="button"
+              variant="secondary"
+              className="min-h-[44px]"
+              loading={notificationsQuery.isFetchingNextPage}
+              onClick={() => void notificationsQuery.fetchNextPage()}
+            >
+              Tải thêm thông báo
+            </Button>
+          </div>
+        )}
       </section>
 
       {/* Web Push Configuration Section */}
@@ -464,4 +496,3 @@ export function NotificationsPage() {
     </div>
   );
 }
-

@@ -16,7 +16,11 @@ import {
 import { CsrfOriginGuard } from '../auth/csrf-origin.guard';
 import { SessionAuthGuard } from '../auth/session-auth.guard';
 import { AuthenticatedRequest } from '../auth/auth.types';
-import { CreateWebPushSubscriptionDto, NotificationQueryDto } from './dto';
+import {
+  CreateWebPushSubscriptionDto,
+  NotificationQueryDto,
+  RevokeWebPushEndpointDto,
+} from './dto';
 import { NotificationsService } from './notifications.service';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -66,6 +70,16 @@ export class NotificationsController {
     return this.notificationsService.createSubscription(req.auth!.user.id, dto);
   }
 
+  @Post('subscriptions/revoke-endpoint')
+  @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'no-store')
+  async revokeSubscriptionByEndpoint(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: RevokeWebPushEndpointDto,
+  ) {
+    return this.notificationsService.revokeByEndpoint(req.auth!.user.id, dto.endpoint);
+  }
+
   @Delete('subscriptions/:id')
   @HttpCode(HttpStatus.OK)
   @Header('Cache-Control', 'no-store')
@@ -104,4 +118,3 @@ export class NotificationsController {
     return this.notificationsService.resolveAction(req.auth!.user.id, id);
   }
 }
-

@@ -27,3 +27,8 @@ export class CreateWebPushSubscriptionDto {
   deviceLabel?: string;
 }
 
+export class RevokeWebPushEndpointDto {
+  @IsString()
+  @IsNotEmpty()
+  endpoint!: string;
+}

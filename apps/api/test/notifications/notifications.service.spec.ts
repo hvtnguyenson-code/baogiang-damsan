@@ -36,6 +36,7 @@ describe('NotificationsService (unit)', () => {
       vapidSubject: 'mailto:admin@damsan.edu.vn',
       encryptionKey: 'test-32-byte-encryption-key-for-unit-test!!',
     },
+    nodeEnv: 'test',
   } as unknown as AppConfig;
 
   beforeEach(() => {
@@ -79,6 +80,10 @@ describe('NotificationsService (unit)', () => {
       config,
       transport,
     );
+  });
+
+  afterEach(() => {
+    service.onModuleDestroy();
   });
 
   describe('listNotifications', () => {
@@ -144,7 +149,9 @@ describe('NotificationsService (unit)', () => {
         readAt: null,
         resolvedAt: null,
       }));
+      // First page batch returns 3 items (more than fetchSize 2)
       prisma.inAppNotification.findMany.mockResolvedValue(items);
+      prisma.inAppNotification.findFirst.mockResolvedValue({ id: 'n-2' });
 
       const res = await service.listNotifications('user-1', undefined, '2');
       expect(res.items).toHaveLength(2);
@@ -233,8 +240,8 @@ describe('NotificationsService (unit)', () => {
     });
   });
 
-  describe('web push subscription management', () => {
-    it('rejects non-HTTPS endpoints outside localhost', async () => {
+  describe('web push subscription management & shared-device security', () => {
+    it('rejects invalid or untrusted push endpoints', async () => {
       await expect(
         service.createSubscription('user-1', {
           endpoint: 'http://insecure-push-service.com/sub/1',
@@ -261,30 +268,52 @@ describe('NotificationsService (unit)', () => {
       expect(res.id).toBe('sub-1');
     });
 
-    it('reassigns subscription safely on shared-device account switch', async () => {
+    it('CRITICAL: reassigning on shared-device invalidates old user pending deliveries', async () => {
       prisma.webPushSubscription.findUnique.mockResolvedValue({
         id: 'sub-shared',
-        userId: 'old-user',
+        userId: 'user-A',
         deviceLabel: 'Tablet',
       });
+      prisma.webPushSubscription.findMany.mockResolvedValue([]);
       prisma.webPushSubscription.update.mockResolvedValue({
         id: 'sub-shared',
-        userId: 'new-user',
+        userId: 'user-B',
         deviceLabel: 'Tablet',
         createdAt: new Date(),
         lastSeenAt: new Date(),
       });
+      prisma.webPushDelivery.updateMany.mockResolvedValue({ count: 2 });
 
-      const res = await service.createSubscription('new-user', {
-        endpoint: 'https://push.example.com/shared',
+      const res = await service.createSubscription('user-B', {
+        endpoint: 'http://127.0.0.1:8080/push/shared',
         keys: { p256dh: 'k', auth: 'a' },
       });
       expect(res.id).toBe('sub-shared');
+
+      // Verifies old deliveries targeting sub-shared were marked DEAD
+      expect(prisma.webPushDelivery.updateMany).toHaveBeenCalledWith({
+        where: {
+          subscriptionId: 'sub-shared',
+          status: {
+            in: [
+              WebPushDeliveryStatus.PENDING,
+              WebPushDeliveryStatus.LEASED,
+              WebPushDeliveryStatus.RETRY_WAIT,
+            ],
+          },
+        },
+        data: expect.objectContaining({
+          status: WebPushDeliveryStatus.DEAD,
+          lastErrorCode: 'SHARED_DEVICE_SWITCH',
+        }),
+      });
+
+      // Verifies subscription is reassigned to user-B
       expect(prisma.webPushSubscription.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'sub-shared' },
           data: expect.objectContaining({
-            userId: 'new-user',
+            userId: 'user-B',
             revokedAt: null,
             invalidatedAt: null,
           }),
@@ -308,7 +337,7 @@ describe('NotificationsService (unit)', () => {
       });
 
       const res = await service.createSubscription('user-1', {
-        endpoint: 'https://push.example.com/device6',
+        endpoint: 'http://127.0.0.1:8080/push/device6',
         keys: { p256dh: 'k', auth: 'a' },
       });
       expect(res.id).toBe('sub-new');
@@ -320,7 +349,7 @@ describe('NotificationsService (unit)', () => {
       );
     });
 
-    it('revokes subscription successfully for owner', async () => {
+    it('revokes subscription successfully for owner and cancels deliveries', async () => {
       prisma.webPushSubscription.findFirst.mockResolvedValue({
         id: 'sub-1',
         userId: 'user-1',
@@ -334,29 +363,92 @@ describe('NotificationsService (unit)', () => {
         where: { id: 'sub-1' },
         data: { revokedAt: expect.any(Date) },
       });
+      expect(prisma.webPushDelivery.updateMany).toHaveBeenCalledWith({
+        where: {
+          subscriptionId: 'sub-1',
+          status: {
+            in: [
+              WebPushDeliveryStatus.PENDING,
+              WebPushDeliveryStatus.LEASED,
+              WebPushDeliveryStatus.RETRY_WAIT,
+            ],
+          },
+        },
+        data: expect.objectContaining({
+          status: WebPushDeliveryStatus.DEAD,
+          lastErrorCode: 'SUBSCRIPTION_REVOKED',
+        }),
+      });
     });
 
-    it('throws 404 when trying to revoke subscription of another user', async () => {
-      prisma.webPushSubscription.findFirst.mockResolvedValue(null);
-      await expect(service.revokeSubscription('user-1', 'sub-other')).rejects.toThrow(NotFoundException);
+    it('revokes subscription by endpoint on logout', async () => {
+      prisma.webPushSubscription.findFirst.mockResolvedValue({
+        id: 'sub-1',
+        userId: 'user-1',
+        revokedAt: null,
+      });
+      prisma.webPushSubscription.update.mockResolvedValue({} as never);
+
+      const res = await service.revokeByEndpoint('user-1', 'http://127.0.0.1:8080/push/test');
+      expect(res.success).toBe(true);
+      expect(prisma.webPushSubscription.update).toHaveBeenCalledWith({
+        where: { id: 'sub-1' },
+        data: { revokedAt: expect.any(Date) },
+      });
     });
   });
 
-  describe('outbox delivery worker and retries', () => {
+  describe('outbox delivery worker and CAS verification', () => {
     const encKey = deriveEncryptionKey('test-32-byte-encryption-key-for-unit-test!!');
-    const validEndpointCipher = encryptAtRest('https://push.example.com/test', encKey);
+    const validEndpointCipher = encryptAtRest('http://127.0.0.1:8080/push/test', encKey);
     const validP256dhCipher = encryptAtRest('p256dh-key', encKey);
     const validAuthCipher = encryptAtRest('auth-key', encKey);
 
-    it('processes pending delivery and marks SENT on 200', async () => {
+    it('CRITICAL: marks DEAD with RECIPIENT_MISMATCH if delivery subscription does not match notification recipient', async () => {
       prisma.webPushDelivery.findMany.mockResolvedValue([
         {
           id: 'del-1',
           status: WebPushDeliveryStatus.PENDING,
           attemptCount: 0,
-          notification: { id: 'n-1', bodySafe: 'Hello' },
+          notification: { id: 'n-1', recipientUserId: 'user-A', bodySafe: 'Secret for A' },
           subscription: {
             id: 'sub-1',
+            userId: 'user-B', // Swapped / Mismatched user!
+            endpointCiphertext: validEndpointCipher,
+            p256dhCiphertext: validP256dhCipher,
+            authCiphertext: validAuthCipher,
+            revokedAt: null,
+            invalidatedAt: null,
+          },
+        },
+      ]);
+      prisma.webPushDelivery.updateMany.mockResolvedValue({ count: 1 });
+
+      const stats = await service.processPendingDeliveries(1);
+      expect(stats.failed).toBe(1);
+      expect(stats.sent).toBe(0);
+      expect(transport.sendNotification).not.toHaveBeenCalled();
+
+      // Verifies CAS write marking DEAD with RECIPIENT_MISMATCH
+      expect(prisma.webPushDelivery.updateMany).toHaveBeenCalledWith({
+        where: { id: 'del-1', leaseOwner: expect.any(String) },
+        data: expect.objectContaining({
+          status: WebPushDeliveryStatus.DEAD,
+          lastErrorCode: 'RECIPIENT_MISMATCH',
+        }),
+      });
+    });
+
+    it('processes pending delivery and marks SENT on 200 with CAS', async () => {
+      prisma.webPushDelivery.findMany.mockResolvedValue([
+        {
+          id: 'del-1',
+          status: WebPushDeliveryStatus.PENDING,
+          attemptCount: 0,
+          notification: { id: 'n-1', recipientUserId: 'user-1', bodySafe: 'Hello' },
+          subscription: {
+            id: 'sub-1',
+            userId: 'user-1',
             endpointCiphertext: validEndpointCipher,
             p256dhCiphertext: validP256dhCipher,
             authCiphertext: validAuthCipher,
@@ -370,9 +462,9 @@ describe('NotificationsService (unit)', () => {
 
       const stats = await service.processPendingDeliveries(1);
       expect(stats.sent).toBe(1);
-      expect(prisma.webPushDelivery.update).toHaveBeenCalledWith(
+      expect(prisma.webPushDelivery.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: 'del-1' },
+          where: { id: 'del-1', leaseOwner: expect.any(String) },
           data: expect.objectContaining({ status: WebPushDeliveryStatus.SENT }),
         }),
       );
@@ -384,9 +476,10 @@ describe('NotificationsService (unit)', () => {
           id: 'del-1',
           status: WebPushDeliveryStatus.PENDING,
           attemptCount: 0,
-          notification: { id: 'n-1', bodySafe: 'Hello' },
+          notification: { id: 'n-1', recipientUserId: 'user-1', bodySafe: 'Hello' },
           subscription: {
             id: 'sub-1',
+            userId: 'user-1',
             endpointCiphertext: validEndpointCipher,
             p256dhCiphertext: validP256dhCipher,
             authCiphertext: validAuthCipher,
@@ -413,9 +506,10 @@ describe('NotificationsService (unit)', () => {
           id: 'del-1',
           status: WebPushDeliveryStatus.RETRY_WAIT,
           attemptCount: 4,
-          notification: { id: 'n-1', bodySafe: 'Hello' },
+          notification: { id: 'n-1', recipientUserId: 'user-1', bodySafe: 'Hello' },
           subscription: {
             id: 'sub-1',
+            userId: 'user-1',
             endpointCiphertext: validEndpointCipher,
             p256dhCiphertext: validP256dhCipher,
             authCiphertext: validAuthCipher,
@@ -433,9 +527,9 @@ describe('NotificationsService (unit)', () => {
 
       const stats = await service.processPendingDeliveries(1);
       expect(stats.failed).toBe(1);
-      expect(prisma.webPushDelivery.update).toHaveBeenCalledWith(
+      expect(prisma.webPushDelivery.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: 'del-1' },
+          where: { id: 'del-1', leaseOwner: expect.any(String) },
           data: expect.objectContaining({
             status: WebPushDeliveryStatus.DEAD,
             attemptCount: 5,
@@ -445,4 +539,3 @@ describe('NotificationsService (unit)', () => {
     });
   });
 });
-

@@ -72,15 +72,15 @@ describe('NotificationsPage', () => {
 
     await screen.findByText('Báo cáo mới cần duyệt');
 
-    // Click "Chưa đọc" tab
-    const unreadTab = screen.getByRole('tab', { name: /Chưa đọc/i });
+    // Click "Chưa đọc" filter button
+    const unreadTab = screen.getByRole('button', { name: /Chưa đọc/i });
     fireEvent.click(unreadTab);
 
     expect(screen.getByText('Báo cáo mới cần duyệt')).toBeInTheDocument();
     expect(screen.queryByText('Báo cáo đã được phê duyệt')).not.toBeInTheDocument();
 
-    // Click "Cần xử lý" tab
-    const actionTab = screen.getByRole('tab', { name: /Cần xử lý/i });
+    // Click "Cần xử lý" filter button
+    const actionTab = screen.getByRole('button', { name: /Cần xử lý/i });
     fireEvent.click(actionTab);
 
     expect(screen.getByText('Báo cáo mới cần duyệt')).toBeInTheDocument();

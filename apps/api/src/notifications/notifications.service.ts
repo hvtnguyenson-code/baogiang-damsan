@@ -3,16 +3,19 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
+  OnModuleDestroy,
+  OnModuleInit,
+  ServiceUnavailableException,
 } from '@nestjs/common';
-import { ConfigType } from '@nestjs/config';
 import {
   InAppNotificationCategory,
   InAppNotificationPriority,
   Prisma,
   WebPushDeliveryStatus,
 } from '@prisma/client';
-import { appConfig } from '../config/app.config';
+import { AppConfig } from '../config/app.config';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateWebPushSubscriptionDto } from './dto';
 import { NotificationActionRegistry } from './notification-action.registry';
@@ -26,7 +29,7 @@ import {
   WebPushSendParams,
   WebPushTransportPort,
 } from './web-push-transport.port';
-import { WebPushHttpAdapter } from './web-push-http.adapter';
+import { validatePushEndpoint, WebPushHttpAdapter } from './web-push-http.adapter';
 
 export interface PublishNotificationParams {
   recipientUserId: string;
@@ -48,18 +51,69 @@ const MAX_ACTIVE_SUBSCRIPTIONS_PER_USER = 5;
 const RETRY_BACKOFF_SECONDS = [60, 300, 900, 3600];
 
 @Injectable()
-export class NotificationsService {
+export class NotificationsService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(NotificationsService.name);
   private readonly encryptionKey: Buffer;
+  private pollTimer: NodeJS.Timeout | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly actionRegistry: NotificationActionRegistry,
-    @Inject(appConfig.KEY) private readonly config: ConfigType<typeof appConfig>,
+    @Inject('APP_CONFIG') private readonly config: AppConfig,
     @Inject(WebPushHttpAdapter) private readonly transport: WebPushTransportPort,
   ) {
-    this.encryptionKey = deriveEncryptionKey(
-      this.config.webPush.encryptionKey || 'dev-insecure-web-push-encryption-key-32chars!!',
-    );
+    if (this.config.webPush.enabled) {
+      if (
+        !this.config.webPush.encryptionKey ||
+        (this.config.nodeEnv === 'production' &&
+          this.config.webPush.encryptionKey.startsWith('dev-insecure-'))
+      ) {
+        throw new Error(
+          'WEB_PUSH_ENCRYPTION_KEY must be properly configured when web push is enabled in production.',
+        );
+      }
+    }
+
+    this.encryptionKey = this.config.webPush.encryptionKey
+      ? deriveEncryptionKey(this.config.webPush.encryptionKey)
+      : Buffer.alloc(32);
+  }
+
+  onModuleInit() {
+    if (this.config.webPush.enabled) {
+      this.pollTimer = setInterval(() => {
+        this.processPendingDeliveries().catch((err) => {
+          this.logger.error(
+            `Error in periodic Web Push delivery worker: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+        });
+      }, 30_000);
+      if (this.pollTimer.unref) {
+        this.pollTimer.unref();
+      }
+    }
+  }
+
+  onModuleDestroy() {
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
+    }
+  }
+
+  private triggerBackgroundWorker() {
+    if (!this.config.webPush.enabled) return;
+    setImmediate(() => {
+      this.processPendingDeliveries().catch((err) => {
+        this.logger.error(
+          `Background Web Push worker execution failed: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      });
+    });
   }
 
   async listNotifications(
@@ -93,40 +147,77 @@ export class NotificationsService {
       }
     }
 
-    const where: Prisma.InAppNotificationWhereInput = {
-      recipientUserId: userId,
-    };
+    const targetLimit = limit;
+    const visibleItems: Prisma.InAppNotificationGetPayload<Record<string, never>>[] = [];
+    let currentCursorCreatedAt = cursorCreatedAt;
+    let currentCursorId = cursorId;
+    let scannedCount = 0;
+    const MAX_SCAN = 200;
 
-    if (cursorCreatedAt && cursorId) {
-      where.OR = [
-        { createdAt: { lt: cursorCreatedAt } },
-        { createdAt: cursorCreatedAt, id: { lt: cursorId } },
-      ];
-    }
+    while (visibleItems.length < targetLimit && scannedCount < MAX_SCAN) {
+      const fetchSize = Math.min(targetLimit - visibleItems.length + 5, 50);
+      const where: Prisma.InAppNotificationWhereInput = {
+        recipientUserId: userId,
+      };
 
-    const rawItems = await this.prisma.inAppNotification.findMany({
-      where,
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      take: limit + 1,
-    });
+      if (currentCursorCreatedAt && currentCursorId) {
+        where.OR = [
+          { createdAt: { lt: currentCursorCreatedAt } },
+          { createdAt: currentCursorCreatedAt, id: { lt: currentCursorId } },
+        ];
+      }
 
-    const hasMore = rawItems.length > limit;
-    const pagedItems = hasMore ? rawItems.slice(0, limit) : rawItems;
+      const batch = await this.prisma.inAppNotification.findMany({
+        where,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: fetchSize + 1,
+      });
 
-    // Authorization Twice (N04): filter items through current capabilities
-    const visibleItems: typeof pagedItems = [];
-    for (const item of pagedItems) {
-      const isVisible = await this.actionRegistry.isNotificationVisible(userId, item);
-      if (isVisible) {
-        visibleItems.push(item);
+      if (batch.length === 0) {
+        break;
+      }
+
+      const hasMoreInBatch = batch.length > fetchSize;
+      const itemsToProcess = hasMoreInBatch ? batch.slice(0, fetchSize) : batch;
+      scannedCount += itemsToProcess.length;
+
+      for (const item of itemsToProcess) {
+        const isVisible = await this.actionRegistry.isNotificationVisible(userId, item);
+        if (isVisible) {
+          visibleItems.push(item);
+          if (visibleItems.length === targetLimit) {
+            currentCursorCreatedAt = item.createdAt;
+            currentCursorId = item.id;
+            break;
+          }
+        }
+      }
+
+      const lastProcessed = itemsToProcess[itemsToProcess.length - 1];
+      currentCursorCreatedAt = lastProcessed.createdAt;
+      currentCursorId = lastProcessed.id;
+
+      if (!hasMoreInBatch) {
+        break;
       }
     }
 
     let nextCursor: string | null = null;
-    if (hasMore && pagedItems.length > 0) {
-      const last = pagedItems[pagedItems.length - 1];
-      const cursorPlain = `${last.createdAt.toISOString()}_${last.id}`;
-      nextCursor = Buffer.from(cursorPlain, 'utf8').toString('base64');
+    if (visibleItems.length > 0 && currentCursorCreatedAt && currentCursorId) {
+      const probe = await this.prisma.inAppNotification.findFirst({
+        where: {
+          recipientUserId: userId,
+          OR: [
+            { createdAt: { lt: currentCursorCreatedAt } },
+            { createdAt: currentCursorCreatedAt, id: { lt: currentCursorId } },
+          ],
+        },
+        select: { id: true },
+      });
+      if (probe) {
+        const cursorPlain = `${currentCursorCreatedAt.toISOString()}_${currentCursorId}`;
+        nextCursor = Buffer.from(cursorPlain, 'utf8').toString('base64');
+      }
     }
 
     return {
@@ -155,6 +246,8 @@ export class NotificationsService {
       select: {
         id: true,
         eventType: true,
+        sourceKind: true,
+        sourceId: true,
         actionKey: true,
       },
     });
@@ -267,16 +360,24 @@ export class NotificationsService {
   }
 
   async createSubscription(userId: string, dto: CreateWebPushSubscriptionDto) {
-    let url: URL;
-    try {
-      url = new URL(dto.endpoint);
-    } catch {
-      throw new BadRequestException('Endpoint không hợp lệ.');
+    if (!this.config.webPush.enabled) {
+      throw new BadRequestException('Tính năng thông báo Web Push hiện chưa được bật.');
     }
 
-    const isLoopback = ['127.0.0.1', 'localhost', '::1'].includes(url.hostname.toLowerCase());
-    if (url.protocol !== 'https:' && !(url.protocol === 'http:' && isLoopback)) {
-      throw new BadRequestException('Endpoint phải sử dụng giao thức HTTPS.');
+    if (
+      !this.config.webPush.encryptionKey ||
+      (this.config.nodeEnv === 'production' &&
+        this.config.webPush.encryptionKey.startsWith('dev-insecure-'))
+    ) {
+      throw new ServiceUnavailableException('Chưa cấu hình khóa mã hóa Web Push trên máy chủ.');
+    }
+
+    const isTestOrDev =
+      this.config.nodeEnv === 'test' || this.config.nodeEnv === 'development';
+    if (!validatePushEndpoint(dto.endpoint, isTestOrDev)) {
+      throw new BadRequestException(
+        'Endpoint nhà cung cấp Push không hợp lệ hoặc không được hỗ trợ.',
+      );
     }
 
     if (!dto.keys?.p256dh || !dto.keys?.auth) {
@@ -295,7 +396,51 @@ export class NotificationsService {
       });
 
       if (existing) {
-        // Shared-device switch: reassign safely to new user, reset revoked/invalidated status
+        if (existing.userId !== userId) {
+          // CRITICAL: Shared device takeover by another user.
+          // Invalidate and cancel all deliveries queued for the previous user's subscription
+          await tx.webPushDelivery.updateMany({
+            where: {
+              subscriptionId: existing.id,
+              status: {
+                in: [
+                  WebPushDeliveryStatus.PENDING,
+                  WebPushDeliveryStatus.LEASED,
+                  WebPushDeliveryStatus.RETRY_WAIT,
+                ],
+              },
+            },
+            data: {
+              status: WebPushDeliveryStatus.DEAD,
+              lastErrorCode: 'SHARED_DEVICE_SWITCH',
+              leaseOwner: null,
+              leaseUntil: null,
+            },
+          });
+
+          // Enforce 5 active subscriptions for the new user
+          const activeSubs = await tx.webPushSubscription.findMany({
+            where: {
+              userId,
+              revokedAt: null,
+              invalidatedAt: null,
+            },
+            orderBy: { createdAt: 'asc' },
+          });
+
+          if (activeSubs.length >= MAX_ACTIVE_SUBSCRIPTIONS_PER_USER) {
+            const excessCount = activeSubs.length - MAX_ACTIVE_SUBSCRIPTIONS_PER_USER + 1;
+            const toRevoke = activeSubs.slice(0, excessCount);
+            for (const sub of toRevoke) {
+              await tx.webPushSubscription.update({
+                where: { id: sub.id },
+                data: { revokedAt: new Date() },
+              });
+            }
+          }
+        }
+
+        // Reassign or refresh subscription safely
         const updated = await tx.webPushSubscription.update({
           where: { id: existing.id },
           data: {
@@ -310,6 +455,7 @@ export class NotificationsService {
             lastSeenAt: new Date(),
           },
         });
+
         return {
           id: updated.id,
           deviceLabel: updated.deviceLabel,
@@ -318,7 +464,7 @@ export class NotificationsService {
         };
       }
 
-      // Enforce 5 active subscriptions per user
+      // New endpoint subscription
       const activeSubs = await tx.webPushSubscription.findMany({
         where: {
           userId,
@@ -379,6 +525,66 @@ export class NotificationsService {
       });
     }
 
+    // Cancel all unfinished deliveries for this subscription
+    await this.prisma.webPushDelivery.updateMany({
+      where: {
+        subscriptionId,
+        status: {
+          in: [
+            WebPushDeliveryStatus.PENDING,
+            WebPushDeliveryStatus.LEASED,
+            WebPushDeliveryStatus.RETRY_WAIT,
+          ],
+        },
+      },
+      data: {
+        status: WebPushDeliveryStatus.DEAD,
+        lastErrorCode: 'SUBSCRIPTION_REVOKED',
+        leaseOwner: null,
+        leaseUntil: null,
+      },
+    });
+
+    return { success: true };
+  }
+
+  async revokeByEndpoint(userId: string, endpoint: string) {
+    const endpointDigest = computeEndpointDigest(endpoint);
+    const sub = await this.prisma.webPushSubscription.findFirst({
+      where: {
+        endpointDigest,
+        userId,
+      },
+    });
+
+    if (sub) {
+      if (!sub.revokedAt) {
+        await this.prisma.webPushSubscription.update({
+          where: { id: sub.id },
+          data: { revokedAt: new Date() },
+        });
+      }
+
+      await this.prisma.webPushDelivery.updateMany({
+        where: {
+          subscriptionId: sub.id,
+          status: {
+            in: [
+              WebPushDeliveryStatus.PENDING,
+              WebPushDeliveryStatus.LEASED,
+              WebPushDeliveryStatus.RETRY_WAIT,
+            ],
+          },
+        },
+        data: {
+          status: WebPushDeliveryStatus.DEAD,
+          lastErrorCode: 'SUBSCRIPTION_REVOKED_LOGOUT',
+          leaseOwner: null,
+          leaseUntil: null,
+        },
+      });
+    }
+
     return { success: true };
   }
 
@@ -402,7 +608,6 @@ export class NotificationsService {
       actionParamsJson = null,
     } = params;
 
-    // Canonical insert with deterministic dedupe
     const existing = await tx.inAppNotification.findUnique({
       where: {
         recipientUserId_dedupeKey: {
@@ -428,11 +633,12 @@ export class NotificationsService {
           title,
           bodySafe,
           actionKey,
-          actionParamsJson: actionParamsJson ? (actionParamsJson as Prisma.InputJsonValue) : Prisma.JsonNull,
+          actionParamsJson: actionParamsJson
+            ? (actionParamsJson as Prisma.InputJsonValue)
+            : Prisma.JsonNull,
         },
       });
 
-      // If Web Push is enabled, enqueue delivery for all active subscriptions
       if (this.config.webPush.enabled) {
         const activeSubscriptions = await tx.webPushSubscription.findMany({
           where: {
@@ -465,6 +671,10 @@ export class NotificationsService {
       }
     }
 
+    if (this.config.webPush.enabled) {
+      this.triggerBackgroundWorker();
+    }
+
     return notification;
   }
 
@@ -491,21 +701,33 @@ export class NotificationsService {
     });
   }
 
-  async processPendingDeliveries(batchSize = 10): Promise<{ processed: number; sent: number; failed: number }> {
+  async processPendingDeliveries(
+    batchSize = 10,
+  ): Promise<{ processed: number; sent: number; failed: number }> {
     if (!this.config.webPush.enabled) {
       return { processed: 0, sent: 0, failed: 0 };
     }
 
     const now = new Date();
     const leaseUntil = new Date(Date.now() + 30_000);
-    const leaseOwner = `worker_${process.pid}_${Date.now()}`;
+    const leaseOwner = `worker_${process.pid}_${Date.now()}_${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
 
-    // Atomically find and lease deliveries
+    // Query candidates recovering expired leases
     const candidates = await this.prisma.webPushDelivery.findMany({
       where: {
-        status: { in: [WebPushDeliveryStatus.PENDING, WebPushDeliveryStatus.RETRY_WAIT] },
-        nextAttemptAt: { lte: now },
-        OR: [{ leaseUntil: null }, { leaseUntil: { lt: now } }],
+        OR: [
+          { status: WebPushDeliveryStatus.PENDING },
+          {
+            status: WebPushDeliveryStatus.RETRY_WAIT,
+            nextAttemptAt: { lte: now },
+          },
+          {
+            status: WebPushDeliveryStatus.LEASED,
+            leaseUntil: { lte: now },
+          },
+        ],
       },
       take: batchSize,
       include: {
@@ -523,8 +745,17 @@ export class NotificationsService {
       const leased = await this.prisma.webPushDelivery.updateMany({
         where: {
           id: delivery.id,
-          status: delivery.status,
-          OR: [{ leaseUntil: null }, { leaseUntil: { lt: now } }],
+          OR: [
+            { status: WebPushDeliveryStatus.PENDING },
+            {
+              status: WebPushDeliveryStatus.RETRY_WAIT,
+              nextAttemptAt: { lte: now },
+            },
+            {
+              status: WebPushDeliveryStatus.LEASED,
+              leaseUntil: { lte: now },
+            },
+          ],
         },
         data: {
           status: WebPushDeliveryStatus.LEASED,
@@ -537,14 +768,25 @@ export class NotificationsService {
       processed++;
 
       const sub = delivery.subscription;
-      if (sub.revokedAt || sub.invalidatedAt) {
-        await this.prisma.webPushDelivery.update({
-          where: { id: delivery.id },
+
+      // CRITICAL: At-send-time cross-account and validity check
+      if (
+        sub.userId !== delivery.notification.recipientUserId ||
+        sub.revokedAt !== null ||
+        sub.invalidatedAt !== null
+      ) {
+        const lastErrorCode =
+          sub.userId !== delivery.notification.recipientUserId
+            ? 'RECIPIENT_MISMATCH'
+            : 'SUBSCRIPTION_NOT_ACTIVE';
+
+        await this.prisma.webPushDelivery.updateMany({
+          where: { id: delivery.id, leaseOwner },
           data: {
-            status: WebPushDeliveryStatus.INVALID_SUBSCRIPTION,
+            status: WebPushDeliveryStatus.DEAD,
             leaseOwner: null,
             leaseUntil: null,
-            lastErrorCode: 'SUBSCRIPTION_NOT_ACTIVE',
+            lastErrorCode,
           },
         });
         failed++;
@@ -558,9 +800,9 @@ export class NotificationsService {
         endpoint = decryptAtRest(sub.endpointCiphertext, this.encryptionKey);
         p256dh = decryptAtRest(sub.p256dhCiphertext, this.encryptionKey);
         auth = decryptAtRest(sub.authCiphertext, this.encryptionKey);
-      } catch (err) {
-        await this.prisma.webPushDelivery.update({
-          where: { id: delivery.id },
+      } catch {
+        await this.prisma.webPushDelivery.updateMany({
+          where: { id: delivery.id, leaseOwner },
           data: {
             status: WebPushDeliveryStatus.DEAD,
             leaseOwner: null,
@@ -589,8 +831,8 @@ export class NotificationsService {
       const result = await this.transport.sendNotification(params);
 
       if (result.success) {
-        await this.prisma.webPushDelivery.update({
-          where: { id: delivery.id },
+        await this.prisma.webPushDelivery.updateMany({
+          where: { id: delivery.id, leaseOwner },
           data: {
             status: WebPushDeliveryStatus.SENT,
             sentAt: new Date(),
@@ -601,14 +843,13 @@ export class NotificationsService {
         });
         sent++;
       } else if (result.statusCode === 404 || result.statusCode === 410) {
-        // Mark subscription invalidated
         await this.prisma.$transaction([
           this.prisma.webPushSubscription.update({
             where: { id: sub.id },
             data: { invalidatedAt: new Date() },
           }),
-          this.prisma.webPushDelivery.update({
-            where: { id: delivery.id },
+          this.prisma.webPushDelivery.updateMany({
+            where: { id: delivery.id, leaseOwner },
             data: {
               status: WebPushDeliveryStatus.INVALID_SUBSCRIPTION,
               leaseOwner: null,
@@ -621,8 +862,8 @@ export class NotificationsService {
       } else {
         const nextAttemptCount = delivery.attemptCount + 1;
         if (nextAttemptCount >= 5) {
-          await this.prisma.webPushDelivery.update({
-            where: { id: delivery.id },
+          await this.prisma.webPushDelivery.updateMany({
+            where: { id: delivery.id, leaseOwner },
             data: {
               status: WebPushDeliveryStatus.DEAD,
               attemptCount: nextAttemptCount,
@@ -633,13 +874,14 @@ export class NotificationsService {
           });
           failed++;
         } else {
+          const jitterMs = Math.floor(Math.random() * 5000);
           const backoffSec =
             result.retryAfterSeconds ??
             RETRY_BACKOFF_SECONDS[nextAttemptCount - 1] ??
             3600;
-          const nextAttemptAt = new Date(Date.now() + backoffSec * 1000);
-          await this.prisma.webPushDelivery.update({
-            where: { id: delivery.id },
+          const nextAttemptAt = new Date(Date.now() + backoffSec * 1000 + jitterMs);
+          await this.prisma.webPushDelivery.updateMany({
+            where: { id: delivery.id, leaseOwner },
             data: {
               status: WebPushDeliveryStatus.RETRY_WAIT,
               attemptCount: nextAttemptCount,
@@ -657,4 +899,3 @@ export class NotificationsService {
     return { processed, sent, failed };
   }
 }
-

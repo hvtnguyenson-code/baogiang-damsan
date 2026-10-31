@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { CapabilityAuthorizationService } from '../authorization/capability-authorization.service';
+import { PrismaService } from '../prisma/prisma.service';
 
 export interface ActionResolutionResult {
   allowed: boolean;
@@ -7,9 +8,20 @@ export interface ActionResolutionResult {
   reason?: string;
 }
 
+export interface NotificationVisibilityCandidate {
+  eventType: string;
+  sourceKind?: string | null;
+  sourceId?: string | null;
+  actionKey?: string | null;
+  actionParamsJson?: unknown;
+}
+
 @Injectable()
 export class NotificationActionRegistry {
-  constructor(private readonly capabilityAuth: CapabilityAuthorizationService) {}
+  constructor(
+    private readonly capabilityAuth: CapabilityAuthorizationService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   async resolveAction(
     userId: string,
@@ -34,10 +46,25 @@ export class NotificationActionRegistry {
             requestedScope: 'SCHOOL_WIDE',
           }));
         if (!hasPerm) {
-          return { allowed: false, reason: 'Không còn quyền truy cập hoặc công việc đã thay đổi.' };
+          return { allowed: false, reason: 'Không còn quyền duyệt báo cáo kê khai.' };
         }
+
         const revisionId =
           typeof actionParamsJson?.['revisionId'] === 'string' ? actionParamsJson['revisionId'] : undefined;
+
+        if (revisionId) {
+          const revision = await this.prisma.reportingStatementRevision.findUnique({
+            where: { id: revisionId },
+            include: { state: true },
+          });
+          if (!revision || revision.state?.lifecycleState !== 'SUBMITTED') {
+            return {
+              allowed: false,
+              reason: 'Báo cáo kê khai này không còn ở trạng thái chờ duyệt.',
+            };
+          }
+        }
+
         const targetUrl = revisionId
           ? `/phe-duyet-bao-cao?revisionId=${encodeURIComponent(revisionId)}`
           : '/phe-duyet-bao-cao';
@@ -45,21 +72,46 @@ export class NotificationActionRegistry {
       }
 
       case 'REPORTING_VIEW': {
-        const canPersonal = await this.capabilityAuth.hasCapability({
-          userId,
-          capabilityKey: 'REPORTING_STATEMENT_READ',
-          requestedScope: 'PERSONAL',
-        });
+        const revisionId =
+          typeof actionParamsJson?.['revisionId'] === 'string' ? actionParamsJson['revisionId'] : undefined;
+
         const canWide = await this.capabilityAuth.hasCapability({
           userId,
           capabilityKey: 'REPORTING_STATEMENT_READ',
           requestedScope: 'SCHOOL_WIDE',
         });
-        if (!canPersonal && !canWide) {
-          return { allowed: false, reason: 'Không còn quyền truy cập hoặc công việc đã thay đổi.' };
+
+        if (revisionId) {
+          const revision = await this.prisma.reportingStatementRevision.findUnique({
+            where: { id: revisionId },
+            include: { series: true },
+          });
+          if (!revision) {
+            return { allowed: false, reason: 'Không tìm thấy báo cáo kê khai.' };
+          }
+          if (revision.series.submitterUserId === userId) {
+            const canPersonal = await this.capabilityAuth.hasCapability({
+              userId,
+              capabilityKey: 'REPORTING_STATEMENT_READ',
+              requestedScope: 'PERSONAL',
+            });
+            if (!canPersonal && !canWide) {
+              return { allowed: false, reason: 'Không có quyền xem báo cáo kê khai cá nhân.' };
+            }
+          } else if (!canWide) {
+            return { allowed: false, reason: 'Không có quyền xem báo cáo kê khai của giáo viên khác.' };
+          }
+        } else {
+          const canPersonal = await this.capabilityAuth.hasCapability({
+            userId,
+            capabilityKey: 'REPORTING_STATEMENT_READ',
+            requestedScope: 'PERSONAL',
+          });
+          if (!canPersonal && !canWide) {
+            return { allowed: false, reason: 'Không còn quyền xem báo cáo kê khai.' };
+          }
         }
-        const revisionId =
-          typeof actionParamsJson?.['revisionId'] === 'string' ? actionParamsJson['revisionId'] : undefined;
+
         const targetUrl = revisionId
           ? `/bao-cao-ke-khai/${encodeURIComponent(revisionId)}`
           : '/bao-cao-ke-khai';
@@ -73,7 +125,7 @@ export class NotificationActionRegistry {
           requestedScope: 'PERSONAL',
         });
         if (!hasPerm) {
-          return { allowed: false, reason: 'Không còn quyền truy cập hoặc công việc đã thay đổi.' };
+          return { allowed: false, reason: 'Không còn quyền truy cập lịch dạy.' };
         }
         return { allowed: true, targetUrl: '/lich-day' };
       }
@@ -85,7 +137,7 @@ export class NotificationActionRegistry {
           requestedScope: 'SCHOOL_WIDE',
         });
         if (!hasPerm) {
-          return { allowed: false, reason: 'Không còn quyền truy cập hoặc công việc đã thay đổi.' };
+          return { allowed: false, reason: 'Không còn quyền điều hành chuyên môn.' };
         }
         return { allowed: true, targetUrl: '/quan-tri/dieu-hanh-chuyen-mon' };
       }
@@ -116,19 +168,19 @@ export class NotificationActionRegistry {
         }
 
         if (!hasPerm) {
-          return { allowed: false, reason: 'Không còn quyền truy cập hoặc công việc đã thay đổi.' };
+          return { allowed: false, reason: 'Không còn quyền truy cập dữ liệu quản trị.' };
         }
         return { allowed: true, targetUrl: '/quan-tri/san-sang-du-lieu' };
       }
 
       default:
-        return { allowed: false, reason: 'Không còn quyền truy cập hoặc công việc đã thay đổi.' };
+        return { allowed: false, reason: 'Loại công việc không được hỗ trợ hoặc đã thay đổi.' };
     }
   }
 
   async isNotificationVisible(
     userId: string,
-    notification: { eventType: string; actionKey?: string | null },
+    notification: NotificationVisibilityCandidate,
   ): Promise<boolean> {
     if (notification.eventType === 'REPORTING_SUBMITTED' || notification.actionKey === 'REPORTING_APPROVAL') {
       const isApprover =
@@ -142,8 +194,47 @@ export class NotificationActionRegistry {
           capabilityKey: 'APPROVAL_VICE_PRINCIPAL',
           requestedScope: 'SCHOOL_WIDE',
         }));
-      return isApprover;
+      if (!isApprover) return false;
+
+      // Source revalidation: statement must exist and be in SUBMITTED state
+      if (notification.sourceKind === 'ReportingStatementRevision' && notification.sourceId) {
+        const revision = await this.prisma.reportingStatementRevision.findUnique({
+          where: { id: notification.sourceId },
+          include: { state: true },
+        });
+        if (!revision || revision.state?.lifecycleState !== 'SUBMITTED') {
+          return false;
+        }
+      }
+      return true;
     }
+
+    if (notification.eventType === 'REPORTING_DECIDED' || notification.actionKey === 'REPORTING_VIEW') {
+      if (notification.sourceKind === 'ReportingStatementRevision' && notification.sourceId) {
+        const revision = await this.prisma.reportingStatementRevision.findUnique({
+          where: { id: notification.sourceId },
+          include: { series: true },
+        });
+        if (!revision) return false;
+
+        const isSubmitter = revision.series.submitterUserId === userId;
+        const canWide = await this.capabilityAuth.hasCapability({
+          userId,
+          capabilityKey: 'REPORTING_STATEMENT_READ',
+          requestedScope: 'SCHOOL_WIDE',
+        });
+
+        if (notification.eventType === 'REPORTING_DECIDED' && !isSubmitter) {
+          return false;
+        }
+
+        if (!isSubmitter && !canWide) {
+          return false;
+        }
+      }
+      return true;
+    }
+
     return true;
   }
 }
