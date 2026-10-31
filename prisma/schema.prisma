@@ -337,6 +337,8 @@ model User {
   telegramLinkChallenges                    TelegramLinkChallenge[]                 @relation("UserTelegramLinkChallenges")
   telegramAccountLinks                      TelegramAccountLink[]                   @relation("UserTelegramAccountLinks")
   telegramNotificationDeliveries            TelegramNotificationDelivery[]          @relation("UserTelegramNotificationDeliveries")
+  inAppNotifications                        InAppNotification[]                     @relation("UserInAppNotifications")
+  webPushSubscriptions                      WebPushSubscription[]                   @relation("UserWebPushSubscriptions")
 
   @@index([status])
   @@map("users")
@@ -2082,4 +2084,100 @@ model TelegramNotificationDelivery {
   @@index([accountLinkId, deliveryStatus], map: "telegram_notification_deliveries_link_status_idx")
   @@index([deliveryStatus, attemptStartedAt], map: "telegram_notification_deliveries_status_attempt_idx")
   @@map("telegram_notification_deliveries")
+}
+
+enum InAppNotificationCategory {
+  ACTION_REQUIRED
+  INFORMATION
+  SYSTEM
+}
+
+enum InAppNotificationPriority {
+  NORMAL
+  HIGH
+}
+
+enum WebPushDeliveryStatus {
+  PENDING
+  LEASED
+  SENT
+  RETRY_WAIT
+  DEAD
+  INVALID_SUBSCRIPTION
+}
+
+model InAppNotification {
+  id               String                    @id @default(uuid()) @db.Uuid
+  recipientUserId  String                    @map("recipient_user_id") @db.Uuid
+  eventType        String                    @map("event_type") @db.VarChar(64)
+  category         InAppNotificationCategory @map("category")
+  priority         InAppNotificationPriority @default(NORMAL) @map("priority")
+  sourceKind       String                    @map("source_kind") @db.VarChar(64)
+  sourceId         String                    @map("source_id") @db.Uuid
+  sourceVersion    String?                   @map("source_version") @db.VarChar(64)
+  sourceEventId    String                    @map("source_event_id") @db.VarChar(128)
+  dedupeKey        String                    @map("dedupe_key") @db.VarChar(255)
+  title            String                    @map("title") @db.VarChar(255)
+  bodySafe         String                    @map("body_safe") @db.VarChar(1000)
+  actionKey        String?                   @map("action_key") @db.VarChar(64)
+  actionParamsJson Json?                     @map("action_params_json")
+  createdAt        DateTime                  @default(now()) @map("created_at") @db.Timestamptz(3)
+  readAt           DateTime?                 @map("read_at") @db.Timestamptz(3)
+  resolvedAt       DateTime?                 @map("resolved_at") @db.Timestamptz(3)
+  stateVersion     Int                       @default(1) @map("state_version")
+
+  recipientUser User               @relation("UserInAppNotifications", fields: [recipientUserId], references: [id], onDelete: Restrict)
+  deliveries    WebPushDelivery[]
+
+  @@unique([recipientUserId, dedupeKey], map: "in_app_notifications_recipient_dedupe_key")
+  @@index([recipientUserId, createdAt(sort: Desc), id(sort: Desc)], map: "in_app_notifications_recipient_created_id_idx")
+  @@index([recipientUserId, readAt, createdAt], map: "in_app_notifications_recipient_read_created_idx")
+  @@index([sourceKind, sourceId], map: "in_app_notifications_source_kind_source_id_idx")
+  @@map("in_app_notifications")
+}
+
+model WebPushSubscription {
+  id                 String    @id @default(uuid()) @db.Uuid
+  userId             String    @map("user_id") @db.Uuid
+  deviceLabel        String?   @map("device_label") @db.VarChar(100)
+  endpointCiphertext String    @map("endpoint_ciphertext") @db.Text
+  endpointDigest     String    @unique(map: "web_push_subscriptions_endpoint_digest_key") @map("endpoint_digest") @db.VarChar(64)
+  p256dhCiphertext   String    @map("p256dh_ciphertext") @db.Text
+  authCiphertext     String    @map("auth_ciphertext") @db.Text
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  lastSeenAt         DateTime  @default(now()) @map("last_seen_at") @db.Timestamptz(3)
+  revokedAt          DateTime? @map("revoked_at") @db.Timestamptz(3)
+  invalidatedAt      DateTime? @map("invalidated_at") @db.Timestamptz(3)
+  vapidKeyVersion    String?   @map("vapid_key_version") @db.VarChar(32)
+
+  user       User              @relation("UserWebPushSubscriptions", fields: [userId], references: [id], onDelete: Restrict)
+  deliveries WebPushDelivery[]
+
+  @@index([userId, revokedAt, invalidatedAt], map: "web_push_subscriptions_user_status_idx")
+  @@map("web_push_subscriptions")
+}
+
+model WebPushDelivery {
+  id             String                @id @default(uuid()) @db.Uuid
+  notificationId String                @map("notification_id") @db.Uuid
+  subscriptionId String                @map("subscription_id") @db.Uuid
+  dedupeKey      String                @map("dedupe_key") @db.VarChar(255)
+  payloadVersion Int                   @default(1) @map("payload_version")
+  status         WebPushDeliveryStatus @default(PENDING) @map("status")
+  attemptCount   Int                   @default(0) @map("attempt_count")
+  nextAttemptAt  DateTime              @default(now()) @map("next_attempt_at") @db.Timestamptz(3)
+  leaseOwner     String?               @map("lease_owner") @db.VarChar(100)
+  leaseUntil     DateTime?             @map("lease_until") @db.Timestamptz(3)
+  lastErrorCode  String?               @map("last_error_code") @db.VarChar(100)
+  createdAt      DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  sentAt         DateTime?             @map("sent_at") @db.Timestamptz(3)
+
+  notification InAppNotification   @relation(fields: [notificationId], references: [id], onDelete: Restrict)
+  subscription WebPushSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
+
+  @@unique([notificationId, subscriptionId, payloadVersion], map: "web_push_deliveries_notification_sub_version_key")
+  @@index([status, nextAttemptAt], map: "web_push_deliveries_status_next_attempt_idx")
+  @@index([leaseUntil], map: "web_push_deliveries_lease_until_idx")
+  @@map("web_push_deliveries")
 }

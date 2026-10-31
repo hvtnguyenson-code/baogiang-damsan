@@ -8,6 +8,15 @@ export interface TelegramConfig {
   webhookSecret?: string;
 }
 
+export interface WebPushConfig {
+  enabled: boolean;
+  vapidPublicKey?: string;
+  vapidPrivateKey?: string;
+  vapidSubject?: string;
+  vapidKeyVersion?: string;
+  encryptionKey?: string;
+}
+
 export interface AppConfig {
   nodeEnv: string;
   timeZone: string;
@@ -18,6 +27,7 @@ export interface AppConfig {
   aiActiveModeEnabled: boolean;
   aiPassiveModeEnabled: boolean;
   webPushEnabled: boolean;
+  webPush: WebPushConfig;
   logLevel: string;
   databaseUrl: string;
   httpTrustProxyHops: number;
@@ -162,6 +172,46 @@ export const appConfig = registerAs('app', (): AppConfig => {
     telegramWebhookSecret = process.env['TELEGRAM_WEBHOOK_SECRET'] || undefined;
   }
 
+  const webPushEnabled = booleanValue('WEB_PUSH_ENABLED', false);
+  let vapidPublicKey: string | undefined;
+  let vapidPrivateKey: string | undefined;
+  let vapidSubject: string | undefined;
+  let vapidKeyVersion: string | undefined;
+  let webPushEncryptionKey: string | undefined;
+
+  if (webPushEnabled) {
+    const rawVapidPublic = process.env['VAPID_PUBLIC_KEY'];
+    if (!rawVapidPublic || rawVapidPublic.trim().length === 0) {
+      throw new Error('[Config] VAPID_PUBLIC_KEY is required and cannot be blank when WEB_PUSH_ENABLED is true.');
+    }
+    vapidPublicKey = rawVapidPublic.trim();
+
+    const rawVapidPrivate = process.env['VAPID_PRIVATE_KEY'];
+    if (!rawVapidPrivate || rawVapidPrivate.trim().length === 0) {
+      throw new Error('[Config] VAPID_PRIVATE_KEY is required and cannot be blank when WEB_PUSH_ENABLED is true.');
+    }
+    vapidPrivateKey = rawVapidPrivate.trim();
+
+    const rawVapidSubject = process.env['VAPID_SUBJECT'];
+    if (!rawVapidSubject || (!rawVapidSubject.startsWith('mailto:') && !rawVapidSubject.startsWith('https://'))) {
+      throw new Error('[Config] VAPID_SUBJECT is required and must start with mailto: or https:// when WEB_PUSH_ENABLED is true.');
+    }
+    vapidSubject = rawVapidSubject.trim();
+    vapidKeyVersion = process.env['VAPID_KEY_VERSION']?.trim() || 'v1';
+
+    const rawEncKey = process.env['WEB_PUSH_ENCRYPTION_KEY'];
+    if (nodeEnv === 'production' && (!rawEncKey || rawEncKey.trim().length < 32)) {
+      throw new Error('[Config] WEB_PUSH_ENCRYPTION_KEY (at least 32 characters) is required in production when WEB_PUSH_ENABLED is true.');
+    }
+    webPushEncryptionKey = rawEncKey?.trim() || 'dev-insecure-web-push-encryption-key-32chars!!';
+  } else {
+    vapidPublicKey = process.env['VAPID_PUBLIC_KEY']?.trim() || undefined;
+    vapidPrivateKey = process.env['VAPID_PRIVATE_KEY']?.trim() || undefined;
+    vapidSubject = process.env['VAPID_SUBJECT']?.trim() || undefined;
+    vapidKeyVersion = process.env['VAPID_KEY_VERSION']?.trim() || undefined;
+    webPushEncryptionKey = process.env['WEB_PUSH_ENCRYPTION_KEY']?.trim() || 'dev-insecure-web-push-encryption-key-32chars!!';
+  }
+
   return {
     nodeEnv,
     timeZone: configuredTimeZone ?? BUSINESS_TIME_ZONE,
@@ -171,7 +221,15 @@ export const appConfig = registerAs('app', (): AppConfig => {
     aiEnabled: process.env['AI_ENABLED'] === 'true',
     aiActiveModeEnabled: process.env['AI_ACTIVE_MODE_ENABLED'] === 'true',
     aiPassiveModeEnabled: process.env['AI_PASSIVE_MODE_ENABLED'] === 'true',
-    webPushEnabled: process.env['WEB_PUSH_ENABLED'] === 'true',
+    webPushEnabled,
+    webPush: {
+      enabled: webPushEnabled,
+      vapidPublicKey,
+      vapidPrivateKey,
+      vapidSubject,
+      vapidKeyVersion,
+      encryptionKey: webPushEncryptionKey,
+    },
     logLevel: process.env['LOG_LEVEL'] ?? 'log',
     databaseUrl,
     httpTrustProxyHops: nonNegativeInteger('HTTP_TRUST_PROXY_HOPS', nodeEnv === 'production' ? 1 : 0),

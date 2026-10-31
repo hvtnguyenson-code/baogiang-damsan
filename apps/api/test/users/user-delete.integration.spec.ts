@@ -105,8 +105,8 @@ integration('P5-051 clean-slate deletion (real isolated PostgreSQL)', () => {
     const [v] = await h.prisma.$queryRaw<Array<{ version: string; isolation: string }>>`SELECT version(), current_setting('transaction_isolation') AS isolation`;
     expect(v.version).toMatch(/PostgreSQL/);
     expect(v.isolation).toBe('read committed');
-    expect(USER_DELETE_FK_INVENTORY.filter((f) => f.parent === 'users')).toHaveLength(72);
-    expect(new Set(USER_DELETE_FK_INVENTORY.filter((f) => f.parent === 'users').map((f) => f.child)).size).toBe(40);
+    expect(USER_DELETE_FK_INVENTORY.filter((f) => f.parent === 'users')).toHaveLength(74);
+    expect(new Set(USER_DELETE_FK_INVENTORY.filter((f) => f.parent === 'users').map((f) => f.child)).size).toBe(42);
     expect(USER_DELETE_FK_INVENTORY.filter((f) => f.parent !== 'users')).toHaveLength(4);
     expect((await preview((await target()).id)).body.eligibility).toBe('ELIGIBLE');
   });

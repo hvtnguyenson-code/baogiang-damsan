@@ -11,6 +11,14 @@ import type {
   TelegramTestNotificationRequest,
   TelegramTestNotificationResponse,
   TelegramUnlinkResponse,
+  CreateWebPushSubscriptionDto,
+  CreateWebPushSubscriptionResponse,
+  MarkNotificationReadResponse,
+  NotificationActionResolutionResponse,
+  NotificationListResponse,
+  NotificationPushConfigResponse,
+  UnreadNotificationCountResponse,
+  WebPushSubscriptionListResponse,
 } from '@baogiang/contracts';
 import { HEALTH_PATHS } from '@baogiang/config';
 import {
@@ -241,4 +249,51 @@ export const sendTelegramTestNotification = (
   apiFetch<TelegramTestNotificationResponse>('/integrations/telegram/test', {
     method: 'POST',
     body: JSON.stringify(input),
+  });
+
+export const fetchNotifications = (
+  cursor?: string,
+  limit?: number,
+): Promise<NotificationListResponse> => {
+  const params = new URLSearchParams();
+  if (cursor) params.set('cursor', cursor);
+  if (limit) params.set('limit', String(limit));
+  const query = params.toString();
+  return apiFetch<NotificationListResponse>(`/notifications${query ? `?${query}` : ''}`);
+};
+
+export const fetchUnreadNotificationCount = (): Promise<UnreadNotificationCountResponse> =>
+  apiFetch<UnreadNotificationCountResponse>('/notifications/unread-count');
+
+export const markNotificationRead = (
+  id: string,
+): Promise<MarkNotificationReadResponse> =>
+  apiFetch<MarkNotificationReadResponse>(`/notifications/${encodeURIComponent(id)}/read`, {
+    method: 'POST',
+  });
+
+export const fetchNotificationAction = (
+  id: string,
+): Promise<NotificationActionResolutionResponse> =>
+  apiFetch<NotificationActionResolutionResponse>(`/notifications/${encodeURIComponent(id)}/action`);
+
+export const fetchNotificationPushConfig = (): Promise<NotificationPushConfigResponse> =>
+  apiFetch<NotificationPushConfigResponse>('/notifications/push-config');
+
+export const fetchWebPushSubscriptions = (): Promise<WebPushSubscriptionListResponse> =>
+  apiFetch<WebPushSubscriptionListResponse>('/notifications/subscriptions');
+
+export const createWebPushSubscription = (
+  dto: CreateWebPushSubscriptionDto,
+): Promise<CreateWebPushSubscriptionResponse> =>
+  apiFetch<CreateWebPushSubscriptionResponse>('/notifications/subscriptions', {
+    method: 'POST',
+    body: JSON.stringify(dto),
+  });
+
+export const revokeWebPushSubscription = (
+  id: string,
+): Promise<{ success: boolean }> =>
+  apiFetch<{ success: boolean }>(`/notifications/subscriptions/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
   });

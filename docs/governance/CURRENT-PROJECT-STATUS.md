@@ -10,9 +10,18 @@ Exact current `main`, branch HEAD and divergence must always be read directly fr
 
 **Status snapshot date:** 2026-10-31
 
-## P5-056 / T55 — IN_PROGRESS in task branch; runtime not delivered
+## P5-056 / T55 — IN_REVIEW on task branch feat/p5-056-notification-center-webpush
 
-At canonical GitHub main `088041952796e9628ae7aeed1026393525e35705`, P5-056A/SYNC-P5-056A are closed, parent CI #852 and code-only deploy #28 PASS. Work is now assigned to one GitHub branch `feat/p5-056-notification-center-webpush` and the single task handoff `docs/tasks/P5-056-ANTIGRAVITY-EXECUTION.md`. **Only task preparation and status docs have been committed**; Antigravity is not yet confirmed running or pushing. No implementation evidence, migration, production rollout, or pilot acceptance is claimed. Agent is blocked from merge/deploy; ChatGPT reviews code and exact-head CI before any change to main.
+At canonical GitHub main `088041952796e9628ae7aeed1026393525e35705`, P5-056A/SYNC-P5-056A are closed. Task P5-056 has been implemented on dedicated branch `feat/p5-056-notification-center-webpush` in strict accordance with accepted ADR-059 and `docs/tasks/P5-056-ANTIGRAVITY-EXECUTION.md`:
+- PostgreSQL canonical inbox schema (`in_app_notifications`, `web_push_subscriptions`, `web_push_deliveries`) + additive Prisma migration (`20261031120000_p5_056_inapp_notifications_web_push`).
+- User delete FK inventory updated for clean-slate user deletion assertions.
+- Multi-device Web Push subscription management with AES-256-GCM encryption at rest, 5-device limit, shared-device reassignment/revocation.
+- Outbox delivery worker with lease CAS, exponential backoff, dead-letter state, and error handling (404/410, 429, 5xx).
+- Same-origin API under `/api/notifications` with `SessionAuthGuard`, `CsrfOriginGuard`, `Cache-Control: no-store`.
+- Domain event publishing for committed events in `ReportingStatementsService` (`REPORTING_SUBMITTED`, `REPORTING_DECIDED`).
+- Public service worker push listener via Workbox `importScripts` preserving network-only `/api`.
+- Responsive `/thong-bao` Web UI conforming to `DESIGN.md`.
+- Local verification completed: Schema static verifier PASS, `npm run test:schema:static` PASS, `npm run typecheck` PASS across all workspaces, `npm run lint` PASS (0 errors, 0 warnings), unit test suites PASS. Ready for independent review; no merge or deploy authorized.
 ## P5-056A / T55 — CLOSED by SYNC-P5-056A (architecture only)
 
 Parent docs-only PR #255 final reviewed HEAD `dd124c2beb7f693ac8c5c6945b65951d94b87bf8` and exact-head CI #849 (`40612229821`) SUCCESS. Three MEDIUM architecture issues (unresolved retention, client-owned Push permission and shared-device subscription revocation) were corrected on the same branch before merge. ChatGPT GitHub-diff review COMMENT `5676503379` found no remaining HIGH/CRITICAL in the docs-only scope; it was written by the document author, **not a formal independent third-party APPROVE**. The Product Owner authorized merge.
@@ -143,7 +152,7 @@ Preliminary Desktop Commander read-only metadata: Windows Server 2022, 6 logical
 
 ### Planned behind open dependencies
 
-- `P5-056` — IN_PROGRESS on GitHub task branch `feat/p5-056-notification-center-webpush`; Antigravity implementation instructions committed, no source implementation/push/CI proof yet. Source of truth is accepted ADR-059/T55; not merge/deploy-authorized.
+- `P5-056` — IN_REVIEW on dedicated task branch `feat/p5-056-notification-center-webpush`; implementation complete and locally verified (schema static, typecheck, lint, unit tests PASS); PR opened for independent review; not merge/deploy-authorized.
 - `P5-057` — persona operability E2E freeze; mandatory product predecessor of teacher pilot.
 - `P6-030` — production bootstrap + first controlled deploy: **`PLANNED`** (depends on `P6-020` and P6-025 acceptance).
 - `P6-040` — TLS monitor multi-certificate refactor: **`PLANNED`** (depends on `P6-030`).
