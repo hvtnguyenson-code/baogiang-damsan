@@ -67,7 +67,7 @@ export class NotificationsController {
     @Req() req: AuthenticatedRequest,
     @Body() dto: CreateWebPushSubscriptionDto,
   ) {
-    return this.notificationsService.createSubscription(req.auth!.user.id, dto);
+    return this.notificationsService.createSubscription(req.auth!.user.id, dto, req.auth!.sessionId);
   }
 
   @Post('subscriptions/revoke-endpoint')

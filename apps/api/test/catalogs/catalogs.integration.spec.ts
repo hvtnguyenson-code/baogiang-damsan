@@ -1,3 +1,4 @@
+import { Phase01Harness } from '../helpers/phase01-test-harness';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { PrismaClient, UserStatus } from '@prisma/client';
@@ -44,20 +45,11 @@ integration('Catalog APIs (isolated PostgreSQL integration)', () => {
   });
 
   beforeEach(async () => {
-    await prisma.webPushDelivery.deleteMany();
-    await prisma.webPushSubscription.deleteMany();
-    await prisma.inAppNotification.deleteMany();
-    await prisma.auditEvent.deleteMany();
-    await prisma.authSession.deleteMany();
-    await prisma.teachingAssignment.deleteMany();
-    await prisma.capabilityGrant.deleteMany();
-    await prisma.subjectGroupMembership.deleteMany();
-    await prisma.staffSubject.deleteMany();
-    await prisma.subjectGroup.deleteMany();
-    await prisma.subject.deleteMany();
-    await prisma.staffProfile.deleteMany();
-    await prisma.user.deleteMany();
-    await prisma.capabilityDefinition.deleteMany();
+    // Use the complete migration-aware cleanup; partial user teardown depends
+    // on Jest suite order once retained domain/notification records exist.
+    const cleanup = new Phase01Harness();
+    cleanup.prisma = prisma;
+    await cleanup.clean();
     await prisma.capabilityDefinition.createMany({ data: [
       { key: 'SUBJECT_GROUP_MANAGE', description: 'groups', allowedScopeTypes: ['SCHOOL_WIDE'] },
       { key: 'SUBJECT_MANAGE', description: 'subjects', allowedScopeTypes: ['SCHOOL_WIDE'] },

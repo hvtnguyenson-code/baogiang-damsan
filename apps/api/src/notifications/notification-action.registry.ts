@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { Injectable } from '@nestjs/common';
 import { CapabilityAuthorizationService } from '../authorization/capability-authorization.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -181,81 +182,27 @@ export class NotificationActionRegistry {
   async isNotificationVisible(
     userId: string,
     notification: NotificationVisibilityCandidate,
+    db: Prisma.TransactionClient = this.prisma,
   ): Promise<boolean> {
     const { eventType, actionKey, sourceKind, sourceId } = notification;
+    // Only the two committed domain events implemented by P5-056 are registered.
+    const expectedAction = eventType === 'REPORTING_SUBMITTED' ? 'REPORTING_APPROVAL'
+      : eventType === 'REPORTING_DECIDED' ? 'REPORTING_VIEW' : null;
+    const params = notification.actionParamsJson;
+    if (!expectedAction || actionKey !== expectedAction || sourceKind !== 'ReportingStatementRevision'
+      || !sourceId || !params || typeof params !== 'object' || Array.isArray(params)
+      || (params as Record<string, unknown>)['revisionId'] !== sourceId) return false;
 
-    if (eventType === 'REPORTING_SUBMITTED' || actionKey === 'REPORTING_APPROVAL') {
-      const isApprover =
-        (await this.capabilityAuth.hasCapability({
-          userId,
-          capabilityKey: 'APPROVAL_PRINCIPAL',
-          requestedScope: 'SCHOOL_WIDE',
-        })) ||
-        (await this.capabilityAuth.hasCapability({
-          userId,
-          capabilityKey: 'APPROVAL_VICE_PRINCIPAL',
-          requestedScope: 'SCHOOL_WIDE',
-        }));
-      if (!isApprover) return false;
-
-      // Fail-closed source revalidation (N04): source must be ReportingStatementRevision with valid sourceId
-      if (sourceKind !== 'ReportingStatementRevision' || !sourceId) {
-        return false;
-      }
-
-      const revision = await this.prisma.reportingStatementRevision.findUnique({
-        where: { id: sourceId },
-        include: { state: true },
-      });
-      if (!revision || revision.state?.lifecycleState !== 'SUBMITTED') {
-        return false;
-      }
-      return true;
+    const revision = await db.reportingStatementRevision.findUnique({
+      where: { id: sourceId }, include: { series: true, state: true },
+    });
+    if (!revision) return false;
+    if (eventType === 'REPORTING_SUBMITTED') {
+      if (revision.state?.lifecycleState !== 'SUBMITTED' || revision.series.submitterUserId === userId) return false;
+      return (await this.capabilityAuth.hasCapability({ userId, capabilityKey: 'APPROVAL_PRINCIPAL', requestedScope: 'SCHOOL_WIDE' }, db))
+        || this.capabilityAuth.hasCapability({ userId, capabilityKey: 'APPROVAL_VICE_PRINCIPAL', requestedScope: 'SCHOOL_WIDE' }, db);
     }
-
-    if (eventType === 'REPORTING_DECIDED' || actionKey === 'REPORTING_VIEW') {
-      // Fail-closed source revalidation (N04): source must be ReportingStatementRevision with valid sourceId
-      if (sourceKind !== 'ReportingStatementRevision' || !sourceId) {
-        return false;
-      }
-
-      const revision = await this.prisma.reportingStatementRevision.findUnique({
-        where: { id: sourceId },
-        include: { series: true },
-      });
-      if (!revision) return false;
-
-      const isSubmitter = revision.series.submitterUserId === userId;
-      const canWide = await this.capabilityAuth.hasCapability({
-        userId,
-        capabilityKey: 'REPORTING_STATEMENT_READ',
-        requestedScope: 'SCHOOL_WIDE',
-      });
-
-      if (eventType === 'REPORTING_DECIDED' && !isSubmitter) {
-        return false;
-      }
-
-      if (!isSubmitter && !canWide) {
-        return false;
-      }
-      return true;
-    }
-
-    if (eventType.startsWith('TIMETABLE_')) {
-      const canPersonal = await this.capabilityAuth.hasCapability({
-        userId,
-        capabilityKey: 'TEACHER_BASE',
-        requestedScope: 'PERSONAL',
-      });
-      return canPersonal;
-    }
-
-    if (eventType.startsWith('SYSTEM_')) {
-      return true;
-    }
-
-    // Fail-closed on unrecognized notification type
-    return false;
+    if (revision.series.submitterUserId !== userId || !['APPROVED', 'REJECTED'].includes(revision.state?.lifecycleState ?? '')) return false;
+    return this.capabilityAuth.hasCapability({ userId, capabilityKey: 'REPORTING_STATEMENT_READ', requestedScope: 'PERSONAL' }, db);
   }
 }

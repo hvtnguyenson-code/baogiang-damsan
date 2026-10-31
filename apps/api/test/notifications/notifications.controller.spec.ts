@@ -9,6 +9,7 @@ describe('NotificationsController (unit)', () => {
 
   const req = {
     auth: {
+      sessionId: "session-1",
       user: {
         id: '11111111-1111-1111-1111-111111111111',
       },
@@ -72,7 +73,7 @@ describe('NotificationsController (unit)', () => {
       keys: { p256dh: 'k', auth: 'a' },
     };
     await controller.createSubscription(req, dto);
-    expect(service.createSubscription).toHaveBeenCalledWith('11111111-1111-1111-1111-111111111111', dto);
+    expect(service.createSubscription).toHaveBeenCalledWith('11111111-1111-1111-1111-111111111111', dto, 'session-1');
   });
 
   it('rejects invalid UUID on revokeSubscription', async () => {

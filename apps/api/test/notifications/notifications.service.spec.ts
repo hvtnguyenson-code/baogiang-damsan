@@ -1,4 +1,5 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { createECDH, randomBytes } from 'node:crypto';
 import {
   InAppNotificationCategory,
   InAppNotificationPriority,
@@ -19,9 +20,13 @@ type MockPrisma = {
   webPushSubscription: Record<string, jest.Mock>;
   webPushDelivery: Record<string, jest.Mock>;
   $transaction: jest.Mock;
+  $queryRaw: jest.Mock;
+  authSession: Record<string, jest.Mock>;
 };
 
 describe('NotificationsService (unit)', () => {
+  const receiver = createECDH('prime256v1'); receiver.generateKeys();
+  const subscriptionKeys = { p256dh: receiver.getPublicKey().toString('base64url'), auth: randomBytes(16).toString('base64url') };
   let service: NotificationsService;
   let prisma: MockPrisma;
   let actionRegistry: jest.Mocked<NotificationActionRegistry>;
@@ -41,6 +46,8 @@ describe('NotificationsService (unit)', () => {
 
   beforeEach(() => {
     prisma = {
+      $queryRaw: jest.fn().mockResolvedValue([]),
+      authSession: { findFirst: jest.fn().mockResolvedValue({ id: "session-1" }) },
       inAppNotification: {
         findMany: jest.fn(),
         findFirst: jest.fn(),
@@ -50,6 +57,7 @@ describe('NotificationsService (unit)', () => {
         updateMany: jest.fn(),
       },
       webPushSubscription: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         findMany: jest.fn(),
         findFirst: jest.fn(),
         findUnique: jest.fn(),
@@ -58,6 +66,7 @@ describe('NotificationsService (unit)', () => {
       },
       webPushDelivery: {
         findMany: jest.fn(),
+        findFirst: jest.fn(),
         updateMany: jest.fn(),
         update: jest.fn(),
         upsert: jest.fn(),
@@ -74,6 +83,12 @@ describe('NotificationsService (unit)', () => {
       sendNotification: jest.fn().mockResolvedValue({ success: true }),
     };
 
+    prisma.webPushDelivery.findFirst.mockImplementation(async () => {
+      const candidates = await prisma.webPushDelivery.findMany();
+      const sub = candidates[0].subscription;
+      return { subscription: { ...sub, authSession: { userId: sub.userId, revokedAt: null,
+        expiresAt: new Date(Date.now() + 60000), user: { status: 'ACTIVE', lockedUntil: null } } } };
+    });
     service = new NotificationsService(
       prisma as unknown as PrismaService,
       actionRegistry,
@@ -245,8 +260,8 @@ describe('NotificationsService (unit)', () => {
       await expect(
         service.createSubscription('user-1', {
           endpoint: 'http://insecure-push-service.com/sub/1',
-          keys: { p256dh: 'key1', auth: 'auth1' },
-        }),
+          keys: subscriptionKeys,
+        }, "session-1"),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -262,9 +277,9 @@ describe('NotificationsService (unit)', () => {
 
       const res = await service.createSubscription('user-1', {
         endpoint: 'http://127.0.0.1:8080/push/test',
-        keys: { p256dh: 'key1', auth: 'auth1' },
+        keys: subscriptionKeys,
         deviceLabel: 'Local Device',
-      });
+      }, "session-1");
       expect(res.id).toBe('sub-1');
     });
 
@@ -286,8 +301,8 @@ describe('NotificationsService (unit)', () => {
 
       const res = await service.createSubscription('user-B', {
         endpoint: 'http://127.0.0.1:8080/push/shared',
-        keys: { p256dh: 'k', auth: 'a' },
-      });
+        keys: subscriptionKeys,
+      }, "session-1");
       expect(res.id).toBe('sub-shared');
 
       // Verifies old deliveries targeting sub-shared were marked DEAD
@@ -304,7 +319,7 @@ describe('NotificationsService (unit)', () => {
         },
         data: expect.objectContaining({
           status: WebPushDeliveryStatus.DEAD,
-          lastErrorCode: 'SHARED_DEVICE_SWITCH',
+          lastErrorCode: 'SUBSCRIPTION_REBOUND',
         }),
       });
 
@@ -338,8 +353,8 @@ describe('NotificationsService (unit)', () => {
 
       const res = await service.createSubscription('user-1', {
         endpoint: 'http://127.0.0.1:8080/push/device6',
-        keys: { p256dh: 'k', auth: 'a' },
-      });
+        keys: subscriptionKeys,
+      }, "session-1");
       expect(res.id).toBe('sub-new');
       expect(prisma.webPushSubscription.update).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -359,13 +374,13 @@ describe('NotificationsService (unit)', () => {
 
       const res = await service.revokeSubscription('user-1', 'sub-1');
       expect(res.success).toBe(true);
-      expect(prisma.webPushSubscription.update).toHaveBeenCalledWith({
-        where: { id: 'sub-1' },
+      expect(prisma.webPushSubscription.updateMany).toHaveBeenCalledWith({
+        where: { id: 'sub-1', userId: 'user-1', revokedAt: null },
         data: { revokedAt: expect.any(Date) },
       });
       expect(prisma.webPushDelivery.updateMany).toHaveBeenCalledWith({
         where: {
-          subscriptionId: 'sub-1',
+          subscription: { id: 'sub-1', userId: 'user-1' },
           status: {
             in: [
               WebPushDeliveryStatus.PENDING,
@@ -391,8 +406,8 @@ describe('NotificationsService (unit)', () => {
 
       const res = await service.revokeByEndpoint('user-1', 'http://127.0.0.1:8080/push/test');
       expect(res.success).toBe(true);
-      expect(prisma.webPushSubscription.update).toHaveBeenCalledWith({
-        where: { id: 'sub-1' },
+      expect(prisma.webPushSubscription.updateMany).toHaveBeenCalledWith({
+        where: { userId: 'user-1', endpointDigest: expect.any(String), revokedAt: null },
         data: { revokedAt: expect.any(Date) },
       });
     });
@@ -403,6 +418,26 @@ describe('NotificationsService (unit)', () => {
     const validEndpointCipher = encryptAtRest('http://127.0.0.1:8080/push/test', encKey);
     const validP256dhCipher = encryptAtRest('p256dh-key', encKey);
     const validAuthCipher = encryptAtRest('auth-key', encKey);
+
+    it('starts each batch item lease when that item is claimed, after earlier slow sends', async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-10-31T00:00:00Z'));
+      try {
+        const sub = { id: 'sub-1', userId: 'user-1', endpointCiphertext: validEndpointCipher,
+          p256dhCiphertext: validP256dhCipher, authCiphertext: validAuthCipher, revokedAt: null, invalidatedAt: null };
+        prisma.webPushDelivery.findMany.mockResolvedValue(['d-1', 'd-2'].map(id => ({
+          id, attemptCount: 0, notification: { id: 'n-1', recipientUserId: 'user-1' }, subscription: sub,
+        })));
+        prisma.webPushDelivery.updateMany.mockResolvedValue({ count: 1 });
+        transport.sendNotification.mockImplementationOnce(async () => {
+          jest.setSystemTime(new Date('2026-10-31T00:00:40Z')); return { success: true };
+        });
+        await service.processPendingDeliveries(2);
+        const claims = prisma.webPushDelivery.updateMany.mock.calls.filter(([args]) => args.data.status === 'LEASED');
+        expect(claims).toHaveLength(2);
+        expect(claims[0][0].data.leaseUntil).toEqual(new Date('2026-10-31T00:00:30Z'));
+        expect(claims[1][0].data.leaseUntil).toEqual(new Date('2026-10-31T00:01:10Z'));
+      } finally { jest.useRealTimers(); }
+    });
 
     it('CRITICAL: marks DEAD with RECIPIENT_MISMATCH if delivery subscription does not match notification recipient', async () => {
       prisma.webPushDelivery.findMany.mockResolvedValue([

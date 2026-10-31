@@ -1,6 +1,6 @@
 # P5-056 — In-App Notification Center & Web Push Implementation
 
-**Status:** READY (effective after SYNC-P5-056A merges; not started)  
+**Status:** IN_REVIEW — PR #257 consolidated correction; local gates passed, exact-head CI and independent review required; no merge/deploy authority
 **Depends on:** P5-056A  
 **Traceability:** T55
 
@@ -35,7 +35,7 @@ Implement the accepted P5-056A architecture end-to-end.
 A user can receive a durable in-app notification, close the browser, log in again, find the same notification, mark it read, navigate to the related authorized task, and optionally receive Web Push on an eligible device. Disabling Push must leave the in-app record intact.
 
 
-## Handoff contract from P5-056A (proposal; pending acceptance)
+## Handoff contract from P5-056A (accepted architecture)
 
 P5-056 must implement the accepted versions of ADR-059 and P5-056A requirement after the closure SYNC merges. A green docs-only parent CI is not runtime acceptance. The exact module/event mapping is to be verified against domain sources at task start; draft type names do not authorize publishing fictitious events.
 

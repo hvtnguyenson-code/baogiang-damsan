@@ -1,5 +1,4 @@
 export interface WebPushSendPayload {
-  notificationId: string;
   title: string;
   body: string;
   clickUrl?: string;

@@ -42,6 +42,9 @@ describe('WebPushHttpAdapter & SSRF Guard (unit)', () => {
       expect(validatePushEndpoint('https://attacker.evil.com/push')).toBe(false);
       expect(validatePushEndpoint('https://storage.googleapis.com/push')).toBe(false);
       expect(validatePushEndpoint('https://internal-service.local/push')).toBe(false);
+      expect(validatePushEndpoint('https://user:password@fcm.googleapis.com/push')).toBe(false);
+      expect(validatePushEndpoint('https://fcm.googleapis.com:8443/push')).toBe(false);
+      expect(validatePushEndpoint('https://fcm.googleapis.com/push#fragment')).toBe(false);
     });
 
     it('accepts known official push service providers via HTTPS', () => {

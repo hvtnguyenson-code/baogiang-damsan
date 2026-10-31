@@ -39,6 +39,7 @@ describe('NotificationActionRegistry (unit)', () => {
       prisma.reportingStatementRevision.findUnique.mockResolvedValue({
         id: 'rev-123',
         state: { lifecycleState: 'SUBMITTED' },
+        series: { submitterUserId: 'teacher' },
       });
 
       const res = await registry.resolveAction('user-1', 'REPORTING_APPROVAL', { revisionId: 'rev-123' });
@@ -144,6 +145,7 @@ describe('NotificationActionRegistry (unit)', () => {
         eventType: 'REPORTING_SUBMITTED',
         sourceKind: 'ReportingStatementRevision',
         sourceId: 'rev-1',
+        actionParamsJson: { revisionId: 'rev-1' },
         actionKey: 'REPORTING_APPROVAL',
       });
       expect(visible).toBe(false);
@@ -156,12 +158,14 @@ describe('NotificationActionRegistry (unit)', () => {
       prisma.reportingStatementRevision.findUnique.mockResolvedValue({
         id: 'rev-1',
         state: { lifecycleState: 'SUBMITTED' },
+        series: { submitterUserId: 'teacher' },
       });
 
       const visible = await registry.isNotificationVisible('user-1', {
         eventType: 'REPORTING_SUBMITTED',
         sourceKind: 'ReportingStatementRevision',
         sourceId: 'rev-1',
+        actionParamsJson: { revisionId: 'rev-1' },
         actionKey: 'REPORTING_APPROVAL',
       });
       expect(visible).toBe(true);
@@ -171,12 +175,14 @@ describe('NotificationActionRegistry (unit)', () => {
       prisma.reportingStatementRevision.findUnique.mockResolvedValue({
         id: 'rev-1',
         series: { submitterUserId: 'user-author' },
+        state: { lifecycleState: 'APPROVED' },
       });
 
       const visible = await registry.isNotificationVisible('user-other', {
         eventType: 'REPORTING_DECIDED',
         sourceKind: 'ReportingStatementRevision',
         sourceId: 'rev-1',
+        actionParamsJson: { revisionId: 'rev-1' },
         actionKey: 'REPORTING_VIEW',
       });
       expect(visible).toBe(false);
@@ -189,12 +195,14 @@ describe('NotificationActionRegistry (unit)', () => {
       prisma.reportingStatementRevision.findUnique.mockResolvedValue({
         id: 'rev-1',
         series: { submitterUserId: 'user-author' },
+        state: { lifecycleState: 'APPROVED' },
       });
 
       const visible = await registry.isNotificationVisible('user-author', {
         eventType: 'REPORTING_DECIDED',
         sourceKind: 'ReportingStatementRevision',
         sourceId: 'rev-1',
+        actionParamsJson: { revisionId: 'rev-1' },
         actionKey: 'REPORTING_VIEW',
       });
       expect(visible).toBe(true);

@@ -101,7 +101,7 @@ integration('P5-051 clean-slate deletion (real isolated PostgreSQL)', () => {
     throw new Error('Expected an observed PostgreSQL lock wait');
   }
 
-  it('verifies PostgreSQL version, READ COMMITTED and migration-backed 40-table/72-direct + 4-indirect graph', async () => {
+  it('verifies PostgreSQL version, READ COMMITTED and migration-backed 42-table/74-direct + 4-indirect graph', async () => {
     const [v] = await h.prisma.$queryRaw<Array<{ version: string; isolation: string }>>`SELECT version(), current_setting('transaction_isolation') AS isolation`;
     expect(v.version).toMatch(/PostgreSQL/);
     expect(v.isolation).toBe('read committed');

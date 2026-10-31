@@ -36,6 +36,20 @@ describe('NotificationsPage', () => {
     },
   ];
 
+  it('continues from an empty authorization window to an older visible notification', async () => {
+    const fetch = vi.spyOn(apiClient, 'fetchNotifications')
+      .mockResolvedValueOnce({ items: [], nextCursor: 'opaque-continuation' })
+      .mockResolvedValueOnce({ items: [sampleNotifications[1]], nextCursor: null });
+    vi.spyOn(apiClient, 'fetchUnreadNotificationCount').mockResolvedValue({ count: 0 });
+    vi.spyOn(apiClient, 'fetchNotificationPushConfig').mockResolvedValue({ enabled: false, maxSubscriptionsPerUser: 5 });
+    vi.spyOn(apiClient, 'fetchWebPushSubscriptions').mockResolvedValue({ items: [] });
+    renderWithQuery(<NotificationsPage />, '/thong-bao');
+    fireEvent.click(await screen.findByRole('button', { name: 'Tải thêm thông báo' }));
+    expect(await screen.findByText('Báo cáo đã được phê duyệt')).toBeInTheDocument();
+    expect(fetch).toHaveBeenLastCalledWith('opaque-continuation', 20);
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Tải thêm thông báo' })).not.toBeInTheDocument());
+  });
+
   it('renders page header and list of notifications', async () => {
     vi.spyOn(apiClient, 'fetchNotifications').mockResolvedValue({
       items: sampleNotifications,

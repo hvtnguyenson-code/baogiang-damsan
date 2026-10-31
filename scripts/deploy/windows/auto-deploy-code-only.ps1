@@ -77,7 +77,7 @@ try {
   $digest = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
   $source = Join-Path $repo 'scripts\deploy\windows'
   $scripts = @('deployment-common.ps1','install-release.ps1','backup-database.ps1',
-    'run-migrations.ps1','assert-no-pending-migrations.ps1','sync-capability-catalog.ps1',
+    'run-migrations.ps1','assert-no-pending-migrations.ps1','assert-release-schema.ps1','sync-capability-catalog.ps1',
     'switch-current-release.ps1','restart-baogiang-api.ps1','start-baogiang-api.ps1',
     'test-production-health.ps1','rollback-release.ps1','notify-operator-telegram.ps1',
     'invoke-production-deploy.ps1','prune-releases.ps1')

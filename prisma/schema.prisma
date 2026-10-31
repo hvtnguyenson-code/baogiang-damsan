@@ -490,6 +490,7 @@ model AuthSession {
   createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
 
   user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  webPushSubscriptions WebPushSubscription[]
 
   @@index([userId, revokedAt, expiresAt])
   @@index([expiresAt])
@@ -2139,6 +2140,8 @@ model InAppNotification {
 model WebPushSubscription {
   id                 String    @id @default(uuid()) @db.Uuid
   userId             String    @map("user_id") @db.Uuid
+  authSessionId      String?   @map("auth_session_id") @db.Uuid
+  generation         Int       @default(1)
   deviceLabel        String?   @map("device_label") @db.VarChar(100)
   endpointCiphertext String    @map("endpoint_ciphertext") @db.Text
   endpointDigest     String    @unique(map: "web_push_subscriptions_endpoint_digest_key") @map("endpoint_digest") @db.VarChar(64)
@@ -2151,9 +2154,11 @@ model WebPushSubscription {
   vapidKeyVersion    String?   @map("vapid_key_version") @db.VarChar(32)
 
   user       User              @relation("UserWebPushSubscriptions", fields: [userId], references: [id], onDelete: Restrict)
+  authSession AuthSession?     @relation(fields: [authSessionId], references: [id], onDelete: Restrict)
   deliveries WebPushDelivery[]
 
   @@index([userId, revokedAt, invalidatedAt], map: "web_push_subscriptions_user_status_idx")
+  @@index([authSessionId], map: "web_push_subscriptions_auth_session_idx")
   @@map("web_push_subscriptions")
 }
 
@@ -2161,6 +2166,7 @@ model WebPushDelivery {
   id             String                @id @default(uuid()) @db.Uuid
   notificationId String                @map("notification_id") @db.Uuid
   subscriptionId String                @map("subscription_id") @db.Uuid
+  subscriptionGeneration Int           @default(1) @map("subscription_generation")
   dedupeKey      String                @map("dedupe_key") @db.VarChar(255)
   payloadVersion Int                   @default(1) @map("payload_version")
   status         WebPushDeliveryStatus @default(PENDING) @map("status")

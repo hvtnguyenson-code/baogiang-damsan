@@ -10,6 +10,14 @@ const migrationPath = path.join(
 );
 assert.ok(fs.existsSync(migrationPath), 'Notification migration file must exist');
 const migration = fs.readFileSync(migrationPath, 'utf8');
+const binding = fs.readFileSync(path.join(root, 'prisma/migrations/20261031190000_p5_056_push_session_binding/migration.sql'), 'utf8');
+assert.match(binding, /ADD COLUMN "auth_session_id" UUID/);
+assert.match(binding, /REFERENCES "auth_sessions"\("id"\) ON DELETE RESTRICT/);
+assert.match(binding, /ADD COLUMN "generation" INTEGER NOT NULL DEFAULT 1/);
+assert.match(binding, /ADD COLUMN "subscription_generation" INTEGER NOT NULL DEFAULT 1/);
+assert.match(binding, /"revoked_at" = CURRENT_TIMESTAMP/);
+assert.match(binding, /"last_error_code" = 'SESSION_BINDING_REQUIRED'/);
+assert.doesNotMatch(binding, /\b(DROP|DELETE\s+FROM|TRUNCATE)\b/i);
 
 // 1. Models & Enums in schema.prisma
 const requiredModels = [

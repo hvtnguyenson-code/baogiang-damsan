@@ -6,6 +6,8 @@ import { PrismaService } from '../../src/prisma/prisma.service';
 
 describe('NotificationsModule DI Bootstrap (unit/integration)', () => {
   it('successfully compiles NotificationsModule without missing dependencies', async () => {
+    const previous = process.env['DATABASE_URL'];
+    process.env['DATABASE_URL'] = 'postgresql://test@127.0.0.1:1/di_test';
     process.env['WEB_PUSH_ENABLED'] = 'false';
 
     const moduleRef = await Test.createTestingModule({
@@ -25,5 +27,7 @@ describe('NotificationsModule DI Bootstrap (unit/integration)', () => {
     expect(controller).toBeDefined();
 
     await moduleRef.close();
+    if (previous === undefined) delete process.env['DATABASE_URL'];
+    else process.env['DATABASE_URL'] = previous;
   });
 });

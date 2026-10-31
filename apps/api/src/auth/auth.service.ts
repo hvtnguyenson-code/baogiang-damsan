@@ -4,11 +4,12 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import { AuditResult, UserStatus, WebPushDeliveryStatus } from '@prisma/client';
+import { AuditResult, UserStatus } from '@prisma/client';
 import { createHash } from 'crypto';
 import { AuditService } from '../audit/audit.service';
 import { AppConfig } from '../config/app.config';
 import { PrismaService } from '../prisma/prisma.service';
+import { revokePushSubscriptions } from '../notifications/push-revocation';
 import { AuthenticatedUser, RequestMeta } from './auth.types';
 import { PasswordService } from './password.service';
 import { SessionTokenService } from './session-token.service';
@@ -51,7 +52,7 @@ export class AuthService {
     };
   }
 
-  async login(usernameInput: string, password: string, meta: RequestMeta): Promise<LoginResult> {
+  async login(usernameInput: string, password: string, meta: RequestMeta, previousRawToken?: string): Promise<LoginResult> {
     const username = usernameInput.trim().toLowerCase();
     const user = await this.prisma.user.findUnique({
       where: { username },
@@ -103,6 +104,15 @@ export class AuthService {
         return false;
       }
 
+      // A successful login replaces this browser's cookie, including an expired
+      // prior session. Revoke its installation before issuing the new session.
+      if (previousRawToken && this.tokens.isValid(previousRawToken)) {
+        const previous = await tx.authSession.findUnique({ where: { tokenHash: this.tokens.hash(previousRawToken) } });
+        if (previous) {
+          await tx.authSession.updateMany({ where: { id: previous.id, revokedAt: null }, data: { revokedAt: sessionIssuedAt } });
+          await revokePushSubscriptions(tx, { userId: previous.userId, authSessionId: previous.id }, 'SESSION_REPLACED');
+        }
+      }
       await tx.authSession.create({
         data: {
           userId: user.id,
@@ -208,6 +218,7 @@ export class AuthService {
   async logout(sessionId: string, userId: string, meta: RequestMeta): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
       await tx.authSession.updateMany({ where: { id: sessionId, userId, revokedAt: null }, data: { revokedAt: new Date() } });
+      await revokePushSubscriptions(tx, { userId, authSessionId: sessionId }, 'SESSION_LOGOUT');
       await this.audit.write({ actorUserId: userId, action: 'AUTH_LOGOUT', entityType: 'AuthSession', entityId: sessionId, requestId: meta.requestId, result: AuditResult.SUCCESS }, tx);
     });
   }
@@ -215,28 +226,7 @@ export class AuthService {
   async logoutAll(userId: string, meta: RequestMeta): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
       const result = await tx.authSession.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: new Date() } });
-      await tx.webPushSubscription.updateMany({
-        where: { userId, revokedAt: null },
-        data: { revokedAt: new Date() },
-      });
-      await tx.webPushDelivery.updateMany({
-        where: {
-          subscription: { userId },
-          status: {
-            in: [
-              WebPushDeliveryStatus.PENDING,
-              WebPushDeliveryStatus.LEASED,
-              WebPushDeliveryStatus.RETRY_WAIT,
-            ],
-          },
-        },
-        data: {
-          status: WebPushDeliveryStatus.DEAD,
-          lastErrorCode: 'LOGOUT_ALL_REVOCATION',
-          leaseOwner: null,
-          leaseUntil: null,
-        },
-      });
+      await revokePushSubscriptions(tx, { userId }, 'LOGOUT_ALL_REVOCATION');
       await this.audit.write({ actorUserId: userId, action: 'AUTH_LOGOUT_ALL', entityType: 'User', entityId: userId, requestId: meta.requestId, result: AuditResult.SUCCESS, metadata: { revokedSessionCount: result.count } }, tx);
     });
   }
@@ -265,6 +255,7 @@ export class AuthService {
         throw new UnauthorizedException('Mật khẩu hiện tại không hợp lệ.');
       }
       const revoked = await tx.authSession.updateMany({ where: { userId, id: { not: sessionId }, revokedAt: null }, data: { revokedAt: new Date() } });
+      await revokePushSubscriptions(tx, { userId, authSessionId: { not: sessionId } }, 'PASSWORD_CHANGE');
       await this.audit.write({ actorUserId: userId, action: 'AUTH_PASSWORD_CHANGED', entityType: 'User', entityId: userId, requestId: meta.requestId, result: AuditResult.SUCCESS, metadata: { otherSessionsRevoked: revoked.count } }, tx);
     });
   }

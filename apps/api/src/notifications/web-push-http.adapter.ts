@@ -23,6 +23,7 @@ function parseRetryAfter(value: string | null | undefined): number | undefined {
 export function validatePushEndpoint(endpoint: string, allowLoopback = false): boolean {
   try {
     const url = new URL(endpoint);
+    if (url.username || url.password || url.hash || (url.port && url.port !== '443' && !allowLoopback)) return false;
     const hostname = url.hostname.toLowerCase();
     const isLoopback = ['127.0.0.1', 'localhost', '::1'].includes(hostname);
 
@@ -83,7 +84,6 @@ export class WebPushHttpAdapter implements WebPushTransportPort {
     };
 
     const payloadString = JSON.stringify({
-      notificationId: payload.notificationId,
       title: payload.title,
       body: payload.body,
       clickUrl: payload.clickUrl ?? '/thong-bao',

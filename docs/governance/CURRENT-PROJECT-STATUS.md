@@ -10,23 +10,46 @@ Exact current `main`, branch HEAD and divergence must always be read directly fr
 
 **Status snapshot date:** 2026-10-31
 
-## P5-056 / T55 — IN_REVIEW on task branch feat/p5-056-notification-center-webpush
+## P5-056 / T55 — IN_REVIEW: PR #257 Codex correction
 
-At canonical GitHub main `088041952796e9628ae7aeed1026393525e35705`, P5-056A/SYNC-P5-056A are closed. Task P5-056 has been implemented on dedicated branch `feat/p5-056-notification-center-webpush` in strict accordance with accepted ADR-059 and `docs/tasks/P5-056-ANTIGRAVITY-EXECUTION.md`:
-- PostgreSQL canonical inbox schema (`in_app_notifications`, `web_push_subscriptions`, `web_push_deliveries`) + additive Prisma migration (`20261031120000_p5_056_inapp_notifications_web_push`). Production rollout gate: `prisma migrate deploy` must run before application startup to prevent any race condition on unmigrated tables.
-- User delete FK inventory and schema fingerprint updated (`f1b595a20660667e91fab612d37167b7`), with correct collation sorting (`homeroom_assignments` before `in_app_notifications`), verified with all 59 tests in `user-delete.integration.spec.ts` passing against real PostgreSQL 17.
-- Integration test harnesses (`Phase01Harness.clean()` and suite fixtures) cleaned up with proper notification and push subscription teardown before `user.deleteMany()`.
-- Multi-device Web Push subscription management with AES-256-GCM encryption at rest, 5-device limit, shared-device reassignment/revocation, and server-side push subscription revocation upon `logoutAll`.
-- Generic PII-free Web Push payload (`title: 'Báo giảng Đam San'`, `body: 'Bạn có thông báo mới trong hệ thống.'`, `clickUrl: '/thong-bao'`) strictly omitting all business details, usernames, and statement text.
-- Outbox delivery worker with lease CAS, exponential backoff, dead-letter state, and error handling (404/410, 429, 5xx).
-- SSRF guard in `WebPushHttpAdapter` hardened with strict host regexes (`fcm.googleapis.com`, `*.push.apple.com`, `*.notify.windows.com`, `*.push.services.mozilla.com`).
-- Fail-closed source revalidation (N04) in `NotificationActionRegistry.isNotificationVisible()`.
-- Cursor pagination scanning advancing strictly to the last evaluated item.
-- Same-origin API under `/api/notifications` with `SessionAuthGuard`, `CsrfOriginGuard`, `Cache-Control: no-store`.
-- Domain event publishing for committed events in `ReportingStatementsService` (`REPORTING_SUBMITTED`, `REPORTING_DECIDED`).
-- Public service worker push listener via Workbox `importScripts` preserving network-only `/api`.
-- Responsive `/thong-bao` Web UI conforming to `DESIGN.md`.
-- Comprehensive local verification completed: Schema static verifier PASS, `npm run test:schema:static` PASS, `npm run test:ui:static` PASS, `npm run typecheck` PASS across all workspaces, `npm run lint` PASS (0 errors, 0 warnings), Web unit tests 749/749 PASS, API unit tests 112/112 suites PASS, PostgreSQL integration tests PASS. Ready for independent review; no merge or deploy authorized.
+Canonical main was fetched directly as `088041952796e9628ae7aeed1026393525e35705`;
+takeover HEAD `39b60d6026b093629ebcafc93750b04be93180f2` on the existing
+`feat/p5-056-notification-center-webpush` branch. P5-056A is CLOSED;
+P5-056 is not merged/closed. Reviews 5722373124, 5722618883 and 5722773426
+require correction; original CI #855 and compatibility #78 failed.
+
+- Clean migration replay on PG16.15 and PG17.10 produced the same original
+  fingerprint `612e1f3b0d4abba0b6e796b15da72c5c`, enforcement true and all
+  78 inbound FKs matching. The previous `f1b595a20660667e91fab612d37167b7`
+  constant was incorrect; the old blanket PG17/integration PASS claim is withdrawn.
+  The additive session/generation migration has reviewed fingerprint
+  `dcc09117df18e7b7c914f4a1aec781fe` on both versions, without relaxing deletion.
+- Subscriptions bind to the authenticated session; logout, logout-all, successful
+  cookie replacement and other-session password revocation cancel the correct
+  deliveries. Offline expiry/current source rights are checked before sending.
+  Endpoint/user/session locks and ownership generations protect device admission,
+  handoff and late provider responses. Already in-flight provider requests cannot
+  be retracted; only fixed generic copy and the inbox route are sent/displayed.
+- Only exact REPORTING_SUBMITTED/REPORTING_DECIDED event/action/source bindings
+  are registered. Publication uses the current evaluator in the source transaction;
+  list/count/read/action/send recheck current resource authority. Hidden scan
+  windows retain a continuation cursor even with zero visible items.
+- Automatic deployment stays code-only and stops on pending migrations. Both
+  release paths now require read-only schema verification before switch/start;
+  deployment manifests carry the new verifier. Windows fixtures cover ordering,
+  rejection and recovery without production access.
+- API unit 114 suites / 2,143 tests and Web unit 750 tests passed. Full isolated
+  PG16.15 and PG17.10 each passed 54 suites / 754 tests, with one unchanged opt-in
+  live-browser skip. Lint/typecheck/production build, Prisma/migration, UI/PWA,
+  secret scan and Windows deployment gates passed. Exact-head GitHub CI and
+  compatibility checks plus independent source review remain required.
+  No production schema/deploy action or independent approval is asserted.
+
+Execution scope: `docs/tasks/P5-056-CODEX-CORRECTION.md`.
+Validation: `docs/phase-reports/P5-056-CODEX-CORRECTION-VALIDATION.md`.
+Prepared release/rollback rehearsal: `docs/operations/P5-056-CONTROLLED-RELEASE-PLAN.md`.
+P5-057 device/persona acceptance and P6-050 remain gated.
+
 ## P5-056A / T55 — CLOSED by SYNC-P5-056A (architecture only)
 
 Parent docs-only PR #255 final reviewed HEAD `dd124c2beb7f693ac8c5c6945b65951d94b87bf8` and exact-head CI #849 (`40612229821`) SUCCESS. Three MEDIUM architecture issues (unresolved retention, client-owned Push permission and shared-device subscription revocation) were corrected on the same branch before merge. ChatGPT GitHub-diff review COMMENT `5676503379` found no remaining HIGH/CRITICAL in the docs-only scope; it was written by the document author, **not a formal independent third-party APPROVE**. The Product Owner authorized merge.

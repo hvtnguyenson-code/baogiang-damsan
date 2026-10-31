@@ -1,4 +1,4 @@
-// P5-056: verified against all 30 migrations on isolated PostgreSQL 17.10.
+// P5-056: verified against all 31 migrations on isolated PostgreSQL 16.15 and 17.10.
 // Changes require migration-graph review; runtime compares the complete inbound graph.
 export const USER_DELETE_FK_INVENTORY = [{"schema":"public","child":"audit_events","name":"audit_events_actor_user_id_fkey","parent":"users","columns":["actor_user_id"],"refs":["id"],"del":"n","upd":"c","valid":true,"deferred":false},
  {"schema":"public","child":"auth_sessions","name":"auth_sessions_user_id_fkey","parent":"users","columns":["user_id"],"refs":["id"],"del":"r","upd":"c","valid":true,"deferred":false},
