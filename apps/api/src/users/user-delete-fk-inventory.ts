@@ -1,4 +1,4 @@
-// P5-051: verified against all 29 migrations on isolated PostgreSQL 17.10.
+// P5-056: verified against all 30 migrations on isolated PostgreSQL 17.10.
 // Changes require migration-graph review; runtime compares the complete inbound graph.
 export const USER_DELETE_FK_INVENTORY = [{"schema":"public","child":"audit_events","name":"audit_events_actor_user_id_fkey","parent":"users","columns":["actor_user_id"],"refs":["id"],"del":"n","upd":"c","valid":true,"deferred":false},
  {"schema":"public","child":"auth_sessions","name":"auth_sessions_user_id_fkey","parent":"users","columns":["user_id"],"refs":["id"],"del":"r","upd":"c","valid":true,"deferred":false},
@@ -20,6 +20,7 @@ export const USER_DELETE_FK_INVENTORY = [{"schema":"public","child":"audit_event
  {"schema":"public","child":"homeroom_assignments","name":"homeroom_assignments_created_by_user_id_fkey","parent":"users","columns":["created_by_user_id"],"refs":["id"],"del":"r","upd":"c","valid":true,"deferred":false},
  {"schema":"public","child":"homeroom_assignments","name":"homeroom_assignments_reversed_by_user_id_fkey","parent":"users","columns":["reversed_by_user_id"],"refs":["id"],"del":"r","upd":"c","valid":true,"deferred":false},
  {"schema":"public","child":"homeroom_assignments","name":"homeroom_assignments_teacher_user_id_fkey","parent":"users","columns":["teacher_user_id"],"refs":["id"],"del":"r","upd":"c","valid":true,"deferred":false},
+ {"schema":"public","child":"in_app_notifications","name":"in_app_notifications_recipient_user_id_fkey","parent":"users","columns":["recipient_user_id"],"refs":["id"],"del":"r","upd":"c","valid":true,"deferred":false},
  {"schema":"public","child":"makeup_teaching_schedules","name":"makeup_teaching_schedules_created_by_user_id_fkey","parent":"users","columns":["created_by_user_id"],"refs":["id"],"del":"r","upd":"c","valid":true,"deferred":false},
  {"schema":"public","child":"makeup_teaching_schedules","name":"makeup_teaching_schedules_eligibility_staff_subject_fkey","parent":"staff_subjects","columns":["eligibility_staff_subject_id","scheduled_teacher_user_id","subject_id"],"refs":["id","user_id","subject_id"],"del":"r","upd":"c","valid":true,"deferred":false},
  {"schema":"public","child":"makeup_teaching_schedules","name":"makeup_teaching_schedules_reversed_by_user_id_fkey","parent":"users","columns":["reversed_by_user_id"],"refs":["id"],"del":"r","upd":"c","valid":true,"deferred":false},
@@ -75,4 +76,5 @@ export const USER_DELETE_FK_INVENTORY = [{"schema":"public","child":"audit_event
  {"schema":"public","child":"timetable_versions","name":"timetable_versions_activated_by_user_id_fkey","parent":"users","columns":["activated_by_user_id"],"refs":["id"],"del":"r","upd":"c","valid":true,"deferred":false},
  {"schema":"public","child":"timetable_versions","name":"timetable_versions_approved_by_user_id_fkey","parent":"users","columns":["approved_by_user_id"],"refs":["id"],"del":"r","upd":"c","valid":true,"deferred":false},
  {"schema":"public","child":"timetable_versions","name":"timetable_versions_created_by_user_id_fkey","parent":"users","columns":["created_by_user_id"],"refs":["id"],"del":"r","upd":"c","valid":true,"deferred":false},
- {"schema":"public","child":"timetable_versions","name":"timetable_versions_validated_by_user_id_fkey","parent":"users","columns":["validated_by_user_id"],"refs":["id"],"del":"r","upd":"c","valid":true,"deferred":false}] as const;
+ {"schema":"public","child":"timetable_versions","name":"timetable_versions_validated_by_user_id_fkey","parent":"users","columns":["validated_by_user_id"],"refs":["id"],"del":"r","upd":"c","valid":true,"deferred":false},
+ {"schema":"public","child":"web_push_subscriptions","name":"web_push_subscriptions_user_id_fkey","parent":"users","columns":["user_id"],"refs":["id"],"del":"r","upd":"c","valid":true,"deferred":false}] as const;

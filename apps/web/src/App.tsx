@@ -35,6 +35,7 @@ import { MakeupSchedulingPage } from './pages/MakeupSchedulingPage';
 import { TeachingOperationsPage } from './pages/TeachingOperationsPage';
 import { TimetableAdminPage } from './pages/TimetableAdminPage';
 import { DataReadinessPage } from './pages/DataReadinessPage';
+import { NotificationsPage } from './pages/NotificationsPage';
 import type { BusinessPolicyUiAdapter } from './lib/business-policy-ui-registry';
 import {
   canAccessDataReadinessCenter,
@@ -65,6 +66,7 @@ export default function App({ businessPolicyAdapters }: { businessPolicyAdapters
       <Route element={<ProtectedRoute />}>
         <Route element={<AppLayout />}>
           <Route path="/" element={<HomePage />} />
+          <Route path="/thong-bao" element={<NotificationsPage />} />
           <Route path="/ho-so" element={<ProfilePage />} />
           <Route element={<CapabilityRoute allow={(c) => hasCapability(c, 'TEACHER_BASE', 'PERSONAL')} />}><Route path="/lich-day" element={<EffectiveSchedulePage />} /></Route>
           <Route element={<CapabilityRoute allow={(c) => canSubmitPersonalReporting(c) || canReadPersonalReporting(c)} />}><Route path="/bao-cao-ke-khai" element={<ReportingStatementsPage />} /></Route>

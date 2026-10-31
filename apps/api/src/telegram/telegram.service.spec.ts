@@ -72,6 +72,7 @@ describe('TelegramService (ADR-058 Acceptance Cases)', () => {
       aiActiveModeEnabled: false,
       aiPassiveModeEnabled: false,
       webPushEnabled: false,
+      webPush: { enabled: false },
       telegram: {
         enabled: true,
         botToken,

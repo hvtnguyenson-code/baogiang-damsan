@@ -28,6 +28,7 @@ describe('TelegramBotApiAdapter (CX-02 / CX-03 / CX-04 Transport Hardening)', ()
     aiActiveModeEnabled: false,
     aiPassiveModeEnabled: false,
     webPushEnabled: false,
+    webPush: { enabled: false },
     telegram: {
       enabled: true,
       botToken: secretBotToken,

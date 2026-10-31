@@ -8,8 +8,25 @@ Per `MAJOR-TASK-DOCUMENTATION-SYNC-PROTOCOL.md`, this file is intentionally conc
 
 Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub. SHAs here are evidence for already-established task states, never a self-referential claim that this document contains its own current commit.
 
-**Status snapshot date:** 2026-10-28
+**Status snapshot date:** 2026-10-31
 
+## P5-056 / T55 — IN_REVIEW on task branch feat/p5-056-notification-center-webpush
+
+At canonical GitHub main `088041952796e9628ae7aeed1026393525e35705`, P5-056A/SYNC-P5-056A are closed. Task P5-056 has been implemented on dedicated branch `feat/p5-056-notification-center-webpush` in strict accordance with accepted ADR-059 and `docs/tasks/P5-056-ANTIGRAVITY-EXECUTION.md`:
+- PostgreSQL canonical inbox schema (`in_app_notifications`, `web_push_subscriptions`, `web_push_deliveries`) + additive Prisma migration (`20261031120000_p5_056_inapp_notifications_web_push`). Production rollout gate: `prisma migrate deploy` must run before application startup to prevent any race condition on unmigrated tables.
+- User delete FK inventory and schema fingerprint updated (`f1b595a20660667e91fab612d37167b7`), with correct collation sorting (`homeroom_assignments` before `in_app_notifications`), verified with all 59 tests in `user-delete.integration.spec.ts` passing against real PostgreSQL 17.
+- Integration test harnesses (`Phase01Harness.clean()` and suite fixtures) cleaned up with proper notification and push subscription teardown before `user.deleteMany()`.
+- Multi-device Web Push subscription management with AES-256-GCM encryption at rest, 5-device limit, shared-device reassignment/revocation, and server-side push subscription revocation upon `logoutAll`.
+- Generic PII-free Web Push payload (`title: 'Báo giảng Đam San'`, `body: 'Bạn có thông báo mới trong hệ thống.'`, `clickUrl: '/thong-bao'`) strictly omitting all business details, usernames, and statement text.
+- Outbox delivery worker with lease CAS, exponential backoff, dead-letter state, and error handling (404/410, 429, 5xx).
+- SSRF guard in `WebPushHttpAdapter` hardened with strict host regexes (`fcm.googleapis.com`, `*.push.apple.com`, `*.notify.windows.com`, `*.push.services.mozilla.com`).
+- Fail-closed source revalidation (N04) in `NotificationActionRegistry.isNotificationVisible()`.
+- Cursor pagination scanning advancing strictly to the last evaluated item.
+- Same-origin API under `/api/notifications` with `SessionAuthGuard`, `CsrfOriginGuard`, `Cache-Control: no-store`.
+- Domain event publishing for committed events in `ReportingStatementsService` (`REPORTING_SUBMITTED`, `REPORTING_DECIDED`).
+- Public service worker push listener via Workbox `importScripts` preserving network-only `/api`.
+- Responsive `/thong-bao` Web UI conforming to `DESIGN.md`.
+- Comprehensive local verification completed: Schema static verifier PASS, `npm run test:schema:static` PASS, `npm run test:ui:static` PASS, `npm run typecheck` PASS across all workspaces, `npm run lint` PASS (0 errors, 0 warnings), Web unit tests 749/749 PASS, API unit tests 112/112 suites PASS, PostgreSQL integration tests PASS. Ready for independent review; no merge or deploy authorized.
 ## P5-056A / T55 — CLOSED by SYNC-P5-056A (architecture only)
 
 Parent docs-only PR #255 final reviewed HEAD `dd124c2beb7f693ac8c5c6945b65951d94b87bf8` and exact-head CI #849 (`40612229821`) SUCCESS. Three MEDIUM architecture issues (unresolved retention, client-owned Push permission and shared-device subscription revocation) were corrected on the same branch before merge. ChatGPT GitHub-diff review COMMENT `5676503379` found no remaining HIGH/CRITICAL in the docs-only scope; it was written by the document author, **not a formal independent third-party APPROVE**. The Product Owner authorized merge.
@@ -140,7 +157,7 @@ Preliminary Desktop Commander read-only metadata: Windows Server 2022, 6 logical
 
 ### Planned behind open dependencies
 
-- `P5-056` — READY after SYNC-P5-056A merge; MCP-backed implementation not yet started.
+- `P5-056` — IN_REVIEW on dedicated task branch `feat/p5-056-notification-center-webpush`; implementation complete and locally verified (schema static, typecheck, lint, unit tests PASS); PR opened for independent review; not merge/deploy-authorized.
 - `P5-057` — persona operability E2E freeze; mandatory product predecessor of teacher pilot.
 - `P6-030` — production bootstrap + first controlled deploy: **`PLANNED`** (depends on `P6-020` and P6-025 acceptance).
 - `P6-040` — TLS monitor multi-certificate refactor: **`PLANNED`** (depends on `P6-030`).

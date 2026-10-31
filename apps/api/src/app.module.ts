@@ -32,6 +32,7 @@ import { EffectiveScheduleModule } from './effective-schedule/effective-schedule
 import { HistoricalTeachingModule } from './historical-teaching/historical-teaching.module';
 import { TelegramModule } from './telegram/telegram.module';
 import { DataReadinessModule } from './data-readiness/data-readiness.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
 
@@ -82,6 +83,7 @@ import { DataReadinessModule } from './data-readiness/data-readiness.module';
     HistoricalTeachingModule,
     TelegramModule,
     DataReadinessModule,
+    NotificationsModule,
   ],
 })
 export class AppModule {}

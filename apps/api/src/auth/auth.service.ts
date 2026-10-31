@@ -4,7 +4,7 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import { AuditResult, UserStatus } from '@prisma/client';
+import { AuditResult, UserStatus, WebPushDeliveryStatus } from '@prisma/client';
 import { createHash } from 'crypto';
 import { AuditService } from '../audit/audit.service';
 import { AppConfig } from '../config/app.config';
@@ -215,6 +215,28 @@ export class AuthService {
   async logoutAll(userId: string, meta: RequestMeta): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
       const result = await tx.authSession.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: new Date() } });
+      await tx.webPushSubscription.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      await tx.webPushDelivery.updateMany({
+        where: {
+          subscription: { userId },
+          status: {
+            in: [
+              WebPushDeliveryStatus.PENDING,
+              WebPushDeliveryStatus.LEASED,
+              WebPushDeliveryStatus.RETRY_WAIT,
+            ],
+          },
+        },
+        data: {
+          status: WebPushDeliveryStatus.DEAD,
+          lastErrorCode: 'LOGOUT_ALL_REVOCATION',
+          leaseOwner: null,
+          leaseUntil: null,
+        },
+      });
       await this.audit.write({ actorUserId: userId, action: 'AUTH_LOGOUT_ALL', entityType: 'User', entityId: userId, requestId: meta.requestId, result: AuditResult.SUCCESS, metadata: { revokedSessionCount: result.count } }, tx);
     });
   }

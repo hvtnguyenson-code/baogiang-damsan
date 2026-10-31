@@ -37,6 +37,9 @@ const config: AppConfig = {
   telegram: {
     enabled: false,
   },
+  webPush: {
+    enabled: false,
+  },
 };
 
 describe('auth security foundations', () => {

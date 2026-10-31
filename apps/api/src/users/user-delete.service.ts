@@ -315,7 +315,7 @@ export class UserDeleteService {
         AND t.relkind IN ('r','p','f','m')
         AND NOT (n.nspname='public' AND t.relname='_prisma_migrations')
         AND a.attnum>0 AND NOT a.attisdropped`;
-    if (schema.fingerprint !== '13031cf488b8cd86152b3e981e348bb5' || !schema.enforced) return false;
+    if (schema.fingerprint !== 'f1b595a20660667e91fab612d37167b7' || !schema.enforced) return false;
     const actual = await tx.$queryRaw<ForeignKey[]>`
       SELECT ns.nspname AS schema, t.relname AS child, c.conname AS name, p.relname AS parent,
         ARRAY(SELECT a.attname::text FROM unnest(c.conkey) WITH ORDINALITY k(n,i)
