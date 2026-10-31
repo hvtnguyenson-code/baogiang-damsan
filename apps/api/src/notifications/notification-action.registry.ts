@@ -182,7 +182,9 @@ export class NotificationActionRegistry {
     userId: string,
     notification: NotificationVisibilityCandidate,
   ): Promise<boolean> {
-    if (notification.eventType === 'REPORTING_SUBMITTED' || notification.actionKey === 'REPORTING_APPROVAL') {
+    const { eventType, actionKey, sourceKind, sourceId } = notification;
+
+    if (eventType === 'REPORTING_SUBMITTED' || actionKey === 'REPORTING_APPROVAL') {
       const isApprover =
         (await this.capabilityAuth.hasCapability({
           userId,
@@ -196,45 +198,64 @@ export class NotificationActionRegistry {
         }));
       if (!isApprover) return false;
 
-      // Source revalidation: statement must exist and be in SUBMITTED state
-      if (notification.sourceKind === 'ReportingStatementRevision' && notification.sourceId) {
-        const revision = await this.prisma.reportingStatementRevision.findUnique({
-          where: { id: notification.sourceId },
-          include: { state: true },
-        });
-        if (!revision || revision.state?.lifecycleState !== 'SUBMITTED') {
-          return false;
-        }
+      // Fail-closed source revalidation (N04): source must be ReportingStatementRevision with valid sourceId
+      if (sourceKind !== 'ReportingStatementRevision' || !sourceId) {
+        return false;
+      }
+
+      const revision = await this.prisma.reportingStatementRevision.findUnique({
+        where: { id: sourceId },
+        include: { state: true },
+      });
+      if (!revision || revision.state?.lifecycleState !== 'SUBMITTED') {
+        return false;
       }
       return true;
     }
 
-    if (notification.eventType === 'REPORTING_DECIDED' || notification.actionKey === 'REPORTING_VIEW') {
-      if (notification.sourceKind === 'ReportingStatementRevision' && notification.sourceId) {
-        const revision = await this.prisma.reportingStatementRevision.findUnique({
-          where: { id: notification.sourceId },
-          include: { series: true },
-        });
-        if (!revision) return false;
+    if (eventType === 'REPORTING_DECIDED' || actionKey === 'REPORTING_VIEW') {
+      // Fail-closed source revalidation (N04): source must be ReportingStatementRevision with valid sourceId
+      if (sourceKind !== 'ReportingStatementRevision' || !sourceId) {
+        return false;
+      }
 
-        const isSubmitter = revision.series.submitterUserId === userId;
-        const canWide = await this.capabilityAuth.hasCapability({
-          userId,
-          capabilityKey: 'REPORTING_STATEMENT_READ',
-          requestedScope: 'SCHOOL_WIDE',
-        });
+      const revision = await this.prisma.reportingStatementRevision.findUnique({
+        where: { id: sourceId },
+        include: { series: true },
+      });
+      if (!revision) return false;
 
-        if (notification.eventType === 'REPORTING_DECIDED' && !isSubmitter) {
-          return false;
-        }
+      const isSubmitter = revision.series.submitterUserId === userId;
+      const canWide = await this.capabilityAuth.hasCapability({
+        userId,
+        capabilityKey: 'REPORTING_STATEMENT_READ',
+        requestedScope: 'SCHOOL_WIDE',
+      });
 
-        if (!isSubmitter && !canWide) {
-          return false;
-        }
+      if (eventType === 'REPORTING_DECIDED' && !isSubmitter) {
+        return false;
+      }
+
+      if (!isSubmitter && !canWide) {
+        return false;
       }
       return true;
     }
 
-    return true;
+    if (eventType.startsWith('TIMETABLE_')) {
+      const canPersonal = await this.capabilityAuth.hasCapability({
+        userId,
+        capabilityKey: 'TEACHER_BASE',
+        requestedScope: 'PERSONAL',
+      });
+      return canPersonal;
+    }
+
+    if (eventType.startsWith('SYSTEM_')) {
+      return true;
+    }
+
+    // Fail-closed on unrecognized notification type
+    return false;
   }
 }

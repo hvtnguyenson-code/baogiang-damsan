@@ -181,23 +181,24 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
       const itemsToProcess = hasMoreInBatch ? batch.slice(0, fetchSize) : batch;
       scannedCount += itemsToProcess.length;
 
+      let lastScannedItem: Prisma.InAppNotificationGetPayload<Record<string, never>> | null = null;
       for (const item of itemsToProcess) {
+        lastScannedItem = item;
         const isVisible = await this.actionRegistry.isNotificationVisible(userId, item);
         if (isVisible) {
           visibleItems.push(item);
           if (visibleItems.length === targetLimit) {
-            currentCursorCreatedAt = item.createdAt;
-            currentCursorId = item.id;
             break;
           }
         }
       }
 
-      const lastProcessed = itemsToProcess[itemsToProcess.length - 1];
-      currentCursorCreatedAt = lastProcessed.createdAt;
-      currentCursorId = lastProcessed.id;
+      if (lastScannedItem) {
+        currentCursorCreatedAt = lastScannedItem.createdAt;
+        currentCursorId = lastScannedItem.id;
+      }
 
-      if (!hasMoreInBatch) {
+      if (visibleItems.length === targetLimit || !hasMoreInBatch) {
         break;
       }
     }
@@ -820,7 +821,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
         payload: {
           notificationId: delivery.notification.id,
           title: 'Báo giảng Đam San',
-          body: delivery.notification.bodySafe,
+          body: 'Bạn có thông báo mới trong hệ thống.',
           clickUrl: '/thong-bao',
         },
         vapidPublicKey: this.config.webPush.vapidPublicKey,

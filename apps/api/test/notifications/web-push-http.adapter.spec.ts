@@ -40,6 +40,7 @@ describe('WebPushHttpAdapter & SSRF Guard (unit)', () => {
 
     it('rejects arbitrary domains outside push service allowlist', () => {
       expect(validatePushEndpoint('https://attacker.evil.com/push')).toBe(false);
+      expect(validatePushEndpoint('https://storage.googleapis.com/push')).toBe(false);
       expect(validatePushEndpoint('https://internal-service.local/push')).toBe(false);
     });
 

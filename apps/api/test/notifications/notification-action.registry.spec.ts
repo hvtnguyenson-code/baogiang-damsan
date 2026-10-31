@@ -199,5 +199,30 @@ describe('NotificationActionRegistry (unit)', () => {
       });
       expect(visible).toBe(true);
     });
+
+    it('hides REPORTING_SUBMITTED notification if sourceKind is not ReportingStatementRevision or sourceId is missing', async () => {
+      capabilityAuth.hasCapability.mockResolvedValue(true);
+
+      const visibleNoId = await registry.isNotificationVisible('user-approver', {
+        eventType: 'REPORTING_SUBMITTED',
+        actionKey: 'REPORTING_APPROVAL',
+      });
+      expect(visibleNoId).toBe(false);
+
+      const visibleWrongKind = await registry.isNotificationVisible('user-approver', {
+        eventType: 'REPORTING_SUBMITTED',
+        sourceKind: 'UnknownEntity',
+        sourceId: 'some-id',
+        actionKey: 'REPORTING_APPROVAL',
+      });
+      expect(visibleWrongKind).toBe(false);
+    });
+
+    it('hides unrecognized notification eventType (fail-closed)', async () => {
+      const visible = await registry.isNotificationVisible('user-1', {
+        eventType: 'UNREGISTERED_EVENT_TYPE',
+      });
+      expect(visible).toBe(false);
+    });
   });
 });

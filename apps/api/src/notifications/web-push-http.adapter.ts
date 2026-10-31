@@ -40,11 +40,10 @@ export function validatePushEndpoint(endpoint: string, allowLoopback = false): b
 
     // Known reputable push service domain suffixes
     const allowedHostPatterns = [
-      /(^|\.)googleapis\.com$/i,
+      /^fcm\.googleapis\.com$/i,
       /(^|\.)push\.apple\.com$/i,
       /(^|\.)notify\.windows\.com$/i,
       /(^|\.)push\.services\.mozilla\.com$/i,
-      /(^|\.)services\.mozilla\.com$/i,
     ];
 
     return allowedHostPatterns.some((pattern) => pattern.test(hostname));
