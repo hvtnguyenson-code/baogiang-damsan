@@ -37,18 +37,21 @@ $parts = Set-PostgresProcessEnvironment -DatabaseUrl $databaseUrl -ExpectedPort 
 function Get-MigrationState([string]$Phase) {
   $existsQuery = "SELECT CASE WHEN to_regclass('public._prisma_migrations') IS NULL THEN 'NOT_PRESENT' ELSE 'PRESENT' END;"
   try {
-    $exists = @(& $PsqlExe '--tuples-only','--no-align','--command',$existsQuery,'--host',$parts.host,'--port',[string]$parts.port,'--username',$parts.user,'--dbname',$parts.database 2>$null)
+    $existsArgs = @('--tuples-only','--no-align','--command',$existsQuery,'--host',$parts.host,'--port',[string]$parts.port,'--username',$parts.user,'--dbname',$parts.database)
+    $exists = @(& $PsqlExe @existsArgs 2>$null)
     if ($LASTEXITCODE -ne 0) { throw 'psql migration-table state query failed.' }
     $tableState = ($exists -join '').Trim()
     if ($tableState -eq 'NOT_PRESENT') { return [ordered]@{ phase = $Phase; state = 'NOT_PRESENT' } }
     $rowsQuery = "SELECT COALESCE(string_agg(migration_name || ':' || CASE WHEN finished_at IS NULL THEN 'UNFINISHED' ELSE 'FINISHED' END || ':' || CASE WHEN rolled_back_at IS NULL THEN 'NOT_ROLLED_BACK' ELSE 'ROLLED_BACK' END, ',' ORDER BY started_at), 'EMPTY') FROM public._prisma_migrations;"
-    $rows = @(& $PsqlExe '--tuples-only','--no-align','--command',$rowsQuery,'--host',$parts.host,'--port',[string]$parts.port,'--username',$parts.user,'--dbname',$parts.database 2>$null)
+    $rowsArgs = @('--tuples-only','--no-align','--command',$rowsQuery,'--host',$parts.host,'--port',[string]$parts.port,'--username',$parts.user,'--dbname',$parts.database)
+    $rows = @(& $PsqlExe @rowsArgs 2>$null)
     if ($LASTEXITCODE -ne 0) { throw 'psql migration-row state query failed.' }
     return [ordered]@{ phase = $Phase; state = ($rows -join '').Trim() }
   } catch { throw }
 }
   $before = Get-MigrationState 'before'
-  $statusOutput = @(& $NpxExe 'prisma','migrate','status','--schema',$schema 2>&1)
+  $statusArgs = @('prisma','migrate','status','--schema',$schema)
+  $statusOutput = @(& $NpxExe @statusArgs 2>&1)
   $statusExit = $LASTEXITCODE
   $statusClass = 'clean'
   if ($statusExit -ne 0) {
