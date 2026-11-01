@@ -10,6 +10,12 @@ Exact current `main`, branch HEAD and divergence must always be read directly fr
 
 **Status snapshot date:** 2026-11-01
 
+## P5-057 / T56 ? IN_PROGRESS: admin usability and persona E2E
+
+Product Owner reports that production B?o gi?ng remains extremely difficult to operate for school administration (2026-11-01). Issue #262 records blocking audit evidence; P6-050 pilot is **BLOCKED**. This task branch introduces the first bounded operability correction: multi-class teaching assignments in one atomic SERIALIZABLE transaction, read-only preview of candidate conflicts, explicit review confirmation and a link from advanced capability grants to approved responsibility templates in Users administration. No authority is derived automatically from class assignment; capability checks remain unchanged.
+
+This is **not P5-057 closure**. All seven persona E2E journeys, principal Android/desktop/keyboard accessibility gates, TKB/PPCT production data flow, and independent UX review still require evidence. CI/PR pending. No production mutation.
+
 ## P5-056 / T55 — CLOSED (technical scope; SYNC-P5-056)
 
 PR #257 merged as `62b6ffb85602f2be5f2d54b7ed16ad6a6fb05029`; exact-head CI #857 (`41215108383`) SUCCESS 2/2 and off-host #80 (`41215108378`) SUCCESS 2/2. Follow-up deploy corrections PR #258/#259 and cleanup #260 merged; production release `0dd691cf5c1294125a2cf7fddcbaea3a190fc3f1` verified 2026-11-01 (API live/ready 200, 38/38 capabilities, production schema `verifiedSchema` and no migrations pending). Technical scope accepted by Product Owner 2026-11-01; physical Android/iOS Push and real-persona UAT remain P5-057, not certified here.

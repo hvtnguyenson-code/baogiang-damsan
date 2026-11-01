@@ -23,7 +23,6 @@ import {
   isCivilDate,
   nextCivilDate,
   buildChangeTeachingAssignmentTeacherInput,
-  buildCreateTeachingAssignmentInput,
   teachingAssignmentApi,
   type ChangeTeachingAssignmentTeacherInput,
   type CreateTeachingAssignmentInput,
@@ -32,7 +31,7 @@ import {
 type Filters = { schoolClassId: string; subjectId: string; teacherUserId: string; activeOn: string };
 type CreateDraft = {
   kind: 'create';
-  schoolClassId: string;
+  schoolClassIds: string[];
   subjectId: string;
   teacherUserId: string;
   validFrom: string;
@@ -105,7 +104,7 @@ export function TeachingAssignmentsPage() {
   });
 
   const createMutation = useMutation({
-    mutationFn: (input: CreateTeachingAssignmentInput) => teachingAssignmentApi.create(selectedYearId, input),
+    mutationFn: (input: Omit<CreateTeachingAssignmentInput, 'schoolClassId'> & { schoolClassIds: string[] }) => teachingAssignmentApi.createBulk(selectedYearId, input),
     onMutate: () => { setSuccess(''); setFormError(''); },
     onSuccess: async () => {
       setWorkflow(undefined);
@@ -197,7 +196,7 @@ export function TeachingAssignmentsPage() {
       action={<Button
         type="button"
         disabled={!activeCalendar || workspace.isPending}
-        onClick={() => begin({ kind: 'create', schoolClassId: '', subjectId: '', teacherUserId: '', validFrom: '', validUntil: '', note: '' })}
+        onClick={() => begin({ kind: 'create', schoolClassIds: [], subjectId: '', teacherUserId: '', validFrom: '', validUntil: '', note: '' })}
       >Tạo phân công</Button>}
     >Theo dõi trách nhiệm giảng dạy theo lớp, môn học và khoảng hiệu lực trong năm học.</PageHeader>
 
@@ -218,6 +217,7 @@ export function TeachingAssignmentsPage() {
     {formError && <p className="form-field__error" role="alert"><span aria-hidden="true">!</span> {formError}</p>}
     {workflow?.kind === 'create' && activeCalendar && workspace.data && <CreateWorkflow
       draft={workflow}
+      academicYearId={selectedYearId}
       calendar={activeCalendar}
       classes={activeClasses}
       subjects={activeSubjects}
@@ -229,13 +229,13 @@ export function TeachingAssignmentsPage() {
       onCancel={() => setWorkflow(undefined)}
       onSubmit={(event) => {
         event.preventDefault();
-        if (!workflow.schoolClassId || !workflow.subjectId || !workflow.teacherUserId || !isCivilDate(workflow.validFrom)) {
+        if (workflow.schoolClassIds.length === 0 || !workflow.subjectId || !workflow.teacherUserId || !isCivilDate(workflow.validFrom)) {
           setFormError('Chọn lớp, môn học, ngày bắt đầu và giáo viên đủ điều kiện.'); return;
         }
         if (workflow.validUntil && (!isCivilDate(workflow.validUntil) || workflow.validUntil < workflow.validFrom)) {
           setFormError('Ngày kết thúc phải bằng hoặc sau ngày bắt đầu.'); return;
         }
-        createMutation.mutate(buildCreateTeachingAssignmentInput({ ...workflow, validFrom: workflow.validFrom }));
+        createMutation.mutate({ schoolClassIds: workflow.schoolClassIds, subjectId: workflow.subjectId, teacherUserId: workflow.teacherUserId, validFrom: workflow.validFrom, ...(workflow.validUntil && isCivilDate(workflow.validUntil) ? { validUntil: workflow.validUntil } : {}), ...(workflow.note.trim() ? { note: workflow.note.trim() } : {}) });
       }}
       submitting={createMutation.isPending}
     />}
@@ -328,6 +328,7 @@ function candidateRequestFor(workflow: Workflow | undefined, calendar: { startDa
 
 function CreateWorkflow(props: {
   draft: CreateDraft;
+  academicYearId: string;
   calendar: { startDate: CivilDateString; endDate: CivilDateString };
   classes: Array<{ id: string; code: string; name: string }>;
   subjects: Array<{ id: string; code: string; name: string }>;
@@ -341,22 +342,85 @@ function CreateWorkflow(props: {
   onSubmit(event: FormEvent): void;
 }) {
   const { draft } = props;
-  const resetTeacher = (patch: Partial<CreateDraft>) => props.onChange({ ...draft, ...patch, teacherUserId: '' });
+  const [confirmed, setConfirmed] = useState(false);
+  const [previewKey, setPreviewKey] = useState('');
+  const buildBulkInput = () => ({
+    schoolClassIds: draft.schoolClassIds,
+    subjectId: draft.subjectId,
+    teacherUserId: draft.teacherUserId,
+    validFrom: draft.validFrom as CivilDateString,
+    ...(draft.validUntil && isCivilDate(draft.validUntil) ? { validUntil: draft.validUntil } : {}),
+    ...(draft.note.trim() ? { note: draft.note.trim() } : {}),
+  });
+  const preview = useMutation({
+    mutationFn: (input: ReturnType<typeof buildBulkInput>) => teachingAssignmentApi.previewBulk(props.academicYearId, input),
+    onSuccess: (_data, input) => setPreviewKey(JSON.stringify(input)),
+  });
+  const previewPassed = preview.data?.canApply === true && previewKey === JSON.stringify(buildBulkInput());
+  const change = (next: CreateDraft) => {
+    setConfirmed(false);
+    setPreviewKey('');
+    preview.reset();
+    props.onChange(next);
+  };
+  const submitAfterPreview = (event: FormEvent) => {
+    if (!previewPassed || !confirmed) { event.preventDefault(); return; }
+    props.onSubmit(event);
+  };
+  const resetTeacher = (patch: Partial<CreateDraft>) => change({ ...draft, ...patch, teacherUserId: '' });
   const candidateReady = Boolean(candidateRequestFor(draft, props.calendar));
-  return <form className="inline-work-form teaching-assignment-workflow" onSubmit={props.onSubmit} noValidate>
+  return <form className="inline-work-form teaching-assignment-workflow" onSubmit={submitAfterPreview} noValidate>
     <h2>Tạo phân công giảng dạy</h2>
     {!candidateReady && <p className="muted-copy">Chọn môn học và khoảng hiệu lực hợp lệ để xem giáo viên đủ điều kiện.</p>}
     <div className="form-grid">
-      <SelectField label="Lớp" id="teaching-create-class" value={draft.schoolClassId} onChange={(event) => props.onChange({ ...draft, schoolClassId: event.target.value })} required><option value="">Chọn lớp</option>{props.classes.map((item) => <option key={item.id} value={item.id}>{item.code} — {item.name}</option>)}</SelectField>
+      <fieldset className="teaching-create-classes">
+        <legend>Chọn lớp giảng dạy ({draft.schoolClassIds.length} lớp)</legend>
+        <div className="form-actions">
+          <Button type="button" variant="quiet" onClick={() => change({ ...draft, schoolClassIds: props.classes.map((item) => item.id) })}>Chọn tất cả</Button>
+          <Button type="button" variant="quiet" onClick={() => change({ ...draft, schoolClassIds: [] })}>Bỏ chọn</Button>
+        </div>
+        <p className="muted-copy">Chọn nhiều lớp trong một lần, mỗi lớp sẽ có một phân công riêng.</p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: '0.75rem' }}>
+          {props.classes.map((item) => <label key={item.id}>
+            <input type="checkbox" checked={draft.schoolClassIds.includes(item.id)}
+              onChange={(event) => change({ ...draft, schoolClassIds: event.target.checked
+                ? [...draft.schoolClassIds, item.id]
+                : draft.schoolClassIds.filter((id) => id !== item.id) })} />
+            {' '}{item.code}
+          </label>)}
+        </div>
+      </fieldset>
       <SelectField label="Môn học" id="teaching-create-subject" value={draft.subjectId} onChange={(event) => resetTeacher({ subjectId: event.target.value })} required><option value="">Chọn môn học</option>{props.subjects.map((item) => <option key={item.id} value={item.id}>{item.code} — {item.name}</option>)}</SelectField>
       <FormField label="Có hiệu lực từ" name="teaching-create-from" type="date" min={props.calendar.startDate} max={props.calendar.endDate} value={draft.validFrom} onChange={(event) => resetTeacher({ validFrom: event.target.value })} required />
       <FormField label="Có hiệu lực đến" name="teaching-create-until" hint="Có thể để trống nếu chưa ấn định ngày kết thúc." type="date" min={draft.validFrom || props.calendar.startDate} max={props.calendar.endDate} value={draft.validUntil} onChange={(event) => resetTeacher({ validUntil: event.target.value })} />
-      <SelectField label="Giáo viên" id="teaching-create-teacher" value={draft.teacherUserId} onChange={(event) => props.onChange({ ...draft, teacherUserId: event.target.value })} disabled={!candidateReady || props.candidatesPending || Boolean(props.candidatesError)} required><option value="">{!candidateReady ? 'Chọn môn và ngày trước' : props.candidatesPending ? 'Đang tìm giáo viên…' : 'Chọn giáo viên'}</option>{props.candidates.map((item) => <option key={item.userId} value={item.userId}>{teacherLabel(item)}</option>)}</SelectField>
-      <TextareaField label="Ghi chú" id="teaching-create-note" maxLength={2000} value={draft.note} onChange={(event) => props.onChange({ ...draft, note: event.target.value })} />
+      <SelectField label="Giáo viên" id="teaching-create-teacher" value={draft.teacherUserId} onChange={(event) => change({ ...draft, teacherUserId: event.target.value })} disabled={!candidateReady || props.candidatesPending || Boolean(props.candidatesError)} required><option value="">{!candidateReady ? 'Chọn môn và ngày trước' : props.candidatesPending ? 'Đang tìm giáo viên…' : 'Chọn giáo viên'}</option>{props.candidates.map((item) => <option key={item.userId} value={item.userId}>{teacherLabel(item)}</option>)}</SelectField>
+      <TextareaField label="Ghi chú" id="teaching-create-note" maxLength={2000} value={draft.note} onChange={(event) => change({ ...draft, note: event.target.value })} />
     </div>
     {Boolean(props.candidatesError) && <QueryFailure error={props.candidatesError} retry={props.onRetry} />}
     {candidateReady && !props.candidatesPending && !props.candidatesError && props.candidates.length === 0 && <p className="candidate-empty">Không có giáo viên đáp ứng điều kiện môn học và khoảng hiệu lực này.</p>}
-    <div className="form-actions"><Button type="submit" loading={props.submitting}>Lưu phân công</Button><Button type="button" variant="quiet" onClick={props.onCancel}>Hủy</Button></div>
+    <section aria-label="Xem trước phân công">
+      <h3>Xem trước khi lưu</h3>
+      <p>{draft.schoolClassIds.length} lớp · {props.subjects.find((item) => item.id === draft.subjectId)?.name ?? 'Chưa chọn môn'} · {props.candidates.find((item) => item.userId === draft.teacherUserId)?.displayName ?? 'Chưa chọn giáo viên'}</p>
+      <p>{props.classes.filter((item) => draft.schoolClassIds.includes(item.id)).map((item) => item.code).join(', ') || 'Chưa chọn lớp'}</p>
+      <p className="muted-copy">Nếu bất kỳ lớp nào không hợp lệ, toàn bộ lệnh sẽ thất bại, không ghi một phần dữ liệu.</p>
+      <Button type="button" variant="secondary" loading={preview.isPending}
+        disabled={!candidateReady || !draft.teacherUserId || draft.schoolClassIds.length === 0}
+        onClick={() => { setConfirmed(false); preview.mutate(buildBulkInput()); }}>
+        Kiểm tra xung đột trước khi lưu
+      </Button>
+      {preview.isError && <p role="alert">Không thể kiểm tra phân công. Vui lòng thử lại.</p>}
+      {preview.data && previewKey === JSON.stringify(buildBulkInput()) && (
+        preview.data.canApply
+          ? <p role="status">Tất cả {draft.schoolClassIds.length} lớp hợp lệ tại thời điểm kiểm tra. Lệnh lưu sẽ kiểm tra lại để tránh xung đột đồng thời.</p>
+          : <div role="alert"><strong>Chưa thể lưu vì có xung đột:</strong>
+              <ul>{preview.data.issues.map((issue) => <li key={issue.schoolClassId}>
+                {props.classes.find((item) => item.id === issue.schoolClassId)?.code ?? 'Lớp không xác định'}: {issue.message}
+              </li>)}</ul>
+            </div>
+      )}
+      <label><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /> Tôi đã kiểm tra giáo viên, môn, lớp và thời gian.</label>
+    </section>
+    <div className="form-actions"><Button type="submit" disabled={!confirmed || !previewPassed || draft.schoolClassIds.length === 0 || !candidateReady || !draft.teacherUserId} loading={props.submitting}>Lưu phân công</Button><Button type="button" variant="quiet" onClick={props.onCancel}>Hủy</Button></div>
   </form>;
 }
 

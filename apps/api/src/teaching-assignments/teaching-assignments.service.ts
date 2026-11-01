@@ -13,6 +13,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import {
   ChangeTeachingAssignmentTeacherDto,
   CreateTeachingAssignmentDto,
+  CreateBulkTeachingAssignmentDto,
   EndTeachingAssignmentDto,
   ListTeachingAssignmentsDto,
 } from './dto';
@@ -151,6 +152,84 @@ export class TeachingAssignmentsService {
           validFrom, validUntil,
         });
         return toRecord(row);
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
+    } catch (error) {
+      this.rethrowConflict(error);
+    }
+  }
+
+  async previewBulk(
+    academicYearId: string,
+    dto: CreateBulkTeachingAssignmentDto,
+  ): Promise<{ canApply: boolean; issues: Array<{ schoolClassId: string; message: string }> }> {
+    if (new Set(dto.schoolClassIds).size !== dto.schoolClassIds.length) {
+      throw new BadRequestException('Danh sach lop co phan tu trung.');
+    }
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe('SET TRANSACTION READ ONLY');
+      await this.requireAcademicYear(academicYearId, tx);
+      const calendar = await requireActiveCalendar(tx, academicYearId);
+      const validFrom = dto.validFrom as CivilDateString;
+      const validUntil = (dto.validUntil ?? null) as CivilDateString | null;
+      requireCalendarEnvelope(validFrom, validUntil, calendar);
+      const issues: Array<{ schoolClassId: string; message: string }> = [];
+      for (const schoolClassId of dto.schoolClassIds) {
+        try {
+          await validateTeachingAssignmentCandidate(tx, {
+            academicYearId, schoolClassId, subjectId: dto.subjectId,
+            teacherUserId: dto.teacherUserId, validFrom,
+            effectiveEnd: validUntil ?? formatCivilDate(calendar.endDate),
+          });
+        } catch (error) {
+          if (!(error instanceof HttpException)) throw error;
+          issues.push({ schoolClassId, message: error.message });
+        }
+      }
+      return { canApply: issues.length === 0, issues };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+  }
+
+  async createBulk(
+    academicYearId: string,
+    dto: CreateBulkTeachingAssignmentDto,
+    actorUserId: string,
+    meta: RequestMeta,
+  ): Promise<TeachingAssignmentRecord[]> {
+    if (new Set(dto.schoolClassIds).size !== dto.schoolClassIds.length) {
+      throw new BadRequestException('Danh sach lop co phan tu trung.');
+    }
+    try {
+      return await retryTeachingAssignmentSerializableMutation(() => this.prisma.$transaction(async (tx) => {
+        await this.requireAcademicYear(academicYearId, tx);
+        const calendar = await requireActiveCalendar(tx, academicYearId);
+        const validFrom = dto.validFrom as CivilDateString;
+        const validUntil = (dto.validUntil ?? null) as CivilDateString | null;
+        requireCalendarEnvelope(validFrom, validUntil, calendar);
+        const result: TeachingAssignmentRecord[] = [];
+        for (const schoolClassId of dto.schoolClassIds) {
+          await validateTeachingAssignmentCandidate(tx, {
+            academicYearId,
+            schoolClassId,
+            subjectId: dto.subjectId,
+            teacherUserId: dto.teacherUserId,
+            validFrom,
+            effectiveEnd: validUntil ?? formatCivilDate(calendar.endDate),
+          });
+          const row = await tx.teachingAssignment.create({
+            data: {
+              academicYearId, schoolClassId, subjectId: dto.subjectId,
+              teacherUserId: dto.teacherUserId, validFrom: parseCivilDate(validFrom),
+              validUntil: validUntil ? parseCivilDate(validUntil) : null, note: normalizedNote(dto.note),
+            },
+            include: assignmentInclude,
+          });
+          await this.writeAudit(tx, actorUserId, meta, 'TEACHING_ASSIGNMENT_CREATED', row.id, {
+            academicYearId, schoolClassId, subjectId: dto.subjectId, teacherUserId: dto.teacherUserId,
+            validFrom, validUntil, bulk: true,
+          });
+          result.push(toRecord(row));
+        }
+        return result;
       }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
     } catch (error) {
       this.rethrowConflict(error);

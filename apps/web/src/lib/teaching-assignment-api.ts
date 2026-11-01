@@ -77,6 +77,11 @@ export const teachingAssignmentApi = {
     ),
   create: (academicYearId: string, input: CreateTeachingAssignmentInput) =>
     apiFetch<TeachingAssignmentRecord>(`/academic-years/${academicYearId}/teaching-assignments`, json(input)),
+  previewBulk: (academicYearId: string, input: Omit<CreateTeachingAssignmentInput, 'schoolClassId'> & { schoolClassIds: string[] }) =>
+    apiFetch<{ canApply: boolean; issues: Array<{ schoolClassId: string; message: string }> }>(
+      '/academic-years/' + academicYearId + '/teaching-assignments/bulk/preview', json(input)),
+  createBulk: (academicYearId: string, input: Omit<CreateTeachingAssignmentInput, 'schoolClassId'> & { schoolClassIds: string[] }) =>
+    apiFetch<TeachingAssignmentRecord[]>(`/academic-years/${academicYearId}/teaching-assignments/bulk`, json(input)),
   end: (id: string, endDate: CivilDateString) =>
     apiFetch<TeachingAssignmentRecord>(`/teaching-assignments/${id}/end`, json({ endDate })),
   changeTeacher: (id: string, input: ChangeTeachingAssignmentTeacherInput) =>
