@@ -59,15 +59,7 @@ function trustedAuthorityScript(input) {
   ];
 }
 
-function buildHandshake(contract) {
-  const checks = [...trustedAuthorityScript(contract), "Write-Output 'BAOGIANG_HANDSHAKE_PASS'"].join('; ');
-  // Preserve fail-closed checks while emitting a bounded category, not exception text.
-  return encodedPowerShell([
-    "$ErrorActionPreference='Stop'",
-    "try {",
-    checks,
-    "} catch {",
-    "  $category = if ($_.FullyQualifiedErrorId -match '^[A-Za-z0-9_.-]{1,100}
+function buildHandshake(contract) { return encodedPowerShell([...trustedAuthorityScript(contract), "Write-Output 'BAOGIANG_HANDSHAKE_PASS'"].join('; ')); }
 
 function buildPrepareTransfer(contract) {
   assertTransferName(contract.transferName);
