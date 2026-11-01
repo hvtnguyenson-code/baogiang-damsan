@@ -44,6 +44,7 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api/],
+        importScripts: ['/push-worker.js'],
         runtimeCaching: [
           {
             urlPattern: /^\/api/,

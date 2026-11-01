@@ -2,7 +2,7 @@ import { BadRequestException, Body, Controller, Get, HttpCode, Post, Req, Res, U
 import { AuthMeResponse, AuthMutationResponse, LoginResponse } from '@baogiang/contracts';
 import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
-import { cookieOptions, requestMeta } from './auth-http';
+import { cookieOptions, readCookie, requestMeta } from './auth-http';
 import { AuthenticatedRequest } from './auth.types';
 import { ChangePasswordDto, LoginDto } from './dto/auth.dto';
 import { SessionAuthGuard } from './session-auth.guard';
@@ -50,7 +50,7 @@ export class AuthController {
       if (isClientAborted) {
         throw new BadRequestException('Yêu cầu đã bị hủy bởi máy khách.');
       }
-      const result = await this.auth.login(normalizedUsername, dto.password, meta);
+      const result = await this.auth.login(normalizedUsername, dto.password, meta, readCookie(request, this.config.auth.cookieName));
       response.cookie(this.config.auth.cookieName, result.rawToken, cookieOptions(this.config, result.expiresAt));
       return { user: { ...result.user, status: 'ACTIVE' }, expiresAt: result.expiresAt.toISOString() };
     } catch (error) {

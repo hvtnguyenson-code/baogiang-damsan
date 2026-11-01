@@ -193,6 +193,9 @@ export function AppLayout() {
               );
             })}
 
+            <NavLink to="/thong-bao" className="primary-nav__root-link">
+              Thông báo
+            </NavLink>
             <NavLink to="/ho-so" className="primary-nav__root-link">
               Hồ sơ
             </NavLink>
@@ -221,6 +224,9 @@ export function AppLayout() {
                 <div className="mobile-nav-section__links">
                   <NavLink to="/" end onClick={() => setMobileMenuOpen(false)} className="mobile-nav-link">
                     Không gian làm việc
+                  </NavLink>
+                  <NavLink to="/thong-bao" onClick={() => setMobileMenuOpen(false)} className="mobile-nav-link">
+                    Thông báo
                   </NavLink>
                   <NavLink to="/ho-so" onClick={() => setMobileMenuOpen(false)} className="mobile-nav-link">
                     Hồ sơ cá nhân

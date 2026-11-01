@@ -1,3 +1,4 @@
+import { inspectUserDeletionSchema } from './user-delete-schema';
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { AuditResult, Prisma } from '@prisma/client';
 import { UserDeleteBlockerCode, UserDeletePreflightResponse, UserDeleteResponse } from '@baogiang/contracts';
@@ -7,10 +8,6 @@ import { PrismaService } from '../prisma/prisma.service';
 import { USER_DELETE_FK_INVENTORY } from './user-delete-fk-inventory';
 
 type Db = Prisma.TransactionClient;
-interface ForeignKey {
-  schema: string; child: string; name: string; parent: string;
-  columns: string[]; refs: string[]; del: string; upd: string; valid: boolean; deferred: boolean;
-}
 const SETUP = new Set(['staff_profiles', 'subject_group_memberships', 'staff_subjects']);
 const SECURITY = new Set(['auth_sessions', 'capability_grants', 'audit_events']);
 const REASONS: Record<UserDeleteBlockerCode, string> = {
@@ -287,47 +284,7 @@ export class UserDeleteService {
   }
 
   private async verifiedGraph(tx: Db): Promise<boolean> {
-    // A newly added table/column may carry identities without a FK. Require an
-    // explicit review before enabling deletion on a different physical schema.
-    const [schema] = await tx.$queryRaw<Array<{ fingerprint: string; enforced: boolean }>>`
-      SELECT md5(string_agg(t.relname || ':' || a.attname || ':' || format_type(a.atttypid,a.atttypmod)
-        || ':' || a.attnotnull::text, ',' ORDER BY n.nspname COLLATE "C",t.relname COLLATE "C",a.attnum)) AS fingerprint,
-        current_setting('session_replication_role') = 'origin' AND NOT EXISTS (
-          SELECT 1 FROM pg_trigger tr JOIN pg_constraint c ON c.oid=tr.tgconstraint
-          WHERE c.contype='f' AND c.confrelid IN (to_regclass('public.users'), to_regclass('public.staff_profiles'),
-            to_regclass('public.staff_subjects'), to_regclass('public.subject_group_memberships'))
-            AND tr.tgenabled <> 'O'
-        ) AND NOT EXISTS (
-          SELECT 1 FROM pg_class r JOIN pg_namespace rn ON rn.oid=r.relnamespace
-          WHERE rn.nspname='public' AND (r.relrowsecurity OR r.relforcerowsecurity)
-        ) AND NOT EXISTS (
-          SELECT 1 FROM pg_trigger tr WHERE NOT tr.tgisinternal AND tr.tgrelid IN (
-            to_regclass('public.users'), to_regclass('public.staff_profiles'),
-            to_regclass('public.staff_subjects'), to_regclass('public.subject_group_memberships'))
-        ) AND NOT EXISTS (
-          SELECT 1 FROM pg_rewrite rw WHERE rw.ev_class IN (
-            to_regclass('public.users'), to_regclass('public.staff_profiles'),
-            to_regclass('public.staff_subjects'), to_regclass('public.subject_group_memberships'))
-        ) AS enforced
-      FROM pg_class t JOIN pg_namespace n ON n.oid=t.relnamespace JOIN pg_attribute a ON a.attrelid=t.oid
-      WHERE n.nspname NOT IN ('pg_catalog','information_schema')
-        AND n.nspname NOT LIKE 'pg_toast%' AND n.nspname NOT LIKE 'pg_temp_%'
-        AND t.relkind IN ('r','p','f','m')
-        AND NOT (n.nspname='public' AND t.relname='_prisma_migrations')
-        AND a.attnum>0 AND NOT a.attisdropped`;
-    if (schema.fingerprint !== '13031cf488b8cd86152b3e981e348bb5' || !schema.enforced) return false;
-    const actual = await tx.$queryRaw<ForeignKey[]>`
-      SELECT ns.nspname AS schema, t.relname AS child, c.conname AS name, p.relname AS parent,
-        ARRAY(SELECT a.attname::text FROM unnest(c.conkey) WITH ORDINALITY k(n,i)
-          JOIN pg_attribute a ON a.attrelid=c.conrelid AND a.attnum=k.n ORDER BY i) AS columns,
-        ARRAY(SELECT a.attname::text FROM unnest(c.confkey) WITH ORDINALITY k(n,i)
-          JOIN pg_attribute a ON a.attrelid=c.confrelid AND a.attnum=k.n ORDER BY i) AS refs,
-        c.confdeltype::text AS del, c.confupdtype::text AS upd, c.convalidated AS valid, c.condeferrable AS deferred
-      FROM pg_constraint c JOIN pg_class t ON t.oid=c.conrelid JOIN pg_class p ON p.oid=c.confrelid
-        JOIN pg_namespace ns ON ns.oid=t.relnamespace
-      WHERE c.contype='f' AND c.confrelid IN (to_regclass('public.users'), to_regclass('public.staff_profiles'),
-        to_regclass('public.staff_subjects'), to_regclass('public.subject_group_memberships'))
-      ORDER BY ns.nspname COLLATE "C",t.relname COLLATE "C",c.conname COLLATE "C"`;
-    return JSON.stringify(actual) === JSON.stringify(USER_DELETE_FK_INVENTORY);
+    const proof = await inspectUserDeletionSchema(tx);
+    return proof.fingerprintMatches && proof.enforced && proof.inventoryMatches;
   }
 }

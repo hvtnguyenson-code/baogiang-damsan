@@ -67,6 +67,9 @@ export class Phase01Harness {
     await this.prisma.telegramNotificationDelivery.deleteMany();
     await this.prisma.telegramAccountLink.deleteMany();
     await this.prisma.telegramLinkChallenge.deleteMany();
+    await this.prisma.webPushDelivery.deleteMany();
+    await this.prisma.webPushSubscription.deleteMany();
+    await this.prisma.inAppNotification.deleteMany();
     await this.prisma.telegramWebhookReceipt.deleteMany();
     await this.prisma.auditEvent.deleteMany();
     await this.prisma.authSession.deleteMany();

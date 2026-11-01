@@ -1,5 +1,22 @@
-import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { AuditResult, Prisma, ReportingStatementCommandType as Command, ReportingStatementHistoryEvent as Event, ReportingStatementLifecycleState as State } from '@prisma/client';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common';
+import {
+  AuditResult,
+  InAppNotificationCategory,
+  InAppNotificationPriority,
+  Prisma,
+  ReportingStatementCommandType as Command,
+  ReportingStatementHistoryEvent as Event,
+  ReportingStatementLifecycleState as State,
+} from '@prisma/client';
+import { NotificationsService } from '../notifications/notifications.service';
 import { createHash, randomUUID } from 'crypto';
 import {
   CapabilityKey,
@@ -49,6 +66,7 @@ export class ReportingStatementsService {
     private readonly businessConfiguration: BusinessConfigurationService,
     @Inject(REPORTING_STATEMENT_CLOCK) private readonly clock: ReportingStatementClock,
     private readonly officialWorkloadProjection: OfficialWorkloadProjectionService,
+    @Optional() private readonly notificationsService?: NotificationsService,
   ) {}
 
   async preview(dto: PreviewReportingStatementDto, request: AuthenticatedRequest): Promise<ReportingStatementPreviewResponse> {
@@ -524,6 +542,44 @@ export class ReportingStatementsService {
         const approved = existing ? await this.repository.loadCurrentApproved(tx, existing.id) : null;
         const saved = await this.repository.persistSubmittedRevision(tx, { series: key, frozen, revision: { predecessorRevisionId: tail?.id ?? null, supersedesRevisionId: approved?.revisionId ?? null }, lifecycleToken: randomUUID(), command: { actorUserId: actor, requestKey: dto.requestKey, requestFingerprint: fp }, history: { actorUserId: actor, actorDisplayNameSnapshot: profile?.profile?.displayName ?? null, actorStaffCodeSnapshot: profile?.profile?.staffCode ?? null } });
         await this.audit.write({ actorUserId: actor, action: 'REPORTING_STATEMENT_SUBMITTED', entityType: 'ReportingStatementRevision', entityId: saved.revision.id, requestId: requestMeta(request).requestId, result: AuditResult.SUCCESS, metadata: { commandType: 'SUBMIT', seriesId: saved.series.id, lifecycleState: 'SUBMITTED' } }, tx);
+
+        if (this.notificationsService) {
+          const approverGrants = await tx.capabilityGrant.findMany({
+            where: {
+              capabilityKey: { in: ['APPROVAL_PRINCIPAL', 'APPROVAL_VICE_PRINCIPAL'] },
+              scopeType: 'SCHOOL_WIDE',
+              revokedAt: null,
+              validFrom: { lte: asOf },
+              OR: [{ validUntil: null }, { validUntil: { gt: asOf } }],
+              user: {
+                status: 'ACTIVE',
+                lockedUntil: null,
+              },
+            },
+            select: { userId: true },
+          });
+
+          const uniqueApproverIds = Array.from(new Set(approverGrants.map((g) => g.userId)));
+          for (const approverId of uniqueApproverIds) {
+            if (approverId === actor) continue;
+            await this.notificationsService.publishInAppNotification(tx, {
+              recipientUserId: approverId,
+              eventType: 'REPORTING_SUBMITTED',
+              category: InAppNotificationCategory.ACTION_REQUIRED,
+              priority: InAppNotificationPriority.HIGH,
+              sourceKind: 'ReportingStatementRevision',
+              sourceId: saved.revision.id,
+              sourceVersion: null,
+              sourceEventId: saved.revision.id,
+              dedupeKey: `REPORTING_SUBMITTED_${saved.revision.id}_${approverId}`,
+              title: 'Báo cáo kê khai mới cần duyệt',
+              bodySafe: `Giáo viên ${profile?.profile?.displayName ?? 'cán bộ'} đã gửi báo cáo kê khai cần phê duyệt.`,
+              actionKey: 'REPORTING_APPROVAL',
+              actionParamsJson: { revisionId: saved.revision.id },
+            });
+          }
+        }
+
         return { revisionId: saved.revision.id, seriesId: saved.series.id, lifecycleState: saved.state.lifecycleState, lifecycleToken: saved.state.lifecycleToken, asOfInstant: asOf.toISOString(), replay: false };
       }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
     });
@@ -600,6 +656,36 @@ export class ReportingStatementsService {
         if (!changed.transitioned) throw new ConflictException('Lifecycle token đã cũ.');
         await this.repository.appendDecisionHistory(tx, { seriesId: target.seriesId, revisionId, eventType: command === 'APPROVE' ? Event.APPROVED : Event.REJECTED, stateBefore: State.SUBMITTED, stateAfter: command === 'APPROVE' ? State.APPROVED : State.REJECTED, actorUserId: actor, actorDisplayNameSnapshot: profile?.profile?.displayName ?? null, actorStaffCodeSnapshot: profile?.profile?.staffCode ?? null, commandId: receipt.id, lifecycleTokenBefore: dto.expectedLifecycleToken, lifecycleTokenAfter: next });
         await this.audit.write({ actorUserId: actor, action: command === 'APPROVE' ? 'REPORTING_STATEMENT_APPROVED' : 'REPORTING_STATEMENT_REJECTED', entityType: 'ReportingStatementRevision', entityId: revisionId, requestId: requestMeta(request).requestId, result: AuditResult.SUCCESS, metadata: { commandType: command, seriesId: target.seriesId, lifecycleState: command === 'APPROVE' ? 'APPROVED' : 'REJECTED' } }, tx);
+
+        if (this.notificationsService) {
+          // Resolve all REPORTING_SUBMITTED notifications for this statement revision
+          await this.notificationsService.resolveNotificationBySource(
+            tx,
+            'ReportingStatementRevision',
+            revisionId,
+            'REPORTING_SUBMITTED',
+          );
+
+          // Publish REPORTING_DECIDED to submitter
+          await this.notificationsService.publishInAppNotification(tx, {
+            recipientUserId: target.series.submitterUserId,
+            eventType: 'REPORTING_DECIDED',
+            category: InAppNotificationCategory.INFORMATION,
+            priority: InAppNotificationPriority.NORMAL,
+            sourceKind: 'ReportingStatementRevision',
+            sourceId: revisionId,
+            sourceVersion: null,
+            sourceEventId: receipt.id,
+            dedupeKey: `REPORTING_DECIDED_${receipt.id}_${target.series.submitterUserId}`,
+            title: command === 'APPROVE' ? 'Báo cáo kê khai đã được duyệt' : 'Báo cáo kê khai bị từ chối duyệt',
+            bodySafe: command === 'APPROVE'
+              ? 'Báo cáo kê khai của bạn đã được phê duyệt.'
+              : 'Báo cáo kê khai của bạn đã bị từ chối duyệt.',
+            actionKey: 'REPORTING_VIEW',
+            actionParamsJson: { revisionId },
+          });
+        }
+
         return { revisionId, seriesId: target.seriesId, lifecycleState: command === 'APPROVE' ? State.APPROVED : State.REJECTED, lifecycleToken: next, replay: false };
       }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
     });

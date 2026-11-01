@@ -772,7 +772,7 @@ try {
       'API_HOST=127.0.0.1',
       'API_PORT=3100',
       'HTTP_TRUST_PROXY_HOPS=1',
-      'DATABASE_URL=postgresql://baogiang_app:secret@127.0.0.1:5433/baogiang?schema=public',
+      'DATABASE_URL=postgresql://baogiang_app:secret@127.0.0.1:5434/baogiang?schema=public',
       'CORS_ORIGINS=https://baogiang.dtnt-damsan.edu.vn',
       'AUTH_SESSION_TTL_SECONDS=1800',
       'AUTH_LAST_SEEN_UPDATE_SECONDS=60',
@@ -956,6 +956,11 @@ try {
   }
 
   function Set-FixtureScriptStubs([hashtable]$Stubs) {
+    # These cases inject failures after schema admission. The real schema gate
+    # and its rejection/activation ordering are exercised by the P5-056 fixture.
+    if (-not $Stubs.ContainsKey('assert-release-schema.ps1')) {
+      $Stubs['assert-release-schema.ps1'] = 'param($ReleaseSha) @{ state="verifiedSchema"; releaseSha=$ReleaseSha } | ConvertTo-Json -Compress'
+    }
     foreach ($scriptName in $Stubs.Keys) {
       $targetScript = Join-Path $fixtureScriptsDir $scriptName
       [IO.File]::WriteAllText($targetScript, $Stubs[$scriptName], [Text.UTF8Encoding]::new($false))

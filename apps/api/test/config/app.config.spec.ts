@@ -183,4 +183,52 @@ describe('appConfig (unit)', () => {
       expect(config.telegram.webhookSecret).toBe('Valid_Secret-123');
     });
   });
+
+  describe('web push configuration validation', () => {
+    beforeEach(() => {
+      process.env['DATABASE_URL'] = 'postgresql://test@localhost:5432/test';
+    });
+
+    it('defaults WEB_PUSH_ENABLED to false with optional VAPID keys', () => {
+      delete process.env['WEB_PUSH_ENABLED'];
+      const config = appConfig();
+      expect(config.webPushEnabled).toBe(false);
+      expect(config.webPush.enabled).toBe(false);
+    });
+
+    it('validates VAPID_PUBLIC_KEY when WEB_PUSH_ENABLED=true', () => {
+      process.env['WEB_PUSH_ENABLED'] = 'true';
+      delete process.env['VAPID_PUBLIC_KEY'];
+      expect(() => appConfig()).toThrow('VAPID_PUBLIC_KEY is required and cannot be blank');
+    });
+
+    it('validates VAPID_PRIVATE_KEY when WEB_PUSH_ENABLED=true', () => {
+      process.env['WEB_PUSH_ENABLED'] = 'true';
+      process.env['VAPID_PUBLIC_KEY'] = 'test-public-key';
+      delete process.env['VAPID_PRIVATE_KEY'];
+      expect(() => appConfig()).toThrow('VAPID_PRIVATE_KEY is required and cannot be blank');
+    });
+
+    it('validates VAPID_SUBJECT when WEB_PUSH_ENABLED=true', () => {
+      process.env['WEB_PUSH_ENABLED'] = 'true';
+      process.env['VAPID_PUBLIC_KEY'] = 'test-public-key';
+      process.env['VAPID_PRIVATE_KEY'] = 'test-private-key';
+      process.env['VAPID_SUBJECT'] = 'invalid-subject';
+      expect(() => appConfig()).toThrow('VAPID_SUBJECT is required and must start with mailto: or https://');
+    });
+
+    it('parses valid web push configuration when enabled', () => {
+      process.env['WEB_PUSH_ENABLED'] = 'true';
+      process.env['VAPID_PUBLIC_KEY'] = 'BEl62iUYgUivxIkv69yViEuiBIa';
+      process.env['VAPID_PRIVATE_KEY'] = 'secret-private-key';
+      process.env['VAPID_SUBJECT'] = 'mailto:admin@damsan.edu.vn';
+
+      const config = appConfig();
+      expect(config.webPushEnabled).toBe(true);
+      expect(config.webPush.enabled).toBe(true);
+      expect(config.webPush.vapidPublicKey).toBe('BEl62iUYgUivxIkv69yViEuiBIa');
+      expect(config.webPush.vapidPrivateKey).toBe('secret-private-key');
+      expect(config.webPush.vapidSubject).toBe('mailto:admin@damsan.edu.vn');
+    });
+  });
 });

@@ -1871,13 +1871,84 @@ export interface MakeupTargetOptionsResponse {
 // Notification Contracts (foundation types for Phase 03+)
 // ============================================================
 
-/** Notification priority levels */
+// ============================================================
+// In-App Notification Center & Web Push Contracts (P5-056 / ADR-059)
+// ============================================================
+
+export type InAppNotificationCategory = 'ACTION_REQUIRED' | 'INFORMATION' | 'SYSTEM';
+export type InAppNotificationPriority = 'NORMAL' | 'HIGH';
+
+export interface InAppNotificationItem {
+  id: string;
+  eventType: string;
+  category: InAppNotificationCategory;
+  priority: InAppNotificationPriority;
+  title: string;
+  body: string;
+  actionKey?: string | null;
+  createdAt: string;
+  readAt?: string | null;
+  resolvedAt?: string | null;
+}
+
+export interface NotificationListResponse {
+  items: InAppNotificationItem[];
+  nextCursor?: string | null;
+}
+
+export interface UnreadNotificationCountResponse {
+  count: number;
+}
+
+export interface MarkNotificationReadResponse {
+  success: boolean;
+  readAt: string;
+}
+
+export interface NotificationActionResolutionResponse {
+  targetUrl: string;
+}
+
+export interface NotificationPushConfigResponse {
+  enabled: boolean;
+  vapidPublicKey?: string;
+  maxSubscriptionsPerUser: number;
+}
+
+export interface WebPushSubscriptionItem {
+  id: string;
+  deviceLabel?: string | null;
+  createdAt: string;
+  lastSeenAt: string;
+}
+
+export interface WebPushSubscriptionListResponse {
+  items: WebPushSubscriptionItem[];
+}
+
+export interface CreateWebPushSubscriptionDto {
+  endpoint: string;
+  keys: {
+    p256dh: string;
+    auth: string;
+  };
+  deviceLabel?: string;
+}
+
+export interface CreateWebPushSubscriptionResponse {
+  id: string;
+  deviceLabel?: string | null;
+  createdAt: string;
+  lastSeenAt: string;
+}
+
+/** Notification priority levels (legacy foundation) */
 export type NotificationPriority = 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT';
 
-/** Notification read/processing status */
+/** Notification read/processing status (legacy foundation) */
 export type NotificationStatus = 'UNREAD' | 'READ' | 'PROCESSED';
 
-/** Base notification shape */
+/** Base notification shape (legacy foundation) */
 export interface BaseNotification {
   id: string;
   userId: string;

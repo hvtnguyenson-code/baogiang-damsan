@@ -71,6 +71,11 @@ try {
     if ($null -eq $driftResult -or $driftResult.state -ne 'verifiedNoPending' -or $driftResult.releaseSha -cne $p.ReleaseSha -or [int]$driftResult.databasePort -ne 5434) { throw 'Code-only deployment blocked: migration drift evidence is missing or invalid.' }
     $report.migration = $driftResult
   }
+  # Both authorized migration and automatic code-only paths must verify the
+  # actual release schema before any pointer switch or API activation.
+  $schemaJson = & (Join-Path $PSScriptRoot 'assert-release-schema.ps1') -ReleaseSha $p.ReleaseSha -Root $canonicalRoot -NodeExe $p.NodeExe -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl | Select-Object -Last 1
+  $schemaResult = $schemaJson | ConvertFrom-Json
+  if ($null -eq $schemaResult -or $schemaResult.state -cne 'verifiedSchema' -or $schemaResult.releaseSha -cne $p.ReleaseSha) { throw 'Exact release schema evidence is invalid.' }
   $report.capabilityCatalog.state = 'attemptedUnknown'
   $catalogJson = & (Join-Path $PSScriptRoot 'sync-capability-catalog.ps1') -ReleaseSha $p.ReleaseSha -ReleasePath (Join-Path $canonicalRoot "releases\$($p.ReleaseSha)") -NodeExe $p.NodeExe -Root $canonicalRoot -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl -BackupVerified | Select-Object -Last 1
   $report.capabilityCatalog = $catalogJson | ConvertFrom-Json

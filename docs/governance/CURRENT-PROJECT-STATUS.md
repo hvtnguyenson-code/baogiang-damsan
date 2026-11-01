@@ -8,7 +8,51 @@ Per `MAJOR-TASK-DOCUMENTATION-SYNC-PROTOCOL.md`, this file is intentionally conc
 
 Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub. SHAs here are evidence for already-established task states, never a self-referential claim that this document contains its own current commit.
 
-**Status snapshot date:** 2026-10-28
+**Status snapshot date:** 2026-10-31
+
+## P5-056 / T55 — IN_REVIEW: PR #257 Codex correction
+
+Canonical main was fetched directly as `088041952796e9628ae7aeed1026393525e35705`;
+takeover HEAD `39b60d6026b093629ebcafc93750b04be93180f2` on the existing
+`feat/p5-056-notification-center-webpush` branch. P5-056A is CLOSED;
+P5-056 is not merged/closed. Reviews 5722373124, 5722618883 and 5722773426
+require correction; original CI #855 and compatibility #78 failed.
+
+- Clean migration replay on PG16.15 and PG17.10 produced the same original
+  fingerprint `612e1f3b0d4abba0b6e796b15da72c5c`, enforcement true and all
+  78 inbound FKs matching. The previous `f1b595a20660667e91fab612d37167b7`
+  constant was incorrect; the old blanket PG17/integration PASS claim is withdrawn.
+  The additive session/generation migration has reviewed fingerprint
+  `dcc09117df18e7b7c914f4a1aec781fe` on both versions, without relaxing deletion.
+- Subscriptions bind to the authenticated session; logout, logout-all, successful
+  cookie replacement and other-session password revocation cancel the correct
+  deliveries. Offline expiry/current source rights are checked before sending.
+  Endpoint/user/session locks and ownership generations protect device admission,
+  handoff and late provider responses. Already in-flight provider requests cannot
+  be retracted; only fixed generic copy and the inbox route are sent/displayed.
+- Only exact REPORTING_SUBMITTED/REPORTING_DECIDED event/action/source bindings
+  are registered. Publication uses the current evaluator in the source transaction;
+  list/count/read/action/send recheck current resource authority. Hidden scan
+  windows retain a continuation cursor even with zero visible items.
+- Automatic deployment stays code-only and stops on pending migrations. Both
+  release paths now require read-only schema verification before switch/start;
+  deployment manifests carry the new verifier. Windows fixtures cover ordering,
+  rejection and recovery without production access.
+- API unit 114 suites / 2,143 tests and Web unit 750 tests passed. Full isolated
+  PG16.15 and PG17.10 each passed 54 suites / 754 tests, with one unchanged opt-in
+  live-browser skip. Lint/typecheck/production build, Prisma/migration, UI/PWA,
+  secret scan and Windows deployment gates passed. Exact-head GitHub CI and
+  compatibility checks plus independent source review remain required.
+  First correction checkpoint `59bc4e6` passed off-host #79 and CI Windows, but CI
+  #856 exposed one P2002 inbox-publication race. Follow-up uses PostgreSQL-native
+  conflict arbitration for inbox/outbox and strengthens the concurrency regression;
+  see the validation report for separate checkpoint/run provenance.
+  No production schema/deploy action or independent approval is asserted.
+
+Execution scope: `docs/tasks/P5-056-CODEX-CORRECTION.md`.
+Validation: `docs/phase-reports/P5-056-CODEX-CORRECTION-VALIDATION.md`.
+Prepared release/rollback rehearsal: `docs/operations/P5-056-CONTROLLED-RELEASE-PLAN.md`.
+P5-057 device/persona acceptance and P6-050 remain gated.
 
 ## P5-056A / T55 — CLOSED by SYNC-P5-056A (architecture only)
 
@@ -140,7 +184,7 @@ Preliminary Desktop Commander read-only metadata: Windows Server 2022, 6 logical
 
 ### Planned behind open dependencies
 
-- `P5-056` — READY after SYNC-P5-056A merge; MCP-backed implementation not yet started.
+- `P5-056` — IN_REVIEW on dedicated task branch `feat/p5-056-notification-center-webpush`; implementation complete and locally verified (schema static, typecheck, lint, unit tests PASS); PR opened for independent review; not merge/deploy-authorized.
 - `P5-057` — persona operability E2E freeze; mandatory product predecessor of teacher pilot.
 - `P6-030` — production bootstrap + first controlled deploy: **`PLANNED`** (depends on `P6-020` and P6-025 acceptance).
 - `P6-040` — TLS monitor multi-certificate refactor: **`PLANNED`** (depends on `P6-030`).

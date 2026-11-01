@@ -63,6 +63,7 @@ describe('auth HTTP boundary', () => {
       'user',
       'Password9',
       expect.objectContaining({ ipAddress: '127.0.0.1' }),
+      undefined,
     );
   });
 
@@ -359,7 +360,7 @@ describe('auth HTTP boundary', () => {
       expect(res1.status).toBe(200);
 
       // Verify no session was created for user2
-      expect(authService.login).not.toHaveBeenCalledWith('user2', expect.anything(), expect.anything());
+      expect(authService.login).not.toHaveBeenCalledWith('user2', expect.anything(), expect.anything(), undefined);
 
       // Subsequent legitimate request 3 succeeds normally
       const res3 = await request(server)

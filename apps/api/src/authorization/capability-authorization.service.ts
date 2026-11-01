@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { CapabilityScope, ScopedCapability } from '@baogiang/contracts';
 import { PrismaService } from '../prisma/prisma.service';
+import { Prisma } from '@prisma/client';
 import {
   AUTHORIZATION_CLOCK,
   AuthorizationClock,
@@ -27,11 +28,11 @@ export class CapabilityAuthorizationService {
     @Inject(AUTHORIZATION_CLOCK) private readonly clock: AuthorizationClock,
   ) {}
 
-  async hasCapability(request: CapabilityRequest): Promise<boolean> {
-    return (await this.evaluate(request)).allowed;
+  async hasCapability(request: CapabilityRequest, db: Prisma.TransactionClient = this.prisma): Promise<boolean> {
+    return (await this.evaluate(request, db)).allowed;
   }
 
-  async evaluate(request: CapabilityRequest): Promise<AuthorizationDecision> {
+  async evaluate(request: CapabilityRequest, db: Prisma.TransactionClient = this.prisma): Promise<AuthorizationDecision> {
     const atTime = request.atTime ? new Date(request.atTime) : this.clock.now();
     const deny = (reasonCode: AuthorizationDecision['reasonCode'], normalizedResourceId?: string): AuthorizationDecision => ({
       allowed: false,
@@ -42,7 +43,7 @@ export class CapabilityAuthorizationService {
     if (Number.isNaN(atTime.getTime())) return deny('REQUIREMENT_INVALID');
 
     const [user, definition] = await Promise.all([
-      this.prisma.user.findUnique({
+      db.user.findUnique({
         where: { id: request.userId },
         select: {
           status: true,
@@ -53,7 +54,7 @@ export class CapabilityAuthorizationService {
           },
         },
       }),
-      this.prisma.capabilityDefinition.findUnique({
+      db.capabilityDefinition.findUnique({
         where: { key: request.capabilityKey },
         select: { isActive: true, allowedScopeTypes: true },
       }),

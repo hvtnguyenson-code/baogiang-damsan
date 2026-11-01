@@ -10,6 +10,7 @@ import {
   logout,
   onRemoteSessionBoundary,
   onUnauthorized,
+  revokeWebPushEndpoint,
 } from '../lib/api-client';
 import { AUTH_QUERY_KEY, clearSessionCache } from './session-cache';
 
@@ -301,6 +302,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async logout() {
       invalidatePendingReconciliations();
       setLogoutError(null);
+      if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+        try {
+          const reg = await navigator.serviceWorker.getRegistration();
+          const sub = await reg?.pushManager?.getSubscription();
+          if (sub?.endpoint) {
+            await revokeWebPushEndpoint(sub.endpoint).catch(() => undefined);
+            await sub.unsubscribe().catch(() => undefined);
+          }
+        } catch {
+          // Push cleanup is best-effort and must not block logout
+        }
+      }
       try {
         await logoutMutation.mutateAsync();
         clearSessionCache(queryClient);

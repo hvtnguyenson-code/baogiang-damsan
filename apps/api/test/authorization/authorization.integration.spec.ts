@@ -1,3 +1,4 @@
+import { Phase01Harness } from '../helpers/phase01-test-harness';
 import { Controller, Get, INestApplication, Param, UseGuards, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { PrismaClient } from '@prisma/client';
@@ -83,19 +84,11 @@ integration('Capability authorization (isolated PostgreSQL integration)', () => 
   });
 
   beforeEach(async () => {
-    await prisma.auditEvent.deleteMany();
-    await prisma.authSession.deleteMany();
-    await prisma.teachingAssignment.deleteMany();
-    await prisma.capabilityGrant.deleteMany();
-    if (assignmentTablesAvailable) {
-      await prisma.staffAdditionalDutyAssignment.deleteMany();
-      await prisma.additionalDutyDefinition.deleteMany();
-      await prisma.subjectGroupMembership.deleteMany();
-    }
-    await prisma.staffProfile.deleteMany();
-    await prisma.user.deleteMany();
-    if (assignmentTablesAvailable) await prisma.subjectGroup.deleteMany();
-    await prisma.capabilityDefinition.deleteMany();
+    // Use the complete migration-aware cleanup; partial user teardown depends
+    // on Jest suite order once retained domain/notification records exist.
+    const cleanup = new Phase01Harness();
+    cleanup.prisma = prisma;
+    await cleanup.clean();
     await prisma.capabilityDefinition.createMany({
       data: [
         { key: 'USER_MANAGE', description: 'Manage users', allowedScopeTypes: ['SCHOOL_WIDE'] },

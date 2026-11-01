@@ -49,7 +49,7 @@
     "test:deploy:behavior": "node scripts/ci/verify-deployment-behavior.cjs",
     "test:workflow:contract": "node scripts/ci/verify-workflow-contract.cjs",
     "test:deploy:powershell": "node scripts/ci/verify-powershell-parser.cjs",
-    "test:deploy:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/ci/test-deployment-windows.ps1 && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/ci/test-p6-010-http01-windows.ps1",
+    "test:deploy:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/ci/test-deployment-windows.ps1 && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/ci/test-p6-010-http01-windows.ps1 && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/ci/test-p5-056-release-gate.ps1",
     "test:deploy:aud04": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/ci/test-audit04-failure-injection.ps1",
     "test:ui:static": "node scripts/ui/verify-ui-foundation.cjs && node scripts/ui/verify-pwa-baseline.cjs",
     "test:pwa:static": "node scripts/ui/verify-pwa-baseline.cjs",
