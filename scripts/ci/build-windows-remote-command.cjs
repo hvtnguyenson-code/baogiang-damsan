@@ -59,7 +59,92 @@ function trustedAuthorityScript(input) {
   ];
 }
 
-function buildHandshake(contract) { return encodedPowerShell([...trustedAuthorityScript(contract), "Write-Output 'BAOGIANG_HANDSHAKE_PASS'"].join('; ')); }
+function buildHandshake(contract) {
+  const checks = [...trustedAuthorityScript(contract), "Write-Output 'BAOGIANG_HANDSHAKE_PASS'"].join('; ');
+  // Preserve fail-closed checks while emitting a bounded category, not exception text.
+  return encodedPowerShell([
+    "$ErrorActionPreference='Stop'",
+    "try {",
+    checks,
+    "} catch {",
+    "  $category = if ($_.FullyQualifiedErrorId -match '^[A-Za-z0-9_.-]{1,100}
+
+function buildPrepareTransfer(contract) {
+  assertTransferName(contract.transferName);
+  const root = contract.root.replace(/[\\/]+$/, '');
+  const parent = `${root}\\incoming`;
+  const candidate = `${parent}\\${contract.transferName}`;
+  return encodedPowerShell([...trustedAuthorityScript(contract),
+    `$parent=${psLiteral(parent)}`, `$candidate=${psLiteral(candidate)}`,
+    `if([IO.Path]::GetFullPath($parent).TrimEnd('\\') -ine (Join-Path $root 'incoming')){throw 'TRANSFER_PARENT_CONFLICT'}`,
+    `if((Split-Path -Parent ([IO.Path]::GetFullPath($candidate))) -ine [IO.Path]::GetFullPath($parent)){throw 'TRANSFER_NOT_DIRECT_CHILD'}`,
+    `if(Test-Path -LiteralPath $candidate){throw 'TRANSFER_ALREADY_EXISTS'}`,
+    `$parentItem=Get-Item -LiteralPath $parent -Force -ErrorAction Stop`,
+    `if(-not $parentItem.PSIsContainer -or ($parentItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw 'TRANSFER_PARENT_UNSAFE'}`,
+    `New-Item -ItemType Directory -Path $candidate | Out-Null`,
+    `$created=Get-Item -LiteralPath $candidate -Force -ErrorAction Stop`,
+    `if(-not $created.PSIsContainer -or ($created.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw 'TRANSFER_CREATED_UNSAFE'}`,
+    `Write-Output 'BAOGIANG_PREPARE_TRANSFER_PASS'`,
+  ].join('; '));
+}
+
+function buildFileInvocation(scriptPath, parameterPath) { return encodedPowerShell(`$ErrorActionPreference='Stop'; & ${psLiteral(scriptPath)} -ParameterFile ${psLiteral(parameterPath)}`); }
+function windowsRootToSftp(root) { if (typeof root !== 'string' || !WINDOWS_ROOT.test(root)) throw new Error('Windows deployment root must use safe ASCII path segments.'); return `/${root[0].toUpperCase()}:/${root.slice(3).replace(/\\/g, '/')}`; }
+function quoteSftp(value) { if (/[\r\n\u0000]/.test(value)) throw new Error('Unsafe SFTP batch value.'); return `"${String(value).replace(/(["\\])/g, '\\$1')}"`; }
+
+function buildCleanup(root, transfer) {
+  assertTransferName(transfer);
+  if (!WINDOWS_ROOT.test(root)) throw new Error('Unsafe cleanup root.');
+  const parent = `${root.replace(/[\\/]+$/, '')}\\incoming`;
+  const candidate = `${parent}\\${transfer}`;
+  return encodedPowerShell([
+    "$ErrorActionPreference='Stop'", `$root=${psLiteral(root)}`, `$parent=${psLiteral(parent)}`, `$candidate=${psLiteral(candidate)}`,
+    `if([IO.Path]::GetFullPath($parent).TrimEnd('\\') -ine (Join-Path ([IO.Path]::GetFullPath($root).TrimEnd('\\')) 'incoming')){throw 'CLEANUP_PARENT_CONFLICT'}`,
+    `if((Split-Path -Parent ([IO.Path]::GetFullPath($candidate))) -ine [IO.Path]::GetFullPath($parent)){throw 'CLEANUP_NOT_DIRECT_CHILD'}`,
+    `$filesystemRoot=[IO.Path]::GetPathRoot($candidate);$cursor=[IO.Path]::GetFullPath($candidate).TrimEnd('\\');$visited=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)`,
+    `while($true){if(-not $visited.Add($cursor)){throw 'CLEANUP_ANCESTOR_UNVERIFIABLE'};try{$item=Get-Item -LiteralPath $cursor -Force -ErrorAction Stop}catch{throw 'CLEANUP_PATH_UNVERIFIABLE'};if(-not $item.PSIsContainer){throw 'CLEANUP_PATH_NOT_DIRECTORY'};if(($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw 'CLEANUP_REPARSE_POINT'};if($cursor.TrimEnd('\\') -ieq $filesystemRoot.TrimEnd('\\')){break};$cursor=(Split-Path -Parent $cursor);if([string]::IsNullOrWhiteSpace($cursor)){throw 'CLEANUP_ANCESTOR_UNVERIFIABLE'}}`,
+    `Remove-Item -LiteralPath $candidate -Recurse -Force`,
+  ].join('; '));
+}
+
+
+const STAGED_COMMAND_FILE = /^bg-command-(?:handshake|prepare)-[0-9]+-[0-9]+-[0-9a-f]{40}\.ps1$/;
+function buildStagedInvocation(root, name, digest) {
+  if (!WINDOWS_ROOT.test(root)) throw new Error('Unsafe deployment root for staged command.');
+  if (!STAGED_COMMAND_FILE.test(name)) throw new Error('Unsafe staged command filename.');
+  if (!SHA256.test(digest)) throw new Error('Invalid staged command SHA256.');
+  const path = root.replace(/[\\/]+$/, '') + '\\incoming\\' + name;
+  return encodedPowerShell([
+    "$ErrorActionPreference='Stop'",
+    `$path=${psLiteral(path)}`,
+    "$file=Get-Item -LiteralPath $path -Force -ErrorAction Stop",
+    "if($file.PSIsContainer -or ($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw 'STAGED_COMMAND_UNSAFE'}",
+    `if((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -cne ${psLiteral(digest.toUpperCase())}){throw 'STAGED_COMMAND_HASH_MISMATCH'}`,
+    "& powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $path",
+    "if($LASTEXITCODE -ne 0){throw 'STAGED_COMMAND_FAILED'}"
+  ].join(';'));
+}
+
+if (require.main === module) {
+  const [mode, ...args] = process.argv.slice(2);
+  if (mode === 'handshake') console.log(buildHandshake(JSON.parse(args[0])));
+  else if (mode === 'handshake-base64') console.log(buildHandshake(JSON.parse(Buffer.from(args[0], 'base64').toString('utf8'))));
+  else if (mode === 'prepare-transfer') console.log(buildPrepareTransfer(JSON.parse(args[0])));
+  else if (mode === 'prepare-transfer-base64') console.log(buildPrepareTransfer(JSON.parse(Buffer.from(args[0], 'base64').toString('utf8'))));
+  else if (mode === 'invoke') console.log(buildFileInvocation(args[0], args[1]));
+  else if (mode === 'staged-invoke') console.log(buildStagedInvocation(args[0], args[1], args[2]));
+  else if (mode === 'sftp-root') console.log(windowsRootToSftp(args[0]));
+  else if (mode === 'cleanup') console.log(buildCleanup(args[0], args[1]));
+  else throw new Error('Expected handshake, prepare-transfer, invoke, sftp-root or cleanup mode.');
+}
+
+module.exports = { psLiteral, encodedPowerShell, buildHandshake, buildPrepareTransfer, buildFileInvocation, windowsRootToSftp, assertTransferName, quoteSftp, buildCleanup, buildStagedInvocation };
+) { $_.FullyQualifiedErrorId } else { 'HANDSHAKE_UNCLASSIFIED' }",
+    "  [Console]::Error.WriteLine('BAOGIANG_HANDSHAKE_FAILED category=' + $category)",
+    "  exit 1",
+    "}"
+  ].join('; '));
+}
 
 function buildPrepareTransfer(contract) {
   assertTransferName(contract.transferName);
