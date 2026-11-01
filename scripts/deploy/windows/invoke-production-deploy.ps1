@@ -94,6 +94,14 @@ try {
   try {
     & (Join-Path $PSScriptRoot 'notify-operator-telegram.ps1') -Root $canonicalRoot -EnvFile $p.EnvFile -ExpectedBaseUrl $p.ExpectedBaseUrl -EventId $p.TransferDirectoryName -ReleaseSha $p.ReleaseSha | Out-Null
   } catch { } # A durable successful deploy report remains the authority; notifier has its own journal.
+  # Housekeeping only after a successful deployment and durable verified report.
+  # Never roll back healthy production because pruning is unavailable.
+  try {
+    & (Join-Path $PSScriptRoot 'prune-releases.ps1') -Root $canonicalRoot -ExpectedSha $p.ReleaseSha -Execute | Out-Null
+    Write-Output "BAOGIANG_RELEASE_PRUNE_OK sha=$($p.ReleaseSha)"
+  } catch {
+    Write-Warning ('BAOGIANG_RELEASE_PRUNE_SKIPPED: ' + $_.Exception.Message)
+  }
   Write-Output ($report | ConvertTo-Json -Depth 12)
 } catch {
   $original = $_
