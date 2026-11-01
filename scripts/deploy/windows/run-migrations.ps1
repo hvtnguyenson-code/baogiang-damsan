@@ -29,6 +29,8 @@ Assert-BaoGiangQuiescence -Marker $identity.marker -ServiceKind $ServiceKind -Se
 $release = Assert-ExactReleasePath -Root $identity.canonicalRoot -ReleaseSha $ReleaseSha -ReleasePath $ReleasePath
 $schema = Get-CanonicalPath (Join-Path $release 'prisma\schema.prisma')
 if (-not (Test-Path -LiteralPath $schema -PathType Leaf) -or -not (Test-PathWithin $schema $release)) { throw 'Prisma schema is missing from the exact release.' }
+Push-Location $release
+try {
 Invoke-WithServerEnvironment -EnvFile $EnvFile -ExpectedBaseUrl $ExpectedBaseUrl -ScriptBlock {
 try {
 Assert-ExecutableContract @{ NpxExe = $NpxExe; PsqlExe = $PsqlExe }
@@ -71,3 +73,4 @@ function Get-MigrationState([string]$Phase) {
   [ordered]@{ state = 'completed'; before = $before; after = $after } | ConvertTo-Json -Compress
 } finally { Clear-PostgresProcessEnvironment }
 }
+} finally { Pop-Location }

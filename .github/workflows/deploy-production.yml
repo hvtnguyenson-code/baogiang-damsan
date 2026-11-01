@@ -327,7 +327,7 @@ jobs:
           PROD_BAOGIANG_ROOT: ${{ vars.PROD_BAOGIANG_ROOT }}
         run: |
           set -euo pipefail
-          root='${PROD_BAOGIANG_ROOT}'
+          root="$PROD_BAOGIANG_ROOT"
           transfer='${{ steps.handshake.outputs.transfer_name }}'
           invoke="$root\\incoming\\$transfer\\invoke-production-deploy.ps1"
           parameters="$root\\incoming\\$transfer\\deploy-parameters.json"
@@ -375,7 +375,7 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -s "$SSH_KEY" && -s "$KNOWN_HOSTS" ]]; then
-            root='${PROD_BAOGIANG_ROOT}'; transfer='${{ steps.handshake.outputs.transfer_name }}'
+            root="$PROD_BAOGIANG_ROOT"; transfer='${{ steps.handshake.outputs.transfer_name }}'
             [[ "$transfer" =~ ^control-[0-9]+-[0-9]+-[0-9a-f]{40}$ ]] || { echo 'Skipping remote cleanup: no verified transfer directory.'; exit 0; }
             encoded="$(node control-plane/scripts/ci/build-windows-remote-command.cjs cleanup "$root" "$transfer")"
             timeout 120 ssh -i "$SSH_KEY" -p "$PROD_SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "$PROD_SSH_USER@$PROD_SSH_HOST" powershell.exe -NoProfile -NonInteractive -EncodedCommand "$encoded"

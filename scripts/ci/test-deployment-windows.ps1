@@ -115,6 +115,7 @@ if ($catalogSyncText -match 'npm run prisma:seed|prisma db seed') { throw 'Capab
 
 $migrationPath = Join-Path $repo 'scripts\deploy\windows\run-migrations.ps1'
 $migrationText = Get-Content -LiteralPath $migrationPath -Raw -Encoding UTF8
+if ($migrationText -notmatch [regex]::Escape('Push-Location $release') -or $migrationText -notmatch [regex]::Escape('Pop-Location')) { throw 'Production migration must run Prisma from exact release and restore working directory.' }
 foreach ($requiredMigrationToken in @('ReleaseSha','Assert-ExactReleasePath','prisma\schema.prisma','Test-PathWithin $schema $release')) {
   if ($migrationText -notmatch [regex]::Escape($requiredMigrationToken)) { throw "Migration wrapper is missing exact-release safety token: $requiredMigrationToken" }
 }
