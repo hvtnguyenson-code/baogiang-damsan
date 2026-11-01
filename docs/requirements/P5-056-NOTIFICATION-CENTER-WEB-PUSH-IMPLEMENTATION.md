@@ -1,6 +1,6 @@
 # P5-056 — In-App Notification Center & Web Push Implementation
 
-**Status:** IN_REVIEW — PR #257 consolidated correction; local gates passed, exact-head CI and independent review required; no merge/deploy authority
+**Status:** CLOSED on merge of `SYNC-P5-056`; PR #257 merged, CI #857 / off-host #80 SUCCESS, verified production schema and release on 2026-11-01; physical device/persona acceptance in P5-057.
 **Depends on:** P5-056A  
 **Traceability:** T55
 
@@ -40,3 +40,8 @@ A user can receive a durable in-app notification, close the browser, log in agai
 P5-056 must implement the accepted versions of ADR-059 and P5-056A requirement after the closure SYNC merges. A green docs-only parent CI is not runtime acceptance. The exact module/event mapping is to be verified against domain sources at task start; draft type names do not authorize publishing fictitious events.
 
 Implement **on one P5-056 task branch** through (A) transactional canonical inbox + Prisma migration and dedupe/outbox; (B) multi-device encrypted subscriptions, delivery retry/dead-letter; (C) signed-in Vietnamese inbox and Workbox-safe Push handlers; (D) PostgreSQL isolated, capability negative/race, Playwright and physical device acceptance evidence. Backend writes and schema/migration require MCP/CI execution and an explicit task scope. Keep Telegram integration independent. Unresolved ACTION_REQUIRED records must not be purged solely by age; browser support/permission must be determined on the client rather than trusted as a server claim; on shared-device logout or account switch, the old account's subscription must be revoked server-side even if browser unsubscribe fails, without touching the user's other devices. Add negative/cleanup tests for those cases. No production data migration without separate deployment authority.
+
+
+## Technical closure evidence (2026-11-01)
+
+PR #257 merged as `62b6ffb85602f2be5f2d54b7ed16ad6a6fb05029`; exact-head CI #857 (`41215108383`) SUCCESS 2/2 and off-host #80 (`41215108378`) SUCCESS 2/2. Follow-up deploy corrections PR #258/#259 and cleanup #260 merged; production release `0dd691cf5c1294125a2cf7fddcbaea3a190fc3f1` verified 2026-11-01 (API live/ready 200, 38/38 capabilities, production schema `verifiedSchema` and no migrations pending). Technical scope accepted by Product Owner 2026-11-01; physical Android/iOS Push and real-persona UAT remain P5-057, not certified here.
