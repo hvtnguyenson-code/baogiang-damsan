@@ -1,8 +1,17 @@
 # P5-057 — Persona Operability E2E Freeze
 
-**Status:** PLANNED  
+**Status:** IN_PROGRESS (WS1 documentation/authority mapping only; not persona E2E closure)
 **Depends on:** P5-051, P5-052, P5-053, P5-054, P5-055, P5-056, P5-020, P5-030, P5-010  
 **Traceability:** T56
+
+## Approved execution order (03/11/2026)
+
+1. Freeze academic business authority (WS1).
+2. Complete administration workflows with bounded changes (WS2–WS6).
+3. Fix empirically demonstrated persona UX blockers (WS7).
+4. Execute the full seven-persona acceptance gate (WS8).
+
+Details: `docs/tasks/P5-057-FOUR-STAGE-OPERABILITY-EXECUTION-PLAN.md`. Authority matrix draft: `docs/requirements/P5-057-ACADEMIC-AUTHORITY-MATRIX-DRAFT.md`. No completed code/authority is reopened without concrete evidence. `P6-050` remains blocked.
 
 ## Objective
 

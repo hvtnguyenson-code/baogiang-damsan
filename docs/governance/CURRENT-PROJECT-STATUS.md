@@ -8,7 +8,11 @@ Per `MAJOR-TASK-DOCUMENTATION-SYNC-PROTOCOL.md`, this file is intentionally conc
 
 Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub. SHAs here are evidence for already-established task states, never a self-referential claim that this document contains its own current commit.
 
-**Status snapshot date:** 2026-11-01
+**Status snapshot date:** 2026-11-03
+
+## P5-057 / T56 — IN_PROGRESS (WS1 documents only)
+
+Product Owner approved a four-stage order on 2026-11-03: (1) lock business authority, (2) complete admin workflows, (3) correct observed UX blockers, (4) seven-persona E2E acceptance. Eight bounded work packages WS1–WS8 are documented in `docs/tasks/P5-057-FOUR-STAGE-OPERABILITY-EXECUTION-PLAN.md`; the first authority comparison is `docs/requirements/P5-057-ACADEMIC-AUTHORITY-MATRIX-DRAFT.md`. The matrix contains open policy decisions and does **not** authorize backend changes. `P6-050` remains blocked. Existing PR #263 for multi-class assignment remains independent and **OPEN/unmerged** at head `e9dfb399f73b20ee45ed30408f46964e979636c6` on initial review. No DB, production, CI/CD or runtime mutation is authorized by this docs-only plan.
 
 ## P5-056 / T55 — CLOSED (technical scope; SYNC-P5-056)
 
