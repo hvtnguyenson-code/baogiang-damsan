@@ -58,5 +58,11 @@ No update to product baseline, README, roadmap or PROJECT_CONTEXT is needed: no 
 ## Review checkpoint
 
 Final local results: PostgreSQL 16.14 **6 suites, 166/166 PASS** (129.256 s); PostgreSQL 17.10 **6 suites, 166/166 PASS** (127.797 s). Each includes nine new provenance cases and 60 user-deletion cases. Prisma validate/generate, API lint, workspace typecheck, four schema-static gates, runner syntax and diff checks PASS. Initial local fixture corrections (unique-constraint precedence and measured inventory counts) were consolidated before the first push; no CI was used to diagnose them.
-+
-+Branch: `codex/p5-057-b1-provenance-foundation`, one scoped code PR against canonical main. Exact reviewed head and authoritative PR CI belong to GitHub evidence, not a self-referential hash in this document. No B2 implementation. No merge/deploy.
+
+Branch: `codex/p5-057-b1-provenance-foundation`, one scoped code PR against canonical main. Exact reviewed head and authoritative PR CI belong to GitHub evidence, not a self-referential hash in this document. No B2 implementation. No merge/deploy.
+
+### Consolidated review-checkpoint correction
+
+Initial head `e9550595c5a789560d8fb80fa612c0a6fa61f935` CI [42045068247](https://github.com/hvtnguyenson-code/baogiang-damsan/actions/runs/42045068247) and PG16 off-host [42045068264](https://github.com/hvtnguyenson-code/baogiang-damsan/actions/runs/42045068264) each had exactly one failing integration assertion: notifications still expected 78 inbound FKs although the measured inventory is 84. Both complete job logs were inspected before correction; fingerprintMatches, inventoryMatches and enforcement were true. The 55-suite integration run had 763 PASS, one failure and one existing skip; API unit tests were 2,143 PASS. This is an omitted schema-proof test expectation, not a permission-policy or migration change.
+
+The correction updates that one test expectation to 84 and preserves all release-verifier denial probes. No migration/runtime change. Local follow-up: notifications + special-programme lifecycle, two suites **32/32 PASS on each PG16/PG17**. An expanded parallel all-integration local attempt was stopped after lifecycle tests exceeded the default five-second timeout; these same lifecycle tests passed sequentially with CLI `--testTimeout=30000`, without repository timeout/business changes. Do not interpret that stopped attempt as a full local-suite PASS. API lint/typecheck and diff checks passed before the single consolidated correction push on the same branch/PR. No unchanged-SHA rerun or extra PR/workflow was requested.
