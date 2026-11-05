@@ -3,7 +3,7 @@
 **Ngày quyết định nghiệp vụ:** 05/11/2026.
 **Trạng thái:** **D3-PARTIAL ACCEPTED — bổ sung quyết định PO 05/11/2026:** Hiện tại **01 PHT phụ trách chuyên môn chính**, PHT còn lại có mẫu PHT thông thường; hệ thống **cho phép gán thêm từng quyền chuyên môn theo phạm vi, thời hạn và quyết định hợp lệ** cho PHT còn lại khi nhiệm vụ thay đổi. **Không khóa cứng giới hạn 01 người trong engine**, không cấp quyền toàn trường tự động, không tự biến PHT được ủy quyền thành người phụ trách chính. D2/D4/D5/D6 và phần quy trình cấp/thu hồi của D3 vẫn **OPEN**.
 **Phạm vi:** Báo giảng; tài liệu kiến trúc/dự thảo triển khai, **không phải cấp quyền runtime**.
-**Căn cứ D1:** Product Owner chốt phương án **B** ngày 05/11/2026: PHT chuyên môn tự quyết định **và trực tiếp cấu hình** nghiệp vụ chuyên môn; Admin kỹ thuật không cấu hình thay PHT.
+**Căn cứ D1 và quyết định bổ sung của PO 05/11/2026:** PHT chuyên môn chính có **TOÀN QUYỀN CHUYÊN MÔN TOÀN TRƯỜNG**, bao gồm trực tiếp quyết định, cấu hình, phê duyệt trong các luồng chuyên môn thuộc nhiệm vụ và **cấp/đổi/thu hồi quyền chuyên môn của nhân sự**, kể cả giao quyền chuyên môn cụ thể cho PHT thứ hai. Đây là thẩm quyền nghiệp vụ gốc của người phụ trách chuyên môn chính, không phải generic `CAPABILITY_GRANT/SCHOOL_WIDE` hay quyền quản trị tài khoản. Không phụ thuộc Admin kỹ thuật bấm thay. Các bất biến về chống tự duyệt chứng từ cá nhân, tách quyền kỹ thuật, kiểm tra backend, lịch sử và audit vẫn bắt buộc.
 
 ## 1. Hai mẫu trách nhiệm cần thể hiện rõ trên UI
 
@@ -12,7 +12,7 @@
 | Nhãn hiển thị | **Phó Hiệu trưởng phụ trách chuyên môn** | **Phó Hiệu trưởng** |
 | Responsibility Template | **`VICE_PRINCIPAL_ACADEMIC`** (đã có) | **`VICE_PRINCIPAL`** (đề xuất bổ sung) |
 | Chức danh hành chính | Phó Hiệu trưởng | Phó Hiệu trưởng |
-| Quyền điều hành, cấp/thu hồi capability chuyên môn | Có theo scope, hiệu lực, lệnh nghiệp vụ hẹp và audit sau khi triển khai D1–D6 | **Không mặc định** |
+| Quyền điều hành, cấp/thu hồi capability chuyên môn | **Toàn quyền chuyên môn SCHOOL_WIDE** với nghiệp vụ thuộc Báo giảng; trực tiếp cấp, sửa, thu hồi grant chuyên môn cho nhân sự/PHT khác qua command nghiệp vụ hẹp và audit, sau khi backend triển khai | **Không mặc định**; chỉ có các quyền chuyên môn riêng được PHT chính cấp hợp lệ |
 | Phân công giáo viên-môn-lớp, TKB, PPCT, lịch ngoại lệ, dạy thay/bù, cấu hình GDĐP/HĐTN-HN | Người **quyết định và thao tác cấu hình** theo thẩm quyền | Không tự có quyền; chỉ tham gia chuyên môn khi được phân công dưới một capability riêng được phép |
 | Xem báo cáo trường | Theo quyền chuyên môn đã cấp | Không tự mặc định được xem toàn trường; quyền xem/giám sát nếu có phải độc lập và chỉ đọc theo chính sách |
 | Quyền giảng dạy, kê khai cá nhân | Giữ `TEACHER_BASE` và quyền cá nhân nếu là giáo viên thực tế | Giữ `TEACHER_BASE` và quyền cá nhân nếu là giáo viên thực tế |
@@ -42,8 +42,8 @@ Thiết kế thực thi khi D2–D6 được khóa:
 
 ### 3.1. Quyết định đã được Product Owner chốt ngày 05/11/2026
 
-- **Cấu hình vận hành hiện tại:** có **một PHT phụ trách chuyên môn chính**. PHT còn lại mang trách nhiệm `VICE_PRINCIPAL`, không mặc định có quyền cấu hình hoặc duyệt chuyên môn.
-- **Linh hoạt khi phân công thay đổi:** PHT còn lại **có thể nhận một hoặc nhiều capability chuyên môn bổ sung**, ví dụ quản lý HĐTN-HN, GDĐP, một nhóm môn hoặc một phần công tác TKB, theo quyết định hợp lệ. Chỉ được thực hiện đúng scope, thời điểm hiệu lực và lệnh nghiệp vụ được cấp, **không tự nhận toàn bộ `PHT_OPERABILITY_GRANTS`**.
+- **Cấu hình vận hành hiện tại:** có **một PHT phụ trách chuyên môn chính** với **toàn quyền chuyên môn toàn trường**: tổ/môn, phân công GV/lớp, TKB, PPCT, ngoại lệ lịch, dạy bù/thay, cấu hình/điều hành chuyên môn và các chương trình GDĐP/HĐTN-HN, quản lý/cấp/đổi/thu hồi capability **chuyên môn**. PHT chính là người quyết định và trực tiếp cấu hình qua giao diện nghiệp vụ; không cần Admin thao tác hộ. PHT còn lại mang trách nhiệm `VICE_PRINCIPAL`, không mặc định có quyền cấu hình hoặc duyệt chuyên môn.
+- **Linh hoạt khi phân công thay đổi:** **PHT chuyên môn chính trực tiếp quyết định, cấp, sửa và thu hồi** một hoặc nhiều quyền chuyên môn cho PHT còn lại, ví dụ HĐTN-HN, GDĐP, một nhóm môn hoặc một phần công tác TKB. Người được giao chỉ được thực hiện đúng scope, thời điểm hiệu lực và lệnh nghiệp vụ được cấp, **không tự nhận toàn bộ `PHT_OPERABILITY_GRANTS`**, không tự bổ nhiệm thành PHT chính và không chuyển giao quyền cấp quyền tiếp nếu chưa có quyết định hợp lệ.
 - **Không khóa số lượng bằng mã:** hệ thống không được hardcode `MAX_ACADEMIC_VICE_PRINCIPALS=1` trong type/template/capability evaluator hoặc schema. Quy tắc **một người phụ trách chính tại thời điểm hiện tại** thuộc cấu hình và quy trình phân công được kiểm soát, không phải giới hạn bất biến của kiến trúc.
 - **Tách chức trách với quyền:** `VICE_PRINCIPAL_ACADEMIC` là mẫu trách nhiệm PHT chuyên môn chính; `VICE_PRINCIPAL` là mẫu PHT thông thường. Các capability nghiệp vụ cấp thêm cho PHT thông thường là **grant có nguồn gốc và hiệu lực riêng**, không phải hành động tự nâng nhãn lên PHT chuyên môn chính.
 - **Chuyển giao chính thức:** có thể đổi người phụ trách chuyên môn chính qua giao dịch chuyển giao được ủy quyền, preview quyền thay đổi, kích hoạt grant phù hợp cho người mới, kết thúc/thu hồi grant không còn hợp lệ của người cũ và ghi audit. Không xóa lịch sử TKB, PPCT, TeachingAssignment hay bản ghi quyền cũ. Chống khoảng trống hoặc chồng chéo thẩm quyền ở cùng scope/thời điểm.
@@ -61,7 +61,7 @@ Thiết kế thực thi khi D2–D6 được khóa:
 
 ### 3.3. Những nội dung D3 còn OPEN
 
-- Ai có thẩm quyền phê duyệt và thực thi việc giao thêm quyền cho PHT thứ hai, chuyển giao chính thức hoặc kích hoạt chế độ thay thế khi người phụ trách vắng mặt? Liên quan D2/D4/D5.
+- **Đã chốt:** PHT chuyên môn chính quyết định và trực tiếp cấu hình việc cấp/đổi/thu hồi quyền chuyên môn bổ sung cho PHT thứ hai, đúng scope/audit; không cần Admin bấm hộ. **Vẫn OPEN:** Ai xác lập/thu hồi tư cách **PHT chính** ban đầu; ai phê duyệt chuyển giao người phụ trách chính, cứu hộ khi PHT chính vắng mặt/không thể thao tác và xử lý thay đổi do cấp có thẩm quyền. Liên quan D2/D4/D5.
 - PHT thường có quyền xem dashboard toàn trường không, hay chỉ xem theo phạm vi được giao? Không tự cấp `SCHOOL_WIDE`.
 - Quy định thời hạn mặc định của quyền giao thêm, nguồn quyết định và yêu cầu gia hạn/thu hồi, quản lý xung đột khi hai PHT cùng được quyền trên một mảng.
 - Cách biểu diễn “PHT chuyên môn chính” trong dữ liệu, thao tác chuyển giao nguyên tử, thời điểm hiệu lực khi đổi năm học và quy trình cứu hộ khi không có PHT chính. Chưa tự chọn migration/schema.
@@ -90,11 +90,14 @@ Thiết kế thực thi khi D2–D6 được khóa:
 | VP-18 | Hai PHT có grant giao nhau cùng scope | Không cho ghi đè im lặng; kiểm tra conflict/version/effective time và lưu audit |
 | VP-19 | Thêm capability cho PHT thường không thay đổi mẫu base | Chỉ cấp quyền cụ thể, không tự nâng thành `VICE_PRINCIPAL_ACADEMIC` hoặc có `CAPABILITY_GRANT` |
 | VP-20 | Tương lai tăng số PHT phụ trách theo mảng | Không phải thay engine/schema chỉ để tăng số người; vẫn buộc quyết định phân công và kiểm tra scope |
+| VP-21 | PHT chuyên môn chính phân quyền chuyên môn cho PHT thường | Cấp/đổi/thu hồi thành công trong phạm vi được chọn, không cần Admin, lưu đầy đủ actor/scope/hiệu lực/audit |
+| VP-22 | PHT chuyên môn chính thực hiện toàn bộ tác vụ học thuật toàn trường | Các chức năng chuyên môn cho phép theo lệnh nghiệp vụ, không phải vì generic grant; không bị thiếu quyền chức năng do template rời rạc |
+| VP-23 | PHT chính tìm cách tự duyệt bảng kê giảng dạy cá nhân hoặc thao tác quyền kỹ thuật | Backend từ chối đúng bất biến; toàn quyền chuyên môn không vượt tuyến duyệt cá nhân hay cấp quyền kỹ thuật |
 
 ## 5. Cổng triển khai
 
 - **Đã được PO chốt:** hai loại PHT theo phạm vi; **chỉ PHT chuyên môn** được phân quyền và cấu hình chuyên môn trong giới hạn được xác lập.
-- **Đã chốt bổ sung:** hiện tại chỉ **01 PHT chuyên môn chính**, nhưng PHT còn lại có thể được giao thêm quyền chuyên môn **hẹp, theo scope và hiệu lực**, không tự chuyển mẫu vai trò. Không giới hạn cứng số người trong engine.
-- **Chưa chốt:** thẩm quyền cấp/thu hồi quyền bổ sung, phạm vi chi tiết, quyền xem PHT thường, quy trình chuyển giao/chữa cháy, thời hạn, xung đột chỉnh sửa và khả năng có nhiều người phụ trách chính trong tương lai.
+- **Đã chốt bổ sung:** hiện tại chỉ **01 PHT chuyên môn chính, có TOÀN QUYỀN CHUYÊN MÔN TOÀN TRƯỜNG**, bao gồm **trực tiếp cấp/đổi/thu hồi quyền chuyên môn** cho PHT còn lại và các nhân sự theo phạm vi nghiệp vụ. PHT thường chỉ được thực thi grant bổ sung theo scope và hiệu lực, không tự chuyển mẫu vai trò. Không giới hạn cứng số người trong engine; không cấp quyền kỹ thuật hoặc tự duyệt bảng kê cá nhân.
+- **Chưa chốt:** tư cách bổ nhiệm/thu hồi/chuyển giao PHT chính, phạm vi chi tiết của grant PHT thứ hai, quyền xem PHT thường, quy trình cứu hộ khi không có PHT chính, thời hạn mặc định, xung đột chỉnh sửa và khả năng có nhiều người phụ trách chính trong tương lai. Quyền PHT chính quyết định và cấu hình **grant chuyên môn** đã được chốt.
 - WS1 tiếp tục `IN_PROGRESS`; chỉ triển khai code sau khi D2–D6 (đặc biệt D2/D3/D4/D5) được xác nhận và có bộ test + rollback rõ ràng.
 - Không thay đổi runtime, schema, migration, VPS, database, PR #263 hoặc dự án Nội trú/Kiểm tra Online trong bước cập nhật quyết định tài liệu này.
