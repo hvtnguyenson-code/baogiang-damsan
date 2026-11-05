@@ -1,7 +1,7 @@
 # P5-057 / WS1 / D3 — Phân biệt PHT chuyên môn và PHT không phụ trách chuyên môn
 
 **Ngày quyết định nghiệp vụ:** 05/11/2026.
-**Trạng thái:** **D3-PARTIAL ACCEPTED — bổ sung quyết định PO 05/11/2026:** Hiện tại **01 PHT phụ trách chuyên môn chính**, PHT còn lại có mẫu PHT thông thường; hệ thống **cho phép gán thêm từng quyền chuyên môn theo phạm vi, thời hạn và quyết định hợp lệ** cho PHT còn lại khi nhiệm vụ thay đổi. **Không khóa cứng giới hạn 01 người trong engine**, không cấp quyền toàn trường tự động, không tự biến PHT được ủy quyền thành người phụ trách chính. D2/D4/D5/D6 và phần quy trình cấp/thu hồi của D3 vẫn **OPEN**.
+**Trạng thái:** **D3-PARTIAL ACCEPTED — bổ sung quyết định PO 05/11/2026:** Hiện tại **01 PHT phụ trách chuyên môn chính**, PHT còn lại có mẫu PHT thông thường; hệ thống **cho phép gán thêm từng quyền chuyên môn theo phạm vi, thời hạn và quyết định hợp lệ** cho PHT còn lại khi nhiệm vụ thay đổi. **Không khóa cứng giới hạn 01 người trong engine**, không cấp quyền toàn trường tự động, không tự biến PHT được ủy quyền thành người phụ trách chính. **Đã chốt thêm: Admin kỹ thuật tạo tài khoản và gán mẫu vai trò ban đầu**, kể cả PHT chuyên môn chính. Các chi tiết kiểm soát kỹ thuật, thu hồi khi đổi vai trò, Hiệu trưởng override/cứu hộ trong D2/D4/D5/D6 vẫn **OPEN**.
 **Phạm vi:** Báo giảng; tài liệu kiến trúc/dự thảo triển khai, **không phải cấp quyền runtime**.
 **Căn cứ D1 và quyết định bổ sung của PO 05/11/2026:** PHT chuyên môn chính có **TOÀN QUYỀN CHUYÊN MÔN TOÀN TRƯỜNG**, bao gồm trực tiếp quyết định, cấu hình, phê duyệt trong các luồng chuyên môn thuộc nhiệm vụ và **cấp/đổi/thu hồi quyền chuyên môn của nhân sự**, kể cả giao quyền chuyên môn cụ thể cho PHT thứ hai. Đây là thẩm quyền nghiệp vụ gốc của người phụ trách chuyên môn chính, không phải generic `CAPABILITY_GRANT/SCHOOL_WIDE` hay quyền quản trị tài khoản. Không phụ thuộc Admin kỹ thuật bấm thay. Các bất biến về chống tự duyệt chứng từ cá nhân, tách quyền kỹ thuật, kiểm tra backend, lịch sử và audit vẫn bắt buộc.
 
@@ -36,7 +36,8 @@ Thiết kế thực thi khi D2–D6 được khóa:
 3. Mẫu `VICE_PRINCIPAL_ACADEMIC` hiện có vẫn làm nguồn quyền quản trị chuyên môn; bổ sung command chuyên môn hẹp theo **D1-B** khi thiết kế D2 xong. Tuyệt đối **không** giải quyết bằng cách cấp generic `CAPABILITY_GRANT/SCHOOL_WIDE`.
 4. Tiếp tục dùng `CapabilityGrant` + evaluator default-deny + scope và `validFrom/validUntil/revokedAt`, CSRF, audit. Template/nhãn chỉ là cơ chế materialize grant và trình bày UI, **không phải điều kiện đủ để qua backend guard**.
 5. Việc chuyển `VICE_PRINCIPAL_ACADEMIC` thành `VICE_PRINCIPAL` phải có xác nhận đúng thẩm quyền, preview quyền cần thu hồi, đóng hiệu lực/thu hồi đúng grant, ghi actor + căn cứ + thời điểm; **không tự động xóa dữ liệu lịch sử** hay sửa các bản ghi TKB, PPCT, TeachingAssignment đã phát sinh.
-6. Khi nâng từ PHT thường lên PHT chuyên môn, không dựa vào chức danh; phải có quyết định giao phụ trách chuyên môn, nguồn gốc thẩm quyền và phạm vi được duyệt. Chính sách bootstrap người đầu tiên và authority của Hiệu trưởng thuộc **D2/D4/D5 chưa quyết định**.
+6. Khi nâng từ PHT thường lên PHT chuyên môn, không dựa vào tên chức danh tự nhập; **Admin kỹ thuật tạo tài khoản và trực tiếp chọn mẫu trách nhiệm phù hợp** theo phân công thực tế của trường. Ghi đầy đủ actor, người nhận, mẫu trước/sau và thời điểm. **Quyền thao tác bổ nhiệm hệ thống của Admin đã được Product Owner chốt 05/11/2026**, không phải quyền sử dụng các chức năng chuyên môn. Quy định Hiệu trưởng override/cứu hộ và phương án thu hồi an toàn vẫn thuộc D2/D4/D5.
+7. **Bằng chứng rủi ro code hiện tại:** `apps/api/src/capabilities/responsibility-templates.controller.ts` bảo vệ apply template bằng `CAPABILITY_GRANT/SCHOOL_WIDE`, còn `AccessBaselineService.applyTemplate()` trong `apps/api/src/capabilities/access-baseline.service.ts` chỉ **chèn các grant còn thiếu**, không thấy luồng thu hồi các grant từ template trước. Vì thế lựa chọn lại template **không đồng nghĩa chuyển vai trò an toàn**. Trước khi triển khai cần thiết kế giao dịch thay vai trò có preview, thu hồi đúng nguồn grant, bảo toàn grant cá nhân/hợp lệ độc lập, chống tự nâng quyền và audit. Không kết luận tính năng này đã có sẵn.
 
 ## 3. D3 — Một PHT phụ trách chính, quyền bổ sung linh hoạt
 
@@ -59,9 +60,34 @@ Thiết kế thực thi khi D2–D6 được khóa:
 - Admin kỹ thuật và PHT thông thường không thể tự cấp quyền cho mình; không cấp `SYSTEM_ADMIN`, `USER_MANAGE`, generic `CAPABILITY_GRANT/SCHOOL_WIDE` để đạt mục tiêu.
 - Quyền bổ sung có thể là **thao tác** hoặc **chỉ xem**; không suy luận quyền phê duyệt từ quyền xem hay tên vai trò. Xung đột chỉnh sửa cùng nghiệp vụ cần quy tắc ownership/effective time và audit rõ ràng.
 
-### 3.3. Những nội dung D3 còn OPEN
+### 3.3. Đã chốt — Admin kỹ thuật khởi tạo tài khoản và gán vai trò hệ thống (05/11/2026)
 
-- **Đã chốt:** PHT chuyên môn chính quyết định và trực tiếp cấu hình việc cấp/đổi/thu hồi quyền chuyên môn bổ sung cho PHT thứ hai, đúng scope/audit; không cần Admin bấm hộ. **Vẫn OPEN:** Ai xác lập/thu hồi tư cách **PHT chính** ban đầu; ai phê duyệt chuyển giao người phụ trách chính, cứu hộ khi PHT chính vắng mặt/không thể thao tác và xử lý thay đổi do cấp có thẩm quyền. Liên quan D2/D4/D5.
+Product Owner quyết định **Admin kỹ thuật có quyền tạo tài khoản và gán vai trò trong ứng dụng**, bao gồm **`VICE_PRINCIPAL_ACADEMIC` (PHT chuyên môn chính)** và **`VICE_PRINCIPAL` (PHT thông thường)**. Đây là thao tác **khởi tạo, bổ nhiệm hoặc điều chỉnh vai trò hệ thống**, khác với **phân quyền nghiệp vụ chuyên môn hằng ngày** của PHT chuyên môn chính.
+
+**Phân định trách nhiệm đã chốt:**
+
+| Công việc | Admin kỹ thuật | PHT chuyên môn chính | PHT thông thường |
+| --- | --- | --- | --- |
+| Tạo, kích hoạt, khóa, đặt lại tài khoản | **Thực hiện** | Không mặc định | Không mặc định |
+| Gán/chuyển mẫu vai trò PHT trong hệ thống | **Thực hiện, chịu trách nhiệm thao tác và audit** | Không tự phong hoặc tự đổi vai trò chính | Không tự phong |
+| Gán mẫu vai trò giáo viên, tổ trưởng và vai trò hệ thống ban đầu | **Thực hiện theo phạm vi quản trị tài khoản** | Quản lý phân quyền/nghiệp vụ chuyên môn sau khi tài khoản được tạo | Không mặc định |
+| Điều hành TKB, PPCT, giảng dạy, phân công giáo viên | **Không** | **Toàn quyền chuyên môn, trực tiếp cấu hình** | Chỉ theo grant chuyên môn bổ sung đã cấp |
+| Cấp/đổi/thu hồi các grant nghiệp vụ chuyên môn sau khởi tạo | **Không thực hiện thay PHT** | **Trực tiếp quyết định và thao tác** | Không tự cấp/đổi quyền |
+| Quản trị bảo mật, tài khoản, hạ tầng | Theo quyền kỹ thuật | Không mặc định | Không mặc định |
+
+**Ranh giới triển khai quan trọng:** gán mẫu `VICE_PRINCIPAL_ACADEMIC` có thể materialize grant quản trị chuyên môn toàn trường. Vì vậy **đây là một thao tác nhạy cảm nâng quyền**, dù do Admin kỹ thuật thực hiện trong phạm vi được phép. Backend phải kiểm tra quyền thao tác gán template, danh mục template hợp lệ, tài khoản đích, ngăn **Admin tự gán role chuyên môn cho chính mình**, ghi audit và quản lý thu hồi. Không được dùng generic `CAPABILITY_GRANT` để Admin tùy ý cấp từng quyền chuyên môn ngoài mẫu vai trò; không bỏ guard chỉ vì lựa chọn đã được chốt.
+
+**Luồng khuyến nghị để thực hiện quyết định này** (kỹ thuật chưa được triển khai):
+1. Admin tạo/chọn tài khoản đích, chọn rõ **PHT chuyên môn chính** hoặc **PHT thông thường**; hệ thống hiển thị danh sách quyền sẽ có, xung đột và quyền phải thu hồi.
+2. Khi áp dụng mẫu PHT chuyên môn chính, kiểm tra quy tắc phân công **01 người chính tại thời điểm hiện tại** theo cấu hình, xử lý trường hợp chuyển giao trước khi kích hoạt đồng thời quyền toàn trường không mong muốn.
+3. Cập nhật có kiểm soát trong giao dịch, ghi người thao tác, mẫu vai trò và tập grant thêm/thu hồi, thời điểm hiệu lực, bản ghi audit; không xóa lịch sử phân công hoặc grant cũ.
+4. Admin **không trở thành PHT chuyên môn** sau thao tác và không được trực tiếp sửa TKB, PPCT, quyền chuyên môn chi tiết của giáo viên. PHT chính tự sử dụng giao diện nghiệp vụ để làm những việc đó.
+
+**Chưa tự đặt thêm điều kiện phải có nút Hiệu trưởng phê duyệt trước khi Admin gán vai trò:** Product Owner hiện giao thao tác bổ nhiệm hệ thống cho Admin kỹ thuật. Quy trình nhân sự ngoài ứng dụng, thu hồi khẩn cấp, phân quyền nhiều Admin và trường hợp khôi phục quyền khi thiếu PHT chính được thiết kế tiếp tại D2/D4/D5. Không vì các chi tiết còn mở mà phủ định thẩm quyền gán vai trò đã chốt.
+
+### 3.4. Những nội dung D3 còn OPEN
+
+- **Đã chốt:** **Admin kỹ thuật tạo tài khoản, gán/chuyển mẫu vai trò hệ thống**, kể cả PHT chuyên môn chính; PHT chính quyết định và trực tiếp cấu hình việc cấp/đổi/thu hồi các **quyền chuyên môn chi tiết** cho PHT thứ hai và nhân sự theo scope/audit, không cần Admin bấm hộ. **Vẫn OPEN:** cách xác minh giao dịch thay vai trò không để sót grant cũ, quy tắc phê duyệt/khôi phục đặc biệt của Hiệu trưởng, cơ chế cứu hộ khi không có PHT chính và các kiểm soát cụ thể theo D2/D4/D5.
 - PHT thường có quyền xem dashboard toàn trường không, hay chỉ xem theo phạm vi được giao? Không tự cấp `SCHOOL_WIDE`.
 - Quy định thời hạn mặc định của quyền giao thêm, nguồn quyết định và yêu cầu gia hạn/thu hồi, quản lý xung đột khi hai PHT cùng được quyền trên một mảng.
 - Cách biểu diễn “PHT chuyên môn chính” trong dữ liệu, thao tác chuyển giao nguyên tử, thời điểm hiệu lực khi đổi năm học và quy trình cứu hộ khi không có PHT chính. Chưa tự chọn migration/schema.
@@ -93,11 +119,18 @@ Thiết kế thực thi khi D2–D6 được khóa:
 | VP-21 | PHT chuyên môn chính phân quyền chuyên môn cho PHT thường | Cấp/đổi/thu hồi thành công trong phạm vi được chọn, không cần Admin, lưu đầy đủ actor/scope/hiệu lực/audit |
 | VP-22 | PHT chuyên môn chính thực hiện toàn bộ tác vụ học thuật toàn trường | Các chức năng chuyên môn cho phép theo lệnh nghiệp vụ, không phải vì generic grant; không bị thiếu quyền chức năng do template rời rạc |
 | VP-23 | PHT chính tìm cách tự duyệt bảng kê giảng dạy cá nhân hoặc thao tác quyền kỹ thuật | Backend từ chối đúng bất biến; toàn quyền chuyên môn không vượt tuyến duyệt cá nhân hay cấp quyền kỹ thuật |
+| VP-24 | Admin tạo tài khoản mới và chọn mẫu PHT thông thường | Tài khoản được tạo hợp lệ, không sinh quyền quản trị chuyên môn mặc định; audit actor/template |
+| VP-25 | Admin tạo hoặc gán mẫu PHT chuyên môn chính cho tài khoản đích hợp lệ | Materialize đúng tập quyền học thuật của template sau kiểm tra giao dịch/chống xung đột; Admin không trở thành PHT |
+| VP-26 | Admin cố tự gán `VICE_PRINCIPAL_ACADEMIC` cho chính tài khoản Admin | Backend từ chối self-promotion; audit denial, không cấp quyền chuyên môn |
+| VP-27 | Admin đổi PHT chuyên môn chính sang PHT thường | Thu hồi/đóng hiệu lực grant thuộc mẫu cũ, giữ quyền giảng dạy và grant độc lập, lịch sử/audit không bị xóa |
+| VP-28 | Admin gán vai trò cho PHT thứ hai rồi PHT chính cấp riêng quyền HĐTN-HN | Tách hai nghiệp vụ: Admin xử lý role, PHT xử lý grant chi tiết; không mở rộng quyền ngoài `ACTIVITY` |
+| VP-29 | Admin gọi API generic grant để cấp quyền chuyên môn lẻ, ngoài template | Backend từ chối; không dùng quyền bổ nhiệm làm lối tắt bỏ qua cơ chế PHT phân quyền chuyên môn |
 
 ## 5. Cổng triển khai
 
 - **Đã được PO chốt:** hai loại PHT theo phạm vi; **chỉ PHT chuyên môn** được phân quyền và cấu hình chuyên môn trong giới hạn được xác lập.
 - **Đã chốt bổ sung:** hiện tại chỉ **01 PHT chuyên môn chính, có TOÀN QUYỀN CHUYÊN MÔN TOÀN TRƯỜNG**, bao gồm **trực tiếp cấp/đổi/thu hồi quyền chuyên môn** cho PHT còn lại và các nhân sự theo phạm vi nghiệp vụ. PHT thường chỉ được thực thi grant bổ sung theo scope và hiệu lực, không tự chuyển mẫu vai trò. Không giới hạn cứng số người trong engine; không cấp quyền kỹ thuật hoặc tự duyệt bảng kê cá nhân.
-- **Chưa chốt:** tư cách bổ nhiệm/thu hồi/chuyển giao PHT chính, phạm vi chi tiết của grant PHT thứ hai, quyền xem PHT thường, quy trình cứu hộ khi không có PHT chính, thời hạn mặc định, xung đột chỉnh sửa và khả năng có nhiều người phụ trách chính trong tương lai. Quyền PHT chính quyết định và cấu hình **grant chuyên môn** đã được chốt.
+- **Đã chốt:** **Admin kỹ thuật tạo tài khoản và gán/chuyển mẫu vai trò hệ thống**, kể cả bổ nhiệm người giữ mẫu PHT chuyên môn chính; sau đó **PHT chính trực tiếp quản lý các grant chuyên môn chi tiết**. Đây là hai thẩm quyền khác nhau. 
+- **Chưa chốt phần kỹ thuật/ngoại lệ:** kiểm soát self-promotion, thu hồi grants khi đổi vai trò (code hiện tại chỉ thêm quyền), quy trình khôi phục khi vắng PHT chính, phạm vi chi tiết của grant PHT thứ hai, quyền xem PHT thường, thời hạn mặc định, xung đột chỉnh sửa và khả năng có nhiều người phụ trách chính trong tương lai. Không tự suy ra quy trình phê duyệt nhân sự của Hiệu trưởng.
 - WS1 tiếp tục `IN_PROGRESS`; chỉ triển khai code sau khi D2–D6 (đặc biệt D2/D3/D4/D5) được xác nhận và có bộ test + rollback rõ ràng.
 - Không thay đổi runtime, schema, migration, VPS, database, PR #263 hoặc dự án Nội trú/Kiểm tra Online trong bước cập nhật quyết định tài liệu này.
