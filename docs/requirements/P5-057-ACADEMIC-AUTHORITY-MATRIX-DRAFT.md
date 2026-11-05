@@ -1,6 +1,6 @@
 # P5-057 / WS1 — Ma trận thẩm quyền nghiệp vụ chuyên môn (DỰ THẢO ĐỐI CHIẾU)
 
-**Trạng thái:** DRAFT / CHƯA LÀ CHÍNH SÁCH BACKEND ĐÃ PHÊ DUYỆT.
+**Trạng thái:** DRAFT tổng thể WS1; **D1 CHỐT PHƯƠNG ÁN B bởi Product Owner ngày 05/11/2026**. D2–D6 OPEN, chưa sửa chính sách backend đang chạy.
 **Ngày lập:** 03/11/2026.
 **Phạm vi:** Báo giảng; chuẩn bị Giai đoạn 1 của `docs/tasks/P5-057-FOUR-STAGE-OPERABILITY-EXECUTION-PLAN.md`.
 **Không thực hiện trong tài liệu này:** cấp/thu hồi quyền thật, đổi role từ danh xưng, schema, migrations, sửa code, VPS/deploy.
@@ -26,10 +26,10 @@ Ký hiệu: **Q** = quyết định/phê duyệt nghiệp vụ; **T** = thực h
 | Nghiệp vụ | Admin tài khoản / kỹ thuật | PHT chuyên môn | Hiệu trưởng | Tổ trưởng | GV | Điều phối |
 | --- | --- | --- | --- | --- | --- | --- |
 | Tạo/kích hoạt/khóa/reset tài khoản | T | X | X | — | — | — |
-| Ghi thông tin tổ/môn/kiêm nhiệm, role vào hồ sơ | T theo quyết định hợp lệ | Q với phần chuyên môn | giám sát/phê duyệt theo chính sách trường | đề xuất trong tổ | — | đề xuất phạm vi |
+| Ghi tổ/môn/kiêm nhiệm và trách nhiệm chuyên môn | Chỉ quản lý thông tin tài khoản kỹ thuật; không cấu hình chuyên môn | **Q/T trực tiếp** | Giám sát theo D4 | Đề xuất trong tổ | — | Đề xuất phạm vi |
 | Phê duyệt phân công GV dạy môn/lớp | Không tự quyết định | **Q**, T khi có quyền | X | đề xuất | X phần mình | — |
-| Điều chỉnh phân công/hiệu lực lịch sử | T hành chính chỉ sau quyết định nếu được ủy quyền; không mặc định | **Q**, T | X | đề xuất có phạm vi | — | — |
-| Cấp/đổi/thu hồi **capability chuyên môn** | Chỉ xử lý kỹ thuật khi có quyết định có audit; không tự duyệt | **Q**, T theo API giới hạn sẽ thiết kế | X | đề xuất phạm vi tổ | — | — |
+| Điều chỉnh phân công/hiệu lực lịch sử | **—** (không cấu hình) | **Q/T trực tiếp** | X | Đề xuất có phạm vi | — | — |
+| Cấp/đổi/thu hồi **capability chuyên môn** | **—** (không cấp thay PHT) | **Q/T trực tiếp**, backend allowlist sẽ thiết kế | X | Đề xuất phạm vi tổ | — | — |
 | Cấp/thu hồi capability kỹ thuật (USER_MANAGE, SYSTEM_ADMIN, CAPABILITY_GRANT, secrets) | T theo quy trình riêng | — | X theo quy định | — | — | — |
 | Điều hành TKB, PPCT, ngoại lệ, dạy thay/bù | — nếu không được giao quyền nghiệp vụ | Q/T theo capability có hiệu lực | X/duyệt theo thẩm quyền | T phạm vi tổ đã giao | T phạm vi cá nhân | T phạm vi chương trình |
 | Duyệt bảng kê cá nhân của HT/PHT | Không | Không tự duyệt | Không tự duyệt | T đúng tổ đang có hiệu lực | — | — |
@@ -38,9 +38,9 @@ Ký hiệu: **Q** = quyết định/phê duyệt nghiệp vụ; **T** = thực h
 
 **Điểm cần khóa:** ranh giới "Admin gán vai trò" từ §14.1 với "PHT quyết định phân quyền chuyên môn" từ Product Owner. Trường hợp thực thi kỹ thuật không đồng nghĩa quyền tự quyết; phải có bằng chứng `approvedBy` hoặc giao dịch cấp quyền giới hạn gắn với PHT.
 
-## 3. Các quyết định WS1 còn OPEN (cấm code cho đến khi chốt)
+## 3. D1 ĐÃ CHỐT B; D2–D6 còn OPEN (chưa cho phép sửa code)
 
-**D1 — Cơ chế thực thi quyết định PHT.** Chọn giữa (A) PHT phê duyệt request, Admin thực thi kỹ thuật với bắt buộc kiểm chứng quyết định; hoặc (B) PHT trực tiếp cấp nhóm quyền chuyên môn **allowlist**, với capability nghiệp vụ hẹp riêng, kiểm soát scope/effectivity/audit, không có generic technical grant. Không cấp `CAPABILITY_GRANT/SCHOOL_WIDE` đơn thuần để sửa UX.
+**D1 — ACCEPTED: PHƯƠNG ÁN B (05/11/2026).** PHT trực tiếp **quyết định và cấu hình tất cả nghiệp vụ chuyên môn** trong phạm vi thẩm quyền qua giao diện/command nghiệp vụ kiểm soát chặt chẽ: phân công GV/môn/lớp, TKB, PPCT, nghiệp vụ giảng dạy, quyền chuyên môn, GDĐP/HĐTN-HN. Admin quản trị tài khoản/hạ tầng kỹ thuật, **không quyết định hoặc cấu hình chuyên môn thay PHT**. Không cấp `CAPABILITY_GRANT/SCHOOL_WIDE` hoặc quyền kỹ thuật tổng quát cho PHT. D2–D6 vẫn OPEN để chốt phạm vi PHT, backend deny, vai trò HT, ủy quyền, chính sách nguồn dữ liệu; chưa được sửa runtime.
 
 **D2 — Cách chặn Admin tự cấp quyền chuyên môn.** Hiện generic `CAPABILITY_GRANT` có thể cho phép thao tác rộng; chỉ cấm nút trên UI là không đủ. Cần xác định authority kiểm tra ở backend, bootstrap/recovery account và quy trình cấp cứu mất PHT.
 
@@ -52,7 +52,7 @@ Ký hiệu: **Q** = quyết định/phê duyệt nghiệp vụ; **T** = thực h
 
 **D6 — Nguồn phân công.** TKB/import hỗ trợ gợi ý môn/lớp nhưng không được tự động thay thế quyết định chuyên môn; xử lý trùng/không rõ tên/đổi lịch với người quyết định.
 
-D1–D6 cần được thể hiện trong một quyết định nghiệp vụ/ADR bổ sung đã phê duyệt trước khi sửa source. Không thay đổi các ADR đã chấp thuận chỉ để hợp thức hóa cách làm mới.
+D1 đã được ghi vào `P5-057-WS1-ACADEMIC-AUTHORITY-DECISION-RECORD-DRAFT.md` theo phương án B. D2–D6 vẫn phải được chốt trong hồ sơ quyết định trước khi sửa source. Không thay đổi các ADR đã chấp thuận chỉ để hợp thức hóa cách làm mới.
 
 ## 4. Kiểm tra bắt buộc trước khi cho phép WS4/WS5
 

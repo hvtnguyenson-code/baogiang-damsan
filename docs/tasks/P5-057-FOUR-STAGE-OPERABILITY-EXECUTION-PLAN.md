@@ -1,7 +1,7 @@
 # P5-057 — Kế hoạch hoàn thiện Báo giảng theo 4 giai đoạn
 
 **Ngày quyết định thứ tự:** 03/11/2026 (Product Owner chấp thuận trong trao đổi).
-**Trạng thái:** ĐÃ CHỐT THỨ TỰ; phạm vi/giải pháp chi tiết phải qua Stage 1 và review trước khi sửa runtime.
+**Trạng thái:** ĐÃ CHỐT THỨ TỰ. **D1 PHƯƠNG ÁN B ĐƯỢC PRODUCT OWNER CHỐT 05/11/2026:** PHT trực tiếp quyết định và cấu hình mọi nghiệp vụ chuyên môn trong phạm vi phụ trách; Admin kỹ thuật không nhập/cấp quyền chuyên môn thay PHT. D2–D6 vẫn OPEN, không sửa runtime/auth/schema khi chưa chốt; P5-057 tiếp tục IN_PROGRESS.
 **Phạm vi:** duy nhất repository `hvtnguyenson-code/baogiang-damsan`.
 **Task chính đang có:** `P5-057` / traceability `T56`; `P6-050` là cổng pilot riêng, **không** tính hoàn thành chỉ nhờ CI xanh.
 **Định hướng:** **REALIGN, NOT REBUILD** — giữ nguyên các domain, persistence, security/history đã được phê duyệt.

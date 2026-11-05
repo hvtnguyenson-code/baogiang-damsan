@@ -8,11 +8,11 @@ Per `MAJOR-TASK-DOCUMENTATION-SYNC-PROTOCOL.md`, this file is intentionally conc
 
 Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub. SHAs here are evidence for already-established task states, never a self-referential claim that this document contains its own current commit.
 
-**Status snapshot date:** 2026-11-03
+**Status snapshot date:** 2026-11-05
 
 ## P5-057 / T56 — IN_PROGRESS (WS1 documents only)
 
-Product Owner approved a four-stage order on 2026-11-03: (1) lock business authority, (2) complete admin workflows, (3) correct observed UX blockers, (4) seven-persona E2E acceptance. Eight bounded work packages WS1–WS8 are documented in `docs/tasks/P5-057-FOUR-STAGE-OPERABILITY-EXECUTION-PLAN.md`; the first authority comparison is `docs/requirements/P5-057-ACADEMIC-AUTHORITY-MATRIX-DRAFT.md`. The matrix contains open policy decisions and does **not** authorize backend changes. `P6-050` remains blocked. Existing PR #263 for multi-class assignment remains independent and **OPEN/unmerged** at head `e9dfb399f73b20ee45ed30408f46964e979636c6` on initial review. No DB, production, CI/CD or runtime mutation is authorized by this docs-only plan.
+Product Owner approved a four-stage order on 2026-11-03: (1) lock business authority, (2) complete admin workflows, (3) correct observed UX blockers, (4) seven-persona E2E acceptance. Eight bounded work packages WS1–WS8 are documented in `docs/tasks/P5-057-FOUR-STAGE-OPERABILITY-EXECUTION-PLAN.md`; the first authority comparison is `docs/requirements/P5-057-ACADEMIC-AUTHORITY-MATRIX-DRAFT.md`. Product Owner **approved D1 Option B on 2026-11-05**: PHT directly decides **and configures all academic/professional operations** within assigned authority, via scoped professional workflows; Technical Admin manages accounts/infrastructure and must not decide or configure academic operations on PHT's behalf. D2–D6 remain OPEN; the D1 policy choice does **not** authorize a backend/schema/production change or close WS1. Reference: `docs/requirements/P5-057-WS1-ACADEMIC-AUTHORITY-DECISION-RECORD-DRAFT.md`. `P6-050` remains blocked. Existing PR #263 for multi-class assignment remains independent and **OPEN/unmerged** at head `e9dfb399f73b20ee45ed30408f46964e979636c6` on initial review. No DB, production, CI/CD or runtime mutation is authorized by this docs-only plan.
 
 ## P5-056 / T55 — CLOSED (technical scope; SYNC-P5-056)
 

@@ -3,6 +3,7 @@
 **Mã tài liệu:** `P5-057-WS1-ACADEMIC-AUTHORITY-DECISION-RECORD-DRAFT`
 **Trạng thái pháp lý:** **DRAFT / NON-NORMATIVE / AWAITING PRODUCT OWNER APPROVAL**
 **Ngày lập dự thảo:** 05/11/2026
+**Quyết định Product Owner 05/11/2026: D1 = PHƯƠNG ÁN B (ACCEPTED).** PHT trực tiếp quyết định và cấu hình mọi nghiệp vụ chuyên môn thuộc thẩm quyền, không cần Admin kỹ thuật bấm hộ. D2–D6 vẫn OPEN; chưa cho phép thay đổi backend, schema, quyền thật hoặc deploy.
 **Phạm vi áp dụng:** Gói công việc 1 (WS1 — Khóa nghiệp vụ thẩm quyền chuyên môn) thuộc nhiệm vụ `P5-057` (Traceability: `T56`).
 **Nhánh Git công tác:** `docs/p5-057-four-stage-realignment` (Expected baseline HEAD: `5aa14857e1447c5bff710b0e6888ebaa649cd8d7`).
 **Ranh giới kỹ thuật:** **TÀI LIỆU DUY NHẤT ĐƯỢC TẠO — DOCS-ONLY**. Tuyệt đối không thay đổi mã nguồn backend, frontend, schema cơ sở dữ liệu, Prisma migration, test suite, file khóa phụ thuộc, cấu hình Git, VPS, hệ thống Quản lí Nội trú hay cơ sở dữ liệu production.
@@ -124,13 +125,13 @@ flowchart TD
 | **2. Phân công nhiệm vụ giảng dạy** | | | | | | |
 | - Lập kế hoạch phân công giáo viên dạy lớp-môn | I | **A** | I | **R** (đề xuất) | I (xem phân công) | — |
 | - Phê duyệt / ban hành phân công giảng dạy chính thức | — | **R / A** | C (giám sát) | I | I | — |
-| - Điều chỉnh phân công / thay đổi hiệu lực daterange | **R** (nếu ủy quyền) | **A** | I | C (báo cáo) | I | — |
+| - Điều chỉnh phân công / thay đổi hiệu lực daterange | **—** (không cấu hình chuyên môn) | **R / A** | I | C (báo cáo) | I | — |
 | **3. Cấp phát và quản lý Capability** | | | | | | |
 | - Cấp/thu hồi quyền kỹ thuật (USER_MANAGE, AUDIT_VIEW) | **R** | — | **A** | — | — | — |
 | - Cấp/thu hồi quyền chuyên môn qua Template (D1 Option B) | — | **R / A** | C (giám sát) | — | — | — |
-| - Cấp/thu hồi quyền chuyên môn qua Admin (D1 Option A) | **R** (theo lệnh) | **A** (duyệt lệnh) | I | — | — | — |
+| - Cấp/thu hồi quyền chuyên môn qua Admin (D1 Option A — ĐÃ LOẠI, chỉ lưu để truy vết) | **KHÔNG ÁP DỤNG** | **PHT tự thao tác theo B** | I | — | — | — |
 | **4. Điều hành học thuật thường ngày** | | | | | | |
-| - Nhập và ban hành Thời khóa biểu (TKB) chính thức | **R** (hỗ trợ file) | **A** (phê duyệt) | I | I | I (xem lịch) | I |
+| - Cấu hình, nhập và ban hành Thời khóa biểu (TKB) chính thức | **—** (chỉ hỗ trợ kỹ thuật hệ thống) | **R / A** | I (giám sát) | C (đề xuất) | I (xem lịch) | I |
 | - Nhập và ban hành Phân phối chương trình (PPCT) | — | **A** | I | **R** (kiểm tra/nộp) | I (xem bài học) | — |
 | - Duyệt ngoại lệ lịch, tiết dạy bù, dạy thay | — | **A** | I | **R** (thẩm tra) | C (người dạy) | — |
 | **5. Đánh giá và Phê duyệt báo cáo kê khai** | | | | | | |
@@ -139,19 +140,19 @@ flowchart TD
 | - Thẩm định bảng kê cá nhân của HT và PHT | — | — | — | **R / A** (đúng tổ) | — | — |
 | - Phê duyệt báo cáo thống kê toàn trường cấp BGH | — | **R** | **A** | I | I | I |
 | **6. Chương trình đặc thù (GDĐP, HĐTN-HN)** | | | | | | |
-| - Xây dựng kế hoạch chuyên đề và phân công slot | — | C | I | C | — | **R** |
+| - Cấu hình và quyết định kế hoạch chuyên đề, phân công slot | — | **R / A** | I | C | — | **C / R** (chuẩn bị đề xuất trong phạm vi) |
 | - Phê duyệt kế hoạch chương trình đặc thù | — | **R / A** | C | — | — | I |
 | - Xác nhận minh chứng tham gia (Attestation) | — | **R / A** (khi duyệt) | I | — | I (nhận tiết) | **R** (xác nhận đợt) |
 
 ---
 
-## 3. Sáu Mục Quyết định Thẩm quyền (D1 – D6: TẤT CẢ ĐỀU OPEN)
+## 3. Sáu Mục Quyết định Thẩm quyền (D1 đã chốt B; D2–D6 OPEN)
 
-Toàn bộ 6 vấn đề dưới đây đang ở trạng thái **OPEN**, bắt buộc phải trình Product Owner xem xét và ký duyệt trước khi bước vào Giai đoạn 2 (thực thi mã nguồn).
+D1 đã được Product Owner phê duyệt theo phương án B ngày 05/11/2026. D2–D6 vẫn OPEN và phải được chốt trước khi sửa quyền backend; bản quyết định từng phần không đồng nghĩa WS1 đã CLOSED.
 
 ```mermaid
 flowchart LR
-    D1["D1: Cơ chế thực thi quyết định PHT\n(Option A vs Option B)"]
+    D1["D1: PHT trực tiếp cấu hình chuyên môn\n(ACCEPTED - B)"]
     D2["D2: Chặn Admin tự cấp quyền chuyên môn\nở tầng Backend"]
     D3["D3: Số lượng PHT, Scope & Thời hạn"]
     D4["D4: Thẩm quyền Giám sát & Override của HT"]
@@ -167,7 +168,7 @@ flowchart LR
 
 ### D1 — Cơ chế thực thi quyết định phân quyền chuyên môn của PHT
 
-- **Trạng thái:** **OPEN (Bắt buộc giữ nguyên 2 phương án A và B để PO lựa chọn; KHÔNG tự ý mặc định B)**.
+- **Trạng thái:** **ACCEPTED — PHƯƠNG ÁN B (Product Owner, 05/11/2026).** PHT trực tiếp quyết định và cấu hình mọi nghiệp vụ chuyên môn trong phạm vi phụ trách: phân công GV/môn/lớp, TKB, PPCT, ngoại lệ giảng dạy, mẫu quyền chuyên môn, GDĐP và HĐTN-HN. Admin chỉ quản lý tài khoản và hạ tầng kỹ thuật, không cấu hình chuyên môn thay PHT. Đây là quyết định mô hình nghiệp vụ; D2–D6 (giới hạn backend, phạm vi, HT, ủy quyền, nhập liệu) chưa chốt.
 - **Bối cảnh & Mâu thuẫn thực tế:**
   Chỉ đạo của PO ngày 01/11/2026 xác định PHT là người quyết định phân quyền chuyên môn. Tuy nhiên, trong code hiện tại (`responsibility-templates.controller.ts`), toàn bộ API gán template lại yêu cầu `@RequireCapability('CAPABILITY_GRANT', { scope: 'SCHOOL_WIDE' })`. Nếu giữ nguyên, PHT không thể bấm nút trên màn hình vì template PHT cấm `CAPABILITY_GRANT`. Nếu cấp generic `CAPABILITY_GRANT` cho PHT thì vi phạm nguyên tắc an toàn, biến PHT thành Admin kỹ thuật.
 - **Phương án A: Mô hình "Yêu cầu — Phê duyệt — Admin thực thi" (Workflow-based Delegation)**
@@ -180,8 +181,8 @@ flowchart LR
   - *Ưu điểm:* Trao toàn quyền tự chủ cho PHT đúng như chỉ đạo của PO; phân công và cấp quyền diễn ra tức thì, không phụ thuộc vào Admin kỹ thuật; giao diện người dùng tinh gọn, chỉ thấy danh sách giáo viên và mẫu trách nhiệm sư phạm.
   - *Nhược điểm:* Đòi hỏi phải bổ sung một capability mới trong database, thêm controller/command mới và kiểm thử kỹ lưỡng ranh giới allowlist.
   - *Điều kiện an toàn:* Backend phải kiểm tra cứng (hardcoded validator) danh mục capability được sinh ra; nếu payload chứa bất kỳ capability nào thuộc nhóm `TECHNICAL` (`USER_MANAGE`, `CAPABILITY_GRANT`, `SYSTEM_ADMIN`), hệ thống lập tức ném lỗi 403 và ghi nhận vi phạm an ninh.
-- **Khuyến nghị đề xuất (*PROPOSED, NOT APPROVED*):**
-  Khuyến nghị **Phương án B** vì giải quyết triệt để trải nghiệm người dùng của PHT theo đúng tinh thần P5-050, chấm dứt tình trạng Ban Giám hiệu phải "nhờ" nhân viên kỹ thuật bấm hộ quyền sư phạm. Tuy nhiên, quyền quyết định cuối cùng thuộc về Product Owner.
+- **Quyết định đã được Product Owner phê duyệt (*ACCEPTED, 05/11/2026*):**
+  **Chọn phương án B**. PHT có quyền tự thao tác toàn bộ cấu hình chuyên môn đúng scope qua giao diện nghiệp vụ, backend default-deny và allowlist chuyên môn riêng; không cấp `CAPABILITY_GRANT/SCHOOL_WIDE`, `USER_MANAGE`, `SYSTEM_ADMIN`. Phương án A được giữ bên trên để truy vết nhưng không được triển khai. Tên endpoint, capability mới, schema và cơ chế ủy quyền chỉ là đề xuất kỹ thuật chờ D2–D6.
 - **Hệ quả Runtime / Schema / Migration:**
   - Nếu chọn A: Bổ sung bảng lưu vết yêu cầu phê duyệt phân quyền `AcademicAuthorityRequest`, thêm trường kiểm tra `approvedByPhtUserId`.
   - Nếu chọn B: Thêm 1 bản ghi vào bảng `CapabilityDefinition` (`ACADEMIC_AUTHORITY_MANAGE`), cập nhật template `VICE_PRINCIPAL_ACADEMIC` trong file mã nguồn catalog, không sửa đổi cấu trúc bảng `User` hay `CapabilityGrant`.
@@ -189,7 +190,7 @@ flowchart LR
   - PHT gọi command thành công với template `SUBJECT_LEADER` (200 OK).
   - PHT cố tình gửi payload chứa capability kỹ thuật `USER_MANAGE` qua command chuyên môn -> Backend chặn đứng (403 Forbidden / Reject).
 - **Câu hỏi chốt yêu cầu Product Owner:**
-  *Product Owner muốn PHT trực tiếp bấm nút phân quyền giáo viên trên giao diện thông qua lệnh chuyên môn riêng (Phương án B), hay muốn PHT chỉ ký duyệt và giao Admin kỹ thuật thực hiện thao tác nhập liệu (Phương án A)?*
+  *ĐÃ TRẢ LỜI 05/11/2026: chọn B. PHT trực tiếp quyết định và cấu hình nghiệp vụ chuyên môn; Admin không thực hiện thay. D2–D6 tiếp tục cần phê duyệt phạm vi và cơ chế an toàn.*
 
 ---
 
@@ -450,7 +451,7 @@ flowchart TD
     B1 --> B2 --> B3 --> B4
 ```
 
-1. **Blocker 1 (Về D1):** Product Owner chọn **Phương án B** (Xây dựng command chuyên môn riêng để PHT trực tiếp bấm phân quyền giáo viên trên giao diện mà không có quyền kỹ thuật) hay **Phương án A** (PHT chỉ ký phiếu, Admin kỹ thuật bấm nút trên phần mềm)?
+1. **D1 ĐÃ ĐƯỢC GIẢI QUYẾT (05/11/2026):** Product Owner chọn **phương án B** — PHT trực tiếp quyết định và cấu hình toàn bộ nghiệp vụ chuyên môn. Phương án A (Admin thao tác hộ) bị loại. Còn phải khóa D2–D6 trước implementation.
 2. **Blocker 2 (Về D2):** Product Owner có phê chuẩn việc khóa cứng ở tầng backend để ngăn chặn vĩnh viễn việc tài khoản Admin kỹ thuật tự gán quyền Ban Giám hiệu cho chính mình không?
 3. **Blocker 3 (Về D3 & D4):** Mô hình vận hành thực tế tại trường Đam San có phân chia các Phó Hiệu trưởng phụ trách từng mảng hay gom chung một quyền `SCHOOL_WIDE`; và Hiệu trưởng có cần phê duyệt cấp 2 đối với TKB do PHT ban hành không?
 4. **Blocker 4 (Về D5 & D6):** Product Owner xác nhận quy tắc bắt buộc: Cán bộ quản lý (HT/PHT) phải nộp bảng kê tiết dạy cá nhân qua Tổ trưởng thẩm định (không tự duyệt), và dữ liệu import từ Thời khóa biểu chỉ là gợi ý tham khảo, không tự động sinh quyền giảng dạy trong hệ thống?
