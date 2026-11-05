@@ -222,6 +222,8 @@ flowchart LR
 
 ### D3 — Số lượng PHT, Phân định Phạm vi (Scope) và Thời hạn Hiệu lực
 
+**QUYẾT ĐỊNH TỪNG PHẦN ĐÃ CHỐT (PO, 05/11/2026):** Hai mẫu PHT riêng biệt: `VICE_PRINCIPAL_ACADEMIC` — chỉ người được giao phụ trách chuyên môn mới trực tiếp phân quyền/cấu hình chuyên môn; `VICE_PRINCIPAL` — PHT thông thường không có quyền chuyên môn mặc định. Không cấp quyền theo nhãn chức danh; phải materialize grant bằng engine đang có và chặn tại backend. Xem `docs/requirements/P5-057-WS1-D3-VICE-PRINCIPAL-ROLE-TEMPLATES.md`. **Các lựa chọn số lượng, phạm vi, thời hạn và quy trình bổ nhiệm bên dưới chưa được PO chốt; D3 còn OPEN các phần này.**
+
 - **Trạng thái:** **OPEN**.
 - **Bối cảnh & Mâu thuẫn thực tế:**
   Trong các trường THPT công lập, ban giám hiệu thường có từ 1 đến 2 Phó Hiệu trưởng (ví dụ: 1 PHT phụ trách chuyên môn, 1 PHT phụ trách cơ sở vật chất, nội trú, nề nếp). Nếu hệ thống mặc định mọi PHT đều có quyền `SCHOOL_WIDE` trên toàn bộ môn học và phân công giảng dạy thì có nguy cơ chồng chéo thẩm quyền hoặc can thiệp sai chức năng. Ngoài ra, việc bổ nhiệm PHT có thời hạn nhiệm kỳ và thay đổi phân công theo từng năm học.

@@ -44,7 +44,7 @@ Ký hiệu: **Q** = quyết định/phê duyệt nghiệp vụ; **T** = thực h
 
 **D2 — Cách chặn Admin tự cấp quyền chuyên môn.** Hiện generic `CAPABILITY_GRANT` có thể cho phép thao tác rộng; chỉ cấm nút trên UI là không đủ. Cần xác định authority kiểm tra ở backend, bootstrap/recovery account và quy trình cấp cứu mất PHT.
 
-**D3 — Phạm vi PHT.** PHT chuyên môn duy nhất hay có nhiều PHT; áp dụng SCHOOL_WIDE, năm học, môn, tổ hoặc ủy quyền theo trường hợp; trường hợp quyền kết thúc hiệu lực.
+**D3 — PARTIAL ACCEPTED (05/11/2026):** Có **hai mẫu PHT tách biệt**: `VICE_PRINCIPAL_ACADEMIC` (PHT phụ trách chuyên môn, được quyết định và cấu hình chuyên môn trong scope hợp lệ) và `VICE_PRINCIPAL` (PHT thông thường, **không có quyền chuyên môn mặc định**). Đây là hai Responsibility Template trên cùng engine capability, **không phải role-check thay thế guard**. Thiết kế và kiểm thử trong `docs/requirements/P5-057-WS1-D3-VICE-PRINCIPAL-ROLE-TEMPLATES.md`. **D3 vẫn OPEN phần còn lại:** số lượng PHT chuyên môn, phạm vi phụ trách, nhiệm kỳ, cơ chế chuyển đổi và bổ nhiệm.
 
 **D4 — Vai trò Hiệu trưởng.** Giữ giám sát/phê duyệt riêng; xác định trường hợp quyền override hay phê duyệt thứ hai, không mặc nhiên gộp làm PHT.
 
