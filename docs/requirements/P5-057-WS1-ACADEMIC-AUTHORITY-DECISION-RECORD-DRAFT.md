@@ -3,12 +3,12 @@
 **Mã tài liệu:** `P5-057-WS1-ACADEMIC-AUTHORITY-DECISION-RECORD-DRAFT`
 **Trạng thái pháp lý:** **DRAFT / NON-NORMATIVE / AWAITING PRODUCT OWNER APPROVAL**
 **Ngày lập dự thảo:** 05/11/2026
-**Quyết định Product Owner:** D1 = PHƯƠNG ÁN B (ACCEPTED 05/11/2026); D3 PARTIAL ACCEPTED (05/11/2026); **D4 PARTIAL ACCEPTED (06/11/2026)** về giám sát độc lập và ngoại lệ khẩn cấp có kiểm soát. D2/D5/D6, chi tiết chuyển giao/thu hồi D3 và quy trình phê duyệt/thu hồi quyền cứu hộ D4 vẫn OPEN; chưa cho phép thay đổi backend, schema, quyền thật hoặc deploy.
+**Quyết định Product Owner:** D1 = PHƯƠNG ÁN B (ACCEPTED 05/11/2026); D3 PARTIAL ACCEPTED (05/11/2026); **D4 PARTIAL ACCEPTED (06/11/2026)** về giám sát độc lập và ngoại lệ khẩn cấp có kiểm soát. D2/D5/D6, chi tiết chuyển giao/thu hồi D3 và quy trình can thiệp khẩn cấp D4 vẫn OPEN; chưa cho phép thay đổi backend, schema, quyền thật hoặc deploy.
 **Phạm vi áp dụng:** Gói công việc 1 (WS1 — Khóa nghiệp vụ thẩm quyền chuyên môn) thuộc nhiệm vụ `P5-057` (Traceability: `T56`).
 **Nhánh Git công tác:** `docs/p5-057-four-stage-realignment` (Expected baseline HEAD: `5aa14857e1447c5bff710b0e6888ebaa649cd8d7`).
 **Ranh giới kỹ thuật:** **TÀI LIỆU DUY NHẤT ĐƯỢC TẠO — DOCS-ONLY**. Tuyệt đối không thay đổi mã nguồn backend, frontend, schema cơ sở dữ liệu, Prisma migration, test suite, file khóa phụ thuộc, cấu hình Git, VPS, hệ thống Quản lí Nội trú hay cơ sở dữ liệu production.
 
-> **Lưu ý kiểm chứng:** Tên endpoint API, trường chứng từ phê duyệt, mã lỗi, thời hạn cứu hộ và luồng kiểm thử trong bản ADR là **đề xuất thiết kế**, trừ khi có đường dẫn mã nguồn được đối chiếu rõ ràng. Không coi các ví dụ là tính năng backend đã có, không tự động lựa chọn D1–D6 hay khẳng định schema không cần thay đổi.
+> **Lưu ý kiểm chứng:** Tên endpoint API, trường chứng từ phê duyệt, mã lỗi, thời hạn hiệu lực và luồng kiểm thử trong bản ADR là **đề xuất thiết kế**, trừ khi có đường dẫn mã nguồn được đối chiếu rõ ràng. Không coi các ví dụ là tính năng backend đã có, không tự động lựa chọn D1–D6 hay khẳng định schema không cần thay đổi.
 
 > [!IMPORTANT]
 > **Tuyên bố Thẩm quyền & Giới hạn Pháp lý:**
@@ -194,29 +194,23 @@ flowchart LR
 
 ---
 
-### D2 — Ngăn chặn Admin kỹ thuật tự cấp quyền chuyên môn ở tầng Backend
+### D2 — Tách quyền kỹ thuật và quyền chuyên môn trên backend
 
-- **Trạng thái:** **OPEN**.
-- **Bối cảnh & Mâu thuẫn thực tế:**
-  Hiện tại, tài khoản Admin kỹ thuật có capability `CAPABILITY_GRANT / SCHOOL_WIDE`. Trên giao diện có thể ẩn các nút gán quyền giáo viên, nhưng ở tầng backend, Admin hoàn toàn có thể dùng cURL, Postman hoặc can thiệp script gọi trực tiếp `POST /api/users/:myId/capability-grants` với body `capabilityKey: 'APPROVAL_PRINCIPAL'` hoặc `'APPROVAL_VICE_PRINCIPAL'`. Hàm `CapabilitiesService.create()` hiện tại không kiểm tra xem actor có phải là chính targetUser hay không, và không kiểm tra danh mục quyền hạn của actor đối với các quyền nghiệp vụ nhạy cảm.
-- **Các lựa chọn giải pháp:**
-  - *Lựa chọn 1 (Namespace Separation):* Phân chia capability definition thành 2 nhóm rõ rệt: `TECHNICAL` và `ACADEMIC`. `CAPABILITY_GRANT` của Admin chỉ có thẩm quyền trên các capability thuộc nhóm `TECHNICAL`. Mọi hành vi cấp capability nhóm `ACADEMIC` bị chặn từ tầng domain service.
-  - *Lựa chọn 2 (Anti-Self-Grant & Strict Deny Matrix):* Bổ sung luật bất biến trong `CapabilitiesService.create`:
-    1. Cấm tuyệt đối tự cấp quyền cho chính mình: `if (actorUserId === targetUserId) throw new ForbiddenException('SELF_GRANT_PROHIBITED');`
-    2. Cấm cấp các quyền duyệt BGH nếu actor không sở hữu thẩm quyền phê duyệt tương ứng.
-  - *Lựa chọn 3 (Quy trình Cấp cứu - Disaster Recovery Path):* Thiết lập cơ chế "khóa cứu hộ" (Emergency Break-Glass). Khi trường chưa có PHT hoặc PHT đột xuất nghỉ dài ngày, Admin chỉ được kích hoạt quyền chuyên môn tạm thời khi có chữ ký điện tử hoặc mã xác thực của Hiệu trưởng kèm lý do bắt buộc và thời hạn tự động thu hồi theo giới hạn thời gian Product Owner phê duyệt (72 giờ chỉ là ví dụ chưa được chốt).
-- **Ưu / Nhược điểm:**
-  - Lựa chọn 1 & 2 triệt tiêu hoàn toàn nguy cơ leo thang đặc quyền (privilege escalation), đảm bảo tính toàn vẹn của dữ liệu báo giảng trước các đợt thanh tra.
-  - Yêu cầu phải xây dựng kịch bản cấp cứu (Lựa chọn 3) để tránh việc hệ thống bị "đóng băng" khi nhân sự BGH có biến động.
-- **Điều kiện an toàn bắt buộc:** Chặn ở tầng mã nguồn backend service/guard; tuyệt đối không coi việc ẩn nút trên giao diện frontend là giải pháp bảo mật.
-- **Khuyến nghị đề xuất (*PROPOSED, NOT APPROVED*):**
-  Áp dụng kết hợp **Lựa chọn 1 + Lựa chọn 2** vào `CapabilitiesService`, đồng thời quy định rõ quy trình Bootstrap ban đầu: tài khoản PHT đầu tiên của trường được khởi tạo quyền chuyên môn thông qua cơ chế seed dữ liệu hoặc do Hiệu trưởng xác nhận trong biên bản bàn giao hệ thống.
-- **Hệ quả Runtime / Schema:** Cần đánh giá khả năng lưu provenance quyết định, scope và audit trong cấu trúc hiện có; chưa thể khẳng định chỉ sửa validation hay chắc chắn không cần migration. Nếu cần thay đổi schema phải có quyết định riêng và backout.
-- **Kịch bản kiểm thử bắt buộc:**
-  - Admin kỹ thuật gửi request tự gán `APPROVAL_VICE_PRINCIPAL` cho chính mình -> Trả về `403 Forbidden` (`AUTH_ADMIN_SELF_GRANT_DENIED`).
-  - Admin kỹ thuật gán quyền cho giáo viên khác mà không có token ủy quyền chuyên môn -> Trả về `403 Forbidden`.
-- **Câu hỏi chốt yêu cầu Product Owner:**
-  *Product Owner có đồng ý cấm tuyệt đối Admin kỹ thuật tự cấp các quyền chuyên môn/phê duyệt của Ban Giám hiệu ở tầng mã nguồn backend, và chỉ cho phép kích hoạt quyền PHT thông qua quy trình cứu hộ có sự phê chuẩn của Hiệu trưởng hay không?*
+- **Trạng thái:** Tiền đề vận hành đã được Product Owner xác nhận 06/11/2026; thiết kế backend **ĐỀ XUẤT / CHƯA PHÊ DUYỆT TRIỂN KHAI**.
+- **Tiền đề bắt buộc:** Nhà trường **luôn có PHT phụ trách chuyên môn**. Không thiết kế tài khoản cứu hộ, Admin tạm quyền chuyên môn, cấp quyền khẩn vì không có PHT, hay bootstrap/seed quyền cho một PHT giả định “đầu tiên”. Chỉ có thao tác khởi tạo và chuyển giao **theo phân công nhân sự thực tế**. Cấu hình hiện tại có một PHT chính; không hardcode số lượng vào engine.
+- **Phân công trách nhiệm đã chốt:**
+  1. **Admin kỹ thuật** quản lý tài khoản và **gán/chuyển mẫu vai trò ban đầu**, bao gồm PHT chuyên môn, theo phân công nhà trường; không tự cấp từng capability chuyên môn, tự phong PHT, hoặc sử dụng quyền điều hành chuyên môn.
+  2. **PHT chuyên môn chính** trực tiếp quyết định, cấu hình, cấp/đổi/thu hồi các quyền học thuật chi tiết cho giáo viên, tổ trưởng, điều phối và PHT khác, trong đúng phạm vi và thời gian hiệu lực. Không cần Admin bấm hộ.
+  3. **Hiệu trưởng** giám sát riêng theo D4, không mặc nhiên nhận quyền cấp/sửa quyền chuyên môn của PHT; ngoại lệ can thiệp khẩn cấp theo D4 không phải con đường thay thế PHT chính.
+- **Hiện trạng code:** `capabilities.controller.ts` và `responsibility-templates.controller.ts` vẫn bảo vệ API bằng generic `CAPABILITY_GRANT/SCHOOL_WIDE`; `CapabilitiesService.create()` chưa chặn actor tự cấp hoặc thiếu căn cứ nghiệp vụ; `AccessBaselineService.applyTemplate()` chỉ thêm grant còn thiếu, không thu hồi grant từ mẫu cũ.
+- **Thiết kế kỹ thuật tối thiểu đề xuất:**
+  1. Giữ một engine `CapabilityGrant`, evaluator default-deny, scope/effective-time và audit; không tạo engine thứ hai, không mặc định B1 inert đã xử lý provenance.
+  2. **Generic Admin grant** chỉ cấp/thu hồi capability thuộc danh mục kỹ thuật được phê duyệt; capability chuyên môn hoặc chưa phân loại phải fail-closed ở service/guard, ngay cả khi gọi API trực tiếp. Kiểm kê grant cũ để không khóa nhầm người dùng khi chuyển đổi.
+  3. **Gán mẫu trách nhiệm ban đầu** là API hẹp dành cho Admin: kiểm tra actor, target khác chính mình, mẫu hợp lệ và căn cứ phân công; preview tập grant thêm/thu hồi, áp dụng nguyên tử, lưu actor và audit. Không được dùng `applyTemplate()` add-only làm thao tác đổi vai trò. Không tự nâng quyền.
+  4. **Lệnh phân quyền chuyên môn hẹp** dành cho PHT chính: allowlist capability học thuật, đúng scope/thời hạn và nguồn quyết định; cấm quyền kỹ thuật `USER_MANAGE`, `SYSTEM_ADMIN`, `CAPABILITY_GRANT`, tự cấp, tự bổ nhiệm PHT chính và tự mở quyền cấp tiếp.
+  5. **Chuyển giao PHT chính theo quyết định nhân sự:** giữ đủ người phụ trách hợp lệ trong quá trình chuyển; xác minh nguồn grant, đóng đúng grant từ vai trò cũ, giữ các grant độc lập và lịch sử. Không có luồng cứu hộ do giả định thiếu PHT.
+- **Kiểm thử bắt buộc:** Admin gán mẫu PHT cho người khác (thành công) nhưng tự gán PHT/cấp lẻ `SUBJECT_MANAGE` (403); PHT cấp quyền học thuật đúng phạm vi (thành công) nhưng cấp quyền kỹ thuật hoặc tự nâng (403); đổi PHT chính bảo toàn lịch sử, thu hồi quyền cũ đúng nguồn, không có khoảng trống; quyền legacy được đối chiếu trước cutover; gọi trực tiếp API vượt quyền bị chặn.
+- **Cần chốt trước khi code:** danh mục technical/academic, trường dữ liệu chứng minh phân công, vòng đời grant mẫu và cách xử lý quyền legacy. **Không coi thiết kế này đã được chấp thuận triển khai**; WS1 vẫn mở.
 
 ---
 
@@ -258,7 +252,7 @@ flowchart LR
   3. Hiệu trưởng **không mặc nhiên trở thành PHT chuyên môn**, không tự nhận quyền `CAPABILITY_GRANT/SCHOOL_WIDE`, `ACADEMIC_AUTHORITY_MANAGE` hay lệnh sửa thay PHT. Quyền `APPROVAL_PRINCIPAL` hiện hữu (nếu được cấp hợp lệ) không được suy diễn thành quyền override mọi dữ liệu.
   4. **Ngoại lệ can thiệp khẩn cấp chỉ được thiết kế khi có căn cứ quản trị cụ thể**, giới hạn nghiệp vụ/đối tượng/phạm vi/thời hạn, người ra quyết định, lý do, thời điểm, hậu quả và vết kiểm toán. Quyền can thiệp không được chuyển thành quyền thường trực hoặc mở rộng sang thao tác kỹ thuật và quyền Nội trú.
   5. Quy tắc chống tự cấp quyền, tự phê duyệt bảng kê và lịch sử nghiệp vụ tiếp tục bắt buộc. Không thay đổi các capability phê duyệt nghiệp vụ đã được cấp hợp lệ cho Hiệu trưởng theo tuyến hiện hữu.
-- **Còn OPEN trước khi triển khai bất kỳ quyền can thiệp nào:** (i) định nghĩa và chứng từ tình huống khẩn cấp, (ii) người khởi tạo/phê chuẩn và kiểm soát hai người nếu cần, (iii) tập lệnh allowlist, (iv) thời hạn tối đa và thu hồi khi hết hạn, (v) thông báo tới PHT/HT, (vi) chống can thiệp chính mình, (vii) thu hồi và khôi phục đúng tình trạng trước khi override, (viii) tình huống PHT vắng/không thể thực thi. Chưa mặc định 24/72 giờ, chưa mặc định lệnh override chỉ bởi vì Hiệu trưởng có quyền giám sát.
+- **Còn OPEN trước khi triển khai bất kỳ quyền can thiệp nào:** (i) định nghĩa và chứng từ tình huống khẩn cấp, (ii) người khởi tạo/phê chuẩn và kiểm soát hai người nếu cần, (iii) tập lệnh allowlist, (iv) thời hạn tối đa và thu hồi khi hết hạn, (v) thông báo tới PHT/HT, (vi) chống can thiệp chính mình, (vii) thu hồi và khôi phục đúng tình trạng trước khi override, (viii) tình huống xử lý quyết định chuyên môn khẩn cấp với thẩm quyền đã được xác định. Chưa mặc định 24/72 giờ, chưa mặc định lệnh override chỉ bởi vì Hiệu trưởng có quyền giám sát.
 - **Kiểm thử bắt buộc khi thiết kế triển khai:** Hiệu trưởng chỉ có quyền xem gọi API cấp grant/sửa phân công -> từ chối; PHT có quyền hợp lệ vẫn thực hiện nghiệp vụ thường xuyên không phụ thuộc một phê duyệt mới; yêu cầu cứu hộ thiếu căn cứ/scope/thời hạn hoặc vượt phạm vi -> từ chối; mọi can thiệp khẩn cấp hợp lệ phải được audit và hết hạn/thu hồi theo chính sách được chốt; không đổi quyền cấp/duyệt bảng kê đã tồn tại.
 - **Giới hạn hiệu lực của quyết định:** D4 **chốt nguyên tắc nghiệp vụ**, **không chốt thiết kế endpoint, capability, DB migration, chính sách quyền cứu hộ hay thời hạn**. Việc chốt cơ chế triển khai D4 phụ thuộc D2/D3/D5 và phê duyệt riêng, không được coi là cấp quyền ngay.
 
@@ -279,7 +273,7 @@ flowchart LR
   2. **Quy tắc Chống tự cấp quyền (Anti-Self-Grant):**
      Bất kỳ actor nào (dù là Admin hay PHT) cũng không được phép gọi API cấp quyền cho chính ID tài khoản của mình. Việc gia hạn hoặc nâng quyền cho bản thân phải do một chủ thể có thẩm quyền khác thực hiện.
   3. **Quy chế Ủy quyền (Delegation Policy):**
-     - Khi PHT vắng mặt, Hiệu trưởng có thể ký quyết định ủy quyền tạm thời cho một Tổ trưởng chuyên môn đảm nhiệm vai trò Quyền PHT Chuyên môn.
+     - PHT chuyên môn chính có thể phân công bổ sung nhiệm vụ chuyên môn theo quyết định nhà trường; không tạo vai trò Quyền PHT hay chuyển thẩm quyền PHT chính cho Admin.
      - Lệnh ủy quyền bắt buộc phải có thời hạn (`validFrom`, `validUntil`), mục đích rõ ràng và tự động hủy bỏ khi hết hạn.
      - Người được ủy quyền chỉ được thực thi các quyền trong phạm vi được giao, tuyệt đối không được tự ý ủy quyền tiếp cho người thứ ba (cấm sub-delegation).
 - **Khuyến nghị đề xuất (*PROPOSED, NOT APPROVED*):**
@@ -433,7 +427,7 @@ WS1 chỉ được phép coi là hoàn thành và đóng lại khi thỏa mãn t
 ```mermaid
 flowchart TD
     B1["BLOCKER 1 (D1): Cơ chế thực thi quyền PHT\n(PHT bấm nút trực tiếp qua lệnh chuyên môn riêng\nHAY Admin kỹ thuật nhập liệu theo phiếu duyệt?)"]
-    B2["BLOCKER 2 (D2): Khóa cứng cấm Admin tự cấp quyền\n(Đồng ý chặn cứng ở backend cấm Admin tự phong quyền BGH\nvà thiết lập quy trình cứu hộ có xác nhận của Hiệu trưởng?)"]
+    B2["BLOCKER 2 (D2): Khóa cứng cấm Admin tự cấp quyền\n(Đồng ý chặn cứng ở backend cấm Admin tự phong quyền BGH\nvà bảo vệ quy trình Admin gán mẫu PHT ban đầu theo phân công?)"]
     B3["BLOCKER 3 (D3 & D4): Mô hình tổ chức Ban Giám hiệu\n(Chốt số lượng PHT chuyên môn, thẩm quyền theo năm học,\nvà quyền phủ quyết / override có kiểm soát của Hiệu trưởng)"]
     B4["BLOCKER 4 (D5 & D6): Kỷ luật Duyệt Báo cáo & Phân công\n(Khóa cứng cấm BGH tự duyệt bảng kê của mình\nvà xác nhận TKB chỉ là nguồn tham chiếu, không tự sinh quyền)"]
 

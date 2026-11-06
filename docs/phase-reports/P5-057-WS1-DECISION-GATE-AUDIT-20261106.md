@@ -19,7 +19,7 @@
 
 | Gate | Cần chốt | Phương án cần xem xét |
 |---|---|---|
-| D2 | Phạm vi admin gán mẫu ban đầu, giới hạn generic grant, recovery khi mất PHT | Backend kiểm tra nguồn quyết định chuyên môn, chống admin tự cấp/tự phong; luồng cứu hộ có phê chuẩn và audit độc lập |
+| D2 | Phạm vi Admin gán mẫu ban đầu, giới hạn generic grant, chuyển PHT theo phân công | Backend kiểm tra nguồn phân công và allowlist, chặn tự cấp/tự phong; PHT cấp quyền học thuật trực tiếp; không có luồng cứu hộ do thiếu PHT |
 | D3 còn lại | Bổ nhiệm/chuyển giao PHT chính | Preview grant chênh lệch theo nguồn; thu hồi grant mẫu cũ đúng thời điểm, bảo toàn grant độc lập/historical audit |
 | D4 — đã chốt nguyên tắc 06/11 | Hiệu trưởng giám sát độc lập; không mặc nhiên sửa/cấp quyền thay PHT, không buộc mọi quyết định PHT qua duyệt cấp 2 | Ngoại lệ khẩn cấp cần căn cứ, scope, giới hạn thời gian và audit. **Còn OPEN**: ai phê chuẩn, cách thực thi, thời hạn tối đa, thu hồi/khôi phục |
 | D5 | Tự duyệt/tự ủy quyền và duyệt báo cáo BGH | Chặn tại backend, phủ cả API gọi trực tiếp; duyệt độc lập theo tuyến |
@@ -30,3 +30,7 @@
 ## Cập nhật quyết định D4 — 06/11/2026
 
 Product Owner đã đồng ý với đề xuất ngay sau CI #892: Hiệu trưởng giám sát chuyên môn, không tự động nhận quyền cấp/sửa quyền thay PHT; ngoại lệ khẩn cấp chỉ theo phạm vi, thời hạn và căn cứ được kiểm soát và lưu audit. Đây là **PARTIAL ACCEPTED ở tầng chính sách**, không phải phê duyệt triển khai. Chưa thay đổi principal template, quyền production, tuyến duyệt bảng kê hay backend.
+
+## Xác nhận thực tế vận hành 06/11/2026
+
+Product Owner xác nhận trường **luôn bố trí PHT phụ trách chuyên môn**. D2/D3/D5 không xây dựng cơ chế 'mất PHT' hay Admin cứu hộ. Chuyển giao vai trò chỉ thực hiện theo phân công nhân sự thực tế, giữ hiệu lực hợp lệ, đúng nguồn grant và audit. Phần D4 đã chốt nguyên tắc can thiệp khẩn cấp vào quyết định nghiệp vụ là vấn đề khác, không phải cơ chế thay thế PHT.
