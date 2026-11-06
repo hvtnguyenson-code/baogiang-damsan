@@ -10,6 +10,10 @@ Exact current `main`, branch HEAD and divergence must always be read directly fr
 
 **Status snapshot date:** 2026-11-01
 
+## P5-057 / B1 — IN_REVIEW (inert schema only)
+
+Product Owner authorized B1 implementation under Issue #262 review [6659592897](https://github.com/hvtnguyenson-code/baogiang-damsan/issues/262#issuecomment-6659592897). Canonical implementation base was read directly from GitHub: `85c406572400789fab5d3ec693a67d05528a9fec`. Model B adds empty provenance/appointment/receipt structures and a nullable grant coordinate, preserving the evaluator, generic API, existing grants, exact index and exclusion constraint. The clean-slate deletion fingerprint/inventory was measured on isolated PG16.14/17.10: identical fingerprint `dcc2a3bb3c84234d62d617e8128bcbfb`, 84 inbound FKs; targeted 6-suite regression 166/166 PASS on each engine. See `docs/phase-reports/P5-057-B1-SCHEMA-FOUNDATION.md`; GitHub review/CI remain required. This does not activate source-aware writing, grant any role, backfill legacy rights, authorize B2–B5, or close P5-057/pilot. Design authority #264 remains an independent open docs PR; #263 remains independent.
+
 ## P5-056 / T55 — CLOSED (technical scope; SYNC-P5-056)
 
 PR #257 merged as `62b6ffb85602f2be5f2d54b7ed16ad6a6fb05029`; exact-head CI #857 (`41215108383`) SUCCESS 2/2 and off-host #80 (`41215108378`) SUCCESS 2/2. Follow-up deploy corrections PR #258/#259 and cleanup #260 merged; production release `0dd691cf5c1294125a2cf7fddcbaea3a190fc3f1` verified 2026-11-01 (API live/ready 200, 38/38 capabilities, production schema `verifiedSchema` and no migrations pending). Technical scope accepted by Product Owner 2026-11-01; physical Android/iOS Push and real-persona UAT remain P5-057, not certified here.
