@@ -101,14 +101,27 @@ integration('P5-051 clean-slate deletion (real isolated PostgreSQL)', () => {
     throw new Error('Expected an observed PostgreSQL lock wait');
   }
 
-  it('verifies PostgreSQL version, READ COMMITTED and migration-backed 42-table/74-direct + 4-indirect graph', async () => {
+  it('verifies PostgreSQL version, READ COMMITTED and replay-measured 46-table/80-direct + 4-indirect graph', async () => {
     const [v] = await h.prisma.$queryRaw<Array<{ version: string; isolation: string }>>`SELECT version(), current_setting('transaction_isolation') AS isolation`;
     expect(v.version).toMatch(/PostgreSQL/);
     expect(v.isolation).toBe('read committed');
-    expect(USER_DELETE_FK_INVENTORY.filter((f) => f.parent === 'users')).toHaveLength(74);
-    expect(new Set(USER_DELETE_FK_INVENTORY.filter((f) => f.parent === 'users').map((f) => f.child)).size).toBe(42);
+    expect(USER_DELETE_FK_INVENTORY.filter((f) => f.parent === 'users')).toHaveLength(80);
+    expect(new Set(USER_DELETE_FK_INVENTORY.filter((f) => f.parent === 'users').map((f) => f.child)).size).toBe(46);
     expect(USER_DELETE_FK_INVENTORY.filter((f) => f.parent !== 'users')).toHaveLength(4);
     expect((await preview((await target()).id)).body.eligibility).toBe('ELIGIBLE');
+  });
+
+  it('retains B1 provenance references without broadening the clean-slate deletion allowlist', async () => {
+    const u = await target();
+    const coordinate = await h.prisma.accessCoordinate.create({ data: {
+      userId: u.id, capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL',
+    } });
+    try {
+      await blocked(u, 'BUSINESS_HISTORY');
+    } finally {
+      // This empty, unreferenced coordinate is a test-only fixture, not retained evidence.
+      await h.prisma.accessCoordinate.delete({ where: { id: coordinate.id } });
+    }
   });
 
   it('read-only preview is minimal and pristine PENDING profile deletion retains administrator audit and unrelated data', async () => {

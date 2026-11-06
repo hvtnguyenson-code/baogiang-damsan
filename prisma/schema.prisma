@@ -278,6 +278,12 @@ model User {
   createdAt          DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt          DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
+  accessCoordinates                         AccessCoordinate[]
+  accessCommandsAsActor                     AccessCommand[] @relation("AccessActor")
+  accessCommandsAsTarget                    AccessCommand[] @relation("AccessTarget")
+  accessCommandsAsPeer                      AccessCommand[] @relation("AccessPeer")
+  roleAppointments                          RoleAppointment[]
+  grantSources                              GrantSource[]
   profile                                   StaffProfile?
   subjectGroupMemberships                   SubjectGroupMembership[]
   staffSubjects                             StaffSubject[]
@@ -447,6 +453,7 @@ model CapabilityDefinition {
   createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt         DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
+  accessCoordinates AccessCoordinate[]
   grants CapabilityGrant[]
 
   @@index([isActive, key])
@@ -468,6 +475,12 @@ model CapabilityGrant {
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
+  coordinateId String? @map("coordinate_id") @db.Uuid
+  coordinate AccessCoordinate? @relation("GrantCoordinate", fields: [coordinateId, userId, capabilityKey, scopeType], references: [id, userId, capabilityKey, scopeType], onDelete: Restrict, onUpdate: Restrict, map: "capability_grants_coordinate_fkey")
+  resourceCoordinate AccessCoordinate? @relation("GrantResource", fields: [coordinateId, scopeResourceId], references: [id, scopeResourceId], onDelete: Restrict, onUpdate: Restrict, map: "capability_grants_coordinate_resource_fkey")
+  legacySources GrantSource[] @relation("LegacyGrant")
+  projectionSlices GrantProjectionSlice[]
+
   user       User                 @relation("CapabilityGrantSubject", fields: [userId], references: [id], onDelete: Restrict)
   capability CapabilityDefinition @relation(fields: [capabilityKey], references: [key], onDelete: Restrict)
   grantedBy  User?                @relation("CapabilityGrantGrantedBy", fields: [grantedByUserId], references: [id], onDelete: SetNull)
@@ -475,6 +488,8 @@ model CapabilityGrant {
 
   @@index([userId, capabilityKey, revokedAt, validFrom, validUntil])
   @@index([scopeType, scopeResourceId, validFrom, validUntil])
+  @@unique([id, coordinateId], map: "capability_grants_id_coordinate_key")
+  @@index([coordinateId])
   @@map("capability_grants")
 }
 
@@ -2186,4 +2201,177 @@ model WebPushDelivery {
   @@index([status, nextAttemptAt], map: "web_push_deliveries_status_next_attempt_idx")
   @@index([leaseUntil], map: "web_push_deliveries_lease_until_idx")
   @@map("web_push_deliveries")
+}
+
+// P5-057/B1: inert provenance foundation. No runtime writer, seed or backfill.
+model AuthorizationState {
+  id String @id @db.VarChar(100)
+  epoch BigInt @default(0)
+  lastMutationAt DateTime? @map("last_mutation_at") @db.Timestamptz(3)
+  @@map("authorization_states")
+}
+
+model AccessCommand {
+  id String @id @default(uuid()) @db.Uuid
+  actorUserId String @map("actor_user_id") @db.Uuid
+  targetUserId String @map("target_user_id") @db.Uuid
+  peerUserId String? @map("peer_user_id") @db.Uuid
+  commandType String @map("command_type") @db.VarChar(50)
+  requestKey String @map("request_key") @db.VarChar(200)
+  fingerprint String @db.VarChar(64)
+  effectiveAt DateTime @map("effective_at") @db.Timestamptz(3)
+  result Json @db.JsonB
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  actor User @relation("AccessActor", fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  target User @relation("AccessTarget", fields: [targetUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  peer User? @relation("AccessPeer", fields: [peerUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  appointments RoleAppointment[]
+  sources GrantSource[]
+  sourceRevisions GrantSourceRevision[]
+  projections GrantProjectionRevision[]
+  @@unique([actorUserId, commandType, requestKey], map: "access_commands_actor_type_request_key")
+  @@index([targetUserId])
+  @@index([peerUserId])
+  @@map("access_commands")
+}
+
+model AccessCoordinate {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  capabilityKey String @map("capability_key") @db.VarChar(100)
+  scopeType String @map("scope_type") @db.VarChar(50)
+  scopeResourceId String? @map("scope_resource_id") @db.Uuid
+  version BigInt @default(0)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  capability CapabilityDefinition @relation(fields: [capabilityKey], references: [key], onDelete: Restrict, onUpdate: Restrict)
+  grants CapabilityGrant[] @relation("GrantCoordinate")
+  resourceGrants CapabilityGrant[] @relation("GrantResource")
+  sources GrantSource[]
+  projections GrantProjectionRevision[]
+  @@unique([id, userId], map: "access_coordinates_id_user_key")
+  @@unique([id, userId, capabilityKey, scopeType], map: "access_coordinates_grant_identity_key")
+  @@unique([id, scopeResourceId], map: "access_coordinates_id_resource_key")
+  @@index([userId, capabilityKey])
+  @@index([capabilityKey])
+  @@map("access_coordinates")
+}
+
+model AuthoritySeat {
+  id String @id @default(uuid()) @db.Uuid
+  key String @unique @db.VarChar(100)
+  policyVersion BigInt @map("policy_version")
+  enabled Boolean
+  appointments RoleAppointment[]
+  @@map("authority_seats")
+}
+
+model RoleAppointment {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  seatId String? @map("seat_id") @db.Uuid
+  templateKey String @map("template_key") @db.VarChar(100)
+  templateVersion String @map("template_version") @db.VarChar(100)
+  templateSnapshot Json @map("template_snapshot") @db.JsonB
+  validFrom DateTime @map("valid_from") @db.Timestamptz(3)
+  validUntil DateTime? @map("valid_until") @db.Timestamptz(3)
+  cancelledAt DateTime? @map("cancelled_at") @db.Timestamptz(3)
+  version BigInt @default(0)
+  createdCommandId String @map("created_command_id") @db.Uuid
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  seat AuthoritySeat? @relation(fields: [seatId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  command AccessCommand @relation(fields: [createdCommandId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  sources GrantSource[]
+  @@unique([id, userId], map: "role_appointments_id_user_key")
+  @@index([userId, validFrom, validUntil])
+  @@index([createdCommandId])
+  @@map("role_appointments")
+}
+
+model GrantSource {
+  id String @id @default(uuid()) @db.Uuid
+  coordinateId String @map("coordinate_id") @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  kind String @db.VarChar(50)
+  appointmentId String? @map("appointment_id") @db.Uuid
+  legacyGrantId String? @map("legacy_grant_id") @db.Uuid
+  createdCommandId String @map("created_command_id") @db.Uuid
+  supersedesSourceId String? @map("supersedes_source_id") @db.Uuid
+  coordinate AccessCoordinate @relation(fields: [coordinateId, userId], references: [id, userId], onDelete: Restrict, onUpdate: Restrict)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  appointment RoleAppointment? @relation(fields: [appointmentId, userId], references: [id, userId], onDelete: Restrict, onUpdate: Restrict)
+  legacyGrant CapabilityGrant? @relation("LegacyGrant", fields: [legacyGrantId, coordinateId], references: [id, coordinateId], onDelete: Restrict, onUpdate: Restrict)
+  command AccessCommand @relation(fields: [createdCommandId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  predecessor GrantSource? @relation("SourceLineage", fields: [supersedesSourceId, coordinateId], references: [id, coordinateId], onDelete: Restrict, onUpdate: Restrict)
+  successors GrantSource[] @relation("SourceLineage")
+  revisions GrantSourceRevision[]
+  @@unique([id, coordinateId], map: "grant_sources_id_coordinate_key")
+  @@index([userId])
+  @@index([appointmentId])
+  @@index([legacyGrantId])
+  @@index([createdCommandId])
+  @@index([coordinateId])
+  @@index([supersedesSourceId])
+  @@map("grant_sources")
+}
+
+model GrantSourceRevision {
+  id String @id @default(uuid()) @db.Uuid
+  sourceId String @map("source_id") @db.Uuid
+  coordinateId String @map("coordinate_id") @db.Uuid
+  revision BigInt
+  validFrom DateTime @map("valid_from") @db.Timestamptz(3)
+  validUntil DateTime? @map("valid_until") @db.Timestamptz(3)
+  disposition String @db.VarChar(20)
+  commandId String @map("command_id") @db.Uuid
+  source GrantSource @relation(fields: [sourceId, coordinateId], references: [id, coordinateId], onDelete: Restrict, onUpdate: Restrict)
+  command AccessCommand @relation(fields: [commandId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  supports GrantSupport[]
+  @@unique([sourceId, revision], map: "grant_source_revisions_source_revision_key")
+  @@unique([id, coordinateId], map: "grant_source_revisions_id_coordinate_key")
+  @@index([commandId])
+  @@map("grant_source_revisions")
+}
+
+model GrantProjectionRevision {
+  id String @id @default(uuid()) @db.Uuid
+  coordinateId String @map("coordinate_id") @db.Uuid
+  version BigInt
+  commandId String @map("command_id") @db.Uuid
+  effectiveAt DateTime @map("effective_at") @db.Timestamptz(3)
+  coordinate AccessCoordinate @relation(fields: [coordinateId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  command AccessCommand @relation(fields: [commandId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  slices GrantProjectionSlice[]
+  @@unique([coordinateId, version], map: "grant_projection_revisions_coordinate_version_key")
+  @@unique([id, coordinateId], map: "grant_projection_revisions_id_coordinate_key")
+  @@index([commandId])
+  @@map("grant_projection_revisions")
+}
+
+model GrantProjectionSlice {
+  id String @id @default(uuid()) @db.Uuid
+  projectionRevisionId String @map("projection_revision_id") @db.Uuid
+  coordinateId String @map("coordinate_id") @db.Uuid
+  grantId String @map("grant_id") @db.Uuid
+  validFromSnapshot DateTime @map("valid_from_snapshot") @db.Timestamptz(3)
+  validUntilSnapshot DateTime? @map("valid_until_snapshot") @db.Timestamptz(3)
+  projection GrantProjectionRevision @relation(fields: [projectionRevisionId, coordinateId], references: [id, coordinateId], onDelete: Restrict, onUpdate: Restrict)
+  grant CapabilityGrant @relation(fields: [grantId, coordinateId], references: [id, coordinateId], onDelete: Restrict, onUpdate: Restrict)
+  supports GrantSupport[]
+  @@unique([projectionRevisionId, grantId], map: "grant_projection_slices_revision_grant_key")
+  @@unique([id, coordinateId], map: "grant_projection_slices_id_coordinate_key")
+  @@index([grantId])
+  @@map("grant_projection_slices")
+}
+
+model GrantSupport {
+  sliceId String @map("slice_id") @db.Uuid
+  sourceRevisionId String @map("source_revision_id") @db.Uuid
+  coordinateId String @map("coordinate_id") @db.Uuid
+  coveredFrom DateTime @map("covered_from") @db.Timestamptz(3)
+  coveredUntil DateTime? @map("covered_until") @db.Timestamptz(3)
+  slice GrantProjectionSlice @relation(fields: [sliceId, coordinateId], references: [id, coordinateId], onDelete: Restrict, onUpdate: Restrict)
+  sourceRevision GrantSourceRevision @relation(fields: [sourceRevisionId, coordinateId], references: [id, coordinateId], onDelete: Restrict, onUpdate: Restrict)
+  @@id([sliceId, sourceRevisionId])
+  @@index([sourceRevisionId])
+  @@map("grant_supports")
 }

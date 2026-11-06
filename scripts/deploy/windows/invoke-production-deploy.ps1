@@ -37,6 +37,16 @@ try {
   & (Join-Path $PSScriptRoot 'install-release.ps1') -ReleaseSha $p.ReleaseSha -Root $canonicalRoot -SourceArchive $incoming -ExpectedSha256 $p.ExpectedSha256 -NpmExe $p.NpmExe -NpxExe $p.NpxExe -NodeExe $p.NodeExe -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName
   $backupJson = & (Join-Path $PSScriptRoot 'backup-database.ps1') -PgDumpExe $p.PgDumpExe -PgRestoreExe $p.PgRestoreExe -Root $canonicalRoot -BackupRoot (Join-Path $canonicalRoot 'backups') -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint | Select-Object -Last 1
   $report.backup = $backupJson | ConvertFrom-Json
+  # Fail before service quiescence if the existing production database does
+  # not match the CURRENT deployed release migration history. With GitHub's
+  # one-SQL hash gate, this prevents applying an unapproved migration backlog.
+  if ($p.MigrationRequested -and $hasCurrentRelease) {
+    if ([string]$report.previousRelease -cnotmatch '^[0-9a-f]{40}$') { throw 'PRE_MIGRATION_BASELINE_SHA_INVALID' }
+    $baselineJson = & (Join-Path $PSScriptRoot 'assert-no-pending-migrations.ps1') -ReleaseSha $report.previousRelease -ReleasePath (Join-Path $canonicalRoot "releases\$($report.previousRelease)") -NpxExe $p.NpxExe -Root $canonicalRoot -ServiceKind $p.ServiceKind -ServiceName $p.ServiceName -EnvFile $p.EnvFile -StartupWrapper $p.StartupWrapper -ExpectedEntryPoint $p.ExpectedEntryPoint -ExpectedBaseUrl $p.ExpectedBaseUrl | Select-Object -Last 1
+    $baselineResult = $baselineJson | ConvertFrom-Json
+    if ($null -eq $baselineResult -or $baselineResult.state -cne 'verifiedNoPending' -or $baselineResult.releaseSha -cne $report.previousRelease -or [int]$baselineResult.databasePort -ne 5434) { throw 'PRE_MIGRATION_BASELINE_DRIFT_BLOCKED' }
+    Write-Output "BAOGIANG_PRE_MIGRATION_BASELINE_VERIFIED sha=$($report.previousRelease)"
+  }
   if ($p.MigrationRequested) {
     $mwAuth = Assert-MaintenanceWindowAuthorization -MaintenanceWindow $p.MaintenanceWindow -ExpectedReleaseSha $p.ReleaseSha
     $report.maintenanceWindow = $mwAuth

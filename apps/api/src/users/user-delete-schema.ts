@@ -8,7 +8,7 @@ interface ForeignKey {
 
 // Measured from the complete committed migration chain on isolated PG16 and PG17.
 // Changes require migration replay and review; runtime must never learn/accept a new hash.
-export const EXPECTED_SCHEMA_FINGERPRINT = 'dcc09117df18e7b7c914f4a1aec781fe';
+export const EXPECTED_SCHEMA_FINGERPRINT = 'dcc2a3bb3c84234d62d617e8128bcbfb';
 
 export async function inspectUserDeletionSchema(tx: Prisma.TransactionClient) {
   // A newly added table/column may carry identities without a FK. Require an
