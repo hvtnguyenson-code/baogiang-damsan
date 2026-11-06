@@ -8,11 +8,19 @@ Per `MAJOR-TASK-DOCUMENTATION-SYNC-PROTOCOL.md`, this file is intentionally conc
 
 Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub. SHAs here are evidence for already-established task states, never a self-referential claim that this document contains its own current commit.
 
-**Status snapshot date:** 2026-11-05
+**Status snapshot date:** 2026-11-06
 
-## P5-057 / T56 — IN_PROGRESS (WS1 documents only)
+## P5-057 / WS1 — IN_PROGRESS: academic authority decisions
 
-Product Owner approved a four-stage order on 2026-11-03: (1) lock business authority, (2) complete admin workflows, (3) correct observed UX blockers, (4) seven-persona E2E acceptance. Eight bounded work packages WS1–WS8 are documented in `docs/tasks/P5-057-FOUR-STAGE-OPERABILITY-EXECUTION-PLAN.md`; the first authority comparison is `docs/requirements/P5-057-ACADEMIC-AUTHORITY-MATRIX-DRAFT.md`. Product Owner **approved D1 Option B on 2026-11-05**: PHT directly decides **and configures all academic/professional operations** within assigned authority, via scoped professional workflows; Technical Admin manages accounts/infrastructure and must not decide or configure academic operations on PHT's behalf. D2–D6 remain OPEN; the D1 policy choice does **not** authorize a backend/schema/production change or close WS1. **D3 PARTIAL ACCEPTED 2026-11-05:** distinguish `VICE_PRINCIPAL_ACADEMIC` (academic management authority only for formally designated PHT) from proposed `VICE_PRINCIPAL` (ordinary PHT, no default academic management authority); see `docs/requirements/P5-057-WS1-D3-VICE-PRINCIPAL-ROLE-TEMPLATES.md`. D3 scope, quantity, effective dates and designation/revocation rules remain OPEN. Reference: `docs/requirements/P5-057-WS1-ACADEMIC-AUTHORITY-DECISION-RECORD-DRAFT.md`. `P6-050` remains blocked. Existing PR #263 for multi-class assignment remains independent and **OPEN/unmerged** at head `e9dfb399f73b20ee45ed30408f46964e979636c6` on initial review. No DB, production, CI/CD or runtime mutation is authorized by this docs-only plan.
+Product Owner approved **D1 Option B** on 05/11/2026: PHT phụ trách chuyên môn quyết định và trực tiếp cấu hình nghiệp vụ chuyên môn, Admin kỹ thuật không quyết định chuyên môn thay PHT. **D3 PARTIAL ACCEPTED:** hiện 01 PHT chuyên môn chính; PHT thông thường không có quyền chuyên môn mặc định nhưng có thể nhận từng quyền giới hạn; Admin kỹ thuật tạo tài khoản và gán mẫu trách nhiệm ban đầu theo phân công nhà trường, kể cả PHT chính. **D2/D4/D5/D6 và chi tiết chuyển giao/thu hồi, chống tự bổ nhiệm của D3 vẫn OPEN**; không sửa quyền backend hay đóng WS1. Xem PR #264 và hồ sơ quyết định WS1.
+
+## P5-057 / B1 — DEPLOYED (inert provenance foundation)
+
+PR #265 merged; schema B1 production verified ở release `9fde64eae80eae8082c1dabfd157397703760b95` ngày 06/11/2026. Cấu trúc nguồn grant còn rỗng, evaluator/quyền cũ giữ nguyên; không kích hoạt B2–B5. Evidence: `docs/phase-reports/P5-057-B1-SCHEMA-FOUNDATION.md`.
+
+## P5-057 / WS2 — DEPLOYED TECHNICAL; REAL ADMIN UAT OPEN
+
+PR #263 gán một giáo viên/môn cho nhiều lớp cùng lô đã merged và deploy `bd79173a1180c26cbd33555ff081c015ef515bff` ngày 06/11/2026. CI main #891, auto-deploy #37, VPS #33 SUCCESS; API/web HTTP 200 và PID Nội trú 4304 giữ nguyên. Thay đổi code-only không sửa schema/auth/pipeline. **Nghiệm thu người dùng thật, tải và thao tác Admin vẫn chưa hoàn tất**; P5-057 tổng thể IN_PROGRESS, P6-050 BLOCKED.
 
 ## P5-056 / T55 — CLOSED (technical scope; SYNC-P5-056)
 

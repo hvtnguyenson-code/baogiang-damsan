@@ -1,7 +1,7 @@
 # P5-057 — Kế hoạch hoàn thiện Báo giảng theo 4 giai đoạn
 
 **Ngày quyết định thứ tự:** 03/11/2026 (Product Owner chấp thuận trong trao đổi).
-**Trạng thái:** ĐÃ CHỐT THỨ TỰ. **D1 PHƯƠNG ÁN B ĐƯỢC PRODUCT OWNER CHỐT 05/11/2026:** PHT trực tiếp quyết định và cấu hình mọi nghiệp vụ chuyên môn trong phạm vi phụ trách; Admin kỹ thuật không nhập/cấp quyền chuyên môn thay PHT. D2–D6 vẫn OPEN, không sửa runtime/auth/schema khi chưa chốt; P5-057 tiếp tục IN_PROGRESS.
+**Trạng thái:** ĐÃ CHỐT THỨ TỰ. **D1 PHƯƠNG ÁN B ĐƯỢC PRODUCT OWNER CHỐT 05/11/2026:** PHT trực tiếp quyết định và cấu hình mọi nghiệp vụ chuyên môn trong phạm vi phụ trách; Admin kỹ thuật không nhập/cấp quyền chuyên môn thay PHT. D3 đã chốt một phần (01 PHT chuyên môn chính; Admin tạo tài khoản và gán mẫu ban đầu); D2/D4/D5/D6 và chi tiết chuyển giao/thu hồi D3 vẫn OPEN. Không sửa runtime/auth/schema khi chưa chốt; P5-057 IN_PROGRESS.
 **Phạm vi:** duy nhất repository `hvtnguyenson-code/baogiang-damsan`.
 **Task chính đang có:** `P5-057` / traceability `T56`; `P6-050` là cổng pilot riêng, **không** tính hoàn thành chỉ nhờ CI xanh.
 **Định hướng:** **REALIGN, NOT REBUILD** — giữ nguyên các domain, persistence, security/history đã được phê duyệt.
@@ -42,7 +42,7 @@ Không sử dụng mã nguồn hiện tại hoặc bản prototype để âm th�
 
 ### Giai đoạn 2 — HOÀN THIỆN QUẢN TRỊ (gói việc 2–6)
 
-**WS2. Phân công nhiều lớp — PR #263 hiện có.** Audit diff/CI, không tái tạo nhánh; xác minh atomic rollback, preview/race và hiệu lực lịch sử; nghiệm thu admin thực; merge/deploy riêng sau khi qua gate và có chỉ thị. Không tự merge chỉ vì xanh.
+**WS2. Phân công nhiều lớp — đã triển khai kỹ thuật PR #263.** Merge `bd79173a1180c26cbd33555ff081c015ef515bff`, main CI #891, auto-deploy #37, VPS #33 SUCCESS 06/11/2026. Vẫn cần UAT Admin thật, kiểm tra preview/race/tải trên dữ liệu phù hợp; chưa đóng toàn bộ P5-057.
 
 **WS3. Hồ sơ nhân sự và mẫu quyền theo chức trách.** Tận dụng UsersPage, P5-051 responsibility template; chọn nhân sự → vai trò, tổ, môn, kiêm nhiệm → preview hiệu lực → xác nhận; hạn chế thao tác cấp quyền thủ công. Không đổi capability thành role hardcode.
 
@@ -84,7 +84,7 @@ Không sử dụng mã nguồn hiện tại hoặc bản prototype để âm th�
 
 - MCP G3 trên thiết bị `NGUYENSON` đã được xác nhận; project root `D:\baogiang-damsan` có trong registry.
 - Git ban đầu: `feat/p5-057-admin-bulk-teaching-assignments@e9dfb399f73b20ee45ed30408f46964e979636c6`, working tree sạch.
-- PR #263: `OPEN`, GitHub đã báo CI #873 và compatibility #89 SUCCESS; **chưa merge**, không coi đây là P5-057 closure.
+- PR #263: ĐÃ MERGE/DEPLOY code-only 06/11/2026 sau CI #890/#891 và compatibility #97 SUCCESS; đây không phải P5-057 closure.
 - Đã tách nhánh docs riêng `docs/p5-057-four-stage-realignment` từ `origin/main@85c406572400789fab5d3ec693a67d05528a9fec`.
 - WS1 bắt đầu bằng bản ma trận dự thảo; **chưa được phép sửa quyền backend trước khi chốt chi tiết**.
 - Các WS2–WS8 là **gói công việc đề xuất** dưới P5-057, không tự tạo mã số task chính thức mới trong register. P5-051–P5-056 đã đóng ở phạm vi kỹ thuật; không mở lại khi không có bằng chứng.

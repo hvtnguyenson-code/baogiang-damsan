@@ -11,6 +11,7 @@ const years = [
 const activeCalendar = { id: 'calendar-1', versionNumber: 1, startDate: '2026-08-31', endDate: '2026-09-04' };
 const classes = [
   { id: 'class-active', code: '10A1', name: 'Lớp 10A1', gradeLevel: 10, status: 'ACTIVE' },
+  { id: 'class-active-2', code: '10A2', name: 'Lop 10A2', gradeLevel: 10, status: 'ACTIVE' },
   { id: 'class-inactive', code: '10C', name: 'Lớp cũ', gradeLevel: 10, status: 'INACTIVE' },
 ];
 const subjects = [
@@ -37,6 +38,7 @@ function defaultFetch(options: {
   assignments?: unknown[];
   candidates?: unknown[];
   mutationStatus?: number;
+  previewIssues?: Array<{ schoolClassId: string; message: string }>;
 } = {}) {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input); const method = init?.method ?? 'GET';
@@ -45,8 +47,11 @@ function defaultFetch(options: {
     if (url.includes('/eligible-teachers')) return jsonResponse(page(options.candidates ?? teachers, 100));
     if (/\/teaching-assignment-options\/academic-years\/[^/?]+$/.test(url)) return jsonResponse(workspace(options.calendar === undefined ? activeCalendar : options.calendar));
     if (url.includes('/teaching-assignments') && method === 'GET') return jsonResponse(page(options.assignments ?? [row]));
+    if (url.endsWith('/teaching-assignments/bulk/preview') && method === 'POST') {
+      return jsonResponse({ canApply: !options.previewIssues?.length, issues: options.previewIssues ?? [] });
+    }
     if (url.includes('/teaching-assignments') && method === 'POST') {
-      return options.mutationStatus ? jsonResponse({ statusCode: options.mutationStatus, message: 'conflict' }, options.mutationStatus) : jsonResponse(row, 201);
+      return options.mutationStatus ? jsonResponse({ statusCode: options.mutationStatus, message: 'conflict' }, options.mutationStatus) : jsonResponse(url.endsWith('/bulk') ? [row] : row, 201);
     }
     return jsonResponse({});
   });
@@ -119,12 +124,13 @@ describe('TeachingAssignmentsPage', () => {
     const user = userEvent.setup(); renderApp('/quan-tri/phan-cong-giang-day');
     await user.click(await screen.findByRole('button', { name: 'Tạo phân công' }));
     const form = screen.getByRole('heading', { name: 'Tạo phân công giảng dạy' }).closest('form')!;
-    expect(within(form).getByLabelText('Lớp').querySelector('option[value="class-inactive"]')).toBeNull();
+    expect(within(form).queryByLabelText('10C')).not.toBeInTheDocument();
     expect(within(form).getByLabelText('Môn học').querySelector('option[value="subject-inactive"]')).toBeNull();
     expect(within(form).getByLabelText('Có hiệu lực từ')).toHaveAttribute('min', activeCalendar.startDate);
     expect(within(form).getByLabelText('Có hiệu lực từ')).toHaveAttribute('max', activeCalendar.endDate);
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/eligible-teachers'))).toBe(false);
-    await user.selectOptions(within(form).getByLabelText('Lớp'), 'class-active');
+    await user.click(within(form).getByLabelText('10A1'));
+    await user.click(within(form).getByLabelText('10A2'));
     await user.selectOptions(within(form).getByLabelText('Môn học'), 'subject-active');
     fireEvent.change(within(form).getByLabelText('Có hiệu lực từ'), { target: { value: '2026-08-31' } });
     await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes('validFrom=2026-08-31'))).toBe(true));
@@ -136,14 +142,40 @@ describe('TeachingAssignmentsPage', () => {
     fireEvent.change(within(form).getByLabelText('Có hiệu lực đến'), { target: { value: '' } });
     await waitFor(() => expect(within(form).getByLabelText('Giáo viên')).toBeEnabled());
     await user.selectOptions(within(form).getByLabelText('Giáo viên'), 'teacher-a');
+    await user.click(within(form).getByRole('button', { name: /Kiểm tra xung đột/ }));
+    await within(form).findByRole('status');
+    await user.click(within(form).getByLabelText(/Tôi đã kiểm tra/));
     await user.click(within(form).getByRole('button', { name: 'Lưu phân công' }));
     await waitFor(() => {
-      const call = fetchMock.mock.calls.find(([url, init]) => String(url).endsWith('/academic-years/year-new/teaching-assignments') && init?.method === 'POST');
+      const call = fetchMock.mock.calls.find(([url, init]) => String(url).endsWith('/academic-years/year-new/teaching-assignments/bulk') && init?.method === 'POST');
       expect(JSON.parse(String(call?.[1]?.body))).toEqual({
-        schoolClassId: 'class-active', subjectId: 'subject-active', teacherUserId: 'teacher-a', validFrom: '2026-08-31',
+        schoolClassIds: ['class-active', 'class-active-2'], subjectId: 'subject-active', teacherUserId: 'teacher-a', validFrom: '2026-08-31',
       });
     });
     expect(await screen.findByText('Đã tạo phân công giảng dạy.')).toBeInTheDocument();
+  });
+
+  it('blocks saving all classes when preview reports a conflicting class', async () => {
+    const fetchMock = defaultFetch({
+      assignments: [],
+      previewIssues: [{ schoolClassId: 'class-active-2', message: 'Conflicting assignment' }],
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    renderApp('/quan-tri/phan-cong-giang-day');
+    await user.click(await screen.findByRole('button', { name: 'Tạo phân công' }));
+    const form = screen.getByRole('heading', { name: 'Tạo phân công giảng dạy' }).closest('form')!;
+    await user.click(within(form).getByLabelText('10A1'));
+    await user.click(within(form).getByLabelText('10A2'));
+    await user.selectOptions(within(form).getByLabelText('Môn học'), 'subject-active');
+    fireEvent.change(within(form).getByLabelText('Có hiệu lực từ'), { target: { value: '2026-08-31' } });
+    await waitFor(() => expect(within(form).getByLabelText('Giáo viên')).toBeEnabled());
+    await user.selectOptions(within(form).getByLabelText('Giáo viên'), 'teacher-a');
+    await user.click(within(form).getByRole('button', { name: /Kiểm tra xung đột/ }));
+    expect(await within(form).findByText(/Conflicting assignment/)).toBeInTheDocument();
+    expect(within(form).getByRole('button', { name: 'Lưu phân công' })).toBeDisabled();
+    expect(fetchMock.mock.calls.some(([url, init]) =>
+      String(url).endsWith('/teaching-assignments/bulk') && init?.method === 'POST')).toBe(false);
   });
 
   it('treats zero eligible teachers as a factual empty state and preserves a 409 create draft', async () => {
@@ -151,7 +183,7 @@ describe('TeachingAssignmentsPage', () => {
     const user = userEvent.setup(); renderApp('/quan-tri/phan-cong-giang-day');
     await user.click(await screen.findByRole('button', { name: 'Tạo phân công' }));
     const form = screen.getByRole('heading', { name: 'Tạo phân công giảng dạy' }).closest('form')!;
-    await user.selectOptions(within(form).getByLabelText('Lớp'), 'class-active');
+    await user.click(within(form).getByLabelText('10A1'));
     await user.selectOptions(within(form).getByLabelText('Môn học'), 'subject-active');
     fireEvent.change(within(form).getByLabelText('Có hiệu lực từ'), { target: { value: '2026-08-31' } });
     expect(await within(form).findByText(/không có giáo viên đáp ứng điều kiện/i)).toBeInTheDocument();
@@ -160,6 +192,9 @@ describe('TeachingAssignmentsPage', () => {
     fireEvent.change(within(form).getByLabelText('Có hiệu lực từ'), { target: { value: '2026-09-01' } });
     await waitFor(() => expect(within(form).getByLabelText('Giáo viên')).toBeEnabled());
     await user.selectOptions(within(form).getByLabelText('Giáo viên'), 'teacher-a');
+    await user.click(within(form).getByRole('button', { name: /Kiểm tra xung đột/ }));
+    await within(form).findByRole('status');
+    await user.click(within(form).getByLabelText(/Tôi đã kiểm tra/));
     await user.click(within(form).getByRole('button', { name: 'Lưu phân công' }));
     expect(await screen.findByText(/dữ liệu xung đột/i)).toBeInTheDocument();
     expect(within(form).getByLabelText('Có hiệu lực từ')).toHaveValue('2026-09-01');

@@ -1,6 +1,6 @@
 # P5-057 / WS1 — Ma trận thẩm quyền nghiệp vụ chuyên môn (DỰ THẢO ĐỐI CHIẾU)
 
-**Trạng thái:** DRAFT tổng thể WS1; **D1 CHỐT PHƯƠNG ÁN B bởi Product Owner ngày 05/11/2026**. D2–D6 OPEN, chưa sửa chính sách backend đang chạy.
+**Trạng thái:** WS1 DRAFT; **D1 ACCEPTED (Option B, 05/11/2026), D3 PARTIAL ACCEPTED (05/11/2026)**. D2/D4/D5/D6 và chi tiết chuyển giao/thu hồi D3 vẫn OPEN. Không thay đổi backend/quyền thật.
 **Ngày lập:** 03/11/2026.
 **Phạm vi:** Báo giảng; chuẩn bị Giai đoạn 1 của `docs/tasks/P5-057-FOUR-STAGE-OPERABILITY-EXECUTION-PLAN.md`.
 **Không thực hiện trong tài liệu này:** cấp/thu hồi quyền thật, đổi role từ danh xưng, schema, migrations, sửa code, VPS/deploy.
@@ -44,7 +44,7 @@ Ký hiệu: **Q** = quyết định/phê duyệt nghiệp vụ; **T** = thực h
 
 **D2 — Cách chặn Admin tự cấp quyền chuyên môn.** Hiện generic `CAPABILITY_GRANT` có thể cho phép thao tác rộng; chỉ cấm nút trên UI là không đủ. Cần xác định authority kiểm tra ở backend, bootstrap/recovery account và quy trình cấp cứu mất PHT.
 
-**D3 — PARTIAL ACCEPTED (05/11/2026):** Có **hai mẫu PHT tách biệt**: `VICE_PRINCIPAL_ACADEMIC` (PHT phụ trách chuyên môn, được quyết định và cấu hình chuyên môn trong scope hợp lệ) và `VICE_PRINCIPAL` (PHT thông thường, **không có quyền chuyên môn mặc định**). Đây là hai Responsibility Template trên cùng engine capability, **không phải role-check thay thế guard**. Thiết kế và kiểm thử trong `docs/requirements/P5-057-WS1-D3-VICE-PRINCIPAL-ROLE-TEMPLATES.md`. **D3 vẫn OPEN phần còn lại:** số lượng PHT chuyên môn, phạm vi phụ trách, nhiệm kỳ, cơ chế chuyển đổi và bổ nhiệm.
+**D3 — PARTIAL ACCEPTED (05/11/2026):** Một PHT phụ trách chuyên môn chính hiện nay, toàn quyền chuyên môn toàn trường; PHT khác dùng mẫu thông thường `VICE_PRINCIPAL` (đề xuất thêm, chưa có code) và có thể nhận từng capability chuyên môn có hạn/phạm vi. Admin kỹ thuật tạo tài khoản và **gán mẫu vai trò ban đầu theo phân công**, kể cả `VICE_PRINCIPAL_ACADEMIC`, nhưng không quyết định nghiệp vụ chuyên môn. Không hardcode số PHT chính. Còn OPEN: quy trình chứng minh bổ nhiệm, chống tự phong, chuyển giao, thu hồi grant từ template cũ và cứu hộ; đối chiếu `P5-057-WS1-D3-VICE-PRINCIPAL-ROLE-TEMPLATES.md`.
 
 **D4 — Vai trò Hiệu trưởng.** Giữ giám sát/phê duyệt riêng; xác định trường hợp quyền override hay phê duyệt thứ hai, không mặc nhiên gộp làm PHT.
 
@@ -70,6 +70,6 @@ D1 đã được ghi vào `P5-057-WS1-ACADEMIC-AUTHORITY-DECISION-RECORD-DRAFT.m
 1. Đánh dấu D1–D6 và đối chiếu với quyền backend hiện có, không tự chọn giải pháp đòi migration.
 2. Lập decision record về RACI và mô hình nghiệp vụ, trình Product Owner phê duyệt trước thay đổi auth.
 3. Chỉ sau đó lập thiết kế tối thiểu cho WS2–WS6, với test matrix, rollback và bounded PR.
-4. Giữ PR #263 độc lập; không thêm thay đổi thẩm quyền vào PR đang xanh nhưng chưa merge.
+4. PR #263 đã deploy kỹ thuật ngày 06/11/2026; không gộp sửa đổi thẩm quyền vào PR đó. User UAT vẫn OPEN.
 
 **Ghi chú:** Đây là tài liệu kiến trúc và nghiệm thu, không phải một capability-grant hay phép thay đổi quyền tự động.

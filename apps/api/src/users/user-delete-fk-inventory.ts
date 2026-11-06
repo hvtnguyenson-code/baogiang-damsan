@@ -1,6 +1,11 @@
-// P5-056: verified against all 31 migrations on isolated PostgreSQL 16.15 and 17.10.
+// P5-057/B1: measured from all 32 migrations on isolated PostgreSQL 16.14 and 17.10.
 // Changes require migration-graph review; runtime compares the complete inbound graph.
-export const USER_DELETE_FK_INVENTORY = [{"schema":"public","child":"audit_events","name":"audit_events_actor_user_id_fkey","parent":"users","columns":["actor_user_id"],"refs":["id"],"del":"n","upd":"c","valid":true,"deferred":false},
+export const USER_DELETE_FK_INVENTORY = [
+ {"schema":"public","child":"access_commands","name":"access_commands_actor_user_id_fkey","parent":"users","columns":["actor_user_id"],"refs":["id"],"del":"r","upd":"r","valid":true,"deferred":false},
+ {"schema":"public","child":"access_commands","name":"access_commands_peer_user_id_fkey","parent":"users","columns":["peer_user_id"],"refs":["id"],"del":"r","upd":"r","valid":true,"deferred":false},
+ {"schema":"public","child":"access_commands","name":"access_commands_target_user_id_fkey","parent":"users","columns":["target_user_id"],"refs":["id"],"del":"r","upd":"r","valid":true,"deferred":false},
+ {"schema":"public","child":"access_coordinates","name":"access_coordinates_user_id_fkey","parent":"users","columns":["user_id"],"refs":["id"],"del":"r","upd":"r","valid":true,"deferred":false},
+ {"schema":"public","child":"audit_events","name":"audit_events_actor_user_id_fkey","parent":"users","columns":["actor_user_id"],"refs":["id"],"del":"n","upd":"c","valid":true,"deferred":false},
  {"schema":"public","child":"auth_sessions","name":"auth_sessions_user_id_fkey","parent":"users","columns":["user_id"],"refs":["id"],"del":"r","upd":"c","valid":true,"deferred":false},
  {"schema":"public","child":"business_policy_commands","name":"business_policy_commands_actor_fkey","parent":"users","columns":["actor_user_id"],"refs":["id"],"del":"r","upd":"c","valid":true,"deferred":false},
  {"schema":"public","child":"business_policy_versions","name":"business_policy_versions_created_by_fkey","parent":"users","columns":["created_by_user_id"],"refs":["id"],"del":"r","upd":"c","valid":true,"deferred":false},
@@ -16,6 +21,7 @@ export const USER_DELETE_FK_INVENTORY = [{"schema":"public","child":"audit_event
  {"schema":"public","child":"curricular_teaching_executions","name":"curricular_exec_created_by_fkey","parent":"users","columns":["created_by_user_id"],"refs":["id"],"del":"r","upd":"c","valid":true,"deferred":false},
  {"schema":"public","child":"curricular_teaching_executions","name":"curricular_exec_responsible_teacher_fkey","parent":"users","columns":["responsible_teacher_user_id"],"refs":["id"],"del":"r","upd":"c","valid":true,"deferred":false},
  {"schema":"public","child":"curricular_teaching_executions","name":"curricular_exec_reversed_by_fkey","parent":"users","columns":["reversed_by_user_id"],"refs":["id"],"del":"r","upd":"c","valid":true,"deferred":false},
+ {"schema":"public","child":"grant_sources","name":"grant_sources_user_id_fkey","parent":"users","columns":["user_id"],"refs":["id"],"del":"r","upd":"r","valid":true,"deferred":false},
  {"schema":"public","child":"historical_teaching_import_batches","name":"historical_teaching_import_batches_confirmed_by_fkey","parent":"users","columns":["confirmed_by_user_id"],"refs":["id"],"del":"r","upd":"c","valid":true,"deferred":false},
  {"schema":"public","child":"homeroom_assignments","name":"homeroom_assignments_created_by_user_id_fkey","parent":"users","columns":["created_by_user_id"],"refs":["id"],"del":"r","upd":"c","valid":true,"deferred":false},
  {"schema":"public","child":"homeroom_assignments","name":"homeroom_assignments_reversed_by_user_id_fkey","parent":"users","columns":["reversed_by_user_id"],"refs":["id"],"del":"r","upd":"c","valid":true,"deferred":false},
@@ -49,6 +55,7 @@ export const USER_DELETE_FK_INVENTORY = [{"schema":"public","child":"audit_event
  {"schema":"public","child":"reporting_statement_commands","name":"reporting_statement_command_actor_fkey","parent":"users","columns":["actor_user_id"],"refs":["id"],"del":"r","upd":"c","valid":true,"deferred":false},
  {"schema":"public","child":"reporting_statement_histories","name":"reporting_statement_history_actor_fkey","parent":"users","columns":["actor_user_id"],"refs":["id"],"del":"r","upd":"c","valid":true,"deferred":false},
  {"schema":"public","child":"reporting_statement_series","name":"reporting_statement_series_submitter_fkey","parent":"users","columns":["submitter_user_id"],"refs":["id"],"del":"r","upd":"c","valid":true,"deferred":false},
+ {"schema":"public","child":"role_appointments","name":"role_appointments_user_id_fkey","parent":"users","columns":["user_id"],"refs":["id"],"del":"r","upd":"r","valid":true,"deferred":false},
  {"schema":"public","child":"special_activities","name":"special_activities_created_by_user_id_fkey","parent":"users","columns":["created_by_user_id"],"refs":["id"],"del":"r","upd":"c","valid":true,"deferred":false},
  {"schema":"public","child":"special_activities","name":"special_activities_reversed_by_user_id_fkey","parent":"users","columns":["reversed_by_user_id"],"refs":["id"],"del":"r","upd":"c","valid":true,"deferred":false},
  {"schema":"public","child":"special_activity_participation_executions","name":"activity_exec_actual_teacher_fkey","parent":"users","columns":["actual_teacher_user_id"],"refs":["id"],"del":"r","upd":"c","valid":true,"deferred":false},
@@ -77,4 +84,5 @@ export const USER_DELETE_FK_INVENTORY = [{"schema":"public","child":"audit_event
  {"schema":"public","child":"timetable_versions","name":"timetable_versions_approved_by_user_id_fkey","parent":"users","columns":["approved_by_user_id"],"refs":["id"],"del":"r","upd":"c","valid":true,"deferred":false},
  {"schema":"public","child":"timetable_versions","name":"timetable_versions_created_by_user_id_fkey","parent":"users","columns":["created_by_user_id"],"refs":["id"],"del":"r","upd":"c","valid":true,"deferred":false},
  {"schema":"public","child":"timetable_versions","name":"timetable_versions_validated_by_user_id_fkey","parent":"users","columns":["validated_by_user_id"],"refs":["id"],"del":"r","upd":"c","valid":true,"deferred":false},
- {"schema":"public","child":"web_push_subscriptions","name":"web_push_subscriptions_user_id_fkey","parent":"users","columns":["user_id"],"refs":["id"],"del":"r","upd":"c","valid":true,"deferred":false}] as const;
+ {"schema":"public","child":"web_push_subscriptions","name":"web_push_subscriptions_user_id_fkey","parent":"users","columns":["user_id"],"refs":["id"],"del":"r","upd":"c","valid":true,"deferred":false}
+] as const;

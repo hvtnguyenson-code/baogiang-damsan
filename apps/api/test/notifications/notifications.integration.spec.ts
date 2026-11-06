@@ -89,7 +89,7 @@ integration('P5-056 notifications security and concurrency (isolated PostgreSQL)
 
   it('proves fingerprint, enforcement and complete FK inventory separately', async () => {
     await expect(verifyReleaseSchema(h.prisma, inspectUserDeletionSchema)).resolves.toBeUndefined();
-    expect(await inspectUserDeletionSchema(h.prisma)).toMatchObject({ fingerprintMatches: true, enforced: true, inventoryMatches: true, foreignKeyCount: 78 });
+    expect(await inspectUserDeletionSchema(h.prisma)).toMatchObject({ fingerprintMatches: true, enforced: true, inventoryMatches: true, foreignKeyCount: 84 });
     await h.prisma.$transaction(async tx => {
       await tx.$executeRawUnsafe('ALTER TABLE public.web_push_subscriptions ADD COLUMN unexpected_identity uuid');
       expect(await inspectUserDeletionSchema(tx)).toMatchObject({ fingerprintMatches: false, inventoryMatches: true });

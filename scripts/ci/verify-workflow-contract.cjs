@@ -60,6 +60,16 @@ const active = fs.readFileSync(path.join(__dirname, '..', '..', '.github', 'work
 const automatic = fs.readFileSync(path.join(__dirname, '..', '..', '.github', 'workflows', 'auto-deploy-production.yml'), 'utf8');
 const stable = fs.readFileSync(path.join(__dirname, '..', 'deploy', 'windows', 'auto-deploy-code-only.ps1'), 'utf8');
 assert.ok(automatic.includes('gh workflow run deploy-vps.yml'));
+assert.ok(automatic.includes('gh workflow run deploy-production.yml'), 'reviewed migration route missing');
+assert.ok(automatic.includes('scripts/ci/classify-production-migrations.cjs'), 'fail-closed classification missing');
+assert.ok(automatic.includes('approved-migration'), 'approved migration mode missing');
+assert.ok(automatic.includes('Read deployed BaoGiang release via pinned read-only SSH'), 'deployed baseline proof missing');
+assert.ok(automatic.includes('steps.predecessor.outputs.sha'), 'classifier must use observed deployed SHA');
+assert.ok(automatic.includes('maintenance_operator=github-policy-approved'), 'dedicated policy principal missing');
+assert.ok(automatic.includes('steps.classification.outputs.mode'), 'dispatch must use classification output');
+assert.ok(automatic.includes('environment: production'), 'SSH secrets must use production environment');
+assert.ok(automatic.indexOf('Read deployed BaoGiang release') < automatic.indexOf('Classify migration delta'), 'SSH baseline must precede classification');
+assert.ok(automatic.includes('already-current)'), 'idempotent already-deployed release must not redispatch');
 assert.match(active, /workflow_dispatch:/);
 assert.match(active, /environment: production/);
 assert.ok(active.includes('ssh -n -i'));

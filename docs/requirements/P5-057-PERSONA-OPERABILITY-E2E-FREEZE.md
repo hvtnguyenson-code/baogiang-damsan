@@ -1,6 +1,6 @@
 # P5-057 — Persona Operability E2E Freeze
 
-**Status:** IN_PROGRESS (WS1 documentation/authority mapping only; not persona E2E closure)
+**Status:** IN_PROGRESS (WS1 authority decisions OPEN; WS2 PR #263 technically deployed 06/11/2026; seven-persona E2E not accepted)
 **Depends on:** P5-051, P5-052, P5-053, P5-054, P5-055, P5-056, P5-020, P5-030, P5-010  
 **Traceability:** T56
 
