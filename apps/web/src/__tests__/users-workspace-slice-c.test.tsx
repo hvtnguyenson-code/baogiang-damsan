@@ -163,6 +163,55 @@ describe('P5-051 Slice C: Users Administration Workspace', () => {
     expect(screen.getByText('binh@damsan.edu.vn')).toBeInTheDocument();
   });
 
+  it('WS3: switching staff resets template, subject scope and sensitive workspace context', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        return jsonResponse(auth(
+          { key: 'USER_MANAGE', scope: 'SCHOOL_WIDE' },
+          { key: 'CAPABILITY_GRANT', scope: 'SCHOOL_WIDE' },
+        ));
+      }
+      if (url.includes('/api/capabilities/responsibility-templates')) {
+        return jsonResponse({ items: mockTemplates });
+      }
+      if (url.includes('/api/subject-groups')) {
+        return jsonResponse(page([{ id: 'sg-math', code: 'TOAN', name: 'Tổ Toán', status: 'ACTIVE' }]));
+      }
+      if (url.includes('/api/subjects')) {
+        return jsonResponse(page([{ id: 's-math', code: 'TOAN', name: 'Môn Toán', status: 'ACTIVE' }]));
+      }
+      if (url.includes('/api/users')) return jsonResponse(page(mockUsers));
+      return jsonResponse({});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+
+    renderApp('/quan-tri/nguoi-dung');
+    await user.click(await screen.findByRole('button', { name: 'Chọn gv_nguyenvanb' }));
+    const templateSelect = await screen.findByLabelText(/Chọn Mẫu trách nhiệm/i);
+    await user.selectOptions(templateSelect, 'SUBJECT_LEADER');
+    const groupSelect = await screen.findByLabelText(/Tổ chuyên môn phụ trách/i);
+    await user.selectOptions(groupSelect, 'sg-math');
+    const math = await screen.findByRole('checkbox', { name: /Môn Toán/i });
+    await user.click(math);
+    expect(templateSelect).toHaveValue('SUBJECT_LEADER');
+    expect(groupSelect).toHaveValue('sg-math');
+    expect(math).toBeChecked();
+
+    await user.click(screen.getByRole('button', { name: 'Chọn gv_clean_slate' }));
+    expect(screen.getByLabelText(/Chọn Mẫu trách nhiệm/i)).toHaveValue('TEACHER');
+    expect(screen.queryByLabelText(/Tổ chuyên môn phụ trách/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Áp dụng Mẫu trách nhiệm/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/Áp dụng mẫu hiện chỉ bổ sung quyền còn thiếu/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Chọn gv_nguyenvanb' }));
+    expect(screen.getByLabelText(/Chọn Mẫu trách nhiệm/i)).toHaveValue('TEACHER');
+    await user.selectOptions(screen.getByLabelText(/Chọn Mẫu trách nhiệm/i), 'SUBJECT_LEADER');
+    expect(await screen.findByLabelText(/Tổ chuyên môn phụ trách/i)).toHaveValue('');
+    expect(await screen.findByRole('checkbox', { name: /Môn Toán/i })).not.toBeChecked();
+  });
+
   it('runs responsibility template preview and apply flow for TEACHER template with server-owned catalog', async () => {
     let previewCalled = false;
     let applyCalled = false;

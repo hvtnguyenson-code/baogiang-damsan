@@ -834,6 +834,14 @@ export function UsersPage() {
     document.querySelectorAll('details.user-directory-more[open]').forEach((el) => {
       el.removeAttribute('open');
     });
+    // Never carry a previous staff member's role/template/resource choices into another account.
+    // Clicking the already-selected staff member should not discard an in-progress choice.
+    if (selectedUserId !== user.id) {
+      setActiveTab('templates');
+      setSelectedTemplateKey('TEACHER');
+      setSubjectGroupId('');
+      setSubjectIds([]);
+    }
     setSuccess('');
     setDraft(null);
     setSelectedUserId(user.id);
@@ -1712,6 +1720,10 @@ export function UsersPage() {
                       Gán quyền tự động theo <strong>Mẫu phân quyền theo nhiệm vụ được phê duyệt</strong>. Hệ thống sẽ kiểm tra
                       tính hợp lệ, xung đột và thời hạn trước khi áp dụng.
                     </div>
+                    <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded p-3" role="note">
+                      Lưu ý: Áp dụng mẫu hiện chỉ bổ sung quyền còn thiếu, không tự thu hồi quyền của chức trách cũ.
+                      Khi chuyển nhiệm vụ, cần đối soát và thu hồi quyền cũ theo quy trình được phê duyệt.
+                    </p>
 
                     {/* Server-Owned Template Catalog & Selection */}
                     {!canGrant ? (
