@@ -357,6 +357,35 @@ integration('P5-051 Professional Baseline & Responsibility Templates (Isolated P
     expect(countAfter).toBe(countBefore);
   });
 
+  it('11b. WS3 preflight shows current grants outside TEACHER without mutation or revoke', async () => {
+    const admin = await h.actor({ grants: [{ capabilityKey: 'CAPABILITY_GRANT' }] });
+    const userId = await createTestUser({ status: UserStatus.ACTIVE, isTeachingStaff: true });
+    const apply = await admin.agent
+      .post(`/api/users/${userId}/responsibility-templates/apply`)
+      .set('Origin', testOrigin)
+      .send({ templateKey: 'VICE_PRINCIPAL_ACADEMIC' });
+    expect(apply.status).toBe(200);
+
+    const before = await h.prisma.capabilityGrant.findMany({
+      where: { userId }, orderBy: { id: 'asc' },
+    });
+    const preview = await admin.agent
+      .post(`/api/users/${userId}/responsibility-templates/preview`)
+      .set('Origin', testOrigin)
+      .send({ templateKey: 'TEACHER' });
+    expect(preview.status).toBe(200);
+    expect(preview.body.transitionReview).toEqual(expect.objectContaining({
+      mode: 'READ_ONLY', activeGrantCount: before.length,
+      provenanceVerified: false, revocationAvailable: false,
+    }));
+    expect(preview.body.transitionReview.outsideTemplateActiveGrantCount).toBeGreaterThan(0);
+    expect(preview.body.transitionReview.outsideTemplateSample.length).toBeLessThanOrEqual(8);
+    const after = await h.prisma.capabilityGrant.findMany({
+      where: { userId }, orderBy: { id: 'asc' },
+    });
+    expect(after).toEqual(before);
+  });
+
   it('11 & 12. PHT template apply materializes exact grants, includes APPROVAL_VICE_PRINCIPAL', async () => {
     const admin = await h.actor({ grants: [{ capabilityKey: 'CAPABILITY_GRANT' }] });
     const userId = await createTestUser({ status: UserStatus.ACTIVE, isTeachingStaff: true });

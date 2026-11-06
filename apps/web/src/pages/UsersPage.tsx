@@ -2155,6 +2155,40 @@ export function UsersPage() {
                           </div>
                         )}
 
+                        {/* WS3 read-only review: grants outside the selected template
+                            are NOT inferred to be revocation candidates. */}
+                        {templatePreview.transitionReview && (
+                          <div role="status" className="rounded border border-amber-300 bg-amber-50 p-3 space-y-2 text-xs text-amber-950">
+                            <div className="font-bold">Đối chiếu quyền trước khi chuyển nhiệm vụ (chỉ xem)</div>
+                            <p>
+                              Đang có <strong>{templatePreview.transitionReview.activeGrantCount}</strong> quyền hiệu lực;
+                              <strong> {templatePreview.transitionReview.outsideTemplateActiveGrantCount}</strong> quyền
+                              nằm ngoài mẫu đang chọn.
+                            </p>
+                            <p>
+                              Quyền ngoài mẫu có thể là quyền độc lập vẫn cần giữ. Chưa xác minh nguồn cấp nên
+                              <strong> không thể xác định quyền nào cần thu hồi tự động</strong>.
+                              Kiểm tra này không thay đổi hay thu hồi bất kỳ quyền nào.
+                            </p>
+                            {templatePreview.transitionReview.outsideTemplateSample.length > 0 && (
+                              <ul className="list-disc pl-5 space-y-1" aria-label="Quyền hiện hữu ngoài mẫu cần đối chiếu">
+                                {templatePreview.transitionReview.outsideTemplateSample.map((g, i) => (
+                                  <li key={i}>
+                                    {capabilityKeyLabel(g.capabilityKey)} · {scopeTypeLabel(g.scopeType)}
+                                  </li>
+                                ))}
+                                {templatePreview.transitionReview.outsideTemplateActiveGrantCount >
+                                  templatePreview.transitionReview.outsideTemplateSample.length && (
+                                  <li>
+                                    Và {templatePreview.transitionReview.outsideTemplateActiveGrantCount -
+                                      templatePreview.transitionReview.outsideTemplateSample.length} quyền khác cần đối chiếu.
+                                  </li>
+                                )}
+                              </ul>
+                            )}
+                          </div>
+                        )}
+
                         {/* Grants To Add */}
                         <div>
                           <div className="text-xs font-bold text-blue-900 uppercase tracking-wide mb-1">

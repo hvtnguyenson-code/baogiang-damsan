@@ -352,9 +352,40 @@ export class AccessBaselineService {
       }
     }
 
+    // Never infer revocation candidates from an add-only template. Existing
+    // independent/legacy grant provenance has not been verified at this gate.
+    // A coordinate outside the selected template means REVIEW, not REVOKE.
+    const requestedCoordinates = new Set(
+      grantSpecs.map((spec) =>
+        JSON.stringify([spec.capabilityKey, spec.scopeType, spec.scopeResourceId ?? null]),
+      ),
+    );
+    const activeGrants = existingGrants.filter(
+      (g) => g.validFrom <= now && (!g.validUntil || g.validUntil > now),
+    );
+    const outsideTemplate = activeGrants.filter(
+      (g) =>
+        !requestedCoordinates.has(
+          JSON.stringify([g.capabilityKey, g.scopeType, g.scopeResourceId ?? null]),
+        ),
+    );
+
     return {
       templateKey: dto.templateKey,
       version: templateDef.version,
+      transitionReview: {
+        mode: 'READ_ONLY',
+        evaluatedAt: now.toISOString(),
+        activeGrantCount: activeGrants.length,
+        outsideTemplateActiveGrantCount: outsideTemplate.length,
+        outsideTemplateSample: outsideTemplate.slice(0, 8).map((g) => ({
+          capabilityKey: g.capabilityKey,
+          scopeType: g.scopeType as CapabilityScope,
+          ...(g.scopeResourceId ? { scopeResourceId: g.scopeResourceId } : {}),
+        })),
+        provenanceVerified: false,
+        revocationAvailable: false,
+      },
       targetUser: {
         id: user.id,
         username: user.username,
