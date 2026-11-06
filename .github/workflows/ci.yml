@@ -132,6 +132,9 @@ jobs:
       - name: Deployment behavioral fixtures
         run: npm run test:deploy:behavior
 
+      - name: Auto-deploy migration classification fixtures
+        run: node --test scripts/ci/test-auto-migration-policy.cjs
+
       - name: Workflow contract verification
         run: npm run test:workflow:contract
 
