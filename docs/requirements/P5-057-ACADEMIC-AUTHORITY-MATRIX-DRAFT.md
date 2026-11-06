@@ -38,7 +38,7 @@ Ký hiệu: **Q** = quyết định/phê duyệt nghiệp vụ; **T** = thực h
 
 **Điểm cần khóa:** ranh giới "Admin gán vai trò" từ §14.1 với "PHT quyết định phân quyền chuyên môn" từ Product Owner. Trường hợp thực thi kỹ thuật không đồng nghĩa quyền tự quyết; phải có bằng chứng `approvedBy` hoặc giao dịch cấp quyền giới hạn gắn với PHT.
 
-## 3. D1 ĐÃ CHỐT B; D2–D6 còn OPEN (chưa cho phép sửa code)
+## 3. D1 chốt B; D3/D4 chốt một phần; D2/D5/D6 cần hoàn thiện gate trước khi code
 
 **D1 — ACCEPTED: PHƯƠNG ÁN B (05/11/2026).** PHT trực tiếp **quyết định và cấu hình tất cả nghiệp vụ chuyên môn** trong phạm vi thẩm quyền qua giao diện/command nghiệp vụ kiểm soát chặt chẽ: phân công GV/môn/lớp, TKB, PPCT, nghiệp vụ giảng dạy, quyền chuyên môn, GDĐP/HĐTN-HN. Admin quản trị tài khoản/hạ tầng kỹ thuật, **không quyết định hoặc cấu hình chuyên môn thay PHT**. Không cấp `CAPABILITY_GRANT/SCHOOL_WIDE` hoặc quyền kỹ thuật tổng quát cho PHT. D2–D6 vẫn OPEN để chốt phạm vi PHT, backend deny, vai trò HT, ủy quyền, chính sách nguồn dữ liệu; chưa được sửa runtime.
 
@@ -52,7 +52,7 @@ Ký hiệu: **Q** = quyết định/phê duyệt nghiệp vụ; **T** = thực h
 
 **D6 — Nguồn phân công.** TKB/import hỗ trợ gợi ý môn/lớp nhưng không được tự động thay thế quyết định chuyên môn; xử lý trùng/không rõ tên/đổi lịch với người quyết định.
 
-D1 đã được ghi vào `P5-057-WS1-ACADEMIC-AUTHORITY-DECISION-RECORD-DRAFT.md` theo phương án B. D2–D6 vẫn phải được chốt trong hồ sơ quyết định trước khi sửa source. Không thay đổi các ADR đã chấp thuận chỉ để hợp thức hóa cách làm mới.
+D1 đã chốt phương án B, D3/D4 chốt một phần. D2/D5/D6 có kiến trúc đề xuất và danh sách câu hỏi còn mở trong `P5-057-WS1-TECHNICAL-BASELINE-20261106.md`; chưa cho phép sửa quyền production. Không thay đổi các ADR đã chấp thuận chỉ để hợp thức hóa cách làm mới.
 
 ## 4. Kiểm tra bắt buộc trước khi cho phép WS4/WS5
 

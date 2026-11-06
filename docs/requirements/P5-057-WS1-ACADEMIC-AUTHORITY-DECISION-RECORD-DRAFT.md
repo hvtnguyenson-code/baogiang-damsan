@@ -1,11 +1,11 @@
 # P5-057 / WS1 — Bản ghi Quyết định Thẩm quyền Chuyên môn và Mô hình Phân quyền (DỰ THẢO)
 
 **Mã tài liệu:** `P5-057-WS1-ACADEMIC-AUTHORITY-DECISION-RECORD-DRAFT`
-**Trạng thái pháp lý:** **DRAFT / NON-NORMATIVE / AWAITING PRODUCT OWNER APPROVAL**
+**Trạng thái:** **TECHNICAL BASELINE READY / NON-NORMATIVE** — D1 accepted, D3/D4 partially accepted; implementation choices D2/D5/D6 documented, policy sign-off still required before permission changes.
 **Ngày lập dự thảo:** 05/11/2026
 **Quyết định Product Owner:** D1 = PHƯƠNG ÁN B (ACCEPTED 05/11/2026); D3 PARTIAL ACCEPTED (05/11/2026); **D4 PARTIAL ACCEPTED (06/11/2026)** về giám sát độc lập và ngoại lệ khẩn cấp có kiểm soát. D2/D5/D6, chi tiết chuyển giao/thu hồi D3 và quy trình can thiệp khẩn cấp D4 vẫn OPEN; chưa cho phép thay đổi backend, schema, quyền thật hoặc deploy.
 **Phạm vi áp dụng:** Gói công việc 1 (WS1 — Khóa nghiệp vụ thẩm quyền chuyên môn) thuộc nhiệm vụ `P5-057` (Traceability: `T56`).
-**Nhánh Git công tác:** `docs/p5-057-four-stage-realignment` (Expected baseline HEAD: `5aa14857e1447c5bff710b0e6888ebaa649cd8d7`).
+**Nhánh Git công tác:** `docs/p5-057-four-stage-realignment` (PR #264; code baseline `bd79173a1180c26cbd33555ff081c015ef515bff`).
 **Ranh giới kỹ thuật:** **TÀI LIỆU DUY NHẤT ĐƯỢC TẠO — DOCS-ONLY**. Tuyệt đối không thay đổi mã nguồn backend, frontend, schema cơ sở dữ liệu, Prisma migration, test suite, file khóa phụ thuộc, cấu hình Git, VPS, hệ thống Quản lí Nội trú hay cơ sở dữ liệu production.
 
 > **Lưu ý kiểm chứng:** Tên endpoint API, trường chứng từ phê duyệt, mã lỗi, thời hạn hiệu lực và luồng kiểm thử trong bản ADR là **đề xuất thiết kế**, trừ khi có đường dẫn mã nguồn được đối chiếu rõ ràng. Không coi các ví dụ là tính năng backend đã có, không tự động lựa chọn D1–D6 hay khẳng định schema không cần thay đổi.
@@ -35,7 +35,7 @@ Bảng đối chiếu dưới đây liệt kê toàn bộ các căn cứ thẩm 
 | 4 | Baseline sản phẩm tiền Pilot | `docs/governance/PRE-PILOT-PRODUCT-BASELINE.md` | **Đã xác minh** | Nguyên tắc "REALIGN, NOT REBUILD", giữ vững backend default-deny, session xác thực máy chủ, lịch sử daterange `TeachingAssignment`, TKB, PPCT và Reporting Statement. |
 | 5 | Ma trận truy vết tiền Pilot | `docs/governance/PRE-PILOT-TRACEABILITY-MATRIX.md` | **Đã xác minh** | Hàng `T56` (P5-057); các hàng nền tảng `T03` (TeachingAssignment), `T04` (TKB), `T05` (PPCT), `T18` (Coordinator GDĐP/HĐTN), `T50` (Baseline/Templates). |
 | 6 | Sổ đăng ký công việc | `docs/governance/PRE-PILOT-TASK-REGISTER.md` | **Đã xác minh** | Nhiệm vụ `P5-057` đang ở trạng thái `IN_PROGRESS` (chỉ docs WS1); tiền đề bắt buộc trước khi mở cổng kiểm tra giáo viên `P6-050`. |
-| 7 | Hiện trạng dự án | `docs/governance/CURRENT-PROJECT-STATUS.md` | **Đã xác minh** | Xác nhận snapshot trạng thái 03/11/2026, PR #263 đang `OPEN` và không bị ảnh hưởng bởi WS1. |
+| 7 | Hiện trạng dự án | `docs/governance/CURRENT-PROJECT-STATUS.md` | **Đã xác minh** | Xác nhận 06/11/2026: PR #263 đã merge và deploy code-only (CI #891, VPS #33); UAT người dùng thật còn mở. |
 | 8 | Phương án B v1.3 Addendum | `docs/specifications/PA-B-VPS-PostgreSQL-v1.3-IMPLEMENTATION-ADDENDUM.md` | **Đã xác minh** | Thẩm quyền cao nhất về hạ tầng VPS Windows Server 2022, PostgreSQL độc lập, phân tách môi trường local/CI/VPS và kỷ luật delivery. |
 | 9 | Phương án B v1.2 Đặc tả nghiệp vụ | `docs/specifications/PA-B-VPS-PostgreSQL-v1.2-AI-governance.docx` (và các bản audit canonical) | **Đã xác minh** | Mục 2, 3, 14, 15: Nguyên tắc `TEACHER_BASE` là nền tảng; cộng dồn capability; Admin quản trị tài khoản; HT/PHT nộp bảng kê qua Tổ trưởng, không tự duyệt. |
 | 10 | Danh mục Mẫu trách nhiệm | `apps/api/src/capabilities/responsibility-template-catalog.ts` | **Đã xác minh** | Định nghĩa 7 template: `TEACHER`, `SUBJECT_LEADER`, `VICE_PRINCIPAL_ACADEMIC`, `PRINCIPAL`, `GDDP_COORDINATOR`, `HDTN_COORDINATOR`, `TECHNICAL_ACCOUNT_ADMIN`. PHT có các quyền nghiệp vụ `SCHOOL_WIDE` nhưng thuộc tính `forbiddenDefaults` cấm `CAPABILITY_GRANT`, `USER_MANAGE`, `SYSTEM_ADMIN`. |
@@ -63,7 +63,7 @@ Bảng dưới đây chỉ rõ sự khác biệt giữa thiết kế trong tài 
 | **Vai trò của Admin kỹ thuật** | Admin tài khoản tạo người dùng, gán tổ, môn, chức vụ và vai trò kiêm nhiệm (Mục 14.1). | Admin sở hữu capability kỹ thuật để duy trì vòng đời hệ thống. | Admin có `USER_MANAGE` và `CAPABILITY_GRANT/SCHOOL_WIDE`, có thể gán mọi quyền cho bất kỳ ai. | **Thu hẹp nghiêm ngặt:** Admin chỉ quản lý tài khoản kỹ thuật (tạo, kích hoạt, khóa, reset mật khẩu). Admin **KHÔNG ĐƯỢC** tự ý quyết định hay tự cấp quyền chuyên môn. |
 | **Vai trò của Phó Hiệu trưởng (PHT)** | PHT là cán bộ quản lý chuyên môn, thực hiện phân công và duyệt báo cáo. | PHT có các capability nghiệp vụ chuyên môn; không được cấp quyền kỹ thuật hệ thống. | Template `VICE_PRINCIPAL_ACADEMIC` có quyền nghiệp vụ nhưng bị cấm `CAPABILITY_GRANT` nên bị Controller chặn truy cập UI gán quyền. | **Nâng thành Thẩm quyền Quyết định Chuyên môn:** PHT là người duy nhất phê duyệt hoặc ban hành phân quyền chuyên môn. Giải quyết tắc nghẽn UI bằng command chuyên môn hẹp (D1). |
 | **Cấp phát quyền hạn (Granting Authority)** | Không quy định cơ chế kỹ thuật chi tiết của việc gán quyền. | Generic `CAPABILITY_GRANT/SCHOOL_WIDE` quản lý toàn bộ việc cấp/thu hồi mọi capability. | Một capability duy nhất `CAPABILITY_GRANT` dùng chung cho cả quyền kỹ thuật và quyền chuyên môn. | **Phân tách ranh giới (D1, D2):** Đề xuất tách biệt hoặc đặt chốt chặn backend để Admin không dùng `CAPABILITY_GRANT` tự chiếm quyền chuyên môn và PHT không nhận generic technical grant. |
-| **Quy trình Phê duyệt Báo cáo Kê khai** | HT và PHT gửi bảng kê tiết dạy cá nhân qua Tổ trưởng chuyên môn thẩm định, không tự duyệt (Mục 3.4). | Bảo vệ logic nghiệp vụ, cấm tự phê duyệt (anti-self-approval). | Backend đã có endpoint nộp và duyệt, nhưng chưa có ràng buộc cứng ở tầng database ngăn HT/PHT tự duyệt bảng kê cá nhân. | **Siết chặt tuyệt đối (D5):** Khóa cứng quy tắc chống tự duyệt ở backend service/guard; bắt buộc bảng kê cá nhân của BGH phải gửi qua TTCM tương ứng. |
+| **Quy trình Phê duyệt Báo cáo Kê khai** | HT và PHT gửi bảng kê tiết dạy cá nhân qua Tổ trưởng chuyên môn thẩm định, không tự duyệt (Mục 3.4). | Bảo vệ logic nghiệp vụ, cấm tự phê duyệt (anti-self-approval). | Backend `ReportingStatementsService.decide()` đã chặn người tự duyệt bản kê bằng so sánh `submitterUserId === actor`, có integration test cho cả duyệt/từ chối; tuyến thẩm định TTCM cho BGH còn cần làm rõ. | **Giữ chức năng D5 đã có:** không viết lại kiểm tra chống tự duyệt; làm rõ tuyến TTCM thẩm định BGH và xây kiểm soát anti-self-grant tại grant writer. |
 | **Nguồn dữ liệu Phân công (TKB/PPCT)** | Dữ liệu nhập từ TKB và phân công của trường là căn cứ điều hành. | Importer chuẩn hóa dữ liệu, lưu vết lịch sử không ghi đè, preview trước khi ghi. | Importer TKB native Đam San (`P2-040`/`P2-050`) ghi nhận các tiết học và marker đặc thù. | **Phân định rõ ràng (D6):** TKB nhập vào chỉ là nguồn **gợi ý (suggestion)**, tuyệt đối không tự động sinh quyền hay thay thế quyết định chuyên môn của PHT. |
 
 ---
@@ -85,7 +85,7 @@ flowchart TD
         HT["Hiệu trưởng (Giám sát / Override)"]
         PHT -->|Q: Quyết định Phân công Giảng dạy| DEC_ASSIGN["Phê duyệt Danh sách Lớp - Môn - GV"]
         PHT -->|Q: Quyết định Phân quyền Chuyên môn| DEC_CAP["Ban hành Quyết định / Chỉ thị Cấp quyền"]
-        HT -.->|Giám sát tối cao / Phê duyệt cấp 2| PHT
+        HT -.->|Giám sát độc lập, không mặc nhiên duyệt cấp 2| PHT
     end
 
     subgraph TANG_3["TẦNG 3: THỰC THI CAPABILITY BACKEND (T)"]
@@ -146,9 +146,9 @@ flowchart TD
 
 ---
 
-## 3. Sáu Mục Quyết định Thẩm quyền (D1 đã chốt B; D2–D6 OPEN)
+## 3. Sáu quyết định — D1 accepted; D3/D4 partial; D2/D5/D6 có hợp đồng đề xuất
 
-D1 đã được Product Owner phê duyệt theo phương án B ngày 05/11/2026. D2–D6 vẫn OPEN và phải được chốt trước khi sửa quyền backend; bản quyết định từng phần không đồng nghĩa WS1 đã CLOSED.
+D1 đã được PO chốt phương án B; D3/D4 chốt một phần; PO xác nhận trường luôn có PHT chuyên môn. Các vấn đề phải quyết định bổ sung được định danh trong `docs/requirements/P5-057-WS1-TECHNICAL-BASELINE-20261106.md`. Hợp đồng triển khai là đề xuất kỹ thuật, chưa cấp quyền sửa backend hay đóng WS1.
 
 ```mermaid
 flowchart LR
@@ -216,7 +216,7 @@ flowchart LR
 
 ### D3 — Số lượng PHT, Phân định Phạm vi (Scope) và Thời hạn Hiệu lực
 
-**QUYẾT ĐỊNH TỪNG PHẦN ĐÃ CHỐT (PO, 05/11/2026):** Hai mẫu PHT riêng biệt: `VICE_PRINCIPAL_ACADEMIC` — chỉ người được giao phụ trách chuyên môn mới trực tiếp phân quyền/cấu hình chuyên môn; `VICE_PRINCIPAL` — PHT thông thường không có quyền chuyên môn mặc định. Không cấp quyền theo nhãn chức danh; phải materialize grant bằng engine đang có và chặn tại backend. Xem `docs/requirements/P5-057-WS1-D3-VICE-PRINCIPAL-ROLE-TEMPLATES.md`. **Các lựa chọn số lượng, phạm vi, thời hạn và quy trình bổ nhiệm bên dưới chưa được PO chốt; D3 còn OPEN các phần này.**
+**QUYẾT ĐỊNH TỪNG PHẦN ĐÃ CHỐT (PO, 05/11/2026):** Hai mẫu PHT riêng biệt: `VICE_PRINCIPAL_ACADEMIC` — chỉ người được giao phụ trách chuyên môn mới trực tiếp phân quyền/cấu hình chuyên môn; `VICE_PRINCIPAL` — PHT thông thường không có quyền chuyên môn mặc định. Không cấp quyền theo nhãn chức danh; phải materialize grant bằng engine đang có và chặn tại backend. Xem `docs/requirements/P5-057-WS1-D3-VICE-PRINCIPAL-ROLE-TEMPLATES.md`. **Đã chốt hiện có một PHT chuyên môn chính, trường luôn bố trí PHT; không hardcode số lượng. Các phương án số lượng phía dưới chỉ giữ để truy vết. D3 còn mở quy trình chuyển giao grant và chứng từ bổ nhiệm.**
 
 - **Trạng thái:** **OPEN**.
 - **Bối cảnh & Mâu thuẫn thực tế:**
@@ -256,63 +256,27 @@ flowchart LR
 - **Kiểm thử bắt buộc khi thiết kế triển khai:** Hiệu trưởng chỉ có quyền xem gọi API cấp grant/sửa phân công -> từ chối; PHT có quyền hợp lệ vẫn thực hiện nghiệp vụ thường xuyên không phụ thuộc một phê duyệt mới; yêu cầu cứu hộ thiếu căn cứ/scope/thời hạn hoặc vượt phạm vi -> từ chối; mọi can thiệp khẩn cấp hợp lệ phải được audit và hết hạn/thu hồi theo chính sách được chốt; không đổi quyền cấp/duyệt bảng kê đã tồn tại.
 - **Giới hạn hiệu lực của quyết định:** D4 **chốt nguyên tắc nghiệp vụ**, **không chốt thiết kế endpoint, capability, DB migration, chính sách quyền cứu hộ hay thời hạn**. Việc chốt cơ chế triển khai D4 phụ thuộc D2/D3/D5 và phê duyệt riêng, không được coi là cấp quyền ngay.
 
-### D5 — Nguyên tắc Chống Tự cấp, Chống Tự duyệt và Quy chế Ủy quyền
+### D5 — Chống tự cấp, chống tự duyệt và ủy quyền
 
-- **Trạng thái:** **OPEN**.
-- **Bối cảnh & Mâu thuẫn thực tế:**
-  Một lỗi nghiêm trọng trong các hệ thống quản lý trường học là cán bộ quản lý tự phê duyệt minh chứng tiết dạy của chính mình để thanh toán chế độ thừa giờ. Đặc tả v1.2 Mục 3.4 đã quy định rõ: *HT và PHT vẫn thực hiện nghĩa vụ giảng dạy theo quy định của nhà giáo, nộp bảng kê tiết dạy cá nhân qua Tổ trưởng chuyên môn thẩm định, tuyệt đối không được tự duyệt*. Tuy nhiên, cơ chế kiểm soát này cần được cụ thể hóa thành luật bất biến trong mã nguồn. Ngoài ra, khi PHT đi công tác hoặc nghỉ phép, cần có quy chế ủy quyền hợp lệ.
-- **Các quy tắc bắt buộc phải khóa:**
-  1. **Quy tắc Chống tự duyệt (Anti-Self-Approval):**
-     Tại endpoint phê duyệt báo cáo kê khai (`POST /api/reporting-statements/:id/approve`), backend bắt buộc kiểm tra:
-     ```typescript
-     if (statement.teacherUserId === actorUserId) {
-       throw new ForbiddenException('CANNOT_APPROVE_OWN_REPORTING_STATEMENT');
-     }
-     ```
-     Bảng kê của PHT và HT bắt buộc phải do Tổ trưởng chuyên môn của bộ môn mà cán bộ đó sinh hoạt thẩm định và ký xác nhận.
-  2. **Quy tắc Chống tự cấp quyền (Anti-Self-Grant):**
-     Bất kỳ actor nào (dù là Admin hay PHT) cũng không được phép gọi API cấp quyền cho chính ID tài khoản của mình. Việc gia hạn hoặc nâng quyền cho bản thân phải do một chủ thể có thẩm quyền khác thực hiện.
-  3. **Quy chế Ủy quyền (Delegation Policy):**
-     - PHT chuyên môn chính có thể phân công bổ sung nhiệm vụ chuyên môn theo quyết định nhà trường; không tạo vai trò Quyền PHT hay chuyển thẩm quyền PHT chính cho Admin.
-     - Lệnh ủy quyền bắt buộc phải có thời hạn (`validFrom`, `validUntil`), mục đích rõ ràng và tự động hủy bỏ khi hết hạn.
-     - Người được ủy quyền chỉ được thực thi các quyền trong phạm vi được giao, tuyệt đối không được tự ý ủy quyền tiếp cho người thứ ba (cấm sub-delegation).
-- **Khuyến nghị đề xuất (*PROPOSED, NOT APPROVED*):**
-  Khóa cứng toàn bộ các quy tắc trên vào tầng backend domain service; bổ sung bộ kiểm tra tự động (unit test + integration test) bảo vệ các ranh giới này.
-- **Hệ quả Runtime / Schema:** Thêm check logic trong service phê duyệt báo cáo kê khai; không cần sửa đổi schema.
-- **Kịch bản kiểm thử bắt buộc:**
-  - PHT bấm nút duyệt bảng kê tiết dạy của chính mình -> Backend trả về lỗi `403 Forbidden` (`CANNOT_APPROVE_OWN_REPORTING_STATEMENT`).
-  - Tổ trưởng chuyên môn duyệt bảng kê tiết dạy của PHT (với tư cách giáo viên trong tổ) -> Thành công (200 OK).
-- **Câu hỏi chốt yêu cầu Product Owner:**
-  *Product Owner xác nhận quy tắc: Bảng kê tiết dạy cá nhân của Hiệu trưởng và Phó Hiệu trưởng bắt buộc phải gửi về Tổ trưởng chuyên môn thẩm định như giáo viên bình thường, phần mềm tuyệt đối cấm cán bộ quản lý tự duyệt bảng kê của mình đúng không?*
+**ĐÃ CÓ TRONG CODE:** `ReportingStatementsService.decide()` chặn người đang đăng nhập tự `APPROVE` hoặc `REJECT` bản kê mà `target.series.submitterUserId === actor` bên trong transaction. Integration test `reporting-statements.integration.spec.ts` kiểm tra cả hai hành vi và không tạo command/history. **Không viết lại chức năng đã có.**
+
+**CHƯA CÓ BẰNG CHỨNG ĐÁP ỨNG ĐẶC TẢ:** endpoint duyệt bảng kê hiện chấp nhận `APPROVAL_PRINCIPAL` hoặc `APPROVAL_VICE_PRINCIPAL` với `SCHOOL_WIDE`. Trong khi quy trình nhà trường yêu cầu HT/PHT nộp bảng kê cá nhân qua TTCM đúng tổ thẩm định. Không cấp hai capability cấp BGH cho TTCM chỉ để cho duyệt; cần xác định chức năng thẩm định TTCM có phạm vi tổ/môn và người phê duyệt cuối.
+
+**CẦN TRIỂN KHAI:** chống actor tự cấp, tự gia hạn, tự bổ nhiệm hoặc tự thu hồi grant để vượt thẩm quyền tại tất cả writer cấp quyền (`CapabilitiesService.create/revoke`, lệnh gán/đổi template, lệnh PHT). Ủy quyền học thuật có nguồn, phạm vi và hiệu lực cụ thể, không ủy quyền tiếp. Trường luôn có PHT chuyên môn, không thêm luồng cứu hộ giả định thiếu PHT.
+
+**CỔNG CẦN CHỐT:** thẩm quyền TTCM đối với bảng kê của BGH, khác biệt giữa thẩm định và phê duyệt cuối, thời hạn/scope ủy quyền. Bảo vệ legacy approval; không đổi quyền production trong WS1.
 
 ---
 
-### D6 — Nguồn Phân công: TKB và Dữ liệu Nhập khẩu chỉ đóng vai trò Gợi ý (Suggestion Only)
+### D6 — Dữ liệu TKB/import chỉ hỗ trợ đối chiếu, không tự ban hành phân công
 
-- **Trạng thái:** **OPEN**.
-- **Bối cảnh & Mâu thuẫn thực tế:**
-  Khi trường nhập file Thời khóa biểu (TKB) từ các phần mềm xếp khóa thời khóa biểu (như phần mềm SmartTest, TKB của Bộ, hoặc file Excel native Đam San qua `P2-040`/`P2-050`), file TKB có chứa thông tin ghép cặp giữa Lớp, Môn và Tên viết tắt/Mã của giáo viên. Nếu hệ thống tự động lấy thông tin từ file TKB để tạo thành `TeachingAssignment` chính thức hoặc tự động cấp quyền sửa điểm/báo giảng thì rất nguy hiểm: file TKB xếp có thể có sai sót, có trường hợp mượn tên giáo viên, hoặc giáo viên dạy thay tạm thời.
-- **Các nguyên tắc quản lý dữ liệu:**
-  1. **TKB là nguồn gợi ý (Suggestion Source), không phải nguồn tạo quyền (Authority Generator):**
-     Việc nhập TKB chỉ tạo ra các bản ghi thời khóa biểu dự thảo (`TimetableEntry`). Dữ liệu này được hiển thị lên màn hình Quản lý Phân công Giảng dạy dưới dạng "Gợi ý từ Thời khóa biểu gần nhất".
-  2. **Quyết định phân công là một giao dịch độc lập:**
-     Chỉ khi PHT chuyên môn vào màn hình rà soát, đối chiếu, xác nhận và bấm nút **"Ban hành Phân công Giảng dạy"**, thì bản ghi `TeachingAssignment` chính thức mới được tạo ra trong cơ sở dữ liệu.
-  3. **Bảo toàn lịch sử phân công theo ngày dân sự (Date-Effective Retention):**
-     Mỗi bản ghi `TeachingAssignment` có `effectiveFrom` và `effectiveUntil`. Khi có sự điều chỉnh phân công giữa học kỳ (ví dụ đổi giáo viên dạy lớp 12A1 từ thầy A sang cô B):
-     - Hệ thống **KHÔNG ĐƯỢC XÓA** bản ghi của thầy A;
-     - Hệ thống cập nhật `effectiveUntil` của thầy A bằng ngày kết thúc nhiệm vụ;
-     - Tạo bản ghi mới cho cô B với `effectiveFrom` bắt đầu từ ngày nhận lớp;
-     - Mọi minh chứng giảng dạy, tiết dạy đã báo giảng và thống kê trong quá khứ của thầy A được bảo lưu 100% nguyên vẹn.
-  4. **Xử lý xung đột và bất thường dữ liệu:**
-     Nếu file TKB có mã giáo viên chưa tồn tại trong danh mục nhân sự, hoặc 1 lớp-môn có 2 giáo viên cùng dạy trong cùng 1 ngày (xung đột co-teaching trái phép theo ADR-012): Hệ thống phải dừng lại ở bước Preview, cảnh báo đỏ và yêu cầu PHT chỉ định rõ ràng trước khi cho phép ghi nhận.
-- **Khuyến nghị đề xuất (*PROPOSED, NOT APPROVED*):**
-  Giữ nguyên kiến trúc hiện tại của `TeachingAssignment` và PR #263: tách biệt hoàn toàn giữa luồng nhập TKB và luồng phê duyệt phân công giảng dạy. TKB chỉ là dữ liệu tham chiếu đầu vào.
-- **Hệ quả Runtime / Schema:** Giữ nguyên schema hiện tại của `TeachingAssignment` (đã có đủ `effectiveFrom`, `effectiveUntil`, khóa ngoại quan hệ).
-- **Kịch bản kiểm thử bắt buộc:**
-  - Nhập file TKB mới -> Kiểm tra cơ sở dữ liệu xác nhận bảng `TeachingAssignment` chưa bị thay đổi tự động (Unchanged).
-  - PHT bấm xác nhận phân công hàng loạt (PR #263) -> `TeachingAssignment` được cập nhật đúng ngày hiệu lực, bản ghi lịch sử cũ được bảo toàn nguyên vẹn.
-- **Câu hỏi chốt yêu cầu Product Owner:**
-  *Product Owner xác nhận nguyên tắc: Dữ liệu giáo viên đọc từ file Thời khóa biểu chỉ hiển thị lên để PHT tham khảo và chỉnh sửa, việc phân công chính thức bắt buộc phải do PHT bấm duyệt chứ hệ thống không tự ý gán quyền dạy học từ file TKB đúng không?*
+**ĐÃ CÓ TRONG CODE:** `timetable-import-workbook.controller.ts` cung cấp `inspect`, `preview`, `confirm` dưới `TIMETABLE_MANAGE/SCHOOL_WIDE`. `TimetableImportWorkbookService.confirm()` tạo `TimetableVersion` trạng thái **DRAFT**, không kích hoạt ngay. Có workflow validate → approve → activate độc lập trong `timetable-versions.controller.ts` / `timetables.service.ts`.
+
+**QUY TẮC:** File TKB không được tự sinh `CapabilityGrant` hay tự thay phân công `TeachingAssignment` chính thức. PHT chuyên môn trực tiếp đối chiếu và xác nhận thay đổi theo thẩm quyền. Dòng mã giáo viên không xác định, xung đột dạy trùng, khác dữ liệu phân công phải có preview và từ chối ghi khi chưa hợp lệ.
+
+**DỮ LIỆU THỰC:** Prisma `TeachingAssignment.validFrom` và `validUntil` (`Date`) là trường ngày hiệu lực, không phải `effectiveFrom/effectiveUntil`. Khi chuyển GV, đóng khoảng hiệu lực cũ, tạo phân công mới và bảo toàn lịch sử. Không tạo importer thứ hai.
+
+**CỔNG CẦN CHỐT:** UX gợi ý/đối soát hàng loạt, quyền xác nhận thuộc PHT/tổ trưởng được ủy quyền theo từng trường hợp. Không mở permission từ dữ liệu TKB.
 
 ---
 
@@ -331,13 +295,13 @@ Trong suốt quá trình triển khai Giai đoạn 1 và chuẩn bị cho các g
    - `PpctPlanVersion` / `PpctItemRevision` (Lịch sử phân phối chương trình);
    - `CurricularTeachingExecution` (Minh chứng tiết dạy đã thực hiện);
    - `ReportingStatement` (Báo cáo kê khai đã nộp và đóng băng).
-   Mọi thao tác điều chỉnh đều thực hiện dưới hình thức đóng hiệu lực (`effectiveUntil`) và mở bản ghi mới, hoặc đổi trạng thái sang `REVERSED` / `SUPERSEDED`.
+   Mọi thao tác điều chỉnh đều thực hiện dưới hình thức đóng hiệu lực (`validUntil`) và mở bản ghi mới, hoặc đổi trạng thái sang `REVERSED` / `SUPERSEDED`.
 4. **Không Xóa Vật lý Tài khoản đã có Dữ liệu Vận hành:**
    Chỉ cho phép xóa vật lý (clean-slate delete theo P5-051) đối với các tài khoản thử nghiệm mới tạo chưa có bất kỳ phát sinh nghiệp vụ hay vết kiểm toán nào. Tài khoản đã có lịch sử giảng dạy, báo giảng hoặc đăng nhập chỉ được phép chuyển trạng thái sang `DISABLED` để bảo toàn tính toàn vẹn của hồ sơ pháp lý trường học.
 5. **Tuyệt đối Không Cấp Generic `CAPABILITY_GRANT/SCHOOL_WIDE` cho PHT:**
    Không vì mục đích giải quyết nhanh lỗi giao diện mà cấp quyền quản trị kỹ thuật tối cao cho Phó Hiệu trưởng. Mọi thao tác của PHT phải được thực hiện thông qua các capability nghiệp vụ chuyên môn tương ứng.
 6. **Bảo vệ Ranh giới Độc lập của PR #263 và Giữ Phạm vi WS1:**
-   - PR #263 (`feat/p5-057-admin-bulk-teaching-assignments`) là giải pháp kỹ thuật độc lập cho tính năng phân công nhiều lớp của Admin/PHT, hiện đang ở trạng thái `OPEN` và xanh CI. WS1 không được can thiệp, không rebase, không cherry-pick hay làm thay đổi mã nguồn của PR #263.
+   - PR #263 đã merge và deploy kỹ thuật trên VPS ngày 06/11/2026; UAT người dùng thật chưa khép. WS1 không can thiệp mã nguồn WS2 đã phát hành.
    - Nhiệm vụ WS1 là hoàn thiện tài liệu Decision Record (docs-only). Tuyệt đối không mở rộng phạm vi sang viết code cho WS2 (Phân công nhiều lớp), WS3 (Hồ sơ nhân sự), WS4 (Quyền PHT), WS5 (Nhiều môn/lớp), WS6 (Tổ trưởng/Điều phối), WS7 (Sửa UX) hay WS8 (Nghiệm thu E2E).
 
 ---
@@ -350,7 +314,7 @@ Trong suốt quá trình triển khai Giai đoạn 1 và chuẩn bị cho các g
 | :--- | :--- | :---: | :--- | :--- | :--- | :--- | :--- |
 | **TC-SEC-01** | Technical Admin tự cấp quyền chuyên môn cho chính mình | **Negative** | Admin Kỹ thuật | `POST /api/users/:myId/capability-grants` | Payload yêu cầu cấp `APPROVAL_VICE_PRINCIPAL` hoặc `APPROVAL_PRINCIPAL` cho chính `actorUserId`. | **Bị chặn đứng ở backend**. Không tạo grant trong cơ sở dữ liệu. | `403 Forbidden` (`AUTH_SELF_GRANT_PROHIBITED`) |
 | **TC-SEC-02** | PHT cố tình gọi API cấp quyền kỹ thuật hạ tầng | **Negative** | Phó Hiệu trưởng | `POST /api/capability-grants` hoặc `POST /api/academic-authority/apply-template` | Payload chứa `USER_MANAGE`, `CAPABILITY_GRANT` hoặc `SYSTEM_ADMIN`. | **Bị chặn đứng ngay tại guard/service**. Không cho phép leo thang đặc quyền. | `403 Forbidden` (`FORBIDDEN_CAPABILITY_ESCALATION`) |
-| **TC-SEC-03** | Cán bộ quản lý (HT/PHT) tự duyệt bảng kê tiết dạy của bản thân | **Negative** | PHT hoặc Hiệu trưởng | `POST /api/reporting-statements/:myStatementId/approve` | `statement.teacherUserId === actorUserId` (Bảng kê của chính người đang đăng nhập). | **Bị chặn đứng hoàn toàn**. Bắt buộc bảng kê phải chuyển sang Tổ trưởng duyệt. | `403 Forbidden` (`CANNOT_APPROVE_OWN_REPORTING_STATEMENT`) |
+| **TC-SEC-03** | Cán bộ quản lý (HT/PHT) tự duyệt bảng kê tiết dạy của bản thân | **Negative** | PHT hoặc Hiệu trưởng | `POST /api/reporting-statements/:myStatementId/approve` | `target.series.submitterUserId === actor` (Bảng kê của chính người đang đăng nhập). | **Bị chặn đứng hoàn toàn**. Bắt buộc bảng kê phải chuyển sang Tổ trưởng duyệt. | `403 Forbidden` (`CANNOT_APPROVE_OWN_REPORTING_STATEMENT`) |
 | **TC-SEC-04** | Tổ trưởng chuyên môn thao tác vượt phạm vi tổ được giao | **Negative** | Tổ trưởng Tổ Toán | `POST /api/teaching-assignments` hoặc `GET /api/subject-groups/:otherGroupId` | Yêu cầu điều chỉnh phân công hoặc đọc dữ liệu của Tổ Ngữ văn (`otherGroupId`). | **Bị từ chối truy cập** do scope không khớp với `scopeResourceId` của grant. | `403 Forbidden` (`SCOPE_RESOURCE_MISMATCH`) |
 | **TC-SEC-05** | Điều phối viên can thiệp chéo chương trình đặc thù | **Negative** | Điều phối viên GDĐP | `POST /api/programme-planning/hdtn-occurrences` | Cố tình tạo hoặc duyệt lịch hoạt động của chương trình HĐTN-HN (`kind === HDTN_HN`). | **Bị từ chối**. Capability `GDDP_COORDINATOR` chỉ có hiệu lực trên `ACTIVITY` loại GDĐP. | `403 Forbidden` (`PROGRAMME_KIND_MISMATCH`) |
 | **TC-SEC-06** | Thao tác khi CapabilityGrant đã bị thu hồi (`revokedAt != null`) | **Negative** | Giáo viên / PHT | Bất kỳ endpoint yêu cầu quyền tương ứng | Grant đã bị đánh dấu thu hồi: `revokedAt: 2026-11-01T00:00:00Z`. | **Bị từ chối**. Bộ đánh giá quyền hạn xác định grant không còn hiệu lực. | `403 Forbidden` (`GRANT_NOT_ACTIVE`) |
@@ -361,7 +325,7 @@ Trong suốt quá trình triển khai Giai đoạn 1 và chuẩn bị cho các g
 | **TC-SEC-11** | Cố tình xóa vật lý tài khoản đã phát sinh lịch sử giảng dạy | **Negative** | Admin Kỹ thuật | `DELETE /api/users/:id` | `user` đã có bản ghi liên kết trong `TeachingAssignment` hoặc `CurricularTeachingExecution`. | **Bị từ chối bởi Preflight Deletion Guard**. Chỉ cho phép chuyển sang `DISABLED`. | `409 Conflict` (`SAFE_DELETE_REJECTED_HAS_HISTORY`) |
 | **TC-SEC-12** | Người được ủy quyền chuyên môn thao tác đúng thời hạn cho phép | **Positive** | TTCM được ủy quyền | `POST /api/academic-authority/approve-schedule` | Thao tác diễn ra trong khoảng `[validFrom, validUntil]` của quyết định ủy quyền hợp lệ. | **Thực hiện thành công**. Hệ thống ghi log audit rõ ràng danh tính người được ủy quyền. | `200 OK` (Audit: `DELEGATED_AUTHORITY_SUCCESS`) |
 | **TC-SEC-13** | Xem trước (Preview) phân quyền trước khi thực thi ghi nhận | **Positive** | PHT Chuyên môn | `POST /api/users/:id/responsibility-templates/preview` | Gửi cấu hình template dự kiến áp dụng cho giáo viên. | **Chỉ sau khi D1 được phê duyệt và quyền truy cập được triển khai hợp lệ:** trả về danh sách quyền dự kiến sinh ra mà không thay đổi bản ghi DB; PHT hiện chưa mặc nhiên có quyền gọi endpoint này. | `200 OK` (Chế độ đọc thuần túy — Read-only) |
-| **TC-SEC-14** | Bảo tồn nguyên vẹn lịch sử phân công khi thay đổi giáo viên dạy | **Positive** | PHT Chuyên môn | `POST /api/teaching-assignments/bulk-reassign` | Thay đổi giáo viên dạy môn Toán lớp 10A1 từ ngày 15/11/2026. | Bản ghi cũ được đóng `effectiveUntil: 2026-11-14`. Bản ghi mới tạo có `effectiveFrom: 2026-11-15`. Dữ liệu cũ nguyên vẹn. | `200 OK` (Bảo toàn lịch sử theo ngày dân sự) |
+| **TC-SEC-14** | Bảo tồn nguyên vẹn lịch sử phân công khi thay đổi giáo viên dạy | **Positive** | PHT Chuyên môn | `POST /api/teaching-assignments/bulk-reassign` | Thay đổi giáo viên dạy môn Toán lớp 10A1 từ ngày 15/11/2026. | Bản ghi cũ được đóng `validUntil: 2026-11-14`. Bản ghi mới tạo có `validFrom: 2026-11-15`. Dữ liệu cũ nguyên vẹn. | `200 OK` (Bảo toàn lịch sử theo ngày dân sự) |
 
 ---
 
@@ -393,9 +357,9 @@ flowchart TD
 ### 6.2 Tiêu chí Nghiệm thu để Product Owner Chốt Đóng WS1 (Sign-off Criteria)
 
 WS1 chỉ được phép coi là hoàn thành và đóng lại khi thỏa mãn toàn bộ 5 điều kiện tiên quyết sau:
-- [ ] **Tiêu chí 1 (Tính đầy đủ):** Dự thảo Decision Record đã khảo sát chính xác hiện trạng code backend của Đam San, phản ánh trung thực mâu thuẫn giữa `CAPABILITY_GRANT` và quyền hạn chuyên môn của PHT.
-- [ ] **Tiêu chí 2 (Không suy đoán mã):** Toàn bộ 6 mục D1–D6 được giữ ở trạng thái OPEN; phương án D1 giữ nguyên lựa chọn công bằng giữa A và B; không tự ý áp đặt giải pháp kỹ thuật khi chưa có ý kiến của PO.
-- [ ] **Tiêu chí 3 (Bảo toàn ranh giới an toàn):** Giữ vững 100% nguyên tắc `TEACHER_BASE`, default-deny, bảo tồn lịch sử ngày dân sự và cấm generic `CAPABILITY_GRANT` cho PHT.
+- [x] **Tiêu chí 1 (Đối chiếu kỹ thuật):** Đã khảo sát 38/38 capability, grant writer, template, chống tự duyệt và vòng đời import TKB theo mã `main@bd79173a`.
+- [x] **Tiêu chí 2 (Không suy đoán quyết định):** D1 đã chốt B; D3/D4 chốt một phần; D2/D5/D6 có đề xuất cụ thể và cổng còn mở được đánh dấu, không biến đề xuất thành quyết định PO.
+- [x] **Tiêu chí 3 (Bảo toàn ranh giới thiết kế):** Giữ `TEACHER_BASE`, default-deny, lịch sử ngày dân sự và cấm cấp generic `CAPABILITY_GRANT` cho PHT; không sửa runtime.
 - [ ] **Tiêu chí 4 (Phê duyệt chính thức từ PO):** Có văn bản xác nhận hoặc ghi nhận phê chuẩn rõ ràng của Product Owner đối với từng mục trong D1–D6.
 - [ ] **Tiêu chí 5 (Kỷ luật nhánh và Commit):** Nhánh công tác không chứa bất kỳ thay đổi nào ngoài tài liệu docs-only; không làm ảnh hưởng tới PR #263; vượt qua toàn bộ các kiểm tra `git status --short` và `git diff --check`.
 
