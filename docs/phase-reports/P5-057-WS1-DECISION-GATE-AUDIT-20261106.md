@@ -13,7 +13,7 @@
 1. `capabilities.controller.ts` và `responsibility-templates.controller.ts` yêu cầu `CAPABILITY_GRANT/SCHOOL_WIDE`: PHT chưa thể thao tác cấp quyền chuyên môn qua endpoint generic.
 2. `capabilities.service.ts:create()` kiểm tra definition/scope và audit nhưng chưa kiểm tra căn cứ quyết định chuyên môn, không chống actor tự cấp quyền tại method này.
 3. `access-baseline.service.ts:applyTemplate()` khóa user row và **chỉ thêm grant thiếu**: gán mẫu khác không đồng nghĩa thu hồi grant từ mẫu cũ. Không dùng UI đổi tên template để tuyên bố đã thu hồi.
-4. `responsibility-template-catalog.ts` có `VICE_PRINCIPAL_ACADEMIC` nhưng chưa có mẫu `VICE_PRINCIPAL` riêng.
+4. `responsibility-template-catalog.ts` có `VICE_PRINCIPAL_ACADEMIC` nhưng chưa có mẫu `VICE_PRINCIPAL` riêng. **Phát hiện D4:** mẫu `PRINCIPAL` còn trải `...PHT_OPERABILITY_GRANTS`, mang theo quyền mutation quản trị chuyên môn dù thiết kế D4 chỉ giám sát; phải đối soát và chuyển quyền theo nguồn trước khi đổi template thật.
 
 ## Cổng quyết định chưa phê duyệt (đề xuất kỹ thuật, không tự áp dụng)
 
@@ -34,3 +34,7 @@ Product Owner đã đồng ý với đề xuất ngay sau CI #892: Hiệu trư�
 ## Xác nhận thực tế vận hành 06/11/2026
 
 Product Owner xác nhận trường **luôn bố trí PHT phụ trách chuyên môn**. D2/D3/D5 không xây dựng cơ chế 'mất PHT' hay Admin cứu hộ. Chuyển giao vai trò chỉ thực hiện theo phân công nhân sự thực tế, giữ hiệu lực hợp lệ, đúng nguồn grant và audit. Phần D4 đã chốt nguyên tắc can thiệp khẩn cấp vào quyết định nghiệp vụ là vấn đề khác, không phải cơ chế thay thế PHT.
+
+## Đối chiếu D2 theo danh mục mã nguồn
+
+Đã kiểm kê 38/38 capability từ `prisma/capability-catalog.cjs` và kiểm tra các đường writer (`CapabilitiesService.create/revoke`, `AccessBaselineService.applyTemplate/applyReconciliation`). Ma trận phân loại ứng viên, vấn đề `PRINCIPAL` kế thừa PHT operability và test cụ thể ở `docs/phase-reports/P5-057-WS1-D2-CODE-AND-CAPABILITY-AUDIT-20261106.md`. Đây là bằng chứng code và đề xuất kỹ thuật, không phải phân quyền mới hoặc quyết định PO đã chốt.
