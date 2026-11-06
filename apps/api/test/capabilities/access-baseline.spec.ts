@@ -698,6 +698,51 @@ describe('P5-051 Access Baseline & Responsibility Template Unit Tests', () => {
     });
   });
 
+  describe('WS3 read-only role-change preflight', () => {
+    it('counts only currently active outside-template grants without deciding revocation', async () => {
+      const now = Date.now();
+      const mockPrisma = {
+        user: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'user-1', username: 'teacher1', status: UserStatus.ACTIVE,
+            profile: { isTeachingStaff: true, displayName: 'Teacher 1' },
+          }),
+        },
+        capabilityDefinition: {
+          findMany: jest.fn().mockResolvedValue(
+            ['TEACHER_BASE', 'REPORTING_STATEMENT_SUBMIT', 'REPORTING_STATEMENT_READ', 'TEACHING_EXECUTION_RECORD']
+              .map((key) => ({ key, isActive: true, allowedScopeTypes: ['PERSONAL'] })),
+          ),
+        },
+        capabilityGrant: {
+          findMany: jest.fn().mockResolvedValue([
+            { id: 'base', capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL',
+              scopeResourceId: null, validFrom: new Date(now - 60000), validUntil: null, revokedAt: null },
+            { id: 'old-pht', capabilityKey: 'TIMETABLE_MANAGE', scopeType: 'SCHOOL_WIDE',
+              scopeResourceId: null, validFrom: new Date(now - 60000), validUntil: null, revokedAt: null },
+            { id: 'expired', capabilityKey: 'REPORTING_READ', scopeType: 'SCHOOL_WIDE',
+              scopeResourceId: null, validFrom: new Date(now - 86400000),
+              validUntil: new Date(now - 60000), revokedAt: null },
+            { id: 'future', capabilityKey: 'SYSTEM_ADMIN', scopeType: 'SCHOOL_WIDE',
+              scopeResourceId: null, validFrom: new Date(now + 86400000), validUntil: null, revokedAt: null },
+          ]),
+        },
+      };
+      const service = new AccessBaselineService(mockPrisma as never, {} as never);
+      const preview = await service.previewTemplate('user-1', { templateKey: 'TEACHER' });
+      expect(preview.transitionReview).toEqual(expect.objectContaining({
+        mode: 'READ_ONLY', activeGrantCount: 2, outsideTemplateActiveGrantCount: 1,
+        provenanceVerified: false, revocationAvailable: false,
+        outsideTemplateSample: [expect.objectContaining({ capabilityKey: 'TIMETABLE_MANAGE' })],
+      }));
+      expect(preview.alreadyPresent).toHaveLength(1);
+      expect(preview.grantsToAdd).toHaveLength(3);
+      expect(mockPrisma.capabilityGrant.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { userId: 'user-1', revokedAt: null } }),
+      );
+    });
+  });
+
   describe('Administrative Read-Model Options Unit Tests', () => {
     it('34. listAcademicYearOptions returns paginated academic years ordered by code desc', async () => {
       const mockPrisma = {

@@ -244,6 +244,17 @@ describe('P5-051 Slice C: Users Administration Workspace', () => {
           conflicts: [],
           forbiddenDefaults: [],
           notes: ['Mẫu chuẩn chuyên môn áp dụng cho tất cả giáo viên.'],
+          transitionReview: {
+            mode: 'READ_ONLY',
+            evaluatedAt: '2026-11-06T00:00:00.000Z',
+            activeGrantCount: 3,
+            outsideTemplateActiveGrantCount: 1,
+            outsideTemplateSample: [
+              { capabilityKey: 'TIMETABLE_MANAGE', scopeType: 'SCHOOL_WIDE' },
+            ],
+            provenanceVerified: false,
+            revocationAvailable: false,
+          },
         });
       }
       if (url.includes('/api/users/u-teacher-1/responsibility-templates/apply') && init?.method === 'POST') {
@@ -283,6 +294,10 @@ describe('P5-051 Slice C: Users Administration Workspace', () => {
     expect(await screen.findByText('Đủ điều kiện')).toBeInTheDocument();
     expect(screen.getByText('Quyền cơ sở giáo viên')).toBeInTheDocument();
     expect(screen.getByText('Mẫu chuẩn chuyên môn áp dụng cho tất cả giáo viên.')).toBeInTheDocument();
+    expect(screen.getByText(/Đối chiếu quyền trước khi chuyển nhiệm vụ/i)).toBeInTheDocument();
+    expect(screen.getByText(/không thể xác định quyền nào cần thu hồi tự động/i)).toBeInTheDocument();
+    expect(screen.getByRole('list', { name: /Quyền hiện hữu ngoài mẫu cần đối chiếu/i }))
+      .toHaveTextContent(/thời khóa biểu/i);
 
     // Apply button is now enabled
     const applyBtn = screen.getByRole('button', { name: /Áp dụng Mẫu trách nhiệm/i });

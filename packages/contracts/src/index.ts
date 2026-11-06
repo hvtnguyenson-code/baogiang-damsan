@@ -388,6 +388,21 @@ export interface ResponsibilityTemplatePreviewRequest {
   programmeMasterId?: string;
 }
 
+// Read-only transparency for a potential role change. This is NOT a revocation plan.
+export interface ResponsibilityTemplateTransitionReview {
+  mode: 'READ_ONLY';
+  evaluatedAt: string;
+  activeGrantCount: number;
+  outsideTemplateActiveGrantCount: number;
+  outsideTemplateSample: Array<{
+    capabilityKey: string;
+    scopeType: CapabilityScope;
+    scopeResourceId?: string | null;
+  }>;
+  provenanceVerified: false;
+  revocationAvailable: false;
+}
+
 export interface ResponsibilityTemplatePreviewResponse {
   templateKey: ResponsibilityTemplateKey;
   version: string;
@@ -415,6 +430,8 @@ export interface ResponsibilityTemplatePreviewResponse {
   conflicts: ResponsibilityTemplateConflictItem[];
   forbiddenDefaults: string[];
   notes: string[];
+  // Optional for compatibility with older preview fixtures/clients.
+  transitionReview?: ResponsibilityTemplateTransitionReview;
 }
 
 export interface ResponsibilityTemplateApplyRequest {
