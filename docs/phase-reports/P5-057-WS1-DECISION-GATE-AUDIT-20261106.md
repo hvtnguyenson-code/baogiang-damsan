@@ -21,8 +21,12 @@
 |---|---|---|
 | D2 | Phạm vi admin gán mẫu ban đầu, giới hạn generic grant, recovery khi mất PHT | Backend kiểm tra nguồn quyết định chuyên môn, chống admin tự cấp/tự phong; luồng cứu hộ có phê chuẩn và audit độc lập |
 | D3 còn lại | Bổ nhiệm/chuyển giao PHT chính | Preview grant chênh lệch theo nguồn; thu hồi grant mẫu cũ đúng thời điểm, bảo toàn grant độc lập/historical audit |
-| D4 | Quyền giám sát/override của Hiệu trưởng | Mặc định xem/giám sát; override chỉ với căn cứ, phạm vi, thời hạn và audit rõ |
+| D4 — đã chốt nguyên tắc 06/11 | Hiệu trưởng giám sát độc lập; không mặc nhiên sửa/cấp quyền thay PHT, không buộc mọi quyết định PHT qua duyệt cấp 2 | Ngoại lệ khẩn cấp cần căn cứ, scope, giới hạn thời gian và audit. **Còn OPEN**: ai phê chuẩn, cách thực thi, thời hạn tối đa, thu hồi/khôi phục |
 | D5 | Tự duyệt/tự ủy quyền và duyệt báo cáo BGH | Chặn tại backend, phủ cả API gọi trực tiếp; duyệt độc lập theo tuyến |
 | D6 | TKB/import là đề xuất hay quyết định phân công | Chỉ hỗ trợ đối chiếu/preview; người có quyền xác nhận ghi, bảo toàn phiên bản lịch sử |
 
-**Gate:** Không đóng WS1 hoặc chuyển sang sửa quyền WS3/WS4 khi D2/D4/D5/D6 và phần còn lại của D3 chưa được chốt; không cho phép P6-050 pilot.
+**Gate:** D4 đã PARTIAL ACCEPTED về nguyên tắc ngày 06/11/2026; D2/D5/D6, phần còn lại D3 và cơ chế cứu hộ D4 vẫn OPEN. Không đóng WS1 hoặc triển khai quyền WS3/WS4 trước khi chốt các quy tắc còn thiếu; P6-050 vẫn BLOCKED.
+
+## Cập nhật quyết định D4 — 06/11/2026
+
+Product Owner đã đồng ý với đề xuất ngay sau CI #892: Hiệu trưởng giám sát chuyên môn, không tự động nhận quyền cấp/sửa quyền thay PHT; ngoại lệ khẩn cấp chỉ theo phạm vi, thời hạn và căn cứ được kiểm soát và lưu audit. Đây là **PARTIAL ACCEPTED ở tầng chính sách**, không phải phê duyệt triển khai. Chưa thay đổi principal template, quyền production, tuyến duyệt bảng kê hay backend.

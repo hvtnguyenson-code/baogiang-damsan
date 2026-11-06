@@ -12,7 +12,7 @@ Exact current `main`, branch HEAD and divergence must always be read directly fr
 
 ## P5-057 / WS1 — IN_PROGRESS: academic authority decisions
 
-Product Owner approved **D1 Option B** on 05/11/2026: PHT phụ trách chuyên môn quyết định và trực tiếp cấu hình nghiệp vụ chuyên môn, Admin kỹ thuật không quyết định chuyên môn thay PHT. **D3 PARTIAL ACCEPTED:** hiện 01 PHT chuyên môn chính; PHT thông thường không có quyền chuyên môn mặc định nhưng có thể nhận từng quyền giới hạn; Admin kỹ thuật tạo tài khoản và gán mẫu trách nhiệm ban đầu theo phân công nhà trường, kể cả PHT chính. **D2/D4/D5/D6 và chi tiết chuyển giao/thu hồi, chống tự bổ nhiệm của D3 vẫn OPEN**; không sửa quyền backend hay đóng WS1. Xem PR #264 và hồ sơ quyết định WS1.
+Product Owner approved **D1 Option B** on 05/11/2026: PHT phụ trách chuyên môn quyết định và trực tiếp cấu hình nghiệp vụ chuyên môn, Admin kỹ thuật không quyết định chuyên môn thay PHT. **D3 PARTIAL ACCEPTED:** hiện 01 PHT chuyên môn chính; PHT thông thường không có quyền chuyên môn mặc định nhưng có thể nhận từng quyền giới hạn; Admin kỹ thuật tạo tài khoản và gán mẫu trách nhiệm ban đầu theo phân công nhà trường, kể cả PHT chính. **D4 PARTIAL ACCEPTED (06/11/2026):** Hiệu trưởng giám sát độc lập, không tự có quyền thao tác chuyên môn thay PHT; can thiệp khẩn cấp chỉ có căn cứ, phạm vi, thời hạn và audit. **D2/D5/D6, chi tiết chuyển giao/thu hồi D3 và quy trình thực thi/cứu hộ D4 vẫn OPEN**; không sửa quyền backend hay đóng WS1. Xem PR #264 và hồ sơ quyết định WS1.
 
 ## P5-057 / B1 — DEPLOYED (inert provenance foundation)
 

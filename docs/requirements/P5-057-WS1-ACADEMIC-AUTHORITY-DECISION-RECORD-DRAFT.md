@@ -3,7 +3,7 @@
 **Mã tài liệu:** `P5-057-WS1-ACADEMIC-AUTHORITY-DECISION-RECORD-DRAFT`
 **Trạng thái pháp lý:** **DRAFT / NON-NORMATIVE / AWAITING PRODUCT OWNER APPROVAL**
 **Ngày lập dự thảo:** 05/11/2026
-**Quyết định Product Owner 05/11/2026: D1 = PHƯƠNG ÁN B (ACCEPTED).** PHT trực tiếp quyết định và cấu hình mọi nghiệp vụ chuyên môn thuộc thẩm quyền, không cần Admin kỹ thuật bấm hộ. D2–D6 vẫn OPEN; chưa cho phép thay đổi backend, schema, quyền thật hoặc deploy.
+**Quyết định Product Owner:** D1 = PHƯƠNG ÁN B (ACCEPTED 05/11/2026); D3 PARTIAL ACCEPTED (05/11/2026); **D4 PARTIAL ACCEPTED (06/11/2026)** về giám sát độc lập và ngoại lệ khẩn cấp có kiểm soát. D2/D5/D6, chi tiết chuyển giao/thu hồi D3 và quy trình phê duyệt/thu hồi quyền cứu hộ D4 vẫn OPEN; chưa cho phép thay đổi backend, schema, quyền thật hoặc deploy.
 **Phạm vi áp dụng:** Gói công việc 1 (WS1 — Khóa nghiệp vụ thẩm quyền chuyên môn) thuộc nhiệm vụ `P5-057` (Traceability: `T56`).
 **Nhánh Git công tác:** `docs/p5-057-four-stage-realignment` (Expected baseline HEAD: `5aa14857e1447c5bff710b0e6888ebaa649cd8d7`).
 **Ranh giới kỹ thuật:** **TÀI LIỆU DUY NHẤT ĐƯỢC TẠO — DOCS-ONLY**. Tuyệt đối không thay đổi mã nguồn backend, frontend, schema cơ sở dữ liệu, Prisma migration, test suite, file khóa phụ thuộc, cấu hình Git, VPS, hệ thống Quản lí Nội trú hay cơ sở dữ liệu production.
@@ -249,31 +249,18 @@ flowchart LR
 
 ---
 
-### D4 — Thẩm quyền Giám sát và Quyền Phủ quyết (Override) của Hiệu trưởng
+### D4 — Thẩm quyền giám sát độc lập của Hiệu trưởng; can thiệp khẩn cấp có kiểm soát
 
-- **Trạng thái:** **OPEN**.
-- **Bối cảnh & Mâu thuẫn thực tế:**
-  Hiệu trưởng là người đứng đầu cơ sở giáo dục, chịu trách nhiệm cao nhất trước pháp luật và Sở GD&ĐT. Về mặt quản lý, Hiệu trưởng có quyền kiểm tra mọi hoạt động của PHT và có quyền phủ quyết (override) các quyết định chuyên môn khi cần thiết. Tuy nhiên, nếu gộp chung quyền của Hiệu trưởng và PHT vào làm một, hệ thống sẽ mất đi tính độc lập trong kiểm tra giám sát, vi phạm nguyên tắc tách biệt trách nhiệm.
-- **Các lựa chọn giải pháp:**
-  - *Lựa chọn 1 (Giám sát độc lập):* Hiệu trưởng chỉ thực hiện quyền giám sát (`AUDIT_VIEW`, `REPORTING_STATEMENT_READ`, `REPORTING_READ`). Mọi việc phân công, xếp lịch, điều hành hàng ngày giao trọn cho PHT. Hiệu trưởng không trực tiếp bấm nút thay đổi phân công giảng dạy để tránh làm sai lệch trách nhiệm của PHT.
-  - *Lựa chọn 2 (Thẩm quyền Override có kiểm soát):* Hiệu trưởng sở hữu capability tối cao `APPROVAL_PRINCIPAL / SCHOOL_WIDE`. Hiệu trưởng có quyền:
-    1. Đóng băng/mở khóa kỳ báo cáo;
-    2. Hủy bỏ hoặc điều chỉnh một phân công chuyên môn do PHT đã ban hành, nhưng thao tác này bắt buộc phải ghi log sự kiện đặc biệt (`PRINCIPAL_OVERRIDE_EVENT`) kèm lý do giải trình bằng văn bản.
-  - *Lựa chọn 3 (Phê duyệt cấp 2 bắt buộc):* Các quyết định quan trọng (như ban hành TKB đầu học kỳ, điều chỉnh PPCT chính thức) phải qua 2 bước: PHT thẩm định/trình duyệt -> Hiệu trưởng phê duyệt lần cuối mới có hiệu lực thi hành.
-- **Ưu / Nhược điểm:**
-  - Lựa chọn 2 cân bằng hoàn hảo giữa tính linh hoạt trong quản lý và yêu cầu kiểm soát quyền lực, phù hợp với Điều lệ trường THPT.
-  - Lựa chọn 3 có thể làm chậm tiến độ nếu Hiệu trưởng đi công tác.
-- **Điều kiện an toàn bắt buộc:** Tuyệt đối không cấp capability `APPROVAL_VICE_PRINCIPAL` cho Hiệu trưởng. Hiệu trưởng hành động với danh nghĩa và capability riêng biệt `APPROVAL_PRINCIPAL`. Mọi hành động can thiệp vào phân công của PHT phải lưu vết audit không thể tẩy xóa.
-- **Khuyến nghị đề xuất (*PROPOSED, NOT APPROVED*):**
-  Khuyến nghị **Lựa chọn 2 (Thẩm quyền Override có kiểm soát)**.
-- **Hệ quả Runtime / Schema:** Lưu vết override trong bảng `AuditLog` với metadata chi tiết; không cần tạo bảng mới.
-- **Kịch bản kiểm thử bắt buộc:**
-  - Hiệu trưởng xem toàn bộ báo cáo và audit log toàn trường -> Thành công (200 OK).
-  - Hiệu trưởng thực hiện override phân công chuyên môn -> Thành công và hệ thống ghi nhận audit log với hành động `PRINCIPAL_OVERRIDE` (200 OK).
-- **Câu hỏi chốt yêu cầu Product Owner:**
-  *Product Owner có yêu cầu các quyết định của PHT (TKB, phân công giảng dạy) phải qua Hiệu trưởng phê duyệt cấp 2 trên phần mềm, hay chỉ cần PHT duyệt là có hiệu lực ngay và Hiệu trưởng giữ quyền kiểm tra/phủ quyết khi cần?*
-
----
+- **Trạng thái:** **PARTIAL ACCEPTED — Product Owner đồng ý ngày 06/11/2026** với phương án mặc định giám sát, không tự động cấp quyền can thiệp. Những thông số triển khai và quy trình cứu hộ vẫn **OPEN**.
+- **Quyết định chính sách đã chốt:**
+  1. Hiệu trưởng giám sát, kiểm tra, theo dõi việc thực hiện nghiệp vụ chuyên môn qua đúng các quyền đọc/duyệt hợp lệ hiện có. Không suy luận quyền sửa, cấp hoặc thu hồi capability chuyên môn từ chức danh Hiệu trưởng hay từ quyền xem.
+  2. PHT phụ trách chuyên môn vẫn trực tiếp quyết định và cấu hình công việc thường ngày. **Không bổ sung bước Hiệu trưởng phê duyệt cấp hai bắt buộc** cho mọi phân công, TKB hoặc PPCT trong phần mềm.
+  3. Hiệu trưởng **không mặc nhiên trở thành PHT chuyên môn**, không tự nhận quyền `CAPABILITY_GRANT/SCHOOL_WIDE`, `ACADEMIC_AUTHORITY_MANAGE` hay lệnh sửa thay PHT. Quyền `APPROVAL_PRINCIPAL` hiện hữu (nếu được cấp hợp lệ) không được suy diễn thành quyền override mọi dữ liệu.
+  4. **Ngoại lệ can thiệp khẩn cấp chỉ được thiết kế khi có căn cứ quản trị cụ thể**, giới hạn nghiệp vụ/đối tượng/phạm vi/thời hạn, người ra quyết định, lý do, thời điểm, hậu quả và vết kiểm toán. Quyền can thiệp không được chuyển thành quyền thường trực hoặc mở rộng sang thao tác kỹ thuật và quyền Nội trú.
+  5. Quy tắc chống tự cấp quyền, tự phê duyệt bảng kê và lịch sử nghiệp vụ tiếp tục bắt buộc. Không thay đổi các capability phê duyệt nghiệp vụ đã được cấp hợp lệ cho Hiệu trưởng theo tuyến hiện hữu.
+- **Còn OPEN trước khi triển khai bất kỳ quyền can thiệp nào:** (i) định nghĩa và chứng từ tình huống khẩn cấp, (ii) người khởi tạo/phê chuẩn và kiểm soát hai người nếu cần, (iii) tập lệnh allowlist, (iv) thời hạn tối đa và thu hồi khi hết hạn, (v) thông báo tới PHT/HT, (vi) chống can thiệp chính mình, (vii) thu hồi và khôi phục đúng tình trạng trước khi override, (viii) tình huống PHT vắng/không thể thực thi. Chưa mặc định 24/72 giờ, chưa mặc định lệnh override chỉ bởi vì Hiệu trưởng có quyền giám sát.
+- **Kiểm thử bắt buộc khi thiết kế triển khai:** Hiệu trưởng chỉ có quyền xem gọi API cấp grant/sửa phân công -> từ chối; PHT có quyền hợp lệ vẫn thực hiện nghiệp vụ thường xuyên không phụ thuộc một phê duyệt mới; yêu cầu cứu hộ thiếu căn cứ/scope/thời hạn hoặc vượt phạm vi -> từ chối; mọi can thiệp khẩn cấp hợp lệ phải được audit và hết hạn/thu hồi theo chính sách được chốt; không đổi quyền cấp/duyệt bảng kê đã tồn tại.
+- **Giới hạn hiệu lực của quyết định:** D4 **chốt nguyên tắc nghiệp vụ**, **không chốt thiết kế endpoint, capability, DB migration, chính sách quyền cứu hộ hay thời hạn**. Việc chốt cơ chế triển khai D4 phụ thuộc D2/D3/D5 và phê duyệt riêng, không được coi là cấp quyền ngay.
 
 ### D5 — Nguyên tắc Chống Tự cấp, Chống Tự duyệt và Quy chế Ủy quyền
 

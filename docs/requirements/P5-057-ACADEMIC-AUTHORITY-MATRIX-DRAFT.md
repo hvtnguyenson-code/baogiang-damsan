@@ -1,6 +1,6 @@
 # P5-057 / WS1 — Ma trận thẩm quyền nghiệp vụ chuyên môn (DỰ THẢO ĐỐI CHIẾU)
 
-**Trạng thái:** WS1 DRAFT; **D1 ACCEPTED (Option B, 05/11/2026), D3 PARTIAL ACCEPTED (05/11/2026)**. D2/D4/D5/D6 và chi tiết chuyển giao/thu hồi D3 vẫn OPEN. Không thay đổi backend/quyền thật.
+**Trạng thái:** WS1 DRAFT; **D1 ACCEPTED (Option B, 05/11/2026), D3 PARTIAL ACCEPTED (05/11/2026)**. **D4 PARTIAL ACCEPTED (06/11/2026):** Hiệu trưởng giám sát độc lập, không tự động nhận quyền PHT hay quyền cấp/sửa quyền chuyên môn; ngoại lệ khẩn cấp có kiểm soát. D2/D5/D6, chi tiết chuyển giao/thu hồi D3 và thủ tục thực thi khẩn cấp D4 vẫn OPEN. Không thay đổi backend/quyền thật.
 **Ngày lập:** 03/11/2026.
 **Phạm vi:** Báo giảng; chuẩn bị Giai đoạn 1 của `docs/tasks/P5-057-FOUR-STAGE-OPERABILITY-EXECUTION-PLAN.md`.
 **Không thực hiện trong tài liệu này:** cấp/thu hồi quyền thật, đổi role từ danh xưng, schema, migrations, sửa code, VPS/deploy.
@@ -46,7 +46,7 @@ Ký hiệu: **Q** = quyết định/phê duyệt nghiệp vụ; **T** = thực h
 
 **D3 — PARTIAL ACCEPTED (05/11/2026):** Một PHT phụ trách chuyên môn chính hiện nay, toàn quyền chuyên môn toàn trường; PHT khác dùng mẫu thông thường `VICE_PRINCIPAL` (đề xuất thêm, chưa có code) và có thể nhận từng capability chuyên môn có hạn/phạm vi. Admin kỹ thuật tạo tài khoản và **gán mẫu vai trò ban đầu theo phân công**, kể cả `VICE_PRINCIPAL_ACADEMIC`, nhưng không quyết định nghiệp vụ chuyên môn. Không hardcode số PHT chính. Còn OPEN: quy trình chứng minh bổ nhiệm, chống tự phong, chuyển giao, thu hồi grant từ template cũ và cứu hộ; đối chiếu `P5-057-WS1-D3-VICE-PRINCIPAL-ROLE-TEMPLATES.md`.
 
-**D4 — Vai trò Hiệu trưởng.** Giữ giám sát/phê duyệt riêng; xác định trường hợp quyền override hay phê duyệt thứ hai, không mặc nhiên gộp làm PHT.
+**D4 — PARTIAL ACCEPTED (06/11/2026):** Hiệu trưởng giám sát/kiểm tra hoạt động chuyên môn, không mặc nhiên có quyền cấp, thu hồi hoặc sửa quyền chuyên môn thay PHT và không tự có quyền sửa TKB/PPCT/phân công. Quyết định chuyên môn của PHT có hiệu lực theo quy trình thường lệ, không bị thêm bước Hiệu trưởng duyệt cấp 2 bắt buộc trong phần mềm. **Chỉ trong tình huống khẩn cấp có căn cứ** mới được xem xét can thiệp giới hạn về mục đích, đối tượng, phạm vi và thời hạn, với thông tin người ra quyết định, lý do, thời điểm và audit không thể xóa. **OPEN phần triển khai:** ai phê chuẩn/khởi tạo cứu hộ, tiêu chí khẩn cấp, thời hạn tối đa, quy trình hai người, quyền được override và thu hồi tự động — không kích hoạt API/role/override khi chưa được phê duyệt. Các quyền phê duyệt báo cáo hiện có của Hiệu trưởng không bị thu hồi bởi quyết định này.
 
 **D5 — Quyết định/ủy quyền khi cùng vai trò.** Ai có thể thay đổi quyền của chính mình hoặc người có quyền tương đương? Mặc định chống tự cấp/tự duyệt và lập audit đầy đủ.
 
