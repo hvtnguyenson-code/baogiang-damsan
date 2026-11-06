@@ -10,15 +10,17 @@ Exact current `main`, branch HEAD and divergence must always be read directly fr
 
 **Status snapshot date:** 2026-11-06
 
-## P5-057 / B1 — DEPLOYED (inert schema only)
+## P5-057 / WS1 — IN_PROGRESS: academic authority decisions
 
-Product Owner authorized B1 implementation under Issue #262 review [6659592897](https://github.com/hvtnguyenson-code/baogiang-damsan/issues/262#issuecomment-6659592897). Canonical implementation base was read directly from GitHub: `85c406572400789fab5d3ec693a67d05528a9fec`. Model B adds empty provenance/appointment/receipt structures and a nullable grant coordinate, preserving the evaluator, generic API, existing grants, exact index and exclusion constraint. The clean-slate deletion fingerprint/inventory was measured on isolated PG16.14/17.10: identical fingerprint `dcc2a3bb3c84234d62d617e8128bcbfb`, 84 inbound FKs; targeted 6-suite regression 166/166 PASS on each engine. See `docs/phase-reports/P5-057-B1-SCHEMA-FOUNDATION.md`; GitHub review/CI remain required. This does not activate source-aware writing, grant any role, backfill legacy rights, authorize B2–B5, or close P5-057/pilot. B1 merge PR #265 was released as 9fde64eae80eae8082c1dabfd157397703760b95; production migration and health verified 2026-11-06. Design authority #264 remains a separate open docs PR; #263 remains an independent operability PR.
+Product Owner approved **D1 Option B** on 05/11/2026: PHT phụ trách chuyên môn quyết định và trực tiếp cấu hình nghiệp vụ chuyên môn, Admin kỹ thuật không quyết định chuyên môn thay PHT. **D3 PARTIAL ACCEPTED:** trường luôn có PHT chuyên môn (PO xác nhận 06/11/2026), hiện 01 PHT chính; PHT thông thường không có quyền chuyên môn mặc định nhưng có thể nhận từng quyền giới hạn; Admin kỹ thuật tạo tài khoản và gán mẫu trách nhiệm ban đầu theo phân công nhà trường, kể cả PHT chính. **D4 PARTIAL ACCEPTED (06/11/2026):** Hiệu trưởng giám sát độc lập, không tự có quyền thao tác chuyên môn thay PHT; can thiệp khẩn cấp chỉ có căn cứ, phạm vi, thời hạn và audit. **D2/D5/D6, chi tiết chuyển giao/thu hồi D3 và quy trình thực thi/cứu hộ D4 vẫn OPEN**; không sửa quyền backend hay đóng WS1. Xem PR #264 và hồ sơ quyết định WS1.
 
-## P5-057 / T56 ? IN_PROGRESS: admin usability and persona E2E
+## P5-057 / B1 — DEPLOYED (inert provenance foundation)
 
-Product Owner reports that production B?o gi?ng remains extremely difficult to operate for school administration (2026-11-01). Issue #262 records blocking audit evidence; P6-050 pilot is **BLOCKED**. This task branch introduces the first bounded operability correction: multi-class teaching assignments in one atomic SERIALIZABLE transaction, read-only preview of candidate conflicts, explicit review confirmation and a link from advanced capability grants to approved responsibility templates in Users administration. No authority is derived automatically from class assignment; capability checks remain unchanged.
+PR #265 merged; schema B1 production verified ở release `9fde64eae80eae8082c1dabfd157397703760b95` ngày 06/11/2026. Cấu trúc nguồn grant còn rỗng, evaluator/quyền cũ giữ nguyên; không kích hoạt B2–B5. Evidence: `docs/phase-reports/P5-057-B1-SCHEMA-FOUNDATION.md`.
 
-This is **not P5-057 closure**. All seven persona E2E journeys, principal Android/desktop/keyboard accessibility gates, TKB/PPCT production data flow, and independent UX review still require evidence. CI/PR undergoing revalidation against B1 production main. No production mutation.
+## P5-057 / WS2 — DEPLOYED TECHNICAL; REAL ADMIN UAT OPEN
+
+PR #263 gán một giáo viên/môn cho nhiều lớp cùng lô đã merged và deploy `bd79173a1180c26cbd33555ff081c015ef515bff` ngày 06/11/2026. CI main #891, auto-deploy #37, VPS #33 SUCCESS; API/web HTTP 200 và PID Nội trú 4304 giữ nguyên. Thay đổi code-only không sửa schema/auth/pipeline. **Nghiệm thu người dùng thật, tải và thao tác Admin vẫn chưa hoàn tất**; P5-057 tổng thể IN_PROGRESS, P6-050 BLOCKED.
 
 ## P5-056 / T55 — CLOSED (technical scope; SYNC-P5-056)
 
