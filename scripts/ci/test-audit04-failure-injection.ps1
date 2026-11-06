@@ -961,6 +961,11 @@ try {
     if (-not $Stubs.ContainsKey('assert-release-schema.ps1')) {
       $Stubs['assert-release-schema.ps1'] = 'param($ReleaseSha) @{ state="verifiedSchema"; releaseSha=$ReleaseSha } | ConvertTo-Json -Compress'
     }
+    # AUD-04 injects failures after a clean migration baseline; the real
+    # read-only baseline guard is independently covered by the release tests.
+    if (-not $Stubs.ContainsKey('assert-no-pending-migrations.ps1')) {
+      $Stubs['assert-no-pending-migrations.ps1'] = 'param($ReleaseSha) @{ state="verifiedNoPending"; releaseSha=$ReleaseSha; databasePort=5434 } | ConvertTo-Json -Compress'
+    }
     foreach ($scriptName in $Stubs.Keys) {
       $targetScript = Join-Path $fixtureScriptsDir $scriptName
       [IO.File]::WriteAllText($targetScript, $Stubs[$scriptName], [Text.UTF8Encoding]::new($false))
@@ -3306,6 +3311,52 @@ exit /b 0
     Write-Output '  [PASS] Test 37 (AUD-04-TO-1): Hard timeout watchdog verified; hanging child processes terminated cleanly without orphan processes'
   }
 
+
+  # --- TEST 38: A drifted deployed baseline must stop BEFORE quiescence ---
+  Invoke-AudTest 38 'Pre-migration baseline drift rejected before any service stop or SQL' {
+    $fix = New-AudFixtureEnvironment 'test38'
+    $origReleaseDir = Join-Path $fix.Root "releases\$origSha\apps\api\dist\apps\api\src"
+    New-Item -ItemType Directory -Path $origReleaseDir -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $origReleaseDir 'main.js'), 'console.log("v1");', [Text.UTF8Encoding]::new($false))
+    New-Item -ItemType Junction -Path (Join-Path $fix.Root 'current') -Target (Join-Path $fix.Root "releases\$origSha") | Out-Null
+    $xfer = Prepare-IncomingTransfer $fix.Root $newSha
+
+    $stubs = @{
+      'install-release.ps1' = 'param($ReleaseSha, $Root) New-Item -ItemType Directory -Path (Join-Path $Root ("releases\" + $ReleaseSha)) -Force | Out-Null; Write-Output ''{"state":"installed"}'''
+      'backup-database.ps1' = 'Write-Output ''{"state":"verified","backupFile":"b.dump"}'''
+      'assert-no-pending-migrations.ps1' = 'param($ReleaseSha) @{ state="pending"; releaseSha=$ReleaseSha; databasePort=5434 } | ConvertTo-Json -Compress'
+      'run-migrations.ps1' = "throw 'UNEXPECTED_SQL_EXECUTION'"
+    }
+    Set-FixtureScriptStubs $stubs
+
+    $paramFile = Join-Path $fix.Root 'deploy-params.json'
+    Write-DeploymentParameters $paramFile @{
+      ReleaseSha = $newSha; Root = $fix.Root; TransferDirectoryName = $xfer.TransferDir; SourceArchiveName = $xfer.ArchiveName
+      ExpectedSha256 = $xfer.Sha256; NodeExe = $fakeToolPath; NpmExe = $fakeToolPath; NpxExe = $fakeToolPath
+      PsqlExe = $fakeToolPath; PgDumpExe = $fakeToolPath; PgRestoreExe = $fakeToolPath
+      EnvFile = $fix.EnvFile; StartupWrapper = $fix.StartupWrapper; NginxExe = $fakeToolPath; NginxConfig = $fix.NginxConfig
+      ExpectedBaseUrl = 'https://baogiang.dtnt-damsan.edu.vn'; ServiceKind = 'scheduled-task'; ServiceName = 'BaoGiangBackend'
+      ExpectedEntryPoint = $fix.EntryPoint; MigrationRequested = $true; ProductionMigrationApproved = $true
+      RollbackCompatibilityApproved = $false; ReportFileName = "deploy-report-$newSha.json"
+    }
+    $global:aud04StopCalls.Clear()
+    $caught = $null
+    try {
+      & (Join-Path $fixtureScriptsDir 'invoke-production-deploy.ps1') -ParameterFile $paramFile | Out-Null
+    } catch { $caught = $_ }
+    if ($null -eq $caught -or $caught.Exception.Message -notmatch 'PRE_MIGRATION_BASELINE_DRIFT_BLOCKED') {
+      throw "Test 38 expected PRE_MIGRATION_BASELINE_DRIFT_BLOCKED but got: $($caught.Exception.Message)"
+    }
+    if ($global:aud04StopCalls.Count -ne 0) { throw 'Test 38 violated pre-quiescence boundary: service stop was called' }
+    $currentTarget = Split-Path (Assert-ReleasePointerTarget -PointerPath (Join-Path $fix.Root 'current') -Root $fix.Root) -Leaf
+    if ($currentTarget -cne $origSha) { throw 'Test 38 changed the original release pointer' }
+    $reportPath = Join-Path $fix.Root "logs\deploy-report-$newSha.json"
+    if (-not (Test-Path $reportPath)) { throw 'Test 38 missing durable failure report' }
+    $rep = Get-Content $reportPath -Raw | ConvertFrom-Json
+    if ($rep.migration.state -ne 'notStarted' -or $rep.rollback.state -ne 'notNeeded') { throw 'Test 38 incorrectly marked migration attempted or rollback required' }
+    Write-Output '  [PASS] Test 38: Baseline drift blocked before stop, SQL, switch; original pointer preserved'
+  }
+
   if ($SimulateTimeout) {
     Write-Output "  [RUN] Test 99 (Simulated Timeout)"
     $hangingTool99 = Join-Path $tempDir 'hanging-tool-99.cmd'
@@ -3322,7 +3373,7 @@ exit /b 0
     }
   }
 
-  $expectedCount = if ($OnlyTest -gt 0) { 1 } else { 37 }
+  $expectedCount = if ($OnlyTest -gt 0) { 1 } else { 38 }
   if ($global:aud04PassCount -ne $expectedCount) {
     throw "AUD-04 test verification failed: expected $expectedCount passed tests, but $global:aud04PassCount passed."
   }

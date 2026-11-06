@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "entries": [
+    {
+      "path": "prisma/migrations/20261105150000_p5_057_b1_provenance_foundation/migration.sql",
+      "sha256": "0edab84bdb4919f6d3bf5bb669a17e415096db2272a23f9680e20e893654bccb",
+      "category": "QUIESCED_ADDITIVE",
+      "review": "PR #265 exact-head 3241a02cdeed9aeab68db0ac26af95fd6de75701; independent B1 review #5787220008 and 2026-11-05 read-only VPS preflight",
+      "scope": "B1 inert schema only; requires verified backup, isolated BaoGiang quiescence, post-migration schema gate"
+    }
+  ]
+}
