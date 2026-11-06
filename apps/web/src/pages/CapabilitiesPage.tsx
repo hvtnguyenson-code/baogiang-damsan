@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import type { CapabilityDefinitionRecord, CapabilityScope, CatalogEntry, UserManagementRecord } from '@baogiang/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
@@ -344,6 +345,13 @@ export function CapabilitiesPage() {
       <PageHeader eyebrow="Quyền và phạm vi" title="Cấp quyền">
         Quyền có hiệu lực theo quyền, phạm vi và thời gian. Quản trị kỹ thuật không thay thế quyền nghiệp vụ.
       </PageHeader>
+      {canUsers && (
+        <section className="limitation-note" aria-labelledby="role-template-guidance">
+          <h2 id="role-template-guidance">Phân quyền thông thường: dùng mẫu theo chức trách</h2>
+          <p>Không cần chọn từng mã quyền. Hãy mở hồ sơ nhân sự, chọn mẫu Giáo viên, Tổ trưởng, Phó Hiệu trưởng... rồi xem trước và áp dụng. Trang này chỉ nên dùng để điều chỉnh quyền đặc biệt.</p>
+          <Link to="/quan-tri/nguoi-dung">Mở hồ sơ nhân sự và mẫu phân quyền</Link>
+        </section>
+      )}
       {!canUsers && (
         <div className="limitation-note">
           <strong>Chưa thể chọn người nhận quyền.</strong> Tài khoản này không có quyền đọc danh sách người dùng; giao diện không nhận mã người dùng thô.

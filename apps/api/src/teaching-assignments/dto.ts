@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, ArrayUnique, IsArray, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator';
 import { IsCivilDate } from '../common/validation/civil-date';
 
 export class TeachingAssignmentPageDto {
@@ -22,6 +22,15 @@ export class ListEligibleTeachingAssignmentTeachersDto extends TeachingAssignmen
 
 export class CreateTeachingAssignmentDto {
   @IsUUID() schoolClassId!: string;
+  @IsUUID() subjectId!: string;
+  @IsUUID() teacherUserId!: string;
+  @IsCivilDate() validFrom!: string;
+  @IsOptional() @IsCivilDate() validUntil?: string;
+  @IsOptional() @IsString() @MaxLength(2000) note?: string;
+}
+
+export class CreateBulkTeachingAssignmentDto {
+  @IsArray() @ArrayMinSize(1) @ArrayMaxSize(100) @ArrayUnique() @IsUUID('4', { each: true }) schoolClassIds!: string[];
   @IsUUID() subjectId!: string;
   @IsUUID() teacherUserId!: string;
   @IsCivilDate() validFrom!: string;

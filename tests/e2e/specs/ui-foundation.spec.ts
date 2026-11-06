@@ -307,10 +307,15 @@ test('real teaching assignment flow creates, changes teacher, and ends the repla
   await selectOptionMatching(page.getByRole('combobox', { name: 'Năm học', exact: true }), new RegExp(suffix));
   await page.getByRole('button', { name: 'Tạo phân công' }).click();
   const createForm = page.locator('form.inline-work-form');
-  await selectOptionMatching(createForm.getByLabel('Lớp'), new RegExp(String(schoolClass.code)));
+  const classChoice = createForm.getByRole('checkbox', { name: String(schoolClass.code), exact: true });
+  await expect(classChoice).toBeVisible();
+  await classChoice.check();
   await selectOptionMatching(createForm.getByLabel('Môn học'), new RegExp(String(subject.code)));
   await createForm.getByLabel('Có hiệu lực từ').fill('2026-08-31');
-  await selectOptionMatching(createForm.getByLabel('Giáo viên'), new RegExp(`Giáo viên A ${suffix}`));
+  await selectOptionMatching(createForm.getByRole('combobox', { name: 'Giáo viên', exact: true }), new RegExp(`Giáo viên A ${suffix}`));
+  await createForm.getByRole('button', { name: /Kiểm tra xung đột trước khi lưu/ }).click();
+  await expect(createForm.getByRole('status')).toContainText('hợp lệ');
+  await createForm.getByRole('checkbox', { name: /Tôi đã kiểm tra/ }).check();
   await createForm.getByRole('button', { name: 'Lưu phân công' }).click();
   await expect(page.getByRole('status').getByText('Đã tạo phân công giảng dạy.')).toBeVisible();
 

@@ -13,6 +13,7 @@ import { RequireCapability } from '../authorization/require-capability.decorator
 import {
   ChangeTeachingAssignmentTeacherDto,
   CreateTeachingAssignmentDto,
+  CreateBulkTeachingAssignmentDto,
   EndTeachingAssignmentDto,
   ListTeachingAssignmentsDto,
 } from './dto';
@@ -30,6 +31,25 @@ export class AcademicYearTeachingAssignmentsController {
     @Query() query: ListTeachingAssignmentsDto,
   ): Promise<TeachingAssignmentListResponse> {
     return this.service.list(academicYearId, query);
+  }
+
+  @Post('bulk/preview')
+  @UseGuards(SessionAuthGuard, CsrfOriginGuard, CapabilityGuard)
+  previewBulk(
+    @Param('academicYearId', ParseUUIDPipe) academicYearId: string,
+    @Body() dto: CreateBulkTeachingAssignmentDto,
+  ): Promise<{ canApply: boolean; issues: Array<{ schoolClassId: string; message: string }> }> {
+    return this.service.previewBulk(academicYearId, dto);
+  }
+
+  @Post('bulk')
+  @UseGuards(SessionAuthGuard, CsrfOriginGuard, CapabilityGuard)
+  createBulk(
+    @Param('academicYearId', ParseUUIDPipe) academicYearId: string,
+    @Body() dto: CreateBulkTeachingAssignmentDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<TeachingAssignmentRecord[]> {
+    return this.service.createBulk(academicYearId, dto, request.auth!.user.id, requestMeta(request));
   }
 
   @Post()
