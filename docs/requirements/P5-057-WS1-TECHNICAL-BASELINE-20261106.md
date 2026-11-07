@@ -1,5 +1,7 @@
 # P5-057 / WS1 — Đặc tả triển khai kỹ thuật hợp nhất
 
+> **Bổ sung chính sách 07/11/2026 (PO ACCEPTED):** D2–D6 đã chốt nguyên tắc, trong đó D6 cho phép tự cập nhật `TeachingAssignment` từ nguồn TKB đã được PHT phê duyệt trước. Các mệnh đề mô tả D2–D6 là OPEN hoặc TKB chỉ được phép gợi ý dưới đây phản ánh **baseline lịch sử 06/11**, không còn là chính sách mới nhất. Xem `docs/requirements/P5-057-WS1-D2-D6-PO-DECISIONS-20261107.md`. Cổng triển khai và kiểm thử vẫn OPEN; không sửa runtime bằng tài liệu này.
+
 **Ngày:** 06/11/2026. **Trạng thái:** TECHNICAL DESIGN READY / POLICY SIGN-OFF PENDING. **Phạm vi:** chỉ hệ thống Báo giảng. **Reference implementation:** `main@bd79173a1180c26cbd33555ff081c015ef515bff`; tài liệu PR #264. Không thay đổi API/DB/VPS/Nội trú bằng hồ sơ này.
 
 ## 1. Quyết định đã chốt, không hỏi lại
