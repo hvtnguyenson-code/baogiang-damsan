@@ -8,13 +8,17 @@ Per `MAJOR-TASK-DOCUMENTATION-SYNC-PROTOCOL.md`, this file is intentionally conc
 
 Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub. SHAs here are evidence for already-established task states, never a self-referential claim that this document contains its own current commit.
 
-**Status snapshot date:** 2026-11-06
+**Status snapshot date:** 2026-11-07
 
 ## P5-057 / WS1 — IN_PROGRESS: D1–D6 policy principles ACCEPTED; implementation gates OPEN
 
 PO đã chốt D1 Phương án B ngày 05/11 và **D2–D6 ngày 07/11/2026**. D2: Admin gán mẫu ban đầu theo quyết định nhân sự, PHT quản lý thay đổi chuyên môn; D3: chuyển giao có hiệu lực ngay khi người có thẩm quyền xác nhận; D4: Hiệu trưởng tự kích hoạt can thiệp khẩn cấp có lý do, thời hạn và thông báo PHT; D5: TTCM thẩm định bảng kê BGH, cấm tự duyệt/tự cấp; D6: **tự cập nhật phân công từ nguồn TKB đã PHT phê duyệt trước**. D6 thay cho giả định cũ “TKB chỉ là gợi ý, PHT xác nhận từng cập nhật”, nhưng yêu cầu phê duyệt gắn nguồn/snapshot/phạm vi và không tự cấp capability. Các gate về provenance/grant legacy, quyết định nhân sự, TTL khẩn cấp, tuyến TTCM và nguồn TKB vẫn cần đặc tả/kiểm thử; **không tuyên bố WS1 CLOSED, không kích hoạt quyền production**. Hồ sơ chuẩn: `docs/requirements/P5-057-WS1-D2-D6-PO-DECISIONS-20261107.md`.
 
 PR #269 (`e729dc3e22f5b5094b13a55ca61eef7902a94d32`) chỉ thêm read-only preflight khi đổi mẫu quyền; triển khai VPS 07/11 thành công và các health check HTTP 200, không chuyển đổi grant tự động. P5-057 tiếp tục IN_PROGRESS; P6-050 vẫn BLOCKED.
+
+**Bổ sung PO D2–D3 (07/11):** **Ai được bổ nhiệm chức trách thì được miễn nhiệm chức trách đó theo cùng thẩm quyền**: **PHT bổ nhiệm/miễn nhiệm TTCM; Admin bổ nhiệm/miễn nhiệm PHT**. Admin chỉ lập hồ sơ cho TTCM, không tự bổ nhiệm/miễn nhiệm TTCM; không tự bổ nhiệm/nâng quyền. Quy tắc đã cập nhật vào hồ sơ chính sách và thiết kế D2–D3; quy trình chuyển giao, chứng cứ và xử lý grant legacy vẫn OPEN.
+
+**WS1 D2–D3 design study (07/11, DRAFT):** kiểm kê tĩnh G1–G6 (generic create/revoke, apply template, baseline, bootstrap, catalog), thiết kế source-aware transfer, union coverage, legacy unknown fail-closed và rollback trong `docs/requirements/P5-057-WS1-D2-D3-GRANT-SOURCE-TRANSFER-DESIGN-20261107.md`. **Chưa đo DB production, chưa có approval triển khai writer**; P5-057 vẫn IN_PROGRESS.
 
 ## P5-057 / B1 — DEPLOYED (inert provenance foundation)
 
