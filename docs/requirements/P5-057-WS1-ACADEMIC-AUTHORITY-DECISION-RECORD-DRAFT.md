@@ -1,5 +1,7 @@
 # P5-057 / WS1 — Bản ghi Quyết định Thẩm quyền Chuyên môn và Mô hình Phân quyền (DỰ THẢO)
 
+> **Bổ sung quyết định PO 07/11/2026:** D2–D6 đã được chốt ở cấp nguyên tắc nghiệp vụ. Bản này lưu lại lịch sử dự thảo ngày 05–06/11; mọi mô tả D2/D5/D6 còn OPEN hoặc chỉ cho phép TKB làm gợi ý là **trạng thái cũ**. Nguồn chính sách mới: `docs/requirements/P5-057-WS1-D2-D6-PO-DECISIONS-20261107.md`. Gating kỹ thuật và bảo mật vẫn phải hoàn tất trước khi sửa quyền production.
+
 **Mã tài liệu:** `P5-057-WS1-ACADEMIC-AUTHORITY-DECISION-RECORD-DRAFT`
 **Trạng thái:** **TECHNICAL BASELINE READY / NON-NORMATIVE** — D1 accepted, D3/D4 partially accepted; implementation choices D2/D5/D6 documented, policy sign-off still required before permission changes.
 **Ngày lập dự thảo:** 05/11/2026
