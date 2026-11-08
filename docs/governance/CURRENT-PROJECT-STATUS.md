@@ -8,7 +8,13 @@ Per `MAJOR-TASK-DOCUMENTATION-SYNC-PROTOCOL.md`, this file is intentionally conc
 
 Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub. SHAs here are evidence for already-established task states, never a self-referential claim that this document contains its own current commit.
 
-**Status snapshot date:** 2026-11-07
+**Status snapshot date:** 2026-11-08
+
+## P5-057 / WS1 — D2–D3 minimal accountability and defensive writer boundary
+
+**PO clarification dated 08/11/2026:** Báo giảng is not an electronic personnel-decision archive. Normal appointments and dismissals require no administrative document number, signature, scanned decision, or mandatory justification; the authenticated confirming actor, target, duty, scope, server confirmation time and grant-source/audit information are recorded automatically. See `docs/requirements/P5-057-WS1-PO-ACCOUNTABILITY-SIMPLIFICATION-20261108.md`. D4 emergency intervention remains subject to reason and bounded duration.
+
+**First defensive implementation slice (this branch):** the generic grant writer rejects actor=target on creation and revocation; responsibility-template application rejects actor=target before opening a transaction. These are bounded safeguards only: generic actor-to-other academic grant restrictions, Admin/PHT appointment/transfer commands, provenance B1 writer, legacy reconciliation and real-persona acceptance remain **OPEN**. No new authority, automatic revocation or claim of P5-057 completion. No schema migration.
 
 ## P5-057 / WS1 — IN_PROGRESS: D1–D6 policy principles ACCEPTED; implementation gates OPEN
 

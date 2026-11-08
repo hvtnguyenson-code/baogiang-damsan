@@ -116,13 +116,31 @@ integration('Capability management API (isolated PostgreSQL integration)', () =>
     expect((await manager.agent.post(`/api/capability-grants/${first.body.id as string}/revoke`).set('Origin', testOrigin).send({ revokeReason: null })).status).toBe(400);
   });
 
+  it('WS1/D2: denies generic self-grant and self-revoke via authenticated HTTP', async () => {
+    const manager = await h.actor({ grants: [{ capabilityKey: 'CAPABILITY_GRANT' }] });
+    const ownGrant = await h.prisma.capabilityGrant.findFirstOrThrow({
+      where: { userId: manager.id, capabilityKey: 'CAPABILITY_GRANT', revokedAt: null },
+    });
+    const selfGrant = await manager.agent.post(`/api/users/${manager.id}/capability-grants`)
+      .set('Origin', testOrigin).send({ capabilityKey: 'SYSTEM_ADMIN', scopeType: 'SCHOOL_WIDE' });
+    expect(selfGrant.status).toBe(403);
+    expect(await h.prisma.capabilityGrant.count({
+      where: { userId: manager.id, capabilityKey: 'SYSTEM_ADMIN', revokedAt: null },
+    })).toBe(0);
+    const selfRevoke = await manager.agent.post(`/api/capability-grants/${ownGrant.id}/revoke`)
+      .set('Origin', testOrigin).send({});
+    expect(selfRevoke.status).toBe(403);
+    expect((await h.prisma.capabilityGrant.findUniqueOrThrow({ where: { id: ownGrant.id } })).revokedAt).toBeNull();
+  });
+
   it('rolls back create and first revoke when audit writing fails', async () => {
     const userId = await target();
+    const actorId = await target();
     const service = new CapabilitiesService(h.prisma as never, { write: jest.fn().mockRejectedValue(new Error('audit unavailable')) } as never);
-    await expect(service.create(userId, { capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL' }, userId, {})).rejects.toThrow('audit unavailable');
+    await expect(service.create(userId, { capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL' }, actorId, {})).rejects.toThrow('audit unavailable');
     expect(await h.prisma.capabilityGrant.count({ where: { userId } })).toBe(0);
     const grant = await h.prisma.capabilityGrant.create({ data: { userId, capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL', validFrom: new Date() } });
-    await expect(service.revoke(grant.id, {}, userId, {})).rejects.toThrow('audit unavailable');
+    await expect(service.revoke(grant.id, {}, actorId, {})).rejects.toThrow('audit unavailable');
     expect((await h.prisma.capabilityGrant.findUniqueOrThrow({ where: { id: grant.id } })).revokedAt).toBeNull();
   });
 });
