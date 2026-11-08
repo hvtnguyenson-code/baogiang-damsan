@@ -15,7 +15,7 @@ import {
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
-import { CapabilityScope, ResponsibilityTemplateKey } from '@baogiang/contracts';
+import { CapabilityScope, ResponsibilityTemplateKey, RoleAppointmentPreflightRequest } from '@baogiang/contracts';
 import { IsAbsoluteInstant } from '../common/validation/is-absolute-instant.decorator';
 
 const scopes: CapabilityScope[] = ['PERSONAL', 'SUBJECT_GROUP', 'SUBJECT', 'ACTIVITY', 'SCHOOL_WIDE'];
@@ -125,4 +125,17 @@ export class ListProgrammeMasterOptionsDto extends CapabilityPageDto {
 
   @IsEnum(PROGRAMME_MASTER_OPTION_KINDS)
   kind!: ProgrammeMasterOptionKind;
+}
+
+// WS1/D2-D3: read-only evidence preview. This is never an appointment command.
+export class RoleAppointmentPreflightDto implements RoleAppointmentPreflightRequest {
+  @IsEnum(['VICE_PRINCIPAL_ACADEMIC', 'SUBJECT_LEADER'])
+  templateKey!: 'VICE_PRINCIPAL_ACADEMIC' | 'SUBJECT_LEADER';
+
+  @IsUUID('4')
+  targetUserId!: string;
+
+  @IsOptional()
+  @IsUUID('4')
+  subjectGroupId?: string;
 }

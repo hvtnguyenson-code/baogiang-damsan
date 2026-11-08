@@ -434,6 +434,28 @@ export interface ResponsibilityTemplatePreviewResponse {
   transitionReview?: ResponsibilityTemplateTransitionReview;
 }
 
+/** WS1/D2-D3 read-only preview; not proof that the actor can appoint or dismiss. */
+export interface RoleAppointmentPreflightRequest {
+  templateKey: 'VICE_PRINCIPAL_ACADEMIC' | 'SUBJECT_LEADER';
+  targetUserId: string;
+  subjectGroupId?: string;
+}
+
+export interface RoleAppointmentPreflightResponse {
+  mode: 'READ_ONLY';
+  canConfirm: false;
+  confirmationBlocker: 'B1_SOURCE_WRITER_NOT_ACTIVE';
+  authorityBasis: 'CAPABILITY_PRECHECK_ONLY';
+  templatePreview: ResponsibilityTemplatePreviewResponse;
+  evidence: {
+    activeGrantCount: number;
+    legacyUnlinkedActiveGrantCount: number;
+    b1LinkedButUnverifiedActiveGrantCount: number;
+    activeRoleAppointmentCount: number;
+    provenanceVerified: false;
+  };
+}
+
 export interface ResponsibilityTemplateApplyRequest {
   templateKey: ResponsibilityTemplateKey;
   resources?: ResponsibilityTemplateResourceInput;

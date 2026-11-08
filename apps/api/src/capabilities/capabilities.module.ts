@@ -6,11 +6,13 @@ import { AccessBaselineService } from './access-baseline.service';
 import { CapabilitiesController } from './capabilities.controller';
 import { CapabilitiesService } from './capabilities.service';
 import { ResponsibilityTemplatesController } from './responsibility-templates.controller';
+import { AppointmentPreflightController } from './appointment-preflight.controller';
+import { AppointmentPreflightService } from './appointment-preflight.service';
 
 @Module({
   imports: [AuthModule, AuthorizationModule],
-  controllers: [CapabilitiesController, ResponsibilityTemplatesController],
-  providers: [CapabilitiesService, AccessBaselineService, AuditService],
+  controllers: [CapabilitiesController, ResponsibilityTemplatesController, AppointmentPreflightController],
+  providers: [CapabilitiesService, AccessBaselineService, AppointmentPreflightService, AuditService],
   exports: [CapabilitiesService, AccessBaselineService],
 })
 export class CapabilitiesModule {}
