@@ -10,6 +10,10 @@ Exact current `main`, branch HEAD and divergence must always be read directly fr
 
 **Status snapshot date:** 2026-11-08
 
+## WS1 / B1 multi-source PostgreSQL rehearsal (08/11/2026)
+
+Isolated database integration fixtures prove a role and independent source can support one grant, retaining rights when only the role ends and closing rights when its sole source ends. All fixtures roll back. No runtime writer, API, migration or production mutation. Evidence: docs/phase-reports/P5-057-WS1-B1-TWO-SOURCE-TRANSACTION-FIXTURES-20261108.md. Authorization, idempotency, concurrency and legacy cutover remain OPEN.
+
 ## WS1 / B1 inventory + B2 pure coverage planner (08/11/2026)
 
 Read-only aggregate inventory on production confirms **1 ACTIVE account, 9 active legacy grants with coordinateId=NULL, 0 rows in all 10 B1 provenance/authorization tables**; see `docs/phase-reports/P5-057-WS1-B1-READONLY-INVENTORY-20261108.md`. No production data mutation. New pure coverage planner plus unit fixtures computes before/after/coverage loss/retention for verified multiple sources and half-open time windows, failing closed on unknown legacy or invalid evidence. **Not integrated into writer or evaluator; no appointment command; canConfirm remains false.**

@@ -143,4 +143,124 @@ integration('P5-057 B1 inert provenance schema', () => {
     await rejected(tx, `INSERT INTO grant_sources(id,coordinate_id,user_id,kind,appointment_id,created_command_id)
       VALUES ('${randomUUID()}','${c.id}','${f.other.id}','ROLE_TEMPLATE','${appointment.id}','${f.command.id}')`, '23503');
   }));
+  it('retains one grant when a role source ends but independent baseline still supports it', () => isolated(async (tx, f) => {
+    const seat = await tx.authoritySeat.create({ data: {
+      key: 'B1_TEST_' + randomUUID(), policyVersion: 1n, enabled: false,
+    } });
+    const appointment = await tx.roleAppointment.create({ data: {
+      userId: f.user.id, seatId: seat.id, templateKey: 'SUBJECT_LEADER',
+      templateVersion: 'fixture', templateSnapshot: { onlyTest: true },
+      validFrom: from, validUntil: until, createdCommandId: f.command.id,
+    } });
+    const roleSource = await tx.grantSource.create({ data: {
+      coordinateId: f.coordinate.id, userId: f.user.id,
+      kind: 'ROLE_TEMPLATE', appointmentId: appointment.id,
+      createdCommandId: f.command.id,
+    } });
+    const roleRevision = await tx.grantSourceRevision.create({ data: {
+      sourceId: roleSource.id, coordinateId: f.coordinate.id, revision: 1n,
+      validFrom: from, validUntil: until, disposition: 'ACCEPTED', commandId: f.command.id,
+    } });
+    // Two distinct sources, one real grant, one source-supported projection.
+    const projection2 = await tx.grantProjectionRevision.create({ data: {
+      coordinateId: f.coordinate.id, version: 2n, commandId: f.command.id, effectiveAt: from,
+    } });
+    const slice2 = await tx.grantProjectionSlice.create({ data: {
+      projectionRevisionId: projection2.id, coordinateId: f.coordinate.id,
+      grantId: f.grant.id, validFromSnapshot: from, validUntilSnapshot: until,
+    } });
+    for (const revision of [f.revision, roleRevision]) {
+      await tx.grantSupport.create({ data: {
+        sliceId: slice2.id, sourceRevisionId: revision.id,
+        coordinateId: f.coordinate.id, coveredFrom: from, coveredUntil: until,
+      } });
+    }
+    expect(await tx.capabilityGrant.count({ where: {
+      userId: f.user.id, capabilityKey: f.key, scopeType: 'PERSONAL', revokedAt: null,
+    } })).toBe(1);
+    expect(await tx.grantSupport.count({ where: { sliceId: slice2.id } })).toBe(2);
+
+    // A second overlapping grant must be rejected even when the source is independent.
+    await tx.$executeRawUnsafe('SAVEPOINT b1_two_source_overlap');
+    let overlapFailure: unknown;
+    try {
+      await tx.capabilityGrant.create({ data: {
+        userId: f.user.id, capabilityKey: f.key, scopeType: 'PERSONAL',
+        coordinateId: f.coordinate.id,
+        validFrom: new Date('2026-11-15T00:00:00.000Z'), validUntil: until,
+      } });
+    } catch (error) { overlapFailure = error; }
+    await tx.$executeRawUnsafe('ROLLBACK TO SAVEPOINT b1_two_source_overlap');
+    await tx.$executeRawUnsafe('RELEASE SAVEPOINT b1_two_source_overlap');
+    expect(overlapFailure).toBeDefined();
+
+    const effectiveAt = new Date('2026-11-15T00:00:00.000Z');
+    const endCommand = await tx.accessCommand.create({ data: {
+      actorUserId: f.other.id, targetUserId: f.user.id,
+      commandType: 'TEST_DISMISS_ROLE', requestKey: randomUUID(),
+      fingerprint: 'b'.repeat(64), effectiveAt,
+      result: { onlyTest: true },
+    } });
+    await tx.roleAppointment.update({ where: { id: appointment.id }, data: { validUntil: effectiveAt } });
+    await tx.grantSourceRevision.create({ data: {
+      sourceId: roleSource.id, coordinateId: f.coordinate.id,
+      revision: 2n, validFrom: from, validUntil: effectiveAt,
+      disposition: 'ENDED', commandId: endCommand.id,
+    } });
+    const projection3 = await tx.grantProjectionRevision.create({ data: {
+      coordinateId: f.coordinate.id, version: 3n,
+      commandId: endCommand.id, effectiveAt,
+    } });
+    const slice3 = await tx.grantProjectionSlice.create({ data: {
+      projectionRevisionId: projection3.id, coordinateId: f.coordinate.id,
+      grantId: f.grant.id, validFromSnapshot: effectiveAt, validUntilSnapshot: until,
+    } });
+    await tx.grantSupport.create({ data: {
+      sliceId: slice3.id, sourceRevisionId: f.revision.id,
+      coordinateId: f.coordinate.id, coveredFrom: effectiveAt, coveredUntil: until,
+    } });
+    const sameGrant = await tx.capabilityGrant.findUniqueOrThrow({ where: { id: f.grant.id } });
+    expect(sameGrant.revokedAt).toBeNull();
+    expect(sameGrant.validUntil?.toISOString()).toBe(until.toISOString());
+    const latestSupport = await tx.grantSupport.findMany({
+      where: { sliceId: slice3.id }, select: { sourceRevisionId: true },
+    });
+    expect(latestSupport.map(row => row.sourceRevisionId)).toEqual([f.revision.id]);
+    const latestRole = await tx.grantSourceRevision.findFirstOrThrow({
+      where: { sourceId: roleSource.id }, orderBy: { revision: 'desc' },
+    });
+    expect(latestRole.disposition).toBe('ENDED');
+    expect(latestRole.validUntil?.toISOString()).toBe(effectiveAt.toISOString());
+    expect(await tx.grantSupport.count({ where: { sliceId: slice2.id } })).toBe(2);
+  }));
+
+  it('closes future grant coverage at confirmation when the only source ends', () => isolated(async (tx, f) => {
+    const effectiveAt = new Date('2026-11-15T00:00:00.000Z');
+    const endCommand = await tx.accessCommand.create({ data: {
+      actorUserId: f.other.id, targetUserId: f.user.id,
+      commandType: 'TEST_END_ONLY_SOURCE', requestKey: randomUUID(),
+      fingerprint: 'c'.repeat(64), effectiveAt, result: { onlyTest: true },
+    } });
+    await tx.grantSourceRevision.create({ data: {
+      sourceId: f.source.id, coordinateId: f.coordinate.id,
+      revision: 2n, validFrom: from, validUntil: effectiveAt,
+      disposition: 'ENDED', commandId: endCommand.id,
+    } });
+    const changed = await tx.capabilityGrant.update({
+      where: { id: f.grant.id }, data: { validUntil: effectiveAt },
+    });
+    expect(changed.revokedAt).toBeNull();
+    expect(changed.validUntil?.toISOString()).toBe(effectiveAt.toISOString());
+    const projection = await tx.grantProjectionRevision.create({ data: {
+      coordinateId: f.coordinate.id, version: 2n, commandId: endCommand.id, effectiveAt,
+    } });
+    expect(await tx.grantProjectionSlice.count({ where: { projectionRevisionId: projection.id } })).toBe(0);
+    expect(await tx.capabilityGrant.count({ where: {
+      id: f.grant.id, revokedAt: null, validFrom: { lte: effectiveAt },
+      OR: [{ validUntil: null }, { validUntil: { gt: effectiveAt } }],
+    } })).toBe(0);
+    expect(await tx.capabilityGrant.count({ where: { id: f.grant.id } })).toBe(1);
+    expect(await tx.grantProjectionSlice.count({ where: { id: f.slice.id } })).toBe(1);
+  }));
+
 });
