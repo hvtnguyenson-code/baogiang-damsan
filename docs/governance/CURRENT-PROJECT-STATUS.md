@@ -10,6 +10,12 @@ Exact current `main`, branch HEAD and divergence must always be read directly fr
 
 **Status snapshot date:** 2026-11-08
 
+## WS1/D2-D3 — Read-only appointment preflight (08/11/2026)
+
+The next bounded backend slice adds `POST /api/role-appointments/preflight` for PHT/TTCM evidence review. It reuses the established responsibility-template preview and capability evaluator. An Admin with both `USER_MANAGE` and `CAPABILITY_GRANT` may preview PHT; a PHT with `APPROVAL_VICE_PRINCIPAL` may preview TTCM. This is **capability precheck only, not verified authority-seat provenance**; the result is always `mode=READ_ONLY`, `canConfirm=false`, and `confirmationBlocker=B1_SOURCE_WRITER_NOT_ACTIVE`.
+
+The response reports active legacy `coordinateId=null` grants separately from B1-linked grants that still lack complete source/support verification, plus active appointment count. It never infers revocation from template differences; no `CapabilityGrant`, `RoleAppointment`, `GrantSource`, or authorization state is written. This does **not** resolve the generic writer bypass. A future specialized and independently reviewed B1 source-aware writer must prove actor seat, source union coverage, idempotency, concurrent transfers, rollback and legacy reconciliation before any confirm endpoint exists.
+
 ## P5-057 / WS1 — D2–D3 minimal accountability and defensive writer boundary
 
 **PO clarification dated 08/11/2026:** Báo giảng is not an electronic personnel-decision archive. Normal appointments and dismissals require no administrative document number, signature, scanned decision, or mandatory justification; the authenticated confirming actor, target, duty, scope, server confirmation time and grant-source/audit information are recorded automatically. See `docs/requirements/P5-057-WS1-PO-ACCOUNTABILITY-SIMPLIFICATION-20261108.md`. D4 emergency intervention remains subject to reason and bounded duration.
