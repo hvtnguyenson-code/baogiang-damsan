@@ -10,6 +10,10 @@ Exact current `main`, branch HEAD and divergence must always be read directly fr
 
 **Status snapshot date:** 2026-11-08
 
+## WS1 / B1 inventory + B2 pure coverage planner (08/11/2026)
+
+Read-only aggregate inventory on production confirms **1 ACTIVE account, 9 active legacy grants with coordinateId=NULL, 0 rows in all 10 B1 provenance/authorization tables**; see `docs/phase-reports/P5-057-WS1-B1-READONLY-INVENTORY-20261108.md`. No production data mutation. New pure coverage planner plus unit fixtures computes before/after/coverage loss/retention for verified multiple sources and half-open time windows, failing closed on unknown legacy or invalid evidence. **Not integrated into writer or evaluator; no appointment command; canConfirm remains false.**
+
 ## WS1/D2-D3 — Read-only appointment preflight (08/11/2026)
 
 The next bounded backend slice adds `POST /api/role-appointments/preflight` for PHT/TTCM evidence review. It reuses the established responsibility-template preview and capability evaluator. An Admin with both `USER_MANAGE` and `CAPABILITY_GRANT` may preview PHT; a PHT with `APPROVAL_VICE_PRINCIPAL` may preview TTCM. This is **capability precheck only, not verified authority-seat provenance**; the result is always `mode=READ_ONLY`, `canConfirm=false`, and `confirmationBlocker=B1_SOURCE_WRITER_NOT_ACTIVE`.
