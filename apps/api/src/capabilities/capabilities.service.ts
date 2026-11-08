@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { AuditResult, CapabilityDefinition, CapabilityGrant, CatalogStatus, Prisma } from '@prisma/client';
 import {
   CapabilityDefinitionListResponse,
@@ -90,6 +90,9 @@ export class CapabilitiesService {
   }
 
   async create(userId: string, dto: CreateGrantDto, actor: string, meta: RequestMeta): Promise<CapabilityGrantRecord> {
+    // WS1/D2: a generic grant endpoint must never promote the authenticated actor.
+    // This check belongs in the writer, not only the HTTP guard or UI.
+    if (userId === actor) throw new ForbiddenException('Không được tự cấp quyền cho chính mình.');
     await this.requireUser(userId);
     const validFrom = dto.validFrom ? new Date(dto.validFrom) : new Date();
     const validUntil = dto.validUntil ? new Date(dto.validUntil) : null;
@@ -133,6 +136,9 @@ export class CapabilitiesService {
     return this.prisma.$transaction(async (tx) => {
       const old = await tx.capabilityGrant.findUnique({ where: { id } });
       if (!old) throw new NotFoundException('Không tìm thấy grant.');
+      // Check before idempotent return: even a prior revocation cannot be used
+      // as a generic self-role administration path.
+      if (old.userId === actor) throw new ForbiddenException('Không được tự thu hồi quyền qua chức năng quản trị.');
       if (old.revokedAt) return toCapabilityGrantRecord(old);
       const row = await tx.capabilityGrant.update({
         where: { id },

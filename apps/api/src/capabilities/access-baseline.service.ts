@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -422,6 +423,8 @@ export class AccessBaselineService {
     actorUserId: string,
     meta: RequestMeta,
   ): Promise<ResponsibilityTemplateApplyResponse> {
+    // WS1/D2: applying a role template to oneself is not an appointment.
+    if (userId === actorUserId) throw new ForbiddenException('Không được tự gán mẫu chức trách cho chính mình.');
     const templateDef = getTemplateDefinition(dto.templateKey);
 
     return this.prisma.$transaction(async (tx) => {

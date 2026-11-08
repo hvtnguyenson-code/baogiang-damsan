@@ -1,4 +1,4 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { UserStatus } from '@prisma/client';
 import {
   evaluateCoordinateEffectivity,
@@ -353,6 +353,17 @@ describe('P5-051 Access Baseline & Responsibility Template Unit Tests', () => {
   });
 
   describe('AccessBaselineService Invariants & Guards (Mocked Unit)', () => {
+    it('WS1/D2: rejects self-appointment before opening a transaction', async () => {
+      const transaction = jest.fn();
+      const service = new AccessBaselineService({ $transaction: transaction } as never, {} as never);
+      await expect(service.applyTemplate(
+        'same-user', { templateKey: 'VICE_PRINCIPAL_ACADEMIC' },
+        'same-user', { requestId: 'ws1-self-role' },
+      )).rejects.toThrow(ForbiddenException);
+      expect(transaction).not.toHaveBeenCalled();
+    });
+
+
     it('16. template apply on non-teaching staff fails closed with ConflictException', async () => {
       const mockPrisma = {
         $queryRaw: jest.fn().mockResolvedValue([]),
