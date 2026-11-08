@@ -354,6 +354,55 @@ try {
   if (-not (Test-Path -LiteralPath $tgJournalPath -PathType Leaf)) { throw 'OP-TG-06: durable journal is missing.' }
   $tgRepeat = & $tgScript @tgArgs | Select-Object -Last 1 | ConvertFrom-Json
   if ($tgRepeat.state -cne 'ALREADY_RESERVED' -or $tgRepeat.attempted -cne $false) { throw 'OP-TG-06: uncertain event was retried.' }
+  # OP-TG-07: a validated, disabled bot never calls the provider, but must
+  # atomically persist the final disposition on Windows (no null backup path).
+  $tgEnv = Join-Path $tgRoot 'shared\synthetic-production.env'
+  @(
+    'NODE_ENV=production'
+    'TZ=Asia/Ho_Chi_Minh'
+    'API_HOST=127.0.0.1'
+    'API_PORT=3100'
+    'HTTP_TRUST_PROXY_HOPS=1'
+    'DATABASE_URL=postgresql://fixture:fixture@127.0.0.1:5434/fixture'
+    'CORS_ORIGINS=https://baogiang.dtnt-damsan.edu.vn'
+    'AUTH_SESSION_TTL_SECONDS=3600'
+    'AUTH_LAST_SEEN_UPDATE_SECONDS=30'
+    'AUTH_COOKIE_NAME=bg_test'
+    'AUTH_COOKIE_PATH=/'
+    'AUTH_COOKIE_SECURE=true'
+    'AUTH_COOKIE_SAME_SITE=lax'
+    'AUTH_LOCKOUT_THRESHOLD=5'
+    'AUTH_LOCKOUT_DURATION_SECONDS=600'
+    'AUTH_PASSWORD_MIN_LENGTH=8'
+    'AUTH_LOGIN_RATE_LIMIT_MAX=20'
+    'AUTH_LOGIN_RATE_LIMIT_WINDOW_SECONDS=60'
+    'AUTH_LOGIN_RATE_LIMIT_MAX_KEYS=10000'
+    'AI_ENABLED=false'
+    'AI_ACTIVE_MODE_ENABLED=false'
+    'AI_PASSIVE_MODE_ENABLED=false'
+    'WEB_PUSH_ENABLED=false'
+    'LOG_LEVEL=info'
+    'TELEGRAM_ENABLED=false'
+  ) | Set-Content -LiteralPath $tgEnv -Encoding UTF8
+  $tgArgs.EnvFile = $tgEnv
+  $tgArgs.EventId = "control-123-2-$tgSha"
+  $tgDisabledDisposition = & $tgScript @tgArgs | Select-Object -Last 1 | ConvertFrom-Json
+  if ($tgDisabledDisposition.state -cne 'REJECTED' -or $tgDisabledDisposition.code -cne 'BOT_DISABLED' -or
+      $tgDisabledDisposition.attempted -cne $true) {
+    throw 'OP-TG-07: disabled bot disposition is incorrect.'
+  }
+  $tgFinalJournalPath = Join-Path $tgRoot "logs\operator-telegram-$($tgArgs.EventId).json"
+  $tgFinalJournal = Get-Content -LiteralPath $tgFinalJournalPath -Raw -Encoding UTF8 | ConvertFrom-Json
+  if ($tgFinalJournal.state -cne 'REJECTED' -or $tgFinalJournal.code -cne 'BOT_DISABLED') {
+    throw 'OP-TG-07: final journal status was not persisted atomically.'
+  }
+  if (@(Get-ChildItem -LiteralPath (Join-Path $tgRoot 'logs') -File | Where-Object {
+      $_.Name -like '*.tmp.*' -or $_.Name -like '*.backup.*'
+    }).Count -gt 0) { throw 'OP-TG-07: temporary/backup journal files were not cleaned.' }
+  $tgNoReplay = & $tgScript @tgArgs | Select-Object -Last 1 | ConvertFrom-Json
+  if ($tgNoReplay.state -cne 'ALREADY_RESERVED' -or $tgNoReplay.attempted -cne $false) {
+    throw 'OP-TG-07: final event disposition was sent again.'
+  }
   $aclRoot = Join-Path $temp 'acl-authority-root'
   $aclShared = Join-Path $aclRoot 'shared'
   foreach ($directory in @(Get-ProductionRequiredDirectoryNames)) { New-Item -ItemType Directory -Path (Join-Path $aclRoot $directory) -Force | Out-Null }
