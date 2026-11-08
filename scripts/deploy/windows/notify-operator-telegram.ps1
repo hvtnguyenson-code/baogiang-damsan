@@ -122,8 +122,19 @@ finally { Clear-PostgresProcessEnvironment }
 $journal.state = [string]$outcome.state
 $journal.code = [string]$outcome.code
 $tmp = "$journalPath.tmp.$([guid]::NewGuid().ToString('N'))"
+$backup = "$journalPath.backup.$([guid]::NewGuid().ToString('N'))"
 try {
   [IO.File]::WriteAllText($tmp,($journal | ConvertTo-Json -Compress),[Text.UTF8Encoding]::new($false))
-  [IO.File]::Replace($tmp,$journalPath,$null)
-} catch { } finally { if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Force } }
+  # .NET Framework on Windows rejects a null backup path in File.Replace.
+  # Keep the pre-send PENDING reservation when the atomic status update fails.
+  [IO.File]::Replace($tmp,$journalPath,$backup)
+} catch {
+  # Best effort only: a failed journal update must never cause a second send.
+} finally {
+  foreach ($stagingPath in @($tmp,$backup)) {
+    if (Test-Path -LiteralPath $stagingPath) {
+      Remove-Item -LiteralPath $stagingPath -Force -ErrorAction SilentlyContinue
+    }
+  }
+}
 Write-Output (@{ state=$outcome.state; attempted=$true; code=$outcome.code } | ConvertTo-Json -Compress)

@@ -69,6 +69,10 @@ for (const token of ['Assert-VerifiedDeploySuccess','RESERVED_BEFORE_SEND','File
   if (token === 'deliveryAttempted') continue;
   if (!operatorNotifier.includes(token)) fail(`operator Telegram notifier missing gate: ${token}`);
 }
+if (operatorNotifier.includes('[IO.File]::Replace($tmp,$journalPath,$null)') ||
+    !operatorNotifier.includes('[IO.File]::Replace($tmp,$journalPath,$backup)')) {
+  fail('Operator Telegram journal update must use a real backup path on Windows');
+}
 const rollback = read(path.join(scriptDir, 'rollback-release.ps1'));
 const invoke = read(path.join(scriptDir, 'invoke-production-deploy.ps1'));
 const operatorInvoke = invoke.indexOf("'notify-operator-telegram.ps1'");
