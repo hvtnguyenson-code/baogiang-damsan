@@ -263,4 +263,101 @@ integration('P5-057 B1 inert provenance schema', () => {
     expect(await tx.grantProjectionSlice.count({ where: { id: f.slice.id } })).toBe(1);
   }));
 
+
+  it('rejects stale coordinate and appointment version writes before projection commit', () => isolated(async (tx, f) => {
+    const first = await tx.accessCoordinate.updateMany({
+      where: { id: f.coordinate.id, version: 0n },
+      data: { version: { increment: 1n } },
+    });
+    const stale = await tx.accessCoordinate.updateMany({
+      where: { id: f.coordinate.id, version: 0n },
+      data: { version: { increment: 1n } },
+    });
+    expect(first.count).toBe(1);
+    expect(stale.count).toBe(0);
+    expect((await tx.accessCoordinate.findUniqueOrThrow({ where: { id: f.coordinate.id } })).version).toBe(1n);
+
+    const seat = await tx.authoritySeat.create({
+      data: { key: 'B1_CAS_' + randomUUID(), policyVersion: 1n, enabled: false },
+    });
+    const appointment = await tx.roleAppointment.create({ data: {
+      userId: f.user.id, seatId: seat.id, templateKey: 'SUBJECT_LEADER',
+      templateVersion: 'fixture', templateSnapshot: { onlyTest: true },
+      validFrom: from, validUntil: until, createdCommandId: f.command.id,
+    } });
+    const endedAt = new Date('2026-11-15T00:00:00.000Z');
+    const accepted = await tx.roleAppointment.updateMany({
+      where: { id: appointment.id, version: 0n },
+      data: { validUntil: endedAt, version: { increment: 1n } },
+    });
+    const rejectedStale = await tx.roleAppointment.updateMany({
+      where: { id: appointment.id, version: 0n },
+      data: { validUntil: new Date('2026-11-20T00:00:00.000Z'), version: { increment: 1n } },
+    });
+    expect(accepted.count).toBe(1);
+    expect(rejectedStale.count).toBe(0);
+    const current = await tx.roleAppointment.findUniqueOrThrow({ where: { id: appointment.id } });
+    expect(current.version).toBe(1n);
+    expect(current.validUntil?.toISOString()).toBe(endedAt.toISOString());
+    expect(await tx.grantProjectionRevision.count({ where: { coordinateId: f.coordinate.id } })).toBe(1);
+  }));
+
+  it('preserves the first receipt on an actor/type/request-key replay with different payload', () => isolated(async (tx, f) => {
+    const requestKey = randomUUID();
+    const first = await tx.accessCommand.create({ data: {
+      actorUserId: f.other.id, targetUserId: f.user.id,
+      commandType: 'B1_TEST_REPLAY', requestKey, fingerprint: 'd'.repeat(64),
+      effectiveAt: from, result: { outcome: 'FIRST' },
+    } });
+    await tx.$executeRawUnsafe('SAVEPOINT b1_conflicting_replay');
+    let failure: unknown;
+    try {
+      await tx.accessCommand.create({ data: {
+        actorUserId: f.other.id, targetUserId: f.user.id,
+        commandType: 'B1_TEST_REPLAY', requestKey, fingerprint: 'e'.repeat(64),
+        effectiveAt: until, result: { outcome: 'SECOND' },
+      } });
+    } catch (error) { failure = error; }
+    await tx.$executeRawUnsafe('ROLLBACK TO SAVEPOINT b1_conflicting_replay');
+    await tx.$executeRawUnsafe('RELEASE SAVEPOINT b1_conflicting_replay');
+    expect(failure).toBeDefined();
+    const receipt = await tx.accessCommand.findUniqueOrThrow({ where: { id: first.id } });
+    expect(receipt.fingerprint).toBe('d'.repeat(64));
+    expect(receipt.result).toEqual({ outcome: 'FIRST' });
+    expect(await tx.accessCommand.count({ where: {
+      actorUserId: f.other.id, commandType: 'B1_TEST_REPLAY', requestKey,
+    } })).toBe(1);
+  }));
+
+  it('rolls back the command, source revision and grant adjustment together on failure', async () => {
+    const failure = new Error('synthetic downstream failure');
+    let commandId = '';
+    let userId = '';
+    let grantId = '';
+    await expect(db.$transaction(async (tx) => {
+      const f = await fixture(tx);
+      userId = f.user.id;
+      grantId = f.grant.id;
+      const command = await tx.accessCommand.create({ data: {
+        actorUserId: f.other.id, targetUserId: f.user.id,
+        commandType: 'B1_TEST_ROLLBACK', requestKey: randomUUID(),
+        fingerprint: 'f'.repeat(64), effectiveAt: from, result: { onlyTest: true },
+      } });
+      commandId = command.id;
+      const endedAt = new Date('2026-11-15T00:00:00.000Z');
+      await tx.grantSourceRevision.create({ data: {
+        sourceId: f.source.id, coordinateId: f.coordinate.id,
+        revision: 2n, validFrom: from, validUntil: endedAt,
+        disposition: 'ENDED', commandId,
+      } });
+      await tx.capabilityGrant.update({
+        where: { id: f.grant.id }, data: { validUntil: endedAt },
+      });
+      throw failure;
+    }, { timeout: 20000 })).rejects.toBe(failure);
+    expect(await db.accessCommand.findUnique({ where: { id: commandId } })).toBeNull();
+    expect(await db.capabilityGrant.findUnique({ where: { id: grantId } })).toBeNull();
+    expect(await db.user.findUnique({ where: { id: userId } })).toBeNull();
+  });
+
 });
