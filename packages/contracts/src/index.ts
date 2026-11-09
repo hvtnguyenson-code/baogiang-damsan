@@ -453,6 +453,15 @@ export interface RoleAppointmentPreflightResponse {
     b1LinkedButUnverifiedActiveGrantCount: number;
     activeRoleAppointmentCount: number;
     provenanceVerified: false;
+    /** Aggregated, non-authoritative evidence; never used for writes. */
+    b1Advisory?: {
+      mode: 'ADVISORY_ONLY';
+      state: 'NO_LINKED_GRANTS' | 'INSPECTED' | 'DEFERRED_LIMIT';
+      inspectedGrantCount: number;
+      supportCandidateGrantCount: number;
+      unverifiedLinkedGrantCount: number;
+      deferredLinkedGrantCount: number;
+    };
   };
 }
 

@@ -10,6 +10,11 @@ Exact current `main`, branch HEAD and divergence must always be read directly fr
 
 **Status snapshot date:** 2026-11-08
 
+## P5-057 / WS1-B — B1 advisory-preflight checkpoint 09/11/2026
+
+PR #278, main merge 9e00377aed8a364da12e68e31d487c457a7c8757, deployed the B1 source inspector and bounded PostgreSQL READ ONLY snapshots. This scoped next B1 slice attaches only aggregate ADVISORY_ONLY evidence to existing appointment preflight, after actor authorization, without changing READ_ONLY, canConfirm=false or writer-blocked semantics. No grant/revoke, appointment command, UI, or production DB mutation. Handoff: docs/phase-reports/P5-057-WS1-B1-ADVISORY-PREFLIGHT-20261109.md.
+
+P5-057 / T56 remains IN_PROGRESS; this is a partial technical checkpoint. Sensitive capability policy, source-aware writer, multi-source time union, transaction CAS, legacy reconciliation, and real Admin/PHT/persona UAT remain OPEN. P6-050 is not unblocked.
 ## WS1 / B1 multi-source PostgreSQL rehearsal (08/11/2026)
 
 Isolated database integration fixtures prove a role and independent source can support one grant, retaining rights when only the role ends and closing rights when its sole source ends. All fixtures roll back. No runtime writer, API, migration or production mutation. Evidence: docs/phase-reports/P5-057-WS1-B1-TWO-SOURCE-TRANSACTION-FIXTURES-20261108.md. Authorization, idempotency, concurrency and legacy cutover remain OPEN.
