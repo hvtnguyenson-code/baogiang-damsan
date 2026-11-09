@@ -41,7 +41,10 @@ integration('P5-057 WS1 appointment preflight API (read-only)', () => {
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({ mode: 'READ_ONLY', canConfirm: false,
       confirmationBlocker: 'B1_SOURCE_WRITER_NOT_ACTIVE',
-      evidence: { activeGrantCount: 0, provenanceVerified: false },
+      evidence: { activeGrantCount: 0, provenanceVerified: false, b1Advisory: {
+        mode: 'ADVISORY_ONLY', state: 'NO_LINKED_GRANTS', inspectedGrantCount: 0,
+        supportCandidateGrantCount: 0, unverifiedLinkedGrantCount: 0, deferredLinkedGrantCount: 0,
+      } },
     });
     expect(await h.prisma.roleAppointment.count()).toBe(0);
     expect(await h.prisma.grantSource.count()).toBe(0);
@@ -59,5 +62,39 @@ integration('P5-057 WS1 appointment preflight API (read-only)', () => {
     expect(response.body.canConfirm).toBe(false);
     expect(await h.prisma.roleAppointment.count()).toBe(0);
     expect(await h.prisma.grantSource.count()).toBe(0);
+  });
+
+  it('preserves active legacy grants and never activates their unsupported B1 history', async () => {
+    const target = await h.actor({
+      usernamePrefix: 'legacy-role-target',
+      grants: [{ capabilityKey: 'USER_MANAGE' }],
+    });
+    const admin = await h.actor({
+      usernamePrefix: 'legacy-role-admin',
+      grants: [{ capabilityKey: 'USER_MANAGE' }, { capabilityKey: 'CAPABILITY_GRANT' }],
+    });
+    const endpoint = '/api/role-appointments/preflight';
+    const before = await h.prisma.capabilityGrant.findMany({
+      where: { userId: target.id }, select: { id: true, coordinateId: true, revokedAt: true },
+    });
+    expect(before).toHaveLength(1);
+    expect(before[0].coordinateId).toBeNull();
+    const response = await admin.agent.post(endpoint).set('Origin', testOrigin).send({
+      templateKey: 'VICE_PRINCIPAL_ACADEMIC', targetUserId: target.id,
+    });
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      mode: 'READ_ONLY', canConfirm: false,
+      confirmationBlocker: 'B1_SOURCE_WRITER_NOT_ACTIVE',
+      evidence: {
+        activeGrantCount: 1, legacyUnlinkedActiveGrantCount: 1, provenanceVerified: false,
+        b1Advisory: { mode: 'ADVISORY_ONLY', state: 'NO_LINKED_GRANTS', inspectedGrantCount: 0 },
+      },
+    });
+    expect(await h.prisma.capabilityGrant.findMany({
+      where: { userId: target.id }, select: { id: true, coordinateId: true, revokedAt: true },
+    })).toEqual(before);
+    expect(await h.prisma.grantSource.count()).toBe(0);
+    expect(await h.prisma.roleAppointment.count()).toBe(0);
   });
 });

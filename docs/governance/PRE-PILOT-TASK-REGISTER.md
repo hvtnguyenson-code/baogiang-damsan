@@ -196,3 +196,7 @@ Every future execution prompt for a major task must include:
 If an implementation task depends on a `DEFERRED_WITH_TRIGGER` architecture task, the implementation task remains non-startable until the trigger fires and the architecture task is `CLOSED`.
 
 If the requested work is not in this register, create/register it first. Do not begin implementation and “document it later”.
+
+## P5-057 / T56 — WS1-B technical checkpoint (09/11/2026)
+
+The existing registered P5-057 task remains IN_PROGRESS; no new task ID or persona acceptance closure is implied. PR #278 delivered inert B1 provenance inspection with main release 9e00377. This bounded follow-up supplies optional aggregated ADVISORY_ONLY preflight evidence after existing Admin/PHT authorization, always canConfirm=false; see docs/phase-reports/P5-057-WS1-B1-ADVISORY-PREFLIGHT-20261109.md. Source-aware writer, legacy reconciliation, time union, CAS, sensitive keys and real UAT remain OPEN. CI/merge/deploy evidence must be added upon completion, not asserted early.

@@ -3,6 +3,10 @@ import { RoleAppointmentPreflightRequest, RoleAppointmentPreflightResponse } fro
 import { CapabilityAuthorizationService } from '../authorization/capability-authorization.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AccessBaselineService } from './access-baseline.service';
+import { B1RepositoryInspector } from './b1-repository-inspector';
+
+// A bounded advisory preview must not hold unbounded DB snapshots.
+export const B1_ADVISORY_PREVIEW_LIMIT = 4;
 
 /**
  * WS1/D2-D3 evidence-only gate. Does not decide the legal/current office holder
@@ -10,11 +14,15 @@ import { AccessBaselineService } from './access-baseline.service';
  */
 @Injectable()
 export class AppointmentPreflightService {
+  private readonly b1Inspector: B1RepositoryInspector;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly authorization: CapabilityAuthorizationService,
     private readonly baselines: AccessBaselineService,
-  ) {}
+  ) {
+    this.b1Inspector = new B1RepositoryInspector(prisma);
+  }
 
   async preview(
     input: RoleAppointmentPreflightRequest,
@@ -61,7 +69,7 @@ export class AppointmentPreflightService {
           validFrom: { lte: now },
           OR: [{ validUntil: null }, { validUntil: { gt: now } }],
         },
-        select: { coordinateId: true },
+        select: { id: true, coordinateId: true },
       }),
       this.prisma.roleAppointment.count({
         where: {
@@ -74,6 +82,30 @@ export class AppointmentPreflightService {
       }),
     ]);
     const legacyUnlinkedActiveGrantCount = grants.filter((grant) => grant.coordinateId === null).length;
+    const linkedGrants = grants.filter((grant) => grant.coordinateId !== null);
+    const shouldInspect = linkedGrants.length > 0 &&
+      linkedGrants.length <= B1_ADVISORY_PREVIEW_LIMIT;
+
+    // Server-fetched IDs only. Every inspector uses a bounded READ ONLY
+    // transaction; its result NEVER authorizes an appointment or revocation.
+    const inspections = shouldInspect
+      ? await Promise.allSettled(linkedGrants.map((grant) => this.b1Inspector.inspect(grant.id)))
+      : [];
+    const supportCandidateGrantCount = inspections.filter((item) =>
+      item.status === 'fulfilled' && item.value.verdict === 'SUPPORT_CANDIDATE' &&
+      item.value.canConfirm === false && item.value.provenanceVerified === false,
+    ).length;
+    const inspectedGrantCount = inspections.length;
+    const b1Advisory = {
+      mode: 'ADVISORY_ONLY' as const,
+      state: linkedGrants.length === 0
+        ? 'NO_LINKED_GRANTS' as const
+        : shouldInspect ? 'INSPECTED' as const : 'DEFERRED_LIMIT' as const,
+      inspectedGrantCount,
+      supportCandidateGrantCount,
+      unverifiedLinkedGrantCount: inspectedGrantCount - supportCandidateGrantCount,
+      deferredLinkedGrantCount: linkedGrants.length - inspectedGrantCount,
+    };
 
     // coordinateId alone does NOT prove source/support union coverage.
     // Deliberately never return an actionable revocation proposal.
@@ -89,6 +121,7 @@ export class AppointmentPreflightService {
         b1LinkedButUnverifiedActiveGrantCount: grants.length - legacyUnlinkedActiveGrantCount,
         activeRoleAppointmentCount,
         provenanceVerified: false,
+        b1Advisory,
       },
     };
   }
