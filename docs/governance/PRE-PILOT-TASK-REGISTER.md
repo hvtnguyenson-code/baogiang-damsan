@@ -200,3 +200,7 @@ If the requested work is not in this register, create/register it first. Do not 
 ## P5-057 / T56 — WS1-B technical checkpoint (09/11/2026)
 
 The existing registered P5-057 task remains IN_PROGRESS; no new task ID or persona acceptance closure is implied. PR #278 delivered inert B1 provenance inspection with main release 9e00377. This bounded follow-up supplies optional aggregated ADVISORY_ONLY preflight evidence after existing Admin/PHT authorization, always canConfirm=false; see docs/phase-reports/P5-057-WS1-B1-ADVISORY-PREFLIGHT-20261109.md. Source-aware writer, legacy reconciliation, time union, CAS, sensitive keys and real UAT remain OPEN. CI/merge/deploy evidence must be added upon completion, not asserted early.
+
+## P5-057 / T56 - B2 independent oracle (10/11/2026)
+
+Task P5-057 remains IN_PROGRESS. After the PR #279 read-only B1 preflight milestone, the next bounded WS1-B test-only slice verifies the pre-existing multi-source half-open coverage planner against an independent seeded oracle, without writer/UI/schema/policy modification. Evidence and CI gates: docs/phase-reports/P5-057-WS1-B2-INDEPENDENT-COVERAGE-ORACLE-20261110.md. Unknown/legacy provenance remains blocked; 9 sensitive capability key-level policy, server proof, CAS/idempotency writer, audit, and persona UAT remain OPEN. P6-050 is not unblocked.
