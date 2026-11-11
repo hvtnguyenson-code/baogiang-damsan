@@ -1766,12 +1766,27 @@ integration('ProgrammeRuntimeBridge (PostgreSQL integration P4-040)', () => {
         },
       });
 
+      // Keep the future case genuinely ahead of the runtime clock, including
+      // after the fixed 2026-2027 fixture year has ended. The slot is Monday.
+      const futureOccurrenceDate = new Date();
+      futureOccurrenceDate.setUTCHours(0, 0, 0, 0);
+      const daysToNextMonday = ((8 - futureOccurrenceDate.getUTCDay()) % 7) || 7;
+      futureOccurrenceDate.setUTCDate(futureOccurrenceDate.getUTCDate() + daysToNextMonday);
+      const fixtureEnd = new Date(Math.max(
+        Date.parse('2027-05-31T23:59:59.999Z'),
+        futureOccurrenceDate.getTime() + 7 * 24 * 60 * 60 * 1000,
+      ));
+      await h.prisma.academicCalendarVersion.update({
+        where: { id: f.calendarVersion.id },
+        data: { endDate: fixtureEnd },
+      });
+
       // Future occurrence on SUPERSEDED plan -> rejected
       const { occ: futureSuperOcc } = await createOccurrenceWithStaffing(f, {
         masterId: master63.id,
         planVersionId: supersededPlan.id,
         topicItemId: supersededTopic.id,
-        civilDate: '2026-11-09T00:00:00.000Z',
+        civilDate: futureOccurrenceDate.toISOString(),
         gradeLevel: 12,
         creatorId: coordinator63.id,
         slots: [{ slotDefId: f.slotDef1.id, teacherIds: [f.teacherA.id] }],

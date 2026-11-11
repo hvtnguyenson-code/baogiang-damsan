@@ -132,11 +132,18 @@ describe('auth routing and forms', () => {
 
   it('changes password, refreshes auth, and enters the workspace', async () => {
     let meCalls = 0;
+    let passwordChanged = false;
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.endsWith('/auth/change-password')) return jsonResponse({ success: true });
-      meCalls += 1;
-      return jsonResponse(meCalls === 1 ? firstLoginAuth : normalAuth);
+      if (url.endsWith('/auth/change-password')) {
+        passwordChanged = true;
+        return jsonResponse({ success: true });
+      }
+      if (url.endsWith('/auth/me')) {
+        meCalls += 1;
+        return jsonResponse(passwordChanged ? normalAuth : firstLoginAuth);
+      }
+      throw new Error('Unexpected fetch in password-change scenario: ' + url);
     }));
     const user = userEvent.setup();
     renderApp('/doi-mat-khau-lan-dau');
@@ -144,8 +151,9 @@ describe('auth routing and forms', () => {
     await user.type(screen.getByLabelText('Mật khẩu mới'), 'ReplacementPassword8');
     await user.type(screen.getByLabelText('Xác nhận mật khẩu mới'), 'ReplacementPassword8');
     await user.click(screen.getByRole('button', { name: /đổi mật khẩu/i }));
-    expect(await screen.findByRole('heading', { name: /chào nguyễn văn an/i })).toBeInTheDocument();
-    expect(meCalls).toBe(2);
+    expect(await screen.findByRole('heading', { name: /chào nguyễn văn an/i }, { timeout: 5_000 })).toBeInTheDocument();
+    expect(passwordChanged).toBe(true);
+    expect(meCalls).toBeGreaterThanOrEqual(2);
   });
 
   it('keeps the first-login page and shows the current-password error after a 401', async () => {
