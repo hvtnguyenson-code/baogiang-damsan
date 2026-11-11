@@ -90,3 +90,7 @@ Trace T56 to docs/phase-reports/P5-057-WS1-B1-ADVISORY-PREFLIGHT-20261109.md. B1
 ## Required review rule
 
 Every future architecture or implementation task that touches one of these rows must cite the row IDs in its task document. If a task discovers a new requirement, creates a new deferral, or observes an authoritative source fingerprint change, the same PR must update this matrix and `PRE-PILOT-TASK-REGISTER.md` or stop for `P0-900`; otherwise that task is not merge-ready.
+
+## T56 B2 multi-source union independent oracle (10/11/2026)
+
+Trace P5-057/WS1-B to docs/phase-reports/P5-057-WS1-B2-INDEPENDENT-COVERAGE-ORACLE-20261110.md. A test-only independent reference compares source coverage before/after, lost coverage and coverage retained from independent sources at half-open boundaries. No authority was inferred from legacy grants or unverified source records; no writer, evaluator, UI or authorization policy was changed. Full WS1 and seven-persona UAT remain OPEN.
