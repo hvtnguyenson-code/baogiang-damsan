@@ -70,6 +70,10 @@ Quy trình thực thi đã khóa:
 
 P5-051 bao gồm safe user lifecycle: tài khoản test/nhầm chỉ được physical delete khi server chứng minh clean-slate; tài khoản đã có login/business/audit history phải disable và giữ lịch sử.
 
+## CI budget / non-interruption authority (MANDATORY - 2026-11-12)
+
+Product Owner hard-stop: **no commit push while any workflow of the same PR is queued/running**, even after a CI failure. Never use Actions as local debugger or trigger cancellation through force-push. Mandatory local preflight, all-workflows-settled gate and consolidated correction: [CI Workflow Budget and Non-Interruption Policy](governance/CI-WORKFLOW-BUDGET-AND-NONINTERRUPTION-POLICY.md). This supersedes any weaker or ambiguous practical guidance in historical reports.
+
 ## Công nghệ
 
 | Tầng | Công nghệ |

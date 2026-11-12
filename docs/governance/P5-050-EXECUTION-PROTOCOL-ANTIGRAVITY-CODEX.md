@@ -114,6 +114,16 @@ For each task:
 
 GitHub Actions is a verifier, not an interactive debugger.
 
+### 4.1. Mandatory hard stop before every push (PO decision 2026-11-12)
+
+**Canonical binding rule:** [CI Workflow Budget and Non-Interruption Policy](CI-WORKFLOW-BUDGET-AND-NONINTERRUPTION-POLICY.md).
+
+- **NO PUSH** (normal, amend, force, documentation, correction) while ANY PR-associated job/workflow is queued, pending, waiting or in progress. This includes P6-021 PG16 after CI's own job has failed. Check the aggregate PR workflow state immediately before each push.
+- Complete local strict TypeScript, lint and targeted tests first; if local tooling fails from OOM/timeout, **STOP** and resolve the preflight, never shift primitive compilation debugging to GitHub CI by default.
+- Collect all CI/reviewer findings before a single consolidated correction; **never intentionally cancel** a running workflow with a replacement push or manual API action. Do not rewrite published commits/force-push to hide multiple CI triggers.
+- Preserve original CI/CD and concurrency. No ad hoc reruns, workaround branches, workflow skips or CI cancellation without separate PO authorization. **One visible commit does not mean one CI invocation.**
+- Incident evidence: PR #285, CI #938 TypeScript failure, P6-021 #116 cancelled when correction push began CI #939 / PG16 #117. See the canonical policy for exact chronology and the pre-push checklist.
+
 ## 5. Prompt contract
 
 Every ChatGPT execution prompt must include:
