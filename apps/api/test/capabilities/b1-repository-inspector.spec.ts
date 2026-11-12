@@ -9,11 +9,37 @@ const id = {
   source2: '55555555-5555-4555-8555-555555555555',
   revision: '66666666-6666-4666-8666-666666666666',
   revision2: '77777777-7777-4777-8777-777777777777',
+  appointment: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  command: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+  command2: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+  seat: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+  actor: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
   projection: '88888888-8888-4888-8888-888888888888',
   slice: '99999999-9999-4999-8999-999999999999',
 };
 const t0 = new Date('2026-11-08T08:00:00.000Z');
 const now = new Date('2026-11-08T09:00:00.000Z');
+
+const roleSource = (): Record<string, unknown> => ({
+  id: id.source, coordinateId: id.coordinate, userId: id.user,
+  kind: 'ROLE_TEMPLATE', appointmentId: id.appointment, legacyGrantId: null,
+  supersedesSourceId: null, createdCommandId: id.command,
+  commandActorId: id.actor, commandTargetId: id.user, commandType: 'APPOINT_ROLE',
+  appointmentUserId: id.user, appointmentCreatedCommandId: id.command,
+  appointmentActorId: id.actor, appointmentTargetId: id.user,
+  appointmentSeatId: id.seat, appointmentValidFrom: t0,
+  appointmentValidUntil: null, appointmentCancelledAt: null,
+  seatEnabled: true, seatPolicyVersion: 1n,
+});
+const directSource = (): Record<string, unknown> => ({
+  ...roleSource(), id: id.source2, kind: 'ACADEMIC_DIRECT',
+  appointmentId: null, createdCommandId: id.command2,
+  commandType: 'ACADEMIC_DIRECT', appointmentUserId: null,
+  appointmentCreatedCommandId: null, appointmentActorId: null,
+  appointmentTargetId: null, appointmentSeatId: null,
+  appointmentValidFrom: null, appointmentValidUntil: null,
+  appointmentCancelledAt: null, seatEnabled: null, seatPolicyVersion: null,
+});
 
 type DbFixture = {
   clock: Array<{ at: Date }>;
@@ -38,10 +64,7 @@ function fixture(): DbFixture {
       id: id.coordinate, userId: id.user, capabilityKey: 'LESSON_REPORT',
       scopeType: 'SCHOOL', scopeResourceId: null, version: 1n,
     }],
-    sources: [{
-      id: id.source, coordinateId: id.coordinate, userId: id.user,
-      kind: 'ROLE_APPOINTMENT', appointmentId: null, legacyGrantId: null,
-    }],
+    sources: [roleSource()],
     revisions: [{
       id: id.revision, sourceId: id.source, coordinateId: id.coordinate,
       revision: 1n, validFrom: t0, validUntil: null, disposition: 'ACCEPTED',
@@ -125,10 +148,7 @@ describe('WS1-B B1 repository snapshot: no mutation, no API, no authorization', 
 
   it('counts two independent valid support sources without authorizing a change', async () => {
     const data = fixture();
-    data.sources.push({
-      id: id.source2, coordinateId: id.coordinate, userId: id.user,
-      kind: 'ROLE_APPOINTMENT', appointmentId: null, legacyGrantId: null,
-    });
+    data.sources.push(directSource());
     data.revisions.push({
       id: id.revision2, sourceId: id.source2, coordinateId: id.coordinate,
       revision: 1n, validFrom: t0, validUntil: null, disposition: 'ACCEPTED',
@@ -214,6 +234,76 @@ describe('WS1-B B1 repository snapshot: no mutation, no API, no authorization', 
     expect((await new B1RepositoryInspector(badMode.client).inspect(id.grant)).reason)
       .toBe('INCOMPLETE_HISTORY');
     expect(badMode.statements).toEqual(['SET TRANSACTION READ ONLY']);
+  });
+
+  it('rejects unknown and unclassified legacy source origins without invoking a writer', async () => {
+    const unknown = fixture();
+    unknown.sources[0].kind = 'ROLE_APPOINTMENT';
+    expect((await new B1RepositoryInspector(fakeDb(unknown).client).inspect(id.grant)).verdict)
+      .toBe('UNVERIFIED');
+    const legacy = fixture();
+    legacy.sources[0] = {
+      ...directSource(), kind: 'LEGACY_UNCLASSIFIED', legacyGrantId: id.grant,
+    };
+    expect((await new B1RepositoryInspector(fakeDb(legacy).client).inspect(id.grant))
+      .provenanceVerified).toBe(false);
+    expect((await new B1RepositoryInspector(fakeDb(legacy).client).inspect(id.grant)).verdict)
+      .toBe('UNVERIFIED');
+  });
+
+  it('rejects role source without real appointment seat evidence', async () => {
+    const missingSeat = fixture();
+    missingSeat.sources[0].appointmentSeatId = null;
+    expect((await new B1RepositoryInspector(fakeDb(missingSeat).client).inspect(id.grant)).verdict)
+      .toBe('UNVERIFIED');
+    const disabledSeat = fixture();
+    disabledSeat.sources[0].seatEnabled = false;
+    expect((await new B1RepositoryInspector(fakeDb(disabledSeat).client).inspect(id.grant)).verdict)
+      .toBe('UNVERIFIED');
+    const cancelled = fixture();
+    cancelled.sources[0].appointmentCancelledAt = t0;
+    expect((await new B1RepositoryInspector(fakeDb(cancelled).client).inspect(id.grant)).verdict)
+      .toBe('UNVERIFIED');
+  });
+
+  it('rejects self-issued or cross-target source command evidence', async () => {
+    const self = fixture();
+    self.sources[0].commandActorId = id.user;
+    expect((await new B1RepositoryInspector(fakeDb(self).client).inspect(id.grant)).verdict)
+      .toBe('UNVERIFIED');
+    const other = fixture();
+    other.sources[0].commandTargetId = id.source2;
+    expect((await new B1RepositoryInspector(fakeDb(other).client).inspect(id.grant)).verdict)
+      .toBe('UNVERIFIED');
+    const impersonatedAppointment = fixture();
+    impersonatedAppointment.sources[0].appointmentTargetId = id.source2;
+    expect((await new B1RepositoryInspector(fakeDb(impersonatedAppointment).client).inspect(id.grant)).verdict)
+      .toBe('UNVERIFIED');
+  });
+
+  it('rejects broken source lineage before counting its supports', async () => {
+    const outside = fixture();
+    outside.sources[0].supersedesSourceId = id.source2;
+    expect((await new B1RepositoryInspector(fakeDb(outside).client).inspect(id.grant)).verdict)
+      .toBe('UNVERIFIED');
+    const same = fixture();
+    same.sources[0].supersedesSourceId = id.source;
+    expect((await new B1RepositoryInspector(fakeDb(same).client).inspect(id.grant)).verdict)
+      .toBe('UNVERIFIED');
+    const cycle = fixture();
+    cycle.sources.push(directSource());
+    cycle.sources[0].supersedesSourceId = id.source2;
+    cycle.sources[1].supersedesSourceId = id.source;
+    expect((await new B1RepositoryInspector(fakeDb(cycle).client).inspect(id.grant)).verdict)
+      .toBe('UNVERIFIED');
+  });
+
+  it('keeps every accepted source-origin result strictly advisory', async () => {
+    const result = await new B1RepositoryInspector(fakeDb(fixture()).client).inspect(id.grant);
+    expect(result).toMatchObject({
+      verdict: 'SUPPORT_CANDIDATE', reason: 'CANDIDATE_ONLY',
+      provenanceVerified: false, canConfirm: false,
+    });
   });
 
   it('does not mutate caller-owned mock rows while deriving evidence', async () => {

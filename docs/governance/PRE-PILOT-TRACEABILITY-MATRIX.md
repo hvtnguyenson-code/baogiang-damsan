@@ -94,3 +94,7 @@ Every future architecture or implementation task that touches one of these rows 
 ## T56 B2 multi-source union independent oracle (10/11/2026)
 
 Trace P5-057/WS1-B to docs/phase-reports/P5-057-WS1-B2-INDEPENDENT-COVERAGE-ORACLE-20261110.md. A test-only independent reference compares source coverage before/after, lost coverage and coverage retained from independent sources at half-open boundaries. No authority was inferred from legacy grants or unverified source records; no writer, evaluator, UI or authorization policy was changed. Full WS1 and seven-persona UAT remain OPEN.
+
+## T56 ? B1 source-origin advisory coherence (12/11/2026)
+
+The `B1RepositoryInspector` evidence snapshot now validates B1 source/command/appointment/seat shape and rejects missing, self-issued, cross-target, legacy or cyclic lineage evidence, within PostgreSQL READ ONLY. This does **not** establish issuer authority, policy for nine sensitive capability keys, time-complete provenance, writer safety or persona acceptance. Evidence: `docs/phase-reports/P5-057-WS1-B1-SOURCE-ORIGIN-CHECK-20261112.md`. `P5-057` remains IN_PROGRESS, `P6-050` BLOCKED.
