@@ -36,6 +36,13 @@ type CoordinateRow = {
 type SourceRow = {
   id: string; coordinateId: string; userId: string; kind: string;
   appointmentId: string | null; legacyGrantId: string | null;
+  supersedesSourceId: string | null; createdCommandId: string;
+  commandActorId: string | null; commandTargetId: string | null; commandType: string | null;
+  appointmentUserId: string | null; appointmentCreatedCommandId: string | null;
+  appointmentActorId: string | null; appointmentTargetId: string | null;
+  appointmentSeatId: string | null; appointmentValidFrom: Date | null;
+  appointmentValidUntil: Date | null; appointmentCancelledAt: Date | null;
+  seatEnabled: boolean | null; seatPolicyVersion: bigint | null;
 };
 type RevisionRow = {
   id: string; sourceId: string; coordinateId: string; revision: bigint;
@@ -67,6 +74,52 @@ const sameNullable = (a: string | null, b: string | null) => a === b;
 const within = <T>(rows: T[], limit: number): boolean =>
   Array.isArray(rows) && rows.length <= limit;
 const unique = (values: string[]) => new Set(values).size === values.length;
+
+// Read-only source-origin coherence, NOT an issuer/scope policy decision.
+// Even a coherent source remains an advisory candidate: provenanceVerified=false.
+const B1_SOURCE_KINDS = new Set([
+  'ROLE_TEMPLATE', 'ACADEMIC_DIRECT', 'PROFESSIONAL_BASELINE',
+  'TECHNICAL_DIRECT', 'LEGACY_UNCLASSIFIED',
+]);
+function coherentSourceOrigins(rows: SourceRow[], userId: string, coordinateId: string): boolean {
+  const ids = new Set(rows.map((row) => row.id));
+  if (!rows.every((row) => {
+    if (!row.id || row.userId !== userId || row.coordinateId !== coordinateId ||
+        !B1_SOURCE_KINDS.has(row.kind) || row.kind === 'LEGACY_UNCLASSIFIED' ||
+        row.legacyGrantId !== null ||
+        !row.createdCommandId || !row.commandActorId || !row.commandTargetId ||
+        row.commandActorId === userId || row.commandTargetId !== userId ||
+        !row.commandType?.trim() ||
+        (row.supersedesSourceId !== null &&
+          (row.supersedesSourceId === row.id || !ids.has(row.supersedesSourceId)))) {
+      return false;
+    }
+    if (row.kind !== 'ROLE_TEMPLATE') return row.appointmentId === null;
+    return !!row.appointmentId && row.appointmentUserId === userId &&
+      !!row.appointmentCreatedCommandId && !!row.appointmentActorId &&
+      row.appointmentActorId !== userId && row.appointmentTargetId === userId &&
+      !!row.appointmentSeatId && row.seatEnabled === true &&
+      typeof row.seatPolicyVersion === 'bigint' && row.seatPolicyVersion > 0n &&
+      row.appointmentValidFrom instanceof Date &&
+      Number.isFinite(row.appointmentValidFrom.getTime()) &&
+      (row.appointmentValidUntil === null ||
+        (row.appointmentValidUntil instanceof Date &&
+          row.appointmentValidUntil.getTime() > row.appointmentValidFrom.getTime())) &&
+      row.appointmentCancelledAt === null;
+  })) return false;
+  // A finite same-coordinate predecessor chain must not contain a cycle.
+  const predecessor = new Map(rows.map((row) => [row.id, row.supersedesSourceId]));
+  return rows.every((row) => {
+    const visited = new Set<string>();
+    let cursor: string | null = row.id;
+    while (cursor !== null) {
+      if (visited.has(cursor)) return false;
+      visited.add(cursor);
+      cursor = predecessor.get(cursor) ?? null;
+    }
+    return true;
+  });
+}
 
 export class B1RepositoryInspector {
   constructor(private readonly prisma: PrismaClient) {}
@@ -119,17 +172,36 @@ export class B1RepositoryInspector {
           return unverified('INVALID_EVIDENCE');
 
         const sources = await tx.$queryRaw<SourceRow[]>`
-          SELECT id, coordinate_id AS "coordinateId", user_id AS "userId",
-                 kind, appointment_id AS "appointmentId",
-                 legacy_grant_id AS "legacyGrantId"
-          FROM grant_sources WHERE coordinate_id = ${coordinateId}::uuid
-          ORDER BY id LIMIT ${B1_SNAPSHOT_LIMITS.sources + 1}
+          SELECT s.id, s.coordinate_id AS "coordinateId", s.user_id AS "userId",
+                 s.kind, s.appointment_id AS "appointmentId",
+                 s.legacy_grant_id AS "legacyGrantId",
+                 s.supersedes_source_id AS "supersedesSourceId",
+                 s.created_command_id AS "createdCommandId",
+                 source_command.actor_user_id AS "commandActorId",
+                 source_command.target_user_id AS "commandTargetId",
+                 source_command.command_type AS "commandType",
+                 appointment.user_id AS "appointmentUserId",
+                 appointment.created_command_id AS "appointmentCreatedCommandId",
+                 appointment_command.actor_user_id AS "appointmentActorId",
+                 appointment_command.target_user_id AS "appointmentTargetId",
+                 appointment.seat_id AS "appointmentSeatId",
+                 appointment.valid_from AS "appointmentValidFrom",
+                 appointment.valid_until AS "appointmentValidUntil",
+                 appointment.cancelled_at AS "appointmentCancelledAt",
+                 seat.enabled AS "seatEnabled", seat.policy_version AS "seatPolicyVersion"
+          FROM grant_sources s
+          LEFT JOIN access_commands source_command ON source_command.id = s.created_command_id
+          LEFT JOIN role_appointments appointment ON appointment.id = s.appointment_id
+          LEFT JOIN access_commands appointment_command
+                 ON appointment_command.id = appointment.created_command_id
+          LEFT JOIN authority_seats seat ON seat.id = appointment.seat_id
+          WHERE s.coordinate_id = ${coordinateId}::uuid
+          ORDER BY s.id LIMIT ${B1_SNAPSHOT_LIMITS.sources + 1}
         `;
         if (!within(sources, B1_SNAPSHOT_LIMITS.sources))
           return unverified('INCOMPLETE_HISTORY');
         if (!unique(sources.map((row) => row.id)) ||
-            sources.some((row) => !row.id || row.coordinateId !== coordinateId ||
-              row.userId !== grant.userId || !row.kind))
+            !coherentSourceOrigins(sources, grant.userId, coordinateId))
           return unverified('INVALID_EVIDENCE');
         const sourceIds = new Set(sources.map((row) => row.id));
 

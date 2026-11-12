@@ -8,7 +8,11 @@ Per `MAJOR-TASK-DOCUMENTATION-SYNC-PROTOCOL.md`, this file is intentionally conc
 
 Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub. SHAs here are evidence for already-established task states, never a self-referential claim that this document contains its own current commit.
 
-**Status snapshot date:** 2026-11-08
+**Status snapshot date:** 2026-11-12
+
+## P5-057 / WS1-B1 ? ngu?n quy?n B1 / source-origin advisory checkpoint 12/11/2026
+
+Tr?n nh?nh ri?ng sau PR #280, ki?m tra li?n k?t `GrantSource ? AccessCommand / RoleAppointment / AuthoritySeat`, d? li?u kh?p actor?target?coordinate, predecessor kh?ng t?o v?ng v? t? ch?i ngu?n legacy/unknown. ??y l? hardening **READ ONLY, ADVISORY_ONLY**: kh?ng n?ng `SUPPORT_CANDIDATE` th?nh th?m quy?n, v?n `provenanceVerified=false`, `canConfirm=false`. Jest scoped 16/16, TypeScript scoped v? PostgreSQL 17.10 c? l?p ??t; ESLint chu?n c?n ch? CI do laptop thi?u b? nh?. **Ch?a merge ho?c deploy** ? checkpoint t?i li?u n?y; WS1/T56 v?n IN_PROGRESS, P6-050 BLOCKED. H? s?: `docs/phase-reports/P5-057-WS1-B1-SOURCE-ORIGIN-CHECK-20261112.md`.
 
 ## P5-057 / WS1-B — B1 advisory-preflight checkpoint 09/11/2026
 

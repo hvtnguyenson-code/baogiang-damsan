@@ -204,3 +204,7 @@ The existing registered P5-057 task remains IN_PROGRESS; no new task ID or perso
 ## P5-057 / T56 - B2 independent oracle (10/11/2026)
 
 Task P5-057 remains IN_PROGRESS. After the PR #279 read-only B1 preflight milestone, the next bounded WS1-B test-only slice verifies the pre-existing multi-source half-open coverage planner against an independent seeded oracle, without writer/UI/schema/policy modification. Evidence and CI gates: docs/phase-reports/P5-057-WS1-B2-INDEPENDENT-COVERAGE-ORACLE-20261110.md. Unknown/legacy provenance remains blocked; 9 sensitive capability key-level policy, server proof, CAS/idempotency writer, audit, and persona UAT remain OPEN. P6-050 is not unblocked.
+
+## P5-057 / T56 ? B1 server source-origin coherence (12/11/2026)
+
+Bounded read-only check of B1 source-command/appointment/seat links and finite predecessor lineage, preserving `UNVERIFIED` on legacy/unknown, self-issue or mismatched actor/target. Isolated Jest 16/16, scoped TypeScript and local PostgreSQL 17.10 Prisma smoke PASS; project-wide type-aware ESLint remains a GitHub CI gate due laptop memory limits. No real issuer/seat authority policy verification, writer, evaluator, API, DB/schema change or persona UAT. P5-057 IN_PROGRESS and P6-050 gated. Evidence: `docs/phase-reports/P5-057-WS1-B1-SOURCE-ORIGIN-CHECK-20261112.md`.
