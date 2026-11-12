@@ -10,6 +10,10 @@ Exact current `main`, branch HEAD and divergence must always be read directly fr
 
 **Status snapshot date:** 2026-11-12
 
+## WS1 / G-D2-2 — Dự thảo ma trận 9 capability nhạy cảm (12/11/2026)
+
+Đã đối chiếu 9 key ở catalog, runtime consumer và 7 responsibility template trên `main@6a42ee4`; kiểm thử drift 13/13 PASS, TypeScript scoped PASS. **Đã phát hiện khoảng trống CRITICAL**: generic create/revoke vẫn chưa gắn issuer/seat/source policy cho 9 key; `actor !== target` không đủ để chặn cấp vượt thẩm quyền. Dự thảo `docs/requirements/P5-057-WS1-SENSITIVE-NINE-CAPABILITY-MATRIX-20261112.md` và evidence `docs/phase-reports/P5-057-WS1-SENSITIVE-NINE-INVENTORY-20261112.md` là **REVIEW_REQUIRED, không phải policy đã được PO duyệt**. Không mở writer/đụng DB hoặc CI/CD; P5-057/T56 IN_PROGRESS, P6-050 BLOCKED.
+
 ## P5-057 / WS1-B1 ? ngu?n quy?n B1 / source-origin advisory checkpoint 12/11/2026
 
 Tr?n nh?nh ri?ng sau PR #280, ki?m tra li?n k?t `GrantSource ? AccessCommand / RoleAppointment / AuthoritySeat`, d? li?u kh?p actor?target?coordinate, predecessor kh?ng t?o v?ng v? t? ch?i ngu?n legacy/unknown. ??y l? hardening **READ ONLY, ADVISORY_ONLY**: kh?ng n?ng `SUPPORT_CANDIDATE` th?nh th?m quy?n, v?n `provenanceVerified=false`, `canConfirm=false`. Jest scoped 16/16, TypeScript scoped v? PostgreSQL 17.10 c? l?p ??t; ESLint chu?n c?n ch? CI do laptop thi?u b? nh?. **Ch?a merge ho?c deploy** ? checkpoint t?i li?u n?y; WS1/T56 v?n IN_PROGRESS, P6-050 BLOCKED. H? s?: `docs/phase-reports/P5-057-WS1-B1-SOURCE-ORIGIN-CHECK-20261112.md`.

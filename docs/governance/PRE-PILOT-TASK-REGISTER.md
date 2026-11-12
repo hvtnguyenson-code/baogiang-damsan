@@ -208,3 +208,7 @@ Task P5-057 remains IN_PROGRESS. After the PR #279 read-only B1 preflight milest
 ## P5-057 / T56 ? B1 server source-origin coherence (12/11/2026)
 
 Bounded read-only check of B1 source-command/appointment/seat links and finite predecessor lineage, preserving `UNVERIFIED` on legacy/unknown, self-issue or mismatched actor/target. Isolated Jest 16/16, scoped TypeScript and local PostgreSQL 17.10 Prisma smoke PASS; project-wide type-aware ESLint remains a GitHub CI gate due laptop memory limits. No real issuer/seat authority policy verification, writer, evaluator, API, DB/schema change or persona UAT. P5-057 IN_PROGRESS and P6-050 gated. Evidence: `docs/phase-reports/P5-057-WS1-B1-SOURCE-ORIGIN-CHECK-20261112.md`.
+
+### P5-057 / T56 — WS1 G-D2-2 sensitive nine policy (12/11/2026)
+
+Bản kiểm kê catalog/templates/call sites và ma trận `owner/issuer/revoker/scope/effectivity/evidence` cho 9 capability nhạy cảm đã biên soạn dưới dạng **DRAFT/REVIEW REQUIRED**. Xác nhận PO 08/11: không bắt buộc chứng từ hành chính cho bổ nhiệm thông thường; backend tự ghi actor xác thực và audit. Jest kiểm kê 13/13 PASS và TS scoped PASS; generic writer bypass còn OPEN/CRITICAL, AI governance chưa bật. Cần PO chốt 9 gate trước khi code writer; không cập nhật trạng thái đóng P5-057/T56. Bằng chứng: `docs/requirements/P5-057-WS1-SENSITIVE-NINE-CAPABILITY-MATRIX-20261112.md`, `docs/phase-reports/P5-057-WS1-SENSITIVE-NINE-INVENTORY-20261112.md`.

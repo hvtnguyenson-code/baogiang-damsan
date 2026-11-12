@@ -98,3 +98,7 @@ Trace P5-057/WS1-B to docs/phase-reports/P5-057-WS1-B2-INDEPENDENT-COVERAGE-ORAC
 ## T56 ? B1 source-origin advisory coherence (12/11/2026)
 
 The `B1RepositoryInspector` evidence snapshot now validates B1 source/command/appointment/seat shape and rejects missing, self-issued, cross-target, legacy or cyclic lineage evidence, within PostgreSQL READ ONLY. This does **not** establish issuer authority, policy for nine sensitive capability keys, time-complete provenance, writer safety or persona acceptance. Evidence: `docs/phase-reports/P5-057-WS1-B1-SOURCE-ORIGIN-CHECK-20261112.md`. `P5-057` remains IN_PROGRESS, `P6-050` BLOCKED.
+
+### T56 / G-D2-2 — Nine-key issuer authority trace (12/11/2026)
+
+Đối chiếu catalog/runtime/templates cho `APPROVAL_PRINCIPAL`, `APPROVAL_VICE_PRINCIPAL`, `AUDIT_VIEW`, `ADDITIONAL_DUTY_CATALOG_MANAGE`, `AI_CONFIGURE_POLICY`, `AI_VIEW_USAGE`, `AI_VIEW_COST`, `AI_VIEW_AUDIT`, `AI_DISABLE_SYSTEM`. Key scope `SCHOOL_WIDE`; static Jest 13/13 PASS. Chủ sở hữu và quyền issuer/revoker chưa được phê duyệt đầy đủ, generic writer thiếu authority-seat guard; đây là checkpoint **thiết kế**, không phải đóng T56. Xem `docs/requirements/P5-057-WS1-SENSITIVE-NINE-CAPABILITY-MATRIX-20261112.md`; P6-050 vẫn BLOCKED.
