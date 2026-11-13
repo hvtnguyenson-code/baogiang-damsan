@@ -7,6 +7,13 @@
       "category": "QUIESCED_ADDITIVE",
       "review": "PR #265 exact-head 3241a02cdeed9aeab68db0ac26af95fd6de75701; independent B1 review #5787220008 and 2026-11-05 read-only VPS preflight",
       "scope": "B1 inert schema only; requires verified backup, isolated BaoGiang quiescence, post-migration schema gate"
+    },
+    {
+      "path": "prisma/migrations/20261113160000_p5_057_ws1_multi_vice_seat/migration.sql",
+      "sha256": "a19dd175524388aac7beefdbad0ed715963e459e49d5f7fdfb72a43e9833f79b",
+      "category": "QUIESCED_ADDITIVE",
+      "review": "2026-11-13 WS1 independent source/DDL review; PostgreSQL 17 33 migrations and 2 writer integration tests PASS; exact-head PostgreSQL16 CI required prior to PR #285 merge; PO technical delegation with controlled maintenance.",
+      "scope": "Semantically additive VP capacity only: PostgreSQL transaction replaces old global seat exclusion with exclusive non-VP seat and VP (seat,user) exclusion. No data row mutation. Requires quiescence, verified backup, pg16 compatibility, post-DDL checks. DDL is constraint replacement, not online ADD-only; never restart Noi Tru."
     }
   ]
 }
