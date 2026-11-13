@@ -12,6 +12,7 @@ import { AuditService } from '../audit/audit.service';
 import { RequestMeta } from '../auth/auth.types';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateGrantDto, ListCapabilitiesDto, ListGrantsDto, RevokeGrantDto } from './dto';
+import { assertGenericGrantSourceSafe } from './sensitive-generic-writer-gate';
 
 const CAPABILITY_GRANT_CONSTRAINT = 'capability_grants_no_active_overlap';
 
@@ -90,6 +91,7 @@ export class CapabilitiesService {
   }
 
   async create(userId: string, dto: CreateGrantDto, actor: string, meta: RequestMeta): Promise<CapabilityGrantRecord> {
+    assertGenericGrantSourceSafe(dto.capabilityKey);
     // WS1/D2: a generic grant endpoint must never promote the authenticated actor.
     // This check belongs in the writer, not only the HTTP guard or UI.
     if (userId === actor) throw new ForbiddenException('Không được tự cấp quyền cho chính mình.');
@@ -136,6 +138,7 @@ export class CapabilitiesService {
     return this.prisma.$transaction(async (tx) => {
       const old = await tx.capabilityGrant.findUnique({ where: { id } });
       if (!old) throw new NotFoundException('Không tìm thấy grant.');
+      assertGenericGrantSourceSafe(old.capabilityKey);
       // Check before idempotent return: even a prior revocation cannot be used
       // as a generic self-role administration path.
       if (old.userId === actor) throw new ForbiddenException('Không được tự thu hồi quyền qua chức năng quản trị.');

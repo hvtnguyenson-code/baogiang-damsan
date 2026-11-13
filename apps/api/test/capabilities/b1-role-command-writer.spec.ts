@@ -16,7 +16,7 @@ const oneHour = () => new Date('2026-11-12T10:00:00.000Z');
 const trusted: B1TrustedActor = { userId: actor, requestId: 'ws1-internal-test' };
 const appoint = (patch: Partial<B1RoleCommandInput> = {}): B1RoleCommandInput => ({
   operation: 'APPOINT', role: 'PRINCIPAL', targetUserId: target,
-  expectedSeatVersion: '1', requestKey: 'test-role-appoint-0001', ...patch,
+  expectedSeatVersion: '1', expectedAuthorizationEpoch: '0', requestKey: 'test-role-appoint-0001', ...patch,
 });
 const idOf = (n: number) => 'a' + n.toString(16).padStart(7, '0') + '-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 
@@ -92,7 +92,7 @@ function fake(initialState: DbState = initial()) {
         updateMany: async ({ where, data }: any) => {
           const a = appointment(where.id);
           if (!a || a.version !== where.version || a.cancelledAt !== where.cancelledAt) return { count: 0 };
-          Object.assign(a, { cancelledAt: data.cancelledAt, validUntil: data.validUntil, version: a.version+1n });
+          Object.assign(a, { validUntil: data.validUntil, version: a.version+1n });
           return { count: 1 };
         },
       },
@@ -119,7 +119,7 @@ function fake(initialState: DbState = initial()) {
         },
         findUniqueOrThrow: async ({ where }: any) => command(where.id) || (() => { throw Error('NOT_FOUND'); })(),
         create: async ({ data }: any) => { const c = { id: newid(), ...data }; s.commands.push(c); return c; },
-        update: async ({ where, data }: any) => { const c = command(where.id)!; Object.assign(c,data); return c; },
+        update: async () => { throw Error('APPEND_ONLY_ACCESS_COMMAND_TRIGGER'); },
       },
       accessCoordinate: {
         findMany: async ({ where }: any) => s.coordinates.filter((v) => v.userId === where.userId &&
@@ -170,7 +170,8 @@ function fake(initialState: DbState = initial()) {
           slice.supports.push(data); return data;
         },
       },
-      authorizationState: { upsert: async () => { s.epoch++; return {}; } },
+      authorizationState: { findUnique: async () => s.epoch === 0n ? null : { epoch: s.epoch },
+        upsert: async () => { s.epoch++; return {}; } },
       auditEvent: { create: async ({ data }: any) => { s.audit.push(data); return data; } },
     };
     const result = await fn(tx);
@@ -254,13 +255,14 @@ describe('P5-057 WS1 / inert B1 writer: atomic source-aware personnel commands',
     const first=await w.execute(appoint(),trusted);db.setTime(oneHour());
     const r=await w.execute(appoint({operation:'TRANSFER',targetUserId:next,
       previousUserId:target,expectedAppointmentId:first.appointmentId!,
-      requestKey:'test-role-transfer-0002'}),trusted);
+      expectedAuthorizationEpoch:'1',requestKey:'test-role-transfer-0002'}),trusted);
     expect(r).toMatchObject({operation:'TRANSFER',sourcesOpened:2,sourcesClosed:2,
       grantsCreated:2,grantsRevoked:2});
     const s=db.snapshot();
     expect(s.grants.filter((g) => g.userId === target && g.revokedAt===null)).toHaveLength(0);
     expect(s.grants.filter((g) => g.userId === next && g.revokedAt===null)).toHaveLength(2);
-    expect(s.appointments.find((a) => a.id===first.appointmentId)!.cancelledAt).toEqual(oneHour());
+    expect(s.appointments.find((a) => a.id===first.appointmentId)!.validUntil).toEqual(oneHour());
+    expect(s.appointments.find((a) => a.id===first.appointmentId)!.cancelledAt).toBeNull();
     expect(s.audit).toHaveLength(2);
   });
 
@@ -268,18 +270,18 @@ describe('P5-057 WS1 / inert B1 writer: atomic source-aware personnel commands',
     const db=fake();const w=new B1RoleCommandWriter(db.prisma);
     const first=await w.execute(appoint(),trusted);
     await expect(w.execute(appoint({operation:'DISMISS',
-      expectedAppointmentId:first.appointmentId!,requestKey:'test-same-tick-dismiss'}),trusted))
+      expectedAppointmentId:first.appointmentId!,expectedAuthorizationEpoch:'1',requestKey:'test-same-tick-dismiss'}),trusted))
       .rejects.toThrow('INVALID_APPOINTMENT_TO_CLOSE');
     expect(db.snapshot().audit).toHaveLength(1);
   });
 
-  it('dismissal revokes only B1-sourced grants and records source cancellation', async () => {
+  it('dismissal revokes only B1-sourced grants and records source end', async () => {
     const db=fake();const w=new B1RoleCommandWriter(db.prisma);
     const first=await w.execute(appoint(),trusted);db.setTime(oneHour());
     const result=await w.execute(appoint({operation:'DISMISS',expectedAppointmentId:first.appointmentId!,
-      requestKey:'test-role-dismiss-0003'}),trusted);
+      expectedAuthorizationEpoch:'1',requestKey:'test-role-dismiss-0003'}),trusted);
     expect(result).toMatchObject({sourcesOpened:0,sourcesClosed:2,grantsCreated:0,grantsRevoked:2});
-    expect(db.snapshot().revisions.filter((r) => r.disposition==='CANCELLED')).toHaveLength(2);
+    expect(db.snapshot().revisions.filter((r) => r.disposition==='ENDED')).toHaveLength(2);
   });
 
   it('preserves AUDIT_VIEW after ending Principal source when independent technical B1 support remains', async () => {
@@ -288,18 +290,15 @@ describe('P5-057 WS1 / inert B1 writer: atomic source-aware personnel commands',
     const ids = {cmd:idOf(301),role:idOf(302),coord:idOf(303),
       grant:idOf(304),source:idOf(305),revision:idOf(306),projection:idOf(307),slice:idOf(308)};
     db.mutate((s) => {
-      s.commands.push({id:ids.cmd,actorUserId:issuer,targetUserId:target,
-        commandType:'SEED_TECHNICAL_ROLE',requestKey:'seed-indep',fingerprint:'seed',result:{}});
-      s.appointments.push({id:ids.role,userId:target,seatId:techSeat,
-        templateKey:'TECHNICAL_ACCOUNT_ADMIN',validFrom:earlier,
-        validUntil:null,cancelledAt:null,version:0n,createdCommandId:ids.cmd});
+      s.commands.push({id:ids.cmd,actorUserId:actor,targetUserId:target,
+        commandType:'B1_TECHNICAL_DIRECT_GRANT',requestKey:'seed-indep',fingerprint:'seed',result:{}});
       s.coordinates.push({id:ids.coord,userId:target,capabilityKey:'AUDIT_VIEW',
         scopeType:'SCHOOL_WIDE',scopeResourceId:null,version:1n});
       s.grants.push({id:ids.grant,userId:target,capabilityKey:'AUDIT_VIEW',
         scopeType:'SCHOOL_WIDE',scopeResourceId:null,coordinateId:ids.coord,
         revokedAt:null,validFrom:earlier,validUntil:null});
       s.sources.push({id:ids.source,coordinateId:ids.coord,userId:target,
-        kind:'ROLE_TEMPLATE',legacyGrantId:null,appointmentId:ids.role,
+        kind:'TECHNICAL_DIRECT',legacyGrantId:null,appointmentId:null,
         createdCommandId:ids.cmd});
       s.revisions.push({id:ids.revision,sourceId:ids.source,coordinateId:ids.coord,
         revision:1n,validFrom:earlier,validUntil:null,disposition:'ACCEPTED',commandId:ids.cmd});
@@ -320,7 +319,7 @@ describe('P5-057 WS1 / inert B1 writer: atomic source-aware personnel commands',
     expect(projectionsBefore[projectionsBefore.length-1]!.slices[0].supports).toHaveLength(2);
     db.setTime(oneHour());
     const end = await w.execute(appoint({operation:'DISMISS',expectedAppointmentId:initial.appointmentId!,
-      requestKey:'test-principal-dismiss-independent-source'}),trusted);
+      expectedAuthorizationEpoch:'1',requestKey:'test-principal-dismiss-independent-source'}),trusted);
     expect(end).toMatchObject({sourcesClosed:2,grantsRevoked:1});
     s=db.snapshot();
     const auditGrant=s.grants.find((g)=>g.id===ids.grant)!;
@@ -336,10 +335,10 @@ describe('P5-057 WS1 / inert B1 writer: atomic source-aware personnel commands',
     const db=fake();const w=new B1RoleCommandWriter(db.prisma);
     await w.execute(appoint(),trusted);
     await expect(w.execute(appoint({targetUserId:next,
-      requestKey:'test-concurrent-principal-appointment'}),trusted))
+      expectedAuthorizationEpoch:'1',requestKey:'test-concurrent-principal-appointment'}),trusted))
       .rejects.toThrow('PRINCIPAL_SEAT_OCCUPANCY_CONFLICT');
     await expect(w.execute(appoint({targetUserId:next,expectedSeatVersion:'2',
-      requestKey:'test-stale-policy-seat'}),trusted))
+      expectedAuthorizationEpoch:'1',requestKey:'test-stale-policy-seat'}),trusted))
       .rejects.toThrow('STALE_OR_DISABLED_AUTHORITY_SEAT');
     expect(db.snapshot().audit).toHaveLength(1);
   });
@@ -359,7 +358,7 @@ describe('P5-057 WS1 / inert B1 writer: atomic source-aware personnel commands',
     const a=await w.execute(appoint({role:'VICE_PRINCIPAL_ACADEMIC',
       requestKey:'test-vp-appoint-001'}),trusted);
     const b=await w.execute(appoint({role:'VICE_PRINCIPAL_ACADEMIC',
-      targetUserId:next,requestKey:'test-vp-appoint-002'}),trusted);
+      targetUserId:next,expectedAuthorizationEpoch:'1',requestKey:'test-vp-appoint-002'}),trusted);
     expect(a.sourcesOpened+b.sourcesOpened).toBe(4);
     expect(db.snapshot().grants.filter((g)=>g.userId!==actor&&g.capabilityKey==='CAPABILITY_GRANT')).toHaveLength(0);
   });

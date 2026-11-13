@@ -25,6 +25,10 @@ export async function bootstrapAdmin(
   passwords: PasswordService,
   input: BootstrapAdminInput,
 ): Promise<string> {
+  // Bootstrap is a one-time CLI exception, not a runtime bypass after B1 cutover.
+  if (process.env.B1_REJECT_GENERIC_SENSITIVE_WRITES === 'true') {
+    throw new Error('Bootstrap technical grants are disabled after B1 source-aware cutover.');
+  }
   const username = input.username.trim().toLowerCase();
   const displayName = input.displayName.trim();
   if (!username || !displayName) throw new Error('Bootstrap username and display name are required.');

@@ -40,6 +40,7 @@ import { AuditService } from '../audit/audit.service';
 import { RequestMeta } from '../auth/auth.types';
 import { PrismaService } from '../prisma/prisma.service';
 import { toCapabilityGrantRecord } from './capabilities.service';
+import { assertGenericTemplateSourceSafe } from './sensitive-generic-writer-gate';
 import { evaluateCoordinateEffectivity } from './effectivity-evaluator';
 import {
   getTemplateDefinition,
@@ -471,6 +472,7 @@ export class AccessBaselineService {
         programmeMasterId: resolved.programmeMasterId,
       });
 
+      assertGenericTemplateSourceSafe(grantSpecs);
       // Validate all grant specs before checking or inserting grants
       await this.validateCapabilityGrantSpecs(grantSpecs, tx);
 

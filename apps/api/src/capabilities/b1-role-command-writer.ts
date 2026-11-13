@@ -8,7 +8,7 @@
  * Activation requires legacy inventory/reconciliation, full PG16/17 simulation,
  * direct-API bypass closure, 7-persona UAT and separate PO-approved cutover.
  */
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { AuditResult, Prisma, PrismaClient, UserStatus } from '@prisma/client';
 
@@ -20,7 +20,8 @@ export interface B1RoleCommandInput {
   targetUserId: string; // NEW holder on TRANSFER; current holder on DISMISS
   previousUserId?: string; // mandatory only on TRANSFER
   expectedAppointmentId?: string; // mandatory on DISMISS/TRANSFER
-  expectedSeatVersion: string; // advisory preview token, verified against DB
+  expectedSeatVersion: string; // authority policy version
+  expectedAuthorizationEpoch: string; // compare actual B1 mutation epoch
   requestKey: string; // client idempotency token; never an authority signal
 }
 export interface B1TrustedActor {
@@ -42,6 +43,12 @@ export interface B1RoleReceipt {
   grantsRevoked: number;
 }
 
+const supportedSeatsForKey: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  APPROVAL_PRINCIPAL: Object.freeze(['PRINCIPAL']),
+  AUDIT_VIEW: Object.freeze(['PRINCIPAL', 'TECHNICAL_ACCOUNT_ADMIN']),
+  APPROVAL_VICE_PRINCIPAL: Object.freeze(['VICE_PRINCIPAL_ACADEMIC']),
+  ADDITIONAL_DUTY_CATALOG_MANAGE: Object.freeze(['VICE_PRINCIPAL_ACADEMIC', 'TECHNICAL_ACCOUNT_ADMIN']),
+});
 const roles: Readonly<Record<B1Role, readonly string[]>> = Object.freeze({
   PRINCIPAL: Object.freeze(['APPROVAL_PRINCIPAL', 'AUDIT_VIEW']),
   VICE_PRINCIPAL_ACADEMIC: Object.freeze([
@@ -65,7 +72,7 @@ function fingerprint(input: B1RoleCommandInput, actorUserId: string): string {
   const normalized = [
     actorUserId, input.operation, input.role, input.targetUserId,
     input.previousUserId ?? null, input.expectedAppointmentId ?? null,
-    input.expectedSeatVersion,
+    input.expectedSeatVersion, input.expectedAuthorizationEpoch,
   ];
   return createHash('sha256').update(JSON.stringify(normalized)).digest('hex');
 }
@@ -74,7 +81,8 @@ function validate(input: B1RoleCommandInput, actor: B1TrustedActor): void {
       actor.userId === input.targetUserId || !token.test(input.requestKey || '') ||
       !Object.prototype.hasOwnProperty.call(roles, input.role) ||
       !['APPOINT', 'DISMISS', 'TRANSFER'].includes(input.operation) ||
-      !/^[1-9][0-9]{0,17}$/.test(input.expectedSeatVersion)) {
+      !/^[1-9][0-9]{0,17}$/.test(input.expectedSeatVersion) ||
+      !/^(0|[1-9][0-9]{0,18})$/.test(input.expectedAuthorizationEpoch)) {
     throw new ForbiddenException('Yêu cầu chức trách không hợp lệ hoặc tự thay đổi quyền.');
   }
   if (input.operation === 'APPOINT' &&
@@ -114,9 +122,6 @@ export class B1RoleCommandWriter {
       `;
       if (lockedSeats.length !== 1) error('AUTHORITY_SEAT_NOT_INITIALIZED');
       const seat = await tx.authoritySeat.findUnique({ where: { key: input.role } });
-      if (!seat || !seat.enabled || seat.policyVersion.toString() !== input.expectedSeatVersion) {
-        error('STALE_OR_DISABLED_AUTHORITY_SEAT');
-      }
 
       const people = [...new Set([actor.userId, input.targetUserId, ...(oldUserId ? [oldUserId] : [])])].sort();
       await tx.$queryRaw`
@@ -198,6 +203,15 @@ export class B1RoleCommandWriter {
         return persisted;
       }
 
+      if (!seat || !seat.enabled || seat.policyVersion.toString() !== input.expectedSeatVersion) {
+        error('STALE_OR_DISABLED_AUTHORITY_SEAT');
+      }
+      const currentState = await tx.authorizationState.findUnique({
+        where: { id: 'B1_GLOBAL' }, select: { epoch: true },
+      });
+      if ((currentState?.epoch ?? 0n).toString() !== input.expectedAuthorizationEpoch) {
+        error('STALE_AUTHORIZATION_EPOCH');
+      }
       const roleAppointments = await tx.roleAppointment.findMany({
         where: {
           seatId: seat.id, templateKey: input.role,
@@ -221,13 +235,25 @@ export class B1RoleCommandWriter {
         error('PRINCIPAL_SEAT_OCCUPANCY_CONFLICT');
       }
 
+      // AccessCommand is append-only: plan an immutable successful receipt first.
+      // Any later failure rolls back the command and every other write together.
+      const planned = await this.planSummary(tx, input.role, input.operation,
+        input.targetUserId, oldAppointment?.id ?? null, oldUserId, at);
+      const commandId = randomUUID();
+      const appointmentIdPlanned = input.operation === 'DISMISS' ? null : randomUUID();
+      const receipt: B1RoleReceipt = {
+        state: 'APPLIED', commandId, role: input.role, operation: input.operation,
+        targetUserId: input.targetUserId, previousUserId: oldUserId,
+        appointmentId: appointmentIdPlanned, effectiveAt: at.toISOString(), ...planned,
+      };
       const command = await tx.accessCommand.create({
         data: {
+          id: commandId,
           actorUserId: actor.userId,
           targetUserId: input.targetUserId,
           ...(oldUserId ? { peerUserId: oldUserId } : {}),
           commandType, requestKey: input.requestKey, fingerprint: digest,
-          effectiveAt: at, result: { state: 'PROCESSING' },
+          effectiveAt: at, result: receipt as unknown as Prisma.InputJsonValue,
         },
       });
       const summary = initSummary();
@@ -237,6 +263,7 @@ export class B1RoleCommandWriter {
       if (input.operation !== 'DISMISS') {
         const appointment = await tx.roleAppointment.create({
           data: {
+            id: appointmentIdPlanned!,
             userId: input.targetUserId, seatId: seat.id,
             templateKey: input.role, templateVersion: 'WS1-B1-v1',
             templateSnapshot: { key: input.role, version: 'WS1-B1-v1', capabilityKeys: [...roles[input.role]], sensitiveOnly: true },
@@ -253,12 +280,10 @@ export class B1RoleCommandWriter {
         create: { id: 'B1_GLOBAL', epoch: 1n, lastMutationAt: at },
         update: { epoch: { increment: 1n }, lastMutationAt: at },
       });
-      const receipt: B1RoleReceipt = {
-        state: 'APPLIED', commandId: command.id, role: input.role, operation: input.operation,
-        targetUserId: input.targetUserId, previousUserId: oldUserId,
-        appointmentId, effectiveAt: at.toISOString(), ...summary,
-      };
-      await tx.accessCommand.update({ where: { id: command.id }, data: { result: receipt as unknown as Prisma.InputJsonValue } });
+      if (appointmentId !== receipt.appointmentId ||
+          (Object.keys(summary) as Array<keyof Summary>).some((key) => summary[key] !== planned[key])) {
+        error('B1_PLAN_ACTUAL_RESULT_MISMATCH');
+      }
       await tx.auditEvent.create({ data: {
         actorUserId: actor.userId,
         action: `B1_ROLE_${input.operation}`,
@@ -274,6 +299,73 @@ export class B1RoleCommandWriter {
       } });
       return receipt;
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 2000, timeout: 12000 });
+  }
+
+  /**
+   * Check issuer authority at the original B1 source creation timestamp.
+   * Bootstrap/legacy lacking retained evidence cannot be inferred as valid.
+   */
+  private async wasTechnicalIssuer(tx: Tx, issuerId: string, at: Date): Promise<boolean> {
+    const seats = await tx.roleAppointment.findMany({
+      where: {
+        userId: issuerId, templateKey: 'TECHNICAL_ACCOUNT_ADMIN',
+        cancelledAt: null, validFrom: { lte: at },
+        OR: [{ validUntil: null }, { validUntil: { gt: at } }],
+      },
+      include: { seat: true, command: true }, take: 3,
+    });
+    if (seats.length !== 1 || seats[0].seat?.key !== 'TECHNICAL_ACCOUNT_ADMIN' ||
+        seats[0].command.targetUserId !== issuerId ||
+        seats[0].command.actorUserId === issuerId) return false;
+    const techGrants = await tx.capabilityGrant.findMany({
+      where: {
+        userId: issuerId, capabilityKey: { in: ['USER_MANAGE', 'CAPABILITY_GRANT'] },
+        scopeType: 'SCHOOL_WIDE', scopeResourceId: null,
+        validFrom: { lte: at },
+        AND: [
+          { OR: [{ validUntil: null }, { validUntil: { gt: at } }] },
+          { OR: [{ revokedAt: null }, { revokedAt: { gt: at } }] },
+        ],
+      },
+      select: { capabilityKey: true }, take: 16,
+    });
+    return techGrants.length < 16 &&
+      ['USER_MANAGE', 'CAPABILITY_GRANT'].every((key) =>
+        techGrants.some((g) => g.capabilityKey === key));
+  }
+
+  /**
+   * Calculate and freeze the command receipt before its append-only INSERT.
+   * Serialisable locks + actual summary check prevent a false persisted receipt.
+   */
+  private async planSummary(tx: Tx, role: B1Role, operation: B1RoleOperation,
+    targetId: string, oldAppointmentId: string | null,
+    oldUserId: string | null, at: Date): Promise<Summary> {
+    const planned = initSummary();
+    if (oldUserId && oldAppointmentId) {
+      const sources = await tx.grantSource.findMany({
+        where: { appointmentId: oldAppointmentId }, take: roles[role].length + 1,
+      });
+      if (sources.length !== roles[role].length) error('SOURCE_INVENTORY_NEEDS_RECONCILIATION');
+      for (const key of roles[role]) {
+        const before = await this.coordinate(tx, oldUserId, key, at);
+        const source = sources.find((s) => s.coordinateId === before.coordinateId &&
+          s.userId === oldUserId && s.kind === 'ROLE_TEMPLATE');
+        if (!source || !before.active.some((s) => s.sourceId === source.id)) {
+          error('SOURCE_NOT_CURRENT_FOR_APPOINTMENT');
+        }
+        planned.sourcesClosed++;
+        if (before.active.length === 1) planned.grantsRevoked++;
+      }
+    }
+    if (operation !== 'DISMISS') {
+      for (const key of roles[role]) {
+        const before = await this.coordinate(tx, targetId, key, at);
+        planned.sourcesOpened++;
+        if (!before.grantId) planned.grantsCreated++;
+      }
+    }
+    return planned;
   }
 
   /** Only current, linked, fully B1-supported grants may be changed. */
@@ -311,25 +403,53 @@ export class B1RoleCommandWriter {
     if (sources.length >= 33) error('SOURCE_HISTORY_LIMIT_NEEDS_RECONCILIATION');
     const active: SourceRev[] = [];
     for (const s of sources) {
-      if (s.userId !== userId || s.kind !== 'ROLE_TEMPLATE' ||
-          s.legacyGrantId !== null || !s.appointment || !s.appointment.seat ||
-          s.appointment.templateKey !== s.appointment.seat.key ||
-          s.appointment.userId !== userId || s.command.targetUserId !== userId ||
-          s.command.actorUserId === userId || s.appointment.command.targetUserId !== userId ||
-          s.appointment.command.actorUserId === userId ||
-          s.revisions.length === 0) {
+      if (s.userId !== userId || s.legacyGrantId !== null ||
+          s.command.targetUserId !== userId || s.command.actorUserId === userId ||
+          s.revisions.length === 0 ||
+          (s.revisions[0].disposition === 'ACCEPTED' &&
+            s.revisions[0].commandId !== s.createdCommandId)) {
         error('SOURCE_LINEAGE_NEEDS_RECONCILIATION');
       }
+      if (s.kind === 'ROLE_TEMPLATE') {
+        if (!s.appointment || !s.appointment.seat ||
+            s.appointment.templateKey !== s.appointment.seat.key ||
+            !supportedSeatsForKey[key]?.includes(s.appointment.templateKey) ||
+            s.createdCommandId !== s.appointment.createdCommandId ||
+            s.command.id !== s.appointment.command.id ||
+            s.appointment.userId !== userId ||
+            s.appointment.command.targetUserId !== userId ||
+            s.appointment.command.actorUserId === userId) {
+          error('ROLE_SOURCE_ISSUER_OR_SEAT_MISMATCH');
+        }
+        if (s.appointment.templateKey !== 'TECHNICAL_ACCOUNT_ADMIN' &&
+            !await this.wasTechnicalIssuer(tx, s.command.actorUserId, s.command.effectiveAt)) {
+          error('ROLE_SOURCE_ISSUER_NOT_PROVEN');
+        }
+      } else if (s.kind === 'TECHNICAL_DIRECT') {
+        if (!['AUDIT_VIEW', 'ADDITIONAL_DUTY_CATALOG_MANAGE'].includes(key) ||
+            s.appointment !== null ||
+            s.command.commandType !== 'B1_TECHNICAL_DIRECT_GRANT' ||
+            !await this.wasTechnicalIssuer(tx, s.command.actorUserId, s.command.effectiveAt)) {
+          error('TECHNICAL_SOURCE_ISSUER_NOT_PROVEN');
+        }
+      } else {
+        error('UNSUPPORTED_SOURCE_KIND_NEEDS_RECONCILIATION');
+      }
       const last = s.revisions[0];
-      if (last.disposition === 'ACCEPTED' && current(last.validFrom, last.validUntil, at) &&
-          s.appointment.cancelledAt === null &&
-          current(s.appointment.validFrom, s.appointment.validUntil, at) &&
-          s.appointment.seat.enabled) {
+      const roleAppointment = s.kind === 'ROLE_TEMPLATE' ? s.appointment : null;
+      const roleSourceActive = Boolean(roleAppointment &&
+        roleAppointment.cancelledAt === null &&
+        current(roleAppointment.validFrom, roleAppointment.validUntil, at) &&
+        roleAppointment.seat?.enabled);
+      const directSourceActive = s.kind === 'TECHNICAL_DIRECT';
+      if (last.disposition === 'ACCEPTED' &&
+          current(last.validFrom, last.validUntil, at) &&
+          (roleSourceActive || directSourceActive)) {
         active.push({
           sourceId: s.id, revisionId: last.id,
           validFrom: last.validFrom, validUntil: last.validUntil,
         });
-      } else if (last.disposition !== 'CANCELLED' && last.disposition !== 'ACCEPTED') {
+      } else if (last.disposition !== 'CANCELLED' && last.disposition !== 'ENDED' && last.disposition !== 'ACCEPTED') {
         error('UNKNOWN_SOURCE_DISPOSITION');
       }
     }
@@ -443,7 +563,7 @@ export class B1RoleCommandWriter {
     }
     const updated = await tx.roleAppointment.updateMany({
       where: { id: appointmentId, version: appointment.version, cancelledAt: null },
-      data: { cancelledAt: at, validUntil: at, version: { increment: 1n } },
+      data: { validUntil: at, version: { increment: 1n } },
     });
     if (updated.count !== 1) error('APPOINTMENT_CAS_CONFLICT');
     for (const { before, source } of details) {
@@ -456,7 +576,7 @@ export class B1RoleCommandWriter {
       await tx.grantSourceRevision.create({ data: {
         sourceId: source.id, coordinateId: before.coordinateId,
         revision: existing.revision + 1n, validFrom: existing.validFrom,
-        validUntil: at, disposition: 'CANCELLED', commandId,
+        validUntil: at, disposition: 'ENDED', commandId,
       } });
       const remaining = before.active.filter((s) => s.sourceId !== source.id);
       let grantId = before.grantId;
