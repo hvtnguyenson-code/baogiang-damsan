@@ -60,12 +60,13 @@ const active = fs.readFileSync(path.join(__dirname, '..', '..', '.github', 'work
 const automatic = fs.readFileSync(path.join(__dirname, '..', '..', '.github', 'workflows', 'auto-deploy-production.yml'), 'utf8');
 const stable = fs.readFileSync(path.join(__dirname, '..', 'deploy', 'windows', 'auto-deploy-code-only.ps1'), 'utf8');
 assert.ok(automatic.includes('gh workflow run deploy-vps.yml'));
-assert.ok(automatic.includes('gh workflow run deploy-production.yml'), 'reviewed migration route missing');
+assert.ok(!automatic.includes('gh workflow run deploy-production.yml'), 'automatic migration must not use direct SSH session');
+assert.equal((automatic.match(/gh workflow run deploy-vps\.yml/g)||[]).length,2,'code and migration must use one worker');
 assert.ok(automatic.includes('scripts/ci/classify-production-migrations.cjs'), 'fail-closed classification missing');
 assert.ok(automatic.includes('approved-migration'), 'approved migration mode missing');
 assert.ok(automatic.includes('Read deployed BaoGiang release via pinned read-only SSH'), 'deployed baseline proof missing');
 assert.ok(automatic.includes('steps.predecessor.outputs.sha'), 'classifier must use observed deployed SHA');
-assert.ok(automatic.includes('maintenance_operator=github-policy-approved'), 'dedicated policy principal missing');
+assert.ok(automatic.includes('run_migrations=true'), 'approved migration dispatch missing');
 assert.ok(automatic.includes('steps.classification.outputs.mode'), 'dispatch must use classification output');
 assert.ok(automatic.includes('environment: production'), 'SSH secrets must use production environment');
 assert.ok(automatic.indexOf('Read deployed BaoGiang release') < automatic.indexOf('Classify migration delta'), 'SSH baseline must precede classification');
@@ -90,12 +91,14 @@ assert.doesNotMatch(active, /\\\\\$\{(?:TARGET_SHA|nonce|accepted##)/,'Bash para
 const requestScript = fs.readFileSync(path.join(__dirname, '..', 'deploy', 'windows', 'request-deploy.ps1'), 'utf8');
 assert.ok(requestScript.includes('BaoGiangDeploymentWorker') && requestScript.includes('schtasks.exe'));
 for(const token of ["'Enqueue'","'Poll'",'DEPLOY_BUSY_DIFFERENT_OR_STALE_REQUEST','DEPLOY_WORKER_START_NOT_CONFIRMED','BAOGIANG_DEPLOY_ACCEPTED','deploy-request.lock','FileShare]::None','existingAge -le 2','statusOwnsExisting']) assert.ok(requestScript.includes(token), 'missing resumable deployment protocol: '+token);
+assert.ok(requestScript.includes('allowPreapprovedMigration'), 'request must carry worker-verified mode');
 assert.ok(!requestScript.includes('Get-ScheduledTask'),'SSH request path must not require ScheduledTasks module/task-query permission');
 assert.ok(!requestScript.includes('Global\\BaoGiangDeployRequestLock'),'SSH request path must not require a Global named mutex');
 assert.ok(requestScript.includes('BAOGIANG_WORKER_RESULT_TIMEOUT'));
-assert.match(active, /RUN_MIGRATIONS.*== 'false'/);
+assert.match(active, /RUN_MIGRATIONS.*== 'true'/);
+assert.ok(active.includes('-AllowPreapprovedMigration'), 'SSH request must forward migration intent to SYSTEM');
 assert.doesNotMatch(active, /git clone|npm install|npm ci|migrate deploy|restart-service|Stop-Service/i);
-for (const required of ['Assert-Http200 $neighborHealthUrl', 'MigrationRequested = $false', 'RollbackCompatibilityApproved = $false', 'invoke-production-deploy.ps1', 'PROTECTED_NEIGHBOR_PROCESS_CHANGED', 'BAOGIANG_DEPLOY_VERIFIED']) {
+for (const required of ['Assert-Http200 $neighborHealthUrl', 'MigrationRequested = [bool]$AllowPreapprovedMigration', 'RollbackCompatibilityApproved = $false', 'invoke-production-deploy.ps1', 'PROTECTED_NEIGHBOR_PROCESS_CHANGED', 'BAOGIANG_DEPLOY_VERIFIED']) {
   assert.ok(stable.includes(required), 'missing isolated VPS guard: ' + required);
 }
 assert.ok(!stable.includes('DamSanV5') && !stable.includes('C:'+'\\\\'+'damsan'));
@@ -106,6 +109,7 @@ assert.match(stable, /SourceArchiveName/);
 console.log('[workflow-contract] PASS (parsed trigger/job/permissions/concurrency/inputs/environment/transfer/report structure)');
 
 const workerScript=fs.readFileSync(path.join(__dirname,'..','deploy','windows','deploy-worker.ps1'),'utf8');
+assert.ok(workerScript.includes('AllowPreapprovedMigration:$state.allowPreapprovedMigration'),'SYSTEM worker must forward approved mode');
 assert.ok(workerScript.includes("$state.status='running'") && workerScript.includes('WriteAllText($runningTmp'));
 const healthScript=fs.readFileSync(path.join(__dirname,'..','deploy','windows','test-production-health.ps1'),'utf8');
 const controllerScript=fs.readFileSync(path.join(__dirname,'..','deploy','windows','invoke-production-deploy.ps1'),'utf8');

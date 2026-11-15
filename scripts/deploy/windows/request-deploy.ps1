@@ -3,7 +3,8 @@ param(
   [Parameter(Mandatory=$true)][ValidatePattern('^[0-9a-f]{40}$')][string]$ExpectedSha,
   [ValidateSet('Wait','Enqueue','Poll')][string]$Mode='Wait',
   [ValidatePattern('^[0-9a-f]{32}$')][string]$Nonce='',
-  [switch]$PreflightOnly
+  [switch]$PreflightOnly,
+  [switch]$AllowPreapprovedMigration
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
@@ -13,10 +14,17 @@ $statusPath='C:\ProgramData\BaoGiangDeploy\status.json'
 $workerName='BaoGiangDeploymentWorker'
 $workerPath='C:\ProgramData\BaoGiangDeploy\worker.ps1'
 if(-not (Test-Path -LiteralPath $workerPath -PathType Leaf)){throw 'PROTECTED_WORKER_MISSING'}
+if($PreflightOnly -and $AllowPreapprovedMigration){throw 'PREFLIGHT_MIGRATION_CONFLICT'}
 
 function Read-JsonFile([string]$Path){
   if(-not (Test-Path -LiteralPath $Path -PathType Leaf)){return $null}
   return (Get-Content -LiteralPath $Path -Raw -ErrorAction Stop | ConvertFrom-Json)
+}
+function Read-MigrationFlag([object]$Request){
+  if($null -eq $Request){return $false}
+  if(-not $Request.PSObject.Properties.Name.Contains('allowPreapprovedMigration')){return $false}
+  if($Request.allowPreapprovedMigration -isnot [bool]){throw 'REQUEST_MIGRATION_FLAG_INVALID'}
+  return [bool]$Request.allowPreapprovedMigration
 }
 function Assert-Result([object]$Result,[string]$Sha){
   if([string]$Result.sha -cne $Sha){throw 'WORKER_RESULT_SHA_MISMATCH'}
@@ -74,7 +82,8 @@ try{
   if($Mode -ceq 'Enqueue' -and $null -ne $existing -and
      [string]$existing.sha -ceq $ExpectedSha -and
      [string]$existing.nonce -cmatch '^[0-9a-f]{32}$' -and
-     [bool]$existing.preflightOnly -eq [bool]$PreflightOnly){
+     [bool]$existing.preflightOnly -eq [bool]$PreflightOnly -and
+     (Read-MigrationFlag $existing) -eq [bool]$AllowPreapprovedMigration){
     $existingIssued=[DateTimeOffset]::Parse([string]$existing.issuedUtc)
     $existingAge=([DateTimeOffset]::UtcNow-$existingIssued).TotalMinutes
     $statusOwnsExisting=($null -ne $status -and [string]$status.nonce -ceq [string]$existing.nonce)
@@ -88,6 +97,7 @@ try{
     if($null -ne $existing -and [string]$existing.sha -ceq $ExpectedSha -and
        [string]$existing.nonce -cmatch '^[0-9a-f]{32}$' -and
        [bool]$existing.preflightOnly -eq [bool]$PreflightOnly -and
+       (Read-MigrationFlag $existing) -eq [bool]$AllowPreapprovedMigration -and
        [string]$status.nonce -ceq [string]$existing.nonce){
       $busyIssued=[DateTimeOffset]::Parse([string]$existing.issuedUtc)
       $busyAge=([DateTimeOffset]::UtcNow-$busyIssued).TotalMinutes
@@ -109,6 +119,7 @@ try{
     nonce=$newNonce
     issuedUtc=[DateTimeOffset]::UtcNow.ToString('o')
     preflightOnly=[bool]$PreflightOnly
+    allowPreapprovedMigration=[bool]$AllowPreapprovedMigration
   }
   $temp=Join-Path (Join-Path $root 'incoming') ('request-'+$newNonce+'.tmp')
   try{

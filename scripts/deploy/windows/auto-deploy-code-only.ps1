@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
   [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{40}$')][string]$ExpectedSha,
-  [switch]$PreflightOnly
+  [switch]$PreflightOnly,
+  [switch]$AllowPreapprovedMigration
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -52,17 +53,53 @@ $main = ([string](Invoke-Git @('rev-parse','origin/main'))).Trim()
 if ($main -cne $ExpectedSha) { throw "MAIN_SHA_MISMATCH: expected=$ExpectedSha actual=$main" }
 Invoke-Git @('cat-file','-e',"$ExpectedSha^{commit}") | Out-Null
 
+if ($PreflightOnly -and $AllowPreapprovedMigration) { throw 'PREFLIGHT_MIGRATION_CONFLICT' }
 if ($PreflightOnly) {
   Assert-Http200 $healthUrl
   Write-Output "BAOGIANG_PREFLIGHT_PASS sha=$ExpectedSha neighbor_pid=$neighborPid"
   return
 }
 $oldTarget = [string](Get-Item -LiteralPath (Join-Path $root 'current') -Force).Target
-if ($oldTarget -match [regex]::Escape($ExpectedSha) + '$') {
+if ($oldTarget -cnotmatch '^C:\\baogiang\\releases\\([0-9a-f]{40})$') { throw 'UNVERIFIED_DEPLOYED_BASELINE_POINTER' }
+$deployedSha = [string]$Matches[1]
+if ($deployedSha -ceq $ExpectedSha) {
   Assert-Http200 $healthUrl
   & (Join-Path $repo 'scripts\deploy\windows\test-production-health.ps1') -BaseUrl 'https://baogiang.dtnt-damsan.edu.vn' -VerifyFrontend | Out-Null
   Write-Output "BAOGIANG_DEPLOY_ALREADY_CURRENT sha=$ExpectedSha"
   return
+}
+$maintenanceWindow = $null
+if ($AllowPreapprovedMigration) {
+  # Only the already-deployed policy/classifier is trusted. The new release
+  # must not modify deployment controls in the same change as its SQL.
+  $classifierRelative = 'scripts/ci/classify-production-migrations.cjs'
+  $baselineBlob = ([string](Invoke-Git @('rev-parse',("$deployedSha"+':'+$classifierRelative)))).Trim()
+  $localBlob = ([string](Invoke-Git @('rev-parse',('HEAD:'+$classifierRelative)))).Trim()
+  if ($baselineBlob -cne $localBlob) { throw 'TRUSTED_DEPLOYED_CLASSIFIER_NOT_AVAILABLE' }
+  $classifier = Join-Path $repo 'scripts\\ci\\classify-production-migrations.cjs'
+  Push-Location $repo
+  try {
+    $proof = @(& (Join-Path $nodeDir 'node.exe') $classifier $deployedSha $ExpectedSha)
+    if ($LASTEXITCODE -ne 0) { throw 'PREAPPROVED_MIGRATION_CLASSIFICATION_FAILED' }
+  } finally { Pop-Location }
+  $record = @($proof | Where-Object { $_ -is [string] -and $_.StartsWith('BAOGIANG_AUTO_DEPLOY_CLASSIFIED ') })
+  if ($record.Count -ne 1) { throw 'MIGRATION_CLASSIFICATION_EVIDENCE_MISSING' }
+  $classification = $record[0].Substring('BAOGIANG_AUTO_DEPLOY_CLASSIFIED '.Length) | ConvertFrom-Json
+  if ($classification.mode -cne 'approved-migration' -or
+      @($classification.migrations).Count -ne 1 -or
+      [string]$classification.approvalDigest -cnotmatch '^[0-9a-f]{64}$') {
+    throw 'MIGRATION_NOT_APPROVED_IN_DEPLOYED_BASELINE'
+  }
+  $maintenanceWindow = [ordered]@{
+    ReleaseSha=$ExpectedSha
+    StartUtc=[DateTime]::UtcNow.AddMinutes(-2).ToString('yyyy-MM-ddTHH:mm:ssZ')
+    EndUtc=[DateTime]::UtcNow.AddMinutes(50).ToString('yyyy-MM-ddTHH:mm:ssZ')
+    AuthorizedBy='reviewed-deployed-policy-system-worker'
+    Approved=$true
+  }
+} else {
+  $pendingSql = @(Invoke-Git @('diff','--name-only',$deployedSha,$ExpectedSha,'--','prisma/migrations') | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+  if ($pendingSql.Count -gt 0) { throw 'CODE_ONLY_RELEASE_HAS_PENDING_MIGRATION' }
 }
 Invoke-Git @('checkout','--detach',$ExpectedSha) | Out-Null
 $runId = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
@@ -100,10 +137,10 @@ try {
     ExpectedBaseUrl = 'https://baogiang.dtnt-damsan.edu.vn'
     ServiceKind = 'scheduled-task'; ServiceName = $taskName
     ExpectedEntryPoint = $marker.entryPoint
-    MigrationRequested = $false; ProductionMigrationApproved = $false
+    MigrationRequested = [bool]$AllowPreapprovedMigration; ProductionMigrationApproved = [bool]$AllowPreapprovedMigration
     RollbackCompatibilityApproved = $false
     PreMigrationRecoveryApproved = $false
-    MaintenanceWindow = $null
+    MaintenanceWindow = $maintenanceWindow
     ReportFileName = "deploy-report-$ExpectedSha.json"
   }
   $parameters = Join-Path $transfer 'deploy-parameters.json'
@@ -113,6 +150,7 @@ try {
   $reportPath = Join-Path (Join-Path $root 'logs') $settings.ReportFileName
   if (-not (Test-Path -LiteralPath $reportPath -PathType Leaf)) { throw 'DEPLOY_REPORT_MISSING' }
   $report = Get-Content -LiteralPath $reportPath -Raw | ConvertFrom-Json
+  if ($AllowPreapprovedMigration -and [string]$report.migration.state -cne 'completed') { throw 'APPROVED_MIGRATION_REPORT_NOT_COMPLETED' }
   if ($report.overallState -cne 'succeeded' -or $report.releaseSha -cne $ExpectedSha) {
     throw 'DEPLOY_REPORT_NOT_SUCCESSFUL'
   }

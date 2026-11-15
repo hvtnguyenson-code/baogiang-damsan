@@ -151,3 +151,23 @@ test('production worker checks deployed migration baseline before stopping BaoGi
   assert.match(worker,/ReleaseSha \$report\.previousRelease/);
   assert.match(worker,/databasePort -ne 5434/);
 });
+
+test('both automatic release modes use the same detached SYSTEM worker', () => {
+  const automatic = fs.readFileSync('.github/workflows/auto-deploy-production.yml','utf8');
+  const direct = fs.readFileSync('.github/workflows/deploy-production.yml','utf8');
+  const viaWorker = fs.readFileSync('.github/workflows/deploy-vps.yml','utf8');
+  const request = fs.readFileSync('scripts/deploy/windows/request-deploy.ps1','utf8');
+  const worker = fs.readFileSync('scripts/deploy/windows/deploy-worker.ps1','utf8');
+  const runner = fs.readFileSync('scripts/deploy/windows/auto-deploy-code-only.ps1','utf8');
+  assert.equal((automatic.match(/gh workflow run deploy-vps\.yml/g) || []).length, 2);
+  assert.doesNotMatch(automatic,/gh workflow run deploy-production\.yml/);
+  assert.match(direct,/if: \$\{\{ false \}\}/);
+  assert.match(viaWorker,/-AllowPreapprovedMigration/);
+  assert.match(request,/allowPreapprovedMigration=\[bool\]\$AllowPreapprovedMigration/);
+  assert.match(worker,/-AllowPreapprovedMigration:\$state\.allowPreapprovedMigration/);
+  assert.match(runner,/MIGRATION_NOT_APPROVED_IN_DEPLOYED_BASELINE/);
+  assert.match(runner,/CODE_ONLY_RELEASE_HAS_PENDING_MIGRATION/);
+  assert.match(runner,/TRUSTED_DEPLOYED_CLASSIFIER_NOT_AVAILABLE/);
+  assert.match(runner,/ProductionMigrationApproved = \[bool\]\$AllowPreapprovedMigration/);
+  assert.match(runner,/APPROVED_MIGRATION_REPORT_NOT_COMPLETED/);
+});
