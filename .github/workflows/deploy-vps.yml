@@ -12,7 +12,7 @@ on:
         required: true
         type: string
       run_migrations:
-        description: Must remain false (code-only deploy)
+        description: Allow one previously approved migration, verified again by SYSTEM worker
         default: false
         required: true
         type: boolean
@@ -50,12 +50,13 @@ jobs:
           set -euo pipefail
           [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$CONFIRMATION" == 'DEPLOY-BAOGIANG-PRODUCTION' ]]
-          [[ "$RUN_MIGRATIONS" == 'false' && "$ROLLBACK_AFTER_MIGRATION" == 'false' ]]
+          [[ "$RUN_MIGRATIONS" == 'false' || "$RUN_MIGRATIONS" == 'true' ]]
+          [[ "$ROLLBACK_AFTER_MIGRATION" == 'false' ]]
           main_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)"
           [[ "$main_sha" == "$TARGET_SHA" ]] || { echo 'Superseded or unsafe main commit'; exit 1; }
           ci="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$TARGET_SHA&per_page=100" --jq '[.workflow_runs[] | select(.name == "CI" and .head_sha == "'"$TARGET_SHA"'" and .status == "completed" and .conclusion == "success" and .event == "push" and .head_branch == "main")] | length')"
           [[ "$ci" -gt 0 ]] || { echo 'No successful main CI'; exit 1; }
-          echo "Admitted isolated code-only SHA: $TARGET_SHA"
+          echo "Admitted isolated SHA: $TARGET_SHA"
 
       - name: Prepare pinned OpenSSH identity
         shell: bash
@@ -85,6 +86,7 @@ jobs:
         timeout-minutes: 40
         env:
           TARGET_SHA: ${{ inputs.commit_sha }}
+          RUN_MIGRATIONS: ${{ inputs.run_migrations }}
           VPS_HOST: ${{ secrets.PROD_SSH_HOST }}
           VPS_PORT: ${{ secrets.PROD_SSH_PORT }}
           VPS_USER: ${{ secrets.PROD_SSH_USER }}
@@ -92,6 +94,8 @@ jobs:
           set -euo pipefail
           [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$VPS_USER" == bg_deploy ]]
+          migration_args=()
+          if [[ "$RUN_MIGRATIONS" == 'true' ]]; then migration_args=(-AllowPreapprovedMigration); fi
           keyfile="$RUNNER_TEMP/baogiang-ssh-key"
           knownfile="$RUNNER_TEMP/baogiang-known-hosts"
           trap 'rm -f "$keyfile" "$knownfile"' EXIT
@@ -104,7 +108,7 @@ jobs:
               "$VPS_USER@$VPS_HOST" \
               powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass \
               -File 'C:\ProgramData\BaoGiangDeploy\request-deploy.ps1' \
-              -ExpectedSha "$TARGET_SHA" "$@"
+              -ExpectedSha "$TARGET_SHA" "${migration_args[@]}" "$@"
           }
           # An ambiguous transport failure MUST be retried idempotently,
           # not treated as permission to launch another worker.

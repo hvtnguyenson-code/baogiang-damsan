@@ -47,6 +47,9 @@ env:
 
 jobs:
   deploy:
+    # Legacy direct SSH session cannot access ScheduledTasks CIM under bg_deploy.
+    # Permanently disabled: automated and manual releases use deploy-vps.yml only.
+    if: ${{ false }}
     name: Controlled production deployment
     runs-on: ubuntu-latest
     timeout-minutes: 30

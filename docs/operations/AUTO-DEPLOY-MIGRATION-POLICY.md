@@ -7,7 +7,7 @@ Status: P5-057 infrastructure change **in review**; no production migration or d
 - Develop and test in the registered local Báo giảng repository, open one bounded PR, and require exact-head PR CI success before merging.
 - Merging to `main` triggers CI on the merge SHA. The existing `auto-deploy-production.yml` listens only for successful **push/main** CI, verifies canonical main HEAD, then classifies the migration delta.
 - **No migration files introduced by this main change:** dispatch the existing `deploy-vps.yml` code-only worker. That worker executes short pinned SSH sessions and a detached, idempotent, exact-SHA worker on the Báo giảng VPS. It backs up and verifies schema and startup; it does not restart Nội trú.
-- **Exactly one new, previously approved SQL migration:** dispatch the existing `deploy-production.yml` through GitHub Actions SSH/SFTP, with an automatic, SHA-bound maintenance window, verified backup, service-specific quiescence, migration, schema verification, release switch and health checks.
+- **Exactly one new, previously approved SQL migration:** dispatch the SAME `deploy-vps.yml` pinned-SSH enqueue to the already installed `BaoGiangDeploymentWorker` SYSTEM task. The SYSTEM worker rechecks the deployed-baseline SQL hash, then runs a SHA-bound maintenance window, verified backup, service-specific quiescence, migration, schema verification, release switch and health checks. The old `deploy-production.yml` direct-SSH job is disabled.
 - **Any changed/deleted/unapproved migration, multiple migrations in one delta, or concurrent changes to deployment control-plane files:** fail closed before dispatch. These require technical review and an explicit operator-controlled migration action via GitHub, not edits to scripts on the VPS.
 
 The local laptop and Desktop Commander are not required after GitHub receives the commit. All mandatory deployment SSH credentials belong to GitHub Actions environment/repository settings. An approved release can be monitored in GitHub Actions and via the durable redacted deploy report. The already existing Telegram notifier runs **only after verified successful release**; bot configuration is separate. Failure is reported by a red GitHub workflow, never masked as a successful Telegram send.
@@ -18,7 +18,7 @@ The local laptop and Desktop Commander are not required after GitHub receives th
 2. A new migration is auto-eligible only under `QUIESCED_ADDITIVE`, matching the previously DEPLOYED policy hash byte-for-byte. Adding the metadata is itself a policy change needing substantive human review; a hash alone is **not** proof of SQL safety. Do not approve destructive DDL, backfills or privilege-changing migrations in this list.
 3. B1 reference: `20261105150000_p5_057_b1_provenance_foundation` from code PR #265 is reviewed as inert additive schema; its hash is pinned in policy. If its SQL changes in any way, automatic promotion stops.
 4. Reviewers must re-check the migration against the **current physical production schema** and deployment readiness. Auto migration executes only if the GitHub release succeeds through all existing runtime safety guards.
-5. Keep `deploy-vps.yml` code-only fail-closed contract unchanged, with `MigrationRequested=false`. Never modify VPS shared scripts to bypass migration approval.
+5. Keep `deploy-vps.yml` fail-closed for code-only (`MigrationRequested=false`) and only permit `MigrationRequested=true` when the installed SYSTEM worker independently validates the previously deployed classifier and SQL approval. Never grant `bg_deploy` direct Task Scheduler administration or bypass approval.
 
 ## Guarantees and limitations
 
@@ -41,7 +41,23 @@ The local laptop and Desktop Commander are not required after GitHub receives th
 
 ## Operations when Desktop Commander is unavailable
 
-- Use repository GitHub Actions: CI run, `Auto deploy production after green CI` dispatch run, then `Deploy Bao giang VPS` for code-only or `Deploy production` for approved migrations.
+- Use repository GitHub Actions: CI run, `Auto deploy production after green CI` dispatch run, then `Deploy Bao giang VPS` for BOTH code-only and previously approved migrations; the legacy direct-SSH `Deploy production` job is disabled.
 - To investigate a failure, read job log/artifacts and the redacted release report. Re-run only after diagnosing the failure; do not blindly create new PRs or manually run database commands.
 - If GH SSH credentials/host key/environment permissions are missing or invalid, deployment **fails closed**. Reconnecting Desktop Commander is not a prerequisite to fix GitHub workflow configuration.
 - Telegram delivery is best-effort and cannot replace GitHub report/health verification.
+
+
+## Worker installation and release evidence (2026-11-15 repair)
+
+The protected installed VPS files `C:\\ProgramData\\BaoGiangDeploy\\request-deploy.ps1`,
+`worker.ps1` and `auto-deploy-code-only.ps1` MUST match the reviewed repository
+versions (the worker implementation is tracked as `scripts/deploy/windows/deploy-worker.ps1`)
+before merging this control-plane PR. Stage with exact-file backups and SHA-256
+proof, syntax-check each script, verify scheduled-task identity and ACL, and do
+not touch PostgreSQL, API, Nginx or the Nội trú process during this bootstrap.
+Missing/old worker code must fail closed; do not solve by elevating `bg_deploy`.
+
+GitHub main CI green means only **dispatch authorized**. Release success also requires
+its dedicated `Deploy Bao giang VPS` workflow green, durable success report,
+verified active SHA and external live/ready/frontend checks. A dispatcher green
+with a red downstream deploy is NEVER a successful release.

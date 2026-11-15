@@ -6,22 +6,32 @@ $requestPath='C:\baogiang\incoming\deploy-request.json'
 $statusPath='C:\ProgramData\BaoGiangDeploy\status.json'
 $runner='C:\ProgramData\BaoGiangDeploy\auto-deploy-code-only.ps1'
 $task='BaoGiangDeploymentWorker'
-$state=[ordered]@{status='failed';sha='';nonce='';preflightOnly=$true;startedUtc=[DateTime]::UtcNow.ToString('o');finishedUtc='';message='';processId=$PID}
+$state=[ordered]@{status='failed';sha='';nonce='';preflightOnly=$true;allowPreapprovedMigration=$false;startedUtc=[DateTime]::UtcNow.ToString('o');finishedUtc='';message='';processId=$PID}
 try {
   if(-not (Test-Path -LiteralPath $requestPath -PathType Leaf)){throw 'REQUEST_MISSING'}
   $item=Get-Item -LiteralPath $requestPath -Force -ErrorAction Stop
   if(($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or $item.Length -gt 1024){throw 'REQUEST_UNSAFE'}
   $request=Get-Content -LiteralPath $requestPath -Raw -ErrorAction Stop | ConvertFrom-Json
   $keys=@($request.PSObject.Properties.Name)
-  if(@(Compare-Object $keys @('sha','nonce','issuedUtc','preflightOnly')).Length -gt 0){throw 'REQUEST_KEYS_INVALID'}
+  $required=@('sha','nonce','issuedUtc','preflightOnly')
+  $allowed=@($required)+@('allowPreapprovedMigration')
+  if(@($required | Where-Object { $keys -cnotcontains $_ }).Count -gt 0 -or
+     @($keys | Where-Object { $allowed -cnotcontains $_ }).Count -gt 0){throw 'REQUEST_KEYS_INVALID'}
+  $allowMigration=$false
+  if($keys -ccontains 'allowPreapprovedMigration'){
+    if($request.allowPreapprovedMigration -isnot [bool]){throw 'REQUEST_MIGRATION_FLAG_INVALID'}
+    $allowMigration=[bool]$request.allowPreapprovedMigration
+  }
   if([string]$request.sha -cnotmatch '^[0-9a-f]{40}$' -or [string]$request.nonce -cnotmatch '^[0-9a-f]{32}$'){throw 'REQUEST_ID_INVALID'}
   if($request.preflightOnly -isnot [bool]){throw 'REQUEST_MODE_INVALID'}
+  if($request.preflightOnly -and $allowMigration){throw 'PREFLIGHT_MIGRATION_CONFLICT'}
   $issued=[DateTimeOffset]::Parse([string]$request.issuedUtc)
   $age=([DateTimeOffset]::UtcNow-$issued).TotalMinutes
   if($age -lt -1 -or $age -gt 5){throw 'REQUEST_EXPIRED'}
   $state.sha=[string]$request.sha
   $state.nonce=[string]$request.nonce
   $state.preflightOnly=[bool]$request.preflightOnly
+  $state.allowPreapprovedMigration=$allowMigration
   $state.status='running'
   # Publish RUNNING before any long build so a short-lived observer can
   # distinguish a pending task from active work after SSH disconnects.
@@ -32,7 +42,7 @@ try {
   } finally {
     if(Test-Path -LiteralPath $runningTmp){Remove-Item -LiteralPath $runningTmp -Force -ErrorAction SilentlyContinue}
   }
-  $output=@(& $runner -ExpectedSha $state.sha -PreflightOnly:$state.preflightOnly)
+  $output=@(& $runner -ExpectedSha $state.sha -PreflightOnly:$state.preflightOnly -AllowPreapprovedMigration:$state.allowPreapprovedMigration)
   if($LASTEXITCODE -and $LASTEXITCODE -ne 0){throw 'RUNNER_FAILED'}
   $evidence=($output|Where-Object{$_ -is [string] -and $_ -match '^BAOGIANG_(PREFLIGHT_PASS|DEPLOY_VERIFIED|DEPLOY_ALREADY_CURRENT)' }|Select-Object -Last 1)
   if(-not $evidence){throw 'RUNNER_SUCCESS_MARKER_MISSING'}
