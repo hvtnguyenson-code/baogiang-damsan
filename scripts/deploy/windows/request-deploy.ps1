@@ -22,7 +22,7 @@ function Read-JsonFile([string]$Path){
 }
 function Read-MigrationFlag([object]$Request){
   if($null -eq $Request){return $false}
-  if(-not $Request.PSObject.Properties.Name.Contains('allowPreapprovedMigration')){return $false}
+  if(@($Request.PSObject.Properties.Name) -cnotcontains 'allowPreapprovedMigration'){return $false}
   if($Request.allowPreapprovedMigration -isnot [bool]){throw 'REQUEST_MIGRATION_FLAG_INVALID'}
   return [bool]$Request.allowPreapprovedMigration
 }

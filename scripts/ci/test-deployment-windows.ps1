@@ -1901,3 +1901,30 @@ try {
   if ($null -ne (Get-Variable xferRoot -ErrorAction SilentlyContinue) -and (Test-Path -LiteralPath $xferRoot)) { Remove-Item -LiteralPath $xferRoot -Recurse -Force }
   if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Recurse -Force }
 }
+
+# CI regression: the SSH request mode decoder must fail closed on invalid values.
+# Evaluate only the isolated reviewed function AST; never enqueue a worker.
+$modePath=Join-Path $repo 'scripts\deploy\windows\request-deploy.ps1'
+$modeTokens=$null;$modeErrors=$null
+$modeAst=[System.Management.Automation.Language.Parser]::ParseFile($modePath,[ref]$modeTokens,[ref]$modeErrors)
+if(@($modeErrors).Count -gt 0){throw 'DEPLOY_MODE_SCRIPT_PARSE_FAILED'}
+$modeFunctions=@($modeAst.FindAll({
+  param($astNode)
+  $astNode -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $astNode.Name -eq 'Read-MigrationFlag'
+},$true))
+if($modeFunctions.Count -ne 1){throw 'DEPLOY_MODE_DECODER_MISSING'}
+. ([scriptblock]::Create($modeFunctions[0].Extent.Text))
+foreach($case in @(
+  @{name='empty';request=[pscustomobject]@{};expected=$false},
+  @{name='legacy';request=[pscustomobject]@{sha='test';nonce='test'};expected=$false},
+  @{name='code-only';request=[pscustomobject]@{allowPreapprovedMigration=$false};expected=$false},
+  @{name='approved';request=[pscustomobject]@{allowPreapprovedMigration=$true};expected=$true}
+)){
+  if((Read-MigrationFlag $case.request) -ne $case.expected){throw ('DEPLOY_MODE_DECODER_BAD_'+$case.name)}
+}
+$invalidRejected=$false
+try{$null=Read-MigrationFlag ([pscustomobject]@{allowPreapprovedMigration='true'})}catch{
+  if($_.Exception.Message -match 'REQUEST_MIGRATION_FLAG_INVALID'){$invalidRejected=$true}
+}
+if(-not $invalidRejected){throw 'DEPLOY_MODE_DECODER_ACCEPTED_UNTYPED_FLAG'}
+Write-Output '[worker-mode] PASS (legacy, empty, approved, rejected string flag)'
