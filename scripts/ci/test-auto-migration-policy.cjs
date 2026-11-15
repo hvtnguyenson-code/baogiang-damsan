@@ -182,7 +182,7 @@ test('automatic dispatch status tracks actual downstream deploy completion', () 
   assert.match(dispatch.run,/dispatched=true/);
   const wait=job.steps.find(s=>s.name==='Verify exact downstream production deployment');
   assert.ok(wait);
-  assert.match(wait.run,/steps\.delivery\.outputs\.dispatched/);
+  assert.match(wait.if,/steps\.delivery\.outputs\.dispatched/);
   assert.match(wait.run,/DOWNSTREAM_DEPLOY_RESULT/);
   assert.match(wait.run,/\[\[ "\$result" == success \]\] \|\| exit 1/);
   assert.match(wait.run,/AMBIGUOUS_DOWNSTREAM_DEPLOY/);
