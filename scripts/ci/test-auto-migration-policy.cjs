@@ -171,3 +171,20 @@ test('both automatic release modes use the same detached SYSTEM worker', () => {
   assert.match(runner,/ProductionMigrationApproved = \[bool\]\$AllowPreapprovedMigration/);
   assert.match(runner,/APPROVED_MIGRATION_REPORT_NOT_COMPLETED/);
 });
+
+
+test('automatic dispatch status tracks actual downstream deploy completion', () => {
+  const yaml=require('js-yaml').load(fs.readFileSync('.github/workflows/auto-deploy-production.yml','utf8'));
+  const job=yaml.jobs.dispatch;
+  assert.ok(job.timeoutMinutes === undefined || job['timeout-minutes'] >= 50);
+  const dispatch=job.steps.find(s=>s.id==='delivery');
+  assert.ok(dispatch);
+  assert.match(dispatch.run,/dispatched=true/);
+  const wait=job.steps.find(s=>s.name==='Verify exact downstream production deployment');
+  assert.ok(wait);
+  assert.match(wait.run,/steps\.delivery\.outputs\.dispatched/);
+  assert.match(wait.run,/DOWNSTREAM_DEPLOY_RESULT/);
+  assert.match(wait.run,/\[\[ "\$result" == success \]\] \|\| exit 1/);
+  assert.match(wait.run,/AMBIGUOUS_DOWNSTREAM_DEPLOY/);
+  assert.match(wait.run,/DOWNSTREAM_DEPLOY_TIMEOUT/);
+});

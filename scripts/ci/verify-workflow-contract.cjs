@@ -71,6 +71,8 @@ assert.ok(automatic.includes('steps.classification.outputs.mode'), 'dispatch mus
 assert.ok(automatic.includes('environment: production'), 'SSH secrets must use production environment');
 assert.ok(automatic.indexOf('Read deployed BaoGiang release') < automatic.indexOf('Classify migration delta'), 'SSH baseline must precede classification');
 assert.ok(automatic.includes('already-current)'), 'idempotent already-deployed release must not redispatch');
+assert.ok(automatic.includes('Verify exact downstream production deployment'), 'dispatch green must verify downstream success');
+assert.ok(automatic.includes('BAOGIANG_AUTO_DEPLOY_VERIFIED'), 'downstream success proof absent');
 assert.match(active, /workflow_dispatch:/);
 assert.match(active, /environment: production/);
 assert.ok(active.includes('ssh -n -i'));

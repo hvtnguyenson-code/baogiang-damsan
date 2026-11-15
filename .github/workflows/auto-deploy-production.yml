@@ -24,7 +24,7 @@ jobs:
       github.event.workflow_run.repository.full_name == github.repository
     runs-on: ubuntu-latest
     environment: production
-    timeout-minutes: 5
+    timeout-minutes: 55
     steps:
       - name: Checkout canonical repository
         uses: actions/checkout@v4
@@ -130,6 +130,7 @@ jobs:
 
       - name: Dispatch according to reviewed migration policy
         if: steps.gate.outputs.dispatch == 'true'
+        id: delivery
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -139,6 +140,7 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$(gh api "repos/$REPO/git/ref/heads/main" --jq '.object.sha')" == "$TARGET_SHA" ]] || { echo 'Superseded before dispatch; skip.'; exit 0; }
+          echo "dispatch_started_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
           case "$DEPLOY_MODE" in
             already-current)
               echo "BAOGIANG_ALREADY_DEPLOYED sha=$TARGET_SHA"
@@ -149,6 +151,7 @@ jobs:
                 -f "confirmation=DEPLOY-BAOGIANG-PRODUCTION" \
                 -f "run_migrations=false" \
                 -f "allow_code_rollback_after_migration=false"
+              echo 'dispatched=true' >> "$GITHUB_OUTPUT"
               echo "BAOGIANG_CODE_ONLY_DISPATCHED sha=$TARGET_SHA"
               ;;
             approved-migration)
@@ -159,7 +162,53 @@ jobs:
                 -f "confirmation=DEPLOY-BAOGIANG-PRODUCTION" \
                 -f "run_migrations=true" \
                 -f "allow_code_rollback_after_migration=false"
+              echo 'dispatched=true' >> "$GITHUB_OUTPUT"
               echo "BAOGIANG_REVIEWED_MIGRATION_DISPATCHED sha=$TARGET_SHA"
               ;;
             *) echo 'Unrecognized deployment mode; fail closed.' >&2; exit 1 ;;
           esac
+
+      - name: Verify exact downstream production deployment
+        if: steps.delivery.outputs.dispatched == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
+          STARTED_AT: ${{ steps.delivery.outputs.dispatch_started_at }}
+        run: |
+          set -euo pipefail
+          # Green dispatch is not a green release. The launched job must finish.
+          [[ "$STARTED_AT" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]
+          observed_id=''
+          for attempt in {1..240}; do
+            runs="$(gh api "repos/$REPO/actions/workflows/deploy-vps.yml/runs?event=workflow_dispatch&per_page=30" \
+              --jq '.workflow_runs | map({id,head_sha,created_at,status,conclusion,html_url})')"
+            match="$(jq -c --arg sha "$TARGET_SHA" --arg started "$STARTED_AT" \
+              '[.[] | select(.head_sha == $sha and .created_at >= $started)] | sort_by(.id)' <<< "$runs")"
+            count="$(jq 'length' <<< "$match")"
+            if (( count > 1 )); then
+              echo 'AMBIGUOUS_DOWNSTREAM_DEPLOY: do not trust a guessed workflow run.' >&2
+              exit 1
+            fi
+            if (( count == 1 )); then
+              id="$(jq -r '.[0].id' <<< "$match")"
+              if [[ -n "$observed_id" && "$observed_id" != "$id" ]]; then
+                echo 'DOWNSTREAM_DEPLOY_ID_CHANGED' >&2
+                exit 1
+              fi
+              observed_id="$id"
+              state="$(jq -r '.[0].status' <<< "$match")"
+              result="$(jq -r '.[0].conclusion // ""' <<< "$match")"
+              url="$(jq -r '.[0].html_url' <<< "$match")"
+              if [[ "$state" == completed ]]; then
+                echo "DOWNSTREAM_DEPLOY_RESULT id=$id conclusion=$result url=$url"
+                [[ "$result" == success ]] || exit 1
+                echo "BAOGIANG_AUTO_DEPLOY_VERIFIED sha=$TARGET_SHA downstream_run=$id"
+                exit 0
+              fi
+            fi
+            sleep 12
+          done
+          echo "DOWNSTREAM_DEPLOY_TIMEOUT sha=$TARGET_SHA run=$observed_id" >&2
+          exit 1
