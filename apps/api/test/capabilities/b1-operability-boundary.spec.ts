@@ -8,8 +8,8 @@ describe('P5-057 WS1 B1 activation boundary — full workspace is not a two-key 
 
   it.each(cases)('retains teacher and school-operability entitlements for $key', ({ key, approvalKey }) => {
     const template = getTemplateDefinition(key);
-    const sourceKeys = new Set(template.sourceAuthorityGrants.map((entry) => entry.capabilityKey));
-    const operabilityKeys = new Set(template.productOperabilityGrants.map((entry) => entry.capabilityKey));
+    const sourceKeys = new Set<string>(template.sourceAuthorityGrants.map((entry) => entry.capabilityKey));
+    const operabilityKeys = new Set<string>(template.productOperabilityGrants.map((entry) => entry.capabilityKey));
 
     expect(sourceKeys.has('TEACHER_BASE')).toBe(true);
     expect(sourceKeys.has(approvalKey)).toBe(true);
