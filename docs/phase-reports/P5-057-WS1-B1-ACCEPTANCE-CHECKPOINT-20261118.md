@@ -45,3 +45,10 @@
 6. Separate authorization to register/activate writer and enable cutover guard; **DO NOT** activate in this PR.
 
 **Decision:** `P5-057/T56 = IN_PROGRESS`, `P6-050 = BLOCKED`. This checkpoint may be reviewed as test-only evidence. CI green does not prove B1 production readiness.
+
+## Follow-up HTTP boundary acceptance (18/11/2026)
+
+- New `apps/api/test/capabilities/b1-sensitive-generic-http.integration.spec.ts` uses the existing `Phase01Harness`, real NestJS HTTP routes, session cookie + CSRF and a CI-certified, isolated PostgreSQL test DB.
+- Under `B1_REJECT_GENERIC_SENSITIVE_WRITES=true` **only inside the test process**, verifies (a) anonymous/CSRF failure; (b) all 9 sensitive generic create calls return 403 without B1 writes; (c) all 9 sensitive revoke calls plus previously revoked grant return 403 without mutation; (d) PRINCIPAL, VICE_PRINCIPAL_ACADEMIC and TECHNICAL_ACCOUNT_ADMIN generic template apply deny atomically; (e) unrelated TEACHER_BASE grant remains usable.
+- Local transpile-only Jest discovered four tests, **4/4 skipped without a certified test DB**; scoped non-type-aware ESLint passed. This is not a passing PostgreSQL assertion.
+- Exact-head CI and PG16 must exercise these HTTP paths. No other runtime/security flag/code/module/provider change is allowed in this PR. No activation or merger implied.
