@@ -14,7 +14,7 @@ integration('P5-057 WS1 B1 — actual HTTP sensitive generic writer cutover boun
   beforeEach(async () => {
     process.env.B1_REJECT_GENERIC_SENSITIVE_WRITES = 'true';
     await h.clean();
-    const keys = new Set<string>([...SENSITIVE_CAPABILITY_KEYS, 'TEACHER_BASE']);
+    const keys = new Set<string>([...SENSITIVE_CAPABILITY_KEYS, 'TEACHER_BASE', 'CAPABILITY_GRANT']);
     await h.seedCapabilities(
       [...keys].map((key) => ({ key, scopes: ['SCHOOL_WIDE', 'PERSONAL'] })),
     );
