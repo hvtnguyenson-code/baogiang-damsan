@@ -52,3 +52,11 @@
 - Under `B1_REJECT_GENERIC_SENSITIVE_WRITES=true` **only inside the test process**, verifies (a) anonymous/CSRF failure; (b) all 9 sensitive generic create calls return 403 without B1 writes; (c) all 9 sensitive revoke calls plus previously revoked grant return 403 without mutation; (d) PRINCIPAL, VICE_PRINCIPAL_ACADEMIC and TECHNICAL_ACCOUNT_ADMIN generic template apply deny atomically; (e) unrelated TEACHER_BASE grant remains usable.
 - Local transpile-only Jest discovered four tests, **4/4 skipped without a certified test DB**; scoped non-type-aware ESLint passed. This is not a passing PostgreSQL assertion.
 - Exact-head CI and PG16 must exercise these HTTP paths. No other runtime/security flag/code/module/provider change is allowed in this PR. No activation or merger implied.
+
+## 19/11/2026 — Multi-connection epoch persistence check
+
+- Exact previous PR HEAD 9d65138a: CI workflow 44351412950 = SUCCESS; PostgreSQL 16 off-host workflow 44351412882 = SUCCESS. The real HTTP negative suite passes on both PostgreSQL versions.
+- New b1-authorization-epoch-concurrency.integration.spec.ts uses three independent Prisma clients connected ONLY to a certified ephemeral TEST_DATABASE_URL. It creates a uniquely named, temporary authorization_states row (never B1_GLOBAL), forces both SERIALIZABLE readers to observe epoch zero before attempting concurrent increments, and requires exactly one commit with a serialization/write-conflict loser. The row is deleted and clients are disconnected after the test.
+- This tests PostgreSQL multi-connection SERIALIZABLE behavior for the epoch persistence primitive. It does NOT run two complete B1RoleCommandWriter operations, demonstrate transfer of retained evidence, or clear the real concurrent APPOINT/TRANSFER acceptance gate.
+- Laptop targeted non-type-aware lint passed; transpile-only Jest discovered 1 test and skipped it without a certified test DB. Exact-head CI on PG16/17 remains mandatory evidence.
+- The test never registers the staged writer or enables B1 in a running app. No production data, schema, migration, or release workflow change.
