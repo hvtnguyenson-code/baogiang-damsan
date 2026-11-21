@@ -11,6 +11,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { AuditResult, Prisma, PrismaClient, UserStatus } from '@prisma/client';
+import { materializeTemplateGrants } from './responsibility-template-catalog';
+import { CapabilityKey } from '@baogiang/contracts';
 
 export type B1Role = 'PRINCIPAL' | 'VICE_PRINCIPAL_ACADEMIC';
 export type B1RoleOperation = 'APPOINT' | 'DISMISS' | 'TRANSFER';
@@ -49,12 +51,23 @@ const supportedSeatsForKey: Readonly<Record<string, readonly string[]>> = Object
   APPROVAL_VICE_PRINCIPAL: Object.freeze(['VICE_PRINCIPAL_ACADEMIC']),
   ADDITIONAL_DUTY_CATALOG_MANAGE: Object.freeze(['VICE_PRINCIPAL_ACADEMIC', 'TECHNICAL_ACCOUNT_ADMIN']),
 });
-const roles: Readonly<Record<B1Role, readonly string[]>> = Object.freeze({
-  PRINCIPAL: Object.freeze(['APPROVAL_PRINCIPAL', 'AUDIT_VIEW']),
+const roles: Readonly<Record<B1Role, readonly CapabilityKey[]>> = Object.freeze({
+  PRINCIPAL: Object.freeze(['APPROVAL_PRINCIPAL', 'AUDIT_VIEW'] as const),
   VICE_PRINCIPAL_ACADEMIC: Object.freeze([
     'APPROVAL_VICE_PRINCIPAL', 'ADDITIONAL_DUTY_CATALOG_MANAGE',
-  ]),
+  ] as const),
 });
+export const B1_STAGED_SOURCE_KEYS: Readonly<Record<B1Role, readonly CapabilityKey[]>> = roles;
+
+/** Shares the same policy-key list between full writer and advisory preview. */
+export function b1FullRoleSourceKeys(role: B1Role): readonly CapabilityKey[] {
+  const catalogKeys = materializeTemplateGrants({ templateKey: role })
+    .filter((spec) => spec.scopeType === 'SCHOOL_WIDE' && spec.scopeResourceId === null)
+    .map((spec) => spec.capabilityKey);
+  const keys = [...new Set([...roles[role], ...catalogKeys])].sort();
+  if (keys.length < 2 || keys.length > 32) error('FULL_ROLE_TEMPLATE_OUT_OF_BOUNDS');
+  return keys;
+}
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const token = /^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/;
 function error(reason: string): never { throw new ConflictException(reason); }
@@ -105,7 +118,60 @@ function initSummary(): Summary {
 
 /** A real mutating class, intentionally unreachable from the running app. */
 export class B1RoleCommandWriter {
-  constructor(private readonly prisma: PrismaClient) {}
+  constructor(private readonly prisma: PrismaClient, private readonly fullTemplate = false) {}
+
+  /** B1-owned authority and school-wide operability from the existing
+   * responsibility template. Teacher PERSONAL baselines are independent. */
+  private roleKeys(role: B1Role): readonly CapabilityKey[] {
+    if (!this.fullTemplate) return roles[role];
+    return b1FullRoleSourceKeys(role);
+  }
+
+  private seatMaySource(key: string, seatKey: string): boolean {
+    if (seatKey === 'TECHNICAL_ACCOUNT_ADMIN') {
+      return supportedSeatsForKey[key]?.includes(seatKey) ?? false;
+    }
+    if (seatKey !== 'PRINCIPAL' && seatKey !== 'VICE_PRINCIPAL_ACADEMIC') return false;
+    return this.roleKeys(seatKey).some((candidate) => candidate === key);
+  }
+
+  private async verifyRoleOperabilityPrerequisites(
+    tx: Tx, role: B1Role, userId: string, at: Date,
+  ): Promise<void> {
+    if (!this.fullTemplate) return;
+    const keys = this.roleKeys(role);
+    const definitions = await tx.capabilityDefinition.findMany({
+      where: { key: { in: [...keys] } },
+      select: { key: true, isActive: true, allowedScopeTypes: true },
+    });
+    if (definitions.length !== keys.length || definitions.some((d) =>
+      !d.isActive || !d.allowedScopeTypes.includes('SCHOOL_WIDE'))) {
+      error('FULL_ROLE_CAPABILITY_CATALOG_NOT_READY');
+    }
+    // Personal teacher capabilities are not role sources. They must be
+    // present independently and can never be revoked by B1 dismissal.
+    const personal = materializeTemplateGrants({ templateKey: role })
+      .filter((spec) => spec.scopeType === 'PERSONAL');
+    const personalKeys = [...new Set(personal.map((spec) => spec.capabilityKey))];
+    const personalDefs = await tx.capabilityDefinition.findMany({
+      where: { key: { in: personalKeys } },
+      select: { key: true, isActive: true, allowedScopeTypes: true },
+    });
+    if (personalDefs.length !== personalKeys.length || personalDefs.some((d) =>
+      !d.isActive || !d.allowedScopeTypes.includes('PERSONAL'))) {
+      error('PERSONAL_BASELINE_CATALOG_NOT_READY');
+    }
+    for (const spec of personal) {
+      const active = await tx.capabilityGrant.findMany({
+        where: { userId, capabilityKey: spec.capabilityKey,
+          scopeType: 'PERSONAL', scopeResourceId: null, revokedAt: null,
+          validFrom: { lte: at },
+          OR: [{ validUntil: null }, { validUntil: { gt: at } }] },
+        select: { id: true }, take: 2,
+      });
+      if (active.length !== 1) error('INDEPENDENT_TEACHER_BASELINE_NOT_READY');
+    }
+  }
 
   async execute(input: B1RoleCommandInput, actor: B1TrustedActor): Promise<B1RoleReceipt> {
     validate(input, actor);
@@ -115,7 +181,11 @@ export class B1RoleCommandWriter {
       input.operation === 'DISMISS' ? input.targetUserId : null;
 
     return this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`SET LOCAL statement_timeout = '5000ms'`;
+      if (this.fullTemplate) {
+        await tx.$executeRaw`SET LOCAL statement_timeout = '8000ms'`;
+      } else {
+        await tx.$executeRaw`SET LOCAL statement_timeout = '5000ms'`;
+      }
       // Seat -> sorted users -> sorted coordinates is the common lock order.
       const lockedSeats = await tx.$queryRaw<Array<{ id: string }>>`
         SELECT id FROM authority_seats WHERE key = ${input.role} FOR UPDATE
@@ -235,6 +305,25 @@ export class B1RoleCommandWriter {
         error('PRINCIPAL_SEAT_OCCUPANCY_CONFLICT');
       }
 
+      // Revalidate all role-owned school-wide capabilities and independent
+      // personal teacher baseline in the same SERIALIZABLE transaction.
+      if (input.operation !== 'DISMISS') {
+        await this.verifyRoleOperabilityPrerequisites(tx, input.role, input.targetUserId, at);
+      }
+      if (this.fullTemplate && oldAppointment) {
+        const oldSnapshot = oldAppointment.templateSnapshot as {
+          sensitiveOnly?: unknown; capabilityKeys?: unknown;
+        } | null;
+        const snapshotKeys = Array.isArray(oldSnapshot?.capabilityKeys)
+          ? oldSnapshot.capabilityKeys as string[] : null;
+        const currentKeys = this.roleKeys(input.role);
+        if (oldSnapshot?.sensitiveOnly !== false || !snapshotKeys ||
+            snapshotKeys.length !== currentKeys.length ||
+            currentKeys.some((key) => !snapshotKeys.includes(key))) {
+          error('ROLE_SOURCE_POLICY_RECONCILIATION_REQUIRED');
+        }
+      }
+
       // AccessCommand is append-only: plan an immutable successful receipt first.
       // Any later failure rolls back the command and every other write together.
       const planned = await this.planSummary(tx, input.role, input.operation,
@@ -265,13 +354,13 @@ export class B1RoleCommandWriter {
           data: {
             id: appointmentIdPlanned!,
             userId: input.targetUserId, seatId: seat.id,
-            templateKey: input.role, templateVersion: 'WS1-B1-v1',
-            templateSnapshot: { key: input.role, version: 'WS1-B1-v1', capabilityKeys: [...roles[input.role]], sensitiveOnly: true },
+            templateKey: input.role, templateVersion: this.fullTemplate ? 'WS1-B1-v2' : 'WS1-B1-v1',
+            templateSnapshot: { key: input.role, version: this.fullTemplate ? 'WS1-B1-v2' : 'WS1-B1-v1', capabilityKeys: [...this.roleKeys(input.role)], sensitiveOnly: !this.fullTemplate },
             validFrom: at, validUntil: null, createdCommandId: command.id,
           },
         });
         appointmentId = appointment.id;
-        for (const key of roles[input.role]) {
+        for (const key of this.roleKeys(input.role)) {
           await this.openSource(tx, input.targetUserId, key, appointmentId, at, command.id, summary);
         }
       }
@@ -298,7 +387,7 @@ export class B1RoleCommandWriter {
         },
       } });
       return receipt;
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 2000, timeout: 12000 });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: this.fullTemplate ? 4000 : 2000, timeout: this.fullTemplate ? 30000 : 12000 });
   }
 
   /**
@@ -344,10 +433,10 @@ export class B1RoleCommandWriter {
     const planned = initSummary();
     if (oldUserId && oldAppointmentId) {
       const sources = await tx.grantSource.findMany({
-        where: { appointmentId: oldAppointmentId }, take: roles[role].length + 1,
+        where: { appointmentId: oldAppointmentId }, take: this.roleKeys(role).length + 1,
       });
-      if (sources.length !== roles[role].length) error('SOURCE_INVENTORY_NEEDS_RECONCILIATION');
-      for (const key of roles[role]) {
+      if (sources.length !== this.roleKeys(role).length) error('SOURCE_INVENTORY_NEEDS_RECONCILIATION');
+      for (const key of this.roleKeys(role)) {
         const before = await this.coordinate(tx, oldUserId, key, at);
         const source = sources.find((s) => s.coordinateId === before.coordinateId &&
           s.userId === oldUserId && s.kind === 'ROLE_TEMPLATE');
@@ -359,7 +448,7 @@ export class B1RoleCommandWriter {
       }
     }
     if (operation !== 'DISMISS') {
-      for (const key of roles[role]) {
+      for (const key of this.roleKeys(role)) {
         const before = await this.coordinate(tx, targetId, key, at);
         planned.sourcesOpened++;
         if (!before.grantId) planned.grantsCreated++;
@@ -413,7 +502,7 @@ export class B1RoleCommandWriter {
       if (s.kind === 'ROLE_TEMPLATE') {
         if (!s.appointment || !s.appointment.seat ||
             s.appointment.templateKey !== s.appointment.seat.key ||
-            !supportedSeatsForKey[key]?.includes(s.appointment.templateKey) ||
+            !this.seatMaySource(key, s.appointment.templateKey) ||
             s.createdCommandId !== s.appointment.createdCommandId ||
             s.command.id !== s.appointment.command.id ||
             s.appointment.userId !== userId ||
@@ -541,14 +630,14 @@ export class B1RoleCommandWriter {
       error('INVALID_APPOINTMENT_TO_CLOSE');
     }
     const sources = await tx.grantSource.findMany({ where: { appointmentId }, orderBy: { id: 'asc' } });
-    if (sources.length !== roles[role].length ||
+    if (sources.length !== this.roleKeys(role).length ||
         sources.some((source) => source.userId !== userId ||
           source.kind !== 'ROLE_TEMPLATE' || source.legacyGrantId !== null)) {
       error('INCOMPLETE_ROLE_SOURCES_NEEDS_RECONCILIATION');
     }
     // Prevalidate all coordinates before changing any source.
     const details = [];
-    for (const key of roles[role]) {
+    for (const key of this.roleKeys(role)) {
       const coords = await tx.accessCoordinate.findMany({ where: {
         userId, capabilityKey: key, scopeType: 'SCHOOL_WIDE', scopeResourceId: null,
       }, take: 3 });
