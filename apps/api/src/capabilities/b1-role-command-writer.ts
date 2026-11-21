@@ -12,6 +12,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { AuditResult, Prisma, PrismaClient, UserStatus } from '@prisma/client';
 import { materializeTemplateGrants } from './responsibility-template-catalog';
+import { CapabilityKey } from '@baogiang/contracts';
 
 export type B1Role = 'PRINCIPAL' | 'VICE_PRINCIPAL_ACADEMIC';
 export type B1RoleOperation = 'APPOINT' | 'DISMISS' | 'TRANSFER';
@@ -50,16 +51,16 @@ const supportedSeatsForKey: Readonly<Record<string, readonly string[]>> = Object
   APPROVAL_VICE_PRINCIPAL: Object.freeze(['VICE_PRINCIPAL_ACADEMIC']),
   ADDITIONAL_DUTY_CATALOG_MANAGE: Object.freeze(['VICE_PRINCIPAL_ACADEMIC', 'TECHNICAL_ACCOUNT_ADMIN']),
 });
-const roles: Readonly<Record<B1Role, readonly string[]>> = Object.freeze({
+const roles: Readonly<Record<B1Role, readonly CapabilityKey[]>> = Object.freeze({
   PRINCIPAL: Object.freeze(['APPROVAL_PRINCIPAL', 'AUDIT_VIEW']),
   VICE_PRINCIPAL_ACADEMIC: Object.freeze([
     'APPROVAL_VICE_PRINCIPAL', 'ADDITIONAL_DUTY_CATALOG_MANAGE',
   ]),
 });
-export const B1_STAGED_SOURCE_KEYS: Readonly<Record<B1Role, readonly string[]>> = roles;
+export const B1_STAGED_SOURCE_KEYS: Readonly<Record<B1Role, readonly CapabilityKey[]>> = roles;
 
 /** Shares the same policy-key list between full writer and advisory preview. */
-export function b1FullRoleSourceKeys(role: B1Role): readonly string[] {
+export function b1FullRoleSourceKeys(role: B1Role): readonly CapabilityKey[] {
   const catalogKeys = materializeTemplateGrants({ templateKey: role })
     .filter((spec) => spec.scopeType === 'SCHOOL_WIDE' && spec.scopeResourceId === null)
     .map((spec) => spec.capabilityKey);
@@ -121,7 +122,7 @@ export class B1RoleCommandWriter {
 
   /** B1-owned authority and school-wide operability from the existing
    * responsibility template. Teacher PERSONAL baselines are independent. */
-  private roleKeys(role: B1Role): readonly string[] {
+  private roleKeys(role: B1Role): readonly CapabilityKey[] {
     if (!this.fullTemplate) return roles[role];
     return b1FullRoleSourceKeys(role);
   }
@@ -131,7 +132,7 @@ export class B1RoleCommandWriter {
       return supportedSeatsForKey[key]?.includes(seatKey) ?? false;
     }
     if (seatKey !== 'PRINCIPAL' && seatKey !== 'VICE_PRINCIPAL_ACADEMIC') return false;
-    return this.roleKeys(seatKey).includes(key);
+    return this.roleKeys(seatKey).some((candidate) => candidate === key);
   }
 
   private async verifyRoleOperabilityPrerequisites(

@@ -57,3 +57,8 @@ Lần kiểm tra read-only ngày 21/11: một tài khoản ACTIVE, chín grant h
 - API write bắt buộc có thêm flag `B1_FULL_ROLE_SOURCE_CUTOVER_APPROVED=true`, bên cạnh các cờ chính sách G1/G3/G4, legacy và chặn generic. Chưa bật bất kỳ flag nào trên production.
 - Preview đối chiếu trả riêng phần chỉ được Writer hai-key cũ quản lý, phần được Writer đầy đủ V2 quản lý, và các quyền cá nhân độc lập. Trạng thái `ACTIVE_LINKED_UNVERIFIED` không bao giờ tương đương chứng cứ đủ.
 - Test HTTP synthetic full lifecycle và bảo toàn baseline cá nhân chạy trên schema riêng; chờ đúng-head CI trên PostgreSQL 16/17 để xác nhận. Kiểm thử này không phê duyệt thao tác trên tài khoản thật.
+## 21/11 — bổ sung kiểm thử ranh giới bảy persona (backend)
+
+- Test HTTP thật có bảy persona bị chặn: Hiệu trưởng chỉ có quyền giám sát, PHT chuyên môn, TTCM, giáo viên, quản trị chỉ có `CAPABILITY_GRANT`, quản trị chỉ có `USER_MANAGE`, người không có quyền; phiên vô danh phải nhận 401. Khi mọi flag thử nghiệm đều bật, thiếu hai quyền quản trị đồng thời không thể gửi lệnh B1 và không tạo `AccessCommand`.
+- Đây là kiểm tra **ủy quyền backend tự động**, tuyệt đối không được ghi nhận thay cho nghiệm thu giao diện PWA và nghiệp vụ thực tế của bảy vai trò trên điện thoại.
+- Đợt CI `c2f1167` đầu tiên có lỗi typecheck TS2322 tại `b1-role-command-http.service.ts:90` do generic `string` thay vì `CapabilityKey`; đã thu hẹp kiểu dữ liệu tại nguồn bằng `CapabilityKey` của package contracts trước khi đẩy lại. Không thay đổi schema, migration hoặc quyền production.

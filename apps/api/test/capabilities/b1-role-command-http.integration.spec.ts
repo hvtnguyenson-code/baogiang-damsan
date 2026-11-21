@@ -43,6 +43,8 @@ integration('P5-057 WS1 B1 — source-aware HTTP command boundary', () => {
       { key: 'APPROVAL_PRINCIPAL', scopes: ['SCHOOL_WIDE'] },
       { key: 'AUDIT_VIEW', scopes: ['SCHOOL_WIDE'] },
       { key: 'TEACHER_BASE', scopes: ['PERSONAL'] },
+      { key: 'APPROVAL_VICE_PRINCIPAL', scopes: ['SCHOOL_WIDE'] },
+      { key: 'SUBJECT_GROUP_LEAD', scopes: ['SUBJECT_GROUP'] },
     ]);
   });
   afterAll(async () => {
@@ -189,6 +191,37 @@ integration('P5-057 WS1 B1 — source-aware HTTP command boundary', () => {
     expect(noSession.status).toBe(401);
     expect(await h.prisma.accessCommand.count()).toBe(0);
   });
+
+  it('blocks seven unauthorised staff/admin personas at the real HTTP boundary', async () => {
+    const target = await h.actor({ usernamePrefix: 'b1-seven-persona-target' });
+    const endpoint = '/api/role-appointments/commands';
+    const input = command(target.id);
+    for (const key of gateKeys) process.env[key] = 'true';
+    const blocked = [
+      { label: 'principal', grants: [
+        { capabilityKey: 'APPROVAL_PRINCIPAL' }, { capabilityKey: 'AUDIT_VIEW' },
+      ] },
+      { label: 'vice-principal', grants: [{ capabilityKey: 'APPROVAL_VICE_PRINCIPAL' }] },
+      { label: 'subject-leader', grants: [{ capabilityKey: 'SUBJECT_GROUP_LEAD',
+        scopeType: 'SUBJECT_GROUP', scopeResourceId: randomUUID() }] },
+      { label: 'teacher', grants: [{ capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL' }] },
+      { label: 'technical-grant-only', grants: [{ capabilityKey: 'CAPABILITY_GRANT' }] },
+      { label: 'technical-user-only', grants: [{ capabilityKey: 'USER_MANAGE' }] },
+      { label: 'no-permissions', grants: [] },
+    ];
+    for (const persona of blocked) {
+      const individual = await h.actor({
+        usernamePrefix: `b1-${persona.label}`, grants: persona.grants,
+      });
+      const denied = await individual.agent.post(endpoint)
+        .set('Origin', testOrigin).send(input);
+      expect(denied.status).toBe(403);
+    }
+    expect((await request(h.app.getHttpServer())
+      .post(endpoint).set('Origin', testOrigin).send(input)).status).toBe(401);
+    expect(await h.prisma.accessCommand.count()).toBe(0);
+    expect(await h.prisma.roleAppointment.count()).toBe(0);
+  }, 35_000);
 
   it('pure gate matrix stays fail-closed for every independently missing flag', () => {
     for (const role of ['PRINCIPAL', 'VICE_PRINCIPAL_ACADEMIC'] as const) {
