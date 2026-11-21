@@ -6,7 +6,7 @@ import { CsrfOriginGuard } from '../auth/csrf-origin.guard';
 import { CapabilityGuard } from '../authorization/capability.guard';
 import { RequireCapabilities } from '../authorization/require-capability.decorator';
 import { B1RoleReceipt } from './b1-role-command-writer';
-import { B1RoleCommandContextQueryDto, B1RoleCommandDto } from './b1-role-command.dto';
+import { B1RoleCommandContextQueryDto, B1RoleCommandDto, B1RoleOperabilityQueryDto } from './b1-role-command.dto';
 import { B1RoleCommandHttpService } from './b1-role-command-http.service';
 
 /**
@@ -25,6 +25,16 @@ export class B1RoleCommandController {
   @UseGuards(SessionAuthGuard, CapabilityGuard)
   context(@Query() input: B1RoleCommandContextQueryDto, @Req() request: AuthenticatedRequest) {
     return this.service.context(input.role, request.auth!.user.id);
+  }
+
+  @Get('operability-preview')
+  @RequireCapabilities(
+    { capabilityKey: 'USER_MANAGE', scope: 'SCHOOL_WIDE' },
+    { capabilityKey: 'CAPABILITY_GRANT', scope: 'SCHOOL_WIDE' },
+  )
+  @UseGuards(SessionAuthGuard, CapabilityGuard)
+  operability(@Query() input: B1RoleOperabilityQueryDto) {
+    return this.service.operabilityPreview(input.role, input.targetUserId);
   }
 
   @Post('commands')

@@ -7,6 +7,7 @@ import { PrismaClient, UserStatus } from '@prisma/client';
 import request from 'supertest';
 import { AppModule } from '../../src/app.module';
 import { PasswordService } from '../../src/auth/password.service';
+import { materializeTemplateGrants } from '../../src/capabilities/responsibility-template-catalog';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { resolveSafeTestDatabaseUrl } from '../helpers/test-database-safety';
 import { testOrigin, testPassword } from '../helpers/phase01-test-harness';
@@ -19,7 +20,7 @@ const integration = safeUrl ? describe : describe.skip;
 integration('P5-057 B1 — authenticated HTTP successful appointment and replay', () => {
   const schema = `b1http_${randomUUID().replaceAll('-', '')}`;
   const flags = [
-    'B1_ROLE_COMMANDS_ENABLED', 'B1_REJECT_GENERIC_SENSITIVE_WRITES',
+    'B1_ROLE_COMMANDS_ENABLED', 'B1_FULL_ROLE_SOURCE_CUTOVER_APPROVED', 'B1_REJECT_GENERIC_SENSITIVE_WRITES',
     'B1_LEGACY_PROVENANCE_RECONCILED', 'B1_PRINCIPAL_POLICY_APPROVED',
     'B1_AUDIT_SOURCE_POLICY_APPROVED', 'B1_PHT_CATALOG_POLICY_APPROVED',
   ] as const;
@@ -90,14 +91,27 @@ integration('P5-057 B1 — authenticated HTTP successful appointment and replay'
     const target = await person('target');
     const successor = await person('successor');
     const vice = await person('vice');
-    for (const candidate of [target, successor, vice]) {
+    const noBaseline = await person('no-baseline');
+    for (const candidate of [target, successor, vice, noBaseline]) {
       await db.staffProfile.create({ data: {
         userId: candidate.id, displayName: 'Synthetic B1 staff', isTeachingStaff: true,
       } });
     }
-    for (const key of ['USER_MANAGE', 'CAPABILITY_GRANT', 'APPROVAL_PRINCIPAL', 'AUDIT_VIEW', 'APPROVAL_VICE_PRINCIPAL', 'ADDITIONAL_DUTY_CATALOG_MANAGE']) {
+    const principalSpecs = materializeTemplateGrants({ templateKey: 'PRINCIPAL' });
+    const vpSpecs = materializeTemplateGrants({ templateKey: 'VICE_PRINCIPAL_ACADEMIC' });
+    const principalKeys = new Set(principalSpecs
+      .filter((spec) => spec.scopeType === 'SCHOOL_WIDE').map((spec) => spec.capabilityKey));
+    const vpKeys = new Set(vpSpecs
+      .filter((spec) => spec.scopeType === 'SCHOOL_WIDE').map((spec) => spec.capabilityKey));
+    vpKeys.add('ADDITIONAL_DUTY_CATALOG_MANAGE');
+    const personalKeys = [...new Set([...principalSpecs, ...vpSpecs]
+      .filter((spec) => spec.scopeType === 'PERSONAL').map((spec) => spec.capabilityKey))];
+    const catalogKeys = new Set([
+      'USER_MANAGE', 'CAPABILITY_GRANT', ...principalKeys, ...vpKeys, ...personalKeys,
+    ]);
+    for (const key of catalogKeys) {
       await db.capabilityDefinition.create({ data: {
-        key, description: 'Isolated B1 HTTP fixture', allowedScopeTypes: ['SCHOOL_WIDE'],
+        key, description: 'Isolated B1 HTTP fixture', allowedScopeTypes: ['SCHOOL_WIDE', 'PERSONAL'],
         isActive: true, isSystem: true,
       } });
     }
@@ -111,6 +125,14 @@ integration('P5-057 B1 — authenticated HTTP successful appointment and replay'
       key: 'VICE_PRINCIPAL_ACADEMIC', enabled: true, policyVersion: 1n,
     } });
     const before = new Date(Date.now() - 3_600_000);
+    for (const candidate of [target, successor, vice]) {
+      for (const key of personalKeys) {
+        await db.capabilityGrant.create({ data: {
+          userId: candidate.id, capabilityKey: key, scopeType: 'PERSONAL',
+          validFrom: before, grantedByUserId: issuer.id,
+        } });
+      }
+    }
     const seed = await db.accessCommand.create({ data: {
       actorUserId: issuer.id, targetUserId: admin.id,
       commandType: 'B1_SYNTHETIC_ADMIN_SEAT', requestKey: randomUUID(),
@@ -141,7 +163,7 @@ integration('P5-057 B1 — authenticated HTTP successful appointment and replay'
     expect(applied.status).toBe(200);
     expect(applied.body).toMatchObject({
       state: 'APPLIED', role: 'PRINCIPAL', operation: 'APPOINT',
-      targetUserId: target.id, sourcesOpened: 2, grantsCreated: 2,
+      targetUserId: target.id, sourcesOpened: principalKeys.size, grantsCreated: principalKeys.size,
     });
     const replay = await agent.post(endpoint).set('Origin', testOrigin).send(input);
     expect(replay.status).toBe(200);
@@ -166,7 +188,7 @@ integration('P5-057 B1 — authenticated HTTP successful appointment and replay'
     expect(handover.status).toBe(200);
     expect(handover.body).toMatchObject({
       state: 'APPLIED', operation: 'TRANSFER', previousUserId: target.id,
-      targetUserId: successor.id, sourcesClosed: 2, sourcesOpened: 2,
+      targetUserId: successor.id, sourcesClosed: principalKeys.size, sourcesOpened: principalKeys.size,
     });
     expect((await db.roleAppointment.findUniqueOrThrow({
       where: { id: applied.body.appointmentId },
@@ -184,10 +206,16 @@ integration('P5-057 B1 — authenticated HTTP successful appointment and replay'
     });
     expect(dismissal.status).toBe(200);
     expect(dismissal.body).toMatchObject({
-      state: 'APPLIED', operation: 'DISMISS', sourcesClosed: 2,
+      state: 'APPLIED', operation: 'DISMISS', sourcesClosed: principalKeys.size,
     });
     expect(await db.roleAppointment.count({ where: {
       seatId: principal.id, validUntil: null, cancelledAt: null,
+    } })).toBe(0);
+    expect(await db.capabilityGrant.count({ where: {
+      userId: successor.id, scopeType: 'PERSONAL', revokedAt: null,
+    } })).toBe(personalKeys.length);
+    expect(await db.capabilityGrant.count({ where: {
+      userId: successor.id, scopeType: 'SCHOOL_WIDE', revokedAt: null,
     } })).toBe(0);
 
     // Separate PO-gated Vice-Principal route (synthetic policies only).
@@ -198,7 +226,7 @@ integration('P5-057 B1 — authenticated HTTP successful appointment and replay'
     });
     expect(vpAppointment.status).toBe(200);
     expect(vpAppointment.body).toMatchObject({
-      state: 'APPLIED', role: 'VICE_PRINCIPAL_ACADEMIC', sourcesOpened: 2,
+      state: 'APPLIED', role: 'VICE_PRINCIPAL_ACADEMIC', sourcesOpened: vpKeys.size,
     });
     await new Promise((done) => setTimeout(done, 30));
     const vpDismissal = await agent.post(endpoint).set('Origin', testOrigin).send({
@@ -208,12 +236,31 @@ integration('P5-057 B1 — authenticated HTTP successful appointment and replay'
       expectedAuthorizationEpoch: '4', requestKey: `b1-http-vp-end-${randomUUID()}`,
     });
     expect(vpDismissal.status).toBe(200);
-    expect(vpDismissal.body).toMatchObject({ state: 'APPLIED', sourcesClosed: 2 });
+    expect(vpDismissal.body).toMatchObject({ state: 'APPLIED', sourcesClosed: vpKeys.size });
     expect(await db.roleAppointment.count({ where: {
       seatId: academic.id, validUntil: null, cancelledAt: null,
     } })).toBe(0);
     expect((await db.authorizationState.findUniqueOrThrow({
       where: { id: 'B1_GLOBAL' },
     })).epoch).toBe(5n);
-  }, 75_000);
+    expect(await db.capabilityGrant.count({ where: {
+      userId: vice.id, scopeType: 'PERSONAL', revokedAt: null,
+    } })).toBe(personalKeys.length);
+    expect(await db.capabilityGrant.count({ where: {
+      userId: vice.id, scopeType: 'SCHOOL_WIDE', revokedAt: null,
+    } })).toBe(0);
+    const missingBaseline = await agent.post(endpoint).set('Origin', testOrigin).send({
+      operation: 'APPOINT', role: 'VICE_PRINCIPAL_ACADEMIC',
+      targetUserId: noBaseline.id,
+      expectedSeatVersion: academic.policyVersion.toString(),
+      expectedAuthorizationEpoch: '5', requestKey: `b1-http-missing-${randomUUID()}`,
+    });
+    expect(missingBaseline.status).toBe(409);
+    expect(await db.roleAppointment.count({ where: {
+      seatId: academic.id, validUntil: null, cancelledAt: null,
+    } })).toBe(0);
+    expect((await db.authorizationState.findUniqueOrThrow({
+      where: { id: 'B1_GLOBAL' },
+    })).epoch).toBe(5n);
+  }, 170_000);
 });

@@ -5,6 +5,14 @@ import { B1RoleCommandInput } from './b1-role-command-writer';
  * Client input carries concurrency tokens only; actor authority is taken
  * exclusively from the authenticated server-side session.
  */
+export class B1RoleOperabilityQueryDto {
+  @IsIn(['PRINCIPAL', 'VICE_PRINCIPAL_ACADEMIC'])
+  role!: 'PRINCIPAL' | 'VICE_PRINCIPAL_ACADEMIC';
+
+  @IsUUID('4')
+  targetUserId!: string;
+}
+
 export class B1RoleCommandContextQueryDto {
   @IsIn(['PRINCIPAL', 'VICE_PRINCIPAL_ACADEMIC'])
   role!: 'PRINCIPAL' | 'VICE_PRINCIPAL_ACADEMIC';

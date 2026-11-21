@@ -1,5 +1,7 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { materializeTemplateGrants } from './responsibility-template-catalog';
+import { B1_STAGED_SOURCE_KEYS, b1FullRoleSourceKeys } from './b1-role-command-writer';
 import {
   B1RoleCommandInput,
   B1RoleCommandWriter,
@@ -18,12 +20,13 @@ export class B1RoleCommandHttpService {
   private readonly writer: B1RoleCommandWriter;
 
   constructor(private readonly prisma: PrismaService) {
-    this.writer = new B1RoleCommandWriter(prisma);
+    this.writer = new B1RoleCommandWriter(prisma, true);
   }
 
   static activationBlockers(role: B1RoleCommandInput['role'], env: NodeJS.ProcessEnv = process.env): string[] {
     const required = [
       'B1_ROLE_COMMANDS_ENABLED',
+      'B1_FULL_ROLE_SOURCE_CUTOVER_APPROVED',
       'B1_REJECT_GENERIC_SENSITIVE_WRITES',
       'B1_LEGACY_PROVENANCE_RECONCILED',
       role === 'PRINCIPAL' ? 'B1_PRINCIPAL_POLICY_APPROVED' : 'B1_PHT_CATALOG_POLICY_APPROVED',
@@ -65,6 +68,67 @@ export class B1RoleCommandHttpService {
         appointmentId: item.id, userId: item.userId, validFrom: item.validFrom.toISOString(),
       })),
       inventoryTruncated: appointments.length === 33,
+    };
+  }
+
+  /** Only compares current grants with the full existing responsibility
+   * template. Linked does not mean source-verified, and this never
+   * authorizes appointment, migration, revocation or automatic backfill. */
+  async operabilityPreview(role: B1RoleCommandInput['role'], targetUserId: string) {
+    const target = await this.prisma.user.findUnique({
+      where: { id: targetUserId },
+      select: { status: true, profile: { select: { isTeachingStaff: true } } },
+    });
+    if (!target) throw new NotFoundException('Không tìm thấy nhân sự cần kiểm tra.');
+    const specs = materializeTemplateGrants({ templateKey: role });
+    const fullKeys = new Set(b1FullRoleSourceKeys(role));
+    // G4 is an explicitly gated PHT school-wide source in the writer;
+    // it is not yet a default in the currently released VP template.
+    for (const key of fullKeys) {
+      if (!specs.some((spec) => spec.capabilityKey === key &&
+        spec.scopeType === 'SCHOOL_WIDE')) {
+        specs.push({ capabilityKey: key, scopeType: 'SCHOOL_WIDE',
+          scopeResourceId: null, category: 'SOURCE_AUTHORITY',
+          description: 'Nguồn chức trách B1 chỉ được sử dụng khi chính sách được duyệt.',
+        });
+      }
+    }
+    const now = new Date();
+    const grants = await this.prisma.capabilityGrant.findMany({
+      where: { userId: targetUserId, capabilityKey: { in: specs.map((s) => s.capabilityKey) },
+        revokedAt: null, validFrom: { lte: now },
+        OR: [{ validUntil: null }, { validUntil: { gt: now } }] },
+      select: { capabilityKey: true, scopeType: true, scopeResourceId: true,
+        coordinateId: true }, take: 257,
+    });
+    const capabilities = specs.map((spec) => {
+      const matching = grants.filter((grant) => grant.capabilityKey === spec.capabilityKey
+        && grant.scopeType === spec.scopeType
+        && grant.scopeResourceId === (spec.scopeResourceId ?? null));
+      const state = matching.length === 0 ? 'MISSING'
+        : matching.length > 1 ? 'OVERLAPPING_GRANTS'
+          : matching[0].coordinateId === null ? 'ACTIVE_LEGACY_UNLINKED'
+            : 'ACTIVE_LINKED_UNVERIFIED';
+      return { sourceManagedByB1: B1_STAGED_SOURCE_KEYS[role].includes(spec.capabilityKey)
+        && spec.scopeType === 'SCHOOL_WIDE',
+        sourceManagedByFullRoleWriter: fullKeys.has(spec.capabilityKey)
+          && spec.scopeType === 'SCHOOL_WIDE',
+        capabilityKey: spec.capabilityKey, scopeType: spec.scopeType,
+        scopeResourceId: spec.scopeResourceId ?? null, category: spec.category, state };
+    });
+    return { mode: 'READ_ONLY' as const, canConfirm: false as const,
+      role, targetUserId, eligibleTeachingStaff:
+        target.profile?.isTeachingStaff === true &&
+        ['ACTIVE', 'PENDING'].includes(target.status),
+      requiredCount: capabilities.length,
+      notManagedByStagedWriterCount: capabilities.filter((s) => !s.sourceManagedByB1).length,
+      notManagedByFullRoleWriterCount: capabilities.filter((s) => !s.sourceManagedByFullRoleWriter).length,
+      missingCount: capabilities.filter((s) => s.state === 'MISSING').length,
+      legacyUnlinkedCount: capabilities.filter((s) => s.state === 'ACTIVE_LEGACY_UNLINKED').length,
+      overlappingCount: capabilities.filter((s) => s.state === 'OVERLAPPING_GRANTS').length,
+      inventoryTruncated: grants.length === 257,
+      provenanceVerified: false as const,
+      capabilities,
     };
   }
 

@@ -5,6 +5,7 @@ import { B1RoleCommandHttpService } from '../../src/capabilities/b1-role-command
 
 const gateKeys = [
   'B1_ROLE_COMMANDS_ENABLED',
+  'B1_FULL_ROLE_SOURCE_CUTOVER_APPROVED',
   'B1_REJECT_GENERIC_SENSITIVE_WRITES',
   'B1_LEGACY_PROVENANCE_RECONCILED',
   'B1_PRINCIPAL_POLICY_APPROVED',
@@ -41,6 +42,7 @@ integration('P5-057 WS1 B1 — source-aware HTTP command boundary', () => {
       { key: 'CAPABILITY_GRANT', scopes: ['SCHOOL_WIDE'] },
       { key: 'APPROVAL_PRINCIPAL', scopes: ['SCHOOL_WIDE'] },
       { key: 'AUDIT_VIEW', scopes: ['SCHOOL_WIDE'] },
+      { key: 'TEACHER_BASE', scopes: ['PERSONAL'] },
     ]);
   });
   afterAll(async () => {
@@ -147,6 +149,44 @@ integration('P5-057 WS1 B1 — source-aware HTTP command boundary', () => {
     const invalid = await admin.agent.get('/api/role-appointments/command-context')
       .query({ role: 'SCHOOL_ADMIN' });
     expect(invalid.status).toBe(400);
+    expect(await h.prisma.accessCommand.count()).toBe(0);
+  });
+
+  it('compares full operability without changing provenance or granting authority', async () => {
+    const admin = await h.actor({ grants: [
+      { capabilityKey: 'USER_MANAGE' }, { capabilityKey: 'CAPABILITY_GRANT' },
+    ] });
+    const target = await h.actor();
+    await h.prisma.capabilityGrant.create({ data: {
+      userId: target.id, capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL',
+      validFrom: new Date(Date.now() - 60_000),
+    } });
+    const response = await admin.agent.get('/api/role-appointments/operability-preview')
+      .query({ role: 'PRINCIPAL', targetUserId: target.id });
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      mode: 'READ_ONLY', canConfirm: false, provenanceVerified: false,
+      targetUserId: target.id, legacyUnlinkedCount: 1,
+    });
+    expect(response.body.requiredCount).toBeGreaterThan(2);
+    expect(response.body.notManagedByStagedWriterCount).toBeGreaterThan(0);
+    expect(response.body.notManagedByFullRoleWriterCount).toBeGreaterThan(0);
+    expect(response.body.capabilities).toEqual(expect.arrayContaining([
+      expect.objectContaining({ capabilityKey: 'TEACHER_BASE', state: 'ACTIVE_LEGACY_UNLINKED', sourceManagedByFullRoleWriter: false }),
+      expect.objectContaining({ capabilityKey: 'TIMETABLE_MANAGE', state: 'MISSING', sourceManagedByB1: false, sourceManagedByFullRoleWriter: true }),
+      expect.objectContaining({ capabilityKey: 'APPROVAL_PRINCIPAL', state: 'MISSING', sourceManagedByB1: true }),
+    ]));
+    const vpPreview = await admin.agent.get('/api/role-appointments/operability-preview')
+      .query({ role: 'VICE_PRINCIPAL_ACADEMIC', targetUserId: target.id });
+    expect(vpPreview.status).toBe(200);
+    expect(vpPreview.body.capabilities).toEqual(expect.arrayContaining([
+      expect.objectContaining({ capabilityKey: 'ADDITIONAL_DUTY_CATALOG_MANAGE',
+        sourceManagedByFullRoleWriter: true, state: 'MISSING' }),
+    ]));
+    const noSession = await request(h.app.getHttpServer())
+      .get('/api/role-appointments/operability-preview')
+      .query({ role: 'PRINCIPAL', targetUserId: target.id });
+    expect(noSession.status).toBe(401);
     expect(await h.prisma.accessCommand.count()).toBe(0);
   });
 
