@@ -60,3 +60,11 @@
 - This tests PostgreSQL multi-connection SERIALIZABLE behavior for the epoch persistence primitive. It does NOT run two complete B1RoleCommandWriter operations, demonstrate transfer of retained evidence, or clear the real concurrent APPOINT/TRANSFER acceptance gate.
 - Laptop targeted non-type-aware lint passed; transpile-only Jest discovered 1 test and skipped it without a certified test DB. Exact-head CI on PG16/17 remains mandatory evidence.
 - The test never registers the staged writer or enables B1 in a running app. No production data, schema, migration, or release workflow change.
+## 21/11/2026 — Real two-writer APPOINT / TRANSFER concurrency gate
+
+- New \`apps/api/test/capabilities/b1-real-writer-concurrency.integration.spec.ts\` creates a unique temporary \`b1race_<uuid>\` schema only inside a certified \`baogiang_test\` PostgreSQL database and applies the real Prisma migrations into that schema.
+- Two independent Prisma clients execute the **actual** unregistered \`B1RoleCommandWriter.execute\` concurrently, with a barrier that confirms both real SERIALIZABLE transactions opened before the command callbacks run. Race 1: two APPOINT PRINCIPAL candidates with epoch 0; race 2: two TRANSFER PRINCIPAL successors from the winner with epoch 1.
+- Acceptance is exactly one applied command for each race, one current Principal seat, retained successful commands only, original Principal appointment closed after transfer, and authorization epoch moving 0 => 1 => 2.
+- All fixture users, grants, appointments, source revisions and retained commands exist only in the dedicated temporary schema. The test disconnects all clients and drops that generated schema after completion; it does not mutate the shared public schema or production.
+- This gate DOES NOT prove multi-source \`AUDIT_VIEW\` preservation, production bootstrap legacy reconciliation, authority policy approval, or HTTP writer activation.
+- Local scoped ESLint PASS; transpile-only Jest discovered one test and skipped it without a certified database. Do not label multi-writer PG16/17 PASS until exact-head CI logs confirm it. No CI/CD, runtime or schema migrations were changed.
