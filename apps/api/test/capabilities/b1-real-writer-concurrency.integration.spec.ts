@@ -215,5 +215,102 @@ integration('P5-057 WS1 B1 — isolated real two-writer APPOINT/TRANSFER races',
     expect((await client.authorizationState.findUniqueOrThrow({
       where: { id: 'B1_GLOBAL' },
     })).epoch).toBe(2n);
-  }, 60_000);
+
+    // Seed a second, independently evidenced TECHNICAL_DIRECT source on the
+    // succeeding Principal's AUDIT_VIEW coordinate. This is a fixture confined
+    // to the disposable schema, never the real generic grant ingress.
+    const winner = transfers.find((r) => r.status === 'fulfilled') as
+      PromiseFulfilledResult<Awaited<ReturnType<B1RoleCommandWriter['execute']>>>;
+    const successor = winner.value;
+    const independent = await client.$transaction(async (tx) => {
+      const auditGrant = await tx.capabilityGrant.findFirstOrThrow({ where: {
+        userId: successor.targetUserId, capabilityKey: 'AUDIT_VIEW',
+        scopeType: 'SCHOOL_WIDE', revokedAt: null, coordinateId: { not: null },
+      } });
+      const coordinateId = auditGrant.coordinateId!;
+      const coordinate = await tx.accessCoordinate.findUniqueOrThrow({
+        where: { id: coordinateId },
+      });
+      const roleSource = await tx.grantSource.findFirstOrThrow({ where: {
+        appointmentId: successor.appointmentId!, coordinateId, kind: 'ROLE_TEMPLATE',
+      } });
+      const roleRev = await tx.grantSourceRevision.findFirstOrThrow({
+        where: { sourceId: roleSource.id }, orderBy: { revision: 'desc' },
+      });
+      const at = new Date();
+      const evidence = await tx.accessCommand.create({ data: {
+        actorUserId: f.actor.id, targetUserId: successor.targetUserId,
+        commandType: 'B1_TECHNICAL_DIRECT_GRANT', requestKey: randomUUID(),
+        fingerprint: 'b'.repeat(64), effectiveAt: at, result: {},
+      } });
+      const direct = await tx.grantSource.create({ data: {
+        coordinateId, userId: successor.targetUserId,
+        kind: 'TECHNICAL_DIRECT', createdCommandId: evidence.id,
+      } });
+      const directRev = await tx.grantSourceRevision.create({ data: {
+        sourceId: direct.id, coordinateId, revision: 1n,
+        validFrom: at, validUntil: null, disposition: 'ACCEPTED',
+        commandId: evidence.id,
+      } });
+      const updated = await tx.accessCoordinate.updateMany({
+        where: { id: coordinateId, version: coordinate.version },
+        data: { version: { increment: 1n } },
+      });
+      expect(updated.count).toBe(1);
+      const projection = await tx.grantProjectionRevision.create({ data: {
+        coordinateId, version: coordinate.version + 1n,
+        commandId: evidence.id, effectiveAt: at,
+      } });
+      const slice = await tx.grantProjectionSlice.create({ data: {
+        projectionRevisionId: projection.id, coordinateId, grantId: auditGrant.id,
+        validFromSnapshot: auditGrant.validFrom,
+        validUntilSnapshot: auditGrant.validUntil,
+      } });
+      await tx.grantSupport.createMany({ data: [
+        {
+          sliceId: slice.id, coordinateId, sourceRevisionId: roleRev.id,
+          coveredFrom: roleRev.validFrom, coveredUntil: roleRev.validUntil,
+        },
+        {
+          sliceId: slice.id, coordinateId, sourceRevisionId: directRev.id,
+          coveredFrom: directRev.validFrom, coveredUntil: null,
+        },
+      ] });
+      await tx.authorizationState.update({
+        where: { id: 'B1_GLOBAL' }, data: { epoch: { increment: 1n } },
+      });
+      return { grantId: auditGrant.id, coordinateId, directRevisionId: directRev.id };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+
+    const dismissal = await new B1RoleCommandWriter(client).execute({
+      operation: 'DISMISS', role: 'PRINCIPAL',
+      targetUserId: successor.targetUserId,
+      expectedAppointmentId: successor.appointmentId!,
+      expectedSeatVersion, expectedAuthorizationEpoch: '3',
+      requestKey: randomUUID(),
+    }, actor);
+    expect(dismissal).toMatchObject({
+      state: 'APPLIED', sourcesClosed: 2, grantsRevoked: 1,
+    });
+    expect((await client.capabilityGrant.findUniqueOrThrow({
+      where: { id: independent.grantId },
+    })).revokedAt).toBeNull();
+    const coordinate = await client.accessCoordinate.findUniqueOrThrow({
+      where: { id: independent.coordinateId },
+    });
+    const latest = await client.grantProjectionRevision.findUniqueOrThrow({
+      where: { coordinateId_version: {
+        coordinateId: independent.coordinateId, version: coordinate.version,
+      } }, include: { slices: { include: { supports: true } } },
+    });
+    expect(latest.slices).toHaveLength(1);
+    expect(latest.slices[0].supports.map((s) => s.sourceRevisionId))
+      .toEqual([independent.directRevisionId]);
+    expect(await client.roleAppointment.count({
+      where: { seatId: f.principalSeat.id, cancelledAt: null, validUntil: null },
+    })).toBe(0);
+    expect((await client.authorizationState.findUniqueOrThrow({
+      where: { id: 'B1_GLOBAL' },
+    })).epoch).toBe(4n);
+  }, 70_000);
 });
