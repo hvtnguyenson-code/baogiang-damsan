@@ -52,10 +52,10 @@ const supportedSeatsForKey: Readonly<Record<string, readonly string[]>> = Object
   ADDITIONAL_DUTY_CATALOG_MANAGE: Object.freeze(['VICE_PRINCIPAL_ACADEMIC', 'TECHNICAL_ACCOUNT_ADMIN']),
 });
 const roles: Readonly<Record<B1Role, readonly CapabilityKey[]>> = Object.freeze({
-  PRINCIPAL: Object.freeze(['APPROVAL_PRINCIPAL', 'AUDIT_VIEW']),
+  PRINCIPAL: Object.freeze(['APPROVAL_PRINCIPAL', 'AUDIT_VIEW'] as const),
   VICE_PRINCIPAL_ACADEMIC: Object.freeze([
     'APPROVAL_VICE_PRINCIPAL', 'ADDITIONAL_DUTY_CATALOG_MANAGE',
-  ]),
+  ] as const),
 });
 export const B1_STAGED_SOURCE_KEYS: Readonly<Record<B1Role, readonly CapabilityKey[]>> = roles;
 
