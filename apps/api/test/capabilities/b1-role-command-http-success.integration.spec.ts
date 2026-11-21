@@ -262,5 +262,101 @@ integration('P5-057 B1 — authenticated HTTP successful appointment and replay'
     expect((await db.authorizationState.findUniqueOrThrow({
       where: { id: 'B1_GLOBAL' },
     })).epoch).toBe(5n);
-  }, 170_000);
+
+    // Two separate B1 office sources legitimately support the same
+    // SCHOOL_WIDE coordinate in this disposable synthetic test schema.
+    // This is NOT authorization for production dual office holding.
+    await new Promise((done) => setTimeout(done, 30));
+    const overlappingVp = await agent.post(endpoint).set('Origin', testOrigin).send({
+      operation: 'APPOINT', role: 'VICE_PRINCIPAL_ACADEMIC',
+      targetUserId: vice.id,
+      expectedSeatVersion: academic.policyVersion.toString(),
+      expectedAuthorizationEpoch: '5',
+      requestKey: `b1-dual-vp-${randomUUID()}`,
+    });
+    expect(overlappingVp.status).toBe(200);
+    expect(overlappingVp.body.sourcesOpened).toBe(vpKeys.size);
+
+    await new Promise((done) => setTimeout(done, 30));
+    const overlappingPrincipal = await agent.post(endpoint).set('Origin', testOrigin).send({
+      operation: 'APPOINT', role: 'PRINCIPAL', targetUserId: vice.id,
+      expectedSeatVersion: principal.policyVersion.toString(),
+      expectedAuthorizationEpoch: '6',
+      requestKey: `b1-dual-principal-${randomUUID()}`,
+    });
+    expect(overlappingPrincipal.status).toBe(200);
+    expect(overlappingPrincipal.body.sourcesOpened).toBe(principalKeys.size);
+
+    const shared = await db.capabilityGrant.findFirstOrThrow({ where: {
+      userId: vice.id, capabilityKey: 'TIMETABLE_MANAGE',
+      scopeType: 'SCHOOL_WIDE', revokedAt: null,
+    } });
+    expect(shared.coordinateId).not.toBeNull();
+    const originalSources = await db.grantSource.findMany({ where: {
+      coordinateId: shared.coordinateId!,
+      appointmentId: { in: [
+        overlappingVp.body.appointmentId, overlappingPrincipal.body.appointmentId,
+      ] },
+    } });
+    expect(originalSources).toHaveLength(2);
+    const dualProjection = await db.grantProjectionRevision.findFirstOrThrow({
+      where: { coordinateId: shared.coordinateId! },
+      orderBy: { version: 'desc' },
+      include: { slices: { include: { supports: true } } },
+    });
+    expect(dualProjection.slices).toHaveLength(1);
+    expect(dualProjection.slices[0].supports).toHaveLength(2);
+
+    await new Promise((done) => setTimeout(done, 30));
+    const endVp = await agent.post(endpoint).set('Origin', testOrigin).send({
+      operation: 'DISMISS', role: 'VICE_PRINCIPAL_ACADEMIC',
+      targetUserId: vice.id, expectedAppointmentId: overlappingVp.body.appointmentId,
+      expectedSeatVersion: academic.policyVersion.toString(),
+      expectedAuthorizationEpoch: '7',
+      requestKey: `b1-dual-vp-dismiss-${randomUUID()}`,
+    });
+    expect(endVp.status).toBe(200);
+    expect(endVp.body.sourcesClosed).toBe(vpKeys.size);
+    expect((await db.capabilityGrant.findUniqueOrThrow({
+      where: { id: shared.id },
+    })).revokedAt).toBeNull();
+    expect(await db.capabilityGrant.count({ where: {
+      userId: vice.id, capabilityKey: 'APPROVAL_VICE_PRINCIPAL',
+      scopeType: 'SCHOOL_WIDE', revokedAt: null,
+    } })).toBe(0);
+    const retainedProjection = await db.grantProjectionRevision.findFirstOrThrow({
+      where: { coordinateId: shared.coordinateId! },
+      orderBy: { version: 'desc' },
+      include: { slices: { include: { supports: true } } },
+    });
+    expect(retainedProjection.slices).toHaveLength(1);
+    expect(retainedProjection.slices[0].supports).toHaveLength(1);
+    const principalSource = originalSources.find((source) =>
+      source.appointmentId === overlappingPrincipal.body.appointmentId);
+    expect(principalSource).toBeDefined();
+    const retainedRevision = await db.grantSourceRevision.findFirstOrThrow({
+      where: { sourceId: principalSource!.id }, orderBy: { revision: 'desc' },
+    });
+    expect(retainedProjection.slices[0].supports[0].sourceRevisionId).toBe(retainedRevision.id);
+
+    await new Promise((done) => setTimeout(done, 30));
+    const endPrincipal = await agent.post(endpoint).set('Origin', testOrigin).send({
+      operation: 'DISMISS', role: 'PRINCIPAL', targetUserId: vice.id,
+      expectedAppointmentId: overlappingPrincipal.body.appointmentId,
+      expectedSeatVersion: principal.policyVersion.toString(),
+      expectedAuthorizationEpoch: '8',
+      requestKey: `b1-dual-principal-dismiss-${randomUUID()}`,
+    });
+    expect(endPrincipal.status).toBe(200);
+    expect(endPrincipal.body.sourcesClosed).toBe(principalKeys.size);
+    expect((await db.capabilityGrant.findUniqueOrThrow({
+      where: { id: shared.id },
+    })).revokedAt).not.toBeNull();
+    expect(await db.capabilityGrant.count({ where: {
+      userId: vice.id, scopeType: 'PERSONAL', revokedAt: null,
+    } })).toBe(personalKeys.length);
+    expect((await db.authorizationState.findUniqueOrThrow({
+      where: { id: 'B1_GLOBAL' },
+    })).epoch).toBe(9n);
+  }, 300_000);
 });
