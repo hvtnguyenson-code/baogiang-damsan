@@ -168,6 +168,18 @@ integration('P5-057 B1 — authenticated HTTP successful appointment and replay'
     const replay = await agent.post(endpoint).set('Origin', testOrigin).send(input);
     expect(replay.status).toBe(200);
     expect(replay.body).toEqual(applied.body);
+    // The applied idempotency key must not be reused for a different payload.
+    const conflictingTargetReplay = await agent.post(endpoint).set('Origin', testOrigin)
+      .send({ ...input, targetUserId: successor.id });
+    expect(conflictingTargetReplay.status).toBe(409);
+    expect(conflictingTargetReplay.body.message).toBe('IDEMPOTENCY_KEY_CONFLICT');
+    const conflictingEpochReplay = await agent.post(endpoint).set('Origin', testOrigin)
+      .send({ ...input, expectedAuthorizationEpoch: '1' });
+    expect(conflictingEpochReplay.status).toBe(409);
+    expect(conflictingEpochReplay.body.message).toBe('IDEMPOTENCY_KEY_CONFLICT');
+    expect(await db.roleAppointment.count({
+      where: { userId: successor.id, templateKey: 'PRINCIPAL' },
+    })).toBe(0);
     expect(await db.accessCommand.count({ where: { commandType: 'B1_APPOINT_ROLE' } })).toBe(1);
     expect((await db.authorizationState.findUniqueOrThrow({
       where: { id: 'B1_GLOBAL' },
