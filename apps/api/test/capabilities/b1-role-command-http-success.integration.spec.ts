@@ -88,10 +88,14 @@ integration('P5-057 B1 — authenticated HTTP successful appointment and replay'
     const issuer = await person('issuer');
     const admin = await person('admin');
     const target = await person('target');
-    await db.staffProfile.create({ data: {
-      userId: target.id, displayName: 'Synthetic B1 staff', isTeachingStaff: true,
-    } });
-    for (const key of ['USER_MANAGE', 'CAPABILITY_GRANT', 'APPROVAL_PRINCIPAL', 'AUDIT_VIEW']) {
+    const successor = await person('successor');
+    const vice = await person('vice');
+    for (const candidate of [target, successor, vice]) {
+      await db.staffProfile.create({ data: {
+        userId: candidate.id, displayName: 'Synthetic B1 staff', isTeachingStaff: true,
+      } });
+    }
+    for (const key of ['USER_MANAGE', 'CAPABILITY_GRANT', 'APPROVAL_PRINCIPAL', 'AUDIT_VIEW', 'APPROVAL_VICE_PRINCIPAL', 'ADDITIONAL_DUTY_CATALOG_MANAGE']) {
       await db.capabilityDefinition.create({ data: {
         key, description: 'Isolated B1 HTTP fixture', allowedScopeTypes: ['SCHOOL_WIDE'],
         isActive: true, isSystem: true,
@@ -102,6 +106,9 @@ integration('P5-057 B1 — authenticated HTTP successful appointment and replay'
     } });
     const principal = await db.authoritySeat.create({ data: {
       key: 'PRINCIPAL', enabled: true, policyVersion: 1n,
+    } });
+    const academic = await db.authoritySeat.create({ data: {
+      key: 'VICE_PRINCIPAL_ACADEMIC', enabled: true, policyVersion: 1n,
     } });
     const before = new Date(Date.now() - 3_600_000);
     const seed = await db.accessCommand.create({ data: {
@@ -147,5 +154,66 @@ integration('P5-057 B1 — authenticated HTTP successful appointment and replay'
       .send({ ...input, requestKey: `stale-${randomUUID()}` });
     expect(stale.status).toBe(409);
     expect(await db.accessCommand.count({ where: { commandType: 'B1_APPOINT_ROLE' } })).toBe(1);
-  }, 60_000);
+
+    // HTTP handover is a second real B1 transaction with a fresh target.
+    await new Promise((done) => setTimeout(done, 30));
+    const handover = await agent.post(endpoint).set('Origin', testOrigin).send({
+      operation: 'TRANSFER', role: 'PRINCIPAL', targetUserId: successor.id,
+      previousUserId: target.id, expectedAppointmentId: applied.body.appointmentId,
+      expectedSeatVersion: principal.policyVersion.toString(),
+      expectedAuthorizationEpoch: '1', requestKey: `b1-http-transfer-${randomUUID()}`,
+    });
+    expect(handover.status).toBe(200);
+    expect(handover.body).toMatchObject({
+      state: 'APPLIED', operation: 'TRANSFER', previousUserId: target.id,
+      targetUserId: successor.id, sourcesClosed: 2, sourcesOpened: 2,
+    });
+    expect((await db.roleAppointment.findUniqueOrThrow({
+      where: { id: applied.body.appointmentId },
+    })).validUntil).not.toBeNull();
+    expect(await db.roleAppointment.count({ where: {
+      seatId: principal.id, validUntil: null, cancelledAt: null,
+    } })).toBe(1);
+
+    await new Promise((done) => setTimeout(done, 30));
+    const dismissal = await agent.post(endpoint).set('Origin', testOrigin).send({
+      operation: 'DISMISS', role: 'PRINCIPAL', targetUserId: successor.id,
+      expectedAppointmentId: handover.body.appointmentId,
+      expectedSeatVersion: principal.policyVersion.toString(),
+      expectedAuthorizationEpoch: '2', requestKey: `b1-http-dismiss-${randomUUID()}`,
+    });
+    expect(dismissal.status).toBe(200);
+    expect(dismissal.body).toMatchObject({
+      state: 'APPLIED', operation: 'DISMISS', sourcesClosed: 2,
+    });
+    expect(await db.roleAppointment.count({ where: {
+      seatId: principal.id, validUntil: null, cancelledAt: null,
+    } })).toBe(0);
+
+    // Separate PO-gated Vice-Principal route (synthetic policies only).
+    const vpAppointment = await agent.post(endpoint).set('Origin', testOrigin).send({
+      operation: 'APPOINT', role: 'VICE_PRINCIPAL_ACADEMIC', targetUserId: vice.id,
+      expectedSeatVersion: academic.policyVersion.toString(),
+      expectedAuthorizationEpoch: '3', requestKey: `b1-http-vp-${randomUUID()}`,
+    });
+    expect(vpAppointment.status).toBe(200);
+    expect(vpAppointment.body).toMatchObject({
+      state: 'APPLIED', role: 'VICE_PRINCIPAL_ACADEMIC', sourcesOpened: 2,
+    });
+    await new Promise((done) => setTimeout(done, 30));
+    const vpDismissal = await agent.post(endpoint).set('Origin', testOrigin).send({
+      operation: 'DISMISS', role: 'VICE_PRINCIPAL_ACADEMIC', targetUserId: vice.id,
+      expectedAppointmentId: vpAppointment.body.appointmentId,
+      expectedSeatVersion: academic.policyVersion.toString(),
+      expectedAuthorizationEpoch: '4', requestKey: `b1-http-vp-end-${randomUUID()}`,
+    });
+    expect(vpDismissal.status).toBe(200);
+    expect(vpDismissal.body).toMatchObject({ state: 'APPLIED', sourcesClosed: 2 });
+    expect(await db.roleAppointment.count({ where: {
+      seatId: academic.id, validUntil: null, cancelledAt: null,
+    } })).toBe(0);
+    expect((await db.authorizationState.findUniqueOrThrow({
+      where: { id: 'B1_GLOBAL' },
+    })).epoch).toBe(5n);
+  }, 75_000);
 });
