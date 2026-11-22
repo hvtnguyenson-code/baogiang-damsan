@@ -66,7 +66,7 @@ export const leadershipApi = {
       apiFetch<LeadershipPreview>('/role-appointments/operability-preview' + queryString({ role, targetUserId })),
     ]);
     // Refuse incomplete, old or mismatched payloads. No authority is inferred
-    // from a successful GET, a client's capability list, or a title.
+    // from a successful GET, a client-side permission list, or a title.
     if (!context || !preview || context.role !== role || preview.role !== role ||
         preview.targetUserId !== targetUserId || context.mode !== 'READ_ONLY' ||
         preview.mode !== 'READ_ONLY' || context.canConfirm !== false ||

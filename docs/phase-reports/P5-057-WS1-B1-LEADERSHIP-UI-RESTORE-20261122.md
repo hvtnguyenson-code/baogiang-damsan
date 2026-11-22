@@ -22,3 +22,5 @@ Registered task P5-057 remains IN_PROGRESS; P6-050 remains BLOCKED. Worktree bra
 Before any activation: independent issuer/trusted bootstrap and technical-source authority evidence; actual legacy/source reconciliation; authorized seat provisioning; verified production backup and real seven-persona UAT; exact-head CI and independent review. All production flags remain OFF. PR #290 stays Draft. No merge, VPS change, deployment or change to CI/CD. Only GitHub automatic CD after separately authorized green main merge.
 
 Scoped API/Web ESLint PASS; local Vite process stopped. Browser candidate preserved in ignored test-results/p5-057-b1-local-run/browser-candidate.spec.ts.
+
+CI follow-up: f9c4626 PG16 44991260201 and Windows deployment contract PASS; CI 44991260291 stopped before tests at UI foundation static verification because an API-client source comment contained a prohibited technical word. Comment-only correction; canonical scripts/ui/verify-ui-foundation.cjs PASS locally. No rule or behavior changed. New exact-head CI required.
