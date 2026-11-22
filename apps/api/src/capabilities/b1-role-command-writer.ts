@@ -11,10 +11,13 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { AuditResult, Prisma, PrismaClient, UserStatus } from '@prisma/client';
-import { materializeTemplateGrants } from './responsibility-template-catalog';
 import { CapabilityKey } from '@baogiang/contracts';
+import {
+  B1_APPROVED_ROLE_SOURCE_KEYS as roles, B1_SUPPORTED_SEATS_FOR_KEY as supportedSeatsForKey,
+  B1PolicyRole, materializeB1RoleGrants,
+} from './b1-approved-role-policy';
 
-export type B1Role = 'PRINCIPAL' | 'VICE_PRINCIPAL_ACADEMIC';
+export type B1Role = B1PolicyRole;
 export type B1RoleOperation = 'APPOINT' | 'DISMISS' | 'TRANSFER';
 export interface B1RoleCommandInput {
   operation: B1RoleOperation;
@@ -45,23 +48,12 @@ export interface B1RoleReceipt {
   grantsRevoked: number;
 }
 
-const supportedSeatsForKey: Readonly<Record<string, readonly string[]>> = Object.freeze({
-  APPROVAL_PRINCIPAL: Object.freeze(['PRINCIPAL']),
-  AUDIT_VIEW: Object.freeze(['PRINCIPAL', 'TECHNICAL_ACCOUNT_ADMIN']),
-  APPROVAL_VICE_PRINCIPAL: Object.freeze(['VICE_PRINCIPAL_ACADEMIC']),
-  ADDITIONAL_DUTY_CATALOG_MANAGE: Object.freeze(['VICE_PRINCIPAL_ACADEMIC', 'TECHNICAL_ACCOUNT_ADMIN']),
-});
-const roles: Readonly<Record<B1Role, readonly CapabilityKey[]>> = Object.freeze({
-  PRINCIPAL: Object.freeze(['APPROVAL_PRINCIPAL', 'AUDIT_VIEW'] as const),
-  VICE_PRINCIPAL_ACADEMIC: Object.freeze([
-    'APPROVAL_VICE_PRINCIPAL', 'ADDITIONAL_DUTY_CATALOG_MANAGE',
-  ] as const),
-});
+
 export const B1_STAGED_SOURCE_KEYS: Readonly<Record<B1Role, readonly CapabilityKey[]>> = roles;
 
 /** Shares the same policy-key list between full writer and advisory preview. */
 export function b1FullRoleSourceKeys(role: B1Role): readonly CapabilityKey[] {
-  const catalogKeys = materializeTemplateGrants({ templateKey: role })
+  const catalogKeys = materializeB1RoleGrants(role)
     .filter((spec) => spec.scopeType === 'SCHOOL_WIDE' && spec.scopeResourceId === null)
     .map((spec) => spec.capabilityKey);
   const keys = [...new Set([...roles[role], ...catalogKeys])].sort();
@@ -150,7 +142,7 @@ export class B1RoleCommandWriter {
     }
     // Personal teacher capabilities are not role sources. They must be
     // present independently and can never be revoked by B1 dismissal.
-    const personal = materializeTemplateGrants({ templateKey: role })
+    const personal = materializeB1RoleGrants(role)
       .filter((spec) => spec.scopeType === 'PERSONAL');
     const personalKeys = [...new Set(personal.map((spec) => spec.capabilityKey))];
     const personalDefs = await tx.capabilityDefinition.findMany({

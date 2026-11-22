@@ -8,6 +8,10 @@ Starting baseline: `main@4bcf2e7fb2104304fd044693a0bf8838f6038d85`.
 
 This register exists to prevent planned or deferred work from disappearing between phases. No pre-pilot requirement may be left only in prose such as “later”, “deferred”, “future slice” or “out of scope”. It must have a row here.
 
+### P5-057 / T56 — checkpoint 22/11/2026 (IN_PROGRESS)
+
+G1/G3/G4 business principles explicitly accepted by PO (“Chốt G1, G3, G4”), recorded in `docs/requirements/P5-057-WS1-PO-THREE-GATES-DECISION-PACKET-20261121.md` and PR #290 comment 7073734866. Baseline exact PR HEAD `c53f98941d1a4d75063ba8d2d08bc376c69b87f3`; CI 44978705253 and PG16 44978705271 SUCCESS. Both #289/#290 Draft, not merged or deployed. Shared versioned B1 policy implemented; local TypeScript/lint, 43 unit tests and four targeted PG17 integration suites PASS; exact-head CI pending. Retain separate authority for technical-source issuance/revocation and initial Admin bootstrap, reconcile legacy sources, complete seven-persona UAT and backup/restore rehearsal, obtain separate cutover authorization. Phase-11 AI remains OFF. P5-057/T56 remains IN_PROGRESS and P6-050 remains blocked; no new major task or unregistered deferral is created.
+
 ## Status vocabulary
 
 - `PLANNED` — accepted work exists but dependencies are not yet all closed.

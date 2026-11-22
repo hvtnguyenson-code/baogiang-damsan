@@ -8,7 +8,11 @@ Per `MAJOR-TASK-DOCUMENTATION-SYNC-PROTOCOL.md`, this file is intentionally conc
 
 Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub. SHAs here are evidence for already-established task states, never a self-referential claim that this document contains its own current commit.
 
-**Status snapshot date:** 2026-11-12
+**Status snapshot date:** 2026-11-22
+
+## P5-057 / WS1-B1 — G1/G3/G4 accepted by PO; technical cutover gated (22/11/2026)
+
+PO: “Chốt G1, G3, G4”. Technical Admin records Principal appointment/dismissal/handover following the competent external authority; Principal and technical Admin have independently authorized AUDIT_VIEW sources; academic PHT manages the additional-duty catalog and technical Admin retains independent operational assistance. No self-grant, no inference of legacy provenance, five Phase-11 AI capabilities remain OFF. Decision: `docs/requirements/P5-057-WS1-PO-THREE-GATES-DECISION-PACKET-20261121.md`; evidence PR #290 comment 7073734866. Exact HEAD `c53f98941d1a4d75063ba8d2d08bc376c69b87f3`: CI 44978705253 and PG16 44978705271 SUCCESS. Both PR #289/#290 remain Draft. P5-057/T56 IN_PROGRESS, P6-050 blocked. Shared B1 policy WS1-B1-G1-G3-G4-20261122 implemented and local TypeScript/lint, 43 unit tests and four targeted PG17 integration suites PASS; exact-head CI still required; independent issuer/trusted bootstrap evidence, technical-source issue/revoke authority, legacy reconciliation, seven-persona UAT and backup/restore rehearsal remain open. This PO approval does not authorize flags, production mutation, merge or deploy.
 
 ## WS1 / G-D2-2 — Dự thảo ma trận 9 capability nhạy cảm (12/11/2026)
 

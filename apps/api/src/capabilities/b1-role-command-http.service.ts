@@ -1,6 +1,6 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { materializeTemplateGrants } from './responsibility-template-catalog';
+import { materializeB1RoleGrants } from './b1-approved-role-policy';
 import { B1_STAGED_SOURCE_KEYS, b1FullRoleSourceKeys } from './b1-role-command-writer';
 import {
   B1RoleCommandInput,
@@ -80,19 +80,9 @@ export class B1RoleCommandHttpService {
       select: { status: true, profile: { select: { isTeachingStaff: true } } },
     });
     if (!target) throw new NotFoundException('Không tìm thấy nhân sự cần kiểm tra.');
-    const specs = materializeTemplateGrants({ templateKey: role });
+    // Approved B1-only policy, including G4; legacy templates stay unchanged.
+    const specs = materializeB1RoleGrants(role);
     const fullKeys = new Set(b1FullRoleSourceKeys(role));
-    // G4 is an explicitly gated PHT school-wide source in the writer;
-    // it is not yet a default in the currently released VP template.
-    for (const key of fullKeys) {
-      if (!specs.some((spec) => spec.capabilityKey === key &&
-        spec.scopeType === 'SCHOOL_WIDE')) {
-        specs.push({ capabilityKey: key, scopeType: 'SCHOOL_WIDE',
-          scopeResourceId: null, category: 'SOURCE_AUTHORITY',
-          description: 'Nguồn chức trách B1 chỉ được sử dụng khi chính sách được duyệt.',
-        });
-      }
-    }
     const now = new Date();
     const grants = await this.prisma.capabilityGrant.findMany({
       where: { userId: targetUserId, capabilityKey: { in: specs.map((s) => s.capabilityKey) },

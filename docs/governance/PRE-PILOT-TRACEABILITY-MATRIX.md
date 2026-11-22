@@ -10,6 +10,10 @@ Baseline audited: `main@4bcf2e7fb2104304fd044693a0bf8838f6038d85`.
 
 This matrix is the mandatory cross-domain map from source requirement to current implementation and future action. A task may not close a requirement by narrowing it to a minimum core unless the remaining requirement is added to the task register with an explicit re-entry trigger.
 
+### T56 decision evidence — 22/11/2026
+
+P5-057/T56: PO accepted G1/G3/G4 in `docs/requirements/P5-057-WS1-PO-THREE-GATES-DECISION-PACKET-20261121.md` (PR #290 comment 7073734866). The policy defines the Principal recording authority and independent AUDIT_VIEW and PHT/technical catalog sources; it does not change the five disabled AI keys or authorize automatic legacy reconciliation. Exact HEAD `c53f98941d1a4d75063ba8d2d08bc376c69b87f3`, prior CI/PG16 SUCCESS. Shared versioned B1 policy now aligns the full writer and read-only preview; 43 unit tests, TypeScript, scoped lint and four PG17 integration suites PASS locally. The staged B1 code is not yet deployed or fully accepted; persona UAT and independent source/bootstrap/legacy/restore evidence remain prerequisites. Existing T56 disposition and P5-057 IN_PROGRESS gate remain; P6-050 is not unblocked.
+
 ## Disposition vocabulary
 
 - `KEEP` — current architecture/code remains product-valid.
