@@ -135,28 +135,34 @@ integration('P5-057 WS1 B1 — actual HTTP sensitive generic writer cutover boun
     const coordinate = await h.prisma.accessCoordinate.create({ data: {
       userId: target.id, capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL',
     } });
-    const direct = await operator.agent.post(`/api/users/${target.id}/capability-grants`)
-      .set('Origin', testOrigin)
-      .send({ capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL' });
-    expect(direct.status).toBe(403);
-    const template = await operator.agent
-      .post(`/api/users/${target.id}/responsibility-templates/apply`)
-      .set('Origin', testOrigin).send({ templateKey: 'TEACHER' });
-    expect(template.status).toBe(403);
-    expect(await h.prisma.capabilityGrant.count({ where: { userId: target.id } })).toBe(0);
-    expect(await h.prisma.accessCoordinate.findUniqueOrThrow({
-      where: { id: coordinate.id },
-    })).toMatchObject({ id: coordinate.id, version: 0n });
-    expect(await h.prisma.auditEvent.count({ where: {
-      entityId: target.id, action: 'RESPONSIBILITY_TEMPLATE_APPLIED',
-    } })).toBe(0);
+    try {
+      const direct = await operator.agent.post(`/api/users/${target.id}/capability-grants`)
+        .set('Origin', testOrigin)
+        .send({ capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL' });
+      expect(direct.status).toBe(403);
+      const template = await operator.agent
+        .post(`/api/users/${target.id}/responsibility-templates/apply`)
+        .set('Origin', testOrigin).send({ templateKey: 'TEACHER' });
+      expect(template.status).toBe(403);
+      expect(await h.prisma.capabilityGrant.count({ where: { userId: target.id } })).toBe(0);
+      expect(await h.prisma.accessCoordinate.findUniqueOrThrow({
+        where: { id: coordinate.id },
+      })).toMatchObject({ id: coordinate.id, version: 0n });
+      expect(await h.prisma.auditEvent.count({ where: {
+        entityId: target.id, action: 'RESPONSIBILITY_TEMPLATE_APPLIED',
+      } })).toBe(0);
 
-    // A different user without that managed coordinate must remain operable.
-    const unrelated = await h.actor({ usernamePrefix: 'b1-unrelated-teacher' });
-    const legitimate = await operator.agent
-      .post(`/api/users/${unrelated.id}/capability-grants`)
-      .set('Origin', testOrigin)
-      .send({ capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL' });
-    expect(legitimate.status).toBe(201);
+      // A different user without that managed coordinate must remain operable.
+      const unrelated = await h.actor({ usernamePrefix: 'b1-unrelated-teacher' });
+      const legitimate = await operator.agent
+        .post(`/api/users/${unrelated.id}/capability-grants`)
+        .set('Origin', testOrigin)
+        .send({ capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL' });
+      expect(legitimate.status).toBe(201);
+    } finally {
+      // Phase01Harness.clean deletes users; do not leak this source-tracked
+      // coordinate into another suite (its user FK is RESTRICT).
+      await h.prisma.accessCoordinate.delete({ where: { id: coordinate.id } });
+    }
   });
 });
