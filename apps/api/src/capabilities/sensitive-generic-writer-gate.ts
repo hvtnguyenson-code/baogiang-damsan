@@ -14,7 +14,18 @@ export function isGenericGrantSourceBlocked(capabilityKey: string): boolean {
   return process.env.B1_REJECT_GENERIC_SENSITIVE_WRITES === 'true' && sensitiveKeys.has(capabilityKey);
 }
 
-export function assertGenericGrantSourceSafe(capabilityKey: string): void {
+export function assertGenericGrantSourceSafe(
+  capabilityKey: string, coordinateId: string | null = null,
+): void {
+  // A source-linked B1 grant must never be revoked by the legacy endpoint,
+  // including non-sensitive full-role keys. The gate remains inert until the
+  // separately approved B1 cutover flag is enabled.
+  if (process.env.B1_REJECT_GENERIC_SENSITIVE_WRITES === 'true' &&
+      coordinateId !== null) {
+    throw new ForbiddenException(
+      'Grant đã gắn nguồn B1 phải được quản lý qua lệnh chức trách có kiểm chứng nguồn.',
+    );
+  }
   if (!isGenericGrantSourceBlocked(capabilityKey)) return;
   throw new ForbiddenException(
     'Quyền nhạy cảm phải được cấp hoặc thu hồi bằng lệnh B1 có chứng minh nguồn.',

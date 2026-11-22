@@ -82,7 +82,7 @@ integration('P5-057 WS1 staged B1 writer — real PostgreSQL transaction', () =>
       } });
     }
     const state = await tx.authorizationState.findUnique({ where: { id: 'B1_GLOBAL' } });
-    return { actor, target, vice, principal, academic, epoch: state?.epoch ?? 0n };
+    return { actor, target, vice, technical, principal, academic, epoch: state?.epoch ?? 0n };
   }
 
   it('writes immutable Principal command/receipt on actual B1 constraints and rolls back fixtures', () =>
@@ -141,5 +141,51 @@ integration('P5-057 WS1 staged B1 writer — real PostgreSQL transaction', () =>
       expect(await tx.grantSource.count({
         where: { createdCommandId: { in: [one.commandId, two.commandId] } },
       })).toBe(4);
+    }));
+
+  // Historical proof is checked against the source issuance timestamp, not
+  // against the current status of an administrator's ordinary expiry.
+  it('accepts historically valid technical issuer rights after normal expiry', () =>
+    isolated(async (tx) => {
+      const f = await fixture(tx);
+      const issuedAt = new Date(Date.now() - 30 * 60_000);
+      const expiredAt = new Date(Date.now() - 10 * 60_000);
+      const appointment = await tx.roleAppointment.updateMany({
+        where: { userId: f.actor.id, seatId: f.technical.id, cancelledAt: null },
+        data: { validUntil: expiredAt },
+      });
+      expect(appointment.count).toBe(1);
+      const revoked = await tx.capabilityGrant.updateMany({
+        where: {
+          userId: f.actor.id, capabilityKey: { in: ['USER_MANAGE', 'CAPABILITY_GRANT'] },
+          revokedAt: null,
+        },
+        data: { revokedAt: expiredAt },
+      });
+      expect(revoked.count).toBe(2);
+      const verifier = new B1RoleCommandWriter({} as PrismaClient) as unknown as {
+        wasTechnicalIssuer: (client: Prisma.TransactionClient, id: string, at: Date) => Promise<boolean>,
+      };
+      expect(await verifier.wasTechnicalIssuer(tx, f.actor.id, issuedAt)).toBe(true);
+      expect(await verifier.wasTechnicalIssuer(tx, f.actor.id, new Date())).toBe(false);
+    }));
+
+  // This is a characterization, NOT a PO decision that cancellation should
+  // retrospectively void otherwise legitimate source issuance. Fail closed
+  // until the cancellation/VOID semantics are explicitly resolved.
+  it('keeps cancelled technical appointments out of historical issuer proof', () =>
+    isolated(async (tx) => {
+      const f = await fixture(tx);
+      const issuedAt = new Date(Date.now() - 30 * 60_000);
+      const cancelledAt = new Date(Date.now() - 10 * 60_000);
+      const appointment = await tx.roleAppointment.updateMany({
+        where: { userId: f.actor.id, seatId: f.technical.id, cancelledAt: null },
+        data: { cancelledAt },
+      });
+      expect(appointment.count).toBe(1);
+      const verifier = new B1RoleCommandWriter({} as PrismaClient) as unknown as {
+        wasTechnicalIssuer: (client: Prisma.TransactionClient, id: string, at: Date) => Promise<boolean>,
+      };
+      expect(await verifier.wasTechnicalIssuer(tx, f.actor.id, issuedAt)).toBe(false);
     }));
 });

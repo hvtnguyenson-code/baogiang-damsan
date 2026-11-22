@@ -138,7 +138,7 @@ export class CapabilitiesService {
     return this.prisma.$transaction(async (tx) => {
       const old = await tx.capabilityGrant.findUnique({ where: { id } });
       if (!old) throw new NotFoundException('Không tìm thấy grant.');
-      assertGenericGrantSourceSafe(old.capabilityKey);
+      assertGenericGrantSourceSafe(old.capabilityKey, old.coordinateId);
       // Check before idempotent return: even a prior revocation cannot be used
       // as a generic self-role administration path.
       if (old.userId === actor) throw new ForbiddenException('Không được tự thu hồi quyền qua chức năng quản trị.');

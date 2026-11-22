@@ -83,6 +83,7 @@ integration('P5-057 WS1 B1 — isolated real two-writer APPOINT/TRANSFER races',
     }
     for (const key of [
       'USER_MANAGE', 'CAPABILITY_GRANT', 'APPROVAL_PRINCIPAL', 'AUDIT_VIEW',
+      'APPROVAL_VICE_PRINCIPAL', 'ADDITIONAL_DUTY_CATALOG_MANAGE',
     ]) {
       await db.capabilityDefinition.create({ data: {
         key, description: 'B1 race fixture', allowedScopeTypes: ['SCHOOL_WIDE'],
@@ -94,6 +95,9 @@ integration('P5-057 WS1 B1 — isolated real two-writer APPOINT/TRANSFER races',
     } });
     const principalSeat = await db.authoritySeat.create({ data: {
       key: 'PRINCIPAL', enabled: true, policyVersion: 1n,
+    } });
+    const academicSeat = await db.authoritySeat.create({ data: {
+      key: 'VICE_PRINCIPAL_ACADEMIC', enabled: true, policyVersion: 1n,
     } });
     const before = new Date(Date.now() - 3_600_000);
     const origin = await db.accessCommand.create({ data: {
@@ -114,7 +118,7 @@ integration('P5-057 WS1 B1 — isolated real two-writer APPOINT/TRANSFER races',
       } });
     }
     await db.authorizationState.create({ data: { id: 'B1_GLOBAL', epoch: 0n } });
-    return { actor, candidates, principalSeat };
+    return { actor, candidates, principalSeat, academicSeat };
   }
 
   async function race<T>(
@@ -312,5 +316,95 @@ integration('P5-057 WS1 B1 — isolated real two-writer APPOINT/TRANSFER races',
     expect((await client.authorizationState.findUniqueOrThrow({
       where: { id: 'B1_GLOBAL' },
     })).epoch).toBe(4n);
-  }, 70_000);
+
+    // PHT is NOT a unique school-wide seat, but two competing commands with
+    // the same B1_GLOBAL epoch must never both commit. Real independent
+    // PostgreSQL connections and transactions are used for every race.
+    const vpSeatVersion = f.academicSeat.policyVersion.toString();
+    const vpRole = 'VICE_PRINCIPAL_ACADEMIC' as const;
+    const vpAppointments = await race(
+      (writer) => writer.execute({
+        operation: 'APPOINT', role: vpRole,
+        targetUserId: f.candidates[0].id, expectedSeatVersion: vpSeatVersion,
+        expectedAuthorizationEpoch: '4', requestKey: randomUUID(),
+      }, actor),
+      (writer) => writer.execute({
+        operation: 'APPOINT', role: vpRole,
+        targetUserId: f.candidates[1].id, expectedSeatVersion: vpSeatVersion,
+        expectedAuthorizationEpoch: '4', requestKey: randomUUID(),
+      }, actor),
+    );
+    expect(vpAppointments.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(vpAppointments.filter((r) => r.status === 'rejected')).toHaveLength(1);
+    const vpAppointment = (vpAppointments.find((r) => r.status === 'fulfilled') as
+      PromiseFulfilledResult<Awaited<ReturnType<B1RoleCommandWriter['execute']>>>).value;
+    expect(vpAppointment).toMatchObject({
+      state: 'APPLIED', role: vpRole, operation: 'APPOINT', sourcesOpened: 2,
+    });
+    expect(await client.roleAppointment.count({
+      where: { seatId: f.academicSeat.id, cancelledAt: null, validUntil: null },
+    })).toBe(1);
+    expect((await client.authorizationState.findUniqueOrThrow({
+      where: { id: 'B1_GLOBAL' },
+    })).epoch).toBe(5n);
+
+    // Distinct would-be successors race to transfer the *same* current PHT.
+    // The loser must not retain any source, appointment or command evidence.
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 30));
+    const vpTransferPayload = {
+      operation: 'TRANSFER' as const, role: vpRole,
+      previousUserId: vpAppointment.targetUserId,
+      expectedAppointmentId: vpAppointment.appointmentId!,
+      expectedSeatVersion: vpSeatVersion, expectedAuthorizationEpoch: '5',
+    };
+    const vpTransfers = await race(
+      (writer) => writer.execute({
+        ...vpTransferPayload, targetUserId: f.candidates[2].id, requestKey: randomUUID(),
+      }, actor),
+      (writer) => writer.execute({
+        ...vpTransferPayload, targetUserId: f.candidates[3].id, requestKey: randomUUID(),
+      }, actor),
+    );
+    expect(vpTransfers.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(vpTransfers.filter((r) => r.status === 'rejected')).toHaveLength(1);
+    const vpTransfer = (vpTransfers.find((r) => r.status === 'fulfilled') as
+      PromiseFulfilledResult<Awaited<ReturnType<B1RoleCommandWriter['execute']>>>).value;
+    expect(vpTransfer).toMatchObject({ state: 'APPLIED', operation: 'TRANSFER', role: vpRole });
+    expect((await client.roleAppointment.findUniqueOrThrow({
+      where: { id: vpAppointment.appointmentId! },
+    })).validUntil).not.toBeNull();
+    expect(await client.roleAppointment.count({
+      where: { seatId: f.academicSeat.id, cancelledAt: null, validUntil: null },
+    })).toBe(1);
+    expect((await client.authorizationState.findUniqueOrThrow({
+      where: { id: 'B1_GLOBAL' },
+    })).epoch).toBe(6n);
+
+    // Two concurrent dismissals of the same appointment are also serialized;
+    // no double revocation or duplicate audit/evidence may survive.
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 30));
+    const vpDismissPayload = {
+      operation: 'DISMISS' as const, role: vpRole,
+      targetUserId: vpTransfer.targetUserId,
+      expectedAppointmentId: vpTransfer.appointmentId!,
+      expectedSeatVersion: vpSeatVersion, expectedAuthorizationEpoch: '6',
+    };
+    const vpDismissals = await race(
+      (writer) => writer.execute({ ...vpDismissPayload, requestKey: randomUUID() }, actor),
+      (writer) => writer.execute({ ...vpDismissPayload, requestKey: randomUUID() }, actor),
+    );
+    expect(vpDismissals.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(vpDismissals.filter((r) => r.status === 'rejected')).toHaveLength(1);
+    expect(await client.roleAppointment.count({
+      where: { seatId: f.academicSeat.id, cancelledAt: null, validUntil: null },
+    })).toBe(0);
+    expect(await client.capabilityGrant.count({ where: {
+      userId: vpTransfer.targetUserId,
+      capabilityKey: { in: ['APPROVAL_VICE_PRINCIPAL', 'ADDITIONAL_DUTY_CATALOG_MANAGE'] },
+      revokedAt: null,
+    } })).toBe(0);
+    expect((await client.authorizationState.findUniqueOrThrow({
+      where: { id: 'B1_GLOBAL' },
+    })).epoch).toBe(7n);
+  }, 120_000);
 });
