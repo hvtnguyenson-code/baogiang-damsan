@@ -10,9 +10,12 @@ import { SENSITIVE_CAPABILITY_KEYS } from './sensitive-capability-policy';
 
 const sensitiveKeys = new Set<string>(SENSITIVE_CAPABILITY_KEYS);
 
+export function isGenericGrantSourceBlocked(capabilityKey: string): boolean {
+  return process.env.B1_REJECT_GENERIC_SENSITIVE_WRITES === 'true' && sensitiveKeys.has(capabilityKey);
+}
+
 export function assertGenericGrantSourceSafe(capabilityKey: string): void {
-  if (process.env.B1_REJECT_GENERIC_SENSITIVE_WRITES !== 'true') return;
-  if (!sensitiveKeys.has(capabilityKey)) return;
+  if (!isGenericGrantSourceBlocked(capabilityKey)) return;
   throw new ForbiddenException(
     'Quyền nhạy cảm phải được cấp hoặc thu hồi bằng lệnh B1 có chứng minh nguồn.',
   );

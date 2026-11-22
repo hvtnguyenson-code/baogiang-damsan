@@ -1,6 +1,7 @@
 import { createHash, generateKeyPairSync, randomUUID, sign } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { PrismaClient, UserStatus } from '@prisma/client';
 import {
   B1InitialTechnicalAdminBootstrap, B1InitialBootstrapInput,
@@ -18,6 +19,30 @@ integration('B1 INITIAL technical Admin bootstrap: isolated, sign-verified, zero
   let owner: PrismaClient | null = null;
   let db: PrismaClient | null = null;
   let created = false;
+  let archiveDirectory: string | null = null;
+  const root = resolve(__dirname, '../../../..');
+  const restoreRequested = process.env.B1_LOCAL_BACKUP_RESTORE_REHEARSAL === '1';
+
+  function pgTool(tool: 'pg_dump' | 'pg_restore', args: string[]): void {
+    if (!safeUrl || !restoreRequested || process.env.CI === 'true' ||
+        process.env.BAOGIANG_ALLOW_DESTRUCTIVE_TEST_DB !== '1' ||
+        !/^b1init_[0-9a-f]{32}$/.test(schema)) {
+      throw new Error('B1_BACKUP_RESTORE_LOCAL_FIXTURE_REQUIRED');
+    }
+    const url = new URL(safeUrl);
+    if (url.hostname !== '127.0.0.1' || url.pathname !== '/baogiang_test' ||
+        !process.env.B1_TEST_PG_BIN) throw new Error('B1_BACKUP_RESTORE_WRONG_TARGET');
+    const executable = resolve(process.env.B1_TEST_PG_BIN,
+      process.platform === 'win32' ? tool + '.exe' : tool);
+    const result = spawnSync(executable, [
+      '--host=127.0.0.1', '--port=' + (url.port || '5432'),
+      '--username=' + decodeURIComponent(url.username),
+      '--dbname=baogiang_test', '--no-password', ...args,
+    ], { cwd: root, timeout: 90_000, encoding: 'utf8',
+      env: { ...process.env, PGPASSWORD: decodeURIComponent(url.password) },
+      maxBuffer: 4 * 1024 * 1024 });
+    if (result.status !== 0) throw new Error('B1_BACKUP_RESTORE_TOOL_FAILED_' + tool);
+  }
 
   beforeAll(async () => {
     // Shared certification already distinguishes trusted GitHub CI from explicit local opt-in.
@@ -34,7 +59,6 @@ integration('B1 INITIAL technical Admin bootstrap: isolated, sign-verified, zero
     created = true;
     url.searchParams.set('schema', schema);
     const isolated = url.toString();
-    const root = resolve(__dirname, '../../../..');
     const migrated = spawnSync(process.execPath,
       [resolve(root,'node_modules/prisma/build/index.js'),'migrate','deploy',
         '--schema',resolve(root,'prisma/schema.prisma')],
@@ -51,7 +75,10 @@ integration('B1 INITIAL technical Admin bootstrap: isolated, sign-verified, zero
       if (created && owner && /^b1init_[0-9a-f]{32}$/.test(schema)) {
         await owner.$executeRawUnsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
       }
-    } finally { await owner?.$disconnect(); }
+    } finally {
+      await owner?.$disconnect();
+      if (archiveDirectory) rmSync(archiveDirectory, { recursive: true, force: true });
+    }
   }, 60_000);
 
   it('rejects forged/self approvals and stale grants, then creates one signed command & seat without changing 9 grants', async () => {
@@ -131,6 +158,18 @@ integration('B1 INITIAL technical Admin bootstrap: isolated, sign-verified, zero
     expect(await db.authoritySeat.count()).toBe(0);
     expect(await getGrants()).toEqual(before);
 
+    const originalEpoch = await db.authorizationState.findUnique({ where: { id: 'B1_GLOBAL' } });
+    const originalAuditCount = await db.auditEvent.count();
+    let archivePath: string | undefined;
+    let archiveHash: string | undefined;
+    if (restoreRequested) {
+      archiveDirectory = mkdtempSync(resolve(root, '.b1-restore-'));
+      archivePath = resolve(archiveDirectory, 'fixture.dump');
+      pgTool('pg_dump', ['--schema=' + schema, '--format=custom', '--file=' + archivePath]);
+      archiveHash = createHash('sha256').update(readFileSync(archivePath)).digest('hex');
+      expect(readFileSync(archivePath).length).toBeGreaterThan(0);
+    }
+
     const receipt = await bootstrap.execute(signed);
     expect(receipt).toMatchObject({
       state: 'BOOTSTRAP_APPLIED', rightsFingerprintSha256: rightsFingerprint,
@@ -155,5 +194,36 @@ integration('B1 INITIAL technical Admin bootstrap: isolated, sign-verified, zero
     await expect(bootstrap.execute(approve({ ...base,requestKey:`new-${randomUUID()}` })))
       .rejects.toThrow('B1_INITIAL_BOOTSTRAP_ALREADY_ESTABLISHED');
     expect(await getGrants()).toEqual(before);
-  }, 180_000);
+    expect(await db.auditEvent.count()).toBe(originalAuditCount + 1);
+    expect(await db.accessCoordinate.count()).toBe(0);
+    expect(await db.grantSource.count()).toBe(0);
+
+    if (restoreRequested) {
+      if (!archivePath || !owner || !archiveHash || !safeUrl) throw new Error('B1_BACKUP_RESTORE_NOT_READY');
+      expect(createHash('sha256').update(readFileSync(archivePath)).digest('hex')).toBe(archiveHash);
+      await db.$disconnect();
+      db = null;
+      // Only the UUID schema created and dumped by this test can be dropped.
+      if (!created || !/^b1init_[0-9a-f]{32}$/.test(schema)) {
+        throw new Error('B1_BACKUP_RESTORE_REFUSE_DROP');
+      }
+      await owner.$executeRawUnsafe('DROP SCHEMA "' + schema + '" CASCADE');
+      pgTool('pg_restore', ['--exit-on-error', '--single-transaction',
+        '--no-owner', '--no-privileges', archivePath]);
+      const restoredUrl = new URL(safeUrl);
+      restoredUrl.searchParams.set('schema', schema);
+      db = new PrismaClient({ datasources: { db: { url: restoredUrl.toString() } } });
+      await db.$connect();
+      expect(await getGrants()).toEqual(before);
+      expect(await db.user.count()).toBe(2);
+      expect(await db.accessCommand.count()).toBe(0);
+      expect(await db.roleAppointment.count()).toBe(0);
+      expect(await db.authoritySeat.count()).toBe(0);
+      expect(await db.accessCoordinate.count()).toBe(0);
+      expect(await db.grantSource.count()).toBe(0);
+      expect(await db.auditEvent.count()).toBe(originalAuditCount);
+      expect(await db.authorizationState.findUnique({ where: { id: 'B1_GLOBAL' } })).toEqual(originalEpoch);
+      console.info('B1_LOCAL_BACKUP_RESTORE_VERIFIED: 9 identical legacy rows; original epoch, audit and zero B1 command/seat/source restored');
+    }
+  }, 300_000);
 });

@@ -10,6 +10,14 @@ Exact current `main`, branch HEAD and divergence must always be read directly fr
 
 **Status snapshot date:** 2026-11-22
 
+## P5-057 / T56 - B1 leadership UI and isolated recovery (22/11/2026)
+
+PR #290 Draft; baseline d82e22e7ed8a20b929e3fd098be0fa5c0a41036a, CI 44983027935 and PG16 44983027937 SUCCESS. Admin leadership UI connected to guarded B1 commands; legacy preview reflects the existing cutover gate. Local API/Web TypeScript and scoped ESLint PASS, Web 34/34 and API 16/16 PASS. Native isolated PostgreSQL backup/restore verified all 9 legacy rows, original epoch/audit and no new B1 entities; temporary schemas removed. Playwright local run stalled; real seven-persona UAT not accepted. Production backup, independent issuer/trust, source reconciliation and cutover still gated. P5-057 IN_PROGRESS; P6-050 BLOCKED. No production activation, merge or deploy.
+
+Evidence: docs/phase-reports/P5-057-WS1-B1-LEADERSHIP-UI-RESTORE-20261122.md.
+
+
+
 ## P5-057 / WS1-B1 — G1/G3/G4 accepted by PO; technical cutover gated (22/11/2026)
 
 PO: “Chốt G1, G3, G4”. Technical Admin records Principal appointment/dismissal/handover following the competent external authority; Principal and technical Admin have independently authorized AUDIT_VIEW sources; academic PHT manages the additional-duty catalog and technical Admin retains independent operational assistance. No self-grant, no inference of legacy provenance, five Phase-11 AI capabilities remain OFF. Decision: `docs/requirements/P5-057-WS1-PO-THREE-GATES-DECISION-PACKET-20261121.md`; evidence PR #290 comment 7073734866. Exact HEAD `c53f98941d1a4d75063ba8d2d08bc376c69b87f3`: CI 44978705253 and PG16 44978705271 SUCCESS. Both PR #289/#290 remain Draft. P5-057/T56 IN_PROGRESS, P6-050 blocked. Shared B1 policy WS1-B1-G1-G3-G4-20261122 implemented and local TypeScript/lint, 43 unit tests and four targeted PG17 integration suites PASS; exact-head CI still required; independent issuer/trusted bootstrap evidence, technical-source issue/revoke authority, legacy reconciliation, seven-persona UAT and backup/restore rehearsal remain open. This PO approval does not authorize flags, production mutation, merge or deploy.

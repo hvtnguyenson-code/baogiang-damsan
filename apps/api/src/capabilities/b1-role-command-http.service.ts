@@ -51,23 +51,33 @@ export class B1RoleCommandHttpService {
     const verifiedTechnicalSeat = issuerSeats.length === 1
       && issuerSeats[0].seat?.key === 'TECHNICAL_ACCOUNT_ADMIN'
       && issuerSeats[0].seat.enabled
+      && issuerSeats[0].seat.policyVersion >= 1n
       && issuerSeats[0].command.targetUserId === actorUserId
       && issuerSeats[0].command.actorUserId !== actorUserId;
     const appointments = seat ? await this.prisma.roleAppointment.findMany({
       where: { seatId: seat.id, templateKey: role, cancelledAt: null,
         validFrom: { lte: now }, OR: [{ validUntil: null }, { validUntil: { gt: now } }] },
-      select: { id: true, userId: true, validFrom: true },
+      select: { id: true, userId: true, validFrom: true,
+        user: { select: { username: true, profile: { select: { displayName: true } } } } },
       orderBy: { userId: 'asc' }, take: 33,
     }) : [];
-    return { mode: 'READ_ONLY' as const, canConfirm: false as const,
-      verifiedTechnicalSeat, activationBlockers: B1RoleCommandHttpService.activationBlockers(role),
+    const activationBlockers = B1RoleCommandHttpService.activationBlockers(role);
+    const inventoryTruncated = appointments.length >= 32;
+    // Submission readiness is a UI precheck only, never writer authorization.
+    // All issuer, source, epoch and target conditions are revalidated in the command transaction.
+    return { role, mode: 'READ_ONLY' as const, canConfirm: false as const,
+      verifiedTechnicalSeat, activationBlockers,
+      commandSubmissionReady: verifiedTechnicalSeat && activationBlockers.length === 0
+        && seat?.enabled === true && seat.policyVersion >= 1n && !inventoryTruncated,
       seatEnabled: seat?.enabled ?? false,
       expectedSeatVersion: seat?.policyVersion.toString() ?? null,
       expectedAuthorizationEpoch: (epoch?.epoch ?? 0n).toString(),
       activeAppointments: appointments.map((item) => ({
         appointmentId: item.id, userId: item.userId, validFrom: item.validFrom.toISOString(),
+        displayName: item.user.profile?.displayName ?? item.user.username,
+        username: item.user.username,
       })),
-      inventoryTruncated: appointments.length === 33,
+      inventoryTruncated,
     };
   }
 

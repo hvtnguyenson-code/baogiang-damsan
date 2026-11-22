@@ -20,6 +20,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useAuth } from '../auth/auth-context';
 import { Button } from '../components/ui/button';
+import { LeadershipAppointmentsPanel } from '../components/LeadershipAppointmentsPanel';
 import { FormField } from '../components/ui/form-field';
 import {
   FormSection,
@@ -187,7 +188,7 @@ export function UsersPage() {
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [draft, setDraft] = useState<UserDraft | null>(null);
-  const [activeTab, setActiveTab] = useState<'templates' | 'profile' | 'safe-delete'>('templates');
+  const [activeTab, setActiveTab] = useState<'templates' | 'leadership' | 'profile' | 'safe-delete'>('templates');
   const [showReconciliation, setShowReconciliation] = useState(false);
 
   // Success & error feedback
@@ -1697,6 +1698,15 @@ export function UsersPage() {
                   >
                     📋 Hồ sơ & Trạng thái
                   </button>
+                  {canManageUsers && canGrant && (
+                    <button
+                      type="button"
+                      className={'workspace-tab-btn' + (activeTab === 'leadership' ? ' workspace-tab-btn--active' : '')}
+                      onClick={() => setActiveTab('leadership')}
+                    >
+                      Chức trách lãnh đạo
+                    </button>
+                  )}
                   {canManageUsers && (
                     <button
                       type="button"
@@ -1712,6 +1722,11 @@ export function UsersPage() {
                     </button>
                   )}
                 </div>
+
+                {activeTab === 'leadership' && canManageUsers && canGrant && auth && (
+                  <LeadershipAppointmentsPanel key={auth.user.id + ':' + selectedUser.id}
+                    user={selectedUser} actorId={auth.user.id} />
+                )}
 
                 {/* TAB 1: RESPONSIBILITY TEMPLATES */}
                 {activeTab === 'templates' && (

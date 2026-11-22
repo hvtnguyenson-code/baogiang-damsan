@@ -40,7 +40,7 @@ import { AuditService } from '../audit/audit.service';
 import { RequestMeta } from '../auth/auth.types';
 import { PrismaService } from '../prisma/prisma.service';
 import { toCapabilityGrantRecord } from './capabilities.service';
-import { assertGenericTemplateSourceSafe } from './sensitive-generic-writer-gate';
+import { assertGenericTemplateSourceSafe, isGenericGrantSourceBlocked } from './sensitive-generic-writer-gate';
 import { evaluateCoordinateEffectivity } from './effectivity-evaluator';
 import {
   getTemplateDefinition,
@@ -288,6 +288,13 @@ export class AccessBaselineService {
       resolvedSubjectIds: resolved.subjectIds,
       programmeMasterId: resolved.programmeMasterId,
     });
+
+    // The generic apply endpoint fails closed on sensitive templates after B1 cutover.
+    // Reflect that same rule in the preview without enabling the new writer.
+    if (grantSpecs.some((spec) => isGenericGrantSourceBlocked(spec.capabilityKey))) {
+      isEligible = false;
+      ineligibilityReason = 'Mẫu này không còn được áp dụng trực tiếp. Hãy sử dụng khu vực chức trách lãnh đạo hoặc đề nghị quản trị kiểm tra nguồn quyền.';
+    }
 
     // Enforce CapabilityDefinition semantics before evaluating or returning preview
     await this.validateCapabilityGrantSpecs(grantSpecs, this.prisma);

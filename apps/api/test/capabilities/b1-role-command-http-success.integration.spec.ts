@@ -159,11 +159,34 @@ integration('P5-057 B1 — authenticated HTTP successful appointment and replay'
       expectedAuthorizationEpoch: '0', requestKey: `b1-http-${randomUUID()}`,
     };
     const endpoint = '/api/role-appointments/commands';
+    const legacyPreview = await agent.post('/api/users/' + target.id + '/responsibility-templates/preview')
+      .set('Origin', testOrigin).send({ templateKey: 'PRINCIPAL' });
+    expect(legacyPreview.status).toBe(200);
+    expect(legacyPreview.body.eligibility.isEligible).toBe(false);
+    expect(legacyPreview.body.eligibility.reason).toContain('không còn được áp dụng trực tiếp');
+    const teacherPreview = await agent.post('/api/users/' + target.id + '/responsibility-templates/preview')
+      .set('Origin', testOrigin).send({ templateKey: 'TEACHER' });
+    expect(teacherPreview.status).toBe(200);
+    expect(teacherPreview.body.eligibility.isEligible).toBe(true);
+    const beforeContext = await agent.get('/api/role-appointments/command-context').query({ role: 'PRINCIPAL' });
+    expect(beforeContext.status).toBe(200);
+    expect(beforeContext.body).toMatchObject({
+      role: 'PRINCIPAL', mode: 'READ_ONLY', canConfirm: false,
+      commandSubmissionReady: true, verifiedTechnicalSeat: true, activeAppointments: [],
+      expectedSeatVersion: '1', expectedAuthorizationEpoch: '0',
+    });
     const applied = await agent.post(endpoint).set('Origin', testOrigin).send(input);
     expect(applied.status).toBe(200);
     expect(applied.body).toMatchObject({
       state: 'APPLIED', role: 'PRINCIPAL', operation: 'APPOINT',
       targetUserId: target.id, sourcesOpened: principalKeys.size, grantsCreated: principalKeys.size,
+    });
+    const namedContext = await agent.get('/api/role-appointments/command-context').query({ role: 'PRINCIPAL' });
+    expect(namedContext.status).toBe(200);
+    expect(namedContext.body).toMatchObject({
+      canConfirm: false, commandSubmissionReady: true, expectedAuthorizationEpoch: '1',
+      activeAppointments: [{ appointmentId: applied.body.appointmentId, userId: target.id,
+        username: target.username, displayName: 'Synthetic B1 staff' }],
     });
     const replay = await agent.post(endpoint).set('Origin', testOrigin).send(input);
     expect(replay.status).toBe(200);

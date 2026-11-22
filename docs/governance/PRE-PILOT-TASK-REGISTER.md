@@ -216,3 +216,9 @@ Bounded read-only check of B1 source-command/appointment/seat links and finite p
 ### P5-057 / T56 — WS1 G-D2-2 sensitive nine policy (12/11/2026)
 
 Bản kiểm kê catalog/templates/call sites và ma trận `owner/issuer/revoker/scope/effectivity/evidence` cho 9 capability nhạy cảm đã biên soạn dưới dạng **DRAFT/REVIEW REQUIRED**. Xác nhận PO 08/11: không bắt buộc chứng từ hành chính cho bổ nhiệm thông thường; backend tự ghi actor xác thực và audit. Jest kiểm kê 13/13 PASS và TS scoped PASS; generic writer bypass còn OPEN/CRITICAL, AI governance chưa bật. Cần PO chốt 9 gate trước khi code writer; không cập nhật trạng thái đóng P5-057/T56. Bằng chứng: `docs/requirements/P5-057-WS1-SENSITIVE-NINE-CAPABILITY-MATRIX-20261112.md`, `docs/phase-reports/P5-057-WS1-SENSITIVE-NINE-INVENTORY-20261112.md`.
+
+## P5-057 / T56 - B1 leadership UI and isolated recovery (22/11/2026)
+
+PR #290 Draft; baseline d82e22e7ed8a20b929e3fd098be0fa5c0a41036a, CI 44983027935 and PG16 44983027937 SUCCESS. Admin leadership UI connected to guarded B1 commands; legacy preview reflects the existing cutover gate. Local API/Web TypeScript and scoped ESLint PASS, Web 34/34 and API 16/16 PASS. Native isolated PostgreSQL backup/restore verified all 9 legacy rows, original epoch/audit and no new B1 entities; temporary schemas removed. Playwright local run stalled; real seven-persona UAT not accepted. Production backup, independent issuer/trust, source reconciliation and cutover still gated. P5-057 IN_PROGRESS; P6-050 BLOCKED. No production activation, merge or deploy.
+
+Evidence: docs/phase-reports/P5-057-WS1-B1-LEADERSHIP-UI-RESTORE-20261122.md.

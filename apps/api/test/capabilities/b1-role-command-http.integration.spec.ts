@@ -143,7 +143,7 @@ integration('P5-057 WS1 B1 — source-aware HTTP command boundary', () => {
       .query({ role: 'PRINCIPAL' });
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
-      mode: 'READ_ONLY', canConfirm: false, verifiedTechnicalSeat: false,
+      role: 'PRINCIPAL', mode: 'READ_ONLY', canConfirm: false, commandSubmissionReady: false, verifiedTechnicalSeat: false,
       seatEnabled: false, expectedSeatVersion: null,
       expectedAuthorizationEpoch: '0', activeAppointments: [],
     });
