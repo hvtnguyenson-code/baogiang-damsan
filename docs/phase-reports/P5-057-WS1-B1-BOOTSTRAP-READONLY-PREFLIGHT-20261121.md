@@ -49,3 +49,7 @@ Bước CI mới thực hiện rehearsal thực trên PostgreSQL 17 với schema
 6. **Production:** không bật `B1_ROLE_COMMANDS_ENABLED`, `B1_LEGACY_PROVENANCE_RECONCILED`, `B1_FULL_ROLE_SOURCE_CUTOVER_APPROVED` hay các cờ PO khác khi những điều kiện trên chưa hoàn tất.
 
 **Đề nghị bước phát triển tiếp:** một thủ tục bootstrap nguồn Admin B1 **tách biệt và không có đường truy cập public**, chỉ sinh lệnh một lần sau khi có quyết định nguồn quyền độc lập và đủ chứng cứ rollback. Thủ tục này không thuộc công cụ kiểm kê chỉ đọc nói trên.
+
+## 22/11 - Bounded legacy review
+
+The read-only report adds legacyRightsReview grouped by recognized catalog key and scope type, with active-unlinked counts, catalog scope-type compatibility and sourceDecision=NOT_ESTABLISHED. Unknown values are masked, no user or resource IDs emitted. Incomplete or duplicate-row inventory rejects fingerprints; truncated report has no legacy review. 10/10 Node tests PASS; PG17 nine-row scratch rehearsal PASS, rights hash preserved, linkage changed only for the synthetic exercise. No actual source is certified and no production inventory was refreshed. G1/G3/G4 accepted; real technical source authority remains separately gated.

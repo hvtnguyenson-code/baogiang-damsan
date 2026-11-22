@@ -9,6 +9,8 @@
 const { createHash } = require('node:crypto');
 const { pathToFileURL } = require('node:url');
 const { resolve } = require('node:path');
+const { CAPABILITIES, VALID_SCOPE_TYPES } = require('../../prisma/capability-catalog.cjs');
+const catalogScopes = new Map(CAPABILITIES.map(([key, , scopes]) => [key, new Set(scopes)]));
 
 const MAX_ACTIVE_GRANTS = 10000;
 const digest = (records) => createHash('sha256').update(JSON.stringify(records)).digest('hex');
@@ -20,7 +22,12 @@ function summarize(snapshot) {
     throw new Error('B1_PREFLIGHT_INCOMPLETE_SNAPSHOT');
   }
   const rows = snapshot.activeGrants;
-  const truncated = rows.length > MAX_ACTIVE_GRANTS;
+  if (!Number.isSafeInteger(snapshot.activeGrantCount) || snapshot.activeGrantCount < 0 ||
+      rows.length !== Math.min(snapshot.activeGrantCount, MAX_ACTIVE_GRANTS + 1) ||
+      new Set(rows.map((g) => g.id)).size !== rows.length) {
+    throw new Error('B1_PREFLIGHT_INCOMPLETE_GRANT_INVENTORY');
+  }
+  const truncated = snapshot.activeGrantCount > MAX_ACTIVE_GRANTS;
   const active = rows.slice(0, MAX_ACTIVE_GRANTS);
   const normalized = active.map((g) => ({
     id: g.id, userId: g.userId, capabilityKey: g.capabilityKey,
@@ -34,6 +41,24 @@ function summarize(snapshot) {
     ...g, coordinateId: coordinatesByGrantId.get(g.id),
   }));
   const activeLegacyUnlinked = active.filter((g) => g.coordinateId === null).length;
+  // Aggregate only: never expose identities, resource IDs or arbitrary unknown codes.
+  // A catalog match is not proof of historical authority or permission to reconcile.
+  const legacyGroups = new Map();
+  if (!truncated) for (const g of active) {
+    if (g.coordinateId !== null) continue;
+    const capabilityKey = catalogScopes.has(g.capabilityKey) ? g.capabilityKey : 'UNKNOWN_CATALOG_KEY';
+    const scopeType = VALID_SCOPE_TYPES.has(g.scopeType) ? g.scopeType : 'UNKNOWN_SCOPE';
+    const key = JSON.stringify([capabilityKey, scopeType]);
+    const group = legacyGroups.get(key) ?? {
+      capabilityKey, scopeType, activeUnlinkedCount: 0,
+      catalogScopeMatches: catalogScopes.get(capabilityKey)?.has(scopeType) === true,
+      sourceDecision: 'NOT_ESTABLISHED',
+    };
+    group.activeUnlinkedCount += 1;
+    legacyGroups.set(key, group);
+  }
+  const legacyRightsReview = truncated ? null : [...legacyGroups.values()]
+    .sort((a, b) => a.capabilityKey.localeCompare(b.capabilityKey) || a.scopeType.localeCompare(b.scopeType));
   const technicalGrants = new Map();
   const overlaps = new Map();
   for (const g of active) {
@@ -81,6 +106,7 @@ function summarize(snapshot) {
       overlapsCount: [...overlaps.values()].filter((n) => n > 1).length,
       inventoryTruncated: truncated,
     },
+    legacyRightsReview,
     databaseBlockers: blockers,
     externalApprovalsNotCertified: [
       'INDEPENDENT_HUMAN_ATTESTATION',

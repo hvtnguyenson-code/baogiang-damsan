@@ -393,5 +393,14 @@ integration('P5-057 B1 — authenticated HTTP successful appointment and replay'
     expect((await db.authorizationState.findUniqueOrThrow({
       where: { id: 'B1_GLOBAL' },
     })).epoch).toBe(9n);
+
+    // Opt-in local continuation of this existing fixture with real Chromium/Nest/PG.
+    // The default CI suite stays independent of local browser setup.
+    if (process.env.B1_LOCAL_BROWSER_ACCEPTANCE === '1') {
+      const { runB1LocalBrowserAcceptance } = await import('../helpers/b1-local-browser-acceptance');
+      await runB1LocalBrowserAcceptance({
+        app, db, schema, admin, issuer, principal: target, pht: vice, person,
+      });
+    }
   }, 300_000);
 });

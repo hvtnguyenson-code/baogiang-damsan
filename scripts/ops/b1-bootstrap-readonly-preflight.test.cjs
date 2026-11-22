@@ -41,6 +41,34 @@ test('nine unlinked legacy grants: no authority fabricated and no PII output', (
   assert.deepEqual(input, before);
 });
 
+test('legacy review groups only recognized keys/scopes and never certifies source authority', () => {
+  const input = data();
+  input.activeGrants[4].capabilityKey = 'private-fixture-identifier';
+  input.activeGrants[5].scopeType = 'private-fixture-scope';
+  input.activeGrants[0].scopeResourceId = issuer;
+  const report = summarize(input);
+  assert.equal(report.legacyRightsReview.reduce((n, g) => n + g.activeUnlinkedCount, 0), 9);
+  assert.deepEqual(report.legacyRightsReview.find((g) => g.capabilityKey === 'AUDIT_VIEW'), {
+    capabilityKey: 'AUDIT_VIEW', scopeType: 'SCHOOL_WIDE', activeUnlinkedCount: 1,
+    catalogScopeMatches: true, sourceDecision: 'NOT_ESTABLISHED',
+  });
+  assert.ok(report.legacyRightsReview.some((g) => g.capabilityKey === 'UNKNOWN_CATALOG_KEY'));
+  assert.ok(report.legacyRightsReview.some((g) => g.scopeType === 'UNKNOWN_SCOPE'));
+  assert.ok(report.legacyRightsReview.every((g) => g.sourceDecision === 'NOT_ESTABLISHED'));
+  assert.ok(!JSON.stringify(report).includes('private-fixture'));
+  assert.ok(!JSON.stringify(report).includes(issuer));
+  assert.deepEqual(summarize(data('40000000-0000-4000-8000-000000000004')).legacyRightsReview, []);
+});
+
+test('rejects incomplete or duplicate-grant row inventories before returning a fingerprint', () => {
+  const partial = data();
+  partial.activeGrantCount += 1;
+  assert.throws(() => summarize(partial), /B1_PREFLIGHT_INCOMPLETE_GRANT_INVENTORY/);
+  const duplicate = data();
+  duplicate.activeGrants[1].id = duplicate.activeGrants[0].id;
+  assert.throws(() => summarize(duplicate), /B1_PREFLIGHT_INCOMPLETE_GRANT_INVENTORY/);
+});
+
 test('rights fingerprint detects grant modification, but is insensitive to linkage-only changes', () => {
   const legacy = summarize(data());
   const linked = summarize(data('40000000-0000-4000-8000-000000000004'));
@@ -84,6 +112,7 @@ test('incomplete snapshot and bound overflow fail closed', () => {
   const report = summarize(big);
   assert.equal(report.inventory.inventoryTruncated, true);
   assert.equal(report.grantRightsFingerprintSha256, null);
+  assert.equal(report.legacyRightsReview, null);
   assert.ok(report.databaseBlockers.includes('ACTIVE_GRANT_INVENTORY_TRUNCATED'));
 });
 

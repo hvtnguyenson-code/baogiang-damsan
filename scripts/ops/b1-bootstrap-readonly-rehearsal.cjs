@@ -57,6 +57,8 @@ async function main(){
    const before=summarize(await readSnapshot(scratch));
    assert.equal(before.inventory.activeGrantCount,9);
    assert.equal(before.inventory.activeLegacyUnlinkedCount,9);
+   assert.equal(before.legacyRightsReview.reduce((n,g)=>n+g.activeUnlinkedCount,0),9);
+   assert.ok(before.legacyRightsReview.every(g=>g.sourceDecision==='NOT_ESTABLISHED'));
    assert.equal(before.inventory.candidateTechnicalUsersWithTwoGrantsCount,1);
    assert.ok(before.databaseBlockers.includes('LEGACY_ACTIVE_GRANTS_UNLINKED'));
    assert.equal(before.canConfirm,false);
@@ -71,6 +73,7 @@ async function main(){
    const after=summarize(await readSnapshot(scratch));
    assert.equal(after.inventory.activeGrantCount,9);
    assert.equal(after.inventory.activeLegacyUnlinkedCount,8);
+   assert.equal(after.legacyRightsReview.reduce((n,g)=>n+g.activeUnlinkedCount,0),8);
    assert.equal(after.grantRightsFingerprintSha256,before.grantRightsFingerprintSha256);
    assert.notEqual(after.grantLinkageFingerprintSha256,before.grantLinkageFingerprintSha256);
    assert.equal(after.canConfirm,false);
