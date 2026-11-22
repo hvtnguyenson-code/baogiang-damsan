@@ -63,3 +63,8 @@ Không đưa tên tài khoản, UUID người dùng, đường dẫn chứa mậ
 Để giảm việc phải phê duyệt lẻ tẻ, tập hợp **một gói quyết định tổ chức** cho A/B/C/D/E (đúng chủ thể, khóa tin cậy và quy tắc chín nguồn), đồng thời sắp lịch ký nghiệm thu H và review I. Các bí mật và danh tính riêng chỉ trao đổi qua kênh nội bộ bảo mật, không dán vào chat/GitHub.
 
 **P5-057/T56 = IN_PROGRESS; P6-050 = BLOCKED.**
+
+
+## Addendum: actual production read-only evidence on 22/11/2026
+
+See docs/phase-reports/P5-057-WS1-B1-PRODUCTION-READONLY-EVIDENCE-20261122.md. Actual production remains 9 active / 9 source-unlinked grants and 0 B1 seat/commands/sources; read-only rights/linkage fingerprints recorded. Current production release 54c1916. The scheduled backup archive dated 22/11 is readable and hashed, but has not been restored to an isolated clone. Code-only migration classifier reports no migration changes to Draft PR #290 d0f22fa. This does not close the independent authority, full UAT, independent security or production restore GO/NO-GO gates.
