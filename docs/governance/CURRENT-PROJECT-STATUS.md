@@ -8,7 +8,37 @@ Per `MAJOR-TASK-DOCUMENTATION-SYNC-PROTOCOL.md`, this file is intentionally conc
 
 Exact current `main`, branch HEAD and divergence must always be read directly from Git/GitHub. SHAs here are evidence for already-established task states, never a self-referential claim that this document contains its own current commit.
 
-**Status snapshot date:** 2026-11-12
+**Status snapshot date:** 2026-11-22
+
+### P5-057 / T56 — production read-only evidence (22/11/2026)
+
+Observed production BaoGiang only: current code release 54c1916b81c7271614eeadcbc8ef6fb5de1789cd, API port 3100, B1_* explicit production env keys 0 (file-only). READ ONLY, REPEATABLE READ PostgreSQL at 127.0.0.1:5434/baogiang: 9 active SCHOOL_WIDE grants, 9 unlinked legacy grants, 1 technical-user candidate (not proven), 0 technical seat/appointment, 0 B1 commands/sources/coordinates/projections. Rights SHA256 570e04d9ed2060f53d7d4150f0ede32cd35391e759748bef1e27222569f74dc0; linkage SHA256 8428736dca9117c1bfa21d9e4868e46ddeb679748298ed06fc39610cd7b244ad. Latest scheduled backup archive 22 Nov 02:30 local, 540380 bytes, SHA256 dbb7e4ac5db38958813d34f270351d4648984707588a6f7ef60d8933f625674b; pg_restore --list PASS (928 TOC lines), but clone restoration NOT tested. Canonical deployed-to-d0f22fa migration classifier: code-only, zero migration deltas; .github/workflows/ci.yml has additive test steps and still needs review. Production source authority/unlinked legacy provenance, real issuer/trust, G3/G4 direct source approvals, production clone restore, full real-persona UAT, independent full PR review and cutover GO remain OPEN. P5-057 IN_PROGRESS, P6-050 BLOCKED. No production data mutation, merge or deploy. Full evidence: docs/phase-reports/P5-057-WS1-B1-PRODUCTION-READONLY-EVIDENCE-20261122.md.
+
+### P5-057 / T56 — Predeploy GO/NO-GO, 22/11/2026
+
+Code baseline PR #290 59c0aba (CI #45014806965 and PG16 #45014807004 SUCCESS); #289 and #290 Draft / unmerged. Formal technical/organizational release gate now at docs/phase-reports/P5-057-WS1-B1-PREDEPLOY-GO-NOGO-20261122.md. Current decision = NO-GO to bootstrap and B1 activation: independent external issuer and Ed25519 pin, separate G3/G4 technical source issuance policy, audited nine legacy grants, recent production read-only inventory, tested production clone/rollback, full seven-persona business UAT and independent full PR security review are not established. A new real-PG bootstrap fixture asserts the preexisting GiST no-overlap constraint prevents duplicate active rights before any signed bootstrap transaction (1/1 local PG17 PASS, 0 scratch schemas). No production runtime code changes; G1/G3/G4 remain accepted and AI OFF. P5-057 IN_PROGRESS, P6-050 BLOCKED; do not merge/deploy.
+
+### G4 independent technical source regression — 22/11/2026
+
+PR #290 remains Draft on exact baseline 65b679c (CI 45002191648 + PG16 45002191640 SUCCESS). Isolated PostgreSQL 17 real-HTTP fixture now verifies PHT APPOINT/DISMISS with both PHT and independently supported technical G4 sources: one effective grant, two projection supports while appointed, then only independent support after PHT dismissal; original PERSONAL baseline preserved and B1 authorization epoch advanced. Test 1/1 PASS; test TypeScript and scoped lint PASS; 0 residual b1http schemas. A narrow read-only Codex review of the writer completed with "No confirmed bug"; it is not full independent PR approval. Full technical source issuance/revocation authority, initial Admin signer, nine-grant legacy provenance, complete real-persona UAT and production backup/cutover still blocked. P5-057 IN_PROGRESS; P6-050 BLOCKED. No production change, merge or deploy. Evidence: docs/phase-reports/P5-057-WS1-B1-G4-INDEPENDENT-SOURCE-REVIEW-20261122.md.
+
+## P5-057 / T56 - Live browser and legacy review checkpoint (22/11/2026)
+
+Baseline 09f751e0ec3eeb24507e6f0ae5a7c900104a88f1; UI static gate corrected and PASS; PG16 44994596898 SUCCESS. New browser fixture reuses the existing isolated HTTP lifecycle suite, actual NestJS and built Web, loopback only. Admin recorded Principal and PHT via UI, all seven synthetic personas used real login and routes, including PHT first password change and 8 work links; mock browser regression 8/8 PASS (19 images), live browser drill PASS (18 images; 18 non-Admin route visits plus Admin appointment actions). Temporary B1 schemas absent; test servers stopped. Read-only legacy review groups recognized capability keys/scopes and marks source decisions NOT_ESTABLISHED; 10/10 unit tests and PG17 scratch rehearsal PASS. See docs/phase-reports/P5-057-WS1-B1-LEADERSHIP-UI-RESTORE-20261122.md. This closes a bounded browser navigation/appointment rehearsal, not full seven-persona business acceptance, physical-device UAT, independent review, actual reconciliation or production cutover. P5-057 IN_PROGRESS; P6-050 BLOCKED. No production changes.
+
+
+
+## P5-057 / T56 - B1 leadership UI and isolated recovery (22/11/2026)
+
+PR #290 Draft; baseline d82e22e7ed8a20b929e3fd098be0fa5c0a41036a, CI 44983027935 and PG16 44983027937 SUCCESS. Admin leadership UI connected to guarded B1 commands; legacy preview reflects the existing cutover gate. Local API/Web TypeScript and scoped ESLint PASS, Web 34/34 and API 16/16 PASS. Native isolated PostgreSQL backup/restore verified all 9 legacy rows, original epoch/audit and no new B1 entities; temporary schemas removed. Playwright local run stalled; real seven-persona UAT not accepted. Production backup, independent issuer/trust, source reconciliation and cutover still gated. P5-057 IN_PROGRESS; P6-050 BLOCKED. No production activation, merge or deploy.
+
+Evidence: docs/phase-reports/P5-057-WS1-B1-LEADERSHIP-UI-RESTORE-20261122.md.
+
+
+
+## P5-057 / WS1-B1 — G1/G3/G4 accepted by PO; technical cutover gated (22/11/2026)
+
+PO: “Chốt G1, G3, G4”. Technical Admin records Principal appointment/dismissal/handover following the competent external authority; Principal and technical Admin have independently authorized AUDIT_VIEW sources; academic PHT manages the additional-duty catalog and technical Admin retains independent operational assistance. No self-grant, no inference of legacy provenance, five Phase-11 AI capabilities remain OFF. Decision: `docs/requirements/P5-057-WS1-PO-THREE-GATES-DECISION-PACKET-20261121.md`; evidence PR #290 comment 7073734866. Exact HEAD `c53f98941d1a4d75063ba8d2d08bc376c69b87f3`: CI 44978705253 and PG16 44978705271 SUCCESS. Both PR #289/#290 remain Draft. P5-057/T56 IN_PROGRESS, P6-050 blocked. Shared B1 policy WS1-B1-G1-G3-G4-20261122 implemented and local TypeScript/lint, 43 unit tests and four targeted PG17 integration suites PASS; exact-head CI still required; independent issuer/trusted bootstrap evidence, technical-source issue/revoke authority, legacy reconciliation, seven-persona UAT and backup/restore rehearsal remain open. This PO approval does not authorize flags, production mutation, merge or deploy.
 
 ## WS1 / G-D2-2 — Dự thảo ma trận 9 capability nhạy cảm (12/11/2026)
 

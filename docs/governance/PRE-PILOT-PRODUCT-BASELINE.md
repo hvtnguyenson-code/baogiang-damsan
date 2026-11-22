@@ -10,6 +10,10 @@ This document records the Product Owner direction accepted for pre-pilot realign
 
 Starting repository baseline: `main@4bcf2e7fb2104304fd044693a0bf8838f6038d85`.
 
+### PO decision addendum — 22/11/2026: P5-057 WS1 G1/G3/G4
+
+Business principles accepted by PO: (G1) technical Admin records Principal appointment/dismissal/handover upon competent external decision, never self-appoints; (G3) Principal and technical Admin may hold independent authorized AUDIT_VIEW sources, each source's removal preserves coverage of the other; (G4) academic Vice Principal manages the additional-duty catalog, and technical Admin retains independently authorized operational assistance. Five Phase-11 AI governance capabilities remain OFF. See `docs/requirements/P5-057-WS1-PO-THREE-GATES-DECISION-PACKET-20261121.md`. Authority to bootstrap an initial technical Admin, issue/revoke the independent technical sources, reconcile legacy grants, change production flags or deploy is not conferred by this approval. Implementation remains under P5-057/T56 and separate cutover approval.
+
 ## 1. Purpose
 
 The repository already contains a strong retained-history backend foundation. The pre-pilot problem is not a full-code failure. It is a product-completeness and governance problem: several minimum-core/deferred decisions were never re-entered, while some mutable status documents later became stale.

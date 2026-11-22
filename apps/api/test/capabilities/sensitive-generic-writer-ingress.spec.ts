@@ -73,4 +73,54 @@ describe('P5-057 — guard is called at generic service write ingress', () => {
     expect(writes).not.toHaveBeenCalled();
   });
 
+  it('refuses generic create on a non-sensitive B1-managed coordinate before writing', async () => {
+    const writes = jest.fn().mockRejectedValue(new Error('GENERIC_CREATE_REACHED'));
+    const managed = jest.fn().mockResolvedValue({ id: '33333333-3333-4333-8333-333333333333' });
+    const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([{ id: holder }]),
+      accessCoordinate: { findFirst: managed },
+      capabilityGrant: { create: writes },
+    };
+    const db = {
+      user: { findUnique: jest.fn().mockResolvedValue({ id: holder }) },
+      capabilityDefinition: { findUnique: jest.fn().mockResolvedValue({
+        key: 'TEACHER_BASE', isActive: true, allowedScopeTypes: ['PERSONAL'],
+      }) },
+      $transaction: jest.fn(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx)),
+    };
+    const audit = { write: jest.fn() };
+    const service = new CapabilitiesService(db as never, audit as never);
+    await expect(service.create(
+      holder, { capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL' } as never,
+      admin, { requestId: 'b1-managed-create' } as never,
+    )).rejects.toThrow(ForbiddenException);
+    expect(managed).toHaveBeenCalledTimes(1);
+    expect(writes).not.toHaveBeenCalled();
+    expect(audit.write).not.toHaveBeenCalled();
+  });
+
+  it('refuses a non-sensitive teacher template on managed coordinates atomically', async () => {
+    const writes = jest.fn().mockRejectedValue(new Error('GENERIC_TEMPLATE_CREATE_REACHED'));
+    const managed = jest.fn().mockResolvedValue({ id: '33333333-3333-4333-8333-333333333333' });
+    const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([{ id: holder }]),
+      user: { findUnique: jest.fn().mockResolvedValue({
+        id: holder, status: 'ACTIVE', profile: { isTeachingStaff: true },
+      }) },
+      accessCoordinate: { findFirst: managed },
+      capabilityGrant: { create: writes, findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const audit = { write: jest.fn() };
+    const db = { $transaction: jest.fn(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx)) };
+    const service = new AccessBaselineService(db as never, audit as never);
+    jest.spyOn(service, 'validateCapabilityGrantSpecs').mockResolvedValue(undefined);
+    await expect(service.applyTemplate(
+      holder, { templateKey: 'TEACHER' } as never, admin,
+      { requestId: 'b1-managed-template' } as never,
+    )).rejects.toThrow(ForbiddenException);
+    expect(managed).toHaveBeenCalledTimes(1);
+    expect(writes).not.toHaveBeenCalled();
+    expect(audit.write).not.toHaveBeenCalled();
+  });
+
 });
