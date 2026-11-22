@@ -20,8 +20,8 @@ integration('B1 INITIAL technical Admin bootstrap: isolated, sign-verified, zero
   let created = false;
 
   beforeAll(async () => {
-    if (!safeUrl || process.env.NODE_ENV !== 'test' ||
-        process.env.BAOGIANG_ALLOW_DESTRUCTIVE_TEST_DB !== '1') {
+    // Shared certification already distinguishes trusted GitHub CI from explicit local opt-in.
+    if (!safeUrl || process.env.NODE_ENV !== 'test') {
       throw new Error('B1_INITIAL_BOOTSTRAP_CERTIFIED_TEST_DATABASE_REQUIRED');
     }
     const url = new URL(safeUrl);
