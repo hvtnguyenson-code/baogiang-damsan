@@ -2,6 +2,7 @@ import { ForbiddenException } from '@nestjs/common';
 import { SENSITIVE_CAPABILITY_KEYS } from '../../src/capabilities/sensitive-capability-policy';
 import { CapabilitiesService } from '../../src/capabilities/capabilities.service';
 import {
+  assertGenericCoordinatesUnmanaged,
   assertGenericGrantSourceSafe,
   assertGenericTemplateSourceSafe,
 } from '../../src/capabilities/sensitive-generic-writer-gate';
@@ -84,6 +85,31 @@ describe('P5-057 WS1 generic ingress shadow/cutover guard', () => {
     )).rejects.toThrow(ForbiddenException);
     expect(update).not.toHaveBeenCalled();
     expect(audit.write).not.toHaveBeenCalled();
+  });
+
+  it('checks only exact managed coordinates and avoids extra queries while cutover is OFF', async () => {
+    const lookup = jest.fn().mockResolvedValue(null);
+    const tx = { accessCoordinate: { findFirst: lookup } };
+    const userId = '22222222-2222-4222-8222-222222222222';
+    const specs = [{
+      capabilityKey: 'TEACHER_BASE', scopeType: 'PERSONAL', scopeResourceId: null,
+    }, {
+      capabilityKey: 'SUBJECT_MANAGE', scopeType: 'SUBJECT',
+      scopeResourceId: '33333333-3333-4333-8333-333333333333',
+    }];
+    delete process.env.B1_REJECT_GENERIC_SENSITIVE_WRITES;
+    await assertGenericCoordinatesUnmanaged(tx as never, userId, specs);
+    expect(lookup).not.toHaveBeenCalled();
+    process.env.B1_REJECT_GENERIC_SENSITIVE_WRITES = 'true';
+    await expect(assertGenericCoordinatesUnmanaged(tx as never, userId, specs))
+      .resolves.toBeUndefined();
+    expect(lookup).toHaveBeenCalledWith({
+      where: { userId, OR: specs },
+      select: { id: true },
+    });
+    lookup.mockResolvedValueOnce({ id: '11111111-1111-4111-8111-111111111111' });
+    await expect(assertGenericCoordinatesUnmanaged(tx as never, userId, specs))
+      .rejects.toThrow(ForbiddenException);
   });
 
   it('does not enable cutover on ambiguous environment values', () => {

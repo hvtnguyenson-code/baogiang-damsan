@@ -40,7 +40,7 @@ import { AuditService } from '../audit/audit.service';
 import { RequestMeta } from '../auth/auth.types';
 import { PrismaService } from '../prisma/prisma.service';
 import { toCapabilityGrantRecord } from './capabilities.service';
-import { assertGenericTemplateSourceSafe, isGenericGrantSourceBlocked } from './sensitive-generic-writer-gate';
+import { assertGenericCoordinatesUnmanaged, assertGenericTemplateSourceSafe, isGenericGrantSourceBlocked } from './sensitive-generic-writer-gate';
 import { evaluateCoordinateEffectivity } from './effectivity-evaluator';
 import {
   getTemplateDefinition,
@@ -480,6 +480,9 @@ export class AccessBaselineService {
       });
 
       assertGenericTemplateSourceSafe(grantSpecs);
+      // We already hold the user row lock. Reject an entire template when
+      // even one coordinate is B1-managed (including non-sensitive keys).
+      await assertGenericCoordinatesUnmanaged(tx, userId, grantSpecs);
       // Validate all grant specs before checking or inserting grants
       await this.validateCapabilityGrantSpecs(grantSpecs, tx);
 

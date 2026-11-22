@@ -12,7 +12,7 @@ import { AuditService } from '../audit/audit.service';
 import { RequestMeta } from '../auth/auth.types';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateGrantDto, ListCapabilitiesDto, ListGrantsDto, RevokeGrantDto } from './dto';
-import { assertGenericGrantSourceSafe } from './sensitive-generic-writer-gate';
+import { assertGenericCoordinatesUnmanaged, assertGenericGrantSourceSafe, isGenericB1CutoverEnabled } from './sensitive-generic-writer-gate';
 
 const CAPABILITY_GRANT_CONSTRAINT = 'capability_grants_no_active_overlap';
 
@@ -107,6 +107,14 @@ export class CapabilitiesService {
     const scopeResourceId = await this.normalizeResource(dto);
     try {
       return await this.prisma.$transaction(async (tx) => {
+        if (isGenericB1CutoverEnabled()) {
+          // B1 commands serialize on the same user row before touching source
+          // coordinates. Keep the generic check and write under that lock.
+          await tx.$queryRaw`SELECT id FROM users WHERE id = ${userId}::uuid FOR UPDATE`;
+          await assertGenericCoordinatesUnmanaged(tx, userId, [{
+            capabilityKey: dto.capabilityKey, scopeType: dto.scopeType, scopeResourceId,
+          }]);
+        }
         const row = await tx.capabilityGrant.create({
           data: { userId, capabilityKey: dto.capabilityKey, scopeType: dto.scopeType, scopeResourceId, validFrom, validUntil, grantedByUserId: actor },
         });
