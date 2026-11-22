@@ -170,17 +170,21 @@ integration('P5-057 WS1 staged B1 writer — real PostgreSQL transaction', () =>
       expect(await verifier.wasTechnicalIssuer(tx, f.actor.id, new Date())).toBe(false);
     }));
 
-  // This is a characterization, NOT a PO decision that cancellation should
-  // retrospectively void otherwise legitimate source issuance. Fail closed
-  // until the cancellation/VOID semantics are explicitly resolved.
-  it('keeps cancelled technical appointments out of historical issuer proof', () =>
+  // Schema role_appointments_shape_check treats cancelledAt as an effective
+  // void from appointment inception (cancelled_at <= valid_from), not as an
+  // ordinary end timestamp. Historical authority must remain fail-closed for
+  // that void; normal expiry is covered by validUntil in the test above.
+  it('keeps retroactively voided technical appointments out of historical issuer proof', () =>
     isolated(async (tx) => {
       const f = await fixture(tx);
       const issuedAt = new Date(Date.now() - 30 * 60_000);
-      const cancelledAt = new Date(Date.now() - 10 * 60_000);
+      const technicalAppointment = await tx.roleAppointment.findFirstOrThrow({
+        where: { userId: f.actor.id, seatId: f.technical.id, cancelledAt: null },
+        select: { validFrom: true },
+      });
       const appointment = await tx.roleAppointment.updateMany({
         where: { userId: f.actor.id, seatId: f.technical.id, cancelledAt: null },
-        data: { cancelledAt },
+        data: { cancelledAt: technicalAppointment.validFrom },
       });
       expect(appointment.count).toBe(1);
       const verifier = new B1RoleCommandWriter({} as PrismaClient) as unknown as {
