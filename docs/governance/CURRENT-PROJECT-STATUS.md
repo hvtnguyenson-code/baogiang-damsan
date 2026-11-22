@@ -10,6 +10,10 @@ Exact current `main`, branch HEAD and divergence must always be read directly fr
 
 **Status snapshot date:** 2026-11-22
 
+### P5-057 / T56 — Predeploy GO/NO-GO, 22/11/2026
+
+Code baseline PR #290 59c0aba (CI #45014806965 and PG16 #45014807004 SUCCESS); #289 and #290 Draft / unmerged. Formal technical/organizational release gate now at docs/phase-reports/P5-057-WS1-B1-PREDEPLOY-GO-NOGO-20261122.md. Current decision = NO-GO to bootstrap and B1 activation: independent external issuer and Ed25519 pin, separate G3/G4 technical source issuance policy, audited nine legacy grants, recent production read-only inventory, tested production clone/rollback, full seven-persona business UAT and independent full PR security review are not established. A new real-PG bootstrap fixture asserts the preexisting GiST no-overlap constraint prevents duplicate active rights before any signed bootstrap transaction (1/1 local PG17 PASS, 0 scratch schemas). No production runtime code changes; G1/G3/G4 remain accepted and AI OFF. P5-057 IN_PROGRESS, P6-050 BLOCKED; do not merge/deploy.
+
 ### G4 independent technical source regression — 22/11/2026
 
 PR #290 remains Draft on exact baseline 65b679c (CI 45002191648 + PG16 45002191640 SUCCESS). Isolated PostgreSQL 17 real-HTTP fixture now verifies PHT APPOINT/DISMISS with both PHT and independently supported technical G4 sources: one effective grant, two projection supports while appointed, then only independent support after PHT dismissal; original PERSONAL baseline preserved and B1 authorization epoch advanced. Test 1/1 PASS; test TypeScript and scoped lint PASS; 0 residual b1http schemas. A narrow read-only Codex review of the writer completed with "No confirmed bug"; it is not full independent PR approval. Full technical source issuance/revocation authority, initial Admin signer, nine-grant legacy provenance, complete real-persona UAT and production backup/cutover still blocked. P5-057 IN_PROGRESS; P6-050 BLOCKED. No production change, merge or deploy. Evidence: docs/phase-reports/P5-057-WS1-B1-G4-INDEPENDENT-SOURCE-REVIEW-20261122.md.

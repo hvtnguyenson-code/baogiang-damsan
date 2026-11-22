@@ -158,6 +158,13 @@ integration('B1 INITIAL technical Admin bootstrap: isolated, sign-verified, zero
     expect(await db.authoritySeat.count()).toBe(0);
     expect(await getGrants()).toEqual(before);
 
+    // PostgreSQL's GiST exclusion constraint rejects active duplicates even
+    // before bootstrap; preserve this invariant in the real PG16/17 suite.
+    await expect(db.capabilityGrant.create({ data: {
+      userId: admin.id, capabilityKey: grantKeys[2], scopeType: 'SCHOOL_WIDE',
+      validFrom: new Date(Date.now() - 60000), grantedByUserId: issuer.id,
+    } })).rejects.toThrow('capability_grants_no_active_overlap');
+    expect(await getGrants()).toEqual(before);
     const originalEpoch = await db.authorizationState.findUnique({ where: { id: 'B1_GLOBAL' } });
     const originalAuditCount = await db.auditEvent.count();
     let archivePath: string | undefined;
