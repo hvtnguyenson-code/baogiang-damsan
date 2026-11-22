@@ -14,6 +14,10 @@ This matrix is the mandatory cross-domain map from source requirement to current
 
 P5-057/T56: PO accepted G1/G3/G4 in `docs/requirements/P5-057-WS1-PO-THREE-GATES-DECISION-PACKET-20261121.md` (PR #290 comment 7073734866). The policy defines the Principal recording authority and independent AUDIT_VIEW and PHT/technical catalog sources; it does not change the five disabled AI keys or authorize automatic legacy reconciliation. Exact HEAD `c53f98941d1a4d75063ba8d2d08bc376c69b87f3`, prior CI/PG16 SUCCESS. Shared versioned B1 policy now aligns the full writer and read-only preview; 43 unit tests, TypeScript, scoped lint and four PG17 integration suites PASS locally. The staged B1 code is not yet deployed or fully accepted; persona UAT and independent source/bootstrap/legacy/restore evidence remain prerequisites. Existing T56 disposition and P5-057 IN_PROGRESS gate remain; P6-050 is not unblocked.
 
+### G4 independent technical source regression — 22/11/2026
+
+PR #290 remains Draft on exact baseline 65b679c (CI 45002191648 + PG16 45002191640 SUCCESS). Isolated PostgreSQL 17 real-HTTP fixture now verifies PHT APPOINT/DISMISS with both PHT and independently supported technical G4 sources: one effective grant, two projection supports while appointed, then only independent support after PHT dismissal; original PERSONAL baseline preserved and B1 authorization epoch advanced. Test 1/1 PASS; test TypeScript and scoped lint PASS; 0 residual b1http schemas. A narrow read-only Codex review of the writer completed with "No confirmed bug"; it is not full independent PR approval. Full technical source issuance/revocation authority, initial Admin signer, nine-grant legacy provenance, complete real-persona UAT and production backup/cutover still blocked. P5-057 IN_PROGRESS; P6-050 BLOCKED. No production change, merge or deploy. Evidence: docs/phase-reports/P5-057-WS1-B1-G4-INDEPENDENT-SOURCE-REVIEW-20261122.md.
+
 ## Disposition vocabulary
 
 - `KEEP` — current architecture/code remains product-valid.

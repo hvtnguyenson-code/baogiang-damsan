@@ -402,5 +402,104 @@ integration('P5-057 B1 — authenticated HTTP successful appointment and replay'
         app, db, schema, admin, issuer, principal: target, pht: vice, person,
       });
     }
+
+    // G4 independent-source regression: an authorized technical source is
+    // emulated ONLY in this disposable schema. This does not approve any
+    // production technical-direct issuance or revocation.
+    const directG4 = await db.$transaction(async (tx) => {
+      const at = new Date();
+      const evidence = await tx.accessCommand.create({ data: {
+        actorUserId: admin.id, targetUserId: vice.id,
+        commandType: 'B1_TECHNICAL_DIRECT_GRANT',
+        requestKey: randomUUID(), fingerprint: 'c'.repeat(64),
+        effectiveAt: at, result: {},
+      } });
+      // A prior PHT dismissal has already created the coordinate. Reuse its
+      // history and monotonic version, never create a duplicate identity.
+      const coordinate = await tx.accessCoordinate.findFirstOrThrow({ where: {
+        userId: vice.id, capabilityKey: 'ADDITIONAL_DUTY_CATALOG_MANAGE',
+        scopeType: 'SCHOOL_WIDE', scopeResourceId: null,
+      } });
+      const grant = await tx.capabilityGrant.create({ data: {
+        userId: vice.id, capabilityKey: 'ADDITIONAL_DUTY_CATALOG_MANAGE',
+        scopeType: 'SCHOOL_WIDE', scopeResourceId: null, coordinateId: coordinate.id,
+        validFrom: at, grantedByUserId: admin.id,
+      } });
+      const source = await tx.grantSource.create({ data: {
+        coordinateId: coordinate.id, userId: vice.id, kind: 'TECHNICAL_DIRECT',
+        createdCommandId: evidence.id,
+      } });
+      const revision = await tx.grantSourceRevision.create({ data: {
+        sourceId: source.id, coordinateId: coordinate.id,
+        revision: 1n, validFrom: at, validUntil: null,
+        disposition: 'ACCEPTED', commandId: evidence.id,
+      } });
+      const projection = await tx.grantProjectionRevision.create({ data: {
+        coordinateId: coordinate.id, version: coordinate.version + 1n,
+        commandId: evidence.id, effectiveAt: at,
+      } });
+      const slice = await tx.grantProjectionSlice.create({ data: {
+        projectionRevisionId: projection.id, coordinateId: coordinate.id,
+        grantId: grant.id, validFromSnapshot: at, validUntilSnapshot: null,
+      } });
+      await tx.grantSupport.create({ data: {
+        sliceId: slice.id, coordinateId: coordinate.id,
+        sourceRevisionId: revision.id, coveredFrom: at, coveredUntil: null,
+      } });
+      const coordinateCas = await tx.accessCoordinate.updateMany({
+        where: { id: coordinate.id, version: coordinate.version },
+        data: { version: { increment: 1n } },
+      });
+      expect(coordinateCas.count).toBe(1);
+      await tx.authorizationState.update({ where: { id: 'B1_GLOBAL' },
+        data: { epoch: { increment: 1n } } });
+      return { grantId: grant.id, coordinateId: coordinate.id, revisionId: revision.id };
+    });
+    const g4Appointment = await agent.post(endpoint).set('Origin', testOrigin).send({
+      operation: 'APPOINT', role: 'VICE_PRINCIPAL_ACADEMIC',
+      targetUserId: vice.id, expectedSeatVersion: academic.policyVersion.toString(),
+      expectedAuthorizationEpoch: '10', requestKey: 'b1-http-g4-' + randomUUID(),
+    });
+    expect(g4Appointment.status).toBe(200);
+    expect(g4Appointment.body.sourcesOpened).toBe(vpKeys.size);
+    expect(await db.capabilityGrant.count({ where: {
+      userId: vice.id, capabilityKey: 'ADDITIONAL_DUTY_CATALOG_MANAGE',
+      scopeType: 'SCHOOL_WIDE', revokedAt: null,
+    } })).toBe(1);
+    const dualG4 = await db.grantProjectionRevision.findFirstOrThrow({
+      where: { coordinateId: directG4.coordinateId }, orderBy: { version: 'desc' },
+      include: { slices: { include: { supports: true } } },
+    });
+    expect(dualG4.slices).toHaveLength(1);
+    expect(dualG4.slices[0].supports).toHaveLength(2);
+
+    await new Promise((done) => setTimeout(done, 30));
+    const g4Dismissal = await agent.post(endpoint).set('Origin', testOrigin).send({
+      operation: 'DISMISS', role: 'VICE_PRINCIPAL_ACADEMIC',
+      targetUserId: vice.id, expectedAppointmentId: g4Appointment.body.appointmentId,
+      expectedSeatVersion: academic.policyVersion.toString(),
+      expectedAuthorizationEpoch: '11', requestKey: 'b1-http-g4-end-' + randomUUID(),
+    });
+    expect(g4Dismissal.status).toBe(200);
+    expect(g4Dismissal.body.sourcesClosed).toBe(vpKeys.size);
+    expect((await db.capabilityGrant.findUniqueOrThrow({
+      where: { id: directG4.grantId },
+    })).revokedAt).toBeNull();
+    expect(await db.capabilityGrant.count({ where: {
+      userId: vice.id, scopeType: 'SCHOOL_WIDE', revokedAt: null,
+    } })).toBe(1);
+    const survivingG4 = await db.grantProjectionRevision.findFirstOrThrow({
+      where: { coordinateId: directG4.coordinateId }, orderBy: { version: 'desc' },
+      include: { slices: { include: { supports: true } } },
+    });
+    expect(survivingG4.slices).toHaveLength(1);
+    expect(survivingG4.slices[0].supports.map((support) =>
+      support.sourceRevisionId)).toEqual([directG4.revisionId]);
+    expect(await db.capabilityGrant.count({ where: {
+      userId: vice.id, scopeType: 'PERSONAL', revokedAt: null,
+    } })).toBe(personalKeys.length);
+    expect((await db.authorizationState.findUniqueOrThrow({
+      where: { id: 'B1_GLOBAL' },
+    })).epoch).toBe(12n);
   }, 300_000);
 });

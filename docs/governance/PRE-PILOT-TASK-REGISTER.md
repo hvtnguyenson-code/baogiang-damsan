@@ -12,6 +12,10 @@ This register exists to prevent planned or deferred work from disappearing betwe
 
 G1/G3/G4 business principles explicitly accepted by PO (“Chốt G1, G3, G4”), recorded in `docs/requirements/P5-057-WS1-PO-THREE-GATES-DECISION-PACKET-20261121.md` and PR #290 comment 7073734866. Baseline exact PR HEAD `c53f98941d1a4d75063ba8d2d08bc376c69b87f3`; CI 44978705253 and PG16 44978705271 SUCCESS. Both #289/#290 Draft, not merged or deployed. Shared versioned B1 policy implemented; local TypeScript/lint, 43 unit tests and four targeted PG17 integration suites PASS; exact-head CI pending. Retain separate authority for technical-source issuance/revocation and initial Admin bootstrap, reconcile legacy sources, complete seven-persona UAT and backup/restore rehearsal, obtain separate cutover authorization. Phase-11 AI remains OFF. P5-057/T56 remains IN_PROGRESS and P6-050 remains blocked; no new major task or unregistered deferral is created.
 
+### G4 independent technical source regression — 22/11/2026
+
+PR #290 remains Draft on exact baseline 65b679c (CI 45002191648 + PG16 45002191640 SUCCESS). Isolated PostgreSQL 17 real-HTTP fixture now verifies PHT APPOINT/DISMISS with both PHT and independently supported technical G4 sources: one effective grant, two projection supports while appointed, then only independent support after PHT dismissal; original PERSONAL baseline preserved and B1 authorization epoch advanced. Test 1/1 PASS; test TypeScript and scoped lint PASS; 0 residual b1http schemas. A narrow read-only Codex review of the writer completed with "No confirmed bug"; it is not full independent PR approval. Full technical source issuance/revocation authority, initial Admin signer, nine-grant legacy provenance, complete real-persona UAT and production backup/cutover still blocked. P5-057 IN_PROGRESS; P6-050 BLOCKED. No production change, merge or deploy. Evidence: docs/phase-reports/P5-057-WS1-B1-G4-INDEPENDENT-SOURCE-REVIEW-20261122.md.
+
 ## Status vocabulary
 
 - `PLANNED` — accepted work exists but dependencies are not yet all closed.
